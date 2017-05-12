@@ -1,0 +1,218 @@
+//
+// COPYRIGHT 2017 Brightgate Inc. All rights reserved.
+//
+// This copyright notice is Copyright Management Information under 17 USC 1202
+// and is included to protect this work and deter copyright infringement.
+// Removal or alteration of this Copyright Management Information without the
+// express written permission of Brightgate Inc is prohibited, and any
+// such unauthorized removal or alteration will be a violation of federal law.
+//
+// vim:set comments=b\://:
+
+// # Field number partitioning
+//
+// We write field numbers as hexadecimal integer literals, so that the
+// partitioning is evident.  So that we might combine the messages into
+// a smaller set of unified messages in the future, we partition the
+// per-message field numbers into ranges.  (This choice trades off
+// message size against later refactoring.)
+//
+// ## Common field numbers
+//
+// 0x01  Timestamp for event/message.
+// 0x02  Sender string for event/message.
+// ...
+// 0x0f
+//
+// # Conventions
+// - MAC addresses are the low 6 bytes of a 64-bit fixed integer.
+// - IPv4 addresses are a 32-bit fixed integer.
+
+// XXX Debian parser of the moment only recognizes "proto2".  Plan on an
+// update.
+syntax = "proto2";
+
+package base_msg;
+
+message Timestamp {
+	required int64 seconds = 0x01;
+	required int32 nanos = 0x02;
+}
+
+// XXX In some ways, this enum duplicates content we already have in
+// services(5).  But since services mixes TCP, UDP, and RPC with a
+// syntax beyond an integer, we will build our own list for now.
+enum Protocol {
+	DNS = 1;
+	DHCP = 2;
+}
+
+// The ping message is sent shortly after an application or service
+// establishes its publication connection to the broker.  It should be the
+// first message sent after connection establishment.
+// @topic "sys.ping", TOPIC_PING
+// @range 0x100
+message EventPing {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+
+	optional string ping_message = 0x100;
+}
+
+// The config message is sent whenever an application or service
+// modifies shared configuration.  Subscribers--all applications or
+// services that have public configuration--must then determine whether or
+// not they must modify their operations in response to the updated
+// configuration.
+// @topic "sys.config", TOPIC_CONFIG
+// @range 0x200
+message EventConfig {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+
+	enum Scope {
+		TABLE_CHANGE = 1;
+	}
+
+	optional Scope scope = 0x200;
+	optional string scope_name = 0x201;
+}
+
+// XXX sys.error
+// @topic "sys.error", TOPIC_ERROR
+// @range 0x300
+
+// The network entity message is sent whenever an application or service
+// suspects that it has discovered a new or modified entity (IP endpoint)
+// on a network, or when it believes that an entity has departed the
+// network.
+// @topic "net.entity", TOPIC_ENTITY
+// @range 0x400
+message EventNetEntity {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+
+	optional fixed64 mac_address = 0x400;
+	optional fixed32 ipv4_address = 0x401;
+	optional string interface_name = 0x402;
+	optional string dns_name = 0x403;
+}
+
+// The network resource is sent whenever an application or service
+// allocates or reclaims a resource it manages.  An example managed
+// resource would be DHCP lease offers and releases.
+// @topic "net.resource", TOPIC_RESOURCE
+// @range 0x500
+message EventNetResource {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+
+	enum Action {
+		RELEASED = 1;
+		CLAIMED = 2;
+		COLLISION = 3;
+	}
+
+	optional Action action = 0x500;
+	// Who's involved?
+}
+
+// The network request is sent whenever an application or service issues
+// an information request that does not imply allocation.  An example
+// request would be a DNS host lookup.
+//
+// For DNS, the requestor field is an IP address.
+//
+// For DHCP, the requestor field is a MAC address.
+//
+// @topic "net.request", TOPIC_REQUEST
+// @range 0x600
+message EventNetRequest {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+	optional string identity_uuid = 0x04;
+
+	optional Protocol protocol = 0x0600;
+
+	optional string request = 0x0601;
+	optional string response = 0x0602;
+
+	// protocol-specific requestor
+	optional string requestor = 0x0603;
+}
+
+// XXX net.service
+// @topic "net.service", TOPIC_SERVICE
+// @range 0x700
+
+// The network exception is sent whenever an application or service
+// detects a request that is not allowed and responds with the reason
+// for the disallowance.
+// @topic "net.exception", TOPIC_EXCEPTION
+// @range 0x800
+message EventNetException {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+	optional string identity_uuid = 0x04;
+
+	optional Protocol protocol = 0x0800;
+
+	enum Reason {
+		DIRECT_FORBIDDEN = 1;
+		POLICY_BOUNDARY_VIOLATED = 2;
+		ILLEGAL_ADDRESS = 3;
+	}
+	optional Reason reason = 0x801;
+	optional string message = 0x802;
+
+	optional string requestor = 0x0803;
+}
+
+// Configuration messages
+// XXX Types and lists?
+// Delete is not defined without a property name.
+
+message ConfigQuery {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+	optional string identity_uuid = 0x04;
+
+	// XXX Should we just model on REST?  (GET, POST, PUT, DELETE?)
+	enum Operation {
+		GET = 1;
+		SET = 2;
+		DELETE = 4;
+	}
+	required Operation operation = 0x2000;
+
+	optional string property = 0x2001;
+	optional string value = 0x2002;
+}
+
+message ConfigResponse {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+	optional string identity_uuid = 0x04;
+
+	enum OpResponse {
+		OP_OK = 0;
+		GET_PROP_NOT_FOUND = 1;
+		GET_VALUE_NOT_FOUND = 2;
+		SET_PROP_NO_PERM = 5;
+		DELETE_PROP_NO_PERM = 9;
+		DELETE_PROP_EMPTY = 10;
+		DELETE_PROP_NOT_FOUND = 11;
+	}
+	required OpResponse response = 0x2003;
+
+	optional string property = 0x2001;
+	optional string value = 0x2002;
+}
