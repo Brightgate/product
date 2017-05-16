@@ -1,0 +1,86 @@
+
+COPYRIGHT 2017 Brightgate Inc. All rights reserved.
+
+This copyright notice is Copyright Management Information under 17 USC 1202
+and is included to protect this work and deter copyright infringement.
+Removal or alteration of this Copyright Management Information without the
+express written permission of Brightgate Inc is prohibited, and any
+such unauthorized removal or alteration will be a violation of federal law.
+
+
+README.Product
+
+# Directories
+
+base/			Resource and Protocol Buffer message definitions
+
+golang/			Golang-based command, daemon, and library
+			implementations.
+
+## Directory naming
+
+Name directories in snake case, as Python module names may not include
+'-' characters.
+
+# Proto area
+
+$ROOT is set to ./proto.$(uname -m).  On an imaged system, $ROOT is
+equivalent to /.
+
+At present, the proto area contains components that use the standard
+hierarchy.  Brightgate specific components are in
+$ROOT/opt/com.brightgate.
+
+# Go language aspects
+
+We typically write "Golang" to improve search uniqueness.
+
+To retrieve the Golang SDK for Linux x64, use
+
+$ curl -O https://storage.googleapis.com/golang/go1.8.1.linux-amd64.tar.gz
+
+To retrieve the Golang SDK for Linux ARM, use
+
+$ curl -O https://storage.googleapis.com/golang/go1.8.1.linux-armv6l.tar.gz
+
+For Linux systems, we recommend unpacking these archives in $HOME.  (If
+you wish to keep multiple Golang versions, then "mv go go-1.8.1; ln -s
+go-1.8.1 go" or the equivalent may be helpful after unpacking.  You will
+want to remove the go symbolic link before unpacking a new version.)
+
+To retrieve the Golang SDK for macOS x64, use
+
+$ curl -O https://storage.googleapis.com/golang/go1.8.1.linux-amd64.pkg
+
+Installation of this package creates /usr/local/go.
+
+Because each platform generates local tools, you will want to use "make
+plat-clobber" to switch a repository from one platform to another, such
+as from Linux to macOS, or from x86 to ARM.
+
+# Build
+
+Source the env.sh file via
+
+$ . ./env.sh
+
+to set up initial Golang environment variables.
+
+bg-reqs.bash to install needed development and runtime components for
+Python-based components.  (The Makefile will use go get to retrieve
+needed Golang module dependencies.)
+
+`make` is used to build the software components.
+
+# Test
+
+`sudo`(8) is used to acquire privilege from the developer during testing.
+
+Components are installed in $(ROOT)/opt/com.brightgate/bin.  bg-run in
+that directory can be used to start individual daemons:
+
+bg-run broker
+bg-run logd
+bg-run dhcpd
+bg-run dnsd
+bg-run httpd
