@@ -22,11 +22,15 @@ red=$(tput setaf 1)
 offred=$offbold
 
 
-root=$PWD/proto
+root=$PWD/proto.$(uname -m)
+if [[ ! -d $root ]]; then
+	echo no proto in $PWD
+	exit 1
+fi
 
 pythonver=3
 pythonpath=$root/usr/local/lib/python$pythonver/dist-packages
-bin=$root/usr/local/bin
+bin=$root/opt/com.brightgate/bin
 
 function log_error {
 	echo $(date +0%Y-%m-%d\ %H:%M:%S) $red{$1} $offgreen$bold$2$offbold
@@ -47,13 +51,13 @@ function pyrun {
 
 function binrun {
 	log_info binrun $1
-	$bin/$1
+	GOTRACEBACK=all $bin/$1
 }
 
 # XXX caprun?
 function sudobinrun {
 	log_privileged run $1
-	sudo -E $bin/$1
+	sudo -E GOTRACEBACK=all $bin/$1
 }
 
 function sudopyrun {
@@ -71,11 +75,11 @@ function usage {
 	echo \tbg-run dhcpd
 	echo \tbg-run dnsd
 	echo \tbg-run httpd
-	echo \tbg-run filterd
-	echo \tbg-run hostapd.m
-	echo \tbg-run analyzerd
-	echo \tbg-run actord
-	echo \tbg-run exploitd
+#	echo \tbg-run filterd
+	echo \tbg-run hostapd
+#	echo \tbg-run analyzerd
+#	echo \tbg-run actord
+#	echo \tbg-run exploitd
 	echo \tbg-run prometheus
 	echo
 	echo \tbg-run start-world
@@ -88,6 +92,8 @@ elif [[ $1 == dhcpd ]]; then
 	sudobinrun ap.dhcp4d
 elif [[ $1 == dnsd ]]; then
 	sudobinrun ap.dns4d
+elif [[ $1 == hostapd ]]; then
+	sudobinrun ap.hostapd.m
 elif [[ $1 == httpd ]]; then
 	binrun ap.httpd # While using port 8000.
 elif [[ $1 == logd ]]; then
@@ -109,6 +115,7 @@ elif [[ $1 == "start-world" ]]; then
 	binrun prometheus &
 	sleep 3
 	binrun ap.logd
+	sudobinrun ap.hostapd.m
 	sudobinrun ap.dhcp4d
 	sudobinrun ap.dns4d
 	binrun ap.httpd # While using port 8000.

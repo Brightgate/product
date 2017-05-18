@@ -22,13 +22,21 @@
 #
 #	 $ . ./env.sh
 #
+# 3. To clean out local binaries, use
+#
+#	 $ make plat-clobber
+
 UNAME_S = $(shell uname -s)
+UNAME_M = $(shell uname -m)
 $(info kernel UNAME_S=$(UNAME_S))
+
+$(info GOOS = $(shell $(GO) env GOOS))
+$(info GOARCH = $(shell $(GO) env GOARCH))
 
 ifeq ("$(UNAME_S)","Darwin")
 # On macOS, install the .pkg provided by golang.org.
 export GOPATH=$(shell pwd)/golang
-export GOROOT=$(HOME)/go
+export GOROOT=/usr/local/go
 $(info operating-system macOS)
 else
 # On Linux
@@ -38,93 +46,139 @@ $(info operating-system Linux)
 endif
 
 GO=$(GOROOT)/bin/go
+GO_CLEAN_FLAGS = -i -x
+GO_GET_FLAGS = -v
+
 $(info go-version $(shell $(GO) version))
 $(info GOROOT $(GOROOT))
 $(info GOPATH $(GOPATH))
 
-PROTOC_PLUGIN=$(GOPATH)/bin/protoc-gen-go
+PROTOC_PLUGINS = \
+	$(GOPATH)/bin/protoc-gen-doc \
+	$(GOPATH)/bin/protoc-gen-go
+
+# XXX if not GOOS, GOARCH
+ifeq ("$(GOARCH)","")
+ROOT=proto.$(UNAME_M)
+endif
+
+ifeq ("$(GOARCH)","arm")
+ROOT=proto.armv7l
+endif
+
+APPBASE=$(ROOT)/opt/com.brightgate
+APPBIN=$(APPBASE)/bin
+APPDOC=$(APPBASE)/share/doc
 
 DAEMONS = \
-	proto/usr/local/bin/ap.brokerd \
-	proto/usr/local/bin/ap.dhcp4d \
-	proto/usr/local/bin/ap.dns4d \
-	proto/usr/local/bin/ap.hostapd.m \
-	proto/usr/local/bin/ap.httpd \
-	proto/usr/local/bin/ap.logd
+	$(APPBIN)/ap.brokerd \
+	$(APPBIN)/ap.dhcp4d \
+	$(APPBIN)/ap.dns4d \
+	$(APPBIN)/ap.hostapd.m \
+	$(APPBIN)/ap.httpd \
+	$(APPBIN)/ap.logd
 
-#	proto/usr/local/bin/ap.configd \
+#	$(APPBIN)/ap.configd \
 
 COMMANDS = \
-	proto/usr/local/bin/ap-configctl \
-	proto/usr/local/bin/ap-msgping
+	$(APPBIN)/ap-msgping \
+	$(APPBIN)/bg-run \
+	$(APPBIN)/pi-netstrap
 
-install: $(COMMANDS) $(DAEMONS)
+#	$(APPBIN)/ap-configctl \
 
-proto/usr/local/bin/%: ./% | proto/usr/local/bin
-	install -m 0755 $< proto/usr/local/bin
+install: $(COMMANDS) $(DAEMONS) docs
 
-proto/usr/local/bin:
-	mkdir -p proto/usr/local/bin
+docs: | $(PROTOC_PLUGINS)
+
+$(APPDOC)/: base/base_msg.proto | $(PROTOC_PLUGINS) $(APPDOC)
+	cd base && \
+		protoc --plugin $(GOPATH)/bin \
+		    --doc_out $(APPDOC) $(notdir $<)
+
+$(COMMANDS) $(DAEMONS) : | $(APPBIN)
+
+$(APPBIN)/%: ./% | $(APPBIN)
+	install -m 0755 $< $(APPBIN)
+
+$(APPBIN):
+	mkdir -p $(APPBIN)
 
 # XXX brokerd does not need the base messages.
-./ap.brokerd: \
+$(APPBIN)/ap.brokerd: \
     golang/src/ap.brokerd/brokerd.go \
     golang/src/base_def/base_def.go \
     golang/src/base_msg/base_msg.pb.go
-	$(GO) build ap.brokerd
+	$(GO) get $(GO_GET_FLAGS) ap.brokerd
+	cd $(APPBIN) && $(GO) build ap.brokerd
 
-./ap-configctl: \
+$(APPBIN)/ap-configctl: \
     golang/src/ap-configctl/configctl.go \
     golang/src/base_def/base_def.go \
     golang/src/base_msg/base_msg.pb.go
-	$(GO) build ap-configctl
+	$(GO) get $(GO_GET_FLAGS) ap-configctl
+	cd $(APPBIN) && $(GO) build ap-configctl
 
-./ap.configd: \
+$(APPBIN)/ap.configd: \
     golang/src/ap.configd/configd.go \
     golang/src/base_def/base_def.go \
     golang/src/base_msg/base_msg.pb.go
-	$(GO) build ap.configd
+	$(GO) get $(GO_GET_FLAGS) ap.configd
+	cd $(APPBIN) && $(GO) build ap.configd
 
-./ap.dhcp4d: \
+$(APPBIN)/ap.dhcp4d: \
     golang/src/ap.dhcp4d/dhcp4d.go \
     golang/src/base_def/base_def.go \
     golang/src/base_msg/base_msg.pb.go
-	$(GO) build ap.dhcp4d
+	$(GO) get $(GO_GET_FLAGS) ap.dhcp4d
+	cd $(APPBIN) && $(GO) build ap.dhcp4d
 
-./ap.dns4d: \
+$(APPBIN)/ap.dns4d: \
     golang/src/ap.dns4d/dns4d.go \
     golang/src/base_def/base_def.go \
     golang/src/base_msg/base_msg.pb.go
-	$(GO) build ap.dns4d
+	$(GO) get $(GO_GET_FLAGS) ap.dns4d
+	cd $(APPBIN) && $(GO) build ap.dns4d
 
-./ap.hostapd.m: \
+$(APPBIN)/ap.hostapd.m: \
     golang/src/ap.hostapd.m/hostapd.m.go \
     golang/src/base_def/base_def.go \
     golang/src/base_msg/base_msg.pb.go
-	$(GO) build ap.hostapd.m
+	$(GO) get $(GO_GET_FLAGS) ap.hostapd.m
+	cd $(APPBIN) && $(GO) build ap.hostapd.m
 
-./ap.httpd: \
+$(APPBIN)/ap.httpd: \
     golang/src/ap.httpd/httpd.go \
     golang/src/base_def/base_def.go \
     golang/src/base_msg/base_msg.pb.go
-	$(GO) build ap.httpd
+	$(GO) get $(GO_GET_FLAGS) ap.httpd
+	cd $(APPBIN) && $(GO) build ap.httpd
 
-./ap.logd: \
+$(APPBIN)/ap.logd: \
     golang/src/ap.logd/logd.go \
     golang/src/base_msg/base_msg.pb.go
-	$(GO) build ap.logd
+	$(GO) get $(GO_GET_FLAGS) ap.logd
+	cd $(APPBIN) && $(GO) build ap.logd
 
-./ap-msgping: \
+$(APPBIN)/ap-msgping: \
     golang/src/ap-msgping/msgping.go \
     golang/src/base_def/base_def.go \
     golang/src/base_msg/base_msg.pb.go
-	$(GO) build ap-msgping
+	$(GO) get $(GO_GET_FLAGS) ap-msgping
+	cd $(APPBIN) && $(GO) build ap-msgping
 
-proto: golang/src/base_msg/base_msg.pb.go base/base_msg_pb2.py | golang/src/base_msg
+$(APPBIN)/bg-run: bg-run.bash
+	install -m 0755 $< $@
 
-golang/src/base_msg/base_msg.pb.go: base/base_msg.proto | $(PROTOC_PLUGIN)
+$(APPBIN)/pi-netstrap: pi-netstrap.bash
+	install -m 0755 $< $@
+
+proto: golang/src/base_msg/base_msg.pb.go base/base_msg_pb2.py
+
+golang/src/base_msg/base_msg.pb.go: base/base_msg.proto | \
+	$(PROTOC_PLUGINS) golang/src/base_msg
 	cd base && \
-		protoc --plugin $(PROTOC_PLUGIN) \
+		protoc --plugin $(GOPATH)/bin \
 		    --go_out $(GOPATH)/src/base_msg $(notdir $<)
 
 base/base_msg_pb2.py: base/base_msg.proto
@@ -140,9 +194,11 @@ clean:
 	rm -f base/base_msg_pb2.py golang/src/base_msg/base_msg.pb.go
 
 plat-clobber: clobber
-	-$(GO) clean -i -r -x github.com/golang/protobuf/protoc-gen-go
-	-$(GO) clean -i -r -x github.com/golang/protobuf/proto
+	-$(GO) clean $(GO_CLEAN_FLAGS) github.com/golang/protobuf/protoc-gen-go
+	-$(GO) clean $(GO_CLEAN_FLAGS) github.com/golang/protobuf/proto
+	-$(GO) clean $(GO_CLEAN_FLAGS) sourcegraph.com/sourcegraph/prototools/cmd/protoc-gen-doc
 
-$(PROTOC_PLUGIN):
+$(PROTOC_PLUGINS):
 	$(GO) get -u github.com/golang/protobuf/proto
 	$(GO) get -u github.com/golang/protobuf/protoc-gen-go
+	$(GO) get -u sourcegraph.com/sourcegraph/prototools/cmd/protoc-gen-doc

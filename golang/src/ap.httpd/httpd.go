@@ -63,8 +63,6 @@ func event_subscribe() {
 	subscriber.SetSubscribe("")
 
 	for {
-		log.Println("receive message bytes")
-
 		msg, err := subscriber.RecvMessageBytes(0)
 		if err != nil {
 			log.Println(err)

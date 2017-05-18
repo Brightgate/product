@@ -77,8 +77,6 @@ func bus_listener() {
 	subscriber.SetSubscribe("")
 
 	for {
-		log.Println("bus receive message bytes")
-
 		msg, err := subscriber.RecvMessageBytes(0)
 		if err != nil {
 			log.Println(err)
@@ -143,9 +141,15 @@ var client_map map[string]int64
 
 func record_client(ipstr string) {
 	host, _, _ := net.SplitHostPort(ipstr)
+	if host == "" {
+		log.Printf("empty host from '%s'\n", ipstr)
+		return
+	}
+
 	client_map_mtx.Lock()
-	log.Printf("client %s, map[client] %d\n", host, client_map[host])
 	client_map[host] = client_map[host] + 1
+	log.Printf("client %s, map[client] %d\n", host, client_map[host])
+
 	if client_map[host] == 1 {
 		t := time.Now()
 
@@ -260,16 +264,22 @@ func local_handler(w dns.ResponseWriter, r *dns.Msg) {
 			r2, _, err := c.Exchange(q, "8.8.8.8:53")
 			if err != nil {
 				log.Printf("failed to exchange: %v", err)
-			}
-			if r2 != nil && r2.Rcode != dns.RcodeSuccess {
-				log.Printf("failed to get an valid answer\n%v", r)
-			}
+				// XXX At this point, r2 is empty or
+				// bad, because of a network error.
+				// If it's an I/O timeout, do we retry?
+			} else {
+				if r2 != nil && r2.Rcode != dns.RcodeSuccess {
+					log.Printf("failed to get an valid answer\n%v", r)
+					// XXX At this point, r2 represents a
+					// DNS error.
+				}
 
-			log.Printf("bs proxy response %s\n", r2)
+				log.Printf("bs proxy response %s\n", r2)
 
-			m.Authoritative = false
-			for _, answer := range r2.Answer {
-				m.Answer = append(m.Answer, answer)
+				m.Authoritative = false
+				for _, answer := range r2.Answer {
+					m.Answer = append(m.Answer, answer)
+				}
 			}
 		}
 	}

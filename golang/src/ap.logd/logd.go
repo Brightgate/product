@@ -59,8 +59,6 @@ func main() {
 	subscriber.SetSubscribe("")
 
 	for {
-		log.Println("receive message bytes")
-
 		msg, err := subscriber.RecvMessageBytes(0)
 		if err != nil {
 			log.Println(err)
@@ -74,34 +72,29 @@ func main() {
 			// XXX pings were green
 			ping := &base_msg.EventPing{}
 			proto.Unmarshal(msg[1], ping)
-			log.Printf("[sys.ping] ")
-			log.Println(ping)
+			log.Printf("[sys.ping] %v", ping)
 
 		case base_def.TOPIC_CONFIG:
 			config := &base_msg.EventConfig{}
 			proto.Unmarshal(msg[1], config)
-			log.Printf("[sys.config] ")
-			log.Println(config)
+			log.Printf("[sys.config] %v", config)
 
 		case base_def.TOPIC_ENTITY:
 			// XXX entities were blue
 			entity := &base_msg.EventNetEntity{}
 			proto.Unmarshal(msg[1], entity)
-			log.Printf("[net.entity] ")
-			log.Println(entity)
+			log.Printf("[net.entity] %v", entity)
 
 		case base_def.TOPIC_RESOURCE:
 			resource := &base_msg.EventNetResource{}
 			proto.Unmarshal(msg[1], resource)
-			log.Printf("[net.resource] ")
-			log.Println(resource)
+			log.Printf("[net.resource] %v", resource)
 
 		case base_def.TOPIC_REQUEST:
 			// XXX requests were also blue
 			request := &base_msg.EventNetRequest{}
 			proto.Unmarshal(msg[1], request)
-			log.Printf("[net.request] ")
-			log.Println(request)
+			log.Printf("[net.request] %v", request)
 
 		default:
 			log.Println("unknown topic " + topic + "; ignoring message")
