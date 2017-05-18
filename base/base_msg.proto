@@ -120,6 +120,8 @@ message EventNetResource {
 	}
 
 	optional Action action = 0x500;
+	optional fixed32 ipv4_address = 0x501;
+	optional string dns_name = 0x502;
 	// Who's involved?
 }
 

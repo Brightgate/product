@@ -152,11 +152,9 @@ func main() {
 	var b ap_common.Broker
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-
-	log.Printf("start on port %v", *port)
-
 	flag.Parse()
 
+	log.Printf("start on port %v", *port)
 	log.Println("cli flags parsed")
 
 	time.Sleep(time.Second)

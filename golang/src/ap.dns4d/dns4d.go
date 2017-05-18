@@ -37,6 +37,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -56,16 +57,92 @@ import (
 var (
 	addr = flag.String("listen-address", base_def.DNSD_PROMETHEUS_PORT,
 		"The address to listen on for HTTP requests.")
-	port      = flag.Int("port", 53, "port to run on")
-	tsig      = flag.String("tsig", "", "use MD5 hmac tsig: keyname:base64")
+	port         = flag.Int("port", 53, "port to run on")
+	tsig         = flag.String("tsig", "", "use MD5 hmac tsig: keyname:base64")
+	upstream_dns = flag.String("upstream-dns", "8.8.8.8:53",
+		"The upstream DNS server to use.")
 	broker    ap_common.Broker
 	phishdata *phishtank.DataSource
+
+	latencies = prometheus.NewSummary(prometheus.SummaryOpts{
+		Name: "dns_resolve_seconds",
+		Help: "DNS query resolution time",
+	})
+
+	client_map_mtx sync.Mutex
+	client_map     map[string]int64
+
+	hosts_mtx sync.Mutex
 )
 
-var latencies = prometheus.NewSummary(prometheus.SummaryOpts{
-	Name: "dns_resolve_seconds",
-	Help: "DNS query resolution time",
-})
+// Terminate dom with '.'.
+const dom = "blueslugs.com."
+
+type dns_record struct {
+	rectype uint16
+	recval  string
+}
+
+/*
+ * Although hosts[] is seeded with A and CNAME records from the configuration,
+ * PTR records are currently added dynamically as we receive net.resource events
+ * from ap.dhcp4d. Access to hosts[] is protected by hosts_mtx, as we need to
+ * update the record based on event subscriptions while potentially serving
+ * records from either local_handler() or proxy_handler().
+ */
+var hosts = map[string]dns_record{
+	"a-gw.blueslugs.com.":                {dns.TypeA, "192.168.135.1"},
+	"s-media.blueslugs.com.":             {dns.TypeA, "192.168.135.4"},
+	"w-media.blueslugs.com.":             {dns.TypeCNAME, "s-media.blueslugs.com."},
+	"s-cooler.blueslugs.com.":            {dns.TypeA, "192.168.135.5"},
+	"p-inky.blueslugs.com.":              {dns.TypeA, "192.168.135.6"},
+	"inky.blueslugs.com.":                {dns.TypeCNAME, "p-inky.blueslugs.com."},
+	"a-sprinkles.blueslugs.com.":         {dns.TypeA, "192.168.135.19"},
+	"a-mfi-outdoor-front.blueslugs.com.": {dns.TypeA, "192.168.135.20"},
+	"mfi-outdoor-front.blueslugs.com.":   {dns.TypeCNAME, "a-mfi-outdoor-front.blueslugs.com."},
+	"a-mfi-office.blueslugs.com.":        {dns.TypeA, "192.168.135.21"},
+	"mfi-office.blueslugs.com.":          {dns.TypeCNAME, "mfi-office.blueslugs.com."},
+	"a-berry-clock.blueslugs.com.":       {dns.TypeA, "192.168.135.29"},
+	"a-tivo.blueslugs.com.":              {dns.TypeA, "192.168.135.30"},
+	"a-tivo-stream.blueslugs.com.":       {dns.TypeA, "192.168.135.31"},
+	"pckts2.blueslugs.com.":              {dns.TypeA, "192.168.135.139"},
+	"w-tappy.blueslugs.com.":             {dns.TypeA, "192.168.135.248"},
+	"w-pi3.blueslugs.com.":               {dns.TypeA, "192.168.135.248"},
+	"s-pi.blueslugs.com.":                {dns.TypeA, "192.168.135.249"},
+	"pidora.blueslugs.com.":              {dns.TypeCNAME, "pidora.blueslugs.com."},
+	"s-deb.blueslugs.com.":               {dns.TypeA, "192.168.135.251"},
+	"debian.blueslugs.com.":              {dns.TypeCNAME, "s-deb.blueslugs.com."},
+	"i1.blueslugs.com.":                  {dns.TypeCNAME, "s-deb.blueslugs.com."},
+	"s-cent.blueslugs.com.":              {dns.TypeA, "192.168.135.252"},
+	"centos.blueslugs.com.":              {dns.TypeCNAME, "s-cent.blueslugs.com."},
+	"phab.blueslugs.com.":                {dns.TypeCNAME, "s-cent.blueslugs.com."},
+	"s-smart.blueslugs.com.":             {dns.TypeA, "192.168.135.253"},
+	"smartos.blueslugs.com.":             {dns.TypeCNAME, "s-smart.blueslugs.com."},
+	"s-vm.blueslugs.com.":                {dns.TypeA, "192.168.135.254"},
+}
+
+func dns_update(resource *base_msg.EventNetResource) {
+	action := resource.GetAction()
+	ipv4 := make(net.IP, net.IPv4len)
+
+	binary.BigEndian.PutUint32(ipv4, resource.GetIpv4Address())
+	arpa, err := dns.ReverseAddr(ipv4.String())
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	hosts_mtx.Lock()
+	if action == base_msg.EventNetResource_CLAIMED {
+		hosts[arpa] = dns_record{
+			rectype: dns.TypePTR,
+			recval:  resource.GetDnsName() + ".",
+		}
+	} else if action == base_msg.EventNetResource_RELEASED {
+		delete(hosts, arpa)
+	}
+	hosts_mtx.Unlock()
+}
 
 func config_changed(event []byte) {
 	config := &base_msg.EventConfig{}
@@ -73,8 +150,11 @@ func config_changed(event []byte) {
 	log.Println(config)
 }
 
-// Terminate dom with '.'.
-const dom = "blueslugs.com."
+func resource_changed(event []byte) {
+	resource := &base_msg.EventNetResource{}
+	proto.Unmarshal(event, resource)
+	dns_update(resource)
+}
 
 // service_config = {
 //     "mode": "proxy",      # "passthrough"?
@@ -111,9 +191,6 @@ const dom = "blueslugs.com."
 //         # XXX Database schema
 //         # XXX Configuration event for table updates
 
-var client_map_mtx sync.Mutex
-var client_map map[string]int64
-
 func record_client(ipstr string) {
 	host, _, _ := net.SplitHostPort(ipstr)
 	if host == "" {
@@ -149,42 +226,6 @@ func record_client(ipstr string) {
 	client_map_mtx.Unlock()
 }
 
-type dns_record struct {
-	rectype uint16
-	recval  string
-}
-
-var hosts = map[string]dns_record{
-	"a-gw.blueslugs.com.":                {dns.TypeA, "192.168.135.1"},
-	"s-media.blueslugs.com.":             {dns.TypeA, "192.168.135.4"},
-	"w-media.blueslugs.com.":             {dns.TypeCNAME, "s-media.blueslugs.com."},
-	"s-cooler.blueslugs.com.":            {dns.TypeA, "192.168.135.5"},
-	"p-inky.blueslugs.com.":              {dns.TypeA, "192.168.135.6"},
-	"inky.blueslugs.com.":                {dns.TypeCNAME, "p-inky.blueslugs.com."},
-	"a-sprinkles.blueslugs.com.":         {dns.TypeA, "192.168.135.19"},
-	"a-mfi-outdoor-front.blueslugs.com.": {dns.TypeA, "192.168.135.20"},
-	"mfi-outdoor-front.blueslugs.com.":   {dns.TypeCNAME, "a-mfi-outdoor-front.blueslugs.com."},
-	"a-mfi-office.blueslugs.com.":        {dns.TypeA, "192.168.135.21"},
-	"mfi-office.blueslugs.com.":          {dns.TypeCNAME, "mfi-office.blueslugs.com."},
-	"a-berry-clock.blueslugs.com.":       {dns.TypeA, "192.168.135.29"},
-	"a-tivo.blueslugs.com.":              {dns.TypeA, "192.168.135.30"},
-	"a-tivo-stream.blueslugs.com.":       {dns.TypeA, "192.168.135.31"},
-	"pckts2.blueslugs.com.":              {dns.TypeA, "192.168.135.139"},
-	"w-tappy.blueslugs.com.":             {dns.TypeA, "192.168.135.248"},
-	"w-pi3.blueslugs.com.":               {dns.TypeA, "192.168.135.248"},
-	"s-pi.blueslugs.com.":                {dns.TypeA, "192.168.135.249"},
-	"pidora.blueslugs.com.":              {dns.TypeCNAME, "pidora.blueslugs.com."},
-	"s-deb.blueslugs.com.":               {dns.TypeA, "192.168.135.251"},
-	"debian.blueslugs.com.":              {dns.TypeCNAME, "s-deb.blueslugs.com."},
-	"i1.blueslugs.com.":                  {dns.TypeCNAME, "s-deb.blueslugs.com."},
-	"s-cent.blueslugs.com.":              {dns.TypeA, "192.168.135.252"},
-	"centos.blueslugs.com.":              {dns.TypeCNAME, "s-cent.blueslugs.com."},
-	"phab.blueslugs.com.":                {dns.TypeCNAME, "s-cent.blueslugs.com."},
-	"s-smart.blueslugs.com.":             {dns.TypeA, "192.168.135.253"},
-	"smartos.blueslugs.com.":             {dns.TypeCNAME, "s-smart.blueslugs.com."},
-	"s-vm.blueslugs.com.":                {dns.TypeA, "192.168.135.254"},
-}
-
 func local_handler(w dns.ResponseWriter, r *dns.Msg) {
 	var (
 		a  net.IP
@@ -204,7 +245,10 @@ func local_handler(w dns.ResponseWriter, r *dns.Msg) {
 
 	// Iterate through questions.
 	for _, question := range r.Question {
-		if rec, ok := hosts[question.Name]; ok {
+		hosts_mtx.Lock()
+		rec, rec_ok := hosts[question.Name]
+		hosts_mtx.Unlock()
+		if rec_ok {
 			if rec.rectype == dns.TypeA {
 				a = net.ParseIP(rec.recval)
 				rr = &dns.A{
@@ -238,7 +282,7 @@ func local_handler(w dns.ResponseWriter, r *dns.Msg) {
 
 			c := new(dns.Client)
 			// XXX Upstream DNS server config.
-			r2, _, err := c.Exchange(q, "8.8.8.8:53")
+			r2, _, err := c.Exchange(q, *upstream_dns)
 			if err != nil {
 				log.Printf("failed to exchange: %v", err)
 				// XXX At this point, r2 is empty or
@@ -317,11 +361,24 @@ func proxy_handler(w dns.ResponseWriter, r *dns.Msg) {
 				// XXX Following is our gateway's IP
 				A: net.IP{192, 168, 136, 1}.To4(),
 			})
+		} else if strings.Contains(question.Name, ".in-addr.arpa.") {
+			hosts_mtx.Lock()
+			rec, rec_ok := hosts[question.Name]
+			hosts_mtx.Unlock()
+			if rec_ok && rec.rectype == dns.TypePTR {
+				m.Answer = append(m.Answer, &dns.PTR{
+					Hdr: dns.RR_Header{Name: question.Name,
+						Rrtype: dns.TypePTR, Class: dns.ClassINET, Ttl: 0},
+					Ptr: rec.recval,
+				})
+			} else {
+				log.Printf("unhandled arpa DNS query: %v", question)
+			}
 		} else {
 
 			c := new(dns.Client)
 			// XXX Upstream DNS server config.
-			r2, _, err := c.Exchange(r, "8.8.8.8:53")
+			r2, _, err := c.Exchange(r, *upstream_dns)
 			if err != nil {
 				log.Printf("failed to exchange: %v", err)
 			} else {
@@ -329,7 +386,7 @@ func proxy_handler(w dns.ResponseWriter, r *dns.Msg) {
 					log.Printf("failed to get an valid answer\n%v", r)
 				}
 
-				m.Answer = r2.Answer
+				m.Answer = append(m.Answer, r2.Answer...)
 			}
 		}
 	}
@@ -402,6 +459,7 @@ func main() {
 
 	broker.Init("ap.dns4d")
 	broker.Handle(base_def.TOPIC_CONFIG, config_changed)
+	broker.Handle(base_def.TOPIC_RESOURCE, resource_changed)
 	broker.Connect()
 	defer broker.Disconnect()
 
@@ -419,7 +477,6 @@ func main() {
 	log.Printf("phishdata %v", phishdata)
 
 	dns.HandleFunc("blueslugs.com.", local_handler)
-
 	dns.HandleFunc(".", proxy_handler)
 
 	go func() {

@@ -48,16 +48,14 @@ var (
 	client_map_mtx sync.Mutex
 	client_map     map[string]int64
 	broker         ap_common.Broker
+
+	StaticMap map[string]net.IP
 )
 
-func config_changed(event []byte) {
-	config := &base_msg.EventConfig{}
-	proto.Unmarshal(event, config)
-	log.Println(config)
-}
-
 type lease struct {
+	name   string    // Client's name from DHCP packet
 	nic    string    // Client's CHAddr
+	ipaddr net.IP    // Client's IP address
 	expiry time.Time // When the lease expires
 }
 
@@ -70,7 +68,11 @@ type DHCPHandler struct {
 	leases        map[int]lease // Map to keep track of leases
 }
 
-var StaticMap map[string]net.IP
+func config_changed(event []byte) {
+	config := &base_msg.EventConfig{}
+	proto.Unmarshal(event, config)
+	log.Println(config)
+}
 
 func hwaddr_to_uint64(ha net.HardwareAddr) uint64 {
 	ext_hwaddr := make([]byte, 8)
@@ -86,10 +88,11 @@ func (h *DHCPHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType, options
 
 	hwaddr := p.CHAddr().String()
 	hwaddr_u64 := hwaddr_to_uint64(p.CHAddr())
+	hostname := string(options[dhcp.OptionHostName])
 
 	client_map_mtx.Lock()
 	client_map[hwaddr] = client_map[hwaddr] + 1
-	log.Printf("client %s, map[client] %d\n", hwaddr, client_map[hwaddr])
+	log.Printf("client %s (%s), map[client] %d\n", hwaddr, hostname, client_map[hwaddr])
 
 	if client_map[hwaddr] == 1 {
 		ipaddr := p.CIAddr()
@@ -103,6 +106,7 @@ func (h *DHCPHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType, options
 			Debug:       proto.String("-"),
 			MacAddress:  proto.Uint64(hwaddr_u64),
 			Ipv4Address: proto.Uint32(binary.BigEndian.Uint32(ipaddr)),
+			DnsName:     proto.String(hostname),
 		}
 
 		data, err := proto.Marshal(entity)
@@ -121,7 +125,7 @@ func (h *DHCPHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType, options
 	switch msgType {
 
 	case dhcp.Discover:
-		free, nic := -1, p.CHAddr().String()
+		free, nic := -1, hwaddr
 		for i, v := range h.leases { // Find previous lease
 			if v.nic == nic {
 				free = i
@@ -151,7 +155,7 @@ func (h *DHCPHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType, options
 			Sender:    proto.String(fmt.Sprintf("ap.dhcp4d(%d)", os.Getpid())),
 			Debug:     proto.String("-"),
 			Protocol:  &protocol,
-			Requestor: proto.String(p.CHAddr().String()),
+			Requestor: proto.String(hwaddr),
 		}
 
 		data, err := proto.Marshal(entity)
@@ -171,7 +175,7 @@ func (h *DHCPHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType, options
 		 */
 		var reqIP net.IP
 
-		static_candidate := StaticMap[p.CHAddr().String()]
+		static_candidate := StaticMap[hwaddr]
 		request_option := net.IP(options[dhcp.OptionRequestedIPAddress])
 
 		log.Printf("request static? %v option? %v client? %v", static_candidate, request_option, p.CIAddr())
@@ -186,9 +190,14 @@ func (h *DHCPHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType, options
 
 		if len(reqIP) == 4 && !reqIP.Equal(net.IPv4zero) {
 			if leaseNum := dhcp.IPRange(h.start, reqIP) - 1; leaseNum >= 0 && leaseNum < h.leaseRange {
-				if l, exists := h.leases[leaseNum]; !exists || l.nic == p.CHAddr().String() {
-					h.leases[leaseNum] = lease{nic: p.CHAddr().String(), expiry: time.Now().Add(h.leaseDuration)}
+				if l, exists := h.leases[leaseNum]; !exists || l.nic == hwaddr {
 					t := time.Now()
+					h.leases[leaseNum] = lease{
+						name:   hostname,
+						nic:    hwaddr,
+						ipaddr: reqIP,
+						expiry: t.Add(h.leaseDuration),
+					}
 
 					action := base_msg.EventNetResource_CLAIMED
 					entity := &base_msg.EventNetResource{
@@ -196,9 +205,11 @@ func (h *DHCPHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType, options
 							Seconds: proto.Int64(t.Unix()),
 							Nanos:   proto.Int32(int32(t.Nanosecond())),
 						},
-						Sender: proto.String(fmt.Sprintf("ap.dhcp4d(%d)", os.Getpid())),
-						Debug:  proto.String("-"),
-						Action: &action,
+						Sender:      proto.String(fmt.Sprintf("ap.dhcp4d(%d)", os.Getpid())),
+						Debug:       proto.String("-"),
+						Action:      &action,
+						Ipv4Address: proto.Uint32(binary.BigEndian.Uint32(reqIP)),
+						DnsName:     proto.String(hostname),
 					}
 
 					data, err := proto.Marshal(entity)
@@ -219,9 +230,11 @@ func (h *DHCPHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType, options
 		return dhcp.ReplyPacket(p, dhcp.NAK, h.ip, nil, 0, nil)
 
 	case dhcp.Release, dhcp.Decline:
-		nic := p.CHAddr().String()
+		nic := hwaddr
 		for i, v := range h.leases {
 			if v.nic == nic {
+				name := h.leases[i].name
+				ip := h.leases[i].ipaddr
 				delete(h.leases, i)
 				t := time.Now()
 
@@ -231,9 +244,11 @@ func (h *DHCPHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType, options
 						Seconds: proto.Int64(t.Unix()),
 						Nanos:   proto.Int32(int32(t.Nanosecond())),
 					},
-					Sender: proto.String(fmt.Sprintf("ap.dhcp4d(%d)", os.Getpid())),
-					Debug:  proto.String("-"),
-					Action: &action,
+					Sender:      proto.String(fmt.Sprintf("ap.dhcp4d(%d)", os.Getpid())),
+					Debug:       proto.String("-"),
+					Action:      &action,
+					Ipv4Address: proto.Uint32(binary.BigEndian.Uint32(ip)),
+					DnsName:     proto.String(name),
 				}
 
 				data, err := proto.Marshal(entity)
