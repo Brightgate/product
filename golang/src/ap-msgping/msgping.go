@@ -13,8 +13,6 @@ package main
 import (
 	"fmt"
 	"log"
-	// "os"
-	"strconv"
 	"time"
 
 	"base_def"
@@ -30,7 +28,7 @@ func main() {
 
 	log.Println("start")
 	publisher, _ := zmq.NewSocket(zmq.PUB)
-	publisher.Connect(base_def.APPLIANCE_ZMQ_URL + ":" + strconv.Itoa(base_def.BROKER_ZMQ_PUB_PORT))
+	publisher.Connect(base_def.BROKER_ZMQ_PUB_URL)
 
 	//  Ensure subscriber connection has time to complete
 	time.Sleep(time.Second)

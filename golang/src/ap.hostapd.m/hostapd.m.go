@@ -37,7 +37,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"strconv"
 	"text/template"
 	"time"
 
@@ -52,7 +51,8 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
-var addr = flag.String("listen-address", ":"+strconv.Itoa(base_def.HOSTAPDM_PROMETHEUS_PORT), "The address to listen on for HTTP requests.")
+var addr = flag.String("listen-address", base_def.HOSTAPDM_PROMETHEUS_PORT,
+	"The address to listen on for HTTP requests.")
 var wifi_interface = flag.String("interface", "wlan0", "Wireless interface to use.")
 
 const min_lifetime = 1.5e9
@@ -88,7 +88,7 @@ func event_listener() {
 	//  First, connect our subscriber socket
 	subscriber, _ := zmq.NewSocket(zmq.SUB)
 	defer subscriber.Close()
-	subscriber.Connect("tcp://localhost:" + strconv.Itoa(base_def.BROKER_ZMQ_SUB_PORT))
+	subscriber.Connect(base_def.BROKER_ZMQ_SUB_URL)
 	subscriber.SetSubscribe("")
 
 	for {

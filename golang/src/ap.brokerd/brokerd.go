@@ -20,7 +20,6 @@ import (
 	"flag"
 	"log"
 	"net/http"
-	"strconv"
 
 	"base_def"
 
@@ -30,7 +29,8 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
-var addr = flag.String("listen-address", ":"+strconv.Itoa(base_def.BROKER_PROMETHEUS_PORT), "The address to listen on for HTTP requests.")
+var addr = flag.String("listen-address", base_def.BROKER_PROMETHEUS_PORT,
+	"The address to listen on for HTTP requests.")
 
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
@@ -57,11 +57,11 @@ func main() {
 
 	frontend, _ := zmq.NewSocket(zmq.XSUB)
 	defer frontend.Close()
-	frontend.Bind(base_def.APPLIANCE_ZMQ_URL + ":" + strconv.Itoa(base_def.BROKER_ZMQ_PUB_PORT))
+	frontend.Bind(base_def.BROKER_ZMQ_PUB_URL)
 
 	backend, _ := zmq.NewSocket(zmq.XPUB)
 	defer backend.Close()
-	backend.Bind(base_def.APPLIANCE_ZMQ_URL + ":" + strconv.Itoa(base_def.BROKER_ZMQ_SUB_PORT))
+	backend.Bind(base_def.BROKER_ZMQ_SUB_URL)
 
 	log.Println("frontend, backend ready; about to invoke proxy")
 

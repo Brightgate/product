@@ -27,7 +27,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 
@@ -44,7 +43,7 @@ import (
 	dhcp "github.com/krolaw/dhcp4"
 )
 
-var addr = flag.String("promhttp-address", ":"+strconv.Itoa(base_def.DHCPD_PROMETHEUS_PORT),
+var addr = flag.String("promhttp-address", base_def.DHCPD_PROMETHEUS_PORT,
 	"Prometheus publication HTTP port.")
 
 var publisher_mtx sync.Mutex
@@ -61,7 +60,7 @@ func bus_listener() {
 	// First, connect our subscriber socket
 	subscriber, _ := zmq.NewSocket(zmq.SUB)
 	defer subscriber.Close()
-	subscriber.Connect("tcp://localhost:" + strconv.Itoa(base_def.BROKER_ZMQ_SUB_PORT))
+	subscriber.Connect(base_def.BROKER_ZMQ_SUB_URL)
 	subscriber.SetSubscribe("")
 
 	for {
@@ -365,7 +364,7 @@ func main() {
 	if zerr != nil {
 		log.Printf("couldn't get a PUB socket: %v", zerr)
 	}
-	publisher.Connect(base_def.APPLIANCE_ZMQ_URL + ":" + strconv.Itoa(base_def.BROKER_ZMQ_PUB_PORT))
+	publisher.Connect(base_def.BROKER_ZMQ_PUB_URL)
 
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)

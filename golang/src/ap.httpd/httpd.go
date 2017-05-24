@@ -9,13 +9,14 @@
  */
 
 // appliance HTTPD front end
+// no fishing picture: https://pixabay.com/p-1191938/?no_redirect
 
 package main
 
 import (
 	"flag"
 	"fmt"
-	"html"
+	"html/template"
 	"log"
 	"net/http"
 	"os"
@@ -36,8 +37,10 @@ import (
 )
 
 var (
-	addr          = flag.String("promhttp-address", ":"+strconv.Itoa(base_def.HTTPD_PROMETHEUS_PORT), "The address to listen on for Prometheus HTTP requests.")
-	port          = ":8000"
+	addr = flag.String("promhttp-address", base_def.HTTPD_PROMETHEUS_PORT,
+		"The address to listen on for Prometheus HTTP requests.")
+	port = flag.String("http-port", ":8000",
+		"The port to listen on for HTTP requests.")
 	publisher_mtx sync.Mutex
 	publisher     *zmq.Socket
 )
@@ -59,7 +62,7 @@ func event_subscribe() {
 	//  First, connect our subscriber socket
 	subscriber, _ := zmq.NewSocket(zmq.SUB)
 	defer subscriber.Close()
-	subscriber.Connect("tcp://localhost:" + strconv.Itoa(base_def.BROKER_ZMQ_SUB_PORT))
+	subscriber.Connect(base_def.BROKER_ZMQ_SUB_URL)
 	subscriber.SetSubscribe("")
 
 	for {
@@ -109,85 +112,42 @@ func event_subscribe() {
 			log.Println("unknown topic " + topic + "; ignoring message")
 		}
 
-		// def event_subscribe() -> None:
-		//     client = zeroless.Client()
-		//     client.connect_local(port=bdef.BROKER_ZMQ_SUB_PORT)
-		//
-		//     other_events.insert(0, ("httpd.internal",
-		//                             timestamp_iso8601(time.time()),
-		//                             "subscription starts"))
-		//     print("start")
-		//
-		//     while True:
-		//         try:
-		//             for topic, msg in listen:
-		//                 print("event")
-		//                 logging.info("[%s] %s", topic, msg)
-		//
-		//                 # XXX We are using topics to separate the message types, which
-		//                 # may not be sufficiently flexible.
-		//                 if topic == bdef.TOPIC_PING:
-		//                     eping.ParseFromString(msg)
-		//                     other_events.insert(0, ("ping",
-		//                                             timestamp_iso8601(eping.timestamp),
-		//                                             eping.ping_message, eping.sender))
-		//
-		//                 elif topic == bdef.TOPIC_CONFIG:
-		//                     econfig.ParseFromString(msg)
-		//                     other_events.insert(0, ("config",
-		//                                             timestamp_iso8601(econfig.timestamp),
-		//                                             str(econfig).replace("\n", "|")))
-		//
-		//                 elif topic == bdef.TOPIC_ENTITY:
-		//                     enetentity.ParseFromString(msg)
-		//                     entity_events.insert(0, ("entity",
-		//                                              timestamp_iso8601(enetentity.timestamp),
-		//                                              netaddr.IPAddress(enetentity.ipv4_address),
-		//                                              enetentity.sender))
-		//
-		//                 elif topic == bdef.TOPIC_REQUEST:
-		//                     enetrequest.ParseFromString(msg)
-		//                     request_events.insert(0, ("request",
-		//                                               timestamp_iso8601(enetrequest.timestamp),
-		//                                               enetrequest.requestor,
-		//                                               enetrequest.request))
-		//
-		//                 elif topic == bdef.TOPIC_RESOURCE:
-		//                     enetresource.ParseFromString(msg)
-		//                     other_events.insert(0, ("resource",
-		//                                             timestamp_iso8601(enetresource.timestamp),
-		//                                             str(enetentity).replace("\n", "|")))
-		//
-		//                 elif topic == bdef.TOPIC_EXCEPTION:
-		//                     enetexception.ParseFromString(msg)
-		//                     other_events.insert(0, ("exception",
-		//                                             timestamp_iso8601(enetexception.timestamp),
-		//                                             str(enetexception).replace("\n", "|")))
-		//
-		//                 else:
-		//                     other_events.insert(0, ("httpd.internal",
-		//                                             timestamp_iso8601(time.time()),
-		//                                             "unknown event"))
-		//         except ValueError:
-		//             logging.error("listen returned more than 2 items")
-		//
-		//
-
 	}
 
-	// # Event lists are lists we believe sorted descending by timestamp.
-	// entity_events = []
-	// request_events = []
-	// other_events = []
-	//
 }
+
+type IndexContent struct {
+	URLPath string
+
+	NPings     string
+	NConfigs   string
+	NEntities  string
+	NResources string
+	NRequests  string
+
+	Host string
+}
+
+var index_template *template.Template
 
 func index_handler(w http.ResponseWriter, r *http.Request) {
 	lt := time.Now()
 
-	fmt.Fprintf(w, "Hello, %q", html.EscapeString(r.URL.Path))
-	fmt.Fprintf(w, "Pings %d; Configs: %d; Entities: %d; Resources: %d; Requests: %d",
-		pings, configs, entities, resources, requests)
+	conf := &IndexContent{
+		URLPath:    r.URL.Path,
+		NPings:     strconv.Itoa(pings),
+		NConfigs:   strconv.Itoa(configs),
+		NEntities:  strconv.Itoa(entities),
+		NResources: strconv.Itoa(resources),
+		NRequests:  strconv.Itoa(requests),
+		Host:       r.Host,
+	}
+
+	err := index_template.Execute(w, conf)
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
 
 	latencies.Observe(time.Since(lt).Seconds())
 }
@@ -199,14 +159,14 @@ func init() {
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
-	log.Printf("start on port %s", port)
+	log.Printf("start on port %v", *port)
 
 	flag.Parse()
 
 	log.Println("cli flags parsed")
 
 	publisher, _ = zmq.NewSocket(zmq.PUB)
-	publisher.Connect(base_def.APPLIANCE_ZMQ_URL + ":" + strconv.Itoa(base_def.BROKER_ZMQ_PUB_PORT))
+	publisher.Connect(base_def.BROKER_ZMQ_PUB_URL)
 
 	time.Sleep(time.Second)
 
@@ -241,6 +201,12 @@ func main() {
 	/* Probably another goroutine */
 	go event_subscribe()
 
+	index_template, err = template.ParseFiles("golang/src/ap.httpd/index.html.got")
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(2)
+	}
+
 	//
 	// HTTPD_INDEX_RENDER = promc.Summary("httpd_index_render_seconds",
 	//                                    "HTTP index page render time")
@@ -267,5 +233,5 @@ func main() {
 
 	http.HandleFunc("/", index_handler)
 
-	log.Fatal(http.ListenAndServe(":8000", nil))
+	log.Fatal(http.ListenAndServe(*port, nil))
 }

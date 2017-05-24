@@ -21,7 +21,6 @@ import (
 	"flag"
 	"log"
 	"net/http"
-	"strconv"
 
 	"base_def"
 	"base_msg"
@@ -34,8 +33,7 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
-var addr = flag.String("listen-address",
-	":"+strconv.Itoa(base_def.LOGD_PROMETHEUS_PORT),
+var addr = flag.String("listen-address", base_def.LOGD_PROMETHEUS_PORT,
 	"The address to listen on for HTTP requests.")
 
 func main() {
@@ -55,7 +53,7 @@ func main() {
 	//  First, connect our subscriber socket
 	subscriber, _ := zmq.NewSocket(zmq.SUB)
 	defer subscriber.Close()
-	subscriber.Connect("tcp://localhost:" + strconv.Itoa(base_def.BROKER_ZMQ_SUB_PORT))
+	subscriber.Connect(base_def.BROKER_ZMQ_SUB_URL)
 	subscriber.SetSubscribe("")
 
 	for {

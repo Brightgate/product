@@ -12,7 +12,7 @@
 /*
  * Elementary DNSv4 server
  *
- * Requirements can be installed by invoking $SRC/bg-reqs.bash.
+ * Requirements can be installed by invoking $SRC/ap-reqs.bash.
  *
  * XXX Need to handle RFC 2606 (reserved gTLDs that should be intercepted)
  * and RFC 7686 (.onion TLD that should be logged).
@@ -27,6 +27,7 @@
 package main
 
 import (
+	"data/phishtank"
 	"encoding/binary"
 	"flag"
 	"fmt"
@@ -53,11 +54,11 @@ import (
 )
 
 var (
-	addr = flag.String("listen-address",
-		":"+strconv.Itoa(base_def.DNSD_PROMETHEUS_PORT),
+	addr = flag.String("listen-address", base_def.DNSD_PROMETHEUS_PORT,
 		"The address to listen on for HTTP requests.")
-	port = flag.Int("port", 53, "port to run on")
-	tsig = flag.String("tsig", "", "use MD5 hmac tsig: keyname:base64")
+	port      = flag.Int("port", 53, "port to run on")
+	tsig      = flag.String("tsig", "", "use MD5 hmac tsig: keyname:base64")
+	phishdata *phishtank.DataSource
 )
 
 var latencies = prometheus.NewSummary(prometheus.SummaryOpts{
@@ -73,7 +74,7 @@ func bus_listener() {
 	// First, connect our subscriber socket
 	subscriber, _ := zmq.NewSocket(zmq.SUB)
 	defer subscriber.Close()
-	subscriber.Connect("tcp://localhost:" + strconv.Itoa(base_def.BROKER_ZMQ_SUB_PORT))
+	subscriber.Connect(base_def.BROKER_ZMQ_SUB_URL)
 	subscriber.SetSubscribe("")
 
 	for {
@@ -255,6 +256,11 @@ func local_handler(w dns.ResponseWriter, r *dns.Msg) {
 			// Proxy needed if we have decided that
 			// we are allowing our domain to be
 			// handled upstream as well.
+
+			// We are assuming we cannot find records from
+			// upstream in our phishing data.  Otherwise we
+			// would have to perform the phishing check
+			// here.
 			q := new(dns.Msg)
 			q.MsgHdr = r.MsgHdr
 			q.Question = append(q.Question, question)
@@ -298,7 +304,7 @@ func local_handler(w dns.ResponseWriter, r *dns.Msg) {
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
 		Sender:       proto.String(fmt.Sprintf("ap.dns4d(%d)", os.Getpid())),
-		Debug:        proto.String("local/296"),
+		Debug:        proto.String("local_handler"),
 		Requestor:    proto.String(addr.String()),
 		IdentityUuid: proto.String(base_def.ZERO_UUID),
 		//                 # XXX Multiple questions not well-handled here.
@@ -330,17 +336,35 @@ func proxy_handler(w dns.ResponseWriter, r *dns.Msg) {
 	m.SetReply(r)
 	m.Authoritative = false
 
-	c := new(dns.Client)
-	// XXX Upstream DNS server config.
-	r2, _, err := c.Exchange(r, "8.8.8.8:53")
-	if err != nil {
-		log.Printf("failed to exchange: %v", err)
-	}
-	if r2 != nil && r2.Rcode != dns.RcodeSuccess {
-		log.Printf("failed to get an valid answer\n%v", r)
-	}
+	/*
+	 * Are any of the questions in our phishing database?  If so, return
+	 * our IP address; for the HTTP and HTTPS cases, we can display a "no
+	 * phishing" page.
+	 */
+	for _, question := range r.Question {
+		if phishdata.KnownToDataSource(question.Name[:len(question.Name)-1]) {
+			m.Answer = append(m.Answer, &dns.A{
+				Hdr: dns.RR_Header{Name: question.Name,
+					Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 0},
+				// XXX Following is our gateway's IP
+				A: net.IP{192, 168, 136, 1}.To4(),
+			})
+		} else {
 
-	m.Answer = r2.Answer
+			c := new(dns.Client)
+			// XXX Upstream DNS server config.
+			r2, _, err := c.Exchange(r, "8.8.8.8:53")
+			if err != nil {
+				log.Printf("failed to exchange: %v", err)
+			} else {
+				if r2 != nil && r2.Rcode != dns.RcodeSuccess {
+					log.Printf("failed to get an valid answer\n%v", r)
+				}
+
+				m.Answer = r2.Answer
+			}
+		}
+	}
 
 	w.WriteMsg(m)
 
@@ -356,7 +380,7 @@ func proxy_handler(w dns.ResponseWriter, r *dns.Msg) {
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
 		Sender:       proto.String(fmt.Sprintf("ap.dns4d(%d)", os.Getpid())),
-		Debug:        proto.String("-"),
+		Debug:        proto.String("proxy_handler"),
 		Requestor:    proto.String(addr.String()),
 		IdentityUuid: proto.String(base_def.ZERO_UUID),
 		//                 # XXX Multiple questions not well-handled here.
@@ -366,7 +390,6 @@ func proxy_handler(w dns.ResponseWriter, r *dns.Msg) {
 		//                 net_request.response = str(reply.rr)
 		//                 net_request.request = str(request.questions)
 		//                 as_address = netaddr.IPAddress(handler.client_address[0])
-		//                 net_request.requestor = str(as_address)
 		//                 net_request.debug = "remote/317"
 	}
 
@@ -417,7 +440,7 @@ func main() {
 	log.Println("message bus listener routine launched")
 
 	publisher, _ = zmq.NewSocket(zmq.PUB)
-	publisher.Connect(base_def.APPLIANCE_ZMQ_URL + ":" + strconv.Itoa(base_def.BROKER_ZMQ_PUB_PORT))
+	publisher.Connect(base_def.BROKER_ZMQ_PUB_URL)
 
 	time.Sleep(time.Second)
 
@@ -445,6 +468,12 @@ func main() {
 	log.Println("publish ping")
 
 	client_map = make(map[string]int64)
+
+	// load the phishtank
+	log.Printf("phishdata %v", phishdata)
+	phishdata = &phishtank.DataSource{FilePath: "online-valid.csv"}
+	phishdata.Loader("online-valid.csv")
+	log.Printf("phishdata %v", phishdata)
 
 	dns.HandleFunc("blueslugs.com.", local_handler)
 

@@ -31,6 +31,8 @@ fi
 pythonver=3
 pythonpath=$root/usr/local/lib/python$pythonver/dist-packages
 bin=$root/opt/com.brightgate/bin
+etc=$root/opt/com.brightgate/etc
+var=$root/opt/com.brightgate/var
 
 function log_error {
 	echo $(date +0%Y-%m-%d\ %H:%M:%S) $red{$1} $offgreen$bold$2$offbold
@@ -51,13 +53,13 @@ function pyrun {
 
 function binrun {
 	log_info binrun $1
-	GOTRACEBACK=all $bin/$1
+	GOTRACEBACK=${GOTRACEBACK:-single} $bin/$1
 }
 
 # XXX caprun?
 function sudobinrun {
 	log_privileged run $1
-	sudo -E GOTRACEBACK=all $bin/$1
+	sudo -E GOTRACEBACK=${GOTRACEBACK:-single} $bin/$1
 }
 
 function sudopyrun {
@@ -71,19 +73,21 @@ function nyi {
 }
 
 function usage {
-	echo Usage:\tbg-run broker
-	echo \tbg-run dhcpd
-	echo \tbg-run dnsd
-	echo \tbg-run httpd
-#	echo \tbg-run filterd
-	echo \tbg-run hostapd
-#	echo \tbg-run analyzerd
-#	echo \tbg-run actord
-#	echo \tbg-run exploitd
-	echo \tbg-run prometheus
-	echo
-	echo \tbg-run start-world
-	echo \tbg-run update-world
+	cat <<EOF
+Usage:	ap-run broker
+	ap-run dhcpd
+	ap-run dnsd
+	ap-run httpd
+	ap-run filterd
+	ap-run hostapd
+	ap-run analyzerd
+	ap-run actord
+	ap-run exploitd
+	ap-run prometheus
+
+	ap-run start-world
+	ap-run update-world
+EOF
 	exit 2
 }
 if [[ $1 == broker ]]; then
@@ -100,7 +104,7 @@ elif [[ $1 == logd ]]; then
 	binrun ap.logd
 elif [[ $1 == prometheus ]]; then
 	log_info direct-run prometheus
-	$bin/prometheus -config.file=$bin/prometheus.yml -storage.local.path="./prometheus-data"
+	$bin/prometheus -config.file=$etc/prometheus.yml -storage.local.path="$var/prometheus-data"
 elif [[ $1 == sampled ]]; then
 	nyi $1
 elif [[ $1 == analyzerd ]]; then
@@ -114,10 +118,10 @@ elif [[ $1 == "start-world" ]]; then
 	binrun ap.brokerd &
 	binrun prometheus &
 	sleep 3
-	binrun ap.logd
-	sudobinrun ap.hostapd.m
-	sudobinrun ap.dhcp4d
-	sudobinrun ap.dns4d
+	binrun ap.logd &
+	sudobinrun ap.hostapd.m &
+	sudobinrun ap.dhcp4d &
+	sudobinrun ap.dns4d &
 	binrun ap.httpd # While using port 8000.
 	# Wait here.
 elif [[ $1 == "update-world" ]]; then
