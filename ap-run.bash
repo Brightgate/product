@@ -28,8 +28,6 @@ if [[ ! -d $root ]]; then
 	exit 1
 fi
 
-pythonver=3
-pythonpath=$root/usr/local/lib/python$pythonver/dist-packages
 bin=$root/opt/com.brightgate/bin
 etc=$root/opt/com.brightgate/etc
 var=$root/opt/com.brightgate/var
@@ -46,25 +44,19 @@ function log_info {
 	echo $(date +0%Y-%m-%d\ %H:%M:%S) $green{$1} $offgreen$bold$2$offbold
 }
 
-function pyrun {
-	log_info python-run $1
-	PYTHONPATH=$pythonpath python$pythonver $bin/$1
-}
-
 function binrun {
-	log_info binrun $1
-	GOTRACEBACK=${GOTRACEBACK:-single} $bin/$1
+	daemon=$1
+	shift
+	log_info binrun $daemon $*
+	GOTRACEBACK=${GOTRACEBACK:-single} $bin/$daemon $*
 }
 
 # XXX caprun?
 function sudobinrun {
-	log_privileged run $1
-	sudo -E GOTRACEBACK=${GOTRACEBACK:-single} $bin/$1
-}
-
-function sudopyrun {
-	log_privileged run $1
-	sudo -E PYTHONPATH=$pythonpath python$pythonver $bin/$1
+	daemon=$1
+	shift
+	log_privileged run $daemon $*
+	sudo -E GOTRACEBACK=${GOTRACEBACK:-single} $bin/$daemon $*
 }
 
 function nyi {
@@ -92,19 +84,23 @@ EOF
 }
 if [[ $1 == broker ]]; then
 	binrun ap.brokerd
+elif [[ $1 == configd ]]; then
+	sudobinrun ap.configd
 elif [[ $1 == dhcpd ]]; then
 	sudobinrun ap.dhcp4d
 elif [[ $1 == dnsd ]]; then
 	sudobinrun ap.dns4d
 elif [[ $1 == hostapd ]]; then
-	sudobinrun ap.hostapd.m
+	if [ -v BG_SSID ]; then
+		OPTS="-ssid $BG_SSID"
+	fi
+	sudobinrun ap.hostapd.m $OPTS
 elif [[ $1 == httpd ]]; then
 	binrun ap.httpd # While using port 8000.
 elif [[ $1 == logd ]]; then
 	binrun ap.logd
 elif [[ $1 == prometheus ]]; then
-	log_info direct-run prometheus
-	$bin/prometheus -config.file=$etc/prometheus.yml -storage.local.path="$var/prometheus-data"
+	binrun prometheus -config.file=$etc/prometheus.yml -storage.local.path="$var/prometheus-data"
 elif [[ $1 == sampled ]]; then
 	nyi $1
 elif [[ $1 == analyzerd ]]; then
@@ -119,6 +115,7 @@ elif [[ $1 == "start-world" ]]; then
 	binrun prometheus &
 	sleep 3
 	binrun ap.logd &
+	binrun ap.configd &
 	sudobinrun ap.hostapd.m &
 	sudobinrun ap.dhcp4d &
 	sudobinrun ap.dns4d &

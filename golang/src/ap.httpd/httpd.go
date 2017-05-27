@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"ap_common"
 	"base_def"
 	"base_msg"
 
@@ -43,6 +44,8 @@ var (
 		"The port to listen on for HTTP requests.")
 	publisher_mtx sync.Mutex
 	publisher     *zmq.Socket
+
+	config *ap_common.Config
 )
 
 var latencies = prometheus.NewSummary(prometheus.SummaryOpts{
@@ -116,6 +119,51 @@ func event_subscribe() {
 
 }
 
+func cfg_handler(w http.ResponseWriter, r *http.Request) {
+	var err error
+
+	t := time.Now()
+
+	if r.Method != "GET" && r.Method != "POST" {
+		http.Error(w, "Invalid request method.", 405)
+		return
+	}
+
+	if r.Method == "GET" {
+		// Get setting from ap.configd
+		//
+		// From the command line:
+		//     wget -q -O- http://127.0.0.1:8000/config?@/network/wlan0/ssid
+
+		val, err := config.GetProp(r.URL.RawQuery)
+		if err != nil {
+			estr := fmt.Sprintf("%v", err)
+			http.Error(w, estr, 400)
+		} else {
+			fmt.Fprintf(w, "%s", val)
+		}
+	} else {
+		// Send property updates to ap.configd
+		//
+		// From the command line:
+		//    wget -q --post-data '@/network/wlan0/ssid=newssid' \
+		//           http://127.0.0.1:8000/config
+
+		err = r.ParseForm()
+		for key, values := range r.Form {
+			if len(values) != 1 {
+				http.Error(w, "Properties may only have one value", 400)
+				return
+			}
+			err = config.SetProp(key, values[0])
+		}
+	}
+
+	if err == nil {
+		latencies.Observe(time.Since(t).Seconds())
+	}
+}
+
 type IndexContent struct {
 	URLPath string
 
@@ -186,10 +234,10 @@ func main() {
 
 	publisher_mtx.Lock()
 	_, err = publisher.SendMessage(base_def.TOPIC_PING, data)
+	publisher_mtx.Unlock()
 	if err != nil {
 		log.Println(err)
 	}
-	publisher_mtx.Unlock()
 
 	log.Println("publish ping")
 
@@ -197,6 +245,9 @@ func main() {
 	go http.ListenAndServe(*addr, nil)
 
 	log.Println("prometheus client launched")
+
+	// Interface to configd
+	config = ap_common.NewConfig("ap.httpd")
 
 	/* Probably another goroutine */
 	go event_subscribe()
@@ -231,6 +282,7 @@ func main() {
 	// XXX Statically bound to port 8000 on the public interfaces at the
 	// moment.
 
+	http.HandleFunc("/config", cfg_handler)
 	http.HandleFunc("/", index_handler)
 
 	log.Fatal(http.ListenAndServe(*port, nil))

@@ -78,6 +78,8 @@ message EventConfig {
 
 	optional Scope scope = 0x200;
 	optional string scope_name = 0x201;
+	optional string property = 0x202;
+	optional string new_value = 0x203;
 }
 
 // XXX sys.error
@@ -207,6 +209,7 @@ message ConfigResponse {
 		GET_PROP_NOT_FOUND = 1;
 		GET_VALUE_NOT_FOUND = 2;
 		SET_PROP_NO_PERM = 5;
+		SET_PROP_NOT_FOUND = 6;
 		DELETE_PROP_NO_PERM = 9;
 		DELETE_PROP_EMPTY = 10;
 		DELETE_PROP_NOT_FOUND = 11;

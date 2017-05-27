@@ -37,9 +37,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"text/template"
 	"time"
 
+	"ap_common"
 	"base_def"
 	"base_msg"
 
@@ -51,9 +53,16 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
-var addr = flag.String("listen-address", base_def.HOSTAPDM_PROMETHEUS_PORT,
-	"The address to listen on for HTTP requests.")
-var wifi_interface = flag.String("interface", "wlan0", "Wireless interface to use.")
+var (
+	addr = flag.String("listen-address", base_def.HOSTAPDM_PROMETHEUS_PORT,
+		"The address to listen on for HTTP requests.")
+	wifi_interface = flag.String("interface", "wlan0",
+		"Wireless interface to use.")
+	default_ssid  = flag.String("ssid", "set_ssid", "SSID to use")
+	interfaces    = make(map[string]HostapdConf)
+	child_process *os.Process
+	config        *ap_common.Config
+)
 
 const min_lifetime = 1.5e9
 
@@ -106,14 +115,35 @@ func event_listener() {
 
 		config := &base_msg.EventConfig{}
 		proto.Unmarshal(msg[1], config)
-		log.Println(config)
+		property := *config.Property
+		path := strings.Split(property[2:], "/")
 
-		/*
-		 * XXX If this configuration event is associated with my
-		 * interface or with a global mode
-		 * (./global/airplane_mode, for instance, then make
-		 * adjustments.
-		 */
+		// Ignore all properties other than "@/network/*/*"
+		if len(path) != 3 || path[0] != "network" {
+			log.Printf("Ignoring non-network property update: %s\n", property)
+			continue
+		}
+		conf, ok := interfaces[path[1]]
+		if !ok {
+			log.Printf("Ignoring update for unknown NIC: %s\n", property)
+			continue
+		}
+
+		switch path[2] {
+		case "ssid":
+			conf.SSID = *config.NewValue
+			render_hostapd_template(conf)
+			if child_process != nil {
+				// Ideally we would just send the child a SIGHUP
+				// and it would reload the new configuration.
+				// Unfortunately, hostapd seems to need to go
+				// through a full reset before the changes are
+				// correctly propagated to the wifi hw.
+				child_process.Signal(os.Interrupt)
+			}
+		default:
+			log.Printf("Ignoring update for unknown property: %s\n", property)
+		}
 	}
 }
 
@@ -144,6 +174,36 @@ func render_hostapd_template(conf HostapdConf) string {
 	return fn
 }
 
+func base_config(name string) string {
+	var err error
+
+	ssid_prop := fmt.Sprintf("@/network/%s/ssid", name)
+	ssid, _ := config.GetProp(ssid_prop)
+	if len(ssid) == 0 {
+		ssid = fmt.Sprintf("%s%d", *default_ssid, os.Getpid())
+	}
+
+	// Does the configuration file exist?
+	conf_template, err = template.ParseFiles("golang/src/ap.hostapd.m/hostapd.conf.got")
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(2)
+	}
+
+	data := HostapdConf{
+		InterfaceName: name,
+		SSID:          ssid,
+		HardwareModes: "g",
+		Channel:       6,
+		Passphrase:    "sosecretive",
+	}
+	interfaces[name] = data
+
+	fn := render_hostapd_template(data)
+	log.Printf("rendered to %s\n", fn)
+	return (fn)
+}
+
 func main() {
 	var err error
 
@@ -161,23 +221,8 @@ func main() {
 	go event_listener()
 	log.Println("message bus thread launched")
 
-	// Does the configuration file exist?
-	conf_template, err = template.ParseFiles("golang/src/ap.hostapd.m/hostapd.conf.got")
-	if err != nil {
-		log.Fatal(err)
-		os.Exit(2)
-	}
-
-	data := HostapdConf{
-		InterfaceName: *wifi_interface,
-		SSID:          fmt.Sprintf("test%d", os.Getpid()),
-		HardwareModes: "g",
-		Channel:       6,
-		Passphrase:    "sosecretive",
-	}
-
-	fn := render_hostapd_template(data)
-	log.Printf("rendered to %s\n", fn)
+	config = ap_common.NewConfig("ap.hostapd.m")
+	fn := base_config(*wifi_interface)
 
 	var exit_count uint = 0
 	var total_lifetime time.Duration = 0
@@ -206,6 +251,7 @@ func main() {
 		}
 		log.Printf("hostapd started, pid %d; waiting\n", cmd.Process.Pid)
 
+		child_process = cmd.Process
 		err = cmd.Wait()
 		lifetime := time.Since(start_time)
 
@@ -218,5 +264,8 @@ func main() {
 		}
 
 		log.Println("wait completed" + "out:" + outb.String() + "err:" + errb.String())
+		// Give everything a chance to settle before we attempt to
+		// restart the daemon and reconfigure the wifi hardware
+		time.Sleep(time.Second)
 	}
 }
