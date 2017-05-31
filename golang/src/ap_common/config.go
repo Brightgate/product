@@ -12,7 +12,6 @@ package ap_common
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -114,11 +113,9 @@ func (c Config) SetProp(prop, val string) error {
 		var reply [][]byte
 
 		reply, err = c.socket.RecvMessageBytes(0)
-		log.Printf("Received reply [%s]\n", reply)
 		if len(reply) > 0 {
 			response := &base_msg.ConfigResponse{}
 			proto.Unmarshal(reply[0], response)
-			log.Println(response)
 		}
 	}
 	c.mutex.Unlock()

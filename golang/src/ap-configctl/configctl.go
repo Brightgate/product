@@ -9,124 +9,54 @@
  */
 
 /*
- * ap-configctl [-value] property_or_value
+ * ap-configctl [-get | -set] property_or_value
  */
 
 package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
-	"os"
 	"time"
 
-	"base_def"
-	"base_msg"
-
-	"github.com/golang/protobuf/proto"
-
-	zmq "github.com/pebbe/zmq4"
+	"ap_common"
 )
 
-const (
-	sender_fmt = "ap-configctl(%d)"
+var (
+	get_value = flag.Bool("get", false, "Query values")
+	set_value = flag.Bool("set", false, "Set one property to the given value")
+	config    *ap_common.Config
 )
-
-var query_value = flag.Bool("value", false, "Query values")
-var set_value = flag.Bool("set", false, "Set one property to the given value")
 
 func main() {
 	flag.Parse()
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
-	log.Println("start")
-
-	config, _ := zmq.NewSocket(zmq.REQ)
-	config.Connect(base_def.CONFIGD_ZMQ_REP_URL)
+	config = ap_common.NewConfig("ap-configctl")
 
 	//  Ensure subscriber connection has time to complete
 	time.Sleep(time.Second)
 
-	sender := fmt.Sprintf(sender_fmt, os.Getpid())
-
 	if *set_value {
-		log.Println("set")
-
 		if len(flag.Args()) != 2 {
 			log.Fatal("wrong set invocation")
 		}
 
-		t := time.Now()
-		oc := base_msg.ConfigQuery_SET
-
-		query := &base_msg.ConfigQuery{
-			Timestamp: &base_msg.Timestamp{
-				Seconds: proto.Int64(t.Unix()),
-				Nanos:   proto.Int32(int32(t.Nanosecond())),
-			},
-			Sender:    proto.String(sender),
-			Debug:     proto.String("-"),
-			Operation: &oc,
-			Property:  proto.String(flag.Arg(0)),
-			Value:     proto.String(flag.Arg(1)),
-		}
-
-		data, err := proto.Marshal(query)
-
-		_, err = config.SendBytes(data, 0)
+		err := config.SetProp(flag.Arg(0), flag.Arg(1))
 		if err != nil {
-			fmt.Println(err)
+			log.Fatalln("property set failed:", err)
 		}
-
-		// XXX Read back response.
-		reply, _ := config.RecvMessageBytes(0)
-		log.Printf("Received reply [%s]\n", reply)
-
-		response := &base_msg.ConfigResponse{}
-		proto.Unmarshal(reply[0], response)
-
-		log.Println(response)
-
-		log.Println("end set")
-
-		os.Exit(0)
+		log.Printf("set: %v=%v\n", flag.Arg(0), flag.Arg(1))
+	} else if *get_value {
+		for _, arg := range flag.Args() {
+			val, err := config.GetProp(arg)
+			if err != nil {
+				log.Fatalln("property get failed:", err)
+			}
+			log.Printf("get: %v=%v\n", arg, val)
+		}
+	} else {
+		flag.Usage()
 	}
-
-	for _, arg := range flag.Args() {
-		log.Println(arg)
-
-		t := time.Now()
-		oc := base_msg.ConfigQuery_GET
-
-		query := &base_msg.ConfigQuery{
-			Timestamp: &base_msg.Timestamp{
-				Seconds: proto.Int64(t.Unix()),
-				Nanos:   proto.Int32(int32(t.Nanosecond())),
-			},
-			Sender:    proto.String(sender),
-			Debug:     proto.String("-"),
-			Operation: &oc,
-			Property:  proto.String(arg),
-		}
-
-		data, err := proto.Marshal(query)
-
-		_, err = config.SendBytes(data, 0)
-		if err != nil {
-			fmt.Println(err)
-		}
-
-		// XXX Read back response.
-		reply, _ := config.RecvMessageBytes(0)
-		log.Printf("Received reply [%s]\n", reply)
-
-		response := &base_msg.ConfigResponse{}
-		proto.Unmarshal(reply[0], response)
-
-		log.Println(response)
-	}
-
-	log.Println("end")
 }
