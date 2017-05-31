@@ -45,12 +45,8 @@ import (
 	"base_def"
 	"base_msg"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-
 	"github.com/golang/protobuf/proto"
-
-	// Ubuntu: requires libzmq3-dev, which is 0MQ 4.2.1.
-	zmq "github.com/pebbe/zmq4"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
@@ -89,61 +85,37 @@ type HostapdConf struct {
 	Passphrase    string
 }
 
-func event_listener() {
-	/*
-	 * Capture config events.
-	 */
+func config_changed(event []byte) {
+	config := &base_msg.EventConfig{}
+	proto.Unmarshal(event, config)
+	property := *config.Property
+	path := strings.Split(property[2:], "/")
 
-	//  First, connect our subscriber socket
-	subscriber, _ := zmq.NewSocket(zmq.SUB)
-	defer subscriber.Close()
-	subscriber.Connect(base_def.BROKER_ZMQ_SUB_URL)
-	subscriber.SetSubscribe("")
+	// Ignore all properties other than "@/network/*/*"
+	if len(path) != 3 || path[0] != "network" {
+		log.Printf("Ignoring non-network property update: %s\n", property)
+		return
+	}
+	conf, ok := interfaces[path[1]]
+	if !ok {
+		log.Printf("Ignoring update for unknown NIC: %s\n", property)
+		return
+	}
 
-	for {
-		msg, err := subscriber.RecvMessageBytes(0)
-		if err != nil {
-			log.Println(err)
-			break
+	switch path[2] {
+	case "ssid":
+		conf.SSID = *config.NewValue
+		render_hostapd_template(conf)
+		if child_process != nil {
+			// Ideally we would just send the child a SIGHUP
+			// and it would reload the new configuration.
+			// Unfortunately, hostapd seems to need to go
+			// through a full reset before the changes are
+			// correctly propagated to the wifi hw.
+			child_process.Signal(os.Interrupt)
 		}
-
-		topic := string(msg[0])
-
-		if topic != base_def.TOPIC_CONFIG {
-			continue
-		}
-
-		config := &base_msg.EventConfig{}
-		proto.Unmarshal(msg[1], config)
-		property := *config.Property
-		path := strings.Split(property[2:], "/")
-
-		// Ignore all properties other than "@/network/*/*"
-		if len(path) != 3 || path[0] != "network" {
-			log.Printf("Ignoring non-network property update: %s\n", property)
-			continue
-		}
-		conf, ok := interfaces[path[1]]
-		if !ok {
-			log.Printf("Ignoring update for unknown NIC: %s\n", property)
-			continue
-		}
-
-		switch path[2] {
-		case "ssid":
-			conf.SSID = *config.NewValue
-			render_hostapd_template(conf)
-			if child_process != nil {
-				// Ideally we would just send the child a SIGHUP
-				// and it would reload the new configuration.
-				// Unfortunately, hostapd seems to need to go
-				// through a full reset before the changes are
-				// correctly propagated to the wifi hw.
-				child_process.Signal(os.Interrupt)
-			}
-		default:
-			log.Printf("Ignoring update for unknown property: %s\n", property)
-		}
+	default:
+		log.Printf("Ignoring update for unknown property: %s\n", property)
 	}
 }
 
@@ -206,6 +178,7 @@ func base_config(name string) string {
 
 func main() {
 	var err error
+	var b ap_common.Broker
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
@@ -218,7 +191,11 @@ func main() {
 
 	log.Println("prometheus client thread launched")
 
-	go event_listener()
+	b.Init("ap.hostapd.m")
+	b.Handle(base_def.TOPIC_CONFIG, config_changed)
+	b.Connect()
+	defer b.Disconnect()
+
 	log.Println("message bus thread launched")
 
 	config = ap_common.NewConfig("ap.hostapd.m")

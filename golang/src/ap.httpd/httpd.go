@@ -21,20 +21,13 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"sync"
 	"time"
 
 	"ap_common"
 	"base_def"
-	"base_msg"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-
-	"github.com/golang/protobuf/proto"
-
-	// Ubuntu: requires libzmq3-dev, which is 0MQ 4.2.1.
-	zmq "github.com/pebbe/zmq4"
 )
 
 var (
@@ -42,8 +35,6 @@ var (
 		"The address to listen on for Prometheus HTTP requests.")
 	port = flag.String("http-port", ":8000",
 		"The port to listen on for HTTP requests.")
-	publisher_mtx sync.Mutex
-	publisher     *zmq.Socket
 
 	config *ap_common.Config
 )
@@ -61,63 +52,15 @@ var (
 	requests  = 0
 )
 
-func event_subscribe() {
-	//  First, connect our subscriber socket
-	subscriber, _ := zmq.NewSocket(zmq.SUB)
-	defer subscriber.Close()
-	subscriber.Connect(base_def.BROKER_ZMQ_SUB_URL)
-	subscriber.SetSubscribe("")
+func handle_ping(event []byte) { pings++ }
 
-	for {
-		msg, err := subscriber.RecvMessageBytes(0)
-		if err != nil {
-			log.Println(err)
-			break
-		}
+func handle_config(event []byte) { configs++ }
 
-		topic := string(msg[0])
+func handle_entity(event []byte) { entities++ }
 
-		switch topic {
-		case base_def.TOPIC_PING:
-			// XXX pings were green
-			ping := &base_msg.EventPing{}
-			proto.Unmarshal(msg[1], ping)
-			log.Println(ping)
-			pings++
+func handle_resource(event []byte) { resources++ }
 
-		case base_def.TOPIC_CONFIG:
-			config := &base_msg.EventConfig{}
-			proto.Unmarshal(msg[1], config)
-			log.Println(config)
-			configs++
-
-		case base_def.TOPIC_ENTITY:
-			// XXX entities were blue
-			entity := &base_msg.EventNetEntity{}
-			proto.Unmarshal(msg[1], entity)
-			log.Println(entity)
-			entities++
-
-		case base_def.TOPIC_RESOURCE:
-			resource := &base_msg.EventNetResource{}
-			proto.Unmarshal(msg[1], resource)
-			log.Println(resource)
-			resources++
-
-		case base_def.TOPIC_REQUEST:
-			// XXX requests were also blue
-			request := &base_msg.EventNetRequest{}
-			proto.Unmarshal(msg[1], request)
-			log.Println(request)
-			requests++
-
-		default:
-			log.Println("unknown topic " + topic + "; ignoring message")
-		}
-
-	}
-
-}
+func handle_request(event []byte) { requests++ }
 
 func cfg_handler(w http.ResponseWriter, r *http.Request) {
 	var err error
@@ -205,6 +148,9 @@ func init() {
 }
 
 func main() {
+	var err error
+	var b ap_common.Broker
+
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
 	log.Printf("start on port %v", *port)
@@ -213,50 +159,31 @@ func main() {
 
 	log.Println("cli flags parsed")
 
-	publisher, _ = zmq.NewSocket(zmq.PUB)
-	publisher.Connect(base_def.BROKER_ZMQ_PUB_URL)
-
 	time.Sleep(time.Second)
 
-	t := time.Now()
-
-	ping := &base_msg.EventPing{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
-		Sender:      proto.String(fmt.Sprintf("ap.httpd(%d)", os.Getpid())),
-		Debug:       proto.String("-"),
-		PingMessage: proto.String("-"),
-	}
-
-	data, err := proto.Marshal(ping)
-
-	publisher_mtx.Lock()
-	_, err = publisher.SendMessage(base_def.TOPIC_PING, data)
-	publisher_mtx.Unlock()
-	if err != nil {
-		log.Println(err)
-	}
-
-	log.Println("publish ping")
+	// Set up connection with the broker daemon
+	b.Init("ap.httpd")
+	b.Handle(base_def.TOPIC_PING, handle_ping)
+	b.Handle(base_def.TOPIC_CONFIG, handle_config)
+	b.Handle(base_def.TOPIC_ENTITY, handle_entity)
+	b.Handle(base_def.TOPIC_RESOURCE, handle_resource)
+	b.Handle(base_def.TOPIC_REQUEST, handle_request)
+	b.Connect()
+	defer b.Disconnect()
+	b.Ping()
 
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
 	log.Println("prometheus client launched")
-
-	// Interface to configd
-	config = ap_common.NewConfig("ap.httpd")
-
-	/* Probably another goroutine */
-	go event_subscribe()
-
 	index_template, err = template.ParseFiles("golang/src/ap.httpd/index.html.got")
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(2)
 	}
+
+	// Interface to configd
+	config = ap_common.NewConfig("ap.httpd")
 
 	//
 	// HTTPD_INDEX_RENDER = promc.Summary("httpd_index_render_seconds",

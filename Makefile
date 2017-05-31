@@ -125,67 +125,65 @@ $(APPETC):
 $(APPVAR):
 	mkdir -p $(APPVAR)
 
+COMMON_SRCS = \
+    golang/src/base_def/base_def.go \
+    golang/src/base_msg/base_msg.pb.go \
+    golang/src/ap_common/broker.go \
+    golang/src/ap_common/config.go
+
 # XXX brokerd does not need the base messages.
 $(APPBIN)/ap.brokerd: \
     golang/src/ap.brokerd/brokerd.go \
-    golang/src/base_def/base_def.go \
-    golang/src/base_msg/base_msg.pb.go
+    $(COMMON_SRCS)
 	$(GO) get $(GO_GET_FLAGS) ap.brokerd 2>&1 | tee -a get.acc
 	cd $(APPBIN) && $(GO) build ap.brokerd
 
 $(APPBIN)/ap-configctl: \
     golang/src/ap-configctl/configctl.go \
-    golang/src/base_def/base_def.go \
-    golang/src/base_msg/base_msg.pb.go
+    $(COMMON_SRCS)
 	$(GO) get $(GO_GET_FLAGS) ap-configctl
 	cd $(APPBIN) && $(GO) build ap-configctl
 
 $(APPBIN)/ap.configd: \
     golang/src/ap.configd/configd.go \
-    golang/src/base_def/base_def.go \
-    golang/src/base_msg/base_msg.pb.go
+    $(COMMON_SRCS)
 	$(GO) get $(GO_GET_FLAGS) ap.configd 2>&1 | tee -a get.acc
 	cd $(APPBIN) && $(GO) build ap.configd
 
 $(APPBIN)/ap.dhcp4d: \
     golang/src/ap.dhcp4d/dhcp4d.go \
-    golang/src/base_def/base_def.go \
-    golang/src/base_msg/base_msg.pb.go
+    $(COMMON_SRCS)
 	$(GO) get $(GO_GET_FLAGS) ap.dhcp4d 2>&1 | tee -a get.acc
 	cd $(APPBIN) && $(GO) build ap.dhcp4d
 
 $(APPBIN)/ap.dns4d: \
     golang/src/ap.dns4d/dns4d.go \
     golang/src/data/phishtank/phishtank.go \
-    golang/src/base_def/base_def.go \
-    golang/src/base_msg/base_msg.pb.go
+    $(COMMON_SRCS)
 	$(GO) get $(GO_GET_FLAGS) ap.dns4d 2>&1 | tee -a get.acc
 	cd $(APPBIN) && $(GO) build ap.dns4d
 
 $(APPBIN)/ap.hostapd.m: \
     golang/src/ap.hostapd.m/hostapd.m.go \
-    golang/src/base_def/base_def.go \
-    golang/src/base_msg/base_msg.pb.go
+    $(COMMON_SRCS)
 	$(GO) get $(GO_GET_FLAGS) ap.hostapd.m 2>&1 | tee -a get.acc
 	cd $(APPBIN) && $(GO) build ap.hostapd.m
 
 $(APPBIN)/ap.httpd: \
     golang/src/ap.httpd/httpd.go \
-    golang/src/base_def/base_def.go \
-    golang/src/base_msg/base_msg.pb.go
+    $(COMMON_SRCS)
 	$(GO) get $(GO_GET_FLAGS) ap.httpd 2>&1 | tee -a get.acc
 	cd $(APPBIN) && $(GO) build ap.httpd
 
 $(APPBIN)/ap.logd: \
     golang/src/ap.logd/logd.go \
-    golang/src/base_msg/base_msg.pb.go
+    $(COMMON_SRCS)
 	$(GO) get $(GO_GET_FLAGS) ap.logd 2>&1 | tee -a get.acc
 	cd $(APPBIN) && $(GO) build ap.logd
 
 $(APPBIN)/ap-msgping: \
     golang/src/ap-msgping/msgping.go \
-    golang/src/base_def/base_def.go \
-    golang/src/base_msg/base_msg.pb.go
+    $(COMMON_SRCS)
 	$(GO) get $(GO_GET_FLAGS) ap-msgping 2>&1 | tee -a get.acc
 	cd $(APPBIN) && $(GO) build ap-msgping
 

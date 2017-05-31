@@ -98,10 +98,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
 
+	"ap_common"
 	"base_def"
 	"base_msg"
 
@@ -139,9 +139,7 @@ var (
 	addr                  = flag.String("listen-address",
 		base_def.CONFIGD_PROMETHEUS_PORT,
 		"The address to listen on for HTTP requests.")
-
-	publisher_mtx sync.Mutex
-	publisher     *zmq.Socket
+	broker ap_common.Broker
 )
 
 func dump_tree(node *property_node, level int) {
@@ -152,57 +150,6 @@ func dump_tree(node *property_node, level int) {
 	fmt.Printf("%s%s: %s\n", indent, node.name, node.value)
 	for _, n := range node.children {
 		dump_tree(n, level+1)
-	}
-}
-
-func event_subscribe(subscriber *zmq.Socket) {
-	//  First, connect our subscriber socket
-	subscriber.Connect(base_def.BROKER_ZMQ_SUB_URL)
-	subscriber.SetSubscribe("")
-
-	for {
-		log.Println("receive message bytes")
-
-		msg, err := subscriber.RecvMessageBytes(0)
-		if err != nil {
-			log.Println(err)
-			break
-		}
-
-		topic := string(msg[0])
-
-		switch topic {
-		case base_def.TOPIC_PING:
-			// XXX pings were green
-			ping := &base_msg.EventPing{}
-			proto.Unmarshal(msg[1], ping)
-			log.Println(ping)
-
-		case base_def.TOPIC_CONFIG:
-			config := &base_msg.EventConfig{}
-			proto.Unmarshal(msg[1], config)
-			log.Println(config)
-
-		case base_def.TOPIC_ENTITY:
-			// XXX entities were blue
-			entity := &base_msg.EventNetEntity{}
-			proto.Unmarshal(msg[1], entity)
-			log.Println(entity)
-
-		case base_def.TOPIC_RESOURCE:
-			resource := &base_msg.EventNetResource{}
-			proto.Unmarshal(msg[1], resource)
-			log.Println(resource)
-
-		case base_def.TOPIC_REQUEST:
-			// XXX requests were also blue
-			request := &base_msg.EventNetRequest{}
-			proto.Unmarshal(msg[1], request)
-			log.Println(request)
-
-		default:
-			log.Println("unknown topic " + topic + "; ignoring message")
-		}
 	}
 }
 
@@ -220,10 +167,7 @@ func update_notify(prop, val string) {
 	}
 
 	data, err := proto.Marshal(entity)
-
-	publisher_mtx.Lock()
-	_, err = publisher.SendMessage(base_def.TOPIC_CONFIG, data)
-	publisher_mtx.Unlock()
+	err = broker.Publish(base_def.TOPIC_CONFIG, data)
 	if err != nil {
 		log.Printf("Failed to propagate config update: %v", err)
 	}
@@ -540,13 +484,9 @@ func main() {
 	defer db_hdl.Close()
 
 	// zmq setup
-	publisher, _ = zmq.NewSocket(zmq.PUB)
-	publisher.Connect(base_def.BROKER_ZMQ_PUB_URL)
-	defer publisher.Close()
-
-	subscriber, _ := zmq.NewSocket(zmq.SUB)
-	defer subscriber.Close()
-	go event_subscribe(subscriber)
+	broker.Init("ap.configd")
+	broker.Connect()
+	defer broker.Disconnect()
 
 	prop_tree_init()
 

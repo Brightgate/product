@@ -30,6 +30,7 @@ import (
 	"sync"
 	"time"
 
+	"ap_common"
 	"base_def"
 	"base_msg"
 
@@ -37,54 +38,22 @@ import (
 
 	"github.com/golang/protobuf/proto"
 
-	// Ubuntu: requires libzmq3-dev, which is 0MQ 4.2.1.
-	zmq "github.com/pebbe/zmq4"
-
 	dhcp "github.com/krolaw/dhcp4"
 )
 
-var addr = flag.String("promhttp-address", base_def.DHCPD_PROMETHEUS_PORT,
-	"Prometheus publication HTTP port.")
+var (
+	addr = flag.String("promhttp-address", base_def.DHCPD_PROMETHEUS_PORT,
+		"Prometheus publication HTTP port.")
 
-var publisher_mtx sync.Mutex
-var publisher *zmq.Socket
+	client_map_mtx sync.Mutex
+	client_map     map[string]int64
+	broker         ap_common.Broker
+)
 
-var client_map_mtx sync.Mutex
-var client_map map[string]int64
-
-func bus_listener() {
-	// We need to listen for "config" channel events, since that's
-	// how we would become aware of static lease assignment changes
-	// (among other things).
-
-	// First, connect our subscriber socket
-	subscriber, _ := zmq.NewSocket(zmq.SUB)
-	defer subscriber.Close()
-	subscriber.Connect(base_def.BROKER_ZMQ_SUB_URL)
-	subscriber.SetSubscribe("")
-
-	for {
-		msg, err := subscriber.RecvMessageBytes(0)
-		if err != nil {
-			log.Println(err)
-			break
-		}
-
-		topic := string(msg[0])
-
-		if topic != base_def.TOPIC_CONFIG {
-			continue
-		}
-
-		config := &base_msg.EventConfig{}
-		proto.Unmarshal(msg[1], config)
-		log.Println(config)
-
-		/*
-		 * XXX Decide whether this configuration change affects
-		 * us.
-		 */
-	}
+func config_changed(event []byte) {
+	config := &base_msg.EventConfig{}
+	proto.Unmarshal(event, config)
+	log.Println(config)
 }
 
 type lease struct {
@@ -140,12 +109,10 @@ func (h *DHCPHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType, options
 		if err != nil {
 			log.Printf("entity couldn't marshal: %v", err)
 		} else {
-			publisher_mtx.Lock()
-			_, err = publisher.SendMessage(base_def.TOPIC_ENTITY, data)
+			err = broker.Publish(base_def.TOPIC_ENTITY, data)
 			if err != nil {
 				log.Printf("couldn't send %v", err)
 			}
-			publisher_mtx.Unlock()
 		}
 	}
 
@@ -191,12 +158,10 @@ func (h *DHCPHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType, options
 		if err != nil {
 			log.Printf("entity couldn't marshal: %v", err)
 		} else {
-			publisher_mtx.Lock()
-			_, err = publisher.SendMessage(base_def.TOPIC_REQUEST, data)
+			err = broker.Publish(base_def.TOPIC_REQUEST, data)
 			if err != nil {
 				log.Printf("couldn't send %v", err)
 			}
-			publisher_mtx.Unlock()
 		}
 
 		/*
@@ -240,12 +205,10 @@ func (h *DHCPHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType, options
 					if err != nil {
 						log.Printf("entity couldn't marshal: %v", err)
 					} else {
-						publisher_mtx.Lock()
-						_, err = publisher.SendMessage(base_def.TOPIC_RESOURCE, data)
+						err = broker.Publish(base_def.TOPIC_RESOURCE, data)
 						if err != nil {
 							log.Printf("couldn't send %v", err)
 						}
-						publisher_mtx.Unlock()
 					}
 
 					return dhcp.ReplyPacket(p, dhcp.ACK, h.ip, reqIP, h.leaseDuration,
@@ -277,12 +240,10 @@ func (h *DHCPHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType, options
 				if err != nil {
 					log.Printf("entity couldn't marshal: %v", err)
 				} else {
-					publisher_mtx.Lock()
-					_, err = publisher.SendMessage(base_def.TOPIC_RESOURCE, data)
+					err = broker.Publish(base_def.TOPIC_RESOURCE, data)
 					if err != nil {
 						log.Printf("couldn't send %v", err)
 					}
-					publisher_mtx.Unlock()
 				}
 				break
 			}
@@ -359,45 +320,20 @@ func main() {
 
 	log.Println("cli flags parsed")
 
-	var zerr error
-	publisher, zerr = zmq.NewSocket(zmq.PUB)
-	if zerr != nil {
-		log.Printf("couldn't get a PUB socket: %v", zerr)
-	}
-	publisher.Connect(base_def.BROKER_ZMQ_PUB_URL)
-
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
 	log.Println("prometheus client launched")
 
-	go bus_listener()
+	broker.Init("ap.dhcp4d")
+	broker.Handle(base_def.TOPIC_CONFIG, config_changed)
+	broker.Connect()
+	defer broker.Disconnect()
 
 	log.Println("message bus listener routine launched")
-
-	t := time.Now()
-
-	ping := &base_msg.EventPing{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
-		Sender:      proto.String(fmt.Sprintf("ap.dhcp4d(%d)", os.Getpid())),
-		Debug:       proto.String("-"),
-		PingMessage: proto.String("-"),
-	}
-
-	data, err := proto.Marshal(ping)
-
-	publisher_mtx.Lock()
-	_, err = publisher.SendMessage(base_def.TOPIC_PING, data)
-	if err != nil {
-		log.Println(err)
-	}
-	publisher_mtx.Unlock()
+	broker.Ping()
 
 	client_map = make(map[string]int64)
-
 	StaticMap = make(map[string]net.IP)
 
 	/*

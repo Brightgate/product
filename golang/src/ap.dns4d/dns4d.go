@@ -41,6 +41,7 @@ import (
 	"syscall"
 	"time"
 
+	"ap_common"
 	"base_def"
 	"base_msg"
 
@@ -48,7 +49,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/golang/protobuf/proto"
-	zmq "github.com/pebbe/zmq4"
 
 	"github.com/miekg/dns"
 )
@@ -58,6 +58,7 @@ var (
 		"The address to listen on for HTTP requests.")
 	port      = flag.Int("port", 53, "port to run on")
 	tsig      = flag.String("tsig", "", "use MD5 hmac tsig: keyname:base64")
+	broker    ap_common.Broker
 	phishdata *phishtank.DataSource
 )
 
@@ -66,34 +67,10 @@ var latencies = prometheus.NewSummary(prometheus.SummaryOpts{
 	Help: "DNS query resolution time",
 })
 
-func bus_listener() {
-	// We need to listen for "config" channel events, since that's
-	// how we would become aware of static lease assignment changes
-	// (among other things).
-
-	// First, connect our subscriber socket
-	subscriber, _ := zmq.NewSocket(zmq.SUB)
-	defer subscriber.Close()
-	subscriber.Connect(base_def.BROKER_ZMQ_SUB_URL)
-	subscriber.SetSubscribe("")
-
-	for {
-		msg, err := subscriber.RecvMessageBytes(0)
-		if err != nil {
-			log.Println(err)
-			break
-		}
-
-		topic := string(msg[0])
-
-		if topic != base_def.TOPIC_CONFIG {
-			continue
-		}
-
-		config := &base_msg.EventConfig{}
-		proto.Unmarshal(msg[1], config)
-		log.Println(config)
-	}
+func config_changed(event []byte) {
+	config := &base_msg.EventConfig{}
+	proto.Unmarshal(event, config)
+	log.Println(config)
 }
 
 // Terminate dom with '.'.
@@ -134,9 +111,6 @@ const dom = "blueslugs.com."
 //         # XXX Database schema
 //         # XXX Configuration event for table updates
 
-var publisher_mtx sync.Mutex
-var publisher *zmq.Socket
-
 var client_map_mtx sync.Mutex
 var client_map map[string]int64
 
@@ -167,13 +141,10 @@ func record_client(ipstr string) {
 		}
 
 		data, err := proto.Marshal(entity)
-
-		publisher_mtx.Lock()
-		_, err = publisher.SendMessage(base_def.TOPIC_ENTITY, data)
+		err = broker.Publish(base_def.TOPIC_ENTITY, data)
 		if err != nil {
 			log.Println(err)
 		}
-		publisher_mtx.Unlock()
 	}
 	client_map_mtx.Unlock()
 }
@@ -314,14 +285,11 @@ func local_handler(w dns.ResponseWriter, r *dns.Msg) {
 		//                 net_request.request = str(request.questions)
 	}
 
-	data, err := proto.Marshal(entity)
-
-	publisher_mtx.Lock()
-	_, err = publisher.SendMessage(base_def.TOPIC_REQUEST, data)
+	data, _ := proto.Marshal(entity)
+	err := broker.Publish(base_def.TOPIC_REQUEST, data)
 	if err != nil {
 		log.Println(err)
 	}
-	publisher_mtx.Unlock()
 
 	log.Printf("bs handle complete {} %s\n", m)
 }
@@ -394,13 +362,10 @@ func proxy_handler(w dns.ResponseWriter, r *dns.Msg) {
 	}
 
 	data, err := proto.Marshal(entity)
-
-	publisher_mtx.Lock()
-	_, err = publisher.SendMessage(base_def.TOPIC_REQUEST, data)
+	err = broker.Publish(base_def.TOPIC_REQUEST, data)
 	if err != nil {
 		log.Println(err)
 	}
-	publisher_mtx.Unlock()
 }
 
 func init() {
@@ -435,37 +400,15 @@ func main() {
 
 	log.Println("prometheus client launched")
 
-	go bus_listener()
+	broker.Init("ap.dns4d")
+	broker.Handle(base_def.TOPIC_CONFIG, config_changed)
+	broker.Connect()
+	defer broker.Disconnect()
 
 	log.Println("message bus listener routine launched")
 
-	publisher, _ = zmq.NewSocket(zmq.PUB)
-	publisher.Connect(base_def.BROKER_ZMQ_PUB_URL)
-
 	time.Sleep(time.Second)
-
-	t := time.Now()
-
-	ping := &base_msg.EventPing{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
-		Sender:      proto.String(fmt.Sprintf("ap.dns4d(%d)", os.Getpid())),
-		Debug:       proto.String("-"),
-		PingMessage: proto.String("-"),
-	}
-
-	data, err := proto.Marshal(ping)
-
-	publisher_mtx.Lock()
-	_, err = publisher.SendMessage(base_def.TOPIC_PING, data)
-	if err != nil {
-		log.Println(err)
-	}
-	publisher_mtx.Unlock()
-
-	log.Println("publish ping")
+	broker.Ping()
 
 	client_map = make(map[string]int64)
 

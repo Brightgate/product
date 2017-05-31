@@ -21,22 +21,58 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 
+	"ap_common"
 	"base_def"
 	"base_msg"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/golang/protobuf/proto"
-
-	// Ubuntu: requires libzmq3-dev, which is 0MQ 4.2.1.
-	zmq "github.com/pebbe/zmq4"
 )
 
 var addr = flag.String("listen-address", base_def.LOGD_PROMETHEUS_PORT,
 	"The address to listen on for HTTP requests.")
 
+func handle_ping(event []byte) {
+	// XXX pings were green
+	ping := &base_msg.EventPing{}
+	proto.Unmarshal(event, ping)
+	log.Printf("[sys.ping] %v", ping)
+}
+
+func handle_config(event []byte) {
+	config := &base_msg.EventConfig{}
+	proto.Unmarshal(event, config)
+	log.Printf("[sys.config] %v", config)
+}
+
+func handle_entity(event []byte) {
+	// XXX entities were blue
+	entity := &base_msg.EventNetEntity{}
+	proto.Unmarshal(event, entity)
+	log.Printf("[net.entity] %v", entity)
+}
+
+func handle_resource(event []byte) {
+	resource := &base_msg.EventNetResource{}
+	proto.Unmarshal(event, resource)
+	log.Printf("[net.resource] %v", resource)
+}
+
+func handle_request(event []byte) {
+	// XXX requests were also blue
+	request := &base_msg.EventNetRequest{}
+	proto.Unmarshal(event, request)
+	log.Printf("[net.request] %v", request)
+}
+
 func main() {
+	var b ap_common.Broker
+
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
 	log.Println("start")
@@ -50,52 +86,17 @@ func main() {
 
 	log.Println("prometheus client launched")
 
-	//  First, connect our subscriber socket
-	subscriber, _ := zmq.NewSocket(zmq.SUB)
-	defer subscriber.Close()
-	subscriber.Connect(base_def.BROKER_ZMQ_SUB_URL)
-	subscriber.SetSubscribe("")
+	b.Init("ap.logd")
+	b.Handle(base_def.TOPIC_PING, handle_ping)
+	b.Handle(base_def.TOPIC_CONFIG, handle_config)
+	b.Handle(base_def.TOPIC_ENTITY, handle_entity)
+	b.Handle(base_def.TOPIC_RESOURCE, handle_resource)
+	b.Handle(base_def.TOPIC_REQUEST, handle_request)
+	b.Connect()
+	defer b.Disconnect()
 
-	for {
-		msg, err := subscriber.RecvMessageBytes(0)
-		if err != nil {
-			log.Println(err)
-			break
-		}
-
-		topic := string(msg[0])
-
-		switch topic {
-		case base_def.TOPIC_PING:
-			// XXX pings were green
-			ping := &base_msg.EventPing{}
-			proto.Unmarshal(msg[1], ping)
-			log.Printf("[sys.ping] %v", ping)
-
-		case base_def.TOPIC_CONFIG:
-			config := &base_msg.EventConfig{}
-			proto.Unmarshal(msg[1], config)
-			log.Printf("[sys.config] %v", config)
-
-		case base_def.TOPIC_ENTITY:
-			// XXX entities were blue
-			entity := &base_msg.EventNetEntity{}
-			proto.Unmarshal(msg[1], entity)
-			log.Printf("[net.entity] %v", entity)
-
-		case base_def.TOPIC_RESOURCE:
-			resource := &base_msg.EventNetResource{}
-			proto.Unmarshal(msg[1], resource)
-			log.Printf("[net.resource] %v", resource)
-
-		case base_def.TOPIC_REQUEST:
-			// XXX requests were also blue
-			request := &base_msg.EventNetRequest{}
-			proto.Unmarshal(msg[1], request)
-			log.Printf("[net.request] %v", request)
-
-		default:
-			log.Println("unknown topic " + topic + "; ignoring message")
-		}
-	}
+	sig := make(chan os.Signal)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	s := <-sig
+	log.Fatalf("Signal (%v) received, stopping\n", s)
 }
