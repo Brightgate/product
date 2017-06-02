@@ -91,11 +91,14 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -112,46 +115,55 @@ import (
 
 	// Ubuntu: requires libzmq3-dev, which is 0MQ 4.2.1.
 	zmq "github.com/pebbe/zmq4"
-
-	"database/sql"
-	_ "github.com/mattn/go-sqlite3"
 )
 
-type prop_setter func(*property_node, string) error
-type prop_getter func(*property_node) (string, error)
+const (
+	property_filename = "ap_props.json"
+	backup_filename   = "ap_props.json.bak"
+	default_filename  = "ap_defaults.json"
+)
+
+type property_ops struct {
+	get    func(*pnode) (string, error)
+	set    func(*pnode, string, *time.Time) error
+	expire func(*pnode) error
+}
+
+type property_match struct {
+	match *regexp.Regexp
+	ops   *property_ops
+}
+
+var ssid_ops = property_ops{default_getter, ssid_update, default_expirer}
+var uuid_ops = property_ops{default_getter, uuid_update, default_expirer}
+
+var property_match_table = []property_match{
+	{regexp.MustCompile(`^@/uuid$`), &uuid_ops},
+	{regexp.MustCompile(`^@/network/wlan[0-9]+/ssid$`), &ssid_ops},
+}
 
 // All properties are currently represented as strings, but will presumably have
-// more varied types in the future
-type property_node struct {
-	name     string
-	value    string
-	lifetime int
-
-	parent   *property_node   // allows a child to learn about itself
-	children []*property_node // internal nodes have one or more children
-	set      prop_setter      // leaf properties may have setter
-	get      prop_getter      //    and getter functions
+// more varied types in the future.  Expires contains the time at which a
+// property will expire.  A property with a nil Expires field has no expiraton
+// date.
+type pnode struct {
+	Name     string
+	Value    string     `json:"Value,omitempty"`
+	Expires  *time.Time `json:"Expires,omitempty"`
+	Children []*pnode   `json:"Children,omitempty"`
+	parent   *pnode
+	ops      *property_ops
 }
 
 var (
-	db_hdl        *sql.DB = nil
-	property_root         = property_node{"root", "", -1, nil, nil, nil, nil}
-	addr                  = flag.String("listen-address",
+	property_root = pnode{Name: "root"}
+	addr          = flag.String("listen-address",
 		base_def.CONFIGD_PROMETHEUS_PORT,
 		"The address to listen on for HTTP requests.")
-	broker ap_common.Broker
+	broker  ap_common.Broker
+	propdir = flag.String("propdir", "./",
+		"directory in which the property files should be stored")
 )
-
-func dump_tree(node *property_node, level int) {
-	indent := ""
-	for i := 0; i < level; i++ {
-		indent += "  "
-	}
-	fmt.Printf("%s%s: %s\n", indent, node.name, node.value)
-	for _, n := range node.children {
-		dump_tree(n, level+1)
-	}
-}
 
 // Broadcast a notification of a property change
 func update_notify(prop, val string) {
@@ -173,11 +185,27 @@ func update_notify(prop, val string) {
 	}
 }
 
-func uuid_update(node *property_node, uuid string) error {
-	if len(node.value) > 0 {
+func default_setter(node *pnode, val string, expires *time.Time) error {
+	node.Value = val
+	node.Expires = expires
+	return nil
+}
+
+func default_getter(node *pnode) (string, error) {
+	return node.Value, nil
+}
+
+func default_expirer(node *pnode) error {
+	return nil
+}
+
+func uuid_update(node *pnode, uuid string, expires *time.Time) error {
+	const null_uuid = "00000000-0000-0000-0000-000000000000"
+
+	if node.Value != null_uuid {
 		return fmt.Errorf("Cannot change an appliance's UUID")
 	}
-	node.value = uuid
+	node.Value = uuid
 	return nil
 }
 
@@ -197,36 +225,37 @@ func ssid_validate(ssid string) error {
 	return nil
 }
 
-func ssid_update(node *property_node, ssid string) error {
+func ssid_update(node *pnode, ssid string, expires *time.Time) error {
 	err := ssid_validate(ssid)
 	if err == nil {
-		log.Println("publish new ssid: ", ssid)
-		node.value = ssid
+		node.Value = ssid
 	}
 	return err
 }
 
-func ssid_get(node *property_node) (string, error) {
-	return node.value, nil
-}
-
-func property_add(parent *property_node, name string, set prop_setter,
-	get prop_getter) *property_node {
-
-	n := property_node{name, "", -1, parent, nil, set, get}
-	parent.children = append(parent.children, &n)
-	return &n
-}
-
-func cfg_property_full_name(node *property_node) string {
-	if node == &property_root {
-		return "@"
-	} else {
-		return cfg_property_full_name(node.parent) + "/" + node.name
+// To determine whether this new property has non-default operations, we walk
+// through the property_match_table, looking for any matching patterns
+func property_attach_ops(node *pnode, path string) {
+	for _, r := range property_match_table {
+		if r.match.MatchString(path) {
+			node.ops = r.ops
+			return
+		}
 	}
 }
 
-func cfg_property_parse(prop string) *property_node {
+// Allocate a new property node and insert it into the property tree
+func property_add(parent *pnode, name string, path string) *pnode {
+	n := pnode{Name: name, parent: parent}
+	parent.Children = append(parent.Children, &n)
+	property_attach_ops(&n, path)
+	return &n
+}
+
+// Break the property path into its individual components, and use them to
+// navigate the property tree.  Optionally, it will also insert any missing nodes
+// into the tree to instantiate a new property node.
+func cfg_property_parse(prop string, insert bool) *pnode {
 	// Only accept properties that start with exactly one '@', meaning they
 	// are local to this device
 	if len(prop) < 2 || prop[0] != '@' || prop[1] != '/' {
@@ -237,18 +266,23 @@ func cfg_property_parse(prop string) *property_node {
 	// bottom of the tree.  If we exhaust the path, we return the current
 	// search node, which may be either internal or a leaf.  Its up to the
 	// caller to determine which of those is considered a successful search.
-	path := strings.Split(prop[2:], "/")
-	q := len(path)
+	components := strings.Split(prop[2:], "/")
+	q := len(components)
 	node := &property_root
+	path := "@"
 	for i := 0; i < q && node != nil; i++ {
-		var next *property_node
+		var next *pnode
 
-		name := path[i]
-		for _, n := range node.children {
-			if name == n.name {
+		name := components[i]
+		path += "/" + name
+		for _, n := range node.Children {
+			if name == n.Name {
 				next = n
 				break
 			}
+		}
+		if next == nil && insert {
+			next = property_add(node, name, path)
 		}
 		node = next
 	}
@@ -256,25 +290,49 @@ func cfg_property_parse(prop string) *property_node {
 	return node
 }
 
-// properties may have lifetimes.  Currently ignoring that
-func property_update(property, value string) error {
+func property_delete(property string) error {
+	log.Println("delete property " + property)
+	node := cfg_property_parse(property, false)
+	if node == nil {
+		return fmt.Errorf("deleting a nonexistent property: %s",
+			property)
+	}
+
+	siblings := node.parent.Children
+	for i, n := range siblings {
+		if n == node {
+			node.parent.Children =
+				append(siblings[:i], siblings[i+1:]...)
+			break
+		}
+	}
+	delete_subtree(node)
+	prop_tree_store()
+
+	return nil
+}
+
+func property_update(property, value string, expires *time.Time, insert bool) error {
 	var err error
 
 	log.Println("set property " + property + " -> " + value)
-	node := cfg_property_parse(property)
+	node := cfg_property_parse(property, insert)
 	if node == nil {
-		err = fmt.Errorf("No such property")
-	} else if len(node.children) > 0 {
+		if !insert {
+			log.Fatal("Failed to insert a new propery node")
+		}
+		err = fmt.Errorf("Updating a nonexistent property: %s",
+			property)
+	} else if len(node.Children) > 0 {
 		err = fmt.Errorf("Can only modify leaf properties")
-	} else if node.set == nil {
-		// If the property doesn't have a setter, we simply cache the
-		// value in-core and store it in the database
-		node.value = value
-		property_db_store(node, value)
+	} else if node.ops == nil {
+		node.Value = value
+		node.Expires = expires
 	} else {
-		err = node.set(node, value)
+		err = node.ops.set(node, value, expires)
 	}
 	if err == nil {
+		prop_tree_store()
 		update_notify(property, value)
 	} else {
 		log.Println("property update failed: ", err)
@@ -288,22 +346,18 @@ func property_get(property string) (string, error) {
 	var rval string
 
 	log.Println("get property: " + property)
-	node := cfg_property_parse(property)
+	node := cfg_property_parse(property, false)
 	if node == nil {
 		err = fmt.Errorf("No such property")
-	} else if len(node.children) != 0 {
-		// XXX Should eventually support returning a subtree rather
-		// than just leaf properties
-		err = fmt.Errorf("Can only read leaf properties")
-	} else if node.get != nil {
-		rval, err = node.get(node)
-	} else {
-		// If the property doesn't provide a getter, we will first look
-		// for a value in-core.  Failing that, we look in the database
-		rval = node.value
-		if rval == "" {
-			rval, err = property_db_lookup(node)
+	} else if node.ops != nil {
+		rval, err = node.ops.get(node)
+	} else if len(node.Children) != 0 {
+		b, err := json.Marshal(node)
+		if err == nil {
+			rval = string(b)
 		}
+	} else {
+		rval = node.Value
 	}
 
 	if err != nil {
@@ -313,180 +367,166 @@ func property_get(property string) (string, error) {
 	return rval, err
 }
 
-func property_db_store(node *property_node, value string) {
-	/* SET is an INSERT or an UPDATE. */
-	/* INSERT INTO properties (NULL, %s, %s, %s, %s) */
-	/* UPDATE properties SET value = %, modify_dt = %, lifetime = % WHERE name = %
-	 */
-	property := cfg_property_full_name(node)
-	log.Printf("update property %s\n", property)
-
-	rows, err := db_hdl.Query("SELECT COUNT(*) FROM properties WHERE name = ?",
-		property)
-	if err != nil {
-		log.Fatal(err)
+func file_exists(filename string) bool {
+	if _, err := os.Stat(filename); os.IsNotExist(err) {
+		return false
 	}
-	defer rows.Close()
-
-	log.Printf("completed query\n")
-
-	count := 0
-	for rows.Next() {
-		log.Printf("count(*), row = %d\n", count)
-
-		var c int
-		err := rows.Scan(&c)
-		if err != nil {
-			log.Fatal(err)
-		}
-		log.Println(c)
-	}
-
-	log.Println(count)
+	return true
 }
 
-func property_db_lookup(node *property_node) (string, error) {
-	rval := ""
-	property := cfg_property_full_name(node)
-	qs := fmt.Sprintf("select * from properties where name = '%s'",
-		property)
-	log.Printf("requesting (%s)\n", qs)
-	rows, err := db_hdl.Query(qs)
-	if err != nil {
-		return "", err
-	}
-	defer rows.Close()
+func prop_tree_store() error {
+	propfile := *propdir + property_filename
+	backupfile := *propdir + backup_filename
 
-	nrows := 0
-	for rows.Next() {
-		var id int
-		var name string
-		var value string
-		var modify_dt time.Time
-		var lifetime int
-		err = rows.Scan(&id, &name, &value, &modify_dt, &lifetime)
-		if err != nil {
-			return "", err
-		}
-		fmt.Println(id, name, value, modify_dt, lifetime)
-		rval = value
-		nrows++
-	}
-	err = rows.Err()
+	s, err := json.MarshalIndent(property_root, "", "    ")
 	if err != nil {
-		return "", nil
+		log.Fatal("Failed to construct properties JSON: %v\n", err)
 	}
 
-	log.Printf("%d rows\n", nrows)
-	if nrows == 0 {
-		return "", fmt.Errorf("Invalid property")
-	} else {
-		return rval, nil
+	if file_exists(propfile) {
+		// XXX: could store multiple generations of backup files,
+		// allowing for arbitrary rollback.  Could also take explicit
+		// 'checkpoint' snapshots.
+		os.Rename(propfile, backupfile)
+	}
+
+	err = ioutil.WriteFile(propfile, s, 0644)
+	if err != nil {
+		log.Printf("Failed to write properties file: %v\n", err)
+	}
+
+	return err
+}
+
+func prop_tree_load(name string) error {
+	var file []byte
+	var err error
+
+	file, err = ioutil.ReadFile(name)
+	if err != nil {
+		log.Printf("Failed to load properties file %s: %v\n", name, err)
+		return err
+	}
+
+	err = json.Unmarshal(file, &property_root)
+	if err != nil {
+		log.Printf("Failed to import properties from %s: %v\n",
+			name, err)
+		return err
+	}
+
+	return nil
+}
+
+// After loading the initial property values, we need to walk the tree to set
+// the parent pointers, attach any non-default operations, and possibly insert
+// into the expiration heap
+func patch_tree(node *pnode, path string) {
+	property_attach_ops(node, path)
+	for _, n := range node.Children {
+		n.parent = node
+		patch_tree(n, path+"/"+n.Name)
 	}
 }
 
-func db_init() (*sql.DB, error) {
-	log.Println("build minimal config database")
-
-	db, err := sql.Open("sqlite3", "./config.db")
-	if err != nil {
-		return nil, err
+func dump_tree(node *pnode, level int) {
+	indent := ""
+	for i := 0; i < level; i++ {
+		indent += "  "
 	}
-
-	qs := "SELECT name" +
-		" FROM sqlite_master" +
-		" WHERE type='table' AND name='properties';"
-	log.Println("query: " + qs)
-	rows, err := db.Query(qs)
-	if err != nil {
-		return nil, err
+	fmt.Printf("%s%s: %s\n", indent, node.Name, node.Value)
+	for _, n := range node.Children {
+		dump_tree(n, level+1)
 	}
-	defer rows.Close()
-
-	found_properties := false
-	for rows.Next() {
-		var name string
-		err = rows.Scan(&name)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		if name == "properties" {
-			found_properties = true
-		}
+}
+func delete_subtree(node *pnode) {
+	fmt.Printf("Deleting %s\n", node.Name)
+	for _, n := range node.Children {
+		delete_subtree(n)
 	}
-
-	/* Does the table we want exist? */
-	if !found_properties {
-		sqlStmt := `
-		create table properties (
-			id integer not null primary key,
-			name text,
-			value text,
-			modify_dt datetime,
-			lifetime integer
-		);
-		`
-		log.Println("need to execute " + sqlStmt)
-		_, err = db.Exec(sqlStmt)
-		if err != nil {
-			log.Printf("%q: %s\n", err, sqlStmt)
-			return nil, err
-		}
-	}
-	return db, nil
 }
 
-// Build a minimal property tree for testing:
-//    @/uuid = "random uuid"
-//    @/network
-//       @/network/wlan0
-//          @/network/wlan0/ssid = "test<pid>"
 func prop_tree_init() {
-	property_add(&property_root, "uuid", uuid_update, nil)
+	propfile := *propdir + property_filename
+	backupfile := *propdir + backup_filename
+	default_file := *propdir + default_filename
 
-	network := property_add(&property_root, "network", nil, nil)
-	wlan0 := property_add(network, "wlan0", nil, nil)
-	property_add(wlan0, "ssid", ssid_update, ssid_get)
+	if file_exists(propfile) || file_exists(backupfile) {
+		// Load primary properties file
+		err := prop_tree_load(propfile)
+		if err != nil {
+			// Attempt to recover from backup
+			err = prop_tree_load(backupfile)
+			if err != nil {
+				log.Fatal("Unable to load properties")
+			}
+			log.Printf("Loaded properties from backup file")
+		}
+	} else {
+		err := prop_tree_load(default_file)
+		if err != nil {
+			log.Fatal("Unable to load default properties")
+		}
+		appliance_uuid := uuid.NewV4().String()
+		property_update("@/uuid", appliance_uuid, nil, false)
 
-	appliance_uuid := uuid.NewV4().String()
-	initial_ssid := fmt.Sprintf("test%d", os.Getpid())
+		if err = prop_tree_store(); err != nil {
+			log.Fatalf("Failed to create initial properties: %v",
+				err)
+		}
+	}
 
-	property_update("@/uuid", appliance_uuid)
-	property_update("@/network/wlan0/ssid", initial_ssid)
+	patch_tree(&property_root, "@")
+}
 
+func get_handler(q *base_msg.ConfigQuery) (string, error) {
+	return (property_get(*q.Property))
+}
+
+func set_handler(q *base_msg.ConfigQuery, add bool) error {
+	var expires *time.Time
+
+	if q.Expires != nil {
+		sec := *q.Expires.Seconds
+		nano := int64(*q.Expires.Nanos)
+		tmp := time.Unix(sec, nano)
+		expires = &tmp
+	}
+
+	err := property_update(*q.Property, *q.Value, expires, add)
+	if add {
+		dump_tree(&property_root, 0)
+	}
+	return err
+}
+
+func delete_handler(q *base_msg.ConfigQuery) error {
+	err := property_delete(*q.Property)
 	dump_tree(&property_root, 0)
+	return err
 }
 
 func main() {
-	var err error
-
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
-	log.Println("start")
-
 	flag.Parse()
-
-	log.Println("cli flags parsed")
-
-	// XXX Ping!
+	if !strings.HasSuffix(*propdir, "/") {
+		*propdir = *propdir + "/"
+	}
+	if !file_exists(*propdir) {
+		log.Fatalf("Properties directory %s doesn't exist", *propdir)
+	}
 
 	// Prometheus setup
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 	log.Println("prometheus client launched")
 
-	// database setup
-	db_hdl, err = db_init()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db_hdl.Close()
-
 	// zmq setup
 	broker.Init("ap.configd")
 	broker.Connect()
 	defer broker.Disconnect()
+	broker.Ping()
 
 	prop_tree_init()
 
@@ -508,23 +548,30 @@ func main() {
 		log.Println(query)
 
 		rc := base_msg.ConfigResponse_OP_OK
-		if *query.Operation == base_msg.ConfigQuery_GET {
-			val, err = property_get(*query.Property)
+		switch *query.Operation {
+		case base_msg.ConfigQuery_GET:
+			val, err = get_handler(query)
 			if err != nil {
 				rc = base_msg.ConfigResponse_GET_PROP_NOT_FOUND
 			}
-		} else if *query.Operation == base_msg.ConfigQuery_SET {
-			log.Printf("set op\n")
-			err = property_update(*query.Property, *query.Value)
+		case base_msg.ConfigQuery_CREATE:
+			err = set_handler(query, true)
 			if err != nil {
-				// XXX - not the only possible failure
+				rc = base_msg.ConfigResponse_SET_PROP_NO_PERM
+			}
+		case base_msg.ConfigQuery_SET:
+			err = set_handler(query, false)
+			if err != nil {
 				rc = base_msg.ConfigResponse_SET_PROP_NOT_FOUND
 			}
-
-		} else {
-			// XXX Must be a delete if operation was a DELETE.
-			rc = base_msg.ConfigResponse_DELETE_PROP_NO_PERM
-			log.Printf("not set or get\n")
+		case base_msg.ConfigQuery_DELETE:
+			err = delete_handler(query)
+			if err != nil {
+				rc = base_msg.ConfigResponse_DELETE_PROP_NOT_FOUND
+			}
+		default:
+			log.Printf("Unrecognized operation")
+			rc = base_msg.ConfigResponse_UNSUPPORTED
 		}
 
 		t := time.Now()

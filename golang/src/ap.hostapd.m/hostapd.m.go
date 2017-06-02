@@ -55,7 +55,7 @@ var (
 	wifi_interface = flag.String("interface", "wlan0",
 		"Wireless interface to use.")
 	default_ssid  = flag.String("ssid", "set_ssid", "SSID to use")
-	interfaces    = make(map[string]HostapdConf)
+	interfaces    = make(map[string]*HostapdConf)
 	child_process *os.Process
 	config        *ap_common.Config
 )
@@ -86,6 +86,7 @@ type HostapdConf struct {
 }
 
 func config_changed(event []byte) {
+	rewrite := false
 	config := &base_msg.EventConfig{}
 	proto.Unmarshal(event, config)
 	property := *config.Property
@@ -105,6 +106,17 @@ func config_changed(event []byte) {
 	switch path[2] {
 	case "ssid":
 		conf.SSID = *config.NewValue
+		rewrite = true
+
+	case "passphrase":
+		conf.Passphrase = *config.NewValue
+		rewrite = true
+
+	default:
+		log.Printf("Ignoring update for unknown property: %s\n", property)
+	}
+
+	if rewrite {
 		render_hostapd_template(conf)
 		if child_process != nil {
 			// Ideally we would just send the child a SIGHUP
@@ -114,8 +126,6 @@ func config_changed(event []byte) {
 			// correctly propagated to the wifi hw.
 			child_process.Signal(os.Interrupt)
 		}
-	default:
-		log.Printf("Ignoring update for unknown property: %s\n", property)
 	}
 }
 
@@ -129,7 +139,7 @@ var conf_template *template.Template
 /*
  * We return the full path of the file we wrote.
  */
-func render_hostapd_template(conf HostapdConf) string {
+func render_hostapd_template(conf *HostapdConf) string {
 	// filename is some standard non-persistent path, with the
 	// interface name.
 	fn := fmt.Sprintf("%s/hostapd.conf.%s", "/tmp", conf.InterfaceName)
@@ -150,9 +160,15 @@ func base_config(name string) string {
 	var err error
 
 	ssid_prop := fmt.Sprintf("@/network/%s/ssid", name)
-	ssid, _ := config.GetProp(ssid_prop)
-	if len(ssid) == 0 {
-		ssid = fmt.Sprintf("%s%d", *default_ssid, os.Getpid())
+	ssid, err := config.GetProp(ssid_prop)
+	if err != nil {
+		log.Fatalf("Failed to get the ssid for %s: %v\n", name, err)
+	}
+
+	pass_prop := fmt.Sprintf("@/network/%s/passphrase", name)
+	pass, err := config.GetProp(pass_prop)
+	if err != nil {
+		log.Fatalf("Failed to get the passphrase for %s: %v\n", name, err)
 	}
 
 	// Does the configuration file exist?
@@ -167,11 +183,11 @@ func base_config(name string) string {
 		SSID:          ssid,
 		HardwareModes: "g",
 		Channel:       6,
-		Passphrase:    "sosecretive",
+		Passphrase:    pass,
 	}
-	interfaces[name] = data
+	interfaces[name] = &data
 
-	fn := render_hostapd_template(data)
+	fn := render_hostapd_template(&data)
 	log.Printf("rendered to %s\n", fn)
 	return (fn)
 }

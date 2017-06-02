@@ -17,6 +17,7 @@ package main
 import (
 	"flag"
 	"log"
+	"strconv"
 	"time"
 
 	"ap_common"
@@ -25,6 +26,8 @@ import (
 var (
 	get_value = flag.Bool("get", false, "Query values")
 	set_value = flag.Bool("set", false, "Set one property to the given value")
+	add_prop  = flag.Bool("add", false, "Add new property")
+	del_prop  = flag.Bool("del", false, "Delete a property")
 	config    *ap_common.Config
 )
 
@@ -38,16 +41,43 @@ func main() {
 	//  Ensure subscriber connection has time to complete
 	time.Sleep(time.Second)
 
-	if *set_value {
-		if len(flag.Args()) != 2 {
-			log.Fatal("wrong set invocation")
+	var expires *time.Time
+
+	prop := flag.Arg(0)
+	if len(prop) == 0 {
+		log.Fatal("No property specified")
+	}
+
+	if *set_value || *add_prop {
+		var op string
+		var f func(string, string, *time.Time) error
+
+		if *set_value {
+			op = "set"
+			f = config.SetProp
+		} else {
+			op = "create"
+			f = config.CreateProp
 		}
 
-		err := config.SetProp(flag.Arg(0), flag.Arg(1))
-		if err != nil {
-			log.Fatalln("property set failed:", err)
+		val := flag.Arg(1)
+		if len(val) == 0 {
+			log.Fatalf("No value specified for %s", op)
 		}
-		log.Printf("set: %v=%v\n", flag.Arg(0), flag.Arg(1))
+
+		duration := flag.Arg(2)
+		if len(duration) > 0 {
+			seconds, _ := strconv.Atoi(duration)
+			dur := time.Duration(seconds) * time.Second
+			tmp := time.Now().Add(dur)
+			expires = &tmp
+		}
+
+		err := f(prop, val, expires)
+		if err != nil {
+			log.Fatalf("property %s failed: %v\n", op, err)
+		}
+		log.Printf("%s: %v=%v\n", op, prop, val)
 	} else if *get_value {
 		for _, arg := range flag.Args() {
 			val, err := config.GetProp(arg)
@@ -56,6 +86,12 @@ func main() {
 			}
 			log.Printf("get: %v=%v\n", arg, val)
 		}
+	} else if *del_prop {
+		err := config.DeleteProp(prop)
+		if err != nil {
+			log.Fatalln("property get failed:", err)
+		}
+		log.Printf("del: %v\n", prop)
 	} else {
 		flag.Usage()
 	}

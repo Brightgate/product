@@ -92,7 +92,8 @@ COMMANDS = \
 	$(APPBIN)/pi-netstrap
 
 CONFIGS = \
-	$(APPETC)/prometheus.yml
+	$(APPETC)/prometheus.yml \
+	$(APPETC)/ap_defaults.json
 
 DIRS = $(APPBIN) $(APPDOC) $(APPETC) $(APPVAR)
 
@@ -109,6 +110,9 @@ $(COMMANDS) $(DAEMONS) : | $(APPBIN)
 
 $(APPBIN)/%: ./% | $(APPBIN)
 	install -m 0755 $< $(APPBIN)
+
+$(APPETC)/ap_defaults.json: ap_defaults.json | $(APPETC)
+	install -m 0644 $< $(APPETC)
 
 $(APPETC)/prometheus.yml: prometheus.yml | $(APPETC)
 	install -m 0644 $< $(APPETC)

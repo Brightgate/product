@@ -1,0 +1,67 @@
+{
+    "Name": "root",
+    "Children": [
+        {
+            "Name": "uuid",
+            "Value": "00000000-0000-0000-0000-000000000000"
+        },
+        {
+            "Name": "dhcp",
+            "Children": [
+                {
+                    "Name": "config",
+                    "Children": [
+                        {
+                            "Name": "iface",
+                            "Value": "wlan0"
+                        },
+                        {
+                            "Name": "server_ip",
+                            "Value": "192.168.136.1"
+                        },
+                        {
+                            "Name": "subnet_mask",
+                            "Value": "255.255.255.0"
+                        },
+                        {
+                            "Name": "range_start",
+                            "Value": "192.168.136.10"
+                        },
+                        {
+                            "Name": "range_size",
+                            "Value": "90"
+                        },
+                        {
+                            "Name": "lease_duration",
+                            "Value": "120"
+                        }
+                    ]
+                },
+                {
+                    "Name": "static"
+                },
+                {
+                    "Name": "leases"
+                }
+            ]
+        },
+        {
+            "Name": "network",
+            "Children": [
+                {
+                    "Name": "wlan0",
+                    "Children": [
+                        {
+                            "Name": "ssid",
+                            "Value": "setme"
+                        },
+                        {
+                            "Name": "passphrase",
+                            "Value": "sosecretive"
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}

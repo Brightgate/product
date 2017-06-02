@@ -85,7 +85,7 @@ EOF
 if [[ $1 == broker ]]; then
 	binrun ap.brokerd
 elif [[ $1 == configd ]]; then
-	sudobinrun ap.configd
+	binrun ap.configd --propdir $etc
 elif [[ $1 == dhcpd ]]; then
 	sudobinrun ap.dhcp4d
 elif [[ $1 == dnsd ]]; then
@@ -112,10 +112,11 @@ elif [[ $1 == exploitd ]]; then
 elif [[ $1 == "start-world" ]]; then
 	sudo echo "Prepare world"
 	binrun ap.brokerd &
-	binrun prometheus &
+	binrun prometheus -config.file=$etc/prometheus.yml \
+	    -storage.local.path="$var/prometheus-data" &
 	sleep 3
 	binrun ap.logd &
-	binrun ap.configd &
+	binrun ap.configd --propdir $etc &
 	sudobinrun ap.hostapd.m &
 	sudobinrun ap.dhcp4d &
 	sudobinrun ap.dns4d &

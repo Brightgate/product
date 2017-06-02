@@ -12,6 +12,7 @@ package ap_common
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"sync"
 	"time"
@@ -39,54 +40,9 @@ func NewConfig(name string) *Config {
 	return &Config{sender: sender, socket: socket}
 }
 
-func (c Config) GetProp(prop string) (string, error) {
-	var rval string
-	var err error
-
+func (c *Config) msg(oc base_msg.ConfigQuery_Operation, prop, val string,
+	expires *time.Time) (string, error) {
 	t := time.Now()
-	oc := base_msg.ConfigQuery_GET
-
-	query := &base_msg.ConfigQuery{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
-		Sender:    proto.String(c.sender),
-		Debug:     proto.String("-"),
-		Operation: &oc,
-		Property:  proto.String(prop),
-		Value:     proto.String("-"),
-	}
-
-	data, err := proto.Marshal(query)
-	if err != nil {
-		fmt.Println("Failed to marshal config update arguments: ", err)
-		return "", err
-	}
-
-	c.mutex.Lock()
-	_, err = c.socket.SendBytes(data, 0)
-	if err == nil {
-		var reply [][]byte
-
-		reply, err = c.socket.RecvMessageBytes(0)
-		if len(reply) > 0 {
-			response := &base_msg.ConfigResponse{}
-			proto.Unmarshal(reply[0], response)
-			rval = *response.Value
-		}
-	} else {
-		fmt.Println("Failed to send config request: ", err)
-	}
-	c.mutex.Unlock()
-
-	return rval, err
-}
-
-func (c Config) SetProp(prop, val string) error {
-	t := time.Now()
-	oc := base_msg.ConfigQuery_SET
-
 	query := &base_msg.ConfigQuery{
 		Timestamp: &base_msg.Timestamp{
 			Seconds: proto.Int64(t.Unix()),
@@ -98,17 +54,24 @@ func (c Config) SetProp(prop, val string) error {
 		Property:  proto.String(prop),
 		Value:     proto.String(val),
 	}
+	if expires != nil {
+		query.Expires = &base_msg.Timestamp{
+			Seconds: proto.Int64(expires.Unix()),
+			Nanos:   proto.Int32(int32(expires.Nanosecond())),
+		}
+	}
 
 	data, err := proto.Marshal(query)
 	if err != nil {
 		fmt.Println("Failed to marshal config update arguments: ", err)
-		return err
+		return "", err
 	}
 
 	c.mutex.Lock()
 	_, err = c.socket.SendBytes(data, 0)
+	rval := ""
 	if err != nil {
-		fmt.Println("Failed to send config update msg: ", err)
+		fmt.Println("Failed to send config msg: ", err)
 	} else {
 		var reply [][]byte
 
@@ -116,9 +79,37 @@ func (c Config) SetProp(prop, val string) error {
 		if len(reply) > 0 {
 			response := &base_msg.ConfigResponse{}
 			proto.Unmarshal(reply[0], response)
+			log.Println(response)
+			if oc == base_msg.ConfigQuery_GET {
+				rval = *response.Value
+			}
 		}
 	}
 	c.mutex.Unlock()
+
+	return rval, err
+}
+
+func (c Config) GetProp(prop string) (string, error) {
+	rval, err := c.msg(base_msg.ConfigQuery_GET, prop, "-", nil)
+
+	return rval, err
+}
+
+func (c Config) SetProp(prop, val string, expires *time.Time) error {
+	_, err := c.msg(base_msg.ConfigQuery_SET, prop, val, expires)
+
+	return err
+}
+
+func (c Config) CreateProp(prop, val string, expires *time.Time) error {
+	_, err := c.msg(base_msg.ConfigQuery_CREATE, prop, val, expires)
+
+	return err
+}
+
+func (c Config) DeleteProp(prop string) error {
+	_, err := c.msg(base_msg.ConfigQuery_DELETE, prop, "-", nil)
 
 	return err
 }

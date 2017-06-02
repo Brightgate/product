@@ -98,7 +98,7 @@ func cfg_handler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "Properties may only have one value", 400)
 				return
 			}
-			err = config.SetProp(key, values[0])
+			err = config.SetProp(key, values[0], nil)
 		}
 	}
 

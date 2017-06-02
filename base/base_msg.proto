@@ -192,12 +192,14 @@ message ConfigQuery {
 	enum Operation {
 		GET = 1;
 		SET = 2;
+		CREATE = 3;
 		DELETE = 4;
 	}
 	required Operation operation = 0x2000;
 
 	optional string property = 0x2001;
 	optional string value = 0x2002;
+	optional Timestamp expires = 0x2003;
 }
 
 message ConfigResponse {
@@ -215,6 +217,7 @@ message ConfigResponse {
 		DELETE_PROP_NO_PERM = 9;
 		DELETE_PROP_EMPTY = 10;
 		DELETE_PROP_NOT_FOUND = 11;
+		UNSUPPORTED = 12;
 	}
 	required OpResponse response = 0x2003;
 
