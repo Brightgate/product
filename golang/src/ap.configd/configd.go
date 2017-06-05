@@ -91,6 +91,7 @@
 package main
 
 import (
+	"container/heap"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -101,6 +102,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -124,9 +126,8 @@ const (
 )
 
 type property_ops struct {
-	get    func(*pnode) (string, error)
-	set    func(*pnode, string, *time.Time) error
-	expire func(*pnode) error
+	get func(*pnode) (string, error)
+	set func(*pnode, string, *time.Time) error
 }
 
 type property_match struct {
@@ -134,26 +135,34 @@ type property_match struct {
 	ops   *property_ops
 }
 
-var ssid_ops = property_ops{default_getter, ssid_update, default_expirer}
-var uuid_ops = property_ops{default_getter, uuid_update, default_expirer}
+var ssid_ops = property_ops{default_getter, ssid_update}
+var uuid_ops = property_ops{default_getter, uuid_update}
 
 var property_match_table = []property_match{
 	{regexp.MustCompile(`^@/uuid$`), &uuid_ops},
 	{regexp.MustCompile(`^@/network/wlan[0-9]+/ssid$`), &ssid_ops},
 }
 
-// All properties are currently represented as strings, but will presumably have
-// more varied types in the future.  Expires contains the time at which a
-// property will expire.  A property with a nil Expires field has no expiraton
-// date.
+/*
+ * All properties are currently represented as strings, but will presumably have
+ * more varied types in the future.  Expires contains the time at which a
+ * property will expire.  A property with a nil Expires field has no expiraton
+ * date.
+ */
 type pnode struct {
 	Name     string
 	Value    string     `json:"Value,omitempty"`
 	Expires  *time.Time `json:"Expires,omitempty"`
 	Children []*pnode   `json:"Children,omitempty"`
 	parent   *pnode
+	path     string
 	ops      *property_ops
+
+	// Used and maintained by the heap interface methods
+	index int
 }
+
+type pnode_queue []*pnode
 
 var (
 	property_root = pnode{Name: "root"}
@@ -163,10 +172,150 @@ var (
 	broker  ap_common.Broker
 	propdir = flag.String("propdir", "./",
 		"directory in which the property files should be stored")
+
+	exp_heap  pnode_queue
+	exp_timer *time.Timer
+	exp_mutex sync.Mutex
+	expired   []string
 )
 
-// Broadcast a notification of a property change
-func update_notify(prop, val string) {
+/*******************************************************************
+ *
+ * Implement the functions required by the container/heap interface
+ */
+func (q pnode_queue) Len() int { return len(q) }
+
+func (q pnode_queue) Less(i, j int) bool {
+	return (q[i].Expires).Before(*q[j].Expires)
+}
+
+func (q pnode_queue) Swap(i, j int) {
+	q[i], q[j] = q[j], q[i]
+	q[i].index = i
+	q[j].index = j
+}
+
+func (q *pnode_queue) Push(x interface{}) {
+	n := len(*q)
+	prop := x.(*pnode)
+	prop.index = n
+	*q = append(*q, prop)
+}
+
+func (q *pnode_queue) Pop() interface{} {
+	old := *q
+	n := len(old)
+	prop := old[n-1]
+	prop.index = -1 // for safety
+	*q = old[0 : n-1]
+	return prop
+}
+
+/*************************************************************************
+ *
+ * Functions to implement property expiration and maintain the associated
+ * datastructures.
+ */
+func expiration_handler() {
+	reset := time.Duration(time.Minute)
+	for true {
+		<-exp_timer.C
+		exp_mutex.Lock()
+
+		for len(exp_heap) > 0 {
+			next := exp_heap[0]
+			now := time.Now()
+
+			if now.Before(*next.Expires) {
+				break
+			}
+
+			delay := now.Sub(*next.Expires)
+			if delay.Seconds() > 1.0 {
+				log.Printf("Missed expiration for %s by %s\n",
+					next.Name, delay)
+			}
+			log.Printf("Expiring: %s at %v\n", next.Name, time.Now())
+			heap.Pop(&exp_heap)
+
+			next.index = -1
+			next.Expires = nil
+			expired = append(expired, next.path)
+			expiration_notify(next.path)
+		}
+
+		if len(exp_heap) > 0 {
+			next := exp_heap[0]
+			reset = time.Until(*next.Expires)
+		}
+		exp_timer.Reset(reset)
+		exp_mutex.Unlock()
+	}
+}
+
+/*
+ * Update the expiration time of a single property (possibly setting an
+ * expiration for the first time).  If this property ends up at the top of the
+ * expiration heap, reset the expiration timer accordingly.
+ */
+func expiration_update(node *pnode) {
+	exp_mutex.Lock()
+	if node.index == -1 {
+		heap.Push(&exp_heap, node)
+	}
+	heap.Fix(&exp_heap, node.index)
+	if exp_heap[0] == node {
+		exp_timer.Reset(time.Until(*node.Expires))
+	}
+	exp_mutex.Unlock()
+}
+
+/*
+ * Remove a single property from the expiration heap
+ */
+func expiration_remove(node *pnode) {
+	exp_mutex.Lock()
+	if node.index != -1 {
+		heap.Remove(&exp_heap, node.index)
+		node.index = -1
+	}
+	exp_mutex.Unlock()
+}
+
+/*
+ * Walk the list of expired properties and remove them from the tree
+ */
+func expiration_purge() {
+	count := 0
+	for len(expired) > 0 {
+		exp_mutex.Lock()
+		copy := expired
+		expired = nil
+		exp_mutex.Unlock()
+
+		for _, prop := range copy {
+			count++
+			property_delete(prop)
+		}
+	}
+	if count > 0 {
+		prop_tree_store()
+	}
+}
+
+func expiration_init() {
+	exp_heap = make(pnode_queue, 0)
+	heap.Init(&exp_heap)
+
+	exp_timer = time.NewTimer(time.Duration(time.Minute))
+	go expiration_handler()
+}
+
+/*************************************************************************
+ *
+ * Broker notifications
+ */
+func prop_notify(prop, val string, action base_msg.EventConfig_Type) {
 	t := time.Now()
 	entity := &base_msg.EventConfig{
 		Timestamp: &base_msg.Timestamp{
@@ -174,6 +323,7 @@ func update_notify(prop, val string) {
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
 		Sender:   proto.String(fmt.Sprintf("ap.configd(%d)", os.Getpid())),
+		Type:     &action,
 		Property: proto.String(prop),
 		NewValue: proto.String(val),
 	}
@@ -185,6 +335,18 @@ func update_notify(prop, val string) {
 	}
 }
 
+func expiration_notify(prop string) {
+	prop_notify(prop, "-", base_msg.EventConfig_EXPIRE)
+}
+
+func update_notify(prop, val string) {
+	prop_notify(prop, val, base_msg.EventConfig_CHANGE)
+}
+
+/*************************************************************************
+ *
+ * Generic and property-specific setter/getter routines
+ */
 func default_setter(node *pnode, val string, expires *time.Time) error {
 	node.Value = val
 	node.Expires = expires
@@ -193,10 +355,6 @@ func default_setter(node *pnode, val string, expires *time.Time) error {
 
 func default_getter(node *pnode) (string, error) {
 	return node.Value, nil
-}
-
-func default_expirer(node *pnode) error {
-	return nil
 }
 
 func uuid_update(node *pnode, uuid string, expires *time.Time) error {
@@ -233,8 +391,10 @@ func ssid_update(node *pnode, ssid string, expires *time.Time) error {
 	return err
 }
 
-// To determine whether this new property has non-default operations, we walk
-// through the property_match_table, looking for any matching patterns
+/*
+ * To determine whether this new property has non-default operations, we walk
+ * through the property_match_table, looking for any matching patterns
+ */
 func property_attach_ops(node *pnode, path string) {
 	for _, r := range property_match_table {
 		if r.match.MatchString(path) {
@@ -244,28 +404,44 @@ func property_attach_ops(node *pnode, path string) {
 	}
 }
 
-// Allocate a new property node and insert it into the property tree
+/*************************************************************************
+ *
+ * Functions to walk and maintain the property tree
+ */
+
+/*
+ * Allocate a new property node and insert it into the property tree
+ */
 func property_add(parent *pnode, name string, path string) *pnode {
-	n := pnode{Name: name, parent: parent}
+	n := pnode{Name: name,
+		parent: parent,
+		path:   path,
+		index:  -1}
 	parent.Children = append(parent.Children, &n)
 	property_attach_ops(&n, path)
 	return &n
 }
 
-// Break the property path into its individual components, and use them to
-// navigate the property tree.  Optionally, it will also insert any missing nodes
-// into the tree to instantiate a new property node.
+/*
+ * Break the property path into its individual components, and use them to
+ * navigate the property tree.  Optionally, it will also insert any missing nodes
+ * into the tree to instantiate a new property node.
+ */
 func cfg_property_parse(prop string, insert bool) *pnode {
-	// Only accept properties that start with exactly one '@', meaning they
-	// are local to this device
+	/*
+	 * Only accept properties that start with exactly one '@', meaning they
+	 * are local to this device
+	 */
 	if len(prop) < 2 || prop[0] != '@' || prop[1] != '/' {
 		return nil
 	}
 
-	// Walk the tree until we run out of path elements or fall off the
-	// bottom of the tree.  If we exhaust the path, we return the current
-	// search node, which may be either internal or a leaf.  Its up to the
-	// caller to determine which of those is considered a successful search.
+	/*
+	 * Walk the tree until we run out of path elements or fall off the
+	 * bottom of the tree.  If we exhaust the path, we return the current
+	 * search node, which may be either internal or a leaf.  Its up to the
+	 * caller to determine which of those is considered a successful search.
+	 */
 	components := strings.Split(prop[2:], "/")
 	q := len(components)
 	node := &property_root
@@ -307,8 +483,6 @@ func property_delete(property string) error {
 		}
 	}
 	delete_subtree(node)
-	prop_tree_store()
-
 	return nil
 }
 
@@ -318,8 +492,8 @@ func property_update(property, value string, expires *time.Time, insert bool) er
 	log.Println("set property " + property + " -> " + value)
 	node := cfg_property_parse(property, insert)
 	if node == nil {
-		if !insert {
-			log.Fatal("Failed to insert a new propery node")
+		if insert {
+			log.Fatal("Failed to insert a new property")
 		}
 		err = fmt.Errorf("Updating a nonexistent property: %s",
 			property)
@@ -331,11 +505,11 @@ func property_update(property, value string, expires *time.Time, insert bool) er
 	} else {
 		err = node.ops.set(node, value, expires)
 	}
-	if err == nil {
-		prop_tree_store()
-		update_notify(property, value)
-	} else {
+
+	if err != nil {
 		log.Println("property update failed: ", err)
+	} else if node.Expires != nil {
+		expiration_update(node)
 	}
 
 	return err
@@ -367,6 +541,10 @@ func property_get(property string) (string, error) {
 	return rval, err
 }
 
+/*************************************************************************
+ *
+ * Reading and writing the persistent property file
+ */
 func file_exists(filename string) bool {
 	if _, err := os.Stat(filename); os.IsNotExist(err) {
 		return false
@@ -384,9 +562,11 @@ func prop_tree_store() error {
 	}
 
 	if file_exists(propfile) {
-		// XXX: could store multiple generations of backup files,
-		// allowing for arbitrary rollback.  Could also take explicit
-		// 'checkpoint' snapshots.
+		/*
+		 * XXX: could store multiple generations of backup files,
+		 * allowing for arbitrary rollback.  Could also take explicit
+		 * 'checkpoint' snapshots.
+		 */
 		os.Rename(propfile, backupfile)
 	}
 
@@ -418,14 +598,21 @@ func prop_tree_load(name string) error {
 	return nil
 }
 
-// After loading the initial property values, we need to walk the tree to set
-// the parent pointers, attach any non-default operations, and possibly insert
-// into the expiration heap
+/*
+ * After loading the initial property values, we need to walk the tree to set
+ * the parent pointers, attach any non-default operations, and possibly insert
+ * into the expiration heap
+ */
 func patch_tree(node *pnode, path string) {
 	property_attach_ops(node, path)
 	for _, n := range node.Children {
 		n.parent = node
 		patch_tree(n, path+"/"+n.Name)
+	}
+	node.path = path
+	node.index = -1
+	if node.Expires != nil {
+		expiration_update(node)
 	}
 }
 
@@ -434,13 +621,20 @@ func dump_tree(node *pnode, level int) {
 	for i := 0; i < level; i++ {
 		indent += "  "
 	}
-	fmt.Printf("%s%s: %s\n", indent, node.Name, node.Value)
+	e := ""
+	if node.Expires != nil {
+		e = node.Expires.Format("2006-02-01T15:04:05")
+	}
+	fmt.Printf("%s%s: %s  %s\n", indent, node.Name, node.Value, e)
 	for _, n := range node.Children {
 		dump_tree(n, level+1)
 	}
 }
+
 func delete_subtree(node *pnode) {
-	fmt.Printf("Deleting %s\n", node.Name)
+	if node.Expires != nil {
+		expiration_remove(node)
+	}
 	for _, n := range node.Children {
 		delete_subtree(n)
 	}
@@ -477,8 +671,13 @@ func prop_tree_init() {
 	}
 
 	patch_tree(&property_root, "@")
+	dump_tree(&property_root, 0)
 }
 
+/*************************************************************************
+ *
+ * Handling incoming requests from other daemons
+ */
 func get_handler(q *base_msg.ConfigQuery) (string, error) {
 	return (property_get(*q.Property))
 }
@@ -494,15 +693,22 @@ func set_handler(q *base_msg.ConfigQuery, add bool) error {
 	}
 
 	err := property_update(*q.Property, *q.Value, expires, add)
-	if add {
-		dump_tree(&property_root, 0)
+	if err == nil {
+		prop_tree_store()
+		update_notify(*q.Property, *q.Value)
+		if add {
+			dump_tree(&property_root, 0)
+		}
 	}
 	return err
 }
 
 func delete_handler(q *base_msg.ConfigQuery) error {
 	err := property_delete(*q.Property)
-	dump_tree(&property_root, 0)
+	if err != nil {
+		prop_tree_store()
+		dump_tree(&property_root, 0)
+	}
 	return err
 }
 
@@ -516,6 +722,8 @@ func main() {
 	if !file_exists(*propdir) {
 		log.Fatalf("Properties directory %s doesn't exist", *propdir)
 	}
+
+	expiration_init()
 
 	// Prometheus setup
 	http.Handle("/metrics", promhttp.Handler())
@@ -541,6 +749,7 @@ func main() {
 			break // XXX Nope.
 		}
 
+		expiration_purge()
 		query := &base_msg.ConfigQuery{}
 		proto.Unmarshal(msg[0], query)
 

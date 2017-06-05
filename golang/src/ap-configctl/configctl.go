@@ -39,7 +39,7 @@ func main() {
 	config = ap_common.NewConfig("ap-configctl")
 
 	//  Ensure subscriber connection has time to complete
-	time.Sleep(time.Second)
+	time.Sleep(time.Millisecond * 50)
 
 	var expires *time.Time
 

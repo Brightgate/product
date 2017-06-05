@@ -38,9 +38,6 @@
                     ]
                 },
                 {
-                    "Name": "static"
-                },
-                {
                     "Name": "leases"
                 }
             ]

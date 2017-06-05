@@ -117,6 +117,7 @@ elif [[ $1 == "start-world" ]]; then
 	sleep 3
 	binrun ap.logd &
 	binrun ap.configd --propdir $etc &
+	sleep 3
 	sudobinrun ap.hostapd.m &
 	sudobinrun ap.dhcp4d &
 	sudobinrun ap.dns4d &

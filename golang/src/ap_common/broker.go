@@ -27,6 +27,8 @@ var known_topics = [5]string{
 	base_def.TOPIC_REQUEST,
 }
 
+var debug = false
+
 type hdlr_f func(event []byte)
 
 type Broker struct {
@@ -79,16 +81,17 @@ func event_listener(b *Broker) {
 
 		topic := string(msg[0])
 		hdlr, ok := b.handlers[topic]
-		if !ok {
-			log.Printf("[%s] unknown topic: %s\n", b.name, topic)
-			continue
+		if ok && hdlr != nil {
+			hdlr(msg[1])
+		} else if debug {
+			if ok {
+				log.Printf("[%s] ignoring topic: %s\n",
+					b.name, topic)
+			} else {
+				log.Printf("[%s] unknown topic: %s\n",
+					b.name, topic)
+			}
 		}
-		if hdlr == nil {
-			log.Printf("[%s] ignoring topic: %s\n", b.name, topic)
-			continue
-		}
-
-		hdlr(msg[1])
 	}
 }
 

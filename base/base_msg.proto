@@ -72,11 +72,13 @@ message EventConfig {
 	optional string sender = 0x02;
 	optional string debug = 0x03;
 
-	enum Scope {
-		TABLE_CHANGE = 1;
+	enum Type {
+		CHANGE = 1;
+		DELETE = 2;
+		EXPIRE = 3;
 	}
 
-	optional Scope scope = 0x200;
+	optional Type type = 0x200;
 	optional string scope_name = 0x201;
 	optional string property = 0x202;
 	optional string new_value = 0x203;
