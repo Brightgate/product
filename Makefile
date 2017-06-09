@@ -87,6 +87,7 @@ DAEMONS = \
 	$(APPBIN)/ap.sampled
 
 COMMANDS = \
+	$(APPBIN)/ap-arpspoof \
 	$(APPBIN)/ap-msgping \
 	$(APPBIN)/ap-configctl \
 	$(APPBIN)/ap-run \
@@ -134,7 +135,14 @@ COMMON_SRCS = \
     golang/src/base_def/base_def.go \
     golang/src/base_msg/base_msg.pb.go \
     golang/src/ap_common/broker.go \
-    golang/src/ap_common/config.go
+    golang/src/ap_common/config.go \
+    golang/src/ap_common/network/network.go
+
+$(APPBIN)/ap-arpspoof: \
+    golang/src/ap-arpspoof/arpspoof.go \
+    $(COMMON_SRCS)
+	$(GO) get $(GO_GET_FLAGS) ap-arpspoof 2>&1 | tee -a get.acc
+	cd $(APPBIN) && $(GO) build ap-arpspoof
 
 # XXX brokerd does not need the base messages.
 $(APPBIN)/ap.brokerd: \
@@ -146,7 +154,7 @@ $(APPBIN)/ap.brokerd: \
 $(APPBIN)/ap-configctl: \
     golang/src/ap-configctl/configctl.go \
     $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap-configctl
+	$(GO) get $(GO_GET_FLAGS) ap-configctl 2>&1 | tee -a get.acc
 	cd $(APPBIN) && $(GO) build ap-configctl
 
 $(APPBIN)/ap.configd: \
@@ -186,12 +194,6 @@ $(APPBIN)/ap.logd: \
 	$(GO) get $(GO_GET_FLAGS) ap.logd 2>&1 | tee -a get.acc
 	cd $(APPBIN) && $(GO) build ap.logd
 
-$(APPBIN)/ap.sampled: \
-    golang/src/ap.sampled/sampled.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap.sampled 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap.sampled
-
 $(APPBIN)/ap-msgping: \
     golang/src/ap-msgping/msgping.go \
     $(COMMON_SRCS)
@@ -200,6 +202,12 @@ $(APPBIN)/ap-msgping: \
 
 $(APPBIN)/ap-run: ap-run.bash
 	install -m 0755 $< $@
+
+$(APPBIN)/ap.sampled: \
+    golang/src/ap.sampled/sampled.go \
+    $(COMMON_SRCS)
+	$(GO) get $(GO_GET_FLAGS) ap.sampled 2>&1 | tee -a get.acc
+	cd $(APPBIN) && $(GO) build ap.sampled
 
 $(APPBIN)/pi-netstrap: pi-netstrap.bash
 	install -m 0755 $< $@

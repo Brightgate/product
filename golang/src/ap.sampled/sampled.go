@@ -14,6 +14,7 @@ package main
 
 import (
 	"base_def"
+	"bytes"
 	"flag"
 	"io"
 	"log"
@@ -26,6 +27,7 @@ import (
 	"time"
 
 	"ap_common"
+	"ap_common/network"
 	"base_msg"
 
 	"github.com/golang/protobuf/proto"
@@ -69,7 +71,8 @@ var (
 	auditRecords = make(map[gopacket.Endpoint]*record)
 	capStats     = make(map[gopacket.LayerType]*layerStats)
 
-	broker ap_common.Broker
+	macSelf net.HardwareAddr
+	broker  ap_common.Broker
 )
 
 const (
@@ -146,18 +149,29 @@ func handleArp(arp *layers.ARP) {
 }
 
 // Look up the record for this hwaddr:
+//   0) Ignore well known MAC and IP addresses
 //   1) If no record exists, create one. If we are authoritative the record is
 //      vetted. Else the record is foreign.
-//   2) If the record exists but the record's ipaddr differs from the observed
-//      ipaddr, then we save the new ipaddr. If we are authoritative the new
-//      address represents a new DHCP lease and the record is vetted. If we are
-//      not authoritative and the record was previously vetted we are in
-//      conflict.
+//   2) If a 'foreign' or 'vetted' record exists but the record's ipaddr differs
+//      from the observed ipaddr, then we save the new ipaddr. If we are
+//      authoritative the new address represents a new DHCP lease and the record
+//      is vetted. If we are not authoritative and the record was previously
+//      vetted we are in conflict.
 //   3) If the two IP addresses match and we are authritative the record is
 //      vetted.
 func updateRecord(hwaddr net.HardwareAddr, ipaddr net.IP, auth bool) {
+
+	if bytes.Equal(hwaddr, macSelf) || bytes.Equal(hwaddr, network.MacZero) ||
+		network.IsMacMulticast(hwaddr) || bytes.Equal(hwaddr, network.MacBcast) ||
+		ipaddr.Equal(net.IPv4zero) || ipaddr.IsMulticast() ||
+		ipaddr.Equal(net.IPv4bcast) {
+		return
+	}
+
 	auditMtx.Lock()
+	defer auditMtx.Unlock()
 	r, ok := auditRecords[layers.NewMACEndpoint(hwaddr)]
+
 	if !ok {
 		rec := &record{}
 		rec.ipaddr = ipaddr
@@ -167,7 +181,14 @@ func updateRecord(hwaddr net.HardwareAddr, ipaddr net.IP, auth bool) {
 			rec.audit = foreign
 		}
 		auditRecords[layers.NewMACEndpoint(hwaddr)] = rec
-	} else if !r.ipaddr.Equal(ipaddr) {
+		return
+	}
+
+	if r.audit == conflict {
+		return
+	}
+
+	if !r.ipaddr.Equal(ipaddr) {
 		r.ipaddr = ipaddr
 		if auth {
 			r.audit = vetted
@@ -177,13 +198,11 @@ func updateRecord(hwaddr net.HardwareAddr, ipaddr net.IP, auth bool) {
 	} else if auth {
 		r.audit = vetted
 	}
-	auditMtx.Unlock()
 }
 
 // Decode only the layers we care about:
 //   - Look for ARP request and reply to associate MAC and IP
 //   - Look for IPv4 to associate MAC and IP
-// XXX Need to exclude well-known MAC and IP address (all zeros, all ones, etc..)
 func decodePackets(decode []gopacket.DecodingLayer) {
 	handle, err := pcap.OpenLive(*iface, 65536, true, pcap.BlockForever)
 	if err != nil {
@@ -198,7 +217,7 @@ func decodePackets(decode []gopacket.DecodingLayer) {
 	for time.Since(start) < *capTime {
 		var srcMac, dstMac net.HardwareAddr
 
-		data, _, err := handle.ZeroCopyReadPacketData()
+		data, _, err := handle.ReadPacketData()
 		if err != nil {
 			log.Println("Error reading packet data:", err)
 			continue
@@ -339,6 +358,12 @@ func main() {
 			dst: make(map[gopacket.Endpoint]uint64),
 		}
 	}
+
+	self, err := net.InterfaceByName(*iface)
+	if err != nil {
+		log.Fatalf("Failed to get interface %s:", *iface, err)
+	}
+	macSelf = self.HardwareAddr
 
 	// XXX: Ask for all the DHCP leases in the config
 
