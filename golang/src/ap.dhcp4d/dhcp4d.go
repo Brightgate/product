@@ -93,15 +93,16 @@ func leaseProperty(ipaddr net.IP) string {
 
 /*
  * This is the first time we've seen this device.  Send an ENTITY message with
- * its hardware address and any IP address it's requesting.
+ * its hardware address, name, and any IP address it's requesting.
  */
-func notifyNewEntity(p dhcp.Packet) {
+func notifyNewEntity(p dhcp.Packet, options dhcp.Options) {
 	t := time.Now()
 	ipaddr := p.CIAddr()
 	hwaddr_u64 := hwaddr_to_uint64(p.CHAddr())
+	hostname := string(options[dhcp.OptionHostName])
 
-	log.Printf("New client %s (incoming IP address: %s)\n",
-		p.CHAddr().String(), ipaddr.String())
+	log.Printf("New client %s (name: %q incoming IP address: %s)\n",
+		p.CHAddr().String(), hostname, ipaddr.String())
 	entity := &base_msg.EventNetEntity{
 		Timestamp: &base_msg.Timestamp{
 			Seconds: proto.Int64(t.Unix()),
@@ -111,6 +112,7 @@ func notifyNewEntity(p dhcp.Packet) {
 		Debug:       proto.String("-"),
 		MacAddress:  proto.Uint64(hwaddr_u64),
 		Ipv4Address: proto.Uint32(binary.BigEndian.Uint32(ipaddr)),
+		DnsName:     proto.String(hostname),
 	}
 
 	data, err := proto.Marshal(entity)
@@ -124,25 +126,30 @@ func notifyNewEntity(p dhcp.Packet) {
 	}
 }
 
-func notifyDHCPRequest(p dhcp.Packet) {
+/*
+ * A provisioned IP address has now been claimed by a client.
+ */
+func notifyClaimed(p dhcp.Packet, ipaddr net.IP, name string) {
 	t := time.Now()
-	protocol := base_msg.Protocol_DHCP
-	entity := &base_msg.EventNetRequest{
+
+	action := base_msg.EventNetResource_CLAIMED
+	entity := &base_msg.EventNetResource{
 		Timestamp: &base_msg.Timestamp{
 			Seconds: proto.Int64(t.Unix()),
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
-		Sender:    proto.String(fmt.Sprintf("ap.dhcp4d(%d)", os.Getpid())),
-		Debug:     proto.String("-"),
-		Protocol:  &protocol,
-		Requestor: proto.String(p.CHAddr().String()),
+		Sender:      proto.String(fmt.Sprintf("ap.dhcp4d(%d)", os.Getpid())),
+		Debug:       proto.String("-"),
+		Action:      &action,
+		Ipv4Address: proto.Uint32(binary.BigEndian.Uint32(ipaddr)),
+		DnsName:     proto.String(name),
 	}
 
 	data, err := proto.Marshal(entity)
 	if err != nil {
 		log.Printf("entity couldn't marshal: %v", err)
 	} else {
-		err = broker.Publish(base_def.TOPIC_REQUEST, data)
+		err = broker.Publish(base_def.TOPIC_RESOURCE, data)
 		if err != nil {
 			log.Printf("couldn't send %v", err)
 		}
@@ -150,13 +157,13 @@ func notifyDHCPRequest(p dhcp.Packet) {
 }
 
 /*
- * We've have provisionally assigned an IP address to a client.  Send a CLAIM
- * message indicating that that address is no longer available.
+ * We've have provisionally assigned an IP address to a client.  Send a
+ * net.resource message indicating that that address is no longer available.
  */
-func notifyClaimed(p dhcp.Packet, ipaddr net.IP) {
+func notifyProvisioned(p dhcp.Packet, ipaddr net.IP) {
 	t := time.Now()
 
-	action := base_msg.EventNetResource_CLAIMED
+	action := base_msg.EventNetResource_PROVISIONED
 	entity := &base_msg.EventNetResource{
 		Timestamp: &base_msg.Timestamp{
 			Seconds: proto.Int64(t.Unix()),
@@ -252,7 +259,7 @@ func (h *DHCPHandler) discover(p dhcp.Packet, options dhcp.Options) dhcp.Packet 
 	}
 	log.Printf("  OFFER %s to %s\n", l.ipaddr, l.nic)
 
-	notifyClaimed(p, l.ipaddr)
+	notifyProvisioned(p, l.ipaddr)
 	return dhcp.ReplyPacket(p, dhcp.Offer, h.ip, l.ipaddr, h.leaseDuration,
 		h.options.SelectOrderOrAll(options[dhcp.OptionParameterRequestList]))
 }
@@ -301,7 +308,7 @@ func (h *DHCPHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 		action = "granting request"
 	} else {
 		reqIP = net.IP(p.CIAddr())
-		action = "CLAIMed"
+		action = "CLAIMED"
 	}
 	log.Printf("   REQUEST %s %s\n", action, reqIP.String())
 
@@ -327,9 +334,9 @@ func (h *DHCPHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	 * any hostname on restart.  When ap.configd is augmented to accept
 	 * property trees, we can fix this.
 	 */
-	log.Printf("   REQUEST assigned %s to %s\n", l.ipaddr, hwaddr)
+	log.Printf("   REQUEST assigned %s to %s (%q)\n", l.ipaddr, hwaddr, l.name)
 	config.CreateProp(leaseProperty(l.ipaddr), l.nic, l.expires)
-	notifyDHCPRequest(p)
+	notifyClaimed(p, l.ipaddr, l.name)
 
 	return dhcp.ReplyPacket(p, dhcp.ACK, h.ip, l.ipaddr, h.leaseDuration,
 		h.options.SelectOrderOrAll(options[dhcp.OptionParameterRequestList]))
@@ -368,7 +375,7 @@ func (h *DHCPHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType,
 	client_map_mtx.Lock()
 	client_map[hwaddr] = client_map[hwaddr] + 1
 	if client_map[hwaddr] == 1 {
-		notifyNewEntity(p)
+		notifyNewEntity(p, options)
 	}
 	client_map_mtx.Unlock()
 

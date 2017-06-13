@@ -15,12 +15,12 @@
 #
 #    (b) On Linux
 #
-#	 # apt-get install protobuf-compiler libzmq5-dev
+#	 # apt-get install protobuf-compiler libzmq5-dev libpcap-dev
 #	 [Retrieve Go tar archive from golang.org and unpack in $HOME.]
 #
 #    (c) on raspberry pi
 #
-#	 # apt-get install protobuf-compiler libzmq3-dev
+#	 # apt-get install protobuf-compiler libzmq3-dev libpcap-dev
 #	 [Retrieve Go tar archive from golang.org and unpack in $HOME.]
 #
 # 2. Each new shell,
@@ -83,7 +83,8 @@ DAEMONS = \
 	$(APPBIN)/ap.dns4d \
 	$(APPBIN)/ap.hostapd.m \
 	$(APPBIN)/ap.httpd \
-	$(APPBIN)/ap.logd
+	$(APPBIN)/ap.logd \
+	$(APPBIN)/ap.sampled
 
 COMMANDS = \
 	$(APPBIN)/ap-msgping \
@@ -184,6 +185,12 @@ $(APPBIN)/ap.logd: \
     $(COMMON_SRCS)
 	$(GO) get $(GO_GET_FLAGS) ap.logd 2>&1 | tee -a get.acc
 	cd $(APPBIN) && $(GO) build ap.logd
+
+$(APPBIN)/ap.sampled: \
+    golang/src/ap.sampled/sampled.go \
+    $(COMMON_SRCS)
+	$(GO) get $(GO_GET_FLAGS) ap.sampled 2>&1 | tee -a get.acc
+	cd $(APPBIN) && $(GO) build ap.sampled
 
 $(APPBIN)/ap-msgping: \
     golang/src/ap-msgping/msgping.go \

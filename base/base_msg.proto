@@ -117,8 +117,9 @@ message EventNetResource {
 
 	enum Action {
 		RELEASED = 1;
-		CLAIMED = 2;
-		COLLISION = 3;
+		PROVISIONED = 2;
+		CLAIMED = 3;
+		COLLISION = 4;
 	}
 
 	optional Action action = 0x500;

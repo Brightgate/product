@@ -75,6 +75,7 @@ Usage:	ap-run broker
 	ap-run analyzerd
 	ap-run actord
 	ap-run exploitd
+	ap-run sampled
 	ap-run prometheus
 
 	ap-run start-world
@@ -102,7 +103,7 @@ elif [[ $1 == logd ]]; then
 elif [[ $1 == prometheus ]]; then
 	binrun prometheus -config.file=$etc/prometheus.yml -storage.local.path="$var/prometheus-data"
 elif [[ $1 == sampled ]]; then
-	nyi $1
+	binrun sampled
 elif [[ $1 == analyzerd ]]; then
 	nyi $1
 elif [[ $1 == actord ]]; then
@@ -118,6 +119,7 @@ elif [[ $1 == "start-world" ]]; then
 	binrun ap.logd &
 	binrun ap.configd --propdir $etc &
 	sleep 3
+	binrun ap.sampled &
 	sudobinrun ap.hostapd.m &
 	sudobinrun ap.dhcp4d &
 	sudobinrun ap.dns4d &
