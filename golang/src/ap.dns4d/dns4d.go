@@ -313,6 +313,19 @@ func local_handler(w dns.ResponseWriter, r *dns.Msg) {
 	host, _, _ := net.SplitHostPort(ip.String())
 	addr := net.ParseIP(host).To4()
 
+	protocol := base_msg.Protocol_DNS
+
+	requests := make([]string, 0)
+	responses := make([]string, 0)
+
+	for _, question := range r.Question {
+		requests = append(requests, question.String())
+	}
+
+	for _, answer := range m.Answer {
+		responses = append(responses, answer.String())
+	}
+
 	entity := &base_msg.EventNetRequest{
 		Timestamp: &base_msg.Timestamp{
 			Seconds: proto.Int64(t.Unix()),
@@ -322,11 +335,9 @@ func local_handler(w dns.ResponseWriter, r *dns.Msg) {
 		Debug:        proto.String("local_handler"),
 		Requestor:    proto.String(addr.String()),
 		IdentityUuid: proto.String(base_def.ZERO_UUID),
-		//                 # XXX Multiple questions not well-handled here.
-		//
-		//                 net_request.protocol = bmsg.DNS
-		//                 net_request.response = str(reply.rr)
-		//                 net_request.request = str(request.questions)
+		Protocol:     &protocol,
+		Request:      requests,
+		Response:     responses,
 	}
 
 	data, _ := proto.Marshal(entity)
@@ -399,6 +410,19 @@ func proxy_handler(w dns.ResponseWriter, r *dns.Msg) {
 	host, _, _ := net.SplitHostPort(ip.String())
 	addr := net.ParseIP(host).To4()
 
+	protocol := base_msg.Protocol_DNS
+
+	requests := make([]string, 0)
+	responses := make([]string, 0)
+
+	for _, question := range r.Question {
+		requests = append(requests, question.String())
+	}
+
+	for _, answer := range m.Answer {
+		responses = append(responses, answer.String())
+	}
+
 	entity := &base_msg.EventNetRequest{
 		Timestamp: &base_msg.Timestamp{
 			Seconds: proto.Int64(t.Unix()),
@@ -408,14 +432,9 @@ func proxy_handler(w dns.ResponseWriter, r *dns.Msg) {
 		Debug:        proto.String("proxy_handler"),
 		Requestor:    proto.String(addr.String()),
 		IdentityUuid: proto.String(base_def.ZERO_UUID),
-		//                 # XXX Multiple questions not well-handled here.
-		//
-		//                 net_request.protocol = bmsg.DNS
-		//
-		//                 net_request.response = str(reply.rr)
-		//                 net_request.request = str(request.questions)
-		//                 as_address = netaddr.IPAddress(handler.client_address[0])
-		//                 net_request.debug = "remote/317"
+		Protocol:     &protocol,
+		Request:      requests,
+		Response:     responses,
 	}
 
 	data, err := proto.Marshal(entity)

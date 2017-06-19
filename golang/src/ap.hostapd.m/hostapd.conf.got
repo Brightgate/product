@@ -1,14 +1,20 @@
 interface={{.InterfaceName}}
 driver=nl80211
 ssid={{.SSID}}
+utf8_ssid=1
+
+ctrl_interface=/var/run/hostapd
+
 hw_mode={{.HardwareModes}}
+ieee80211n=1
+wmm_enabled=1
+
 channel={{.Channel}}
 
 macaddr_acl=0
 
 ignore_broadcast_ssid=0
 
-auth_algs=2
 wpa=2
 wpa_passphrase={{.Passphrase}}
 wpa_key_mgmt=WPA-PSK

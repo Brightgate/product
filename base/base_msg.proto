@@ -132,9 +132,11 @@ message EventNetResource {
 // an information request that does not imply allocation.  An example
 // request would be a DNS host lookup.
 //
-// For DNS, the requestor field is an IP address.
+// For DNS, the requestor field is an IP address.  There may be multiple
+// requests and responses.
 //
-// For DHCP, the requestor field is a MAC address.
+// For DHCP, the requestor field is a MAC address.  There is typically
+// one request and one response.
 //
 // @topic "net.request", TOPIC_REQUEST
 // @range 0x600
@@ -146,8 +148,8 @@ message EventNetRequest {
 
 	optional Protocol protocol = 0x0600;
 
-	optional string request = 0x0601;
-	optional string response = 0x0602;
+	repeated string request = 0x0601;
+	repeated string response = 0x0602;
 
 	// protocol-specific requestor
 	optional string requestor = 0x0603;
@@ -162,6 +164,7 @@ message EventNetRequest {
 // for the disallowance.
 // @topic "net.exception", TOPIC_EXCEPTION
 // @range 0x800
+
 message EventNetException {
 	required Timestamp timestamp = 0x01;
 	optional string sender = 0x02;
@@ -181,7 +184,7 @@ message EventNetException {
 	optional string requestor = 0x0803;
 }
 
-// Configuration messages
+// Configuration messages (0x2000 - 0x20ff)
 // XXX Types and lists?
 // Delete is not defined without a property name.
 
