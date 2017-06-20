@@ -35,17 +35,19 @@ UNAME_S = $(shell uname -s)
 UNAME_M = $(shell uname -m)
 $(info kernel UNAME_S=$(UNAME_S))
 
+ifeq ("$(GOROOT)","")
 ifeq ("$(UNAME_S)","Darwin")
 # On macOS, install the .pkg provided by golang.org.
-export GOPATH=$(shell pwd)/golang
 export GOROOT=/usr/local/go
 $(info operating-system macOS)
 else
 # On Linux
-export GOPATH=$(shell pwd)/golang
 export GOROOT=$(HOME)/go
 $(info operating-system Linux)
 endif
+endif
+
+export GOPATH=$(shell pwd)/golang
 
 GO=$(GOROOT)/bin/go
 GO_CLEAN_FLAGS = -i -x
