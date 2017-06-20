@@ -147,7 +147,6 @@ func dns_update(resource *base_msg.EventNetResource) {
 func config_changed(event []byte) {
 	config := &base_msg.EventConfig{}
 	proto.Unmarshal(event, config)
-	log.Println(config)
 }
 
 func resource_changed(event []byte) {

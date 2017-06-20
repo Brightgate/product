@@ -20,20 +20,65 @@
                             "Value": "192.168.136.1"
                         },
                         {
-                            "Name": "subnet_mask",
-                            "Value": "255.255.255.0"
+                            "Name": "network",
+                            "Value": "192.168.136.0/24"
                         },
                         {
-                            "Name": "range_start",
-                            "Value": "192.168.136.10"
-                        },
-                        {
-                            "Name": "range_size",
-                            "Value": "90"
-                        },
-                        {
-                            "Name": "lease_duration",
-                            "Value": "120"
+                            "Name": "ranges",
+                            "Children": [
+                                {
+                                    "Name": "unclassified",
+                                    "Children": [
+                                        {
+                                            "Name": "subnet",
+                                            "Value": "192.168.136.32/27"
+                                        },
+                                        {
+                                            "Name": "lease_duration",
+                                            "Value": "10"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "Name": "trusted",
+                                    "Children": [
+                                        {
+                                            "Name": "subnet",
+                                            "Value": "192.168.136.64/27"
+                                        },
+                                        {
+                                            "Name": "lease_duration",
+                                            "Value": "240"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "Name": "local",
+                                    "Children": [
+                                        {
+                                            "Name": "subnet",
+                                            "Value": "192.168.136.96/27"
+                                        },
+                                        {
+                                            "Name": "lease_duration",
+                                            "Value": "240"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "Name": "external",
+                                    "Children": [
+                                        {
+                                            "Name": "subnet",
+                                            "Value": "192.168.136.16/28"
+                                        },
+                                        {
+                                            "Name": "lease_duration",
+                                            "Value": "60"
+                                        }
+                                    ]
+                                }
+                            ]
                         }
                     ]
                 },
@@ -41,6 +86,9 @@
                     "Name": "leases"
                 }
             ]
+        },
+        {
+            "Name": "clients"
         },
         {
             "Name": "network",

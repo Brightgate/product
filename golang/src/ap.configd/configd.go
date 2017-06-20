@@ -92,11 +92,13 @@ package main
 
 import (
 	"container/heap"
+	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"regexp"
@@ -343,6 +345,68 @@ func update_notify(prop, val string) {
 	prop_notify(prop, val, base_msg.EventConfig_CHANGE)
 }
 
+func uint64_to_hwaddr(a uint64) net.HardwareAddr {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, a)
+	return net.HardwareAddr(b[2:])
+}
+
+/*
+ * Placeholder for creating new @/clients/* entries until a real classifier
+ * exists.
+ */
+func entity_handler(event []byte) {
+	entity := &base_msg.EventNetEntity{}
+	proto.Unmarshal(event, entity)
+	if entity.MacAddress == nil {
+		log.Printf("Received a NET.ENTITY event with no MAC: %v\n",
+			entity)
+		return
+	}
+
+	hwaddr := uint64_to_hwaddr(*entity.MacAddress)
+	path := "@/clients/" + hwaddr.String()
+	node := cfg_property_parse(path, true)
+
+	/*
+	 * Determine which client properties are already known
+	 */
+	fields := make(map[string]*pnode)
+	for _, c := range node.Children {
+		fields[c.Name] = c
+	}
+
+	var n *pnode
+	var ok bool
+	if _, ok = fields["class"]; !ok {
+		n := property_add(node, "class", path+"/class")
+		n.Value = "unclassified"
+	}
+	if entity.Ipv4Address != nil {
+		if n, ok = fields["ipv4"]; !ok {
+			n = property_add(node, "ipv4", path+"/ipv4")
+		}
+		ip := make(net.IP, 4)
+		binary.BigEndian.PutUint32(ip, *entity.Ipv4Address)
+		n.Value = ip.String()
+	}
+
+	if entity.InterfaceName != nil {
+		if n, ok = fields["iface"]; !ok {
+			n = property_add(node, "iface", path+"/iface")
+		}
+		n.Value = *entity.InterfaceName
+	}
+
+	if entity.DnsName != nil {
+		if n, ok = fields["dns"]; !ok {
+			n = property_add(node, "dns", path+"/dns")
+		}
+		n.Value = *entity.DnsName
+	}
+	prop_tree_store()
+}
+
 /*************************************************************************
  *
  * Generic and property-specific setter/getter routines
@@ -434,6 +498,10 @@ func cfg_property_parse(prop string, insert bool) *pnode {
 	 */
 	if len(prop) < 2 || prop[0] != '@' || prop[1] != '/' {
 		return nil
+	}
+
+	if prop == "@/" {
+		return &property_root
 	}
 
 	/*
@@ -696,9 +764,6 @@ func set_handler(q *base_msg.ConfigQuery, add bool) error {
 	if err == nil {
 		prop_tree_store()
 		update_notify(*q.Property, *q.Value)
-		if add {
-			dump_tree(&property_root, 0)
-		}
 	}
 	return err
 }
@@ -707,7 +772,6 @@ func delete_handler(q *base_msg.ConfigQuery) error {
 	err := property_delete(*q.Property)
 	if err != nil {
 		prop_tree_store()
-		dump_tree(&property_root, 0)
 	}
 	return err
 }
@@ -732,6 +796,7 @@ func main() {
 
 	// zmq setup
 	broker.Init("ap.configd")
+	broker.Handle(base_def.TOPIC_ENTITY, entity_handler)
 	broker.Connect()
 	defer broker.Disconnect()
 	broker.Ping()
@@ -752,9 +817,6 @@ func main() {
 		expiration_purge()
 		query := &base_msg.ConfigQuery{}
 		proto.Unmarshal(msg[0], query)
-
-		// XXX Query by property or by value?
-		log.Println(query)
 
 		rc := base_msg.ConfigResponse_OP_OK
 		switch *query.Operation {
@@ -797,7 +859,6 @@ func main() {
 			Value:    proto.String(val),
 		}
 
-		log.Println(response)
 		data, err := proto.Marshal(response)
 
 		incoming.SendBytes(data, 0)

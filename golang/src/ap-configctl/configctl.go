@@ -15,8 +15,10 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
-	"log"
+	"fmt"
+	"os"
 	"strconv"
 	"time"
 
@@ -31,10 +33,20 @@ var (
 	config    *ap_common.Config
 )
 
+func show_props(props string) {
+	var root ap_common.PropertyNode
+
+	err := json.Unmarshal([]byte(props), &root)
+	if err != nil {
+		// Assume this was a single value - not a tree
+		fmt.Printf("%s\n", props)
+	} else {
+		ap_common.DumpTree(&root)
+	}
+}
+
 func main() {
 	flag.Parse()
-
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
 	config = ap_common.NewConfig("ap-configctl")
 
@@ -45,7 +57,8 @@ func main() {
 
 	prop := flag.Arg(0)
 	if len(prop) == 0 {
-		log.Fatal("No property specified")
+		fmt.Printf("No property specified\n")
+		os.Exit(1)
 	}
 
 	if *set_value || *add_prop {
@@ -62,7 +75,8 @@ func main() {
 
 		val := flag.Arg(1)
 		if len(val) == 0 {
-			log.Fatalf("No value specified for %s", op)
+			fmt.Printf("No value specified for %s\n", op)
+			os.Exit(1)
 		}
 
 		duration := flag.Arg(2)
@@ -75,23 +89,26 @@ func main() {
 
 		err := f(prop, val, expires)
 		if err != nil {
-			log.Fatalf("property %s failed: %v\n", op, err)
+			fmt.Printf("property %s failed: %v\n", op, err)
+			os.Exit(1)
 		}
-		log.Printf("%s: %v=%v\n", op, prop, val)
+		fmt.Printf("%s: %v=%v\n", op, prop, val)
 	} else if *get_value {
 		for _, arg := range flag.Args() {
 			val, err := config.GetProp(arg)
 			if err != nil {
-				log.Fatalln("property get failed:", err)
+				fmt.Printf("property get failed: %v\n", err)
+				os.Exit(1)
 			}
-			log.Printf("get: %v=%v\n", arg, val)
+			show_props(val)
 		}
 	} else if *del_prop {
 		err := config.DeleteProp(prop)
 		if err != nil {
-			log.Fatalln("property get failed:", err)
+			fmt.Printf("property get failed: %v\n", err)
+			os.Exit(1)
 		}
-		log.Printf("del: %v\n", prop)
+		fmt.Printf("del: %s\n", prop)
 	} else {
 		flag.Usage()
 	}

@@ -86,46 +86,58 @@ type HostapdConf struct {
 }
 
 func config_changed(event []byte) {
-	rewrite := false
+	reset := false
 	config := &base_msg.EventConfig{}
 	proto.Unmarshal(event, config)
 	property := *config.Property
 	path := strings.Split(property[2:], "/")
 
-	// Ignore all properties other than "@/network/*/*"
-	if len(path) != 3 || path[0] != "network" {
-		log.Printf("Ignoring non-network property update: %s\n", property)
-		return
-	}
-	conf, ok := interfaces[path[1]]
-	if !ok {
-		log.Printf("Ignoring update for unknown NIC: %s\n", property)
-		return
-	}
-
-	switch path[2] {
-	case "ssid":
-		conf.SSID = *config.NewValue
-		rewrite = true
-
-	case "passphrase":
-		conf.Passphrase = *config.NewValue
-		rewrite = true
-
-	default:
-		log.Printf("Ignoring update for unknown property: %s\n", property)
+	// Watch for client identifications in @/client/<macaddr>/class.  If a
+	// client changes class, we want it to go through the whole
+	// authentication and connection process again.  Ideally we would just
+	// disassociate that one client, but the big hammer will do for now
+	//
+	if len(path) == 3 && path[0] == "clients" && path[2] == "class" {
+		log.Printf("%s changed class.  Force it to reauthenticate.\n",
+			path[1])
+		reset = true
 	}
 
-	if rewrite {
-		render_hostapd_template(conf)
-		if child_process != nil {
-			// Ideally we would just send the child a SIGHUP
-			// and it would reload the new configuration.
-			// Unfortunately, hostapd seems to need to go
-			// through a full reset before the changes are
-			// correctly propagated to the wifi hw.
-			child_process.Signal(os.Interrupt)
+	// Watch for changes to the network conf
+	if len(path) == 3 && path[0] == "network" {
+		rewrite := false
+		conf, ok := interfaces[path[1]]
+		if !ok {
+			log.Printf("Ignoring update for unknown NIC: %s\n", property)
+			return
 		}
+
+		switch path[2] {
+		case "ssid":
+			conf.SSID = *config.NewValue
+			rewrite = true
+
+		case "passphrase":
+			conf.Passphrase = *config.NewValue
+			rewrite = true
+
+		default:
+			log.Printf("Ignoring update for unknown property: %s\n", property)
+		}
+
+		if rewrite {
+			render_hostapd_template(conf)
+			reset = true
+		}
+	}
+
+	if reset && child_process != nil {
+		// Ideally we would just send the child a SIGHUP and it would
+		// reload the new configuration.  Unfortunately, hostapd seems
+		// to need to go through a full reset before the changes are
+		// correctly propagated to the wifi hw.
+		//
+		child_process.Signal(os.Interrupt)
 	}
 }
 

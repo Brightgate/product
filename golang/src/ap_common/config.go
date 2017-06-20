@@ -12,7 +12,6 @@ package ap_common
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -25,6 +24,32 @@ import (
 	// Ubuntu: requires libzmq3-dev, which is 0MQ 4.2.1.
 	zmq "github.com/pebbe/zmq4"
 )
+
+type PropertyNode struct {
+	Name     string
+	Value    string          `json:"Value,omitempty"`
+	Expires  *time.Time      `json:"Expires,omitempty"`
+	Children []*PropertyNode `json:"Children,omitempty"`
+}
+
+func dumpSubtree(node *PropertyNode, level int) {
+	indent := ""
+	for i := 0; i < level; i++ {
+		indent += "  "
+	}
+	e := ""
+	if node.Expires != nil {
+		e = node.Expires.Format("2006-02-01T15:04:05")
+	}
+	fmt.Printf("%s%s: %s  %s\n", indent, node.Name, node.Value, e)
+	for _, n := range node.Children {
+		dumpSubtree(n, level+1)
+	}
+}
+
+func DumpTree(node *PropertyNode) {
+	dumpSubtree(node, 0)
+}
 
 type Config struct {
 	mutex  sync.Mutex
@@ -79,7 +104,6 @@ func (c *Config) msg(oc base_msg.ConfigQuery_Operation, prop, val string,
 		if len(reply) > 0 {
 			response := &base_msg.ConfigResponse{}
 			proto.Unmarshal(reply[0], response)
-			log.Println(response)
 			if oc == base_msg.ConfigQuery_GET {
 				rval = *response.Value
 			}
