@@ -9,7 +9,7 @@
         "Binary": "ap.configd",
         "DependsOn": "brokerd",
         "Privileged": true,
-	"Options": "-propdir=$APROOT/etc"
+        "Options": "-propdir=$APROOT/etc"
     },
     "dhcp4d": {
         "Name": "dhcp4d",
@@ -34,6 +34,13 @@
         "Binary": "ap.httpd",
         "DependsOn": "configd",
         "Privileged": false
+    },
+    "identifierd": {
+        "Name": "identifierd",
+        "Binary": "ap.identifierd",
+        "DependsOn": "brokerd",
+        "Privileged": false,
+        "Options": "-datadir=$APROOT/etc"
     },
     "logd": {
         "Name": "logd",

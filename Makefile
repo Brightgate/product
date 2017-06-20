@@ -85,6 +85,7 @@ DAEMONS = \
 	$(APPBIN)/ap.dhcp4d \
 	$(APPBIN)/ap.dns4d \
 	$(APPBIN)/ap.httpd \
+	$(APPBIN)/ap.identifierd \
 	$(APPBIN)/ap.logd \
 	$(APPBIN)/ap.mcp \
 	$(APPBIN)/ap.networkd \
@@ -99,9 +100,12 @@ COMMANDS = \
 	$(APPBIN)/ap-run
 
 CONFIGS = \
-	$(APPETC)/prometheus.yml \
 	$(APPETC)/ap_defaults.json \
-	$(APPETC)/mcp.json
+	$(APPETC)/ap_identities.csv \
+	$(APPETC)/ap_mfgid.json \
+	$(APPETC)/mcp.json \
+	$(APPETC)/oui.txt \
+	$(APPETC)/prometheus.yml
 
 DIRS = $(APPBIN) $(APPDOC) $(APPETC) $(APPVAR) $(APPSCAN)
 
@@ -122,8 +126,17 @@ $(APPBIN)/%: ./% | $(APPBIN)
 $(APPETC)/ap_defaults.json: ap_defaults.json | $(APPETC)
 	install -m 0644 $< $(APPETC)
 
+$(APPETC)/ap_identities.csv: ap_identities.csv | $(APPETC)
+	install -m 0644 $< $(APPETC)
+
+$(APPETC)/ap_mfgid.json: ap_mfgid.json | $(APPETC)
+	install -m 0644 $< $(APPETC)
+
 $(APPETC)/mcp.json: golang/src/ap.mcp/mcp.json | $(APPETC)
 	install -m 0644 $< $(APPETC)
+
+$(APPETC)/oui.txt: | $(APPETC)
+	cd $(APPETC) && curl -s -S -O http://standards-oui.ieee.org/oui.txt
 
 $(APPETC)/prometheus.yml: prometheus.yml | $(APPETC)
 	install -m 0644 $< $(APPETC)
@@ -188,6 +201,12 @@ $(APPBIN)/ap.httpd: \
     $(COMMON_SRCS)
 	$(GO) get $(GO_GET_FLAGS) ap.httpd 2>&1 | tee -a get.acc
 	cd $(APPBIN) && $(GO) build ap.httpd
+
+$(APPBIN)/ap.identifierd: \
+    golang/src/ap.identifierd/identifierd.go \
+    $(COMMON_SRCS)
+	$(GO) get $(GO_GET_FLAGS) ap.identifierd 2>&1 | tee -a get.acc
+	cd $(APPBIN) && $(GO) build ap.identifierd
 
 $(APPBIN)/ap.logd: \
     golang/src/ap.logd/logd.go \

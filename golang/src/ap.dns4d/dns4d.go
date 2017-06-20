@@ -28,7 +28,6 @@ package main
 
 import (
 	"data/phishtank"
-	"encoding/binary"
 	"flag"
 	"log"
 	"net"
@@ -43,6 +42,7 @@ import (
 
 	"ap_common"
 	"ap_common/mcp"
+	"ap_common/network"
 	"base_def"
 	"base_msg"
 
@@ -125,9 +125,8 @@ var hosts = map[string]dns_record{
 
 func dns_update(resource *base_msg.EventNetResource) {
 	action := resource.GetAction()
-	ipv4 := make(net.IP, net.IPv4len)
+	ipv4 := network.Uint32ToIPAddr(*resource.Ipv4Address)
 
-	binary.BigEndian.PutUint32(ipv4, resource.GetIpv4Address())
 	arpa, err := dns.ReverseAddr(ipv4.String())
 	if err != nil {
 		log.Println(err)
@@ -215,7 +214,7 @@ func record_client(ipstr string) {
 			},
 			Sender:      proto.String(broker.Name),
 			Debug:       proto.String("-"),
-			Ipv4Address: proto.Uint32(binary.BigEndian.Uint32(addr)),
+			Ipv4Address: proto.Uint32(network.IPAddrToUint32(addr)),
 		}
 
 		err := broker.Publish(entity, base_def.TOPIC_ENTITY)

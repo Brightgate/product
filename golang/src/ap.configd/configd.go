@@ -92,13 +92,11 @@ package main
 
 import (
 	"container/heap"
-	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"regexp"
@@ -110,6 +108,8 @@ import (
 
 	"ap_common"
 	"ap_common/mcp"
+	"ap_common/network"
+
 	"base_def"
 	"base_msg"
 
@@ -346,12 +346,6 @@ func update_notify(prop, val string) {
 	prop_notify(prop, val, base_msg.EventConfig_CHANGE)
 }
 
-func uint64_to_hwaddr(a uint64) net.HardwareAddr {
-	b := make([]byte, 8)
-	binary.BigEndian.PutUint64(b, a)
-	return net.HardwareAddr(b[2:])
-}
-
 /*
  * Placeholder for creating new @/clients/* entries until a real classifier
  * exists.
@@ -365,7 +359,7 @@ func entity_handler(event []byte) {
 		return
 	}
 
-	hwaddr := uint64_to_hwaddr(*entity.MacAddress)
+	hwaddr := network.Uint64ToHWAddr(*entity.MacAddress)
 	path := "@/clients/" + hwaddr.String()
 	node := cfg_property_parse(path, true)
 
@@ -387,8 +381,7 @@ func entity_handler(event []byte) {
 		if n, ok = fields["ipv4"]; !ok {
 			n = property_add(node, "ipv4", path+"/ipv4")
 		}
-		ip := make(net.IP, 4)
-		binary.BigEndian.PutUint32(ip, *entity.Ipv4Address)
+		ip := network.Uint32ToIPAddr(*entity.Ipv4Address)
 		n.Value = ip.String()
 	}
 

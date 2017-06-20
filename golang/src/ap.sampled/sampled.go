@@ -15,7 +15,6 @@ package main
 import (
 	"base_def"
 	"bytes"
-	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"io"
@@ -336,7 +335,7 @@ func auditor() {
 					Sender:      proto.String(broker.Name),
 					Debug:       proto.String("-"),
 					MacAddress:  proto.Uint64(network.HWAddrToUint64(hwaddr)),
-					Ipv4Address: proto.Uint32(binary.BigEndian.Uint32(r.ipaddr)),
+					Ipv4Address: proto.Uint32(network.IPAddrToUint32(r.ipaddr)),
 				}
 
 				err := broker.Publish(entity, base_def.TOPIC_ENTITY)

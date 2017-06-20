@@ -152,6 +152,7 @@ func ArpBroadcastWait(handle *pcap.Handle, src *ArpData, ip net.IP) net.Hardware
 	return ArpRequestWait(handle, src, dst)
 }
 
+// IsMacMulticast checks if the supplied MAC address begins 01:00:5E
 func IsMacMulticast(a net.HardwareAddr) bool {
 	return a[3]&0x80 == 0x80 && bytes.HasPrefix(a, macMcast)
 }
@@ -164,6 +165,25 @@ func HWAddrToUint64(a net.HardwareAddr) uint64 {
 	copy(hwaddr[2:], a)
 
 	return binary.BigEndian.Uint64(hwaddr)
+}
+
+// Uint64ToHWAddr decodes a uint64 into a net.HardwareAddr
+func Uint64ToHWAddr(a uint64) net.HardwareAddr {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, a)
+	return net.HardwareAddr(b[2:])
+}
+
+// IPAddrToUint32 encodes a net.IP as a uint32
+func IPAddrToUint32(a net.IP) uint32 {
+	return binary.BigEndian.Uint32(a)
+}
+
+// Uint32ToIPAddr decodes a uint32 into a new.IP
+func Uint32ToIPAddr(a uint32) net.IP {
+	ipv4 := make(net.IP, net.IPv4len)
+	binary.BigEndian.PutUint32(ipv4, a)
+	return ipv4
 }
 
 // Wait for a network device to reach the 'up' state.  Returns an error on

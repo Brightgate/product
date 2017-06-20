@@ -121,6 +121,7 @@ elif [[ $1 == "start-world" ]]; then
 	binrun ap.configd --propdir $etc &
 	sleep 3
 	sudobinrun ap.networkd &
+	binrun ap.identifierd --datadir $etc &
 	sudobinrun ap.sampled &
 	sudobinrun ap.scand --scandir $spool &
 	sudobinrun ap.dhcp4d &

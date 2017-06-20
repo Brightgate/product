@@ -16,7 +16,6 @@
 package main
 
 import (
-	"encoding/binary"
 	"flag"
 	"log"
 	"math/rand"
@@ -162,7 +161,7 @@ func notifyNewEntity(p dhcp.Packet, options dhcp.Options) {
 		Sender:      proto.String(broker.Name),
 		Debug:       proto.String("-"),
 		MacAddress:  proto.Uint64(hwaddr_u64),
-		Ipv4Address: proto.Uint32(binary.BigEndian.Uint32(ipaddr)),
+		Ipv4Address: proto.Uint32(network.IPAddrToUint32(ipaddr)),
 		DnsName:     proto.String(hostname),
 	}
 
@@ -187,7 +186,7 @@ func notifyClaimed(p dhcp.Packet, ipaddr net.IP, name string) {
 		Sender:      proto.String(broker.Name),
 		Debug:       proto.String("-"),
 		Action:      &action,
-		Ipv4Address: proto.Uint32(binary.BigEndian.Uint32(ipaddr)),
+		Ipv4Address: proto.Uint32(network.IPAddrToUint32(ipaddr)),
 		DnsName:     proto.String(name),
 	}
 
@@ -213,7 +212,7 @@ func notifyProvisioned(p dhcp.Packet, ipaddr net.IP) {
 		Sender:      proto.String(broker.Name),
 		Debug:       proto.String("-"),
 		Action:      &action,
-		Ipv4Address: proto.Uint32(binary.BigEndian.Uint32(ipaddr)),
+		Ipv4Address: proto.Uint32(network.IPAddrToUint32(ipaddr)),
 	}
 
 	err := broker.Publish(resource, base_def.TOPIC_RESOURCE)
@@ -237,7 +236,7 @@ func notifyRelease(ipaddr net.IP) {
 		Sender:      proto.String(broker.Name),
 		Debug:       proto.String("-"),
 		Action:      &action,
-		Ipv4Address: proto.Uint32(binary.BigEndian.Uint32(ipaddr)),
+		Ipv4Address: proto.Uint32(network.IPAddrToUint32(ipaddr)),
 	}
 
 	err := broker.Publish(resource, base_def.TOPIC_RESOURCE)

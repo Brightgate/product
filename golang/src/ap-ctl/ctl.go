@@ -45,7 +45,7 @@ func printStatus(incoming string) {
 	}
 	if len(status) == 1 {
 		for _, s := range status {
-			fmt.Printf(s.Status)
+			fmt.Println(s.Status)
 		}
 		return
 	}
