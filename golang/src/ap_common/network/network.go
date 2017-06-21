@@ -14,6 +14,7 @@ package network
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"net"
 	"time"
@@ -152,4 +153,14 @@ func ArpBroadcastWait(handle *pcap.Handle, src *ArpData, ip net.IP) net.Hardware
 
 func IsMacMulticast(a net.HardwareAddr) bool {
 	return a[3]&0x80 == 0x80 && bytes.HasPrefix(a, macMcast)
+}
+
+// HWAddrToUint64 encodes a net.HardwareAddr as a uint64
+func HWAddrToUint64(a net.HardwareAddr) uint64 {
+	hwaddr := make([]byte, 8)
+	hwaddr[0] = 0
+	hwaddr[1] = 0
+	copy(hwaddr[2:], a)
+
+	return binary.BigEndian.Uint64(hwaddr)
 }

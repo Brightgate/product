@@ -42,7 +42,7 @@ var debug = false
 type hdlr_f func(event []byte)
 
 type Broker struct {
-	name          string
+	Name          string
 	publisher_mtx sync.Mutex
 	publisher     *zmq.Socket
 	subscriber    *zmq.Socket
@@ -57,28 +57,33 @@ func (b *Broker) Ping() {
 			Seconds: proto.Int64(t.Unix()),
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
-		Sender:      proto.String(b.name),
+		Sender:      proto.String(b.Name),
 		Debug:       proto.String("-"),
 		PingMessage: proto.String("-"),
 	}
 
-	data, err := proto.Marshal(ping)
+	err := b.Publish(ping, base_def.TOPIC_PING)
 	if err != nil {
-		log.Printf("Error marshalling ping: %v\n", err)
-	} else {
-		err = b.Publish(base_def.TOPIC_PING, data)
-		if err != nil {
-			log.Printf("Error sending ping: %v\n", err)
-		}
+		log.Printf("couldn't publish %s for %s: %v\n", base_def.TOPIC_PING, b.Name, err)
 	}
 }
 
-func (b *Broker) Publish(topic string, event []byte) error {
-	b.publisher_mtx.Lock()
-	_, err := b.publisher.SendMessage(topic, event)
-	b.publisher_mtx.Unlock()
+// Publish first marshals the protobuf into its wire format and then sends the
+// resulting data on the broker's ZMQ socket
+func (b *Broker) Publish(pb proto.Message, topic string) error {
+	data, err := proto.Marshal(pb)
+	if err != nil {
+		return fmt.Errorf("error marshalling %s: %v", topic, err)
+	}
 
-	return err
+	b.publisher_mtx.Lock()
+	_, err = b.publisher.SendMessage(topic, data)
+	b.publisher_mtx.Unlock()
+	if err != nil {
+		return fmt.Errorf("error sending %s: %v", topic, err)
+	}
+
+	return nil
 }
 
 func event_listener(b *Broker) {
@@ -96,17 +101,17 @@ func event_listener(b *Broker) {
 		} else if debug {
 			if ok {
 				log.Printf("[%s] ignoring topic: %s\n",
-					b.name, topic)
+					b.Name, topic)
 			} else {
 				log.Printf("[%s] unknown topic: %s\n",
-					b.name, topic)
+					b.Name, topic)
 			}
 		}
 	}
 }
 
 func (b *Broker) Handle(topic string, handler hdlr_f) {
-	if len(b.name) == 0 {
+	if len(b.Name) == 0 {
 		log.Panic("Broker hasn't been initialized yet")
 	}
 	b.handlers[topic] = handler
@@ -117,7 +122,7 @@ func (b *Broker) Disconnect() {
 }
 
 func (b *Broker) Connect() {
-	if len(b.name) == 0 {
+	if len(b.Name) == 0 {
 		log.Panic("Broker hasn't been initialized yet")
 	}
 
@@ -133,14 +138,14 @@ func (b *Broker) Connect() {
 }
 
 func (b *Broker) Init(name string) {
-	if len(b.name) > 0 {
+	if len(b.Name) > 0 {
 		log.Panic("Broker can't be initialized multiple times")
 	}
 	if len(name) == 0 {
 		log.Panic("Broker consumer must give its name")
 	}
 
-	b.name = fmt.Sprintf("%s(%d)", name, os.Getpid())
+	b.Name = fmt.Sprintf("%s(%d)", name, os.Getpid())
 	// Add placeholder handlers in the map for known topics
 	b.handlers = make(map[string]hdlr_f)
 	for _, v := range known_topics {

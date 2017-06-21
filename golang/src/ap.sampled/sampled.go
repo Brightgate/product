@@ -15,6 +15,8 @@ package main
 import (
 	"base_def"
 	"bytes"
+	"encoding/binary"
+	"encoding/json"
 	"flag"
 	"io"
 	"log"
@@ -73,6 +75,7 @@ var (
 
 	macSelf net.HardwareAddr
 	broker  ap_common.Broker
+	config  *ap_common.Config
 )
 
 const (
@@ -200,6 +203,12 @@ func updateRecord(hwaddr net.HardwareAddr, ipaddr net.IP, auth bool) {
 	}
 }
 
+func deleteRecord(hwaddr net.HardwareAddr) {
+	auditMtx.Lock()
+	delete(auditRecords, layers.NewMACEndpoint(hwaddr))
+	auditMtx.Unlock()
+}
+
 // Decode only the layers we care about:
 //   - Look for ARP request and reply to associate MAC and IP
 //   - Look for IPv4 to associate MAC and IP
@@ -278,15 +287,10 @@ func dumpPackets() {
 }
 
 func configChanged(event []byte) {
-	config := &base_msg.EventConfig{}
-	proto.Unmarshal(event, config)
-	property := *config.Property
+	eventConfig := &base_msg.EventConfig{}
+	proto.Unmarshal(event, eventConfig)
+	property := *eventConfig.Property
 	path := strings.Split(property[2:], "/")
-
-	// XXX: Need to handle DELETE and EXPIRE
-	if *config.Type != base_msg.EventConfig_CHANGE {
-		return
-	}
 
 	// Ignore all properties other than "@/dhcp/leases/*"
 	if len(path) != 3 || path[0] != "dhcp" || path[1] != "leases" {
@@ -299,12 +303,17 @@ func configChanged(event []byte) {
 		return
 	}
 
-	hwaddr, err := net.ParseMAC(*config.NewValue)
+	hwaddr, err := net.ParseMAC(*eventConfig.NewValue)
 	if err != nil {
-		log.Printf("invalid MAC address %s", *config.NewValue)
+		log.Printf("invalid MAC address %s", *eventConfig.NewValue)
 		return
 	}
-	updateRecord(hwaddr, ipv4, true)
+
+	if *eventConfig.Type == base_msg.EventConfig_CHANGE {
+		updateRecord(hwaddr, ipv4, true)
+	} else {
+		deleteRecord(hwaddr)
+	}
 }
 
 func auditor() {
@@ -313,8 +322,24 @@ func auditor() {
 			if r.audit == conflict {
 				log.Printf("CONFLICT FOUND: %s using %s\n", ep, r.ipaddr)
 			} else if r.audit == foreign {
+				t := time.Now()
 				log.Printf("found unknown net entity: %s using %s\n", ep, r.ipaddr)
-				// issue net.entity?
+				hwaddr, _ := net.ParseMAC(ep.String())
+				entity := &base_msg.EventNetEntity{
+					Timestamp: &base_msg.Timestamp{
+						Seconds: proto.Int64(t.Unix()),
+						Nanos:   proto.Int32(int32(t.Nanosecond())),
+					},
+					Sender:      proto.String(broker.Name),
+					Debug:       proto.String("-"),
+					MacAddress:  proto.Uint64(network.HWAddrToUint64(hwaddr)),
+					Ipv4Address: proto.Uint32(binary.BigEndian.Uint32(r.ipaddr)),
+				}
+
+				err := broker.Publish(entity, base_def.TOPIC_ENTITY)
+				if err != nil {
+					log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_ENTITY, err)
+				}
 			}
 		}
 		time.Sleep(*auditTime)
@@ -330,6 +355,32 @@ func signalHandler() {
 	os.Exit(0)
 }
 
+func getLeases() {
+	var root ap_common.PropertyNode
+
+	tree, err := config.GetProp("@/dhcp/leases")
+	if len(tree) == 0 {
+		if err != nil {
+			log.Printf("Failed to fetch lease info: %v\n", err)
+		}
+		return
+	}
+
+	if err = json.Unmarshal([]byte(tree), &root); err != nil {
+		log.Printf("Failed to decode lease info: %v\n", err)
+	}
+
+	for _, s := range root.Children {
+		ip := net.ParseIP(s.Name)
+		hwaddr, err := net.ParseMAC(s.Value)
+		if err != nil {
+			log.Printf("invalid MAC address %s", s.Value)
+		} else {
+			updateRecord(hwaddr, ip, true)
+		}
+	}
+}
+
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	log.Println("start")
@@ -339,6 +390,16 @@ func main() {
 	if *loopTime < *capTime {
 		log.Fatalln("loop-time should be greater than cap-time")
 	}
+
+	self, err := net.InterfaceByName(*iface)
+	if err != nil {
+		log.Fatalf("Failed to get interface %s:", *iface, err)
+	}
+	macSelf = self.HardwareAddr
+
+	// Interface to configd
+	config = ap_common.NewConfig("ap.sampled")
+	getLeases()
 
 	broker.Init("ap.sampled")
 	broker.Connect()
@@ -358,14 +419,6 @@ func main() {
 			dst: make(map[gopacket.Endpoint]uint64),
 		}
 	}
-
-	self, err := net.InterfaceByName(*iface)
-	if err != nil {
-		log.Fatalf("Failed to get interface %s:", *iface, err)
-	}
-	macSelf = self.HardwareAddr
-
-	// XXX: Ask for all the DHCP leases in the config
 
 	if *verbose {
 		dumpPackets()

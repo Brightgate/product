@@ -243,7 +243,7 @@ func expiration_handler() {
 			next.index = -1
 			next.Expires = nil
 			expired = append(expired, next.path)
-			expiration_notify(next.path)
+			expiration_notify(next.path, next.Value)
 		}
 
 		if len(exp_heap) > 0 {
@@ -324,21 +324,20 @@ func prop_notify(prop, val string, action base_msg.EventConfig_Type) {
 			Seconds: proto.Int64(t.Unix()),
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
-		Sender:   proto.String(fmt.Sprintf("ap.configd(%d)", os.Getpid())),
+		Sender:   proto.String(broker.Name),
 		Type:     &action,
 		Property: proto.String(prop),
 		NewValue: proto.String(val),
 	}
 
-	data, err := proto.Marshal(entity)
-	err = broker.Publish(base_def.TOPIC_CONFIG, data)
+	err := broker.Publish(entity, base_def.TOPIC_CONFIG)
 	if err != nil {
 		log.Printf("Failed to propagate config update: %v", err)
 	}
 }
 
-func expiration_notify(prop string) {
-	prop_notify(prop, "-", base_msg.EventConfig_EXPIRE)
+func expiration_notify(prop, val string) {
+	prop_notify(prop, val, base_msg.EventConfig_EXPIRE)
 }
 
 func update_notify(prop, val string) {

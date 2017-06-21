@@ -30,7 +30,6 @@ import (
 	"data/phishtank"
 	"encoding/binary"
 	"flag"
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -211,13 +210,12 @@ func record_client(ipstr string) {
 				Seconds: proto.Int64(t.Unix()),
 				Nanos:   proto.Int32(int32(t.Nanosecond())),
 			},
-			Sender:      proto.String(fmt.Sprintf("ap.dns4d(%d)", os.Getpid())),
+			Sender:      proto.String(broker.Name),
 			Debug:       proto.String("-"),
 			Ipv4Address: proto.Uint32(binary.BigEndian.Uint32(addr)),
 		}
 
-		data, err := proto.Marshal(entity)
-		err = broker.Publish(base_def.TOPIC_ENTITY, data)
+		err := broker.Publish(entity, base_def.TOPIC_ENTITY)
 		if err != nil {
 			log.Println(err)
 		}
@@ -330,7 +328,7 @@ func local_handler(w dns.ResponseWriter, r *dns.Msg) {
 			Seconds: proto.Int64(t.Unix()),
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
-		Sender:       proto.String(fmt.Sprintf("ap.dns4d(%d)", os.Getpid())),
+		Sender:       proto.String(broker.Name),
 		Debug:        proto.String("local_handler"),
 		Requestor:    proto.String(addr.String()),
 		IdentityUuid: proto.String(base_def.ZERO_UUID),
@@ -339,8 +337,7 @@ func local_handler(w dns.ResponseWriter, r *dns.Msg) {
 		Response:     responses,
 	}
 
-	data, _ := proto.Marshal(entity)
-	err := broker.Publish(base_def.TOPIC_REQUEST, data)
+	err := broker.Publish(entity, base_def.TOPIC_REQUEST)
 	if err != nil {
 		log.Println(err)
 	}
@@ -427,8 +424,7 @@ func proxy_handler(w dns.ResponseWriter, r *dns.Msg) {
 			Seconds: proto.Int64(t.Unix()),
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
-		Sender:       proto.String(fmt.Sprintf("ap.dns4d(%d)", os.Getpid())),
-		Debug:        proto.String("proxy_handler"),
+		Sender:       proto.String(broker.Name),
 		Requestor:    proto.String(addr.String()),
 		IdentityUuid: proto.String(base_def.ZERO_UUID),
 		Protocol:     &protocol,
@@ -436,8 +432,7 @@ func proxy_handler(w dns.ResponseWriter, r *dns.Msg) {
 		Response:     responses,
 	}
 
-	data, err := proto.Marshal(entity)
-	err = broker.Publish(base_def.TOPIC_REQUEST, data)
+	err := broker.Publish(entity, base_def.TOPIC_REQUEST)
 	if err != nil {
 		log.Println(err)
 	}

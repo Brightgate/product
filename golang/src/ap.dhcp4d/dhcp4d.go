@@ -22,7 +22,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"log"
 	"math/rand"
 	"net"
@@ -34,6 +33,7 @@ import (
 	"time"
 
 	"ap_common"
+	"ap_common/network"
 	"base_def"
 	"base_msg"
 
@@ -114,15 +114,6 @@ func config_event(event []byte) {
 	}
 }
 
-func hwaddr_to_uint64(ha net.HardwareAddr) uint64 {
-	ext_hwaddr := make([]byte, 8)
-	ext_hwaddr[0] = 0
-	ext_hwaddr[1] = 0
-	copy(ext_hwaddr[2:], ha)
-
-	return binary.BigEndian.Uint64(ext_hwaddr)
-}
-
 func leaseProperty(ipaddr net.IP) string {
 	return "@/dhcp/leases/" + ipaddr.String()
 }
@@ -134,7 +125,7 @@ func leaseProperty(ipaddr net.IP) string {
 func notifyNewEntity(p dhcp.Packet, options dhcp.Options) {
 	t := time.Now()
 	ipaddr := p.CIAddr()
-	hwaddr_u64 := hwaddr_to_uint64(p.CHAddr())
+	hwaddr_u64 := network.HWAddrToUint64(p.CHAddr())
 	hostname := string(options[dhcp.OptionHostName])
 
 	log.Printf("New client %s (name: %q incoming IP address: %s)\n",
@@ -144,21 +135,16 @@ func notifyNewEntity(p dhcp.Packet, options dhcp.Options) {
 			Seconds: proto.Int64(t.Unix()),
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
-		Sender:      proto.String(fmt.Sprintf("ap.dhcp4d(%d)", os.Getpid())),
+		Sender:      proto.String(broker.Name),
 		Debug:       proto.String("-"),
 		MacAddress:  proto.Uint64(hwaddr_u64),
 		Ipv4Address: proto.Uint32(binary.BigEndian.Uint32(ipaddr)),
 		DnsName:     proto.String(hostname),
 	}
 
-	data, err := proto.Marshal(entity)
+	err := broker.Publish(entity, base_def.TOPIC_ENTITY)
 	if err != nil {
-		log.Printf("entity couldn't marshal: %v", err)
-	} else {
-		err = broker.Publish(base_def.TOPIC_ENTITY, data)
-		if err != nil {
-			log.Printf("couldn't send %v", err)
-		}
+		log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_ENTITY, err)
 	}
 }
 
@@ -169,26 +155,21 @@ func notifyClaimed(p dhcp.Packet, ipaddr net.IP, name string) {
 	t := time.Now()
 
 	action := base_msg.EventNetResource_CLAIMED
-	entity := &base_msg.EventNetResource{
+	resource := &base_msg.EventNetResource{
 		Timestamp: &base_msg.Timestamp{
 			Seconds: proto.Int64(t.Unix()),
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
-		Sender:      proto.String(fmt.Sprintf("ap.dhcp4d(%d)", os.Getpid())),
+		Sender:      proto.String(broker.Name),
 		Debug:       proto.String("-"),
 		Action:      &action,
 		Ipv4Address: proto.Uint32(binary.BigEndian.Uint32(ipaddr)),
 		DnsName:     proto.String(name),
 	}
 
-	data, err := proto.Marshal(entity)
+	err := broker.Publish(resource, base_def.TOPIC_RESOURCE)
 	if err != nil {
-		log.Printf("entity couldn't marshal: %v", err)
-	} else {
-		err = broker.Publish(base_def.TOPIC_RESOURCE, data)
-		if err != nil {
-			log.Printf("couldn't send %v", err)
-		}
+		log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_RESOURCE, err)
 	}
 }
 
@@ -200,25 +181,20 @@ func notifyProvisioned(p dhcp.Packet, ipaddr net.IP) {
 	t := time.Now()
 
 	action := base_msg.EventNetResource_PROVISIONED
-	entity := &base_msg.EventNetResource{
+	resource := &base_msg.EventNetResource{
 		Timestamp: &base_msg.Timestamp{
 			Seconds: proto.Int64(t.Unix()),
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
-		Sender:      proto.String(fmt.Sprintf("ap.dhcp4d(%d)", os.Getpid())),
+		Sender:      proto.String(broker.Name),
 		Debug:       proto.String("-"),
 		Action:      &action,
 		Ipv4Address: proto.Uint32(binary.BigEndian.Uint32(ipaddr)),
 	}
 
-	data, err := proto.Marshal(entity)
+	err := broker.Publish(resource, base_def.TOPIC_RESOURCE)
 	if err != nil {
-		log.Printf("entity couldn't marshal: %v", err)
-	} else {
-		err = broker.Publish(base_def.TOPIC_RESOURCE, data)
-		if err != nil {
-			log.Printf("couldn't send %v", err)
-		}
+		log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_RESOURCE, err)
 	}
 }
 
@@ -229,25 +205,20 @@ func notifyProvisioned(p dhcp.Packet, ipaddr net.IP) {
 func notifyRelease(ipaddr net.IP) {
 	t := time.Now()
 	action := base_msg.EventNetResource_RELEASED
-	entity := &base_msg.EventNetResource{
+	resource := &base_msg.EventNetResource{
 		Timestamp: &base_msg.Timestamp{
 			Seconds: proto.Int64(t.Unix()),
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
-		Sender:      proto.String(fmt.Sprintf("ap.dhcp4d(%d)", os.Getpid())),
+		Sender:      proto.String(broker.Name),
 		Debug:       proto.String("-"),
 		Action:      &action,
 		Ipv4Address: proto.Uint32(binary.BigEndian.Uint32(ipaddr)),
 	}
 
-	data, err := proto.Marshal(entity)
+	err := broker.Publish(resource, base_def.TOPIC_RESOURCE)
 	if err != nil {
-		log.Printf("entity couldn't marshal: %v", err)
-	} else {
-		err = broker.Publish(base_def.TOPIC_RESOURCE, data)
-		if err != nil {
-			log.Printf("couldn't send %v", err)
-		}
+		log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_RESOURCE, err)
 	}
 }
 
