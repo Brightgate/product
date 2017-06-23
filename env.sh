@@ -12,7 +12,7 @@
 if [[ -d /opt/net.b10e/go ]]; then
 	export GOROOT=/opt/net.b10e/go
 else
-	export GOROOT=$(HOME)/go
+	export GOROOT=$HOME/go
 fi
 export GOPATH=$(pwd)/golang
 export PATH=$GOPATH/bin:$GOROOT/bin:$PATH

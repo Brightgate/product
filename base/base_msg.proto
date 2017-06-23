@@ -15,7 +15,8 @@
 // partitioning is evident.  So that we might combine the messages into
 // a smaller set of unified messages in the future, we partition the
 // per-message field numbers into ranges.  (This choice trades off
-// message size against later refactoring.)
+// message size against later refactoring.) When adding a new message type,
+// take the range roughly 100 above the message above.
 //
 // ## Common field numbers
 //
@@ -261,4 +262,46 @@ message ConfigResponse {
 
 	optional string property = 0x2001;
 	optional string value = 0x2002;
+}
+
+// Reports information from single port scan
+message ScanPort {
+	// host information
+	repeated string address = 0x01;
+	repeated string addr_type = 0x02;
+	repeated string hostname = 0x03;
+	repeated string hostname_type = 0x04;
+	required Timestamp scan_time = 0x05;
+
+	// port information
+	required string status = 0x06;
+	required string status_reason = 0x07;
+	optional int32 port_id = 0x08;
+	optional string protocol = 0x09;
+	optional string state = 0x0a;
+	optional string state_reason = 0x0b;
+	optional string service_name = 0x0c;
+	optional string service_method = 0x0d;
+	optional int32 confidence = 0x0e;
+	optional string device_type = 0x0f;
+	optional string product = 0x10;
+	optional string extra_info = 0x11;
+
+	// extra port info (closed|filtered)
+	optional string extra_port_state = 0x12;
+	optional int32 extra_port_count = 0x13;
+	optional string extra_port_reason = 0x14;
+}
+
+// Contains information about newest network scan
+// @topic "net.scan", TOPIC_SCAN
+// @range 0x900
+message EventNetScan {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+	required string scan_location = 0x900;
+	required string start_info = 0x901;
+	repeated ScanPort port_scan = 0x902;	
+	required string summary = 0x903;
 }

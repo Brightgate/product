@@ -29,6 +29,7 @@ TOPIC_ENTITY = b"net.entity"
 TOPIC_REQUEST = b"net.request"
 TOPIC_RESOURCE = b"net.resource"
 TOPIC_EXCEPTION = b"net.exception"
+TOPIC_SCAN = b"net.scan"
 
 BROKER_PROMETHEUS_PORT = 3200
 HTTPD_PROMETHEUS_PORT = 3201

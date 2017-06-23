@@ -77,6 +77,7 @@ APPBIN=$(APPBASE)/bin
 APPDOC=$(APPBASE)/share/doc
 APPETC=$(APPBASE)/etc
 APPVAR=$(APPBASE)/var
+APPSCAN=$(APPVAR)/spool/netscans
 
 DAEMONS = \
 	$(APPBIN)/ap.brokerd \
@@ -87,7 +88,8 @@ DAEMONS = \
 	$(APPBIN)/ap.httpd \
 	$(APPBIN)/ap.logd \
 	$(APPBIN)/ap.mcp \
-	$(APPBIN)/ap.sampled
+	$(APPBIN)/ap.sampled \
+	$(APPBIN)/ap.scand
 
 COMMANDS = \
 	$(APPBIN)/ap-arpspoof \
@@ -102,7 +104,7 @@ CONFIGS = \
 	$(APPETC)/ap_defaults.json \
 	$(APPETC)/mcp.json
 
-DIRS = $(APPBIN) $(APPDOC) $(APPETC) $(APPVAR)
+DIRS = $(APPBIN) $(APPDOC) $(APPETC) $(APPVAR) $(APPSCAN)
 
 install: $(COMMANDS) $(DAEMONS) $(CONFIGS) $(DIRS) docs
 
@@ -135,6 +137,9 @@ $(APPDOC):
 
 $(APPETC):
 	mkdir -p $(APPETC)
+
+$(APPSCAN):
+	mkdir -p $(APPSCAN)
 
 $(APPVAR):
 	mkdir -p $(APPVAR)
@@ -229,6 +234,12 @@ $(APPBIN)/ap.sampled: \
     $(COMMON_SRCS)
 	$(GO) get $(GO_GET_FLAGS) ap.sampled 2>&1 | tee -a get.acc
 	cd $(APPBIN) && $(GO) build ap.sampled
+
+$(APPBIN)/ap.scand: \
+    golang/src/ap.scand/scand.go \
+    $(COMMON_SRCS)
+	$(GO) get $(GO_GET_FLAGS) ap.scand 2>&1 | tee -a get.acc
+	cd $(APPBIN) && $(GO) build ap.scand
 
 $(APPBIN)/pi-netstrap: pi-netstrap.bash
 	install -m 0755 $< $@

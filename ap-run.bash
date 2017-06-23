@@ -31,6 +31,7 @@ fi
 bin=$root/opt/com.brightgate/bin
 etc=$root/opt/com.brightgate/etc
 var=$root/opt/com.brightgate/var
+spool=$var/spool
 
 function log_error {
 	echo $(date +0%Y-%m-%d\ %H:%M:%S) $red{$1} $offgreen$bold$2$offbold
@@ -76,6 +77,7 @@ Usage:	ap-run broker
 	ap-run actord
 	ap-run exploitd
 	ap-run sampled
+	ap-run scand
 	ap-run prometheus
 
 	ap-run start-world
@@ -104,6 +106,8 @@ elif [[ $1 == prometheus ]]; then
 	binrun prometheus -config.file=$etc/prometheus.yml -storage.local.path="$var/prometheus-data"
 elif [[ $1 == sampled ]]; then
 	sudobinrun sampled
+elif [[ $1 == scand ]]; then
+	sudobinrun ap.scand --scandir $spool
 elif [[ $1 == analyzerd ]]; then
 	nyi $1
 elif [[ $1 == actord ]]; then
@@ -120,6 +124,7 @@ elif [[ $1 == "start-world" ]]; then
 	binrun ap.configd --propdir $etc &
 	sleep 3
 	sudobinrun ap.sampled &
+	sudobinrun ap.scand --scandir $spool &
 	sudobinrun ap.hostapd.m &
 	sudobinrun ap.dhcp4d &
 	sudobinrun ap.dns4d &

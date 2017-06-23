@@ -30,6 +30,7 @@ const (
 	TOPIC_REQUEST   = "net.request"
 	TOPIC_RESOURCE  = "net.resource"
 	TOPIC_EXCEPTION = "net.exception"
+	TOPIC_SCAN      = "net.scan"
 
 	BROKER_PROMETHEUS_PORT   = ":3200"
 	HTTPD_PROMETHEUS_PORT    = ":3201"

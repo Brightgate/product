@@ -29,12 +29,13 @@ import (
 // between topics a daemon doesn't recognize and those it is choosing to ignore.
 // This has no functional impact, other than being logged differently in
 // event_listener()
-var known_topics = [5]string{
+var known_topics = [6]string{
 	base_def.TOPIC_PING,
 	base_def.TOPIC_CONFIG,
 	base_def.TOPIC_ENTITY,
 	base_def.TOPIC_RESOURCE,
 	base_def.TOPIC_REQUEST,
+	base_def.TOPIC_SCAN,
 }
 
 var debug = false
