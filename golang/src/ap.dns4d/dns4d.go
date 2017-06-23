@@ -42,6 +42,7 @@ import (
 	"time"
 
 	"ap_common"
+	"ap_common/mcp"
 	"base_def"
 	"base_msg"
 
@@ -73,6 +74,8 @@ var (
 
 	hosts_mtx sync.Mutex
 )
+
+const pname = "ap.dns4d"
 
 // Terminate dom with '.'.
 const dom = "blueslugs.com."
@@ -425,6 +428,7 @@ func proxy_handler(w dns.ResponseWriter, r *dns.Msg) {
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
 		Sender:       proto.String(broker.Name),
+		Debug:        proto.String("proxy_handler"),
 		Requestor:    proto.String(addr.String()),
 		IdentityUuid: proto.String(base_def.ZERO_UUID),
 		Protocol:     &protocol,
@@ -445,7 +449,10 @@ func init() {
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
-	log.Println("start")
+	mcp, err := mcp.New(pname)
+	if err != nil {
+		log.Printf("Failed to connect to mcp\n")
+	}
 
 	// Need to have certain network capabilities.
 	// priv_net_bind_service = prctl.cap_effective.net_bind_service
@@ -470,7 +477,7 @@ func main() {
 
 	log.Println("prometheus client launched")
 
-	broker.Init("ap.dns4d")
+	broker.Init(pname)
 	broker.Handle(base_def.TOPIC_CONFIG, config_changed)
 	broker.Handle(base_def.TOPIC_RESOURCE, resource_changed)
 	broker.Connect()
@@ -492,6 +499,9 @@ func main() {
 	dns.HandleFunc("blueslugs.com.", local_handler)
 	dns.HandleFunc(".", proxy_handler)
 
+	if mcp != nil {
+		mcp.SetStatus("online")
+	}
 	go func() {
 		srv := &dns.Server{Addr: ":" + strconv.Itoa(*port), Net: "udp"}
 		if err := srv.ListenAndServe(); err != nil {

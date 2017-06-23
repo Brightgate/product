@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"ap_common"
+	"ap_common/mcp"
 	"ap_common/network"
 	"base_def"
 	"base_msg"
@@ -54,6 +55,8 @@ var (
 	broker         ap_common.Broker
 	config         *ap_common.Config
 )
+
+const pname = "ap.dhcp4d"
 
 /*******************************************************
  *
@@ -772,9 +775,12 @@ func initClientMap() {
 // st_request_fail_busy = attr.ib(init=False, default=0)
 
 func main() {
-	log.Printf("Starting\n")
-
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
+	mcp, err := mcp.New(pname)
+	if err != nil {
+		log.Printf("Failed to connect to mcp\n")
+	}
 
 	//     # Need to have certain network capabilities.
 	//     priv_net_bind_service = prctl.cap_effective.net_bind_service
@@ -794,17 +800,21 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
-	broker.Init("ap.dhcp4d")
+	broker.Init(pname)
 	broker.Handle(base_def.TOPIC_CONFIG, config_event)
 	broker.Connect()
 	defer broker.Disconnect()
-
 	broker.Ping()
 
 	// Interface to configd
-	config = ap_common.NewConfig("ap.dhcp4d")
+	config = ap_common.NewConfig(pname)
 
 	initClientMap()
+
+	if mcp != nil {
+		mcp.SetStatus("online")
+	}
+
 	initServeDHCP()
 	log.Printf("Shutting down\n")
 }

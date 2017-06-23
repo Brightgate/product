@@ -26,6 +26,7 @@ import (
 	"syscall"
 
 	"ap_common"
+	"ap_common/mcp"
 	"base_def"
 	"base_msg"
 
@@ -36,6 +37,8 @@ import (
 
 var addr = flag.String("listen-address", base_def.LOGD_PROMETHEUS_PORT,
 	"The address to listen on for HTTP requests.")
+
+const pname = "ap.logd"
 
 func handle_ping(event []byte) {
 	// XXX pings were green
@@ -75,18 +78,19 @@ func main() {
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
-	log.Println("start")
-
 	flag.Parse()
 
-	log.Println("cli flags parsed")
+	mcp, err := mcp.New(pname)
+	if err != nil {
+		log.Printf("Failed to connect to mcp\n")
+	}
 
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
 	log.Println("prometheus client launched")
 
-	b.Init("ap.logd")
+	b.Init(pname)
 	b.Handle(base_def.TOPIC_PING, handle_ping)
 	b.Handle(base_def.TOPIC_CONFIG, handle_config)
 	b.Handle(base_def.TOPIC_ENTITY, handle_entity)
@@ -94,6 +98,10 @@ func main() {
 	b.Handle(base_def.TOPIC_REQUEST, handle_request)
 	b.Connect()
 	defer b.Disconnect()
+
+	if mcp != nil {
+		mcp.SetStatus("online")
+	}
 
 	sig := make(chan os.Signal)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)

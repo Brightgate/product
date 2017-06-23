@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"ap_common"
+	"ap_common/mcp"
 	"ap_common/network"
 	"base_msg"
 
@@ -77,6 +78,8 @@ var (
 	broker  ap_common.Broker
 	config  *ap_common.Config
 )
+
+const pname = "ap.sampled"
 
 const (
 	idxEth int = iota
@@ -387,6 +390,11 @@ func main() {
 
 	flag.Parse()
 
+	mcp, err := mcp.New(pname)
+	if err != nil {
+		log.Printf("Failed to connect to mcp\n")
+	}
+
 	if *loopTime < *capTime {
 		log.Fatalln("loop-time should be greater than cap-time")
 	}
@@ -398,10 +406,10 @@ func main() {
 	macSelf = self.HardwareAddr
 
 	// Interface to configd
-	config = ap_common.NewConfig("ap.sampled")
+	config = ap_common.NewConfig(pname)
 	getLeases()
 
-	broker.Init("ap.sampled")
+	broker.Init(pname)
 	broker.Connect()
 	broker.Handle(base_def.TOPIC_CONFIG, configChanged)
 	defer broker.Disconnect()
@@ -427,6 +435,9 @@ func main() {
 	go signalHandler()
 	go auditor()
 
+	if mcp != nil {
+		mcp.SetStatus("online")
+	}
 	for {
 		start := time.Now()
 		decodePackets(decode)

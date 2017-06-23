@@ -60,6 +60,38 @@ message EventPing {
 	optional string ping_message = 0x100;
 }
 
+message MCPRequest {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+
+	enum Operation {
+		GET = 1;
+		SET = 2;
+		DO = 3;
+	}
+	required Operation operation = 0x140;
+
+	optional string status = 0x141;
+	optional string command = 0x142;
+	optional string daemon = 0x143;
+}
+
+message MCPResponse {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+
+	enum OpResponse {
+		OP_OK = 0;
+		NO_DAEMON = 1;
+		INVALID = 99;
+	}
+	required OpResponse response = 0x180;
+
+	optional string status = 0x181;
+}
+
 // The config message is sent whenever an application or service
 // modifies shared configuration.  Subscribers--all applications or
 // services that have public configuration--must then determine whether or

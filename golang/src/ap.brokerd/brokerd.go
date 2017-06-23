@@ -21,6 +21,7 @@ import (
 	"log"
 	"net/http"
 
+	"ap_common/mcp"
 	"base_def"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -47,7 +48,10 @@ func main() {
 	 */
 	flag.Parse()
 
-	log.Println("cli parsed")
+	mcp, err := mcp.New("ap.brokerd")
+	if err != nil {
+		log.Printf("Failed to connect to mcp\n")
+	}
 
 	http.Handle("/metrics", promhttp.Handler())
 
@@ -65,7 +69,10 @@ func main() {
 
 	log.Println("frontend, backend ready; about to invoke proxy")
 
-	err := zmq.Proxy(frontend, backend, nil)
+	if mcp != nil {
+		mcp.SetStatus("online")
+	}
+	err = zmq.Proxy(frontend, backend, nil)
 
 	log.Fatalln("zmq proxy interrupted", err)
 }

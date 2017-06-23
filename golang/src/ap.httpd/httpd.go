@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"ap_common"
+	"ap_common/mcp"
 	"base_def"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -51,6 +52,8 @@ var (
 	resources = 0
 	requests  = 0
 )
+
+const pname = "ap.httpd"
 
 func handle_ping(event []byte) { pings++ }
 
@@ -154,13 +157,15 @@ func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	flag.Parse()
 
-	log.Printf("start on port %v", *port)
-	log.Println("cli flags parsed")
+	mcp, err := mcp.New(pname)
+	if err != nil {
+		log.Printf("Failed to connect to mcp\n")
+	}
 
-	time.Sleep(time.Second)
+	log.Printf("start on port %v", *port)
 
 	// Set up connection with the broker daemon
-	b.Init("ap.httpd")
+	b.Init(pname)
 	b.Handle(base_def.TOPIC_PING, handle_ping)
 	b.Handle(base_def.TOPIC_CONFIG, handle_config)
 	b.Handle(base_def.TOPIC_ENTITY, handle_entity)
@@ -173,7 +178,6 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
-	log.Println("prometheus client launched")
 	index_template, err = template.ParseFiles("golang/src/ap.httpd/index.html.got")
 	if err != nil {
 		log.Fatal(err)
@@ -181,7 +185,7 @@ func main() {
 	}
 
 	// Interface to configd
-	config = ap_common.NewConfig("ap.httpd")
+	config = ap_common.NewConfig(pname)
 
 	//
 	// HTTPD_INDEX_RENDER = promc.Summary("httpd_index_render_seconds",
@@ -210,5 +214,8 @@ func main() {
 	http.HandleFunc("/config", cfg_handler)
 	http.HandleFunc("/", index_handler)
 
+	if mcp != nil {
+		mcp.SetStatus("online")
+	}
 	log.Fatal(http.ListenAndServe(*port, nil))
 }

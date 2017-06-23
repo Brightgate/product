@@ -109,6 +109,7 @@ import (
 	"unicode"
 
 	"ap_common"
+	"ap_common/mcp"
 	"base_def"
 	"base_msg"
 
@@ -125,6 +126,7 @@ const (
 	property_filename = "ap_props.json"
 	backup_filename   = "ap_props.json.bak"
 	default_filename  = "ap_defaults.json"
+	pname             = "ap.configd"
 )
 
 type property_ops struct {
@@ -782,6 +784,12 @@ func main() {
 	if !strings.HasSuffix(*propdir, "/") {
 		*propdir = *propdir + "/"
 	}
+
+	mcp, err := mcp.New(pname)
+	if err != nil {
+		log.Printf("Failed to connect to mcp\n")
+	}
+
 	if !file_exists(*propdir) {
 		log.Fatalf("Properties directory %s doesn't exist", *propdir)
 	}
@@ -791,10 +799,9 @@ func main() {
 	// Prometheus setup
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
-	log.Println("prometheus client launched")
 
 	// zmq setup
-	broker.Init("ap.configd")
+	broker.Init(pname)
 	broker.Handle(base_def.TOPIC_ENTITY, entity_handler)
 	broker.Connect()
 	defer broker.Disconnect()
@@ -802,10 +809,12 @@ func main() {
 
 	prop_tree_init()
 
-	log.Println("Set up listening socket.")
 	incoming, _ := zmq.NewSocket(zmq.REP)
 	incoming.Bind(base_def.CONFIGD_ZMQ_REP_URL)
 
+	if mcp != nil {
+		mcp.SetStatus("online")
+	}
 	for {
 		val := "-"
 		msg, err := incoming.RecvMessageBytes(0)
@@ -851,7 +860,7 @@ func main() {
 				Seconds: proto.Int64(t.Unix()),
 				Nanos:   proto.Int32(int32(t.Nanosecond())),
 			},
-			Sender:   proto.String("ap.configd(" + strconv.Itoa(os.Getpid()) + ")"),
+			Sender:   proto.String(pname + "(" + strconv.Itoa(os.Getpid()) + ")"),
 			Debug:    proto.String("-"),
 			Response: &rc,
 			Property: proto.String("-"),

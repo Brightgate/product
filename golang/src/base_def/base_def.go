@@ -21,7 +21,10 @@ const (
 
 	CONFIGD_ZMQ_REP_URL = APPLIANCE_ZMQ_URL + ":3140"
 
+	MCP_ZMQ_REP_URL = APPLIANCE_ZMQ_URL + ":5150"
+
 	TOPIC_PING      = "sys.ping"
+	TOPIC_MCP       = "sys.mcp"
 	TOPIC_CONFIG    = "sys.config"
 	TOPIC_ENTITY    = "net.entity"
 	TOPIC_REQUEST   = "net.request"

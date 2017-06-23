@@ -37,11 +37,14 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"syscall"
 	"text/template"
 	"time"
 
 	"ap_common"
+	"ap_common/mcp"
 	"base_def"
 	"base_msg"
 
@@ -58,9 +61,11 @@ var (
 	interfaces    = make(map[string]*HostapdConf)
 	child_process *os.Process
 	config        *ap_common.Config
+	stopping      bool
 )
 
 const min_lifetime = 1.5e9
+const pname = "ap.hostapd.m"
 
 /*
  * Property mapping:
@@ -204,33 +209,53 @@ func base_config(name string) string {
 	return (fn)
 }
 
+func signalHandler() {
+	sig := make(chan os.Signal)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	s := <-sig
+	log.Printf("Signal (%v) received, stopping\n", s)
+	if !stopping {
+		stopping = true
+		child_process.Signal(os.Interrupt)
+	}
+}
+
 func main() {
 	var err error
 	var b ap_common.Broker
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
-	log.Println("start")
-
 	flag.Parse()
+
+	mcp, err := mcp.New(pname)
+	if err != nil {
+		log.Printf("Failed to connect to mcp\n")
+	}
 
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
 	log.Println("prometheus client thread launched")
 
-	b.Init("ap.hostapd.m")
+	b.Init(pname)
 	b.Handle(base_def.TOPIC_CONFIG, config_changed)
 	b.Connect()
 	defer b.Disconnect()
 
 	log.Println("message bus thread launched")
 
-	config = ap_common.NewConfig("ap.hostapd.m")
+	config = ap_common.NewConfig(pname)
 	fn := base_config(*wifi_interface)
 
 	var exit_count uint = 0
 	var total_lifetime time.Duration = 0
+
+	if mcp != nil {
+		mcp.SetStatus("online")
+	}
+
+	go signalHandler()
 
 	// Monitor loop:
 	//
@@ -242,7 +267,7 @@ func main() {
 	// Next iteration questions:
 	// - is my daemon already running?
 	// - can I adopt responsibility?
-	for {
+	for !stopping {
 		cmd := exec.Command(hostapd_path, fn)
 
 		var outb, errb bytes.Buffer

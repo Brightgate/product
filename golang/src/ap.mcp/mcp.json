@@ -1,0 +1,58 @@
+{
+    "brokerd": {
+        "Name": "brokerd",
+        "Binary": "ap.brokerd",
+        "Privileged": false
+    },
+    "configd": {
+        "Name": "configd",
+        "Binary": "ap.configd",
+        "DependsOn": "brokerd",
+        "Privileged": true,
+	"Options": "-propdir=$APROOT/etc"
+    },
+    "dhcp4d": {
+        "Name": "dhcp4d",
+        "Binary": "ap.dhcp4d",
+        "DependsOn": "configd",
+        "Privileged": true
+    },
+    "dns4d": {
+        "Name": "dns4d",
+        "Binary": "ap.dns4d",
+        "DependsOn": "configd",
+        "Privileged": true
+    },
+    "hostapd": {
+        "Name": "hostapd.m",
+        "Binary": "ap.hostapd.m",
+        "DependsOn": "configd",
+        "Privileged": true
+    },
+    "httpd": {
+        "Name": "httpd",
+        "Binary": "ap.httpd",
+        "DependsOn": "configd",
+        "Privileged": false
+    },
+    "logd": {
+        "Name": "logd",
+        "Binary": "ap.logd",
+        "DependsOn": "brokerd",
+        "Privileged": false
+    },
+    "sampled": {
+        "Name": "sampled",
+        "Binary": "ap.sampled",
+        "DependsOn": "configd",
+        "Privileged": true
+    },
+    "prometheus": {
+        "Name": "prometheus",
+        "Binary": "prometheus",
+        "Privileged": false,
+        "ThirdParty": true,
+	"Arch": "amd64",
+	"Options": "-config.file=$APROOT/etc/prometheus.yml -storage.local.path=\"$APROOT/var/prometheus-data\""
+    }
+}

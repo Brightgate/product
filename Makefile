@@ -86,10 +86,12 @@ DAEMONS = \
 	$(APPBIN)/ap.hostapd.m \
 	$(APPBIN)/ap.httpd \
 	$(APPBIN)/ap.logd \
+	$(APPBIN)/ap.mcp \
 	$(APPBIN)/ap.sampled
 
 COMMANDS = \
 	$(APPBIN)/ap-arpspoof \
+	$(APPBIN)/ap-ctl \
 	$(APPBIN)/ap-msgping \
 	$(APPBIN)/ap-configctl \
 	$(APPBIN)/ap-run \
@@ -97,7 +99,8 @@ COMMANDS = \
 
 CONFIGS = \
 	$(APPETC)/prometheus.yml \
-	$(APPETC)/ap_defaults.json
+	$(APPETC)/ap_defaults.json \
+	$(APPETC)/mcp.json
 
 DIRS = $(APPBIN) $(APPDOC) $(APPETC) $(APPVAR)
 
@@ -116,6 +119,9 @@ $(APPBIN)/%: ./% | $(APPBIN)
 	install -m 0755 $< $(APPBIN)
 
 $(APPETC)/ap_defaults.json: ap_defaults.json | $(APPETC)
+	install -m 0644 $< $(APPETC)
+
+$(APPETC)/mcp.json: golang/src/ap.mcp/mcp.json | $(APPETC)
 	install -m 0644 $< $(APPETC)
 
 $(APPETC)/prometheus.yml: prometheus.yml | $(APPETC)
@@ -138,6 +144,7 @@ COMMON_SRCS = \
     golang/src/base_msg/base_msg.pb.go \
     golang/src/ap_common/broker.go \
     golang/src/ap_common/config.go \
+    golang/src/ap_common/mcp/mcp_client.go \
     golang/src/ap_common/network/network.go
 
 $(APPBIN)/ap-arpspoof: \
@@ -164,6 +171,12 @@ $(APPBIN)/ap.configd: \
     $(COMMON_SRCS)
 	$(GO) get $(GO_GET_FLAGS) ap.configd 2>&1 | tee -a get.acc
 	cd $(APPBIN) && $(GO) build ap.configd
+
+$(APPBIN)/ap.mcp: \
+    golang/src/ap.mcp/mcp.go \
+    $(COMMON_SRCS)
+	$(GO) get $(GO_GET_FLAGS) ap.mcp 2>&1 | tee -a get.acc
+	cd $(APPBIN) && $(GO) build ap.mcp
 
 $(APPBIN)/ap.dhcp4d: \
     golang/src/ap.dhcp4d/dhcp4d.go \
@@ -195,6 +208,12 @@ $(APPBIN)/ap.logd: \
     $(COMMON_SRCS)
 	$(GO) get $(GO_GET_FLAGS) ap.logd 2>&1 | tee -a get.acc
 	cd $(APPBIN) && $(GO) build ap.logd
+
+$(APPBIN)/ap-ctl: \
+    golang/src/ap-ctl/ctl.go \
+    $(COMMON_SRCS)
+	$(GO) get $(GO_GET_FLAGS) ap-ctl 2>&1 | tee -a get.acc
+	cd $(APPBIN) && $(GO) build ap-ctl
 
 $(APPBIN)/ap-msgping: \
     golang/src/ap-msgping/msgping.go \
