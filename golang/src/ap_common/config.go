@@ -189,9 +189,9 @@ func (c Config) GetProps(prop string) (*PropertyNode, error) {
 // Retrieves a single property from the tree, returning it as a String
 func (c Config) GetProp(prop string) (string, error) {
 	var rval string
-	var err error
 
-	if root, err := c.GetProps(prop); err == nil {
+	root, err := c.GetProps(prop)
+	if err == nil {
 		rval = root.Value
 	}
 
@@ -233,7 +233,7 @@ func getStringVal(root *PropertyNode, name string) (string, error) {
 	node := root.GetChild(name)
 	if node == nil {
 		err = fmt.Errorf("%s is missing a %s property",
-			node.Name)
+			root.Name, name)
 	} else {
 		rval = node.Value
 	}
@@ -248,7 +248,7 @@ func getIntVal(root *PropertyNode, name string) (int, error) {
 	node := root.GetChild(name)
 	if node == nil {
 		err = fmt.Errorf("%s is missing a %s property",
-			node.Name)
+			root.Name, name)
 	} else {
 		if rval, err = strconv.Atoi(node.Value); err != nil {
 			err = fmt.Errorf("%s has malformed %s property",
