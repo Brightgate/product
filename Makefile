@@ -15,12 +15,12 @@
 #
 #    (b) On Linux
 #
-#	 # apt-get install protobuf-compiler libzmq5-dev libpcap-dev
+#	 # apt-get install protobuf-compiler libzmq5-dev libpcap-dev vlan
 #	 [Retrieve Go tar archive from golang.org and unpack in $HOME.]
 #
 #    (c) on raspberry pi
 #
-#	 # apt-get install protobuf-compiler libzmq3-dev libpcap-dev
+#	 # apt-get install protobuf-compiler libzmq3-dev libpcap-dev vlan
 #	 [Retrieve Go tar archive from golang.org and unpack in $HOME.]
 #
 # 2. Each new shell,
@@ -84,10 +84,10 @@ DAEMONS = \
 	$(APPBIN)/ap.configd \
 	$(APPBIN)/ap.dhcp4d \
 	$(APPBIN)/ap.dns4d \
-	$(APPBIN)/ap.hostapd.m \
 	$(APPBIN)/ap.httpd \
 	$(APPBIN)/ap.logd \
 	$(APPBIN)/ap.mcp \
+	$(APPBIN)/ap.networkd \
 	$(APPBIN)/ap.sampled \
 	$(APPBIN)/ap.scand
 
@@ -96,8 +96,7 @@ COMMANDS = \
 	$(APPBIN)/ap-ctl \
 	$(APPBIN)/ap-msgping \
 	$(APPBIN)/ap-configctl \
-	$(APPBIN)/ap-run \
-	$(APPBIN)/pi-netstrap
+	$(APPBIN)/ap-run
 
 CONFIGS = \
 	$(APPETC)/prometheus.yml \
@@ -165,23 +164,11 @@ $(APPBIN)/ap.brokerd: \
 	$(GO) get $(GO_GET_FLAGS) ap.brokerd 2>&1 | tee -a get.acc
 	cd $(APPBIN) && $(GO) build ap.brokerd
 
-$(APPBIN)/ap-configctl: \
-    golang/src/ap-configctl/configctl.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap-configctl 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap-configctl
-
 $(APPBIN)/ap.configd: \
     golang/src/ap.configd/configd.go \
     $(COMMON_SRCS)
 	$(GO) get $(GO_GET_FLAGS) ap.configd 2>&1 | tee -a get.acc
 	cd $(APPBIN) && $(GO) build ap.configd
-
-$(APPBIN)/ap.mcp: \
-    golang/src/ap.mcp/mcp.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap.mcp 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap.mcp
 
 $(APPBIN)/ap.dhcp4d: \
     golang/src/ap.dhcp4d/dhcp4d.go \
@@ -196,12 +183,6 @@ $(APPBIN)/ap.dns4d: \
 	$(GO) get $(GO_GET_FLAGS) ap.dns4d 2>&1 | tee -a get.acc
 	cd $(APPBIN) && $(GO) build ap.dns4d
 
-$(APPBIN)/ap.hostapd.m: \
-    golang/src/ap.hostapd.m/hostapd.m.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap.hostapd.m 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap.hostapd.m
-
 $(APPBIN)/ap.httpd: \
     golang/src/ap.httpd/httpd.go \
     $(COMMON_SRCS)
@@ -213,6 +194,36 @@ $(APPBIN)/ap.logd: \
     $(COMMON_SRCS)
 	$(GO) get $(GO_GET_FLAGS) ap.logd 2>&1 | tee -a get.acc
 	cd $(APPBIN) && $(GO) build ap.logd
+
+$(APPBIN)/ap.mcp: \
+    golang/src/ap.mcp/mcp.go \
+    $(COMMON_SRCS)
+	$(GO) get $(GO_GET_FLAGS) ap.mcp 2>&1 | tee -a get.acc
+	cd $(APPBIN) && $(GO) build ap.mcp
+
+$(APPBIN)/ap.networkd: \
+    golang/src/ap.networkd/networkd.go \
+    $(COMMON_SRCS)
+	$(GO) get $(GO_GET_FLAGS) ap.networkd 2>&1 | tee -a get.acc
+	cd $(APPBIN) && $(GO) build ap.networkd
+
+$(APPBIN)/ap.sampled: \
+    golang/src/ap.sampled/sampled.go \
+    $(COMMON_SRCS)
+	$(GO) get $(GO_GET_FLAGS) ap.sampled 2>&1 | tee -a get.acc
+	cd $(APPBIN) && $(GO) build ap.sampled
+
+$(APPBIN)/ap.scand: \
+    golang/src/ap.scand/scand.go \
+    $(COMMON_SRCS)
+	$(GO) get $(GO_GET_FLAGS) ap.scand 2>&1 | tee -a get.acc
+	cd $(APPBIN) && $(GO) build ap.scand
+
+$(APPBIN)/ap-configctl: \
+    golang/src/ap-configctl/configctl.go \
+    $(COMMON_SRCS)
+	$(GO) get $(GO_GET_FLAGS) ap-configctl 2>&1 | tee -a get.acc
+	cd $(APPBIN) && $(GO) build ap-configctl
 
 $(APPBIN)/ap-ctl: \
     golang/src/ap-ctl/ctl.go \
@@ -227,21 +238,6 @@ $(APPBIN)/ap-msgping: \
 	cd $(APPBIN) && $(GO) build ap-msgping
 
 $(APPBIN)/ap-run: ap-run.bash
-	install -m 0755 $< $@
-
-$(APPBIN)/ap.sampled: \
-    golang/src/ap.sampled/sampled.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap.sampled 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap.sampled
-
-$(APPBIN)/ap.scand: \
-    golang/src/ap.scand/scand.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap.scand 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap.scand
-
-$(APPBIN)/pi-netstrap: pi-netstrap.bash
 	install -m 0755 $< $@
 
 proto: golang/src/base_msg/base_msg.pb.go base/base_msg_pb2.py

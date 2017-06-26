@@ -53,7 +53,7 @@ const (
 )
 
 var (
-	iface = flag.String("interface", "wlan0",
+	cli_iface = flag.String("interface", "",
 		"Interface to capture packets from")
 
 	// XXX These Duration flags should be combined into a single "percentage"
@@ -215,8 +215,8 @@ func deleteRecord(hwaddr net.HardwareAddr) {
 // Decode only the layers we care about:
 //   - Look for ARP request and reply to associate MAC and IP
 //   - Look for IPv4 to associate MAC and IP
-func decodePackets(decode []gopacket.DecodingLayer) {
-	handle, err := pcap.OpenLive(*iface, 65536, true, pcap.BlockForever)
+func decodePackets(iface string, decode []gopacket.DecodingLayer) {
+	handle, err := pcap.OpenLive(iface, 65536, true, pcap.BlockForever)
 	if err != nil {
 		log.Fatalln("OpenLive failed:", err)
 	}
@@ -262,8 +262,8 @@ func decodePackets(decode []gopacket.DecodingLayer) {
 }
 
 // Decode all layers and log verbose output
-func dumpPackets() {
-	handle, err := pcap.OpenLive(*iface, 65536, true, pcap.BlockForever)
+func dumpPackets(iface string) {
+	handle, err := pcap.OpenLive(iface, 65536, true, pcap.BlockForever)
 	if err != nil {
 		log.Fatalln("OpenLive failed:", err)
 	}
@@ -399,14 +399,23 @@ func main() {
 		log.Fatalln("loop-time should be greater than cap-time")
 	}
 
-	self, err := net.InterfaceByName(*iface)
+	// Interface to configd
+	config = ap_common.NewConfig(pname)
+
+	iface := *cli_iface
+	if len(iface) == 0 {
+		iface, err = config.GetProp("@/network/default")
+		if err != nil {
+			log.Fatalf("No default interface defined.\n")
+		}
+	}
+
+	self, err := net.InterfaceByName(iface)
 	if err != nil {
-		log.Fatalf("Failed to get interface %s:", *iface, err)
+		log.Fatalf("Failed to get interface %s:", iface, err)
 	}
 	macSelf = self.HardwareAddr
 
-	// Interface to configd
-	config = ap_common.NewConfig(pname)
 	getLeases()
 
 	broker.Init(pname)
@@ -429,7 +438,7 @@ func main() {
 	}
 
 	if *verbose {
-		dumpPackets()
+		dumpPackets(iface)
 	}
 
 	go signalHandler()
@@ -438,9 +447,13 @@ func main() {
 	if mcp != nil {
 		mcp.SetStatus("online")
 	}
+	if err := network.WaitForDevice(iface, 30*time.Second); err != nil {
+		log.Fatalf("%s is offline\n", iface)
+	}
+
 	for {
 		start := time.Now()
-		decodePackets(decode)
+		decodePackets(iface, decode)
 		time.Sleep(time.Until(start.Add(*loopTime)))
 	}
 }

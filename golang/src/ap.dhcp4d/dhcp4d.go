@@ -13,21 +13,16 @@
  * DHCPv4 daemon
  */
 
-// XXX Exception messages are not displayed.
-// XXX Hardcoded to wlan0.
-
 package main
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"flag"
 	"log"
 	"math/rand"
 	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +34,7 @@ import (
 	"base_msg"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"golang.org/x/net/ipv4"
 
 	"github.com/golang/protobuf/proto"
 
@@ -49,14 +45,41 @@ var (
 	addr = flag.String("promhttp-address", base_def.DHCPD_PROMETHEUS_PORT,
 		"Prometheus publication HTTP port.")
 
-	handlers       map[string]*DHCPHandler
-	client_map_mtx sync.Mutex
-	client_map     map[string]string
-	broker         ap_common.Broker
-	config         *ap_common.Config
+	handlers         map[string]*DHCPHandler
+	client_class_mtx sync.Mutex
+	client_class     map[string]string
+	broker           ap_common.Broker
+	config           *ap_common.Config
+
+	use_vlans     bool
+	physical_nic  string
+	physical_mac  string
+	shared_router net.IP     // without vlans, all classes share a
+	shared_subnet *net.IPNet // subnet and a router node
 )
 
 const pname = "ap.dhcp4d"
+
+func getClass(hwaddr string) string {
+	client_class_mtx.Lock()
+	class := client_class[hwaddr]
+	client_class_mtx.Unlock()
+
+	return class
+}
+
+func updateClass(hwaddr, old, new string) bool {
+	updated := false
+
+	client_class_mtx.Lock()
+	if client_class[hwaddr] == old {
+		client_class[hwaddr] = new
+		updated = true
+	}
+	client_class_mtx.Unlock()
+
+	return updated
+}
 
 /*******************************************************
  *
@@ -80,17 +103,15 @@ func config_changed(path []string, val string) {
 	if len(path) == 3 && path[0] == "clients" && path[2] == "class" {
 		client := path[1]
 
-		client_map_mtx.Lock()
-		old := client_map[client]
-		client_map[client] = val
-		client_map_mtx.Unlock()
-
-		if old == "" {
-			log.Printf("configd reports new client %s is %s\n",
-				client, val)
-		} else {
-			log.Printf("configd moves client %s from %s to  %s\n",
-				client, old, val)
+		old := getClass(client)
+		if (old != val) && updateClass(client, old, val) {
+			if old == "" {
+				log.Printf("configd reports new client %s is %s\n",
+					client, val)
+			} else {
+				log.Printf("configd moves client %s from %s to  %s\n",
+					client, old, val)
+			}
 		}
 	}
 }
@@ -239,27 +260,24 @@ type lease struct {
 	assigned bool       // Lease assigned to a client?
 }
 
-type leaseRange struct {
-	start    net.IP        // Start of IP range to distribute
-	end      net.IP        // End of IP range to distribute
-	size     int           // Number of IPs to distribute (starting from start)
-	duration time.Duration // Lease period
-	leases   []lease       // Per-lease state
-}
-
 type DHCPHandler struct {
-	iface   string       // Net interface we serve
-	ip      net.IP       // Server IP to use
-	network net.IPNet    // Full network from which subranges are defined
-	options dhcp.Options // Options to send to DHCP Clients
-	ranges  map[string]*leaseRange
+	iface       string        // Net interface we serve
+	class       string        // Client class eligible for this server
+	subnet      net.IPNet     // Subnet being managed
+	server_ip   net.IP        // DHCP server's IP
+	options     dhcp.Options  // Options to send to DHCP Clients
+	range_start net.IP        // Start of IP range to distribute
+	range_end   net.IP        // End of IP range to distribute
+	range_size  int           // Number of IPs to distribute (starting from start)
+	duration    time.Duration // Lease period
+	leases      []lease       // Per-lease state
 }
 
 /*
  * Construct a DHCP NAK message
  */
 func (h *DHCPHandler) nak(p dhcp.Packet) dhcp.Packet {
-	return dhcp.ReplyPacket(p, dhcp.NAK, h.ip, nil, 0, nil)
+	return dhcp.ReplyPacket(p, dhcp.NAK, h.server_ip, nil, 0, nil)
 }
 
 /*
@@ -269,21 +287,15 @@ func (h *DHCPHandler) discover(p dhcp.Packet, options dhcp.Options) dhcp.Packet 
 	hwaddr := p.CHAddr().String()
 	log.Printf("DISCOVER %s\n", hwaddr)
 
-	r := h.classRange(hwaddr)
-	if r == nil {
-		log.Printf("%s is in an unconfigured class", hwaddr)
-		return h.nak(p)
-	}
-
-	l := h.leaseAssign(r, hwaddr)
+	l := h.leaseAssign(hwaddr)
 	if l == nil {
-		log.Printf("Out of leases for this class\n")
+		log.Printf("Out of %s leases\n", h.class)
 		return h.nak(p)
 	}
 	log.Printf("  OFFER %s to %s\n", l.ipaddr, l.hwaddr)
 
 	notifyProvisioned(p, l.ipaddr)
-	return dhcp.ReplyPacket(p, dhcp.Offer, h.ip, l.ipaddr, r.duration,
+	return dhcp.ReplyPacket(p, dhcp.Offer, h.server_ip, l.ipaddr, h.duration,
 		h.options.SelectOrderOrAll(options[dhcp.OptionParameterRequestList]))
 }
 
@@ -297,29 +309,12 @@ func (h *DHCPHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	log.Printf("REQUEST for %s\n", hwaddr)
 
 	server, ok := options[dhcp.OptionServerIdentifier]
-	if ok && !net.IP(server).Equal(h.ip) {
+	if ok && !net.IP(server).Equal(h.server_ip) {
 		return nil // Message not for this dhcp server
 	}
 	request_option := net.IP(options[dhcp.OptionRequestedIPAddress])
 
-	/*
-	 * Before we grant an IP request, make sure this client belongs to a
-	 * known class and that any existing IP address is appropriate for that
-	 * class.
-	 */
-	r := h.classRange(hwaddr)
 	current := h.leaseSearch(hwaddr)
-	if r == nil {
-		log.Printf("%s is in an unconfigured class")
-		h.releaseLease(current, hwaddr)
-		return h.nak(p)
-	}
-	if current != nil && !dhcp.IPInRange(r.start, r.end, current.ipaddr) {
-		log.Printf("%s already has IP %s in the wrong class\n",
-			hwaddr, current.ipaddr.String())
-		h.releaseLease(current, hwaddr)
-		return h.nak(p)
-	}
 
 	/*
 	 * If this client already has an IP address assigned (either statically,
@@ -357,19 +352,14 @@ func (h *DHCPHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 		return h.nak(p)
 	}
 
-	slot := dhcp.IPRange(r.start, reqIP) - 1
-	if slot < 0 || slot >= r.size {
-		return h.nak(p)
-	}
-
-	l := &r.leases[slot]
-	if !l.assigned || l.hwaddr != hwaddr {
+	l := h.getLease(reqIP)
+	if l == nil || !l.assigned || l.hwaddr != hwaddr {
 		return h.nak(p)
 	}
 
 	l.name = string(options[dhcp.OptionHostName])
 	if !l.static {
-		expires := time.Now().Add(r.duration)
+		expires := time.Now().Add(h.duration)
 		l.expires = &expires
 	}
 
@@ -378,10 +368,11 @@ func (h *DHCPHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	 * any hostname on restart.  When ap.configd is augmented to accept
 	 * property trees, we can fix this.
 	 */
+	log.Printf("   REQUEST assigned %s to %s (%q) until %s\n", l.ipaddr, hwaddr, l.name, l.expires)
 	config.CreateProp(leaseProperty(l.ipaddr), l.hwaddr, l.expires)
 	notifyClaimed(p, l.ipaddr, l.name)
 
-	return dhcp.ReplyPacket(p, dhcp.ACK, h.ip, l.ipaddr, r.duration,
+	return dhcp.ReplyPacket(p, dhcp.ACK, h.server_ip, l.ipaddr, h.duration,
 		h.options.SelectOrderOrAll(options[dhcp.OptionParameterRequestList]))
 }
 
@@ -408,16 +399,13 @@ func (h *DHCPHandler) release(p dhcp.Packet) {
 	hwaddr := p.CHAddr().String()
 	ipaddr := p.CIAddr()
 
-	r := h.addrRange(ipaddr)
-	if r == nil {
+	l := h.getLease(ipaddr)
+	if l == nil {
 		log.Printf("Client %s RELEASE unsupported address: %s\n",
 			hwaddr, ipaddr.String())
 		return
 	}
-
-	slot := dhcp.IPRange(r.start, ipaddr) - 1
-	lease := &r.leases[slot]
-	if h.releaseLease(lease, hwaddr) {
+	if h.releaseLease(l, hwaddr) {
 		log.Printf("RELEASE %s\n", hwaddr)
 	}
 }
@@ -429,95 +417,71 @@ func (h *DHCPHandler) release(p dhcp.Packet) {
 func (h *DHCPHandler) decline(p dhcp.Packet) {
 	hwaddr := p.CHAddr().String()
 
-	for _, r := range h.ranges {
-		for slot := 0; slot < r.size; slot++ {
-			lease := &r.leases[slot]
-			if h.releaseLease(lease, hwaddr) {
-				log.Printf("DECLINE for %s\n", hwaddr)
-				return
-			}
-		}
+	l := h.leaseSearch(hwaddr)
+	if h.releaseLease(l, hwaddr) {
+		log.Printf("DECLINE for %s\n", hwaddr)
 	}
 }
 
 /*
- * Master DHCP handler.  Routes packets to message-specific handlers
+ * Based on the client's MAC address, identify its class and return the
+ * appropriate DHCP handler
  */
+func selectClassHandler(p dhcp.Packet, options dhcp.Options) *DHCPHandler {
+	hwaddr := p.CHAddr().String()
+	class := getClass(hwaddr)
+	if class == "" {
+		updateClass(hwaddr, "", "unclassified")
+		class = getClass(hwaddr)
+		notifyNewEntity(p, options)
+	}
+
+	class_handler, ok := handlers[class]
+	if !ok {
+		log.Printf("Client %s identified as unknown class '%s'\n",
+			hwaddr, class)
+	}
+	return class_handler
+}
+
 func (h *DHCPHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType,
 	options dhcp.Options) (d dhcp.Packet) {
-	hwaddr := p.CHAddr().String()
 
-	client_map_mtx.Lock()
-	if client_map[hwaddr] == "" {
-		notifyNewEntity(p, options)
-		client_map[hwaddr] = "unclassified"
+	class_handler := selectClassHandler(p, options)
+	if class_handler == nil {
+		return nil
 	}
-	client_map_mtx.Unlock()
 
 	switch msgType {
 
 	case dhcp.Discover:
-		return h.discover(p, options)
+		return class_handler.discover(p, options)
 
 	case dhcp.Request:
-		return h.request(p, options)
+		return class_handler.request(p, options)
 
 	case dhcp.Release:
-		h.release(p)
+		class_handler.release(p)
 
 	case dhcp.Decline:
-		h.decline(p)
+		class_handler.decline(p)
 	}
 	return nil
 }
 
 /*
- * Find the lease range responsible for a given IP address
+ * If this nic already has a live lease, return that.  Otherwise, assign an
+ * available lease at random.  A 'nil' response indicates that all leases are
+ * currently assigned.
  */
-func (h *DHCPHandler) addrRange(ipaddr net.IP) *leaseRange {
-	for _, r := range h.ranges {
-		if dhcp.IPInRange(r.start, r.end, ipaddr) {
-			return r
-		}
-	}
-	return nil
-}
-
-/*
- * Select a lease range based on the client's currently assigned class
- */
-func (h *DHCPHandler) classRange(hwaddr string) *leaseRange {
-	var rval *leaseRange
-
-	client_map_mtx.Lock()
-	class := client_map[hwaddr]
-	if class == "" {
-		class = "unclassified"
-	}
-	client_map_mtx.Unlock()
-
-	if r, ok := h.ranges[class]; ok {
-		rval = r
-	} else {
-		log.Printf("Client %s in unconfigured class: %s\n",
-			hwaddr, class)
-	}
-	return rval
-}
-
-/*
- * Scan the array of leases in this range.  If this nic already has a live
- * lease, return that.  Otherwise, assign an available lease at random.  A 'nil'
- * response indicates that all leases are currently assigned.
- */
-func (h *DHCPHandler) leaseAssign(r *leaseRange, hwaddr string) *lease {
+func (h *DHCPHandler) leaseAssign(hwaddr string) *lease {
 	var rval *lease
 
 	now := time.Now()
-	target := rand.Intn(r.size)
+	target := rand.Intn(h.range_size)
 	assigned := -1
 
-	for i, l := range r.leases {
+	for i, l := range h.leases {
 		if l.assigned && l.expires != nil && l.expires.Before(now) {
 			/*
 			 * We don't actively handle lease expiration messages;
@@ -537,9 +501,9 @@ func (h *DHCPHandler) leaseAssign(r *leaseRange, hwaddr string) *lease {
 	}
 
 	if rval == nil && assigned >= 0 {
-		rval = &r.leases[assigned]
+		rval = &h.leases[assigned]
 		rval.hwaddr = hwaddr
-		rval.ipaddr = dhcp.IPAdd(r.start, assigned)
+		rval.ipaddr = dhcp.IPAdd(h.range_start, assigned)
 		rval.assigned = true
 	}
 	return rval
@@ -550,85 +514,144 @@ func (h *DHCPHandler) leaseAssign(r *leaseRange, hwaddr string) *lease {
  * NIC.
  */
 func (h *DHCPHandler) leaseSearch(hwaddr string) *lease {
-	for _, r := range h.ranges {
-		for i := 0; i < r.size; i++ {
-			l := &r.leases[i]
-			if l.assigned && l.hwaddr == hwaddr {
-				return l
-			}
+	for i := 0; i < h.range_size; i++ {
+		l := &h.leases[i]
+		if l.assigned && l.hwaddr == hwaddr {
+			return l
 		}
 	}
 	return nil
 }
 
-/*******************************************************
- *
- * Interaction with ap.configd
- */
-func getParams(root *ap_common.PropertyNode, params map[string]string) {
-	/*
-	 * Populate the params map, and verify that all required parameters are
-	 * present
-	 */
-	for _, s := range root.Children {
-		if len(s.Value) > 0 {
-			params[s.Name] = s.Value
-		}
+func (h *DHCPHandler) getLease(ip net.IP) *lease {
+	if !dhcp.IPInRange(h.range_start, h.range_end, ip) {
+		return nil
 	}
-	errmsg := ""
-	for i, s := range params {
-		if s == "" {
-			if len(errmsg) > 0 {
-				errmsg = errmsg + ", "
-			}
-			errmsg = errmsg + i
-		}
+
+	slot := dhcp.IPRange(h.range_start, ip) - 1
+
+	if slot < 0 || slot >= h.range_size {
+		return nil
 	}
-	if len(errmsg) != 0 {
-		log.Fatalf("Invalid DHCP config. Missing: %s\n", errmsg)
-	}
+
+	return &h.leases[slot]
 }
 
-func newRange(props *ap_common.PropertyNode, ranges map[string]*leaseRange) {
-	var range_size, duration int
+//
+// Instantiate a new DHCP handler for the given class/subnet.
+//
+func newHandler(class, network, nameserver string, duration int) *DHCPHandler {
+	var range_size int
 	var err error
 
-	params := map[string]string{
-		"subnet":         "",
-		"lease_duration": "",
-	}
-	getParams(props, params)
-
-	if duration, err = strconv.Atoi(params["lease_duration"]); err != nil {
-		log.Fatal("Invalid DHCP config.  Illegal lease_duration: %s\n",
-			params["lease_duration"])
-	}
-
-	ones, bits := 0, 0
-	ip, subnet, err := net.ParseCIDR(params["subnet"])
+	start, subnet, err := net.ParseCIDR(network)
 	if err == nil {
-		ones, bits = subnet.Mask.Size()
+		ones, bits := subnet.Mask.Size()
+		range_size = 1<<uint32(bits-ones) - 2
 	}
-	if ones == 0 || bits == 0 {
-		log.Fatal("Invalid DHCP config.  Poorly formed subnet:: %s\n",
-			params["subnet"])
-	}
-	range_size = 1 << uint32((bits - ones))
 
-	r := leaseRange{
-		start:    ip,
-		end:      dhcp.IPAdd(ip, range_size),
-		size:     range_size,
-		duration: time.Duration(duration) * time.Minute,
-		leases:   make([]lease, range_size, range_size),
+	if range_size == 0 {
+		log.Fatal("Invalid DHCP config.  Poorly formed subnet: %s\n",
+			network)
 	}
-	ranges[props.Name] = &r
+
+	var myip, nsip net.IP
+	if use_vlans {
+		// When using VLANs, each managed range is a proper subnet with
+		// its own routing info.
+		myip = dhcp.IPAdd(start, 1)
+	} else {
+		myip = shared_router
+		subnet = shared_subnet
+	}
+
+	if len(nameserver) == 0 {
+		nsip = myip
+	} else {
+		nsip = net.ParseIP(nameserver).To4()
+	}
+
+	h := DHCPHandler{
+		class:       class,
+		subnet:      *subnet,
+		server_ip:   myip,
+		range_start: start,
+		range_end:   dhcp.IPAdd(start, range_size),
+		range_size:  range_size,
+		duration:    time.Duration(duration) * time.Minute,
+		options: dhcp.Options{
+			dhcp.OptionSubnetMask:       subnet.Mask,
+			dhcp.OptionRouter:           myip,
+			dhcp.OptionDomainNameServer: nsip,
+		},
+		leases: make([]lease, range_size, range_size),
+	}
+
+	return &h
 }
 
-func newHandler() *DHCPHandler {
-	var err error
-	var root ap_common.PropertyNode
+func (h *DHCPHandler) recoverLeases(root *ap_common.PropertyNode) {
+	// Preemptively pull the network and DHCP server from the pool
+	h.leases[0].assigned = true
+	h.leases[1].assigned = true
 
+	if root == nil {
+		return
+	}
+
+	for _, s := range root.Children {
+		ip := net.ParseIP(s.Name).To4()
+		if l := h.getLease(ip); l != nil {
+			l.name = ""
+			l.hwaddr = s.Value
+			l.ipaddr = ip
+			l.expires = s.Expires
+			l.static = (s.Expires == nil)
+			l.assigned = true
+		}
+	}
+}
+
+func initPhysical(props *ap_common.PropertyNode) {
+	var err error
+
+	physical_nic, err = config.GetProp("@/network/default")
+	if err != nil {
+		log.Fatalf("No default interface defined\n")
+	}
+
+	iface, err := net.InterfaceByName(physical_nic)
+	if err != nil {
+		log.Fatalf("No such network device: %s\n", iface)
+	}
+	physical_mac = iface.HardwareAddr.String()
+
+	propname := "@/network/" + physical_nic + "/use_vlans"
+	prop, err := config.GetProp(propname)
+	if err == nil && prop == "true" {
+		use_vlans = true
+	} else {
+		// If we aren't using VLANs, all classes share a subnet
+		if node := props.GetChild("network"); node != nil {
+			start, subnet, err := net.ParseCIDR(node.Value)
+			if err == nil {
+				shared_router = dhcp.IPAdd(start, 1)
+				shared_subnet = subnet
+			}
+		}
+
+		if shared_subnet == nil {
+			log.Fatalf("Missing shared network info\n")
+		}
+	}
+}
+
+func initHandlers() {
+	var err error
+	var nameserver string
+	var props, leases, node *ap_common.PropertyNode
+
+	handlers = make(map[string]*DHCPHandler)
 	/*
 	 * Currently assumes a single interface/dhcp configuration.  If we want
 	 * to support per-interface configs, then this will need to be a tree of
@@ -636,143 +659,134 @@ func newHandler() *DHCPHandler {
 	 * same config, then the 'iface' parameter will have to be a []string
 	 * rather than a single string.
 	 */
-	tree, err := config.GetProp("@/dhcp/config")
-	if err != nil {
+	if props, err = config.GetProps("@/dhcp/config"); err != nil {
 		log.Fatalf("Failed to get DHCP configuration info: %v", err)
 	}
-	err = json.Unmarshal([]byte(tree), &root)
-	if err != nil {
-		log.Fatalf("Failed to decode configuration info: %v", err)
-	}
-	params := map[string]string{
-		"iface":     "",
-		"server_ip": "",
-		"network":   "",
-	}
-	getParams(&root, params)
-	_, network, err := net.ParseCIDR(params["network"])
 
-	/*
-	 * If the router and nameserver weren't specified, fill in sensible
-	 * defaults
-	 */
-	if _, ok := params["router"]; !ok {
-		params["router"] = params["server_ip"]
-	}
-	if _, ok := params["name_server"]; !ok {
-		params["name_server"] = params["server_ip"]
+	initPhysical(props)
+
+	if node = props.GetChild("nameserver"); node != nil {
+		nameserver = node.Value
 	}
 
-	server_ip := net.ParseIP(params["server_ip"]).To4()
-	router := net.ParseIP(params["router"]).To4()
-	name_server := net.ParseIP(params["name_server"]).To4()
+	if leases, err = config.GetProps("@/dhcp/leases"); err != nil {
+		log.Fatalf("Failed to get DHCP lease info: %v", err)
+	}
 
-	ranges := make(map[string]*leaseRange)
-	for _, c := range root.Children {
-		if c.Name == "ranges" {
-			for _, r := range c.Children {
-				newRange(r, ranges)
-			}
+	// Iterate over the known classes.  For each one, find the VLAN name and
+	// subnet, and create a DHCP handler to manage that subnet.
+	classes := config.GetClasses()
+	subnets := config.GetSubnets()
+	for name, class := range classes {
+		subnet, ok := subnets[class.Interface]
+		if !ok {
+			log.Printf("No subnet for %s\n", class.Interface)
+			continue
 		}
-	}
-
-	return &DHCPHandler{
-		iface:   params["iface"],
-		ip:      server_ip,
-		network: *network,
-		ranges:  ranges,
-		options: dhcp.Options{
-			dhcp.OptionSubnetMask:       network.Mask,
-			dhcp.OptionRouter:           router,
-			dhcp.OptionDomainNameServer: name_server,
-		},
-	}
-}
-
-func (h *DHCPHandler) recoverLeases() {
-	var root ap_common.PropertyNode
-
-	tree, err := config.GetProp("@/dhcp/leases")
-	if len(tree) == 0 {
-		if err != nil {
-			log.Printf("Failed to fetch lease info: %v\n", err)
-		}
-		return
-	}
-	if err = json.Unmarshal([]byte(tree), &root); err != nil {
-		log.Printf("Failed to decode lease info: %v\n", err)
-	}
-
-	for _, s := range root.Children {
-		ip := net.ParseIP(s.Name).To4()
-		r := h.addrRange(ip)
-		slot := dhcp.IPRange(r.start, ip) - 1
-		if slot >= 0 && slot < r.size {
-			l := &r.leases[slot]
-			l.name = ""
-			l.hwaddr = s.Value
-			l.ipaddr = ip
-			l.expires = s.Expires
-			l.static = (s.Expires == nil)
-			l.assigned = true
+		h := newHandler(name, subnet, nameserver, class.LeaseDuration)
+		if class.Interface == "default" {
+			h.iface = physical_nic
 		} else {
-			log.Printf("Out of range IP address %s for %s\n",
-				s.Name, s.Value)
+			h.iface = class.Interface
 		}
+
+		h.recoverLeases(leases)
+		handlers[h.class] = h
 	}
+
 }
 
-func initServeDHCP() {
-	handler := newHandler()
-	handler.recoverLeases()
+type MultiConn struct {
+	ifIndex int
+	conn    *ipv4.PacketConn
+	cm      *ipv4.ControlMessage
+}
 
-	log.Printf("DHCP server online\n")
-	err := dhcp.ListenAndServeIf(handler.iface, handler)
+func (s *MultiConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
+	n, s.cm, addr, err = s.conn.ReadFrom(b)
+
 	if err != nil {
-		log.Printf("DHCP server failed: %v\n", err)
-		os.Exit(1)
+		return
 	}
+
+	request_mac := ""
+	if s.cm != nil {
+		iface, err := net.InterfaceByIndex(s.cm.IfIndex)
+		if err == nil {
+			request_mac = iface.HardwareAddr.String()
+		}
+	}
+
+	// Even if a request arrives over a vlan, the mac address matches that
+	// of the physical nic
+	if request_mac != physical_mac {
+		log.Printf("Rejected from %s\b", request_mac)
+		n = 0
+		return
+	}
+	return
 }
 
-func initClientMap() {
-	var clients ap_common.PropertyNode
+func (s *MultiConn) WriteTo(b []byte, addr net.Addr) (n int, err error) {
+	s.cm.Src = nil
+	return s.conn.WriteTo(b, s.cm, addr)
+}
 
-	client_map = make(map[string]string)
-	tree, err := config.GetProp("@/clients")
-	if len(tree) == 0 {
+func ListenAndServeIf(interfaceName string, handler dhcp.Handler) error {
+	iface, err := net.InterfaceByName(interfaceName)
+	if err != nil {
+		return err
+	}
+
+	l, err := net.ListenPacket("udp4", ":67")
+	if err != nil {
+		return err
+	}
+	defer l.Close()
+
+	p := ipv4.NewPacketConn(l)
+	err = p.SetControlMessage(ipv4.FlagInterface, true)
+	if err != nil {
+		return err
+	}
+	serveConn := MultiConn{
+		ifIndex: iface.Index,
+		conn:    p,
+	}
+
+	return dhcp.Serve(&serveConn, handler)
+}
+
+func mainLoop() {
+	/*
+	 * Even with multiple VLANs and/or address ranges, we still only have a
+	 * single UDP broadcast address.  We create a metahandler that receives
+	 * all of the requests at that address, and routes them to the correct
+	 * per-class handler.
+	 */
+	h := DHCPHandler{
+		class: "_metahandler",
+	}
+	for {
+		err := ListenAndServeIf(physical_nic, &h)
 		if err != nil {
-			log.Printf("Failed to get initial client list: %v", err)
-		}
-		return
-	}
-
-	if err = json.Unmarshal([]byte(tree), &clients); err != nil {
-		log.Printf("Failed to decode configuration info: %v", err)
-		return
-	}
-
-	for _, client := range clients.Children {
-		for _, field := range client.Children {
-			if field.Name == "class" {
-				client_map[client.Name] = field.Value
-				log.Printf("%s starts as %s\n", client.Name,
-					field.Value)
-				break
-			}
+			log.Printf("DHCP server failed: %v\n", err)
+		} else {
+			log.Printf("%s DHCP server exited\n", err)
 		}
 	}
 }
 
-// # XXX quarantine range
-// # XXX trusted dns, untrusted dns
 //
-// # XXX intent: siphon/monitor or active
-//
-// # XXX allocator statistics
-// st_allocated = attr.ib(init=False, default=0)
-// st_freed = attr.ib(init=False, default=0)
-// st_request_fail_range = attr.ib(init=False, default=0)
-// st_request_fail_busy = attr.ib(init=False, default=0)
+// Determine the initial client -> class mappings
+func initClientMap() {
+	client_class = make(map[string]string)
+	clients := config.GetClients()
+	for client, info := range clients {
+		client_class[client] = info.Class
+		log.Printf("%s starts as %s\n", client, info.Class)
+	}
+}
 
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
@@ -781,19 +795,6 @@ func main() {
 	if err != nil {
 		log.Printf("Failed to connect to mcp\n")
 	}
-
-	//     # Need to have certain network capabilities.
-	//     priv_net_bind_service = prctl.cap_effective.net_bind_service
-	//     priv_net_broadcast = prctl.cap_effective.net_broadcast
-	//
-	//     if not priv_net_bind_service:
-	//         logging.warning("require CAP_NET_BIND_SERVICE to bind DHCP server port")
-	//         sys.exit(1)
-	//     if not priv_net_broadcast:
-	//         logging.warning("require CAP_NET_BROADCAST to acquire broadcast packets")
-	//         sys.exit(1)
-
-	//     # XXX configuration retrieval
 
 	flag.Parse()
 
@@ -808,13 +809,16 @@ func main() {
 
 	// Interface to configd
 	config = ap_common.NewConfig(pname)
-
 	initClientMap()
 
+	initHandlers()
 	if mcp != nil {
 		mcp.SetStatus("online")
 	}
-
-	initServeDHCP()
+	log.Printf("DHCP server online for %s (%s)\n", physical_nic,
+		physical_mac)
+	mainLoop()
 	log.Printf("Shutting down\n")
+
+	os.Exit(0)
 }

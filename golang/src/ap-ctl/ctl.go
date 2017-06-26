@@ -11,8 +11,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
+	"time"
 
 	"ap_common/mcp"
 )
@@ -27,6 +30,44 @@ var valid_cmds = map[string]bool{
 func usage() {
 	fmt.Printf("usage: ap-ctl <status | stop | start | restart> <daemon | all>\n")
 	os.Exit(1)
+}
+
+func printStatus(incoming string) {
+	var status map[string]mcp.DaemonStatus
+
+	if err := json.Unmarshal([]byte(incoming), &status); err != nil {
+		fmt.Printf("Unable to unpack result from ap.mcp\n")
+		return
+	}
+
+	if len(status) == 0 {
+		return
+	}
+	if len(status) == 1 {
+		for _, s := range status {
+			fmt.Printf(s.Status)
+		}
+		return
+	}
+
+	format := "%12s\t%5s\t%12s\t%s\n"
+	fmt.Printf(format, "DAEMON", "PID", "STATUS", "SINCE")
+	for _, s := range status {
+		var pid, since string
+
+		if s.Pid != -1 {
+			pid = strconv.Itoa(s.Pid)
+		} else {
+			pid = "-"
+		}
+		if s.Since == time.Unix(0, 0) {
+			since = "forever"
+		} else {
+			since = s.Since.Format("Mon Jan 2 15:04:05")
+		}
+
+		fmt.Printf(format, s.Name, pid, s.Status, since)
+	}
 }
 
 func main() {
@@ -55,7 +96,7 @@ func main() {
 			fmt.Printf("Failed get status for %s: %v\n",
 				daemon, err)
 		}
-		fmt.Printf("%v\n", rval)
+		printStatus(rval)
 	} else {
 		err := mcp.Do(daemon, cmd)
 		if err != nil {

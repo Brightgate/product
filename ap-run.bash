@@ -72,7 +72,7 @@ Usage:	ap-run broker
 	ap-run dnsd
 	ap-run httpd
 	ap-run filterd
-	ap-run hostapd
+	ap-run networkd
 	ap-run analyzerd
 	ap-run actord
 	ap-run exploitd
@@ -93,11 +93,8 @@ elif [[ $1 == dhcpd ]]; then
 	sudobinrun ap.dhcp4d
 elif [[ $1 == dnsd ]]; then
 	sudobinrun ap.dns4d
-elif [[ $1 == hostapd ]]; then
-	if [ -v BG_SSID ]; then
-		OPTS="-ssid $BG_SSID"
-	fi
-	sudobinrun ap.hostapd.m $OPTS
+elif [[ $1 == networkd ]]; then
+	sudobinrun ap.networkd $OPTS
 elif [[ $1 == httpd ]]; then
 	binrun ap.httpd # While using port 8000.
 elif [[ $1 == logd ]]; then
@@ -123,9 +120,9 @@ elif [[ $1 == "start-world" ]]; then
 	binrun ap.logd &
 	binrun ap.configd --propdir $etc &
 	sleep 3
+	sudobinrun ap.networkd &
 	sudobinrun ap.sampled &
 	sudobinrun ap.scand --scandir $spool &
-	sudobinrun ap.hostapd.m &
 	sudobinrun ap.dhcp4d &
 	sudobinrun ap.dns4d &
 	binrun ap.httpd # While using port 8000.

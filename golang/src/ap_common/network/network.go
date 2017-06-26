@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"time"
 
@@ -163,4 +164,20 @@ func HWAddrToUint64(a net.HardwareAddr) uint64 {
 	copy(hwaddr[2:], a)
 
 	return binary.BigEndian.Uint64(hwaddr)
+}
+
+// Wait for a network device to reach the 'up' state.  Returns an error on
+// timeout
+func WaitForDevice(dev string, timeout time.Duration) error {
+	fn := "/sys/class/net/" + dev + "/operstate"
+
+	start := time.Now()
+	for time.Since(start) < timeout {
+		state, err := ioutil.ReadFile(fn)
+		if err == nil && string(state[0:2]) == "up" {
+			return nil
+		}
+		time.Sleep(time.Millisecond * 100)
+	}
+	return fmt.Errorf("Timeout %s still not online.", dev)
 }

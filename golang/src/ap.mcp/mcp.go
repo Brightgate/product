@@ -50,10 +50,10 @@ type daemon struct {
 	ThirdParty bool    `json:"ThirdParty,omitempty"`
 	Privileged bool
 
-	run         bool
-	lastContact time.Time
-	process     *os.Process
-	status      string
+	run        bool
+	statusTime time.Time
+	process    *os.Process
+	status     string
 	sync.Mutex
 }
 
@@ -76,6 +76,11 @@ var (
 
 	daemons = make(daemonSet)
 )
+
+func setStatus(d *daemon, status string) {
+	d.status = status
+	d.statusTime = time.Now()
+}
 
 //
 // Given a name, select the daemons that will be affected.  Currently the
@@ -122,7 +127,7 @@ func singleInstance(d *daemon) error {
 	var args []string
 	var execpath string
 
-	d.status = "starting"
+	setStatus(d, "starting")
 
 	if d.Options != nil {
 		args = strings.Split(*d.Options, " ")
@@ -162,7 +167,7 @@ func singleInstance(d *daemon) error {
 	if d.ThirdParty {
 		// A third party daemon doesn't participate in the ZMQ updates,
 		// so we won't get an online notification.  Just set it here.
-		d.status = "online"
+		setStatus(d, "online")
 	}
 
 	if err == nil {
@@ -196,7 +201,7 @@ func runDaemon(d *daemon) {
 	d.Lock()
 	if d.status == "offline" || d.status == "broken" {
 		d.run = true
-		d.status = "preparing"
+		setStatus(d, "preparing")
 	} else {
 		log.Printf("%s is already %s\n", d.Name, d.status)
 		d.run = false
@@ -212,16 +217,16 @@ func runDaemon(d *daemon) {
 			log.Printf("%s exited after %s\n", d.Name, time.Since(start_time))
 			if time.Since(start_times[0]) < period {
 				log.Printf("%s is dying too quickly")
-				d.status = "broken"
+				setStatus(d, "broken")
 				d.run = false
 			}
 		} else {
 			log.Printf("%s wouldn't start: %v\n", d.Name, err)
-			d.status = "broken"
+			setStatus(d, "broken")
 			d.run = false
 		}
 		if d.run {
-			d.status = "restarting"
+			setStatus(d, "restarting")
 		}
 	}
 	d.Unlock()
@@ -229,17 +234,25 @@ func runDaemon(d *daemon) {
 
 func handleGetStatus(set daemonSet) *string {
 	var rval *string
+	status := make(map[string]mcp.DaemonStatus)
 
-	//
-	// Can only get the status of one daemon at a time
-	//
-	// XXX: make this a JSON blob with multiple daemons, their status,
-	// and their last contact time
-	//
-	if len(set) == 1 {
-		for _, d := range set {
-			rval = &d.status
+	for _, d := range set {
+		pid := -1
+		if d.process != nil {
+			pid = d.process.Pid
 		}
+
+		status[d.Name] = mcp.DaemonStatus{
+			Name:   d.Name,
+			Status: d.status,
+			Since:  d.statusTime,
+			Pid:    pid,
+		}
+	}
+	b, err := json.MarshalIndent(status, "", "  ")
+	if err == nil {
+		s := string(b)
+		rval = &s
 	}
 	return rval
 }
@@ -249,8 +262,7 @@ func handleSetStatus(set daemonSet, status *string) {
 	// command to target more than a single daemon
 	if len(set) == 1 {
 		for _, d := range set {
-			d.status = *status
-			d.lastContact = time.Now()
+			setStatus(d, *status)
 		}
 	}
 }
@@ -311,7 +323,7 @@ func handleStart(set daemonSet) {
 				log.Printf("%s took more than %v to come "+
 					"online.  Giving up.",
 					next.Name, online_timeout)
-				next.status = "broken"
+				setStatus(next, "broken")
 			} else if *debug && next.status != last {
 				last = next.status
 				if *debug {
@@ -348,7 +360,7 @@ func handleStop(set daemonSet) {
 		if d.status != "offline" {
 			log.Printf("Stopping %s\n", d.Name)
 			procs[n] = d.process
-			d.status = "stopping"
+			setStatus(d, "stopping")
 			d.run = false
 		}
 		d.Unlock()
@@ -363,7 +375,7 @@ func handleStop(set daemonSet) {
 					// if the process has changed, it means
 					// the daemon has already been
 					// restarted.
-					d.status = "offline"
+					setStatus(d, "offline")
 					log.Printf("%s stopped\n", d.Name)
 				}
 				delete(set, n)
@@ -552,6 +564,7 @@ func loadDefinitions() error {
 			continue
 		}
 		d.status = "offline"
+		d.statusTime = time.Unix(0, 0)
 		if d.Options != nil {
 			r := re.ReplaceAllString(*d.Options, *aproot)
 			d.Options = &r

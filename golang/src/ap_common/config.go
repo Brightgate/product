@@ -11,8 +11,11 @@
 package ap_common
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -25,6 +28,18 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
+type ClassConfig struct {
+	Interface     string
+	LeaseDuration int
+}
+
+type ClientInfo struct {
+	Class   string
+	DNSName string
+}
+
+//
+// A node in the property tree.
 type PropertyNode struct {
 	Name     string
 	Value    string          `json:"Value,omitempty"`
@@ -47,16 +62,55 @@ func dumpSubtree(node *PropertyNode, level int) {
 	}
 }
 
-func DumpTree(node *PropertyNode) {
-	dumpSubtree(node, 0)
+// Dump the contents of a property tree in a human-legible format
+func (n *PropertyNode) DumpTree() {
+	dumpSubtree(n, 0)
 }
 
+// Search the node's children, looking for one with a name matching the provided
+// key.  Returns a pointer the child node if it finds a match, nil if it
+// doesn't.
+func (n *PropertyNode) GetChild(key string) *PropertyNode {
+	for _, s := range n.Children {
+		if s.Name == key {
+			return s
+		}
+	}
+	return nil
+}
+
+// Search the node's children, looking for one with a value matching the
+// provided key.  Returns a pointer the child node if it finds a match, nil if
+// it doesn't.  If multiple children have the same value, this will return only
+// the first one found.
+func (n *PropertyNode) GetChildByValue(value string) *PropertyNode {
+	for _, s := range n.Children {
+		if s.Value == value {
+			return s
+		}
+	}
+	return nil
+}
+
+// Returns the property name
+func (n *PropertyNode) GetName() string {
+	return n.Name
+}
+
+// Returns the property value
+func (n *PropertyNode) GetValue() string {
+	return n.Value
+}
+
+// Opaque type representing a connection to ap.configd
 type Config struct {
 	mutex  sync.Mutex
 	socket *zmq.Socket
 	sender string
 }
 
+// Connect to ap.configd.  Return a handle used for subsequent interactions with
+// the daemon
 func NewConfig(name string) *Config {
 	sender := fmt.Sprintf("%s(%d)", name, os.Getpid())
 	socket, _ := zmq.NewSocket(zmq.REQ)
@@ -114,26 +168,169 @@ func (c *Config) msg(oc base_msg.ConfigQuery_Operation, prop, val string,
 	return rval, err
 }
 
+// Retrieves the properties subtree rooted at the given property, and returns a
+// PropertyNode representing the root of that subtree
+func (c Config) GetProps(prop string) (*PropertyNode, error) {
+	var root PropertyNode
+	var err error
+
+	tree, err := c.msg(base_msg.ConfigQuery_GET, prop, "-", nil)
+	if err != nil {
+		fmt.Printf("Failed to retrieve %s: %v", prop, err)
+	} else {
+		if err = json.Unmarshal([]byte(tree), &root); err != nil {
+			fmt.Printf("Failed to decode %s: %v", prop, err)
+		}
+	}
+
+	return &root, err
+}
+
+// Retrieves a single property from the tree, returning it as a String
 func (c Config) GetProp(prop string) (string, error) {
-	rval, err := c.msg(base_msg.ConfigQuery_GET, prop, "-", nil)
+	var rval string
+	var err error
+
+	if root, err := c.GetProps(prop); err == nil {
+		rval = root.Value
+	}
 
 	return rval, err
 }
 
+// Updates a single property, taking an optional expiration time.  If the
+// property doesn't already exist, an error is returned.
 func (c Config) SetProp(prop, val string, expires *time.Time) error {
 	_, err := c.msg(base_msg.ConfigQuery_SET, prop, val, expires)
 
 	return err
 }
 
+// Updates a single property, taking an optional expiration time.  If the
+// property doesn't already exist, it is created - as well as any parent
+// properties needed to provide a path through the tree.
 func (c Config) CreateProp(prop, val string, expires *time.Time) error {
 	_, err := c.msg(base_msg.ConfigQuery_CREATE, prop, val, expires)
 
 	return err
 }
 
+// Deletes a property, or property subtree
 func (c Config) DeleteProp(prop string) error {
 	_, err := c.msg(base_msg.ConfigQuery_DELETE, prop, "-", nil)
 
 	return err
+}
+
+//
+// Utility functions to fetch specific property subtrees and transform the
+// results into typed maps
+
+func getStringVal(root *PropertyNode, name string) (string, error) {
+	var err error
+	var rval string
+
+	node := root.GetChild(name)
+	if node == nil {
+		err = fmt.Errorf("%s is missing a %s property",
+			node.Name)
+	} else {
+		rval = node.Value
+	}
+
+	return rval, err
+}
+
+func getIntVal(root *PropertyNode, name string) (int, error) {
+	var err error
+	var rval int
+
+	node := root.GetChild(name)
+	if node == nil {
+		err = fmt.Errorf("%s is missing a %s property",
+			node.Name)
+	} else {
+		if rval, err = strconv.Atoi(node.Value); err != nil {
+			err = fmt.Errorf("%s has malformed %s property",
+				node.Name)
+		}
+		fmt.Printf("%s %s -> %d\n", name, node.Value, rval)
+	}
+	return rval, err
+}
+
+//
+// Fetch the Classes subtree and return a Class -> ClassConfig map
+func (c Config) GetClasses() map[string]*ClassConfig {
+	props, err := c.GetProps("@/classes")
+	if err != nil {
+		log.Printf("Failed to get class list: %v", err)
+		return nil
+	}
+
+	set := make(map[string]*ClassConfig)
+	for _, class := range props.Children {
+		var iface string
+		var duration int
+
+		if iface, err = getStringVal(class, "interface"); err == nil {
+			duration, err = getIntVal(class, "lease_duration")
+		}
+		if err == nil {
+			c := ClassConfig{Interface: iface, LeaseDuration: duration}
+			set[class.Name] = &c
+		} else {
+			fmt.Printf("Malformed class %s: %v\n", class.Name, err)
+		}
+	}
+
+	return set
+}
+
+//
+// Fetch the interfaces subtree, and return a map of Interface -> subnet
+func (c Config) GetSubnets() map[string]string {
+	props, err := c.GetProps("@/interfaces")
+	if err != nil {
+		log.Printf("Failed to get interfaces list: %v", err)
+		return nil
+	}
+
+	set := make(map[string]string)
+	for _, iface := range props.Children {
+		subnet, err := getStringVal(iface, "subnet")
+		if err != nil {
+			fmt.Printf("Malformed subnet %s: %v\n", iface.Name, err)
+		} else {
+			set[iface.Name] = subnet
+		}
+	}
+
+	return set
+}
+
+//
+// Fetch the Clients subtree, and return a map of macaddr -> ClientInfo
+func (c Config) GetClients() map[string]*ClientInfo {
+	props, err := c.GetProps("@/clients")
+	if err != nil {
+		log.Printf("Failed to get clients list: %v", err)
+		return nil
+	}
+
+	set := make(map[string]*ClientInfo)
+	for _, client := range props.Children {
+		var class, macaddr, dnsname string
+
+		macaddr = client.Name
+		if class, err = getStringVal(client, "class"); err != nil {
+			fmt.Printf("Client %s has no class\n", macaddr)
+		} else {
+			dnsname, err = getStringVal(client, "dns")
+			c := ClientInfo{Class: class, DNSName: dnsname}
+			set[macaddr] = &c
+		}
+	}
+
+	return set
 }

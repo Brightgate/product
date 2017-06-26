@@ -594,13 +594,11 @@ func property_get(property string) (string, error) {
 		err = fmt.Errorf("No such property")
 	} else if node.ops != nil {
 		rval, err = node.ops.get(node)
-	} else if len(node.Children) != 0 {
+	} else {
 		b, err := json.Marshal(node)
 		if err == nil {
 			rval = string(b)
 		}
-	} else {
-		rval = node.Value
 	}
 
 	if err != nil {
@@ -625,7 +623,7 @@ func prop_tree_store() error {
 	propfile := *propdir + property_filename
 	backupfile := *propdir + backup_filename
 
-	s, err := json.MarshalIndent(property_root, "", "    ")
+	s, err := json.MarshalIndent(property_root, "", "  ")
 	if err != nil {
 		log.Fatal("Failed to construct properties JSON: %v\n", err)
 	}

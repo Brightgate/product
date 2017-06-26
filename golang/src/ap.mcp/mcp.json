@@ -23,9 +23,9 @@
         "DependsOn": "configd",
         "Privileged": true
     },
-    "hostapd": {
-        "Name": "hostapd.m",
-        "Binary": "ap.hostapd.m",
+    "networkd": {
+        "Name": "networkd",
+        "Binary": "ap.networkd",
         "DependsOn": "configd",
         "Privileged": true
     },
@@ -44,7 +44,7 @@
     "sampled": {
         "Name": "sampled",
         "Binary": "ap.sampled",
-        "DependsOn": "configd",
+        "DependsOn": "networkd",
         "Privileged": true
     },
     "prometheus": {

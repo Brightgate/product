@@ -42,6 +42,13 @@ const (
 	MCP_OP_DO  = base_msg.MCPRequest_DO
 )
 
+type DaemonStatus struct {
+	Name   string
+	Status string
+	Since  time.Time
+	Pid    int
+}
+
 func New(name string) (*MCP, error) {
 	var handle *MCP
 

@@ -15,7 +15,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -32,18 +31,6 @@ var (
 	del_prop  = flag.Bool("del", false, "Delete a property")
 	config    *ap_common.Config
 )
-
-func show_props(props string) {
-	var root ap_common.PropertyNode
-
-	err := json.Unmarshal([]byte(props), &root)
-	if err != nil {
-		// Assume this was a single value - not a tree
-		fmt.Printf("%s\n", props)
-	} else {
-		ap_common.DumpTree(&root)
-	}
-}
 
 func main() {
 	flag.Parse()
@@ -95,12 +82,12 @@ func main() {
 		fmt.Printf("%s: %v=%v\n", op, prop, val)
 	} else if *get_value {
 		for _, arg := range flag.Args() {
-			val, err := config.GetProp(arg)
+			root, err := config.GetProps(arg)
 			if err != nil {
 				fmt.Printf("property get failed: %v\n", err)
 				os.Exit(1)
 			}
-			show_props(val)
+			root.DumpTree()
 		}
 	} else if *del_prop {
 		err := config.DeleteProp(prop)

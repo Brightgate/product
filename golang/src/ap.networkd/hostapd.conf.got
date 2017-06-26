@@ -1,4 +1,4 @@
-interface={{.InterfaceName}}
+interface={{.Interface}}
 driver=nl80211
 ssid={{.SSID}}
 utf8_ssid=1
@@ -20,3 +20,7 @@ wpa_passphrase={{.Passphrase}}
 wpa_key_mgmt=WPA-PSK
 wpa_pairwise=TKIP
 rsn_pairwise=CCMP
+
+{{.VLANComment}}dynamic_vlan=1
+{{.VLANComment}}vlan_file={{.ConfDir}}/hostapd.vlan
+{{.VLANComment}}accept_mac_file={{.ConfDir}}/hostapd.macs
