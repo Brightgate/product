@@ -18,7 +18,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -28,32 +28,81 @@ import (
 	"time"
 
 	"ap_common"
+	"ap_common/mcp"
 	"base_def"
 	"base_msg"
 
 	"github.com/golang/protobuf/proto"
 	nmap "github.com/ktscholl/go-nmap"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
-	broker      ap_common.Broker
 	activeHosts map[string]struct{}
+	broker      ap_common.Broker
+	config      *ap_common.Config
 	scanQueue   chan ScanRequest
 	quit        chan string
-	nmapDir     = flag.String("scandir", ".",
+
+	nmapDir = flag.String("scandir", ".",
 		"directory in which the nmap scan files should be stored")
-	// default value?
+	addr = flag.String("prom_address", base_def.SCAND_PROMETHEUS_PORT,
+		"The address to listen on for Prometheus HTTP requests.")
+
+	// prometheus metrics
+	cleanScanCount = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "cleaning_scans",
+			Help: "Number of cleaning scans completed.",
+		})
+	hostScanCount = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "host_scans",
+			Help: "Number of host scans completed.",
+		})
+	hostsUp = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "hosts_up",
+			Help: "Number of hosts currently up.",
+		})
+	knownHostsGauge = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "known_hosts",
+			Help: "Number of recognized hosts.",
+		})
+	scanDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name: "scan_duration",
+			Help: "Scan duration in seconds, by IP and scan type.",
+		},
+		[]string{"ip", "type"})
+	scannersFinished = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "scanners_finished",
+			Help: "Number of scans finished, by IP and scan type.",
+		},
+		[]string{"ip", "type"})
+	scannersStarted = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "scanners_started",
+			Help: "Number of scans started, by IP and scan type.",
+		},
+		[]string{"ip", "type"})
 )
 
 const (
-	numScanners  = 10
-	hostScanFreq = 5 * time.Minute
-	cleanFreq    = 10 * time.Minute
-	maxFiles     = 10
-	hostLifetime = 1 * time.Hour
-	defaultFreq  = 2 * time.Minute
-	udpFreq      = 10 * time.Minute
 	bufferSize   = 100
+	cleanFreq    = 10 * time.Minute
+	defaultFreq  = 2 * time.Minute
+	hostLifetime = 1 * time.Hour
+	hostScanFreq = 5 * time.Minute
+	maxFiles     = 10
+	numScanners  = 10
+	pname        = "ap.scand"
+	udpFreq      = 30 * time.Minute
+	// default scan takes 70sec on average
+	// udp scan takes 1000sec on average
 )
 
 // ScanRequest is used to send tasks to scanners
@@ -63,30 +112,7 @@ type ScanRequest struct {
 	File string
 }
 
-// Event contains information from scan to be sent via message bus.
-type Event struct {
-	// host info
-	Addresses []nmap.Address
-	Hostnames []nmap.Hostname
-	Endtime   nmap.Timestamp
-	Status    nmap.Status
-	// port info
-	PortID        int
-	Protocol      string
-	State         nmap.State
-	ServiceName   string
-	ServiceMethod string
-	Confidence    int
-	DeviceType    string
-	Product       string
-	ExtraInfo     string
-	// extra port info (closed|filtered)
-	EPState  string
-	EPCount  int
-	EPReason string
-}
-
-// ByDateModified is for sorting files by date modified
+// ByDateModified is for sorting files by date modified.
 type ByDateModified []string
 
 func (s ByDateModified) Len() int {
@@ -97,14 +123,15 @@ func (s ByDateModified) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
 
+// Nonexistent files are treated as if they were older.
 func (s ByDateModified) Less(i, j int) bool {
 	iFile, err := os.Stat(s[i])
 	if err != nil {
-		panic(err)
+		return false
 	}
 	jFile, err := os.Stat(s[j])
 	if err != nil {
-		panic(err)
+		return true
 	}
 	return iFile.ModTime().After(jFile.ModTime())
 }
@@ -146,96 +173,81 @@ func schedulePortScan(request ScanRequest, freq time.Duration) {
 // scanner performs ScanRequests as they come in through the scanQueue.
 func scanner(id int) {
 	for s := range scanQueue {
-		log.Printf("Scanner %d starting %+v", id, s)
+		t := time.Now()
+		scannersStarted.WithLabelValues(s.IP, s.File).Inc()
 		portScan(s.IP, s.Args, s.File)
-		log.Printf("Scanner %d finished %+v", id, s)
+		scanDuration.WithLabelValues(s.IP, s.File).Observe(
+			time.Since(t).Seconds())
+		scannersFinished.WithLabelValues(s.IP, s.File).Inc()
 	}
-}
-
-// getIP gets the IP address of the created network. From arpspoof.go
-func getIP() (ipaddr net.IP) {
-	iface, err := net.InterfaceByName("wlan0")
-	if err != nil {
-		log.Fatalf("Unable to use interface wlan0")
-	}
-	ifaceAddrs, err := iface.Addrs()
-	if err != nil {
-		log.Fatalln("Unable to get interface unicast addresses:", err)
-	}
-	for _, addr := range ifaceAddrs {
-		if ipnet, ok := addr.(*net.IPNet); ok {
-			if ip4 := ipnet.IP.To4(); ip4 != nil {
-				ipaddr = ip4
-				break
-			}
-		}
-	}
-	if ipaddr == nil {
-		log.Fatalln("Could not get interface address.")
-	}
-	return
 }
 
 // hostScan scans the network for new hosts and schedules regular port scans
 // on the host if one is found.
 func hostScan() {
-	log.Println("Starting host scan")
-
+	defer hostScanCount.Inc()
 	files, err := ioutil.ReadDir(*nmapDir)
 	if err != nil {
 		log.Printf("Error checking known hosts: %v\n", err)
 		return
 	}
+	// integrate hosts recognized from other daemons
 	var knownHosts []string
+	var numKnownHosts float64
 	for _, file := range files {
 		if file.IsDir() {
 			knownHosts = append(knownHosts, file.Name())
+			numKnownHosts++
 		}
 	} // note that this includes netscans
-	netIP := "192.168.2.35/24"
-	// netIP := getIP().String() + "/24"
-	// ^^ would scan our network, but right now that's not too interesting
-	file := fmt.Sprintf("%snetscans/netscan-%d.xml", *nmapDir,
-		int(time.Now().Unix()))
-	args := "-sn -PS22,53,3389,80,443 -PA22,53,3389,80,443 -PU -PY"
-	scanResults, err := scan(netIP, args, file, false)
-	if err != nil {
-		// error already printed in scan
-		return
-	}
-	for _, host := range scanResults.Hosts {
-		var ip string
-		for _, addr := range host.Addresses {
-			if addr.AddrType == "ipv4" {
-				ip = addr.Addr
-				break
-			}
+	knownHostsGauge.Set(numKnownHosts - 1)
+	ipMap := config.GetSubnets()
+	var numHostsUp float64
+	for iface, subnetIP := range ipMap {
+		// iface, subnetIP := "test", "192.168.2.1/24" <-- for testing on BUR01
+		file := fmt.Sprintf("%snetscans/netscan-%d.xml", *nmapDir,
+			int(time.Now().Unix()))
+		args := "-sn -PS22,53,3389,80,443 -PA22,53,3389,80,443 -PU -PY"
+		scanResults, err := scan(subnetIP, args, file, false)
+		if err != nil {
+			// error already printed in scan
+			return
 		}
-		if host.Status.State == "up" && ip != "" {
-			if _, ok := activeHosts[ip]; !ok {
-				if !contains(knownHosts, ip) {
-					// XXX message bus, net.entity or something similar
-					log.Printf("Unknown host discovered: %s", ip)
-					if err := os.MkdirAll(*nmapDir+ip, 0755); err != nil {
-						log.Printf("Error adding directory %s: %v\n", ip, err)
-						return
-					}
-				} else {
-					log.Printf("%s is back online, restarting scans", ip)
+		for _, host := range scanResults.Hosts {
+			var ip string
+			for _, addr := range host.Addresses {
+				if addr.AddrType == "ipv4" {
+					ip = addr.Addr
+					break
 				}
-				// XXXX eventually, set scans and scan frequencies based on
-				// type of device detected
-				schedulePortScan(ScanRequest{ip, "-v -sV -T4", "default"}, defaultFreq)
-				schedulePortScan(ScanRequest{ip, "-sU -v -sV -T4", "udp"}, udpFreq)
-				activeHosts[ip] = struct{}{}
 			}
-			if _, err := os.Create(*nmapDir + ip + "/.keep"); err != nil {
-				log.Printf("Error adding .keep file %s: %v\n", ip, err)
-				return
+			if host.Status.State == "up" && ip != "" {
+				numHostsUp++
+				if _, ok := activeHosts[ip]; !ok {
+					if !contains(knownHosts, ip) {
+						// XXX message bus, net.entity or something similar
+						log.Printf("Unknown host discovered on %s: %s", iface, ip)
+						if err := os.MkdirAll(*nmapDir+ip, 0755); err != nil {
+							log.Printf("Error adding directory %s: %v\n", ip, err)
+							return
+						}
+					} else {
+						log.Printf("%s is back online on %s, restarting scans", ip, iface)
+					}
+					// XXXX eventually, set scans and scan frequencies based on
+					// type of device detected
+					schedulePortScan(ScanRequest{ip, "-v -sV -O -T4", "default"}, defaultFreq)
+					schedulePortScan(ScanRequest{ip, "-sU -v -O -sV -T4", "udp"}, udpFreq)
+					activeHosts[ip] = struct{}{}
+				}
+				if _, err := os.Create(*nmapDir + ip + "/.keep"); err != nil {
+					log.Printf("Error adding .keep file %s: %v\n", ip, err)
+					return
+				}
 			}
 		}
 	}
-	log.Println("Finished host scan")
+	hostsUp.Set(numHostsUp)
 }
 
 // scan uses nmap to scan ip with the given arguments, outputting its results
@@ -285,105 +297,106 @@ func scan(ip string, nmapArgs string, file string, verbose bool) (*nmap.NmapRun,
 	return scanResults, nil
 }
 
-// start gives informations about the start conditions of a port scan from
-// its NmapRun struct.
-func start(s *nmap.NmapRun) string {
-	return fmt.Sprintf("Nmap %s scan initiated %s as: %s", s.Version,
-		s.StartStr, s.Args)
-}
-
-// toEvents separates a NmapRun struct into a slice of Events
-func toEvents(s *nmap.NmapRun) (events []Event) {
+// toHosts changes an NmapRun struct into something that can be sent over
+// the message bus
+func toHosts(s *nmap.NmapRun) []*base_msg.Host {
+	hosts := make([]*base_msg.Host, 0)
 	for _, host := range s.Hosts {
-		if host.Status.State == "down" {
-			e := *new(Event)
-			e.Addresses = host.Addresses
-			e.Hostnames = host.Hostnames
-			e.Endtime = s.RunStats.Finished.Time
-			e.Status = host.Status
-			events = append(events, e)
+		h := new(base_msg.Host)
+		h.Starttime = timestampToProto(host.StartTime)
+		h.Endtime = timestampToProto(host.EndTime)
+		h.Status = proto.String(host.Status.State)
+		h.StatusReason = proto.String(host.Status.Reason)
+		for _, addr := range host.Addresses {
+			a := &base_msg.InfoAndType{
+				Info: proto.String(addr.Addr),
+				Type: proto.String(addr.AddrType),
+			}
+			h.Addresses = append(h.Addresses, a)
 		}
-		for _, port := range host.Ports {
-			e := *new(Event)
-			e.Addresses = host.Addresses
-			e.Hostnames = host.Hostnames
-			e.Endtime = host.EndTime
-			e.Status = host.Status
-			e.PortID = port.PortId
-			e.Protocol = port.Protocol
-			e.State = port.State
-			e.ServiceName = port.Service.Name
-			e.Confidence = port.Service.Conf
-			e.ServiceMethod = port.Service.Method
-			e.DeviceType = port.Service.DeviceType
-			e.Product = port.Service.Product
-			e.ExtraInfo = port.Service.ExtraInfo
-			events = append(events, e)
+		for _, hostname := range host.Hostnames {
+			hn := &base_msg.InfoAndType{
+				Info: proto.String(hostname.Name),
+				Type: proto.String(hostname.Type),
+			}
+			h.Hostnames = append(h.Hostnames, hn)
 		}
 		for _, extraports := range host.ExtraPorts {
 			for _, reason := range extraports.Reasons {
-				e := *new(Event)
-				e.Addresses = host.Addresses
-				e.Hostnames = host.Hostnames
-				e.Endtime = host.EndTime
-				e.Status = host.Status
-				e.EPState = extraports.State
-				e.EPReason = reason.Reason
-				e.EPCount = reason.Count
-				events = append(events, e)
+				ep := &base_msg.ExtraPort{
+					State:  proto.String(extraports.State),
+					Count:  proto.Int(reason.Count),
+					Reason: proto.String(reason.Reason),
+				}
+				h.ExtraPorts = append(h.ExtraPorts, ep)
 			}
 		}
+		for _, port := range host.Ports {
+			p := new(base_msg.Port)
+			p.Protocol = proto.String(port.Protocol)
+			p.PortId = proto.Int(port.PortId)
+			p.State = proto.String(port.State.State)
+			p.StateReason = proto.String(port.State.Reason)
+			p.ServiceName = proto.String(port.Service.Name)
+			p.ServiceMethod = proto.String(port.Service.Method)
+			p.Confidence = proto.Int(port.Service.Conf)
+
+			//optional
+			p.DeviceType = proto.String(port.Service.DeviceType)
+			p.Product = proto.String(port.Service.Product)
+			p.ExtraInfo = proto.String(port.Service.ExtraInfo)
+			p.ServiceFp = proto.String(port.Service.ServiceFp)
+			p.Version = proto.String(port.Service.Version)
+			for _, cpe := range port.Service.CPEs {
+				p.Cpes = append(p.Cpes, string(cpe))
+			}
+			p.Ostype = proto.String(port.Service.OsType)
+
+			h.Ports = append(h.Ports, p)
+		}
+		for _, usedPort := range host.Os.PortsUsed {
+			up := &base_msg.UsedPort{
+				State:    proto.String(usedPort.State),
+				Protocol: proto.String(usedPort.Proto),
+				PortId:   proto.Int(usedPort.PortId),
+			}
+			h.PortsUsed = append(h.PortsUsed, up)
+		}
+		for _, match := range host.Os.OsMatches {
+			m := new(base_msg.OSMatch)
+			m.Name = proto.String(match.Name)
+			m.Accuracy = proto.String(match.Accuracy)
+			m.Line = proto.String(match.Line)
+			for _, class := range match.OsClasses {
+				c := new(base_msg.OSClass)
+				c.Type = proto.String(class.Type)
+				c.Vendor = proto.String(class.Vendor)
+				c.Osfamily = proto.String(class.OsFamily)
+				c.Osgen = proto.String(class.OsGen)
+				c.Accuracy = proto.String(class.Accuracy)
+				for _, cpe := range class.CPEs {
+					c.Cpes = append(c.Cpes, string(cpe))
+				}
+				m.OsClasses = append(m.OsClasses, c)
+			}
+			h.OsMatches = append(h.OsMatches, m)
+		}
+		for _, f := range host.Os.OsFingerprints {
+			h.OsFingerprints = append(h.OsFingerprints, string(f.Fingerprint))
+		}
+		h.Uptime = proto.Int(host.Uptime.Seconds)
+		h.Lastboot = proto.String(host.Uptime.Lastboot)
+		hosts = append(hosts, h)
 	}
-	return
+	return hosts
 }
 
-// toScanPort takes an Event and returns a ScanPort. Used for message bus.
-func (e Event) toScanPort() base_msg.ScanPort {
-	addresses := make([]string, 0)
-	addrTypes := make([]string, 0)
-	hostnames := make([]string, 0)
-	hostnameTypes := make([]string, 0)
-
-	for _, addr := range e.Addresses {
-		addresses = append(addresses, addr.Addr)
-		addrTypes = append(addrTypes, addr.AddrType)
+func timestampToProto(t nmap.Timestamp) *base_msg.Timestamp {
+	tt := time.Time(t)
+	return &base_msg.Timestamp{
+		Seconds: proto.Int64(tt.Unix()),
+		Nanos:   proto.Int32(int32(tt.Nanosecond())),
 	}
-
-	for _, hostname := range e.Hostnames {
-		hostnames = append(hostnames, hostname.Name)
-		hostnameTypes = append(hostnameTypes, hostname.Type)
-	}
-	t := time.Time(e.Endtime)
-
-	scan := base_msg.ScanPort{
-		// host information
-		Address:      addresses,
-		AddrType:     addrTypes,
-		Hostname:     hostnames,
-		HostnameType: hostnameTypes,
-		ScanTime: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
-		// port information
-		Status:        proto.String(e.Status.State),
-		StatusReason:  proto.String(e.Status.Reason),
-		PortId:        proto.Int(e.PortID),
-		Protocol:      proto.String(e.Protocol),
-		State:         proto.String(e.State.State),
-		StateReason:   proto.String(e.State.Reason),
-		ServiceName:   proto.String(e.ServiceName),
-		ServiceMethod: proto.String(e.ServiceMethod),
-		Confidence:    proto.Int(e.Confidence),
-		DeviceType:    proto.String(e.DeviceType),
-		Product:       proto.String(e.Product),
-		ExtraInfo:     proto.String(e.ExtraInfo),
-		// extra port info (closed|filtered)
-		ExtraPortState:  proto.String(e.EPState),
-		ExtraPortCount:  proto.Int(e.EPCount),
-		ExtraPortReason: proto.String(e.EPReason),
-	}
-	return scan
 }
 
 // portScan scans the ports of the given IP address using nmap, putting
@@ -402,23 +415,21 @@ func portScan(ip string, nmapArgs string, filename string) {
 		quit <- ip
 		return
 	}
-	portScans := make([]*base_msg.ScanPort, 0)
-	for _, event := range toEvents(scanResults) {
-		sp := event.toScanPort()
-		portScans = append(portScans, &sp)
-	}
+	hosts := toHosts(scanResults)
 	t := time.Now()
+	start := fmt.Sprintf("Nmap %s scan initiated %s as: %s", scanResults.Version,
+		scanResults.StartStr, scanResults.Args)
 
 	scan := &base_msg.EventNetScan{
 		Timestamp: &base_msg.Timestamp{
 			Seconds: proto.Int64(t.Unix()),
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
-		Sender:       proto.String(fmt.Sprintf("ap.dns4d(%d)", os.Getpid())),
+		Sender:       proto.String(broker.Name),
 		Debug:        proto.String("-"),
 		ScanLocation: proto.String(file),
-		StartInfo:    proto.String(start(scanResults)),
-		PortScan:     portScans,
+		StartInfo:    proto.String(start),
+		Hosts:        hosts,
 		Summary:      proto.String(scanResults.RunStats.Finished.Summary),
 	}
 
@@ -432,8 +443,7 @@ func portScan(ip string, nmapArgs string, filename string) {
 // and also deletes files older than hostLifetime. If a directory is empty, it
 // is deleted.
 func cleanAll() {
-	log.Println("Beginning cleaning")
-
+	defer cleanScanCount.Inc()
 	files, err := ioutil.ReadDir(*nmapDir)
 	if err != nil {
 		log.Printf("Error checking known hosts: %v\n", err)
@@ -453,7 +463,6 @@ func cleanAll() {
 			path := *nmapDir + host + "/" + file.Name()
 			if !file.IsDir() {
 				if time.Now().Sub(file.ModTime()) > hostLifetime {
-					// is a file and too old
 					log.Println("Deleting " + path)
 					if err := os.Remove(path); err != nil {
 						log.Printf("Error removing %s: %v\n",
@@ -466,24 +475,16 @@ func cleanAll() {
 					if i > -1 {
 						cutName := fileName[:i]
 						names[cutName] = append(names[cutName], path)
-						// are the inner slices initialized?
 					}
 				}
 			}
 		}
 		for name, paths := range names {
 			if name != "" {
-				defer func() {
-					if r := recover(); r != nil {
-						log.Println("Error opening files", r)
-						return
-					}
-				}()
 				sort.Sort(ByDateModified(paths))
-				// check for panic somehow?
 				if len(paths) > maxFiles {
-					toDelete := paths[maxFiles:]        // might be off by one
-					log.Println("To delete:", toDelete) // check types
+					toDelete := paths[maxFiles:]
+					log.Println("Deleting ", toDelete)
 					for _, path := range toDelete {
 						if err := os.Remove(path); err != nil {
 							log.Printf("Error removing %s: %v\n",
@@ -505,7 +506,6 @@ func cleanAll() {
 		if err == io.EOF && host != "netscans" {
 			log.Printf("No recent scans for %s, forgetting host", host)
 
-			// just in case
 			delete(activeHosts, host)
 			quit <- host
 
@@ -515,59 +515,14 @@ func cleanAll() {
 			}
 		}
 	}
-	log.Println("Done cleaning")
 }
 
-// echo prints a message upon recieving an EventNetScan. Can also echo back
-// content sent by uncommenting line.
+// echo echos back a recieved EventNetScan.
+// Add broker.Handle(base_def.TOPIC_SCAN, echo) in main to run.
 func echo(event []byte) {
 	scan := &base_msg.EventNetScan{}
 	proto.Unmarshal(event, scan)
-	log.Println("New scan properly sent")
-	//log.Println(scan)
-}
-
-// String returns the Event in string format. Primarily for debugging.
-func String(e Event) (str string) {
-	str += fmt.Sprint(time.Time(e.Endtime))
-	str += " Address(es): "
-	for _, addr := range e.Addresses {
-		str += (addr.Addr + " (" + addr.AddrType)
-		if addr.Vendor != "" {
-			str += (", " + addr.Vendor)
-		}
-		str += ") "
-	}
-	if e.Hostnames != nil {
-		str += "Hostname(s): "
-		for _, hostname := range e.Hostnames {
-			str += hostname.Name + " (" + hostname.Type + ") "
-		}
-	}
-	str += fmt.Sprintf("Status: %s (%s)", e.Status.State, e.Status.Reason)
-	if e.Status.State != "up" {
-		return
-	}
-	if e.EPCount != 0 {
-		str += fmt.Sprintf(" %d Port(s) State: %s (%s)", e.EPCount,
-			e.EPState, e.EPReason)
-		return
-	}
-	if e.PortID != 0 {
-		str += fmt.Sprintf(" Port %d (%s) State: %s (%s) Service: %s "+
-			"(%s, Confidence: %d)", e.PortID, e.Protocol, e.State.State,
-			e.State.Reason, e.ServiceName, e.ServiceMethod, e.Confidence)
-		if e.DeviceType != "" {
-			str += fmt.Sprintf(" Device Type: %s", e.DeviceType)
-		}
-		if e.Product != "" {
-			str += fmt.Sprintf(" Product: %s", e.Product)
-		}
-		if e.ExtraInfo != "" {
-			str += fmt.Sprintf(" Extra Info: %s", e.ExtraInfo)
-		}
-	}
-	return
+	log.Println(scan)
 }
 
 func contains(s []string, e string) bool {
@@ -582,6 +537,12 @@ func contains(s []string, e string) bool {
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	flag.Parse()
+
+	mcp, err := mcp.New(pname)
+	if err != nil {
+		log.Printf("failed to connect to mcp\n")
+	}
+
 	if !strings.HasSuffix(*nmapDir, "/") {
 		*nmapDir = *nmapDir + "/"
 	}
@@ -589,13 +550,22 @@ func main() {
 		log.Fatalf("Scan directory %s doesn't exist", *nmapDir)
 	}
 
-	broker.Init("ap.scand")
-	broker.Handle(base_def.TOPIC_SCAN, echo)
+	prometheus.MustRegister(cleanScanCount, scannersStarted, scannersFinished,
+		hostScanCount, hostsUp, knownHostsGauge, scanDuration)
+
+	http.Handle("/metrics", promhttp.Handler())
+	go http.ListenAndServe(*addr, nil)
+
+	config = ap_common.NewConfig(pname)
+	broker.Init(pname)
 	broker.Connect()
 	defer broker.Disconnect()
-
-	time.Sleep(time.Second)
 	broker.Ping()
+	if mcp != nil {
+		if err = mcp.SetStatus("online"); err != nil {
+			log.Printf("failed to set status\n")
+		}
+	}
 
 	sig := make(chan os.Signal)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
@@ -613,5 +583,4 @@ func main() {
 
 	s := <-sig
 	log.Fatalf("Signal (%v) received, stopping all scans\n", s)
-	// XXX handle incomplete xml files
 }

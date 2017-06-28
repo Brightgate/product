@@ -3,4 +3,4 @@
 scrape_configs:
   - job_name: "bg"
     static_configs:
-      - targets: ["localhost:3200", "localhost:3201", "localhost:3202", "localhost:3203", "localhost:3204"]
+      - targets: ["localhost:3200", "localhost:3201", "localhost:3202", "localhost:3203", "localhost:3204", "localhost:3208"]

@@ -54,6 +54,13 @@
         "DependsOn": "networkd",
         "Privileged": true
     },
+    "scand": {
+        "Name": "scand",
+        "Binary": "ap.scand",
+        "DependsOn": "networkd",
+        "Privileged": true,
+        "Options": "-scandir $APROOT/var/spool"
+    },
     "prometheus": {
         "Name": "prometheus",
         "Binary": "prometheus",

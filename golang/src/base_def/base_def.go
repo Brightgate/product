@@ -29,8 +29,8 @@ const (
 	TOPIC_ENTITY    = "net.entity"
 	TOPIC_REQUEST   = "net.request"
 	TOPIC_RESOURCE  = "net.resource"
-	TOPIC_EXCEPTION = "net.exception"
 	TOPIC_SCAN      = "net.scan"
+	TOPIC_EXCEPTION = "net.exception"
 
 	BROKER_PROMETHEUS_PORT   = ":3200"
 	HTTPD_PROMETHEUS_PORT    = ":3201"
@@ -40,4 +40,5 @@ const (
 	HOSTAPDM_PROMETHEUS_PORT = ":3205"
 	FILTERD_PROMETHEUS_PORT  = ":3206"
 	CONFIGD_PROMETHEUS_PORT  = ":3207"
+	SCAND_PROMETHEUS_PORT    = ":3208"
 )

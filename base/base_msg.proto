@@ -265,33 +265,76 @@ message ConfigResponse {
 	optional string value = 0x2002;
 }
 
-// Reports information from single port scan
-message ScanPort {
-	// host information
-	repeated string address = 0x01;
-	repeated string addr_type = 0x02;
-	repeated string hostname = 0x03;
-	repeated string hostname_type = 0x04;
-	required Timestamp scan_time = 0x05;
+// For network scans
+message Port {
+	required string protocol = 0x01;
+	required int32 port_id = 0x02;
+	required string state = 0x03;
+	required string state_reason = 0x04;
+	required string service_name = 0x05;
+	required string service_method = 0x06;
+	required int32 confidence = 0x07;
+	optional string device_type = 0x08;
+	optional string product = 0x09;
+	optional string extra_info = 0x0a;
+	optional string service_fp = 0x0b;
+	optional string version = 0x0c;
+	repeated string cpes = 0x0d;
+	optional string ostype = 0x0e;
+}
 
-	// port information
-	required string status = 0x06;
-	required string status_reason = 0x07;
-	optional int32 port_id = 0x08;
-	optional string protocol = 0x09;
-	optional string state = 0x0a;
-	optional string state_reason = 0x0b;
-	optional string service_name = 0x0c;
-	optional string service_method = 0x0d;
-	optional int32 confidence = 0x0e;
-	optional string device_type = 0x0f;
-	optional string product = 0x10;
-	optional string extra_info = 0x11;
+// Info for closed|filtered ports
+message ExtraPort {
+	required string state = 0x01;
+	required int32 count = 0x02;
+	required string reason = 0x03;
+}
 
-	// extra port info (closed|filtered)
-	optional string extra_port_state = 0x12;
-	optional int32 extra_port_count = 0x13;
-	optional string extra_port_reason = 0x14;
+// used in OS identification
+message UsedPort {
+	required string state = 0x01;
+	required string protocol = 0x02;
+	required int32 port_id = 0x03;
+}
+
+message OSMatch {
+	required string name = 0x01;
+	required string accuracy = 0x02;
+	required string line = 0x03;
+	repeated OSClass os_classes = 0x04;
+}
+
+message OSClass {
+	required string type = 0x01;
+	required string vendor = 0x02;
+	required string osfamily = 0x03;
+	required string osgen = 0x04;
+	required string accuracy = 0x05;
+	repeated string cpes = 0x06;
+}
+
+// used for hostnames and addresses
+message InfoAndType {
+	required string info = 0x01;
+	required string type = 0x02;
+}
+
+message Host {
+	required Timestamp starttime = 0x01;
+	required Timestamp endtime = 0x02;
+	required string status = 0x03;
+	required string status_reason = 0x04;
+	repeated InfoAndType addresses = 0x05;
+	repeated InfoAndType hostnames = 0x06;
+	repeated ExtraPort extra_ports = 0x07;
+	repeated Port ports = 0x08;
+
+	repeated UsedPort ports_used = 0x09;
+	repeated OSMatch os_matches = 0x0a;
+	repeated string os_fingerprints = 0x0b;
+
+	optional int32 uptime = 0x0c;
+	optional string lastboot = 0x0d;
 }
 
 // Contains information about newest network scan
@@ -303,6 +346,6 @@ message EventNetScan {
 	optional string debug = 0x03;
 	required string scan_location = 0x900;
 	required string start_info = 0x901;
-	repeated ScanPort port_scan = 0x902;	
+	repeated Host hosts = 0x902;	
 	required string summary = 0x903;
 }
