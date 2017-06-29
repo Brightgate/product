@@ -12,10 +12,6 @@
                     "Name": "config",
                     "Children": [
                         {
-                            "Name": "server_ip",
-                            "Value": "192.168.136.1"
-                        },
-                        {
                             "Name": "network",
                             "Value": "192.168.136.0/24"
                         }
@@ -93,40 +89,14 @@
 		    "Name": "default",
 		    "Value": "wlan0"
 		},
-                {
-                    "Name": "wlan0",
-                    "Children": [
-                        {
-                            "Name": "use_vlans",
-                            "Value": "false"
-                        },
-                        {
-                            "Name": "ssid",
-                            "Value": "setme"
-                        },
-                        {
-                            "Name": "passphrase",
-                            "Value": "sosecretive"
-                        }
-                    ]
-                },
 		{
-                    "Name": "wlan1",
-                    "Children": [
-                        {
-                            "Name": "use_vlans",
-                            "Value": "true"
-                        },
-                        {
-                            "Name": "ssid",
-                            "Value": "setme"
-                        },
-                        {
-                            "Name": "passphrase",
-                            "Value": "sosecretive"
-                        }
-                    ]
-               }
+                    "Name": "ssid",
+		    "Value": "setme"
+		},
+		{
+		    "Name": "passphrase",
+		    "Value": "sosecretive"
+		}
             ]
         },
 	{

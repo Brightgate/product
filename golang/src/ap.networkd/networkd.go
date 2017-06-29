@@ -33,19 +33,23 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"text/template"
 	"time"
 
 	"ap_common"
 	"ap_common/mcp"
 	"ap_common/network"
+
 	"base_def"
 	"base_msg"
 
@@ -56,12 +60,15 @@ import (
 var (
 	addr = flag.String("listen-address", base_def.HOSTAPDM_PROMETHEUS_PORT,
 		"The address to listen on for HTTP requests.")
-	aps           = make(map[string]*APConfig)
-	clients       map[string]*ap_common.ClientInfo  // macaddr -> ClientInfo
-	classes       map[string]*ap_common.ClassConfig // class -> config
-	subnets       map[string]string                 // interface -> subnet
-	child_process *os.Process                       // track the hostapd proc
-	config        *ap_common.Config
+	aps          = make(map[string]*APConfig)
+	devices      = make(map[string]*device)        // physical network devices
+	clients      map[string]*ap_common.ClientInfo  // macaddr -> ClientInfo
+	classes      map[string]*ap_common.ClassConfig // class -> config
+	subnets      map[string]string                 // interface -> subnet
+	activeWifi   string                            // live wireless iface
+	childProcess *os.Process                       // track the hostapd proc
+	config       *ap_common.Config
+	running      bool
 )
 
 const (
@@ -69,15 +76,22 @@ const (
 	failures_allowed = 4
 	period           = time.Duration(time.Minute)
 
-	confdir         = "/tmp"
-	conf_template   = "golang/src/ap.networkd/hostapd.conf.got"
-	hostapd_path    = "/usr/sbin/hostapd"
-	hostapd_options = "-dKt"
-	iptables_cmd    = "/sbin/iptables"
-	sysctl_cmd      = "/sbin/sysctl"
-	ip_cmd          = "/sbin/ip"
-	pname           = "ap.networkd"
+	confdir        = "/tmp"
+	confTemplate   = "golang/src/ap.networkd/hostapd.conf.got"
+	hostapdPath    = "/usr/sbin/hostapd"
+	hostapdOptions = "-dKt"
+	iptablesCmd    = "/sbin/iptables"
+	sysctlCmd      = "/sbin/sysctl"
+	ipCmd          = "/sbin/ip"
+	pname          = "ap.networkd"
 )
+
+type device struct {
+	name         string
+	hwaddr       string
+	wireless     bool
+	supportVLANs bool
+}
 
 type APConfig struct {
 	Interface string // Linux device name
@@ -95,148 +109,149 @@ type APConfig struct {
 	VLANComment string // Used to disable vlan params in .conf template
 }
 
+//////////////////////////////////////////////////////////////////////////
+//
+// Interaction with the rest of the ap daemons
+//
+
 func config_changed(event []byte) {
-	reset := false
 	config := &base_msg.EventConfig{}
 	proto.Unmarshal(event, config)
 	property := *config.Property
 	path := strings.Split(property[2:], "/")
 
+	reset := false
+	fullReset := false
+	rewrite := false
+	conf := aps[activeWifi]
+
 	// Watch for client identifications in @/client/<macaddr>/class.  If a
-	// client changes class, we want it to go through the whole
-	// authentication and connection process again.  Ideally we would just
-	// disassociate that one client, but the big hammer will do for now
+	// client changes class, we need it to rewrite the mac_accept file and
+	// then force the client to reassociate with its new VLAN.
 	//
 	if len(path) == 3 && path[0] == "clients" && path[2] == "class" {
-		log.Printf("%s changed class.  Force it to reauthenticate.\n",
-			path[1])
+		hwaddr := path[1]
+		rewrite = true
 		reset = true
+
+		newClass := *config.NewValue
+		if c, ok := clients[hwaddr]; ok {
+			fmt.Printf("Moving %s from %s to %s\n", hwaddr, c.Class,
+				newClass)
+			c.Class = newClass
+		} else {
+			c := ap_common.ClientInfo{Class: newClass}
+			fmt.Printf("New client %s in %s\n", hwaddr, newClass)
+			clients[hwaddr] = &c
+		}
 	}
 
 	// Watch for changes to the network conf
-	if len(path) == 3 && path[0] == "network" {
-		rewrite := false
-		conf, ok := aps[path[1]]
-		if !ok {
-			log.Printf("Ignoring update for unknown NIC: %s\n", property)
-			return
-		}
-
-		switch path[2] {
+	if len(path) == 2 && path[0] == "network" {
+		switch path[1] {
 		case "ssid":
 			conf.SSID = *config.NewValue
 			rewrite = true
+			fullReset = true
 
 		case "passphrase":
 			conf.Passphrase = *config.NewValue
 			rewrite = true
+			fullReset = true
 
 		default:
-			log.Printf("Ignoring update for unknown property: %s\n", property)
+			log.Printf("Ignoring update for unknown property: %s\n",
+				property)
 		}
 
-		if rewrite {
-			generateHostAPDConf(conf)
-			reset = true
-		}
 	}
 
-	if reset && child_process != nil {
+	if rewrite {
+		generateHostAPDConf(conf)
+	}
+
+	if childProcess != nil {
 		//
-		// Ideally we would just send the child a SIGHUP and it would
-		// reload the new configuration.  Unfortunately, hostapd seems
-		// to need to go through a full reset before the changes are
-		// correctly propagated to the wifi hw.
+		// A SIGHUP will cause hostapd to reload its configuration.
+		// However, it seems that we really need to kill and restart the
+		// process for ssid/passphrase changes to be propagated down to
+		// the wifi hardware
 		//
-		child_process.Signal(os.Interrupt)
+		if fullReset {
+			childProcess.Signal(syscall.SIGINT)
+		} else if reset {
+			childProcess.Signal(syscall.SIGHUP)
+		}
 	}
 }
 
-func getSubnetConfig(iface string) (string, bool) {
+func getSubnetConfig() string {
+	var subnet string
 	var err error
-	var props, node *ap_common.PropertyNode
-	var use_vlans bool
 
 	// In order to set up the correct routes, we need to know the network
 	// we're expected to serve.
-	if props, err = config.GetProps("@/dhcp/config"); err != nil {
+	if subnet, err = config.GetProp("@/dhcp/config/network"); err != nil {
 		log.Fatalf("Failed to get DHCP configuration info: %v", err)
 	}
 
-	if node = props.GetChild("network"); node == nil {
-		log.Fatalf("DHCP config has no network defined\n", iface)
-	}
-	network := node.Value
-	if _, _, err := net.ParseCIDR(network); err != nil {
+	if _, _, err = net.ParseCIDR(subnet); err != nil {
 		log.Fatalf("DHCP config has illegal network '%s': %v\n",
-			network, err)
+			subnet, err)
 	}
 
-	propname := "@/network/" + iface + "/use_vlans"
-	if prop, err := config.GetProp(propname); err == nil {
-		if prop == "true" {
-			use_vlans = true
-		}
-	}
-
-	return network, use_vlans
+	return subnet
 }
 
 //
 // Get network settings from configd and use them to initialize the AP
 //
-func getAPConfig() {
-	var name, ssid, passphrase, vlan_comment string
+func getAPConfig(d *device) {
+	var ssid, passphrase, vlan_comment string
 
 	props, err := config.GetProps("@/network")
 	if err != nil {
 		log.Fatalf("Failed to get network configuration info: %v", err)
 	}
 
-	if node := props.GetChild("default"); node != nil {
-		name = node.Value
-	} else {
-		log.Fatalf("No default network defined\n")
-	}
-
-	iface := props.GetChild(name)
-	if iface == nil {
-		log.Fatalf("No configuration defined for %s\n", name)
-	}
-
-	if node := iface.GetChild("ssid"); node != nil {
+	if node := props.GetChild("ssid"); node != nil {
 		ssid = node.GetValue()
 	} else {
-		log.Fatalf("No SSID defined for %s\n", name)
+		log.Fatalf("No SSID configured\n")
 	}
 
-	if node := iface.GetChild("passphrase"); node != nil {
+	if node := props.GetChild("passphrase"); node != nil {
 		passphrase = node.GetValue()
 	} else {
-		log.Fatalf("No passphrase defined for %s\n", name)
+		log.Fatalf("No passphrase configured\n")
 	}
 
-	network, use_vlans := getSubnetConfig(name)
-	if use_vlans {
+	network := getSubnetConfig()
+	if d.supportVLANs {
 		vlan_comment = ""
 	} else {
 		vlan_comment = "#"
 	}
 
 	data := APConfig{
-		Interface:     name,
+		Interface:     d.name,
 		Network:       network,
-		UseVLANs:      use_vlans,
+		UseVLANs:      d.supportVLANs,
 		SSID:          ssid,
 		HardwareModes: "g",
 		Channel:       6,
 		Passphrase:    passphrase,
-		ConfFile:      "hostapd.conf." + name,
+		ConfFile:      "hostapd.conf." + d.name,
 		ConfDir:       confdir,
 		VLANComment:   vlan_comment,
 	}
-	aps[name] = &data
+	aps[d.name] = &data
 }
+
+//////////////////////////////////////////////////////////////////////////
+//
+// hostapd configuration and monitoring
+//
 
 // Extract the VLAN ID from the VLAN name (i.e., vlan.5 returns 5)
 func vlanID(vlan string) int {
@@ -267,7 +282,7 @@ func generateHostAPDConf(conf *APConfig) string {
 
 	// Create hostapd.conf, using the APConfig contents to fill out the .got
 	// template
-	t, err := template.ParseFiles(conf_template)
+	t, err := template.ParseFiles(confTemplate)
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(2)
@@ -329,6 +344,30 @@ func generateHostAPDConf(conf *APConfig) string {
 }
 
 //
+// When we get a signal, set the 'running' flag to false and signal any hostapd
+// process we're monitoring.  We want to be sure the wireless interface has been
+// released before we give mcp a chance to restart the whole stack.
+//
+func signalHandler() {
+	attempts := 0
+	sig := make(chan os.Signal)
+	for {
+		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+		<-sig
+
+		running = false
+		if childProcess != nil {
+			if attempts < 5 {
+				childProcess.Signal(syscall.SIGINT)
+			} else {
+				childProcess.Signal(syscall.SIGKILL)
+			}
+			attempts++
+		}
+	}
+}
+
+//
 // Wait for stdout/stderr from a process, and print whatever it sends.  When the
 // pipe is closed, notify our caller.
 //
@@ -354,8 +393,8 @@ func runOne(conf *APConfig, done chan *APConfig) {
 
 	start_times := make([]time.Time, failures_allowed)
 	pipe_closed := make(chan string)
-	for {
-		cmd := exec.Command(hostapd_path, fn)
+	for running {
+		cmd := exec.Command(hostapdPath, fn)
 
 		//
 		// Set up pipes for the child's stderr and stdout, so we can get
@@ -380,7 +419,7 @@ func runOne(conf *APConfig, done chan *APConfig) {
 			conf.Status = fmt.Errorf("Failed to launch: %v", err)
 			break
 		}
-		child_process = cmd.Process
+		childProcess = cmd.Process
 
 		prepareNet()
 
@@ -408,7 +447,7 @@ func runOne(conf *APConfig, done chan *APConfig) {
 
 //
 // Kick off the monitor routines for all of our NICs, and then wait until
-// they've all exited.  (Since we only support a single NIC right now, this is
+// they've all exited.  (Since we only support a single AP right now, this is
 // overkill, but harmless.)
 //
 func runAll() int {
@@ -417,8 +456,10 @@ func runAll() int {
 	errors := 0
 
 	for _, c := range aps {
-		running++
-		go runOne(c, done)
+		if c.Interface == activeWifi {
+			running++
+			go runOne(c, done)
+		}
 	}
 
 	for running > 0 {
@@ -436,6 +477,11 @@ func runAll() int {
 	return errors
 }
 
+//////////////////////////////////////////////////////////////////////////
+//
+// Low-level network manipulation.
+//
+
 //
 // Get a NIC ready to serve as the router for a NATted subnet
 //
@@ -446,13 +492,13 @@ func prepareInterface(nic, subnet string) {
 		nic = bridge
 	}
 	// ip addr flush dev wlan0
-	cmd := exec.Command(ip_cmd, "addr", "flush", "dev", nic)
+	cmd := exec.Command(ipCmd, "addr", "flush", "dev", nic)
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to remove existing IP address: %v\n", err)
 	}
 
 	// ip route del 192.168.136.0/24
-	cmd = exec.Command(ip_cmd, "route", "del", subnet)
+	cmd = exec.Command(ipCmd, "route", "del", subnet)
 	cmd.Run()
 
 	// Derive the router's IP address from the network.
@@ -463,18 +509,18 @@ func prepareInterface(nic, subnet string) {
 	router := (net.IP(raw)).String()
 
 	// ip addr add 192.168.136.1 dev wlan0
-	cmd = exec.Command(ip_cmd, "addr", "add", router, "dev", nic)
+	cmd = exec.Command(ipCmd, "addr", "add", router, "dev", nic)
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to set the router address: %v\n", err)
 	}
 
 	// ip link set up wlan0
-	cmd = exec.Command(ip_cmd, "link", "set", "up", nic)
+	cmd = exec.Command(ipCmd, "link", "set", "up", nic)
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to enable nic: %v\n", err)
 	}
 	// ip route add 192.168.136.0/24 dev wlan0
-	cmd = exec.Command(ip_cmd, "route", "add", subnet, "dev", nic)
+	cmd = exec.Command(ipCmd, "route", "add", subnet, "dev", nic)
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to add %s as the new route: %v\n", subnet, err)
 	}
@@ -485,7 +531,7 @@ func prepareInterface(nic, subnet string) {
 //
 func iptablesManaged(nic, subnet string) {
 	// Route traffic from the managed network to eth0
-	cmd := exec.Command(iptables_cmd,
+	cmd := exec.Command(iptablesCmd,
 		"-I", "FORWARD",
 		"-i", nic,
 		"-o", "eth0",
@@ -498,7 +544,7 @@ func iptablesManaged(nic, subnet string) {
 	}
 
 	// Traffic from the managed network has its IP addresses masqueraded
-	cmd = exec.Command(iptables_cmd,
+	cmd = exec.Command(iptablesCmd,
 		"-t", "nat",
 		"-I", "POSTROUTING",
 		"-o", "eth0",
@@ -511,18 +557,18 @@ func iptablesManaged(nic, subnet string) {
 
 func iptablesReset() {
 	// Flush out any existing rules
-	cmd := exec.Command(iptables_cmd, "-F")
+	cmd := exec.Command(iptablesCmd, "-F")
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("failed to flush FILTER rules: %v\n", err)
 	}
-	cmd = exec.Command(iptables_cmd, "-t", "nat", "-F")
+	cmd = exec.Command(iptablesCmd, "-t", "nat", "-F")
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("failed to flush NAT rules: %v\n", err)
 	}
 
 	// Allowed traffic on connected ports to flow from eth0 back to the
 	// internal network
-	cmd = exec.Command(iptables_cmd,
+	cmd = exec.Command(iptablesCmd,
 		"-I", "FORWARD",
 		"-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED",
 		"-j", "ACCEPT")
@@ -534,7 +580,7 @@ func iptablesReset() {
 func prepareNet() {
 	fmt.Printf("Preparing\n")
 	// Enable packet forwarding
-	cmd := exec.Command(sysctl_cmd, "-w", "net.ipv4.ip_forward=1")
+	cmd := exec.Command(sysctlCmd, "-w", "net.ipv4.ip_forward=1")
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to enable packet forwarding: %v\n", err)
 	}
@@ -542,18 +588,17 @@ func prepareNet() {
 	// Build a list of all the subnets we're managing, and the interfaces
 	// they live on
 	managed := make(map[string]string)
-	for _, a := range aps {
-		if a.UseVLANs {
-			for i, s := range subnets {
-				if i == "default" {
-					managed[a.Interface] = s
-				} else {
-					managed[i] = s
-				}
+	ap := aps[activeWifi]
+	if ap.UseVLANs {
+		for i, s := range subnets {
+			if i == "default" {
+				managed[ap.Interface] = s
+			} else {
+				managed[i] = s
 			}
-		} else {
-			managed[a.Interface] = a.Network
 		}
+	} else {
+		managed[ap.Interface] = ap.Network
 	}
 
 	// If we're using VLANs, then we need to wait for hostapd to create the
@@ -573,6 +618,80 @@ func prepareNet() {
 	for i, s := range managed {
 		iptablesManaged(i, s)
 		prepareInterface(i, s)
+	}
+}
+
+func getDevice(name string) *device {
+	hwaddr, err := ioutil.ReadFile("/sys/class/net/" + name + "/address")
+	if err != nil {
+		log.Printf("Failed to get hwaddr for %s: %v\n", name, err)
+		return nil
+	}
+	d := device{name: name, hwaddr: string(hwaddr)}
+	return (&d)
+}
+
+func getEthernet(name string) *device {
+	d := getDevice(name)
+	if d != nil {
+		d.wireless = false
+		d.supportVLANs = false
+	}
+	return (d)
+}
+
+func getWireless(name string) *device {
+	d := getDevice(name)
+	if d == nil {
+		return nil
+	}
+
+	data, err := ioutil.ReadFile("/sys/class/net/" + name + "/phy80211/name")
+	if err != nil {
+		log.Printf("Couldn't get phy for %s: %v\n", name, err)
+		return nil
+	}
+	phy := strings.TrimSpace(string(data))
+
+	//
+	// The following is a hack.  This should (and will) be accomplished by
+	// asking the nl80211 layer through the netlink interface.
+	//
+	out, err := exec.Command("/sbin/iw", "phy", phy, "info").Output()
+	if err != nil {
+		log.Printf("Failed to get %s capabilities: %v\n", name, err)
+		return nil
+	}
+	capabilities := string(out)
+
+	if d != nil {
+		d.wireless = true
+		d.supportVLANs = strings.Contains(capabilities, "VLAN")
+	}
+	return (d)
+}
+
+//
+// Inventory the network devices in the system
+//
+func getDevices() {
+	devs, err := ioutil.ReadDir("/sys/class/net")
+	if err != nil {
+		log.Fatalf("Unable to inventory network devices: %v\n", err)
+	}
+
+	for _, dev := range devs {
+		var d *device
+		name := dev.Name()
+		if strings.HasPrefix(name, "eth") {
+			d = getEthernet(name)
+		} else if strings.HasPrefix(name, "wlan") {
+			d = getWireless(name)
+		}
+
+		if d != nil {
+			devices[name] = d
+		}
 	}
 }
 
@@ -601,14 +720,36 @@ func main() {
 	defer b.Disconnect()
 
 	config = ap_common.NewConfig(pname)
-	getAPConfig()
 	subnets = config.GetSubnets()
 	classes = config.GetClasses()
 	clients = config.GetClients()
+	oldWifi, err := config.GetProp("@/network/default")
+
+	getDevices()
+	for _, d := range devices {
+		if d.wireless {
+			getAPConfig(d)
+			if activeWifi == "" || d.supportVLANs {
+				activeWifi = d.name
+			}
+		}
+	}
+	if activeWifi == "" {
+		log.Fatalf("Couldn't find a wifi device to use\n")
+	}
+	log.Printf("Hosting wireless network on %s\n", activeWifi)
+	if oldWifi != activeWifi {
+		err = config.SetProp("@/network/default", activeWifi, nil)
+		if err != nil {
+			log.Printf("Failed to set @/network/default: %v\n", err)
+		}
+	}
 
 	if mcp != nil {
 		mcp.SetStatus("online")
 	}
 
+	running = true
+	go signalHandler()
 	os.Exit(runAll())
 }
