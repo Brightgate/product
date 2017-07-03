@@ -44,25 +44,28 @@ var (
 	addr = flag.String("promhttp-address", base_def.DHCPD_PROMETHEUS_PORT,
 		"Prometheus publication HTTP port.")
 
-	handlers         map[string]*DHCPHandler
-	client_class_mtx sync.Mutex
-	client_class     map[string]string
-	broker           ap_common.Broker
-	config           *ap_common.Config
+	handlers       = make(map[string]*DHCPHandler)
+	clientClass    = make(map[string]string)
+	clientClassMtx sync.Mutex
+	broker         ap_common.Broker
+	config         *ap_common.Config
 
-	use_vlans     bool
-	physical_nic  string
-	physical_mac  string
-	shared_router net.IP     // without vlans, all classes share a
-	shared_subnet *net.IPNet // subnet and a router node
+	use_vlans    bool
+	physical_nic string
+	wanMac       string
+	wifiMac      string
+	sharedRouter net.IP     // without vlans, all classes share a
+	sharedSubnet *net.IPNet // subnet and a router node
+
+	lastRequestOn string // last DHCP request arrived on this mac
 )
 
 const pname = "ap.dhcp4d"
 
 func getClass(hwaddr string) string {
-	client_class_mtx.Lock()
-	class := client_class[hwaddr]
-	client_class_mtx.Unlock()
+	clientClassMtx.Lock()
+	class := clientClass[hwaddr]
+	clientClassMtx.Unlock()
 
 	return class
 }
@@ -70,12 +73,12 @@ func getClass(hwaddr string) string {
 func updateClass(hwaddr, old, new string) bool {
 	updated := false
 
-	client_class_mtx.Lock()
-	if client_class[hwaddr] == old {
-		client_class[hwaddr] = new
+	clientClassMtx.Lock()
+	if clientClass[hwaddr] == old {
+		clientClass[hwaddr] = new
 		updated = true
 	}
-	client_class_mtx.Unlock()
+	clientClassMtx.Unlock()
 
 	return updated
 }
@@ -84,7 +87,7 @@ func updateClass(hwaddr, old, new string) bool {
  *
  * Communication with message broker
  */
-func config_expired(path []string) {
+func configExpired(path []string) {
 	/*
 	 * Watch for lease expirations in @/dhcp/leases/<ipaddr>.  We actually
 	 * clean up expired leases as a side effect of handing out new ones, so
@@ -95,7 +98,7 @@ func config_expired(path []string) {
 	}
 }
 
-func config_changed(path []string, val string) {
+func configChanged(path []string, val string) {
 	/*
 	 * Watch for client identifications in @/client/<macaddr>/class
 	 */
@@ -111,6 +114,12 @@ func config_changed(path []string, val string) {
 				log.Printf("configd moves client %s from %s to  %s\n",
 					client, old, val)
 			}
+		}
+	} else if len(path) == 2 && path[0] == "network" {
+		if path[1] == "wifi_mac" {
+			wifiMac = val
+		} else if path[1] == "wan_mac" {
+			wanMac = val
 		}
 	}
 }
@@ -131,9 +140,9 @@ func config_event(event []byte) {
 
 	switch etype {
 	case base_msg.EventConfig_EXPIRE:
-		config_expired(path)
+		configExpired(path)
 	case base_msg.EventConfig_CHANGE:
-		config_changed(path, value)
+		configChanged(path, value)
 	}
 }
 
@@ -145,7 +154,7 @@ func leaseProperty(ipaddr net.IP) string {
  * This is the first time we've seen this device.  Send an ENTITY message with
  * its hardware address, name, and any IP address it's requesting.
  */
-func notifyNewEntity(p dhcp.Packet, options dhcp.Options) {
+func notifyNewEntity(p dhcp.Packet, options dhcp.Options, class string) {
 	t := time.Now()
 	ipaddr := p.CIAddr()
 	hwaddr_u64 := network.HWAddrToUint64(p.CHAddr())
@@ -163,6 +172,7 @@ func notifyNewEntity(p dhcp.Packet, options dhcp.Options) {
 		MacAddress:  proto.Uint64(hwaddr_u64),
 		Ipv4Address: proto.Uint32(network.IPAddrToUint32(ipaddr)),
 		DnsName:     proto.String(hostname),
+		Class:       proto.String(class),
 	}
 
 	err := broker.Publish(entity, base_def.TOPIC_ENTITY)
@@ -430,9 +440,22 @@ func selectClassHandler(p dhcp.Packet, options dhcp.Options) *DHCPHandler {
 	hwaddr := p.CHAddr().String()
 	class := getClass(hwaddr)
 	if class == "" {
-		updateClass(hwaddr, "", "unclassified")
+		// If the DHCP request arrived on the wifi port, the client is
+		// 'unclassified'.  Otherwise, it's 'wired'.  This relies on the
+		// knowledge that the DHCP library (krolaw/dhcp4) will call the
+		// handler immediately after the call to ReadFrom(), where
+		// lastRequestOn gets set.
+		//
+		if lastRequestOn == wifiMac {
+			updateClass(hwaddr, "", "unclassified")
+		} else {
+			updateClass(hwaddr, "", "wired")
+		}
+
 		class = getClass(hwaddr)
-		notifyNewEntity(p, options)
+		log.Printf("New %s client %s via %s: %s\n", class, hwaddr,
+			lastRequestOn)
+		notifyNewEntity(p, options, class)
 	}
 
 	class_handler, ok := handlers[class]
@@ -560,8 +583,8 @@ func newHandler(class, network, nameserver string, duration int) *DHCPHandler {
 		// its own routing info.
 		myip = dhcp.IPAdd(start, 1)
 	} else {
-		myip = shared_router
-		subnet = shared_subnet
+		myip = sharedRouter
+		subnet = sharedSubnet
 	}
 
 	if len(nameserver) == 0 {
@@ -623,10 +646,10 @@ func initPhysical(props *ap_common.PropertyNode) {
 	if err != nil {
 		log.Fatalf("No such network device: %s\n", iface)
 	}
-	physical_mac = iface.HardwareAddr.String()
+	wanMac, _ = config.GetProp("@/network/wan_mac")
+	wifiMac, _ = config.GetProp("@/network/wifi_mac")
 
-	propname := "@/network/" + physical_nic + "/use_vlans"
-	prop, err := config.GetProp(propname)
+	prop, err := config.GetProp("@/network/use_vlans")
 	if err == nil && prop == "true" {
 		use_vlans = true
 	} else {
@@ -634,12 +657,12 @@ func initPhysical(props *ap_common.PropertyNode) {
 		if node := props.GetChild("network"); node != nil {
 			start, subnet, err := net.ParseCIDR(node.Value)
 			if err == nil {
-				shared_router = dhcp.IPAdd(start, 1)
-				shared_subnet = subnet
+				sharedRouter = dhcp.IPAdd(start, 1)
+				sharedSubnet = subnet
 			}
 		}
 
-		if shared_subnet == nil {
+		if sharedSubnet == nil {
 			log.Fatalf("Missing shared network info\n")
 		}
 	}
@@ -650,7 +673,6 @@ func initHandlers() {
 	var nameserver string
 	var props, leases, node *ap_common.PropertyNode
 
-	handlers = make(map[string]*DHCPHandler)
 	/*
 	 * Currently assumes a single interface/dhcp configuration.  If we want
 	 * to support per-interface configs, then this will need to be a tree of
@@ -696,9 +718,8 @@ func initHandlers() {
 }
 
 type MultiConn struct {
-	ifIndex int
-	conn    *ipv4.PacketConn
-	cm      *ipv4.ControlMessage
+	conn *ipv4.PacketConn
+	cm   *ipv4.ControlMessage
 }
 
 func (s *MultiConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
@@ -708,20 +729,26 @@ func (s *MultiConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 		return
 	}
 
-	request_mac := ""
+	requestMac := ""
 	if s.cm != nil {
 		iface, err := net.InterfaceByIndex(s.cm.IfIndex)
 		if err == nil {
-			request_mac = iface.HardwareAddr.String()
+			requestMac = iface.HardwareAddr.String()
 		}
 	}
 
-	// Even if a request arrives over a vlan, the mac address matches that
-	// of the physical nic
-	if request_mac != physical_mac {
-		log.Printf("Rejected from %s\b", request_mac)
+	// If the request arrives on the WAN port, drop it.
+	if requestMac == wanMac {
+		log.Printf("Request arrived on wan: %s\n", requestMac)
 		n = 0
-		return
+	} else {
+		if requestMac == wifiMac {
+			log.Printf("Request arrived on wifi: %s\n", requestMac)
+		} else {
+			log.Printf("Request arrived on wired: %s\n", requestMac)
+		}
+
+		lastRequestOn = requestMac
 	}
 	return
 }
@@ -731,12 +758,7 @@ func (s *MultiConn) WriteTo(b []byte, addr net.Addr) (n int, err error) {
 	return s.conn.WriteTo(b, s.cm, addr)
 }
 
-func ListenAndServeIf(interfaceName string, handler dhcp.Handler) error {
-	iface, err := net.InterfaceByName(interfaceName)
-	if err != nil {
-		return err
-	}
-
+func listenAndServeIf(handler dhcp.Handler) error {
 	l, err := net.ListenPacket("udp4", ":67")
 	if err != nil {
 		return err
@@ -749,8 +771,7 @@ func ListenAndServeIf(interfaceName string, handler dhcp.Handler) error {
 		return err
 	}
 	serveConn := MultiConn{
-		ifIndex: iface.Index,
-		conn:    p,
+		conn: p,
 	}
 
 	return dhcp.Serve(&serveConn, handler)
@@ -767,7 +788,7 @@ func mainLoop() {
 		class: "_metahandler",
 	}
 	for {
-		err := ListenAndServeIf(physical_nic, &h)
+		err := listenAndServeIf(&h)
 		if err != nil {
 			log.Printf("DHCP server failed: %v\n", err)
 		} else {
@@ -779,10 +800,9 @@ func mainLoop() {
 //
 // Determine the initial client -> class mappings
 func initClientMap() {
-	client_class = make(map[string]string)
 	clients := config.GetClients()
 	for client, info := range clients {
-		client_class[client] = info.Class
+		clientClass[client] = info.Class
 		log.Printf("%s starts as %s\n", client, info.Class)
 	}
 }
@@ -814,8 +834,7 @@ func main() {
 	if mcp != nil {
 		mcp.SetStatus("online")
 	}
-	log.Printf("DHCP server online for %s (%s)\n", physical_nic,
-		physical_mac)
+	log.Printf("DHCP server online\n")
 	mainLoop()
 	log.Printf("Shutting down\n")
 

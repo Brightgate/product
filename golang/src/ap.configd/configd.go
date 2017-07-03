@@ -375,7 +375,11 @@ func entity_handler(event []byte) {
 	var ok bool
 	if _, ok = fields["class"]; !ok {
 		n := property_add(node, "class", path+"/class")
-		n.Value = "unclassified"
+		if entity.Class != nil {
+			n.Value = *entity.Class
+		} else {
+			n.Value = "unclassified"
+		}
 	}
 	if entity.Ipv4Address != nil {
 		if n, ok = fields["ipv4"]; !ok {

@@ -76,6 +76,19 @@
                             "Value": "60"
                         }
                     ]
+                },
+		{
+                    "Name": "wired",
+                    "Children": [
+                        {
+                            "Name": "interface",
+                            "Value": "br0"
+                        },
+                        {
+                            "Name": "lease_duration",
+                            "Value": "60"
+                        }
+                    ]
                 }
             ]
         },
@@ -88,6 +101,10 @@
 		{
 		    "Name": "default",
 		    "Value": "wlan0"
+		},
+		{
+		    "Name": "use_vlans",
+		    "Value": "false"
 		},
 		{
                     "Name": "ssid",
@@ -135,6 +152,15 @@
                         {
                             "Name": "subnet",
                             "Value": "192.168.136.16/28"
+                        }
+                    ]
+                },
+		{
+                    "Name": "br0",
+                    "Children": [
+                        {
+                            "Name": "subnet",
+                            "Value": "192.168.137.0/28"
                         }
                     ]
                 }

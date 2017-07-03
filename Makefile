@@ -15,12 +15,15 @@
 #
 #    (b) On Linux
 #
-#	 # apt-get install protobuf-compiler libzmq5-dev libpcap-dev vlan
+#	 # apt-get install protobuf-compiler libzmq5-dev libpcap-dev vlan \
+#		 bridge-utils
 #	 [Retrieve Go tar archive from golang.org and unpack in $HOME.]
 #
 #    (c) on raspberry pi
 #
-#	 # apt-get install protobuf-compiler libzmq3-dev libpcap-dev vlan
+#	 # apt-get install protobuf-compiler libzmq3-dev libpcap-dev vlan \
+#		 bridge-utils
+#
 #	 [Retrieve Go tar archive from golang.org and unpack in $HOME.]
 #
 # 2. Each new shell,

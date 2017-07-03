@@ -136,6 +136,7 @@ message EventNetEntity {
 	optional fixed32 ipv4_address = 0x401;
 	optional string interface_name = 0x402;
 	optional string dns_name = 0x403;
+	optional string class = 0x404;
 }
 
 // The network resource is sent whenever an application or service
