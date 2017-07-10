@@ -80,7 +80,7 @@ APPBIN=$(APPBASE)/bin
 APPDOC=$(APPBASE)/share/doc
 APPETC=$(APPBASE)/etc
 APPVAR=$(APPBASE)/var
-APPSCAN=$(APPVAR)/spool/netscans
+APPSPOOL=$(APPVAR)/spool
 
 DAEMONS = \
 	$(APPBIN)/ap.brokerd \
@@ -110,7 +110,7 @@ CONFIGS = \
 	$(APPETC)/oui.txt \
 	$(APPETC)/prometheus.yml
 
-DIRS = $(APPBIN) $(APPDOC) $(APPETC) $(APPVAR) $(APPSCAN)
+DIRS = $(APPBIN) $(APPDOC) $(APPETC) $(APPVAR) $(APPSPOOL)
 
 install: $(COMMANDS) $(DAEMONS) $(CONFIGS) $(DIRS) docs
 
@@ -153,8 +153,8 @@ $(APPDOC):
 $(APPETC):
 	mkdir -p $(APPETC)
 
-$(APPSCAN):
-	mkdir -p $(APPSCAN)
+$(APPSPOOL):
+	mkdir -p $(APPSPOOL)
 
 $(APPVAR):
 	mkdir -p $(APPVAR)

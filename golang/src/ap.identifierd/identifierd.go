@@ -11,7 +11,8 @@
 /*
 Use observed data to make predictions about client identities.
 To Do:
-  0) Need to read config dhcp leases to build initial membership
+  0) Need to read config dhcp leases to build initial membership. Also, read
+     the saved training data file to re-build the set of observations
   1) Incorporate sampled data
   2) Incorporate scand data
   3) Improve training data
@@ -36,6 +37,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -55,6 +57,7 @@ import (
 
 var (
 	dataDir = flag.String("datadir", "./", "Directory containing data files")
+	logDir  = flag.String("logdir", "./", "Directory for device learning log data")
 
 	broker ap_common.Broker
 
@@ -65,8 +68,13 @@ var (
 	naiveBayes *naive.BernoulliNBClassifier
 	id3Tree    *trees.ID3DecisionTree
 
+	// DNS requests only contain the IP addr, so we maintin a map ipaddr -> hwaddr
+	ipMtx sync.Mutex
+	ipMap = make(map[uint32]uint64)
+
 	trainData *base.DenseInstances
 	testData  = model.NewObservations()
+	newData   = model.NewEntities()
 
 	// See github.com/miekg/dns/types.go: func (q *Question) String() {}
 	dnsQ = regexp.MustCompile(`;(.*?)\t`)
@@ -79,6 +87,25 @@ const (
 	mfgidFile = "ap_mfgid.json"
 	trainFile = "ap_identities.csv"
 )
+
+func getHWaddr(ip uint32) (uint64, bool) {
+	ipMtx.Lock()
+	defer ipMtx.Unlock()
+	hwaddr, ok := ipMap[ip]
+	return hwaddr, ok
+}
+
+func addIP(ip uint32, hwaddr uint64) {
+	ipMtx.Lock()
+	defer ipMtx.Unlock()
+	ipMap[ip] = hwaddr
+}
+
+func removeIP(ip uint32) {
+	ipMtx.Lock()
+	defer ipMtx.Unlock()
+	delete(ipMap, ip)
+}
 
 func handleEntity(event []byte) {
 	entity := &base_msg.EventNetEntity{}
@@ -95,12 +122,9 @@ func handleEntity(event []byte) {
 		return
 	}
 
-	id, ok := mfgidDB[entry.Manufacturer]
-	if !ok {
-		log.Printf("%s is a %s product: MID = SETME\n", hwaddr, entry.Manufacturer)
-		return
-	}
+	id := mfgidDB[entry.Manufacturer]
 
+	newData.AddIdentityHint(*entity.MacAddress, entry.Manufacturer, *entity.DnsName)
 	testData.SetByName(*entity.MacAddress, "Manufacturer ID", strconv.Itoa(id))
 }
 
@@ -114,14 +138,21 @@ func handleRequest(event []byte) {
 
 	for _, q := range request.Request {
 		qName := dnsQ.FindStringSubmatch(q)[1]
+
+		// See record_client() in dns4d
 		ip := net.ParseIP(*request.Requestor)
-		hwaddr, ok := testData.GetHWaddr(network.IPAddrToUint32(ip))
+		if ip == nil {
+			log.Printf("empty Requestor: %v\n", request)
+			return
+		}
+
+		hwaddr, ok := getHWaddr(network.IPAddrToUint32(ip))
 		if !ok {
 			log.Println("unknown entity:", ip)
 			return
 		}
 
-		log.Printf("%s %s: %s\n", network.Uint64ToHWAddr(hwaddr), *request.Requestor, qName)
+		newData.AddDNS(hwaddr, qName)
 		testData.SetByName(hwaddr, qName, "1")
 	}
 }
@@ -152,10 +183,23 @@ func handleConfig(event []byte) {
 	hwaddr := network.HWAddrToUint64(mac)
 
 	if *eventConfig.Type == base_msg.EventConfig_CHANGE {
-		testData.AddIP(ipaddr, hwaddr)
+		addIP(ipaddr, hwaddr)
 	} else {
-		testData.RemoveIP(ipaddr)
+		removeIP(ipaddr)
 	}
+}
+
+func logger() {
+	tick := time.NewTicker(time.Duration(5 * time.Minute))
+	logFile := *logDir + "training_data.csv"
+
+	for {
+		<-tick.C
+		if err := newData.WriteCSV(logFile); err != nil {
+			log.Println("Could not save training data:", err)
+		}
+	}
+
 }
 
 func identify() {
@@ -183,6 +227,10 @@ func main() {
 
 	if !strings.HasSuffix(*dataDir, "/") {
 		*dataDir = *dataDir + "/"
+	}
+
+	if !strings.HasSuffix(*logDir, "/") {
+		*logDir = *logDir + "/"
 	}
 
 	// OUI database
@@ -237,6 +285,11 @@ func main() {
 		}
 	}
 
+	if err := os.MkdirAll(*logDir, 0755); err != nil {
+		log.Fatalln("failed to mkdir:", err)
+	}
+
+	go logger()
 	go identify()
 
 	sig := make(chan os.Signal)

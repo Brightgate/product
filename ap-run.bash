@@ -104,7 +104,7 @@ elif [[ $1 == prometheus ]]; then
 elif [[ $1 == sampled ]]; then
 	sudobinrun sampled
 elif [[ $1 == scand ]]; then
-	sudobinrun ap.scand --scandir $spool
+	sudobinrun ap.scand --scandir $spool/scand
 elif [[ $1 == analyzerd ]]; then
 	nyi $1
 elif [[ $1 == actord ]]; then
@@ -121,9 +121,9 @@ elif [[ $1 == "start-world" ]]; then
 	binrun ap.configd --propdir $etc &
 	sleep 3
 	sudobinrun ap.networkd &
-	binrun ap.identifierd --datadir $etc &
+	binrun ap.identifierd --datadir $etc --logdir $spool/identifierd &
 	sudobinrun ap.sampled &
-	sudobinrun ap.scand --scandir $spool &
+	sudobinrun ap.scand --scandir $spool/scand &
 	sudobinrun ap.dhcp4d &
 	sudobinrun ap.dns4d &
 	binrun ap.httpd # While using port 8000.

@@ -546,8 +546,8 @@ func main() {
 	if !strings.HasSuffix(*nmapDir, "/") {
 		*nmapDir = *nmapDir + "/"
 	}
-	if _, err := os.Stat(*nmapDir); os.IsNotExist(err) {
-		log.Fatalf("Scan directory %s doesn't exist", *nmapDir)
+	if err := os.MkdirAll(*nmapDir+"/netscans", 0755); err != nil {
+		log.Fatalln("failed to make dir %s:", *nmapDir, err)
 	}
 
 	prometheus.MustRegister(cleanScanCount, scannersStarted, scannersFinished,
