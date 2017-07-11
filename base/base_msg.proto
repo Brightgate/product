@@ -339,13 +339,33 @@ message Host {
 
 // Contains information about newest network scan
 // @topic "net.scan", TOPIC_SCAN
-// @range 0x900
+// @range 0x1000
 message EventNetScan {
 	required Timestamp timestamp = 0x01;
 	optional string sender = 0x02;
 	optional string debug = 0x03;
-	required string scan_location = 0x900;
-	required string start_info = 0x901;
-	repeated Host hosts = 0x902;	
-	required string summary = 0x903;
+	required string scan_location = 0x1000;
+	required string start_info = 0x1001;
+	repeated Host hosts = 0x1002;	
+	required string summary = 0x1003;
+}
+
+message Pair {
+	required string header = 0x01;
+	required string value = 0x02;
+}
+
+// Contains information about SSDP
+// @topic "net.scan.ssdp", TOPIC_SCAN_SSDP
+// @range 0x1100
+message EventSSDP {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+	required string address = 0x1100;
+	optional string server = 0x1101;
+	optional string unique_service_name = 0x1102;
+	optional string location = 0x1103;
+	required string search_target = 0x1104;
+	repeated Pair extra_headers = 0x1105;
 }

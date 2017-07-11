@@ -226,18 +226,23 @@ func hostScan() {
 				if _, ok := activeHosts[ip]; !ok {
 					if !contains(knownHosts, ip) {
 						// XXX message bus, net.entity or something similar
-						log.Printf("Unknown host discovered on %s: %s", iface, ip)
+						log.Printf(
+							"Unknown host discovered on %s: %s", iface, ip)
 						if err := os.MkdirAll(*nmapDir+ip, 0755); err != nil {
-							log.Printf("Error adding directory %s: %v\n", ip, err)
+							log.Printf(
+								"Error adding directory %s: %v\n", ip, err)
 							return
 						}
 					} else {
-						log.Printf("%s is back online on %s, restarting scans", ip, iface)
+						log.Printf("%s is back online on %s, restarting scans",
+							ip, iface)
 					}
 					// XXXX eventually, set scans and scan frequencies based on
 					// type of device detected
-					schedulePortScan(ScanRequest{ip, "-v -sV -O -T4", "default"}, defaultFreq)
-					schedulePortScan(ScanRequest{ip, "-sU -v -O -sV -T4", "udp"}, udpFreq)
+					schedulePortScan(ScanRequest{ip, "-v -sV -O -T4", "default"},
+						defaultFreq)
+					schedulePortScan(ScanRequest{ip, "-sU -v -O -sV -T4", "udp"},
+						udpFreq)
 					activeHosts[ip] = struct{}{}
 				}
 				if _, err := os.Create(*nmapDir + ip + "/.keep"); err != nil {

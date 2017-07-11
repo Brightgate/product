@@ -78,6 +78,7 @@ Usage:	ap-run broker
 	ap-run exploitd
 	ap-run sampled
 	ap-run scand
+	ap-run scand-ssdp
 	ap-run prometheus
 
 	ap-run start-world
@@ -105,6 +106,8 @@ elif [[ $1 == sampled ]]; then
 	sudobinrun sampled
 elif [[ $1 == scand ]]; then
 	sudobinrun ap.scand --scandir $spool/scand
+elif [[ $1 == scand-ssdp ]]; then
+	sudobinrun ap.scand-ssdp
 elif [[ $1 == analyzerd ]]; then
 	nyi $1
 elif [[ $1 == actord ]]; then
@@ -124,6 +127,7 @@ elif [[ $1 == "start-world" ]]; then
 	binrun ap.identifierd --datadir $etc --logdir $spool/identifierd &
 	sudobinrun ap.sampled &
 	sudobinrun ap.scand --scandir $spool/scand &
+	sudobinrun ap.scand-ssdp &
 	sudobinrun ap.dhcp4d &
 	sudobinrun ap.dns4d &
 	binrun ap.httpd # While using port 8000.

@@ -61,6 +61,12 @@
         "Privileged": true,
         "Options": "-scandir $APROOT/var/spool"
     },
+    "scand-ssdp": {
+        "Name": "scand-ssdp",
+        "Binary": "ap.scand-ssdp",
+        "DependsOn": "configd",
+        "Privileged": true
+    },
     "prometheus": {
         "Name": "prometheus",
         "Binary": "prometheus",

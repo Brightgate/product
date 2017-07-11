@@ -93,7 +93,8 @@ DAEMONS = \
 	$(APPBIN)/ap.mcp \
 	$(APPBIN)/ap.networkd \
 	$(APPBIN)/ap.sampled \
-	$(APPBIN)/ap.scand
+	$(APPBIN)/ap.scand \
+	$(APPBIN)/ap.scand-ssdp
 
 COMMANDS = \
 	$(APPBIN)/ap-arpspoof \
@@ -240,6 +241,12 @@ $(APPBIN)/ap.scand: \
     $(COMMON_SRCS)
 	$(GO) get $(GO_GET_FLAGS) ap.scand 2>&1 | tee -a get.acc
 	cd $(APPBIN) && $(GO) build ap.scand
+
+$(APPBIN)/ap.scand-ssdp: \
+    golang/src/ap.scand-ssdp/scand-ssdp.go \
+    $(COMMON_SRCS)
+	$(GO) get $(GO_GET_FLAGS) ap.scand-ssdp 2>&1 | tee -a get.acc
+	cd $(APPBIN) && $(GO) build ap.scand-ssdp
 
 $(APPBIN)/ap-configctl: \
     golang/src/ap-configctl/configctl.go \
