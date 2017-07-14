@@ -122,9 +122,14 @@ type IndexContent struct {
 	Host string
 }
 
-var index_template *template.Template
+var stats_template *template.Template
 
 func index_handler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "<h1>Welcome to Brightgate</h1>\n")
+	fmt.Fprintf(w, "<h2>Ask around for the wifi password</h2>\n")
+}
+
+func stats_handler(w http.ResponseWriter, r *http.Request) {
 	lt := time.Now()
 
 	conf := &IndexContent{
@@ -137,7 +142,7 @@ func index_handler(w http.ResponseWriter, r *http.Request) {
 		Host:       r.Host,
 	}
 
-	err := index_template.Execute(w, conf)
+	err := stats_template.Execute(w, conf)
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)
@@ -178,7 +183,7 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
-	index_template, err = template.ParseFiles("golang/src/ap.httpd/index.html.got")
+	stats_template, err = template.ParseFiles("golang/src/ap.httpd/stats.html.got")
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(2)
@@ -212,6 +217,7 @@ func main() {
 	// moment.
 
 	http.HandleFunc("/config", cfg_handler)
+	http.HandleFunc("/stats", stats_handler)
 	http.HandleFunc("/", index_handler)
 
 	if mcp != nil {

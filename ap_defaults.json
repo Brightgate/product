@@ -25,6 +25,19 @@
         {
             "Name": "classes",
             "Children": [
+		{
+                    "Name": "unauthorized",
+                    "Children": [
+                        {
+                            "Name": "interface",
+                            "Value": "connect"
+                        },
+                        {
+                            "Name": "lease_duration",
+                            "Value": "10"
+                        }
+                    ]
+                },
                 {
                     "Name": "unclassified",
                     "Children": [
@@ -119,6 +132,15 @@
 	{
             "Name": "interfaces",
             "Children": [
+		{
+                    "Name": "connect",
+                    "Children": [
+                        {
+                            "Name": "subnet",
+                            "Value": "192.168.138.0/27"
+                        }
+                    ]
+                },
                 {
                     "Name": "default",
                     "Children": [

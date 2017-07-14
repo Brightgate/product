@@ -403,9 +403,9 @@ func main() {
 
 	iface := *cli_iface
 	if len(iface) == 0 {
-		iface, err = config.GetProp("@/network/default")
+		iface, err = config.GetProp("@/network/wifi_nic")
 		if err != nil {
-			log.Fatalf("No default interface defined.\n")
+			log.Fatalf("No wifi interface defined.\n")
 		}
 	}
 

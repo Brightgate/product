@@ -14,7 +14,7 @@
     "dhcp4d": {
         "Name": "dhcp4d",
         "Binary": "ap.dhcp4d",
-        "DependsOn": "configd",
+        "DependsOn": "networkd",
         "Privileged": true
     },
     "dns4d": {

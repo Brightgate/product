@@ -51,9 +51,11 @@ var (
 	config         *ap_common.Config
 
 	use_vlans    bool
-	physical_nic string
-	wanMac       string
+	wifiNic      string
 	wifiMac      string
+	connectNic   string
+	connectMac   string
+	wanMac       string
 	sharedRouter net.IP     // without vlans, all classes share a
 	sharedSubnet *net.IPNet // subnet and a router node
 
@@ -65,6 +67,14 @@ const pname = "ap.dhcp4d"
 func getClass(hwaddr string) string {
 	clientClassMtx.Lock()
 	class := clientClass[hwaddr]
+	clientClassMtx.Unlock()
+
+	return class
+}
+
+func setClass(hwaddr, class string) string {
+	clientClassMtx.Lock()
+	clientClass[hwaddr] = class
 	clientClassMtx.Unlock()
 
 	return class
@@ -114,12 +124,6 @@ func configChanged(path []string, val string) {
 				log.Printf("configd moves client %s from %s to  %s\n",
 					client, old, val)
 			}
-		}
-	} else if len(path) == 2 && path[0] == "network" {
-		if path[1] == "wifi_mac" {
-			wifiMac = val
-		} else if path[1] == "wan_mac" {
-			wanMac = val
 		}
 	}
 }
@@ -432,27 +436,32 @@ func (h *DHCPHandler) decline(p dhcp.Packet) {
 	}
 }
 
-/*
- * Based on the client's MAC address, identify its class and return the
- * appropriate DHCP handler
- */
+//
+// Based on the client's MAC address and/or the network the request arrived on,
+// identify its class and return the appropriate DHCP handler.  The use of
+// lastRequestOn relies on the knowledge that the DHCP library (krolaw/dhcp4)
+// will call the handler immediately after the call to ReadFrom(), where
+// lastRequestOn gets set.
+//
 func selectClassHandler(p dhcp.Packet, options dhcp.Options) *DHCPHandler {
 	hwaddr := p.CHAddr().String()
-	class := getClass(hwaddr)
-	if class == "" {
-		// If the DHCP request arrived on the wifi port, the client is
-		// 'unclassified'.  Otherwise, it's 'wired'.  This relies on the
-		// knowledge that the DHCP library (krolaw/dhcp4) will call the
-		// handler immediately after the call to ReadFrom(), where
-		// lastRequestOn gets set.
-		//
-		if lastRequestOn == wifiMac {
-			updateClass(hwaddr, "", "unclassified")
-		} else {
-			updateClass(hwaddr, "", "wired")
-		}
 
-		class = getClass(hwaddr)
+	oldClass := getClass(hwaddr)
+	if lastRequestOn == connectMac {
+		// All clients connecting on the open port are treated as new -
+		// even if we've previously recgonized them on the protected
+		// network.
+		setClass(hwaddr, "unauthorized")
+	} else if lastRequestOn == wifiMac {
+		if oldClass == "" || oldClass == "unauthorized" {
+			updateClass(hwaddr, oldClass, "unclassified")
+		}
+	} else {
+		updateClass(hwaddr, "", "wired")
+	}
+
+	class := getClass(hwaddr)
+	if class != oldClass {
 		log.Printf("New %s client %s via %s: %s\n", class, hwaddr,
 			lastRequestOn)
 		notifyNewEntity(p, options, class)
@@ -634,20 +643,28 @@ func (h *DHCPHandler) recoverLeases(root *ap_common.PropertyNode) {
 	}
 }
 
-func initPhysical(props *ap_common.PropertyNode) {
+func getInterface(name string) (string, string) {
+	var nic, mac string
 	var err error
 
-	physical_nic, err = config.GetProp("@/network/default")
-	if err != nil {
-		log.Fatalf("No default interface defined\n")
+	if nic, err = config.GetProp("@/network/" + name); err == nil {
+		if err = network.WaitForDevice(nic, 2*time.Second); err == nil {
+			if iface, err := net.InterfaceByName(nic); err == nil {
+				mac = iface.HardwareAddr.String()
+			}
+		}
+		if mac == "" {
+			log.Printf("No such network device: %s\n", nic)
+		}
 	}
 
-	iface, err := net.InterfaceByName(physical_nic)
-	if err != nil {
-		log.Fatalf("No such network device: %s\n", iface)
-	}
-	wanMac, _ = config.GetProp("@/network/wan_mac")
-	wifiMac, _ = config.GetProp("@/network/wifi_mac")
+	return nic, mac
+}
+
+func initPhysical(props *ap_common.PropertyNode) {
+	wifiNic, wifiMac = getInterface("wifi_nic")
+	connectNic, connectMac = getInterface("connect_nic")
+	_, wanMac = getInterface("wan_nic")
 
 	prop, err := config.GetProp("@/network/use_vlans")
 	if err == nil && prop == "true" {
@@ -706,7 +723,12 @@ func initHandlers() {
 		}
 		h := newHandler(name, subnet, nameserver, class.LeaseDuration)
 		if class.Interface == "default" {
-			h.iface = physical_nic
+			h.iface = wifiNic
+		} else if class.Interface == "connect" {
+			if connectNic == "" {
+				continue
+			}
+			h.iface = connectNic
 		} else {
 			h.iface = class.Interface
 		}
@@ -723,15 +745,12 @@ type MultiConn struct {
 }
 
 func (s *MultiConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
+	var iface *net.Interface
+	var requestMac string
+
 	n, s.cm, addr, err = s.conn.ReadFrom(b)
-
-	if err != nil {
-		return
-	}
-
-	requestMac := ""
-	if s.cm != nil {
-		iface, err := net.InterfaceByIndex(s.cm.IfIndex)
+	if err == nil && s.cm != nil {
+		iface, err = net.InterfaceByIndex(s.cm.IfIndex)
 		if err == nil {
 			requestMac = iface.HardwareAddr.String()
 		}
@@ -741,9 +760,11 @@ func (s *MultiConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 	if requestMac == wanMac {
 		log.Printf("Request arrived on wan: %s\n", requestMac)
 		n = 0
-	} else {
+	} else if requestMac != "" {
 		if requestMac == wifiMac {
 			log.Printf("Request arrived on wifi: %s\n", requestMac)
+		} else if requestMac == connectMac {
+			log.Printf("Request arrived on open wifi: %s\n", requestMac)
 		} else {
 			log.Printf("Request arrived on wired: %s\n", requestMac)
 		}

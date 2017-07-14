@@ -1,4 +1,5 @@
 interface={{.Interface}}
+bssid={{.Hwaddr}}
 driver=nl80211
 ssid={{.SSID}}
 utf8_ssid=1
@@ -24,3 +25,6 @@ rsn_pairwise=CCMP
 {{.VLANComment}}dynamic_vlan=1
 {{.VLANComment}}vlan_file={{.ConfDir}}/hostapd.vlan
 {{.VLANComment}}accept_mac_file={{.ConfDir}}/hostapd.macs
+
+{{.ConnectComment}}bss={{.Interface}}_0
+{{.ConnectComment}}ssid={{.SSID}}-connect

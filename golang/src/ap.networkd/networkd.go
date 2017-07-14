@@ -40,6 +40,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -68,9 +69,11 @@ var (
 	subnets    map[string]string                 // iface -> subnet
 
 	activeWifi   *device     // live wireless iface
+	connectWifi  string      // open "network connect" interface
 	activeWan    *device     // WAN port
 	childProcess *os.Process // track the hostapd proc
 	config       *ap_common.Config
+	mcpPort      *mcp.MCP
 	running      bool
 )
 
@@ -88,6 +91,7 @@ const (
 	sysctlCmd      = "/sbin/sysctl"
 	ipCmd          = "/sbin/ip"
 	pname          = "ap.networkd"
+	captivePortal  = "_0"
 )
 
 type device struct {
@@ -95,6 +99,7 @@ type device struct {
 	hwaddr       string
 	wireless     bool
 	supportVLANs bool
+	multipleAPs  bool
 }
 
 type iface struct {
@@ -107,6 +112,7 @@ type iface struct {
 type APConfig struct {
 	Interface string // Linux device name
 	Network   string // Network IP for non-VLAN configs
+	Hwaddr    string // Mac address to use
 	UseVLANs  bool   // Use VLANs or not
 	Status    error  // collect hostapd failures
 
@@ -115,9 +121,10 @@ type APConfig struct {
 	Channel       int
 	Passphrase    string
 
-	ConfDir     string // Location of hostapd.conf, etc.
-	ConfFile    string // Name of this NIC's hostapd.conf
-	VLANComment string // Used to disable vlan params in .conf template
+	ConfDir        string // Location of hostapd.conf, etc.
+	ConfFile       string // Name of this NIC's hostapd.conf
+	VLANComment    string // Used to disable vlan params in .conf template
+	ConnectComment string // Used to disable -connect in .conf template
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -218,38 +225,54 @@ func getSubnetConfig() string {
 // Get network settings from configd and use them to initialize the AP
 //
 func getAPConfig(d *device, props *ap_common.PropertyNode) {
-	var ssid, passphrase, vlan_comment string
+	var ssid, passphrase, vlanComment, connectComment string
+	var node *ap_common.PropertyNode
 
-	if node := props.GetChild("ssid"); node != nil {
-		ssid = node.GetValue()
-	} else {
+	if node = props.GetChild("ssid"); node == nil {
 		log.Fatalf("No SSID configured\n")
 	}
+	ssid = node.GetValue()
 
-	if node := props.GetChild("passphrase"); node != nil {
-		passphrase = node.GetValue()
-	} else {
+	if node = props.GetChild("passphrase"); node == nil {
 		log.Fatalf("No passphrase configured\n")
 	}
+	passphrase = node.GetValue()
 
-	network := getSubnetConfig()
-	if d.supportVLANs {
-		vlan_comment = ""
-	} else {
-		vlan_comment = "#"
+	if !d.supportVLANs {
+		vlanComment = "#"
 	}
+	if d.multipleAPs {
+		// If we create a second SSID for new clients to connect to,
+		// its mac address will be derived from the nic's mac address by
+		// adding 1 to the final octet.  If the final octet is 0xff, we
+		// need to adjust it to make room for the second SSID.
+		octets := strings.Split(d.hwaddr, ":")
+		if len(octets) != 6 {
+			log.Fatalf("%s has an invalid mac address: %s\n",
+				d.name, d.hwaddr)
+		}
+		if octets[5] == "ff" {
+			octets[5] = "fe"
+		}
+		d.hwaddr = strings.Join(octets, ":")
+	} else {
+		connectComment = "#"
+	}
+	network := getSubnetConfig()
 
 	data := APConfig{
-		Interface:     d.name,
-		Network:       network,
-		UseVLANs:      d.supportVLANs,
-		SSID:          ssid,
-		HardwareModes: "g",
-		Channel:       6,
-		Passphrase:    passphrase,
-		ConfFile:      "hostapd.conf." + d.name,
-		ConfDir:       confdir,
-		VLANComment:   vlan_comment,
+		Interface:      d.name,
+		Network:        network,
+		Hwaddr:         d.hwaddr,
+		UseVLANs:       d.supportVLANs,
+		SSID:           ssid,
+		HardwareModes:  "g",
+		Channel:        6,
+		Passphrase:     passphrase,
+		ConfFile:       "hostapd.conf." + d.name,
+		ConfDir:        confdir,
+		VLANComment:    vlanComment,
+		ConnectComment: connectComment,
 	}
 	aps[d.name] = &data
 }
@@ -449,6 +472,9 @@ func runOne(conf *APConfig, done chan *APConfig) {
 
 		resetWifiInterfaces()
 		iptablesReset()
+		if mcpPort != nil {
+			mcpPort.SetStatus("online")
+		}
 
 		// Wait for the stdout/stderr pipes to close and for the child
 		// process to exit
@@ -509,6 +535,16 @@ func runAll() int {
 // Low-level network manipulation.
 //
 
+// Derive the router's IP address from the network.
+//    e.g., 192.168.136.0 -> 192.168.136.1
+func subnetRouter(subnet string) string {
+	_, network, _ := net.ParseCIDR(subnet)
+	raw := network.IP.To4()
+	raw[3] += 1
+	router := (net.IP(raw)).String()
+	return router
+}
+
 //
 // Get a NIC ready to serve as the router for a NATted subnet
 //
@@ -532,14 +568,8 @@ func prepareInterface(iface *iface) {
 	cmd = exec.Command(ipCmd, "route", "del", iface.subnet)
 	cmd.Run()
 
-	// Derive the router's IP address from the network.
-	//    e.g., 192.168.136.0 -> 192.168.136.1
-	_, network, _ := net.ParseCIDR(iface.subnet)
-	raw := network.IP.To4()
-	raw[3] += 1
-	router := (net.IP(raw)).String()
-
 	// ip addr add 192.168.136.1 dev wlan0
+	router := subnetRouter(iface.subnet)
 	cmd = exec.Command(ipCmd, "addr", "add", router, "dev", nic)
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to set the router address: %v\n", err)
@@ -558,10 +588,19 @@ func prepareInterface(iface *iface) {
 	}
 }
 
+func iptablesNatRule(subnet string) string {
+	nat := "-t nat -I POSTROUTING"
+	nat += " -o " + activeWan.name
+	nat += " -s " + subnet
+	nat += " -j MASQUERADE"
+
+	return nat
+}
+
 //
 // Build the iptables rules for a single managed subnet
 //
-func iptablesRules(nic, subnet string) []string {
+func iptablesForwardRules(nic, subnet string) []string {
 	// Route traffic from the managed network to the WAN
 	forward := "-I FORWARD"
 	forward += " -i " + nic
@@ -570,13 +609,42 @@ func iptablesRules(nic, subnet string) []string {
 	forward += " -m conntrack --ctstate NEW"
 	forward += " -j ACCEPT"
 
-	// Traffic from the managed network has its IP addresses masqueraded
-	nat := "-t nat -I POSTROUTING"
-	nat += " -o " + activeWan.name
-	nat += " -s " + subnet
-	nat += " -j MASQUERADE"
+	nat := iptablesNatRule(subnet)
 
 	rules := []string{forward, nat}
+	return rules
+}
+
+//
+// Build the iptables rules for the 'captive portal' subnet
+//
+func iptablesCaptiveRules(nic, subnet string) []string {
+
+	// All http packets get forwarded to our local web server
+	router := subnetRouter(subnet)
+	webserver := router + ":8000"
+	dnat := "-t nat -A PREROUTING" +
+		" -i " + nic +
+		" -p tcp -m multiport --dports 80,8000" +
+		" -j DNAT --to-destination " + webserver
+
+	// Allow DHCP packets through
+	dhcpAllow := "-A INPUT -i " + nic + " -p udp --dport 67 -j ACCEPT"
+
+	// Allow http packets through
+	httpAllow := "-A INPUT -i " + nic + " -p tcp --dport 8000 -j ACCEPT"
+
+	// Allow DNS packets through
+	dnsAllow := "-A INPUT -i " + nic + " -p udp --dport 53 -j ACCEPT"
+
+	// Everything else gets dropped
+	otherInputDrop := "-A INPUT" + " -i " + nic + " -j DROP"
+	otherForwardDrop := "-I FORWARD" + " -i " + nic + " -j DROP"
+	httpForward := "-I FORWARD -i " + nic + " -p tcp --dport 8000 -j ACCEPT"
+
+	nat := iptablesNatRule(subnet)
+	rules := []string{dnat, httpAllow, dnsAllow, dhcpAllow, otherInputDrop,
+		otherForwardDrop, httpForward, nat}
 	return rules
 }
 
@@ -585,7 +653,7 @@ func iptablesIssueRule(rule string) {
 	cmd := exec.Command(iptablesCmd, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Fatalf("failed to apply %s: %s\n", rule, out)
+		log.Printf("failed to apply %s: %s\n", rule, out)
 	}
 }
 
@@ -612,7 +680,13 @@ func iptablesReset() {
 }
 
 func addInterface(name, subnet string, wireless bool) {
-	rules := iptablesRules(name, subnet)
+	var rules []string
+
+	if strings.HasSuffix(name, captivePortal) {
+		rules = iptablesCaptiveRules(name, subnet)
+	} else {
+		rules = iptablesForwardRules(name, subnet)
+	}
 	iface := iface{
 		name:     name,
 		subnet:   subnet,
@@ -717,6 +791,12 @@ func prepareWireless(props *ap_common.PropertyNode) {
 		for i, s := range subnets {
 			if i == "default" {
 				addInterface(activeWifi.name, s, true)
+			} else if i == "connect" {
+				if activeWifi.multipleAPs {
+					connectWifi = activeWifi.name +
+						captivePortal
+					addInterface(connectWifi, s, true)
+				}
 			} else if strings.HasPrefix(i, "vlan.") {
 				addInterface(i, s, true)
 			}
@@ -756,10 +836,15 @@ func getEthernet(name string) *device {
 //
 // Given the name of a wireless NIC, construct a device structure for it
 func getWireless(name string) *device {
+	if strings.HasSuffix(name, captivePortal) {
+		return nil
+	}
+
 	d := getDevice(name)
 	if d == nil {
 		return nil
 	}
+	d.wireless = true
 
 	data, err := ioutil.ReadFile("/sys/class/net/" + name + "/phy80211/name")
 	if err != nil {
@@ -779,10 +864,38 @@ func getWireless(name string) *device {
 	}
 	capabilities := string(out)
 
-	if d != nil {
-		d.wireless = true
-		d.supportVLANs = strings.Contains(capabilities, "VLAN")
+	//
+	// Look for "AP/VLAN" as a supported "software interface mode"
+	//
+	vlanRE := regexp.MustCompile(`AP/VLAN`)
+	vlanModes := vlanRE.FindAllStringSubmatch(capabilities, -1)
+	d.supportVLANs = (len(vlanModes) > 0)
+
+	//
+	// Examine the "valid interface combinations" to see if any include more
+	// than one AP.  This one does:
+	//    #{ AP, mesh point } <= 8,
+	// This one doesn't:
+	//    #{ managed } <= 1, #{ AP } <= 1, #{ P2P-client } <= 1,
+	//
+	comboRE := regexp.MustCompile(`#{ [\w\-, ]+ } <= [0-9]+`)
+	combos := comboRE.FindAllStringSubmatch(capabilities, -1)
+
+	for _, line := range combos {
+		for _, combo := range line {
+			if strings.Contains(combo, "AP") {
+				s := strings.Split(combo, " ")
+				if len(s) > 0 {
+					cnt, _ := strconv.Atoi(s[len(s)-1])
+					if cnt > 1 {
+						log.Printf("%s APs: %d\n", s, cnt)
+						d.multipleAPs = true
+					}
+				}
+			}
+		}
 	}
+
 	return (d)
 }
 
@@ -829,30 +942,29 @@ func updateNetworkProp(props *ap_common.PropertyNode, prop, new string) {
 // update the config now.
 //
 func updateNetworkConfig(props *ap_common.PropertyNode) {
-	var useVLAN string
-
+	updateNetworkProp(props, "wifi_nic", activeWifi.name)
+	updateNetworkProp(props, "connect_nic", connectWifi)
+	updateNetworkProp(props, "wan_nic", activeWan.name)
 	if activeWifi.supportVLANs {
-		useVLAN = "true"
+		updateNetworkProp(props, "use_vlans", "true")
 	} else {
-		useVLAN = "false"
+		updateNetworkProp(props, "use_vlans", "false")
 	}
-
-	updateNetworkProp(props, "default", activeWifi.name)
-	updateNetworkProp(props, "use_vlans", useVLAN)
-	updateNetworkProp(props, "wifi_mac", activeWifi.hwaddr)
-	updateNetworkProp(props, "wan_mac", activeWan.hwaddr)
 }
 
 func main() {
 	var b ap_common.Broker
+	var err error
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
 	flag.Parse()
 
-	mcp, err := mcp.New(pname)
+	mcpPort, err = mcp.New(pname)
 	if err != nil {
 		log.Printf("Failed to connect to mcp\n")
+	} else {
+		mcpPort.SetStatus("initializing")
 	}
 
 	http.Handle("/metrics", promhttp.Handler())
@@ -879,10 +991,6 @@ func main() {
 	prepareWired()
 	prepareWireless(props)
 	updateNetworkConfig(props)
-
-	if mcp != nil {
-		mcp.SetStatus("online")
-	}
 
 	running = true
 	go signalHandler()
