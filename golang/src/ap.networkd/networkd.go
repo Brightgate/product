@@ -241,20 +241,31 @@ func getAPConfig(d *device, props *ap_common.PropertyNode) {
 	if !d.supportVLANs {
 		vlanComment = "#"
 	}
+
 	if d.multipleAPs {
 		// If we create a second SSID for new clients to connect to,
 		// its mac address will be derived from the nic's mac address by
-		// adding 1 to the final octet.  If the final octet is 0xff, we
-		// need to adjust it to make room for the second SSID.
+		// adding 1 to the final octet.  To accomodate that, hostapd
+		// wants the final nybble of the final octet to be 0.
 		octets := strings.Split(d.hwaddr, ":")
 		if len(octets) != 6 {
 			log.Fatalf("%s has an invalid mac address: %s\n",
 				d.name, d.hwaddr)
 		}
-		if octets[5] == "ff" {
-			octets[5] = "fe"
+		b, _ := strconv.ParseUint(octets[5], 16, 32)
+		if b&0xff != 0 {
+			b &= 0xf0
+			octets[5] = fmt.Sprintf("%02x", b)
+
+			// Since we changed the mac address, we need to set the
+			// 'locally administered' bit in the first octet
+			b, _ = strconv.ParseUint(octets[0], 16, 32)
+			b |= 0x02 // Set the "locally administered" bit
+			octets[0] = fmt.Sprintf("%02x", b)
+			o := d.hwaddr
+			d.hwaddr = strings.Join(octets, ":")
+			log.Printf("Changed mac from %s to %s\n", o, d.hwaddr)
 		}
-		d.hwaddr = strings.Join(octets, ":")
 	} else {
 		connectComment = "#"
 	}

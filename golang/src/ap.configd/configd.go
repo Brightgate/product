@@ -144,7 +144,7 @@ var uuid_ops = property_ops{default_getter, uuid_update}
 
 var property_match_table = []property_match{
 	{regexp.MustCompile(`^@/uuid$`), &uuid_ops},
-	{regexp.MustCompile(`^@/network/wlan[0-9]+/ssid$`), &ssid_ops},
+	{regexp.MustCompile(`^@/network/ssid$`), &ssid_ops},
 }
 
 /*
@@ -416,7 +416,14 @@ func default_setter(node *pnode, val string, expires *time.Time) error {
 }
 
 func default_getter(node *pnode) (string, error) {
-	return node.Value, nil
+	var rval string
+
+	b, err := json.Marshal(node)
+	if err == nil {
+		rval = string(b)
+	}
+
+	return rval, err
 }
 
 func uuid_update(node *pnode, uuid string, expires *time.Time) error {
