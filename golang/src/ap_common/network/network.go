@@ -186,6 +186,16 @@ func Uint32ToIPAddr(a uint32) net.IP {
 	return ipv4
 }
 
+// SubnetRouter derives the router's IP address from the network.
+//    e.g., 192.168.136.0 -> 192.168.136.1
+func SubnetRouter(subnet string) string {
+	_, network, _ := net.ParseCIDR(subnet)
+	raw := network.IP.To4()
+	raw[3]++
+	router := (net.IP(raw)).String()
+	return router
+}
+
 // Wait for a network device to reach the 'up' state.  Returns an error on
 // timeout
 func WaitForDevice(dev string, timeout time.Duration) error {

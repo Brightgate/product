@@ -546,16 +546,6 @@ func runAll() int {
 // Low-level network manipulation.
 //
 
-// Derive the router's IP address from the network.
-//    e.g., 192.168.136.0 -> 192.168.136.1
-func subnetRouter(subnet string) string {
-	_, network, _ := net.ParseCIDR(subnet)
-	raw := network.IP.To4()
-	raw[3] += 1
-	router := (net.IP(raw)).String()
-	return router
-}
-
 //
 // Get a NIC ready to serve as the router for a NATted subnet
 //
@@ -580,7 +570,7 @@ func prepareInterface(iface *iface) {
 	cmd.Run()
 
 	// ip addr add 192.168.136.1 dev wlan0
-	router := subnetRouter(iface.subnet)
+	router := network.SubnetRouter(iface.subnet)
 	cmd = exec.Command(ipCmd, "addr", "add", router, "dev", nic)
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to set the router address: %v\n", err)
@@ -632,7 +622,7 @@ func iptablesForwardRules(nic, subnet string) []string {
 func iptablesCaptiveRules(nic, subnet string) []string {
 
 	// All http packets get forwarded to our local web server
-	router := subnetRouter(subnet)
+	router := network.SubnetRouter(subnet)
 	webserver := router + ":8000"
 	dnat := "-t nat -A PREROUTING" +
 		" -i " + nic +

@@ -32,8 +32,9 @@
     "httpd": {
         "Name": "httpd",
         "Binary": "ap.httpd",
-        "DependsOn": "configd",
-        "Privileged": false
+        "DependsOn": "networkd",
+        "Privileged": true,
+        "Options": "-ssldir=$APROOT/etc/ssl"
     },
     "identifierd": {
         "Name": "identifierd",
@@ -59,7 +60,7 @@
         "Binary": "ap.scand",
         "DependsOn": "networkd",
         "Privileged": true,
-        "Options": "-scandir $APROOT/var/spool"
+        "Options": "-scandir=$APROOT/var/spool"
     },
     "scand-ssdp": {
         "Name": "scand-ssdp",

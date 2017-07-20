@@ -32,6 +32,7 @@ bin=$root/opt/com.brightgate/bin
 etc=$root/opt/com.brightgate/etc
 var=$root/opt/com.brightgate/var
 spool=$var/spool
+ssl=$etc/ssl
 
 function log_error {
 	echo $(date +0%Y-%m-%d\ %H:%M:%S) $red{$1} $offgreen$bold$2$offbold
@@ -97,7 +98,7 @@ elif [[ $1 == dnsd ]]; then
 elif [[ $1 == networkd ]]; then
 	sudobinrun ap.networkd $OPTS
 elif [[ $1 == httpd ]]; then
-	binrun ap.httpd # While using port 8000.
+	sudobinrun ap.httpd --ssldir $ssl
 elif [[ $1 == logd ]]; then
 	binrun ap.logd
 elif [[ $1 == prometheus ]]; then
@@ -130,7 +131,7 @@ elif [[ $1 == "start-world" ]]; then
 	sudobinrun ap.scand-ssdp &
 	sudobinrun ap.dhcp4d &
 	sudobinrun ap.dns4d &
-	binrun ap.httpd # While using port 8000.
+	sudobinrun ap.httpd --ssldir $ssl
 	# Wait here.
 elif [[ $1 == "update-world" ]]; then
 	# XXX To create an aware refresh, we would have to be able to

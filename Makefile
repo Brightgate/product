@@ -81,6 +81,7 @@ APPBIN=$(APPBASE)/bin
 APPDOC=$(APPBASE)/share/doc
 APPETC=$(APPBASE)/etc
 APPVAR=$(APPBASE)/var
+APPSSL=$(APPETC)/ssl
 APPSPOOL=$(APPVAR)/spool
 
 DAEMONS = \
@@ -113,7 +114,7 @@ CONFIGS = \
 	$(APPETC)/oui.txt \
 	$(APPETC)/prometheus.yml
 
-DIRS = $(APPBIN) $(APPDOC) $(APPETC) $(APPVAR) $(APPSPOOL)
+DIRS = $(APPBIN) $(APPDOC) $(APPETC) $(APPVAR) $(APPSSL) $(APPSPOOL)
 
 install: $(APPBINARIES) $(CONFIGS) $(DIRS) docs
 

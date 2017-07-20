@@ -491,8 +491,10 @@ func main() {
 
 	// load the phishtank
 	log.Printf("phishdata %v", phishdata)
-	phishdata = &phishtank.DataSource{FilePath: "online-valid.csv"}
-	phishdata.Loader("online-valid.csv")
+	phishdata = &phishtank.DataSource{}
+	phishdata.Loader("online-valid-test.csv")
+	// phishdata.AutoLoader("online-valid.csv", time.Hour)
+	// ^^ uncomment to autoupdate with real phish data, also change in httpd
 	log.Printf("phishdata %v", phishdata)
 
 	dns.HandleFunc("blueslugs.com.", local_handler)
