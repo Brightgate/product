@@ -75,6 +75,7 @@ ifeq ("$(GOARCH)","arm")
 ROOT=proto.armv7l
 endif
 
+GOSRC=golang/src
 APPBASE=$(ROOT)/opt/com.brightgate
 APPBIN=$(APPBASE)/bin
 APPDOC=$(APPBASE)/share/doc
@@ -83,25 +84,26 @@ APPVAR=$(APPBASE)/var
 APPSPOOL=$(APPVAR)/spool
 
 DAEMONS = \
-	$(APPBIN)/ap.brokerd \
-	$(APPBIN)/ap.configd \
-	$(APPBIN)/ap.dhcp4d \
-	$(APPBIN)/ap.dns4d \
-	$(APPBIN)/ap.httpd \
-	$(APPBIN)/ap.identifierd \
-	$(APPBIN)/ap.logd \
-	$(APPBIN)/ap.mcp \
-	$(APPBIN)/ap.networkd \
-	$(APPBIN)/ap.sampled \
-	$(APPBIN)/ap.scand \
-	$(APPBIN)/ap.scand-ssdp
+	ap.brokerd \
+	ap.configd \
+	ap.dhcp4d \
+	ap.dns4d \
+	ap.httpd \
+	ap.identifierd \
+	ap.logd \
+	ap.mcp \
+	ap.networkd \
+	ap.sampled \
+	ap.scand \
+	ap.scand-ssdp
 
 COMMANDS = \
-	$(APPBIN)/ap-arpspoof \
-	$(APPBIN)/ap-ctl \
-	$(APPBIN)/ap-msgping \
-	$(APPBIN)/ap-configctl \
-	$(APPBIN)/ap-run
+	ap-arpspoof \
+	ap-ctl \
+	ap-msgping \
+	ap-configctl
+
+APPBINARIES  := $(COMMANDS:%=$(APPBIN)/%) $(DAEMONS:%=$(APPBIN)/%)
 
 CONFIGS = \
 	$(APPETC)/ap_defaults.json \
@@ -113,7 +115,7 @@ CONFIGS = \
 
 DIRS = $(APPBIN) $(APPDOC) $(APPETC) $(APPVAR) $(APPSPOOL)
 
-install: $(COMMANDS) $(DAEMONS) $(CONFIGS) $(DIRS) docs
+install: $(APPBINARIES) $(CONFIGS) $(DIRS) docs
 
 docs: | $(PROTOC_PLUGINS)
 
@@ -122,7 +124,7 @@ $(APPDOC)/: base/base_msg.proto | $(PROTOC_PLUGINS) $(APPDOC)
 		protoc --plugin $(GOPATH)/bin \
 		    --doc_out $(APPDOC) $(notdir $<)
 
-$(COMMANDS) $(DAEMONS) : | $(APPBIN)
+$(APPBINARIES) : | $(APPBIN)
 
 $(APPBIN)/%: ./% | $(APPBIN)
 	install -m 0755 $< $(APPBIN)
@@ -136,7 +138,7 @@ $(APPETC)/ap_identities.csv: ap_identities.csv | $(APPETC)
 $(APPETC)/ap_mfgid.json: ap_mfgid.json | $(APPETC)
 	install -m 0644 $< $(APPETC)
 
-$(APPETC)/mcp.json: golang/src/ap.mcp/mcp.json | $(APPETC)
+$(APPETC)/mcp.json: $(GOSRC)/ap.mcp/mcp.json | $(APPETC)
 	install -m 0644 $< $(APPETC)
 
 $(APPETC)/oui.txt: | $(APPETC)
@@ -145,134 +147,51 @@ $(APPETC)/oui.txt: | $(APPETC)
 $(APPETC)/prometheus.yml: prometheus.yml | $(APPETC)
 	install -m 0644 $< $(APPETC)
 
-$(APPBIN):
-	mkdir -p $(APPBIN)
-
-$(APPDOC):
-	mkdir -p $(APPDOC)
-
-$(APPETC):
-	mkdir -p $(APPETC)
-
-$(APPSPOOL):
-	mkdir -p $(APPSPOOL)
-
-$(APPVAR):
-	mkdir -p $(APPVAR)
+$(DIRS):
+	mkdir -p $@
 
 COMMON_SRCS = \
-    golang/src/base_def/base_def.go \
-    golang/src/base_msg/base_msg.pb.go \
-    golang/src/ap_common/broker.go \
-    golang/src/ap_common/config.go \
-    golang/src/ap_common/mcp/mcp_client.go \
-    golang/src/ap_common/network/network.go
+    $(GOSRC)/base_def/base_def.go \
+    $(GOSRC)/base_msg/base_msg.pb.go \
+    $(GOSRC)/ap_common/broker.go \
+    $(GOSRC)/ap_common/config.go \
+    $(GOSRC)/ap_common/mcp/mcp_client.go \
+    $(GOSRC)/ap_common/network/network.go
 
-$(APPBIN)/ap-arpspoof: \
-    golang/src/ap-arpspoof/arpspoof.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap-arpspoof 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap-arpspoof
+$(APPBINARIES): $(COMMON_SRCS) .gotten
 
-# XXX brokerd does not need the base messages.
-$(APPBIN)/ap.brokerd: \
-    golang/src/ap.brokerd/brokerd.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap.brokerd 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap.brokerd
+.gotten:
+	$(GO) get $(GO_GET_FLAGS) $(DAEMONS) $(COMMANDS) 2>&1 | tee -a get.acc
+	touch $@
 
-$(APPBIN)/ap.configd: \
-    golang/src/ap.configd/configd.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap.configd 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap.configd
+$(APPBIN)/%:
+	cd $(APPBIN) && $(GO) build $*
 
-$(APPBIN)/ap.dhcp4d: \
-    golang/src/ap.dhcp4d/dhcp4d.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap.dhcp4d 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap.dhcp4d
+$(APPBIN)/ap.brokerd: $(GOSRC)/ap.brokerd/brokerd.go
+$(APPBIN)/ap.configd: $(GOSRC)/ap.configd/configd.go
+$(APPBIN)/ap.dhcp4d: $(GOSRC)/ap.dhcp4d/dhcp4d.go
+$(APPBIN)/ap.dns4d: $(GOSRC)/ap.dns4d/dns4d.go golang/src/data/phishtank/phishtank.go
+$(APPBIN)/ap.httpd: $(GOSRC)/ap.httpd/httpd.go
+$(APPBIN)/ap.identifierd: $(GOSRC)/ap.identifierd/identifierd.go
+$(APPBIN)/ap.logd: $(GOSRC)/ap.logd/logd.go
+$(APPBIN)/ap.mcp: $(GOSRC)/ap.mcp/mcp.go
+$(APPBIN)/ap.networkd: $(GOSRC)/ap.networkd/networkd.go
+$(APPBIN)/ap.sampled: $(GOSRC)/ap.sampled/sampled.go
+$(APPBIN)/ap.scand: $(GOSRC)/ap.scand/scand.go
+$(APPBIN)/ap.scand-ssdp: $(GOSRC)/ap.scand-ssdp/scand-ssdp.go
 
-$(APPBIN)/ap.dns4d: \
-    golang/src/ap.dns4d/dns4d.go \
-    golang/src/data/phishtank/phishtank.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap.dns4d 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap.dns4d
-
-$(APPBIN)/ap.httpd: \
-    golang/src/ap.httpd/httpd.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap.httpd 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap.httpd
-
-$(APPBIN)/ap.identifierd: \
-    golang/src/ap.identifierd/identifierd.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap.identifierd 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap.identifierd
-
-$(APPBIN)/ap.logd: \
-    golang/src/ap.logd/logd.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap.logd 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap.logd
-
-$(APPBIN)/ap.mcp: \
-    golang/src/ap.mcp/mcp.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap.mcp 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap.mcp
-
-$(APPBIN)/ap.networkd: \
-    golang/src/ap.networkd/networkd.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap.networkd 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap.networkd
-
-$(APPBIN)/ap.sampled: \
-    golang/src/ap.sampled/sampled.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap.sampled 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap.sampled
-
-$(APPBIN)/ap.scand: \
-    golang/src/ap.scand/scand.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap.scand 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap.scand
-
-$(APPBIN)/ap.scand-ssdp: \
-    golang/src/ap.scand-ssdp/scand-ssdp.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap.scand-ssdp 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap.scand-ssdp
-
-$(APPBIN)/ap-configctl: \
-    golang/src/ap-configctl/configctl.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap-configctl 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap-configctl
-
-$(APPBIN)/ap-ctl: \
-    golang/src/ap-ctl/ctl.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap-ctl 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap-ctl
-
-$(APPBIN)/ap-msgping: \
-    golang/src/ap-msgping/msgping.go \
-    $(COMMON_SRCS)
-	$(GO) get $(GO_GET_FLAGS) ap-msgping 2>&1 | tee -a get.acc
-	cd $(APPBIN) && $(GO) build ap-msgping
+$(APPBIN)/ap-arpspoof: $(GOSRC)/ap-arpspoof/arpspoof.go
+$(APPBIN)/ap-configctl: $(GOSRC)/ap-configctl/configctl.go
+$(APPBIN)/ap-ctl: $(GOSRC)/ap-ctl/ctl.go
+$(APPBIN)/ap-msgping: $(GOSRC)/ap-msgping/msgping.go
 
 $(APPBIN)/ap-run: ap-run.bash
 	install -m 0755 $< $@
 
-proto: golang/src/base_msg/base_msg.pb.go base/base_msg_pb2.py
+proto: $(GOSRC)/base_msg/base_msg.pb.go base/base_msg_pb2.py
 
-golang/src/base_msg/base_msg.pb.go: base/base_msg.proto | \
-	$(PROTOC_PLUGINS) golang/src/base_msg
+$(GOSRC)/base_msg/base_msg.pb.go: base/base_msg.proto | \
+	$(PROTOC_PLUGINS) $(GOSRC)/base_msg
 	cd base && \
 		protoc --plugin $(GOPATH)/bin \
 		    --go_out $(GOPATH)/src/base_msg $(notdir $<)
@@ -280,25 +199,24 @@ golang/src/base_msg/base_msg.pb.go: base/base_msg.proto | \
 base/base_msg_pb2.py: base/base_msg.proto
 	protoc --python_out . $<
 
-golang/src/base_msg:
-	mkdir -p golang/src/base_msg
+$(GOSRC)/base_msg:
+	mkdir -p $(GOSRC)/base_msg
 
-LOCAL_COMMANDS=$(COMMANDS:$(APPBIN)/%=$(GOPATH)/bin/%)
-LOCAL_DAEMONS=$(DAEMONS:$(APPBIN)/%=$(GOPATH)/bin/%)
+LOCAL_BINARIES=$(APPBINARIES:$(APPBIN)/%=$(GOPATH)/bin/%)
 
 clobber: clean
-	rm -f $(COMMANDS) $(DAEMONS) $(CONFIGS)
-	rm -f $(LOCAL_COMMANDS) $(LOCAL_DAEMONS)
+	rm -f $(APPBINARIES) $(CONFIGS)
+	rm -f $(LOCAL_BINARIES)
 
 clean:
-	rm -f base/base_msg_pb2.py golang/src/base_msg/base_msg.pb.go
+	rm -f base/base_msg_pb2.py $(GOSRC)/base_msg/base_msg.pb.go
 
 plat-clobber: clobber
 	-$(GO) clean $(GO_CLEAN_FLAGS) github.com/golang/protobuf/protoc-gen-go
 	-$(GO) clean $(GO_CLEAN_FLAGS) github.com/golang/protobuf/proto
 	-$(GO) clean $(GO_CLEAN_FLAGS) sourcegraph.com/sourcegraph/prototools/cmd/protoc-gen-doc
 	-cat get.acc | sort -u | xargs $(GO) clean $(GO_CLEAN_FLAGS)
-	rm -f get.acc
+	rm -f get.acc .gotten
 
 $(PROTOC_PLUGINS):
 	$(GO) get -u github.com/golang/protobuf/proto
