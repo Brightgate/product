@@ -18,12 +18,14 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -41,16 +43,17 @@ import (
 )
 
 var (
-	activeHosts map[string]struct{}
-	brokerd     broker.Broker
-	config      *apcfg.APConfig
-	scanQueue   chan ScanRequest
-	quit        chan string
+	scannedHosts = &activeHosts{active: make(map[string]bool)}
+	brokerd      broker.Broker
+	config       *apcfg.APConfig
+	scanQueue    chan ScanRequest
+	quit         chan string
 
 	nmapDir = flag.String("scandir", ".",
 		"directory in which the nmap scan files should be stored")
 	addr = flag.String("prom_address", base_def.SCAND_PROMETHEUS_PORT,
 		"The address to listen on for Prometheus HTTP requests.")
+	verbose = flag.Bool("verbose", false, "Log nmap progress")
 
 	// prometheus metrics
 	cleanScanCount = prometheus.NewCounter(
@@ -107,6 +110,29 @@ const (
 	// udp scan takes 1000sec on average
 )
 
+type activeHosts struct {
+	sync.Mutex
+	active map[string]bool
+}
+
+func (h *activeHosts) add(ip string) {
+	h.Lock()
+	defer h.Unlock()
+	h.active[ip] = true
+}
+
+func (h *activeHosts) del(ip string) {
+	h.Lock()
+	defer h.Unlock()
+	delete(h.active, ip)
+}
+
+func (h *activeHosts) contains(ip string) bool {
+	h.Lock()
+	defer h.Unlock()
+	return h.active[ip]
+}
+
 // ScanRequest is used to send tasks to scanners
 type ScanRequest struct {
 	IP   string
@@ -136,6 +162,23 @@ func (s ByDateModified) Less(i, j int) bool {
 		return true
 	}
 	return iFile.ModTime().After(jFile.ModTime())
+}
+
+func getKnownHosts() ([]string, error) {
+	knownHosts := make([]string, 0)
+
+	files, err := ioutil.ReadDir(*nmapDir)
+	if err != nil {
+		return nil, fmt.Errorf("ReadDir failed: %v", err)
+	}
+
+	// knownHosts will include directory 'netscans'
+	for _, file := range files {
+		if file.IsDir() {
+			knownHosts = append(knownHosts, file.Name())
+		}
+	}
+	return knownHosts, nil
 }
 
 // schedule runs toRun with a frequency determined by freq.
@@ -184,33 +227,54 @@ func scanner(id int) {
 	}
 }
 
+func requestScan(ip string) {
+	path := *nmapDir + ip
+	if err := os.MkdirAll(path, 0755); err != nil {
+		log.Printf("Error adding directory %s: %v\n", path, err)
+		return
+	}
+
+	// Scan the host at ip:
+	//   -O  Enable OS detection.
+	//   -sU UDP Scan.
+	//   -sV Probe open ports to determine service/version info.
+	//   -T4 Timing template (controls RTT timeouts and retry limits).
+	//   -v  Be verbose.
+	//
+	// XXXX eventually, set scans and scan frequencies based on
+	// type of device detected
+	schedulePortScan(ScanRequest{ip, "-v -sV -O -T4", "default"},
+		defaultFreq)
+	schedulePortScan(ScanRequest{ip, "-sU -v -O -sV -T4", "udp"},
+		udpFreq)
+	scannedHosts.add(ip)
+}
+
 // hostScan scans the network for new hosts and schedules regular port scans
 // on the host if one is found.
 func hostScan() {
+	var numHostsUp float64
 	defer hostScanCount.Inc()
-	files, err := ioutil.ReadDir(*nmapDir)
+
+	knownHosts, err := getKnownHosts()
 	if err != nil {
-		log.Printf("Error checking known hosts: %v\n", err)
+		log.Println("error getting knownHosts:", err)
 		return
 	}
-	// integrate hosts recognized from other daemons
-	var knownHosts []string
-	var numKnownHosts float64
-	for _, file := range files {
-		if file.IsDir() {
-			knownHosts = append(knownHosts, file.Name())
-			numKnownHosts++
-		}
-	} // note that this includes netscans
-	knownHostsGauge.Set(numKnownHosts - 1)
+	knownHostsGauge.Set(float64(len(knownHosts) - 1))
 	ipMap := config.GetSubnets()
-	var numHostsUp float64
+
 	for iface, subnetIP := range ipMap {
 		// iface, subnetIP := "test", "192.168.2.1/24" <-- for testing on BUR01
 		file := fmt.Sprintf("%snetscans/netscan-%d.xml", *nmapDir,
 			int(time.Now().Unix()))
+
+		// Attempt to discover hosts:
+		//   - TCP SYN and ACK probe to the listed ports.
+		//   - UDP ping to the default port (40125).
+		//   - SCTP INIT ping to the default port (80).
 		args := "-sn -PS22,53,3389,80,443 -PA22,53,3389,80,443 -PU -PY"
-		scanResults, err := scan(subnetIP, args, file, false)
+		scanResults, err := scan(subnetIP, args, file)
 		if err != nil {
 			// error already printed in scan
 			return
@@ -226,27 +290,16 @@ func hostScan() {
 			if host.Status.State == "up" && ip != "" &&
 				ip != network.SubnetRouter(subnetIP) {
 				numHostsUp++
-				if _, ok := activeHosts[ip]; !ok {
+				if !scannedHosts.contains(ip) {
 					if !contains(knownHosts, ip) {
 						// XXX message bus, net.entity or something similar
-						log.Printf(
-							"Unknown host discovered on %s: %s", iface, ip)
-						if err := os.MkdirAll(*nmapDir+ip, 0755); err != nil {
-							log.Printf(
-								"Error adding directory %s: %v\n", ip, err)
-							return
-						}
+						log.Printf("Unknown host discovered on %s: %s",
+							iface, ip)
 					} else {
 						log.Printf("%s is back online on %s, restarting scans",
 							ip, iface)
 					}
-					// XXXX eventually, set scans and scan frequencies based on
-					// type of device detected
-					schedulePortScan(ScanRequest{ip, "-v -sV -O -T4", "default"},
-						defaultFreq)
-					schedulePortScan(ScanRequest{ip, "-sU -v -O -sV -T4", "udp"},
-						udpFreq)
-					activeHosts[ip] = struct{}{}
+					requestScan(ip)
 				}
 				if _, err := os.Create(*nmapDir + ip + "/.keep"); err != nil {
 					log.Printf("Error adding .keep file %s: %v\n", ip, err)
@@ -261,10 +314,10 @@ func hostScan() {
 // scan uses nmap to scan ip with the given arguments, outputting its results
 // to the given file and parsing its contents into an NmapRun struct.
 // If verbose is true, output of nmap is printed to log, otherwise it is ignored.
-func scan(ip string, nmapArgs string, file string, verbose bool) (*nmap.NmapRun, error) {
+func scan(ip string, nmapArgs string, file string) (*nmap.NmapRun, error) {
 	args := "nmap " + ip + " " + nmapArgs + " -oX " + file
 	cmd := exec.Command("bash", "-c", args)
-	if verbose {
+	if *verbose {
 		cmdReader, err := cmd.StdoutPipe()
 		if err != nil {
 			log.Printf("Error creating StdoutPipe for nmap: %v\n", err)
@@ -412,17 +465,20 @@ func timestampToProto(t nmap.Timestamp) *base_msg.Timestamp {
 func portScan(ip string, nmapArgs string, filename string) {
 	file := fmt.Sprintf("%s%s/%s-%d.xml", *nmapDir, ip, filename,
 		int(time.Now().Unix()))
-	scanResults, err := scan(ip, nmapArgs, file, false)
+
+	scanResults, err := scan(ip, nmapArgs, file)
 	if err != nil {
 		return
 	}
+
 	if len(scanResults.Hosts) == 1 && scanResults.Hosts[0].Status.State != "up" {
 		log.Printf("Host %s is down, stopping scans", ip)
 
-		delete(activeHosts, ip)
+		scannedHosts.del(ip)
 		quit <- ip
 		return
 	}
+
 	hosts := toHosts(scanResults)
 	t := time.Now()
 	start := fmt.Sprintf("Nmap %s scan initiated %s as: %s", scanResults.Version,
@@ -452,17 +508,13 @@ func portScan(ip string, nmapArgs string, filename string) {
 // is deleted.
 func cleanAll() {
 	defer cleanScanCount.Inc()
-	files, err := ioutil.ReadDir(*nmapDir)
+
+	knownHosts, err := getKnownHosts()
 	if err != nil {
-		log.Printf("Error checking known hosts: %v\n", err)
+		log.Println("error getting knownHosts:", err)
 		return
 	}
-	var knownHosts []string
-	for _, file := range files {
-		if file.IsDir() {
-			knownHosts = append(knownHosts, file.Name())
-		}
-	} // note that this includes netscans
+
 	for _, host := range knownHosts {
 		names := make(map[string][]string)
 
@@ -514,7 +566,7 @@ func cleanAll() {
 		if err == io.EOF && host != "netscans" {
 			log.Printf("No recent scans for %s, forgetting host", host)
 
-			delete(activeHosts, host)
+			scannedHosts.del(host)
 			quit <- host
 
 			if err := os.RemoveAll(*nmapDir + host); err != nil {
@@ -531,6 +583,30 @@ func echo(event []byte) {
 	scan := &base_msg.EventNetScan{}
 	proto.Unmarshal(event, scan)
 	log.Println(scan)
+}
+
+func handleConfig(event []byte) {
+	eventConfig := &base_msg.EventConfig{}
+	proto.Unmarshal(event, eventConfig)
+	property := *eventConfig.Property
+	path := strings.Split(property[2:], "/")
+
+	// Ignore all properties other than "@/dhcp/leases/*"
+	if len(path) != 3 || path[0] != "dhcp" || path[1] != "leases" {
+		return
+	}
+
+	ip := net.ParseIP(path[2])
+	if ip == nil {
+		log.Printf("invalid IPv4 address %s", path[2])
+		return
+	}
+
+	if *eventConfig.Type != base_msg.EventConfig_CHANGE {
+		return
+	}
+	log.Printf("requesting scan of %s\n", ip.String())
+	requestScan(ip.String())
 }
 
 func contains(s []string, e string) bool {
@@ -568,8 +644,10 @@ func main() {
 	config = apcfg.NewConfig(pname)
 	brokerd.Init(pname)
 	brokerd.Connect()
+	brokerd.Handle(base_def.TOPIC_CONFIG, handleConfig)
 	defer brokerd.Disconnect()
 	brokerd.Ping()
+
 	if mcp != nil {
 		if err = mcp.SetStatus("online"); err != nil {
 			log.Printf("failed to set status\n")
@@ -581,7 +659,6 @@ func main() {
 
 	scanQueue = make(chan ScanRequest, bufferSize)
 	quit = make(chan string, bufferSize)
-	activeHosts = make(map[string]struct{})
 
 	for i := 0; i < numScanners; i++ {
 		go scanner(i)

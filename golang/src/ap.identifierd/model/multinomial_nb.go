@@ -20,12 +20,12 @@ import (
 // MultinomialNBClassifier holds the data necessary for classification.
 type MultinomialNBClassifier struct {
 	base.BaseEstimator
-	// Prior probability for each class
+	// Log(Prior probability) for each class
 	classPrior map[string]float64
 	// Number of instances in each class.
 	classInstances map[string]int
-	// Conditional probability for each term. This vector should be
-	// accessed in the following way: p(f|c) = condProb[c][f].
+	// Log(Conditional probability) for each term. This vector should be
+	// accessed in the following way: condProb[c][f] = Log(p(f|c)).
 	// Logarithm is used in order to avoid underflow.
 	condProb map[string][]float64
 	// Number of instances used in training.
@@ -78,7 +78,7 @@ func (nb *MultinomialNBClassifier) Fit(X base.FixedDataGrid) {
 	// Number of instances in each class
 	nb.classInstances = make(map[string]int)
 
-	// Prior probability for each class
+	// Log(Prior probability) for each class
 	nb.classPrior = make(map[string]float64)
 
 	// For each class, the i-th position is the number of occurrences of feature
@@ -103,14 +103,14 @@ func (nb *MultinomialNBClassifier) Fit(X base.FixedDataGrid) {
 		return true, nil
 	})
 
-	// Calculate prior and conditional probabilities for each class
+	// Calculate Log(prior) and Log(conditional) for each class
 	for class, classCount := range nb.classInstances {
-		nb.classPrior[class] = float64(classCount) / float64(nb.trainingInstances)
+		nb.classPrior[class] = math.Log(float64(classCount) / float64(nb.trainingInstances))
 		nb.condProb[class] = make([]float64, nb.features)
 		total := totalFreq(termFreq[class])
 		for feat := 0; feat < nb.features; feat++ {
 			// condProb is using Laplace smoothing
-			nb.condProb[class][feat] = (termFreq[class][feat] + 1) / total
+			nb.condProb[class][feat] = math.Log((termFreq[class][feat] + 1) / total)
 		}
 	}
 
@@ -131,10 +131,10 @@ func (nb *MultinomialNBClassifier) PredictOne(vector [][]byte) string {
 	bestClass := ""
 
 	for class := range nb.classInstances {
-		classScore := math.Log(nb.classPrior[class])
+		classScore := nb.classPrior[class]
 		for feat := 0; feat < nb.features; feat++ {
 			if base.UnpackBytesToFloat(vector[feat]) > 0 {
-				classScore += math.Log(nb.condProb[class][feat])
+				classScore += nb.condProb[class][feat]
 			}
 		}
 

@@ -30,11 +30,7 @@ import (
 
 type entity struct {
 	identity string
-
-	// Keep these separate for easier to read CSV files. Can this be done
-	// with AttributeGroup?
-	dnsAttr  map[string]bool
-	portAttr map[string]bool
+	attrs    map[string]bool
 }
 
 // Entities is a vessel to collect data about clients. The data can be exported
@@ -88,7 +84,7 @@ func (e *Entities) getEntityLocked(hwaddr uint64) *entity {
 }
 
 // AddIdentityHint records the client's hostname as seen by DHCP
-func (e *Entities) AddIdentityHint(hwaddr uint64, mfg, name string) {
+func (e *Entities) AddIdentityHint(hwaddr uint64, name string) {
 	e.Lock()
 	defer e.Unlock()
 
@@ -96,26 +92,17 @@ func (e *Entities) AddIdentityHint(hwaddr uint64, mfg, name string) {
 	d.identity = name
 }
 
-// AddDNS records a DNS question name.
-func (e *Entities) AddDNS(hwaddr uint64, qname string) {
+// AddAttr adds the attribute 'a'
+func (e *Entities) AddAttr(hwaddr uint64, a string) {
 	e.Lock()
 	defer e.Unlock()
 
 	d := e.getEntityLocked(hwaddr)
-	d.dnsAttr[qname] = true
-}
-
-// AddPort records an open port.
-func (e *Entities) AddPort(hwaddr uint64, port string) {
-	e.Lock()
-	defer e.Unlock()
-
-	d := e.getEntityLocked(hwaddr)
-	d.portAttr[port] = true
+	d.attrs[a] = true
 }
 
 // WriteCSV exports an Entities struct to a CSV file, overwriting the file at
-// 'path' if it already exists
+// 'path' if it already exists.
 func (e *Entities) WriteCSV(path string) error {
 	e.Lock()
 	defer e.Unlock()
@@ -128,15 +115,10 @@ func (e *Entities) WriteCSV(path string) error {
 	w := csv.NewWriter(f)
 
 	// Compute the union of all the attributes.
-	unionDNS := make(map[string]bool)
-	unionPort := make(map[string]bool)
+	union := make(map[string]bool)
 	for _, ent := range e.dataMap {
-		for q := range ent.dnsAttr {
-			unionDNS[q] = true
-		}
-
-		for p := range ent.portAttr {
-			unionPort[p] = true
+		for a := range ent.attrs {
+			union[a] = true
 		}
 	}
 
@@ -147,19 +129,12 @@ func (e *Entities) WriteCSV(path string) error {
 	// is the class attribute.
 	header := make([]string, 0)
 	header = append(header, "MAC Address")
-	attrMap["MAC Address"] = len(header) - 1
 
-	for q := range unionDNS {
+	for q := range union {
 		header = append(header, q)
 		attrMap[q] = len(header) - 1
 	}
-	for p := range unionPort {
-		header = append(header, p)
-		attrMap[p] = len(header) - 1
-	}
-
 	header = append(header, "Identity")
-	attrMap["Identity"] = len(header) - 1
 	w.Write(header)
 
 	// Make a row for each entity
@@ -169,15 +144,11 @@ func (e *Entities) WriteCSV(path string) error {
 			record[i] = "0"
 		}
 
-		hwaddr := network.Uint64ToHWAddr(a)
-		record[0] = hwaddr.String()
+		record[0] = network.Uint64ToHWAddr(a).String()
 		record[len(record)-1] = ent.identity
 
-		for q := range ent.dnsAttr {
-			record[attrMap[q]] = "1"
-		}
-		for p := range ent.portAttr {
-			record[attrMap[p]] = "1"
+		for a := range ent.attrs {
+			record[attrMap[a]] = "1"
 		}
 		w.Write(record)
 	}
@@ -345,10 +316,14 @@ func (o *Observations) GetBayesIdentity(hwaddr uint64) string {
 
 func newEntity() *entity {
 	ret := &entity{
-		dnsAttr:  make(map[string]bool),
-		portAttr: make(map[string]bool),
+		attrs: make(map[string]bool),
 	}
 	return ret
+}
+
+// FormatPortString formats a port attribute
+func FormatPortString(protocol string, port int32) string {
+	return fmt.Sprintf("%s %d", protocol, port)
 }
 
 // NewEntities creates an empty Entities

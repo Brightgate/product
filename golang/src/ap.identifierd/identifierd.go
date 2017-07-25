@@ -12,13 +12,11 @@
 Use observed data to make predictions about client identities.
 To Do:
   1) Incorporate sampled data
-  2) Incorporate scand data
-  3) Improve training data
-       - (Stephen) I think part of #3 is an event (maybe IdentifyException) when
-         an unknown manufacturer or unknown device is detected. Receipt of #3
-         would trigger a more detailed scan and, subsequently, a telemetry report.
-  4) Need for IdentifyRequest and Response?
-  5) Make the proposed ap.namerd part of ap.identifierd.
+  2) When an unknown manufacturer or unknown device is detected emit an event
+     (maybe IdentifyException) which would trigger a more detailed scan and,
+     subsequently, a telemetry report.
+  3) Need for IdentifyRequest and Response?
+  4) Make the proposed ap.namerd part of ap.identifierd.
 */
 package main
 
@@ -119,7 +117,7 @@ func handleEntity(event []byte) {
 
 	id := mfgidDB[entry.Manufacturer]
 
-	newData.AddIdentityHint(*entity.MacAddress, entry.Manufacturer, *entity.DnsName)
+	newData.AddIdentityHint(*entity.MacAddress, *entity.DnsName)
 	testData.SetByName(*entity.MacAddress, "Manufacturer ID", strconv.Itoa(id))
 }
 
@@ -147,7 +145,7 @@ func handleRequest(event []byte) {
 			return
 		}
 
-		newData.AddDNS(hwaddr, qName)
+		newData.AddAttr(hwaddr, qName)
 		testData.SetByName(hwaddr, qName, "1")
 	}
 }
@@ -179,6 +177,35 @@ func handleConfig(event []byte) {
 		addIP(ipaddr, network.HWAddrToUint64(mac))
 	} else {
 		removeIP(ipaddr)
+	}
+}
+
+func handleScan(event []byte) {
+	var mac string
+	scan := &base_msg.EventNetScan{}
+	proto.Unmarshal(event, scan)
+
+	for _, h := range scan.Hosts {
+		for _, a := range h.Addresses {
+			if *a.Type == "mac" {
+				mac = *a.Info
+				break
+			}
+		}
+
+		hwaddr, err := net.ParseMAC(mac)
+		if err != nil {
+			continue
+		}
+
+		for _, p := range h.Ports {
+			if *p.State != "open" {
+				continue
+			}
+			portString := model.FormatPortString(*p.Protocol, *p.PortId)
+			newData.AddAttr(network.HWAddrToUint64(hwaddr), portString)
+			testData.SetByName(network.HWAddrToUint64(hwaddr), portString, "1")
+		}
 	}
 }
 
@@ -264,15 +291,10 @@ func loadObservations() error {
 		testData.SetByName(hwaddr, "Manufacturer ID", strconv.Itoa(id))
 
 		last := len(record) - 1
-		newData.AddIdentityHint(hwaddr, entry.Manufacturer, record[last])
+		newData.AddIdentityHint(hwaddr, record[last])
 		for i, feat := range record[1:last] {
 			testData.SetByName(hwaddr, header[i], feat)
-
-			if _, err := strconv.Atoi(header[i]); err == nil {
-				newData.AddPort(hwaddr, header[i])
-			} else {
-				newData.AddDNS(hwaddr, header[i])
-			}
+			newData.AddAttr(hwaddr, header[i])
 		}
 
 	}
@@ -333,6 +355,7 @@ func main() {
 	brokerd.Handle(base_def.TOPIC_ENTITY, handleEntity)
 	brokerd.Handle(base_def.TOPIC_REQUEST, handleRequest)
 	brokerd.Handle(base_def.TOPIC_CONFIG, handleConfig)
+	brokerd.Handle(base_def.TOPIC_SCAN, handleScan)
 	brokerd.Connect()
 	defer brokerd.Disconnect()
 	brokerd.Ping()
