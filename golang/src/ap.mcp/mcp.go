@@ -405,7 +405,7 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 	}
 
 	set := selectTargets(req.Daemon)
-	if set == nil {
+	if len(set) == 0 {
 		if *debug {
 			log.Printf("Bad req from %s: unknown daemon: %s\n",
 				*req.Sender, *req.Daemon)

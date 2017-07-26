@@ -52,9 +52,14 @@ endif
 
 export GOPATH=$(shell pwd)/golang
 
-GO=$(GOROOT)/bin/go
+GO = $(GOROOT)/bin/go
+GOFMT = $(GOROOT)/bin/gofmt
 GO_CLEAN_FLAGS = -i -x
 GO_GET_FLAGS = -v
+
+PYTHON3 = python3
+MKDIR = mkdir
+RM = rm
 
 $(info go-version $(shell $(GO) version))
 $(info GOROOT $(GOROOT))
@@ -76,6 +81,7 @@ ROOT=proto.armv7l
 endif
 
 GOSRC=golang/src
+
 APPBASE=$(ROOT)/opt/com.brightgate
 APPBIN=$(APPBASE)/bin
 APPDOC=$(APPBASE)/share/doc
@@ -105,9 +111,10 @@ DAEMONS = \
 
 COMMANDS = \
 	ap-arpspoof \
+	ap-configctl \
 	ap-ctl \
 	ap-msgping \
-	ap-configctl
+	ap-ouisearch
 
 APPBINARIES  := $(COMMANDS:%=$(APPBIN)/%) $(DAEMONS:%=$(APPBIN)/%)
 
@@ -178,7 +185,7 @@ $(APPRULES)/%: golang/src/ap.filterd/% | $(APPRULES)
 	install -m 0644 $< $(APPRULES)
 
 $(DIRS):
-	mkdir -p $@
+	$(MKDIR) -p $@
 
 COMMON_SRCS = \
     $(GOSRC)/base_def/base_def.go \
@@ -215,11 +222,16 @@ $(APPBIN)/ap-arpspoof: $(GOSRC)/ap-arpspoof/arpspoof.go
 $(APPBIN)/ap-configctl: $(GOSRC)/ap-configctl/configctl.go
 $(APPBIN)/ap-ctl: $(GOSRC)/ap-ctl/ctl.go
 $(APPBIN)/ap-msgping: $(GOSRC)/ap-msgping/msgping.go
+$(APPBIN)/ap-ouisearch: $(GOSRC)/ap-ouisearch/ouisearch.go
 
 $(APPBIN)/ap-run: ap-run.bash
 	install -m 0755 $< $@
 
-proto: $(GOSRC)/base_msg/base_msg.pb.go base/base_msg_pb2.py
+$(GOSRC)/base_def/base_def.go: base/generate-base-def.py | $(GOSRC)/base_def
+	$(PYTHON3) $< --go | $(GOFMT) > $@
+
+base/base_def.py: base/generate-base-def.py
+	$(PYTHON3) $< --python3 > $@
 
 $(GOSRC)/base_msg/base_msg.pb.go: base/base_msg.proto | \
 	$(PROTOC_PLUGINS) $(GOSRC)/base_msg
@@ -230,17 +242,24 @@ $(GOSRC)/base_msg/base_msg.pb.go: base/base_msg.proto | \
 base/base_msg_pb2.py: base/base_msg.proto
 	protoc --python_out . $<
 
+$(GOSRC)/base_def:
+	$(MKDIR) -p $(GOSRC)/base_def
+
 $(GOSRC)/base_msg:
-	mkdir -p $(GOSRC)/base_msg
+	$(MKDIR) -p $(GOSRC)/base_msg
 
 LOCAL_BINARIES=$(APPBINARIES:$(APPBIN)/%=$(GOPATH)/bin/%)
 
 clobber: clean
-	rm -f $(APPBINARIES) $(CONFIGS) $(TEMPLATES) $(FILTER_RULES)
-	rm -f $(LOCAL_BINARIES)
+	$(RM) -f $(APPBINARIES) $(CONFIGS) $(TEMPLATES) $(FILTER_RULES)
+	$(RM) -f $(LOCAL_BINARIES)
 
 clean:
-	rm -f base/base_msg_pb2.py $(GOSRC)/base_msg/base_msg.pb.go
+	$(RM) -f \
+		base/base_def.py \
+		base/base_msg_pb2.py \
+		$(GOSRC)/base_def/base_def.go \
+		$(GOSRC)/base_msg/base_msg.pb.go
 
 plat-clobber: clobber
 	-$(GO) clean $(GO_CLEAN_FLAGS) github.com/golang/protobuf/protoc-gen-go

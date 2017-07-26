@@ -20,6 +20,10 @@ import (
 	"ap_common/mcp"
 )
 
+const (
+	pname = "ap-ctl"
+)
+
 var valid_cmds = map[string]bool{
 	"status":  true,
 	"stop":    true,
@@ -28,8 +32,9 @@ var valid_cmds = map[string]bool{
 }
 
 func usage() {
-	fmt.Printf("usage: ap-ctl <status | stop | start | restart> <daemon | all>\n")
-	os.Exit(1)
+	fmt.Printf("usage: %s <status | stop | start | restart> <daemon | all>\n",
+		pname)
+	os.Exit(2)
 }
 
 func printStatus(incoming string) {
@@ -86,21 +91,24 @@ func main() {
 
 	mcp, err := mcp.New("ap-ctl")
 	if err != nil {
-		fmt.Printf("Unable to connect to mcp: %v\n", err)
+		fmt.Printf("%s: unable to connect to mcp: %v\n", pname, err)
 		os.Exit(1)
 	}
 
 	if cmd == "status" {
-		rval, err := mcp.GetStatus(daemon)
+		var rval string
+		rval, err = mcp.GetStatus(daemon)
 		if err != nil {
-			fmt.Printf("Failed get status for %s: %v\n",
-				daemon, err)
+			fmt.Printf("%s: failed get status for '%s': %v\n",
+				pname, daemon, err)
+		} else {
+			printStatus(rval)
 		}
-		printStatus(rval)
 	} else {
 		err := mcp.Do(daemon, cmd)
 		if err != nil {
-			fmt.Printf("Failed to %s %s: %v\n", cmd, daemon, err)
+			fmt.Printf("%s: failed to %s %s: %v\n", pname, cmd,
+				daemon, err)
 		}
 	}
 	if err != nil {

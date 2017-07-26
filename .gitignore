@@ -5,3 +5,5 @@ get.acc
 *.swp
 proto.armv7l
 proto.x86_64
+base/base_def.py
+golang/src/base_def/base_def.go
