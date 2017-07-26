@@ -29,6 +29,7 @@ import (
 
 	"ap_common"
 	"ap_common/mcp"
+	"ap_common/network"
 	"base_def"
 	"base_msg"
 
@@ -221,7 +222,8 @@ func hostScan() {
 					break
 				}
 			}
-			if host.Status.State == "up" && ip != "" {
+			if host.Status.State == "up" && ip != "" &&
+				ip != network.SubnetRouter(subnetIP) {
 				numHostsUp++
 				if _, ok := activeHosts[ip]; !ok {
 					if !contains(knownHosts, ip) {
@@ -540,6 +542,7 @@ func contains(s []string, e string) bool {
 }
 
 func main() {
+	syscall.Setpgid(0, 0)
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	flag.Parse()
 
@@ -587,5 +590,6 @@ func main() {
 	schedule(cleanAll, cleanFreq, false)
 
 	s := <-sig
-	log.Fatalf("Signal (%v) received, stopping all scans\n", s)
+	log.Printf("Signal (%v) received, stopping all scans\n", s)
+	syscall.Kill(-syscall.Getpid(), syscall.SIGKILL) // kill potential orphans
 }
