@@ -1,0 +1,8 @@
+# Internal subnets can't touch the outside world
+BLOCK FROM CLASS local TO IFACE wan
+
+# External subnets can't talk to any other subnet
+ACCEPT UDP FROM CLASS external TO ADDR ALL DPORTS 53 67	 # Allow DNS and DHCP
+BLOCK FROM CLASS external TO IFACE NOT wan
+
+BLOCK FROM CLASS kids TO IFACE wan BETWEEN 10:00PM 07:00AM

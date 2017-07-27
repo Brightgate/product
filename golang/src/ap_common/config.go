@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"strconv"
 	"sync"
@@ -27,6 +28,20 @@ import (
 	// Ubuntu: requires libzmq3-dev, which is 0MQ 4.2.1.
 	zmq "github.com/pebbe/zmq4"
 )
+
+const (
+	N_WAN = iota
+	N_CONNECT
+	N_WIRED
+	N_WIFI
+	N_MAX
+)
+
+type Nic struct {
+	Logical string
+	Iface   string
+	Mac     string
+}
 
 type ClassConfig struct {
 	Interface     string
@@ -333,4 +348,45 @@ func (c Config) GetClients() map[string]*ClientInfo {
 	}
 
 	return set
+}
+
+func getNic(props *PropertyNode, name string) *Nic {
+	var nic, mac string
+
+	if node := props.GetChild(name); node != nil {
+		nic = node.GetValue()
+		if i, err := net.InterfaceByName(nic); err == nil {
+			mac = i.HardwareAddr.String()
+		}
+	}
+
+	if nic == "" {
+		log.Printf("Logical interface %s not configured\n", name)
+	} else if mac == "" {
+		log.Printf("%s mapped to missing nic %s\n", name, nic)
+	} else {
+		n := Nic{Logical: name, Iface: nic, Mac: mac}
+		log.Printf("%s -> %s / %s\n", name, nic, mac)
+		return &n
+	}
+	return nil
+}
+
+// GetLogicalNics returns a map of logical->physical nics currently configured
+func (c Config) GetLogicalNics() ([]*Nic, error) {
+	var nics []*Nic
+
+	props, err := c.GetProps("@/network")
+
+	if err == nil {
+		nics = make([]*Nic, N_MAX)
+		nics[N_WAN] = getNic(props, "wan_nic")
+		nics[N_WIFI] = getNic(props, "wifi_nic")
+		nics[N_WIRED] = getNic(props, "wired_nic")
+		nics[N_CONNECT] = getNic(props, "connect_nic")
+	} else {
+		err = fmt.Errorf("Failed to get network config: %v", err)
+	}
+
+	return nics, err
 }

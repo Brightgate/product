@@ -43,7 +43,7 @@
                     "Children": [
                         {
                             "Name": "interface",
-                            "Value": "default"
+                            "Value": "wifi"
                         },
                         {
                             "Name": "lease_duration",
@@ -112,7 +112,7 @@
             "Name": "network",
             "Children": [
 		{
-		    "Name": "default",
+		    "Name": "wifi",
 		    "Value": "wlan0"
 		},
 		{
@@ -142,7 +142,7 @@
                     ]
                 },
                 {
-                    "Name": "default",
+                    "Name": "wifi",
                     "Children": [
                         {
                             "Name": "subnet",

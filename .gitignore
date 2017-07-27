@@ -1,5 +1,7 @@
 get.acc
 .tags
+.gotten
 *.org
+*.swp
 proto.armv7l
 proto.x86_64

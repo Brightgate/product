@@ -23,6 +23,13 @@
         "DependsOn": "configd",
         "Privileged": true
     },
+    "filterd": {
+        "Name": "filterd",
+        "Binary": "ap.filterd",
+        "DependsOn": "networkd",
+        "Privileged": true,
+	"Options": "-rdir=$APROOT/etc/filter.rules.d"
+    },
     "networkd": {
         "Name": "networkd",
         "Binary": "ap.networkd",

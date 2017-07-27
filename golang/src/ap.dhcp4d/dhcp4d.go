@@ -17,6 +17,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"math/rand"
 	"net"
@@ -50,16 +51,12 @@ var (
 	broker         ap_common.Broker
 	config         *ap_common.Config
 
+	nics         []*ap_common.Nic
 	use_vlans    bool
-	wifiNic      string
-	wifiMac      string
-	connectNic   string
-	connectMac   string
-	wanMac       string
 	sharedRouter net.IP     // without vlans, all classes share a
 	sharedSubnet *net.IPNet // subnet and a router node
 
-	lastRequestOn string // last DHCP request arrived on this mac
+	lastRequestOn int // last DHCP request arrived on this interface
 )
 
 const pname = "ap.dhcp4d"
@@ -447,12 +444,12 @@ func selectClassHandler(p dhcp.Packet, options dhcp.Options) *DHCPHandler {
 	hwaddr := p.CHAddr().String()
 
 	oldClass := getClass(hwaddr)
-	if lastRequestOn == connectMac {
+	if lastRequestOn == ap_common.N_CONNECT {
 		// All clients connecting on the open port are treated as new -
-		// even if we've previously recgonized them on the protected
+		// even if we've previously recognized them on the protected
 		// network.
 		setClass(hwaddr, "unauthorized")
-	} else if lastRequestOn == wifiMac {
+	} else if lastRequestOn == ap_common.N_WIFI {
 		if oldClass == "" || oldClass == "unauthorized" {
 			updateClass(hwaddr, oldClass, "unclassified")
 		}
@@ -462,8 +459,8 @@ func selectClassHandler(p dhcp.Packet, options dhcp.Options) *DHCPHandler {
 
 	class := getClass(hwaddr)
 	if class != oldClass {
-		log.Printf("New %s client %s via %s: %s\n", class, hwaddr,
-			lastRequestOn)
+		log.Printf("New %s client %s on %s interface\n", class, hwaddr,
+			nics[lastRequestOn].Iface)
 		notifyNewEntity(p, options, class)
 	}
 
@@ -643,49 +640,36 @@ func (h *DHCPHandler) recoverLeases(root *ap_common.PropertyNode) {
 	}
 }
 
-func getInterface(name string) (string, string) {
-	var nic, mac string
+func initPhysical(props *ap_common.PropertyNode) error {
 	var err error
 
-	if nic, err = config.GetProp("@/network/" + name); err == nil {
-		if err = network.WaitForDevice(nic, 2*time.Second); err == nil {
-			if iface, err := net.InterfaceByName(nic); err == nil {
-				mac = iface.HardwareAddr.String()
-			}
-		}
-		if mac == "" {
-			log.Printf("No such network device: %s\n", nic)
-		}
+	nics, err = config.GetLogicalNics()
+
+	if err == nil {
+		prop, _ := config.GetProp("@/network/use_vlans")
+		use_vlans = (prop == "true")
 	}
 
-	return nic, mac
-}
-
-func initPhysical(props *ap_common.PropertyNode) {
-	wifiNic, wifiMac = getInterface("wifi_nic")
-	connectNic, connectMac = getInterface("connect_nic")
-	_, wanMac = getInterface("wan_nic")
-
-	prop, err := config.GetProp("@/network/use_vlans")
-	if err == nil && prop == "true" {
-		use_vlans = true
-	} else {
+	if err == nil && !use_vlans {
 		// If we aren't using VLANs, all classes share a subnet
 		if node := props.GetChild("network"); node != nil {
 			start, subnet, err := net.ParseCIDR(node.Value)
 			if err == nil {
 				sharedRouter = dhcp.IPAdd(start, 1)
 				sharedSubnet = subnet
+			} else {
+				err = fmt.Errorf("Malformed subnet %s: %v",
+					node.Value, err)
 			}
-		}
-
-		if sharedSubnet == nil {
-			log.Fatalf("Missing shared network info\n")
+		} else {
+			err = fmt.Errorf("Missing shared network info\n")
 		}
 	}
+
+	return err
 }
 
-func initHandlers() {
+func initHandlers() error {
 	var err error
 	var nameserver string
 	var props, leases, node *ap_common.PropertyNode
@@ -698,17 +682,19 @@ func initHandlers() {
 	 * rather than a single string.
 	 */
 	if props, err = config.GetProps("@/dhcp/config"); err != nil {
-		log.Fatalf("Failed to get DHCP configuration info: %v", err)
+		return (fmt.Errorf("Failed to get DHCP configuration: %v", err))
 	}
 
-	initPhysical(props)
+	if err = initPhysical(props); err != nil {
+		return err
+	}
 
 	if node = props.GetChild("nameserver"); node != nil {
 		nameserver = node.Value
 	}
 
 	if leases, err = config.GetProps("@/dhcp/leases"); err != nil {
-		log.Fatalf("Failed to get DHCP lease info: %v", err)
+		return fmt.Errorf("Failed to get DHCP lease info: %v", err)
 	}
 
 	// Iterate over the known classes.  For each one, find the VLAN name and
@@ -716,19 +702,26 @@ func initHandlers() {
 	classes := config.GetClasses()
 	subnets := config.GetSubnets()
 	for name, class := range classes {
+		var nic *ap_common.Nic
+
 		subnet, ok := subnets[class.Interface]
 		if !ok {
 			log.Printf("No subnet for %s\n", class.Interface)
 			continue
 		}
 		h := newHandler(name, subnet, nameserver, class.LeaseDuration)
-		if class.Interface == "default" {
-			h.iface = wifiNic
-		} else if class.Interface == "connect" {
-			if connectNic == "" {
+		if class.Interface == "wifi" {
+			if nic = nics[ap_common.N_WIFI]; nic == nil {
+				log.Printf("No Wifi NIC available\n")
 				continue
 			}
-			h.iface = connectNic
+			h.iface = nic.Iface
+		} else if class.Interface == "connect" {
+			if nic = nics[ap_common.N_CONNECT]; nic == nil {
+				log.Printf("No Connect-net NIC available\n")
+				continue
+			}
+			h.iface = nic.Iface
 		} else {
 			h.iface = class.Interface
 		}
@@ -737,6 +730,7 @@ func initHandlers() {
 		handlers[h.class] = h
 	}
 
+	return nil
 }
 
 type MultiConn struct {
@@ -753,24 +747,27 @@ func (s *MultiConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 		iface, err = net.InterfaceByIndex(s.cm.IfIndex)
 		if err == nil {
 			requestMac = iface.HardwareAddr.String()
+			if requestMac == "" {
+				n = 0
+				return
+			}
 		}
 	}
 
-	// If the request arrives on the WAN port, drop it.
-	if requestMac == wanMac {
-		log.Printf("Request arrived on wan: %s\n", requestMac)
-		n = 0
-	} else if requestMac != "" {
-		if requestMac == wifiMac {
-			log.Printf("Request arrived on wifi: %s\n", requestMac)
-		} else if requestMac == connectMac {
-			log.Printf("Request arrived on open wifi: %s\n", requestMac)
-		} else {
-			log.Printf("Request arrived on wired: %s\n", requestMac)
+	lastRequestOn = ap_common.N_WIRED
+	for i, nic := range nics {
+		if nic != nil && nic.Mac == requestMac {
+			lastRequestOn = i
+			if i == ap_common.N_WAN {
+				// If the request arrives on the WAN port, drop it.
+				n = 0
+			}
+			break
 		}
-
-		lastRequestOn = requestMac
 	}
+
+	log.Printf("Request arrived on %s: %s\n", nics[lastRequestOn].Logical,
+		requestMac)
 	return
 }
 
@@ -851,7 +848,15 @@ func main() {
 	config = ap_common.NewConfig(pname)
 	initClientMap()
 
-	initHandlers()
+	err = initHandlers()
+
+	if err != nil {
+		if mcp != nil {
+			mcp.SetStatus("broken")
+		}
+		log.Fatalf("DHCP server failed to start: %v\n", err)
+	}
+
 	if mcp != nil {
 		mcp.SetStatus("online")
 	}

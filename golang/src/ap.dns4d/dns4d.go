@@ -69,6 +69,10 @@ var (
 		Help: "DNS query resolution time",
 	})
 
+	captiveSubnet *net.IPNet
+	captiveRouter net.IP
+	gatewayRouter net.IP
+
 	client_map_mtx sync.Mutex
 	client_map     map[string]int64
 
@@ -121,6 +125,17 @@ var hosts = map[string]dns_record{
 	"s-smart.blueslugs.com.":             {dns.TypeA, "192.168.135.253"},
 	"smartos.blueslugs.com.":             {dns.TypeCNAME, "s-smart.blueslugs.com."},
 	"s-vm.blueslugs.com.":                {dns.TypeA, "192.168.135.254"},
+}
+
+func isCaptive(addr *net.UDPAddr) bool {
+	if addr == nil || captiveSubnet == nil {
+		return false
+	}
+
+	ip := addr.IP
+	masked := ip.Mask(captiveSubnet.Mask)
+	rval := masked.Equal(captiveSubnet.IP)
+	return rval
 }
 
 func dns_update(resource *base_msg.EventNetResource) {
@@ -242,24 +257,41 @@ func local_handler(w dns.ResponseWriter, r *dns.Msg) {
 	ip, _ := w.RemoteAddr().(*net.UDPAddr)
 	record_client(ip.String())
 
+	captive := isCaptive(ip)
+
 	// Iterate through questions.
 	for _, question := range r.Question {
-		hosts_mtx.Lock()
-		rec, rec_ok := hosts[question.Name]
-		hosts_mtx.Unlock()
+		var rec dns_record
+		var rec_ok bool
+		if captive {
+			rec = dns_record{
+				rectype: dns.TypeA,
+				recval:  captiveRouter.String(),
+			}
+			rec_ok = true
+		} else {
+			hosts_mtx.Lock()
+			rec, rec_ok = hosts[question.Name]
+			hosts_mtx.Unlock()
+		}
 		if rec_ok {
 			if rec.rectype == dns.TypeA {
 				a = net.ParseIP(rec.recval)
 				rr = &dns.A{
-					Hdr: dns.RR_Header{Name: question.Name,
-						Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 0},
+					Hdr: dns.RR_Header{
+						Name:   question.Name,
+						Rrtype: dns.TypeA,
+						Class:  dns.ClassINET,
+						Ttl:    0},
 					A: a.To4(),
 				}
 			} else if rec.rectype == dns.TypeCNAME {
 				rr = &dns.CNAME{
-					Hdr: dns.RR_Header{Name: question.Name,
+					Hdr: dns.RR_Header{
+						Name:   question.Name,
 						Rrtype: dns.TypeCNAME,
-						Class:  dns.ClassINET, Ttl: 0},
+						Class:  dns.ClassINET,
+						Ttl:    0},
 					Target: rec.recval,
 				}
 			}
@@ -357,31 +389,52 @@ func proxy_handler(w dns.ResponseWriter, r *dns.Msg) {
 	m.SetReply(r)
 	m.Authoritative = false
 
+	captive := isCaptive(ip)
+
 	/*
 	 * Are any of the questions in our phishing database?  If so, return
 	 * our IP address; for the HTTP and HTTPS cases, we can display a "no
 	 * phishing" page.
 	 */
-	for _, question := range r.Question {
-		if phishdata.KnownToDataSource(question.Name[:len(question.Name)-1]) {
+	for _, q := range r.Question {
+		if captive {
+			// On a captive network, we only respond to requests for
+			// A records, and we always return the router for that
+			// subnet
+			if q.Qtype == dns.TypeA {
+				m.Answer = append(m.Answer, &dns.A{
+					Hdr: dns.RR_Header{
+						Name:   q.Name,
+						Rrtype: dns.TypeA,
+						Class:  dns.ClassINET,
+						Ttl:    0},
+					A: captiveRouter,
+				})
+			}
+		} else if phishdata.KnownToDataSource(q.Name[:len(q.Name)-1]) {
 			m.Answer = append(m.Answer, &dns.A{
-				Hdr: dns.RR_Header{Name: question.Name,
-					Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 0},
-				// XXX Following is our gateway's IP
-				A: net.IP{192, 168, 136, 1}.To4(),
+				Hdr: dns.RR_Header{
+					Name:   q.Name,
+					Rrtype: dns.TypeA,
+					Class:  dns.ClassINET,
+					Ttl:    0},
+				A: gatewayRouter,
 			})
-		} else if strings.Contains(question.Name, ".in-addr.arpa.") {
+		} else if strings.Contains(q.Name, ".in-addr.arpa.") {
 			hosts_mtx.Lock()
-			rec, rec_ok := hosts[question.Name]
+			rec, rec_ok := hosts[q.Name]
 			hosts_mtx.Unlock()
 			if rec_ok && rec.rectype == dns.TypePTR {
 				m.Answer = append(m.Answer, &dns.PTR{
-					Hdr: dns.RR_Header{Name: question.Name,
-						Rrtype: dns.TypePTR, Class: dns.ClassINET, Ttl: 0},
+					Hdr: dns.RR_Header{
+						Name:   q.Name,
+						Rrtype: dns.TypePTR,
+						Class:  dns.ClassINET,
+						Ttl:    0},
 					Ptr: rec.recval,
 				})
 			} else {
-				log.Printf("unhandled arpa DNS query: %v", question)
+				log.Printf("unhandled arpa DNS query: %v", q)
 			}
 		} else {
 
@@ -441,6 +494,31 @@ func proxy_handler(w dns.ResponseWriter, r *dns.Msg) {
 	}
 }
 
+func initNetwork() {
+	gw := "127.0.0.1/32"
+
+	config := ap_common.NewConfig(pname)
+	if config != nil {
+		cidr, _ := config.GetProp("@/interfaces/connect/subnet")
+		if cidr != "" {
+			_, subnet, err := net.ParseCIDR(cidr)
+			if err == nil {
+				captiveSubnet = subnet
+				r := network.SubnetRouter(cidr)
+				captiveRouter = net.ParseIP(r).To4()
+			}
+		}
+
+		cidr, _ = config.GetProp("@/dhcp/config/network")
+		if cidr != "" {
+			gw = cidr
+		}
+	}
+
+	r := network.SubnetRouter(gw)
+	gatewayRouter = net.ParseIP(r).To4()
+}
+
 func init() {
 	prometheus.MustRegister(latencies)
 }
@@ -467,6 +545,8 @@ func main() {
 	flag.Parse()
 
 	log.Println("cli flags parsed")
+
+	initNetwork()
 
 	// RESOLVE_TIME = promc.Summary("dns_resolve_seconds",
 	//                              "DNS query resolution time")

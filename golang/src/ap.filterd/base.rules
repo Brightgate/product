@@ -1,0 +1,16 @@
+CAPTURE FROM IFACE connect
+
+# We have to allow dhcp traffic to our wan port, or we can't join the world
+ACCEPT UDP FROM IFACE wan DPORTS 68
+
+# We have to allow dns packets through, or our DNS forwarder can't get its
+# requests answered
+ACCEPT UDP FROM IFACE wan SPORTS 53
+
+# For ease of development, we also open http, ssh, and mDNS.  These need to be
+# closed when we actually deploy this
+ACCEPT TCP FROM IFACE wan DPORTS 22 80
+ACCEPT UDP FROM IFACE wan SPORTS 5353
+
+# Block all other incoming traffic
+BLOCK FROM IFACE wan

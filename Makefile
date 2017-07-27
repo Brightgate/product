@@ -83,6 +83,7 @@ APPETC=$(APPBASE)/etc
 APPVAR=$(APPBASE)/var
 APPSSL=$(APPETC)/ssl
 APPSPOOL=$(APPVAR)/spool
+APPRULES=$(APPETC)/filter.rules.d
 
 HTTPD_TEMPLATE_DIR=$(APPETC)/templates/ap.httpd
 NETWORK_TEMPLATE_DIR=$(APPETC)/templates/ap.networkd
@@ -92,6 +93,7 @@ DAEMONS = \
 	ap.configd \
 	ap.dhcp4d \
 	ap.dns4d \
+	ap.filterd \
 	ap.httpd \
 	ap.identifierd \
 	ap.logd \
@@ -119,6 +121,10 @@ HTTPD_TEMPLATES := $(HTTPD_TEMPLATE_FILES:%=$(HTTPD_TEMPLATE_DIR)/%)
 NETWORK_TEMPLATES := $(NETWORK_TEMPLATE_FILES:%=$(NETWORK_TEMPLATE_DIR)/%)
 TEMPLATES = $(HTTPD_TEMPLATES) $(NETWORK_TEMPLATES)
 
+FILTER_RULES = \
+	$(APPRULES)/base.rules \
+	$(APPRULES)/local.rules
+
 CONFIGS = \
 	$(APPETC)/ap_defaults.json \
 	$(APPETC)/ap_identities.csv \
@@ -128,9 +134,9 @@ CONFIGS = \
 	$(APPETC)/prometheus.yml
 
 DIRS = $(APPBIN) $(APPDOC) $(APPETC) $(APPVAR) $(APPSSL) $(APPSPOOL) \
-       $(HTTPD_TEMPLATE_DIR) $(NETWORK_TEMPLATE_DIR)
+       $(APPRULES) $(HTTPD_TEMPLATE_DIR) $(NETWORK_TEMPLATE_DIR)
 
-install: $(APPBINARIES) $(CONFIGS) $(DIRS) $(TEMPLATES) docs
+install: $(APPBINARIES) $(CONFIGS) $(DIRS) $(FILTER_RULES) $(TEMPLATES) docs
 
 docs: | $(PROTOC_PLUGINS)
 
@@ -162,11 +168,14 @@ $(APPETC)/oui.txt: | $(APPETC)
 $(APPETC)/prometheus.yml: prometheus.yml | $(APPETC)
 	install -m 0644 $< $(APPETC)
 
-$(NETWORK_TEMPLATE_DIR)/hostapd.conf.got: $(GOSRC)/ap.networkd/hostapd.conf.got | $(APPETC)
+$(NETWORK_TEMPLATE_DIR)/%: $(GOSRC)/ap.networkd/% | $(APPETC)
 	install -m 0644 $< $(NETWORK_TEMPLATE_DIR)
 
 $(HTTPD_TEMPLATE_DIR)/%: $(GOSRC)/ap.httpd/% | $(APPETC)
 	install -m 0644 $< $(HTTPD_TEMPLATE_DIR)
+
+$(APPRULES)/%: golang/src/ap.filterd/% | $(APPRULES)
+	install -m 0644 $< $(APPRULES)
 
 $(DIRS):
 	mkdir -p $@
@@ -192,6 +201,7 @@ $(APPBIN)/ap.brokerd: $(GOSRC)/ap.brokerd/brokerd.go
 $(APPBIN)/ap.configd: $(GOSRC)/ap.configd/configd.go
 $(APPBIN)/ap.dhcp4d: $(GOSRC)/ap.dhcp4d/dhcp4d.go
 $(APPBIN)/ap.dns4d: $(GOSRC)/ap.dns4d/dns4d.go golang/src/data/phishtank/phishtank.go
+$(APPBIN)/ap.filterd: $(GOSRC)/ap.filterd/filterd.go $(GOSRC)/ap.filterd/parse.go
 $(APPBIN)/ap.httpd: $(GOSRC)/ap.httpd/httpd.go
 $(APPBIN)/ap.identifierd: $(GOSRC)/ap.identifierd/identifierd.go
 $(APPBIN)/ap.logd: $(GOSRC)/ap.logd/logd.go
@@ -226,7 +236,7 @@ $(GOSRC)/base_msg:
 LOCAL_BINARIES=$(APPBINARIES:$(APPBIN)/%=$(GOPATH)/bin/%)
 
 clobber: clean
-	rm -f $(APPBINARIES) $(CONFIGS)
+	rm -f $(APPBINARIES) $(CONFIGS) $(TEMPLATES) $(FILTER_RULES)
 	rm -f $(LOCAL_BINARIES)
 
 clean:

@@ -74,6 +74,7 @@ var (
 	activeWifi   *device     // live wireless iface
 	connectWifi  string      // open "network connect" interface
 	activeWan    *device     // WAN port
+	activeWired  string      // wired bridge
 	childProcess *os.Process // track the hostapd proc
 	config       *ap_common.Config
 	mcpPort      *mcp.MCP
@@ -88,14 +89,17 @@ const (
 	confdir        = "/tmp"
 	hostapdPath    = "/usr/sbin/hostapd"
 	hostapdOptions = "-dKt"
-	iptablesCmd    = "/sbin/iptables"
 	brctlCmd       = "/sbin/brctl"
 	sysctlCmd      = "/sbin/sysctl"
 	ipCmd          = "/sbin/ip"
 	pname          = "ap.networkd"
-	captivePortal  = "_0"
+	bridge         = "br0"
+	connectPortal  = "_0"
 )
 
+//
+// Physical network devices
+//
 type device struct {
 	name         string
 	hwaddr       string
@@ -104,11 +108,13 @@ type device struct {
 	multipleAPs  bool
 }
 
+//
+// Network interfaces - may be physical or virtual
+//
 type iface struct {
 	name     string
-	wireless bool
 	subnet   string
-	rules    []string
+	wireless bool
 }
 
 type APConfig struct {
@@ -377,7 +383,7 @@ func generateHostAPDConf(conf *APConfig) string {
 				client, info.Class)
 			cc, ok = classes["unclassified"]
 		}
-		if ok && cc.Interface != "default" {
+		if ok && cc.Interface != "wifi" {
 			fmt.Fprintf(mf, "%s %d\n", client, vlanID(cc.Interface))
 		}
 	}
@@ -496,10 +502,7 @@ func runOne(conf *APConfig, done chan *APConfig) {
 		childProcess = cmd.Process
 
 		resetWifiInterfaces()
-		iptablesReset()
-		if mcpPort != nil {
-			mcpPort.SetStatus("online")
-		}
+		mcpPort.SetStatus("online")
 
 		// Wait for the stdout/stderr pipes to close and for the child
 		// process to exit
@@ -603,109 +606,10 @@ func prepareInterface(iface *iface) {
 	}
 }
 
-func iptablesNatRule(subnet string) string {
-	nat := "-t nat -I POSTROUTING"
-	nat += " -o " + activeWan.name
-	nat += " -s " + subnet
-	nat += " -j MASQUERADE"
-
-	return nat
-}
-
-//
-// Build the iptables rules for a single managed subnet
-//
-func iptablesForwardRules(nic, subnet string) []string {
-	// Route traffic from the managed network to the WAN
-	forward := "-I FORWARD"
-	forward += " -i " + nic
-	forward += " -o " + activeWan.name
-	forward += " -s " + subnet
-	forward += " -m conntrack --ctstate NEW"
-	forward += " -j ACCEPT"
-
-	nat := iptablesNatRule(subnet)
-
-	rules := []string{forward, nat}
-	return rules
-}
-
-//
-// Build the iptables rules for the 'captive portal' subnet
-//
-func iptablesCaptiveRules(nic, subnet string) []string {
-
-	// All http packets get forwarded to our local web server
-	router := network.SubnetRouter(subnet)
-	//webserver := router + ":80"
-	dnat := "-t nat -A PREROUTING" +
-		" -i " + nic +
-		" -p tcp --dport 80" +
-		" -j DNAT --to-destination " + router
-
-	// Allow DHCP packets through
-	dhcpAllow := "-A INPUT -i " + nic + " -p udp --dport 67 -j ACCEPT"
-
-	// Allow http packets through
-	httpAllow := "-A INPUT -i " + nic + " -p tcp --dport 80 -j ACCEPT"
-
-	// Allow DNS packets through
-	dnsAllow := "-A INPUT -i " + nic + " -p udp --dport 53 -j ACCEPT"
-
-	// Everything else gets dropped
-	otherInputDrop := "-A INPUT" + " -i " + nic + " -j DROP"
-	otherForwardDrop := "-I FORWARD" + " -i " + nic + " -j DROP"
-	httpForward := "-I FORWARD -i " + nic + " -p tcp --dport 80 -j ACCEPT"
-
-	nat := iptablesNatRule(subnet)
-	rules := []string{dnat, httpAllow, dnsAllow, dhcpAllow, otherInputDrop,
-		otherForwardDrop, httpForward, nat}
-	return rules
-}
-
-func iptablesIssueRule(rule string) {
-	args := strings.Split(rule, " ")
-	cmd := exec.Command(iptablesCmd, args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Printf("failed to apply %s: %s\n", rule, out)
-	}
-}
-
-func iptablesReset() {
-	// Flush out any existing rules
-	iptablesIssueRule("-F")
-	iptablesIssueRule("-t nat -F")
-
-	// Allowed traffic on connected ports to flow from eth0 back to the
-	// internal network
-	iptablesIssueRule("-I FORWARD" +
-		" -m conntrack --ctstate RELATED,ESTABLISHED" +
-		" -j ACCEPT")
-
-	// Add rules for each interface
-	// For the limited rules we're using now, the ordering doesn't matter.
-	// Eventually all of this will move to ap.filterd, where we'll need to
-	// consider the scheduling more carefully.
-	for _, i := range interfaces {
-		for _, r := range i.rules {
-			iptablesIssueRule(r)
-		}
-	}
-}
-
 func addInterface(name, subnet string, wireless bool) {
-	var rules []string
-
-	if strings.HasSuffix(name, captivePortal) {
-		rules = iptablesCaptiveRules(name, subnet)
-	} else {
-		rules = iptablesForwardRules(name, subnet)
-	}
 	iface := iface{
 		name:     name,
 		subnet:   subnet,
-		rules:    rules,
 		wireless: wireless,
 	}
 
@@ -779,8 +683,11 @@ func prepareWired() {
 		}
 	}
 	if wiredLan {
+		activeWired = bridge
 		addInterface(bridge, wired_subnet, false)
 		prepareInterface(interfaces[bridge])
+	} else {
+		activeWired = ""
 	}
 }
 
@@ -804,12 +711,12 @@ func prepareWireless(props *ap_common.PropertyNode) {
 
 	if activeWifi.supportVLANs {
 		for i, s := range subnets {
-			if i == "default" {
+			if i == "wifi" {
 				addInterface(activeWifi.name, s, true)
 			} else if i == "connect" {
 				if activeWifi.multipleAPs {
 					connectWifi = activeWifi.name +
-						captivePortal
+						connectPortal
 					addInterface(connectWifi, s, true)
 				}
 			} else if strings.HasPrefix(i, "vlan.") {
@@ -823,47 +730,33 @@ func prepareWireless(props *ap_common.PropertyNode) {
 
 }
 
-//
-// Given the name of a network device, determine its mac address and construct a
-// device structure for it.
-func getDevice(name string) *device {
-	data, err := ioutil.ReadFile("/sys/class/net/" + name + "/address")
-	if err != nil {
-		log.Printf("Failed to get hwaddr for %s: %v\n", name, err)
-		return nil
+func getEthernet(i net.Interface) *device {
+	d := device{
+		name:         i.Name,
+		hwaddr:       i.HardwareAddr.String(),
+		wireless:     false,
+		supportVLANs: false,
 	}
-	hwaddr := strings.TrimSpace(string(data))
-	d := device{name: name, hwaddr: hwaddr}
-	return (&d)
-}
-
-//
-// Given the name of a wired NIC, construct a device structure for it
-func getEthernet(name string) *device {
-	d := getDevice(name)
-	if d != nil {
-		d.wireless = false
-		d.supportVLANs = false
-	}
-	return (d)
+	return &d
 }
 
 //
 // Given the name of a wireless NIC, construct a device structure for it
-func getWireless(name string) *device {
-	if strings.HasSuffix(name, captivePortal) {
+func getWireless(i net.Interface) *device {
+	if strings.HasSuffix(i.Name, connectPortal) {
 		return nil
 	}
 
-	d := getDevice(name)
-	if d == nil {
-		return nil
+	d := device{
+		name:     i.Name,
+		hwaddr:   i.HardwareAddr.String(),
+		wireless: true,
 	}
-	d.wireless = true
 
-	data, err := ioutil.ReadFile("/sys/class/net/" + name + "/phy80211/name")
+	data, err := ioutil.ReadFile("/sys/class/net/" + i.Name +
+		"/phy80211/name")
 	if err != nil {
-		log.Printf("Couldn't get phy for %s: %v\n", name, err)
+		log.Printf("Couldn't get phy for %s: %v\n", i.Name, err)
 		return nil
 	}
 	phy := strings.TrimSpace(string(data))
@@ -874,7 +767,7 @@ func getWireless(name string) *device {
 	//
 	out, err := exec.Command("/sbin/iw", "phy", phy, "info").Output()
 	if err != nil {
-		log.Printf("Failed to get %s capabilities: %v\n", name, err)
+		log.Printf("Failed to get %s capabilities: %v\n", i.Name, err)
 		return nil
 	}
 	capabilities := string(out)
@@ -903,7 +796,6 @@ func getWireless(name string) *device {
 				if len(s) > 0 {
 					cnt, _ := strconv.Atoi(s[len(s)-1])
 					if cnt > 1 {
-						log.Printf("%s APs: %d\n", s, cnt)
 						d.multipleAPs = true
 					}
 				}
@@ -911,29 +803,28 @@ func getWireless(name string) *device {
 		}
 	}
 
-	return (d)
+	return &d
 }
 
 //
 // Inventory the network devices in the system
 //
 func getDevices() {
-	devs, err := ioutil.ReadDir("/sys/class/net")
+	all, err := net.Interfaces()
 	if err != nil {
 		log.Fatalf("Unable to inventory network devices: %v\n", err)
 	}
 
-	for _, dev := range devs {
+	for _, i := range all {
 		var d *device
-		name := dev.Name()
-		if strings.HasPrefix(name, "eth") {
-			d = getEthernet(name)
-		} else if strings.HasPrefix(name, "wlan") {
-			d = getWireless(name)
+		if strings.HasPrefix(i.Name, "eth") {
+			d = getEthernet(i)
+		} else if strings.HasPrefix(i.Name, "wlan") {
+			d = getWireless(i)
 		}
 
 		if d != nil {
-			devices[name] = d
+			devices[i.Name] = d
 		}
 	}
 }
@@ -959,6 +850,7 @@ func updateNetworkProp(props *ap_common.PropertyNode, prop, new string) {
 func updateNetworkConfig(props *ap_common.PropertyNode) {
 	updateNetworkProp(props, "wifi_nic", activeWifi.name)
 	updateNetworkProp(props, "connect_nic", connectWifi)
+	updateNetworkProp(props, "wired_nic", activeWired)
 	updateNetworkProp(props, "wan_nic", activeWan.name)
 	if activeWifi.supportVLANs {
 		updateNetworkProp(props, "use_vlans", "true")
