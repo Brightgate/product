@@ -84,6 +84,9 @@ APPVAR=$(APPBASE)/var
 APPSSL=$(APPETC)/ssl
 APPSPOOL=$(APPVAR)/spool
 
+HTTPD_TEMPLATE_DIR=$(APPETC)/templates/ap.httpd
+NETWORK_TEMPLATE_DIR=$(APPETC)/templates/ap.networkd
+
 DAEMONS = \
 	ap.brokerd \
 	ap.configd \
@@ -106,6 +109,16 @@ COMMANDS = \
 
 APPBINARIES  := $(COMMANDS:%=$(APPBIN)/%) $(DAEMONS:%=$(APPBIN)/%)
 
+HTTPD_TEMPLATE_FILES = connect_apple.html.got \
+		  connect_generic.html.got \
+		  nophish.html.got \
+		  stats.html.got
+NETWORK_TEMPLATE_FILES = hostapd.conf.got
+
+HTTPD_TEMPLATES := $(HTTPD_TEMPLATE_FILES:%=$(HTTPD_TEMPLATE_DIR)/%)
+NETWORK_TEMPLATES := $(NETWORK_TEMPLATE_FILES:%=$(NETWORK_TEMPLATE_DIR)/%)
+TEMPLATES = $(HTTPD_TEMPLATES) $(NETWORK_TEMPLATES)
+
 CONFIGS = \
 	$(APPETC)/ap_defaults.json \
 	$(APPETC)/ap_identities.csv \
@@ -114,9 +127,10 @@ CONFIGS = \
 	$(APPETC)/oui.txt \
 	$(APPETC)/prometheus.yml
 
-DIRS = $(APPBIN) $(APPDOC) $(APPETC) $(APPVAR) $(APPSSL) $(APPSPOOL)
+DIRS = $(APPBIN) $(APPDOC) $(APPETC) $(APPVAR) $(APPSSL) $(APPSPOOL) \
+       $(HTTPD_TEMPLATE_DIR) $(NETWORK_TEMPLATE_DIR)
 
-install: $(APPBINARIES) $(CONFIGS) $(DIRS) docs
+install: $(APPBINARIES) $(CONFIGS) $(DIRS) $(TEMPLATES) docs
 
 docs: | $(PROTOC_PLUGINS)
 
@@ -147,6 +161,12 @@ $(APPETC)/oui.txt: | $(APPETC)
 
 $(APPETC)/prometheus.yml: prometheus.yml | $(APPETC)
 	install -m 0644 $< $(APPETC)
+
+$(NETWORK_TEMPLATE_DIR)/hostapd.conf.got: $(GOSRC)/ap.networkd/hostapd.conf.got | $(APPETC)
+	install -m 0644 $< $(NETWORK_TEMPLATE_DIR)
+
+$(HTTPD_TEMPLATE_DIR)/%: $(GOSRC)/ap.httpd/% | $(APPETC)
+	install -m 0644 $< $(HTTPD_TEMPLATE_DIR)
 
 $(DIRS):
 	mkdir -p $@

@@ -1,0 +1,4 @@
+<h1>Welcome to Brightgate</h1>
+<form action="/appleConnect" method=GET>
+<input type="submit" value="Join">
+</form>

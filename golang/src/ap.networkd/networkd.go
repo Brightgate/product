@@ -61,6 +61,9 @@ import (
 var (
 	addr = flag.String("listen-address", base_def.HOSTAPDM_PROMETHEUS_PORT,
 		"The address to listen on for HTTP requests.")
+	templateDir = flag.String("template_dir", "golang/src/ap.networkd",
+		"location of hostapd templates")
+
 	aps        = make(map[string]*APConfig)
 	interfaces = make(map[string]*iface)
 	devices    = make(map[string]*device)        // physical network devices
@@ -83,7 +86,6 @@ const (
 	period           = time.Duration(time.Minute)
 
 	confdir        = "/tmp"
-	confTemplate   = "golang/src/ap.networkd/hostapd.conf.got"
 	hostapdPath    = "/usr/sbin/hostapd"
 	hostapdOptions = "-dKt"
 	iptablesCmd    = "/sbin/iptables"
@@ -124,7 +126,8 @@ type APConfig struct {
 	ConfDir        string // Location of hostapd.conf, etc.
 	ConfFile       string // Name of this NIC's hostapd.conf
 	VLANComment    string // Used to disable vlan params in .conf template
-	ConnectComment string // Used to disable -connect in .conf template
+	ConnectSSID    string // SSID to broadcast for connect network
+	ConnectComment string // Used to disable connect net in .conf template
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -177,6 +180,11 @@ func config_changed(event []byte) {
 			rewrite = true
 			fullReset = true
 
+		case "connectssid":
+			conf.ConnectSSID = *config.NewValue
+			rewrite = true
+			fullReset = true
+
 		default:
 			log.Printf("Ignoring update for unknown property: %s\n",
 				property)
@@ -225,7 +233,8 @@ func getSubnetConfig() string {
 // Get network settings from configd and use them to initialize the AP
 //
 func getAPConfig(d *device, props *ap_common.PropertyNode) {
-	var ssid, passphrase, vlanComment, connectComment string
+	var ssid, passphrase, connectSSID string
+	var vlanComment, connectComment string
 	var node *ap_common.PropertyNode
 
 	if node = props.GetChild("ssid"); node == nil {
@@ -238,11 +247,14 @@ func getAPConfig(d *device, props *ap_common.PropertyNode) {
 	}
 	passphrase = node.GetValue()
 
+	if node = props.GetChild("connectssid"); node != nil {
+		connectSSID = node.GetValue()
+	}
 	if !d.supportVLANs {
 		vlanComment = "#"
 	}
 
-	if d.multipleAPs {
+	if d.multipleAPs && len(connectSSID) > 0 {
 		// If we create a second SSID for new clients to connect to,
 		// its mac address will be derived from the nic's mac address by
 		// adding 1 to the final octet.  To accomodate that, hostapd
@@ -284,6 +296,7 @@ func getAPConfig(d *device, props *ap_common.PropertyNode) {
 		ConfDir:        confdir,
 		VLANComment:    vlanComment,
 		ConnectComment: connectComment,
+		ConnectSSID:    connectSSID,
 	}
 	aps[d.name] = &data
 }
@@ -319,10 +332,11 @@ func vlanBridge(vlan string) string {
 //
 func generateHostAPDConf(conf *APConfig) string {
 	var err error
+	tfile := *templateDir + "/hostapd.conf.got"
 
 	// Create hostapd.conf, using the APConfig contents to fill out the .got
 	// template
-	t, err := template.ParseFiles(confTemplate)
+	t, err := template.ParseFiles(tfile)
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(2)
@@ -623,17 +637,17 @@ func iptablesCaptiveRules(nic, subnet string) []string {
 
 	// All http packets get forwarded to our local web server
 	router := network.SubnetRouter(subnet)
-	webserver := router + ":8000"
+	//webserver := router + ":80"
 	dnat := "-t nat -A PREROUTING" +
 		" -i " + nic +
-		" -p tcp -m multiport --dports 80,8000" +
-		" -j DNAT --to-destination " + webserver
+		" -p tcp --dport 80" +
+		" -j DNAT --to-destination " + router
 
 	// Allow DHCP packets through
 	dhcpAllow := "-A INPUT -i " + nic + " -p udp --dport 67 -j ACCEPT"
 
 	// Allow http packets through
-	httpAllow := "-A INPUT -i " + nic + " -p tcp --dport 8000 -j ACCEPT"
+	httpAllow := "-A INPUT -i " + nic + " -p tcp --dport 80 -j ACCEPT"
 
 	// Allow DNS packets through
 	dnsAllow := "-A INPUT -i " + nic + " -p udp --dport 53 -j ACCEPT"
@@ -641,7 +655,7 @@ func iptablesCaptiveRules(nic, subnet string) []string {
 	// Everything else gets dropped
 	otherInputDrop := "-A INPUT" + " -i " + nic + " -j DROP"
 	otherForwardDrop := "-I FORWARD" + " -i " + nic + " -j DROP"
-	httpForward := "-I FORWARD -i " + nic + " -p tcp --dport 8000 -j ACCEPT"
+	httpForward := "-I FORWARD -i " + nic + " -p tcp --dport 80 -j ACCEPT"
 
 	nat := iptablesNatRule(subnet)
 	rules := []string{dnat, httpAllow, dnsAllow, dhcpAllow, otherInputDrop,
