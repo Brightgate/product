@@ -73,6 +73,12 @@ func handle_request(event []byte) {
 	log.Printf("[net.request] %v", request)
 }
 
+func handle_identity(event []byte) {
+	identity := &base_msg.EventNetIdentity{}
+	proto.Unmarshal(event, identity)
+	log.Printf("[net.identity] %v", identity)
+}
+
 func main() {
 	var b ap_common.Broker
 
@@ -96,6 +102,7 @@ func main() {
 	b.Handle(base_def.TOPIC_ENTITY, handle_entity)
 	b.Handle(base_def.TOPIC_RESOURCE, handle_resource)
 	b.Handle(base_def.TOPIC_REQUEST, handle_request)
+	b.Handle(base_def.TOPIC_IDENTITY, handle_identity)
 	b.Connect()
 	defer b.Disconnect()
 

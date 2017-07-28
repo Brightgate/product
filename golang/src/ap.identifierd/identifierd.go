@@ -11,24 +11,24 @@
 /*
 Use observed data to make predictions about client identities.
 To Do:
-  0) Need to read config dhcp leases to build initial membership. Also, read
-     the saved training data file to re-build the set of observations
   1) Incorporate sampled data
   2) Incorporate scand data
   3) Improve training data
        - (Stephen) I think part of #3 is an event (maybe IdentifyException) when
          an unknown manufacturer or unknown device is detected. Receipt of #3
          would trigger a more detailed scan and, subsequently, a telemetry report.
-  4) Create zmq REQ-REP for sending IdentifyRequest and IdentifyResponse
-  5) Tie IdentifyRequest and Response into dhcp and config
-  6) Make the proposed ap.namerd part of ap.identifierd.
+  4) Need for IdentifyRequest and Response?
+  5) Make the proposed ap.namerd part of ap.identifierd.
 */
 package main
 
 import (
 	"base_def"
+	"encoding/csv"
 	"encoding/json"
 	"flag"
+	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -50,9 +50,6 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/klauspost/oui"
-	"github.com/sjwhitworth/golearn/base"
-	"github.com/sjwhitworth/golearn/naive"
-	"github.com/sjwhitworth/golearn/trees"
 )
 
 var (
@@ -60,32 +57,29 @@ var (
 	logDir  = flag.String("logdir", "./", "Directory for device learning log data")
 
 	broker ap_common.Broker
+	config *ap_common.Config
 
 	ouiDB   oui.DynamicDB
 	mfgidDB = make(map[string]int)
-
-	// Prospective models
-	naiveBayes *naive.BernoulliNBClassifier
-	id3Tree    *trees.ID3DecisionTree
 
 	// DNS requests only contain the IP addr, so we maintin a map ipaddr -> hwaddr
 	ipMtx sync.Mutex
 	ipMap = make(map[uint32]uint64)
 
-	trainData *base.DenseInstances
-	testData  = model.NewObservations()
-	newData   = model.NewEntities()
+	testData = model.NewObservations()
+	newData  = model.NewEntities()
 
 	// See github.com/miekg/dns/types.go: func (q *Question) String() {}
 	dnsQ = regexp.MustCompile(`;(.*?)\t`)
 )
 
-const pname = "ap.identifierd"
-
 const (
+	pname = "ap.identifierd"
+
 	ouiFile   = "oui.txt"
 	mfgidFile = "ap_mfgid.json"
 	trainFile = "ap_identities.csv"
+	saveFile  = "observations.csv"
 )
 
 func getHWaddr(ip uint32) (uint64, bool) {
@@ -175,15 +169,13 @@ func handleConfig(event []byte) {
 	}
 	ipaddr := network.IPAddrToUint32(ipv4)
 
-	mac, err := net.ParseMAC(*eventConfig.NewValue)
-	if err != nil {
-		log.Printf("invalid MAC address %s", *eventConfig.NewValue)
-		return
-	}
-	hwaddr := network.HWAddrToUint64(mac)
-
 	if *eventConfig.Type == base_msg.EventConfig_CHANGE {
-		addIP(ipaddr, hwaddr)
+		mac, err := net.ParseMAC(*eventConfig.NewValue)
+		if err != nil {
+			log.Printf("invalid MAC address %s", *eventConfig.NewValue)
+			return
+		}
+		addIP(ipaddr, network.HWAddrToUint64(mac))
 	} else {
 		removeIP(ipaddr)
 	}
@@ -191,25 +183,99 @@ func handleConfig(event []byte) {
 
 func logger() {
 	tick := time.NewTicker(time.Duration(5 * time.Minute))
-	logFile := *logDir + "training_data.csv"
-
+	logFile := *logDir + saveFile
 	for {
 		<-tick.C
 		if err := newData.WriteCSV(logFile); err != nil {
-			log.Println("Could not save training data:", err)
+			log.Println("Could not save observation data:", err)
 		}
 	}
-
 }
 
 func identify() {
-	tick := time.NewTicker(time.Duration(time.Minute))
-
+	newIdentities := testData.Predict()
 	for {
-		<-tick.C
-		testData.PredictBayes(naiveBayes)
-		testData.PredictID3(id3Tree)
+		id := <-newIdentities
+
+		// Naive Bayes is more accurate. Let it set the identity property.
+		if id.Model == "Naive Bayes" {
+			prop := "@/clients/" + network.Uint64ToHWAddr(id.HwAddr).String() + "/identity"
+			config.CreateProp(prop, id.Identity, nil)
+		}
+
+		t := time.Now()
+		identity := &base_msg.EventNetIdentity{
+			Timestamp: &base_msg.Timestamp{
+				Seconds: proto.Int64(t.Unix()),
+				Nanos:   proto.Int32(int32(t.Nanosecond())),
+			},
+			Sender:     proto.String(broker.Name),
+			Debug:      proto.String("-"),
+			MacAddress: proto.Uint64(id.HwAddr),
+			Name:       proto.String(id.Identity),
+			Certainty:  proto.Float64(0),
+		}
+
+		err := broker.Publish(identity, base_def.TOPIC_IDENTITY)
+		if err != nil {
+			log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_IDENTITY, err)
+		}
 	}
+}
+
+func loadObservations() error {
+	logFile := *logDir + saveFile
+	f, err := os.Open(logFile)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	r := csv.NewReader(f)
+
+	// Read attribute names
+	header, err := r.Read()
+	if err != nil {
+		return fmt.Errorf("failed to read header from %s: %s", logFile, err)
+	}
+
+	header = header[1:]
+	for {
+		record, err := r.Read()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return fmt.Errorf("failed to read saved observations from %s: %s", logFile, err)
+		}
+
+		mac, err := net.ParseMAC(record[0])
+		if err != nil {
+			return fmt.Errorf("invalid MAC addres %s: %s", record[0], err)
+		}
+
+		entry, err := ouiDB.Query(mac.String())
+		if err != nil {
+			return fmt.Errorf("MAC address %s not in OUI database: %s", mac, err)
+		}
+
+		id := mfgidDB[entry.Manufacturer]
+		hwaddr := network.HWAddrToUint64(mac)
+		testData.SetByName(hwaddr, "Manufacturer ID", strconv.Itoa(id))
+
+		last := len(record) - 1
+		newData.AddIdentityHint(hwaddr, entry.Manufacturer, record[last])
+		for i, feat := range record[1:last] {
+			testData.SetByName(hwaddr, header[i], feat)
+
+			if _, err := strconv.Atoi(header[i]); err == nil {
+				newData.AddPort(hwaddr, header[i])
+			} else {
+				newData.AddDNS(hwaddr, header[i])
+			}
+		}
+
+	}
+	return nil
 }
 
 func main() {
@@ -252,21 +318,12 @@ func main() {
 		log.Fatalf("failed to import manufacturer IDs from %s: %v\n", mfgidPath, err)
 	}
 
-	// Load the training data and train the models. Eventually, read a trained
-	// model from disk.
-	trainData, err = model.LoadTrainingData(*dataDir+trainFile, testData)
-	if err != nil {
-		log.Fatalln("failed to load training data:", err)
+	if err = testData.Train(*dataDir + trainFile); err != nil {
+		log.Fatalln("failed to train models", err)
 	}
 
-	id3Tree, err = model.NewTree(trainData)
-	if err != nil {
-		log.Fatalln("failed to make ID3 tree:", err)
-	}
-
-	naiveBayes, err = model.NewBayes(trainData)
-	if err != nil {
-		log.Fatalln("failed to make Naive Bayes:", err)
+	if err := loadObservations(); err != nil {
+		log.Println("failed to recover observations:", err)
 	}
 
 	// Use the broker to listen for appropriate messages to create and update
@@ -278,6 +335,8 @@ func main() {
 	broker.Connect()
 	defer broker.Disconnect()
 	broker.Ping()
+
+	config = ap_common.NewConfig(pname)
 
 	if mcp != nil {
 		if err = mcp.SetStatus("online"); err != nil {

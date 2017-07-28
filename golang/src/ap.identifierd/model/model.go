@@ -16,9 +16,9 @@ package model
 import (
 	"encoding/csv"
 	"fmt"
-	"log"
 	"os"
 	"sync"
+	"time"
 
 	"ap_common/network"
 
@@ -44,6 +44,14 @@ type Entities struct {
 	dataMap map[uint64]*entity
 }
 
+// Prediction is a struct to communicate a new prediction from the named model.
+// See Observations.Predict()
+type Prediction struct {
+	Model    string
+	HwAddr   uint64
+	Identity string
+}
+
 type client struct {
 	rowIdx      int
 	nbIdentity  string
@@ -57,7 +65,15 @@ type Observations struct {
 	spec []base.AttributeSpec
 
 	// hwaddr -> client
-	clnt map[uint64]client
+	clients map[uint64]*client
+
+	// Trained prospective models used for prediction, the attributes used to
+	// train them, and corresponding filters for 'inst'.
+	naiveBayes    *naive.BernoulliNBClassifier
+	naiveAttrs    []base.Attribute
+	naiveFiltered *base.LazilyFilteredInstances
+	id3Tree       *trees.ID3DecisionTree
+	id3Filtered   *base.LazilyFilteredInstances
 
 	// attribute name -> column index
 	attrMap map[string]int
@@ -104,7 +120,7 @@ func (e *Entities) WriteCSV(path string) error {
 	e.Lock()
 	defer e.Unlock()
 
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		return err
 	}
@@ -170,6 +186,76 @@ func (e *Entities) WriteCSV(path string) error {
 	return w.Error()
 }
 
+// loadTrainingData reads the CSV file at 'path' and returns a new
+// DenseInstances for training, while also adding the training data's attributes
+// to the Observations.
+func (o *Observations) loadTrainingData(path string) (*base.DenseInstances, error) {
+	trainData, err := base.ParseCSVToInstances(path, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse training data in %s: %s", path, err)
+	}
+
+	// Could call trainData.AllAttributes(), but the resulting slice is ordered
+	// by AttributeGroup, making it difficult to add new rows of observed data
+	attrs := base.ParseCSVGetAttributes(path, true)
+	for i, a := range attrs {
+		o.spec = append(o.spec, o.inst.AddAttribute(a))
+		o.attrMap[a.GetName()] = i
+	}
+
+	last := len(attrs) - 1
+	err = o.inst.AddClassAttribute(attrs[last])
+	if err != nil {
+		return nil, fmt.Errorf("failed to add class attribute: %s", err)
+	}
+
+	// We need to add one value to the class attribute, which is a
+	// CategoricalAttribute, because GetStringFromSysVal() panics if the attribute
+	// has no values. Perhaps we should fix this to just print the empty string
+	o.spec[last].GetAttribute().GetSysValFromString("Unknown")
+
+	return trainData, nil
+}
+
+// Train loads the training data and trains the models. Eventually, we want to
+// read a trained model from disk.
+func (o *Observations) Train(path string) error {
+	var err error
+
+	o.Lock()
+	defer o.Unlock()
+
+	trainData, err := o.loadTrainingData(path)
+	if err != nil {
+		return fmt.Errorf("failed to load training data: %s", err)
+	}
+
+	disFilt, err := Discretise(trainData)
+	if err != nil {
+		return fmt.Errorf("failed to create discrete filter: %s", err)
+	}
+
+	trainDataFiltered := base.NewLazilyFilteredInstances(trainData, disFilt)
+	if o.id3Tree, err = NewTree(trainDataFiltered); err != nil {
+		return fmt.Errorf("failed to make new ID3 tree: %s", err)
+	}
+	o.id3Filtered = base.NewLazilyFilteredInstances(o.inst, disFilt)
+
+	binFilt, err := Binarize(trainData)
+	if err != nil {
+		return fmt.Errorf("failed to create binary filter: %s", err)
+	}
+
+	trainDataFiltered = base.NewLazilyFilteredInstances(trainData, binFilt)
+	o.naiveBayes = NewBayes(trainDataFiltered)
+	classAttrs := trainDataFiltered.AllClassAttributes()
+	allAttrs := trainDataFiltered.AllAttributes()
+	o.naiveAttrs = base.AttributeDifference(allAttrs, classAttrs)
+	o.naiveFiltered = base.NewLazilyFilteredInstances(o.inst, binFilt)
+
+	return nil
+}
+
 // SetByName sets the attribute 'attr' to the value 'val' for the client
 // specified by 'hwaddr'.
 func (o *Observations) SetByName(hwaddr uint64, attr, val string) {
@@ -177,12 +263,12 @@ func (o *Observations) SetByName(hwaddr uint64, attr, val string) {
 	defer o.Unlock()
 
 	// Get this client's row index, or create a new row
-	if _, ok := o.clnt[hwaddr]; !ok {
+	if _, ok := o.clients[hwaddr]; !ok {
 		o.inst.Extend(1)
 		_, rows := o.inst.Size()
-		o.clnt[hwaddr] = client{rowIdx: rows - 1}
+		o.clients[hwaddr] = &client{rowIdx: rows - 1}
 	}
-	row := o.clnt[hwaddr].rowIdx
+	row := o.clients[hwaddr].rowIdx
 
 	// Get the attribute's column index. GoLearn doesn't allow adding new
 	// attributes to FixedDataGrid
@@ -195,37 +281,66 @@ func (o *Observations) SetByName(hwaddr uint64, attr, val string) {
 }
 
 // PredictBayes predicts identities for the observations using Naive Bayes
-func (o *Observations) PredictBayes(nb *naive.BernoulliNBClassifier) {
-	o.Lock()
-	defer o.Unlock()
-
-	dataf, err := Binarize(o.inst)
-	if err != nil {
-		log.Println("failed to binarize:", err)
-	}
-
-	predictions := nb.Predict(dataf)
-	for h, c := range o.clnt {
-		c.nbIdentity = base.GetClass(predictions, c.rowIdx)
-		log.Printf("New NB identity for %s: %s\n", network.Uint64ToHWAddr(h), c.nbIdentity)
+func (o *Observations) predictBayes(ch chan Prediction) {
+	predictions := o.naiveBayes.Predict(o.naiveFiltered)
+	for h, c := range o.clients {
+		newID := base.GetClass(predictions, c.rowIdx)
+		if newID != c.nbIdentity {
+			c.nbIdentity = newID
+			ch <- Prediction{Model: "Naive Bayes", HwAddr: h, Identity: newID}
+		}
 	}
 }
 
 // PredictID3 predicts identities for the observations using ID3
-func (o *Observations) PredictID3(id3 *trees.ID3DecisionTree) {
+func (o *Observations) predictID3(ch chan Prediction) {
+	predictions, _ := o.id3Tree.Predict(o.id3Filtered)
+	for h, c := range o.clients {
+		newID := base.GetClass(predictions, c.rowIdx)
+		if newID != c.id3Identity {
+			c.id3Identity = newID
+			ch <- Prediction{Model: "ID3 Tree", HwAddr: h, Identity: newID}
+		}
+	}
+}
+
+// Predict periodically runs predictions over the entire set of Observations.
+// When a client's predicted identity changes a new Prediction is sent on the
+// channel returned to the caller.
+func (o *Observations) Predict() <-chan Prediction {
+	predCh := make(chan Prediction)
+
+	go func(ch chan Prediction) {
+		tick := time.NewTicker(time.Duration(time.Minute))
+		for {
+			<-tick.C
+			o.Lock()
+			o.predictID3(ch)
+			o.predictBayes(ch)
+			o.Unlock()
+		}
+	}(predCh)
+	return predCh
+}
+
+// GetBayesIdentity returns a prediction for hwaddr.
+func (o *Observations) GetBayesIdentity(hwaddr uint64) string {
 	o.Lock()
 	defer o.Unlock()
 
-	dataf, err := Discretise(o.inst)
-	if err != nil {
-		log.Println("failed to discretise:", err)
+	c, ok := o.clients[hwaddr]
+	if !ok {
+		return "Unknown"
 	}
 
-	predictions, _ := id3.Predict(dataf)
-	for h, c := range o.clnt {
-		c.id3Identity = base.GetClass(predictions, c.rowIdx)
-		log.Printf("New ID3 identity for %s: %s\n", network.Uint64ToHWAddr(h), c.id3Identity)
+	featAttrSpecs := base.ResolveAttributes(o.naiveFiltered, o.naiveAttrs)
+
+	vector := make([][]byte, len(featAttrSpecs))
+	for i := 0; i < len(vector); i++ {
+		vector[i] = o.naiveFiltered.Get(featAttrSpecs[i], c.rowIdx)
 	}
+	return o.naiveBayes.PredictOne(vector)
+
 }
 
 func newEntity() *entity {
@@ -249,49 +364,14 @@ func NewObservations() *Observations {
 	ret := &Observations{
 		inst:    base.NewDenseInstances(),
 		spec:    make([]base.AttributeSpec, 0),
-		clnt:    make(map[uint64]client),
+		clients: make(map[uint64]*client),
 		attrMap: make(map[string]int),
 	}
 	return ret
 }
 
-// LoadTrainingData reads the CSV file at 'path' and returns a new
-// DenseInstances for training, while also adding the training data's attributes
-// to 'testData'.
-func LoadTrainingData(path string, testData *Observations) (*base.DenseInstances, error) {
-	trainData, err := base.ParseCSVToInstances(path, true)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse training data in %s: %s", path, err)
-	}
-
-	// Could call trainData.AllAttributes(), but the resulting slice is ordered
-	// by AttributeGroup, making it difficult to add new rows of observed data
-	attrs := base.ParseCSVGetAttributes(path, true)
-
-	testData.Lock()
-	defer testData.Unlock()
-	for i, a := range attrs {
-		testData.spec = append(testData.spec, testData.inst.AddAttribute(a))
-		testData.attrMap[a.GetName()] = i
-	}
-
-	last := len(attrs) - 1
-	err = testData.inst.AddClassAttribute(attrs[last])
-	if err != nil {
-		return nil, fmt.Errorf("failed to add class attribute: %s", err)
-	}
-
-	// We need to add one value to the class attribute, which is a
-	// CategoricalAttribute, because GetStringFromSysVal() panics if the attribute
-	// has no values. Perhaps we should fix this to just print the empty string
-	testData.spec[last].GetAttribute().GetSysValFromString("Unknown")
-
-	return trainData, nil
-}
-
 // Discretise transforms attributes into CategoricalAttributes
-func Discretise(src base.FixedDataGrid) (base.FixedDataGrid, error) {
-	// Discretise the dataset with Chi-Merge
+func Discretise(src base.FixedDataGrid) (*filters.ChiMergeFilter, error) {
 	// XXX Need to understand the magic parameter
 	filt := filters.NewChiMergeFilter(src, 0.999)
 	for _, a := range base.NonClassFloatAttributes(src) {
@@ -302,20 +382,14 @@ func Discretise(src base.FixedDataGrid) (base.FixedDataGrid, error) {
 		return nil, fmt.Errorf("could not train Chi-Merge filter: %s", err)
 	}
 
-	ret := base.NewLazilyFilteredInstances(src, filt)
-	return ret, nil
+	return filt, nil
 }
 
 // NewTree returns a new ID3 decision tree trained with trainData
 func NewTree(trainData base.FixedDataGrid) (*trees.ID3DecisionTree, error) {
-	dataf, err := Discretise(trainData)
-	if err != nil {
-		return nil, fmt.Errorf("could not discretise: %s", err)
-	}
-
 	// XXX Need to understand the magic parameter which controls train-prune split.
 	id3Tree := trees.NewID3DecisionTree(0.4)
-	err = id3Tree.Fit(dataf)
+	err := id3Tree.Fit(trainData)
 	if err != nil {
 		return nil, fmt.Errorf("could not train ID3 tree: %s", err)
 	}
@@ -323,7 +397,7 @@ func NewTree(trainData base.FixedDataGrid) (*trees.ID3DecisionTree, error) {
 }
 
 // Binarize transforms attributes into BinaryAttributes
-func Binarize(src base.FixedDataGrid) (base.FixedDataGrid, error) {
+func Binarize(src base.FixedDataGrid) (*filters.BinaryConvertFilter, error) {
 	filt := filters.NewBinaryConvertFilter()
 	for _, a := range base.NonClassAttributes(src) {
 		filt.AddAttribute(a)
@@ -333,18 +407,12 @@ func Binarize(src base.FixedDataGrid) (base.FixedDataGrid, error) {
 		return nil, fmt.Errorf("could not train binary filter: %s", err)
 	}
 
-	ret := base.NewLazilyFilteredInstances(src, filt)
-	return ret, nil
+	return filt, nil
 }
 
 // NewBayes returns a new Naive Bayes clasifier trained with trainData
-func NewBayes(trainData base.FixedDataGrid) (*naive.BernoulliNBClassifier, error) {
-	dataf, err := Binarize(trainData)
-	if err != nil {
-		return nil, fmt.Errorf("could not binarize: %s", err)
-	}
-
+func NewBayes(trainData base.FixedDataGrid) *naive.BernoulliNBClassifier {
 	naiveBayes := naive.NewBernoulliNBClassifier()
-	naiveBayes.Fit(dataf)
-	return naiveBayes, nil
+	naiveBayes.Fit(trainData)
+	return naiveBayes
 }

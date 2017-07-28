@@ -15,7 +15,6 @@ package main
 import (
 	"base_def"
 	"bytes"
-	"encoding/json"
 	"flag"
 	"io"
 	"log"
@@ -358,21 +357,14 @@ func signalHandler() {
 }
 
 func getLeases() {
-	var root ap_common.PropertyNode
+	var leases *ap_common.PropertyNode
+	var err error
 
-	tree, err := config.GetProp("@/dhcp/leases")
-	if len(tree) == 0 {
-		if err != nil {
-			log.Printf("Failed to fetch lease info: %v\n", err)
-		}
-		return
+	if leases, err = config.GetProps("@/dhcp/leases"); err != nil {
+		log.Printf("Failed to get DHCP lease info: %v", err)
 	}
 
-	if err = json.Unmarshal([]byte(tree), &root); err != nil {
-		log.Printf("Failed to decode lease info: %v\n", err)
-	}
-
-	for _, s := range root.Children {
+	for _, s := range leases.Children {
 		ip := net.ParseIP(s.Name)
 		hwaddr, err := net.ParseMAC(s.Value)
 		if err != nil {

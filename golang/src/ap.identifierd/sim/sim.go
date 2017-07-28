@@ -108,10 +108,11 @@ func generateData() (*base.DenseInstances, error) {
 }
 
 func runTree(rawData *base.DenseInstances) error {
-	rawDataFilt, err := model.Discretise(rawData)
+	filt, err := model.Discretise(rawData)
 	if err != nil {
 		return fmt.Errorf("failed to discretise: %v", err)
 	}
+	rawDataFilt := base.NewLazilyFilteredInstances(rawData, filt)
 	trainData, testData := base.InstancesTrainTestSplit(rawDataFilt, *split)
 
 	id3Tree := trees.NewID3DecisionTree(0.6)
@@ -134,17 +135,14 @@ func runTree(rawData *base.DenseInstances) error {
 }
 
 func runBern(rawData *base.DenseInstances) error {
-	rawDataFilt, err := model.Binarize(rawData)
+	filt, err := model.Binarize(rawData)
 	if err != nil {
-		return fmt.Errorf("failed to binarize: %v", err)
+		return fmt.Errorf("failed to create binary filter: %v", err)
 	}
+	rawDataFilt := base.NewLazilyFilteredInstances(rawData, filt)
 	trainData, testData := base.InstancesTrainTestSplit(rawDataFilt, *split)
 
-	naiveBayes, err := model.NewBayes(trainData)
-	if err != nil {
-		return fmt.Errorf("failed to make Naive Bayes: %v", err)
-	}
-
+	naiveBayes := model.NewBayes(trainData)
 	predictions := naiveBayes.Predict(testData)
 	if err != nil {
 		return fmt.Errorf("failed to predict: %v", err)

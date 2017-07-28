@@ -245,7 +245,7 @@ func expiration_handler() {
 			next.index = -1
 			next.Expires = nil
 			expired = append(expired, next.path)
-			expiration_notify(next.path, next.Value)
+			expirationNotify(next.path, next.Value)
 		}
 
 		if len(exp_heap) > 0 {
@@ -338,12 +338,16 @@ func prop_notify(prop, val string, action base_msg.EventConfig_Type) {
 	}
 }
 
-func expiration_notify(prop, val string) {
-	prop_notify(prop, val, base_msg.EventConfig_EXPIRE)
+func updateNotify(prop, val string) {
+	prop_notify(prop, val, base_msg.EventConfig_CHANGE)
 }
 
-func update_notify(prop, val string) {
-	prop_notify(prop, val, base_msg.EventConfig_CHANGE)
+func deleteNotify(prop string) {
+	prop_notify(prop, "-", base_msg.EventConfig_DELETE)
+}
+
+func expirationNotify(prop, val string) {
+	prop_notify(prop, val, base_msg.EventConfig_EXPIRE)
 }
 
 /*
@@ -766,15 +770,16 @@ func set_handler(q *base_msg.ConfigQuery, add bool) error {
 	err := property_update(*q.Property, *q.Value, expires, add)
 	if err == nil {
 		prop_tree_store()
-		update_notify(*q.Property, *q.Value)
+		updateNotify(*q.Property, *q.Value)
 	}
 	return err
 }
 
 func delete_handler(q *base_msg.ConfigQuery) error {
 	err := property_delete(*q.Property)
-	if err != nil {
+	if err == nil {
 		prop_tree_store()
+		deleteNotify(*q.Property)
 	}
 	return err
 }

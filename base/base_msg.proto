@@ -218,6 +218,22 @@ message EventNetException {
 	optional string requestor = 0x0803;
 }
 
+// The network identity is sent whenever the identifier daemon is able to
+// identify a client device.
+// @topic "net.identity", TOPIC_IDENTITY
+// @range 0x900
+
+message EventNetIdentity {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+
+	optional fixed64 mac_address = 0x900;
+	optional string name = 0x901;
+	optional double certainty = 0x902;
+
+}
+
 // Configuration messages (0x2000 - 0x20ff)
 // XXX Types and lists?
 // Delete is not defined without a property name.
@@ -346,7 +362,7 @@ message EventNetScan {
 	optional string debug = 0x03;
 	required string scan_location = 0x1000;
 	required string start_info = 0x1001;
-	repeated Host hosts = 0x1002;	
+	repeated Host hosts = 0x1002;
 	required string summary = 0x1003;
 }
 

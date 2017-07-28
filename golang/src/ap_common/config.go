@@ -49,8 +49,9 @@ type ClassConfig struct {
 }
 
 type ClientInfo struct {
-	Class   string
-	DNSName string
+	Class    string
+	DNSName  string
+	Identity string
 }
 
 //
@@ -335,16 +336,23 @@ func (c Config) GetClients() map[string]*ClientInfo {
 
 	set := make(map[string]*ClientInfo)
 	for _, client := range props.Children {
-		var class, macaddr, dnsname string
+		var class, macaddr, dnsname, identity string
 
 		macaddr = client.Name
 		if class, err = getStringVal(client, "class"); err != nil {
-			fmt.Printf("Client %s has no class\n", macaddr)
-		} else {
-			dnsname, err = getStringVal(client, "dns")
-			c := ClientInfo{Class: class, DNSName: dnsname}
-			set[macaddr] = &c
+			log.Printf("Client %s has no class\n", macaddr)
 		}
+
+		if dnsname, err = getStringVal(client, "dns"); err != nil {
+			log.Printf("Client %s has no DNS name\n", macaddr)
+		}
+
+		if identity, err = getStringVal(client, "identity"); err != nil {
+			log.Printf("Client %s has no identity\n", macaddr)
+		}
+
+		c := ClientInfo{Class: class, DNSName: dnsname, Identity: identity}
+		set[macaddr] = &c
 	}
 
 	return set

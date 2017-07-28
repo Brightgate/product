@@ -48,8 +48,8 @@
         "Name": "identifierd",
         "Binary": "ap.identifierd",
         "DependsOn": "brokerd",
-        "Privileged": false,
-        "Options": "-datadir=$APROOT/etc"
+        "Privileged": true,
+        "Options": "-datadir=$APROOT/etc -logdir $APROOT/var/spool/identifierd"
     },
     "logd": {
         "Name": "logd",
@@ -68,7 +68,7 @@
         "Binary": "ap.scand",
         "DependsOn": "networkd",
         "Privileged": true,
-        "Options": "-scandir=$APROOT/var/spool"
+        "Options": "-scandir $APROOT/var/spool/scand"
     },
     "scand-ssdp": {
         "Name": "scand-ssdp",

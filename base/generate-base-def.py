@@ -36,7 +36,7 @@ def py3_header(v):
     return ("#!/usr/bin/python\n")
 
 def py3_comment(v):
-    if v[0] is None: 
+    if v[0] is None:
         return ("\n")
 
     return ("# %s\n" % " ".join(v))
@@ -85,7 +85,7 @@ def golang_header(v):
     return ("")
 
 def golang_comment(v):
-    if v[0] is None: 
+    if v[0] is None:
         return ("\n")
 
     return ("// %s\n" % " ".join(v))
@@ -176,7 +176,6 @@ assignments = [
     [Statement.LIST, "BROKER_ZMQ_PUB_URL", "APPLIANCE_ZMQ_URL", "+", ":3131"],
     [Statement.LIST, "BROKER_ZMQ_SUB_URL", "APPLIANCE_ZMQ_URL", "+", ":3132"],
     [Statement.LIST, "CONFIGD_ZMQ_REP_URL", "APPLIANCE_ZMQ_URL", "+", ":3140"],
-    [Statement.LIST, "IDENTIFIERD_ZMQ_REP_URL", "APPLIANCE_ZMQ_URL", "+", ":3141"],
     [Statement.LIST, "MCP_ZMQ_REP_URL", "APPLIANCE_ZMQ_URL", "+", ":5150"],
     [Statement.COMMENT, None],
     [Statement.COMMENT, "Cloud definitions"],

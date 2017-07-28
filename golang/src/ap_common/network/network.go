@@ -176,7 +176,11 @@ func Uint64ToHWAddr(a uint64) net.HardwareAddr {
 
 // IPAddrToUint32 encodes a net.IP as a uint32
 func IPAddrToUint32(a net.IP) uint32 {
-	return binary.BigEndian.Uint32(a)
+	b := a.To4()
+	if b == nil {
+		return 0
+	}
+	return binary.BigEndian.Uint32(b)
 }
 
 // Uint32ToIPAddr decodes a uint32 into a new.IP
