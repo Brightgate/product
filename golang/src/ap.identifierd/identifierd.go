@@ -41,7 +41,8 @@ import (
 	"syscall"
 	"time"
 
-	"ap_common"
+	"ap_common/apcfg"
+	"ap_common/broker"
 	"ap_common/mcp"
 	"ap_common/network"
 	"base_msg"
@@ -56,8 +57,8 @@ var (
 	dataDir = flag.String("datadir", "./", "Directory containing data files")
 	logDir  = flag.String("logdir", "./", "Directory for device learning log data")
 
-	broker ap_common.Broker
-	config *ap_common.Config
+	brokerd broker.Broker
+	apcfgd  *apcfg.APConfig
 
 	ouiDB   oui.DynamicDB
 	mfgidDB = make(map[string]int)
@@ -200,7 +201,7 @@ func identify() {
 		// Naive Bayes is more accurate. Let it set the identity property.
 		if id.Model == "Naive Bayes" {
 			prop := "@/clients/" + network.Uint64ToHWAddr(id.HwAddr).String() + "/identity"
-			config.CreateProp(prop, id.Identity, nil)
+			apcfgd.CreateProp(prop, id.Identity, nil)
 		}
 
 		t := time.Now()
@@ -209,14 +210,14 @@ func identify() {
 				Seconds: proto.Int64(t.Unix()),
 				Nanos:   proto.Int32(int32(t.Nanosecond())),
 			},
-			Sender:     proto.String(broker.Name),
+			Sender:     proto.String(brokerd.Name),
 			Debug:      proto.String("-"),
 			MacAddress: proto.Uint64(id.HwAddr),
 			Name:       proto.String(id.Identity),
 			Certainty:  proto.Float64(0),
 		}
 
-		err := broker.Publish(identity, base_def.TOPIC_IDENTITY)
+		err := brokerd.Publish(identity, base_def.TOPIC_IDENTITY)
 		if err != nil {
 			log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_IDENTITY, err)
 		}
@@ -328,15 +329,15 @@ func main() {
 
 	// Use the broker to listen for appropriate messages to create and update
 	// our observations.
-	broker.Init(pname)
-	broker.Handle(base_def.TOPIC_ENTITY, handleEntity)
-	broker.Handle(base_def.TOPIC_REQUEST, handleRequest)
-	broker.Handle(base_def.TOPIC_CONFIG, handleConfig)
-	broker.Connect()
-	defer broker.Disconnect()
-	broker.Ping()
+	brokerd.Init(pname)
+	brokerd.Handle(base_def.TOPIC_ENTITY, handleEntity)
+	brokerd.Handle(base_def.TOPIC_REQUEST, handleRequest)
+	brokerd.Handle(base_def.TOPIC_CONFIG, handleConfig)
+	brokerd.Connect()
+	defer brokerd.Disconnect()
+	brokerd.Ping()
 
-	config = ap_common.NewConfig(pname)
+	apcfgd = apcfg.NewConfig(pname)
 
 	if mcp != nil {
 		if err = mcp.SetStatus("online"); err != nil {

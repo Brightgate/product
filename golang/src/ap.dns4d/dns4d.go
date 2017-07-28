@@ -40,7 +40,8 @@ import (
 	"syscall"
 	"time"
 
-	"ap_common"
+	"ap_common/apcfg"
+	"ap_common/broker"
 	"ap_common/mcp"
 	"ap_common/network"
 	"base_def"
@@ -61,7 +62,7 @@ var (
 	tsig         = flag.String("tsig", "", "use MD5 hmac tsig: keyname:base64")
 	upstream_dns = flag.String("upstream-dns", "8.8.8.8:53",
 		"The upstream DNS server to use.")
-	broker    ap_common.Broker
+	brokerd   broker.Broker
 	phishdata *phishtank.DataSource
 
 	latencies = prometheus.NewSummary(prometheus.SummaryOpts{
@@ -227,12 +228,12 @@ func record_client(ipstr string) {
 				Seconds: proto.Int64(t.Unix()),
 				Nanos:   proto.Int32(int32(t.Nanosecond())),
 			},
-			Sender:      proto.String(broker.Name),
+			Sender:      proto.String(brokerd.Name),
 			Debug:       proto.String("-"),
 			Ipv4Address: proto.Uint32(network.IPAddrToUint32(addr)),
 		}
 
-		err := broker.Publish(entity, base_def.TOPIC_ENTITY)
+		err := brokerd.Publish(entity, base_def.TOPIC_ENTITY)
 		if err != nil {
 			log.Println(err)
 		}
@@ -362,7 +363,7 @@ func local_handler(w dns.ResponseWriter, r *dns.Msg) {
 			Seconds: proto.Int64(t.Unix()),
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
-		Sender:       proto.String(broker.Name),
+		Sender:       proto.String(brokerd.Name),
 		Debug:        proto.String("local_handler"),
 		Requestor:    proto.String(addr.String()),
 		IdentityUuid: proto.String(base_def.ZERO_UUID),
@@ -371,7 +372,7 @@ func local_handler(w dns.ResponseWriter, r *dns.Msg) {
 		Response:     responses,
 	}
 
-	err := broker.Publish(entity, base_def.TOPIC_REQUEST)
+	err := brokerd.Publish(entity, base_def.TOPIC_REQUEST)
 	if err != nil {
 		log.Println(err)
 	}
@@ -479,7 +480,7 @@ func proxy_handler(w dns.ResponseWriter, r *dns.Msg) {
 			Seconds: proto.Int64(t.Unix()),
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
-		Sender:       proto.String(broker.Name),
+		Sender:       proto.String(brokerd.Name),
 		Debug:        proto.String("proxy_handler"),
 		Requestor:    proto.String(addr.String()),
 		IdentityUuid: proto.String(base_def.ZERO_UUID),
@@ -488,7 +489,7 @@ func proxy_handler(w dns.ResponseWriter, r *dns.Msg) {
 		Response:     responses,
 	}
 
-	err := broker.Publish(entity, base_def.TOPIC_REQUEST)
+	err := brokerd.Publish(entity, base_def.TOPIC_REQUEST)
 	if err != nil {
 		log.Println(err)
 	}
@@ -497,7 +498,7 @@ func proxy_handler(w dns.ResponseWriter, r *dns.Msg) {
 func initNetwork() {
 	gw := "127.0.0.1/32"
 
-	config := ap_common.NewConfig(pname)
+	config := apcfg.NewConfig(pname)
 	if config != nil {
 		cidr, _ := config.GetProp("@/interfaces/connect/subnet")
 		if cidr != "" {
@@ -556,16 +557,16 @@ func main() {
 
 	log.Println("prometheus client launched")
 
-	broker.Init(pname)
-	broker.Handle(base_def.TOPIC_CONFIG, config_changed)
-	broker.Handle(base_def.TOPIC_RESOURCE, resource_changed)
-	broker.Connect()
-	defer broker.Disconnect()
+	brokerd.Init(pname)
+	brokerd.Handle(base_def.TOPIC_CONFIG, config_changed)
+	brokerd.Handle(base_def.TOPIC_RESOURCE, resource_changed)
+	brokerd.Connect()
+	defer brokerd.Disconnect()
 
 	log.Println("message bus listener routine launched")
 
 	time.Sleep(time.Second)
-	broker.Ping()
+	brokerd.Ping()
 
 	client_map = make(map[string]int64)
 

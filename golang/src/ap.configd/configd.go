@@ -106,7 +106,7 @@ import (
 	"time"
 	"unicode"
 
-	"ap_common"
+	"ap_common/broker"
 	"ap_common/mcp"
 	"ap_common/network"
 
@@ -173,7 +173,7 @@ var (
 	addr          = flag.String("listen-address",
 		base_def.CONFIGD_PROMETHEUS_PORT,
 		"The address to listen on for HTTP requests.")
-	broker  ap_common.Broker
+	brokerd broker.Broker
 	propdir = flag.String("propdir", "./",
 		"directory in which the property files should be stored")
 
@@ -326,13 +326,13 @@ func prop_notify(prop, val string, action base_msg.EventConfig_Type) {
 			Seconds: proto.Int64(t.Unix()),
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
-		Sender:   proto.String(broker.Name),
+		Sender:   proto.String(brokerd.Name),
 		Type:     &action,
 		Property: proto.String(prop),
 		NewValue: proto.String(val),
 	}
 
-	err := broker.Publish(entity, base_def.TOPIC_CONFIG)
+	err := brokerd.Publish(entity, base_def.TOPIC_CONFIG)
 	if err != nil {
 		log.Printf("Failed to propagate config update: %v", err)
 	}
@@ -808,11 +808,11 @@ func main() {
 	go http.ListenAndServe(*addr, nil)
 
 	// zmq setup
-	broker.Init(pname)
-	broker.Handle(base_def.TOPIC_ENTITY, entity_handler)
-	broker.Connect()
-	defer broker.Disconnect()
-	broker.Ping()
+	brokerd.Init(pname)
+	brokerd.Handle(base_def.TOPIC_ENTITY, entity_handler)
+	brokerd.Connect()
+	defer brokerd.Disconnect()
+	brokerd.Ping()
 
 	prop_tree_init()
 

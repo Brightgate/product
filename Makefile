@@ -190,8 +190,8 @@ $(DIRS):
 COMMON_SRCS = \
     $(GOSRC)/base_def/base_def.go \
     $(GOSRC)/base_msg/base_msg.pb.go \
-    $(GOSRC)/ap_common/broker.go \
-    $(GOSRC)/ap_common/config.go \
+    $(GOSRC)/ap_common/broker/broker.go \
+    $(GOSRC)/ap_common/apcfg/apcfg.go \
     $(GOSRC)/ap_common/mcp/mcp_client.go \
     $(GOSRC)/ap_common/network/network.go
 

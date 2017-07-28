@@ -26,7 +26,8 @@ import (
 	"syscall"
 	"time"
 
-	"ap_common"
+	"ap_common/apcfg"
+	"ap_common/broker"
 	"ap_common/mcp"
 	"ap_common/network"
 	"base_msg"
@@ -73,8 +74,8 @@ var (
 	capStats     = make(map[gopacket.LayerType]*layerStats)
 
 	macSelf net.HardwareAddr
-	broker  ap_common.Broker
-	config  *ap_common.Config
+	brokerd broker.Broker
+	config  *apcfg.APConfig
 )
 
 const pname = "ap.sampled"
@@ -331,13 +332,13 @@ func auditor() {
 						Seconds: proto.Int64(t.Unix()),
 						Nanos:   proto.Int32(int32(t.Nanosecond())),
 					},
-					Sender:      proto.String(broker.Name),
+					Sender:      proto.String(brokerd.Name),
 					Debug:       proto.String("-"),
 					MacAddress:  proto.Uint64(network.HWAddrToUint64(hwaddr)),
 					Ipv4Address: proto.Uint32(network.IPAddrToUint32(r.ipaddr)),
 				}
 
-				err := broker.Publish(entity, base_def.TOPIC_ENTITY)
+				err := brokerd.Publish(entity, base_def.TOPIC_ENTITY)
 				if err != nil {
 					log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_ENTITY, err)
 				}
@@ -357,7 +358,7 @@ func signalHandler() {
 }
 
 func getLeases() {
-	var leases *ap_common.PropertyNode
+	var leases *apcfg.PropertyNode
 	var err error
 
 	if leases, err = config.GetProps("@/dhcp/leases"); err != nil {
@@ -391,7 +392,7 @@ func main() {
 	}
 
 	// Interface to configd
-	config = ap_common.NewConfig(pname)
+	config = apcfg.NewConfig(pname)
 
 	iface := *cli_iface
 	if len(iface) == 0 {
@@ -409,11 +410,11 @@ func main() {
 
 	getLeases()
 
-	broker.Init(pname)
-	broker.Connect()
-	broker.Handle(base_def.TOPIC_CONFIG, configChanged)
-	defer broker.Disconnect()
-	broker.Ping()
+	brokerd.Init(pname)
+	brokerd.Connect()
+	brokerd.Handle(base_def.TOPIC_CONFIG, configChanged)
+	defer brokerd.Disconnect()
+	brokerd.Ping()
 
 	// These are the layers we wish to decode
 	decode := make([]gopacket.DecodingLayer, idxMAX)

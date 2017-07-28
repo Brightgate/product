@@ -21,7 +21,7 @@ import (
 	"strconv"
 	"time"
 
-	"ap_common"
+	"ap_common/apcfg"
 )
 
 var (
@@ -29,13 +29,13 @@ var (
 	set_value = flag.Bool("set", false, "Set one property to the given value")
 	add_prop  = flag.Bool("add", false, "Add new property")
 	del_prop  = flag.Bool("del", false, "Delete a property")
-	config    *ap_common.Config
+	apcfgd    *apcfg.APConfig
 )
 
 func main() {
 	flag.Parse()
 
-	config = ap_common.NewConfig("ap-configctl")
+	apcfgd = apcfg.NewConfig("ap-configctl")
 
 	//  Ensure subscriber connection has time to complete
 	time.Sleep(time.Millisecond * 50)
@@ -54,10 +54,10 @@ func main() {
 
 		if *set_value {
 			op = "set"
-			f = config.SetProp
+			f = apcfgd.SetProp
 		} else {
 			op = "create"
-			f = config.CreateProp
+			f = apcfgd.CreateProp
 		}
 
 		val := flag.Arg(1)
@@ -82,7 +82,7 @@ func main() {
 		fmt.Printf("%s: %v=%v\n", op, prop, val)
 	} else if *get_value {
 		for _, arg := range flag.Args() {
-			root, err := config.GetProps(arg)
+			root, err := apcfgd.GetProps(arg)
 			if err != nil {
 				fmt.Printf("property get failed: %v\n", err)
 				os.Exit(1)
@@ -90,7 +90,7 @@ func main() {
 			root.DumpTree()
 		}
 	} else if *del_prop {
-		err := config.DeleteProp(prop)
+		err := apcfgd.DeleteProp(prop)
 		if err != nil {
 			fmt.Printf("property get failed: %v\n", err)
 			os.Exit(1)

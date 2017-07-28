@@ -47,7 +47,8 @@ import (
 	"text/template"
 	"time"
 
-	"ap_common"
+	"ap_common/apcfg"
+	"ap_common/broker"
 	"ap_common/mcp"
 	"ap_common/network"
 
@@ -66,17 +67,17 @@ var (
 
 	aps        = make(map[string]*APConfig)
 	interfaces = make(map[string]*iface)
-	devices    = make(map[string]*device)        // physical network devices
-	clients    map[string]*ap_common.ClientInfo  // macaddr -> ClientInfo
-	classes    map[string]*ap_common.ClassConfig // class -> config
-	subnets    map[string]string                 // iface -> subnet
+	devices    = make(map[string]*device)    // physical network devices
+	clients    map[string]*apcfg.ClientInfo  // macaddr -> ClientInfo
+	classes    map[string]*apcfg.ClassConfig // class -> config
+	subnets    map[string]string             // iface -> subnet
 
 	activeWifi   *device     // live wireless iface
 	connectWifi  string      // open "network connect" interface
 	activeWan    *device     // WAN port
 	activeWired  string      // wired bridge
 	childProcess *os.Process // track the hostapd proc
-	config       *ap_common.Config
+	config       *apcfg.APConfig
 	mcpPort      *mcp.MCP
 	running      bool
 )
@@ -141,10 +142,10 @@ type APConfig struct {
 // Interaction with the rest of the ap daemons
 //
 
-func config_changed(event []byte) {
-	config := &base_msg.EventConfig{}
-	proto.Unmarshal(event, config)
-	property := *config.Property
+func config_changed(raw []byte) {
+	event := &base_msg.EventConfig{}
+	proto.Unmarshal(raw, event)
+	property := *event.Property
 	path := strings.Split(property[2:], "/")
 
 	reset := false
@@ -161,13 +162,13 @@ func config_changed(event []byte) {
 		rewrite = true
 		reset = true
 
-		newClass := *config.NewValue
+		newClass := *event.NewValue
 		if c, ok := clients[hwaddr]; ok {
 			fmt.Printf("Moving %s from %s to %s\n", hwaddr, c.Class,
 				newClass)
 			c.Class = newClass
 		} else {
-			c := ap_common.ClientInfo{Class: newClass}
+			c := apcfg.ClientInfo{Class: newClass}
 			fmt.Printf("New client %s in %s\n", hwaddr, newClass)
 			clients[hwaddr] = &c
 		}
@@ -177,17 +178,17 @@ func config_changed(event []byte) {
 	if len(path) == 2 && path[0] == "network" {
 		switch path[1] {
 		case "ssid":
-			conf.SSID = *config.NewValue
+			conf.SSID = *event.NewValue
 			rewrite = true
 			fullReset = true
 
 		case "passphrase":
-			conf.Passphrase = *config.NewValue
+			conf.Passphrase = *event.NewValue
 			rewrite = true
 			fullReset = true
 
 		case "connectssid":
-			conf.ConnectSSID = *config.NewValue
+			conf.ConnectSSID = *event.NewValue
 			rewrite = true
 			fullReset = true
 
@@ -238,10 +239,10 @@ func getSubnetConfig() string {
 //
 // Get network settings from configd and use them to initialize the AP
 //
-func getAPConfig(d *device, props *ap_common.PropertyNode) {
+func getAPConfig(d *device, props *apcfg.PropertyNode) {
 	var ssid, passphrase, connectSSID string
 	var vlanComment, connectComment string
-	var node *ap_common.PropertyNode
+	var node *apcfg.PropertyNode
 
 	if node = props.GetChild("ssid"); node == nil {
 		log.Fatalf("No SSID configured\n")
@@ -695,7 +696,7 @@ func prepareWired() {
 // Choose a wifi NIC to host our wireless clients, and build a list of the
 // wireless interfaces we'll be supporting
 //
-func prepareWireless(props *ap_common.PropertyNode) {
+func prepareWireless(props *apcfg.PropertyNode) {
 	for _, dev := range devices {
 		if dev.wireless {
 			getAPConfig(dev, props)
@@ -829,7 +830,7 @@ func getDevices() {
 	}
 }
 
-func updateNetworkProp(props *ap_common.PropertyNode, prop, new string) {
+func updateNetworkProp(props *apcfg.PropertyNode, prop, new string) {
 	old := ""
 	if node := props.GetChild(prop); node != nil {
 		old = node.GetValue()
@@ -847,7 +848,7 @@ func updateNetworkProp(props *ap_common.PropertyNode, prop, new string) {
 // If our device inventory caused us to change any of the old network choices,
 // update the config now.
 //
-func updateNetworkConfig(props *ap_common.PropertyNode) {
+func updateNetworkConfig(props *apcfg.PropertyNode) {
 	updateNetworkProp(props, "wifi_nic", activeWifi.name)
 	updateNetworkProp(props, "connect_nic", connectWifi)
 	updateNetworkProp(props, "wired_nic", activeWired)
@@ -860,7 +861,7 @@ func updateNetworkConfig(props *ap_common.PropertyNode) {
 }
 
 func main() {
-	var b ap_common.Broker
+	var b broker.Broker
 	var err error
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
@@ -884,7 +885,7 @@ func main() {
 	b.Connect()
 	defer b.Disconnect()
 
-	config = ap_common.NewConfig(pname)
+	config = apcfg.NewConfig(pname)
 	subnets = config.GetSubnets()
 	classes = config.GetClasses()
 	clients = config.GetClients()

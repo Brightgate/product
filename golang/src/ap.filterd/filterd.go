@@ -64,7 +64,8 @@ import (
 	"strings"
 	"syscall"
 
-	"ap_common"
+	"ap_common/apcfg"
+	"ap_common/broker"
 	"ap_common/mcp"
 	"ap_common/network"
 
@@ -80,10 +81,10 @@ var (
 		"The address to listen on for HTTP requests.")
 	rulesDir = flag.String("rdir", "./", "Location of the filter rules")
 
-	config *ap_common.Config
+	config *apcfg.APConfig
 
 	interfaces map[string]*iface
-	nics       []*ap_common.Nic
+	nics       []*apcfg.Nic
 	useVLANs   bool
 
 	rules   []*Rule
@@ -187,7 +188,7 @@ func iptablesAddRule(table, chain, rule string) {
 // Build the core routing rules for a single managed subnet
 //
 func ifaceForwardRules(iface *iface) {
-	wan := nics[ap_common.N_WAN]
+	wan := nics[apcfg.N_WAN]
 	if wan == nil {
 		return
 	}
@@ -255,16 +256,16 @@ func genEndpointIface(e *Endpoint, src bool) (string, error) {
 		d = "-o"
 	}
 
-	var nic *ap_common.Nic
+	var nic *apcfg.Nic
 	switch e.detail {
 	case "wan":
-		nic = nics[ap_common.N_WAN]
+		nic = nics[apcfg.N_WAN]
 	case "wifi":
-		nic = nics[ap_common.N_WIFI]
+		nic = nics[apcfg.N_WIFI]
 	case "wired":
-		nic = nics[ap_common.N_WIRED]
+		nic = nics[apcfg.N_WIRED]
 	case "connect":
-		nic = nics[ap_common.N_CONNECT]
+		nic = nics[apcfg.N_CONNECT]
 	}
 	if nic != nil {
 		name = nic.Iface
@@ -537,7 +538,7 @@ func initNetwork() {
 		}
 
 		if logical == "wifi" {
-			if nic := nics[ap_common.N_WIFI]; nic != nil {
+			if nic := nics[apcfg.N_WIFI]; nic != nil {
 				name = nic.Iface
 			} else {
 				log.Printf("No wifi network available\n")
@@ -547,7 +548,7 @@ func initNetwork() {
 				subnet = wifiSubnet
 			}
 		} else if logical == "connect" {
-			if nic := nics[ap_common.N_CONNECT]; nic != nil {
+			if nic := nics[apcfg.N_CONNECT]; nic != nil {
 				name = nic.Iface
 			} else {
 				log.Printf("No connect network available\n")
@@ -598,7 +599,7 @@ func loadRules() error {
 }
 
 func main() {
-	var b ap_common.Broker
+	var b broker.Broker
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
@@ -624,7 +625,7 @@ func main() {
 	b.Connect()
 	defer b.Disconnect()
 
-	config = ap_common.NewConfig(pname)
+	config = apcfg.NewConfig(pname)
 
 	if mcp != nil {
 		mcp.SetStatus("online")

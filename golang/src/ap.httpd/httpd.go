@@ -31,7 +31,8 @@ import (
 	"syscall"
 	"time"
 
-	"ap_common"
+	"ap_common/apcfg"
+	"ap_common/broker"
 	"ap_common/mcp"
 	"ap_common/network"
 	"base_def"
@@ -63,7 +64,7 @@ var (
 	statsTemplate *template.Template
 
 	mcpp   *mcp.MCP
-	config *ap_common.Config
+	config *apcfg.APConfig
 )
 
 var latencies = prometheus.NewSummary(prometheus.SummaryOpts{
@@ -407,7 +408,7 @@ func init() {
 
 func main() {
 	var err error
-	var b ap_common.Broker
+	var b broker.Broker
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	flag.Var(ports, "http-ports", "The ports to listen on for HTTP requests.")
@@ -440,7 +441,7 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
-	config = ap_common.NewConfig(pname)
+	config = apcfg.NewConfig(pname)
 
 	phishdata.Loader("online-valid-test.csv")
 	// phishdata.AutoLoader("online-valid.csv", time.Hour)

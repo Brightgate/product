@@ -27,7 +27,8 @@ import (
 	"syscall"
 	"time"
 
-	"ap_common"
+	"ap_common/apcfg"
+	"ap_common/broker"
 	"ap_common/mcp"
 	"ap_common/network"
 	"base_def"
@@ -41,8 +42,8 @@ import (
 
 var (
 	activeHosts map[string]struct{}
-	broker      ap_common.Broker
-	config      *ap_common.Config
+	brokerd     broker.Broker
+	config      *apcfg.APConfig
 	scanQueue   chan ScanRequest
 	quit        chan string
 
@@ -432,7 +433,7 @@ func portScan(ip string, nmapArgs string, filename string) {
 			Seconds: proto.Int64(t.Unix()),
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
-		Sender:       proto.String(broker.Name),
+		Sender:       proto.String(brokerd.Name),
 		Debug:        proto.String("-"),
 		ScanLocation: proto.String(file),
 		StartInfo:    proto.String(start),
@@ -440,7 +441,7 @@ func portScan(ip string, nmapArgs string, filename string) {
 		Summary:      proto.String(scanResults.RunStats.Finished.Summary),
 	}
 
-	err = broker.Publish(scan, base_def.TOPIC_SCAN)
+	err = brokerd.Publish(scan, base_def.TOPIC_SCAN)
 	if err != nil {
 		log.Printf("Error sending scan: %v\n", err)
 	}
@@ -525,7 +526,7 @@ func cleanAll() {
 }
 
 // echo echos back a recieved EventNetScan.
-// Add broker.Handle(base_def.TOPIC_SCAN, echo) in main to run.
+// Add brokerd.Handle(base_def.TOPIC_SCAN, echo) in main to run.
 func echo(event []byte) {
 	scan := &base_msg.EventNetScan{}
 	proto.Unmarshal(event, scan)
@@ -564,11 +565,11 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
-	config = ap_common.NewConfig(pname)
-	broker.Init(pname)
-	broker.Connect()
-	defer broker.Disconnect()
-	broker.Ping()
+	config = apcfg.NewConfig(pname)
+	brokerd.Init(pname)
+	brokerd.Connect()
+	defer brokerd.Disconnect()
+	brokerd.Ping()
 	if mcp != nil {
 		if err = mcp.SetStatus("online"); err != nil {
 			log.Printf("failed to set status\n")

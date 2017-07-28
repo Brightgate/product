@@ -8,7 +8,7 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 
-package ap_common
+package apcfg
 
 import (
 	"encoding/json"
@@ -119,7 +119,7 @@ func (n *PropertyNode) GetValue() string {
 }
 
 // Opaque type representing a connection to ap.configd
-type Config struct {
+type APConfig struct {
 	mutex  sync.Mutex
 	socket *zmq.Socket
 	sender string
@@ -127,15 +127,15 @@ type Config struct {
 
 // Connect to ap.configd.  Return a handle used for subsequent interactions with
 // the daemon
-func NewConfig(name string) *Config {
+func NewConfig(name string) *APConfig {
 	sender := fmt.Sprintf("%s(%d)", name, os.Getpid())
 	socket, _ := zmq.NewSocket(zmq.REQ)
 	socket.Connect(base_def.CONFIGD_ZMQ_REP_URL)
 
-	return &Config{sender: sender, socket: socket}
+	return &APConfig{sender: sender, socket: socket}
 }
 
-func (c *Config) msg(oc base_msg.ConfigQuery_Operation, prop, val string,
+func (c *APConfig) msg(oc base_msg.ConfigQuery_Operation, prop, val string,
 	expires *time.Time) (string, error) {
 	t := time.Now()
 	query := &base_msg.ConfigQuery{
@@ -186,7 +186,7 @@ func (c *Config) msg(oc base_msg.ConfigQuery_Operation, prop, val string,
 
 // Retrieves the properties subtree rooted at the given property, and returns a
 // PropertyNode representing the root of that subtree
-func (c Config) GetProps(prop string) (*PropertyNode, error) {
+func (c APConfig) GetProps(prop string) (*PropertyNode, error) {
 	var root PropertyNode
 	var err error
 
@@ -203,7 +203,7 @@ func (c Config) GetProps(prop string) (*PropertyNode, error) {
 }
 
 // Retrieves a single property from the tree, returning it as a String
-func (c Config) GetProp(prop string) (string, error) {
+func (c APConfig) GetProp(prop string) (string, error) {
 	var rval string
 
 	root, err := c.GetProps(prop)
@@ -216,7 +216,7 @@ func (c Config) GetProp(prop string) (string, error) {
 
 // Updates a single property, taking an optional expiration time.  If the
 // property doesn't already exist, an error is returned.
-func (c Config) SetProp(prop, val string, expires *time.Time) error {
+func (c APConfig) SetProp(prop, val string, expires *time.Time) error {
 	_, err := c.msg(base_msg.ConfigQuery_SET, prop, val, expires)
 
 	return err
@@ -225,14 +225,14 @@ func (c Config) SetProp(prop, val string, expires *time.Time) error {
 // Updates a single property, taking an optional expiration time.  If the
 // property doesn't already exist, it is created - as well as any parent
 // properties needed to provide a path through the tree.
-func (c Config) CreateProp(prop, val string, expires *time.Time) error {
+func (c APConfig) CreateProp(prop, val string, expires *time.Time) error {
 	_, err := c.msg(base_msg.ConfigQuery_CREATE, prop, val, expires)
 
 	return err
 }
 
 // Deletes a property, or property subtree
-func (c Config) DeleteProp(prop string) error {
+func (c APConfig) DeleteProp(prop string) error {
 	_, err := c.msg(base_msg.ConfigQuery_DELETE, prop, "-", nil)
 
 	return err
@@ -277,7 +277,7 @@ func getIntVal(root *PropertyNode, name string) (int, error) {
 
 //
 // Fetch the Classes subtree and return a Class -> ClassConfig map
-func (c Config) GetClasses() map[string]*ClassConfig {
+func (c APConfig) GetClasses() map[string]*ClassConfig {
 	props, err := c.GetProps("@/classes")
 	if err != nil {
 		log.Printf("Failed to get class list: %v", err)
@@ -305,7 +305,7 @@ func (c Config) GetClasses() map[string]*ClassConfig {
 
 //
 // Fetch the interfaces subtree, and return a map of Interface -> subnet
-func (c Config) GetSubnets() map[string]string {
+func (c APConfig) GetSubnets() map[string]string {
 	props, err := c.GetProps("@/interfaces")
 	if err != nil {
 		log.Printf("Failed to get interfaces list: %v", err)
@@ -327,7 +327,7 @@ func (c Config) GetSubnets() map[string]string {
 
 //
 // Fetch the Clients subtree, and return a map of macaddr -> ClientInfo
-func (c Config) GetClients() map[string]*ClientInfo {
+func (c APConfig) GetClients() map[string]*ClientInfo {
 	props, err := c.GetProps("@/clients")
 	if err != nil {
 		log.Printf("Failed to get clients list: %v", err)
@@ -381,7 +381,7 @@ func getNic(props *PropertyNode, name string) *Nic {
 }
 
 // GetLogicalNics returns a map of logical->physical nics currently configured
-func (c Config) GetLogicalNics() ([]*Nic, error) {
+func (c APConfig) GetLogicalNics() ([]*Nic, error) {
 	var nics []*Nic
 
 	props, err := c.GetProps("@/network")

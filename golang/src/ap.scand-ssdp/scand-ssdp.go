@@ -23,7 +23,8 @@ import (
 	"syscall"
 	"time"
 
-	"ap_common"
+	"ap_common/apcfg"
+	"ap_common/broker"
 	"ap_common/mcp"
 	"base_def"
 	"base_msg"
@@ -35,9 +36,9 @@ import (
 var (
 	addr = flag.String("prom_address", base_def.SCAND_SSDP_PROMETHEUS_PORT,
 		"The address to listen on for Prometheus HTTP requests.")
-	broker ap_common.Broker
-	config *ap_common.Config
-	pname  = "ap.scand-ssdp"
+	brokerd broker.Broker
+	config  *apcfg.APConfig
+	pname   = "ap.scand-ssdp"
 )
 
 // listen listens on conn for UDP packets, and documents them.
@@ -75,7 +76,7 @@ func document(addr *net.UDPAddr, rs []byte) {
 		Seconds: proto.Int64(t.Unix()),
 		Nanos:   proto.Int32(int32(t.Nanosecond())),
 	}
-	msg.Sender = proto.String(broker.Name)
+	msg.Sender = proto.String(brokerd.Name)
 	msg.Debug = proto.String("-")
 
 	msg.Address = proto.String(addr.String())
@@ -105,14 +106,14 @@ func document(addr *net.UDPAddr, rs []byte) {
 	}
 	msg.ExtraHeaders = hs
 
-	err = broker.Publish(msg, base_def.TOPIC_SCAN_SSDP)
+	err = brokerd.Publish(msg, base_def.TOPIC_SCAN_SSDP)
 	if err != nil {
 		log.Printf("Error sending scan: %v\n", err)
 	}
 }
 
 // echo echos back a recieved EventNetScan.
-// Add broker.Handle(base_def.TOPIC_SCAN_SSDP, echo) in main to run.
+// Add brokerd.Handle(base_def.TOPIC_SCAN_SSDP, echo) in main to run.
 func echo(event []byte) {
 	msg := &base_msg.EventSSDP{}
 	proto.Unmarshal(event, msg)
@@ -131,12 +132,12 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
-	config = ap_common.NewConfig(pname)
+	config = apcfg.NewConfig(pname)
 
-	broker.Init(pname)
-	broker.Connect()
-	defer broker.Disconnect()
-	broker.Ping()
+	brokerd.Init(pname)
+	brokerd.Connect()
+	defer brokerd.Disconnect()
+	brokerd.Ping()
 
 	if mcp != nil {
 		if err = mcp.SetStatus("online"); err != nil {

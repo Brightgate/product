@@ -25,7 +25,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"ap_common"
+	"ap_common/broker"
 	"ap_common/mcp"
 	"base_def"
 	"base_msg"
@@ -80,7 +80,7 @@ func handle_identity(event []byte) {
 }
 
 func main() {
-	var b ap_common.Broker
+	var b broker.Broker
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 

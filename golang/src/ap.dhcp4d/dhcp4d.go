@@ -27,7 +27,8 @@ import (
 	"sync"
 	"time"
 
-	"ap_common"
+	"ap_common/apcfg"
+	"ap_common/broker"
 	"ap_common/mcp"
 	"ap_common/network"
 	"base_def"
@@ -48,10 +49,10 @@ var (
 	handlers       = make(map[string]*DHCPHandler)
 	clientClass    = make(map[string]string)
 	clientClassMtx sync.Mutex
-	broker         ap_common.Broker
-	config         *ap_common.Config
+	brokerd        broker.Broker
+	config         *apcfg.APConfig
 
-	nics         []*ap_common.Nic
+	nics         []*apcfg.Nic
 	use_vlans    bool
 	sharedRouter net.IP     // without vlans, all classes share a
 	sharedSubnet *net.IPNet // subnet and a router node
@@ -115,29 +116,29 @@ func configChanged(path []string, val string) {
 		old := getClass(client)
 		if (old != val) && updateClass(client, old, val) {
 			if old == "" {
-				log.Printf("configd reports new client %s is %s\n",
+				log.Printf("config reports new client %s is %s\n",
 					client, val)
 			} else {
-				log.Printf("configd moves client %s from %s to  %s\n",
+				log.Printf("config moves client %s from %s to  %s\n",
 					client, old, val)
 			}
 		}
 	}
 }
 
-func config_event(event []byte) {
-	config := &base_msg.EventConfig{}
-	proto.Unmarshal(event, config)
+func config_event(raw []byte) {
+	event := &base_msg.EventConfig{}
+	proto.Unmarshal(raw, event)
 
 	// Ignore messages without an explicit type
-	if config.Type == nil {
+	if event.Type == nil {
 		return
 	}
 
-	etype := *config.Type
-	property := *config.Property
+	etype := *event.Type
+	property := *event.Property
 	path := strings.Split(property[2:], "/")
-	value := *config.NewValue
+	value := *event.NewValue
 
 	switch etype {
 	case base_msg.EventConfig_EXPIRE:
@@ -168,7 +169,7 @@ func notifyNewEntity(p dhcp.Packet, options dhcp.Options, class string) {
 			Seconds: proto.Int64(t.Unix()),
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
-		Sender:      proto.String(broker.Name),
+		Sender:      proto.String(brokerd.Name),
 		Debug:       proto.String("-"),
 		MacAddress:  proto.Uint64(hwaddr_u64),
 		Ipv4Address: proto.Uint32(network.IPAddrToUint32(ipaddr)),
@@ -176,7 +177,7 @@ func notifyNewEntity(p dhcp.Packet, options dhcp.Options, class string) {
 		Class:       proto.String(class),
 	}
 
-	err := broker.Publish(entity, base_def.TOPIC_ENTITY)
+	err := brokerd.Publish(entity, base_def.TOPIC_ENTITY)
 	if err != nil {
 		log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_ENTITY, err)
 	}
@@ -194,14 +195,14 @@ func notifyClaimed(p dhcp.Packet, ipaddr net.IP, name string) {
 			Seconds: proto.Int64(t.Unix()),
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
-		Sender:      proto.String(broker.Name),
+		Sender:      proto.String(brokerd.Name),
 		Debug:       proto.String("-"),
 		Action:      &action,
 		Ipv4Address: proto.Uint32(network.IPAddrToUint32(ipaddr)),
 		DnsName:     proto.String(name),
 	}
 
-	err := broker.Publish(resource, base_def.TOPIC_RESOURCE)
+	err := brokerd.Publish(resource, base_def.TOPIC_RESOURCE)
 	if err != nil {
 		log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_RESOURCE, err)
 	}
@@ -220,13 +221,13 @@ func notifyProvisioned(p dhcp.Packet, ipaddr net.IP) {
 			Seconds: proto.Int64(t.Unix()),
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
-		Sender:      proto.String(broker.Name),
+		Sender:      proto.String(brokerd.Name),
 		Debug:       proto.String("-"),
 		Action:      &action,
 		Ipv4Address: proto.Uint32(network.IPAddrToUint32(ipaddr)),
 	}
 
-	err := broker.Publish(resource, base_def.TOPIC_RESOURCE)
+	err := brokerd.Publish(resource, base_def.TOPIC_RESOURCE)
 	if err != nil {
 		log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_RESOURCE, err)
 	}
@@ -244,13 +245,13 @@ func notifyRelease(ipaddr net.IP) {
 			Seconds: proto.Int64(t.Unix()),
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
-		Sender:      proto.String(broker.Name),
+		Sender:      proto.String(brokerd.Name),
 		Debug:       proto.String("-"),
 		Action:      &action,
 		Ipv4Address: proto.Uint32(network.IPAddrToUint32(ipaddr)),
 	}
 
-	err := broker.Publish(resource, base_def.TOPIC_RESOURCE)
+	err := brokerd.Publish(resource, base_def.TOPIC_RESOURCE)
 	if err != nil {
 		log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_RESOURCE, err)
 	}
@@ -375,7 +376,7 @@ func (h *DHCPHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 
 	/*
 	 * XXX: currently a lease is a single property, which means we will lose
-	 * any hostname on restart.  When ap.configd is augmented to accept
+	 * any hostname on restart.  When ap.config is augmented to accept
 	 * property trees, we can fix this.
 	 */
 	log.Printf("   REQUEST assigned %s to %s (%q) until %s\n", l.ipaddr, hwaddr, l.name, l.expires)
@@ -444,12 +445,12 @@ func selectClassHandler(p dhcp.Packet, options dhcp.Options) *DHCPHandler {
 	hwaddr := p.CHAddr().String()
 
 	oldClass := getClass(hwaddr)
-	if lastRequestOn == ap_common.N_CONNECT {
+	if lastRequestOn == apcfg.N_CONNECT {
 		// All clients connecting on the open port are treated as new -
 		// even if we've previously recognized them on the protected
 		// network.
 		setClass(hwaddr, "unauthorized")
-	} else if lastRequestOn == ap_common.N_WIFI {
+	} else if lastRequestOn == apcfg.N_WIFI {
 		if oldClass == "" || oldClass == "unauthorized" {
 			updateClass(hwaddr, oldClass, "unclassified")
 		}
@@ -618,7 +619,7 @@ func newHandler(class, network, nameserver string, duration int) *DHCPHandler {
 	return &h
 }
 
-func (h *DHCPHandler) recoverLeases(root *ap_common.PropertyNode) {
+func (h *DHCPHandler) recoverLeases(root *apcfg.PropertyNode) {
 	// Preemptively pull the network and DHCP server from the pool
 	h.leases[0].assigned = true
 	h.leases[1].assigned = true
@@ -640,7 +641,7 @@ func (h *DHCPHandler) recoverLeases(root *ap_common.PropertyNode) {
 	}
 }
 
-func initPhysical(props *ap_common.PropertyNode) error {
+func initPhysical(props *apcfg.PropertyNode) error {
 	var err error
 
 	nics, err = config.GetLogicalNics()
@@ -672,7 +673,7 @@ func initPhysical(props *ap_common.PropertyNode) error {
 func initHandlers() error {
 	var err error
 	var nameserver string
-	var props, leases, node *ap_common.PropertyNode
+	var props, leases, node *apcfg.PropertyNode
 
 	/*
 	 * Currently assumes a single interface/dhcp configuration.  If we want
@@ -702,7 +703,7 @@ func initHandlers() error {
 	classes := config.GetClasses()
 	subnets := config.GetSubnets()
 	for name, class := range classes {
-		var nic *ap_common.Nic
+		var nic *apcfg.Nic
 
 		subnet, ok := subnets[class.Interface]
 		if !ok {
@@ -711,13 +712,13 @@ func initHandlers() error {
 		}
 		h := newHandler(name, subnet, nameserver, class.LeaseDuration)
 		if class.Interface == "wifi" {
-			if nic = nics[ap_common.N_WIFI]; nic == nil {
+			if nic = nics[apcfg.N_WIFI]; nic == nil {
 				log.Printf("No Wifi NIC available\n")
 				continue
 			}
 			h.iface = nic.Iface
 		} else if class.Interface == "connect" {
-			if nic = nics[ap_common.N_CONNECT]; nic == nil {
+			if nic = nics[apcfg.N_CONNECT]; nic == nil {
 				log.Printf("No Connect-net NIC available\n")
 				continue
 			}
@@ -754,11 +755,11 @@ func (s *MultiConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 		}
 	}
 
-	lastRequestOn = ap_common.N_WIRED
+	lastRequestOn = apcfg.N_WIRED
 	for i, nic := range nics {
 		if nic != nil && nic.Mac == requestMac {
 			lastRequestOn = i
-			if i == ap_common.N_WAN {
+			if i == apcfg.N_WAN {
 				// If the request arrives on the WAN port, drop it.
 				n = 0
 			}
@@ -838,14 +839,14 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
-	broker.Init(pname)
-	broker.Handle(base_def.TOPIC_CONFIG, config_event)
-	broker.Connect()
-	defer broker.Disconnect()
-	broker.Ping()
+	brokerd.Init(pname)
+	brokerd.Handle(base_def.TOPIC_CONFIG, config_event)
+	brokerd.Connect()
+	defer brokerd.Disconnect()
+	brokerd.Ping()
 
-	// Interface to configd
-	config = ap_common.NewConfig(pname)
+	// Interface to config
+	config = apcfg.NewConfig(pname)
 	initClientMap()
 
 	err = initHandlers()

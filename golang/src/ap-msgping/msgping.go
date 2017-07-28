@@ -14,11 +14,11 @@ import (
 	"log"
 	"time"
 
-	"ap_common"
+	"ap_common/broker"
 )
 
 func main() {
-	var b ap_common.Broker
+	var b broker.Broker
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
