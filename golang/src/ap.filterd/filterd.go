@@ -481,6 +481,9 @@ func iptablesRebuild() {
 	iptablesAddRule("filter", "FORWARD",
 		" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT")
 
+	iptablesAddRule("filter", "INPUT",
+		" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT")
+
 	// Add the basic routing rules for each interface
 	for _, i := range interfaces {
 		if i.class != "unauthorized" {
@@ -583,7 +586,7 @@ func loadRules() error {
 
 	for _, dent := range dents {
 		name := dent.Name()
-		if !strings.HasSuffix(name, ".rule") {
+		if !strings.HasSuffix(name, ".rules") {
 			continue
 		}
 
