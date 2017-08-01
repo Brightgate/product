@@ -55,7 +55,8 @@
         "Name": "logd",
         "Binary": "ap.logd",
         "DependsOn": "brokerd",
-        "Privileged": false
+        "Privileged": true,
+        "Options": "-logdir=$APROOT/var/spool/logd"
     },
     "sampled": {
         "Name": "sampled",

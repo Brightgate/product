@@ -100,7 +100,7 @@ elif [[ $1 == networkd ]]; then
 elif [[ $1 == httpd ]]; then
 	sudobinrun ap.httpd --ssldir $ssl
 elif [[ $1 == logd ]]; then
-	binrun ap.logd
+	sudobinrun ap.logd --logdir $spool/logd
 elif [[ $1 == prometheus ]]; then
 	binrun prometheus -config.file=$etc/prometheus.yml -storage.local.path="$var/prometheus-data"
 elif [[ $1 == sampled ]]; then
@@ -121,7 +121,7 @@ elif [[ $1 == "start-world" ]]; then
 	binrun prometheus -config.file=$etc/prometheus.yml \
 	    -storage.local.path="$var/prometheus-data" &
 	sleep 3
-	binrun ap.logd &
+	sudobinrun ap.logd --logdir $spool/logd &
 	binrun ap.configd --propdir $etc &
 	sleep 3
 	sudobinrun ap.networkd &
