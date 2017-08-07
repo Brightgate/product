@@ -82,6 +82,10 @@ endif
 
 GOSRC=golang/src
 
+GITHASH=$(shell git describe --always --long --dirty)
+$(info GITHASH $(GITHASH))
+VERFLAGS=-ldflags="-X main.ApVersion=$(GITHASH)"
+
 APPBASE=$(ROOT)/opt/com.brightgate
 APPBIN=$(APPBASE)/bin
 APPDOC=$(APPBASE)/share/doc
@@ -202,10 +206,11 @@ $(APPBINARIES): $(COMMON_SRCS) .gotten
 	touch $@
 
 $(APPBIN)/%:
-	cd $(APPBIN) && $(GO) build $*
+	cd $(APPBIN) && $(GO) build $(VERFLAGS) $*
 
 $(APPBIN)/ap.brokerd: $(GOSRC)/ap.brokerd/brokerd.go
-$(APPBIN)/ap.configd: $(GOSRC)/ap.configd/configd.go
+$(APPBIN)/ap.configd: $(GOSRC)/ap.configd/configd.go \
+	$(GOSRC)/ap.configd/upgrade_v1.go
 $(APPBIN)/ap.dhcp4d: $(GOSRC)/ap.dhcp4d/dhcp4d.go
 $(APPBIN)/ap.dns4d: $(GOSRC)/ap.dns4d/dns4d.go golang/src/data/phishtank/phishtank.go
 $(APPBIN)/ap.filterd: $(GOSRC)/ap.filterd/filterd.go $(GOSRC)/ap.filterd/parse.go

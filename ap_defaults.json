@@ -6,6 +6,14 @@
             "Value": "00000000-0000-0000-0000-000000000000"
         },
         {
+            "Name": "cfgversion",
+            "Value": "1"
+        },
+        {
+            "Name": "apversion",
+            "Value": "0"
+        },
+        {
             "Name": "dhcp",
             "Children": [
                 {

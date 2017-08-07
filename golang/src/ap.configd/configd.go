@@ -127,6 +127,9 @@ const (
 	backup_filename   = "ap_props.json.bak"
 	default_filename  = "ap_defaults.json"
 	pname             = "ap.configd"
+
+	minConfigVersion = 0
+	curConfigVersion = 1
 )
 
 type property_ops struct {
@@ -156,6 +159,7 @@ var property_match_table = []property_match{
 type pnode struct {
 	Name     string
 	Value    string     `json:"Value,omitempty"`
+	Modified *time.Time `json:"Modified,omitempty"`
 	Expires  *time.Time `json:"Expires,omitempty"`
 	Children []*pnode   `json:"Children,omitempty"`
 	parent   *pnode
@@ -176,6 +180,9 @@ var (
 	brokerd broker.Broker
 	propdir = flag.String("propdir", "./",
 		"directory in which the property files should be stored")
+
+	ApVersion    string
+	upgradeHooks []func() error
 
 	exp_heap  pnode_queue
 	exp_timer *time.Timer
@@ -483,6 +490,21 @@ func property_attach_ops(node *pnode, path string) {
  */
 
 /*
+ * Updated the modified timestamp for a node and its ancestors
+ */
+func mark_updated(node *pnode) {
+	now := time.Now()
+
+	for node != nil {
+		// We want each node in the chain to have the same time, but it
+		// can't be a pointer to the same time.
+		copy := now
+		node.Modified = &copy
+		node = node.parent
+	}
+}
+
+/*
  * Allocate a new property node and insert it into the property tree
  */
 func property_add(parent *pnode, name string, path string) *pnode {
@@ -559,6 +581,7 @@ func property_delete(property string) error {
 			break
 		}
 	}
+	mark_updated(node)
 	delete_subtree(node)
 	return nil
 }
@@ -585,8 +608,11 @@ func property_update(property, value string, expires *time.Time, insert bool) er
 
 	if err != nil {
 		log.Println("property update failed: ", err)
-	} else if node.Expires != nil {
-		expiration_update(node)
+	} else {
+		mark_updated(node)
+		if node.Expires != nil {
+			expiration_update(node)
+		}
 	}
 
 	return err
@@ -631,6 +657,14 @@ func prop_tree_store() error {
 	propfile := *propdir + property_filename
 	backupfile := *propdir + backup_filename
 
+	node := cfg_property_parse("@/apversion", false)
+	if node == nil {
+		// This should have been handled by upgradeV1
+		log.Printf("Warning: @/apversion property missing\n")
+		node = cfg_property_parse("@/apversion", true)
+	}
+	node.Value = ApVersion
+
 	s, err := json.MarshalIndent(property_root, "", "  ")
 	if err != nil {
 		log.Fatal("Failed to construct properties JSON: %v\n", err)
@@ -673,16 +707,65 @@ func prop_tree_load(name string) error {
 	return nil
 }
 
+func addUpgradeHook(version int, hook func() error) {
+	if version > curConfigVersion {
+		msg := fmt.Sprintf("Upgrade hook %d > current max of %d\n",
+			version, curConfigVersion)
+		panic(msg)
+	}
+
+	if upgradeHooks == nil {
+		upgradeHooks = make([]func() error, curConfigVersion+1)
+	}
+	upgradeHooks[version] = hook
+}
+
+func versionTree() error {
+	upgraded := false
+	version := 0
+
+	node := cfg_property_parse("@/cfgversion", true)
+	if node.Value != "" {
+		version, _ = strconv.Atoi(node.Value)
+	}
+	if version < minConfigVersion {
+		return fmt.Errorf("Obsolete properties file.")
+	}
+	if version > curConfigVersion {
+		log.Fatalf("Properties file is newer than the software\n")
+	}
+
+	for version < curConfigVersion {
+		log.Printf("Upgrading properties from version %d to %d\n",
+			version, version+1)
+		version++
+		if upgradeHooks[version] != nil {
+			if err := upgradeHooks[version](); err != nil {
+				return fmt.Errorf("upgrade failed: %v", err)
+			}
+		}
+		node.Value = strconv.Itoa(version)
+		upgraded = true
+	}
+
+	if upgraded {
+		if err := prop_tree_store(); err != nil {
+			return fmt.Errorf("Failed to write properties: %v", err)
+		}
+	}
+	return nil
+}
+
 /*
  * After loading the initial property values, we need to walk the tree to set
  * the parent pointers, attach any non-default operations, and possibly insert
  * into the expiration heap
  */
-func patch_tree(node *pnode, path string) {
+func patchTree(node *pnode, path string) {
 	property_attach_ops(node, path)
 	for _, n := range node.Children {
 		n.parent = node
-		patch_tree(n, path+"/"+n.Name)
+		patchTree(n, path+"/"+n.Name)
 	}
 	node.path = path
 	node.index = -1
@@ -691,7 +774,7 @@ func patch_tree(node *pnode, path string) {
 	}
 }
 
-func dump_tree(node *pnode, level int) {
+func dumpTree(node *pnode, level int) {
 	indent := ""
 	for i := 0; i < level; i++ {
 		indent += "  "
@@ -702,7 +785,7 @@ func dump_tree(node *pnode, level int) {
 	}
 	fmt.Printf("%s%s: %s  %s\n", indent, node.Name, node.Value, e)
 	for _, n := range node.Children {
-		dump_tree(n, level+1)
+		dumpTree(n, level+1)
 	}
 }
 
@@ -716,37 +799,51 @@ func delete_subtree(node *pnode) {
 }
 
 func prop_tree_init() {
+	var err error
+
 	propfile := *propdir + property_filename
 	backupfile := *propdir + backup_filename
 	default_file := *propdir + default_filename
 
-	if file_exists(propfile) || file_exists(backupfile) {
-		// Load primary properties file
-		err := prop_tree_load(propfile)
-		if err != nil {
-			// Attempt to recover from backup
+	if file_exists(propfile) {
+		err = prop_tree_load(propfile)
+	} else {
+		err = fmt.Errorf("File missing")
+	}
+
+	if err != nil {
+		log.Printf("Unable to load properties: %v", err)
+		if file_exists(backupfile) {
 			err = prop_tree_load(backupfile)
-			if err != nil {
-				log.Fatal("Unable to load properties")
-			}
+		} else {
+			err = fmt.Errorf("File missing")
+		}
+
+		if err != nil {
+			log.Printf("Unable to load backup properties: %v", err)
+		} else {
 			log.Printf("Loaded properties from backup file")
 		}
-	} else {
-		err := prop_tree_load(default_file)
+	}
+
+	if err != nil {
+		log.Printf("No usable properties files.  Loading defaults.\n")
+		err = prop_tree_load(default_file)
 		if err != nil {
 			log.Fatal("Unable to load default properties")
 		}
 		appliance_uuid := uuid.NewV4().String()
-		property_update("@/uuid", appliance_uuid, nil, false)
+		property_update("@/uuid", appliance_uuid, nil, true)
+	}
 
-		if err = prop_tree_store(); err != nil {
-			log.Fatalf("Failed to create initial properties: %v",
-				err)
+	if err == nil {
+		if err = versionTree(); err != nil {
+			log.Printf("Failed version check: %v\n", err)
 		}
 	}
 
-	patch_tree(&property_root, "@")
-	dump_tree(&property_root, 0)
+	patchTree(&property_root, "@")
+	dumpTree(&property_root, 0)
 }
 
 /*************************************************************************
