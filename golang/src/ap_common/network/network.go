@@ -25,11 +25,26 @@ import (
 	"github.com/google/gopacket/pcap"
 )
 
-// Well known MAC addresses
+// Well known addresses
 var (
 	MacZero  = net.HardwareAddr([]byte{0, 0, 0, 0, 0, 0})
 	MacBcast = net.HardwareAddr([]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF})
-	macMcast = net.HardwareAddr([]byte{0x01, 0x00, 0x5E}) // prefix only
+
+	// Multicast addresses for mDNS
+	MacmDNSv4 = net.HardwareAddr([]byte{0x01, 0x00, 0x5E, 0x00, 0x00, 0xFB})
+	MacmDNSv6 = net.HardwareAddr([]byte{0x33, 0x33, 0x00, 0x00, 0x00, 0xFB})
+	IpmDNSv4  = net.IPv4(224, 0, 0, 251)
+	IpmDNSv6  = net.IP{0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFB}
+
+	// Multicast addresses for SSDP
+	IpSSDPv4       = net.IPv4(239, 255, 255, 250)
+	IpSSDPv6Link   = net.IP{0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0C}
+	IpSSDPv6Site   = net.IP{0xFF, 0x05, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0C}
+	IpSSDPv6Org    = net.IP{0xFF, 0x08, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0C}
+	IpSSDPv6Global = net.IP{0xFF, 0x0E, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0C}
+
+	// Multicast prefix
+	macMcast = net.HardwareAddr([]byte{0x01, 0x00, 0x5E})
 )
 
 // ArpData consists of the data necessary to construct an ARP request or reply

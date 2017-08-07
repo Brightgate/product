@@ -23,19 +23,20 @@
         "DependsOn": "configd",
         "Privileged": true
     },
+    "dnsmasq": {
+        "Name": "dnsmasq",
+        "Binary": "/usr/sbin/dnsmasq",
+        "DependsOn": "networkd",
+        "Privileged": true,
+        "ThirdParty": true,
+        "Options": "-k -h -p 5300 -i lo"
+    },
     "filterd": {
         "Name": "filterd",
         "Binary": "ap.filterd",
         "DependsOn": "networkd",
         "Privileged": true,
-	"Options": "-rdir=$APROOT/etc/filter.rules.d"
-    },
-    "networkd": {
-        "Name": "networkd",
-        "Binary": "ap.networkd",
-        "DependsOn": "configd",
-        "Privileged": true,
-        "Options": "-template_dir=$APROOT/etc/templates/ap.networkd"
+        "Options": "-rdir=$APROOT/etc/filter.rules.d"
     },
     "httpd": {
         "Name": "httpd",
@@ -51,12 +52,33 @@
         "Privileged": true,
         "Options": "-datadir=$APROOT/etc -logdir $APROOT/var/spool/identifierd"
     },
+    "listend": {
+        "Name": "listend",
+        "Binary": "ap.listend",
+        "DependsOn": "networkd",
+        "Privileged": true
+    },
     "logd": {
         "Name": "logd",
         "Binary": "ap.logd",
         "DependsOn": "brokerd",
         "Privileged": true,
         "Options": "-logdir=$APROOT/var/spool/logd"
+    },
+    "networkd": {
+        "Name": "networkd",
+        "Binary": "ap.networkd",
+        "DependsOn": "configd",
+        "Privileged": true,
+        "Options": "-template_dir=$APROOT/etc/templates/ap.networkd"
+    },
+    "prometheus": {
+        "Name": "prometheus",
+        "Binary": "prometheus",
+        "Privileged": false,
+        "ThirdParty": true,
+        "Arch": "amd64",
+        "Options": "-config.file=$APROOT/etc/prometheus.yml -storage.local.path=\"$APROOT/var/prometheus-data\""
     },
     "sampled": {
         "Name": "sampled",
@@ -70,27 +92,5 @@
         "DependsOn": "networkd",
         "Privileged": true,
         "Options": "-scandir $APROOT/var/spool/scand"
-    },
-    "scand-ssdp": {
-        "Name": "scand-ssdp",
-        "Binary": "ap.scand-ssdp",
-        "DependsOn": "configd",
-        "Privileged": true
-    },
-    "prometheus": {
-        "Name": "prometheus",
-        "Binary": "prometheus",
-        "Privileged": false,
-        "ThirdParty": true,
-	"Arch": "amd64",
-	"Options": "-config.file=$APROOT/etc/prometheus.yml -storage.local.path=\"$APROOT/var/prometheus-data\""
-    },
-    "dnsmasq": {
-        "Name": "dnsmasq",
-        "Binary": "/usr/sbin/dnsmasq",
-        "DependsOn": "networkd",
-        "Privileged": true,
-        "ThirdParty": true,
-	"Options": "-k -h -p 5300 -i lo"
     }
 }

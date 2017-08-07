@@ -401,7 +401,7 @@ func main() {
 
 	self, err := net.InterfaceByName(iface)
 	if err != nil {
-		log.Fatalf("Failed to get interface %s:", iface, err)
+		log.Fatalf("Failed to get interface %s: %s\n", iface, err)
 	}
 	macSelf = self.HardwareAddr
 

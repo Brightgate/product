@@ -219,11 +219,11 @@ func (c APConfig) GetProps(prop string) (*PropertyNode, error) {
 
 	tree, err := c.msg(base_msg.ConfigQuery_GET, prop, "-", nil)
 	if err != nil {
-		fmt.Printf("Failed to retrieve %s: %v\n", prop, err)
-	} else {
-		if err = json.Unmarshal([]byte(tree), &root); err != nil {
-			fmt.Printf("Failed to decode %s: %v\n", prop, err)
-		}
+		return &root, fmt.Errorf("Failed to retrieve %s: %v", prop, err)
+	}
+
+	if err = json.Unmarshal([]byte(tree), &root); err != nil {
+		return &root, fmt.Errorf("Failed to decode %s: %v", prop, err)
 	}
 
 	return &root, err

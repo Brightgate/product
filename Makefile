@@ -106,12 +106,12 @@ DAEMONS = \
 	ap.filterd \
 	ap.httpd \
 	ap.identifierd \
+	ap.listend \
 	ap.logd \
 	ap.mcp \
 	ap.networkd \
 	ap.sampled \
-	ap.scand \
-	ap.scand-ssdp
+	ap.scand
 
 COMMANDS = \
 	ap-arpspoof \
@@ -217,12 +217,12 @@ $(APPBIN)/ap.dns4d: $(GOSRC)/ap.dns4d/dns4d.go golang/src/data/phishtank/phishta
 $(APPBIN)/ap.filterd: $(GOSRC)/ap.filterd/filterd.go $(GOSRC)/ap.filterd/parse.go
 $(APPBIN)/ap.httpd: $(GOSRC)/ap.httpd/httpd.go
 $(APPBIN)/ap.identifierd: $(GOSRC)/ap.identifierd/identifierd.go
+$(APPBIN)/ap.listend: $(GOSRC)/ap.listend/listend.go
 $(APPBIN)/ap.logd: $(GOSRC)/ap.logd/logd.go
 $(APPBIN)/ap.mcp: $(GOSRC)/ap.mcp/mcp.go
 $(APPBIN)/ap.networkd: $(GOSRC)/ap.networkd/networkd.go
 $(APPBIN)/ap.sampled: $(GOSRC)/ap.sampled/sampled.go
 $(APPBIN)/ap.scand: $(GOSRC)/ap.scand/scand.go
-$(APPBIN)/ap.scand-ssdp: $(GOSRC)/ap.scand-ssdp/scand-ssdp.go
 
 $(APPBIN)/ap-arpspoof: $(GOSRC)/ap-arpspoof/arpspoof.go
 $(APPBIN)/ap-configctl: $(GOSRC)/ap-configctl/configctl.go

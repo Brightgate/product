@@ -115,9 +115,13 @@ func handleEntity(event []byte) {
 		return
 	}
 
-	id := mfgidDB[entry.Manufacturer]
+	hostname := "Unknown"
+	if entity.Hostname != nil {
+		hostname = *entity.Hostname
+	}
+	newData.AddIdentityHint(*entity.MacAddress, hostname)
 
-	newData.AddIdentityHint(*entity.MacAddress, *entity.Hostname)
+	id := mfgidDB[entry.Manufacturer]
 	testData.SetByName(*entity.MacAddress, "Manufacturer ID", strconv.Itoa(id))
 }
 
@@ -208,6 +212,33 @@ func handleScan(event []byte) {
 			newData.AddAttr(network.HWAddrToUint64(hwaddr), portString)
 			testData.SetByName(network.HWAddrToUint64(hwaddr), portString, "1")
 		}
+	}
+}
+
+func listenAttr(addr, kind string) {
+	ip := net.ParseIP(addr)
+	if ip == nil {
+		return
+	}
+
+	hwaddr, ok := getHWaddr(network.IPAddrToUint32(ip))
+	if !ok {
+		return
+	}
+
+	newData.AddAttr(hwaddr, kind)
+	testData.SetByName(hwaddr, kind, "1")
+}
+
+func handleListen(event []byte) {
+	listen := &base_msg.EventListen{}
+	proto.Unmarshal(event, listen)
+
+	switch *listen.Type {
+	case base_msg.EventListen_SSDP:
+		listenAttr(*listen.Ssdp.Address, "SSDP")
+	case base_msg.EventListen_mDNS:
+		listenAttr(*listen.Mdns.Address, "mDNS")
 	}
 }
 
@@ -358,6 +389,7 @@ func main() {
 	brokerd.Handle(base_def.TOPIC_REQUEST, handleRequest)
 	brokerd.Handle(base_def.TOPIC_CONFIG, handleConfig)
 	brokerd.Handle(base_def.TOPIC_SCAN, handleScan)
+	brokerd.Handle(base_def.TOPIC_LISTEN, handleListen)
 	brokerd.Connect()
 	defer brokerd.Disconnect()
 	brokerd.Ping()

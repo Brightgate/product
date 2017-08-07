@@ -369,16 +369,51 @@ message Pair {
 }
 
 // Contains information about SSDP
-// @topic "net.scan.ssdp", TOPIC_SCAN_SSDP
-// @range 0x1100
 message EventSSDP {
+	required string address = 0xb00;
+
+	enum MessageType {
+		ALIVE = 0;
+		BYEBYE = 1;
+		DISCOVER = 2;
+	}
+	required MessageType type = 0xb01;
+
+	// notify and response
+	optional string server = 0xb02;
+	optional string unique_service_name = 0xb03;
+	optional string location = 0xb04;
+
+	// search and response
+	optional string search_target = 0xb05;
+
+	// notify
+	optional string notification_type = 0xb06;
+
+	repeated Pair extra_headers = 0xb07;
+}
+
+// Contains information about mDNS
+message EventmDNS {
+	required string address = 0xc00;
+	repeated string request = 0xc01;
+	repeated string response = 0xc02;
+}
+
+// Union of EventSSDP and EventmDNS messages
+// @topic "net.listen", TOPIC_LISTEN
+message EventListen {
 	required Timestamp timestamp = 0x01;
 	optional string sender = 0x02;
 	optional string debug = 0x03;
-	required string address = 0x1100;
-	optional string server = 0x1101;
-	optional string unique_service_name = 0x1102;
-	optional string location = 0x1103;
-	required string search_target = 0x1104;
-	repeated Pair extra_headers = 0x1105;
+
+	enum Type {
+		SSDP = 1;
+		mDNS = 2;
+	}
+	required Type type = 0xa00;
+
+	// Only one of these will be set
+	optional EventSSDP ssdp = 0xa01;
+	optional EventmDNS mdns = 0xa02;
 }

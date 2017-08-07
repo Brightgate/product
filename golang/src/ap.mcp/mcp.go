@@ -223,7 +223,7 @@ func runDaemon(d *daemon) {
 		log.Printf("%s exited %s after %s\n", d.Name, msg,
 			time.Since(start_time))
 		if time.Since(start_times[0]) < period {
-			log.Printf("%s is dying too quickly")
+			log.Printf("%s is dying too quickly", d.Name)
 			setStatus(d, "broken")
 		}
 		if d.status == "broken" {

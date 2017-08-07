@@ -389,11 +389,13 @@ func (h *DHCPHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	log.Printf("   REQUEST %s %s\n", action, reqIP.String())
 
 	if len(reqIP) != 4 || reqIP.Equal(net.IPv4zero) {
+		log.Printf("Invalid reqIP %s from %s\n", reqIP.String(), hwaddr)
 		return h.nak(p)
 	}
 
 	l := h.getLease(reqIP)
 	if l == nil || !l.assigned || l.hwaddr != hwaddr {
+		log.Printf("Invalid lease of %s for %s\n", reqIP.String(), hwaddr)
 		return h.nak(p)
 	}
 
