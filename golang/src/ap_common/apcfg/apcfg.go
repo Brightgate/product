@@ -49,10 +49,18 @@ type ClassConfig struct {
 }
 
 type ClientInfo struct {
-	Class    string
-	DNSName  string
-	Identity string
+	Class    string     // Assigned class
+	DNSName  string     // Assigned hostname
+	IPv4     net.IP     // Network address
+	Expires  *time.Time // DHCP lease expiration time
+	DHCPName string     // Requested hostname
+	Identity string     // Our current best guess at the client type
 }
+
+type ClassMap map[string]*ClassConfig
+type ClientMap map[string]*ClientInfo
+type SubnetMap map[string]string
+type NicMap map[string]string
 
 //
 // A node in the property tree.
@@ -118,6 +126,11 @@ func (n *PropertyNode) GetValue() string {
 	return n.Value
 }
 
+// Returns the property expiration time
+func (n *PropertyNode) GetExpiry() *time.Time {
+	return n.Expires
+}
+
 // Opaque type representing a connection to ap.configd
 type APConfig struct {
 	mutex  sync.Mutex
@@ -137,6 +150,8 @@ func NewConfig(name string) *APConfig {
 
 func (c *APConfig) msg(oc base_msg.ConfigQuery_Operation, prop, val string,
 	expires *time.Time) (string, error) {
+
+	response := &base_msg.ConfigResponse{}
 	t := time.Now()
 	query := &base_msg.ConfigQuery{
 		Timestamp: &base_msg.Timestamp{
@@ -158,7 +173,7 @@ func (c *APConfig) msg(oc base_msg.ConfigQuery_Operation, prop, val string,
 
 	data, err := proto.Marshal(query)
 	if err != nil {
-		fmt.Println("Failed to marshal config update arguments: ", err)
+		fmt.Printf("Failed to marshal config arguments: %v\n", err)
 		return "", err
 	}
 
@@ -166,20 +181,32 @@ func (c *APConfig) msg(oc base_msg.ConfigQuery_Operation, prop, val string,
 	_, err = c.socket.SendBytes(data, 0)
 	rval := ""
 	if err != nil {
-		fmt.Println("Failed to send config msg: ", err)
+		fmt.Printf("Failed to send config msg: %v\n", err)
 	} else {
 		var reply [][]byte
 
 		reply, err = c.socket.RecvMessageBytes(0)
 		if len(reply) > 0 {
-			response := &base_msg.ConfigResponse{}
 			proto.Unmarshal(reply[0], response)
-			if oc == base_msg.ConfigQuery_GET {
-				rval = *response.Value
-			}
 		}
 	}
 	c.mutex.Unlock()
+	if err == nil {
+		switch *response.Response {
+		case base_msg.ConfigResponse_OP_OK:
+			if oc == base_msg.ConfigQuery_GET {
+				rval = *response.Value
+			}
+		case base_msg.ConfigResponse_PROP_NOT_FOUND:
+			err = fmt.Errorf("Property not found")
+		case base_msg.ConfigResponse_VALUE_NOT_FOUND:
+			err = fmt.Errorf("Value not found")
+		case base_msg.ConfigResponse_NO_PERM:
+			err = fmt.Errorf("Permission denied")
+		case base_msg.ConfigResponse_UNSUPPORTED:
+			err = fmt.Errorf("Operation not supported")
+		}
+	}
 
 	return rval, err
 }
@@ -192,10 +219,10 @@ func (c APConfig) GetProps(prop string) (*PropertyNode, error) {
 
 	tree, err := c.msg(base_msg.ConfigQuery_GET, prop, "-", nil)
 	if err != nil {
-		fmt.Printf("Failed to retrieve %s: %v", prop, err)
+		fmt.Printf("Failed to retrieve %s: %v\n", prop, err)
 	} else {
 		if err = json.Unmarshal([]byte(tree), &root); err != nil {
-			fmt.Printf("Failed to decode %s: %v", prop, err)
+			fmt.Printf("Failed to decode %s: %v\n", prop, err)
 		}
 	}
 
@@ -277,10 +304,10 @@ func getIntVal(root *PropertyNode, name string) (int, error) {
 
 //
 // Fetch the Classes subtree and return a Class -> ClassConfig map
-func (c APConfig) GetClasses() map[string]*ClassConfig {
+func (c APConfig) GetClasses() ClassMap {
 	props, err := c.GetProps("@/classes")
 	if err != nil {
-		log.Printf("Failed to get class list: %v", err)
+		log.Printf("Failed to get class list: %v\n", err)
 		return nil
 	}
 
@@ -305,10 +332,10 @@ func (c APConfig) GetClasses() map[string]*ClassConfig {
 
 //
 // Fetch the interfaces subtree, and return a map of Interface -> subnet
-func (c APConfig) GetSubnets() map[string]string {
+func (c APConfig) GetSubnets() SubnetMap {
 	props, err := c.GetProps("@/interfaces")
 	if err != nil {
-		log.Printf("Failed to get interfaces list: %v", err)
+		log.Printf("Failed to get interfaces list: %v\n", err)
 		return nil
 	}
 
@@ -325,34 +352,61 @@ func (c APConfig) GetSubnets() map[string]string {
 	return set
 }
 
+func getClient(client *PropertyNode) *ClientInfo {
+	var class, dns, dhcp, identity string
+	var ipv4 net.IP
+	var exp *time.Time
+	var err error
+
+	if class, err = getStringVal(client, "class"); err != nil {
+		class = "unclassified"
+	}
+
+	identity, _ = getStringVal(client, "identity")
+	dhcp, _ = getStringVal(client, "dhcp_name")
+	dns, _ = getStringVal(client, "dns_name")
+	if addr := client.GetChild("ipv4"); addr != nil {
+		if ip := net.ParseIP(addr.Value); ip != nil {
+			ipv4 = ip.To4()
+			exp = addr.Expires
+		}
+	}
+
+	c := ClientInfo{
+		Class:    class,
+		DHCPName: dhcp,
+		DNSName:  dns,
+		IPv4:     ipv4,
+		Expires:  exp,
+		Identity: identity,
+	}
+	return &c
+}
+
+//
+// Fetch a single client and return a ClientInfo structure
+func (c APConfig) GetClient(macaddr string) *ClientInfo {
+	client, err := c.GetProps("@/clients/" + macaddr)
+	if err != nil {
+		log.Printf("Failed to get %s: %v\n", macaddr, err)
+		return nil
+	}
+
+	return getClient(client)
+}
+
 //
 // Fetch the Clients subtree, and return a map of macaddr -> ClientInfo
-func (c APConfig) GetClients() map[string]*ClientInfo {
+func (c APConfig) GetClients() ClientMap {
 	props, err := c.GetProps("@/clients")
 	if err != nil {
-		log.Printf("Failed to get clients list: %v", err)
+		log.Printf("Failed to get clients list: %v\n", err)
 		return nil
 	}
 
 	set := make(map[string]*ClientInfo)
 	for _, client := range props.Children {
-		var class, macaddr, dnsname, identity string
-
-		macaddr = client.Name
-		if class, err = getStringVal(client, "class"); err != nil {
-			log.Printf("Client %s has no class\n", macaddr)
-		}
-
-		if dnsname, err = getStringVal(client, "dns"); err != nil {
-			log.Printf("Client %s has no DNS name\n", macaddr)
-		}
-
-		if identity, err = getStringVal(client, "identity"); err != nil {
-			log.Printf("Client %s has no identity\n", macaddr)
-		}
-
-		c := ClientInfo{Class: class, DNSName: dnsname, Identity: identity}
-		set[macaddr] = &c
+		set[client.Name] = getClient(client)
 	}
 
 	return set

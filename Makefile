@@ -210,7 +210,8 @@ $(APPBIN)/%:
 
 $(APPBIN)/ap.brokerd: $(GOSRC)/ap.brokerd/brokerd.go
 $(APPBIN)/ap.configd: $(GOSRC)/ap.configd/configd.go \
-	$(GOSRC)/ap.configd/upgrade_v1.go
+	$(GOSRC)/ap.configd/upgrade_v1.go \
+	$(GOSRC)/ap.configd/upgrade_v2.go
 $(APPBIN)/ap.dhcp4d: $(GOSRC)/ap.dhcp4d/dhcp4d.go
 $(APPBIN)/ap.dns4d: $(GOSRC)/ap.dns4d/dns4d.go golang/src/data/phishtank/phishtank.go
 $(APPBIN)/ap.filterd: $(GOSRC)/ap.filterd/filterd.go $(GOSRC)/ap.filterd/parse.go

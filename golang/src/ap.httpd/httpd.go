@@ -59,12 +59,13 @@ var (
 	key       string
 	certValid bool
 
-	ifaceToSubnet map[string]string
+	config    *apcfg.APConfig
+	subnetMap apcfg.SubnetMap
+
 	phishdata     = &phishtank.DataSource{}
 	statsTemplate *template.Template
 
-	mcpp   *mcp.MCP
-	config *apcfg.APConfig
+	mcpp *mcp.MCP
 )
 
 var latencies = prometheus.NewSummary(prometheus.SummaryOpts{
@@ -358,8 +359,7 @@ func initNetwork() error {
 	adminMap = make(map[string]bool)
 	captiveMap = make(map[string]bool)
 
-	ifaceToSubnet = config.GetSubnets()
-	if ifaceToSubnet == nil {
+	if subnetMap = config.GetSubnets(); subnetMap == nil {
 		return fmt.Errorf("Failed to get subnet addresses")
 	}
 
@@ -368,9 +368,9 @@ func initNetwork() error {
 	if err != nil {
 		return fmt.Errorf("Failed to get gateway address: %v", err)
 	}
-	ifaceToSubnet["gateway"] = gatewaySubnet
+	subnetMap["gateway"] = gatewaySubnet
 
-	for iface, subnet := range ifaceToSubnet {
+	for iface, subnet := range subnetMap {
 		router := network.SubnetRouter(subnet)
 		if iface == "connect" {
 			captiveMap[router] = true
@@ -479,7 +479,7 @@ func main() {
 		log.Printf("Error refreshing certificate: %v", err)
 	}
 
-	for iface, subnet := range ifaceToSubnet {
+	for iface, subnet := range subnetMap {
 		router := network.SubnetRouter(subnet)
 		if iface == "connect" {
 			listen(router, ":80", iface, captiveRouter)

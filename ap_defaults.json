@@ -24,9 +24,6 @@
                             "Value": "192.168.136.0/24"
                         }
                     ]
-                },
-                {
-                    "Name": "leases"
                 }
             ]
         },
@@ -134,6 +131,14 @@
 		{
 		    "Name": "passphrase",
 		    "Value": "sosecretive"
+		},
+		{
+		    "Name": "domainname",
+		    "Value": ""
+		},
+		{
+		    "Name": "dnsserver",
+		    "Value": "8.8.8.8:53"
 		}
             ]
         },

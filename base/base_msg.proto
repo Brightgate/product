@@ -135,7 +135,7 @@ message EventNetEntity {
 	optional fixed64 mac_address = 0x400;
 	optional fixed32 ipv4_address = 0x401;
 	optional string interface_name = 0x402;
-	optional string dns_name = 0x403;
+	optional string hostname = 0x403;
 	optional string class = 0x404;
 }
 
@@ -158,7 +158,8 @@ message EventNetResource {
 
 	optional Action action = 0x500;
 	optional fixed32 ipv4_address = 0x501;
-	optional string dns_name = 0x502;
+	optional string hostname = 0x502;
+	optional fixed32 duration = 0x503;
 	// Who's involved?
 }
 
@@ -266,14 +267,10 @@ message ConfigResponse {
 
 	enum OpResponse {
 		OP_OK = 0;
-		GET_PROP_NOT_FOUND = 1;
-		GET_VALUE_NOT_FOUND = 2;
-		SET_PROP_NO_PERM = 5;
-		SET_PROP_NOT_FOUND = 6;
-		DELETE_PROP_NO_PERM = 9;
-		DELETE_PROP_EMPTY = 10;
-		DELETE_PROP_NOT_FOUND = 11;
-		UNSUPPORTED = 12;
+		PROP_NOT_FOUND = 1;
+		VALUE_NOT_FOUND = 2;
+		NO_PERM = 3;
+		UNSUPPORTED = 4;
 	}
 	required OpResponse response = 0x2003;
 

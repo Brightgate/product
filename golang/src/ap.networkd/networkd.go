@@ -67,17 +67,18 @@ var (
 
 	aps        = make(map[string]*APConfig)
 	interfaces = make(map[string]*iface)
-	devices    = make(map[string]*device)    // physical network devices
-	clients    map[string]*apcfg.ClientInfo  // macaddr -> ClientInfo
-	classes    map[string]*apcfg.ClassConfig // class -> config
-	subnets    map[string]string             // iface -> subnet
+	devices    = make(map[string]*device) // physical network devices
+
+	config  *apcfg.APConfig
+	clients apcfg.ClientMap // macaddr -> ClientInfo
+	classes apcfg.ClassMap  // class -> config
+	subnets apcfg.SubnetMap // iface -> subnet
 
 	activeWifi   *device     // live wireless iface
 	connectWifi  string      // open "network connect" interface
 	activeWan    *device     // WAN port
 	activeWired  string      // wired bridge
 	childProcess *os.Process // track the hostapd proc
-	config       *apcfg.APConfig
 	mcpPort      *mcp.MCP
 	running      bool
 )
@@ -164,12 +165,12 @@ func config_changed(raw []byte) {
 
 		newClass := *event.NewValue
 		if c, ok := clients[hwaddr]; ok {
-			fmt.Printf("Moving %s from %s to %s\n", hwaddr, c.Class,
+			log.Printf("Moving %s from %s to %s\n", hwaddr, c.Class,
 				newClass)
 			c.Class = newClass
 		} else {
 			c := apcfg.ClientInfo{Class: newClass}
-			fmt.Printf("New client %s in %s\n", hwaddr, newClass)
+			log.Printf("New client %s in %s\n", hwaddr, newClass)
 			clients[hwaddr] = &c
 		}
 	}
@@ -443,7 +444,7 @@ func handlePipe(name string, r io.ReadCloser, done chan string) {
 
 	for err == nil {
 		if _, err = r.Read(buf); err == nil {
-			fmt.Printf("%s", buf)
+			log.Printf("%s", buf)
 		}
 	}
 
@@ -575,7 +576,7 @@ func prepareInterface(iface *iface) {
 			nic = bridge
 		}
 	}
-	fmt.Printf("Preparing %s %s\n", nic, iface.subnet)
+	log.Printf("Preparing %s %s\n", nic, iface.subnet)
 
 	// ip addr flush dev wlan0
 	cmd := exec.Command(ipCmd, "addr", "flush", "dev", nic)
@@ -667,14 +668,14 @@ func prepareWired() {
 
 		// Use the oui to identify the on-board port
 		if strings.HasPrefix(dev.hwaddr, "b8:27:eb:") {
-			fmt.Printf("Using %s for WAN\n", name)
+			log.Printf("Using %s for WAN\n", name)
 			if activeWan != nil {
 				log.Printf("Found multiple eth ports\n")
 			} else {
 				activeWan = dev
 			}
 		} else if wiredLan {
-			fmt.Printf("Using %s for clients\n", name)
+			log.Printf("Using %s for clients\n", name)
 
 			cmd := exec.Command(brctlCmd, "addif", bridge, name)
 			if err := cmd.Run(); err != nil {

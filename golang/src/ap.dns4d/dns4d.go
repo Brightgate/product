@@ -34,7 +34,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -47,22 +46,18 @@ import (
 	"base_def"
 	"base_msg"
 
+	"github.com/golang/protobuf/proto"
+	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-
-	"github.com/golang/protobuf/proto"
-
-	"github.com/miekg/dns"
 )
 
 var (
 	addr = flag.String("listen-address", base_def.DNSD_PROMETHEUS_PORT,
 		"The address to listen on for HTTP requests.")
-	port         = flag.Int("port", 53, "port to run on")
-	tsig         = flag.String("tsig", "", "use MD5 hmac tsig: keyname:base64")
-	upstream_dns = flag.String("upstream-dns", "8.8.8.8:53",
-		"The upstream DNS server to use.")
+
 	brokerd   broker.Broker
+	config    *apcfg.APConfig
 	phishdata *phishtank.DataSource
 
 	latencies = prometheus.NewSummary(prometheus.SummaryOpts{
@@ -71,70 +66,35 @@ var (
 	})
 
 	captiveSubnet *net.IPNet
-	captiveRouter net.IP
-	gatewayRouter net.IP
 
-	client_map_mtx sync.Mutex
-	client_map     map[string]int64
+	captiveA   *dns_record
+	phishtankA *dns_record
 
-	hosts_mtx sync.Mutex
+	clientMtx sync.Mutex
+	clients   apcfg.ClientMap
+	warned    map[string]bool
+
+	hostsMtx sync.Mutex
+	hosts    map[string]dns_record
+
+	domainname   string
+	upstream_dns = "8.8.8.8:53"
 )
 
 const pname = "ap.dns4d"
 
-// Terminate dom with '.'.
-const dom = "blueslugs.com."
-
 type dns_record struct {
 	rectype uint16
 	recval  string
+	expires *time.Time
 }
 
-/*
- * Although hosts[] is seeded with A and CNAME records from the configuration,
- * PTR records are currently added dynamically as we receive net.resource events
- * from ap.dhcp4d. Access to hosts[] is protected by hosts_mtx, as we need to
- * update the record based on event subscriptions while potentially serving
- * records from either local_handler() or proxy_handler().
- */
-var hosts = map[string]dns_record{
-	"a-gw.blueslugs.com.":                {dns.TypeA, "192.168.135.1"},
-	"s-media.blueslugs.com.":             {dns.TypeA, "192.168.135.4"},
-	"w-media.blueslugs.com.":             {dns.TypeCNAME, "s-media.blueslugs.com."},
-	"s-cooler.blueslugs.com.":            {dns.TypeA, "192.168.135.5"},
-	"p-inky.blueslugs.com.":              {dns.TypeA, "192.168.135.6"},
-	"inky.blueslugs.com.":                {dns.TypeCNAME, "p-inky.blueslugs.com."},
-	"a-sprinkles.blueslugs.com.":         {dns.TypeA, "192.168.135.19"},
-	"a-mfi-outdoor-front.blueslugs.com.": {dns.TypeA, "192.168.135.20"},
-	"mfi-outdoor-front.blueslugs.com.":   {dns.TypeCNAME, "a-mfi-outdoor-front.blueslugs.com."},
-	"a-mfi-office.blueslugs.com.":        {dns.TypeA, "192.168.135.21"},
-	"mfi-office.blueslugs.com.":          {dns.TypeCNAME, "mfi-office.blueslugs.com."},
-	"a-berry-clock.blueslugs.com.":       {dns.TypeA, "192.168.135.29"},
-	"a-tivo.blueslugs.com.":              {dns.TypeA, "192.168.135.30"},
-	"a-tivo-stream.blueslugs.com.":       {dns.TypeA, "192.168.135.31"},
-	"pckts2.blueslugs.com.":              {dns.TypeA, "192.168.135.139"},
-	"w-tappy.blueslugs.com.":             {dns.TypeA, "192.168.135.248"},
-	"w-pi3.blueslugs.com.":               {dns.TypeA, "192.168.135.248"},
-	"s-pi.blueslugs.com.":                {dns.TypeA, "192.168.135.249"},
-	"pidora.blueslugs.com.":              {dns.TypeCNAME, "pidora.blueslugs.com."},
-	"s-deb.blueslugs.com.":               {dns.TypeA, "192.168.135.251"},
-	"debian.blueslugs.com.":              {dns.TypeCNAME, "s-deb.blueslugs.com."},
-	"i1.blueslugs.com.":                  {dns.TypeCNAME, "s-deb.blueslugs.com."},
-	"s-cent.blueslugs.com.":              {dns.TypeA, "192.168.135.252"},
-	"centos.blueslugs.com.":              {dns.TypeCNAME, "s-cent.blueslugs.com."},
-	"phab.blueslugs.com.":                {dns.TypeCNAME, "s-cent.blueslugs.com."},
-	"s-smart.blueslugs.com.":             {dns.TypeA, "192.168.135.253"},
-	"smartos.blueslugs.com.":             {dns.TypeCNAME, "s-smart.blueslugs.com."},
-	"s-vm.blueslugs.com.":                {dns.TypeA, "192.168.135.254"},
-}
-
-func isCaptive(addr *net.UDPAddr) bool {
-	if addr == nil || captiveSubnet == nil {
+func isCaptive(client net.IP) bool {
+	if client == nil || captiveSubnet == nil {
 		return false
 	}
 
-	ip := addr.IP
-	masked := ip.Mask(captiveSubnet.Mask)
+	masked := client.Mask(captiveSubnet.Mask)
 	rval := masked.Equal(captiveSubnet.IP)
 	return rval
 }
@@ -142,211 +102,91 @@ func isCaptive(addr *net.UDPAddr) bool {
 func dns_update(resource *base_msg.EventNetResource) {
 	action := resource.GetAction()
 	ipv4 := network.Uint32ToIPAddr(*resource.Ipv4Address)
+	ttl := time.Duration(resource.GetDuration()) * time.Second
+	expires := time.Now().Add(ttl)
 
 	arpa, err := dns.ReverseAddr(ipv4.String())
 	if err != nil {
-		log.Println(err)
+		log.Printf("Invalid IP address %s: %v\n", ipv4, err)
 		return
 	}
 
-	hosts_mtx.Lock()
+	hostsMtx.Lock()
 	if action == base_msg.EventNetResource_CLAIMED {
 		hosts[arpa] = dns_record{
 			rectype: dns.TypePTR,
-			recval:  resource.GetDnsName() + ".",
+			recval:  resource.GetHostname() + ".",
+			expires: &expires,
 		}
 	} else if action == base_msg.EventNetResource_RELEASED {
 		delete(hosts, arpa)
 	}
-	hosts_mtx.Unlock()
+	hostsMtx.Unlock()
 }
 
-func config_changed(event []byte) {
-	config := &base_msg.EventConfig{}
-	proto.Unmarshal(event, config)
+func configEvent(raw []byte) {
+	var old, new *apcfg.ClientInfo
+
+	event := &base_msg.EventConfig{}
+	proto.Unmarshal(raw, event)
+
+	// Ignore messages without an explicit type
+	if event.Type == nil {
+		return
+	}
+	etype := *event.Type
+	property := *event.Property
+	path := strings.Split(property[2:], "/")
+
+	// Ignore any config changes unrelated to clients
+	if len(path) < 2 || path[0] != "clients" {
+		return
+	}
+
+	macaddr := path[1]
+
+	// The only whole-client update we would react to (or expect to see, for
+	// that matter) is a delete
+	if len(path) == 2 {
+		if etype != base_msg.EventConfig_DELETE {
+			return
+		}
+	} else {
+		f := path[2]
+		if f != "ipv4" && f != "dns_name" && f != "dhcp_name" {
+			// These are the only 3 fields that affect DNS
+			return
+		}
+
+		if etype == base_msg.EventConfig_CHANGE {
+			new = config.GetClient(macaddr)
+		}
+	}
+
+	hostsMtx.Lock()
+	old = clients[macaddr]
+	if old != nil {
+		delete(clients, macaddr)
+		deleteOneClient(old)
+	}
+	if new != nil {
+		updateOneClient(new)
+		clients[macaddr] = new
+	}
+	hostsMtx.Unlock()
 }
 
-func resource_changed(event []byte) {
+func resourceEvent(event []byte) {
 	resource := &base_msg.EventNetResource{}
 	proto.Unmarshal(event, resource)
 	dns_update(resource)
 }
 
-// service_config = {
-//     "mode": "proxy",      # "passthrough"?
-// }
-//
-// # Site 1
-// net_config = {
-//     "gw": "192.168.135.1",
-//     "domain": "blueslugs.com",
-//     # XXX These should become URLs per RFC 4501.
-//     "ns": ["208.67.222.222", "208.67.220.220"],
-//     # 36 - 48
-//     "ranges": {
-//         "trusted": ("192.168.135.36", 6),
-//         "untrusted": ("192.168.135.42", 3),
-//         "quarantined": ("192.168.135.45", 3)
-//     }
-// }
-//
-// # Site 2
-// # net_config = {
-// #         "gw": "192.168.247.1",
-// #         "domain": "blueslugs.com",
-// #         "ns": ["208.67.222.222", "208.67.220.220"],
-// #         "ranges": {
-// #             "trusted": ("192.168.247.24", 16),
-// #             "untrusted": ("192.168.247.40", 8),
-// #             "quarantined": ("192.168.247.48", 4)
-// #         }
-// # }
-// # trusted = IPv4Range("trusted", "192.168.247.64", 32)
-// # untrusted = IPv4Range("untrusted", "192.168.247.128", 32)
-//
-//         # XXX Database schema
-//         # XXX Configuration event for table updates
+func logRequest(handler string, start time.Time, ip net.IP, r, m *dns.Msg) {
+	latencies.Observe(time.Since(start).Seconds())
 
-func record_client(ipstr string) {
-	host, _, _ := net.SplitHostPort(ipstr)
-	if host == "" {
-		log.Printf("empty host from '%s'\n", ipstr)
-		return
-	}
-
-	client_map_mtx.Lock()
-	client_map[host] = client_map[host] + 1
-	log.Printf("client %s, map[client] %d\n", host, client_map[host])
-
-	if client_map[host] == 1 {
-		t := time.Now()
-
-		addr := net.ParseIP(host).To4()
-
-		entity := &base_msg.EventNetEntity{
-			Timestamp: &base_msg.Timestamp{
-				Seconds: proto.Int64(t.Unix()),
-				Nanos:   proto.Int32(int32(t.Nanosecond())),
-			},
-			Sender:      proto.String(brokerd.Name),
-			Debug:       proto.String("-"),
-			Ipv4Address: proto.Uint32(network.IPAddrToUint32(addr)),
-		}
-
-		err := brokerd.Publish(entity, base_def.TOPIC_ENTITY)
-		if err != nil {
-			log.Println(err)
-		}
-	}
-	client_map_mtx.Unlock()
-}
-
-func local_handler(w dns.ResponseWriter, r *dns.Msg) {
-	var (
-		a  net.IP
-		rr dns.RR
-	)
-
-	lt := time.Now()
-
-	m := new(dns.Msg)
-	m.SetReply(r)
-
-	// XXX We will need the remote client address once we
-	// are ready to give different answers to different
-	// askers.
-	ip, _ := w.RemoteAddr().(*net.UDPAddr)
-	record_client(ip.String())
-
-	captive := isCaptive(ip)
-
-	// Iterate through questions.
-	for _, question := range r.Question {
-		var rec dns_record
-		var rec_ok bool
-		if captive {
-			rec = dns_record{
-				rectype: dns.TypeA,
-				recval:  captiveRouter.String(),
-			}
-			rec_ok = true
-		} else {
-			hosts_mtx.Lock()
-			rec, rec_ok = hosts[question.Name]
-			hosts_mtx.Unlock()
-		}
-		if rec_ok {
-			if rec.rectype == dns.TypeA {
-				a = net.ParseIP(rec.recval)
-				rr = &dns.A{
-					Hdr: dns.RR_Header{
-						Name:   question.Name,
-						Rrtype: dns.TypeA,
-						Class:  dns.ClassINET,
-						Ttl:    0},
-					A: a.To4(),
-				}
-			} else if rec.rectype == dns.TypeCNAME {
-				rr = &dns.CNAME{
-					Hdr: dns.RR_Header{
-						Name:   question.Name,
-						Rrtype: dns.TypeCNAME,
-						Class:  dns.ClassINET,
-						Ttl:    0},
-					Target: rec.recval,
-				}
-			}
-
-			m.Authoritative = true
-			m.Answer = append(m.Answer, rr)
-		} else {
-			// Proxy needed if we have decided that
-			// we are allowing our domain to be
-			// handled upstream as well.
-
-			// We are assuming we cannot find records from
-			// upstream in our phishing data.  Otherwise we
-			// would have to perform the phishing check
-			// here.
-			q := new(dns.Msg)
-			q.MsgHdr = r.MsgHdr
-			q.Question = append(q.Question, question)
-
-			c := new(dns.Client)
-			// XXX Upstream DNS server config.
-			r2, _, err := c.Exchange(q, *upstream_dns)
-			if err != nil {
-				log.Printf("failed to exchange: %v", err)
-				// XXX At this point, r2 is empty or
-				// bad, because of a network error.
-				// If it's an I/O timeout, do we retry?
-			} else {
-				if r2 != nil && r2.Rcode != dns.RcodeSuccess {
-					log.Printf("failed to get an valid answer\n%v", r)
-					// XXX At this point, r2 represents a
-					// DNS error.
-				}
-
-				log.Printf("bs proxy response %s\n", r2)
-
-				m.Authoritative = false
-				for _, answer := range r2.Answer {
-					m.Answer = append(m.Answer, answer)
-				}
-			}
-		}
-	}
-
-	w.WriteMsg(m)
-
-	latencies.Observe(time.Since(lt).Seconds())
 	t := time.Now()
-
-	host, _, _ := net.SplitHostPort(ip.String())
-	addr := net.ParseIP(host).To4()
-
 	protocol := base_msg.Protocol_DNS
-
 	requests := make([]string, 0)
 	responses := make([]string, 0)
 
@@ -364,8 +204,8 @@ func local_handler(w dns.ResponseWriter, r *dns.Msg) {
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
 		Sender:       proto.String(brokerd.Name),
-		Debug:        proto.String("local_handler"),
-		Requestor:    proto.String(addr.String()),
+		Debug:        proto.String(handler),
+		Requestor:    proto.String(ip.String()),
 		IdentityUuid: proto.String(base_def.ZERO_UUID),
 		Protocol:     &protocol,
 		Request:      requests,
@@ -376,148 +216,355 @@ func local_handler(w dns.ResponseWriter, r *dns.Msg) {
 	if err != nil {
 		log.Println(err)
 	}
-
-	log.Printf("bs handle complete {} %s\n", m)
 }
 
-func proxy_handler(w dns.ResponseWriter, r *dns.Msg) {
-	lt := time.Now()
+// We just got a DNS request from an unknown client.  Send a notification that
+// we have an unknown entity on our network.
+func logUnknown(ipstr string) bool {
+	var addr net.IP
 
-	ip, _ := w.RemoteAddr().(*net.UDPAddr)
-	record_client(ip.String())
+	if host, _, _ := net.SplitHostPort(ipstr); host != "" {
+		addr = net.ParseIP(host).To4()
+	} else {
+		return false
+	}
+
+	t := time.Now()
+	entity := &base_msg.EventNetEntity{
+		Timestamp: &base_msg.Timestamp{
+			Seconds: proto.Int64(t.Unix()),
+			Nanos:   proto.Int32(int32(t.Nanosecond())),
+		},
+		Sender:      proto.String(brokerd.Name),
+		Debug:       proto.String("-"),
+		Ipv4Address: proto.Uint32(network.IPAddrToUint32(addr)),
+	}
+
+	err := brokerd.Publish(entity, base_def.TOPIC_ENTITY)
+	return err == nil
+}
+
+// Determine whether the DNS request came from a known client.  If it did,
+// return the IP address to which the response should be sent.  If it didn't,
+// raise a warning flag and return nil.
+func getClientAddr(w dns.ResponseWriter) net.IP {
+	var rval net.IP
+
+	addr, ok := w.RemoteAddr().(*net.UDPAddr)
+	if !ok {
+		return nil
+	}
+
+	clientMtx.Lock()
+	for _, c := range clients {
+		if addr.IP.Equal(c.IPv4) {
+			rval = c.IPv4
+			break
+		}
+	}
+
+	if rval == nil {
+		ip := addr.IP.String()
+		if !warned[ip] {
+			warned[ip] = logUnknown(ip)
+		}
+	}
+	clientMtx.Unlock()
+
+	return rval
+}
+
+func answerA(q dns.Question, rec dns_record) *dns.A {
+	a := net.ParseIP(rec.recval)
+	rr := dns.A{
+		Hdr: dns.RR_Header{
+			Name:   q.Name,
+			Rrtype: dns.TypeA,
+			Class:  dns.ClassINET,
+			Ttl:    0},
+		A: a.To4(),
+	}
+
+	return &rr
+}
+
+func answerPTR(q dns.Question, rec dns_record) *dns.PTR {
+	rr := dns.PTR{
+		Hdr: dns.RR_Header{
+			Name:   q.Name,
+			Rrtype: dns.TypePTR,
+			Class:  dns.ClassINET,
+			Ttl:    0},
+		Ptr: rec.recval,
+	}
+	return &rr
+}
+
+func answerCNAME(q dns.Question, rec dns_record) *dns.CNAME {
+	rr := dns.CNAME{
+		Hdr: dns.RR_Header{
+			Name:   q.Name,
+			Rrtype: dns.TypeCNAME,
+			Class:  dns.ClassINET,
+			Ttl:    0},
+		Target: rec.recval,
+	}
+	return &rr
+}
+
+func captiveHandler(w dns.ResponseWriter, r *dns.Msg) {
+	ip := getClientAddr(w)
+	m := new(dns.Msg)
+	m.SetReply(r)
+	m.Authoritative = true
+
+	start := time.Now()
+	for _, q := range r.Question {
+		if q.Qtype == dns.TypeA && captiveA != nil {
+			m.Answer = append(m.Answer, answerA(q, *captiveA))
+		}
+	}
+	w.WriteMsg(m)
+
+	logRequest("captiveHandler", start, ip, r, m)
+}
+
+func localHandler(w dns.ResponseWriter, r *dns.Msg) {
+	ip := getClientAddr(w)
+	if ip == nil {
+		return
+	} else if isCaptive(ip) {
+		captiveHandler(w, r)
+		return
+	}
+
+	m := new(dns.Msg)
+	m.SetReply(r)
+	m.Authoritative = true
+
+	start := time.Now()
+	for _, q := range r.Question {
+
+		hostsMtx.Lock()
+		rec, rec_ok := hosts[q.Name]
+		hostsMtx.Unlock()
+
+		if rec_ok {
+			if rec.rectype == dns.TypeA {
+				m.Answer = append(m.Answer, answerA(q, rec))
+			} else if rec.rectype == dns.TypeCNAME {
+				m.Answer = append(m.Answer, answerCNAME(q, rec))
+			}
+			continue
+		}
+
+		// Proxy needed if we have decided that we are allowing
+		// our domain to be handled upstream as well.
+		pq := new(dns.Msg)
+		pq.MsgHdr = r.MsgHdr
+		pq.Question = append(pq.Question, q)
+
+		c := new(dns.Client)
+		r2, _, err := c.Exchange(pq, upstream_dns)
+		if err != nil {
+			log.Printf("failed to exchange: %v", err)
+		} else if r2 != nil && r2.Rcode != dns.RcodeSuccess {
+			log.Printf("failed to get an valid answer\n%v", r)
+		} else {
+			log.Printf("%s proxy response %s\n",
+				domainname, r2)
+
+			m.Authoritative = false
+			m.Answer = append(m.Answer, r2.Answer...)
+		}
+	}
+	w.WriteMsg(m)
+
+	logRequest("localHandler", start, ip, r, m)
+}
+
+func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
+	ip := getClientAddr(w)
+	if ip == nil {
+		return
+	} else if isCaptive(ip) {
+		captiveHandler(w, r)
+		return
+	}
 
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.Authoritative = false
 
-	captive := isCaptive(ip)
-
-	/*
-	 * Are any of the questions in our phishing database?  If so, return
-	 * our IP address; for the HTTP and HTTPS cases, we can display a "no
-	 * phishing" page.
-	 */
+	start := time.Now()
 	for _, q := range r.Question {
-		if captive {
-			// On a captive network, we only respond to requests for
-			// A records, and we always return the router for that
-			// subnet
-			if q.Qtype == dns.TypeA {
-				m.Answer = append(m.Answer, &dns.A{
-					Hdr: dns.RR_Header{
-						Name:   q.Name,
-						Rrtype: dns.TypeA,
-						Class:  dns.ClassINET,
-						Ttl:    0},
-					A: captiveRouter,
-				})
-			}
-		} else if phishdata.KnownToDataSource(q.Name[:len(q.Name)-1]) {
-			m.Answer = append(m.Answer, &dns.A{
-				Hdr: dns.RR_Header{
-					Name:   q.Name,
-					Rrtype: dns.TypeA,
-					Class:  dns.ClassINET,
-					Ttl:    0},
-				A: gatewayRouter,
-			})
-		} else if strings.Contains(q.Name, ".in-addr.arpa.") {
-			hosts_mtx.Lock()
-			rec, rec_ok := hosts[q.Name]
-			hosts_mtx.Unlock()
-			if rec_ok && rec.rectype == dns.TypePTR {
-				m.Answer = append(m.Answer, &dns.PTR{
-					Hdr: dns.RR_Header{
-						Name:   q.Name,
-						Rrtype: dns.TypePTR,
-						Class:  dns.ClassINET,
-						Ttl:    0},
-					Ptr: rec.recval,
-				})
-			} else {
-				log.Printf("unhandled arpa DNS query: %v", q)
-			}
-		} else {
+		if phishdata.KnownToDataSource(q.Name[:len(q.Name)-1]) {
+			// Are any of the questions in our phishing database?
+			// If so, return our IP address; for the HTTP and HTTPS
+			// cases, we can display a "no phishing" page.
+			m.Answer = append(m.Answer, answerA(q, *phishtankA))
 
+		} else if strings.Contains(q.Name, ".in-addr.arpa.") {
+			hostsMtx.Lock()
+			rec, rec_ok := hosts[q.Name]
+			hostsMtx.Unlock()
+			if rec_ok && rec.rectype == dns.TypePTR {
+				m.Answer = append(m.Answer, answerPTR(q, rec))
+			}
+
+		} else {
 			c := new(dns.Client)
-			// XXX Upstream DNS server config.
-			r2, _, err := c.Exchange(r, *upstream_dns)
+
+			r2, _, err := c.Exchange(r, upstream_dns)
 			if err != nil {
 				log.Printf("failed to exchange: %v", err)
+			} else if r2 != nil && r2.Rcode != dns.RcodeSuccess {
+				log.Printf("failed to get an valid answer\n%v", r)
 			} else {
-				if r2 != nil && r2.Rcode != dns.RcodeSuccess {
-					log.Printf("failed to get an valid answer\n%v", r)
-				}
-
 				m.Answer = append(m.Answer, r2.Answer...)
 			}
 		}
 	}
-
 	w.WriteMsg(m)
+	logRequest("proxyHandler", start, ip, r, m)
+}
 
-	latencies.Observe(time.Since(lt).Seconds())
-	t := time.Now()
+func deleteOneClient(c *apcfg.ClientInfo) {
+	if c.IPv4 == nil {
+		return
+	}
+	ipv4 := c.IPv4.String()
 
-	host, _, _ := net.SplitHostPort(ip.String())
-	addr := net.ParseIP(host).To4()
+	delete(warned, ipv4)
 
-	protocol := base_msg.Protocol_DNS
-
-	requests := make([]string, 0)
-	responses := make([]string, 0)
-
-	for _, question := range r.Question {
-		requests = append(requests, question.String())
+	if arpa, err := dns.ReverseAddr(ipv4); err == nil {
+		log.Printf("Deleting PTR record %s->%s\n", arpa, c.DHCPName)
+		delete(hosts, arpa)
 	}
 
-	for _, answer := range m.Answer {
-		responses = append(responses, answer.String())
-	}
-
-	entity := &base_msg.EventNetRequest{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
-		Sender:       proto.String(brokerd.Name),
-		Debug:        proto.String("proxy_handler"),
-		Requestor:    proto.String(addr.String()),
-		IdentityUuid: proto.String(base_def.ZERO_UUID),
-		Protocol:     &protocol,
-		Request:      requests,
-		Response:     responses,
-	}
-
-	err := brokerd.Publish(entity, base_def.TOPIC_REQUEST)
-	if err != nil {
-		log.Println(err)
+	for addr, rec := range hosts {
+		if rec.rectype == dns.TypeA && rec.recval == ipv4 {
+			log.Printf("Deleting A record %s->%s\n", addr, ipv4)
+			delete(hosts, addr)
+		}
 	}
 }
 
-func initNetwork() {
-	gw := "127.0.0.1/32"
+// Convert a client's configd info into DNS records
+func updateOneClient(c *apcfg.ClientInfo) {
+	if c.IPv4 == nil {
+		return
+	}
 
-	config := apcfg.NewConfig(pname)
-	if config != nil {
-		cidr, _ := config.GetProp("@/interfaces/connect/subnet")
-		if cidr != "" {
-			_, subnet, err := net.ParseCIDR(cidr)
-			if err == nil {
-				captiveSubnet = subnet
-				r := network.SubnetRouter(cidr)
-				captiveRouter = net.ParseIP(r).To4()
+	ipv4 := c.IPv4.String()
+	delete(warned, ipv4)
+	if c.DNSName != "" {
+		hostname := c.DNSName + "."
+		if domainname != "" {
+			hostname += domainname + "."
+		}
+		hosts[hostname] = dns_record{
+			rectype: dns.TypeA,
+			recval:  ipv4,
+			expires: c.Expires,
+		}
+	}
+
+	if c.DHCPName != "" {
+		arpa, err := dns.ReverseAddr(ipv4)
+		if err != nil {
+			log.Printf("Invalid address %v for %s: %v\n",
+				c.IPv4, c.DNSName, err)
+		} else {
+			hosts[arpa] = dns_record{
+				rectype: dns.TypePTR,
+				recval:  c.DHCPName,
+				expires: c.Expires,
 			}
 		}
+	}
+}
 
-		cidr, _ = config.GetProp("@/dhcp/config/network")
+func initHostMap() {
+	clients = config.GetClients()
+	for _, c := range clients {
+		if c.Expires == nil || c.Expires.After(time.Now()) {
+			updateOneClient(c)
+		}
+	}
+}
+
+func getNameserver() string {
+	// Get the nameserver address from configd
+	tmp, _ := config.GetProp("@/network/dnsserver")
+	if tmp == "" {
+		return ""
+	}
+
+	// Attempt to split the address into <ip>:<port>
+	comp := strings.Split(tmp, ":")
+	if len(comp) < 1 || len(comp) > 2 {
+		goto errout
+	}
+
+	// Verify that that IP address is legal
+	if ip := net.ParseIP(comp[0]); ip == nil {
+		goto errout
+	}
+
+	// If the address didn't include a port number, append the standard port
+	if len(comp) == 1 {
+		tmp += ":53"
+	}
+
+	return tmp
+
+errout:
+	log.Printf("Invalid nameserver: %s\n", tmp)
+	return ""
+}
+
+func initNetwork() {
+	gw := "127.0.0.1/32" // Default phishtank target
+
+	warned = make(map[string]bool)
+	config = apcfg.NewConfig(pname)
+	if config != nil {
+		domainname, _ = config.GetProp("@/network/domainname")
+		if tmp := getNameserver(); tmp != "" {
+			upstream_dns = tmp
+		}
+		log.Printf("Using nameserver: %s\n", upstream_dns)
+
+		// If we have a network defined, we want phishtank lookups to
+		// resolve to that.
+		cidr, err := config.GetProp("@/dhcp/config/network")
 		if cidr != "" {
 			gw = cidr
+		} else {
+			log.Printf("Failed to get subnet address: %v\n", err)
+		}
+
+		// If we have a 'connect' network, construct an A record which
+		// we can use to answer all DNS requests on that subnet.
+		cidr, _ = config.GetProp("@/interfaces/connect/subnet")
+		if cidr != "" {
+			if _, subnet, err := net.ParseCIDR(cidr); err == nil {
+				router := network.SubnetRouter(subnet.String())
+				captiveSubnet = subnet
+				captiveA = &dns_record{
+					rectype: dns.TypeA,
+					recval:  router,
+				}
+			}
 		}
 	}
 
 	r := network.SubnetRouter(gw)
-	gatewayRouter = net.ParseIP(r).To4()
+	phishtankA = &dns_record{
+		rectype: dns.TypeA,
+		recval:  r,
+	}
 }
 
 func init() {
@@ -545,30 +592,22 @@ func main() {
 	}
 	flag.Parse()
 
-	log.Println("cli flags parsed")
-
-	initNetwork()
-
-	// RESOLVE_TIME = promc.Summary("dns_resolve_seconds",
-	//                              "DNS query resolution time")
-
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
 	log.Println("prometheus client launched")
 
 	brokerd.Init(pname)
-	brokerd.Handle(base_def.TOPIC_CONFIG, config_changed)
-	brokerd.Handle(base_def.TOPIC_RESOURCE, resource_changed)
+	brokerd.Handle(base_def.TOPIC_CONFIG, configEvent)
+	brokerd.Handle(base_def.TOPIC_RESOURCE, resourceEvent)
 	brokerd.Connect()
 	defer brokerd.Disconnect()
-
-	log.Println("message bus listener routine launched")
-
-	time.Sleep(time.Second)
 	brokerd.Ping()
 
-	client_map = make(map[string]int64)
+	config = apcfg.NewConfig(pname)
+	hosts = make(map[string]dns_record)
+	initNetwork()
+	initHostMap()
 
 	// load the phishtank
 	log.Printf("phishdata %v", phishdata)
@@ -578,14 +617,17 @@ func main() {
 	// ^^ uncomment to autoupdate with real phish data, also change in httpd
 	log.Printf("phishdata %v", phishdata)
 
-	dns.HandleFunc("blueslugs.com.", local_handler)
-	dns.HandleFunc(".", proxy_handler)
+	if domainname != "" {
+		dns.HandleFunc(domainname+".", localHandler)
+	}
+	dns.HandleFunc(".", proxyHandler)
 
 	if mcp != nil {
 		mcp.SetStatus("online")
 	}
+
 	go func() {
-		srv := &dns.Server{Addr: ":" + strconv.Itoa(*port), Net: "udp"}
+		srv := &dns.Server{Addr: ":53", Net: "udp"}
 		if err := srv.ListenAndServe(); err != nil {
 			log.Fatalf("Failed to set udp listener %s\n", err.Error())
 		}
@@ -594,7 +636,7 @@ func main() {
 	log.Println("udp dns listener routine launched")
 
 	go func() {
-		srv := &dns.Server{Addr: ":" + strconv.Itoa(*port), Net: "tcp"}
+		srv := &dns.Server{Addr: ":53", Net: "tcp"}
 		if err := srv.ListenAndServe(); err != nil {
 			log.Fatalf("Failed to set tcp listener %s\n", err.Error())
 		}
@@ -607,33 +649,3 @@ func main() {
 	s := <-sig
 	log.Fatalf("Signal (%v) received, stopping\n", s)
 }
-
-// # XXX retrieve my server address
-// #   XXX one service instance per separate network?
-//
-// # XXX network configurations
-// # XXX quarantine range
-// # XXX trusted dns, untrusted dns
-// # XXX event log: host discovery from DNS request
-//
-//
-//     def __init__(self, address_list, event_channels, timeout=120):
-//         # address_list is a list of IPAddresses
-//         self.address_list = address_list
-//         self.address = address_list[0]
-//         self.port = 53 # XXX Less general
-//         self.timeout = timeout
-//
-//         self.clients = []
-//
-//         # event_channels should be the set of channels the app needs
-//         self.event_channels = event_channels
-//
-//         self.st_requests = 0
-//         self.st_local_responses = 0
-//         self.st_local_not_founds = 0
-//         self.st_remote_not_founds = 0
-//         # XXX timestamp based statistics?
-//
-//     @RESOLVE_TIME.time()
-//     def resolve(self, request, handler):

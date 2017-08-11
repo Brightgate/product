@@ -129,12 +129,12 @@ const (
 	pname             = "ap.configd"
 
 	minConfigVersion = 0
-	curConfigVersion = 1
+	curConfigVersion = 2
 )
 
 type property_ops struct {
 	get func(*pnode) (string, error)
-	set func(*pnode, string, *time.Time) error
+	set func(*pnode, string, *time.Time) (bool, error)
 }
 
 type property_match struct {
@@ -142,6 +142,7 @@ type property_match struct {
 	ops   *property_ops
 }
 
+var default_ops = property_ops{default_getter, default_setter}
 var ssid_ops = property_ops{default_getter, ssid_update}
 var uuid_ops = property_ops{default_getter, uuid_update}
 
@@ -264,19 +265,51 @@ func expiration_handler() {
 	}
 }
 
+func nextExpiration() *pnode {
+	if len(exp_heap) == 0 {
+		return nil
+	}
+
+	return exp_heap[0]
+}
+
 /*
  * Update the expiration time of a single property (possibly setting an
- * expiration for the first time).  If this property ends up at the top of the
- * expiration heap, reset the expiration timer accordingly.
+ * expiration for the first time).  If this property either starts or ends at
+ * the top of the expiration heap, reset the expiration timer accordingly.
  */
 func expiration_update(node *pnode) {
+	reset := false
+
 	exp_mutex.Lock()
-	if node.index == -1 {
-		heap.Push(&exp_heap, node)
+
+	if node == nextExpiration() {
+		reset = true
 	}
-	heap.Fix(&exp_heap, node.index)
-	if exp_heap[0] == node {
-		exp_timer.Reset(time.Until(*node.Expires))
+
+	if node.Expires == nil {
+		// This node doesn't have an expiration.  If it's in the heap,
+		// it's probably because we just made the setting permanent.
+		// Pull it out of the heap.
+		if node.index != -1 {
+			heap.Remove(&exp_heap, node.index)
+			node.index = -1
+		}
+	} else {
+		if node.index == -1 {
+			heap.Push(&exp_heap, node)
+		}
+		heap.Fix(&exp_heap, node.index)
+	}
+
+	if node == nextExpiration() {
+		reset = true
+	}
+
+	if reset {
+		if next := nextExpiration(); next != nil {
+			exp_timer.Reset(time.Until(*next.Expires))
+		}
 	}
 	exp_mutex.Unlock()
 }
@@ -364,12 +397,13 @@ func expirationNotify(prop, val string) {
 func entity_handler(event []byte) {
 	entity := &base_msg.EventNetEntity{}
 	proto.Unmarshal(event, entity)
+	dhcp := strings.HasPrefix(*entity.Sender, "ap.dhcp4d")
+
 	if entity.MacAddress == nil {
 		log.Printf("Received a NET.ENTITY event with no MAC: %v\n",
 			entity)
 		return
 	}
-
 	hwaddr := network.Uint64ToHWAddr(*entity.MacAddress)
 	path := "@/clients/" + hwaddr.String()
 	node := cfg_property_parse(path, true)
@@ -385,33 +419,26 @@ func entity_handler(event []byte) {
 	var n *pnode
 	var ok bool
 	if _, ok = fields["class"]; !ok {
-		n := property_add(node, "class", path+"/class")
+		n := property_add(node, "class")
 		if entity.Class != nil {
 			n.Value = *entity.Class
 		} else {
 			n.Value = "unclassified"
 		}
 	}
-	if entity.Ipv4Address != nil {
-		if n, ok = fields["ipv4"]; !ok {
-			n = property_add(node, "ipv4", path+"/ipv4")
-		}
-		ip := network.Uint32ToIPAddr(*entity.Ipv4Address)
-		n.Value = ip.String()
-	}
 
 	if entity.InterfaceName != nil {
 		if n, ok = fields["iface"]; !ok {
-			n = property_add(node, "iface", path+"/iface")
+			n = property_add(node, "iface")
 		}
 		n.Value = *entity.InterfaceName
 	}
 
-	if entity.DnsName != nil {
+	if dhcp && entity.Hostname != nil {
 		if n, ok = fields["dns"]; !ok {
-			n = property_add(node, "dns", path+"/dns")
+			n = property_add(node, "dhcp_name")
 		}
-		n.Value = *entity.DnsName
+		n.Value = *entity.Hostname
 	}
 	prop_tree_store()
 }
@@ -420,10 +447,19 @@ func entity_handler(event []byte) {
  *
  * Generic and property-specific setter/getter routines
  */
-func default_setter(node *pnode, val string, expires *time.Time) error {
-	node.Value = val
-	node.Expires = expires
-	return nil
+func default_setter(node *pnode, val string, expires *time.Time) (bool, error) {
+	updated := false
+
+	if node.Value != val {
+		node.Value = val
+		updated = true
+	}
+
+	if node.Expires != nil || expires != nil {
+		node.Expires = expires
+		updated = true
+	}
+	return updated, nil
 }
 
 func default_getter(node *pnode) (string, error) {
@@ -437,14 +473,14 @@ func default_getter(node *pnode) (string, error) {
 	return rval, err
 }
 
-func uuid_update(node *pnode, uuid string, expires *time.Time) error {
+func uuid_update(node *pnode, uuid string, expires *time.Time) (bool, error) {
 	const null_uuid = "00000000-0000-0000-0000-000000000000"
 
 	if node.Value != null_uuid {
-		return fmt.Errorf("Cannot change an appliance's UUID")
+		return false, fmt.Errorf("Cannot change an appliance's UUID")
 	}
 	node.Value = uuid
-	return nil
+	return true, nil
 }
 
 func ssid_validate(ssid string) error {
@@ -463,12 +499,13 @@ func ssid_validate(ssid string) error {
 	return nil
 }
 
-func ssid_update(node *pnode, ssid string, expires *time.Time) error {
+func ssid_update(node *pnode, ssid string, expires *time.Time) (bool, error) {
 	err := ssid_validate(ssid)
-	if err == nil {
+	if err == nil && node.Value != ssid {
 		node.Value = ssid
+		return true, nil
 	}
-	return err
+	return false, err
 }
 
 /*
@@ -482,6 +519,7 @@ func property_attach_ops(node *pnode, path string) {
 			return
 		}
 	}
+	node.ops = &default_ops
 }
 
 /*************************************************************************
@@ -507,11 +545,14 @@ func mark_updated(node *pnode) {
 /*
  * Allocate a new property node and insert it into the property tree
  */
-func property_add(parent *pnode, name string, path string) *pnode {
-	n := pnode{Name: name,
+func property_add(parent *pnode, property string) *pnode {
+	path := parent.path + "/" + property
+
+	n := pnode{Name: property,
 		parent: parent,
 		path:   path,
 		index:  -1}
+
 	parent.Children = append(parent.Children, &n)
 	property_attach_ops(&n, path)
 	return &n
@@ -549,7 +590,6 @@ func cfg_property_parse(prop string, insert bool) *pnode {
 		var next *pnode
 
 		name := components[i]
-		path += "/" + name
 		for _, n := range node.Children {
 			if name == n.Name {
 				next = n
@@ -557,8 +597,9 @@ func cfg_property_parse(prop string, insert bool) *pnode {
 			}
 		}
 		if next == nil && insert {
-			next = property_add(node, name, path)
+			next = property_add(node, name)
 		}
+		path += "/" + name
 		node = next
 	}
 
@@ -566,7 +607,7 @@ func cfg_property_parse(prop string, insert bool) *pnode {
 }
 
 func property_delete(property string) error {
-	log.Println("delete property " + property)
+	log.Printf("delete property: %s\n", property)
 	node := cfg_property_parse(property, false)
 	if node == nil {
 		return fmt.Errorf("deleting a nonexistent property: %s",
@@ -586,24 +627,25 @@ func property_delete(property string) error {
 	return nil
 }
 
-func property_update(property, value string, expires *time.Time, insert bool) error {
+func property_update(property, value string, expires *time.Time,
+	insert bool) (bool, error) {
 	var err error
 
-	log.Println("set property " + property + " -> " + value)
+	log.Printf("set property %s -> %s\n", property, value)
+	updated := false
+
 	node := cfg_property_parse(property, insert)
 	if node == nil {
 		if insert {
-			log.Fatal("Failed to insert a new property")
+			err = fmt.Errorf("Failed to insert a new property")
+		} else {
+			err = fmt.Errorf("Updating a nonexistent property: %s",
+				property)
 		}
-		err = fmt.Errorf("Updating a nonexistent property: %s",
-			property)
 	} else if len(node.Children) > 0 {
 		err = fmt.Errorf("Can only modify leaf properties")
-	} else if node.ops == nil {
-		node.Value = value
-		node.Expires = expires
 	} else {
-		err = node.ops.set(node, value, expires)
+		updated, err = node.ops.set(node, value, expires)
 	}
 
 	if err != nil {
@@ -615,19 +657,16 @@ func property_update(property, value string, expires *time.Time, insert bool) er
 		}
 	}
 
-	return err
+	return updated, err
 }
 
 func property_get(property string) (string, error) {
 	var err error
 	var rval string
 
-	log.Println("get property: " + property)
 	node := cfg_property_parse(property, false)
 	if node == nil {
 		err = fmt.Errorf("No such property")
-	} else if node.ops != nil {
-		rval, err = node.ops.get(node)
 	} else {
 		b, err := json.Marshal(node)
 		if err == nil {
@@ -636,7 +675,7 @@ func property_get(property string) (string, error) {
 	}
 
 	if err != nil {
-		log.Println("property get failed: ", err)
+		log.Printf("property get for %s failed: %v\n", property, err)
 	}
 
 	return rval, err
@@ -828,21 +867,22 @@ func prop_tree_init() {
 
 	if err != nil {
 		log.Printf("No usable properties files.  Loading defaults.\n")
-		err = prop_tree_load(default_file)
+		err := prop_tree_load(default_file)
 		if err != nil {
 			log.Fatal("Unable to load default properties")
 		}
+		patchTree(&property_root, "@")
 		appliance_uuid := uuid.NewV4().String()
 		property_update("@/uuid", appliance_uuid, nil, true)
 	}
 
 	if err == nil {
+		patchTree(&property_root, "@")
 		if err = versionTree(); err != nil {
 			log.Printf("Failed version check: %v\n", err)
 		}
 	}
 
-	patchTree(&property_root, "@")
 	dumpTree(&property_root, 0)
 }
 
@@ -864,8 +904,8 @@ func set_handler(q *base_msg.ConfigQuery, add bool) error {
 		expires = &tmp
 	}
 
-	err := property_update(*q.Property, *q.Value, expires, add)
-	if err == nil {
+	updated, err := property_update(*q.Property, *q.Value, expires, add)
+	if updated {
 		prop_tree_store()
 		updateNotify(*q.Property, *q.Value)
 	}
@@ -933,24 +973,20 @@ func main() {
 		rc := base_msg.ConfigResponse_OP_OK
 		switch *query.Operation {
 		case base_msg.ConfigQuery_GET:
-			val, err = get_handler(query)
-			if err != nil {
-				rc = base_msg.ConfigResponse_GET_PROP_NOT_FOUND
+			if val, err = get_handler(query); err != nil {
+				rc = base_msg.ConfigResponse_PROP_NOT_FOUND
 			}
 		case base_msg.ConfigQuery_CREATE:
-			err = set_handler(query, true)
-			if err != nil {
-				rc = base_msg.ConfigResponse_SET_PROP_NO_PERM
+			if err = set_handler(query, true); err != nil {
+				rc = base_msg.ConfigResponse_NO_PERM
 			}
 		case base_msg.ConfigQuery_SET:
-			err = set_handler(query, false)
-			if err != nil {
-				rc = base_msg.ConfigResponse_SET_PROP_NOT_FOUND
+			if err = set_handler(query, false); err != nil {
+				rc = base_msg.ConfigResponse_PROP_NOT_FOUND
 			}
 		case base_msg.ConfigQuery_DELETE:
-			err = delete_handler(query)
-			if err != nil {
-				rc = base_msg.ConfigResponse_DELETE_PROP_NOT_FOUND
+			if err = delete_handler(query); err != nil {
+				rc = base_msg.ConfigResponse_PROP_NOT_FOUND
 			}
 		default:
 			log.Printf("Unrecognized operation")

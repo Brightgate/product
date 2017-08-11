@@ -117,7 +117,7 @@ func handleEntity(event []byte) {
 
 	id := mfgidDB[entry.Manufacturer]
 
-	newData.AddIdentityHint(*entity.MacAddress, *entity.DnsName)
+	newData.AddIdentityHint(*entity.MacAddress, *entity.Hostname)
 	testData.SetByName(*entity.MacAddress, "Manufacturer ID", strconv.Itoa(id))
 }
 
@@ -154,26 +154,28 @@ func handleConfig(event []byte) {
 	eventConfig := &base_msg.EventConfig{}
 	proto.Unmarshal(event, eventConfig)
 	property := *eventConfig.Property
+	value := *eventConfig.NewValue
 	path := strings.Split(property[2:], "/")
 
-	// Ignore all properties other than "@/dhcp/leases/*"
-	if len(path) != 3 || path[0] != "dhcp" || path[1] != "leases" {
+	// Ignore all properties other than "@/clients/*/ipv4"
+	if len(path) != 3 || path[0] != "clients" || path[2] != "ipv4" {
 		return
 	}
 
-	ipv4 := net.ParseIP(path[2])
+	mac, err := net.ParseMAC(path[1])
+	if err != nil {
+		log.Printf("invalid MAC address %s", *eventConfig.NewValue)
+		return
+	}
+
+	ipv4 := net.ParseIP(value)
 	if ipv4 == nil {
-		log.Printf("invalid IPv4 address %s", path[2])
+		log.Printf("invalid IPv4 address %s", value)
 		return
 	}
 	ipaddr := network.IPAddrToUint32(ipv4)
 
 	if *eventConfig.Type == base_msg.EventConfig_CHANGE {
-		mac, err := net.ParseMAC(*eventConfig.NewValue)
-		if err != nil {
-			log.Printf("invalid MAC address %s", *eventConfig.NewValue)
-			return
-		}
 		addIP(ipaddr, network.HWAddrToUint64(mac))
 	} else {
 		removeIP(ipaddr)

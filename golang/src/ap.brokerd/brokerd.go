@@ -19,7 +19,11 @@ package main
 import (
 	"flag"
 	"log"
+	"time"
+	"os"
 	"net/http"
+	"os/signal"
+	"syscall"
 
 	"ap_common/mcp"
 	"base_def"
@@ -33,7 +37,11 @@ import (
 var addr = flag.String("listen-address", base_def.BROKER_PROMETHEUS_PORT,
 	"The address to listen on for HTTP requests.")
 
+var mcpd *mcp.MCP
+
 func main() {
+	var err error
+
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
 	log.Println("start")
@@ -48,7 +56,7 @@ func main() {
 	 */
 	flag.Parse()
 
-	mcp, err := mcp.New("ap.brokerd")
+	mcpd, err := mcp.New("ap.brokerd")
 	if err != nil {
 		log.Printf("Failed to connect to mcp\n")
 	}
@@ -69,10 +77,28 @@ func main() {
 
 	log.Println("frontend, backend ready; about to invoke proxy")
 
-	if mcp != nil {
-		mcp.SetStatus("online")
+	if mcpd != nil {
+		mcpd.SetStatus("online")
 	}
-	err = zmq.Proxy(frontend, backend, nil)
 
-	log.Fatalln("zmq proxy interrupted", err)
+	go func() {
+		for {
+			start := time.Now()
+
+			err = zmq.Proxy(frontend, backend, nil)
+			log.Printf("zmq proxy interrupted: %v\n", err)
+			if time.Since(start).Seconds() < 10 {
+				break
+			}
+		}
+		if mcpd != nil {
+			mcpd.SetStatus("broken")
+			log.Fatalf("Errors coming too quickly.  Giving up.\n")
+		}
+	}()
+
+	sig := make(chan os.Signal)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	s := <-sig
+	log.Fatalf("Signal (%v) received, stopping\n", s)
 }

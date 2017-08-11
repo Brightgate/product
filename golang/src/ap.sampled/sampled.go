@@ -162,7 +162,7 @@ func handleArp(arp *layers.ARP) {
 //      authoritative the new address represents a new DHCP lease and the record
 //      is vetted. If we are not authoritative and the record was previously
 //      vetted we are in conflict.
-//   3) If the two IP addresses match and we are authritative the record is
+//   3) If the two IP addresses match and we are authoritative the record is
 //      vetted.
 func updateRecord(hwaddr net.HardwareAddr, ipaddr net.IP, auth bool) {
 
@@ -294,25 +294,25 @@ func configChanged(event []byte) {
 	property := *eventConfig.Property
 	path := strings.Split(property[2:], "/")
 
-	// Ignore all properties other than "@/dhcp/leases/*"
-	if len(path) != 3 || path[0] != "dhcp" || path[1] != "leases" {
+	// Watch for lease events on @/clients/<macaddr>/ipv4.
+	if len(path) != 3 || path[0] != "clients" || path[2] != "ipv4" {
 		return
 	}
 
-	ipv4 := net.ParseIP(path[2])
-	if ipv4 == nil {
-		log.Printf("invalid IPv4 address %s", path[2])
+	ip := net.ParseIP(*eventConfig.NewValue)
+	if ip == nil {
+		log.Printf("invalid IP address %s", *eventConfig.NewValue)
 		return
 	}
 
-	hwaddr, err := net.ParseMAC(*eventConfig.NewValue)
+	hwaddr, err := net.ParseMAC(path[1])
 	if err != nil {
-		log.Printf("invalid MAC address %s", *eventConfig.NewValue)
+		log.Printf("invalid MAC address %s", path[1])
 		return
 	}
 
 	if *eventConfig.Type == base_msg.EventConfig_CHANGE {
-		updateRecord(hwaddr, ipv4, true)
+		updateRecord(hwaddr, ip.To4(), true)
 	} else {
 		deleteRecord(hwaddr)
 	}
@@ -358,20 +358,17 @@ func signalHandler() {
 }
 
 func getLeases() {
-	var leases *apcfg.PropertyNode
-	var err error
-
-	if leases, err = config.GetProps("@/dhcp/leases"); err != nil {
-		log.Printf("Failed to get DHCP lease info: %v", err)
+	clients := config.GetClients()
+	if clients == nil {
+		return
 	}
 
-	for _, s := range leases.Children {
-		ip := net.ParseIP(s.Name)
-		hwaddr, err := net.ParseMAC(s.Value)
+	for macaddr, client := range clients {
+		hwaddr, err := net.ParseMAC(macaddr)
 		if err != nil {
-			log.Printf("invalid MAC address %s", s.Value)
-		} else {
-			updateRecord(hwaddr, ip, true)
+			log.Printf("Invalid mac address: %s\n", macaddr)
+		} else if client.IPv4 != nil {
+			updateRecord(hwaddr, client.IPv4, true)
 		}
 	}
 }

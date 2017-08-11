@@ -84,5 +84,13 @@
         "ThirdParty": true,
 	"Arch": "amd64",
 	"Options": "-config.file=$APROOT/etc/prometheus.yml -storage.local.path=\"$APROOT/var/prometheus-data\""
+    },
+    "dnsmasq": {
+        "Name": "dnsmasq",
+        "Binary": "/usr/sbin/dnsmasq",
+        "DependsOn": "networkd",
+        "Privileged": true,
+        "ThirdParty": true,
+	"Options": "-k -h -p 5300 -i lo"
     }
 }

@@ -46,13 +46,15 @@ var (
 	addr = flag.String("promhttp-address", base_def.DHCPD_PROMETHEUS_PORT,
 		"Prometheus publication HTTP port.")
 
-	handlers       = make(map[string]*DHCPHandler)
-	clientClass    = make(map[string]string)
-	clientClassMtx sync.Mutex
-	brokerd        broker.Broker
-	config         *apcfg.APConfig
+	handlers = make(map[string]*DHCPHandler)
 
-	nics         []*apcfg.Nic
+	brokerd broker.Broker
+
+	config    *apcfg.APConfig
+	nics      []*apcfg.Nic
+	clients   apcfg.ClientMap
+	clientMtx sync.Mutex
+
 	use_vlans    bool
 	sharedRouter net.IP     // without vlans, all classes share a
 	sharedSubnet *net.IPNet // subnet and a router node
@@ -63,17 +65,25 @@ var (
 const pname = "ap.dhcp4d"
 
 func getClass(hwaddr string) string {
-	clientClassMtx.Lock()
-	class := clientClass[hwaddr]
-	clientClassMtx.Unlock()
+	var class string
+
+	clientMtx.Lock()
+	if client := clients[hwaddr]; client != nil {
+		class = client.Class
+	}
+	clientMtx.Unlock()
 
 	return class
 }
 
 func setClass(hwaddr, class string) string {
-	clientClassMtx.Lock()
-	clientClass[hwaddr] = class
-	clientClassMtx.Unlock()
+	clientMtx.Lock()
+	if client := clients[hwaddr]; client != nil {
+		client.Class = class
+	} else {
+		clients[hwaddr] = &apcfg.ClientInfo{Class: class}
+	}
+	clientMtx.Unlock()
 
 	return class
 }
@@ -81,12 +91,18 @@ func setClass(hwaddr, class string) string {
 func updateClass(hwaddr, old, new string) bool {
 	updated := false
 
-	clientClassMtx.Lock()
-	if clientClass[hwaddr] == old {
-		clientClass[hwaddr] = new
+	clientMtx.Lock()
+	client := clients[hwaddr]
+	if client == nil && old == "" {
+		client = &apcfg.ClientInfo{Class: ""}
+		clients[hwaddr] = client
+	}
+
+	if client != nil && client.Class == old {
+		client.Class = new
 		updated = true
 	}
-	clientClassMtx.Unlock()
+	clientMtx.Unlock()
 
 	return updated
 }
@@ -97,18 +113,23 @@ func updateClass(hwaddr, old, new string) bool {
  */
 func configExpired(path []string) {
 	/*
-	 * Watch for lease expirations in @/dhcp/leases/<ipaddr>.  We actually
+	 * Watch for lease expirations in @/clients/<macaddr>/ipv4.  We actually
 	 * clean up expired leases as a side effect of handing out new ones, so
 	 * all we do here is log it.
 	 */
-	if len(path) == 3 && path[0] == "dhcp" && path[1] == "leases" {
+	if len(path) == 3 && path[0] == "clients" && path[2] == "ipv4" {
 		log.Printf("Lease for %s expired\n", path[2])
 	}
 }
 
 func configChanged(path []string, val string) {
+	//
+	// XXX: We need to watch for changes to ipv4 as well.  That could happen
+	// if we assign a client a static IP address using configd.
+	//
+
 	/*
-	 * Watch for client identifications in @/client/<macaddr>/class
+	 * Watch for client identifications in @/clients/<macaddr>/class
 	 */
 	if len(path) == 3 && path[0] == "clients" && path[2] == "class" {
 		client := path[1]
@@ -148,8 +169,12 @@ func config_event(raw []byte) {
 	}
 }
 
-func leaseProperty(ipaddr net.IP) string {
-	return "@/dhcp/leases/" + ipaddr.String()
+func hostnameProperty(hwaddr string) string {
+	return fmt.Sprintf("@/clients/%s/dhcp_name", hwaddr)
+}
+
+func leaseProperty(hwaddr string) string {
+	return fmt.Sprintf("@/clients/%s/ipv4", hwaddr)
 }
 
 /*
@@ -173,7 +198,7 @@ func notifyNewEntity(p dhcp.Packet, options dhcp.Options, class string) {
 		Debug:       proto.String("-"),
 		MacAddress:  proto.Uint64(hwaddr_u64),
 		Ipv4Address: proto.Uint32(network.IPAddrToUint32(ipaddr)),
-		DnsName:     proto.String(hostname),
+		Hostname:    proto.String(hostname),
 		Class:       proto.String(class),
 	}
 
@@ -186,7 +211,10 @@ func notifyNewEntity(p dhcp.Packet, options dhcp.Options, class string) {
 /*
  * A provisioned IP address has now been claimed by a client.
  */
-func notifyClaimed(p dhcp.Packet, ipaddr net.IP, name string) {
+func notifyClaimed(p dhcp.Packet, ipaddr net.IP, name string,
+	dur time.Duration) {
+
+	ttl := uint32(dur.Seconds())
 	t := time.Now()
 
 	action := base_msg.EventNetResource_CLAIMED
@@ -199,7 +227,8 @@ func notifyClaimed(p dhcp.Packet, ipaddr net.IP, name string) {
 		Debug:       proto.String("-"),
 		Action:      &action,
 		Ipv4Address: proto.Uint32(network.IPAddrToUint32(ipaddr)),
-		DnsName:     proto.String(name),
+		Hostname:    proto.String(name),
+		Duration:    proto.Uint32(ttl),
 	}
 
 	err := brokerd.Publish(resource, base_def.TOPIC_RESOURCE)
@@ -374,14 +403,11 @@ func (h *DHCPHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 		l.expires = &expires
 	}
 
-	/*
-	 * XXX: currently a lease is a single property, which means we will lose
-	 * any hostname on restart.  When ap.config is augmented to accept
-	 * property trees, we can fix this.
-	 */
-	log.Printf("   REQUEST assigned %s to %s (%q) until %s\n", l.ipaddr, hwaddr, l.name, l.expires)
-	config.CreateProp(leaseProperty(l.ipaddr), l.hwaddr, l.expires)
-	notifyClaimed(p, l.ipaddr, l.name)
+	log.Printf("   REQUEST assigned %s to %s (%q) until %s\n",
+		l.ipaddr, hwaddr, l.name, l.expires)
+	config.CreateProp(leaseProperty(hwaddr), l.ipaddr.String(), l.expires)
+	config.CreateProp(hostnameProperty(hwaddr), l.name, nil)
+	notifyClaimed(p, l.ipaddr, l.name, h.duration)
 
 	return dhcp.ReplyPacket(p, dhcp.ACK, h.server_ip, l.ipaddr, h.duration,
 		h.options.SelectOrderOrAll(options[dhcp.OptionParameterRequestList]))
@@ -399,7 +425,7 @@ func (h *DHCPHandler) releaseLease(l *lease, hwaddr string) bool {
 
 	l.assigned = false
 	notifyRelease(l.ipaddr)
-	config.DeleteProp(leaseProperty(l.ipaddr))
+	config.DeleteProp(leaseProperty(l.hwaddr))
 	return true
 }
 
@@ -619,23 +645,22 @@ func newHandler(class, network, nameserver string, duration int) *DHCPHandler {
 	return &h
 }
 
-func (h *DHCPHandler) recoverLeases(root *apcfg.PropertyNode) {
+func (h *DHCPHandler) recoverLeases() {
 	// Preemptively pull the network and DHCP server from the pool
 	h.leases[0].assigned = true
 	h.leases[1].assigned = true
 
-	if root == nil {
-		return
-	}
+	for macaddr, client := range clients {
+		if client.IPv4 == nil {
+			continue
+		}
 
-	for _, s := range root.Children {
-		ip := net.ParseIP(s.Name).To4()
-		if l := h.getLease(ip); l != nil {
-			l.name = ""
-			l.hwaddr = s.Value
-			l.ipaddr = ip
-			l.expires = s.Expires
-			l.static = (s.Expires == nil)
+		if l := h.getLease(client.IPv4); l != nil {
+			l.name = client.DHCPName
+			l.hwaddr = macaddr
+			l.ipaddr = client.IPv4
+			l.expires = client.Expires
+			l.static = (client.Expires == nil)
 			l.assigned = true
 		}
 	}
@@ -673,7 +698,7 @@ func initPhysical(props *apcfg.PropertyNode) error {
 func initHandlers() error {
 	var err error
 	var nameserver string
-	var props, leases, node *apcfg.PropertyNode
+	var props, node *apcfg.PropertyNode
 
 	/*
 	 * Currently assumes a single interface/dhcp configuration.  If we want
@@ -692,10 +717,6 @@ func initHandlers() error {
 
 	if node = props.GetChild("nameserver"); node != nil {
 		nameserver = node.Value
-	}
-
-	if leases, err = config.GetProps("@/dhcp/leases"); err != nil {
-		return fmt.Errorf("Failed to get DHCP lease info: %v", err)
 	}
 
 	// Iterate over the known classes.  For each one, find the VLAN name and
@@ -727,7 +748,7 @@ func initHandlers() error {
 			h.iface = class.Interface
 		}
 
-		h.recoverLeases(leases)
+		h.recoverLeases()
 		handlers[h.class] = h
 	}
 
@@ -816,16 +837,6 @@ func mainLoop() {
 	}
 }
 
-//
-// Determine the initial client -> class mappings
-func initClientMap() {
-	clients := config.GetClients()
-	for client, info := range clients {
-		clientClass[client] = info.Class
-		log.Printf("%s starts as %s\n", client, info.Class)
-	}
-}
-
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
@@ -847,7 +858,7 @@ func main() {
 
 	// Interface to config
 	config = apcfg.NewConfig(pname)
-	initClientMap()
+	clients = config.GetClients()
 
 	err = initHandlers()
 
