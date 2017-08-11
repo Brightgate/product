@@ -21,9 +21,6 @@
  * servers in the same process.
  */
 
-// Ubuntu: requires libzmq3-dev, which is 0MQ 4.2.1.
-// XXX Exception messages are not displayed.
-
 package main
 
 import (
@@ -70,15 +67,31 @@ var (
 	captiveA   *dns_record
 	phishtankA *dns_record
 
+	domainname   string
+	upstream_dns = "8.8.8.8:53"
+)
+
+/*
+ * The 'clients' map represents all of the clients that we know about.  In
+ * particular, we track which clients have been assigned an IP address either
+ * statically or by DHCP.  This map is used to populate our initial DNS dataset
+ * and to determine which incoming requests we will answer.
+
+ * The 'hosts' map contains the DNS records we use to answer DNS requests.  The
+ * initial data comes from the properties file, via the clients map.  Over time
+ * additional PTR records will be added in response to NetEntity events.
+ *
+ * The two maps are protected by mutexes.  If an operation requires holding both
+ * mutexes, the ClientMtx should be taken first.
+ *
+ */
+var (
 	clientMtx sync.Mutex
 	clients   apcfg.ClientMap
 	warned    map[string]bool
 
 	hostsMtx sync.Mutex
 	hosts    map[string]dns_record
-
-	domainname   string
-	upstream_dns = "8.8.8.8:53"
 )
 
 const pname = "ap.dns4d"
@@ -163,7 +176,7 @@ func configEvent(raw []byte) {
 		}
 	}
 
-	hostsMtx.Lock()
+	clientMtx.Lock()
 	old = clients[macaddr]
 	if old != nil {
 		delete(clients, macaddr)
@@ -173,7 +186,7 @@ func configEvent(raw []byte) {
 		updateOneClient(new)
 		clients[macaddr] = new
 	}
-	hostsMtx.Unlock()
+	clientMtx.Unlock()
 }
 
 func resourceEvent(event []byte) {
@@ -437,6 +450,7 @@ func deleteOneClient(c *apcfg.ClientInfo) {
 
 	delete(warned, ipv4)
 
+	hostsMtx.Lock()
 	if arpa, err := dns.ReverseAddr(ipv4); err == nil {
 		log.Printf("Deleting PTR record %s->%s\n", arpa, c.DHCPName)
 		delete(hosts, arpa)
@@ -448,6 +462,7 @@ func deleteOneClient(c *apcfg.ClientInfo) {
 			delete(hosts, addr)
 		}
 	}
+	hostsMtx.Unlock()
 }
 
 // Convert a client's configd info into DNS records
@@ -458,6 +473,7 @@ func updateOneClient(c *apcfg.ClientInfo) {
 
 	ipv4 := c.IPv4.String()
 	delete(warned, ipv4)
+	hostsMtx.Lock()
 	if c.DNSName != "" {
 		hostname := c.DNSName + "."
 		if domainname != "" {
@@ -483,6 +499,7 @@ func updateOneClient(c *apcfg.ClientInfo) {
 			}
 		}
 	}
+	hostsMtx.Unlock()
 }
 
 func initHostMap() {

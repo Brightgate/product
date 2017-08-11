@@ -208,21 +208,25 @@ func runDaemon(d *daemon) {
 	}
 
 	for d.run {
+		var msg string
+
 		start_time := time.Now()
 		start_times = append(start_times[1:failures_allowed], start_time)
 
 		err := singleInstance(d)
-
 		if err == nil {
-			log.Printf("%s exited after %s\n", d.Name, time.Since(start_time))
-			if time.Since(start_times[0]) < period {
-				log.Printf("%s is dying too quickly")
-				setStatus(d, "broken")
-				d.run = false
-			}
+			msg = "cleanly"
 		} else {
-			log.Printf("%s wouldn't start: %v\n", d.Name, err)
+			msg = fmt.Sprintf("with '%v'", err)
+		}
+
+		log.Printf("%s exited %s after %s\n", d.Name, msg,
+			time.Since(start_time))
+		if time.Since(start_times[0]) < period {
+			log.Printf("%s is dying too quickly")
 			setStatus(d, "broken")
+		}
+		if d.status == "broken" {
 			d.run = false
 		}
 		if d.run {
