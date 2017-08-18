@@ -32,6 +32,10 @@ import (
 func upgradeV2() error {
 
 	leases := cfg_property_parse("@/dhcp/leases", false)
+	if leases == nil {
+		log.Printf("V1 config file missing @/dhcp/leases")
+		return nil
+	}
 
 	for _, lease := range leases.Children {
 		var class_node, ipv4_node, dns_node *pnode
