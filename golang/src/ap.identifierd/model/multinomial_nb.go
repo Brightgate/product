@@ -116,8 +116,9 @@ func (nb *MultinomialNBClassifier) Fit(X base.FixedDataGrid) {
 
 }
 
-// PredictOne classifies one instances.
-func (nb *MultinomialNBClassifier) PredictOne(vector [][]byte) string {
+// PredictOne uses the trained model to predict the test vector's class and class
+// probability.
+func (nb *MultinomialNBClassifier) PredictOne(vector [][]byte) (string, float64) {
 	if nb.features == 0 {
 		panic("Fit should be called before predicting")
 	}
@@ -126,9 +127,12 @@ func (nb *MultinomialNBClassifier) PredictOne(vector [][]byte) string {
 		panic("Different dimensions in Train and Test sets")
 	}
 
-	// Currently only the predicted class is returned.
 	bestScore := -math.MaxFloat64
+	bestIdx := 0
 	bestClass := ""
+
+	scale := math.MaxFloat64
+	scores := make([]float64, 0)
 
 	for class := range nb.classInstances {
 		classScore := nb.classPrior[class]
@@ -138,25 +142,47 @@ func (nb *MultinomialNBClassifier) PredictOne(vector [][]byte) string {
 			}
 		}
 
+		scores = append(scores, classScore)
+		if classScore < scale {
+			scale = classScore
+		}
+
 		if classScore > bestScore {
 			bestScore = classScore
+			bestIdx = len(scores) - 1
 			bestClass = class
 		}
 	}
 
-	return bestClass
+	// Apply softmax
+	var norm float64
+	for i, s := range scores {
+		eScore := math.Exp(s - scale)
+		scores[i] = eScore
+		norm += eScore
+	}
+
+	return bestClass, scores[bestIdx] / norm
 }
 
 // Predict classifies all instances in the FixedDataGrid, and is just a wrapper
 // for the PredictOne function.
-func (nb *MultinomialNBClassifier) Predict(what base.FixedDataGrid) base.FixedDataGrid {
-	ret := base.GeneratePredictionVector(what)
+func (nb *MultinomialNBClassifier) Predict(what base.FixedDataGrid) (base.FixedDataGrid, base.FixedDataGrid) {
+	classes := base.GeneratePredictionVector(what)
 	featAttrSpecs := base.ResolveAttributes(what, nb.attrs)
 
+	scores := base.NewDenseInstances()
+	a := base.NewFloatAttribute("Class Score")
+	spec := scores.AddAttribute(a)
+	_, rowCount := what.Size()
+	scores.Extend(rowCount)
+
 	what.MapOverRows(featAttrSpecs, func(row [][]byte, i int) (bool, error) {
-		base.SetClass(ret, i, nb.PredictOne(row))
+		c, s := nb.PredictOne(row)
+		scores.Set(spec, i, base.PackFloatToBytes(s))
+		base.SetClass(classes, i, c)
 		return true, nil
 	})
 
-	return ret
+	return classes, scores
 }

@@ -33,7 +33,6 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -122,7 +121,7 @@ func handleEntity(event []byte) {
 	newData.AddIdentityHint(*entity.MacAddress, hostname)
 
 	id := mfgidDB[entry.Manufacturer]
-	testData.SetByName(*entity.MacAddress, "Manufacturer ID", strconv.Itoa(id))
+	testData.SetByName(*entity.MacAddress, model.FormatMfgString(id), "1")
 }
 
 func handleRequest(event []byte) {
@@ -243,7 +242,7 @@ func handleListen(event []byte) {
 }
 
 func logger() {
-	tick := time.NewTicker(time.Duration(5 * time.Minute))
+	tick := time.NewTicker(5 * time.Minute)
 	logFile := *logDir + saveFile
 	for {
 		<-tick.C
@@ -253,15 +252,23 @@ func logger() {
 	}
 }
 
+func updateClient(hwaddr uint64, identity string) {
+	hw := network.Uint64ToHWAddr(hwaddr).String()
+	identProp := "@/clients/" + hw + "/identity"
+
+	if err := apcfgd.CreateProp(identProp, identity, nil); err != nil {
+		log.Printf("error creating prop %s: %s\n", identProp, err)
+	}
+}
+
 func identify() {
 	newIdentities := testData.Predict()
 	for {
 		id := <-newIdentities
 
-		// Naive Bayes is more accurate. Let it set the identity property.
-		if id.Model == "Naive Bayes" {
-			prop := "@/clients/" + network.Uint64ToHWAddr(id.HwAddr).String() + "/identity"
-			apcfgd.CreateProp(prop, id.Identity, nil)
+		// XXX Naive Bayes is the only model returning a Probability estimate.
+		if id.Probability > 0 {
+			updateClient(id.HwAddr, id.Identity)
 		}
 
 		t := time.Now()
@@ -274,7 +281,7 @@ func identify() {
 			Debug:      proto.String("-"),
 			MacAddress: proto.Uint64(id.HwAddr),
 			Name:       proto.String(id.Identity),
-			Certainty:  proto.Float64(0),
+			Certainty:  proto.Float64(id.Probability),
 		}
 
 		err := brokerd.Publish(identity, base_def.TOPIC_IDENTITY)
@@ -321,7 +328,7 @@ func loadObservations() error {
 
 		id := mfgidDB[entry.Manufacturer]
 		hwaddr := network.HWAddrToUint64(mac)
-		testData.SetByName(hwaddr, "Manufacturer ID", strconv.Itoa(id))
+		testData.SetByName(hwaddr, model.FormatMfgString(id), "1")
 
 		last := len(record) - 1
 		newData.AddIdentityHint(hwaddr, record[last])
@@ -374,6 +381,14 @@ func main() {
 		log.Fatalf("failed to import manufacturer IDs from %s: %v\n", mfgidPath, err)
 	}
 
+	// Training the ID3 tree takes a long time (currently ~30s). Tell mcp we are
+	// online now so we don't trigger its timeout.
+	if mcp != nil {
+		if err = mcp.SetStatus("online"); err != nil {
+			log.Printf("failed to set status\n")
+		}
+	}
+
 	if err = testData.Train(*dataDir + trainFile); err != nil {
 		log.Fatalln("failed to train models", err)
 	}
@@ -395,12 +410,6 @@ func main() {
 	brokerd.Ping()
 
 	apcfgd = apcfg.NewConfig(pname)
-
-	if mcp != nil {
-		if err = mcp.SetStatus("online"); err != nil {
-			log.Printf("failed to set status\n")
-		}
-	}
 
 	if err := os.MkdirAll(*logDir, 0755); err != nil {
 		log.Fatalln("failed to mkdir:", err)

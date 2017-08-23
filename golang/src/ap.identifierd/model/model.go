@@ -16,7 +16,9 @@ package model
 import (
 	"encoding/csv"
 	"fmt"
+	"log"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -24,7 +26,6 @@ import (
 
 	"github.com/sjwhitworth/golearn/base"
 	"github.com/sjwhitworth/golearn/filters"
-	"github.com/sjwhitworth/golearn/naive"
 	"github.com/sjwhitworth/golearn/trees"
 )
 
@@ -43,15 +44,16 @@ type Entities struct {
 // Prediction is a struct to communicate a new prediction from the named model.
 // See Observations.Predict()
 type Prediction struct {
-	Model    string
-	HwAddr   uint64
-	Identity string
+	Model       string
+	HwAddr      uint64
+	Identity    string
+	Probability float64
 }
 
 type client struct {
 	rowIdx      int
-	nbIdentity  string
-	id3Identity string
+	nbIdentity  *Prediction
+	id3Identity *Prediction
 }
 
 // Observations contains a subset of the data we observe from a client.
@@ -65,7 +67,7 @@ type Observations struct {
 
 	// Trained prospective models used for prediction, the attributes used to
 	// train them, and corresponding filters for 'inst'.
-	naiveBayes    *naive.BernoulliNBClassifier
+	naiveBayes    *BernoulliNBClassifier
 	naiveAttrs    []base.Attribute
 	naiveFiltered *base.LazilyFilteredInstances
 	id3Tree       *trees.ID3DecisionTree
@@ -138,13 +140,13 @@ func (e *Entities) WriteCSV(path string) error {
 	w.Write(header)
 
 	// Make a row for each entity
-	for a, ent := range e.dataMap {
+	for hw, ent := range e.dataMap {
 		record := make([]string, len(header))
 		for i := range header {
 			record[i] = "0"
 		}
 
-		record[0] = network.Uint64ToHWAddr(a).String()
+		record[0] = network.Uint64ToHWAddr(hw).String()
 		record[len(record)-1] = ent.identity
 
 		for a := range ent.attrs {
@@ -237,7 +239,11 @@ func (o *Observations) SetByName(hwaddr uint64, attr, val string) {
 	if _, ok := o.clients[hwaddr]; !ok {
 		o.inst.Extend(1)
 		_, rows := o.inst.Size()
-		o.clients[hwaddr] = &client{rowIdx: rows - 1}
+		o.clients[hwaddr] = &client{
+			rowIdx:      rows - 1,
+			nbIdentity:  &Prediction{"Naive Bayes", hwaddr, "Unknown", 0.0},
+			id3Identity: &Prediction{"ID3 Tree", hwaddr, "Unknown", 0.0},
+		}
 	}
 	row := o.clients[hwaddr].rowIdx
 
@@ -252,25 +258,38 @@ func (o *Observations) SetByName(hwaddr uint64, attr, val string) {
 }
 
 // PredictBayes predicts identities for the observations using Naive Bayes
-func (o *Observations) predictBayes(ch chan Prediction) {
-	predictions := o.naiveBayes.Predict(o.naiveFiltered)
-	for h, c := range o.clients {
+func (o *Observations) predictBayes(ch chan *Prediction) {
+	predictions, probabilities := o.naiveBayes.Predict(o.naiveFiltered)
+	for _, c := range o.clients {
 		newID := base.GetClass(predictions, c.rowIdx)
-		if newID != c.nbIdentity {
-			c.nbIdentity = newID
-			ch <- Prediction{Model: "Naive Bayes", HwAddr: h, Identity: newID}
+
+		idProb, err := strconv.ParseFloat(probabilities.RowString(c.rowIdx), 64)
+		if err != nil {
+			log.Printf("Failed to parse identity probability %q: %s\n",
+				probabilities.RowString(c.rowIdx), err)
+			continue
+		}
+
+		// The model returns the most probable identity. If the identity has
+		// changed then the old identity is now less probable than (or equal to)
+		// the new identity, so send an update. If the identity hasn't changed
+		// but the model's confience has, send an update
+		if newID != c.nbIdentity.Identity || idProb != c.nbIdentity.Probability {
+			c.nbIdentity.Identity = newID
+			c.nbIdentity.Probability = idProb
+			ch <- c.nbIdentity
 		}
 	}
 }
 
 // PredictID3 predicts identities for the observations using ID3
-func (o *Observations) predictID3(ch chan Prediction) {
+func (o *Observations) predictID3(ch chan *Prediction) {
 	predictions, _ := o.id3Tree.Predict(o.id3Filtered)
-	for h, c := range o.clients {
+	for _, c := range o.clients {
 		newID := base.GetClass(predictions, c.rowIdx)
-		if newID != c.id3Identity {
-			c.id3Identity = newID
-			ch <- Prediction{Model: "ID3 Tree", HwAddr: h, Identity: newID}
+		if newID != c.id3Identity.Identity {
+			c.id3Identity.Identity = newID
+			ch <- c.id3Identity
 		}
 	}
 }
@@ -278,11 +297,11 @@ func (o *Observations) predictID3(ch chan Prediction) {
 // Predict periodically runs predictions over the entire set of Observations.
 // When a client's predicted identity changes a new Prediction is sent on the
 // channel returned to the caller.
-func (o *Observations) Predict() <-chan Prediction {
-	predCh := make(chan Prediction)
+func (o *Observations) Predict() <-chan *Prediction {
+	predCh := make(chan *Prediction)
 
-	go func(ch chan Prediction) {
-		tick := time.NewTicker(time.Duration(time.Minute))
+	go func(ch chan *Prediction) {
+		tick := time.NewTicker(time.Minute)
 		for {
 			<-tick.C
 			o.Lock()
@@ -294,14 +313,14 @@ func (o *Observations) Predict() <-chan Prediction {
 	return predCh
 }
 
-// GetBayesIdentity returns a prediction for hwaddr.
-func (o *Observations) GetBayesIdentity(hwaddr uint64) string {
+// GetBayesIdentity returns a prediction and probability for hwaddr.
+func (o *Observations) GetBayesIdentity(hwaddr uint64) (string, float64) {
 	o.Lock()
 	defer o.Unlock()
 
 	c, ok := o.clients[hwaddr]
 	if !ok {
-		return "Unknown"
+		return "Unknown", 0.0
 	}
 
 	featAttrSpecs := base.ResolveAttributes(o.naiveFiltered, o.naiveAttrs)
@@ -311,7 +330,6 @@ func (o *Observations) GetBayesIdentity(hwaddr uint64) string {
 		vector[i] = o.naiveFiltered.Get(featAttrSpecs[i], c.rowIdx)
 	}
 	return o.naiveBayes.PredictOne(vector)
-
 }
 
 func newEntity() *entity {
@@ -324,6 +342,11 @@ func newEntity() *entity {
 // FormatPortString formats a port attribute
 func FormatPortString(protocol string, port int32) string {
 	return fmt.Sprintf("%s %d", protocol, port)
+}
+
+// FormatMfgString formats a manufacturer attribute
+func FormatMfgString(mfg int) string {
+	return fmt.Sprintf("Mfg%d", mfg)
 }
 
 // NewEntities creates an empty Entities
@@ -386,8 +409,8 @@ func Binarize(src base.FixedDataGrid) (*filters.BinaryConvertFilter, error) {
 }
 
 // NewBayes returns a new Naive Bayes clasifier trained with trainData
-func NewBayes(trainData base.FixedDataGrid) *naive.BernoulliNBClassifier {
-	naiveBayes := naive.NewBernoulliNBClassifier()
+func NewBayes(trainData base.FixedDataGrid) *BernoulliNBClassifier {
+	naiveBayes := NewBernoulliNBClassifier()
 	naiveBayes.Fit(trainData)
 	return naiveBayes
 }

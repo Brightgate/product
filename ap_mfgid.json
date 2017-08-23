@@ -1,6 +1,12 @@
 {
-	"Unknown": 0,
-	"Apple, Inc.": 1,
-	"Arcadyan Technology Corporation": 2,
-	"LG Innotek": 3
+  "Amazon Technologies Inc.": 5,
+  "Apple, Inc.": 1,
+  "Arcadyan Technology Corporation": 2,
+  "Circle Media Inc": 8,
+  "LG Innotek": 3,
+  "Murata Manufacturing Co., Ltd.": 9,
+  "Roku, Inc.": 7,
+  "SAMSUNG ELECTRO-MECHANICS(THAILAND)": 6,
+  "Sonos, Inc.": 4,
+  "Unknown": 0
 }

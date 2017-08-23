@@ -92,8 +92,8 @@ func event_listener(b *Broker) {
 	for {
 		msg, err := b.subscriber.RecvMessageBytes(0)
 		if err != nil {
-			log.Println(err)
-			break
+			log.Printf("listener for %s failed to receive: %s\n", b.Name, err)
+			continue
 		}
 
 		topic := string(msg[0])

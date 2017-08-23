@@ -25,8 +25,9 @@ import (
 	"log"
 	"net"
 	"os"
-	"strconv"
 	"strings"
+
+	"ap.identifierd/model"
 
 	"github.com/klauspost/oui"
 )
@@ -109,8 +110,9 @@ func readObservations(path string) {
 			identity: trueIdentity,
 			attrs:    make(map[string]string),
 		}
-		s.attrs["Manufacturer ID"] = strconv.Itoa(mfgidDB[entry.Manufacturer])
-		attrUnion["Manufacturer ID"] = true
+		mfgStr := model.FormatMfgString(mfgidDB[entry.Manufacturer])
+		s.attrs[mfgStr] = "1"
+		attrUnion[mfgStr] = true
 
 		for i, feat := range record[1:last] {
 			if feat == "0" {
