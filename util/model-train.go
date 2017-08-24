@@ -28,8 +28,8 @@ import (
 	"strconv"
 	"strings"
 
-	"ap.identifierd/model"
 	"ap_common/device"
+	"ap_common/model"
 
 	"github.com/klauspost/oui"
 )

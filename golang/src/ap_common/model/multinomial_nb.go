@@ -157,6 +157,7 @@ func (nb *MultinomialNBClassifier) PredictOne(vector [][]byte) (string, float64)
 	// Apply softmax
 	var norm float64
 	for i, s := range scores {
+		// XXX eScore and norm may still overflow. Try using package math/big
 		eScore := math.Exp(s - scale)
 		scores[i] = eScore
 		norm += eScore

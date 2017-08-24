@@ -42,18 +42,18 @@ import (
 	"ap_common/apcfg"
 	"ap_common/broker"
 	"ap_common/mcp"
+	"ap_common/model"
 	"ap_common/network"
 	"base_msg"
-
-	"ap.identifierd/model"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/klauspost/oui"
 )
 
 var (
-	dataDir = flag.String("datadir", "./", "Directory containing data files")
-	logDir  = flag.String("logdir", "./", "Directory for device learning log data")
+	dataDir  = flag.String("datadir", "./", "Directory containing data files")
+	modelDir = flag.String("modeldir", "./", "Directory containing a saved model")
+	logDir   = flag.String("logdir", "./", "Directory for device learning log data")
 
 	brokerd broker.Broker
 	apcfgd  *apcfg.APConfig
@@ -65,8 +65,8 @@ var (
 	ipMtx sync.Mutex
 	ipMap = make(map[uint32]uint64)
 
-	testData = model.NewObservations()
-	newData  = model.NewEntities()
+	testData = newObservations()
+	newData  = newEntities()
 
 	// See github.com/miekg/dns/types.go: func (q *Question) String() {}
 	dnsQ = regexp.MustCompile(`;(.*?)\t`)
@@ -119,10 +119,10 @@ func handleEntity(event []byte) {
 	if entity.Hostname != nil {
 		hostname = *entity.Hostname
 	}
-	newData.AddIdentityHint(*entity.MacAddress, hostname)
+	newData.addIdentityHint(*entity.MacAddress, hostname)
 
 	id := mfgidDB[entry.Manufacturer]
-	testData.SetByName(*entity.MacAddress, model.FormatMfgString(id))
+	testData.setByName(*entity.MacAddress, model.FormatMfgString(id))
 }
 
 func handleRequest(event []byte) {
@@ -149,8 +149,8 @@ func handleRequest(event []byte) {
 			return
 		}
 
-		newData.AddAttr(hwaddr, qName)
-		testData.SetByName(hwaddr, qName)
+		newData.addAttr(hwaddr, qName)
+		testData.setByName(hwaddr, qName)
 	}
 }
 
@@ -209,8 +209,8 @@ func handleScan(event []byte) {
 				continue
 			}
 			portString := model.FormatPortString(*p.Protocol, *p.PortId)
-			newData.AddAttr(network.HWAddrToUint64(hwaddr), portString)
-			testData.SetByName(network.HWAddrToUint64(hwaddr), portString)
+			newData.addAttr(network.HWAddrToUint64(hwaddr), portString)
+			testData.setByName(network.HWAddrToUint64(hwaddr), portString)
 		}
 	}
 }
@@ -226,8 +226,8 @@ func listenAttr(addr, kind string) {
 		return
 	}
 
-	newData.AddAttr(hwaddr, kind)
-	testData.SetByName(hwaddr, kind)
+	newData.addAttr(hwaddr, kind)
+	testData.setByName(hwaddr, kind)
 }
 
 func handleListen(event []byte) {
@@ -242,23 +242,34 @@ func handleListen(event []byte) {
 	}
 }
 
-func logger() {
+func logger(stop chan bool, wg *sync.WaitGroup) {
+	defer wg.Done()
 	tick := time.NewTicker(5 * time.Minute)
 	logFile := *logDir + saveFile
-	for {
-		<-tick.C
-		if err := newData.WriteCSV(logFile); err != nil {
+
+	w := func(path string) {
+		if err := newData.writeCSV(logFile); err != nil {
 			log.Println("Could not save observation data:", err)
+		}
+	}
+
+	for {
+		select {
+		case <-tick.C:
+			w(logFile)
+		case <-stop:
+			w(logFile)
+			return
 		}
 	}
 }
 
-func updateClient(hwaddr uint64, identity string, confidence float64) {
+func updateClient(hwaddr uint64, devID string, confidence float32) {
 	hw := network.Uint64ToHWAddr(hwaddr).String()
 	identProp := "@/clients/" + hw + "/identity"
 	confProp := "@/clients/" + hw + "/confidence"
 
-	if err := apcfgd.CreateProp(identProp, identity, nil); err != nil {
+	if err := apcfgd.CreateProp(identProp, devID, nil); err != nil {
 		log.Printf("error creating prop %s: %s\n", identProp, err)
 	}
 
@@ -268,19 +279,19 @@ func updateClient(hwaddr uint64, identity string, confidence float64) {
 }
 
 func identify() {
-	newIdentities := testData.Predict()
+	newIdentities := testData.predict()
 	for {
 		id := <-newIdentities
-		devid, err := strconv.Atoi(id.Identity)
+		devid, err := strconv.Atoi(id.devID)
 		if err != nil || devid == 0 {
 			log.Printf("returned a bogus identity for %v: %s",
-				id.HwAddr, id.Identity)
+				id.hwaddr, id.devID)
 			continue
 		}
 
 		// XXX Set the bar low until the model gets more training data
-		if id.Probability > 0 {
-			updateClient(id.HwAddr, id.Identity, id.Probability)
+		if id.probability > 0 {
+			updateClient(id.hwaddr, id.devID, id.probability)
 		}
 
 		t := time.Now()
@@ -291,9 +302,9 @@ func identify() {
 			},
 			Sender:     proto.String(brokerd.Name),
 			Debug:      proto.String("-"),
-			MacAddress: proto.Uint64(id.HwAddr),
+			MacAddress: proto.Uint64(id.hwaddr),
 			Devid:      proto.Int32(int32(devid)),
-			Certainty:  proto.Float64(id.Probability),
+			Certainty:  proto.Float32(id.probability),
 		}
 
 		err = brokerd.Publish(identity, base_def.TOPIC_IDENTITY)
@@ -340,16 +351,16 @@ func loadObservations() error {
 
 		id := mfgidDB[entry.Manufacturer]
 		hwaddr := network.HWAddrToUint64(mac)
-		testData.SetByName(hwaddr, model.FormatMfgString(id))
+		testData.setByName(hwaddr, model.FormatMfgString(id))
 
 		last := len(record) - 1
-		newData.AddIdentityHint(hwaddr, record[last])
+		newData.addIdentityHint(hwaddr, record[last])
 		for i, feat := range record[1:last] {
 			if feat == "0" {
 				continue
 			}
-			testData.SetByName(hwaddr, header[i])
-			newData.AddAttr(hwaddr, header[i])
+			testData.setByName(hwaddr, header[i])
+			newData.addAttr(hwaddr, header[i])
 		}
 
 	}
@@ -372,7 +383,7 @@ func recoverClients() {
 		}
 
 		if client.DHCPName != "" {
-			newData.AddIdentityHint(hw, client.DHCPName)
+			newData.addIdentityHint(hw, client.DHCPName)
 		}
 	}
 }
@@ -420,16 +431,8 @@ func main() {
 	apcfgd = apcfg.NewConfig(pname)
 	recoverClients()
 
-	// Training the ID3 tree takes a long time (currently ~30s). Tell mcp we are
-	// online now so we don't trigger its timeout.
-	if mcpd != nil {
-		if err = mcpd.SetState(mcp.ONLINE); err != nil {
-			log.Printf("failed to set status\n")
-		}
-	}
-
-	if err = testData.Train(*dataDir + trainFile); err != nil {
-		log.Fatalln("failed to train models", err)
+	if err = testData.loadModel(*dataDir+trainFile, *modelDir); err != nil {
+		log.Fatalln("failed to load model", err)
 	}
 
 	if err := loadObservations(); err != nil {
@@ -452,10 +455,23 @@ func main() {
 		log.Fatalln("failed to mkdir:", err)
 	}
 
-	go logger()
+	if mcpd != nil {
+		if err = mcpd.SetState(mcp.ONLINE); err != nil {
+			log.Printf("failed to set status\n")
+		}
+	}
+
+	stop := make(chan bool)
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go logger(stop, wg)
 	go identify()
 
 	sig := make(chan os.Signal)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
+
+	// Tell the logger to stop, and wait for it to flush its output
+	stop <- true
+	wg.Wait()
 }

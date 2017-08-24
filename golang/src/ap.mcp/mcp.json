@@ -50,7 +50,7 @@
         "Binary": "ap.identifierd",
         "DependsOn": "configd",
         "Privileged": true,
-        "Options": "-datadir=$APROOT/etc -logdir $APROOT/var/spool/identifierd"
+        "Options": "-datadir=$APROOT/etc -modeldir=$APROOT/etc/device_model -logdir $APROOT/var/spool/identifierd"
     },
     "logd": {
         "Name": "logd",

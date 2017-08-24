@@ -25,7 +25,7 @@
 #    (c) On Debian
 #
 #	 # apt-get install protobuf-compiler libzmq3-dev libpcap-dev vlan \
-	#	 bridge-utils lintian
+#		bridge-utils lintian
 #	 # pip3 install sh
 #	 [Retrieve Go tar archive from golang.org and unpack in $HOME.]
 #
@@ -35,6 +35,9 @@
 #		 bridge-utils lintian python3
 #	 # pip3 install sh
 #	 [Retrieve Go tar archive from golang.org and unpack in $HOME.]
+#	 [Retrieve the TensorFlow C library from
+#	  https://ph0.b10e.net/w/testing-raspberry-pi/ or
+#	  https://ph0.b10e.net/w/testing-banana-pi/]
 #
 # 2. Each new shell,
 #
@@ -131,6 +134,7 @@ APPVAR=$(APPBASE)/var
 APPSSL=$(APPETC)/ssl
 APPSPOOL=$(APPVAR)/spool
 APPRULES=$(APPETC)/filter.rules.d
+APPMODEL=$(APPETC)/device_model
 
 HTTPD_TEMPLATE_DIR=$(APPETC)/templates/ap.httpd
 NETWORK_TEMPLATE_DIR=$(APPETC)/templates/ap.networkd
@@ -208,6 +212,7 @@ APPCOMPONENTS = \
 	$(APPBINARIES) \
 	$(APPCONFIGS) \
 	$(APPDIRS) \
+	$(APPMODEL) \
 	$(APPTEMPLATES) \
 	$(FILTER_RULES)
 
@@ -328,6 +333,11 @@ $(HTTPD_TEMPLATE_DIR)/%: $(GOSRC)/ap.httpd/% | $(APPETC)
 $(APPRULES)/%: golang/src/ap.filterd/% | $(APPRULES)
 	$(INSTALL) -m 0644 $< $(APPRULES)
 
+$(APPMODEL): golang/src/ap.identifierd/linear_model_deviceID/* | $(DIRS)
+	$(MKDIR) -p $@
+	cp -r $^ $@
+	touch $@
+
 $(APPDIRS):
 	$(MKDIR) -p $@
 
@@ -367,9 +377,7 @@ $(APPBIN)/ap.filterd: \
 	$(GOSRC)/ap.filterd/filterd.go \
 	$(GOSRC)/ap.filterd/parse.go
 $(APPBIN)/ap.httpd: $(GOSRC)/ap.httpd/ap.httpd.go
-$(APPBIN)/ap.identifierd: \
-	$(GOSRC)/ap.identifierd/identifierd.go \
-	$(GOSRC)/ap.identifierd/model/model.go
+$(APPBIN)/ap.identifierd: $(GOSRC)/ap.identifierd/identifierd.go
 $(APPBIN)/ap.logd: $(GOSRC)/ap.logd/logd.go
 $(APPBIN)/ap.mcp: $(GOSRC)/ap.mcp/mcp.go
 $(APPBIN)/ap.networkd: $(GOSRC)/ap.networkd/networkd.go

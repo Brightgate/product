@@ -230,7 +230,7 @@ message EventNetIdentity {
 
 	optional fixed64 mac_address = 0x900;
 	optional int32 devid = 0x901;
-	optional double certainty = 0x902;
+	optional float certainty = 0x902;
 
 }
 
