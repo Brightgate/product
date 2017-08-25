@@ -120,6 +120,10 @@ COMMANDS = \
 	ap-msgping \
 	ap-ouisearch
 
+GO_TESTABLES = \
+	ap_common/apcfg \
+	ap_common/network
+
 APPBINARIES  := $(COMMANDS:%=$(APPBIN)/%) $(DAEMONS:%=$(APPBIN)/%)
 
 HTTPD_TEMPLATE_FILES = connect_apple.html.got \
@@ -148,6 +152,16 @@ DIRS = $(APPBIN) $(APPDOC) $(APPETC) $(APPVAR) $(APPSSL) $(APPSPOOL) \
        $(APPRULES) $(HTTPD_TEMPLATE_DIR) $(NETWORK_TEMPLATE_DIR)
 
 install: $(APPBINARIES) $(CONFIGS) $(DIRS) $(FILTER_RULES) $(TEMPLATES) docs
+
+test: test-go
+
+test-go: install
+	go test $(GO_TESTABLES)
+
+coverage: coverage-go
+
+coverage-go: install
+	go test -cover $(GO_TESTABLES)
 
 docs: | $(PROTOC_PLUGINS)
 
