@@ -7,7 +7,7 @@
         },
         {
             "Name": "cfgversion",
-            "Value": "2"
+            "Value": "3"
         },
         {
             "Name": "apversion",
@@ -28,14 +28,14 @@
             ]
         },
         {
-            "Name": "classes",
+            "Name": "rings",
             "Children": [
 		{
-                    "Name": "unauthorized",
+                    "Name": "setup",
                     "Children": [
                         {
                             "Name": "interface",
-                            "Value": "connect"
+                            "Value": "setup"
                         },
                         {
                             "Name": "lease_duration",
@@ -44,7 +44,7 @@
                     ]
                 },
                 {
-                    "Name": "unclassified",
+                    "Name": "unenrolled",
                     "Children": [
                         {
                             "Name": "interface",
@@ -57,7 +57,7 @@
                     ]
                 },
                 {
-                    "Name": "trusted",
+                    "Name": "core",
                     "Children": [
                         {
                             "Name": "interface",
@@ -65,12 +65,12 @@
                         },
                         {
                             "Name": "lease_duration",
-                            "Value": "240"
+                            "Value": "1440"
                         }
                     ]
                 },
                 {
-                    "Name": "local",
+                    "Name": "standard",
                     "Children": [
                         {
                             "Name": "interface",
@@ -78,12 +78,12 @@
                         },
                         {
                             "Name": "lease_duration",
-                            "Value": "240"
+                            "Value": "1440"
                         }
                     ]
                 },
                 {
-                    "Name": "external",
+                    "Name": "devices",
                     "Children": [
                         {
                             "Name": "interface",
@@ -91,7 +91,33 @@
                         },
                         {
                             "Name": "lease_duration",
-                            "Value": "60"
+                            "Value": "180"
+                        }
+                    ]
+                },
+		{
+                    "Name": "guest",
+                    "Children": [
+                        {
+                            "Name": "interface",
+                            "Value": "vlan.6"
+                        },
+                        {
+                            "Name": "lease_duration",
+                            "Value": "30"
+                        }
+                    ]
+                },
+		{
+                    "Name": "quarantine",
+                    "Children": [
+                        {
+                            "Name": "interface",
+                            "Value": "vlan.7"
+                        },
+                        {
+                            "Name": "lease_duration",
+                            "Value": "10"
                         }
                     ]
                 },
@@ -104,7 +130,7 @@
                         },
                         {
                             "Name": "lease_duration",
-                            "Value": "60"
+                            "Value": "720"
                         }
                     ]
                 }
@@ -146,11 +172,11 @@
             "Name": "interfaces",
             "Children": [
 		{
-                    "Name": "connect",
+                    "Name": "setup",
                     "Children": [
                         {
                             "Name": "subnet",
-                            "Value": "192.168.138.0/27"
+                            "Value": "192.168.133.0/27"
                         }
                     ]
                 },
@@ -159,7 +185,7 @@
                     "Children": [
                         {
                             "Name": "subnet",
-                            "Value": "192.168.136.32/27"
+                            "Value": "192.168.134.0/27"
                         }
                     ]
                 },
@@ -168,7 +194,7 @@
                     "Children": [
                         {
                             "Name": "subnet",
-                            "Value": "192.168.136.64/27"
+                            "Value": "192.168.135.0/27"
                         }
                     ]
                 },
@@ -177,7 +203,7 @@
                     "Children": [
                         {
                             "Name": "subnet",
-                            "Value": "192.168.136.96/27"
+                            "Value": "192.168.136.0/27"
                         }
                     ]
                 },
@@ -186,7 +212,25 @@
                     "Children": [
                         {
                             "Name": "subnet",
-                            "Value": "192.168.136.16/28"
+                            "Value": "192.168.137.0/28"
+                        }
+                    ]
+                },
+		{
+                    "Name": "vlan.6",
+                    "Children": [
+                        {
+                            "Name": "subnet",
+                            "Value": "192.168.138.0/28"
+                        }
+                    ]
+                },
+		{
+                    "Name": "vlan.7",
+                    "Children": [
+                        {
+                            "Name": "subnet",
+                            "Value": "192.168.139.0/28"
                         }
                     ]
                 },
@@ -195,7 +239,7 @@
                     "Children": [
                         {
                             "Name": "subnet",
-                            "Value": "192.168.137.0/28"
+                            "Value": "192.168.140.0/28"
                         }
                     ]
                 }

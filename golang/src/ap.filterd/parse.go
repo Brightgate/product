@@ -19,11 +19,11 @@ package main
 // Endpoint:  <kind> <detail>
 // --------
 // ADDR  CIDR
-// CLASS class_name
+// RING  ring_name
 // TYPE  client_type
-// IFACE wan/wired/wifi/connect
+// IFACE wan/wired/wifi/setup
 //
-// Ports: (DPORT|SPORT) <port list>
+// Ports: (DPORTS|SPORTS) <port list>
 //
 // Time:
 // -----
@@ -60,13 +60,13 @@ const (
 const (
 	E_ADDR = iota
 	E_TYPE
-	E_CLASS
+	E_RING
 	E_IFACE
 	E_MAX
 )
 
 // Endpoint represents either the FROM or TO endpoint of a filter rule.
-type Endpoint struct {
+type endpoint struct {
 	kind   int
 	detail string
 	addr   *net.IPNet
@@ -74,17 +74,19 @@ type Endpoint struct {
 }
 
 // A single parsed filter rule
-type Rule struct {
+type rule struct {
 	text   string
 	action int
 	proto  int
-	from   *Endpoint
-	to     *Endpoint
+	from   *endpoint
+	to     *endpoint
 	sports []int
 	dports []int
 	start  *time.Time
 	end    *time.Time
 }
+
+type ruleList []*rule
 
 //
 // Read a rule from the file.  Drop all comments and extra whitespace.  Join
@@ -170,11 +172,10 @@ func getAddr(addr string) (ipnet *net.IPNet, err error) {
 	return
 }
 
-// Parse (FROM|TO) (ADDR <addr>|CLASS <class>|TYPE <type>|IFACE <iface>)
-func getEndpoint(tokens []string, name string) (ep *Endpoint, cnt int, err error) {
-	var e Endpoint
+// Parse (FROM|TO) (ADDR <addr>|RING <ring>|TYPE <type>|IFACE <iface>)
+func getEndpoint(tokens []string, name string) (ep *endpoint, cnt int, err error) {
+	var e endpoint
 
-	ep = &e
 	err = nil
 	cnt = 0
 
@@ -211,8 +212,8 @@ func getEndpoint(tokens []string, name string) (ep *Endpoint, cnt int, err error
 	case "ADDR":
 		e.kind = E_ADDR
 		e.addr, err = getAddr(e.detail)
-	case "CLASS":
-		e.kind = E_CLASS
+	case "RING":
+		e.kind = E_RING
 	case "TYPE":
 		e.kind = E_TYPE
 	case "IFACE":
@@ -221,6 +222,9 @@ func getEndpoint(tokens []string, name string) (ep *Endpoint, cnt int, err error
 		err = fmt.Errorf("Invalid kind for %s endpoint: %s", name, tokens[1])
 	}
 
+	if err == nil {
+		ep = &e
+	}
 	return
 }
 
@@ -289,10 +293,10 @@ func getTime(tokens []string) (start, end *time.Time, cnt int, err error) {
 	return
 }
 
-func parseRule(text string) (rp *Rule, err error) {
+func parseRule(text string) (rp *rule, err error) {
 	var c int
 
-	r := Rule{text: text}
+	r := rule{text: text}
 	rp = &r
 
 	tokens := strings.Split(text, " ")
@@ -353,7 +357,7 @@ func parseRule(text string) (rp *Rule, err error) {
 //
 // ParseRules reads a list of filter rules from a file, and returns a slice
 // of Rules.
-func ParseRules(rulesFile string) (rules []*Rule, err error) {
+func parseRulesFile(rulesFile string) (rules ruleList, err error) {
 	file, err := os.Open(rulesFile)
 	if err != nil {
 		fmt.Printf("Couldn't open %s: %v\n", rulesFile, err)

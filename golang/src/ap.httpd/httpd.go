@@ -372,7 +372,7 @@ func initNetwork() error {
 
 	for iface, subnet := range subnetMap {
 		router := network.SubnetRouter(subnet)
-		if iface == "connect" {
+		if iface == "setup" {
 			captiveMap[router] = true
 			captiveMap[router+":80"] = true
 		} else {
@@ -481,7 +481,7 @@ func main() {
 
 	for iface, subnet := range subnetMap {
 		router := network.SubnetRouter(subnet)
-		if iface == "connect" {
+		if iface == "setup" {
 			listen(router, ":80", iface, captiveRouter)
 		} else {
 			for _, port := range ports {

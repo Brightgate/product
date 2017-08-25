@@ -56,7 +56,7 @@ var (
 	clientMtx sync.Mutex
 
 	use_vlans    bool
-	sharedRouter net.IP     // without vlans, all classes share a
+	sharedRouter net.IP     // without vlans, all rings share a
 	sharedSubnet *net.IPNet // subnet and a router node
 
 	lastRequestOn int // last DHCP request arrived on this interface
@@ -64,42 +64,42 @@ var (
 
 const pname = "ap.dhcp4d"
 
-func getClass(hwaddr string) string {
-	var class string
+func getRing(hwaddr string) string {
+	var ring string
 
 	clientMtx.Lock()
 	if client := clients[hwaddr]; client != nil {
-		class = client.Class
+		ring = client.Ring
 	}
 	clientMtx.Unlock()
 
-	return class
+	return ring
 }
 
-func setClass(hwaddr, class string) string {
+func setRing(hwaddr, ring string) string {
 	clientMtx.Lock()
 	if client := clients[hwaddr]; client != nil {
-		client.Class = class
+		client.Ring = ring
 	} else {
-		clients[hwaddr] = &apcfg.ClientInfo{Class: class}
+		clients[hwaddr] = &apcfg.ClientInfo{Ring: ring}
 	}
 	clientMtx.Unlock()
 
-	return class
+	return ring
 }
 
-func updateClass(hwaddr, old, new string) bool {
+func updateRing(hwaddr, old, new string) bool {
 	updated := false
 
 	clientMtx.Lock()
 	client := clients[hwaddr]
 	if client == nil && old == "" {
-		client = &apcfg.ClientInfo{Class: ""}
+		client = &apcfg.ClientInfo{Ring: ""}
 		clients[hwaddr] = client
 	}
 
-	if client != nil && client.Class == old {
-		client.Class = new
+	if client != nil && client.Ring == old {
+		client.Ring = new
 		updated = true
 	}
 	clientMtx.Unlock()
@@ -129,13 +129,13 @@ func configChanged(path []string, val string) {
 	//
 
 	/*
-	 * Watch for client identifications in @/clients/<macaddr>/class
+	 * Watch for client identifications in @/clients/<macaddr>/ring
 	 */
-	if len(path) == 3 && path[0] == "clients" && path[2] == "class" {
+	if len(path) == 3 && path[0] == "clients" && path[2] == "ring" {
 		client := path[1]
 
-		old := getClass(client)
-		if (old != val) && updateClass(client, old, val) {
+		old := getRing(client)
+		if (old != val) && updateRing(client, old, val) {
 			if old == "" {
 				log.Printf("config reports new client %s is %s\n",
 					client, val)
@@ -181,7 +181,7 @@ func leaseProperty(hwaddr string) string {
  * This is the first time we've seen this device.  Send an ENTITY message with
  * its hardware address, name, and any IP address it's requesting.
  */
-func notifyNewEntity(p dhcp.Packet, options dhcp.Options, class string) {
+func notifyNewEntity(p dhcp.Packet, options dhcp.Options, ring string) {
 	t := time.Now()
 	ipaddr := p.CIAddr()
 	hwaddr_u64 := network.HWAddrToUint64(p.CHAddr())
@@ -199,7 +199,7 @@ func notifyNewEntity(p dhcp.Packet, options dhcp.Options, class string) {
 		MacAddress:  proto.Uint64(hwaddr_u64),
 		Ipv4Address: proto.Uint32(network.IPAddrToUint32(ipaddr)),
 		Hostname:    proto.String(hostname),
-		Class:       proto.String(class),
+		Ring:        proto.String(ring),
 	}
 
 	err := brokerd.Publish(entity, base_def.TOPIC_ENTITY)
@@ -302,7 +302,7 @@ type lease struct {
 
 type DHCPHandler struct {
 	iface       string        // Net interface we serve
-	class       string        // Client class eligible for this server
+	ring        string        // Client ring eligible for this server
 	subnet      net.IPNet     // Subnet being managed
 	server_ip   net.IP        // DHCP server's IP
 	options     dhcp.Options  // Options to send to DHCP Clients
@@ -329,7 +329,7 @@ func (h *DHCPHandler) discover(p dhcp.Packet, options dhcp.Options) dhcp.Packet 
 
 	l := h.leaseAssign(hwaddr)
 	if l == nil {
-		log.Printf("Out of %s leases\n", h.class)
+		log.Printf("Out of %s leases\n", h.ring)
 		return h.nak(p)
 	}
 	log.Printf("  OFFER %s to %s\n", l.ipaddr, l.hwaddr)
@@ -464,64 +464,64 @@ func (h *DHCPHandler) decline(p dhcp.Packet) {
 
 //
 // Based on the client's MAC address and/or the network the request arrived on,
-// identify its class and return the appropriate DHCP handler.  The use of
+// identify its ring and return the appropriate DHCP handler.  The use of
 // lastRequestOn relies on the knowledge that the DHCP library (krolaw/dhcp4)
 // will call the handler immediately after the call to ReadFrom(), where
 // lastRequestOn gets set.
 //
-func selectClassHandler(p dhcp.Packet, options dhcp.Options) *DHCPHandler {
+func selectRingHandler(p dhcp.Packet, options dhcp.Options) *DHCPHandler {
 	hwaddr := p.CHAddr().String()
 
-	oldClass := getClass(hwaddr)
-	if lastRequestOn == apcfg.N_CONNECT {
+	oldRing := getRing(hwaddr)
+	if lastRequestOn == apcfg.N_SETUP {
 		// All clients connecting on the open port are treated as new -
 		// even if we've previously recognized them on the protected
 		// network.
-		setClass(hwaddr, "unauthorized")
+		setRing(hwaddr, base_def.RING_SETUP)
 	} else if lastRequestOn == apcfg.N_WIFI {
-		if oldClass == "" || oldClass == "unauthorized" {
-			updateClass(hwaddr, oldClass, "unclassified")
+		if oldRing == "" || oldRing == base_def.RING_SETUP {
+			updateRing(hwaddr, oldRing, base_def.RING_UNENROLLED)
 		}
 	} else {
-		updateClass(hwaddr, "", "wired")
+		updateRing(hwaddr, "", base_def.RING_WIRED)
 	}
 
-	class := getClass(hwaddr)
-	if class != oldClass {
-		log.Printf("New %s client %s on %s interface\n", class, hwaddr,
+	ring := getRing(hwaddr)
+	if ring != oldRing {
+		log.Printf("New %s client %s on %s interface\n", ring, hwaddr,
 			nics[lastRequestOn].Iface)
-		notifyNewEntity(p, options, class)
+		notifyNewEntity(p, options, ring)
 	}
 
-	class_handler, ok := handlers[class]
+	ringHandler, ok := handlers[ring]
 	if !ok {
-		log.Printf("Client %s identified as unknown class '%s'\n",
-			hwaddr, class)
+		log.Printf("Client %s identified as unknown ring '%s'\n",
+			hwaddr, ring)
 	}
-	return class_handler
+	return ringHandler
 }
 
 func (h *DHCPHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType,
 	options dhcp.Options) (d dhcp.Packet) {
 
-	class_handler := selectClassHandler(p, options)
-	if class_handler == nil {
+	ringHandler := selectRingHandler(p, options)
+	if ringHandler == nil {
 		return nil
 	}
 
 	switch msgType {
 
 	case dhcp.Discover:
-		return class_handler.discover(p, options)
+		return ringHandler.discover(p, options)
 
 	case dhcp.Request:
-		return class_handler.request(p, options)
+		return ringHandler.request(p, options)
 
 	case dhcp.Release:
-		class_handler.release(p)
+		ringHandler.release(p)
 
 	case dhcp.Decline:
-		class_handler.decline(p)
+		ringHandler.decline(p)
 	}
 	return nil
 }
@@ -595,9 +595,9 @@ func (h *DHCPHandler) getLease(ip net.IP) *lease {
 }
 
 //
-// Instantiate a new DHCP handler for the given class/subnet.
+// Instantiate a new DHCP handler for the given ring/subnet.
 //
-func newHandler(class, network, nameserver string, duration int) *DHCPHandler {
+func newHandler(ring, network, nameserver string, duration int) *DHCPHandler {
 	var range_size int
 	var err error
 
@@ -629,7 +629,7 @@ func newHandler(class, network, nameserver string, duration int) *DHCPHandler {
 	}
 
 	h := DHCPHandler{
-		class:       class,
+		ring:        ring,
 		subnet:      *subnet,
 		server_ip:   myip,
 		range_start: start,
@@ -679,7 +679,7 @@ func initPhysical(props *apcfg.PropertyNode) error {
 	}
 
 	if err == nil && !use_vlans {
-		// If we aren't using VLANs, all classes share a subnet
+		// If we aren't using VLANs, all rings share a subnet
 		if node := props.GetChild("network"); node != nil {
 			start, subnet, err := net.ParseCIDR(node.Value)
 			if err == nil {
@@ -721,37 +721,37 @@ func initHandlers() error {
 		nameserver = node.Value
 	}
 
-	// Iterate over the known classes.  For each one, find the VLAN name and
+	// Iterate over the known rings.  For each one, find the VLAN name and
 	// subnet, and create a DHCP handler to manage that subnet.
-	classes := config.GetClasses()
+	rings := config.GetRings()
 	subnets := config.GetSubnets()
-	for name, class := range classes {
+	for name, ring := range rings {
 		var nic *apcfg.Nic
 
-		subnet, ok := subnets[class.Interface]
+		subnet, ok := subnets[ring.Interface]
 		if !ok {
-			log.Printf("No subnet for %s\n", class.Interface)
+			log.Printf("No subnet for %s\n", ring.Interface)
 			continue
 		}
-		h := newHandler(name, subnet, nameserver, class.LeaseDuration)
-		if class.Interface == "wifi" {
+		h := newHandler(name, subnet, nameserver, ring.LeaseDuration)
+		if ring.Interface == "wifi" {
 			if nic = nics[apcfg.N_WIFI]; nic == nil {
 				log.Printf("No Wifi NIC available\n")
 				continue
 			}
 			h.iface = nic.Iface
-		} else if class.Interface == "connect" {
-			if nic = nics[apcfg.N_CONNECT]; nic == nil {
+		} else if ring.Interface == "setup" {
+			if nic = nics[apcfg.N_SETUP]; nic == nil {
 				log.Printf("No Connect-net NIC available\n")
 				continue
 			}
 			h.iface = nic.Iface
 		} else {
-			h.iface = class.Interface
+			h.iface = ring.Interface
 		}
 
 		h.recoverLeases()
-		handlers[h.class] = h
+		handlers[h.ring] = h
 	}
 
 	return nil
@@ -824,10 +824,10 @@ func mainLoop() {
 	 * Even with multiple VLANs and/or address ranges, we still only have a
 	 * single UDP broadcast address.  We create a metahandler that receives
 	 * all of the requests at that address, and routes them to the correct
-	 * per-class handler.
+	 * per-ring handler.
 	 */
 	h := DHCPHandler{
-		class: "_metahandler",
+		ring: "_metahandler",
 	}
 	for {
 		err := listenAndServeIf(&h)

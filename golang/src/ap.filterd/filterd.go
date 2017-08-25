@@ -60,8 +60,10 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 
 	"ap_common/apcfg"
@@ -87,8 +89,9 @@ var (
 	nics       []*apcfg.Nic
 	useVLANs   bool
 
-	rules   []*Rule
-	applied map[string]map[string][]string
+	rules     ruleList
+	applied   map[string]map[string][]string
+	rulesLock sync.Mutex
 )
 
 //
@@ -112,7 +115,14 @@ const (
 type iface struct {
 	name   string
 	subnet string
-	class  string
+	ring   string
+}
+
+func refilter() {
+	rulesLock.Lock()
+	iptablesRebuild()
+	iptablesReset()
+	rulesLock.Unlock()
 }
 
 func configChanged(event []byte) {
@@ -124,9 +134,60 @@ func configChanged(event []byte) {
 	// Watch for changes to the network conf
 	if len(path) == 2 && path[0] == "network" {
 		initNetwork()
-		iptablesRebuild()
-		iptablesReset()
+		refilter()
 	}
+}
+
+// Implement the Sort interface for the list of rules
+func (list ruleList) Len() int {
+	return len(list)
+}
+
+func (list ruleList) Less(i, j int) bool {
+	a := list[i]
+	b := list[j]
+
+	// First ordering criterion: which rule has a more specific source
+	afrom := E_MAX
+	if a.from != nil {
+		afrom = a.from.kind
+	}
+	bfrom := E_MAX
+	if b.from != nil {
+		bfrom = b.from.kind
+	}
+	if afrom != bfrom {
+		return afrom < bfrom
+	}
+
+	// Second: which rule has a more specific destination
+	ato := E_MAX
+	if a.to != nil {
+		ato = a.to.kind
+	}
+	bto := E_MAX
+	if b.to != nil {
+		bto = b.to.kind
+	}
+	if ato != bto {
+		return ato < bto
+	}
+
+	// Third: which rules specifies more destination ports
+	if len(a.dports) != len(b.dports) {
+		return len(a.dports) > len(b.dports)
+	}
+
+	// Fourth: which rules specifies more source ports
+	if len(a.sports) != len(b.sports) {
+		return len(a.sports) > len(b.sports)
+	}
+
+	return false
+}
+
+func (list ruleList) Swap(i, j int) {
+	list[i], list[j] = list[j], list[i]
 }
 
 //
@@ -208,7 +269,7 @@ func ifaceForwardRules(iface *iface) {
 	iptablesAddRule("filter", "FORWARD", connRule)
 }
 
-func genEndpointAddr(e *Endpoint, src bool) (string, error) {
+func genEndpointAddr(e *endpoint, src bool) (string, error) {
 	var d, r string
 
 	if e.addr != nil {
@@ -222,13 +283,13 @@ func genEndpointAddr(e *Endpoint, src bool) (string, error) {
 	return r, nil
 }
 
-func genEndpointType(e *Endpoint, src bool) (string, error) {
+func genEndpointType(e *endpoint, src bool) (string, error) {
 	// Types won't be supported until the identifier starts feeding results
 	// into the config tree
 	return "", nil
 }
 
-func genEndpointClass(e *Endpoint, src bool) (string, error) {
+func genEndpointRing(e *endpoint, src bool) (string, error) {
 	var d string
 
 	if src {
@@ -238,16 +299,16 @@ func genEndpointClass(e *Endpoint, src bool) (string, error) {
 	}
 
 	for _, i := range interfaces {
-		if i.class == e.detail {
+		if i.ring == e.detail {
 			r := fmt.Sprintf(" %s %s ", d, i.subnet)
 			return r, nil
 		}
 	}
 
-	return "", fmt.Errorf("no such class: %s", e.detail)
+	return "", fmt.Errorf("no such ring: %s", e.detail)
 }
 
-func genEndpointIface(e *Endpoint, src bool) (string, error) {
+func genEndpointIface(e *endpoint, src bool) (string, error) {
 	var d, name string
 
 	if src {
@@ -264,8 +325,8 @@ func genEndpointIface(e *Endpoint, src bool) (string, error) {
 		nic = nics[apcfg.N_WIFI]
 	case "wired":
 		nic = nics[apcfg.N_WIRED]
-	case "connect":
-		nic = nics[apcfg.N_CONNECT]
+	case "setup":
+		nic = nics[apcfg.N_SETUP]
 	}
 	if nic != nil {
 		name = nic.Iface
@@ -283,16 +344,16 @@ func genEndpointIface(e *Endpoint, src bool) (string, error) {
 	return fmt.Sprintf(" %s %s ", d, name), nil
 }
 
-func genEndpoint(rule *Rule, from bool) (ep string, err error) {
-	var e *Endpoint
+func genEndpoint(r *rule, from bool) (ep string, err error) {
+	var e *endpoint
 
 	ep = ""
 	err = nil
 
 	if from {
-		e = rule.from
+		e = r.from
 	} else {
-		e = rule.to
+		e = r.to
 	}
 
 	switch e.kind {
@@ -300,8 +361,8 @@ func genEndpoint(rule *Rule, from bool) (ep string, err error) {
 		ep, err = genEndpointAddr(e, from)
 	case E_TYPE:
 		ep, err = genEndpointType(e, from)
-	case E_CLASS:
-		ep, err = genEndpointClass(e, from)
+	case E_RING:
+		ep, err = genEndpointRing(e, from)
 	case E_IFACE:
 		ep, err = genEndpointIface(e, from)
 	}
@@ -312,61 +373,61 @@ func genEndpoint(rule *Rule, from bool) (ep string, err error) {
 	return
 }
 
-func genPorts(rule *Rule) (r string, err error) {
+func genPorts(r *rule) (portList string, err error) {
 	var d string
 	var ports *[]int
 
-	if len(rule.sports) > 0 {
+	if len(r.sports) > 0 {
 		d = " --sport"
-		ports = &rule.sports
+		ports = &r.sports
 	}
-	if len(rule.dports) > 0 {
+	if len(r.dports) > 0 {
 		if ports != nil {
 			err = fmt.Errorf("can't specify both SPORT and DPORT")
 			return
 		}
 
 		d = " --dport"
-		ports = &rule.dports
+		ports = &r.dports
 	}
 	if ports == nil {
 		return
 	}
 	if len(*ports) > 1 {
-		r = fmt.Sprintf(" -m multiport %ss ", d)
-	} else if rule.proto == P_UDP {
-		r = fmt.Sprintf(" -m udp %s ", d)
+		portList = fmt.Sprintf(" -m multiport %ss ", d)
+	} else if r.proto == P_UDP {
+		portList = fmt.Sprintf(" -m udp %s ", d)
 	} else {
-		r = fmt.Sprintf(" -m tcp %s ", d)
+		portList = fmt.Sprintf(" -m tcp %s ", d)
 	}
 
 	for i, p := range *ports {
 		if i > 0 {
-			r += ","
+			portList += ","
 		}
-		r += strconv.Itoa(p)
+		portList += strconv.Itoa(p)
 	}
 
-	return r, nil
+	return
 }
 
 //
 // Build the iptables rules for a captive portal subnet.
 // Currently this only supports capturing an IFACE endpoint.  There's no reason
-// it couldn't be extended to support classes or individual clients in the
+// it couldn't be extended to support rings or individual clients in the
 // future.
 //
-func addCaptureRules(rule *Rule) error {
-	if rule.to != nil {
+func addCaptureRules(r *rule) error {
+	if r.to != nil {
 		return fmt.Errorf("CAPTURE rules only support source endpoints")
 	}
-	if rule.from == nil {
+	if r.from == nil {
 		return fmt.Errorf("CAPTURE rules must provide source endpoint")
 	}
 
-	i, ok := interfaces[rule.from.detail]
+	i, ok := interfaces[r.from.detail]
 	if !ok {
-		return fmt.Errorf("no such interface: %s", rule.from.detail)
+		return fmt.Errorf("no such interface: %s", r.from.detail)
 	}
 	ep := " -i " + i.name
 	webserver := network.SubnetRouter(i.subnet) + ":80"
@@ -401,37 +462,37 @@ func addCaptureRules(rule *Rule) error {
 	return nil
 }
 
-func addRule(rule *Rule) error {
-	var r string
+func addRule(r *rule) error {
+	var iptablesRule string
 
-	if rule.action == A_CAPTURE {
+	if r.action == A_CAPTURE {
 		// 'capture' isn't a single rule - it's a coordinated collection
 		// of rules.
-		return addCaptureRules(rule)
+		return addCaptureRules(r)
 	}
 
-	from := rule.from
-	to := rule.to
+	from := r.from
+	to := r.to
 	chain := "FORWARD"
 
-	switch rule.proto {
+	switch r.proto {
 	case P_UDP:
-		r += " -p udp"
+		iptablesRule += " -p udp"
 	case P_TCP:
-		r += " -p tcp"
+		iptablesRule += " -p tcp"
 	case P_ICMP:
-		r += " -p icmp"
+		iptablesRule += " -p icmp"
 	case P_IP:
-		r += " -p ip"
+		iptablesRule += " -p ip"
 	}
 
 	if from != nil {
-		e, err := genEndpoint(rule, true)
+		e, err := genEndpoint(r, true)
 		if err != nil {
 			fmt.Printf("Bad 'from' endpoint: %v\n", err)
 			return err
 		}
-		r += e
+		iptablesRule += e
 
 		if from.kind == E_IFACE && from.detail == "wan" {
 			chain = "INPUT"
@@ -439,29 +500,29 @@ func addRule(rule *Rule) error {
 	}
 
 	if to != nil {
-		e, err := genEndpoint(rule, false)
+		e, err := genEndpoint(r, false)
 		if err != nil {
 			fmt.Printf("Bad 'to' endpoint: %v\n", err)
 			return err
 		}
 
-		r += e
+		iptablesRule += e
 	}
 
-	e, err := genPorts(rule)
+	e, err := genPorts(r)
 	if err != nil {
 		fmt.Printf("Bad port list: %v\n", err)
 		return err
 	}
-	r += e
+	iptablesRule += e
 
-	switch rule.action {
+	switch r.action {
 	case A_ACCEPT:
-		r += " -j ACCEPT"
-		iptablesAddRule("filter", chain, r)
+		iptablesRule += " -j ACCEPT"
+		iptablesAddRule("filter", chain, iptablesRule)
 	case A_BLOCK:
-		r += " -j DROP"
-		iptablesAddRule("filter", chain, r)
+		iptablesRule += " -j DROP"
+		iptablesAddRule("filter", chain, iptablesRule)
 	}
 
 	return nil
@@ -486,28 +547,16 @@ func iptablesRebuild() {
 
 	// Add the basic routing rules for each interface
 	for _, i := range interfaces {
-		if i.class != "unauthorized" {
+		if i.ring != base_def.RING_SETUP &&
+			i.ring != base_def.RING_QUARANTINE {
 			ifaceForwardRules(i)
 		}
 	}
 
 	// Now add filter rules, from the most specific to the most general
-	for etype := E_ADDR; etype < E_MAX; etype++ {
-		for _, r := range rules {
-			// A given rule's specificity is determined by the most
-			// specific endpoint
-			rtype := E_MAX
-			if r.from != nil {
-				rtype = r.from.kind
-			}
-			if r.to != nil && r.to.kind < rtype {
-				rtype = r.to.kind
-			}
-
-			if rtype == etype {
-				addRule(r)
-			}
-		}
+	sort.Sort(rules)
+	for _, r := range rules {
+		addRule(r)
 	}
 }
 
@@ -521,21 +570,21 @@ func initNetwork() {
 
 	nics, _ = config.GetLogicalNics()
 	subnets := config.GetSubnets()
-	classes := config.GetClasses()
+	rings := config.GetRings()
 
 	//
 	// Build the list of network interfaces we need to protect.  This
-	// involves translating logical names (e.g., 'wifi' or 'connect') into
+	// involves translating logical names (e.g., 'wifi' or 'setup') into
 	// their physical instance names, and dropping interfaces not supported
 	// by this hardware
 	//
 	for logical, subnet := range subnets {
-		var name, class string
+		var name, ring string
 
-		// See if the interface belongs to a specific class
-		for c, conf := range classes {
+		// See if the interface belongs to a specific ring
+		for r, conf := range rings {
 			if logical == conf.Interface {
-				class = c
+				ring = r
 				break
 			}
 		}
@@ -550,11 +599,11 @@ func initNetwork() {
 			if !useVLANs {
 				subnet = wifiSubnet
 			}
-		} else if logical == "connect" {
-			if nic := nics[apcfg.N_CONNECT]; nic != nil {
+		} else if logical == "setup" {
+			if nic := nics[apcfg.N_SETUP]; nic != nil {
 				name = nic.Iface
 			} else {
-				log.Printf("No connect network available\n")
+				log.Printf("No setup network available\n")
 				continue
 			}
 		} else {
@@ -571,7 +620,7 @@ func initNetwork() {
 		i := iface{
 			name:   name,
 			subnet: subnet,
-			class:  class,
+			ring:   ring,
 		}
 		interfaces[logical] = &i
 		fmt.Printf("iface %s -> %v\n", logical, i)
@@ -579,6 +628,8 @@ func initNetwork() {
 }
 
 func loadRules() error {
+	var list ruleList
+
 	dents, err := ioutil.ReadDir(*rulesDir)
 	if err != nil {
 		return fmt.Errorf("Unable to process rules directory: %v", err)
@@ -591,13 +642,17 @@ func loadRules() error {
 		}
 
 		fullPath := *rulesDir + "/" + name
-		ruleSet, err := ParseRules(fullPath)
+		ruleSet, err := parseRulesFile(fullPath)
 		if err != nil {
 			return fmt.Errorf("failed to import %s: %v",
 				fullPath, err)
 		}
-		rules = append(rules, ruleSet...)
+		list = append(list, ruleSet...)
 	}
+
+	rulesLock.Lock()
+	rules = list
+	rulesLock.Unlock()
 	return nil
 }
 
@@ -616,13 +671,6 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
-	log.Println("prometheus client thread launched")
-
-	if err = loadRules(); err != nil {
-		mcp.SetStatus("broken")
-		log.Fatalf("Unable to load the rules files\n")
-	}
-
 	b.Init(pname)
 	b.Handle(base_def.TOPIC_CONFIG, configChanged)
 	b.Connect()
@@ -635,11 +683,24 @@ func main() {
 	}
 
 	initNetwork()
-	iptablesRebuild()
-	iptablesReset()
 
 	sig := make(chan os.Signal)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	s := <-sig
-	log.Fatalf("Signal (%v) received, stopping\n", s)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	for {
+		if err = loadRules(); err != nil {
+			if mcp != nil {
+				mcp.SetStatus("broken")
+			}
+			log.Fatalf("Unable to load the rules files\n")
+		}
+		refilter()
+
+		s := <-sig
+		if s == syscall.SIGHUP {
+			log.Printf("Reloading the rules files\n")
+		} else {
+			log.Printf("Signal (%v) received, stopping\n", s)
+			os.Exit(0)
+		}
+	}
 }

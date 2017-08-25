@@ -71,11 +71,11 @@ var (
 
 	config  *apcfg.APConfig
 	clients apcfg.ClientMap // macaddr -> ClientInfo
-	classes apcfg.ClassMap  // class -> config
+	rings   apcfg.RingMap   // ring -> config
 	subnets apcfg.SubnetMap // iface -> subnet
 
 	activeWifi   *device     // live wireless iface
-	connectWifi  string      // open "network connect" interface
+	setupWifi    string      // open "network setup" interface
 	activeWan    *device     // WAN port
 	activeWired  string      // wired bridge
 	childProcess *os.Process // track the hostapd proc
@@ -96,7 +96,7 @@ const (
 	ipCmd          = "/sbin/ip"
 	pname          = "ap.networkd"
 	bridge         = "br0"
-	connectPortal  = "_0"
+	setupPortal    = "_0"
 )
 
 //
@@ -131,11 +131,11 @@ type APConfig struct {
 	Channel       int
 	Passphrase    string
 
-	ConfDir        string // Location of hostapd.conf, etc.
-	ConfFile       string // Name of this NIC's hostapd.conf
-	VLANComment    string // Used to disable vlan params in .conf template
-	ConnectSSID    string // SSID to broadcast for connect network
-	ConnectComment string // Used to disable connect net in .conf template
+	ConfDir      string // Location of hostapd.conf, etc.
+	ConfFile     string // Name of this NIC's hostapd.conf
+	VLANComment  string // Used to disable vlan params in .conf template
+	SetupSSID    string // SSID to broadcast for setup network
+	SetupComment string // Used to disable setup net in .conf template
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -154,23 +154,23 @@ func config_changed(raw []byte) {
 	rewrite := false
 	conf := aps[activeWifi.name]
 
-	// Watch for client identifications in @/client/<macaddr>/class.  If a
-	// client changes class, we need it to rewrite the mac_accept file and
+	// Watch for client identifications in @/client/<macaddr>/ring.  If a
+	// client changes rings, we need it to rewrite the mac_accept file and
 	// then force the client to reassociate with its new VLAN.
 	//
-	if len(path) == 3 && path[0] == "clients" && path[2] == "class" {
+	if len(path) == 3 && path[0] == "clients" && path[2] == "ring" {
 		hwaddr := path[1]
 		rewrite = true
 		reset = true
 
-		newClass := *event.NewValue
+		newRing := *event.NewValue
 		if c, ok := clients[hwaddr]; ok {
-			log.Printf("Moving %s from %s to %s\n", hwaddr, c.Class,
-				newClass)
-			c.Class = newClass
+			log.Printf("Moving %s from %s to %s\n", hwaddr, c.Ring,
+				newRing)
+			c.Ring = newRing
 		} else {
-			c := apcfg.ClientInfo{Class: newClass}
-			log.Printf("New client %s in %s\n", hwaddr, newClass)
+			c := apcfg.ClientInfo{Ring: newRing}
+			log.Printf("New client %s in %s\n", hwaddr, newRing)
 			clients[hwaddr] = &c
 		}
 	}
@@ -188,8 +188,8 @@ func config_changed(raw []byte) {
 			rewrite = true
 			fullReset = true
 
-		case "connectssid":
-			conf.ConnectSSID = *event.NewValue
+		case "setupssid":
+			conf.SetupSSID = *event.NewValue
 			rewrite = true
 			fullReset = true
 
@@ -241,8 +241,8 @@ func getSubnetConfig() string {
 // Get network settings from configd and use them to initialize the AP
 //
 func getAPConfig(d *device, props *apcfg.PropertyNode) {
-	var ssid, passphrase, connectSSID string
-	var vlanComment, connectComment string
+	var ssid, passphrase, setupSSID string
+	var vlanComment, setupComment string
 	var node *apcfg.PropertyNode
 
 	if node = props.GetChild("ssid"); node == nil {
@@ -255,15 +255,15 @@ func getAPConfig(d *device, props *apcfg.PropertyNode) {
 	}
 	passphrase = node.GetValue()
 
-	if node = props.GetChild("connectssid"); node != nil {
-		connectSSID = node.GetValue()
+	if node = props.GetChild("setupssid"); node != nil {
+		setupSSID = node.GetValue()
 	}
 	if !d.supportVLANs {
 		vlanComment = "#"
 	}
 
-	if d.multipleAPs && len(connectSSID) > 0 {
-		// If we create a second SSID for new clients to connect to,
+	if d.multipleAPs && len(setupSSID) > 0 {
+		// If we create a second SSID for new clients to setup to,
 		// its mac address will be derived from the nic's mac address by
 		// adding 1 to the final octet.  To accomodate that, hostapd
 		// wants the final nybble of the final octet to be 0.
@@ -287,24 +287,24 @@ func getAPConfig(d *device, props *apcfg.PropertyNode) {
 			log.Printf("Changed mac from %s to %s\n", o, d.hwaddr)
 		}
 	} else {
-		connectComment = "#"
+		setupComment = "#"
 	}
 	network := getSubnetConfig()
 
 	data := APConfig{
-		Interface:      d.name,
-		Network:        network,
-		Hwaddr:         d.hwaddr,
-		UseVLANs:       d.supportVLANs,
-		SSID:           ssid,
-		HardwareModes:  "g",
-		Channel:        6,
-		Passphrase:     passphrase,
-		ConfFile:       "hostapd.conf." + d.name,
-		ConfDir:        confdir,
-		VLANComment:    vlanComment,
-		ConnectComment: connectComment,
-		ConnectSSID:    connectSSID,
+		Interface:     d.name,
+		Network:       network,
+		Hwaddr:        d.hwaddr,
+		UseVLANs:      d.supportVLANs,
+		SSID:          ssid,
+		HardwareModes: "g",
+		Channel:       6,
+		Passphrase:    passphrase,
+		ConfFile:      "hostapd.conf." + d.name,
+		ConfDir:       confdir,
+		VLANComment:   vlanComment,
+		SetupComment:  setupComment,
+		SetupSSID:     setupSSID,
 	}
 	aps[d.name] = &data
 }
@@ -375,15 +375,15 @@ func generateHostAPDConf(conf *APConfig) string {
 
 	// One client per line, containing "<mac addr> <vlan_id>"
 	for client, info := range clients {
-		if info.Class == "wired" {
+		if info.Ring == base_def.RING_WIRED {
 			continue
 		}
 
-		cc, ok := classes[info.Class]
+		cc, ok := rings[info.Ring]
 		if !ok {
-			log.Printf("%s in unrecognized class %s.\n",
-				client, info.Class)
-			cc, ok = classes["unclassified"]
+			log.Printf("%s in unrecognized ring %s.\n",
+				client, info.Ring)
+			cc, ok = rings[base_def.RING_UNENROLLED]
 		}
 		if ok && cc.Interface != "wifi" {
 			fmt.Fprintf(mf, "%s %d\n", client, vlanID(cc.Interface))
@@ -398,8 +398,8 @@ func generateHostAPDConf(conf *APConfig) string {
 	}
 	defer vf.Close()
 
-	for _, class := range classes {
-		iface := class.Interface
+	for _, ring := range rings {
+		iface := ring.Interface
 
 		if strings.HasPrefix(iface, "vlan") {
 			fmt.Fprintf(vf, "%d\t%s\n", vlanID(iface), iface)
@@ -631,7 +631,7 @@ func prepareWired() {
 		log.Fatalf("Failed to enable packet forwarding: %v\n", err)
 	}
 
-	cc, wiredLan := classes["wired"]
+	cc, wiredLan := rings[base_def.RING_WIRED]
 	if wiredLan {
 		var ok bool
 
@@ -654,7 +654,7 @@ func prepareWired() {
 			wiredLan = false
 		}
 	} else {
-		log.Printf("No 'wired' client class defined\n")
+		log.Printf("No 'wired' client ring defined\n")
 	}
 
 	//
@@ -715,11 +715,11 @@ func prepareWireless(props *apcfg.PropertyNode) {
 		for i, s := range subnets {
 			if i == "wifi" {
 				addInterface(activeWifi.name, s, true)
-			} else if i == "connect" {
+			} else if i == "setup" {
 				if activeWifi.multipleAPs {
-					connectWifi = activeWifi.name +
-						connectPortal
-					addInterface(connectWifi, s, true)
+					setupWifi = activeWifi.name +
+						setupPortal
+					addInterface(setupWifi, s, true)
 				}
 			} else if strings.HasPrefix(i, "vlan.") {
 				addInterface(i, s, true)
@@ -745,7 +745,7 @@ func getEthernet(i net.Interface) *device {
 //
 // Given the name of a wireless NIC, construct a device structure for it
 func getWireless(i net.Interface) *device {
-	if strings.HasSuffix(i.Name, connectPortal) {
+	if strings.HasSuffix(i.Name, setupPortal) {
 		return nil
 	}
 
@@ -851,7 +851,7 @@ func updateNetworkProp(props *apcfg.PropertyNode, prop, new string) {
 //
 func updateNetworkConfig(props *apcfg.PropertyNode) {
 	updateNetworkProp(props, "wifi_nic", activeWifi.name)
-	updateNetworkProp(props, "connect_nic", connectWifi)
+	updateNetworkProp(props, "setup_nic", setupWifi)
 	updateNetworkProp(props, "wired_nic", activeWired)
 	updateNetworkProp(props, "wan_nic", activeWan.name)
 	if activeWifi.supportVLANs {
@@ -888,7 +888,7 @@ func main() {
 
 	config = apcfg.NewConfig(pname)
 	subnets = config.GetSubnets()
-	classes = config.GetClasses()
+	rings = config.GetRings()
 	clients = config.GetClients()
 
 	props, err := config.GetProps("@/network")

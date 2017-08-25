@@ -562,9 +562,9 @@ func initNetwork() {
 			log.Printf("Failed to get subnet address: %v\n", err)
 		}
 
-		// If we have a 'connect' network, construct an A record which
+		// If we have a 'setup' network, construct an A record which
 		// we can use to answer all DNS requests on that subnet.
-		cidr, _ = config.GetProp("@/interfaces/connect/subnet")
+		cidr, _ = config.GetProp("@/interfaces/setup/subnet")
 		if cidr != "" {
 			if _, subnet, err := net.ParseCIDR(cidr); err == nil {
 				router := network.SubnetRouter(subnet.String())

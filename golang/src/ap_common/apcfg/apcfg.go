@@ -31,11 +31,22 @@ import (
 
 const (
 	N_WAN = iota
-	N_CONNECT
+	N_SETUP
 	N_WIRED
 	N_WIFI
 	N_MAX
 )
+
+var ValidRings = map[string]bool{
+	base_def.RING_UNENROLLED: true,
+	base_def.RING_SETUP:      true,
+	base_def.RING_CORE:       true,
+	base_def.RING_STANDARD:   true,
+	base_def.RING_DEVICES:    true,
+	base_def.RING_GUEST:      true,
+	base_def.RING_QUARANTINE: true,
+	base_def.RING_WIRED:      true,
+}
 
 type Nic struct {
 	Logical string
@@ -43,13 +54,13 @@ type Nic struct {
 	Mac     string
 }
 
-type ClassConfig struct {
+type RingConfig struct {
 	Interface     string
 	LeaseDuration int
 }
 
 type ClientInfo struct {
-	Class    string     // Assigned class
+	Ring     string     // Assigned security ring
 	DNSName  string     // Assigned hostname
 	IPv4     net.IP     // Network address
 	Expires  *time.Time // DHCP lease expiration time
@@ -57,7 +68,7 @@ type ClientInfo struct {
 	Identity string     // Our current best guess at the client type
 }
 
-type ClassMap map[string]*ClassConfig
+type RingMap map[string]*RingConfig
 type ClientMap map[string]*ClientInfo
 type SubnetMap map[string]string
 type NicMap map[string]string
@@ -303,27 +314,31 @@ func getIntVal(root *PropertyNode, name string) (int, error) {
 }
 
 //
-// Fetch the Classes subtree and return a Class -> ClassConfig map
-func (c APConfig) GetClasses() ClassMap {
-	props, err := c.GetProps("@/classes")
+// Fetch the Rings subtree and return a Ring -> RingConfig map
+func (c APConfig) GetRings() RingMap {
+	props, err := c.GetProps("@/rings")
 	if err != nil {
-		log.Printf("Failed to get class list: %v\n", err)
+		log.Printf("Failed to get ring list: %v\n", err)
 		return nil
 	}
 
-	set := make(map[string]*ClassConfig)
-	for _, class := range props.Children {
+	set := make(map[string]*RingConfig)
+	for _, ring := range props.Children {
 		var iface string
 		var duration int
 
-		if iface, err = getStringVal(class, "interface"); err == nil {
-			duration, err = getIntVal(class, "lease_duration")
+		if !ValidRings[ring.Name] {
+			log.Printf("Invalid ring name: %s\n", ring.Name)
+			continue
+		}
+		if iface, err = getStringVal(ring, "interface"); err == nil {
+			duration, err = getIntVal(ring, "lease_duration")
 		}
 		if err == nil {
-			c := ClassConfig{Interface: iface, LeaseDuration: duration}
-			set[class.Name] = &c
+			c := RingConfig{Interface: iface, LeaseDuration: duration}
+			set[ring.Name] = &c
 		} else {
-			fmt.Printf("Malformed class %s: %v\n", class.Name, err)
+			fmt.Printf("Malformed ring %s: %v\n", ring.Name, err)
 		}
 	}
 
@@ -353,13 +368,13 @@ func (c APConfig) GetSubnets() SubnetMap {
 }
 
 func getClient(client *PropertyNode) *ClientInfo {
-	var class, dns, dhcp, identity string
+	var ring, dns, dhcp, identity string
 	var ipv4 net.IP
 	var exp *time.Time
 	var err error
 
-	if class, err = getStringVal(client, "class"); err != nil {
-		class = "unclassified"
+	if ring, err = getStringVal(client, "ring"); err != nil {
+		ring = "unenrolled"
 	}
 
 	identity, _ = getStringVal(client, "identity")
@@ -373,7 +388,7 @@ func getClient(client *PropertyNode) *ClientInfo {
 	}
 
 	c := ClientInfo{
-		Class:    class,
+		Ring:     ring,
 		DHCPName: dhcp,
 		DNSName:  dns,
 		IPv4:     ipv4,
@@ -445,7 +460,7 @@ func (c APConfig) GetLogicalNics() ([]*Nic, error) {
 		nics[N_WAN] = getNic(props, "wan_nic")
 		nics[N_WIFI] = getNic(props, "wifi_nic")
 		nics[N_WIRED] = getNic(props, "wired_nic")
-		nics[N_CONNECT] = getNic(props, "connect_nic")
+		nics[N_SETUP] = getNic(props, "setup_nic")
 	} else {
 		err = fmt.Errorf("Failed to get network config: %v", err)
 	}

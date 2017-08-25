@@ -26,5 +26,5 @@ rsn_pairwise=CCMP
 {{.VLANComment}}vlan_file={{.ConfDir}}/hostapd.vlan
 {{.VLANComment}}accept_mac_file={{.ConfDir}}/hostapd.macs
 
-{{.ConnectComment}}bss={{.Interface}}_0
-{{.ConnectComment}}ssid={{.ConnectSSID}}
+{{.SetupComment}}bss={{.Interface}}_0
+{{.SetupComment}}ssid={{.SetupSSID}}

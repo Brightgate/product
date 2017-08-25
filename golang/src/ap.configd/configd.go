@@ -128,8 +128,8 @@ const (
 	default_filename  = "ap_defaults.json"
 	pname             = "ap.configd"
 
-	minConfigVersion = 0
-	curConfigVersion = 2
+	minConfigVersion = 3
+	curConfigVersion = 3
 )
 
 type property_ops struct {
@@ -418,12 +418,12 @@ func entity_handler(event []byte) {
 
 	var n *pnode
 	var ok bool
-	if _, ok = fields["class"]; !ok {
-		n := property_add(node, "class")
-		if entity.Class != nil {
-			n.Value = *entity.Class
+	if _, ok = fields["ring"]; !ok {
+		n := property_add(node, "ring")
+		if entity.Ring != nil {
+			n.Value = *entity.Ring
 		} else {
-			n.Value = "unclassified"
+			n.Value = base_def.RING_UNENROLLED
 		}
 	}
 
@@ -435,7 +435,7 @@ func entity_handler(event []byte) {
 	}
 
 	if dhcp && entity.Hostname != nil {
-		if n, ok = fields["dns"]; !ok {
+		if n, ok = fields["dhcp_name"]; !ok {
 			n = property_add(node, "dhcp_name")
 		}
 		n.Value = *entity.Hostname
