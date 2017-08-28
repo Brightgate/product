@@ -390,14 +390,10 @@ func expirationNotify(prop, val string) {
 	prop_notify(prop, val, base_msg.EventConfig_EXPIRE)
 }
 
-/*
- * Placeholder for creating new @/clients/* entries until a real classifier
- * exists.
- */
 func entity_handler(event []byte) {
+	updated := false
 	entity := &base_msg.EventNetEntity{}
 	proto.Unmarshal(event, entity)
-	dhcp := strings.HasPrefix(*entity.Sender, "ap.dhcp4d")
 
 	if entity.MacAddress == nil {
 		log.Printf("Received a NET.ENTITY event with no MAC: %v\n",
@@ -418,29 +414,36 @@ func entity_handler(event []byte) {
 
 	var n *pnode
 	var ok bool
-	if _, ok = fields["ring"]; !ok {
-		n := property_add(node, "ring")
-		if entity.Ring != nil {
-			n.Value = *entity.Ring
-		} else {
-			n.Value = base_def.RING_UNENROLLED
-		}
-	}
-
 	if entity.InterfaceName != nil {
 		if n, ok = fields["iface"]; !ok {
 			n = property_add(node, "iface")
 		}
-		n.Value = *entity.InterfaceName
+		if n.Value != *entity.InterfaceName {
+			n.Value = *entity.InterfaceName
+			updated = true
+		}
 	}
 
-	if dhcp && entity.Hostname != nil {
-		if n, ok = fields["dhcp_name"]; !ok {
-			n = property_add(node, "dhcp_name")
+	if entity.Ipv4Address != nil {
+		if n, ok = fields["ipv4_observed"]; !ok {
+			n = property_add(node, "ipv4_observed")
 		}
-		n.Value = *entity.Hostname
+		ipv4 := network.Uint32ToIPAddr(*entity.Ipv4Address).String()
+		if n.Value != ipv4 {
+			n.Value = ipv4
+			updated = true
+		}
 	}
-	prop_tree_store()
+
+	if n, ok = fields["ring"]; !ok {
+		n = property_add(node, "ring")
+		n.Value = base_def.RING_UNENROLLED
+		updated = true
+	}
+
+	if updated {
+		prop_tree_store()
+	}
 }
 
 /*************************************************************************

@@ -250,6 +250,39 @@ func requestScan(ip string) {
 	scannedHosts.add(ip)
 }
 
+// Send a notification that we have an unknown entity on our network.
+func logUnknown(iface, mac, ipstr string) bool {
+	var addr net.IP
+
+	addr = net.ParseIP(ipstr).To4()
+	if addr == nil {
+		log.Printf("Couldn't parse IP address: %s\n", ipstr)
+		return false
+	}
+
+	hwaddr, err := net.ParseMAC(mac)
+	if err != nil {
+		log.Printf("Couldn't parse MAC: %s\n", mac)
+		return false
+	}
+
+	t := time.Now()
+	entity := &base_msg.EventNetEntity{
+		Timestamp: &base_msg.Timestamp{
+			Seconds: proto.Int64(t.Unix()),
+			Nanos:   proto.Int32(int32(t.Nanosecond())),
+		},
+		Sender:        proto.String(brokerd.Name),
+		Debug:         proto.String("-"),
+		InterfaceName: &iface,
+		Ipv4Address:   proto.Uint32(network.IPAddrToUint32(addr)),
+		MacAddress:    proto.Uint64(network.HWAddrToUint64(hwaddr)),
+	}
+
+	err = brokerd.Publish(entity, base_def.TOPIC_ENTITY)
+	return err == nil
+}
+
 // hostScan scans the network for new hosts and schedules regular port scans
 // on the host if one is found.
 func hostScan() {
@@ -280,11 +313,12 @@ func hostScan() {
 			return
 		}
 		for _, host := range scanResults.Hosts {
-			var ip string
+			var mac, ip string
 			for _, addr := range host.Addresses {
 				if addr.AddrType == "ipv4" {
 					ip = addr.Addr
-					break
+				} else if addr.AddrType == "mac" {
+					mac = addr.Addr
 				}
 			}
 			if host.Status.State == "up" && ip != "" &&
@@ -293,8 +327,9 @@ func hostScan() {
 				if !scannedHosts.contains(ip) {
 					if !contains(knownHosts, ip) {
 						// XXX message bus, net.entity or something similar
-						log.Printf("Unknown host discovered on %s: %s",
-							iface, ip)
+						log.Printf("Unknown host %s discovered on %s: %s",
+							mac, iface, ip)
+						logUnknown(iface, mac, ip)
 					} else {
 						log.Printf("%s is back online on %s, restarting scans",
 							ip, iface)

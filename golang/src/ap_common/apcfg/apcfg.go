@@ -308,7 +308,6 @@ func getIntVal(root *PropertyNode, name string) (int, error) {
 			err = fmt.Errorf("%s has malformed %s property",
 				node.Name)
 		}
-		fmt.Printf("%s %s -> %d\n", name, node.Value, rval)
 	}
 	return rval, err
 }
@@ -443,7 +442,6 @@ func getNic(props *PropertyNode, name string) *Nic {
 		log.Printf("%s mapped to missing nic %s\n", name, nic)
 	} else {
 		n := Nic{Logical: name, Iface: nic, Mac: mac}
-		log.Printf("%s -> %s / %s\n", name, nic, mac)
 		return &n
 	}
 	return nil

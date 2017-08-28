@@ -76,16 +76,22 @@ func getRing(hwaddr string) string {
 	return ring
 }
 
-func setRing(hwaddr, ring string) string {
+func setRing(hwaddr, ring string) bool {
+	updated := false
+
 	clientMtx.Lock()
 	if client := clients[hwaddr]; client != nil {
-		client.Ring = ring
+		if client.Ring != ring {
+			client.Ring = ring
+			updated = true
+		}
 	} else {
 		clients[hwaddr] = &apcfg.ClientInfo{Ring: ring}
+		updated = true
 	}
 	clientMtx.Unlock()
 
-	return ring
+	return updated
 }
 
 func updateRing(hwaddr, old, new string) bool {
@@ -169,19 +175,15 @@ func config_event(raw []byte) {
 	}
 }
 
-func hostnameProperty(hwaddr string) string {
-	return fmt.Sprintf("@/clients/%s/dhcp_name", hwaddr)
-}
-
-func leaseProperty(hwaddr string) string {
-	return fmt.Sprintf("@/clients/%s/ipv4", hwaddr)
+func propPath(hwaddr, prop string) string {
+	return fmt.Sprintf("@/clients/%s/%s", hwaddr, prop)
 }
 
 /*
  * This is the first time we've seen this device.  Send an ENTITY message with
  * its hardware address, name, and any IP address it's requesting.
  */
-func notifyNewEntity(p dhcp.Packet, options dhcp.Options, ring string) {
+func notifyNewEntity(p dhcp.Packet, options dhcp.Options) {
 	t := time.Now()
 	ipaddr := p.CIAddr()
 	hwaddr_u64 := network.HWAddrToUint64(p.CHAddr())
@@ -199,7 +201,6 @@ func notifyNewEntity(p dhcp.Packet, options dhcp.Options, ring string) {
 		MacAddress:  proto.Uint64(hwaddr_u64),
 		Ipv4Address: proto.Uint32(network.IPAddrToUint32(ipaddr)),
 		Hostname:    proto.String(hostname),
-		Ring:        proto.String(ring),
 	}
 
 	err := brokerd.Publish(entity, base_def.TOPIC_ENTITY)
@@ -400,15 +401,17 @@ func (h *DHCPHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	}
 
 	l.name = string(options[dhcp.OptionHostName])
-	if !l.static {
+	if l.static {
+		l.expires = nil
+	} else {
 		expires := time.Now().Add(h.duration)
 		l.expires = &expires
 	}
 
 	log.Printf("   REQUEST assigned %s to %s (%q) until %s\n",
 		l.ipaddr, hwaddr, l.name, l.expires)
-	config.CreateProp(leaseProperty(hwaddr), l.ipaddr.String(), l.expires)
-	config.CreateProp(hostnameProperty(hwaddr), l.name, nil)
+	config.CreateProp(propPath(hwaddr, "ipv4"), l.ipaddr.String(), l.expires)
+	config.CreateProp(propPath(hwaddr, "dhcp_name"), l.name, nil)
 	notifyClaimed(p, l.ipaddr, l.name, h.duration)
 
 	return dhcp.ReplyPacket(p, dhcp.ACK, h.server_ip, l.ipaddr, h.duration,
@@ -421,13 +424,13 @@ func (h *DHCPHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
  * return 'true'
  */
 func (h *DHCPHandler) releaseLease(l *lease, hwaddr string) bool {
-	if l == nil || !l.assigned || l.hwaddr != hwaddr {
+	if l == nil || !l.assigned || l.hwaddr != hwaddr || l.expires == nil {
 		return false
 	}
 
 	l.assigned = false
 	notifyRelease(l.ipaddr)
-	config.DeleteProp(leaseProperty(l.hwaddr))
+	config.DeleteProp(propPath(l.hwaddr, "ipv4"))
 	return true
 }
 
@@ -479,24 +482,29 @@ func selectRingHandler(p dhcp.Packet, options dhcp.Options) *DHCPHandler {
 		// network.
 		setRing(hwaddr, base_def.RING_SETUP)
 	} else if lastRequestOn == apcfg.N_WIFI {
-		if oldRing == "" || oldRing == base_def.RING_SETUP {
+		// If this client isn't already assigned to a wireless ring, we
+		// mark it as 'unenrolled'.
+		if oldRing == "" || oldRing == base_def.RING_SETUP ||
+			oldRing == base_def.RING_WIRED {
 			updateRing(hwaddr, oldRing, base_def.RING_UNENROLLED)
 		}
 	} else {
-		updateRing(hwaddr, "", base_def.RING_WIRED)
+		setRing(hwaddr, base_def.RING_WIRED)
 	}
 
 	ring := getRing(hwaddr)
-	if ring != oldRing {
-		log.Printf("New %s client %s on %s interface\n", ring, hwaddr,
+	if oldRing == "" {
+		log.Printf("New client %s on %s interface\n", hwaddr,
 			nics[lastRequestOn].Iface)
-		notifyNewEntity(p, options, ring)
+		notifyNewEntity(p, options)
 	}
 
 	ringHandler, ok := handlers[ring]
 	if !ok {
 		log.Printf("Client %s identified as unknown ring '%s'\n",
 			hwaddr, ring)
+	} else if ring != oldRing {
+		config.CreateProp(propPath(hwaddr, "ring"), ring, nil)
 	}
 	return ringHandler
 }

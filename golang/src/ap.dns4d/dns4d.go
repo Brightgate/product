@@ -479,6 +479,7 @@ func updateOneClient(c *apcfg.ClientInfo) {
 		if domainname != "" {
 			hostname += domainname + "."
 		}
+		log.Printf("Adding A record %s->%s\n", hostname, ipv4)
 		hosts[hostname] = dns_record{
 			rectype: dns.TypeA,
 			recval:  ipv4,
@@ -492,6 +493,8 @@ func updateOneClient(c *apcfg.ClientInfo) {
 			log.Printf("Invalid address %v for %s: %v\n",
 				c.IPv4, c.DNSName, err)
 		} else {
+			log.Printf("Adding PTR record %s->%s\n", arpa,
+				c.DHCPName)
 			hosts[arpa] = dns_record{
 				rectype: dns.TypePTR,
 				recval:  c.DHCPName,
