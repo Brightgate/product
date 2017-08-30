@@ -29,13 +29,18 @@ import (
 	"github.com/sjwhitworth/golearn/trees"
 )
 
+const collectionDuration = 30 * time.Minute
+
 type entity struct {
 	identity string
+	timeout  time.Time
 	attrs    map[string]bool
 }
 
 // Entities is a vessel to collect data about clients. The data can be exported
-// for later use as training data.
+// for later use as training data. For each new client we will collect data for
+// 30 minutes. If a consumer of Entities (currently only ap.identifierd) is
+// restarted then the timeout is reset.
 type Entities struct {
 	sync.Mutex
 	dataMap map[uint64]*entity
@@ -91,7 +96,9 @@ func (e *Entities) AddIdentityHint(hwaddr uint64, name string) {
 	defer e.Unlock()
 
 	d := e.getEntityLocked(hwaddr)
-	d.identity = name
+	if d.identity == "" {
+		d.identity = name
+	}
 }
 
 // AddAttr adds the attribute 'a'
@@ -100,7 +107,9 @@ func (e *Entities) AddAttr(hwaddr uint64, a string) {
 	defer e.Unlock()
 
 	d := e.getEntityLocked(hwaddr)
-	d.attrs[a] = true
+	if time.Now().Before(d.timeout) {
+		d.attrs[a] = true
+	}
 }
 
 // WriteCSV exports an Entities struct to a CSV file, overwriting the file at
@@ -229,9 +238,9 @@ func (o *Observations) Train(path string) error {
 	return nil
 }
 
-// SetByName sets the attribute 'attr' to the value 'val' for the client
+// SetByName sets the attribute 'attr' to the value '1' for the client
 // specified by 'hwaddr'.
-func (o *Observations) SetByName(hwaddr uint64, attr, val string) {
+func (o *Observations) SetByName(hwaddr uint64, attr string) {
 	o.Lock()
 	defer o.Unlock()
 
@@ -254,7 +263,7 @@ func (o *Observations) SetByName(hwaddr uint64, attr, val string) {
 		return
 	}
 
-	o.inst.Set(o.spec[col], row, o.spec[col].GetAttribute().GetSysValFromString(val))
+	o.inst.Set(o.spec[col], row, o.spec[col].GetAttribute().GetSysValFromString("1"))
 }
 
 // PredictBayes predicts identities for the observations using Naive Bayes
@@ -334,7 +343,8 @@ func (o *Observations) GetBayesIdentity(hwaddr uint64) (string, float64) {
 
 func newEntity() *entity {
 	ret := &entity{
-		attrs: make(map[string]bool),
+		timeout: time.Now().Add(collectionDuration),
+		attrs:   make(map[string]bool),
 	}
 	return ret
 }

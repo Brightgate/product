@@ -48,7 +48,7 @@
     "identifierd": {
         "Name": "identifierd",
         "Binary": "ap.identifierd",
-        "DependsOn": "brokerd",
+        "DependsOn": "configd",
         "Privileged": true,
         "Options": "-datadir=$APROOT/etc -logdir $APROOT/var/spool/identifierd"
     },

@@ -121,7 +121,7 @@ func handleEntity(event []byte) {
 	newData.AddIdentityHint(*entity.MacAddress, hostname)
 
 	id := mfgidDB[entry.Manufacturer]
-	testData.SetByName(*entity.MacAddress, model.FormatMfgString(id), "1")
+	testData.SetByName(*entity.MacAddress, model.FormatMfgString(id))
 }
 
 func handleRequest(event []byte) {
@@ -149,7 +149,7 @@ func handleRequest(event []byte) {
 		}
 
 		newData.AddAttr(hwaddr, qName)
-		testData.SetByName(hwaddr, qName, "1")
+		testData.SetByName(hwaddr, qName)
 	}
 }
 
@@ -209,7 +209,7 @@ func handleScan(event []byte) {
 			}
 			portString := model.FormatPortString(*p.Protocol, *p.PortId)
 			newData.AddAttr(network.HWAddrToUint64(hwaddr), portString)
-			testData.SetByName(network.HWAddrToUint64(hwaddr), portString, "1")
+			testData.SetByName(network.HWAddrToUint64(hwaddr), portString)
 		}
 	}
 }
@@ -226,7 +226,7 @@ func listenAttr(addr, kind string) {
 	}
 
 	newData.AddAttr(hwaddr, kind)
-	testData.SetByName(hwaddr, kind, "1")
+	testData.SetByName(hwaddr, kind)
 }
 
 func handleListen(event []byte) {
@@ -328,17 +328,41 @@ func loadObservations() error {
 
 		id := mfgidDB[entry.Manufacturer]
 		hwaddr := network.HWAddrToUint64(mac)
-		testData.SetByName(hwaddr, model.FormatMfgString(id), "1")
+		testData.SetByName(hwaddr, model.FormatMfgString(id))
 
 		last := len(record) - 1
 		newData.AddIdentityHint(hwaddr, record[last])
 		for i, feat := range record[1:last] {
-			testData.SetByName(hwaddr, header[i], feat)
+			if feat == "0" {
+				continue
+			}
+			testData.SetByName(hwaddr, header[i])
 			newData.AddAttr(hwaddr, header[i])
 		}
 
 	}
 	return nil
+}
+
+func recoverClients() {
+	clients := apcfgd.GetClients()
+
+	for macaddr, client := range clients {
+		hwaddr, err := net.ParseMAC(macaddr)
+		if err != nil {
+			log.Printf("Invalid mac address in @/clients: %s\n", macaddr)
+			continue
+		}
+		hw := network.HWAddrToUint64(hwaddr)
+
+		if client.IPv4 != nil {
+			addIP(network.IPAddrToUint32(client.IPv4), hw)
+		}
+
+		if client.DHCPName != "" {
+			newData.AddIdentityHint(hw, client.DHCPName)
+		}
+	}
 }
 
 func main() {
@@ -381,6 +405,9 @@ func main() {
 		log.Fatalf("failed to import manufacturer IDs from %s: %v\n", mfgidPath, err)
 	}
 
+	apcfgd = apcfg.NewConfig(pname)
+	recoverClients()
+
 	// Training the ID3 tree takes a long time (currently ~30s). Tell mcp we are
 	// online now so we don't trigger its timeout.
 	if mcpd != nil {
@@ -408,8 +435,6 @@ func main() {
 	brokerd.Connect()
 	defer brokerd.Disconnect()
 	brokerd.Ping()
-
-	apcfgd = apcfg.NewConfig(pname)
 
 	if err := os.MkdirAll(*logDir, 0755); err != nil {
 		log.Fatalln("failed to mkdir:", err)
