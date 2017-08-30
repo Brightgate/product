@@ -659,7 +659,7 @@ func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	flag.Parse()
 
-	mcp, err := mcp.New(pname)
+	mcpd, err := mcp.New(pname)
 	if err != nil {
 		log.Printf("failed to connect to mcp\n")
 	}
@@ -684,8 +684,8 @@ func main() {
 	defer brokerd.Disconnect()
 	brokerd.Ping()
 
-	if mcp != nil {
-		if err = mcp.SetStatus("online"); err != nil {
+	if mcpd != nil {
+		if err = mcpd.SetState(mcp.ONLINE); err != nil {
 			log.Printf("failed to set status\n")
 		}
 	}

@@ -594,7 +594,7 @@ func init() {
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
-	mcp, err := mcp.New(pname)
+	mcpd, err := mcp.New(pname)
 	if err != nil {
 		log.Printf("Failed to connect to mcp\n")
 	}
@@ -642,8 +642,8 @@ func main() {
 	}
 	dns.HandleFunc(".", proxyHandler)
 
-	if mcp != nil {
-		mcp.SetStatus("online")
+	if mcpd != nil {
+		mcpd.SetState(mcp.ONLINE)
 	}
 
 	go func() {

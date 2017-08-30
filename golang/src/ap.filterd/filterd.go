@@ -663,7 +663,7 @@ func main() {
 
 	flag.Parse()
 
-	mcp, err := mcp.New(pname)
+	mcpd, err := mcp.New(pname)
 	if err != nil {
 		log.Printf("Failed to connect to mcp\n")
 	}
@@ -678,8 +678,8 @@ func main() {
 
 	config = apcfg.NewConfig(pname)
 
-	if mcp != nil {
-		mcp.SetStatus("online")
+	if mcpd != nil {
+		mcpd.SetState(mcp.ONLINE)
 	}
 
 	initNetwork()
@@ -688,8 +688,8 @@ func main() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	for {
 		if err = loadRules(); err != nil {
-			if mcp != nil {
-				mcp.SetStatus("broken")
+			if mcpd != nil {
+				mcpd.SetState(mcp.BROKEN)
 			}
 			log.Fatalf("Unable to load the rules files\n")
 		}

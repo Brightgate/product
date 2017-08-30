@@ -19,11 +19,11 @@ package main
 import (
 	"flag"
 	"log"
-	"time"
-	"os"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"ap_common/mcp"
 	"base_def"
@@ -78,7 +78,7 @@ func main() {
 	log.Println("frontend, backend ready; about to invoke proxy")
 
 	if mcpd != nil {
-		mcpd.SetStatus("online")
+		mcpd.SetState(mcp.ONLINE)
 	}
 
 	go func() {
@@ -92,7 +92,7 @@ func main() {
 			}
 		}
 		if mcpd != nil {
-			mcpd.SetStatus("broken")
+			mcpd.SetState(mcp.BROKEN)
 			log.Fatalf("Errors coming too quickly.  Giving up.\n")
 		}
 	}()

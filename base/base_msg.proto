@@ -73,7 +73,7 @@ message MCPRequest {
 	}
 	required Operation operation = 0x140;
 
-	optional string status = 0x141;
+	optional int32 state = 0x141;
 	optional string command = 0x142;
 	optional string daemon = 0x143;
 }
@@ -90,7 +90,7 @@ message MCPResponse {
 	}
 	required OpResponse response = 0x180;
 
-	optional string status = 0x181;
+	optional string state = 0x181;
 }
 
 // The config message is sent whenever an application or service

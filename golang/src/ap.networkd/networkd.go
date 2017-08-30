@@ -79,7 +79,7 @@ var (
 	activeWan    *device     // WAN port
 	activeWired  string      // wired bridge
 	childProcess *os.Process // track the hostapd proc
-	mcpPort      *mcp.MCP
+	mcpd         *mcp.MCP
 	running      bool
 )
 
@@ -504,7 +504,7 @@ func runOne(conf *APConfig, done chan *APConfig) {
 		childProcess = cmd.Process
 
 		resetWifiInterfaces()
-		mcpPort.SetStatus("online")
+		mcpd.SetState(mcp.ONLINE)
 
 		// Wait for the stdout/stderr pipes to close and for the child
 		// process to exit
@@ -869,11 +869,11 @@ func main() {
 
 	flag.Parse()
 
-	mcpPort, err = mcp.New(pname)
+	mcpd, err = mcp.New(pname)
 	if err != nil {
 		log.Printf("Failed to connect to mcp\n")
 	} else {
-		mcpPort.SetStatus("initializing")
+		mcpd.SetState(mcp.INITING)
 	}
 
 	http.Handle("/metrics", promhttp.Handler())

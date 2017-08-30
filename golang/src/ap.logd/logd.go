@@ -158,7 +158,7 @@ func main() {
 		}
 	}
 
-	mcp, err := mcp.New(pname)
+	mcpd, err := mcp.New(pname)
 	if err != nil {
 		log.Println("Failed to connect to mcp")
 	}
@@ -180,8 +180,8 @@ func main() {
 	b.Connect()
 	defer b.Disconnect()
 
-	if mcp != nil {
-		mcp.SetStatus("online")
+	if mcpd != nil {
+		mcpd.SetState(mcp.ONLINE)
 	}
 
 	sig := make(chan os.Signal)

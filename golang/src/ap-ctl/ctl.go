@@ -37,27 +37,35 @@ func usage() {
 	os.Exit(2)
 }
 
-func printStatus(incoming string) {
-	var status map[string]mcp.DaemonStatus
+func stateString(s int) string {
+	state, ok := mcp.States[s]
+	if !ok {
+		state = "invalid_state"
+	}
+	return state
+}
 
-	if err := json.Unmarshal([]byte(incoming), &status); err != nil {
+func printState(incoming string) {
+	var state map[string]mcp.DaemonState
+
+	if err := json.Unmarshal([]byte(incoming), &state); err != nil {
 		fmt.Printf("Unable to unpack result from ap.mcp\n")
 		return
 	}
 
-	if len(status) == 0 {
+	if len(state) == 0 {
 		return
 	}
-	if len(status) == 1 {
-		for _, s := range status {
-			fmt.Println(s.Status)
+	if len(state) == 1 {
+		for _, s := range state {
+			fmt.Println(stateString(s.State))
 		}
 		return
 	}
 
 	format := "%12s\t%5s\t%12s\t%s\n"
-	fmt.Printf(format, "DAEMON", "PID", "STATUS", "SINCE")
-	for _, s := range status {
+	fmt.Printf(format, "DAEMON", "PID", "STATE", "SINCE")
+	for _, s := range state {
 		var pid, since string
 
 		if s.Pid != -1 {
@@ -71,7 +79,7 @@ func printStatus(incoming string) {
 			since = s.Since.Format("Mon Jan 2 15:04:05")
 		}
 
-		fmt.Printf(format, s.Name, pid, s.Status, since)
+		fmt.Printf(format, s.Name, pid, stateString(s.State), since)
 	}
 }
 
@@ -97,12 +105,12 @@ func main() {
 
 	if cmd == "status" {
 		var rval string
-		rval, err = mcp.GetStatus(daemon)
+		rval, err = mcp.GetState(daemon)
 		if err != nil {
 			fmt.Printf("%s: failed get status for '%s': %v\n",
 				pname, daemon, err)
 		} else {
-			printStatus(rval)
+			printState(rval)
 		}
 	} else {
 		err := mcp.Do(daemon, cmd)

@@ -850,7 +850,7 @@ func mainLoop() {
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
-	mcp, err := mcp.New(pname)
+	mcpd, err := mcp.New(pname)
 	if err != nil {
 		log.Printf("Failed to connect to mcp\n")
 	}
@@ -873,14 +873,14 @@ func main() {
 	err = initHandlers()
 
 	if err != nil {
-		if mcp != nil {
-			mcp.SetStatus("broken")
+		if mcpd != nil {
+			mcpd.SetState(mcp.BROKEN)
 		}
 		log.Fatalf("DHCP server failed to start: %v\n", err)
 	}
 
-	if mcp != nil {
-		mcp.SetStatus("online")
+	if mcpd != nil {
+		mcpd.SetState(mcp.ONLINE)
 	}
 	log.Printf("DHCP server online\n")
 	mainLoop()

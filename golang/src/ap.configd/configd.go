@@ -932,7 +932,7 @@ func main() {
 		*propdir = *propdir + "/"
 	}
 
-	mcp, err := mcp.New(pname)
+	mcpd, err := mcp.New(pname)
 	if err != nil {
 		log.Printf("Failed to connect to mcp\n")
 	}
@@ -959,8 +959,8 @@ func main() {
 	incoming, _ := zmq.NewSocket(zmq.REP)
 	incoming.Bind(base_def.CONFIGD_ZMQ_REP_URL)
 
-	if mcp != nil {
-		mcp.SetStatus("online")
+	if mcpd != nil {
+		mcpd.SetState(mcp.ONLINE)
 	}
 	for {
 		val := "-"

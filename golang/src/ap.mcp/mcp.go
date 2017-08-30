@@ -25,6 +25,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -50,10 +51,12 @@ type daemon struct {
 	ThirdParty bool    `json:"ThirdParty,omitempty"`
 	Privileged bool
 
-	run        bool
-	statusTime time.Time
-	process    *os.Process
-	status     string
+	run       bool
+	going     bool // is being maintained by a goroutine
+	startTime time.Time
+	setTime   time.Time
+	process   *os.Process
+	state     int
 	sync.Mutex
 }
 
@@ -77,9 +80,22 @@ var (
 	daemons = make(daemonSet)
 )
 
-func setStatus(d *daemon, status string) {
-	d.status = status
-	d.statusTime = time.Now()
+var stableStates = map[int]bool{
+	mcp.OFFLINE:  true,
+	mcp.ONLINE:   true,
+	mcp.INACTIVE: true,
+	mcp.BROKEN:   true,
+}
+
+var terminalStates = map[int]bool{
+	mcp.OFFLINE:  true,
+	mcp.INACTIVE: true,
+	mcp.BROKEN:   true,
+}
+
+func setState(d *daemon, state int) {
+	d.state = state
+	d.setTime = time.Now()
 }
 
 //
@@ -127,7 +143,7 @@ func singleInstance(d *daemon) error {
 	var args []string
 	var execpath string
 
-	setStatus(d, "starting")
+	setState(d, mcp.STARTING)
 
 	if d.Options != nil {
 		args = strings.Split(*d.Options, " ")
@@ -167,7 +183,7 @@ func singleInstance(d *daemon) error {
 	if d.ThirdParty {
 		// A third party daemon doesn't participate in the ZMQ updates,
 		// so we won't get an online notification.  Just set it here.
-		setStatus(d, "online")
+		setState(d, mcp.ONLINE)
 	}
 
 	if err == nil {
@@ -197,15 +213,13 @@ func singleInstance(d *daemon) error {
 func runDaemon(d *daemon) {
 	start_times := make([]time.Time, failures_allowed)
 
-	// Don't attempt to start a daemon that isn't in a terminal state
 	d.Lock()
-	if d.status == "offline" || d.status == "broken" {
-		d.run = true
-		setStatus(d, "preparing")
-	} else {
-		log.Printf("%s is already %s\n", d.Name, d.status)
-		d.run = false
+	if d.going {
+		d.Unlock()
+		return
 	}
+	d.going = true
+	d.run = true
 
 	for d.run {
 		var msg string
@@ -224,21 +238,19 @@ func runDaemon(d *daemon) {
 			time.Since(start_time))
 		if time.Since(start_times[0]) < period {
 			log.Printf("%s is dying too quickly", d.Name)
-			setStatus(d, "broken")
+			setState(d, mcp.BROKEN)
 		}
-		if d.status == "broken" {
+		if d.state == mcp.BROKEN || d.state == mcp.INACTIVE {
 			d.run = false
 		}
-		if d.run {
-			setStatus(d, "restarting")
-		}
 	}
+	d.going = false
 	d.Unlock()
 }
 
-func handleGetStatus(set daemonSet) *string {
+func handleGetState(set daemonSet) *string {
 	var rval *string
-	status := make(map[string]mcp.DaemonStatus)
+	state := make(map[string]mcp.DaemonState)
 
 	for _, d := range set {
 		pid := -1
@@ -246,14 +258,14 @@ func handleGetStatus(set daemonSet) *string {
 			pid = d.process.Pid
 		}
 
-		status[d.Name] = mcp.DaemonStatus{
-			Name:   d.Name,
-			Status: d.status,
-			Since:  d.statusTime,
-			Pid:    pid,
+		state[d.Name] = mcp.DaemonState{
+			Name:  d.Name,
+			State: d.state,
+			Since: d.setTime,
+			Pid:   pid,
 		}
 	}
-	b, err := json.MarshalIndent(status, "", "  ")
+	b, err := json.MarshalIndent(state, "", "  ")
 	if err == nil {
 		s := string(b)
 		rval = &s
@@ -261,90 +273,100 @@ func handleGetStatus(set daemonSet) *string {
 	return rval
 }
 
-func handleSetStatus(set daemonSet, status *string) {
-	// A daemon can only set its own status, so it's illegal for any 'set'
+func handleSetState(set daemonSet, state int) base_msg.MCPResponse_OpResponse {
+	// A daemon can only set its own state, so it's illegal for any 'set'
 	// command to target more than a single daemon
-	if len(set) == 1 {
-		for _, d := range set {
-			setStatus(d, *status)
-		}
+	_, ok := mcp.States[state]
+	if !ok || len(set) != 1 {
+		return mcp.INVALID
 	}
+
+	for _, d := range set {
+		setState(d, state)
+	}
+	return mcp.OK
 }
 
 //
-// Repeatedly iterate over all daemons in the set.  On each iteration, we select
-// one to launch.  It then gets launched and removed from the set.  When all the
-// daemons have been removed from the set, we're done.
+// Scan the list of candidate daemons, and identify those that are ready to run.
 //
-func handleStart(set daemonSet) {
-	broken := make(daemonSet)
-	for len(set) > 0 {
-		var next *daemon
+func readySet(candidates daemonSet) daemonSet {
+	ready := make(daemonSet)
 
-		for _, d := range set {
-			dep := d.DependsOn
-
-			// If the daemon has no dependencies, start it
-			if dep == nil {
-				next = d
-				break
-			}
-
-			if _, ok := broken[*dep]; ok {
-				log.Printf("%s depends on %s.  Skipping.\n",
-					d.Name, *dep)
-				delete(set, d.Name)
-			}
-
-			// If the daemon has no dependencies left for us to
-			// start, start it.  XXX: we really want to add its
-			// dependencies to the start list or fail the operation,
-			// but we can save that until we support starting
-			// arbitrary sets of daemons
-			if _, ok := set[*dep]; !ok {
-				next = d
-				break
+	for n, d := range candidates {
+		add := false
+		if d.DependsOn == nil {
+			// This daemon has no dependencies, so can run any time
+			add = true
+		} else {
+			dep, ok := daemons[*d.DependsOn]
+			if !ok {
+				// This should never happen.  If it does, launch the new
+				// daemon anyway.
+				log.Printf("%s depends on non-existent daemon %s.\n",
+					d.Name, *d.DependsOn)
+				add = true
+			} else if dep.state == mcp.ONLINE {
+				add = true
 			}
 		}
-		if next == nil {
-			// Shouldn't be possible unless we create a circular
-			// dependency
-			log.Printf("No daemons eligible to run")
+		if add {
+			delete(candidates, n)
+			ready[n] = d
+		}
+	}
+	return ready
+}
+
+//
+// Repeatedly iterate over all daemons in the set.  On each iteration, we
+// identify all the daemons that are eligble to run, launch them, and remove
+// them from the set.  Repeat until all the daemons are running or broken.
+//
+func handleStart(set daemonSet) {
+	launching := make(daemonSet)
+	log.Printf("Starting %v\n", set)
+	for {
+		next := readySet(set)
+		if len(next) == 0 && len(launching) == 0 {
 			break
 		}
 
-		go runDaemon(next)
+		for n, d := range next {
+			d.Lock()
+			delete(next, n)
+			if !d.going {
+				log.Printf("Launching %s\n", n)
+				setState(d, mcp.STARTING)
+				d.startTime = time.Now()
+				launching[n] = d
+				go runDaemon(d)
+			}
+			d.Unlock()
+		}
 
-		// Wait for the freshly launched daemon to come online
-		wait := true
-		last := "offline"
-		started := time.Now()
-		for wait {
-			next.Lock()
-			if next.status == "online" {
-				wait = false
-			} else if time.Since(started) > online_timeout {
+		for n, d := range launching {
+			d.Lock()
+			if time.Since(d.startTime) > online_timeout {
 				log.Printf("%s took more than %v to come "+
 					"online.  Giving up.",
-					next.Name, online_timeout)
-				setStatus(next, "broken")
-			} else if *debug && next.status != last {
-				last = next.status
-				if *debug {
-					log.Printf("Waiting for %s (currently %s)\n",
-						next.Name, last)
-				}
+					n, online_timeout)
+				setState(d, mcp.BROKEN)
 			}
-
-			if next.status == "broken" {
-				broken[next.Name] = next
-				wait = false
+			if stableStates[d.state] {
+				delete(launching, n)
 			}
-
-			next.Unlock()
-			time.Sleep(time.Millisecond * 100)
+			d.Unlock()
 		}
-		delete(set, next.Name)
+	}
+
+	if len(set) > 0 {
+		log.Printf("The following daemons weren't started:\n")
+		for n, d := range set {
+			dep, _ := daemons[*d.DependsOn]
+			log.Printf("   %s: depends on %s (%s)\n", n, dep.Name,
+				mcp.States[dep.state])
+		}
 	}
 }
 
@@ -361,10 +383,10 @@ func handleStop(set daemonSet) {
 	procs := make(map[string]*os.Process)
 	for n, d := range set {
 		d.Lock()
-		if d.status != "offline" {
+		if d.state != mcp.OFFLINE {
 			log.Printf("Stopping %s\n", d.Name)
 			procs[n] = d.process
-			setStatus(d, "stopping")
+			setState(d, mcp.STOPPING)
 			d.run = false
 		}
 		d.Unlock()
@@ -379,7 +401,7 @@ func handleStop(set daemonSet) {
 					// if the process has changed, it means
 					// the daemon has already been
 					// restarted.
-					setStatus(d, "offline")
+					setState(d, mcp.OFFLINE)
 					log.Printf("%s stopped\n", d.Name)
 				}
 				delete(set, n)
@@ -405,7 +427,7 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 		if *debug {
 			log.Printf("Bad req from %s: no daemon\n", *req.Sender)
 		}
-		return nil, mcp.MCP_INVALID
+		return nil, mcp.INVALID
 	}
 
 	set := selectTargets(req.Daemon)
@@ -414,39 +436,39 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 			log.Printf("Bad req from %s: unknown daemon: %s\n",
 				*req.Sender, *req.Daemon)
 		}
-		return nil, mcp.MCP_NO_DAEMON
+		return nil, mcp.NO_DAEMON
 	}
 
 	switch *req.Operation {
-	case mcp.MCP_OP_GET:
+	case mcp.OP_GET:
 		if *debug {
 			log.Printf("%s: Get(%s)\n", *req.Sender, *req.Daemon)
 		}
-		s := handleGetStatus(set)
+		s := handleGetState(set)
 		if s == nil {
-			return nil, mcp.MCP_INVALID
+			return nil, mcp.INVALID
 		} else {
-			return s, mcp.MCP_OK
+			return s, mcp.OK
 		}
 
-	case mcp.MCP_OP_SET:
+	case mcp.OP_SET:
 		if *debug {
 			log.Printf("%s: Set(%s, %s)\n", *req.Sender,
-				*req.Daemon, *req.Status)
+				*req.Daemon, *req.State)
 		}
-		if req.Status == nil {
-			return nil, mcp.MCP_INVALID
+		if req.State == nil {
+			return nil, mcp.INVALID
 		}
-		handleSetStatus(set, req.Status)
-		return nil, mcp.MCP_OK
+		rval := handleSetState(set, int(*req.State))
+		return nil, rval
 
-	case mcp.MCP_OP_DO:
+	case mcp.OP_DO:
 		if req.Command == nil {
 			if *debug {
 				log.Printf("Bad DO from %s: no cmd for %s\n",
 					*req.Daemon, *req.Daemon)
 			}
-			return nil, mcp.MCP_INVALID
+			return nil, mcp.INVALID
 		}
 
 		switch *req.Command {
@@ -461,7 +483,7 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 					*req.Daemon)
 			}
 			go handleStart(set)
-			return nil, mcp.MCP_OK
+			return nil, mcp.OK
 
 		case "restart":
 			if *debug {
@@ -477,7 +499,7 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 			}
 			handleStop(set)
 			go handleStart(restart_set)
-			return nil, mcp.MCP_OK
+			return nil, mcp.OK
 
 		case "stop":
 			if *debug {
@@ -485,11 +507,26 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 					*req.Daemon)
 			}
 			handleStop(set)
-			return nil, mcp.MCP_OK
+			return nil, mcp.OK
 		}
 	}
 
-	return nil, mcp.MCP_INVALID
+	return nil, mcp.INVALID
+}
+
+func signalHandler() {
+	sig := make(chan os.Signal)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	for {
+		s := <-sig
+		if s == syscall.SIGHUP {
+			log.Printf("Reloading mcp.json\n")
+			loadDefinitions()
+		} else {
+			log.Printf("Signal (%v) received, stopping\n", s)
+			os.Exit(0)
+		}
+	}
 }
 
 //
@@ -522,7 +559,7 @@ func mainLoop() {
 			Response: &rc,
 		}
 		if rval != nil {
-			response.Status = proto.String(*rval)
+			response.State = proto.String(*rval)
 		}
 
 		data, err := proto.Marshal(response)
@@ -531,11 +568,13 @@ func mainLoop() {
 		} else {
 			incoming.SendBytes(data, 0)
 		}
-
 	}
 }
 
 func loadDefinitions() error {
+	re := regexp.MustCompile(`\$APROOT`)
+	set := make(daemonSet)
+
 	fn := *cfgfile
 	if len(fn) == 0 {
 		fn = *aproot + "/etc/mcp.json"
@@ -548,31 +587,42 @@ func loadDefinitions() error {
 		return err
 	}
 
-	err = json.Unmarshal(file, &daemons)
+	err = json.Unmarshal(file, &set)
 	if err != nil {
 		log.Printf("Failed to import daemon configs from %s: %v\n",
 			fn, err)
 		return err
 	}
 
-	//
-	// Set the initial status for each daemon to 'offline'
-	// For those daemons that have command line options, replace any
-	// instance of $APROOT with the real path
-	//
-	re := regexp.MustCompile(`\$APROOT`)
-	for n, d := range daemons {
-		if d.Arch != nil && *d.Arch != runtime.GOARCH {
-			log.Printf("Dropping %s - wrong architecture\n", n)
-			delete(daemons, n)
+	for name, new := range set {
+		if new.Arch != nil && *new.Arch != runtime.GOARCH {
+			log.Printf("Dropping %s - wrong architecture\n", name)
 			continue
 		}
-		d.status = "offline"
-		d.statusTime = time.Unix(0, 0)
+
+		d, ok := daemons[name]
+		if !ok {
+			// This is the first time we've seen this daemon, so
+			// keep the entire record
+			d = new
+			d.Lock()
+			d.state = mcp.OFFLINE
+			d.setTime = time.Unix(0, 0)
+			daemons[name] = d
+		} else {
+			// Replace any fields the might reasonably have changed
+			d.Lock()
+			d.Binary = new.Binary
+			d.Options = new.Options
+			d.DependsOn = new.DependsOn
+			d.Privileged = new.Privileged
+		}
 		if d.Options != nil {
+			// replace any instance of $APROOT with the real path
 			r := re.ReplaceAllString(*d.Options, *aproot)
 			d.Options = &r
 		}
+		d.Unlock()
 	}
 
 	return nil
@@ -587,9 +637,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := loadDefinitions(); err != nil {
-		os.Exit(1)
-	}
+	go signalHandler()
 
+	if err := loadDefinitions(); err != nil {
+		log.Fatal("Failed to read daemon definitions\n")
+	}
 	mainLoop()
 }

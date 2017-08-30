@@ -65,7 +65,7 @@ var (
 	phishdata     = &phishtank.DataSource{}
 	statsTemplate *template.Template
 
-	mcpp *mcp.MCP
+	mcpd *mcp.MCP
 )
 
 var latencies = prometheus.NewSummary(prometheus.SummaryOpts{
@@ -422,7 +422,7 @@ func main() {
 		key = *sslDir + "domain.key"
 	}
 
-	mcpp, err = mcp.New(pname)
+	mcpd, err = mcp.New(pname)
 	if err != nil {
 		log.Printf("Failed to connect to mcp\n")
 	}
@@ -449,7 +449,7 @@ func main() {
 
 	err = initNetwork()
 	if err != nil {
-		mcpp.SetStatus("broken")
+		mcpd.SetState(mcp.BROKEN)
 		log.Fatalf("Failed to init network: %v\n", err)
 	}
 
@@ -490,8 +490,8 @@ func main() {
 		}
 	}
 
-	if mcpp != nil {
-		mcpp.SetStatus("online")
+	if mcpd != nil {
+		mcpd.SetState(mcp.ONLINE)
 	}
 
 	sig := make(chan os.Signal)

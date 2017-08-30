@@ -379,7 +379,7 @@ func main() {
 
 	flag.Parse()
 
-	mcp, err := mcp.New(pname)
+	mcpd, err := mcp.New(pname)
 	if err != nil {
 		log.Printf("Failed to connect to mcp\n")
 	}
@@ -433,8 +433,8 @@ func main() {
 	go signalHandler()
 	go auditor()
 
-	if mcp != nil {
-		mcp.SetStatus("online")
+	if mcpd != nil {
+		mcpd.SetState(mcp.ONLINE)
 	}
 	if err := network.WaitForDevice(iface, 30*time.Second); err != nil {
 		log.Fatalf("%s is offline\n", iface)

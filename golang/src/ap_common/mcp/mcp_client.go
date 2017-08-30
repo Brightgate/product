@@ -33,20 +33,40 @@ type MCP struct {
 }
 
 const (
-	MCP_OK        = base_msg.MCPResponse_OP_OK
-	MCP_INVALID   = base_msg.MCPResponse_INVALID
-	MCP_NO_DAEMON = base_msg.MCPResponse_NO_DAEMON
+	OK        = base_msg.MCPResponse_OP_OK
+	INVALID   = base_msg.MCPResponse_INVALID
+	NO_DAEMON = base_msg.MCPResponse_NO_DAEMON
 
-	MCP_OP_GET = base_msg.MCPRequest_GET
-	MCP_OP_SET = base_msg.MCPRequest_SET
-	MCP_OP_DO  = base_msg.MCPRequest_DO
+	OP_GET = base_msg.MCPRequest_GET
+	OP_SET = base_msg.MCPRequest_SET
+	OP_DO  = base_msg.MCPRequest_DO
 )
 
-type DaemonStatus struct {
-	Name   string
-	Status string
-	Since  time.Time
-	Pid    int
+const (
+	OFFLINE = iota
+	STARTING
+	INITING
+	ONLINE
+	STOPPING
+	INACTIVE
+	BROKEN
+)
+
+var States = map[int]string{
+	OFFLINE:  "offline",
+	STARTING: "starting",
+	INITING:  "initializing",
+	ONLINE:   "online",
+	STOPPING: "stopping",
+	BROKEN:   "broken",
+	INACTIVE: "inactive",
+}
+
+type DaemonState struct {
+	Name  string
+	State int
+	Since time.Time
+	Pid   int
 }
 
 func New(name string) (*MCP, error) {
@@ -72,7 +92,7 @@ func New(name string) (*MCP, error) {
 		handle = &MCP{sender: sender, socket: socket}
 		if name[0:3] == "ap." {
 			handle.daemon = name[3:]
-			handle.SetStatus("initializing")
+			handle.SetState(INITING)
 		}
 	}
 
@@ -80,7 +100,7 @@ func New(name string) (*MCP, error) {
 }
 
 func (m *MCP) msg(oc base_msg.MCPRequest_Operation,
-	daemon, status, command string) (string, error) {
+	daemon, command string, state int) (string, error) {
 
 	t := time.Now()
 	op := &base_msg.MCPRequest{
@@ -91,12 +111,10 @@ func (m *MCP) msg(oc base_msg.MCPRequest_Operation,
 		Sender:    proto.String(m.sender),
 		Debug:     proto.String("-"),
 		Operation: &oc,
+		State:     proto.Int32(int32(state)),
 		Daemon:    proto.String(daemon),
 	}
 
-	if len(status) > 0 {
-		op.Status = proto.String(status)
-	}
 	if len(command) > 0 {
 		op.Command = proto.String(command)
 	}
@@ -121,13 +139,13 @@ func (m *MCP) msg(oc base_msg.MCPRequest_Operation,
 			r := base_msg.MCPResponse{}
 			proto.Unmarshal(reply[0], &r)
 			switch *r.Response {
-			case MCP_INVALID:
+			case INVALID:
 				err = fmt.Errorf("Invalid command")
-			case MCP_NO_DAEMON:
+			case NO_DAEMON:
 				err = fmt.Errorf("No such daemon")
 			default:
-				if oc == MCP_OP_GET {
-					rval = *r.Status
+				if oc == OP_GET {
+					rval = *r.State
 				}
 			}
 		}
@@ -137,26 +155,26 @@ func (m *MCP) msg(oc base_msg.MCPRequest_Operation,
 	return rval, err
 }
 
-func (m MCP) GetStatus(daemon string) (string, error) {
-	rval, err := m.msg(MCP_OP_GET, daemon, "", "")
-
-	return rval, err
+func (m MCP) GetState(daemon string) (string, error) {
+	return m.msg(OP_GET, daemon, "", -1)
 }
 
-func (m MCP) SetStatus(status string) error {
+func (m MCP) SetState(state int) error {
 	var err error
 
-	if m.daemon == "" {
-		err = fmt.Errorf("Only a daemon can update its status")
+	if _, ok := States[state]; !ok {
+		err = fmt.Errorf("invalid state: %d", state)
+	} else if m.daemon == "" {
+		err = fmt.Errorf("only a daemon can update its state")
 	} else {
-		_, err = m.msg(MCP_OP_SET, m.daemon, status, "")
+		_, err = m.msg(OP_SET, m.daemon, "", state)
 	}
 
 	return err
 }
 
 func (m MCP) Do(daemon, command string) error {
-	_, err := m.msg(MCP_OP_DO, daemon, "", command)
+	_, err := m.msg(OP_DO, daemon, command, -1)
 
 	return err
 }
