@@ -52,12 +52,6 @@
         "Privileged": true,
         "Options": "-datadir=$APROOT/etc -logdir $APROOT/var/spool/identifierd"
     },
-    "listend": {
-        "Name": "listend",
-        "Binary": "ap.listend",
-        "DependsOn": "networkd",
-        "Privileged": true
-    },
     "logd": {
         "Name": "logd",
         "Binary": "ap.logd",
@@ -79,6 +73,12 @@
         "ThirdParty": true,
         "Arch": "amd64",
         "Options": "-config.file=$APROOT/etc/prometheus.yml -storage.local.path=\"$APROOT/var/prometheus-data\""
+    },
+    "relayd": {
+        "Name": "relayd",
+        "Binary": "ap.relayd",
+        "DependsOn": "networkd",
+        "Privileged": false
     },
     "sampled": {
         "Name": "sampled",

@@ -219,39 +219,33 @@ func config_changed(raw []byte) {
 	}
 }
 
-func getSubnetConfig() string {
-	var subnet string
-	var err error
-
+func getSubnetConfig() (subnet string, err error) {
 	// In order to set up the correct routes, we need to know the network
 	// we're expected to serve.
 	if subnet, err = config.GetProp("@/dhcp/config/network"); err != nil {
-		log.Fatalf("Failed to get DHCP configuration info: %v", err)
-	}
-
-	if _, _, err = net.ParseCIDR(subnet); err != nil {
-		log.Fatalf("DHCP config has illegal network '%s': %v\n",
+		err = fmt.Errorf("failed to get DHCP config: %v", err)
+	} else if _, _, err = net.ParseCIDR(subnet); err != nil {
+		err = fmt.Errorf("DHCP config has illegal network '%s': %v",
 			subnet, err)
 	}
-
-	return subnet
+	return
 }
 
 //
 // Get network settings from configd and use them to initialize the AP
 //
-func getAPConfig(d *device, props *apcfg.PropertyNode) {
+func getAPConfig(d *device, props *apcfg.PropertyNode) error {
 	var ssid, passphrase, setupSSID string
 	var vlanComment, setupComment string
 	var node *apcfg.PropertyNode
 
 	if node = props.GetChild("ssid"); node == nil {
-		log.Fatalf("No SSID configured\n")
+		return fmt.Errorf("no SSID configured")
 	}
 	ssid = node.GetValue()
 
 	if node = props.GetChild("passphrase"); node == nil {
-		log.Fatalf("No passphrase configured\n")
+		return fmt.Errorf("no passphrase configured")
 	}
 	passphrase = node.GetValue()
 
@@ -269,7 +263,7 @@ func getAPConfig(d *device, props *apcfg.PropertyNode) {
 		// wants the final nybble of the final octet to be 0.
 		octets := strings.Split(d.hwaddr, ":")
 		if len(octets) != 6 {
-			log.Fatalf("%s has an invalid mac address: %s\n",
+			return fmt.Errorf("%s has an invalid mac address: %s",
 				d.name, d.hwaddr)
 		}
 		b, _ := strconv.ParseUint(octets[5], 16, 32)
@@ -289,7 +283,11 @@ func getAPConfig(d *device, props *apcfg.PropertyNode) {
 	} else {
 		setupComment = "#"
 	}
-	network := getSubnetConfig()
+
+	network, err := getSubnetConfig()
+	if err != nil {
+		return err
+	}
 
 	data := APConfig{
 		Interface:     d.name,
@@ -307,6 +305,7 @@ func getAPConfig(d *device, props *apcfg.PropertyNode) {
 		SetupSSID:     setupSSID,
 	}
 	aps[d.name] = &data
+	return nil
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -697,18 +696,25 @@ func prepareWired() {
 // Choose a wifi NIC to host our wireless clients, and build a list of the
 // wireless interfaces we'll be supporting
 //
-func prepareWireless(props *apcfg.PropertyNode) {
+func prepareWireless(props *apcfg.PropertyNode) error {
 	for _, dev := range devices {
 		if dev.wireless {
-			getAPConfig(dev, props)
+			if err := getAPConfig(dev, props); err != nil {
+				return err
+			}
+
 			if activeWifi == nil || dev.supportVLANs {
 				activeWifi = dev
 			}
 		}
 	}
 	if activeWifi == nil {
-		log.Fatalf("Couldn't find a wifi device to use\n")
+		return fmt.Errorf("couldn't find a wifi device to use")
 	}
+	if !activeWifi.supportVLANs {
+		return fmt.Errorf("no VLAN-enabled wifi device found")
+	}
+
 	log.Printf("Hosting wireless network on %s\n", activeWifi.name)
 
 	if activeWifi.supportVLANs {
@@ -729,7 +735,7 @@ func prepareWireless(props *apcfg.PropertyNode) {
 		subnet := aps[activeWifi.name].Network
 		addInterface(activeWifi.name, subnet, true)
 	}
-
+	return nil
 }
 
 func getEthernet(i net.Interface) *device {
@@ -893,12 +899,20 @@ func main() {
 
 	props, err := config.GetProps("@/network")
 	if err != nil {
-		log.Fatalf("Failed to get network configuration info: %v", err)
+		err = fmt.Errorf("unable to fetch configuration: %v", err)
+	} else {
+		getDevices()
+		prepareWired()
+		err = prepareWireless(props)
 	}
 
-	getDevices()
-	prepareWired()
-	prepareWireless(props)
+	if err != nil {
+		if mcpd != nil {
+			mcpd.SetState(mcp.BROKEN)
+		}
+		log.Fatalf("networkd failed to start: %v\n", err)
+	}
+
 	updateNetworkConfig(props)
 
 	running = true

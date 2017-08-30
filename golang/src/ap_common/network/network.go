@@ -206,13 +206,25 @@ func Uint32ToIPAddr(a uint32) net.IP {
 }
 
 // SubnetRouter derives the router's IP address from the network.
-//    e.g., 192.168.136.0 -> 192.168.136.1
+//    e.g., 192.168.136.0/28 -> 192.168.136.1
 func SubnetRouter(subnet string) string {
 	_, network, _ := net.ParseCIDR(subnet)
 	raw := network.IP.To4()
 	raw[3]++
 	router := (net.IP(raw)).String()
 	return router
+}
+
+// SubnetBroadcast derives the subnet's broadcast address
+//    e.g., 192.168.136.0/28 -> 192.168.136.15
+func SubnetBroadcast(subnet string) net.IP {
+	_, network, _ := net.ParseCIDR(subnet)
+	raw := network.IP.To4()
+	for i := 0; i < 4; i++ {
+		raw[i] |= (0xff ^ network.Mask[i])
+	}
+
+	return raw
 }
 
 // Wait for a network device to reach the 'up' state.  Returns an error on

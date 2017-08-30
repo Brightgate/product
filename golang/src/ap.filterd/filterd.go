@@ -147,7 +147,14 @@ func (list ruleList) Less(i, j int) bool {
 	a := list[i]
 	b := list[j]
 
-	// First ordering criterion: which rule has a more specific source
+	// First ordering criterion: ACCEPT takes precedence over BLOCK.
+	// This works with our simple current ruleset, but may need to be
+	// refined if/when we start blocking specific sites and/or services.
+	if a.action != b.action {
+		return a.action < b.action
+	}
+
+	// Second criterion: which rule has a more specific source
 	afrom := E_MAX
 	if a.from != nil {
 		afrom = a.from.kind
@@ -160,7 +167,7 @@ func (list ruleList) Less(i, j int) bool {
 		return afrom < bfrom
 	}
 
-	// Second: which rule has a more specific destination
+	// Third: which rule has a more specific destination
 	ato := E_MAX
 	if a.to != nil {
 		ato = a.to.kind
@@ -173,12 +180,12 @@ func (list ruleList) Less(i, j int) bool {
 		return ato < bto
 	}
 
-	// Third: which rules specifies more destination ports
+	// Fourth: which rules specifies more destination ports
 	if len(a.dports) != len(b.dports) {
 		return len(a.dports) > len(b.dports)
 	}
 
-	// Fourth: which rules specifies more source ports
+	// Finally: which rules specifies more source ports
 	if len(a.sports) != len(b.sports) {
 		return len(a.sports) > len(b.sports)
 	}

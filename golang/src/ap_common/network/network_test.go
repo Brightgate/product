@@ -45,3 +45,11 @@ func TestSubnetRouter(t *testing.T) {
 		t.Error()
 	}
 }
+
+func TestSubnetBroadcast(t *testing.T) {
+	result := SubnetBroadcast("128.148.26.0/24").String()
+
+	if result != "128.148.26.255" {
+		t.Error()
+	}
+}
