@@ -32,8 +32,9 @@ var valid_cmds = map[string]bool{
 }
 
 func usage() {
-	fmt.Printf("usage: %s <status | stop | start | restart> <daemon | all>\n",
-		pname)
+	fmt.Printf("usage:\t%s <status | stop | start | restart> daemon...\n"+
+		"\t%s <status | stop | start | restart> all\n",
+		pname, pname)
 	os.Exit(2)
 }
 
@@ -87,12 +88,11 @@ func main() {
 	var cmd, daemon string
 	var err error
 
-	if len(os.Args) != 3 {
+	if len(os.Args) < 3 {
 		usage()
 	}
 
 	cmd = os.Args[1]
-	daemon = os.Args[2]
 	if _, ok := valid_cmds[cmd]; !ok {
 		usage()
 	}
@@ -103,24 +103,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	if cmd == "status" {
-		var rval string
-		rval, err = mcp.GetState(daemon)
-		if err != nil {
-			fmt.Printf("%s: failed get status for '%s': %v\n",
-				pname, daemon, err)
+	for _, daemon = range os.Args[2:] {
+		if cmd == "status" {
+			var rval string
+			rval, err = mcp.GetState(daemon)
+			if err != nil {
+				fmt.Printf("%s: failed get state for '%s': %v\n",
+					pname, daemon, err)
+			} else {
+				printState(rval)
+			}
 		} else {
-			printState(rval)
+			err := mcp.Do(daemon, cmd)
+			if err != nil {
+				fmt.Printf("%s: failed to %s %s: %v\n", pname, cmd,
+					daemon, err)
+			}
 		}
-	} else {
-		err := mcp.Do(daemon, cmd)
 		if err != nil {
-			fmt.Printf("%s: failed to %s %s: %v\n", pname, cmd,
-				daemon, err)
+			os.Exit(1)
 		}
-	}
-	if err != nil {
-		os.Exit(1)
 	}
 	os.Exit(0)
 }

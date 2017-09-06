@@ -286,7 +286,8 @@ plat-clobber: clobber
 	-$(GO) clean $(GO_CLEAN_FLAGS) github.com/golang/protobuf/proto
 	-$(GO) clean $(GO_CLEAN_FLAGS) sourcegraph.com/sourcegraph/prototools/cmd/protoc-gen-doc
 	-cat get.acc | sort -u | xargs $(GO) clean $(GO_CLEAN_FLAGS)
-	rm -f get.acc .gotten
+	-rm -fr golang/src/github.com golang/src/golang.org golang/src/google.golang.org golang/src/sourcegraph.com
+	-rm -f get.acc .gotten
 
 $(PROTOC_PLUGINS):
 	$(GO) get -u github.com/golang/protobuf/proto

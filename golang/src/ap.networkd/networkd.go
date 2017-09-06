@@ -61,7 +61,9 @@ import (
 
 var (
 	addr = flag.String("listen-address", base_def.HOSTAPDM_PROMETHEUS_PORT,
-		"The address to listen on for HTTP requests.")
+		"address to listen on for HTTP requests")
+	platform = flag.String("platform", "rpi3",
+		"hardware platform name")
 	templateDir = flag.String("template_dir", "golang/src/ap.networkd",
 		"location of hostapd templates")
 
@@ -665,24 +667,44 @@ func prepareWired() {
 			continue
 		}
 
-		// Use the oui to identify the on-board port
-		if strings.HasPrefix(dev.hwaddr, "b8:27:eb:") {
-			log.Printf("Using %s for WAN\n", name)
-			if activeWan != nil {
-				log.Printf("Found multiple eth ports\n")
-			} else {
-				activeWan = dev
-			}
-		} else if wiredLan {
-			log.Printf("Using %s for clients\n", name)
+		// On Raspberry Pi 3, use the OUI to identify the
+		// on-board port.
+		if *platform == "rpi3" {
+			if strings.HasPrefix(dev.hwaddr, "b8:27:eb:") {
+				log.Printf("Using %s for WAN\n", name)
+				if activeWan != nil {
+					log.Printf("Found multiple eth ports\n")
+				} else {
+					activeWan = dev
+				}
+			} else if wiredLan {
+				log.Printf("Using %s for clients\n", name)
 
-			cmd := exec.Command(brctlCmd, "addif", bridge, name)
-			if err := cmd.Run(); err != nil {
-				log.Printf("Failed to add %s to %s\n",
-					name, bridge)
+				cmd := exec.Command(brctlCmd, "addif", bridge, name)
+				if err := cmd.Run(); err != nil {
+					log.Printf("Failed to add %s to %s\n",
+						name, bridge)
+				}
+			}
+		} else {
+			if !wiredLan {
+				continue
+			}
+			if name == "eth0" {
+				log.Printf("Using %s for WAN\n", name)
+				activeWan = dev
+			} else {
+				log.Printf("Using %s for clients\n", name)
+
+				cmd := exec.Command(brctlCmd, "addif", bridge, name)
+				if err := cmd.Run(); err != nil {
+					log.Printf("Failed to add %s to %s\n",
+						name, bridge)
+				}
 			}
 		}
 	}
+
 	if wiredLan {
 		activeWired = bridge
 		addInterface(bridge, wired_subnet, false)
