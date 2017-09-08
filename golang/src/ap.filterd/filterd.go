@@ -272,7 +272,6 @@ func ifaceForwardRules(iface *iface) {
 	connRule += " -o " + wan.Iface
 	connRule += " -s " + iface.subnet
 	connRule += " -m conntrack --ctstate NEW"
-	connRule += " -j ACCEPT"
 	iptablesAddRule("filter", "FORWARD", connRule)
 }
 
