@@ -229,7 +229,7 @@ message EventNetIdentity {
 	optional string debug = 0x03;
 
 	optional fixed64 mac_address = 0x900;
-	optional string name = 0x901;
+	optional int32 devid = 0x901;
 	optional double certainty = 0x902;
 
 }

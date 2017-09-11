@@ -144,6 +144,7 @@ CONFIGS = \
 	$(APPETC)/ap_defaults.json \
 	$(APPETC)/ap_identities.csv \
 	$(APPETC)/ap_mfgid.json \
+	$(APPETC)/devices.json \
 	$(APPETC)/mcp.json \
 	$(APPETC)/oui.txt \
 	$(APPETC)/prometheus.yml
@@ -175,13 +176,16 @@ $(APPBINARIES) : | $(APPBIN)
 $(APPBIN)/%: ./% | $(APPBIN)
 	install -m 0755 $< $(APPBIN)
 
-$(APPETC)/ap_defaults.json: ap_defaults.json | $(APPETC)
+$(APPETC)/ap_defaults.json: $(GOSRC)/ap.configd/ap_defaults.json | $(APPETC)
 	install -m 0644 $< $(APPETC)
 
 $(APPETC)/ap_identities.csv: ap_identities.csv | $(APPETC)
 	install -m 0644 $< $(APPETC)
 
 $(APPETC)/ap_mfgid.json: ap_mfgid.json | $(APPETC)
+	install -m 0644 $< $(APPETC)
+
+$(APPETC)/devices.json: $(GOSRC)/ap.configd/devices.json | $(APPETC)
 	install -m 0644 $< $(APPETC)
 
 $(APPETC)/mcp.json: $(GOSRC)/ap.mcp/mcp.json | $(APPETC)
@@ -224,13 +228,15 @@ $(APPBIN)/%:
 
 $(APPBIN)/ap.brokerd: $(GOSRC)/ap.brokerd/brokerd.go
 $(APPBIN)/ap.configd: $(GOSRC)/ap.configd/configd.go \
+	$(GOSRC)/ap.configd/devices.go \
 	$(GOSRC)/ap.configd/upgrade_v1.go \
 	$(GOSRC)/ap.configd/upgrade_v2.go
 $(APPBIN)/ap.dhcp4d: $(GOSRC)/ap.dhcp4d/dhcp4d.go
 $(APPBIN)/ap.dns4d: $(GOSRC)/ap.dns4d/dns4d.go golang/src/data/phishtank/phishtank.go
 $(APPBIN)/ap.filterd: $(GOSRC)/ap.filterd/filterd.go $(GOSRC)/ap.filterd/parse.go
 $(APPBIN)/ap.httpd: $(GOSRC)/ap.httpd/httpd.go
-$(APPBIN)/ap.identifierd: $(GOSRC)/ap.identifierd/identifierd.go
+$(APPBIN)/ap.identifierd: $(GOSRC)/ap.identifierd/identifierd.go \
+	$(GOSRC)/ap.identifierd/model/model.go
 $(APPBIN)/ap.logd: $(GOSRC)/ap.logd/logd.go
 $(APPBIN)/ap.mcp: $(GOSRC)/ap.mcp/mcp.go
 $(APPBIN)/ap.networkd: $(GOSRC)/ap.networkd/networkd.go

@@ -191,11 +191,6 @@ func (o *Observations) loadTrainingData(path string) (*base.DenseInstances, erro
 		return nil, fmt.Errorf("failed to add class attribute: %s", err)
 	}
 
-	// We need to add one value to the class attribute, which is a
-	// CategoricalAttribute, because GetStringFromSysVal() panics if the attribute
-	// has no values. Perhaps we should fix this to just print the empty string
-	o.spec[last].GetAttribute().GetSysValFromString("Unknown")
-
 	return trainData, nil
 }
 

@@ -105,11 +105,37 @@ func getFormatted(prop string) error {
 	}
 }
 
+func printDev(d *apcfg.Device) {
+	fmt.Printf("  Type: %s\n", d.Devtype)
+	fmt.Printf("  Vendor: %s\n", d.Vendor)
+	fmt.Printf("  Product: %s\n", d.ProductName)
+	if d.ProductVersion != "" {
+		fmt.Printf("  Version: %s\n", d.ProductVersion)
+	}
+	if len(d.UDPPorts) > 0 {
+		fmt.Printf("  UDP Ports: %v\n", d.UDPPorts)
+	}
+	if len(d.InboundPorts) > 0 {
+		fmt.Printf("  TCP Inbound: %v\n", d.InboundPorts)
+	}
+	if len(d.OutboundPorts) > 0 {
+		fmt.Printf("  TCP Outbound: %v\n", d.OutboundPorts)
+	}
+	if len(d.DNS) > 0 {
+		fmt.Printf("  DNS Allowed: %v\n", d.OutboundPorts)
+	}
+}
+
 func getProp(prop string) error {
 	var err error
 
 	if !strings.HasPrefix(prop, "@") {
 		err = getFormatted(prop)
+	} else if strings.HasPrefix(prop, "@/devices") {
+		var d *apcfg.Device
+		if d, err = apcfgd.GetDevicePath(prop); err == nil {
+			printDev(d)
+		}
 	} else {
 		root, err := apcfgd.GetProps(prop)
 		if err == nil {

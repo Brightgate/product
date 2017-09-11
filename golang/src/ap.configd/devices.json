@@ -1,0 +1,100 @@
+{
+  "1": {
+    "Obsolete": false,
+    "UpdateTime": "2017-09-06T15:28:51.990415Z",
+    "Devtype": "unknown",
+    "Vendor": "brightgate",
+    "ProductName": "empty record",
+    "Notes": "Placeholder until the device gets a real identity"
+  },
+  "2": {
+    "Obsolete": false,
+    "UpdateTime": "2017-09-06T15:28:51.990415Z",
+    "Devtype": "printer",
+    "Vendor": "Xerox",
+    "ProductName": "Phaser",
+    "UDP": [
+      5353,
+      1900
+    ],
+    "OutboundPorts": [
+      80,
+      641,
+      5357,
+      9100
+    ],
+    "Notes": "631 is IPP. 9100 is PDL.  80 (http) and 5357 (Web Services for Devices) are needed for Windows 10 clients"
+  },
+  "3": {
+    "Obsolete": false,
+    "UpdateTime": "2017-09-06T15:28:51.990415Z",
+    "Devtype": "media",
+    "Vendor": "Sonos",
+    "ProductName": "CONNECT:AMP",
+    "UDP": [
+      5353,
+      1900
+    ],
+    "OutboundPorts": [
+      3400,
+      3401
+    ],
+    "Notes": "The Sonos website (https://sonos.custhelp.com/app/answers/detail/a_id/692/~/configuring-your-firewall-to-work-with-sonos) lists other ports as well."
+  },
+  "4": {
+    "Obsolete": false,
+    "UpdateTime": "2017-09-06T15:28:51.990415Z",
+    "Devtype": "ios",
+    "Vendor": "Apple",
+    "ProductName": "iPhone"
+  },
+  "5": {
+    "Obsolete": false,
+    "UpdateTime": "2017-09-06T15:28:51.990415Z",
+    "Devtype": "computer",
+    "Vendor": "Apple",
+    "ProductName": "Macbook"
+  },
+  "6": {
+    "Obsolete": false,
+    "UpdateTime": "2017-09-06T15:28:51.990415Z",
+    "Devtype": "media",
+    "Vendor": "LG",
+    "ProductName": "Smart TV"
+  },
+  "7": {
+    "Obsolete": false,
+    "UpdateTime": "2017-09-06T15:28:51.990415Z",
+    "Devtype": "media",
+    "Vendor": "Amazon",
+    "ProductName": "Fire TV"
+  },
+  "8": {
+    "Obsolete": false,
+    "UpdateTime": "2017-09-06T15:28:51.990415Z",
+    "Devtype": "iot",
+    "Vendor": "Wink",
+    "ProductName": "Hub"
+  },
+  "9": {
+    "Obsolete": false,
+    "UpdateTime": "2017-09-06T15:28:51.990415Z",
+    "Devtype": "iot",
+    "Vendor": "Circle",
+    "ProductName": "Circle With Disney"
+  },
+  "10": {
+    "Obsolete": false,
+    "UpdateTime": "2017-09-06T15:28:51.990415Z",
+    "Devtype": "media",
+    "Vendor": "Roku",
+    "ProductName": "Roku"
+  },
+  "11": {
+    "Obsolete": false,
+    "UpdateTime": "2017-09-06T15:28:51.990415Z",
+    "Devtype": "android",
+    "Vendor": "Samsung",
+    "ProductName": "Galaxy S5"
+  }
+}

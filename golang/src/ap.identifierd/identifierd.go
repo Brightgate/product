@@ -33,6 +33,7 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -265,6 +266,12 @@ func identify() {
 	newIdentities := testData.Predict()
 	for {
 		id := <-newIdentities
+		devid, err := strconv.Atoi(id.Identity)
+		if err != nil || devid == 0 {
+			log.Printf("returned a bogus identity for %v: %s",
+				id.HwAddr, id.Identity)
+			continue
+		}
 
 		// XXX Naive Bayes is the only model returning a Probability estimate.
 		if id.Probability > 0 {
@@ -280,11 +287,11 @@ func identify() {
 			Sender:     proto.String(brokerd.Name),
 			Debug:      proto.String("-"),
 			MacAddress: proto.Uint64(id.HwAddr),
-			Name:       proto.String(id.Identity),
+			Devid:      proto.Int32(int32(devid)),
 			Certainty:  proto.Float64(id.Probability),
 		}
 
-		err := brokerd.Publish(identity, base_def.TOPIC_IDENTITY)
+		err = brokerd.Publish(identity, base_def.TOPIC_IDENTITY)
 		if err != nil {
 			log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_IDENTITY, err)
 		}

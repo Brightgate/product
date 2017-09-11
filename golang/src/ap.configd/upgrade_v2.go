@@ -59,14 +59,14 @@ func upgradeV2() error {
 		// Create the class property if it doesn't exist.  Otherwise,
 		// leave it alone.
 		if class_node == nil {
-			class_node = property_add(client, "class")
+			class_node = propertyAdd(client, "class")
 			class_node.Value = "unclassified"
 		}
 
 		// Create the ipv4 property if necessary.  Migrate the value
 		// from the old lease into the client structure.
 		if ipv4_node == nil {
-			ipv4_node = property_add(client, "ipv4")
+			ipv4_node = propertyAdd(client, "ipv4")
 		}
 		ipv4_node.Value = ipv4
 		ipv4_node.Expires = lease.Expires
@@ -78,7 +78,7 @@ func upgradeV2() error {
 	}
 
 	// Delete the obsolete @/dhcp/leases tree
-	property_delete("@/dhcp/leases")
+	propertyDelete("@/dhcp/leases")
 
 	return nil
 }

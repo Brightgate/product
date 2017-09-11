@@ -29,63 +29,6 @@
  * /customer/customer_id/site/site_id/appliance/appliance_id/ for this
  *  appliance.
  *
- * Each property within the namespace can be backed from a variety of
- * engines.
- *
- * config
- * decision
- * platform
- *
- * Each property within the namespace has a type.
- *
- * For example
- *
- * @/intent/uplink_mode
- *
- * is an enum with values ["GATEWAY", "BRIDGE"], backed by the config engine.
- *
- * @/
-
- *
- * XXX Handling list values.
- * XXX Handling groups.
-
- * kinds
- *   name
- *   group
- *   property
- *
- * @/network/wlan0/ssid
- *
- * is
- *
- * anchor(appliance)/group(network)/name(wlan0)/property(ssid)
- *
- * anchor(appliance) must lead to a mix of groups and properties.
- *
- * We had our fuller namespace, @@@/, representing the customer at
- * /customer/customer_id. In this case, we see a couple of new node types
- *
- * @@@/hosts
- *
- * anchor(customer)/summary(hosts)
- *
- * where summary() is a union of all the the hosts across the customer's sites.
- * XXX Do we understand how the cable provider appears in this schema?
- *
- * @@/host/6EB4F934-997D-4D39-88B2-674A49D05F14/
- *
- * anchor(site)/group(host)/name(6EB4F934-997D-4D39-88B2-674A49D05F14)/...
- *
- * If we envision the distributed configuration as a tree, with each
- * node potentially sourced from a different backing store (or layered
- * store), then we might have something like
- *
- * type ConfigNode struct {
- *	kind
- *	backing
- *	childkind
- * }
  */
 
 package main
@@ -129,26 +72,46 @@ const (
 	pname             = "ap.configd"
 
 	minConfigVersion = 3
-	curConfigVersion = 3
+	curConfigVersion = 4
 )
 
-type property_ops struct {
+// Allow for significant variation in the processing of subtrees
+type subtreeOps struct {
+	get    func(*base_msg.ConfigQuery) (string, error)
+	set    func(*base_msg.ConfigQuery, bool) error
+	delete func(*base_msg.ConfigQuery) error
+}
+
+type subtreeMatch struct {
+	match *regexp.Regexp
+	ops   *subtreeOps
+}
+
+var defaultSubtreeOps = subtreeOps{getPropHandler, setPropHandler, delPropHandler}
+var devSubtreeOps = subtreeOps{getDevHandler, setDevHandler, delDevHandler}
+
+var subtreeMatchTable = []subtreeMatch{
+	{regexp.MustCompile(`^@/devices`), &devSubtreeOps},
+}
+
+// Allow for specific properties to have their own handlers as well
+type propertyOps struct {
 	get func(*pnode) (string, error)
 	set func(*pnode, string, *time.Time) (bool, error)
 }
 
-type property_match struct {
+type propertyMatch struct {
 	match *regexp.Regexp
-	ops   *property_ops
+	ops   *propertyOps
 }
 
-var default_ops = property_ops{default_getter, default_setter}
-var ssid_ops = property_ops{default_getter, ssid_update}
-var uuid_ops = property_ops{default_getter, uuid_update}
+var defaultPropOps = propertyOps{defaultGetter, defaultSetter}
+var ssidPropOps = propertyOps{defaultGetter, ssidUpdate}
+var uuidPropOps = propertyOps{defaultGetter, uuidUpdate}
 
-var property_match_table = []property_match{
-	{regexp.MustCompile(`^@/uuid$`), &uuid_ops},
-	{regexp.MustCompile(`^@/network/ssid$`), &ssid_ops},
+var propertyMatchTable = []propertyMatch{
+	{regexp.MustCompile(`^@/uuid$`), &uuidPropOps},
+	{regexp.MustCompile(`^@/network/ssid$`), &ssidPropOps},
 }
 
 /*
@@ -165,7 +128,7 @@ type pnode struct {
 	Children []*pnode   `json:"Children,omitempty"`
 	parent   *pnode
 	path     string
-	ops      *property_ops
+	ops      *propertyOps
 
 	// Used and maintained by the heap interface methods
 	index int
@@ -278,7 +241,7 @@ func nextExpiration() *pnode {
  * expiration for the first time).  If this property either starts or ends at
  * the top of the expiration heap, reset the expiration timer accordingly.
  */
-func expiration_update(node *pnode) {
+func expirationUpdate(node *pnode) {
 	reset := false
 
 	exp_mutex.Lock()
@@ -317,7 +280,7 @@ func expiration_update(node *pnode) {
 /*
  * Remove a single property from the expiration heap
  */
-func expiration_remove(node *pnode) {
+func expirationRemove(node *pnode) {
 	exp_mutex.Lock()
 	if node.index != -1 {
 		heap.Remove(&exp_heap, node.index)
@@ -329,7 +292,7 @@ func expiration_remove(node *pnode) {
 /*
  * Walk the list of expired properties and remove them from the tree
  */
-func expiration_purge() {
+func expirationPurge() {
 	count := 0
 	for len(expired) > 0 {
 		exp_mutex.Lock()
@@ -339,7 +302,7 @@ func expiration_purge() {
 
 		for _, prop := range copy {
 			count++
-			property_delete(prop)
+			propertyDelete(prop)
 		}
 	}
 	if count > 0 {
@@ -347,7 +310,7 @@ func expiration_purge() {
 	}
 }
 
-func expiration_init() {
+func expirationInit() {
 	exp_heap = make(pnode_queue, 0)
 	heap.Init(&exp_heap)
 
@@ -416,7 +379,7 @@ func entity_handler(event []byte) {
 	var ok bool
 	if entity.InterfaceName != nil {
 		if n, ok = fields["iface"]; !ok {
-			n = property_add(node, "iface")
+			n = propertyAdd(node, "iface")
 		}
 		if n.Value != *entity.InterfaceName {
 			n.Value = *entity.InterfaceName
@@ -426,7 +389,7 @@ func entity_handler(event []byte) {
 
 	if entity.Ipv4Address != nil {
 		if n, ok = fields["ipv4_observed"]; !ok {
-			n = property_add(node, "ipv4_observed")
+			n = propertyAdd(node, "ipv4_observed")
 		}
 		ipv4 := network.Uint32ToIPAddr(*entity.Ipv4Address).String()
 		if n.Value != ipv4 {
@@ -436,7 +399,7 @@ func entity_handler(event []byte) {
 	}
 
 	if n, ok = fields["ring"]; !ok {
-		n = property_add(node, "ring")
+		n = propertyAdd(node, "ring")
 		n.Value = base_def.RING_UNENROLLED
 		updated = true
 	}
@@ -450,7 +413,7 @@ func entity_handler(event []byte) {
  *
  * Generic and property-specific setter/getter routines
  */
-func default_setter(node *pnode, val string, expires *time.Time) (bool, error) {
+func defaultSetter(node *pnode, val string, expires *time.Time) (bool, error) {
 	updated := false
 
 	if node.Value != val {
@@ -465,7 +428,7 @@ func default_setter(node *pnode, val string, expires *time.Time) (bool, error) {
 	return updated, nil
 }
 
-func default_getter(node *pnode) (string, error) {
+func defaultGetter(node *pnode) (string, error) {
 	var rval string
 
 	b, err := json.Marshal(node)
@@ -476,7 +439,7 @@ func default_getter(node *pnode) (string, error) {
 	return rval, err
 }
 
-func uuid_update(node *pnode, uuid string, expires *time.Time) (bool, error) {
+func uuidUpdate(node *pnode, uuid string, expires *time.Time) (bool, error) {
 	const null_uuid = "00000000-0000-0000-0000-000000000000"
 
 	if node.Value != null_uuid {
@@ -486,7 +449,7 @@ func uuid_update(node *pnode, uuid string, expires *time.Time) (bool, error) {
 	return true, nil
 }
 
-func ssid_validate(ssid string) error {
+func ssidValidate(ssid string) error {
 	if len(ssid) == 0 || len(ssid) > 32 {
 		return fmt.Errorf("SSID must be between 1 and 32 characters")
 	}
@@ -502,8 +465,8 @@ func ssid_validate(ssid string) error {
 	return nil
 }
 
-func ssid_update(node *pnode, ssid string, expires *time.Time) (bool, error) {
-	err := ssid_validate(ssid)
+func ssidUpdate(node *pnode, ssid string, expires *time.Time) (bool, error) {
+	err := ssidValidate(ssid)
 	if err == nil && node.Value != ssid {
 		node.Value = ssid
 		return true, nil
@@ -516,13 +479,13 @@ func ssid_update(node *pnode, ssid string, expires *time.Time) (bool, error) {
  * through the property_match_table, looking for any matching patterns
  */
 func property_attach_ops(node *pnode, path string) {
-	for _, r := range property_match_table {
+	for _, r := range propertyMatchTable {
 		if r.match.MatchString(path) {
 			node.ops = r.ops
 			return
 		}
 	}
-	node.ops = &default_ops
+	node.ops = &defaultPropOps
 }
 
 /*************************************************************************
@@ -533,7 +496,7 @@ func property_attach_ops(node *pnode, path string) {
 /*
  * Updated the modified timestamp for a node and its ancestors
  */
-func mark_updated(node *pnode) {
+func markUpdated(node *pnode) {
 	now := time.Now()
 
 	for node != nil {
@@ -548,7 +511,7 @@ func mark_updated(node *pnode) {
 /*
  * Allocate a new property node and insert it into the property tree
  */
-func property_add(parent *pnode, property string) *pnode {
+func propertyAdd(parent *pnode, property string) *pnode {
 	path := parent.path + "/" + property
 
 	n := pnode{Name: property,
@@ -600,7 +563,7 @@ func cfg_property_parse(prop string, insert bool) *pnode {
 			}
 		}
 		if next == nil && insert {
-			next = property_add(node, name)
+			next = propertyAdd(node, name)
 		}
 		path += "/" + name
 		node = next
@@ -609,7 +572,20 @@ func cfg_property_parse(prop string, insert bool) *pnode {
 	return node
 }
 
-func property_delete(property string) error {
+func deleteChild(parent, child *pnode) {
+	siblings := parent.Children
+	for i, n := range siblings {
+		if n == child {
+			parent.Children =
+				append(siblings[:i], siblings[i+1:]...)
+			markUpdated(parent)
+			break
+		}
+	}
+	deleteSubtree(child)
+}
+
+func propertyDelete(property string) error {
 	log.Printf("delete property: %s\n", property)
 	node := cfg_property_parse(property, false)
 	if node == nil {
@@ -617,20 +593,11 @@ func property_delete(property string) error {
 			property)
 	}
 
-	siblings := node.parent.Children
-	for i, n := range siblings {
-		if n == node {
-			node.parent.Children =
-				append(siblings[:i], siblings[i+1:]...)
-			break
-		}
-	}
-	mark_updated(node)
-	delete_subtree(node)
+	deleteChild(node.parent, node)
 	return nil
 }
 
-func property_update(property, value string, expires *time.Time,
+func propertyUpdate(property, value string, expires *time.Time,
 	insert bool) (bool, error) {
 	var err error
 
@@ -654,16 +621,16 @@ func property_update(property, value string, expires *time.Time,
 	if err != nil {
 		log.Println("property update failed: ", err)
 	} else {
-		mark_updated(node)
+		markUpdated(node)
 		if node.Expires != nil {
-			expiration_update(node)
+			expirationUpdate(node)
 		}
 	}
 
 	return updated, err
 }
 
-func property_get(property string) (string, error) {
+func propertyGet(property string) (string, error) {
 	var err error
 	var rval string
 
@@ -812,7 +779,7 @@ func patchTree(node *pnode, path string) {
 	node.path = path
 	node.index = -1
 	if node.Expires != nil {
-		expiration_update(node)
+		expirationUpdate(node)
 	}
 }
 
@@ -831,12 +798,12 @@ func dumpTree(node *pnode, level int) {
 	}
 }
 
-func delete_subtree(node *pnode) {
+func deleteSubtree(node *pnode) {
 	if node.Expires != nil {
-		expiration_remove(node)
+		expirationRemove(node)
 	}
 	for _, n := range node.Children {
-		delete_subtree(n)
+		deleteSubtree(n)
 	}
 }
 
@@ -876,7 +843,7 @@ func prop_tree_init() {
 		}
 		patchTree(&property_root, "@")
 		appliance_uuid := uuid.NewV4().String()
-		property_update("@/uuid", appliance_uuid, nil, true)
+		propertyUpdate("@/uuid", appliance_uuid, nil, true)
 	}
 
 	if err == nil {
@@ -893,11 +860,11 @@ func prop_tree_init() {
  *
  * Handling incoming requests from other daemons
  */
-func get_handler(q *base_msg.ConfigQuery) (string, error) {
-	return (property_get(*q.Property))
+func getPropHandler(q *base_msg.ConfigQuery) (string, error) {
+	return propertyGet(*q.Property)
 }
 
-func set_handler(q *base_msg.ConfigQuery, add bool) error {
+func setPropHandler(q *base_msg.ConfigQuery, add bool) error {
 	var expires *time.Time
 
 	if q.Expires != nil {
@@ -907,7 +874,7 @@ func set_handler(q *base_msg.ConfigQuery, add bool) error {
 		expires = &tmp
 	}
 
-	updated, err := property_update(*q.Property, *q.Value, expires, add)
+	updated, err := propertyUpdate(*q.Property, *q.Value, expires, add)
 	if updated {
 		prop_tree_store()
 		updateNotify(*q.Property, *q.Value)
@@ -915,13 +882,100 @@ func set_handler(q *base_msg.ConfigQuery, add bool) error {
 	return err
 }
 
-func delete_handler(q *base_msg.ConfigQuery) error {
-	err := property_delete(*q.Property)
+func delPropHandler(q *base_msg.ConfigQuery) error {
+	err := propertyDelete(*q.Property)
 	if err == nil {
 		prop_tree_store()
 		deleteNotify(*q.Property)
 	}
 	return err
+}
+
+func processOneEvent(query *base_msg.ConfigQuery) *base_msg.ConfigResponse {
+	var err error
+
+	prop := *query.Property
+	ops := &defaultSubtreeOps
+	val := "-"
+	rc := base_msg.ConfigResponse_OP_OK
+
+	for _, r := range subtreeMatchTable {
+		if r.match.MatchString(prop) {
+			ops = r.ops
+			break
+		}
+	}
+
+	switch *query.Operation {
+	case base_msg.ConfigQuery_GET:
+		if val, err = ops.get(query); err != nil {
+			rc = base_msg.ConfigResponse_PROP_NOT_FOUND
+			log.Printf("Get %s failed: %v\n", prop, err)
+		}
+	case base_msg.ConfigQuery_CREATE:
+		if err = ops.set(query, true); err != nil {
+			rc = base_msg.ConfigResponse_NO_PERM
+			log.Printf("Create %s failed: %v\n", prop, err)
+		}
+	case base_msg.ConfigQuery_SET:
+		if err = ops.set(query, false); err != nil {
+			rc = base_msg.ConfigResponse_PROP_NOT_FOUND
+			log.Printf("Set %s failed: %v\n", prop, err)
+		}
+	case base_msg.ConfigQuery_DELETE:
+		if err = ops.delete(query); err != nil {
+			rc = base_msg.ConfigResponse_PROP_NOT_FOUND
+			log.Printf("Del %s failed: %v\n", prop, err)
+		}
+	default:
+		log.Printf("Unrecognized operation")
+		rc = base_msg.ConfigResponse_UNSUPPORTED
+	}
+
+	t := time.Now()
+
+	response := &base_msg.ConfigResponse{
+		Timestamp: &base_msg.Timestamp{
+			Seconds: proto.Int64(t.Unix()),
+			Nanos:   proto.Int32(int32(t.Nanosecond())),
+		},
+		Sender:   proto.String(pname + "(" + strconv.Itoa(os.Getpid()) + ")"),
+		Debug:    proto.String("-"),
+		Response: &rc,
+		Property: proto.String("-"),
+		Value:    proto.String(val),
+	}
+
+	return response
+}
+
+func eventLoop(incoming *zmq.Socket) {
+	errs := 0
+	for {
+		msg, err := incoming.RecvMessageBytes(0)
+		if err != nil {
+			log.Printf("Error receiving message: %v\n", err)
+			errs++
+			if errs > 10 {
+				log.Fatalf("Too many errors - giving up\n")
+			}
+			continue
+		}
+
+		errs = 0
+		expirationPurge()
+		query := &base_msg.ConfigQuery{}
+		proto.Unmarshal(msg[0], query)
+
+		response := processOneEvent(query)
+		data, err := proto.Marshal(response)
+		if err != nil {
+			log.Printf("Failed to marshall response to %v: %v\n",
+				*query, err)
+		} else {
+			incoming.SendBytes(data, 0)
+		}
+	}
 }
 
 func main() {
@@ -941,7 +995,7 @@ func main() {
 		log.Fatalf("Properties directory %s doesn't exist", *propdir)
 	}
 
-	expiration_init()
+	expirationInit()
 
 	// Prometheus setup
 	http.Handle("/metrics", promhttp.Handler())
@@ -954,6 +1008,14 @@ func main() {
 	defer brokerd.Disconnect()
 	brokerd.Ping()
 
+	if err = DeviceDBInit(); err != nil {
+		log.Printf("Failed to import devices database: %v\n", err)
+		if mcpd != nil {
+			mcpd.SetState(mcp.BROKEN)
+			os.Exit(1)
+		}
+	}
+
 	prop_tree_init()
 
 	incoming, _ := zmq.NewSocket(zmq.REP)
@@ -962,56 +1024,6 @@ func main() {
 	if mcpd != nil {
 		mcpd.SetState(mcp.ONLINE)
 	}
-	for {
-		val := "-"
-		msg, err := incoming.RecvMessageBytes(0)
-		if err != nil {
-			break // XXX Nope.
-		}
 
-		expiration_purge()
-		query := &base_msg.ConfigQuery{}
-		proto.Unmarshal(msg[0], query)
-
-		rc := base_msg.ConfigResponse_OP_OK
-		switch *query.Operation {
-		case base_msg.ConfigQuery_GET:
-			if val, err = get_handler(query); err != nil {
-				rc = base_msg.ConfigResponse_PROP_NOT_FOUND
-			}
-		case base_msg.ConfigQuery_CREATE:
-			if err = set_handler(query, true); err != nil {
-				rc = base_msg.ConfigResponse_NO_PERM
-			}
-		case base_msg.ConfigQuery_SET:
-			if err = set_handler(query, false); err != nil {
-				rc = base_msg.ConfigResponse_PROP_NOT_FOUND
-			}
-		case base_msg.ConfigQuery_DELETE:
-			if err = delete_handler(query); err != nil {
-				rc = base_msg.ConfigResponse_PROP_NOT_FOUND
-			}
-		default:
-			log.Printf("Unrecognized operation")
-			rc = base_msg.ConfigResponse_UNSUPPORTED
-		}
-
-		t := time.Now()
-
-		response := &base_msg.ConfigResponse{
-			Timestamp: &base_msg.Timestamp{
-				Seconds: proto.Int64(t.Unix()),
-				Nanos:   proto.Int32(int32(t.Nanosecond())),
-			},
-			Sender:   proto.String(pname + "(" + strconv.Itoa(os.Getpid()) + ")"),
-			Debug:    proto.String("-"),
-			Response: &rc,
-			Property: proto.String("-"),
-			Value:    proto.String(val),
-		}
-
-		data, err := proto.Marshal(response)
-
-		incoming.SendBytes(data, 0)
-	}
+	eventLoop(incoming)
 }

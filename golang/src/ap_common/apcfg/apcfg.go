@@ -73,6 +73,20 @@ type ClientMap map[string]*ClientInfo
 type SubnetMap map[string]string
 type NicMap map[string]string
 
+// Definition of a single device
+type Device struct {
+	Obsolete       bool
+	UpdateTime     time.Time
+	Devtype        string
+	Vendor         string
+	ProductName    string
+	ProductVersion string   `json:"Version,omitempty"`
+	UDPPorts       []int    `json:"UDP,omitempty"`
+	InboundPorts   []int    `json:"InboundPorts,omitempty"`
+	OutboundPorts  []int    `json:"OutboundPorts,omitempty"`
+	DNS            []string `json:"DNS,omitempty"`
+}
+
 //
 // A node in the property tree.
 type PropertyNode struct {
@@ -464,4 +478,24 @@ func (c APConfig) GetLogicalNics() ([]*Nic, error) {
 	}
 
 	return nics, err
+}
+
+// Fetch a single device by its path
+func (c APConfig) GetDevicePath(path string) (*Device, error) {
+	var dev Device
+
+	tree, err := c.msg(base_msg.ConfigQuery_GET, path, "-", nil)
+	if err != nil {
+		err = fmt.Errorf("failed to retrieve %s: %v", path, err)
+	} else if err = json.Unmarshal([]byte(tree), &dev); err != nil {
+		err = fmt.Errorf("failed to decode %s: %v", tree, err)
+	}
+
+	return &dev, err
+}
+
+// Fetch a single device by its ID #
+func (c APConfig) GetDevice(devid int) (*Device, error) {
+	path := fmt.Sprintf("@/devices/%d", devid)
+	return c.GetDevicePath(path)
 }
