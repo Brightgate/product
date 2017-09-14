@@ -96,5 +96,47 @@
     "Devtype": "android",
     "Vendor": "Samsung",
     "ProductName": "Galaxy S5"
+  },
+  "12": {
+    "Obsolete": false,
+    "UpdateTime": "2017-09-14T18:05:42.998564Z",
+    "Devtype": "computer",
+    "Vendor": "Raspberry Pi Foundation",
+    "ProductName": "Raspberry Pi 3"
+  },
+  "13": {
+    "Obsolete": false,
+    "UpdateTime": "2017-09-14T18:05:42.998564Z",
+    "Devtype": "computer",
+    "Vendor": "Asus/Ubuntu",
+    "ProductName": "UX303U"
+  },
+  "14": {
+    "Obsolete": false,
+    "UpdateTime": "2017-09-14T18:05:42.998564Z",
+    "Devtype": "computer",
+    "Vendor": "Toshiba/Windows",
+    "ProductName": "Satellite L755"
+  },
+  "15": {
+    "Obsolete": false,
+    "UpdateTime": "2017-09-14T18:05:42.998564Z",
+    "Devtype": "android",
+    "Vendor": "Motorola",
+    "ProductName": "Moto Z"
+  },
+  "16": {
+    "Obsolete": false,
+    "UpdateTime": "2017-09-14T18:05:42.998564Z",
+    "Devtype": "android",
+    "Vendor": "Motorola",
+    "ProductName": "Moto Z2 Force"
+  },
+  "17": {
+    "Obsolete": false,
+    "UpdateTime": "2017-09-14T18:05:42.998564Z",
+    "Devtype": "computer",
+    "Vendor": "VirtualBox",
+    "ProductName": "VM"
   }
 }

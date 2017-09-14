@@ -690,7 +690,8 @@ func prepareWired() {
 			if !wiredLan {
 				continue
 			}
-			if name == "eth0" {
+			if strings.HasPrefix(name, "eth") ||
+				strings.HasPrefix(name, "enx") {
 				log.Printf("Using %s for WAN\n", name)
 				activeWan = dev
 			} else {
@@ -847,9 +848,11 @@ func getDevices() {
 
 	for _, i := range all {
 		var d *device
-		if strings.HasPrefix(i.Name, "eth") {
+		if strings.HasPrefix(i.Name, "eth") ||
+			strings.HasPrefix(i.Name, "enx") {
 			d = getEthernet(i)
-		} else if strings.HasPrefix(i.Name, "wlan") {
+		} else if strings.HasPrefix(i.Name, "wlan") ||
+			strings.HasPrefix(i.Name, "wlx") {
 			d = getWireless(i)
 		}
 

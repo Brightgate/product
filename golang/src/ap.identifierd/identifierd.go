@@ -253,12 +253,17 @@ func logger() {
 	}
 }
 
-func updateClient(hwaddr uint64, identity string) {
+func updateClient(hwaddr uint64, identity string, confidence float64) {
 	hw := network.Uint64ToHWAddr(hwaddr).String()
 	identProp := "@/clients/" + hw + "/identity"
+	confProp := "@/clients/" + hw + "/confidence"
 
 	if err := apcfgd.CreateProp(identProp, identity, nil); err != nil {
 		log.Printf("error creating prop %s: %s\n", identProp, err)
+	}
+
+	if err := apcfgd.CreateProp(confProp, fmt.Sprintf("%.2f", confidence), nil); err != nil {
+		log.Printf("error creating prop %s: %s\n", confProp, err)
 	}
 }
 
@@ -273,9 +278,9 @@ func identify() {
 			continue
 		}
 
-		// XXX Naive Bayes is the only model returning a Probability estimate.
+		// XXX Set the bar low until the model gets more training data
 		if id.Probability > 0 {
-			updateClient(id.HwAddr, id.Identity)
+			updateClient(id.HwAddr, id.Identity, id.Probability)
 		}
 
 		t := time.Now()

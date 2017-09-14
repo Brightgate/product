@@ -8,9 +8,8 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 
-// Package model is for training new models (currently only ID3 decision trees,
-// Bernoulli Naive Bayes, and Multinomial Naive Bayes) and making predictions
-// about client identities
+// Package model is for training new models and making predictions about client
+// identities
 package model
 
 import (
@@ -56,9 +55,8 @@ type Prediction struct {
 }
 
 type client struct {
-	rowIdx      int
-	nbIdentity  *Prediction
-	id3Identity *Prediction
+	rowIdx     int
+	nbIdentity *Prediction
 }
 
 // Observations contains a subset of the data we observe from a client.
@@ -70,13 +68,9 @@ type Observations struct {
 	// hwaddr -> client
 	clients map[uint64]*client
 
-	// Trained prospective models used for prediction, the attributes used to
-	// train them, and corresponding filters for 'inst'.
-	naiveBayes    *BernoulliNBClassifier
-	naiveAttrs    []base.Attribute
-	naiveFiltered *base.LazilyFilteredInstances
-	id3Tree       *trees.ID3DecisionTree
-	id3Filtered   *base.LazilyFilteredInstances
+	// Trained models used for prediction and the attributes used to train them.
+	naiveBayes *MultinomialNBClassifier
+	naiveAttrs []base.Attribute
 
 	// attribute name -> column index
 	attrMap map[string]int
@@ -207,28 +201,10 @@ func (o *Observations) Train(path string) error {
 		return fmt.Errorf("failed to load training data: %s", err)
 	}
 
-	disFilt, err := Discretise(trainData)
-	if err != nil {
-		return fmt.Errorf("failed to create discrete filter: %s", err)
-	}
-
-	trainDataFiltered := base.NewLazilyFilteredInstances(trainData, disFilt)
-	if o.id3Tree, err = NewTree(trainDataFiltered); err != nil {
-		return fmt.Errorf("failed to make new ID3 tree: %s", err)
-	}
-	o.id3Filtered = base.NewLazilyFilteredInstances(o.inst, disFilt)
-
-	binFilt, err := Binarize(trainData)
-	if err != nil {
-		return fmt.Errorf("failed to create binary filter: %s", err)
-	}
-
-	trainDataFiltered = base.NewLazilyFilteredInstances(trainData, binFilt)
-	o.naiveBayes = NewBayes(trainDataFiltered)
-	classAttrs := trainDataFiltered.AllClassAttributes()
-	allAttrs := trainDataFiltered.AllAttributes()
+	o.naiveBayes = NewBayes(trainData)
+	classAttrs := trainData.AllClassAttributes()
+	allAttrs := trainData.AllAttributes()
 	o.naiveAttrs = base.AttributeDifference(allAttrs, classAttrs)
-	o.naiveFiltered = base.NewLazilyFilteredInstances(o.inst, binFilt)
 
 	return nil
 }
@@ -244,9 +220,8 @@ func (o *Observations) SetByName(hwaddr uint64, attr string) {
 		o.inst.Extend(1)
 		_, rows := o.inst.Size()
 		o.clients[hwaddr] = &client{
-			rowIdx:      rows - 1,
-			nbIdentity:  &Prediction{"Naive Bayes", hwaddr, "Unknown", 0.0},
-			id3Identity: &Prediction{"ID3 Tree", hwaddr, "Unknown", 0.0},
+			rowIdx:     rows - 1,
+			nbIdentity: &Prediction{"Naive Bayes", hwaddr, "Unknown", 0.0},
 		}
 	}
 	row := o.clients[hwaddr].rowIdx
@@ -263,10 +238,9 @@ func (o *Observations) SetByName(hwaddr uint64, attr string) {
 
 // PredictBayes predicts identities for the observations using Naive Bayes
 func (o *Observations) predictBayes(ch chan *Prediction) {
-	predictions, probabilities := o.naiveBayes.Predict(o.naiveFiltered)
+	predictions, probabilities := o.naiveBayes.Predict(o.inst)
 	for _, c := range o.clients {
 		newID := base.GetClass(predictions, c.rowIdx)
-
 		idProb, err := strconv.ParseFloat(probabilities.RowString(c.rowIdx), 64)
 		if err != nil {
 			log.Printf("Failed to parse identity probability %q: %s\n",
@@ -286,18 +260,6 @@ func (o *Observations) predictBayes(ch chan *Prediction) {
 	}
 }
 
-// PredictID3 predicts identities for the observations using ID3
-func (o *Observations) predictID3(ch chan *Prediction) {
-	predictions, _ := o.id3Tree.Predict(o.id3Filtered)
-	for _, c := range o.clients {
-		newID := base.GetClass(predictions, c.rowIdx)
-		if newID != c.id3Identity.Identity {
-			c.id3Identity.Identity = newID
-			ch <- c.id3Identity
-		}
-	}
-}
-
 // Predict periodically runs predictions over the entire set of Observations.
 // When a client's predicted identity changes a new Prediction is sent on the
 // channel returned to the caller.
@@ -309,7 +271,6 @@ func (o *Observations) Predict() <-chan *Prediction {
 		for {
 			<-tick.C
 			o.Lock()
-			o.predictID3(ch)
 			o.predictBayes(ch)
 			o.Unlock()
 		}
@@ -327,11 +288,11 @@ func (o *Observations) GetBayesIdentity(hwaddr uint64) (string, float64) {
 		return "Unknown", 0.0
 	}
 
-	featAttrSpecs := base.ResolveAttributes(o.naiveFiltered, o.naiveAttrs)
+	featAttrSpecs := base.ResolveAttributes(o.inst, o.naiveAttrs)
 
 	vector := make([][]byte, len(featAttrSpecs))
 	for i := 0; i < len(vector); i++ {
-		vector[i] = o.naiveFiltered.Get(featAttrSpecs[i], c.rowIdx)
+		vector[i] = o.inst.Get(featAttrSpecs[i], c.rowIdx)
 	}
 	return o.naiveBayes.PredictOne(vector)
 }
@@ -414,8 +375,8 @@ func Binarize(src base.FixedDataGrid) (*filters.BinaryConvertFilter, error) {
 }
 
 // NewBayes returns a new Naive Bayes clasifier trained with trainData
-func NewBayes(trainData base.FixedDataGrid) *BernoulliNBClassifier {
-	naiveBayes := NewBernoulliNBClassifier()
+func NewBayes(trainData base.FixedDataGrid) *MultinomialNBClassifier {
+	naiveBayes := NewMultinomialNBClassifier()
 	naiveBayes.Fit(trainData)
 	return naiveBayes
 }

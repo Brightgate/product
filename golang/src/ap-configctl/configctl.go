@@ -65,8 +65,9 @@ func getRings() error {
 func getClients() error {
 	clients := apcfgd.GetClients()
 
-	fmt.Printf("%-17s %-16s %-10s %-15s %-16s %-s\n",
-		"macaddr", "name", "ring", "ip addr", "expiration", "identity")
+	fmt.Printf("%-17s %-16s %-10s %-15s %-16s %-9s %-s\n",
+		"macaddr", "name", "ring", "ip addr", "expiration",
+		"identity", "confidence")
 
 	for mac, client := range clients {
 		name := "-"
@@ -87,8 +88,9 @@ func getClients() error {
 			}
 		}
 
-		fmt.Printf("%-17s %-16s %-10s %-15s %-16s %-s\n",
-			mac, name, client.Ring, ipv4, exp, client.Identity)
+		fmt.Printf("%-17s %-16s %-10s %-15s %-16s %-9s %-s\n",
+			mac, name, client.Ring, ipv4, exp,
+			client.Identity, client.Confidence)
 	}
 
 	return nil

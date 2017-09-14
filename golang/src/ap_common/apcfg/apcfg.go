@@ -60,12 +60,13 @@ type RingConfig struct {
 }
 
 type ClientInfo struct {
-	Ring     string     // Assigned security ring
-	DNSName  string     // Assigned hostname
-	IPv4     net.IP     // Network address
-	Expires  *time.Time // DHCP lease expiration time
-	DHCPName string     // Requested hostname
-	Identity string     // Our current best guess at the client type
+	Ring       string     // Assigned security ring
+	DNSName    string     // Assigned hostname
+	IPv4       net.IP     // Network address
+	Expires    *time.Time // DHCP lease expiration time
+	DHCPName   string     // Requested hostname
+	Identity   string     // Our current best guess at the client type
+	Confidence string     // Our confidence for the Identity guess
 }
 
 type RingMap map[string]*RingConfig
@@ -381,7 +382,7 @@ func (c APConfig) GetSubnets() SubnetMap {
 }
 
 func getClient(client *PropertyNode) *ClientInfo {
-	var ring, dns, dhcp, identity string
+	var ring, dns, dhcp, identity, confidence string
 	var ipv4 net.IP
 	var exp *time.Time
 	var err error
@@ -391,6 +392,7 @@ func getClient(client *PropertyNode) *ClientInfo {
 	}
 
 	identity, _ = getStringVal(client, "identity")
+	confidence, _ = getStringVal(client, "confidence")
 	dhcp, _ = getStringVal(client, "dhcp_name")
 	dns, _ = getStringVal(client, "dns_name")
 	if addr := client.GetChild("ipv4"); addr != nil {
@@ -401,12 +403,13 @@ func getClient(client *PropertyNode) *ClientInfo {
 	}
 
 	c := ClientInfo{
-		Ring:     ring,
-		DHCPName: dhcp,
-		DNSName:  dns,
-		IPv4:     ipv4,
-		Expires:  exp,
-		Identity: identity,
+		Ring:       ring,
+		DHCPName:   dhcp,
+		DNSName:    dns,
+		IPv4:       ipv4,
+		Expires:    exp,
+		Identity:   identity,
+		Confidence: confidence,
 	}
 	return &c
 }

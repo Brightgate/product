@@ -3,10 +3,16 @@
   "Apple, Inc.": 1,
   "Arcadyan Technology Corporation": 2,
   "Circle Media Inc": 8,
+  "Intel Corporate": 12,
   "LG Innotek": 3,
+  "Liteon Technology Corporation": 11,
+  "Motorola Mobility LLC, a Lenovo Company": 13,
   "Murata Manufacturing Co., Ltd.": 9,
+  "PCS Systemtechnik GmbH": 15,
+  "Raspberry Pi Foundation": 10,
   "Roku, Inc.": 7,
   "SAMSUNG ELECTRO-MECHANICS(THAILAND)": 6,
   "Sonos, Inc.": 4,
-  "Unknown": 0
+  "Unknown": 0,
+  "Xerox Corporation": 14
 }
