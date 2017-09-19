@@ -25,9 +25,11 @@ import (
 	"log"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 
 	"ap.identifierd/model"
+	"ap_common/device"
 
 	"github.com/klauspost/oui"
 )
@@ -40,20 +42,28 @@ const (
 var (
 	observedFiles = flag.String("observed", "",
 		"A comma separated list of CSV files containing observations.")
-	identFile = flag.String("identities", "", "The CSV file of identities to update.")
-	mfgFile   = flag.String("mfgIDs", "", "The JSON file of MFG IDs to update.")
-	ouiFile   = flag.String("oui", "", "The path to oui.txt.")
+	identFile = flag.String("identities", "$ETC/ap_identities.csv",
+		"The CSV file of identities to update.")
+	mfgFile = flag.String("mfgIDs", "$ETC/ap_mfgid.json",
+		"The JSON file of MFG IDs to update.")
+	ouiFile = flag.String("oui", "$ETC/oui.txt",
+		"The path to oui.txt.")
+	devFile = flag.String("dev", "$ETC/devices.json",
+		"The path to devices.json.")
+	etcDir = flag.String("etc", "proto.armv7l/opt/com.brightgate/etc",
+		"The path to the brighgate etc/ directory")
 
 	ouiDB   oui.DynamicDB
 	mfgidDB = make(map[string]int)
-	maxID   int
+	maxMfg  int
+	devices device.DeviceMap
 
 	attrUnion = make(map[string]bool)
 	output    = make([]*sample, 0)
 )
 
 type sample struct {
-	identity string
+	identity int
 	attrs    map[string]string
 }
 
@@ -94,16 +104,25 @@ func readObservations(path string) {
 
 		last := len(record) - 1
 		fmt.Printf("What is (%s, %s, %s)? (Or 'SKIP') ", mac.String(), entry.Manufacturer, record[last])
-		trueIdentity, _ := userInput.ReadString('\n')
-		trueIdentity = strings.TrimSpace(trueIdentity)
-
-		if strings.Contains(trueIdentity, "SKIP") {
+		trueIdentity := 0
+		for {
+			entry, _ := userInput.ReadString('\n')
+			entry = strings.TrimSpace(entry)
+			if strings.Contains(entry, "SKIP") || strings.Contains(entry, "NEW") {
+				break
+			}
+			tmp, err := strconv.Atoi(entry)
+			if err != nil || tmp == 0 {
+				fmt.Printf("Invalid entry: %s\n", entry)
+			}
+		}
+		if trueIdentity == 0 {
 			continue
 		}
 
 		if _, ok := mfgidDB[entry.Manufacturer]; !ok {
-			maxID++
-			mfgidDB[entry.Manufacturer] = maxID
+			maxMfg++
+			mfgidDB[entry.Manufacturer] = maxMfg
 		}
 
 		s := &sample{
@@ -145,8 +164,10 @@ func readIdentities(path string) {
 		log.Fatalf("failed to read header from %s: %s\n", path, err)
 	}
 
-	known := make(map[string]bool)
+	max := 0
+	line := 0
 	for {
+		line++
 		record, err := r.Read()
 		if err == io.EOF {
 			break
@@ -155,13 +176,20 @@ func readIdentities(path string) {
 		}
 
 		last := len(record) - 1
+		id, err := strconv.Atoi(record[last])
+		if err != nil || id == 0 {
+			fmt.Printf("Bad id at %s: %d\n", record[last], line)
+			continue
+		}
+		if id > max {
+			max = id
+		}
 
 		s := &sample{
-			identity: record[last],
+			identity: id,
 			attrs:    make(map[string]string),
 		}
 
-		known[s.identity] = true
 		for i, feat := range record[:last] {
 			if feat == "0" {
 				continue
@@ -173,8 +201,10 @@ func readIdentities(path string) {
 	}
 
 	fmt.Println("The identities we know about are:")
-	for i := range known {
-		fmt.Printf("\t%q\n", i)
+	for i := 2; i <= max; i++ {
+		if d, ok := devices[uint32(i)]; ok {
+			fmt.Printf("\t%-2d  %s %s\n", i, d.Vendor, d.ProductName)
+		}
 	}
 }
 
@@ -204,7 +234,7 @@ func writeIdentities(path string) {
 		for a, v := range s.attrs {
 			row[attrMap[a]] = v
 		}
-		row[len(row)-1] = s.identity
+		row[len(row)-1] = strconv.Itoa(s.identity)
 		w.Write(row)
 	}
 
@@ -226,32 +256,45 @@ func writeMfgs(path string) {
 	}
 }
 
+func filemunge(path string) string {
+	return strings.Replace(path, "$ETC", *etcDir, 1)
+}
+
 func main() {
 	var err error
 	flag.Parse()
 
-	ouiDB, err = oui.OpenFile(*ouiFile)
+	path := filemunge(*ouiFile)
+	ouiDB, err = oui.OpenFile(path)
 	if err != nil {
-		log.Fatalf("failed to open OUI file %s: %s", *ouiFile, err)
+		log.Fatalf("failed to open OUI file %s: %s", path, err)
 	}
 
-	file, err := ioutil.ReadFile(*mfgFile)
+	path = filemunge(*mfgFile)
+	file, err := ioutil.ReadFile(path)
 	if err != nil {
-		log.Fatalf("failed to open manufacturer ID file %s: %s\n", *mfgFile, err)
+		log.Fatalf("failed to open manufacturer ID file %s: %s\n", path, err)
 	}
 
 	err = json.Unmarshal(file, &mfgidDB)
 	if err != nil {
-		log.Fatalf("failed to import manufacturer IDs from %s: %s\n", *mfgFile, err)
+		log.Fatalf("failed to import manufacturer IDs from %s: %s\n", path, err)
 	}
 
 	for _, v := range mfgidDB {
-		if v > maxID {
-			maxID = v
+		if v > maxMfg {
+			maxMfg = v
 		}
 	}
 
-	readIdentities(*identFile)
+	path = filemunge(*devFile)
+	devices, err = device.DevicesLoad(path)
+	if err != nil {
+		log.Fatalf("failed to import devices from %s: %s\n", path, err)
+	}
+
+	path = filemunge(*identFile)
+	readIdentities(path)
 
 	files := strings.Split(*observedFiles, ",")
 	for _, f := range files {

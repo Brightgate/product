@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"ap_common/apcfg"
+	"ap_common/device"
 )
 
 type setfunc func(string, string, *time.Time) error
@@ -107,7 +108,7 @@ func getFormatted(prop string) error {
 	}
 }
 
-func printDev(d *apcfg.Device) {
+func printDev(d *device.Device) {
 	fmt.Printf("  Type: %s\n", d.Devtype)
 	fmt.Printf("  Vendor: %s\n", d.Vendor)
 	fmt.Printf("  Product: %s\n", d.ProductName)
@@ -134,7 +135,7 @@ func getProp(prop string) error {
 	if !strings.HasPrefix(prop, "@") {
 		err = getFormatted(prop)
 	} else if strings.HasPrefix(prop, "@/devices") {
-		var d *apcfg.Device
+		var d *device.Device
 		if d, err = apcfgd.GetDevicePath(prop); err == nil {
 			printDev(d)
 		}

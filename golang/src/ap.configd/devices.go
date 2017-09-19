@@ -13,11 +13,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"strconv"
 	"strings"
 
-	"ap_common/apcfg"
+	"ap_common/device"
 
 	"base_msg"
 )
@@ -27,7 +26,7 @@ const (
 )
 
 var (
-	devices map[uint32]*apcfg.Device
+	devices device.DeviceMap
 )
 
 // Handle a request for a single device.
@@ -67,17 +66,8 @@ func delDevHandler(q *base_msg.ConfigQuery) error {
 }
 
 func DeviceDBInit() error {
-	var file []byte
 	var err error
 
-	name := *propdir + deviceDB
-	if file, err = ioutil.ReadFile(name); err != nil {
-		err = fmt.Errorf("failed to load device database from %s: %v",
-			name, err)
-	} else if err = json.Unmarshal(file, &devices); err != nil {
-		err = fmt.Errorf("failed to import device database from %s: %v",
-			name, err)
-	}
-
+	devices, err = device.DevicesLoad(*propdir + deviceDB)
 	return err
 }

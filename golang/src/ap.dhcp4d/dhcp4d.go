@@ -129,10 +129,10 @@ func configExpired(path []string) {
 }
 
 func configChanged(path []string, val string) {
-	//
-	// XXX: We need to watch for changes to ipv4 as well.  That could happen
-	// if we assign a client a static IP address using configd.
-	//
+	if len(path) == 3 && path[0] == "clients" && path[2] == "ipv4" {
+		staticIPAssigned(path[1], val)
+		return
+	}
 
 	/*
 	 * Watch for client identifications in @/clients/<macaddr>/ring
@@ -287,6 +287,42 @@ func notifyRelease(ipaddr net.IP) {
 	}
 }
 
+func staticIPAssigned(hwaddr, ipaddr string) {
+	ipv4 := net.ParseIP(ipaddr)
+	if ipv4 == nil {
+		log.Printf("Invalid IP address %s for %s\n", ipaddr, hwaddr)
+		return
+	}
+
+	// If this client already has a lease for a different address,
+	// release it.
+	ring := getRing(hwaddr)
+	if ring == "" {
+		// While we could assign an address to a client we've never seen
+		// before, it's up to somebody else to create the initial client
+		// record for us to work with.
+		log.Printf("Can't assign static IP to non-existent client\n")
+		return
+	}
+
+	h := handlers[ring]
+	if !dhcp.IPInRange(h.range_start, h.range_end, ipv4) {
+		log.Printf("%s is in the %s ring, which doesn't include %s.\n",
+			hwaddr, ring, ipaddr)
+		return
+	}
+
+	if l := h.leaseSearch(hwaddr); l != nil {
+		if ipv4.Equal(l.ipaddr) {
+			// Don't do anything if the address doesn't change
+			return
+		}
+		h.releaseLease(l, hwaddr, true)
+	}
+	l := h.getLease(ipv4)
+	h.recordLease(l, hwaddr, "", ipv4, nil)
+}
+
 /*******************************************************
  *
  * Implementing the DHCP protocol
@@ -423,8 +459,11 @@ func (h *DHCPHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
  * Otherwise, release it, update the configuration, send a notification, and
  * return 'true'
  */
-func (h *DHCPHandler) releaseLease(l *lease, hwaddr string) bool {
-	if l == nil || !l.assigned || l.hwaddr != hwaddr || l.expires == nil {
+func (h *DHCPHandler) releaseLease(l *lease, hwaddr string, force bool) bool {
+	if l == nil || !l.assigned || l.hwaddr != hwaddr {
+		return false
+	}
+	if l.expires == nil && !force {
 		return false
 	}
 
@@ -447,7 +486,7 @@ func (h *DHCPHandler) release(p dhcp.Packet) {
 			hwaddr, ipaddr.String())
 		return
 	}
-	if h.releaseLease(l, hwaddr) {
+	if h.releaseLease(l, hwaddr, false) {
 		log.Printf("RELEASE %s\n", hwaddr)
 	}
 }
@@ -460,7 +499,7 @@ func (h *DHCPHandler) decline(p dhcp.Packet) {
 	hwaddr := p.CHAddr().String()
 
 	l := h.leaseSearch(hwaddr)
-	if h.releaseLease(l, hwaddr) {
+	if h.releaseLease(l, hwaddr, false) {
 		log.Printf("DECLINE for %s\n", hwaddr)
 	}
 }
@@ -534,6 +573,16 @@ func (h *DHCPHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType,
 	return nil
 }
 
+func (h *DHCPHandler) recordLease(l *lease, hwaddr, name string, ipv4 net.IP,
+	etime *time.Time) {
+	l.name = name
+	l.hwaddr = hwaddr
+	l.ipaddr = ipv4.To4()
+	l.expires = etime
+	l.static = (etime == nil)
+	l.assigned = true
+}
+
 /*
  * If this nic already has a live lease, return that.  Otherwise, assign an
  * available lease at random.  A 'nil' response indicates that all leases are
@@ -566,10 +615,9 @@ func (h *DHCPHandler) leaseAssign(hwaddr string) *lease {
 	}
 
 	if rval == nil && assigned >= 0 {
+		ipv4 := dhcp.IPAdd(h.range_start, assigned)
 		rval = &h.leases[assigned]
-		rval.hwaddr = hwaddr
-		rval.ipaddr = dhcp.IPAdd(h.range_start, assigned)
-		rval.assigned = true
+		h.recordLease(rval, hwaddr, "", ipv4, nil)
 	}
 	return rval
 }
@@ -666,12 +714,8 @@ func (h *DHCPHandler) recoverLeases() {
 		}
 
 		if l := h.getLease(client.IPv4); l != nil {
-			l.name = client.DHCPName
-			l.hwaddr = macaddr
-			l.ipaddr = client.IPv4
-			l.expires = client.Expires
-			l.static = (client.Expires == nil)
-			l.assigned = true
+			h.recordLease(l, macaddr, client.DHCPName, client.IPv4,
+				client.Expires)
 		}
 	}
 }

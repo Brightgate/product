@@ -99,7 +99,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
+
+	"ap_common/device"
 
 	"github.com/lib/pq"
 )
@@ -154,20 +155,6 @@ var tables = map[string]string{
 	matchTable: matchSchema,
 }
 
-type Device struct {
-	Obsolete       bool
-	UpdateTime     time.Time
-	Devtype        string
-	Vendor         string
-	ProductName    string
-	ProductVersion string   `json:"Version,omitempty"`
-	UDPPorts       []int    `json:"UDP,omitempty"`
-	InboundPorts   []int    `json:"InboundPorts,omitempty"`
-	OutboundPorts  []int    `json:"OutboundPorts,omitempty"`
-	DNS            []string `json:"DNS,omitempty"`
-	Notes          string   `json:"Notes,omitempty"`
-}
-
 type match struct {
 	matchid int
 	charstr string
@@ -183,7 +170,7 @@ var (
 )
 
 var (
-	devices         map[uint32]*Device
+	devices         device.DeviceMap
 	manufacturers   map[string]int
 	characteristics []string
 	matches         []match
@@ -319,7 +306,7 @@ func getStrArrayValue(f *string) []string {
 //
 // Routines for populating the database from our internal representations
 //
-func insertOneDevice(db *sql.DB, devid uint32, dev *Device) error {
+func insertOneDevice(db *sql.DB, devid uint32, dev *device.Device) error {
 	tm := string(pq.FormatTimestamp(dev.UpdateTime))
 
 	columns := "Devid, Obsolete, UpdateTime, Devtype"
@@ -410,21 +397,15 @@ func populateDatabase(db *sql.DB) error {
 //
 
 func importDevices(fileName *string) error {
-	var file []byte
 	var err error
 
 	if *fileName == "" {
-		return fmt.Errorf("import requires a device database")
+		err = fmt.Errorf("import requires a device database")
+	} else {
+		devices, err = device.DevicesLoad(*fileName)
 	}
-	if file, err = ioutil.ReadFile(*fileName); err != nil {
-		return fmt.Errorf("failed to load device database from %s: %v",
-			*fileName, err)
-	}
-	if err = json.Unmarshal(file, &devices); err != nil {
-		return fmt.Errorf("failed to import device database from %s: %v",
-			*fileName, err)
-	}
-	return nil
+
+	return err
 }
 
 func exportDevices(name string) error {
@@ -634,7 +615,7 @@ func fetchMatches(db *sql.DB) error {
 // Build a single Device struct from its database row
 //
 func extractOneDevice(rows *sql.Rows) error {
-	var d Device
+	var d device.Device
 
 	var (
 		devid          uint32
@@ -681,7 +662,7 @@ func fetchDevices(db *sql.DB) error {
 	}
 	defer rows.Close()
 
-	devices = make(map[uint32]*Device)
+	devices = make(device.DeviceMap)
 	for rows.Next() {
 		if err := extractOneDevice(rows); err != nil {
 			return fmt.Errorf("Failed to process row: %v", err)
