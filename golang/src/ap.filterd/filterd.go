@@ -102,7 +102,7 @@ var (
 	tables = []string{"nat", "filter"}
 	chains = map[string][]string{
 		"nat":    {"PREROUTING", "INPUT", "OUTPUT", "POSTROUTING"},
-		"filter": {"INPUT", "FORWARD", "OUTPUT"},
+		"filter": {"INPUT", "FORWARD", "OUTPUT", "dropped"},
 	}
 )
 
@@ -228,8 +228,13 @@ func iptablesReset() {
 		f.WriteString("*" + t + "\n")
 
 		for _, c := range chains[t] {
-			// default behavior for the chain
-			f.WriteString(":" + c + " ACCEPT\n")
+			// Set the default behavior for built-in chains to
+			// ACCEPT.  Our added chain(s) must be set to "-"
+			def := "ACCEPT"
+			if c != strings.ToUpper(c) {
+				def = "-"
+			}
+			fmt.Fprintf(f, ":%s %s\n", c, def)
 		}
 
 		for _, c := range chains[t] {
@@ -453,7 +458,7 @@ func addCaptureRules(r *rule) error {
 	httpAllow := ep + " -p tcp --dport 80 -j ACCEPT"
 
 	// http packets get forwarded.  Everything else gets dropped.
-	otherDrop := ep + " -j DROP"
+	otherDrop := ep + " -j dropped"
 
 	iptablesAddRule("nat", "PREROUTING", captureRule)
 	iptablesAddRule("filter", "INPUT", dnsAllow)
@@ -527,7 +532,7 @@ func addRule(r *rule) error {
 		iptablesRule += " -j ACCEPT"
 		iptablesAddRule("filter", chain, iptablesRule)
 	case A_BLOCK:
-		iptablesRule += " -j DROP"
+		iptablesRule += " -j dropped"
 		iptablesAddRule("filter", chain, iptablesRule)
 	}
 
@@ -558,6 +563,17 @@ func iptablesRebuild() {
 			ifaceForwardRules(i)
 		}
 	}
+
+	// Dropped packets should be logged
+	// These messages can be collected in a dedicated log file by creating
+	// the following .conf file:
+	//
+	// $ sudo cat /etc/rsyslog.d/bg.conf
+	// :msg, contains, "DROPPED" -/var/log/bg-dropped.log
+	// & ~
+	iptablesAddRule("filter", "dropped",
+		"-j LOG -m limit --limit 10/min  --log-prefix \"DROPPED \"")
+	iptablesAddRule("filter", "dropped", "-j DROP")
 
 	// Now add filter rules, from the most specific to the most general
 	sort.Sort(rules)

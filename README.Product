@@ -76,11 +76,38 @@ needed Golang module dependencies.)
 
 `sudo`(8) is used to acquire privilege from the developer during testing.
 
-Components are installed in $(ROOT)/opt/com.brightgate/bin.  ap-run in
-that directory can be used to start individual daemons:
+The ap.relayd daemon forwards UDP broadcast requests between security rings.  To
+allow mDNS forwarding to work correctly, the Linux mDNS responder
+(avahi-daemon) must be disabled before launching our daemons:
 
-ap-run broker
-ap-run logd
-ap-run dhcpd
-ap-run dnsd
-ap-run httpd
+$ sudo systemctl disable avahi-daemon
+$ sudo systemctl stop avahi-daemon
+
+Components are installed in $(ROOT)/opt/com.brightgate/bin.  ap.mcp in that
+directory is the 'master control process', and is responsible for launching and
+monitoring all of our other daemons.  To run our software, mcp should be run as
+root:
+
+$ sudo ./proto.armv7l/opt/com.brightgate/bin/ap.mcp
+2017/09/16 13:35:49 mcp.go:599: Dropping prometheus - wrong architecture
+2017/09/16 13:35:49 mcp.go:540: MCP online
+
+Either put ap.mcp in the background, or switch to another window, and launch the
+remaining daemomns:
+
+$ ap-ctl start all
+$ ap-ctl status all
+      DAEMON      PID          STATE    SINCE
+     brokerd     3518         online    Sat Sep 16 13:59:14
+      dhcp4d     3721         online    Sat Sep 16 13:59:31
+     filterd     3710         online    Sat Sep 16 13:59:31
+       httpd     3730         online    Sat Sep 16 13:59:31
+ identifierd     3554         online    Sat Sep 16 13:59:25
+    networkd     3552         online    Sat Sep 16 13:59:25
+     sampled     3724         online    Sat Sep 16 13:59:29
+     configd     3535         online    Sat Sep 16 13:59:20
+       dns4d     3553         online    Sat Sep 16 13:59:22
+     dnsmasq     3715         online    Sat Sep 16 13:59:26
+        logd     3536         online    Sat Sep 16 13:59:18
+      relayd     3709         online    Sat Sep 16 13:59:31
+       scand     3711         online    Sat Sep 16 13:59:31

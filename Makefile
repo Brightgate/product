@@ -22,7 +22,7 @@
 #    (c) on raspberry pi
 #
 #	 # apt-get install protobuf-compiler libzmq3-dev libpcap-dev vlan \
-#		 bridge-utils
+#		 bridge-utils python3
 #
 #	 [Retrieve Go tar archive from golang.org and unpack in $HOME.]
 #
