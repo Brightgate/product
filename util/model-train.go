@@ -105,17 +105,23 @@ func readObservations(path string) {
 		last := len(record) - 1
 		fmt.Printf("What is (%s, %s, %s)? (Or 'SKIP') ", mac.String(), entry.Manufacturer, record[last])
 		trueIdentity := 0
+		name := ""
 		for {
 			entry, _ := userInput.ReadString('\n')
 			entry = strings.TrimSpace(entry)
 			if strings.Contains(entry, "SKIP") || strings.Contains(entry, "NEW") {
 				break
 			}
-			tmp, err := strconv.Atoi(entry)
-			if err != nil || tmp == 0 {
-				fmt.Printf("Invalid entry: %s\n", entry)
+			if tmp, err := strconv.Atoi(entry); err == nil {
+				if d, ok := devices[uint32(tmp)]; ok {
+					trueIdentity = tmp
+					name = d.Vendor + " " + d.ProductName
+					break
+				}
 			}
+			fmt.Printf("Invalid entry: %s\n", entry)
 		}
+
 		if trueIdentity == 0 {
 			continue
 		}
@@ -138,7 +144,7 @@ func readObservations(path string) {
 				continue
 			}
 
-			fmt.Printf("\tAdd feature %q to %q? (Y/n) ", header[i], trueIdentity)
+			fmt.Printf("\tAdd feature %q to %s? (Y/n) ", header[i], name)
 			response, _ := userInput.ReadString('\n')
 			if strings.Contains(response, "n") {
 				continue
@@ -164,7 +170,6 @@ func readIdentities(path string) {
 		log.Fatalf("failed to read header from %s: %s\n", path, err)
 	}
 
-	max := 0
 	line := 0
 	for {
 		line++
@@ -180,9 +185,6 @@ func readIdentities(path string) {
 		if err != nil || id == 0 {
 			fmt.Printf("Bad id at %s: %d\n", record[last], line)
 			continue
-		}
-		if id > max {
-			max = id
 		}
 
 		s := &sample{
@@ -200,9 +202,18 @@ func readIdentities(path string) {
 		output = append(output, s)
 	}
 
+	// We want to iterate over the devices in ascending order - not in the
+	// default map order.  To do that, we need to find the maximum ID.
+	max := uint32(2)
+	for i := range devices {
+		if i > max {
+			max = i
+		}
+	}
+
 	fmt.Println("The identities we know about are:")
-	for i := 2; i <= max; i++ {
-		if d, ok := devices[uint32(i)]; ok {
+	for i := uint32(2); i <= max; i++ {
+		if d, ok := devices[i]; ok {
 			fmt.Printf("\t%-2d  %s %s\n", i, d.Vendor, d.ProductName)
 		}
 	}

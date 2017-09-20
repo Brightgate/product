@@ -18,6 +18,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -225,15 +226,29 @@ func (o *Observations) SetByName(hwaddr uint64, attr string) {
 		}
 	}
 	row := o.clients[hwaddr].rowIdx
+	attrs := []string{attr}
 
-	// Get the attribute's column index. GoLearn doesn't allow adding new
-	// attributes to FixedDataGrid
-	col, ok := o.attrMap[attr]
-	if !ok {
-		return
+	// If the attribute is a DNS name try to match on each subdomain, from
+	// the most to least specific.
+	// XXX: it would be nice if we could specify attributes as regular
+	// expressions rather than simple strings, which would let us avoid
+	// embedding this kind of structural knowledge here.
+	if strings.HasSuffix(attr, ".") {
+		all := strings.Split(attr, ".")
+		for l := 1; l < len(all)-2; l++ {
+			n := strings.Join(all[l:], ".")
+			attrs = append(attrs, n)
+		}
 	}
 
-	o.inst.Set(o.spec[col], row, o.spec[col].GetAttribute().GetSysValFromString("1"))
+	for _, a := range attrs {
+		// Get the attribute's column index. GoLearn doesn't allow
+		// adding new attributes to FixedDataGrid
+		if col, ok := o.attrMap[a]; col {
+			o.inst.Set(o.spec[col], row,
+				o.spec[col].GetAttribute().GetSysValFromString("1"))
+		}
+	}
 }
 
 // PredictBayes predicts identities for the observations using Naive Bayes

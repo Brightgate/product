@@ -617,7 +617,8 @@ func (h *DHCPHandler) leaseAssign(hwaddr string) *lease {
 	if rval == nil && assigned >= 0 {
 		ipv4 := dhcp.IPAdd(h.range_start, assigned)
 		rval = &h.leases[assigned]
-		h.recordLease(rval, hwaddr, "", ipv4, nil)
+		expires := time.Now().Add(h.duration)
+		h.recordLease(rval, hwaddr, "", ipv4, &expires)
 	}
 	return rval
 }

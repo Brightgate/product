@@ -3,6 +3,8 @@
   "Apple, Inc.": 1,
   "Arcadyan Technology Corporation": 2,
   "Circle Media Inc": 8,
+  "Espressif Inc.": 16,
+  "Hewlett Packard": 19,
   "Intel Corporate": 12,
   "LG Innotek": 3,
   "Liteon Technology Corporation": 11,
@@ -13,6 +15,8 @@
   "Roku, Inc.": 7,
   "SAMSUNG ELECTRO-MECHANICS(THAILAND)": 6,
   "Sonos, Inc.": 4,
+  "Sony Interactive Entertainment Inc.": 18,
+  "TiVo": 17,
   "Unknown": 0,
   "Xerox Corporation": 14
 }
