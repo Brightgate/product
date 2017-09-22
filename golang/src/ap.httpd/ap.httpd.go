@@ -44,6 +44,8 @@ import (
 )
 
 var (
+	aproot = flag.String("root", "proto.armv7l/opt/com.brightgate",
+		"Root of AP installation")
 	addr = flag.String("promhttp-address", base_def.HTTPD_PROMETHEUS_PORT,
 		"The address to listen on for Prometheus HTTP requests.")
 	templateDir = flag.String("template_dir", "golang/src/ap.httpd",
@@ -61,10 +63,10 @@ var (
 	key       string
 	certValid bool
 
-	config    *apcfg.APConfig
-	subnetMap apcfg.SubnetMap
+	config      *apcfg.APConfig
+	subnetMap   apcfg.SubnetMap
+	phishScorer phishtank.Scorer
 
-	phishdata     = &phishtank.DataSource{}
 	statsTemplate *template.Template
 
 	mcpd *mcp.MCP
@@ -388,16 +390,34 @@ func listen(addr, port, iface string, handler http.Handler) {
 
 	if port == ":443" {
 		if certValid {
-			go http.ListenAndServeTLS(addr+port, cert, key, handler)
+			go func() {
+				err := http.ListenAndServeTLS(addr+port, cert, key, handler)
+				log.Printf("TLS Listener on %s (%s) exited: %v\n", addr+port, iface, err)
+			}()
 		} else {
 			listening = false
 		}
 	} else {
-		go http.ListenAndServe(addr+port, handler)
+		go func() {
+			err := http.ListenAndServe(addr+port, handler)
+			log.Printf("Listener on %s (%s) exited: %v\n", addr+port, iface, err)
+		}()
 	}
 	if listening {
 		log.Printf("Listening on %s (%s)", addr+port, iface)
 	}
+}
+
+// loadPhishtank sets the global phishScorer to score how reliable a domain is
+func loadPhishtank() {
+	antiphishing := *aproot + "/var/spool/antiphishing/"
+
+	reader := phishtank.NewReader(
+		phishtank.Whitelist(antiphishing+"whitelist.csv"),
+		phishtank.Phishtank(antiphishing+"phishtank.csv"),
+		phishtank.MDL(antiphishing+"mdl.csv"),
+		phishtank.Generic(antiphishing+"example_blacklist.csv", -3, 1))
+	phishScorer = reader.Scorer()
 }
 
 func init() {
@@ -441,9 +461,7 @@ func main() {
 
 	config = apcfg.NewConfig(pname)
 
-	phishdata.Loader("online-valid-test.csv")
-	// phishdata.AutoLoader("online-valid.csv", time.Hour)
-	// ^^ uncomment to autoupdate with real phish data, also change in dns4d
+	loadPhishtank()
 
 	err = initNetwork()
 	if err != nil {
@@ -467,7 +485,8 @@ func main() {
 
 	phishRouter := mainRouter.MatcherFunc(
 		func(r *http.Request, match *mux.RouteMatch) bool {
-			return phishdata.KnownToDataSource(r.Host)
+			log.Printf("Host: %s Score: %d\n", r.Host, phishScorer.Score(r.Host, phishtank.Dns))
+			return phishScorer.Score(r.Host, phishtank.Dns) < 0
 		}).Subrouter()
 	phishRouter.HandleFunc("/", phishHandler)
 

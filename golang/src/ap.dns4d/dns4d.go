@@ -14,6 +14,9 @@
  *
  * Requirements can be installed by invoking $SRC/ap-reqs.bash.
  *
+ * Local DNS-specific files are kept in <aproot>/var/spool/dns4d/.
+ * Anti-phishing datafiles are kept in <aproot>/var/spool/antiphishing/.
+ *
  * XXX Need to handle RFC 2606 (reserved gTLDs that should be intercepted)
  * and RFC 7686 (.onion TLD that should be logged).
  *
@@ -24,7 +27,6 @@
 package main
 
 import (
-	"data/phishtank"
 	"flag"
 	"log"
 	"net"
@@ -42,6 +44,7 @@ import (
 	"ap_common/network"
 	"base_def"
 	"base_msg"
+	"data/phishtank"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/miekg/dns"
@@ -50,22 +53,28 @@ import (
 )
 
 var (
+	aproot = flag.String("root", "proto.armv7l/opt/com.brightgate",
+		"Root of AP installation")
 	addr = flag.String("listen-address", base_def.DNSD_PROMETHEUS_PORT,
 		"The address to listen on for HTTP requests.")
-
-	brokerd   broker.Broker
-	config    *apcfg.APConfig
-	phishdata *phishtank.DataSource
+	brokerd broker.Broker
+	config  *apcfg.APConfig
 
 	latencies = prometheus.NewSummary(prometheus.SummaryOpts{
 		Name: "dns_resolve_seconds",
 		Help: "DNS query resolution time",
 	})
 
-	subnetRecords map[string]*dnsRecord
+	captiveSubnet *net.IPNet
+
+	phishScorer phishtank.Scorer
+
+	ringRecords map[string]*dnsRecord
 
 	domainname   string
 	upstream_dns = "8.8.8.8:53"
+	// If site's phishing score is below this, send to our IP
+	phishThreshold = 0
 )
 
 /*
@@ -315,7 +324,7 @@ func answerCNAME(q dns.Question, rec dnsRecord) *dns.CNAME {
 }
 
 func captiveHandler(client *apcfg.ClientInfo, w dns.ResponseWriter, r *dns.Msg) {
-	record, _ := subnetRecords[client.Ring]
+	record, _ := ringRecords[client.Ring]
 
 	m := new(dns.Msg)
 	m.SetReply(r)
@@ -393,7 +402,7 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 		captiveHandler(c, w, r)
 		return
 	}
-	record, _ := subnetRecords[c.Ring]
+	record, _ := ringRecords[c.Ring]
 
 	m := new(dns.Msg)
 	m.SetReply(r)
@@ -401,12 +410,14 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 
 	start := time.Now()
 	for _, q := range r.Question {
-		if phishdata.KnownToDataSource(q.Name[:len(q.Name)-1]) {
+		if phishScorer.Score(
+			q.Name[:len(q.Name)-1], phishtank.Dns) < phishThreshold {
 			// Are any of the questions in our phishing database?
 			// If so, return our IP address; for the HTTP and HTTPS
 			// cases, we can display a "no phishing" page.
+			log.Printf("phish threshold crossed, ring %s, returning %v\n",
+				c.Ring, *record)
 			m.Answer = append(m.Answer, answerA(q, *record))
-
 		} else if strings.Contains(q.Name, ".in-addr.arpa.") {
 			hostsMtx.Lock()
 			rec, rec_ok := hosts[q.Name]
@@ -547,21 +558,52 @@ func initNetwork() {
 	}
 	log.Printf("Using nameserver: %s\n", upstream_dns)
 
+	rings := config.GetRings()
+	if rings == nil {
+		log.Fatalf("Can't retrieve ring information\n")
+	} else {
+		log.Printf("defined rings %v\n", rings)
+	}
+
 	subnets := config.GetSubnets()
 	if subnets == nil {
 		log.Fatalf("Can't retrieve subnet information\n")
+	} else {
+		log.Printf("defined subnets %v\n", subnets)
 	}
 
-	// Each ring will have an A record for that subnet's router.  That
+	// Each ring will have an A record for that ring's router.  That
 	// record will double as a result for phishing URLs and all captive
 	// portal requests.
-	subnetRecords = make(map[string]*dnsRecord)
-	for n, s := range subnets {
-		subnetRecords[n] = &dnsRecord{
+	ringRecords = make(map[string]*dnsRecord)
+	for name, ring := range rings {
+		subnet, ok := subnets[ring.Interface]
+		if !ok {
+			log.Printf("No subnet for %s/%s\n", name,
+				ring.Interface)
+			continue
+		}
+
+		srouter := network.SubnetRouter(subnet)
+		log.Printf("add DNS A pointer to %s for %s/%s\n", srouter,
+			name, ring.Interface)
+		ringRecords[name] = &dnsRecord{
 			rectype: dns.TypeA,
-			recval:  network.SubnetRouter(s),
+			recval:  srouter,
 		}
 	}
+}
+
+// loadPhishtank sets the global phishScorer to score how reliable a domain is
+func loadPhishtank() {
+	antiphishing := *aproot + "/var/spool/antiphishing/"
+
+	reader := phishtank.NewReader(
+		phishtank.Whitelist(antiphishing+"whitelist.csv"),
+		phishtank.Phishtank(antiphishing+"phishtank.csv"),
+		phishtank.MDL(antiphishing+"mdl.csv"),
+		phishtank.Generic(antiphishing+"example_blacklist.csv", -3, 1))
+	phishScorer = reader.Scorer(phishtank.Dns)
 }
 
 func init() {
@@ -605,14 +647,7 @@ func main() {
 	hosts = make(map[string]dnsRecord)
 	initNetwork()
 	initHostMap()
-
-	// load the phishtank
-	log.Printf("phishdata %v", phishdata)
-	phishdata = &phishtank.DataSource{}
-	phishdata.Loader("online-valid-test.csv")
-	// phishdata.AutoLoader("online-valid.csv", time.Hour)
-	// ^^ uncomment to autoupdate with real phish data, also change in httpd
-	log.Printf("phishdata %v", phishdata)
+	loadPhishtank()
 
 	if domainname != "" {
 		dns.HandleFunc(domainname+".", localHandler)

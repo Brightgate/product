@@ -73,12 +73,6 @@ GOFMT = $(GOROOT)/bin/gofmt
 GO_CLEAN_FLAGS = -i -x
 GO_GET_FLAGS = -v
 
-INSTALL = install
-
-PYTHON3 = python3
-MKDIR = mkdir
-RM = rm
-
 $(info go-version $(shell $(GO) version))
 $(info GOROOT $(GOROOT))
 $(info GOPATH $(GOPATH))
@@ -86,6 +80,14 @@ GOOS = $(shell $(GO) env GOOS)
 $(info GOOS = $(GOOS))
 GOARCH = $(shell $(GO) env GOARCH)
 $(info GOARCH = $(GOARCH))
+GOSRC = golang/src
+
+INSTALL = install
+PYTHON3 = python3
+MKDIR = mkdir
+RM = rm
+
+$(info python3-version $(PYTHON3) -> $(shell $(PYTHON3) -V))
 
 GITHASH=$(shell git describe --always --long --dirty)
 $(info GITHASH $(GITHASH))
@@ -112,12 +114,6 @@ PKG_DEB_ARCH=armhf
 TARGETS=$(APPCOMPONENTS)
 endif
 
-GOSRC=golang/src
-
-GITHASH=$(shell git describe --always --long --dirty)
-$(info GITHASH $(GITHASH))
-VERFLAGS=-ldflags="-X main.ApVersion=$(GITHASH)"
-
 # Appliance components and supporting definitions
 
 APPROOT=$(ROOT)/appliance
@@ -133,6 +129,7 @@ APPETCCROND=$(APPROOT)/etc/cron.d
 APPVAR=$(APPBASE)/var
 APPSSL=$(APPETC)/ssl
 APPSPOOL=$(APPVAR)/spool
+APPSPOOLANTIPHISH=$(APPVAR)/spool/antiphishing
 APPRULES=$(APPETC)/filter.rules.d
 APPMODEL=$(APPETC)/device_model
 
@@ -191,11 +188,13 @@ APPCONFIGS = \
 	$(APPETC)/ap_defaults.json \
 	$(APPETC)/ap_identities.csv \
 	$(APPETC)/ap_mfgid.json \
+	$(APPETCCROND)/com-brightgate-appliance-cron \
 	$(APPETC)/devices.json \
 	$(APPETC)/mcp.json \
 	$(APPETC)/oui.txt \
 	$(APPETC)/prometheus.yml \
-	$(APPETCCROND)/com-brightgate-appliance-cron
+	$(APPSPOOLANTIPHISH)/example_blacklist.csv \
+	$(APPSPOOLANTIPHISH)/whitelist.csv
 
 APPDIRS = \
 	$(APPBIN) \
@@ -206,6 +205,7 @@ APPDIRS = \
 	$(APPSSL) \
 	$(APPSPOOL) \
 	$(APPVAR) \
+	$(APPSPOOLANTIPHISH) \
 	$(HTTPD_CLIENTWEB_DIR) \
 	$(HTTPD_TEMPLATE_DIR) \
 	$(NETWORK_TEMPLATE_DIR)
@@ -219,14 +219,12 @@ APPCOMPONENTS = \
 	$(FILTER_RULES)
 
 APP_COMMON_SRCS = \
-    $(GOSRC)/ap_common/apcfg/apcfg.go \
-    $(GOSRC)/ap_common/broker/broker.go \
-    $(GOSRC)/ap_common/mcp/mcp_client.go \
-    $(GOSRC)/ap_common/network/network.go \
-    $(GOSRC)/base_def/base_def.go \
-    $(GOSRC)/base_msg/base_msg.pb.go
-
-#
+	$(GOSRC)/ap_common/apcfg/apcfg.go \
+	$(GOSRC)/ap_common/broker/broker.go \
+	$(GOSRC)/ap_common/mcp/mcp_client.go \
+	$(GOSRC)/ap_common/network/network.go \
+	$(GOSRC)/base_def/base_def.go \
+	$(GOSRC)/base_msg/base_msg.pb.go
 
 # Cloud components and supporting definitions.
 
@@ -326,6 +324,12 @@ $(APPETC)/prometheus.yml: prometheus.yml | $(APPETC)
 $(APPETCCROND)/com-brightgate-appliance-cron: com-brightgate-appliance-cron | $(APPETCCROND)
 	$(INSTALL) -m 0644 $< $(APPETCCROND)
 
+$(APPSPOOLANTIPHISH)/example_blacklist.csv: $(GOSRC)/data/phishtank/example_blacklist.csv | $(APPSPOOLANTIPHISH)
+	$(INSTALL) -m 0644 $< $(APPSPOOLANTIPHISH)
+
+$(APPSPOOLANTIPHISH)/whitelist.csv: $(GOSRC)/data/phishtank/whitelist.csv | $(APPSPOOLANTIPHISH)
+	$(INSTALL) -m 0644 $< $(APPSPOOLANTIPHISH)
+
 $(NETWORK_TEMPLATE_DIR)/%: $(GOSRC)/ap.networkd/% | $(APPETC)
 	$(INSTALL) -m 0644 $< $(NETWORK_TEMPLATE_DIR)
 
@@ -343,18 +347,19 @@ $(APPMODEL): golang/src/ap.identifierd/linear_model_deviceID/* | $(DIRS)
 $(APPDIRS):
 	$(MKDIR) -p $@
 
-#
-
 COMMON_SRCS = \
-    $(GOSRC)/base_def/base_def.go \
-    $(GOSRC)/base_msg/base_msg.pb.go \
-    $(GOSRC)/ap_common/broker/broker.go \
-    $(GOSRC)/ap_common/apcfg/apcfg.go \
-    $(GOSRC)/ap_common/mcp/mcp_client.go \
-    $(GOSRC)/ap_common/network/network.go \
-    $(GOSRC)/cloud_rpc/cloud_rpc.pb.go
+	$(GOSRC)/base_def/base_def.go \
+	$(GOSRC)/base_msg/base_msg.pb.go \
+	$(GOSRC)/ap_common/broker/broker.go \
+	$(GOSRC)/ap_common/apcfg/apcfg.go \
+	$(GOSRC)/ap_common/mcp/mcp_client.go \
+	$(GOSRC)/ap_common/network/network.go
 
-# Appliance Golang components
+PHISH_SRCS = \
+	$(GOSRC)/data/phishtank/datasource.go \
+	$(GOSRC)/data/phishtank/csv.go \
+	$(GOSRC)/data/phishtank/remote.go \
+	$(GOSRC)/data/phishtank/safebrowsing.go
 
 $(APPBINARIES): $(APP_COMMON_SRCS) .app.gotten | $(APPBIN)
 
@@ -374,11 +379,13 @@ $(APPBIN)/ap.configd: \
 $(APPBIN)/ap.dhcp4d: $(GOSRC)/ap.dhcp4d/dhcp4d.go
 $(APPBIN)/ap.dns4d: \
 	$(GOSRC)/ap.dns4d/dns4d.go \
-	$(GOSRC)/data/phishtank/phishtank.go
+	$(PHISH_SRCS)
 $(APPBIN)/ap.filterd: \
 	$(GOSRC)/ap.filterd/filterd.go \
 	$(GOSRC)/ap.filterd/parse.go
-$(APPBIN)/ap.httpd: $(GOSRC)/ap.httpd/ap.httpd.go
+$(APPBIN)/ap.httpd: \
+	$(GOSRC)/ap.httpd/ap.httpd.go \
+	$(PHISH_SRCS)
 $(APPBIN)/ap.identifierd: $(GOSRC)/ap.identifierd/identifierd.go
 $(APPBIN)/ap.logd: $(GOSRC)/ap.logd/logd.go
 $(APPBIN)/ap.mcp: $(GOSRC)/ap.mcp/mcp.go
@@ -398,8 +405,6 @@ $(APPBIN)/ap-rpc: \
 
 LOCAL_BINARIES=$(APPBINARIES:$(APPBIN)/%=$(GOPATH)/bin/%)
 
-#
-
 # Cloud components
 
 # Installation of cloud configuration files
@@ -412,8 +417,6 @@ $(CLOUDROOTLIB)/systemd/system/cl.httpd.service: cl.httpd.service | $(CLOUDROOTL
 
 $(CLOUDROOTLIB)/systemd/system/cl.rpcd.service: cl.rpcd.service | $(CLOUDROOTLIB)/systemd/system
 	$(INSTALL) -m 0644 $< $(CLOUDROOTLIB)/systemd/system
-
-#
 
 $(CLOUDBINARIES): $(COMMON_SRCS) .cloud.gotten
 
@@ -435,11 +438,7 @@ $(CLOUDROOTLIB)/systemd/system: | $(CLOUDROOTLIB)
 $(CLOUDDIRS):
 	$(MKDIR) -p $@
 
-#
-
-# 3rd Party Components
-
-#
+# Common definitions
 
 $(GOSRC)/base_def/base_def.go: base/generate-base-def.py | $(GOSRC)/base_def
 	$(PYTHON3) $< --go | $(GOFMT) > $@

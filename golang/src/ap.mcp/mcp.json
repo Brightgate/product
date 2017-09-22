@@ -21,7 +21,8 @@
         "Name": "dns4d",
         "Binary": "ap.dns4d",
         "DependsOn": "configd",
-        "Privileged": true
+        "Privileged": true,
+        "Options": "-root=$APROOT"
     },
     "dnsmasq": {
         "Name": "dnsmasq",
@@ -43,7 +44,7 @@
         "Binary": "ap.httpd",
         "DependsOn": "networkd",
         "Privileged": true,
-        "Options": "-template_dir=$APROOT/etc/templates/ap.httpd -ssldir=$APROOT/etc/ssl -client-web_dir=$APROOT/var/www/client-web"
+        "Options": "-root=$APROOT -template_dir=$APROOT/etc/templates/ap.httpd -ssldir=$APROOT/etc/ssl"
     },
     "identifierd": {
         "Name": "identifierd",
