@@ -244,7 +244,7 @@ func (o *Observations) SetByName(hwaddr uint64, attr string) {
 	for _, a := range attrs {
 		// Get the attribute's column index. GoLearn doesn't allow
 		// adding new attributes to FixedDataGrid
-		if col, ok := o.attrMap[a]; col {
+		if col, ok := o.attrMap[a]; ok {
 			o.inst.Set(o.spec[col], row,
 				o.spec[col].GetAttribute().GetSysValFromString("1"))
 		}
