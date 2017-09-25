@@ -389,9 +389,6 @@ func initInterfaces() {
 	nics, _ := config.GetLogicalNics()
 	subnets := config.GetSubnets()
 
-	p, _ := config.GetProp("@/network/use_vlans")
-	useVLANs := (p == "true")
-
 	ifaceToRing = make(map[int]string)
 	ringToIface = make(map[string]*net.Interface)
 	ipv4ToIface = make(map[string]*net.Interface)
@@ -413,7 +410,7 @@ func initInterfaces() {
 			name = nics[apcfg.N_WIFI].Iface
 		} else if conf.Interface == "br0" {
 			name = nics[apcfg.N_WIRED].Iface
-		} else if useVLANs && strings.HasPrefix(conf.Interface, "vlan") {
+		} else if strings.HasPrefix(conf.Interface, "vlan") {
 			// Transform "vlan.X" -> "brvlanX"
 			tmp := strings.Split(conf.Interface, ".")
 			if len(tmp) != 2 {

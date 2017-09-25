@@ -14,20 +14,6 @@
             "Value": "0"
         },
         {
-            "Name": "dhcp",
-            "Children": [
-                {
-                    "Name": "config",
-                    "Children": [
-                        {
-                            "Name": "network",
-                            "Value": "192.168.136.0/24"
-                        }
-                    ]
-                }
-            ]
-        },
-        {
             "Name": "rings",
             "Children": [
 		{
@@ -145,10 +131,6 @@
 		{
 		    "Name": "wifi",
 		    "Value": "wlan0"
-		},
-		{
-		    "Name": "use_vlans",
-		    "Value": "false"
 		},
 		{
 		    "Name": "ssid",

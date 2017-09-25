@@ -76,10 +76,11 @@ var (
 	rings   apcfg.RingMap   // ring -> config
 	subnets apcfg.SubnetMap // iface -> subnet
 
-	activeWifi   *device     // live wireless iface
-	setupWifi    string      // open "network setup" interface
-	activeWan    *device     // WAN port
-	activeWired  string      // wired bridge
+	activeWifi  string // live wireless iface
+	setupWifi   string // open "network setup" interface
+	activeWan   string // WAN port
+	activeWired string // wired bridge
+
 	childProcess *os.Process // track the hostapd proc
 	mcpd         *mcp.MCP
 	running      bool
@@ -123,9 +124,7 @@ type iface struct {
 
 type APConfig struct {
 	Interface string // Linux device name
-	Network   string // Network IP for non-VLAN configs
 	Hwaddr    string // Mac address to use
-	UseVLANs  bool   // Use VLANs or not
 	Status    error  // collect hostapd failures
 
 	SSID          string
@@ -154,7 +153,7 @@ func config_changed(raw []byte) {
 	reset := false
 	fullReset := false
 	rewrite := false
-	conf := aps[activeWifi.name]
+	conf := aps[activeWifi]
 
 	// Watch for client identifications in @/client/<macaddr>/ring.  If a
 	// client changes rings, we need it to rewrite the mac_accept file and
@@ -221,18 +220,6 @@ func config_changed(raw []byte) {
 	}
 }
 
-func getSubnetConfig() (subnet string, err error) {
-	// In order to set up the correct routes, we need to know the network
-	// we're expected to serve.
-	if subnet, err = config.GetProp("@/dhcp/config/network"); err != nil {
-		err = fmt.Errorf("failed to get DHCP config: %v", err)
-	} else if _, _, err = net.ParseCIDR(subnet); err != nil {
-		err = fmt.Errorf("DHCP config has illegal network '%s': %v",
-			subnet, err)
-	}
-	return
-}
-
 //
 // Get network settings from configd and use them to initialize the AP
 //
@@ -253,9 +240,6 @@ func getAPConfig(d *device, props *apcfg.PropertyNode) error {
 
 	if node = props.GetChild("setupssid"); node != nil {
 		setupSSID = node.GetValue()
-	}
-	if !d.supportVLANs {
-		vlanComment = "#"
 	}
 
 	if d.multipleAPs && len(setupSSID) > 0 {
@@ -286,16 +270,9 @@ func getAPConfig(d *device, props *apcfg.PropertyNode) error {
 		setupComment = "#"
 	}
 
-	network, err := getSubnetConfig()
-	if err != nil {
-		return err
-	}
-
 	data := APConfig{
 		Interface:     d.name,
-		Network:       network,
 		Hwaddr:        d.hwaddr,
-		UseVLANs:      d.supportVLANs,
 		SSID:          ssid,
 		HardwareModes: "g",
 		Channel:       6,
@@ -359,10 +336,6 @@ func generateHostAPDConf(conf *APConfig) string {
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)
-	}
-
-	if !conf.UseVLANs {
-		return fn
 	}
 
 	// Create the 'accept_macs' file, which tells hostapd how to map clients
@@ -540,7 +513,7 @@ func runAll() int {
 	errors := 0
 
 	for _, c := range aps {
-		if c.Interface == activeWifi.name {
+		if c.Interface == activeWifi {
 			running++
 			go runOne(c, done)
 		}
@@ -672,10 +645,10 @@ func prepareWired() {
 		if *platform == "rpi3" {
 			if strings.HasPrefix(dev.hwaddr, "b8:27:eb:") {
 				log.Printf("Using %s for WAN\n", name)
-				if activeWan != nil {
+				if activeWan != "" {
 					log.Printf("Found multiple eth ports\n")
 				} else {
-					activeWan = dev
+					activeWan = dev.name
 				}
 			} else if wiredLan {
 				log.Printf("Using %s for clients\n", name)
@@ -693,7 +666,7 @@ func prepareWired() {
 			if strings.HasPrefix(name, "eth") ||
 				strings.HasPrefix(name, "enx") {
 				log.Printf("Using %s for WAN\n", name)
-				activeWan = dev
+				activeWan = dev.name
 			} else {
 				log.Printf("Using %s for clients\n", name)
 
@@ -720,43 +693,41 @@ func prepareWired() {
 // wireless interfaces we'll be supporting
 //
 func prepareWireless(props *apcfg.PropertyNode) error {
+	var wifiNic *device
+
 	for _, dev := range devices {
 		if dev.wireless {
 			if err := getAPConfig(dev, props); err != nil {
 				return err
 			}
 
-			if activeWifi == nil || dev.supportVLANs {
-				activeWifi = dev
+			if wifiNic == nil || dev.supportVLANs {
+				wifiNic = dev
 			}
 		}
 	}
-	if activeWifi == nil {
+	if wifiNic == nil {
 		return fmt.Errorf("couldn't find a wifi device to use")
 	}
-	if !activeWifi.supportVLANs {
+
+	if !wifiNic.supportVLANs {
 		return fmt.Errorf("no VLAN-enabled wifi device found")
 	}
 
-	log.Printf("Hosting wireless network on %s\n", activeWifi.name)
+	activeWifi = wifiNic.name
+	log.Printf("Hosting wireless network on %s\n", activeWifi)
 
-	if activeWifi.supportVLANs {
-		for i, s := range subnets {
-			if i == "wifi" {
-				addInterface(activeWifi.name, s, true)
-			} else if i == "setup" {
-				if activeWifi.multipleAPs {
-					setupWifi = activeWifi.name +
-						setupPortal
-					addInterface(setupWifi, s, true)
-				}
-			} else if strings.HasPrefix(i, "vlan.") {
-				addInterface(i, s, true)
+	for i, s := range subnets {
+		if i == "wifi" {
+			addInterface(activeWifi, s, true)
+		} else if i == "setup" {
+			if wifiNic.multipleAPs {
+				setupWifi = activeWifi + setupPortal
+				addInterface(setupWifi, s, true)
 			}
+		} else if strings.HasPrefix(i, "vlan.") {
+			addInterface(i, s, true)
 		}
-	} else {
-		subnet := aps[activeWifi.name].Network
-		addInterface(activeWifi.name, subnet, true)
 	}
 	return nil
 }
@@ -881,15 +852,10 @@ func updateNetworkProp(props *apcfg.PropertyNode, prop, new string) {
 // update the config now.
 //
 func updateNetworkConfig(props *apcfg.PropertyNode) {
-	updateNetworkProp(props, "wifi_nic", activeWifi.name)
+	updateNetworkProp(props, "wifi_nic", activeWifi)
 	updateNetworkProp(props, "setup_nic", setupWifi)
 	updateNetworkProp(props, "wired_nic", activeWired)
-	updateNetworkProp(props, "wan_nic", activeWan.name)
-	if activeWifi.supportVLANs {
-		updateNetworkProp(props, "use_vlans", "true")
-	} else {
-		updateNetworkProp(props, "use_vlans", "false")
-	}
+	updateNetworkProp(props, "wan_nic", activeWan)
 }
 
 func main() {

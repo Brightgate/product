@@ -62,10 +62,7 @@ var (
 		Help: "DNS query resolution time",
 	})
 
-	captiveSubnet *net.IPNet
-
-	captiveA   *dns_record
-	phishtankA *dns_record
+	subnetRecords map[string]*dnsRecord
 
 	domainname   string
 	upstream_dns = "8.8.8.8:53"
@@ -91,25 +88,15 @@ var (
 	warned    map[string]bool
 
 	hostsMtx sync.Mutex
-	hosts    map[string]dns_record
+	hosts    map[string]dnsRecord
 )
 
 const pname = "ap.dns4d"
 
-type dns_record struct {
+type dnsRecord struct {
 	rectype uint16
 	recval  string
 	expires *time.Time
-}
-
-func isCaptive(client net.IP) bool {
-	if client == nil || captiveSubnet == nil {
-		return false
-	}
-
-	masked := client.Mask(captiveSubnet.Mask)
-	rval := masked.Equal(captiveSubnet.IP)
-	return rval
 }
 
 func dns_update(resource *base_msg.EventNetResource) {
@@ -126,7 +113,7 @@ func dns_update(resource *base_msg.EventNetResource) {
 
 	hostsMtx.Lock()
 	if action == base_msg.EventNetResource_CLAIMED {
-		hosts[arpa] = dns_record{
+		hosts[arpa] = dnsRecord{
 			rectype: dns.TypePTR,
 			recval:  resource.GetHostname() + ".",
 			expires: &expires,
@@ -135,6 +122,14 @@ func dns_update(resource *base_msg.EventNetResource) {
 		delete(hosts, arpa)
 	}
 	hostsMtx.Unlock()
+}
+
+// These are the per-client property changes that affect us
+var relevantProperties = map[string]bool{
+	"ipv4":      true,
+	"dns_name":  true,
+	"dhcp_name": true,
+	"ring":      true,
 }
 
 func configEvent(raw []byte) {
@@ -165,9 +160,8 @@ func configEvent(raw []byte) {
 			return
 		}
 	} else {
-		f := path[2]
-		if f != "ipv4" && f != "dns_name" && f != "dhcp_name" {
-			// These are the only 3 fields that affect DNS
+		// Check to see if this is a property change that we care about
+		if r, _ := relevantProperties[path[2]]; !r {
 			return
 		}
 
@@ -258,36 +252,31 @@ func logUnknown(ipstr string) bool {
 }
 
 // Determine whether the DNS request came from a known client.  If it did,
-// return the IP address to which the response should be sent.  If it didn't,
-// raise a warning flag and return nil.
-func getClientAddr(w dns.ResponseWriter) net.IP {
-	var rval net.IP
-
+// return the client record.  If it didn't, raise a warning flag and return nil.
+func getClient(w dns.ResponseWriter) *apcfg.ClientInfo {
 	addr, ok := w.RemoteAddr().(*net.UDPAddr)
 	if !ok {
 		return nil
 	}
 
 	clientMtx.Lock()
+	defer clientMtx.Unlock()
+
 	for _, c := range clients {
 		if addr.IP.Equal(c.IPv4) {
-			rval = c.IPv4
-			break
+			return c
 		}
 	}
 
-	if rval == nil {
-		ip := addr.IP.String()
-		if !warned[ip] {
-			warned[ip] = logUnknown(ip)
-		}
+	ipStr := addr.IP.String()
+	if !warned[ipStr] {
+		warned[ipStr] = logUnknown(ipStr)
 	}
-	clientMtx.Unlock()
 
-	return rval
+	return nil
 }
 
-func answerA(q dns.Question, rec dns_record) *dns.A {
+func answerA(q dns.Question, rec dnsRecord) *dns.A {
 	a := net.ParseIP(rec.recval)
 	rr := dns.A{
 		Hdr: dns.RR_Header{
@@ -301,7 +290,7 @@ func answerA(q dns.Question, rec dns_record) *dns.A {
 	return &rr
 }
 
-func answerPTR(q dns.Question, rec dns_record) *dns.PTR {
+func answerPTR(q dns.Question, rec dnsRecord) *dns.PTR {
 	rr := dns.PTR{
 		Hdr: dns.RR_Header{
 			Name:   q.Name,
@@ -313,7 +302,7 @@ func answerPTR(q dns.Question, rec dns_record) *dns.PTR {
 	return &rr
 }
 
-func answerCNAME(q dns.Question, rec dns_record) *dns.CNAME {
+func answerCNAME(q dns.Question, rec dnsRecord) *dns.CNAME {
 	rr := dns.CNAME{
 		Hdr: dns.RR_Header{
 			Name:   q.Name,
@@ -325,29 +314,29 @@ func answerCNAME(q dns.Question, rec dns_record) *dns.CNAME {
 	return &rr
 }
 
-func captiveHandler(w dns.ResponseWriter, r *dns.Msg) {
-	ip := getClientAddr(w)
+func captiveHandler(client *apcfg.ClientInfo, w dns.ResponseWriter, r *dns.Msg) {
+	record, _ := subnetRecords[client.Ring]
+
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.Authoritative = true
-
 	start := time.Now()
 	for _, q := range r.Question {
-		if q.Qtype == dns.TypeA && captiveA != nil {
-			m.Answer = append(m.Answer, answerA(q, *captiveA))
+		if q.Qtype == dns.TypeA {
+			m.Answer = append(m.Answer, answerA(q, *record))
 		}
 	}
 	w.WriteMsg(m)
 
-	logRequest("captiveHandler", start, ip, r, m)
+	logRequest("captiveHandler", start, client.IPv4, r, m)
 }
 
 func localHandler(w dns.ResponseWriter, r *dns.Msg) {
-	ip := getClientAddr(w)
-	if ip == nil {
+	c := getClient(w)
+	if c == nil {
 		return
-	} else if isCaptive(ip) {
-		captiveHandler(w, r)
+	} else if c.Ring == "setup" {
+		captiveHandler(c, w, r)
 		return
 	}
 
@@ -393,17 +382,18 @@ func localHandler(w dns.ResponseWriter, r *dns.Msg) {
 	}
 	w.WriteMsg(m)
 
-	logRequest("localHandler", start, ip, r, m)
+	logRequest("localHandler", start, c.IPv4, r, m)
 }
 
 func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
-	ip := getClientAddr(w)
-	if ip == nil {
+	c := getClient(w)
+	if c == nil {
 		return
-	} else if isCaptive(ip) {
-		captiveHandler(w, r)
+	} else if c.Ring == "setup" {
+		captiveHandler(c, w, r)
 		return
 	}
+	record, _ := subnetRecords[c.Ring]
 
 	m := new(dns.Msg)
 	m.SetReply(r)
@@ -415,7 +405,7 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 			// Are any of the questions in our phishing database?
 			// If so, return our IP address; for the HTTP and HTTPS
 			// cases, we can display a "no phishing" page.
-			m.Answer = append(m.Answer, answerA(q, *phishtankA))
+			m.Answer = append(m.Answer, answerA(q, *record))
 
 		} else if strings.Contains(q.Name, ".in-addr.arpa.") {
 			hostsMtx.Lock()
@@ -439,7 +429,7 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 		}
 	}
 	w.WriteMsg(m)
-	logRequest("proxyHandler", start, ip, r, m)
+	logRequest("proxyHandler", start, c.IPv4, r, m)
 }
 
 func deleteOneClient(c *apcfg.ClientInfo) {
@@ -480,7 +470,7 @@ func updateOneClient(c *apcfg.ClientInfo) {
 			hostname += domainname + "."
 		}
 		log.Printf("Adding A record %s->%s\n", hostname, ipv4)
-		hosts[hostname] = dns_record{
+		hosts[hostname] = dnsRecord{
 			rectype: dns.TypeA,
 			recval:  ipv4,
 			expires: c.Expires,
@@ -495,7 +485,7 @@ func updateOneClient(c *apcfg.ClientInfo) {
 		} else {
 			log.Printf("Adding PTR record %s->%s\n", arpa,
 				c.DHCPName)
-			hosts[arpa] = dns_record{
+			hosts[arpa] = dnsRecord{
 				rectype: dns.TypePTR,
 				recval:  c.DHCPName,
 				expires: c.Expires,
@@ -545,45 +535,32 @@ errout:
 }
 
 func initNetwork() {
-	gw := "127.0.0.1/32" // Default phishtank target
-
 	warned = make(map[string]bool)
-	config = apcfg.NewConfig(pname)
-	if config != nil {
-		domainname, _ = config.GetProp("@/network/domainname")
-		if tmp := getNameserver(); tmp != "" {
-			upstream_dns = tmp
-		}
-		log.Printf("Using nameserver: %s\n", upstream_dns)
 
-		// If we have a network defined, we want phishtank lookups to
-		// resolve to that.
-		cidr, err := config.GetProp("@/dhcp/config/network")
-		if cidr != "" {
-			gw = cidr
-		} else {
-			log.Printf("Failed to get subnet address: %v\n", err)
-		}
-
-		// If we have a 'setup' network, construct an A record which
-		// we can use to answer all DNS requests on that subnet.
-		cidr, _ = config.GetProp("@/interfaces/setup/subnet")
-		if cidr != "" {
-			if _, subnet, err := net.ParseCIDR(cidr); err == nil {
-				router := network.SubnetRouter(subnet.String())
-				captiveSubnet = subnet
-				captiveA = &dns_record{
-					rectype: dns.TypeA,
-					recval:  router,
-				}
-			}
-		}
+	if config = apcfg.NewConfig(pname); config == nil {
+		log.Fatalf("Can't connect to the config daemon\n")
 	}
 
-	r := network.SubnetRouter(gw)
-	phishtankA = &dns_record{
-		rectype: dns.TypeA,
-		recval:  r,
+	domainname, _ = config.GetProp("@/network/domainname")
+	if tmp := getNameserver(); tmp != "" {
+		upstream_dns = tmp
+	}
+	log.Printf("Using nameserver: %s\n", upstream_dns)
+
+	subnets := config.GetSubnets()
+	if subnets == nil {
+		log.Fatalf("Can't retrieve subnet information\n")
+	}
+
+	// Each ring will have an A record for that subnet's router.  That
+	// record will double as a result for phishing URLs and all captive
+	// portal requests.
+	subnetRecords = make(map[string]*dnsRecord)
+	for n, s := range subnets {
+		subnetRecords[n] = &dnsRecord{
+			rectype: dns.TypeA,
+			recval:  network.SubnetRouter(s),
+		}
 	}
 }
 
@@ -625,7 +602,7 @@ func main() {
 	brokerd.Ping()
 
 	config = apcfg.NewConfig(pname)
-	hosts = make(map[string]dns_record)
+	hosts = make(map[string]dnsRecord)
 	initNetwork()
 	initHostMap()
 

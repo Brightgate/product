@@ -296,13 +296,16 @@ func templateHandler(w http.ResponseWriter, template string) {
 }
 
 func phishHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Phishing request: %v\n", *r)
 	templateHandler(w, "nophish")
 }
 func appleHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("apple_connect: %v\n", *r)
 	templateHandler(w, "connect_apple")
 }
 
 func defaultHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("default connect: %v\n", *r)
 	templateHandler(w, "connect_generic")
 }
 
@@ -362,13 +365,6 @@ func initNetwork() error {
 	if subnetMap = config.GetSubnets(); subnetMap == nil {
 		return fmt.Errorf("Failed to get subnet addresses")
 	}
-
-	// Add gateway address to catch dns4d phishing forwarding and if no vlan.
-	gatewaySubnet, err := config.GetProp("@/dhcp/config/network")
-	if err != nil {
-		return fmt.Errorf("Failed to get gateway address: %v", err)
-	}
-	subnetMap["gateway"] = gatewaySubnet
 
 	for iface, subnet := range subnetMap {
 		router := network.SubnetRouter(subnet)

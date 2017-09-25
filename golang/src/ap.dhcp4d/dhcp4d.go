@@ -55,7 +55,6 @@ var (
 	clients   apcfg.ClientMap
 	clientMtx sync.Mutex
 
-	use_vlans    bool
 	sharedRouter net.IP     // without vlans, all rings share a
 	sharedSubnet *net.IPNet // subnet and a router node
 
@@ -654,7 +653,7 @@ func (h *DHCPHandler) getLease(ip net.IP) *lease {
 //
 // Instantiate a new DHCP handler for the given ring/subnet.
 //
-func newHandler(ring, network, nameserver string, duration int) *DHCPHandler {
+func newHandler(ring, network string, duration int) *DHCPHandler {
 	var range_size int
 	var err error
 
@@ -669,21 +668,9 @@ func newHandler(ring, network, nameserver string, duration int) *DHCPHandler {
 			network)
 	}
 
-	var myip, nsip net.IP
-	if use_vlans {
-		// When using VLANs, each managed range is a proper subnet with
-		// its own routing info.
-		myip = dhcp.IPAdd(start, 1)
-	} else {
-		myip = sharedRouter
-		subnet = sharedSubnet
-	}
-
-	if len(nameserver) == 0 {
-		nsip = myip
-	} else {
-		nsip = net.ParseIP(nameserver).To4()
-	}
+	// When using VLANs, each managed range is a proper subnet with
+	// its own routing info.
+	myip := dhcp.IPAdd(start, 1)
 
 	h := DHCPHandler{
 		ring:        ring,
@@ -696,7 +683,7 @@ func newHandler(ring, network, nameserver string, duration int) *DHCPHandler {
 		options: dhcp.Options{
 			dhcp.OptionSubnetMask:       subnet.Mask,
 			dhcp.OptionRouter:           myip,
-			dhcp.OptionDomainNameServer: nsip,
+			dhcp.OptionDomainNameServer: myip,
 		},
 		leases: make([]lease, range_size, range_size),
 	}
@@ -721,57 +708,11 @@ func (h *DHCPHandler) recoverLeases() {
 	}
 }
 
-func initPhysical(props *apcfg.PropertyNode) error {
-	var err error
-
-	nics, err = config.GetLogicalNics()
-
-	if err == nil {
-		prop, _ := config.GetProp("@/network/use_vlans")
-		use_vlans = (prop == "true")
-	}
-
-	if err == nil && !use_vlans {
-		// If we aren't using VLANs, all rings share a subnet
-		if node := props.GetChild("network"); node != nil {
-			start, subnet, err := net.ParseCIDR(node.Value)
-			if err == nil {
-				sharedRouter = dhcp.IPAdd(start, 1)
-				sharedSubnet = subnet
-			} else {
-				err = fmt.Errorf("Malformed subnet %s: %v",
-					node.Value, err)
-			}
-		} else {
-			err = fmt.Errorf("Missing shared network info\n")
-		}
-	}
-
-	return err
-}
-
 func initHandlers() error {
 	var err error
-	var nameserver string
-	var props, node *apcfg.PropertyNode
 
-	/*
-	 * Currently assumes a single interface/dhcp configuration.  If we want
-	 * to support per-interface configs, then this will need to be a tree of
-	 * per-iface configs.  If we want to support multple interfaces with the
-	 * same config, then the 'iface' parameter will have to be a []string
-	 * rather than a single string.
-	 */
-	if props, err = config.GetProps("@/dhcp/config"); err != nil {
-		return (fmt.Errorf("Failed to get DHCP configuration: %v", err))
-	}
-
-	if err = initPhysical(props); err != nil {
+	if nics, err = config.GetLogicalNics(); err != nil {
 		return err
-	}
-
-	if node = props.GetChild("nameserver"); node != nil {
-		nameserver = node.Value
 	}
 
 	// Iterate over the known rings.  For each one, find the VLAN name and
@@ -786,7 +727,7 @@ func initHandlers() error {
 			log.Printf("No subnet for %s\n", ring.Interface)
 			continue
 		}
-		h := newHandler(name, subnet, nameserver, ring.LeaseDuration)
+		h := newHandler(name, subnet, ring.LeaseDuration)
 		if ring.Interface == "wifi" {
 			if nic = nics[apcfg.N_WIFI]; nic == nil {
 				log.Printf("No Wifi NIC available\n")
@@ -885,7 +826,7 @@ func mainLoop() {
 	for {
 		err := listenAndServeIf(&h)
 		if err != nil {
-			log.Printf("DHCP server failed: %v\n", err)
+			log.Fatalf("DHCP server failed: %v\n", err)
 		} else {
 			log.Printf("%s DHCP server exited\n", err)
 		}

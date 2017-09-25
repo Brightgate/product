@@ -86,8 +86,7 @@ var (
 	config *apcfg.APConfig
 
 	interfaces map[string]*iface
-	nics       []*apcfg.Nic
-	useVLANs   bool
+	nics       []string
 
 	rules     ruleList
 	applied   map[string]map[string][]string
@@ -262,19 +261,19 @@ func iptablesAddRule(table, chain, rule string) {
 //
 func ifaceForwardRules(iface *iface) {
 	wan := nics[apcfg.N_WAN]
-	if wan == nil {
+	if wan == "" {
 		return
 	}
 
 	// Traffic from the managed network has its IP addresses masqueraded
-	masqRule := " -o " + wan.Iface
+	masqRule := " -o " + wan
 	masqRule += " -s " + iface.subnet
 	masqRule += " -j MASQUERADE"
 	iptablesAddRule("nat", "POSTROUTING", masqRule)
 
 	// Route traffic from the managed network to the WAN
 	connRule := " -i " + iface.name
-	connRule += " -o " + wan.Iface
+	connRule += " -o " + wan
 	connRule += " -s " + iface.subnet
 	connRule += " -m conntrack --ctstate NEW"
 	iptablesAddRule("filter", "FORWARD", connRule)
@@ -328,19 +327,15 @@ func genEndpointIface(e *endpoint, src bool) (string, error) {
 		d = "-o"
 	}
 
-	var nic *apcfg.Nic
 	switch e.detail {
 	case "wan":
-		nic = nics[apcfg.N_WAN]
+		name = nics[apcfg.N_WAN]
 	case "wifi":
-		nic = nics[apcfg.N_WIFI]
+		name = nics[apcfg.N_WIFI]
 	case "wired":
-		nic = nics[apcfg.N_WIRED]
+		name = nics[apcfg.N_WIRED]
 	case "setup":
-		nic = nics[apcfg.N_SETUP]
-	}
-	if nic != nil {
-		name = nic.Iface
+		name = nics[apcfg.N_SETUP]
 	}
 
 	if name == "" {
@@ -583,14 +578,16 @@ func iptablesRebuild() {
 }
 
 func initNetwork() {
-	useVLANs = false
 	interfaces = make(map[string]*iface)
 
-	wifiSubnet, _ := config.GetProp("@/dhcp/config/network")
-	p, _ := config.GetProp("@/network/use_vlans")
-	useVLANs = (p == "true")
+	n, _ := config.GetLogicalNics()
+	nics = make([]string, apcfg.N_MAX)
+	for i := 0; i < apcfg.N_MAX; i++ {
+		if n[i] != nil {
+			nics[i] = n[i].Iface
+		}
+	}
 
-	nics, _ = config.GetLogicalNics()
 	subnets := config.GetSubnets()
 	rings := config.GetRings()
 
@@ -612,19 +609,12 @@ func initNetwork() {
 		}
 
 		if logical == "wifi" {
-			if nic := nics[apcfg.N_WIFI]; nic != nil {
-				name = nic.Iface
-			} else {
+			if name = nics[apcfg.N_WIFI]; name == "" {
 				log.Printf("No wifi network available\n")
 				continue
 			}
-			if !useVLANs {
-				subnet = wifiSubnet
-			}
 		} else if logical == "setup" {
-			if nic := nics[apcfg.N_SETUP]; nic != nil {
-				name = nic.Iface
-			} else {
+			if name = nics[apcfg.N_SETUP]; name == "" {
 				log.Printf("No setup network available\n")
 				continue
 			}
@@ -632,9 +622,6 @@ func initNetwork() {
 			name = logical
 		}
 
-		if !useVLANs && strings.HasPrefix(name, "vlan") {
-			continue
-		}
 		if len(name) == 0 || len(subnet) == 0 {
 			continue
 		}
