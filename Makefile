@@ -136,6 +136,7 @@ APPSPOOL=$(APPVAR)/spool
 APPRULES=$(APPETC)/filter.rules.d
 APPMODEL=$(APPETC)/device_model
 
+HTTPD_CLIENTWEB_DIR=$(APPVAR)/www/client-web
 HTTPD_TEMPLATE_DIR=$(APPETC)/templates/ap.httpd
 NETWORK_TEMPLATE_DIR=$(APPETC)/templates/ap.networkd
 
@@ -201,10 +202,11 @@ APPDIRS = \
 	$(APPDOC) \
 	$(APPETC) \
 	$(APPETCCROND) \
-	$(APPVAR) \
+	$(APPRULES) \
 	$(APPSSL) \
 	$(APPSPOOL) \
-	$(APPRULES) \
+	$(APPVAR) \
+	$(HTTPD_CLIENTWEB_DIR) \
 	$(HTTPD_TEMPLATE_DIR) \
 	$(NETWORK_TEMPLATE_DIR)
 

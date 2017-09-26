@@ -48,6 +48,8 @@ var (
 		"The address to listen on for Prometheus HTTP requests.")
 	templateDir = flag.String("template_dir", "golang/src/ap.httpd",
 		"location of httpd templates")
+	clientWebDir = flag.String("client-web_dir", "client-web",
+		"location of httpd client web root")
 	sslDir = flag.String("ssldir", "",
 		"The directory for storing the SSL certificate and key.")
 	ports = listFlag([]string{":80", ":443"})
@@ -452,6 +454,7 @@ func main() {
 	// routing
 	mainRouter := mux.NewRouter()
 	mainRouter.HandleFunc("/", defaultHandler)
+	mainRouter.PathPrefix("/client-web/").Handler(http.StripPrefix("/client-web/", http.FileServer(http.Dir(*clientWebDir))))
 
 	adminRouter := mainRouter.MatcherFunc(hostInMap(adminMap)).Subrouter()
 	adminRouter.HandleFunc("/config", cfgHandler)
