@@ -1,5 +1,6 @@
 get.acc
-.gotten
+.app.gotten
+.cloud.gotten
 .tags
 .gotten
 *.org
@@ -7,4 +8,7 @@ get.acc
 proto.armv7l
 proto.x86_64
 base/base_def.py
+base/cloud_rpc_pb2_grpc.py
 golang/src/base_def/base_def.go
+golang/src/cloud_rpc/cloud_rpc.pb.go
+golang/src/cloud_rpc/cloud_rpc.pb.gw.go

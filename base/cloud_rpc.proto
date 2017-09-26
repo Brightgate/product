@@ -1,0 +1,58 @@
+//
+// COPYRIGHT 2017 Brightgate Inc. All rights reserved.
+//
+// This copyright notice is Copyright Management Information under 17 USC 1202
+// and is included to protect this work and deter copyright infringement.
+// Removal or alteration of this Copyright Management Information without the
+// express written permission of Brightgate Inc is prohibited, and any
+// such unauthorized removal or alteration will be a violation of federal law.
+//
+// vim:set comments=b\://:
+
+// # Field number partitioning
+//
+// We write field numbers as hexadecimal integer literals, so that the
+// partitioning is evident.  So that we might combine the messages into
+// a smaller set of unified messages in the future, we partition the
+// per-message field numbers into ranges.  (This choice trades off
+// message size against later refactoring.)
+//
+// ## Common field numbers
+//
+// 0x01  Timestamp for event/message.
+// 0x02  Sender string for event/message.
+// ...
+// 0x0f
+//
+// # Conventions
+// - MAC addresses are the low 6 bytes of a 64-bit fixed integer.
+// - IPv4 addresses are a 32-bit fixed integer.
+
+syntax = "proto3";
+
+package cloud_rpc;
+
+// XXX Can we assume a shared time domain?
+// XXX Need REST annotations.
+
+message UpcallRequest {
+	bytes HMAC = 0x10;
+	string uuid = 0x100;
+	repeated string wan_hwaddr = 0x101;
+	repeated string component_version = 0x110;
+	int64 uptime_elapsed = 0x111;
+	int32 net_host_count = 0x120;
+}
+
+message UpcallResponse {
+	string token = 0x200;
+	int64 upcall_elapsed = 0x210;
+	int64 downcall_elapsed = 0x211;
+}
+
+service Upbeat {
+	rpc Upcall(UpcallRequest) returns (UpcallResponse) {};
+}
+
+// Downbeat is when the cloud attempts to probe the appliance.  I am
+// assuming we will use ICMP messages for this purpose.

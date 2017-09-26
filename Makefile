@@ -13,17 +13,27 @@
 #	 $ sudo brew install protobuf zmq
 #	 [Retrieve and install Go pkg from golang.org]
 #
-#    (b) On Linux
+#	 You will not be able to build the packages target on MacOS.
+#
+#    (b) On Ubuntu
 #
 #	 # apt-get install protobuf-compiler libzmq5-dev libpcap-dev vlan \
-#		 bridge-utils
+#		 bridge-utils lintian
+#	 # pip3 install sh
 #	 [Retrieve Go tar archive from golang.org and unpack in $HOME.]
 #
-#    (c) on raspberry pi
+#    (c) On Debian
 #
 #	 # apt-get install protobuf-compiler libzmq3-dev libpcap-dev vlan \
-#		 bridge-utils python3
+	#	 bridge-utils lintian
+#	 # pip3 install sh
+#	 [Retrieve Go tar archive from golang.org and unpack in $HOME.]
 #
+#    (d) on raspberry pi
+#
+#	 # apt-get install protobuf-compiler libzmq3-dev libpcap-dev vlan \
+#		 bridge-utils lintian python3
+#	 # pip3 install sh
 #	 [Retrieve Go tar archive from golang.org and unpack in $HOME.]
 #
 # 2. Each new shell,
@@ -33,6 +43,9 @@
 # 3. To clean out local binaries, use
 #
 #	 $ make plat-clobber
+#
+# 4. On x86_64, the build constructs all components, whether for appliance or
+#    for cloud.  On ARM, only appliance components are built.
 
 UNAME_S = $(shell uname -s)
 UNAME_M = $(shell uname -m)
@@ -57,6 +70,8 @@ GOFMT = $(GOROOT)/bin/gofmt
 GO_CLEAN_FLAGS = -i -x
 GO_GET_FLAGS = -v
 
+INSTALL = install
+
 PYTHON3 = python3
 MKDIR = mkdir
 RM = rm
@@ -64,20 +79,34 @@ RM = rm
 $(info go-version $(shell $(GO) version))
 $(info GOROOT $(GOROOT))
 $(info GOPATH $(GOPATH))
-$(info go env GOOS = $(shell $(GO) env GOOS))
-$(info go env GOARCH = $(shell $(GO) env GOARCH))
+GOOS = $(shell $(GO) env GOOS)
+$(info GOOS = $(GOOS))
+GOARCH = $(shell $(GO) env GOARCH)
+$(info GOARCH = $(GOARCH))
+
+GITHASH=$(shell git describe --always --long --dirty)
+$(info GITHASH $(GITHASH))
+VERFLAGS=-ldflags="-X main.ApVersion=$(GITHASH)"
 
 PROTOC_PLUGINS = \
 	$(GOPATH)/bin/protoc-gen-doc \
 	$(GOPATH)/bin/protoc-gen-go
 
-# XXX if not GOOS, GOARCH
-ifeq ("$(GOARCH)","")
+ifeq ("$(GOARCH)","amd64")
+$(info --> Building appliance and cloud components for x86_64.)
 ROOT=proto.$(UNAME_M)
+PKG_DEB_ARCH=amd64
+TARGETS=$(APPCOMPONENTS) $(CLOUDCOMPONENTS)
 endif
 
 ifeq ("$(GOARCH)","arm")
+# XXX Could avoid building cloud components.
+# UNAME_M will read armv7l on Raspbian and on Ubuntu for  Banana Pi.
+# Both use armhf as the architecture for .deb files.
+$(info --> Building appliance components for ARM.)
 ROOT=proto.armv7l
+PKG_DEB_ARCH=armhf
+TARGETS=$(APPCOMPONENTS)
 endif
 
 GOSRC=golang/src
@@ -86,10 +115,18 @@ GITHASH=$(shell git describe --always --long --dirty)
 $(info GITHASH $(GITHASH))
 VERFLAGS=-ldflags="-X main.ApVersion=$(GITHASH)"
 
-APPBASE=$(ROOT)/opt/com.brightgate
+# Appliance components and supporting definitions
+
+APPROOT=$(ROOT)/appliance
+APPBASE=$(APPROOT)/opt/com.brightgate
 APPBIN=$(APPBASE)/bin
 APPDOC=$(APPBASE)/share/doc
+APPWEB=$(APPBASE)/share/web
+# APPCSS
+# APPJS
+# APPHTML
 APPETC=$(APPBASE)/etc
+APPETCCROND=$(APPROOT)/etc/cron.d
 APPVAR=$(APPBASE)/var
 APPSSL=$(APPETC)/ssl
 APPSPOOL=$(APPVAR)/spool
@@ -98,7 +135,7 @@ APPRULES=$(APPETC)/filter.rules.d
 HTTPD_TEMPLATE_DIR=$(APPETC)/templates/ap.httpd
 NETWORK_TEMPLATE_DIR=$(APPETC)/templates/ap.networkd
 
-DAEMONS = \
+APPDAEMONS = \
 	ap.brokerd \
 	ap.configd \
 	ap.dhcp4d \
@@ -113,46 +150,128 @@ DAEMONS = \
 	ap.sampled \
 	ap.scand
 
-COMMANDS = \
+APPCOMMANDS = \
 	ap-arpspoof \
 	ap-configctl \
 	ap-ctl \
 	ap-msgping \
-	ap-ouisearch
+	ap-ouisearch \
+	ap-rpc
+
+APPBINARIES = $(APPCOMMANDS:%=$(APPBIN)/%) $(APPDAEMONS:%=$(APPBIN)/%)
+
+# XXX Common configurations?
+
+HTTPD_TEMPLATE_FILES = \
+	connect_apple.html.got \
+	connect_generic.html.got \
+	nophish.html.got \
+	stats.html.got
 
 GO_TESTABLES = \
 	ap_common/apcfg \
 	ap_common/network
 
-APPBINARIES  := $(COMMANDS:%=$(APPBIN)/%) $(DAEMONS:%=$(APPBIN)/%)
-
-HTTPD_TEMPLATE_FILES = connect_apple.html.got \
-		  connect_generic.html.got \
-		  nophish.html.got \
-		  stats.html.got
 NETWORK_TEMPLATE_FILES = hostapd.conf.got
 
-HTTPD_TEMPLATES := $(HTTPD_TEMPLATE_FILES:%=$(HTTPD_TEMPLATE_DIR)/%)
-NETWORK_TEMPLATES := $(NETWORK_TEMPLATE_FILES:%=$(NETWORK_TEMPLATE_DIR)/%)
-TEMPLATES = $(HTTPD_TEMPLATES) $(NETWORK_TEMPLATES)
+HTTPD_TEMPLATES = $(HTTPD_TEMPLATE_FILES:%=$(HTTPD_TEMPLATE_DIR)/%)
+NETWORK_TEMPLATES = $(NETWORK_TEMPLATE_FILES:%=$(NETWORK_TEMPLATE_DIR)/%)
+APPTEMPLATES = $(HTTPD_TEMPLATES) $(NETWORK_TEMPLATES)
 
 FILTER_RULES = \
 	$(APPRULES)/base.rules \
 	$(APPRULES)/local.rules
 
-CONFIGS = \
+APPCONFIGS = \
 	$(APPETC)/ap_defaults.json \
 	$(APPETC)/ap_identities.csv \
 	$(APPETC)/ap_mfgid.json \
 	$(APPETC)/devices.json \
 	$(APPETC)/mcp.json \
 	$(APPETC)/oui.txt \
-	$(APPETC)/prometheus.yml
+	$(APPETC)/prometheus.yml \
+	$(APPETCCROND)/com-brightgate-appliance-cron
 
-DIRS = $(APPBIN) $(APPDOC) $(APPETC) $(APPVAR) $(APPSSL) $(APPSPOOL) \
-       $(APPRULES) $(HTTPD_TEMPLATE_DIR) $(NETWORK_TEMPLATE_DIR)
+APPDIRS = \
+	$(APPBIN) \
+	$(APPDOC) \
+	$(APPETC) \
+	$(APPETCCROND) \
+	$(APPVAR) \
+	$(APPSSL) \
+	$(APPSPOOL) \
+	$(APPRULES) \
+	$(HTTPD_TEMPLATE_DIR) \
+	$(NETWORK_TEMPLATE_DIR)
 
-install: $(APPBINARIES) $(CONFIGS) $(DIRS) $(FILTER_RULES) $(TEMPLATES) docs
+APPCOMPONENTS = \
+	$(APPBINARIES) \
+	$(APPCONFIGS) \
+	$(APPDIRS) \
+	$(APPTEMPLATES) \
+	$(FILTER_RULES)
+
+APP_COMMON_SRCS = \
+    $(GOSRC)/ap_common/apcfg/apcfg.go \
+    $(GOSRC)/ap_common/broker/broker.go \
+    $(GOSRC)/ap_common/mcp/mcp_client.go \
+    $(GOSRC)/ap_common/network/network.go \
+    $(GOSRC)/base_def/base_def.go \
+    $(GOSRC)/base_msg/base_msg.pb.go
+
+#
+
+# Cloud components and supporting definitions.
+
+CLOUDBASE=$(ROOT)/cloud/opt/net.b10e
+CLOUDBIN=$(CLOUDBASE)/bin
+CLOUDETC=$(CLOUDBASE)/etc
+CLOUDROOTLIB=$(ROOT)/cloud/lib
+
+CLOUDDAEMONS = \
+	cl.httpd \
+	cl.rpcd
+
+CLOUDCOMMANDS =
+
+CLOUDCONFIGS = \
+	$(CLOUDROOTLIB)/systemd/system/cl.httpd.service \
+	$(CLOUDROOTLIB)/systemd/system/cl.rpcd.service
+
+CLOUDBINARIES = $(CLOUDCOMMANDS:%=$(CLOUDBIN)/%) $(CLOUDDAEMONS:%=$(CLOUDBIN)/%)
+
+CLOUDDIRS = \
+	$(CLOUDBIN) \
+	$(CLOUDETC) \
+	$(CLOUDROOTLIB)
+
+CLOUDCOMPONENTS = $(CLOUDBINARIES) $(CLOUDCONFIGS) $(CLOUDDIRS)
+
+CLOUD_COMMON_SRCS = \
+    $(GOSRC)/cloud_rpc/cloud_rpc.pb.go
+
+#
+
+# -zcompress-level
+#      Specify  which compression level to use on the compressor backend, when
+#      building a package (default is 9 for gzip  and bzip2,  6  for  xz  and
+#      lzma).   The accepted values are 0-9 with: 0 being mapped to compressor
+#      none for gzip and 0 mapped to 1 for bzip2. Before dpkg 1.16.2  level  0
+#      was equivalent to compressor none for all compressors.
+#
+# -Zcompress-type
+#      Specify which compression type to use when building a package.  Allowed
+#      values  are  gzip,  xz  (since  dpkg 1.15.6), bzip2 (deprecated), lzma
+#      (since dpkg 1.14.0; deprecated), and none (default is xz).
+
+install: $(TARGETS)
+
+appliance: $(APPCOMPONENTS)
+
+cloud: $(CLOUDCOMPONENTS)
+
+packages: install
+	$(PYTHON3) build/deb-pkg.py --lint -a $(PKG_DEB_ARCH) -Z gzip -z 5
 
 test: test-go
 
@@ -171,43 +290,48 @@ $(APPDOC)/: base/base_msg.proto | $(PROTOC_PLUGINS) $(APPDOC)
 		protoc --plugin $(GOPATH)/bin \
 		    --doc_out $(APPDOC) $(notdir $<)
 
-$(APPBINARIES) : | $(APPBIN)
-
-$(APPBIN)/%: ./% | $(APPBIN)
-	install -m 0755 $< $(APPBIN)
+# Installation of appliance configuration files
 
 $(APPETC)/ap_defaults.json: $(GOSRC)/ap.configd/ap_defaults.json | $(APPETC)
-	install -m 0644 $< $(APPETC)
+	$(INSTALL) -m 0644 $< $(APPETC)
 
 $(APPETC)/ap_identities.csv: ap_identities.csv | $(APPETC)
-	install -m 0644 $< $(APPETC)
+	$(INSTALL) -m 0644 $< $(APPETC)
 
 $(APPETC)/ap_mfgid.json: ap_mfgid.json | $(APPETC)
-	install -m 0644 $< $(APPETC)
+	$(INSTALL) -m 0644 $< $(APPETC)
 
 $(APPETC)/devices.json: $(GOSRC)/ap.configd/devices.json | $(APPETC)
-	install -m 0644 $< $(APPETC)
+	$(INSTALL) -m 0644 $< $(APPETC)
 
 $(APPETC)/mcp.json: $(GOSRC)/ap.mcp/mcp.json | $(APPETC)
-	install -m 0644 $< $(APPETC)
+	$(INSTALL) -m 0644 $< $(APPETC)
 
 $(APPETC)/oui.txt: | $(APPETC)
 	cd $(APPETC) && curl -s -S -O http://standards-oui.ieee.org/oui.txt
 
+$(APPETC)/datasources.json: datasources.json | $(APPETC)
+	$(INSTALL) -m 0644 $< $(APPETC)
+
 $(APPETC)/prometheus.yml: prometheus.yml | $(APPETC)
-	install -m 0644 $< $(APPETC)
+	$(INSTALL) -m 0644 $< $(APPETC)
+
+$(APPETCCROND)/com-brightgate-appliance-cron: com-brightgate-appliance-cron | $(APPETCCROND)
+	$(INSTALL) -m 0644 $< $(APPETCCROND)
 
 $(NETWORK_TEMPLATE_DIR)/%: $(GOSRC)/ap.networkd/% | $(APPETC)
-	install -m 0644 $< $(NETWORK_TEMPLATE_DIR)
+	$(INSTALL) -m 0644 $< $(NETWORK_TEMPLATE_DIR)
 
 $(HTTPD_TEMPLATE_DIR)/%: $(GOSRC)/ap.httpd/% | $(APPETC)
-	install -m 0644 $< $(HTTPD_TEMPLATE_DIR)
+	$(INSTALL) -m 0644 $< $(HTTPD_TEMPLATE_DIR)
 
 $(APPRULES)/%: golang/src/ap.filterd/% | $(APPRULES)
-	install -m 0644 $< $(APPRULES)
+	$(INSTALL) -m 0644 $< $(APPRULES)
 
-$(DIRS):
+$(APPDIRS):
 	$(MKDIR) -p $@
+
+#
 
 COMMON_SRCS = \
     $(GOSRC)/base_def/base_def.go \
@@ -215,27 +339,36 @@ COMMON_SRCS = \
     $(GOSRC)/ap_common/broker/broker.go \
     $(GOSRC)/ap_common/apcfg/apcfg.go \
     $(GOSRC)/ap_common/mcp/mcp_client.go \
-    $(GOSRC)/ap_common/network/network.go
+    $(GOSRC)/ap_common/network/network.go \
+    $(GOSRC)/cloud_rpc/cloud_rpc.pb.go
 
-$(APPBINARIES): $(COMMON_SRCS) .gotten
+# Appliance Golang components
 
-.gotten:
-	$(GO) get $(GO_GET_FLAGS) $(DAEMONS) $(COMMANDS) 2>&1 | tee -a get.acc
+$(APPBINARIES): $(APP_COMMON_SRCS) .app.gotten | $(APPBIN)
+
+.app.gotten:
+	$(GO) get $(GO_GET_FLAGS) $(APPDAEMONS) $(APPCOMMANDS) 2>&1 | tee -a get.acc
 	touch $@
 
 $(APPBIN)/%:
 	cd $(APPBIN) && $(GO) build $(VERFLAGS) $*
 
 $(APPBIN)/ap.brokerd: $(GOSRC)/ap.brokerd/brokerd.go
-$(APPBIN)/ap.configd: $(GOSRC)/ap.configd/configd.go \
+$(APPBIN)/ap.configd: \
+	$(GOSRC)/ap.configd/configd.go \
 	$(GOSRC)/ap.configd/devices.go \
 	$(GOSRC)/ap.configd/upgrade_v1.go \
 	$(GOSRC)/ap.configd/upgrade_v2.go
 $(APPBIN)/ap.dhcp4d: $(GOSRC)/ap.dhcp4d/dhcp4d.go
-$(APPBIN)/ap.dns4d: $(GOSRC)/ap.dns4d/dns4d.go golang/src/data/phishtank/phishtank.go
-$(APPBIN)/ap.filterd: $(GOSRC)/ap.filterd/filterd.go $(GOSRC)/ap.filterd/parse.go
-$(APPBIN)/ap.httpd: $(GOSRC)/ap.httpd/httpd.go
-$(APPBIN)/ap.identifierd: $(GOSRC)/ap.identifierd/identifierd.go \
+$(APPBIN)/ap.dns4d: \
+	$(GOSRC)/ap.dns4d/dns4d.go \
+	$(GOSRC)/data/phishtank/phishtank.go
+$(APPBIN)/ap.filterd: \
+	$(GOSRC)/ap.filterd/filterd.go \
+	$(GOSRC)/ap.filterd/parse.go
+$(APPBIN)/ap.httpd: $(GOSRC)/ap.httpd/ap.httpd.go
+$(APPBIN)/ap.identifierd: \
+	$(GOSRC)/ap.identifierd/identifierd.go \
 	$(GOSRC)/ap.identifierd/model/model.go
 $(APPBIN)/ap.logd: $(GOSRC)/ap.logd/logd.go
 $(APPBIN)/ap.mcp: $(GOSRC)/ap.mcp/mcp.go
@@ -249,15 +382,65 @@ $(APPBIN)/ap-configctl: $(GOSRC)/ap-configctl/configctl.go
 $(APPBIN)/ap-ctl: $(GOSRC)/ap-ctl/ctl.go
 $(APPBIN)/ap-msgping: $(GOSRC)/ap-msgping/msgping.go
 $(APPBIN)/ap-ouisearch: $(GOSRC)/ap-ouisearch/ouisearch.go
+$(APPBIN)/ap-rpc: \
+	$(GOSRC)/ap-rpc/rpc.go \
+	$(CLOUD_COMMON_SRCS)
 
-$(APPBIN)/ap-run: ap-run.bash
-	install -m 0755 $< $@
+LOCAL_BINARIES=$(APPBINARIES:$(APPBIN)/%=$(GOPATH)/bin/%)
+
+#
+
+# Cloud components
+
+# Installation of cloud configuration files
+
+$(CLOUDETC)/datasources.json: datasources.json | $(CLOUDETC)
+	$(INSTALL) -m 0644 $< $(CLOUDETC)
+
+$(CLOUDROOTLIB)/systemd/system/cl.httpd.service: cl.httpd.service | $(CLOUDROOTLIB)/systemd/system
+	$(INSTALL) -m 0644 $< $(CLOUDROOTLIB)/systemd/system
+
+$(CLOUDROOTLIB)/systemd/system/cl.rpcd.service: cl.rpcd.service | $(CLOUDROOTLIB)/systemd/system
+	$(INSTALL) -m 0644 $< $(CLOUDROOTLIB)/systemd/system
+
+#
+
+$(CLOUDBINARIES): $(COMMON_SRCS) .cloud.gotten
+
+.cloud.gotten:
+	$(GO) get $(GO_GET_FLAGS) $(CLOUDDAEMONS) $(CLOUDCOMMANDS) 2>&1 | tee -a get.acc
+	touch $@
+
+$(CLOUDBIN)/%: | $(CLOUDBIN)
+	cd $(CLOUDBIN) && $(GO) build $(VERFLAGS) $*
+
+$(CLOUDBIN)/cl.httpd: $(GOSRC)/cl.httpd/cl.httpd.go
+$(CLOUDBIN)/cl.rpcd: \
+	$(GOSRC)/cl.rpcd/rpcd.go \
+	$(CLOUD_COMMON_SRCS)
+
+$(CLOUDROOTLIB)/systemd/system: | $(CLOUDROOTLIB)
+	mkdir -p $(CLOUDROOTLIB)/systemd/system
+
+$(CLOUDDIRS):
+	$(MKDIR) -p $@
+
+#
+
+# 3rd Party Components
+
+#
 
 $(GOSRC)/base_def/base_def.go: base/generate-base-def.py | $(GOSRC)/base_def
 	$(PYTHON3) $< --go | $(GOFMT) > $@
 
 base/base_def.py: base/generate-base-def.py
 	$(PYTHON3) $< --python3 > $@
+
+$(GOSRC)/base_def:
+	$(MKDIR) -p $(GOSRC)/base_def
+
+# Protocol buffers
 
 $(GOSRC)/base_msg/base_msg.pb.go: base/base_msg.proto | \
 	$(PROTOC_PLUGINS) $(GOSRC)/base_msg
@@ -268,34 +451,56 @@ $(GOSRC)/base_msg/base_msg.pb.go: base/base_msg.proto | \
 base/base_msg_pb2.py: base/base_msg.proto
 	protoc --python_out . $<
 
-$(GOSRC)/base_def:
-	$(MKDIR) -p $(GOSRC)/base_def
-
 $(GOSRC)/base_msg:
 	$(MKDIR) -p $(GOSRC)/base_msg
 
-LOCAL_BINARIES=$(APPBINARIES:$(APPBIN)/%=$(GOPATH)/bin/%)
+golang/src/cloud_rpc/cloud_rpc.pb.go: base/cloud_rpc.proto | \
+	$(PROTOC_PLUGINS) golang/src/cloud_rpc
+	cd base && \
+		protoc --plugin $(GOPATH)/bin \
+			-I/usr/local/include \
+			-I . \
+			-I$(GOPATH)/src \
+			-I$(GOPATH)/src/github.com/golang/protobuf/protoc-gen-go/descriptor \
+			--go_out=plugins=grpc:$(GOPATH)/src/cloud_rpc \
+			$(notdir $<)
 
-clobber: clean
-	$(RM) -f $(APPBINARIES) $(CONFIGS) $(TEMPLATES) $(FILTER_RULES)
-	$(RM) -f $(LOCAL_BINARIES)
+base/cloud_rpc_pb2.py: base/cloud_rpc.proto
+	python3 -m grpc_tools.protoc \
+		-I. \
+		-Ibase \
+		--python_out=. --grpc_python_out=. $<
+
+$(GOSRC)/cloud_rpc:
+	mkdir -p golang/src/cloud_rpc
+
+$(PROTOC_PLUGINS):
+	$(GO) get -u github.com/golang/protobuf/proto
+	$(GO) get -u github.com/golang/protobuf/protoc-gen-go
+	$(GO) get -u sourcegraph.com/sourcegraph/prototools/cmd/protoc-gen-doc
+
+LOCAL_COMMANDS=$(COMMANDS:$(APPBIN)/%=$(GOPATH)/bin/%)
+LOCAL_DAEMONS=$(DAEMONS:$(APPBIN)/%=$(GOPATH)/bin/%)
+
+clobber: clean clobber-packages
+	$(RM) -fr $(ROOT)
+
+clobber-packages:
+	-$(RM) -fr bg-appliance_*.*.*-*_* bg-cloud_*.*.*-*_*
 
 clean:
 	$(RM) -f \
 		base/base_def.py \
 		base/base_msg_pb2.py \
+		base/cloud_rpc_pb2.py \
 		$(GOSRC)/base_def/base_def.go \
-		$(GOSRC)/base_msg/base_msg.pb.go
+		$(GOSRC)/base_msg/base_msg.pb.go \
+		$(GOSRC)/cloud_rpc/cloud_rpc.pb.go
 
 plat-clobber: clobber
 	-$(GO) clean $(GO_CLEAN_FLAGS) github.com/golang/protobuf/protoc-gen-go
 	-$(GO) clean $(GO_CLEAN_FLAGS) github.com/golang/protobuf/proto
 	-$(GO) clean $(GO_CLEAN_FLAGS) sourcegraph.com/sourcegraph/prototools/cmd/protoc-gen-doc
 	-cat get.acc | sort -u | xargs $(GO) clean $(GO_CLEAN_FLAGS)
-	-rm -fr golang/src/github.com golang/src/golang.org golang/src/google.golang.org golang/src/sourcegraph.com
-	-rm -f get.acc .gotten
-
-$(PROTOC_PLUGINS):
-	$(GO) get -u github.com/golang/protobuf/proto
-	$(GO) get -u github.com/golang/protobuf/protoc-gen-go
-	$(GO) get -u sourcegraph.com/sourcegraph/prototools/cmd/protoc-gen-doc
+	-$(RM) -fr golang/src/github.com golang/src/golang.org golang/src/google.golang.org golang/src/sourcegraph.com
+	-$(RM) -f get.acc .app.gotten .cloud.gotten

@@ -416,3 +416,37 @@ message EventListen {
 	optional EventSSDP ssdp = 0xa01;
 	optional EventmDNS mdns = 0xa02;
 }
+
+// Namer suggestion messages (0x3000 - 0x37ff)
+
+message NameRequest {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+	optional string identity_uuid = 0x04;
+}
+
+message NameResponse {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+	optional string identity_uuid = 0x04;
+}
+
+// Device identification messages (0x3800 - 0x3fff)
+
+message IdentifyRequest {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+	optional string identity_uuid = 0x04;
+}
+
+message IdentifyResponse {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+	optional string identity_uuid = 0x04;
+
+	optional float certainty = 0x3100;
+}

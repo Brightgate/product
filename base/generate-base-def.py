@@ -189,6 +189,11 @@ assignments = [
     [Statement.COMMENT, None],
     [Statement.COMMENT, "Cloud definitions"],
     [Statement.SIMPLE_PORT, "CLRPCD_LISTEND_PROMETHEUS_PORT", 3300],
+    [Statement.SIMPLE_STR, "CL_SVC_URL", "https://svc0.b10e.net:443"],
+    [Statement.SIMPLE_STR, "CL_SVC_RPC", "svc0.b10e.net:4430"],
+    [Statement.SIMPLE_PORT, "CLRPCD_PROMETHEUS_PORT", 3600],
+    [Statement.SIMPLE_PORT, "CLRPCD_HTTP_PORT", 4000],
+    [Statement.LIST, "CLRPCD_URL", "CL_SVC_URL", "+", "/rpc"],
     [Statement.SECTION, ")"],
     [Statement.FOOTER, None],
 ]
