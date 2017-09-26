@@ -490,6 +490,18 @@ $(PROTOC_PLUGINS):
 LOCAL_COMMANDS=$(COMMANDS:$(APPBIN)/%=$(GOPATH)/bin/%)
 LOCAL_DAEMONS=$(DAEMONS:$(APPBIN)/%=$(GOPATH)/bin/%)
 
+NPM = npm
+client-web/.npm-installed: client-web/package.json
+	(cd client-web && $(NPM) install)
+	touch $@
+
+client-web: client-web/.npm-installed FRC | $(HTTPD_CLIENTWEB_DIR)
+	$(RM) -fr $(HTTPD_CLIENTWEB_DIR)/*
+	(cd client-web && $(NPM) run build)
+	tar -C client-web/dist -c -f - . | tar -C $(HTTPD_CLIENTWEB_DIR) -xvf -
+
+FRC:
+
 clobber: clean clobber-packages
 	$(RM) -fr $(ROOT)
 

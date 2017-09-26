@@ -58,6 +58,21 @@ Because each platform generates local tools, you will want to use "make
 plat-clobber" to switch a repository from one platform to another, such
 as from Linux to macOS, or from x86 to ARM.
 
+# node.js
+
+On our x86 cloud dev systems, node.js 6.x should be installed; if not, use
+ansible to do so.  For Raspberry Pi systems, you need to install node.js 6.x.
+Here is a reasonable way to do so:
+
+pi$ curl -sL https://deb.nodesource.com/setup_6.x | sudo -E bash -
+
+(should connect you to nodesource's pkg repo)
+
+pi$ sudo apt-get install -y nodejs
+
+pi$ nodejs --version
+v6.11.3  (may be higher than this)
+
 # Build
 
 Source the env.sh file via
