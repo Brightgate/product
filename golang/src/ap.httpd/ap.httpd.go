@@ -39,6 +39,8 @@ import (
 	"data/phishtank"
 
 	"github.com/gorilla/mux"
+	"github.com/lestrrat/go-apache-logformat"
+	"github.com/urfave/negroni"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -490,7 +492,8 @@ func main() {
 		}).Subrouter()
 	phishRouter.HandleFunc("/", phishHandler)
 
-	http.Handle("/", mainRouter)
+	nMain := negroni.New(negroni.NewRecovery())
+	nMain.UseHandler(apachelog.CombinedLog.Wrap(mainRouter, os.Stderr))
 
 	err = refreshCertificate()
 	if err != nil {
@@ -500,10 +503,10 @@ func main() {
 	for iface, subnet := range subnetMap {
 		router := network.SubnetRouter(subnet)
 		if iface == "setup" {
-			listen(router, ":80", iface, captiveRouter)
+			listen(router, ":80", iface, nMain)
 		} else {
 			for _, port := range ports {
-				listen(router, port, iface, mainRouter)
+				listen(router, port, iface, nMain)
 			}
 		}
 	}
