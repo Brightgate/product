@@ -142,7 +142,6 @@ APPDAEMONS = \
 	ap.configd \
 	ap.dhcp4d \
 	ap.dns4d \
-	ap.filterd \
 	ap.httpd \
 	ap.identifierd \
 	ap.logd \
@@ -336,7 +335,7 @@ $(NETWORK_TEMPLATE_DIR)/%: $(GOSRC)/ap.networkd/% | $(APPETC)
 $(HTTPD_TEMPLATE_DIR)/%: $(GOSRC)/ap.httpd/% | $(APPETC)
 	$(INSTALL) -m 0644 $< $(HTTPD_TEMPLATE_DIR)
 
-$(APPRULES)/%: golang/src/ap.filterd/% | $(APPRULES)
+$(APPRULES)/%: golang/src/ap.networkd/% | $(APPRULES)
 	$(INSTALL) -m 0644 $< $(APPRULES)
 
 $(APPMODEL): golang/src/ap.identifierd/linear_model_deviceID/* | $(DIRS)
@@ -368,7 +367,7 @@ $(APPBINARIES): $(APP_COMMON_SRCS) .app.gotten | $(APPBIN)
 	touch $@
 
 $(APPBIN)/%:
-	cd $(APPBIN) && $(GO) build $(VERFLAGS) $*
+	cd $(APPBIN) && $(GO) build -i $(VERFLAGS) $*
 
 $(APPBIN)/ap.brokerd: $(GOSRC)/ap.brokerd/brokerd.go
 $(APPBIN)/ap.configd: \
@@ -380,16 +379,16 @@ $(APPBIN)/ap.dhcp4d: $(GOSRC)/ap.dhcp4d/dhcp4d.go
 $(APPBIN)/ap.dns4d: \
 	$(GOSRC)/ap.dns4d/dns4d.go \
 	$(PHISH_SRCS)
-$(APPBIN)/ap.filterd: \
-	$(GOSRC)/ap.filterd/filterd.go \
-	$(GOSRC)/ap.filterd/parse.go
 $(APPBIN)/ap.httpd: \
 	$(GOSRC)/ap.httpd/ap.httpd.go \
 	$(PHISH_SRCS)
 $(APPBIN)/ap.identifierd: $(GOSRC)/ap.identifierd/identifierd.go
 $(APPBIN)/ap.logd: $(GOSRC)/ap.logd/logd.go
 $(APPBIN)/ap.mcp: $(GOSRC)/ap.mcp/mcp.go
-$(APPBIN)/ap.networkd: $(GOSRC)/ap.networkd/networkd.go
+$(APPBIN)/ap.networkd: \
+	$(GOSRC)/ap.networkd/filterd.go \
+	$(GOSRC)/ap.networkd/networkd.go \
+	$(GOSRC)/ap.networkd/parse.go
 $(APPBIN)/ap.relayd: $(GOSRC)/ap.relayd/relayd.go
 $(APPBIN)/ap.sampled: $(GOSRC)/ap.sampled/sampled.go
 $(APPBIN)/ap.scand: $(GOSRC)/ap.scand/scand.go

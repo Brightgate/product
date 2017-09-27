@@ -762,14 +762,13 @@ func (s *MultiConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 
 	n, s.cm, addr, err = s.conn.ReadFrom(b)
 	if err == nil && s.cm != nil {
-		iface, err = net.InterfaceByIndex(s.cm.IfIndex)
-		if err == nil {
+		if iface, err = net.InterfaceByIndex(s.cm.IfIndex); err == nil {
 			requestMac = iface.HardwareAddr.String()
-			if requestMac == "" {
-				n = 0
-				return
-			}
 		}
+	}
+	if requestMac == "" {
+		n = 0
+		return
 	}
 
 	lastRequestOn = apcfg.N_WIRED

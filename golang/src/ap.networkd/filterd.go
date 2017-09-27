@@ -52,45 +52,24 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
-	"net/http"
 	"os"
 	"os/exec"
-	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
-	"syscall"
 
 	"ap_common/apcfg"
-	"ap_common/broker"
-	"ap_common/mcp"
 	"ap_common/network"
 
 	"base_def"
-	"base_msg"
-
-	"github.com/golang/protobuf/proto"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
-	addr = flag.String("listen-address", base_def.HOSTAPDM_PROMETHEUS_PORT,
-		"The address to listen on for HTTP requests.")
-	rulesDir = flag.String("rdir", "./", "Location of the filter rules")
-
-	config *apcfg.APConfig
-
-	interfaces map[string]*iface
-	nics       []string
-
-	rules     ruleList
-	applied   map[string]map[string][]string
-	rulesLock sync.Mutex
+	rules   ruleList
+	applied map[string]map[string][]string
 )
 
 //
@@ -108,34 +87,7 @@ var (
 const (
 	iptablesRulesFile = "/tmp/iptables.rules"
 	iptablesCmd       = "/sbin/iptables-restore"
-	pname             = "ap.filterd"
 )
-
-type iface struct {
-	name   string
-	subnet string
-	ring   string
-}
-
-func refilter() {
-	rulesLock.Lock()
-	iptablesRebuild()
-	iptablesReset()
-	rulesLock.Unlock()
-}
-
-func configChanged(event []byte) {
-	config := &base_msg.EventConfig{}
-	proto.Unmarshal(event, config)
-	property := *config.Property
-	path := strings.Split(property[2:], "/")
-
-	// Watch for changes to the network conf
-	if len(path) == 2 && path[0] == "network" {
-		initNetwork()
-		refilter()
-	}
-}
 
 // Implement the Sort interface for the list of rules
 func (list ruleList) Len() int {
@@ -299,7 +251,7 @@ func genEndpointType(e *endpoint, src bool) (string, error) {
 	return "", nil
 }
 
-func genEndpointRing(e *endpoint, src bool) (string, error) {
+func genEndpointRing(ifaces ifaceMap, e *endpoint, src bool) (string, error) {
 	var d string
 
 	if src {
@@ -308,7 +260,7 @@ func genEndpointRing(e *endpoint, src bool) (string, error) {
 		d = "-d"
 	}
 
-	for _, i := range interfaces {
+	for _, i := range ifaces {
 		if i.ring == e.detail {
 			r := fmt.Sprintf(" %s %s ", d, i.subnet)
 			return r, nil
@@ -318,7 +270,7 @@ func genEndpointRing(e *endpoint, src bool) (string, error) {
 	return "", fmt.Errorf("no such ring: %s", e.detail)
 }
 
-func genEndpointIface(e *endpoint, src bool) (string, error) {
+func genEndpointIface(ifaces ifaceMap, e *endpoint, src bool) (string, error) {
 	var d, name string
 
 	if src {
@@ -339,7 +291,7 @@ func genEndpointIface(e *endpoint, src bool) (string, error) {
 	}
 
 	if name == "" {
-		if i, ok := interfaces[e.detail]; ok {
+		if i, ok := ifaces[e.detail]; ok {
 			name = i.name
 		}
 	}
@@ -350,7 +302,7 @@ func genEndpointIface(e *endpoint, src bool) (string, error) {
 	return fmt.Sprintf(" %s %s ", d, name), nil
 }
 
-func genEndpoint(r *rule, from bool) (ep string, err error) {
+func genEndpoint(ifaces ifaceMap, r *rule, from bool) (ep string, err error) {
 	var e *endpoint
 
 	ep = ""
@@ -368,9 +320,9 @@ func genEndpoint(r *rule, from bool) (ep string, err error) {
 	case E_TYPE:
 		ep, err = genEndpointType(e, from)
 	case E_RING:
-		ep, err = genEndpointRing(e, from)
+		ep, err = genEndpointRing(ifaces, e, from)
 	case E_IFACE:
-		ep, err = genEndpointIface(e, from)
+		ep, err = genEndpointIface(ifaces, e, from)
 	}
 	if err == nil && e.not {
 		ep = " !" + ep
@@ -423,7 +375,7 @@ func genPorts(r *rule) (portList string, err error) {
 // it couldn't be extended to support rings or individual clients in the
 // future.
 //
-func addCaptureRules(r *rule) error {
+func addCaptureRules(ifaces ifaceMap, r *rule) error {
 	if r.to != nil {
 		return fmt.Errorf("CAPTURE rules only support source endpoints")
 	}
@@ -431,7 +383,7 @@ func addCaptureRules(r *rule) error {
 		return fmt.Errorf("CAPTURE rules must provide source endpoint")
 	}
 
-	i, ok := interfaces[r.from.detail]
+	i, ok := ifaces[r.from.detail]
 	if !ok {
 		return fmt.Errorf("no such interface: %s", r.from.detail)
 	}
@@ -468,13 +420,13 @@ func addCaptureRules(r *rule) error {
 	return nil
 }
 
-func addRule(r *rule) error {
+func addRule(ifaces ifaceMap, r *rule) error {
 	var iptablesRule string
 
 	if r.action == A_CAPTURE {
 		// 'capture' isn't a single rule - it's a coordinated collection
 		// of rules.
-		return addCaptureRules(r)
+		return addCaptureRules(ifaces, r)
 	}
 
 	from := r.from
@@ -493,7 +445,7 @@ func addRule(r *rule) error {
 	}
 
 	if from != nil {
-		e, err := genEndpoint(r, true)
+		e, err := genEndpoint(ifaces, r, true)
 		if err != nil {
 			fmt.Printf("Bad 'from' endpoint: %v\n", err)
 			return err
@@ -506,7 +458,7 @@ func addRule(r *rule) error {
 	}
 
 	if to != nil {
-		e, err := genEndpoint(r, false)
+		e, err := genEndpoint(ifaces, r, false)
 		if err != nil {
 			fmt.Printf("Bad 'to' endpoint: %v\n", err)
 			return err
@@ -535,7 +487,7 @@ func addRule(r *rule) error {
 	// XXX - handle start/end times
 }
 
-func iptablesRebuild() {
+func iptablesRebuild(ifaces ifaceMap) {
 	log.Printf("Rebuilding iptables rules\n")
 
 	applied = make(map[string]map[string][]string)
@@ -552,7 +504,7 @@ func iptablesRebuild() {
 		" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT")
 
 	// Add the basic routing rules for each interface
-	for _, i := range interfaces {
+	for _, i := range ifaces {
 		if i.ring != base_def.RING_SETUP &&
 			i.ring != base_def.RING_QUARANTINE {
 			ifaceForwardRules(i)
@@ -573,75 +525,16 @@ func iptablesRebuild() {
 	// Now add filter rules, from the most specific to the most general
 	sort.Sort(rules)
 	for _, r := range rules {
-		addRule(r)
+		addRule(ifaces, r)
 	}
 }
 
-func initNetwork() {
-	interfaces = make(map[string]*iface)
-
-	n, _ := config.GetLogicalNics()
-	nics = make([]string, apcfg.N_MAX)
-	for i := 0; i < apcfg.N_MAX; i++ {
-		if n[i] != nil {
-			nics[i] = n[i].Iface
-		}
-	}
-
-	subnets := config.GetSubnets()
-	rings := config.GetRings()
-
-	//
-	// Build the list of network interfaces we need to protect.  This
-	// involves translating logical names (e.g., 'wifi' or 'setup') into
-	// their physical instance names, and dropping interfaces not supported
-	// by this hardware
-	//
-	for logical, subnet := range subnets {
-		var name, ring string
-
-		// See if the interface belongs to a specific ring
-		for r, conf := range rings {
-			if logical == conf.Interface {
-				ring = r
-				break
-			}
-		}
-
-		if logical == "wifi" {
-			if name = nics[apcfg.N_WIFI]; name == "" {
-				log.Printf("No wifi network available\n")
-				continue
-			}
-		} else if logical == "setup" {
-			if name = nics[apcfg.N_SETUP]; name == "" {
-				log.Printf("No setup network available\n")
-				continue
-			}
-		} else {
-			name = logical
-		}
-
-		if len(name) == 0 || len(subnet) == 0 {
-			continue
-		}
-
-		i := iface{
-			name:   name,
-			subnet: subnet,
-			ring:   ring,
-		}
-		interfaces[logical] = &i
-		fmt.Printf("iface %s -> %v\n", logical, i)
-	}
-}
-
-func loadRules() error {
+func loadFilterRules() error {
 	var list ruleList
 
 	dents, err := ioutil.ReadDir(*rulesDir)
 	if err != nil {
-		return fmt.Errorf("Unable to process rules directory: %v", err)
+		return fmt.Errorf("unable to process rules directory: %v", err)
 	}
 
 	for _, dent := range dents {
@@ -659,57 +552,11 @@ func loadRules() error {
 		list = append(list, ruleSet...)
 	}
 
-	rulesLock.Lock()
 	rules = list
-	rulesLock.Unlock()
 	return nil
 }
 
-func main() {
-	var b broker.Broker
-
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-
-	flag.Parse()
-
-	mcpd, err := mcp.New(pname)
-	if err != nil {
-		log.Printf("Failed to connect to mcp\n")
-	}
-
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(*addr, nil)
-
-	b.Init(pname)
-	b.Handle(base_def.TOPIC_CONFIG, configChanged)
-	b.Connect()
-	defer b.Disconnect()
-
-	config = apcfg.NewConfig(pname)
-
-	if mcpd != nil {
-		mcpd.SetState(mcp.ONLINE)
-	}
-
-	initNetwork()
-
-	sig := make(chan os.Signal)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-	for {
-		if err = loadRules(); err != nil {
-			if mcpd != nil {
-				mcpd.SetState(mcp.BROKEN)
-			}
-			log.Fatalf("Unable to load the rules files\n")
-		}
-		refilter()
-
-		s := <-sig
-		if s == syscall.SIGHUP {
-			log.Printf("Reloading the rules files\n")
-		} else {
-			log.Printf("Signal (%v) received, stopping\n", s)
-			os.Exit(0)
-		}
-	}
+func applyFilters(ifaces ifaceMap) {
+	iptablesRebuild(ifaces)
+	iptablesReset()
 }

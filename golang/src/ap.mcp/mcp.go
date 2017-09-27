@@ -72,7 +72,7 @@ const (
 )
 
 var (
-	aproot = flag.String("root", "proto.armv7l/opt/com.brightgate",
+	aproot = flag.String("root", "proto.armv7l/appliance/opt/com.brightgate",
 		"Root of AP installation")
 	cfgfile = flag.String("c", "", "Alternate daemon config file")
 	debug   = flag.Bool("d", false, "Extra debug logging")

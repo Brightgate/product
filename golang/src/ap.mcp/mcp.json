@@ -32,13 +32,6 @@
         "ThirdParty": true,
         "Options": "-k -h -p 5300 -i lo"
     },
-    "filterd": {
-        "Name": "filterd",
-        "Binary": "ap.filterd",
-        "DependsOn": "networkd",
-        "Privileged": true,
-        "Options": "-rdir=$APROOT/etc/filter.rules.d"
-    },
     "httpd": {
         "Name": "httpd",
         "Binary": "ap.httpd",
@@ -65,7 +58,7 @@
         "Binary": "ap.networkd",
         "DependsOn": "configd",
         "Privileged": true,
-        "Options": "-template_dir=$APROOT/etc/templates/ap.networkd"
+        "Options": "-template_dir=$APROOT/etc/templates/ap.networkd -rdir=$APROOT/etc/filter.rules.d"
     },
     "prometheus": {
         "Name": "prometheus",
