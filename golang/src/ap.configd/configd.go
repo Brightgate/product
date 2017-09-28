@@ -72,7 +72,7 @@ const (
 	pname             = "ap.configd"
 
 	minConfigVersion = 3
-	curConfigVersion = 4
+	curConfigVersion = 5
 )
 
 // Allow for significant variation in the processing of subtrees
@@ -844,6 +844,10 @@ func prop_tree_init() {
 		patchTree(&property_root, "@")
 		appliance_uuid := uuid.NewV4().String()
 		propertyUpdate("@/uuid", appliance_uuid, nil, true)
+
+		// XXX: this needs to come from the cloud - not hardcoded
+		appliance_siteid := "7410"
+		propertyUpdate("@/siteid", appliance_siteid, nil, true)
 	}
 
 	if err == nil {

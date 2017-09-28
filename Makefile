@@ -374,7 +374,9 @@ $(APPBIN)/ap.configd: \
 	$(GOSRC)/ap.configd/configd.go \
 	$(GOSRC)/ap.configd/devices.go \
 	$(GOSRC)/ap.configd/upgrade_v1.go \
-	$(GOSRC)/ap.configd/upgrade_v2.go
+	$(GOSRC)/ap.configd/upgrade_v2.go \
+	$(GOSRC)/ap.configd/upgrade_v4.go \
+	$(GOSRC)/ap.configd/upgrade_v5.go
 $(APPBIN)/ap.dhcp4d: $(GOSRC)/ap.dhcp4d/dhcp4d.go
 $(APPBIN)/ap.dns4d: \
 	$(GOSRC)/ap.dns4d/dns4d.go \

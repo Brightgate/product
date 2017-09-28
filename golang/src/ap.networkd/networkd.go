@@ -30,6 +30,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"io"
@@ -79,6 +80,7 @@ var (
 
 	nics = make([]string, apcfg.N_MAX)
 
+	hostapdLog   *log.Logger
 	childProcess *os.Process // track the hostapd proc
 	mcpd         *mcp.MCP
 	running      bool
@@ -397,18 +399,13 @@ func signalHandler() {
 // Wait for stdout/stderr from a process, and print whatever it sends.  When the
 // pipe is closed, notify our caller.
 //
-func handlePipe(name string, r io.ReadCloser, done chan string) {
-	var err error
-
-	buf := make([]byte, 1024)
-
-	for err == nil {
-		if _, err = r.Read(buf); err == nil {
-			log.Printf("%s", buf)
-		}
+func handlePipe(r io.ReadCloser, done chan bool) {
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		hostapdLog.Printf("hostapd: %s\n", scanner.Text())
 	}
 
-	done <- name
+	done <- true
 }
 
 func resetWifiInterfaces() {
@@ -434,7 +431,7 @@ func runOne(conf *APConfig, done chan *APConfig) {
 	fn := generateHostAPDConf(conf)
 
 	start_times := make([]time.Time, failures_allowed)
-	pipe_closed := make(chan string)
+	pipe_closed := make(chan bool)
 	for running {
 		cmd := exec.Command(hostapdPath, fn)
 
@@ -445,11 +442,11 @@ func runOne(conf *APConfig, done chan *APConfig) {
 		pipes := 0
 		if stdout, err := cmd.StdoutPipe(); err == nil {
 			pipes++
-			go handlePipe("stdout", stdout, pipe_closed)
+			go handlePipe(stdout, pipe_closed)
 		}
 		if stderr, err := cmd.StderrPipe(); err == nil {
 			pipes++
-			go handlePipe("stderr", stderr, pipe_closed)
+			go handlePipe(stderr, pipe_closed)
 		}
 
 		start_time := time.Now()
@@ -861,6 +858,7 @@ func main() {
 	var err error
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+	hostapdLog = log.New(os.Stderr, "", log.Ldate|log.Ltime)
 
 	flag.Parse()
 

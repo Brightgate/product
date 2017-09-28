@@ -67,14 +67,16 @@ var (
 
 	captiveSubnet *net.IPNet
 
-	phishScorer phishtank.Scorer
-
-	ringRecords map[string]*dnsRecord
-
-	domainname   string
-	upstream_dns = "8.8.8.8:53"
 	// If site's phishing score is below this, send to our IP
 	phishThreshold = 0
+	phishScorer    phishtank.Scorer
+
+	ringRecords  map[string]dnsRecord // per-ring records for the router
+	perRingHosts map[string]bool      // hosts with per-ring results
+
+	domainname     string
+	brightgate_dns string
+	upstream_dns   = "8.8.8.8:53"
 )
 
 /*
@@ -332,12 +334,26 @@ func captiveHandler(client *apcfg.ClientInfo, w dns.ResponseWriter, r *dns.Msg) 
 	start := time.Now()
 	for _, q := range r.Question {
 		if q.Qtype == dns.TypeA {
-			m.Answer = append(m.Answer, answerA(q, *record))
+			m.Answer = append(m.Answer, answerA(q, record))
 		}
 	}
 	w.WriteMsg(m)
 
 	logRequest("captiveHandler", start, client.IPv4, r, m)
+}
+
+func upstreamRequest(server string, r, m *dns.Msg) error {
+	c := new(dns.Client)
+
+	r2, _, err := c.Exchange(r, server)
+	if err != nil {
+		log.Printf("failed to exchange: %v", err)
+	} else if r2 != nil && r2.Rcode != dns.RcodeSuccess {
+		log.Printf("failed to get a valid answer\n%v", r)
+	} else {
+		m.Answer = append(m.Answer, r2.Answer...)
+	}
+	return err
 }
 
 func localHandler(w dns.ResponseWriter, r *dns.Msg) {
@@ -355,10 +371,16 @@ func localHandler(w dns.ResponseWriter, r *dns.Msg) {
 
 	start := time.Now()
 	for _, q := range r.Question {
+		var rec dnsRecord
+		var rec_ok bool
 
-		hostsMtx.Lock()
-		rec, rec_ok := hosts[q.Name]
-		hostsMtx.Unlock()
+		if perRingHosts[q.Name] {
+			rec, rec_ok = ringRecords[c.Ring]
+		} else {
+			hostsMtx.Lock()
+			rec, rec_ok = hosts[q.Name]
+			hostsMtx.Unlock()
+		}
 
 		if rec_ok {
 			if rec.rectype == dns.TypeA {
@@ -366,27 +388,16 @@ func localHandler(w dns.ResponseWriter, r *dns.Msg) {
 			} else if rec.rectype == dns.TypeCNAME {
 				m.Answer = append(m.Answer, answerCNAME(q, rec))
 			}
-			continue
-		}
-
-		// Proxy needed if we have decided that we are allowing
-		// our domain to be handled upstream as well.
-		pq := new(dns.Msg)
-		pq.MsgHdr = r.MsgHdr
-		pq.Question = append(pq.Question, q)
-
-		c := new(dns.Client)
-		r2, _, err := c.Exchange(pq, upstream_dns)
-		if err != nil {
-			log.Printf("failed to exchange: %v", err)
-		} else if r2 != nil && r2.Rcode != dns.RcodeSuccess {
-			log.Printf("failed to get an valid answer\n%v", r)
-		} else {
-			log.Printf("%s proxy response %s\n",
-				domainname, r2)
-
-			m.Authoritative = false
-			m.Answer = append(m.Answer, r2.Answer...)
+		} else if brightgate_dns != "" {
+			// Proxy needed if we have decided that we are allowing
+			// our brightgate domain to be handled upstream as well.
+			pq := new(dns.Msg)
+			pq.MsgHdr = r.MsgHdr
+			pq.Question = append(pq.Question, q)
+			err := upstreamRequest(brightgate_dns, pq, m)
+			if err == nil {
+				m.Authoritative = false
+			}
 		}
 	}
 	w.WriteMsg(m)
@@ -415,9 +426,12 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 			// Are any of the questions in our phishing database?
 			// If so, return our IP address; for the HTTP and HTTPS
 			// cases, we can display a "no phishing" page.
+			//
+			// XXX: maybe we should return a CNAME record for our
+			// local 'phishing.<siteid>.brightgate.net'?
 			log.Printf("phish threshold crossed, ring %s, returning %v\n",
-				c.Ring, *record)
-			m.Answer = append(m.Answer, answerA(q, *record))
+				c.Ring, record)
+			m.Answer = append(m.Answer, answerA(q, record))
 		} else if strings.Contains(q.Name, ".in-addr.arpa.") {
 			hostsMtx.Lock()
 			rec, rec_ok := hosts[q.Name]
@@ -427,16 +441,7 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 			}
 
 		} else {
-			c := new(dns.Client)
-
-			r2, _, err := c.Exchange(r, upstream_dns)
-			if err != nil {
-				log.Printf("failed to exchange: %v", err)
-			} else if r2 != nil && r2.Rcode != dns.RcodeSuccess {
-				log.Printf("failed to get an valid answer\n%v", r)
-			} else {
-				m.Answer = append(m.Answer, r2.Answer...)
-			}
+			upstreamRequest(upstream_dns, r, m)
 		}
 	}
 	w.WriteMsg(m)
@@ -476,10 +481,8 @@ func updateOneClient(c *apcfg.ClientInfo) {
 	delete(warned, ipv4)
 	hostsMtx.Lock()
 	if c.DNSName != "" {
-		hostname := c.DNSName + "."
-		if domainname != "" {
-			hostname += domainname + "."
-		}
+		hostname := c.DNSName + "." + domainname + "."
+
 		log.Printf("Adding A record %s->%s\n", hostname, ipv4)
 		hosts[hostname] = dnsRecord{
 			rectype: dns.TypeA,
@@ -512,6 +515,12 @@ func initHostMap() {
 		if c.Expires == nil || c.Expires.After(time.Now()) {
 			updateOneClient(c)
 		}
+	}
+
+	perRingHosts = make(map[string]bool)
+	hostnames := [...]string{"gateway", "phishing", "malware", "captive"}
+	for _, name := range hostnames {
+		perRingHosts[name+"."+domainname+"."] = true
 	}
 }
 
@@ -552,7 +561,13 @@ func initNetwork() {
 		log.Fatalf("Can't connect to the config daemon\n")
 	}
 
-	domainname, _ = config.GetProp("@/network/domainname")
+	siteid, err := config.GetProp("@/siteid")
+	if err != nil {
+		log.Printf("Failed to fetch siteid: %v\n", err)
+		siteid = "0000"
+	}
+	domainname = siteid + ".brightgate.net"
+
 	if tmp := getNameserver(); tmp != "" {
 		upstream_dns = tmp
 	}
@@ -575,7 +590,7 @@ func initNetwork() {
 	// Each ring will have an A record for that ring's router.  That
 	// record will double as a result for phishing URLs and all captive
 	// portal requests.
-	ringRecords = make(map[string]*dnsRecord)
+	ringRecords = make(map[string]dnsRecord)
 	for name, ring := range rings {
 		subnet, ok := subnets[ring.Interface]
 		if !ok {
@@ -585,9 +600,7 @@ func initNetwork() {
 		}
 
 		srouter := network.SubnetRouter(subnet)
-		log.Printf("add DNS A pointer to %s for %s/%s\n", srouter,
-			name, ring.Interface)
-		ringRecords[name] = &dnsRecord{
+		ringRecords[name] = dnsRecord{
 			rectype: dns.TypeA,
 			recval:  srouter,
 		}
@@ -634,8 +647,6 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
-	log.Println("prometheus client launched")
-
 	brokerd.Init(pname)
 	brokerd.Handle(base_def.TOPIC_CONFIG, configEvent)
 	brokerd.Handle(base_def.TOPIC_RESOURCE, resourceEvent)
@@ -649,9 +660,7 @@ func main() {
 	initHostMap()
 	loadPhishtank()
 
-	if domainname != "" {
-		dns.HandleFunc(domainname+".", localHandler)
-	}
+	dns.HandleFunc(domainname+".", localHandler)
 	dns.HandleFunc(".", proxyHandler)
 
 	if mcpd != nil {

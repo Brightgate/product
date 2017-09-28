@@ -17,6 +17,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -118,18 +119,13 @@ func selectTargets(name *string) daemonSet {
 // Wait for stdout/stderr from a process, and print whatever it sends.  When the
 // pipe is closed, notify our caller.
 //
-func handlePipe(name string, r io.ReadCloser, done chan string) {
-	var err error
-	var n int
-
-	buf := make([]byte, 1024)
-	for err == nil {
-		if n, err = r.Read(buf); err == nil {
-			fmt.Printf("%s", string(buf[:n]))
-		}
+func handlePipe(r io.ReadCloser, done chan bool) {
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		fmt.Printf("%s\n", scanner.Text())
 	}
 
-	done <- name
+	done <- true
 }
 
 //
@@ -159,14 +155,14 @@ func singleInstance(d *daemon) error {
 	// Set up pipes for the child's stderr and stdout, so we can get
 	// the output while the child is still running
 	pipes := 0
-	pipe_closed := make(chan string)
+	pipe_closed := make(chan bool)
 	if stdout, err := cmd.StdoutPipe(); err == nil {
 		pipes++
-		go handlePipe("stdout", stdout, pipe_closed)
+		go handlePipe(stdout, pipe_closed)
 	}
 	if stderr, err := cmd.StderrPipe(); err == nil {
 		pipes++
-		go handlePipe("stderr", stderr, pipe_closed)
+		go handlePipe(stderr, pipe_closed)
 	}
 
 	if *debug {
@@ -325,7 +321,6 @@ func readySet(candidates daemonSet) daemonSet {
 //
 func handleStart(set daemonSet) {
 	launching := make(daemonSet)
-	log.Printf("Starting %v\n", set)
 	for {
 		next := readySet(set)
 		if len(next) == 0 && len(launching) == 0 {

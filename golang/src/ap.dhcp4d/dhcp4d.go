@@ -55,6 +55,8 @@ var (
 	clients   apcfg.ClientMap
 	clientMtx sync.Mutex
 
+	siteid string
+
 	sharedRouter net.IP     // without vlans, all rings share a
 	sharedSubnet *net.IPNet // subnet and a router node
 
@@ -687,6 +689,7 @@ func newHandler(ring, network string, duration int) *DHCPHandler {
 		},
 		leases: make([]lease, range_size, range_size),
 	}
+	h.options[dhcp.OptionDomainName] = []byte(siteid + ".brightgate.net")
 
 	return &h
 }
@@ -854,6 +857,12 @@ func main() {
 	// Interface to config
 	config = apcfg.NewConfig(pname)
 	clients = config.GetClients()
+
+	siteid, err = config.GetProp("@/siteid")
+	if err != nil {
+		log.Printf("Failed to get siteid: %v\n", err)
+		siteid = "0000"
+	}
 
 	err = initHandlers()
 

@@ -6,8 +6,12 @@
             "Value": "00000000-0000-0000-0000-000000000000"
         },
         {
+            "Name": "siteid",
+            "Value": "0"
+        },
+        {
             "Name": "cfgversion",
-            "Value": "4"
+            "Value": "5"
         },
         {
             "Name": "apversion",
@@ -139,10 +143,6 @@
 		{
 		    "Name": "passphrase",
 		    "Value": "sosecretive"
-		},
-		{
-		    "Name": "domainname",
-		    "Value": ""
 		},
 		{
 		    "Name": "dnsserver",
