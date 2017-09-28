@@ -8,11 +8,11 @@
     "watchify": "watchify -vd -p browserify-hmr -e src/main.js -o dist/js/build.js",
     "serve": "http-server -o -c 1 dist/",
     "dev": "npm-run-all --parallel watchify serve",
-    "build:dir": "rm -fr dist && mkdir -p dist/js dist/css dist/fonts",
-    "build:f7-assets": "cp node_modules/framework7/dist/css/framework7* dist/css",
-    "build:f7-font-assets": "cp node_modules/framework7-icons/css/* dist/css && cp node_modules/framework7-icons/fonts/* dist/fonts",
-    "build:www-assets": "cp src/html/* dist/ && cp src/css/* dist/css",
-    "build:browserify": "cross-env NODE_ENV=production browserify -g envify -p [ vueify/plugins/extract-css -o dist/css/build.css ] -e src/main.js | uglifyjs -c warnings=false -m > dist/js/build.js",
+    "build:dir": "rm -fr dist && mkdir -p dist/js dist/css dist/fonts dist/img",
+    "build:f7-assets": "rsync -a node_modules/framework7/dist/css/framework7* dist/css/",
+    "build:f7-font-assets": "rsync -a node_modules/framework7-icons/css/ dist/css/ && rsync -a node_modules/framework7-icons/fonts/ dist/fonts/",
+    "build:www-assets": "rsync -a src/html/* dist/ && rsync -a src/css/ dist/css/ && rsync -a src/img/ dist/img/",
+    "build:browserify": "cross-env NODE_ENV=production browserify -g envify -p [ vueify/plugins/extract-css -o dist/css/build.css ] -e src/main.js > dist/js/build.js",
     "build": "npm run build:dir && npm run build:www-assets && npm run build:f7-assets && npm run build:f7-font-assets && npm run build:browserify"
   },
   "browser": {

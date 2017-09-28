@@ -4,8 +4,8 @@ export default [
       component: require('./pages/about.vue')
   },
   {
-      path: '/appleConfig/',
-      component: require('./pages/appleConfig.vue')
+      path: '/enroll/',
+      component: require('./pages/enroll.vue')
   },
   {
       path: '/form/',
