@@ -83,6 +83,7 @@
             </f7-navbar>
             <f7-block-title>Brightgate Administration</f7-block-title>
             <f7-block inner>
+              <i class="f7-icons">home</i>
               <p>Duis sed erat ac eros ultrices pharetra id ut tellus. Praesent rhoncus enim ornare ipsum aliquet ultricies. Pellentesque sodales erat quis elementum sagittis.</p>
             </f7-block>
             <f7-block-title>Navigation</f7-block-title>
