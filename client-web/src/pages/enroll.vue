@@ -3,6 +3,8 @@
     <center><h2>Getting Online with Brightgate</h2></center>
     <center><h4>Intro: Install Secure Network Profile</h4></center>
     <f7-grid >
+      <!-- NB using widths with %s here is non-standard and won't result
+           in using F7 f7-col-<NN> classes to layout. -->
       <f7-col width="30%"></f7-col>
       <f7-col width="10%">
         <f7-button round tab-link="#step1" active><b>1</b></f7-button>
@@ -33,6 +35,9 @@
             </div><!-- help -->
             <center><img src="img/step1.png" width=202 height=424></center>
           </f7-card-content>
+	  <!-- XXX This isn't working right-- card footers use flexbox for layout and
+               this seems to interfere with grid layout; may need to set flex
+               justification to fix? -->
           <f7-card-footer before>
             <f7-grid style="padding: 10px">
               <f7-col width="60" align=left>
@@ -104,41 +109,7 @@
           </f7-card-footer>
         </f7-card>
       </f7-tab>
-
     </f7-tabs>
-
-    </f7-block>
-
-    <f7-block inner>
-    </f7-block>
-    <f7-block-title>Navigation</f7-block-title>
-    <f7-list>
-      <f7-list-item link="/about/" title="About"></f7-list-item>
-      <f7-list-item link="/form/" title="Form"></f7-list-item>
-      <f7-list-item link="/dynamic-route/blog/45/post/125/?foo=bar#about" title="Dynamic Route"></f7-list-item>
-    </f7-list>
-    <f7-block-title>Side Panels</f7-block-title>
-    <f7-block>
-      <f7-grid>
-        <f7-col width="50">
-          <f7-button open-panel="left">Left Panel</f7-button>
-        </f7-col>
-        <f7-col width="50">
-          <f7-button open-panel="right">Right Panel</f7-button>
-        </f7-col>
-      </f7-grid>
-    </f7-block>
-    <f7-block-title>Modals</f7-block-title>
-    <f7-block>
-      <f7-grid>
-        <f7-col width="50">
-          <f7-button open-popup="#popup">Popup</f7-button>
-        </f7-col>
-        <f7-col width="50">
-          <f7-button open-login-screen="#login-screen">Login Screen</f7-button>
-        </f7-col>
-      </f7-grid>
-    </f7-block>
   </f7-page>
 
 </template>
