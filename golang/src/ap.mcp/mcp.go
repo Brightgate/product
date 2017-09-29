@@ -70,13 +70,15 @@ const (
 	online_timeout   = time.Duration(15 * time.Second)
 	NOBODY_UID       = 65534 // uid for 'nobody'
 	ROOT_UID         = 0     // uid for 'root'
+	pidfile          = "/var/tmp/ap.mcp.pid"
 )
 
 var (
 	aproot = flag.String("root", "proto.armv7l/appliance/opt/com.brightgate",
 		"Root of AP installation")
 	cfgfile = flag.String("c", "", "Alternate daemon config file")
-	debug   = flag.Bool("d", false, "Extra debug logging")
+	logfile = flag.String("l", "", "where to send log messages")
+	verbose = flag.Bool("v", false, "more verbose logging")
 
 	daemons = make(daemonSet)
 )
@@ -165,7 +167,7 @@ func singleInstance(d *daemon) error {
 		go handlePipe(stderr, pipe_closed)
 	}
 
-	if *debug {
+	if *verbose {
 		log.Printf("Starting %s\n", execpath)
 	}
 
@@ -419,7 +421,7 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 	base_msg.MCPResponse_OpResponse) {
 
 	if req.Daemon == nil {
-		if *debug {
+		if *verbose {
 			log.Printf("Bad req from %s: no daemon\n", *req.Sender)
 		}
 		return nil, mcp.INVALID
@@ -427,7 +429,7 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 
 	set := selectTargets(req.Daemon)
 	if len(set) == 0 {
-		if *debug {
+		if *verbose {
 			log.Printf("Bad req from %s: unknown daemon: %s\n",
 				*req.Sender, *req.Daemon)
 		}
@@ -436,7 +438,7 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 
 	switch *req.Operation {
 	case mcp.OP_GET:
-		if *debug {
+		if *verbose {
 			log.Printf("%s: Get(%s)\n", *req.Sender, *req.Daemon)
 		}
 		s := handleGetState(set)
@@ -447,7 +449,7 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 		}
 
 	case mcp.OP_SET:
-		if *debug {
+		if *verbose {
 			log.Printf("%s: Set(%s, %s)\n", *req.Sender,
 				*req.Daemon, *req.State)
 		}
@@ -459,7 +461,7 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 
 	case mcp.OP_DO:
 		if req.Command == nil {
-			if *debug {
+			if *verbose {
 				log.Printf("Bad DO from %s: no cmd for %s\n",
 					*req.Daemon, *req.Daemon)
 			}
@@ -473,7 +475,7 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 			// the launched daemons.  XXX: We immediately return OK
 			// to the caller, but that should really be done by the
 			// go routine when the daemons are all back online
-			if *debug {
+			if *verbose {
 				log.Printf("%s: START(%s)\n", *req.Daemon,
 					*req.Daemon)
 			}
@@ -481,7 +483,7 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 			return nil, mcp.OK
 
 		case "restart":
-			if *debug {
+			if *verbose {
 				log.Printf("%s: RESTART(%s)\n", *req.Daemon,
 					*req.Daemon)
 			}
@@ -497,7 +499,7 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 			return nil, mcp.OK
 
 		case "stop":
-			if *debug {
+			if *verbose {
 				log.Printf("%s: STOP(%s)\n", *req.Daemon,
 					*req.Daemon)
 			}
@@ -519,6 +521,7 @@ func signalHandler() {
 			loadDefinitions()
 		} else {
 			log.Printf("Signal (%v) received, stopping\n", s)
+			os.Remove(pidfile)
 			os.Exit(0)
 		}
 	}
@@ -623,6 +626,33 @@ func loadDefinitions() error {
 	return nil
 }
 
+// Check for the existence of /var/tmp/ap.mcp.pid.  If the file exists, check to
+// see whether the pid it contains is still running as ap.mcp.  If it is,
+// decline to start.  Otherwise, create the file with our PID.
+func pidLock() error {
+	var err error
+	var data []byte
+
+	if data, err = ioutil.ReadFile(pidfile); err == nil {
+		pid := string(data)
+		data, err = ioutil.ReadFile("/proc/" + pid + "/stat")
+		if err == nil {
+			fields := strings.Split(string(data), " ")
+			if len(fields) > 2 && fields[1] == "(ap.mcp)" {
+				return fmt.Errorf("another instance of mcp "+
+					"appears to be running as pid %s", pid)
+			}
+		}
+	}
+
+	pid := strconv.Itoa(os.Getpid())
+	err = ioutil.WriteFile(pidfile, []byte(pid), 0666)
+	if err != nil {
+		err = fmt.Errorf("unable to create %s: %v", pidfile, err)
+	}
+	return err
+}
+
 func main() {
 	flag.Parse()
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
@@ -630,6 +660,31 @@ func main() {
 	if os.Geteuid() != ROOT_UID {
 		log.Printf("mcp must be run as root\n")
 		os.Exit(1)
+	}
+
+	if err := pidLock(); err != nil {
+		log.Printf("%v\n", err)
+		os.Exit(1)
+	}
+
+	if *logfile != "" {
+		f, err := os.OpenFile(*logfile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			fmt.Printf("Unable to redirect logging to %s: %v",
+				*logfile, err)
+		} else {
+			defer f.Close()
+			os.Stdin, err = os.OpenFile("/dev/null", os.O_RDONLY, 0)
+			if err != nil {
+				log.Printf("Couldn't close stdin\n")
+			} else {
+				os.Stdout = f
+				os.Stderr = f
+				log.SetOutput(f)
+				log.Printf("\n\nap.mcp (%d) coming online...\n",
+					os.Getpid())
+			}
+		}
 	}
 
 	go signalHandler()
