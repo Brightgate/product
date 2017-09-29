@@ -5,8 +5,8 @@
   "author": "Brightgate, Inc.",
   "license": "UNLICENSED",
   "scripts": {
-    "watchify": "watchify -vd -p browserify-hmr -e src/main.js -o dist/js/build.js",
-    "serve": "http-server -o -c 1 dist/",
+    "watchify": "cross-env watchify -vd -p [ browserify-hmr -p ${WATCHIFY_PORT:-3123} -u http://localhost:${WATCHIFY_PORT:-3123} ] -e src/main.js -o dist/js/build.js",
+    "serve": "cross-env http-server -p ${DEV_HTTP_PORT:-8801} -o -c 1 dist/",
     "dev": "npm-run-all --parallel watchify serve",
     "build:dir": "rm -fr dist && mkdir -p dist/js dist/css dist/fonts dist/img",
     "build:f7-assets": "rsync -a node_modules/framework7/dist/css/framework7* dist/css/",

@@ -35,19 +35,12 @@
             </div><!-- help -->
             <center><img src="img/step1.png" width=202 height=424></center>
           </f7-card-content>
-	  <!-- XXX This isn't working right-- card footers use flexbox for layout and
-               this seems to interfere with grid layout; may need to set flex
-               justification to fix? -->
-          <f7-card-footer before>
-            <f7-grid style="padding: 10px">
-              <f7-col width="60" align=left>
-                <f7-link open-popup="#connect">Skip intro and connect</f7-link>
-              </f7-col>
-              <f7-col width="40" align=right>
-                <f7-link v-on:click="showHelp = false" v-if="showHelp">Hide Help</f7-link>
-                <f7-link v-on:click="showHelp = true" v-if="!showHelp">Show Help</f7-link>
-              </f7-col>
-            </f7-grid>
+          <f7-card-footer>
+            <!-- This aligns properly due to flexbox styling with default
+                 justify-content: space-between -->
+            <f7-link open-popup="#connect">Skip intro and connect</f7-link>
+            <f7-link v-on:click="showHelp = false" v-if="showHelp">Hide Help</f7-link>
+            <f7-link v-on:click="showHelp = true" v-if="!showHelp">Show Help</f7-link>
           </f7-card-footer>
         </f7-card>
       </f7-tab>
@@ -66,16 +59,9 @@
             <center><img src="img/step2.png" width=202 height=424></center>
           </f7-card-content>
           <f7-card-footer>
-            <f7-grid style="padding: 10px">
-              <f7-col width="60" align=left>
-                <f7-link open-connect>Skip intro and connect</f7-link>
-              </f7-col>
-              <f7-col width="40" align=right>
-                <f7-link v-on:click="showHelp = false" v-if="showHelp">Hide Help</f7-link>
-                <f7-link v-on:click="showHelp = true" v-if="!showHelp">Show Help</f7-link>
-              </f7-col>
-              </f7-col>
-            </f7-grid>
+            <f7-link open-popup="#connect">Skip intro and connect</f7-link>
+            <f7-link v-on:click="showHelp = false" v-if="showHelp">Hide Help</f7-link>
+            <f7-link v-on:click="showHelp = true" v-if="!showHelp">Show Help</f7-link>
           </f7-card-footer>
         </f7-card>
       </f7-tab>
@@ -97,14 +83,9 @@
             </f7-link>
           </f7-card-content>
           <f7-card-footer>
-            <f7-grid style="padding: 10px">
-              <f7-col width="60" align=left>
-                <f7-link open-connect>Connect</f7-link>
-              </f7-col>
-              <f7-col width="40" align=right>
-                <f7-link v-on:click="showHelp = false" v-if="showHelp">Hide Help</f7-link>
-                <f7-link v-on:click="showHelp = true" v-if="!showHelp">Show Help</f7-link>
-              </f7-col>
+            <f7-link open-popup="#connect">Connect</f7-link>
+            <f7-link v-on:click="showHelp = false" v-if="showHelp">Hide Help</f7-link>
+            <f7-link v-on:click="showHelp = true" v-if="!showHelp">Show Help</f7-link>
             </f7-grid>
           </f7-card-footer>
         </f7-card>
