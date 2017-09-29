@@ -78,12 +78,12 @@
             </div><!-- help -->
             <center><img src="img/step3.png" width=202 height=297></center>
 <span></span>
-            <f7-link open-connect>
+            <f7-link href="/appleConnect" external>
               <center><img src="img/connect-button.png" width=200></center>
             </f7-link>
           </f7-card-content>
           <f7-card-footer>
-            <f7-link open-popup="#connect">Connect</f7-link>
+            <f7-link href="/appleConnect" external>Connect</f7-link>
             <f7-link v-on:click="showHelp = false" v-if="showHelp">Hide Help</f7-link>
             <f7-link v-on:click="showHelp = true" v-if="!showHelp">Show Help</f7-link>
             </f7-grid>

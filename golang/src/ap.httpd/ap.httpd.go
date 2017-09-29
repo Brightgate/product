@@ -254,7 +254,7 @@ func listen(addr string, port string, iface string, cfg *tls.Config, certf strin
 	if port == ":443" {
 		go func() {
 			srv := &http.Server{
-				Addr:         ":443",
+				Addr:         addr + ":443",
 				Handler:      handler,
 				TLSConfig:    cfg,
 				TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
@@ -294,12 +294,6 @@ func main() {
 	flag.Var(ports, "http-ports", "The ports to listen on for HTTP requests.")
 	flag.Parse()
 
-	demoHostname := "gateway.7401.brightgate.net"
-	certf := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem",
-		demoHostname)
-	keyf := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem",
-		demoHostname)
-
 	mcpd, err = mcp.New(pname)
 	if err != nil {
 		log.Printf("Failed to connect to mcp\n")
@@ -327,6 +321,11 @@ func main() {
 		siteid = "0000"
 	}
 	domainname = fmt.Sprintf("%s.brightgate.net", siteid)
+	demoHostname := fmt.Sprintf("gateway.%s", domainname)
+	certf := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem",
+		demoHostname)
+	keyf := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem",
+		demoHostname)
 
 	loadPhishtank()
 
@@ -358,15 +357,16 @@ func main() {
 	mainRouter.HandleFunc("/", defaultHandler)
 	mainRouter.PathPrefix("/apid/").Handler(http.StripPrefix("/apid", demoAPIRouter))
 	mainRouter.PathPrefix("/client-web/").Handler(http.StripPrefix("/client-web/", http.FileServer(http.Dir(*clientWebDir))))
+	nMain := negroni.New(negroni.NewRecovery())
+	nMain.UseHandler(apachelog.CombinedLog.Wrap(mainRouter, os.Stderr))
 
-	captiveRouter := mainRouter.MatcherFunc(hostInMap(captiveMap)).Subrouter()
+	captiveRouter := mux.NewRouter()
 	captiveRouter.HandleFunc("/", defaultHandler)
 	captiveRouter.PathPrefix("/client-web/").Handler(http.StripPrefix("/client-web/", http.FileServer(http.Dir(*clientWebDir))))
 	captiveRouter.HandleFunc("/hotspot-detect.html", appleHandler)
 	captiveRouter.HandleFunc("/appleConnect", appleConnect)
-
-	nMain := negroni.New(negroni.NewRecovery())
-	nMain.UseHandler(apachelog.CombinedLog.Wrap(mainRouter, os.Stderr))
+	nCaptive := negroni.New(negroni.NewRecovery())
+	nCaptive.UseHandler(apachelog.CombinedLog.Wrap(captiveRouter, os.Stderr))
 
 	tlsCfg := &tls.Config{
 		MinVersion:               tls.VersionTLS12,
@@ -383,7 +383,7 @@ func main() {
 	for iface, subnet := range subnetMap {
 		router := network.SubnetRouter(subnet)
 		if iface == "setup" {
-			listen(router, ":80", iface, tlsCfg, certf, keyf, nMain)
+			listen(router, ":80", iface, tlsCfg, certf, keyf, nCaptive)
 		} else {
 			for _, port := range ports {
 				listen(router, port, iface, tlsCfg, certf, keyf, nMain)
