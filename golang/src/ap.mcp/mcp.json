@@ -37,7 +37,7 @@
         "Binary": "ap.httpd",
         "DependsOn": "networkd",
         "Privileged": true,
-        "Options": "-root=$APROOT -template_dir=$APROOT/etc/templates/ap.httpd -ssldir=$APROOT/etc/ssl"
+        "Options": "-root=$APROOT -template_dir=$APROOT/etc/templates/ap.httpd -client-web_dir=$APROOT/var/www/client-web"
     },
     "identifierd": {
         "Name": "identifierd",

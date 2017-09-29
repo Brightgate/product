@@ -8,6 +8,10 @@ export default [
       component: require('./pages/enroll.vue')
   },
   {
+      path: '/malwareWarn/',
+      component: require('./pages/malwareWarn.vue')
+  },
+  {
       path: '/form/',
       component: require('./pages/form.vue')
   },

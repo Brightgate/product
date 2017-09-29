@@ -107,6 +107,7 @@ class DebPackage:
         """Invoke the appropriate package build utility."""
         sh.fakeroot("dpkg-deb", "-Z", compresstype, "-z", compresslevel,
                     "--build", self.work_dir(arch), _fg=True)
+        self.rm_work_dir(arch)
 
     def run_lint(self, arch):
         """Run lintian against the constructed package."""

@@ -15,8 +15,8 @@ package main
 
 import (
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
-	"errors"
 	"flag"
 	"fmt"
 	"html/template"
@@ -24,7 +24,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
@@ -41,12 +40,13 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/lestrrat/go-apache-logformat"
 	"github.com/urfave/negroni"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
-	aproot = flag.String("root", "proto.armv7l/opt/com.brightgate",
+	aproot = flag.String("root", "proto.armv7l/appliance/opt/com.brightgate",
 		"Root of AP installation")
 	addr = flag.String("promhttp-address", base_def.HTTPD_PROMETHEUS_PORT,
 		"The address to listen on for Prometheus HTTP requests.")
@@ -54,11 +54,8 @@ var (
 		"location of httpd templates")
 	clientWebDir = flag.String("client-web_dir", "client-web",
 		"location of httpd client web root")
-	sslDir = flag.String("ssldir", "",
-		"The directory for storing the SSL certificate and key.")
 	ports = listFlag([]string{":80", ":443"})
 
-	adminMap   map[string]bool
 	captiveMap map[string]bool
 
 	cert      string
@@ -68,8 +65,7 @@ var (
 	config      *apcfg.APConfig
 	subnetMap   apcfg.SubnetMap
 	phishScorer phishtank.Scorer
-
-	statsTemplate *template.Template
+	domainname  string
 
 	mcpd *mcp.MCP
 )
@@ -135,90 +131,6 @@ func handle_request(event []byte) { requests++ }
 func hostInMap(hostMap map[string]bool) mux.MatcherFunc {
 	return func(r *http.Request, match *mux.RouteMatch) bool {
 		return hostMap[r.Host]
-	}
-}
-
-// StatsContent contains information for filling out the stats template.
-type StatsContent struct {
-	URLPath string
-
-	NPings     string
-	NConfigs   string
-	NEntities  string
-	NResources string
-	NRequests  string
-
-	Host string
-}
-
-func statsHandler(w http.ResponseWriter, r *http.Request) {
-	lt := time.Now()
-
-	statsTemplate, err := openTemplate("stats")
-	if err == nil {
-		conf := &StatsContent{
-			URLPath:    r.URL.Path,
-			NPings:     strconv.Itoa(pings),
-			NConfigs:   strconv.Itoa(configs),
-			NEntities:  strconv.Itoa(entities),
-			NResources: strconv.Itoa(resources),
-			NRequests:  strconv.Itoa(requests),
-			Host:       r.Host,
-		}
-
-		err = statsTemplate.Execute(w, conf)
-	}
-	if err != nil {
-		http.Error(w, "Internal server error", 501)
-
-	} else {
-		latencies.Observe(time.Since(lt).Seconds())
-	}
-}
-
-// XXX broken-- unexpected end of JSON
-func cfgHandler(w http.ResponseWriter, r *http.Request) {
-	var err error
-
-	t := time.Now()
-
-	if r.Method != "GET" && r.Method != "POST" {
-		http.Error(w, "Invalid request method.", 405)
-		return
-	}
-
-	if r.Method == "GET" {
-		// Get setting from ap.configd
-		//
-		// From the command line:
-		//     wget -q -O- http://127.0.0.1:8000/config?@/network/wlan0/ssid
-
-		val, err := config.GetProp(r.URL.RawQuery)
-		if err != nil {
-			estr := fmt.Sprintf("%v", err)
-			http.Error(w, estr, 400)
-		} else {
-			fmt.Fprintf(w, "%s", val)
-		}
-	} else {
-		// Send property updates to ap.configd
-		//
-		// From the command line:
-		//    wget -q --post-data '@/network/wlan0/ssid=newssid' \
-		//           http://127.0.0.1:8000/config
-
-		err = r.ParseForm()
-		for key, values := range r.Form {
-			if len(values) != 1 {
-				http.Error(w, "Properties may only have one value", 400)
-				return
-			}
-			err = config.SetProp(key, values[0], nil)
-		}
-	}
-
-	if err == nil {
-		latencies.Observe(time.Since(t).Seconds())
 	}
 }
 
@@ -303,69 +215,25 @@ func templateHandler(w http.ResponseWriter, template string) {
 
 func phishHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Phishing request: %v\n", *r)
-	templateHandler(w, "nophish")
+	phishu := fmt.Sprintf("http://phishing.%s/client-web/malwareWarn.html?host=%s", domainname, r.Host)
+	http.Redirect(w, r, phishu, http.StatusSeeOther)
 }
+
 func appleHandler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("apple_connect: %v\n", *r)
-	templateHandler(w, "connect_apple")
+	log.Printf("appleHandler: %v\n", *r)
+	gatewayu := fmt.Sprintf("http://gateway.%s/client-web/enroll.html",
+		domainname)
+	http.Redirect(w, r, gatewayu, http.StatusFound)
 }
 
 func defaultHandler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("default connect: %v\n", *r)
-	templateHandler(w, "connect_generic")
-}
-
-// refreshCertificate updates the certificate using the ssl directory, if provided.
-func refreshCertificate() error {
-	certValid = false
-
-	if *sslDir == "" {
-		return errors.New("no ssl directory")
-	}
-	cmdName := "openssl"
-	certInfo := "-subj /C=US/ST=California/L=Burlingame/O=Brightgate" +
-		"/CN=brightgate.net"
-
-	_, err := os.Stat(cert)
-	if err == nil {
-		args := fmt.Sprintf("x509 -checkend 0 -in %s", cert)
-		if out, err := exec.Command(
-			cmdName, strings.Split(args, " ")...).Output(); err != nil {
-			return fmt.Errorf("failed to check certificate expiration: %v",
-				err)
-		} else if string(strings.TrimSpace(string(out))) ==
-			"Certificate will not expire" {
-			return nil
-		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("failed to open certificate file: %v", err)
-	}
-
-	if _, err := os.Stat(key); err != nil {
-		if os.IsNotExist(err) {
-			args := fmt.Sprintf("genrsa -out %s 2048", key)
-			if err := exec.Command(
-				cmdName, strings.Split(args, " ")...).Run(); err != nil {
-				return fmt.Errorf("failed to create ssl key: %v", err)
-			}
-		} else {
-			return fmt.Errorf("failed to open key file: %v", err)
-		}
-	}
-
-	args := fmt.Sprintf("req -key %s -new -x509 -days 365 -out %s %s",
-		key, cert, certInfo)
-	if err := exec.Command(
-		cmdName, strings.Split(args, " ")...).Run(); err != nil {
-		return fmt.Errorf("failed to sign certificate: %v", err)
-	}
-	certValid = true
-	return nil
+	log.Printf("defaultHandler: %v\n", *r)
+	gatewayu := fmt.Sprintf("http://gateway.%s/client-web/", domainname)
+	http.Redirect(w, r, gatewayu, http.StatusFound)
 }
 
 func initNetwork() error {
 	// init maps
-	adminMap = make(map[string]bool)
 	captiveMap = make(map[string]bool)
 
 	if subnetMap = config.GetSubnets(); subnetMap == nil {
@@ -377,36 +245,28 @@ func initNetwork() error {
 		if iface == "setup" {
 			captiveMap[router] = true
 			captiveMap[router+":80"] = true
-		} else {
-			adminMap[router] = true
-			for _, port := range ports {
-				adminMap[router+port] = true
-			}
 		}
 	}
 	return nil
 }
 
-func listen(addr, port, iface string, handler http.Handler) {
-	listening := true
-
+func listen(addr string, port string, iface string, cfg *tls.Config, certf string, keyf string, handler http.Handler) {
 	if port == ":443" {
-		if certValid {
-			go func() {
-				err := http.ListenAndServeTLS(addr+port, cert, key, handler)
-				log.Printf("TLS Listener on %s (%s) exited: %v\n", addr+port, iface, err)
-			}()
-		} else {
-			listening = false
-		}
+		go func() {
+			srv := &http.Server{
+				Addr:         ":443",
+				Handler:      handler,
+				TLSConfig:    cfg,
+				TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
+			}
+			err := srv.ListenAndServeTLS(certf, keyf)
+			log.Printf("TLS Listener on %s (%s) exited: %v\n", addr+port, iface, err)
+		}()
 	} else {
 		go func() {
 			err := http.ListenAndServe(addr+port, handler)
 			log.Printf("Listener on %s (%s) exited: %v\n", addr+port, iface, err)
 		}()
-	}
-	if listening {
-		log.Printf("Listening on %s (%s)", addr+port, iface)
 	}
 }
 
@@ -434,13 +294,11 @@ func main() {
 	flag.Var(ports, "http-ports", "The ports to listen on for HTTP requests.")
 	flag.Parse()
 
-	if *sslDir != "" {
-		if !strings.HasSuffix(*sslDir, "/") {
-			*sslDir = *sslDir + "/"
-		}
-		cert = *sslDir + "domain.crt"
-		key = *sslDir + "domain.key"
-	}
+	demoHostname := "gateway.7401.brightgate.net"
+	certf := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem",
+		demoHostname)
+	keyf := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem",
+		demoHostname)
 
 	mcpd, err = mcp.New(pname)
 	if err != nil {
@@ -463,6 +321,13 @@ func main() {
 
 	config = apcfg.NewConfig(pname)
 
+	siteid, err := config.GetProp("@/siteid")
+	if err != nil {
+		log.Printf("@/siteid not defined: %v\n", err)
+		siteid = "0000"
+	}
+	domainname = fmt.Sprintf("%s.brightgate.net", siteid)
+
 	loadPhishtank()
 
 	err = initNetwork()
@@ -472,18 +337,16 @@ func main() {
 	}
 
 	// routing
+	demoAPIRouter := mux.NewRouter()
+	demoAPIRouter.HandleFunc("/alerts", demoAlertsHandler)
+	demoAPIRouter.HandleFunc("/devices/{ring}", demoDevicesByRingHandler)
+	demoAPIRouter.HandleFunc("/devices", demoDevicesHandler)
+	demoAPIRouter.HandleFunc("/access/{devid}", demoAccessByIDHandler)
+	demoAPIRouter.HandleFunc("/access", demoAccessHandler)
+	demoAPIRouter.HandleFunc("/config/{property:[a-z@/]+}", demoPropertyByNameHandler)
+	demoAPIRouter.HandleFunc("/config", demoPropertyHandler)
+
 	mainRouter := mux.NewRouter()
-	mainRouter.HandleFunc("/", defaultHandler)
-	mainRouter.PathPrefix("/client-web/").Handler(http.StripPrefix("/client-web/", http.FileServer(http.Dir(*clientWebDir))))
-
-	adminRouter := mainRouter.MatcherFunc(hostInMap(adminMap)).Subrouter()
-	adminRouter.HandleFunc("/config", cfgHandler)
-	adminRouter.HandleFunc("/stats", statsHandler)
-
-	captiveRouter := mainRouter.MatcherFunc(hostInMap(captiveMap)).Subrouter()
-	captiveRouter.HandleFunc("/", defaultHandler)
-	captiveRouter.HandleFunc("/hotspot-detect.html", appleHandler)
-	captiveRouter.HandleFunc("/appleConnect", appleConnect)
 
 	phishRouter := mainRouter.MatcherFunc(
 		func(r *http.Request, match *mux.RouteMatch) bool {
@@ -492,21 +355,38 @@ func main() {
 		}).Subrouter()
 	phishRouter.HandleFunc("/", phishHandler)
 
+	mainRouter.HandleFunc("/", defaultHandler)
+	mainRouter.PathPrefix("/apid/").Handler(http.StripPrefix("/apid", demoAPIRouter))
+	mainRouter.PathPrefix("/client-web/").Handler(http.StripPrefix("/client-web/", http.FileServer(http.Dir(*clientWebDir))))
+
+	captiveRouter := mainRouter.MatcherFunc(hostInMap(captiveMap)).Subrouter()
+	captiveRouter.HandleFunc("/", defaultHandler)
+	captiveRouter.PathPrefix("/client-web/").Handler(http.StripPrefix("/client-web/", http.FileServer(http.Dir(*clientWebDir))))
+	captiveRouter.HandleFunc("/hotspot-detect.html", appleHandler)
+	captiveRouter.HandleFunc("/appleConnect", appleConnect)
+
 	nMain := negroni.New(negroni.NewRecovery())
 	nMain.UseHandler(apachelog.CombinedLog.Wrap(mainRouter, os.Stderr))
 
-	err = refreshCertificate()
-	if err != nil {
-		log.Printf("Error refreshing certificate: %v", err)
+	tlsCfg := &tls.Config{
+		MinVersion:               tls.VersionTLS12,
+		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		PreferServerCipherSuites: true,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+		},
 	}
 
 	for iface, subnet := range subnetMap {
 		router := network.SubnetRouter(subnet)
 		if iface == "setup" {
-			listen(router, ":80", iface, nMain)
+			listen(router, ":80", iface, tlsCfg, certf, keyf, nMain)
 		} else {
 			for _, port := range ports {
-				listen(router, port, iface, nMain)
+				listen(router, port, iface, tlsCfg, certf, keyf, nMain)
 			}
 		}
 	}

@@ -82,6 +82,9 @@ GOARCH = $(shell $(GO) env GOARCH)
 $(info GOARCH = $(GOARCH))
 GOSRC = golang/src
 
+# Use "make PKG_LINT= packages" to skip lintian pass.
+PKG_LINT = --lint
+
 INSTALL = install
 PYTHON3 = python3
 MKDIR = mkdir
@@ -165,8 +168,6 @@ APPBINARIES = $(APPCOMMANDS:%=$(APPBIN)/%) $(APPDAEMONS:%=$(APPBIN)/%)
 
 HTTPD_TEMPLATE_FILES = \
 	connect_apple.html.got \
-	connect_generic.html.got \
-	nophish.html.got \
 	stats.html.got
 
 GO_TESTABLES = \
@@ -274,8 +275,9 @@ appliance: $(APPCOMPONENTS)
 
 cloud: $(CLOUDCOMPONENTS)
 
+
 packages: install
-	$(PYTHON3) build/deb-pkg.py --lint -a $(PKG_DEB_ARCH) -Z gzip -z 5
+	$(PYTHON3) build/deb-pkg.py $(PKG_LINT) -a $(PKG_DEB_ARCH) -Z gzip -z 5
 
 test: test-go
 
@@ -383,6 +385,7 @@ $(APPBIN)/ap.dns4d: \
 	$(PHISH_SRCS)
 $(APPBIN)/ap.httpd: \
 	$(GOSRC)/ap.httpd/ap.httpd.go \
+	$(GOSRC)/ap.httpd/api-demo.go \
 	$(PHISH_SRCS)
 $(APPBIN)/ap.identifierd: $(GOSRC)/ap.identifierd/identifierd.go
 $(APPBIN)/ap.logd: $(GOSRC)/ap.logd/logd.go
