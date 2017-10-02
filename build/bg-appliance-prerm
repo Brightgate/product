@@ -9,7 +9,18 @@
 # such unauthorized removal or alteration will be a violation of federal law.
 #
 
-if [ "x$0" = "xremove" ]; then
+
+# Brightgate packaging policy: set -x required.
+set -x
+
+if [ "x$1" = "xremove" ]; then
+    # Disable appliance services.
+    systemctl stop brightgate-appliance.service
+    systemctl stop ap.mcp.service
+
+    systemctl disable brightgate-appliance.service
+    systemctl disable ap.mcp.service
+
     # Enable the services we normally disable.
     systemctl enable avahi-daemon.service
     systemctl enable dnsmasq.service

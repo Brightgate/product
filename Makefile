@@ -129,6 +129,7 @@ APPWEB=$(APPBASE)/share/web
 # APPHTML
 APPETC=$(APPBASE)/etc
 APPETCCROND=$(APPROOT)/etc/cron.d
+APPROOTLIB=$(APPROOT)/lib
 APPVAR=$(APPBASE)/var
 APPSSL=$(APPETC)/ssl
 APPSPOOL=$(APPVAR)/spool
@@ -160,7 +161,8 @@ APPCOMMANDS = \
 	ap-ctl \
 	ap-msgping \
 	ap-ouisearch \
-	ap-rpc
+	ap-rpc \
+	ap-start
 
 APPBINARIES = $(APPCOMMANDS:%=$(APPBIN)/%) $(APPDAEMONS:%=$(APPBIN)/%)
 
@@ -193,6 +195,8 @@ APPCONFIGS = \
 	$(APPETC)/mcp.json \
 	$(APPETC)/oui.txt \
 	$(APPETC)/prometheus.yml \
+	$(APPROOTLIB)/systemd/system/ap.mcp.service \
+	$(APPROOTLIB)/systemd/system/brightgate-appliance.service \
 	$(APPSPOOLANTIPHISH)/example_blacklist.csv \
 	$(APPSPOOLANTIPHISH)/whitelist.csv
 
@@ -201,6 +205,7 @@ APPDIRS = \
 	$(APPDOC) \
 	$(APPETC) \
 	$(APPETCCROND) \
+	$(APPROOTLIB) \
 	$(APPRULES) \
 	$(APPSSL) \
 	$(APPSPOOL) \
@@ -228,10 +233,11 @@ APP_COMMON_SRCS = \
 
 # Cloud components and supporting definitions.
 
-CLOUDBASE=$(ROOT)/cloud/opt/net.b10e
+CLOUDROOT=$(ROOT)/cloud
+CLOUDBASE=$(CLOUDROOT)/opt/net.b10e
 CLOUDBIN=$(CLOUDBASE)/bin
 CLOUDETC=$(CLOUDBASE)/etc
-CLOUDROOTLIB=$(ROOT)/cloud/lib
+CLOUDROOTLIB=$(CLOUDROOT)/lib
 
 CLOUDDAEMONS = \
 	cl.httpd \
@@ -307,6 +313,12 @@ $(APPETC)/ap_identities.csv: ap_identities.csv | $(APPETC)
 $(APPETC)/ap_mfgid.json: ap_mfgid.json | $(APPETC)
 	$(INSTALL) -m 0644 $< $(APPETC)
 
+$(APPROOTLIB)/systemd/system/ap.mcp.service: ap.mcp.service | $(APPROOTLIB)/systemd/system
+	$(INSTALL) -m 0644 $< $(APPROOTLIB)/systemd/system
+
+$(APPROOTLIB)/systemd/system/brightgate-appliance.service: brightgate-appliance.service | $(APPROOTLIB)/systemd/system
+	$(INSTALL) -m 0644 $< $(APPROOTLIB)/systemd/system
+
 $(APPETC)/devices.json: $(GOSRC)/ap.configd/devices.json | $(APPETC)
 	$(INSTALL) -m 0644 $< $(APPETC)
 
@@ -345,6 +357,9 @@ $(APPMODEL): golang/src/ap.identifierd/linear_model_deviceID/* | $(DIRS)
 	cp -r $^ $@
 	touch $@
 
+$(APPROOTLIB)/systemd/system: | $(APPROOTLIB)
+	mkdir -p $(APPROOTLIB)/systemd/system
+
 $(APPDIRS):
 	$(MKDIR) -p $@
 
@@ -367,6 +382,9 @@ $(APPBINARIES): $(APP_COMMON_SRCS) .app.gotten | $(APPBIN)
 .app.gotten:
 	$(GO) get $(GO_GET_FLAGS) $(APPDAEMONS) $(APPCOMMANDS) 2>&1 | tee -a get.acc
 	touch $@
+
+$(APPBIN)/ap-start: ap-start.sh
+	$(INSTALL) -m 0755 $< $@
 
 $(APPBIN)/%:
 	cd $(APPBIN) && $(GO) build -i $(VERFLAGS) $*
