@@ -130,7 +130,9 @@
 <script>
 export default {
   data: function () {
-    var query = ((decodeURIComponent(window.location.href).match("details[?](.*)$")||["",""])[1]);
+    // vue's idea of the current query params
+    var query = this.$route.query
+    console.log("Device details: query is " + JSON.stringify(query))
     return {
       render_time: function (mins) {
         var days  = Math.floor(mins / 1440);
@@ -153,11 +155,11 @@ export default {
       // In the future, we can use this query to filter specific device info
       // if we can't get dynamic routes to work properly
       query: query,
-      show_alert: (query.match("alert") ? true : false),
-      show_notification: (query.match("notification") ? true : false),
+      show_alert: query.alert,
+      show_notification: query.notification,
       device_details: {
         device: 'Apple iPhone 6 Plus',
-        network_name: (query.match("network_name=([^&]*)")||["","CAT"])[1],
+        network_name: query.network_name,
         os_version: 'iOS 10.3.3',
         owner: 'Christopher Thorpe',
         activated: 'August 10, 2017',

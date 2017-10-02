@@ -26,7 +26,7 @@
 
             <f7-block-title>Serious Alerts</f7-block-title>
             <f7-list>
-                <f7-list-item link-external link="/details?network_name=jsmith&alert" title="🚫&nbsp;&nbsp;WannaCry on 'jsmith'"/>
+                <f7-list-item link="/details?alert=true&network_name=jsmith" title="🚫&nbsp;&nbsp;WannaCry on 'jsmith'"/>
             </f7-list>
 
             <f7-block-title>Tools</f7-block-title>
@@ -39,8 +39,8 @@
 
             <f7-block-title>Notifications</f7-block-title>
             <f7-list>
-                <f7-list-item link-external link="/details?network_name=catpad&notification/" title="⚠️&nbsp;&nbsp;Update iPad 'catpad'"/>
-                <f7-list-item link-external link="/details?network_name=samsung-un50&notification/" title="⚠️&nbsp;&nbsp;Update Smart TV 'samsung-un50'"/>
+                <f7-list-item link="/details?notification=true&network_name=catpad" title="⚠️&nbsp;&nbsp;Update iPad 'catpad'"/>
+                <f7-list-item link="/details?notification=true&network_name=samsung-un50" title="⚠️&nbsp;&nbsp;Update Smart TV 'samsung-un50'"/>
             </f7-list>
 
 

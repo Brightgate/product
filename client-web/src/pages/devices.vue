@@ -20,11 +20,10 @@
             v-for="device in category.list"
             v-bind:title="device.network_name"
             v-bind:media="device.media"
-            link-external
             v-bind:link="'/details?network_name=' + device.network_name 
-                        + '&' + (device.show_alert || '') 
-                        + '&' + (device.notification || '') ">
-        <div v-if="device.show_alert">
+                        + (device.alert ? '&alert=true' : '') 
+                        + (device.notification ? '&notification=true' : '') ">
+        <div v-if="device.alert">
           <f7-link open-popover="#virus">🚫</f7-link>
         </div>
         <div v-if ="device.notification">
@@ -161,7 +160,7 @@
               activated: 'August 10, 2017',
               owner_phone: '+1-617-259-4751',
               owner_email: 'cat@brightgate.com',
-              show_alert: 'alert',
+              alert: 'alert',
               media: '<img src="img/nova-solid-laptop-1.png" width=32 height=32>'
             },
           ],
