@@ -4,6 +4,14 @@ export default [
       component: require('./pages/about.vue')
   },
   {
+      path: '/devices/',
+      component: require('./pages/devices.vue')
+  },
+  {
+      path: '/details/',
+      component: require('./pages/details.vue')
+  },
+  {
       path: '/enroll/',
       component: require('./pages/enroll.vue')
   },

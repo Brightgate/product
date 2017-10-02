@@ -1,65 +1,82 @@
 <template>
-  <!-- App -->
-  <div id="app">
+  <f7-page>
+    <f7-navbar back-link="Back" title="Brightgate - Devices" sliding>
+    </f7-navbar>
 
-    <!-- Statusbar -->
-    <f7-statusbar></f7-statusbar>
+    <f7-list v-for="category in categories" v-if="category.list.length > 0">
+      <f7-list-item divider/>
 
-    <!-- Main Views -->
-    <f7-views>
-      <f7-view id="main-view" main>
-        <f7-pages navbar-fixed>
+
+      <f7-list-item v-if="category == devices.recent" group-title 
+                    v-bind:title="category.name + ' (' + category.list.length.toString(10) + ')'"/>
+      <f7-list-item v-if="category == devices.recent">
+        <f7-link v-on:click="showRecent = true" v-if="!showRecent">Show Recent Attempts...</f7-link>
+        <f7-link v-on:click="showRecent = false" v-if="showRecent">Hide Recent Attempts...</f7-link>
+      </f7-list-item>
+      <f7-list-item v-else group-title v-bind:title="category.name"/>
+
+      <f7-list-item 
+            v-if="showRecent || category != devices.recent"
+            v-for="device in category.list"
+            v-bind:title="device.network_name"
+            v-bind:media="device.media"
+            link-external
+            v-bind:link="'/details?network_name=' + device.network_name 
+                        + '&' + (device.show_alert || '') 
+                        + '&' + (device.notification || '') ">
+        <div v-if="device.show_alert">
+          <f7-link open-popover="#virus">🚫</f7-link>
+        </div>
+        <div v-if ="device.notification">
+          <f7-link open-popover="#notification">⚠️</f7-link>
+        </div>
+      </f7-list-item>
+    </f7-list>
+
+
+    <f7-popover id="virus">
+      <f7-block> 
+        <ul>
+            <li>Brightgate detected WannaCry ransomware on this device.</li>
+            <li>For your security, Brightgate has disconnected it from the network
+                and attempted to prevent the ransomware from encrypting more
+                files.</li>
+            <li>Visit brightgate.com from another computer for more help.</li>
+        </ul>
+      </f7-block> 
+    </f7-popover>
+
+    <f7-popover id="notification">
+      <f7-block> 
+        <ul>
+            <li>This device is less secure because it is running old software.</li>
+            <li>Brightgate can't automatically update this device.</li>
+            <li>Follow the manufacturer's instructions to update its software.</li>
+        </ul>
+      </f7-block> 
+    </f7-popover>
+
+    <f7-popup id="popup">
+      <f7-view navbar-fixed>
+        <f7-pages>
           <f7-page>
-            <f7-navbar>
-                <!-- not centering properly with f7-nav-center -->
-                <img src="img/bglogo.png"/>
-            </f7-navbar>
-            <f7-block-title>Brightgate Status</f7-block-title>
-            <f7-block inner>
-		<p><b>One of your computers has a virus.</b><br/>
-		See the "Serious Alerts" below.</p>
-                <p>Your network is working properly.</p>
-            </f7-block>
-
-            <f7-block-title>Serious Alerts</f7-block-title>
-            <f7-list>
-                <f7-list-item link-external link="/details?network_name=jsmith&alert" title="🚫&nbsp;&nbsp;WannaCry on 'jsmith'"/>
-            </f7-list>
-
-            <f7-block-title>Tools</f7-block-title>
-            <f7-list>
-              <f7-list-item link="/devices/" :title="'Manage Devices (' + devices.count + ')'"></f7-list-item>
-              <f7-list-item title="Open Setup Network">
-		<div v-if="!setupOn">
-		  <f7-button color="green" v-on:click="setupOn=true">Off</f7-button>
-		</div><div v-if="setupOn">
-		  <f7-button fill color="green" v-on:click="setupOn=false">On</f7-button>
-		</div>
-              </f7-list-item>
-            </f7-list>
-
-            <f7-block-title>Notifications</f7-block-title>
-            <f7-list>
-                <f7-list-item link-external link="/details?network_name=catpad&notification/" title="⚠️&nbsp;&nbsp;Update iPad 'catpad'"/>
-                <f7-list-item link-external link="/details?network_name=samsung-un50&notification/" title="⚠️&nbsp;&nbsp;Update Smart TV 'samsung-un50'"/>
-            </f7-list>
-
-
+            <f7-subnavbar title="Connect">
+              <f7-nav-right>
+                <f7-link close-popup>Close</f7-link>
+              </f7-nav-right>
+            </f7-subnavbar>
+            <f7-block>Lorem ipsum dolor sit amet, consectetur adipisicing elit. Neque, architecto. Cupiditate laudantium rem nesciunt numquam, ipsam. Voluptates omnis, a inventore atque ratione aliquam. Omnis iusto nemo quos ullam obcaecati, quod.</f7-block>
           </f7-page>
         </f7-pages>
       </f7-view>
-    </f7-views>
+    </f7-popup>
 
-  </div>
+  </f7-page>
 </template>
-
 <script>
+
 // TODO: Need to make this global 
       var myDevices = {
-        count: 9,
-        alerts: 1,
-        notifications: 2,
-
         recent: {
           name: 'Recent Attempted Connections',
           list: [
@@ -225,12 +242,16 @@
 
       };
 
-export default {
-  data: function () {
-    return {
-      devices: myDevices,
-      setupOn: false,
+  export default {
+
+    data: function () {
+      return {
+        showRecent: false,
+
+        devices: myDevices,
+        categories: [myDevices.recent, myDevices.phones, myDevices.computers,
+                     myDevices.media, myDevices.things],
+      }
     }
   }
-}
 </script>

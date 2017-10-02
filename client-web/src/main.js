@@ -17,7 +17,7 @@ import App from './app.vue'
 Vue.use(Framework7Vue)
 
 // Init App
-new Vue({
+var vm = new Vue({
   el: '#app',
   template: '<app/>',
   // Init Framework7 by passing parameters here
