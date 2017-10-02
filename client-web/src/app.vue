@@ -11,8 +11,11 @@
         <f7-pages navbar-fixed>
           <f7-page>
             <f7-navbar>
-                <!-- not centering properly with f7-nav-center -->
-                <img src="img/bglogo.png"/>
+                <!-- f7-nav-center doesn't seem to center properly without also
+                     including left and right. -->
+                <f7-nav-left>&nbsp;</f7-nav-left>
+                <f7-nav-center><img src="img/bglogo.png"/></f7-nav-center>
+                <f7-nav-right>&nbsp;</f7-nav-right>
             </f7-navbar>
             <f7-block-title>Brightgate Status</f7-block-title>
             <f7-block inner>
@@ -30,11 +33,7 @@
             <f7-list>
               <f7-list-item link="/devices/" :title="'Manage Devices (' + devices.count + ')'"></f7-list-item>
               <f7-list-item title="Open Setup Network">
-		<div v-if="!setupOn">
-		  <f7-button color="green" v-on:click="setupOn=true">Off</f7-button>
-		</div><div v-if="setupOn">
-		  <f7-button fill color="green" v-on:click="setupOn=false">On</f7-button>
-		</div>
+                <f7-input type="switch" slot="after" :checked="setupOn"></f7-input></span>
               </f7-list-item>
             </f7-list>
 
