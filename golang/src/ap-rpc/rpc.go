@@ -43,6 +43,8 @@ type Cfg struct {
 	B10E_SVC_URL    string
 }
 
+const pname = "ap-rpc"
+
 var (
 	config *apcfg.APConfig
 	// ApVersion will be replaced by go build step.
@@ -112,7 +114,10 @@ func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	envcfg.Unmarshal(&environ)
 
-	config := apcfg.NewConfig("ap-rpc")
+	config, err := apcfg.NewConfig(pname)
+	if err != nil {
+		log.Fatalf("cannot connect to configd: %v\n", err)
+	}
 
 	if len(environ.B10E_SVC_URL) == 0 {
 		// XXX ap.configd lookup.
@@ -173,7 +178,7 @@ func main() {
 		opts = append(opts, grpc.WithInsecure())
 	}
 
-	opts = append(opts, grpc.WithUserAgent("ap-rpc"))
+	opts = append(opts, grpc.WithUserAgent(pname))
 
 	conn, err := grpc.Dial(serverAddr, opts...)
 	if err != nil {

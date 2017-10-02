@@ -80,14 +80,22 @@ func New(name string) (*MCP, error) {
 		return handle, err
 	}
 
-	err = socket.SetRcvtimeo(time.Duration(30 * time.Second))
+	err = socket.SetSndtimeo(time.Duration(base_def.LOCAL_ZMQ_SEND_TIMEOUT * time.Second))
+	if err != nil {
+		fmt.Printf("Failed to set MCP send timeout: %v\n", err)
+		return handle, err
+	}
+
+	err = socket.SetRcvtimeo(time.Duration(base_def.LOCAL_ZMQ_RECEIVE_TIMEOUT * time.Second))
 	if err != nil {
 		fmt.Printf("Failed to set MCP receive timeout: %v\n", err)
+		return handle, err
 	}
 
 	err = socket.Connect(base_def.MCP_ZMQ_REP_URL)
 	if err != nil {
 		err = fmt.Errorf("Failed to connect new MCP socket: %v", err)
+		return handle, err
 	} else {
 		handle = &MCP{sender: sender, socket: socket}
 		if name[0:3] == "ap." {

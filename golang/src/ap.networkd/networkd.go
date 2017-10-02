@@ -863,7 +863,7 @@ func main() {
 	flag.Parse()
 
 	if mcpd, err = mcp.New(pname); err != nil {
-		log.Printf("Failed to connect to mcp\n")
+		log.Printf("cannot connect to mcp: %v\n", err)
 	} else {
 		mcpd.SetState(mcp.INITING)
 	}
@@ -876,7 +876,11 @@ func main() {
 	b.Connect()
 	defer b.Disconnect()
 
-	config = apcfg.NewConfig(pname)
+	config, err = apcfg.NewConfig(pname)
+	if err != nil {
+		log.Fatalf("cannot connect to configd: %v\n", err)
+	}
+
 	subnets = config.GetSubnets()
 	rings = config.GetRings()
 	clients = config.GetClients()

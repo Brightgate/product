@@ -428,7 +428,11 @@ func main() {
 		log.Fatalf("failed to import manufacturer IDs from %s: %v\n", mfgidPath, err)
 	}
 
-	apcfgd = apcfg.NewConfig(pname)
+	apcfgd, err = apcfg.NewConfig(pname)
+	if err != nil {
+		log.Fatalf("cannot connect to configd: %v\n", err)
+	}
+
 	recoverClients()
 
 	if err = testData.loadModel(*dataDir+trainFile, *modelDir); err != nil {

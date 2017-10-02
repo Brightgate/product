@@ -152,7 +152,9 @@ assignments = [
     [Statement.PACKAGE, "base_def"],
     [Statement.SECTION, "const ("],
     [Statement.SIMPLE_STR, "ZERO_UUID", "00000000-0000-0000-0000-000000000000"],
+
     [Statement.COMMENT, "Appliance definitions"],
+
     [Statement.COMMENT, "Security rings"],
     [Statement.SIMPLE_STR, "RING_UNENROLLED", "unenrolled"],
     [Statement.SIMPLE_STR, "RING_SETUP", "setup"],
@@ -162,7 +164,8 @@ assignments = [
     [Statement.SIMPLE_STR, "RING_GUEST", "guest"],
     [Statement.SIMPLE_STR, "RING_QUARANTINE", "quarantine"],
     [Statement.SIMPLE_STR, "RING_WIRED", "wired"],
-    [Statement.SIMPLE_STR, "APPLIANCE_ZMQ_URL", "tcp://127.0.0.1"],
+
+    [Statement.COMMENT, "Message bus topics"],
     [Statement.SIMPLE_STR, "TOPIC_PING", "sys.ping"],
     [Statement.SIMPLE_STR, "TOPIC_MCP", "sys.mcp"],
     [Statement.SIMPLE_STR, "TOPIC_CONFIG", "sys.config"],
@@ -173,6 +176,8 @@ assignments = [
     [Statement.SIMPLE_STR, "TOPIC_LISTEN", "net.listen"],
     [Statement.SIMPLE_STR, "TOPIC_EXCEPTION", "net.exception"],
     [Statement.SIMPLE_STR, "TOPIC_IDENTITY",  "net.identity"],
+
+    [Statement.COMMENT, "Prometheus client HTTP ports"],
     [Statement.SIMPLE_PORT, "BROKER_PROMETHEUS_PORT", 3200],
     [Statement.SIMPLE_PORT, "HTTPD_PROMETHEUS_PORT", 3201],
     [Statement.SIMPLE_PORT, "LOGD_PROMETHEUS_PORT", 3202],
@@ -182,10 +187,15 @@ assignments = [
     [Statement.SIMPLE_PORT, "CONFIGD_PROMETHEUS_PORT", 3207],
     [Statement.SIMPLE_PORT, "SCAND_PROMETHEUS_PORT", 3208],
     [Statement.SIMPLE_PORT, "RELAYD_PROMETHEUS_PORT", 3209],
+
+    [Statement.COMMENT, "ZeroMQ definitions"],
+    [Statement.SIMPLE_STR, "APPLIANCE_ZMQ_URL", "tcp://127.0.0.1"],
     [Statement.LIST, "BROKER_ZMQ_PUB_URL", "APPLIANCE_ZMQ_URL", "+", ":3131"],
     [Statement.LIST, "BROKER_ZMQ_SUB_URL", "APPLIANCE_ZMQ_URL", "+", ":3132"],
     [Statement.LIST, "CONFIGD_ZMQ_REP_URL", "APPLIANCE_ZMQ_URL", "+", ":3140"],
     [Statement.LIST, "MCP_ZMQ_REP_URL", "APPLIANCE_ZMQ_URL", "+", ":5150"],
+    [Statement.SIMPLE_NUM, "LOCAL_ZMQ_SEND_TIMEOUT", 10],
+    [Statement.SIMPLE_NUM, "LOCAL_ZMQ_RECEIVE_TIMEOUT", 20],
     [Statement.COMMENT, None],
     [Statement.COMMENT, "Cloud definitions"],
     [Statement.SIMPLE_PORT, "CLRPCD_LISTEND_PROMETHEUS_PORT", 3300],

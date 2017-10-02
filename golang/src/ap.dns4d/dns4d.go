@@ -555,15 +555,18 @@ errout:
 }
 
 func initNetwork() {
+	var err error
+
 	warned = make(map[string]bool)
 
-	if config = apcfg.NewConfig(pname); config == nil {
-		log.Fatalf("Can't connect to the config daemon\n")
+	config, err = apcfg.NewConfig(pname)
+	if err != nil {
+		log.Fatalf("cannot connect to configd: %v\n", err)
 	}
 
 	siteid, err := config.GetProp("@/siteid")
 	if err != nil {
-		log.Printf("Failed to fetch siteid: %v\n", err)
+		log.Printf("failed to fetch siteid: %v\n", err)
 		siteid = "0000"
 	}
 	domainname = siteid + ".brightgate.net"
@@ -628,7 +631,7 @@ func main() {
 
 	mcpd, err := mcp.New(pname)
 	if err != nil {
-		log.Printf("Failed to connect to mcp\n")
+		log.Printf("cannot connect to mcp\n")
 	}
 
 	// Need to have certain network capabilities.
@@ -654,7 +657,6 @@ func main() {
 	defer brokerd.Disconnect()
 	brokerd.Ping()
 
-	config = apcfg.NewConfig(pname)
 	hosts = make(map[string]dnsRecord)
 	initNetwork()
 	initHostMap()

@@ -313,7 +313,10 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
-	config = apcfg.NewConfig(pname)
+	config, err = apcfg.NewConfig(pname)
+	if err != nil {
+		log.Fatalf("cannot connect to configd: %v\n", err)
+	}
 
 	siteid, err := config.GetProp("@/siteid")
 	if err != nil {

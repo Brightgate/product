@@ -142,7 +142,7 @@
   "18": {
     "Obsolete": false,
     "UpdateTime": "2017-09-20T09:47:42.998564Z",
-    "Devtype": "IoT",
+    "Devtype": "iot",
     "Vendor": "Generic",
     "ProductName": "ESP8266"
   },

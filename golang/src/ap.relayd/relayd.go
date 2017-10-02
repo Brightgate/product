@@ -448,7 +448,7 @@ func main() {
 
 	mcpd, err := mcp.New(pname)
 	if err != nil {
-		log.Printf("Failed to connect to mcp\n")
+		log.Printf("cannot connect to mcp: %v\n", err)
 	}
 
 	flag.Parse()
@@ -458,7 +458,10 @@ func main() {
 	defer brokerd.Disconnect()
 	brokerd.Ping()
 
-	config = apcfg.NewConfig(pname)
+	config, err = apcfg.NewConfig(pname)
+	if err != nil {
+		log.Fatalf("cannot connect to configd: %v\n", err)
+	}
 
 	initInterfaces()
 	for _, s := range multicastServices {

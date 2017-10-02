@@ -153,12 +153,34 @@ type APConfig struct {
 
 // Connect to ap.configd.  Return a handle used for subsequent interactions with
 // the daemon
-func NewConfig(name string) *APConfig {
+func NewConfig(name string) (*APConfig, error) {
 	sender := fmt.Sprintf("%s(%d)", name, os.Getpid())
-	socket, _ := zmq.NewSocket(zmq.REQ)
-	socket.Connect(base_def.CONFIGD_ZMQ_REP_URL)
 
-	return &APConfig{sender: sender, socket: socket}
+	socket, err := zmq.NewSocket(zmq.REQ)
+	if err != nil {
+		err = fmt.Errorf("Failed to create new cfg socket: %v", err)
+		return nil, err
+	}
+
+	err = socket.SetSndtimeo(time.Duration(base_def.LOCAL_ZMQ_SEND_TIMEOUT * time.Second))
+	if err != nil {
+		fmt.Printf("Failed to set cfg send timeout: %v\n", err)
+		return nil, err
+	}
+
+	err = socket.SetRcvtimeo(time.Duration(base_def.LOCAL_ZMQ_RECEIVE_TIMEOUT * time.Second))
+	if err != nil {
+		fmt.Printf("Failed to set cfg receive timeout: %v\n", err)
+		return nil, err
+	}
+
+	err = socket.Connect(base_def.CONFIGD_ZMQ_REP_URL)
+	if err != nil {
+		err = fmt.Errorf("Failed to connect new cfg socket: %v", err)
+		return nil, err
+	}
+
+	return &APConfig{sender: sender, socket: socket}, err
 }
 
 func (c *APConfig) msg(oc base_msg.ConfigQuery_Operation, prop, val string,

@@ -114,7 +114,7 @@ func main() {
 				printState(rval)
 			}
 		} else {
-			err := mcp.Do(daemon, cmd)
+			err = mcp.Do(daemon, cmd)
 			if err != nil {
 				fmt.Printf("%s: failed to %s %s: %v\n", pname, cmd,
 					daemon, err)

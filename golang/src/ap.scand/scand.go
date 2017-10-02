@@ -661,7 +661,7 @@ func main() {
 
 	mcpd, err := mcp.New(pname)
 	if err != nil {
-		log.Printf("failed to connect to mcp\n")
+		log.Printf("cannot connect to mcp: %v\n", err)
 	}
 
 	if !strings.HasSuffix(*nmapDir, "/") {
@@ -677,7 +677,11 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
-	config = apcfg.NewConfig(pname)
+	config, err = apcfg.NewConfig(pname)
+	if err != nil {
+		log.Fatalf("cannot connect to configd: %v\n", err)
+	}
+
 	brokerd.Init(pname)
 	brokerd.Connect()
 	brokerd.Handle(base_def.TOPIC_CONFIG, handleConfig)

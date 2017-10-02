@@ -62,6 +62,7 @@ func (s BasicCSVSource) ReadTo(dest *MasterExtraction, kinds []Kind) {
 	f, err := os.Open(s.filepath)
 	if err != nil {
 		log.Printf("Couldn't open '%s': %v", s.filepath, err)
+		return
 	}
 	defer f.Close()
 

@@ -381,7 +381,7 @@ func main() {
 
 	mcpd, err := mcp.New(pname)
 	if err != nil {
-		log.Printf("Failed to connect to mcp\n")
+		log.Printf("cannot connect to mcp: %v\n", err)
 	}
 
 	if *loopTime < *capTime {
@@ -389,7 +389,10 @@ func main() {
 	}
 
 	// Interface to configd
-	config = apcfg.NewConfig(pname)
+	config, err = apcfg.NewConfig(pname)
+	if err != nil {
+		log.Fatalf("cannot connect to configd: %v\n", err)
+	}
 
 	iface := *cli_iface
 	if len(iface) == 0 {

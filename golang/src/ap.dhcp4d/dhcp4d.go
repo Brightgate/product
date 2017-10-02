@@ -855,12 +855,16 @@ func main() {
 	brokerd.Ping()
 
 	// Interface to config
-	config = apcfg.NewConfig(pname)
+	config, err = apcfg.NewConfig(pname)
+	if err != nil {
+		log.Fatalf("cannot connect to configd: %v\n", err)
+	}
+
 	clients = config.GetClients()
 
 	siteid, err = config.GetProp("@/siteid")
 	if err != nil {
-		log.Printf("Failed to get siteid: %v\n", err)
+		log.Printf("failed to get siteid: %v\n", err)
 		siteid = "0000"
 	}
 
@@ -878,7 +882,7 @@ func main() {
 	}
 	log.Printf("DHCP server online\n")
 	mainLoop()
-	log.Printf("Shutting down\n")
+	log.Printf("shutting down\n")
 
 	os.Exit(0)
 }

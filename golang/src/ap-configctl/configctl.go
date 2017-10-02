@@ -12,6 +12,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -188,6 +189,8 @@ func main() {
 	var cmd, prop, newval, duration string
 	var err error
 
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
 	argc := len(os.Args) - 1
 	if argc >= 1 {
 		cmd = os.Args[1]
@@ -219,7 +222,11 @@ func main() {
 		duration = os.Args[4]
 	}
 
-	apcfgd = apcfg.NewConfig(pname)
+	apcfgd, err = apcfg.NewConfig(pname)
+	if err != nil {
+		log.Fatalf("cannot connect to configd: %v\n", err)
+	}
+
 	switch cmd {
 	case "set":
 		err = setProp(prop, newval, duration, apcfgd.SetProp)
