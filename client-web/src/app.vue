@@ -35,6 +35,9 @@
               <f7-list-item title="Open Setup Network">
                 <f7-input type="switch" slot="after" :checked="setupOn"></f7-input></span>
               </f7-list-item>
+              <f7-list-item title="Accept Devices">
+                <span slot="after"><f7-button @click="openAcceptPopup">Accept</f7-button></span>
+              </f7-list-item>
             </f7-list>
 
             <f7-block-title>Notifications</f7-block-title>
@@ -49,18 +52,63 @@
       </f7-view>
     </f7-views>
 
+    <f7-popup id="acceptPop" v-bind:opened="acceptOpen">
+    <f7-block v-if="devicesAccepted">
+      <p>Devices Acceptance succeeded.  {{devicesChanged}} devices were affected.</p>
+    </f7-block>
+    <f7-block v-if="devicesAcceptedError != ''">
+      <p>There was an error accepting devices:
+      <b>{{ devicesAcceptedError }}.</b></p>
+    </f7-block>
+    <f7-button @click="closeAcceptPopup">Close</f7-button>
+    </f7-popup>
+
   </div>
 </template>
 
 <script>
 import { mockDevices } from "./mock_devices";
+import superagent from 'superagent';
 
 export default {
+
   data: function () {
     return {
       devices: mockDevices,
       setupOn: false,
+      acceptOpen: false,
+      devicesAccepted: false,
+      devicesAcceptedError: "",
     }
+  },
+
+  methods: {
+
+    openAcceptPopup: function () {
+      console.log("ACCEPTING DEVICES YO");
+      // get the popup open
+      this.acceptOpen = true;
+      // clear error and accepted
+      this.devicesAccepted = false;
+      this.devicesChanged = 0;
+      this.devicesAcceptedError = "";
+      superagent.get('/apid/supreme').end((err, res) => {
+        if (err) {
+          console.log("Hey, error here: ", err);
+          this.devicesAcceptedError = err.toString();
+        } else {
+          console.log("Hey, no error, res is " + res.text);
+          var res_json = JSON.parse(res.text)
+          this.devicesAccepted = true;
+          this.devicesChanged = res_json.changed ? res_json.changed : -1;
+        }
+      })
+    },
+
+    closeAcceptPopup: function () {
+      this.acceptOpen = false
+    },
+
   }
 }
 </script>
