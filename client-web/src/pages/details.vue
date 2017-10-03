@@ -128,6 +128,8 @@
   </f7-page>
 </template>
 <script>
+import { mockDevices } from "../mock_devices";
+
 export default {
   data: function () {
     // vue's idea of the current query params
@@ -157,15 +159,7 @@ export default {
       query: query,
       show_alert: query.alert,
       show_notification: query.notification,
-      device_details: {
-        device: 'Apple iPhone 6 Plus',
-        network_name: query.network_name,
-        os_version: 'iOS 10.3.3',
-        owner: 'Christopher Thorpe',
-        activated: 'August 10, 2017',
-        owner_phone: '+1-617-259-4751',
-        owner_email: 'cat@brightgate.com',
-      },
+      device_details: mockDevices.devices.by_netname[query.network_name],
       log_details: [
         { log_id: "0", day: "Today",     time: 71,
           entries: [
