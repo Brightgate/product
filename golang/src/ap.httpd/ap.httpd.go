@@ -345,6 +345,7 @@ func main() {
 	demoAPIRouter.HandleFunc("/devices", demoDevicesHandler)
 	demoAPIRouter.HandleFunc("/access/{devid}", demoAccessByIDHandler)
 	demoAPIRouter.HandleFunc("/access", demoAccessHandler)
+	demoAPIRouter.HandleFunc("/supreme", demoSupremeHandler)
 	demoAPIRouter.HandleFunc("/config/{property:[a-z@/]+}", demoPropertyByNameHandler)
 	demoAPIRouter.HandleFunc("/config", demoPropertyHandler)
 
