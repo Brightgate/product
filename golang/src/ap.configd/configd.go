@@ -96,8 +96,9 @@ var subtreeMatchTable = []subtreeMatch{
 
 // Allow for specific properties to have their own handlers as well
 type propertyOps struct {
-	get func(*pnode) (string, error)
-	set func(*pnode, string, *time.Time) (bool, error)
+	get    func(*pnode) (string, error)
+	set    func(*pnode, string, *time.Time) (bool, error)
+	expire func(*pnode)
 }
 
 type propertyMatch struct {
@@ -105,13 +106,15 @@ type propertyMatch struct {
 	ops   *propertyOps
 }
 
-var defaultPropOps = propertyOps{defaultGetter, defaultSetter}
-var ssidPropOps = propertyOps{defaultGetter, ssidUpdate}
-var uuidPropOps = propertyOps{defaultGetter, uuidUpdate}
+var defaultPropOps = propertyOps{defaultGetter, defaultSetter, defaultExpire}
+var ssidPropOps = propertyOps{defaultGetter, ssidUpdate, defaultExpire}
+var uuidPropOps = propertyOps{defaultGetter, uuidUpdate, defaultExpire}
+var ringPropOps = propertyOps{defaultGetter, defaultSetter, ringExpire}
 
 var propertyMatchTable = []propertyMatch{
 	{regexp.MustCompile(`^@/uuid$`), &uuidPropOps},
 	{regexp.MustCompile(`^@/network/ssid$`), &ssidPropOps},
+	{regexp.MustCompile(`^@/clients/.*/ring$`), &ringPropOps},
 }
 
 /*
@@ -215,8 +218,8 @@ func expiration_handler() {
 
 			next.index = -1
 			next.Expires = nil
-			expired = append(expired, next.path)
-			expirationNotify(next.path, next.Value)
+
+			next.ops.expire(next)
 		}
 
 		if len(exp_heap) > 0 {
@@ -297,7 +300,7 @@ func expirationPurge() {
 	for len(expired) > 0 {
 		exp_mutex.Lock()
 		copy := expired
-		expired = nil
+		expired = make([]string, 0)
 		exp_mutex.Unlock()
 
 		for _, prop := range copy {
@@ -314,6 +317,7 @@ func expirationInit() {
 	exp_heap = make(pnode_queue, 0)
 	heap.Init(&exp_heap)
 
+	expired = make([]string, 0)
 	exp_timer = time.NewTimer(time.Duration(time.Minute))
 	go expiration_handler()
 }
@@ -439,6 +443,13 @@ func defaultGetter(node *pnode) (string, error) {
 	return rval, err
 }
 
+func defaultExpire(node *pnode) {
+	expirationNotify(node.path, node.Value)
+	expired = append(expired, node.path)
+
+	node.Value = ""
+}
+
 func uuidUpdate(node *pnode, uuid string, expires *time.Time) (bool, error) {
 	const null_uuid = "00000000-0000-0000-0000-000000000000"
 
@@ -472,6 +483,14 @@ func ssidUpdate(node *pnode, ssid string, expires *time.Time) (bool, error) {
 		return true, nil
 	}
 	return false, err
+}
+
+//
+// When a client's ring assignment expires, it returns to the Unenrolled ring
+//
+func ringExpire(node *pnode) {
+	node.Value = base_def.RING_UNENROLLED
+	updateNotify(node.path, node.Value)
 }
 
 /*
