@@ -38,7 +38,7 @@
           <f7-card-footer>
             <!-- This aligns properly due to flexbox styling with default
                  justify-content: space-between -->
-            <f7-link open-popup="#connect">Skip intro and connect</f7-link>
+            <f7-link href="/appleConnect" external>Skip intro and connect</f7-link>
             <f7-link v-on:click="showHelp = false" v-if="showHelp">Hide Help</f7-link>
             <f7-link v-on:click="showHelp = true" v-if="!showHelp">Show Help</f7-link>
           </f7-card-footer>
@@ -59,7 +59,7 @@
             <center><img src="img/step2.png" width=202 height=424></center>
           </f7-card-content>
           <f7-card-footer>
-            <f7-link open-popup="#connect">Skip intro and connect</f7-link>
+            <f7-link href="/appleConnect" external>Skip intro and connect</f7-link>
             <f7-link v-on:click="showHelp = false" v-if="showHelp">Hide Help</f7-link>
             <f7-link v-on:click="showHelp = true" v-if="!showHelp">Show Help</f7-link>
           </f7-card-footer>

@@ -85,7 +85,7 @@ export default {
   methods: {
 
     openAcceptPopup: function () {
-      console.log("ACCEPTING DEVICES YO");
+      console.log("Accepting devices");
       // get the popup open
       this.acceptOpen = true;
       // clear error and accepted
@@ -94,10 +94,10 @@ export default {
       this.devicesAcceptedError = "";
       superagent.get('/apid/supreme').end((err, res) => {
         if (err) {
-          console.log("Hey, error here: ", err);
+          console.log("Error accepting devices: ", err);
           this.devicesAcceptedError = err.toString();
         } else {
-          console.log("Hey, no error, res is " + res.text);
+          console.log("Succeeded accepting devices: " + res.text);
           var res_json = JSON.parse(res.text)
           this.devicesAccepted = true;
           this.devicesChanged = res_json.changed ? res_json.changed : -1;

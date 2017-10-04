@@ -7,7 +7,7 @@
       <f7-list-item divider/>
 
       <f7-list-item v-if="catkey == 'recent'" group-title 
-                    v-bind:title="category.name + ' (' + category.network_names.length.toString(10) + ')'"/>
+        v-bind:title="category.name + ' (' + category.network_names.length.toString(10) + ')'"/>
       <f7-list-item v-if="catkey == 'recent'">
         <f7-link v-on:click="showRecent = true" v-if="!showRecent">Show Recent Attempts...</f7-link>
         <f7-link v-on:click="showRecent = false" v-if="showRecent">Hide Recent Attempts...</f7-link>
@@ -31,6 +31,7 @@
           <f7-link open-popover="#notification">⚠️</f7-link>
         </div>
       </f7-list-item>
+
     </f7-list>
 
 
@@ -56,20 +57,6 @@
       </f7-block> 
     </f7-popover>
 
-    <f7-popup id="popup">
-      <f7-view navbar-fixed>
-        <f7-pages>
-          <f7-page>
-            <f7-subnavbar title="Connect">
-              <f7-nav-right>
-                <f7-link close-popup>Close</f7-link>
-              </f7-nav-right>
-            </f7-subnavbar>
-            <f7-block>Lorem ipsum dolor sit amet, consectetur adipisicing elit. Neque, architecto. Cupiditate laudantium rem nesciunt numquam, ipsam. Voluptates omnis, a inventore atque ratione aliquam. Omnis iusto nemo quos ullam obcaecati, quod.</f7-block>
-          </f7-page>
-        </f7-pages>
-      </f7-view>
-    </f7-popup>
 
   </f7-page>
 </template>
