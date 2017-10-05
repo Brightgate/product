@@ -420,6 +420,7 @@ func runOne(conf *APConfig, done chan *APConfig) {
 			break
 		}
 
+		childProcess = child.Process
 		resetWifiInterfaces()
 		mcpd.SetState(mcp.ONLINE)
 

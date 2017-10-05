@@ -79,6 +79,11 @@ func getClients() error {
 			name = client.DHCPName
 		}
 
+		ring := "-"
+		if client.Ring != "" {
+			ring = client.Ring
+		}
+
 		ipv4 := "-"
 		exp := "-"
 		if client.IPv4 != nil {
@@ -91,8 +96,7 @@ func getClients() error {
 		}
 
 		fmt.Printf("%-17s %-16s %-10s %-15s %-16s %-9s %-s\n",
-			mac, name, client.Ring, ipv4, exp,
-			client.Identity, client.Confidence)
+			mac, name, ring, ipv4, exp, client.Identity, client.Confidence)
 	}
 
 	return nil

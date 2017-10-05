@@ -62,10 +62,9 @@
     },
     "prometheus": {
         "Name": "prometheus",
-        "Binary": "prometheus",
-        "Privileged": false,
+        "Binary": "/usr/local/bin/prometheus",
+        "Privileged": true,
         "ThirdParty": true,
-        "Arch": "amd64",
         "Options": "-config.file=$APROOT/etc/prometheus.yml -storage.local.path=\"$APROOT/var/prometheus-data\""
     },
     "relayd": {

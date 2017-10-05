@@ -22,6 +22,7 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -32,9 +33,9 @@ import (
 	"syscall"
 	"time"
 
-	// "base_def"
 	"cloud_rpc"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/tomazk/envcfg"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -71,6 +72,9 @@ const (
 )
 
 var (
+	clroot = flag.String("root", "proto.x86_64/cloud/opt/net.b10e",
+		"Root of cloud installation")
+
 	environ Cfg
 
 	serverKeyPair  *tls.Certificate
@@ -86,6 +90,58 @@ var (
 		Help: "GRPC upcall invalid HMAC attempts",
 	})
 )
+
+type inventoryServer struct{}
+
+func (i *inventoryServer) Upcall(ctx context.Context, req *cloud_rpc.InventoryReport) (*cloud_rpc.UpcallResponse, error) {
+	// HMAC
+	lt := time.Now()
+	year := lt.Year()
+
+	rhmac := hmac.New(sha256.New, cloud_rpc.HMACKeys[year])
+	rhmac.Write([]byte(req.Devices.String()))
+	expectedHMAC := rhmac.Sum(nil)
+
+	if !hmac.Equal(req.HMAC, expectedHMAC) {
+		invalid_upcalls.Inc()
+		return nil, grpc.Errorf(codes.Unauthenticated, "valid hmac required")
+	}
+
+	log.Printf("received inventory from %v (%v)\n", req.Uuid, req.WanHwaddr)
+	dirPath := fmt.Sprintf("%s/var/spool/%s/", *clroot, req.Uuid)
+	if err := os.MkdirAll(dirPath, 0755); err != nil {
+		return nil, grpc.Errorf(codes.FailedPrecondition, "mkdir failed")
+	}
+
+	path := fmt.Sprintf("%s/observations.%d.pb", dirPath, int(time.Now().Unix()))
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return nil, grpc.Errorf(codes.FailedPrecondition, "open failed")
+	}
+	defer f.Close()
+
+	out, err := proto.Marshal(req.Devices)
+	if err != nil {
+		return nil, grpc.Errorf(codes.FailedPrecondition, "marshal failed")
+	}
+
+	if _, err := f.Write(out); err != nil {
+		return nil, grpc.Errorf(codes.FailedPrecondition, "write failed")
+	}
+
+	// Formulate a response.
+	res := cloud_rpc.UpcallResponse{
+		UpcallElapsed:   -1,
+		DowncallElapsed: -1,
+	}
+
+	return &res, nil
+}
+
+func newInventoryServer() *inventoryServer {
+	ret := &inventoryServer{}
+	return ret
+}
 
 type upbeatServer struct {
 	// map of MACs to UUIDs
@@ -111,9 +167,7 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 	rhmac.Write([]byte(data))
 	expectedHMAC := rhmac.Sum(nil)
 
-	valid_hmac := hmac.Equal(req.HMAC, expectedHMAC)
-
-	if !valid_hmac {
+	if !hmac.Equal(req.HMAC, expectedHMAC) {
 		// Discard invalid HMAC messages!
 		invalid_upcalls.Inc()
 		return nil, grpc.Errorf(codes.Unauthenticated, "valid hmac required")
@@ -121,12 +175,6 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 
 	log.Printf("hwaddr %v uuid %v version %v uptime %v\n",
 		req.WanHwaddr, req.Uuid, req.ComponentVersion, req.UptimeElapsed)
-
-	// Formulate a response.
-	res := cloud_rpc.UpcallResponse{
-		UpcallElapsed:   -1,
-		DowncallElapsed: -1,
-	}
 
 	peer, ok := peer.FromContext(ctx)
 	if !ok {
@@ -191,6 +239,12 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 
 	latencies.Observe(time.Since(lt).Seconds())
 
+	// Formulate a response.
+	res := cloud_rpc.UpcallResponse{
+		UpcallElapsed:   -1,
+		DowncallElapsed: -1,
+	}
+
 	return &res, nil
 }
 
@@ -211,12 +265,14 @@ func main() {
 	var keypair tls.Certificate
 	var serverCertPool *x509.CertPool
 
+	flag.Parse()
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	envcfg.Unmarshal(&environ)
 
 	if len(environ.B10E_CLRPCD_PROMETHEUS_PORT) != 0 {
 		http.Handle("/metrics", promhttp.Handler())
 		go http.ListenAndServe(environ.B10E_CLRPCD_PROMETHEUS_PORT, nil)
+		log.Println("prometheus client launched")
 	}
 
 	// It is bad if B10E_CERT_HOSTNAME is not defined.
@@ -228,8 +284,6 @@ func main() {
 		environ.B10E_CERT_HOSTNAME)
 	keyf := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem",
 		environ.B10E_CERT_HOSTNAME)
-
-	log.Println("prometheus client launched")
 
 	grpc_port := ":4430"
 
@@ -277,9 +331,11 @@ func main() {
 
 	grpcServer := grpc.NewServer(opts...)
 
-	upbeatServer := newUpbeatServer()
+	ubServer := newUpbeatServer()
+	cloud_rpc.RegisterUpbeatServer(grpcServer, ubServer)
 
-	cloud_rpc.RegisterUpbeatServer(grpcServer, upbeatServer)
+	invServer := newInventoryServer()
+	cloud_rpc.RegisterInventoryServer(grpcServer, invServer)
 
 	grpc_conn, err := net.Listen("tcp", grpc_port)
 	if err != nil {
@@ -294,7 +350,7 @@ func main() {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 
 		fmt.Fprintf(w, "%-36v %-17v %-39v %v\n", "UUID", "MAC", "LAST", "VERSION")
-		for uu, appinfo := range upbeatServer.uuids {
+		for uu, appinfo := range ubServer.uuids {
 			fmt.Fprintf(w, "%36v %17v %-39v %v\n", uu,
 				appinfo.wan_hwaddr[0], appinfo.last_contact,
 				appinfo.component_version[0])

@@ -239,6 +239,8 @@ CLOUDBASE=$(CLOUDROOT)/opt/net.b10e
 CLOUDBIN=$(CLOUDBASE)/bin
 CLOUDETC=$(CLOUDBASE)/etc
 CLOUDROOTLIB=$(CLOUDROOT)/lib
+CLOUDVAR=$(CLOUDBASE)/var
+CLOUDSPOOL=$(CLOUDVAR)/spool
 
 CLOUDDAEMONS = \
 	cl.httpd \
@@ -255,7 +257,9 @@ CLOUDBINARIES = $(CLOUDCOMMANDS:%=$(CLOUDBIN)/%) $(CLOUDDAEMONS:%=$(CLOUDBIN)/%)
 CLOUDDIRS = \
 	$(CLOUDBIN) \
 	$(CLOUDETC) \
-	$(CLOUDROOTLIB)
+	$(CLOUDROOTLIB) \
+	$(CLOUDSPOOL) \
+	$(CLOUDVAR)
 
 CLOUDCOMPONENTS = $(CLOUDBINARIES) $(CLOUDCONFIGS) $(CLOUDDIRS)
 
@@ -498,7 +502,7 @@ golang/src/cloud_rpc/cloud_rpc.pb.go: base/cloud_rpc.proto | \
 			-I . \
 			-I$(GOPATH)/src \
 			-I$(GOPATH)/src/github.com/golang/protobuf/protoc-gen-go/descriptor \
-			--go_out=plugins=grpc:$(GOPATH)/src/cloud_rpc \
+			--go_out=plugins=grpc,Mbase_msg.proto=base_msg:$(GOPATH)/src/cloud_rpc \
 			$(notdir $<)
 
 base/cloud_rpc_pb2.py: base/cloud_rpc.proto

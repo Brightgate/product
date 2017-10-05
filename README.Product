@@ -73,6 +73,14 @@ pi$ sudo apt-get install -y nodejs
 pi$ nodejs --version
 v6.11.3  (may be higher than this)
 
+# Prometheus
+
+Install Prometheus for ARM:
+
+pi$ curl -LO https://github.com/prometheus/prometheus/releases/download/v1.8.0/prometheus-1.8.0.linux-armv7.tar.gz
+pi$ tar -xf prometheus-1.8.0.linux-armv7.tar.gz
+pi$ sudo cp prometheus-1.8.0.linux-armv7/prometheus /usr/local/bin/
+
 # Build
 
 Source the env.sh file via

@@ -23,14 +23,16 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"net"
 	"os"
 	"strconv"
 	"strings"
 
 	"ap_common/device"
 	"ap_common/model"
+	"ap_common/network"
+	"base_msg"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/klauspost/oui"
 )
 
@@ -41,7 +43,7 @@ const (
 
 var (
 	observedFiles = flag.String("observed", "",
-		"A comma separated list of CSV files containing observations.")
+		"A comma separated list of .pb files, each containing a single DeviceInventory.")
 	identFile = flag.String("identities", "$ETC/ap_identities.csv",
 		"The CSV file of identities to update.")
 	mfgFile = flag.String("mfgIDs", "$ETC/ap_mfgid.json",
@@ -63,47 +65,100 @@ var (
 )
 
 type sample struct {
+	name     string
 	identity int
 	attrs    map[string]string
 }
 
+func addFeat(user *bufio.Reader, s *sample, feat string) bool {
+	fmt.Printf("\tAdd feature %q to %s? (Y/n) ", feat, s.name)
+	response, _ := user.ReadString('\n')
+	if strings.Contains(response, "n") {
+		return false
+	}
+	s.attrs[feat] = "1"
+	attrUnion[feat] = true
+	return true
+}
+
+func addDNS(devInfo *base_msg.DeviceInfo, user *bufio.Reader, s *sample) {
+	if devInfo.Request == nil {
+		return
+	}
+
+	added := make(map[string]bool)
+	for _, msg := range devInfo.Request {
+		for _, q := range msg.Request {
+			feat := model.DNSQ.FindStringSubmatch(q)[1]
+			if added[feat] {
+				continue
+			}
+			added[feat] = addFeat(user, s, feat)
+		}
+	}
+}
+
+func addScan(devInfo *base_msg.DeviceInfo, user *bufio.Reader, s *sample) {
+	if devInfo.Scan == nil {
+		return
+	}
+
+	added := make(map[string]bool)
+	for _, msg := range devInfo.Scan {
+		for _, h := range msg.Hosts {
+			for _, p := range h.Ports {
+				if *p.State != "open" {
+					continue
+				}
+				feat := model.FormatPortString(*p.Protocol, *p.PortId)
+				if added[feat] {
+					continue
+				}
+				added[feat] = addFeat(user, s, feat)
+			}
+		}
+	}
+}
+
+func addListen(devInfo *base_msg.DeviceInfo, user *bufio.Reader, s *sample) {
+	if devInfo.Listen == nil {
+		return
+	}
+
+	added := make(map[string]bool)
+	for _, msg := range devInfo.Listen {
+		var feat string
+		switch *msg.Type {
+		case base_msg.EventListen_SSDP:
+			feat = "SSDP"
+		case base_msg.EventListen_mDNS:
+			feat = "mDNS"
+		}
+		if added[feat] {
+			continue
+		}
+		added[feat] = addFeat(user, s, feat)
+	}
+}
+
 func readObservations(path string) {
-	f, err := os.Open(path)
+	in, err := ioutil.ReadFile(path)
 	if err != nil {
 		log.Fatalf("failed to open data file %s\n", path)
 	}
-	defer f.Close()
 
-	r := csv.NewReader(f)
-	header, err := r.Read()
-	if err != nil {
-		log.Fatalf("failed to read header from %s: %s\n", path, err)
-	}
-
+	inventory := &base_msg.DeviceInventory{}
+	proto.Unmarshal(in, inventory)
 	userInput := bufio.NewReader(os.Stdin)
 
-	// header[0] is "MAC Address".
-	header = header[1:]
-	for {
-		record, err := r.Read()
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			log.Fatalf("failed to read from %s: %s\n", path, err)
-		}
-
-		mac, err := net.ParseMAC(record[0])
-		if err != nil {
-			log.Fatalf("invalid MAC address %s: %s\n", record[0], err)
-		}
-
+	for _, devInfo := range inventory.Devices {
+		hwaddr := *devInfo.MacAddress
+		mac := network.Uint64ToHWAddr(hwaddr)
 		entry, err := ouiDB.Query(mac.String())
 		if err != nil {
 			log.Fatalf("MAC address %s not in OUI database: %s\n", mac, err)
 		}
-
-		last := len(record) - 1
-		fmt.Printf("What is (%s, %s, %s)? (Or 'SKIP') ", mac.String(), entry.Manufacturer, record[last])
+		fmt.Printf("What is (%s, %s, %s)? (Or 'SKIP') ", mac.String(), entry.Manufacturer, devInfo.GetDhcpName())
 		trueIdentity := 0
 		name := ""
 		for {
@@ -132,27 +187,19 @@ func readObservations(path string) {
 		}
 
 		s := &sample{
+			name:     name,
 			identity: trueIdentity,
 			attrs:    make(map[string]string),
 		}
+
 		mfgStr := model.FormatMfgString(mfgidDB[entry.Manufacturer])
 		s.attrs[mfgStr] = "1"
 		attrUnion[mfgStr] = true
 
-		for i, feat := range record[1:last] {
-			if feat == "0" {
-				continue
-			}
+		addDNS(devInfo, userInput, s)
+		addScan(devInfo, userInput, s)
+		addListen(devInfo, userInput, s)
 
-			fmt.Printf("\tAdd feature %q to %s? (Y/n) ", header[i], name)
-			response, _ := userInput.ReadString('\n')
-			if strings.Contains(response, "n") {
-				continue
-			}
-
-			s.attrs[header[i]] = feat
-			attrUnion[header[i]] = true
-		}
 		output = append(output, s)
 	}
 }

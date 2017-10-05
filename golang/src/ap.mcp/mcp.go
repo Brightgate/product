@@ -25,7 +25,6 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -46,7 +45,6 @@ type daemon struct {
 	Binary     string
 	Options    *string `json:"Options,omitempty"`
 	DependsOn  *string `json:"DependsOn,omitempty"`
-	Arch       *string `json:"Arch,omitempty"`
 	ThirdParty bool    `json:"ThirdParty,omitempty"`
 	Privileged bool
 
@@ -560,11 +558,6 @@ func loadDefinitions() error {
 	}
 
 	for name, new := range set {
-		if new.Arch != nil && *new.Arch != runtime.GOARCH {
-			log.Printf("Dropping %s - wrong architecture\n", name)
-			continue
-		}
-
 		d, ok := daemons[name]
 		if !ok {
 			// This is the first time we've seen this daemon, so

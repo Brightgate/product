@@ -414,12 +414,8 @@ func getClient(client *PropertyNode) *ClientInfo {
 	var ring, dns, dhcp, identity, confidence string
 	var ipv4 net.IP
 	var exp *time.Time
-	var err error
 
-	if ring, err = getStringVal(client, "ring"); err != nil {
-		ring = "unenrolled"
-	}
-
+	ring, _ = getStringVal(client, "ring")
 	identity, _ = getStringVal(client, "identity")
 	confidence, _ = getStringVal(client, "confidence")
 	dhcp, _ = getStringVal(client, "dhcp_name")

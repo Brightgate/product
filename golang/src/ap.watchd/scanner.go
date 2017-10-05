@@ -12,12 +12,11 @@
 package main
 
 import (
-	"bufio"
 	"container/heap"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"os"
 	"sort"
 	"strings"
@@ -94,6 +93,7 @@ type ScanRequest struct {
 	Args []string
 	File string
 
+	Again  bool
 	Period time.Duration
 	When   time.Time
 
@@ -188,9 +188,10 @@ func cancelPortScan(ip string) {
 	pendingLock.Unlock()
 }
 
-func schedulePortScan(request *ScanRequest) {
+func schedulePortScan(request *ScanRequest, again bool) {
 	if activeHosts.contains(request.IP) {
 		request.When = time.Now()
+		request.Again = again
 		pendingLock.Lock()
 		heap.Push(&scansPending, request)
 		pendingLock.Unlock()
@@ -204,14 +205,19 @@ func portScanner() {
 
 		pendingLock.Lock()
 		now := time.Now()
-		if len(scansPending) > 0 {
-			req = scansPending[0]
-			if req.When.After(now) {
-				req = nil
-			} else {
-				heap.Pop(&scansPending)
+		for i, r := range scansPending {
+			if r.When.After(now) {
+				break
 			}
+
+			if r.Again && r.When.Add(r.Period).After(now) {
+				continue
+			}
+
+			req = heap.Remove(&scansPending, i).(*ScanRequest)
+			break
 		}
+
 		pendingLock.Unlock()
 		if req == nil {
 			time.Sleep(time.Second)
@@ -224,7 +230,7 @@ func portScanner() {
 		scanDuration.WithLabelValues(req.IP, req.File).Observe(dur)
 		scansFinished.WithLabelValues(req.IP, req.File).Inc()
 
-		schedulePortScan(req)
+		schedulePortScan(req, true)
 	}
 }
 
@@ -268,8 +274,8 @@ func scannerRequest(ip string) {
 	}
 
 	activeHosts.add(ip)
-	schedulePortScan(&defaultScan)
-	schedulePortScan(&UDPScan)
+	schedulePortScan(&defaultScan, false)
+	schedulePortScan(&UDPScan, false)
 }
 
 func subnetHostScan(iface, subnet string, scannedHosts *hostmap) int {
@@ -360,19 +366,6 @@ func hostScan() {
 		seen += subnetHostScan(iface, subnet, scannedHosts)
 	}
 	hostsUp.Set(float64(seen))
-}
-
-//
-// Wait for stdout/stderr from a process, and print whatever it sends.  When the
-// pipe is closed, notify our caller.
-//
-func handlePipe(r io.ReadCloser, done chan bool) {
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		log.Printf("%s\n", scanner.Text())
-	}
-
-	done <- true
 }
 
 // scan uses nmap to scan ip with the given arguments, outputting its results
@@ -543,6 +536,7 @@ func portScan(ip string, nmapArgs []string, filename string) {
 		return
 	}
 
+	addr := net.ParseIP(ip)
 	hosts := toHosts(scanResults)
 	t := time.Now()
 	start := fmt.Sprintf("Nmap %s scan initiated %s as: %s", scanResults.Version,
@@ -555,6 +549,7 @@ func portScan(ip string, nmapArgs []string, filename string) {
 		},
 		Sender:       proto.String(brokerd.Name),
 		Debug:        proto.String("-"),
+		Ipv4Address:  proto.Uint32(network.IPAddrToUint32(addr)),
 		ScanLocation: proto.String(file),
 		StartInfo:    proto.String(start),
 		Hosts:        hosts,

@@ -29,7 +29,7 @@ import (
 
 	// "base_def"
 
-	"github.com/lestrrat/go-apache-logformat"
+	apachelog "github.com/lestrrat/go-apache-logformat"
 	"github.com/tomazk/envcfg"
 
 	//	"github.com/prometheus/client_golang/prometheus"

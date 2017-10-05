@@ -16,7 +16,9 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -25,9 +27,10 @@ import (
 	"time"
 
 	"ap_common/apcfg"
-	// "base_def"
+	"base_msg"
 	"cloud_rpc"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/tomazk/envcfg"
 
 	"golang.org/x/net/context"
@@ -45,31 +48,42 @@ type Cfg struct {
 
 const pname = "ap-rpc"
 
+var services = map[string]bool{
+	"upbeat":    true,
+	"inventory": true,
+}
+
 var (
-	config *apcfg.APConfig
+	aproot = flag.String("root", "proto.armv7l/appliance/opt/com.brightgate",
+		"Root of AP installation")
+
+	environ    Cfg
+	serverAddr string
+	config     *apcfg.APConfig
+
+	apuuid   string
+	aphwaddr []string
+
 	// ApVersion will be replaced by go build step.
 	ApVersion = "undefined"
 )
 
 // Return the MAC address for the defined WAN interface.
-func get_wan_interface(config *apcfg.APConfig) string {
+func getWanInterface(config *apcfg.APConfig) string {
 	wan_nic, err := config.GetProp("@/network/wan_nic")
 	if err != nil {
-		fmt.Printf("property get @/network/wan_nic failed: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("property get @/network/wan_nic failed: %v\n", err)
 	}
 
 	iface, err := net.InterfaceByName(wan_nic)
 	if err != nil {
-		log.Printf("could not retrieve %s interface: %v\n",
-			wan_nic, err)
-		os.Exit(1)
+		log.Fatalf("could not retrieve %s interface: %v\n", wan_nic, err)
 	}
 
 	return iface.HardwareAddr.String()
 }
 
-func first_version() string {
+func firstVersion() string {
 	return "git:rPS" + ApVersion
 }
 
@@ -106,66 +120,13 @@ func retrieveUptime() time.Duration {
 	return time.Duration(0)
 }
 
-func main() {
-	var environ Cfg
-	var serverAddr string
-	var elapsed time.Duration
-
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-	envcfg.Unmarshal(&environ)
-
-	config, err := apcfg.NewConfig(nil, pname)
-	if err != nil {
-		log.Fatalf("cannot connect to configd: %v\n", err)
-	}
-
-	if len(environ.B10E_SVC_URL) == 0 {
-		// XXX ap.configd lookup.
-		serverAddr = "svc0.b10e.net:4430"
-	} else {
-		serverAddr = environ.B10E_SVC_URL
-	}
-
-	// Retrieve appliance UUID
-	uuid, err := config.GetProp("@/uuid")
-	if err != nil {
-		fmt.Printf("property get failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Retrieve appliance MAC.
-	hwaddr := make([]string, 0)
-	hwaddr = append(hwaddr, get_wan_interface(config))
-
-	// Retrieve appliance uptime.
-	elapsed = retrieveUptime()
-
-	// Retrieve component versions.
-	versions := make([]string, 0)
-	versions = append(versions, first_version())
-
-	year := time.Now().Year()
-	rhmac := hmac.New(sha256.New, cloud_rpc.HMACKeys[year])
-	data := fmt.Sprintf("%v %v", hwaddr, int64(elapsed))
-	rhmac.Write([]byte(data))
-
-	// Build UpcallRequest
-	request := &cloud_rpc.UpcallRequest{
-		HMAC:             rhmac.Sum(nil),
-		Uuid:             uuid,
-		UptimeElapsed:    int64(elapsed),
-		WanHwaddr:        hwaddr,
-		ComponentVersion: versions,
-		NetHostCount:     0,
-	}
-
+func dial() (*grpc.ClientConn, error) {
 	var opts []grpc.DialOption
 
 	if !environ.B10E_LOCAL_MODE {
 		cp, nocperr := x509.SystemCertPool()
 		if nocperr != nil {
-			log.Printf("no system certificate pool: %v\n", nocperr)
-			os.Exit(1)
+			return nil, fmt.Errorf("no system certificate pool: %v", nocperr)
 		}
 
 		tc := tls.Config{
@@ -182,8 +143,39 @@ func main() {
 
 	conn, err := grpc.Dial(serverAddr, opts...)
 	if err != nil {
-		log.Printf("grpc Dial() to '%s' failed: %v\n", serverAddr, err)
-		os.Exit(1)
+		return nil, fmt.Errorf("grpc Dial() to '%s' failed: %v", serverAddr, err)
+	}
+	return conn, nil
+}
+
+func sendUpbeat() {
+	var elapsed time.Duration
+
+	// Retrieve appliance uptime.
+	elapsed = retrieveUptime()
+
+	// Retrieve component versions.
+	versions := make([]string, 0)
+	versions = append(versions, firstVersion())
+
+	year := time.Now().Year()
+	rhmac := hmac.New(sha256.New, cloud_rpc.HMACKeys[year])
+	data := fmt.Sprintf("%v %v", aphwaddr, int64(elapsed))
+	rhmac.Write([]byte(data))
+
+	// Build UpcallRequest
+	request := &cloud_rpc.UpcallRequest{
+		HMAC:             rhmac.Sum(nil),
+		Uuid:             apuuid,
+		UptimeElapsed:    int64(elapsed),
+		WanHwaddr:        aphwaddr,
+		ComponentVersion: versions,
+		NetHostCount:     0,
+	}
+
+	conn, err := dial()
+	if err != nil {
+		grpclog.Fatalf("dial() failed: %v", err)
 	}
 	defer conn.Close()
 
@@ -196,4 +188,86 @@ func main() {
 
 	log.Println(response)
 	grpclog.Println(response)
+}
+
+func sendInventory() {
+	// Read device inventory from disk
+	in, err := ioutil.ReadFile(*aproot + "/var/spool/identifierd/observations.pb")
+	if err != nil {
+		log.Println("failed to read device inventory")
+		return
+	}
+	inventory := &base_msg.DeviceInventory{}
+	proto.Unmarshal(in, inventory)
+
+	// HMAC
+	year := time.Now().Year()
+	rhmac := hmac.New(sha256.New, cloud_rpc.HMACKeys[year])
+	rhmac.Write([]byte(inventory.String()))
+
+	// Build InventoryReport
+	report := &cloud_rpc.InventoryReport{
+		HMAC:      rhmac.Sum(nil),
+		Uuid:      apuuid,
+		WanHwaddr: aphwaddr,
+		Devices:   inventory,
+	}
+
+	conn, err := dial()
+	if err != nil {
+		grpclog.Fatalf("dial() failed: %v", err)
+	}
+	defer conn.Close()
+
+	client := cloud_rpc.NewInventoryClient(conn)
+
+	response, err := client.Upcall(context.Background(), report)
+	if err != nil {
+		grpclog.Fatalf("%v.Upcall(_) = _, %v: ", client, err)
+	}
+
+	log.Println(response)
+	grpclog.Println(response)
+}
+
+func main() {
+	var err error
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+	flag.Parse()
+
+	svc := flag.Args()[0]
+	if !services[svc] {
+		log.Fatalf("Unknown service %s\n", svc)
+	}
+
+	envcfg.Unmarshal(&environ)
+
+	config, err := apcfg.NewConfig(nil, pname)
+	if err != nil {
+		log.Fatalf("cannot connect to configd: %v\n", err)
+	}
+
+	// Retrieve appliance UUID
+	apuuid, err = config.GetProp("@/uuid")
+	if err != nil {
+		log.Fatalf("property get failed: %v\n", err)
+	}
+
+	// Retrieve appliance MAC.
+	aphwaddr = make([]string, 0)
+	aphwaddr = append(aphwaddr, getWanInterface(config))
+
+	if len(environ.B10E_SVC_URL) == 0 {
+		// XXX ap.configd lookup.
+		serverAddr = "svc0.b10e.net:4430"
+	} else {
+		serverAddr = environ.B10E_SVC_URL
+	}
+
+	switch svc {
+	case "upbeat":
+		sendUpbeat()
+	case "inventory":
+		sendInventory()
+	}
 }

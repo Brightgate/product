@@ -21,8 +21,9 @@ import (
 	"time"
 
 	"ap_common/model"
-	"ap_common/network"
+	"base_msg"
 
+	"github.com/golang/protobuf/proto"
 	tf "github.com/tensorflow/tensorflow/tensorflow/go"
 )
 
@@ -43,15 +44,13 @@ const tfProb = "linear/head/predictions/probabilities"
 const devIDBase = 2
 
 type entity struct {
-	name    string
 	timeout time.Time
-	attrs   map[string]bool
+	info    *base_msg.DeviceInfo
 }
 
-// entities is a vessel to collect data about clients. The data can be exported
-// for later use as training data. For each new client we will collect data for
-// 30 minutes. If a consumer of Entities (currently only ap.identifierd) is
-// restarted then the timeout is reset.
+// entities is a vessel to collect data about clients. The data is sent to the
+// cloud for later use as training data. Some data is collected for only 30
+// minutes after seeing a NetEntity message.
 type entities struct {
 	sync.Mutex
 	dataMap map[uint64]*entity
@@ -90,90 +89,119 @@ type observations struct {
 func (e *entities) getEntityLocked(hwaddr uint64) *entity {
 	_, ok := e.dataMap[hwaddr]
 	if !ok {
-		e.dataMap[hwaddr] = newEntity()
+		e.dataMap[hwaddr] = newEntity(hwaddr)
 	}
 	return e.dataMap[hwaddr]
 }
 
-// addIdentityHint records the client's hostname as seen by DHCP
-func (e *entities) addIdentityHint(hwaddr uint64, name string) {
+func (e *entities) addTimeout(hwaddr uint64) {
 	e.Lock()
 	defer e.Unlock()
 
 	d := e.getEntityLocked(hwaddr)
-	if d.name == "" {
-		d.name = name
-	}
+	d.timeout = time.Now().Add(collectionDuration)
 }
 
-// addAttr adds the attribute 'a'
-func (e *entities) addAttr(hwaddr uint64, a string) {
+func (e *entities) addDHCPName(hwaddr uint64, name string) {
 	e.Lock()
 	defer e.Unlock()
 
 	d := e.getEntityLocked(hwaddr)
-	if time.Now().Before(d.timeout) {
-		d.attrs[a] = true
+	if d.info.DhcpName == nil {
+		d.info.DhcpName = proto.String(name)
 	}
 }
 
-// writeCSV exports an Entities struct to a CSV file, overwriting the file at
-// 'path' if it already exists.
-func (e *entities) writeCSV(path string) error {
+func (e *entities) addMsgEntity(hwaddr uint64, msg *base_msg.EventNetEntity) {
+	e.Lock()
+	defer e.Unlock()
+
+	d := e.getEntityLocked(hwaddr)
+	if d.info.Entity == nil {
+		d.info.Entity = msg
+	}
+}
+
+func (e *entities) addMsgOptions(hwaddr uint64, msg *base_msg.DHCPOptions) {
+	e.Lock()
+	defer e.Unlock()
+
+	d := e.getEntityLocked(hwaddr)
+	d.info.Options = append(d.info.Options, msg)
+}
+
+// A message is recorded in this entity's DeviceInfo if the timeout is
+// uninitialized (during identifierd startup for example), if the timeout has
+// not expired, or if the message contains a feature included in
+// observations.attrMap
+func recordMsg(d *entity, force bool) bool {
+	return d.timeout.IsZero() || time.Now().Before(d.timeout) || force
+}
+
+func (e *entities) addMsgScan(hwaddr uint64, msg *base_msg.EventNetScan, force bool) {
+	e.Lock()
+	defer e.Unlock()
+
+	d := e.getEntityLocked(hwaddr)
+
+	// We don't always get a get OS fingerprint on the first scan
+	if recordMsg(d, force) {
+		d.info.Scan = append(d.info.Scan, msg)
+	}
+}
+
+func (e *entities) addMsgRequest(hwaddr uint64, msg *base_msg.EventNetRequest, force bool) {
+	e.Lock()
+	defer e.Unlock()
+
+	d := e.getEntityLocked(hwaddr)
+	if recordMsg(d, force) {
+		d.info.Request = append(d.info.Request, msg)
+	}
+}
+
+func (e *entities) addMsgListen(hwaddr uint64, msg *base_msg.EventListen, force bool) {
+	e.Lock()
+	defer e.Unlock()
+
+	d := e.getEntityLocked(hwaddr)
+	if recordMsg(d, force) {
+		d.info.Listen = append(d.info.Listen, msg)
+	}
+}
+
+func (e *entities) writeInventory(path string) error {
 	e.Lock()
 	defer e.Unlock()
 
 	tmpPath := path + ".tmp"
-	f, err := os.OpenFile(tmpPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	w := csv.NewWriter(f)
 
-	// Compute the union of all the attributes.
-	union := make(map[string]bool)
-	for _, ent := range e.dataMap {
-		for a := range ent.attrs {
-			union[a] = true
-		}
+	t := time.Now()
+	inventory := &base_msg.DeviceInventory{
+		Timestamp: &base_msg.Timestamp{
+			Seconds: proto.Int64(t.Unix()),
+			Nanos:   proto.Int32(int32(t.Nanosecond())),
+		},
 	}
 
-	// Make an attribute name -> column index map
-	attrMap := make(map[string]int)
-
-	// The first row in the CSV is the attribute header. The last item in the row
-	// is the class attribute.
-	header := make([]string, 0)
-	header = append(header, "MAC Address")
-
-	for q := range union {
-		header = append(header, q)
-		attrMap[q] = len(header) - 1
-	}
-	header = append(header, "Identity")
-	w.Write(header)
-
-	// Make a row for each entity
-	for hw, ent := range e.dataMap {
-		record := make([]string, len(header))
-		for i := range header {
-			record[i] = "0"
-		}
-
-		record[0] = network.Uint64ToHWAddr(hw).String()
-		record[len(record)-1] = ent.name
-
-		for a := range ent.attrs {
-			record[attrMap[a]] = "1"
-		}
-		w.Write(record)
+	for _, d := range e.dataMap {
+		inventory.Devices = append(inventory.Devices, d.info)
 	}
 
-	w.Flush()
-	if err := w.Error(); err != nil {
-		return fmt.Errorf("write failed: %s", err)
+	out, err := proto.Marshal(inventory)
+	if err != nil {
+		return fmt.Errorf("failed to encode device inventory: %s", err)
 	}
+
+	if _, err := f.Write(out); err != nil {
+		return fmt.Errorf("failed to write device inventory: %s", err)
+	}
+
 	return os.Rename(tmpPath, path)
 }
 
@@ -231,7 +259,7 @@ func (o *observations) loadModel(dataPath, modelPath string) error {
 	return nil
 }
 
-func (o *observations) setByName(hwaddr uint64, attr string) {
+func (o *observations) setByName(hwaddr uint64, attr string) bool {
 	o.Lock()
 	defer o.Unlock()
 
@@ -249,9 +277,10 @@ func (o *observations) setByName(hwaddr uint64, attr string) {
 
 	col, ok := o.attrMap[attr]
 	if !ok {
-		return
+		return false
 	}
 	o.clients[hwaddr].attrs[col] = "1"
+	return true
 }
 
 func (o *observations) inference(c *client) (int64, float32, error) {
@@ -328,10 +357,16 @@ func (o *observations) predict() <-chan *prediction {
 	return predCh
 }
 
-func newEntity() *entity {
+func newEntity(hwaddr uint64) *entity {
+	t := time.Now()
 	ret := &entity{
-		timeout: time.Now().Add(collectionDuration),
-		attrs:   make(map[string]bool),
+		info: &base_msg.DeviceInfo{
+			Timestamp: &base_msg.Timestamp{
+				Seconds: proto.Int64(t.Unix()),
+				Nanos:   proto.Int32(int32(t.Nanosecond())),
+			},
+			MacAddress: proto.Uint64(hwaddr),
+		},
 	}
 	return ret
 }

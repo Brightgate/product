@@ -22,17 +22,14 @@ package main
 
 import (
 	"base_def"
-	"encoding/csv"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net"
 	"os"
 	"os/signal"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,9 +64,6 @@ var (
 
 	testData = newObservations()
 	newData  = newEntities()
-
-	// See github.com/miekg/dns/types.go: func (q *Question) String() {}
-	dnsQ = regexp.MustCompile(`;(.*?)\t`)
 )
 
 const (
@@ -78,7 +72,7 @@ const (
 	ouiFile   = "oui.txt"
 	mfgidFile = "ap_mfgid.json"
 	trainFile = "ap_identities.csv"
-	saveFile  = "observations.csv"
+	saveFile  = "observations.pb"
 )
 
 func delHWaddr(hwaddr uint64) {
@@ -111,32 +105,41 @@ func removeIP(ip uint32) {
 	delete(ipMap, ip)
 }
 
-func handleEntity(event []byte) {
-	entity := &base_msg.EventNetEntity{}
-	proto.Unmarshal(event, entity)
-
-	if entity.MacAddress == nil {
-		return
-	}
-
-	hwaddr := network.Uint64ToHWAddr(*entity.MacAddress)
-	entry, err := ouiDB.Query(hwaddr.String())
+func handleEntity(hwaddr uint64, msg *base_msg.EventNetEntity) {
+	var id int
+	mac := network.Uint64ToHWAddr(hwaddr)
+	entry, err := ouiDB.Query(mac.String())
 	if err != nil {
-		log.Printf("MAC address %s not in OUI database\n", hwaddr)
-		return
+		log.Printf("MAC address %s not in OUI database\n", mac)
+		id = mfgidDB["Unknown"]
+	} else {
+		id = mfgidDB[entry.Manufacturer]
 	}
 
-	hostname := "Unknown"
-	if entity.Hostname != nil {
-		hostname = *entity.Hostname
-	}
-	newData.addIdentityHint(*entity.MacAddress, hostname)
-
-	id := mfgidDB[entry.Manufacturer]
-	testData.setByName(*entity.MacAddress, model.FormatMfgString(id))
+	testData.setByName(hwaddr, model.FormatMfgString(id))
+	newData.addTimeout(hwaddr)
+	newData.addMsgEntity(hwaddr, msg)
 }
 
-func handleRequest(event []byte) {
+func handleEntityRaw(event []byte) {
+	msg := &base_msg.EventNetEntity{}
+	proto.Unmarshal(event, msg)
+	if msg.MacAddress == nil {
+		return
+	}
+	handleEntity(*msg.MacAddress, msg)
+}
+
+func handleRequest(hwaddr uint64, msg *base_msg.EventNetRequest) {
+	var force bool
+	for _, q := range msg.Request {
+		qName := model.DNSQ.FindStringSubmatch(q)[1]
+		force = force || testData.setByName(hwaddr, qName)
+	}
+	newData.addMsgRequest(hwaddr, msg, force)
+}
+
+func handleRequestRaw(event []byte) {
 	request := &base_msg.EventNetRequest{}
 	proto.Unmarshal(event, request)
 
@@ -144,25 +147,30 @@ func handleRequest(event []byte) {
 		return
 	}
 
-	for _, q := range request.Request {
-		qName := dnsQ.FindStringSubmatch(q)[1]
-
-		// See record_client() in dns4d
-		ip := net.ParseIP(*request.Requestor)
-		if ip == nil {
-			log.Printf("empty Requestor: %v\n", request)
-			return
-		}
-
-		hwaddr, ok := getHWaddr(network.IPAddrToUint32(ip))
-		if !ok {
-			log.Println("unknown entity:", ip)
-			return
-		}
-
-		newData.addAttr(hwaddr, qName)
-		testData.setByName(hwaddr, qName)
+	// See record_client() in dns4d
+	ip := net.ParseIP(*request.Requestor)
+	if ip == nil {
+		log.Printf("empty Requestor: %v\n", request)
+		return
 	}
+
+	hwaddr, ok := getHWaddr(network.IPAddrToUint32(ip))
+	if !ok {
+		log.Println("unknown entity:", ip)
+		return
+	}
+	handleRequest(hwaddr, request)
+}
+
+func configDHCPChanged(path []string, val string) {
+	mac, err := net.ParseMAC(path[1])
+	if err != nil {
+		log.Printf("invalid MAC address %s", path[1])
+		return
+	}
+
+	hwaddr := network.HWAddrToUint64(mac)
+	newData.addDHCPName(hwaddr, val)
 }
 
 func configIPv4Changed(path []string, val string) {
@@ -191,60 +199,62 @@ func configIPv4Delexp(path []string) {
 	delHWaddr(network.HWAddrToUint64(mac))
 }
 
-func handleScan(event []byte) {
-	var mac string
-	scan := &base_msg.EventNetScan{}
-	proto.Unmarshal(event, scan)
-
+func handleScan(hwaddr uint64, scan *base_msg.EventNetScan) {
+	var force bool
 	for _, h := range scan.Hosts {
-		for _, a := range h.Addresses {
-			if *a.Type == "mac" {
-				mac = *a.Info
-				break
-			}
-		}
-
-		hwaddr, err := net.ParseMAC(mac)
-		if err != nil {
-			continue
-		}
-
 		for _, p := range h.Ports {
 			if *p.State != "open" {
 				continue
 			}
 			portString := model.FormatPortString(*p.Protocol, *p.PortId)
-			newData.addAttr(network.HWAddrToUint64(hwaddr), portString)
-			testData.setByName(network.HWAddrToUint64(hwaddr), portString)
+			force = force || testData.setByName(hwaddr, portString)
 		}
 	}
+	newData.addMsgScan(hwaddr, scan, force)
 }
 
-func listenAttr(addr, kind string) {
-	ip := net.ParseIP(addr)
-	if ip == nil {
-		return
-	}
+func handleScanRaw(event []byte) {
+	scan := &base_msg.EventNetScan{}
+	proto.Unmarshal(event, scan)
 
-	hwaddr, ok := getHWaddr(network.IPAddrToUint32(ip))
+	hwaddr, ok := getHWaddr(*scan.Ipv4Address)
 	if !ok {
 		return
 	}
-
-	newData.addAttr(hwaddr, kind)
-	testData.setByName(hwaddr, kind)
+	handleScan(hwaddr, scan)
 }
 
-func handleListen(event []byte) {
+func handleListen(hwaddr uint64, listen *base_msg.EventListen) {
+	var force bool
+	switch *listen.Type {
+	case base_msg.EventListen_SSDP:
+		force = testData.setByName(hwaddr, "SSDP")
+	case base_msg.EventListen_mDNS:
+		force = testData.setByName(hwaddr, "mDNS")
+	}
+
+	newData.addMsgListen(hwaddr, listen, force)
+}
+
+func handleListenRaw(event []byte) {
 	listen := &base_msg.EventListen{}
 	proto.Unmarshal(event, listen)
 
-	switch *listen.Type {
-	case base_msg.EventListen_SSDP:
-		listenAttr(*listen.Ssdp.Address, "SSDP")
-	case base_msg.EventListen_mDNS:
-		listenAttr(*listen.Mdns.Address, "mDNS")
+	hwaddr, ok := getHWaddr(*listen.Ipv4Address)
+	if !ok {
+		return
 	}
+	handleListen(hwaddr, listen)
+}
+
+func handleOptions(hwaddr uint64, options *base_msg.DHCPOptions) {
+	newData.addMsgOptions(hwaddr, options)
+}
+
+func handleOptionsRaw(event []byte) {
+	options := &base_msg.DHCPOptions{}
+	proto.Unmarshal(event, options)
+	handleOptions(*options.MacAddress, options)
 }
 
 func logger(stop chan bool, wg *sync.WaitGroup) {
@@ -253,7 +263,7 @@ func logger(stop chan bool, wg *sync.WaitGroup) {
 	logFile := *logDir + saveFile
 
 	w := func(path string) {
-		if err := newData.writeCSV(logFile); err != nil {
+		if err := newData.writeInventory(logFile); err != nil {
 			log.Println("Could not save observation data:", err)
 		}
 	}
@@ -321,53 +331,42 @@ func identify() {
 
 func loadObservations() error {
 	logFile := *logDir + saveFile
-	f, err := os.Open(logFile)
+	in, err := ioutil.ReadFile(logFile)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	inventory := &base_msg.DeviceInventory{}
+	proto.Unmarshal(in, inventory)
 
-	r := csv.NewReader(f)
-
-	// Read attribute names
-	header, err := r.Read()
-	if err != nil {
-		return fmt.Errorf("failed to read header from %s: %s", logFile, err)
-	}
-
-	header = header[1:]
-	for {
-		record, err := r.Read()
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			return fmt.Errorf("failed to read saved observations from %s: %s", logFile, err)
+	for _, devInfo := range inventory.Devices {
+		hwaddr := *devInfo.MacAddress
+		if devInfo.Entity != nil {
+			handleEntity(hwaddr, devInfo.Entity)
 		}
 
-		mac, err := net.ParseMAC(record[0])
-		if err != nil {
-			return fmt.Errorf("invalid MAC addres %s: %s", record[0], err)
-		}
-
-		entry, err := ouiDB.Query(mac.String())
-		if err != nil {
-			return fmt.Errorf("MAC address %s not in OUI database: %s", mac, err)
-		}
-
-		id := mfgidDB[entry.Manufacturer]
-		hwaddr := network.HWAddrToUint64(mac)
-		testData.setByName(hwaddr, model.FormatMfgString(id))
-
-		last := len(record) - 1
-		newData.addIdentityHint(hwaddr, record[last])
-		for i, feat := range record[1:last] {
-			if feat == "0" {
-				continue
+		if devInfo.Scan != nil {
+			for _, msg := range devInfo.Scan {
+				handleScan(hwaddr, msg)
 			}
-			testData.setByName(hwaddr, header[i])
-			newData.addAttr(hwaddr, header[i])
 		}
 
+		if devInfo.Request != nil {
+			for _, msg := range devInfo.Request {
+				handleRequest(hwaddr, msg)
+			}
+		}
+
+		if devInfo.Listen != nil {
+			for _, msg := range devInfo.Listen {
+				handleListen(hwaddr, msg)
+			}
+		}
+
+		if devInfo.Options != nil {
+			for _, msg := range devInfo.Options {
+				handleOptions(hwaddr, msg)
+			}
+		}
 	}
 	return nil
 }
@@ -388,7 +387,7 @@ func recoverClients() {
 		}
 
 		if client.DHCPName != "" {
-			newData.addIdentityHint(hw, client.DHCPName)
+			newData.addDHCPName(hw, client.DHCPName)
 		}
 	}
 }
@@ -445,10 +444,11 @@ func main() {
 	// our observations.
 	brokerd = broker.New(pname)
 	defer brokerd.Fini()
-	brokerd.Handle(base_def.TOPIC_ENTITY, handleEntity)
-	brokerd.Handle(base_def.TOPIC_REQUEST, handleRequest)
-	brokerd.Handle(base_def.TOPIC_SCAN, handleScan)
-	brokerd.Handle(base_def.TOPIC_LISTEN, handleListen)
+	brokerd.Handle(base_def.TOPIC_ENTITY, handleEntityRaw)
+	brokerd.Handle(base_def.TOPIC_REQUEST, handleRequestRaw)
+	brokerd.Handle(base_def.TOPIC_SCAN, handleScanRaw)
+	brokerd.Handle(base_def.TOPIC_LISTEN, handleListenRaw)
+	brokerd.Handle(base_def.TOPIC_OPTIONS, handleOptionsRaw)
 
 	apcfgd, err = apcfg.NewConfig(brokerd, pname)
 	if err != nil {
@@ -458,6 +458,7 @@ func main() {
 	recoverClients()
 
 	apcfgd.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
+	apcfgd.HandleChange(`^@/clients/.*/dhcp_name$`, configDHCPChanged)
 	apcfgd.HandleDelete(`^@/clients/.*/ipv4$`, configIPv4Delexp)
 	apcfgd.HandleExpire(`^@/clients/.*/ipv4$`, configIPv4Delexp)
 

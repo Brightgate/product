@@ -354,6 +354,7 @@ message EventNetScan {
 	required Timestamp timestamp = 0x01;
 	optional string sender = 0x02;
 	optional string debug = 0x03;
+	optional fixed32 ipv4_address = 0x04;
 	required string scan_location = 0x1000;
 	required string start_info = 0x1001;
 	repeated Host hosts = 0x1002;
@@ -367,34 +368,31 @@ message Pair {
 
 // Contains information about SSDP
 message EventSSDP {
-	required string address = 0xb00;
-
 	enum MessageType {
 		ALIVE = 0;
 		BYEBYE = 1;
 		DISCOVER = 2;
 	}
-	required MessageType type = 0xb01;
+	required MessageType type = 0xb00;
 
 	// notify and response
-	optional string server = 0xb02;
-	optional string unique_service_name = 0xb03;
-	optional string location = 0xb04;
+	optional string server = 0xb01;
+	optional string unique_service_name = 0xb02;
+	optional string location = 0xb03;
 
 	// search and response
-	optional string search_target = 0xb05;
+	optional string search_target = 0xb04;
 
 	// notify
-	optional string notification_type = 0xb06;
+	optional string notification_type = 0xb05;
 
-	repeated Pair extra_headers = 0xb07;
+	repeated Pair extra_headers = 0xb0;
 }
 
 // Contains information about mDNS
 message EventmDNS {
-	required string address = 0xc00;
-	repeated string request = 0xc01;
-	repeated string response = 0xc02;
+	repeated string request = 0xc00;
+	repeated string response = 0xc01;
 }
 
 // Union of EventSSDP and EventmDNS messages
@@ -403,6 +401,7 @@ message EventListen {
 	required Timestamp timestamp = 0x01;
 	optional string sender = 0x02;
 	optional string debug = 0x03;
+	optional fixed32 ipv4_address = 0x04;
 
 	enum Type {
 		SSDP = 1;
@@ -447,4 +446,39 @@ message IdentifyResponse {
 	optional string identity_uuid = 0x04;
 
 	optional float certainty = 0x3100;
+}
+
+// Which DHCP options were used by the client
+// @topic "net.options", TOPIC_OPTIONS
+message DHCPOptions {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+
+	optional fixed64 mac_address = 0x04;
+	optional uint32 msg_type = 0x05;
+
+	// DHCP Option 55: Parameter Request List
+	optional bytes param_req_list = 0x06;
+
+	// DHCP Option 60: Vendor Class Identifier
+	optional bytes vendor_class_id = 0x07;
+}
+
+message DeviceInfo {
+	optional Timestamp timestamp = 0x01;
+	optional fixed64 mac_address = 0x02;
+	optional string dns_name = 0x03;
+	optional string dhcp_name = 0x04;
+
+	optional EventNetEntity entity = 0x05;
+	repeated EventNetScan scan = 0x06;
+	repeated EventNetRequest request = 0x07;
+	repeated EventListen listen = 0x08;
+	repeated DHCPOptions options = 0x09;
+}
+
+message DeviceInventory {
+	optional Timestamp timestamp = 0x01;
+	repeated DeviceInfo devices = 0x02;
 }

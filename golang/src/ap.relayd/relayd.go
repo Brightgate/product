@@ -119,7 +119,6 @@ func mDNSEvent(addr net.IP, requests, responses []string) {
 	t := time.Now()
 
 	event := &base_msg.EventmDNS{
-		Address:  proto.String(addr.String()),
 		Request:  requests,
 		Response: responses,
 	}
@@ -130,10 +129,11 @@ func mDNSEvent(addr net.IP, requests, responses []string) {
 			Seconds: proto.Int64(t.Unix()),
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
-		Sender: proto.String(brokerd.Name),
-		Debug:  proto.String("-"),
-		Type:   &listenType,
-		Mdns:   event,
+		Sender:      proto.String(brokerd.Name),
+		Debug:       proto.String("-"),
+		Ipv4Address: proto.Uint32(network.IPAddrToUint32(addr)),
+		Type:        &listenType,
+		Mdns:        event,
 	}
 
 	if err := brokerd.Publish(listen, base_def.TOPIC_LISTEN); err != nil {
@@ -174,9 +174,7 @@ func mDNSHandler(addr net.IP, b []byte) error {
 func ssdpEvent(addr net.IP, mtype base_msg.EventSSDP_MessageType,
 	req *http.Request) {
 
-	msg := &base_msg.EventSSDP{
-		Address: proto.String(addr.String()),
-	}
+	msg := &base_msg.EventSSDP{}
 	msg.Type = &mtype
 
 	// only stores first value for each header
@@ -211,10 +209,11 @@ func ssdpEvent(addr net.IP, mtype base_msg.EventSSDP_MessageType,
 			Seconds: proto.Int64(t.Unix()),
 			Nanos:   proto.Int32(int32(t.Nanosecond())),
 		},
-		Sender: proto.String(brokerd.Name),
-		Debug:  proto.String("-"),
-		Type:   &listenType,
-		Ssdp:   msg,
+		Sender:      proto.String(brokerd.Name),
+		Debug:       proto.String("-"),
+		Ipv4Address: proto.Uint32(network.IPAddrToUint32(addr)),
+		Type:        &listenType,
+		Ssdp:        msg,
 	}
 
 	if err := brokerd.Publish(listen, base_def.TOPIC_LISTEN); err != nil {

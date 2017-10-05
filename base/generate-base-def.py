@@ -176,6 +176,7 @@ assignments = [
     [Statement.SIMPLE_STR, "TOPIC_LISTEN", "net.listen"],
     [Statement.SIMPLE_STR, "TOPIC_EXCEPTION", "net.exception"],
     [Statement.SIMPLE_STR, "TOPIC_IDENTITY",  "net.identity"],
+    [Statement.SIMPLE_STR, "TOPIC_OPTIONS",  "net.options"],
 
     [Statement.COMMENT, "Prometheus client HTTP ports"],
     [Statement.SIMPLE_PORT, "BROKER_PROMETHEUS_PORT", 3200],

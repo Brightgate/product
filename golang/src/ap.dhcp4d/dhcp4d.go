@@ -259,6 +259,30 @@ func notifyRelease(ipaddr net.IP) {
 	}
 }
 
+/*
+ * Report on the DHCP options used by the client. Useed for DHCP fingerprinting.
+ */
+func notifyOptions(hwaddr net.HardwareAddr, options dhcp.Options, msgType dhcp.MessageType) {
+	t := time.Now()
+	msg := &base_msg.DHCPOptions{
+		Timestamp: &base_msg.Timestamp{
+			Seconds: proto.Int64(t.Unix()),
+			Nanos:   proto.Int32(int32(t.Nanosecond())),
+		},
+		Sender:        proto.String(brokerd.Name),
+		Debug:         proto.String("-"),
+		MacAddress:    proto.Uint64(network.HWAddrToUint64(hwaddr)),
+		MsgType:       proto.Uint32(uint32(msgType)),
+		ParamReqList:  options[dhcp.OptionParameterRequestList],
+		VendorClassId: options[dhcp.OptionVendorClassIdentifier],
+	}
+
+	err := brokerd.Publish(msg, base_def.TOPIC_OPTIONS)
+	if err != nil {
+		log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_OPTIONS, err)
+	}
+}
+
 func staticIPAssigned(hwaddr, ipaddr string) {
 	ipv4 := net.ParseIP(ipaddr)
 	if ipv4 == nil {
@@ -336,6 +360,8 @@ func (h *DHCPHandler) discover(p dhcp.Packet, options dhcp.Options) dhcp.Packet 
 	hwaddr := p.CHAddr().String()
 	log.Printf("DISCOVER %s\n", hwaddr)
 
+	notifyOptions(p.CHAddr(), options, dhcp.Discover)
+
 	l := h.leaseAssign(hwaddr)
 	if l == nil {
 		log.Printf("Out of %s leases\n", h.ring)
@@ -356,6 +382,8 @@ func (h *DHCPHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 
 	hwaddr := p.CHAddr().String()
 	log.Printf("REQUEST for %s\n", hwaddr)
+
+	notifyOptions(p.CHAddr(), options, dhcp.Request)
 
 	server, ok := options[dhcp.OptionServerIdentifier]
 	if ok && !net.IP(server).Equal(h.server_ip) {

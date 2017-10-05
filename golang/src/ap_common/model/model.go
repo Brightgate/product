@@ -12,10 +12,15 @@ package model
 
 import (
 	"fmt"
+	"regexp"
 
 	tf "github.com/tensorflow/tensorflow/tensorflow/go"
 	"github.com/tensorflow/tensorflow/tensorflow/go/op"
 )
+
+// DNSQ matches DNS questions.
+// See github.com/miekg/dns/types.go: func (q *Question) String() {}
+var DNSQ = regexp.MustCompile(`;(.*?)\t`)
 
 // FormatPortString formats a port attribute
 func FormatPortString(protocol string, port int32) string {
