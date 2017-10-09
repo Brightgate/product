@@ -518,7 +518,13 @@ func iptablesRebuild(ifaces ifaceMap) {
 	// $ sudo cat /etc/rsyslog.d/bg.conf
 	// :msg, contains, "DROPPED" -/var/log/bg-dropped.log
 	// & ~
-	iptablesAddRule("filter", "dropped",
+
+	// optionally skip logging of dropped packets on the WAN port.
+	wan_filter := ""
+	if _, err := config.GetProp("@/network/nologwan"); err == nil {
+		wan_filter = "! -i " + nics[apcfg.N_WAN] + " "
+	}
+	iptablesAddRule("filter", "dropped", wan_filter+
 		"-j LOG -m limit --limit 10/min  --log-prefix \"DROPPED \"")
 	iptablesAddRule("filter", "dropped", "-j DROP")
 
