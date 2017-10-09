@@ -13,6 +13,8 @@ import Routes from './routes.js'
 // Import App Component
 import App from './app.vue'
 
+import store from './store'
+
 // Init F7 Vue Plugin
 Vue.use(Framework7Vue)
 
@@ -20,13 +22,13 @@ Vue.use(Framework7Vue)
 var vm = new Vue({
   el: '#app',
   template: '<app/>',
+  store,
   // Init Framework7 by passing parameters here
   framework7: {
     root: '#app',
     /* Uncomment to enable Material theme: */
     // material: true,
     routes: Routes,
-    template7Pages: true
   },
   methods: {
     onF7Init: function () {

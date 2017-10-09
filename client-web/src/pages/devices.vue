@@ -1,39 +1,36 @@
 <template>
-  <f7-page>
-    <f7-navbar back-link="Back" title="Brightgate - Devices" sliding>
-    </f7-navbar>
+  <f7-page pull-to-refresh @ptr:refresh="pullRefresh">
+    <f7-navbar back-link="Back" title="Brightgate - Devices" sliding />
 
-    <f7-list v-for="(category, catkey) in categories" v-if="category.network_names.length > 0">
+    <f7-list v-for="catkey in device_category_order"
+             v-if="$store.getters.NumUniqIDs_By_Category(catkey) > 0">
       <f7-list-item divider/>
 
-      <f7-list-item v-if="catkey == 'recent'" group-title 
-        v-bind:title="category.name + ' (' + category.network_names.length.toString(10) + ')'"/>
+      <f7-list-item group-title 
+              v-bind:title="device_category_description[catkey] +
+              (catkey == 'recent' ? ` (${$store.getters.NumUniqIDs_By_Category(catkey)})` : '')"/>
       <f7-list-item v-if="catkey == 'recent'">
         <f7-link v-on:click="showRecent = true" v-if="!showRecent">Show Recent Attempts...</f7-link>
         <f7-link v-on:click="showRecent = false" v-if="showRecent">Hide Recent Attempts...</f7-link>
       </f7-list-item>
-      <f7-list-item v-else group-title v-bind:title="category.name"/>
 
       <f7-list-item 
             v-if="showRecent || catkey != 'recent'"
-            v-for="devname in category.network_names"
-            v-bind:title="devname"
-            v-bind:link="'/details?network_name=' + devname
-                        + (by_netname[devname].alert ? '&alert=true' : '') 
-                        + (by_netname[devname].notification ? '&notification=true' : '') ">
-            <div slot="media">
-              <img v-bind:src="'img/nova-solid-' + by_netname[devname].media + '.png'" width=32 height=32>
-            </div>
-        <div v-if="by_netname[devname].alert">
+            v-for="device in $store.getters.Devices_By_Category(catkey)"
+            v-bind:title="device.network_name"
+            v-bind:link="'/details?uniqid=' + device.uniqid">
+        <div slot="media">
+          <img v-bind:src="'img/nova-solid-' + device.media + '.png'" width=32 height=32>
+        </div>
+        <div v-if="device.alert">
           <f7-link open-popover="#virus">🚫</f7-link>
         </div>
-        <div v-if ="by_netname[devname].notification">
+        <div v-if="device.notification">
           <f7-link open-popover="#notification">⚠️</f7-link>
         </div>
       </f7-list-item>
 
     </f7-list>
-
 
     <f7-popover id="virus">
       <f7-block> 
@@ -57,21 +54,35 @@
       </f7-block> 
     </f7-popover>
 
-
   </f7-page>
 </template>
 <script>
 
-import { mockDevices } from "../mock_devices.js";
-var myDevices = mockDevices;
+const device_category_description = {
+  recent: 'Recent Attempted Connections',
+  phone: 'Phones & Tablets',
+  computer: 'Computers',
+  media: 'Media',
+  iot: 'Things'
+};
 
-  export default {
-    data: function () {
-      return {
-        showRecent: false,
-        categories: myDevices.devices.categories,
-        by_netname: myDevices.devices.by_netname
-      }
+const device_category_order = ['recent', 'phone', 'computer', 'media', 'iot']
+
+export default {
+  data: function () {
+    return {
+      showRecent: false,
+      device_category_description,
+      device_category_order,
     }
-  }
+  },
+
+  methods: {
+    pullRefresh: function(event, done) {
+      this.$store.dispatch('fetchDevices').then(() => {
+        return done()
+      })
+    },
+  },
+}
 </script>

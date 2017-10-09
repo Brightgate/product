@@ -399,6 +399,7 @@ func main() {
 	demoAPIRouter.HandleFunc("/alerts", demoAlertsHandler)
 	demoAPIRouter.HandleFunc("/devices/{ring}", demoDevicesByRingHandler)
 	demoAPIRouter.HandleFunc("/devices", demoDevicesHandler)
+	demoAPIRouter.HandleFunc("/rings", demoRingsHandler)
 	demoAPIRouter.HandleFunc("/access/{devid}", demoAccessByIDHandler)
 	demoAPIRouter.HandleFunc("/access", demoAccessHandler)
 	demoAPIRouter.HandleFunc("/supreme", demoSupremeHandler)

@@ -3,7 +3,7 @@
     <f7-navbar back-link="Back" v-bind:title="device_details.network_name + ' - Details'" sliding>
     </f7-navbar>
 
-    <div v-if="show_notification">
+    <div v-if="device_details.notification">
       <f7-block-title>⚠️&nbsp;&nbsp;Security Notification</f7-block-title>
       <f7-block inner>
         <li>This device is less secure because it is running old software.</li>
@@ -12,7 +12,7 @@
       </f7-block>
     </div>
 
-    <div v-if="show_alert">
+    <div v-if="device_details.alert">
       <f7-block-title>🚫&nbsp;&nbsp;Important Alert</f7-block-title>
       <f7-block inner>
         <li>Brightgate detected WannaCry ransomware on this device.</li>
@@ -39,12 +39,25 @@
     </f7-list>
 
     <f7-block-title>Access Control</f7-block-title>
-    <f7-block inner>
-      <div v-if="show_alert">
-        <p>🚫&nbsp;&nbsp;For your security, Brightgate has blocked this device
-        from your network.  See the alert above for more details.
-        </p>
-      </div>
+    <f7-list form>
+      <f7-list-item>
+      <f7-label>Security Ring</f7-label>
+      <span v-if="ring_changing" class="preloader"></span>
+      <f7-input v-else type="select" v-model="device_details.ring" @input="changeRing($event)">
+        <option v-for="ring in rings" v-bind:value="ring" v-bind:key="ring">{{ring}}</option>
+      </f7-input>
+      </f7-list-item>
+    </f7-list>
+
+    <f7-list media-list>
+      <f7-list-item v-if="device_details.alert" title="Status" after="Blocked 🚫"
+        text="For your security, Brightgate has blocked this device
+        from your network.  See the alert above for more details." />
+      <f7-list-item v-else title="Status" after="Normal ✅" />
+
+    </f7-list>
+
+    <f7-block>
       <p>
       Guest access expires in {{ render_time(expiration) }}.<br/><br/>
       <f7-grid>
@@ -128,13 +141,43 @@
   </f7-page>
 </template>
 <script>
-import { mockDevices } from "../mock_devices";
+import assert from "assert"
 
 export default {
+  beforeCreate: function() {
+    this.$store.dispatch('fetchRings');
+  },
+
+  methods: {
+
+    changeRing: function(wanted_ring) {
+      console.log(`Change Ring to ${wanted_ring}`)
+      assert(typeof wanted_ring === "string")
+      this.ring_changing = true
+      this.$store.dispatch("changeRing", {
+        deviceUniqID: this.device_details.uniqid,
+        newRing: wanted_ring
+      }).then(() => {
+        this.ring_changing = false
+      }).catch((err) => {
+        this.ring_changing = false
+        alert(`Failed to change security ring for ${this.device_details.network_name} to ${wanted_ring}: ${err}`)
+      })
+    }
+  },
+
+  computed: {
+    device_details: function () {
+      const query = this.$route.query
+      return this.$store.getters.Device_By_UniqID(query.uniqid);
+    },
+    rings: function () {
+      return this.$store.getters.Rings
+    }
+  },
   data: function () {
     // vue's idea of the current query params
     var query = this.$route.query
-    console.log("Device details: query is " + JSON.stringify(query))
     return {
       render_time: function (mins) {
         var days  = Math.floor(mins / 1440);
@@ -152,14 +195,12 @@ export default {
         }
         return result;
       },
+      ring_changing: false,
       paused: false,
       expiration: 314,
       // In the future, we can use this query to filter specific device info
       // if we can't get dynamic routes to work properly
       query: query,
-      show_alert: query.alert,
-      show_notification: query.notification,
-      device_details: mockDevices.devices.by_netname[query.network_name],
       log_details: [
         { log_id: "0", day: "Today",     time: 71,
           entries: [

@@ -383,6 +383,33 @@ func demoDevicesByRingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// GET rings () -> (...)
+func demoRingsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	props, err := config.GetProps("@/rings")
+	if err != nil {
+		log.Printf("Failed to get ring list: %v\n", err)
+	}
+
+	var rings []string
+	for _, ring := range props.Children {
+		rings = append(rings, ring.Name)
+	}
+
+	b, err := json.Marshal(rings)
+	if err != nil {
+		log.Printf("failed to json marshal rings '%v': %v\n", rings, err)
+		return
+	}
+
+	_, err = w.Write(b)
+	if err != nil {
+		log.Printf("failed to write rings '%v': %v\n", b, err)
+		return
+	}
+}
+
 // GET devices () -> (...)
 // Policy: GET (*_USER, *_ADMIN)
 func demoDevicesHandler(w http.ResponseWriter, r *http.Request) {
@@ -479,10 +506,8 @@ func demoPropertyByNameHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
-// XXX broken-- unexpected end of JSON
 func demoPropertyHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
-	w.Header().Set("Content-Type", "application/json")
 
 	t := time.Now()
 
@@ -503,7 +528,7 @@ func demoPropertyHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, estr, 400)
 		} else {
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintf(w, "%s", val)
+			fmt.Fprintf(w, "\"%s\"", val)
 		}
 	} else {
 		// Send property updates to ap.configd

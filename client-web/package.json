@@ -25,11 +25,14 @@
     ]
   },
   "dependencies": {
-    "vue": "^2.4.4",
-    "superagent": "^3.6.2",
+    "bluebird": "^3.5.1",
     "framework7": "^1.6.5",
+    "framework7-icons": "^0.8.9",
     "framework7-vue": "^0.9.3",
-    "framework7-icons": "^0.8.9"
+    "lodash": "^4.17.4",
+    "superagent": "^3.6.2",
+    "vue": "^2.4.4",
+    "vuex": "^2.4.1"
   },
   "devDependencies": {
     "babel-core": "^6.0.0",
