@@ -57,7 +57,7 @@ var (
 		"Root of AP installation")
 	addr = flag.String("listen-address", base_def.DNSD_PROMETHEUS_PORT,
 		"The address to listen on for HTTP requests.")
-	brokerd broker.Broker
+	brokerd *broker.Broker
 	config  *apcfg.APConfig
 
 	latencies = prometheus.NewSummary(prometheus.SummaryOpts{
@@ -135,63 +135,44 @@ func dns_update(resource *base_msg.EventNetResource) {
 	hostsMtx.Unlock()
 }
 
-// These are the per-client property changes that affect us
-var relevantProperties = map[string]bool{
-	"ipv4":      true,
-	"dns_name":  true,
-	"dhcp_name": true,
-	"ring":      true,
-}
-
-func configEvent(raw []byte) {
-	var old, new *apcfg.ClientInfo
-
-	event := &base_msg.EventConfig{}
-	proto.Unmarshal(raw, event)
-
-	// Ignore messages without an explicit type
-	if event.Type == nil {
+func changeEvent(path []string, val string) {
+	mac := path[1]
+	new := config.GetClient(mac)
+	if new == nil {
+		log.Printf("Change event for unknown client: %s\n", mac)
 		return
-	}
-	etype := *event.Type
-	property := *event.Property
-	path := strings.Split(property[2:], "/")
-
-	// Ignore any config changes unrelated to clients
-	if len(path) < 2 || path[0] != "clients" {
-		return
-	}
-
-	macaddr := path[1]
-
-	// The only whole-client update we would react to (or expect to see, for
-	// that matter) is a delete
-	if len(path) == 2 {
-		if etype != base_msg.EventConfig_DELETE {
-			return
-		}
-	} else {
-		// Check to see if this is a property change that we care about
-		if r, _ := relevantProperties[path[2]]; !r {
-			return
-		}
-
-		if etype == base_msg.EventConfig_CHANGE {
-			new = config.GetClient(macaddr)
-		}
 	}
 
 	clientMtx.Lock()
-	old = clients[macaddr]
-	if old != nil {
-		delete(clients, macaddr)
+	if old := clients[mac]; old != nil {
 		deleteOneClient(old)
 	}
-	if new != nil {
-		updateOneClient(new)
-		clients[macaddr] = new
-	}
+	updateOneClient(new)
+	clients[mac] = new
 	clientMtx.Unlock()
+}
+
+func deleteEvent(path []string) {
+	ignore := true
+
+	if len(path) == 2 {
+		// Handle full client delete (@/clients/<mac>)
+		ignore = false
+	} else if len(path) == 3 &&
+		(path[2] == "dns_name" || path[2] == "ipv4") {
+		ignore = false
+	}
+
+	if !ignore {
+		mac := path[1]
+
+		clientMtx.Lock()
+		if old := clients[mac]; old != nil {
+			delete(clients, mac)
+			deleteOneClient(old)
+		}
+		clientMtx.Unlock()
+	}
 }
 
 func resourceEvent(event []byte) {
@@ -559,11 +540,6 @@ func initNetwork() {
 
 	warned = make(map[string]bool)
 
-	config, err = apcfg.NewConfig(pname)
-	if err != nil {
-		log.Fatalf("cannot connect to configd: %v\n", err)
-	}
-
 	siteid, err := config.GetProp("@/siteid")
 	if err != nil {
 		log.Printf("failed to fetch siteid: %v\n", err)
@@ -650,12 +626,17 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
-	brokerd.Init(pname)
-	brokerd.Handle(base_def.TOPIC_CONFIG, configEvent)
+	brokerd = broker.New(pname)
 	brokerd.Handle(base_def.TOPIC_RESOURCE, resourceEvent)
-	brokerd.Connect()
-	defer brokerd.Disconnect()
-	brokerd.Ping()
+	defer brokerd.Fini()
+
+	config, err = apcfg.NewConfig(brokerd, pname)
+	if err != nil {
+		log.Fatalf("cannot connect to configd: %v\n", err)
+	}
+	config.HandleChange(`^@/clients/.*/(ipv4|dns_name|dhcp_name|ring)$`,
+		changeEvent)
+	config.HandleDelete(`^@/clients/`, deleteEvent)
 
 	hosts = make(map[string]dnsRecord)
 	initNetwork()

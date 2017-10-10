@@ -114,7 +114,7 @@ func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	envcfg.Unmarshal(&environ)
 
-	config, err := apcfg.NewConfig(pname)
+	config, err := apcfg.NewConfig(nil, pname)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}

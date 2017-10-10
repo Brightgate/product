@@ -113,21 +113,10 @@ func event_listener(b *Broker) {
 }
 
 func (b *Broker) Handle(topic string, handler hdlr_f) {
-	if len(b.Name) == 0 {
-		log.Panic("Broker hasn't been initialized yet")
-	}
 	b.handlers[topic] = handler
 }
 
-func (b *Broker) Disconnect() {
-	b.subscriber.Close()
-}
-
-func (b *Broker) Connect() {
-	if len(b.Name) == 0 {
-		log.Panic("Broker hasn't been initialized yet")
-	}
-
+func (b *Broker) connect() {
 	s, _ := zmq.NewSocket(zmq.SUB)
 	b.subscriber = s
 	b.subscriber.Connect(base_def.BROKER_ZMQ_SUB_URL)
@@ -139,18 +128,30 @@ func (b *Broker) Connect() {
 	go event_listener(b)
 }
 
-func (b *Broker) Init(name string) {
-	if len(b.Name) > 0 {
-		log.Panic("Broker can't be initialized multiple times")
-	}
+// Fini closes the subscriber's connection to the broker
+func (b *Broker) Fini() {
+	b.subscriber.Close()
+}
+
+// New allocates a brokers structure and establishes a network connection to
+// the broker daemon.
+func New(name string) *Broker {
 	if len(name) == 0 {
-		log.Panic("Broker consumer must give its name")
+		log.Printf("Broker consumer must give its name\n")
+		return nil
 	}
 
-	b.Name = fmt.Sprintf("%s(%d)", name, os.Getpid())
+	b := Broker{
+		Name:     fmt.Sprintf("%s(%d)", name, os.Getpid()),
+		handlers: make(map[string]hdlr_f),
+	}
+
 	// Add placeholder handlers in the map for known topics
-	b.handlers = make(map[string]hdlr_f)
 	for _, v := range known_topics {
 		b.handlers[v] = nil
 	}
+
+	b.connect()
+	b.Ping()
+	return &b
 }

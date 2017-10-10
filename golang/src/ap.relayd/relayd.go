@@ -63,7 +63,7 @@ var ringLevel = map[string]int{
 
 var (
 	debug   = flag.Bool("debug", false, "Enable debug logging")
-	brokerd broker.Broker
+	brokerd *broker.Broker
 	config  *apcfg.APConfig
 	rings   apcfg.RingMap
 
@@ -453,12 +453,10 @@ func main() {
 
 	flag.Parse()
 
-	brokerd.Init(pname)
-	brokerd.Connect()
-	defer brokerd.Disconnect()
-	brokerd.Ping()
+	brokerd = broker.New(pname)
+	defer brokerd.Fini()
 
-	config, err = apcfg.NewConfig(pname)
+	config, err = apcfg.NewConfig(brokerd, pname)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}

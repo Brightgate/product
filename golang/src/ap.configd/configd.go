@@ -144,7 +144,7 @@ var (
 	addr          = flag.String("listen-address",
 		base_def.CONFIGD_PROMETHEUS_PORT,
 		"The address to listen on for HTTP requests.")
-	brokerd broker.Broker
+	brokerd *broker.Broker
 	propdir = flag.String("propdir", "./",
 		"directory in which the property files should be stored")
 
@@ -1024,12 +1024,9 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
-	// zmq setup
-	brokerd.Init(pname)
+	brokerd = broker.New(pname)
 	brokerd.Handle(base_def.TOPIC_ENTITY, entity_handler)
-	brokerd.Connect()
-	defer brokerd.Disconnect()
-	brokerd.Ping()
+	defer brokerd.Fini()
 
 	if err = DeviceDBInit(); err != nil {
 		log.Printf("Failed to import devices database: %v\n", err)

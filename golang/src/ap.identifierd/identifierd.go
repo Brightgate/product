@@ -55,7 +55,7 @@ var (
 	modelDir = flag.String("modeldir", "./", "Directory containing a saved model")
 	logDir   = flag.String("logdir", "./", "Directory for device learning log data")
 
-	brokerd broker.Broker
+	brokerd *broker.Broker
 	apcfgd  *apcfg.APConfig
 
 	ouiDB   oui.DynamicDB
@@ -80,6 +80,17 @@ const (
 	trainFile = "ap_identities.csv"
 	saveFile  = "observations.csv"
 )
+
+func delHWaddr(hwaddr uint64) {
+	ipMtx.Lock()
+	defer ipMtx.Unlock()
+	for ip, hw := range ipMap {
+		if hw == hwaddr {
+			delete(ipMap, ip)
+			break
+		}
+	}
+}
 
 func getHWaddr(ip uint32) (uint64, bool) {
 	ipMtx.Lock()
@@ -154,36 +165,30 @@ func handleRequest(event []byte) {
 	}
 }
 
-func handleConfig(event []byte) {
-	eventConfig := &base_msg.EventConfig{}
-	proto.Unmarshal(event, eventConfig)
-	property := *eventConfig.Property
-	value := *eventConfig.NewValue
-	path := strings.Split(property[2:], "/")
-
-	// Ignore all properties other than "@/clients/*/ipv4"
-	if len(path) != 3 || path[0] != "clients" || path[2] != "ipv4" {
-		return
-	}
-
+func configIPv4Changed(path []string, val string) {
 	mac, err := net.ParseMAC(path[1])
 	if err != nil {
-		log.Printf("invalid MAC address %s", *eventConfig.NewValue)
+		log.Printf("invalid MAC address %s", path[1])
 		return
 	}
 
-	ipv4 := net.ParseIP(value)
+	ipv4 := net.ParseIP(val)
 	if ipv4 == nil {
-		log.Printf("invalid IPv4 address %s", value)
+		log.Printf("invalid IPv4 address %s", val)
 		return
 	}
 	ipaddr := network.IPAddrToUint32(ipv4)
+	addIP(ipaddr, network.HWAddrToUint64(mac))
+}
 
-	if *eventConfig.Type == base_msg.EventConfig_CHANGE {
-		addIP(ipaddr, network.HWAddrToUint64(mac))
-	} else {
-		removeIP(ipaddr)
+func configIPv4Delexp(path []string) {
+	mac, err := net.ParseMAC(path[1])
+	if err != nil {
+		log.Printf("invalid MAC address %s", path[1])
+		return
 	}
+
+	delHWaddr(network.HWAddrToUint64(mac))
 }
 
 func handleScan(event []byte) {
@@ -428,13 +433,6 @@ func main() {
 		log.Fatalf("failed to import manufacturer IDs from %s: %v\n", mfgidPath, err)
 	}
 
-	apcfgd, err = apcfg.NewConfig(pname)
-	if err != nil {
-		log.Fatalf("cannot connect to configd: %v\n", err)
-	}
-
-	recoverClients()
-
 	if err = testData.loadModel(*dataDir+trainFile, *modelDir); err != nil {
 		log.Fatalln("failed to load model", err)
 	}
@@ -445,15 +443,23 @@ func main() {
 
 	// Use the broker to listen for appropriate messages to create and update
 	// our observations.
-	brokerd.Init(pname)
+	brokerd = broker.New(pname)
+	defer brokerd.Fini()
 	brokerd.Handle(base_def.TOPIC_ENTITY, handleEntity)
 	brokerd.Handle(base_def.TOPIC_REQUEST, handleRequest)
-	brokerd.Handle(base_def.TOPIC_CONFIG, handleConfig)
 	brokerd.Handle(base_def.TOPIC_SCAN, handleScan)
 	brokerd.Handle(base_def.TOPIC_LISTEN, handleListen)
-	brokerd.Connect()
-	defer brokerd.Disconnect()
-	brokerd.Ping()
+
+	apcfgd, err = apcfg.NewConfig(brokerd, pname)
+	if err != nil {
+		log.Fatalf("cannot connect to configd: %v\n", err)
+	}
+
+	recoverClients()
+
+	apcfgd.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
+	apcfgd.HandleDelete(`^@/clients/.*/ipv4$`, configIPv4Delexp)
+	apcfgd.HandleExpire(`^@/clients/.*/ipv4$`, configIPv4Delexp)
 
 	if err := os.MkdirAll(*logDir, 0755); err != nil {
 		log.Fatalln("failed to mkdir:", err)

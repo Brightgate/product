@@ -12,24 +12,19 @@ package main
 
 import (
 	"log"
-	"time"
 
 	"ap_common/broker"
 )
 
-func main() {
-	var b broker.Broker
+const (
+	pname = "ap-msgping"
+)
 
+func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
 	log.Println("start")
-	b.Init("ap-msgping")
-	b.Connect()
-	defer b.Disconnect()
-
-	//  Ensure subscriber connection has time to complete
-	time.Sleep(time.Second)
-	b.Ping()
-
+	b := broker.New(pname)
+	defer b.Fini()
 	log.Println("end")
 }

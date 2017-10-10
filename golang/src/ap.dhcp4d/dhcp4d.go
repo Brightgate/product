@@ -23,7 +23,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -48,7 +47,7 @@ var (
 
 	handlers = make(map[string]*DHCPHandler)
 
-	brokerd broker.Broker
+	brokerd *broker.Broker
 
 	config    *apcfg.APConfig
 	nics      []*apcfg.Nic
@@ -129,50 +128,22 @@ func configExpired(path []string) {
 	}
 }
 
-func configChanged(path []string, val string) {
-	if len(path) == 3 && path[0] == "clients" && path[2] == "ipv4" {
-		staticIPAssigned(path[1], val)
-		return
-	}
-
-	/*
-	 * Watch for client identifications in @/clients/<macaddr>/ring
-	 */
-	if len(path) == 3 && path[0] == "clients" && path[2] == "ring" {
-		client := path[1]
-
-		old := getRing(client)
-		if (old != val) && updateRing(client, old, val) {
-			if old == "" {
-				log.Printf("config reports new client %s is %s\n",
-					client, val)
-			} else {
-				log.Printf("config moves client %s from %s to  %s\n",
-					client, old, val)
-			}
-		}
-	}
+func configIPv4Changed(path []string, val string) {
+	staticIPAssigned(path[1], val)
 }
 
-func config_event(raw []byte) {
-	event := &base_msg.EventConfig{}
-	proto.Unmarshal(raw, event)
+func configRingChanged(path []string, val string) {
+	client := path[1]
 
-	// Ignore messages without an explicit type
-	if event.Type == nil {
-		return
-	}
-
-	etype := *event.Type
-	property := *event.Property
-	path := strings.Split(property[2:], "/")
-	value := *event.NewValue
-
-	switch etype {
-	case base_msg.EventConfig_EXPIRE:
-		configExpired(path)
-	case base_msg.EventConfig_CHANGE:
-		configChanged(path, value)
+	old := getRing(client)
+	if (old != val) && updateRing(client, old, val) {
+		if old == "" {
+			log.Printf("config reports new client %s is %s\n",
+				client, val)
+		} else {
+			log.Printf("config moves client %s from %s to  %s\n",
+				client, old, val)
+		}
 	}
 }
 
@@ -848,17 +819,17 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
-	brokerd.Init(pname)
-	brokerd.Handle(base_def.TOPIC_CONFIG, config_event)
-	brokerd.Connect()
-	defer brokerd.Disconnect()
-	brokerd.Ping()
+	brokerd = broker.New(pname)
+	defer brokerd.Fini()
 
 	// Interface to config
-	config, err = apcfg.NewConfig(pname)
+	config, err = apcfg.NewConfig(brokerd, pname)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}
+	config.HandleExpire(`^@/clients/.*/ipv4$`, configExpired)
+	config.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
+	config.HandleChange(`^@/clients/.*/ring$`, configRingChanged)
 
 	clients = config.GetClients()
 

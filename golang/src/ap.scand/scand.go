@@ -44,7 +44,7 @@ import (
 
 var (
 	scannedHosts = &activeHosts{active: make(map[string]bool)}
-	brokerd      broker.Broker
+	brokerd      *broker.Broker
 	config       *apcfg.APConfig
 	scanQueue    chan ScanRequest
 	quit         chan string
@@ -620,29 +620,12 @@ func echo(event []byte) {
 	log.Println(scan)
 }
 
-func handleConfig(event []byte) {
-	eventConfig := &base_msg.EventConfig{}
-	proto.Unmarshal(event, eventConfig)
-	property := *eventConfig.Property
-	value := *eventConfig.NewValue
-	path := strings.Split(property[2:], "/")
-
-	// Ignore all properties other than "@/clients/*/ipv4"
-	if len(path) != 3 || path[0] != "clients" || path[2] != "ipv4" {
-		return
-	}
-
-	ipv4 := net.ParseIP(value)
-	if ipv4 == nil {
+func configIPv4Changed(path []string, value string) {
+	if ipv4 := net.ParseIP(value); ipv4 != nil {
+		requestScan(ipv4.String())
+	} else {
 		log.Printf("invalid IPv4 address %s", value)
-		return
 	}
-
-	if *eventConfig.Type != base_msg.EventConfig_CHANGE {
-		return
-	}
-
-	requestScan(ipv4.String())
 }
 
 func contains(s []string, e string) bool {
@@ -677,16 +660,14 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
-	config, err = apcfg.NewConfig(pname)
+	brokerd = broker.New(pname)
+	defer brokerd.Fini()
+
+	config, err = apcfg.NewConfig(brokerd, pname)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}
-
-	brokerd.Init(pname)
-	brokerd.Connect()
-	brokerd.Handle(base_def.TOPIC_CONFIG, handleConfig)
-	defer brokerd.Disconnect()
-	brokerd.Ping()
+	config.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
 
 	if mcpd != nil {
 		if err = mcpd.SetState(mcp.ONLINE); err != nil {

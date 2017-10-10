@@ -288,7 +288,6 @@ func init() {
 
 func main() {
 	var err error
-	var b broker.Broker
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	flag.Var(ports, "http-ports", "The ports to listen on for HTTP requests.")
@@ -300,20 +299,18 @@ func main() {
 	}
 
 	// Set up connection with the broker daemon
-	b.Init(pname)
+	b := broker.New(pname)
 	b.Handle(base_def.TOPIC_PING, handle_ping)
 	b.Handle(base_def.TOPIC_CONFIG, handle_config)
 	b.Handle(base_def.TOPIC_ENTITY, handle_entity)
 	b.Handle(base_def.TOPIC_RESOURCE, handle_resource)
 	b.Handle(base_def.TOPIC_REQUEST, handle_request)
-	b.Connect()
-	defer b.Disconnect()
-	b.Ping()
+	defer b.Fini()
 
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
-	config, err = apcfg.NewConfig(pname)
+	config, err = apcfg.NewConfig(b, pname)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}

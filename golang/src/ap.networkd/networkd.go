@@ -54,9 +54,7 @@ import (
 	"ap_common/network"
 
 	"base_def"
-	"base_msg"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -146,56 +144,7 @@ type APConfig struct {
 // Interaction with the rest of the ap daemons
 //
 
-func config_changed(raw []byte) {
-	event := &base_msg.EventConfig{}
-	proto.Unmarshal(raw, event)
-	property := *event.Property
-	path := strings.Split(property[2:], "/")
-
-	conf := aps[nics[apcfg.N_WIFI]]
-
-	if len(path) == 3 && path[0] == "clients" && path[2] == "ring" {
-		// Watch for client identifications in @/client/<macaddr>/ring.
-		//
-		// If a client changes rings, we need it to rewrite the
-		// mac_accept file and then force the client to reassociate with
-		// its new VLAN.
-		hwaddr := path[1]
-		newRing := *event.NewValue
-		c, ok := clients[hwaddr]
-		if !ok {
-			c := apcfg.ClientInfo{Ring: newRing}
-			log.Printf("New client %s in %s\n", hwaddr, newRing)
-			clients[hwaddr] = &c
-		} else if c.Ring != newRing {
-			log.Printf("Moving %s from %s to %s\n",
-				hwaddr, c.Ring, newRing)
-			c.Ring = newRing
-		} else {
-			// False alarm.
-			return
-		}
-	} else if len(path) == 2 && path[0] == "network" {
-		// Watch for changes to the network conf
-		switch path[1] {
-		case "ssid":
-			conf.SSID = *event.NewValue
-
-		case "passphrase":
-			conf.Passphrase = *event.NewValue
-
-		case "setupssid":
-			conf.SetupSSID = *event.NewValue
-
-		default:
-			log.Printf("Ignoring update for unknown property: %s\n",
-				property)
-			return
-		}
-	} else {
-		return
-	}
-
+func apReset(conf *APConfig) {
 	generateHostAPDConf(conf)
 	if childProcess != nil {
 		//
@@ -206,6 +155,46 @@ func config_changed(raw []byte) {
 		//
 		childProcess.Signal(syscall.SIGINT)
 	}
+}
+
+func configRingChanged(path []string, val string) {
+	hwaddr := path[1]
+	newRing := val
+	c, ok := clients[hwaddr]
+	if !ok {
+		c := apcfg.ClientInfo{Ring: newRing}
+		log.Printf("New client %s in %s\n", hwaddr, newRing)
+		clients[hwaddr] = &c
+	} else if c.Ring != newRing {
+		log.Printf("Moving %s from %s to %s\n", hwaddr, c.Ring, newRing)
+		c.Ring = newRing
+	} else {
+		// False alarm.
+		return
+	}
+
+	conf := aps[nics[apcfg.N_WIFI]]
+	apReset(conf)
+}
+
+func configNetworkChanged(path []string, val string) {
+	conf := aps[nics[apcfg.N_WIFI]]
+
+	// Watch for changes to the network conf
+	switch path[1] {
+	case "ssid":
+		conf.SSID = val
+
+	case "passphrase":
+		conf.Passphrase = val
+
+	case "setupssid":
+		conf.SetupSSID = val
+
+	default:
+		return
+	}
+	apReset(conf)
 }
 
 //
@@ -854,7 +843,6 @@ func updateNetworkConfig(props *apcfg.PropertyNode) {
 }
 
 func main() {
-	var b broker.Broker
 	var err error
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
@@ -871,15 +859,15 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
-	b.Init(pname)
-	b.Handle(base_def.TOPIC_CONFIG, config_changed)
-	b.Connect()
-	defer b.Disconnect()
+	b := broker.New(pname)
+	defer b.Fini()
 
-	config, err = apcfg.NewConfig(pname)
+	config, err = apcfg.NewConfig(b, pname)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}
+	config.HandleChange(`^@/clients/.*/ring$`, configRingChanged)
+	config.HandleChange(`^@/network/`, configNetworkChanged)
 
 	subnets = config.GetSubnets()
 	rings = config.GetRings()

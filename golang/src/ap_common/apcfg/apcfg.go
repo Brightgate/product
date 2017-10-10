@@ -16,10 +16,12 @@ import (
 	"log"
 	"net"
 	"os"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
 
+	"ap_common/broker"
 	"ap_common/device"
 	"base_def"
 	"base_msg"
@@ -144,16 +146,32 @@ func (n *PropertyNode) GetExpiry() *time.Time {
 	return n.Expires
 }
 
+type changeMatch struct {
+	match   *regexp.Regexp
+	handler func([]string, string)
+}
+
+type delexpMatch struct {
+	match   *regexp.Regexp
+	handler func([]string)
+}
+
 // Opaque type representing a connection to ap.configd
 type APConfig struct {
 	mutex  sync.Mutex
 	socket *zmq.Socket
 	sender string
+
+	broker         *broker.Broker
+	changeHandlers []changeMatch
+	deleteHandlers []delexpMatch
+	expireHandlers []delexpMatch
+	handling       bool
 }
 
 // Connect to ap.configd.  Return a handle used for subsequent interactions with
 // the daemon
-func NewConfig(name string) (*APConfig, error) {
+func NewConfig(b *broker.Broker, name string) (*APConfig, error) {
 	sender := fmt.Sprintf("%s(%d)", name, os.Getpid())
 
 	socket, err := zmq.NewSocket(zmq.REQ)
@@ -180,7 +198,15 @@ func NewConfig(name string) (*APConfig, error) {
 		return nil, err
 	}
 
-	return &APConfig{sender: sender, socket: socket}, err
+	c := APConfig{
+		sender:         sender,
+		socket:         socket,
+		broker:         b,
+		changeHandlers: make([]changeMatch, 0),
+		deleteHandlers: make([]delexpMatch, 0),
+		expireHandlers: make([]delexpMatch, 0),
+	}
+	return &c, nil
 }
 
 func (c *APConfig) msg(oc base_msg.ConfigQuery_Operation, prop, val string,

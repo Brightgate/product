@@ -225,6 +225,7 @@ APPCOMPONENTS = \
 
 APP_COMMON_SRCS = \
 	$(GOSRC)/ap_common/apcfg/apcfg.go \
+	$(GOSRC)/ap_common/apcfg/events.go \
 	$(GOSRC)/ap_common/broker/broker.go \
 	$(GOSRC)/ap_common/mcp/mcp_client.go \
 	$(GOSRC)/ap_common/network/network.go \

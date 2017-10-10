@@ -222,7 +222,7 @@ func main() {
 		duration = os.Args[4]
 	}
 
-	apcfgd, err = apcfg.NewConfig(pname)
+	apcfgd, err = apcfg.NewConfig(nil, pname)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}

@@ -116,8 +116,6 @@ func logRotate(logDirs []string) {
 }
 
 func main() {
-	var b broker.Broker
-
 	flag.Parse()
 	var logDir string
 
@@ -170,15 +168,14 @@ func main() {
 
 	log.Println("prometheus client launched")
 
-	b.Init(pname)
+	b := broker.New(pname)
 	b.Handle(base_def.TOPIC_PING, handle_ping)
 	b.Handle(base_def.TOPIC_CONFIG, handle_config)
 	b.Handle(base_def.TOPIC_ENTITY, handle_entity)
 	b.Handle(base_def.TOPIC_RESOURCE, handle_resource)
 	b.Handle(base_def.TOPIC_REQUEST, handle_request)
 	b.Handle(base_def.TOPIC_IDENTITY, handle_identity)
-	b.Connect()
-	defer b.Disconnect()
+	defer b.Fini()
 
 	if mcpd != nil {
 		mcpd.SetState(mcp.ONLINE)

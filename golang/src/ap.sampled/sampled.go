@@ -21,7 +21,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -74,7 +73,7 @@ var (
 	capStats     = make(map[gopacket.LayerType]*layerStats)
 
 	macSelf net.HardwareAddr
-	brokerd broker.Broker
+	brokerd *broker.Broker
 	config  *apcfg.APConfig
 )
 
@@ -288,20 +287,18 @@ func dumpPackets(iface string) {
 
 }
 
-func configChanged(event []byte) {
-	eventConfig := &base_msg.EventConfig{}
-	proto.Unmarshal(event, eventConfig)
-	property := *eventConfig.Property
-	path := strings.Split(property[2:], "/")
-
-	// Watch for lease events on @/clients/<macaddr>/ipv4.
-	if len(path) != 3 || path[0] != "clients" || path[2] != "ipv4" {
-		return
+func configIPv4Delexp(path []string) {
+	if hwaddr, err := net.ParseMAC(path[1]); err == nil {
+		deleteRecord(hwaddr)
+	} else {
+		log.Printf("invalid MAC address %s", path[1])
 	}
+}
 
-	ip := net.ParseIP(*eventConfig.NewValue)
+func configIPv4Changed(path []string, val string) {
+	ip := net.ParseIP(val)
 	if ip == nil {
-		log.Printf("invalid IP address %s", *eventConfig.NewValue)
+		log.Printf("invalid IP address %s", val)
 		return
 	}
 
@@ -311,11 +308,7 @@ func configChanged(event []byte) {
 		return
 	}
 
-	if *eventConfig.Type == base_msg.EventConfig_CHANGE {
-		updateRecord(hwaddr, ip.To4(), true)
-	} else {
-		deleteRecord(hwaddr)
-	}
+	updateRecord(hwaddr, ip.To4(), true)
 }
 
 func auditor() {
@@ -388,11 +381,17 @@ func main() {
 		log.Fatalln("loop-time should be greater than cap-time")
 	}
 
+	brokerd = broker.New(pname)
+	defer brokerd.Fini()
+
 	// Interface to configd
-	config, err = apcfg.NewConfig(pname)
+	config, err = apcfg.NewConfig(brokerd, pname)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}
+	config.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
+	config.HandleDelete(`^@/clients/.*/ipv4$`, configIPv4Delexp)
+	config.HandleExpire(`^@/clients/.*/ipv4$`, configIPv4Delexp)
 
 	iface := *cli_iface
 	if len(iface) == 0 {
@@ -409,12 +408,6 @@ func main() {
 	macSelf = self.HardwareAddr
 
 	getLeases()
-
-	brokerd.Init(pname)
-	brokerd.Connect()
-	brokerd.Handle(base_def.TOPIC_CONFIG, configChanged)
-	defer brokerd.Disconnect()
-	brokerd.Ping()
 
 	// These are the layers we wish to decode
 	decode := make([]gopacket.DecodingLayer, idxMAX)
