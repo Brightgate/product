@@ -25,9 +25,9 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
 	"ap_common/apcfg"
+	"ap_common/aputil"
 	"ap_common/broker"
 	"ap_common/mcp"
 	"ap_common/network"
@@ -116,8 +116,6 @@ func initListener(s service) (p *ipv4.PacketConn, err error) {
 }
 
 func mDNSEvent(addr net.IP, requests, responses []string) {
-	t := time.Now()
-
 	event := &base_msg.EventmDNS{
 		Request:  requests,
 		Response: responses,
@@ -125,10 +123,7 @@ func mDNSEvent(addr net.IP, requests, responses []string) {
 
 	listenType := base_msg.EventListen_mDNS
 	listen := &base_msg.EventListen{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
+		Timestamp:   aputil.NowToProtobuf(),
 		Sender:      proto.String(brokerd.Name),
 		Debug:       proto.String("-"),
 		Ipv4Address: proto.Uint32(network.IPAddrToUint32(addr)),
@@ -202,13 +197,9 @@ func ssdpEvent(addr net.IP, mtype base_msg.EventSSDP_MessageType,
 	}
 	msg.ExtraHeaders = hs
 
-	t := time.Now()
 	listenType := base_msg.EventListen_SSDP
 	listen := &base_msg.EventListen{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
+		Timestamp:   aputil.NowToProtobuf(),
 		Sender:      proto.String(brokerd.Name),
 		Debug:       proto.String("-"),
 		Ipv4Address: proto.Uint32(network.IPAddrToUint32(addr)),

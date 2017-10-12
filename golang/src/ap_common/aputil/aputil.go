@@ -18,6 +18,11 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+	"time"
+
+	"base_msg"
+
+	"github.com/golang/protobuf/proto"
 )
 
 // Child is used to build and track the state of an child subprocess
@@ -118,4 +123,34 @@ func FileExists(filename string) bool {
 		return false
 	}
 	return true
+}
+
+// ProtobufToTime converts a Protobuf timestamp into the equivalent Go version
+func ProtobufToTime(ptime *base_msg.Timestamp) *time.Time {
+	if ptime == nil {
+		return nil
+	}
+
+	sec := *ptime.Seconds
+	nano := int64(*ptime.Nanos)
+	tmp := time.Unix(sec, nano)
+	return &tmp
+}
+
+// ProtobufToTime converts a Go timestamp into the equivalent Protobuf version
+func TimeToProtobuf(gtime *time.Time) *base_msg.Timestamp {
+	if gtime == nil {
+		return nil
+	}
+
+	tmp := base_msg.Timestamp{
+		Seconds: proto.Int64(gtime.Unix()),
+		Nanos:   proto.Int32(int32(gtime.Nanosecond())),
+	}
+	return &tmp
+}
+
+func NowToProtobuf() *base_msg.Timestamp {
+	gtime := time.Now()
+	return TimeToProtobuf(&gtime)
 }

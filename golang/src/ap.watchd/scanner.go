@@ -46,10 +46,10 @@ var (
 const (
 	cleanFreq = 10 * time.Minute
 
-	// default scan takes 70sec on average
+	// tcp syn scan takes 70sec on average
 	// udp scan takes 1000sec on average
-	defaultFreq = 2 * time.Minute
-	udpFreq     = 30 * time.Minute
+	tcpFreq = 2 * time.Minute
+	udpFreq = 30 * time.Minute
 
 	hostLifetime = 1 * time.Hour
 	hostScanFreq = 5 * time.Minute
@@ -89,9 +89,9 @@ func hostmapCreate() *hostmap {
 
 // ScanRequest is used to send tasks to scanners
 type ScanRequest struct {
-	IP   string
-	Args []string
-	File string
+	IP       string
+	Args     []string
+	ScanType string
 
 	Again  bool
 	Period time.Duration
@@ -140,7 +140,7 @@ func (q *scanQueue) Pop() interface{} {
 func getScannedHosts() (*hostmap, error) {
 	h := hostmapCreate()
 
-	files, err := ioutil.ReadDir(*nmapDir)
+	files, err := ioutil.ReadDir(*watchDir)
 	if err != nil {
 		return nil, fmt.Errorf("ReadDir failed: %v", err)
 	}
@@ -224,11 +224,11 @@ func portScanner() {
 			continue
 		}
 
-		scansStarted.WithLabelValues(req.IP, req.File).Inc()
-		portScan(req.IP, req.Args, req.File)
+		scansStarted.WithLabelValues(req.IP, req.ScanType).Inc()
+		portScan(req)
 		dur := time.Since(now).Seconds()
-		scanDuration.WithLabelValues(req.IP, req.File).Observe(dur)
-		scansFinished.WithLabelValues(req.IP, req.File).Inc()
+		scanDuration.WithLabelValues(req.IP, req.ScanType).Observe(dur)
+		scansFinished.WithLabelValues(req.IP, req.ScanType).Inc()
 
 		schedulePortScan(req, true)
 	}
@@ -239,7 +239,7 @@ func scannerRequest(ip string) {
 		return
 	}
 
-	path := *nmapDir + "/" + ip
+	path := *watchDir + "/" + ip
 	if !aputil.FileExists(path) {
 		if err := os.Mkdir(path, 0755); err != nil {
 			log.Printf("Error adding directory %s: %v\n", path, err)
@@ -256,26 +256,37 @@ func scannerRequest(ip string) {
 	//
 	// XXXX eventually, set scans and scan frequencies based on
 	// type of device detected
-	baseArgs := []string{"-v", "-sV", "-O", "-T4"}
-	udpArgs := append(baseArgs, "-sU")
+	tcpArgs := []string{"-v", "-sV", "-O", "-T4"}
+	udpArgs := append(tcpArgs, "-sU")
 
-	defaultScan := ScanRequest{
-		IP:     ip,
-		Args:   baseArgs,
-		File:   "default",
-		Period: defaultFreq,
+	TCPScan := ScanRequest{
+		IP:       ip,
+		Args:     tcpArgs,
+		ScanType: "tcp",
+		Period:   tcpFreq,
 	}
 
 	UDPScan := ScanRequest{
-		IP:     ip,
-		Args:   udpArgs,
-		File:   "default",
-		Period: udpFreq,
+		IP:       ip,
+		Args:     udpArgs,
+		ScanType: "udp",
+		Period:   udpFreq,
 	}
 
 	activeHosts.add(ip)
-	schedulePortScan(&defaultScan, false)
+	schedulePortScan(&TCPScan, false)
 	schedulePortScan(&UDPScan, false)
+}
+
+func getMacIP(host *nmap.Host) (mac, ip string) {
+	for _, addr := range host.Addresses {
+		if addr.AddrType == "ipv4" {
+			ip = addr.Addr
+		} else if addr.AddrType == "mac" {
+			mac = strings.ToLower(addr.Addr)
+		}
+	}
+	return
 }
 
 func subnetHostScan(iface, subnet string, scannedHosts *hostmap) int {
@@ -288,7 +299,7 @@ func subnetHostScan(iface, subnet string, scannedHosts *hostmap) int {
 		return 0
 	}
 
-	file := fmt.Sprintf("%s/netscans/netscan-%d.xml", *nmapDir,
+	file := fmt.Sprintf("%s/netscans/netscan-%d.xml", *watchDir,
 		int(time.Now().Unix()))
 
 	// Attempt to discover hosts:
@@ -305,17 +316,10 @@ func subnetHostScan(iface, subnet string, scannedHosts *hostmap) int {
 	}
 	clients := config.GetClients()
 	for _, host := range scanResults.Hosts {
-		var ip, mac string
 		if host.Status.State != "up" {
 			continue
 		}
-		for _, addr := range host.Addresses {
-			if addr.AddrType == "ipv4" {
-				ip = addr.Addr
-			} else if addr.AddrType == "mac" {
-				mac = strings.ToLower(addr.Addr)
-			}
-		}
+		mac, ip := getMacIP(&host)
 
 		// Skip any incomplete records.  We also don't want to schedule
 		// scans of the router (i.e., us)
@@ -416,144 +420,157 @@ func scan(ip string, nmapArgs []string, file string) (*nmap.NmapRun, error) {
 	return scanResults, nil
 }
 
-// toHosts changes an NmapRun struct into something that can be sent over
-// the message bus
-func toHosts(s *nmap.NmapRun) []*base_msg.Host {
-	hosts := make([]*base_msg.Host, 0)
-	for _, host := range s.Hosts {
-		h := new(base_msg.Host)
-		h.Starttime = timestampToProto(host.StartTime)
-		h.Endtime = timestampToProto(host.EndTime)
-		h.Status = proto.String(host.Status.State)
-		h.StatusReason = proto.String(host.Status.Reason)
-		for _, addr := range host.Addresses {
-			a := &base_msg.InfoAndType{
-				Info: proto.String(addr.Addr),
-				Type: proto.String(addr.AddrType),
-			}
-			h.Addresses = append(h.Addresses, a)
-		}
-		for _, hostname := range host.Hostnames {
-			hn := &base_msg.InfoAndType{
-				Info: proto.String(hostname.Name),
-				Type: proto.String(hostname.Type),
-			}
-			h.Hostnames = append(h.Hostnames, hn)
-		}
-		for _, extraports := range host.ExtraPorts {
-			for _, reason := range extraports.Reasons {
-				ep := &base_msg.ExtraPort{
-					State:  proto.String(extraports.State),
-					Count:  proto.Int(reason.Count),
-					Reason: proto.String(reason.Reason),
-				}
-				h.ExtraPorts = append(h.ExtraPorts, ep)
-			}
-		}
-		for _, port := range host.Ports {
-			p := new(base_msg.Port)
-			p.Protocol = proto.String(port.Protocol)
-			p.PortId = proto.Int(port.PortId)
-			p.State = proto.String(port.State.State)
-			p.StateReason = proto.String(port.State.Reason)
-			p.ServiceName = proto.String(port.Service.Name)
-			p.ServiceMethod = proto.String(port.Service.Method)
-			p.Confidence = proto.Int(port.Service.Conf)
+// Find and record all the ports we found open for this host.
+func recordNmapResults(host *nmap.Host) {
+	mac, _ := getMacIP(host)
+	dev := GetDeviceRecord(mac)
 
-			//optional
-			p.DeviceType = proto.String(port.Service.DeviceType)
-			p.Product = proto.String(port.Service.Product)
-			p.ExtraInfo = proto.String(port.Service.ExtraInfo)
-			p.ServiceFp = proto.String(port.Service.ServiceFp)
-			p.Version = proto.String(port.Service.Version)
-			for _, cpe := range port.Service.CPEs {
-				p.Cpes = append(p.Cpes, string(cpe))
-			}
-			p.Ostype = proto.String(port.Service.OsType)
-
-			h.Ports = append(h.Ports, p)
+	for _, port := range host.Ports {
+		if p, ok := dev.Stats[port.Protocol]; ok {
+			p.OpenPorts[port.PortId] = true
 		}
-		for _, usedPort := range host.Os.PortsUsed {
-			up := &base_msg.UsedPort{
-				State:    proto.String(usedPort.State),
-				Protocol: proto.String(usedPort.Proto),
-				PortId:   proto.Int(usedPort.PortId),
-			}
-			h.PortsUsed = append(h.PortsUsed, up)
-		}
-		for _, match := range host.Os.OsMatches {
-			m := new(base_msg.OSMatch)
-			m.Name = proto.String(match.Name)
-			m.Accuracy = proto.String(match.Accuracy)
-			m.Line = proto.String(match.Line)
-			for _, class := range match.OsClasses {
-				c := new(base_msg.OSClass)
-				c.Type = proto.String(class.Type)
-				c.Vendor = proto.String(class.Vendor)
-				c.Osfamily = proto.String(class.OsFamily)
-				c.Osgen = proto.String(class.OsGen)
-				c.Accuracy = proto.String(class.Accuracy)
-				for _, cpe := range class.CPEs {
-					c.Cpes = append(c.Cpes, string(cpe))
-				}
-				m.OsClasses = append(m.OsClasses, c)
-			}
-			h.OsMatches = append(h.OsMatches, m)
-		}
-		for _, f := range host.Os.OsFingerprints {
-			h.OsFingerprints = append(h.OsFingerprints, string(f.Fingerprint))
-		}
-		h.Uptime = proto.Int(host.Uptime.Seconds)
-		h.Lastboot = proto.String(host.Uptime.Lastboot)
-		hosts = append(hosts, h)
 	}
-	return hosts
+	ReleaseDeviceRecord(dev)
 }
 
 func timestampToProto(t nmap.Timestamp) *base_msg.Timestamp {
 	tt := time.Time(t)
-	return &base_msg.Timestamp{
-		Seconds: proto.Int64(tt.Unix()),
-		Nanos:   proto.Int32(int32(tt.Nanosecond())),
+	return aputil.TimeToProtobuf(&tt)
+}
+
+// marshall an NmapRun struct into something that fits into a protobuf
+func marshallNmapResults(host *nmap.Host) *base_msg.Host {
+	var h base_msg.Host
+
+	h.Starttime = timestampToProto(host.StartTime)
+	h.Endtime = timestampToProto(host.EndTime)
+	h.Status = proto.String(host.Status.State)
+	h.StatusReason = proto.String(host.Status.Reason)
+	for _, addr := range host.Addresses {
+		a := &base_msg.InfoAndType{
+			Info: proto.String(addr.Addr),
+			Type: proto.String(addr.AddrType),
+		}
+		h.Addresses = append(h.Addresses, a)
 	}
+	for _, hostname := range host.Hostnames {
+		hn := &base_msg.InfoAndType{
+			Info: proto.String(hostname.Name),
+			Type: proto.String(hostname.Type),
+		}
+		h.Hostnames = append(h.Hostnames, hn)
+	}
+	for _, extraports := range host.ExtraPorts {
+		for _, reason := range extraports.Reasons {
+			ep := &base_msg.ExtraPort{
+				State:  proto.String(extraports.State),
+				Count:  proto.Int(reason.Count),
+				Reason: proto.String(reason.Reason),
+			}
+			h.ExtraPorts = append(h.ExtraPorts, ep)
+		}
+	}
+	for _, port := range host.Ports {
+		p := new(base_msg.Port)
+		p.Protocol = proto.String(port.Protocol)
+		p.PortId = proto.Int(port.PortId)
+		p.State = proto.String(port.State.State)
+		p.StateReason = proto.String(port.State.Reason)
+		p.ServiceName = proto.String(port.Service.Name)
+		p.ServiceMethod = proto.String(port.Service.Method)
+		p.Confidence = proto.Int(port.Service.Conf)
+
+		//optional
+		p.DeviceType = proto.String(port.Service.DeviceType)
+		p.Product = proto.String(port.Service.Product)
+		p.ExtraInfo = proto.String(port.Service.ExtraInfo)
+		p.ServiceFp = proto.String(port.Service.ServiceFp)
+		p.Version = proto.String(port.Service.Version)
+		for _, cpe := range port.Service.CPEs {
+			p.Cpes = append(p.Cpes, string(cpe))
+		}
+		p.Ostype = proto.String(port.Service.OsType)
+
+		h.Ports = append(h.Ports, p)
+	}
+	for _, usedPort := range host.Os.PortsUsed {
+		up := &base_msg.UsedPort{
+			State:    proto.String(usedPort.State),
+			Protocol: proto.String(usedPort.Proto),
+			PortId:   proto.Int(usedPort.PortId),
+		}
+		h.PortsUsed = append(h.PortsUsed, up)
+	}
+	for _, match := range host.Os.OsMatches {
+		m := new(base_msg.OSMatch)
+		m.Name = proto.String(match.Name)
+		m.Accuracy = proto.String(match.Accuracy)
+		m.Line = proto.String(match.Line)
+		for _, class := range match.OsClasses {
+			c := new(base_msg.OSClass)
+			c.Type = proto.String(class.Type)
+			c.Vendor = proto.String(class.Vendor)
+			c.Osfamily = proto.String(class.OsFamily)
+			c.Osgen = proto.String(class.OsGen)
+			c.Accuracy = proto.String(class.Accuracy)
+			for _, cpe := range class.CPEs {
+				c.Cpes = append(c.Cpes, string(cpe))
+			}
+			m.OsClasses = append(m.OsClasses, c)
+		}
+		h.OsMatches = append(h.OsMatches, m)
+	}
+	for _, f := range host.Os.OsFingerprints {
+		h.OsFingerprints = append(h.OsFingerprints, string(f.Fingerprint))
+	}
+	h.Uptime = proto.Int(host.Uptime.Seconds)
+	h.Lastboot = proto.String(host.Uptime.Lastboot)
+
+	return &h
 }
 
 // portScan scans the ports of the given IP address using nmap, putting
 // results on the message bus. Scans of IP are stopped if host is down.
-func portScan(ip string, nmapArgs []string, filename string) {
-	file := fmt.Sprintf("%s/%s/%s-%d.xml", *nmapDir, ip, filename,
+func portScan(req *ScanRequest) {
+	file := fmt.Sprintf("%s/%s/%s-%d.xml", *watchDir, req.IP, req.ScanType,
 		int(time.Now().Unix()))
 
-	scanResults, err := scan(ip, nmapArgs, file)
+	res, err := scan(req.IP, req.Args, file)
 	if err != nil {
 		return
 	}
 
-	if len(scanResults.Hosts) == 1 && scanResults.Hosts[0].Status.State != "up" {
-		log.Printf("Host %s is down, stopping scans", ip)
-		activeHosts.del(ip)
-		cancelPortScan(ip)
+	if len(res.Hosts) != 1 {
+		log.Printf("Scan of 1 host returned %d results: %v\n",
+			len(res.Hosts), res)
 		return
 	}
 
-	addr := net.ParseIP(ip)
-	hosts := toHosts(scanResults)
-	t := time.Now()
-	start := fmt.Sprintf("Nmap %s scan initiated %s as: %s", scanResults.Version,
-		scanResults.StartStr, scanResults.Args)
+	host := &res.Hosts[0]
+	if host.Status.State != "up" {
+		log.Printf("Host %s is down, stopping scans", req.IP)
+		activeHosts.del(req.IP)
+		cancelPortScan(req.IP)
+		return
+	}
+
+	recordNmapResults(host)
+	marshalledHosts := make([]*base_msg.Host, 1)
+	marshalledHosts[0] = marshallNmapResults(host)
+
+	addr := net.ParseIP(req.IP)
+	start := fmt.Sprintf("Nmap %s scan initiated %s as: %s", res.Version,
+		res.StartStr, res.Args)
 
 	scan := &base_msg.EventNetScan{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
+		Timestamp:    aputil.NowToProtobuf(),
 		Sender:       proto.String(brokerd.Name),
 		Debug:        proto.String("-"),
 		Ipv4Address:  proto.Uint32(network.IPAddrToUint32(addr)),
 		ScanLocation: proto.String(file),
 		StartInfo:    proto.String(start),
-		Hosts:        hosts,
-		Summary:      proto.String(scanResults.RunStats.Finished.Summary),
+		Hosts:        marshalledHosts,
+		Summary:      proto.String(res.RunStats.Finished.Summary),
 	}
 
 	err = brokerd.Publish(scan, base_def.TOPIC_SCAN)
@@ -632,7 +649,7 @@ func cleanAll() {
 	}
 
 	for host := range scannedHosts.active {
-		if cleanHostdir(*nmapDir+"/"+host) == 0 {
+		if cleanHostdir(*watchDir+"/"+host) == 0 {
 			log.Printf("No recent scans for %s, forgetting host", host)
 			activeHosts.del(host)
 			cancelPortScan(host)
@@ -650,18 +667,23 @@ func scannerFini() {
 	log.Printf("Shutting down scanner\n")
 }
 
-func scannerInit() {
+func scannerInit() error {
 	activeHosts = hostmapCreate()
 	scansPending = make(scanQueue, 0)
 	heap.Init(&scansPending)
 
 	scansRunning = make(map[*os.Process]bool)
 
-	os.MkdirAll(*nmapDir+"/netscans", 0755)
+	os.MkdirAll(*watchDir+"/netscans", 0755)
 	for i := 0; i < numScanners; i++ {
 		go portScanner()
 	}
 
 	schedule(hostScan, hostScanFreq, true)
 	schedule(cleanAll, cleanFreq, false)
+	return nil
+}
+
+func init() {
+	addWatcher("scanner", scannerInit, scannerFini)
 }

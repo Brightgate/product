@@ -129,6 +129,7 @@ APPWEB=$(APPBASE)/share/web
 # APPHTML
 APPETC=$(APPBASE)/etc
 APPETCCROND=$(APPROOT)/etc/cron.d
+APPETCRSYSLOGD=$(APPROOT)/etc/rsyslog.d
 APPROOTLIB=$(APPROOT)/lib
 APPVAR=$(APPBASE)/var
 APPSSL=$(APPETC)/ssl
@@ -161,7 +162,8 @@ APPCOMMANDS = \
 	ap-msgping \
 	ap-ouisearch \
 	ap-rpc \
-	ap-start
+	ap-start \
+	ap-stats
 
 APPBINARIES = $(APPCOMMANDS:%=$(APPBIN)/%) $(APPDAEMONS:%=$(APPBIN)/%)
 
@@ -190,6 +192,7 @@ APPCONFIGS = \
 	$(APPETC)/ap_identities.csv \
 	$(APPETC)/ap_mfgid.json \
 	$(APPETCCROND)/com-brightgate-appliance-cron \
+	$(APPETCRSYSLOGD)/com-brightgate-rsyslog.conf \
 	$(APPETC)/devices.json \
 	$(APPETC)/mcp.json \
 	$(APPETC)/oui.txt \
@@ -204,6 +207,7 @@ APPDIRS = \
 	$(APPDOC) \
 	$(APPETC) \
 	$(APPETCCROND) \
+	$(APPETCRSYSLOGD) \
 	$(APPROOTLIB) \
 	$(APPRULES) \
 	$(APPSSL) \
@@ -229,6 +233,7 @@ APP_COMMON_SRCS = \
 	$(GOSRC)/ap_common/broker/broker.go \
 	$(GOSRC)/ap_common/mcp/mcp_client.go \
 	$(GOSRC)/ap_common/network/network.go \
+	$(GOSRC)/ap_common/watchd/watchd_client.go \
 	$(GOSRC)/base_def/base_def.go \
 	$(GOSRC)/base_msg/base_msg.pb.go
 
@@ -342,6 +347,9 @@ $(APPETC)/prometheus.yml: prometheus.yml | $(APPETC)
 $(APPETCCROND)/com-brightgate-appliance-cron: com-brightgate-appliance-cron | $(APPETCCROND)
 	$(INSTALL) -m 0644 $< $(APPETCCROND)
 
+$(APPETCRSYSLOGD)/com-brightgate-rsyslog.conf: $(GOSRC)/ap.watchd/com-brightgate-rsyslog.conf | $(APPETCRSYSLOGD)
+	$(INSTALL) -m 0644 $< $(APPETCRSYSLOGD)
+
 $(APPSPOOLANTIPHISH)/example_blacklist.csv: $(GOSRC)/data/phishtank/example_blacklist.csv | $(APPSPOOLANTIPHISH)
 	$(INSTALL) -m 0644 $< $(APPSPOOLANTIPHISH)
 
@@ -420,6 +428,8 @@ $(APPBIN)/ap.networkd: \
 	$(GOSRC)/ap.networkd/parse.go
 $(APPBIN)/ap.relayd: $(GOSRC)/ap.relayd/relayd.go
 $(APPBIN)/ap.watchd: \
+	$(GOSRC)/ap.watchd/api.go \
+	$(GOSRC)/ap.watchd/droplog.go \
 	$(GOSRC)/ap.watchd/metrics.go \
 	$(GOSRC)/ap.watchd/sampler.go \
 	$(GOSRC)/ap.watchd/scanner.go \
@@ -433,6 +443,7 @@ $(APPBIN)/ap-ouisearch: $(GOSRC)/ap-ouisearch/ouisearch.go
 $(APPBIN)/ap-rpc: \
 	$(GOSRC)/ap-rpc/rpc.go \
 	$(CLOUD_COMMON_SRCS)
+$(APPBIN)/ap-stats: $(GOSRC)/ap-stats/stats.go
 
 LOCAL_BINARIES=$(APPBINARIES:$(APPBIN)/%=$(GOPATH)/bin/%)
 

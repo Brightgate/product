@@ -78,6 +78,6 @@
         "Binary": "ap.watchd",
         "DependsOn": "networkd",
         "Privileged": true,
-        "Options": "-scandir $APROOT/var/spool/watchd"
+        "Options": "-dir $APROOT/var/spool/watchd"
     }
 }

@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"ap_common/apcfg"
+	"ap_common/aputil"
 	"ap_common/broker"
 	"ap_common/mcp"
 	"ap_common/network"
@@ -156,7 +157,6 @@ func propPath(hwaddr, prop string) string {
  * its hardware address, name, and any IP address it's requesting.
  */
 func notifyNewEntity(p dhcp.Packet, options dhcp.Options) {
-	t := time.Now()
 	ipaddr := p.CIAddr()
 	hwaddr_u64 := network.HWAddrToUint64(p.CHAddr())
 	hostname := string(options[dhcp.OptionHostName])
@@ -164,10 +164,7 @@ func notifyNewEntity(p dhcp.Packet, options dhcp.Options) {
 	log.Printf("New client %s (name: %q incoming IP address: %s)\n",
 		p.CHAddr().String(), hostname, ipaddr.String())
 	entity := &base_msg.EventNetEntity{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
+		Timestamp:   aputil.NowToProtobuf(),
 		Sender:      proto.String(brokerd.Name),
 		Debug:       proto.String("-"),
 		MacAddress:  proto.Uint64(hwaddr_u64),
@@ -188,14 +185,10 @@ func notifyClaimed(p dhcp.Packet, ipaddr net.IP, name string,
 	dur time.Duration) {
 
 	ttl := uint32(dur.Seconds())
-	t := time.Now()
 
 	action := base_msg.EventNetResource_CLAIMED
 	resource := &base_msg.EventNetResource{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
+		Timestamp:   aputil.NowToProtobuf(),
 		Sender:      proto.String(brokerd.Name),
 		Debug:       proto.String("-"),
 		Action:      &action,
@@ -215,14 +208,9 @@ func notifyClaimed(p dhcp.Packet, ipaddr net.IP, name string,
  * net.resource message indicating that that address is no longer available.
  */
 func notifyProvisioned(p dhcp.Packet, ipaddr net.IP) {
-	t := time.Now()
-
 	action := base_msg.EventNetResource_PROVISIONED
 	resource := &base_msg.EventNetResource{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
+		Timestamp:   aputil.NowToProtobuf(),
 		Sender:      proto.String(brokerd.Name),
 		Debug:       proto.String("-"),
 		Action:      &action,
@@ -240,13 +228,9 @@ func notifyProvisioned(p dhcp.Packet, ipaddr net.IP) {
  * the client, or the lease may have expired.
  */
 func notifyRelease(ipaddr net.IP) {
-	t := time.Now()
 	action := base_msg.EventNetResource_RELEASED
 	resource := &base_msg.EventNetResource{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
+		Timestamp:   aputil.NowToProtobuf(),
 		Sender:      proto.String(brokerd.Name),
 		Debug:       proto.String("-"),
 		Action:      &action,

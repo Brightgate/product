@@ -61,6 +61,9 @@ message EventPing {
 	optional string ping_message = 0x100;
 }
 
+// MCPRequest messages are used by child daemons to send status updates to mcp,
+// and by ap-ctl to send commands and query status.
+// @range 0x140
 message MCPRequest {
 	required Timestamp timestamp = 0x01;
 	optional string sender = 0x02;
@@ -78,6 +81,8 @@ message MCPRequest {
 	optional string daemon = 0x143;
 }
 
+// MCPResponse messages are sent by ap.mcp in response to MCPRequest messages
+// @range 0x180
 message MCPResponse {
 	required Timestamp timestamp = 0x01;
 	optional string sender = 0x02;
@@ -273,6 +278,36 @@ message ConfigResponse {
 
 	optional string property = 0x2001;
 	optional string value = 0x2002;
+}
+
+// WatchdRequest messages are used to query watchd for per-device observations
+// and statistics
+// @range 0x2100
+message WatchdRequest {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+
+	required string command = 0x2100;
+	required string device = 0x2101;
+	optional Timestamp start = 0x2102;
+	optional Timestamp end = 0x2103;
+}
+
+// WatchdResponse messages contain the results of a WatchdRequest
+// @range 0x2180
+message WatchdResponse {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+
+	enum WatchdResponse {
+		OK = 0;
+		Err = 1;
+	}
+
+	required WatchdResponse status = 0x2180;
+	required string response = 0x2181;
 }
 
 // For network scans

@@ -17,10 +17,11 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
-	"time"
 
 	"ap_common/apcfg"
+	"ap_common/aputil"
 	"ap_common/broker"
 	"ap_common/mcp"
 	"ap_common/network"
@@ -30,21 +31,123 @@ import (
 	"github.com/golang/protobuf/proto"
 )
 
-var (
-	brokerd *broker.Broker
-	config  *apcfg.APConfig
-
-	nmapDir = flag.String("scandir", ".",
-		"directory in which the nmap scan files should be stored")
-	addr = flag.String("prom_address", base_def.SCAND_PROMETHEUS_PORT,
-		"The address to listen on for Prometheus HTTP requests.")
-	verbose = flag.Bool("verbose", false, "Log nmap progress")
-)
-
 const (
 	pname = "ap.watchd"
 )
 
+var (
+	brokerd *broker.Broker
+	config  *apcfg.APConfig
+
+	watchDir = flag.String("dir", ".",
+		"directory in which the watchd work files should be stored")
+	addr = flag.String("prom_address", base_def.WATCHD_PROMETHEUS_PORT,
+		"The address to listen on for Prometheus HTTP requests.")
+	verbose = flag.Bool("verbose", false, "Log nmap progress")
+
+	watchers = make([]*Watcher, 0)
+)
+
+var (
+	macToIP = make(map[string]string)
+	ipToMac = make(map[string]string)
+	mapMtx  sync.Mutex
+)
+
+//
+// watchd hosts a number of relatively independent monitoring subsystems.  Each
+// is defined by the following structure, and plugged into the watchd framework
+// at launch time by their init() functions.
+//
+type Watcher struct {
+	Name string
+	Init func() error
+	Fini func()
+}
+
+func addWatcher(name string, ini func() error, fini func()) {
+	w := Watcher{
+		Name: name,
+		Init: ini,
+		Fini: fini,
+	}
+
+	watchers = append(watchers, &w)
+}
+
+//
+// We maintain mappings from MAC to IP Address, and from IP Address to MAC.
+// These mappings are populated at startup with call to GetClients().  They are
+// updated over time by monitoring changes in @/clients/<macaddr>ipv4
+//
+func getMacFromIP(ip string) string {
+	mapMtx.Lock()
+	mac := ipToMac[ip]
+	mapMtx.Unlock()
+	return mac
+}
+
+func getIPFromMac(mac string) string {
+	mapMtx.Lock()
+	ip := macToIP[mac]
+	mapMtx.Unlock()
+	return ip
+}
+
+func setMacIP(mac, ip string) {
+	mapMtx.Lock()
+	macToIP[mac] = ip
+	ipToMac[ip] = mac
+	log.Printf("%s <->%s\n", mac, ip)
+	mapMtx.Unlock()
+}
+
+func clearMac(mac string) {
+	mapMtx.Lock()
+	ip := macToIP[mac]
+	if ip != "" {
+		delete(ipToMac, ip)
+	}
+	delete(macToIP, mac)
+	mapMtx.Unlock()
+}
+
+func macToIPInit() {
+	clients := config.GetClients()
+
+	for m, c := range clients {
+		if c.IPv4 != nil {
+			setMacIP(m, c.IPv4.String())
+		}
+	}
+}
+
+func configIPv4Changed(path []string, value string) {
+	hwaddr, err := net.ParseMAC(path[1])
+	if err != nil {
+		log.Printf("invalid MAC address %s", path[1])
+		return
+	}
+
+	if ipv4 := net.ParseIP(value); ipv4 != nil {
+		samplerUpdate(hwaddr, ipv4.To4(), true)
+		scannerRequest(ipv4.String())
+		setMacIP(path[1], value)
+	} else {
+		log.Printf("invalid IPv4 address %s", value)
+	}
+}
+
+func configIPv4Delexp(path []string) {
+	if hwaddr, err := net.ParseMAC(path[1]); err == nil {
+		samplerDelete(hwaddr)
+		clearMac(path[1])
+	} else {
+		log.Printf("invalid MAC address %s", path[1])
+	}
+}
+
+//
 // Send a notification that we have an unknown entity on our network.
 func logUnknown(iface, mac, ipstr string) bool {
 	var addr net.IP
@@ -61,12 +164,8 @@ func logUnknown(iface, mac, ipstr string) bool {
 		return false
 	}
 
-	t := time.Now()
 	entity := &base_msg.EventNetEntity{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
+		Timestamp:     aputil.NowToProtobuf(),
 		Sender:        proto.String(brokerd.Name),
 		Debug:         proto.String("-"),
 		InterfaceName: &iface,
@@ -76,29 +175,6 @@ func logUnknown(iface, mac, ipstr string) bool {
 
 	err = brokerd.Publish(entity, base_def.TOPIC_ENTITY)
 	return err == nil
-}
-
-func configIPv4Changed(path []string, value string) {
-	hwaddr, err := net.ParseMAC(path[1])
-	if err != nil {
-		log.Printf("invalid MAC address %s", path[1])
-		return
-	}
-
-	if ipv4 := net.ParseIP(value); ipv4 != nil {
-		samplerUpdate(hwaddr, ipv4.To4(), true)
-		scannerRequest(ipv4.String())
-	} else {
-		log.Printf("invalid IPv4 address %s", value)
-	}
-}
-
-func configIPv4Delexp(path []string) {
-	if hwaddr, err := net.ParseMAC(path[1]); err == nil {
-		samplerDelete(hwaddr)
-	} else {
-		log.Printf("invalid MAC address %s", path[1])
-	}
 }
 
 func signalHandler() {
@@ -114,6 +190,12 @@ func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	flag.Parse()
 
+	if !aputil.FileExists(*watchDir) {
+		if err := os.Mkdir(*watchDir, 0755); err != nil {
+			log.Fatal("Error adding directory %s: %v\n",
+				*watchDir, err)
+		}
+	}
 	mcpd, err := mcp.New(pname)
 	if err != nil {
 		log.Printf("failed to connect to mcp\n")
@@ -126,7 +208,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}
+
 	config.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
+	config.HandleDelete(`^@/clients/.*/ipv4$`, configIPv4Delexp)
+	config.HandleExpire(`^@/clients/.*/ipv4$`, configIPv4Delexp)
+	macToIPInit()
 
 	if mcpd != nil {
 		if err = mcpd.SetState(mcp.ONLINE); err != nil {
@@ -134,20 +220,19 @@ func main() {
 		}
 	}
 
-	metricsInit()
+	for _, w := range watchers {
+		var err error
 
-	if err = sampleInit(); err != nil {
-		log.Printf("Failed to start sampler: %v\n", err)
-	} else {
-		defer sampleFini()
+		if w.Init != nil {
+			err = w.Init()
+		}
+
+		if err != nil {
+			log.Printf("Failed to start %s: %v\n", w.Name, err)
+		} else if w.Fini != nil {
+			defer w.Fini()
+		}
 	}
-
-	scannerInit()
-	defer scannerFini()
-
-	config.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
-	config.HandleDelete(`^@/clients/.*/ipv4$`, configIPv4Delexp)
-	config.HandleExpire(`^@/clients/.*/ipv4$`, configIPv4Delexp)
 
 	signalHandler()
 }

@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"ap_common/apcfg"
+	"ap_common/aputil"
 	"ap_common/broker"
 	"ap_common/mcp"
 	"ap_common/model"
@@ -309,12 +310,8 @@ func identify() {
 			updateClient(id.hwaddr, id.devID, id.probability)
 		}
 
-		t := time.Now()
 		identity := &base_msg.EventNetIdentity{
-			Timestamp: &base_msg.Timestamp{
-				Seconds: proto.Int64(t.Unix()),
-				Nanos:   proto.Int32(int32(t.Nanosecond())),
-			},
+			Timestamp:  aputil.NowToProtobuf(),
 			Sender:     proto.String(brokerd.Name),
 			Debug:      proto.String("-"),
 			MacAddress: proto.Uint64(id.hwaddr),

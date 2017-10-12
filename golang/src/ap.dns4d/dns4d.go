@@ -39,6 +39,7 @@ import (
 	"time"
 
 	"ap_common/apcfg"
+	"ap_common/aputil"
 	"ap_common/broker"
 	"ap_common/mcp"
 	"ap_common/network"
@@ -199,7 +200,6 @@ func resourceEvent(event []byte) {
 func logRequest(handler string, start time.Time, ip net.IP, r, m *dns.Msg) {
 	latencies.Observe(time.Since(start).Seconds())
 
-	t := time.Now()
 	protocol := base_msg.Protocol_DNS
 	requests := make([]string, 0)
 	responses := make([]string, 0)
@@ -213,10 +213,7 @@ func logRequest(handler string, start time.Time, ip net.IP, r, m *dns.Msg) {
 	}
 
 	entity := &base_msg.EventNetRequest{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
+		Timestamp:    aputil.NowToProtobuf(),
 		Sender:       proto.String(brokerd.Name),
 		Debug:        proto.String(handler),
 		Requestor:    proto.String(ip.String()),
@@ -243,12 +240,8 @@ func logUnknown(ipstr string) bool {
 		return false
 	}
 
-	t := time.Now()
 	entity := &base_msg.EventNetEntity{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
+		Timestamp:   aputil.NowToProtobuf(),
 		Sender:      proto.String(brokerd.Name),
 		Debug:       proto.String("-"),
 		Ipv4Address: proto.Uint32(network.IPAddrToUint32(addr)),

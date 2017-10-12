@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"ap_common/aputil"
 	"base_def"
 	"base_msg"
 
@@ -110,12 +111,8 @@ func New(name string) (*MCP, error) {
 func (m *MCP) msg(oc base_msg.MCPRequest_Operation,
 	daemon, command string, state int) (string, error) {
 
-	t := time.Now()
 	op := &base_msg.MCPRequest{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
+		Timestamp: aputil.NowToProtobuf(),
 		Sender:    proto.String(m.sender),
 		Debug:     proto.String("-"),
 		Operation: &oc,

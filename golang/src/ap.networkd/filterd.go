@@ -511,21 +511,21 @@ func iptablesRebuild(ifaces ifaceMap) {
 		}
 	}
 
-	// Dropped packets should be logged
-	// These messages can be collected in a dedicated log file by creating
-	// the following .conf file:
-	//
-	// $ sudo cat /etc/rsyslog.d/bg.conf
-	// :msg, contains, "DROPPED" -/var/log/bg-dropped.log
-	// & ~
-
-	// optionally skip logging of dropped packets on the WAN port.
-	wan_filter := ""
-	if _, err := config.GetProp("@/network/nologwan"); err == nil {
-		wan_filter = "! -i " + nics[apcfg.N_WAN] + " "
+	// Dropped packets should be logged.  We use different rules for LAN and
+	// WAN drops so they can be rate-limited independently.  We can
+	// optionally skip logging of dropped packets on the WAN port
+	// altogether.
+	wan_filter := "-i " + nics[apcfg.N_WAN] + " "
+	lan_filter := "! " + wan_filter
+	if _, err := config.GetProp("@/network/nologwan"); err != nil {
+		// Limit logged WAN drops to 1/second
+		iptablesAddRule("filter", "dropped", wan_filter+
+			"-j LOG -m limit --limit 60/min  --log-prefix \"DROPPED \"")
 	}
-	iptablesAddRule("filter", "dropped", wan_filter+
-		"-j LOG -m limit --limit 10/min  --log-prefix \"DROPPED \"")
+
+	// Limit logged LAN drops to 10/second
+	iptablesAddRule("filter", "dropped", lan_filter+
+		"-j LOG -m limit --limit 600/min  --log-prefix \"DROPPED \"")
 	iptablesAddRule("filter", "dropped", "-j DROP")
 
 	// Now add filter rules, from the most specific to the most general

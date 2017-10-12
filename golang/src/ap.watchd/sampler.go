@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"ap_common/apcfg"
 	"ap_common/network"
 
 	// Requires libpcap
@@ -59,14 +60,24 @@ var (
 
 	sampleTicker *time.Ticker
 	auditTicker  *time.Ticker
-	macSelf      net.HardwareAddr
+
+	scanningAddr net.HardwareAddr
+	scanningName string
+	gateways     map[uint32]bool
 )
 
 const (
 	idxEth int = iota
 	idxIpv4
 	idxArp
+	idxUDP
+	idxTCP
 	idxMAX
+)
+
+var (
+	decodeLayers []gopacket.DecodingLayer
+	parser       *gopacket.DecodingLayerParser
 )
 
 type auditType int
@@ -85,6 +96,7 @@ const (
 // inserted into auditRecords and vetted by the lease information coming from
 // ap.dhcp4d.
 type record struct {
+	iface  string
 	ipaddr net.IP
 	audit  auditType
 }
@@ -135,6 +147,29 @@ func handleArp(arp *layers.ARP) {
 	stats.dst[layers.NewMACEndpoint(arp.DstHwAddress)]++
 }
 
+func handlePort(src, dst net.IP, sport, dport int, proto string) {
+	// XXX: this is just recording the observed source/destination ports.
+	// In many cases, what we really want to know is the service being used.
+	// So, we may be recording that the traffic originates from port 55617,
+	// but it's really more interesting that it is going to port 443.  For
+	// intra-lan traffic, we'll record both ends of the conversation.  For
+	// traffic that is lan<->wan, we might be dropping the interesting half.
+	// This needs some more thought.
+
+	if rec := GetDeviceRecordByIP(src.String()); rec != nil {
+		if p := GetProtoRecord(rec, proto); p != nil {
+			p.OutPorts[sport] = true
+		}
+		ReleaseDeviceRecord(rec)
+	}
+	if rec := GetDeviceRecordByIP(dst.String()); rec != nil {
+		if p := GetProtoRecord(rec, proto); p != nil {
+			p.InPorts[dport] = true
+		}
+		ReleaseDeviceRecord(rec)
+	}
+}
+
 // Look up the record for this hwaddr:
 //   0) Ignore well known MAC and IP addresses
 //   1) If no record exists, create one. If we are authoritative the record is
@@ -148,8 +183,10 @@ func handleArp(arp *layers.ARP) {
 //      vetted.
 func samplerUpdate(hwaddr net.HardwareAddr, ipaddr net.IP, auth bool) {
 
-	if bytes.Equal(hwaddr, macSelf) || bytes.Equal(hwaddr, network.MacZero) ||
-		network.IsMacMulticast(hwaddr) || bytes.Equal(hwaddr, network.MacBcast) ||
+	if bytes.Equal(hwaddr, scanningAddr) ||
+		bytes.Equal(hwaddr, network.MacZero) ||
+		network.IsMacMulticast(hwaddr) ||
+		bytes.Equal(hwaddr, network.MacBcast) ||
 		ipaddr.Equal(net.IPv4zero) || ipaddr.IsMulticast() ||
 		ipaddr.Equal(net.IPv4bcast) {
 		return
@@ -160,8 +197,10 @@ func samplerUpdate(hwaddr net.HardwareAddr, ipaddr net.IP, auth bool) {
 	r, ok := auditRecords[layers.NewMACEndpoint(hwaddr)]
 
 	if !ok {
-		rec := &record{}
-		rec.ipaddr = ipaddr
+		rec := &record{
+			ipaddr: ipaddr,
+			iface:  scanningName,
+		}
 		if auth {
 			rec.audit = vetted
 		} else {
@@ -193,52 +232,110 @@ func samplerDelete(hwaddr net.HardwareAddr) {
 	auditMtx.Unlock()
 }
 
+func decodeOnePacket(data []byte) {
+	var eth *layers.Ethernet
+	var srcIP, dstIP net.IP
+
+	decoded := []gopacket.LayerType{}
+	if err := parser.DecodeLayers(data, &decoded); err != nil {
+		return
+	}
+
+	for _, typ := range decoded {
+		switch typ {
+		case layers.LayerTypeEthernet:
+			eth = decodeLayers[idxEth].(*layers.Ethernet)
+
+		case layers.LayerTypeIPv4:
+			ipv4 := decodeLayers[idxIpv4].(*layers.IPv4)
+			srcIP = ipv4.SrcIP
+			dstIP = ipv4.DstIP
+
+			// We ignore traffic to/from our gateway addresses
+			// because the scanner's nmap children are responsible
+			// for a ton of traffic we're not interested in.
+			if gateways[network.IPAddrToUint32(srcIP)] ||
+				gateways[network.IPAddrToUint32(dstIP)] {
+				return
+			}
+
+			handleEther(eth)
+			samplerUpdate(eth.SrcMAC, srcIP, false)
+			samplerUpdate(eth.DstMAC, dstIP, false)
+			handleIpv4(ipv4)
+
+		case layers.LayerTypeARP:
+			arp := decodeLayers[idxArp].(*layers.ARP)
+			samplerUpdate(arp.SourceHwAddress, arp.SourceProtAddress, false)
+			samplerUpdate(arp.DstHwAddress, arp.DstProtAddress, false)
+			handleArp(arp)
+
+		case layers.LayerTypeUDP:
+			udp := decodeLayers[idxUDP].(*layers.UDP)
+			sport := int(udp.SrcPort)
+			dport := int(udp.DstPort)
+			handlePort(srcIP, dstIP, sport, dport, "udp")
+
+		case layers.LayerTypeTCP:
+			tcp := decodeLayers[idxTCP].(*layers.TCP)
+			sport := int(tcp.SrcPort)
+			dport := int(tcp.DstPort)
+			handlePort(srcIP, dstIP, sport, dport, "tcp")
+		}
+	}
+}
+
 // Decode only the layers we care about:
 //   - Look for ARP request and reply to associate MAC and IP
 //   - Look for IPv4 to associate MAC and IP
-func decodePackets(iface string, decode []gopacket.DecodingLayer) {
+func decodePackets(iface string) {
 	handle, err := pcap.OpenLive(iface, 65536, true, pcap.BlockForever)
 	if err != nil {
 		log.Fatalln("OpenLive failed:", err)
 	}
 	defer handle.Close()
 
-	parser := gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet, decode...)
-	decoded := []gopacket.LayerType{}
-
 	start := time.Now()
 	for time.Since(start) < *capTime {
-		var srcMac, dstMac net.HardwareAddr
-
 		data, _, err := handle.ReadPacketData()
 		if err != nil {
 			log.Println("Error reading packet data:", err)
 			continue
 		}
-		err = parser.DecodeLayers(data, &decoded)
+		decodeOnePacket(data)
+	}
+}
 
-		for _, typ := range decoded {
-			switch typ {
-			case layers.LayerTypeEthernet:
-				// Save the MAC address for reference in IPv4 layer
-				eth := decode[idxEth].(*layers.Ethernet)
-				srcMac = eth.SrcMAC
-				dstMac = eth.DstMAC
-				handleEther(eth)
+func getInterfaces() []string {
+	ifaces := make([]string, 0)
 
-			case layers.LayerTypeIPv4:
-				ipv4 := decode[idxIpv4].(*layers.IPv4)
-				samplerUpdate(srcMac, ipv4.SrcIP, false)
-				samplerUpdate(dstMac, ipv4.DstIP, false)
-				handleIpv4(ipv4)
+	rings := config.GetRings()
+	nics, _ := config.GetLogicalNics()
 
-			case layers.LayerTypeARP:
-				arp := decode[idxArp].(*layers.ARP)
-				samplerUpdate(arp.SourceHwAddress, arp.SourceProtAddress, false)
-				samplerUpdate(arp.DstHwAddress, arp.DstProtAddress, false)
-				handleArp(arp)
+	for _, r := range rings {
+		if r.Interface == "setup" {
+			if n := nics[apcfg.N_SETUP]; n != nil {
+				ifaces = append(ifaces, n.Iface)
 			}
+		} else if r.Interface == "wifi" {
+			if n := nics[apcfg.N_WIFI]; n != nil {
+				ifaces = append(ifaces, n.Iface)
+			}
+		} else {
+			ifaces = append(ifaces, r.Interface)
 		}
+	}
+	log.Printf("Sampling on these interfaces: %v\n", ifaces)
+	return ifaces
+}
+
+func getGateways() {
+	gateways = make(map[uint32]bool)
+	subnets := config.GetSubnets()
+
+	for _, s := range subnets {
+		router := net.ParseIP(network.SubnetRouter(s))
+		gateways[network.IPAddrToUint32(router)] = true
 	}
 }
 
@@ -258,7 +355,7 @@ func getLeases() {
 	}
 }
 
-func auditor(iface string) {
+func auditor() {
 	auditTicker = time.NewTicker(*auditTime)
 	for {
 		<-auditTicker.C
@@ -266,41 +363,65 @@ func auditor(iface string) {
 			if r.audit == conflict {
 				log.Printf("CONFLICT FOUND: %s using %s\n", ep, r.ipaddr)
 			} else if r.audit == foreign {
-				logUnknown(iface, ep.String(), r.ipaddr.String())
+				logUnknown(r.iface, ep.String(), r.ipaddr.String())
 			}
 		}
 	}
 }
 
-func sample(iface string) {
-	// These are the layers we wish to decode
-	decode := make([]gopacket.DecodingLayer, idxMAX)
-	decode[idxEth] = &layers.Ethernet{}
-	decode[idxIpv4] = &layers.IPv4{}
-	decode[idxArp] = &layers.ARP{}
+func sampleIface(iface string) error {
+	self, err := net.InterfaceByName(iface)
+	if err != nil {
+		return fmt.Errorf("failed to get mac addr: %s", err)
+	}
+	scanningAddr = self.HardwareAddr
+	scanningName = iface
 
-	for _, layer := range decode {
+	if err := network.WaitForDevice(iface, 0); err != nil {
+		return fmt.Errorf("device is offline")
+	}
+
+	if *verbose {
+		log.Printf("Sample start: %s\n", iface)
+	}
+	decodePackets(iface)
+	if *verbose {
+		log.Printf("Sample done: %s\n", iface)
+	}
+	return nil
+}
+
+func sampleLoop(ifaces []string) {
+	// These are the layers we wish to decode
+	decodeLayers = make([]gopacket.DecodingLayer, idxMAX)
+	decodeLayers[idxEth] = &layers.Ethernet{}
+	decodeLayers[idxIpv4] = &layers.IPv4{}
+	decodeLayers[idxArp] = &layers.ARP{}
+	decodeLayers[idxUDP] = &layers.UDP{}
+	decodeLayers[idxTCP] = &layers.TCP{}
+
+	parser = gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet,
+		decodeLayers...)
+
+	for _, layer := range decodeLayers {
 		capStats[layer.(gopacket.Layer).LayerType()] = &layerStats{
 			src: make(map[gopacket.Endpoint]uint64),
 			dst: make(map[gopacket.Endpoint]uint64),
 		}
 	}
 
+	idx := 0
 	sampleTicker = time.NewTicker(*loopTime)
 	for {
-		<-sampleTicker.C
-		err := network.WaitForDevice(iface, 0)
+		iface := ifaces[idx]
+		idx = (idx + 1) % len(ifaces)
+
+		err := sampleIface(iface)
 		if err != nil {
-			log.Printf("Not sampling: %s is offline", iface)
-		} else {
-			if *verbose {
-				log.Printf("Sample starting\n")
-			}
-			decodePackets(iface, decode)
-			if *verbose {
-				log.Printf("Sample finished\n")
-			}
+			log.Printf("Sample of %s failed: %v\n", iface, err)
+			continue
 		}
+		<-sampleTicker.C
 	}
 }
 
@@ -316,27 +437,16 @@ func sampleInit() error {
 		return fmt.Errorf("loop-time should be greater than cap-time")
 	}
 
-	iface, err := config.GetProp("@/network/wifi_nic")
-	if err != nil {
-		iface, err = config.GetProp("@/network/wired_nic")
-		if err != nil {
-			return fmt.Errorf("no interfaces defined")
-		}
-		log.Printf("Sampling wired traffic on %s\n", iface)
-	} else {
-		log.Printf("Sampling wifi traffic on %s\n", iface)
-	}
-
-	self, err := net.InterfaceByName(iface)
-	if err != nil {
-		return fmt.Errorf("failed to get mac address for %s: %s",
-			iface, err)
-	}
-	macSelf = self.HardwareAddr
-
+	getGateways()
 	getLeases()
-	go auditor(iface)
-	go sample(iface)
+	ifaces := getInterfaces()
+
+	go sampleLoop(ifaces)
+	go auditor()
 
 	return nil
+}
+
+func init() {
+	addWatcher("sampler", sampleInit, sampleFini)
 }

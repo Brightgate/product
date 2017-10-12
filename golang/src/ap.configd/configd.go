@@ -332,16 +332,12 @@ func expirationInit() {
  * Broker notifications
  */
 func prop_notify(prop, val string, action base_msg.EventConfig_Type) {
-	t := time.Now()
 	entity := &base_msg.EventConfig{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
-		Sender:   proto.String(brokerd.Name),
-		Type:     &action,
-		Property: proto.String(prop),
-		NewValue: proto.String(val),
+		Timestamp: aputil.NowToProtobuf(),
+		Sender:    proto.String(brokerd.Name),
+		Type:      &action,
+		Property:  proto.String(prop),
+		NewValue:  proto.String(val),
 	}
 
 	err := brokerd.Publish(entity, base_def.TOPIC_CONFIG)
@@ -979,15 +975,7 @@ func getPropHandler(q *base_msg.ConfigQuery) (string, error) {
 }
 
 func setPropHandler(q *base_msg.ConfigQuery, add bool) error {
-	var expires *time.Time
-
-	if q.Expires != nil {
-		sec := *q.Expires.Seconds
-		nano := int64(*q.Expires.Nanos)
-		tmp := time.Unix(sec, nano)
-		expires = &tmp
-	}
-
+	expires := aputil.ProtobufToTime(q.Expires)
 	updated, err := propertyUpdate(*q.Property, *q.Value, expires, add)
 	if updated {
 		prop_tree_store()
@@ -1047,18 +1035,13 @@ func processOneEvent(query *base_msg.ConfigQuery) *base_msg.ConfigResponse {
 		val = fmt.Sprintf("%v", err)
 	}
 
-	t := time.Now()
-
 	response := &base_msg.ConfigResponse{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
-		Sender:   proto.String(pname + "(" + strconv.Itoa(os.Getpid()) + ")"),
-		Debug:    proto.String("-"),
-		Response: &rc,
-		Property: proto.String("-"),
-		Value:    proto.String(val),
+		Timestamp: aputil.NowToProtobuf(),
+		Sender:    proto.String(pname + "(" + strconv.Itoa(os.Getpid()) + ")"),
+		Debug:     proto.String("-"),
+		Response:  &rc,
+		Property:  proto.String("-"),
+		Value:     proto.String(val),
 	}
 
 	return response
