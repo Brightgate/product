@@ -49,6 +49,7 @@ import (
 	"time"
 	"unicode"
 
+	"ap_common/aputil"
 	"ap_common/broker"
 	"ap_common/mcp"
 	"ap_common/network"
@@ -674,13 +675,6 @@ func propertyGet(property string) (string, error) {
  *
  * Reading and writing the persistent property file
  */
-func file_exists(filename string) bool {
-	if _, err := os.Stat(filename); os.IsNotExist(err) {
-		return false
-	}
-	return true
-}
-
 func prop_tree_store() error {
 	propfile := *propdir + property_filename
 	backupfile := *propdir + backup_filename
@@ -698,7 +692,7 @@ func prop_tree_store() error {
 		log.Fatal("Failed to construct properties JSON: %v\n", err)
 	}
 
-	if file_exists(propfile) {
+	if aputil.FileExists(propfile) {
 		/*
 		 * XXX: could store multiple generations of backup files,
 		 * allowing for arbitrary rollback.  Could also take explicit
@@ -833,7 +827,7 @@ func prop_tree_init() {
 	backupfile := *propdir + backup_filename
 	default_file := *propdir + default_filename
 
-	if file_exists(propfile) {
+	if aputil.FileExists(propfile) {
 		err = prop_tree_load(propfile)
 	} else {
 		err = fmt.Errorf("File missing")
@@ -841,7 +835,7 @@ func prop_tree_init() {
 
 	if err != nil {
 		log.Printf("Unable to load properties: %v", err)
-		if file_exists(backupfile) {
+		if aputil.FileExists(backupfile) {
 			err = prop_tree_load(backupfile)
 		} else {
 			err = fmt.Errorf("File missing")
@@ -1014,7 +1008,7 @@ func main() {
 		log.Printf("Failed to connect to mcp\n")
 	}
 
-	if !file_exists(*propdir) {
+	if !aputil.FileExists(*propdir) {
 		log.Fatalf("Properties directory %s doesn't exist", *propdir)
 	}
 

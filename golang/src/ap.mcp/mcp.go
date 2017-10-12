@@ -17,15 +17,12 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
 	"os/signal"
 	"regexp"
 	"runtime"
@@ -35,6 +32,7 @@ import (
 	"syscall"
 	"time"
 
+	"ap_common/aputil"
 	"ap_common/mcp"
 	"base_def"
 	"base_msg"
@@ -118,19 +116,6 @@ func selectTargets(name *string) daemonSet {
 }
 
 //
-// Wait for stdout/stderr from a process, and print whatever it sends.  When the
-// pipe is closed, notify our caller.
-//
-func handlePipe(r io.ReadCloser, done chan bool) {
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		fmt.Printf("%s\n", scanner.Text())
-	}
-
-	done <- true
-}
-
-//
 // Attempt to launch a child process.  If that fails, return an error.  If it
 // succeeds, return nil when the child process exits
 //
@@ -152,55 +137,37 @@ func singleInstance(d *daemon) error {
 	} else {
 		execpath = *aproot + "/bin/" + d.Binary
 	}
-	cmd := exec.Command(execpath, args...)
 
-	// Set up pipes for the child's stderr and stdout, so we can get
-	// the output while the child is still running
-	pipes := 0
-	pipe_closed := make(chan bool)
-	if stdout, err := cmd.StdoutPipe(); err == nil {
-		pipes++
-		go handlePipe(stdout, pipe_closed)
-	}
-	if stderr, err := cmd.StderrPipe(); err == nil {
-		pipes++
-		go handlePipe(stderr, pipe_closed)
-	}
+	child := aputil.NewChild(execpath, args...)
+	child.LogOutput("", 0)
 
 	if *verbose {
 		log.Printf("Starting %s\n", execpath)
 	}
 
-	if d.Privileged {
-		err = cmd.Start()
-	} else {
-		syscall.Setreuid(ROOT_UID, NOBODY_UID)
-		err = cmd.Start()
-		syscall.Setreuid(ROOT_UID, ROOT_UID)
+	if !d.Privileged {
+		child.SetUID(NOBODY_UID, NOBODY_UID)
 	}
+	if err = child.Start(); err != nil {
+		return err
+	}
+
 	if d.ThirdParty {
 		// A third party daemon doesn't participate in the ZMQ updates,
 		// so we won't get an online notification.  Just set it here.
 		setState(d, mcp.ONLINE)
 	}
 
-	if err == nil {
-		d.process = cmd.Process
-		d.Unlock()
+	d.process = child.Process
+	d.Unlock()
 
-		// Wait for the stdout/stderr pipes to close and for the child
-		// process to exit
-		for pipes > 0 {
-			<-pipe_closed
-			pipes--
-		}
-		err = cmd.Wait()
-		if err != nil {
-			log.Printf("%s failed: %v\n", d.Name, err)
-		}
-		d.Lock()
-		d.process = nil
+	err = child.Wait()
+
+	if err != nil {
+		log.Printf("%s failed: %v\n", d.Name, err)
 	}
+	d.Lock()
+	d.process = nil
 
 	return err
 }

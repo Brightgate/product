@@ -30,10 +30,8 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -49,6 +47,7 @@ import (
 	"time"
 
 	"ap_common/apcfg"
+	"ap_common/aputil"
 	"ap_common/broker"
 	"ap_common/mcp"
 	"ap_common/network"
@@ -384,19 +383,6 @@ func signalHandler() {
 	}
 }
 
-//
-// Wait for stdout/stderr from a process, and print whatever it sends.  When the
-// pipe is closed, notify our caller.
-//
-func handlePipe(r io.ReadCloser, done chan bool) {
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		hostapdLog.Printf("hostapd: %s\n", scanner.Text())
-	}
-
-	done <- true
-}
-
 func resetWifiInterfaces() {
 	start := time.Now()
 	for _, iface := range interfaces {
@@ -420,45 +406,24 @@ func runOne(conf *APConfig, done chan *APConfig) {
 	fn := generateHostAPDConf(conf)
 
 	start_times := make([]time.Time, failures_allowed)
-	pipe_closed := make(chan bool)
 	for running {
-		cmd := exec.Command(hostapdPath, fn)
-
-		//
-		// Set up pipes for the child's stderr and stdout, so we can get
-		// the output while the child is still running
-		//
-		pipes := 0
-		if stdout, err := cmd.StdoutPipe(); err == nil {
-			pipes++
-			go handlePipe(stdout, pipe_closed)
-		}
-		if stderr, err := cmd.StderrPipe(); err == nil {
-			pipes++
-			go handlePipe(stderr, pipe_closed)
-		}
+		child := aputil.NewChild(hostapdPath, fn)
+		child.LogOutput("hostapd: ", log.Ldate|log.Ltime)
 
 		start_time := time.Now()
 		start_times = append(start_times[1:failures_allowed], start_time)
 
 		log.Printf("Starting hostapd for %s\n", conf.Interface)
 
-		if err := cmd.Start(); err != nil {
+		if err := child.Start(); err != nil {
 			conf.Status = fmt.Errorf("Failed to launch: %v", err)
 			break
 		}
-		childProcess = cmd.Process
 
 		resetWifiInterfaces()
 		mcpd.SetState(mcp.ONLINE)
 
-		// Wait for the stdout/stderr pipes to close and for the child
-		// process to exit
-		for pipes > 0 {
-			<-pipe_closed
-			pipes--
-		}
-		cmd.Wait()
+		child.Wait()
 
 		log.Printf("hostapd for %s exited after %s\n",
 			conf.Interface, time.Since(start_time))
@@ -846,7 +811,6 @@ func main() {
 	var err error
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-	hostapdLog = log.New(os.Stderr, "", log.Ldate|log.Ltime)
 
 	flag.Parse()
 

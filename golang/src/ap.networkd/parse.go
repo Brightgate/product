@@ -35,6 +35,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"strconv"
@@ -258,7 +259,7 @@ func getPorts(tokens []string) (sports, dports []int, cnt int, err error) {
 	for _, t := range tokens[1:] {
 		val, err := strconv.Atoi(t)
 		if err != nil {
-			fmt.Printf("Failed to xlate %s: %v\n", t, err)
+			log.Printf("Failed to xlate %s: %v\n", t, err)
 			break
 		}
 
@@ -360,7 +361,7 @@ func parseRule(text string) (rp *rule, err error) {
 func parseRulesFile(rulesFile string) (rules ruleList, err error) {
 	file, err := os.Open(rulesFile)
 	if err != nil {
-		fmt.Printf("Couldn't open %s: %v\n", rulesFile, err)
+		log.Printf("Couldn't open %s: %v\n", rulesFile, err)
 		os.Exit(1)
 	}
 	defer file.Close()
@@ -373,12 +374,12 @@ func parseRulesFile(rulesFile string) (rules ruleList, err error) {
 		}
 
 		if err != nil {
-			fmt.Printf("Failed to read %s: %v\n", rulesFile, err)
+			log.Printf("Failed to read %s: %v\n", rulesFile, err)
 			break
 		}
 		s, err := parseRule(rule)
 		if err != nil {
-			fmt.Printf("Failed to parse '%s': %v\n", rule, err)
+			log.Printf("Failed to parse '%s': %v\n", rule, err)
 			break
 		}
 		rules = append(rules, s)

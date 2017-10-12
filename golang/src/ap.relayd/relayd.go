@@ -439,7 +439,6 @@ func initInterfaces() {
 		ipv4ToIface[network.SubnetRouter(subnet)] = iface
 		ringToIface[ring] = iface
 		ifaceToRing[iface.Index] = ring
-		fmt.Printf("%s: %s %v\n", ring, name, ifaceBroadcast[name])
 	}
 }
 

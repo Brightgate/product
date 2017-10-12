@@ -233,12 +233,14 @@ func WaitForDevice(dev string, timeout time.Duration) error {
 	fn := "/sys/class/net/" + dev + "/operstate"
 
 	start := time.Now()
-	for time.Since(start) < timeout {
+	for {
 		state, err := ioutil.ReadFile(fn)
 		if err == nil && string(state[0:2]) == "up" {
 			return nil
 		}
+		if time.Since(start) >= timeout {
+			return fmt.Errorf("timeout: %s not online", dev)
+		}
 		time.Sleep(time.Millisecond * 100)
 	}
-	return fmt.Errorf("Timeout %s still not online.", dev)
 }

@@ -13,25 +13,15 @@
 package main
 
 import (
-	"base_def"
 	"bytes"
 	"flag"
-	"io"
+	"fmt"
 	"log"
 	"net"
-	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 	"time"
 
-	"ap_common/apcfg"
-	"ap_common/broker"
-	"ap_common/mcp"
 	"ap_common/network"
-	"base_msg"
-
-	"github.com/golang/protobuf/proto"
 
 	// Requires libpcap
 	"github.com/google/gopacket"
@@ -51,9 +41,6 @@ const (
 )
 
 var (
-	cli_iface = flag.String("interface", "",
-		"Interface to capture packets from")
-
 	// XXX These Duration flags should be combined into a single "percentage"
 	// flag which indicates how many packets, or how much time, we spend capturing.
 	// Ideally, the auditor and sampler go routines could communicate their
@@ -65,19 +52,15 @@ var (
 		"How long to capture packets in each capture interval")
 	loopTime = flag.Duration("loop-time", time.Duration(time.Second*60),
 		"Loop interval duration (should be greater than cap-time)")
-	verbose = flag.Bool("verbose", false,
-		"Dump the contents of every packet. All other flags are ignored")
 
 	auditMtx     sync.Mutex
 	auditRecords = make(map[gopacket.Endpoint]*record)
 	capStats     = make(map[gopacket.LayerType]*layerStats)
 
-	macSelf net.HardwareAddr
-	brokerd *broker.Broker
-	config  *apcfg.APConfig
+	sampleTicker *time.Ticker
+	auditTicker  *time.Ticker
+	macSelf      net.HardwareAddr
 )
-
-const pname = "ap.sampled"
 
 const (
 	idxEth int = iota
@@ -163,7 +146,7 @@ func handleArp(arp *layers.ARP) {
 //      vetted we are in conflict.
 //   3) If the two IP addresses match and we are authoritative the record is
 //      vetted.
-func updateRecord(hwaddr net.HardwareAddr, ipaddr net.IP, auth bool) {
+func samplerUpdate(hwaddr net.HardwareAddr, ipaddr net.IP, auth bool) {
 
 	if bytes.Equal(hwaddr, macSelf) || bytes.Equal(hwaddr, network.MacZero) ||
 		network.IsMacMulticast(hwaddr) || bytes.Equal(hwaddr, network.MacBcast) ||
@@ -204,7 +187,7 @@ func updateRecord(hwaddr net.HardwareAddr, ipaddr net.IP, auth bool) {
 	}
 }
 
-func deleteRecord(hwaddr net.HardwareAddr) {
+func samplerDelete(hwaddr net.HardwareAddr) {
 	auditMtx.Lock()
 	delete(auditRecords, layers.NewMACEndpoint(hwaddr))
 	auditMtx.Unlock()
@@ -245,109 +228,18 @@ func decodePackets(iface string, decode []gopacket.DecodingLayer) {
 
 			case layers.LayerTypeIPv4:
 				ipv4 := decode[idxIpv4].(*layers.IPv4)
-				updateRecord(srcMac, ipv4.SrcIP, false)
-				updateRecord(dstMac, ipv4.DstIP, false)
+				samplerUpdate(srcMac, ipv4.SrcIP, false)
+				samplerUpdate(dstMac, ipv4.DstIP, false)
 				handleIpv4(ipv4)
 
 			case layers.LayerTypeARP:
 				arp := decode[idxArp].(*layers.ARP)
-				updateRecord(arp.SourceHwAddress, arp.SourceProtAddress, false)
-				updateRecord(arp.DstHwAddress, arp.DstProtAddress, false)
+				samplerUpdate(arp.SourceHwAddress, arp.SourceProtAddress, false)
+				samplerUpdate(arp.DstHwAddress, arp.DstProtAddress, false)
 				handleArp(arp)
 			}
 		}
 	}
-}
-
-// Decode all layers and log verbose output
-func dumpPackets(iface string) {
-	handle, err := pcap.OpenLive(iface, 65536, true, pcap.BlockForever)
-	if err != nil {
-		log.Fatalln("OpenLive failed:", err)
-	}
-	defer handle.Close()
-
-	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
-	for {
-		packet, err := packetSource.NextPacket()
-		if err == io.EOF {
-			log.Println("Encountered EOF")
-			break
-		} else if err != nil {
-			log.Println("NextPacket() error:", err)
-		} else if layerErr := packet.ErrorLayer(); layerErr != nil {
-			ethLayer := packet.Layer(layers.LayerTypeEthernet)
-			if ethLayer == nil || ethLayer.(*layers.Ethernet).EthernetType != EthernetTypeLARQ {
-				log.Println("Decoding error:", layerErr)
-			}
-		} else {
-			log.Println(packet.Dump())
-		}
-	}
-
-}
-
-func configIPv4Delexp(path []string) {
-	if hwaddr, err := net.ParseMAC(path[1]); err == nil {
-		deleteRecord(hwaddr)
-	} else {
-		log.Printf("invalid MAC address %s", path[1])
-	}
-}
-
-func configIPv4Changed(path []string, val string) {
-	ip := net.ParseIP(val)
-	if ip == nil {
-		log.Printf("invalid IP address %s", val)
-		return
-	}
-
-	hwaddr, err := net.ParseMAC(path[1])
-	if err != nil {
-		log.Printf("invalid MAC address %s", path[1])
-		return
-	}
-
-	updateRecord(hwaddr, ip.To4(), true)
-}
-
-func auditor() {
-	for {
-		for ep, r := range auditRecords {
-			if r.audit == conflict {
-				log.Printf("CONFLICT FOUND: %s using %s\n", ep, r.ipaddr)
-			} else if r.audit == foreign {
-				t := time.Now()
-				log.Printf("found unknown net entity: %s using %s\n", ep, r.ipaddr)
-				hwaddr, _ := net.ParseMAC(ep.String())
-				entity := &base_msg.EventNetEntity{
-					Timestamp: &base_msg.Timestamp{
-						Seconds: proto.Int64(t.Unix()),
-						Nanos:   proto.Int32(int32(t.Nanosecond())),
-					},
-					Sender:      proto.String(brokerd.Name),
-					Debug:       proto.String("-"),
-					MacAddress:  proto.Uint64(network.HWAddrToUint64(hwaddr)),
-					Ipv4Address: proto.Uint32(network.IPAddrToUint32(r.ipaddr)),
-				}
-
-				err := brokerd.Publish(entity, base_def.TOPIC_ENTITY)
-				if err != nil {
-					log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_ENTITY, err)
-				}
-			}
-		}
-		time.Sleep(*auditTime)
-	}
-}
-
-func signalHandler() {
-	sig := make(chan os.Signal)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	<-sig
-	printStats()
-
-	os.Exit(0)
 }
 
 func getLeases() {
@@ -361,54 +253,26 @@ func getLeases() {
 		if err != nil {
 			log.Printf("Invalid mac address: %s\n", macaddr)
 		} else if client.IPv4 != nil {
-			updateRecord(hwaddr, client.IPv4, true)
+			samplerUpdate(hwaddr, client.IPv4, true)
 		}
 	}
 }
 
-func main() {
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-	log.Println("start")
-
-	flag.Parse()
-
-	mcpd, err := mcp.New(pname)
-	if err != nil {
-		log.Printf("cannot connect to mcp: %v\n", err)
-	}
-
-	if *loopTime < *capTime {
-		log.Fatalln("loop-time should be greater than cap-time")
-	}
-
-	brokerd = broker.New(pname)
-	defer brokerd.Fini()
-
-	// Interface to configd
-	config, err = apcfg.NewConfig(brokerd, pname)
-	if err != nil {
-		log.Fatalf("cannot connect to configd: %v\n", err)
-	}
-	config.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
-	config.HandleDelete(`^@/clients/.*/ipv4$`, configIPv4Delexp)
-	config.HandleExpire(`^@/clients/.*/ipv4$`, configIPv4Delexp)
-
-	iface := *cli_iface
-	if len(iface) == 0 {
-		iface, err = config.GetProp("@/network/wifi_nic")
-		if err != nil {
-			log.Fatalf("No wifi interface defined.\n")
+func auditor(iface string) {
+	auditTicker = time.NewTicker(*auditTime)
+	for {
+		<-auditTicker.C
+		for ep, r := range auditRecords {
+			if r.audit == conflict {
+				log.Printf("CONFLICT FOUND: %s using %s\n", ep, r.ipaddr)
+			} else if r.audit == foreign {
+				logUnknown(iface, ep.String(), r.ipaddr.String())
+			}
 		}
 	}
+}
 
-	self, err := net.InterfaceByName(iface)
-	if err != nil {
-		log.Fatalf("Failed to get interface %s: %s\n", iface, err)
-	}
-	macSelf = self.HardwareAddr
-
-	getLeases()
-
+func sample(iface string) {
 	// These are the layers we wish to decode
 	decode := make([]gopacket.DecodingLayer, idxMAX)
 	decode[idxEth] = &layers.Ethernet{}
@@ -422,23 +286,57 @@ func main() {
 		}
 	}
 
-	if *verbose {
-		dumpPackets(iface)
-	}
-
-	go signalHandler()
-	go auditor()
-
-	if mcpd != nil {
-		mcpd.SetState(mcp.ONLINE)
-	}
-	if err := network.WaitForDevice(iface, 30*time.Second); err != nil {
-		log.Fatalf("%s is offline\n", iface)
-	}
-
+	sampleTicker = time.NewTicker(*loopTime)
 	for {
-		start := time.Now()
-		decodePackets(iface, decode)
-		time.Sleep(time.Until(start.Add(*loopTime)))
+		<-sampleTicker.C
+		err := network.WaitForDevice(iface, 0)
+		if err != nil {
+			log.Printf("Not sampling: %s is offline", iface)
+		} else {
+			if *verbose {
+				log.Printf("Sample starting\n")
+			}
+			decodePackets(iface, decode)
+			if *verbose {
+				log.Printf("Sample finished\n")
+			}
+		}
 	}
+}
+
+func sampleFini() {
+	log.Printf("Shutting down sampler\n")
+	sampleTicker.Stop()
+	auditTicker.Stop()
+	printStats()
+}
+
+func sampleInit() error {
+	if *loopTime < *capTime {
+		return fmt.Errorf("loop-time should be greater than cap-time")
+	}
+
+	iface, err := config.GetProp("@/network/wifi_nic")
+	if err != nil {
+		iface, err = config.GetProp("@/network/wired_nic")
+		if err != nil {
+			return fmt.Errorf("no interfaces defined")
+		}
+		log.Printf("Sampling wired traffic on %s\n", iface)
+	} else {
+		log.Printf("Sampling wifi traffic on %s\n", iface)
+	}
+
+	self, err := net.InterfaceByName(iface)
+	if err != nil {
+		return fmt.Errorf("failed to get mac address for %s: %s",
+			iface, err)
+	}
+	macSelf = self.HardwareAddr
+
+	getLeases()
+	go auditor(iface)
+	go sample(iface)
+
+	return nil
 }

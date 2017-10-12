@@ -447,7 +447,7 @@ func addRule(ifaces ifaceMap, r *rule) error {
 	if from != nil {
 		e, err := genEndpoint(ifaces, r, true)
 		if err != nil {
-			fmt.Printf("Bad 'from' endpoint: %v\n", err)
+			log.Printf("Bad 'from' endpoint: %v\n", err)
 			return err
 		}
 		iptablesRule += e
@@ -460,7 +460,7 @@ func addRule(ifaces ifaceMap, r *rule) error {
 	if to != nil {
 		e, err := genEndpoint(ifaces, r, false)
 		if err != nil {
-			fmt.Printf("Bad 'to' endpoint: %v\n", err)
+			log.Printf("Bad 'to' endpoint: %v\n", err)
 			return err
 		}
 
@@ -469,7 +469,7 @@ func addRule(ifaces ifaceMap, r *rule) error {
 
 	e, err := genPorts(r)
 	if err != nil {
-		fmt.Printf("Bad port list: %v\n", err)
+		log.Printf("Bad port list: %v\n", err)
 		return err
 	}
 	iptablesRule += e

@@ -152,8 +152,7 @@ APPDAEMONS = \
 	ap.mcp \
 	ap.networkd \
 	ap.relayd \
-	ap.sampled \
-	ap.scand
+	ap.watchd
 
 APPCOMMANDS = \
 	ap-arpspoof \
@@ -226,6 +225,7 @@ APPCOMPONENTS = \
 APP_COMMON_SRCS = \
 	$(GOSRC)/ap_common/apcfg/apcfg.go \
 	$(GOSRC)/ap_common/apcfg/events.go \
+	$(GOSRC)/ap_common/aputil/aputil.go \
 	$(GOSRC)/ap_common/broker/broker.go \
 	$(GOSRC)/ap_common/mcp/mcp_client.go \
 	$(GOSRC)/ap_common/network/network.go \
@@ -369,6 +369,7 @@ COMMON_SRCS = \
 	$(GOSRC)/base_msg/base_msg.pb.go \
 	$(GOSRC)/ap_common/broker/broker.go \
 	$(GOSRC)/ap_common/apcfg/apcfg.go \
+	$(GOSRC)/ap_common/aputil/aputil.go \
 	$(GOSRC)/ap_common/mcp/mcp_client.go \
 	$(GOSRC)/ap_common/network/network.go
 
@@ -414,8 +415,11 @@ $(APPBIN)/ap.networkd: \
 	$(GOSRC)/ap.networkd/networkd.go \
 	$(GOSRC)/ap.networkd/parse.go
 $(APPBIN)/ap.relayd: $(GOSRC)/ap.relayd/relayd.go
-$(APPBIN)/ap.sampled: $(GOSRC)/ap.sampled/sampled.go
-$(APPBIN)/ap.scand: $(GOSRC)/ap.scand/scand.go
+$(APPBIN)/ap.watchd: \
+	$(GOSRC)/ap.watchd/metrics.go \
+	$(GOSRC)/ap.watchd/sampler.go \
+	$(GOSRC)/ap.watchd/scanner.go \
+	$(GOSRC)/ap.watchd/watchd.go
 
 $(APPBIN)/ap-arpspoof: $(GOSRC)/ap-arpspoof/arpspoof.go
 $(APPBIN)/ap-configctl: $(GOSRC)/ap-configctl/configctl.go

@@ -74,17 +74,11 @@
         "DependsOn": "networkd",
         "Privileged": false
     },
-    "sampled": {
-        "Name": "sampled",
-        "Binary": "ap.sampled",
-        "DependsOn": "networkd",
-        "Privileged": true
-    },
-    "scand": {
-        "Name": "scand",
-        "Binary": "ap.scand",
+    "watchd": {
+        "Name": "watchd",
+        "Binary": "ap.watchd",
         "DependsOn": "networkd",
         "Privileged": true,
-        "Options": "-scandir $APROOT/var/spool/scand"
+        "Options": "-scandir $APROOT/var/spool/watchd"
     }
 }
