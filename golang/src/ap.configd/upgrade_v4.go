@@ -19,7 +19,7 @@ import (
 // text to integral DeviceIDs
 
 func upgradeV4() error {
-	clients := cfg_property_parse("@/clients", false)
+	clients := propertySearch("@/clients")
 	if clients == nil {
 		log.Printf("V3 config file missing @/clients")
 		return nil

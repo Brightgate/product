@@ -132,6 +132,7 @@ func printDev(d *device.Device) {
 
 func getProp(prop string) error {
 	var err error
+	var root *apcfg.PropertyNode
 
 	if !strings.HasPrefix(prop, "@") {
 		err = getFormatted(prop)
@@ -141,7 +142,7 @@ func getProp(prop string) error {
 			printDev(d)
 		}
 	} else {
-		root, err := apcfgd.GetProps(prop)
+		root, err = apcfgd.GetProps(prop)
 		if err == nil {
 			root.DumpTree()
 		}
@@ -230,24 +231,17 @@ func main() {
 	switch cmd {
 	case "set":
 		err = setProp(prop, newval, duration, apcfgd.SetProp)
-		if err == nil {
-			fmt.Printf("ok\n")
-		}
 	case "add":
 		err = setProp(prop, newval, duration, apcfgd.CreateProp)
-		if err == nil {
-			fmt.Printf("ok\n")
-		}
 	case "get":
 		err = getProp(prop)
 	case "del":
 		err = delProp(prop)
-		if err == nil {
-			fmt.Printf("ok\n")
-		}
 	}
 	if err != nil {
 		fmt.Printf("%s failed: %v\n", cmd, err)
 		os.Exit(1)
+	} else if cmd != "get" {
+		fmt.Printf("ok")
 	}
 }

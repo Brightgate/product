@@ -31,7 +31,7 @@ import (
 
 func upgradeV2() error {
 
-	leases := cfg_property_parse("@/dhcp/leases", false)
+	leases := propertySearch("@/dhcp/leases")
 	if leases == nil {
 		log.Printf("V1 config file missing @/dhcp/leases")
 		return nil
@@ -44,7 +44,7 @@ func upgradeV2() error {
 		macaddr := lease.Value
 		log.Printf("Migrating the lease for %s / %s\n", ipv4, macaddr)
 
-		client := cfg_property_parse("@/clients/"+macaddr, true)
+		client := propertyInsert("@/clients/" + macaddr)
 		for _, node := range client.Children {
 			switch node.Name {
 			case "class":

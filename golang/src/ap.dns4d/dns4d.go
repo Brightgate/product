@@ -135,24 +135,31 @@ func dns_update(resource *base_msg.EventNetResource) {
 	hostsMtx.Unlock()
 }
 
-func changeEvent(path []string, val string) {
+func clientUpdateEvent(path []string, val string) {
+	if len(path) != 3 {
+		// All updates should affect /clients/<macaddr>/property
+		return
+	}
+
 	mac := path[1]
 	new := config.GetClient(mac)
 	if new == nil {
-		log.Printf("Change event for unknown client: %s\n", mac)
+		log.Printf("Got update for nonexistent client: %s\n", mac)
 		return
 	}
 
 	clientMtx.Lock()
-	if old := clients[mac]; old != nil {
+	old := clients[mac]
+	if old != nil {
 		deleteOneClient(old)
 	}
 	updateOneClient(new)
 	clients[mac] = new
+
 	clientMtx.Unlock()
 }
 
-func deleteEvent(path []string) {
+func clientDeleteEvent(path []string) {
 	ignore := true
 
 	if len(path) == 2 {
@@ -173,6 +180,14 @@ func deleteEvent(path []string) {
 		}
 		clientMtx.Unlock()
 	}
+}
+func cnameUpdateEvent(path []string, val string) {
+	updateOneCname(path[2], val)
+}
+
+func cnameDeleteEvent(path []string) {
+	log.Printf("cname delete %s\n", path[2])
+	deleteOneCname(path[2])
 }
 
 func resourceEvent(event []byte) {
@@ -490,11 +505,42 @@ func updateOneClient(c *apcfg.ClientInfo) {
 	hostsMtx.Unlock()
 }
 
+func updateOneCname(hostname, canonical string) {
+	hostname = hostname + "." + domainname + "."
+	canonical = canonical + "." + domainname + "."
+	log.Printf("cname update %s -> %s\n", hostname, canonical)
+
+	hostsMtx.Lock()
+	hosts[hostname] = dnsRecord{
+		rectype: dns.TypeCNAME,
+		recval:  canonical,
+	}
+	hostsMtx.Unlock()
+}
+
+func deleteOneCname(hostname string) {
+	hostname = hostname + "." + domainname + "."
+	log.Printf("cname delete %s\n", hostname)
+
+	hostsMtx.Lock()
+	delete(hosts, hostname)
+	hostsMtx.Unlock()
+}
+
 func initHostMap() {
 	clients = config.GetClients()
 	for _, c := range clients {
 		if c.Expires == nil || c.Expires.After(time.Now()) {
 			updateOneClient(c)
+		}
+	}
+
+	cnames, err := config.GetProps("@/dns/cnames")
+	if err != nil {
+		log.Printf("Failed to get cnames: %v\n", err)
+	} else {
+		for _, c := range cnames.Children {
+			updateOneCname(c.Name, c.Value)
 		}
 	}
 
@@ -635,8 +681,12 @@ func main() {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}
 	config.HandleChange(`^@/clients/.*/(ipv4|dns_name|dhcp_name|ring)$`,
-		changeEvent)
-	config.HandleDelete(`^@/clients/`, deleteEvent)
+		clientUpdateEvent)
+	config.HandleDelete(`^@/clients/.*`, clientDeleteEvent)
+	config.HandleExpire(`^@/clients/.*/(ipv4|dns_name)$`, clientDeleteEvent)
+
+	config.HandleChange(`^@/dns/cnames/.*$`, cnameUpdateEvent)
+	config.HandleDelete(`^@/dns/cnames/.*$`, cnameDeleteEvent)
 
 	hosts = make(map[string]dnsRecord)
 	initNetwork()

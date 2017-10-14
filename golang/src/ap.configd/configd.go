@@ -111,11 +111,15 @@ var defaultPropOps = propertyOps{defaultGetter, defaultSetter, defaultExpire}
 var ssidPropOps = propertyOps{defaultGetter, ssidUpdate, defaultExpire}
 var uuidPropOps = propertyOps{defaultGetter, uuidUpdate, defaultExpire}
 var ringPropOps = propertyOps{defaultGetter, defaultSetter, ringExpire}
+var dnsPropOps = propertyOps{defaultGetter, dnsSetter, defaultExpire}
+var cnamePropOps = propertyOps{defaultGetter, cnameSetter, defaultExpire}
 
 var propertyMatchTable = []propertyMatch{
 	{regexp.MustCompile(`^@/uuid$`), &uuidPropOps},
 	{regexp.MustCompile(`^@/network/ssid$`), &ssidPropOps},
 	{regexp.MustCompile(`^@/clients/.*/ring$`), &ringPropOps},
+	{regexp.MustCompile(`^@/clients/.*/dns_name$`), &dnsPropOps},
+	{regexp.MustCompile(`^@/dns/cnames/`), &cnamePropOps},
 }
 
 /*
@@ -370,7 +374,7 @@ func entity_handler(event []byte) {
 	}
 	hwaddr := network.Uint64ToHWAddr(*entity.MacAddress)
 	path := "@/clients/" + hwaddr.String()
-	node := cfg_property_parse(path, true)
+	node := propertyInsert(path)
 
 	/*
 	 * Determine which client properties are already known
@@ -487,6 +491,75 @@ func ssidUpdate(node *pnode, ssid string, expires *time.Time) (bool, error) {
 }
 
 //
+// Check to see whether the given hostname is already inuse as either a device's
+// dns_name or as the left hand side of a cname.  We can optionally indicate a
+// device to ignore, allowing us to answer the question "is any other device
+// using this hostname?"
+//
+func dnsNameInuse(ignore *pnode, hostname string) bool {
+	lower := strings.ToLower(hostname)
+
+	clients := propertySearch("@/clients")
+	for _, device := range clients.Children {
+		if device == ignore {
+			continue
+		}
+		for _, prop := range device.Children {
+			if prop.Name == "dns_name" {
+				if strings.ToLower(prop.Value) == lower {
+					return true
+				}
+				break
+			}
+		}
+	}
+
+	cnames := propertySearch("@/dns/cnames")
+	for _, record := range cnames.Children {
+		if record == ignore {
+			continue
+		}
+		if strings.ToLower(record.Name) == lower {
+			return true
+		}
+	}
+
+	return false
+}
+
+// Validate and record the hostname that will be used to generate DNS A records
+// for this device
+func dnsSetter(node *pnode, hostname string, expires *time.Time) (bool, error) {
+	if !network.ValidHostname(hostname) {
+		return false, fmt.Errorf("invalid hostname: %s", hostname)
+	}
+
+	if dnsNameInuse(node.parent, hostname) {
+		return false, fmt.Errorf("duplicate hostname")
+	}
+
+	return defaultSetter(node, hostname, expires)
+}
+
+// Validate and record both the hostname and the canonical name that will be
+// used to generate DNS CNAME records
+func cnameSetter(node *pnode, hostname string, expires *time.Time) (bool, error) {
+	if !network.ValidHostname(node.Name) {
+		return false, fmt.Errorf("invalid hostname: %s", node.Name)
+	}
+
+	if !network.ValidHostname(hostname) {
+		return false, fmt.Errorf("invalid canonical name: %s", hostname)
+	}
+
+	if dnsNameInuse(node, node.Name) {
+		return false, fmt.Errorf("duplicate hostname")
+	}
+
+	return defaultSetter(node, hostname, expires)
+}
+
+//
 // When a client's ring assignment expires, it returns to the Unenrolled ring
 //
 func ringExpire(node *pnode) {
@@ -544,12 +617,17 @@ func propertyAdd(parent *pnode, property string) *pnode {
 	return &n
 }
 
-/*
- * Break the property path into its individual components, and use them to
- * navigate the property tree.  Optionally, it will also insert any missing nodes
- * into the tree to instantiate a new property node.
- */
-func cfg_property_parse(prop string, insert bool) *pnode {
+func childSearch(node *pnode, name string) *pnode {
+	for _, n := range node.Children {
+		if name == n.Name {
+			return n
+		}
+
+	}
+	return nil
+}
+
+func propertyParse(prop string) []string {
 	/*
 	 * Only accept properties that start with exactly one '@', meaning they
 	 * are local to this device
@@ -559,34 +637,51 @@ func cfg_property_parse(prop string, insert bool) *pnode {
 	}
 
 	if prop == "@/" {
-		return &property_root
+		return make([]string, 0)
 	}
 
-	/*
-	 * Walk the tree until we run out of path elements or fall off the
-	 * bottom of the tree.  If we exhaust the path, we return the current
-	 * search node, which may be either internal or a leaf.  Its up to the
-	 * caller to determine which of those is considered a successful search.
-	 */
-	components := strings.Split(prop[2:], "/")
-	q := len(components)
+	return strings.Split(prop[2:], "/")
+}
+
+/*
+ * Insert an empty property into the tree, returning the leaf node.  If the
+ * property already exists, the tree is left unchanged.
+ */
+func propertyInsert(prop string) *pnode {
+	components := propertyParse(prop)
+
+	if components == nil || len(components) < 1 {
+		return nil
+	}
+
 	node := &property_root
 	path := "@"
-	for i := 0; i < q && node != nil; i++ {
-		var next *pnode
-
-		name := components[i]
-		for _, n := range node.Children {
-			if name == n.Name {
-				next = n
-				break
-			}
-		}
-		if next == nil && insert {
+	for _, name := range components {
+		next := childSearch(node, name)
+		if next == nil {
 			next = propertyAdd(node, name)
 		}
 		path += "/" + name
 		node = next
+	}
+
+	return node
+}
+
+/*
+ * Walk the tree looking for the given property.
+ */
+func propertySearch(prop string) *pnode {
+	components := propertyParse(prop)
+	if components == nil {
+		return nil
+	}
+
+	node := &property_root
+	for _, name := range components {
+		if node = childSearch(node, name); node == nil {
+			break
+		}
 	}
 
 	return node
@@ -607,7 +702,7 @@ func deleteChild(parent, child *pnode) {
 
 func propertyDelete(property string) error {
 	log.Printf("delete property: %s\n", property)
-	node := cfg_property_parse(property, false)
+	node := propertySearch(property)
 	if node == nil {
 		return fmt.Errorf("deleting a nonexistent property: %s",
 			property)
@@ -620,11 +715,15 @@ func propertyDelete(property string) error {
 func propertyUpdate(property, value string, expires *time.Time,
 	insert bool) (bool, error) {
 	var err error
+	var updated, inserted bool
 
 	log.Printf("set property %s -> %s\n", property, value)
-	updated := false
+	node := propertySearch(property)
+	if node == nil {
+		node = propertyInsert(property)
+		inserted = true
+	}
 
-	node := cfg_property_parse(property, insert)
 	if node == nil {
 		if insert {
 			err = fmt.Errorf("Failed to insert a new property")
@@ -640,6 +739,9 @@ func propertyUpdate(property, value string, expires *time.Time,
 
 	if err != nil {
 		log.Println("property update failed: ", err)
+		if inserted {
+			deleteChild(node.parent, node)
+		}
 	} else {
 		markUpdated(node)
 		if node.Expires != nil {
@@ -654,14 +756,13 @@ func propertyGet(property string) (string, error) {
 	var err error
 	var rval string
 
-	node := cfg_property_parse(property, false)
-	if node == nil {
-		err = fmt.Errorf("No such property")
-	} else {
+	if node := propertySearch(property); node != nil {
 		b, err := json.Marshal(node)
 		if err == nil {
 			rval = string(b)
 		}
+	} else {
+		err = fmt.Errorf("No such property")
 	}
 
 	if err != nil {
@@ -679,12 +780,7 @@ func prop_tree_store() error {
 	propfile := *propdir + property_filename
 	backupfile := *propdir + backup_filename
 
-	node := cfg_property_parse("@/apversion", false)
-	if node == nil {
-		// This should have been handled by upgradeV1
-		log.Printf("Warning: @/apversion property missing\n")
-		node = cfg_property_parse("@/apversion", true)
-	}
+	node := propertyInsert("@/apversion")
 	node.Value = ApVersion
 
 	s, err := json.MarshalIndent(property_root, "", "  ")
@@ -746,7 +842,7 @@ func versionTree() error {
 	upgraded := false
 	version := 0
 
-	node := cfg_property_parse("@/cfgversion", true)
+	node := propertyInsert("@/cfgversion")
 	if node.Value != "" {
 		version, _ = strconv.Atoi(node.Value)
 	}
@@ -914,7 +1010,7 @@ func processOneEvent(query *base_msg.ConfigQuery) *base_msg.ConfigResponse {
 	prop := *query.Property
 	ops := &defaultSubtreeOps
 	val := "-"
-	rc := base_msg.ConfigResponse_OP_OK
+	rc := base_msg.ConfigResponse_OK
 
 	for _, r := range subtreeMatchTable {
 		if r.match.MatchString(prop) {
@@ -926,27 +1022,28 @@ func processOneEvent(query *base_msg.ConfigQuery) *base_msg.ConfigResponse {
 	switch *query.Operation {
 	case base_msg.ConfigQuery_GET:
 		if val, err = ops.get(query); err != nil {
-			rc = base_msg.ConfigResponse_PROP_NOT_FOUND
-			log.Printf("Get %s failed: %v\n", prop, err)
+			rc = base_msg.ConfigResponse_FAILED
 		}
 	case base_msg.ConfigQuery_CREATE:
 		if err = ops.set(query, true); err != nil {
-			rc = base_msg.ConfigResponse_NO_PERM
-			log.Printf("Create %s failed: %v\n", prop, err)
+			rc = base_msg.ConfigResponse_FAILED
 		}
 	case base_msg.ConfigQuery_SET:
 		if err = ops.set(query, false); err != nil {
-			rc = base_msg.ConfigResponse_PROP_NOT_FOUND
-			log.Printf("Set %s failed: %v\n", prop, err)
+			rc = base_msg.ConfigResponse_FAILED
 		}
 	case base_msg.ConfigQuery_DELETE:
 		if err = ops.delete(query); err != nil {
-			rc = base_msg.ConfigResponse_PROP_NOT_FOUND
-			log.Printf("Del %s failed: %v\n", prop, err)
+			rc = base_msg.ConfigResponse_FAILED
 		}
 	default:
-		log.Printf("Unrecognized operation")
 		rc = base_msg.ConfigResponse_UNSUPPORTED
+		err = fmt.Errorf("unrecognized operation")
+	}
+
+	if rc != base_msg.ConfigResponse_OK {
+		log.Printf("Config operation failed: %v\n", err)
+		val = fmt.Sprintf("%v", err)
 	}
 
 	t := time.Now()

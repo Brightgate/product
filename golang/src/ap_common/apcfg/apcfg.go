@@ -254,18 +254,12 @@ func (c *APConfig) msg(oc base_msg.ConfigQuery_Operation, prop, val string,
 	c.mutex.Unlock()
 	if err == nil {
 		switch *response.Response {
-		case base_msg.ConfigResponse_OP_OK:
+		case base_msg.ConfigResponse_OK:
 			if oc == base_msg.ConfigQuery_GET {
 				rval = *response.Value
 			}
-		case base_msg.ConfigResponse_PROP_NOT_FOUND:
-			err = fmt.Errorf("Property not found")
-		case base_msg.ConfigResponse_VALUE_NOT_FOUND:
-			err = fmt.Errorf("Value not found")
-		case base_msg.ConfigResponse_NO_PERM:
-			err = fmt.Errorf("Permission denied")
-		case base_msg.ConfigResponse_UNSUPPORTED:
-			err = fmt.Errorf("Operation not supported")
+		default:
+			err = fmt.Errorf("%s", *response.Value)
 		}
 	}
 

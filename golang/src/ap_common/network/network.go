@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/google/gopacket"
@@ -243,4 +245,15 @@ func WaitForDevice(dev string, timeout time.Duration) error {
 		}
 		time.Sleep(time.Millisecond * 100)
 	}
+}
+
+var legalHostname = regexp.MustCompile(`^([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$`)
+
+// ValidHostname checks whether the provided hostname is RFC1123-compliant.
+// A hostname may contain only letters, digits, and hyphens.  It may neither
+// start nor end with hyphen.
+func ValidHostname(hostname string) bool {
+	lower := strings.ToLower(hostname)
+
+	return legalHostname.Match([]byte(lower))
 }

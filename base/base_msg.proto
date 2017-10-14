@@ -265,11 +265,9 @@ message ConfigResponse {
 	optional string identity_uuid = 0x04;
 
 	enum OpResponse {
-		OP_OK = 0;
-		PROP_NOT_FOUND = 1;
-		VALUE_NOT_FOUND = 2;
-		NO_PERM = 3;
-		UNSUPPORTED = 4;
+		OK = 0;
+		FAILED = 1;
+		UNSUPPORTED = 2;
 	}
 	required OpResponse response = 0x2003;
 
