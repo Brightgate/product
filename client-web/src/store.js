@@ -214,6 +214,13 @@ const actions = {
     })
   },
 
+  enrollSMS (context, { phone }) {
+    console.log(`enrollSMS: phone:${phone}`)
+    return superagent.post('/apid/enroll'
+    ).type('form'
+    ).send({ phone: phone })
+  },
+
   // Ask the server to change the ring property for a device, then
   // attempt to wait for that change to propagate.  In practice this
   // seems to take several seconds, during which time the server may
@@ -230,6 +237,7 @@ const actions = {
       return context.dispatch('fetchDevices')
     })
   },
+
 
 }
 

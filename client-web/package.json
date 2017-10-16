@@ -5,7 +5,7 @@
   "author": "Brightgate, Inc.",
   "license": "UNLICENSED",
   "scripts": {
-    "watchify": "cross-env watchify -vd -p [ browserify-hmr -p ${WATCHIFY_PORT:-3123} -u http://localhost:${WATCHIFY_PORT:-3123} ] -e src/main.js -o dist/js/build.js",
+    "watchify": "cross-env watchify -vd -p [ browserify-hmr -p ${WATCHIFY_PORT:-3123} -h '0.0.0.0' -u http://$(hostname):${WATCHIFY_PORT:-3123} ] -e src/main.js -o dist/js/build.js",
     "serve": "cross-env http-server -p ${DEV_HTTP_PORT:-8801} -o -c 1 dist/",
     "dev": "npm-run-all --parallel watchify serve",
     "build:dir": "rm -fr dist && mkdir -p dist/js dist/css dist/fonts dist/img",
@@ -29,6 +29,7 @@
     "framework7": "^1.6.5",
     "framework7-icons": "^0.8.9",
     "framework7-vue": "^0.9.3",
+    "libphonenumber-js": "^0.4.35",
     "lodash": "^4.17.4",
     "superagent": "^3.6.2",
     "vue": "^2.4.4",

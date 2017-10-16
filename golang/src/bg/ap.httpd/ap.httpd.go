@@ -231,8 +231,12 @@ func appleHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func defaultHandler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("defaultHandler: %v\n", *r)
 	gatewayu := fmt.Sprintf("http://gateway.%s/client-web/", domainname)
+	http.Redirect(w, r, gatewayu, http.StatusFound)
+}
+
+func defaultCaptiveHandler(w http.ResponseWriter, r *http.Request) {
+	gatewayu := fmt.Sprintf("http://gateway.%s/client-web/enroll.html", domainname)
 	http.Redirect(w, r, gatewayu, http.StatusFound)
 }
 
@@ -393,23 +397,9 @@ func main() {
 	loadPhishtank()
 
 	// routing
-	demoAPIRouter := mux.NewRouter()
-	demoAPIRouter.HandleFunc("/login", demoLoginHandler)
-	demoAPIRouter.HandleFunc("/logout", demoLogoutHandler)
-	demoAPIRouter.HandleFunc("/alerts", demoAlertsHandler)
-	demoAPIRouter.HandleFunc("/devices/{ring}", demoDevicesByRingHandler)
-	demoAPIRouter.HandleFunc("/devices", demoDevicesHandler)
-	demoAPIRouter.HandleFunc("/rings", demoRingsHandler)
-	demoAPIRouter.HandleFunc("/access/{devid}", demoAccessByIDHandler)
-	demoAPIRouter.HandleFunc("/access", demoAccessHandler)
-	demoAPIRouter.HandleFunc("/supreme", demoSupremeHandler)
-	demoAPIRouter.HandleFunc("/config/{property:[a-z@/]+}", demoPropertyByNameHandler)
-	demoAPIRouter.HandleFunc("/config", demoPropertyHandler)
-	demoAPIRouter.HandleFunc("/users/{uid}/otp", demoUserByUIDOTPQRHandler)
-	demoAPIRouter.HandleFunc("/users/{uid}", demoUserByUIDHandler)
-	demoAPIRouter.HandleFunc("/users", demoUsersHandler)
-
 	mainRouter := mux.NewRouter()
+
+	demoAPIRouter := makeDemoAPIRouter()
 
 	phishRouter := mainRouter.MatcherFunc(
 		func(r *http.Request, match *mux.RouteMatch) bool {
@@ -432,11 +422,12 @@ func main() {
 	nMain.UseHandler(apachelog.CombinedLog.Wrap(mainRouter, os.Stderr))
 
 	captiveRouter := mux.NewRouter()
-	captiveRouter.HandleFunc("/", defaultHandler)
+	captiveRouter.HandleFunc("/", defaultCaptiveHandler)
 	captiveRouter.PathPrefix("/client-web/").Handler(http.StripPrefix("/client-web/",
 		http.FileServer(http.Dir(*clientWebDir))))
 	captiveRouter.HandleFunc("/hotspot-detect.html", appleHandler)
 	captiveRouter.HandleFunc("/appleConnect", appleConnect)
+	captiveRouter.HandleFunc("/apid/enroll", demoEnrollHandler)
 
 	nCaptive := negroni.New(negroni.NewRecovery())
 	nCaptive.UseHandler(apachelog.CombinedLog.Wrap(captiveRouter, os.Stderr))

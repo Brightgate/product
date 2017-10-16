@@ -29,6 +29,8 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/pquerna/otp"
+	"github.com/sfreiberg/gotwilio"
+	"github.com/ttacon/libphonenumber"
 )
 
 const (
@@ -695,6 +697,82 @@ func demoUsersHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type EnrollResponse struct {
+	SmsDelivered bool   `json:"smsdelivered"`
+	SmsErrorCode int    `json:"smserrorcode"`
+	SmsError     string `json:"smserror"`
+}
+
+func demoEnrollHandler(w http.ResponseWriter, r *http.Request) {
+	var err error
+
+	t := time.Now()
+
+	if r.Method != "POST" {
+		http.Error(w, "Invalid request method.", 405)
+		return
+	}
+	twilioSID := "ACaa018fa0f7631d585a56f6806a5bfc74"
+	twilioAuthToken := "cfe70c8ed40429f0ba961189f554dc90"
+	from := "+16507694283"
+
+	networkSSID, err := config.GetProp("@/network/ssid")
+	if err != nil {
+		http.Error(w, "Internal Error", 500)
+	}
+	networkPassphrase, err := config.GetProp("@/network/passphrase")
+
+	message := fmt.Sprintf("💡 Brightgate Wi-Fi\nNetwork: %s\n"+
+		"Password: %s\nHelp: bit.ly/2yhPDQz", networkSSID,
+		networkPassphrase)
+
+	log.Printf("Enroll Handler: phone='%v'\n", r.PostFormValue("phone"))
+	if r.PostFormValue("phone") == "" {
+		http.Error(w, "Invalid request.", 400)
+		return
+	}
+
+	to, err := libphonenumber.Parse(r.PostFormValue("phone"), "US")
+	if err != nil {
+		response := EnrollResponse{false, 0, "Invalid Phone Number"}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			panic(err)
+		}
+		return
+	}
+
+	formattedTo := libphonenumber.Format(to, libphonenumber.INTERNATIONAL)
+	log.Printf("Enroll Handler: formattedTo='%v'\n", formattedTo)
+	twilio := gotwilio.NewTwilioClient(twilioSID, twilioAuthToken)
+	smsResponse, exception, err := twilio.SendSMS(from, formattedTo, message, "", "")
+	if err != nil {
+		log.Printf("Enroll Handler: twilio go err='%v'\n", err)
+		http.Error(w, "Twilio Error.", 500)
+		return
+	}
+	if exception != nil {
+		rstr := "Twilio failed sending SMS."
+		if exception.Code >= 21210 && exception.Code <= 21217 {
+			rstr = "Invalid Phone Number"
+		}
+		response := EnrollResponse{false, exception.Code, rstr}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			panic(err)
+		}
+		return
+	}
+	log.Printf("Enroll Handler: smsResponse='%v'\n", smsResponse)
+	response := EnrollResponse{true, 0, "Current Status: " + smsResponse.Status}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		panic(err)
+		return
+	}
+
+	if err == nil {
+		latencies.Observe(time.Since(t).Seconds())
+	}
+}
+
 // StatsContent contains information for filling out the stats template.
 // Policy: GET(*)
 type StatsContent struct {
@@ -732,4 +810,21 @@ func demoStatsHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		latencies.Observe(time.Since(lt).Seconds())
 	}
+}
+
+func makeDemoAPIRouter() *mux.Router {
+	router := mux.NewRouter()
+	router.HandleFunc("/access", demoAccessHandler)
+	router.HandleFunc("/access/{devid}", demoAccessByIDHandler)
+	router.HandleFunc("/alerts", demoAlertsHandler)
+	router.HandleFunc("/config/{property:[a-z@/]+}", demoPropertyByNameHandler)
+	router.HandleFunc("/config", demoPropertyHandler)
+	router.HandleFunc("/devices/{ring}", demoDevicesByRingHandler)
+	router.HandleFunc("/devices", demoDevicesHandler)
+	router.HandleFunc("/enroll", demoEnrollHandler)
+	router.HandleFunc("/login", demoLoginHandler)
+	router.HandleFunc("/logout", demoLogoutHandler)
+	router.HandleFunc("/rings", demoRingsHandler)
+	router.HandleFunc("/supreme", demoSupremeHandler)
+	return router
 }
