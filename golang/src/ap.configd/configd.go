@@ -514,13 +514,14 @@ func dnsNameInuse(ignore *pnode, hostname string) bool {
 		}
 	}
 
-	cnames := propertySearch("@/dns/cnames")
-	for _, record := range cnames.Children {
-		if record == ignore {
-			continue
-		}
-		if strings.ToLower(record.Name) == lower {
-			return true
+	if cnames := propertySearch("@/dns/cnames"); cnames != nil {
+		for _, record := range cnames.Children {
+			if record == ignore {
+				continue
+			}
+			if strings.ToLower(record.Name) == lower {
+				return true
+			}
 		}
 	}
 

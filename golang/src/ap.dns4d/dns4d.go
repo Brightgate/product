@@ -535,10 +535,7 @@ func initHostMap() {
 		}
 	}
 
-	cnames, err := config.GetProps("@/dns/cnames")
-	if err != nil {
-		log.Printf("Failed to get cnames: %v\n", err)
-	} else {
+	if cnames, _ := config.GetProps("@/dns/cnames"); cnames != nil {
 		for _, c := range cnames.Children {
 			updateOneCname(c.Name, c.Value)
 		}
