@@ -98,17 +98,25 @@ func (i *inventoryServer) Upcall(ctx context.Context, req *cloud_rpc.InventoryRe
 	lt := time.Now()
 	year := lt.Year()
 
+	log.Println("Context: ", ctx)
+	log.Println("InventoryReport: ", req)
+
+	if req.HMAC == nil || req.Uuid == nil {
+		invalid_upcalls.Inc()
+		return nil, grpc.Errorf(codes.InvalidArgument, "req missing needed parameters")
+	}
+
 	rhmac := hmac.New(sha256.New, cloud_rpc.HMACKeys[year])
 	rhmac.Write([]byte(req.Devices.String()))
 	expectedHMAC := rhmac.Sum(nil)
 
-	if !hmac.Equal(req.HMAC, expectedHMAC) {
+	if !hmac.Equal(req.GetHMAC(), expectedHMAC) {
 		invalid_upcalls.Inc()
 		return nil, grpc.Errorf(codes.Unauthenticated, "valid hmac required")
 	}
 
-	log.Printf("received inventory from %v (%v)\n", req.Uuid, req.WanHwaddr)
-	dirPath := fmt.Sprintf("%s/var/spool/%s/", *clroot, req.Uuid)
+	log.Printf("received inventory from %s (%v)\n", req.GetUuid(), req.GetWanHwaddr())
+	dirPath := fmt.Sprintf("%s/var/spool/%s/", *clroot, req.GetUuid())
 	if err := os.MkdirAll(dirPath, 0755); err != nil {
 		return nil, grpc.Errorf(codes.FailedPrecondition, "mkdir failed")
 	}
@@ -131,8 +139,7 @@ func (i *inventoryServer) Upcall(ctx context.Context, req *cloud_rpc.InventoryRe
 
 	// Formulate a response.
 	res := cloud_rpc.UpcallResponse{
-		UpcallElapsed:   -1,
-		DowncallElapsed: -1,
+		UpcallElapsed:   proto.Int64(time.Now().Sub(lt).Nanoseconds()),
 	}
 
 	return &res, nil
@@ -160,10 +167,21 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 	lt := time.Now()
 	year := lt.Year()
 
-	log.Println(ctx, req)
+	log.Println("Context: ", ctx)
+	log.Println("UpcallRequest: ", req.String())
+
+	if req.HMAC == nil || req.WanHwaddr == nil ||
+	    req.UptimeElapsed == nil || req.Uuid == nil {
+		invalid_upcalls.Inc()
+		return nil, grpc.Errorf(codes.InvalidArgument, "req missing parameters")
+	}
+
+	log.Printf("hwaddr %v uuid %s version %v uptime %d\n",
+		req.GetWanHwaddr(), req.GetUuid(), req.GetComponentVersion(),
+		req.GetUptimeElapsed())
 
 	rhmac := hmac.New(sha256.New, cloud_rpc.HMACKeys[year])
-	data := fmt.Sprintf("%v %v", req.WanHwaddr, req.UptimeElapsed)
+	data := fmt.Sprintf("%x %d", req.GetWanHwaddr(), req.GetUptimeElapsed())
 	rhmac.Write([]byte(data))
 	expectedHMAC := rhmac.Sum(nil)
 
@@ -172,9 +190,6 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 		invalid_upcalls.Inc()
 		return nil, grpc.Errorf(codes.Unauthenticated, "valid hmac required")
 	}
-
-	log.Printf("hwaddr %v uuid %v version %v uptime %v\n",
-		req.WanHwaddr, req.Uuid, req.ComponentVersion, req.UptimeElapsed)
 
 	peer, ok := peer.FromContext(ctx)
 	if !ok {
@@ -189,31 +204,31 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 		component_version: req.ComponentVersion,
 		last_contact:      time.Now(),
 		net_host_count:    0,
-		uptime:            req.UptimeElapsed,
-		wan_hwaddr:        req.WanHwaddr,
+		uptime:            req.GetUptimeElapsed(),
+		wan_hwaddr:        req.GetWanHwaddr(),
 		wan_ipv4addr:      peer.Addr.String(),
 	}
 
 	// Update our tables.
-	log.Printf("len hwaddr %v\n", len(req.WanHwaddr))
+	log.Printf("len hwaddr %v\n", len(req.GetWanHwaddr()))
 
 	new_system := false
 	new_software_install := false
 
 	// req.Uuid not in s.uuids[] --> new system
-	if _, ok := s.uuids[req.Uuid]; ok {
+	if _, ok := s.uuids[req.GetUuid()]; ok {
 		log.Printf("uuid is known\n")
 	} else {
-		log.Printf("uuid %v is a new system\n", req.Uuid)
+		log.Printf("uuid %s is a new system\n", req.GetUuid())
 		new_system = true
 	}
 
 	// req.WanHwaddr not in s.macs[] --> new system
-	for _, hwaddr := range req.WanHwaddr {
+	for _, hwaddr := range req.GetWanHwaddr() {
 		if _, ok := s.macs[hwaddr]; ok {
 			// req.WanHwaddr not the same Uuid --> new
 			// software install
-			if s.macs[hwaddr] != req.Uuid {
+			if s.macs[hwaddr] != req.GetUuid() {
 				// New installation?
 				log.Printf("WanHwaddr not equal to Uuid, new software install")
 				new_software_install = true
@@ -224,16 +239,16 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 	}
 
 	if new_system {
-		log.Printf("recording uuid %v\n", req.Uuid)
+		log.Printf("recording uuid %s\n", req.GetUuid())
 
 		// Record it!
-		s.uuids[req.Uuid] = ai
+		s.uuids[req.GetUuid()] = ai
 	}
 
 	if new_system || new_software_install {
 		for _, hwaddr := range req.WanHwaddr {
-			log.Printf("recording hwaddr %v\n", hwaddr)
-			s.macs[hwaddr] = req.Uuid
+			log.Printf("recording hwaddr %s\n", hwaddr)
+			s.macs[hwaddr] = req.GetUuid()
 		}
 	}
 
@@ -241,8 +256,7 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 
 	// Formulate a response.
 	res := cloud_rpc.UpcallResponse{
-		UpcallElapsed:   -1,
-		DowncallElapsed: -1,
+		UpcallElapsed:   proto.Int64(time.Now().Sub(lt).Nanoseconds()),
 	}
 
 	return &res, nil
@@ -277,7 +291,7 @@ func main() {
 
 	// It is bad if B10E_CERT_HOSTNAME is not defined.
 	// It is unfortunate if B10E_CERT_HOSTNAME is not defined.
-	log.Printf("environ %v", environ)
+	log.Printf("environ %+v", environ)
 
 	// Port 443 listener.
 	certf := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem",

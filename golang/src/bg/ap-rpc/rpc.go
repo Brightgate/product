@@ -160,17 +160,17 @@ func sendUpbeat() {
 
 	year := time.Now().Year()
 	rhmac := hmac.New(sha256.New, cloud_rpc.HMACKeys[year])
-	data := fmt.Sprintf("%v %v", aphwaddr, int64(elapsed))
+	data := fmt.Sprintf("%x %d", aphwaddr, int64(elapsed))
 	rhmac.Write([]byte(data))
 
 	// Build UpcallRequest
 	request := &cloud_rpc.UpcallRequest{
 		HMAC:             rhmac.Sum(nil),
-		Uuid:             apuuid,
-		UptimeElapsed:    int64(elapsed),
+		Uuid:             proto.String(apuuid),
+		UptimeElapsed:    proto.Int64(int64(elapsed)),
 		WanHwaddr:        aphwaddr,
 		ComponentVersion: versions,
-		NetHostCount:     0,
+		NetHostCount:     proto.Int32(0), // XXX not finished
 	}
 
 	conn, err := dial()
@@ -208,7 +208,7 @@ func sendInventory() {
 	// Build InventoryReport
 	report := &cloud_rpc.InventoryReport{
 		HMAC:      rhmac.Sum(nil),
-		Uuid:      apuuid,
+		Uuid:      proto.String(apuuid),
 		WanHwaddr: aphwaddr,
 		Devices:   inventory,
 	}
