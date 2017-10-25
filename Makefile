@@ -50,10 +50,24 @@
 # 4. On x86_64, the build constructs all components, whether for appliance or
 #    for cloud.  On ARM, only appliance components are built.
 
+#
+# OS definitions
+#
 UNAME_S = $(shell uname -s)
 UNAME_M = $(shell uname -m)
 $(info kernel UNAME_S=$(UNAME_S))
 
+#
+# Git related definitions
+#
+export GITROOT = $(shell git rev-parse --show-toplevel)
+export GOPATH=$(GITROOT)/golang
+GITHASH=$(shell git describe --always --long --dirty)
+$(info GITHASH $(GITHASH))
+
+#
+# Go environment setup
+#
 ifeq ("$(GOROOT)","")
 ifeq ("$(UNAME_S)","Darwin")
 # On macOS, install the .pkg provided by golang.org.
@@ -65,8 +79,6 @@ export GOROOT=$(HOME)/go
 $(info operating-system Linux)
 endif
 endif
-
-export GOPATH=$(shell pwd)/golang
 
 GO = $(GOROOT)/bin/go
 GOFMT = $(GOROOT)/bin/gofmt
@@ -81,25 +93,36 @@ $(info GOOS = $(GOOS))
 GOARCH = $(shell $(GO) env GOARCH)
 $(info GOARCH = $(GOARCH))
 GOSRC = golang/src
+GOSRCBG = $(GOSRC)/bg
+# Vendoring directory, where external deps are placed
+GOSRCBGVENDOR = $(GOSRCBG)/vendor
+# Where we stick build tools
+GOBIN = golang/bin
 
+GOVERFLAGS=-ldflags="-X main.ApVersion=$(GITHASH)"
+
+#
+# Miscellaneous environment setup
+#
 # Use "make PKG_LINT= packages" to skip lintian pass.
 PKG_LINT = --lint
 
 INSTALL = install
-PYTHON3 = python3
 MKDIR = mkdir
 RM = rm
 
+PYTHON3 = python3
 $(info python3-version $(PYTHON3) -> $(shell $(PYTHON3) -V))
-
-GITHASH=$(shell git describe --always --long --dirty)
-$(info GITHASH $(GITHASH))
-VERFLAGS=-ldflags="-X main.ApVersion=$(GITHASH)"
 
 PROTOC_PLUGINS = \
 	$(GOPATH)/bin/protoc-gen-doc \
 	$(GOPATH)/bin/protoc-gen-go
 
+#
+# ARCH dependent setup
+# - Select proto area name
+# - Select default target list
+#
 ifeq ("$(GOARCH)","amd64")
 $(info --> Building appliance and cloud components for x86_64.)
 ROOT=proto.$(UNAME_M)
@@ -108,7 +131,6 @@ TARGETS=$(APPCOMPONENTS) $(CLOUDCOMPONENTS)
 endif
 
 ifeq ("$(GOARCH)","arm")
-# XXX Could avoid building cloud components.
 # UNAME_M will read armv7l on Raspbian and on Ubuntu for  Banana Pi.
 # Both use armhf as the architecture for .deb files.
 $(info --> Building appliance components for ARM.)
@@ -174,8 +196,8 @@ HTTPD_TEMPLATE_FILES = \
 	stats.html.got
 
 GO_TESTABLES = \
-	ap_common/apcfg \
-	ap_common/network
+	bg/ap_common/apcfg \
+	bg/ap_common/network
 
 NETWORK_TEMPLATE_FILES = hostapd.conf.got
 
@@ -227,15 +249,15 @@ APPCOMPONENTS = \
 	$(FILTER_RULES)
 
 APP_COMMON_SRCS = \
-	$(GOSRC)/ap_common/apcfg/apcfg.go \
-	$(GOSRC)/ap_common/apcfg/events.go \
-	$(GOSRC)/ap_common/aputil/aputil.go \
-	$(GOSRC)/ap_common/broker/broker.go \
-	$(GOSRC)/ap_common/mcp/mcp_client.go \
-	$(GOSRC)/ap_common/network/network.go \
-	$(GOSRC)/ap_common/watchd/watchd_client.go \
-	$(GOSRC)/base_def/base_def.go \
-	$(GOSRC)/base_msg/base_msg.pb.go
+	$(GOSRCBG)/ap_common/apcfg/apcfg.go \
+	$(GOSRCBG)/ap_common/apcfg/events.go \
+	$(GOSRCBG)/ap_common/aputil/aputil.go \
+	$(GOSRCBG)/ap_common/broker/broker.go \
+	$(GOSRCBG)/ap_common/mcp/mcp_client.go \
+	$(GOSRCBG)/ap_common/network/network.go \
+	$(GOSRCBG)/ap_common/watchd/watchd_client.go \
+	$(GOSRCBG)/base_def/base_def.go \
+	$(GOSRCBG)/base_msg/base_msg.pb.go
 
 # Cloud components and supporting definitions.
 
@@ -269,7 +291,7 @@ CLOUDDIRS = \
 CLOUDCOMPONENTS = $(CLOUDBINARIES) $(CLOUDCONFIGS) $(CLOUDDIRS)
 
 CLOUD_COMMON_SRCS = \
-    $(GOSRC)/cloud_rpc/cloud_rpc.pb.go
+    $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go
 
 #
 
@@ -314,7 +336,7 @@ $(APPDOC)/: base/base_msg.proto | $(PROTOC_PLUGINS) $(APPDOC)
 
 # Installation of appliance configuration files
 
-$(APPETC)/ap_defaults.json: $(GOSRC)/ap.configd/ap_defaults.json | $(APPETC)
+$(APPETC)/ap_defaults.json: $(GOSRCBG)/ap.configd/ap_defaults.json | $(APPETC)
 	$(INSTALL) -m 0644 $< $(APPETC)
 
 $(APPETC)/ap_identities.csv: ap_identities.csv | $(APPETC)
@@ -329,10 +351,10 @@ $(APPROOTLIB)/systemd/system/ap.mcp.service: ap.mcp.service | $(APPROOTLIB)/syst
 $(APPROOTLIB)/systemd/system/brightgate-appliance.service: brightgate-appliance.service | $(APPROOTLIB)/systemd/system
 	$(INSTALL) -m 0644 $< $(APPROOTLIB)/systemd/system
 
-$(APPETC)/devices.json: $(GOSRC)/ap.configd/devices.json | $(APPETC)
+$(APPETC)/devices.json: $(GOSRCBG)/ap.configd/devices.json | $(APPETC)
 	$(INSTALL) -m 0644 $< $(APPETC)
 
-$(APPETC)/mcp.json: $(GOSRC)/ap.mcp/mcp.json | $(APPETC)
+$(APPETC)/mcp.json: $(GOSRCBG)/ap.mcp/mcp.json | $(APPETC)
 	$(INSTALL) -m 0644 $< $(APPETC)
 
 $(APPETC)/oui.txt: | $(APPETC)
@@ -347,25 +369,25 @@ $(APPETC)/prometheus.yml: prometheus.yml | $(APPETC)
 $(APPETCCROND)/com-brightgate-appliance-cron: com-brightgate-appliance-cron | $(APPETCCROND)
 	$(INSTALL) -m 0644 $< $(APPETCCROND)
 
-$(APPETCRSYSLOGD)/com-brightgate-rsyslog.conf: $(GOSRC)/ap.watchd/com-brightgate-rsyslog.conf | $(APPETCRSYSLOGD)
+$(APPETCRSYSLOGD)/com-brightgate-rsyslog.conf: $(GOSRCBG)/ap.watchd/com-brightgate-rsyslog.conf | $(APPETCRSYSLOGD)
 	$(INSTALL) -m 0644 $< $(APPETCRSYSLOGD)
 
-$(APPSPOOLANTIPHISH)/example_blacklist.csv: $(GOSRC)/data/phishtank/example_blacklist.csv | $(APPSPOOLANTIPHISH)
+$(APPSPOOLANTIPHISH)/example_blacklist.csv: $(GOSRCBG)/data/phishtank/example_blacklist.csv | $(APPSPOOLANTIPHISH)
 	$(INSTALL) -m 0644 $< $(APPSPOOLANTIPHISH)
 
-$(APPSPOOLANTIPHISH)/whitelist.csv: $(GOSRC)/data/phishtank/whitelist.csv | $(APPSPOOLANTIPHISH)
+$(APPSPOOLANTIPHISH)/whitelist.csv: $(GOSRCBG)/data/phishtank/whitelist.csv | $(APPSPOOLANTIPHISH)
 	$(INSTALL) -m 0644 $< $(APPSPOOLANTIPHISH)
 
-$(NETWORK_TEMPLATE_DIR)/%: $(GOSRC)/ap.networkd/% | $(APPETC)
+$(NETWORK_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.networkd/% | $(APPETC)
 	$(INSTALL) -m 0644 $< $(NETWORK_TEMPLATE_DIR)
 
-$(HTTPD_TEMPLATE_DIR)/%: $(GOSRC)/ap.httpd/% | $(APPETC)
+$(HTTPD_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.httpd/% | $(APPETC)
 	$(INSTALL) -m 0644 $< $(HTTPD_TEMPLATE_DIR)
 
-$(APPRULES)/%: golang/src/ap.networkd/% | $(APPRULES)
+$(APPRULES)/%: $(GOSRCBG)/ap.networkd/% | $(APPRULES)
 	$(INSTALL) -m 0644 $< $(APPRULES)
 
-$(APPMODEL): golang/src/ap.identifierd/linear_model_deviceID/* | $(DIRS)
+$(APPMODEL): $(GOSRCBG)/ap.identifierd/linear_model_deviceID/* | $(DIRS)
 	$(MKDIR) -p $@
 	cp -r $^ $@
 	touch $@
@@ -377,73 +399,69 @@ $(APPDIRS):
 	$(MKDIR) -p $@
 
 COMMON_SRCS = \
-	$(GOSRC)/base_def/base_def.go \
-	$(GOSRC)/base_msg/base_msg.pb.go \
-	$(GOSRC)/ap_common/broker/broker.go \
-	$(GOSRC)/ap_common/apcfg/apcfg.go \
-	$(GOSRC)/ap_common/aputil/aputil.go \
-	$(GOSRC)/ap_common/mcp/mcp_client.go \
-	$(GOSRC)/ap_common/network/network.go
+	$(GOSRCBG)/base_def/base_def.go \
+	$(GOSRCBG)/base_msg/base_msg.pb.go \
+	$(GOSRCBG)/ap_common/broker/broker.go \
+	$(GOSRCBG)/ap_common/apcfg/apcfg.go \
+	$(GOSRCBG)/ap_common/aputil/aputil.go \
+	$(GOSRCBG)/ap_common/mcp/mcp_client.go \
+	$(GOSRCBG)/ap_common/network/network.go
 
 PHISH_SRCS = \
-	$(GOSRC)/data/phishtank/datasource.go \
-	$(GOSRC)/data/phishtank/csv.go \
-	$(GOSRC)/data/phishtank/remote.go \
-	$(GOSRC)/data/phishtank/safebrowsing.go
+	$(GOSRCBG)/data/phishtank/datasource.go \
+	$(GOSRCBG)/data/phishtank/csv.go \
+	$(GOSRCBG)/data/phishtank/remote.go \
+	$(GOSRCBG)/data/phishtank/safebrowsing.go
 
-$(APPBINARIES): $(APP_COMMON_SRCS) .app.gotten | $(APPBIN)
-
-.app.gotten:
-	$(GO) get $(GO_GET_FLAGS) $(APPDAEMONS) $(APPCOMMANDS) 2>&1 | tee -a get.acc
-	touch $@
+$(APPBINARIES): $(APP_COMMON_SRCS) | $(APPBIN) deps-ensured
 
 $(APPBIN)/ap-start: ap-start.sh
 	$(INSTALL) -m 0755 $< $@
 
 $(APPBIN)/%:
-	cd $(APPBIN) && $(GO) build -i $(VERFLAGS) $*
+	GOBIN=$(realpath $(APPBIN)) $(GO) install $(GOVERFLAGS) bg/$*
 
-$(APPBIN)/ap.brokerd: $(GOSRC)/ap.brokerd/brokerd.go
+$(APPBIN)/ap.brokerd: $(GOSRCBG)/ap.brokerd/brokerd.go
 $(APPBIN)/ap.configd: \
-	$(GOSRC)/ap.configd/configd.go \
-	$(GOSRC)/ap.configd/devices.go \
-	$(GOSRC)/ap.configd/upgrade_v1.go \
-	$(GOSRC)/ap.configd/upgrade_v2.go \
-	$(GOSRC)/ap.configd/upgrade_v4.go \
-	$(GOSRC)/ap.configd/upgrade_v5.go
-$(APPBIN)/ap.dhcp4d: $(GOSRC)/ap.dhcp4d/dhcp4d.go
+	$(GOSRCBG)/ap.configd/configd.go \
+	$(GOSRCBG)/ap.configd/devices.go \
+	$(GOSRCBG)/ap.configd/upgrade_v1.go \
+	$(GOSRCBG)/ap.configd/upgrade_v2.go \
+	$(GOSRCBG)/ap.configd/upgrade_v4.go \
+	$(GOSRCBG)/ap.configd/upgrade_v5.go
+$(APPBIN)/ap.dhcp4d: $(GOSRCBG)/ap.dhcp4d/dhcp4d.go
 $(APPBIN)/ap.dns4d: \
-	$(GOSRC)/ap.dns4d/dns4d.go \
+	$(GOSRCBG)/ap.dns4d/dns4d.go \
 	$(PHISH_SRCS)
 $(APPBIN)/ap.httpd: \
-	$(GOSRC)/ap.httpd/ap.httpd.go \
-	$(GOSRC)/ap.httpd/api-demo.go \
+	$(GOSRCBG)/ap.httpd/ap.httpd.go \
+	$(GOSRCBG)/ap.httpd/api-demo.go \
 	$(PHISH_SRCS)
-$(APPBIN)/ap.identifierd: $(GOSRC)/ap.identifierd/identifierd.go
-$(APPBIN)/ap.logd: $(GOSRC)/ap.logd/logd.go
-$(APPBIN)/ap.mcp: $(GOSRC)/ap.mcp/mcp.go
+$(APPBIN)/ap.identifierd: $(GOSRCBG)/ap.identifierd/identifierd.go
+$(APPBIN)/ap.logd: $(GOSRCBG)/ap.logd/logd.go
+$(APPBIN)/ap.mcp: $(GOSRCBG)/ap.mcp/mcp.go
 $(APPBIN)/ap.networkd: \
-	$(GOSRC)/ap.networkd/filterd.go \
-	$(GOSRC)/ap.networkd/networkd.go \
-	$(GOSRC)/ap.networkd/parse.go
-$(APPBIN)/ap.relayd: $(GOSRC)/ap.relayd/relayd.go
+	$(GOSRCBG)/ap.networkd/filterd.go \
+	$(GOSRCBG)/ap.networkd/networkd.go \
+	$(GOSRCBG)/ap.networkd/parse.go
+$(APPBIN)/ap.relayd: $(GOSRCBG)/ap.relayd/relayd.go
 $(APPBIN)/ap.watchd: \
-	$(GOSRC)/ap.watchd/api.go \
-	$(GOSRC)/ap.watchd/droplog.go \
-	$(GOSRC)/ap.watchd/metrics.go \
-	$(GOSRC)/ap.watchd/sampler.go \
-	$(GOSRC)/ap.watchd/scanner.go \
-	$(GOSRC)/ap.watchd/watchd.go
+	$(GOSRCBG)/ap.watchd/api.go \
+	$(GOSRCBG)/ap.watchd/droplog.go \
+	$(GOSRCBG)/ap.watchd/metrics.go \
+	$(GOSRCBG)/ap.watchd/sampler.go \
+	$(GOSRCBG)/ap.watchd/scanner.go \
+	$(GOSRCBG)/ap.watchd/watchd.go
 
-$(APPBIN)/ap-arpspoof: $(GOSRC)/ap-arpspoof/arpspoof.go
-$(APPBIN)/ap-configctl: $(GOSRC)/ap-configctl/configctl.go
-$(APPBIN)/ap-ctl: $(GOSRC)/ap-ctl/ctl.go
-$(APPBIN)/ap-msgping: $(GOSRC)/ap-msgping/msgping.go
-$(APPBIN)/ap-ouisearch: $(GOSRC)/ap-ouisearch/ouisearch.go
+$(APPBIN)/ap-arpspoof: $(GOSRCBG)/ap-arpspoof/arpspoof.go
+$(APPBIN)/ap-configctl: $(GOSRCBG)/ap-configctl/configctl.go
+$(APPBIN)/ap-ctl: $(GOSRCBG)/ap-ctl/ctl.go
+$(APPBIN)/ap-msgping: $(GOSRCBG)/ap-msgping/msgping.go
+$(APPBIN)/ap-ouisearch: $(GOSRCBG)/ap-ouisearch/ouisearch.go
 $(APPBIN)/ap-rpc: \
-	$(GOSRC)/ap-rpc/rpc.go \
+	$(GOSRCBG)/ap-rpc/rpc.go \
 	$(CLOUD_COMMON_SRCS)
-$(APPBIN)/ap-stats: $(GOSRC)/ap-stats/stats.go
+$(APPBIN)/ap-stats: $(GOSRCBG)/ap-stats/stats.go
 
 LOCAL_BINARIES=$(APPBINARIES:$(APPBIN)/%=$(GOPATH)/bin/%)
 
@@ -460,18 +478,14 @@ $(CLOUDROOTLIB)/systemd/system/cl.httpd.service: cl.httpd.service | $(CLOUDROOTL
 $(CLOUDROOTLIB)/systemd/system/cl.rpcd.service: cl.rpcd.service | $(CLOUDROOTLIB)/systemd/system
 	$(INSTALL) -m 0644 $< $(CLOUDROOTLIB)/systemd/system
 
-$(CLOUDBINARIES): $(COMMON_SRCS) .cloud.gotten
-
-.cloud.gotten:
-	$(GO) get $(GO_GET_FLAGS) $(CLOUDDAEMONS) $(CLOUDCOMMANDS) 2>&1 | tee -a get.acc
-	touch $@
+$(CLOUDBINARIES): $(COMMON_SRCS) | deps-ensured
 
 $(CLOUDBIN)/%: | $(CLOUDBIN)
-	cd $(CLOUDBIN) && $(GO) build $(VERFLAGS) $*
+	GOBIN=$(realpath $(CLOUDBIN)) $(GO) install $(GOVERFLAGS) bg/$*
 
-$(CLOUDBIN)/cl.httpd: $(GOSRC)/cl.httpd/cl.httpd.go
+$(CLOUDBIN)/cl.httpd: $(GOSRCBG)/cl.httpd/cl.httpd.go
 $(CLOUDBIN)/cl.rpcd: \
-	$(GOSRC)/cl.rpcd/rpcd.go \
+	$(GOSRCBG)/cl.rpcd/rpcd.go \
 	$(CLOUD_COMMON_SRCS)
 
 $(CLOUDROOTLIB)/systemd/system: | $(CLOUDROOTLIB)
@@ -482,38 +496,38 @@ $(CLOUDDIRS):
 
 # Common definitions
 
-$(GOSRC)/base_def/base_def.go: base/generate-base-def.py | $(GOSRC)/base_def
+$(GOSRCBG)/base_def/base_def.go: base/generate-base-def.py | $(GOSRCBG)/base_def
 	$(PYTHON3) $< --go | $(GOFMT) > $@
 
 base/base_def.py: base/generate-base-def.py
 	$(PYTHON3) $< --python3 > $@
 
-$(GOSRC)/base_def:
-	$(MKDIR) -p $(GOSRC)/base_def
+$(GOSRCBG)/base_def:
+	$(MKDIR) -p $(GOSRCBG)/base_def
 
 # Protocol buffers
 
-$(GOSRC)/base_msg/base_msg.pb.go: base/base_msg.proto | \
-	$(PROTOC_PLUGINS) $(GOSRC)/base_msg
+$(GOSRCBG)/base_msg/base_msg.pb.go: base/base_msg.proto | \
+	$(PROTOC_PLUGINS) $(GOSRCBG)/base_msg
 	cd base && \
 		protoc --plugin $(GOPATH)/bin \
-		    --go_out $(GOPATH)/src/base_msg $(notdir $<)
+		    --go_out ../$(GOSRCBG)/base_msg $(notdir $<)
 
 base/base_msg_pb2.py: base/base_msg.proto
 	protoc --python_out . $<
 
-$(GOSRC)/base_msg:
-	$(MKDIR) -p $(GOSRC)/base_msg
+$(GOSRCBG)/base_msg:
+	$(MKDIR) -p $(GOSRCBG)/base_msg
 
-golang/src/cloud_rpc/cloud_rpc.pb.go: base/cloud_rpc.proto | \
-	$(PROTOC_PLUGINS) golang/src/cloud_rpc
+$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go: base/cloud_rpc.proto | \
+	$(PROTOC_PLUGINS) $(GOSRCBG)/cloud_rpc
 	cd base && \
 		protoc --plugin $(GOPATH)/bin \
 			-I/usr/local/include \
 			-I . \
 			-I$(GOPATH)/src \
 			-I$(GOPATH)/src/github.com/golang/protobuf/protoc-gen-go/descriptor \
-			--go_out=plugins=grpc,Mbase_msg.proto=base_msg:$(GOPATH)/src/cloud_rpc \
+			--go_out=plugins=grpc,Mbase_msg.proto=bg/base_msg:../$(GOSRCBG)/cloud_rpc \
 			$(notdir $<)
 
 base/cloud_rpc_pb2.py: base/cloud_rpc.proto
@@ -522,7 +536,7 @@ base/cloud_rpc_pb2.py: base/cloud_rpc.proto
 		-Ibase \
 		--python_out=. --grpc_python_out=. $<
 
-$(GOSRC)/cloud_rpc:
+$(GOSRCBG)/cloud_rpc:
 	mkdir -p golang/src/cloud_rpc
 
 $(PROTOC_PLUGINS):
@@ -532,6 +546,11 @@ $(PROTOC_PLUGINS):
 
 LOCAL_COMMANDS=$(COMMANDS:$(APPBIN)/%=$(GOPATH)/bin/%)
 LOCAL_DAEMONS=$(DAEMONS:$(APPBIN)/%=$(GOPATH)/bin/%)
+
+#
+# Go Dependencies: Pull in definitions for 'dep'
+#
+include Makefile.godeps
 
 NPM = npm
 client-web/.npm-installed: client-web/package.json
@@ -545,8 +564,10 @@ client-web: client-web/.npm-installed FRC | $(HTTPD_CLIENTWEB_DIR)
 
 FRC:
 
-clobber: clean clobber-packages
+clobber: clean clobber-packages clobber-godeps
 	$(RM) -fr $(ROOT)
+	$(RM) -fr $(GOSRC)/pkg
+	$(RM) -fr $(GOSRC)/bin
 
 clobber-packages:
 	-$(RM) -fr bg-appliance_*.*.*-*_* bg-cloud_*.*.*-*_*
@@ -556,14 +577,12 @@ clean:
 		base/base_def.py \
 		base/base_msg_pb2.py \
 		base/cloud_rpc_pb2.py \
-		$(GOSRC)/base_def/base_def.go \
-		$(GOSRC)/base_msg/base_msg.pb.go \
-		$(GOSRC)/cloud_rpc/cloud_rpc.pb.go
+		$(GOSRCBG)/base_def/base_def.go \
+		$(GOSRCBG)/base_msg/base_msg.pb.go \
+		$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go
 
 plat-clobber: clobber
 	-$(GO) clean $(GO_CLEAN_FLAGS) github.com/golang/protobuf/protoc-gen-go
 	-$(GO) clean $(GO_CLEAN_FLAGS) github.com/golang/protobuf/proto
 	-$(GO) clean $(GO_CLEAN_FLAGS) sourcegraph.com/sourcegraph/prototools/cmd/protoc-gen-doc
-	-cat get.acc | sort -u | xargs $(GO) clean $(GO_CLEAN_FLAGS)
 	-$(RM) -fr golang/src/github.com golang/src/golang.org golang/src/google.golang.org golang/src/sourcegraph.com
-	-$(RM) -f get.acc .app.gotten .cloud.gotten

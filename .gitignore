@@ -1,8 +1,6 @@
-get.acc
-.app.gotten
-.cloud.gotten
 .tags
-.gotten
+.deps_ensured
+.dep_installed
 *.org
 *.swp
 proto.armv7l
@@ -10,6 +8,6 @@ proto.x86_64
 base/base_def.py
 base/cloud_rpc_pb2_grpc.py
 client-web/npm-debug.log*
-golang/src/base_def/base_def.go
-golang/src/cloud_rpc/cloud_rpc.pb.go
-golang/src/cloud_rpc/cloud_rpc.pb.gw.go
+golang/src/bg/base_def/base_def.go
+golang/src/bg/cloud_rpc/cloud_rpc.pb.go
+golang/src/bg/cloud_rpc/cloud_rpc.pb.gw.go
