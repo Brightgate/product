@@ -11,7 +11,7 @@
         },
         {
             "Name": "cfgversion",
-            "Value": "5"
+            "Value": "6"
         },
         {
             "Name": "apversion",
@@ -24,8 +24,12 @@
                     "Name": "setup",
                     "Children": [
                         {
-                            "Name": "interface",
-                            "Value": "setup"
+                            "Name": "vlan",
+                            "Value": "-1"
+                        },
+                        {
+                            "Name": "subnet",
+                            "Value": "192.168.131.0/26"
                         },
                         {
                             "Name": "lease_duration",
@@ -37,8 +41,12 @@
                     "Name": "unenrolled",
                     "Children": [
                         {
-                            "Name": "interface",
-                            "Value": "wifi"
+                            "Name": "vlan",
+                            "Value": "0"
+                        },
+                        {
+                            "Name": "subnet",
+                            "Value": "192.168.132.0/26"
                         },
                         {
                             "Name": "lease_duration",
@@ -50,8 +58,12 @@
                     "Name": "core",
                     "Children": [
                         {
-                            "Name": "interface",
-                            "Value": "vlan.3"
+                            "Name": "vlan",
+                            "Value": "3"
+                        },
+                        {
+                            "Name": "subnet",
+                            "Value": "192.168.133.0/26"
                         },
                         {
                             "Name": "lease_duration",
@@ -63,8 +75,12 @@
                     "Name": "standard",
                     "Children": [
                         {
-                            "Name": "interface",
-                            "Value": "vlan.4"
+                            "Name": "vlan",
+                            "Value": "4"
+                        },
+                        {
+                            "Name": "subnet",
+                            "Value": "192.168.134.0/26"
                         },
                         {
                             "Name": "lease_duration",
@@ -76,8 +92,12 @@
                     "Name": "devices",
                     "Children": [
                         {
-                            "Name": "interface",
-                            "Value": "vlan.5"
+                            "Name": "vlan",
+                            "Value": "5"
+                        },
+                        {
+                            "Name": "subnet",
+                            "Value": "192.168.135.0/26"
                         },
                         {
                             "Name": "lease_duration",
@@ -89,8 +109,12 @@
                     "Name": "guest",
                     "Children": [
                         {
-                            "Name": "interface",
-                            "Value": "vlan.6"
+                            "Name": "vlan",
+                            "Value": "6"
+                        },
+                        {
+                            "Name": "subnet",
+                            "Value": "192.168.136.0/26"
                         },
                         {
                             "Name": "lease_duration",
@@ -102,25 +126,16 @@
                     "Name": "quarantine",
                     "Children": [
                         {
-                            "Name": "interface",
-                            "Value": "vlan.7"
+                            "Name": "vlan",
+                            "Value": "7"
+                        },
+                        {
+                            "Name": "subnet",
+                            "Value": "192.168.137.0/26"
                         },
                         {
                             "Name": "lease_duration",
                             "Value": "10"
-                        }
-                    ]
-                },
-		{
-                    "Name": "wired",
-                    "Children": [
-                        {
-                            "Name": "interface",
-                            "Value": "br0"
-                        },
-                        {
-                            "Name": "lease_duration",
-                            "Value": "720"
                         }
                     ]
                 }
@@ -133,10 +148,6 @@
             "Name": "network",
             "Children": [
 		{
-		    "Name": "wifi",
-		    "Value": "wlan0"
-		},
-		{
 		    "Name": "ssid",
 		    "Value": "setme"
 		},
@@ -145,86 +156,13 @@
 		    "Value": "sosecretive"
 		},
 		{
+		    "Name": "setup_nic",
+		    "Value": ""
+		},
+		{
 		    "Name": "dnsserver",
 		    "Value": "8.8.8.8:53"
 		}
-            ]
-        },
-	{
-            "Name": "interfaces",
-            "Children": [
-		{
-                    "Name": "setup",
-                    "Children": [
-                        {
-                            "Name": "subnet",
-                            "Value": "192.168.133.0/27"
-                        }
-                    ]
-                },
-                {
-                    "Name": "wifi",
-                    "Children": [
-                        {
-                            "Name": "subnet",
-                            "Value": "192.168.134.0/27"
-                        }
-                    ]
-                },
-                {
-                    "Name": "vlan.3",
-                    "Children": [
-                        {
-                            "Name": "subnet",
-                            "Value": "192.168.135.0/27"
-                        }
-                    ]
-                },
-                {
-                    "Name": "vlan.4",
-                    "Children": [
-                        {
-                            "Name": "subnet",
-                            "Value": "192.168.136.0/27"
-                        }
-                    ]
-                },
-                {
-                    "Name": "vlan.5",
-                    "Children": [
-                        {
-                            "Name": "subnet",
-                            "Value": "192.168.137.0/28"
-                        }
-                    ]
-                },
-		{
-                    "Name": "vlan.6",
-                    "Children": [
-                        {
-                            "Name": "subnet",
-                            "Value": "192.168.138.0/28"
-                        }
-                    ]
-                },
-		{
-                    "Name": "vlan.7",
-                    "Children": [
-                        {
-                            "Name": "subnet",
-                            "Value": "192.168.139.0/28"
-                        }
-                    ]
-                },
-		{
-                    "Name": "br0",
-                    "Children": [
-                        {
-                            "Name": "subnet",
-                            "Value": "192.168.140.0/28"
-                        }
-                    ]
-                }
             ]
         }
     ]

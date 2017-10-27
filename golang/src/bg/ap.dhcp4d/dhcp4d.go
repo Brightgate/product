@@ -51,7 +51,6 @@ var (
 	brokerd *broker.Broker
 
 	config    *apcfg.APConfig
-	nics      []*apcfg.Nic
 	clients   apcfg.ClientMap
 	clientMtx sync.Mutex
 
@@ -60,7 +59,9 @@ var (
 	sharedRouter net.IP     // without vlans, all rings share a
 	sharedSubnet *net.IPNet // subnet and a router node
 
-	lastRequestOn int // last DHCP request arrived on this interface
+	wanMac        string // mac address of the WAN port
+	setupMac      string // mac address of the setup network's NIC
+	lastRequestOn string // last DHCP request arrived on this interface
 )
 
 const pname = "ap.dhcp4d"
@@ -156,7 +157,7 @@ func propPath(hwaddr, prop string) string {
  * This is the first time we've seen this device.  Send an ENTITY message with
  * its hardware address, name, and any IP address it's requesting.
  */
-func notifyNewEntity(p dhcp.Packet, options dhcp.Options) {
+func notifyNewEntity(p dhcp.Packet, options dhcp.Options, ring string) {
 	ipaddr := p.CIAddr()
 	hwaddr_u64 := network.HWAddrToUint64(p.CHAddr())
 	hostname := string(options[dhcp.OptionHostName])
@@ -167,6 +168,7 @@ func notifyNewEntity(p dhcp.Packet, options dhcp.Options) {
 		Timestamp:   aputil.NowToProtobuf(),
 		Sender:      proto.String(brokerd.Name),
 		Debug:       proto.String("-"),
+		Ring:        proto.String(ring),
 		MacAddress:  proto.Uint64(hwaddr_u64),
 		Ipv4Address: proto.Uint32(network.IPAddrToUint32(ipaddr)),
 		Hostname:    proto.String(hostname),
@@ -314,7 +316,6 @@ type lease struct {
 }
 
 type DHCPHandler struct {
-	iface       string        // Net interface we serve
 	ring        string        // Client ring eligible for this server
 	subnet      net.IPNet     // Subnet being managed
 	server_ip   net.IP        // DHCP server's IP
@@ -493,34 +494,27 @@ func (h *DHCPHandler) decline(p dhcp.Packet) {
 //
 func selectRingHandler(p dhcp.Packet, options dhcp.Options) *DHCPHandler {
 	hwaddr := p.CHAddr().String()
-
 	oldRing := getRing(hwaddr)
-	if lastRequestOn == apcfg.N_SETUP {
+	if lastRequestOn == setupMac {
 		// All clients connecting on the open port are treated as new -
 		// even if we've previously recognized them on the protected
 		// network.
 		setRing(hwaddr, base_def.RING_SETUP)
-	} else if lastRequestOn == apcfg.N_WIFI {
-		// If this client isn't already assigned to a wireless ring, we
+	} else if oldRing == "" || oldRing == base_def.RING_SETUP {
+		// If this client isn't already assigned to a ring, we
 		// mark it as 'unenrolled'.
-		if oldRing == "" || oldRing == base_def.RING_SETUP ||
-			oldRing == base_def.RING_WIRED {
-			updateRing(hwaddr, oldRing, base_def.RING_UNENROLLED)
-		}
-	} else {
-		setRing(hwaddr, base_def.RING_WIRED)
+		updateRing(hwaddr, oldRing, base_def.RING_UNENROLLED)
 	}
 
 	ring := getRing(hwaddr)
 	if oldRing == "" {
-		log.Printf("New client %s on %s interface\n", hwaddr,
-			nics[lastRequestOn].Iface)
-		notifyNewEntity(p, options)
+		log.Printf("New client %s on ring %s\n", hwaddr, ring)
+		notifyNewEntity(p, options, ring)
 	}
 
 	ringHandler, ok := handlers[ring]
 	if !ok {
-		log.Printf("Client %s identified as unknown ring '%s'\n",
+		log.Printf("Client %s identified on unknown ring '%s'\n",
 			hwaddr, ring)
 	} else if ring != oldRing {
 		config.CreateProp(propPath(hwaddr, "ring"), ring, nil)
@@ -690,42 +684,32 @@ func (h *DHCPHandler) recoverLeases() {
 	}
 }
 
-func initHandlers() error {
-	var err error
+func getMac(name string) string {
+	mac := ""
 
-	if nics, err = config.GetLogicalNics(); err != nil {
-		return err
+	if name != "" {
+		iface, err := net.InterfaceByName(name)
+		if err != nil {
+			log.Printf("Can't get interface '%s': %v\n", name, err)
+		} else {
+			mac = iface.HardwareAddr.String()
+		}
+	}
+	return mac
+}
+
+func initHandlers() error {
+	if setupNic, err := config.GetProp("@/network/setup_nic"); err == nil {
+		setupMac = getMac(setupNic)
+	}
+	if wanNic, err := config.GetProp("@/network/wan_nic"); err == nil {
+		wanMac = getMac(wanNic)
 	}
 
-	// Iterate over the known rings.  For each one, find the VLAN name and
-	// subnet, and create a DHCP handler to manage that subnet.
-	rings := config.GetRings()
-	subnets := config.GetSubnets()
-	for name, ring := range rings {
-		var nic *apcfg.Nic
-
-		subnet, ok := subnets[ring.Interface]
-		if !ok {
-			log.Printf("No subnet for %s\n", ring.Interface)
-			continue
-		}
-		h := newHandler(name, subnet, ring.LeaseDuration)
-		if ring.Interface == "wifi" {
-			if nic = nics[apcfg.N_WIFI]; nic == nil {
-				log.Printf("No Wifi NIC available\n")
-				continue
-			}
-			h.iface = nic.Iface
-		} else if ring.Interface == "setup" {
-			if nic = nics[apcfg.N_SETUP]; nic == nil {
-				log.Printf("No Connect-net NIC available\n")
-				continue
-			}
-			h.iface = nic.Iface
-		} else {
-			h.iface = ring.Interface
-		}
-
+	// Iterate over the known rings.  For each one, create a DHCP handler to
+	// manage its subnet.
+	for name, ring := range config.GetRings() {
+		h := newHandler(name, ring.Subnet, ring.LeaseDuration)
 		h.recoverLeases()
 		handlers[h.ring] = h
 	}
@@ -750,23 +734,18 @@ func (s *MultiConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 	}
 	if requestMac == "" {
 		n = 0
-		return
-	}
-
-	lastRequestOn = apcfg.N_WIRED
-	for i, nic := range nics {
-		if nic != nil && nic.Mac == requestMac {
-			lastRequestOn = i
-			if i == apcfg.N_WAN {
-				// If the request arrives on the WAN port, drop it.
-				n = 0
-			}
-			break
+	} else {
+		lastRequestOn = requestMac
+		switch requestMac {
+		case wanMac:
+			// If the request arrives on the WAN port, drop it.
+			n = 0
+		case setupMac:
+			log.Printf("Request arrived on setup network\n")
+		default:
+			log.Printf("Request arrived on %s\n", requestMac)
 		}
 	}
-
-	log.Printf("Request arrived on %s: %s\n", nics[lastRequestOn].Logical,
-		requestMac)
 	return
 }
 

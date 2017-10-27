@@ -49,6 +49,8 @@ var (
 )
 
 var (
+	rings apcfg.RingMap
+
 	macToIP = make(map[string]string)
 	ipToMac = make(map[string]string)
 	mapMtx  sync.Mutex
@@ -149,7 +151,7 @@ func configIPv4Delexp(path []string) {
 
 //
 // Send a notification that we have an unknown entity on our network.
-func logUnknown(iface, mac, ipstr string) bool {
+func logUnknown(ring, mac, ipstr string) bool {
 	var addr net.IP
 
 	addr = net.ParseIP(ipstr).To4()
@@ -165,12 +167,12 @@ func logUnknown(iface, mac, ipstr string) bool {
 	}
 
 	entity := &base_msg.EventNetEntity{
-		Timestamp:     aputil.NowToProtobuf(),
-		Sender:        proto.String(brokerd.Name),
-		Debug:         proto.String("-"),
-		InterfaceName: &iface,
-		Ipv4Address:   proto.Uint32(network.IPAddrToUint32(addr)),
-		MacAddress:    proto.Uint64(network.HWAddrToUint64(hwaddr)),
+		Timestamp:   aputil.NowToProtobuf(),
+		Sender:      proto.String(brokerd.Name),
+		Debug:       proto.String("-"),
+		Ring:        proto.String(ring),
+		Ipv4Address: proto.Uint32(network.IPAddrToUint32(addr)),
+		MacAddress:  proto.Uint64(network.HWAddrToUint64(hwaddr)),
 	}
 
 	err = brokerd.Publish(entity, base_def.TOPIC_ENTITY)
@@ -214,11 +216,10 @@ func main() {
 	config.HandleDelete(`^@/clients/.*/ipv4$`, configIPv4Delexp)
 	config.HandleExpire(`^@/clients/.*/ipv4$`, configIPv4Delexp)
 	macToIPInit()
+	rings = config.GetRings()
 
 	if mcpd != nil {
-		if err = mcpd.SetState(mcp.ONLINE); err != nil {
-			log.Printf("failed to set status\n")
-		}
+		mcpd.SetState(mcp.ONLINE)
 	}
 
 	for _, w := range watchers {

@@ -61,7 +61,6 @@ import (
 	"strconv"
 	"strings"
 
-	"bg/ap_common/apcfg"
 	"bg/ap_common/network"
 	"bg/base_def"
 )
@@ -210,22 +209,23 @@ func iptablesAddRule(table, chain, rule string) {
 //
 // Build the core routing rules for a single managed subnet
 //
-func ifaceForwardRules(iface *iface) {
-	wan := nics[apcfg.N_WAN]
-	if wan == "" {
+func ifaceForwardRules(ring string) {
+	if ring == base_def.RING_SETUP || ring == base_def.RING_QUARANTINE {
+		// These rings don't get the normal NAT behavior
 		return
 	}
+	config := rings[ring]
 
 	// Traffic from the managed network has its IP addresses masqueraded
-	masqRule := " -o " + wan
-	masqRule += " -s " + iface.subnet
+	masqRule := " -o " + wanNic
+	masqRule += " -s " + config.Subnet
 	masqRule += " -j MASQUERADE"
 	iptablesAddRule("nat", "POSTROUTING", masqRule)
 
 	// Route traffic from the managed network to the WAN
-	connRule := " -i " + iface.name
-	connRule += " -o " + wan
-	connRule += " -s " + iface.subnet
+	connRule := " -i " + config.Bridge
+	connRule += " -o " + wanNic
+	connRule += " -s " + config.Subnet
 	connRule += " -m conntrack --ctstate NEW"
 	iptablesAddRule("filter", "FORWARD", connRule)
 }
@@ -250,7 +250,7 @@ func genEndpointType(e *endpoint, src bool) (string, error) {
 	return "", nil
 }
 
-func genEndpointRing(ifaces ifaceMap, e *endpoint, src bool) (string, error) {
+func genEndpointRing(e *endpoint, src bool) (string, error) {
 	var d string
 
 	if src {
@@ -259,17 +259,15 @@ func genEndpointRing(ifaces ifaceMap, e *endpoint, src bool) (string, error) {
 		d = "-d"
 	}
 
-	for _, i := range ifaces {
-		if i.ring == e.detail {
-			r := fmt.Sprintf(" %s %s ", d, i.subnet)
-			return r, nil
-		}
+	if ring := rings[e.detail]; ring != nil {
+		r := fmt.Sprintf(" %s %s ", d, ring.Subnet)
+		return r, nil
 	}
 
 	return "", fmt.Errorf("no such ring: %s", e.detail)
 }
 
-func genEndpointIface(ifaces ifaceMap, e *endpoint, src bool) (string, error) {
+func genEndpointIface(e *endpoint, src bool) (string, error) {
 	var d, name string
 
 	if src {
@@ -280,28 +278,16 @@ func genEndpointIface(ifaces ifaceMap, e *endpoint, src bool) (string, error) {
 
 	switch e.detail {
 	case "wan":
-		name = nics[apcfg.N_WAN]
-	case "wifi":
-		name = nics[apcfg.N_WIFI]
-	case "wired":
-		name = nics[apcfg.N_WIRED]
+		name = wanNic
 	case "setup":
-		name = nics[apcfg.N_SETUP]
-	}
-
-	if name == "" {
-		if i, ok := ifaces[e.detail]; ok {
-			name = i.name
-		}
-	}
-
-	if name == "" {
+		name = setupNic
+	default:
 		return "", fmt.Errorf("no such interface: %s", e.detail)
 	}
 	return fmt.Sprintf(" %s %s ", d, name), nil
 }
 
-func genEndpoint(ifaces ifaceMap, r *rule, from bool) (ep string, err error) {
+func genEndpoint(r *rule, from bool) (ep string, err error) {
 	var e *endpoint
 
 	ep = ""
@@ -319,9 +305,9 @@ func genEndpoint(ifaces ifaceMap, r *rule, from bool) (ep string, err error) {
 	case E_TYPE:
 		ep, err = genEndpointType(e, from)
 	case E_RING:
-		ep, err = genEndpointRing(ifaces, e, from)
+		ep, err = genEndpointRing(e, from)
 	case E_IFACE:
-		ep, err = genEndpointIface(ifaces, e, from)
+		ep, err = genEndpointIface(e, from)
 	}
 	if err == nil && e.not {
 		ep = " !" + ep
@@ -370,11 +356,10 @@ func genPorts(r *rule) (portList string, err error) {
 
 //
 // Build the iptables rules for a captive portal subnet.
-// Currently this only supports capturing an IFACE endpoint.  There's no reason
-// it couldn't be extended to support rings or individual clients in the
-// future.
+// Currently this only supports capturing a RING endpoint.  There's no reason it
+// couldn't be extended to support individual clients in the future.
 //
-func addCaptureRules(ifaces ifaceMap, r *rule) error {
+func addCaptureRules(r *rule) error {
 	if r.to != nil {
 		return fmt.Errorf("CAPTURE rules only support source endpoints")
 	}
@@ -382,12 +367,18 @@ func addCaptureRules(ifaces ifaceMap, r *rule) error {
 		return fmt.Errorf("CAPTURE rules must provide source endpoint")
 	}
 
-	i, ok := ifaces[r.from.detail]
-	if !ok {
-		return fmt.Errorf("no such interface: %s", r.from.detail)
+	ring := rings[r.from.detail]
+	if ring == nil {
+		return fmt.Errorf("CAPTURE rules must specify a source ring")
 	}
-	ep := " -i " + i.name
-	webserver := network.SubnetRouter(i.subnet) + ":80"
+	if ring.Bridge == "" {
+		log.Printf("No bridge defined for %s.  Skipping.\n",
+			r.from.detail)
+		return nil
+	}
+
+	ep := " -i " + ring.Bridge
+	webserver := network.SubnetRouter(ring.Subnet) + ":80"
 
 	// All http packets get forwarded to our local web server
 	captureRule := ep +
@@ -395,7 +386,7 @@ func addCaptureRules(ifaces ifaceMap, r *rule) error {
 		" -j DNAT --to-destination " + webserver
 
 	// Allow local DNS packets through
-	dnsAllow := ep + " -p udp --dport 53 -d " + i.subnet + " -j ACCEPT"
+	dnsAllow := ep + " -p udp --dport 53 -d " + ring.Subnet + " -j ACCEPT"
 
 	// Allow DHCP packets through
 	dhcpAllow := ep + " -p udp --dport 67 -j ACCEPT"
@@ -419,13 +410,13 @@ func addCaptureRules(ifaces ifaceMap, r *rule) error {
 	return nil
 }
 
-func addRule(ifaces ifaceMap, r *rule) error {
+func addRule(r *rule) error {
 	var iptablesRule string
 
 	if r.action == A_CAPTURE {
 		// 'capture' isn't a single rule - it's a coordinated collection
 		// of rules.
-		return addCaptureRules(ifaces, r)
+		return addCaptureRules(r)
 	}
 
 	from := r.from
@@ -444,7 +435,7 @@ func addRule(ifaces ifaceMap, r *rule) error {
 	}
 
 	if from != nil {
-		e, err := genEndpoint(ifaces, r, true)
+		e, err := genEndpoint(r, true)
 		if err != nil {
 			log.Printf("Bad 'from' endpoint: %v\n", err)
 			return err
@@ -457,7 +448,7 @@ func addRule(ifaces ifaceMap, r *rule) error {
 	}
 
 	if to != nil {
-		e, err := genEndpoint(ifaces, r, false)
+		e, err := genEndpoint(r, false)
 		if err != nil {
 			log.Printf("Bad 'to' endpoint: %v\n", err)
 			return err
@@ -486,7 +477,7 @@ func addRule(ifaces ifaceMap, r *rule) error {
 	// XXX - handle start/end times
 }
 
-func iptablesRebuild(ifaces ifaceMap) {
+func iptablesRebuild() {
 	log.Printf("Rebuilding iptables rules\n")
 
 	applied = make(map[string]map[string][]string)
@@ -503,34 +494,31 @@ func iptablesRebuild(ifaces ifaceMap) {
 		" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT")
 
 	// Add the basic routing rules for each interface
-	for _, i := range ifaces {
-		if i.ring != base_def.RING_SETUP &&
-			i.ring != base_def.RING_QUARANTINE {
-			ifaceForwardRules(i)
-		}
+	for ring := range rings {
+		ifaceForwardRules(ring)
 	}
 
 	// Dropped packets should be logged.  We use different rules for LAN and
 	// WAN drops so they can be rate-limited independently.  We can
 	// optionally skip logging of dropped packets on the WAN port
 	// altogether.
-	wan_filter := "-i " + nics[apcfg.N_WAN] + " "
-	lan_filter := "! " + wan_filter
+	wanFilter := "-i " + wanNic + " "
+	lanFilter := "! " + wanFilter
 	if _, err := config.GetProp("@/network/nologwan"); err != nil {
 		// Limit logged WAN drops to 1/second
-		iptablesAddRule("filter", "dropped", wan_filter+
+		iptablesAddRule("filter", "dropped", wanFilter+
 			"-j LOG -m limit --limit 60/min  --log-prefix \"DROPPED \"")
 	}
 
 	// Limit logged LAN drops to 10/second
-	iptablesAddRule("filter", "dropped", lan_filter+
+	iptablesAddRule("filter", "dropped", lanFilter+
 		"-j LOG -m limit --limit 600/min  --log-prefix \"DROPPED \"")
 	iptablesAddRule("filter", "dropped", "-j DROP")
 
 	// Now add filter rules, from the most specific to the most general
 	sort.Sort(rules)
 	for _, r := range rules {
-		addRule(ifaces, r)
+		addRule(r)
 	}
 }
 
@@ -561,7 +549,7 @@ func loadFilterRules() error {
 	return nil
 }
 
-func applyFilters(ifaces ifaceMap) {
-	iptablesRebuild(ifaces)
+func applyFilters() {
+	iptablesRebuild()
 	iptablesReset()
 }

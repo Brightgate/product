@@ -73,7 +73,7 @@ const (
 	pname             = "ap.configd"
 
 	minConfigVersion = 3
-	curConfigVersion = 5
+	curConfigVersion = 6
 )
 
 // Allow for significant variation in the processing of subtrees
@@ -382,16 +382,6 @@ func entity_handler(event []byte) {
 
 	var n *pnode
 	var ok bool
-	if entity.InterfaceName != nil {
-		if n, ok = fields["iface"]; !ok {
-			n = propertyAdd(node, "iface")
-		}
-		if n.Value != *entity.InterfaceName {
-			n.Value = *entity.InterfaceName
-			updated = true
-		}
-	}
-
 	if entity.Ipv4Address != nil {
 		if n, ok = fields["ipv4_observed"]; !ok {
 			n = propertyAdd(node, "ipv4_observed")

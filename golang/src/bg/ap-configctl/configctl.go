@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -30,36 +31,40 @@ var apcfgd *apcfg.APConfig
 
 func getRings() error {
 	rings := apcfgd.GetRings()
-	subnets := apcfgd.GetSubnets()
-	nics, _ := apcfgd.GetLogicalNics()
 	clients := apcfgd.GetClients()
+
+	// Build a list of ring names, and sort them by the vlan ID of the
+	// corresponding ring config.
+	names := make([]string, 0)
+	for r := range rings {
+		names = append(names, r)
+	}
+	sort.Slice(names,
+		func(i, j int) bool {
+			ringI := rings[names[i]]
+			ringJ := rings[names[j]]
+			return ringI.Vlan < ringJ.Vlan
+		})
 
 	cnt := make(map[string]int)
 	for _, c := range clients {
 		cnt[c.Ring]++
 	}
 
-	fmt.Printf("%-10s %-9s %-18s %-7s\n",
-		"ring", "interface", "subnet", "clients")
-	for name, ring := range rings {
+	fmt.Printf("%-10s %-4s %-9s %-18s %-7s\n",
+		"ring", "vlan", "interface", "subnet", "clients")
+	for _, name := range names {
+		var vlan string
 
-		nic := ring.Interface
-		subnet := subnets[nic]
-		if nic == "setup" {
-			if nics[apcfg.N_SETUP] == nil {
-				nic = "-"
-			} else {
-				nic = nics[apcfg.N_SETUP].Iface
-			}
-		} else if nic == "wifi" {
-			if nics[apcfg.N_WIFI] == nil {
-				nic = "-"
-			} else {
-				nic = nics[apcfg.N_WIFI].Iface
-			}
+		ring := rings[name]
+		if ring.Vlan >= 0 {
+			vlan = strconv.Itoa(ring.Vlan)
+		} else {
+			vlan = "-"
 		}
-		fmt.Printf("%-10s %-9s %-18s %7d\n",
-			name, nic, subnet, cnt[name])
+
+		fmt.Printf("%-10s %-4s %-9s %-18s %7d\n",
+			name, vlan, ring.Bridge, ring.Subnet, cnt[name])
 	}
 	return nil
 }
@@ -67,11 +72,19 @@ func getRings() error {
 func getClients() error {
 	clients := apcfgd.GetClients()
 
+	// Build a list of client mac addresses, and sort them
+	macs := make([]string, 0)
+	for mac := range clients {
+		macs = append(macs, mac)
+	}
+	sort.Strings(macs)
+
 	fmt.Printf("%-17s %-16s %-10s %-15s %-16s %-9s %-s\n",
 		"macaddr", "name", "ring", "ip addr", "expiration",
 		"identity", "confidence")
 
-	for mac, client := range clients {
+	for _, mac := range macs {
+		client := clients[mac]
 		name := "-"
 		if client.DNSName != "" {
 			name = client.DNSName

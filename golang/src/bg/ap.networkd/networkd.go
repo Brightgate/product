@@ -66,24 +66,25 @@ var (
 	rulesDir = flag.String("rules_dir", "./", "Location of the filter rules")
 
 	aps         = make(apMap)
-	interfaces  = make(ifaceMap)
 	physDevices = make(physDevMap)
 
 	config  *apcfg.APConfig
 	clients apcfg.ClientMap // macaddr -> ClientInfo
 	rings   apcfg.RingMap   // ring -> config
-	subnets apcfg.SubnetMap // iface -> subnet
 
-	nics = make([]string, apcfg.N_MAX)
+	setupNic string
+	wanNic   string
+	wifiNic  string
 
 	hostapdLog   *log.Logger
 	childProcess *os.Process // track the hostapd proc
 	mcpd         *mcp.MCP
+
 	running      bool
+	setupNetwork bool
 )
 
 type apMap map[string]*APConfig
-type ifaceMap map[string]*iface
 type physDevMap map[string]*physDevice
 
 const (
@@ -98,7 +99,6 @@ const (
 	sysctlCmd      = "/sbin/sysctl"
 	ipCmd          = "/sbin/ip"
 	pname          = "ap.networkd"
-	bridge         = "br0"
 	setupPortal    = "_0"
 )
 
@@ -108,16 +108,6 @@ type physDevice struct {
 	wireless     bool
 	supportVLANs bool
 	multipleAPs  bool
-}
-
-//
-// Network interfaces - may be physical or virtual
-//
-type iface struct {
-	ring     string
-	name     string
-	subnet   string
-	wireless bool
 }
 
 type APConfig struct {
@@ -171,12 +161,12 @@ func configRingChanged(path []string, val string) {
 		return
 	}
 
-	conf := aps[nics[apcfg.N_WIFI]]
+	conf := aps[wifiNic]
 	apReset(conf)
 }
 
 func configNetworkChanged(path []string, val string) {
-	conf := aps[nics[apcfg.N_WIFI]]
+	conf := aps[wifiNic]
 
 	// Watch for changes to the network conf
 	switch path[1] {
@@ -241,8 +231,10 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 			d.hwaddr = strings.Join(octets, ":")
 			log.Printf("Changed mac from %s to %s\n", o, d.hwaddr)
 		}
+		setupNetwork = true
 	} else {
 		setupComment = "#"
+		setupNetwork = false
 	}
 
 	data := APConfig{
@@ -266,27 +258,6 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 //
 // hostapd configuration and monitoring
 //
-
-// Extract the VLAN ID from the VLAN name (i.e., vlan.5 returns 5)
-func vlanID(vlan string) int {
-	rval := -1
-	s := strings.Split(vlan, ".")
-	if len(s) == 2 {
-		rval, _ = strconv.Atoi(s[1])
-	}
-	return rval
-}
-
-// Derive a VLAN's bridge name (i.e., vlan.5 returns brvlan5)
-func vlanBridge(vlan string) string {
-	rval := ""
-
-	s := strings.Split(vlan, ".")
-	if len(s) == 2 {
-		rval = "brvlan" + s[1]
-	}
-	return rval
-}
 
 //
 // Generate the 3 configuration files needed for hostapd.
@@ -324,18 +295,12 @@ func generateHostAPDConf(conf *APConfig) string {
 
 	// One client per line, containing "<mac addr> <vlan_id>"
 	for client, info := range clients {
-		if info.Ring == base_def.RING_WIRED {
-			continue
+		vlan := 0
+		if ring, ok := rings[info.Ring]; ok {
+			vlan = ring.Vlan
 		}
-
-		cc, ok := rings[info.Ring]
-		if !ok {
-			log.Printf("%s in unrecognized ring %s.\n",
-				client, info.Ring)
-			cc, ok = rings[base_def.RING_UNENROLLED]
-		}
-		if ok && cc.Interface != "wifi" {
-			fmt.Fprintf(mf, "%s %d\n", client, vlanID(cc.Interface))
+		if vlan > 0 {
+			fmt.Fprintf(mf, "%s %d\n", client, vlan)
 		}
 	}
 
@@ -348,10 +313,8 @@ func generateHostAPDConf(conf *APConfig) string {
 	defer vf.Close()
 
 	for _, ring := range rings {
-		iface := ring.Interface
-
-		if strings.HasPrefix(iface, "vlan") {
-			fmt.Fprintf(vf, "%d\t%s\n", vlanID(iface), iface)
+		if ring.Vlan > 0 {
+			fmt.Fprintf(vf, "%d\tvlan.%d\n", ring.Vlan, ring.Vlan)
 		}
 	}
 
@@ -382,17 +345,24 @@ func signalHandler() {
 	}
 }
 
-func resetWifiInterfaces() {
-	start := time.Now()
-	for _, iface := range interfaces {
-		if iface.wireless {
-			name := iface.name
-			err := network.WaitForDevice(name, 2*time.Second)
-			if err == nil {
-				prepareInterface(iface)
-			} else {
-				log.Printf("%s failed to come online in %s.\n",
-					name, time.Since(start))
+func resetInterfaces() {
+	for ring := range rings {
+		if ring != "setup" || setupNetwork {
+			prepareRingBridge(ring)
+		}
+	}
+
+	// Any wired NICs that aren't connecting us to the WAN are put on the
+	// standard ring's bridge.
+	// XXX: this should be a per-interface configuration setting.
+	bridge := rings[base_def.RING_STANDARD].Bridge
+	for _, dev := range physDevices {
+		name := dev.name
+		if !dev.wireless && name != wanNic {
+			cmd := exec.Command(brctlCmd, "addif", bridge, name)
+			if err := cmd.Run(); err != nil {
+				log.Printf("Failed to add %s to %s\n",
+					name, bridge)
 			}
 		}
 	}
@@ -406,6 +376,8 @@ func runOne(conf *APConfig, done chan *APConfig) {
 
 	start_times := make([]time.Time, failures_allowed)
 	for running {
+		deleteBridges()
+
 		child := aputil.NewChild(hostapdPath, fn)
 		child.LogOutput("hostapd: ", log.Ldate|log.Ltime)
 
@@ -420,7 +392,7 @@ func runOne(conf *APConfig, done chan *APConfig) {
 		}
 
 		childProcess = child.Process
-		resetWifiInterfaces()
+		resetInterfaces()
 		mcpd.SetState(mcp.ONLINE)
 
 		child.Wait()
@@ -450,7 +422,7 @@ func runAll() int {
 	errors := 0
 
 	for _, c := range aps {
-		if c.Interface == nics[apcfg.N_WIFI] {
+		if c.Interface == wifiNic {
 			running++
 			go runOne(c, done)
 		}
@@ -467,6 +439,7 @@ func runAll() int {
 		}
 		running--
 	}
+	deleteBridges()
 
 	return errors
 }
@@ -476,105 +449,114 @@ func runAll() int {
 // Low-level network manipulation.
 //
 
-//
-// Get a NIC ready to serve as the router for a NATted subnet
-//
-func prepareInterface(iface *iface) {
-	nic := iface.name
-	if iface.wireless {
-		bridge := vlanBridge(iface.name)
-		if len(bridge) > 0 {
-			nic = bridge
+// Delete the bridges associated with each ring.  This gets us back to a known
+// ground state, simplifying the task of rebuilding everything when hostapd
+// starts back up.
+func deleteBridges() {
+	for _, conf := range rings {
+		bridge := conf.Bridge
+		exec.Command(ipCmd, "link", "set", "down", bridge).Run()
+		exec.Command(brctlCmd, "delbr", bridge).Run()
+	}
+}
+
+// Create a ring's network bridge.  If a nic is provided, attach it to the
+// bridge.
+func createBridge(ring *apcfg.RingConfig, nic string) error {
+	bridge := ring.Bridge
+
+	cmd := exec.Command(brctlCmd, "addbr", bridge)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("addbr %s failed: %v", bridge, err)
+	}
+
+	cmd = exec.Command(ipCmd, "link", "set", "up", bridge)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("bridge %s failed to come up: %v", bridge,
+			err)
+	}
+
+	if nic != "" {
+		cmd = exec.Command(brctlCmd, "addif", bridge, nic)
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("addif %s %s failed: %v", bridge,
+				nic, err)
 		}
 	}
-	log.Printf("Preparing %s %s\n", nic, iface.subnet)
+
+	return nil
+}
+
+//
+// Prepare a ring's bridge: clean up any old state, assign a new address, set up
+// routes, etc.
+//
+func prepareRingBridge(ringName string) {
+	ring := rings[ringName]
+	bridge := ring.Bridge
+
+	log.Printf("Preparing %s %s\n", bridge, ring.Subnet)
+
+	if ringName == base_def.RING_UNENROLLED {
+		// Unenrolled / unknown devices end up on the 'default' wireless
+		// interface, which is not part of a vlan and does not have a
+		// bridge created by hostapd.  To prevent the rest of the system
+		// from needing to understand that implementation detail, we
+		// create a bridge for vlan '0', which will have just that one
+		// interface attached to it.
+		if err := createBridge(ring, wifiNic); err != nil {
+			log.Printf("failed to create unenrolled bridge: %v\n",
+				err)
+			return
+		}
+	}
+
+	err := network.WaitForDevice(bridge, 5*time.Second)
+	if err != nil {
+		log.Printf("%s failed to come online: %v\n", bridge, err)
+		return
+	}
 
 	// ip addr flush dev wlan0
-	cmd := exec.Command(ipCmd, "addr", "flush", "dev", nic)
+	cmd := exec.Command(ipCmd, "addr", "flush", "dev", bridge)
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to remove existing IP address: %v\n", err)
 	}
 
 	// ip route del 192.168.136.0/24
-	cmd = exec.Command(ipCmd, "route", "del", iface.subnet)
+	cmd = exec.Command(ipCmd, "route", "del", ring.Subnet)
 	cmd.Run()
 
 	// ip addr add 192.168.136.1 dev wlan0
-	router := network.SubnetRouter(iface.subnet)
-	cmd = exec.Command(ipCmd, "addr", "add", router, "dev", nic)
+	router := network.SubnetRouter(ring.Subnet)
+	cmd = exec.Command(ipCmd, "addr", "add", router, "dev", bridge)
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to set the router address: %v\n", err)
 	}
 
 	// ip link set up wlan0
-	cmd = exec.Command(ipCmd, "link", "set", "up", nic)
+	cmd = exec.Command(ipCmd, "link", "set", "up", bridge)
 	if err := cmd.Run(); err != nil {
-		log.Fatalf("Failed to enable nic: %v\n", err)
+		log.Fatalf("Failed to enable bridge: %v\n", err)
 	}
 	// ip route add 192.168.136.0/24 dev wlan0
-	cmd = exec.Command(ipCmd, "route", "add", iface.subnet, "dev", nic)
+	cmd = exec.Command(ipCmd, "route", "add", ring.Subnet, "dev", bridge)
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to add %s as the new route: %v\n",
-			iface.subnet, err)
+			ring.Subnet, err)
 	}
 }
 
-func addInterface(logical, physical, subnet string, wireless bool) {
-	var ring string
-
-	for r, i := range rings {
-		if i.Interface == logical {
-			ring = r
-			break
-		}
-	}
-	iface := iface{
-		ring:     ring,
-		name:     physical,
-		subnet:   subnet,
-		wireless: wireless,
-	}
-
-	interfaces[logical] = &iface
-}
-
 //
-// Set up the wired ethernet ports.
+// Identify and prepare the WAN port.
 //
-func prepareWired() {
+func prepareWan() {
 	var err error
-	var bridge, wired_subnet string
 
 	// Enable packet forwarding
 	cmd := exec.Command(sysctlCmd, "-w", "net.ipv4.ip_forward=1")
 	if err = cmd.Run(); err != nil {
 		log.Fatalf("Failed to enable packet forwarding: %v\n", err)
-	}
-
-	cc, wiredLan := rings[base_def.RING_WIRED]
-	if wiredLan {
-		var ok bool
-
-		// Create a bridge for any wired ports, after tearing down any
-		// left over from a previous instance
-		bridge = cc.Interface
-		exec.Command(ipCmd, "link", "set", "down", bridge).Run()
-		exec.Command(brctlCmd, "delbr", bridge).Run()
-
-		wired_subnet, ok = subnets[bridge]
-		if !ok {
-			err = fmt.Errorf("No subnet configured")
-		} else {
-			err = exec.Command(brctlCmd, "addbr", bridge).Run()
-		}
-
-		if err != nil {
-			log.Printf("Failed to create wired bridge %s: %v\n",
-				bridge, err)
-			wiredLan = false
-		}
-	} else {
-		log.Printf("No 'wired' client ring defined\n")
 	}
 
 	//
@@ -589,49 +571,20 @@ func prepareWired() {
 		// On Raspberry Pi 3, use the OUI to identify the
 		// on-board port.
 		if *platform == "rpi3" {
-			if strings.HasPrefix(dev.hwaddr, "b8:27:eb:") {
-				log.Printf("Using %s for WAN\n", name)
-				if nics[apcfg.N_WAN] != "" {
-					log.Printf("Found multiple eth ports\n")
-				} else {
-					nics[apcfg.N_WAN] = dev.name
-				}
-			} else if wiredLan {
-				log.Printf("Using %s for clients\n", name)
-
-				cmd := exec.Command(brctlCmd, "addif", bridge, name)
-				if err := cmd.Run(); err != nil {
-					log.Printf("Failed to add %s to %s\n",
-						name, bridge)
-				}
-			}
-		} else {
-			if !wiredLan {
+			if !strings.HasPrefix(dev.hwaddr, "b8:27:eb:") {
 				continue
 			}
-			if strings.HasPrefix(name, "eth") ||
-				strings.HasPrefix(name, "enx") {
-				log.Printf("Using %s for WAN\n", name)
-				nics[apcfg.N_WAN] = dev.name
-			} else {
-				log.Printf("Using %s for clients\n", name)
-
-				cmd := exec.Command(brctlCmd, "addif", bridge, name)
-				if err := cmd.Run(); err != nil {
-					log.Printf("Failed to add %s to %s\n",
-						name, bridge)
-				}
-			}
+		} else if !strings.HasPrefix(name, "eth") &&
+			!strings.HasPrefix(name, "enx") {
+			continue
 		}
+
+		log.Printf("Using %s for WAN\n", name)
+		wanNic = dev.name
+		return
 	}
 
-	if wiredLan {
-		nics[apcfg.N_WIRED] = bridge
-		addInterface(bridge, bridge, wired_subnet, false)
-		prepareInterface(interfaces[bridge])
-	} else {
-		nics[apcfg.N_WIRED] = ""
-	}
+	log.Printf("No WAN connection available\n")
 }
 
 //
@@ -639,7 +592,7 @@ func prepareWired() {
 // wireless interfaces we'll be supporting
 //
 func prepareWireless(props *apcfg.PropertyNode) error {
-	var wifiNic *physDevice
+	var wifi *physDevice
 
 	for _, dev := range physDevices {
 		if dev.wireless {
@@ -647,36 +600,24 @@ func prepareWireless(props *apcfg.PropertyNode) error {
 				return err
 			}
 
-			if wifiNic == nil || dev.supportVLANs {
-				wifiNic = dev
+			if wifi == nil || dev.supportVLANs {
+				wifi = dev
 			}
 		}
 	}
-	if wifiNic == nil {
+	if wifi == nil {
 		return fmt.Errorf("couldn't find a wifi device to use")
 	}
 
-	if !wifiNic.supportVLANs {
+	if !wifi.supportVLANs {
 		return fmt.Errorf("no VLAN-enabled wifi device found")
 	}
 
-	nics[apcfg.N_WIFI] = wifiNic.name
-	log.Printf("Hosting wireless network on %s\n", nics[apcfg.N_WIFI])
-
-	for logical, subnet := range subnets {
-		physical := ""
-		switch {
-		case logical == "wifi":
-			physical = nics[apcfg.N_WIFI]
-		case logical == "setup" && wifiNic.multipleAPs:
-			nics[apcfg.N_SETUP] = nics[apcfg.N_WIFI] + setupPortal
-			physical = nics[apcfg.N_SETUP]
-		case strings.HasPrefix(logical, "vlan."):
-			physical = logical
-		}
-		if physical != "" {
-			addInterface(logical, physical, subnet, true)
-		}
+	wifiNic = wifi.name
+	log.Printf("Hosting wireless network on %s\n", wifiNic)
+	if setupNetwork {
+		setupNic = wifiNic + setupPortal
+		log.Printf("Hosting setup network on %s\n", setupNic)
 	}
 	return nil
 }
@@ -801,10 +742,8 @@ func updateNetworkProp(props *apcfg.PropertyNode, prop, new string) {
 // update the config now.
 //
 func updateNetworkConfig(props *apcfg.PropertyNode) {
-	updateNetworkProp(props, "wifi_nic", nics[apcfg.N_WIFI])
-	updateNetworkProp(props, "setup_nic", nics[apcfg.N_SETUP])
-	updateNetworkProp(props, "wired_nic", nics[apcfg.N_WIRED])
-	updateNetworkProp(props, "wan_nic", nics[apcfg.N_WAN])
+	updateNetworkProp(props, "setup_nic", setupNic)
+	updateNetworkProp(props, "wan_nic", wanNic)
 }
 
 func main() {
@@ -835,7 +774,6 @@ func main() {
 	config.HandleChange(`^@/clients/.*/ring$`, configRingChanged)
 	config.HandleChange(`^@/network/`, configNetworkChanged)
 
-	subnets = config.GetSubnets()
 	rings = config.GetRings()
 	clients = config.GetClients()
 
@@ -844,7 +782,7 @@ func main() {
 		err = fmt.Errorf("unable to fetch configuration: %v", err)
 	} else {
 		getDevices()
-		prepareWired()
+		prepareWan()
 		err = prepareWireless(props)
 	}
 	if err == nil {
@@ -859,7 +797,7 @@ func main() {
 	}
 
 	updateNetworkConfig(props)
-	applyFilters(interfaces)
+	applyFilters()
 
 	running = true
 	go signalHandler()

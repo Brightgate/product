@@ -33,14 +33,6 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
-const (
-	N_WAN = iota
-	N_SETUP
-	N_WIRED
-	N_WIFI
-	N_MAX
-)
-
 var ValidRings = map[string]bool{
 	base_def.RING_UNENROLLED: true,
 	base_def.RING_SETUP:      true,
@@ -49,17 +41,12 @@ var ValidRings = map[string]bool{
 	base_def.RING_DEVICES:    true,
 	base_def.RING_GUEST:      true,
 	base_def.RING_QUARANTINE: true,
-	base_def.RING_WIRED:      true,
-}
-
-type Nic struct {
-	Logical string
-	Iface   string
-	Mac     string
 }
 
 type RingConfig struct {
-	Interface     string
+	Subnet        string
+	Bridge        string
+	Vlan          int
 	LeaseDuration int
 }
 
@@ -76,8 +63,6 @@ type ClientInfo struct {
 
 type RingMap map[string]*RingConfig
 type ClientMap map[string]*ClientInfo
-type SubnetMap map[string]string
-type NicMap map[string]string
 
 //
 // A node in the property tree.
@@ -380,43 +365,35 @@ func (c *APConfig) GetRings() RingMap {
 
 	set := make(map[string]*RingConfig)
 	for _, ring := range props.Children {
-		var iface string
-		var duration int
+		var subnet, bridge string
+		var vlan, duration int
 
 		if !ValidRings[ring.Name] {
-			log.Printf("Invalid ring name: %s\n", ring.Name)
-			continue
+			err = fmt.Errorf("invalid ring name: %s", ring.Name)
 		}
-		if iface, err = getStringVal(ring, "interface"); err == nil {
+		if err == nil {
+			vlan, err = getIntVal(ring, "vlan")
+			if vlan >= 0 {
+				bridge = "brvlan" + strconv.Itoa(vlan)
+			} else {
+				bridge, _ = c.GetProp("@/network/setup_nic")
+			}
+		}
+		if err == nil {
+			subnet, err = getStringVal(ring, "subnet")
+		}
+		if err == nil {
 			duration, err = getIntVal(ring, "lease_duration")
 		}
 		if err == nil {
-			c := RingConfig{Interface: iface, LeaseDuration: duration}
+			c := RingConfig{
+				Vlan:          vlan,
+				Subnet:        subnet,
+				Bridge:        bridge,
+				LeaseDuration: duration}
 			set[ring.Name] = &c
 		} else {
 			fmt.Printf("Malformed ring %s: %v\n", ring.Name, err)
-		}
-	}
-
-	return set
-}
-
-//
-// Fetch the interfaces subtree, and return a map of Interface -> subnet
-func (c *APConfig) GetSubnets() SubnetMap {
-	props, err := c.GetProps("@/interfaces")
-	if err != nil {
-		log.Printf("Failed to get interfaces list: %v\n", err)
-		return nil
-	}
-
-	set := make(map[string]string)
-	for _, iface := range props.Children {
-		subnet, err := getStringVal(iface, "subnet")
-		if err != nil {
-			fmt.Printf("Malformed subnet %s: %v\n", iface.Name, err)
-		} else {
-			set[iface.Name] = subnet
 		}
 	}
 
@@ -482,46 +459,6 @@ func (c *APConfig) GetClients() ClientMap {
 	}
 
 	return set
-}
-
-func getNic(props *PropertyNode, name string) *Nic {
-	var nic, mac string
-
-	if node := props.GetChild(name); node != nil {
-		nic = node.GetValue()
-		if i, err := net.InterfaceByName(nic); err == nil {
-			mac = i.HardwareAddr.String()
-		}
-	}
-
-	if nic == "" {
-		log.Printf("Logical interface %s not configured\n", name)
-	} else if mac == "" {
-		log.Printf("%s mapped to missing nic %s\n", name, nic)
-	} else {
-		n := Nic{Logical: name, Iface: nic, Mac: mac}
-		return &n
-	}
-	return nil
-}
-
-// GetLogicalNics returns a map of logical->physical nics currently configured
-func (c *APConfig) GetLogicalNics() ([]*Nic, error) {
-	var nics []*Nic
-
-	props, err := c.GetProps("@/network")
-
-	if err == nil {
-		nics = make([]*Nic, N_MAX)
-		nics[N_WAN] = getNic(props, "wan_nic")
-		nics[N_WIFI] = getNic(props, "wifi_nic")
-		nics[N_WIRED] = getNic(props, "wired_nic")
-		nics[N_SETUP] = getNic(props, "setup_nic")
-	} else {
-		err = fmt.Errorf("Failed to get network config: %v", err)
-	}
-
-	return nics, err
 }
 
 // Fetch a single device by its path

@@ -21,7 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"bg/ap_common/apcfg"
 	"bg/ap_common/network"
 
 	// Requires libpcap
@@ -61,9 +60,10 @@ var (
 	sampleTicker *time.Ticker
 	auditTicker  *time.Ticker
 
-	scanningAddr net.HardwareAddr
-	scanningName string
-	gateways     map[uint32]bool
+	scanningAddr  net.HardwareAddr
+	scanningIface string
+	scanningRing  string
+	gateways      map[uint32]bool
 )
 
 const (
@@ -89,14 +89,14 @@ const (
 )
 
 // Our initial network audit strategy is to examine the packet stream for
-// Ethernet packets with EthernetTypeIPv4 and EthernetTypeARP. For TypeIPv4 we
-// will create a (hwaddr, ipaddr) pair using the MAC address from the Ethernet
-// header and the IP address from the IP header. For TypeARP the pair
-// (hwaddr, ipaddr) will be extracted from the ARP header. These pairs will be
-// inserted into auditRecords and vetted by the lease information coming from
+// Ethernet packets with EthernetTypeIPv4 and EthernetTypeARP.  We will use
+// these to construct records for subsequent auditing.  The records include the
+// packet's IP address and security ring, and will be stored in a map indexed by
+// the mac address extracted from the IP/ARP headers.  These MAC->IP mappings
+// will subsequently be compared against the lease information coming from
 // ap.dhcp4d.
 type record struct {
-	iface  string
+	ring   string
 	ipaddr net.IP
 	audit  auditType
 }
@@ -199,7 +199,7 @@ func samplerUpdate(hwaddr net.HardwareAddr, ipaddr net.IP, auth bool) {
 	if !ok {
 		rec := &record{
 			ipaddr: ipaddr,
-			iface:  scanningName,
+			ring:   scanningRing,
 		}
 		if auth {
 			rec.audit = vetted
@@ -306,35 +306,11 @@ func decodePackets(iface string) {
 	}
 }
 
-func getInterfaces() []string {
-	ifaces := make([]string, 0)
-
-	rings := config.GetRings()
-	nics, _ := config.GetLogicalNics()
-
-	for _, r := range rings {
-		if r.Interface == "setup" {
-			if n := nics[apcfg.N_SETUP]; n != nil {
-				ifaces = append(ifaces, n.Iface)
-			}
-		} else if r.Interface == "wifi" {
-			if n := nics[apcfg.N_WIFI]; n != nil {
-				ifaces = append(ifaces, n.Iface)
-			}
-		} else {
-			ifaces = append(ifaces, r.Interface)
-		}
-	}
-	log.Printf("Sampling on these interfaces: %v\n", ifaces)
-	return ifaces
-}
-
 func getGateways() {
 	gateways = make(map[uint32]bool)
-	subnets := config.GetSubnets()
 
-	for _, s := range subnets {
-		router := net.ParseIP(network.SubnetRouter(s))
+	for _, r := range rings {
+		router := net.ParseIP(network.SubnetRouter(r.Subnet))
 		gateways[network.IPAddrToUint32(router)] = true
 	}
 }
@@ -363,19 +339,20 @@ func auditor() {
 			if r.audit == conflict {
 				log.Printf("CONFLICT FOUND: %s using %s\n", ep, r.ipaddr)
 			} else if r.audit == foreign {
-				logUnknown(r.iface, ep.String(), r.ipaddr.String())
+				logUnknown(r.ring, ep.String(), r.ipaddr.String())
 			}
 		}
 	}
 }
 
-func sampleIface(iface string) error {
+func sampleOne(ring, iface string) error {
 	self, err := net.InterfaceByName(iface)
 	if err != nil {
 		return fmt.Errorf("failed to get mac addr: %s", err)
 	}
 	scanningAddr = self.HardwareAddr
-	scanningName = iface
+	scanningIface = iface
+	scanningRing = ring
 
 	if err := network.WaitForDevice(iface, 0); err != nil {
 		return fmt.Errorf("device is offline")
@@ -391,7 +368,7 @@ func sampleIface(iface string) error {
 	return nil
 }
 
-func sampleLoop(ifaces []string) {
+func sampleLoop() {
 	// These are the layers we wish to decode
 	decodeLayers = make([]gopacket.DecodingLayer, idxMAX)
 	decodeLayers[idxEth] = &layers.Ethernet{}
@@ -410,18 +387,20 @@ func sampleLoop(ifaces []string) {
 		}
 	}
 
-	idx := 0
 	sampleTicker = time.NewTicker(*loopTime)
 	for {
-		iface := ifaces[idx]
-		idx = (idx + 1) % len(ifaces)
-
-		err := sampleIface(iface)
-		if err != nil {
-			log.Printf("Sample of %s failed: %v\n", iface, err)
-			continue
+		for ring, config := range rings {
+			if config.Bridge == "" {
+				continue
+			}
+			err := sampleOne(ring, config.Bridge)
+			if err != nil {
+				log.Printf("Sample of %s on %s failed: %v\n",
+					ring, config.Bridge, err)
+				continue
+			}
+			<-sampleTicker.C
 		}
-		<-sampleTicker.C
 	}
 }
 
@@ -439,9 +418,8 @@ func sampleInit() error {
 
 	getGateways()
 	getLeases()
-	ifaces := getInterfaces()
 
-	go sampleLoop(ifaces)
+	go sampleLoop()
 	go auditor()
 
 	return nil

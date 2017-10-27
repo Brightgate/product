@@ -55,14 +55,11 @@ var (
 		"location of httpd client web root")
 	ports = listFlag([]string{":80", ":443"})
 
-	captiveMap map[string]bool
-
 	cert      string
 	key       string
 	certValid bool
 
 	config      *apcfg.APConfig
-	subnetMap   apcfg.SubnetMap
 	phishScorer phishtank.Scorer
 	domainname  string
 
@@ -231,25 +228,8 @@ func defaultHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, gatewayu, http.StatusFound)
 }
 
-func initNetwork() error {
-	// init maps
-	captiveMap = make(map[string]bool)
-
-	if subnetMap = config.GetSubnets(); subnetMap == nil {
-		return fmt.Errorf("Failed to get subnet addresses")
-	}
-
-	for iface, subnet := range subnetMap {
-		router := network.SubnetRouter(subnet)
-		if iface == "setup" {
-			captiveMap[router] = true
-			captiveMap[router+":80"] = true
-		}
-	}
-	return nil
-}
-
-func listen(addr string, port string, iface string, cfg *tls.Config, certf string, keyf string, handler http.Handler) {
+func listen(addr string, port string, ring string, cfg *tls.Config,
+	certf string, keyf string, handler http.Handler) {
 	if port == ":443" {
 		go func() {
 			srv := &http.Server{
@@ -259,12 +239,12 @@ func listen(addr string, port string, iface string, cfg *tls.Config, certf strin
 				TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
 			}
 			err := srv.ListenAndServeTLS(certf, keyf)
-			log.Printf("TLS Listener on %s (%s) exited: %v\n", addr+port, iface, err)
+			log.Printf("TLS Listener on %s (%s) exited: %v\n", addr+port, ring, err)
 		}()
 	} else {
 		go func() {
 			err := http.ListenAndServe(addr+port, handler)
-			log.Printf("Listener on %s (%s) exited: %v\n", addr+port, iface, err)
+			log.Printf("Listener on %s (%s) exited: %v\n", addr+port, ring, err)
 		}()
 	}
 }
@@ -287,6 +267,7 @@ func init() {
 
 func main() {
 	var err error
+	var rings apcfg.RingMap
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	flag.Var(ports, "http-ports", "The ports to listen on for HTTP requests.")
@@ -311,9 +292,19 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
-	config, err = apcfg.NewConfig(b, pname)
-	if err != nil {
-		log.Fatalf("cannot connect to configd: %v\n", err)
+	if config, err = apcfg.NewConfig(b, pname); err == nil {
+		rings = config.GetRings()
+	}
+
+	if rings == nil {
+		if mcpd != nil {
+			mcpd.SetState(mcp.BROKEN)
+		}
+		if err != nil {
+			log.Fatalf("cannot connect to configd: %v\n", err)
+		} else {
+			log.Fatal("can't get ring configuration\n")
+		}
 	}
 
 	siteid, err := config.GetProp("@/siteid")
@@ -330,12 +321,6 @@ func main() {
 
 	loadPhishtank()
 
-	err = initNetwork()
-	if err != nil {
-		mcpd.SetState(mcp.BROKEN)
-		log.Fatalf("Failed to init network: %v\n", err)
-	}
-
 	// routing
 	demoAPIRouter := mux.NewRouter()
 	demoAPIRouter.HandleFunc("/alerts", demoAlertsHandler)
@@ -351,20 +336,23 @@ func main() {
 
 	phishRouter := mainRouter.MatcherFunc(
 		func(r *http.Request, match *mux.RouteMatch) bool {
-			log.Printf("Host: %s Score: %d\n", r.Host, phishScorer.Score(r.Host, phishtank.Dns))
+			log.Printf("Host: %s Score: %d\n", r.Host,
+				phishScorer.Score(r.Host, phishtank.Dns))
 			return phishScorer.Score(r.Host, phishtank.Dns) < 0
 		}).Subrouter()
 	phishRouter.HandleFunc("/", phishHandler)
 
 	mainRouter.HandleFunc("/", defaultHandler)
 	mainRouter.PathPrefix("/apid/").Handler(http.StripPrefix("/apid", demoAPIRouter))
-	mainRouter.PathPrefix("/client-web/").Handler(http.StripPrefix("/client-web/", http.FileServer(http.Dir(*clientWebDir))))
+	mainRouter.PathPrefix("/client-web/").Handler(http.StripPrefix("/client-web/",
+		http.FileServer(http.Dir(*clientWebDir))))
 	nMain := negroni.New(negroni.NewRecovery())
 	nMain.UseHandler(apachelog.CombinedLog.Wrap(mainRouter, os.Stderr))
 
 	captiveRouter := mux.NewRouter()
 	captiveRouter.HandleFunc("/", defaultHandler)
-	captiveRouter.PathPrefix("/client-web/").Handler(http.StripPrefix("/client-web/", http.FileServer(http.Dir(*clientWebDir))))
+	captiveRouter.PathPrefix("/client-web/").Handler(http.StripPrefix("/client-web/",
+		http.FileServer(http.Dir(*clientWebDir))))
 	captiveRouter.HandleFunc("/hotspot-detect.html", appleHandler)
 	captiveRouter.HandleFunc("/appleConnect", appleConnect)
 	nCaptive := negroni.New(negroni.NewRecovery())
@@ -382,13 +370,13 @@ func main() {
 		},
 	}
 
-	for iface, subnet := range subnetMap {
-		router := network.SubnetRouter(subnet)
-		if iface == "setup" {
-			listen(router, ":80", iface, tlsCfg, certf, keyf, nCaptive)
+	for ring, config := range rings {
+		router := network.SubnetRouter(config.Subnet)
+		if ring == "setup" {
+			listen(router, ":80", ring, tlsCfg, certf, keyf, nCaptive)
 		} else {
 			for _, port := range ports {
-				listen(router, port, iface, tlsCfg, certf, keyf, nMain)
+				listen(router, port, ring, tlsCfg, certf, keyf, nMain)
 			}
 		}
 	}

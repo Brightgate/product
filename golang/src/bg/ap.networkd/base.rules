@@ -1,4 +1,4 @@
-CAPTURE FROM IFACE setup
+CAPTURE FROM RING setup
 BLOCK TO RING setup
 
 # We have to allow dhcp traffic to our wan port, or we can't join the world

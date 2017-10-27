@@ -139,7 +139,7 @@ message EventNetEntity {
 
 	optional fixed64 mac_address = 0x400;
 	optional fixed32 ipv4_address = 0x401;
-	optional string interface_name = 0x402;
+	optional string ring = 0x402;
 	optional string hostname = 0x403;
 }
 

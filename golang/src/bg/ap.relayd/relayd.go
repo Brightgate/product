@@ -23,7 +23,6 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"syscall"
 
 	"bg/ap_common/apcfg"
@@ -55,7 +54,6 @@ var multicastServices = []service{
 
 var ringLevel = map[string]int{
 	base_def.RING_CORE:     0,
-	base_def.RING_WIRED:    0,
 	base_def.RING_STANDARD: 1,
 	base_def.RING_DEVICES:  2,
 	base_def.RING_GUEST:    3,
@@ -77,6 +75,10 @@ func debugLog(format string, args ...interface{}) {
 	if *debug {
 		log.Printf(format, args)
 	}
+}
+
+func vlanBridge(vlan int) string {
+	return "brvlan" + strconv.Itoa(vlan)
 }
 
 func initListener(s service) (p *ipv4.PacketConn, err error) {
@@ -376,8 +378,6 @@ func mrelay(s service) {
 
 func initInterfaces() {
 	rings = config.GetRings()
-	nics, _ := config.GetLogicalNics()
-	subnets := config.GetSubnets()
 
 	ifaceToRing = make(map[int]string)
 	ringToIface = make(map[string]*net.Interface)
@@ -396,37 +396,18 @@ func initInterfaces() {
 		// interface to the multicast groups on which we listen.
 		if _, ok := ringLevel[ring]; !ok {
 			debugLog("No relaying from %s\n", ring)
-		} else if conf.Interface == "wifi" {
-			name = nics[apcfg.N_WIFI].Iface
-		} else if conf.Interface == "br0" {
-			name = nics[apcfg.N_WIRED].Iface
-		} else if strings.HasPrefix(conf.Interface, "vlan") {
-			// Transform "vlan.X" -> "brvlanX"
-			tmp := strings.Split(conf.Interface, ".")
-			if len(tmp) != 2 {
-				log.Printf("Malformed VLAN: %s\n", conf.Interface)
-			} else {
-				name = "brvlan" + tmp[1]
-			}
-		}
-
-		if name == "" {
 			continue
 		}
-		iface, err := net.InterfaceByName(name)
+
+		bridge := vlanBridge(conf.Vlan)
+		iface, err := net.InterfaceByName(bridge)
 		if err != nil {
-			log.Printf("No interface %s: %v\n", name, err)
+			log.Printf("No interface %s: %v\n", bridge, err)
 			continue
 		}
 
-		subnet, ok := subnets[conf.Interface]
-		if !ok {
-			log.Printf("Undefined interface: %s\n", conf.Interface)
-			continue
-		}
-
-		ifaceBroadcast[name] = network.SubnetBroadcast(subnet)
-		ipv4ToIface[network.SubnetRouter(subnet)] = iface
+		ifaceBroadcast[name] = network.SubnetBroadcast(conf.Subnet)
+		ipv4ToIface[network.SubnetRouter(conf.Subnet)] = iface
 		ringToIface[ring] = iface
 		ifaceToRing[iface.Index] = ring
 	}

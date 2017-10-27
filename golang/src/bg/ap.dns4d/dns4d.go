@@ -593,26 +593,12 @@ func initNetwork() {
 		log.Printf("defined rings %v\n", rings)
 	}
 
-	subnets := config.GetSubnets()
-	if subnets == nil {
-		log.Fatalf("Can't retrieve subnet information\n")
-	} else {
-		log.Printf("defined subnets %v\n", subnets)
-	}
-
 	// Each ring will have an A record for that ring's router.  That
 	// record will double as a result for phishing URLs and all captive
 	// portal requests.
 	ringRecords = make(map[string]dnsRecord)
 	for name, ring := range rings {
-		subnet, ok := subnets[ring.Interface]
-		if !ok {
-			log.Printf("No subnet for %s/%s\n", name,
-				ring.Interface)
-			continue
-		}
-
-		srouter := network.SubnetRouter(subnet)
+		srouter := network.SubnetRouter(ring.Subnet)
 		ringRecords[name] = dnsRecord{
 			rectype: dns.TypeA,
 			recval:  srouter,

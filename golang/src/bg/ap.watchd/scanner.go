@@ -289,15 +289,8 @@ func getMacIP(host *nmap.Host) (mac, ip string) {
 	return
 }
 
-func subnetHostScan(iface, subnet string, scannedHosts *hostmap) int {
+func subnetHostScan(ring, subnet string, scannedHosts *hostmap) int {
 	seen := 0
-
-	if err := network.WaitForDevice(iface, 0); err != nil {
-		if *verbose {
-			log.Printf("%s offline.  Skipping scan.\n", iface)
-		}
-		return 0
-	}
 
 	file := fmt.Sprintf("%s/netscans/netscan-%d.xml", *watchDir,
 		int(time.Now().Unix()))
@@ -311,7 +304,7 @@ func subnetHostScan(iface, subnet string, scannedHosts *hostmap) int {
 
 	scanResults, err := scan(subnet, args, file)
 	if err != nil {
-		log.Printf("Scan of %s failed: %v\n", iface, err)
+		log.Printf("Scan of %s ring failed: %v\n", ring, err)
 		return 0
 	}
 	clients := config.GetClients()
@@ -335,16 +328,15 @@ func subnetHostScan(iface, subnet string, scannedHosts *hostmap) int {
 
 		if scannedHosts.contains(ip) {
 			if _, ok := clients[mac]; !ok {
-				log.Printf("Unknown host %s found on %s: %s",
-					mac, iface, ip)
-				logUnknown(iface, mac, ip)
+				log.Printf("Unknown host %s found on ring %s: %s",
+					mac, ring, ip)
+				logUnknown(ring, mac, ip)
 			} else {
-				log.Printf("host %s now active on %s: %s",
-					mac, iface, ip)
+				log.Printf("host %s now active on ring %s: %s",
+					mac, ring, ip)
 			}
 		} else {
-			log.Printf("%s is back online on %s, restarting scans",
-				ip, iface)
+			log.Printf("%s is back online, restarting scans", ip)
 		}
 		scannerRequest(ip)
 	}
@@ -363,11 +355,10 @@ func hostScan() {
 	}
 
 	scannedHostsGauge.Set(float64(len(scannedHosts.active) - 1))
-	ipMap := config.GetSubnets()
 
 	seen := 0
-	for iface, subnet := range ipMap {
-		seen += subnetHostScan(iface, subnet, scannedHosts)
+	for ring, config := range rings {
+		seen += subnetHostScan(ring, config.Subnet, scannedHosts)
 	}
 	hostsUp.Set(float64(seen))
 }

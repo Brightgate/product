@@ -9,19 +9,15 @@ BLOCK FROM RING unenrolled TO RING core
 BLOCK FROM RING unenrolled TO RING standard
 BLOCK FROM RING unenrolled TO RING devices
 BLOCK FROM RING unenrolled TO RING guest
-BLOCK FROM RING unenrolled TO RING wired
 
 BLOCK FROM RING guest TO RING core
 BLOCK FROM RING guest TO RING standard
 BLOCK FROM RING guest TO RING devices
-BLOCK FROM RING guest TO RING wired
 
 BLOCK FROM RING devices TO RING core
 BLOCK FROM RING devices TO RING standard
-BLOCK FROM RING devices TO RING wired
 
 BLOCK FROM RING standard TO RING core
-BLOCK FROM RING standard TO RING wired
 
 # Sonos receivers initiate TCP sessions to controllers
 # We would like this to be "FROM DEVICE sonos"
@@ -30,12 +26,12 @@ ACCEPT TCP FROM RING devices DPORTS 3400 3401
 
 # Printers
 # Port 631 is IPP. Port 9100 is PDL (needed for the Xerox Phaser, at least)
-# Needed to allow access to printers on the wired network.  This can/should be
+# Needed to allow access to printers on the core network.  This can/should be
 # more precisely targetted.  e.g., "allow client a.b.c.d to access printer
 # w.x.y.z"
 # Port 80 (http) and 5357 (Web Services for Devices) are needed for Windows 10
 # clients.
-ACCEPT TCP FROM RING standard TO RING wired DPORTS 631 9100 80 5357
+ACCEPT TCP FROM RING standard TO RING core DPORTS 631 9100 80 5357
 
 # Airplay
 ACCEPT UDP FROM RING devices SPORTS 6001 6002 6003
