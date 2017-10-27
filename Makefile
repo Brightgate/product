@@ -164,30 +164,47 @@ HTTPD_CLIENTWEB_DIR=$(APPVAR)/www/client-web
 HTTPD_TEMPLATE_DIR=$(APPETC)/templates/ap.httpd
 NETWORK_TEMPLATE_DIR=$(APPETC)/templates/ap.networkd
 
-APPDAEMONS = \
-	ap.brokerd \
-	ap.configd \
-	ap.dhcp4d \
-	ap.dns4d \
-	ap.httpd \
-	ap.identifierd \
-	ap.logd \
-	ap.mcp \
-	ap.networkd \
-	ap.relayd \
-	ap.watchd
+COMMON_GOPKGS = \
+	bg/ap_common/apcfg \
+	bg/ap_common/aputil \
+	bg/ap_common/broker \
+	bg/ap_common/device \
+	bg/ap_common/mcp \
+	bg/ap_common/model \
+	bg/ap_common/network \
+	bg/ap_common/watchd
 
-APPCOMMANDS = \
-	ap-arpspoof \
-	ap-configctl \
-	ap-ctl \
-	ap-msgping \
-	ap-ouisearch \
-	ap-rpc \
-	ap-start \
-	ap-stats
+APPCOMMAND_GOPKGS = \
+	bg/ap-arpspoof \
+	bg/ap-configctl \
+	bg/ap-ctl \
+	bg/ap-msgping \
+	bg/ap-ouisearch \
+	bg/ap-rpc \
+	bg/ap-stats
 
-APPBINARIES = $(APPCOMMANDS:%=$(APPBIN)/%) $(APPDAEMONS:%=$(APPBIN)/%)
+APPDAEMON_GOPKGS = \
+	bg/ap.brokerd \
+	bg/ap.configd \
+	bg/ap.dhcp4d \
+	bg/ap.dns4d \
+	bg/ap.httpd \
+	bg/ap.identifierd \
+	bg/ap.logd \
+	bg/ap.mcp \
+	bg/ap.networkd \
+	bg/ap.relayd \
+	bg/ap.watchd
+
+APP_GOPKGS = $(COMMON_GOPKGS) $(APPCOMMAND_GOPKGS) $(APPDAEMON_GOPKGS)
+
+MISCCOMMANDS = \
+	ap-start
+
+APPBINARIES = \
+	$(APPCOMMAND_GOPKGS:bg/%=$(APPBIN)/%) \
+	$(APPDAEMON_GOPKGS:bg/%=$(APPBIN)/%) \
+	$(MISCCOMMANDS:%=$(APPBIN)/%)
 
 # XXX Common configurations?
 
@@ -269,11 +286,17 @@ CLOUDROOTLIB=$(CLOUDROOT)/lib
 CLOUDVAR=$(CLOUDBASE)/var
 CLOUDSPOOL=$(CLOUDVAR)/spool
 
-CLOUDDAEMONS = \
-	cl.httpd \
-	cl.rpcd
+CLOUDDAEMON_GOPKGS = \
+	bg/cl.httpd \
+	bg/cl.rpcd
 
-CLOUDCOMMANDS =
+CLOUDCOMMAND_GOPKGS =
+
+CLOUD_GOPKGS = $(CLOUDDAEMON_GOPKGS) $(CLOUDCOMMAND_GOPKGS)
+
+CLOUDDAEMONS = $(CLOUDDAEMON_GOPKGS:bg/%=%)
+
+CLOUDCOMMANDS = $(CLOUDCOMMAND_GOPKGS:bg/%=%)
 
 CLOUDCONFIGS = \
 	$(CLOUDROOTLIB)/systemd/system/cl.httpd.service \
@@ -326,6 +349,10 @@ coverage: coverage-go
 
 coverage-go: install
 	go test -cover $(GO_TESTABLES)
+
+vet-go:
+	go vet $(APP_GOPKGS)
+	go vet $(CLOUD_GOPKGS)
 
 docs: | $(PROTOC_PLUGINS)
 

@@ -64,7 +64,7 @@ func printState(incoming string) {
 		return
 	}
 
-	format := "%12s\t%5s\t%12s\t%s\n"
+	const format = "%12s\t%5s\t%12s\t%s\n"
 	fmt.Printf(format, "DAEMON", "PID", "STATE", "SINCE")
 	for _, s := range state {
 		var pid, since string

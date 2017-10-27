@@ -137,7 +137,7 @@ func (w *Watchd) GetStats(mac string, start, end *time.Time) (DeviceMap, error) 
 		err = json.Unmarshal(rval, &devs)
 		return devs, err
 	case ERR:
-		return nil, fmt.Errorf(*r.Response)
+		return nil, fmt.Errorf("%v", *r.Response)
 	default:
 		return nil, fmt.Errorf("unrecognized response from watchd")
 	}

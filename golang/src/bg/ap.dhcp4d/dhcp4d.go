@@ -649,7 +649,7 @@ func newHandler(ring, network string, duration int) *DHCPHandler {
 	}
 
 	if range_size == 0 {
-		log.Fatal("Invalid DHCP config.  Poorly formed subnet: %s\n",
+		log.Fatalf("Invalid DHCP config.  Poorly formed subnet: %s\n",
 			network)
 	}
 

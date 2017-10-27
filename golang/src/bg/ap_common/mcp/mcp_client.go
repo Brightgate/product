@@ -160,11 +160,11 @@ func (m *MCP) msg(oc base_msg.MCPRequest_Operation,
 	return rval, err
 }
 
-func (m MCP) GetState(daemon string) (string, error) {
+func (m *MCP) GetState(daemon string) (string, error) {
 	return m.msg(OP_GET, daemon, "", -1)
 }
 
-func (m MCP) SetState(state int) error {
+func (m *MCP) SetState(state int) error {
 	var err error
 
 	if _, ok := States[state]; !ok {
@@ -178,7 +178,7 @@ func (m MCP) SetState(state int) error {
 	return err
 }
 
-func (m MCP) Do(daemon, command string) error {
+func (m *MCP) Do(daemon, command string) error {
 	_, err := m.msg(OP_DO, daemon, command, -1)
 
 	return err

@@ -96,7 +96,7 @@ func (nb *MultinomialNBClassifier) Fit(X base.FixedDataGrid) {
 		for feat := 0; feat < len(docVector); feat++ {
 			val := base.UnpackBytesToFloat(docVector[feat])
 			if val < 0 {
-				panic(fmt.Sprintf("features should be positive: %d < 0", val))
+				panic(fmt.Sprintf("features should be positive: %f < 0", val))
 			}
 			termFreq[class][feat] += val
 		}

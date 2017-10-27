@@ -791,7 +791,7 @@ func updateNetworkProp(props *apcfg.PropertyNode, prop, new string) {
 		path := "@/network/" + prop
 		err := config.CreateProp(path, new, nil)
 		if err != nil {
-			log.Printf("Failed to update %s: %v\n", err)
+			log.Printf("Failed to update %s: %v\n", path, err)
 		}
 	}
 }

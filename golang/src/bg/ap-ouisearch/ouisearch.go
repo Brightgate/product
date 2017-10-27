@@ -53,7 +53,7 @@ func main() {
 		log.Fatalf("couldn't open '%s': %v\n", db_path, err)
 	}
 
-	log.Println("generated %v\n", db.Generated())
+	log.Printf("generated %v\n", db.Generated())
 
 	// Query each MAC address given on the command line.
 	fmt.Printf(output_fmt, "HWADDR", "MANUFACTURER")

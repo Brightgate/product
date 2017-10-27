@@ -192,7 +192,7 @@ func main() {
 
 	if !aputil.FileExists(*watchDir) {
 		if err := os.Mkdir(*watchDir, 0755); err != nil {
-			log.Fatal("Error adding directory %s: %v\n",
+			log.Fatalf("Error adding directory %s: %v\n",
 				*watchDir, err)
 		}
 	}

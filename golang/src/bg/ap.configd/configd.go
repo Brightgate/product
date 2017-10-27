@@ -782,7 +782,7 @@ func prop_tree_store() error {
 
 	s, err := json.MarshalIndent(property_root, "", "  ")
 	if err != nil {
-		log.Fatal("Failed to construct properties JSON: %v\n", err)
+		log.Fatalf("Failed to construct properties JSON: %v\n", err)
 	}
 
 	if aputil.FileExists(propfile) {

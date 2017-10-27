@@ -268,7 +268,7 @@ func (c *APConfig) msg(oc base_msg.ConfigQuery_Operation, prop, val string,
 
 // Retrieves the properties subtree rooted at the given property, and returns a
 // PropertyNode representing the root of that subtree
-func (c APConfig) GetProps(prop string) (*PropertyNode, error) {
+func (c *APConfig) GetProps(prop string) (*PropertyNode, error) {
 	var root PropertyNode
 	var err error
 
@@ -285,7 +285,7 @@ func (c APConfig) GetProps(prop string) (*PropertyNode, error) {
 }
 
 // Retrieves a single property from the tree, returning it as a String
-func (c APConfig) GetProp(prop string) (string, error) {
+func (c *APConfig) GetProp(prop string) (string, error) {
 	var rval string
 
 	root, err := c.GetProps(prop)
@@ -298,7 +298,7 @@ func (c APConfig) GetProp(prop string) (string, error) {
 
 // Updates a single property, taking an optional expiration time.  If the
 // property doesn't already exist, an error is returned.
-func (c APConfig) SetProp(prop, val string, expires *time.Time) error {
+func (c *APConfig) SetProp(prop, val string, expires *time.Time) error {
 	_, err := c.msg(base_msg.ConfigQuery_SET, prop, val, expires)
 
 	return err
@@ -307,14 +307,14 @@ func (c APConfig) SetProp(prop, val string, expires *time.Time) error {
 // Updates a single property, taking an optional expiration time.  If the
 // property doesn't already exist, it is created - as well as any parent
 // properties needed to provide a path through the tree.
-func (c APConfig) CreateProp(prop, val string, expires *time.Time) error {
+func (c *APConfig) CreateProp(prop, val string, expires *time.Time) error {
 	_, err := c.msg(base_msg.ConfigQuery_CREATE, prop, val, expires)
 
 	return err
 }
 
 // Deletes a property, or property subtree
-func (c APConfig) DeleteProp(prop string) error {
+func (c *APConfig) DeleteProp(prop string) error {
 	_, err := c.msg(base_msg.ConfigQuery_DELETE, prop, "-", nil)
 
 	return err
@@ -350,7 +350,7 @@ func getIntVal(root *PropertyNode, name string) (int, error) {
 	} else {
 		if rval, err = strconv.Atoi(node.Value); err != nil {
 			err = fmt.Errorf("%s has malformed %s property",
-				node.Name)
+				root.Name, name)
 		}
 	}
 	return rval, err
@@ -358,7 +358,7 @@ func getIntVal(root *PropertyNode, name string) (int, error) {
 
 //
 // Fetch the Rings subtree and return a Ring -> RingConfig map
-func (c APConfig) GetRings() RingMap {
+func (c *APConfig) GetRings() RingMap {
 	props, err := c.GetProps("@/rings")
 	if err != nil {
 		log.Printf("Failed to get ring list: %v\n", err)
@@ -390,7 +390,7 @@ func (c APConfig) GetRings() RingMap {
 
 //
 // Fetch the interfaces subtree, and return a map of Interface -> subnet
-func (c APConfig) GetSubnets() SubnetMap {
+func (c *APConfig) GetSubnets() SubnetMap {
 	props, err := c.GetProps("@/interfaces")
 	if err != nil {
 		log.Printf("Failed to get interfaces list: %v\n", err)
@@ -441,7 +441,7 @@ func getClient(client *PropertyNode) *ClientInfo {
 
 //
 // Fetch a single client and return a ClientInfo structure
-func (c APConfig) GetClient(macaddr string) *ClientInfo {
+func (c *APConfig) GetClient(macaddr string) *ClientInfo {
 	client, err := c.GetProps("@/clients/" + macaddr)
 	if err != nil {
 		log.Printf("Failed to get %s: %v\n", macaddr, err)
@@ -453,7 +453,7 @@ func (c APConfig) GetClient(macaddr string) *ClientInfo {
 
 //
 // Fetch the Clients subtree, and return a map of macaddr -> ClientInfo
-func (c APConfig) GetClients() ClientMap {
+func (c *APConfig) GetClients() ClientMap {
 	props, err := c.GetProps("@/clients")
 	if err != nil {
 		log.Printf("Failed to get clients list: %v\n", err)
@@ -490,7 +490,7 @@ func getNic(props *PropertyNode, name string) *Nic {
 }
 
 // GetLogicalNics returns a map of logical->physical nics currently configured
-func (c APConfig) GetLogicalNics() ([]*Nic, error) {
+func (c *APConfig) GetLogicalNics() ([]*Nic, error) {
 	var nics []*Nic
 
 	props, err := c.GetProps("@/network")
@@ -509,7 +509,7 @@ func (c APConfig) GetLogicalNics() ([]*Nic, error) {
 }
 
 // Fetch a single device by its path
-func (c APConfig) GetDevicePath(path string) (*device.Device, error) {
+func (c *APConfig) GetDevicePath(path string) (*device.Device, error) {
 	var dev device.Device
 
 	tree, err := c.msg(base_msg.ConfigQuery_GET, path, "-", nil)
@@ -523,7 +523,7 @@ func (c APConfig) GetDevicePath(path string) (*device.Device, error) {
 }
 
 // Fetch a single device by its ID #
-func (c APConfig) GetDevice(devid int) (*device.Device, error) {
+func (c *APConfig) GetDevice(devid int) (*device.Device, error) {
 	path := fmt.Sprintf("@/devices/%d", devid)
 	return c.GetDevicePath(path)
 }

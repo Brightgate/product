@@ -415,7 +415,7 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 
 	case mcp.OP_SET:
 		if *verbose {
-			log.Printf("%s: Set(%s, %s)\n", *req.Sender,
+			log.Printf("%s: Set(%s, %d)\n", *req.Sender,
 				*req.Daemon, *req.State)
 		}
 		if req.State == nil {
