@@ -628,7 +628,7 @@ func main() {
 	}
 
 	if *logfile != "" {
-		f, err := os.OpenFile(*logfile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		f, err := os.OpenFile(*logfile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 		if err != nil {
 			fmt.Printf("Unable to redirect logging to %s: %v",
 				*logfile, err)
