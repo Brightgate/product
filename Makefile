@@ -316,47 +316,51 @@ CLOUDCOMPONENTS = $(CLOUDBINARIES) $(CLOUDCONFIGS) $(CLOUDDIRS)
 CLOUD_COMMON_SRCS = \
     $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go
 
-#
-
-# -zcompress-level
-#      Specify  which compression level to use on the compressor backend, when
-#      building a package (default is 9 for gzip  and bzip2,  6  for  xz  and
-#      lzma).   The accepted values are 0-9 with: 0 being mapped to compressor
-#      none for gzip and 0 mapped to 1 for bzip2. Before dpkg 1.16.2  level  0
-#      was equivalent to compressor none for all compressors.
-#
-# -Zcompress-type
-#      Specify which compression type to use when building a package.  Allowed
-#      values  are  gzip,  xz  (since  dpkg 1.15.6), bzip2 (deprecated), lzma
-#      (since dpkg 1.14.0; deprecated), and none (default is xz).
-
 install: $(TARGETS)
 
 appliance: $(APPCOMPONENTS)
 
 cloud: $(CLOUDCOMPONENTS)
 
-
 packages: install
-	$(PYTHON3) build/deb-pkg.py $(PKG_LINT) -a $(PKG_DEB_ARCH) -Z gzip -z 5
+	$(PYTHON3) build/deb-pkg/deb-pkg.py $(PKG_LINT) --arch $(PKG_DEB_ARCH)
 
 test: test-go
 
 test-go: install
-	go test $(GO_TESTABLES)
+	$(GO) test $(GO_TESTABLES)
 
 coverage: coverage-go
 
 coverage-go: install
-	go test -cover $(GO_TESTABLES)
+	$(GO) test -cover $(GO_TESTABLES)
 
 vet-go:
-	go vet $(APP_GOPKGS)
-	go vet $(CLOUD_GOPKGS)
+	$(GO) vet $(APP_GOPKGS)
+	$(GO) vet $(CLOUD_GOPKGS)
+
+# Things that are presently lint clean and should stay that way
+LINTCLEAN_TARGETS= \
+	bg/ap_common/model \
+	bg/ap-arpspoof \
+	bg/ap-configctl \
+	bg/ap-ctl \
+	bg/ap-msgping \
+	bg/ap-stats \
+	bg/ap.brokerd \
+	bg/ap.httpd \
+	bg/ap.identifierd \
+	bg/ap.relayd
+
+lint-go:
+	golint -set_exit_status $(LINTCLEAN_TARGETS)
+
+lintall-go:
+	golint $(APP_GOPKGS) $(CLOUD_GOPKGS)
 
 docs: | $(PROTOC_PLUGINS)
 
-$(APPDOC)/: base/base_msg.proto | $(PROTOC_PLUGINS) $(APPDOC)
+$(APPDOC)/: base/base_msg.proto | $(PROTOC_PLUGINS) $(APPDOC) $(BASE_MSG)
 	cd base && \
 		protoc --plugin $(GOPATH)/bin \
 		    --doc_out $(APPDOC) $(notdir $<)
@@ -420,7 +424,7 @@ $(APPMODEL): $(GOSRCBG)/ap.identifierd/linear_model_deviceID/* | $(DIRS)
 	touch $@
 
 $(APPROOTLIB)/systemd/system: | $(APPROOTLIB)
-	mkdir -p $(APPROOTLIB)/systemd/system
+	$(MKDIR) -p $(APPROOTLIB)/systemd/system
 
 $(APPDIRS):
 	$(MKDIR) -p $@
@@ -516,12 +520,14 @@ $(CLOUDBIN)/cl.rpcd: \
 	$(CLOUD_COMMON_SRCS)
 
 $(CLOUDROOTLIB)/systemd/system: | $(CLOUDROOTLIB)
-	mkdir -p $(CLOUDROOTLIB)/systemd/system
+	$(MKDIR) -p $(CLOUDROOTLIB)/systemd/system
 
 $(CLOUDDIRS):
 	$(MKDIR) -p $@
 
+#
 # Common definitions
+#
 
 $(GOSRCBG)/base_def/base_def.go: base/generate-base-def.py | $(GOSRCBG)/base_def
 	$(PYTHON3) $< --go | $(GOFMT) > $@
@@ -529,10 +535,9 @@ $(GOSRCBG)/base_def/base_def.go: base/generate-base-def.py | $(GOSRCBG)/base_def
 base/base_def.py: base/generate-base-def.py
 	$(PYTHON3) $< --python3 > $@
 
-$(GOSRCBG)/base_def:
-	$(MKDIR) -p $(GOSRCBG)/base_def
-
+#
 # Protocol buffers
+#
 
 $(GOSRCBG)/base_msg/base_msg.pb.go: base/base_msg.proto | \
 	$(PROTOC_PLUGINS) $(GOSRCBG)/base_msg
@@ -542,9 +547,6 @@ $(GOSRCBG)/base_msg/base_msg.pb.go: base/base_msg.proto | \
 
 base/base_msg_pb2.py: base/base_msg.proto
 	protoc --python_out . $<
-
-$(GOSRCBG)/base_msg:
-	$(MKDIR) -p $(GOSRCBG)/base_msg
 
 $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go: base/cloud_rpc.proto | \
 	$(PROTOC_PLUGINS) $(GOSRCBG)/cloud_rpc
@@ -558,13 +560,10 @@ $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go: base/cloud_rpc.proto | \
 			$(notdir $<)
 
 base/cloud_rpc_pb2.py: base/cloud_rpc.proto
-	python3 -m grpc_tools.protoc \
+	$(PYTHON3) -m grpc_tools.protoc \
 		-I. \
 		-Ibase \
 		--python_out=. --grpc_python_out=. $<
-
-$(GOSRCBG)/cloud_rpc:
-	mkdir -p golang/src/cloud_rpc
 
 $(PROTOC_PLUGINS):
 	$(GO) get -u github.com/golang/protobuf/proto

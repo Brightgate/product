@@ -24,7 +24,7 @@ const (
 	pname = "ap-ctl"
 )
 
-var valid_cmds = map[string]bool{
+var validCmds = map[string]bool{
 	"status":  true,
 	"stop":    true,
 	"start":   true,
@@ -93,7 +93,7 @@ func main() {
 	}
 
 	cmd = os.Args[1]
-	if _, ok := valid_cmds[cmd]; !ok {
+	if _, ok := validCmds[cmd]; !ok {
 		usage()
 	}
 

@@ -116,15 +116,15 @@ func (l listFlag) Set(value string) error {
 	return nil
 }
 
-func handle_ping(event []byte) { pings++ }
+func handlePing(event []byte) { pings++ }
 
-func handle_config(event []byte) { configs++ }
+func handleConfig(event []byte) { configs++ }
 
-func handle_entity(event []byte) { entities++ }
+func handleEntity(event []byte) { entities++ }
 
-func handle_resource(event []byte) { resources++ }
+func handleResource(event []byte) { resources++ }
 
-func handle_request(event []byte) { requests++ }
+func handleRequest(event []byte) { requests++ }
 
 // hostInMap returns a Gorilla Mux matching function that checks to see if
 // the host is in the given map.
@@ -300,11 +300,11 @@ func main() {
 
 	// Set up connection with the broker daemon
 	b := broker.New(pname)
-	b.Handle(base_def.TOPIC_PING, handle_ping)
-	b.Handle(base_def.TOPIC_CONFIG, handle_config)
-	b.Handle(base_def.TOPIC_ENTITY, handle_entity)
-	b.Handle(base_def.TOPIC_RESOURCE, handle_resource)
-	b.Handle(base_def.TOPIC_REQUEST, handle_request)
+	b.Handle(base_def.TOPIC_PING, handlePing)
+	b.Handle(base_def.TOPIC_CONFIG, handleConfig)
+	b.Handle(base_def.TOPIC_ENTITY, handleEntity)
+	b.Handle(base_def.TOPIC_RESOURCE, handleResource)
+	b.Handle(base_def.TOPIC_REQUEST, handleRequest)
 	defer b.Fini()
 
 	http.Handle("/metrics", promhttp.Handler())

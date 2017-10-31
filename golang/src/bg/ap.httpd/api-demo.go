@@ -25,8 +25,9 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// What would an Alert be?  A reference ID to a full Alert?
-type DAAlerts struct {
+// DAAlerts is a placeholder.
+// XXX What would an Alert be?  A reference ID to a full Alert?
+type daAlerts struct {
 	DbgRequest string
 	Alerts     []string
 }
@@ -35,7 +36,7 @@ type DAAlerts struct {
 func demoAlertsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	rs := fmt.Sprintf("%v", r)
-	as := DAAlerts{
+	as := daAlerts{
 		//		Alerts:     {""},
 		DbgRequest: rs,
 	}
@@ -52,7 +53,7 @@ func demoAlertsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-type DADevice struct {
+type daDevice struct {
 	HwAddr       string
 	Manufacturer string
 	Model        string
@@ -68,13 +69,13 @@ type DADevice struct {
 	MediaLink    string
 }
 
-type DADevices struct {
+type daDevices struct {
 	DbgRequest string
-	Devices    []DADevice
+	Devices    []daDevice
 }
 
-func buildDeviceResponse(hwaddr string, client *apcfg.ClientInfo) DADevice {
-	var cd DADevice
+func buildDeviceResponse(hwaddr string, client *apcfg.ClientInfo) daDevice {
+	var cd daDevice
 
 	/* JavaScript from devices.vue:
 	{
@@ -144,10 +145,10 @@ func demoDevicesByRingHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 
 	clientsRaw := config.GetClients()
-	var devices DADevices
+	var devices daDevices
 
 	for mac, client := range clientsRaw {
-		var cd DADevice
+		var cd daDevice
 
 		if client.Ring != vars["ring"] {
 			continue
@@ -178,10 +179,10 @@ func demoDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	clientsRaw := config.GetClients()
-	var devices DADevices
+	var devices daDevices
 
 	for mac, client := range clientsRaw {
-		var cd DADevice
+		var cd daDevice
 
 		cd = buildDeviceResponse(mac, client)
 

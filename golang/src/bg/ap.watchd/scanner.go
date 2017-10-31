@@ -30,7 +30,7 @@ import (
 	"bg/base_msg"
 
 	"github.com/golang/protobuf/proto"
-	nmap "github.com/ktscholl/go-nmap"
+	nmap "github.com/lair-framework/go-nmap"
 )
 
 var (

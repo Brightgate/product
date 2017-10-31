@@ -81,9 +81,9 @@
 
 [[projects]]
   branch = "master"
-  name = "github.com/ktscholl/go-nmap"
+  name = "github.com/lair-framework/go-nmap"
   packages = ["."]
-  revision = "01d7e4bbef9e7de69b96236969efd9b1ced86ec7"
+  revision = "672725bbaae4337773b4ca267029c22606e38420"
 
 [[projects]]
   name = "github.com/lestrrat/go-apache-logformat"
@@ -208,6 +208,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "51f6e12b9f025f8edd5a0bf6064b4037eb6566cedab630f13cb89de63ab12499"
+  inputs-digest = "0f6cfcfc70708d01d98c40e2dfa895b43f0b61b01f2151dfe9a7a15d3b85158e"
   solver-name = "gps-cdcl"
   solver-version = 1

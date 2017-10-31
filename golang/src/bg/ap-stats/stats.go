@@ -41,7 +41,7 @@ func mapToList(in map[int]bool) []int {
 	}
 
 	list := make([]int, 0)
-	for i, _ := range in {
+	for i := range in {
 		list = append(list, i)
 	}
 

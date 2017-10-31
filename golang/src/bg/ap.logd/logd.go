@@ -52,7 +52,7 @@ var (
 
 const pname = "ap.logd"
 
-func handle_ping(event []byte) {
+func handlePing(event []byte) {
 	// XXX pings were green
 	ping := &base_msg.EventPing{}
 	proto.Unmarshal(event, ping)
@@ -60,14 +60,14 @@ func handle_ping(event []byte) {
 	eventsHandled.Inc()
 }
 
-func handle_config(event []byte) {
+func handleConfig(event []byte) {
 	config := &base_msg.EventConfig{}
 	proto.Unmarshal(event, config)
 	log.Printf("[sys.config] %v", config)
 	eventsHandled.Inc()
 }
 
-func handle_entity(event []byte) {
+func handleEntity(event []byte) {
 	// XXX entities were blue
 	entity := &base_msg.EventNetEntity{}
 	proto.Unmarshal(event, entity)
@@ -75,14 +75,14 @@ func handle_entity(event []byte) {
 	eventsHandled.Inc()
 }
 
-func handle_resource(event []byte) {
+func handleResource(event []byte) {
 	resource := &base_msg.EventNetResource{}
 	proto.Unmarshal(event, resource)
 	log.Printf("[net.resource] %v", resource)
 	eventsHandled.Inc()
 }
 
-func handle_request(event []byte) {
+func handleRequest(event []byte) {
 	// XXX requests were also blue
 	request := &base_msg.EventNetRequest{}
 	proto.Unmarshal(event, request)
@@ -90,7 +90,7 @@ func handle_request(event []byte) {
 	eventsHandled.Inc()
 }
 
-func handle_identity(event []byte) {
+func handleIdentity(event []byte) {
 	identity := &base_msg.EventNetIdentity{}
 	proto.Unmarshal(event, identity)
 	log.Printf("[net.identity] %v", identity)
@@ -169,12 +169,12 @@ func main() {
 	log.Println("prometheus client launched")
 
 	b := broker.New(pname)
-	b.Handle(base_def.TOPIC_PING, handle_ping)
-	b.Handle(base_def.TOPIC_CONFIG, handle_config)
-	b.Handle(base_def.TOPIC_ENTITY, handle_entity)
-	b.Handle(base_def.TOPIC_RESOURCE, handle_resource)
-	b.Handle(base_def.TOPIC_REQUEST, handle_request)
-	b.Handle(base_def.TOPIC_IDENTITY, handle_identity)
+	b.Handle(base_def.TOPIC_PING, handlePing)
+	b.Handle(base_def.TOPIC_CONFIG, handleConfig)
+	b.Handle(base_def.TOPIC_ENTITY, handleEntity)
+	b.Handle(base_def.TOPIC_RESOURCE, handleResource)
+	b.Handle(base_def.TOPIC_REQUEST, handleRequest)
+	b.Handle(base_def.TOPIC_IDENTITY, handleIdentity)
 	defer b.Fini()
 
 	if mcpd != nil {
