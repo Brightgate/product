@@ -716,7 +716,7 @@ func propertyUpdate(property, value string, expires *time.Time,
 
 	log.Printf("set property %s -> %s\n", property, value)
 	node := propertySearch(property)
-	if node == nil {
+	if node == nil && insert {
 		node = propertyInsert(property)
 		inserted = true
 	}

@@ -247,12 +247,8 @@ func notifyRelease(ipaddr net.IP) {
  * Report on the DHCP options used by the client. Useed for DHCP fingerprinting.
  */
 func notifyOptions(hwaddr net.HardwareAddr, options dhcp.Options, msgType dhcp.MessageType) {
-	t := time.Now()
 	msg := &base_msg.DHCPOptions{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
+		Timestamp:     aputil.NowToProtobuf(),
 		Sender:        proto.String(brokerd.Name),
 		Debug:         proto.String("-"),
 		MacAddress:    proto.Uint64(network.HWAddrToUint64(hwaddr)),

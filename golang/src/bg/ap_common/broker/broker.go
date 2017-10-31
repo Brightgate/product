@@ -15,8 +15,8 @@ import (
 	"log"
 	"os"
 	"sync"
-	"time"
 
+	"bg/ap_common/aputil"
 	"bg/base_def"
 	"bg/base_msg"
 
@@ -52,13 +52,8 @@ type Broker struct {
 }
 
 func (b *Broker) Ping() {
-	t := time.Now()
-
 	ping := &base_msg.EventPing{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
+		Timestamp:   aputil.NowToProtobuf(),
 		Sender:      proto.String(b.Name),
 		Debug:       proto.String("-"),
 		PingMessage: proto.String("-"),

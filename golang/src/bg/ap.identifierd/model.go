@@ -14,13 +14,16 @@ import (
 	"encoding/csv"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"bg/ap_common/aputil"
 	"bg/ap_common/model"
+	"bg/ap_common/network"
 	"bg/base_msg"
 
 	"github.com/golang/protobuf/proto"
@@ -43,14 +46,24 @@ const tfProb = "linear/head/predictions/probabilities"
 // See ap.configd/devices.json. Keep in sync with Python training script
 const devIDBase = 2
 
+// entity contains data about a client. The data is sent to the cloud for later
+// use as training data. Some data is collected for only 30 minutes after seeing
+// a NetEntity message which helps limit the volume of data we collect and
+// reduces noisy in the data. The 30 minute timeout is reset if identiferd
+// restarts.
+//
+// Some data we see may be "sensitive." Currently only DNS queries are deemed
+// sensitive. A client can opt-out of DNS collection by setting that client's
+// dns_private config option:
+//
+// $ ap-configctl add @/clients/dc:9b:9c:60:b8:6d/dns_private true
 type entity struct {
 	timeout time.Time
+	private bool
 	info    *base_msg.DeviceInfo
 }
 
-// entities is a vessel to collect data about clients. The data is sent to the
-// cloud for later use as training data. Some data is collected for only 30
-// minutes after seeing a NetEntity message.
+// entities is a vessel to collect data about clients.
 type entities struct {
 	sync.Mutex
 	dataMap map[uint64]*entity
@@ -94,6 +107,14 @@ func (e *entities) getEntityLocked(hwaddr uint64) *entity {
 	return e.dataMap[hwaddr]
 }
 
+func (e *entities) setPrivacy(mac net.HardwareAddr, private bool) {
+	e.Lock()
+	defer e.Unlock()
+
+	d := e.getEntityLocked(network.HWAddrToUint64(mac))
+	d.private = private
+}
+
 func (e *entities) addTimeout(hwaddr uint64) {
 	e.Lock()
 	defer e.Unlock()
@@ -131,11 +152,11 @@ func (e *entities) addMsgOptions(hwaddr uint64, msg *base_msg.DHCPOptions) {
 }
 
 // A message is recorded in this entity's DeviceInfo if the timeout is
-// uninitialized (during identifierd startup for example), if the timeout has
-// not expired, or if the message contains a feature included in
-// observations.attrMap
-func recordMsg(d *entity, force bool) bool {
-	return d.timeout.IsZero() || time.Now().Before(d.timeout) || force
+// uninitialized (during identifierd startup for example) or if the timeout has
+// not expired. If the message contains a feature included in
+// observations.attrMap then we always record it.
+func recordMsg(d *entity) bool {
+	return d.timeout.IsZero() || time.Now().Before(d.timeout)
 }
 
 func (e *entities) addMsgScan(hwaddr uint64, msg *base_msg.EventNetScan, force bool) {
@@ -145,7 +166,7 @@ func (e *entities) addMsgScan(hwaddr uint64, msg *base_msg.EventNetScan, force b
 	d := e.getEntityLocked(hwaddr)
 
 	// We don't always get a get OS fingerprint on the first scan
-	if recordMsg(d, force) {
+	if force || recordMsg(d) {
 		d.info.Scan = append(d.info.Scan, msg)
 	}
 }
@@ -155,7 +176,7 @@ func (e *entities) addMsgRequest(hwaddr uint64, msg *base_msg.EventNetRequest, f
 	defer e.Unlock()
 
 	d := e.getEntityLocked(hwaddr)
-	if recordMsg(d, force) {
+	if force || (recordMsg(d) && !d.private) {
 		d.info.Request = append(d.info.Request, msg)
 	}
 }
@@ -165,7 +186,7 @@ func (e *entities) addMsgListen(hwaddr uint64, msg *base_msg.EventListen, force 
 	defer e.Unlock()
 
 	d := e.getEntityLocked(hwaddr)
-	if recordMsg(d, force) {
+	if force || recordMsg(d) {
 		d.info.Listen = append(d.info.Listen, msg)
 	}
 }
@@ -181,12 +202,8 @@ func (e *entities) writeInventory(path string) error {
 	}
 	defer f.Close()
 
-	t := time.Now()
 	inventory := &base_msg.DeviceInventory{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
+		Timestamp: aputil.NowToProtobuf(),
 	}
 
 	for _, d := range e.dataMap {
@@ -358,13 +375,10 @@ func (o *observations) predict() <-chan *prediction {
 }
 
 func newEntity(hwaddr uint64) *entity {
-	t := time.Now()
 	ret := &entity{
+		private: false,
 		info: &base_msg.DeviceInfo{
-			Timestamp: &base_msg.Timestamp{
-				Seconds: proto.Int64(t.Unix()),
-				Nanos:   proto.Int32(int32(t.Nanosecond())),
-			},
+			Timestamp:  aputil.NowToProtobuf(),
 			MacAddress: proto.Uint64(hwaddr),
 		},
 	}

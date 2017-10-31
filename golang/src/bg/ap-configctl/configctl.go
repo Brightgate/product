@@ -246,6 +246,6 @@ func main() {
 		fmt.Printf("%s failed: %v\n", cmd, err)
 		os.Exit(1)
 	} else if cmd != "get" {
-		fmt.Printf("ok")
+		fmt.Println("ok")
 	}
 }

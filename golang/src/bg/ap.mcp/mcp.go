@@ -511,15 +511,11 @@ func mainLoop() {
 		proto.Unmarshal(msg[0], req)
 		rval, rc := handleRequest(req)
 
-		t := time.Now()
 		response := &base_msg.MCPResponse{
-			Timestamp: &base_msg.Timestamp{
-				Seconds: proto.Int64(t.Unix()),
-				Nanos:   proto.Int32(int32(t.Nanosecond())),
-			},
-			Sender:   proto.String(me),
-			Debug:    proto.String("-"),
-			Response: &rc,
+			Timestamp: aputil.NowToProtobuf(),
+			Sender:    proto.String(me),
+			Debug:     proto.String("-"),
+			Response:  &rc,
 		}
 		if rval != nil {
 			response.State = proto.String(*rval)

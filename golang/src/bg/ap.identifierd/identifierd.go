@@ -166,7 +166,7 @@ func handleRequestRaw(event []byte) {
 func configDHCPChanged(path []string, val string) {
 	mac, err := net.ParseMAC(path[1])
 	if err != nil {
-		log.Printf("invalid MAC address %s", path[1])
+		log.Printf("invalid MAC address %s\n", path[1])
 		return
 	}
 
@@ -177,13 +177,13 @@ func configDHCPChanged(path []string, val string) {
 func configIPv4Changed(path []string, val string) {
 	mac, err := net.ParseMAC(path[1])
 	if err != nil {
-		log.Printf("invalid MAC address %s", path[1])
+		log.Printf("invalid MAC address %s\n", path[1])
 		return
 	}
 
 	ipv4 := net.ParseIP(val)
 	if ipv4 == nil {
-		log.Printf("invalid IPv4 address %s", val)
+		log.Printf("invalid IPv4 address %s\n", val)
 		return
 	}
 	ipaddr := network.IPAddrToUint32(ipv4)
@@ -193,11 +193,37 @@ func configIPv4Changed(path []string, val string) {
 func configIPv4Delexp(path []string) {
 	mac, err := net.ParseMAC(path[1])
 	if err != nil {
-		log.Printf("invalid MAC address %s", path[1])
+		log.Printf("invalid MAC address %s\n", path[1])
 		return
 	}
 
 	delHWaddr(network.HWAddrToUint64(mac))
+}
+
+func configPrivacyChanged(path []string, val string) {
+	mac, err := net.ParseMAC(path[1])
+	if err != nil {
+		log.Printf("invalid MAC address %s: %s\n", path[1], err)
+		return
+	}
+
+	private, err := strconv.ParseBool(val)
+	if err != nil {
+		log.Printf("invalid bool value %s: %s\n", val, err)
+		return
+	}
+
+	newData.setPrivacy(mac, private)
+}
+
+func configPrivacyDelete(path []string) {
+	mac, err := net.ParseMAC(path[1])
+	if err != nil {
+		log.Printf("invalid MAC address %s\n", path[1])
+		return
+	}
+
+	newData.setPrivacy(mac, false)
 }
 
 func handleScan(hwaddr uint64, scan *base_msg.EventNetScan) {
@@ -300,7 +326,7 @@ func identify() {
 		id := <-newIdentities
 		devid, err := strconv.Atoi(id.devID)
 		if err != nil || devid == 0 {
-			log.Printf("returned a bogus identity for %v: %s",
+			log.Printf("returned a bogus identity for %v: %s\n",
 				id.hwaddr, id.devID)
 			continue
 		}
@@ -364,6 +390,8 @@ func loadObservations() error {
 				handleOptions(hwaddr, msg)
 			}
 		}
+
+		newData.addTimeout(hwaddr)
 	}
 	return nil
 }
@@ -386,6 +414,8 @@ func recoverClients() {
 		if client.DHCPName != "" {
 			newData.addDHCPName(hw, client.DHCPName)
 		}
+
+		newData.setPrivacy(hwaddr, client.DNSPrivate)
 	}
 }
 
@@ -433,19 +463,11 @@ func main() {
 		log.Fatalln("failed to load model", err)
 	}
 
-	if err := loadObservations(); err != nil {
-		log.Println("failed to recover observations:", err)
-	}
-
 	// Use the broker to listen for appropriate messages to create and update
-	// our observations.
+	// our observations. To respect a client's privacy we won't register any
+	// handlers until we have recovered each client's privacy configuration.
 	brokerd = broker.New(pname)
 	defer brokerd.Fini()
-	brokerd.Handle(base_def.TOPIC_ENTITY, handleEntityRaw)
-	brokerd.Handle(base_def.TOPIC_REQUEST, handleRequestRaw)
-	brokerd.Handle(base_def.TOPIC_SCAN, handleScanRaw)
-	brokerd.Handle(base_def.TOPIC_LISTEN, handleListenRaw)
-	brokerd.Handle(base_def.TOPIC_OPTIONS, handleOptionsRaw)
 
 	apcfgd, err = apcfg.NewConfig(brokerd, pname)
 	if err != nil {
@@ -454,10 +476,22 @@ func main() {
 
 	recoverClients()
 
+	if err := loadObservations(); err != nil {
+		log.Println("failed to recover observations:", err)
+	}
+
+	brokerd.Handle(base_def.TOPIC_ENTITY, handleEntityRaw)
+	brokerd.Handle(base_def.TOPIC_REQUEST, handleRequestRaw)
+	brokerd.Handle(base_def.TOPIC_SCAN, handleScanRaw)
+	brokerd.Handle(base_def.TOPIC_LISTEN, handleListenRaw)
+	brokerd.Handle(base_def.TOPIC_OPTIONS, handleOptionsRaw)
+
 	apcfgd.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
 	apcfgd.HandleChange(`^@/clients/.*/dhcp_name$`, configDHCPChanged)
 	apcfgd.HandleDelete(`^@/clients/.*/ipv4$`, configIPv4Delexp)
 	apcfgd.HandleExpire(`^@/clients/.*/ipv4$`, configIPv4Delexp)
+	apcfgd.HandleChange(`^@/clients/.*/dns_private$`, configPrivacyChanged)
+	apcfgd.HandleDelete(`^@/clients/.*/dns_private$`, configPrivacyDelete)
 
 	if err := os.MkdirAll(*logDir, 0755); err != nil {
 		log.Fatalln("failed to mkdir:", err)

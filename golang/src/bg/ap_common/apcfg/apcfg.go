@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/device"
 	"bg/base_def"
@@ -70,6 +71,7 @@ type ClientInfo struct {
 	DHCPName   string     // Requested hostname
 	Identity   string     // Our current best guess at the client type
 	Confidence string     // Our confidence for the Identity guess
+	DNSPrivate bool       // We don't collect DNS queries
 }
 
 type RingMap map[string]*RingConfig
@@ -213,12 +215,8 @@ func (c *APConfig) msg(oc base_msg.ConfigQuery_Operation, prop, val string,
 	expires *time.Time) (string, error) {
 
 	response := &base_msg.ConfigResponse{}
-	t := time.Now()
 	query := &base_msg.ConfigQuery{
-		Timestamp: &base_msg.Timestamp{
-			Seconds: proto.Int64(t.Unix()),
-			Nanos:   proto.Int32(int32(t.Nanosecond())),
-		},
+		Timestamp: aputil.NowToProtobuf(),
 		Sender:    proto.String(c.sender),
 		Debug:     proto.String("-"),
 		Operation: &oc,
@@ -356,6 +354,21 @@ func getIntVal(root *PropertyNode, name string) (int, error) {
 	return rval, err
 }
 
+func getBoolVal(root *PropertyNode, name string) (bool, error) {
+	var err error
+	var rval bool
+
+	node := root.GetChild(name)
+	if node == nil {
+		err = fmt.Errorf("%s is missing a %s property", root.Name, name)
+	} else {
+		if rval, err = strconv.ParseBool(node.Value); err != nil {
+			err = fmt.Errorf("%s has malformed %s property", root.Name, name)
+		}
+	}
+	return rval, err
+}
+
 //
 // Fetch the Rings subtree and return a Ring -> RingConfig map
 func (c *APConfig) GetRings() RingMap {
@@ -414,7 +427,9 @@ func getClient(client *PropertyNode) *ClientInfo {
 	var ring, dns, dhcp, identity, confidence string
 	var ipv4 net.IP
 	var exp *time.Time
+	var private bool
 
+	private, _ = getBoolVal(client, "dns_private")
 	ring, _ = getStringVal(client, "ring")
 	identity, _ = getStringVal(client, "identity")
 	confidence, _ = getStringVal(client, "confidence")
@@ -435,6 +450,7 @@ func getClient(client *PropertyNode) *ClientInfo {
 		Expires:    exp,
 		Identity:   identity,
 		Confidence: confidence,
+		DNSPrivate: private,
 	}
 	return &c
 }
