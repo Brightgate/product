@@ -70,6 +70,8 @@ type DaemonState struct {
 	Pid   int
 }
 
+type DaemonList []*DaemonState
+
 func New(name string) (*MCP, error) {
 	var handle *MCP
 

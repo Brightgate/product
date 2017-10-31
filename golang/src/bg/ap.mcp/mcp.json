@@ -2,27 +2,30 @@
     "brokerd": {
         "Name": "brokerd",
         "Binary": "ap.brokerd",
-        "Privileged": false
+        "Privileged": false,
+        "Modes": [ "core", "gateway" ]
     },
     "configd": {
         "Name": "configd",
         "Binary": "ap.configd",
         "DependsOn": "brokerd",
         "Privileged": true,
-        "Options": "-propdir=$APROOT/etc"
+        "Options": [ "-propdir=/etc/" ],
+        "Modes": [ "core", "gateway" ]
     },
     "dhcp4d": {
         "Name": "dhcp4d",
         "Binary": "ap.dhcp4d",
         "DependsOn": "networkd",
-        "Privileged": true
+        "Privileged": true,
+        "Modes": [ "core", "gateway" ]
     },
     "dns4d": {
         "Name": "dns4d",
         "Binary": "ap.dns4d",
         "DependsOn": "configd",
         "Privileged": true,
-        "Options": "-root=$APROOT"
+        "Modes": [ "core", "gateway" ]
     },
     "dnsmasq": {
         "Name": "dnsmasq",
@@ -30,54 +33,75 @@
         "DependsOn": "networkd",
         "Privileged": true,
         "ThirdParty": true,
-        "Options": "-k -h -p 5300 -i lo"
+        "Options": [ "-k -h -p 5300 -i lo" ],
+        "Modes": [ "gateway" ]
     },
     "httpd": {
         "Name": "httpd",
         "Binary": "ap.httpd",
         "DependsOn": "networkd",
         "Privileged": true,
-        "Options": "-root=$APROOT -template_dir=$APROOT/etc/templates/ap.httpd -client-web_dir=$APROOT/var/www/client-web"
+        "Options": [
+            "-template_dir=/etc/templates/ap.httpd",
+            "-client-web_dir=/var/www/client-web"
+        ],
+        "Modes": [ "gateway" ]
     },
     "identifierd": {
         "Name": "identifierd",
         "Binary": "ap.identifierd",
         "DependsOn": "configd",
         "Privileged": true,
-        "Options": "-datadir=$APROOT/etc -modeldir=$APROOT/etc/device_model -logdir $APROOT/var/spool/identifierd"
+        "Options": [
+            "-datadir=/etc",
+            "-modeldir=/etc/device_model",
+            "-logdir=/var/spool/identifierd"
+        ],
+        "Modes": [ "gateway" ]
     },
     "logd": {
         "Name": "logd",
         "Binary": "ap.logd",
         "DependsOn": "brokerd",
         "Privileged": true,
-        "Options": "-logdir=$APROOT/var/spool/logd"
+        "Options": [ "-logdir=/var/spool/logd" ],
+        "Modes": [ "gateway" ]
     },
     "networkd": {
         "Name": "networkd",
         "Binary": "ap.networkd",
         "DependsOn": "configd",
         "Privileged": true,
-        "Options": "-template_dir=$APROOT/etc/templates/ap.networkd -rdir=$APROOT/etc/filter.rules.d"
+        "Options": [
+            "-template_dir=/etc/templates/ap.networkd",
+            "-rules_dir=/etc/filter.rules.d"
+        ],
+        "Modes": [ "core", "gateway" ]
     },
     "prometheus": {
         "Name": "prometheus",
         "Binary": "/usr/local/bin/prometheus",
         "Privileged": true,
         "ThirdParty": true,
-        "Options": "-config.file=$APROOT/etc/prometheus.yml -storage.local.path=\"$APROOT/var/prometheus-data\""
+        "Options": [
+            "-config.file=$APROOT/etc/prometheus.yml",
+            "-storage.local.path=\"$APROOT/var/prometheus-data\""
+        ],
+        "Modes": [ "gateway" ]
     },
     "relayd": {
         "Name": "relayd",
         "Binary": "ap.relayd",
         "DependsOn": "networkd",
-        "Privileged": false
+        "Privileged": false,
+        "Modes": [ "core", "gateway" ]
     },
     "watchd": {
         "Name": "watchd",
         "Binary": "ap.watchd",
         "DependsOn": "networkd",
         "Privileged": true,
-        "Options": "-dir $APROOT/var/spool/watchd"
+        "Options": [ "-dir /var/spool/watchd" ],
+        "Modes": [ "gateway" ]
     }
 }

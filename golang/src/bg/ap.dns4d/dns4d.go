@@ -54,8 +54,6 @@ import (
 )
 
 var (
-	aproot = flag.String("root", "proto.armv7l/opt/com.brightgate",
-		"Root of AP installation")
 	addr = flag.String("listen-address", base_def.DNSD_PROMETHEUS_PORT,
 		"The address to listen on for HTTP requests.")
 	brokerd *broker.Broker
@@ -624,7 +622,7 @@ func initNetwork() {
 
 // loadPhishtank sets the global phishScorer to score how reliable a domain is
 func loadPhishtank() {
-	antiphishing := *aproot + "/var/spool/antiphishing/"
+	antiphishing := aputil.ExpandDirPath("/var/spool/antiphishing/")
 
 	reader := phishtank.NewReader(
 		phishtank.Whitelist(antiphishing+"whitelist.csv"),

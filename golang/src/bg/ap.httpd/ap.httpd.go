@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"bg/ap_common/apcfg"
+	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
 	"bg/ap_common/network"
@@ -46,8 +47,6 @@ import (
 )
 
 var (
-	aproot = flag.String("root", "proto.armv7l/appliance/opt/com.brightgate",
-		"Root of AP installation")
 	addr = flag.String("promhttp-address", base_def.HTTPD_PROMETHEUS_PORT,
 		"The address to listen on for Prometheus HTTP requests.")
 	templateDir = flag.String("template_dir", "golang/src/ap.httpd",
@@ -272,7 +271,7 @@ func listen(addr string, port string, iface string, cfg *tls.Config, certf strin
 
 // loadPhishtank sets the global phishScorer to score how reliable a domain is
 func loadPhishtank() {
-	antiphishing := *aproot + "/var/spool/antiphishing/"
+	antiphishing := aputil.ExpandDirPath("/var/spool/antiphishing/")
 
 	reader := phishtank.NewReader(
 		phishtank.Whitelist(antiphishing+"whitelist.csv"),
@@ -292,6 +291,8 @@ func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	flag.Var(ports, "http-ports", "The ports to listen on for HTTP requests.")
 	flag.Parse()
+	*templateDir = aputil.ExpandDirPath(*templateDir)
+	*clientWebDir = aputil.ExpandDirPath(*clientWebDir)
 
 	mcpd, err = mcp.New(pname)
 	if err != nil {

@@ -17,6 +17,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 
@@ -150,7 +151,31 @@ func TimeToProtobuf(gtime *time.Time) *base_msg.Timestamp {
 	return &tmp
 }
 
+// NowToProtobuf gets the current time and returns a pointer to the Protobuf
+// translation, which is suitable for embedding in a protobuf structure.
 func NowToProtobuf() *base_msg.Timestamp {
 	gtime := time.Now()
 	return TimeToProtobuf(&gtime)
+}
+
+// ExpandDirPath takes a path name and will translate it into an
+// APROOT-relative path if that incoming path starts with a single '/'.  If the
+// path starts with anything else, it is returned unchanged.
+func ExpandDirPath(path string) string {
+	if !strings.HasPrefix(path, "/") {
+		// If the incoming path doesn't start with '/', then it's meant
+		// to be relative from the current directory - not the root
+		return path
+	}
+	if strings.HasPrefix(path, "//") {
+		// If the incoming path starts with '//', then it's meant
+		// to be an absolute path - not relative to APROOT
+		return strings.TrimPrefix(path, "/")
+	}
+
+	root := os.Getenv("APROOT")
+	if root == "" {
+		root = "./"
+	}
+	return root + path
 }

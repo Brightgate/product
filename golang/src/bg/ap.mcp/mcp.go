@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,17 +44,19 @@ import (
 type daemon struct {
 	Name       string
 	Binary     string
-	Options    *string `json:"Options,omitempty"`
-	DependsOn  *string `json:"DependsOn,omitempty"`
-	ThirdParty bool    `json:"ThirdParty,omitempty"`
+	Modes      []string `json:"Modes,omitempty"`
+	Options    []string `json:"Options,omitempty"`
+	DependsOn  *string  `json:"DependsOn,omitempty"`
+	ThirdParty bool     `json:"ThirdParty,omitempty"`
 	Privileged bool
 
-	run       bool
-	going     bool // is being maintained by a goroutine
-	startTime time.Time
-	setTime   time.Time
-	process   *os.Process
-	state     int
+	run         bool
+	going       bool // is being maintained by a goroutine
+	startTime   time.Time
+	setTime     time.Time
+	process     *os.Process
+	state       int
+	launchOrder int
 	sync.Mutex
 }
 
@@ -70,8 +73,8 @@ const (
 )
 
 var (
-	aproot = flag.String("root", "proto.armv7l/appliance/opt/com.brightgate",
-		"Root of AP installation")
+	aproot  = flag.String("root", "", "Root of AP installation")
+	apmode  = flag.String("mode", "gateway", "Intended mode of this node")
 	cfgfile = flag.String("c", "", "Alternate daemon config file")
 	logfile = flag.String("l", "", "where to send log messages")
 	verbose = flag.Bool("v", false, "more verbose logging")
@@ -126,8 +129,8 @@ func singleInstance(d *daemon) error {
 
 	setState(d, mcp.STARTING)
 
-	if d.Options != nil {
-		args = strings.Split(*d.Options, " ")
+	for _, o := range d.Options {
+		args = append(args, strings.Split(o, " ")...)
 	}
 
 	if d.Binary[0] == byte('/') {
@@ -211,9 +214,26 @@ func runDaemon(d *daemon) {
 	d.Unlock()
 }
 
+type sortList mcp.DaemonList
+
+func (l sortList) Len() int {
+	return len(l)
+}
+
+func (l sortList) Less(a, b int) bool {
+	A := daemons[l[a].Name]
+	B := daemons[l[b].Name]
+
+	return A.launchOrder < B.launchOrder
+}
+
+func (l sortList) Swap(a, b int) {
+	l[a], l[b] = l[b], l[a]
+}
+
 func handleGetState(set daemonSet) *string {
 	var rval *string
-	state := make(map[string]mcp.DaemonState)
+	list := make(sortList, 0)
 
 	for _, d := range set {
 		pid := -1
@@ -221,14 +241,17 @@ func handleGetState(set daemonSet) *string {
 			pid = d.process.Pid
 		}
 
-		state[d.Name] = mcp.DaemonState{
+		state := mcp.DaemonState{
 			Name:  d.Name,
 			State: d.state,
 			Since: d.setTime,
 			Pid:   pid,
 		}
+		list = append(list, &state)
 	}
-	b, err := json.MarshalIndent(state, "", "  ")
+	sort.Sort(list)
+
+	b, err := json.MarshalIndent(list, "", "  ")
 	if err == nil {
 		s := string(b)
 		rval = &s
@@ -531,9 +554,6 @@ func mainLoop() {
 }
 
 func loadDefinitions() error {
-	re := regexp.MustCompile(`\$APROOT`)
-	set := make(daemonSet)
-
 	fn := *cfgfile
 	if len(fn) == 0 {
 		fn = *aproot + "/etc/mcp.json"
@@ -541,19 +561,31 @@ func loadDefinitions() error {
 
 	file, err := ioutil.ReadFile(fn)
 	if err != nil {
-		log.Printf("Failed to load daemon configs from %s: %v\n",
+		return fmt.Errorf("failed to load daemon configs from %s: %v",
 			fn, err)
-		return err
 	}
 
+	set := make(daemonSet)
 	err = json.Unmarshal(file, &set)
 	if err != nil {
-		log.Printf("Failed to import daemon configs from %s: %v\n",
+		return fmt.Errorf("failed to import daemon configs from %s: %v",
 			fn, err)
-		return err
 	}
 
+	re := regexp.MustCompile(`\$APROOT`)
 	for name, new := range set {
+		included := false
+
+		for _, mode := range new.Modes {
+			if mode == *apmode {
+				included = true
+				break
+			}
+		}
+		if !included {
+			continue
+		}
+
 		d, ok := daemons[name]
 		if !ok {
 			// This is the first time we've seen this daemon, so
@@ -571,12 +603,35 @@ func loadDefinitions() error {
 			d.DependsOn = new.DependsOn
 			d.Privileged = new.Privileged
 		}
-		if d.Options != nil {
+		options := make([]string, 0)
+		for _, o := range d.Options {
 			// replace any instance of $APROOT with the real path
-			r := re.ReplaceAllString(*d.Options, *aproot)
-			d.Options = &r
+			o = re.ReplaceAllString(o, *aproot)
+			options = append(options, o)
 		}
+		d.Options = options
 		d.Unlock()
+	}
+	if len(daemons) == 0 {
+		return fmt.Errorf("no daemons configured for '%s' mode",
+			*apmode)
+	}
+
+	for _, d := range daemons {
+		d.launchOrder = 0
+	}
+	ordered := 0
+	for ordered < len(daemons) {
+		for _, d := range daemons {
+			if d.launchOrder > 0 {
+				continue
+			}
+			if d.DependsOn == nil ||
+				daemons[*d.DependsOn].launchOrder > 0 {
+				ordered++
+				d.launchOrder = ordered
+			}
+		}
 	}
 
 	return nil
@@ -609,6 +664,38 @@ func pidLock() error {
 	return err
 }
 
+func openLogfile(path string) *os.File {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		fmt.Printf("Unable to redirect logging to %s: %v", path, err)
+		return nil
+	}
+	os.Stdout = f
+	os.Stderr = f
+	log.SetOutput(f)
+
+	os.Stdin, err = os.OpenFile("/dev/null", os.O_RDONLY, 0)
+	if err != nil {
+		log.Printf("Couldn't close stdin\n")
+	}
+	return f
+}
+
+func setEnvironment() {
+	if *aproot == "" {
+		p, _ := os.Executable()
+		if strings.HasSuffix(p, "/bin/ap.mcp") {
+			*aproot = strings.TrimSuffix(p, "/bin/ap.mcp")
+		} else {
+			wd, _ := os.Getwd()
+			*aproot = wd
+		}
+		fmt.Printf("aproot not set - using '%s'\n", *aproot)
+	}
+	os.Setenv("APROOT", *aproot)
+	os.Setenv("APMODE", *apmode)
+}
+
 func main() {
 	flag.Parse()
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
@@ -623,30 +710,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	setEnvironment()
+
 	if *logfile != "" {
-		f, err := os.OpenFile(*logfile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
-		if err != nil {
-			fmt.Printf("Unable to redirect logging to %s: %v",
-				*logfile, err)
-		} else {
+		f := openLogfile(aputil.ExpandDirPath(*logfile))
+		if f != nil {
 			defer f.Close()
-			os.Stdin, err = os.OpenFile("/dev/null", os.O_RDONLY, 0)
-			if err != nil {
-				log.Printf("Couldn't close stdin\n")
-			} else {
-				os.Stdout = f
-				os.Stderr = f
-				log.SetOutput(f)
-				log.Printf("\n\nap.mcp (%d) coming online...\n",
-					os.Getpid())
-			}
 		}
+	}
+	log.Printf("ap.mcp (%d) coming online...\n", os.Getpid())
+
+	if err := loadDefinitions(); err != nil {
+		log.Fatalf("Failed to load daemon config: %v\n", err)
 	}
 
 	go signalHandler()
 
-	if err := loadDefinitions(); err != nil {
-		log.Fatal("Failed to read daemon definitions\n")
-	}
 	mainLoop()
 }

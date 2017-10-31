@@ -426,6 +426,9 @@ func main() {
 	log.Println("start")
 
 	flag.Parse()
+	*dataDir = aputil.ExpandDirPath(*dataDir)
+	*modelDir = aputil.ExpandDirPath(*modelDir)
+	*logDir = aputil.ExpandDirPath(*logDir)
 
 	mcpd, err := mcp.New(pname)
 	if err != nil {

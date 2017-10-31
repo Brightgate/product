@@ -47,26 +47,24 @@ func stateString(s int) string {
 }
 
 func printState(incoming string) {
-	var state map[string]mcp.DaemonState
+	var states mcp.DaemonList
 
-	if err := json.Unmarshal([]byte(incoming), &state); err != nil {
+	if err := json.Unmarshal([]byte(incoming), &states); err != nil {
 		fmt.Printf("Unable to unpack result from ap.mcp\n")
 		return
 	}
 
-	if len(state) == 0 {
+	if len(states) == 0 {
 		return
 	}
-	if len(state) == 1 {
-		for _, s := range state {
-			fmt.Println(stateString(s.State))
-		}
+	if len(states) == 1 {
+		fmt.Println(stateString(states[0].State))
 		return
 	}
 
 	const format = "%12s\t%5s\t%12s\t%s\n"
 	fmt.Printf(format, "DAEMON", "PID", "STATE", "SINCE")
-	for _, s := range state {
+	for _, s := range states {
 		var pid, since string
 
 		if s.Pid != -1 {

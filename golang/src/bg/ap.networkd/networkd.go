@@ -63,7 +63,7 @@ var (
 		"hardware platform name")
 	templateDir = flag.String("template_dir", "golang/src/ap.networkd",
 		"location of hostapd templates")
-	rulesDir = flag.String("rdir", "./", "Location of the filter rules")
+	rulesDir = flag.String("rules_dir", "./", "Location of the filter rules")
 
 	aps         = make(apMap)
 	interfaces  = make(ifaceMap)
@@ -813,6 +813,8 @@ func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
 	flag.Parse()
+	*templateDir = aputil.ExpandDirPath(*templateDir)
+	*rulesDir = aputil.ExpandDirPath(*rulesDir)
 
 	if mcpd, err = mcp.New(pname); err != nil {
 		log.Printf("cannot connect to mcp: %v\n", err)

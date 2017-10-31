@@ -1083,6 +1083,7 @@ func main() {
 	if !strings.HasSuffix(*propdir, "/") {
 		*propdir = *propdir + "/"
 	}
+	*propdir = aputil.ExpandDirPath(*propdir)
 
 	mcpd, err := mcp.New(pname)
 	if err != nil {

@@ -29,6 +29,7 @@ import (
 	"strings"
 	"syscall"
 
+	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
 	"bg/base_def"
@@ -42,7 +43,8 @@ import (
 var (
 	addr = flag.String("listen-address", base_def.LOGD_PROMETHEUS_PORT,
 		"The address to listen on for HTTP requests.")
-	logDirCLI     = flag.String("logdir", "", "Log file directory")
+	logDir = flag.String("logdir", "", "Log file directory")
+
 	eventsHandled = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "events_handled",
@@ -115,45 +117,41 @@ func logRotate(logDirs []string) {
 	fmt.Fprintf(cf, "%s/*.log {\n%s\n}", files, optsF)
 }
 
-func main() {
-	flag.Parse()
-	var logDir string
-
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-
-	apRoot, rootDefined := os.LookupEnv("APROOT")
-
-	if *logDirCLI != "" {
-		logDir = *logDirCLI
-	} else if rootDefined {
-		// Else if APROOT defined, construct path and open that.
-		logDir = fmt.Sprintf("%s/var/spool/logd", apRoot)
-	} else {
-		log.Println("No log folder found; use -logdir or APROOT")
+func openLog(path string) (*os.File, error) {
+	fp, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't get absolute path: %v", err)
 	}
 
-	if logDir != "" {
-		fp, err := filepath.Abs(logDir)
-		if err != nil {
-			log.Printf("Couldn't get absolute path: %v", err)
-		}
+	if err := os.MkdirAll(fp, 0755); err != nil {
+		return nil, fmt.Errorf("failed to make path: %v", err)
+	}
 
-		if err := os.MkdirAll(fp, 0755); err != nil {
-			log.Printf("failed to mkdir: %v", err)
-		}
-		// slice, since might eventually want multiple types of logs
-		logDirs := []string{fp}
-		logRotate(logDirs)
+	// slice, since might eventually want multiple types of logs
+	logDirs := []string{fp}
+	logRotate(logDirs)
 
-		logfile := fp + "/events.log"
-		file, err := os.OpenFile(logfile,
-			os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0755)
-		if err != nil {
-			log.Println("Error opening log file.")
-		} else {
-			defer file.Close()
-			log.SetOutput(io.MultiWriter(file, os.Stdout))
-		}
+	logfile := fp + "/events.log"
+	file, err := os.OpenFile(logfile, os.O_CREATE|os.O_APPEND|os.O_WRONLY,
+		0600)
+	if err != nil {
+		return nil, fmt.Errorf("error opening log file: %v", err)
+	}
+	return file, nil
+}
+
+func main() {
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
+	flag.Parse()
+	*logDir = aputil.ExpandDirPath(*logDir)
+
+	file, err := openLog(*logDir)
+	if err == nil {
+		defer file.Close()
+		log.SetOutput(io.MultiWriter(file, os.Stdout))
+	} else {
+		log.Printf("Failed to open logfile: %v\n", err)
 	}
 
 	mcpd, err := mcp.New(pname)

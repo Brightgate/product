@@ -189,6 +189,7 @@ func signalHandler() {
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	flag.Parse()
+	*watchDir = aputil.ExpandDirPath(*watchDir)
 
 	if !aputil.FileExists(*watchDir) {
 		if err := os.Mkdir(*watchDir, 0755); err != nil {
