@@ -30,9 +30,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
+	"bg/ap_common/network"
+	"bg/base_msg"
 	"bg/cloud_rpc"
 
 	"github.com/golang/protobuf/proto"
@@ -91,55 +94,71 @@ var (
 	})
 )
 
+func validhmac(received []byte, data string) bool {
+	year := time.Now().Year()
+	rhmac := hmac.New(sha256.New, cloud_rpc.HMACKeys[year])
+	rhmac.Write([]byte(data))
+	expectedHMAC := rhmac.Sum(nil)
+	return hmac.Equal(received, expectedHMAC)
+}
+
 type inventoryServer struct{}
 
-func (i *inventoryServer) Upcall(ctx context.Context, req *cloud_rpc.InventoryReport) (*cloud_rpc.UpcallResponse, error) {
-	// HMAC
-	lt := time.Now()
-	year := lt.Year()
+func writeInfo(devInfo *base_msg.DeviceInfo, basePath string) error {
+	hwaddr := network.Uint64ToHWAddr(devInfo.GetMacAddress())
+	path := filepath.Join(basePath, hwaddr.String())
+	if err := os.MkdirAll(path, 0755); err != nil {
+		return grpc.Errorf(codes.FailedPrecondition, "mkdir failed")
+	}
 
+	filename := fmt.Sprintf("device_info.%d.pb", int(time.Now().Unix()))
+	f, err := os.OpenFile(
+		filepath.Join(path, filename),
+		os.O_WRONLY|os.O_CREATE|os.O_TRUNC,
+		0644)
+	if err != nil {
+		return grpc.Errorf(codes.FailedPrecondition, "open failed")
+	}
+	defer f.Close()
+
+	out, err := proto.Marshal(devInfo)
+	if err != nil {
+		return grpc.Errorf(codes.FailedPrecondition, "marshal failed")
+	}
+
+	if _, err := f.Write(out); err != nil {
+		return grpc.Errorf(codes.FailedPrecondition, "write failed")
+	}
+	return nil
+}
+
+func (i *inventoryServer) Upcall(ctx context.Context, req *cloud_rpc.InventoryReport) (*cloud_rpc.UpcallResponse, error) {
+	lt := time.Now()
 	log.Println("Context: ", ctx)
-	log.Println("InventoryReport: ", req)
 
 	if req.HMAC == nil || req.Uuid == nil {
 		invalid_upcalls.Inc()
 		return nil, grpc.Errorf(codes.InvalidArgument, "req missing needed parameters")
 	}
 
-	rhmac := hmac.New(sha256.New, cloud_rpc.HMACKeys[year])
-	rhmac.Write([]byte(req.Devices.String()))
-	expectedHMAC := rhmac.Sum(nil)
-
-	if !hmac.Equal(req.GetHMAC(), expectedHMAC) {
+	if !validhmac(req.GetHMAC(), req.Inventory.String()) {
 		invalid_upcalls.Inc()
 		return nil, grpc.Errorf(codes.Unauthenticated, "valid hmac required")
 	}
 
 	log.Printf("received inventory from %s (%v)\n", req.GetUuid(), req.GetWanHwaddr())
-	dirPath := fmt.Sprintf("%s/var/spool/%s/", *clroot, req.GetUuid())
-	if err := os.MkdirAll(dirPath, 0755); err != nil {
-		return nil, grpc.Errorf(codes.FailedPrecondition, "mkdir failed")
-	}
 
-	path := fmt.Sprintf("%s/observations.%d.pb", dirPath, int(time.Now().Unix()))
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-	if err != nil {
-		return nil, grpc.Errorf(codes.FailedPrecondition, "open failed")
-	}
-	defer f.Close()
-
-	out, err := proto.Marshal(req.Devices)
-	if err != nil {
-		return nil, grpc.Errorf(codes.FailedPrecondition, "marshal failed")
-	}
-
-	if _, err := f.Write(out); err != nil {
-		return nil, grpc.Errorf(codes.FailedPrecondition, "write failed")
+	// We receive only what has recently changed
+	basePath := filepath.Join(*clroot, "var", "spool", req.GetUuid())
+	for _, devInfo := range req.Inventory.Devices {
+		if err := writeInfo(devInfo, basePath); err != nil {
+			return nil, err
+		}
 	}
 
 	// Formulate a response.
 	res := cloud_rpc.UpcallResponse{
-		UpcallElapsed:   proto.Int64(time.Now().Sub(lt).Nanoseconds()),
+		UpcallElapsed: proto.Int64(time.Now().Sub(lt).Nanoseconds()),
 	}
 
 	return &res, nil
@@ -165,13 +184,11 @@ func (s *upbeatServer) Init() {
 func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest) (*cloud_rpc.UpcallResponse, error) {
 	// Prometheus metric: upcall latency.
 	lt := time.Now()
-	year := lt.Year()
-
 	log.Println("Context: ", ctx)
 	log.Println("UpcallRequest: ", req.String())
 
 	if req.HMAC == nil || req.WanHwaddr == nil ||
-	    req.UptimeElapsed == nil || req.Uuid == nil {
+		req.UptimeElapsed == nil || req.Uuid == nil {
 		invalid_upcalls.Inc()
 		return nil, grpc.Errorf(codes.InvalidArgument, "req missing parameters")
 	}
@@ -180,12 +197,8 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 		req.GetWanHwaddr(), req.GetUuid(), req.GetComponentVersion(),
 		req.GetUptimeElapsed())
 
-	rhmac := hmac.New(sha256.New, cloud_rpc.HMACKeys[year])
 	data := fmt.Sprintf("%x %d", req.GetWanHwaddr(), req.GetUptimeElapsed())
-	rhmac.Write([]byte(data))
-	expectedHMAC := rhmac.Sum(nil)
-
-	if !hmac.Equal(req.HMAC, expectedHMAC) {
+	if !validhmac(req.GetHMAC(), data) {
 		// Discard invalid HMAC messages!
 		invalid_upcalls.Inc()
 		return nil, grpc.Errorf(codes.Unauthenticated, "valid hmac required")
@@ -256,7 +269,7 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 
 	// Formulate a response.
 	res := cloud_rpc.UpcallResponse{
-		UpcallElapsed:   proto.Int64(time.Now().Sub(lt).Nanoseconds()),
+		UpcallElapsed: proto.Int64(time.Now().Sub(lt).Nanoseconds()),
 	}
 
 	return &res, nil
@@ -342,6 +355,12 @@ func main() {
 
 		opts = append(opts, grpc.Creds(credentials.NewTLS(&tlsc)))
 	}
+
+	// XXX RPCCompressor() and RPCDecompressor() will be deprecated in the next
+	// grpc release. Use UseCompressor() instead.
+	opts = append(opts,
+		grpc.RPCCompressor(grpc.NewGZIPCompressor()),
+		grpc.RPCDecompressor(grpc.NewGZIPDecompressor()))
 
 	grpcServer := grpc.NewServer(opts...)
 

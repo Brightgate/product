@@ -61,7 +61,7 @@ message InventoryReport {
 	optional bytes HMAC = 0x10;
 	optional string uuid = 0x11;
 	repeated string wan_hwaddr = 0x12;
-	optional base_msg.DeviceInventory devices = 0x400;
+	optional base_msg.DeviceInventory inventory = 0x400;
 }
 
 service Inventory {

@@ -500,17 +500,20 @@ message DHCPOptions {
 	optional bytes vendor_class_id = 0x07;
 }
 
+// DeviceInfo messages are used to collect interesting events about a specific
+// client. These messages are serialized to disk and sent to the cloud.
 message DeviceInfo {
-	optional Timestamp timestamp = 0x01;
-	optional fixed64 mac_address = 0x02;
-	optional string dns_name = 0x03;
-	optional string dhcp_name = 0x04;
+	optional Timestamp created = 0x01;
+	optional Timestamp updated = 0x02;
+	optional fixed64 mac_address = 0x03;
+	optional string dns_name = 0x04;
+	optional string dhcp_name = 0x05;
 
-	optional EventNetEntity entity = 0x05;
-	repeated EventNetScan scan = 0x06;
-	repeated EventNetRequest request = 0x07;
-	repeated EventListen listen = 0x08;
-	repeated DHCPOptions options = 0x09;
+	optional EventNetEntity entity = 0x4000;
+	repeated EventNetScan scan = 0x4001;
+	repeated EventNetRequest request = 0x4002;
+	repeated EventListen listen = 0x4003;
+	repeated DHCPOptions options = 0x4004;
 }
 
 message DeviceInventory {

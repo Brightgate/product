@@ -13,9 +13,11 @@ package main
 import (
 	"encoding/csv"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,8 +31,6 @@ import (
 	"github.com/golang/protobuf/proto"
 	tf "github.com/tensorflow/tensorflow/tensorflow/go"
 )
-
-const collectionDuration = 30 * time.Minute
 
 // saved_model_cli should be able to give us the names below by doing
 //
@@ -46,11 +46,16 @@ const tfProb = "linear/head/predictions/probabilities"
 // See ap.configd/devices.json. Keep in sync with Python training script
 const devIDBase = 2
 
-// entity contains data about a client. The data is sent to the cloud for later
-// use as training data. Some data is collected for only 30 minutes after seeing
-// a NetEntity message which helps limit the volume of data we collect and
-// reduces noisy in the data. The 30 minute timeout is reset if identiferd
-// restarts.
+// 'entity' contains data about a client. The data is sent to the cloud for
+// later use as training data. Most data is collected for only 30 minutes after
+// seeing the client is active. A client is deemed active if we receive any of:
+//   1) EventNetEntity
+//   2) DHCPOptions
+//   3) EventNetScan
+//   4) EventNetRequest
+//   5) EventListen
+// The 30 minute timeout is reset if identiferd restarts.
+// XXX Add config option to reset the timeout on a specific client.
 //
 // Some data we see may be "sensitive." Currently only DNS queries are deemed
 // sensitive. A client can opt-out of DNS collection by setting that client's
@@ -59,6 +64,7 @@ const devIDBase = 2
 // $ ap-configctl add @/clients/dc:9b:9c:60:b8:6d/dns_private true
 type entity struct {
 	timeout time.Time
+	saved   time.Time
 	private bool
 	info    *base_msg.DeviceInfo
 }
@@ -115,14 +121,6 @@ func (e *entities) setPrivacy(mac net.HardwareAddr, private bool) {
 	d.private = private
 }
 
-func (e *entities) addTimeout(hwaddr uint64) {
-	e.Lock()
-	defer e.Unlock()
-
-	d := e.getEntityLocked(hwaddr)
-	d.timeout = time.Now().Add(collectionDuration)
-}
-
 func (e *entities) addDHCPName(hwaddr uint64, name string) {
 	e.Lock()
 	defer e.Unlock()
@@ -133,13 +131,21 @@ func (e *entities) addDHCPName(hwaddr uint64, name string) {
 	}
 }
 
+func addTimeout(d *entity) {
+	if d.timeout.IsZero() {
+		d.timeout = time.Now().Add(collectionDuration)
+	}
+}
+
 func (e *entities) addMsgEntity(hwaddr uint64, msg *base_msg.EventNetEntity) {
 	e.Lock()
 	defer e.Unlock()
 
 	d := e.getEntityLocked(hwaddr)
+	addTimeout(d)
 	if d.info.Entity == nil {
 		d.info.Entity = msg
+		d.info.Updated = aputil.NowToProtobuf()
 	}
 }
 
@@ -148,66 +154,72 @@ func (e *entities) addMsgOptions(hwaddr uint64, msg *base_msg.DHCPOptions) {
 	defer e.Unlock()
 
 	d := e.getEntityLocked(hwaddr)
+	addTimeout(d)
 	d.info.Options = append(d.info.Options, msg)
+	d.info.Updated = aputil.NowToProtobuf()
 }
 
-// A message is recorded in this entity's DeviceInfo if the timeout is
-// uninitialized (during identifierd startup for example) or if the timeout has
-// not expired. If the message contains a feature included in
-// observations.attrMap then we always record it.
-func recordMsg(d *entity) bool {
-	return d.timeout.IsZero() || time.Now().Before(d.timeout)
-}
-
-func (e *entities) addMsgScan(hwaddr uint64, msg *base_msg.EventNetScan, force bool) {
+func (e *entities) addMsgScan(hwaddr uint64, msg *base_msg.EventNetScan) {
 	e.Lock()
 	defer e.Unlock()
 
 	d := e.getEntityLocked(hwaddr)
-
-	// We don't always get a get OS fingerprint on the first scan
-	if force || recordMsg(d) {
+	addTimeout(d)
+	if time.Now().Before(d.timeout) {
 		d.info.Scan = append(d.info.Scan, msg)
+		d.info.Updated = aputil.NowToProtobuf()
 	}
 }
 
-func (e *entities) addMsgRequest(hwaddr uint64, msg *base_msg.EventNetRequest, force bool) {
+func (e *entities) addMsgRequest(hwaddr uint64, msg *base_msg.EventNetRequest) {
 	e.Lock()
 	defer e.Unlock()
 
 	d := e.getEntityLocked(hwaddr)
-	if force || (recordMsg(d) && !d.private) {
+	addTimeout(d)
+	if time.Now().Before(d.timeout) && !d.private {
 		d.info.Request = append(d.info.Request, msg)
+		d.info.Updated = aputil.NowToProtobuf()
 	}
 }
 
-func (e *entities) addMsgListen(hwaddr uint64, msg *base_msg.EventListen, force bool) {
+func (e *entities) addMsgListen(hwaddr uint64, msg *base_msg.EventListen) {
 	e.Lock()
 	defer e.Unlock()
 
 	d := e.getEntityLocked(hwaddr)
-	if force || recordMsg(d) {
+	addTimeout(d)
+	if time.Now().Before(d.timeout) {
 		d.info.Listen = append(d.info.Listen, msg)
+		d.info.Updated = aputil.NowToProtobuf()
 	}
 }
 
 func (e *entities) writeInventory(path string) error {
 	e.Lock()
 	defer e.Unlock()
-
-	tmpPath := path + ".tmp"
-	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
+	defer debug.FreeOSMemory()
 
 	inventory := &base_msg.DeviceInventory{
 		Timestamp: aputil.NowToProtobuf(),
 	}
 
-	for _, d := range e.dataMap {
+	for h, d := range e.dataMap {
+		updated := aputil.ProtobufToTime(d.info.Updated)
+		if updated == nil || updated.Before(d.saved) {
+			continue
+		}
+
 		inventory.Devices = append(inventory.Devices, d.info)
+		d.saved = time.Now()
+		d.info = &base_msg.DeviceInfo{
+			Created:    aputil.NowToProtobuf(),
+			MacAddress: proto.Uint64(h),
+		}
+	}
+
+	if len(inventory.Devices) == 0 {
+		return nil
 	}
 
 	out, err := proto.Marshal(inventory)
@@ -215,11 +227,18 @@ func (e *entities) writeInventory(path string) error {
 		return fmt.Errorf("failed to encode device inventory: %s", err)
 	}
 
+	newPath := fmt.Sprintf("%s.%d", path, int(time.Now().Unix()))
+	f, err := os.OpenFile(newPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
 	if _, err := f.Write(out); err != nil {
 		return fmt.Errorf("failed to write device inventory: %s", err)
 	}
 
-	return os.Rename(tmpPath, path)
+	return nil
 }
 
 func (o *observations) loadModel(dataPath, modelPath string) error {
@@ -276,7 +295,79 @@ func (o *observations) loadModel(dataPath, modelPath string) error {
 	return nil
 }
 
-func (o *observations) setByName(hwaddr uint64, attr string) bool {
+func (o *observations) saveTestData(testPath string) error {
+	o.Lock()
+	defer o.Unlock()
+
+	tmpPath := testPath + ".tmp"
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open %s: %s", tmpPath, err)
+	}
+	defer f.Close()
+	w := csv.NewWriter(f)
+
+	header := make([]string, len(o.attrMap)+1)
+	header[0] = "MAC Address"
+	for a, i := range o.attrMap {
+		header[i+1] = a
+	}
+	w.Write(header)
+
+	row := make([]string, 0)
+	for h, c := range o.clients {
+		row = append(row, network.Uint64ToHWAddr(h).String())
+		row = append(row, c.attrs...)
+		w.Write(row)
+	}
+
+	w.Flush()
+	if err := w.Error(); err != nil {
+		if err := os.Remove(tmpPath); err != nil {
+			log.Printf("failed to remove tmp file %s: %s\n", tmpPath, err)
+		}
+		return fmt.Errorf("failed to write %s: %s", tmpPath, err)
+	}
+	return os.Rename(tmpPath, testPath)
+}
+
+func (o *observations) loadTestData(testPath string) error {
+	f, err := os.Open(testPath)
+	if err != nil {
+		return fmt.Errorf("failed to open %s: %s", testPath, err)
+	}
+	defer f.Close()
+	r := csv.NewReader(f)
+
+	header, err := r.Read()
+	if err != nil {
+		return fmt.Errorf("failed to read header from %s: %s", testPath, err)
+	}
+
+	for {
+		row, err := r.Read()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return fmt.Errorf("failed to read from %s: %s", testPath, err)
+		}
+
+		hwaddr, err := net.ParseMAC(row[0])
+		if err != nil {
+			log.Printf("invalid MAC address %s: %s\n", row[0], err)
+			continue
+		}
+
+		for i, v := range row[1:] {
+			if v == "1" {
+				o.setByName(network.HWAddrToUint64(hwaddr), header[i+1])
+			}
+		}
+	}
+	return nil
+}
+
+func (o *observations) setByName(hwaddr uint64, attr string) {
 	o.Lock()
 	defer o.Unlock()
 
@@ -292,12 +383,9 @@ func (o *observations) setByName(hwaddr uint64, attr string) bool {
 		o.clients[hwaddr] = c
 	}
 
-	col, ok := o.attrMap[attr]
-	if !ok {
-		return false
+	if col, ok := o.attrMap[attr]; ok {
+		o.clients[hwaddr].attrs[col] = "1"
 	}
-	o.clients[hwaddr].attrs[col] = "1"
-	return true
 }
 
 func (o *observations) inference(c *client) (int64, float32, error) {
@@ -378,7 +466,7 @@ func newEntity(hwaddr uint64) *entity {
 	ret := &entity{
 		private: false,
 		info: &base_msg.DeviceInfo{
-			Timestamp:  aputil.NowToProtobuf(),
+			Created:    aputil.NowToProtobuf(),
 			MacAddress: proto.Uint64(hwaddr),
 		},
 	}

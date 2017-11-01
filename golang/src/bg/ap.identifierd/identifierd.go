@@ -29,6 +29,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -70,10 +71,15 @@ var (
 const (
 	pname = "ap.identifierd"
 
-	ouiFile   = "oui.txt"
-	mfgidFile = "ap_mfgid.json"
-	trainFile = "ap_identities.csv"
-	saveFile  = "observations.pb"
+	ouiFile     = "oui.txt"
+	mfgidFile   = "ap_mfgid.json"
+	trainFile   = "ap_identities.csv"
+	testFile    = "test_data.csv"
+	observeFile = "observations.pb"
+
+	keepFor            = 2 * 24 * time.Hour
+	logInterval        = 15 * time.Minute
+	collectionDuration = 30 * time.Minute
 )
 
 func delHWaddr(hwaddr uint64) {
@@ -106,8 +112,15 @@ func removeIP(ip uint32) {
 	delete(ipMap, ip)
 }
 
-func handleEntity(hwaddr uint64, msg *base_msg.EventNetEntity) {
+func handleEntity(event []byte) {
 	var id int
+	msg := &base_msg.EventNetEntity{}
+	proto.Unmarshal(event, msg)
+
+	if msg.MacAddress == nil {
+		return
+	}
+	hwaddr := *msg.MacAddress
 	mac := network.Uint64ToHWAddr(hwaddr)
 	entry, err := ouiDB.Query(mac.String())
 	if err != nil {
@@ -118,29 +131,10 @@ func handleEntity(hwaddr uint64, msg *base_msg.EventNetEntity) {
 	}
 
 	testData.setByName(hwaddr, model.FormatMfgString(id))
-	newData.addTimeout(hwaddr)
 	newData.addMsgEntity(hwaddr, msg)
 }
 
-func handleEntityRaw(event []byte) {
-	msg := &base_msg.EventNetEntity{}
-	proto.Unmarshal(event, msg)
-	if msg.MacAddress == nil {
-		return
-	}
-	handleEntity(*msg.MacAddress, msg)
-}
-
-func handleRequest(hwaddr uint64, msg *base_msg.EventNetRequest) {
-	var force bool
-	for _, q := range msg.Request {
-		qName := model.DNSQ.FindStringSubmatch(q)[1]
-		force = force || testData.setByName(hwaddr, qName)
-	}
-	newData.addMsgRequest(hwaddr, msg, force)
-}
-
-func handleRequestRaw(event []byte) {
+func handleRequest(event []byte) {
 	request := &base_msg.EventNetRequest{}
 	proto.Unmarshal(event, request)
 
@@ -160,7 +154,13 @@ func handleRequestRaw(event []byte) {
 		log.Println("unknown entity:", ip)
 		return
 	}
-	handleRequest(hwaddr, request)
+
+	for _, q := range request.Request {
+		qName := model.DNSQ.FindStringSubmatch(q)[1]
+		testData.setByName(hwaddr, qName)
+	}
+
+	newData.addMsgRequest(hwaddr, request)
 }
 
 func configDHCPChanged(path []string, val string) {
@@ -226,21 +226,7 @@ func configPrivacyDelete(path []string) {
 	newData.setPrivacy(mac, false)
 }
 
-func handleScan(hwaddr uint64, scan *base_msg.EventNetScan) {
-	var force bool
-	for _, h := range scan.Hosts {
-		for _, p := range h.Ports {
-			if *p.State != "open" {
-				continue
-			}
-			portString := model.FormatPortString(*p.Protocol, *p.PortId)
-			force = force || testData.setByName(hwaddr, portString)
-		}
-	}
-	newData.addMsgScan(hwaddr, scan, force)
-}
-
-func handleScanRaw(event []byte) {
+func handleScan(event []byte) {
 	scan := &base_msg.EventNetScan{}
 	proto.Unmarshal(event, scan)
 
@@ -248,22 +234,21 @@ func handleScanRaw(event []byte) {
 	if !ok {
 		return
 	}
-	handleScan(hwaddr, scan)
-}
 
-func handleListen(hwaddr uint64, listen *base_msg.EventListen) {
-	var force bool
-	switch *listen.Type {
-	case base_msg.EventListen_SSDP:
-		force = testData.setByName(hwaddr, "SSDP")
-	case base_msg.EventListen_mDNS:
-		force = testData.setByName(hwaddr, "mDNS")
+	for _, h := range scan.Hosts {
+		for _, p := range h.Ports {
+			if *p.State != "open" {
+				continue
+			}
+			portString := model.FormatPortString(*p.Protocol, *p.PortId)
+			testData.setByName(hwaddr, portString)
+		}
 	}
 
-	newData.addMsgListen(hwaddr, listen, force)
+	newData.addMsgScan(hwaddr, scan)
 }
 
-func handleListenRaw(event []byte) {
+func handleListen(event []byte) {
 	listen := &base_msg.EventListen{}
 	proto.Unmarshal(event, listen)
 
@@ -271,36 +256,74 @@ func handleListenRaw(event []byte) {
 	if !ok {
 		return
 	}
-	handleListen(hwaddr, listen)
+
+	switch *listen.Type {
+	case base_msg.EventListen_SSDP:
+		testData.setByName(hwaddr, "SSDP")
+	case base_msg.EventListen_mDNS:
+		testData.setByName(hwaddr, "mDNS")
+	}
+
+	newData.addMsgListen(hwaddr, listen)
 }
 
-func handleOptions(hwaddr uint64, options *base_msg.DHCPOptions) {
-	newData.addMsgOptions(hwaddr, options)
-}
-
-func handleOptionsRaw(event []byte) {
+func handleOptions(event []byte) {
 	options := &base_msg.DHCPOptions{}
 	proto.Unmarshal(event, options)
-	handleOptions(*options.MacAddress, options)
+	newData.addMsgOptions(*options.MacAddress, options)
 }
 
+func save() {
+	if err := newData.writeInventory(filepath.Join(*logDir, observeFile)); err != nil {
+		log.Println("could not save observation data:", err)
+	}
+
+	if err := testData.saveTestData(filepath.Join(*dataDir, testFile)); err != nil {
+		log.Println("could not save test data:", err)
+	}
+}
+
+func clean() {
+	walkFunc := func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return fmt.Errorf("error walking to %s: %v", path, err)
+		}
+
+		if info.IsDir() || !strings.HasPrefix(info.Name(), observeFile) {
+			return nil
+		}
+
+		old := time.Now().Add(-keepFor)
+		if info.ModTime().After(old) {
+			return nil
+		}
+
+		if err := os.Remove(path); err != nil {
+			return fmt.Errorf("error removing %s: %v", path, err)
+		}
+
+		return nil
+	}
+
+	if err := filepath.Walk(*logDir, walkFunc); err != nil {
+		log.Printf("error walking %s: %v\n", *logDir, err)
+	}
+}
+
+// logger periodically saves to disk both data for inference by the trained
+// device ID model, and data observed from clients to be sent to the cloud.
+// The observed data is kept for keepFor hours until it is removed by clean().
 func logger(stop chan bool, wg *sync.WaitGroup) {
 	defer wg.Done()
-	tick := time.NewTicker(5 * time.Minute)
-	logFile := *logDir + saveFile
-
-	w := func(path string) {
-		if err := newData.writeInventory(logFile); err != nil {
-			log.Println("Could not save observation data:", err)
-		}
-	}
+	tick := time.NewTicker(logInterval)
 
 	for {
 		select {
 		case <-tick.C:
-			w(logFile)
+			save()
+			clean()
 		case <-stop:
-			w(logFile)
+			save()
 			return
 		}
 	}
@@ -352,50 +375,6 @@ func identify() {
 	}
 }
 
-func loadObservations() error {
-	logFile := *logDir + saveFile
-	in, err := ioutil.ReadFile(logFile)
-	if err != nil {
-		return err
-	}
-	inventory := &base_msg.DeviceInventory{}
-	proto.Unmarshal(in, inventory)
-
-	for _, devInfo := range inventory.Devices {
-		hwaddr := *devInfo.MacAddress
-		if devInfo.Entity != nil {
-			handleEntity(hwaddr, devInfo.Entity)
-		}
-
-		if devInfo.Scan != nil {
-			for _, msg := range devInfo.Scan {
-				handleScan(hwaddr, msg)
-			}
-		}
-
-		if devInfo.Request != nil {
-			for _, msg := range devInfo.Request {
-				handleRequest(hwaddr, msg)
-			}
-		}
-
-		if devInfo.Listen != nil {
-			for _, msg := range devInfo.Listen {
-				handleListen(hwaddr, msg)
-			}
-		}
-
-		if devInfo.Options != nil {
-			for _, msg := range devInfo.Options {
-				handleOptions(hwaddr, msg)
-			}
-		}
-
-		newData.addTimeout(hwaddr)
-	}
-	return nil
-}
-
 func recoverClients() {
 	clients := apcfgd.GetClients()
 
@@ -435,23 +414,15 @@ func main() {
 		log.Printf("failed to connect to mcp\n")
 	}
 
-	if !strings.HasSuffix(*dataDir, "/") {
-		*dataDir = *dataDir + "/"
-	}
-
-	if !strings.HasSuffix(*logDir, "/") {
-		*logDir = *logDir + "/"
-	}
-
 	// OUI database
-	ouiPath := *dataDir + ouiFile
+	ouiPath := filepath.Join(*dataDir, ouiFile)
 	ouiDB, err = oui.OpenFile(ouiPath)
 	if err != nil {
 		log.Fatalf("failed to open OUI file %s: %s", ouiPath, err)
 	}
 
 	// Manufacturer database
-	mfgidPath := *dataDir + mfgidFile
+	mfgidPath := filepath.Join(*dataDir, mfgidFile)
 	file, err := ioutil.ReadFile(mfgidPath)
 	if err != nil {
 		log.Fatalf("failed to open manufacturer ID file %s: %v\n", mfgidPath, err)
@@ -462,7 +433,7 @@ func main() {
 		log.Fatalf("failed to import manufacturer IDs from %s: %v\n", mfgidPath, err)
 	}
 
-	if err = testData.loadModel(*dataDir+trainFile, *modelDir); err != nil {
+	if err = testData.loadModel(filepath.Join(*dataDir, trainFile), *modelDir); err != nil {
 		log.Fatalln("failed to load model", err)
 	}
 
@@ -479,15 +450,15 @@ func main() {
 
 	recoverClients()
 
-	if err := loadObservations(); err != nil {
-		log.Println("failed to recover observations:", err)
+	if err := testData.loadTestData(filepath.Join(*dataDir, testFile)); err != nil {
+		log.Println("failed to recover test data:", err)
 	}
 
-	brokerd.Handle(base_def.TOPIC_ENTITY, handleEntityRaw)
-	brokerd.Handle(base_def.TOPIC_REQUEST, handleRequestRaw)
-	brokerd.Handle(base_def.TOPIC_SCAN, handleScanRaw)
-	brokerd.Handle(base_def.TOPIC_LISTEN, handleListenRaw)
-	brokerd.Handle(base_def.TOPIC_OPTIONS, handleOptionsRaw)
+	brokerd.Handle(base_def.TOPIC_ENTITY, handleEntity)
+	brokerd.Handle(base_def.TOPIC_REQUEST, handleRequest)
+	brokerd.Handle(base_def.TOPIC_SCAN, handleScan)
+	brokerd.Handle(base_def.TOPIC_LISTEN, handleListen)
+	brokerd.Handle(base_def.TOPIC_OPTIONS, handleOptions)
 
 	apcfgd.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
 	apcfgd.HandleChange(`^@/clients/.*/dhcp_name$`, configDHCPChanged)
