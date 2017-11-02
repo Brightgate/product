@@ -82,6 +82,7 @@ endif
 
 GO = $(GOROOT)/bin/go
 GOFMT = $(GOROOT)/bin/gofmt
+GOLINT = $(GOROOT)/bin/golint
 GO_CLEAN_FLAGS = -i -x
 GO_GET_FLAGS = -v
 
@@ -353,10 +354,10 @@ LINTCLEAN_TARGETS= \
 	bg/ap.relayd
 
 lint-go:
-	golint -set_exit_status $(LINTCLEAN_TARGETS)
+	$(GOLINT) -set_exit_status $(LINTCLEAN_TARGETS)
 
 lintall-go:
-	golint $(APP_GOPKGS) $(CLOUD_GOPKGS)
+	$(GOLINT) $(APP_GOPKGS) $(CLOUD_GOPKGS)
 
 docs: | $(PROTOC_PLUGINS)
 

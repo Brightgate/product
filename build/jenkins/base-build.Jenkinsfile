@@ -14,7 +14,7 @@
 // one.  We are using "declarative" for now but this is not dogmatic.
 //
 pipeline {
-    agent none
+    agent any
     stages {
         stage('checkout') {
             steps {
