@@ -55,7 +55,6 @@
 #
 UNAME_S = $(shell uname -s)
 UNAME_M = $(shell uname -m)
-$(info kernel UNAME_S=$(UNAME_S))
 
 #
 # Git related definitions
@@ -63,7 +62,6 @@ $(info kernel UNAME_S=$(UNAME_S))
 export GITROOT = $(shell git rev-parse --show-toplevel)
 export GOPATH=$(GITROOT)/golang
 GITHASH=$(shell git describe --always --long --dirty)
-$(info GITHASH $(GITHASH))
 
 #
 # Go environment setup
@@ -86,13 +84,11 @@ GOLINT = $(GOROOT)/bin/golint
 GO_CLEAN_FLAGS = -i -x
 GO_GET_FLAGS = -v
 
-$(info go-version $(shell $(GO) version))
-$(info GOROOT $(GOROOT))
-$(info GOPATH $(GOPATH))
 GOOS = $(shell $(GO) env GOOS)
-$(info GOOS = $(GOOS))
 GOARCH = $(shell $(GO) env GOARCH)
-$(info GOARCH = $(GOARCH))
+GOHOSTARCH = $(shell $(GO) env GOHOSTARCH)
+GOVERSION = $(shell $(GO) version)
+
 GOSRC = golang/src
 GOSRCBG = $(GOSRC)/bg
 # Vendoring directory, where external deps are placed
@@ -113,7 +109,7 @@ MKDIR = mkdir
 RM = rm
 
 PYTHON3 = python3
-$(info python3-version $(PYTHON3) -> $(shell $(PYTHON3) -V))
+PYTHON3VERSION = $(shell $(PYTHON3) -V)
 
 PROTOC_PLUGINS = \
 	$(GOPATH)/bin/protoc-gen-doc \
@@ -125,22 +121,65 @@ PROTOC_PLUGINS = \
 # - Select default target list
 #
 ifeq ("$(GOARCH)","amd64")
-$(info --> Building appliance and cloud components for x86_64.)
 ROOT=proto.$(UNAME_M)
 PKG_DEB_ARCH=amd64
-TARGETS=$(APPCOMPONENTS) $(CLOUDCOMPONENTS)
+TARGETS=appliance cloud
 endif
 
 ifeq ("$(GOARCH)","arm")
 # UNAME_M will read armv7l on Raspbian and on Ubuntu for  Banana Pi.
 # Both use armhf as the architecture for .deb files.
-$(info --> Building appliance components for ARM.)
 ROOT=proto.armv7l
 PKG_DEB_ARCH=armhf
-TARGETS=$(APPCOMPONENTS)
+TARGETS=appliance
 endif
 
+#
+# Cross compilation setup
+#
+ifneq ($(GOHOSTARCH),$(GOARCH))
+ifeq ($(SYSROOT),)
+$(error SYSROOT must be set for cross builds)
+endif
+ifneq ($(GOARCH),arm)
+$(error 'arm' is the only supported cross target)
+endif
+
+# SYSROOT doesn't work right if isn't an absolute path
+CROSS_SYSROOT=$(realpath $(SYSROOT))
+CROSS_CC=/usr/bin/arm-linux-gnueabihf-gcc
+CROSS_CGO_LDFLAGS=--sysroot $(CROSS_SYSROOT) -Lusr/local/lib
+CROSS_CGO_CFLAGS=--sysroot $(CROSS_SYSROOT) -Iusr/local/include
+endif
+
+#
+# Announce some things about the build
+#
+define report
+#        TARGETS: $(TARGETS)
+#         KERNEL: UNAME_S=$(UNAME_S) UNAME_M=$(UNAME_M)
+#        GITHASH: $(GITHASH)
+#             GO: $(GO)
+#      GOVERSION: $(GOVERSION)
+#         GOROOT: $(GOROOT)
+#         GOPATH: $(GOPATH)
+#           GOOS: $(GOOS)
+#     GOHOSTARCH: $(GOHOSTARCH)
+#         GOARCH: $(GOARCH)
+# PYTHON3VERSION: $(PYTHON3VERSION)
+endef
+$(info $(report))
+undefine report
+$(ifneq "$(GOHOSTARCH)","$(GOARCH)")
+define report
+#     CROSSBUILD: $(GOHOSTARCH) -> $(GOARCH)
+#        SYSROOT: $(SYSROOT)
+$(info $(report))
+endef
+
+#
 # Appliance components and supporting definitions
+#
 
 APPROOT=$(ROOT)/appliance
 APPBASE=$(APPROOT)/opt/com.brightgate
@@ -361,6 +400,7 @@ lintall-go:
 
 docs: | $(PROTOC_PLUGINS)
 
+
 $(APPDOC)/: base/base_msg.proto | $(PROTOC_PLUGINS) $(APPDOC) $(BASE_MSG)
 	cd base && \
 		protoc --plugin $(GOPATH)/bin \
@@ -450,8 +490,28 @@ $(APPBINARIES): $(APP_COMMON_SRCS) | $(APPBIN) deps-ensured
 $(APPBIN)/ap-start: ap-start.sh
 	$(INSTALL) -m 0755 $< $@
 
+# Build rules for go binaries.
+ifeq ($(GOHOSTARCH),$(GOARCH))
+# Non-cross compilation ("normal" build)
+
+# Here we use 'go install' because it is faster than 'go build'
 $(APPBIN)/%:
-	GOBIN=$(realpath $(APPBIN)) $(GO) install $(GOVERFLAGS) bg/$*
+	GOBIN=$(realpath $(@D)) \
+	    $(GO) install $(GOVERFLAGS) bg/$*
+
+else
+# Cross compiling
+
+# We cannot use 'go install' because part of go's cross-compilation scheme
+# involves rebuilding parts of its standard library at compile time, and
+# 'go install' will fail doing that because it wants to write things to
+# the global GOROOT.  We fall back to 'go build'.
+$(APPBIN)/%:
+	SYSROOT=$(CROSS_SYSROOT) CC=$(CROSS_CC) \
+	    CGO_LDFLAGS="$(CROSS_CGO_LDFLAGS)" \
+	    CGO_CFLAGS="$(CROSS_CGO_CFLAGS)" \
+	    CGO_ENABLED=1 $(GO) build -o $(@) $(GOVERFLAGS) bg/$*
+endif
 
 $(APPBIN)/ap.brokerd: $(GOSRCBG)/ap.brokerd/brokerd.go
 $(APPBIN)/ap.configd: \
@@ -513,7 +573,8 @@ $(CLOUDROOTLIB)/systemd/system/cl.rpcd.service: cl.rpcd.service | $(CLOUDROOTLIB
 $(CLOUDBINARIES): $(COMMON_SRCS) | deps-ensured
 
 $(CLOUDBIN)/%: | $(CLOUDBIN)
-	GOBIN=$(realpath $(CLOUDBIN)) $(GO) install $(GOVERFLAGS) bg/$*
+	GOBIN=$(realpath $(@D)) \
+	    $(GO) install $(GOVERFLAGS) bg/$*
 
 $(CLOUDBIN)/cl.httpd: $(GOSRCBG)/cl.httpd/cl.httpd.go
 $(CLOUDBIN)/cl.rpcd: \
@@ -606,7 +667,9 @@ clean:
 		base/cloud_rpc_pb2.py \
 		$(GOSRCBG)/base_def/base_def.go \
 		$(GOSRCBG)/base_msg/base_msg.pb.go \
-		$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go
+		$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
+		$(APPBINARIES) \
+		$(CLOUDBINARIES)
 
 plat-clobber: clobber
 	-$(GO) clean $(GO_CLEAN_FLAGS) github.com/golang/protobuf/protoc-gen-go

@@ -1,0 +1,35 @@
+#
+# COPYRIGHT 2017 Brightgate Inc. All rights reserved.
+#
+# This copyright notice is Copyright Management Information under 17 USC 1202
+# and is included to protect this work and deter copyright infringement.
+# Removal or alteration of this Copyright Management Information without the
+# express written permission of Brightgate Inc is prohibited, and any
+# such unauthorized removal or alteration will be a violation of federal law.
+#
+
+#
+# multistrap(1) configuration for arm sysroot creation
+#
+# This configuration allows us to build an ARM sysroot suitable for
+# cross-compilation activities on x86.
+#
+# This should be regarded as experimental.
+#
+
+[General]
+arch=armhf
+directory=sysroot.raspbian-stretch
+unpack=true
+bootstrap=Raspbian
+aptsources=Raspbian
+# causes removal of apt-cache and other space reductions
+cleanup=true
+noauth=true
+
+[Raspbian]
+packages= libc-dev-bin libc6-dev libdbus-1-dev libexpat1-dev libgcc-6-dev libltdl-dev libncurses5-dev libnl-3-dev libnl-genl-3-dev libnl-route-3-dev libpcap-dev libreadline-dev libssl1.0-dev libstdc++-6-dev libtinfo-dev libzmq3-dev linux-libc-dev zlib1g-dev
+source=http://archive.raspbian.org/raspbian
+keyring=raspbian-archive-keyring
+components=main contrib non-free
+suite=stretch
