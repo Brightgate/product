@@ -151,18 +151,21 @@ func recordDrop(d *dropRecord) *dropTable {
 	return table
 }
 
+// Use a regular expression to extract the date and details of a dropped packet
+// message.  We use the square brackets to divide the line.  Note also the use
+// of \b (word boundary) to force the datestamp not to have any trailing
+// whitespace (time.Parse gets mad).
+var dropRE = regexp.MustCompile(`(.+)\b\s+\[.+\]\s+DROPPED\s+(.*)`)
+
 func getDrop(line string) *dropRecord {
 	var d dropRecord
 
-	// Use a regular expression to extract the date and details of a
-	// dropped packet message
-	re := regexp.MustCompile(`(\S+ \S+ \S+) (.* DROPPED )(.*)`)
-
-	if !re.MatchString(line) {
+	l := dropRE.FindStringSubmatch(line)
+	if l == nil {
 		// Ignore any log messages that don't look like drops
+		log.Printf("ignored message <%s>\n", line)
 		return nil
 	}
-	l := re.FindStringSubmatch(line)
 
 	// The first matched expression is the date
 	when, err := time.Parse("Jan 2 15:04:05", l[1])
@@ -170,11 +173,12 @@ func getDrop(line string) *dropRecord {
 		year := time.Now().Year()
 		d.time = when.AddDate(year, 0, 0)
 	} else {
-		fmt.Printf("Failed to read time (%s): %v\n", l[1], err)
+		log.Printf("Failed to read time from substring <%s> of "+
+			"full line <%s>: %v\n", l[1], line, err)
 	}
 
-	// The third match contains the contents of the DROP message
-	for _, field := range strings.Split(l[3], " ") {
+	// The second match contains the contents of the DROP message.
+	for _, field := range strings.Split(l[2], " ") {
 		var key, val string
 
 		f := strings.SplitN(field, "=", 2)
@@ -211,7 +215,7 @@ func getDrop(line string) *dropRecord {
 		}
 	}
 	if d.indev == "" && d.outdev == "" {
-		log.Printf("bad line: %s\n", line)
+		log.Printf("bad line: <%s>\n", line)
 		return nil
 	}
 
