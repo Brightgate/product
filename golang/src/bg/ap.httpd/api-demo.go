@@ -697,10 +697,30 @@ func demoUsersHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-type EnrollResponse struct {
-	SmsDelivered bool   `json:"smsdelivered"`
-	SmsErrorCode int    `json:"smserrorcode"`
-	SmsError     string `json:"smserror"`
+type enrollResponse struct {
+	SMSDelivered bool   `json:"smsdelivered"`
+	SMSErrorCode int    `json:"smserrorcode"`
+	SMSError     string `json:"smserror"`
+}
+
+// sendOneSMS is a utility helper for the Enroll handler.
+func sendOneSMS(twilio *gotwilio.Twilio, from string, to string, message string) (*enrollResponse, error) {
+	var response *enrollResponse
+	smsResponse, exception, err := twilio.SendSMS(from, to, message, "", "")
+	if err != nil {
+		return nil, err
+	}
+	if exception != nil {
+		rstr := "Twilio failed sending SMS."
+		if exception.Code >= 21210 && exception.Code <= 21217 {
+			rstr = "Invalid Phone Number"
+		}
+		response = &enrollResponse{false, exception.Code, rstr}
+	} else {
+		response = &enrollResponse{true, 0,
+			"Current Status: " + smsResponse.Status}
+	}
+	return response, nil
 }
 
 func demoEnrollHandler(w http.ResponseWriter, r *http.Request) {
@@ -722,9 +742,13 @@ func demoEnrollHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	networkPassphrase, err := config.GetProp("@/network/passphrase")
 
-	message := fmt.Sprintf("💡 Brightgate Wi-Fi\nNetwork: %s\n"+
-		"Password: %s\nHelp: bit.ly/2yhPDQz", networkSSID,
-		networkPassphrase)
+	// The SMS to the customer is structured as two messages, one with
+	// help and the network name, and the other with the passphrase.
+	// This is because on most iOS and Android SMS clients, it's easy to
+	// copy a whole SMS message, but range selection is disabled.
+	message1 := fmt.Sprintf("Brightgate Wi-Fi\nHelp: bit.ly/2yhPDQz\n"+
+		"Network: %s\n<password follows>", networkSSID)
+	message2 := fmt.Sprintf("%s", networkPassphrase)
 
 	log.Printf("Enroll Handler: phone='%v'\n", r.PostFormValue("phone"))
 	if r.PostFormValue("phone") == "" {
@@ -734,38 +758,31 @@ func demoEnrollHandler(w http.ResponseWriter, r *http.Request) {
 
 	to, err := libphonenumber.Parse(r.PostFormValue("phone"), "US")
 	if err != nil {
-		response := EnrollResponse{false, 0, "Invalid Phone Number"}
+		response := enrollResponse{false, 0, "Invalid Phone Number"}
 		if err := json.NewEncoder(w).Encode(response); err != nil {
 			panic(err)
 		}
 		return
 	}
-
 	formattedTo := libphonenumber.Format(to, libphonenumber.INTERNATIONAL)
 	log.Printf("Enroll Handler: formattedTo='%v'\n", formattedTo)
+
 	twilio := gotwilio.NewTwilioClient(twilioSID, twilioAuthToken)
-	smsResponse, exception, err := twilio.SendSMS(from, formattedTo, message, "", "")
-	if err != nil {
-		log.Printf("Enroll Handler: twilio go err='%v'\n", err)
-		http.Error(w, "Twilio Error.", 500)
-		return
-	}
-	if exception != nil {
-		rstr := "Twilio failed sending SMS."
-		if exception.Code >= 21210 && exception.Code <= 21217 {
-			rstr = "Invalid Phone Number"
+	var response *enrollResponse
+	for _, message := range []string{message1, message2} {
+		response, err = sendOneSMS(twilio, from, formattedTo, message)
+		if err != nil {
+			log.Printf("Enroll Handler: twilio go err='%v'\n", err)
+			http.Error(w, "Twilio Error.", 500)
+			return
 		}
-		response := EnrollResponse{false, exception.Code, rstr}
-		if err := json.NewEncoder(w).Encode(response); err != nil {
-			panic(err)
+		// if not sent then give up sending more
+		if response.SMSDelivered == false {
+			break
 		}
-		return
 	}
-	log.Printf("Enroll Handler: smsResponse='%v'\n", smsResponse)
-	response := EnrollResponse{true, 0, "Current Status: " + smsResponse.Status}
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		panic(err)
-		return
 	}
 
 	if err == nil {

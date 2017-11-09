@@ -3,10 +3,10 @@
     <center><h2>Getting Online with Brightgate</h2></center>
     <center><h4>Sign up using your phone number</h4></center>
 
-    <f7-list form inset>
+    <f7-list inset>
       <f7-list-item>
         <f7-label>Phone</f7-label>
-        <f7-input v-model="magicphone" type="text" placeholder="Your Phone #" required/>
+        <f7-input v-on:keyup.enter="enrollSMS" v-model="magicphone" type="tel" placeholder="Your Phone #" required autofocus lazy/>
       </f7-list-item>
     </f7-list>
     <f7-block inset>
@@ -42,6 +42,7 @@ export default {
   methods: {
     enrollSMS: function () {
       console.log(`enrollSMS: ${this.phone}`)
+      this.sms_error = false
       this.enrolling = true
       return this.$store.dispatch('enrollSMS', {
         phone: this.phone
