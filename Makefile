@@ -495,9 +495,16 @@ ifeq ($(GOHOSTARCH),$(GOARCH))
 # Non-cross compilation ("normal" build)
 
 # Here we use 'go install' because it is faster than 'go build'
+#
+# The 'touch' is present because of the blanket dependency of all APPBINARIES
+# on APP_COMMON_SRCS.  If a developer updates one of the common sources, then
+# make will conclude that all binaries must be rebuilt, but 'go install' will
+# skip writing the binary in cases where it detects that there is nothing to
+# do.  This should be revisited for golang 1.10.
 $(APPBIN)/%:
 	GOBIN=$(realpath $(@D)) \
 	    $(GO) install $(GOVERFLAGS) bg/$*
+	touch $(@)
 
 else
 # Cross compiling
@@ -506,11 +513,15 @@ else
 # involves rebuilding parts of its standard library at compile time, and
 # 'go install' will fail doing that because it wants to write things to
 # the global GOROOT.  We fall back to 'go build'.
+#
+# See above for rationale about touch.  Possibly not strictly needed here
+# but included for parity.
 $(APPBIN)/%:
 	SYSROOT=$(CROSS_SYSROOT) CC=$(CROSS_CC) \
 	    CGO_LDFLAGS="$(CROSS_CGO_LDFLAGS)" \
 	    CGO_CFLAGS="$(CROSS_CGO_CFLAGS)" \
 	    CGO_ENABLED=1 $(GO) build -o $(@) $(GOVERFLAGS) bg/$*
+	touch $(@)
 endif
 
 $(APPBIN)/ap.brokerd: $(GOSRCBG)/ap.brokerd/brokerd.go
@@ -573,9 +584,17 @@ $(CLOUDROOTLIB)/systemd/system/cl.rpcd.service: cl.rpcd.service | $(CLOUDROOTLIB
 
 $(CLOUDBINARIES): $(COMMON_SRCS) | deps-ensured
 
+# Here we use 'go install' because it is faster than 'go build'
+#
+# The 'touch' is present because of the blanket dependency of all CLOUDBINARIES
+# on COMMON_SRCS.  If a developer updates one of the common sources, then make
+# will conclude that all binaries must be rebuilt, but 'go install' will skip
+# writing the binary in cases where it detects that there is nothing to do.
+# This should be revisited for golang 1.10.
 $(CLOUDBIN)/%: | $(CLOUDBIN)
 	GOBIN=$(realpath $(@D)) \
 	    $(GO) install $(GOVERFLAGS) bg/$*
+	touch $(@)
 
 $(CLOUDBIN)/cl.httpd: $(GOSRCBG)/cl.httpd/cl.httpd.go
 $(CLOUDBIN)/cl.rpcd: \
