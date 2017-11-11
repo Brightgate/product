@@ -27,10 +27,10 @@ import (
 	"strconv"
 	"strings"
 
-	"ap_common/device"
-	"ap_common/model"
-	"ap_common/network"
-	"base_msg"
+	"bg/ap_common/device"
+	"bg/ap_common/model"
+	"bg/ap_common/network"
+	"bg/base_msg"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/klauspost/oui"

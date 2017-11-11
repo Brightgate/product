@@ -100,7 +100,7 @@ import (
 	"strconv"
 	"strings"
 
-	"ap_common/device"
+	"bg/ap_common/device"
 
 	"github.com/lib/pq"
 )

@@ -18,21 +18,21 @@
 #    (b) On Ubuntu
 #
 #	 # apt-get install protobuf-compiler libzmq5-dev libpcap-dev vlan \
-#		 bridge-utils lintian
+#		 bridge-utils lintian mercurial
 #	 # pip3 install sh
 #	 [Retrieve Go tar archive from golang.org and unpack in $HOME.]
 #
 #    (c) On Debian
 #
 #	 # apt-get install protobuf-compiler libzmq3-dev libpcap-dev vlan \
-#		bridge-utils lintian
+#		bridge-utils lintian mercurial
 #	 # pip3 install sh
 #	 [Retrieve Go tar archive from golang.org and unpack in $HOME.]
 #
 #    (d) on raspberry pi
 #
 #	 # apt-get install protobuf-compiler libzmq3-dev libpcap-dev vlan \
-#		 bridge-utils lintian python3
+#		 bridge-utils lintian python3 mercurial
 #	 # pip3 install sh
 #	 [Retrieve Go tar archive from golang.org and unpack in $HOME.]
 #	 [Retrieve the TensorFlow C library from
@@ -89,8 +89,8 @@ GOARCH = $(shell $(GO) env GOARCH)
 GOHOSTARCH = $(shell $(GO) env GOHOSTARCH)
 GOVERSION = $(shell $(GO) version)
 
-GOSRC = golang/src
-GOSRCBG = $(GOSRC)/bg
+GOWS = golang
+GOSRCBG = $(GOWS)/src/bg
 # Vendoring directory, where external deps are placed
 GOSRCBGVENDOR = $(GOSRCBG)/vendor
 # Where we stick build tools
@@ -310,11 +310,38 @@ APP_COMMON_SRCS = \
 	$(GOSRCBG)/ap_common/apcfg/events.go \
 	$(GOSRCBG)/ap_common/aputil/aputil.go \
 	$(GOSRCBG)/ap_common/broker/broker.go \
+	$(GOSRCBG)/ap_common/device/device.go \
 	$(GOSRCBG)/ap_common/mcp/mcp_client.go \
+	$(GOSRCBG)/ap_common/model/model.go \
 	$(GOSRCBG)/ap_common/network/network.go \
 	$(GOSRCBG)/ap_common/watchd/watchd_client.go \
 	$(GOSRCBG)/base_def/base_def.go \
 	$(GOSRCBG)/base_msg/base_msg.pb.go
+
+# Miscellaneous utilities
+
+UTILROOT=$(ROOT)/util
+UTILBIN=$(UTILROOT)/bin
+
+UTILCOMMON_SRCS = \
+	$(GOSRCBG)/ap_common/device/device.go \
+	$(GOSRCBG)/ap_common/model/bernoulli_nb.go \
+	$(GOSRCBG)/ap_common/model/model.go \
+	$(GOSRCBG)/ap_common/model/multinomial_nb.go \
+	$(GOSRCBG)/ap_common/network/network.go \
+	$(GOSRCBG)/base_msg/base_msg.pb.go
+
+UTILCOMMAND_SRCS = \
+	bg/util/device_db.go \
+	bg/util/model-merge.go \
+	bg/util/model-sim.go \
+	bg/util/model-train.go
+
+UTILBINARIES = $(UTILCOMMAND_SRCS:bg/util/%.go=$(UTILBIN)/%)
+
+UTILDIRS = $(UTILBIN)
+
+UTILCOMPONENTS = $(UTILBINARIES) $(UTILDIRS)
 
 # Cloud components and supporting definitions.
 
@@ -361,6 +388,8 @@ install: $(TARGETS)
 appliance: $(APPCOMPONENTS)
 
 cloud: $(CLOUDCOMPONENTS)
+
+util: $(UTILCOMPONENTS)
 
 packages: install
 	$(PYTHON3) build/deb-pkg/deb-pkg.py $(PKG_LINT) --arch $(PKG_DEB_ARCH)
@@ -569,6 +598,17 @@ $(APPBIN)/ap-stats: $(GOSRCBG)/ap-stats/stats.go
 
 LOCAL_BINARIES=$(APPBINARIES:$(APPBIN)/%=$(GOPATH)/bin/%)
 
+# Miscellaneous utility components
+
+$(UTILBINARIES): $(UTILCOMMON_SRCS) | deps-ensured
+
+$(UTILDIRS):
+	$(MKDIR) -p $@
+
+$(UTILBIN)/%: $(GOSRCBG)/util/%.go | $(UTILBIN)
+	GOBIN=$(realpath $(@D)) \
+	    $(GO) install $(GOVERFLAGS) $(GOSRCBG)/util/$*.go
+
 # Cloud components
 
 # Installation of cloud configuration files
@@ -674,8 +714,8 @@ FRC:
 
 clobber: clean clobber-packages clobber-godeps
 	$(RM) -fr $(ROOT)
-	$(RM) -fr $(GOSRC)/pkg
-	$(RM) -fr $(GOSRC)/bin
+	$(RM) -fr $(GOWS)/pkg
+	$(RM) -fr $(GOWS)/bin
 
 clobber-packages:
 	-$(RM) -fr bg-appliance_*.*.*-*_* bg-cloud_*.*.*-*_*
@@ -689,7 +729,8 @@ clean:
 		$(GOSRCBG)/base_msg/base_msg.pb.go \
 		$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
 		$(APPBINARIES) \
-		$(CLOUDBINARIES)
+		$(CLOUDBINARIES) \
+		$(UTILBINARIES)
 
 plat-clobber: clobber
 	-$(GO) clean $(GO_CLEAN_FLAGS) github.com/golang/protobuf/protoc-gen-go
