@@ -14,6 +14,9 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
+
+	"bg/ap_common/aputil"
 
 	"bg/base_def"
 	"bg/base_msg"
@@ -21,6 +24,17 @@ import (
 	"github.com/golang/protobuf/proto"
 )
 
+type changeMatch struct {
+	match   *regexp.Regexp
+	handler func([]string, string, *time.Time)
+}
+
+type delexpMatch struct {
+	match   *regexp.Regexp
+	handler func([]string)
+}
+
+// Opaque type representing a connection to ap.configd
 func (c *APConfig) configEvent(raw []byte) {
 	event := &base_msg.EventConfig{}
 	proto.Unmarshal(raw, event)
@@ -36,9 +50,10 @@ func (c *APConfig) configEvent(raw []byte) {
 	value := *event.NewValue
 
 	if etype == base_msg.EventConfig_CHANGE {
+		expires := aputil.ProtobufToTime(event.Expires)
 		for _, m := range c.changeHandlers {
 			if m.match.MatchString(property) {
-				m.handler(path, value)
+				m.handler(path, value, expires)
 			}
 		}
 	} else if etype == base_msg.EventConfig_DELETE {
@@ -72,7 +87,8 @@ func (c *APConfig) handleCommon(path string) (re *regexp.Regexp, err error) {
 }
 
 // HandleChange registers a callback function for property change events
-func (c *APConfig) HandleChange(path string, handler func([]string, string)) error {
+func (c *APConfig) HandleChange(path string, handler func([]string, string,
+	*time.Time)) error {
 	re, err := c.handleCommon(path)
 	if err == nil {
 		match := changeMatch{

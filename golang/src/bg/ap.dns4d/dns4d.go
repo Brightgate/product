@@ -134,7 +134,7 @@ func dns_update(resource *base_msg.EventNetResource) {
 	hostsMtx.Unlock()
 }
 
-func clientUpdateEvent(path []string, val string) {
+func clientUpdateEvent(path []string, val string, expires *time.Time) {
 	if len(path) != 3 {
 		// All updates should affect /clients/<macaddr>/property
 		return
@@ -180,7 +180,7 @@ func clientDeleteEvent(path []string) {
 		clientMtx.Unlock()
 	}
 }
-func cnameUpdateEvent(path []string, val string) {
+func cnameUpdateEvent(path []string, val string, expires *time.Time) {
 	updateOneCname(path[2], val)
 }
 
@@ -329,18 +329,34 @@ func captiveHandler(client *apcfg.ClientInfo, w dns.ResponseWriter, r *dns.Msg) 
 	logRequest("captiveHandler", start, client.IPv4, r, m)
 }
 
-func upstreamRequest(server string, r, m *dns.Msg) error {
+func upstreamRequest(server string, r, m *dns.Msg) {
 	c := new(dns.Client)
 
 	r2, _, err := c.Exchange(r, server)
-	if err != nil {
+	if err != nil || r2 == nil {
 		log.Printf("failed to exchange: %v", err)
-	} else if r2 != nil && r2.Rcode != dns.RcodeSuccess {
-		log.Printf("failed to get a valid answer\n%v", r)
-	} else {
-		m.Answer = append(m.Answer, r2.Answer...)
+		m.Rcode = dns.RcodeServerFailure
+		return
 	}
-	return err
+
+	// Copy the flags from the message header
+	m.Compress = r2.Compress
+	m.Authoritative = r2.Authoritative
+	m.Truncated = r2.Truncated
+	m.RecursionDesired = r2.RecursionDesired
+	m.RecursionAvailable = r2.RecursionAvailable
+	m.Rcode = r2.Rcode
+	if r2.Rcode != dns.RcodeSuccess {
+		log.Printf("failed to get a valid answer to query: %v\n", r)
+		log.Printf("  response: %v\n", r2)
+	} else {
+		// We've received a valid answer from the upstream DNS server.
+		// Copy the different 'answer' fields into our forwarded reply
+		// message.
+		m.Answer = append(m.Answer, r2.Answer...)
+		m.Ns = append(m.Ns, r2.Ns...)
+		m.Extra = append(m.Extra, r2.Extra...)
+	}
 }
 
 func localHandler(w dns.ResponseWriter, r *dns.Msg) {
@@ -381,10 +397,7 @@ func localHandler(w dns.ResponseWriter, r *dns.Msg) {
 			pq := new(dns.Msg)
 			pq.MsgHdr = r.MsgHdr
 			pq.Question = append(pq.Question, q)
-			err := upstreamRequest(brightgate_dns, pq, m)
-			if err == nil {
-				m.Authoritative = false
-			}
+			upstreamRequest(brightgate_dns, pq, m)
 		}
 	}
 	w.WriteMsg(m)

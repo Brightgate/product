@@ -16,7 +16,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"regexp"
 	"strconv"
 	"sync"
 	"time"
@@ -133,17 +132,6 @@ func (n *PropertyNode) GetExpiry() *time.Time {
 	return n.Expires
 }
 
-type changeMatch struct {
-	match   *regexp.Regexp
-	handler func([]string, string)
-}
-
-type delexpMatch struct {
-	match   *regexp.Regexp
-	handler func([]string)
-}
-
-// Opaque type representing a connection to ap.configd
 type APConfig struct {
 	mutex  sync.Mutex
 	socket *zmq.Socket
@@ -207,12 +195,7 @@ func (c *APConfig) msg(oc base_msg.ConfigQuery_Operation, prop, val string,
 		Operation: &oc,
 		Property:  proto.String(prop),
 		Value:     proto.String(val),
-	}
-	if expires != nil {
-		query.Expires = &base_msg.Timestamp{
-			Seconds: proto.Int64(expires.Unix()),
-			Nanos:   proto.Int32(int32(expires.Nanosecond())),
-		}
+		Expires:   aputil.TimeToProtobuf(expires),
 	}
 
 	data, err := proto.Marshal(query)

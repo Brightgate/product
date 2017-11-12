@@ -145,7 +145,7 @@ func apReset(conf *APConfig) {
 	}
 }
 
-func configRingChanged(path []string, val string) {
+func configRingChanged(path []string, val string, expires *time.Time) {
 	hwaddr := path[1]
 	newRing := val
 	c, ok := clients[hwaddr]
@@ -165,7 +165,7 @@ func configRingChanged(path []string, val string) {
 	apReset(conf)
 }
 
-func configNetworkChanged(path []string, val string) {
+func configNetworkChanged(path []string, val string, expires *time.Time) {
 	conf := aps[wifiNic]
 
 	// Watch for changes to the network conf

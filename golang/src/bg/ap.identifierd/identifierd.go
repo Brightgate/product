@@ -163,7 +163,7 @@ func handleRequest(event []byte) {
 	newData.addMsgRequest(hwaddr, request)
 }
 
-func configDHCPChanged(path []string, val string) {
+func configDHCPChanged(path []string, val string, expires *time.Time) {
 	mac, err := net.ParseMAC(path[1])
 	if err != nil {
 		log.Printf("invalid MAC address %s\n", path[1])
@@ -174,7 +174,7 @@ func configDHCPChanged(path []string, val string) {
 	newData.addDHCPName(hwaddr, val)
 }
 
-func configIPv4Changed(path []string, val string) {
+func configIPv4Changed(path []string, val string, expires *time.Time) {
 	mac, err := net.ParseMAC(path[1])
 	if err != nil {
 		log.Printf("invalid MAC address %s\n", path[1])
@@ -200,7 +200,7 @@ func configIPv4Delexp(path []string) {
 	delHWaddr(network.HWAddrToUint64(mac))
 }
 
-func configPrivacyChanged(path []string, val string) {
+func configPrivacyChanged(path []string, val string, expires *time.Time) {
 	mac, err := net.ParseMAC(path[1])
 	if err != nil {
 		log.Printf("invalid MAC address %s: %s\n", path[1], err)

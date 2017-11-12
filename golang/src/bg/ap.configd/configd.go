@@ -40,6 +40,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"regexp"
@@ -111,6 +112,7 @@ var defaultPropOps = propertyOps{defaultGetter, defaultSetter, defaultExpire}
 var ssidPropOps = propertyOps{defaultGetter, ssidUpdate, defaultExpire}
 var uuidPropOps = propertyOps{defaultGetter, uuidUpdate, defaultExpire}
 var ringPropOps = propertyOps{defaultGetter, defaultSetter, ringExpire}
+var ipv4PropOps = propertyOps{defaultGetter, ipv4Setter, defaultExpire}
 var dnsPropOps = propertyOps{defaultGetter, dnsSetter, defaultExpire}
 var cnamePropOps = propertyOps{defaultGetter, cnameSetter, defaultExpire}
 
@@ -119,6 +121,7 @@ var propertyMatchTable = []propertyMatch{
 	{regexp.MustCompile(`^@/network/ssid$`), &ssidPropOps},
 	{regexp.MustCompile(`^@/clients/.*/ring$`), &ringPropOps},
 	{regexp.MustCompile(`^@/clients/.*/dns_name$`), &dnsPropOps},
+	{regexp.MustCompile(`^@/clients/.*/ipv4$`), &ipv4PropOps},
 	{regexp.MustCompile(`^@/dns/cnames/`), &cnamePropOps},
 }
 
@@ -208,6 +211,15 @@ func expiration_handler() {
 		for len(exp_heap) > 0 {
 			next := exp_heap[0]
 			now := time.Now()
+
+			if next.Expires == nil {
+				// Should never happen
+				log.Printf("Found static property %s in "+
+					"expiration heap at %d\n",
+					next.path, next.index)
+				heap.Pop(&exp_heap)
+				continue
+			}
 
 			if now.Before(*next.Expires) {
 				break
@@ -331,13 +343,16 @@ func expirationInit() {
  *
  * Broker notifications
  */
-func prop_notify(prop, val string, action base_msg.EventConfig_Type) {
+func propNotify(prop, val string, expires *time.Time,
+	action base_msg.EventConfig_Type) {
+
 	entity := &base_msg.EventConfig{
 		Timestamp: aputil.NowToProtobuf(),
 		Sender:    proto.String(brokerd.Name),
 		Type:      &action,
 		Property:  proto.String(prop),
 		NewValue:  proto.String(val),
+		Expires:   aputil.TimeToProtobuf(expires),
 	}
 
 	err := brokerd.Publish(entity, base_def.TOPIC_CONFIG)
@@ -346,16 +361,16 @@ func prop_notify(prop, val string, action base_msg.EventConfig_Type) {
 	}
 }
 
-func updateNotify(prop, val string) {
-	prop_notify(prop, val, base_msg.EventConfig_CHANGE)
+func updateNotify(prop, val string, expires *time.Time) {
+	propNotify(prop, val, expires, base_msg.EventConfig_CHANGE)
 }
 
 func deleteNotify(prop string) {
-	prop_notify(prop, "-", base_msg.EventConfig_DELETE)
+	propNotify(prop, "-", nil, base_msg.EventConfig_DELETE)
 }
 
 func expirationNotify(prop, val string) {
-	prop_notify(prop, val, base_msg.EventConfig_EXPIRE)
+	propNotify(prop, val, nil, base_msg.EventConfig_EXPIRE)
 }
 
 func entity_handler(event []byte) {
@@ -476,6 +491,15 @@ func ssidUpdate(node *pnode, ssid string, expires *time.Time) (bool, error) {
 	return false, err
 }
 
+func findChild(parent *pnode, name string) *pnode {
+	for _, c := range parent.Children {
+		if c.Name == name {
+			return c
+		}
+	}
+	return nil
+}
+
 //
 // Check to see whether the given hostname is already inuse as either a device's
 // dns_name or as the left hand side of a cname.  We can optionally indicate a
@@ -490,12 +514,9 @@ func dnsNameInuse(ignore *pnode, hostname string) bool {
 		if device == ignore {
 			continue
 		}
-		for _, prop := range device.Children {
-			if prop.Name == "dns_name" {
-				if strings.ToLower(prop.Value) == lower {
-					return true
-				}
-				break
+		if prop := findChild(device, "dns_name"); prop != nil {
+			if strings.ToLower(prop.Value) == lower {
+				return true
 			}
 		}
 	}
@@ -546,12 +567,38 @@ func cnameSetter(node *pnode, hostname string, expires *time.Time) (bool, error)
 	return defaultSetter(node, hostname, expires)
 }
 
+// Validate and record an ipv4 assignment for this device
+func ipv4Setter(node *pnode, addr string, expires *time.Time) (bool, error) {
+	ipv4 := net.ParseIP(addr)
+	if ipv4 == nil {
+		return false, fmt.Errorf("invalid address: %s", addr)
+	}
+
+	// Make sure the address isn't already assigned
+	clients := propertySearch("@/clients")
+	for _, device := range clients.Children {
+		if device == node {
+			// Reassigning the device's address to itself is fine
+			continue
+		}
+
+		if ipv4Node := findChild(device, "ipv4"); ipv4Node != nil {
+			if ipv4.Equal(net.ParseIP(ipv4Node.Value)) {
+				return false, fmt.Errorf("%s in use by %s",
+					addr, device.Name)
+			}
+		}
+	}
+
+	return defaultSetter(node, addr, expires)
+}
+
 //
 // When a client's ring assignment expires, it returns to the Unenrolled ring
 //
 func ringExpire(node *pnode) {
 	node.Value = base_def.RING_UNENROLLED
-	updateNotify(node.path, node.Value)
+	updateNotify(node.path, node.Value, nil)
 }
 
 /*
@@ -703,6 +750,7 @@ func propertyUpdate(property, value string, expires *time.Time,
 	insert bool) (bool, error) {
 	var err error
 	var updated, inserted bool
+	var oldExpiration *time.Time
 
 	log.Printf("set property %s -> %s\n", property, value)
 	node := propertySearch(property)
@@ -721,6 +769,7 @@ func propertyUpdate(property, value string, expires *time.Time,
 	} else if len(node.Children) > 0 {
 		err = fmt.Errorf("Can only modify leaf properties")
 	} else {
+		oldExpiration = node.Expires
 		updated, err = node.ops.set(node, value, expires)
 	}
 
@@ -731,7 +780,7 @@ func propertyUpdate(property, value string, expires *time.Time,
 		}
 	} else {
 		markUpdated(node)
-		if node.Expires != nil {
+		if oldExpiration != nil || expires != nil {
 			expirationUpdate(node)
 		}
 	}
@@ -969,7 +1018,7 @@ func setPropHandler(q *base_msg.ConfigQuery, add bool) error {
 	updated, err := propertyUpdate(*q.Property, *q.Value, expires, add)
 	if updated {
 		prop_tree_store()
-		updateNotify(*q.Property, *q.Value)
+		updateNotify(*q.Property, *q.Value, expires)
 	}
 	return err
 }

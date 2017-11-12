@@ -19,6 +19,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
@@ -124,7 +125,7 @@ func macToIPInit() {
 	}
 }
 
-func configIPv4Changed(path []string, value string) {
+func configIPv4Changed(path []string, value string, expires *time.Time) {
 	hwaddr, err := net.ParseMAC(path[1])
 	if err != nil {
 		log.Printf("invalid MAC address %s", path[1])

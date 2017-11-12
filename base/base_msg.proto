@@ -120,6 +120,7 @@ message EventConfig {
 	optional string scope_name = 0x201;
 	optional string property = 0x202;
 	optional string new_value = 0x203;
+	optional Timestamp expires = 0x204;
 }
 
 // XXX sys.error
