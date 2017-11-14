@@ -38,7 +38,7 @@ deps-update:
 # Invoke this target by hand to get a table of packages and their metadata.
 #
 deps-status:
-	cd $(GOSRCBG) && $(DEPBIN) status
+	cd $(realpath $(GOSRCBG)) && $(DEPBIN) status
 
 clobber-godeps:
 	$(RM) -f .deps_ensured
