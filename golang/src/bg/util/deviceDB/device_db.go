@@ -87,13 +87,12 @@
  * the database has no means to interpret them.
  */
 
-package main
+package deviceDB
 
 import (
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -106,15 +105,10 @@ import (
 )
 
 const (
-	devTable   = "devices"
-	mfgTable   = "manufacturers"
-	charTable  = "characteristics"
-	matchTable = "matches"
-
-	dbUser     = "nils"
-	dbPassword = ""
-	dbName     = "nils"
-	dbSSL      = "disable"
+	DevTable   = "devices"
+	MfgTable   = "manufacturers"
+	CharTable  = "characteristics"
+	MatchTable = "matches"
 )
 
 const devSchema = `
@@ -138,56 +132,51 @@ const charSchema = `
 	`
 
 const mfgSchema = `
-		MfgId	integer PRIMARY KEY,
+		MfgId	integer NOT NULL PRIMARY KEY,
 		Name 	text NOT NULL
 	`
 
 const matchSchema = `
-		MatchID		integer NOT NULL,
+		MatchID		integer NOT NULL PRIMARY KEY,
 		Characteristics	text NOT NULL,
 		Device 		integer NOT NULL
 	`
 
 var tables = map[string]string{
-	devTable:   devSchema,
-	charTable:  charSchema,
-	mfgTable:   mfgSchema,
-	matchTable: matchSchema,
+	DevTable:   devSchema,
+	CharTable:  charSchema,
+	MfgTable:   mfgSchema,
+	MatchTable: matchSchema,
 }
 
-type match struct {
-	matchid int
-	charstr string
-	devid   int
+// Match encodes a row in the 'matches' table
+type Match struct {
+	Matchid int
+	Charstr string
+	Devid   uint32
 }
 
 var (
-	devFile = flag.String("dev", "", "device JSON file")
-	idFile  = flag.String("id", "", "identifier CSV")
-	mfgFile = flag.String("mfg", "", "manufacturer json")
-	impFlag = flag.Bool("import", false, "import into database")
-	expFlag = flag.Bool("export", false, "export from database")
-)
-
-var (
-	devices         device.DeviceMap
+	devices         device.Collection
 	manufacturers   map[string]int
 	characteristics []string
-	matches         []match
+	matches         []Match
 )
 
 ///////////////////////////////////////////////////
 //
 // Database interaction routines
 //
-func connectDB() (db *sql.DB, err error) {
+
+// ConnectDB connects to the named database.
+func ConnectDB(name, pw string) (db *sql.DB, err error) {
 	dbinfo := fmt.Sprintf("user=%s password=%s dbname=%s sslmode=%s",
-		dbUser, dbPassword, dbName, dbSSL)
+		name, pw, name, "disable")
 
 	db, err = sql.Open("postgres", dbinfo)
 
 	if err != nil {
-		err = fmt.Errorf("failed to connect to %s: %v", dbName, err)
+		err = fmt.Errorf("failed to connect to %s: %v", name, err)
 	}
 	return
 }
@@ -306,7 +295,9 @@ func getStrArrayValue(f *string) []string {
 //
 // Routines for populating the database from our internal representations
 //
-func insertOneDevice(db *sql.DB, devid uint32, dev *device.Device) error {
+
+// InsertOneDevice inserts a row into the 'devices' table.
+func InsertOneDevice(db *sql.DB, devid uint32, dev *device.Device) error {
 	tm := string(pq.FormatTimestamp(dev.UpdateTime))
 
 	columns := "Devid, Obsolete, UpdateTime, Devtype"
@@ -321,7 +312,7 @@ func insertOneDevice(db *sql.DB, devid uint32, dev *device.Device) error {
 	addStrArrayColumn(&columns, &values, "DNS", dev.DNS)
 	addStringColumn(&columns, &values, "Notes", dev.Notes)
 
-	err := insertRow(db, devTable, columns, values)
+	err := insertRow(db, DevTable, columns, values)
 	if err != nil {
 		err = fmt.Errorf("failed to insert dev %v: %v", *dev, err)
 	}
@@ -329,10 +320,11 @@ func insertOneDevice(db *sql.DB, devid uint32, dev *device.Device) error {
 	return err
 }
 
-func insertOneMfg(db *sql.DB, id int, name string) error {
+// InsertOneMfg inserts a row into the 'manufacturers' table.
+func InsertOneMfg(db *sql.DB, id int, name string) error {
 	columns := "MfgId, Name"
 	values := fmt.Sprintf("'%d', '%s'", id, name)
-	err := insertRow(db, mfgTable, columns, values)
+	err := insertRow(db, MfgTable, columns, values)
 	if err != nil {
 		err = fmt.Errorf("failed to insert mfg %s: %v", name, err)
 	}
@@ -340,10 +332,11 @@ func insertOneMfg(db *sql.DB, id int, name string) error {
 	return err
 }
 
-func insertOneCharacteristic(db *sql.DB, index int, char string) error {
+// InsertOneCharacteristic inserts a row into the 'characteristics' table.
+func InsertOneCharacteristic(db *sql.DB, index int, char string) error {
 	columns := "Index, Characteristic"
 	values := fmt.Sprintf("'%d', '%s'", index, char)
-	err := insertRow(db, charTable, columns, values)
+	err := insertRow(db, CharTable, columns, values)
 	if err != nil {
 		err = fmt.Errorf("failed to insert char %s: %v", char, err)
 	}
@@ -351,38 +344,40 @@ func insertOneCharacteristic(db *sql.DB, index int, char string) error {
 	return err
 }
 
-func insertOneMatch(db *sql.DB, m match) error {
+// InsertOneMatch inserts a row into the 'matches' table.
+func InsertOneMatch(db *sql.DB, m Match) error {
 	columns := "MatchID, Characteristics, Device"
-	values := fmt.Sprintf("'%d', '%s', '%d'", m.matchid, m.charstr, m.devid)
-	err := insertRow(db, matchTable, columns, values)
+	values := fmt.Sprintf("'%d', '%s', '%d'", m.Matchid, m.Charstr, m.Devid)
+	err := insertRow(db, MatchTable, columns, values)
 	if err != nil {
-		err = fmt.Errorf("failed to insert match %d: %v", m.matchid, err)
+		err = fmt.Errorf("failed to insert match %d: %v", m.Matchid, err)
 	}
 
 	return err
 }
 
-func populateDatabase(db *sql.DB) error {
+// PopulateDatabase takes in core data and writes it to the database.
+func PopulateDatabase(db *sql.DB) error {
 	for id, d := range devices {
-		if err := insertOneDevice(db, id, d); err != nil {
+		if err := InsertOneDevice(db, id, d); err != nil {
 			return err
 		}
 	}
 
 	for i, c := range characteristics {
-		if err := insertOneCharacteristic(db, i, c); err != nil {
+		if err := InsertOneCharacteristic(db, i, c); err != nil {
 			return err
 		}
 	}
 
 	for n, i := range manufacturers {
-		if err := insertOneMfg(db, i, n); err != nil {
+		if err := InsertOneMfg(db, i, n); err != nil {
 			return err
 		}
 	}
 
 	for _, m := range matches {
-		if err := insertOneMatch(db, m); err != nil {
+		if err := InsertOneMatch(db, m); err != nil {
 			return err
 		}
 	}
@@ -396,13 +391,13 @@ func populateDatabase(db *sql.DB) error {
 // internal representations
 //
 
-func importDevices(fileName *string) error {
+func importDevices(fileName string) error {
 	var err error
 
-	if *fileName == "" {
+	if fileName == "" {
 		err = fmt.Errorf("import requires a device database")
 	} else {
-		devices, err = device.DevicesLoad(*fileName)
+		devices, err = device.DevicesLoad(fileName)
 	}
 
 	return err
@@ -422,14 +417,14 @@ func exportDevices(name string) error {
 // Import the identities CSV file, and generate the characteristics list and the
 // characteristics -> device map.
 //
-func importIds(fileName *string) error {
+func importIds(fileName string) error {
 	var file []byte
 	var err error
 
-	if *fileName == "" {
+	if fileName == "" {
 		return fmt.Errorf("import requires an identifier database")
 	}
-	if file, err = ioutil.ReadFile(*fileName); err != nil {
+	if file, err = ioutil.ReadFile(fileName); err != nil {
 		return fmt.Errorf("failed to load identifiers from %s: %v",
 			fileName, err)
 	}
@@ -437,18 +432,19 @@ func importIds(fileName *string) error {
 	r := csv.NewReader(strings.NewReader(string(file)))
 	line, err := r.Read()
 	if err != nil {
-		return fmt.Errorf("failed to parse ID file %s: %v", *fileName, err)
+		return fmt.Errorf("failed to parse ID file %s: %v", fileName, err)
 	}
 
-	// The first line of the CSV contains the characteristics
-	fields := len(line)
+	// The first line of the CSV contains the characteristics. The last field
+	// must be omitted because it's the label.
+	fields := len(line) - 1
 	characteristics = make([]string, fields)
-	for i, c := range line {
+	for i, c := range line[0:fields] {
 		characteristics[i] = c
 	}
 
 	// Each subsequent line records the characteristics for a single device
-	matches = make([]match, 0)
+	matches = make([]Match, 0)
 	row := 0
 	for {
 		row++
@@ -456,14 +452,14 @@ func importIds(fileName *string) error {
 			break
 		}
 
-		if len(line) != fields {
+		if len(line)-1 != fields {
 			fmt.Printf("%d has %d fields - needs %d\n",
 				row, len(line), fields)
 			continue
 		}
 
-		vals := line[0 : fields-1]
-		id, _ := strconv.Atoi(line[fields-1])
+		vals := line[0:fields]
+		id, _ := strconv.ParseUint(line[fields], 10, 32)
 
 		// Build a list of the '1' characteristics
 		charstr := ""
@@ -475,10 +471,10 @@ func importIds(fileName *string) error {
 				delim = ","
 			}
 		}
-		match := match{
-			matchid: row,
-			charstr: charstr,
-			devid:   id,
+		match := Match{
+			Matchid: row,
+			Charstr: charstr,
+			Devid:   uint32(id),
 		}
 		matches = append(matches, match)
 	}
@@ -486,26 +482,27 @@ func importIds(fileName *string) error {
 	return nil
 }
 
-func importManufacturers(fileName *string) error {
+func importManufacturers(fileName string) error {
 	var file []byte
 	var err error
 
-	if *fileName == "" {
+	if fileName == "" {
 		return fmt.Errorf("import requires a manufacturer database")
 	}
-	if file, err = ioutil.ReadFile(*fileName); err != nil {
+	if file, err = ioutil.ReadFile(fileName); err != nil {
 		return fmt.Errorf("failed to load manufacturers from %s: %v",
-			*fileName, err)
+			fileName, err)
 	}
 	if err = json.Unmarshal(file, &manufacturers); err != nil {
 		return fmt.Errorf("failed to import manufacturers from %s: %v",
-			*fileName, err)
+			fileName, err)
 	}
 
 	return nil
 }
 
-func importData(db *sql.DB) error {
+// ImportData reads JSON data and initializes the database tables.
+func ImportData(db *sql.DB, devFile, idFile, mfgFile string) error {
 	if err := importDevices(devFile); err != nil {
 		return err
 	}
@@ -534,7 +531,7 @@ func importData(db *sql.DB) error {
 //
 func fetchManufacturers(db *sql.DB) error {
 	fmt.Printf("Fetching manufacturers\n")
-	rows, err := db.Query("SELECT * FROM " + mfgTable)
+	rows, err := db.Query("SELECT * FROM " + MfgTable)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve manufacturer data: %v", err)
 	}
@@ -558,7 +555,7 @@ func fetchManufacturers(db *sql.DB) error {
 //
 func fetchCharacteristics(db *sql.DB) error {
 	fmt.Printf("Fetching characteristics\n")
-	rows, err := db.Query("SELECT * FROM " + charTable)
+	rows, err := db.Query("SELECT * FROM " + CharTable)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve characteristic data: %v", err)
 	}
@@ -588,24 +585,25 @@ func fetchCharacteristics(db *sql.DB) error {
 //
 func fetchMatches(db *sql.DB) error {
 	fmt.Printf("Fetching matches\n")
-	rows, err := db.Query("SELECT * FROM " + matchTable)
+	rows, err := db.Query("SELECT * FROM " + MatchTable)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve match data: %v", err)
 	}
 	defer rows.Close()
 
-	matches = make([]match, 0)
+	matches = make([]Match, 0)
 	for rows.Next() {
 		var char string
-		var matchid, devid int
+		var matchid int
+		var devid uint32
 
 		if err := rows.Scan(&matchid, &char, &devid); err != nil {
 			return fmt.Errorf("failed to extract match data: %v", err)
 		}
-		match := match{
-			matchid: matchid,
-			charstr: char,
-			devid:   devid,
+		match := Match{
+			Matchid: matchid,
+			Charstr: char,
+			Devid:   devid,
 		}
 		matches = append(matches, match)
 	}
@@ -656,13 +654,13 @@ func extractOneDevice(rows *sql.Rows) error {
 func fetchDevices(db *sql.DB) error {
 	fmt.Printf("Fetching devices\n")
 
-	rows, err := db.Query("SELECT * FROM " + devTable)
+	rows, err := db.Query("SELECT * FROM " + DevTable)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve data: %v", err)
 	}
 	defer rows.Close()
 
-	devices = make(device.DeviceMap)
+	devices = make(device.Collection)
 	for rows.Next() {
 		if err := extractOneDevice(rows); err != nil {
 			return fmt.Errorf("Failed to process row: %v", err)
@@ -671,7 +669,8 @@ func fetchDevices(db *sql.DB) error {
 	return nil
 }
 
-func fetchData(db *sql.DB) error {
+// FetchData reads database tables to populate the in core state.
+func FetchData(db *sql.DB) error {
 	if err := fetchDevices(db); err != nil {
 		return fmt.Errorf("failed to fetch device data: %v", err)
 	}
@@ -706,11 +705,12 @@ func exportIDs(fileName string) error {
 	defer file.Close()
 	w := csv.NewWriter(file)
 
-	columns := len(characteristics)
+	columns := len(characteristics) + 1
 	row := make([]string, columns)
 	for i, c := range characteristics {
 		row[i] = c
 	}
+	row[columns-1] = "Identity"
 	w.Write(row)
 
 	for _, m := range matches {
@@ -721,16 +721,16 @@ func exportIDs(fileName string) error {
 			row[i] = "0"
 		}
 
-		for _, s := range strings.Split(m.charstr, ",") {
+		for _, s := range strings.Split(m.Charstr, ",") {
 			idx, err := strconv.Atoi(s)
 			if err != nil || (idx >= columns-1) {
 				fmt.Printf("Invalid index: %s\n", s)
-				fmt.Printf("  %d: %s\n", m.matchid, m.charstr)
+				fmt.Printf("  %d: %s\n", m.Matchid, m.Charstr)
 			} else {
 				row[idx] = "1"
 			}
 		}
-		row[columns-1] = strconv.Itoa(m.devid)
+		row[columns-1] = strconv.FormatUint(uint64(m.Devid), 10)
 		w.Write(row)
 	}
 	w.Flush()
@@ -749,14 +749,15 @@ func exportManufacturers(name string) error {
 	return err
 }
 
-func fileCheck(filename *string) error {
-	if _, err := os.Stat(*filename); err == nil {
-		return fmt.Errorf("%s already exists", *filename)
+func fileCheck(filename string) error {
+	if _, err := os.Stat(filename); err == nil {
+		return fmt.Errorf("%s already exists", filename)
 	}
 	return nil
 }
 
-func exportData(db *sql.DB) error {
+// ExportData takes in core data and writes it to JSON files.
+func ExportData(db *sql.DB, devFile, idFile, mfgFile string) error {
 	var err error
 
 	if err = fileCheck(devFile); err == nil {
@@ -768,60 +769,23 @@ func exportData(db *sql.DB) error {
 		return err
 	}
 
-	if *devFile != "" {
-		if err = exportDevices(*devFile); err != nil {
+	if devFile != "" {
+		if err = exportDevices(devFile); err != nil {
 			return fmt.Errorf("failed to export devices: %v", err)
 		}
 	}
 
-	if *mfgFile != "" {
-		if err = exportManufacturers(*mfgFile); err != nil {
+	if mfgFile != "" {
+		if err = exportManufacturers(mfgFile); err != nil {
 			return fmt.Errorf("failed to export manufacturers: %v",
 				err)
 		}
 	}
 
-	if *idFile != "" {
-		if err = exportIDs(*idFile); err != nil {
+	if idFile != "" {
+		if err = exportIDs(idFile); err != nil {
 			return fmt.Errorf("failed to export identities: %v", err)
 		}
 	}
 	return nil
-}
-
-func usage(name string) {
-	fmt.Printf("Usage: %s < -import | -export > -dev <device.json> -id <id.csv> -mfg <mfg.json>\n",
-		name)
-	os.Exit(1)
-}
-
-func main() {
-	flag.Parse()
-
-	imp := (impFlag != nil) && *impFlag
-	exp := (expFlag != nil) && *expFlag
-	if imp == exp {
-		usage(os.Args[0])
-	}
-
-	db, err := connectDB()
-	if err != nil {
-		fmt.Printf("Failed to connect to DB: %v\n", err)
-		os.Exit(1)
-	}
-
-	if imp {
-		if err = importData(db); err == nil {
-			err = populateDatabase(db)
-		}
-	} else {
-		if err = fetchData(db); err == nil {
-			err = exportData(db)
-		}
-	}
-
-	if err != nil {
-		fmt.Printf("%v\n", err)
-		os.Exit(1)
-	}
 }

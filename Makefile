@@ -338,10 +338,11 @@ UTILCOMMON_SRCS = \
 	$(GOSRCBG)/ap_common/model/model.go \
 	$(GOSRCBG)/ap_common/model/multinomial_nb.go \
 	$(GOSRCBG)/ap_common/network/network.go \
-	$(GOSRCBG)/base_msg/base_msg.pb.go
+	$(GOSRCBG)/base_msg/base_msg.pb.go \
+	$(GOSRCBG)/util/deviceDB/device_db.go
 
 UTILCOMMAND_SRCS = \
-	bg/util/device_db.go \
+	bg/util/build_device_db.go \
 	bg/util/model-merge.go \
 	bg/util/model-sim.go \
 	bg/util/model-train.go

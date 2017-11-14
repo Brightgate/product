@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"bg/ap_common/aputil"
+	"bg/ap_common/device"
 	"bg/ap_common/model"
 	"bg/ap_common/network"
 	"bg/base_msg"
@@ -42,9 +43,6 @@ const tfFeaturesKey = "x"
 const tfInput = "input_example_tensor"
 const tfClassID = "linear/head/predictions/class_ids"
 const tfProb = "linear/head/predictions/probabilities"
-
-// See ap.configd/devices.json. Keep in sync with Python training script
-const devIDBase = 2
 
 // 'entity' contains data about a client. The data is sent to the cloud for
 // later use as training data. Most data is collected for only 30 minutes after
@@ -435,7 +433,7 @@ func (o *observations) predictClients(ch chan *prediction) {
 		// changed then the old identity is now less probable than (or equal to)
 		// the new identity, so send an update. If the identity hasn't changed
 		// but the model's confience has, send an update
-		newID := strconv.FormatInt(devID+devIDBase, 10)
+		newID := strconv.FormatInt(devID+device.IDBase, 10)
 		if newID != c.identity.devID || prob != c.identity.probability {
 			c.identity.devID = newID
 			c.identity.probability = prob

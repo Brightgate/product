@@ -9,76 +9,118 @@
  *
  */
 
-// Use observations collected from identifierd to create new training data.
+// model-train uses observations collected from identifierd to update the
+// various tables in the device database. The tables combine to form the
+// training data for new models. Create the device DB locally before using this
+// script.
+//
 // Currently a human is required to select features, but eventually we can try
 // automatic feature selection through some statistical measure of significance.
 package main
 
 import (
 	"bufio"
-	"encoding/csv"
-	"encoding/json"
+	"database/sql"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"bg/ap_common/device"
 	"bg/ap_common/model"
 	"bg/ap_common/network"
 	"bg/base_msg"
+	"bg/util/deviceDB"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/klauspost/oui"
 )
 
-const (
-	identOut = "new_ap_identities.csv"
-	mfgOut   = "new_ap_mfgid.json"
-)
-
 var (
-	observedFiles = flag.String("observed", "",
-		"A comma separated list of .pb files, each containing a single DeviceInventory.")
-	identFile = flag.String("identities", "$ETC/ap_identities.csv",
-		"The CSV file of identities to update.")
-	mfgFile = flag.String("mfgIDs", "$ETC/ap_mfgid.json",
-		"The JSON file of MFG IDs to update.")
+	// The infoDir should be a directory containing protobuf files, each file
+	// containing a single DeviceInfo. We assume (and enforce) that all files in
+	// the infoDir reference the same client. Because of the streaming nature
+	// of data collection (see ap.identifierd) the entire directory is treated
+	// as one sample.
+	infoDir = flag.String("info", "",
+		"A directory of .pb files for a specific client, each file containing a single DeviceInfo.")
 	ouiFile = flag.String("oui", "$ETC/oui.txt",
 		"The path to oui.txt.")
-	devFile = flag.String("dev", "$ETC/devices.json",
-		"The path to devices.json.")
-	etcDir = flag.String("etc", "proto.armv7l/opt/com.brightgate/etc",
-		"The path to the brighgate etc/ directory")
 
-	ouiDB   oui.DynamicDB
-	mfgidDB = make(map[string]int)
-	maxMfg  int
-	devices device.DeviceMap
+	db       *sql.DB
+	ouiDB    oui.DynamicDB
+	maxMfg   int
+	maxChar  int
+	maxMatch int
+	maxDev   uint32
 
-	attrUnion = make(map[string]bool)
-	output    = make([]*sample, 0)
+	added = make(map[string]bool)
 )
 
 type sample struct {
-	name     string
-	identity int
-	attrs    map[string]string
+	name  string
+	match deviceDB.Match
 }
 
+// Ask the user if feature 'feat' should be included as an identifying feature
+// of the sample. If so, add the feature to the characteristics table if it
+// doesn't already exist.
 func addFeat(user *bufio.Reader, s *sample, feat string) bool {
-	fmt.Printf("\tAdd feature %q to %s? (Y/n) ", feat, s.name)
+	var name string
+	if s.name == "" {
+		name = "(unknown)"
+	} else {
+		name = s.name
+	}
+
+	fmt.Printf("\tAdd feature %q to %s? (Y/n) ", feat, name)
 	response, _ := user.ReadString('\n')
 	if strings.Contains(response, "n") {
 		return false
 	}
-	s.attrs[feat] = "1"
-	attrUnion[feat] = true
+
+	var index int
+	row := db.QueryRow("SELECT index FROM "+deviceDB.CharTable+" WHERE characteristic=$1", feat)
+	if err := row.Scan(&index); err != nil && err != sql.ErrNoRows {
+		log.Fatalf("failed to to fetch feature %s: %s\n", feat, err)
+	} else if err == sql.ErrNoRows {
+		maxChar++
+		index = maxChar
+		if err := deviceDB.InsertOneCharacteristic(db, maxChar, feat); err != nil {
+			log.Fatalf("failed to insert characteristic %s: %s\n", feat, err)
+		}
+	}
+
+	if len(s.match.Charstr) != 0 {
+		s.match.Charstr += ","
+	}
+
+	s.match.Charstr += strconv.Itoa(index)
 	return true
+}
+
+func addMfg(mfg string, user *bufio.Reader, s *sample) {
+	var mfgid int
+	row := db.QueryRow("SELECT mfgid FROM "+deviceDB.MfgTable+" WHERE name=$1", mfg)
+	if err := row.Scan(&mfgid); err != nil && err != sql.ErrNoRows {
+		log.Fatalf("failed to to fetch mfg %s: %s\n", mfg, err)
+	} else if err == sql.ErrNoRows {
+		maxMfg++
+		mfgid = maxMfg
+		if err := deviceDB.InsertOneMfg(db, maxMfg, mfg); err != nil {
+			log.Fatalf("failed to insert mfg %s: %s\n", mfg, err)
+		}
+	}
+
+	mfgStr := model.FormatMfgString(mfgid)
+	if !added[mfgStr] {
+		added[mfgStr] = addFeat(user, s, mfgStr)
+	}
 }
 
 func addDNS(devInfo *base_msg.DeviceInfo, user *bufio.Reader, s *sample) {
@@ -86,7 +128,6 @@ func addDNS(devInfo *base_msg.DeviceInfo, user *bufio.Reader, s *sample) {
 		return
 	}
 
-	added := make(map[string]bool)
 	for _, msg := range devInfo.Request {
 		for _, q := range msg.Request {
 			feat := model.DNSQ.FindStringSubmatch(q)[1]
@@ -103,7 +144,6 @@ func addScan(devInfo *base_msg.DeviceInfo, user *bufio.Reader, s *sample) {
 		return
 	}
 
-	added := make(map[string]bool)
 	for _, msg := range devInfo.Scan {
 		for _, h := range msg.Hosts {
 			for _, p := range h.Ports {
@@ -125,7 +165,6 @@ func addListen(devInfo *base_msg.DeviceInfo, user *bufio.Reader, s *sample) {
 		return
 	}
 
-	added := make(map[string]bool)
 	for _, msg := range devInfo.Listen {
 		var feat string
 		switch *msg.Type {
@@ -141,224 +180,195 @@ func addListen(devInfo *base_msg.DeviceInfo, user *bufio.Reader, s *sample) {
 	}
 }
 
-func readObservations(path string) {
-	in, err := ioutil.ReadFile(path)
-	if err != nil {
-		log.Fatalf("failed to open data file %s\n", path)
+func promptUser(user *bufio.Reader, prompt string) string {
+	fmt.Printf("%s", prompt)
+	entry, _ := user.ReadString('\n')
+	entry = strings.TrimSpace(entry)
+	return entry
+}
+
+func newDevice(user *bufio.Reader, entry *oui.Entry, s *sample) {
+	productName := promptUser(user, "Enter product name: ")
+	productVer := promptUser(user, "Enter product version: ")
+	devType := promptUser(user, "Enter device type: ")
+
+	maxDev++
+	d := &device.Device{
+		Obsolete:       false,
+		UpdateTime:     time.Now(),
+		Devtype:        devType,
+		Vendor:         entry.Manufacturer,
+		ProductName:    productName,
+		ProductVersion: productVer,
 	}
 
-	inventory := &base_msg.DeviceInventory{}
-	proto.Unmarshal(in, inventory)
-	userInput := bufio.NewReader(os.Stdin)
+	if err := deviceDB.InsertOneDevice(db, maxDev, d); err != nil {
+		log.Fatalf("failed to insert device: %s\n", err)
+	}
 
-	for _, devInfo := range inventory.Devices {
-		hwaddr := *devInfo.MacAddress
-		mac := network.Uint64ToHWAddr(hwaddr)
-		entry, err := ouiDB.Query(mac.String())
-		if err != nil {
-			log.Fatalf("MAC address %s not in OUI database: %s\n", mac, err)
-		}
-		fmt.Printf("What is (%s, %s, %s)? (Or 'SKIP') ", mac.String(), entry.Manufacturer, devInfo.GetDhcpName())
-		trueIdentity := 0
-		name := ""
+	s.match.Devid = maxDev
+	s.name = d.Vendor + " " + d.ProductName
+}
+
+func readObservations(hwMatch uint64, file os.FileInfo, s *sample) {
+	path := filepath.Join(*infoDir, file.Name())
+	in, err := ioutil.ReadFile(path)
+	if err != nil {
+		log.Fatalf("failed to open data file %s: %s\n", path, err)
+	}
+
+	devInfo := &base_msg.DeviceInfo{}
+	proto.Unmarshal(in, devInfo)
+
+	hwaddr := devInfo.GetMacAddress()
+	if hwaddr != hwMatch {
+		mac1 := network.Uint64ToHWAddr(hwaddr)
+		mac2 := network.Uint64ToHWAddr(hwMatch)
+		log.Fatalf("MAC addresses don't match: %s != %s\n", mac1, mac2)
+	}
+
+	mac := network.Uint64ToHWAddr(hwaddr)
+	ouiEntry, err := ouiDB.Query(mac.String())
+	if err != nil {
+		log.Fatalf("MAC address %s not in OUI database: %s\n", mac, err)
+	}
+
+	userInput := bufio.NewReader(os.Stdin)
+	if s.match.Devid == 0 {
+		fmt.Printf("What is (%s, %s, %s)?\n"+
+			"\tIf you don't know just hit enter.\n"+
+			"\tFor new device IDs enter 'NEW'.\n"+
+			"\tTo skip this file (%s) enter 'SKIP'\n",
+			mac.String(), ouiEntry.Manufacturer, devInfo.GetDhcpName(), path)
+
 		for {
 			entry, _ := userInput.ReadString('\n')
 			entry = strings.TrimSpace(entry)
-			if strings.Contains(entry, "SKIP") || strings.Contains(entry, "NEW") {
+
+			if entry == "" {
 				break
 			}
-			if tmp, err := strconv.Atoi(entry); err == nil {
-				if d, ok := devices[uint32(tmp)]; ok {
-					trueIdentity = tmp
-					name = d.Vendor + " " + d.ProductName
+
+			if strings.Contains(entry, "SKIP") {
+				return
+			}
+
+			if strings.Contains(entry, "NEW") {
+				newDevice(userInput, ouiEntry, s)
+				break
+			}
+
+			if tmp, err := strconv.ParseUint(entry, 10, 32); err == nil {
+				var vendor string
+				var productName string
+				row := db.QueryRow("SELECT Vendor, ProductName FROM "+deviceDB.DevTable+" WHERE Devid=$1", tmp)
+				if err := row.Scan(&vendor, &productName); err == nil {
+					s.match.Devid = uint32(tmp)
+					s.name = vendor + " " + productName
 					break
+				} else {
+					fmt.Printf("DB Query failed: %v\n", err)
 				}
 			}
 			fmt.Printf("Invalid entry: %s\n", entry)
 		}
+	}
 
-		if trueIdentity == 0 {
-			continue
+	addMfg(ouiEntry.Manufacturer, userInput, s)
+	addDNS(devInfo, userInput, s)
+	addScan(devInfo, userInput, s)
+	addListen(devInfo, userInput, s)
+}
+
+func readInfo(dir string) {
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		log.Fatalf("failed to read dir %s: %s\n", dir, err)
+	}
+
+	// Read the first MacAddress. All subsequent files should match.
+	path := filepath.Join(dir, files[0].Name())
+	in, err := ioutil.ReadFile(path)
+	if err != nil {
+		log.Fatalf("failed to open data file %s: %s\n", path, err)
+	}
+
+	devInfo := &base_msg.DeviceInfo{}
+	proto.Unmarshal(in, devInfo)
+	hwaddr := devInfo.GetMacAddress()
+	if hwaddr == 0 {
+		log.Fatalf("failed to get MAC address in %s\n", path)
+	}
+
+	// All files consitute a single sample.
+	maxMatch++
+	s := &sample{
+		match: deviceDB.Match{Matchid: maxMatch},
+	}
+
+	for _, f := range files {
+		readObservations(hwaddr, f, s)
+	}
+
+	if s.match.Devid != 0 {
+		if err := deviceDB.InsertOneMatch(db, s.match); err != nil {
+			log.Fatalf("failed to insert match %s: %s\n", s.name, err)
 		}
-
-		if _, ok := mfgidDB[entry.Manufacturer]; !ok {
-			maxMfg++
-			mfgidDB[entry.Manufacturer] = maxMfg
-		}
-
-		s := &sample{
-			name:     name,
-			identity: trueIdentity,
-			attrs:    make(map[string]string),
-		}
-
-		mfgStr := model.FormatMfgString(mfgidDB[entry.Manufacturer])
-		s.attrs[mfgStr] = "1"
-		attrUnion[mfgStr] = true
-
-		addDNS(devInfo, userInput, s)
-		addScan(devInfo, userInput, s)
-		addListen(devInfo, userInput, s)
-
-		output = append(output, s)
+	} else {
+		log.Fatalf("cannot create a sample with no identity!\n")
 	}
 }
 
-func readIdentities(path string) {
-	f, err := os.Open(path)
-	if err != nil {
-		log.Fatalf("failed to open data file %s\n", path)
-	}
-	defer f.Close()
-
-	r := csv.NewReader(f)
-	header, err := r.Read()
-	if err != nil {
-		log.Fatalf("failed to read header from %s: %s\n", path, err)
-	}
-
-	line := 0
-	for {
-		line++
-		record, err := r.Read()
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			log.Fatalf("failed to read from %s: %s\n", path, err)
-		}
-
-		last := len(record) - 1
-		id, err := strconv.Atoi(record[last])
-		if err != nil || id == 0 {
-			fmt.Printf("Bad id at %s: %d\n", record[last], line)
-			continue
-		}
-
-		s := &sample{
-			identity: id,
-			attrs:    make(map[string]string),
-		}
-
-		for i, feat := range record[:last] {
-			if feat == "0" {
-				continue
-			}
-			s.attrs[header[i]] = feat
-			attrUnion[header[i]] = true
-		}
-		output = append(output, s)
-	}
-
-	// We want to iterate over the devices in ascending order - not in the
-	// default map order.  To do that, we need to find the maximum ID.
-	max := uint32(2)
-	for i := range devices {
-		if i > max {
-			max = i
-		}
-	}
+func readIdentities() {
+	var devid uint32
+	var vendor string
+	var productName string
 
 	fmt.Println("The identities we know about are:")
-	for i := uint32(2); i <= max; i++ {
-		if d, ok := devices[i]; ok {
-			fmt.Printf("\t%-2d  %s %s\n", i, d.Vendor, d.ProductName)
-		}
-	}
-}
-
-func writeIdentities(path string) {
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+	rows, err := db.Query("SELECT Devid, Vendor, ProductName FROM " + deviceDB.DevTable + " ORDER BY Devid ASC")
 	if err != nil {
-		log.Fatalf("failed to open %s: %s\n", path, err)
+		log.Fatalf("failed to retrieve Vendor and ProductName data: %s", err)
 	}
-	defer f.Close()
-	w := csv.NewWriter(f)
+	defer rows.Close()
 
-	attrMap := make(map[string]int)
-	header := make([]string, 0)
-	for a := range attrUnion {
-		header = append(header, a)
-		attrMap[a] = len(header) - 1
-	}
-	header = append(header, "Identity")
-	w.Write(header)
-
-	for _, s := range output {
-		row := make([]string, len(header))
-		for i := range header {
-			row[i] = "0"
+	for rows.Next() {
+		if err := rows.Scan(&devid, &vendor, &productName); err != nil {
+			log.Fatalf("failed to scan for Vendor and ProductName: %s", err)
 		}
-
-		for a, v := range s.attrs {
-			row[attrMap[a]] = v
-		}
-		row[len(row)-1] = strconv.Itoa(s.identity)
-		w.Write(row)
+		fmt.Printf("\t%-2d  %s %s\n", devid, vendor, productName)
 	}
-
-	w.Flush()
-	if w.Error() != nil {
-		log.Fatalf("failed to write to %s: %s\n", path, err)
-	}
-}
-
-func writeMfgs(path string) {
-	s, err := json.MarshalIndent(mfgidDB, "", "  ")
-	if err != nil {
-		log.Fatalf("failed to construct JSON: %s\n", err)
-	}
-
-	err = ioutil.WriteFile(path, s, 0644)
-	if err != nil {
-		log.Fatalf("Failed to write file %s: %s\n", path, err)
-	}
-}
-
-func filemunge(path string) string {
-	return strings.Replace(path, "$ETC", *etcDir, 1)
 }
 
 func main() {
 	var err error
 	flag.Parse()
 
-	path := filemunge(*ouiFile)
-	ouiDB, err = oui.OpenFile(path)
+	db, err = deviceDB.ConnectDB(os.Getenv("BGUSER"), os.Getenv("BGPASSWORD"))
 	if err != nil {
-		log.Fatalf("failed to open OUI file %s: %s", path, err)
+		log.Fatalf("Failed to connect to DB: %s\n", err)
 	}
 
-	path = filemunge(*mfgFile)
-	file, err := ioutil.ReadFile(path)
+	ouiDB, err = oui.OpenFile(*ouiFile)
 	if err != nil {
-		log.Fatalf("failed to open manufacturer ID file %s: %s\n", path, err)
+		log.Fatalf("failed to open OUI file %s: %s", *ouiFile, err)
 	}
 
-	err = json.Unmarshal(file, &mfgidDB)
-	if err != nil {
-		log.Fatalf("failed to import manufacturer IDs from %s: %s\n", path, err)
+	if err = db.QueryRow("SELECT MAX(mfgid) FROM " + deviceDB.MfgTable).Scan(&maxMfg); err != nil {
+		log.Fatalf("failed to get maxMfg: %s\n", err)
 	}
 
-	for _, v := range mfgidDB {
-		if v > maxMfg {
-			maxMfg = v
-		}
+	if err = db.QueryRow("SELECT MAX(index) FROM " + deviceDB.CharTable).Scan(&maxChar); err != nil {
+		log.Fatalf("failed to get maxChar: %s\n", err)
 	}
 
-	path = filemunge(*devFile)
-	devices, err = device.DevicesLoad(path)
-	if err != nil {
-		log.Fatalf("failed to import devices from %s: %s\n", path, err)
+	if err = db.QueryRow("SELECT MAX(matchid) FROM " + deviceDB.MatchTable).Scan(&maxMatch); err != nil {
+		log.Fatalf("failed to get maxMatch: %s\n", err)
 	}
 
-	path = filemunge(*identFile)
-	readIdentities(path)
-
-	files := strings.Split(*observedFiles, ",")
-	for _, f := range files {
-		readObservations(f)
+	if err = db.QueryRow("SELECT MAX(devid) FROM " + deviceDB.DevTable).Scan(&maxDev); err != nil {
+		log.Fatalf("failed to get maxDev: %s\n", err)
 	}
 
-	writeIdentities(identOut)
-	writeMfgs(mfgOut)
+	readIdentities()
+	readInfo(*infoDir)
 }

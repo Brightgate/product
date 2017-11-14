@@ -17,6 +17,9 @@ import (
 	"time"
 )
 
+// IDBase is the minimum device ID
+const IDBase = 2
+
 // Device describes a single device
 type Device struct {
 	Obsolete       bool

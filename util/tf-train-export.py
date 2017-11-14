@@ -28,7 +28,7 @@ import os
 import shutil
 import tensorflow as tf
 
-# See ap.configd/devices.json. Keep in sync with Golang inference.
+# Keep in sync with ap_common/device/device.go: IDBase
 DEVID_BASE = 2
 
 # The same key must be used when running inference.
