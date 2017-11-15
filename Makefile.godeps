@@ -40,6 +40,16 @@ deps-update:
 deps-status:
 	cd $(realpath $(GOSRCBG)) && $(DEPBIN) status
 
+#
+# Invoke this target by hand to add a new dependency.  For example:
+# make deps-add DEPNAME=github.com/foo/baz@0.5.2
+#
+# Check in the resultant Gopkg.lock and Gopkg.toml changes.
+#
+deps-add:
+	cd $(GOSRCBG) && $(DEPBIN) ensure -add $(DEPNAME)
+	touch .deps_ensured
+
 clobber-godeps:
 	$(RM) -f .deps_ensured
 	$(RM) -fr $(GOSRCBGVENDOR)
