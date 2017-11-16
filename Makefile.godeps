@@ -47,7 +47,7 @@ deps-status:
 # Check in the resultant Gopkg.lock and Gopkg.toml changes.
 #
 deps-add:
-	cd $(GOSRCBG) && $(DEPBIN) ensure -add $(DEPNAME)
+	cd $(realpath $(GOSRCBG)) && $(DEPBIN) ensure -add $(DEPNAME)
 	touch .deps_ensured
 
 clobber-godeps:

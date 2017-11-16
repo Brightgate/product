@@ -25,7 +25,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -44,7 +43,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+
+	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/net/context"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -92,6 +96,9 @@ var (
 		Name: "upcall_invalids",
 		Help: "GRPC upcall invalid HMAC attempts",
 	})
+
+	globalLog        *zap.Logger
+	globalSugaredLog *zap.SugaredLogger
 )
 
 func validhmac(received []byte, data string) bool {
@@ -104,37 +111,81 @@ func validhmac(received []byte, data string) bool {
 
 type inventoryServer struct{}
 
-func writeInfo(devInfo *base_msg.DeviceInfo, basePath string) error {
+func writeInfo(devInfo *base_msg.DeviceInfo, basePath string) (string, error) {
 	hwaddr := network.Uint64ToHWAddr(devInfo.GetMacAddress())
 	path := filepath.Join(basePath, hwaddr.String())
 	if err := os.MkdirAll(path, 0755); err != nil {
-		return grpc.Errorf(codes.FailedPrecondition, "mkdir failed")
+		return "", grpc.Errorf(codes.FailedPrecondition, "mkdir failed")
 	}
 
 	filename := fmt.Sprintf("device_info.%d.pb", int(time.Now().Unix()))
+	path = filepath.Join(path, filename)
 	f, err := os.OpenFile(
-		filepath.Join(path, filename),
+		path,
 		os.O_WRONLY|os.O_CREATE|os.O_TRUNC,
 		0644)
 	if err != nil {
-		return grpc.Errorf(codes.FailedPrecondition, "open failed")
+		return "", grpc.Errorf(codes.FailedPrecondition, "open failed")
 	}
 	defer f.Close()
 
 	out, err := proto.Marshal(devInfo)
 	if err != nil {
-		return grpc.Errorf(codes.FailedPrecondition, "marshal failed")
+		os.Remove(path)
+		return "", grpc.Errorf(codes.FailedPrecondition, "marshal failed")
 	}
 
 	if _, err := f.Write(out); err != nil {
-		return grpc.Errorf(codes.FailedPrecondition, "write failed")
+		os.Remove(path)
+		return "", grpc.Errorf(codes.FailedPrecondition, "write failed")
 	}
-	return nil
+	return path, nil
+}
+
+func setupLogs() (*zap.Logger, *zap.SugaredLogger) {
+	var log *zap.Logger
+	var err error
+	if globalLog != nil {
+		return getLogs()
+	}
+	if terminal.IsTerminal(int(os.Stderr.Fd())) {
+		config := zap.NewDevelopmentConfig()
+		config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		log, err = config.Build(zap.AddStacktrace(zapcore.ErrorLevel))
+	} else {
+		// For now we'll take the defaults but choose our time format.
+		// In the future we'll want to adjust this with more
+		// customization.
+		config := zap.NewProductionConfig()
+		config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+		log, err = config.Build(zap.AddStacktrace(zapcore.ErrorLevel))
+	}
+	if err != nil {
+		panic("can't zap")
+	}
+	globalLog = log
+	globalSugaredLog = globalLog.Sugar()
+	return getLogs()
+}
+
+func getLogs() (*zap.Logger, *zap.SugaredLogger) {
+	return globalLog, globalSugaredLog
+}
+
+func loggerFromCtx(ctx context.Context) (*zap.Logger, *zap.SugaredLogger) {
+	log, _ := getLogs()
+	if ctx != nil {
+		pr, ok := peer.FromContext(ctx)
+		if ok && pr != nil {
+			log = log.With(zap.String("peer", pr.Addr.String()))
+		}
+	}
+	return log, log.Sugar()
 }
 
 func (i *inventoryServer) Upcall(ctx context.Context, req *cloud_rpc.InventoryReport) (*cloud_rpc.UpcallResponse, error) {
 	lt := time.Now()
-	log.Println("Context: ", ctx)
+	_, slog := loggerFromCtx(ctx)
 
 	if req.HMAC == nil || req.Uuid == nil {
 		invalid_upcalls.Inc()
@@ -146,14 +197,16 @@ func (i *inventoryServer) Upcall(ctx context.Context, req *cloud_rpc.InventoryRe
 		return nil, grpc.Errorf(codes.Unauthenticated, "valid hmac required")
 	}
 
-	log.Printf("received inventory from %s (%v)\n", req.GetUuid(), req.GetWanHwaddr())
+	slog.Infow("incoming inventory", "uuid", req.GetUuid(), "WanHwAddr", req.GetWanHwaddr())
 
 	// We receive only what has recently changed
 	basePath := filepath.Join(*clroot, "var", "spool", req.GetUuid())
 	for _, devInfo := range req.Inventory.Devices {
-		if err := writeInfo(devInfo, basePath); err != nil {
+		path, err := writeInfo(devInfo, basePath)
+		if err != nil {
 			return nil, err
 		}
+		slog.Infow("wrote report", "path", path)
 	}
 
 	// Formulate a response.
@@ -184,8 +237,8 @@ func (s *upbeatServer) Init() {
 func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest) (*cloud_rpc.UpcallResponse, error) {
 	// Prometheus metric: upcall latency.
 	lt := time.Now()
-	log.Println("Context: ", ctx)
-	log.Println("UpcallRequest: ", req.String())
+	_, slog := loggerFromCtx(ctx)
+	slog.Info("UpcallRequest: ", req.String())
 
 	if req.HMAC == nil || req.WanHwaddr == nil ||
 		req.UptimeElapsed == nil || req.Uuid == nil {
@@ -193,7 +246,7 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 		return nil, grpc.Errorf(codes.InvalidArgument, "req missing parameters")
 	}
 
-	log.Printf("hwaddr %v uuid %s version %v uptime %d\n",
+	slog.Infof("hwaddr %v uuid %s version %v uptime %d\n",
 		req.GetWanHwaddr(), req.GetUuid(), req.GetComponentVersion(),
 		req.GetUptimeElapsed())
 
@@ -206,9 +259,7 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 
 	peer, ok := peer.FromContext(ctx)
 	if !ok {
-		log.Printf("no peer available in %v\n", ctx)
-	} else {
-		log.Printf("peer %v\n", peer.Addr)
+		return nil, fmt.Errorf("no peer available in %v", ctx)
 	}
 
 	// What do we do with a request?
@@ -223,16 +274,16 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 	}
 
 	// Update our tables.
-	log.Printf("len hwaddr %v\n", len(req.GetWanHwaddr()))
+	slog.Infof("len hwaddr %v\n", len(req.GetWanHwaddr()))
 
 	new_system := false
 	new_software_install := false
 
 	// req.Uuid not in s.uuids[] --> new system
 	if _, ok := s.uuids[req.GetUuid()]; ok {
-		log.Printf("uuid is known\n")
+		slog.Info("uuid is known")
 	} else {
-		log.Printf("uuid %s is a new system\n", req.GetUuid())
+		slog.Infof("uuid %s is a new system", req.GetUuid())
 		new_system = true
 	}
 
@@ -243,7 +294,7 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 			// software install
 			if s.macs[hwaddr] != req.GetUuid() {
 				// New installation?
-				log.Printf("WanHwaddr not equal to Uuid, new software install")
+				slog.Info("WanHwaddr not equal to Uuid, new software install")
 				new_software_install = true
 			}
 		} else {
@@ -252,7 +303,7 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 	}
 
 	if new_system {
-		log.Printf("recording uuid %s\n", req.GetUuid())
+		slog.Infof("recording uuid %s", req.GetUuid())
 
 		// Record it!
 		s.uuids[req.GetUuid()] = ai
@@ -260,7 +311,7 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 
 	if new_system || new_software_install {
 		for _, hwaddr := range req.WanHwaddr {
-			log.Printf("recording hwaddr %s\n", hwaddr)
+			slog.Infof("recording hwaddr %s", hwaddr)
 			s.macs[hwaddr] = req.GetUuid()
 		}
 	}
@@ -291,20 +342,24 @@ func main() {
 	var opts []grpc.ServerOption
 	var keypair tls.Certificate
 	var serverCertPool *x509.CertPool
+	var err error
+
+	log, slog := setupLogs()
+	defer log.Sync()
 
 	flag.Parse()
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	envcfg.Unmarshal(&environ)
+
+	slog.Infow(pname+" starting", "args", os.Args, "envcfg", environ)
 
 	if len(environ.B10E_CLRPCD_PROMETHEUS_PORT) != 0 {
 		http.Handle("/metrics", promhttp.Handler())
 		go http.ListenAndServe(environ.B10E_CLRPCD_PROMETHEUS_PORT, nil)
-		log.Println("prometheus client launched")
+		slog.Info("prometheus client launched")
 	}
 
 	// It is bad if B10E_CERT_HOSTNAME is not defined.
 	// It is unfortunate if B10E_CERT_HOSTNAME is not defined.
-	log.Printf("environ %+v", environ)
 
 	// Port 443 listener.
 	certf := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem",
@@ -314,28 +369,29 @@ func main() {
 
 	grpc_port := ":4430"
 
-	log.Println("local mode", environ.B10E_LOCAL_MODE)
-
-	if !environ.B10E_LOCAL_MODE {
+	if environ.B10E_LOCAL_MODE {
+		slog.Info("local mode")
+	} else {
+		slog.Info("secure remote mode")
 		certb, err := ioutil.ReadFile(certf)
 		if err != nil {
-			log.Printf("read cert file failed: %v\n", err)
+			slog.Warnw("read cert file failed", "err", err)
 		}
 		keyb, err := ioutil.ReadFile(keyf)
 		if err != nil {
-			log.Printf("read key file failed: %v\n", err)
+			slog.Warnw("read key file failed", "err", err)
 		}
 
 		keypair, err = tls.X509KeyPair(certb, keyb)
 		if err != nil {
-			log.Printf("generate X509 key pair failed: %v\n", err)
+			slog.Warnw("generate X509 key pair failed", "err", err)
 		}
 
 		serverCertPool = x509.NewCertPool()
 
 		ok := serverCertPool.AppendCertsFromPEM(certb)
 		if !ok {
-			panic("bad certs")
+			slog.Fatal("bad certs")
 		}
 
 		tlsc := tls.Config{
@@ -400,5 +456,5 @@ func main() {
 	sig := make(chan os.Signal)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	s := <-sig
-	log.Fatalf("Signal (%v) received, stopping\n", s)
+	slog.Infof("Signal (%v) received, stopping", s)
 }

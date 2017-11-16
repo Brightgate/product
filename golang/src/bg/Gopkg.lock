@@ -212,6 +212,30 @@
   version = "v0.2.0"
 
 [[projects]]
+  name = "go.uber.org/atomic"
+  packages = ["."]
+  revision = "8474b86a5a6f79c443ce4b2992817ff32cf208b8"
+  version = "v1.3.1"
+
+[[projects]]
+  name = "go.uber.org/multierr"
+  packages = ["."]
+  revision = "3c4937480c32f4c13a875a1829af76c98ca3d40a"
+  version = "v1.1.0"
+
+[[projects]]
+  name = "go.uber.org/zap"
+  packages = [".","buffer","internal/bufferpool","internal/color","internal/exit","zapcore"]
+  revision = "35aad584952c3e7020db7b839f6b102de6271f89"
+  version = "v1.7.1"
+
+[[projects]]
+  branch = "master"
+  name = "golang.org/x/crypto"
+  packages = ["ssh/terminal"]
+  revision = "9f005a07e0d31d45e6656d241bb5c0f2efd4bc94"
+
+[[projects]]
   branch = "master"
   name = "golang.org/x/image"
   packages = ["draw","font","math/f64","math/fixed","tiff","tiff/lzw"]
@@ -222,6 +246,12 @@
   name = "golang.org/x/net"
   packages = ["bpf","context","http2","http2/hpack","idna","internal/iana","internal/socket","internal/timeseries","ipv4","lex/httplex","trace"]
   revision = "4b14673ba32bee7f5ac0f990a48f033919fd418b"
+
+[[projects]]
+  branch = "master"
+  name = "golang.org/x/sys"
+  packages = ["unix","windows"]
+  revision = "bf42f188b9bc6f2cf5b8ee5a912ef1aedd0eba4c"
 
 [[projects]]
   branch = "master"
@@ -256,6 +286,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "b7a29631a84d8cbc4546533c3f9c43722d5c949d1b8d7c90dd40142067c6d367"
+  inputs-digest = "c2e1c8e69fb57c6c06c9db4b6b4fe1989446473f12b3f92b8e9a1f9d8c781792"
   solver-name = "gps-cdcl"
   solver-version = 1
