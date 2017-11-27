@@ -33,6 +33,7 @@ import (
 )
 
 var validRings = map[string]bool{
+	base_def.RING_INTERNAL:   true,
 	base_def.RING_UNENROLLED: true,
 	base_def.RING_SETUP:      true,
 	base_def.RING_CORE:       true,
@@ -153,6 +154,8 @@ type APConfig struct {
 // NewConfig will connect to ap.configd, and will return a handle used for
 // subsequent interactions with the daemon
 func NewConfig(b *broker.Broker, name string) (*APConfig, error) {
+	var host string
+
 	sender := fmt.Sprintf("%s(%d)", name, os.Getpid())
 
 	socket, err := zmq.NewSocket(zmq.REQ)
@@ -173,7 +176,12 @@ func NewConfig(b *broker.Broker, name string) (*APConfig, error) {
 		return nil, err
 	}
 
-	err = socket.Connect(base_def.CONFIGD_ZMQ_REP_URL)
+	if aputil.IsMeshMode() {
+		host = base_def.GATEWAY_ZMQ_URL
+	} else {
+		host = base_def.LOCAL_ZMQ_URL
+	}
+	err = socket.Connect(host + base_def.CONFIGD_ZMQ_REP_PORT)
 	if err != nil {
 		err = fmt.Errorf("Failed to connect new cfg socket: %v", err)
 		return nil, err
@@ -364,8 +372,6 @@ func (c *APConfig) GetRings() RingMap {
 			vlan, err = getIntVal(ring, "vlan")
 			if vlan >= 0 {
 				bridge = "brvlan" + strconv.Itoa(vlan)
-			} else {
-				bridge, _ = c.GetProp("@/network/setup_nic")
 			}
 		}
 		if err == nil {
@@ -469,4 +475,39 @@ func (c *APConfig) GetDevicePath(path string) (*device.Device, error) {
 func (c *APConfig) GetDevice(devid int) (*device.Device, error) {
 	path := fmt.Sprintf("@/devices/%d", devid)
 	return c.GetDevicePath(path)
+}
+
+// GetNics returns a slice of mac addresses, representing the NICs that match
+// the filter parameters
+func (c *APConfig) GetNics(ring string, local bool) ([]string, error) {
+	var nodes []*PropertyNode
+
+	s := make([]string, 0)
+	prop := "@/nodes"
+	if local {
+		prop += "/" + aputil.GetNodeID().String()
+	}
+	props, err := c.GetProps(prop)
+	if err != nil {
+		return nil, fmt.Errorf("property get %s failed: %v\n", prop, err)
+	}
+
+	if local {
+		nodes = []*PropertyNode{props}
+	} else {
+		nodes = props.Children
+	}
+	for _, node := range nodes {
+		for _, nic := range node.Children {
+			var nicRing string
+			if x := nic.GetChild("ring"); x != nil {
+				nicRing = x.Value
+			}
+
+			if ring == "" || ring == nicRing {
+				s = append(s, nic.Name)
+			}
+		}
+	}
+	return s, nil
 }

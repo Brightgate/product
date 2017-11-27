@@ -84,30 +84,31 @@ type DaemonList []*DaemonState
 func New(name string) (*MCP, error) {
 	var handle *MCP
 
-	sender := fmt.Sprintf("%s(%d)", name, os.Getpid())
+	port := base_def.LOCAL_ZMQ_URL + base_def.MCP_ZMQ_REP_PORT
+	sendTO := base_def.LOCAL_ZMQ_SEND_TIMEOUT * time.Second
+	recvTO := base_def.LOCAL_ZMQ_RECEIVE_TIMEOUT * time.Second
 
 	socket, err := zmq.NewSocket(zmq.REQ)
 	if err != nil {
-		err = fmt.Errorf("Failed to create new MCP socket: %v", err)
+		err = fmt.Errorf("failed to create new MCP socket: %v", err)
 		return handle, err
 	}
 
-	err = socket.SetSndtimeo(time.Duration(base_def.LOCAL_ZMQ_SEND_TIMEOUT * time.Second))
-	if err != nil {
-		fmt.Printf("Failed to set MCP send timeout: %v\n", err)
+	if err = socket.SetSndtimeo(time.Duration(sendTO)); err != nil {
+		fmt.Printf("failed to set MCP send timeout: %v\n", err)
 		return handle, err
 	}
 
-	err = socket.SetRcvtimeo(time.Duration(base_def.LOCAL_ZMQ_RECEIVE_TIMEOUT * time.Second))
-	if err != nil {
-		fmt.Printf("Failed to set MCP receive timeout: %v\n", err)
+	if err = socket.SetRcvtimeo(time.Duration(recvTO)); err != nil {
+		fmt.Printf("failed to set MCP receive timeout: %v\n", err)
 		return handle, err
 	}
 
-	err = socket.Connect(base_def.MCP_ZMQ_REP_URL)
+	err = socket.Connect(port)
 	if err != nil {
-		err = fmt.Errorf("Failed to connect new MCP socket: %v", err)
+		err = fmt.Errorf("failed to connect new socket %s: %v", port, err)
 	} else {
+		sender := fmt.Sprintf("%s(%d)", name, os.Getpid())
 		handle = &MCP{sender: sender, socket: socket}
 		if name[0:3] == "ap." {
 			handle.daemon = name[3:]

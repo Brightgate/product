@@ -40,6 +40,8 @@ var (
 	scansRunning map[*os.Process]bool
 	runLock      sync.Mutex
 
+	internalMacs map[string]bool
+
 	activeHosts *hostmap // hosts we believe to be currently present
 )
 
@@ -313,6 +315,11 @@ func subnetHostScan(ring, subnet string, scannedHosts *hostmap) int {
 			continue
 		}
 		mac, ip := getMacIP(&host)
+
+		if internalMacs[mac] {
+			// Don't probe any other APs
+			continue
+		}
 
 		// Skip any incomplete records.  We also don't want to schedule
 		// scans of the router (i.e., us)
@@ -659,6 +666,15 @@ func scannerFini() {
 }
 
 func scannerInit() error {
+
+	// Build a set of the MACs belonging to our APs, so we can distinguish
+	// between client and internal network traffic
+	internalMacs = make(map[string]bool)
+	nics, _ := config.GetNics("", false)
+	for _, nic := range nics {
+		internalMacs[nic] = true
+	}
+
 	activeHosts = hostmapCreate()
 	scansPending = make(scanQueue, 0)
 	heap.Init(&scansPending)

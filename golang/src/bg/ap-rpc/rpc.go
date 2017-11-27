@@ -22,7 +22,6 @@ import (
 	"hash"
 	"io/ioutil"
 	"log"
-	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -32,6 +31,7 @@ import (
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/ap_common/network"
+	"bg/base_def"
 	"bg/base_msg"
 	"bg/cloud_rpc"
 
@@ -84,17 +84,15 @@ func gethmac(data string) hash.Hash {
 
 // Return the MAC address for the defined WAN interface.
 func getWanInterface(config *apcfg.APConfig) string {
-	wanNic, err := config.GetProp("@/network/wan_nic")
+	nics, err := config.GetNics(base_def.RING_WAN, true)
 	if err != nil {
-		log.Fatalf("property get @/network/wan_nic failed: %v\n", err)
+		log.Fatalf("failed to get list of WAN NICs: %v\n", err)
+	}
+	if len(nics) == 0 {
+		log.Fatalf("No WAN interface identified\n")
 	}
 
-	iface, err := net.InterfaceByName(wanNic)
-	if err != nil {
-		log.Fatalf("could not retrieve %s interface: %v\n", wanNic, err)
-	}
-
-	return iface.HardwareAddr.String()
+	return nics[0]
 }
 
 func firstVersion() string {

@@ -241,7 +241,7 @@ func WaitForDevice(dev string, timeout time.Duration) error {
 			return nil
 		}
 		if time.Since(start) >= timeout {
-			return fmt.Errorf("timeout: %s not online", dev)
+			return fmt.Errorf("timeout: %s not online: %s", dev, state)
 		}
 		time.Sleep(time.Millisecond * 100)
 	}

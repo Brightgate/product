@@ -32,7 +32,12 @@ const (
 
 func apiLoop() {
 	incoming, _ := zmq.NewSocket(zmq.REP)
-	incoming.Bind(base_def.WATCHD_ZMQ_REP_URL)
+	port := base_def.LOCAL_ZMQ_URL + base_def.WATCHD_ZMQ_REP_PORT
+	if err := incoming.Bind(port); err != nil {
+		log.Fatalf("failed to open incoming port %s: %v\n", port, err)
+	}
+	log.Printf("Listening on %s\n", port)
+
 	me := pname + "." + strconv.Itoa(os.Getpid())
 
 	for {

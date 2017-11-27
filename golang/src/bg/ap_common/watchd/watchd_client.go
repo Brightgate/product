@@ -73,19 +73,20 @@ func New(name string) (*Watchd, error) {
 
 	socket, err := zmq.NewSocket(zmq.REQ)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create new Watchd socket: %v", err)
+		return nil, fmt.Errorf("failed to create new watchd socket: %v", err)
 	}
 
 	if err = socket.SetSndtimeo(sendTimeout); err != nil {
-		return nil, fmt.Errorf("failed to set Watchd send timeout: %v", err)
+		return nil, fmt.Errorf("failed to set watchd send timeout: %v", err)
 	}
 
 	if err = socket.SetRcvtimeo(recvTimeout); err != nil {
-		return nil, fmt.Errorf("failed to set Watchd receive timeout: %v", err)
+		return nil, fmt.Errorf("failed to set watchd receive timeout: %v", err)
 	}
 
-	if err = socket.Connect(base_def.WATCHD_ZMQ_REP_URL); err != nil {
-		return nil, fmt.Errorf("failed to connect new Watchd socket: %v", err)
+	err = socket.Connect(base_def.LOCAL_ZMQ_URL + base_def.WATCHD_ZMQ_REP_PORT)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect new watchd socket: %v", err)
 	}
 
 	h := Watchd{

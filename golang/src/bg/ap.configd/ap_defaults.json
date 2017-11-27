@@ -11,7 +11,7 @@
         },
         {
             "Name": "cfgversion",
-            "Value": "6"
+            "Value": "7"
         },
         {
             "Name": "apversion",
@@ -29,11 +29,28 @@
                         },
                         {
                             "Name": "subnet",
-                            "Value": "192.168.131.0/26"
+                            "Value": "192.168.130.0/26"
                         },
                         {
                             "Name": "lease_duration",
                             "Value": "10"
+                        }
+                    ]
+                },
+		{
+                    "Name": "internal",
+                    "Children": [
+                        {
+                            "Name": "vlan",
+                            "Value": "1"
+                        },
+                        {
+                            "Name": "subnet",
+                            "Value": "192.168.131.0/29"
+                        },
+                        {
+                            "Name": "lease_duration",
+                            "Value": "1440"
                         }
                     ]
                 },
@@ -154,10 +171,6 @@
 		{
 		    "Name": "passphrase",
 		    "Value": "sosecretive"
-		},
-		{
-		    "Name": "setup_nic",
-		    "Value": ""
 		},
 		{
 		    "Name": "dnsserver",

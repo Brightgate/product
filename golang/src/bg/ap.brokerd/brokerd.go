@@ -69,13 +69,19 @@ func main() {
 
 	frontend, _ := zmq.NewSocket(zmq.XSUB)
 	defer frontend.Close()
-	frontend.Bind(base_def.BROKER_ZMQ_PUB_URL)
+	port := base_def.INCOMING_ZMQ_URL + base_def.BROKER_ZMQ_PUB_PORT
+	if err = frontend.Bind(port); err != nil {
+		log.Fatalf("Unable to bind publish port %s: %v\n", port, err)
+	}
+	log.Printf("Publishing on %s\n", port)
 
 	backend, _ := zmq.NewSocket(zmq.XPUB)
 	defer backend.Close()
-	backend.Bind(base_def.BROKER_ZMQ_SUB_URL)
-
-	log.Println("frontend, backend ready; about to invoke proxy")
+	port = base_def.INCOMING_ZMQ_URL + base_def.BROKER_ZMQ_SUB_PORT
+	if err = backend.Bind(port); err != nil {
+		log.Fatalf("Unable to bind subscribe port %s: %v\n", port, err)
+	}
+	log.Printf("Subscribed on %s\n", port)
 
 	if mcpd != nil {
 		mcpd.SetState(mcp.ONLINE)

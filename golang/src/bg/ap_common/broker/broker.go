@@ -117,13 +117,26 @@ func (b *Broker) Handle(topic string, handler handlerF) {
 }
 
 func (b *Broker) connect() {
+	var host string
+
+	if aputil.IsMeshMode() {
+		host = base_def.GATEWAY_ZMQ_URL
+	} else {
+		host = base_def.LOCAL_ZMQ_URL
+	}
 	s, _ := zmq.NewSocket(zmq.SUB)
 	b.subscriber = s
-	b.subscriber.Connect(base_def.BROKER_ZMQ_SUB_URL)
+	err := b.subscriber.Connect(host + base_def.BROKER_ZMQ_SUB_PORT)
+	if err != nil {
+		log.Fatalf("Unable to connect to broker subscribe: %v\n", err)
+	}
 	b.subscriber.SetSubscribe("")
 
 	b.publisher, _ = zmq.NewSocket(zmq.PUB)
-	b.publisher.Connect(base_def.BROKER_ZMQ_PUB_URL)
+	err = b.publisher.Connect(host + base_def.BROKER_ZMQ_PUB_PORT)
+	if err != nil {
+		log.Fatalf("Unable to connect to broker publish: %v\n", err)
+	}
 
 	go eventListener(b)
 }

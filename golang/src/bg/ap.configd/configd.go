@@ -74,7 +74,7 @@ const (
 	pname            = "ap.configd"
 
 	minConfigVersion = 3
-	curConfigVersion = 6
+	curConfigVersion = 7
 )
 
 // Allow for significant variation in the processing of subtrees
@@ -577,7 +577,7 @@ func ipv4Setter(node *pnode, addr string, expires *time.Time) (bool, error) {
 	// Make sure the address isn't already assigned
 	clients := propertySearch("@/clients")
 	for _, device := range clients.Children {
-		if device == node {
+		if device == node.parent {
 			// Reassigning the device's address to itself is fine
 			continue
 		}
@@ -755,8 +755,9 @@ func propertyUpdate(property, value string, expires *time.Time,
 	log.Printf("set property %s -> %s\n", property, value)
 	node := propertySearch(property)
 	if node == nil && insert {
-		node = propertyInsert(property)
-		inserted = true
+		if node = propertyInsert(property); node != nil {
+			inserted = true
+		}
 	}
 
 	if node == nil {
@@ -1154,7 +1155,11 @@ func main() {
 	propTreeInit()
 
 	incoming, _ := zmq.NewSocket(zmq.REP)
-	incoming.Bind(base_def.CONFIGD_ZMQ_REP_URL)
+	port := base_def.INCOMING_ZMQ_URL + base_def.CONFIGD_ZMQ_REP_PORT
+	if err = incoming.Bind(port); err != nil {
+		log.Fatalf("Failed to bind incoming port %s: %v\n", port, err)
+	}
+	log.Printf("Listening on %s\n", port)
 
 	if mcpd != nil {
 		mcpd.SetState(mcp.ONLINE)

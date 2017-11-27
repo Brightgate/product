@@ -72,9 +72,10 @@ var (
 	clients apcfg.ClientMap // macaddr -> ClientInfo
 	rings   apcfg.RingMap   // ring -> config
 
-	setupNic string
-	wanNic   string
-	wifiNic  string
+	setupNic    string
+	wanNic      string
+	wifiNic     string
+	meshNodeIdx byte
 
 	hostapdLog   *log.Logger
 	childProcess *os.Process // track the hostapd proc
@@ -98,6 +99,7 @@ const (
 	brctlCmd       = "/sbin/brctl"
 	sysctlCmd      = "/sbin/sysctl"
 	ipCmd          = "/sbin/ip"
+	vconfigCmd     = "/sbin/vconfig"
 	pname          = "ap.networkd"
 	setupPortal    = "_0"
 )
@@ -105,6 +107,7 @@ const (
 type physDevice struct {
 	name         string
 	hwaddr       string
+	ring         string
 	wireless     bool
 	supportVLANs bool
 	multipleAPs  bool
@@ -186,6 +189,31 @@ func configNetworkChanged(path []string, val string, expires *time.Time) {
 }
 
 //
+// Replace the final nybble of a mac address to match the transformations
+// hostapd performs to support multple SSIDs
+//
+func macUpdateLastOctet(mac string, nybble uint64) string {
+	octets := strings.Split(mac, ":")
+	if len(octets) == 6 {
+		b, _ := strconv.ParseUint(octets[5], 16, 32)
+		newNybble := (b & 0xf0) | nybble
+		if newNybble != b {
+			octets[5] = fmt.Sprintf("%02x", newNybble)
+
+			// Since we changed the mac address, we need to set the
+			// 'locally administered' bit in the first octet
+			b, _ = strconv.ParseUint(octets[0], 16, 32)
+			b |= 0x02 // Set the "locally administered" bit
+			octets[0] = fmt.Sprintf("%02x", b)
+			mac = strings.Join(octets, ":")
+		}
+	} else {
+		log.Printf("invalid mac address: %s", mac)
+	}
+	return mac
+}
+
+//
 // Get network settings from configd and use them to initialize the AP
 //
 func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
@@ -193,10 +221,19 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 	var vlanComment, setupComment string
 	var node *apcfg.PropertyNode
 
+	meshNode := aputil.IsMeshMode()
+	apSuffix := ""
+	if meshNode {
+		// XXX - for now we'll give mesh nodes their own SSID.  This
+		// lets us sort out the layer 2/3 plumbing issues without having
+		// to worry about AP handoff
+		apSuffix += "-mesh"
+	}
+
 	if node = props.GetChild("ssid"); node == nil {
 		return fmt.Errorf("no SSID configured")
 	}
-	ssid = node.GetValue()
+	ssid = node.GetValue() + apSuffix
 
 	if node = props.GetChild("passphrase"); node == nil {
 		return fmt.Errorf("no passphrase configured")
@@ -204,33 +241,20 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 	passphrase = node.GetValue()
 
 	if node = props.GetChild("setupssid"); node != nil {
-		setupSSID = node.GetValue()
+		setupSSID = node.GetValue() + apSuffix
 	}
 
-	if d.multipleAPs && len(setupSSID) > 0 {
-		// If we create a second SSID for new clients to setup to,
+	if !meshNode && d.multipleAPs && len(setupSSID) > 0 {
+		// If we create a second SSID for new clients to connect to,
 		// its mac address will be derived from the nic's mac address by
 		// adding 1 to the final octet.  To accomodate that, hostapd
 		// wants the final nybble of the final octet to be 0.
-		octets := strings.Split(d.hwaddr, ":")
-		if len(octets) != 6 {
-			return fmt.Errorf("%s has an invalid mac address: %s",
-				d.name, d.hwaddr)
+		newMac := macUpdateLastOctet(d.hwaddr, 0)
+		if newMac != d.hwaddr {
+			log.Printf("Changed mac from %s to %s\n", d.hwaddr, newMac)
+			d.hwaddr = newMac
 		}
-		b, _ := strconv.ParseUint(octets[5], 16, 32)
-		if b&0xff != 0 {
-			b &= 0xf0
-			octets[5] = fmt.Sprintf("%02x", b)
-
-			// Since we changed the mac address, we need to set the
-			// 'locally administered' bit in the first octet
-			b, _ = strconv.ParseUint(octets[0], 16, 32)
-			b |= 0x02 // Set the "locally administered" bit
-			octets[0] = fmt.Sprintf("%02x", b)
-			o := d.hwaddr
-			d.hwaddr = strings.Join(octets, ":")
-			log.Printf("Changed mac from %s to %s\n", o, d.hwaddr)
-		}
+		setupComment = ""
 		setupNetwork = true
 	} else {
 		setupComment = "#"
@@ -313,7 +337,7 @@ func generateHostAPDConf(conf *APConfig) string {
 	defer vf.Close()
 
 	for _, ring := range rings {
-		if ring.Vlan > 0 {
+		if ring.Vlan > 1 {
 			fmt.Fprintf(vf, "%d\tvlan.%d\n", ring.Vlan, ring.Vlan)
 		}
 	}
@@ -345,27 +369,163 @@ func signalHandler() {
 	}
 }
 
-func resetInterfaces() {
+// Create a ring's network bridge.  If a nic is provided, attach it to the
+// bridge.
+func createBridge(ring *apcfg.RingConfig, nic string) {
+	bridge := ring.Bridge
+
+	err := exec.Command(brctlCmd, "addbr", bridge).Run()
+	if err != nil {
+		log.Printf("addbr %s failed: %v", bridge, err)
+		return
+	}
+
+	err = exec.Command(ipCmd, "link", "set", "up", bridge).Run()
+	if err != nil {
+		log.Printf("bridge %s failed to come up: %v", bridge, err)
+		return
+	}
+
+	if nic != "" {
+		err = exec.Command(brctlCmd, "addif", bridge, nic).Run()
+		if err != nil {
+			log.Printf("addif %s %s failed: %v", bridge, nic, err)
+		}
+	}
+}
+
+func lanRing(ring string) bool {
+	return (ring != base_def.RING_SETUP && ring != base_def.RING_INTERNAL)
+}
+
+// Find the network device being used for internal traffic, and return the IP
+// address assigned to it.
+func getInternalAddr() net.IP {
+	for _, dev := range physDevices {
+		if dev.ring != base_def.RING_INTERNAL {
+			continue
+		}
+
+		iface, err := net.InterfaceByName(dev.name)
+		if err != nil {
+			log.Printf("Failed to get interface for %s: %v\n",
+				dev.name, err)
+			continue
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			log.Printf("Failed to get address for %s: %v\n",
+				iface.Name, err)
+			continue
+		}
+
+		for _, addr := range addrs {
+			var ipv4 net.IP
+
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ipv4 = v.IP.To4()
+
+			case *net.IPAddr:
+				ipv4 = v.IP.To4()
+			}
+
+			if ipv4 != nil {
+				return ipv4
+			}
+		}
+	}
+
+	return nil
+}
+
+func rebuildInternalNet() {
+	meshNode := aputil.IsMeshMode()
+
+	if !meshNode {
+		prepareRingBridge(base_def.RING_INTERNAL)
+	}
+
+	br := rings[base_def.RING_INTERNAL].Bridge
+
+	// For each internal network device, create a virtual device for each
+	// LAN ring and attach it to the bridge for that ring
+	for _, dev := range physDevices {
+		if dev.ring != base_def.RING_INTERNAL {
+			continue
+		}
+
+		if !meshNode {
+			log.Printf("Adding %s to bridge %s\n", dev.name, br)
+			err := exec.Command(brctlCmd, "addif", br, dev.name).Run()
+			if err != nil {
+				log.Printf("failed to add %s to %s: %v\n",
+					dev.name, br, err)
+				continue
+			}
+		}
+		for name, ring := range rings {
+			if lanRing(name) {
+				addVif(dev.name, ring.Vlan)
+			}
+		}
+	}
+}
+
+func rebuildLan() {
 	for ring := range rings {
-		if ring != "setup" || setupNetwork {
+		if lanRing(ring) {
 			prepareRingBridge(ring)
 		}
 	}
 
-	// Any wired NICs that aren't connecting us to the WAN are put on the
-	// standard ring's bridge.
-	// XXX: this should be a per-interface configuration setting.
-	bridge := rings[base_def.RING_STANDARD].Bridge
+	// Connect all the wired LAN NICs to ring-appropriate bridges.
 	for _, dev := range physDevices {
 		name := dev.name
-		if !dev.wireless && name != wanNic {
-			cmd := exec.Command(brctlCmd, "addif", bridge, name)
-			if err := cmd.Run(); err != nil {
-				log.Printf("Failed to add %s to %s\n",
-					name, bridge)
-			}
+		ring := rings[dev.ring]
+
+		if dev.wireless || ring == nil || !lanRing(dev.ring) {
+			continue
+		}
+
+		br := ring.Bridge
+		log.Printf("Connecting %s (%s) to the %s bridge: %s\n",
+			name, dev.hwaddr, dev.ring, br)
+		err := exec.Command(brctlCmd, "addif", br, name).Run()
+		if err != nil {
+			log.Printf("Failed to add %s: %v\n", name, err)
 		}
 	}
+}
+
+func resetInterfaces() {
+
+	// We use the lowest byte of our internal IP address as a transient,
+	// local node index.  For the gateway node, that will always be 1.  For
+	// the mesh nodes, we need pull it from the address the gateway's DHCP
+	// server gave us.
+	meshNodeIdx = 1
+	if aputil.IsMeshMode() {
+		ip := getInternalAddr()
+		if ip == nil {
+			log.Printf("Mesh node has no gateway connection\n")
+			return
+		}
+		meshNodeIdx = ip[3]
+	}
+
+	// hostapd creates most of the per-ring bridges.  We need to create
+	// these two manually.
+	createBridge(rings[base_def.RING_UNENROLLED], wifiNic)
+	createBridge(rings[base_def.RING_INTERNAL], "")
+
+	if setupNetwork {
+		prepareRingBridge(base_def.RING_SETUP)
+	}
+
+	rebuildLan()
+	rebuildInternalNet()
 }
 
 //
@@ -449,42 +609,60 @@ func runAll() int {
 // Low-level network manipulation.
 //
 
+// Create a virtual port for the given NIC / VLAN pair.  Attach the new virtual
+// port to the bridge for the associated VLAN.
+func addVif(nic string, vlan int) {
+	vid := strconv.Itoa(vlan)
+	vif := nic + "." + vid
+	bridge := fmt.Sprintf("brvlan%d", vlan)
+
+	deleteVif(vif)
+	err := exec.Command(vconfigCmd, "add", nic, vid).Run()
+	if err != nil {
+		log.Printf("Failed to create vif %s: %v\n", vif, err)
+		return
+	}
+
+	err = exec.Command(brctlCmd, "addif", bridge, vif).Run()
+	if err != nil {
+		log.Printf("Failed to add %s to %s: %v\n", vif, bridge, err)
+		return
+	}
+
+	err = exec.Command(ipCmd, "link", "set", "up", vif).Run()
+	if err != nil {
+		log.Printf("Failed to enable %s: %v\n", vif, err)
+	}
+}
+
+func deleteVif(vif string) {
+	exec.Command(ipCmd, "link", "del", vif).Run()
+}
+
+func deleteBridge(bridge string) {
+	exec.Command(ipCmd, "link", "set", "down", bridge).Run()
+	exec.Command(brctlCmd, "delbr", bridge).Run()
+}
+
 // Delete the bridges associated with each ring.  This gets us back to a known
 // ground state, simplifying the task of rebuilding everything when hostapd
 // starts back up.
 func deleteBridges() {
 	for _, conf := range rings {
-		bridge := conf.Bridge
-		exec.Command(ipCmd, "link", "set", "down", bridge).Run()
-		exec.Command(brctlCmd, "delbr", bridge).Run()
+		deleteBridge(conf.Bridge)
 	}
 }
 
-// Create a ring's network bridge.  If a nic is provided, attach it to the
-// bridge.
-func createBridge(ring *apcfg.RingConfig, nic string) error {
-	bridge := ring.Bridge
-
-	cmd := exec.Command(brctlCmd, "addbr", bridge)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("addbr %s failed: %v", bridge, err)
-	}
-
-	cmd = exec.Command(ipCmd, "link", "set", "up", bridge)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("bridge %s failed to come up: %v", bridge,
-			err)
-	}
-
-	if nic != "" {
-		cmd = exec.Command(brctlCmd, "addif", bridge, nic)
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("addif %s %s failed: %v", bridge,
-				nic, err)
-		}
-	}
-
-	return nil
+//
+// Determine the address to be used for the given ring's router on this node.
+// If the AP has an address of 192.168.131.x on the internal subnet, then the
+// router for each ring will be the corresponding .x address in that ring's
+// subnet.
+func localRouter(ring *apcfg.RingConfig) string {
+	_, network, _ := net.ParseCIDR(ring.Subnet)
+	raw := network.IP.To4()
+	raw[3] = meshNodeIdx
+	return (net.IP(raw)).String()
 }
 
 //
@@ -495,26 +673,18 @@ func prepareRingBridge(ringName string) {
 	ring := rings[ringName]
 	bridge := ring.Bridge
 
-	log.Printf("Preparing %s %s\n", bridge, ring.Subnet)
+	log.Printf("Preparing %s ring: %s %s\n", ringName, bridge, ring.Subnet)
 
-	if ringName == base_def.RING_UNENROLLED {
-		// Unenrolled / unknown devices end up on the 'default' wireless
-		// interface, which is not part of a vlan and does not have a
-		// bridge created by hostapd.  To prevent the rest of the system
-		// from needing to understand that implementation detail, we
-		// create a bridge for vlan '0', which will have just that one
-		// interface attached to it.
-		if err := createBridge(ring, wifiNic); err != nil {
-			log.Printf("failed to create unenrolled bridge: %v\n",
-				err)
+	// The 'internal' bridge is a special case, since it will not get a
+	// 'link up' until/unless the NIC is attached.  The other bridges
+	// already have wireless NICs attached, and we expect them to be in the
+	// 'link up' state already.
+	if ringName != "internal" {
+		err := network.WaitForDevice(bridge, 5*time.Second)
+		if err != nil {
+			log.Printf("%s failed to come online: %v\n", bridge, err)
 			return
 		}
-	}
-
-	err := network.WaitForDevice(bridge, 5*time.Second)
-	if err != nil {
-		log.Printf("%s failed to come online: %v\n", bridge, err)
-		return
 	}
 
 	// ip addr flush dev wlan0
@@ -528,7 +698,7 @@ func prepareRingBridge(ringName string) {
 	cmd.Run()
 
 	// ip addr add 192.168.136.1 dev wlan0
-	router := network.SubnetRouter(ring.Subnet)
+	router := localRouter(ring)
 	cmd = exec.Command(ipCmd, "addr", "add", router, "dev", bridge)
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to set the router address: %v\n", err)
@@ -547,11 +717,28 @@ func prepareRingBridge(ringName string) {
 	}
 }
 
+func persistNicRing(mac, ring string) {
+	node := aputil.GetNodeID().String()
+	prop := "@/nodes/" + node + "/" + mac + "/ring"
+	err := config.CreateProp(prop, ring, nil)
+	if err != nil {
+		log.Printf("Failed to persist %s as %s: %v\n", mac, ring, err)
+	}
+}
+
 //
 // Identify and prepare the WAN port.
 //
 func prepareWan() {
 	var err error
+	var available, wan *physDevice
+	var outgoingRing string
+
+	if aputil.IsMeshMode() {
+		outgoingRing = base_def.RING_INTERNAL
+	} else {
+		outgoingRing = base_def.RING_WAN
+	}
 
 	// Enable packet forwarding
 	cmd := exec.Command(sysctlCmd, "-w", "net.ipv4.ip_forward=1")
@@ -559,12 +746,11 @@ func prepareWan() {
 		log.Fatalf("Failed to enable packet forwarding: %v\n", err)
 	}
 
-	//
-	// Identify the on-board ethernet port, which will connect us to the
-	// WAN.  All other wired ports will be connected to the client bridge.
-	//
+	// Find the WAN device
 	for name, dev := range physDevices {
 		if dev.wireless {
+			// XXX - at some point we should investigate using a
+			// wireless link as a mesh backhaul
 			continue
 		}
 
@@ -579,12 +765,30 @@ func prepareWan() {
 			continue
 		}
 
-		log.Printf("Using %s for WAN\n", name)
-		wanNic = dev.name
-		return
+		available = dev
+		if dev.ring == outgoingRing {
+			if wan == nil {
+				wan = dev
+			} else {
+				log.Printf("Multiple outgoing nics configured.  "+
+					"Using: %s\n", wan.hwaddr)
+			}
+		}
 	}
 
-	log.Printf("No WAN connection available\n")
+	if available == nil {
+		log.Printf("couldn't find a outgoing device to use")
+		return
+	}
+	if wan == nil {
+		wan = available
+		log.Printf("No outgoing device configured.  Using %s\n", wan.hwaddr)
+		wan.ring = outgoingRing
+		persistNicRing(wan.hwaddr, wan.ring)
+	}
+
+	wanNic = wan.name
+	return
 }
 
 //
@@ -592,32 +796,57 @@ func prepareWan() {
 // wireless interfaces we'll be supporting
 //
 func prepareWireless(props *apcfg.PropertyNode) error {
-	var wifi *physDevice
+	var available, wifi *physDevice
 
 	for _, dev := range physDevices {
-		if dev.wireless {
-			if err := getAPConfig(dev, props); err != nil {
-				return err
-			}
+		if !dev.wireless {
+			continue
+		}
 
-			if wifi == nil || dev.supportVLANs {
+		if err := getAPConfig(dev, props); err != nil {
+			return err
+		}
+
+		if available == nil || dev.supportVLANs {
+			available = dev
+		}
+
+		if dev.ring == base_def.RING_UNENROLLED {
+			if !dev.supportVLANs {
+				log.Printf("%s doesn't support VLANs\n",
+					dev.hwaddr)
+			} else if wifi == nil {
 				wifi = dev
+			} else {
+				log.Printf("Multiple wifi nics configured.  "+
+					"Using: %s\n", wifi.hwaddr)
 			}
 		}
 	}
-	if wifi == nil {
+
+	if available == nil {
 		return fmt.Errorf("couldn't find a wifi device to use")
 	}
 
-	if !wifi.supportVLANs {
+	if !available.supportVLANs {
 		return fmt.Errorf("no VLAN-enabled wifi device found")
 	}
 
+	if wifi == nil {
+		wifi = available
+		log.Printf("No wifi device configured.  Using %s\n", wifi.hwaddr)
+		wifi.ring = base_def.RING_UNENROLLED
+		persistNicRing(wifi.hwaddr, wifi.ring)
+	}
+
 	wifiNic = wifi.name
-	log.Printf("Hosting wireless network on %s\n", wifiNic)
+	log.Printf("Hosting wireless network on %s (%s)\n", wifiNic, wifi.hwaddr)
 	if setupNetwork {
 		setupNic = wifiNic + setupPortal
-		log.Printf("Hosting setup network on %s\n", setupNic)
+		mac := macUpdateLastOctet(wifi.hwaddr, 1)
+		rings[base_def.RING_SETUP].Bridge = setupNic
+		persistNicRing(mac, base_def.RING_SETUP)
+		log.Printf("Hosting setup network on %s (%s)\n", setupNic, mac)
 	}
 	return nil
 }
@@ -702,6 +931,16 @@ func getWireless(i net.Interface) *physDevice {
 // Inventory the physical network devices in the system
 //
 func getDevices() {
+	// Get the known device->ring mappings from configd
+	devToRing := make(map[string]string)
+	nics, _ := config.GetProps("@/nodes/" + aputil.GetNodeID().String())
+	if nics != nil {
+		for _, nic := range nics.Children {
+			if x := nic.GetChild("ring"); x != nil {
+				devToRing[nic.Name] = x.Value
+			}
+		}
+	}
 	all, err := net.Interfaces()
 	if err != nil {
 		log.Fatalf("Unable to inventory network devices: %v\n", err)
@@ -718,42 +957,16 @@ func getDevices() {
 		}
 
 		if d != nil {
+			d.ring = devToRing[d.hwaddr]
 			physDevices[i.Name] = d
 		}
 	}
 }
 
-func updateNetworkProp(props *apcfg.PropertyNode, prop, new string) {
-	old := ""
-	if node := props.GetChild(prop); node != nil {
-		old = node.GetValue()
-	}
-	if old != new {
-		path := "@/network/" + prop
-		err := config.CreateProp(path, new, nil)
-		if err != nil {
-			log.Printf("Failed to update %s: %v\n", path, err)
-		}
-	}
-}
-
-//
-// If our device inventory caused us to change any of the old network choices,
-// update the config now.
-//
-func updateNetworkConfig(props *apcfg.PropertyNode) {
-	updateNetworkProp(props, "setup_nic", setupNic)
-	updateNetworkProp(props, "wan_nic", wanNic)
-}
-
-func main() {
+// Connect to all of the other brighgate daemons and construct our initial model
+// of the system
+func daemonInit() error {
 	var err error
-
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-
-	flag.Parse()
-	*templateDir = aputil.ExpandDirPath(*templateDir)
-	*rulesDir = aputil.ExpandDirPath(*rulesDir)
 
 	if mcpd, err = mcp.New(pname); err != nil {
 		log.Printf("cannot connect to mcp: %v\n", err)
@@ -761,42 +974,78 @@ func main() {
 		mcpd.SetState(mcp.INITING)
 	}
 
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(*addr, nil)
-
 	b := broker.New(pname)
-	defer b.Fini()
 
 	config, err = apcfg.NewConfig(b, pname)
 	if err != nil {
-		log.Fatalf("cannot connect to configd: %v\n", err)
+		return fmt.Errorf("cannot connect to configd: %v", err)
 	}
 	config.HandleChange(`^@/clients/.*/ring$`, configRingChanged)
 	config.HandleChange(`^@/network/`, configNetworkChanged)
 
 	rings = config.GetRings()
 	clients = config.GetClients()
-
 	props, err := config.GetProps("@/network")
 	if err != nil {
-		err = fmt.Errorf("unable to fetch configuration: %v", err)
-	} else {
-		getDevices()
-		prepareWan()
-		err = prepareWireless(props)
-	}
-	if err == nil {
-		err = loadFilterRules()
+		return fmt.Errorf("unable to fetch configuration: %v", err)
 	}
 
-	if err != nil {
+	getDevices()
+	prepareWan()
+	if err = prepareWireless(props); err != nil {
+		return fmt.Errorf("unable to prep wifi devices: %v", err)
+	}
+
+	// All wired devices that haven't yet been assigned to a ring will be
+	// put into "standard" by default
+
+	for _, dev := range physDevices {
+		if !dev.wireless && dev.ring == "" {
+			dev.ring = base_def.RING_STANDARD
+			persistNicRing(dev.hwaddr, dev.ring)
+		}
+	}
+
+	if err = loadFilterRules(); err != nil {
+		return fmt.Errorf("unable to load filter rules: %v", err)
+	}
+
+	return nil
+}
+
+func networkCleanup() {
+	devs, _ := ioutil.ReadDir("/sys/devices/virtual/net")
+	for _, dev := range devs {
+		name := dev.Name()
+
+		if strings.HasPrefix(name, "b") {
+			deleteBridge(name)
+		}
+		if strings.HasPrefix(name, "e") && strings.Contains(name, ".") {
+			deleteVif(name)
+		}
+	}
+}
+
+func main() {
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
+	flag.Parse()
+	*templateDir = aputil.ExpandDirPath(*templateDir)
+	*rulesDir = aputil.ExpandDirPath(*rulesDir)
+
+	http.Handle("/metrics", promhttp.Handler())
+	go http.ListenAndServe(*addr, nil)
+
+	networkCleanup()
+
+	if err := daemonInit(); err != nil {
 		if mcpd != nil {
 			mcpd.SetState(mcp.BROKEN)
 		}
 		log.Fatalf("networkd failed to start: %v\n", err)
 	}
 
-	updateNetworkConfig(props)
 	applyFilters()
 
 	running = true

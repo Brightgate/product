@@ -59,8 +59,9 @@ var (
 	sharedRouter net.IP     // without vlans, all rings share a
 	sharedSubnet *net.IPNet // subnet and a router node
 
-	wanMac        string // mac address of the WAN port
-	setupMac      string // mac address of the setup network's NIC
+	wanMacs   = make(map[string]bool) // mac(s) connected to the wan
+	setupMacs = make(map[string]bool) // mac(s) hosting the setup network
+
 	lastRequestOn string // last DHCP request arrived on this interface
 )
 
@@ -535,7 +536,7 @@ func (h *ringHandler) decline(p dhcp.Packet) {
 func selectRingHandler(p dhcp.Packet, options dhcp.Options) *ringHandler {
 	hwaddr := p.CHAddr().String()
 	oldRing := getRing(hwaddr)
-	if lastRequestOn == setupMac {
+	if setupMacs[lastRequestOn] {
 		// All clients connecting on the open port are treated as new -
 		// even if we've previously recognized them on the protected
 		// network.
@@ -660,44 +661,62 @@ func (h *ringHandler) getLease(ip net.IP) *lease {
 	return &h.leases[slot]
 }
 
-//
-// Instantiate a new DHCP handler for the given ring/subnet.
-//
-func newHandler(ring, network string, duration int) *ringHandler {
-	var rangeSpan int
+func ipRange(ring, subnet string) (start net.IP, ipnet *net.IPNet, span int) {
 	var err error
 
-	start, subnet, err := net.ParseCIDR(network)
-	if err == nil {
-		ones, bits := subnet.Mask.Size()
-		rangeSpan = 1<<uint32(bits-ones) - 2
+	start, ipnet, err = net.ParseCIDR(subnet)
+	if err != nil {
+		log.Fatalf("Invalid subnet %v for ring %s: %v\n",
+			subnet, ring, err)
 	}
 
-	if rangeSpan == 0 {
-		log.Fatalf("Invalid DHCP config.  Poorly formed subnet: %s\n",
-			network)
-	}
+	ones, bits := ipnet.Mask.Size()
+	span = (1<<uint32(bits-ones) - 2)
+	return
+}
 
-	// When using VLANs, each managed range is a proper subnet with
-	// its own routing info.
+//
+// Instantiate a new DHCP handler for the given ring
+//
+func newHandler(name string, rings apcfg.RingMap) *ringHandler {
+	ring := rings[name]
+	duration := time.Duration(ring.LeaseDuration) * time.Minute
+	start, subnet, span := ipRange(name, ring.Subnet)
+
 	myip := dhcp.IPAdd(start, 1)
+	if name == base_def.RING_INTERNAL {
+		// Shrink the range to exclude the router
+		span--
+		start = dhcp.IPAdd(start, 1)
+	} else {
+		// Exclude the lower addresses that are reserved for the routers
+		// on each of the mesh APs
+		iname := base_def.RING_INTERNAL
+		isub := rings[base_def.RING_INTERNAL].Subnet
+		_, _, reserved := ipRange(iname, isub)
+		start = dhcp.IPAdd(start, reserved)
+		span -= reserved
+	}
+	// Exclude the broadcast address
+	span--
 
 	h := ringHandler{
-		ring:       ring,
+		ring:       name,
 		subnet:     *subnet,
 		serverIP:   myip,
 		rangeStart: start,
-		rangeEnd:   dhcp.IPAdd(start, rangeSpan),
-		rangeSpan:  rangeSpan,
-		duration:   time.Duration(duration) * time.Minute,
+		rangeEnd:   dhcp.IPAdd(start, span),
+		rangeSpan:  span,
+		duration:   duration,
 		options: dhcp.Options{
 			dhcp.OptionSubnetMask:       subnet.Mask,
 			dhcp.OptionRouter:           myip,
 			dhcp.OptionDomainNameServer: myip,
 		},
-		leases: make([]lease, rangeSpan, rangeSpan),
+		leases: make([]lease, span, span),
 	}
 	h.options[dhcp.OptionDomainName] = []byte(siteid + ".brightgate.net")
+	h.options[dhcp.OptionVendorClassIdentifier] = []byte("Brightgate, Inc.")
 
 	return &h
 }
@@ -734,17 +753,26 @@ func getMac(name string) string {
 }
 
 func initHandlers() error {
-	if setupNic, err := config.GetProp("@/network/setup_nic"); err == nil {
-		setupMac = getMac(setupNic)
+	nodes, err := config.GetProps("@/nodes")
+	if err != nil {
+		return fmt.Errorf("unable to get NIC ring assignments: %v", err)
 	}
-	if wanNic, err := config.GetProp("@/network/wan_nic"); err == nil {
-		wanMac = getMac(wanNic)
+	for _, node := range nodes.Children {
+		for _, nic := range node.Children {
+			switch nic.Value {
+			case base_def.RING_SETUP:
+				setupMacs[nic.Name] = true
+			case base_def.RING_WAN:
+				wanMacs[nic.Name] = true
+			}
+		}
 	}
 
 	// Iterate over the known rings.  For each one, create a DHCP handler to
 	// manage its subnet.
-	for name, ring := range config.GetRings() {
-		h := newHandler(name, ring.Subnet, ring.LeaseDuration)
+	rings := config.GetRings()
+	for name := range rings {
+		h := newHandler(name, rings)
 		h.recoverLeases()
 		handlers[h.ring] = h
 	}
@@ -771,13 +799,13 @@ func (s *multiConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 		n = 0
 	} else {
 		lastRequestOn = requestMac
-		switch requestMac {
-		case wanMac:
+		if wanMacs[requestMac] {
 			// If the request arrives on the WAN port, drop it.
 			n = 0
-		case setupMac:
-			log.Printf("Request arrived on setup network\n")
-		default:
+		} else if setupMacs[requestMac] {
+			log.Printf("Request arrived on %s (setup network)\n",
+				requestMac)
+		} else {
 			log.Printf("Request arrived on %s\n", requestMac)
 		}
 	}

@@ -4,19 +4,23 @@ BLOCK TO RING quarantine
 
 # Unenrolled clients can't touch the outside world.  We allow internal
 # clients to reach them in case it's needed for enrollment
+BLOCK FROM RING unenrolled TO RING internal
 BLOCK FROM RING unenrolled TO IFACE wan
 BLOCK FROM RING unenrolled TO RING core
 BLOCK FROM RING unenrolled TO RING standard
 BLOCK FROM RING unenrolled TO RING devices
 BLOCK FROM RING unenrolled TO RING guest
 
+BLOCK FROM RING guest TO RING internal
 BLOCK FROM RING guest TO RING core
 BLOCK FROM RING guest TO RING standard
 BLOCK FROM RING guest TO RING devices
 
+BLOCK FROM RING devices TO RING internal
 BLOCK FROM RING devices TO RING core
 BLOCK FROM RING devices TO RING standard
 
+BLOCK FROM RING standard TO RING internal
 BLOCK FROM RING standard TO RING core
 
 # Sonos receivers initiate TCP sessions to controllers

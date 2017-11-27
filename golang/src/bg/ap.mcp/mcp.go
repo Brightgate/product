@@ -69,7 +69,7 @@ const (
 
 var (
 	aproot  = flag.String("root", "", "Root of AP installation")
-	apmode  = flag.String("mode", "gateway", "Intended mode of this node")
+	apmode  = flag.String("mode", "", "Mode in which this AP should operate")
 	cfgfile = flag.String("c", "", "Alternate daemon config file")
 	logfile = flag.String("l", "", "where to send log messages")
 	verbose = flag.Bool("v", false, "more verbose logging")
@@ -280,14 +280,10 @@ func readySet(candidates daemonSet) daemonSet {
 			// This daemon has no dependencies, so can run any time
 			add = true
 		} else {
+			// If the dependency isn't in the daemons map, then it's
+			// not expected to be running in this mode.
 			dep, ok := daemons[*d.DependsOn]
-			if !ok {
-				// This should never happen.  If it does, launch the new
-				// daemon anyway.
-				log.Printf("%s depends on non-existent daemon %s.\n",
-					d.Name, *d.DependsOn)
-				add = true
-			} else if dep.state == mcp.ONLINE {
+			if !ok || dep.state == mcp.ONLINE {
 				add = true
 			}
 		}
@@ -515,7 +511,10 @@ func signalHandler() {
 //
 func mainLoop() {
 	incoming, _ := zmq.NewSocket(zmq.REP)
-	incoming.Bind(base_def.MCP_ZMQ_REP_URL)
+	port := base_def.LOCAL_ZMQ_URL + base_def.MCP_ZMQ_REP_PORT
+	if err := incoming.Bind(port); err != nil {
+		log.Fatalf("failed to bind incoming port %s: %v\n", port, err)
+	}
 	me := "mcp." + strconv.Itoa(os.Getpid()) + ")"
 
 	log.Println("MCP online")
@@ -568,11 +567,11 @@ func loadDefinitions() error {
 	}
 
 	re := regexp.MustCompile(`\$APROOT`)
-	for name, new := range set {
+	for name, newDaemon := range set {
 		included := false
 
-		for _, mode := range new.Modes {
-			if mode == *apmode {
+		for _, mode := range newDaemon.Modes {
+			if aputil.IsNodeMode(mode) {
 				included = true
 				break
 			}
@@ -585,7 +584,7 @@ func loadDefinitions() error {
 		if !ok {
 			// This is the first time we've seen this daemon, so
 			// keep the entire record
-			d = new
+			d = newDaemon
 			d.Lock()
 			d.state = mcp.OFFLINE
 			d.setTime = time.Unix(0, 0)
@@ -593,10 +592,10 @@ func loadDefinitions() error {
 		} else {
 			// Replace any fields the might reasonably have changed
 			d.Lock()
-			d.Binary = new.Binary
-			d.Options = new.Options
-			d.DependsOn = new.DependsOn
-			d.Privileged = new.Privileged
+			d.Binary = newDaemon.Binary
+			d.Options = newDaemon.Options
+			d.DependsOn = newDaemon.DependsOn
+			d.Privileged = newDaemon.Privileged
 		}
 		options := make([]string, 0)
 		for _, o := range d.Options {
@@ -608,8 +607,8 @@ func loadDefinitions() error {
 		d.Unlock()
 	}
 	if len(daemons) == 0 {
-		return fmt.Errorf("no daemons configured for '%s' mode",
-			*apmode)
+		return fmt.Errorf("no daemons for '%s' mode",
+			aputil.GetNodeMode())
 	}
 
 	for _, d := range daemons {
@@ -621,8 +620,14 @@ func loadDefinitions() error {
 			if d.launchOrder > 0 {
 				continue
 			}
-			if d.DependsOn == nil ||
-				daemons[*d.DependsOn].launchOrder > 0 {
+			launchable := true
+			if d.DependsOn != nil {
+				daemon, ok := daemons[*d.DependsOn]
+				if ok && daemon.launchOrder == 0 {
+					launchable = false
+				}
+			}
+			if launchable {
 				ordered++
 				d.launchOrder = ordered
 			}
@@ -688,6 +693,10 @@ func setEnvironment() {
 		fmt.Printf("aproot not set - using '%s'\n", *aproot)
 	}
 	os.Setenv("APROOT", *aproot)
+
+	if *apmode == "" {
+		*apmode = aputil.GetNodeMode()
+	}
 	os.Setenv("APMODE", *apmode)
 }
 

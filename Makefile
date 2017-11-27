@@ -32,7 +32,7 @@
 #    (d) on raspberry pi
 #
 #	 # apt-get install protobuf-compiler libzmq3-dev libpcap-dev vlan \
-#		 bridge-utils lintian python3 mercurial
+#		 hostapd bridge-utils lintian python3 mercurial
 #	 # pip3 install sh
 #	 [Retrieve Go tar archive from golang.org and unpack in $HOME.]
 #	 [Retrieve the TensorFlow C library from
@@ -585,7 +585,8 @@ $(APPBIN)/ap.configd: \
 	$(GOSRCBG)/ap.configd/upgrade_v2.go \
 	$(GOSRCBG)/ap.configd/upgrade_v4.go \
 	$(GOSRCBG)/ap.configd/upgrade_v5.go \
-	$(GOSRCBG)/ap.configd/upgrade_v6.go
+	$(GOSRCBG)/ap.configd/upgrade_v6.go \
+	$(GOSRCBG)/ap.configd/upgrade_v7.go
 $(APPBIN)/ap.dhcp4d: $(GOSRCBG)/ap.dhcp4d/dhcp4d.go
 $(APPBIN)/ap.dns4d: \
 	$(GOSRCBG)/ap.dns4d/dns4d.go \

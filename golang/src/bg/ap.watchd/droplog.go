@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"bg/ap_common/aputil"
+	"bg/base_def"
 
 	"database/sql"
 	_ "github.com/mattn/go-sqlite3"
@@ -45,7 +46,7 @@ var (
 
 	dbHandle *sql.DB
 
-	wanIface string
+	wanIfaces map[string]bool
 )
 
 type dropTable struct {
@@ -113,7 +114,7 @@ func countDrop(d *dropRecord) {
 
 	// If the target device was local to our LAN, bump its 'incoming
 	// blocks' count.
-	if d.outdev != wanIface {
+	if !wanIfaces[d.outdev] {
 		if rec := getDeviceRecordByIP(dstIP); rec != nil {
 			p := getProtoRecord(rec, d.proto)
 			if p != nil {
@@ -128,7 +129,7 @@ func countDrop(d *dropRecord) {
 func recordDrop(d *dropRecord) *dropTable {
 	var table *dropTable
 
-	if d.indev == wanIface {
+	if wanIfaces[d.indev] {
 		table = wanDrops
 	} else {
 		table = lanDrops
@@ -302,7 +303,7 @@ func logMonitor(logpipe *os.File) {
 
 			// We only maintain per-device firewall statistics for
 			// packets that originate within our LAN.
-			if d.indev != wanIface {
+			if !wanIfaces[d.indev] {
 				countDrop(d)
 			}
 		}
@@ -337,8 +338,38 @@ func droplogFini() {
 	dbHandle.Close()
 }
 
+// Identify all NICs the connect us to the outside world
+func findWanNics() {
+	wanIfaces = make(map[string]bool)
+
+	nics, err := config.GetNics(base_def.RING_WAN, false)
+	if err != nil {
+		log.Printf("failed to get list of WAN NICs: %v\n", err)
+		return
+	}
+
+	all, err := net.Interfaces()
+	if err != nil {
+		log.Printf("failed to get local interface list: %v\n", err)
+		return
+	}
+
+	for _, iface := range all {
+		name := strings.ToLower(iface.Name)
+		mac := iface.HardwareAddr.String()
+		for _, nic := range nics {
+			if nic == mac {
+				wanIfaces[name] = true
+				break
+			}
+		}
+	}
+	log.Printf("WAN interfaces: %v\n", wanIfaces)
+}
+
 func droplogInit() error {
-	wanIface, _ = config.GetProp("@/network/wan_nic")
+	findWanNics()
+
 	pipe, err := openPipe(*logpipe)
 	if err != nil {
 		return fmt.Errorf("failed to open syslog pipe %s: %v",
