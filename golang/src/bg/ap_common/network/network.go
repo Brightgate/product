@@ -39,11 +39,11 @@ var (
 	IpmDNSv6  = net.IP{0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFB}
 
 	// Multicast addresses for SSDP
-	IpSSDPv4       = net.IPv4(239, 255, 255, 250)
-	IpSSDPv6Link   = net.IP{0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0C}
-	IpSSDPv6Site   = net.IP{0xFF, 0x05, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0C}
-	IpSSDPv6Org    = net.IP{0xFF, 0x08, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0C}
-	IpSSDPv6Global = net.IP{0xFF, 0x0E, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0C}
+	IPSSDPv4       = net.IPv4(239, 255, 255, 250)
+	IPSSDPv6Link   = net.IP{0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0C}
+	IPSSDPv6Site   = net.IP{0xFF, 0x05, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0C}
+	IPSSDPv6Org    = net.IP{0xFF, 0x08, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0C}
+	IPSSDPv6Global = net.IP{0xFF, 0x0E, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0C}
 
 	// Multicast prefix
 	macMcast = net.HardwareAddr([]byte{0x01, 0x00, 0x5E})
@@ -229,8 +229,8 @@ func SubnetBroadcast(subnet string) net.IP {
 	return raw
 }
 
-// Wait for a network device to reach the 'up' state.  Returns an error on
-// timeout
+// WaitForDevice will wait for a network device to reach the 'up' state.
+// Returns an error on timeout or if the device doesn't exist
 func WaitForDevice(dev string, timeout time.Duration) error {
 	fn := "/sys/class/net/" + dev + "/operstate"
 

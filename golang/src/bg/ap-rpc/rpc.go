@@ -44,10 +44,10 @@ import (
 	"google.golang.org/grpc/grpclog"
 )
 
-type Cfg struct {
+type cfg struct {
 	// Override configuration value.
-	B10E_LOCAL_MODE bool
-	B10E_SVC_URL    string
+	LocalMode bool
+	SrvURL    string
 }
 
 const pname = "ap-rpc"
@@ -64,7 +64,7 @@ var (
 	aproot = flag.String("root", "proto.armv7l/appliance/opt/com.brightgate",
 		"Root of AP installation")
 
-	environ    Cfg
+	environ    cfg
 	serverAddr string
 	config     *apcfg.APConfig
 
@@ -84,14 +84,14 @@ func gethmac(data string) hash.Hash {
 
 // Return the MAC address for the defined WAN interface.
 func getWanInterface(config *apcfg.APConfig) string {
-	wan_nic, err := config.GetProp("@/network/wan_nic")
+	wanNic, err := config.GetProp("@/network/wan_nic")
 	if err != nil {
 		log.Fatalf("property get @/network/wan_nic failed: %v\n", err)
 	}
 
-	iface, err := net.InterfaceByName(wan_nic)
+	iface, err := net.InterfaceByName(wanNic)
 	if err != nil {
-		log.Fatalf("could not retrieve %s interface: %v\n", wan_nic, err)
+		log.Fatalf("could not retrieve %s interface: %v\n", wanNic, err)
 	}
 
 	return iface.HardwareAddr.String()
@@ -133,7 +133,7 @@ func retrieveUptime() time.Duration {
 func dial() (*grpc.ClientConn, error) {
 	var opts []grpc.DialOption
 
-	if !environ.B10E_LOCAL_MODE {
+	if !environ.LocalMode {
 		cp, nocperr := x509.SystemCertPool()
 		if nocperr != nil {
 			return nil, fmt.Errorf("no system certificate pool: %v", nocperr)
@@ -345,11 +345,11 @@ func main() {
 	aphwaddr = make([]string, 0)
 	aphwaddr = append(aphwaddr, getWanInterface(config))
 
-	if len(environ.B10E_SVC_URL) == 0 {
+	if len(environ.SrvURL) == 0 {
 		// XXX ap.configd lookup.
 		serverAddr = "svc0.b10e.net:4430"
 	} else {
-		serverAddr = environ.B10E_SVC_URL
+		serverAddr = environ.SrvURL
 	}
 
 	switch svc {

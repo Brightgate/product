@@ -414,14 +414,14 @@ func scan(ip string, nmapArgs []string, file string) (*nmap.NmapRun, error) {
 // Find and record all the ports we found open for this host.
 func recordNmapResults(host *nmap.Host) {
 	mac, _ := getMacIP(host)
-	dev := GetDeviceRecord(mac)
+	dev := getDeviceRecord(mac)
 
 	for _, port := range host.Ports {
 		if p, ok := dev.Stats[port.Protocol]; ok {
 			p.OpenPorts[port.PortId] = true
 		}
 	}
-	ReleaseDeviceRecord(dev)
+	releaseDeviceRecord(dev)
 }
 
 func timestampToProto(t nmap.Timestamp) *base_msg.Timestamp {

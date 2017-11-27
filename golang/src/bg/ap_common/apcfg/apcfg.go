@@ -32,7 +32,7 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
-var ValidRings = map[string]bool{
+var validRings = map[string]bool{
 	base_def.RING_UNENROLLED: true,
 	base_def.RING_SETUP:      true,
 	base_def.RING_CORE:       true,
@@ -42,6 +42,7 @@ var ValidRings = map[string]bool{
 	base_def.RING_QUARANTINE: true,
 }
 
+// RingConfig defines the parameters of a ring's subnet
 type RingConfig struct {
 	Subnet        string
 	Bridge        string
@@ -49,6 +50,7 @@ type RingConfig struct {
 	LeaseDuration int
 }
 
+// ClientInfo contains all of the configuration information for a client device
 type ClientInfo struct {
 	Ring       string     // Assigned security ring
 	DNSName    string     // Assigned hostname
@@ -60,11 +62,13 @@ type ClientInfo struct {
 	DNSPrivate bool       // We don't collect DNS queries
 }
 
+// RingMap maps ring names to the configuration information
 type RingMap map[string]*RingConfig
+
+// ClientMap maps a device's mac address to its configuration information
 type ClientMap map[string]*ClientInfo
 
-//
-// A node in the property tree.
+// PropertyNode is a single node in the property tree
 type PropertyNode struct {
 	Name     string
 	Value    string          `json:"Value,omitempty"`
@@ -87,14 +91,14 @@ func dumpSubtree(node *PropertyNode, level int) {
 	}
 }
 
-// Dump the contents of a property tree in a human-legible format
+// DumpTree displays the contents of a property tree in a human-legible format
 func (n *PropertyNode) DumpTree() {
 	dumpSubtree(n, 0)
 }
 
-// Search the node's children, looking for one with a name matching the provided
-// key.  Returns a pointer the child node if it finds a match, nil if it
-// doesn't.
+// GetChild searches through a node's list of children, looking for one with a
+// name matching the provided key.  Returns a pointer the child node if it finds
+// a match, nil if it doesn't.
 func (n *PropertyNode) GetChild(key string) *PropertyNode {
 	for _, s := range n.Children {
 		if s.Name == key {
@@ -104,10 +108,10 @@ func (n *PropertyNode) GetChild(key string) *PropertyNode {
 	return nil
 }
 
-// Search the node's children, looking for one with a value matching the
-// provided key.  Returns a pointer the child node if it finds a match, nil if
-// it doesn't.  If multiple children have the same value, this will return only
-// the first one found.
+// GetChildByValue searches through a node's list of childrenn, looking for one
+// with a value matching the provided key.  Returns a pointer the child node if
+// it finds a match, nil if it doesn't.  If multiple children have the same
+// value, this will return only the first one found.
 func (n *PropertyNode) GetChildByValue(value string) *PropertyNode {
 	for _, s := range n.Children {
 		if s.Value == value {
@@ -117,21 +121,23 @@ func (n *PropertyNode) GetChildByValue(value string) *PropertyNode {
 	return nil
 }
 
-// Returns the property name
+// GetName returns the name field of a property node
 func (n *PropertyNode) GetName() string {
 	return n.Name
 }
 
-// Returns the property value
+// GetValue returns the value field of a property node
 func (n *PropertyNode) GetValue() string {
 	return n.Value
 }
 
-// Returns the property expiration time
+// GetExpiry returns the expiration time of a property.  Properties that don't
+// expire will return nil.
 func (n *PropertyNode) GetExpiry() *time.Time {
 	return n.Expires
 }
 
+// APConfig is an opaque type representing a connection to ap.configd
 type APConfig struct {
 	mutex  sync.Mutex
 	socket *zmq.Socket
@@ -144,8 +150,8 @@ type APConfig struct {
 	handling       bool
 }
 
-// Connect to ap.configd.  Return a handle used for subsequent interactions with
-// the daemon
+// NewConfig will connect to ap.configd, and will return a handle used for
+// subsequent interactions with the daemon
 func NewConfig(b *broker.Broker, name string) (*APConfig, error) {
 	sender := fmt.Sprintf("%s(%d)", name, os.Getpid())
 
@@ -232,8 +238,8 @@ func (c *APConfig) msg(oc base_msg.ConfigQuery_Operation, prop, val string,
 	return rval, err
 }
 
-// Retrieves the properties subtree rooted at the given property, and returns a
-// PropertyNode representing the root of that subtree
+// GetProps retrieves the properties subtree rooted at the given property, and
+// returns a PropertyNode representing the root of that subtree
 func (c *APConfig) GetProps(prop string) (*PropertyNode, error) {
 	var root PropertyNode
 	var err error
@@ -250,7 +256,7 @@ func (c *APConfig) GetProps(prop string) (*PropertyNode, error) {
 	return &root, err
 }
 
-// Retrieves a single property from the tree, returning it as a String
+// GetProp retrieves a single property from the tree, returning it as a String
 func (c *APConfig) GetProp(prop string) (string, error) {
 	var rval string
 
@@ -262,16 +268,16 @@ func (c *APConfig) GetProp(prop string) (string, error) {
 	return rval, err
 }
 
-// Updates a single property, taking an optional expiration time.  If the
-// property doesn't already exist, an error is returned.
+// SetProp updates a single property, taking an optional expiration time.  If
+// the property doesn't already exist, an error is returned.
 func (c *APConfig) SetProp(prop, val string, expires *time.Time) error {
 	_, err := c.msg(base_msg.ConfigQuery_SET, prop, val, expires)
 
 	return err
 }
 
-// Updates a single property, taking an optional expiration time.  If the
-// property doesn't already exist, it is created - as well as any parent
+// CreateProp updates a single property, taking an optional expiration time.  If
+// the property doesn't already exist, it is created - as well as any parent
 // properties needed to provide a path through the tree.
 func (c *APConfig) CreateProp(prop, val string, expires *time.Time) error {
 	_, err := c.msg(base_msg.ConfigQuery_CREATE, prop, val, expires)
@@ -279,7 +285,7 @@ func (c *APConfig) CreateProp(prop, val string, expires *time.Time) error {
 	return err
 }
 
-// Deletes a property, or property subtree
+// DeleteProp will delete a property, or property subtree
 func (c *APConfig) DeleteProp(prop string) error {
 	_, err := c.msg(base_msg.ConfigQuery_DELETE, prop, "-", nil)
 
@@ -337,8 +343,8 @@ func getBoolVal(root *PropertyNode, name string) (bool, error) {
 	return rval, err
 }
 
-//
-// Fetch the Rings subtree and return a Ring -> RingConfig map
+// GetRings fetches the Rings subtree from ap.configd, and converts the json
+// into a Ring -> RingConfig map
 func (c *APConfig) GetRings() RingMap {
 	props, err := c.GetProps("@/rings")
 	if err != nil {
@@ -351,7 +357,7 @@ func (c *APConfig) GetRings() RingMap {
 		var subnet, bridge string
 		var vlan, duration int
 
-		if !ValidRings[ring.Name] {
+		if !validRings[ring.Name] {
 			err = fmt.Errorf("invalid ring name: %s", ring.Name)
 		}
 		if err == nil {
@@ -416,7 +422,8 @@ func getClient(client *PropertyNode) *ClientInfo {
 }
 
 //
-// Fetch a single client and return a ClientInfo structure
+// GetClient fetches a single client from ap.configd and converts the json
+// result into a ClientInfo structure
 func (c *APConfig) GetClient(macaddr string) *ClientInfo {
 	client, err := c.GetProps("@/clients/" + macaddr)
 	if err != nil {
@@ -427,8 +434,8 @@ func (c *APConfig) GetClient(macaddr string) *ClientInfo {
 	return getClient(client)
 }
 
-//
-// Fetch the Clients subtree, and return a map of macaddr -> ClientInfo
+// GetClients the full Clients subtree, and converts the returned json into a
+// map of ClientInfo structures, indexed by the client's mac address
 func (c *APConfig) GetClients() ClientMap {
 	props, err := c.GetProps("@/clients")
 	if err != nil {
@@ -444,7 +451,7 @@ func (c *APConfig) GetClients() ClientMap {
 	return set
 }
 
-// Fetch a single device by its path
+// GetDevicePath fetches a single device by its path
 func (c *APConfig) GetDevicePath(path string) (*device.Device, error) {
 	var dev device.Device
 
@@ -458,7 +465,7 @@ func (c *APConfig) GetDevicePath(path string) (*device.Device, error) {
 	return &dev, err
 }
 
-// Fetch a single device by its ID #
+// GetDevice fetches a single device by its ID #
 func (c *APConfig) GetDevice(devid int) (*device.Device, error) {
 	path := fmt.Sprintf("@/devices/%d", devid)
 	return c.GetDevicePath(path)

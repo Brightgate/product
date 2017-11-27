@@ -20,13 +20,13 @@ import (
 )
 
 const (
-	output_fmt = "%-18s %s\n"
+	outputFmt = "%-18s %s\n"
 )
 
 var (
-	cli_db_path = flag.String("oui-db-path", "", "Path to OUI database file")
-	db_path     string
-	db          oui.StaticDB
+	cliDbPath = flag.String("oui-db-path", "", "Path to OUI database file")
+	dbPath    string
+	db        oui.StaticDB
 )
 
 func main() {
@@ -34,35 +34,35 @@ func main() {
 
 	flag.Parse()
 
-	ap_root, root_defined := os.LookupEnv("APROOT")
+	apRoot, ok := os.LookupEnv("APROOT")
 
 	// If command line option defined, open that.
-	if *cli_db_path != "" {
-		db_path = *cli_db_path
-	} else if root_defined {
+	if *cliDbPath != "" {
+		dbPath = *cliDbPath
+	} else if ok {
 		// Else if APROOT defined, construct path and open that.
-		db_path = fmt.Sprintf("%s/etc/oui.txt", ap_root)
+		dbPath = fmt.Sprintf("%s/etc/oui.txt", apRoot)
 	} else {
 		log.Println("No OUI database found; use -oui-db-path or APROOT")
 		os.Exit(2)
 	}
 
 	// Open a copy of the IEEE OUI database.
-	db, err := oui.OpenStaticFile(db_path)
+	db, err := oui.OpenStaticFile(dbPath)
 	if err != nil {
-		log.Fatalf("couldn't open '%s': %v\n", db_path, err)
+		log.Fatalf("couldn't open '%s': %v\n", dbPath, err)
 	}
 
 	log.Printf("generated %v\n", db.Generated())
 
 	// Query each MAC address given on the command line.
-	fmt.Printf(output_fmt, "HWADDR", "MANUFACTURER")
+	fmt.Printf(outputFmt, "HWADDR", "MANUFACTURER")
 	for _, mac := range flag.Args() {
 		entry, err := db.Query(mac)
 
 		// If error is nil, we have a result in "entry"
 		if err == nil {
-			fmt.Printf(output_fmt, mac, entry.Manufacturer)
+			fmt.Printf(outputFmt, mac, entry.Manufacturer)
 		} else {
 			log.Println("Query() err", err)
 		}

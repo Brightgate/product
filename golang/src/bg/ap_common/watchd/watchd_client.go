@@ -34,6 +34,8 @@ import (
 // will be saved into a database before before cleared, so we will be able to
 // examine a device's historical behavior in greater detail.)
 
+// ProtoRecord tracks a device's network statistics for a single protocol
+// (currently just TCP and UDP)
 type ProtoRecord struct {
 	OpenPorts      map[int]bool   `json:"OpenPorts,omitempty"`
 	OutPorts       map[int]bool   `json:"OutPorts,omitempty"`
@@ -42,9 +44,13 @@ type ProtoRecord struct {
 	IncomingBlocks map[string]int `json:"IncomingBlocks,omitempty"`
 }
 
+// DeviceRecord tracks a device's network statistics for all protocols
 type DeviceRecord map[string]*ProtoRecord
+
+// DeviceMap tracks all devices for which we are gathering statistics
 type DeviceMap map[string]DeviceRecord
 
+// Watchd is an opaque handle used by clients to communicate with ap.watchd
 type Watchd struct {
 	socket *zmq.Socket
 	sender string
@@ -52,7 +58,9 @@ type Watchd struct {
 }
 
 const (
-	OK  = base_msg.WatchdResponse_OK
+	// OK means the watchd operation succeeded
+	OK = base_msg.WatchdResponse_OK
+	// ERR means the watchd operation failed
 	ERR = base_msg.WatchdResponse_Err
 
 	sendTimeout = time.Duration(base_def.LOCAL_ZMQ_SEND_TIMEOUT * time.Second)

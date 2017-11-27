@@ -29,7 +29,7 @@ import (
 // between topics a daemon doesn't recognize and those it is choosing to ignore.
 // This has no functional impact, other than being logged differently in
 // event_listener()
-var known_topics = [7]string{
+var knownTopics = [7]string{
 	base_def.TOPIC_PING,
 	base_def.TOPIC_CONFIG,
 	base_def.TOPIC_ENTITY,
@@ -41,16 +41,18 @@ var known_topics = [7]string{
 
 var debug = false
 
-type hdlr_f func(event []byte)
+type handlerF func(event []byte)
 
+// Broker is an opaque handle used by daemons to communicate with ap.brokerd
 type Broker struct {
-	Name          string
-	publisher_mtx sync.Mutex
-	publisher     *zmq.Socket
-	subscriber    *zmq.Socket
-	handlers      map[string]hdlr_f
+	Name         string
+	publisherMtx sync.Mutex
+	publisher    *zmq.Socket
+	subscriber   *zmq.Socket
+	handlers     map[string]handlerF
 }
 
+// Ping will send a single ping message to ap.brokerd
 func (b *Broker) Ping() {
 	ping := &base_msg.EventPing{
 		Timestamp:   aputil.NowToProtobuf(),
@@ -61,7 +63,8 @@ func (b *Broker) Ping() {
 
 	err := b.Publish(ping, base_def.TOPIC_PING)
 	if err != nil {
-		log.Printf("couldn't publish %s for %s: %v\n", base_def.TOPIC_PING, b.Name, err)
+		log.Printf("couldn't publish %s for %s: %v\n",
+			base_def.TOPIC_PING, b.Name, err)
 	}
 }
 
@@ -73,9 +76,9 @@ func (b *Broker) Publish(pb proto.Message, topic string) error {
 		return fmt.Errorf("error marshalling %s: %v", topic, err)
 	}
 
-	b.publisher_mtx.Lock()
+	b.publisherMtx.Lock()
 	_, err = b.publisher.SendMessage(topic, data)
-	b.publisher_mtx.Unlock()
+	b.publisherMtx.Unlock()
 	if err != nil {
 		return fmt.Errorf("error sending %s: %v", topic, err)
 	}
@@ -83,7 +86,7 @@ func (b *Broker) Publish(pb proto.Message, topic string) error {
 	return nil
 }
 
-func event_listener(b *Broker) {
+func eventListener(b *Broker) {
 	for {
 		msg, err := b.subscriber.RecvMessageBytes(0)
 		if err != nil {
@@ -107,7 +110,9 @@ func event_listener(b *Broker) {
 	}
 }
 
-func (b *Broker) Handle(topic string, handler hdlr_f) {
+// Handle adds a new callback function for the identified topic.  This will
+// replace an existing handler for that topic.
+func (b *Broker) Handle(topic string, handler handlerF) {
 	b.handlers[topic] = handler
 }
 
@@ -120,7 +125,7 @@ func (b *Broker) connect() {
 	b.publisher, _ = zmq.NewSocket(zmq.PUB)
 	b.publisher.Connect(base_def.BROKER_ZMQ_PUB_URL)
 
-	go event_listener(b)
+	go eventListener(b)
 }
 
 // Fini closes the subscriber's connection to the broker
@@ -138,11 +143,11 @@ func New(name string) *Broker {
 
 	b := Broker{
 		Name:     fmt.Sprintf("%s(%d)", name, os.Getpid()),
-		handlers: make(map[string]hdlr_f),
+		handlers: make(map[string]handlerF),
 	}
 
 	// Add placeholder handlers in the map for known topics
-	for _, v := range known_topics {
+	for _, v := range knownTopics {
 		b.handlers[v] = nil
 	}
 

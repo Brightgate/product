@@ -16,7 +16,7 @@ import (
 
 func upgradeV1() error {
 	log.Printf("Adding @/apversion property\n")
-	propertyUpdate("@/apversion", ApVersion, nil, true)
+	propertyUpdate("@/apversion", apVersion, nil, true)
 	return nil
 }
 

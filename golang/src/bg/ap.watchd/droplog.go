@@ -50,8 +50,8 @@ var (
 
 type dropTable struct {
 	name  string
-	minId int
-	maxId int
+	minID int
+	maxID int
 }
 
 // Default logfile format:
@@ -102,25 +102,25 @@ func countDrop(d *dropRecord) {
 	sport := strconv.Itoa(d.sprt)
 
 	// Bump the 'outgoing blocks' count of the originating device
-	if rec := GetDeviceRecord(d.smac); rec != nil {
-		p := GetProtoRecord(rec, d.proto)
+	if rec := getDeviceRecord(d.smac); rec != nil {
+		p := getProtoRecord(rec, d.proto)
 		if p != nil {
 			tgt := dstIP + ":" + dport
 			p.OutgoingBlocks[tgt]++
 		}
-		ReleaseDeviceRecord(rec)
+		releaseDeviceRecord(rec)
 	}
 
 	// If the target device was local to our LAN, bump its 'incoming
 	// blocks' count.
 	if d.outdev != wanIface {
-		if rec := GetDeviceRecordByIP(dstIP); rec != nil {
-			p := GetProtoRecord(rec, d.proto)
+		if rec := getDeviceRecordByIP(dstIP); rec != nil {
+			p := getProtoRecord(rec, d.proto)
 			if p != nil {
 				src := srcIP + ":" + sport
 				p.IncomingBlocks[src]++
 			}
-			ReleaseDeviceRecord(rec)
+			releaseDeviceRecord(rec)
 		}
 	}
 }
@@ -134,8 +134,8 @@ func recordDrop(d *dropRecord) *dropTable {
 		table = lanDrops
 	}
 
-	table.maxId++
-	d.id = table.maxId
+	table.maxID++
+	d.id = table.maxID
 	columns := "Id, Time, InDev, OutDev, SrcIP, DstIP, " +
 		"SrcMAC, SrcPort, DstPort, Proto"
 
@@ -249,10 +249,10 @@ func tableInit(db *sql.DB, table string) (*dropTable, error) {
 	}
 
 	t.name = table
-	t.minId = getVal(db, table, "MIN")
-	t.maxId = getVal(db, table, "MAX")
+	t.minID = getVal(db, table, "MIN")
+	t.maxID = getVal(db, table, "MAX")
 
-	log.Printf("%s IDs %d - %d\n", table, t.minId, t.maxId)
+	log.Printf("%s IDs %d - %d\n", table, t.minID, t.maxID)
 	return &t, nil
 }
 
@@ -274,21 +274,21 @@ func dbInit(name string) (*sql.DB, error) {
 }
 
 func trimTable(t *dropTable) {
-	if t.maxId-t.minId <= maxRecords {
+	if t.maxID-t.minID <= maxRecords {
 		return
 	}
 
 	log.Printf("%s table has %d entries.  Trimming to %d.\n",
-		t.name, t.maxId-t.minId, minRecords)
+		t.name, t.maxID-t.minID, minRecords)
 
-	newMin := t.maxId - minRecords
+	newMin := t.maxID - minRecords
 	stmnt := fmt.Sprintf("DELETE FROM %s WHERE id < %d", t.name, newMin)
 	if res, err := dbHandle.Exec(stmnt, 1); err != nil {
 		log.Printf("'%s' failed: %v\n", stmnt, err)
 	} else {
 		deleted, _ := res.RowsAffected()
 		log.Printf("Deleted %d entries\n", deleted)
-		t.minId = newMin
+		t.minID = newMin
 	}
 }
 
@@ -317,7 +317,7 @@ func openPipe(name string) (pipe *os.File, err error) {
 	if !aputil.FileExists(name) {
 		log.Printf("Creating named pipe %s for log input\n", name)
 		if err = syscall.Mkfifo(name, 0600); err != nil {
-			err = fmt.Errorf("Failed to create %s: %v\n", name, err)
+			err = fmt.Errorf("failed to create %s: %v", name, err)
 			return
 		}
 

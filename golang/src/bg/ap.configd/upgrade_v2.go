@@ -38,7 +38,7 @@ func upgradeV2() error {
 	}
 
 	for _, lease := range leases.Children {
-		var class_node, ipv4_node, dns_node *pnode
+		var classNode, ipv4Node, dnsNode *pnode
 
 		ipv4 := lease.Name
 		macaddr := lease.Value
@@ -48,32 +48,32 @@ func upgradeV2() error {
 		for _, node := range client.Children {
 			switch node.Name {
 			case "class":
-				class_node = node
+				classNode = node
 			case "ipv4":
-				ipv4_node = node
+				ipv4Node = node
 			case "dns":
-				dns_node = node
+				dnsNode = node
 			}
 		}
 
 		// Create the class property if it doesn't exist.  Otherwise,
 		// leave it alone.
-		if class_node == nil {
-			class_node = propertyAdd(client, "class")
-			class_node.Value = "unclassified"
+		if classNode == nil {
+			classNode = propertyAdd(client, "class")
+			classNode.Value = "unclassified"
 		}
 
 		// Create the ipv4 property if necessary.  Migrate the value
 		// from the old lease into the client structure.
-		if ipv4_node == nil {
-			ipv4_node = propertyAdd(client, "ipv4")
+		if ipv4Node == nil {
+			ipv4Node = propertyAdd(client, "ipv4")
 		}
-		ipv4_node.Value = ipv4
-		ipv4_node.Expires = lease.Expires
+		ipv4Node.Value = ipv4
+		ipv4Node.Expires = lease.Expires
 
 		// The "dns" property is now called "dhcp_name"
-		if dns_node != nil {
-			dns_node.Name = "dhcp_name"
+		if dnsNode != nil {
+			dnsNode.Name = "dhcp_name"
 		}
 	}
 

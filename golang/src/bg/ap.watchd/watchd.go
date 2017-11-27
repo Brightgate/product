@@ -46,7 +46,7 @@ var (
 		"The address to listen on for Prometheus HTTP requests.")
 	verbose = flag.Bool("verbose", false, "Log nmap progress")
 
-	watchers = make([]*Watcher, 0)
+	watchers = make([]*watcher, 0)
 )
 
 var (
@@ -62,17 +62,17 @@ var (
 // is defined by the following structure, and plugged into the watchd framework
 // at launch time by their init() functions.
 //
-type Watcher struct {
-	Name string
-	Init func() error
-	Fini func()
+type watcher struct {
+	name string
+	init func() error
+	fini func()
 }
 
 func addWatcher(name string, ini func() error, fini func()) {
-	w := Watcher{
-		Name: name,
-		Init: ini,
-		Fini: fini,
+	w := watcher{
+		name: name,
+		init: ini,
+		fini: fini,
 	}
 
 	watchers = append(watchers, &w)
@@ -226,14 +226,14 @@ func main() {
 	for _, w := range watchers {
 		var err error
 
-		if w.Init != nil {
-			err = w.Init()
+		if w.init != nil {
+			err = w.init()
 		}
 
 		if err != nil {
-			log.Printf("Failed to start %s: %v\n", w.Name, err)
-		} else if w.Fini != nil {
-			defer w.Fini()
+			log.Printf("Failed to start %s: %v\n", w.name, err)
+		} else if w.fini != nil {
+			defer w.fini()
 		}
 	}
 

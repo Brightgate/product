@@ -26,6 +26,7 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
+// MCP is an opaque handle used by client daemons to communicate with ap.mcp
 type MCP struct {
 	socket *zmq.Socket
 	sender string
@@ -33,16 +34,18 @@ type MCP struct {
 	sync.Mutex
 }
 
+// Shorthand forms of base_msg commands and error codes
 const (
-	OK        = base_msg.MCPResponse_OP_OK
-	INVALID   = base_msg.MCPResponse_INVALID
-	NO_DAEMON = base_msg.MCPResponse_NO_DAEMON
+	OK       = base_msg.MCPResponse_OP_OK
+	INVALID  = base_msg.MCPResponse_INVALID
+	NODAEMON = base_msg.MCPResponse_NO_DAEMON
 
-	OP_GET = base_msg.MCPRequest_GET
-	OP_SET = base_msg.MCPRequest_SET
-	OP_DO  = base_msg.MCPRequest_DO
+	GET = base_msg.MCPRequest_GET
+	SET = base_msg.MCPRequest_SET
+	DO  = base_msg.MCPRequest_DO
 )
 
+// Daemons must be in one of the following states
 const (
 	OFFLINE = iota
 	STARTING
@@ -53,6 +56,8 @@ const (
 	BROKEN
 )
 
+// States maps the integral value of a daemon's state to a human-readable ascii
+// value
 var States = map[int]string{
 	OFFLINE:  "offline",
 	STARTING: "starting",
@@ -63,6 +68,7 @@ var States = map[int]string{
 	INACTIVE: "inactive",
 }
 
+// DaemonState describes the current state of a daemon
 type DaemonState struct {
 	Name  string
 	State int
@@ -70,8 +76,11 @@ type DaemonState struct {
 	Pid   int
 }
 
+// DaemonList is a slice containing the states for multiple daemons
 type DaemonList []*DaemonState
 
+// New connects to ap.mcp, and returns an opaque handle that can be used for
+// subsequent communication with the daemon.
 func New(name string) (*MCP, error) {
 	var handle *MCP
 
@@ -98,7 +107,6 @@ func New(name string) (*MCP, error) {
 	err = socket.Connect(base_def.MCP_ZMQ_REP_URL)
 	if err != nil {
 		err = fmt.Errorf("Failed to connect new MCP socket: %v", err)
-		return handle, err
 	} else {
 		handle = &MCP{sender: sender, socket: socket}
 		if name[0:3] == "ap." {
@@ -148,10 +156,10 @@ func (m *MCP) msg(oc base_msg.MCPRequest_Operation,
 			switch *r.Response {
 			case INVALID:
 				err = fmt.Errorf("Invalid command")
-			case NO_DAEMON:
+			case NODAEMON:
 				err = fmt.Errorf("No such daemon")
 			default:
-				if oc == OP_GET {
+				if oc == GET {
 					rval = *r.State
 				}
 			}
@@ -162,10 +170,12 @@ func (m *MCP) msg(oc base_msg.MCPRequest_Operation,
 	return rval, err
 }
 
+// GetState will query ap.mcp for the current state of a single daemon.
 func (m *MCP) GetState(daemon string) (string, error) {
-	return m.msg(OP_GET, daemon, "", -1)
+	return m.msg(GET, daemon, "", -1)
 }
 
+// SetState is used by a daemon to notify ap.mcp of a change in its state
 func (m *MCP) SetState(state int) error {
 	var err error
 
@@ -174,14 +184,15 @@ func (m *MCP) SetState(state int) error {
 	} else if m.daemon == "" {
 		err = fmt.Errorf("only a daemon can update its state")
 	} else {
-		_, err = m.msg(OP_SET, m.daemon, "", state)
+		_, err = m.msg(SET, m.daemon, "", state)
 	}
 
 	return err
 }
 
+// Do is used to instruct ap.mcp to initiate an operation on a daemon
 func (m *MCP) Do(daemon, command string) error {
-	_, err := m.msg(OP_DO, daemon, command, -1)
+	_, err := m.msg(DO, daemon, command, -1)
 
 	return err
 }

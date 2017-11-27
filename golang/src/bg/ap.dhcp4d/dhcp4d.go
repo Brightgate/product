@@ -46,7 +46,7 @@ var (
 	addr = flag.String("promhttp-address", base_def.DHCPD_PROMETHEUS_PORT,
 		"Prometheus publication HTTP port.")
 
-	handlers = make(map[string]*DHCPHandler)
+	handlers = make(map[string]*ringHandler)
 
 	brokerd *broker.Broker
 
@@ -155,9 +155,9 @@ func configIPv4Changed(path []string, val string, expires *time.Time) {
 	}
 
 	h := handlers[ring]
-	if !dhcp.IPInRange(h.range_start, h.range_end, ipv4) {
+	if !dhcp.IPInRange(h.rangeStart, h.rangeEnd, ipv4) {
 		log.Printf("%s assigned %s, out of its ring range (%v - %v)\n",
-			hwaddr, ipaddr, h.range_start, h.range_end)
+			hwaddr, ipaddr, h.rangeStart, h.rangeEnd)
 		return
 	}
 
@@ -232,7 +232,7 @@ func propPath(hwaddr, prop string) string {
  */
 func notifyNewEntity(p dhcp.Packet, options dhcp.Options, ring string) {
 	ipaddr := p.CIAddr()
-	hwaddr_u64 := network.HWAddrToUint64(p.CHAddr())
+	hwaddr := network.HWAddrToUint64(p.CHAddr())
 	hostname := string(options[dhcp.OptionHostName])
 
 	log.Printf("New client %s (name: %q incoming IP address: %s)\n",
@@ -242,7 +242,7 @@ func notifyNewEntity(p dhcp.Packet, options dhcp.Options, ring string) {
 		Sender:      proto.String(brokerd.Name),
 		Debug:       proto.String("-"),
 		Ring:        proto.String(ring),
-		MacAddress:  proto.Uint64(hwaddr_u64),
+		MacAddress:  proto.Uint64(hwaddr),
 		Ipv4Address: proto.Uint32(network.IPAddrToUint32(ipaddr)),
 		Hostname:    proto.String(hostname),
 	}
@@ -352,29 +352,29 @@ type lease struct {
 	assigned bool       // Lease assigned to a client?
 }
 
-type DHCPHandler struct {
-	ring        string        // Client ring eligible for this server
-	subnet      net.IPNet     // Subnet being managed
-	server_ip   net.IP        // DHCP server's IP
-	options     dhcp.Options  // Options to send to DHCP Clients
-	range_start net.IP        // Start of IP range to distribute
-	range_end   net.IP        // End of IP range to distribute
-	range_size  int           // Number of IPs to distribute (starting from start)
-	duration    time.Duration // Lease period
-	leases      []lease       // Per-lease state
+type ringHandler struct {
+	ring       string        // Client ring eligible for this server
+	subnet     net.IPNet     // Subnet being managed
+	serverIP   net.IP        // DHCP server's IP
+	options    dhcp.Options  // Options to send to DHCP Clients
+	rangeStart net.IP        // Start of IP range to distribute
+	rangeEnd   net.IP        // End of IP range to distribute
+	rangeSpan  int           // Number of IPs to distribute (starting from start)
+	duration   time.Duration // Lease period
+	leases     []lease       // Per-lease state
 }
 
 /*
  * Construct a DHCP NAK message
  */
-func (h *DHCPHandler) nak(p dhcp.Packet) dhcp.Packet {
-	return dhcp.ReplyPacket(p, dhcp.NAK, h.server_ip, nil, 0, nil)
+func (h *ringHandler) nak(p dhcp.Packet) dhcp.Packet {
+	return dhcp.ReplyPacket(p, dhcp.NAK, h.serverIP, nil, 0, nil)
 }
 
 /*
  * Handle DISCOVER messages
  */
-func (h *DHCPHandler) discover(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
+func (h *ringHandler) discover(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	hwaddr := p.CHAddr().String()
 	log.Printf("DISCOVER %s\n", hwaddr)
 
@@ -388,14 +388,14 @@ func (h *DHCPHandler) discover(p dhcp.Packet, options dhcp.Options) dhcp.Packet 
 	log.Printf("  OFFER %s to %s\n", l.ipaddr, l.hwaddr)
 
 	notifyProvisioned(l.ipaddr)
-	return dhcp.ReplyPacket(p, dhcp.Offer, h.server_ip, l.ipaddr, h.duration,
+	return dhcp.ReplyPacket(p, dhcp.Offer, h.serverIP, l.ipaddr, h.duration,
 		h.options.SelectOrderOrAll(options[dhcp.OptionParameterRequestList]))
 }
 
 /*
  * Handle REQUEST messages
  */
-func (h *DHCPHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
+func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	var reqIP net.IP
 
 	hwaddr := p.CHAddr().String()
@@ -404,10 +404,10 @@ func (h *DHCPHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	notifyOptions(p.CHAddr(), options, dhcp.Request)
 
 	server, ok := options[dhcp.OptionServerIdentifier]
-	if ok && !net.IP(server).Equal(h.server_ip) {
+	if ok && !net.IP(server).Equal(h.serverIP) {
 		return nil // Message not for this dhcp server
 	}
-	request_option := net.IP(options[dhcp.OptionRequestedIPAddress])
+	requestOption := net.IP(options[dhcp.OptionRequestedIPAddress])
 
 	current := h.leaseSearch(hwaddr)
 
@@ -419,8 +419,8 @@ func (h *DHCPHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	action := ""
 	if current != nil {
 		reqIP = current.ipaddr
-		if request_option != nil {
-			if reqIP.Equal(request_option) {
+		if requestOption != nil {
+			if reqIP.Equal(requestOption) {
 				action = "renewing"
 			} else {
 				/*
@@ -434,8 +434,8 @@ func (h *DHCPHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 		} else {
 			action = "found existing lease"
 		}
-	} else if request_option != nil {
-		reqIP = request_option
+	} else if requestOption != nil {
+		reqIP = requestOption
 		action = "granting request"
 	} else {
 		reqIP = net.IP(p.CIAddr())
@@ -471,7 +471,7 @@ func (h *DHCPHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	// Note: even for static IP assignments, we tell the requesting client
 	// that it needs to renew at the regular period for the ring.  This lets
 	// us revoke a static assignment at some point in the future.
-	return dhcp.ReplyPacket(p, dhcp.ACK, h.server_ip, l.ipaddr, h.duration,
+	return dhcp.ReplyPacket(p, dhcp.ACK, h.serverIP, l.ipaddr, h.duration,
 		h.options.SelectOrderOrAll(options[dhcp.OptionParameterRequestList]))
 }
 
@@ -480,7 +480,7 @@ func (h *DHCPHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
  * Otherwise, release it, update the configuration, send a notification, and
  * return 'true'
  */
-func (h *DHCPHandler) releaseLease(l *lease, hwaddr string) bool {
+func (h *ringHandler) releaseLease(l *lease, hwaddr string) bool {
 	if l == nil || !l.assigned || l.hwaddr != hwaddr {
 		return false
 	}
@@ -497,7 +497,7 @@ func (h *DHCPHandler) releaseLease(l *lease, hwaddr string) bool {
 /*
  * Handle RELEASE message for a specific IP address
  */
-func (h *DHCPHandler) release(p dhcp.Packet) {
+func (h *ringHandler) release(p dhcp.Packet) {
 	hwaddr := p.CHAddr().String()
 	ipaddr := p.CIAddr()
 
@@ -516,7 +516,7 @@ func (h *DHCPHandler) release(p dhcp.Packet) {
  * Handle DECLINE message.  We only get the client's MAC address, so we have to
  * scan all possible leases to find the one being declined
  */
-func (h *DHCPHandler) decline(p dhcp.Packet) {
+func (h *ringHandler) decline(p dhcp.Packet) {
 	hwaddr := p.CHAddr().String()
 
 	l := h.leaseSearch(hwaddr)
@@ -532,7 +532,7 @@ func (h *DHCPHandler) decline(p dhcp.Packet) {
 // will call the handler immediately after the call to ReadFrom(), where
 // lastRequestOn gets set.
 //
-func selectRingHandler(p dhcp.Packet, options dhcp.Options) *DHCPHandler {
+func selectRingHandler(p dhcp.Packet, options dhcp.Options) *ringHandler {
 	hwaddr := p.CHAddr().String()
 	oldRing := getRing(hwaddr)
 	if lastRequestOn == setupMac {
@@ -562,7 +562,7 @@ func selectRingHandler(p dhcp.Packet, options dhcp.Options) *DHCPHandler {
 	return ringHandler
 }
 
-func (h *DHCPHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType,
+func (h *ringHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType,
 	options dhcp.Options) (d dhcp.Packet) {
 
 	ringHandler := selectRingHandler(p, options)
@@ -587,7 +587,7 @@ func (h *DHCPHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType,
 	return nil
 }
 
-func (h *DHCPHandler) recordLease(l *lease, hwaddr, name string, ipv4 net.IP,
+func (h *ringHandler) recordLease(l *lease, hwaddr, name string, ipv4 net.IP,
 	etime *time.Time) {
 	l.name = name
 	l.hwaddr = hwaddr
@@ -602,11 +602,11 @@ func (h *DHCPHandler) recordLease(l *lease, hwaddr, name string, ipv4 net.IP,
  * available lease at random.  A 'nil' response indicates that all leases are
  * currently assigned.
  */
-func (h *DHCPHandler) leaseAssign(hwaddr string) *lease {
+func (h *ringHandler) leaseAssign(hwaddr string) *lease {
 	var rval *lease
 
 	now := time.Now()
-	target := rand.Intn(h.range_size)
+	target := rand.Intn(h.rangeSpan)
 	assigned := -1
 
 	for i, l := range h.leases {
@@ -629,7 +629,7 @@ func (h *DHCPHandler) leaseAssign(hwaddr string) *lease {
 	}
 
 	if rval == nil && assigned >= 0 {
-		ipv4 := dhcp.IPAdd(h.range_start, assigned)
+		ipv4 := dhcp.IPAdd(h.rangeStart, assigned)
 		rval = &h.leases[assigned]
 		expires := time.Now().Add(h.duration)
 		h.recordLease(rval, hwaddr, "", ipv4, &expires)
@@ -641,8 +641,8 @@ func (h *DHCPHandler) leaseAssign(hwaddr string) *lease {
  * Scan all leases in all ranges, looking for an IP address assigned to this
  * NIC.
  */
-func (h *DHCPHandler) leaseSearch(hwaddr string) *lease {
-	for i := 0; i < h.range_size; i++ {
+func (h *ringHandler) leaseSearch(hwaddr string) *lease {
+	for i := 0; i < h.rangeSpan; i++ {
 		l := &h.leases[i]
 		if l.assigned && l.hwaddr == hwaddr {
 			return l
@@ -651,29 +651,29 @@ func (h *DHCPHandler) leaseSearch(hwaddr string) *lease {
 	return nil
 }
 
-func (h *DHCPHandler) getLease(ip net.IP) *lease {
-	if !dhcp.IPInRange(h.range_start, h.range_end, ip) {
+func (h *ringHandler) getLease(ip net.IP) *lease {
+	if !dhcp.IPInRange(h.rangeStart, h.rangeEnd, ip) {
 		return nil
 	}
 
-	slot := dhcp.IPRange(h.range_start, ip) - 1
+	slot := dhcp.IPRange(h.rangeStart, ip) - 1
 	return &h.leases[slot]
 }
 
 //
 // Instantiate a new DHCP handler for the given ring/subnet.
 //
-func newHandler(ring, network string, duration int) *DHCPHandler {
-	var range_size int
+func newHandler(ring, network string, duration int) *ringHandler {
+	var rangeSpan int
 	var err error
 
 	start, subnet, err := net.ParseCIDR(network)
 	if err == nil {
 		ones, bits := subnet.Mask.Size()
-		range_size = 1<<uint32(bits-ones) - 2
+		rangeSpan = 1<<uint32(bits-ones) - 2
 	}
 
-	if range_size == 0 {
+	if rangeSpan == 0 {
 		log.Fatalf("Invalid DHCP config.  Poorly formed subnet: %s\n",
 			network)
 	}
@@ -682,27 +682,27 @@ func newHandler(ring, network string, duration int) *DHCPHandler {
 	// its own routing info.
 	myip := dhcp.IPAdd(start, 1)
 
-	h := DHCPHandler{
-		ring:        ring,
-		subnet:      *subnet,
-		server_ip:   myip,
-		range_start: start,
-		range_end:   dhcp.IPAdd(start, range_size),
-		range_size:  range_size,
-		duration:    time.Duration(duration) * time.Minute,
+	h := ringHandler{
+		ring:       ring,
+		subnet:     *subnet,
+		serverIP:   myip,
+		rangeStart: start,
+		rangeEnd:   dhcp.IPAdd(start, rangeSpan),
+		rangeSpan:  rangeSpan,
+		duration:   time.Duration(duration) * time.Minute,
 		options: dhcp.Options{
 			dhcp.OptionSubnetMask:       subnet.Mask,
 			dhcp.OptionRouter:           myip,
 			dhcp.OptionDomainNameServer: myip,
 		},
-		leases: make([]lease, range_size, range_size),
+		leases: make([]lease, rangeSpan, rangeSpan),
 	}
 	h.options[dhcp.OptionDomainName] = []byte(siteid + ".brightgate.net")
 
 	return &h
 }
 
-func (h *DHCPHandler) recoverLeases() {
+func (h *ringHandler) recoverLeases() {
 	// Preemptively pull the network and DHCP server from the pool
 	h.leases[0].assigned = true
 	h.leases[1].assigned = true
@@ -752,12 +752,12 @@ func initHandlers() error {
 	return nil
 }
 
-type MultiConn struct {
+type multiConn struct {
 	conn *ipv4.PacketConn
 	cm   *ipv4.ControlMessage
 }
 
-func (s *MultiConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
+func (s *multiConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 	var iface *net.Interface
 	var requestMac string
 
@@ -784,7 +784,7 @@ func (s *MultiConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 	return
 }
 
-func (s *MultiConn) WriteTo(b []byte, addr net.Addr) (n int, err error) {
+func (s *multiConn) WriteTo(b []byte, addr net.Addr) (n int, err error) {
 	s.cm.Src = nil
 	return s.conn.WriteTo(b, s.cm, addr)
 }
@@ -801,7 +801,7 @@ func listenAndServeIf(handler dhcp.Handler) error {
 	if err != nil {
 		return err
 	}
-	serveConn := MultiConn{
+	serveConn := multiConn{
 		conn: p,
 	}
 
@@ -815,7 +815,7 @@ func mainLoop() {
 	 * all of the requests at that address, and routes them to the correct
 	 * per-ring handler.
 	 */
-	h := DHCPHandler{
+	h := ringHandler{
 		ring: "_metahandler",
 	}
 	for {

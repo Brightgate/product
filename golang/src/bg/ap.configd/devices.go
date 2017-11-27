@@ -26,7 +26,7 @@ const (
 )
 
 var (
-	devices device.DeviceMap
+	devices device.Collection
 )
 
 // Handle a request for a single device.
@@ -65,7 +65,7 @@ func delDevHandler(q *base_msg.ConfigQuery) error {
 	return fmt.Errorf("the device tree is read-only")
 }
 
-func DeviceDBInit() error {
+func deviceDBInit() error {
 	var err error
 
 	devices, err = device.DevicesLoad(*propdir + deviceDB)

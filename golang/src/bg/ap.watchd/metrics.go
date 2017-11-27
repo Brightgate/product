@@ -104,11 +104,15 @@ func newDeviceRecord() *deviceRecord {
 	return &d
 }
 
-func ReleaseDeviceRecord(d *deviceRecord) {
+// releaseDeviceRecord drops the lock on a device record
+func releaseDeviceRecord(d *deviceRecord) {
 	d.Unlock()
 }
 
-func GetDeviceRecord(mac string) *deviceRecord {
+// getDeviceRecord looks up a device record based on the provide mac address.
+// If the corresponding device is found, the structure is locked and returned to
+// the caller.  It must be released when the client is finished with it.
+func getDeviceRecord(mac string) *deviceRecord {
 	statsMtx.Lock()
 	d, ok := currentStats[mac]
 	if !ok {
@@ -121,7 +125,9 @@ func GetDeviceRecord(mac string) *deviceRecord {
 	return d
 }
 
-func GetProtoRecord(d *deviceRecord, proto string) *watchd.ProtoRecord {
+// getProtoRecord finds the protocol specific data within a device's full set of
+// statistics
+func getProtoRecord(d *deviceRecord, proto string) *watchd.ProtoRecord {
 	if d != nil {
 		return d.Stats[proto]
 	}
@@ -129,14 +135,17 @@ func GetProtoRecord(d *deviceRecord, proto string) *watchd.ProtoRecord {
 	return nil
 }
 
-func GetDeviceRecordByIP(ip string) *deviceRecord {
+// getDeviceRecordByIP looks up a device record based on the provided IP address
+func getDeviceRecordByIP(ip string) *deviceRecord {
 	if mac := getMacFromIP(ip); mac != "" {
-		return GetDeviceRecord(mac)
+		return getDeviceRecord(mac)
 	}
 	return nil
 }
 
-func GetMetrics(mac string, start, end *time.Time) (int, string) {
+// getMetrics looks up all of the metrics for a specific device, and returns
+// them as a JSON-encoded string.
+func getMetrics(mac string, start, end *time.Time) (int, string) {
 	var inStats *deviceMap
 
 	if start == nil && end == nil {
@@ -149,7 +158,7 @@ func GetMetrics(mac string, start, end *time.Time) (int, string) {
 		// aggregated data
 		inStats = &aggregatedStats
 	} else {
-		return API_ERR, "API doesn't yet support arbitrary time ranges"
+		return ERR, "API doesn't yet support arbitrary time ranges"
 	}
 
 	outStats := make(map[string]*watchd.DeviceRecord)
@@ -164,12 +173,12 @@ func GetMetrics(mac string, start, end *time.Time) (int, string) {
 	} else if dev, ok := (*inStats)[mac]; ok {
 		outStats[mac] = &dev.Stats
 	} else {
-		return API_ERR, "no such device: " + mac
+		return ERR, "no such device: " + mac
 	}
 
 	data, _ := json.MarshalIndent(outStats, "", "  ")
 
-	return API_OK, string(data)
+	return OK, string(data)
 }
 
 func aggregateBool(agg, cur map[int]bool) {

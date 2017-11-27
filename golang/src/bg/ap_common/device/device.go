@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-// Definition of a single device
+// Device describes a single device
 type Device struct {
 	Obsolete       bool
 	UpdateTime     time.Time
@@ -32,10 +32,13 @@ type Device struct {
 	Notes          string   `json:"Notes,omitempty"`
 }
 
-type DeviceMap map[uint32]*Device
+// Collection describes a collection of devices, indexed by DeviceID
+type Collection map[uint32]*Device
 
-func DevicesLoad(name string) (DeviceMap, error) {
-	var devices DeviceMap
+// DevicesLoad will read a JSON-formatted device database file, and returns a
+// populated Collection
+func DevicesLoad(name string) (Collection, error) {
+	var devices Collection
 	var file []byte
 	var err error
 

@@ -9,11 +9,6 @@
  *
  */
 
-/*
- * Todo:
- *    - Define real states and a state machine
- *    - Support more fine-grained capabilities / privileges
- */
 package main
 
 import (
@@ -64,12 +59,12 @@ type daemonSet map[string]*daemon
 
 // Allow up to 4 failures in a 1 minute period before giving up
 const (
-	failures_allowed = 4
-	period           = time.Duration(time.Minute)
-	online_timeout   = time.Duration(15 * time.Second)
-	NOBODY_UID       = 65534 // uid for 'nobody'
-	ROOT_UID         = 0     // uid for 'root'
-	pidfile          = "/var/tmp/ap.mcp.pid"
+	failuresAllowed = 4
+	period          = time.Duration(time.Minute)
+	onlineTimeout   = time.Duration(15 * time.Second)
+	nobodyUID       = 65534 // uid for 'nobody'
+	rootUID         = 0     // uid for 'root'
+	pidfile         = "/var/tmp/ap.mcp.pid"
 )
 
 var (
@@ -147,7 +142,7 @@ func singleInstance(d *daemon) error {
 	}
 
 	if !d.Privileged {
-		child.SetUID(NOBODY_UID, NOBODY_UID)
+		child.SetUID(nobodyUID, nobodyUID)
 	}
 	if err = child.Start(); err != nil {
 		return err
@@ -177,7 +172,7 @@ func singleInstance(d *daemon) error {
 // launch, monitor, and restart a single daemon
 //
 func runDaemon(d *daemon) {
-	start_times := make([]time.Time, failures_allowed)
+	startTimes := make([]time.Time, failuresAllowed)
 
 	d.Lock()
 	if d.going {
@@ -190,8 +185,8 @@ func runDaemon(d *daemon) {
 	for d.run {
 		var msg string
 
-		start_time := time.Now()
-		start_times = append(start_times[1:failures_allowed], start_time)
+		startTime := time.Now()
+		startTimes = append(startTimes[1:failuresAllowed], startTime)
 
 		err := singleInstance(d)
 		if err == nil {
@@ -201,8 +196,8 @@ func runDaemon(d *daemon) {
 		}
 
 		log.Printf("%s exited %s after %s\n", d.Name, msg,
-			time.Since(start_time))
-		if time.Since(start_times[0]) < period {
+			time.Since(startTime))
+		if time.Since(startTimes[0]) < period {
 			log.Printf("%s is dying too quickly", d.Name)
 			setState(d, mcp.BROKEN)
 		}
@@ -332,10 +327,10 @@ func handleStart(set daemonSet) {
 
 		for n, d := range launching {
 			d.Lock()
-			if time.Since(d.startTime) > online_timeout {
+			if time.Since(d.startTime) > onlineTimeout {
 				log.Printf("%s took more than %v to come "+
 					"online.  Giving up.",
-					n, online_timeout)
+					n, onlineTimeout)
 				setState(d, mcp.BROKEN)
 			}
 			if stableStates[d.state] {
@@ -362,7 +357,7 @@ func handleStart(set daemonSet) {
 // We're done when the set is empty.
 //
 func handleStop(set daemonSet) {
-	const nice_tries = 10
+	const niceTries = 10
 
 	tries := 0
 	procs := make(map[string]*os.Process)
@@ -390,7 +385,7 @@ func handleStop(set daemonSet) {
 					log.Printf("%s stopped\n", d.Name)
 				}
 				delete(set, n)
-			} else if tries < nice_tries {
+			} else if tries < niceTries {
 				p.Signal(os.Interrupt)
 			} else {
 				p.Signal(os.Kill)
@@ -421,22 +416,22 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 			log.Printf("Bad req from %s: unknown daemon: %s\n",
 				*req.Sender, *req.Daemon)
 		}
-		return nil, mcp.NO_DAEMON
+		return nil, mcp.NODAEMON
 	}
 
 	switch *req.Operation {
-	case mcp.OP_GET:
+	case mcp.GET:
 		if *verbose {
 			log.Printf("%s: Get(%s)\n", *req.Sender, *req.Daemon)
 		}
 		s := handleGetState(set)
+		rval := mcp.OK
 		if s == nil {
-			return nil, mcp.INVALID
-		} else {
-			return s, mcp.OK
+			rval = mcp.INVALID
 		}
+		return s, rval
 
-	case mcp.OP_SET:
+	case mcp.SET:
 		if *verbose {
 			log.Printf("%s: Set(%s, %d)\n", *req.Sender,
 				*req.Daemon, *req.State)
@@ -447,7 +442,7 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 		rval := handleSetState(set, int(*req.State))
 		return nil, rval
 
-	case mcp.OP_DO:
+	case mcp.DO:
 		if req.Command == nil {
 			if *verbose {
 				log.Printf("Bad DO from %s: no cmd for %s\n",
@@ -478,12 +473,12 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 			// The set is emptied as a side effect of the
 			// handleStop, so we make a copy to use during the
 			// subsequent handleStart()
-			restart_set := make(daemonSet)
+			restartSet := make(daemonSet)
 			for k, v := range set {
-				restart_set[k] = v
+				restartSet[k] = v
 			}
 			handleStop(set)
-			go handleStart(restart_set)
+			go handleStart(restartSet)
 			return nil, mcp.OK
 
 		case "stop":
@@ -700,7 +695,7 @@ func main() {
 	flag.Parse()
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
-	if os.Geteuid() != ROOT_UID {
+	if os.Geteuid() != rootUID {
 		log.Printf("mcp must be run as root\n")
 		os.Exit(1)
 	}

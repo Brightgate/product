@@ -24,9 +24,10 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
+// shorthand aliases for constants imported from base_msg
 const (
-	API_OK  = int(base_msg.WatchdResponse_OK)
-	API_ERR = int(base_msg.WatchdResponse_Err)
+	OK  = int(base_msg.WatchdResponse_OK)
+	ERR = int(base_msg.WatchdResponse_Err)
 )
 
 func apiLoop() {
@@ -50,9 +51,9 @@ func apiLoop() {
 
 		switch *req.Command {
 		case "getstats":
-			rc, rval = GetMetrics(*req.Device, start, end)
+			rc, rval = getMetrics(*req.Device, start, end)
 		default:
-			rc = API_ERR
+			rc = ERR
 			rval = "Invalid command: " + *req.Command
 		}
 

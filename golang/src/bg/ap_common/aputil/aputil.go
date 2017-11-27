@@ -138,7 +138,7 @@ func ProtobufToTime(ptime *base_msg.Timestamp) *time.Time {
 	return &tmp
 }
 
-// ProtobufToTime converts a Go timestamp into the equivalent Protobuf version
+// TimeToProtobuf converts a Go timestamp into the equivalent Protobuf version
 func TimeToProtobuf(gtime *time.Time) *base_msg.Timestamp {
 	if gtime == nil {
 		return nil

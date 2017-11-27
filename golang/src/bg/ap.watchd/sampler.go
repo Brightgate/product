@@ -156,17 +156,17 @@ func handlePort(src, dst net.IP, sport, dport int, proto string) {
 	// traffic that is lan<->wan, we might be dropping the interesting half.
 	// This needs some more thought.
 
-	if rec := GetDeviceRecordByIP(src.String()); rec != nil {
-		if p := GetProtoRecord(rec, proto); p != nil {
+	if rec := getDeviceRecordByIP(src.String()); rec != nil {
+		if p := getProtoRecord(rec, proto); p != nil {
 			p.OutPorts[sport] = true
 		}
-		ReleaseDeviceRecord(rec)
+		releaseDeviceRecord(rec)
 	}
-	if rec := GetDeviceRecordByIP(dst.String()); rec != nil {
-		if p := GetProtoRecord(rec, proto); p != nil {
+	if rec := getDeviceRecordByIP(dst.String()); rec != nil {
+		if p := getProtoRecord(rec, proto); p != nil {
 			p.InPorts[dport] = true
 		}
-		ReleaseDeviceRecord(rec)
+		releaseDeviceRecord(rec)
 	}
 }
 

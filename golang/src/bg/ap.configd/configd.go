@@ -68,10 +68,10 @@ import (
 )
 
 const (
-	property_filename = "ap_props.json"
-	backup_filename   = "ap_props.json.bak"
-	default_filename  = "ap_defaults.json"
-	pname             = "ap.configd"
+	propertyFilename = "ap_props.json"
+	backupFilename   = "ap_props.json.bak"
+	defaultFilename  = "ap_defaults.json"
+	pname            = "ap.configd"
 
 	minConfigVersion = 3
 	curConfigVersion = 6
@@ -145,50 +145,50 @@ type pnode struct {
 	index int
 }
 
-type pnode_queue []*pnode
+type pnodeQueue []*pnode
 
 var (
-	property_root = pnode{Name: "root"}
-	addr          = flag.String("listen-address",
+	propTreeRoot = pnode{Name: "root"}
+	addr         = flag.String("listen-address",
 		base_def.CONFIGD_PROMETHEUS_PORT,
 		"The address to listen on for HTTP requests.")
 	brokerd *broker.Broker
 	propdir = flag.String("propdir", "./",
 		"directory in which the property files should be stored")
 
-	ApVersion    string
+	apVersion    string
 	upgradeHooks []func() error
 
-	exp_heap  pnode_queue
-	exp_timer *time.Timer
-	exp_mutex sync.Mutex
-	expired   []string
+	expirationHeap  pnodeQueue
+	expirationTimer *time.Timer
+	expirationLock  sync.Mutex
+	expired         []string
 )
 
 /*******************************************************************
  *
  * Implement the functions required by the container/heap interface
  */
-func (q pnode_queue) Len() int { return len(q) }
+func (q pnodeQueue) Len() int { return len(q) }
 
-func (q pnode_queue) Less(i, j int) bool {
+func (q pnodeQueue) Less(i, j int) bool {
 	return (q[i].Expires).Before(*q[j].Expires)
 }
 
-func (q pnode_queue) Swap(i, j int) {
+func (q pnodeQueue) Swap(i, j int) {
 	q[i], q[j] = q[j], q[i]
 	q[i].index = i
 	q[j].index = j
 }
 
-func (q *pnode_queue) Push(x interface{}) {
+func (q *pnodeQueue) Push(x interface{}) {
 	n := len(*q)
 	prop := x.(*pnode)
 	prop.index = n
 	*q = append(*q, prop)
 }
 
-func (q *pnode_queue) Pop() interface{} {
+func (q *pnodeQueue) Pop() interface{} {
 	old := *q
 	n := len(old)
 	prop := old[n-1]
@@ -202,14 +202,14 @@ func (q *pnode_queue) Pop() interface{} {
  * Functions to implement property expiration and maintain the associated
  * datastructures.
  */
-func expiration_handler() {
+func expirationHandler() {
 	reset := time.Duration(time.Minute)
 	for true {
-		<-exp_timer.C
-		exp_mutex.Lock()
+		<-expirationTimer.C
+		expirationLock.Lock()
 
-		for len(exp_heap) > 0 {
-			next := exp_heap[0]
+		for len(expirationHeap) > 0 {
+			next := expirationHeap[0]
 			now := time.Now()
 
 			if next.Expires == nil {
@@ -217,7 +217,7 @@ func expiration_handler() {
 				log.Printf("Found static property %s in "+
 					"expiration heap at %d\n",
 					next.path, next.index)
-				heap.Pop(&exp_heap)
+				heap.Pop(&expirationHeap)
 				continue
 			}
 
@@ -231,7 +231,7 @@ func expiration_handler() {
 					next.Name, delay)
 			}
 			log.Printf("Expiring: %s at %v\n", next.Name, time.Now())
-			heap.Pop(&exp_heap)
+			heap.Pop(&expirationHeap)
 
 			next.index = -1
 			next.Expires = nil
@@ -239,21 +239,21 @@ func expiration_handler() {
 			next.ops.expire(next)
 		}
 
-		if len(exp_heap) > 0 {
-			next := exp_heap[0]
+		if len(expirationHeap) > 0 {
+			next := expirationHeap[0]
 			reset = time.Until(*next.Expires)
 		}
-		exp_timer.Reset(reset)
-		exp_mutex.Unlock()
+		expirationTimer.Reset(reset)
+		expirationLock.Unlock()
 	}
 }
 
 func nextExpiration() *pnode {
-	if len(exp_heap) == 0 {
+	if len(expirationHeap) == 0 {
 		return nil
 	}
 
-	return exp_heap[0]
+	return expirationHeap[0]
 }
 
 /*
@@ -264,7 +264,7 @@ func nextExpiration() *pnode {
 func expirationUpdate(node *pnode) {
 	reset := false
 
-	exp_mutex.Lock()
+	expirationLock.Lock()
 
 	if node == nextExpiration() {
 		reset = true
@@ -275,14 +275,14 @@ func expirationUpdate(node *pnode) {
 		// it's probably because we just made the setting permanent.
 		// Pull it out of the heap.
 		if node.index != -1 {
-			heap.Remove(&exp_heap, node.index)
+			heap.Remove(&expirationHeap, node.index)
 			node.index = -1
 		}
 	} else {
 		if node.index == -1 {
-			heap.Push(&exp_heap, node)
+			heap.Push(&expirationHeap, node)
 		}
-		heap.Fix(&exp_heap, node.index)
+		heap.Fix(&expirationHeap, node.index)
 	}
 
 	if node == nextExpiration() {
@@ -291,22 +291,22 @@ func expirationUpdate(node *pnode) {
 
 	if reset {
 		if next := nextExpiration(); next != nil {
-			exp_timer.Reset(time.Until(*next.Expires))
+			expirationTimer.Reset(time.Until(*next.Expires))
 		}
 	}
-	exp_mutex.Unlock()
+	expirationLock.Unlock()
 }
 
 /*
  * Remove a single property from the expiration heap
  */
 func expirationRemove(node *pnode) {
-	exp_mutex.Lock()
+	expirationLock.Lock()
 	if node.index != -1 {
-		heap.Remove(&exp_heap, node.index)
+		heap.Remove(&expirationHeap, node.index)
 		node.index = -1
 	}
-	exp_mutex.Unlock()
+	expirationLock.Unlock()
 }
 
 /*
@@ -315,10 +315,10 @@ func expirationRemove(node *pnode) {
 func expirationPurge() {
 	count := 0
 	for len(expired) > 0 {
-		exp_mutex.Lock()
+		expirationLock.Lock()
 		copy := expired
 		expired = make([]string, 0)
-		exp_mutex.Unlock()
+		expirationLock.Unlock()
 
 		for _, prop := range copy {
 			count++
@@ -326,17 +326,17 @@ func expirationPurge() {
 		}
 	}
 	if count > 0 {
-		prop_tree_store()
+		propTreeStore()
 	}
 }
 
 func expirationInit() {
-	exp_heap = make(pnode_queue, 0)
-	heap.Init(&exp_heap)
+	expirationHeap = make(pnodeQueue, 0)
+	heap.Init(&expirationHeap)
 
 	expired = make([]string, 0)
-	exp_timer = time.NewTimer(time.Duration(time.Minute))
-	go expiration_handler()
+	expirationTimer = time.NewTimer(time.Duration(time.Minute))
+	go expirationHandler()
 }
 
 /*************************************************************************
@@ -373,7 +373,7 @@ func expirationNotify(prop, val string) {
 	propNotify(prop, val, nil, base_msg.EventConfig_EXPIRE)
 }
 
-func entity_handler(event []byte) {
+func entityHandler(event []byte) {
 	updated := false
 	entity := &base_msg.EventNetEntity{}
 	proto.Unmarshal(event, entity)
@@ -415,7 +415,7 @@ func entity_handler(event []byte) {
 	}
 
 	if updated {
-		prop_tree_store()
+		propTreeStore()
 	}
 }
 
@@ -457,9 +457,9 @@ func defaultExpire(node *pnode) {
 }
 
 func uuidUpdate(node *pnode, uuid string, expires *time.Time) (bool, error) {
-	const null_uuid = "00000000-0000-0000-0000-000000000000"
+	const nullUUID = "00000000-0000-0000-0000-000000000000"
 
-	if node.Value != null_uuid {
+	if node.Value != nullUUID {
 		return false, fmt.Errorf("Cannot change an appliance's UUID")
 	}
 	node.Value = uuid
@@ -605,7 +605,7 @@ func ringExpire(node *pnode) {
  * To determine whether this new property has non-default operations, we walk
  * through the property_match_table, looking for any matching patterns
  */
-func property_attach_ops(node *pnode, path string) {
+func propAttachOps(node *pnode, path string) {
 	for _, r := range propertyMatchTable {
 		if r.match.MatchString(path) {
 			node.ops = r.ops
@@ -647,7 +647,7 @@ func propertyAdd(parent *pnode, property string) *pnode {
 		index:  -1}
 
 	parent.Children = append(parent.Children, &n)
-	property_attach_ops(&n, path)
+	propAttachOps(&n, path)
 	return &n
 }
 
@@ -688,7 +688,7 @@ func propertyInsert(prop string) *pnode {
 		return nil
 	}
 
-	node := &property_root
+	node := &propTreeRoot
 	path := "@"
 	for _, name := range components {
 		next := childSearch(node, name)
@@ -711,7 +711,7 @@ func propertySearch(prop string) *pnode {
 		return nil
 	}
 
-	node := &property_root
+	node := &propTreeRoot
 	for _, name := range components {
 		if node = childSearch(node, name); node == nil {
 			break
@@ -812,14 +812,14 @@ func propertyGet(property string) (string, error) {
  *
  * Reading and writing the persistent property file
  */
-func prop_tree_store() error {
-	propfile := *propdir + property_filename
-	backupfile := *propdir + backup_filename
+func propTreeStore() error {
+	propfile := *propdir + propertyFilename
+	backupfile := *propdir + backupFilename
 
 	node := propertyInsert("@/apversion")
-	node.Value = ApVersion
+	node.Value = apVersion
 
-	s, err := json.MarshalIndent(property_root, "", "  ")
+	s, err := json.MarshalIndent(propTreeRoot, "", "  ")
 	if err != nil {
 		log.Fatalf("Failed to construct properties JSON: %v\n", err)
 	}
@@ -841,7 +841,7 @@ func prop_tree_store() error {
 	return err
 }
 
-func prop_tree_load(name string) error {
+func propTreeLoad(name string) error {
 	var file []byte
 	var err error
 
@@ -851,7 +851,7 @@ func prop_tree_load(name string) error {
 		return err
 	}
 
-	err = json.Unmarshal(file, &property_root)
+	err = json.Unmarshal(file, &propTreeRoot)
 	if err != nil {
 		log.Printf("Failed to import properties from %s: %v\n",
 			name, err)
@@ -883,10 +883,10 @@ func versionTree() error {
 		version, _ = strconv.Atoi(node.Value)
 	}
 	if version < minConfigVersion {
-		return fmt.Errorf("Obsolete properties file.")
+		return fmt.Errorf("obsolete properties file")
 	}
 	if version > curConfigVersion {
-		log.Fatalf("Properties file is newer than the software\n")
+		return fmt.Errorf("properties file is newer than the software")
 	}
 
 	for version < curConfigVersion {
@@ -903,7 +903,7 @@ func versionTree() error {
 	}
 
 	if upgraded {
-		if err := prop_tree_store(); err != nil {
+		if err := propTreeStore(); err != nil {
 			return fmt.Errorf("Failed to write properties: %v", err)
 		}
 	}
@@ -916,7 +916,7 @@ func versionTree() error {
  * into the expiration heap
  */
 func patchTree(node *pnode, path string) {
-	property_attach_ops(node, path)
+	propAttachOps(node, path)
 	for _, n := range node.Children {
 		n.parent = node
 		patchTree(n, path+"/"+n.Name)
@@ -952,15 +952,15 @@ func deleteSubtree(node *pnode) {
 	}
 }
 
-func prop_tree_init() {
+func propTreeInit() {
 	var err error
 
-	propfile := *propdir + property_filename
-	backupfile := *propdir + backup_filename
-	default_file := *propdir + default_filename
+	propfile := *propdir + propertyFilename
+	backupfile := *propdir + backupFilename
+	defaultFile := *propdir + defaultFilename
 
 	if aputil.FileExists(propfile) {
-		err = prop_tree_load(propfile)
+		err = propTreeLoad(propfile)
 	} else {
 		err = fmt.Errorf("File missing")
 	}
@@ -968,7 +968,7 @@ func prop_tree_init() {
 	if err != nil {
 		log.Printf("Unable to load properties: %v", err)
 		if aputil.FileExists(backupfile) {
-			err = prop_tree_load(backupfile)
+			err = propTreeLoad(backupfile)
 		} else {
 			err = fmt.Errorf("File missing")
 		}
@@ -982,27 +982,27 @@ func prop_tree_init() {
 
 	if err != nil {
 		log.Printf("No usable properties files.  Loading defaults.\n")
-		err := prop_tree_load(default_file)
+		err := propTreeLoad(defaultFile)
 		if err != nil {
 			log.Fatal("Unable to load default properties")
 		}
-		patchTree(&property_root, "@")
-		appliance_uuid := uuid.NewV4().String()
-		propertyUpdate("@/uuid", appliance_uuid, nil, true)
+		patchTree(&propTreeRoot, "@")
+		applianceUUID := uuid.NewV4().String()
+		propertyUpdate("@/uuid", applianceUUID, nil, true)
 
 		// XXX: this needs to come from the cloud - not hardcoded
-		appliance_siteid := "7410"
-		propertyUpdate("@/siteid", appliance_siteid, nil, true)
+		applianceSiteID := "7410"
+		propertyUpdate("@/siteid", applianceSiteID, nil, true)
 	}
 
 	if err == nil {
-		patchTree(&property_root, "@")
+		patchTree(&propTreeRoot, "@")
 		if err = versionTree(); err != nil {
-			log.Printf("Failed version check: %v\n", err)
+			log.Fatalf("Failed version check: %v\n", err)
 		}
 	}
 
-	dumpTree(&property_root, 0)
+	dumpTree(&propTreeRoot, 0)
 }
 
 /*************************************************************************
@@ -1017,7 +1017,7 @@ func setPropHandler(q *base_msg.ConfigQuery, add bool) error {
 	expires := aputil.ProtobufToTime(q.Expires)
 	updated, err := propertyUpdate(*q.Property, *q.Value, expires, add)
 	if updated {
-		prop_tree_store()
+		propTreeStore()
 		updateNotify(*q.Property, *q.Value, expires)
 	}
 	return err
@@ -1026,7 +1026,7 @@ func setPropHandler(q *base_msg.ConfigQuery, add bool) error {
 func delPropHandler(q *base_msg.ConfigQuery) error {
 	err := propertyDelete(*q.Property)
 	if err == nil {
-		prop_tree_store()
+		propTreeStore()
 		deleteNotify(*q.Property)
 	}
 	return err
@@ -1140,10 +1140,10 @@ func main() {
 	go http.ListenAndServe(*addr, nil)
 
 	brokerd = broker.New(pname)
-	brokerd.Handle(base_def.TOPIC_ENTITY, entity_handler)
+	brokerd.Handle(base_def.TOPIC_ENTITY, entityHandler)
 	defer brokerd.Fini()
 
-	if err = DeviceDBInit(); err != nil {
+	if err = deviceDBInit(); err != nil {
 		log.Printf("Failed to import devices database: %v\n", err)
 		if mcpd != nil {
 			mcpd.SetState(mcp.BROKEN)
@@ -1151,7 +1151,7 @@ func main() {
 		}
 	}
 
-	prop_tree_init()
+	propTreeInit()
 
 	incoming, _ := zmq.NewSocket(zmq.REP)
 	incoming.Bind(base_def.CONFIGD_ZMQ_REP_URL)

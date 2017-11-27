@@ -73,9 +73,9 @@ var (
 	ringRecords  map[string]dnsRecord // per-ring records for the router
 	perRingHosts map[string]bool      // hosts with per-ring results
 
-	domainname     string
-	brightgate_dns string
-	upstream_dns   = "8.8.8.8:53"
+	domainname    string
+	brightgateDNS string
+	upstreamDNS   = "8.8.8.8:53"
 )
 
 /*
@@ -109,7 +109,7 @@ type dnsRecord struct {
 	expires *time.Time
 }
 
-func dns_update(resource *base_msg.EventNetResource) {
+func dnsUpdate(resource *base_msg.EventNetResource) {
 	action := resource.GetAction()
 	ipv4 := network.Uint32ToIPAddr(*resource.Ipv4Address)
 	ttl := time.Duration(resource.GetDuration()) * time.Second
@@ -192,7 +192,7 @@ func cnameDeleteEvent(path []string) {
 func resourceEvent(event []byte) {
 	resource := &base_msg.EventNetResource{}
 	proto.Unmarshal(event, resource)
-	dns_update(resource)
+	dnsUpdate(resource)
 }
 
 func logRequest(handler string, start time.Time, ip net.IP, r, m *dns.Msg) {
@@ -375,29 +375,29 @@ func localHandler(w dns.ResponseWriter, r *dns.Msg) {
 	start := time.Now()
 	for _, q := range r.Question {
 		var rec dnsRecord
-		var rec_ok bool
+		var ok bool
 
 		if perRingHosts[q.Name] {
-			rec, rec_ok = ringRecords[c.Ring]
+			rec, ok = ringRecords[c.Ring]
 		} else {
 			hostsMtx.Lock()
-			rec, rec_ok = hosts[q.Name]
+			rec, ok = hosts[q.Name]
 			hostsMtx.Unlock()
 		}
 
-		if rec_ok {
+		if ok {
 			if rec.rectype == dns.TypeA {
 				m.Answer = append(m.Answer, answerA(q, rec))
 			} else if rec.rectype == dns.TypeCNAME {
 				m.Answer = append(m.Answer, answerCNAME(q, rec))
 			}
-		} else if brightgate_dns != "" {
+		} else if brightgateDNS != "" {
 			// Proxy needed if we have decided that we are allowing
 			// our brightgate domain to be handled upstream as well.
 			pq := new(dns.Msg)
 			pq.MsgHdr = r.MsgHdr
 			pq.Question = append(pq.Question, q)
-			upstreamRequest(brightgate_dns, pq, m)
+			upstreamRequest(brightgateDNS, pq, m)
 		}
 	}
 	w.WriteMsg(m)
@@ -434,14 +434,14 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 			m.Answer = append(m.Answer, answerA(q, record))
 		} else if strings.Contains(q.Name, ".in-addr.arpa.") {
 			hostsMtx.Lock()
-			rec, rec_ok := hosts[q.Name]
+			rec, ok := hosts[q.Name]
 			hostsMtx.Unlock()
-			if rec_ok && rec.rectype == dns.TypePTR {
+			if ok && rec.rectype == dns.TypePTR {
 				m.Answer = append(m.Answer, answerPTR(q, rec))
 			}
 
 		} else {
-			upstreamRequest(upstream_dns, r, m)
+			upstreamRequest(upstreamDNS, r, m)
 		}
 	}
 	w.WriteMsg(m)
@@ -595,9 +595,9 @@ func initNetwork() {
 	domainname = siteid + ".brightgate.net"
 
 	if tmp := getNameserver(); tmp != "" {
-		upstream_dns = tmp
+		upstreamDNS = tmp
 	}
-	log.Printf("Using nameserver: %s\n", upstream_dns)
+	log.Printf("Using nameserver: %s\n", upstreamDNS)
 
 	rings := config.GetRings()
 	if rings == nil {

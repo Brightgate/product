@@ -152,6 +152,15 @@ CROSS_CGO_LDFLAGS=--sysroot $(CROSS_SYSROOT) -Lusr/local/lib
 CROSS_CGO_CFLAGS=--sysroot $(CROSS_SYSROOT) -Iusr/local/include
 endif
 
+BUILDTOOLS = \
+	protobuf-compiler \
+	libzmq3-dev \
+	libpcap-dev \
+	lintian \
+	python3 \
+	python3-pip \
+	mercurial
+
 #
 # Announce some things about the build
 #
@@ -383,7 +392,7 @@ CLOUDCOMPONENTS = $(CLOUDBINARIES) $(CLOUDCONFIGS) $(CLOUDDIRS)
 CLOUD_COMMON_SRCS = \
     $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go
 
-install: $(TARGETS)
+install: tools $(TARGETS)
 
 appliance: $(APPCOMPONENTS)
 
@@ -410,16 +419,31 @@ vet-go:
 
 # Things that are presently lint clean and should stay that way
 LINTCLEAN_TARGETS= \
+	bg/ap_common/apcfg \
+	bg/ap_common/aputil \
+	bg/ap_common/broker \
+	bg/ap_common/device \
+	bg/ap_common/mcp \
 	bg/ap_common/model \
+	bg/ap_common/network \
+	bg/ap_common/watchd \
 	bg/ap-arpspoof \
 	bg/ap-configctl \
 	bg/ap-ctl \
 	bg/ap-msgping \
+	bg/ap-ouisearch \
+	bg/ap-rpc \
 	bg/ap-stats \
 	bg/ap.brokerd \
+	bg/ap.configd \
+	bg/ap.dns4d \
+	bg/ap.dhcp4d \
 	bg/ap.httpd \
 	bg/ap.identifierd \
-	bg/ap.relayd
+	bg/ap.logd \
+	bg/ap.mcp \
+	bg/ap.relayd \
+	bg/ap.watchd
 
 lint-go:
 	$(GOLINT) -set_exit_status $(LINTCLEAN_TARGETS)
@@ -695,6 +719,12 @@ $(PROTOC_PLUGINS):
 LOCAL_COMMANDS=$(COMMANDS:$(APPBIN)/%=$(GOPATH)/bin/%)
 LOCAL_DAEMONS=$(DAEMONS:$(APPBIN)/%=$(GOPATH)/bin/%)
 
+tools: .tools
+
+.tools:
+	dpkg --verify $(BUILDTOOLS)
+	touch .tools
+
 #
 # Go Dependencies: Pull in definitions for 'dep'
 #
@@ -722,6 +752,7 @@ clobber-packages:
 
 clean:
 	$(RM) -f \
+		.tools \
 		base/base_def.py \
 		base/base_msg_pb2.py \
 		base/cloud_rpc_pb2.py \
