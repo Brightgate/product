@@ -44,26 +44,26 @@ import (
 )
 
 const (
-	A_ACCEPT = iota
-	A_BLOCK
-	A_CAPTURE
+	actionAccept = iota
+	actionBlock
+	actionCapture
 )
 
 const (
-	P_ALL = iota
-	P_UDP
-	P_TCP
-	P_IP
-	P_ICMP
-	P_MAX
+	protoAll = iota
+	protoUDP
+	protoTCP
+	protoIP
+	protoICMP
+	protoMAX
 )
 
 const (
-	E_ADDR = iota
-	E_TYPE
-	E_RING
-	E_IFACE
-	E_MAX
+	endpointAddr = iota
+	endpointType
+	endpointRing
+	endpointIface
+	endpointMAX
 )
 
 // Endpoint represents either the FROM or TO endpoint of a filter rule.
@@ -126,11 +126,11 @@ func getRule(r *bufio.Reader) (rule string, err error) {
 func getAction(t string) (action int, err error) {
 	switch t {
 	case "ACCEPT":
-		action = A_ACCEPT
+		action = actionAccept
 	case "BLOCK":
-		action = A_BLOCK
+		action = actionBlock
 	case "CAPTURE":
-		action = A_CAPTURE
+		action = actionCapture
 	default:
 		err = fmt.Errorf("Unrecognized action: %s", t)
 	}
@@ -139,7 +139,7 @@ func getAction(t string) (action int, err error) {
 
 func getProtocol(p string) (proto int, err error) {
 	err = nil
-	proto = P_ALL
+	proto = protoAll
 
 	switch p {
 	case "FROM":
@@ -151,13 +151,13 @@ func getProtocol(p string) (proto int, err error) {
 		// we know it was elided.
 
 	case "UDP":
-		proto = P_UDP
+		proto = protoUDP
 	case "TCP":
-		proto = P_TCP
+		proto = protoTCP
 	case "ICMP":
-		proto = P_ICMP
+		proto = protoICMP
 	case "IP":
-		proto = P_IP
+		proto = protoIP
 	default:
 		err = fmt.Errorf("Unrecognized protocol: %s", p)
 	}
@@ -211,14 +211,14 @@ func getEndpoint(tokens []string, name string) (ep *endpoint, cnt int, err error
 
 	switch kind {
 	case "ADDR":
-		e.kind = E_ADDR
+		e.kind = endpointAddr
 		e.addr, err = getAddr(e.detail)
 	case "RING":
-		e.kind = E_RING
+		e.kind = endpointRing
 	case "TYPE":
-		e.kind = E_TYPE
+		e.kind = endpointType
 	case "IFACE":
-		e.kind = E_IFACE
+		e.kind = endpointIface
 	default:
 		err = fmt.Errorf("Invalid kind for %s endpoint: %s", name, tokens[1])
 	}
@@ -317,7 +317,7 @@ func parseRule(text string) (rp *rule, err error) {
 	if r.proto, err = getProtocol(tokens[t]); err != nil {
 		return
 	}
-	if r.proto != P_ALL {
+	if r.proto != protoAll {
 		t++
 	}
 

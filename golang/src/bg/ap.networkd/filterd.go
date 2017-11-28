@@ -104,11 +104,11 @@ func (list ruleList) Less(i, j int) bool {
 	}
 
 	// Second criterion: which rule has a more specific source
-	afrom := E_MAX
+	afrom := endpointMAX
 	if a.from != nil {
 		afrom = a.from.kind
 	}
-	bfrom := E_MAX
+	bfrom := endpointMAX
 	if b.from != nil {
 		bfrom = b.from.kind
 	}
@@ -117,11 +117,11 @@ func (list ruleList) Less(i, j int) bool {
 	}
 
 	// Third: which rule has a more specific destination
-	ato := E_MAX
+	ato := endpointMAX
 	if a.to != nil {
 		ato = a.to.kind
 	}
-	bto := E_MAX
+	bto := endpointMAX
 	if b.to != nil {
 		bto = b.to.kind
 	}
@@ -300,13 +300,13 @@ func genEndpoint(r *rule, from bool) (ep string, err error) {
 	}
 
 	switch e.kind {
-	case E_ADDR:
+	case endpointAddr:
 		ep, err = genEndpointAddr(e, from)
-	case E_TYPE:
+	case endpointType:
 		ep, err = genEndpointType(e, from)
-	case E_RING:
+	case endpointRing:
 		ep, err = genEndpointRing(e, from)
-	case E_IFACE:
+	case endpointIface:
 		ep, err = genEndpointIface(e, from)
 	}
 	if err == nil && e.not {
@@ -338,7 +338,7 @@ func genPorts(r *rule) (portList string, err error) {
 	}
 	if len(*ports) > 1 {
 		portList = fmt.Sprintf(" -m multiport %ss ", d)
-	} else if r.proto == P_UDP {
+	} else if r.proto == protoUDP {
 		portList = fmt.Sprintf(" -m udp %s ", d)
 	} else {
 		portList = fmt.Sprintf(" -m tcp %s ", d)
@@ -413,7 +413,7 @@ func addCaptureRules(r *rule) error {
 func addRule(r *rule) error {
 	var iptablesRule string
 
-	if r.action == A_CAPTURE {
+	if r.action == actionCapture {
 		// 'capture' isn't a single rule - it's a coordinated collection
 		// of rules.
 		return addCaptureRules(r)
@@ -424,13 +424,13 @@ func addRule(r *rule) error {
 	chain := "FORWARD"
 
 	switch r.proto {
-	case P_UDP:
+	case protoUDP:
 		iptablesRule += " -p udp"
-	case P_TCP:
+	case protoTCP:
 		iptablesRule += " -p tcp"
-	case P_ICMP:
+	case protoICMP:
 		iptablesRule += " -p icmp"
-	case P_IP:
+	case protoIP:
 		iptablesRule += " -p ip"
 	}
 
@@ -442,7 +442,7 @@ func addRule(r *rule) error {
 		}
 		iptablesRule += e
 
-		if from.kind == E_IFACE && from.detail == "wan" {
+		if from.kind == endpointIface && from.detail == "wan" {
 			chain = "INPUT"
 		}
 	}
@@ -465,10 +465,10 @@ func addRule(r *rule) error {
 	iptablesRule += e
 
 	switch r.action {
-	case A_ACCEPT:
+	case actionAccept:
 		iptablesRule += " -j ACCEPT"
 		iptablesAddRule("filter", chain, iptablesRule)
-	case A_BLOCK:
+	case actionBlock:
 		iptablesRule += " -j dropped"
 		iptablesAddRule("filter", chain, iptablesRule)
 	}

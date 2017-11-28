@@ -85,13 +85,13 @@ var (
 	setupNetwork bool
 )
 
-type apMap map[string]*APConfig
+type apMap map[string]*apConfig
 type physDevMap map[string]*physDevice
 
 const (
 	// Allow up to 4 failures in a 1 minute period before giving up
-	failures_allowed = 4
-	period           = time.Duration(time.Minute)
+	failuresAllowed = 4
+	period          = time.Duration(time.Minute)
 
 	confdir        = "/tmp"
 	hostapdPath    = "/usr/sbin/hostapd"
@@ -113,21 +113,21 @@ type physDevice struct {
 	multipleAPs  bool
 }
 
-type APConfig struct {
-	Interface string // Linux device name
-	Hwaddr    string // Mac address to use
-	Status    error  // collect hostapd failures
-
+type apConfig struct {
+	// Fields used to populate the configuration template
+	Interface     string // Linux device name
+	HWaddr        string // Mac address to use
 	SSID          string
+	Passphrase    string
 	HardwareModes string
 	Channel       int
-	Passphrase    string
+	SetupSSID     string // SSID to broadcast for setup network
+	SetupComment  string // Used to disable setup net in .conf template
+	ConfDir       string // Location of hostapd.conf, etc.
 
-	ConfDir      string // Location of hostapd.conf, etc.
-	ConfFile     string // Name of this NIC's hostapd.conf
-	VLANComment  string // Used to disable vlan params in .conf template
-	SetupSSID    string // SSID to broadcast for setup network
-	SetupComment string // Used to disable setup net in .conf template
+	confFile string // Name of this NIC's hostapd.conf
+
+	status error // collect hostapd failures
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -135,7 +135,7 @@ type APConfig struct {
 // Interaction with the rest of the ap daemons
 //
 
-func apReset(conf *APConfig) {
+func apReset(conf *apConfig) {
 	generateHostAPDConf(conf)
 	if childProcess != nil {
 		//
@@ -218,7 +218,7 @@ func macUpdateLastOctet(mac string, nybble uint64) string {
 //
 func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 	var ssid, passphrase, setupSSID string
-	var vlanComment, setupComment string
+	var setupComment string
 	var node *apcfg.PropertyNode
 
 	meshNode := aputil.IsMeshMode()
@@ -261,18 +261,18 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 		setupNetwork = false
 	}
 
-	data := APConfig{
+	data := apConfig{
 		Interface:     d.name,
-		Hwaddr:        d.hwaddr,
+		HWaddr:        d.hwaddr,
 		SSID:          ssid,
 		HardwareModes: "g",
 		Channel:       6,
 		Passphrase:    passphrase,
-		ConfFile:      "hostapd.conf." + d.name,
-		ConfDir:       confdir,
-		VLANComment:   vlanComment,
 		SetupComment:  setupComment,
 		SetupSSID:     setupSSID,
+		ConfDir:       confdir,
+
+		confFile: "hostapd.conf." + d.name,
 	}
 	aps[d.name] = &data
 	return nil
@@ -286,11 +286,11 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 //
 // Generate the 3 configuration files needed for hostapd.
 //
-func generateHostAPDConf(conf *APConfig) string {
+func generateHostAPDConf(conf *apConfig) string {
 	var err error
 	tfile := *templateDir + "/hostapd.conf.got"
 
-	// Create hostapd.conf, using the APConfig contents to fill out the .got
+	// Create hostapd.conf, using the apConfig contents to fill out the .got
 	// template
 	t, err := template.ParseFiles(tfile)
 	if err != nil {
@@ -298,7 +298,7 @@ func generateHostAPDConf(conf *APConfig) string {
 		os.Exit(2)
 	}
 
-	fn := conf.ConfDir + "/" + conf.ConfFile
+	fn := conf.ConfDir + "/" + conf.confFile
 	cf, _ := os.Create(fn)
 	defer cf.Close()
 
@@ -531,23 +531,23 @@ func resetInterfaces() {
 //
 // Launch, monitor, and maintain the hostapd process for a single interface
 //
-func runOne(conf *APConfig, done chan *APConfig) {
+func runOne(conf *apConfig, done chan *apConfig) {
 	fn := generateHostAPDConf(conf)
 
-	start_times := make([]time.Time, failures_allowed)
+	startTimes := make([]time.Time, failuresAllowed)
 	for running {
 		deleteBridges()
 
 		child := aputil.NewChild(hostapdPath, fn)
 		child.LogOutput("hostapd: ", log.Ldate|log.Ltime)
 
-		start_time := time.Now()
-		start_times = append(start_times[1:failures_allowed], start_time)
+		startTime := time.Now()
+		startTimes = append(startTimes[1:failuresAllowed], startTime)
 
 		log.Printf("Starting hostapd for %s\n", conf.Interface)
 
 		if err := child.Start(); err != nil {
-			conf.Status = fmt.Errorf("Failed to launch: %v", err)
+			conf.status = fmt.Errorf("failed to launch: %v", err)
 			break
 		}
 
@@ -558,9 +558,9 @@ func runOne(conf *APConfig, done chan *APConfig) {
 		child.Wait()
 
 		log.Printf("hostapd for %s exited after %s\n",
-			conf.Interface, time.Since(start_time))
-		if time.Since(start_times[0]) < period {
-			conf.Status = fmt.Errorf("Dying too quickly")
+			conf.Interface, time.Since(startTime))
+		if time.Since(startTimes[0]) < period {
+			conf.status = fmt.Errorf("dying too quickly")
 			break
 		}
 
@@ -577,7 +577,7 @@ func runOne(conf *APConfig, done chan *APConfig) {
 // overkill, but harmless.)
 //
 func runAll() int {
-	done := make(chan *APConfig)
+	done := make(chan *apConfig)
 	running := 0
 	errors := 0
 
@@ -590,9 +590,9 @@ func runAll() int {
 
 	for running > 0 {
 		c := <-done
-		if c.Status != nil {
+		if c.status != nil {
 			log.Printf("%s hostapd failed: %v\n", c.Interface,
-				c.Status)
+				c.status)
 			errors++
 		} else {
 			log.Printf("%s hostapd exited\n", c.Interface)

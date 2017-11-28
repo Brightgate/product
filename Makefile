@@ -418,32 +418,7 @@ vet-go:
 	$(GO) vet $(CLOUD_GOPKGS)
 
 # Things that are presently lint clean and should stay that way
-LINTCLEAN_TARGETS= \
-	bg/ap_common/apcfg \
-	bg/ap_common/aputil \
-	bg/ap_common/broker \
-	bg/ap_common/device \
-	bg/ap_common/mcp \
-	bg/ap_common/model \
-	bg/ap_common/network \
-	bg/ap_common/watchd \
-	bg/ap-arpspoof \
-	bg/ap-configctl \
-	bg/ap-ctl \
-	bg/ap-msgping \
-	bg/ap-ouisearch \
-	bg/ap-rpc \
-	bg/ap-stats \
-	bg/ap.brokerd \
-	bg/ap.configd \
-	bg/ap.dns4d \
-	bg/ap.dhcp4d \
-	bg/ap.httpd \
-	bg/ap.identifierd \
-	bg/ap.logd \
-	bg/ap.mcp \
-	bg/ap.relayd \
-	bg/ap.watchd
+LINTCLEAN_TARGETS= $(APP_GOPKGS)
 
 lint-go:
 	$(GOLINT) -set_exit_status $(LINTCLEAN_TARGETS)

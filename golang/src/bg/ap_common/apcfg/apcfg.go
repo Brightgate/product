@@ -489,7 +489,7 @@ func (c *APConfig) GetNics(ring string, local bool) ([]string, error) {
 	}
 	props, err := c.GetProps(prop)
 	if err != nil {
-		return nil, fmt.Errorf("property get %s failed: %v\n", prop, err)
+		return nil, fmt.Errorf("property get %s failed: %v", prop, err)
 	}
 
 	if local {

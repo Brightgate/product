@@ -1,5 +1,5 @@
 interface={{.Interface}}
-bssid={{.Hwaddr}}
+bssid={{.HWaddr}}
 driver=nl80211
 ssid={{.SSID}}
 utf8_ssid=1
@@ -22,9 +22,9 @@ wpa_key_mgmt=WPA-PSK
 wpa_pairwise=TKIP
 rsn_pairwise=CCMP
 
-{{.VLANComment}}dynamic_vlan=1
-{{.VLANComment}}vlan_file={{.ConfDir}}/hostapd.vlan
-{{.VLANComment}}accept_mac_file={{.ConfDir}}/hostapd.macs
+dynamic_vlan=1
+vlan_file={{.ConfDir}}/hostapd.vlan
+accept_mac_file={{.ConfDir}}/hostapd.macs
 
 {{.SetupComment}}bss={{.Interface}}_0
 {{.SetupComment}}ssid={{.SetupSSID}}

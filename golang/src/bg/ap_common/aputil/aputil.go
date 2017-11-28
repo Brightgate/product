@@ -234,7 +234,7 @@ var legalModes = map[string]bool{
 	base_def.MODE_MESH:    true,
 }
 
-// GetMode returns the mode this node is running in
+// GetNodeMode returns the mode this node is running in
 func GetNodeMode() string {
 	var proposed string
 
