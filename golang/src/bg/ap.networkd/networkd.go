@@ -73,10 +73,10 @@ var (
 	clients apcfg.ClientMap // macaddr -> ClientInfo
 	rings   apcfg.RingMap   // ring -> config
 
-	setupNic    string
-	wanNic      string
-	wifiNic     string
-	meshNodeIdx byte
+	setupNic       string
+	wanNic         string
+	wifiNic        string
+	networkNodeIdx byte
 
 	hostapdLog   *log.Logger
 	childProcess *os.Process // track the hostapd proc
@@ -318,9 +318,9 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 	var setupComment string
 	var node *apcfg.PropertyNode
 
-	meshNode := aputil.IsMeshMode()
+	satNode := aputil.IsSatelliteMode()
 	apSuffix := ""
-	if meshNode {
+	if satNode {
 		// XXX - for now we'll give mesh nodes their own SSID.  This
 		// lets us sort out the layer 2/3 plumbing issues without having
 		// to worry about AP handoff
@@ -341,7 +341,7 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 		setupSSID = node.GetValue() + apSuffix
 	}
 
-	if !meshNode && d.multipleAPs && len(setupSSID) > 0 {
+	if !satNode && d.multipleAPs && len(setupSSID) > 0 {
 		// If we create a second SSID for new clients to connect to,
 		// its mac address will be derived from the nic's mac address by
 		// adding 1 to the final octet.  To accomodate that, hostapd
@@ -540,9 +540,9 @@ func getInternalAddr() net.IP {
 }
 
 func rebuildInternalNet() {
-	meshNode := aputil.IsMeshMode()
+	satNode := aputil.IsSatelliteMode()
 
-	if !meshNode {
+	if !satNode {
 		prepareRingBridge(base_def.RING_INTERNAL)
 	}
 
@@ -555,7 +555,7 @@ func rebuildInternalNet() {
 			continue
 		}
 
-		if !meshNode {
+		if !satNode {
 			log.Printf("Adding %s to bridge %s\n", dev.name, br)
 			err := exec.Command(brctlCmd, "addif", br, dev.name).Run()
 			if err != nil {
@@ -602,16 +602,16 @@ func resetInterfaces() {
 
 	// We use the lowest byte of our internal IP address as a transient,
 	// local node index.  For the gateway node, that will always be 1.  For
-	// the mesh nodes, we need pull it from the address the gateway's DHCP
-	// server gave us.
-	meshNodeIdx = 1
-	if aputil.IsMeshMode() {
+	// the satellite nodes, we need pull it from the address the gateway's
+	// DHCP server gave us.
+	networkNodeIdx = 1
+	if aputil.IsSatelliteMode() {
 		ip := getInternalAddr()
 		if ip == nil {
-			log.Printf("Mesh node has no gateway connection\n")
+			log.Printf("Satellite node has no gateway connection\n")
 			return
 		}
-		meshNodeIdx = ip[3]
+		networkNodeIdx = ip[3]
 	}
 
 	// hostapd creates most of the per-ring bridges.  We need to create
@@ -760,7 +760,7 @@ func deleteBridges() {
 func localRouter(ring *apcfg.RingConfig) string {
 	_, network, _ := net.ParseCIDR(ring.Subnet)
 	raw := network.IP.To4()
-	raw[3] = meshNodeIdx
+	raw[3] = networkNodeIdx
 	return (net.IP(raw)).String()
 }
 
@@ -833,7 +833,7 @@ func prepareWan() {
 	var available, wan *physDevice
 	var outgoingRing string
 
-	if aputil.IsMeshMode() {
+	if aputil.IsSatelliteMode() {
 		outgoingRing = base_def.RING_INTERNAL
 	} else {
 		outgoingRing = base_def.RING_WAN

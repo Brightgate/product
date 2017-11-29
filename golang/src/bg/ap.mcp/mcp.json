@@ -76,7 +76,7 @@
             "-template_dir=/etc/templates/ap.networkd",
             "-rules_dir=/etc/filter.rules.d"
         ],
-        "Modes": [ "core", "gateway", "mesh" ]
+        "Modes": [ "core", "gateway", "satellite" ]
     },
     "prometheus": {
         "Name": "prometheus",

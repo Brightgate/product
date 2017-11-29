@@ -34,12 +34,10 @@ import (
 	"bg/base_def"
 	"bg/base_msg"
 
+	"github.com/golang/protobuf/proto"
+	dhcp "github.com/krolaw/dhcp4"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/ipv4"
-
-	"github.com/golang/protobuf/proto"
-
-	dhcp "github.com/krolaw/dhcp4"
 )
 
 var (
@@ -468,6 +466,20 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	config.CreateProp(propPath(hwaddr, "ipv4"), l.ipaddr.String(), l.expires)
 	config.CreateProp(propPath(hwaddr, "dhcp_name"), l.name, nil)
 	notifyClaimed(p, l.ipaddr, l.name, h.duration)
+
+	if h.ring == base_def.RING_INTERNAL {
+		// Clients asking for addresses on the internal network are
+		// notified that they are expected to operate as satellite nodes
+		o := []dhcp.Option{
+			{
+				Code:  1,
+				Value: []byte(base_def.MODE_SATELLITE),
+			},
+		}
+
+		vendorOpt, _ := aputil.DHCPEncodeOptions(o)
+		h.options[dhcp.OptionVendorSpecificInformation] = vendorOpt
+	}
 
 	// Note: even for static IP assignments, we tell the requesting client
 	// that it needs to renew at the regular period for the ring.  This lets

@@ -21,9 +21,18 @@ if [ "x$1" = "xremove" ]; then
     systemctl disable brightgate-appliance.service
     systemctl disable ap.mcp.service
 
+    # Remove the modifications we made to the dhcpcd config
+    sed -i "/Brightgate option/d" /etc/dhcpcd.conf
+
     # Enable the services we normally disable.
     systemctl enable avahi-daemon.service
     systemctl enable dnsmasq.service
+
+elif [ "x$1" = "xupgrade" ]; then
+
+    # Remove the modifications we made to the dhcpcd config
+    sed -i "/Brightgate option/d" /etc/dhcpcd.conf
+
 fi
 
 # Otherwise we are upgrading to $1, and we will leave the services undisturbed.

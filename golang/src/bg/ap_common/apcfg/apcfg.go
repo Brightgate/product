@@ -176,7 +176,7 @@ func NewConfig(b *broker.Broker, name string) (*APConfig, error) {
 		return nil, err
 	}
 
-	if aputil.IsMeshMode() {
+	if aputil.IsSatelliteMode() {
 		host = base_def.GATEWAY_ZMQ_URL
 	} else {
 		host = base_def.LOCAL_ZMQ_URL

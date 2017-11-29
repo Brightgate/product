@@ -18,6 +18,14 @@ if [ "x$1" = "xconfigure" ]; then
     systemctl disable avahi-daemon.service
     systemctl disable dnsmasq.service
 
+    # Prevent linux from acting like a wlan client
+    # Ask the upstream DHCP server to identify itself
+    cat >> /etc/dhcpcd.conf << EOF
+allowinterfaces eth* enx*                                   # Brightgate option
+denyinterfaces eth*.* enx*.*                                # Brightgate option
+option vendor_class_identifier, vendor_encapsulated_options # Brightgate option
+EOF
+
     # Enable appliance services.
     systemctl enable ap.mcp.service
     systemctl enable brightgate-appliance.service

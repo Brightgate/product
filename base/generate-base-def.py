@@ -158,7 +158,7 @@ assignments = [
     [Statement.COMMENT, "Appliance operating modes"],
     [Statement.SIMPLE_STR, "MODE_GATEWAY", "gateway"],
     [Statement.SIMPLE_STR, "MODE_CORE", "core"],
-    [Statement.SIMPLE_STR, "MODE_MESH", "mesh"],
+    [Statement.SIMPLE_STR, "MODE_SATELLITE", "satellite"],
 
     [Statement.COMMENT, "Security rings"],
     [Statement.SIMPLE_STR, "RING_UNENROLLED", "unenrolled"],

@@ -12,12 +12,15 @@ package aputil
 
 import (
 	"bufio"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -27,10 +30,14 @@ import (
 	"bg/base_msg"
 
 	"github.com/golang/protobuf/proto"
+	dhcp "github.com/krolaw/dhcp4"
 	"github.com/satori/uuid"
 )
 
-const machineIDFile = "/etc/machine-id"
+const (
+	machineIDFile = "/etc/machine-id"
+	dhcpDump      = "/sbin/dhcpcd"
+)
 
 var (
 	nodeID   = uuid.Nil
@@ -228,10 +235,115 @@ func GetNodeID() uuid.UUID {
 	return nodeID
 }
 
+// DHCPDecodeOptions parses a bytestream into a slice of DHCP options
+func DHCPDecodeOptions(s []byte) (opts []dhcp.Option, err error) {
+	end := len(s)
+	idx := 0
+	for idx+3 < end {
+		code := s[idx]
+		valLen := int(s[idx+1])
+		idx += 2
+		if valLen < 1 || idx+valLen > end {
+			err = fmt.Errorf("illegal option length: %d", valLen)
+			break
+		}
+		val := s[idx : idx+valLen]
+		idx += valLen
+
+		o := dhcp.Option{
+			Code:  dhcp.OptionCode(code),
+			Value: val,
+		}
+		opts = append(opts, o)
+	}
+	return
+}
+
+// DHCPEncodeOptions marshalls a slice of DHCP options into a bytestream as
+// described in RFC-2132
+func DHCPEncodeOptions(opts []dhcp.Option) (s []byte, err error) {
+	for _, opt := range opts {
+		if opt.Code == 0 || opt.Code >= dhcp.End {
+			err = fmt.Errorf("bad option code: %d", opt.Code)
+			break
+		}
+
+		s = append(s, byte(opt.Code))
+		s = append(s, byte(len(opt.Value)))
+		s = append(s, opt.Value...)
+	}
+	s = append(s, byte(dhcp.End))
+
+	return
+}
+
+// Iterate over all of the wired network interfaces, looking for one that has
+// a Brightgate-assigned address.  If we find one, look to see whether it has
+// also assigned us an operating mode.
+func getModeFromDHCP() string {
+	var vendor, vendorOpt string
+
+	// Extract the two components of a DHCP option from lines like:
+	//   domain_name_servers='192.168.52.1'
+	//   vendor_class_identifier='Brightgate, Inc.'
+	//   vendor_encapsulated_options='0109736174656c6c697465ff'
+	optionRE := regexp.MustCompile(`(\w+)='(.*)'`)
+
+	all, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+
+	for _, i := range all {
+		vendor = ""
+		vendorOpt = ""
+
+		if !strings.HasPrefix(i.Name, "eth") &&
+			!strings.HasPrefix(i.Name, "enx") {
+			continue
+		}
+
+		out, err := exec.Command(dhcpDump, "-4", "-U", i.Name).Output()
+		if err != nil {
+			continue
+		}
+
+		options := optionRE.FindAllStringSubmatch(string(out), -1)
+		for _, opt := range options {
+			if opt[1] == "vendor_class_identifier" {
+				vendor = opt[2]
+			}
+			if opt[1] == "vendor_encapsulated_options" {
+				vendorOpt = opt[2]
+			}
+		}
+
+		if strings.Contains(vendor, "Brightgate") && vendorOpt != "" {
+			break
+		}
+	}
+
+	if vendorOpt != "" {
+		// The vendor options are encapsulated in a binary stream of
+		// [code, len, value] triples, which is then converted into a
+		// binhex string.
+		if s, err := hex.DecodeString(vendorOpt); err == nil {
+			opts, _ := DHCPDecodeOptions(s)
+			for _, o := range opts {
+				if o.Code == 1 {
+					return string(o.Value)
+				}
+			}
+		}
+	}
+
+	return ""
+}
+
 var legalModes = map[string]bool{
-	base_def.MODE_GATEWAY: true,
-	base_def.MODE_CORE:    true,
-	base_def.MODE_MESH:    true,
+	base_def.MODE_GATEWAY:   true,
+	base_def.MODE_CORE:      true,
+	base_def.MODE_SATELLITE: true,
 }
 
 // GetNodeMode returns the mode this node is running in
@@ -246,6 +358,10 @@ func GetNodeMode() string {
 	}
 
 	proposed = os.Getenv("APMODE")
+	if proposed == "" {
+		proposed = getModeFromDHCP()
+	}
+
 	if proposed == "" {
 		proposed = base_def.MODE_GATEWAY
 	}
@@ -263,7 +379,7 @@ func IsNodeMode(check string) bool {
 	return (mode == check)
 }
 
-// IsMeshMode checks to see whether this node is running as a mesh node
-func IsMeshMode() bool {
-	return IsNodeMode(base_def.MODE_MESH)
+// IsSatelliteMode checks to see whether this node is running as a mesh node
+func IsSatelliteMode() bool {
+	return IsNodeMode(base_def.MODE_SATELLITE)
 }

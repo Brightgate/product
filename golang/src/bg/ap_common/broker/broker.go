@@ -119,7 +119,7 @@ func (b *Broker) Handle(topic string, handler handlerF) {
 func (b *Broker) connect() {
 	var host string
 
-	if aputil.IsMeshMode() {
+	if aputil.IsSatelliteMode() {
 		host = base_def.GATEWAY_ZMQ_URL
 	} else {
 		host = base_def.LOCAL_ZMQ_URL
