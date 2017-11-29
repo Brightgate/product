@@ -34,6 +34,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -65,8 +66,8 @@ var (
 		"location of hostapd templates")
 	rulesDir = flag.String("rules_dir", "./", "Location of the filter rules")
 
-	aps         = make(apMap)
-	physDevices = make(physDevMap)
+	aps         = make(map[string]*apConfig)
+	physDevices = make(map[string]*physDevice)
 
 	config  *apcfg.APConfig
 	clients apcfg.ClientMap // macaddr -> ClientInfo
@@ -85,9 +86,6 @@ var (
 	setupNetwork bool
 )
 
-type apMap map[string]*apConfig
-type physDevMap map[string]*physDevice
-
 const (
 	// Allow up to 4 failures in a 1 minute period before giving up
 	failuresAllowed = 4
@@ -105,12 +103,14 @@ const (
 )
 
 type physDevice struct {
-	name         string
-	hwaddr       string
-	ring         string
-	wireless     bool
-	supportVLANs bool
-	multipleAPs  bool
+	name         string // Linux device name
+	hwaddr       string // mac address
+	ring         string // configured ring
+	wireless     bool   // is this a wireless nic?
+	supportVLANs bool   // does the nic support VLANs
+	multipleAPs  bool   // does the nic support multiple APs
+	channelsG    []int  // Supported 802.11g channels
+	channelsAC   []int  // Supported 802.11ac channels
 }
 
 type apConfig struct {
@@ -129,6 +129,19 @@ type apConfig struct {
 
 	status error // collect hostapd failures
 }
+
+// Precompile some regular expressions
+var (
+	vlanRE = regexp.MustCompile(`AP/VLAN`)
+
+	// Match interface combination lines:
+	//   #{ managed } <= 1, #{ AP } <= 1, #{ P2P-client } <= 1
+	comboRE = regexp.MustCompile(`#{ [\w\-, ]+ } <= [0-9]+`)
+
+	// Match channel/frequency lines:
+	//   * 2462 MHz [11] (20.0 dBm)
+	channelRE = regexp.MustCompile(`\* (\d+) MHz \[(\d+)\] \((.*)\)`)
+)
 
 //////////////////////////////////////////////////////////////////////////
 //
@@ -213,6 +226,90 @@ func macUpdateLastOctet(mac string, nybble uint64) string {
 	return mac
 }
 
+// Select a channel and mode for this AP.  If we already have one or the other
+// configured, make sure they are mutually compatible and supported by this
+// hardware.  If the configuration is missing or broken, fall back to some
+// sensible defaults.
+func getModeChannel(d *physDevice) (mode string, channel int) {
+	prop := "@/nodes/" + aputil.GetNodeID().String() + "/" + d.hwaddr
+	if nic, _ := config.GetProps(prop); nic != nil {
+		if x := nic.GetChild("mode"); x != nil {
+			mode = x.Value
+		}
+		if x := nic.GetChild("channel"); x != nil {
+			if channel, _ = strconv.Atoi(x.Value); channel == 0 {
+				log.Printf("%s is not a valid channel number\n",
+					x.Value)
+			}
+		}
+	}
+
+	if mode != "" {
+		if mode == "ac" {
+			// hostapd supports AC, but expects it to be called "a"
+			mode = "a"
+		}
+
+		if mode == "a" {
+			if len(d.channelsAC) == 0 {
+				log.Printf("%s doesn't support mode ac\n",
+					d.hwaddr)
+				mode = ""
+			}
+		} else if mode == "g" {
+			if len(d.channelsG) == 0 {
+				log.Printf("%s doesn't support mode g\n",
+					d.hwaddr)
+				mode = ""
+			}
+		} else {
+			log.Printf("Configured mode '%s' is invalid\n", mode)
+			mode = ""
+		}
+	}
+
+	if mode == "" {
+		if len(d.channelsAC) > 0 {
+			mode = "a"
+		} else {
+			mode = "g"
+		}
+	}
+
+	if channel != 0 {
+		var list []int
+		if mode == "a" {
+			list = d.channelsAC
+		} else {
+			list = d.channelsG
+		}
+
+		valid := false
+		for _, x := range list {
+			if channel == x {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			log.Printf("%d is not a valid channel for mode %s\n",
+				channel, mode)
+			channel = 0
+		}
+	}
+
+	if channel == 0 {
+		if mode == "g" {
+			channel = 6
+		} else {
+			n := rand.Int() % len(d.channelsAC)
+			channel = d.channelsAC[n]
+		}
+	}
+
+	return mode, channel
+}
+
 //
 // Get network settings from configd and use them to initialize the AP
 //
@@ -261,12 +358,14 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 		setupNetwork = false
 	}
 
+	mode, channel := getModeChannel(d)
+
 	data := apConfig{
 		Interface:     d.name,
 		HWaddr:        d.hwaddr,
 		SSID:          ssid,
-		HardwareModes: "g",
-		Channel:       6,
+		HardwareModes: mode,
+		Channel:       channel,
 		Passphrase:    passphrase,
 		SetupComment:  setupComment,
 		SetupSSID:     setupSSID,
@@ -869,9 +968,11 @@ func getWireless(i net.Interface) *physDevice {
 	}
 
 	d := physDevice{
-		name:     i.Name,
-		hwaddr:   i.HardwareAddr.String(),
-		wireless: true,
+		name:       i.Name,
+		hwaddr:     i.HardwareAddr.String(),
+		wireless:   true,
+		channelsG:  make([]int, 0),
+		channelsAC: make([]int, 0),
 	}
 
 	data, err := ioutil.ReadFile("/sys/class/net/" + i.Name +
@@ -896,7 +997,6 @@ func getWireless(i net.Interface) *physDevice {
 	//
 	// Look for "AP/VLAN" as a supported "software interface mode"
 	//
-	vlanRE := regexp.MustCompile(`AP/VLAN`)
 	vlanModes := vlanRE.FindAllStringSubmatch(capabilities, -1)
 	d.supportVLANs = (len(vlanModes) > 0)
 
@@ -907,9 +1007,7 @@ func getWireless(i net.Interface) *physDevice {
 	// This one doesn't:
 	//    #{ managed } <= 1, #{ AP } <= 1, #{ P2P-client } <= 1,
 	//
-	comboRE := regexp.MustCompile(`#{ [\w\-, ]+ } <= [0-9]+`)
 	combos := comboRE.FindAllStringSubmatch(capabilities, -1)
-
 	for _, line := range combos {
 		for _, combo := range line {
 			if strings.Contains(combo, "AP") {
@@ -922,6 +1020,31 @@ func getWireless(i net.Interface) *physDevice {
 				}
 			}
 		}
+	}
+
+	// Find all the available channels and bin them into the appropriate
+	// per-mode groups
+	channels := channelRE.FindAllStringSubmatch(capabilities, -1)
+	for _, line := range channels {
+		// Skip any channels that are unavailable for either technical
+		// or regulatory reasons
+		if strings.Contains(line[3], "disabled") ||
+			strings.Contains(line[3], "no IR") ||
+			strings.Contains(line[3], "radar detection") {
+			continue
+		}
+		channel, _ := strconv.Atoi(line[2])
+		if channel >= 1 && channel <= 14 {
+			d.channelsG = append(d.channelsG, channel)
+		} else if channel >= 36 && channel <= 165 {
+			d.channelsAC = append(d.channelsAC, channel)
+		}
+	}
+
+	if len(d.channelsG) == 0 && len(d.channelsAC) == 0 {
+		log.Printf("No supported channels found for %s\n",
+			d.hwaddr)
+		return nil
 	}
 
 	return &d
@@ -941,6 +1064,7 @@ func getDevices() {
 			}
 		}
 	}
+
 	all, err := net.Interfaces()
 	if err != nil {
 		log.Fatalf("Unable to inventory network devices: %v\n", err)
@@ -948,6 +1072,7 @@ func getDevices() {
 
 	for _, i := range all {
 		var d *physDevice
+
 		if strings.HasPrefix(i.Name, "eth") ||
 			strings.HasPrefix(i.Name, "enx") {
 			d = getEthernet(i)
@@ -1028,6 +1153,7 @@ func networkCleanup() {
 }
 
 func main() {
+	rand.Seed(time.Now().Unix())
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
 	flag.Parse()
