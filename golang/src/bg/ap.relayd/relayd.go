@@ -23,7 +23,9 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
@@ -40,11 +42,19 @@ import (
 
 const pname = "ap.relayd"
 
+type endpoint struct {
+	conn  ipv4.PacketConn
+	iface *net.Interface
+	ip    net.IP
+	port  int
+	ring  string
+}
+
 type service struct {
 	name    string
 	address net.IP
 	port    int
-	handler func(net.IP, []byte) error
+	handler func(*endpoint, []byte) error
 }
 
 var multicastServices = []service{
@@ -61,6 +71,8 @@ var ringLevel = map[string]int{
 
 var (
 	debug   = flag.Bool("debug", false, "Enable debug logging")
+	ssdpMax = flag.Int("smax", 10, "Max # of open M-SEARCH requests")
+
 	brokerd *broker.Broker
 	config  *apcfg.APConfig
 	rings   apcfg.RingMap
@@ -69,6 +81,8 @@ var (
 	ringToIface    map[string]*net.Interface
 	ipv4ToIface    map[string]*net.Interface
 	ifaceBroadcast map[string]net.IP
+
+	ssdpSearchRequests int32
 )
 
 func debugLog(format string, args ...interface{}) {
@@ -138,7 +152,7 @@ func mDNSEvent(addr net.IP, requests, responses []string) {
 	}
 }
 
-func mDNSHandler(addr net.IP, b []byte) error {
+func mDNSHandler(source *endpoint, b []byte) error {
 	msg := new(dns.Msg)
 	if err := msg.Unpack(b); err != nil {
 		return fmt.Errorf("malformed mDNS packet: %v", err)
@@ -148,7 +162,7 @@ func mDNSHandler(addr net.IP, b []byte) error {
 	responses := make([]string, 0)
 
 	if len(msg.Question) > 0 {
-		debugLog("mDNS request from %v\n", addr)
+		debugLog("mDNS request from %v\n", source.ip)
 		for _, question := range msg.Question {
 			debugLog("   %s\n", question.String())
 			requests = append(requests, question.String())
@@ -156,14 +170,14 @@ func mDNSHandler(addr net.IP, b []byte) error {
 	}
 
 	if len(msg.Answer) > 0 {
-		debugLog("mDNS reply from %v\n", addr)
+		debugLog("mDNS reply from %v\n", source.ip)
 		for _, answer := range msg.Answer {
 			debugLog("   %s\n", answer.String())
 			responses = append(responses, answer.String())
 		}
 	}
 
-	mDNSEvent(addr, requests, responses)
+	mDNSEvent(source.ip, requests, responses)
 
 	return nil
 }
@@ -214,23 +228,97 @@ func ssdpEvent(addr net.IP, mtype base_msg.EventSSDP_MessageType,
 	}
 }
 
-func ssdpHandler(addr net.IP, buf []byte) error {
+// Currently we just check an SSDP packet to be sure that it's a correctly
+// structured HTTP response.  We don't examine its contents, but an OK may
+// contain information that would be useful to identifierd.
+func ssdpResponseCheck(rdr io.Reader) error {
+	_, err := http.ReadResponse(bufio.NewReader(rdr), nil)
+	if err != nil {
+		err = fmt.Errorf("malformed HTTP: %v", err)
+	}
+	return err
+}
+
+func ssdpResponseRelay(requestor endpoint, relay *ipv4.PacketConn) {
+	addr := &net.UDPAddr{IP: requestor.ip, Port: requestor.port}
+	buf := make([]byte, 4096)
+
+	atomic.AddInt32(&ssdpSearchRequests, 1)
+	debugLog("Forwarding SSDP M-SEARCH from %v\n", addr)
+	for {
+		n, _, src, err := relay.ReadFrom(buf)
+		if err != nil {
+			// This port has a deadline set, so we expect to hit a
+			// timeout.  Any other error is worth noting.
+			e, _ := err.(net.Error)
+			if !e.Timeout() {
+				log.Printf("Failed to read from %v: %v\n",
+					relay.LocalAddr(), err)
+			}
+			break
+		}
+		if err = ssdpResponseCheck(bytes.NewReader(buf)); err != nil {
+			log.Printf("Bad SSDP response from %v: %v\n", src, err)
+			break
+		}
+
+		debugLog("Forwarding SSDP response from %v to %v\n", src, addr)
+		l, err := requestor.conn.WriteTo(buf[:n], nil, addr)
+		if err != nil {
+			log.Printf("    Forward to %v failed: %v\n", addr, err)
+			break
+		} else if l != n {
+			log.Printf("    Forwarded %d of %d to %v\n", l, n, addr)
+			break
+		}
+	}
+	atomic.AddInt32(&ssdpSearchRequests, -1)
+}
+
+// The response to an SSDP M-SEARCH request is a unicast packet back to the
+// originating port.  We create a new local UDP port from which to forward the
+// SEARCH packet, and on which we will listen for responses.  We also make a
+// static copy of the originating endpoint structure, so we know where the
+// response packet needs to be forwarded.
+func ssdpSearchHandler(source *endpoint, mx int) error {
+	if ssdpSearchRequests >= int32(*ssdpMax) {
+		return fmt.Errorf("too many outstanding M-SEARCH requests")
+	}
+
+	p, err := net.ListenPacket("udp4", ":0")
+	if err != nil {
+		return fmt.Errorf("unable to init SEARCH handler: %v", err)
+	}
+	relay := ipv4.NewPacketConn(p)
+
+	// MX is the maximum time the device should wait before responding.  We
+	// will leave our port open for 2x that long.
+	deadline := time.Now().Add(time.Duration(mx*2) * time.Second)
+	if err = relay.SetDeadline(deadline); err != nil {
+		return fmt.Errorf("unable to set UDP deadline: %v", err)
+	}
+
+	requestor := *source
+	go ssdpResponseRelay(requestor, relay)
+
+	// Replace the original PacketConn in the source structure with our new
+	// PacketConn, causing the SEARCH request to be forwarded from our newly
+	// opened UDP port instead of the standard SSDP port (1900).
+	source.conn = *relay
+	return nil
+}
+
+func ssdpHandler(source *endpoint, buf []byte) error {
 	var req *http.Request
 
 	rdr := bytes.NewReader(buf)
 	req, err := http.ReadRequest(bufio.NewReader(rdr))
 	if err != nil {
 		// If we failed to parse the packet as a request, attempt it as
-		// a response.  We don't currently examine the contents of a
-		// response packet, but an OK may contain information that would
-		// be useful to identifierd.
+		// a response.
 		rdr.Seek(0, io.SeekStart)
-		_, err = http.ReadResponse(bufio.NewReader(rdr), nil)
-		if err != nil {
-			err = fmt.Errorf("malformed HTTP: %v", err)
-		}
+		return ssdpResponseCheck(rdr)
 
-		return err
 	}
 
 	var mtype base_msg.EventSSDP_MessageType
@@ -238,7 +326,16 @@ func ssdpHandler(addr net.IP, buf []byte) error {
 		uri := req.Header.Get("Man")
 		if uri == "\"ssdp:discover\"" {
 			mtype = base_msg.EventSSDP_DISCOVER
-			debugLog("Forwarding SSDP M-SEARCH from %v\n", addr)
+			mxHdr := req.Header.Get("MX")
+			mx, _ := strconv.Atoi(mxHdr)
+			if mxHdr == "" {
+				err = fmt.Errorf("M-SEARCH missing MX header")
+			} else if mx < 1 || mx > 5 {
+				err = fmt.Errorf("M-SEARCH bad MX header: %s",
+					mxHdr)
+			} else {
+				err = ssdpSearchHandler(source, mx)
+			}
 		} else if uri == "" {
 			err = fmt.Errorf("missing M-SEARCH uri")
 		} else {
@@ -248,10 +345,10 @@ func ssdpHandler(addr net.IP, buf []byte) error {
 		nts := req.Header.Get("NTS")
 		if nts == "ssdp:alive" {
 			mtype = base_msg.EventSSDP_ALIVE
-			debugLog("Forwarding SSDP ALIVE from %v\n", addr)
+			debugLog("Forwarding SSDP ALIVE from %v\n", source.ip)
 		} else if nts == "ssdp:byebye" {
 			mtype = base_msg.EventSSDP_BYEBYE
-			debugLog("Forwarding SSDP BYEBYE from %v\n", addr)
+			debugLog("Forwarding SSDP BYEBYE from %v\n", source.ip)
 		} else if nts == "" {
 			err = fmt.Errorf("missing NOTIFY nts")
 		} else {
@@ -263,7 +360,7 @@ func ssdpHandler(addr net.IP, buf []byte) error {
 	}
 
 	if err == nil {
-		ssdpEvent(addr, mtype, req)
+		ssdpEvent(source.ip, mtype, req)
 	}
 
 	return err
@@ -272,9 +369,10 @@ func ssdpHandler(addr net.IP, buf []byte) error {
 //
 // Read the next message for this protocol.  Return the length and the interface
 // on which it arrived.
-func getPacket(conn *ipv4.PacketConn, buf []byte) (int, net.IP, *net.Interface) {
+func getPacket(conn *ipv4.PacketConn, buf []byte) (int, *endpoint) {
 	for {
 		var ip net.IP
+		var portno int
 
 		n, cm, src, err := conn.ReadFrom(buf)
 		if n == 0 || err != nil {
@@ -285,10 +383,11 @@ func getPacket(conn *ipv4.PacketConn, buf []byte) (int, net.IP, *net.Interface) 
 		}
 
 		ipv4 := ""
-		if host, _, err := net.SplitHostPort(src.String()); err == nil {
+		if host, port, err := net.SplitHostPort(src.String()); err == nil {
 			if ip = net.ParseIP(host); ip != nil {
 				ipv4 = ip.To4().String()
 			}
+			portno, _ = strconv.Atoi(port)
 		}
 		if ipv4 == "" {
 			log.Printf("Not an valid source: %s\n", src.String())
@@ -303,9 +402,24 @@ func getPacket(conn *ipv4.PacketConn, buf []byte) (int, net.IP, *net.Interface) 
 		iface, err := net.InterfaceByIndex(cm.IfIndex)
 		if err != nil {
 			log.Printf("Receive error from %s: %v\n", ipv4, err)
-		} else {
-			return n, ip, iface
+			continue
 		}
+
+		ring, ok := ifaceToRing[iface.Index]
+		if !ok {
+			// This packet isn't from a ring we relay UDP to/from
+			continue
+		}
+
+		source := endpoint{
+			conn:  *conn,
+			iface: iface,
+			ip:    ip,
+			port:  portno,
+			ring:  ring,
+		}
+		source.conn = *conn
+		return n, &source
 	}
 }
 
@@ -325,13 +439,7 @@ func mrelay(s service) {
 	for {
 		var err error
 
-		n, srcIP, srcIface := getPacket(conn, buf)
-
-		srcRing, ok := ifaceToRing[srcIface.Index]
-		if !ok {
-			// This packet isn't from a ring we relay UDP to/from
-			continue
-		}
+		n, source := getPacket(conn, buf)
 
 		//
 		// Currently we relay all messages up and down the rings.  It
@@ -340,15 +448,15 @@ func mrelay(s service) {
 		relayUp := true
 		relayDown := true
 
-		if err = s.handler(srcIP, buf); err != nil {
+		if err = s.handler(source, buf); err != nil {
 			log.Printf("Bad %s packet: %v\n", s.name, err)
 			continue
 		}
 
-		srcLevel := ringLevel[srcRing]
+		srcLevel := ringLevel[source.ring]
 		for dstRing, dstLevel := range ringLevel {
 			dstIface := ringToIface[dstRing]
-			if dstIface.Index == srcIface.Index {
+			if dstIface.Index == source.iface.Index {
 				// Don't repeat the message on the interface it
 				// arrived on
 				continue
@@ -362,9 +470,9 @@ func mrelay(s service) {
 				continue
 			}
 
-			conn.SetMulticastInterface(dstIface)
-			conn.SetMulticastTTL(255)
-			l, err := conn.WriteTo(buf[:n], nil, fw)
+			source.conn.SetMulticastInterface(dstIface)
+			source.conn.SetMulticastTTL(255)
+			l, err := source.conn.WriteTo(buf[:n], nil, fw)
 			if err != nil {
 				log.Printf("    Forward to %s failed: %v\n",
 					dstIface.Name, err)
