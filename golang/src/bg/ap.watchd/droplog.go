@@ -293,8 +293,19 @@ func trimTable(t *dropTable) {
 	}
 }
 
-func logMonitor(logpipe *os.File) {
-	scanner := bufio.NewScanner(logpipe)
+func logMonitor(name string) {
+	// The pipe open will block until/unless something is written to the
+	// pipe, so it's worth noting both when we start the open and when it
+	// completes.
+	log.Printf("Opening droplog pipe: %s\n", name)
+	pipe, err := os.OpenFile(name, os.O_RDONLY, os.ModeNamedPipe)
+	if err != nil {
+		log.Printf("Failed to open droplog pipe %s: %v\n", name, err)
+		return
+	}
+	log.Printf("Opened droplog pipe: %s\n", name)
+
+	scanner := bufio.NewScanner(pipe)
 	for scanner.Scan() {
 		d := getDrop(scanner.Text())
 		if d != nil {
@@ -314,24 +325,21 @@ func logMonitor(logpipe *os.File) {
 	}
 }
 
-func openPipe(name string) (pipe *os.File, err error) {
+func createPipe(name string) error {
 	if !aputil.FileExists(name) {
 		log.Printf("Creating named pipe %s for log input\n", name)
-		if err = syscall.Mkfifo(name, 0600); err != nil {
-			err = fmt.Errorf("failed to create %s: %v", name, err)
-			return
+		if err := syscall.Mkfifo(name, 0600); err != nil {
+			return fmt.Errorf("failed to create %s: %v", name, err)
 		}
 
 		log.Printf("Restarting rsyslogd\n")
 		c := exec.Command("/bin/systemctl", "restart", "rsyslog")
-		if err = c.Run(); err != nil {
-			err = fmt.Errorf("failed to restart rsyslogd: %v", err)
-			return
+		if err := c.Run(); err != nil {
+			return fmt.Errorf("failed to restart rsyslogd: %v", err)
 		}
 	}
 
-	pipe, err = os.OpenFile(name, os.O_RDONLY, os.ModeNamedPipe)
-	return
+	return nil
 }
 
 func droplogFini() {
@@ -368,20 +376,20 @@ func findWanNics() {
 }
 
 func droplogInit() error {
+	var err error
+
 	findWanNics()
 
-	pipe, err := openPipe(*logpipe)
-	if err != nil {
-		return fmt.Errorf("failed to open syslog pipe %s: %v",
+	if err = createPipe(*logpipe); err != nil {
+		return fmt.Errorf("failed to create syslog pipe %s: %v",
 			*logpipe, err)
 	}
 
-	dbHandle, err = dbInit(*watchDir + "/" + *dropDB)
-	if err != nil {
+	if dbHandle, err = dbInit(*watchDir + "/" + *dropDB); err != nil {
 		return fmt.Errorf("database error: %v", err)
 	}
 
-	go logMonitor(pipe)
+	go logMonitor(*logpipe)
 	return nil
 }
 
