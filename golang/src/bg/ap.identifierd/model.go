@@ -33,17 +33,6 @@ import (
 	tf "github.com/tensorflow/tensorflow/tensorflow/go"
 )
 
-// saved_model_cli should be able to give us the names below by doing
-//
-//   $ saved_model_cli show --dir <model-dir> --tag_set serve --signature_def serving_default
-//
-// but the resulting output doesn't give the feature key or the class ID path.
-// Manually inspect the saved model .pbtxt file to fill in what we need.
-const tfFeaturesKey = "x"
-const tfInput = "input_example_tensor"
-const tfClassID = "linear/head/predictions/class_ids"
-const tfProb = "linear/head/predictions/probabilities"
-
 // 'entity' contains data about a client. The data is sent to the cloud for
 // later use as training data. Most data is collected for only 30 minutes after
 // seeing the client is active. A client is deemed active if we receive any of:
@@ -88,25 +77,30 @@ type client struct {
 
 // observations contains a subset of the data we observe from a client.
 type observations struct {
-	sync.Mutex
-
 	// hwaddr -> client
-	clients map[uint64]*client
+	clients    map[uint64]*client
+	clientLock sync.Mutex
 
 	// attribute name -> column index
 	attrMap map[string]int
 
 	// TensorFlow data
 	savedModel  *tf.SavedModel
-	inputs      *tf.Operation
-	outputProb  *tf.Operation
-	outputClass *tf.Operation
+	inputs      tf.Output
+	outputProb  []tf.Output
+	outputClass []tf.Output
 }
 
 func (e *entities) getEntityLocked(hwaddr uint64) *entity {
 	_, ok := e.dataMap[hwaddr]
 	if !ok {
-		e.dataMap[hwaddr] = newEntity(hwaddr)
+		e.dataMap[hwaddr] = &entity{
+			private: false,
+			info: &base_msg.DeviceInfo{
+				Created:    aputil.NowToProtobuf(),
+				MacAddress: proto.Uint64(hwaddr),
+			},
+		}
 	}
 	return e.dataMap[hwaddr]
 }
@@ -240,9 +234,6 @@ func (e *entities) writeInventory(path string) error {
 }
 
 func (o *observations) loadModel(dataPath, modelPath string) error {
-	o.Lock()
-	defer o.Unlock()
-
 	// Read the header from the training data. There is a very strong assumption
 	// here that the file we are reading has the features/attributes in the same
 	// order as the file used to train the model
@@ -270,33 +261,40 @@ func (o *observations) loadModel(dataPath, modelPath string) error {
 	}
 	o.savedModel = linearModel
 
-	// Test that we have the correct paths in the model. Store the ops for later
-	// inference
-	testForInputs := linearModel.Graph.Operation(tfInput)
+	// Test that we have the correct paths in the model.
+	testForInputs := linearModel.Graph.Operation(model.TFInput)
 	if testForInputs == nil {
-		return fmt.Errorf("wrong input path %s", tfInput)
+		return fmt.Errorf("wrong input path %s", model.TFInput)
 	}
-	o.inputs = testForInputs
+	o.inputs = testForInputs.Output(0)
 
-	testForProbs := linearModel.Graph.Operation(tfProb)
+	testForProbs := linearModel.Graph.Operation(model.TFProb)
 	if testForProbs == nil {
-		return fmt.Errorf("wrong output path %s", tfProb)
+		return fmt.Errorf("wrong output path %s", model.TFProb)
 	}
-	o.outputProb = testForProbs
+	o.outputProb = make([]tf.Output, 1)
+	o.outputProb[0] = testForProbs.Output(0)
 
-	testForClasses := linearModel.Graph.Operation(tfClassID)
+	testForClasses := linearModel.Graph.Operation(model.TFClassID)
 	if testForClasses == nil {
-		return fmt.Errorf("wrong output path %s", tfClassID)
+		return fmt.Errorf("wrong output path %s", model.TFClassID)
 	}
-	o.outputClass = testForClasses
+	o.outputClass = make([]tf.Output, 1)
+	o.outputClass[0] = testForClasses.Output(0)
+
+	// Test that we have the correct feature keys
+	testClient := &client{attrs: make([]string, len(o.attrMap))}
+	for i := 0; i < len(testClient.attrs); i++ {
+		testClient.attrs[i] = "0"
+	}
+	if _, _, err := o.inference(testClient); err != nil {
+		return fmt.Errorf("inference failed: %s", err)
+	}
 
 	return nil
 }
 
 func (o *observations) saveTestData(testPath string) error {
-	o.Lock()
-	defer o.Unlock()
-
 	tmpPath := testPath + ".tmp"
 	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
@@ -312,12 +310,14 @@ func (o *observations) saveTestData(testPath string) error {
 	}
 	w.Write(header)
 
-	row := make([]string, 0)
+	o.clientLock.Lock()
 	for h, c := range o.clients {
+		row := make([]string, 0)
 		row = append(row, network.Uint64ToHWAddr(h).String())
 		row = append(row, c.attrs...)
 		w.Write(row)
 	}
+	o.clientLock.Unlock()
 
 	w.Flush()
 	if err := w.Error(); err != nil {
@@ -366,8 +366,8 @@ func (o *observations) loadTestData(testPath string) error {
 }
 
 func (o *observations) setByName(hwaddr uint64, attr string) {
-	o.Lock()
-	defer o.Unlock()
+	o.clientLock.Lock()
+	defer o.clientLock.Unlock()
 
 	if _, ok := o.clients[hwaddr]; !ok {
 		c := &client{
@@ -390,29 +390,23 @@ func (o *observations) inference(c *client) (int64, float32, error) {
 	var runResult []*tf.Tensor
 	var runErr error
 
-	example, err := model.FormatTFExample(tfFeaturesKey, strings.Join(c.attrs, ","))
+	example, err := model.FormatTFExample(model.TFFeaturesKey, strings.Join(c.attrs, ","))
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to make tf.Example: %s", err)
 	}
 
 	feeds := make(map[tf.Output]*tf.Tensor)
-	feeds[o.inputs.Output(0)] = example[0]
-
-	fetchProb := make([]tf.Output, 1)
-	fetchProb[0] = o.outputProb.Output(0)
-
-	fetchClass := make([]tf.Output, 1)
-	fetchClass[0] = o.outputClass.Output(0)
+	feeds[o.inputs] = example[0]
 
 	// Fetch the class first. The runResult is the class id which provides
 	// an index into the fetched probabilities
-	runResult, runErr = o.savedModel.Session.Run(feeds, fetchClass, nil)
+	runResult, runErr = o.savedModel.Session.Run(feeds, o.outputClass, nil)
 	if runErr != nil {
 		return 0, 0, fmt.Errorf("fetching class ID failed: %s", runErr)
 	}
 	predClass := runResult[0].Value().([]int64)[0]
 
-	runResult, runErr = o.savedModel.Session.Run(feeds, fetchProb, nil)
+	runResult, runErr = o.savedModel.Session.Run(feeds, o.outputProb, nil)
 	if runErr != nil {
 		return 0, 0, fmt.Errorf("fetching probabilities failed: %s", runErr)
 	}
@@ -449,26 +443,15 @@ func (o *observations) predict() <-chan *prediction {
 	predCh := make(chan *prediction)
 
 	go func(ch chan *prediction) {
-		tick := time.NewTicker(time.Minute)
+		tick := time.NewTicker(predictInterval)
 		for {
 			<-tick.C
-			o.Lock()
+			o.clientLock.Lock()
 			o.predictClients(ch)
-			o.Unlock()
+			o.clientLock.Unlock()
 		}
 	}(predCh)
 	return predCh
-}
-
-func newEntity(hwaddr uint64) *entity {
-	ret := &entity{
-		private: false,
-		info: &base_msg.DeviceInfo{
-			Created:    aputil.NowToProtobuf(),
-			MacAddress: proto.Uint64(hwaddr),
-		},
-	}
-	return ret
 }
 
 // NewEntities creates an empty Entities

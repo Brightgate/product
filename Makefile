@@ -334,9 +334,7 @@ UTILBIN=$(UTILROOT)/bin
 
 UTILCOMMON_SRCS = \
 	$(GOSRCBG)/ap_common/device/device.go \
-	$(GOSRCBG)/ap_common/model/bernoulli_nb.go \
 	$(GOSRCBG)/ap_common/model/model.go \
-	$(GOSRCBG)/ap_common/model/multinomial_nb.go \
 	$(GOSRCBG)/ap_common/network/network.go \
 	$(GOSRCBG)/base_msg/base_msg.pb.go \
 	$(GOSRCBG)/util/deviceDB/device_db.go

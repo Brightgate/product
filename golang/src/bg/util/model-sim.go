@@ -57,17 +57,11 @@ import (
 
 	"bg/ap_common/model"
 
+	tf "github.com/tensorflow/tensorflow/tensorflow/go"
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
 	"gonum.org/v1/plot/plotutil"
 	"gonum.org/v1/plot/vg"
-
-	"github.com/sjwhitworth/golearn/base"
-	"github.com/sjwhitworth/golearn/evaluation"
-	"github.com/sjwhitworth/golearn/filters"
-	"github.com/sjwhitworth/golearn/trees"
-
-	tf "github.com/tensorflow/tensorflow/tensorflow/go"
 )
 
 const (
@@ -92,11 +86,8 @@ var (
 	split       = flag.Float64("split", .4, "Train-test split")
 	randomize   = flag.Bool("randomize", false, "Randomize 'devs', 'samples', and 'features'.")
 
-	models = flag.String("models", "",
+	models = flag.String("models", "tf",
 		"Comma separate list of models to evaluate.\n\tCurrently support "+
-			"'tree' (ID3 Decision Tree), "+
-			"'bern' (Bernoulli Naive Bayes), "+
-			"'multi'(Multinomail Naive Bayes), "+
 			"'tf' (TensorFlow linear classifier).")
 
 	reliabilityPlot *plot.Plot
@@ -188,35 +179,6 @@ func tfData(data [][]string, devices []string) error {
 		return fmt.Errorf("failed to write testing data: %s", err)
 	}
 	return nil
-}
-
-func goLearnData(data [][]string, devices []string) (*base.DenseInstances, error) {
-	numRows := len(data)
-	numCols := len(data[0])
-	rawData := base.NewDenseInstances()
-	attrSpec := make([]base.AttributeSpec, 0)
-
-	for i := 0; i < numCols; i++ {
-		attr := base.NewFloatAttribute(fmt.Sprintf("Attr%d", i))
-		attrSpec = append(attrSpec, rawData.AddAttribute(attr))
-	}
-
-	clsAttr := base.NewCategoricalAttribute()
-	clsAttr.SetName("Device")
-	attrSpec = append(attrSpec, rawData.AddAttribute(clsAttr))
-	if err := rawData.AddClassAttribute(clsAttr); err != nil {
-		return nil, err
-	}
-	rawData.Extend(numRows)
-
-	for i := 0; i < numRows; i++ {
-		for j := 0; j < numCols; j++ {
-			rawData.Set(attrSpec[j], i, attrSpec[j].GetAttribute().GetSysValFromString(data[i][j]))
-		}
-		rawData.Set(attrSpec[numCols], i, attrSpec[numCols].GetAttribute().GetSysValFromString(devices[i]))
-	}
-
-	return rawData, nil
 }
 
 func generateData() ([][]string, []string) {
@@ -330,38 +292,6 @@ func binUpdate(trueClass, predClass string, classProb float64, acc map[int]*accu
 	}
 }
 
-func reliability(data, pred, prob base.FixedDataGrid) ([][]float64, float64, error) {
-	acc := make(map[int]*accuracyBin)
-
-	_, dataRows := data.Size()
-	_, predRows := pred.Size()
-	_, probRows := prob.Size()
-	if dataRows != predRows || predRows != probRows {
-		return nil, 0, fmt.Errorf("number of rows differ: %d, %d, %d",
-			dataRows, predRows, probRows)
-	}
-
-	for i := 0; i < numBins; i++ {
-		acc[i] = &accuracyBin{}
-	}
-
-	for i := 0; i < dataRows; i++ {
-		classProb, err := strconv.ParseFloat(prob.RowString(i), 64)
-		if err != nil || math.IsNaN(classProb) {
-			fmt.Printf("failed to parse class probability %q: %s\n",
-				prob.RowString(i), err)
-			continue
-		}
-
-		realClass := base.GetClass(data, i)
-		predClass := base.GetClass(pred, i)
-		binUpdate(realClass, predClass, classProb, acc)
-	}
-
-	rel, ece := computeMetrics(acc)
-	return rel, ece, nil
-}
-
 func runTensorFlow() ([][]float64, error) {
 	var output bytes.Buffer
 	output.WriteString("TensorFlow LinearClassifier:\n")
@@ -381,19 +311,19 @@ func runTensorFlow() ([][]float64, error) {
 		return nil, fmt.Errorf("failed to LoadSavedModel: %s", err)
 	}
 
-	testForInputs := savedModel.Graph.Operation("input_example_tensor")
+	testForInputs := savedModel.Graph.Operation(model.TFInput)
 	if testForInputs == nil {
-		return nil, fmt.Errorf("wrong input path")
+		return nil, fmt.Errorf("wrong input path %s", model.TFInput)
 	}
 
-	testForProbs := savedModel.Graph.Operation("linear/head/predictions/probabilities")
+	testForProbs := savedModel.Graph.Operation(model.TFProb)
 	if testForProbs == nil {
-		return nil, fmt.Errorf("wrong %q output path", "probabilities")
+		return nil, fmt.Errorf("wrong output path %s", model.TFProb)
 	}
 
-	testForClasses := savedModel.Graph.Operation("linear/head/predictions/class_ids")
+	testForClasses := savedModel.Graph.Operation(model.TFClassID)
 	if testForClasses == nil {
-		return nil, fmt.Errorf("wrong %q output path", "class_ids")
+		return nil, fmt.Errorf("wrong output path", model.TFClassID)
 	}
 
 	// Load the testing set which was created with tfData. The JSON string is
@@ -428,7 +358,7 @@ func runTensorFlow() ([][]float64, error) {
 
 		last := len(row) - 1
 		trueClass := row[last]
-		example, err := model.FormatTFExample("x", strings.Join(row[:last], ","))
+		example, err := model.FormatTFExample(model.TFFeaturesKey, strings.Join(row[:last], ","))
 		if err != nil {
 			return nil, fmt.Errorf("failed to make tf.Example: %s", err)
 		}
@@ -477,121 +407,6 @@ func runTensorFlow() ([][]float64, error) {
 	return rel, nil
 }
 
-func discretise(src base.FixedDataGrid) (*filters.ChiMergeFilter, error) {
-	// XXX Need to understand the magic parameter
-	filt := filters.NewChiMergeFilter(src, 0.999)
-	for _, a := range base.NonClassFloatAttributes(src) {
-		filt.AddAttribute(a)
-	}
-
-	if err := filt.Train(); err != nil {
-		return nil, fmt.Errorf("could not train Chi-Merge filter: %s", err)
-	}
-
-	return filt, nil
-}
-
-func runTree(rawData *base.DenseInstances) error {
-	var output bytes.Buffer
-	output.WriteString("ID3 Tree:\n")
-
-	filt, err := discretise(rawData)
-	if err != nil {
-		return fmt.Errorf("failed to discretise: %v", err)
-	}
-	rawDataFilt := base.NewLazilyFilteredInstances(rawData, filt)
-	trainData, testData := base.InstancesTrainTestSplit(rawDataFilt, *split)
-
-	id3Tree := trees.NewID3DecisionTree(0.6)
-	err = id3Tree.Fit(trainData)
-	if err != nil {
-		return fmt.Errorf("failed to fit ID3 tree: %v", err)
-	}
-
-	predictions, err := id3Tree.Predict(testData)
-	if err != nil {
-		return fmt.Errorf("failed to predict with ID3 tree: %v", err)
-	}
-
-	cf, err := evaluation.GetConfusionMatrix(testData, predictions)
-	if err != nil {
-		return fmt.Errorf("unable to get confusion matrix: %v", err)
-	}
-	output.WriteString(fmt.Sprintf("\tAccuracy: %f\n", evaluation.GetAccuracy(cf)))
-	fmt.Print(output.String())
-	return nil
-}
-
-func binarize(src base.FixedDataGrid) (*filters.BinaryConvertFilter, error) {
-	filt := filters.NewBinaryConvertFilter()
-	for _, a := range base.NonClassAttributes(src) {
-		filt.AddAttribute(a)
-	}
-
-	if err := filt.Train(); err != nil {
-		return nil, fmt.Errorf("could not train binary filter: %s", err)
-	}
-
-	return filt, nil
-}
-
-func runBern(rawData *base.DenseInstances) ([][]float64, error) {
-	var output bytes.Buffer
-	output.WriteString("Bernoulli NB:\n")
-
-	filt, err := binarize(rawData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create binary filter: %v", err)
-	}
-	rawDataFilt := base.NewLazilyFilteredInstances(rawData, filt)
-	trainData, testData := base.InstancesTrainTestSplit(rawDataFilt, *split)
-
-	naiveBayes := model.NewBernoulliNBClassifier()
-	naiveBayes.Fit(trainData)
-	predictions, probabilities := naiveBayes.Predict(testData)
-
-	cf, err := evaluation.GetConfusionMatrix(testData, predictions)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get confusion matrix: %v", err)
-	}
-	output.WriteString(fmt.Sprintf("\tAccuracy: %f\n", evaluation.GetAccuracy(cf)))
-
-	rel, ece, err := reliability(testData, predictions, probabilities)
-	if err != nil {
-		return nil, fmt.Errorf("unable to quantify reliability: %v", err)
-	}
-	output.WriteString(fmt.Sprintf("\tECE: %f\n", ece))
-	fmt.Print(output.String())
-
-	return rel, nil
-}
-
-func runMulti(rawData *base.DenseInstances) ([][]float64, error) {
-	var output bytes.Buffer
-	output.WriteString("Multinomial NB:\n")
-
-	trainData, testData := base.InstancesTrainTestSplit(rawData, *split)
-
-	multiBayes := model.NewMultinomialNBClassifier()
-	multiBayes.Fit(trainData)
-	predictions, probabilities := multiBayes.Predict(testData)
-
-	cf, err := evaluation.GetConfusionMatrix(testData, predictions)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get confusion matrix: %v", err)
-	}
-	output.WriteString(fmt.Sprintf("\tAccuracy: %f\n", evaluation.GetAccuracy(cf)))
-
-	rel, ece, err := reliability(testData, predictions, probabilities)
-	if err != nil {
-		return nil, fmt.Errorf("unable to quantify reliability: %v", err)
-	}
-	output.WriteString(fmt.Sprintf("\tECE: %f\n", ece))
-	fmt.Print(output.String())
-
-	return rel, nil
-}
-
 func reliabilityPoints(rel [][]float64) plotter.XYs {
 	pts := make(plotter.XYs, len(rel))
 	for i := range pts {
@@ -626,34 +441,10 @@ func init() {
 
 func main() {
 	var err error
-	var bernRel, multRel, tfRel [][]float64
+	var tfRel [][]float64
 
 	flag.Parse()
 	data, devices := generateData()
-	glData, err := goLearnData(data, devices)
-	if err != nil {
-		fmt.Println("failed to generate data:", err)
-		os.Exit(1)
-	}
-
-	if strings.Contains(*models, "tree") {
-		if err := runTree(glData); err != nil {
-			fmt.Println("ID3 tree fit/predict failed:", err)
-		}
-	}
-
-	if strings.Contains(*models, "bern") {
-		if bernRel, err = runBern(glData); err != nil {
-			fmt.Println("Bernoulli NB fit/predict failed:", err)
-		}
-	}
-
-	if strings.Contains(*models, "multi") {
-		if multRel, err = runMulti(glData); err != nil {
-			fmt.Println("Multinomial NB fit/predict failed:", err)
-		}
-	}
-
 	if strings.Contains(*models, "tf") {
 		if err = tfData(data, devices); err != nil {
 			fmt.Printf("failed to create TensorFlow data: %s\n", err)
@@ -667,8 +458,6 @@ func main() {
 	}
 
 	err = plotutil.AddLinePoints(reliabilityPlot,
-		"Bern", reliabilityPoints(bernRel),
-		"Multi", reliabilityPoints(multRel),
 		"TFLC", reliabilityPoints(tfRel))
 	if err != nil {
 		fmt.Println("failed to add points: %s\n", err)

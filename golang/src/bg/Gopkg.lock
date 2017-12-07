@@ -32,36 +32,6 @@
   revision = "1643683e1b54a9e88ad26d98f81400c8c9d9f4f9"
 
 [[projects]]
-  branch = "master"
-  name = "github.com/gonum/blas"
-  packages = [".","blas64","native","native/internal/math32"]
-  revision = "37e82626499e1df7c54aeaba0959fd6e7e8dc1e4"
-
-[[projects]]
-  branch = "master"
-  name = "github.com/gonum/floats"
-  packages = ["."]
-  revision = "f74b330d45c56584a6ea7a27f5c64ea2900631e9"
-
-[[projects]]
-  branch = "master"
-  name = "github.com/gonum/internal"
-  packages = ["asm/f32","asm/f64"]
-  revision = "e57e4534cf9b3b00ef6c0175f59d8d2d34f60914"
-
-[[projects]]
-  branch = "master"
-  name = "github.com/gonum/lapack"
-  packages = [".","lapack64","native"]
-  revision = "5ed4b826becd1807e09377508f51756586d1a98c"
-
-[[projects]]
-  branch = "master"
-  name = "github.com/gonum/matrix"
-  packages = [".","mat64"]
-  revision = "dd6034299e4242c9f0ea36735e6d4264dfcb3f9f"
-
-[[projects]]
   name = "github.com/google/gopacket"
   packages = [".","layers","pcap"]
   revision = "11c65f1ca9081dfea43b4f9643f5c155583b73ba"
@@ -188,12 +158,6 @@
   version = "v1.1.0"
 
 [[projects]]
-  branch = "master"
-  name = "github.com/sjwhitworth/golearn"
-  packages = ["base","evaluation","filters","trees"]
-  revision = "d2c70d74e05147f0182cba1dcf79d03ff3ec65ed"
-
-[[projects]]
   name = "github.com/tensorflow/tensorflow"
   packages = ["tensorflow/go","tensorflow/go/op"]
   revision = "48c54eee17b35ebc15e274e36632eccb76072f7d"
@@ -286,6 +250,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "d648ce85e20a17a8ed855c1f826c1da697773f4a9cc064c6e276dea414d10946"
+  inputs-digest = "d2572a3d12cb0b14ceb5860ee0b28f7ed6a1200701feb544bc61f5cfdf5f436c"
   solver-name = "gps-cdcl"
   solver-version = 1

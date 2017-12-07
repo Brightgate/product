@@ -18,6 +18,25 @@ import (
 	"github.com/tensorflow/tensorflow/tensorflow/go/op"
 )
 
+// saved_model_cli should be able to give us the names below by doing
+//
+//   $ saved_model_cli show --dir <model-dir> --tag_set serve --signature_def serving_default
+//
+// but the resulting output doesn't give the feature key or the class ID path.
+// Manually inspect the saved model .pbtxt file to fill in what we need.
+
+// TFFeaturesKey is the key used in the TensorFlow feature column
+const TFFeaturesKey = "x"
+
+// TFInput is the name of the input tensors in the saved model
+const TFInput = "input_example_tensor"
+
+// TFClassID is the name of the output tensor containing class IDs
+const TFClassID = "linear/head/predictions/class_ids"
+
+// TFProb is the name of the output tensor containing class probabilities
+const TFProb = "linear/head/predictions/probabilities"
+
 // DNSQ matches DNS questions.
 // See github.com/miekg/dns/types.go: func (q *Question) String() {}
 var DNSQ = regexp.MustCompile(`;(.*?)\t`)

@@ -80,6 +80,7 @@ const (
 	keepFor            = 2 * 24 * time.Hour
 	logInterval        = 15 * time.Minute
 	collectionDuration = 30 * time.Minute
+	predictInterval    = 5 * time.Minute
 )
 
 func delHWaddr(hwaddr uint64) {
