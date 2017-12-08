@@ -381,7 +381,7 @@ func scan(ip string, nmapArgs []string, file string) (*nmap.NmapRun, error) {
 	child := aputil.NewChild("/usr/bin/nmap", args...)
 
 	if *verbose {
-		child.LogOutput("", 0)
+		child.LogOutputTo("", 0, os.Stderr)
 	}
 
 	runLock.Lock()
@@ -412,7 +412,7 @@ func scan(ip string, nmapArgs []string, file string) (*nmap.NmapRun, error) {
 	}
 	scanResults, err := nmap.Parse(fileContent)
 	if err != nil {
-		return nil, fmt.Errorf("error parsig nmap results %s: %v",
+		return nil, fmt.Errorf("error parsing nmap results %s: %v",
 			file, err)
 	}
 	return scanResults, nil

@@ -49,7 +49,7 @@ type daemon struct {
 	going       bool // is being maintained by a goroutine
 	startTime   time.Time
 	setTime     time.Time
-	process     *os.Process
+	child       *aputil.Child
 	state       int
 	launchOrder int
 	sync.Mutex
@@ -71,8 +71,10 @@ var (
 	aproot  = flag.String("root", "", "Root of AP installation")
 	apmode  = flag.String("mode", "", "Mode in which this AP should operate")
 	cfgfile = flag.String("c", "", "Alternate daemon config file")
-	logfile = flag.String("l", "", "where to send log messages")
+	logname = flag.String("l", "", "where to send log messages")
 	verbose = flag.Bool("v", false, "more verbose logging")
+
+	logfile *os.File
 
 	daemons = make(daemonSet)
 )
@@ -122,6 +124,11 @@ func singleInstance(d *daemon) error {
 	var args []string
 	var execpath string
 
+	out := os.Stderr
+	if logfile != nil {
+		out = logfile
+	}
+
 	setState(d, mcp.STARTING)
 
 	for _, o := range d.Options {
@@ -135,7 +142,7 @@ func singleInstance(d *daemon) error {
 	}
 
 	child := aputil.NewChild(execpath, args...)
-	child.LogOutput("", 0)
+	child.LogOutputTo("", 0, out)
 
 	if *verbose {
 		log.Printf("Starting %s\n", execpath)
@@ -154,7 +161,7 @@ func singleInstance(d *daemon) error {
 		setState(d, mcp.ONLINE)
 	}
 
-	d.process = child.Process
+	d.child = child
 	d.Unlock()
 
 	err = child.Wait()
@@ -163,7 +170,7 @@ func singleInstance(d *daemon) error {
 		log.Printf("%s failed: %v\n", d.Name, err)
 	}
 	d.Lock()
-	d.process = nil
+	d.child = nil
 
 	return err
 }
@@ -232,8 +239,8 @@ func handleGetState(set daemonSet) *string {
 
 	for _, d := range set {
 		pid := -1
-		if d.process != nil {
-			pid = d.process.Pid
+		if d.child != nil {
+			pid = d.child.Process.Pid
 		}
 
 		state := mcp.DaemonState{
@@ -361,7 +368,9 @@ func handleStop(set daemonSet) {
 		d.Lock()
 		if d.state != mcp.OFFLINE {
 			log.Printf("Stopping %s\n", d.Name)
-			procs[n] = d.process
+			if d.child != nil {
+				procs[n] = d.child.Process
+			}
 			setState(d, mcp.STOPPING)
 			d.run = false
 		}
@@ -370,8 +379,13 @@ func handleStop(set daemonSet) {
 
 	for len(set) > 0 {
 		for n, d := range set {
+			var p *os.Process
+
 			d.Lock()
-			p := d.process
+			if d.child != nil {
+				p = d.child.Process
+			}
+
 			if p == nil || p != procs[n] {
 				if p == nil {
 					// if the process has changed, it means
@@ -496,10 +510,14 @@ func signalHandler() {
 	for {
 		s := <-sig
 		if s == syscall.SIGHUP {
+			reopenLogfile()
 			log.Printf("Reloading mcp.json\n")
 			loadDefinitions()
 		} else {
 			log.Printf("Signal (%v) received, stopping\n", s)
+			if logfile != nil {
+				logfile.Close()
+			}
 			os.Remove(pidfile)
 			os.Exit(0)
 		}
@@ -664,21 +682,40 @@ func pidLock() error {
 	return err
 }
 
-func openLogfile(path string) *os.File {
+func reopenLogfile() {
+	if *logname == "" {
+		return
+	}
+
+	path := aputil.ExpandDirPath(*logname)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
-		fmt.Printf("Unable to redirect logging to %s: %v", path, err)
-		return nil
+		log.Printf("Unable to redirect logging to %s: %v", path, err)
+		return
 	}
+
 	os.Stdout = f
 	os.Stderr = f
-	log.SetOutput(f)
-
-	os.Stdin, err = os.OpenFile("/dev/null", os.O_RDONLY, 0)
-	if err != nil {
-		log.Printf("Couldn't close stdin\n")
+	for _, d := range daemons {
+		d.Lock()
+		if d.child != nil {
+			d.child.SetOutput(f)
+		}
+		d.Unlock()
 	}
-	return f
+
+	if logfile == nil {
+		os.Stdin, err = os.OpenFile("/dev/null", os.O_RDONLY, 0)
+		if err != nil {
+			log.Printf("Couldn't close stdin\n")
+		}
+	} else {
+		log.Printf("Closing log\n")
+		logfile.Close()
+	}
+	log.SetOutput(f)
+	log.Printf("Opened %s\n", path)
+	logfile = f
 }
 
 func setEnvironment() {
@@ -715,13 +752,8 @@ func main() {
 	}
 
 	setEnvironment()
+	reopenLogfile()
 
-	if *logfile != "" {
-		f := openLogfile(aputil.ExpandDirPath(*logfile))
-		if f != nil {
-			defer f.Close()
-		}
-	}
 	log.Printf("ap.mcp (%d) coming online...\n", os.Getpid())
 
 	if err := loadDefinitions(); err != nil {

@@ -109,10 +109,19 @@ func (c *Child) SetUID(uid, gid uint32) {
 	c.Cmd.SysProcAttr = &attr
 }
 
-// LogOutput will cause us to capture the stdin/stdout streams from a child
+// SetOutput will reset a child's log target
+func (c *Child) SetOutput(w io.Writer) {
+	if c.logger == nil {
+		return
+	}
+
+	c.logger.SetOutput(w)
+}
+
+// LogOutputTo will cause us to capture the stdin/stdout streams from a child
 // process
-func (c *Child) LogOutput(prefix string, flags int) {
-	c.logger = log.New(os.Stderr, "", flags)
+func (c *Child) LogOutputTo(prefix string, flags int, w io.Writer) {
+	c.logger = log.New(w, "", flags)
 	c.prefix = prefix
 
 	c.pipes = 0

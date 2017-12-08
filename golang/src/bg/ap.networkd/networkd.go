@@ -638,7 +638,7 @@ func runOne(conf *apConfig, done chan *apConfig) {
 		deleteBridges()
 
 		child := aputil.NewChild(hostapdPath, fn)
-		child.LogOutput("hostapd: ", log.Ldate|log.Ltime)
+		child.LogOutputTo("hostapd: ", log.Ldate|log.Ltime, os.Stderr)
 
 		startTime := time.Now()
 		startTimes = append(startTimes[1:failuresAllowed], startTime)
