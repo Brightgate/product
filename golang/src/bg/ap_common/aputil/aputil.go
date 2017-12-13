@@ -236,7 +236,7 @@ func GetNodeID() uuid.UUID {
 			s[0:8], s[8:12], s[12:16], s[16:20], s[20:32])
 		nodeID, err = uuid.FromString(uuidStr)
 		if err != nil {
-			log.Printf("Failed to parse %s as a UUID: %v\n",
+			log.Fatalf("Failed to parse %s as a UUID: %v\n",
 				uuidStr, err)
 		}
 	}

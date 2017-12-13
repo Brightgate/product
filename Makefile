@@ -220,6 +220,7 @@ COMMON_GOPKGS = \
 	bg/ap_common/aputil \
 	bg/ap_common/broker \
 	bg/ap_common/device \
+	bg/ap_common/iotcore \
 	bg/ap_common/mcp \
 	bg/ap_common/model \
 	bg/ap_common/network \
@@ -229,6 +230,7 @@ APPCOMMAND_GOPKGS = \
 	bg/ap-arpspoof \
 	bg/ap-configctl \
 	bg/ap-ctl \
+	bg/ap-iot \
 	bg/ap-msgping \
 	bg/ap-ouisearch \
 	bg/ap-rpc \
@@ -263,6 +265,7 @@ APPBINARIES = \
 
 GO_TESTABLES = \
 	bg/ap_common/apcfg \
+	bg/ap_common/iotcore \
 	bg/ap_common/network \
 	bg/ap.networkd \
 	bg/ap.userauthd
@@ -340,6 +343,7 @@ APP_COMMON_SRCS = \
 	$(GOSRCBG)/ap_common/aputil/aputil.go \
 	$(GOSRCBG)/ap_common/broker/broker.go \
 	$(GOSRCBG)/ap_common/device/device.go \
+	$(GOSRCBG)/ap_common/iotcore/iotcore.go \
 	$(GOSRCBG)/ap_common/mcp/mcp_client.go \
 	$(GOSRCBG)/ap_common/model/model.go \
 	$(GOSRCBG)/ap_common/network/network.go \
@@ -425,7 +429,7 @@ packages: install
 test: test-go
 
 test-go: install
-	$(GO) test $(GO_TESTABLES)
+	$(GO) test -v -timeout 20s $(GO_TESTABLES)
 
 coverage: coverage-go
 
@@ -622,6 +626,9 @@ $(APPBIN)/ap-msgping: $(GOSRCBG)/ap-msgping/msgping.go
 $(APPBIN)/ap-ouisearch: $(GOSRCBG)/ap-ouisearch/ouisearch.go
 $(APPBIN)/ap-rpc: \
 	$(GOSRCBG)/ap-rpc/rpc.go \
+	$(CLOUD_COMMON_SRCS)
+$(APPBIN)/ap-iot: \
+	$(GOSRCBG)/ap-iot/iot.go \
 	$(CLOUD_COMMON_SRCS)
 $(APPBIN)/ap-stats: $(GOSRCBG)/ap-stats/stats.go
 $(APPBIN)/ap-userctl: $(GOSRCBG)/ap-userctl/userctl.go

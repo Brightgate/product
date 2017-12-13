@@ -42,6 +42,8 @@ message UpcallRequest {
 	repeated string wan_hwaddr = 0x101;
 	repeated string component_version = 0x110;
 	optional int64 uptime_elapsed = 0x111;
+	optional string boot_time = 0x112;
+	optional string record_time = 0x113;
 	optional int32 net_host_count = 0x120;
 }
 

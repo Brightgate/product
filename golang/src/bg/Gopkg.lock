@@ -26,6 +26,24 @@
   version = "v1.0.0"
 
 [[projects]]
+  name = "github.com/dgrijalva/jwt-go"
+  packages = ["."]
+  revision = "dbeaa9332f19a944acb5736b4456cfcc02140e29"
+  version = "v3.1.0"
+
+[[projects]]
+  name = "github.com/eclipse/paho.mqtt.golang"
+  packages = [".","packets"]
+  revision = "aff15770515e3c57fc6109da73d42b0d46f7f483"
+  version = "v1.1.0"
+
+[[projects]]
+  name = "github.com/fgrosse/zaptest"
+  packages = ["."]
+  revision = "88dc3e74eadbccae7fe0cce56e0627cb7bc35b97"
+  version = "v1.0.0"
+
+[[projects]]
   branch = "master"
   name = "github.com/golang/freetype"
   packages = [".","raster","truetype"]
@@ -172,8 +190,7 @@
 [[projects]]
   name = "github.com/satori/uuid"
   packages = ["."]
-  revision = "879c5887cd475cd7864858769793b2ceb0d44feb"
-  version = "v1.1.0"
+  revision = "5bf94b69c6b68ee1b541973bb8e1144db23a194b"
 
 [[projects]]
   name = "github.com/spf13/afero"
@@ -244,7 +261,7 @@
 [[projects]]
   branch = "master"
   name = "golang.org/x/net"
-  packages = ["bpf","context","http2","http2/hpack","idna","internal/iana","internal/socket","internal/timeseries","ipv4","lex/httplex","trace"]
+  packages = ["bpf","context","http2","http2/hpack","idna","internal/iana","internal/socket","internal/timeseries","ipv4","lex/httplex","proxy","trace","websocket"]
   revision = "4b14673ba32bee7f5ac0f990a48f033919fd418b"
 
 [[projects]]
@@ -286,6 +303,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "64f117acf20521afcf71d50e1b684734a730c7c678d384d52fccb2ea822d724f"
+  inputs-digest = "26838acde060c4bc1ab6e0f19ae2ec6cf9b6719eabdda35eb54a7cc5be406c47"
   solver-name = "gps-cdcl"
   solver-version = 1
