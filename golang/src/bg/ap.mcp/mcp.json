@@ -96,6 +96,14 @@
         "Privileged": false,
         "Modes": [ "core", "gateway" ]
     },
+    "userauthd": {
+        "Name": "userauthd",
+        "Binary": "ap.userauthd",
+        "DependsOn": "configd",
+        "Privileged": true,
+        "Options":  [ "-template_dir=$APROOT/etc/templates/ap.userauthd" ],
+        "Modes": [ "gateway" ]
+    },
     "watchd": {
         "Name": "watchd",
         "Binary": "ap.watchd",

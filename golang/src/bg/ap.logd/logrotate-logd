@@ -1,0 +1,8 @@
+/opt/com.brightgate/var/spool/logd/*.log {
+	monthly
+	copytruncate
+	rotate 10
+	size 10M
+	missingok
+	notifempty
+}

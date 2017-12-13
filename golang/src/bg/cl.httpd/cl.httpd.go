@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+// Cfg contains the environment variable-based configuration settings
 type Cfg struct {
 	// The certificate hostname is the primary hostname associated
 	// with the SSL certificate, and not necessarily the nodename.
@@ -60,11 +61,11 @@ func port443Handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func port80Handler(w http.ResponseWriter, r *http.Request) {
-	redirect_url := "https://" + r.Host + r.URL.Path
+	redirectURL := "https://" + r.Host + r.URL.Path
 	if len(r.URL.RawQuery) > 0 {
-		redirect_url += "?" + r.URL.RawQuery
+		redirectURL += "?" + r.URL.RawQuery
 	}
-	http.Redirect(w, r, redirect_url, 301)
+	http.Redirect(w, r, redirectURL, 301)
 }
 
 // XXX Restore init() if we are registering Prometheus metrics.

@@ -13,16 +13,26 @@ package main
 // Demo API implementation
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"image/png"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"bg/ap_common/apcfg"
 
 	"github.com/gorilla/mux"
+	"github.com/pquerna/otp"
+)
+
+const (
+	cookieName = "com.brightgate.appliance"
 )
 
 // DAAlerts is a placeholder.
@@ -32,7 +42,196 @@ type daAlerts struct {
 	Alerts     []string
 }
 
+// POST login () -> (...)
+// POST uid, userPassword[, totppass]
+func demoLoginHandler(w http.ResponseWriter, r *http.Request) {
+	err := r.ParseForm()
+	if err != nil {
+		log.Printf("cannot parse form: %v\n", err)
+		http.Error(w, "bad request", 400)
+		return
+	}
+
+	// Must have user and password.
+	uids, present := r.Form["uid"]
+	if !present || len(uids) == 0 {
+		log.Printf("incomplete form, uid\n")
+		http.Error(w, "bad request", 400)
+		return
+	}
+
+	uid := uids[0]
+	if len(uids) > 1 {
+		log.Printf("multiple uids in form submission: %v\n", uids)
+		http.Error(w, "bad request", 400)
+	}
+
+	userPasswords, present := r.Form["userPassword"]
+	if !present || len(userPasswords) == 0 {
+		log.Printf("incomplete form, userPassword\n")
+		http.Error(w, "bad request", 400)
+		return
+	}
+
+	userPassword := userPasswords[0]
+	if len(userPasswords) > 1 {
+		log.Printf("multiple userPasswords in form submission: %v\n", userPasswords)
+		http.Error(w, "bad request", 400)
+	}
+
+	// Retrieve user node.
+	pp := fmt.Sprintf("@/users/%s/userPassword", uid)
+	stored, err := config.GetProp(pp)
+	if err != nil {
+		log.Printf("demo login for '%s' denied: %v\n", uid, err)
+		http.Error(w, "login denied", 401)
+		return
+	}
+
+	cmp := bcrypt.CompareHashAndPassword([]byte(stored),
+		[]byte(userPassword))
+	if cmp != nil {
+		log.Printf("demo login for '%s' denied: password comparison\n", uid)
+		http.Error(w, "login denied", 401)
+		return
+	}
+
+	// XXX How would 2FA work?  If TOTP defined for this user, send
+	// back 2FA required?
+
+	filling := map[string]string{
+		"uid": uid,
+	}
+
+	if encoded, err := cutter.Encode(cookieName, filling); err == nil {
+		cookie := &http.Cookie{
+			Name:  cookieName,
+			Value: encoded,
+			// Default lifetime is 30 days.
+		}
+
+		if cookie.String() == "" {
+			log.Printf("cookie is empty and will be dropped: %v -> %v\n", cookie, cookie.String())
+		}
+
+		http.SetCookie(w, cookie)
+
+	} else {
+		log.Printf("cookie encoding failed: %v\n", err)
+	}
+
+	io.WriteString(w, "OK login\n")
+}
+
+// GET logout () -> (...)
+func demoLogoutHandler(w http.ResponseWriter, r *http.Request) {
+	var value map[string]string
+
+	// XXX Should only logout if logged in.
+	if cookie, err := r.Cookie(cookieName); err == nil {
+		value = make(map[string]string)
+		if err = cutter.Decode(cookieName, cookie.Value, &value); err == nil {
+			log.Printf("Logging out '%s'\n", value["uid"])
+		} else {
+			log.Printf("Could not decode cookie\n")
+			http.Error(w, "bad request", 400)
+			return
+		}
+	} else {
+		// No cookie defined.
+		log.Printf("Could not find cookie for logout\n")
+		http.Error(w, "bad request", 400)
+		return
+	}
+
+	filling := map[string]string{
+		"uid": "",
+	}
+
+	if encoded, err := cutter.Encode(cookieName, filling); err == nil {
+		cookie := &http.Cookie{
+			Name:   cookieName,
+			Value:  encoded,
+			MaxAge: -1,
+		}
+		http.SetCookie(w, cookie)
+	}
+
+	io.WriteString(w, "OK logout\n")
+}
+
+func isLoggedIn(r *http.Request) bool {
+	var value map[string]string
+
+	cookie, err := r.Cookie(cookieName)
+	if err != nil {
+		// No cookie.
+		return false
+	}
+
+	value = make(map[string]string)
+	if err = cutter.Decode(cookieName, cookie.Value, &value); err != nil {
+		log.Printf("request contains undecryptable cookie value: %v\n", err)
+		return false
+	}
+
+	// Lookup uid.
+	uid := value["uid"]
+
+	// Retrieve user node.
+	pp := fmt.Sprintf("@/users/%s/userPassword", uid)
+	stored, err := config.GetProp(pp)
+	if err != nil {
+		log.Printf("demo login for '%s' denied: %v\n", uid, err)
+		return false
+	}
+
+	if stored != "" {
+		return true
+	}
+
+	// Accounts with empty passwords can't be logged into.
+	return false
+}
+
+func getRequestUID(r *http.Request) string {
+	var value map[string]string
+
+	cookie, err := r.Cookie(cookieName)
+	if err != nil {
+		// No cookie.
+		return ""
+	}
+
+	value = make(map[string]string)
+	if err = cutter.Decode(cookieName, cookie.Value, &value); err != nil {
+		log.Printf("request contains undecryptable cookie value: %v\n", err)
+		return ""
+	}
+
+	// Lookup uid.
+	uid := value["uid"]
+
+	// Retrieve user node.
+	pp := fmt.Sprintf("@/users/%s/userPassword", uid)
+	stored, err := config.GetProp(pp)
+	if err != nil {
+		log.Printf("demo login for '%s' denied: %v\n", uid, err)
+		return ""
+	}
+
+	if stored != "" {
+		return uid
+	}
+
+	// Accounts with empty passwords can't be logged into.
+	return ""
+}
+
 // GET alerts  () -> (...)
+// Policy: GET(*_ADMIN)
+// XXX Should a GUEST or USER be able to see the alerts that correspond
+// to their behavior?
 func demoAlertsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	rs := fmt.Sprintf("%v", r)
@@ -139,7 +338,17 @@ func buildDeviceResponse(hwaddr string, client *apcfg.ClientInfo) daDevice {
 }
 
 // GET devices on ring (ring) -> (...)
+// Policy: GET (*_USER, *_ADMIN)
 func demoDevicesByRingHandler(w http.ResponseWriter, r *http.Request) {
+	uid := getRequestUID(r)
+
+	log.Printf("/devices [uid '%s']\n", uid)
+
+	if uid == "" {
+		http.Error(w, "forbidden", 403)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 
 	vars := mux.Vars(r)
@@ -175,7 +384,17 @@ func demoDevicesByRingHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET devices () -> (...)
+// Policy: GET (*_USER, *_ADMIN)
 func demoDevicesHandler(w http.ResponseWriter, r *http.Request) {
+	uid := getRequestUID(r)
+
+	log.Printf("/devices [uid '%s']\n", uid)
+
+	if uid == "" {
+		http.Error(w, "forbidden", 403)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 
 	clientsRaw := config.GetClients()
@@ -313,7 +532,146 @@ func demoPropertyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type daUser struct {
+	DbgRequest      string
+	UID             string
+	UUID            string
+	DisplayName     string
+	Email           string
+	TelephoneNumber string
+	HasTOTP         bool
+}
+
+type daUsers struct {
+	DbgRequest string
+	Users      []daUser
+}
+
+func buildUserResponse(uid string, user *apcfg.UserInfo) daUser {
+	var cu daUser
+
+	// XXX mismatch possible between uid and user.uid?
+	cu.UID = uid
+	cu.UUID = user.UUID
+	cu.DisplayName = user.DisplayName
+	cu.Email = user.Email
+	cu.TelephoneNumber = user.TelephoneNumber
+	if user.TOTP == "" {
+		cu.HasTOTP = false
+	} else {
+		// XXX Could be a stricter test for correctness/lack of
+		// corruption.
+		cu.HasTOTP = true
+	}
+
+	// XXX We are not reporting our password or TOTP back in this
+	// call.
+
+	return cu
+}
+
+//	demoAPIRouter.HandleFunc("/users/{uid}/otp"
+func demoUserByUIDOTPQRHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	// uid
+	uid := vars["uid"]
+	// GetUser(uid)
+	user, err := config.GetUser(uid)
+	if err != nil {
+		log.Printf("no such user '%v': %v\n", uid, err)
+		http.Error(w, "not found", 404)
+		return
+	}
+
+	// Encode TOTP field using module
+	key, err := otp.NewKeyFromURL(user.TOTP)
+	if err != nil {
+		log.Printf("cannot convert TOTP to key: %v\n", err)
+		http.Error(w, "internal server error", 500)
+		return
+	}
+
+	// Convert TOTP key into a PNG
+	var buf bytes.Buffer
+	img, err := key.Image(200, 200)
+	if err != nil {
+		panic(err)
+	}
+	png.Encode(&buf, img)
+
+	// Header: application/png
+	w.Write(buf.Bytes())
+}
+
+// demoUserByUIDHandler returns a JSON-formatted user object for the
+// requested uid, typically in response to a GET request to
+// "[demo_api_root]/users/{uid}".
+func demoUserByUIDHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// XXX what uid if not present?
+	vars := mux.Vars(r)
+	uid := vars["uid"]
+
+	userRaw, err := config.GetUser(uid)
+	if err != nil {
+		log.Printf("no such user '%v': %v\n", uid, err)
+		http.Error(w, "not found", 404)
+		return
+	}
+
+	cu := buildUserResponse(uid, userRaw)
+
+	cu.DbgRequest = fmt.Sprintf("%v", r)
+
+	b, err := json.Marshal(cu)
+	if err != nil {
+		log.Printf("failed to json marshal user '%v': %v\n", cu, err)
+		http.Error(w, "bad request", 400)
+		return
+	}
+
+	_, err = w.Write(b)
+	if err != nil {
+		log.Printf("failed to write user '%v': %v\n", b, err)
+		http.Error(w, "bad request", 400)
+		return
+	}
+}
+
+// demoUsersHandler returns a JSON-formatted list of configured users,
+// typically in response to a GET request to "[demo_api_root]/users".
+func demoUsersHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	usersRaw := config.GetUsers()
+	var users daUsers
+
+	for uid, user := range usersRaw {
+		cu := buildUserResponse(uid, user)
+
+		users.Users = append(users.Users, cu)
+	}
+
+	users.DbgRequest = fmt.Sprintf("%v", r)
+
+	b, err := json.Marshal(users)
+	if err != nil {
+		log.Printf("failed to json marshal users '%v': %v\n", users, err)
+		http.Error(w, "bad request", 400)
+		return
+	}
+
+	_, err = w.Write(b)
+	if err != nil {
+		log.Printf("failed to write users '%v': %v\n", b, err)
+		http.Error(w, "bad request", 400)
+		return
+	}
+}
+
 // StatsContent contains information for filling out the stats template.
+// Policy: GET(*)
 type StatsContent struct {
 	URLPath string
 

@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"bg/ap_common/network"
+	"bg/base_def"
 	"bg/base_msg"
 	"bg/cloud_rpc"
 
@@ -55,6 +56,7 @@ import (
 	"google.golang.org/grpc/peer"
 )
 
+// Cfg contains the environment variable-based configuration settings
 type Cfg struct {
 	// The certificate hostname is the primary hostname associated
 	// with the SSL certificate, and not necessarily the nodename.
@@ -66,12 +68,12 @@ type Cfg struct {
 }
 
 type applianceInfo struct {
-	component_version []string
-	last_contact      time.Time
-	net_host_count    int32
-	uptime            int64
-	wan_hwaddr        []string
-	wan_ipv4addr      string
+	componentVersion []string
+	lastContact      time.Time
+	netHostCount     int32
+	uptime           int64
+	wanHwaddr        []string
+	wanIpv4addr      string
 }
 
 const (
@@ -92,7 +94,7 @@ var (
 		Name: "upcall_seconds",
 		Help: "GRPC upcall time",
 	})
-	invalid_upcalls = prometheus.NewCounter(prometheus.CounterOpts{
+	invalidUpcalls = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "upcall_invalids",
 		Help: "GRPC upcall invalid HMAC attempts",
 	})
@@ -188,12 +190,12 @@ func (i *inventoryServer) Upcall(ctx context.Context, req *cloud_rpc.InventoryRe
 	_, slog := loggerFromCtx(ctx)
 
 	if req.HMAC == nil || req.Uuid == nil {
-		invalid_upcalls.Inc()
+		invalidUpcalls.Inc()
 		return nil, grpc.Errorf(codes.InvalidArgument, "req missing needed parameters")
 	}
 
 	if !validhmac(req.GetHMAC(), req.Inventory.String()) {
-		invalid_upcalls.Inc()
+		invalidUpcalls.Inc()
 		return nil, grpc.Errorf(codes.Unauthenticated, "valid hmac required")
 	}
 
@@ -242,7 +244,7 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 
 	if req.HMAC == nil || req.WanHwaddr == nil ||
 		req.UptimeElapsed == nil || req.Uuid == nil {
-		invalid_upcalls.Inc()
+		invalidUpcalls.Inc()
 		return nil, grpc.Errorf(codes.InvalidArgument, "req missing parameters")
 	}
 
@@ -253,7 +255,7 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 	data := fmt.Sprintf("%x %d", req.GetWanHwaddr(), req.GetUptimeElapsed())
 	if !validhmac(req.GetHMAC(), data) {
 		// Discard invalid HMAC messages!
-		invalid_upcalls.Inc()
+		invalidUpcalls.Inc()
 		return nil, grpc.Errorf(codes.Unauthenticated, "valid hmac required")
 	}
 
@@ -265,26 +267,26 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 	// What do we do with a request?
 	// Turn it into an appliance info.
 	ai := applianceInfo{
-		component_version: req.ComponentVersion,
-		last_contact:      time.Now(),
-		net_host_count:    0,
-		uptime:            req.GetUptimeElapsed(),
-		wan_hwaddr:        req.GetWanHwaddr(),
-		wan_ipv4addr:      peer.Addr.String(),
+		componentVersion: req.ComponentVersion,
+		lastContact:      time.Now(),
+		netHostCount:     0,
+		uptime:           req.GetUptimeElapsed(),
+		wanHwaddr:        req.GetWanHwaddr(),
+		wanIpv4addr:      peer.Addr.String(),
 	}
 
 	// Update our tables.
 	slog.Infof("len hwaddr %v\n", len(req.GetWanHwaddr()))
 
-	new_system := false
-	new_software_install := false
+	newSystem := false
+	newSoftwareInstall := false
 
 	// req.Uuid not in s.uuids[] --> new system
 	if _, ok := s.uuids[req.GetUuid()]; ok {
 		slog.Info("uuid is known")
 	} else {
 		slog.Infof("uuid %s is a new system", req.GetUuid())
-		new_system = true
+		newSystem = true
 	}
 
 	// req.WanHwaddr not in s.macs[] --> new system
@@ -295,21 +297,21 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 			if s.macs[hwaddr] != req.GetUuid() {
 				// New installation?
 				slog.Info("WanHwaddr not equal to Uuid, new software install")
-				new_software_install = true
+				newSoftwareInstall = true
 			}
 		} else {
-			new_system = true
+			newSystem = true
 		}
 	}
 
-	if new_system {
+	if newSystem {
 		slog.Infof("recording uuid %s", req.GetUuid())
 
 		// Record it!
 		s.uuids[req.GetUuid()] = ai
 	}
 
-	if new_system || new_software_install {
+	if newSystem || newSoftwareInstall {
 		for _, hwaddr := range req.WanHwaddr {
 			slog.Infof("recording hwaddr %s", hwaddr)
 			s.macs[hwaddr] = req.GetUuid()
@@ -334,7 +336,7 @@ func newUpbeatServer() *upbeatServer {
 
 func init() {
 	prometheus.MustRegister(latencies)
-	prometheus.MustRegister(invalid_upcalls)
+	prometheus.MustRegister(invalidUpcalls)
 }
 
 func main() {
@@ -367,7 +369,7 @@ func main() {
 	keyf := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem",
 		environ.B10E_CERT_HOSTNAME)
 
-	grpc_port := ":4430"
+	grpcPort := base_def.CLRPCD_GRPC_PORT
 
 	if environ.B10E_LOCAL_MODE {
 		slog.Info("local mode")
@@ -426,12 +428,12 @@ func main() {
 	invServer := newInventoryServer()
 	cloud_rpc.RegisterInventoryServer(grpcServer, invServer)
 
-	grpc_conn, err := net.Listen("tcp", grpc_port)
+	grpcConn, err := net.Listen("tcp", grpcPort)
 	if err != nil {
 		panic(err)
 	}
 
-	go grpcServer.Serve(grpc_conn)
+	go grpcServer.Serve(grpcConn)
 
 	fleetMux := http.NewServeMux()
 
@@ -441,8 +443,8 @@ func main() {
 		fmt.Fprintf(w, "%-36v %-17v %-39v %v\n", "UUID", "MAC", "LAST", "VERSION")
 		for uu, appinfo := range ubServer.uuids {
 			fmt.Fprintf(w, "%36v %17v %-39v %v\n", uu,
-				appinfo.wan_hwaddr[0], appinfo.last_contact,
-				appinfo.component_version[0])
+				appinfo.wanHwaddr[0], appinfo.lastContact,
+				appinfo.componentVersion[0])
 		}
 	})
 

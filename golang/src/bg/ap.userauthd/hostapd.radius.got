@@ -1,0 +1,176 @@
+driver=none
+
+#ctrl_interface=/var/run/hostapd.radius
+
+eap_server=1
+
+# If SQLite support is included, this can be set to "sqlite:/path/to/sqlite.db"
+# to use SQLite database instead of a text file.
+eap_user_file=/tmp/hostapd.users.conf
+
+# CA certificate (PEM or DER file) for EAP-TLS/PEAP/TTLS
+ca_cert=/etc/letsencrypt/live/{{.ServerName}}/chain.pem
+
+# Server certificate (PEM or DER file) for EAP-TLS/PEAP/TTLS
+server_cert=/etc/letsencrypt/live/{{.ServerName}}/cert.pem
+
+# Private key matching with the server certificate for EAP-TLS/PEAP/TTLS
+# This may point to the same file as server_cert if both certificate and key
+# are included in a single file. PKCS#12 (PFX) file (.p12/.pfx) can also be
+# used by commenting out server_cert and specifying the PFX file as the
+# private_key.
+private_key=/etc/letsencrypt/live/{{.ServerName}}/privkey.pem
+
+# Passphrase for private key
+#private_key_passwd=secret passphrase
+
+# Server identity
+# EAP methods that provide mechanism for authenticated server identity delivery
+# use this value. If not set, "hostapd" is used as a default.
+server_id={{.ServerName}}
+
+# Enable CRL verification.
+# Note: hostapd does not yet support CRL downloading based on CDP. Thus, a
+# valid CRL signed by the CA is required to be included in the ca_cert file.
+# This can be done by using PEM format for CA certificate and CRL and
+# concatenating these into one file. Whenever CRL changes, hostapd needs to be
+# restarted to take the new CRL into use.
+# 0 = do not verify CRLs (default)
+# 1 = check the CRL of the user certificate
+# 2 = check all CRLs in the certificate path
+#check_crl=1
+
+# TLS Session Lifetime in seconds
+# This can be used to allow TLS sessions to be cached and resumed with an
+# abbreviated handshake when using EAP-TLS/TTLS/PEAP.
+# (default: 0 = session caching and resumption disabled)
+#tls_session_lifetime=3600
+
+# Cached OCSP stapling response (DER encoded)
+# If set, this file is sent as a certificate status response by the EAP server
+# if the EAP peer requests certificate status in the ClientHello message.
+# This cache file can be updated, e.g., by running following command
+# periodically to get an update from the OCSP responder:
+# openssl ocsp \
+#	-no_nonce \
+#	-CAfile /etc/hostapd.ca.pem \
+#	-issuer /etc/hostapd.ca.pem \
+#	-cert /etc/hostapd.server.pem \
+#	-url http://ocsp.example.com:8888/ \
+#	-respout /tmp/ocsp-cache.der
+#ocsp_stapling_response=/tmp/ocsp-cache.der
+
+# Cached OCSP stapling response list (DER encoded OCSPResponseList)
+# This is similar to ocsp_stapling_response, but the extended version defined in
+# RFC 6961 to allow multiple OCSP responses to be provided.
+#ocsp_stapling_response_multi=/tmp/ocsp-multi-cache.der
+
+# dh_file: File path to DH/DSA parameters file (in PEM format)
+# This is an optional configuration file for setting parameters for an
+# ephemeral DH key exchange. In most cases, the default RSA authentication does
+# not use this configuration. However, it is possible setup RSA to use
+# ephemeral DH key exchange. In addition, ciphers with DSA keys always use
+# ephemeral DH keys. This can be used to achieve forward secrecy. If the file
+# is in DSA parameters format, it will be automatically converted into DH
+# params. This parameter is required if anonymous EAP-FAST is used.
+# You can generate DH parameters file with OpenSSL, e.g.,
+# "openssl dhparam -out /etc/hostapd.dh.pem 2048"
+#dh_file=/etc/hostapd.dh.pem
+
+# OpenSSL cipher string
+#
+# This is an OpenSSL specific configuration option for configuring the default
+# ciphers. If not set, the value configured at build time ("DEFAULT:!EXP:!LOW"
+# by default) is used.
+# See https://www.openssl.org/docs/apps/ciphers.html for OpenSSL documentation
+# on cipher suite configuration. This is applicable only if hostapd is built to
+# use OpenSSL.
+#openssl_ciphers=DEFAULT:!EXP:!LOW
+
+# Fragment size for EAP methods
+#fragment_size=1400
+
+# Finite cyclic group for EAP-pwd. Number maps to group of domain parameters
+# using the IANA repository for IKE (RFC 2409).
+#pwd_group=19
+
+# Configuration data for EAP-SIM database/authentication gateway interface.
+# This is a text string in implementation specific format. The example
+# implementation in eap_sim_db.c uses this as the UNIX domain socket name for
+# the HLR/AuC gateway (e.g., hlr_auc_gw). In this case, the path uses "unix:"
+# prefix. If hostapd is built with SQLite support (CONFIG_SQLITE=y in .config),
+# database file can be described with an optional db=<path> parameter.
+#eap_sim_db=unix:/tmp/hlr_auc_gw.sock
+#eap_sim_db=unix:/tmp/hlr_auc_gw.sock db=/tmp/hostapd.db
+
+# EAP-SIM DB request timeout
+# This parameter sets the maximum time to wait for a database request response.
+# The parameter value is in seconds.
+#eap_sim_db_timeout=1
+
+# Encryption key for EAP-FAST PAC-Opaque values. This key must be a secret,
+# random value. It is configured as a 16-octet value in hex format. It can be
+# generated, e.g., with the following command:
+# od -tx1 -v -N16 /dev/random | colrm 1 8 | tr -d ' '
+#pac_opaque_encr_key=000102030405060708090a0b0c0d0e0f
+
+# EAP-FAST authority identity (A-ID)
+# A-ID indicates the identity of the authority that issues PACs. The A-ID
+# should be unique across all issuing servers. In theory, this is a variable
+# length field, but due to some existing implementations requiring A-ID to be
+# 16 octets in length, it is strongly recommended to use that length for the
+# field to provid interoperability with deployed peer implementations. This
+# field is configured in hex format.
+#eap_fast_a_id=101112131415161718191a1b1c1d1e1f
+
+# EAP-FAST authority identifier information (A-ID-Info)
+# This is a user-friendly name for the A-ID. For example, the enterprise name
+# and server name in a human-readable format. This field is encoded as UTF-8.
+#eap_fast_a_id_info=test server
+
+# Enable/disable different EAP-FAST provisioning modes:
+#0 = provisioning disabled
+#1 = only anonymous provisioning allowed
+#2 = only authenticated provisioning allowed
+#3 = both provisioning modes allowed (default)
+#eap_fast_prov=3
+
+# EAP-FAST PAC-Key lifetime in seconds (hard limit)
+#pac_key_lifetime=604800
+
+# EAP-FAST PAC-Key refresh time in seconds (soft limit on remaining hard
+# limit). The server will generate a new PAC-Key when this number of seconds
+# (or fewer) of the lifetime remains.
+#pac_key_refresh_time=86400
+
+# EAP-SIM and EAP-AKA protected success/failure indication using AT_RESULT_IND
+# (default: 0 = disabled).
+#eap_sim_aka_result_ind=1
+
+# Trusted Network Connect (TNC)
+# If enabled, TNC validation will be required before the peer is allowed to
+# connect. Note: This is only used with EAP-TTLS and EAP-FAST. If any other
+# EAP method is enabled, the peer will be allowed to connect without TNC.
+#tnc=1
+
+# EAP Re-authentication Protocol (ERP) - RFC 6696
+#
+# Whether to enable ERP on the EAP server.
+#eap_server_erp=1
+#
+##### RADIUS authentication server configuration ##############################
+
+# hostapd can be used as a RADIUS authentication server for other hosts. This
+# requires that the integrated EAP server is also enabled and both
+# authentication services are sharing the same configuration.
+
+# File name of the RADIUS clients configuration for the RADIUS server. If this
+# commented out, RADIUS server is disabled.
+radius_server_clients=/tmp/hostapd.radius_clients.conf
+
+# The UDP port number for the RADIUS authentication server
+radius_server_auth_port=1812
+
+# Use IPv6 with RADIUS server (IPv4 will also be supported using IPv6 API)
+#radius_server_ipv6=1
+

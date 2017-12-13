@@ -17,7 +17,9 @@ import sys
 
 from enum import Enum
 
+
 class Statement(Enum):
+    """Enumeration of statement kinds."""
     COMMENT = 0
     FOOTER = 1
     HEADER = 2
@@ -154,6 +156,12 @@ assignments = [
     [Statement.SIMPLE_STR, "ZERO_UUID", "00000000-0000-0000-0000-000000000000"],
 
     [Statement.COMMENT, "Appliance definitions"],
+    [Statement.SIMPLE_NUM, "EXIT_OK", 0],
+    [Statement.SIMPLE_NUM, "EXIT_ERROR", 1],
+    [Statement.SIMPLE_NUM, "EXIT_USAGE", 2],
+    [Statement.SIMPLE_NUM, "RADIUS_SECRET_SIZE", 8],
+    [Statement.SIMPLE_NUM, "HTTPD_HMAC_SIZE", 32],
+    [Statement.SIMPLE_NUM, "HTTPD_AES_SIZE", 32],
 
     [Statement.COMMENT, "Appliance operating modes"],
     [Statement.SIMPLE_STR, "MODE_GATEWAY", "gateway"],
@@ -190,7 +198,8 @@ assignments = [
     [Statement.SIMPLE_PORT, "LOGD_PROMETHEUS_PORT", 3202],
     [Statement.SIMPLE_PORT, "DNSD_PROMETHEUS_PORT", 3203],
     [Statement.SIMPLE_PORT, "DHCPD_PROMETHEUS_PORT", 3204],
-    [Statement.SIMPLE_PORT, "HOSTAPDM_PROMETHEUS_PORT", 3205],
+    [Statement.SIMPLE_PORT, "NETWORKD_PROMETHEUS_PORT", 3205],
+    [Statement.SIMPLE_PORT, "USERAUTHD_PROMETHEUS_PORT", 3206],
     [Statement.SIMPLE_PORT, "CONFIGD_PROMETHEUS_PORT", 3207],
     [Statement.SIMPLE_PORT, "WATCHD_PROMETHEUS_PORT", 3208],
     [Statement.SIMPLE_PORT, "RELAYD_PROMETHEUS_PORT", 3209],
@@ -213,6 +222,7 @@ assignments = [
     [Statement.SIMPLE_STR, "CL_SVC_RPC", "svc0.b10e.net:4430"],
     [Statement.SIMPLE_PORT, "CLRPCD_PROMETHEUS_PORT", 3600],
     [Statement.SIMPLE_PORT, "CLRPCD_HTTP_PORT", 4000],
+    [Statement.SIMPLE_PORT, "CLRPCD_GRPC_PORT", 4430],
     [Statement.LIST, "CLRPCD_URL", "CL_SVC_URL", "+", "/rpc"],
     [Statement.SECTION, ")"],
     [Statement.FOOTER, None],

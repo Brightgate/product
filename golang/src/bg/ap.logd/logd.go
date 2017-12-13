@@ -26,7 +26,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 
 	"bg/ap_common/aputil"
@@ -99,24 +98,6 @@ func handleIdentity(event []byte) {
 	eventsHandled.Inc()
 }
 
-// logRotate creates the logrotate(1) configuration file for ap.logd at
-// /etc/logrotate.d/logd.
-func logRotate(logDirs []string) {
-	fn := "/etc/logrotate.d/logd"
-	cf, err := os.OpenFile(fn, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
-	if err != nil {
-		log.Printf("Error creating logrotate file: %v", err)
-		return
-	}
-	defer cf.Close()
-
-	files := strings.Join(logDirs, "/*.log\n")
-	opts := []string{"monthly", "copytruncate", "rotate 10", "size 10M",
-		"missingok", "notifempty"}
-	optsF := strings.Join(opts, "\n")
-	fmt.Fprintf(cf, "%s/*.log {\n%s\n}", files, optsF)
-}
-
 func openLog(path string) (*os.File, error) {
 	fp, err := filepath.Abs(path)
 	if err != nil {
@@ -126,10 +107,6 @@ func openLog(path string) (*os.File, error) {
 	if err := os.MkdirAll(fp, 0755); err != nil {
 		return nil, fmt.Errorf("failed to make path: %v", err)
 	}
-
-	// slice, since might eventually want multiple types of logs
-	logDirs := []string{fp}
-	logRotate(logDirs)
 
 	logfile := fp + "/events.log"
 	file, err := os.OpenFile(logfile, os.O_CREATE|os.O_APPEND|os.O_WRONLY,

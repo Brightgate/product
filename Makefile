@@ -200,6 +200,7 @@ APPWEB=$(APPBASE)/share/web
 # APPHTML
 APPETC=$(APPBASE)/etc
 APPETCCROND=$(APPROOT)/etc/cron.d
+APPETCLOGROTATED=$(APPROOT)/etc/logrotate.d
 APPETCRSYSLOGD=$(APPROOT)/etc/rsyslog.d
 APPROOTLIB=$(APPROOT)/lib
 APPVAR=$(APPBASE)/var
@@ -211,7 +212,8 @@ APPMODEL=$(APPETC)/device_model
 
 HTTPD_CLIENTWEB_DIR=$(APPVAR)/www/client-web
 HTTPD_TEMPLATE_DIR=$(APPETC)/templates/ap.httpd
-NETWORK_TEMPLATE_DIR=$(APPETC)/templates/ap.networkd
+NETWORKD_TEMPLATE_DIR=$(APPETC)/templates/ap.networkd
+USERAUTHD_TEMPLATE_DIR=$(APPETC)/templates/ap.userauthd
 
 COMMON_GOPKGS = \
 	bg/ap_common/apcfg \
@@ -230,7 +232,8 @@ APPCOMMAND_GOPKGS = \
 	bg/ap-msgping \
 	bg/ap-ouisearch \
 	bg/ap-rpc \
-	bg/ap-stats
+	bg/ap-stats \
+	bg/ap-userctl
 
 APPDAEMON_GOPKGS = \
 	bg/ap.brokerd \
@@ -243,6 +246,7 @@ APPDAEMON_GOPKGS = \
 	bg/ap.mcp \
 	bg/ap.networkd \
 	bg/ap.relayd \
+	bg/ap.userauthd \
 	bg/ap.watchd
 
 APP_GOPKGS = $(COMMON_GOPKGS) $(APPCOMMAND_GOPKGS) $(APPDAEMON_GOPKGS)
@@ -257,19 +261,31 @@ APPBINARIES = \
 
 # XXX Common configurations?
 
+GO_TESTABLES = \
+	bg/ap_common/apcfg \
+	bg/ap_common/network \
+	bg/ap.networkd \
+	bg/ap.userauthd
+
 HTTPD_TEMPLATE_FILES = \
 	connect_apple.html.got \
 	stats.html.got
 
-GO_TESTABLES = \
-	bg/ap_common/apcfg \
-	bg/ap_common/network
+NETWORKD_TEMPLATE_FILES = \
+	hostapd.conf.got \
+	hostapd-eap.conf.got
 
-NETWORK_TEMPLATE_FILES = hostapd.conf.got
+USERAUTHD_TEMPLATE_FILES = \
+	hostapd.radius.got \
+	hostapd.radius_clients.got \
+	hostapd.users.got
+
+# hostapd.radius_clients.got \
 
 HTTPD_TEMPLATES = $(HTTPD_TEMPLATE_FILES:%=$(HTTPD_TEMPLATE_DIR)/%)
-NETWORK_TEMPLATES = $(NETWORK_TEMPLATE_FILES:%=$(NETWORK_TEMPLATE_DIR)/%)
-APPTEMPLATES = $(HTTPD_TEMPLATES) $(NETWORK_TEMPLATES)
+NETWORKD_TEMPLATES = $(NETWORKD_TEMPLATE_FILES:%=$(NETWORKD_TEMPLATE_DIR)/%)
+USERAUTHD_TEMPLATES = $(USERAUTHD_TEMPLATE_FILES:%=$(USERAUTHD_TEMPLATE_DIR)/%)
+APPTEMPLATES = $(HTTPD_TEMPLATES) $(NETWORKD_TEMPLATES) $(USERAUTHD_TEMPLATES)
 
 FILTER_RULES = \
 	$(APPRULES)/base.rules \
@@ -285,6 +301,8 @@ APPCONFIGS = \
 	$(APPETC)/mcp.json \
 	$(APPETC)/oui.txt \
 	$(APPETC)/prometheus.yml \
+	$(APPETCLOGROTATED)/logd \
+	$(APPETCLOGROTATED)/mcp \
 	$(APPROOTLIB)/systemd/system/ap.mcp.service \
 	$(APPROOTLIB)/systemd/system/brightgate-appliance.service \
 	$(APPSPOOLANTIPHISH)/example_blacklist.csv \
@@ -295,6 +313,7 @@ APPDIRS = \
 	$(APPDOC) \
 	$(APPETC) \
 	$(APPETCCROND) \
+	$(APPETCLOGROTATED) \
 	$(APPETCRSYSLOGD) \
 	$(APPROOTLIB) \
 	$(APPRULES) \
@@ -304,7 +323,8 @@ APPDIRS = \
 	$(APPSPOOLANTIPHISH) \
 	$(HTTPD_CLIENTWEB_DIR) \
 	$(HTTPD_TEMPLATE_DIR) \
-	$(NETWORK_TEMPLATE_DIR)
+	$(NETWORKD_TEMPLATE_DIR) \
+	$(USERAUTHD_TEMPLATE_DIR)
 
 APPCOMPONENTS = \
 	$(APPBINARIES) \
@@ -468,6 +488,12 @@ $(APPETC)/prometheus.yml: prometheus.yml | $(APPETC)
 $(APPETCCROND)/com-brightgate-appliance-cron: com-brightgate-appliance-cron | $(APPETCCROND)
 	$(INSTALL) -m 0644 $< $(APPETCCROND)
 
+$(APPETCLOGROTATED)/logd: $(GOSRCBG)/ap.logd/logrotate-logd | $(APPETCLOGROTATED)
+	$(INSTALL) -m 0644 $< $(APPETCLOGROTATED)
+
+$(APPETCLOGROTATED)/mcp: $(GOSRCBG)/ap.mcp/logrotate-mcp | $(APPETCLOGROTATED)
+	$(INSTALL) -m 0644 $< $(APPETCLOGROTATED)
+
 $(APPETCRSYSLOGD)/com-brightgate-rsyslog.conf: $(GOSRCBG)/ap.watchd/com-brightgate-rsyslog.conf | $(APPETCRSYSLOGD)
 	$(INSTALL) -m 0644 $< $(APPETCRSYSLOGD)
 
@@ -477,11 +503,14 @@ $(APPSPOOLANTIPHISH)/example_blacklist.csv: $(GOSRCBG)/data/phishtank/example_bl
 $(APPSPOOLANTIPHISH)/whitelist.csv: $(GOSRCBG)/data/phishtank/whitelist.csv | $(APPSPOOLANTIPHISH)
 	$(INSTALL) -m 0644 $< $(APPSPOOLANTIPHISH)
 
-$(NETWORK_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.networkd/% | $(APPETC)
-	$(INSTALL) -m 0644 $< $(NETWORK_TEMPLATE_DIR)
-
 $(HTTPD_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.httpd/% | $(APPETC)
 	$(INSTALL) -m 0644 $< $(HTTPD_TEMPLATE_DIR)
+
+$(NETWORKD_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.networkd/% | $(APPETC)
+	$(INSTALL) -m 0644 $< $(NETWORKD_TEMPLATE_DIR)
+
+$(USERAUTHD_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.userauthd/% | $(APPETC)
+	$(INSTALL) -m 0644 $< $(USERAUTHD_TEMPLATE_DIR)
 
 $(APPRULES)/%: $(GOSRCBG)/ap.networkd/% | $(APPRULES)
 	$(INSTALL) -m 0644 $< $(APPRULES)
@@ -577,6 +606,7 @@ $(APPBIN)/ap.networkd: \
 	$(GOSRCBG)/ap.networkd/networkd.go \
 	$(GOSRCBG)/ap.networkd/parse.go
 $(APPBIN)/ap.relayd: $(GOSRCBG)/ap.relayd/relayd.go
+$(APPBIN)/ap.userauthd: $(GOSRCBG)/ap.userauthd/userauthd.go
 $(APPBIN)/ap.watchd: \
 	$(GOSRCBG)/ap.watchd/api.go \
 	$(GOSRCBG)/ap.watchd/droplog.go \
@@ -594,6 +624,7 @@ $(APPBIN)/ap-rpc: \
 	$(GOSRCBG)/ap-rpc/rpc.go \
 	$(CLOUD_COMMON_SRCS)
 $(APPBIN)/ap-stats: $(GOSRCBG)/ap-stats/stats.go
+$(APPBIN)/ap-userctl: $(GOSRCBG)/ap-userctl/userctl.go
 
 LOCAL_BINARIES=$(APPBINARIES:$(APPBIN)/%=$(GOPATH)/bin/%)
 

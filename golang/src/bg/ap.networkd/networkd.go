@@ -58,7 +58,7 @@ import (
 )
 
 var (
-	addr = flag.String("listen-address", base_def.HOSTAPDM_PROMETHEUS_PORT,
+	addr = flag.String("listen-address", base_def.NETWORKD_PROMETHEUS_PORT,
 		"address to listen on for HTTP requests")
 	platform = flag.String("platform", "rpi3",
 		"hardware platform name")
@@ -126,8 +126,11 @@ type apConfig struct {
 	ConfDir       string // Location of hostapd.conf, etc.
 
 	confFile string // Name of this NIC's hostapd.conf
+	status   error  // collect hostapd failures
 
-	status error // collect hostapd failures
+	RadiusAuthServer     string
+	RadiusAuthServerPort string
+	RadiusAuthSecret     string // RADIUS shared secret
 }
 
 // Precompile some regular expressions
@@ -316,6 +319,7 @@ func getModeChannel(d *physDevice) (mode string, channel int) {
 func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 	var ssid, passphrase, setupSSID string
 	var setupComment string
+	var radiusSecret string
 	var node *apcfg.PropertyNode
 
 	satNode := aputil.IsSatelliteMode()
@@ -337,6 +341,14 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 	}
 	passphrase = node.GetValue()
 
+	// If @/network/radiusAuthSecret is already set, retrieve its value.
+	sp, err := config.GetProp("@/network/radiusAuthSecret")
+	if err == nil {
+		radiusSecret = sp
+	} else {
+		radiusSecret = ""
+	}
+
 	if node = props.GetChild("setupssid"); node != nil {
 		setupSSID = node.GetValue() + apSuffix
 	}
@@ -344,7 +356,7 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 	if !satNode && d.multipleAPs && len(setupSSID) > 0 {
 		// If we create a second SSID for new clients to connect to,
 		// its mac address will be derived from the nic's mac address by
-		// adding 1 to the final octet.  To accomodate that, hostapd
+		// adding 1 to the final octet.  To accommodate that, hostapd
 		// wants the final nybble of the final octet to be 0.
 		newMac := macUpdateLastOctet(d.hwaddr, 0)
 		if newMac != d.hwaddr {
@@ -371,8 +383,16 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 		SetupSSID:     setupSSID,
 		ConfDir:       confdir,
 
-		confFile: "hostapd.conf." + d.name,
+		confFile:             "hostapd.conf." + d.name,
+		RadiusAuthServer:     "127.0.0.1",
+		RadiusAuthServerPort: "1812",
+		RadiusAuthSecret:     radiusSecret,
 	}
+
+	if satNode {
+		data.RadiusAuthServer = "gateway"
+	}
+
 	aps[d.name] = &data
 	return nil
 }
@@ -677,17 +697,17 @@ func runOne(conf *apConfig, done chan *apConfig) {
 //
 func runAll() int {
 	done := make(chan *apConfig)
-	running := 0
+	numRunning := 0
 	errors := 0
 
 	for _, c := range aps {
 		if c.Interface == wifiNic {
-			running++
+			numRunning++
 			go runOne(c, done)
 		}
 	}
 
-	for running > 0 {
+	for numRunning > 0 {
 		c := <-done
 		if c.status != nil {
 			log.Printf("%s hostapd failed: %v\n", c.Interface,
@@ -696,7 +716,7 @@ func runAll() int {
 		} else {
 			log.Printf("%s hostapd exited\n", c.Interface)
 		}
-		running--
+		numRunning--
 	}
 	deleteBridges()
 

@@ -16,6 +16,7 @@ package main
 import (
 	"crypto/sha256"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/hex"
 	"flag"
 	"fmt"
@@ -39,7 +40,9 @@ import (
 	"bg/data/phishtank"
 
 	"github.com/gorilla/mux"
+	"github.com/gorilla/securecookie"
 	"github.com/lestrrat/go-apache-logformat"
+
 	"github.com/urfave/negroni"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -58,6 +61,8 @@ var (
 	cert      string
 	key       string
 	certValid bool
+
+	cutter *securecookie.SecureCookie
 
 	config      *apcfg.APConfig
 	phishScorer phishtank.Scorer
@@ -81,6 +86,9 @@ var (
 
 const (
 	pname = "ap.httpd"
+
+	cookiehmackeyprop = "@/httpd/cookie-hmac-key"
+	cookieaeskeyprop  = "@/httpd/cookie-aes-key"
 
 	// XXX: These should come from config, so we can update it as necessary
 	profileURL    = "https://demo1.brightgate.net/cgi-bin/apple-mc.py"
@@ -261,6 +269,69 @@ func loadPhishtank() {
 	phishScorer = reader.Scorer()
 }
 
+func establishHttpdKeys() ([]byte, []byte) {
+	var hs, as []byte
+
+	// If @/httpd/cookie-hmac-key is already set, retrieve its value.
+	hs64, err := config.GetProp(cookiehmackeyprop)
+	if err != nil {
+		hs = securecookie.GenerateRandomKey(base_def.HTTPD_HMAC_SIZE)
+		if hs == nil {
+			log.Fatalf("could not generate random key of size %d\n",
+				base_def.HTTPD_HMAC_SIZE)
+		}
+		hs64 = base64.StdEncoding.EncodeToString(hs)
+
+		err = config.CreateProp(cookiehmackeyprop, hs64, nil)
+		if err != nil {
+			log.Fatalf("could not create '%s': %v\n", cookiehmackeyprop, err)
+		}
+	} else {
+		hs, err = base64.StdEncoding.DecodeString(hs64)
+		if err != nil {
+			log.Fatalf("'%s' contains invalid b64 representation: %v\n", cookiehmackeyprop, err)
+		}
+
+		if len(hs) != base_def.HTTPD_HMAC_SIZE {
+			// Delete
+			err = config.DeleteProp(cookiehmackeyprop)
+			if err != nil {
+				log.Fatalf("could not delete invalid size HMAC key: %v\n", err)
+			} else {
+				return establishHttpdKeys()
+			}
+		}
+	}
+
+	as64, err := config.GetProp(cookieaeskeyprop)
+	if err != nil {
+		as = securecookie.GenerateRandomKey(base_def.HTTPD_AES_SIZE)
+		as64 = base64.StdEncoding.EncodeToString(as)
+
+		err = config.CreateProp(cookieaeskeyprop, as64, nil)
+		if err != nil {
+			log.Fatalf("could not create '%s': %v\n", cookieaeskeyprop, err)
+		}
+	} else {
+		as, err = base64.StdEncoding.DecodeString(as64)
+		if err != nil {
+			log.Fatalf("'%s' contains invalid b64 representation: %v\n", cookieaeskeyprop, err)
+		}
+
+		if len(as) != base_def.HTTPD_AES_SIZE {
+			// Delete
+			err = config.DeleteProp(cookieaeskeyprop)
+			if err != nil {
+				log.Fatalf("could not delete invalid size AES key: %v\n", err)
+			} else {
+				return establishHttpdKeys()
+			}
+		}
+	}
+
+	return hs, as
+}
+
 func init() {
 	prometheus.MustRegister(latencies)
 }
@@ -323,6 +394,8 @@ func main() {
 
 	// routing
 	demoAPIRouter := mux.NewRouter()
+	demoAPIRouter.HandleFunc("/login", demoLoginHandler)
+	demoAPIRouter.HandleFunc("/logout", demoLogoutHandler)
 	demoAPIRouter.HandleFunc("/alerts", demoAlertsHandler)
 	demoAPIRouter.HandleFunc("/devices/{ring}", demoDevicesByRingHandler)
 	demoAPIRouter.HandleFunc("/devices", demoDevicesHandler)
@@ -331,6 +404,9 @@ func main() {
 	demoAPIRouter.HandleFunc("/supreme", demoSupremeHandler)
 	demoAPIRouter.HandleFunc("/config/{property:[a-z@/]+}", demoPropertyByNameHandler)
 	demoAPIRouter.HandleFunc("/config", demoPropertyHandler)
+	demoAPIRouter.HandleFunc("/users/{uid}/otp", demoUserByUIDOTPQRHandler)
+	demoAPIRouter.HandleFunc("/users/{uid}", demoUserByUIDHandler)
+	demoAPIRouter.HandleFunc("/users", demoUsersHandler)
 
 	mainRouter := mux.NewRouter()
 
@@ -346,6 +422,11 @@ func main() {
 	mainRouter.PathPrefix("/apid/").Handler(http.StripPrefix("/apid", demoAPIRouter))
 	mainRouter.PathPrefix("/client-web/").Handler(http.StripPrefix("/client-web/",
 		http.FileServer(http.Dir(*clientWebDir))))
+
+	hashKey, blockKey := establishHttpdKeys()
+
+	cutter = securecookie.New(hashKey, blockKey)
+
 	nMain := negroni.New(negroni.NewRecovery())
 	nMain.UseHandler(apachelog.CombinedLog.Wrap(mainRouter, os.Stderr))
 
@@ -355,6 +436,7 @@ func main() {
 		http.FileServer(http.Dir(*clientWebDir))))
 	captiveRouter.HandleFunc("/hotspot-detect.html", appleHandler)
 	captiveRouter.HandleFunc("/appleConnect", appleConnect)
+
 	nCaptive := negroni.New(negroni.NewRecovery())
 	nCaptive.UseHandler(apachelog.CombinedLog.Wrap(captiveRouter, os.Stderr))
 
