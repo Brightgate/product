@@ -81,6 +81,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"text/template"
 	"time"
@@ -119,11 +120,13 @@ var (
 		"location of userauthd templates")
 
 	childProcess *os.Process // track the hostapd proc
-	configd      *apcfg.APConfig
-	mcpd         *mcp.MCP
-	running      bool
-	secret       []byte
-	rc           *rConf
+	childLock    sync.Mutex
+
+	configd *apcfg.APConfig
+	mcpd    *mcp.MCP
+	running bool
+	secret  []byte
+	rc      *rConf
 
 	authRequests = prometheus.NewCounter(
 		prometheus.CounterOpts{
@@ -145,27 +148,45 @@ const (
 	period           = time.Duration(time.Minute)
 )
 
+func childSignal(signal os.Signal) {
+	childLock.Lock()
+	if childProcess != nil {
+		childProcess.Signal(signal)
+	}
+	childLock.Unlock()
+}
+
+func childSet(process *os.Process) {
+	childLock.Lock()
+	childProcess = process
+	childLock.Unlock()
+}
+
 func configNetworkRadiusChanged(path []string, val string, expires *time.Time) {
+	var resetFunc func(*rConf) string
+
 	// Watch for changes to the network configuration.
 	switch path[1] {
 	case "radiusAuthServer":
-		generateRadiusHostapdConf(rc)
-		syscall.Kill(childProcess.Pid, syscall.SIGHUP)
+		resetFunc = generateRadiusHostapdConf
 	case "radiusAuthServerPort":
-		generateRadiusHostapdConf(rc)
-		syscall.Kill(childProcess.Pid, syscall.SIGHUP)
+		resetFunc = generateRadiusHostapdConf
 	case "radiusAuthSecret":
-		generateRadiusClientConf(rc)
-		syscall.Kill(childProcess.Pid, syscall.SIGHUP)
+		resetFunc = generateRadiusClientConf
 		log.Printf("surprising change to network/radiusAuthSecret\n")
 	default:
 		log.Printf("ignoring change to %v\n", path)
+	}
+
+	if resetFunc != nil {
+		resetFunc(rc)
+		childSignal(syscall.SIGHUP)
 	}
 }
 
 func configUserChanged(path []string, val string, expires *time.Time) {
 	generateRadiusHostapdUsers(rc)
-	syscall.Kill(childProcess.Pid, syscall.SIGHUP)
+	childSignal(syscall.SIGHUP)
 }
 
 // Generate the user database needed for hostapd in RADIUS mode.
@@ -264,10 +285,10 @@ func signalHandler() {
 		running = false
 		if childProcess != nil {
 			if attempts < 5 {
-				childProcess.Signal(syscall.SIGINT)
+				childSignal(syscall.SIGINT)
 			} else {
 				log.Printf("child has ignored TERM, %d INTs\n", attempts)
-				childProcess.Signal(syscall.SIGKILL)
+				childSignal(syscall.SIGKILL)
 			}
 			attempts++
 		}
@@ -299,8 +320,9 @@ func runOne(rc *rConf, done chan *rConf) {
 			break
 		}
 
-		childProcess = child.Process
+		childSet(child.Process)
 		child.Wait()
+		childSet(nil)
 
 		log.Printf("RADIUS hostapd exited after %s\n",
 			time.Since(startTime))

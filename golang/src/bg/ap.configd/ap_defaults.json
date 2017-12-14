@@ -173,6 +173,10 @@
 		    "Value": "sosecretive"
 		},
 		{
+		    "Name": "regdomain",
+		    "Value": "US"
+		},
+		{
 		    "Name": "dnsserver",
 		    "Value": "8.8.8.8:53"
 		}

@@ -97,6 +97,7 @@ const (
 	brctlCmd       = "/sbin/brctl"
 	sysctlCmd      = "/sbin/sysctl"
 	ipCmd          = "/sbin/ip"
+	iwCmd          = "/sbin/iw"
 	vconfigCmd     = "/sbin/vconfig"
 	pname          = "ap.networkd"
 	setupPortal    = "_0"
@@ -135,6 +136,8 @@ type apConfig struct {
 
 // Precompile some regular expressions
 var (
+	locationRE = regexp.MustCompile(`^[A-Z][A-Z]$`)
+
 	vlanRE = regexp.MustCompile(`AP/VLAN`)
 
 	// Match interface combination lines:
@@ -1007,7 +1010,7 @@ func getWireless(i net.Interface) *physDevice {
 	// The following is a hack.  This should (and will) be accomplished by
 	// asking the nl80211 layer through the netlink interface.
 	//
-	out, err := exec.Command("/sbin/iw", "phy", phy, "info").Output()
+	out, err := exec.Command(iwCmd, "phy", phy, "info").Output()
 	if err != nil {
 		log.Printf("Failed to get %s capabilities: %v\n", i.Name, err)
 		return nil
@@ -1108,7 +1111,26 @@ func getDevices() {
 	}
 }
 
-// Connect to all of the other brighgate daemons and construct our initial model
+func setRegulatoryDomain(prop *apcfg.PropertyNode) {
+	domain := "US"
+
+	if x := prop.GetChild("regdomain"); x != nil {
+		t := []byte(strings.ToUpper(x.Value))
+		if !locationRE.Match(t) {
+			log.Printf("Illegal @/network/regdomain: %s\n", x.Value)
+		} else {
+			domain = x.Value
+		}
+	}
+
+	log.Printf("Setting regulatory domain to %s\n", domain)
+	out, err := exec.Command(iwCmd, "reg", "set", domain).CombinedOutput()
+	if err != nil {
+		log.Printf("Failed to set domain: %v\n%s\n", err, out)
+	}
+}
+
+// Connect to all of the other brightgate daemons and construct our initial model
 // of the system
 func daemonInit() error {
 	var err error
@@ -1134,6 +1156,7 @@ func daemonInit() error {
 	if err != nil {
 		return fmt.Errorf("unable to fetch configuration: %v", err)
 	}
+	setRegulatoryDomain(props)
 
 	getDevices()
 	prepareWan()

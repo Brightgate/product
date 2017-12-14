@@ -43,7 +43,7 @@ import (
 const pname = "ap.relayd"
 
 type endpoint struct {
-	conn  ipv4.PacketConn
+	conn  *ipv4.PacketConn
 	iface *net.Interface
 	ip    net.IP
 	port  int
@@ -239,21 +239,18 @@ func ssdpResponseCheck(rdr io.Reader) error {
 	return err
 }
 
-func ssdpResponseRelay(requestor endpoint, relay *ipv4.PacketConn) {
-	addr := &net.UDPAddr{IP: requestor.ip, Port: requestor.port}
+func ssdpResponseRelay(addr *net.UDPAddr, requestor, responder *ipv4.PacketConn) {
 	buf := make([]byte, 4096)
-
 	atomic.AddInt32(&ssdpSearchRequests, 1)
-	debugLog("Forwarding SSDP M-SEARCH from %v\n", addr)
 	for {
-		n, _, src, err := relay.ReadFrom(buf)
+		n, _, src, err := responder.ReadFrom(buf)
 		if err != nil {
 			// This port has a deadline set, so we expect to hit a
 			// timeout.  Any other error is worth noting.
 			e, _ := err.(net.Error)
 			if !e.Timeout() {
 				log.Printf("Failed to read from %v: %v\n",
-					relay.LocalAddr(), err)
+					responder.LocalAddr(), err)
 			}
 			break
 		}
@@ -263,7 +260,7 @@ func ssdpResponseRelay(requestor endpoint, relay *ipv4.PacketConn) {
 		}
 
 		debugLog("Forwarding SSDP response from %v to %v\n", src, addr)
-		l, err := requestor.conn.WriteTo(buf[:n], nil, addr)
+		l, err := requestor.WriteTo(buf[:n], nil, addr)
 		if err != nil {
 			log.Printf("    Forward to %v failed: %v\n", addr, err)
 			break
@@ -289,22 +286,23 @@ func ssdpSearchHandler(source *endpoint, mx int) error {
 	if err != nil {
 		return fmt.Errorf("unable to init SEARCH handler: %v", err)
 	}
-	relay := ipv4.NewPacketConn(p)
+	response := ipv4.NewPacketConn(p)
 
 	// MX is the maximum time the device should wait before responding.  We
 	// will leave our port open for 2x that long.
 	deadline := time.Now().Add(time.Duration(mx*2) * time.Second)
-	if err = relay.SetDeadline(deadline); err != nil {
+	if err = response.SetDeadline(deadline); err != nil {
 		return fmt.Errorf("unable to set UDP deadline: %v", err)
 	}
 
-	requestor := *source
-	go ssdpResponseRelay(requestor, relay)
+	addr := &net.UDPAddr{IP: source.ip, Port: source.port}
+	debugLog("Forwarding SSDP M-SEARCH from %v\n", addr)
+	go ssdpResponseRelay(addr, source.conn, response)
 
 	// Replace the original PacketConn in the source structure with our new
 	// PacketConn, causing the SEARCH request to be forwarded from our newly
 	// opened UDP port instead of the standard SSDP port (1900).
-	source.conn = *relay
+	source.conn = response
 	return nil
 }
 
@@ -412,13 +410,12 @@ func getPacket(conn *ipv4.PacketConn, buf []byte) (int, *endpoint) {
 		}
 
 		source := endpoint{
-			conn:  *conn,
+			conn:  conn,
 			iface: iface,
 			ip:    ip,
 			port:  portno,
 			ring:  ring,
 		}
-		source.conn = *conn
 		return n, &source
 	}
 }
