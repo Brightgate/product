@@ -201,8 +201,8 @@
 [[projects]]
   name = "github.com/tensorflow/tensorflow"
   packages = ["tensorflow/go","tensorflow/go/op"]
-  revision = "48c54eee17b35ebc15e274e36632eccb76072f7d"
-  version = "v1.3.1"
+  revision = "438604fc885208ee05f9eef2d0f2c630e1360a83"
+  version = "v1.4.1"
 
 [[projects]]
   branch = "master"
@@ -303,6 +303,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "26838acde060c4bc1ab6e0f19ae2ec6cf9b6719eabdda35eb54a7cc5be406c47"
+  inputs-digest = "6b41e6192f9d50dab4c3751a2f3979294adea9428be6c7da94a08c93c43c49a0"
   solver-name = "gps-cdcl"
   solver-version = 1

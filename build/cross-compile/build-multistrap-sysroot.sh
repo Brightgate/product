@@ -51,16 +51,15 @@ find "$SYSROOT_NAME/usr/share" -type f ! -name '*.h' -print0 | xargs -0 --no-run
 info "remove etc"
 rm -fr "${SYSROOT_NAME:??}/etc"
 
-#
-# aaarrrggghhh
-#
+# In the future we will want to cross compile TensorFlow as part of our CI workflow.
+# For now just download a pre-built binary.
 info "Adding tensorflow"
 tmpdir=$(mktemp --directory)
-/opt/net.b10e/bin/arc download F603 --as "$tmpdir/libtensorflow-raspberrypi.tar.gz" || \
+/opt/net.b10e/bin/arc download F1089 --as "$tmpdir/libtensorflow-r1.4.1-raspberrypi.tar.gz" || \
 	die "tensorflow download failed"
 mkdir -p "$SYSROOT_NAME/usr/local/lib"
-tar --to-stdout -x -f "$tmpdir/libtensorflow-raspberrypi.tar.gz" \
-	 raspberrypi/libtensorflow.so > "$SYSROOT_NAME/usr/local/lib/libtensorflow.so" || \
+tar --to-stdout -x -f "$tmpdir/libtensorflow-r1.4.1-raspberrypi.tar.gz" \
+	 raspberrypi_cross/libtensorflow.so > "$SYSROOT_NAME/usr/local/lib/libtensorflow.so" || \
 	die "tar extract failed"
 chmod a+rx "$SYSROOT_NAME/usr/local/lib/libtensorflow.so"
 rm -fr "$tmpdir"
