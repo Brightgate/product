@@ -429,7 +429,7 @@ packages: install
 test: test-go
 
 test-go: install
-	$(GO) test -v -timeout 20s $(GO_TESTABLES)
+	$(GO) test $(GO_TESTABLES)
 
 coverage: coverage-go
 
