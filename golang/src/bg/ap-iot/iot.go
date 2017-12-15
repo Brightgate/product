@@ -58,6 +58,12 @@ var (
 
 	environ cfg
 
+	logger    *zap.Logger
+	slogger   *zap.SugaredLogger
+	zapConfig zap.Config
+
+	cachedBootTime time.Time
+
 	// ApVersion will be replaced by go build step.
 	ApVersion = "undefined"
 )
@@ -65,8 +71,6 @@ var (
 func firstVersion() string {
 	return "git:rPS" + ApVersion
 }
-
-var cachedBootTime time.Time
 
 // LinuxBootTime retrieves the instance boot time using /proc/stat's "btime" field.
 func LinuxBootTime() (time.Time, error) {
@@ -139,10 +143,6 @@ var msgFunc mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
 	fmt.Printf("TOPIC: %s\n", msg.Topic())
 	fmt.Printf("MSG: %s\n", msg.Payload())
 }
-
-var logger *zap.Logger
-var slogger *zap.SugaredLogger
-var zapConfig zap.Config
 
 func zapSetup() {
 	var err error

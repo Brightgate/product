@@ -24,10 +24,13 @@ import (
 )
 
 // IoTMQTTClient is an extension of MQTT.client, adding additional information
-// needed for Google IoT Core clients.  This includes a set of parameters
-// needed to build the ClientID, as well as data required to build the JWT
-// which is used as the connection password.  The JWT must periodically be
-// refreshed, and this structure allows that to happen
+// needed for Google IoT Core MQTT clients (see also
+// https://cloud.google.com/iot/docs/how-tos/mqtt-bridge and
+// http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html).  This
+// includes a set of parameters needed to build the ClientID, as well as data
+// required to build the JSON Web Token (JWT, https://jwt.io/, RFC 7519) which
+// is used as the connection password.  The JWT must periodically be refreshed,
+// and this structure allows that to happen
 //
 // XXX Presently, a missing feature in the MQTT.client means that we need to
 // tear down and rebuild the client in order to change the password, and this
@@ -50,6 +53,9 @@ type IoTMQTTClient struct {
 
 // JWTExpiry represents the number of seconds until the JWT is expired.
 const JWTExpiry = 3600
+const MQTTBrokerURI = "ssl://mqtt.googleapis.com:8883"
+const MQTTPingTimeout = 10 * time.Second
+const MQTTKeepAlive = 5 * time.Minute
 
 func (c *IoTMQTTClient) String() string {
 	return fmt.Sprintf("IoTMQTTClient %v", c.clientID)
@@ -107,10 +113,10 @@ func (c *IoTMQTTClient) refreshJWT() {
 
 func (c *IoTMQTTClient) makeClient() {
 	// Setup MQTT client options
-	opts := mqtt.NewClientOptions().AddBroker("ssl://mqtt.googleapis.com:8883")
-	opts.SetKeepAlive(5 * time.Minute)
+	opts := mqtt.NewClientOptions().AddBroker(MQTTBrokerURI)
+	opts.SetKeepAlive(MQTTKeepAlive)
 	opts.SetDefaultPublishHandler(c.defaultPublishHandler)
-	opts.SetPingTimeout(10 * time.Second)
+	opts.SetPingTimeout(MQTTPingTimeout)
 
 	opts.SetUsername("unused")
 	opts.SetPassword(c.signedJWT)
@@ -122,9 +128,6 @@ func (c *IoTMQTTClient) makeClient() {
 
 // NewMQTTClient will create a new Google Cloud IoT Core client.  It also
 // exposes the mqtt.Client API.
-//
-// XXX might need to work on defaultPublishHandler more
-// XXX rework to take private key as bytes
 func NewMQTTClient(project string, region string, registryID string,
 	deviceID string, privKey *rsa.PrivateKey,
 	defaultPublishHandler func(mqtt.Client, mqtt.Message)) (mqtt.Client, error) {

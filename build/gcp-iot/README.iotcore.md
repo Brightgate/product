@@ -12,69 +12,70 @@ README.iotcore.md
 
 This directory contains tools for use with Google Cloud IoT core.
 
-# Device Registry
+# Device (Appliance) Registry
 
-The topmost object in the IoT core is the device registry.  An arbitrary number
+The topmost object in the IoT core is what Google calls the "device registry"--
+for us, this is a registry of the Appliances in our fleet.  An arbitrary number
 of such registries can be created (helpful for testing), and the
 `mk_registry.sh` script will create a new one.  Once a registry is created,
-devices can be provisioned to the registry.
+devices (Appliances) can be provisioned to the registry.
 
 Example:
 
 ```shell
-$ ./mk_registry.sh ~/secrets/Engineering.json peppy-breaker-161717 my-dev-registry
+$ ./mk_registry.sh ~/secrets/Engineering.json peppy-breaker-161717 my-appliance-registry
 Activated service account credentials for: [bg-iot-core-administration@peppy-breaker-161717.iam.gserviceaccount.com]
-Created topic [projects/peppy-breaker-161717/topics/iot-my-dev-registry-events].
+Created topic [projects/peppy-breaker-161717/topics/iot-my-appliance-registry-events].
 bindings:
 - members:
   - serviceAccount:cloud-iot@system.gserviceaccount.com
   role: roles/pubsub.publisher
 etag: BwVgPxEEEWA=
-Created topic [projects/peppy-breaker-161717/topics/iot-my-dev-registry-state].
+Created topic [projects/peppy-breaker-161717/topics/iot-my-appliance-registry-state].
 bindings:
 - members:
   - serviceAccount:cloud-iot@system.gserviceaccount.com
   role: roles/pubsub.publisher
 etag: BwVgPxEioNk=
-Created registry [my-dev-registry].
----------- my-dev-registry -------------------------------------
+Created registry [my-appliance-registry].
+---------- my-appliance-registry -------------------------------------
 eventNotificationConfigs:
-- pubsubTopicName: projects/peppy-breaker-161717/topics/iot-my-dev-registry-events
+- pubsubTopicName: projects/peppy-breaker-161717/topics/iot-my-appliance-registry-events
 httpConfig:
   httpEnabledState: HTTP_ENABLED
-id: my-dev-registry
+id: my-appliance-registry
 mqttConfig:
   mqttEnabledState: MQTT_ENABLED
-name: projects/peppy-breaker-161717/locations/us-central1/registries/my-dev-registry
+name: projects/peppy-breaker-161717/locations/us-central1/registries/my-appliance-registry
 stateNotificationConfig:
-  pubsubTopicName: projects/peppy-breaker-161717/topics/iot-my-dev-registry-state
+  pubsubTopicName: projects/peppy-breaker-161717/topics/iot-my-appliance-registry-state
 ```
 
 Where `Engineering.json` is credential fetched from a GCP service account with
 sufficient authorization.  (In our Engineering environment this is called
 `BG IOT Core Administration` or `bg-iot-core-administration@peppy-breaker-161717.iam.gserviceaccount.com`).
 
-# Device Provisioning
+# Device (Appliance) Provisioning
 
 The provisioning process involves creating a key pair, provisioning the public
 side of the key pair to the IoT Core, and provisioning the private side of the
-key pair to the device.
+key pair to the appliance.
 
 Example:
 
 First, allocate the key pair and register with IoT core:
 
 ```shell
-$ ./provision_device_to_registry.sh ~/Engineering.json peppy-breaker-161717 my-dev-registry my-device
-Generating Key/Pair and Certificate for my-device
+$ ./provision_device_to_registry.sh ~/Engineering.json peppy-breaker-161717 my-appliance-registry my-bg1
+Generating Key/Pair and Certificate for my-bg1
 Generating a 2048 bit RSA private key
 ..........................................................................+++
 ...............................................................................+++
-writing new private key to 'my-device.rsa_private.pem'
+writing new private key to 'my-bg1.rsa_private.pem'
 -----
-Adding my-device to registry my-dev-registry in region us-central1
-Created device [my-device].
----------- my-dev-registry -------------------------------------
+Adding my-bg1 to registry my-appliance-registry in region us-central1
+Created device [my-bg1].
+---------- my-appliance-registry -------------------------------------
 config:
   cloudUpdateTime: '2017-12-13T21:02:16.747355Z'
   version: '1'
@@ -101,16 +102,16 @@ credentials:
       vti96HJkq0ZYdCbybybIR1w3XZZ/aHdAeRT+dOwZUhZbswjjso3Tl5ExmwTQEBjO
       nVe6A2MsuaLiV9HTGcTPeekYExv8UU5qNkeVTn7WLAauaA4t6q5fAygoXbs=
       -----END CERTIFICATE-----
-id: my-device
+id: my-bg1
 metadata:
   net_b10e_iot_device_uuid: c5ae5b88-6680-4458-af11-ad79a0514da0
-name: projects/peppy-breaker-161717/locations/us-central1/registries/my-dev-registry/devices/2602124588818925
+name: projects/peppy-breaker-161717/locations/us-central1/registries/my-appliance-registry/devices/2602124588818925
 numId: '2602124588818925'
 -------------------------------------------------------------
 
-Now provision my-device.rsa_private.pem to the appliance
+Now provision my-bg1.rsa_private.pem to the appliance
 ```
 
-Next, copy the my-device.rsa_private.pem to the appliance.  In the future we will have
-a specific place to store it.  `chmod 600 my-device.rsa_private.pem` whereever the key is
+Next, copy the my-bg1.rsa_private.pem to the appliance.  In the future we will have
+a specific place to store it.  `chmod 600 my-bg1.rsa_private.pem` whereever the key is
 placed is a good practice.
