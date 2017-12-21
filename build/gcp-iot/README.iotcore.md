@@ -59,7 +59,8 @@ sufficient authorization.  (In our Engineering environment this is called
 
 The provisioning process involves creating a key pair, provisioning the public
 side of the key pair to the IoT Core, and provisioning the private side of the
-key pair to the appliance.
+key pair to the appliance.  The private side of the key pair, as well as the
+rest of the credential parameters, are bundled in a JSON envelope.
 
 Example:
 
@@ -109,9 +110,17 @@ name: projects/peppy-breaker-161717/locations/us-central1/registries/my-applianc
 numId: '2602124588818925'
 -------------------------------------------------------------
 
-Now provision my-bg1.rsa_private.pem to the appliance
+All set.  Now provision my-bg1.iotcore.secret.json to the appliance: /opt/com.brightgate/etc/secret/iotcore/iotcore.secret.json
 ```
 
-Next, copy the my-bg1.rsa_private.pem to the appliance.  In the future we will have
-a specific place to store it.  `chmod 600 my-bg1.rsa_private.pem` whereever the key is
-placed is a good practice.
+As directed, copy the `my-bg1.iotcore.secret.json` file to the appliance, and
+name it `/opt/com.brightgate/etc/secret/iotcore/iotcore.secret.json`.
+`chmod 600 /opt/com.brightgate/etc/secret/iotcore/iotcore.secret.json`
+is a good practice.  At this point, `cron` should begin sending a very tiny
+scrap of telemetry about your appliance every few minutes.  To confirm that
+it's working, try:
+
+```
+pi@pi $ sudo /opt/com.brightgate/bin/ap-iot -root /opt/com.brightgate upbeat
+2018-01-03T16:41:11.581-0800	INFO	ap-iot/iot.go:125	Sent upbeat	{"text": "{\"component_version\":[\"git:rPS@ebb494b-dirty\"],\"boot_time\":\"2018-01-03T11:33:32-08:00\",\"record_time\":\"2018-01-03T16:41:11-08:00\"}"}
+```

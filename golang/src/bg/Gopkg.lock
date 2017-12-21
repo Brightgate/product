@@ -34,8 +34,7 @@
 [[projects]]
   name = "github.com/eclipse/paho.mqtt.golang"
   packages = [".","packets"]
-  revision = "aff15770515e3c57fc6109da73d42b0d46f7f483"
-  version = "v1.1.0"
+  revision = "64d8663555716776a6fa8dbadcb032caf06e0a86"
 
 [[projects]]
   name = "github.com/fgrosse/zaptest"
@@ -303,6 +302,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "6b41e6192f9d50dab4c3751a2f3979294adea9428be6c7da94a08c93c43c49a0"
+  inputs-digest = "ac4b610277fd6ad4e2fcb191dee3cd340ab03453ac121cc7a397824795463402"
   solver-name = "gps-cdcl"
   solver-version = 1

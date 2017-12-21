@@ -11,14 +11,12 @@
 package iotcore
 
 import (
-	"crypto/rsa"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
-	jwt "github.com/dgrijalva/jwt-go"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -36,57 +34,50 @@ import (
 // tear down and rebuild the client in order to change the password, and this
 // class facilitates that as well.  This is highly disruptive, so it should
 // be ripped out as soon as possible, or we should fix the upstream library.
+// See https://github.com/eclipse/paho.mqtt.golang/issues/147.
 //
 type IoTMQTTClient struct {
-	broker                string
-	project               string
-	region                string
-	registryID            string
-	deviceID              string
-	privKey               *rsa.PrivateKey
-	signedJWT             string
-	clientID              string // computed from above
-	mqttOpts              mqtt.ClientOptions
-	defaultPublishHandler func(mqtt.Client, mqtt.Message)
+	cred        *IoTCredential
+	signedJWT   string
+	eventTopic  string
+	stateTopic  string
+	configTopic string
+	onConfig    ConfigHandler
+	mqttOpts    mqtt.ClientOptions
 	mqtt.Client
+	// Unfortunately we seem to encounter races in the MQTT package
+	// between Disconnect() and Publish()-- when we disconnect the
+	// outstanding Tokens don't seem to be notified.  See also
+	// https://github.com/eclipse/paho.mqtt.golang/issues/169.
+	// There's little else we can do except impose a much coarser
+	// locking scheme.
+	sync.RWMutex
 }
 
-// JWTExpiry represents the number of seconds until the JWT is expired.
-const JWTExpiry = 3600
-const MQTTBrokerURI = "ssl://mqtt.googleapis.com:8883"
-const MQTTPingTimeout = 10 * time.Second
-const MQTTKeepAlive = 5 * time.Minute
+// ConfigHandler represents a callback when a Config message is received
+type ConfigHandler func(*IoTMQTTClient, mqtt.Message)
+
+// cJWTExpiry represents the number of seconds until the JWT is expired.
+const cJWTExpiry = 3600
+
+const cMQTTBrokerURI = "ssl://mqtt.googleapis.com:8883"
+const cMQTTPingTimeout = 10 * time.Second
+const cMQTTKeepAlive = 5 * time.Minute
 
 func (c *IoTMQTTClient) String() string {
-	return fmt.Sprintf("IoTMQTTClient %v", c.clientID)
-}
-
-func (c *IoTMQTTClient) makeJWT() (string, error) {
-	jwtSigningMethod := jwt.GetSigningMethod("RS256")
-	if jwtSigningMethod == nil {
-		return "", errors.New("Couldn't find signing method")
-	}
-	jwtClaims := &jwt.StandardClaims{
-		IssuedAt:  time.Now().Unix(),
-		ExpiresAt: time.Now().Unix() + JWTExpiry,
-		Audience:  c.project,
-	}
-	j := jwt.NewWithClaims(jwtSigningMethod, jwtClaims)
-	signedJWT, err := j.SignedString(c.privKey)
-	if err != nil {
-		return "", errors.Wrap(err, "Couldn't sign JWT")
-	}
-	return signedJWT, nil
+	return fmt.Sprintf("IoTMQTTClient cred:%v", c.cred)
 }
 
 // Periodically refresh the JWT token
 func (c *IoTMQTTClient) refreshJWT() {
 	log.Printf("refreshJWT()\n")
-	signedJWT, err := c.makeJWT()
+	c.Lock()
+	defer c.Unlock()
+	signedJWT, err := c.cred.makeJWT()
 	if err != nil {
 		log.Printf("refreshJWT failed: %s\n", err)
 		// Try again sooner.
-		time.AfterFunc(time.Second*JWTExpiry/10, c.refreshJWT)
+		time.AfterFunc(time.Second*cJWTExpiry/10, c.refreshJWT)
 		return
 	}
 
@@ -107,20 +98,23 @@ func (c *IoTMQTTClient) refreshJWT() {
 		if token := c.Client.Connect(); token.Wait() && token.Error() != nil {
 			panic(token.Error())
 		}
+		// Restore config subscription
+		c.resubscribeConfig().Wait()
+		log.Printf("refreshJWT() reconnected client\n")
 	}
-	time.AfterFunc(time.Second*JWTExpiry/2, c.refreshJWT)
+	time.AfterFunc(time.Second*cJWTExpiry/2, c.refreshJWT)
 }
 
 func (c *IoTMQTTClient) makeClient() {
 	// Setup MQTT client options
-	opts := mqtt.NewClientOptions().AddBroker(MQTTBrokerURI)
-	opts.SetKeepAlive(MQTTKeepAlive)
-	opts.SetDefaultPublishHandler(c.defaultPublishHandler)
-	opts.SetPingTimeout(MQTTPingTimeout)
+	opts := mqtt.NewClientOptions().AddBroker(cMQTTBrokerURI)
+	opts.SetKeepAlive(cMQTTKeepAlive)
+
+	opts.SetPingTimeout(cMQTTPingTimeout)
 
 	opts.SetUsername("unused")
 	opts.SetPassword(c.signedJWT)
-	opts.SetClientID(c.clientID)
+	opts.SetClientID(c.cred.clientID())
 
 	mqttc := mqtt.NewClient(opts)
 	c.Client = mqttc
@@ -128,35 +122,71 @@ func (c *IoTMQTTClient) makeClient() {
 
 // NewMQTTClient will create a new Google Cloud IoT Core client.  It also
 // exposes the mqtt.Client API.
-func NewMQTTClient(project string, region string, registryID string,
-	deviceID string, privKey *rsa.PrivateKey,
-	defaultPublishHandler func(mqtt.Client, mqtt.Message)) (mqtt.Client, error) {
-
+func NewMQTTClient(cred *IoTCredential) (*IoTMQTTClient, error) {
 	var err error
 
-	clientID := fmt.Sprintf(
-		"projects/%s/locations/%s/registries/%s/devices/%s",
-		project, region, registryID, deviceID)
-
 	c := &IoTMQTTClient{
-		project:               project,
-		region:                region,
-		registryID:            registryID,
-		deviceID:              deviceID,
-		privKey:               privKey,
-		clientID:              clientID,
-		defaultPublishHandler: defaultPublishHandler,
+		cred: cred,
 	}
 
 	// Call makeJWT (to try to drive a hard error if something is misconfigured)
-	c.signedJWT, err = c.makeJWT()
+	c.signedJWT, err = c.cred.makeJWT()
 	if err != nil {
 		return nil, err
 	}
+	c.eventTopic = fmt.Sprintf("/devices/%s/events", c.cred.DeviceID)
+	c.stateTopic = fmt.Sprintf("/devices/%s/state", c.cred.DeviceID)
+	c.configTopic = fmt.Sprintf("/devices/%s/config", c.cred.DeviceID)
+
 	c.makeClient()
 	// Start timer driver JWT refresh
-	time.AfterFunc(time.Second*JWTExpiry/2, c.refreshJWT)
+	time.AfterFunc(time.Second*cJWTExpiry/2, c.refreshJWT)
 	return c, nil
+}
+
+// PublishEvent publishes an event ('telemetry') to the IoT core broker
+func (c *IoTMQTTClient) PublishEvent(subfolder string, qos byte, payload interface{}) mqtt.Token {
+	c.RLock()
+	defer c.RUnlock()
+	var t mqtt.Token
+	if subfolder != "" {
+		t = c.Publish(c.eventTopic+"/"+subfolder, qos, false, payload)
+	} else {
+		t = c.Publish(c.eventTopic, qos, false, payload)
+	}
+	t.Wait() // XXX to resolve race; remove in the future
+	return t
+}
+
+// PublishState publishes device state to the IoT core broker
+func (c *IoTMQTTClient) PublishState(qos byte, payload interface{}) mqtt.Token {
+	c.RLock()
+	defer c.RUnlock()
+	t := c.Publish(c.stateTopic, 1, false, payload)
+	t.Wait() // XXX to resolve race; remove in the future
+	return t
+}
+
+func (c *IoTMQTTClient) resubscribeConfig() mqtt.Token {
+	// At present IoT core has only one downstream topic.  So we can just
+	// use the "default" mechanism to set a function to receive those
+	// messages here.
+	if c.onConfig == nil {
+		return &mqtt.DummyToken{}
+	}
+	configClosure := func(client mqtt.Client, message mqtt.Message) {
+		c.onConfig(c, message)
+	}
+	return c.Subscribe(c.configTopic, 1, configClosure)
+}
+
+// SubscribeConfig registers a receiver for configuration data and subscribes
+// to the appropriate topic.
+func (c *IoTMQTTClient) SubscribeConfig(onConfig ConfigHandler) {
+	c.RLock()
+	defer c.RUnlock()
+	c.onConfig = onConfig
+	c.resubscribeConfig().Wait()
 }
 
 // MQTTLogToZap is a convenience function for connecting the MQTT's somewhat
@@ -164,8 +194,8 @@ func NewMQTTClient(project string, region string, registryID string,
 func MQTTLogToZap(logger *zap.Logger) {
 	mqtt.DEBUG, _ = zap.NewStdLogAt(logger, zapcore.DebugLevel)
 	// mqtt's WARN msgs aren't very helpful, and trigger stack traces with
-	// the default config, so we use InfoLevel
-	mqtt.WARN, _ = zap.NewStdLogAt(logger, zapcore.InfoLevel)
+	// the default config, so we use DebugLevel
+	mqtt.WARN, _ = zap.NewStdLogAt(logger, zapcore.DebugLevel)
 	mqtt.ERROR, _ = zap.NewStdLogAt(logger, zapcore.ErrorLevel)
 	mqtt.CRITICAL, _ = zap.NewStdLogAt(logger, zapcore.PanicLevel)
 }

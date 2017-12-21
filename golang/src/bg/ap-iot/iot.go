@@ -28,7 +28,6 @@ import (
 	"bg/ap_common/iotcore"
 	"bg/cloud_rpc"
 
-	jwt "github.com/dgrijalva/jwt-go"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/golang/protobuf/proto"
 	"github.com/pkg/errors"
@@ -44,17 +43,13 @@ type cfg struct {
 }
 
 var services = map[string]bool{
-	"upbeat": true,
+	"upbeat":      true,
+	"upbeat-loop": true,
 }
 
 var (
-	apRootFlag = flag.String("root", "proto.armv7l/appliance/opt/com.brightgate",
-		"Root of AP installation")
-	pemPathFlag  = flag.String("pem-path", "", "PEM file path")
-	projectFlag  = flag.String("project", "", "Google Cloud Project ID [required]")
-	regionFlag   = flag.String("region", "us-central1", "Google Cloud Region ID")
-	registryFlag = flag.String("registry", "", "Google Cloud IoT Registry ID [required]")
-	deviceIDFlag = flag.String("device-id", "", "Device ID in the registry [required]")
+	apRootFlag   = flag.String("root", "proto.armv7l/appliance/opt/com.brightgate", "Root of AP installation")
+	credPathFlag = flag.String("cred-path", "etc/secret/iotcore/iotcore.secret.json", "JSON credential file for this IoTCore device")
 
 	environ cfg
 
@@ -67,10 +62,6 @@ var (
 	// ApVersion will be replaced by go build step.
 	ApVersion = "undefined"
 )
-
-func firstVersion() string {
-	return "git:rPS" + ApVersion
-}
 
 // LinuxBootTime retrieves the instance boot time using /proc/stat's "btime" field.
 func LinuxBootTime() (time.Time, error) {
@@ -86,7 +77,8 @@ func LinuxBootTime() (time.Time, error) {
 	for scanner.Scan() {
 		fields := strings.Split(scanner.Text(), " ")
 		if fields[0] == "btime" {
-			val, err := strconv.ParseInt(fields[1], 10, 64)
+			var val int64
+			val, err = strconv.ParseInt(fields[1], 10, 64)
 			if err != nil {
 				return time.Time{}, errors.Wrap(err, "Failed to get Boot Time")
 			}
@@ -100,7 +92,7 @@ func LinuxBootTime() (time.Time, error) {
 	return time.Time{}, errors.New("/proc/stat possibly empty")
 }
 
-func sendUpbeat(mqttc mqtt.Client) error {
+func sendUpbeat(iotc *iotcore.IoTMQTTClient) error {
 	// Build UpcallRequest
 	bootTime, err := LinuxBootTime()
 	if err != nil {
@@ -121,27 +113,18 @@ func sendUpbeat(mqttc mqtt.Client) error {
 	if err != nil {
 		return errors.Wrap(err, "Failed sending Upbeat")
 	}
-	topic := fmt.Sprintf("/devices/%s/events", *deviceIDFlag)
-	slogger.Infow("Sending upbeat", "text", string(text))
-	mqttc.Publish(topic, 1, false, text)
+	slogger.Debugw("Sending upbeat", "text", string(text))
+	t := iotc.PublishEvent("upbeat", 1, text)
+	if !t.Wait() {
+		slogger.Errorw("upbeat failed", "error", t.Error())
+		return errors.Wrap(t.Error(), "Failed to wait for upbeat publish")
+	}
+	slogger.Infow("Sent upbeat", "text", string(text))
 	return nil
 }
 
-func onConfigReceived(client mqtt.Client, message mqtt.Message) {
-	slogger.Infow("Received Configuration Msg", "config", string(message.Payload()))
-}
-
-func subscribeConfig(mqttc mqtt.Client) {
-	topic := fmt.Sprintf("/devices/%s/config", *deviceIDFlag)
-	if token := mqttc.Subscribe(topic, 1, onConfigReceived); token.Wait() && token.Error() != nil {
-		panic(token.Error())
-	}
-}
-
-// XXX Needs to go?
-var msgFunc mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
-	fmt.Printf("TOPIC: %s\n", msg.Topic())
-	fmt.Printf("MSG: %s\n", msg.Payload())
+func onConfig(iotc *iotcore.IoTMQTTClient, message mqtt.Message) {
+	slogger.Infow("Received Configuration", "config", string(message.Payload()))
 }
 
 func zapSetup() {
@@ -156,11 +139,11 @@ func zapSetup() {
 	_ = zap.RedirectStdLog(logger)
 }
 
-func upbeatLoop(mqttc mqtt.Client) {
+func upbeatLoop(iotc *iotcore.IoTMQTTClient) {
 	sigs := make(chan os.Signal, 1)
-	ticker := time.NewTicker(time.Second * 60)
+	ticker := time.NewTicker(time.Minute)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	err := sendUpbeat(mqttc)
+	err := sendUpbeat(iotc)
 	if err != nil {
 		slogger.Errorw("Upbeat failed", "err", err)
 	}
@@ -168,11 +151,12 @@ func upbeatLoop(mqttc mqtt.Client) {
 	for {
 		select {
 		case <-ticker.C:
-			err := sendUpbeat(mqttc)
+			err := sendUpbeat(iotc)
 			if err != nil {
 				slogger.Errorw("Upbeat failed", "err", err)
 			}
-		case <-sigs:
+		case termSig := <-sigs:
+			slogger.Infof("Received signal %s. Stopping", termSig)
 			ticker.Stop()
 			return
 		}
@@ -185,7 +169,9 @@ func usage(format string, opts ...interface{}) {
 	if errmsg != "" {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", errmsg)
 	}
-	fmt.Fprintf(os.Stderr, "Usage: %s [options] upbeat\n", pname)
+	fmt.Fprintf(os.Stderr, "Usage:\n")
+	fmt.Fprintf(os.Stderr, "    %s [options] upbeat\n", pname)
+	fmt.Fprintf(os.Stderr, "    %s [options] upbeat-loop\n", pname)
 	flag.PrintDefaults()
 	os.Exit(2)
 }
@@ -203,47 +189,47 @@ func main() {
 		usage("Unknown service %s\n", svc)
 	}
 
-	if *pemPathFlag == "" {
-		usage("Must specify PEM path with -pem-path")
-	}
-	if *projectFlag == "" {
-		usage("Must specify GCP project with -project")
-	}
-	if *regionFlag == "" {
-		usage("Must specify GCP region with -region")
-	}
-	if *registryFlag == "" {
-		usage("Must specify GCP registry with -registry")
-	}
-	if *deviceIDFlag == "" {
-		usage("Must specify Device ID with -device-id")
+	var credPath string
+	if filepath.IsAbs(*credPathFlag) {
+		credPath = *credPathFlag
+	} else {
+		credPath = filepath.Join(*apRootFlag, *credPathFlag)
 	}
 
-	envcfg.Unmarshal(&environ)
-
-	pemFile, err := ioutil.ReadFile(*pemPathFlag)
+	var credFile []byte
+	credFile, err := ioutil.ReadFile(credPath)
 	if err != nil {
-		slogger.Fatalf("Failed reading PEM file: %s", err)
+		slogger.Fatalf("Failed to read credential file: %s", err)
 	}
-	privKey, err := jwt.ParseRSAPrivateKeyFromPEM(pemFile)
+	iotCred, err := iotcore.NewCredentialFromJSON(credFile)
 	if err != nil {
-		slogger.Fatalf("Failed parsing PEM file: %s", err)
+		slogger.Fatalf("Failed to build credential: %s", err)
+	}
+
+	err = envcfg.Unmarshal(&environ)
+	if err != nil {
+		slogger.Fatalf("Failed to unmarshal from environment: %s", err)
 	}
 
 	iotcore.MQTTLogToZap(logger)
-	mqttc, err := iotcore.NewMQTTClient(*projectFlag, *regionFlag,
-		*registryFlag, *deviceIDFlag, privKey, msgFunc)
+	iotc, err := iotcore.NewMQTTClient(iotCred)
 	if err != nil {
 		slogger.Fatalf("Could not initialize IoT core client: %s", err)
 	}
-	if token := mqttc.Connect(); token.Wait() && token.Error() != nil {
+	if token := iotc.Connect(); token.Wait() && token.Error() != nil {
 		slogger.Fatalf("Could not connect IoT core client: %s", err)
 	}
-	defer mqttc.Disconnect(250)
-	subscribeConfig(mqttc)
+	defer iotc.Disconnect(250)
 
 	switch svc {
 	case "upbeat":
-		upbeatLoop(mqttc)
+		err := sendUpbeat(iotc)
+		if err != nil {
+			slogger.Errorw("Upbeat failed", "err", err)
+		}
+	case "upbeat-loop":
+		// Subscribe to config events; this is basically demo-ware for now
+		iotc.SubscribeConfig(onConfig)
+		upbeatLoop(iotc)
 	}
 }

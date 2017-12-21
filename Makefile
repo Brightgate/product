@@ -204,7 +204,9 @@ APPETCLOGROTATED=$(APPROOT)/etc/logrotate.d
 APPETCRSYSLOGD=$(APPROOT)/etc/rsyslog.d
 APPROOTLIB=$(APPROOT)/lib
 APPVAR=$(APPBASE)/var
-APPSSL=$(APPETC)/ssl
+APPSECRET=$(APPETC)/secret
+APPSECRETSSL=$(APPSECRET)/ssl
+APPSECRETIOTCORE=$(APPSECRET)/iotcore
 APPSPOOL=$(APPVAR)/spool
 APPSPOOLANTIPHISH=$(APPVAR)/spool/antiphishing
 APPRULES=$(APPETC)/filter.rules.d
@@ -304,8 +306,8 @@ APPCONFIGS = \
 	$(APPETC)/mcp.json \
 	$(APPETC)/oui.txt \
 	$(APPETC)/prometheus.yml \
-	$(APPETCLOGROTATED)/logd \
-	$(APPETCLOGROTATED)/mcp \
+	$(APPETCLOGROTATED)/com-brightgate-logrotate-logd \
+	$(APPETCLOGROTATED)/com-brightgate-logrotate-mcp \
 	$(APPROOTLIB)/systemd/system/ap.mcp.service \
 	$(APPROOTLIB)/systemd/system/brightgate-appliance.service \
 	$(APPSPOOLANTIPHISH)/example_blacklist.csv \
@@ -320,7 +322,9 @@ APPDIRS = \
 	$(APPETCRSYSLOGD) \
 	$(APPROOTLIB) \
 	$(APPRULES) \
-	$(APPSSL) \
+	$(APPSECRET) \
+	$(APPSECRETSSL) \
+	$(APPSECRETIOTCORE) \
 	$(APPSPOOL) \
 	$(APPVAR) \
 	$(APPSPOOLANTIPHISH) \
@@ -344,6 +348,7 @@ APP_COMMON_SRCS = \
 	$(GOSRCBG)/ap_common/broker/broker.go \
 	$(GOSRCBG)/ap_common/device/device.go \
 	$(GOSRCBG)/ap_common/iotcore/iotcore.go \
+	$(GOSRCBG)/ap_common/iotcore/iotcred.go \
 	$(GOSRCBG)/ap_common/mcp/mcp_client.go \
 	$(GOSRCBG)/ap_common/model/model.go \
 	$(GOSRCBG)/ap_common/network/network.go \
@@ -429,7 +434,7 @@ packages: install
 test: test-go
 
 test-go: install
-	$(GO) test $(GO_TESTABLES)
+	$(GO) test $(GO_TESTFLAGS) $(GO_TESTABLES)
 
 coverage: coverage-go
 
@@ -460,64 +465,64 @@ $(APPDOC)/: base/base_msg.proto | $(PROTOC_PLUGINS) $(APPDOC) $(BASE_MSG)
 # Installation of appliance configuration files
 
 $(APPETC)/ap_defaults.json: $(GOSRCBG)/ap.configd/ap_defaults.json | $(APPETC)
-	$(INSTALL) -m 0644 $< $(APPETC)
+	$(INSTALL) -m 0644 $< $@
 
 $(APPETC)/ap_identities.csv: ap_identities.csv | $(APPETC)
-	$(INSTALL) -m 0644 $< $(APPETC)
+	$(INSTALL) -m 0644 $< $@
 
 $(APPETC)/ap_mfgid.json: ap_mfgid.json | $(APPETC)
-	$(INSTALL) -m 0644 $< $(APPETC)
+	$(INSTALL) -m 0644 $< $@
 
 $(APPROOTLIB)/systemd/system/ap.mcp.service: ap.mcp.service | $(APPROOTLIB)/systemd/system
-	$(INSTALL) -m 0644 $< $(APPROOTLIB)/systemd/system
+	$(INSTALL) -m 0644 $< $@
 
 $(APPROOTLIB)/systemd/system/brightgate-appliance.service: brightgate-appliance.service | $(APPROOTLIB)/systemd/system
-	$(INSTALL) -m 0644 $< $(APPROOTLIB)/systemd/system
+	$(INSTALL) -m 0644 $< $@
 
 $(APPETC)/devices.json: $(GOSRCBG)/ap.configd/devices.json | $(APPETC)
-	$(INSTALL) -m 0644 $< $(APPETC)
+	$(INSTALL) -m 0644 $< $@
 
 $(APPETC)/mcp.json: $(GOSRCBG)/ap.mcp/mcp.json | $(APPETC)
-	$(INSTALL) -m 0644 $< $(APPETC)
+	$(INSTALL) -m 0644 $< $@
 
 $(APPETC)/oui.txt: | $(APPETC)
 	cd $(APPETC) && curl -s -S -O http://standards-oui.ieee.org/oui.txt
 
 $(APPETC)/datasources.json: datasources.json | $(APPETC)
-	$(INSTALL) -m 0644 $< $(APPETC)
+	$(INSTALL) -m 0644 $< $@
 
 $(APPETC)/prometheus.yml: prometheus.yml | $(APPETC)
-	$(INSTALL) -m 0644 $< $(APPETC)
+	$(INSTALL) -m 0644 $< $@
 
 $(APPETCCROND)/com-brightgate-appliance-cron: com-brightgate-appliance-cron | $(APPETCCROND)
 	$(INSTALL) -m 0644 $< $(APPETCCROND)
 
-$(APPETCLOGROTATED)/logd: $(GOSRCBG)/ap.logd/logrotate-logd | $(APPETCLOGROTATED)
-	$(INSTALL) -m 0644 $< $(APPETCLOGROTATED)
+$(APPETCLOGROTATED)/com-brightgate-logrotate-logd: $(GOSRCBG)/ap.logd/com-brightgate-logrotate-logd | $(APPETCLOGROTATED)
+	$(INSTALL) -m 0644 $< $@
 
-$(APPETCLOGROTATED)/mcp: $(GOSRCBG)/ap.mcp/logrotate-mcp | $(APPETCLOGROTATED)
-	$(INSTALL) -m 0644 $< $(APPETCLOGROTATED)
+$(APPETCLOGROTATED)/com-brightgate-logrotate-mcp: $(GOSRCBG)/ap.mcp/com-brightgate-logrotate-mcp | $(APPETCLOGROTATED)
+	$(INSTALL) -m 0644 $< $@
 
 $(APPETCRSYSLOGD)/com-brightgate-rsyslog.conf: $(GOSRCBG)/ap.watchd/com-brightgate-rsyslog.conf | $(APPETCRSYSLOGD)
-	$(INSTALL) -m 0644 $< $(APPETCRSYSLOGD)
+	$(INSTALL) -m 0644 $< $@
 
 $(APPSPOOLANTIPHISH)/example_blacklist.csv: $(GOSRCBG)/data/phishtank/example_blacklist.csv | $(APPSPOOLANTIPHISH)
-	$(INSTALL) -m 0644 $< $(APPSPOOLANTIPHISH)
+	$(INSTALL) -m 0644 $< $@
 
 $(APPSPOOLANTIPHISH)/whitelist.csv: $(GOSRCBG)/data/phishtank/whitelist.csv | $(APPSPOOLANTIPHISH)
-	$(INSTALL) -m 0644 $< $(APPSPOOLANTIPHISH)
+	$(INSTALL) -m 0644 $< $@
 
 $(HTTPD_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.httpd/% | $(APPETC)
-	$(INSTALL) -m 0644 $< $(HTTPD_TEMPLATE_DIR)
+	$(INSTALL) -m 0644 $< $@
 
 $(NETWORKD_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.networkd/% | $(APPETC)
-	$(INSTALL) -m 0644 $< $(NETWORKD_TEMPLATE_DIR)
+	$(INSTALL) -m 0644 $< $@
 
 $(USERAUTHD_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.userauthd/% | $(APPETC)
-	$(INSTALL) -m 0644 $< $(USERAUTHD_TEMPLATE_DIR)
+	$(INSTALL) -m 0644 $< $@
 
 $(APPRULES)/%: $(GOSRCBG)/ap.networkd/% | $(APPRULES)
-	$(INSTALL) -m 0644 $< $(APPRULES)
+	$(INSTALL) -m 0644 $< $@
 
 $(APPMODEL): $(GOSRCBG)/ap.identifierd/linear_model_deviceID/* | $(DIRS)
 	$(MKDIR) -p $@

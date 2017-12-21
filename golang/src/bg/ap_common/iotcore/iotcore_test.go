@@ -12,6 +12,7 @@ package iotcore
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,64 +73,129 @@ func setupLogging(t *testing.T) (*zap.Logger, *zap.SugaredLogger) {
 	return logger, slogger
 }
 
-func setupClient(t *testing.T) (mqtt.Client, chan [2]string, error) {
-	incoming := make(chan [2]string)
+func TestNewJSON(t *testing.T) {
+	pemstr := strings.Replace(testPEM, "\n", "\\n", -1)
+	credJSON := fmt.Sprintf(`
+		{
+		"project": "%s",
+		"region": "%s",
+		"registry": "%s",
+		"device_id": "%s",
+		"private_key": "%s"
+		}`, testProject, testRegion, testRegistry, testDevice, pemstr)
 
-	messageHandler := func(client mqtt.Client, msg mqtt.Message) {
-		t.Logf("messageHandler: saw %s: %s", msg.Topic(), string(msg.Payload()))
-		incoming <- [2]string{msg.Topic(), string(msg.Payload())}
+	cred, err := NewCredentialFromJSON([]byte(credJSON))
+	if err != nil {
+		t.Errorf("Failed to make cred from JSON")
 	}
 
+	// Also exercise String() method of cred
+	t.Logf("created cred %s", cred)
+}
+
+func TestBadJSON(t *testing.T) {
+	// Mostly valid with a bad PEM
+	badPEM := fmt.Sprintf(`{
+		"project": "%s",
+		"region": "%s",
+		"registry": "%s",
+		"device_id": "%s",
+		"private_key": "nonsense"
+		}`, testProject, testRegion, testRegistry, testDevice)
+
+	for _, badJSON := range []string{"{}", "", "badjson", badPEM} {
+		_, err := NewCredentialFromJSON([]byte(badJSON))
+		if err == nil {
+			t.Errorf("Unexpected success making cred from bad JSON")
+			return
+		}
+		t.Logf("Saw expected error: %s", err)
+	}
+
+}
+
+func setupClient(t *testing.T) (*IoTMQTTClient, error) {
 	testKey, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(testPEM))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
+	cred := NewCredential(testProject, testRegion, testRegistry, testDevice, testKey)
 
-	client, err := NewMQTTClient(testProject, testRegion, testRegistry,
-		testDevice, testKey, messageHandler)
+	client, err := NewMQTTClient(cred)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if token := client.Connect(); token.WaitTimeout(10*time.Second) == false || token.Error() != nil {
-		return nil, nil, fmt.Errorf("Connect failed or timed out: %s", token.Error())
+		return nil, fmt.Errorf("Connect failed or timed out: %s", token.Error())
 	}
-	return client, incoming, err
+	// Also exercise String() method of client
+	t.Logf("created and connected %s", client)
+	return client, err
 }
 
 func TestConnection(t *testing.T) {
-	_, slogger := setupLogging(t)
-	client, _, err := setupClient(t)
+	_, _ = setupLogging(t)
+	client, err := setupClient(t)
 	if err != nil {
 		t.Errorf("Failed to make client: %s", err)
 		return
 	}
-	slogger.Infof("Connected")
-	// Seems to hang forever if called too soon after connect.
-	time.Sleep(100 * time.Millisecond)
+	t.Logf("Connected")
 	client.Disconnect(250)
-	slogger.Infof("Disconnected")
+	t.Logf("Disconnected")
 }
 
-func TestPublish(t *testing.T) {
-	_, slogger := setupLogging(t)
-	client, _, err := setupClient(t)
+func TestRefresh(t *testing.T) {
+	_, _ = setupLogging(t)
+	client, err := setupClient(t)
+	if err != nil {
+		t.Errorf("Failed to make client: %s", err)
+		return
+	}
+	t.Logf("Connected")
+	client.refreshJWT()
+	if !client.IsConnected() {
+		t.Errorf("Client is not connected after refresh")
+		return
+	}
+	client.Disconnect(250)
+	t.Logf("Disconnected")
+}
+
+func TestPublishEvent(t *testing.T) {
+	_, _ = setupLogging(t)
+	client, err := setupClient(t)
 	if err != nil {
 		t.Errorf("Failed to make client: %s", err)
 		return
 	}
 
-	topic := fmt.Sprintf("/devices/%s/events", testDevice)
-	text := "Test events"
-	token := client.Publish(topic, 1, false, text)
+	// No Subfolder
+	text := "Test Event"
+	token := client.PublishEvent("", 1, text)
 	if token.WaitTimeout(2*time.Second) == false {
 		t.Errorf("Publish timed out.")
 		return
 	}
+	// Subfolder
+	token = client.PublishEvent("testsubfolder", 1, text)
+	if token.WaitTimeout(2*time.Second) == false {
+		t.Errorf("Publish timed out.")
+		return
+	}
+	client.Disconnect(250)
+}
 
-	topic = fmt.Sprintf("/devices/%s/state", testDevice)
-	text = "Test state"
-	slogger.Infow("Sending event", "topic", topic, "text", string(text))
-	token = client.Publish(topic, 1, false, text)
+func TestPublishState(t *testing.T) {
+	_, _ = setupLogging(t)
+	client, err := setupClient(t)
+	if err != nil {
+		t.Errorf("Failed to make client: %s", err)
+		return
+	}
+
+	text := "Test State"
+	token := client.PublishState(1, text)
 	if token.WaitTimeout(2*time.Second) == false {
 		t.Errorf("Publish timed out.")
 		return
@@ -138,27 +204,34 @@ func TestPublish(t *testing.T) {
 }
 
 func TestConfig(t *testing.T) {
-	_, slogger := setupLogging(t)
-	client, incoming, err := setupClient(t)
+	_, _ = setupLogging(t)
+	client, err := setupClient(t)
 	if err != nil {
 		t.Errorf("Failed to make client: %s", err)
 		return
 	}
 
-	topic := fmt.Sprintf("/devices/%s/config", testDevice)
-	if token := client.Subscribe(topic, 1, nil); token.WaitTimeout(10*time.Second) && token.Error() != nil {
-		t.Errorf("Failed to subscribe: %s", token.Error())
+	incoming := make(chan string)
+	onConfig := func(client *IoTMQTTClient, msg mqtt.Message) {
+		t.Logf("onConfig: saw %s: %s", msg.Topic(), string(msg.Payload()))
+		incoming <- string(msg.Payload())
+	}
+	client.SubscribeConfig(onConfig)
+	incomingMsg := <-incoming
+	t.Logf("Received message '%s'", incomingMsg)
+	if incomingMsg != testConfigPayload {
+		t.Errorf("payload: %s != %s", incomingMsg, testConfigPayload)
 		return
 	}
 
-	incomingMsg := <-incoming
-	slogger.Infow("Received message", "topic", incomingMsg[0], "payload", incomingMsg[1])
-	if incomingMsg[0] != topic {
-		t.Errorf("topic: %s != %s", incomingMsg[0], topic)
-		return
-	}
-	if incomingMsg[1] != testConfigPayload {
-		t.Errorf("payload: %s != %s", incomingMsg[0], testConfigPayload)
+	// We expect that refreshJWT will hangup the connection and then
+	// reestablish it.  It will resubscribe onConfig.  So we expect to
+	// see the config message again.
+	client.refreshJWT()
+	incomingMsg = <-incoming
+	t.Logf("Received second message '%s'", incomingMsg)
+	if incomingMsg != testConfigPayload {
+		t.Errorf("payload: %s != %s", incomingMsg, testConfigPayload)
 		return
 	}
 	client.Disconnect(250)

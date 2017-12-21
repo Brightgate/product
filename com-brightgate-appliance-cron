@@ -1,2 +1,3 @@
 */7 * * * * root /opt/com.brightgate/bin/ap-rpc -root /opt/com.brightgate upbeat
 0 */12 * * * root /opt/com.brightgate/bin/ap-rpc -root /opt/com.brightgate inventory
+*/7 * * * * root /opt/com.brightgate/bin/ap-iot -root /opt/com.brightgate upbeat

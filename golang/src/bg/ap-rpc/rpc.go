@@ -321,6 +321,9 @@ func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	flag.Parse()
 
+	if len(flag.Args()) == 0 {
+		log.Fatalf("Service name required.\n")
+	}
 	svc := flag.Args()[0]
 	if !services[svc] {
 		log.Fatalf("Unknown service %s\n", svc)

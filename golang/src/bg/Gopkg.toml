@@ -114,3 +114,7 @@
 [[constraint]]
   branch = "master"
   name = "github.com/fgrosse/zaptest"
+
+[[constraint]]
+  name = "github.com/eclipse/paho.mqtt.golang"
+  revision = "64d8663555716776a6fa8dbadcb032caf06e0a86"

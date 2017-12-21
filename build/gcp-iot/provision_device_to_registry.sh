@@ -9,6 +9,9 @@
 # such unauthorized removal or alteration will be a violation of federal law.
 #
 
+# Create files private by default
+umask 077
+
 CRED_FILE=$1
 PROJECT_ID=$2
 REGISTRY_ID=$3
@@ -41,6 +44,14 @@ fi
 echo "Generating Key/Pair and Certificate for $DEVICE_NAME"
 openssl req -x509 -nodes -newkey rsa:2048 -keyout "$DEVICE_NAME.rsa_private.pem" \
     -out "$DEVICE_NAME.rsa_cert.pem" -subj "/CN=unused"
+ret=$?
+if [[ $ret -ne 0 ]]; then
+	echo "OpenSSL failed.  Exited $ret"
+	exit 1
+fi
+# Replace the row separator (newline) with literal backslash-enn, as
+# JSON cannot accomodate multiline strings.
+PEMESCAPED=$(awk 1 ORS='\\n' "$DEVICE_NAME.rsa_private.pem")
 
 echo "Adding $DEVICE_NAME to registry $REGISTRY_ID in region $REGION"
 # XXX can add --public-key expiration time here later.
@@ -54,5 +65,14 @@ gcloud beta iot devices describe "$DEVICE_NAME" --registry "$REGISTRY_ID" --regi
 
 echo "-------------------------------------------------------------"
 echo
-echo "Now provision $DEVICE_NAME.rsa_private.pem to the appliance"
+cat <<EOF > $DEVICE_NAME.iotcore.secret.json
+{
+	"project": "$PROJECT_ID",
+	"region": "$REGION",
+	"registry": "$REGISTRY_ID",
+	"device_id": "$DEVICE_NAME",
+	"private_key": "$PEMESCAPED"
+}
+EOF
 
+echo "All set.  Now provision $DEVICE_NAME.iotcore.secret.json to the appliance: /opt/com.brightgate/etc/secret/iotcore/iotcore.secret.json"
