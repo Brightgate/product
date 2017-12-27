@@ -1,10 +1,11 @@
 /var/log/mcp.log {
 	monthly
-	copytruncate
+	create
 	rotate 10
 	size 10M
 	missingok
 	notifempty
 	postrotate
 		/bin/kill -HUP $(/bin/cat /var/tmp/ap.mcp.pid)
+	endscript
 }

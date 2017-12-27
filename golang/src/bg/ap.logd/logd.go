@@ -42,12 +42,13 @@ import (
 var (
 	addr = flag.String("listen-address", base_def.LOGD_PROMETHEUS_PORT,
 		"The address to listen on for HTTP requests.")
-	logDir = flag.String("logdir", "", "Log file directory")
+	logDir  = flag.String("logdir", "", "Log file directory")
+	logFile *os.File
 
 	eventsHandled = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "events_handled",
-			Help: "Number of cleaning scans completed.",
+			Help: "Number of events logged.",
 		})
 )
 
@@ -117,18 +118,28 @@ func openLog(path string) (*os.File, error) {
 	return file, nil
 }
 
+func reopenLogfile() error {
+	newLog, err := openLog(*logDir)
+	if err != nil {
+		return err
+	}
+	log.SetOutput(io.MultiWriter(newLog, os.Stdout))
+	if logFile != nil {
+		logFile.Close()
+	}
+	logFile = newLog
+	return nil
+}
+
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
 	flag.Parse()
 	*logDir = aputil.ExpandDirPath(*logDir)
 
-	file, err := openLog(*logDir)
-	if err == nil {
-		defer file.Close()
-		log.SetOutput(io.MultiWriter(file, os.Stdout))
-	} else {
-		log.Printf("Failed to open logfile: %v\n", err)
+	err := reopenLogfile()
+	if err != nil {
+		log.Fatalf("Failed to setup logging: %s\n", err)
 	}
 
 	mcpd, err := mcp.New(pname)
@@ -157,7 +168,17 @@ func main() {
 	}
 
 	sig := make(chan os.Signal)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	s := <-sig
-	log.Fatalf("Signal (%v) received, stopping\n", s)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	for {
+		switch s := <-sig; s {
+		case syscall.SIGHUP:
+			log.Printf("Signal (%v) received, reopening logs.\n", s)
+			err = reopenLogfile()
+			if err != nil {
+				log.Fatalf("Exiting.  Fatal error reopening log: %s\n", err)
+			}
+		default:
+			log.Fatalf("Signal (%v) received, stopping\n", s)
+		}
+	}
 }

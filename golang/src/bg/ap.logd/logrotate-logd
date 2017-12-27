@@ -1,8 +1,11 @@
 /opt/com.brightgate/var/spool/logd/*.log {
 	monthly
-	copytruncate
+	create
 	rotate 10
 	size 10M
 	missingok
 	notifempty
+	postrotate
+		/usr/bin/pkill -HUP -x ap.logd
+	endscript
 }
