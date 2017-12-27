@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"bg/ap_common/network"
+	"bg/base_def"
 
 	// Requires libpcap
 	"github.com/google/gopacket"
@@ -41,29 +42,29 @@ const (
 )
 
 var (
-	// XXX These Duration flags should be combined into a single "percentage"
-	// flag which indicates how many packets, or how much time, we spend capturing.
-	// Ideally, the auditor and sampler go routines could communicate their
-	// impact on resources (CPU, memory, time, etc...) and then self-tune to keep
-	// the overall impact on the appliance's resources under an accepatable level.
 	auditTime = flag.Duration("audit-time", time.Duration(time.Second*120),
 		"How often to audit the sample records")
-	capTime = flag.Duration("cap-time", time.Duration(time.Second*30),
-		"How long to capture packets in each capture interval")
-	loopTime = flag.Duration("loop-time", time.Duration(time.Second*60),
-		"Loop interval duration (should be greater than cap-time)")
 
-	auditMtx     sync.Mutex
-	auditRecords = make(map[gopacket.Endpoint]*record)
-	capStats     = make(map[gopacket.LayerType]*layerStats)
+	warnTime = flag.Duration("warn-time", time.Duration(time.Hour),
+		"How often to report a device using a bad IP address")
 
-	sampleTicker *time.Ticker
-	auditTicker  *time.Ticker
+	// Currently granted DHCP leases (maps Mac -> IPv4)
+	currentAddrs = make(map[uint64]uint32)
+	currentMtx   sync.Mutex
 
-	scanningAddr  net.HardwareAddr
-	scanningIface string
-	scanningRing  string
-	gateways      map[uint32]bool
+	// Historically granted DHCP leases (maps Mac -> IPv4)
+	oldAddrs = make(map[uint64]uint32)
+	oldMtx   sync.Mutex
+
+	// Mac -> IPv4 pairs we've observed on the network.
+	currentObservations  = make(map[uint64]map[uint32]bool)
+	historicObservations = make(map[uint64]map[uint32]time.Time)
+	observedMtx          sync.Mutex
+
+	capStats       = make(map[gopacket.LayerType]*layerStats)
+	auditTicker    *time.Ticker
+	gateways       map[uint32]bool
+	samplerRunning bool
 )
 
 const (
@@ -107,6 +108,7 @@ type record struct {
 type layerStats struct {
 	src map[gopacket.Endpoint]uint64
 	dst map[gopacket.Endpoint]uint64
+	sync.Mutex
 }
 
 func printStats() {
@@ -129,22 +131,28 @@ func handleEther(eth *layers.Ethernet) {
 
 	stats := capStats[eth.LayerType()]
 
+	stats.Lock()
 	stats.src[layers.NewMACEndpoint(eth.SrcMAC)]++
 	stats.dst[layers.NewMACEndpoint(eth.DstMAC)]++
+	stats.Unlock()
 }
 
 func handleIpv4(ipv4 *layers.IPv4) {
 	stats := capStats[ipv4.LayerType()]
 
+	stats.Lock()
 	stats.src[layers.NewIPEndpoint(ipv4.SrcIP)]++
 	stats.dst[layers.NewIPEndpoint(ipv4.DstIP)]++
+	stats.Unlock()
 }
 
 func handleArp(arp *layers.ARP) {
 	stats := capStats[arp.LayerType()]
 
+	stats.Lock()
 	stats.src[layers.NewMACEndpoint(arp.SourceHwAddress)]++
 	stats.dst[layers.NewMACEndpoint(arp.DstHwAddress)]++
+	stats.Unlock()
 }
 
 func handlePort(src, dst net.IP, sport, dport int, proto string) {
@@ -170,20 +178,11 @@ func handlePort(src, dst net.IP, sport, dport int, proto string) {
 	}
 }
 
-// Look up the record for this hwaddr:
-//   0) Ignore well known MAC and IP addresses
-//   1) If no record exists, create one. If we are authoritative the record is
-//      vetted. Else the record is foreign.
-//   2) If a 'foreign' or 'vetted' record exists but the record's ipaddr differs
-//      from the observed ipaddr, then we save the new ipaddr. If we are
-//      authoritative the new address represents a new DHCP lease and the record
-//      is vetted. If we are not authoritative and the record was previously
-//      vetted we are in conflict.
-//   3) If the two IP addresses match and we are authoritative the record is
-//      vetted.
-func samplerUpdate(hwaddr net.HardwareAddr, ipaddr net.IP, auth bool) {
+func observedIPAddr(self, hwaddr net.HardwareAddr, ipaddr net.IP) {
 
-	if bytes.Equal(hwaddr, scanningAddr) ||
+	// Ignore records for internal routers, or zero, multicast, or broadcast
+	// addresses.
+	if bytes.Equal(hwaddr, self) ||
 		bytes.Equal(hwaddr, network.MacZero) ||
 		network.IsMacMulticast(hwaddr) ||
 		bytes.Equal(hwaddr, network.MacBcast) ||
@@ -192,47 +191,56 @@ func samplerUpdate(hwaddr net.HardwareAddr, ipaddr net.IP, auth bool) {
 		return
 	}
 
-	auditMtx.Lock()
-	defer auditMtx.Unlock()
-	r, ok := auditRecords[layers.NewMACEndpoint(hwaddr)]
+	// Convert the addresses into integers for faster processing
+	mac := network.HWAddrToUint64(hwaddr)
+	ip := network.IPAddrToUint32(ipaddr)
 
+	// If this mac->ip is valid, we're done
+	currentMtx.Lock()
+	expected, ok := currentAddrs[mac]
+	currentMtx.Unlock()
+	if ok && expected == ip {
+		return
+	}
+
+	// Record this observation for the auditor to evaluate
+	observedMtx.Lock()
+	list, ok := currentObservations[mac]
 	if !ok {
-		rec := &record{
-			ipaddr: ipaddr,
-			ring:   scanningRing,
-		}
-		if auth {
-			rec.audit = vetted
+		list = make(map[uint32]bool)
+		currentObservations[mac] = list
+	}
+	list[ip] = true
+	observedMtx.Unlock()
+}
+
+func registerIPAddr(hwaddr net.HardwareAddr, ipaddr net.IP) {
+	mac := network.HWAddrToUint64(hwaddr)
+	ip := network.IPAddrToUint32(ipaddr)
+
+	currentMtx.Lock()
+	current, ok := currentAddrs[mac]
+	if !ok || current != ip {
+		if ip == 0 {
+			delete(currentAddrs, mac)
 		} else {
-			rec.audit = foreign
+			currentAddrs[mac] = ip
 		}
-		auditRecords[layers.NewMACEndpoint(hwaddr)] = rec
-		return
 	}
+	currentMtx.Unlock()
 
-	if r.audit == conflict {
-		return
-	}
-
-	if !r.ipaddr.Equal(ipaddr) {
-		r.ipaddr = ipaddr
-		if auth {
-			r.audit = vetted
-		} else if r.audit == vetted {
-			r.audit = conflict
-		}
-	} else if auth {
-		r.audit = vetted
+	if ok && ip != current {
+		oldMtx.Lock()
+		oldAddrs[mac] = current
+		oldMtx.Unlock()
 	}
 }
 
-func samplerDelete(hwaddr net.HardwareAddr) {
-	auditMtx.Lock()
-	delete(auditRecords, layers.NewMACEndpoint(hwaddr))
-	auditMtx.Unlock()
+func unregisterIPAddr(hwaddr net.HardwareAddr) {
+	registerIPAddr(hwaddr, network.Uint32ToIPAddr(0))
 }
 
-func decodeOnePacket(data []byte) {
+func decodeOnePacket(self net.HardwareAddr, data []byte) {
 	var eth *layers.Ethernet
 	var srcIP, dstIP net.IP
 
@@ -260,14 +268,16 @@ func decodeOnePacket(data []byte) {
 			}
 
 			handleEther(eth)
-			samplerUpdate(eth.SrcMAC, srcIP, false)
-			samplerUpdate(eth.DstMAC, dstIP, false)
+			observedIPAddr(self, eth.SrcMAC, srcIP)
+			observedIPAddr(self, eth.DstMAC, dstIP)
 			handleIpv4(ipv4)
 
 		case layers.LayerTypeARP:
 			arp := decodeLayers[idxArp].(*layers.ARP)
-			samplerUpdate(arp.SourceHwAddress, arp.SourceProtAddress, false)
-			samplerUpdate(arp.DstHwAddress, arp.DstProtAddress, false)
+			observedIPAddr(self, arp.SourceHwAddress,
+				arp.SourceProtAddress)
+			observedIPAddr(self, arp.DstHwAddress,
+				arp.DstProtAddress)
 			handleArp(arp)
 
 		case layers.LayerTypeUDP:
@@ -282,27 +292,6 @@ func decodeOnePacket(data []byte) {
 			dport := int(tcp.DstPort)
 			handlePort(srcIP, dstIP, sport, dport, "tcp")
 		}
-	}
-}
-
-// Decode only the layers we care about:
-//   - Look for ARP request and reply to associate MAC and IP
-//   - Look for IPv4 to associate MAC and IP
-func decodePackets(iface string) {
-	handle, err := pcap.OpenLive(iface, 65536, true, pcap.BlockForever)
-	if err != nil {
-		log.Fatalln("OpenLive failed:", err)
-	}
-	defer handle.Close()
-
-	start := time.Now()
-	for time.Since(start) < *capTime {
-		data, _, err := handle.ReadPacketData()
-		if err != nil {
-			log.Println("Error reading packet data:", err)
-			continue
-		}
-		decodeOnePacket(data)
 	}
 }
 
@@ -326,49 +315,140 @@ func getLeases() {
 		if err != nil {
 			log.Printf("Invalid mac address: %s\n", macaddr)
 		} else if client.IPv4 != nil {
-			samplerUpdate(hwaddr, client.IPv4, true)
+			registerIPAddr(hwaddr, client.IPv4)
+		}
+	}
+}
+
+func auditRecords(recs map[uint64]map[uint32]bool) {
+
+	// Make a pass over the observed data, filtering out any that
+	// are legal in retrospect.  This can happen if we saw traffic
+	// to a legal client before we got the DHCP update from configd.
+	currentMtx.Lock()
+	for mac, addrs := range recs {
+		for ip := range addrs {
+			if currentAddrs[mac] == ip {
+				delete(addrs, ip)
+			}
+		}
+		if len(addrs) == 0 {
+			delete(recs, mac)
+		}
+	}
+	currentMtx.Unlock()
+
+	// Repeat a warning if it was at least this long ago
+	now := time.Now()
+	warnSince := now.Add(-1 * *warnTime)
+
+	// Iterate over all of the remaining illegal addresses we've
+	// seen.  If this is the first time we've seen one, report it.  If it's
+	// been a while since we mentioned seeing it, repeat the message.
+	for mac, addrs := range recs {
+		historic, ok := historicObservations[mac]
+		if !ok {
+			historic = make(map[uint32]time.Time)
+			historicObservations[mac] = historic
+		}
+
+		for ip := range addrs {
+			lastTime, ok := historic[ip]
+			if !ok || lastTime.Before(warnSince) {
+				// Check to see if this is a stale address, or
+				// just bad
+				oldstr := ""
+				oldMtx.Lock()
+				if oldAddrs[mac] == ip {
+					oldstr = "stale "
+				}
+				oldMtx.Unlock()
+
+				hwaddr := network.Uint64ToHWAddr(mac)
+				ipaddr := network.Uint32ToIPAddr(ip)
+				log.Printf("Found device %v using %saddr %v\n",
+					hwaddr, oldstr, ipaddr)
+				historic[ip] = now
+			}
 		}
 	}
 }
 
 func auditor() {
 	auditTicker = time.NewTicker(*auditTime)
-	for {
+	for samplerRunning {
 		<-auditTicker.C
-		for ep, r := range auditRecords {
-			if r.audit == conflict {
-				log.Printf("CONFLICT FOUND: %s using %s\n", ep, r.ipaddr)
-			} else if r.audit == foreign {
-				logUnknown(r.ring, ep.String(), r.ipaddr.String())
-			}
+
+		// Make a copy of currentObservations and reset the master, so
+		// we can evaluate the list without holding the lock.
+		observedMtx.Lock()
+		copy := currentObservations
+		currentObservations = make(map[uint64]map[uint32]bool)
+		observedMtx.Unlock()
+
+		auditRecords(copy)
+	}
+}
+
+func openOne(ring, iface string) (*pcap.Handle, error) {
+	if ring != base_def.RING_INTERNAL {
+		// The internal ring is special.  See
+		// networkd.go:prepareRingBridge()
+		err := network.WaitForDevice(iface, time.Minute)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %v", iface, err)
 		}
 	}
+
+	handle, err := pcap.OpenLive(iface, 65536, true, pcap.BlockForever)
+	if err != nil {
+		err = fmt.Errorf("pcap.OpenLive(%s) failed: %v", iface, err)
+	}
+	return handle, err
 }
 
-func sampleOne(ring, iface string) error {
+func sampleOne(ring, iface string) {
 	self, err := net.InterfaceByName(iface)
 	if err != nil {
-		return fmt.Errorf("failed to get mac addr: %s", err)
+		log.Printf("failed to get mac addr for %s device (%s): %v",
+			ring, iface, err)
+		return
 	}
-	scanningAddr = self.HardwareAddr
-	scanningIface = iface
-	scanningRing = ring
+	log.Printf("Sampling on %s (%s)\n", ring, iface)
 
-	if err := network.WaitForDevice(iface, 0); err != nil {
-		return fmt.Errorf("device is offline")
-	}
+	warned := false
+	for samplerRunning {
+		handle, err := openOne(ring, iface)
+		if err != nil {
+			if !warned {
+				log.Printf("openOne(%s) failed: %v\n",
+					iface, err)
+				warned = true
+			}
+			continue
+		}
+		warned = false
 
-	if *verbose {
-		log.Printf("Sample start: %s\n", iface)
+		for {
+			data, _, err := handle.ReadPacketData()
+			if err != nil {
+				log.Println("Error reading packet data:", err)
+				break
+			}
+			decodeOnePacket(self.HardwareAddr, data)
+		}
+		handle.Close()
 	}
-	decodePackets(iface)
-	if *verbose {
-		log.Printf("Sample done: %s\n", iface)
-	}
-	return nil
 }
 
-func sampleLoop() {
+func sampleFini() {
+	log.Printf("Shutting down sampler\n")
+	samplerRunning = false
+	auditTicker.Stop()
+	printStats()
+}
+
+func sampleInit() error {
 	// These are the layers we wish to decode
 	decodeLayers = make([]gopacket.DecodingLayer, idxMAX)
 	decodeLayers[idxEth] = &layers.Ethernet{}
@@ -387,39 +467,17 @@ func sampleLoop() {
 		}
 	}
 
-	sampleTicker = time.NewTicker(*loopTime)
-	for {
-		for ring, config := range rings {
-			if config.Bridge == "" {
-				continue
-			}
-			err := sampleOne(ring, config.Bridge)
-			if err != nil {
-				log.Printf("Sample of %s on %s failed: %v\n",
-					ring, config.Bridge, err)
-				continue
-			}
-			<-sampleTicker.C
-		}
-	}
-}
-
-func sampleFini() {
-	log.Printf("Shutting down sampler\n")
-	sampleTicker.Stop()
-	auditTicker.Stop()
-	printStats()
-}
-
-func sampleInit() error {
-	if *loopTime < *capTime {
-		return fmt.Errorf("loop-time should be greater than cap-time")
-	}
-
 	getGateways()
 	getLeases()
 
-	go sampleLoop()
+	samplerRunning = true
+	for ring, config := range rings {
+		if config.Bridge == "" {
+			continue
+		}
+		go sampleOne(ring, config.Bridge)
+	}
+
 	go auditor()
 
 	return nil

@@ -801,7 +801,7 @@ func prepareRingBridge(ringName string) {
 	// 'link up' until/unless the NIC is attached.  The other bridges
 	// already have wireless NICs attached, and we expect them to be in the
 	// 'link up' state already.
-	if ringName != "internal" {
+	if ringName != base_def.RING_INTERNAL {
 		err := network.WaitForDevice(bridge, 5*time.Second)
 		if err != nil {
 			log.Printf("%s failed to come online: %v\n", bridge, err)

@@ -101,7 +101,6 @@ func setMacIP(mac, ip string) {
 	mapMtx.Lock()
 	macToIP[mac] = ip
 	ipToMac[ip] = mac
-	log.Printf("%s <->%s\n", mac, ip)
 	mapMtx.Unlock()
 }
 
@@ -133,7 +132,7 @@ func configIPv4Changed(path []string, value string, expires *time.Time) {
 	}
 
 	if ipv4 := net.ParseIP(value); ipv4 != nil {
-		samplerUpdate(hwaddr, ipv4.To4(), true)
+		registerIPAddr(hwaddr, ipv4.To4())
 		scannerRequest(ipv4.String())
 		setMacIP(path[1], value)
 	} else {
@@ -143,7 +142,7 @@ func configIPv4Changed(path []string, value string, expires *time.Time) {
 
 func configIPv4Delexp(path []string) {
 	if hwaddr, err := net.ParseMAC(path[1]); err == nil {
-		samplerDelete(hwaddr)
+		unregisterIPAddr(hwaddr)
 		clearMac(path[1])
 	} else {
 		log.Printf("invalid MAC address %s", path[1])
