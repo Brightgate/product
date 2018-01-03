@@ -326,18 +326,10 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 	var node *apcfg.PropertyNode
 
 	satNode := aputil.IsSatelliteMode()
-	apSuffix := ""
-	if satNode {
-		// XXX - for now we'll give mesh nodes their own SSID.  This
-		// lets us sort out the layer 2/3 plumbing issues without having
-		// to worry about AP handoff
-		apSuffix += "-mesh"
-	}
-
 	if node = props.GetChild("ssid"); node == nil {
 		return fmt.Errorf("no SSID configured")
 	}
-	ssid = node.GetValue() + apSuffix
+	ssid = node.GetValue()
 
 	if node = props.GetChild("passphrase"); node == nil {
 		return fmt.Errorf("no passphrase configured")
@@ -353,7 +345,7 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 	}
 
 	if node = props.GetChild("setupssid"); node != nil {
-		setupSSID = node.GetValue() + apSuffix
+		setupSSID = node.GetValue()
 	}
 
 	if !satNode && d.multipleAPs && len(setupSSID) > 0 {
