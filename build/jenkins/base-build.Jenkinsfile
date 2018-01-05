@@ -1,7 +1,10 @@
 //
 // Jenkins pipeline DSL for a "basic build" of this repository.  This is
-// intended to exercise the different ways one can build this repo, in order
-// to ensure that everything is working.
+// intended to exercise the main ways one can build this repo.  It is designed
+// to turn around results fairly quickly and as such it is not intended to
+// exhaustively test every part of the Makefile infrastructure-- that can be
+// done by other jobs which repeatedly build and clobber with different
+// options.
 // 
 // More information about the Jenkins pipeline DSL can be found at:
 //  - https://jenkins.io/doc/book/pipeline/
@@ -16,24 +19,19 @@
 pipeline {
     agent any
     stages {
-        stage('checkout') {
-            steps {
-                checkout([
-                    $class: 'GitSCM',
-                    branches: [[name: '*/master']],
-                    extensions: [[$class: 'CleanBeforeCheckout']],
-                    browser: [
-                    $class: 'Phabricator',
-                    repo: 'Product',
-                    repoUrl: 'https://ph0.b10e.net/'
-                    ],
-                    userRemoteConfigs: [[url: 'ssh://git@ph0.b10e.net:2222/source/Product.git']]
-                ])
-            }
-        }
         stage('build') {
             steps {
-                sh 'source env.sh && make && make install'
+                sh 'source env.sh && make'
+                // Incremental 'make' after above should do nothing
+                sh 'source env.sh && make -q'
+
+                sh 'source env.sh && make util'
+                // Incremental 'make util' after above should do nothing
+                sh 'source env.sh && make -q util'
+
+                sh 'source env.sh && make install'
+                // Incremental 'make install' after above should do nothing
+                sh 'source env.sh && make -q install'
             }
         }
         stage('packaging') {
