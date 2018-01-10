@@ -11,9 +11,35 @@ import Promise from "bluebird"
 
 Vue.use(Vuex)
 
+// XXX this needs to get replaced with constants from devices.json
+const device_category_all = ['recent', 'phone', 'computer', 'media', 'iot']
+
+// Developer switch, for now; this would be better as a part of the store itself
+const enable_mock = true
+
+var initDevices
+if (enable_mock) {
+  initDevices = {
+     by_uniqid: _.keyBy(mockDevices, 'uniqid'),
+     categories: {}
+  }
+} else {
+  initDevices = {
+     by_uniqid: {},
+     categories: {}
+  }
+}
+makeDeviceCategories(initDevices)
+
+const STD_TIMEOUT = {
+  response: 500,
+  deadline: 5000
+}
+const RETRY_DELAY = 1000
+
 const state = {
-  devices: {categories: {}, by_uniqid: {}},
-  deviceCount: 0,
+  devices: _.cloneDeep(initDevices),
+  deviceCount: Object.keys(initDevices.by_uniqid).length,
   rings: []
 };
 
@@ -60,15 +86,6 @@ const getters = {
     return state.rings
   },
 }
-
-// XXX this needs to get replaced with constants from devices.json
-const device_category_all = ['recent', 'phone', 'computer', 'media', 'iot']
-
-const STD_TIMEOUT = {
-  response: 500,
-  deadline: 5000
-}
-const RETRY_DELAY = 1000
 
 // Make up to maxcount attempts to see if property has changed to an
 // expected value.
@@ -134,16 +151,34 @@ function devicesGetP(maxcount, count) {
   })
 }
 
+function makeDeviceCategories(devices) {
+    // Reorganize the data into:
+    // { 'phone': [list of phones...], 'computer': [...] ... }
+    //
+    // Make sure all categories are present.
+    devices.categories = {}
+    for (var c of device_category_all) {
+      devices.categories[c] = []
+    }
+
+    _.reduce(devices.by_uniqid, ((result, value) => {
+      assert(value.category in devices.categories, `category ${value.category} is missing`)
+      result[value.category].push(value.uniqid);
+      return result;
+    }), devices.categories)
+    return devices
+}
+
 const actions = {
   // Load the list of devices from the server.  merge it with mock devices
   // defined locally (if using).
   fetchDevices (context) {
     console.log("Store: fetchDevices")
+    var devices = {
+        categories: {},
+        by_uniqid: {},
+    }
     return devicesGetP(10).then((res_json) => {
-      var devices = {
-          categories: {},
-          by_uniqid: {},
-      }
 
       var mapped_devices = _.map(res_json.Devices, (dev) => {
         return {
@@ -162,25 +197,13 @@ const actions = {
         }
       })
 
-      devices.by_uniqid = _.defaults(
-        _.keyBy(mapped_devices, 'uniqid'),
-        _.keyBy(mockDevices, 'uniqid'))
-
-      // Reorganize the data into:
-      // { 'phone': [list of phones...], 'computer': [...] ... }
-      //
-      // Make sure all categories are present.
-      devices.categories = {}
-      for (var c of device_category_all) {
-        devices.categories[c] = []
+      devices.by_uniqid = _.keyBy(mapped_devices, 'uniqid')
+    }).finally(() => {
+      if (enable_mock) {
+        _.defaults(devices.by_uniqid,  _.keyBy(mockDevices, 'uniqid'))
       }
-
-      _.reduce(devices.by_uniqid, ((result, value) => {
-        assert(value.category in devices.categories, `category ${value.category} is missing`)
-        result[value.category].push(value.uniqid);
-        return result;
-      }), devices.categories)
-
+    }).then(() => {
+      makeDeviceCategories(devices)
       context.commit('setDevices', devices)
     })
   },
