@@ -45,12 +45,11 @@ type IoTMQTTClient struct {
 	onConfig    ConfigHandler
 	mqttOpts    mqtt.ClientOptions
 	mqtt.Client
-	// Unfortunately we seem to encounter races in the MQTT package
-	// between Disconnect() and Publish()-- when we disconnect the
-	// outstanding Tokens don't seem to be notified.  See also
-	// https://github.com/eclipse/paho.mqtt.golang/issues/169.
-	// There's little else we can do except impose a much coarser
-	// locking scheme.
+	// Due to the above bug, sometimes Publish() calls might fail due to
+	// Disconnect() triggered from our timer.  We use a lock to try to get
+	// things to drain before doing the Disconnect() but it's not
+	// guaranteed.  The lock guarantees that once we start the JWT refresh,
+	// we won't submit any other commands.
 	sync.RWMutex
 }
 
@@ -95,11 +94,11 @@ func (c *IoTMQTTClient) refreshJWT() {
 	c.makeClient()
 	if connected {
 		log.Printf("refreshJWT() reconnecting client\n")
-		if token := c.Client.Connect(); token.Wait() && token.Error() != nil {
+		if token := c.Client.Connect(); token.WaitTimeout(10*time.Second) && token.Error() != nil {
 			panic(token.Error())
 		}
 		// Restore config subscription
-		c.resubscribeConfig().Wait()
+		c.resubscribeConfig().WaitTimeout(10 * time.Second)
 		log.Printf("refreshJWT() reconnected client\n")
 	}
 	time.AfterFunc(time.Second*cJWTExpiry/2, c.refreshJWT)
@@ -154,7 +153,6 @@ func (c *IoTMQTTClient) PublishEvent(subfolder string, qos byte, payload interfa
 	} else {
 		t = c.Publish(c.eventTopic, qos, false, payload)
 	}
-	t.Wait() // XXX to resolve race; remove in the future
 	return t
 }
 
@@ -163,7 +161,6 @@ func (c *IoTMQTTClient) PublishState(qos byte, payload interface{}) mqtt.Token {
 	c.RLock()
 	defer c.RUnlock()
 	t := c.Publish(c.stateTopic, 1, false, payload)
-	t.Wait() // XXX to resolve race; remove in the future
 	return t
 }
 

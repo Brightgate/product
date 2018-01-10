@@ -115,9 +115,9 @@ func sendUpbeat(iotc *iotcore.IoTMQTTClient) error {
 	}
 	slogger.Debugw("Sending upbeat", "text", string(text))
 	t := iotc.PublishEvent("upbeat", 1, text)
-	if !t.Wait() {
+	if t.Wait() && t.Error() != nil {
 		slogger.Errorw("upbeat failed", "error", t.Error())
-		return errors.Wrap(t.Error(), "Failed to wait for upbeat publish")
+		return errors.Wrap(t.Error(), "Upbeat send failed")
 	}
 	slogger.Infow("Sent upbeat", "text", string(text))
 	return nil
