@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -642,4 +642,20 @@ func (c *APConfig) SetUserPassword(user string, passwd string) error {
 	}
 
 	return nil
+}
+
+// GetActiveBlocks builds a slice of all the IP addresses that were being
+// actively blocked at the time of the call.
+func (c *APConfig) GetActiveBlocks() []string {
+	list := make([]string, 0)
+
+	active, _ := c.GetProps("@/firewall/active")
+	now := time.Now()
+	for _, node := range active.Children {
+		if node.Expires == nil || now.Before(*node.Expires) {
+			list = append(list, node.Name)
+		}
+	}
+
+	return list
 }

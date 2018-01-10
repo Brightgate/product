@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -13,14 +13,11 @@
  * message logger
  */
 
-// XXX Exception messages are not displayed.
-
 package main
 
 import (
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -31,6 +28,7 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
+	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
 
@@ -55,7 +53,6 @@ var (
 const pname = "ap.logd"
 
 func handlePing(event []byte) {
-	// XXX pings were green
 	ping := &base_msg.EventPing{}
 	proto.Unmarshal(event, ping)
 	log.Printf("[sys.ping] %v", ping)
@@ -70,11 +67,67 @@ func handleConfig(event []byte) {
 }
 
 func handleEntity(event []byte) {
-	// XXX entities were blue
 	entity := &base_msg.EventNetEntity{}
 	proto.Unmarshal(event, entity)
 	log.Printf("[net.entity] %v", entity)
 	eventsHandled.Inc()
+}
+
+func extendMsg(msg *string, field, value string) {
+	new := field + ": " + value
+	if len(*msg) > 0 {
+		*msg += ", "
+	}
+	*msg += new
+}
+
+func handleException(event []byte) {
+	exception := &base_msg.EventNetException{}
+	proto.Unmarshal(event, exception)
+	log.Printf("[net.exception] %v", exception)
+	eventsHandled.Inc()
+
+	// Construct a user-friendly message to push to the system log
+	time := aputil.ProtobufToTime(exception.Timestamp)
+	timestamp := time.Format("2006/01/02 13:04:05")
+
+	msg := ""
+	if exception.Sender != nil {
+		extendMsg(&msg, "Sender", *exception.Sender)
+	}
+
+	if exception.Protocol != nil {
+		protocols := base_msg.Protocol_name
+		num := int32(*exception.Protocol)
+		extendMsg(&msg, "Protocol", protocols[num])
+	}
+
+	if exception.Reason != nil {
+		reasons := base_msg.EventNetException_Reason_name
+		num := int32(*exception.Reason)
+		extendMsg(&msg, "Reason", reasons[num])
+	}
+
+	if exception.MacAddress != nil {
+		mac := network.Uint64ToHWAddr(*exception.MacAddress)
+		extendMsg(&msg, "hwaddr", mac.String())
+	}
+
+	if exception.Ipv4Address != nil {
+		ip := network.Uint32ToIPAddr(*exception.Ipv4Address)
+		extendMsg(&msg, "IP", ip.String())
+	}
+
+	if exception.Hostname != nil {
+		extendMsg(&msg, "Hostname", *exception.Hostname)
+	}
+
+	if exception.Message != nil {
+		extendMsg(&msg, "Message", *exception.Message)
+
+	}
+
+	fmt.Printf("%s Handled exception event: %s\n", timestamp, msg)
 }
 
 func handleResource(event []byte) {
@@ -85,7 +138,6 @@ func handleResource(event []byte) {
 }
 
 func handleRequest(event []byte) {
-	// XXX requests were also blue
 	request := &base_msg.EventNetRequest{}
 	proto.Unmarshal(event, request)
 	log.Printf("[net.request] %v", request)
@@ -123,7 +175,7 @@ func reopenLogfile() error {
 	if err != nil {
 		return err
 	}
-	log.SetOutput(io.MultiWriter(newLog, os.Stdout))
+	log.SetOutput(newLog)
 	if logFile != nil {
 		logFile.Close()
 	}
@@ -158,6 +210,7 @@ func main() {
 	b.Handle(base_def.TOPIC_PING, handlePing)
 	b.Handle(base_def.TOPIC_CONFIG, handleConfig)
 	b.Handle(base_def.TOPIC_ENTITY, handleEntity)
+	b.Handle(base_def.TOPIC_EXCEPTION, handleException)
 	b.Handle(base_def.TOPIC_RESOURCE, handleResource)
 	b.Handle(base_def.TOPIC_REQUEST, handleRequest)
 	b.Handle(base_def.TOPIC_IDENTITY, handleIdentity)

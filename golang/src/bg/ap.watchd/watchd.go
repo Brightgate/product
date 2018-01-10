@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -40,7 +40,7 @@ var (
 	brokerd *broker.Broker
 	config  *apcfg.APConfig
 
-	watchDir = flag.String("dir", ".",
+	watchDir = flag.String("dir", "/var/spool/watchd",
 		"directory in which the watchd work files should be stored")
 	addr = flag.String("prom_address", base_def.WATCHD_PROMETHEUS_PORT,
 		"The address to listen on for Prometheus HTTP requests.")
@@ -194,7 +194,7 @@ func main() {
 	*watchDir = aputil.ExpandDirPath(*watchDir)
 
 	if !aputil.FileExists(*watchDir) {
-		if err := os.Mkdir(*watchDir, 0755); err != nil {
+		if err := os.MkdirAll(*watchDir, 0755); err != nil {
 			log.Fatalf("Error adding directory %s: %v\n",
 				*watchDir, err)
 		}

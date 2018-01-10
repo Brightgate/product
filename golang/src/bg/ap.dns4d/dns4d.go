@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -274,6 +274,22 @@ func getClient(w dns.ResponseWriter) *apcfg.ClientInfo {
 	return nil
 }
 
+// Look through the client table to find the mac address corresponding to this
+// client record.
+func getMac(record *apcfg.ClientInfo) net.HardwareAddr {
+	clientMtx.Lock()
+	defer clientMtx.Unlock()
+
+	for m, c := range clients {
+		if c == record {
+			mac, _ := net.ParseMAC(m)
+			return mac
+		}
+	}
+
+	return network.MacZero
+}
+
 func answerA(q dns.Question, rec dnsRecord) *dns.A {
 	a := net.ParseIP(rec.recval)
 	rr := dns.A{
@@ -405,6 +421,28 @@ func localHandler(w dns.ResponseWriter, r *dns.Msg) {
 	logRequest("localHandler", start, c.IPv4, r, m)
 }
 
+func notifyBlockEvent(c *apcfg.ClientInfo, hostname string) {
+	protocol := base_msg.Protocol_DNS
+	reason := base_msg.EventNetException_PHISHING_ADDRESS
+	topic := base_def.TOPIC_EXCEPTION
+	dev := getMac(c)
+
+	entity := &base_msg.EventNetException{
+		Timestamp:   aputil.NowToProtobuf(),
+		Sender:      proto.String(brokerd.Name),
+		Debug:       proto.String("-"),
+		Protocol:    &protocol,
+		Reason:      &reason,
+		Hostname:    &hostname,
+		MacAddress:  proto.Uint64(network.HWAddrToUint64(dev)),
+		Ipv4Address: proto.Uint32(network.IPAddrToUint32(c.IPv4)),
+	}
+
+	if err := brokerd.Publish(entity, topic); err != nil {
+		log.Printf("couldn't publish %s (%v): %v\n", topic, entity, err)
+	}
+}
+
 func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 	c := getClient(w)
 	if c == nil {
@@ -413,7 +451,6 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 		captiveHandler(c, w, r)
 		return
 	}
-	record, _ := ringRecords[c.Ring]
 
 	m := new(dns.Msg)
 	m.SetReply(r)
@@ -421,17 +458,19 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 
 	start := time.Now()
 	for _, q := range r.Question {
-		if phishScorer.Score(
-			q.Name[:len(q.Name)-1], phishtank.Dns) < phishThreshold {
+		hostname := q.Name[:len(q.Name)-1]
+		if phishScorer.Score(hostname, phishtank.Dns) < phishThreshold {
 			// Are any of the questions in our phishing database?
 			// If so, return our IP address; for the HTTP and HTTPS
 			// cases, we can display a "no phishing" page.
 			//
 			// XXX: maybe we should return a CNAME record for our
 			// local 'phishing.<siteid>.brightgate.net'?
+			localRecord, _ := ringRecords[c.Ring]
 			log.Printf("phish threshold crossed, ring %s, returning %v\n",
-				c.Ring, record)
-			m.Answer = append(m.Answer, answerA(q, record))
+				c.Ring, localRecord)
+			m.Answer = append(m.Answer, answerA(q, localRecord))
+			notifyBlockEvent(c, hostname)
 		} else if strings.Contains(q.Name, ".in-addr.arpa.") {
 			hostsMtx.Lock()
 			rec, ok := hosts[q.Name]

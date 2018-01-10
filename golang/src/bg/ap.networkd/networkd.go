@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -1164,6 +1164,8 @@ func daemonInit() error {
 	}
 	config.HandleChange(`^@/clients/.*/ring$`, configRingChanged)
 	config.HandleChange(`^@/network/`, configNetworkChanged)
+	config.HandleChange(`^@/firewall/active/`, configBlocklistChanged)
+	config.HandleExpire(`^@/firewall/active/`, configBlocklistExpired)
 
 	rings = config.GetRings()
 	clients = config.GetClients()

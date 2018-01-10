@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2017 Brightgate Inc. All rights reserved.
+// COPYRIGHT 2018 Brightgate Inc. All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -46,6 +46,7 @@ message Timestamp {
 enum Protocol {
 	DNS = 1;
 	DHCP = 2;
+	IP = 3;
 }
 
 // The ping message is sent shortly after an application or service
@@ -217,11 +218,14 @@ message EventNetException {
 		DIRECT_FORBIDDEN = 1;
 		POLICY_BOUNDARY_VIOLATED = 2;
 		ILLEGAL_ADDRESS = 3;
+		PHISHING_ADDRESS = 4;
+		BLOCKED_IP = 5;
 	}
 	optional Reason reason = 0x801;
 	optional string message = 0x802;
-
-	optional string requestor = 0x0803;
+	optional fixed64 mac_address = 0x803;
+	optional fixed32 ipv4_address = 0x804;
+	optional string hostname = 0x805;
 }
 
 // The network identity is sent whenever the identifier daemon is able to

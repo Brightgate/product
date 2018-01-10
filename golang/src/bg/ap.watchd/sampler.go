@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -346,6 +346,8 @@ func processOnePacket(state *samplerState, data []byte) {
 				int(tcp.DstPort), "tcp")
 		}
 		collectStats(state, eth, ipv4, uint64(len(data)))
+		checkBlock(dstMac, srcIP)
+		checkBlock(srcMac, dstIP)
 	}
 	observedIPAddr(state, srcMac, srcIP)
 	observedIPAddr(state, dstMac, dstIP)
@@ -536,6 +538,7 @@ func sampleFini() {
 }
 
 func sampleInit() error {
+	blocklistInit()
 	getGateways()
 	getLeases()
 

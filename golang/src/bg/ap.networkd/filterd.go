@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -55,11 +55,13 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"bg/ap_common/network"
 	"bg/base_def"
@@ -80,11 +82,13 @@ var (
 		"nat":    {"PREROUTING", "INPUT", "OUTPUT", "POSTROUTING"},
 		"filter": {"INPUT", "FORWARD", "OUTPUT", "dropped"},
 	}
+	blockedIPs map[uint32]struct{}
 )
 
 const (
 	iptablesRulesFile = "/tmp/iptables.rules"
-	iptablesCmd       = "/sbin/iptables-restore"
+	restoreCmd        = "/sbin/iptables-restore"
+	iptablesCmd       = "/sbin/iptables"
 )
 
 // Implement the Sort interface for the list of rules
@@ -195,8 +199,7 @@ func iptablesReset() {
 		f.WriteString("COMMIT\n")
 	}
 
-	cmd := exec.Command(iptablesCmd, iptablesRulesFile)
-	out, err := cmd.CombinedOutput()
+	out, err := exec.Command(restoreCmd, iptablesRulesFile).CombinedOutput()
 	if err != nil {
 		log.Printf("failed to apply rules: %s\n", out)
 	}
@@ -477,6 +480,72 @@ func addRule(r *rule) error {
 	// XXX - handle start/end times
 }
 
+func iptablesRuleApply(rule string) {
+	args := strings.Split(rule, " ")
+	args = append([]string{iptablesCmd}, args...)
+	cmd := exec.Command(iptablesCmd)
+	cmd.Args = args
+
+	if out, err := cmd.CombinedOutput(); err != nil {
+		log.Printf("iptables rule '%s' failed: %s\n", rule, out)
+	}
+}
+
+// Update the live iptables rules needed to add or remove blocks for
+// incoming and outgoing traffic from a blocked IP address
+func updateBlockRules(addr string, add bool) {
+	var action string
+	if add {
+		log.Printf("Adding active block on %s\n", addr)
+		action = "-I"
+	} else {
+		log.Printf("Removing active block on %s\n", addr)
+		action = "-D"
+	}
+
+	inputRule := "-t filter " + action + " INPUT -s " + addr + " -j dropped"
+	fwdRule := "-t filter " + action + " FORWARD -d " + addr + " -j dropped"
+	iptablesRuleApply(inputRule)
+	iptablesRuleApply(fwdRule)
+}
+
+// Extract and validate an IP address from a firewall property like
+// @/firewall/active/2.3.4.5
+func getAddrFromPath(path []string) (addr string, flat uint32) {
+	if len(path) == 3 {
+		addr = path[2]
+		if ip := net.ParseIP(addr); ip != nil {
+			flat = network.IPAddrToUint32(ip)
+		}
+	}
+	return
+}
+
+// An active block on an IP address has expired.  Remove that from the list of
+// blocked IPs and delete the iptables rules currently implementing the block.
+func configBlocklistExpired(path []string) {
+	addr, flat := getAddrFromPath(path)
+	if flat != 0 {
+		if _, blocked := blockedIPs[flat]; blocked {
+			delete(blockedIPs, flat)
+			updateBlockRules(addr, false)
+		}
+	}
+}
+
+// An active block on an IP address has been added.  Add the address to the list
+// of blocked IPs and insert new iptables rules to prevent traffic to/from that
+// IP.
+func configBlocklistChanged(path []string, val string, expires *time.Time) {
+	addr, flat := getAddrFromPath(path)
+	if flat != 0 {
+		if _, blocked := blockedIPs[flat]; !blocked {
+			blockedIPs[flat] = struct{}{}
+			updateBlockRules(addr, true)
+		}
+	}
+}
+
 func iptablesRebuild() {
 	log.Printf("Rebuilding iptables rules\n")
 
@@ -496,6 +565,19 @@ func iptablesRebuild() {
 	// Add the basic routing rules for each interface
 	for ring := range rings {
 		ifaceForwardRules(ring)
+	}
+
+	// Repopulate the list of blocked  IPs
+	active := config.GetActiveBlocks()
+	blockedIPs = make(map[uint32]struct{})
+	for _, addr := range active {
+		if ip := net.ParseIP(addr); ip != nil {
+			flat := network.IPAddrToUint32(ip)
+			blockedIPs[flat] = struct{}{}
+			dropRule := addr + " -j dropped"
+			iptablesAddRule("filter", "INPUT", " -s "+dropRule)
+			iptablesAddRule("filter", "FORWARD", " -d "+dropRule)
+		}
 	}
 
 	// Dropped packets should be logged.  We use different rules for LAN and
@@ -550,6 +632,7 @@ func loadFilterRules() error {
 }
 
 func applyFilters() {
+
 	iptablesRebuild()
 	iptablesReset()
 }

@@ -1,5 +1,5 @@
 #
-# COPYRIGHT 2017 Brightgate Inc. All rights reserved.
+# COPYRIGHT 2018 Brightgate Inc. All rights reserved.
 #
 # This copyright notice is Copyright Management Information under 17 USC 1202
 # and is included to protect this work and deter copyright infringement.
@@ -209,6 +209,7 @@ APPSECRETSSL=$(APPSECRET)/ssl
 APPSECRETIOTCORE=$(APPSECRET)/iotcore
 APPSPOOL=$(APPVAR)/spool
 APPSPOOLANTIPHISH=$(APPVAR)/spool/antiphishing
+APPSPOOLWATCHD=$(APPVAR)/spool/watchd
 APPRULES=$(APPETC)/filter.rules.d
 APPMODEL=$(APPETC)/device_model
 
@@ -311,7 +312,8 @@ APPCONFIGS = \
 	$(APPROOTLIB)/systemd/system/ap.mcp.service \
 	$(APPROOTLIB)/systemd/system/brightgate-appliance.service \
 	$(APPSPOOLANTIPHISH)/example_blacklist.csv \
-	$(APPSPOOLANTIPHISH)/whitelist.csv
+	$(APPSPOOLANTIPHISH)/whitelist.csv \
+	$(APPSPOOLWATCHD)/ip_blocklist.csv
 
 APPDIRS = \
 	$(APPBIN) \
@@ -328,6 +330,7 @@ APPDIRS = \
 	$(APPSPOOL) \
 	$(APPVAR) \
 	$(APPSPOOLANTIPHISH) \
+	$(APPSPOOLWATCHD) \
 	$(HTTPD_CLIENTWEB_DIR) \
 	$(HTTPD_TEMPLATE_DIR) \
 	$(NETWORKD_TEMPLATE_DIR) \
@@ -512,6 +515,9 @@ $(APPSPOOLANTIPHISH)/example_blacklist.csv: $(GOSRCBG)/data/phishtank/example_bl
 $(APPSPOOLANTIPHISH)/whitelist.csv: $(GOSRCBG)/data/phishtank/whitelist.csv | $(APPSPOOLANTIPHISH)
 	$(INSTALL) -m 0644 $< $@
 
+$(APPSPOOLWATCHD)/ip_blocklist.csv: $(GOSRCBG)/ap.watchd/ip_blocklist.csv | $(APPSPOOLWATCHD)
+	$(INSTALL) -m 0644 $< $@
+
 $(HTTPD_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.httpd/% | $(APPETC)
 	$(INSTALL) -m 0644 $< $@
 
@@ -618,6 +624,7 @@ $(APPBIN)/ap.relayd: $(GOSRCBG)/ap.relayd/relayd.go
 $(APPBIN)/ap.userauthd: $(GOSRCBG)/ap.userauthd/userauthd.go
 $(APPBIN)/ap.watchd: \
 	$(GOSRCBG)/ap.watchd/api.go \
+	$(GOSRCBG)/ap.watchd/block.go \
 	$(GOSRCBG)/ap.watchd/droplog.go \
 	$(GOSRCBG)/ap.watchd/metrics.go \
 	$(GOSRCBG)/ap.watchd/sampler.go \
