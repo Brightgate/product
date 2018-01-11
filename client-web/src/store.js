@@ -59,6 +59,10 @@ const getters = {
     return state.devices.by_uniqid[uniqid]
   },
 
+  All_Devices: (state) => {
+    return state.devices.by_uniqid
+  },
+
   Devices_By_Category: (state) => (category) => {
     const d = state.devices
     if (!(category in d.categories)) {
@@ -253,7 +257,7 @@ const actions = {
     const propname = `@/clients/${deviceUniqID}/ring`
     return context.dispatch('setConfigProp', {
         property: propname,
-	value: newRing
+  value: newRing
     }).then(() => {
       return checkPropChangeP(propname, newRing, 10)
     }).then(() => {

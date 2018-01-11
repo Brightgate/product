@@ -19,33 +19,41 @@
               <f7-nav-center><img src="img/bglogo.png"/></f7-nav-center>
               <f7-nav-right>&nbsp;</f7-nav-right>
             </f7-navbar>
-            <f7-block-title>Brightgate Status</f7-block-title>
+            <f7-block-title>{{ $t("message.status.brightgate_status") }}</f7-block-title>
             <f7-block inner>
-              <p><b>One of your computers has a virus.</b><br/>
-                See the "Serious Alerts" below.</p>
-              <p>Your network is working properly.</p>
+              <p v-html="$t('message.status.has_virus', {'serious_alerts': $t('message.alerts.serious_alerts')})"></p>
+              <p>{{ $t("message.status.network_properly") }}</p>
             </f7-block>
 
-            <f7-block-title>Serious Alerts</f7-block-title>
+            <f7-block-title>{{ $t("message.alerts.serious_alerts") }}</f7-block-title>
             <f7-list>
-              <f7-list-item link="/details?uniqid=aa:aa:c8:83:1c:11" title="🚫&nbsp;&nbsp;WannaCry on 'jsmith'"/>
+              <f7-list-item 
+                    v-for="device in $store.getters.All_Devices"
+                    v-if="device.alert"
+                    :title="$t('message.alerts.wannacry', {'device': device.network_name})"
+                    :link="'/details?uniqid=' + device.uniqid">
+              </f7-list-item>
             </f7-list>
 
-            <f7-block-title>Tools</f7-block-title>
+            <f7-block-title>{{ $t("message.tools.tools") }}</f7-block-title>
             <f7-list>
-              <f7-list-item link="/devices/" :title="'Manage Devices (' + $store.getters.Device_Count + ')'"></f7-list-item>
-              <f7-list-item title="Open Setup Network">
+              <f7-list-item link="/devices/" :title="$t('message.tools.manage_devices', {'device_count': $store.getters.Device_Count})"></f7-list-item>
+              <f7-list-item :title="$t('message.tools.open_setup_network')">
                 <f7-input type="switch" slot="after" :checked="setupOn"></f7-input>
               </f7-list-item>
-              <f7-list-item title="Accept Devices">
-                <span slot="after"><f7-button @click="openAcceptPopup">Accept</f7-button></span>
+              <f7-list-item :title="$t('message.tools.accept_devices')">
+                <span slot="after"><f7-button @click="openAcceptPopup">{{ $t("message.general.accept") }}</f7-button></span>
               </f7-list-item>
             </f7-list>
 
-            <f7-block-title>Notifications</f7-block-title>
+            <f7-block-title>{{ $t("message.notifications.notifications") }}</f7-block-title>
             <f7-list>
-              <f7-list-item link="/details?uniqid=c8:bc:c8:83:1c:33" title="⚠️&nbsp;&nbsp;Update iPad 'catpad'"/>
-              <f7-list-item link="/details?uniqid=c8:bc:c8:83:1c:22" title="⚠️&nbsp;&nbsp;Update Smart TV 'samsung-un50'"/>
+              <f7-list-item 
+                    v-for="device in $store.getters.All_Devices"
+                    v-if="device.notification"
+                    :title="$t('message.notifications.update_device', {'device': device.network_name})"
+                    :link="'/details?uniqid=' + device.uniqid">
+              </f7-list-item>
             </f7-list>
 
           </f7-page>
@@ -53,7 +61,7 @@
       </f7-view>
     </f7-views>
 
-    <f7-popup id="acceptPop" v-bind:opened="acceptOpen">
+    <f7-popup id="acceptPop" :opened="acceptOpen">
       <f7-block v-if="devicesAccepted">
         <p>Devices Acceptance succeeded.  {{devicesChanged}} devices were affected.</p>
       </f7-block>

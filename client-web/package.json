@@ -33,7 +33,9 @@
     "lodash": "^4.17.4",
     "superagent": "^3.6.2",
     "vue": "^2.4.4",
-    "vuex": "^2.4.1"
+    "vue-i18n": "^7.3.3",
+    "vuex": "^2.4.1",
+    "browser-locale": "^1.0.3"
   },
   "devDependencies": {
     "babel-core": "^6.0.0",

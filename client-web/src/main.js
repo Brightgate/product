@@ -1,6 +1,9 @@
 // Import Vue
 import Vue from 'vue'
 
+// Import VueI18n
+import VueI18n from 'vue-i18n'
+
 // Import F7
 import Framework7 from 'framework7'
 
@@ -14,12 +17,17 @@ import Routes from './routes.js'
 import App from './app.vue'
 
 import store from './store'
+import { messages, i18n } from './i18n'
 
 // Init F7 Vue Plugin
 Vue.use(Framework7Vue)
 
+// Init VueI18n Plugin
+Vue.use(VueI18n)
+
 // Init App
 var vm = new Vue({
+  i18n,
   el: '#app',
   template: '<app/>',
   store,
