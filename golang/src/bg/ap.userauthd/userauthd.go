@@ -262,9 +262,9 @@ func generateRadiusClientConf(rc *rConf) string {
 func signalHandler() {
 	sig := make(chan os.Signal)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	<-sig
+	s := <-sig
 
-	log.Printf("Received signal %v\n", sig)
+	log.Printf("Received signal %v\n", s)
 	running = false
 	hostapdProcess.Stop()
 }
@@ -272,7 +272,7 @@ func signalHandler() {
 //
 // Launch, monitor, and maintain the hostapd process for a single interface
 //
-func runOne(rc *rConf, done chan *rConf) {
+func runOne(rc *rConf) {
 	log.Printf("runOne entry\n")
 	generateRadiusHostapdUsers(rc)
 	generateRadiusClientConf(rc)
@@ -299,6 +299,10 @@ func runOne(rc *rConf, done chan *rConf) {
 
 		log.Printf("RADIUS hostapd exited after %s\n",
 			time.Since(startTime))
+
+		if !running {
+			break
+		}
 		if time.Since(startTimes[0]) < period {
 			rc.Status = fmt.Sprintf("Dying too quickly")
 			break
@@ -308,7 +312,6 @@ func runOne(rc *rConf, done chan *rConf) {
 		// restart the daemon.
 		time.Sleep(time.Second)
 	}
-	done <- rc
 	log.Printf("runOne exit\n")
 }
 
@@ -384,10 +387,8 @@ func main() {
 		Users:            nil,
 	}
 
-	done := make(chan *rConf)
-
 	running = true
 	go signalHandler()
 
-	runOne(rc, done)
+	runOne(rc)
 }

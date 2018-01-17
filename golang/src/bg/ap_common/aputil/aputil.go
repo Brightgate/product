@@ -88,22 +88,30 @@ func (c *Child) Start() error {
 }
 
 // Stop stops a child process - first with a gentle SIGINT, and then with a more
-// severe SIGKILL.
-func (c *Child) Stop() {
+// severe SIGKILL.  The call returns the signal used to terminate the process.
+func (c *Child) Stop() syscall.Signal {
 	if c == nil {
-		return
+		return 0
 	}
 
 	sig := syscall.SIGINT
 	attempts := 0
+	sleeps := 0
 
 	for c.Process != nil {
-		if attempts > 5 {
-			sig = syscall.SIGKILL
+		if sleeps == 0 {
+			if attempts > 5 {
+				sig = syscall.SIGKILL
+			}
+			attempts++
+			c.Signal(sig)
 		}
-		c.Signal(sig)
-		time.Sleep(100 * time.Millisecond)
+
+		time.Sleep(10 * time.Millisecond)
+		sleeps = (sleeps + 1) % 50
 	}
+
+	return sig
 }
 
 // Signal sends a signal to a child process

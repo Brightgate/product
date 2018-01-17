@@ -469,9 +469,9 @@ func generateHostAPDConf(conf *apConfig) string {
 func signalHandler() {
 	sig := make(chan os.Signal)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	<-sig
+	s := <-sig
 
-	log.Printf("Received signal %v\n", sig)
+	log.Printf("Received signal %v\n", s)
 	running = false
 	hostapdProcess.Stop()
 }
@@ -691,6 +691,9 @@ func runOne(conf *apConfig, done chan *apConfig) {
 		for ra.IsRunning() {
 			time.Sleep(10 * time.Millisecond)
 		}
+		if !running {
+			break
+		}
 
 		if time.Since(startTimes[0]) < period {
 			conf.status = fmt.Errorf("dying too quickly")
@@ -732,8 +735,6 @@ func runAll() int {
 		}
 		numRunning--
 	}
-	deleteBridges()
-
 	return errors
 }
 
@@ -1233,6 +1234,10 @@ func main() {
 
 	running = true
 	go signalHandler()
+	errcnt := runAll()
 
-	os.Exit(runAll())
+	log.Printf("Cleaning up\n")
+	networkCleanup()
+
+	os.Exit(errcnt)
 }
