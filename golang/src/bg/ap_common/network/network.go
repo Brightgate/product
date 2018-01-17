@@ -31,8 +31,10 @@ import (
 
 // Well known addresses
 var (
-	MacZero  = net.HardwareAddr([]byte{0, 0, 0, 0, 0, 0})
-	MacBcast = net.HardwareAddr([]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF})
+	MacZero     = net.HardwareAddr([]byte{0, 0, 0, 0, 0, 0})
+	MacZeroInt  = HWAddrToUint64(MacZero)
+	MacBcast    = net.HardwareAddr([]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF})
+	MacBcastInt = HWAddrToUint64(MacBcast)
 
 	// Multicast addresses for mDNS
 	MacmDNSv4 = net.HardwareAddr([]byte{0x01, 0x00, 0x5E, 0x00, 0x00, 0xFB})
