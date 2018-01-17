@@ -78,9 +78,9 @@ var (
 	wifiNic        string
 	networkNodeIdx byte
 
-	hostapdLog   *log.Logger
-	childProcess *os.Process // track the hostapd proc
-	mcpd         *mcp.MCP
+	hostapdLog     *log.Logger
+	hostapdProcess *aputil.Child // track the hostapd proc
+	mcpd           *mcp.MCP
 
 	running      bool
 	setupNetwork bool
@@ -155,16 +155,15 @@ var (
 //
 
 func apReset(conf *apConfig) {
+	log.Printf("Resetting hostapd\n")
 	generateHostAPDConf(conf)
-	if childProcess != nil {
-		//
-		// A SIGHUP will cause hostapd to reload its configuration.
-		// However, it seems that we really need to kill and restart the
-		// process for the changes to be propagated down to the wifi
-		// hardware
-		//
-		childProcess.Signal(syscall.SIGINT)
-	}
+	//
+	// A SIGHUP will cause hostapd to reload its configuration.
+	// However, it seems that we really need to kill and restart the
+	// process for the changes to be propagated down to the wifi
+	// hardware
+	//
+	hostapdProcess.Signal(syscall.SIGINT)
 }
 
 func configRingChanged(path []string, val string, expires *time.Time) {
@@ -194,12 +193,15 @@ func configNetworkChanged(path []string, val string, expires *time.Time) {
 	switch path[1] {
 	case "ssid":
 		conf.SSID = val
+		log.Printf("SSID changed to %s\n", val)
 
 	case "passphrase":
 		conf.Passphrase = val
+		log.Printf("SSID changed to %s\n", val)
 
 	case "setupssid":
 		conf.SetupSSID = val
+		log.Printf("setupSSID changed to %s\n", val)
 
 	default:
 		return
@@ -465,22 +467,13 @@ func generateHostAPDConf(conf *apConfig) string {
 // released before we give mcp a chance to restart the whole stack.
 //
 func signalHandler() {
-	attempts := 0
 	sig := make(chan os.Signal)
-	for {
-		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-		<-sig
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	<-sig
 
-		running = false
-		if childProcess != nil {
-			if attempts < 5 {
-				childProcess.Signal(syscall.SIGINT)
-			} else {
-				childProcess.Signal(syscall.SIGKILL)
-			}
-			attempts++
-		}
-	}
+	log.Printf("Received signal %v\n", sig)
+	running = false
+	hostapdProcess.Stop()
 }
 
 // Create a ring's network bridge.  If a nic is provided, attach it to the
@@ -554,11 +547,14 @@ func getInternalAddr() net.IP {
 	return nil
 }
 
-func rebuildInternalNet() {
+func rebuildInternalNet(ra *aputil.RunAbort) {
 	satNode := aputil.IsSatelliteMode()
 
 	if !satNode {
-		prepareRingBridge(base_def.RING_INTERNAL)
+		prepareRingBridge(base_def.RING_INTERNAL, ra)
+	}
+	if ra.IsAbort() {
+		return
 	}
 
 	br := rings[base_def.RING_INTERNAL].Bridge
@@ -587,15 +583,22 @@ func rebuildInternalNet() {
 	}
 }
 
-func rebuildLan() {
+func rebuildLan(ra *aputil.RunAbort) {
 	for ring := range rings {
+		if ra.IsAbort() {
+			return
+		}
 		if lanRing(ring) {
-			prepareRingBridge(ring)
+			prepareRingBridge(ring, ra)
 		}
 	}
 
 	// Connect all the wired LAN NICs to ring-appropriate bridges.
 	for _, dev := range physDevices {
+		if ra.IsAbort() {
+			return
+		}
+
 		name := dev.name
 		ring := rings[dev.ring]
 
@@ -613,7 +616,7 @@ func rebuildLan() {
 	}
 }
 
-func resetInterfaces() {
+func resetInterfaces(ra *aputil.RunAbort) {
 
 	// We use the lowest byte of our internal IP address as a transient,
 	// local node index.  For the gateway node, that will always be 1.  For
@@ -635,11 +638,16 @@ func resetInterfaces() {
 	createBridge(rings[base_def.RING_INTERNAL], "")
 
 	if setupNetwork {
-		prepareRingBridge(base_def.RING_SETUP)
+		prepareRingBridge(base_def.RING_SETUP, ra)
 	}
 
-	rebuildLan()
-	rebuildInternalNet()
+	rebuildLan(ra)
+	rebuildInternalNet(ra)
+
+	if !ra.IsAbort() {
+		mcpd.SetState(mcp.ONLINE)
+	}
+	ra.ClearRunning()
 }
 
 //
@@ -650,29 +658,40 @@ func runOne(conf *apConfig, done chan *apConfig) {
 
 	startTimes := make([]time.Time, failuresAllowed)
 	for running {
+		var ra aputil.RunAbort
+
 		deleteBridges()
 
-		child := aputil.NewChild(hostapdPath, fn)
-		child.LogOutputTo("hostapd: ", log.Ldate|log.Ltime, os.Stderr)
+		hostapdProcess = aputil.NewChild(hostapdPath, fn)
+		hostapdProcess.LogOutputTo("hostapd: ",
+			log.Ldate|log.Ltime, os.Stderr)
 
 		startTime := time.Now()
 		startTimes = append(startTimes[1:failuresAllowed], startTime)
 
 		log.Printf("Starting hostapd for %s\n", conf.Interface)
 
-		if err := child.Start(); err != nil {
+		if err := hostapdProcess.Start(); err != nil {
 			conf.status = fmt.Errorf("failed to launch: %v", err)
 			break
 		}
 
-		childProcess = child.Process
-		resetInterfaces()
-		mcpd.SetState(mcp.ONLINE)
+		ra.SetRunning()
+		ra.ClearAbort()
+		go resetInterfaces(&ra)
 
-		child.Wait()
+		hostapdProcess.Wait()
 
 		log.Printf("hostapd for %s exited after %s\n",
 			conf.Interface, time.Since(startTime))
+
+		// If the child died before all the interfaces were reset, tell
+		// them to give up.
+		ra.SetAbort()
+		for ra.IsRunning() {
+			time.Sleep(10 * time.Millisecond)
+		}
+
 		if time.Since(startTimes[0]) < period {
 			conf.status = fmt.Errorf("dying too quickly")
 			break
@@ -783,7 +802,7 @@ func localRouter(ring *apcfg.RingConfig) string {
 // Prepare a ring's bridge: clean up any old state, assign a new address, set up
 // routes, etc.
 //
-func prepareRingBridge(ringName string) {
+func prepareRingBridge(ringName string, ra *aputil.RunAbort) {
 	ring := rings[ringName]
 	bridge := ring.Bridge
 
@@ -794,9 +813,12 @@ func prepareRingBridge(ringName string) {
 	// already have wireless NICs attached, and we expect them to be in the
 	// 'link up' state already.
 	if ringName != base_def.RING_INTERNAL {
-		err := network.WaitForDevice(bridge, 5*time.Second)
+		err := network.WaitForDevice(bridge, 5*time.Second, ra)
 		if err != nil {
 			log.Printf("%s failed to come online: %v\n", bridge, err)
+			return
+		}
+		if ra.IsAbort() {
 			return
 		}
 	}

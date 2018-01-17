@@ -166,7 +166,7 @@ func singleInstance(d *daemon) error {
 
 	err = child.Wait()
 
-	if err != nil {
+	if d.state != mcp.STOPPING && err != nil {
 		log.Printf("%s failed: %v\n", d.Name, err)
 	}
 	d.Lock()
@@ -238,16 +238,12 @@ func handleGetState(set daemonSet) *string {
 	list := make(sortList, 0)
 
 	for _, d := range set {
-		pid := -1
-		if d.child != nil {
-			pid = d.child.Process.Pid
-		}
 
 		state := mcp.DaemonState{
 			Name:  d.Name,
 			State: d.state,
 			Since: d.setTime,
-			Pid:   pid,
+			Pid:   d.child.GetPID(),
 		}
 		list = append(list, &state)
 	}
@@ -363,13 +359,13 @@ func handleStop(set daemonSet) {
 	const niceTries = 10
 
 	tries := 0
-	procs := make(map[string]*os.Process)
+	children := make(map[string]*aputil.Child)
 	for n, d := range set {
 		d.Lock()
 		if d.state != mcp.OFFLINE {
-			log.Printf("Stopping %s\n", d.Name)
 			if d.child != nil {
-				procs[n] = d.child.Process
+				log.Printf("Stopping %s\n", d.Name)
+				children[n] = d.child
 			}
 			setState(d, mcp.STOPPING)
 			d.run = false
@@ -377,32 +373,30 @@ func handleStop(set daemonSet) {
 		d.Unlock()
 	}
 
+	signal := syscall.SIGINT
 	for len(set) > 0 {
 		for n, d := range set {
-			var p *os.Process
-
 			d.Lock()
-			if d.child != nil {
-				p = d.child.Process
-			}
-
-			if p == nil || p != procs[n] {
-				if p == nil {
-					// if the process has changed, it means
+			c := d.child
+			if c == nil || c != children[n] {
+				if c == nil {
+					// if the child has changed, it means
 					// the daemon has already been
 					// restarted.
 					setState(d, mcp.OFFLINE)
 					log.Printf("%s stopped\n", d.Name)
 				}
 				delete(set, n)
-			} else if tries < niceTries {
-				p.Signal(os.Interrupt)
 			} else {
-				p.Signal(os.Kill)
+				c.Signal(signal)
 			}
 			d.Unlock()
 		}
+
 		tries++
+		if tries > niceTries {
+			signal = syscall.SIGKILL
+		}
 		time.Sleep(time.Millisecond * 250)
 	}
 }
@@ -514,7 +508,10 @@ func signalHandler() {
 			log.Printf("Reloading mcp.json\n")
 			loadDefinitions()
 		} else {
-			log.Printf("Signal (%v) received, stopping\n", s)
+			log.Printf("Signal %v received, stopping childen\n", s)
+			all := "all"
+			handleStop(selectTargets(&all))
+			log.Printf("Exiting\n")
 			if logfile != nil {
 				logfile.Close()
 			}

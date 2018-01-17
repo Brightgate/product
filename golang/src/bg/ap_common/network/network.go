@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 
+	"bg/ap_common/aputil"
+
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
@@ -231,20 +233,26 @@ func SubnetBroadcast(subnet string) net.IP {
 
 // WaitForDevice will wait for a network device to reach the 'up' state.
 // Returns an error on timeout or if the device doesn't exist
-func WaitForDevice(dev string, timeout time.Duration) error {
+func WaitForDevice(dev string, timeout time.Duration,
+	ra *aputil.RunAbort) error {
+
 	fn := "/sys/class/net/" + dev + "/operstate"
 
 	start := time.Now()
 	for {
+		if ra.IsAbort() {
+			break
+		}
 		state, err := ioutil.ReadFile(fn)
 		if err == nil && string(state[0:2]) == "up" {
-			return nil
+			break
 		}
 		if time.Since(start) >= timeout {
 			return fmt.Errorf("timeout: %s not online: %s", dev, state)
 		}
 		time.Sleep(time.Millisecond * 100)
 	}
+	return nil
 }
 
 var legalHostname = regexp.MustCompile(`^([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$`)

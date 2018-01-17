@@ -23,6 +23,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -54,6 +55,8 @@ type Child struct {
 	done   chan bool
 	logger *log.Logger
 	prefix string
+
+	sync.Mutex
 }
 
 //
@@ -77,9 +80,43 @@ func handlePipe(c *Child, r io.ReadCloser) {
 func (c *Child) Start() error {
 	err := c.Cmd.Start()
 	if err == nil {
+		c.Lock()
 		c.Process = c.Cmd.Process
+		c.Unlock()
 	}
 	return err
+}
+
+// Stop stops a child process - first with a gentle SIGINT, and then with a more
+// severe SIGKILL.
+func (c *Child) Stop() {
+	if c == nil {
+		return
+	}
+
+	sig := syscall.SIGINT
+	attempts := 0
+
+	for c.Process != nil {
+		if attempts > 5 {
+			sig = syscall.SIGKILL
+		}
+		c.Signal(sig)
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// Signal sends a signal to a child process
+func (c *Child) Signal(sig os.Signal) {
+	if c == nil {
+		return
+	}
+
+	c.Lock()
+	if c.Process != nil {
+		c.Process.Signal(sig)
+	}
+	c.Unlock()
 }
 
 // Wait waits for the child process to exit.  If we are capturing its output, we
@@ -91,7 +128,12 @@ func (c *Child) Wait() error {
 		<-c.done
 		c.pipes--
 	}
-	return c.Cmd.Wait()
+	err := c.Cmd.Wait()
+
+	c.Lock()
+	c.Process = nil
+	c.Unlock()
+	return err
 }
 
 // SetUID allows us to launch a child process with different credentials than
@@ -107,6 +149,21 @@ func (c *Child) SetUID(uid, gid uint32) {
 	}
 
 	c.Cmd.SysProcAttr = &attr
+}
+
+// GetPID returns the PID of the underlying process, or -1 if there is no
+// process.
+func (c *Child) GetPID() int {
+	pid := -1
+
+	if c != nil {
+		c.Lock()
+		if c.Process != nil {
+			pid = c.Process.Pid
+		}
+		c.Unlock()
+	}
+	return pid
 }
 
 // SetOutput will reset a child's log target
@@ -391,4 +448,44 @@ func IsNodeMode(check string) bool {
 // IsSatelliteMode checks to see whether this node is running as a mesh node
 func IsSatelliteMode() bool {
 	return IsNodeMode(base_def.MODE_SATELLITE)
+}
+
+// RunAbort is an opaque structure used to coordinate the launch, completion,
+// and interruption of long-running goroutines.
+type RunAbort struct {
+	running uint32
+	abort   uint32
+}
+
+// SetAbort tells the goroutine to exit ASAP
+func (t *RunAbort) SetAbort() {
+	atomic.StoreUint32(&t.abort, 1)
+}
+
+// ClearAbort resets the 'abort now' indicator
+func (t *RunAbort) ClearAbort() {
+	atomic.StoreUint32(&t.abort, 0)
+}
+
+// IsAbort is called periodically by the goroutine to determine whether an abort
+// has been requested.
+func (t *RunAbort) IsAbort() bool {
+	return (t != nil) && (atomic.LoadUint32(&t.abort) != 0)
+}
+
+// SetRunning is called immediately before launching the goroutine
+func (t *RunAbort) SetRunning() {
+	atomic.StoreUint32(&t.running, 1)
+}
+
+// ClearRunning is called by the goroutine immediately before exiting, notifying
+// the launcher that the routine has finished.
+func (t *RunAbort) ClearRunning() {
+	atomic.StoreUint32(&t.running, 0)
+}
+
+// IsRunning is called by the launcher to determine whether the goroutine has
+// exieted yet.
+func (t *RunAbort) IsRunning() bool {
+	return (t != nil) && (atomic.LoadUint32(&t.running) != 0)
 }

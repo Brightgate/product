@@ -394,7 +394,7 @@ func openOne(ring, iface string) (*pcap.Handle, error) {
 	if ring != base_def.RING_INTERNAL {
 		// The internal ring is special.  See
 		// networkd.go:prepareRingBridge()
-		err := network.WaitForDevice(iface, time.Minute)
+		err := network.WaitForDevice(iface, time.Minute, nil)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %v", iface, err)
 		}

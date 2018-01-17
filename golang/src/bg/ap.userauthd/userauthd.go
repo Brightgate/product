@@ -81,7 +81,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"text/template"
 	"time"
@@ -119,8 +118,7 @@ var (
 	templateDir = flag.String("template_dir", "golang/src/ap.userauthd",
 		"location of userauthd templates")
 
-	childProcess *os.Process // track the hostapd proc
-	childLock    sync.Mutex
+	hostapdProcess *aputil.Child // track the hostapd proc
 
 	configd *apcfg.APConfig
 	mcpd    *mcp.MCP
@@ -148,20 +146,6 @@ const (
 	period           = time.Duration(time.Minute)
 )
 
-func childSignal(signal os.Signal) {
-	childLock.Lock()
-	if childProcess != nil {
-		childProcess.Signal(signal)
-	}
-	childLock.Unlock()
-}
-
-func childSet(process *os.Process) {
-	childLock.Lock()
-	childProcess = process
-	childLock.Unlock()
-}
-
 func configNetworkRadiusChanged(path []string, val string, expires *time.Time) {
 	var resetFunc func(*rConf) string
 
@@ -180,13 +164,13 @@ func configNetworkRadiusChanged(path []string, val string, expires *time.Time) {
 
 	if resetFunc != nil {
 		resetFunc(rc)
-		childSignal(syscall.SIGHUP)
+		hostapdProcess.Signal(syscall.SIGHUP)
 	}
 }
 
 func configUserChanged(path []string, val string, expires *time.Time) {
 	generateRadiusHostapdUsers(rc)
-	childSignal(syscall.SIGHUP)
+	hostapdProcess.Signal(syscall.SIGHUP)
 }
 
 // Generate the user database needed for hostapd in RADIUS mode.
@@ -276,23 +260,13 @@ func generateRadiusClientConf(rc *rConf) string {
 // released before we give mcp a chance to restart the whole stack.
 //
 func signalHandler() {
-	attempts := 0
 	sig := make(chan os.Signal)
-	for {
-		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-		<-sig
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	<-sig
 
-		running = false
-		if childProcess != nil {
-			if attempts < 5 {
-				childSignal(syscall.SIGINT)
-			} else {
-				log.Printf("child has ignored TERM, %d INTs\n", attempts)
-				childSignal(syscall.SIGKILL)
-			}
-			attempts++
-		}
-	}
+	log.Printf("Received signal %v\n", sig)
+	running = false
+	hostapdProcess.Stop()
 }
 
 //
@@ -307,22 +281,21 @@ func runOne(rc *rConf, done chan *rConf) {
 
 	startTimes := make([]time.Time, failuresAllowed)
 	for running {
-		child := aputil.NewChild(hostapdPath, "-d", fn)
-		child.LogOutputTo("hostapd: ", log.Ldate|log.Ltime, os.Stderr)
+		hostapdProcess = aputil.NewChild(hostapdPath, "-d", fn)
+		hostapdProcess.LogOutputTo("radius: ",
+			log.Ldate|log.Ltime, os.Stderr)
 
 		startTime := time.Now()
 		startTimes = append(startTimes[1:failuresAllowed], startTime)
 
 		log.Printf("Starting RADIUS hostapd\n")
 
-		if err := child.Start(); err != nil {
+		if err := hostapdProcess.Start(); err != nil {
 			rc.Status = fmt.Sprintf("RADIUS hostapd failed to launch: %v", err)
 			break
 		}
 
-		childSet(child.Process)
-		child.Wait()
-		childSet(nil)
+		hostapdProcess.Wait()
 
 		log.Printf("RADIUS hostapd exited after %s\n",
 			time.Since(startTime))
