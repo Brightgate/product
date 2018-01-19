@@ -1,7 +1,7 @@
 <template>
   <f7-page pull-to-refresh @ptr:refresh="pullRefresh">
-    <f7-navbar back-link="Back" title="Brightgate - Devices" sliding />
-
+    <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.devices.title')" sliding />
+    
     <f7-list v-for="catkey in device_category_order"
              v-if="$store.getters.NumUniqIDs_By_Category(catkey) > 0">
       <f7-list-item divider/>
@@ -10,8 +10,8 @@
               v-bind:title="device_category_description[catkey] +
               (catkey == 'recent' ? ` (${$store.getters.NumUniqIDs_By_Category(catkey)})` : '')"/>
       <f7-list-item v-if="catkey == 'recent'">
-        <f7-link v-on:click="showRecent = true" v-if="!showRecent">Show Recent Attempts...</f7-link>
-        <f7-link v-on:click="showRecent = false" v-if="showRecent">Hide Recent Attempts...</f7-link>
+        <f7-link v-on:click="showRecent = true" v-if="!showRecent">{{ $t('message.devices.show_recent') }}</f7-link>
+        <f7-link v-on:click="showRecent = false" v-if="showRecent">{{ $t('message.devices.hide_recent') }}</f7-link>
       </f7-list-item>
 
       <f7-list-item 
@@ -35,11 +35,9 @@
     <f7-popover id="virus">
       <f7-block> 
         <ul>
-            <li>Brightgate detected WannaCry ransomware on this device.</li>
-            <li>For your security, Brightgate has disconnected it from the network
-                and attempted to prevent the ransomware from encrypting more
-                files.</li>
-            <li>Visit brightgate.com from another computer for more help.</li>
+            <li>{{ $t("message.alerts.msg.0") }}</li>
+            <li>{{ $t("message.alerts.msg.1") }}</li>
+            <li>{{ $t("message.alerts.msg.2") }}</li>
         </ul>
       </f7-block> 
     </f7-popover>
@@ -47,9 +45,9 @@
     <f7-popover id="notification">
       <f7-block> 
         <ul>
-            <li>This device is less secure because it is running old software.</li>
-            <li>Brightgate can't automatically update this device.</li>
-            <li>Follow the manufacturer's instructions to update its software.</li>
+            <li>{{ $t("message.notifications.msg.0") }}</li>
+            <li>{{ $t("message.notifications.msg.1") }}</li>
+            <li>{{ $t("message.notifications.msg.2") }}</li>
         </ul>
       </f7-block> 
     </f7-popover>

@@ -30,5 +30,9 @@ export default [
   {
       path: '/dynamic-route/blog/:blogId/post/:postId/',
       component: require('./pages/dynamic-route.vue')
+  },
+  {
+      path: '/login/',
+      component: require('./pages/login.vue')
   }
 ]

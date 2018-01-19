@@ -56,6 +56,14 @@
               </f7-list-item>
             </f7-list>
 
+            <f7-block-title>{{ $t("message.testing.testing") }}</f7-block-title>
+            <f7-list>
+              <f7-list-item :title="$t('message.testing.enable_mock')">
+                <f7-input type="switch" slot="after" checked @change="$store.state.enable_mock = !$store.state.enable_mock; $store.dispatch('fetchDevices')"></f7-input>
+              </f7-list-item>
+              <f7-list-item link="/login/" title="Login"></f7-list-item>
+            </f7-list>
+
           </f7-page>
         </f7-pages>
       </f7-view>
@@ -63,13 +71,12 @@
 
     <f7-popup id="acceptPop" :opened="acceptOpen">
       <f7-block v-if="devicesAccepted">
-        <p>Devices Acceptance succeeded.  {{devicesChanged}} devices were affected.</p>
+        <p>{{ $t('message.tools.success', {'devicesChanged': devicesChanged}) }}</p>
       </f7-block>
       <f7-block v-if="devicesAcceptedError != ''">
-        <p>There was an error accepting devices:
-          <b>{{ devicesAcceptedError }}.</b></p>
+        <p v-html="$t('message.tools.fail', {'devicesAcceptedError': devicesAcceptedError})"></p>
       </f7-block>
-      <f7-button @click="closeAcceptPopup">Close</f7-button>
+      <f7-button @click="closeAcceptPopup"> {{ $t('message.general.close') }} </f7-button>
     </f7-popup>
 
   </div>

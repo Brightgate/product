@@ -40,7 +40,8 @@ const RETRY_DELAY = 1000
 const state = {
   devices: _.cloneDeep(initDevices),
   deviceCount: Object.keys(initDevices.by_uniqid).length,
-  rings: []
+  rings: [],
+  enable_mock: true
 };
 
 const mutations = {
@@ -87,7 +88,7 @@ const getters = {
   },
 
   Rings: (state) => {
-    return state.rings
+      return state.rings
   },
 }
 
@@ -132,7 +133,7 @@ function devicesGetP(maxcount, count) {
   const attempt_str = `#${attempt}/${maxcount}`
   console.log(`devicesGetP: GET /devices try ${attempt_str}`)
 
-  return superagent.get('/apid/devices'
+  return Promise.resolve(superagent.get('/apid/devices'
   ).timeout(STD_TIMEOUT
   ).then((res) => {
     console.log("devicesGetP: got response")
@@ -152,7 +153,7 @@ function devicesGetP(maxcount, count) {
     console.log(`devicesGetP: failed ${attempt_str}, will retry.  ${err}`)
     return Promise.delay(RETRY_DELAY
     ).then(() => { return devicesGetP(maxcount, count - 1) })
-  })
+  }))
 }
 
 function makeDeviceCategories(devices) {
@@ -203,7 +204,7 @@ const actions = {
 
       devices.by_uniqid = _.keyBy(mapped_devices, 'uniqid')
     }).finally(() => {
-      if (enable_mock) {
+      if (state.enable_mock) {
         _.defaults(devices.by_uniqid,  _.keyBy(mockDevices, 'uniqid'))
       }
     }).then(() => {
