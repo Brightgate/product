@@ -38,7 +38,9 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
-var validRings = map[string]bool{
+// ValidRings is a map containing all of the known ring names.  Checking for map
+// membership is a simple way to whether a given name is valid.
+var ValidRings = map[string]bool{
 	base_def.RING_INTERNAL:   true,
 	base_def.RING_UNENROLLED: true,
 	base_def.RING_SETUP:      true,
@@ -390,7 +392,7 @@ func (c *APConfig) GetRings() RingMap {
 		var subnet, bridge string
 		var vlan, duration int
 
-		if !validRings[ring.Name] {
+		if !ValidRings[ring.Name] {
 			err = fmt.Errorf("invalid ring name: %s", ring.Name)
 		}
 		if err == nil {

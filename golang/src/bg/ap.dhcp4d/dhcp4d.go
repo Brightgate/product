@@ -60,6 +60,8 @@ var (
 	wanMacs   = make(map[string]bool) // mac(s) connected to the wan
 	setupMacs = make(map[string]bool) // mac(s) hosting the setup network
 
+	defaultRing = base_def.RING_UNENROLLED
+
 	lastRequestOn string // last DHCP request arrived on this interface
 )
 
@@ -555,8 +557,8 @@ func selectRingHandler(p dhcp.Packet, options dhcp.Options) *ringHandler {
 		setRing(hwaddr, base_def.RING_SETUP)
 	} else if oldRing == "" || oldRing == base_def.RING_SETUP {
 		// If this client isn't already assigned to a ring, we
-		// mark it as 'unenrolled'.
-		updateRing(hwaddr, oldRing, base_def.RING_UNENROLLED)
+		// put it in the default ring
+		updateRing(hwaddr, oldRing, defaultRing)
 	}
 
 	ring := getRing(hwaddr)
@@ -899,6 +901,14 @@ func main() {
 	if err != nil {
 		log.Printf("failed to get siteid: %v\n", err)
 		siteid = "0000"
+	}
+
+	if ring, err := config.GetProp("@/network/default_ring"); err == nil {
+		if _, ok := apcfg.ValidRings[ring]; !ok {
+			log.Printf("Unknown default_ring: %s\n", ring)
+		} else {
+			defaultRing = ring
+		}
 	}
 
 	err = initHandlers()
