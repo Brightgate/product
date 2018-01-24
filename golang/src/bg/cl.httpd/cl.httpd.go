@@ -42,8 +42,8 @@ type Cfg struct {
 	// with the SSL certificate, and not necessarily the nodename.
 	// We use this variable to navigate the Let's Encrypt directory
 	// hierarchy.
-	B10E_CERT_HOSTNAME           string
-	B10E_CLHTTPD_PROMETHEUS_PORT string
+	CertHostname   string `envcfg:"B10E_CERT_HOSTNAME"`
+	PrometheusPort string `envcfg:"B10E_CLHTTPD_PROMETHEUS_PORT"`
 }
 
 const (
@@ -71,21 +71,26 @@ func port80Handler(w http.ResponseWriter, r *http.Request) {
 // XXX Restore init() if we are registering Prometheus metrics.
 
 func main() {
+	var err error
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-	envcfg.Unmarshal(&environ)
+
+	err = envcfg.Unmarshal(&environ)
+	if err != nil {
+		log.Fatalf("Environment Error: %s", err)
+	}
 
 	log.Printf("environ %v", environ)
 
-	if len(environ.B10E_CLHTTPD_PROMETHEUS_PORT) != 0 {
+	if len(environ.PrometheusPort) != 0 {
 		http.Handle("/metrics", promhttp.Handler())
-		go http.ListenAndServe(environ.B10E_CLHTTPD_PROMETHEUS_PORT, nil)
+		go http.ListenAndServe(environ.PrometheusPort, nil)
 	}
 
 	// Port 443 listener.
 	certf := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem",
-		environ.B10E_CERT_HOSTNAME)
+		environ.CertHostname)
 	keyf := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem",
-		environ.B10E_CERT_HOSTNAME)
+		environ.CertHostname)
 
 	port443mux := http.NewServeMux()
 	port443mux.HandleFunc("/", port443Handler)

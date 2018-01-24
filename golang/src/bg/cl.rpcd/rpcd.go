@@ -62,9 +62,9 @@ type Cfg struct {
 	// with the SSL certificate, and not necessarily the nodename.
 	// We use this variable to navigate the Let's Encrypt directory
 	// hierarchy.
-	B10E_CERT_HOSTNAME          string
-	B10E_CLRPCD_PROMETHEUS_PORT string
-	B10E_LOCAL_MODE             bool
+	CertHostname   string `envcfg:"B10E_CERT_HOSTNAME"`
+	PrometheusPort string `envcfg:"B10E_CLRPCD_PROMETHEUS_PORT"`
+	LocalMode      bool   `envcfg:"LOCAL_MODE"`
 }
 
 type applianceInfo struct {
@@ -350,13 +350,16 @@ func main() {
 	defer log.Sync()
 
 	flag.Parse()
-	envcfg.Unmarshal(&environ)
+	err = envcfg.Unmarshal(&environ)
+	if err != nil {
+		slog.Fatalf("Environment Error: %s", err)
+	}
 
 	slog.Infow(pname+" starting", "args", os.Args, "envcfg", environ)
 
-	if len(environ.B10E_CLRPCD_PROMETHEUS_PORT) != 0 {
+	if len(environ.PrometheusPort) != 0 {
 		http.Handle("/metrics", promhttp.Handler())
-		go http.ListenAndServe(environ.B10E_CLRPCD_PROMETHEUS_PORT, nil)
+		go http.ListenAndServe(environ.PrometheusPort, nil)
 		slog.Info("prometheus client launched")
 	}
 
@@ -365,13 +368,13 @@ func main() {
 
 	// Port 443 listener.
 	certf := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem",
-		environ.B10E_CERT_HOSTNAME)
+		environ.CertHostname)
 	keyf := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem",
-		environ.B10E_CERT_HOSTNAME)
+		environ.CertHostname)
 
 	grpcPort := base_def.CLRPCD_GRPC_PORT
 
-	if environ.B10E_LOCAL_MODE {
+	if environ.LocalMode {
 		slog.Info("local mode")
 	} else {
 		slog.Info("secure remote mode")

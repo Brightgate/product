@@ -254,6 +254,8 @@ APPDAEMON_GOPKGS = \
 	bg/ap.userauthd \
 	bg/ap.watchd
 
+ALL_GOPKGS = $(APP_GOPKGS) $(CLOUD_GOPKGS)
+
 APP_GOPKGS = $(COMMON_GOPKGS) $(APPCOMMAND_GOPKGS) $(APPDAEMON_GOPKGS)
 
 MISCCOMMANDS = \
@@ -448,14 +450,8 @@ vet-go:
 	$(GO) vet $(APP_GOPKGS)
 	$(GO) vet $(CLOUD_GOPKGS)
 
-# Things that are presently lint clean and should stay that way
-LINTCLEAN_TARGETS= $(APP_GOPKGS)
-
 lint-go:
-	$(GOLINT) -set_exit_status $(LINTCLEAN_TARGETS)
-
-lintall-go:
-	$(GOLINT) $(APP_GOPKGS) $(CLOUD_GOPKGS)
+	$(GOLINT) -set_exit_status $(ALL_GOPKGS)
 
 docs: | $(PROTOC_PLUGINS)
 
