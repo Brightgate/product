@@ -15,25 +15,19 @@
 #
 #	 You will not be able to build the packages target on MacOS.
 #
-#    (b) On Ubuntu
+#    (b) On Debian/Ubuntu
 #
-#	 # apt-get install protobuf-compiler libzmq5-dev libpcap-dev vlan \
-#		 bridge-utils lintian mercurial
-#	 # pip3 install sh
-#	 [Retrieve Go tar archive from golang.org and unpack in $HOME.]
+#	 $ make tools
+#	 [Follow the directions]
+#	 [If in the Brightgate cloud, Go is already installed.  Else, retrieve
+#	 Go tar archive from golang.org and unpack in $HOME.]
 #
-#    (c) On Debian
+#    (c) On raspberry pi
 #
-#	 # apt-get install protobuf-compiler libzmq3-dev libpcap-dev vlan \
-#		bridge-utils lintian mercurial
-#	 # pip3 install sh
-#	 [Retrieve Go tar archive from golang.org and unpack in $HOME.]
-#
-#    (d) on raspberry pi
-#
-#	 # apt-get install protobuf-compiler libzmq3-dev libpcap-dev vlan \
-#		 hostapd bridge-utils lintian python3 mercurial
-#	 # pip3 install sh
+#	 $ make tools
+#	 [Follow the directions]
+#	 $ sudo apt-get install hostapd
+#	 $ sudo pip3 install sh
 #	 [Retrieve Go tar archive from golang.org and unpack in $HOME.]
 #	 [Retrieve the TensorFlow C library from
 #	  https://ph0.b10e.net/w/testing-raspberry-pi/ or
@@ -740,11 +734,16 @@ $(PROTOC_PLUGINS):
 LOCAL_COMMANDS=$(COMMANDS:$(APPBIN)/%=$(GOPATH)/bin/%)
 LOCAL_DAEMONS=$(DAEMONS:$(APPBIN)/%=$(GOPATH)/bin/%)
 
-tools: .tools
+# Generate a hash of the contents of BUILDTOOLS, so that if the required
+# packages change, we'll rerun the check.
+BUILDTOOLS_HASH=$(shell echo $(BUILDTOOLS) | md5sum | awk '{print $$1}')
+BUILDTOOLS_FILE=.tools-$(BUILDTOOLS_HASH)
 
-.tools:
-	dpkg --verify $(BUILDTOOLS)
-	touch .tools
+tools: $(BUILDTOOLS_FILE)
+
+$(BUILDTOOLS_FILE):
+	build/check-tools.sh $(BUILDTOOLS)
+	touch $@
 
 #
 # Go Dependencies: Pull in definitions for 'dep'
@@ -773,7 +772,7 @@ clobber-packages:
 
 clean:
 	$(RM) -f \
-		.tools \
+		.tools-* \
 		base/base_def.py \
 		base/base_msg_pb2.py \
 		base/cloud_rpc_pb2.py \
