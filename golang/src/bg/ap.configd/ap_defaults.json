@@ -11,7 +11,7 @@
         },
         {
             "Name": "cfgversion",
-            "Value": "7"
+            "Value": "8"
         },
         {
             "Name": "apversion",
@@ -26,6 +26,10 @@
                         {
                             "Name": "vlan",
                             "Value": "-1"
+                        },
+                        {
+                            "Name": "auth",
+                            "Value": "open"
                         },
                         {
                             "Name": "subnet",
@@ -45,6 +49,10 @@
                             "Value": "1"
                         },
                         {
+                            "Name": "auth",
+                            "Value": "open"
+                        },
+                        {
                             "Name": "subnet",
                             "Value": "192.168.131.0/29"
                         },
@@ -60,6 +68,10 @@
                         {
                             "Name": "vlan",
                             "Value": "0"
+                        },
+                        {
+                            "Name": "auth",
+                            "Value": "wpa-psk"
                         },
                         {
                             "Name": "subnet",
@@ -79,6 +91,10 @@
                             "Value": "3"
                         },
                         {
+                            "Name": "auth",
+                            "Value": "wpa-eap"
+                        },
+                        {
                             "Name": "subnet",
                             "Value": "192.168.133.0/26"
                         },
@@ -94,6 +110,10 @@
                         {
                             "Name": "vlan",
                             "Value": "4"
+                        },
+                        {
+                            "Name": "auth",
+                            "Value": "wpa-psk"
                         },
                         {
                             "Name": "subnet",
@@ -113,6 +133,10 @@
                             "Value": "5"
                         },
                         {
+                            "Name": "auth",
+                            "Value": "wpa-psk"
+                        },
+                        {
                             "Name": "subnet",
                             "Value": "192.168.135.0/26"
                         },
@@ -130,6 +154,10 @@
                             "Value": "6"
                         },
                         {
+                            "Name": "auth",
+                            "Value": "wpa-psk"
+                        },
+                        {
                             "Name": "subnet",
                             "Value": "192.168.136.0/26"
                         },
@@ -145,6 +173,10 @@
                         {
                             "Name": "vlan",
                             "Value": "7"
+                        },
+                        {
+                            "Name": "auth",
+                            "Value": "wpa-psk"
                         },
                         {
                             "Name": "subnet",

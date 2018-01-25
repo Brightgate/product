@@ -74,7 +74,7 @@ const (
 	pname            = "ap.configd"
 
 	minConfigVersion = 3
-	curConfigVersion = 7
+	curConfigVersion = 8
 )
 
 // Allow for significant variation in the processing of subtrees
@@ -110,6 +110,7 @@ type propertyMatch struct {
 
 var defaultPropOps = propertyOps{defaultGetter, defaultSetter, defaultExpire}
 var ssidPropOps = propertyOps{defaultGetter, ssidUpdate, defaultExpire}
+var authPropOps = propertyOps{defaultGetter, authUpdate, defaultExpire}
 var uuidPropOps = propertyOps{defaultGetter, uuidUpdate, defaultExpire}
 var ringPropOps = propertyOps{defaultGetter, defaultSetter, ringExpire}
 var ipv4PropOps = propertyOps{defaultGetter, ipv4Setter, defaultExpire}
@@ -119,6 +120,7 @@ var cnamePropOps = propertyOps{defaultGetter, cnameSetter, defaultExpire}
 var propertyMatchTable = []propertyMatch{
 	{regexp.MustCompile(`^@/uuid$`), &uuidPropOps},
 	{regexp.MustCompile(`^@/network/ssid$`), &ssidPropOps},
+	{regexp.MustCompile(`^@/rings/.*/auth$`), &authPropOps},
 	{regexp.MustCompile(`^@/clients/.*/ring$`), &ringPropOps},
 	{regexp.MustCompile(`^@/clients/.*/dns_name$`), &dnsPropOps},
 	{regexp.MustCompile(`^@/clients/.*/ipv4$`), &ipv4PropOps},
@@ -464,6 +466,24 @@ func uuidUpdate(node *pnode, uuid string, expires *time.Time) (bool, error) {
 	}
 	node.Value = uuid
 	return true, nil
+}
+
+func authValidate(auth string) error {
+	if auth != "wpa-psk" && auth != "wpa-eap" {
+		return fmt.Errorf("Only wpa-psk and wpa-eap are supported")
+	}
+
+	return nil
+}
+
+func authUpdate(node *pnode, auth string, expires *time.Time) (bool, error) {
+	auth = strings.ToLower(auth)
+	err := authValidate(auth)
+	if err == nil && node.Value != auth {
+		node.Value = auth
+		return true, nil
+	}
+	return false, err
 }
 
 func ssidValidate(ssid string) error {

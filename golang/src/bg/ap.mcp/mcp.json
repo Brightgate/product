@@ -102,7 +102,7 @@
         "DependsOn": "configd",
         "Privileged": true,
         "Options":  [ "-template_dir=$APROOT/etc/templates/ap.userauthd" ],
-        "Modes": [ "gateway" ]
+        "Modes": [ "core", "gateway" ]
     },
     "watchd": {
         "Name": "watchd",

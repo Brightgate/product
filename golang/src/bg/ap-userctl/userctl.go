@@ -221,6 +221,9 @@ func main() {
 	}
 
 	if *addOp {
+		if len(flag.Arg(0)) == 0 {
+			log.Fatalf("Must provide a username\n")
+		}
 		addUser(flag.Arg(0), *displayNameArg, *emailArg, *phoneArg,
 			*langArg)
 	} else if *deleteOp {

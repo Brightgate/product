@@ -1,30 +1,61 @@
 interface={{.Interface}}
-bssid={{.HWaddr}}
 driver=nl80211
-ssid={{.SSID}}
-utf8_ssid=1
-
 ctrl_interface=/var/run/hostapd
-
 hw_mode={{.HardwareModes}}
 ieee80211n=1
-wmm_enabled=1
 
-channel={{.Channel}}
+# Parameters are not necessarily inherited across successive bssid
+# declarations.  hostapd_config_defaults_bss() has the parameters that
+# are reset on a new bssid declaration; these must then be assigned to
+# our preferred values in each block.
 
-macaddr_acl=0
+# BSS Block 0: PSK network
+{{.PskComment}}bssid={{.HWaddr}}
+{{.PskComment}}ssid={{.SSID}}
+{{.PskComment}}utf8_ssid=1
 
-ignore_broadcast_ssid=0
+{{.PskComment}}wmm_enabled=1
+{{.PskComment}}channel={{.Channel}}
+{{.PskComment}}macaddr_acl=0
+{{.PskComment}}ignore_broadcast_ssid=0
 
-wpa=2
-wpa_passphrase={{.Passphrase}}
-wpa_key_mgmt=WPA-PSK
-wpa_pairwise=TKIP
-rsn_pairwise=CCMP
+{{.PskComment}}wpa=2
+{{.PskComment}}wpa_pairwise=TKIP CCMP
+{{.PskComment}}rsn_pairwise=CCMP
+{{.PskComment}}wpa_key_mgmt=WPA-PSK
+{{.PskComment}}wpa_passphrase={{.Passphrase}}
 
-dynamic_vlan=1
-vlan_file={{.ConfDir}}/hostapd.vlan
-accept_mac_file={{.ConfDir}}/hostapd.macs
+{{.PskComment}}dynamic_vlan=0
+{{.PskComment}}vlan_file={{.ConfDir}}/hostapd.wpa-psk.vlan
+{{.PskComment}}accept_mac_file={{.ConfDir}}/hostapd.wpa-psk.macs
 
+# BSS Block 1: EAP network
+{{.EapComment}}bss={{.Interface}}_1
+{{.EapComment}}ssid={{.SSID}}-eap
+{{.EapComment}}utf8_ssid=1
+
+{{.EapComment}}wmm_enabled=1
+{{.EapComment}}channel={{.Channel}}
+{{.EapComment}}macaddr_acl=0
+{{.EapComment}}ignore_broadcast_ssid=0
+
+{{.EapComment}}wpa=2
+{{.EapComment}}wpa_pairwise=TKIP CCMP
+{{.EapComment}}rsn_pairwise=CCMP
+{{.EapComment}}wpa_key_mgmt=WPA-EAP
+
+{{.EapComment}}ieee8021x=1
+{{.EapComment}}eapol_version=2
+{{.EapComment}}own_ip_addr=127.0.0.1
+
+{{.EapComment}}auth_server_addr={{.RadiusAuthServer}}
+{{.EapComment}}auth_server_port={{.RadiusAuthServerPort}}
+{{.EapComment}}auth_server_shared_secret={{.RadiusAuthSecret}}
+
+{{.EapComment}}dynamic_vlan=0
+{{.EapComment}}vlan_file={{.ConfDir}}/hostapd.wpa-eap.vlan
+{{.EapComment}}accept_mac_file={{.ConfDir}}/hostapd.wpa-eap.macs
+
+# BSS Optional Block 2: Open network
 {{.SetupComment}}bss={{.Interface}}_0
 {{.SetupComment}}ssid={{.SetupSSID}}

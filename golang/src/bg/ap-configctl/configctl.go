@@ -51,8 +51,8 @@ func getRings() error {
 		cnt[c.Ring]++
 	}
 
-	fmt.Printf("%-10s %-4s %-9s %-18s %-7s\n",
-		"ring", "vlan", "interface", "subnet", "clients")
+	fmt.Printf("%-10s %-8s %-4s %-9s %-18s %-7s\n",
+		"ring", "auth", "vlan", "interface", "subnet", "clients")
 	for _, name := range names {
 		var vlan string
 
@@ -63,8 +63,9 @@ func getRings() error {
 			vlan = "-"
 		}
 
-		fmt.Printf("%-10s %-4s %-9s %-18s %7d\n",
-			name, vlan, ring.Bridge, ring.Subnet, cnt[name])
+		fmt.Printf("%-10s %-8s %-4s %-9s %-18s %7d\n",
+			name, ring.Auth, vlan, ring.Bridge, ring.Subnet,
+			cnt[name])
 	}
 	return nil
 }

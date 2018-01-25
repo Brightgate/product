@@ -53,6 +53,7 @@ var ValidRings = map[string]bool{
 
 // RingConfig defines the parameters of a ring's subnet
 type RingConfig struct {
+	Auth          string
 	Subnet        string
 	Bridge        string
 	Vlan          int
@@ -389,8 +390,9 @@ func (c *APConfig) GetRings() RingMap {
 
 	set := make(map[string]*RingConfig)
 	for _, ring := range props.Children {
-		var subnet, bridge string
+		var auth, subnet, bridge string
 		var vlan, duration int
+		var err error
 
 		if !ValidRings[ring.Name] {
 			err = fmt.Errorf("invalid ring name: %s", ring.Name)
@@ -408,7 +410,11 @@ func (c *APConfig) GetRings() RingMap {
 			duration, err = getIntVal(ring, "lease_duration")
 		}
 		if err == nil {
+			auth, err = getStringVal(ring, "auth")
+		}
+		if err == nil {
 			c := RingConfig{
+				Auth:          auth,
 				Vlan:          vlan,
 				Subnet:        subnet,
 				Bridge:        bridge,

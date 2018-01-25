@@ -124,6 +124,8 @@ type apConfig struct {
 	Channel       int
 	SetupSSID     string // SSID to broadcast for setup network
 	SetupComment  string // Used to disable setup net in .conf template
+	PskComment    string // Used to disable wpa-psk in .conf template
+	EapComment    string // Used to disable wpa-eap in .conf template
 	ConfDir       string // Location of hostapd.conf, etc.
 
 	confFile string // Name of this NIC's hostapd.conf
@@ -184,6 +186,30 @@ func configRingChanged(path []string, val string, expires *time.Time) {
 
 	conf := aps[wifiNic]
 	apReset(conf)
+}
+
+func configAuthChanged(path []string, val string, expires *time.Time) {
+	ring := path[1]
+	newAuth := val
+
+	if newAuth != "wpa-psk" && newAuth != "wpa-eap" {
+		log.Printf("Unknown auth set on %s: %s\n", ring, newAuth)
+		return
+	}
+
+	r, ok := rings[ring]
+	if !ok {
+		log.Printf("Authentication set on unknown ring: %s\n", ring)
+		return
+	}
+
+	if r.Auth != newAuth {
+		log.Printf("Changing auth for ring %s from %s to %s\n", ring,
+			r.Auth, newAuth)
+		r.Auth = newAuth
+		conf := aps[wifiNic]
+		apReset(conf)
+	}
 }
 
 func configNetworkChanged(path []string, val string, expires *time.Time) {
@@ -350,6 +376,16 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 		setupSSID = node.GetValue()
 	}
 
+	pskComment := "#"
+	eapComment := "#"
+	for _, r := range rings {
+		if r.Auth == "wpa-psk" {
+			pskComment = ""
+		} else if r.Auth == "wpa-eap" {
+			eapComment = ""
+		}
+	}
+
 	if !satNode && d.multipleAPs && len(setupSSID) > 0 {
 		// If we create a second SSID for new clients to connect to,
 		// its mac address will be derived from the nic's mac address by
@@ -377,6 +413,8 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 		Channel:       channel,
 		Passphrase:    passphrase,
 		SetupComment:  setupComment,
+		PskComment:    pskComment,
+		EapComment:    eapComment,
 		SetupSSID:     setupSSID,
 		ConfDir:       confdir,
 
@@ -400,8 +438,42 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 //
 
 //
-// Generate the 3 configuration files needed for hostapd.
+// Generate the configuration files needed for hostapd.
 //
+func generateVlanConf(conf *apConfig, auth string) {
+	// Create the 'accept_macs' file, which tells hostapd how to map clients
+	// to VLANs.
+	mfn := conf.ConfDir + "/" + "hostapd." + auth + ".macs"
+	mf, err := os.Create(mfn)
+	if err != nil {
+		log.Fatalf("Unable to create %s: %v\n", mfn, err)
+	}
+	defer mf.Close()
+
+	// Create the 'vlan' file, which tells hostapd which vlans to create
+	vfn := conf.ConfDir + "/" + "hostapd." + auth + ".vlan"
+	vf, err := os.Create(vfn)
+	if err != nil {
+		log.Fatalf("Unable to create %s: %v\n", vfn, err)
+	}
+	defer vf.Close()
+
+	for ring, config := range rings {
+		if config.Auth != auth || config.Vlan <= 0 {
+			continue
+		}
+
+		fmt.Fprintf(vf, "%d\tvlan.%d\n", config.Vlan, config.Vlan)
+
+		// One client per line, containing "<mac addr> <vlan_id>"
+		for client, info := range clients {
+			if info.Ring == ring {
+				fmt.Fprintf(mf, "%s %d\n", client, config.Vlan)
+			}
+		}
+	}
+}
+
 func generateHostAPDConf(conf *apConfig) string {
 	var err error
 	tfile := *templateDir + "/hostapd.conf.got"
@@ -424,39 +496,8 @@ func generateHostAPDConf(conf *apConfig) string {
 		os.Exit(1)
 	}
 
-	// Create the 'accept_macs' file, which tells hostapd how to map clients
-	// to VLANs.
-	mfn := conf.ConfDir + "/" + "hostapd.macs"
-	mf, err := os.Create(mfn)
-	if err != nil {
-		log.Fatalf("Unable to create %s: %v\n", mfn, err)
-	}
-	defer mf.Close()
-
-	// One client per line, containing "<mac addr> <vlan_id>"
-	for client, info := range clients {
-		vlan := 0
-		if ring, ok := rings[info.Ring]; ok {
-			vlan = ring.Vlan
-		}
-		if vlan > 0 {
-			fmt.Fprintf(mf, "%s %d\n", client, vlan)
-		}
-	}
-
-	// Create the 'vlan' file, which tells hostapd which vlans to create
-	vfn := conf.ConfDir + "/" + "hostapd.vlan"
-	vf, err := os.Create(vfn)
-	if err != nil {
-		log.Fatalf("Unable to create %s: %v\n", vfn, err)
-	}
-	defer vf.Close()
-
-	for _, ring := range rings {
-		if ring.Vlan > 1 {
-			fmt.Fprintf(vf, "%d\tvlan.%d\n", ring.Vlan, ring.Vlan)
-		}
-	}
+	generateVlanConf(conf, "wpa-psk")
+	generateVlanConf(conf, "wpa-eap")
 
 	return fn
 }
@@ -1163,6 +1204,7 @@ func daemonInit() error {
 		return fmt.Errorf("cannot connect to configd: %v", err)
 	}
 	config.HandleChange(`^@/clients/.*/ring$`, configRingChanged)
+	config.HandleChange(`^@/rings/.*/auth$`, configAuthChanged)
 	config.HandleChange(`^@/network/`, configNetworkChanged)
 	config.HandleChange(`^@/firewall/active/`, configBlocklistChanged)
 	config.HandleExpire(`^@/firewall/active/`, configBlocklistExpired)

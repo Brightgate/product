@@ -274,8 +274,7 @@ HTTPD_TEMPLATE_FILES = \
 	stats.html.got
 
 NETWORKD_TEMPLATE_FILES = \
-	hostapd.conf.got \
-	hostapd-eap.conf.got
+	hostapd.conf.got
 
 USERAUTHD_TEMPLATE_FILES = \
 	hostapd.radius.got \
@@ -594,7 +593,8 @@ $(APPBIN)/ap.configd: \
 	$(GOSRCBG)/ap.configd/upgrade_v4.go \
 	$(GOSRCBG)/ap.configd/upgrade_v5.go \
 	$(GOSRCBG)/ap.configd/upgrade_v6.go \
-	$(GOSRCBG)/ap.configd/upgrade_v7.go
+	$(GOSRCBG)/ap.configd/upgrade_v7.go \
+	$(GOSRCBG)/ap.configd/upgrade_v8.go
 $(APPBIN)/ap.dhcp4d: $(GOSRCBG)/ap.dhcp4d/dhcp4d.go
 $(APPBIN)/ap.dns4d: \
 	$(GOSRCBG)/ap.dns4d/dns4d.go \
