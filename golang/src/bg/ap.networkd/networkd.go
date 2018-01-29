@@ -372,6 +372,7 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 		radiusSecret = ""
 	}
 
+	ssidCnt := 0
 	if node = props.GetChild("setupssid"); node != nil {
 		setupSSID = node.GetValue()
 	}
@@ -381,26 +382,32 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 	for _, r := range rings {
 		if r.Auth == "wpa-psk" {
 			pskComment = ""
+			ssidCnt++
 		} else if r.Auth == "wpa-eap" {
 			eapComment = ""
+			ssidCnt++
 		}
 	}
 
 	if !satNode && d.multipleAPs && len(setupSSID) > 0 {
-		// If we create a second SSID for new clients to connect to,
-		// its mac address will be derived from the nic's mac address by
-		// adding 1 to the final octet.  To accommodate that, hostapd
-		// wants the final nybble of the final octet to be 0.
+		setupComment = ""
+		setupNetwork = true
+		ssidCnt++
+	} else {
+		setupComment = "#"
+		setupNetwork = false
+	}
+
+	if ssidCnt > 1 {
+		// If we create multiple SSIDs, hostapd will generate
+		// additional bssids by incrementing the final octet of the
+		// nic's mac address.  To accommodate that, hostapd wants the
+		// final nybble of the final octet to be 0.
 		newMac := macUpdateLastOctet(d.hwaddr, 0)
 		if newMac != d.hwaddr {
 			log.Printf("Changed mac from %s to %s\n", d.hwaddr, newMac)
 			d.hwaddr = newMac
 		}
-		setupComment = ""
-		setupNetwork = true
-	} else {
-		setupComment = "#"
-		setupNetwork = false
 	}
 
 	mode, channel := getModeChannel(d)
