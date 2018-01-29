@@ -458,7 +458,7 @@ func openOne(ring, iface string) (*pcap.Handle, error) {
 		}
 	}
 
-	handle, err := pcap.OpenLive(iface, 65536, true, time.Duration(time.Second))
+	handle, err := pcap.OpenLive(iface, 65536, true, pcap.BlockForever)
 	if err != nil {
 		err = fmt.Errorf("pcap.OpenLive(%s) failed: %v", iface, err)
 	}
@@ -530,14 +530,16 @@ func getRingSubnet(config *apcfg.RingConfig) (net.HardwareAddr, *net.IPNet, erro
 	return hwaddr, subnet, err
 }
 
-func sampleFini() {
+func sampleFini(w *watcher) {
 	log.Printf("Shutting down sampler\n")
 	samplerRunning = false
 	auditTicker.Stop()
 	printStats()
+
+	w.running = false
 }
 
-func sampleInit() error {
+func sampleInit(w *watcher) {
 	blocklistInit()
 	getGateways()
 	getLeases()
@@ -564,8 +566,7 @@ func sampleInit() error {
 	}
 
 	go auditor()
-
-	return nil
+	w.running = true
 }
 
 func init() {

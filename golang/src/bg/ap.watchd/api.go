@@ -80,11 +80,15 @@ func apiLoop() {
 	}
 }
 
-func apiInit() error {
+func apiFini(w *watcher) {
+	w.running = false
+}
+
+func apiInit(w *watcher) {
 	go apiLoop()
-	return nil
+	w.running = true
 }
 
 func init() {
-	addWatcher("apiloop", apiInit, nil)
+	addWatcher("apiloop", apiInit, apiFini)
 }

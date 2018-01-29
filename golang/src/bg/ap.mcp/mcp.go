@@ -238,12 +238,18 @@ func handleGetState(set daemonSet) *string {
 	list := make(sortList, 0)
 
 	for _, d := range set {
-
 		state := mcp.DaemonState{
 			Name:  d.Name,
 			State: d.state,
 			Since: d.setTime,
 			Pid:   d.child.GetPID(),
+		}
+		if s, _ := d.child.GetState(); s != nil {
+			state.VMSize = s.VMSize
+			state.RssSize = s.RssSize
+			state.VMSwap = s.VMSwap
+			state.Utime = s.Utime
+			state.Stime = s.Stime
 		}
 		list = append(list, &state)
 	}
@@ -499,15 +505,18 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 }
 
 func signalHandler() {
-	sig := make(chan os.Signal)
+	sig := make(chan os.Signal, 3)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	for {
 		s := <-sig
-		if s == syscall.SIGHUP {
+		switch s {
+
+		case syscall.SIGHUP:
 			reopenLogfile()
 			log.Printf("Reloading mcp.json\n")
 			loadDefinitions()
-		} else {
+
+		default:
 			log.Printf("Signal %v received, stopping childen\n", s)
 			all := "all"
 			handleStop(selectTargets(&all))

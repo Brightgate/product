@@ -655,18 +655,27 @@ func cleanAll() {
 	}
 }
 
-func scannerFini() {
+func scannerFini(w *watcher) {
 	log.Printf("Stopping active scans\n")
+	runLock.Lock()
+	for r := range scansRunning {
+		r.Signal(syscall.SIGINT)
+	}
+	runLock.Unlock()
+
+	time.Sleep(time.Second)
+
 	runLock.Lock()
 	for r := range scansRunning {
 		r.Signal(syscall.SIGKILL)
 	}
 	runLock.Unlock()
+
 	log.Printf("Shutting down scanner\n")
+	w.running = false
 }
 
-func scannerInit() error {
-
+func scannerInit(w *watcher) {
 	// Build a set of the MACs belonging to our APs, so we can distinguish
 	// between client and internal network traffic
 	internalMacs = make(map[string]bool)
@@ -688,7 +697,7 @@ func scannerInit() error {
 
 	schedule(hostScan, hostScanFreq, true)
 	schedule(cleanAll, cleanFreq, false)
-	return nil
+	w.running = true
 }
 
 func init() {

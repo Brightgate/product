@@ -62,10 +62,11 @@ func printState(incoming string) {
 		return
 	}
 
-	const format = "%12s\t%5s\t%12s\t%s\n"
-	fmt.Printf(format, "DAEMON", "PID", "STATE", "SINCE")
+	const format = "%12s\t%5s\t%7s\t%7s\t%7s\t%12s\t%s\n"
+	fmt.Printf(format, "DAEMON", "PID", "RSS", "SWAP", "TIME",
+		"STATE", "SINCE")
 	for _, s := range states {
-		var pid, since string
+		var rss, swap, tm, pid, since string
 
 		if s.Pid != -1 {
 			pid = strconv.Itoa(s.Pid)
@@ -77,8 +78,25 @@ func printState(incoming string) {
 		} else {
 			since = s.Since.Format("Mon Jan 2 15:04:05")
 		}
+		if s.State == mcp.ONLINE {
+			rss = fmt.Sprintf("%d MB", s.RssSize/(1024*1024))
+			swap = fmt.Sprintf("%d MB", s.VMSwap/(1024*1024))
 
-		fmt.Printf(format, s.Name, pid, stateString(s.State), since)
+			// The correct way to find the scaling factor is to call
+			// sysconf(_SC_CLK_TCK).  Since there doesn't seem to be
+			// a simple way to do that in Go, I've just hardcoded
+			// the value instead.
+			ticks := s.Utime + s.Stime
+			secs := ticks / 100
+
+			tm = (time.Second * time.Duration(secs)).String()
+
+		} else {
+			rss, swap, tm = "-", "-", "-"
+		}
+
+		fmt.Printf(format, s.Name, pid, rss, swap, tm,
+			stateString(s.State), since)
 	}
 }
 

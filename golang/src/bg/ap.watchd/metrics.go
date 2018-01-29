@@ -14,7 +14,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
-	"fmt"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -222,7 +222,11 @@ func aggregateStats() {
 	statsMtx.Unlock()
 }
 
-func metricsInit() error {
+func metricsFini(w *watcher) {
+	w.running = false
+}
+
+func metricsInit(w *watcher) {
 	prometheus.MustRegister(cleanScanCount, scansStarted, scansFinished,
 		hostScanCount, hostsUp, scannedHostsGauge, scanDuration)
 
@@ -230,7 +234,8 @@ func metricsInit() error {
 	go http.ListenAndServe(*addr, nil)
 
 	if *aperiod < 1 {
-		return fmt.Errorf("aperiod must be at least 1 minute")
+		log.Printf("aperiod must be at least 1 minute\n")
+		return
 	}
 
 	ticker := time.NewTicker(time.Minute * time.Duration(*aperiod))
@@ -240,9 +245,9 @@ func metricsInit() error {
 		}
 	}()
 
-	return nil
+	w.running = true
 }
 
 func init() {
-	addWatcher("metrics", metricsInit, nil)
+	addWatcher("metrics", metricsInit, metricsFini)
 }

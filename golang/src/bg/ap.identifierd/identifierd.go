@@ -54,8 +54,9 @@ var (
 	modelDir = flag.String("modeldir", "./", "Directory containing a saved model")
 	logDir   = flag.String("logdir", "./", "Directory for device learning log data")
 
-	brokerd *broker.Broker
-	apcfgd  *apcfg.APConfig
+	brokerd  *broker.Broker
+	apcfgd   *apcfg.APConfig
+	profiler *aputil.Profiler
 
 	ouiDB   oui.DynamicDB
 	mfgidDB = make(map[string]int)
@@ -399,6 +400,38 @@ func recoverClients() {
 	}
 }
 
+func signalHandler() {
+	profiling := false
+
+	sig := make(chan os.Signal, 3)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR2)
+	for {
+		s := <-sig
+		log.Printf("Signal (%v) received.\n", s)
+		switch s {
+
+		case syscall.SIGUSR2:
+			if profiler == nil {
+				continue
+			}
+
+			if !profiling {
+				if err := profiler.CPUStart(); err != nil {
+					log.Printf("profiler failed: %v\n", err)
+				} else {
+					profiling = true
+				}
+			} else {
+				profiler.CPUStop()
+				profiler.HeapProfile()
+				profiling = false
+			}
+		default:
+			return
+		}
+	}
+}
+
 func main() {
 	var err error
 
@@ -478,15 +511,16 @@ func main() {
 		}
 	}
 
+	profiler = aputil.NewProfiler(pname)
+	defer profiler.CPUStop()
+
 	stop := make(chan bool)
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go logger(stop, wg)
 	go identify()
 
-	sig := make(chan os.Signal)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	<-sig
+	signalHandler()
 
 	// Tell the logger to stop, and wait for it to flush its output
 	stop <- true

@@ -74,6 +74,12 @@ type DaemonState struct {
 	State int
 	Since time.Time
 	Pid   int
+
+	VMSize  uint64 // Current vm size in bytes
+	VMSwap  uint64 // Current swapped-out memory in bytes
+	RssSize uint64 // Current in-core memory in bytes
+	Utime   uint64 // CPU consumed in user mode, in ticks
+	Stime   uint64 // CPI consumed in kernel mode, in ticks
 }
 
 // DaemonList is a slice containing the states for multiple daemons

@@ -21,6 +21,9 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"runtime"
+	"runtime/pprof"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -44,7 +47,16 @@ var (
 	nodeID   = uuid.Nil
 	nodeMode string
 	nodeLock sync.Mutex
+
+	procStatusRE = regexp.MustCompile(`^(\w+):\s+(\d+)`)
 )
+
+// Profiler is a handle used by daemons to initiate profiling operations
+type Profiler struct {
+	name   string
+	index  int
+	active bool
+}
 
 // Child is used to build and track the state of an child subprocess
 type Child struct {
@@ -56,7 +68,22 @@ type Child struct {
 	logger *log.Logger
 	prefix string
 
+	stat   *os.File
+	status *os.File
+
 	sync.Mutex
+}
+
+// ChildState contains some basic statistics of a running child process
+type ChildState struct {
+	State   string
+	VMSize  uint64 // Current vm size in bytes
+	VMPeak  uint64 // Maximum vm size in bytes
+	VMSwap  uint64 // Current swapped-out memory in bytes
+	RssSize uint64 // Current in-core memory in bytes
+	RssPeak uint64 // Maximum in-core memory in bytes
+	Utime   uint64 // CPU consumed in user mode, in ticks
+	Stime   uint64 // CPI consumed in kernel mode, in ticks
 }
 
 //
@@ -139,6 +166,15 @@ func (c *Child) Wait() error {
 	err := c.Cmd.Wait()
 
 	c.Lock()
+	if c.status != nil {
+		c.status.Close()
+		c.status = nil
+	}
+	if c.stat != nil {
+		c.stat.Close()
+		c.stat = nil
+	}
+
 	c.Process = nil
 	c.Unlock()
 	return err
@@ -172,6 +208,79 @@ func (c *Child) GetPID() int {
 		c.Unlock()
 	}
 	return pid
+}
+
+// GetState queries /proc for information about the child process and returns a
+// ChildState structure.
+func (c *Child) GetState() (*ChildState, error) {
+	var rval ChildState
+	var err error
+
+	if c == nil {
+		return nil, nil
+	}
+
+	c.Lock()
+	defer c.Unlock()
+	if c.Process == nil {
+		return nil, nil
+	}
+
+	if c.stat == nil {
+		path := fmt.Sprintf("/proc/%d/stat", c.Process.Pid)
+		c.stat, err = os.Open(path)
+		if err != nil {
+			return nil, err
+		}
+	}
+	b := make([]byte, 1024)
+	_, err = c.stat.ReadAt(b, 0)
+	if err == nil || err == io.EOF {
+		tokens := strings.Split(string(b), " ")
+		if len(tokens) < 52 {
+			return nil,
+				fmt.Errorf("unrecognized /proc/*/stat format")
+		}
+		rval.State = tokens[3]
+		rval.Utime, _ = strconv.ParseUint(tokens[14], 10, 64)
+		rval.Stime, _ = strconv.ParseUint(tokens[15], 10, 64)
+	} else {
+		log.Printf("Failed to read /proc/%d/stat: %v\n", c.Process.Pid, err)
+	}
+
+	if c.status == nil {
+		path := fmt.Sprintf("/proc/%d/status", c.Process.Pid)
+		c.status, err = os.Open(path)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	fields := map[string]*uint64{
+		"VmPeak": &rval.VMPeak,
+		"VmSize": &rval.VMSize,
+		"VmSwap": &rval.VMSwap,
+		"VmHWM":  &rval.RssPeak,
+		"VmRSS":  &rval.RssSize,
+	}
+
+	found := 0
+	c.status.Seek(0, 0)
+	scanner := bufio.NewScanner(c.status)
+	for (found < len(fields)) && scanner.Scan() {
+		line := scanner.Text()
+		tokens := procStatusRE.FindStringSubmatch(line)
+		if len(tokens) > 2 {
+			field, val := tokens[1], tokens[2]
+			if ptr := fields[field]; ptr != nil {
+				kb, _ := strconv.ParseUint(val, 10, 64)
+				*ptr = kb * 1024
+				found++
+			}
+		}
+	}
+
+	return &rval, nil
 }
 
 // SetOutput will reset a child's log target
@@ -496,4 +605,53 @@ func (t *RunAbort) ClearRunning() {
 // exieted yet.
 func (t *RunAbort) IsRunning() bool {
 	return (t != nil) && (atomic.LoadUint32(&t.running) != 0)
+}
+
+// CPUStart begins collecting CPU profiling information
+func (p *Profiler) CPUStart() error {
+	p.index++
+	name := fmt.Sprintf("%s.cpu.%03d.prof", p.name, p.index)
+	file, err := os.Create(name)
+	if err != nil {
+		return fmt.Errorf("failed to create %s: %v", name, err)
+	}
+	log.Printf("Collecting cpu profile data in %s\n", name)
+	pprof.StartCPUProfile(file)
+	p.active = true
+	return nil
+}
+
+// CPUStop stops collecting profiling information and writes out the results
+func (p *Profiler) CPUStop() {
+	if p.active {
+		log.Printf("Stopping profiler\n")
+
+		pprof.StopCPUProfile()
+	}
+	p.active = false
+}
+
+// HeapProfile writes the current heap profile to disk
+func (p *Profiler) HeapProfile() {
+	name := fmt.Sprintf("%s.mem.%03d.prof", p.name, p.index)
+	file, err := os.Create(name)
+	if err != nil {
+		log.Printf("Failed to create heap profile: %v\n",
+			err)
+	} else {
+		runtime.GC()
+		pprof.WriteHeapProfile(file)
+	}
+}
+
+// NewProfiler allocates an opaque handler daemons can use to perfom CPU and
+// memory profiling operations.
+func NewProfiler(name string) *Profiler {
+	p := Profiler{
+		name:   name,
+		index:  0,
+		active: false,
+	}
+
+	return &p
 }

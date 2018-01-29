@@ -342,10 +342,6 @@ func createPipe(name string) error {
 	return nil
 }
 
-func droplogFini() {
-	dbHandle.Close()
-}
-
 // Identify all NICs the connect us to the outside world
 func findWanNics() {
 	wanIfaces = make(map[string]bool)
@@ -375,22 +371,30 @@ func findWanNics() {
 	log.Printf("WAN interfaces: %v\n", wanIfaces)
 }
 
-func droplogInit() error {
-	var err error
+func droplogFini(w *watcher) {
+	dbHandle.Close()
+	w.running = false
+}
 
+func droplogInit(w *watcher) {
 	findWanNics()
 
-	if err = createPipe(*logpipe); err != nil {
-		return fmt.Errorf("failed to create syslog pipe %s: %v",
-			*logpipe, err)
+	err := createPipe(*logpipe)
+	if err != nil {
+		err = fmt.Errorf("creating syslog pipe %s: %v", *logpipe, err)
+	} else {
+		dbHandle, err = dbInit(*watchDir + "/" + *dropDB)
+		if err != nil {
+			err = fmt.Errorf("database error: %v", err)
+		}
 	}
 
-	if dbHandle, err = dbInit(*watchDir + "/" + *dropDB); err != nil {
-		return fmt.Errorf("database error: %v", err)
+	if err == nil {
+		go logMonitor(*logpipe)
+		w.running = true
+	} else {
+		log.Printf("Droplog watcher failed to start: %v\n", err)
 	}
-
-	go logMonitor(*logpipe)
-	return nil
 }
 
 func init() {

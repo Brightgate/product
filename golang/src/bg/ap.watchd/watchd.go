@@ -46,6 +46,8 @@ var (
 		"The address to listen on for Prometheus HTTP requests.")
 	verbose = flag.Bool("verbose", false, "Log nmap progress")
 
+	profiler *aputil.Profiler
+
 	watchers = make([]*watcher, 0)
 )
 
@@ -63,12 +65,13 @@ var (
 // at launch time by their init() functions.
 //
 type watcher struct {
-	name string
-	init func() error
-	fini func()
+	name    string
+	running bool
+	init    func(*watcher)
+	fini    func(*watcher)
 }
 
-func addWatcher(name string, ini func() error, fini func()) {
+func addWatcher(name string, ini func(*watcher), fini func(*watcher)) {
 	w := watcher{
 		name: name,
 		init: ini,
@@ -180,12 +183,35 @@ func logUnknown(ring, mac, ipstr string) bool {
 }
 
 func signalHandler() {
+	profiling := false
+
 	sig := make(chan os.Signal)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR2)
+	for {
+		s := <-sig
+		log.Printf("Signal (%v) received.\n", s)
+		switch s {
 
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	received := <-sig
+		case syscall.SIGUSR2:
+			if profiler == nil {
+				continue
+			}
 
-	log.Printf("Signal (%v) received.\n", received)
+			if !profiling {
+				if err := profiler.CPUStart(); err != nil {
+					log.Printf("profiler failed: %v\n", err)
+				} else {
+					profiling = true
+				}
+			} else {
+				profiler.CPUStop()
+				profiler.HeapProfile()
+				profiling = false
+			}
+		default:
+			return
+		}
+	}
 }
 
 func main() {
@@ -221,20 +247,30 @@ func main() {
 	if mcpd != nil {
 		mcpd.SetState(mcp.ONLINE)
 	}
+	profiler = aputil.NewProfiler(pname)
+	defer profiler.CPUStop()
 
 	for _, w := range watchers {
-		var err error
-
-		if w.init != nil {
-			err = w.init()
-		}
-
-		if err != nil {
-			log.Printf("Failed to start %s: %v\n", w.name, err)
-		} else if w.fini != nil {
-			defer w.fini()
-		}
+		go w.init(w)
 	}
 
 	signalHandler()
+
+	for _, w := range watchers {
+		if w.running {
+			log.Printf("Stopping %s\n", w.name)
+			go w.fini(w)
+		}
+	}
+
+	for _, w := range watchers {
+		logged := false
+		for w.running {
+			if !logged {
+				log.Printf("Waiting for %s\n", w.name)
+				logged = true
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
 }
