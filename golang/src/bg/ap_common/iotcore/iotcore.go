@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -29,6 +29,14 @@ import (
 // required to build the JSON Web Token (JWT, https://jwt.io/, RFC 7519) which
 // is used as the connection password.  The JWT must periodically be refreshed,
 // and this structure allows that to happen
+type IoTMQTTClient interface {
+	PublishEvent(subfolder string, qos byte, payload interface{}) mqtt.Token
+	PublishState(qos byte, payload interface{}) mqtt.Token
+	SubscribeConfig(onConfig ConfigHandler)
+	mqtt.Client
+}
+
+// _IoTMQTTClient is the default implementation of IoTMQTTClient
 //
 // XXX Presently, a missing feature in the MQTT.client means that we need to
 // tear down and rebuild the client in order to change the password, and this
@@ -36,7 +44,7 @@ import (
 // be ripped out as soon as possible, or we should fix the upstream library.
 // See https://github.com/eclipse/paho.mqtt.golang/issues/147.
 //
-type IoTMQTTClient struct {
+type _IoTMQTTClient struct {
 	cred        *IoTCredential
 	signedJWT   string
 	eventTopic  string
@@ -54,7 +62,7 @@ type IoTMQTTClient struct {
 }
 
 // ConfigHandler represents a callback when a Config message is received
-type ConfigHandler func(*IoTMQTTClient, mqtt.Message)
+type ConfigHandler func(IoTMQTTClient, mqtt.Message)
 
 // cJWTExpiry represents the number of seconds until the JWT is expired.
 const cJWTExpiry = 3600
@@ -63,12 +71,12 @@ const cMQTTBrokerURI = "ssl://mqtt.googleapis.com:8883"
 const cMQTTPingTimeout = 10 * time.Second
 const cMQTTKeepAlive = 5 * time.Minute
 
-func (c *IoTMQTTClient) String() string {
-	return fmt.Sprintf("IoTMQTTClient cred:%v", c.cred)
+func (c *_IoTMQTTClient) String() string {
+	return fmt.Sprintf("_IoTMQTTClient cred:%v", c.cred)
 }
 
 // Periodically refresh the JWT token
-func (c *IoTMQTTClient) refreshJWT() {
+func (c *_IoTMQTTClient) refreshJWT() {
 	log.Printf("refreshJWT()\n")
 	c.Lock()
 	defer c.Unlock()
@@ -104,7 +112,7 @@ func (c *IoTMQTTClient) refreshJWT() {
 	time.AfterFunc(time.Second*cJWTExpiry/2, c.refreshJWT)
 }
 
-func (c *IoTMQTTClient) makeClient() {
+func (c *_IoTMQTTClient) makeClient() {
 	// Setup MQTT client options
 	opts := mqtt.NewClientOptions().AddBroker(cMQTTBrokerURI)
 	opts.SetKeepAlive(cMQTTKeepAlive)
@@ -121,10 +129,10 @@ func (c *IoTMQTTClient) makeClient() {
 
 // NewMQTTClient will create a new Google Cloud IoT Core client.  It also
 // exposes the mqtt.Client API.
-func NewMQTTClient(cred *IoTCredential) (*IoTMQTTClient, error) {
+func NewMQTTClient(cred *IoTCredential) (IoTMQTTClient, error) {
 	var err error
 
-	c := &IoTMQTTClient{
+	c := &_IoTMQTTClient{
 		cred: cred,
 	}
 
@@ -140,11 +148,11 @@ func NewMQTTClient(cred *IoTCredential) (*IoTMQTTClient, error) {
 	c.makeClient()
 	// Start timer driver JWT refresh
 	time.AfterFunc(time.Second*cJWTExpiry/2, c.refreshJWT)
-	return c, nil
+	return IoTMQTTClient(c), nil
 }
 
 // PublishEvent publishes an event ('telemetry') to the IoT core broker
-func (c *IoTMQTTClient) PublishEvent(subfolder string, qos byte, payload interface{}) mqtt.Token {
+func (c *_IoTMQTTClient) PublishEvent(subfolder string, qos byte, payload interface{}) mqtt.Token {
 	c.RLock()
 	defer c.RUnlock()
 	var t mqtt.Token
@@ -157,14 +165,14 @@ func (c *IoTMQTTClient) PublishEvent(subfolder string, qos byte, payload interfa
 }
 
 // PublishState publishes device state to the IoT core broker
-func (c *IoTMQTTClient) PublishState(qos byte, payload interface{}) mqtt.Token {
+func (c *_IoTMQTTClient) PublishState(qos byte, payload interface{}) mqtt.Token {
 	c.RLock()
 	defer c.RUnlock()
 	t := c.Publish(c.stateTopic, 1, false, payload)
 	return t
 }
 
-func (c *IoTMQTTClient) resubscribeConfig() mqtt.Token {
+func (c *_IoTMQTTClient) resubscribeConfig() mqtt.Token {
 	// At present IoT core has only one downstream topic.  So we can just
 	// use the "default" mechanism to set a function to receive those
 	// messages here.
@@ -172,14 +180,14 @@ func (c *IoTMQTTClient) resubscribeConfig() mqtt.Token {
 		return &mqtt.DummyToken{}
 	}
 	configClosure := func(client mqtt.Client, message mqtt.Message) {
-		c.onConfig(c, message)
+		c.onConfig(IoTMQTTClient(c), message)
 	}
 	return c.Subscribe(c.configTopic, 1, configClosure)
 }
 
 // SubscribeConfig registers a receiver for configuration data and subscribes
 // to the appropriate topic.
-func (c *IoTMQTTClient) SubscribeConfig(onConfig ConfigHandler) {
+func (c *_IoTMQTTClient) SubscribeConfig(onConfig ConfigHandler) {
 	c.RLock()
 	defer c.RUnlock()
 	c.onConfig = onConfig

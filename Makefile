@@ -241,6 +241,7 @@ APPDAEMON_GOPKGS = \
 	bg/ap.dns4d \
 	bg/ap.httpd \
 	bg/ap.identifierd \
+	bg/ap.iotd \
 	bg/ap.logd \
 	bg/ap.mcp \
 	bg/ap.networkd \
@@ -264,8 +265,10 @@ APPBINARIES = \
 
 GO_TESTABLES = \
 	bg/ap_common/apcfg \
+	bg/ap_common/aputil \
 	bg/ap_common/iotcore \
 	bg/ap_common/network \
+	bg/ap.iotd \
 	bg/ap.networkd \
 	bg/ap.userauthd \
 	bg/cl_common/daemonutils \
@@ -429,7 +432,7 @@ CLOUD_COMMON_SRCS = \
     $(GOSRCBG)/cloud_models/appliancedb/appliancedb.go \
     $(GOSRCBG)/cl_common/daemonutils/utils.go
 
-install: tools $(TARGETS)
+install: tools mocks $(TARGETS)
 
 appliance: $(APPCOMPONENTS)
 
@@ -441,6 +444,27 @@ packages: install
 	$(PYTHON3) build/deb-pkg/deb-pkg.py $(PKG_LINT) --arch $(PKG_DEB_ARCH)
 
 test: test-go
+
+MOCKERY=$(GOPATH)/bin/mockery
+
+$(MOCKERY):
+	$(GO) get -u github.com/vektra/mockery/.../
+
+GO_MOCK_IOTMQTTCLIENT = $(GOSRCBG)/ap_common/iotcore/mocks/IoTMQTTClient.go
+GO_MOCK_SRCS = \
+	$(GO_MOCK_IOTMQTTCLIENT)
+
+mocks: $(GO_MOCK_SRCS)
+
+# Mock rules-- not sure how to make this work with pattern substitution
+# After generation, make compliant with
+# https://github.com/golang/go/issues/13560 so that golint will skip this file.
+# Can be pulled after https://github.com/vektra/mockery/issues/183 is fixed
+# The use of 'realpath' avoids an issue in mockery for workspaces with
+# symlinks (https://github.com/vektra/mockery/issues/157).
+$(GO_MOCK_IOTMQTTCLIENT): $(GOSRCBG)/ap_common/iotcore/iotcore.go | $(MOCKERY) deps-ensured
+	cd $(realpath $(dir $<)) && GOPATH=$(realpath $(GOPATH)) $(MOCKERY) -name IoTMQTTClient
+	sed -i 's/\(\/\/ Code generated.*\)/\1.  DO NOT EDIT./' $@
 
 test-go: install
 	$(GO) test $(GO_TESTFLAGS) $(GO_TESTABLES)
@@ -615,6 +639,7 @@ $(APPBIN)/ap.httpd: \
 	$(GOSRCBG)/ap.httpd/api-demo.go \
 	$(PHISH_SRCS)
 $(APPBIN)/ap.identifierd: $(GOSRCBG)/ap.identifierd/identifierd.go
+$(APPBIN)/ap.iotd: $(GOSRCBG)/ap.iotd/iotd.go
 $(APPBIN)/ap.logd: $(GOSRCBG)/ap.logd/logd.go
 $(APPBIN)/ap.mcp: $(GOSRCBG)/ap.mcp/mcp.go
 $(APPBIN)/ap.networkd: \
@@ -794,7 +819,8 @@ clean:
 		$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
 		$(APPBINARIES) \
 		$(CLOUDBINARIES) \
-		$(UTILBINARIES)
+		$(UTILBINARIES) \
+		$(GO_MOCK_SRCS)
 
 plat-clobber: clobber
 	-$(GO) clean $(GO_CLEAN_FLAGS) github.com/golang/protobuf/protoc-gen-go

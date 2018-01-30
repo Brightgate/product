@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2017 Brightgate Inc. All rights reserved.
+// COPYRIGHT 2018 Brightgate Inc. All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -68,4 +68,18 @@ message InventoryReport {
 
 service Inventory {
 	rpc Upcall(InventoryReport) returns (UpcallResponse) {};
+}
+
+// Cloud simplified version of EventNetException
+// XXX would like feedback on how closely to have this mirror EventNetException
+// or if we should commonize them.
+message NetException {
+	optional string timestamp = 0x01;
+	optional string protocol = 0x02;
+
+	optional string reason = 0x3;
+	optional string message = 0x4;
+	optional fixed64 mac_address = 0x5;
+	optional fixed32 ipv4_address = 0x6;
+	optional string hostname = 0x7;
 }

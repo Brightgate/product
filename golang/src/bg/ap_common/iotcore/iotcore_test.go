@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -114,16 +114,20 @@ func TestBadJSON(t *testing.T) {
 
 }
 
-func setupClient(t *testing.T) (*IoTMQTTClient, error) {
+func setupClient(t *testing.T) (*_IoTMQTTClient, error) {
 	testKey, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(testPEM))
 	if err != nil {
 		return nil, err
 	}
 	cred := NewCredential(testProject, testRegion, testRegistry, testDevice, testKey)
 
-	client, err := NewMQTTClient(cred)
+	c, err := NewMQTTClient(cred)
 	if err != nil {
 		return nil, err
+	}
+	client, ok := c.(*_IoTMQTTClient)
+	if !ok {
+		panic("bad type")
 	}
 	if token := client.Connect(); token.WaitTimeout(10*time.Second) == false || token.Error() != nil {
 		return nil, fmt.Errorf("Connect failed or timed out: %s", token.Error())
@@ -212,7 +216,7 @@ func TestConfig(t *testing.T) {
 	}
 
 	incoming := make(chan string)
-	onConfig := func(client *IoTMQTTClient, msg mqtt.Message) {
+	onConfig := func(client IoTMQTTClient, msg mqtt.Message) {
 		t.Logf("onConfig: saw %s: %s", msg.Topic(), string(msg.Payload()))
 		incoming <- string(msg.Payload())
 	}

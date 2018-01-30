@@ -11,7 +11,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/base64"
 	"flag"
 	"fmt"
@@ -20,11 +19,10 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
+	"bg/ap_common/aputil"
 	"bg/ap_common/iotcore"
 	"bg/cloud_rpc"
 
@@ -45,10 +43,10 @@ type cfg struct {
 var services = map[string]bool{
 	"upbeat":      true,
 	"upbeat-loop": true,
+	"exception":   true,
 }
 
 var (
-	apRootFlag   = flag.String("root", "proto.armv7l/appliance/opt/com.brightgate", "Root of AP installation")
 	credPathFlag = flag.String("cred-path", "etc/secret/iotcore/iotcore.secret.json", "JSON credential file for this IoTCore device")
 
 	environ cfg
@@ -57,47 +55,28 @@ var (
 	slogger   *zap.SugaredLogger
 	zapConfig zap.Config
 
-	cachedBootTime time.Time
-
 	// ApVersion will be replaced by go build step.
 	ApVersion = "undefined"
 )
 
-// LinuxBootTime retrieves the instance boot time using /proc/stat's "btime" field.
-func LinuxBootTime() (time.Time, error) {
-	if !cachedBootTime.IsZero() {
-		return cachedBootTime, nil
-	}
-	statfile, err := os.Open("/proc/stat")
+func publishEventProto(iotc iotcore.IoTMQTTClient, subfolder string, evt proto.Message) error {
+	pb, err := proto.Marshal(evt)
 	if err != nil {
-		return time.Time{}, errors.Wrap(err, "/proc/stat")
+		return errors.Wrapf(err, "Failed to marshal %s to protobuf", subfolder)
 	}
-
-	scanner := bufio.NewScanner(statfile)
-	for scanner.Scan() {
-		fields := strings.Split(scanner.Text(), " ")
-		if fields[0] == "btime" {
-			var val int64
-			val, err = strconv.ParseInt(fields[1], 10, 64)
-			if err != nil {
-				return time.Time{}, errors.Wrap(err, "Failed to get Boot Time")
-			}
-			cachedBootTime = time.Unix(val, 0)
-			return cachedBootTime, nil
-		}
+	pb64 := base64.StdEncoding.EncodeToString(pb)
+	slogger.Debugw("Sending "+subfolder, "payload", evt)
+	t := iotc.PublishEvent(subfolder, 1, pb64)
+	if t.Wait() && t.Error() != nil {
+		return errors.Wrap(t.Error(), "Send failed")
 	}
-	if err = scanner.Err(); err != nil {
-		return time.Time{}, errors.Wrap(err, "Scanner error")
-	}
-	return time.Time{}, errors.New("/proc/stat possibly empty")
+	slogger.Infow("Sent "+subfolder, "payload", evt)
+	return nil
 }
 
-func sendUpbeat(iotc *iotcore.IoTMQTTClient) error {
+func publishUpbeat(iotc iotcore.IoTMQTTClient) error {
 	// Build UpcallRequest
-	bootTime, err := LinuxBootTime()
-	if err != nil {
-		return errors.Wrap(err, "Failed to get boot time")
-	}
+	bootTime := aputil.LinuxBootTime()
 
 	// Retrieve component versions.
 	versions := make([]string, 0)
@@ -108,23 +87,20 @@ func sendUpbeat(iotc *iotcore.IoTMQTTClient) error {
 		RecordTime:       proto.String(time.Now().Format(time.RFC3339)),
 		ComponentVersion: versions,
 	}
-
-	upbeatPB, err := proto.Marshal(upbeat)
-	if err != nil {
-		return errors.Wrap(err, "Failed to marshal upbeat to protobuf")
-	}
-	upbeatPB64 := base64.StdEncoding.EncodeToString(upbeatPB)
-	slogger.Debugw("Sending upbeat", "upbeat", upbeat)
-	t := iotc.PublishEvent("upbeat", 1, upbeatPB64)
-	if t.Wait() && t.Error() != nil {
-		slogger.Errorw("upbeat failed", "error", t.Error())
-		return errors.Wrap(t.Error(), "Upbeat send failed")
-	}
-	slogger.Infow("Sent upbeat", "data", upbeat)
-	return nil
+	return publishEventProto(iotc, "upbeat", upbeat)
 }
 
-func onConfig(iotc *iotcore.IoTMQTTClient, message mqtt.Message) {
+func publishException(iotc iotcore.IoTMQTTClient) error {
+	// Build a "test" Exception
+	exc := &cloud_rpc.NetException{
+		Reason:  proto.String("TEST"),
+		Message: proto.String("test exception"),
+	}
+
+	return publishEventProto(iotc, "exception", exc)
+}
+
+func onConfig(iotc iotcore.IoTMQTTClient, message mqtt.Message) {
 	slogger.Infow("Received Configuration", "config", string(message.Payload()))
 }
 
@@ -140,11 +116,11 @@ func zapSetup() {
 	_ = zap.RedirectStdLog(logger)
 }
 
-func upbeatLoop(iotc *iotcore.IoTMQTTClient) {
+func upbeatLoop(iotc iotcore.IoTMQTTClient) {
 	sigs := make(chan os.Signal, 1)
 	ticker := time.NewTicker(time.Minute)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	err := sendUpbeat(iotc)
+	err := publishUpbeat(iotc)
 	if err != nil {
 		slogger.Errorw("Upbeat failed", "err", err)
 	}
@@ -152,7 +128,7 @@ func upbeatLoop(iotc *iotcore.IoTMQTTClient) {
 	for {
 		select {
 		case <-ticker.C:
-			err := sendUpbeat(iotc)
+			err := publishUpbeat(iotc)
 			if err != nil {
 				slogger.Errorw("Upbeat failed", "err", err)
 			}
@@ -190,12 +166,7 @@ func main() {
 		usage("Unknown service %s\n", svc)
 	}
 
-	var credPath string
-	if filepath.IsAbs(*credPathFlag) {
-		credPath = *credPathFlag
-	} else {
-		credPath = filepath.Join(*apRootFlag, *credPathFlag)
-	}
+	credPath := aputil.ExpandDirPath(*credPathFlag)
 
 	var credFile []byte
 	credFile, err := ioutil.ReadFile(credPath)
@@ -218,19 +189,25 @@ func main() {
 		slogger.Fatalf("Could not initialize IoT core client: %s", err)
 	}
 	if token := iotc.Connect(); token.Wait() && token.Error() != nil {
-		slogger.Fatalf("Could not connect IoT core client: %s", err)
+		slogger.Fatalf("Could not connect IoT core client: %s", token.Error())
 	}
 	defer iotc.Disconnect(250)
 
 	switch svc {
-	case "upbeat":
-		err := sendUpbeat(iotc)
+	case "exception":
+		err := publishException(iotc)
 		if err != nil {
-			slogger.Errorw("Upbeat failed", "err", err)
+			slogger.Errorw("publishException failed", "err", err)
+		}
+	case "upbeat":
+		err := publishUpbeat(iotc)
+		if err != nil {
+			slogger.Errorw("publishUpbeat failed", "err", err)
 		}
 	case "upbeat-loop":
 		// Subscribe to config events; this is basically demo-ware for now
 		iotc.SubscribeConfig(onConfig)
 		upbeatLoop(iotc)
 	}
+
 }

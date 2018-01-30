@@ -190,6 +190,34 @@ func upbeatMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 	}
 }
 
+func exceptionMessage(ctx context.Context, applianceDB appliancedb.DataStore,
+	idmap *appliancedb.ApplianceID, m *pubsub.Message) {
+
+	exc := &cloud_rpc.NetException{}
+
+	// For now we have nothing we can really do with malformed messages
+	defer m.Ack()
+
+	excBuf, err := base64.StdEncoding.DecodeString(string(m.Data))
+	if err != nil {
+		slog.Errorw("failed to decode", "message", m, "error", err, "data", string(m.Data))
+		return
+	}
+	err = proto.Unmarshal(excBuf, exc)
+	if err != nil {
+		slog.Errorw("failed to unmarshal", "message", m, "error", err)
+		return
+	}
+
+	// This is temporary.  For now we don't store exceptions except as JSON blobs.
+	jsonExc, err := json.Marshal(exc)
+	if err != nil {
+		slog.Errorw("failed to json.Marhal", "message", m, "error", err, "data", string(m.Data))
+		return
+	}
+	slog.Infow("Client Exception", "appliance", idmap, "exception", string(jsonExc))
+}
+
 func main() {
 	var environ Cfg
 
@@ -254,8 +282,10 @@ func main() {
 		switch m.Attributes["subFolder"] {
 		case "upbeat":
 			upbeatMessage(ctx, applianceDB, idmap, m)
+		case "exception":
+			exceptionMessage(ctx, applianceDB, idmap, m)
 		default:
-			slog.Errorw("unknown message type (subfolder): %s", m.Attributes["subFolder"])
+			slog.Errorf("unknown message type (subfolder): %s", m.Attributes["subFolder"])
 		}
 	})
 	if err != nil {

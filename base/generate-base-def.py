@@ -203,6 +203,7 @@ assignments = [
     [Statement.SIMPLE_PORT, "CONFIGD_PROMETHEUS_PORT", 3207],
     [Statement.SIMPLE_PORT, "WATCHD_PROMETHEUS_PORT", 3208],
     [Statement.SIMPLE_PORT, "RELAYD_PROMETHEUS_PORT", 3209],
+    [Statement.SIMPLE_PORT, "IOTD_PROMETHEUS_PORT", 3210],
 
     [Statement.COMMENT, "ZeroMQ definitions"],
     [Statement.SIMPLE_STR, "INCOMING_ZMQ_URL", "tcp://*"],

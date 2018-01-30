@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -416,6 +416,17 @@ func GetNodeID() uuid.UUID {
 	}
 
 	return nodeID
+}
+
+// LinuxBootTime retrieves the instance boot time using sysinfo(2)
+func LinuxBootTime() time.Time {
+	var z syscall.Sysinfo_t
+	err := syscall.Sysinfo(&z)
+	if err != nil {
+		panic(err)
+	}
+	uptime := time.Duration(z.Uptime) * time.Second
+	return time.Now().Add(-uptime)
 }
 
 // DHCPDecodeOptions parses a bytestream into a slice of DHCP options
