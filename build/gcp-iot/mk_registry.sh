@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# COPYRIGHT 2017 Brightgate Inc. All rights reserved.
+# COPYRIGHT 2018 Brightgate Inc. All rights reserved.
 #
 # This copyright notice is Copyright Management Information under 17 USC 1202
 # and is included to protect this work and deter copyright infringement.
@@ -22,7 +22,7 @@ if [[ -z $CRED_FILE || ! -f $CRED_FILE || -z $REGISTRY_ID || -z $PROJECT_ID ]]; 
 	exit 2
 fi
 
-gcloud auth activate-service-account --key-file="$CRED_FILE"
+gcloud auth activate-service-account --project="$PROJECT_ID" --key-file="$CRED_FILE"
 SERVICE_ACCT=cloud-iot@system.gserviceaccount.com
 
 EVENTS=iot-$REGISTRY_ID-events

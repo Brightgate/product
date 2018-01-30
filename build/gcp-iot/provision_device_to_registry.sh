@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# COPYRIGHT 2017 Brightgate Inc. All rights reserved.
+# COPYRIGHT 2018 Brightgate Inc. All rights reserved.
 #
 # This copyright notice is Copyright Management Information under 17 USC 1202
 # and is included to protect this work and deter copyright infringement.
@@ -58,7 +58,7 @@ echo "Adding $DEVICE_NAME to registry $REGISTRY_ID in region $REGION"
 gcloud beta iot devices create "$DEVICE_NAME" \
 	--region="$REGION" --registry="$REGISTRY_ID" \
 	--public-key path="$DEVICE_NAME.rsa_cert.pem,type=RSA_X509_PEM" \
-	--metadata=net_b10e_iot_device_uuid="$DEVICE_UUID"
+	--metadata=net_b10e_iot_cloud_uuid="$DEVICE_UUID"
 
 echo "---------- $REGISTRY_ID -------------------------------------"
 gcloud beta iot devices describe "$DEVICE_NAME" --registry "$REGISTRY_ID" --region "$REGION"

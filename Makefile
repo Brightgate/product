@@ -267,7 +267,9 @@ GO_TESTABLES = \
 	bg/ap_common/iotcore \
 	bg/ap_common/network \
 	bg/ap.networkd \
-	bg/ap.userauthd
+	bg/ap.userauthd \
+	bg/cl_common/daemonutils \
+	bg/cloud_models/cloudiotsvc
 
 HTTPD_TEMPLATE_FILES = \
 	connect_apple.html.got \
@@ -389,12 +391,18 @@ CLOUDVAR=$(CLOUDBASE)/var
 CLOUDSPOOL=$(CLOUDVAR)/spool
 
 CLOUDDAEMON_GOPKGS = \
+	bg/cl.eventd \
 	bg/cl.httpd \
 	bg/cl.rpcd
 
+CLOUDCOMMON_GOPKGS = \
+	bg/cl_common/daemonutils \
+	bg/cloud_models/appliancedb \
+	bg/cloud_models/cloudiotsvc
+
 CLOUDCOMMAND_GOPKGS =
 
-CLOUD_GOPKGS = $(CLOUDDAEMON_GOPKGS) $(CLOUDCOMMAND_GOPKGS)
+CLOUD_GOPKGS = $(CLOUDCOMMON_GOPKGS) $(CLOUDDAEMON_GOPKGS) $(CLOUDCOMMAND_GOPKGS)
 
 CLOUDDAEMONS = $(CLOUDDAEMON_GOPKGS:bg/%=%)
 
@@ -402,7 +410,8 @@ CLOUDCOMMANDS = $(CLOUDCOMMAND_GOPKGS:bg/%=%)
 
 CLOUDCONFIGS = \
 	$(CLOUDROOTLIB)/systemd/system/cl.httpd.service \
-	$(CLOUDROOTLIB)/systemd/system/cl.rpcd.service
+	$(CLOUDROOTLIB)/systemd/system/cl.rpcd.service \
+	$(CLOUDROOTLIB)/systemd/system/cl.eventd.service
 
 CLOUDBINARIES = $(CLOUDCOMMANDS:%=$(CLOUDBIN)/%) $(CLOUDDAEMONS:%=$(CLOUDBIN)/%)
 
@@ -416,7 +425,9 @@ CLOUDDIRS = \
 CLOUDCOMPONENTS = $(CLOUDBINARIES) $(CLOUDCONFIGS) $(CLOUDDIRS)
 
 CLOUD_COMMON_SRCS = \
-    $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go
+    $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
+    $(GOSRCBG)/cloud_models/appliancedb/appliancedb.go \
+    $(GOSRCBG)/cl_common/daemonutils/utils.go
 
 install: tools $(TARGETS)
 
@@ -655,11 +666,9 @@ $(UTILBIN)/%: $(GOSRCBG)/util/%.go | $(UTILBIN)
 $(CLOUDETC)/datasources.json: datasources.json | $(CLOUDETC)
 	$(INSTALL) -m 0644 $< $(CLOUDETC)
 
-$(CLOUDROOTLIB)/systemd/system/cl.httpd.service: cl.httpd.service | $(CLOUDROOTLIB)/systemd/system
-	$(INSTALL) -m 0644 $< $(CLOUDROOTLIB)/systemd/system
-
-$(CLOUDROOTLIB)/systemd/system/cl.rpcd.service: cl.rpcd.service | $(CLOUDROOTLIB)/systemd/system
-	$(INSTALL) -m 0644 $< $(CLOUDROOTLIB)/systemd/system
+# Install service descriptions
+$(CLOUDROOTLIB)/systemd/system/%: % | $(CLOUDROOTLIB)/systemd/system
+	$(INSTALL) -m 0644 $< $@
 
 $(CLOUDBINARIES): $(COMMON_SRCS) | deps-ensured
 
@@ -675,7 +684,11 @@ $(CLOUDBIN)/%: | $(CLOUDBIN)
 	    $(GO) install $(GOVERFLAGS) bg/$*
 	touch $(@)
 
-$(CLOUDBIN)/cl.httpd: $(GOSRCBG)/cl.httpd/cl.httpd.go
+$(CLOUDBIN)/cl.eventd: \
+	$(GOSRCBG)/cl.eventd/eventd.go \
+	$(CLOUD_COMMON_SRCS)
+$(CLOUDBIN)/cl.httpd: \
+	$(GOSRCBG)/cl.httpd/cl.httpd.go
 $(CLOUDBIN)/cl.rpcd: \
 	$(GOSRCBG)/cl.rpcd/rpcd.go \
 	$(CLOUD_COMMON_SRCS)

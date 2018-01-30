@@ -47,7 +47,7 @@
 
 [[constraint]]
   branch = "master"
-  name = "github.com/ktscholl/go-nmap"
+  name = "github.com/lair-framework/go-nmap"
 
 [[constraint]]
   name = "github.com/lestrrat/go-apache-logformat"
@@ -67,9 +67,7 @@
 
 [[constraint]]
   name = "github.com/satori/uuid"
-  # Stable version after 1.1.0, move to next numbered version
-  # when it comes.  We need the fix in commit 0aa62d5ddceb50dbcb909d790b5345affd3669b6
-  revision = "5bf94b69c6b68ee1b541973bb8e1144db23a194b"
+  version = "1.2.0"
 
 [[constraint]]
   name = "github.com/tensorflow/tensorflow"

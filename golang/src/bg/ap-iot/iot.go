@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -12,7 +12,7 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -103,23 +103,24 @@ func sendUpbeat(iotc *iotcore.IoTMQTTClient) error {
 	versions := make([]string, 0)
 	versions = append(versions, "git:rPS@"+ApVersion)
 
-	request := &cloud_rpc.UpcallRequest{
+	upbeat := &cloud_rpc.UpcallRequest{
 		BootTime:         proto.String(bootTime.Format(time.RFC3339)),
 		RecordTime:       proto.String(time.Now().Format(time.RFC3339)),
 		ComponentVersion: versions,
 	}
 
-	text, err := json.Marshal(request)
+	upbeatPB, err := proto.Marshal(upbeat)
 	if err != nil {
-		return errors.Wrap(err, "Failed sending Upbeat")
+		return errors.Wrap(err, "Failed to marshal upbeat to protobuf")
 	}
-	slogger.Debugw("Sending upbeat", "text", string(text))
-	t := iotc.PublishEvent("upbeat", 1, text)
+	upbeatPB64 := base64.StdEncoding.EncodeToString(upbeatPB)
+	slogger.Debugw("Sending upbeat", "upbeat", upbeat)
+	t := iotc.PublishEvent("upbeat", 1, upbeatPB64)
 	if t.Wait() && t.Error() != nil {
 		slogger.Errorw("upbeat failed", "error", t.Error())
 		return errors.Wrap(t.Error(), "Upbeat send failed")
 	}
-	slogger.Infow("Sent upbeat", "text", string(text))
+	slogger.Infow("Sent upbeat", "data", upbeat)
 	return nil
 }
 

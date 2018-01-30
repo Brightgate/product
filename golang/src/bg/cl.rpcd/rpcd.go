@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -36,6 +36,7 @@ import (
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
+	"bg/cl_common/daemonutils"
 	"bg/cloud_rpc"
 
 	"github.com/golang/protobuf/proto"
@@ -45,9 +46,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 
-	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/net/context"
 
 	"google.golang.org/grpc"
@@ -98,9 +97,6 @@ var (
 		Name: "upcall_invalids",
 		Help: "GRPC upcall invalid HMAC attempts",
 	})
-
-	globalLog        *zap.Logger
-	globalSugaredLog *zap.SugaredLogger
 )
 
 func validhmac(received []byte, data string) bool {
@@ -144,38 +140,8 @@ func writeInfo(devInfo *base_msg.DeviceInfo, basePath string) (string, error) {
 	return path, nil
 }
 
-func setupLogs() (*zap.Logger, *zap.SugaredLogger) {
-	var log *zap.Logger
-	var err error
-	if globalLog != nil {
-		return getLogs()
-	}
-	if terminal.IsTerminal(int(os.Stderr.Fd())) {
-		config := zap.NewDevelopmentConfig()
-		config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
-		log, err = config.Build(zap.AddStacktrace(zapcore.ErrorLevel))
-	} else {
-		// For now we'll take the defaults but choose our time format.
-		// In the future we'll want to adjust this with more
-		// customization.
-		config := zap.NewProductionConfig()
-		config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-		log, err = config.Build(zap.AddStacktrace(zapcore.ErrorLevel))
-	}
-	if err != nil {
-		panic("can't zap")
-	}
-	globalLog = log
-	globalSugaredLog = globalLog.Sugar()
-	return getLogs()
-}
-
-func getLogs() (*zap.Logger, *zap.SugaredLogger) {
-	return globalLog, globalSugaredLog
-}
-
 func loggerFromCtx(ctx context.Context) (*zap.Logger, *zap.SugaredLogger) {
-	log, _ := getLogs()
+	log, _ := daemonutils.GetLogs()
 	if ctx != nil {
 		pr, ok := peer.FromContext(ctx)
 		if ok && pr != nil {
@@ -346,7 +312,7 @@ func main() {
 	var serverCertPool *x509.CertPool
 	var err error
 
-	log, slog := setupLogs()
+	log, slog := daemonutils.SetupLogs()
 	defer log.Sync()
 
 	flag.Parse()
@@ -354,6 +320,7 @@ func main() {
 	if err != nil {
 		slog.Fatalf("Environment Error: %s", err)
 	}
+	log, slog = daemonutils.ResetupLogs()
 
 	slog.Infow(pname+" starting", "args", os.Args, "envcfg", environ)
 
