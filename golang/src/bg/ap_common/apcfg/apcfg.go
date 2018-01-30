@@ -43,7 +43,6 @@ import (
 var ValidRings = map[string]bool{
 	base_def.RING_INTERNAL:   true,
 	base_def.RING_UNENROLLED: true,
-	base_def.RING_SETUP:      true,
 	base_def.RING_CORE:       true,
 	base_def.RING_STANDARD:   true,
 	base_def.RING_DEVICES:    true,

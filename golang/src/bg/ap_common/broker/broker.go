@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -50,6 +50,7 @@ type Broker struct {
 	publisher    *zmq.Socket
 	subscriber   *zmq.Socket
 	handlers     map[string]handlerF
+	sync.Mutex
 }
 
 // Ping will send a single ping message to ap.brokerd
@@ -95,7 +96,9 @@ func eventListener(b *Broker) {
 		}
 
 		topic := string(msg[0])
+		b.Lock()
 		hdlr, ok := b.handlers[topic]
+		b.Unlock()
 		if ok && hdlr != nil {
 			hdlr(msg[1])
 		} else if debug {
@@ -113,7 +116,9 @@ func eventListener(b *Broker) {
 // Handle adds a new callback function for the identified topic.  This will
 // replace an existing handler for that topic.
 func (b *Broker) Handle(topic string, handler handlerF) {
+	b.Lock()
 	b.handlers[topic] = handler
+	b.Unlock()
 }
 
 func (b *Broker) connect() {

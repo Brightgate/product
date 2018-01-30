@@ -11,7 +11,7 @@
         },
         {
             "Name": "cfgversion",
-            "Value": "8"
+            "Value": "9"
         },
         {
             "Name": "apversion",
@@ -20,27 +20,6 @@
         {
             "Name": "rings",
             "Children": [
-		{
-                    "Name": "setup",
-                    "Children": [
-                        {
-                            "Name": "vlan",
-                            "Value": "-1"
-                        },
-                        {
-                            "Name": "auth",
-                            "Value": "open"
-                        },
-                        {
-                            "Name": "subnet",
-                            "Value": "192.168.130.0/26"
-                        },
-                        {
-                            "Name": "lease_duration",
-                            "Value": "10"
-                        }
-                    ]
-                },
 		{
                     "Name": "internal",
                     "Children": [
@@ -75,7 +54,7 @@
                         },
                         {
                             "Name": "subnet",
-                            "Value": "192.168.132.0/26"
+                            "Value": "192.168.130.0/26"
                         },
                         {
                             "Name": "lease_duration",

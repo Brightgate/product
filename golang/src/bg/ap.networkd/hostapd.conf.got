@@ -1,7 +1,7 @@
 interface={{.Interface}}
 driver=nl80211
 ctrl_interface=/var/run/hostapd
-hw_mode={{.HardwareModes}}
+hw_mode={{.Mode}}
 ieee80211n=1
 
 # Parameters are not necessarily inherited across successive bssid
@@ -11,7 +11,7 @@ ieee80211n=1
 
 # BSS Block 0: PSK network
 {{.PskComment}}bssid={{.HWaddr}}
-{{.PskComment}}ssid={{.SSID}}
+{{.PskComment}}ssid={{.PSKSSID}}
 {{.PskComment}}utf8_ssid=1
 
 {{.PskComment}}wmm_enabled=1
@@ -26,12 +26,12 @@ ieee80211n=1
 {{.PskComment}}wpa_passphrase={{.Passphrase}}
 
 {{.PskComment}}dynamic_vlan=0
-{{.PskComment}}vlan_file={{.ConfDir}}/hostapd.wpa-psk.vlan
-{{.PskComment}}accept_mac_file={{.ConfDir}}/hostapd.wpa-psk.macs
+{{.PskComment}}vlan_file={{.ConfDir}}/hostapd.wpa-psk.{{.Mode}}.vlan
+{{.PskComment}}accept_mac_file={{.ConfDir}}/hostapd.wpa-psk.{{.Mode}}.macs
 
 # BSS Block 1: EAP network
 {{.EapComment}}bss={{.Interface}}_1
-{{.EapComment}}ssid={{.SSID}}-eap
+{{.EapComment}}ssid={{.EAPSSID}}
 {{.EapComment}}utf8_ssid=1
 
 {{.EapComment}}wmm_enabled=1
@@ -53,9 +53,5 @@ ieee80211n=1
 {{.EapComment}}auth_server_shared_secret={{.RadiusAuthSecret}}
 
 {{.EapComment}}dynamic_vlan=0
-{{.EapComment}}vlan_file={{.ConfDir}}/hostapd.wpa-eap.vlan
-{{.EapComment}}accept_mac_file={{.ConfDir}}/hostapd.wpa-eap.macs
-
-# BSS Optional Block 2: Open network
-{{.SetupComment}}bss={{.Interface}}_0
-{{.SetupComment}}ssid={{.SetupSSID}}
+{{.EapComment}}vlan_file={{.ConfDir}}/hostapd.wpa-eap.{{.Mode}}.vlan
+{{.EapComment}}accept_mac_file={{.ConfDir}}/hostapd.wpa-eap.{{.Mode}}.macs

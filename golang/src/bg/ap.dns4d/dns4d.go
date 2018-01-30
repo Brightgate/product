@@ -379,9 +379,6 @@ func localHandler(w dns.ResponseWriter, r *dns.Msg) {
 	c := getClient(w)
 	if c == nil {
 		return
-	} else if c.Ring == "setup" {
-		captiveHandler(c, w, r)
-		return
 	}
 
 	m := new(dns.Msg)
@@ -446,9 +443,6 @@ func notifyBlockEvent(c *apcfg.ClientInfo, hostname string) {
 func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 	c := getClient(w)
 	if c == nil {
-		return
-	} else if c.Ring == "setup" {
-		captiveHandler(c, w, r)
 		return
 	}
 

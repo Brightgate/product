@@ -213,8 +213,8 @@ func iptablesAddRule(table, chain, rule string) {
 // Build the core routing rules for a single managed subnet
 //
 func ifaceForwardRules(ring string) {
-	if ring == base_def.RING_SETUP || ring == base_def.RING_QUARANTINE {
-		// These rings don't get the normal NAT behavior
+	if ring == base_def.RING_QUARANTINE {
+		// The quarantine ring doesn't get the normal NAT behavior
 		return
 	}
 	config := rings[ring]
@@ -282,8 +282,6 @@ func genEndpointIface(e *endpoint, src bool) (string, error) {
 	switch e.detail {
 	case "wan":
 		name = wanNic
-	case "setup":
-		name = setupNic
 	default:
 		return "", fmt.Errorf("no such interface: %s", e.detail)
 	}

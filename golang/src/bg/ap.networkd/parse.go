@@ -21,7 +21,7 @@ package main
 // ADDR  CIDR
 // RING  ring_name
 // TYPE  client_type
-// IFACE wan/lan/setup
+// IFACE wan/lan
 //
 // Ports: (DPORTS|SPORTS) <port list>
 //

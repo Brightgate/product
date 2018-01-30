@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -57,8 +57,7 @@ var (
 	sharedRouter net.IP     // without vlans, all rings share a
 	sharedSubnet *net.IPNet // subnet and a router node
 
-	wanMacs   = make(map[string]bool) // mac(s) connected to the wan
-	setupMacs = make(map[string]bool) // mac(s) hosting the setup network
+	wanMacs = make(map[string]bool) // mac(s) connected to the wan
 
 	defaultRing = base_def.RING_UNENROLLED
 
@@ -550,12 +549,7 @@ func (h *ringHandler) decline(p dhcp.Packet) {
 func selectRingHandler(p dhcp.Packet, options dhcp.Options) *ringHandler {
 	hwaddr := p.CHAddr().String()
 	oldRing := getRing(hwaddr)
-	if setupMacs[lastRequestOn] {
-		// All clients connecting on the open port are treated as new -
-		// even if we've previously recognized them on the protected
-		// network.
-		setRing(hwaddr, base_def.RING_SETUP)
-	} else if oldRing == "" || oldRing == base_def.RING_SETUP {
+	if oldRing == "" {
 		// If this client isn't already assigned to a ring, we
 		// put it in the default ring
 		updateRing(hwaddr, oldRing, defaultRing)
@@ -773,10 +767,7 @@ func initHandlers() error {
 	}
 	for _, node := range nodes.Children {
 		for _, nic := range node.Children {
-			switch nic.Value {
-			case base_def.RING_SETUP:
-				setupMacs[nic.Name] = true
-			case base_def.RING_WAN:
+			if nic.Value == base_def.RING_WAN {
 				wanMacs[nic.Name] = true
 			}
 		}
@@ -816,9 +807,6 @@ func (s *multiConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 		if wanMacs[requestMac] {
 			// If the request arrives on the WAN port, drop it.
 			n = 0
-		} else if setupMacs[requestMac] {
-			log.Printf("Request arrived on %s (setup network)\n",
-				requestMac)
 		} else {
 			log.Printf("Request arrived on %s\n", requestMac)
 		}

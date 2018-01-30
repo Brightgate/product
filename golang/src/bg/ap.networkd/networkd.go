@@ -60,30 +60,34 @@ import (
 var (
 	addr = flag.String("listen-address", base_def.NETWORKD_PROMETHEUS_PORT,
 		"address to listen on for HTTP requests")
-	platform = flag.String("platform", "rpi3",
-		"hardware platform name")
+	platform    = flag.String("platform", "rpi3", "hardware platform name")
+	allow40MHz  = flag.Bool("40mhz", false, "allow 40MHz-wide channels")
 	templateDir = flag.String("template_dir", "golang/src/ap.networkd",
 		"location of hostapd templates")
 	rulesDir = flag.String("rules_dir", "./", "Location of the filter rules")
 
-	aps         = make(map[string]*apConfig)
-	physDevices = make(map[string]*physDevice)
+	physDevices    = make(map[string]*physDevice)
+	perModeDevices = make(map[string]map[*physDevice]bool)
+	modes          = []string{"ac", "g"}
 
-	config  *apcfg.APConfig
-	clients apcfg.ClientMap // macaddr -> ClientInfo
-	rings   apcfg.RingMap   // ring -> config
+	config   *apcfg.APConfig
+	clients  apcfg.ClientMap // macaddr -> ClientInfo
+	rings    apcfg.RingMap   // ring -> config
+	nodeUUID string
 
-	setupNic       string
-	wanNic         string
-	wifiNic        string
-	networkNodeIdx byte
+	wifiSSID       string
+	wifiPassphrase string
+	radiusSecret   string
+
+	wanNic string
 
 	hostapdLog     *log.Logger
 	hostapdProcess *aputil.Child // track the hostapd proc
 	mcpd           *mcp.MCP
 
-	running      bool
-	setupNetwork bool
+	running        bool
+	satellite      bool
+	networkNodeIdx byte
 )
 
 const (
@@ -100,33 +104,36 @@ const (
 	iwCmd          = "/sbin/iw"
 	vconfigCmd     = "/sbin/vconfig"
 	pname          = "ap.networkd"
-	setupPortal    = "_0"
 )
 
 type physDevice struct {
-	name         string // Linux device name
-	hwaddr       string // mac address
-	ring         string // configured ring
-	wireless     bool   // is this a wireless nic?
-	supportVLANs bool   // does the nic support VLANs
-	multipleAPs  bool   // does the nic support multiple APs
-	channelsG    []int  // Supported 802.11g channels
-	channelsAC   []int  // Supported 802.11ac channels
+	name   string // Linux device name
+	hwaddr string // mac address
+	ring   string // configured ring
+
+	cfgMode       string // configured mode
+	activeMode    string // mode being used
+	cfgChannel    int    // configured channel
+	activeChannel int    // channel being used
+
+	wireless     bool             // is this a wireless nic?
+	supportVLANs bool             // does the nic support VLANs
+	interfaces   int              // number of APs it can support
+	channels     map[string][]int // Supported channels per-mode
 }
 
 type apConfig struct {
 	// Fields used to populate the configuration template
-	Interface     string // Linux device name
-	HWaddr        string // Mac address to use
-	SSID          string
-	Passphrase    string
-	HardwareModes string
-	Channel       int
-	SetupSSID     string // SSID to broadcast for setup network
-	SetupComment  string // Used to disable setup net in .conf template
-	PskComment    string // Used to disable wpa-psk in .conf template
-	EapComment    string // Used to disable wpa-eap in .conf template
-	ConfDir       string // Location of hostapd.conf, etc.
+	Interface  string // Linux device name
+	HWaddr     string // Mac address to use
+	PSKSSID    string
+	EAPSSID    string
+	Passphrase string
+	Mode       string
+	Channel    int
+	PskComment string // Used to disable wpa-psk in .conf template
+	EapComment string // Used to disable wpa-eap in .conf template
+	ConfDir    string // Location of hostapd.conf, etc.
 
 	confFile string // Name of this NIC's hostapd.conf
 	status   error  // collect hostapd failures
@@ -135,6 +142,10 @@ type apConfig struct {
 	RadiusAuthServerPort string
 	RadiusAuthSecret     string // RADIUS shared secret
 }
+
+// Per-mode, per-width valid channel lists
+var validGChannels map[int]bool
+var validACChannels map[int]map[int]bool
 
 // Precompile some regular expressions
 var (
@@ -149,6 +160,10 @@ var (
 	// Match channel/frequency lines:
 	//   * 2462 MHz [11] (20.0 dBm)
 	channelRE = regexp.MustCompile(`\* (\d+) MHz \[(\d+)\] \((.*)\)`)
+
+	// Match capabilities line:
+	// Capabilities: 0x2fe
+	capabilitiesRE = regexp.MustCompile(`Capabilities: 0x([[:xdigit:]]+)`)
 )
 
 //////////////////////////////////////////////////////////////////////////
@@ -156,16 +171,41 @@ var (
 // Interaction with the rest of the ap daemons
 //
 
-func apReset(conf *apConfig) {
+func apReset(restart bool) {
 	log.Printf("Resetting hostapd\n")
-	generateHostAPDConf(conf)
-	//
-	// A SIGHUP will cause hostapd to reload its configuration.
-	// However, it seems that we really need to kill and restart the
-	// process for the changes to be propagated down to the wifi
-	// hardware
+
+	// XXX: ideally, for simple changes we should just be able to update the
+	// config files and SIGHUP the running hostapd.  In practice, it seems
+	// like we need to fully restart hostapd for some of them to take
+	// effect.  (Ring assignments in particular have required a full restart
+	// for some iOS clients.  It might be worth exploring a soft reset
+	// followed by an explicit deauth/disassoc for the affected client.)
 	//
 	hostapdProcess.Signal(syscall.SIGINT)
+}
+
+func configChannelChanged(path []string, val string, expires *time.Time) {
+	mac := path[2]
+	newChannel, _ := strconv.Atoi(val)
+
+	if p := physDevices[mac]; p != nil {
+		if p.cfgChannel != newChannel {
+			p.cfgChannel = newChannel
+			apReset(true)
+		}
+	}
+}
+
+func configModeChanged(path []string, val string, expires *time.Time) {
+	mac := path[2]
+	newMode := val
+
+	if p := physDevices[mac]; p != nil {
+		if p.cfgMode != newMode {
+			p.cfgMode = newMode
+			apReset(true)
+		}
+	}
 }
 
 func configRingChanged(path []string, val string, expires *time.Time) {
@@ -184,8 +224,7 @@ func configRingChanged(path []string, val string, expires *time.Time) {
 		return
 	}
 
-	conf := aps[wifiNic]
-	apReset(conf)
+	apReset(false)
 }
 
 func configAuthChanged(path []string, val string, expires *time.Time) {
@@ -207,32 +246,25 @@ func configAuthChanged(path []string, val string, expires *time.Time) {
 		log.Printf("Changing auth for ring %s from %s to %s\n", ring,
 			r.Auth, newAuth)
 		r.Auth = newAuth
-		conf := aps[wifiNic]
-		apReset(conf)
+		apReset(true)
 	}
 }
 
 func configNetworkChanged(path []string, val string, expires *time.Time) {
-	conf := aps[wifiNic]
-
 	// Watch for changes to the network conf
 	switch path[1] {
 	case "ssid":
-		conf.SSID = val
+		wifiSSID = val
 		log.Printf("SSID changed to %s\n", val)
 
 	case "passphrase":
-		conf.Passphrase = val
+		wifiPassphrase = val
 		log.Printf("SSID changed to %s\n", val)
-
-	case "setupssid":
-		conf.SetupSSID = val
-		log.Printf("setupSSID changed to %s\n", val)
 
 	default:
 		return
 	}
-	apReset(conf)
+	apReset(false)
 }
 
 //
@@ -260,123 +292,13 @@ func macUpdateLastOctet(mac string, nybble uint64) string {
 	return mac
 }
 
-// Select a channel and mode for this AP.  If we already have one or the other
-// configured, make sure they are mutually compatible and supported by this
-// hardware.  If the configuration is missing or broken, fall back to some
-// sensible defaults.
-func getModeChannel(d *physDevice) (mode string, channel int) {
-	prop := "@/nodes/" + aputil.GetNodeID().String() + "/" + d.hwaddr
-	if nic, _ := config.GetProps(prop); nic != nil {
-		if x := nic.GetChild("mode"); x != nil {
-			mode = x.Value
-		}
-		if x := nic.GetChild("channel"); x != nil {
-			if channel, _ = strconv.Atoi(x.Value); channel == 0 {
-				log.Printf("%s is not a valid channel number\n",
-					x.Value)
-			}
-		}
-	}
-
-	if mode != "" {
-		if mode == "ac" {
-			// hostapd supports AC, but expects it to be called "a"
-			mode = "a"
-		}
-
-		if mode == "a" {
-			if len(d.channelsAC) == 0 {
-				log.Printf("%s doesn't support mode ac\n",
-					d.hwaddr)
-				mode = ""
-			}
-		} else if mode == "g" {
-			if len(d.channelsG) == 0 {
-				log.Printf("%s doesn't support mode g\n",
-					d.hwaddr)
-				mode = ""
-			}
-		} else {
-			log.Printf("Configured mode '%s' is invalid\n", mode)
-			mode = ""
-		}
-	}
-
-	if mode == "" {
-		if len(d.channelsAC) > 0 {
-			mode = "a"
-		} else {
-			mode = "g"
-		}
-	}
-
-	if channel != 0 {
-		var list []int
-		if mode == "a" {
-			list = d.channelsAC
-		} else {
-			list = d.channelsG
-		}
-
-		valid := false
-		for _, x := range list {
-			if channel == x {
-				valid = true
-				break
-			}
-		}
-		if !valid {
-			log.Printf("%d is not a valid channel for mode %s\n",
-				channel, mode)
-			channel = 0
-		}
-	}
-
-	if channel == 0 {
-		if mode == "g" {
-			channel = 6
-		} else {
-			n := rand.Int() % len(d.channelsAC)
-			channel = d.channelsAC[n]
-		}
-	}
-
-	return mode, channel
-}
-
 //
 // Get network settings from configd and use them to initialize the AP
 //
-func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
-	var ssid, passphrase, setupSSID string
-	var setupComment string
-	var radiusSecret string
-	var node *apcfg.PropertyNode
-
-	satNode := aputil.IsSatelliteMode()
-	if node = props.GetChild("ssid"); node == nil {
-		return fmt.Errorf("no SSID configured")
-	}
-	ssid = node.GetValue()
-
-	if node = props.GetChild("passphrase"); node == nil {
-		return fmt.Errorf("no passphrase configured")
-	}
-	passphrase = node.GetValue()
-
-	// If @/network/radiusAuthSecret is already set, retrieve its value.
-	sp, err := config.GetProp("@/network/radiusAuthSecret")
-	if err == nil {
-		radiusSecret = sp
-	} else {
-		radiusSecret = ""
-	}
+func getAPConfig(d *physDevice) *apConfig {
+	var radiusServer string
 
 	ssidCnt := 0
-	if node = props.GetChild("setupssid"); node != nil {
-		setupSSID = node.GetValue()
-	}
-
 	pskComment := "#"
 	eapComment := "#"
 	for _, r := range rings {
@@ -389,15 +311,18 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 		}
 	}
 
-	if !satNode && d.multipleAPs && len(setupSSID) > 0 {
-		setupComment = ""
-		setupNetwork = true
-		ssidCnt++
+	if satellite {
+		internal := rings[base_def.RING_INTERNAL]
+		gateway := network.SubnetRouter(internal.Subnet)
+		radiusServer = gateway
 	} else {
-		setupComment = "#"
-		setupNetwork = false
+		radiusServer = "127.0.0.1"
 	}
 
+	if ssidCnt > d.interfaces {
+		log.Printf("%s can't support %d SSIDs\n", d.hwaddr, ssidCnt)
+		return nil
+	}
 	if ssidCnt > 1 {
 		// If we create multiple SSIDs, hostapd will generate
 		// additional bssids by incrementing the final octet of the
@@ -410,35 +335,33 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 		}
 	}
 
-	mode, channel := getModeChannel(d)
-
+	pskssid := wifiSSID
+	eapssid := wifiSSID + "-eap"
+	mode := d.activeMode
+	if mode == "ac" {
+		// 802.11ac is configured using "hw_mode=a"
+		mode = "a"
+		pskssid += "-5GHz"
+		eapssid += "-5GHz"
+	}
 	data := apConfig{
-		Interface:     d.name,
-		HWaddr:        d.hwaddr,
-		SSID:          ssid,
-		HardwareModes: mode,
-		Channel:       channel,
-		Passphrase:    passphrase,
-		SetupComment:  setupComment,
-		PskComment:    pskComment,
-		EapComment:    eapComment,
-		SetupSSID:     setupSSID,
-		ConfDir:       confdir,
+		Interface:  d.name,
+		HWaddr:     d.hwaddr,
+		PSKSSID:    pskssid,
+		EAPSSID:    eapssid,
+		Mode:       mode,
+		Channel:    d.activeChannel,
+		Passphrase: wifiPassphrase,
+		PskComment: pskComment,
+		EapComment: eapComment,
+		ConfDir:    confdir,
 
-		confFile:             "hostapd.conf." + d.name,
-		RadiusAuthServer:     "127.0.0.1",
+		RadiusAuthServer:     radiusServer,
 		RadiusAuthServerPort: "1812",
 		RadiusAuthSecret:     radiusSecret,
 	}
 
-	if satNode {
-		internal := rings[base_def.RING_INTERNAL]
-		gateway := network.SubnetRouter(internal.Subnet)
-		data.RadiusAuthServer = gateway
-	}
-
-	aps[d.name] = &data
-	return nil
+	return &data
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -450,9 +373,12 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 // Generate the configuration files needed for hostapd.
 //
 func generateVlanConf(conf *apConfig, auth string) {
+
+	mode := conf.Mode
+
 	// Create the 'accept_macs' file, which tells hostapd how to map clients
 	// to VLANs.
-	mfn := conf.ConfDir + "/" + "hostapd." + auth + ".macs"
+	mfn := confdir + "/" + "hostapd." + auth + "." + mode + ".macs"
 	mf, err := os.Create(mfn)
 	if err != nil {
 		log.Fatalf("Unable to create %s: %v\n", mfn, err)
@@ -460,7 +386,7 @@ func generateVlanConf(conf *apConfig, auth string) {
 	defer mf.Close()
 
 	// Create the 'vlan' file, which tells hostapd which vlans to create
-	vfn := conf.ConfDir + "/" + "hostapd." + auth + ".vlan"
+	vfn := confdir + "/" + "hostapd." + auth + "." + mode + ".vlan"
 	vf, err := os.Create(vfn)
 	if err != nil {
 		log.Fatalf("Unable to create %s: %v\n", vfn, err)
@@ -472,7 +398,7 @@ func generateVlanConf(conf *apConfig, auth string) {
 			continue
 		}
 
-		fmt.Fprintf(vf, "%d\tvlan.%d\n", config.Vlan, config.Vlan)
+		fmt.Fprintf(vf, "%d\tvlan.%s.%d\n", config.Vlan, mode, config.Vlan)
 
 		// One client per line, containing "<mac addr> <vlan_id>"
 		for client, info := range clients {
@@ -483,32 +409,132 @@ func generateVlanConf(conf *apConfig, auth string) {
 	}
 }
 
-func generateHostAPDConf(conf *apConfig) string {
-	var err error
+func selectWifiChannel(mode string, d *physDevice) {
+	d.activeChannel = 0
+
+	if d.cfgChannel > 0 {
+		for _, x := range d.channels[mode] {
+			if x == d.cfgChannel {
+				d.activeChannel = d.cfgChannel
+				return
+			}
+			log.Printf("%s is configured with channel %d, not "+
+				"valid for mode %s\n",
+				d.hwaddr, d.cfgChannel, mode)
+		}
+	}
+	if mode == "g" {
+		d.activeChannel = 6
+	} else {
+		n := rand.Int() % len(d.channels[mode])
+		d.activeChannel = d.channels[mode][n]
+	}
+}
+
+func selectWifiDevices() []*physDevice {
+	active := make(map[string]*physDevice)
+	config := make(map[string]*physDevice)
+
+	// Identify which devices are being used for each mode now, and whether
+	// the user has expressed a preference for one or more devices.
+	for _, p := range physDevices {
+		if p.activeMode != "" {
+			active[p.activeMode] = p
+		}
+		if p.cfgMode != "" {
+			config[p.cfgMode] = p
+		}
+	}
+
+	// If the user has configured a particular NIC for any mode, make it the
+	// active one.
+	for _, mode := range modes {
+		if nic := config[mode]; nic != nil {
+			// If another NIC was being used, clear it
+			if active[mode] != nil {
+				active[mode].activeMode = ""
+			}
+			if perModeDevices[mode][nic] {
+				active[mode] = nic
+			}
+		}
+	}
+
+	// If the user didn't configure an 802.11g NIC, choose one
+	acList := perModeDevices["ac"]
+	gList := perModeDevices["g"]
+	if active["g"] == nil {
+		var available *physDevice
+
+		for p := range gList {
+			if len(acList) == 1 && acList[p] {
+				// This is the only 802.11ac-capable NIC.  Keep
+				// looking for another option to use for mode g.
+				available = p
+				continue
+			}
+			active["g"] = p
+			break
+		}
+		if active["g"] == nil {
+			// We didn't find a good device to use for g, so use the
+			// one we had hoped to keep available for ac.
+			active["g"] = available
+		}
+	}
+
+	// If the user didn't configure an 802.11ac NIC, choose one
+	if active["ac"] == nil {
+		for p := range acList {
+			if p != active["g"] {
+				active["ac"] = p
+				break
+			}
+		}
+	}
+
+	selected := make([]*physDevice, 0)
+	for _, mode := range modes {
+		if nic := active[mode]; nic != nil {
+			nic.activeMode = mode
+			selectWifiChannel(mode, nic)
+			selected = append(selected, nic)
+		}
+	}
+	return selected
+}
+
+func generateHostAPDConf() []string {
 	tfile := *templateDir + "/hostapd.conf.got"
+	files := make([]string, 0)
 
-	// Create hostapd.conf, using the apConfig contents to fill out the .got
-	// template
-	t, err := template.ParseFiles(tfile)
-	if err != nil {
-		log.Fatal(err)
-		os.Exit(2)
+	selected := selectWifiDevices()
+	for _, d := range selected {
+		// Create hostapd.conf, using the apConfig contents to fill
+		// out the .got template
+		t, err := template.ParseFiles(tfile)
+		if err != nil {
+			log.Fatal(err)
+			os.Exit(2)
+		}
+
+		confName := confdir + "/" + "hostapd.conf." + d.name
+		cf, _ := os.Create(confName)
+		defer cf.Close()
+
+		conf := getAPConfig(d)
+		err = t.Execute(cf, conf)
+		if err != nil {
+			log.Fatal(err)
+			os.Exit(1)
+		}
+		generateVlanConf(conf, "wpa-psk")
+		generateVlanConf(conf, "wpa-eap")
+
+		files = append(files, confName)
 	}
 
-	fn := conf.ConfDir + "/" + conf.confFile
-	cf, _ := os.Create(fn)
-	defer cf.Close()
-
-	err = t.Execute(cf, conf)
-	if err != nil {
-		log.Fatal(err)
-		os.Exit(1)
-	}
-
-	generateVlanConf(conf, "wpa-psk")
-	generateVlanConf(conf, "wpa-eap")
-
-	return fn
+	return files
 }
 
 //
@@ -524,35 +550,6 @@ func signalHandler() {
 	log.Printf("Received signal %v\n", s)
 	running = false
 	hostapdProcess.Stop()
-}
-
-// Create a ring's network bridge.  If a nic is provided, attach it to the
-// bridge.
-func createBridge(ring *apcfg.RingConfig, nic string) {
-	bridge := ring.Bridge
-
-	err := exec.Command(brctlCmd, "addbr", bridge).Run()
-	if err != nil {
-		log.Printf("addbr %s failed: %v", bridge, err)
-		return
-	}
-
-	err = exec.Command(ipCmd, "link", "set", "up", bridge).Run()
-	if err != nil {
-		log.Printf("bridge %s failed to come up: %v", bridge, err)
-		return
-	}
-
-	if nic != "" {
-		err = exec.Command(brctlCmd, "addif", bridge, nic).Run()
-		if err != nil {
-			log.Printf("addif %s %s failed: %v", bridge, nic, err)
-		}
-	}
-}
-
-func lanRing(ring string) bool {
-	return (ring != base_def.RING_SETUP && ring != base_def.RING_INTERNAL)
 }
 
 // Find the network device being used for internal traffic, and return the IP
@@ -600,9 +597,6 @@ func getInternalAddr() net.IP {
 func rebuildInternalNet(ra *aputil.RunAbort) {
 	satNode := aputil.IsSatelliteMode()
 
-	if !satNode {
-		prepareRingBridge(base_def.RING_INTERNAL, ra)
-	}
 	if ra.IsAbort() {
 		return
 	}
@@ -626,7 +620,7 @@ func rebuildInternalNet(ra *aputil.RunAbort) {
 			}
 		}
 		for name, ring := range rings {
-			if lanRing(name) {
+			if name != base_def.RING_INTERNAL {
 				addVif(dev.name, ring.Vlan)
 			}
 		}
@@ -634,15 +628,6 @@ func rebuildInternalNet(ra *aputil.RunAbort) {
 }
 
 func rebuildLan(ra *aputil.RunAbort) {
-	for ring := range rings {
-		if ra.IsAbort() {
-			return
-		}
-		if lanRing(ring) {
-			prepareRingBridge(ring, ra)
-		}
-	}
-
 	// Connect all the wired LAN NICs to ring-appropriate bridges.
 	for _, dev := range physDevices {
 		if ra.IsAbort() {
@@ -652,7 +637,8 @@ func rebuildLan(ra *aputil.RunAbort) {
 		name := dev.name
 		ring := rings[dev.ring]
 
-		if dev.wireless || ring == nil || !lanRing(dev.ring) {
+		if dev.wireless || ring == nil ||
+			dev.ring == base_def.RING_INTERNAL {
 			continue
 		}
 
@@ -667,28 +653,19 @@ func rebuildLan(ra *aputil.RunAbort) {
 }
 
 func resetInterfaces(ra *aputil.RunAbort) {
-
-	// We use the lowest byte of our internal IP address as a transient,
-	// local node index.  For the gateway node, that will always be 1.  For
-	// the satellite nodes, we need pull it from the address the gateway's
-	// DHCP server gave us.
-	networkNodeIdx = 1
-	if aputil.IsSatelliteMode() {
-		ip := getInternalAddr()
-		if ip == nil {
-			log.Printf("Satellite node has no gateway connection\n")
-			return
+	br := rings[base_def.RING_UNENROLLED].Bridge
+	for _, d := range physDevices {
+		// If hostapd authorizes a client that isn't assigned to a VLAN,
+		// it gets connected to the physical wifi device rather than a
+		// virtual interface.  Connect those physical devices to the
+		// UNENROLLED bridge.
+		if d.activeMode != "" {
+			err := exec.Command(brctlCmd, "addif", br, d.name).Run()
+			if err != nil {
+				log.Printf("addif %s %s failed: %v", br, d.name,
+					err)
+			}
 		}
-		networkNodeIdx = ip[3]
-	}
-
-	// hostapd creates most of the per-ring bridges.  We need to create
-	// these two manually.
-	createBridge(rings[base_def.RING_UNENROLLED], wifiNic)
-	createBridge(rings[base_def.RING_INTERNAL], "")
-
-	if setupNetwork {
-		prepareRingBridge(base_def.RING_SETUP, ra)
 	}
 
 	rebuildLan(ra)
@@ -701,91 +678,71 @@ func resetInterfaces(ra *aputil.RunAbort) {
 }
 
 //
-// Launch, monitor, and maintain the hostapd process for a single interface
+// Prepare and launch hostapd.  Return when the child hostapd process exits
 //
-func runOne(conf *apConfig, done chan *apConfig) {
-	fn := generateHostAPDConf(conf)
+func runOne() error {
+	var ra aputil.RunAbort
 
+	deleteBridges()
+
+	confFiles := generateHostAPDConf()
+	if len(confFiles) == 0 {
+		return fmt.Errorf("no suitable wireless devices available")
+	}
+
+	createBridges()
+
+	hostapdProcess = aputil.NewChild(hostapdPath, confFiles...)
+	hostapdProcess.LogOutputTo("hostapd: ", log.Ldate|log.Ltime, os.Stderr)
+
+	log.Printf("Starting hostapd\n")
+
+	startTime := time.Now()
+	if err := hostapdProcess.Start(); err != nil {
+		return fmt.Errorf("failed to launch: %v", err)
+	}
+
+	ra.SetRunning()
+	ra.ClearAbort()
+	go resetInterfaces(&ra)
+
+	hostapdProcess.Wait()
+
+	log.Printf("hostapd exited after %s\n", time.Since(startTime))
+
+	// If the child died before all the interfaces were reset, tell
+	// them to give up.
+	ra.SetAbort()
+	for ra.IsRunning() {
+		time.Sleep(10 * time.Millisecond)
+	}
+	return nil
+}
+
+func runLoop() bool {
 	startTimes := make([]time.Time, failuresAllowed)
+
 	for running {
-		var ra aputil.RunAbort
-
-		deleteBridges()
-
-		hostapdProcess = aputil.NewChild(hostapdPath, fn)
-		hostapdProcess.LogOutputTo("hostapd: ",
-			log.Ldate|log.Ltime, os.Stderr)
-
 		startTime := time.Now()
 		startTimes = append(startTimes[1:failuresAllowed], startTime)
 
-		log.Printf("Starting hostapd for %s\n", conf.Interface)
-
-		if err := hostapdProcess.Start(); err != nil {
-			conf.status = fmt.Errorf("failed to launch: %v", err)
-			break
-		}
-
-		ra.SetRunning()
-		ra.ClearAbort()
-		go resetInterfaces(&ra)
-
-		hostapdProcess.Wait()
-
-		log.Printf("hostapd for %s exited after %s\n",
-			conf.Interface, time.Since(startTime))
-
-		// If the child died before all the interfaces were reset, tell
-		// them to give up.
-		ra.SetAbort()
-		for ra.IsRunning() {
-			time.Sleep(10 * time.Millisecond)
-		}
-		if !running {
-			break
+		if err := runOne(); err != nil {
+			log.Printf("%v\n", err)
 		}
 
 		if time.Since(startTimes[0]) < period {
-			conf.status = fmt.Errorf("dying too quickly")
-			break
+			log.Printf("hostapd is dying too quickly")
+			return true
 		}
 
 		// Give everything a chance to settle before we attempt to
 		// restart the daemon and reconfigure the wifi hardware
-		time.Sleep(time.Second)
-	}
-	done <- conf
-}
-
-//
-// Kick off the monitor routines for all of our NICs, and then wait until
-// they've all exited.  (Since we only support a single AP right now, this is
-// overkill, but harmless.)
-//
-func runAll() int {
-	done := make(chan *apConfig)
-	numRunning := 0
-	errors := 0
-
-	for _, c := range aps {
-		if c.Interface == wifiNic {
-			numRunning++
-			go runOne(c, done)
+		if running {
+			time.Sleep(time.Second)
 		}
 	}
 
-	for numRunning > 0 {
-		c := <-done
-		if c.status != nil {
-			log.Printf("%s hostapd failed: %v\n", c.Interface,
-				c.status)
-			errors++
-		} else {
-			log.Printf("%s hostapd exited\n", c.Interface)
-		}
-		numRunning--
-	}
-	return errors
+	return false
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -837,7 +794,6 @@ func deleteBridges() {
 	}
 }
 
-//
 // Determine the address to be used for the given ring's router on this node.
 // If the AP has an address of 192.168.131.x on the internal subnet, then the
 // router for each ring will be the corresponding .x address in that ring's
@@ -853,25 +809,22 @@ func localRouter(ring *apcfg.RingConfig) string {
 // Prepare a ring's bridge: clean up any old state, assign a new address, set up
 // routes, etc.
 //
-func prepareRingBridge(ringName string, ra *aputil.RunAbort) {
+func createBridge(ringName string) {
 	ring := rings[ringName]
 	bridge := ring.Bridge
 
 	log.Printf("Preparing %s ring: %s %s\n", ringName, bridge, ring.Subnet)
 
-	// The 'internal' bridge is a special case, since it will not get a
-	// 'link up' until/unless the NIC is attached.  The other bridges
-	// already have wireless NICs attached, and we expect them to be in the
-	// 'link up' state already.
-	if ringName != base_def.RING_INTERNAL {
-		err := network.WaitForDevice(bridge, 5*time.Second, ra)
-		if err != nil {
-			log.Printf("%s failed to come online: %v\n", bridge, err)
-			return
-		}
-		if ra.IsAbort() {
-			return
-		}
+	err := exec.Command(brctlCmd, "addbr", bridge).Run()
+	if err != nil {
+		log.Printf("addbr %s failed: %v", bridge, err)
+		return
+	}
+
+	err = exec.Command(ipCmd, "link", "set", "up", bridge).Run()
+	if err != nil {
+		log.Printf("bridge %s failed to come up: %v", bridge, err)
+		return
 	}
 
 	// ip addr flush dev wlan0
@@ -887,6 +840,7 @@ func prepareRingBridge(ringName string, ra *aputil.RunAbort) {
 	// ip addr add 192.168.136.1 dev wlan0
 	router := localRouter(ring)
 	cmd = exec.Command(ipCmd, "addr", "add", router, "dev", bridge)
+	log.Printf("Setting %s to %s\n", bridge, router)
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to set the router address: %v\n", err)
 	}
@@ -904,9 +858,22 @@ func prepareRingBridge(ringName string, ra *aputil.RunAbort) {
 	}
 }
 
+func createBridges() {
+	satNode := aputil.IsSatelliteMode()
+
+	for ring := range rings {
+		if satNode && ring == base_def.RING_INTERNAL {
+			// Satellite nodes don't build an internal ring - they connect
+			// to the primary node's internal ring using DHCP.
+			continue
+		}
+
+		createBridge(ring)
+	}
+}
+
 func persistNicRing(mac, ring string) {
-	node := aputil.GetNodeID().String()
-	prop := "@/nodes/" + node + "/" + mac + "/ring"
+	prop := "@/nodes/" + nodeUUID + "/" + mac + "/ring"
 	err := config.CreateProp(prop, ring, nil)
 	if err != nil {
 		log.Printf("Failed to persist %s as %s: %v\n", mac, ring, err)
@@ -979,63 +946,39 @@ func prepareWan() {
 }
 
 //
-// Choose a wifi NIC to host our wireless clients, and build a list of the
-// wireless interfaces we'll be supporting
+// Identify all of the wifi devices that support the capabilities we need
 //
-func prepareWireless(props *apcfg.PropertyNode) error {
-	var available, wifi *physDevice
+func prepareWireless() {
+	for _, mode := range modes {
+		perModeDevices[mode] = make(map[*physDevice]bool)
+	}
 
 	for _, dev := range physDevices {
 		if !dev.wireless {
 			continue
 		}
 
-		if err := getAPConfig(dev, props); err != nil {
-			return err
+		if !dev.supportVLANs {
+			log.Printf("%s doesn't support VLANs\n", dev.hwaddr)
+			continue
 		}
 
-		if available == nil || dev.supportVLANs {
-			available = dev
+		if dev.interfaces <= 1 {
+			log.Printf("%s doesn't support multiple SSIDs\n",
+				dev.hwaddr)
+			continue
 		}
 
-		if dev.ring == base_def.RING_UNENROLLED {
-			if !dev.supportVLANs {
-				log.Printf("%s doesn't support VLANs\n",
-					dev.hwaddr)
-			} else if wifi == nil {
-				wifi = dev
-			} else {
-				log.Printf("Multiple wifi nics configured.  "+
-					"Using: %s\n", wifi.hwaddr)
+		if dev.ring != "" && dev.ring != base_def.RING_UNENROLLED {
+			log.Printf("%s reserved for %s\n", dev.hwaddr, dev.ring)
+		}
+
+		for _, mode := range modes {
+			if len(dev.channels[mode]) > 0 {
+				perModeDevices[mode][dev] = true
 			}
 		}
 	}
-
-	if available == nil {
-		return fmt.Errorf("couldn't find a wifi device to use")
-	}
-
-	if !available.supportVLANs {
-		return fmt.Errorf("no VLAN-enabled wifi device found")
-	}
-
-	if wifi == nil {
-		wifi = available
-		log.Printf("No wifi device configured.  Using %s\n", wifi.hwaddr)
-		wifi.ring = base_def.RING_UNENROLLED
-		persistNicRing(wifi.hwaddr, wifi.ring)
-	}
-
-	wifiNic = wifi.name
-	log.Printf("Hosting wireless network on %s (%s)\n", wifiNic, wifi.hwaddr)
-	if setupNetwork {
-		setupNic = wifiNic + setupPortal
-		mac := macUpdateLastOctet(wifi.hwaddr, 1)
-		rings[base_def.RING_SETUP].Bridge = setupNic
-		persistNicRing(mac, base_def.RING_SETUP)
-		log.Printf("Hosting setup network on %s (%s)\n", setupNic, mac)
-	}
-	return nil
 }
 
 func getEthernet(i net.Interface) *physDevice {
@@ -1051,16 +994,14 @@ func getEthernet(i net.Interface) *physDevice {
 //
 // Given the name of a wireless NIC, construct a device structure for it
 func getWireless(i net.Interface) *physDevice {
-	if strings.HasSuffix(i.Name, setupPortal) {
-		return nil
-	}
-
 	d := physDevice{
-		name:       i.Name,
-		hwaddr:     i.HardwareAddr.String(),
-		wireless:   true,
-		channelsG:  make([]int, 0),
-		channelsAC: make([]int, 0),
+		name:     i.Name,
+		hwaddr:   i.HardwareAddr.String(),
+		wireless: true,
+	}
+	d.channels = make(map[string][]int)
+	for _, mode := range modes {
+		d.channels[mode] = make([]int, 0)
 	}
 
 	data, err := ioutil.ReadFile("/sys/class/net/" + i.Name +
@@ -1098,13 +1039,25 @@ func getWireless(i net.Interface) *physDevice {
 	combos := comboRE.FindAllStringSubmatch(capabilities, -1)
 	for _, line := range combos {
 		for _, combo := range line {
-			if strings.Contains(combo, "AP") {
-				s := strings.Split(combo, " ")
-				if len(s) > 0 {
-					cnt, _ := strconv.Atoi(s[len(s)-1])
-					if cnt > 1 {
-						d.multipleAPs = true
-					}
+			s := strings.Split(combo, " ")
+			if len(s) > 0 && strings.Contains(combo, "AP") {
+				d.interfaces, _ = strconv.Atoi(s[len(s)-1])
+			}
+		}
+	}
+
+	// Figure out which frequency widths this device supports
+	widths := make(map[int]bool)
+	bandCapabilities := capabilitiesRE.FindAllStringSubmatch(capabilities, -1)
+	for _, c := range bandCapabilities {
+		// If bit 1 is set, then the device supports both 20MHz and
+		// 40MHz.  If it isn't, then it only supports 20MHz.
+		widths[20] = true
+		if *allow40MHz {
+			if len(c) == 2 {
+				flags, _ := strconv.ParseUint(c[1], 16, 64)
+				if (flags & (1 << 1)) != 0 {
+					widths[40] = true
 				}
 			}
 		}
@@ -1113,6 +1066,7 @@ func getWireless(i net.Interface) *physDevice {
 	// Find all the available channels and bin them into the appropriate
 	// per-mode groups
 	channels := channelRE.FindAllStringSubmatch(capabilities, -1)
+	supported := 0
 	for _, line := range channels {
 		// Skip any channels that are unavailable for either technical
 		// or regulatory reasons
@@ -1122,16 +1076,28 @@ func getWireless(i net.Interface) *physDevice {
 			continue
 		}
 		channel, _ := strconv.Atoi(line[2])
-		if channel >= 1 && channel <= 14 {
-			d.channelsG = append(d.channelsG, channel)
-		} else if channel >= 36 && channel <= 165 {
-			d.channelsAC = append(d.channelsAC, channel)
+
+		mode := "unsupported"
+		if validGChannels[channel] {
+			mode = "g"
+		} else {
+			for w := range widths {
+				for c := range validACChannels[w] {
+					if channel == c {
+						mode = "ac"
+					}
+				}
+			}
+		}
+
+		if _, ok := d.channels[mode]; ok {
+			d.channels[mode] = append(d.channels[mode], channel)
+			supported++
 		}
 	}
 
-	if len(d.channelsG) == 0 && len(d.channelsAC) == 0 {
-		log.Printf("No supported channels found for %s\n",
-			d.hwaddr)
+	if supported == 0 {
+		log.Printf("No supported channels found for %s\n", d.hwaddr)
 		return nil
 	}
 
@@ -1142,17 +1108,6 @@ func getWireless(i net.Interface) *physDevice {
 // Inventory the physical network devices in the system
 //
 func getDevices() {
-	// Get the known device->ring mappings from configd
-	devToRing := make(map[string]string)
-	nics, _ := config.GetProps("@/nodes/" + aputil.GetNodeID().String())
-	if nics != nil {
-		for _, nic := range nics.Children {
-			if x := nic.GetChild("ring"); x != nil {
-				devToRing[nic.Name] = x.Value
-			}
-		}
-	}
-
 	all, err := net.Interfaces()
 	if err != nil {
 		log.Fatalf("Unable to inventory network devices: %v\n", err)
@@ -1168,18 +1123,68 @@ func getDevices() {
 			strings.HasPrefix(i.Name, "wlx") {
 			d = getWireless(i)
 		}
-
 		if d != nil {
-			d.ring = devToRing[d.hwaddr]
 			physDevices[i.Name] = d
+		}
+	}
+
+	nics, _ := config.GetProps("@/nodes/" + nodeUUID)
+	if nics != nil {
+		for _, nic := range nics.Children {
+			if d := physDevices[nic.Name]; d != nil {
+				if x := nic.GetChild("ring"); x != nil {
+					d.ring = x.Value
+				}
+				if x := nic.GetChild("mode"); x != nil {
+					d.cfgMode = x.Value
+				}
+				if x := nic.GetChild("channel"); x != nil {
+					d.cfgChannel, _ = strconv.Atoi(x.Value)
+				}
+			}
 		}
 	}
 }
 
-func setRegulatoryDomain(prop *apcfg.PropertyNode) {
-	domain := "US"
+// Hardcode the valid channels for each mode
+func makeValidChannelMaps() {
+	validGChannels = make(map[int]bool)
+	for i := 1; i <= 14; i++ {
+		validGChannels[i] = true
+	}
 
-	if x := prop.GetChild("regdomain"); x != nil {
+	HT20 := []int{36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116,
+		120, 124, 128, 132, 136, 140, 144, 149, 153, 161, 165, 169}
+	HT40 := []int{38, 46, 54, 62, 102, 110, 118,
+		126, 134, 142, 151, 159}
+	HT80 := []int{42, 58, 106, 122, 138, 155}
+
+	// For AC mode, we need to build lists of channels for each channel
+	// width.  Some wifi devices will claim to support some channels, even
+	// if they can't support the associated channel width.  (presumably
+	// because their radio covers that frequency.)
+	validACChannels = make(map[int]map[int]bool)
+	validACChannels[20] = make(map[int]bool)
+	for _, c := range HT20 {
+		validACChannels[20][c] = true
+	}
+
+	validACChannels[40] = make(map[int]bool)
+	for _, c := range HT40 {
+		validACChannels[40][c] = true
+	}
+
+	validACChannels[80] = make(map[int]bool)
+	for _, c := range HT80 {
+		validACChannels[80][c] = true
+	}
+}
+
+func globalWifiInit(props *apcfg.PropertyNode) error {
+	makeValidChannelMaps()
+
+	domain := "US"
+	if x := props.GetChild("regdomain"); x != nil {
 		t := []byte(strings.ToUpper(x.Value))
 		if !locationRE.Match(t) {
 			log.Printf("Illegal @/network/regdomain: %s\n", x.Value)
@@ -1193,6 +1198,25 @@ func setRegulatoryDomain(prop *apcfg.PropertyNode) {
 	if err != nil {
 		log.Printf("Failed to set domain: %v\n%s\n", err, out)
 	}
+
+	if node := props.GetChild("radiusAuthSecret"); node != nil {
+		radiusSecret = node.GetValue()
+	} else {
+		return fmt.Errorf("no radiusAuthSecret configured")
+	}
+	if node := props.GetChild("ssid"); node != nil {
+		wifiSSID = node.GetValue()
+	} else {
+		return fmt.Errorf("no SSID configured")
+	}
+
+	if node := props.GetChild("passphrase"); node != nil {
+		wifiPassphrase = node.GetValue()
+	} else {
+		return fmt.Errorf("no WPA-PSK passphrase configured")
+	}
+
+	return nil
 }
 
 // Connect to all of the other brightgate daemons and construct our initial model
@@ -1212,7 +1236,10 @@ func daemonInit() error {
 	if err != nil {
 		return fmt.Errorf("cannot connect to configd: %v", err)
 	}
+	nodeUUID = aputil.GetNodeID().String()
 	config.HandleChange(`^@/clients/.*/ring$`, configRingChanged)
+	config.HandleChange(`^@/nodes/"+nodeUUID+"/.*/mode$`, configModeChanged)
+	config.HandleChange(`^@/nodes/"+nodeUUID+"/.*/channel$`, configChannelChanged)
 	config.HandleChange(`^@/rings/.*/auth$`, configAuthChanged)
 	config.HandleChange(`^@/network/`, configNetworkChanged)
 	config.HandleChange(`^@/firewall/active/`, configBlocklistChanged)
@@ -1224,13 +1251,14 @@ func daemonInit() error {
 	if err != nil {
 		return fmt.Errorf("unable to fetch configuration: %v", err)
 	}
-	setRegulatoryDomain(props)
+
+	if err = globalWifiInit(props); err != nil {
+		return err
+	}
 
 	getDevices()
 	prepareWan()
-	if err = prepareWireless(props); err != nil {
-		return fmt.Errorf("unable to prep wifi devices: %v", err)
-	}
+	prepareWireless()
 
 	// All wired devices that haven't yet been assigned to a ring will be
 	// put into "standard" by default
@@ -1244,6 +1272,20 @@ func daemonInit() error {
 
 	if err = loadFilterRules(); err != nil {
 		return fmt.Errorf("unable to load filter rules: %v", err)
+	}
+
+	// We use the lowest byte of our internal IP address as a transient,
+	// local node index.  For the gateway node, that will always be 1.  For
+	// the satellite nodes, we need pull it from the address the gateway's
+	// DHCP server gave us.
+	networkNodeIdx = 1
+	if satellite = aputil.IsSatelliteMode(); satellite {
+		ip := getInternalAddr()
+		if ip == nil {
+			return fmt.Errorf("satellite node has no gateway " +
+				"connection")
+		}
+		networkNodeIdx = ip[3]
 	}
 
 	return nil
@@ -1287,10 +1329,12 @@ func main() {
 
 	running = true
 	go signalHandler()
-	errcnt := runAll()
+	failed := runLoop()
 
 	log.Printf("Cleaning up\n")
 	networkCleanup()
 
-	os.Exit(errcnt)
+	if failed {
+		os.Exit(1)
+	}
 }
