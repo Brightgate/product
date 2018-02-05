@@ -210,7 +210,6 @@ func (m *MasterExtraction) Close() {}
 
 // Score gives a score for a certain string.
 func (m *MasterExtraction) Score(s string, kind Kind) int {
-	log.Printf("final score for %s: %d", s, m.Extraction(kind).Score(s))
 	return m.Extraction(kind).Score(s)
 }
 
