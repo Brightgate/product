@@ -432,7 +432,9 @@ func getAPConfig(d *physDevice, props *apcfg.PropertyNode) error {
 	}
 
 	if satNode {
-		data.RadiusAuthServer = "gateway"
+		internal := rings[base_def.RING_INTERNAL]
+		gateway := network.SubnetRouter(internal.Subnet)
+		data.RadiusAuthServer = gateway
 	}
 
 	aps[d.name] = &data
