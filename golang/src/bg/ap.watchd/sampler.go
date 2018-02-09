@@ -346,8 +346,12 @@ func processOnePacket(state *samplerState, data []byte) {
 				int(tcp.DstPort), "tcp")
 		}
 		collectStats(state, eth, ipv4, uint64(len(data)))
-		checkBlock(dstMac, srcIP)
-		checkBlock(srcMac, dstIP)
+		if !localIPAddr(srcIP) {
+			checkBlock(dstMac, srcIP)
+		}
+		if !localIPAddr(dstIP) {
+			checkBlock(srcMac, dstIP)
+		}
 	}
 	observedIPAddr(state, srcMac, srcIP)
 	observedIPAddr(state, dstMac, dstIP)
@@ -535,6 +539,7 @@ func sampleFini(w *watcher) {
 	samplerRunning = false
 	auditTicker.Stop()
 	printStats()
+	blocklistFini()
 
 	w.running = false
 }

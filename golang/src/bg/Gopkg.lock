@@ -12,9 +12,12 @@
   packages = [
     "compute/metadata",
     "iam",
+    "internal",
+    "internal/optional",
     "internal/version",
     "pubsub",
-    "pubsub/apiv1"
+    "pubsub/apiv1",
+    "storage"
   ]
   revision = "050b16d2314d5fc3d4c9a51e4cd5c7468e77f162"
   version = "v0.17.0"
@@ -512,6 +515,7 @@
     "internal",
     "iterator",
     "option",
+    "storage/v1",
     "support/bundler",
     "transport",
     "transport/grpc",
@@ -578,6 +582,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "01c8b563b6721bda88b4a796d883609ae9621920c62c06a91328736e03a74b75"
+  inputs-digest = "ae87aaf1e9c12281e1b900e20ea7ec7aa43e5f629b477a6afadd89e922f31346"
   solver-name = "gps-cdcl"
   solver-version = 1

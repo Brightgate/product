@@ -221,7 +221,8 @@ COMMON_GOPKGS = \
 	bg/ap_common/mcp \
 	bg/ap_common/model \
 	bg/ap_common/network \
-	bg/ap_common/watchd
+	bg/ap_common/watchd \
+	bg/common
 
 APPCOMMAND_GOPKGS = \
 	bg/ap-arpspoof \
@@ -312,8 +313,7 @@ APPCONFIGS = \
 	$(APPROOTLIB)/systemd/system/ap.mcp.service \
 	$(APPROOTLIB)/systemd/system/brightgate-appliance.service \
 	$(APPSPOOLANTIPHISH)/example_blacklist.csv \
-	$(APPSPOOLANTIPHISH)/whitelist.csv \
-	$(APPSPOOLWATCHD)/ip_blocklist.csv
+	$(APPSPOOLANTIPHISH)/whitelist.csv
 
 APPDIRS = \
 	$(APPBIN) \
@@ -357,7 +357,8 @@ APP_COMMON_SRCS = \
 	$(GOSRCBG)/ap_common/network/network.go \
 	$(GOSRCBG)/ap_common/watchd/watchd_client.go \
 	$(GOSRCBG)/base_def/base_def.go \
-	$(GOSRCBG)/base_msg/base_msg.pb.go
+	$(GOSRCBG)/base_msg/base_msg.pb.go \
+	$(GOSRCBG)/common/urlfetch.go
 
 # Miscellaneous utilities
 
@@ -401,7 +402,10 @@ CLOUDDAEMON_GOPKGS = \
 CLOUDCOMMON_GOPKGS = \
 	bg/cl_common/daemonutils \
 	bg/cloud_models/appliancedb \
-	bg/cloud_models/cloudiotsvc
+	bg/cloud_models/cloudiotsvc \
+	bg/common
+
+CLOUDCOMMAND_GOPKGS = bg/cl-aggregate
 
 CLOUD_GOPKGS = $(CLOUDCOMMON_GOPKGS) $(CLOUDDAEMON_GOPKGS) $(CLOUDCOMMAND_GOPKGS)
 
@@ -428,7 +432,8 @@ CLOUDCOMPONENTS = $(CLOUDBINARIES) $(CLOUDCONFIGS) $(CLOUDDIRS)
 CLOUD_COMMON_SRCS = \
     $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
     $(GOSRCBG)/cloud_models/appliancedb/appliancedb.go \
-    $(GOSRCBG)/cl_common/daemonutils/utils.go
+    $(GOSRCBG)/cl_common/daemonutils/utils.go \
+    $(GOSRCBG)/common/urlfetch.go
 
 install: tools mocks $(TARGETS)
 
@@ -535,9 +540,6 @@ $(APPSPOOLANTIPHISH)/example_blacklist.csv: $(GOSRCBG)/data/phishtank/example_bl
 	$(INSTALL) -m 0644 $< $@
 
 $(APPSPOOLANTIPHISH)/whitelist.csv: $(GOSRCBG)/data/phishtank/whitelist.csv | $(APPSPOOLANTIPHISH)
-	$(INSTALL) -m 0644 $< $@
-
-$(APPSPOOLWATCHD)/ip_blocklist.csv: $(GOSRCBG)/ap.watchd/ip_blocklist.csv | $(APPSPOOLWATCHD)
 	$(INSTALL) -m 0644 $< $@
 
 $(HTTPD_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.httpd/% | $(APPETC)
@@ -708,6 +710,9 @@ $(CLOUDBIN)/%: | $(CLOUDBIN)
 	    $(GO) install $(GOVERFLAGS) bg/$*
 	touch $(@)
 
+$(CLOUDBIN)/cl-aggregate: \
+	$(GOSRCBG)/cl-aggregate/aggregate.go \
+	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.eventd: \
 	$(GOSRCBG)/cl.eventd/eventd.go \
 	$(CLOUD_COMMON_SRCS)

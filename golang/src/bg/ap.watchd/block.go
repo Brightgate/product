@@ -13,33 +13,62 @@ package main
 import (
 	"bufio"
 	"encoding/binary"
-	"encoding/csv"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"os"
+	"strings"
+	"sync"
 	"time"
 
 	"bg/ap_common/aputil"
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
+	"bg/common"
 
 	"github.com/golang/protobuf/proto"
 )
 
 const (
 	blockfileName = "ip_blocklist.csv"
+
+	googleStorage = "https://storage.googleapis.com"
+	googleBucket  = "bg-blocklist-a198e4a0-5823-4d16-8950-ad34b32ace1c"
+	latestName    = "ip_blacklist.latest"
 )
+
+type ipSet map[uint32]struct{}
+
+type blocklist struct {
+	ips    ipSet      // All IPs in the list
+	filter [][]uint64 // 4-layer bloom filter
+}
 
 var (
-	filter       [4][1024]uint64             // 4-layer bloom filter
-	blockedIPs   = make(map[uint32]struct{}) // known bad IPs
-	activeBlocks = make(map[uint32]struct{}) // IPs being actively blocked
+	currentList    *blocklist
+	currentListMtx sync.Mutex
+
+	activeBlocks = make(ipSet) // IPs being actively blocked
 
 	blockPeriod = time.Hour
+
+	blocklistRefreshPeriod = time.Hour
+	blocklistRefreshTicker *time.Ticker
+	blocklistRefresh       bool
 )
+
+func newBlocklist() *blocklist {
+	var b blocklist
+
+	b.ips = make(ipSet)
+	b.filter = make([][]uint64, 4)
+	for i := 0; i < 4; i++ {
+		b.filter[i] = make([]uint64, 1024)
+	}
+	return &b
+}
 
 // The full blocklist is maintained in an ipv4-indexed map.  We use a simple
 // bloom filter as a pre-check to reduce the number of times we have to do a
@@ -69,28 +98,40 @@ func getPosition(v uint16) (uint16, uint16) {
 
 // Add an IP address to the block list.  Each address gets stored in the
 // blockedAddr map and we update the bloom filter.
-func blocklistAdd(addr uint32) {
-	blockedIPs[addr] = struct{}{}
+func blocklistAdd(building *blocklist, addr uint32) {
+	building.ips[addr] = struct{}{}
 
 	hashes := buildHashes(addr)
 	for h := 0; h < len(hashes); h++ {
 		word, bit := getPosition(hashes[h])
-		filter[h][word] |= (1 << bit)
+		building.filter[h][word] |= (1 << bit)
 	}
 }
 
 // Look to see whether an IP address is in the block list
 func blocklistLookup(addr uint32) bool {
+	if _, blocked := activeBlocks[addr]; blocked {
+		return true
+	}
+
+	currentListMtx.Lock()
+	blocklist := currentList
+	currentListMtx.Unlock()
+
+	if blocklist == nil {
+		return false
+	}
+
 	// We use a bloom filter as a quick check to determine whether we
 	// need to do a full map lookup.
 	hashes := buildHashes(addr)
 	for h := 0; h < len(hashes); h++ {
 		word, bit := getPosition(hashes[h])
-		if filter[h][word]&(1<<bit) == 0 {
+		if blocklist.filter[h][word]&(1<<bit) == 0 {
 			return false
 		}
 	}
-	_, blocked := blockedIPs[addr]
+	_, blocked := blocklist.ips[addr]
 
 	// XXX: It's probably worth creating a small MRU cache of IP addresses
 	// that make it through the bloom filter and aren't in the blocked list.
@@ -173,41 +214,108 @@ func checkBlock(dev net.HardwareAddr, ip net.IP) {
 
 // Pull a list of blocked IPs from a CSV.  The first field of each line must be
 // an IP address.  The rest of the line is ignored.
-func ingestBlocklist(file string) {
-	csvFile, err := os.Open(file)
+func ingestBlocklist(filename string) {
+	building := newBlocklist()
+
+	file, err := os.Open(filename)
 	if err != nil {
-		log.Printf("Unable to open %s: %v\n", file, err)
+		log.Printf("Unable to open %s: %v\n", filename, err)
 		return
 	}
-	defer csvFile.Close()
+	defer file.Close()
 
 	lineNo := 0
 	cnt := 0
-	reader := csv.NewReader(bufio.NewReader(csvFile))
-	for {
-		line, err := reader.Read()
-		if err != nil {
-			if err != io.EOF {
-				log.Printf("failed to read line %d of %s %v\n",
-					lineNo, file, err)
-			}
-			break
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line[0] == '#' {
+			continue
 		}
-		if ip := net.ParseIP(line[0]); ip != nil {
+
+		fields := strings.SplitN(line, ",", 2)
+		if len(fields) < 2 {
+			continue
+		}
+		if ip := net.ParseIP(fields[0]); ip != nil {
 			if addr := network.IPAddrToUint32(ip); addr != 0 {
 				cnt++
-				blocklistAdd(addr)
+				blocklistAdd(building, addr)
 			}
 		}
 		lineNo++
 	}
 
-	log.Printf("Ingested %d blocked IPs from %s\n", cnt, file)
+	log.Printf("Ingested %d blocked IPs from %s\n", cnt, filename)
+	currentListMtx.Lock()
+	currentList = building
+	currentListMtx.Unlock()
+}
+
+//
+// Download ip_blacklist.latest from google cloud storage, which contains
+// the actual name of the latest dataset.  If the name has changed, download the
+// most recent data from the new file.
+//
+func refreshBlocklist(target string) (bool, error) {
+	dataRefreshed := false
+	latestFile := "/var/tmp/" + latestName
+	metaFile := latestFile + ".meta"
+
+	url := googleStorage + "/" + googleBucket + "/" + latestName
+	metaRefreshed, err := common.FetchURL(url, latestFile, metaFile)
+	if err != nil {
+		err = fmt.Errorf("unable to download %s: %v", url, err)
+	}
+
+	if metaRefreshed {
+		b, err := ioutil.ReadFile(latestFile)
+		if err != nil {
+			err = fmt.Errorf("unable to read %s: %v", latestFile, err)
+		} else {
+			sourceName := string(b)
+			url = googleStorage + "/" + googleBucket + "/" +
+				sourceName
+			_, err = common.FetchURL(url, target, "")
+		}
+		if err == nil {
+			dataRefreshed = true
+		} else {
+			os.Remove(metaFile)
+		}
+	}
+
+	return dataRefreshed, err
+}
+
+func blocklistRefresher() {
+	first := true
+	blockfile := *watchDir + "/" + blockfileName
+
+	for blocklistRefresh {
+		refreshed, err := refreshBlocklist(blockfile)
+		if err != nil {
+			log.Printf("ip blocklist refresh failed: %v\n", err)
+		}
+
+		if (first || refreshed) && aputil.FileExists(blockfile) {
+			ingestBlocklist(blockfile)
+		}
+		first = false
+
+		<-blocklistRefreshTicker.C
+	}
+}
+
+func blocklistFini() {
+	log.Printf("Shutting down blocklist refresh\n")
+	blocklistRefresh = false
+	blocklistRefreshTicker.Stop()
 }
 
 func blocklistInit() {
-	filepath := *watchDir + "/" + blockfileName
-	if aputil.FileExists(filepath) {
-		ingestBlocklist(filepath)
-	}
+	blocklistRefresh = true
+	blocklistRefreshTicker = time.NewTicker(blocklistRefreshPeriod)
+
+	go blocklistRefresher()
 }
