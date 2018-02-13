@@ -1,18 +1,24 @@
-/*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
- *
- * This copyright notice is Copyright Management Information under 17 USC 1202
- * and is included to protect this work and deter copyright infringement.
- * Removal or alteration of this Copyright Management Information without the
- * express written permission of Brightgate Inc is prohibited, and any
- * such unauthorized removal or alteration will be a violation of federal law.
- */
+//
+// COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+//
+// This copyright notice is Copyright Management Information under 17 USC 1202
+// and is included to protect this work and deter copyright infringement.
+// Removal or alteration of this Copyright Management Information without the
+// express written permission of Brightgate Inc is prohibited, and any
+// such unauthorized removal or alteration will be a violation of federal law.
+//
 
-/*
- * cl.httpd: cloud HTTP
- * XXX Review 12 factor application.  These will come from Let's
- * Encrypt directory to start.
- */
+//
+// cl.httpd: cloud HTTP server
+
+// XXX Review 12 factor application.  The SSL key and certificate
+// material  will come from Let's Encrypt directory to start.
+
+// Because we have to serve static files to meet ACME HTTP-01
+// authentication on renewal, we need to anchor the http:///.well-known
+// directory hierarchy.  In the current Debian-based deployment, this
+// location is "/var/www/html/.well-known".
+//
 
 package main
 
@@ -29,8 +35,10 @@ import (
 
 	// "base_def"
 
+	"github.com/gorilla/mux"
 	apachelog "github.com/lestrrat/go-apache-logformat"
 	"github.com/tomazk/envcfg"
+	// "github.com/urfave/negroni"
 
 	//	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -44,6 +52,7 @@ type Cfg struct {
 	// hierarchy.
 	CertHostname   string `envcfg:"B10E_CERT_HOSTNAME"`
 	PrometheusPort string `envcfg:"B10E_CLHTTPD_PROMETHEUS_PORT"`
+	WellknownPath  string `envcfg:"B10E_CERTBOT_WELLKNOWN_PATH"`
 }
 
 const (
@@ -72,6 +81,8 @@ func port80Handler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	var err error
+	var wellknown string
+
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
 	err = envcfg.Unmarshal(&environ)
@@ -86,13 +97,22 @@ func main() {
 		go http.ListenAndServe(environ.PrometheusPort, nil)
 	}
 
+	if len(environ.WellknownPath) == 0 {
+		wellknown = "/var/www/html/.well-known"
+	} else {
+		wellknown = environ.WellknownPath
+	}
+
 	// Port 443 listener.
 	certf := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem",
 		environ.CertHostname)
 	keyf := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem",
 		environ.CertHostname)
 
-	port443mux := http.NewServeMux()
+	port443mux := mux.NewRouter()
+	port443mux.PathPrefix("/.well-known/").Handler(
+		http.StripPrefix("/.well-known/",
+			http.FileServer(http.Dir(wellknown))))
 	port443mux.HandleFunc("/", port443Handler)
 	cfg := &tls.Config{
 		MinVersion:               tls.VersionTLS12,
@@ -121,8 +141,12 @@ func main() {
 	}()
 
 	// Port 80 listener.
-	port80mux := http.NewServeMux()
+	port80mux := mux.NewRouter()
+	port80mux.PathPrefix("/.well-known/").Handler(
+		http.StripPrefix("/.well-known/",
+			http.FileServer(http.Dir(wellknown))))
 	port80mux.HandleFunc("/", port80Handler)
+
 	port80srv := &http.Server{
 		Addr:    ":80",
 		Handler: apachelog.CombinedLog.Wrap(port80mux, os.Stderr),
