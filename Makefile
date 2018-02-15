@@ -226,6 +226,7 @@ COMMON_GOPKGS = \
 
 APPCOMMAND_GOPKGS = \
 	bg/ap-arpspoof \
+	bg/ap-complete \
 	bg/ap-configctl \
 	bg/ap-ctl \
 	bg/ap-iot \
@@ -659,6 +660,7 @@ $(APPBIN)/ap.watchd: \
 	$(GOSRCBG)/ap.watchd/watchd.go
 
 $(APPBIN)/ap-arpspoof: $(GOSRCBG)/ap-arpspoof/arpspoof.go
+$(APPBIN)/ap-complete: $(GOSRCBG)/ap-complete/complete.go
 $(APPBIN)/ap-configctl: $(GOSRCBG)/ap-configctl/configctl.go
 $(APPBIN)/ap-ctl: $(GOSRCBG)/ap-ctl/ctl.go
 $(APPBIN)/ap-msgping: $(GOSRCBG)/ap-msgping/msgping.go

@@ -682,16 +682,17 @@ func childSearch(node *pnode, name string) *pnode {
 }
 
 func propertyParse(prop string) []string {
+	prop = strings.TrimSuffix(prop, "/")
+	if prop == "@" {
+		return make([]string, 0)
+	}
+
 	/*
 	 * Only accept properties that start with exactly one '@', meaning they
 	 * are local to this device
 	 */
 	if len(prop) < 2 || prop[0] != '@' || prop[1] != '/' {
 		return nil
-	}
-
-	if prop == "@/" {
-		return make([]string, 0)
 	}
 
 	return strings.Split(prop[2:], "/")
@@ -736,6 +737,12 @@ func propertySearch(prop string) *pnode {
 		if node = childSearch(node, name); node == nil {
 			break
 		}
+	}
+
+	// If the caller explicitly asked for an internal node and we found a
+	// leaf, don't operate on it.
+	if node != nil && len(node.Children) == 0 && strings.HasSuffix(prop, "/") {
+		node = nil
 	}
 
 	return node
