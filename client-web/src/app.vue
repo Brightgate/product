@@ -70,7 +70,8 @@
               <f7-list-item :title="$t('message.testing.enable_mock')">
                 <f7-input type="switch" slot="after" checked @change="$store.state.enable_mock = !$store.state.enable_mock; $store.dispatch('fetchDevices')"></f7-input>
               </f7-list-item>
-              <f7-list-item link="/login/" title="Login"></f7-list-item>
+              <f7-list-item v-if="$store.state.loggedIn" @click="attemptLogout()" title="Logout"></f7-list-item>
+              <f7-list-item v-else link="/login/" title="Login"></f7-list-item>
             </f7-list>
 
           </f7-page>
@@ -132,6 +133,10 @@ export default {
       this.acceptOpen = false
     },
 
+    attemptLogout: function () {
+      this.$store.dispatch("logout",
+        {})
+    },
   }
 }
 </script>

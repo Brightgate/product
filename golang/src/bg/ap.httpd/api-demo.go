@@ -441,13 +441,13 @@ func demoDevicesHandler(w http.ResponseWriter, r *http.Request) {
 
 	b, err := json.Marshal(devices)
 	if err != nil {
-		log.Printf("failed to json marshal ring devices '%v': %v\n", devices, err)
+		log.Printf("failed to json marshal devices '%v': %v\n", devices, err)
 		return
 	}
 
 	_, err = w.Write(b)
 	if err != nil {
-		log.Printf("failed to write ring devices '%v': %v\n", b, err)
+		log.Printf("failed to write devices '%v': %v\n", b, err)
 		return
 	}
 }

@@ -105,6 +105,9 @@ RM = rm
 PYTHON3 = python3
 PYTHON3VERSION = $(shell $(PYTHON3) -V)
 
+NODE = node
+NODEVERSION = $(shell $(NODE) --version)
+
 PROTOC_PLUGINS = \
 	$(GOPATH)/bin/protoc-gen-doc \
 	$(GOPATH)/bin/protoc-gen-go
@@ -170,6 +173,7 @@ define report
 #     GOHOSTARCH: $(GOHOSTARCH)
 #         GOARCH: $(GOARCH)
 # PYTHON3VERSION: $(PYTHON3VERSION)
+#    NODEVERSION: $(NODEVERSION)
 endef
 $(info $(report))
 undefine report

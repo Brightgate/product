@@ -538,6 +538,7 @@ var legalModes = map[string]bool{
 	base_def.MODE_GATEWAY:   true,
 	base_def.MODE_CORE:      true,
 	base_def.MODE_SATELLITE: true,
+	base_def.MODE_HTTP_DEV:  true,
 }
 
 // GetNodeMode returns the mode this node is running in

@@ -35,6 +35,7 @@ Vue.use(Framework7Vue)
 Vue.use(VueI18n)
 
 // Init App
+
 var vm = new Vue({
   i18n,
   el: '#app',

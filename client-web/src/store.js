@@ -10,6 +10,7 @@
 import Vue from 'vue'
 import Vuex from 'vuex'
 
+// XXX Use axios instead?
 import superagent from 'superagent'
 import assert from "assert"
 
@@ -47,6 +48,7 @@ const STD_TIMEOUT = {
 const RETRY_DELAY = 1000
 
 const state = {
+  loggedIn: false,
   devices: _.cloneDeep(initDevices),
   deviceCount: Object.keys(initDevices.by_uniqid).length,
   rings: [],
@@ -62,9 +64,18 @@ const mutations = {
   setRings (state, newRings) {
     state.rings = newRings;
   },
+
+  setLoggedIn (state, newLoggedIn) {
+    console.log(`setLoggedIn: now ${newLoggedIn}`);
+    state.loggedIn = newLoggedIn;
+  },
 }
 
 const getters = {
+  Is_Logged_In: (state) => {
+    return state.loggedIn
+  },
+
   Device_By_UniqID: (state) => (uniqid) => {
     return state.devices.by_uniqid[uniqid]
   },
@@ -146,10 +157,15 @@ function devicesGetP(maxcount, count) {
   ).timeout(STD_TIMEOUT
   ).then((res) => {
     console.log("devicesGetP: got response")
+    //
+    // In principle, a newly instantiated system could have no managed
+    // devices, so a null value for the "Devices" key is legitimate.
+    //
     if (res.body === null ||
         (typeof res.body !== "object") ||
-        !("Devices" in res.body) ||
-        res.body["Devices"] === null) {
+            !("Devices" in res.body)
+            // || res.body["Devices"] === null
+            ) {
       // throw down to our catch handler below, to cause retry or give up.
       throw new Error("Saw incomplete or bad GET /devices response.")
     } else {
@@ -275,6 +291,32 @@ const actions = {
     })
   },
 
+  login (context, { uid, userPassword }) {
+    assert.equal(typeof uid, "string")
+    assert.equal(typeof userPassword, "string")
+    return superagent.post('/apid/login'
+    ).type('form'
+    ).send({ uid: uid, userPassword: userPassword }
+    ).then(() => {
+      console.log(`login: Logged in as ${uid}.`)
+      context.commit("setLoggedIn", true)
+    }).catch((err) => {
+      console.log(`login: Error ${err}`)
+      throw err
+    })
+  },
+
+  logout (context) {
+    console.log(`logout: `)
+    return superagent.get('/apid/logout'
+    ).then(() => {
+      console.log(`logout: Completed`)
+      context.commit("setLoggedIn", false)
+    }).catch((err) => {
+      console.log(`logout: Error ${err}`)
+      throw err
+    })
+  },
 
 }
 
