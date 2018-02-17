@@ -9,16 +9,16 @@
  */
 export default [
   {
-      path: '/about/',
-      component: require('./pages/about.vue')
+      path: '/',
+      component: require('./app.vue'),
   },
   {
-      path: '/devices/',
-      component: require('./pages/devices.vue')
+      path: '/devices',
+      component: require('./pages/devices.vue'),
   },
   {
       path: '/details/',
-      component: require('./pages/details.vue')
+      component: require('./pages/details.vue'),
   },
   {
       path: '/enroll/',
@@ -31,14 +31,6 @@ export default [
   {
       path: '/malwareWarn/',
       component: require('./pages/malwareWarn.vue')
-  },
-  {
-      path: '/form/',
-      component: require('./pages/form.vue')
-  },
-  {
-      path: '/dynamic-route/blog/:blogId/post/:postId/',
-      component: require('./pages/dynamic-route.vue')
   },
   {
       path: '/login/',

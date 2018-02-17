@@ -9,6 +9,15 @@
 -->
 <template>
   <f7-page name="enroll">
+    <f7-navbar>
+      <!-- f7-nav-title doesn't seem to center properly without also
+           including left and right. -->
+      <f7-nav-left>&nbsp;</f7-nav-left>
+      <f7-nav-title><img src="img/bglogo.png"/></f7-nav-title>
+      <f7-nav-right>&nbsp;</f7-nav-right>
+    </f7-navbar>
+
+    <br />
     <center><h2>Getting Online with Brightgate</h2></center>
     <center><h4>Sign up using your phone number</h4></center>
 
@@ -45,7 +54,7 @@
 
 import Promise from 'bluebird'
 import libphonenumber from 'libphonenumber-js'
-const phone_ayt = new libphonenumber.asYouType("US")
+const phone_ayt = new libphonenumber.AsYouType("US")
 
 export default {
   methods: {
@@ -67,22 +76,26 @@ export default {
     },
   },
 
+  // n.b. this is arcane and only sort-of works.  Probably we should switch to
+  // cleave.js or some other framework.  If we roll our own, then phone number
+  // input should go into its own Vue component.
   computed: {
     magicphone: {
-      set: function(newValue) {
-        const ph = libphonenumber.parse(newValue, "US")
-        phone_ayt.reset()
-        this.phone = phone_ayt.input(newValue)
+      set: function(inputEvt) {
+	this.phone = inputEvt.target.value;
+	phone_ayt.reset()
+	this.formattedPhone = phone_ayt.input(this.phone)
+	this.$emit('input', this.formattedPhone)
       },
       get: function() {
-        return this.phone
+        return this.formattedPhone
       }
     },
 
     valid_number: function() {
-      const ph = libphonenumber.parse(this.phone, "US")
-      console.log("ph is", ph)
-      return libphonenumber.isValidNumber(ph)
+      var phonestr = this.phone ? this.phone : ""
+      var res = libphonenumber.isValidNumber(phonestr)
+      return libphonenumber.isValidNumber(phonestr, "US")
     }
   },
 
@@ -91,6 +104,7 @@ export default {
       sms_sent: false,
       sms_error: false,
       phone: "",
+      formattedPhone: "",
       enrolling: false,
     }
   }

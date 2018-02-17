@@ -34,7 +34,7 @@ export const messages = {
       },
       alerts: {
         serious_alerts: 'Serious Alerts',
-        wannacry: '🚫&nbsp;&nbsp;WannaCry on {device}',
+        wannacry: '🚫 WannaCry on {device}',
         important_alert: '🚫 Important Alert!',
         msg: {
           '0': 'Brightgate detected WannaCry ransomware on this device.',
@@ -52,7 +52,7 @@ export const messages = {
       },
       notifications: {
         notifications: 'Notifications',
-        update_device: '⚠️&nbsp;&nbsp;Update device {device}',
+        update_device: '⚠️  Update device {device}',
         security_notifications: '⚠️ Security Notifications',
         msg: {
           '0': 'This device is less secure because it is running old software.',
@@ -145,7 +145,7 @@ export const messages = {
       },
       alerts: {
         serious_alerts: 'Schwerwiegende Warnungen',
-        wannacry: '🚫&nbsp;&nbsp;WannaCry auf {device} entdeckt',
+        wannacry: '🚫 WannaCry auf {device} entdeckt',
         important_alert: '🚫 Dringende Warnung!',
         msg: {
           '0': 'Brightgate hat Kryptotrojaner WannaCry auf diesem Gerät entdeckt.',
@@ -163,7 +163,7 @@ export const messages = {
       },
       notifications: {
         notifications: 'Benachrichtigungen',
-        update_device: '⚠️&nbsp;&nbsp; {device} aktualisieren',
+        update_device: '⚠️  {device} aktualisieren',
         security_notifications: '⚠️ Sicherheitshinweis',
         msg: {
           '0': 'Dieses Gerät ist unsicher wegen veralteter Software.',

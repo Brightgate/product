@@ -29,7 +29,7 @@ import store from './store'
 import { messages, i18n } from './i18n'
 
 // Init F7 Vue Plugin
-Vue.use(Framework7Vue)
+Vue.use(Framework7Vue, Framework7)
 
 // Init VueI18n Plugin
 Vue.use(VueI18n)
@@ -43,14 +43,21 @@ var vm = new Vue({
   store,
   // Init Framework7 by passing parameters here
   framework7: {
-    root: '#app',
-    /* Uncomment to enable Material theme: */
-    // material: true,
+    id: 'net.b10e.appliance-admin',
+    name: 'Brightgate Appliance Admin Tool',
+    theme: 'auto',
     routes: Routes,
   },
   methods: {
     onF7Init: function () {
       console.log('f7-init');
+    },
+    onF7Ready: function (f7) {
+      console.log('f7-ready');
+      if (window.navigateTo) {
+        console.log('f7-ready: trying to nav to ' + window.navigateTo);
+        f7.router.navigate(window.navigateTo);
+      }
     }
   },
   // Register App Component

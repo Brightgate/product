@@ -10,7 +10,6 @@
 import Vue from 'vue'
 import Vuex from 'vuex'
 
-// XXX Use axios instead?
 import superagent from 'superagent'
 import assert from "assert"
 
@@ -52,7 +51,7 @@ const state = {
   devices: _.cloneDeep(initDevices),
   deviceCount: Object.keys(initDevices.by_uniqid).length,
   rings: [],
-  enable_mock: true
+  enable_mock: enable_mock
 };
 
 const mutations = {
@@ -68,6 +67,10 @@ const mutations = {
   setLoggedIn (state, newLoggedIn) {
     console.log(`setLoggedIn: now ${newLoggedIn}`);
     state.loggedIn = newLoggedIn;
+  },
+
+  toggleMock (state) {
+    state.enable_mock = !state.enable_mock
   },
 }
 
@@ -109,6 +112,10 @@ const getters = {
 
   Rings: (state) => {
       return state.rings
+  },
+
+  Mock: (state) => {
+      return state.enable_mock
   },
 }
 
@@ -157,15 +164,9 @@ function devicesGetP(maxcount, count) {
   ).timeout(STD_TIMEOUT
   ).then((res) => {
     console.log("devicesGetP: got response")
-    //
-    // In principle, a newly instantiated system could have no managed
-    // devices, so a null value for the "Devices" key is legitimate.
-    //
     if (res.body === null ||
         (typeof res.body !== "object") ||
-            !("Devices" in res.body)
-            // || res.body["Devices"] === null
-            ) {
+        !("Devices" in res.body)) {
       // throw down to our catch handler below, to cause retry or give up.
       throw new Error("Saw incomplete or bad GET /devices response.")
     } else {
@@ -229,10 +230,10 @@ const actions = {
 
       devices.by_uniqid = _.keyBy(mapped_devices, 'uniqid')
     }).finally(() => {
-      if (state.enable_mock) {
+      console.log(`Store: fetchDevices: enable_mock = ${context.state.enable_mock}`)
+      if (context.state.enable_mock) {
         _.defaults(devices.by_uniqid,  _.keyBy(mockDevices, 'uniqid'))
       }
-    }).then(() => {
       makeDeviceCategories(devices)
       context.commit('setDevices', devices)
     })
@@ -279,15 +280,18 @@ const actions = {
   // seems to take several seconds, during which time the server may
   // become unreachable; thus we use retrys to make things work properly.
   changeRing (context, { deviceUniqID , newRing }) {
+    assert.equal(typeof deviceUniqID, "string")
+    assert.equal(typeof newRing, "string")
     console.log(`changeRing: ${deviceUniqID} -> ${newRing}`)
     const propname = `@/clients/${deviceUniqID}/ring`
     return context.dispatch('setConfigProp', {
         property: propname,
-  value: newRing
+        value: newRing
     }).then(() => {
       return checkPropChangeP(propname, newRing, 10)
-    }).then(() => {
-      return context.dispatch('fetchDevices')
+    }).finally(() => {
+      // let this run async?
+      context.dispatch('fetchDevices')
     })
   },
 

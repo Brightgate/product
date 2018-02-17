@@ -11,7 +11,7 @@
   <f7-page name="enrollApple">
     <center><h2>Getting Online with Brightgate</h2></center>
     <center><h4>Intro: Install Secure Network Profile</h4></center>
-    <f7-grid >
+    <f7-row>
       <!-- NB using widths with %s here is non-standard and won't result
            in using F7 f7-col-<NN> classes to layout. -->
       <f7-col width="30%"></f7-col>
@@ -25,7 +25,7 @@
         <f7-button round tab-link="#step3"><b>3</b></f7-button>
       </f7-col>
       <f7-col width="30%"></f7-col>
-    </f7-grid >
+    </f7-row>
 
     <f7-tabs swipeable>
 
@@ -95,7 +95,6 @@
             <f7-link href="/appleConnect" external>Connect</f7-link>
             <f7-link v-on:click="showHelp = false" v-if="showHelp">Hide Help</f7-link>
             <f7-link v-on:click="showHelp = true" v-if="!showHelp">Show Help</f7-link>
-            </f7-grid>
           </f7-card-footer>
         </f7-card>
       </f7-tab>

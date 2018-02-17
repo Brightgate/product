@@ -8,8 +8,9 @@
   such unauthorized removal or alteration will be a violation of federal law.
 -->
 <template>
-  <f7-page pull-to-refresh @ptr:refresh="pullRefresh">
-    <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.devices.title')" sliding />
+  <f7-page ptr @ptr:refresh="pullRefresh">
+    <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.devices.title')" sliding>
+    </f7-navbar>
     
     <f7-list v-for="catkey in device_category_order"
              v-if="$store.getters.NumUniqIDs_By_Category(catkey) > 0">
@@ -27,7 +28,7 @@
             v-if="showRecent || catkey != 'recent'"
             v-for="device in $store.getters.Devices_By_Category(catkey)"
             v-bind:title="device.network_name"
-            v-bind:link="'/details?uniqid=' + device.uniqid">
+            v-bind:link="'/details/?uniqid=' + device.uniqid">
         <div slot="media">
           <img v-bind:src="'img/nova-solid-' + device.media + '.png'" width=32 height=32>
         </div>
@@ -88,6 +89,8 @@ export default {
     pullRefresh: function(event, done) {
       this.$store.dispatch('fetchDevices').then(() => {
         return done()
+      }).catch((err) => {
+        return done(err)
       })
     },
   },

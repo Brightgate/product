@@ -52,8 +52,8 @@
       <f7-list-item>
       <f7-label>{{ $t("message.details.access.security_ring") }}</f7-label>
       <span v-if="ring_changing" class="preloader"></span>
-      <f7-input v-else type="select" v-model="device_details.ring" @input="changeRing($event)">
-        <option v-for="ring in rings" v-bind:value="ring" v-bind:key="ring">{{ring}}</option>
+      <f7-input v-else type="select" :value="device_details.ring" @input="changeRing($event.target.value)">
+        <option v-for="ring in $store.getters.Rings" v-bind:value="ring" v-bind:key="ring">{{ring}}</option>
       </f7-input>
       </f7-list-item>
     </f7-list>
@@ -66,34 +66,31 @@
 
     <f7-block>
       <p>
-      {{ $t('message.details.access.guest_access.time', {'time': render_time(expiration)}) }} <br/><br/>
-      <f7-grid>
-        <f7-col>
-          <f7-button big color="green" v-on:click="expiration=(expiration+60)">{{ $t('message.details.access.guest_access.extend') }}</f7-button>
-        </f7-col>
-        <f7-col>
-          <div v-if="!paused">
-            <f7-button big color="orange" v-on:click="paused=true">{{ $t('message.details.access.guest_access.pause') }}</f7-button>
-          </div><div v-if="paused">
-            <f7-button big fill color="orange" v-on:click="paused=false">{{ $t('message.details.access.guest_access.unpause') }}</f7-button>
-          </div>
-        </f7-col>
-        <f7-col><f7-button big open-popover="#confirm-remove" color="red">{{ $t('message.details.access.guest_access.remove') }}</f7-button></f7-col>
-      </f7-grid>
-
+        {{ $t('message.details.access.guest_access.time', {'time': render_time(expiration)}) }} <br/><br/>
       </p>
+      <f7-row>
+        <f7-col>
+          <f7-button big outline color="green" v-on:click="expiration=(expiration+60)">{{ $t('message.details.access.guest_access.extend') }}</f7-button>
+        </f7-col>
+        <f7-col>
+          <f7-button v-if="!paused" big outline color="orange" v-on:click="paused=true">{{ $t('message.details.access.guest_access.pause') }}</f7-button>
+          <f7-button v-if="paused" big fill color="orange" v-on:click="paused=false">{{ $t('message.details.access.guest_access.unpause') }}</f7-button>
+        </f7-col>
+        <f7-col>
+          <f7-button big outline popover-open="#confirm-remove" color="red">{{ $t('message.details.access.guest_access.remove') }}</f7-button>
+        </f7-col>
+      </f7-row>
     </f7-block>
 
     <f7-block-title>{{ $t("message.details.activity.activity") }}</f7-block-title>
     <f7-list inner>
-      <f7-list-item v-for="log_day in log_details" :title="log_day.day">
+      <f7-list-item v-for="log_day in log_details" v-bind:title="log_day.day">
         <span>{{ render_time(log_day.time) }} &mdash;
-          <a href="#" v-bind:data-popover="'#logs' + log_day.log_id" class="open-popover link">{{ $t("message.general.details") }}</a>
-          <!-- <f7-link v-link="log_day.link">Details</f7-link> -->
+          <f7-link v-bind:data-popover="'#logs' + log_day.log_id" popover-open>{{ $t("message.general.details") }}</f7-link>
         </span>
       </f7-list-item>
       <f7-list-item>
-        <f7-link open-popover="#limited-logs">{{ $t("message.details.activity.older") }}</f7-link>
+        <f7-link popover-open="#limited-logs">{{ $t("message.details.activity.older") }}</f7-link>
       </f7-list-item>
     </f7-list>
 
@@ -132,15 +129,15 @@
         <p>
         {{ $t('message.details.access.guest_access.confirm_remove', {'device': device_details.network_name}) }} 
         </p>
-        <f7-grid>
+        <f7-row>
           <f7-col width=20>&nbsp;</f7-col>
           <f7-col width=40>
-            <f7-button big color="gray" close-popover>{{ $t('message.general.cancel') }}</f7-button>
+            <f7-button big color="gray" popover-close>{{ $t('message.general.cancel') }}</f7-button>
           </f7-col>
           <f7-col width=40>
-            <f7-button big fill close-popover color="red">{{ $t('message.general.confirm') }}</f7-button>
+            <f7-button big fill popover-close color="red">{{ $t('message.general.confirm') }}</f7-button>
           </f7-col>
-        </f7-grid>
+        </f7-row>
       </f7-block>
     </f7-popover>
 
@@ -151,14 +148,14 @@ import assert from "assert"
 
 export default {
   beforeCreate: function() {
-    this.$store.dispatch('fetchRings');
+    return this.$store.dispatch('fetchRings')
   },
 
   methods: {
 
     changeRing: function(wanted_ring) {
-      console.log(`Change Ring to ${wanted_ring}`)
       assert(typeof wanted_ring === "string")
+      console.log(`Change Ring to ${wanted_ring}`)
       this.ring_changing = true
       this.$store.dispatch("changeRing", {
         deviceUniqID: this.device_details.uniqid,
@@ -174,7 +171,7 @@ export default {
 
   computed: {
     device_details: function () {
-      const query = this.$route.query
+      var query = this.$f7route.query
       return this.$store.getters.Device_By_UniqID(query.uniqid);
     },
     rings: function () {
@@ -182,8 +179,6 @@ export default {
     }
   },
   data: function () {
-    // vue's idea of the current query params
-    var query = this.$route.query
     return {
       render_time: function (mins) {
         var days  = Math.floor(mins / 1440);
@@ -206,7 +201,7 @@ export default {
       expiration: 314,
       // In the future, we can use this query to filter specific device info
       // if we can't get dynamic routes to work properly
-      query: query,
+      query: this.$f7route.query,
       log_details: [
         { log_id: "0", day: this.$t('message.details.activity.dates.today'),     time: 71,
           entries: [
