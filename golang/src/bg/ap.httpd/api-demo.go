@@ -29,6 +29,8 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/pquerna/otp"
+	"github.com/sfreiberg/gotwilio"
+	"github.com/ttacon/libphonenumber"
 )
 
 const (
@@ -383,6 +385,33 @@ func demoDevicesByRingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// GET rings () -> (...)
+func demoRingsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	props, err := config.GetProps("@/rings")
+	if err != nil {
+		log.Printf("Failed to get ring list: %v\n", err)
+	}
+
+	var rings []string
+	for _, ring := range props.Children {
+		rings = append(rings, ring.Name)
+	}
+
+	b, err := json.Marshal(rings)
+	if err != nil {
+		log.Printf("failed to json marshal rings '%v': %v\n", rings, err)
+		return
+	}
+
+	_, err = w.Write(b)
+	if err != nil {
+		log.Printf("failed to write rings '%v': %v\n", b, err)
+		return
+	}
+}
+
 // GET devices () -> (...)
 // Policy: GET (*_USER, *_ADMIN)
 func demoDevicesHandler(w http.ResponseWriter, r *http.Request) {
@@ -412,13 +441,13 @@ func demoDevicesHandler(w http.ResponseWriter, r *http.Request) {
 
 	b, err := json.Marshal(devices)
 	if err != nil {
-		log.Printf("failed to json marshal ring devices '%v': %v\n", devices, err)
+		log.Printf("failed to json marshal devices '%v': %v\n", devices, err)
 		return
 	}
 
 	_, err = w.Write(b)
 	if err != nil {
-		log.Printf("failed to write ring devices '%v': %v\n", b, err)
+		log.Printf("failed to write devices '%v': %v\n", b, err)
 		return
 	}
 }
@@ -479,10 +508,8 @@ func demoPropertyByNameHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
-// XXX broken-- unexpected end of JSON
 func demoPropertyHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
-	w.Header().Set("Content-Type", "application/json")
 
 	t := time.Now()
 
@@ -503,7 +530,7 @@ func demoPropertyHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, estr, 400)
 		} else {
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintf(w, "%s", val)
+			fmt.Fprintf(w, "\"%s\"", val)
 		}
 	} else {
 		// Send property updates to ap.configd
@@ -670,6 +697,99 @@ func demoUsersHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type enrollResponse struct {
+	SMSDelivered bool   `json:"smsdelivered"`
+	SMSErrorCode int    `json:"smserrorcode"`
+	SMSError     string `json:"smserror"`
+}
+
+// sendOneSMS is a utility helper for the Enroll handler.
+func sendOneSMS(twilio *gotwilio.Twilio, from string, to string, message string) (*enrollResponse, error) {
+	var response *enrollResponse
+	smsResponse, exception, err := twilio.SendSMS(from, to, message, "", "")
+	if err != nil {
+		return nil, err
+	}
+	if exception != nil {
+		rstr := "Twilio failed sending SMS."
+		if exception.Code >= 21210 && exception.Code <= 21217 {
+			rstr = "Invalid Phone Number"
+		}
+		response = &enrollResponse{false, exception.Code, rstr}
+	} else {
+		response = &enrollResponse{true, 0,
+			"Current Status: " + smsResponse.Status}
+	}
+	return response, nil
+}
+
+func demoEnrollHandler(w http.ResponseWriter, r *http.Request) {
+	var err error
+
+	t := time.Now()
+
+	if r.Method != "POST" {
+		http.Error(w, "Invalid request method.", 405)
+		return
+	}
+	twilioSID := "ACaa018fa0f7631d585a56f6806a5bfc74"
+	twilioAuthToken := "cfe70c8ed40429f0ba961189f554dc90"
+	from := "+16507694283"
+
+	networkSSID, err := config.GetProp("@/network/ssid")
+	if err != nil {
+		http.Error(w, "Internal Error", 500)
+	}
+	networkPassphrase, err := config.GetProp("@/network/passphrase")
+
+	// The SMS to the customer is structured as two messages, one with
+	// help and the network name, and the other with the passphrase.
+	// This is because on most iOS and Android SMS clients, it's easy to
+	// copy a whole SMS message, but range selection is disabled.
+	message1 := fmt.Sprintf("Brightgate Wi-Fi\nHelp: bit.ly/2yhPDQz\n"+
+		"Network: %s\n<password follows>", networkSSID)
+	message2 := fmt.Sprintf("%s", networkPassphrase)
+
+	log.Printf("Enroll Handler: phone='%v'\n", r.PostFormValue("phone"))
+	if r.PostFormValue("phone") == "" {
+		http.Error(w, "Invalid request.", 400)
+		return
+	}
+
+	to, err := libphonenumber.Parse(r.PostFormValue("phone"), "US")
+	if err != nil {
+		response := enrollResponse{false, 0, "Invalid Phone Number"}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			panic(err)
+		}
+		return
+	}
+	formattedTo := libphonenumber.Format(to, libphonenumber.INTERNATIONAL)
+	log.Printf("Enroll Handler: formattedTo='%v'\n", formattedTo)
+
+	twilio := gotwilio.NewTwilioClient(twilioSID, twilioAuthToken)
+	var response *enrollResponse
+	for _, message := range []string{message1, message2} {
+		response, err = sendOneSMS(twilio, from, formattedTo, message)
+		if err != nil {
+			log.Printf("Enroll Handler: twilio go err='%v'\n", err)
+			http.Error(w, "Twilio Error.", 500)
+			return
+		}
+		// if not sent then give up sending more
+		if response.SMSDelivered == false {
+			break
+		}
+	}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		panic(err)
+	}
+
+	if err == nil {
+		latencies.Observe(time.Since(t).Seconds())
+	}
+}
+
 // StatsContent contains information for filling out the stats template.
 // Policy: GET(*)
 type StatsContent struct {
@@ -707,4 +827,21 @@ func demoStatsHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		latencies.Observe(time.Since(lt).Seconds())
 	}
+}
+
+func makeDemoAPIRouter() *mux.Router {
+	router := mux.NewRouter()
+	router.HandleFunc("/access", demoAccessHandler)
+	router.HandleFunc("/access/{devid}", demoAccessByIDHandler)
+	router.HandleFunc("/alerts", demoAlertsHandler)
+	router.HandleFunc("/config/{property:[a-z@/]+}", demoPropertyByNameHandler)
+	router.HandleFunc("/config", demoPropertyHandler)
+	router.HandleFunc("/devices/{ring}", demoDevicesByRingHandler)
+	router.HandleFunc("/devices", demoDevicesHandler)
+	router.HandleFunc("/enroll", demoEnrollHandler)
+	router.HandleFunc("/login", demoLoginHandler)
+	router.HandleFunc("/logout", demoLogoutHandler)
+	router.HandleFunc("/rings", demoRingsHandler)
+	router.HandleFunc("/supreme", demoSupremeHandler)
+	return router
 }

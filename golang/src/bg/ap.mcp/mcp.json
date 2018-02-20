@@ -3,7 +3,7 @@
         "Name": "brokerd",
         "Binary": "ap.brokerd",
         "Privileged": false,
-        "Modes": [ "core", "gateway" ]
+        "Modes": [ "core", "gateway", "http-dev" ]
     },
     "configd": {
         "Name": "configd",
@@ -11,7 +11,7 @@
         "DependsOn": "brokerd",
         "Privileged": true,
         "Options": [ "-propdir=/etc/" ],
-        "Modes": [ "core", "gateway" ]
+        "Modes": [ "core", "gateway", "http-dev" ]
     },
     "dhcp4d": {
         "Name": "dhcp4d",
@@ -45,7 +45,7 @@
             "-template_dir=/etc/templates/ap.httpd",
             "-client-web_dir=/var/www/client-web"
         ],
-        "Modes": [ "gateway" ]
+        "Modes": [ "gateway", "http-dev" ]
     },
     "identifierd": {
         "Name": "identifierd",

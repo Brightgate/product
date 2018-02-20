@@ -56,7 +56,9 @@ var (
 		"location of httpd templates")
 	clientWebDir = flag.String("client-web_dir", "client-web",
 		"location of httpd client web root")
-	ports = listFlag([]string{":80", ":443"})
+	ports         = listFlag([]string{":80", ":443"})
+	developerHTTP = flag.String("developer-http", "",
+		"Developer http port (disabled by default)")
 
 	cert      string
 	key       string
@@ -231,8 +233,19 @@ func appleHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func defaultHandler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("defaultHandler: %v\n", *r)
-	gatewayu := fmt.Sprintf("http://gateway.%s/client-web/", domainname)
+	var gatewayu string
+
+	if r.Host == "localhost" {
+		gatewayu = fmt.Sprintf("http://localhost/client-web/")
+	} else {
+		gatewayu = fmt.Sprintf("http://gateway.%s/client-web/",
+			domainname)
+	}
+	http.Redirect(w, r, gatewayu, http.StatusFound)
+}
+
+func defaultCaptiveHandler(w http.ResponseWriter, r *http.Request) {
+	gatewayu := fmt.Sprintf("http://gateway.%s/client-web/enroll.html", domainname)
 	http.Redirect(w, r, gatewayu, http.StatusFound)
 }
 
@@ -393,22 +406,9 @@ func main() {
 	loadPhishtank()
 
 	// routing
-	demoAPIRouter := mux.NewRouter()
-	demoAPIRouter.HandleFunc("/login", demoLoginHandler)
-	demoAPIRouter.HandleFunc("/logout", demoLogoutHandler)
-	demoAPIRouter.HandleFunc("/alerts", demoAlertsHandler)
-	demoAPIRouter.HandleFunc("/devices/{ring}", demoDevicesByRingHandler)
-	demoAPIRouter.HandleFunc("/devices", demoDevicesHandler)
-	demoAPIRouter.HandleFunc("/access/{devid}", demoAccessByIDHandler)
-	demoAPIRouter.HandleFunc("/access", demoAccessHandler)
-	demoAPIRouter.HandleFunc("/supreme", demoSupremeHandler)
-	demoAPIRouter.HandleFunc("/config/{property:[a-z@/]+}", demoPropertyByNameHandler)
-	demoAPIRouter.HandleFunc("/config", demoPropertyHandler)
-	demoAPIRouter.HandleFunc("/users/{uid}/otp", demoUserByUIDOTPQRHandler)
-	demoAPIRouter.HandleFunc("/users/{uid}", demoUserByUIDHandler)
-	demoAPIRouter.HandleFunc("/users", demoUsersHandler)
-
 	mainRouter := mux.NewRouter()
+
+	demoAPIRouter := makeDemoAPIRouter()
 
 	phishRouter := mainRouter.MatcherFunc(
 		func(r *http.Request, match *mux.RouteMatch) bool {
@@ -419,9 +419,11 @@ func main() {
 	phishRouter.HandleFunc("/", phishHandler)
 
 	mainRouter.HandleFunc("/", defaultHandler)
-	mainRouter.PathPrefix("/apid/").Handler(http.StripPrefix("/apid", demoAPIRouter))
-	mainRouter.PathPrefix("/client-web/").Handler(http.StripPrefix("/client-web/",
-		http.FileServer(http.Dir(*clientWebDir))))
+	mainRouter.PathPrefix("/apid/").Handler(
+		http.StripPrefix("/apid", demoAPIRouter))
+	mainRouter.PathPrefix("/client-web/").Handler(
+		http.StripPrefix("/client-web/",
+			http.FileServer(http.Dir(*clientWebDir))))
 
 	hashKey, blockKey := establishHttpdKeys()
 
@@ -431,11 +433,14 @@ func main() {
 	nMain.UseHandler(apachelog.CombinedLog.Wrap(mainRouter, os.Stderr))
 
 	captiveRouter := mux.NewRouter()
-	captiveRouter.HandleFunc("/", defaultHandler)
+	captiveRouter.HandleFunc("/", defaultCaptiveHandler)
+	captiveRouter.PathPrefix("/apid/").Handler(
+		http.StripPrefix("/apid", demoAPIRouter))
 	captiveRouter.PathPrefix("/client-web/").Handler(http.StripPrefix("/client-web/",
 		http.FileServer(http.Dir(*clientWebDir))))
 	captiveRouter.HandleFunc("/hotspot-detect.html", appleHandler)
 	captiveRouter.HandleFunc("/appleConnect", appleConnect)
+	captiveRouter.HandleFunc("/apid/enroll", demoEnrollHandler)
 
 	nCaptive := negroni.New(negroni.NewRecovery())
 	nCaptive.UseHandler(apachelog.CombinedLog.Wrap(captiveRouter, os.Stderr))
@@ -461,6 +466,15 @@ func main() {
 				listen(router, port, ring, tlsCfg, certf, keyf, nMain)
 			}
 		}
+	}
+
+	if *developerHTTP != "" {
+		log.Printf("Developer Port configured at %s", *developerHTTP)
+		go func() {
+			err := http.ListenAndServe(*developerHTTP, nMain)
+			log.Printf("Developer listener on %s exited: %v\n",
+				*developerHTTP, err)
+		}()
 	}
 
 	if mcpd != nil {

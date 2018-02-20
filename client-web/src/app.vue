@@ -1,3 +1,12 @@
+<!--
+  COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+
+  This copyright notice is Copyright Management Information under 17 USC 1202
+  and is included to protect this work and deter copyright infringement.
+  Removal or alteration of this Copyright Management Information without the
+  express written permission of Brightgate Inc is prohibited, and any
+  such unauthorized removal or alteration will be a violation of federal law.
+-->
 <template>
   <!-- App -->
   <div id="app">
@@ -5,166 +14,125 @@
     <!-- Statusbar -->
     <f7-statusbar></f7-statusbar>
 
-    <!-- Left Panel -->
-    <f7-panel left reveal layout="dark">
-      <f7-view id="left-panel-view" navbar-through :dynamic-navbar="true">
-        <f7-navbar v-if="$theme.ios" title="Left Panel" sliding></f7-navbar>
-        <f7-pages>
-          <f7-page>
-            <f7-navbar v-if="$theme.material" title="Left Panel" sliding></f7-navbar>
-            <f7-block inner>
-              <p>Left panel content goes here</p>
-            </f7-block>
-            <f7-block-title>Load page in panel</f7-block-title>
-            <f7-list>
-              <f7-list-item link="/about/" title="About"></f7-list-item>
-              <f7-list-item link="/form/" title="Form"></f7-list-item>
-            </f7-list>
-            <f7-block-title>Load page in main view</f7-block-title>
-            <f7-list>
-              <f7-list-item link="/about/" title="About" link-view="#main-view" link-close-panel></f7-list-item>
-              <f7-list-item link="/form/" title="Form" link-view="#main-view" link-close-panel></f7-list-item>
-            </f7-list>
-          </f7-page>
-        </f7-pages>
-      </f7-view>
-    </f7-panel>
-
-    <!-- Right Panel -->
-    <f7-panel right cover layout="dark">
-      <f7-view id="right-panel-view" navbar-through :dynamic-navbar="true">
-        <f7-navbar v-if="$theme.ios" title="Right Panel" sliding></f7-navbar>
-        <f7-pages>
-          <f7-page>
-            <f7-navbar v-if="$theme.material" title="Right Panel" sliding></f7-navbar>
-            <f7-block>
-              <p>Right panel content goes here</p>
-            </f7-block>
-            <f7-block-title>Load page in panel</f7-block-title>
-            <f7-list>
-              <f7-list-item link="/about/" title="About"></f7-list-item>
-              <f7-list-item link="/form/" title="Form"></f7-list-item>
-            </f7-list>
-            <f7-block-title>Load page in main view</f7-block-title>
-            <f7-list>
-              <f7-list-item link="/about/" title="About" link-view="#main-view" link-close-panel></f7-list-item>
-              <f7-list-item link="/form/" title="Form" link-view="#main-view" link-close-panel></f7-list-item>
-            </f7-list>
-          </f7-page>
-        </f7-pages>
-      </f7-view>
-    </f7-panel>
-
     <!-- Main Views -->
-    <f7-views>
-      <f7-view id="main-view" navbar-through :dynamic-navbar="true" main>
-        <!-- iOS Theme Navbar -->
-        <f7-navbar v-if="$theme.ios">
-          <f7-nav-left>
-            <f7-link icon="icon-bars" open-panel="left"></f7-link>
-          </f7-nav-left>
-          <f7-nav-center sliding><img alt="Brightgate" src="img/bglogo.png"/></f7-nav-center>
-          <f7-nav-right>
-            <f7-link icon="icon-bars" open-panel="right"></f7-link>
-          </f7-nav-right>
+    <f7-view id="main-view" url="/" main>
+      <f7-page
+        v-on:page:init="$store.dispatch('fetchDevices').catch((err) => {})"
+        v-on:page:reinit="$store.dispatch('fetchDevices').catch((err) => {})">
+
+        <f7-navbar>
+          <!-- f7-nav-title doesn't seem to center properly without also
+               including left and right. -->
+          <f7-nav-left>&nbsp;</f7-nav-left>
+          <f7-nav-title><img src="img/bglogo.png"/></f7-nav-title>
+          <f7-nav-right>&nbsp;</f7-nav-right>
         </f7-navbar>
-        <!-- Pages -->
-        <f7-pages>
-          <f7-page>
-            <!-- Material Theme Navbar -->
-            <f7-navbar v-if="$theme.material">
-              <f7-nav-left>
-                <f7-link icon="icon-bars" open-panel="left"></f7-link>
-              </f7-nav-left>
-              <f7-nav-center sliding>Brightgate</f7-nav-center>
-              <f7-nav-right>
-                <f7-link icon="icon-bars" open-panel="right"></f7-link>
-              </f7-nav-right>
-            </f7-navbar>
-            <f7-block-title>Brightgate Administration</f7-block-title>
-            <f7-block inner>
-              <i class="f7-icons">home</i>
-              <p>Duis sed erat ac eros ultrices pharetra id ut tellus. Praesent rhoncus enim ornare ipsum aliquet ultricies. Pellentesque sodales erat quis elementum sagittis.</p>
-            </f7-block>
-            <f7-block-title>Navigation</f7-block-title>
-            <f7-list>
-              <f7-list-item link="/about/" title="About"></f7-list-item>
-              <f7-list-item link="/form/" title="Form"></f7-list-item>
-              <f7-list-item link="/dynamic-route/blog/45/post/125/?foo=bar#about" title="Dynamic Route"></f7-list-item>
-            </f7-list>
-            <f7-block-title>Side Panels</f7-block-title>
-            <f7-block>
-              <f7-grid>
-                <f7-col width="50">
-                  <f7-button open-panel="left">Left Panel</f7-button>
-                </f7-col>
-                <f7-col width="50">
-                  <f7-button open-panel="right">Right Panel</f7-button>
-                </f7-col>
-              </f7-grid>
-            </f7-block>
-            <f7-block-title>Modals</f7-block-title>
-            <f7-block>
-              <f7-grid>
-                <f7-col width="50">
-                  <f7-button open-popup="#popup">Popup</f7-button>
-                </f7-col>
-                <f7-col width="50">
-                  <f7-button open-login-screen="#login-screen">Login Screen</f7-button>
-                </f7-col>
-              </f7-grid>
-            </f7-block>
-          </f7-page>
-        </f7-pages>
-      </f7-view>
-    </f7-views>
+        <f7-block-title>{{ $t("message.status.brightgate_status") }}</f7-block-title>
+        <f7-block inner>
+          <p v-html="$t('message.status.has_virus', {'serious_alerts': $t('message.alerts.serious_alerts')})"></p>
+          <p>{{ $t("message.status.network_properly") }}</p>
+        </f7-block>
 
-    <!-- Popup -->
-    <f7-popup id="popup">
-      <f7-view navbar-fixed>
-        <f7-pages>
-          <f7-page>
-            <f7-navbar title="Popup">
-              <f7-nav-right>
-                <f7-link close-popup>Close</f7-link>
-              </f7-nav-right>
-            </f7-navbar>
-            <f7-block>Lorem ipsum dolor sit amet, consectetur adipisicing elit. Neque, architecto. Cupiditate laudantium rem nesciunt numquam, ipsam. Voluptates omnis, a inventore atque ratione aliquam. Omnis iusto nemo quos ullam obcaecati, quod.</f7-block>
-          </f7-page>
-        </f7-pages>
-      </f7-view>
+        <f7-block-title>{{ $t("message.alerts.serious_alerts") }}</f7-block-title>
+        <f7-list>
+          <f7-list-item
+                v-for="device in $store.getters.All_Devices"
+                v-if="device.alert"
+                :title="$t('message.alerts.wannacry', {'device': device.network_name})"
+                :link="'/details/?uniqid=' + device.uniqid">
+          </f7-list-item>
+        </f7-list>
+
+        <f7-block-title>{{ $t("message.tools.tools") }}</f7-block-title>
+        <f7-list>
+          <f7-list-item link="/devices/" :title="$t('message.tools.manage_devices', {'device_count': $store.getters.Device_Count})"></f7-list-item>
+          <f7-list-item :title="$t('message.tools.open_setup_network')">
+            <f7-toggle slot="after" :checked="setupOn"></f7-toggle>
+          </f7-list-item>
+          <f7-list-item :title="$t('message.tools.accept_devices')">
+            <span slot="after"><f7-button @click="openAcceptPopup">{{ $t("message.general.accept") }}</f7-button></span>
+          </f7-list-item>
+        </f7-list>
+
+        <f7-block-title>{{ $t("message.notifications.notifications") }}</f7-block-title>
+        <f7-list>
+          <f7-list-item
+                v-for="device in $store.getters.All_Devices"
+                v-if="device.notification"
+                :title="$t('message.notifications.update_device', {'device': device.network_name})"
+                :link="'/details/?uniqid=' + device.uniqid">
+          </f7-list-item>
+        </f7-list>
+
+        <f7-block-title>{{ $t("message.testing.testing") }}</f7-block-title>
+        <f7-list>
+          <f7-list-item :title="$t('message.testing.enable_mock')">
+            <f7-toggle slot="after" :checked="$store.getters.Mock" @change="$store.commit('toggleMock'); $store.dispatch('fetchDevices').catch((err) => {})"></f7-toggle>
+          </f7-list-item>
+          <f7-list-item v-if="$store.state.loggedIn" @click="attemptLogout()" title="Logout"></f7-list-item>
+          <f7-list-item v-else link="/login/" title="Login"></f7-list-item>
+        </f7-list>
+
+      </f7-page>
+    </f7-view>
+
+    <f7-popup id="acceptPop" :opened="acceptOpen">
+      <f7-block v-if="devicesAccepted">
+        <p>{{ $t('message.tools.success', {'devicesChanged': devicesChanged}) }}</p>
+      </f7-block>
+      <f7-block v-if="devicesAcceptedError != ''">
+        <p v-html="$t('message.tools.fail', {'devicesAcceptedError': devicesAcceptedError})"></p>
+      </f7-block>
+      <f7-button @click="closeAcceptPopup"> {{ $t('message.general.close') }} </f7-button>
     </f7-popup>
-
-    <!-- Login Screen -->
-    <f7-login-screen id="login-screen">
-      <f7-view>
-        <f7-pages>
-          <f7-page login-screen>
-            <f7-login-screen-title>Login</f7-login-screen-title>
-            <f7-list form>
-              <f7-list-item>
-                <f7-label>Username</f7-label>
-                <f7-input name="username" placeholder="Username" type="text"></f7-input>
-              </f7-list-item>
-              <f7-list-item>
-                <f7-label>Password</f7-label>
-                <f7-input name="password" type="password" placeholder="Password"></f7-input>
-              </f7-list-item>
-            </f7-list>
-            <f7-list>
-              <f7-list-button title="Sign In" close-login-screen></f7-list-button>
-              <f7-list-label>
-                <p>Click Sign In to close Login Screen</p>
-              </f7-list-label>
-            </f7-list>
-          </f7-page>
-        </f7-pages>
-      </f7-view>
-    </f7-login-screen>
 
   </div>
 </template>
 
 <script>
-export default {}
+import superagent from 'superagent';
+
+export default {
+
+  data: function () {
+    return {
+      setupOn: false,
+      acceptOpen: false,
+      devicesAccepted: false,
+      devicesAcceptedError: "",
+    }
+  },
+
+  methods: {
+
+    openAcceptPopup: function () {
+      console.log("Accepting devices");
+      // get the popup open
+      this.acceptOpen = true;
+      // clear error and accepted
+      this.devicesAccepted = false;
+      this.devicesChanged = 0;
+      this.devicesAcceptedError = "";
+      superagent.get('/apid/supreme').end((err, res) => {
+        if (err) {
+          console.log("Error accepting devices: ", err);
+          this.devicesAcceptedError = err.toString();
+        } else {
+          console.log("Succeeded accepting devices: " + res.text);
+          var res_json = JSON.parse(res.text)
+          this.devicesAccepted = true;
+          this.devicesChanged = res_json.changed ? res_json.changed : -1;
+        }
+      })
+    },
+
+    closeAcceptPopup: function () {
+      this.acceptOpen = false
+    },
+
+    attemptLogout: function () {
+      this.$store.dispatch("logout", {})
+    },
+  }
+}
 </script>

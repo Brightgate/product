@@ -167,6 +167,7 @@ assignments = [
     [Statement.SIMPLE_STR, "MODE_GATEWAY", "gateway"],
     [Statement.SIMPLE_STR, "MODE_CORE", "core"],
     [Statement.SIMPLE_STR, "MODE_SATELLITE", "satellite"],
+    [Statement.SIMPLE_STR, "MODE_HTTP_DEV", "http-dev"],
 
     [Statement.COMMENT, "Security rings"],
     [Statement.SIMPLE_STR, "RING_UNENROLLED", "unenrolled"],

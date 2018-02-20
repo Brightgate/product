@@ -282,6 +282,12 @@
   version = "v1.2.0"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/sfreiberg/gotwilio"
+  packages = ["."]
+  revision = "58125ef28e4b5d7ab5328593099ae8cac5fcf6a2"
+
+[[projects]]
   name = "github.com/spf13/afero"
   packages = [
     ".",
@@ -582,6 +588,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "ae87aaf1e9c12281e1b900e20ea7ec7aa43e5f629b477a6afadd89e922f31346"
+  inputs-digest = "8e100d0d8f384288797d14b76e655f78bc83dc1fa4d6988c5cbde37601459c3b"
   solver-name = "gps-cdcl"
   solver-version = 1
