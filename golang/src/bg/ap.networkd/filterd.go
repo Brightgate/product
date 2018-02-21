@@ -63,6 +63,7 @@ import (
 	"strings"
 	"time"
 
+	"bg/ap_common/apcfg"
 	"bg/ap_common/network"
 	"bg/base_def"
 )
@@ -230,6 +231,7 @@ func ifaceForwardRules(ring string) {
 	connRule += " -o " + wanNic
 	connRule += " -s " + config.Subnet
 	connRule += " -m conntrack --ctstate NEW"
+	connRule += " -j ACCEPT"
 	iptablesAddRule("filter", "FORWARD", connRule)
 }
 
@@ -257,13 +259,13 @@ func genEndpointRing(e *endpoint, src bool) (string, error) {
 	var d string
 
 	if src {
-		d = "-s"
+		d = "-i" // incoming interface
 	} else {
-		d = "-d"
+		d = "-o" // outgoing interface
 	}
 
 	if ring := rings[e.detail]; ring != nil {
-		r := fmt.Sprintf(" %s %s ", d, ring.Subnet)
+		r := fmt.Sprintf(" %s %s ", d, ring.Bridge)
 		return r, nil
 	}
 
@@ -442,10 +444,6 @@ func addRule(r *rule) error {
 			return err
 		}
 		iptablesRule += e
-
-		if from.kind == endpointIface && from.detail == "wan" {
-			chain = "INPUT"
-		}
 	}
 
 	if to != nil {
@@ -456,6 +454,10 @@ func addRule(r *rule) error {
 		}
 
 		iptablesRule += e
+
+		if to.kind == endpointAP {
+			chain = "INPUT"
+		}
 	}
 
 	e, err := genPorts(r)
@@ -508,7 +510,7 @@ func updateBlockRules(addr string, add bool) {
 }
 
 // Extract and validate an IP address from a firewall property like
-// @/firewall/active/2.3.4.5
+// @/firewall/blocked/2.3.4.5
 func getAddrFromPath(path []string) (addr string, flat uint32) {
 	if len(path) == 3 {
 		addr = path[2]
@@ -544,6 +546,43 @@ func configBlocklistChanged(path []string, val string, expires *time.Time) {
 	}
 }
 
+func firewallRule(p *apcfg.PropertyNode) (*rule, error) {
+	active := p.GetChild("active")
+	rule := p.GetChild("rule")
+
+	if active == nil || active.GetValue() != "true" {
+		return nil, nil
+	}
+
+	if rule == nil {
+		return nil, fmt.Errorf("missing rule text")
+	}
+
+	return parseRule(rule.GetValue())
+}
+
+func firewallRules() {
+	const root = "@/firewall/rules"
+
+	rules, err := config.GetProps(root)
+	if rules == nil {
+		if err != nil {
+			log.Printf("Failed to get %s: %v\n", root, err)
+		}
+		return
+	}
+
+	for _, rule := range rules.Children {
+		r, err := firewallRule(rule)
+		if err != nil {
+			log.Printf("bad firewall rule '%s': %v\n",
+				rule.GetName(), err)
+		} else if r != nil {
+			addRule(r)
+		}
+	}
+}
+
 func iptablesRebuild() {
 	log.Printf("Rebuilding iptables rules\n")
 
@@ -559,6 +598,8 @@ func iptablesRebuild() {
 
 	iptablesAddRule("filter", "INPUT",
 		" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT")
+
+	iptablesAddRule("filter", "INPUT", " -s 127.0.0.1 -j ACCEPT")
 
 	// Add the basic routing rules for each interface
 	for ring := range rings {
@@ -595,11 +636,17 @@ func iptablesRebuild() {
 		"-j LOG -m limit --limit 600/min  --log-prefix \"DROPPED \"")
 	iptablesAddRule("filter", "dropped", "-j DROP")
 
+	firewallRules()
+
 	// Now add filter rules, from the most specific to the most general
 	sort.Sort(rules)
 	for _, r := range rules {
 		addRule(r)
 	}
+
+	// That which is not expressly allowed is forbidden
+	iptablesAddRule("filter", "INPUT", "-j dropped")
+	iptablesAddRule("filter", "FORWARD", "-j dropped")
 }
 
 func loadFilterRules() error {

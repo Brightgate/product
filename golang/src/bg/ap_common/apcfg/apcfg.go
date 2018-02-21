@@ -656,7 +656,7 @@ func (c *APConfig) SetUserPassword(user string, passwd string) error {
 func (c *APConfig) GetActiveBlocks() []string {
 	list := make([]string, 0)
 
-	active, _ := c.GetProps("@/firewall/active")
+	active, _ := c.GetProps("@/firewall/blocked")
 	now := time.Now()
 	for _, node := range active.Children {
 		if node.Expires == nil || now.Before(*node.Expires) {

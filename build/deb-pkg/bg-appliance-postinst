@@ -21,9 +21,13 @@ if [ "x$1" = "xconfigure" ]; then
     # Prevent linux from acting like a wlan client
     # Ask the upstream DHCP server to identify itself
     cat >> /etc/dhcpcd.conf << EOF
-allowinterfaces eth* enx*                                   # Brightgate option
-denyinterfaces eth*.* enx*.*                                # Brightgate option
-option vendor_class_identifier, vendor_encapsulated_options # Brightgate option
+
+# Brightgate Options Start
+ipv4only
+allowinterfaces eth* enx*
+denyinterfaces eth*.* enx*.*
+option vendor_class_identifier, vendor_encapsulated_options
+# Brightgate Options End
 EOF
 
     # Enable appliance services.

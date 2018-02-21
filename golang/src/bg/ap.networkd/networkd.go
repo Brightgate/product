@@ -901,7 +901,7 @@ func prepareWan() {
 	}
 
 	// Find the WAN device
-	for name, dev := range physDevices {
+	for _, dev := range physDevices {
 		if dev.wireless {
 			// XXX - at some point we should investigate using a
 			// wireless link as a mesh backhaul
@@ -914,8 +914,8 @@ func prepareWan() {
 			if !strings.HasPrefix(dev.hwaddr, "b8:27:eb:") {
 				continue
 			}
-		} else if !strings.HasPrefix(name, "eth") &&
-			!strings.HasPrefix(name, "enx") {
+		} else if !strings.HasPrefix(dev.name, "eth") &&
+			!strings.HasPrefix(dev.name, "enx") {
 			continue
 		}
 
@@ -1124,7 +1124,7 @@ func getDevices() {
 			d = getWireless(i)
 		}
 		if d != nil {
-			physDevices[i.Name] = d
+			physDevices[d.hwaddr] = d
 		}
 	}
 
@@ -1242,8 +1242,8 @@ func daemonInit() error {
 	config.HandleChange(`^@/nodes/"+nodeUUID+"/.*/channel$`, configChannelChanged)
 	config.HandleChange(`^@/rings/.*/auth$`, configAuthChanged)
 	config.HandleChange(`^@/network/`, configNetworkChanged)
-	config.HandleChange(`^@/firewall/active/`, configBlocklistChanged)
-	config.HandleExpire(`^@/firewall/active/`, configBlocklistExpired)
+	config.HandleChange(`^@/firewall/blocked/`, configBlocklistChanged)
+	config.HandleExpire(`^@/firewall/blocked/`, configBlocklistExpired)
 
 	rings = config.GetRings()
 	clients = config.GetClients()

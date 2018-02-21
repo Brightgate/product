@@ -127,7 +127,8 @@ packages = [
                """Cloud components."""),
     DebPackage("bg-appliance", "0.0.%s-1" % calver, ["armhf", "amd64"],
                "proto.%s/appliance",
-               ["bridge-utils", "hostapd", "libc6", "libzmq3-dev", "libpcap-dev"],
+               ["bridge-utils", "hostapd-bg", "libc6", "libzmq3-dev", "libpcap-dev",
+	       "iptables", "iptables-persistent", "netfilter-persistent" ],
                """Appliance components.""")
     ]
 

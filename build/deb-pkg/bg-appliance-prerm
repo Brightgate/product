@@ -22,7 +22,7 @@ if [ "x$1" = "xremove" ]; then
     systemctl disable ap.mcp.service
 
     # Remove the modifications we made to the dhcpcd config
-    sed -i "/Brightgate option/d" /etc/dhcpcd.conf
+    sed -i "/^# Brightgate Options Start/,/^# Brightgate Options End/d" /etc/dhcpcd.conf
 
     # Enable the services we normally disable.
     systemctl enable avahi-daemon.service

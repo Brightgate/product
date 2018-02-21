@@ -1,3 +1,14 @@
+/*
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ *
+ * This copyright notice is Copyright Management Information under 17 USC 1202
+ * and is included to protect this work and deter copyright infringement.
+ * Removal or alteration of this Copyright Management Information without the
+ * express written permission of Brightgate Inc is prohibited, and any
+ * such unauthorized removal or alteration will be a violation of federal law.
+ *
+ */
+
 package main
 
 // Rules look loke:
@@ -22,6 +33,7 @@ package main
 // RING  ring_name
 // TYPE  client_type
 // IFACE wan/lan
+// AP
 //
 // Ports: (DPORTS|SPORTS) <port list>
 //
@@ -63,6 +75,7 @@ const (
 	endpointType
 	endpointRing
 	endpointIface
+	endpointAP
 	endpointMAX
 )
 
@@ -124,7 +137,7 @@ func getRule(r *bufio.Reader) (rule string, err error) {
 }
 
 func getAction(t string) (action int, err error) {
-	switch t {
+	switch strings.ToUpper(t) {
 	case "ACCEPT":
 		action = actionAccept
 	case "BLOCK":
@@ -141,7 +154,7 @@ func getProtocol(p string) (proto int, err error) {
 	err = nil
 	proto = protoAll
 
-	switch p {
+	switch strings.ToUpper(p) {
 	case "FROM":
 	case "TO":
 	case "BEFORE":
@@ -165,7 +178,7 @@ func getProtocol(p string) (proto int, err error) {
 }
 
 func getAddr(addr string) (ipnet *net.IPNet, err error) {
-	if addr == "ALL" {
+	if strings.ToUpper(addr) == "ALL" {
 		ipnet = nil
 	} else {
 		_, ipnet, err = net.ParseCIDR(addr)
@@ -173,7 +186,7 @@ func getAddr(addr string) (ipnet *net.IPNet, err error) {
 	return
 }
 
-// Parse (FROM|TO) (ADDR <addr>|RING <ring>|TYPE <type>|IFACE <iface>)
+// Parse (FROM|TO) (ADDR <addr>|RING <ring>|TYPE <type>|IFACE <iface>|AP)
 func getEndpoint(tokens []string, name string) (ep *endpoint, cnt int, err error) {
 	var e endpoint
 
@@ -188,9 +201,14 @@ func getEndpoint(tokens []string, name string) (ep *endpoint, cnt int, err error
 	}
 	cnt++
 
-	// Each endpoint must have at least a direction, a type, and a detail
-	if len(tokens) < 3 {
-		err = fmt.Errorf("Invalid %s endpoint", name)
+	if len(tokens) < 2 {
+		err = fmt.Errorf("Missing %s endpoint", name)
+		return
+	}
+
+	needDetail := strings.ToUpper(tokens[1]) != "AP"
+	if needDetail && len(tokens) < 3 {
+		err = fmt.Errorf("invalid %s endpoint: missing detail", name)
 		return
 	}
 
@@ -206,10 +224,12 @@ func getEndpoint(tokens []string, name string) (ep *endpoint, cnt int, err error
 		}
 	}
 
-	e.detail = tokens[cnt]
-	cnt++
+	if needDetail {
+		e.detail = tokens[cnt]
+		cnt++
+	}
 
-	switch kind {
+	switch strings.ToUpper(kind) {
 	case "ADDR":
 		e.kind = endpointAddr
 		e.addr, err = getAddr(e.detail)
@@ -219,6 +239,8 @@ func getEndpoint(tokens []string, name string) (ep *endpoint, cnt int, err error
 		e.kind = endpointType
 	case "IFACE":
 		e.kind = endpointIface
+	case "AP":
+		e.kind = endpointAP
 	default:
 		err = fmt.Errorf("Invalid kind for %s endpoint: %s", name, tokens[1])
 	}
@@ -247,11 +269,12 @@ func parseTime(tokens []string, num int) (*time.Time, error) {
 func getPorts(tokens []string) (sports, dports []int, cnt int, err error) {
 	var ports *[]int
 
-	if tokens[0] == "SPORTS" {
+	switch strings.ToUpper(tokens[0]) {
+	case "SPORTS":
 		ports = &sports
-	} else if tokens[0] == "DPORTS" {
+	case "DPORTS":
 		ports = &dports
-	} else {
+	default:
 		return
 	}
 
@@ -276,7 +299,7 @@ func getTime(tokens []string) (start, end *time.Time, cnt int, err error) {
 	end = nil
 	err = nil
 
-	switch tokens[0] {
+	switch strings.ToUpper(tokens[0]) {
 	case "BEFORE":
 		cnt = 2
 		end, err = parseTime(tokens, 1)
@@ -305,20 +328,23 @@ func parseRule(text string) (rp *rule, err error) {
 	e := len(tokens)
 
 	if e < 1 {
-		err = fmt.Errorf("No action defined")
-		return
+		return nil, fmt.Errorf("no action defined")
 	}
 
 	if r.action, err = getAction(tokens[t]); err != nil {
 		return
 	}
-	t++
+	if t++; t >= e {
+		return nil, fmt.Errorf("invalid rule")
+	}
 
 	if r.proto, err = getProtocol(tokens[t]); err != nil {
 		return
 	}
 	if r.proto != protoAll {
-		t++
+		if t++; t >= e {
+			return nil, fmt.Errorf("invalid rule")
+		}
 	}
 
 	if r.from, c, err = getEndpoint(tokens[t:], "FROM"); err != nil {

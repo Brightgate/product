@@ -1,14 +1,27 @@
-# We have to allow dhcp traffic to our wan port, or we can't join the world
-ACCEPT UDP FROM IFACE wan DPORTS 68
+# We have to allow dhcp replies on our wan port, or we can't join the world
+ACCEPT UDP FROM IFACE wan TO AP DPORTS 68
 
-# We have to allow dns packets through, or our DNS forwarder can't get its
-# requests answered
-ACCEPT UDP FROM IFACE wan SPORTS 53
+# mcp and networkd on the satellite nodes need to talk to daemons here
+ACCEPT TCP FROM RING internal TO AP DPORTS 3131 3132 3133
 
-# For ease of development, we also open http, ssh, and mDNS.  These need to be
-# closed when we actually deploy this
-ACCEPT TCP FROM IFACE wan DPORTS 22 80
-ACCEPT UDP FROM IFACE wan SPORTS 5353
+# Expose some services to our clients
+ACCEPT UDP FROM IFACE NOT wan TO AP DPORTS 53 67     # DNS, DHCP
+ACCEPT TCP FROM IFACE NOT wan TO AP DPORTS 80 443    # HTTP(s)
 
-# Block all other incoming traffic
-BLOCK FROM IFACE wan
+# The core ring is allowed to access all the others
+ACCEPT FROM RING core TO RING standard
+ACCEPT FROM RING core TO RING guest
+ACCEPT FROM RING core TO RING devices
+ACCEPT FROM RING core TO RING unenrolled
+ACCEPT FROM RING core TO IFACE wan
+
+# The standard ring can talk to guests, devices, and the outside world
+ACCEPT FROM RING standard TO RING guest
+ACCEPT FROM RING standard TO RING devices
+ACCEPT FROM RING standard TO IFACE wan
+
+ACCEPT FROM RING devices TO IFACE wan
+ACCEPT FROM RING devices TO RING guest
+
+ACCEPT FROM RING guest TO IFACE wan
+

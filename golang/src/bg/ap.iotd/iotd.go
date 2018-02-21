@@ -180,14 +180,15 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
-	iotCred, err := getCred()
-	if err != nil {
-		slogger.Fatalf("Failed to build credential: %s", err)
-	}
-
 	mcpd, err := mcp.New(pname)
 	if err != nil {
 		slogger.Fatalf("Failed to connect to mcp: %s", err)
+	}
+
+	iotCred, err := getCred()
+	if err != nil {
+		mcpd.SetState(mcp.BROKEN)
+		slogger.Fatalf("Failed to build credential: %s", err)
 	}
 
 	prometheus.MustRegister(eventsHandled)

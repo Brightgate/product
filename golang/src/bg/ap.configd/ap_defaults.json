@@ -11,7 +11,7 @@
         },
         {
             "Name": "cfgversion",
-            "Value": "9"
+            "Value": "10"
         },
         {
             "Name": "apversion",
@@ -20,7 +20,7 @@
         {
             "Name": "rings",
             "Children": [
-		{
+                {
                     "Name": "internal",
                     "Children": [
                         {
@@ -125,7 +125,7 @@
                         }
                     ]
                 },
-		{
+                {
                     "Name": "guest",
                     "Children": [
                         {
@@ -146,7 +146,7 @@
                         }
                     ]
                 },
-		{
+                {
                     "Name": "quarantine",
                     "Children": [
                         {
@@ -175,23 +175,59 @@
         {
             "Name": "network",
             "Children": [
-		{
-		    "Name": "ssid",
-		    "Value": "setme"
-		},
-		{
-		    "Name": "passphrase",
-		    "Value": "sosecretive"
-		},
-		{
-		    "Name": "regdomain",
-		    "Value": "US"
-		},
-		{
-		    "Name": "dnsserver",
-		    "Value": "8.8.8.8:53"
-		}
+                {
+                    "Name": "ssid",
+                    "Value": "setme"
+                },
+                {
+                    "Name": "passphrase",
+                    "Value": "sosecretive"
+                },
+                {
+                    "Name": "regdomain",
+                    "Value": "US"
+                },
+                {
+                    "Name": "dnsserver",
+                    "Value": "8.8.8.8:53"
+                }
             ]
-        }
+        },
+        {
+            "Name": "firewall",
+            "Children": [
+		{
+                    "Name": "rules",
+                    "Children": [
+                        {
+			    "Name": "ssh-internal",
+			    "Children": [
+				{
+				    "Name": "active",
+				    "Value": "true"
+				},
+				{
+				    "Name": "rule",
+				    "Value": "ACCEPT TCP FROM IFACE NOT wan TO AP DPORTS 22"
+				}
+			    ]
+			},
+			{
+			    "Name": "ssh-external",
+			    "Children": [
+				{
+				    "Name": "active",
+				    "Value": "false"
+				},
+				{
+				    "Name": "rule",
+				    "Value": "ACCEPT TCP FROM IFACE wan TO AP DPORTS 22"
+				}
+			    ]
+			}
+		    ]
+		}
+	    ]
+	}
     ]
 }

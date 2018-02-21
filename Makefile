@@ -197,9 +197,6 @@ APPWEB=$(APPBASE)/share/web
 # APPJS
 # APPHTML
 APPETC=$(APPBASE)/etc
-APPETCCROND=$(APPROOT)/etc/cron.d
-APPETCLOGROTATED=$(APPROOT)/etc/logrotate.d
-APPETCRSYSLOGD=$(APPROOT)/etc/rsyslog.d
 APPROOTLIB=$(APPROOT)/lib
 APPVAR=$(APPBASE)/var
 APPSECRET=$(APPETC)/secret
@@ -210,6 +207,12 @@ APPSPOOLANTIPHISH=$(APPVAR)/spool/antiphishing
 APPSPOOLWATCHD=$(APPVAR)/spool/watchd
 APPRULES=$(APPETC)/filter.rules.d
 APPMODEL=$(APPETC)/device_model
+
+ROOTETC=$(APPROOT)/etc
+ROOTETCCROND=$(ROOTETC)/cron.d
+ROOTETCIPTABLES=$(ROOTETC)/iptables
+ROOTETCLOGROTATED=$(ROOTETC)/logrotate.d
+ROOTETCRSYSLOGD=$(ROOTETC)/rsyslog.d
 
 HTTPD_CLIENTWEB_DIR=$(APPVAR)/www/client-web
 HTTPD_TEMPLATE_DIR=$(APPETC)/templates/ap.httpd
@@ -307,26 +310,24 @@ APPCONFIGS = \
 	$(APPETC)/ap_defaults.json \
 	$(APPETC)/ap_identities.csv \
 	$(APPETC)/ap_mfgid.json \
-	$(APPETCCROND)/com-brightgate-appliance-cron \
-	$(APPETCRSYSLOGD)/com-brightgate-rsyslog.conf \
 	$(APPETC)/devices.json \
 	$(APPETC)/mcp.json \
 	$(APPETC)/oui.txt \
 	$(APPETC)/prometheus.yml \
-	$(APPETCLOGROTATED)/com-brightgate-logrotate-logd \
-	$(APPETCLOGROTATED)/com-brightgate-logrotate-mcp \
 	$(APPROOTLIB)/systemd/system/ap.mcp.service \
 	$(APPROOTLIB)/systemd/system/brightgate-appliance.service \
 	$(APPSPOOLANTIPHISH)/example_blacklist.csv \
-	$(APPSPOOLANTIPHISH)/whitelist.csv
+	$(APPSPOOLANTIPHISH)/whitelist.csv \
+	$(ROOTETCCROND)/com-brightgate-appliance-cron \
+	$(ROOTETCIPTABLES)/rules.v4 \
+	$(ROOTETCRSYSLOGD)/com-brightgate-rsyslog.conf \
+	$(ROOTETCLOGROTATED)/com-brightgate-logrotate-logd \
+	$(ROOTETCLOGROTATED)/com-brightgate-logrotate-mcp
 
 APPDIRS = \
 	$(APPBIN) \
 	$(APPDOC) \
 	$(APPETC) \
-	$(APPETCCROND) \
-	$(APPETCLOGROTATED) \
-	$(APPETCRSYSLOGD) \
 	$(APPROOTLIB) \
 	$(APPRULES) \
 	$(APPSECRET) \
@@ -339,6 +340,11 @@ APPDIRS = \
 	$(HTTPD_CLIENTWEB_DIR) \
 	$(HTTPD_TEMPLATE_DIR) \
 	$(NETWORKD_TEMPLATE_DIR) \
+	$(ROOTETC) \
+	$(ROOTETCCROND) \
+	$(ROOTETCIPTABLES) \
+	$(ROOTETCLOGROTATED) \
+	$(ROOTETCRSYSLOGD) \
 	$(USERAUTHD_TEMPLATE_DIR)
 
 APPCOMPONENTS = \
@@ -529,16 +535,21 @@ $(APPETC)/datasources.json: datasources.json | $(APPETC)
 $(APPETC)/prometheus.yml: prometheus.yml | $(APPETC)
 	$(INSTALL) -m 0644 $< $@
 
-$(APPETCCROND)/com-brightgate-appliance-cron: com-brightgate-appliance-cron | $(APPETCCROND)
-	$(INSTALL) -m 0644 $< $(APPETCCROND)
+$(ROOTETCCROND)/com-brightgate-appliance-cron: com-brightgate-appliance-cron | $(ROOTETCCROND)
+	$(INSTALL) -m 0644 $< $(ROOTETCCROND)
 
-$(APPETCLOGROTATED)/com-brightgate-logrotate-logd: $(GOSRCBG)/ap.logd/com-brightgate-logrotate-logd | $(APPETCLOGROTATED)
+$(ROOTETCIPTABLES)/rules.v4: $(GOSRCBG)/ap.networkd/rules.v4 | $(ROOTETCIPTABLES)
 	$(INSTALL) -m 0644 $< $@
 
-$(APPETCLOGROTATED)/com-brightgate-logrotate-mcp: $(GOSRCBG)/ap.mcp/com-brightgate-logrotate-mcp | $(APPETCLOGROTATED)
+$(APPSPOOLANTIPHISH)/example_blacklist.csv: $(GOSRCBG)/data/phishtank/example_blacklist.csv | $(APPSPOOLANTIPHISH)
+	$(INSTALL) -m 0644 $< $@
+$(ROOTETCLOGROTATED)/com-brightgate-logrotate-logd: $(GOSRCBG)/ap.logd/com-brightgate-logrotate-logd | $(ROOTETCLOGROTATED)
 	$(INSTALL) -m 0644 $< $@
 
-$(APPETCRSYSLOGD)/com-brightgate-rsyslog.conf: $(GOSRCBG)/ap.watchd/com-brightgate-rsyslog.conf | $(APPETCRSYSLOGD)
+$(ROOTETCLOGROTATED)/com-brightgate-logrotate-mcp: $(GOSRCBG)/ap.mcp/com-brightgate-logrotate-mcp | $(ROOTETCLOGROTATED)
+	$(INSTALL) -m 0644 $< $@
+
+$(ROOTETCRSYSLOGD)/com-brightgate-rsyslog.conf: $(GOSRCBG)/ap.watchd/com-brightgate-rsyslog.conf | $(ROOTETCRSYSLOGD)
 	$(INSTALL) -m 0644 $< $@
 
 $(APPSPOOLANTIPHISH)/example_blacklist.csv: $(GOSRCBG)/data/phishtank/example_blacklist.csv | $(APPSPOOLANTIPHISH)

@@ -206,7 +206,7 @@ func checkBlock(dev net.HardwareAddr, ip net.IP) {
 		// culled.  For simplicity in this initial implementation, we'll
 		// live with having to re-block an address once an hour.
 
-		prop := fmt.Sprintf("@/firewall/active/%v", ip)
+		prop := fmt.Sprintf("@/firewall/blocked/%v", ip)
 		expires := time.Now().Add(blockPeriod)
 		config.CreateProp(prop, "", &expires)
 	}
@@ -265,10 +265,10 @@ func refreshBlocklist(target string) (bool, error) {
 	url := googleStorage + "/" + googleBucket + "/" + latestName
 	metaRefreshed, err := common.FetchURL(url, latestFile, metaFile)
 	if err != nil {
-		err = fmt.Errorf("unable to download %s: %v", url, err)
+		return false, fmt.Errorf("unable to download %s: %v", url, err)
 	}
 
-	if metaRefreshed {
+	if metaRefreshed || !aputil.FileExists(target) {
 		b, err := ioutil.ReadFile(latestFile)
 		if err != nil {
 			err = fmt.Errorf("unable to read %s: %v", latestFile, err)
