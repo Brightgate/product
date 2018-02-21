@@ -32,6 +32,8 @@ pipeline {
                 sh 'source env.sh && make install'
                 // Incremental 'make install' after above should do nothing
                 sh 'source env.sh && make -q install'
+
+                sh 'source env.sh && make client-web'
             }
         }
         stage('packaging') {

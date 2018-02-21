@@ -4,6 +4,7 @@
   "description": "Administrative Client for Brightgate Appliance",
   "author": "Brightgate, Inc.",
   "license": "UNLICENSED",
+  "private": "true",
   "scripts": {
     "watchify": "cross-env watchify -vd -p [ browserify-hmr -p ${WATCHIFY_PORT:-3123} -h '0.0.0.0' -u http://$(hostname):${WATCHIFY_PORT:-3123} ] -e src/main.js -o dist/js/build.js",
     "serve": "cross-env http-server -p ${DEV_HTTP_PORT:-8801} -o -c 1 dist/",
@@ -13,6 +14,7 @@
     "build:f7-font-assets": "rsync -a node_modules/framework7-icons/css/ dist/css/ && rsync -a node_modules/framework7-icons/fonts/ dist/fonts/",
     "build:www-assets": "rsync -a src/html/* dist/ && rsync -a src/css/ dist/css/ && rsync -a src/img/ dist/img/",
     "build:browserify": "cross-env NODE_ENV=development browserify -g envify -p [ vueify/plugins/extract-css -o dist/css/build.css ] -e src/main.js > dist/js/build.js",
+    "licenses": "license-checker --production",
     "build": "npm run build:dir && npm run build:www-assets && npm run build:f7-assets && npm run build:f7-font-assets && npm run build:browserify"
   },
   "browser": {
@@ -26,9 +28,9 @@
   },
   "dependencies": {
     "bluebird": "^3.5.1",
-    "framework7": "^2.0.8",
+    "framework7": "^2.0.10",
     "framework7-icons": "^0.8.9",
-    "framework7-vue": "^2.0.7",
+    "framework7-vue": "^2.0.10",
     "libphonenumber-js": "^1.0.24",
     "lodash": "^4.17.5",
     "superagent": "^3.8.2",
@@ -50,6 +52,7 @@
     "cross-env": "^5.0.0",
     "envify": "^4.1.0",
     "http-server": "^0.11.1",
+    "license-checker": "^16.0.0",
     "npm-run-all": "^4.1.2",
     "proxyquireify": "^3.2.1",
     "uglify-js": "^3.3.11",
