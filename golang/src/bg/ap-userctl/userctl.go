@@ -16,7 +16,7 @@
 // ap-userctl -clear-totp uid
 // ap-userctl -delete uid
 // ap-userctl uid
-// ap-userctl
+// ap-userctl [-v]
 
 package main
 
@@ -24,23 +24,15 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net/mail"
-	"time"
 
 	"bg/ap_common/apcfg"
 
+	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh/terminal"
-
-	"github.com/pquerna/otp/totp"
-	"github.com/satori/uuid"
-	"github.com/ttacon/libphonenumber"
 )
 
-type setfunc func(string, string, *time.Time) error
-
 const (
-	pname      = "ap-userctl"
-	totpIssuer = "brightgate-userctl"
+	pname = "ap-userctl"
 )
 
 var (
@@ -56,152 +48,141 @@ var (
 		"telephoneNumber value for added user")
 	langArg = flag.String("language", "en",
 		"preferredLanguage value for added user")
+	vFlag = flag.Bool("v", false, "enable verbose user display")
 )
 
 var config *apcfg.APConfig
 
-const (
-	getUsersHeaders = "%s %s %s %s %s\n"
-	getUsersFormat  = "%s %s %s %s %s\n"
-)
+func getUsers() error {
+	const getUsersFormat = "%-12s %-8s %-24s %-30s\n"
 
-func getUsers() {
 	users := config.GetUsers()
+	if users == nil {
+		return fmt.Errorf("Couldn't fetch users")
+	}
 
-	fmt.Printf(getUsersHeaders,
-		"uid", "displayName", "email", "telephoneNumber", "2fa?")
+	fmt.Printf(getUsersFormat,
+		"UID", "ROLE", "DISPLAYNAME", "EMAIL")
 
 	for name, user := range users {
-		t := "-"
-		if user.TOTP != "" {
-			t = "yes"
-		}
-
 		fmt.Printf(getUsersFormat,
-			name, user.DisplayName, user.Email, user.TelephoneNumber, t)
+			name, user.Role, user.DisplayName, user.Email)
 	}
+	return nil
 }
 
-func addUser(u string, dn string, email string, pn string, lang string) {
-	_, err := mail.ParseAddress(email)
-	if err != nil {
-		log.Fatalf("email must be legitimate RFC5322 address: %v\n", err)
+func printSecret(k, v string) {
+	if v != "" {
+		v = "[redacted]"
 	}
-	if email == "" {
-		log.Fatalf("email must be non-empty\n")
-	}
-
-	phone, err := libphonenumber.Parse(pn, "US")
-	if err != nil {
-		log.Fatalf("phoneNumber must be parseable by libphonenumber: %v\n", err)
-	}
-
-	log.Printf("add user '%s'\n", u)
-
-	if pn != "" {
-		config.CreateProp(
-			fmt.Sprintf("@/users/%s/telephoneNumber", u),
-			libphonenumber.Format(phone, libphonenumber.INTERNATIONAL),
-			nil)
-	}
-
-	config.CreateProp(fmt.Sprintf("@/users/%s/uid", u), u, nil)
-	config.CreateProp(fmt.Sprintf("@/users/%s/email", u), email, nil)
-	config.CreateProp(fmt.Sprintf("@/users/%s/uuid", u), uuid.NewV4().String(), nil)
-
-	// XXX Tests for valid displayName?
-	if dn != "" {
-		config.CreateProp(fmt.Sprintf("@/users/%s/displayName", u), dn,
-			nil)
-	}
-
-	// XXX Tests for valid preferredLanguage?
-	if lang != "" {
-		config.CreateProp(
-			fmt.Sprintf("@/users/%s/preferredLanguage", u), lang,
-			nil)
-	}
+	fmt.Printf("\t%s: %s\n", k, v)
 }
 
-func deleteUser(u string) {
-	if u == "" {
-		log.Fatalf("ignoring deletion of empty user ID\n")
+func getUsersVerbose() error {
+	users := config.GetUsers()
+	if users == nil {
+		return fmt.Errorf("Couldn't fetch users")
 	}
 
-	log.Printf("delete user '%s'\n", u)
-	ut := fmt.Sprintf("@/users/%s", u)
-	err := config.DeleteProp(ut)
-	if err != nil {
-		log.Fatalf("could not delete user '%v': %v\n", u, err)
+	for name, user := range users {
+		fmt.Printf("%s\n", name)
+		fmt.Printf("\tUID: %s\n", user.UID)
+		fmt.Printf("\tUUID: %s\n", user.UUID)
+		fmt.Printf("\tRole: %s\n", user.Role)
+		fmt.Printf("\tDisplayName: %s\n", user.DisplayName)
+		fmt.Printf("\tEmail: %s\n", user.Email)
+		fmt.Printf("\tPreferredLanguage: %s\n", user.PreferredLanguage)
+		fmt.Printf("\tTelephoneNumber: %s\n", user.TelephoneNumber)
+		printSecret("Password", user.Password)
+		printSecret("MD4Password", user.MD4Password)
+		printSecret("TOTP", user.TOTP)
+		fmt.Printf("\n")
 	}
+	return nil
 }
 
-const unikey = "\U0001F511"
+func addUser(uid, displayName, email, phone, lang string) error {
+	err := config.AddUser(uid, displayName, email, phone, lang)
+	if err == nil {
+		log.Printf("added user '%s'\n", uid)
+	}
+	return err
+}
+
+func deleteUser(u string) error {
+	err := config.DeleteUser(u)
+	if err == nil {
+		log.Printf("deleted user '%s'\n", u)
+	}
+	return err
+}
+
+func getUser(u string) (*apcfg.UserInfo, error) {
+	ui, err := config.GetUser(u)
+	return ui, err
+}
 
 func setUserPassword(u string) error {
-	log.Printf("set password for user '%s'\n", u)
+	const unikey = "\U0001F511"
+
+	ui, err := getUser(u)
+	if err != nil {
+		return err
+	}
+	log.Printf("Setting password for user '%s' (%s)\n", u, ui.DisplayName)
 
 	fmt.Print("Enter password: " + unikey)
 	ps1, err := terminal.ReadPassword(0)
 	fmt.Println("")
 	if err != nil {
-		return fmt.Errorf("could not read password: %v", err)
+		return errors.Wrap(err, "could not read password")
 	}
 
 	fmt.Print("Reenter password: " + unikey)
 	ps2, err := terminal.ReadPassword(0)
 	fmt.Println("")
 	if err != nil {
-		return fmt.Errorf("could not read password: %v", err)
+		return errors.Wrap(err, "could not read password")
 	}
 
 	if string(ps1) != string(ps2) {
 		return fmt.Errorf("passwords do not agree")
 	}
 
-	err = config.SetUserPassword(u, string(ps1))
+	err = ui.SetPassword(string(ps1))
 	if err != nil {
-		return fmt.Errorf("SetUserPassword failed: %v", err)
+		return errors.Wrap(err, "SetPassword failed")
 	}
+	log.Printf("New password set for user '%s'\n", u)
 
 	return nil
 }
 
-func setTOTP(u string) {
+func setTOTP(u string) error {
 	// Get user email.
-	ui, err := config.GetUser(u)
+	ui, err := getUser(u)
 	if err != nil {
-		log.Fatalf("cannot load user '%s'\n", u)
+		return err
 	}
-
-	var accountName string
-
-	if ui.Email != "" {
-		accountName = ui.Email
-	} else {
-		// Suboptimal, as potentially collision prone.
-		accountName = u
-	}
-
-	log.Printf("set TOTP for user '%s'\n", u)
-	totpgen, err := totp.Generate(totp.GenerateOpts{
-		Issuer:      totpIssuer,
-		AccountName: accountName,
-	})
+	err = ui.CreateTOTP()
 	if err != nil {
-		log.Fatalf("TOTP generation failed: %v\n", err)
+		return errors.Wrap(err, "Failed to create TOTP secret")
 	}
-
-	config.CreateProp(fmt.Sprintf("@/users/%s/totp", u), totpgen.String(), nil)
+	log.Printf("Created TOTP for <%s> (%s)\n", ui.Email, u)
+	return nil
 }
 
-func clearTOTP(u string) {
-	log.Printf("clear TOTP for user '%s'\n", u)
-	utotp := fmt.Sprintf("@/users/%s/totp", u)
-	err := config.DeleteProp(utotp)
+func clearTOTP(u string) error {
+	ui, err := getUser(u)
 	if err != nil {
-		log.Fatalf("TOTP property deletion failed: %v\n", err)
+		return err
 	}
+	err = ui.ClearTOTP()
+	if err != nil {
+		return errors.Wrap(err, "Failed to clear TOTP secret")
+	}
+	log.Printf("Cleared TOTP for <%s> (%s)\n", ui.Email, u)
+	return nil
 }
 
 func main() {
@@ -217,24 +198,26 @@ func main() {
 	}
 
 	if flag.NArg() > 1 {
-		log.Printf("ignoring users after first\n")
+		log.Fatalf("only one user can be specified")
 	}
 
 	if *addOp {
-		if len(flag.Arg(0)) == 0 {
-			log.Fatalf("Must provide a username\n")
-		}
-		addUser(flag.Arg(0), *displayNameArg, *emailArg, *phoneArg,
+		err = addUser(flag.Arg(0), *displayNameArg, *emailArg, *phoneArg,
 			*langArg)
 	} else if *deleteOp {
-		deleteUser(flag.Arg(0))
+		err = deleteUser(flag.Arg(0))
 	} else if *passwdOp {
-		setUserPassword(flag.Arg(0))
+		err = setUserPassword(flag.Arg(0))
 	} else if *setTotpOp {
-		setTOTP(flag.Arg(0))
+		err = setTOTP(flag.Arg(0))
 	} else if *clearTotpOp {
-		clearTOTP(flag.Arg(0))
+		err = clearTOTP(flag.Arg(0))
+	} else if *vFlag {
+		err = getUsersVerbose()
 	} else {
-		getUsers()
+		err = getUsers()
+	}
+	if err != nil {
+		log.Fatalf("Operation failed: %+v", err)
 	}
 }

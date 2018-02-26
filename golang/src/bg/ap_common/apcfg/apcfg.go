@@ -20,12 +20,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
-	"golang.org/x/crypto/md4"
-
-	"golang.org/x/text/encoding/unicode"
-	"golang.org/x/text/transform"
-
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/device"
@@ -71,30 +65,11 @@ type ClientInfo struct {
 	DNSPrivate bool       // We don't collect DNS queries
 }
 
-// UserInfo contains all of the configuration information for an appliance user
-// account.  Expected roles are: "SITE_ADMIN", "SITE_USER",
-// "SITE_GUEST", "CUST_ADMIN", "CUST_USER", "CUST_GUEST".
-type UserInfo struct {
-	UID               string // Username
-	UUID              string
-	Role              string // User role
-	DisplayName       string // User's friendly name
-	Email             string // User email
-	PreferredLanguage string
-	TelephoneNumber   string // User telephone number
-	TOTP              string // Time-based One Time Password URL
-	Password          string // bcrypt Password
-	MD4Password       string // MD4 Password for WPA-EAP/MSCHAPv2
-}
-
 // RingMap maps ring names to the configuration information
 type RingMap map[string]*RingConfig
 
 // ClientMap maps a device's mac address to its configuration information
 type ClientMap map[string]*ClientInfo
-
-// UserMap maps an account's username to its configuration information
-type UserMap map[string]*UserInfo
 
 // PropertyNode is a single node in the property tree
 type PropertyNode struct {
@@ -542,113 +517,6 @@ func (c *APConfig) GetNics(ring string, local bool) ([]string, error) {
 		}
 	}
 	return s, nil
-}
-
-func getUser(user *PropertyNode) (*UserInfo, error) {
-	uid, err := getStringVal(user, "uid")
-	if err != nil {
-		// Most likely manual creation of the @/users/[uid] node.
-		log.Printf("incomplete user property node: %v", err)
-		return nil, err
-	}
-
-	password, _ := getStringVal(user, "userPassword")
-	md4password, _ := getStringVal(user, "userMD4Password")
-	uuid, _ := getStringVal(user, "uuid")
-	email, _ := getStringVal(user, "email")
-	telephoneNumber, _ := getStringVal(user, "telephoneNumber")
-	preferredLanguage, _ := getStringVal(user, "preferredLanguage")
-	displayName, _ := getStringVal(user, "displayName")
-	totp, _ := getStringVal(user, "totp")
-
-	u := UserInfo{
-		UID:               uid,
-		UUID:              uuid,
-		Email:             email,
-		TelephoneNumber:   telephoneNumber,
-		PreferredLanguage: preferredLanguage,
-		DisplayName:       displayName,
-		TOTP:              totp,
-		Password:          password,
-		MD4Password:       md4password,
-	}
-
-	return &u, nil
-}
-
-// GetUser fetches the UserInfo structure for a given user
-func (c *APConfig) GetUser(uid string) (*UserInfo, error) {
-	user, err := c.GetProps("@/users/" + uid)
-	if err != nil {
-		log.Printf("Failed to get %s: %v\n", uid, err)
-		return nil, err
-	}
-
-	return getUser(user)
-}
-
-// GetUsers fetches the Users subtree, in the form of a map of UID to UserInfo
-// structures.
-func (c *APConfig) GetUsers() UserMap {
-	props, err := c.GetProps("@/users")
-	if err != nil {
-		log.Printf("Failed to get users list: %v\n", err)
-		return nil
-	}
-
-	log.Printf("users as props: %v\n", props)
-
-	set := make(map[string]*UserInfo)
-	for _, user := range props.Children {
-		log.Printf("userinfoing %v\n", user.Name)
-		if us, err := getUser(user); err == nil {
-			set[user.Name] = us
-		} else {
-			log.Printf("couldn't userinfo %v: %v\n", user.Name, err)
-		}
-	}
-
-	return set
-}
-
-// SetUserPassword assigns all appropriate password hash properties for the given user.
-func (c *APConfig) SetUserPassword(user string, passwd string) error {
-	// Test if user exists.
-	_, err := c.GetUser(user)
-	if err != nil {
-		return fmt.Errorf("no such user '%v'", user)
-	}
-
-	// Generate bcrypt password property.
-	hps, err := bcrypt.GenerateFromPassword([]byte(passwd), bcrypt.DefaultCost)
-	if err != nil {
-		return fmt.Errorf("could not encrypt password: %v", err)
-	}
-
-	pp := fmt.Sprintf("@/users/%s/userPassword", user)
-	err = c.CreateProp(pp, string(hps), nil)
-	if err != nil {
-		return fmt.Errorf(
-			"could not create userPassword property '%v': %v",
-			pp, err)
-	}
-
-	// Generate MD4 password property.
-	enc := unicode.UTF16(unicode.LittleEndian, unicode.IgnoreBOM).NewEncoder()
-	md4ps := md4.New()
-	t := transform.NewWriter(md4ps, enc)
-	t.Write([]byte(passwd))
-	md4s := fmt.Sprintf("%x", md4ps.Sum(nil))
-
-	pp = fmt.Sprintf("@/users/%s/userMD4Password", user)
-	err = c.CreateProp(pp, md4s, nil)
-	if err != nil {
-		return fmt.Errorf(
-			"could not create userMD4Password property '%v': %v",
-			pp, err)
-	}
-
-	return nil
 }
 
 // GetActiveBlocks builds a slice of all the IP addresses that were being

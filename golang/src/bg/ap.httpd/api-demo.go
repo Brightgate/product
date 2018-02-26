@@ -81,16 +81,15 @@ func demoLoginHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", 400)
 	}
 
-	// Retrieve user node.
-	pp := fmt.Sprintf("@/users/%s/userPassword", uid)
-	stored, err := config.GetProp(pp)
+	// Retrieve user record
+	ui, err := config.GetUser(uid)
 	if err != nil {
 		log.Printf("demo login for '%s' denied: %v\n", uid, err)
 		http.Error(w, "login denied", 401)
 		return
 	}
 
-	cmp := bcrypt.CompareHashAndPassword([]byte(stored),
+	cmp := bcrypt.CompareHashAndPassword([]byte(ui.Password),
 		[]byte(userPassword))
 	if cmp != nil {
 		log.Printf("demo login for '%s' denied: password comparison\n", uid)
@@ -181,19 +180,14 @@ func isLoggedIn(r *http.Request) bool {
 	uid := value["uid"]
 
 	// Retrieve user node.
-	pp := fmt.Sprintf("@/users/%s/userPassword", uid)
-	stored, err := config.GetProp(pp)
+	ui, err := config.GetUser(uid)
 	if err != nil {
 		log.Printf("demo login for '%s' denied: %v\n", uid, err)
 		return false
 	}
 
-	if stored != "" {
-		return true
-	}
-
 	// Accounts with empty passwords can't be logged into.
-	return false
+	return ui.Password != ""
 }
 
 func getRequestUID(r *http.Request) string {
@@ -215,15 +209,14 @@ func getRequestUID(r *http.Request) string {
 	uid := value["uid"]
 
 	// Retrieve user node.
-	pp := fmt.Sprintf("@/users/%s/userPassword", uid)
-	stored, err := config.GetProp(pp)
+	ui, err := config.GetUser(uid)
 	if err != nil {
 		log.Printf("demo login for '%s' denied: %v\n", uid, err)
 		return ""
 	}
 
-	if stored != "" {
-		return uid
+	if ui.Password != "" {
+		return ui.UID
 	}
 
 	// Accounts with empty passwords can't be logged into.

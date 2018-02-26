@@ -11,7 +11,7 @@
         },
         {
             "Name": "cfgversion",
-            "Value": "10"
+            "Value": "11"
         },
         {
             "Name": "apversion",
@@ -228,6 +228,9 @@
 		    ]
 		}
 	    ]
+	},
+	{
+	    "Name": "users"
 	}
     ]
 }

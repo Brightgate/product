@@ -74,7 +74,7 @@ const (
 	pname            = "ap.configd"
 
 	minConfigVersion = 3
-	curConfigVersion = 10
+	curConfigVersion = 11
 )
 
 // Allow for significant variation in the processing of subtrees
