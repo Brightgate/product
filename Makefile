@@ -541,8 +541,6 @@ $(ROOTETCCROND)/com-brightgate-appliance-cron: com-brightgate-appliance-cron | $
 $(ROOTETCIPTABLES)/rules.v4: $(GOSRCBG)/ap.networkd/rules.v4 | $(ROOTETCIPTABLES)
 	$(INSTALL) -m 0644 $< $@
 
-$(APPSPOOLANTIPHISH)/example_blacklist.csv: $(GOSRCBG)/data/phishtank/example_blacklist.csv | $(APPSPOOLANTIPHISH)
-	$(INSTALL) -m 0644 $< $@
 $(ROOTETCLOGROTATED)/com-brightgate-logrotate-logd: $(GOSRCBG)/ap.logd/com-brightgate-logrotate-logd | $(ROOTETCLOGROTATED)
 	$(INSTALL) -m 0644 $< $@
 
