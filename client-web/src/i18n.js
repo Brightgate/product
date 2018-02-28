@@ -25,11 +25,12 @@ export const messages = {
     message: {
       status: {
         brightgate_status: 'Brightgate Status',
-        has_virus: '<b> One of your computers has a virus.</b><br/> See the "{serious_alerts}" below.',
-        network_properly: 'Your network is working properly.',
       },
       testing: {
         testing: "For Test Purposes",
+        accept_devices: "Accept Devices",
+        accept_success: 'Devices Acceptance succeeded. {devicesChanged} devices were affected.',
+        accept_fail: "There was an error accepting devices: <b>{reason}.</b>",
         enable_mock: "Enable Mock",
       },
       alerts: {
@@ -45,10 +46,9 @@ export const messages = {
       tools: {
         tools: 'Tools',
         manage_devices: 'Manage Devices ({device_count})',
-        open_setup_network: 'Open Setup Network',
-        accept_devices: 'Accept Devices',
-        success: 'Devices Acceptance succeeded. {devicesChanged} devices were affected.',
-        fail: "There was an error accepting devices: <b>{devicesAcceptedError}.</b>",
+        enroll_guest: 'Enroll a Guest User',
+        login: 'Login',
+        logout: 'Logout',
       },
       notifications: {
         notifications: 'Notifications',
@@ -67,6 +67,7 @@ export const messages = {
         close: 'Close',
         confirm: 'Confirm',
         details: 'Details',
+        need_login: 'You must be logged in',
       },
       devices: {
         title: 'Brightgate - Devices',
@@ -123,6 +124,17 @@ export const messages = {
           additional_information: 'Additional Information',
         },
       },
+      enroll: {
+        title: 'Brightgate - Enroll Guest',
+        header: 'Register Guests with Brightgate',
+        subheader: 'Help a guest get online using their phone number',
+        phone: 'Guest Phone Number',
+        phone_placeholder: 'Phone #',
+        send_sms: 'Text Guest',
+        sending: 'Sending',
+        send_success: 'Great!  Your guest should receive an SMS momentarily with the network name and password.',
+        send_failure: 'Oops, something went wrong sending the SMS message.',
+      },
       login: {
         login: 'Login',
         username: 'Username',
@@ -136,12 +148,13 @@ export const messages = {
     message: {
       status: {
         brightgate_status: 'Brightgate Status',
-        has_virus: '<b>Einer Ihrer Geräte hat einen Virus.</b><br/> Sehen Sie "{serious_alerts}".',
-        network_properly: 'Ihr Netzwerk funktioniert ordnungsgemäß.'
       },
       testing: {
         testing: "Für Testzwecke",
-        enable_mock: "Testmodus"
+        enable_mock: "Testmodus",
+        accept_devices: 'Akzeptiere Geräte',
+        accept_success: 'Akzeptanz war erfolgreich. {devicesChanged} Geräte wurden akzeptiert.',
+        accept_fail: "Fehlermeldung: <b>{reason}.</b>",
       },
       alerts: {
         serious_alerts: 'Schwerwiegende Warnungen',
@@ -156,10 +169,9 @@ export const messages = {
       tools: {
         tools: 'Werkzeuge',
         manage_devices: 'Geräte verwalten ({device_count})',
-        open_setup_network: 'Netzwerk Konfiguration',
-        accept_devices: 'Akzeptiere Geräte',
-        success: 'Akzeptanz war erfolgreich. {devicesChanged} Geräte wurden akzeptiert.',
-        fail: "Fehlermeldung: <b>{devicesAcceptedError}.</b>"
+        enroll_guest: 'Registrieren Sie einen Gastbenutzer',
+	login: 'Anmelden',
+	logout: 'Abmelden',
       },
       notifications: {
         notifications: 'Benachrichtigungen',
@@ -178,6 +190,7 @@ export const messages = {
         close: 'Schließen',
         confirm: 'Fortsetzen',
         details: 'Details',
+        need_login: 'Sie müssen angemeldet sein',
       },
       devices: {
         title: 'Brightgate - Geräte',
@@ -234,11 +247,22 @@ export const messages = {
           additional_information: 'Weitere Informationen'
         },
       },
+      enroll: {
+        title: 'Brightgate – Gastbenutzer Registrieren',
+        header: 'Registrieren Sie Gastbenutzer bei Brightgate',
+        subheader: 'Helfen Sie einem Gastbenutzer sich zu registrieren mit seinem Telefonnummer',
+        phone: 'Telefonnummer des Gastbenutzers',
+        phone_placeholder: 'Telefonnummer',
+        send_sms: 'SMS versenden',
+        sending: 'Bitte Warten',
+        send_success: 'Super! Der Gastbenutzer sollte in einem Moment eine SMS mit Netzwerkname und Paßwort erhalten.',
+        send_failure: 'Oop der Versendung von der SMS ist ein Fehler aufgetreten',
+      },
       login: {
         login: 'Login',
         username: 'Name',
         password: 'Passwort',
-        sign_in: 'Einloggen'
+        sign_in: 'Anmelden',
       }
     }
   }

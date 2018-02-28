@@ -23,8 +23,8 @@ Vue.use(Vuex)
 // XXX this needs to get replaced with constants from devices.json
 const device_category_all = ['recent', 'phone', 'computer', 'media', 'iot']
 
-// Developer switch, for now; this would be better as a part of the store itself
-const enable_mock = true
+// Determines whether mock devices are enabled or disabled by default
+const enable_mock = false
 
 var initDevices
 if (enable_mock) {

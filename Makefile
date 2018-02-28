@@ -284,7 +284,6 @@ GO_TESTABLES = \
 	bg/cloud_models/cloudiotsvc
 
 HTTPD_TEMPLATE_FILES = \
-	connect_apple.html.got \
 	stats.html.got
 
 NETWORKD_TEMPLATE_FILES = \

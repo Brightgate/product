@@ -14,22 +14,17 @@
 package main
 
 import (
-	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
-	"encoding/hex"
 	"flag"
 	"fmt"
 	"html/template"
-	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
@@ -91,10 +86,6 @@ const (
 
 	cookiehmackeyprop = "@/httpd/cookie-hmac-key"
 	cookieaeskeyprop  = "@/httpd/cookie-aes-key"
-
-	// XXX: These should come from config, so we can update it as necessary
-	profileURL    = "https://demo1.brightgate.net/cgi-bin/apple-mc.py"
-	profileSecret = "Bulb-Shr1ne"
 )
 
 func openTemplate(name string) (*template.Template, error) {
@@ -140,75 +131,6 @@ func hostInMap(hostMap map[string]bool) mux.MatcherFunc {
 	}
 }
 
-func getProfileParams() (ssid, passphrase string, expiry int64, hash string) {
-	props, err := config.GetProps("@/network")
-	if err == nil {
-		if node := props.GetChild("ssid"); node != nil {
-			ssid = node.GetValue()
-		}
-
-		if node := props.GetChild("passphrase"); node != nil {
-			passphrase = node.GetValue()
-		}
-
-		// How many minutes should the profile be valid for?
-		lifetime := 0
-		if node := props.GetChild("profile_lifetime"); node != nil {
-			lifetime, err = strconv.Atoi(node.GetValue())
-			if err != nil {
-				log.Printf("Bad expiration period '%s': %v\n",
-					node.GetValue(), err)
-			}
-		}
-
-		if lifetime == 0 {
-			// Default to one day
-			lifetime = 24 * 60
-		}
-		expiry = time.Now().Unix() + int64(60*lifetime)
-	}
-
-	s := fmt.Sprintf("%s:%s:%d:%s", ssid, passphrase, expiry, profileSecret)
-	h := sha256.New()
-	h.Write([]byte(s))
-	hash = hex.EncodeToString(h.Sum(nil))
-
-	return
-}
-
-func appleConnect(w http.ResponseWriter, r *http.Request) {
-	ssid, passphrase, expiry, hash := getProfileParams()
-	if ssid == "" || passphrase == "" {
-		http.Error(w, "Network not configured", 503)
-		return
-	}
-
-	req, err := http.NewRequest("GET", profileURL, nil)
-	if err != nil {
-		log.Print(err)
-		http.Error(w, "Internal server error", 501)
-		return
-	}
-
-	q := req.URL.Query()
-	q.Add("ssid", ssid)
-	q.Add("passwd", passphrase)
-	q.Add("expiry", strconv.FormatInt(expiry, 10))
-	q.Add("hash", hash)
-	req.URL.RawQuery = q.Encode()
-
-	resp, err := http.Get(req.URL.String())
-	if err != nil {
-		http.Error(w, "Profile server unavailable", 503)
-		return
-	}
-	for a := range resp.Header {
-		w.Header().Set(a, resp.Header.Get(a))
-	}
-
-	io.Copy(w, resp.Body)
-}
-
 func templateHandler(w http.ResponseWriter, template string) {
 	conf, err := openTemplate(template)
 	if err == nil {
@@ -225,13 +147,6 @@ func phishHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, phishu, http.StatusSeeOther)
 }
 
-func appleHandler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("appleHandler: %v\n", *r)
-	gatewayu := fmt.Sprintf("http://gateway.%s/client-web/enroll.html",
-		domainname)
-	http.Redirect(w, r, gatewayu, http.StatusFound)
-}
-
 func defaultHandler(w http.ResponseWriter, r *http.Request) {
 	var gatewayu string
 
@@ -241,11 +156,6 @@ func defaultHandler(w http.ResponseWriter, r *http.Request) {
 		gatewayu = fmt.Sprintf("http://gateway.%s/client-web/",
 			domainname)
 	}
-	http.Redirect(w, r, gatewayu, http.StatusFound)
-}
-
-func defaultCaptiveHandler(w http.ResponseWriter, r *http.Request) {
-	gatewayu := fmt.Sprintf("http://gateway.%s/client-web/enroll.html", domainname)
 	http.Redirect(w, r, gatewayu, http.StatusFound)
 }
 
@@ -432,19 +342,6 @@ func main() {
 	nMain := negroni.New(negroni.NewRecovery())
 	nMain.UseHandler(apachelog.CombinedLog.Wrap(mainRouter, os.Stderr))
 
-	captiveRouter := mux.NewRouter()
-	captiveRouter.HandleFunc("/", defaultCaptiveHandler)
-	captiveRouter.PathPrefix("/apid/").Handler(
-		http.StripPrefix("/apid", demoAPIRouter))
-	captiveRouter.PathPrefix("/client-web/").Handler(http.StripPrefix("/client-web/",
-		http.FileServer(http.Dir(*clientWebDir))))
-	captiveRouter.HandleFunc("/hotspot-detect.html", appleHandler)
-	captiveRouter.HandleFunc("/appleConnect", appleConnect)
-	captiveRouter.HandleFunc("/apid/enroll", demoEnrollHandler)
-
-	nCaptive := negroni.New(negroni.NewRecovery())
-	nCaptive.UseHandler(apachelog.CombinedLog.Wrap(captiveRouter, os.Stderr))
-
 	tlsCfg := &tls.Config{
 		MinVersion:               tls.VersionTLS12,
 		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
@@ -459,12 +356,8 @@ func main() {
 
 	for ring, config := range rings {
 		router := network.SubnetRouter(config.Subnet)
-		if ring == "setup" {
-			listen(router, ":80", ring, tlsCfg, certf, keyf, nCaptive)
-		} else {
-			for _, port := range ports {
-				listen(router, port, ring, tlsCfg, certf, keyf, nMain)
-			}
+		for _, port := range ports {
+			listen(router, port, ring, tlsCfg, certf, keyf, nMain)
 		}
 	}
 
@@ -481,7 +374,7 @@ func main() {
 		mcpd.SetState(mcp.ONLINE)
 	}
 
-	sig := make(chan os.Signal)
+	sig := make(chan os.Signal, 2)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
 	s := <-sig

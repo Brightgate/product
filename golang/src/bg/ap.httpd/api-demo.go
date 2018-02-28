@@ -467,6 +467,14 @@ func demoAccessHandler(w http.ResponseWriter, r *http.Request) {
 
 // GET requests moves all unenrolled clients to standard.
 func demoSupremeHandler(w http.ResponseWriter, r *http.Request) {
+
+	uid := getRequestUID(r)
+	log.Printf("/supreme [uid '%s']\n", uid)
+	if uid == "" {
+		http.Error(w, "forbidden", 403)
+		return
+	}
+
 	clientsRaw := config.GetClients()
 	count := 0
 
@@ -488,6 +496,13 @@ func demoSupremeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func demoPropertyByNameHandler(w http.ResponseWriter, r *http.Request) {
+	uid := getRequestUID(r)
+	log.Printf("/config [uid '%s']\n", uid)
+	if uid == "" {
+		http.Error(w, "forbidden", 403)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	vars := mux.Vars(r)
 
@@ -503,6 +518,13 @@ func demoPropertyByNameHandler(w http.ResponseWriter, r *http.Request) {
 
 func demoPropertyHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
+
+	uid := getRequestUID(r)
+	log.Printf("/config [uid '%s']\n", uid)
+	if uid == "" {
+		http.Error(w, "forbidden", 403)
+		return
+	}
 
 	t := time.Now()
 
@@ -720,6 +742,13 @@ func demoEnrollHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	t := time.Now()
+
+	uid := getRequestUID(r)
+	log.Printf("/enroll [uid '%s']\n", uid)
+	if uid == "" {
+		http.Error(w, "forbidden", 403)
+		return
+	}
 
 	if r.Method != "POST" {
 		http.Error(w, "Invalid request method.", 405)

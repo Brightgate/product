@@ -9,46 +9,48 @@
 -->
 <template>
   <f7-page name="enroll">
-    <f7-navbar>
-      <!-- f7-nav-title doesn't seem to center properly without also
-           including left and right. -->
-      <f7-nav-left>&nbsp;</f7-nav-left>
-      <f7-nav-title><img src="img/bglogo.png"/></f7-nav-title>
-      <f7-nav-right>&nbsp;</f7-nav-right>
+    <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.enroll.title')" sliding>
     </f7-navbar>
 
-    <br />
-    <center><h2>Getting Online with Brightgate</h2></center>
-    <center><h4>Sign up using your phone number</h4></center>
+    <center><h2>{{ $t('message.enroll.header') }}</h2></center>
+    <center><h4>{{ $t('message.enroll.subheader') }}</h4></center>
 
-    <f7-list inset>
-      <f7-list-item>
-        <f7-label>Phone</f7-label>
-        <f7-input v-on:keyup.enter="enrollSMS" v-model="magicphone" type="tel" placeholder="Your Phone #" required autofocus lazy/>
-      </f7-list-item>
-    </f7-list>
-    <f7-block inset>
-      <p>
-      Give us your phone number, and we'll text you the password to access this network.
-      </p>
-      <f7-button fill big v-bind:color="valid_number ? 'green' : 'blue'" @click="enrollSMS">
-        <span v-if="!enrolling">Text Me</span>
-        <span v-if="enrolling">Sending <span class="preloader"></span></span>
-      </f7-button>
-    </f7-block>
+    <div v-if="! $store.getters.Is_Logged_In">
+      <p>{{ $t('message.general.need_login') }}</p>
+    </div>
+    <div v-else>
+      <f7-list inset>
+        <f7-list-item>
+          <f7-label>{{ $t('message.enroll.phone') }}</f7-label>
+          <f7-input
+                v-on:keyup.enter="enrollSMS"
+                v-model="magicphone"
+                type="tel"
+                :placeholder="$t('message.enroll.phone_placeholder')"
+                required autofocus lazy/>
+        </f7-list-item>
+      </f7-list>
+      <f7-block inset>
+        <f7-button fill big v-bind:color="valid_number ? 'green' : 'blue'" @click="enrollSMS">
+          <span v-if="!enrolling">{{ $t('message.enroll.send_sms') }}</span>
+          <span v-if="enrolling">
+            {{ $t('message.enroll.sending') }}
+          <span class="preloader"></span>
+          </span>
+        </f7-button>
 
-    <f7-block v-if="sms_sent">
-    <p>Great!  You should receive an SMS momentarily with the network
-    name and password.</p>
-    </f7-block>
-    <f7-block v-if="sms_error">
-    <p>Oops, something went wrong sending your SMS message.</p>
-    </f7-block>
-
+        <f7-block v-if="sms_sent">
+          <p>{{ $t('message.enroll.send_success') }}</p>
+          <f7-button fill back>{{ $t('message.general.close') }}</f7-button>
+        </f7-block>
+        <f7-block v-if="sms_error">
+          <p>{{ $t('message.enroll.send_failure') }}</p>
+        </f7-block>
+      </f7-block>
+    </div>
   </f7-page>
 
 </template>
-
 
 <script>
 

@@ -25,15 +25,7 @@ export default [
       component: require('./pages/enroll.vue')
   },
   {
-      path: '/enrollApple/',
-      component: require('./pages/enrollApple.vue')
-  },
-  {
       path: '/malwareWarn/',
       component: require('./pages/malwareWarn.vue')
-  },
-  {
-      path: '/login/',
-      component: require('./pages/login.vue')
   }
 ]
