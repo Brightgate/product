@@ -661,6 +661,7 @@ $(APPBIN)/ap.logd: $(GOSRCBG)/ap.logd/logd.go
 $(APPBIN)/ap.mcp: $(GOSRCBG)/ap.mcp/mcp.go
 $(APPBIN)/ap.networkd: \
 	$(GOSRCBG)/ap.networkd/filterd.go \
+	$(GOSRCBG)/ap.networkd/hostapd.go \
 	$(GOSRCBG)/ap.networkd/networkd.go \
 	$(GOSRCBG)/ap.networkd/parse.go
 $(APPBIN)/ap.relayd: $(GOSRCBG)/ap.relayd/relayd.go
