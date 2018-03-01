@@ -143,8 +143,12 @@ func recordDrop(d *dropRecord) *dropTable {
 	qs := "INSERT INTO " + table.name + "(" + columns +
 		") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
-	_, err := dbHandle.Exec(qs, d.id, d.time, d.indev, d.outdev, d.src,
-		d.dst, d.smac, d.sprt, d.dprt, d.proto)
+	srcIP := d.src.String()
+	dstIP := d.dst.String()
+	srcPort := strconv.Itoa(d.sprt)
+	dstPort := strconv.Itoa(d.dprt)
+	_, err := dbHandle.Exec(qs, d.id, d.time, d.indev, d.outdev,
+		srcIP, dstIP, d.smac, srcPort, dstPort, d.proto)
 	if err != nil {
 		log.Printf("failed to insert drop: %v\n", err)
 	}

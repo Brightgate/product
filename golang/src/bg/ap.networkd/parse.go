@@ -193,7 +193,7 @@ func getEndpoint(tokens []string, name string) (ep *endpoint, cnt int, err error
 	err = nil
 	cnt = 0
 
-	if tokens[0] != name {
+	if strings.ToUpper(tokens[0]) != name {
 		// Both the FROM and TO fields are optional.  If this keyword
 		// doesn't match the one we were looking for, assume it was
 		// elided.

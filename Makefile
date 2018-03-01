@@ -304,7 +304,8 @@ APPTEMPLATES = $(HTTPD_TEMPLATES) $(NETWORKD_TEMPLATES) $(USERAUTHD_TEMPLATES)
 
 FILTER_RULES = \
 	$(APPRULES)/base.rules \
-	$(APPRULES)/local.rules
+	$(APPRULES)/local.rules \
+	$(APPRULES)/relayd.rules
 
 APPCONFIGS = \
 	$(APPETC)/ap_defaults.json \
