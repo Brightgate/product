@@ -156,7 +156,7 @@ func zapSetup() {
 	if err != nil {
 		log.Panicf("can't zap: %s", err)
 	}
-	zapConfig.Level.SetLevel(zapcore.DebugLevel)
+	zapConfig.Level.SetLevel(zapcore.InfoLevel)
 	slogger = logger.Sugar()
 	_ = zap.RedirectStdLog(logger)
 }
