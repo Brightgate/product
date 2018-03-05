@@ -143,6 +143,9 @@ message EventNetEntity {
 	optional fixed32 ipv4_address = 0x401;
 	optional string ring = 0x402;
 	optional string hostname = 0x403;
+	optional string node = 0x404;
+	optional string mode = 0x405;
+	optional bool disconnect = 0x406;
 }
 
 // The network resource is sent whenever an application or service

@@ -69,8 +69,10 @@ import (
 )
 
 var (
-	rules   ruleList
-	applied map[string]map[string][]string
+	rules      ruleList
+	applied    map[string]map[string][]string
+	blockedIPs map[uint32]struct{}
+	wanNic     string
 )
 
 //
@@ -83,7 +85,6 @@ var (
 		"nat":    {"PREROUTING", "INPUT", "OUTPUT", "POSTROUTING"},
 		"filter": {"INPUT", "FORWARD", "OUTPUT", "dropped"},
 	}
-	blockedIPs map[uint32]struct{}
 )
 
 const (

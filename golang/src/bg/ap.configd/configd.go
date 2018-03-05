@@ -110,6 +110,7 @@ type propertyMatch struct {
 
 var defaultPropOps = propertyOps{defaultGetter, defaultSetter, defaultExpire}
 var ssidPropOps = propertyOps{defaultGetter, ssidUpdate, defaultExpire}
+var passphrasePropOps = propertyOps{defaultGetter, passphraseUpdate, defaultExpire}
 var authPropOps = propertyOps{defaultGetter, authUpdate, defaultExpire}
 var uuidPropOps = propertyOps{defaultGetter, uuidUpdate, defaultExpire}
 var ringPropOps = propertyOps{defaultGetter, defaultSetter, ringExpire}
@@ -120,6 +121,7 @@ var cnamePropOps = propertyOps{defaultGetter, cnameSetter, defaultExpire}
 var propertyMatchTable = []propertyMatch{
 	{regexp.MustCompile(`^@/uuid$`), &uuidPropOps},
 	{regexp.MustCompile(`^@/network/ssid$`), &ssidPropOps},
+	{regexp.MustCompile(`^@/network/passphrase$`), &passphrasePropOps},
 	{regexp.MustCompile(`^@/rings/.*/auth$`), &authPropOps},
 	{regexp.MustCompile(`^@/clients/.*/ring$`), &ringPropOps},
 	{regexp.MustCompile(`^@/clients/.*/dns_name$`), &dnsPropOps},
@@ -509,6 +511,35 @@ func ssidUpdate(node *pnode, ssid string, expires *time.Time) (bool, error) {
 		return true, nil
 	}
 	return false, err
+}
+
+func passphraseUpdate(node *pnode, pass string, expires *time.Time) (bool, error) {
+	var err error
+
+	changed := false
+	if len(pass) == 64 {
+		re := regexp.MustCompile(`^[a-fA-F0-9]+$`)
+		if !re.Match([]byte(pass)) {
+			err = fmt.Errorf("64-character passphrases must be" +
+				" hex strings")
+		}
+	} else if len(pass) < 8 || len(pass) > 63 {
+		err = fmt.Errorf("passphrase must be between 8 and 63 characters")
+	} else {
+		for _, c := range pass {
+			if c > unicode.MaxASCII || !unicode.IsPrint(c) {
+				err = fmt.Errorf("Invalid characters in passphrase")
+				break
+			}
+		}
+	}
+
+	if err == nil && node.Value != pass {
+		node.Value = pass
+		changed = true
+	}
+
+	return changed, err
 }
 
 func findChild(parent *pnode, name string) *pnode {

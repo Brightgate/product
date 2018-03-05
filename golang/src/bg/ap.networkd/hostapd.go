@@ -14,9 +14,12 @@ package main
 import (
 	"fmt"
 	"log"
+	"net"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"text/template"
 	"time"
@@ -24,11 +27,13 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/network"
 	"bg/base_def"
+	"bg/base_msg"
+
+	"github.com/golang/protobuf/proto"
 )
 
 var (
-	hostapdLog     *log.Logger
-	hostapdProcess *aputil.Child // track the hostapd proc
+	hostapdLog *log.Logger
 )
 
 const (
@@ -58,17 +63,271 @@ type apConfig struct {
 	RadiusAuthSecret     string // RADIUS shared secret
 }
 
-func apReset(restart bool) {
-	log.Printf("Resetting hostapd\n")
+type hostapdCmd struct {
+	cmd    string
+	res    string
+	err    chan error
+	queued time.Time
+	sent   time.Time
+}
 
-	// XXX: ideally, for simple changes we should just be able to update the
-	// config files and SIGHUP the running hostapd.  In practice, it seems
-	// like we need to fully restart hostapd for some of them to take
-	// effect.  (Ring assignments in particular have required a full restart
-	// for some iOS clients.  It might be worth exploring a soft reset
-	// followed by an explicit deauth/disassoc for the affected client.)
-	//
-	hostapdProcess.Signal(syscall.SIGINT)
+// hostapd has a separate control socket for each of the network interfaces it
+// manages.  For each socket, we can have a single in-process command and any
+// number of queued commands.
+type hostapdConn struct {
+	hostapd     *hostapdHdl
+	active      bool
+	device      *physDevice
+	conn        *net.UnixConn
+	liveCmd     *hostapdCmd
+	pendingCmds []*hostapdCmd
+	stations    map[string]time.Time
+
+	sync.Mutex
+}
+
+// We have a single hostapd process, which may be managing multiple interfaces
+type hostapdHdl struct {
+	process   *aputil.Child
+	devices   []*physDevice
+	confFiles []string
+	conns     []*hostapdConn
+	done      chan error
+}
+
+// Connect to the hostapd command socket for this interface and create a unix
+// domain socket for it to reply to.
+func (c *hostapdConn) connect() {
+	pid := os.Getpid()
+
+	remoteName := "/var/run/hostapd/" + c.device.name
+	localName := "/tmp/hostapd_ctrl_" + c.device.name + "-" + strconv.Itoa(pid)
+
+	laddr := net.UnixAddr{Name: localName, Net: "unixgram"}
+	raddr := net.UnixAddr{Name: remoteName, Net: "unixgram"}
+
+	c.Lock()
+	for c.active {
+		// Wait for the child process to create its socket
+		if aputil.FileExists(remoteName) {
+			// If our socket still exists (either from a previous
+			// instance of ap.networkd or because we failed a prior
+			// Dial attempt), remove it now.
+			os.Remove(localName)
+			c.conn, _ = net.DialUnix("unixgram", &laddr, &raddr)
+			if c.conn != nil {
+				break
+			}
+		}
+		c.Unlock()
+		time.Sleep(100 * time.Millisecond)
+		c.Lock()
+	}
+	c.Unlock()
+}
+
+// This hostapd connection is going away, so flush all of the commands out of
+// the queue
+func (c *hostapdConn) clearCmds() {
+	err := fmt.Errorf("hostapd connection closed")
+	if c.liveCmd != nil {
+		c.liveCmd.err <- err
+		c.liveCmd = nil
+	}
+
+	for len(c.pendingCmds) > 0 {
+		c.pendingCmds[0].err <- err
+		c.pendingCmds = c.pendingCmds[1:]
+	}
+}
+
+// If we don't have a command in-flight, pull the next one from the pending
+// queue and send it to the daemon.
+func (c *hostapdConn) pushCmd() {
+	if c.liveCmd != nil || len(c.pendingCmds) == 0 || c.conn == nil {
+		return
+	}
+
+	l := c.pendingCmds[0]
+	c.pendingCmds = c.pendingCmds[1:]
+
+	l.sent = time.Now()
+	c.conn.SetWriteDeadline(l.sent.Add(time.Second))
+	if _, err := c.conn.Write([]byte(l.cmd)); err != nil {
+		l.err <- fmt.Errorf("failed to send '%s' to %s: %v",
+			l.cmd, c.device.name, err)
+		c.pushCmd()
+	} else {
+		c.liveCmd = l
+	}
+}
+
+func (c *hostapdConn) command(cmd string) error {
+	hc := hostapdCmd{
+		queued: time.Now(),
+		cmd:    cmd,
+		err:    make(chan error, 1),
+	}
+
+	c.Lock()
+	c.pendingCmds = append(c.pendingCmds, &hc)
+	c.pushCmd()
+	c.Unlock()
+
+	err := <-hc.err
+	return err
+}
+
+// Use a result message from hostapd to complete the current outstanding
+// command.
+func (c *hostapdConn) handleResult(result string) {
+	if c.liveCmd == nil {
+		log.Printf("hostapd result with no command: '%s'", result)
+	} else {
+		c.liveCmd.res = result
+		c.liveCmd.err <- nil
+		c.liveCmd = nil
+	}
+}
+
+func sendNetEntity(mac, mode string, disconnect bool) {
+	hwaddr, _ := net.ParseMAC(mac)
+	entity := &base_msg.EventNetEntity{
+		Timestamp:  aputil.NowToProtobuf(),
+		Sender:     proto.String(brokerd.Name),
+		Debug:      proto.String("-"),
+		Mode:       &mode,
+		Node:       &nodeUUID,
+		Disconnect: &disconnect,
+		MacAddress: proto.Uint64(network.HWAddrToUint64(hwaddr)),
+	}
+
+	err := brokerd.Publish(entity, base_def.TOPIC_ENTITY)
+	if err != nil {
+		log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_ENTITY, err)
+	}
+}
+
+func (c *hostapdConn) stationPresent(sta string) {
+	if _, ok := c.stations[sta]; !ok {
+		sendNetEntity(sta, c.device.activeMode, false)
+	}
+	c.stations[sta] = time.Now()
+}
+
+func (c *hostapdConn) stationGone(sta string) {
+	delete(c.stations, sta)
+	sendNetEntity(sta, c.device.activeMode, true)
+}
+
+// Handle an async status message from hostapd
+func (c *hostapdConn) handleStatus(status string) {
+	const (
+		// We're looking for one of the following messages:
+		//    AP-STA-CONNECTED b8:27:eb:9f:d8:e0     (client arrived)
+		//    AP-STA-DISCONNECTED b8:27:eb:9f:d8:e0  (client left)
+		//    AP-STA-POLL-OK b8:27:eb:9f:d8:e0       (client still here)
+		msgs     = "(AP-STA-CONNECTED|AP-STA-DISCONNECTED|AP-STA-POLL-OK)"
+		macOctet = "[[:xdigit:]][[:xdigit:]]"
+		macAddr  = "(" + macOctet + ":" + macOctet + ":" +
+			macOctet + ":" + macOctet + ":" + macOctet + ":" +
+			macOctet + ")"
+	)
+	re := regexp.MustCompile(msgs + " " + macAddr)
+
+	m := re.FindStringSubmatch(status)
+	if len(m) == 3 {
+		switch m[1] {
+		case "AP-STA-CONNECTED":
+			c.stationPresent(m[2])
+		case "AP-STA-POLL-OK":
+			c.stationPresent(m[2])
+		case "AP-STA-DISCONNECTED":
+			c.stationGone(m[2])
+		}
+	}
+}
+
+// close the socket, which will interrupt any pending read/write.
+func (c *hostapdConn) stop() {
+	c.Lock()
+	c.active = false
+	if c.conn != nil {
+		c.conn.Close()
+	}
+	c.Unlock()
+}
+
+// Send periodic PINGs to hostapd to make sure it is still alive and responding
+func (c *hostapdConn) checkIn(exit chan bool) {
+	t := time.NewTicker(time.Second * 5)
+	defer t.Stop()
+
+	for {
+		select {
+		case <-exit:
+			return
+		case <-t.C:
+			c.command("PING")
+		}
+	}
+}
+
+func (c *hostapdConn) run(wg *sync.WaitGroup) {
+
+	go c.command("ATTACH")
+	c.connect()
+
+	stopCheckins := make(chan bool)
+	go c.checkIn(stopCheckins)
+
+	buf := make([]byte, 4096)
+	c.Lock()
+	for c.active {
+		c.pushCmd()
+
+		c.Unlock()
+		c.conn.SetReadDeadline(time.Now().Add(time.Second))
+		n, err := c.conn.Read(buf[:])
+		c.Lock()
+
+		if err != nil {
+			// We expect this read to timeout regularly, so we
+			// ignore those errors.
+			netErr, ok := err.(net.Error)
+			if !ok || !netErr.Timeout() {
+				log.Printf("%s Read error: %v\n",
+					c.device.name, err)
+				break
+			}
+		}
+
+		if c.liveCmd != nil {
+			now := time.Now()
+			delta := (now.Sub(c.liveCmd.sent)).Seconds()
+
+			if delta > float64(*hostapdLatency) {
+				log.Printf("hostapd blocked for %1.2f seconds",
+					delta)
+				c.hostapd.reset()
+				break
+			}
+		}
+
+		if n > 0 {
+			// hostapd prefaces unsolicited status messages with <#>
+			if buf[0] == '<' {
+				c.handleStatus(string(buf[3:n]))
+			} else {
+				c.handleResult(string(buf[:n]))
+			}
+		}
+	}
+	stopCheckins <- true
+	c.clearCmds()
+	c.Unlock()
+
+	wg.Done()
 }
 
 //
@@ -168,11 +427,6 @@ func getAPConfig(d *physDevice) *apConfig {
 	return &data
 }
 
-//////////////////////////////////////////////////////////////////////////
-//
-// hostapd configuration and monitoring
-//
-
 //
 // Generate the configuration files needed for hostapd.
 //
@@ -213,17 +467,18 @@ func generateVlanConf(conf *apConfig, auth string) {
 	}
 }
 
-func generateHostAPDConf(devs []*physDevice) []string {
+func (h *hostapdHdl) generateHostAPDConf() {
 	tfile := *templateDir + "/hostapd.conf.got"
-	files := make([]string, 0)
 
-	for _, d := range devs {
+	files := make([]string, 0)
+	devices := make([]*physDevice, 0)
+
+	for _, d := range h.devices {
 		// Create hostapd.conf, using the apConfig contents to fill
 		// out the .got template
 		t, err := template.ParseFiles(tfile)
 		if err != nil {
-			log.Fatal(err)
-			os.Exit(2)
+			continue
 		}
 
 		confName := confdir + "/" + "hostapd.conf." + d.name
@@ -233,56 +488,98 @@ func generateHostAPDConf(devs []*physDevice) []string {
 		conf := getAPConfig(d)
 		err = t.Execute(cf, conf)
 		if err != nil {
-			log.Fatal(err)
-			os.Exit(1)
+			continue
 		}
 		generateVlanConf(conf, "wpa-psk")
 		generateVlanConf(conf, "wpa-eap")
 
 		files = append(files, confName)
+		devices = append(devices, d)
 	}
 
-	return files
+	h.devices = devices
+	h.confFiles = files
 }
 
-//
-// Prepare and launch hostapd.  Return when the child hostapd process exits
-//
-func runOne(devs []*physDevice) error {
-	var ra aputil.RunAbort
+func (h *hostapdHdl) start() {
+	var wg sync.WaitGroup
 
 	deleteBridges()
 
-	confFiles := generateHostAPDConf(devs)
-	if len(confFiles) == 0 {
-		return fmt.Errorf("no suitable wireless devices available")
+	h.generateHostAPDConf()
+	if len(h.devices) == 0 {
+		h.done <- fmt.Errorf("no suitable wireless devices available")
+		return
 	}
 
+	for _, d := range h.devices {
+		os.Remove("/var/run/hostapd/" + d.name)
+		newConn := hostapdConn{
+			hostapd:     h,
+			active:      true,
+			device:      d,
+			pendingCmds: make([]*hostapdCmd, 0),
+			stations:    make(map[string]time.Time),
+		}
+		h.conns = append(h.conns, &newConn)
+	}
 	createBridges()
+	resetInterfaces()
 
-	hostapdProcess = aputil.NewChild(hostapdPath, confFiles...)
-	hostapdProcess.LogOutputTo("hostapd: ", log.Ldate|log.Ltime, os.Stderr)
+	h.process = aputil.NewChild(hostapdPath, h.confFiles...)
+	h.process.LogOutputTo("hostapd: ", log.Ldate|log.Ltime, os.Stderr)
 
 	log.Printf("Starting hostapd\n")
 
 	startTime := time.Now()
-	if err := hostapdProcess.Start(); err != nil {
-		return fmt.Errorf("failed to launch: %v", err)
+	if err := h.process.Start(); err != nil {
+		h.done <- fmt.Errorf("failed to launch: %v", err)
+		return
 	}
 
-	ra.SetRunning()
-	ra.ClearAbort()
-	go resetInterfaces(&ra)
+	for _, c := range h.conns {
+		wg.Add(1)
+		go c.run(&wg)
+	}
 
-	hostapdProcess.Wait()
+	h.process.Wait()
 
 	log.Printf("hostapd exited after %s\n", time.Since(startTime))
 
-	// If the child died before all the interfaces were reset, tell
-	// them to give up.
-	ra.SetAbort()
-	for ra.IsRunning() {
-		time.Sleep(10 * time.Millisecond)
+	for _, c := range h.conns {
+		go c.stop()
 	}
-	return nil
+
+	wg.Wait()
+	h.done <- nil
+}
+
+func (h *hostapdHdl) reload() {
+	h.generateHostAPDConf()
+	log.Printf("Reloading hostapd\n")
+	h.process.Signal(syscall.SIGINT)
+
+}
+
+func (h *hostapdHdl) reset() {
+	if h != nil {
+		log.Printf("Killing hostapd\n")
+		h.process.Signal(syscall.SIGINT)
+	}
+}
+
+func (h *hostapdHdl) wait() error {
+	err := <-h.done
+	return err
+}
+
+func startHostapd(devs []*physDevice) *hostapdHdl {
+	h := &hostapdHdl{
+		devices: devs,
+		conns:   make([]*hostapdConn, 0),
+		done:    make(chan error, 1),
+	}
+
+	go h.start()
+	return h
 }

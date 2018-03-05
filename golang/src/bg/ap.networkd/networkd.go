@@ -44,12 +44,15 @@ var (
 	allow40MHz  = flag.Bool("40mhz", false, "allow 40MHz-wide channels")
 	templateDir = flag.String("template_dir", "golang/src/ap.networkd",
 		"location of hostapd templates")
-	rulesDir = flag.String("rules_dir", "./", "Location of the filter rules")
+	rulesDir       = flag.String("rules_dir", "./", "Location of the filter rules")
+	hostapdLatency = flag.Int("hl", 5, "hostapd latency limit (seconds)")
 
 	physDevices    = make(map[string]*physDevice)
 	perModeDevices = make(map[string]map[*physDevice]bool)
 	modes          = []string{"ac", "g"}
 
+	mcpd     *mcp.MCP
+	brokerd  *broker.Broker
 	config   *apcfg.APConfig
 	clients  apcfg.ClientMap // macaddr -> ClientInfo
 	rings    apcfg.RingMap   // ring -> config
@@ -59,10 +62,7 @@ var (
 	wifiPassphrase string
 	radiusSecret   string
 
-	wanNic string
-
-	mcpd *mcp.MCP
-
+	hostapd        *hostapdHdl
 	running        bool
 	satellite      bool
 	networkNodeIdx byte
@@ -132,7 +132,7 @@ func configChannelChanged(path []string, val string, expires *time.Time) {
 	if p := physDevices[mac]; p != nil {
 		if p.cfgChannel != newChannel {
 			p.cfgChannel = newChannel
-			apReset(true)
+			hostapd.reload()
 		}
 	}
 }
@@ -144,7 +144,7 @@ func configModeChanged(path []string, val string, expires *time.Time) {
 	if p := physDevices[mac]; p != nil {
 		if p.cfgMode != newMode {
 			p.cfgMode = newMode
-			apReset(true)
+			hostapd.reload()
 		}
 	}
 }
@@ -165,7 +165,7 @@ func configRingChanged(path []string, val string, expires *time.Time) {
 		return
 	}
 
-	apReset(false)
+	hostapd.reload()
 }
 
 func configAuthChanged(path []string, val string, expires *time.Time) {
@@ -187,7 +187,7 @@ func configAuthChanged(path []string, val string, expires *time.Time) {
 		log.Printf("Changing auth for ring %s from %s to %s\n", ring,
 			r.Auth, newAuth)
 		r.Auth = newAuth
-		apReset(true)
+		hostapd.reload()
 	}
 }
 
@@ -205,7 +205,7 @@ func configNetworkChanged(path []string, val string, expires *time.Time) {
 	default:
 		return
 	}
-	apReset(false)
+	hostapd.reload()
 }
 
 func selectWifiChannel(mode string, d *physDevice) {
@@ -347,12 +347,8 @@ func getInternalAddr() net.IP {
 	return nil
 }
 
-func rebuildInternalNet(ra *aputil.RunAbort) {
+func rebuildInternalNet() {
 	satNode := aputil.IsSatelliteMode()
-
-	if ra.IsAbort() {
-		return
-	}
 
 	br := rings[base_def.RING_INTERNAL].Bridge
 
@@ -380,13 +376,9 @@ func rebuildInternalNet(ra *aputil.RunAbort) {
 	}
 }
 
-func rebuildLan(ra *aputil.RunAbort) {
+func rebuildLan() {
 	// Connect all the wired LAN NICs to ring-appropriate bridges.
 	for _, dev := range physDevices {
-		if ra.IsAbort() {
-			return
-		}
-
 		name := dev.name
 		ring := rings[dev.ring]
 
@@ -405,7 +397,7 @@ func rebuildLan(ra *aputil.RunAbort) {
 	}
 }
 
-func resetInterfaces(ra *aputil.RunAbort) {
+func resetInterfaces() {
 	br := rings[base_def.RING_UNENROLLED].Bridge
 	for _, d := range physDevices {
 		// If hostapd authorizes a client that isn't assigned to a VLAN,
@@ -421,26 +413,25 @@ func resetInterfaces(ra *aputil.RunAbort) {
 		}
 	}
 
-	rebuildLan(ra)
-	rebuildInternalNet(ra)
-
-	if !ra.IsAbort() {
-		mcpd.SetState(mcp.ONLINE)
-	}
-	ra.ClearRunning()
+	rebuildLan()
+	rebuildInternalNet()
 }
 
 func runLoop() bool {
 	startTimes := make([]time.Time, failuresAllowed)
 
+	mcpd.SetState(mcp.ONLINE)
 	for running {
 		startTime := time.Now()
 		startTimes = append(startTimes[1:failuresAllowed], startTime)
 
 		selected := selectWifiDevices()
-		if err := runOne(selected); err != nil {
+		hostapd = startHostapd(selected)
+
+		if err := hostapd.wait(); err != nil {
 			log.Printf("%v\n", err)
 		}
+		hostapd = nil
 
 		if time.Since(startTimes[0]) < period {
 			log.Printf("hostapd is dying too quickly")
@@ -942,9 +933,9 @@ func daemonInit() error {
 		mcpd.SetState(mcp.INITING)
 	}
 
-	b := broker.New(pname)
+	brokerd = broker.New(pname)
 
-	config, err = apcfg.NewConfig(b, pname)
+	config, err = apcfg.NewConfig(brokerd, pname)
 	if err != nil {
 		return fmt.Errorf("cannot connect to configd: %v", err)
 	}
@@ -1029,7 +1020,7 @@ func signalHandler() {
 
 	log.Printf("Received signal %v\n", s)
 	running = false
-	hostapdProcess.Stop()
+	hostapd.reset()
 }
 
 func main() {
