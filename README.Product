@@ -8,62 +8,83 @@ express written permission of Brightgate Inc is prohibited, and any
 such unauthorized removal or alteration will be a violation of federal law.
 
 
-README.Product
+# Product Software README
 
 # Directories
 
-base/			Resource and Protocol Buffer message definitions
+```
+base/                   Resource and Protocol Buffer message definitions
 
-golang/			Golang-based command, daemon, and library
-			implementations.
+build/                  Scripts to do with building and provisioning
+
+client-web/             Web-based frontend
+
+golang/                 Golang-based command, daemon, and library
+                        implementations.
+```
 
 ## Directory naming
 
 Name directories in snake case, as Python module names may not include
 '-' characters.
 
-# Proto area
+## The "proto" area
 
-$ROOT is set to ./proto.$(uname -m).  On an imaged system, $ROOT is
-equivalent to /.
+When dealing with appliance components, $ROOT is equivalent to
+`./proto.$(uname -m)/appliance/`.  On an imaged system, $ROOT is
+equivalent to /.  Brightgate specific components are in
+`$ROOT/opt/com.brightgate`.
 
-At present, the proto area contains components that use the standard
-hierarchy.  Brightgate specific components are in
-$ROOT/opt/com.brightgate.
+When dealing with cloud components, $ROOT is equivalent to
+`./proto.$(uname -m)/cloud/`.  Brightgate specific components are in
+`$ROOT/opt/net.b10e/`.
 
-# Go language aspects
+# Installing Tools
+
+## Installing Golang (Go) Language Tools
 
 We typically write "Golang" to improve search uniqueness.
 
+If you are using our cloud systems to build, Golang is installed at
+/opt/net.b10e/go.
+
 To retrieve the Golang SDK for Linux x64, use
 
-$ curl -O https://storage.googleapis.com/golang/go1.8.1.linux-amd64.tar.gz
+```
+$ curl -O https://storage.googleapis.com/golang/go1.8.3.linux-amd64.tar.gz
+```
 
 To retrieve the Golang SDK for Linux ARM, use
 
-$ curl -O https://storage.googleapis.com/golang/go1.8.1.linux-armv6l.tar.gz
+```
+$ curl -O https://storage.googleapis.com/golang/go1.8.3.linux-armv6l.tar.gz
+```
 
 For Linux systems, we recommend unpacking these archives in $HOME.  (If
-you wish to keep multiple Golang versions, then "mv go go-1.8.1; ln -s
-go-1.8.1 go" or the equivalent may be helpful after unpacking.  You will
+you wish to keep multiple Golang versions, then `mv go go-1.8.3; ln -s
+go-1.8.3 go` or the equivalent may be helpful after unpacking.  You will
 want to remove the go symbolic link before unpacking a new version.)
 
 To retrieve the Golang SDK for macOS x64, use
 
-$ curl -O https://storage.googleapis.com/golang/go1.8.1.linux-amd64.pkg
+```
+$ curl -O https://storage.googleapis.com/golang/go1.8.3.darwin-amd64.tar.gz
+```
 
-Installation of this package creates /usr/local/go.
+Installation of this package creates `/usr/local/go`.
 
 Because each platform generates local tools, you will want to use "make
-plat-clobber" to switch a repository from one platform to another, such
-as from Linux to macOS, or from x86 to ARM.
+plat-clobber" to switch a repository from one platform to another, such as from
+Linux to macOS, or from x86 to ARM.  (An easier way is to keep parallel
+workspaces in sync by making one the git upstream of the other).
 
-# node.js
+## Installing node.js
 
 On our x86 cloud dev systems, node.js 6.x should be installed; if not, use
-ansible to do so.  For Raspberry Pi systems, you need to install node.js 6.x.
-Here is a reasonable way to do so:
+ansible to do so.  For ARM systems, you need to install node.js 6.x.  Here is a
+reasonable way to do so:
 
+```
 pi$ curl -sL https://deb.nodesource.com/setup_6.x | sudo -E bash -
 
 (should connect you to nodesource's pkg repo)
@@ -71,55 +92,105 @@ pi$ curl -sL https://deb.nodesource.com/setup_6.x | sudo -E bash -
 pi$ sudo apt-get install -y nodejs
 
 pi$ nodejs --version
-v6.11.3  (may be higher than this)
+v6.13.0  (may be higher than this)
+```
 
-# Prometheus
+## Installing Prometheus
 
 Install Prometheus for ARM:
 
+```
 pi$ curl -LO https://github.com/prometheus/prometheus/releases/download/v1.8.0/prometheus-1.8.0.linux-armv7.tar.gz
 pi$ tar -xf prometheus-1.8.0.linux-armv7.tar.gz
 pi$ sudo cp prometheus-1.8.0.linux-armv7/prometheus /usr/local/bin/
+```
 
-# Build
+# Building Product Software
 
 Source the env.sh file via
 
+```
 $ . ./env.sh
+```
 
-to set up initial Golang environment variables.
+to set up initial Golang environment variables.  `make` is used to build the
+software components.  Useful targets:
 
-ap-reqs.bash to install needed development and runtime components for
-Python-based components.  (The Makefile will use go get to retrieve
-needed Golang module dependencies.)
+```
+$ . ./env.sh
+$ make install
+$ make client-web
+$ make test
+$ make coverage
+$ make lint-go
+$ make packages
 
-`make` is used to build the software components.
+$ make clean
+$ make clobber
+$ make plat-clobber
+```
 
-# Test
+## Building debian packages
 
-`sudo`(8) is used to acquire privilege from the developer during testing.
+While not required (you may run from the `proto` area), you may wish to build
+installable packages for ARM:
 
-The ap.relayd daemon forwards UDP broadcast requests between security rings.  To
-allow mDNS forwarding to work correctly, the Linux mDNS responder
+```
+$ make install && make client-web && make packages
+...
+dpkg-deb: building package 'bg-appliance' in 'bg-appliance_0.0.1803052236-1_amd64.deb'.
+...
+
+$ sudo dpkg -i bg-appliance_0.0.1803052236-1_amd64.deb (use name from above)
+
+```
+
+If you replace an existing bg-appliance package, some amount of restarting, up
+to and including rebooting will be needed.
+
+## Connecting to Google IoT Core
+
+Our appliances talk to the cloud using Google IoT Core.  At a minimum, request
+that an IoT Core secret be provisioned for your appliance.  Install that to
+`$ROOT/opt/com.brightgate/etc/secret/iotcore/iotcore.secret.json`
+in order for your IoT connectivity to work.  See
+`build/gcp-iot/README.iotcore.md` for more details.
+
+
+# Running from the Proto Area
+
+`sudo(8)` is used to acquire privilege from the developer during testing.
+
+The ap.relayd daemon forwards UDP broadcast requests between security rings.
+To allow mDNS forwarding to work correctly, the Linux mDNS responder
 (avahi-daemon) must be disabled before launching our daemons:
 
+```
 $ sudo systemctl disable avahi-daemon
 $ sudo systemctl stop avahi-daemon
+```
 
-Components are installed in $(ROOT)/opt/com.brightgate/bin.  ap.mcp in that
+(If you build and install packages, the package scripting will take care of
+this).
+
+Components are installed in `$(ROOT)/opt/com.brightgate/bin`.  ap.mcp in that
 directory is the 'master control process', and is responsible for launching and
 monitoring all of our other daemons.  To run our software, mcp should be run as
 root:
 
-$ sudo ./proto.armv7l/opt/com.brightgate/bin/ap.mcp
-2017/09/16 13:35:49 mcp.go:599: Dropping prometheus - wrong architecture
-2017/09/16 13:35:49 mcp.go:540: MCP online
+```
+$ sudo ./proto.armv7l/appliance/opt/com.brightgate/bin/ap.mcp
+aproot not set - using '/home/pi/Product.slave/proto.armv7l/appliance/opt/com.brightgate'
+2018/03/05 15:21:27 mcp.go:763: ap.mcp (3711) coming online...
+2018/03/05 15:21:27 mcp.go:544: MCP online
+```
 
-Either put ap.mcp in the background, or switch to another window, and launch the
-remaining daemomns:
+Either put ap.mcp in the background, or switch to another window, and launch
+the remaining daemons:
 
-$ ap-ctl start all
-$ ap-ctl status all
+```
+$ ./proto.armv7l/appliance/opt/com.brightgate/bin/ap-ctl start all
+$ ./proto.armv7l/appliance/opt/com.brightgate/bin/ap-ctl status all
       DAEMON      PID          STATE    SINCE
      brokerd     3518         online    Sat Sep 16 13:59:14
       dhcp4d     3721         online    Sat Sep 16 13:59:31
@@ -134,10 +205,15 @@ $ ap-ctl status all
         logd     3536         online    Sat Sep 16 13:59:18
       relayd     3709         online    Sat Sep 16 13:59:31
        scand     3711         online    Sat Sep 16 13:59:31
+```
+
+(It may take a little while for all of the services to come online)
+
 
 # External assets
 
-https://pixabay.com/en/attention-warning-exclamation-mark-98513/
-	Creative Commons: Free for commercial use, no attribution
-	required
-#
+- Images
+  - [Exclamation Mark](https://pixabay.com/en/attention-warning-exclamation-mark-98513/)
+	Creative Commons: Free for commercial use, no attribution required
+- Assets in client-web:
+  - `(cd client-web && npm run licenses)`

@@ -12,8 +12,6 @@
 /*
  * Elementary DNSv4 server
  *
- * Requirements can be installed by invoking $SRC/ap-reqs.bash.
- *
  * Local DNS-specific files are kept in <aproot>/var/spool/dns4d/.
  * Anti-phishing datafiles are kept in <aproot>/var/spool/antiphishing/.
  *
