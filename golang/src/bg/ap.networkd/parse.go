@@ -215,7 +215,7 @@ func getEndpoint(tokens []string, name string) (ep *endpoint, cnt int, err error
 	kind := tokens[cnt]
 	cnt++
 
-	e.not = (tokens[cnt] == "NOT")
+	e.not = (cnt < len(tokens)) && (tokens[cnt] == "NOT")
 	if e.not {
 		cnt++
 		if cnt == len(tokens) {

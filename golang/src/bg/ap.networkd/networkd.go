@@ -275,9 +275,11 @@ func selectWifiDevices() []*physDevice {
 			active["g"] = p
 			break
 		}
-		if active["g"] == nil {
-			// We didn't find a good device to use for g, so use the
-			// one we had hoped to keep available for ac.
+		if active["g"] == nil && config["ac"] != available {
+			// The only device available for a 'g' network is also
+			// the only device available for 'ac'.  We will use it
+			// for 'g' unless the user has explicitly indicated that
+			// they want it to support 'ac'.
 			active["g"] = available
 		}
 	}

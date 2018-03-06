@@ -265,8 +265,15 @@ func genEndpointRing(e *endpoint, src bool) (string, error) {
 	}
 
 	if ring := rings[e.detail]; ring != nil {
-		r := fmt.Sprintf(" %s %s ", d, ring.Bridge)
-		return r, nil
+		b := ring.Bridge
+		if e.detail == base_def.RING_INTERNAL && satellite {
+			// The gateway node has an internal bridge that all
+			// satellite links connect to.  Satellite nodes use
+			// their 'wan' nic for internal traffic.
+			b = wanNic
+		}
+
+		return fmt.Sprintf(" %s %s ", d, b), nil
 	}
 
 	return "", fmt.Errorf("no such ring: %s", e.detail)
