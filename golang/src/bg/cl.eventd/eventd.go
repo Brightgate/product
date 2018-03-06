@@ -103,7 +103,7 @@ func messageToIDMap(ctx context.Context, applianceDB appliancedb.DataStore,
 			if m.Attributes["projectId"] != environ.IoTProject ||
 				m.Attributes["deviceRegistryLocation"] != environ.IoTRegion ||
 				m.Attributes["deviceRegistryId"] != environ.IoTRegistry {
-				return nil, fmt.Errorf("Message from unexpected registry: %v", m)
+				return nil, fmt.Errorf("Message from unexpected registry: %v [environ: %+v]", m, environ)
 			}
 			device, err := cloudIoT.GetDevice(m.Attributes["deviceId"])
 			if err != nil {
@@ -218,9 +218,26 @@ func exceptionMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 	slog.Infow("Client Exception", "appliance", idmap, "exception", string(jsonExc))
 }
 
-func main() {
-	var environ Cfg
+func checkEnv() {
+	if environ.PostgresConnection == "" {
+		slog.Fatalf("B10E_CLEVENTD_POSTGRES_CONNECTION must be set")
+	}
+	if environ.IoTProject == "" {
+		slog.Fatalf("B10E_CLEVENTD_IOT_PROJECT must be set")
+	}
+	if environ.IoTRegion == "" {
+		slog.Fatalf("B10E_CLEVENTD_IOT_LOCATION must be set")
+	}
+	if environ.IoTRegistry == "" {
+		slog.Fatalf("B10E_CLEVENTD_IOT_REGISTRY must be set")
+	}
+	if environ.PrometheusPort == "" {
+		slog.Warnf("B10E_CLEVENTD_PROMETHEUS_PORT is not set")
+	}
+	slog.Infof(checkMark+"Environ looks good: %+v", environ)
+}
 
+func main() {
 	defer log.Sync()
 	flag.Parse()
 	log, slog = daemonutils.ResetupLogs()
@@ -231,8 +248,9 @@ func main() {
 	}
 
 	slog.Infow(pname+" starting", "args", os.Args, "envcfg", environ)
+	checkEnv()
 
-	if len(environ.PrometheusPort) != 0 {
+	if environ.PrometheusPort != "" {
 		http.Handle("/metrics", promhttp.Handler())
 		go http.ListenAndServe(environ.PrometheusPort, nil)
 		slog.Info("prometheus client launched")
