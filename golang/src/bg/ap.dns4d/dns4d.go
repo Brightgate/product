@@ -70,6 +70,7 @@ var (
 
 	ringRecords  map[string]dnsRecord // per-ring records for the router
 	perRingHosts map[string]bool      // hosts with per-ring results
+	subnets      []*net.IPNet
 
 	domainname    string
 	brightgateDNS string
@@ -360,17 +361,9 @@ func upstreamRequest(server string, r, m *dns.Msg) {
 	m.RecursionDesired = r2.RecursionDesired
 	m.RecursionAvailable = r2.RecursionAvailable
 	m.Rcode = r2.Rcode
-	if r2.Rcode != dns.RcodeSuccess {
-		log.Printf("failed to get a valid answer to query: %v\n", r)
-		log.Printf("  response: %v\n", r2)
-	} else {
-		// We've received a valid answer from the upstream DNS server.
-		// Copy the different 'answer' fields into our forwarded reply
-		// message.
-		m.Answer = append(m.Answer, r2.Answer...)
-		m.Ns = append(m.Ns, r2.Ns...)
-		m.Extra = append(m.Extra, r2.Extra...)
-	}
+	m.Answer = append(m.Answer, r2.Answer...)
+	m.Ns = append(m.Ns, r2.Ns...)
+	m.Extra = append(m.Extra, r2.Extra...)
 }
 
 func localHandler(w dns.ResponseWriter, r *dns.Msg) {
@@ -438,6 +431,19 @@ func notifyBlockEvent(c *apcfg.ClientInfo, hostname string) {
 	}
 }
 
+func localAddress(arpa string) bool {
+	reversed := strings.TrimSuffix(arpa, ".in-addr.arpa.")
+	if ip := net.ParseIP(reversed).To4(); ip != nil {
+		ip[0], ip[1], ip[2], ip[3] = ip[3], ip[2], ip[1], ip[0]
+		for _, s := range subnets {
+			if s.Contains(ip) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 	c := getClient(w)
 	if c == nil {
@@ -448,6 +454,7 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 	m.SetReply(r)
 	m.Authoritative = false
 
+	upstream := false
 	start := time.Now()
 	for _, q := range r.Question {
 		hostname := q.Name[:len(q.Name)-1]
@@ -463,17 +470,26 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 				c.Ring, localRecord)
 			m.Answer = append(m.Answer, answerA(q, localRecord))
 			notifyBlockEvent(c, hostname)
-		} else if strings.Contains(q.Name, ".in-addr.arpa.") {
+		} else if q.Qtype == dns.TypePTR && localAddress(q.Name) {
 			hostsMtx.Lock()
 			rec, ok := hosts[q.Name]
 			hostsMtx.Unlock()
 			if ok && rec.rectype == dns.TypePTR {
 				m.Answer = append(m.Answer, answerPTR(q, rec))
 			}
-
 		} else {
-			upstreamRequest(upstreamDNS, r, m)
+			upstream = true
 		}
+	}
+	if upstream {
+		upstreamRequest(upstreamDNS, r, m)
+	}
+	if m.Len() >= 512 {
+		// Some clients cannot handle DNS packets larger than 512 bytes,
+		// and some firewalls will drop them.  Setting this flag will
+		// cause the underlying DNS library to use name compression,
+		// shrinking the packet before it gets put on the wire.
+		m.Compress = true
 	}
 	w.WriteMsg(m)
 	logRequest("proxyHandler", start, c.IPv4, r, m)
@@ -526,13 +542,13 @@ func updateOneClient(c *apcfg.ClientInfo) {
 		arpa, err := dns.ReverseAddr(ipv4)
 		if err != nil {
 			log.Printf("Invalid address %v for %s: %v\n",
-				c.IPv4, c.DNSName, err)
+				c.IPv4, c.DHCPName, err)
 		} else {
-			log.Printf("Adding PTR record %s->%s\n", arpa,
-				c.DHCPName)
+			hostname := c.DHCPName + "."
+			log.Printf("Adding PTR record %s->%s\n", arpa, hostname)
 			hosts[arpa] = dnsRecord{
 				rectype: dns.TypePTR,
-				recval:  c.DHCPName,
+				recval:  hostname,
 				expires: c.Expires,
 			}
 		}
@@ -646,6 +662,10 @@ func initNetwork() {
 		ringRecords[name] = dnsRecord{
 			rectype: dns.TypeA,
 			recval:  srouter,
+		}
+
+		if _, subnet, _ := net.ParseCIDR(ring.Subnet); subnet != nil {
+			subnets = append(subnets, subnet)
 		}
 	}
 }
