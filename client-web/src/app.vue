@@ -88,7 +88,7 @@
     </f7-view>
 
   <!-- Login Screen -->
-  <f7-login-screen ref="bgLoginScreen" :opened="$store.getters.Is_Logged_In">
+  <f7-login-screen ref="bgLoginScreen">
     <f7-view>
       <f7-page login-screen>
         <f7-login-screen-title style="margin-top: 5px">
