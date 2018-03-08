@@ -9,14 +9,25 @@
 # such unauthorized removal or alteration will be a violation of federal law.
 #
 
+stopsvc()
+{
+   if systemctl is-active --quiet $1; then
+     echo "systemctl disable --now $1"
+     systemctl disable --now $1
+   elif systemctl is-enabled --quiet $1; then
+     echo "systemctl disable $1"
+     systemctl disable $1
+   fi
+}
+
 # Brightgate packaging policy: set -x required.
 set -x
 
 if [ "x$1" = "xconfigure" ]; then
     # Disable services that collide with our use, or that we want to manage
     # directly.
-    systemctl disable avahi-daemon.service
-    systemctl disable dnsmasq.service
+    stopsvc dnsmasq.service
+    stopsvc avahi-daemon.service
 
     # Prevent linux from acting like a wlan client
     # Ask the upstream DHCP server to identify itself

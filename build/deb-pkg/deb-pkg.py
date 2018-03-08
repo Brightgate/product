@@ -126,9 +126,22 @@ packages = [
                ["libc6"],
                """Cloud components."""),
     DebPackage("bg-appliance", "0.0.%s-1" % calver, ["armhf", "amd64"],
-               "proto.%s/appliance",
-               ["bridge-utils", "hostapd-bg", "libc6", "libzmq3-dev", "libpcap-dev",
-	       "iptables", "iptables-persistent", "netfilter-persistent" ],
+               "proto.%s/appliance", [
+                   "bridge-utils",
+                   "dhcpcd5",
+                   "hostapd-bg",
+                   "iproute2",
+                   "iptables",
+                   "iptables-persistent",
+                   "iw",
+                   "libc6",
+                   "libpcap-dev",
+                   "libzmq3-dev",
+                   "netfilter-persistent",
+                   "nmap",
+                   "procps",
+                   "vlan"
+                   ],
                """Appliance components.""")
     ]
 
