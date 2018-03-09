@@ -159,10 +159,15 @@ export default {
 
   methods: {
     pageInit: function () {
-      if (!this.$store.state.loggedIn) {
-        this.$refs.bgLoginScreen.open(true)
-      } else {
-        return this.$store.dispatch('fetchDevices').catch((err) => {})
+      // if navigateTo is set then we're on an alternative landing
+      // page such as malwareWarn, so don't fire the loggedIn or
+      // other behaviors.
+      if (!window.navigateTo) {
+        if (!this.$store.state.loggedIn) {
+          this.$refs.bgLoginScreen.open(true)
+        } else {
+          return this.$store.dispatch('fetchDevices').catch((err) => {})
+        }
       }
     },
 
