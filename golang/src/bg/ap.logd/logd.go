@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"bg/ap_common/aputil"
@@ -118,13 +119,13 @@ func handleException(event []byte) {
 		extendMsg(&msg, "IP", ip.String())
 	}
 
-	if exception.Hostname != nil {
-		extendMsg(&msg, "Hostname", *exception.Hostname)
+	if len(exception.Details) > 0 {
+		details := "[" + strings.Join(exception.Details, ",") + "]"
+		extendMsg(&msg, "Details", details)
 	}
 
 	if exception.Message != nil {
 		extendMsg(&msg, "Message", *exception.Message)
-
 	}
 
 	fmt.Printf("%s Handled exception event: %s\n", timestamp, msg)

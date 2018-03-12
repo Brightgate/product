@@ -13,6 +13,7 @@ package main
 
 import (
 	"container/heap"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -43,6 +44,10 @@ var (
 	internalMacs map[string]bool
 
 	activeHosts *hostmap // hosts we believe to be currently present
+
+	vulnListFile  string
+	vulnList      map[string]vulnDescription
+	vulnScannable bool
 )
 
 const (
@@ -50,8 +55,9 @@ const (
 
 	// tcp syn scan takes 70sec on average
 	// udp scan takes 1000sec on average
-	tcpFreq = 2 * time.Minute
-	udpFreq = 30 * time.Minute
+	tcpFreq  = 2 * time.Minute
+	udpFreq  = 30 * time.Minute
+	vulnFreq = 30 * time.Minute
 
 	hostLifetime = 1 * time.Hour
 	hostScanFreq = 5 * time.Minute
@@ -59,6 +65,11 @@ const (
 	maxFiles    = 10
 	numScanners = 5
 )
+
+type vulnDescription struct {
+	Nickname string   `json:"Nickname,omitempty"`
+	Actions  []string `json:"Actions,omitempty"`
+}
 
 type hostmap struct {
 	sync.Mutex
@@ -94,6 +105,7 @@ type ScanRequest struct {
 	IP       string
 	Args     []string
 	ScanType string
+	Scanner  func(*ScanRequest)
 
 	Again  bool
 	Period time.Duration
@@ -171,7 +183,7 @@ func schedule(toRun func(), freq time.Duration, startNow bool) {
 
 // Look through the pending queue and remove any requests for the given IP
 // address
-func cancelPortScan(ip string) {
+func cancelScan(ip string) {
 	pendingLock.Lock()
 	removed := true
 
@@ -190,7 +202,7 @@ func cancelPortScan(ip string) {
 	pendingLock.Unlock()
 }
 
-func schedulePortScan(request *ScanRequest, again bool) {
+func scheduleScan(request *ScanRequest, again bool) {
 	if activeHosts.contains(request.IP) {
 		request.When = time.Now()
 		request.Again = again
@@ -201,7 +213,7 @@ func schedulePortScan(request *ScanRequest, again bool) {
 }
 
 // scanner performs ScanRequests as they come in through the scansPending queue
-func portScanner() {
+func scanner() {
 	for {
 		var req *ScanRequest
 
@@ -227,12 +239,12 @@ func portScanner() {
 		}
 
 		scansStarted.WithLabelValues(req.IP, req.ScanType).Inc()
-		portScan(req)
+		req.Scanner(req)
 		dur := time.Since(now).Seconds()
 		scanDuration.WithLabelValues(req.IP, req.ScanType).Observe(dur)
 		scansFinished.WithLabelValues(req.IP, req.ScanType).Inc()
 
-		schedulePortScan(req, true)
+		scheduleScan(req, true)
 	}
 }
 
@@ -265,6 +277,7 @@ func scannerRequest(ip string) {
 		IP:       ip,
 		Args:     tcpArgs,
 		ScanType: "tcp",
+		Scanner:  portScan,
 		Period:   tcpFreq,
 	}
 
@@ -272,12 +285,20 @@ func scannerRequest(ip string) {
 		IP:       ip,
 		Args:     udpArgs,
 		ScanType: "udp",
+		Scanner:  portScan,
 		Period:   udpFreq,
 	}
 
+	VulnScan := ScanRequest{
+		IP:       ip,
+		ScanType: "vulnerability",
+		Scanner:  vulnScan,
+		Period:   vulnFreq,
+	}
 	activeHosts.add(ip)
-	schedulePortScan(&TCPScan, false)
-	schedulePortScan(&UDPScan, false)
+	scheduleScan(&TCPScan, false)
+	scheduleScan(&UDPScan, false)
+	scheduleScan(&VulnScan, false)
 }
 
 func getMacIP(host *nmap.Host) (mac, ip string) {
@@ -304,7 +325,7 @@ func subnetHostScan(ring, subnet string, scannedHosts *hostmap) int {
 	args := []string{"-sn", "-PS22,53,3389,80,443",
 		"-PA22,53,3389,80,443", "-PU", "-PY"}
 
-	scanResults, err := scan(subnet, args, file)
+	scanResults, err := nmapScan(subnet, args, file)
 	if err != nil {
 		log.Printf("Scan of %s ring failed: %v\n", ring, err)
 		return 0
@@ -370,15 +391,10 @@ func hostScan() {
 	hostsUp.Set(float64(seen))
 }
 
-// scan uses nmap to scan ip with the given arguments, outputting its results
-// to the given file and parsing its contents into an NmapRun struct.
-// If verbose is true, output of nmap is printed to log, otherwise it is ignored.
-func scan(ip string, nmapArgs []string, file string) (*nmap.NmapRun, error) {
+func runCmd(cmd string, args []string) error {
 	var childProcess *os.Process
 
-	args := []string{ip, "-oX", file}
-	args = append(args, nmapArgs...)
-	child := aputil.NewChild("/usr/bin/nmap", args...)
+	child := aputil.NewChild(cmd, args...)
 
 	if *verbose {
 		child.LogOutputTo("", 0, os.Stderr)
@@ -393,18 +409,30 @@ func scan(ip string, nmapArgs []string, file string) (*nmap.NmapRun, error) {
 	runLock.Unlock()
 
 	if err != nil {
-		return nil, fmt.Errorf("error starting nmap: %v", err)
+		err = fmt.Errorf("error starting %s: %v", cmd, err)
+	} else {
+		if err = child.Wait(); err != nil {
+			err = fmt.Errorf("error running %s: %v", cmd, err)
+		}
+
+		runLock.Lock()
+		delete(scansRunning, childProcess)
+		runLock.Unlock()
+	}
+	return err
+}
+
+// scan uses nmap to scan ip with the given arguments, outputting its results
+// to the given file and parsing its contents into an NmapRun struct.
+// If verbose is true, output of nmap is printed to log, otherwise it is ignored.
+func nmapScan(ip string, nmapArgs []string, file string) (*nmap.NmapRun, error) {
+	args := []string{ip, "-oX", file}
+	args = append(args, nmapArgs...)
+
+	if err := runCmd("/usr/bin/nmap", args); err != nil {
+		return nil, err
 	}
 
-	err = child.Wait()
-
-	runLock.Lock()
-	delete(scansRunning, childProcess)
-	runLock.Unlock()
-
-	if err != nil {
-		return nil, fmt.Errorf("error running nmap: %v", err)
-	}
 	fileContent, err := ioutil.ReadFile(file)
 	if err != nil {
 		return nil, fmt.Errorf("error reading nmap results %s: %v",
@@ -436,8 +464,8 @@ func timestampToProto(t nmap.Timestamp) *base_msg.Timestamp {
 	return aputil.TimeToProtobuf(&tt)
 }
 
-// marshall an NmapRun struct into something that fits into a protobuf
-func marshallNmapResults(host *nmap.Host) *base_msg.Host {
+// marshal an NmapRun struct into something that fits into a protobuf
+func marshalNmapResults(host *nmap.Host) *base_msg.Host {
 	var h base_msg.Host
 
 	h.Starttime = timestampToProto(host.StartTime)
@@ -533,7 +561,7 @@ func portScan(req *ScanRequest) {
 	file := fmt.Sprintf("%s/%s/%s-%d.xml", *watchDir, req.IP, req.ScanType,
 		int(time.Now().Unix()))
 
-	res, err := scan(req.IP, req.Args, file)
+	res, err := nmapScan(req.IP, req.Args, file)
 	if err != nil {
 		return
 	}
@@ -548,13 +576,13 @@ func portScan(req *ScanRequest) {
 	if host.Status.State != "up" {
 		log.Printf("Host %s is down, stopping scans", req.IP)
 		activeHosts.del(req.IP)
-		cancelPortScan(req.IP)
+		cancelScan(req.IP)
 		return
 	}
 
 	recordNmapResults(host)
 	marshalledHosts := make([]*base_msg.Host, 1)
-	marshalledHosts[0] = marshallNmapResults(host)
+	marshalledHosts[0] = marshalNmapResults(host)
 
 	addr := net.ParseIP(req.IP)
 	start := fmt.Sprintf("Nmap %s scan initiated %s as: %s", res.Version,
@@ -574,6 +602,101 @@ func portScan(req *ScanRequest) {
 	err = brokerd.Publish(scan, base_def.TOPIC_SCAN)
 	if err != nil {
 		log.Printf("Error sending scan: %v\n", err)
+	}
+}
+
+func vulnException(mac, ip string, details []string) {
+	reason := base_msg.EventNetException_VULNERABILITY_DETECTED
+	entity := &base_msg.EventNetException{
+		Timestamp:   aputil.NowToProtobuf(),
+		Sender:      proto.String(brokerd.Name),
+		Debug:       proto.String("-"),
+		Reason:      &reason,
+		MacAddress:  aputil.MacStrToProtobuf(mac),
+		Ipv4Address: aputil.IPStrToProtobuf(ip),
+		Details:     details,
+	}
+
+	err := brokerd.Publish(entity, base_def.TOPIC_EXCEPTION)
+	if err != nil {
+		log.Printf("couldn't publish %v to %s: %v\n",
+			entity, base_def.TOPIC_EXCEPTION, err)
+	}
+}
+func vulnHandle(ip string, vulnerabilities map[string]bool) {
+	var msg, spacer string
+	var warn []string
+	var quarantine bool
+
+	mac := getMacFromIP(ip)
+
+	for name := range vulnerabilities {
+		nickname := ""
+		v, ok := vulnList[name]
+		if !ok {
+			nickname = " (unrecognized vulnerability)"
+		} else {
+			for _, a := range v.Actions {
+				switch a {
+				case "Warn":
+					warn = append(warn, name)
+				case "Quarantine":
+					quarantine = true
+				}
+			}
+			if v.Nickname != "" {
+				nickname = " (" + v.Nickname + ")"
+			}
+			msg += spacer + name + nickname
+			spacer = ", "
+		}
+	}
+	log.Printf("%s (seen as %s) found with: %s\n", mac, ip, msg)
+
+	if len(warn) > 0 {
+		vulnException(mac, ip, warn)
+	}
+
+	if quarantine && mac != "" {
+		log.Printf("%s being quarantined\n", mac)
+		config.SetProp("@/clients/"+mac+"/ring",
+			base_def.RING_QUARANTINE, nil)
+	}
+}
+
+func vulnScan(req *ScanRequest) {
+	if !vulnScannable {
+		return
+	}
+
+	prober := aputil.ExpandDirPath("/bin/ap-vuln-aggregate")
+	resFile, err := ioutil.TempFile("", "vuln.")
+	if err != nil {
+		log.Printf("failed to create result file: %v", err)
+		return
+	}
+	name := resFile.Name()
+	defer os.Remove(name)
+
+	args := []string{"-d", vulnListFile, "-i", req.IP, "-o", name}
+	if *verbose {
+		args = append(args, "-v")
+	}
+	if err := runCmd(prober, args); err != nil {
+		log.Printf("vulnerability scan of %s failed: %v\n",
+			req.IP, err)
+		return
+	}
+
+	found := make(map[string]bool)
+	file, err := ioutil.ReadFile(name)
+	if err = json.Unmarshal(file, &found); err != nil {
+		log.Printf("Failed to unmarshal resuts: %v\n", err)
+		return
+	}
+
+	if len(found) > 0 {
+		vulnHandle(req.IP, found)
 	}
 }
 
@@ -650,9 +773,35 @@ func cleanAll() {
 		if cleanHostdir(*watchDir+"/"+host) == 0 {
 			log.Printf("No recent scans for %s, forgetting host", host)
 			activeHosts.del(host)
-			cancelPortScan(host)
+			cancelScan(host)
 		}
 	}
+}
+
+func vulnInit() {
+	vulnListFile = *watchDir + "/vuln-db.json"
+	vulnList = make(map[string]vulnDescription, 0)
+
+	file, err := ioutil.ReadFile(vulnListFile)
+	if err != nil {
+		log.Printf("Failed to read vulnerability list '%s': %v\n",
+			vulnListFile, err)
+		return
+	}
+
+	err = json.Unmarshal(file, &vulnList)
+	if err != nil {
+		log.Printf("Failed to load vulnerability list '%s': %v\n",
+			vulnListFile, err)
+		return
+	}
+	vulnScannable = true
+
+	os.Setenv("NMAPDIR", aputil.ExpandDirPath("/share/nmap"))
+
+	// Make it possible for ap-vuln-aggregate to run ap-inspect without
+	// hardcoding the path in the binary.
+	os.Setenv("PATH", os.Getenv("PATH")+":"+aputil.ExpandDirPath("/bin"))
 }
 
 func scannerFini(w *watcher) {
@@ -687,12 +836,13 @@ func scannerInit(w *watcher) {
 	activeHosts = hostmapCreate()
 	scansPending = make(scanQueue, 0)
 	heap.Init(&scansPending)
+	vulnInit()
 
 	scansRunning = make(map[*os.Process]bool)
 
 	os.MkdirAll(*watchDir+"/netscans", 0755)
 	for i := 0; i < numScanners; i++ {
-		go portScanner()
+		go scanner()
 	}
 
 	schedule(hostScan, hostScanFreq, true)

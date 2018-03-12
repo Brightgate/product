@@ -421,7 +421,7 @@ func notifyBlockEvent(c *apcfg.ClientInfo, hostname string) {
 		Debug:       proto.String("-"),
 		Protocol:    &protocol,
 		Reason:      &reason,
-		Hostname:    &hostname,
+		Details:     []string{hostname},
 		MacAddress:  proto.Uint64(network.HWAddrToUint64(dev)),
 		Ipv4Address: proto.Uint32(network.IPAddrToUint32(c.IPv4)),
 	}

@@ -218,17 +218,15 @@ message EventNetException {
 	optional Protocol protocol = 0x0800;
 
 	enum Reason {
-		DIRECT_FORBIDDEN = 1;
-		POLICY_BOUNDARY_VIOLATED = 2;
-		ILLEGAL_ADDRESS = 3;
-		PHISHING_ADDRESS = 4;
-		BLOCKED_IP = 5;
+		PHISHING_ADDRESS = 1;
+		BLOCKED_IP = 2;
+		VULNERABILITY_DETECTED = 3;
 	}
 	optional Reason reason = 0x801;
 	optional string message = 0x802;
 	optional fixed64 mac_address = 0x803;
 	optional fixed32 ipv4_address = 0x804;
-	optional string hostname = 0x805;
+	repeated string details = 0x805;
 }
 
 // The network identity is sent whenever the identifier daemon is able to

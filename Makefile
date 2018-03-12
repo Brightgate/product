@@ -205,6 +205,7 @@ APPBASE=$(APPROOT)/opt/com.brightgate
 APPBIN=$(APPBASE)/bin
 APPDOC=$(APPBASE)/share/doc
 APPWEB=$(APPBASE)/share/web
+APPSNMAP=$(APPBASE)/share/nmap/scripts
 # APPCSS
 # APPJS
 # APPHTML
@@ -248,12 +249,14 @@ APPCOMMAND_GOPKGS = \
 	bg/ap-complete \
 	bg/ap-configctl \
 	bg/ap-ctl \
+	bg/ap-inspect \
 	bg/ap-iot \
 	bg/ap-msgping \
 	bg/ap-ouisearch \
 	bg/ap-rpc \
 	bg/ap-stats \
-	bg/ap-userctl
+	bg/ap-userctl \
+	bg/ap-vuln-aggregate
 
 APPDAEMON_GOPKGS = \
 	bg/ap.brokerd \
@@ -328,8 +331,10 @@ APPCONFIGS = \
 	$(APPETC)/prometheus.yml \
 	$(APPROOTLIB)/systemd/system/ap.mcp.service \
 	$(APPROOTLIB)/systemd/system/brightgate-appliance.service \
+	$(APPSNMAP)/smb-vuln-ms17-010.nse \
 	$(APPSPOOLANTIPHISH)/example_blacklist.csv \
 	$(APPSPOOLANTIPHISH)/whitelist.csv \
+	$(APPSPOOLWATCHD)/vuln-db.json \
 	$(ROOTETCCROND)/com-brightgate-appliance-cron \
 	$(ROOTETCIPTABLES)/rules.v4 \
 	$(ROOTETCRSYSLOGD)/com-brightgate-rsyslog.conf \
@@ -345,6 +350,7 @@ APPDIRS = \
 	$(APPSECRET) \
 	$(APPSECRETSSL) \
 	$(APPSECRETIOTCORE) \
+	$(APPSNMAP) \
 	$(APPSPOOL) \
 	$(APPVAR) \
 	$(APPSPOOLANTIPHISH) \
@@ -566,10 +572,16 @@ $(ROOTETCLOGROTATED)/com-brightgate-logrotate-mcp: $(GOSRCBG)/ap.mcp/com-brightg
 $(ROOTETCRSYSLOGD)/com-brightgate-rsyslog.conf: $(GOSRCBG)/ap.watchd/com-brightgate-rsyslog.conf | $(ROOTETCRSYSLOGD)
 	$(INSTALL) -m 0644 $< $@
 
+$(APPSNMAP)/smb-vuln-ms17-010.nse: $(GOSRCBG)/ap-vuln-aggregate/smb-vuln-ms17-010.nse | $(APPSNMAP)
+	$(INSTALL) -m 0644 $< $@
+
 $(APPSPOOLANTIPHISH)/example_blacklist.csv: $(GOSRCBG)/data/phishtank/example_blacklist.csv | $(APPSPOOLANTIPHISH)
 	$(INSTALL) -m 0644 $< $@
 
 $(APPSPOOLANTIPHISH)/whitelist.csv: $(GOSRCBG)/data/phishtank/whitelist.csv | $(APPSPOOLANTIPHISH)
+	$(INSTALL) -m 0644 $< $@
+
+$(APPSPOOLWATCHD)/vuln-db.json: $(GOSRCBG)/ap-vuln-aggregate/sample-db.json | $(APPSPOOLWATCHD)
 	$(INSTALL) -m 0644 $< $@
 
 $(HTTPD_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.httpd/% | $(APPETC)
@@ -693,6 +705,7 @@ $(APPBIN)/ap-arpspoof: $(GOSRCBG)/ap-arpspoof/arpspoof.go
 $(APPBIN)/ap-complete: $(GOSRCBG)/ap-complete/complete.go
 $(APPBIN)/ap-configctl: $(GOSRCBG)/ap-configctl/configctl.go
 $(APPBIN)/ap-ctl: $(GOSRCBG)/ap-ctl/ctl.go
+$(APPBIN)/ap-inspect: $(GOSRCBG)/ap-inspect/inspect.go
 $(APPBIN)/ap-msgping: $(GOSRCBG)/ap-msgping/msgping.go
 $(APPBIN)/ap-ouisearch: $(GOSRCBG)/ap-ouisearch/ouisearch.go
 $(APPBIN)/ap-rpc: \
@@ -703,6 +716,10 @@ $(APPBIN)/ap-iot: \
 	$(CLOUD_COMMON_SRCS)
 $(APPBIN)/ap-stats: $(GOSRCBG)/ap-stats/stats.go
 $(APPBIN)/ap-userctl: $(GOSRCBG)/ap-userctl/userctl.go
+$(APPBIN)/ap-vuln-aggregate: \
+	$(GOSRCBG)/ap-vuln-aggregate/ap-inspect.go \
+	$(GOSRCBG)/ap-vuln-aggregate/nmap.go \
+	$(GOSRCBG)/ap-vuln-aggregate/aggregate.go
 
 LOCAL_BINARIES=$(APPBINARIES:$(APPBIN)/%=$(GOPATH)/bin/%)
 

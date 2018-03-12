@@ -1,0 +1,28 @@
+{
+    "CVE-2017-0143": {
+        "Nickname": "wannacry",
+        "Tool": "nmap",
+        "Options": {
+                "script": "smb-vuln-ms17-010",
+                "raw": "-Pn"
+        },
+        "Ports": [ "445" ],
+        "Actions": [ "Warn", "Quarantine" ]
+    },
+    "CVE-2014-0160": {
+        "Nickname": "heartbleed",
+        "Tool": "nmap",
+        "Options": {
+                "script": "ssl-heartbleed"
+        },
+        "Ports": [ "443" ],
+        "Actions": [ "Warn" ]
+    },
+    "CVE-2018-6789": {
+        "Tool": "ap-inspect",
+        "Options": {
+                "probe": "CVE-2018-6789"
+        },
+        "Actions": [ "Warn" ]
+    }
+}

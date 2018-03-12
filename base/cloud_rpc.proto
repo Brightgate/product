@@ -81,5 +81,5 @@ message NetException {
 	optional string message = 0x4;
 	optional fixed64 mac_address = 0x5;
 	optional fixed32 ipv4_address = 0x6;
-	optional string hostname = 0x7;
+	repeated string details = 0x7;
 }

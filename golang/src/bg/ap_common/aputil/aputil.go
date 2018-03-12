@@ -12,6 +12,7 @@ package aputil
 
 import (
 	"bufio"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -402,6 +403,32 @@ func TimeToProtobuf(gtime *time.Time) *base_msg.Timestamp {
 		Nanos:   proto.Int32(int32(gtime.Nanosecond())),
 	}
 	return &tmp
+}
+
+// IPStrToProtobuf translates an IP address string into a uint32 suitable
+// for inserting into a protobuf.
+func IPStrToProtobuf(ipstr string) *uint32 {
+	var rval uint32
+
+	if ip := net.ParseIP(ipstr).To4(); ip != nil {
+		rval = binary.BigEndian.Uint32(ip)
+	}
+	return &rval
+}
+
+// MacStrToProtobuf translates a mac adress string into a uint64 suitable
+// for inserting into a protobuf.
+func MacStrToProtobuf(macstr string) *uint64 {
+	var rval uint64
+
+	if a, err := net.ParseMAC(macstr); err == nil {
+		hwaddr := make([]byte, 8)
+		hwaddr[0] = 0
+		hwaddr[1] = 0
+		copy(hwaddr[2:], a)
+		rval = binary.BigEndian.Uint64(hwaddr)
+	}
+	return &rval
 }
 
 // NowToProtobuf gets the current time and returns a pointer to the Protobuf

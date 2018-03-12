@@ -139,6 +139,12 @@
   version = "v1.1"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/hashicorp/go-version"
+  packages = ["."]
+  revision = "23480c0665776210b5fbbac6eaaee40e3e6a96b7"
+
+[[projects]]
   name = "github.com/klauspost/oui"
   packages = ["."]
   revision = "1309774d78c68a8b186890b07cfea9109f937506"
@@ -589,6 +595,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "c1493135b2cbf25ffd51e567191cf1fe249ec69253739d75552c4e7a64b3fcf8"
+  inputs-digest = "461badbc0eeea964c294abf5fb3fb184686f1b6ffffc0074c2ea87fdf3ee5419"
   solver-name = "gps-cdcl"
   solver-version = 1

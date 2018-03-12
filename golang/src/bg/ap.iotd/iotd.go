@@ -140,8 +140,8 @@ func handleNetException(ctx context.Context, iotc iotcore.IoTMQTTClient, event [
 		cloudNetExc.Ipv4Address = proto.Uint32(*exception.Ipv4Address)
 	}
 
-	if exception.Hostname != nil {
-		cloudNetExc.Hostname = proto.String(*exception.Hostname)
+	if len(exception.Details) > 0 {
+		cloudNetExc.Details = exception.Details
 	}
 
 	return publishEventProto(iotc, "exception", cloudNetExc)
