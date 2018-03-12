@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -80,9 +80,9 @@ func getClients() error {
 	}
 	sort.Strings(macs)
 
-	fmt.Printf("%-17s %-16s %-10s %-15s %-16s %-9s %-s\n",
+	fmt.Printf("%-17s %-16s %-10s %-15s %-16s %-9s\n",
 		"macaddr", "name", "ring", "ip addr", "expiration",
-		"identity", "confidence")
+		"device id")
 
 	for _, mac := range macs {
 		client := clients[mac]
@@ -109,8 +109,33 @@ func getClients() error {
 			}
 		}
 
-		fmt.Printf("%-17s %-16s %-10s %-15s %-16s %-9s %-s\n",
-			mac, name, ring, ipv4, exp, client.Identity, client.Confidence)
+		confidence, err := strconv.ParseFloat(client.Confidence, 32)
+		if err != nil {
+			confidence = 0.0
+		}
+
+		// Don't confuse the user with a device ID unless the confidence
+		// is better than even.
+		identString := ""
+		if confidence >= 0.5 {
+			device, err := apcfgd.GetDevicePath("@/devices/" + client.Identity)
+			if err == nil {
+				identString = fmt.Sprintf("%s %s", device.Vendor, device.ProductName)
+			} else {
+				identString = client.Identity
+			}
+		}
+
+		// If the confidence is less than almost certain (as defined by
+		// Words of Estimative Probability), prepend the device ID with
+		// a question mark.
+		confidenceMarker := ""
+		if confidence < 0.87 {
+			confidenceMarker = "? "
+		}
+
+		fmt.Printf("%-17s %-16s %-10s %-15s %-16s %s%-9s\n",
+			mac, name, ring, ipv4, exp, confidenceMarker, identString)
 	}
 
 	return nil
