@@ -41,7 +41,6 @@ func TestNetException(t *testing.T) {
 
 	iotcMock.On("PublishEvent",
 		"exception",
-		uint8(1),
 		mock.AnythingOfType("string"),
 	).Return(&mqtt.DummyToken{})
 
@@ -73,7 +72,6 @@ func TestSendUpbeat(t *testing.T) {
 
 	iotcMock.On("PublishEvent",
 		"upbeat",
-		uint8(1),
 		mock.AnythingOfType("string"),
 	).Return(&mqtt.DummyToken{})
 

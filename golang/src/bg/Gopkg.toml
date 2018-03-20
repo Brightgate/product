@@ -115,4 +115,4 @@
 
 [[constraint]]
   name = "github.com/eclipse/paho.mqtt.golang"
-  revision = "750c97f293745e8220737ef933da2ec829d2fddd"
+  version = "1.1.1"

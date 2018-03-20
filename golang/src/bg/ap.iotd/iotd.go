@@ -56,9 +56,11 @@ var (
 
 	credPathFlag = flag.String("cred-path", "etc/secret/iotcore/iotcore.secret.json", "JSON credential file for this IoTCore device")
 
-	logger    *zap.Logger
-	slogger   *zap.SugaredLogger
-	zapConfig zap.Config
+	levelFlag   = zap.LevelFlag("log-level", zapcore.InfoLevel, "Log level [debug,info,warn,error,panic,fatal]")
+	logger      *zap.Logger
+	slogger     *zap.SugaredLogger
+	zapConfig   zap.Config
+	globalLevel zap.AtomicLevel
 
 	// ApVersion will be replaced by go build step.
 	ApVersion = "undefined"
@@ -73,7 +75,7 @@ func publishEventProto(iotc iotcore.IoTMQTTClient, subfolder string, evt proto.M
 	}
 	pb64 := base64.StdEncoding.EncodeToString(pb)
 	slogger.Debugw("Sending "+subfolder, "payload", evt)
-	t := iotc.PublishEvent(subfolder, 1, pb64)
+	t := iotc.PublishEvent(subfolder, pb64)
 	if t.Wait() && t.Error() != nil {
 		return errors.Wrap(t.Error(), "Send failed")
 	}
@@ -152,11 +154,12 @@ func onConfig(iotc *iotcore.IoTMQTTClient, message mqtt.Message) {
 func zapSetup() {
 	var err error
 	zapConfig = zap.NewDevelopmentConfig()
+	globalLevel = zap.NewAtomicLevelAt(*levelFlag)
+	zapConfig.Level = globalLevel
 	logger, err = zapConfig.Build()
 	if err != nil {
 		log.Panicf("can't zap: %s", err)
 	}
-	zapConfig.Level.SetLevel(zapcore.InfoLevel)
 	slogger = logger.Sugar()
 	_ = zap.RedirectStdLog(logger)
 }
@@ -176,8 +179,8 @@ func getCred() (*iotcore.IoTCredential, error) {
 func main() {
 	var wg sync.WaitGroup
 
-	zapSetup()
 	flag.Parse()
+	zapSetup()
 	ctx := context.Background()
 
 	mcpd, err := mcp.New(pname)
@@ -200,7 +203,7 @@ func main() {
 	defer b.Fini()
 
 	iotcore.MQTTLogToZap(logger)
-	iotc, err := iotcore.NewMQTTClient(iotCred)
+	iotc, err := iotcore.NewMQTTClient(iotCred, iotcore.DefaultTransportOpts)
 	if err != nil {
 		slogger.Fatalf("Could not initialize IoT core client: %s", err)
 	}

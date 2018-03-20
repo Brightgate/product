@@ -121,7 +121,7 @@ func setupClient(t *testing.T) (*_IoTMQTTClient, error) {
 	}
 	cred := NewCredential(testProject, testRegion, testRegistry, testDevice, testKey)
 
-	c, err := NewMQTTClient(cred)
+	c, err := NewMQTTClient(cred, DefaultTransportOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -149,23 +149,6 @@ func TestConnection(t *testing.T) {
 	t.Logf("Disconnected")
 }
 
-func TestRefresh(t *testing.T) {
-	_, _ = setupLogging(t)
-	client, err := setupClient(t)
-	if err != nil {
-		t.Errorf("Failed to make client: %s", err)
-		return
-	}
-	t.Logf("Connected")
-	client.refreshJWT()
-	if !client.IsConnected() {
-		t.Errorf("Client is not connected after refresh")
-		return
-	}
-	client.Disconnect(250)
-	t.Logf("Disconnected")
-}
-
 func TestPublishEvent(t *testing.T) {
 	_, _ = setupLogging(t)
 	client, err := setupClient(t)
@@ -176,13 +159,13 @@ func TestPublishEvent(t *testing.T) {
 
 	// No Subfolder
 	text := "Test Event"
-	token := client.PublishEvent("", 1, text)
+	token := client.PublishEvent("", text)
 	if token.WaitTimeout(2*time.Second) == false {
 		t.Errorf("Publish timed out.")
 		return
 	}
 	// Subfolder
-	token = client.PublishEvent("testsubfolder", 1, text)
+	token = client.PublishEvent("testsubfolder", text)
 	if token.WaitTimeout(2*time.Second) == false {
 		t.Errorf("Publish timed out.")
 		return
@@ -199,7 +182,7 @@ func TestPublishState(t *testing.T) {
 	}
 
 	text := "Test State"
-	token := client.PublishState(1, text)
+	token := client.PublishState(text)
 	if token.WaitTimeout(2*time.Second) == false {
 		t.Errorf("Publish timed out.")
 		return
@@ -228,15 +211,5 @@ func TestConfig(t *testing.T) {
 		return
 	}
 
-	// We expect that refreshJWT will hangup the connection and then
-	// reestablish it.  It will resubscribe onConfig.  So we expect to
-	// see the config message again.
-	client.refreshJWT()
-	incomingMsg = <-incoming
-	t.Logf("Received second message '%s'", incomingMsg)
-	if incomingMsg != testConfigPayload {
-		t.Errorf("payload: %s != %s", incomingMsg, testConfigPayload)
-		return
-	}
 	client.Disconnect(250)
 }

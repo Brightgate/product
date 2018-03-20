@@ -62,7 +62,8 @@
     ".",
     "packets"
   ]
-  revision = "750c97f293745e8220737ef933da2ec829d2fddd"
+  revision = "36d01c2b4cbeb3d2a12063e4880ce30800af9560"
+  version = "v1.1.1"
 
 [[projects]]
   name = "github.com/fgrosse/zaptest"
@@ -588,6 +589,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "8e100d0d8f384288797d14b76e655f78bc83dc1fa4d6988c5cbde37601459c3b"
+  inputs-digest = "c1493135b2cbf25ffd51e567191cf1fe249ec69253739d75552c4e7a64b3fcf8"
   solver-name = "gps-cdcl"
   solver-version = 1

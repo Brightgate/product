@@ -76,7 +76,7 @@ func (cred *IoTCredential) makeJWT() (string, error) {
 	}
 	cred.jwtClaims = jwt.StandardClaims{
 		IssuedAt:  time.Now().Unix(),
-		ExpiresAt: time.Now().Unix() + cJWTExpiry,
+		ExpiresAt: time.Now().Add(cJWTExpiry).Unix(),
 		Audience:  cred.Project,
 	}
 	j := jwt.NewWithClaims(jwtSigningMethod, cred.jwtClaims)
