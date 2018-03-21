@@ -95,9 +95,6 @@ GOVERFLAGS=-ldflags="-X main.ApVersion=$(GITHASH)"
 #
 # Miscellaneous environment setup
 #
-# Use "make PKG_LINT= packages" to skip lintian pass.
-PKG_LINT = --lint
-
 INSTALL = install
 MKDIR = mkdir
 RM = rm
@@ -455,8 +452,11 @@ cloud: $(CLOUDCOMPONENTS)
 
 util: $(UTILCOMPONENTS)
 
-packages: install
-	$(PYTHON3) build/deb-pkg/deb-pkg.py $(PKG_LINT) --arch $(PKG_DEB_ARCH)
+packages: install client-web
+	$(PYTHON3) build/deb-pkg/deb-pkg.py --arch $(PKG_DEB_ARCH)
+
+packages-lint: install client-web
+	$(PYTHON3) build/deb-pkg/deb-pkg.py --lint --arch $(PKG_DEB_ARCH)
 
 test: test-go
 

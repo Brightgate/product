@@ -40,52 +40,55 @@ ARCH_MAPS = {
     "amd64": "x86_64"
 }
 
+class WrongArchException(Exception):
+    """ Indicates that the package cannot be constructed for this arch. """
+    pass
+
 class DebPackage:
-    """Operations for building a Debian binary package."""
+    """ Base class for debian packages.  Subclass for each specific package"""
+    name = None
+    description = None
+    arches = []
+    depends = None
+    maintainer = None
+    proto_dir = None
 
-    def __init__(self, name, version, arches, tree_fmt, depends, description):
-        self.name = name
+    def __init__(self, arch, version):
         self.version = version
-        self.arches = arches
-        self.tree_fmt = tree_fmt
-        self.depends = depends
-        self.description = description
+        assert len(self.arches) > 0
+        if not arch in self.arches:
+            raise WrongArchException("%s not a supported architecture" % arch)
+        self.arch = arch
+        self.work_dir = "%s_%s_%s" % (self.name, self.version, self.arch)
+        self.package_name = "%s_%s_%s.deb" % (self.name, self.version, self.arch)
+        self.debian_dir = os.path.join(self.work_dir, "DEBIAN")
 
-    def work_dir(self, arch):
-        """Generate the package's work directory."""
-        return "%s_%s_%s" % (self.name, self.version, arch)
-
-    def package_name(self, arch):
-        """Generate the package's filename."""
-        return "%s_%s_%s.deb" % (self.name, self.version, arch)
-
-    def rm_work_dir(self, arch):
+    def rm_work_dir(self):
         """Delete the package's work directory."""
         try:
-            if os.path.exists(self.work_dir(arch)):
-                shutil.rmtree(self.work_dir(arch))
+            if os.path.exists(self.work_dir):
+                shutil.rmtree(self.work_dir)
         except Exception as e:
-            logging.warning("rmtree %s: %s", self.work_dir(arch), e)
+            logging.warning("rmtree %s: %s", self.work_dir, e)
 
-    def mk_work_dir(self, arch):
+    def mk_work_dir(self):
         """Make the package's work directory."""
         try:
-            os.makedirs(self.work_dir(arch) + "/DEBIAN")
+            os.makedirs(self.debian_dir)
         except Exception as e:
-            logging.warning("makedirs %s: %s", self.work_dir(arch), e)
+            logging.warning("makedirs %s: %s", self.work_dir, e)
 
-    def copy_tree(self, arch):
+    def copy_tree(self):
         """Copy package contents, as subtree, from proto area."""
-        shutil.copytree(self.tree_fmt % ARCH_MAPS[arch], self.work_dir(arch))
+        shutil.copytree(self.proto_dir, self.work_dir)
 
-    def emit_metadata(self, arch):
+    def emit_metadata(self):
         """Write the package metadata files."""
         depends = ",".join(self.depends)
 
-        controlf = open(self.work_dir(arch) + "/DEBIAN/control", "w")
-        print(TEMPLATE % (self.name, self.version, arch, depends,
-                          "Brightgate Software <contact_us@brightgate.com>",
-                          self.description),
+        controlf = open(os.path.join(self.debian_dir, "control"), "w")
+        print(TEMPLATE % (self.name, self.version, self.arch, depends,
+                          self.maintainer, self.description),
               file=controlf)
         controlf.close()
 
@@ -93,60 +96,85 @@ class DebPackage:
         for f in ["prerm", "postinst"]:
             src = "build/deb-pkg/%s-%s" % (self.name, f)
             if os.path.exists(src):
-                dst = self.work_dir(arch) + "/DEBIAN/" + f
+                dst = os.path.join(self.debian_dir, f)
                 shutil.copyfile(src, dst)
                 os.chmod(dst, 0o755)
 
-    def collect_contents(self, arch=None):
+    def collect_contents(self):
         """Set up the package's complete contents."""
-        self.rm_work_dir(arch)
-        self.copy_tree(arch)
-        self.mk_work_dir(arch)
-        self.emit_metadata(arch)
+        self.rm_work_dir()
+        self.copy_tree()
+        self.mk_work_dir()
+        self.emit_metadata()
 
-    def build_package(self, arch=None, compresstype="xz", compresslevel=6):
+    def build_package(self, compresstype="xz", compresslevel=6):
         """Invoke the appropriate package build utility."""
         sh.fakeroot("dpkg-deb", "-Z", compresstype, "-z", compresslevel,
-                    "--build", self.work_dir(arch), _fg=True)
-        self.rm_work_dir(arch)
+                    "--build", self.work_dir, _fg=True)
+        self.rm_work_dir()
 
-    def run_lint(self, arch):
+    def run_lint(self):
         """Run lintian against the constructed package."""
         try:
-            sh.lintian("--no-tag-display-limit", self.package_name(arch),
-                       _fg=True)
+            sh.lintian("--no-tag-display-limit", self.package_name, _fg=True)
         except sh.ErrorReturnCode_1:
-            logging.warning("lintian %s returned 1", self.package_name(arch))
+            logging.warning("lintian %s returned 1", self.package_name)
 
-# Package definitions.
-calver = time.strftime("%y%m%d%H%M")
-
-packages = [
-    DebPackage("bg-cloud", "0.0.%s-1" % calver, "amd64", "proto.%s/cloud",
-               ["libc6"],
-               """Cloud components."""),
-    DebPackage("bg-appliance", "0.0.%s-1" % calver, ["armhf", "amd64"],
-               "proto.%s/appliance", [
-                   "bridge-utils",
-                   "dhcpcd5",
-                   "hostapd-bg",
-                   "iproute2",
-                   "iptables",
-                   "iptables-persistent",
-                   "iw",
-                   "libc6",
-                   "libpcap-dev",
-                   "libzmq3-dev",
-                   "netfilter-persistent",
-                   "nmap",
-                   "procps",
-                   "vlan"
-                   ],
-               """Appliance components.""")
+class CloudDebPackage(DebPackage):
+    """Class representing bg-cloud debian package.  Packages cloud software."""
+    name = "bg-cloud"
+    arches = ["amd64"]
+    description = """Cloud components."""
+    maintainer = "Brightgate Software <contact_us@brightgate.com>"
+    depends = [
+        "libc6"
     ]
+
+    def __init__(self, arch, version):
+        super().__init__(arch, version)
+        self.proto_dir = "proto.%s/cloud" % ARCH_MAPS[arch]
+
+    def check_proto(self):
+        pass
+
+class ApplianceDebPackage(DebPackage):
+    """Class representing bg-appliance debian package.  Packages all appliance
+       software."""
+    name = "bg-appliance"
+    arches = ["armhf", "amd64"]
+    description = """Appliance components."""
+    maintainer = "Brightgate Software <contact_us@brightgate.com>"
+    depends = [
+        "bridge-utils",
+        "dhcpcd5",
+        "hostapd-bg",
+        "iproute2",
+        "iptables",
+        "iptables-persistent",
+        "iw",
+        "libc6",
+        "libpcap-dev",
+        "libzmq3-dev",
+        "netfilter-persistent",
+        "nmap",
+        "procps",
+        "vlan"
+    ]
+
+    def __init__(self, arch, version):
+        super().__init__(arch, version)
+        self.proto_dir = "proto.%s/appliance" % ARCH_MAPS[arch]
+
+    def check_proto(self):
+        # prevent packaging a proto area with an initialized config store
+        ap_props = "opt/com.brightgate/etc/ap_props.json"
+        if os.path.exists(os.path.join(self.proto_dir, ap_props)):
+            raise Exception("proto area looks dirty (found %s)" % ap_props)
 
 def main_func():
     """Main program logic"""
+    packages = [CloudDebPackage, ApplianceDebPackage]
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--arch', '-a', required=True)
     parser.add_argument('--lint', action='store_true')
@@ -155,21 +183,34 @@ def main_func():
                         choices=["none", "gzip", "xz"])
 
     opts = parser.parse_args(sys.argv[1:])
+    calver = time.strftime("%y%m%d%H%M")
+    version = "0.0.%s-1" % calver
 
-    for p in packages:
-        if opts.arch not in p.arches:
-            logging.info("skipping %s for %s (supports %s)", opts.arch, p.name,
-                         p.arches)
+    pkgs = []
+    for pclass in packages:
+        try:
+            p = pclass(opts.arch, version)
+        except WrongArchException as e:
+            logging.info("skipping %s: %s", pclass.name, e)
             continue
 
-        logging.info("begin %s package build", p.name)
-        p.collect_contents(arch=opts.arch)
-        p.build_package(arch=opts.arch, compresstype=opts.compresstype,
+        try:
+            logging.info("pre-build check for %s", p.package_name)
+            p.check_proto()
+        except Exception as e:
+            logging.fatal("failed proto area check: %s", e)
+            sys.exit(1)
+        pkgs.append(p)
+
+    for p in pkgs:
+        logging.info("begin %s package build", p.package_name)
+        p.collect_contents()
+        p.build_package(compresstype=opts.compresstype,
                         compresslevel=opts.compresslevel)
         logging.info("end %s package build", p.name)
 
         if opts.lint:
-            p.run_lint(opts.arch)
+            p.run_lint()
 
 if __name__ == "__main__":
     main_func()
