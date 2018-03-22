@@ -303,7 +303,7 @@ func buildDeviceResponse(hwaddr string, client *apcfg.ClientInfo) daDevice {
 	}
 
 	if client.Expires != nil {
-		cd.DHCPExpiry = client.Expires.Format("2006-02-01T15:04")
+		cd.DHCPExpiry = client.Expires.Format("2006-01-02T15:04")
 	} else {
 		cd.DHCPExpiry = "static"
 	}

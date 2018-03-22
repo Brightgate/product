@@ -103,7 +103,7 @@ func getClients() error {
 		if client.IPv4 != nil {
 			ipv4 = client.IPv4.String()
 			if client.Expires != nil {
-				exp = client.Expires.Format("2006-02-01T15:04")
+				exp = client.Expires.Format("2006-01-02T15:04")
 			} else {
 				exp = "static"
 			}

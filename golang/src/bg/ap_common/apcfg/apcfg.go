@@ -86,7 +86,7 @@ func dumpSubtree(node *PropertyNode, level int) {
 	}
 	e := ""
 	if node.Expires != nil {
-		e = node.Expires.Format("2006-02-01T15:04:05")
+		e = node.Expires.Format("2006-01-02T15:04:05")
 	}
 	fmt.Printf("%s%s: %s  %s\n", indent, node.Name, node.Value, e)
 	for _, n := range node.Children {
