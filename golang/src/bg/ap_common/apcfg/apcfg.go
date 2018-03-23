@@ -79,6 +79,12 @@ type PropertyNode struct {
 	Children []*PropertyNode `json:"Children,omitempty"`
 }
 
+// IsActive returns 'true' if we believe the client is currently connected to
+// this AP
+func (c *ClientInfo) IsActive() bool {
+	return c != nil && c.IPv4 != nil
+}
+
 func dumpSubtree(node *PropertyNode, level int) {
 	indent := ""
 	for i := 0; i < level; i++ {

@@ -11,8 +11,8 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"log"
 	"os"
 	"sort"
 	"strconv"
@@ -29,7 +29,11 @@ const pname = "ap-configctl"
 
 var apcfgd *apcfg.APConfig
 
-func getRings() error {
+func getRings(cmd string, args []string) error {
+	if len(args) != 0 {
+		usage(cmd)
+	}
+
 	rings := apcfgd.GetRings()
 	clients := apcfgd.GetClients()
 
@@ -70,85 +74,96 @@ func getRings() error {
 	return nil
 }
 
-func getClients() error {
-	clients := apcfgd.GetClients()
+func printClient(mac string, client *apcfg.ClientInfo) {
+	name := "-"
+	if client.DNSName != "" {
+		name = client.DNSName
+	} else if client.DHCPName != "" {
+		name = client.DHCPName
+	}
+
+	ring := "-"
+	if client.Ring != "" {
+		ring = client.Ring
+	}
+
+	ipv4 := "-"
+	exp := "-"
+	if client.IPv4 != nil {
+		ipv4 = client.IPv4.String()
+		if client.Expires != nil {
+			exp = client.Expires.Format("2006-01-02T15:04")
+		} else {
+			exp = "static"
+		}
+	}
+
+	confidence, err := strconv.ParseFloat(client.Confidence, 32)
+	if err != nil {
+		confidence = 0.0
+	}
+
+	// Don't confuse the user with a device ID unless the confidence
+	// is better than even.
+	identString := ""
+	if confidence >= 0.5 {
+		device, err := apcfgd.GetDevicePath("@/devices/" + client.Identity)
+		if err == nil {
+			identString = fmt.Sprintf("%s %s", device.Vendor, device.ProductName)
+		} else {
+			identString = client.Identity
+		}
+	}
+
+	// If the confidence is less than almost certain (as defined by
+	// Words of Estimative Probability), prepend the device ID with
+	// a question mark.
+	confidenceMarker := ""
+	if confidence < 0.87 {
+		confidenceMarker = "? "
+	}
+
+	fmt.Printf("%-17s %-16s %-10s %-15s %-16s %s%-9s\n",
+		mac, name, ring, ipv4, exp, confidenceMarker, identString)
+}
+
+func getClients(cmd string, args []string) error {
+	flags := flag.NewFlagSet("clients", flag.ContinueOnError)
+	allClients := flags.Bool("a", false, "show all clients")
+
+	if err := flags.Parse(args); err != nil {
+		usage(cmd)
+	}
 
 	// Build a list of client mac addresses, and sort them
+	clients := apcfgd.GetClients()
 	macs := make([]string, 0)
 	for mac := range clients {
 		macs = append(macs, mac)
 	}
 	sort.Strings(macs)
 
-	fmt.Printf("%-17s %-16s %-10s %-15s %-16s %-9s\n",
-		"macaddr", "name", "ring", "ip addr", "expiration",
-		"device id")
+	fmt.Printf("%-17s %-16s %-10s %-15s %-16s %9s\n",
+		"macaddr", "name", "ring", "ip addr", "expiration", "device id")
 
 	for _, mac := range macs {
 		client := clients[mac]
-		name := "-"
-		if client.DNSName != "" {
-			name = client.DNSName
-		} else if client.DHCPName != "" {
-			name = client.DHCPName
+		if client.IsActive() || *allClients {
+			printClient(mac, client)
 		}
-
-		ring := "-"
-		if client.Ring != "" {
-			ring = client.Ring
-		}
-
-		ipv4 := "-"
-		exp := "-"
-		if client.IPv4 != nil {
-			ipv4 = client.IPv4.String()
-			if client.Expires != nil {
-				exp = client.Expires.Format("2006-01-02T15:04")
-			} else {
-				exp = "static"
-			}
-		}
-
-		confidence, err := strconv.ParseFloat(client.Confidence, 32)
-		if err != nil {
-			confidence = 0.0
-		}
-
-		// Don't confuse the user with a device ID unless the confidence
-		// is better than even.
-		identString := ""
-		if confidence >= 0.5 {
-			device, err := apcfgd.GetDevicePath("@/devices/" + client.Identity)
-			if err == nil {
-				identString = fmt.Sprintf("%s %s", device.Vendor, device.ProductName)
-			} else {
-				identString = client.Identity
-			}
-		}
-
-		// If the confidence is less than almost certain (as defined by
-		// Words of Estimative Probability), prepend the device ID with
-		// a question mark.
-		confidenceMarker := ""
-		if confidence < 0.87 {
-			confidenceMarker = "? "
-		}
-
-		fmt.Printf("%-17s %-16s %-10s %-15s %-16s %s%-9s\n",
-			mac, name, ring, ipv4, exp, confidenceMarker, identString)
 	}
 
 	return nil
 }
 
-func getFormatted(prop string) error {
-	switch prop {
+func getFormatted(cmd string, args []string) error {
+	switch args[0] {
 	case "clients":
-		return getClients()
+		return getClients(cmd, args[1:])
 	case "rings":
-		return getRings()
+		return getRings(cmd, args[1:])
 	default:
-		return fmt.Errorf("unrecognized property: %s", prop)
+		return fmt.Errorf("unrecognized property: %s", args[0])
 	}
 }
 
@@ -173,13 +188,24 @@ func printDev(d *device.Device) {
 	}
 }
 
-func getProp(prop string) error {
+func getProp(cmd string, args []string) error {
 	var err error
 	var root *apcfg.PropertyNode
 
+	if len(args) < 1 {
+		usage(cmd)
+	}
+
+	prop := args[0]
 	if !strings.HasPrefix(prop, "@") {
-		err = getFormatted(prop)
-	} else if strings.HasPrefix(prop, "@/devices") {
+		return getFormatted(cmd, args)
+	}
+
+	if len(args) > 1 {
+		usage(cmd)
+	}
+
+	if strings.HasPrefix(prop, "@/devices") {
 		var d *device.Device
 		if d, err = apcfgd.GetDevicePath(prop); err == nil {
 			printDev(d)
@@ -194,93 +220,88 @@ func getProp(prop string) error {
 	return err
 }
 
-func delProp(prop string) error {
-	return apcfgd.DeleteProp(prop)
+func delProp(cmd string, args []string) error {
+	if len(args) != 1 {
+		usage(cmd)
+	}
+	return apcfgd.DeleteProp(args[0])
 }
 
-func setProp(prop, val, dur string, f setfunc) error {
+func setProp(cmd string, args []string) error {
 	var expires *time.Time
+	var err error
 
-	if len(val) == 0 {
-		return fmt.Errorf("no value specified for")
+	if len(args) < 2 || len(args) > 3 {
+		usage(cmd)
 	}
 
-	if len(dur) > 0 {
-		seconds, _ := strconv.Atoi(dur)
+	prop := args[0]
+	val := args[1]
+	if len(args) == 3 {
+		seconds, _ := strconv.Atoi(args[2])
 		dur := time.Duration(seconds) * time.Second
 		tmp := time.Now().Add(dur)
 		expires = &tmp
 	}
 
-	return f(prop, val, expires)
+	if cmd == "set" {
+		err = apcfgd.SetProp(prop, val, expires)
+	} else {
+		err = apcfgd.CreateProp(prop, val, expires)
+	}
+	return err
 }
 
-type op struct {
-	minargs int
-	maxargs int
-	usage   string
+var usages = map[string]string{
+	"set": "<prop> <value [duration]>",
+	"add": "<prop> <value [duration]>",
+	"get": "<prop> | clients [-a] | rings",
+	"del": "<prop>",
 }
 
-var ops = map[string]op{
-	"set": {3, 4, "<prop> <value [duration]>"},
-	"add": {3, 4, "<prop> <value [duration]>"},
-	"get": {2, 2, "<prop>"},
-	"del": {2, 2, "<prop>"},
+func usage(cmd string) {
+	if u, ok := usages[cmd]; ok {
+		fmt.Printf("usage: %s %s %s\n", pname, cmd, u)
+	} else {
+		fmt.Printf("Usage: %s\n", pname)
+		for c, u := range usages {
+			fmt.Printf("    %s %s\n", c, u)
+		}
+	}
+	os.Exit(1)
 }
 
 func main() {
-	var op *op
-	var cmd, prop, newval, duration string
 	var err error
+	var cmd string
+	var args []string
 
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-
-	argc := len(os.Args) - 1
-	if argc >= 1 {
-		cmd = os.Args[1]
-		if x, ok := ops[cmd]; ok {
-			op = &x
-		}
+	if len(os.Args) < 1 {
+		usage("")
 	}
 
-	// Look for a valid command
-	if op == nil {
-		fmt.Printf("Usage: %s\n", pname)
-		for c, o := range ops {
-			fmt.Printf("    %s %s\n", c, o.usage)
-		}
-		os.Exit(1)
-	}
-
-	// Verify that the command has a valid number of arguments
-	if argc < op.minargs || argc > op.maxargs {
-		fmt.Printf("Usage: %s %s %s\n", pname, cmd, op.usage)
-		os.Exit(1)
-	}
-
-	prop = os.Args[2]
-	if argc >= 3 {
-		newval = os.Args[3]
-	}
-	if argc >= 4 {
-		duration = os.Args[4]
-	}
+	cmd = os.Args[1]
+	args = os.Args[2:]
 
 	apcfgd, err = apcfg.NewConfig(nil, pname)
 	if err != nil {
-		log.Fatalf("cannot connect to configd: %v\n", err)
+		fmt.Printf("cannot connect to configd: %v\n", err)
+		os.Exit(1)
 	}
 
 	switch cmd {
 	case "set":
-		err = setProp(prop, newval, duration, apcfgd.SetProp)
+		err = setProp(cmd, args)
 	case "add":
-		err = setProp(prop, newval, duration, apcfgd.CreateProp)
+		err = setProp(cmd, args)
 	case "get":
-		err = getProp(prop)
+		err = getProp(cmd, args)
 	case "del":
-		err = delProp(prop)
+		err = delProp(cmd, args)
+	default:
+		usage("")
 	}
+
 	if err != nil {
 		fmt.Printf("%s failed: %v\n", cmd, err)
 		os.Exit(1)
