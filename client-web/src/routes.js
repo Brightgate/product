@@ -10,7 +10,7 @@
 export default [
   {
       path: '/',
-      component: require('./app.vue'),
+      component: require('./pages/home.vue'),
   },
   {
       path: '/devices',

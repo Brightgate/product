@@ -53,6 +53,7 @@ const RETRY_DELAY = 1000
 
 const state = {
   loggedIn: false,
+  fakeLogin: false,
   devices: _.cloneDeep(initDevices),
   deviceCount: Object.keys(initDevices.by_uniqid).length,
   rings: [],
@@ -89,11 +90,19 @@ const mutations = {
   toggleMock (state) {
     state.enable_mock = !state.enable_mock
   },
+
+  toggleFakeLogin (state) {
+    state.fakeLogin = !state.fakeLogin
+  },
 }
 
 const getters = {
   Is_Logged_In: (state) => {
-    return state.loggedIn
+    return state.loggedIn || state.fakeLogin
+  },
+
+  Fake_Login: (state) => {
+    return state.fakeLogin
   },
 
   Device_By_UniqID: (state) => (uniqid) => {
@@ -312,6 +321,10 @@ const actions = {
       _.defaults(user_result, mockUsers)
     }
     console.log("fetchUsers: GET /apid/users")
+    var user_result = {}
+    if (context.state.enable_mock) {
+      _.defaults(user_result, mockUsers)
+    }
     return superagent.get('/apid/users'
     ).then((res) => {
       console.log("fetchUsers: Succeeded: ", res.body);

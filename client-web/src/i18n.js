@@ -32,6 +32,7 @@ export const messages = {
         accept_success: 'Devices Acceptance succeeded. {devicesChanged} devices were affected.',
         accept_fail: "There was an error accepting devices: <b>{reason}.</b>",
         enable_mock: "Enable Mock",
+        enable_fakelogin: "Simulate being Logged In",
       },
       alerts: {
         serious_alerts: 'Serious Alerts',
@@ -169,10 +170,11 @@ export const messages = {
       },
       testing: {
         testing: "Für Testzwecke",
-        enable_mock: "Testmodus",
         accept_devices: 'Akzeptiere Geräte',
         accept_success: 'Akzeptanz war erfolgreich. {devicesChanged} Geräte wurden akzeptiert.',
         accept_fail: "Fehlermeldung: <b>{reason}.</b>",
+        enable_mock: "Testmodus",
+        enable_fakelogin: "Simulierte Anmeldung",
       },
       alerts: {
         serious_alerts: 'Schwerwiegende Warnungen',

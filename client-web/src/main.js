@@ -48,15 +48,6 @@ var vm = new Vue({
     theme: 'auto',
     routes: Routes,
   },
-  methods: {
-    onF7Ready: function (f7) {
-      console.log('f7-ready');
-      if (window.navigateTo) {
-        console.log('f7-ready: trying to nav to ' + window.navigateTo);
-        f7.router.navigate(window.navigateTo);
-      }
-    }
-  },
   // Register App Component
   components: {
     app: App

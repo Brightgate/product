@@ -22,16 +22,16 @@
       <f7-list inset>
         <f7-list-item>
           <f7-label>{{ $t('message.enroll.phone') }}</f7-label>
-          <f7-input
-                v-on:keyup.enter="enrollSMS"
-                v-model="magicphone"
-                type="tel"
+          <f7-input type="tel"
+                :value="this.phone_input"
+                @input="onTelInput"
                 :placeholder="$t('message.enroll.phone_placeholder')"
-                required autofocus lazy/>
+                required autofocus lazy>
+          </f7-input>
         </f7-list-item>
       </f7-list>
       <f7-block inset>
-        <f7-button fill big v-bind:color="valid_number ? 'green' : 'blue'" @click="enrollSMS">
+        <f7-button fill big v-bind:color="valid_number ? 'green' : 'blue'" :active="valid_number" @click="enrollSMS">
           <span v-if="!enrolling">{{ $t('message.enroll.send_sms') }}</span>
           <span v-if="enrolling">
             {{ $t('message.enroll.sending') }}
@@ -39,13 +39,6 @@
           </span>
         </f7-button>
 
-        <f7-block v-if="sms_sent">
-          <p>{{ $t('message.enroll.send_success') }}</p>
-          <f7-button fill back>{{ $t('message.general.close') }}</f7-button>
-        </f7-block>
-        <f7-block v-if="sms_error">
-          <p>{{ $t('message.enroll.send_failure') }}</p>
-        </f7-block>
       </f7-block>
     </div>
   </f7-page>
@@ -59,56 +52,61 @@ import libphonenumber from 'libphonenumber-js'
 const phone_ayt = new libphonenumber.AsYouType("US")
 
 export default {
-  methods: {
-    enrollSMS: function () {
-      console.log(`enrollSMS: ${this.phone}`)
-      this.sms_error = false
-      this.enrolling = true
-      return this.$store.dispatch('enrollSMS', {
-        phone: this.phone
-      }).then(() => {
-        console.log("enrollSMS: success")
-        this.sms_sent = true
-        this.enrolling = false
-      }).catch(() => {
-        console.log("enrollSMS: failed")
-        this.sms_error = true
-        this.enrolling = false
-      })
-    },
+  data: function() {
+    return {
+      phone_input: "",
+      enrolling: false,
+    }
   },
 
   // n.b. this is arcane and only sort-of works.  Probably we should switch to
   // cleave.js or some other framework.  If we roll our own, then phone number
   // input should go into its own Vue component.
   computed: {
-    magicphone: {
-      set: function(inputEvt) {
-	this.phone = inputEvt.target.value;
-	phone_ayt.reset()
-	this.formattedPhone = phone_ayt.input(this.phone)
-	this.$emit('input', this.formattedPhone)
-      },
-      get: function() {
-        return this.formattedPhone
-      }
-    },
-
     valid_number: function() {
-      var phonestr = this.phone ? this.phone : ""
-      var res = libphonenumber.isValidNumber(phonestr)
-      return libphonenumber.isValidNumber(phonestr, "US")
-    }
+      if (!this.phone_input || this.phone_input === "") {
+        return false
+      }
+      return libphonenumber.isValidNumber(this.phone_input, "US")
+    },
   },
 
-  data: function() {
-    return {
-      sms_sent: false,
-      sms_error: false,
-      phone: "",
-      formattedPhone: "",
-      enrolling: false,
-    }
-  }
+  methods: {
+    onTelInput: function (event) {
+      phone_ayt.reset();
+      this.phone_input = phone_ayt.input(event.target.value);
+    },
+
+    enrollSMS: function () {
+      console.log(`enrollSMS: ${this.phone_input}`)
+      this.enrolling = true
+      return this.$store.dispatch('enrollSMS', {
+        phone: this.phone_input
+      }).then(() => {
+        console.log("enrollSMS: success")
+        const self = this;
+        this.enrolling = false
+	this.$f7.toast.show({
+          text: this.$t('message.enroll.send_success'),
+          closeButton: true,
+          destroyOnClose: true,
+          on: {
+            close: function () {
+              console.log("toast onclose handler")
+              self.$f7router.back()
+            }
+          }
+        })
+      }).catch(() => {
+        console.log("enrollSMS: failed")
+        this.enrolling = false
+	this.$f7.toast.show({
+          text: this.$t('message.enroll.send_failure'),
+          closeButton: true,
+          destroyOnClose: true,
+        })
+      })
+    },
+  },
 }
 </script>
