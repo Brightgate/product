@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -151,6 +151,10 @@ func singleInstance(d *daemon) error {
 	if !d.Privileged {
 		child.SetUID(nobodyUID, nobodyUID)
 	}
+
+	// Put each daemon into its own process group
+	child.SetPgid(true)
+
 	if err = child.Start(); err != nil {
 		return err
 	}
@@ -169,6 +173,7 @@ func singleInstance(d *daemon) error {
 	if d.state != mcp.STOPPING && err != nil {
 		log.Printf("%s failed: %v\n", d.Name, err)
 	}
+
 	d.Lock()
 	d.child = nil
 
@@ -355,16 +360,46 @@ func handleStart(set daemonSet) {
 	}
 }
 
+// killSet is the killer helper function for handleStop, for use with RetryKill
+func killSet(sig syscall.Signal, set daemonSet,
+	children map[string]*aputil.Child) error {
+	errs := make(map[string]error)
+	for n, d := range set {
+		d.Lock()
+		c := d.child
+		if c == nil || c != children[n] {
+			if c == nil {
+				// if the child has changed, it means the daemon
+				// has already been restarted.
+				setState(d, mcp.OFFLINE)
+				log.Printf("%s stopped\n", d.Name)
+			}
+			delete(set, n)
+			delete(errs, n)
+		} else {
+			errs[n] = c.Signal(sig)
+		}
+		d.Unlock()
+	}
+
+	// There's no such thing as partial success: the calling loop will break
+	// if we return failure because it thinks there's no more useful work to
+	// be done.  Thus, only return non-nil if everything is failing.
+	var realerr error
+	for _, e := range errs {
+		if e == nil {
+			return nil
+		}
+		realerr = e
+	}
+	return realerr
+}
+
 //
-// Repeatedly iterate over all daemons in the set.  On each iteration we ask
-// all daemons in the set to exit.  We start by asking nicely (SIGINT) and then
-// less nicely (SIGKILL).  When a daemon has stopped, we remove it from the set.
-// We're done when the set is empty.
+// Kill all daemons in the set using the retryKill() behavior.  When a daemon
+// has stopped, we remove it from the set.  We're done when the set is empty.
 //
 func handleStop(set daemonSet) {
-	const niceTries = 10
-
-	tries := 0
 	children := make(map[string]*aputil.Child)
 	for n, d := range set {
 		d.Lock()
@@ -379,32 +414,11 @@ func handleStop(set daemonSet) {
 		d.Unlock()
 	}
 
-	signal := syscall.SIGINT
-	for len(set) > 0 {
-		for n, d := range set {
-			d.Lock()
-			c := d.child
-			if c == nil || c != children[n] {
-				if c == nil {
-					// if the child has changed, it means
-					// the daemon has already been
-					// restarted.
-					setState(d, mcp.OFFLINE)
-					log.Printf("%s stopped\n", d.Name)
-				}
-				delete(set, n)
-			} else {
-				c.Signal(signal)
-			}
-			d.Unlock()
-		}
-
-		tries++
-		if tries > niceTries {
-			signal = syscall.SIGKILL
-		}
-		time.Sleep(time.Millisecond * 250)
+	kill := func(sig syscall.Signal) error {
+		return killSet(sig, set, children)
 	}
+	alive := func() bool { return len(set) > 0 }
+	aputil.RetryKill(kill, alive)
 }
 
 //

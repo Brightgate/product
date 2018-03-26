@@ -71,6 +71,8 @@ type Child struct {
 	stat   *os.File
 	status *os.File
 
+	setpgid bool
+
 	sync.Mutex
 }
 
@@ -114,24 +116,30 @@ func (c *Child) Start() error {
 	return err
 }
 
-// Stop stops a child process - first with a gentle SIGINT, and then with a more
-// severe SIGKILL.  The call returns the signal used to terminate the process.
-func (c *Child) Stop() syscall.Signal {
-	if c == nil {
-		return 0
-	}
+type killFunc func(syscall.Signal) error
+type aliveFunc func() bool
 
-	sig := syscall.SIGINT
+// RetryKill stops a child process - first with a few gentle SIGTERMs, and
+// finally with a more severe SIGKILL if the former didn't do the trick.  The
+// call returns the signal used to terminate the process.  This abstraction
+// exists to encapsulate this behavior and allow both processes as represented
+// by the Child struct and process groups as represented by negative pids to be
+// killed in this fashion.
+func RetryKill(kill killFunc, alive aliveFunc) syscall.Signal {
+	sig := syscall.SIGTERM
 	attempts := 0
 	sleeps := 0
 
-	for c.Process != nil {
+	for alive() {
 		if sleeps == 0 {
 			if attempts > 5 {
 				sig = syscall.SIGKILL
 			}
 			attempts++
-			c.Signal(sig)
+			// If the kill fails, it will continue to fail
+			if err := kill(sig); err != nil {
+				break
+			}
 		}
 
 		time.Sleep(10 * time.Millisecond)
@@ -141,17 +149,31 @@ func (c *Child) Stop() syscall.Signal {
 	return sig
 }
 
-// Signal sends a signal to a child process
-func (c *Child) Signal(sig os.Signal) {
+// Stop stops a child process using the RetryKill() behavior.
+func (c *Child) Stop() syscall.Signal {
 	if c == nil {
-		return
+		return 0
+	}
+
+	kill := func(sig syscall.Signal) error { return c.Signal(sig) }
+	alive := func() bool { return c.Process != nil }
+	return RetryKill(kill, alive)
+}
+
+// Signal sends a signal to a child process
+func (c *Child) Signal(sig os.Signal) error {
+	var err error
+	if c == nil {
+		return err
 	}
 
 	c.Lock()
 	if c.Process != nil {
-		c.Process.Signal(sig)
+		err = c.Process.Signal(sig)
 	}
 	c.Unlock()
+
+	return err
 }
 
 // Wait waits for the child process to exit.  If we are capturing its output, we
@@ -175,8 +197,23 @@ func (c *Child) Wait() error {
 		c.stat = nil
 	}
 
+	pid := c.Process.Pid
 	c.Process = nil
 	c.Unlock()
+
+	// If we've set this child as a process group leader, then make sure we
+	// kill its entire process group.
+	if c.setpgid {
+		pgkill := func(sig syscall.Signal) error {
+			return syscall.Kill(-pid, sig)
+		}
+		pgalive := func() bool {
+			err := syscall.Kill(-pid, 0)
+			return err != syscall.ESRCH
+		}
+		RetryKill(pgkill, pgalive)
+	}
+
 	return err
 }
 
@@ -188,11 +225,11 @@ func (c *Child) SetUID(uid, gid uint32) {
 		Gid: gid,
 	}
 
-	attr := syscall.SysProcAttr{
-		Credential: &cred,
+	// Be careful not to overwrite an existing SysProcAttr
+	if c.Cmd.SysProcAttr == nil {
+		c.Cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
-
-	c.Cmd.SysProcAttr = &attr
+	c.Cmd.SysProcAttr.Credential = &cred
 }
 
 // GetPID returns the PID of the underlying process, or -1 if there is no
@@ -308,6 +345,20 @@ func (c *Child) LogOutputTo(prefix string, flags int, w io.Writer) {
 		c.pipes++
 		go handlePipe(c, stderr)
 	}
+}
+
+// SetPgid with a true value will cause the child, when started, to be put into
+// a new process group, as the process group leader.  When the child is reaped,
+// its entire process group will be killed.
+func (c *Child) SetPgid(setpgid bool) {
+	c.setpgid = setpgid
+
+	// Be careful not to overwrite an existing SysProcAttr
+	if c.Cmd.SysProcAttr == nil {
+		c.Cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	c.Cmd.SysProcAttr.Setpgid = setpgid
+	c.Cmd.SysProcAttr.Pgid = 0
 }
 
 // NewChild instantiates the tracking structure for a child process

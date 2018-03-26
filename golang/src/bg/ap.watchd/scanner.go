@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -657,19 +657,19 @@ func cleanAll() {
 
 func scannerFini(w *watcher) {
 	log.Printf("Stopping active scans\n")
-	runLock.Lock()
-	for r := range scansRunning {
-		r.Signal(syscall.SIGINT)
-	}
-	runLock.Unlock()
 
-	time.Sleep(time.Second)
-
-	runLock.Lock()
-	for r := range scansRunning {
-		r.Signal(syscall.SIGKILL)
+	kill := func(sig syscall.Signal) error {
+		runLock.Lock()
+		for r := range scansRunning {
+			r.Signal(sig)
+		}
+		runLock.Unlock()
+		// Don't bother trying to figure out partial errors.
+		return nil
 	}
-	runLock.Unlock()
+	alive := func() bool { return len(scansRunning) > 0 }
+
+	aputil.RetryKill(kill, alive)
 
 	log.Printf("Shutting down scanner\n")
 	w.running = false
