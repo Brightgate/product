@@ -208,6 +208,7 @@ func aggregate(agg, cur *watchd.ProtoRecord) {
 func aggregateStats() {
 	statsMtx.Lock()
 	for mac, cur := range currentStats {
+		cur.Lock()
 		agg, ok := aggregatedStats[mac]
 		if !ok {
 			agg = newDeviceRecord()
@@ -218,6 +219,7 @@ func aggregateStats() {
 			aggregate(agg.Stats[p], cur.Stats[p])
 			cur.Stats[p] = newProtoRecord()
 		}
+		cur.Unlock()
 	}
 	statsMtx.Unlock()
 }

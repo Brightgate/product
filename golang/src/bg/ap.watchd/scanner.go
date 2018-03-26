@@ -57,7 +57,7 @@ const (
 	hostScanFreq = 5 * time.Minute
 
 	maxFiles    = 10
-	numScanners = 10
+	numScanners = 5
 )
 
 type hostmap struct {
