@@ -15,10 +15,14 @@
     <f7-statusbar></f7-statusbar>
 
     <!-- Main View -->
-    <f7-view id="main-view" url="/" main>
+    <!-- Note that without stackPages, back navigation doesn't work as you'd
+         expect.  XXX might be able to revisit this when we eject the page
+         below into a separate component.
+    -->
+    <f7-view id="main-view" url="/" :stackPages="true" main>
       <f7-page
         v-on:page:init="pageInit"
-        v-on:page:reinit="pageInit"
+        v-on:page:beforein="pageInit"
         v-on:page:beforeout="pageBeforeOut">
 
         <f7-navbar>
@@ -50,6 +54,11 @@
           <f7-list-item
 		link="/devices/"
 		:title="$t('message.tools.manage_devices', {'device_count': $store.getters.Device_Count})"
+		:class="$store.getters.Is_Logged_In || $store.getters.Mock ? '' : 'disabled'">
+          </f7-list-item>
+          <f7-list-item
+		link="/users/"
+		:title="$t('message.tools.users')"
 		:class="$store.getters.Is_Logged_In || $store.getters.Mock ? '' : 'disabled'">
           </f7-list-item>
           <f7-list-item
@@ -162,6 +171,7 @@ export default {
       // if navigateTo is set then we're on an alternative landing
       // page such as malwareWarn, so don't fire the loggedIn or
       // other behaviors.
+      console.log("app.vue pageInit")
       if (!window.navigateTo) {
         if (!this.$store.state.loggedIn) {
           this.$refs.bgLoginScreen.open(true)

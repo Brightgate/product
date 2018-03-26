@@ -49,6 +49,7 @@ export const messages = {
         enroll_guest: 'Enroll a Guest User',
         login: 'Login',
         logout: 'Logout',
+        users: 'Users',
       },
       notifications: {
         notifications: 'Notifications',
@@ -140,8 +141,25 @@ export const messages = {
         username: 'Username',
         password: 'Password',
         sign_in: 'Sign In'
-      }
-
+      },
+      users: {
+        title: 'Brightgate - Users',
+      },
+      user_details: {
+        username: "Username",
+        uuid: "UUID",
+        role: "Role",
+        roles: {
+          user: "User",
+          admin: "Administrator"
+        },
+        password: "Password",
+        edit_title: "Edit User",
+        create_user_ok: "Created user {name}",
+        create_user_fail: "Failed to create new user: {err}",
+        save_user_ok: "Updated user {name}",
+        save_user_fail: "Failed to create new user: {err}",
+      },
     },
   },
   de: {
@@ -170,8 +188,9 @@ export const messages = {
         tools: 'Werkzeuge',
         manage_devices: 'Geräte verwalten ({device_count})',
         enroll_guest: 'Registrieren Sie einen Gastbenutzer',
-	login: 'Anmelden',
-	logout: 'Abmelden',
+        login: 'Anmelden',
+        logout: 'Abmelden',
+        users: 'Benutzer',
       },
       notifications: {
         notifications: 'Benachrichtigungen',
@@ -263,7 +282,25 @@ export const messages = {
         username: 'Name',
         password: 'Passwort',
         sign_in: 'Anmelden',
-      }
+      },
+      users: {
+        title: 'Brightgate - Benutzer',
+      },
+      user_details: {
+        username: "Name",
+        uuid: "UUID",
+        role: "Rolle",
+        roles: {
+          user: "User",          // XXXI18N
+          admin: "Administrator" // XXXI18N
+        },
+        password: "Passwort",
+        edit_title: "Edit User",                              // XXXI18N
+        create_user_ok: "Created user {name}",                // XXXI18N
+        create_user_fail: "Failed to create new user: {err}", // XXXI18N
+        save_user_ok: "Updated user {name}",                  // XXXI18N
+        save_user_fail: "Failed to create new user: {err}",   // XXXI18N
+      },
     }
   }
 }

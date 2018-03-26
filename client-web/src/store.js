@@ -10,13 +10,15 @@
 import Vue from 'vue'
 import Vuex from 'vuex'
 
-import superagent from 'superagent'
 import assert from "assert"
 
 import { mockDevices } from "./mock_devices.js"
+import { mockUsers } from "./mock_users.js"
 import _ from "lodash"
 import util from "util"
 import Promise from "bluebird"
+import superagent from "superagent-bluebird-promise"
+import retry from "bluebird-retry"
 
 Vue.use(Vuex)
 
@@ -27,16 +29,19 @@ const device_category_all = ['recent', 'phone', 'computer', 'media', 'iot']
 const enable_mock = false
 
 var initDevices
+var initUsers
 if (enable_mock) {
   initDevices = {
      by_uniqid: _.keyBy(mockDevices, 'uniqid'),
      categories: {}
   }
+  initUsers = _.cloneDeep(mockUsers)
 } else {
   initDevices = {
      by_uniqid: {},
      categories: {}
   }
+  initUsers = {}
 }
 makeDeviceCategories(initDevices)
 
@@ -51,6 +56,8 @@ const state = {
   devices: _.cloneDeep(initDevices),
   deviceCount: Object.keys(initDevices.by_uniqid).length,
   rings: [],
+  users: _.cloneDeep(initUsers),
+  userCount: Object.keys(initUsers).length,
   enable_mock: enable_mock
 };
 
@@ -62,6 +69,16 @@ const mutations = {
 
   setRings (state, newRings) {
     state.rings = newRings;
+  },
+
+  setUsers (state, newUsers) {
+    state.users = newUsers;
+    state.userCount = Object.keys(newUsers).length
+  },
+
+  updateUser (state, user) {
+    assert(user.UUID)
+    state.users[user.UUID] = user
   },
 
   setLoggedIn (state, newLoggedIn) {
@@ -114,6 +131,14 @@ const getters = {
       return state.rings
   },
 
+  All_Users: (state) => {
+    return state.users
+  },
+
+  User_By_UUID: (state) => (uuid) => {
+    return state.users[uuid]
+  },
+
   Mock: (state) => {
       return state.enable_mock
   },
@@ -151,35 +176,20 @@ function checkPropChangeP(property, value, maxcount, count) {
 }
 
 // Make up to maxcount attempts to load the devices configuration object
-function devicesGetP(maxcount, count) {
-  assert.equal(typeof maxcount, "number")
-  count = count === undefined ? maxcount : count;
-  assert.equal(typeof count, "number")
-
-  const attempt = (maxcount - count) + 1
-  const attempt_str = `#${attempt}/${maxcount}`
-  console.log(`devicesGetP: GET /devices try ${attempt_str}`)
-
-  return Promise.resolve(superagent.get('/apid/devices'
+function devicesGetP() {
+  console.log(`devicesGetP: GET /devices`)
+  return superagent.get('/apid/devices'
   ).timeout(STD_TIMEOUT
   ).then((res) => {
     console.log("devicesGetP: got response")
     if (res.body === null ||
         (typeof res.body !== "object") ||
         !("Devices" in res.body)) {
-      // throw down to our catch handler below, to cause retry or give up.
       throw new Error("Saw incomplete or bad GET /devices response.")
     } else {
       return res.body
     }
-  }).catch((err) => {
-    if (count === 0) {
-      throw new Error(`devicesGetP: failed ${maxcount} times.  Final error was: ${err}`)
-    }
-    console.log(`devicesGetP: failed ${attempt_str}, will retry.  ${err}`)
-    return Promise.delay(RETRY_DELAY
-    ).then(() => { return devicesGetP(maxcount, count - 1) })
-  }))
+  })
 }
 
 function makeDeviceCategories(devices) {
@@ -209,8 +219,12 @@ const actions = {
         categories: {},
         by_uniqid: {},
     }
-    return devicesGetP(10).then((res_json) => {
-
+    if (context.state.enable_mock) {
+      console.log(`Store: fetchDevices: enable_mock = ${context.state.enable_mock}`)
+      _.defaults(devices.by_uniqid,  _.keyBy(mockDevices, 'uniqid'))
+    }
+    return retry(devicesGetP, { interval: RETRY_DELAY, max_tries: 10 }
+    ).then((res_json) => {
       var mapped_devices = _.map(res_json.Devices, (dev) => {
         return {
           category: 'phone',
@@ -228,12 +242,8 @@ const actions = {
         }
       })
 
-      devices.by_uniqid = _.keyBy(mapped_devices, 'uniqid')
+      _.defaults(devices.by_uniqid, _.keyBy(mapped_devices, 'uniqid'))
     }).finally(() => {
-      console.log(`Store: fetchDevices: enable_mock = ${context.state.enable_mock}`)
-      if (context.state.enable_mock) {
-        _.defaults(devices.by_uniqid,  _.keyBy(mockDevices, 'uniqid'))
-      }
       makeDeviceCategories(devices)
       context.commit('setDevices', devices)
     })
@@ -292,6 +302,35 @@ const actions = {
     }).finally(() => {
       // let this run async?
       context.dispatch('fetchDevices')
+    })
+  },
+
+  // Load the list of users from the server.
+  fetchUsers (context) {
+    var user_result = {}
+    if (context.state.enable_mock) {
+      _.defaults(user_result, mockUsers)
+    }
+    console.log("fetchUsers: GET /apid/users")
+    return superagent.get('/apid/users'
+    ).then((res) => {
+      console.log("fetchUsers: Succeeded: ", res.body);
+      assert(typeof res.body === "object")
+      assert(typeof res.body.Users === "object")
+      _.defaults(user_result, res.body.Users)
+    }).finally(() => {
+      context.commit('setUsers', user_result)
+    }).catch((err) => {
+      console.log(`fetchUsers: Error ${err}`)
+      throw err
+    })
+  },
+
+  // Load the list of rings from the server.
+  saveUser (context, { user }) {
+    console.log("store.js saveUsers: stub implementation, updating: ", user.UID, user.UUID)
+    return Promise.delay(1500).then(() => {
+      context.commit('updateUser', user)
     })
   },
 

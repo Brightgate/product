@@ -27,5 +27,17 @@ export default [
   {
       path: '/malwareWarn/',
       component: require('./pages/malwareWarn.vue')
-  }
+  },
+  {
+      path: '/users/',
+      component: require('./pages/users.vue'),
+  },
+  {
+      path: '/users/:UUID/',
+      component: require('./pages/user_details.vue'),
+  },
+  {
+      path: '/users/:UUID/editor/',
+      component: require('./pages/user_editor.vue'),
+  },
 ]

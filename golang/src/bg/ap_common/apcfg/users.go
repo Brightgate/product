@@ -164,6 +164,32 @@ func (c *APConfig) GetUser(uid string) (*UserInfo, error) {
 	return ui, nil
 }
 
+// GetUserByUUID fetches the UserInfo structure for a given UUID
+func (c *APConfig) GetUserByUUID(uuid string) (*UserInfo, error) {
+	if uuid == "" {
+		return nil, fmt.Errorf("uuid must be specified")
+	}
+	users, err := c.GetProps("@/users/")
+	if err != nil {
+		return nil, errors.Wrapf(err, "Failed to get user list")
+	}
+	for _, user := range users.Children {
+		upn := user.GetChild("uuid")
+		if upn == nil {
+			continue
+		}
+		if upn.Value == uuid {
+			ui, err := newUserFromNode(user)
+			if err != nil {
+				return nil, errors.Wrap(err, "Failed to make UserInfo")
+			}
+			ui.config = c
+			return ui, nil
+		}
+	}
+	return nil, errors.Errorf("No user with UUID %s", uuid)
+}
+
 // GetUsers fetches the Users subtree, in the form of a map of UID to UserInfo
 // structures.
 func (c *APConfig) GetUsers() UserMap {

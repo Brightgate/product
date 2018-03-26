@@ -586,14 +586,14 @@ type daUser struct {
 
 type daUsers struct {
 	DbgRequest string
-	Users      []daUser
+	Users      map[string]daUser
 }
 
-func buildUserResponse(uid string, user *apcfg.UserInfo) daUser {
+func buildUserResponse(user *apcfg.UserInfo) daUser {
 	var cu daUser
 
 	// XXX mismatch possible between uid and user.uid?
-	cu.UID = uid
+	cu.UID = user.UID
 	cu.UUID = user.UUID
 	cu.DisplayName = user.DisplayName
 	cu.Email = user.Email
@@ -646,24 +646,30 @@ func demoUserByUIDOTPQRHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // demoUserByUIDHandler returns a JSON-formatted user object for the
-// requested uid, typically in response to a GET request to
-// "[demo_api_root]/users/{uid}".
-func demoUserByUIDHandler(w http.ResponseWriter, r *http.Request) {
+// requested uuid, typically in response to a GET request to
+// "[demo_api_root]/users/{uuid}".
+func demoUserByUUIDHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// XXX what uid if not present?
-	vars := mux.Vars(r)
-	uid := vars["uid"]
+	uid := getRequestUID(r)
+	log.Printf("/users/{uuid} [uid '%s']\n", uid)
+	if uid == "" {
+		http.Error(w, "forbidden", 403)
+		return
+	}
 
-	userRaw, err := config.GetUser(uid)
+	// XXX what uuid if not present?
+	vars := mux.Vars(r)
+	uuid := vars["uuid"]
+
+	userRaw, err := config.GetUserByUUID(uuid)
 	if err != nil {
-		log.Printf("no such user '%v': %v\n", uid, err)
+		log.Printf("no such user '%v': %v\n", uuid, err)
 		http.Error(w, "not found", 404)
 		return
 	}
 
-	cu := buildUserResponse(uid, userRaw)
-
+	cu := buildUserResponse(userRaw)
 	cu.DbgRequest = fmt.Sprintf("%v", r)
 
 	b, err := json.Marshal(cu)
@@ -681,18 +687,24 @@ func demoUserByUIDHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// demoUsersHandler returns a JSON-formatted list of configured users,
-// typically in response to a GET request to "[demo_api_root]/users".
+// demoUsersHandler returns a JSON-formatted map of configured users, keyed by
+// UUID, typically in response to a GET request to "[demo_api_root]/users".
 func demoUsersHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	usersRaw := config.GetUsers()
+	uid := getRequestUID(r)
+	log.Printf("/users [uid '%s']\n", uid)
+	if uid == "" {
+		http.Error(w, "forbidden", 403)
+		return
+	}
+
 	var users daUsers
+	users.Users = make(map[string]daUser)
 
-	for uid, user := range usersRaw {
-		cu := buildUserResponse(uid, user)
-
-		users.Users = append(users.Users, cu)
+	for _, user := range config.GetUsers() {
+		cu := buildUserResponse(user)
+		users.Users[user.UUID] = cu
 	}
 
 	users.DbgRequest = fmt.Sprintf("%v", r)
@@ -865,5 +877,7 @@ func makeDemoAPIRouter() *mux.Router {
 	router.HandleFunc("/logout", demoLogoutHandler)
 	router.HandleFunc("/rings", demoRingsHandler)
 	router.HandleFunc("/supreme", demoSupremeHandler)
+	router.HandleFunc("/users", demoUsersHandler)
+	router.HandleFunc("/users/{uuid}", demoUserByUUIDHandler)
 	return router
 }

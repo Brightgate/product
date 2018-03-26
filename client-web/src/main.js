@@ -49,9 +49,6 @@ var vm = new Vue({
     routes: Routes,
   },
   methods: {
-    onF7Init: function () {
-      console.log('f7-init');
-    },
     onF7Ready: function (f7) {
       console.log('f7-ready');
       if (window.navigateTo) {
