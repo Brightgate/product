@@ -7,37 +7,47 @@
  * express written permission of Brightgate Inc is prohibited, and any
  * such unauthorized removal or alteration will be a violation of federal law.
  */
+
+import Devices from './pages/devices.vue';
+import Details from './pages/details.vue';
+import Enroll from './pages/enroll.vue';
+import Home from './pages/home.vue';
+import MalwareWarn from './pages/malwareWarn.vue';
+import Users from './pages/users.vue';
+import UserDetails from './pages/user_details.vue';
+import UserEditor from './pages/user_editor.vue';
+
 export default [
   {
-      path: '/',
-      component: require('./pages/home.vue'),
+    path: '/',
+    component: Home,
   },
   {
-      path: '/devices',
-      component: require('./pages/devices.vue'),
+    path: '/devices',
+    component: Devices,
   },
   {
-      path: '/details/',
-      component: require('./pages/details.vue'),
+    path: '/details/',
+    component: Details,
   },
   {
-      path: '/enroll/',
-      component: require('./pages/enroll.vue')
+    path: '/enroll/',
+    component: Enroll,
   },
   {
-      path: '/malwareWarn/',
-      component: require('./pages/malwareWarn.vue')
+    path: '/malwareWarn/',
+    component: MalwareWarn,
   },
   {
-      path: '/users/',
-      component: require('./pages/users.vue'),
+    path: '/users/',
+    component: Users,
   },
   {
-      path: '/users/:UUID/',
-      component: require('./pages/user_details.vue'),
+    path: '/users/:UUID/',
+    component: UserDetails,
   },
   {
-      path: '/users/:UUID/editor/',
-      component: require('./pages/user_editor.vue'),
+    path: '/users/:UUID/editor/',
+    component: UserEditor,
   },
-]
+];

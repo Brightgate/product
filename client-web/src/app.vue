@@ -91,7 +91,7 @@ export default {
     },
   },
 
-  data: function () {
+  data: function() {
     return {
       uid: '',
       userPassword: '',
@@ -101,7 +101,7 @@ export default {
   },
 
   methods: {
-    attemptLogin: function () {
+    attemptLogin: function() {
       this.attemptingLogin = true;
       return Promise.delay(250).then(() => {
         return this.$store.dispatch('login',
@@ -115,7 +115,7 @@ export default {
       });
     },
 
-    closeLogin: function () {
+    closeLogin: function() {
       this.$f7.loginScreen.close();
     },
 

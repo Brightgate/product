@@ -11,12 +11,13 @@
   <f7-page ptr @ptr:refresh="pullRefresh">
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.devices.title')" sliding>
     </f7-navbar>
-    
+
     <f7-list v-for="catkey in device_category_order"
-             v-if="$store.getters.NumUniqIDs_By_Category(catkey) > 0">
+             v-if="$store.getters.NumUniqIDs_By_Category(catkey) > 0"
+             v-bind:key="catkey">
       <f7-list-item divider/>
 
-      <f7-list-item group-title 
+      <f7-list-item group-title
               v-bind:title="device_category_description[catkey] +
               (catkey == 'recent' ? ` (${$store.getters.NumUniqIDs_By_Category(catkey)})` : '')"/>
       <f7-list-item v-if="catkey == 'recent'">
@@ -24,9 +25,10 @@
         <f7-link v-on:click="showRecent = false" v-if="showRecent">{{ $t('message.devices.hide_recent') }}</f7-link>
       </f7-list-item>
 
-      <f7-list-item 
+      <f7-list-item
             v-if="showRecent || catkey != 'recent'"
             v-for="device in $store.getters.Devices_By_Category(catkey)"
+            v-bind:key="device.uniqid"
             v-bind:title="device.network_name"
             v-bind:link="'/details/?uniqid=' + device.uniqid">
         <div slot="media">
@@ -43,23 +45,23 @@
     </f7-list>
 
     <f7-popover id="virus">
-      <f7-block> 
+      <f7-block>
         <ul>
             <li>{{ $t("message.alerts.msg.0") }}</li>
             <li>{{ $t("message.alerts.msg.1") }}</li>
             <li>{{ $t("message.alerts.msg.2") }}</li>
         </ul>
-      </f7-block> 
+      </f7-block>
     </f7-popover>
 
     <f7-popover id="notification">
-      <f7-block> 
+      <f7-block>
         <ul>
             <li>{{ $t("message.notifications.msg.0") }}</li>
             <li>{{ $t("message.notifications.msg.1") }}</li>
             <li>{{ $t("message.notifications.msg.2") }}</li>
         </ul>
-      </f7-block> 
+      </f7-block>
     </f7-popover>
 
   </f7-page>
@@ -71,28 +73,28 @@ const device_category_description = {
   phone: 'Phones & Tablets',
   computer: 'Computers',
   media: 'Media',
-  iot: 'Things'
+  iot: 'Things',
 };
 
-const device_category_order = ['recent', 'phone', 'computer', 'media', 'iot']
+const device_category_order = ['recent', 'phone', 'computer', 'media', 'iot'];
 
 export default {
-  data: function () {
+  data: function() {
     return {
       showRecent: false,
       device_category_description,
       device_category_order,
-    }
+    };
   },
 
   methods: {
     pullRefresh: function(event, done) {
       this.$store.dispatch('fetchDevices').then(() => {
-        return done()
+        return done();
       }).catch((err) => {
-        return done(err)
-      })
+        return done(err);
+      });
     },
   },
-}
+};
 </script>

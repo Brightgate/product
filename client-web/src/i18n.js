@@ -7,32 +7,21 @@
  * express written permission of Brightgate Inc is prohibited, and any
  * such unauthorized removal or alteration will be a violation of federal law.
  */
-// Import Vue
-import Vue from 'vue'
-
-// Import VueI18n
-import VueI18n from 'vue-i18n'
-
-// Import Browser Locale
-import BrowserLocale from 'browser-locale'
-
-// Init VueI18n Plugin
-Vue.use(VueI18n)
 
 // Ready translated locale messages
-export const messages = {
+export default {
   en: {
     message: {
       status: {
         brightgate_status: 'Brightgate Status',
       },
       testing: {
-        testing: "For Test Purposes",
-        accept_devices: "Accept Devices",
+        testing: 'For Test Purposes',
+        accept_devices: 'Accept Devices',
         accept_success: 'Devices Acceptance succeeded. {devicesChanged} devices were affected.',
-        accept_fail: "There was an error accepting devices: <b>{reason}.</b>",
-        enable_mock: "Enable Mock",
-        enable_fakelogin: "Simulate being Logged In",
+        accept_fail: 'There was an error accepting devices: <b>{reason}.</b>',
+        enable_mock: 'Enable Mock',
+        enable_fakelogin: 'Simulate being Logged In',
       },
       alerts: {
         serious_alerts: 'Serious Alerts',
@@ -58,8 +47,8 @@ export const messages = {
         security_notifications: '⚠️ Security Notifications',
         msg: {
           '0': 'This device is less secure because it is running old software.',
-          '1': "Brightgate can't automatically update this device.",
-          '2': "Follow the manufacturer's instructions to update its software.",
+          '1': 'Brightgate can\'t automatically update this device.',
+          '2': 'Follow the manufacturer\'s instructions to update its software.',
         },
       },
       general: {
@@ -80,7 +69,7 @@ export const messages = {
           phone: 'Phones & Tablets',
           computer: 'Computers',
           media: 'Media',
-          iot: 'Things'        
+          iot: 'Things',
         },
       },
       details: {
@@ -93,7 +82,7 @@ export const messages = {
           activated: 'Activated',
           owner: 'Owner',
           owner_email: 'Owner Email',
-          owner_phone: 'Owner Phone'
+          owner_phone: 'Owner Phone',
         },
         access: {
           access_control: 'Access Control',
@@ -104,7 +93,7 @@ export const messages = {
             pause: 'Pause',
             unpause: 'Unpause',
             remove: 'Remove',
-            confirm_remove: 'Please confirm you\'d like to permanently remove the device "{device}" from the network.'
+            confirm_remove: 'Please confirm you\'d like to permanently remove the device \'{device}\' from the network.',
           },
           status: 'Status',
           blocked: 'Blocked 🚫',
@@ -141,25 +130,25 @@ export const messages = {
         login: 'Login',
         username: 'Username',
         password: 'Password',
-        sign_in: 'Sign In'
+        sign_in: 'Sign In',
       },
       users: {
         title: 'Brightgate - Users',
       },
       user_details: {
-        username: "Username",
-        uuid: "UUID",
-        role: "Role",
+        username: 'Username',
+        uuid: 'UUID',
+        role: 'Role',
         roles: {
-          user: "User",
-          admin: "Administrator"
+          user: 'User',
+          admin: 'Administrator',
         },
-        password: "Password",
-        edit_title: "Edit User",
-        create_user_ok: "Created user {name}",
-        create_user_fail: "Failed to create new user: {err}",
-        save_user_ok: "Updated user {name}",
-        save_user_fail: "Failed to create new user: {err}",
+        password: 'Password',
+        edit_title: 'Edit User',
+        create_user_ok: 'Created user {name}',
+        create_user_fail: 'Failed to create new user: {err}',
+        save_user_ok: 'Updated user {name}',
+        save_user_fail: 'Failed to create new user: {err}',
       },
     },
   },
@@ -169,12 +158,12 @@ export const messages = {
         brightgate_status: 'Brightgate Status',
       },
       testing: {
-        testing: "Für Testzwecke",
+        testing: 'Für Testzwecke',
         accept_devices: 'Akzeptiere Geräte',
         accept_success: 'Akzeptanz war erfolgreich. {devicesChanged} Geräte wurden akzeptiert.',
-        accept_fail: "Fehlermeldung: <b>{reason}.</b>",
-        enable_mock: "Testmodus",
-        enable_fakelogin: "Simulierte Anmeldung",
+        accept_fail: 'Fehlermeldung: <b>{reason}.</b>',
+        enable_mock: 'Testmodus',
+        enable_fakelogin: 'Simulierte Anmeldung',
       },
       alerts: {
         serious_alerts: 'Schwerwiegende Warnungen',
@@ -200,8 +189,8 @@ export const messages = {
         security_notifications: '⚠️ Sicherheitshinweis',
         msg: {
           '0': 'Dieses Gerät ist unsicher wegen veralteter Software.',
-          '1': "Brightgate kann dieses Gerät nicht automatisch aktualisieren.",
-          '2': "Folgen Sie den Hinweisen des Herstellers um die Software zu aktualisieren.",
+          '1': 'Brightgate kann dieses Gerät nicht automatisch aktualisieren.',
+          '2': 'Folgen Sie den Hinweisen des Herstellers um die Software zu aktualisieren.',
         },
       },
       general: {
@@ -222,7 +211,7 @@ export const messages = {
           phone: 'Handies & Tablets',
           computer: 'Computers',
           media: 'Media',
-          iot: 'Unidentifiziertes Verbindungsobjekt'        
+          iot: 'Unidentifiziertes Verbindungsobjekt',
         },
       },
       details: {
@@ -246,7 +235,7 @@ export const messages = {
             pause: 'Pausieren',
             unpause: 'Fortsetzen',
             remove: 'Entfernen',
-            confirm_remove: 'Möchten Sie das Gerät "{device}" permanent vom Netzwerk entfernen?'
+            confirm_remove: 'Möchten Sie das Gerät \'{device}\' permanent vom Netzwerk entfernen?',
           },
           status: 'Status',
           blocked: 'Geblockt 🚫',
@@ -265,7 +254,7 @@ export const messages = {
           not_supported: 'Ältere Einträge werden derzeit noch nicht unterstützt.',
         },
         add_info: {
-          additional_information: 'Weitere Informationen'
+          additional_information: 'Weitere Informationen',
         },
       },
       enroll: {
@@ -289,27 +278,20 @@ export const messages = {
         title: 'Brightgate - Benutzer',
       },
       user_details: {
-        username: "Name",
-        uuid: "UUID",
-        role: "Rolle",
+        username: 'Name',
+        uuid: 'UUID',
+        role: 'Rolle',
         roles: {
-          user: "User",          // XXXI18N
-          admin: "Administrator" // XXXI18N
+          user: 'User',          // XXXI18N
+          admin: 'Administrator', // XXXI18N
         },
-        password: "Passwort",
-        edit_title: "Edit User",                              // XXXI18N
-        create_user_ok: "Created user {name}",                // XXXI18N
-        create_user_fail: "Failed to create new user: {err}", // XXXI18N
-        save_user_ok: "Updated user {name}",                  // XXXI18N
-        save_user_fail: "Failed to create new user: {err}",   // XXXI18N
+        password: 'Passwort',
+        edit_title: 'Edit User',                              // XXXI18N
+        create_user_ok: 'Created user {name}',                // XXXI18N
+        create_user_fail: 'Failed to create new user: {err}', // XXXI18N
+        save_user_ok: 'Updated user {name}',                  // XXXI18N
+        save_user_fail: 'Failed to create new user: {err}',   // XXXI18N
       },
-    }
-  }
-}
-
-// Create VueI18n instance with options
-export const i18n = new VueI18n({
-  locale: BrowserLocale().substring(0,2), // read locale from browser without differentiating between en-Us and en
-  fallbackLocale: 'en', // set fallback locale
-  messages, // set locale messages
-})
+    },
+  },
+};

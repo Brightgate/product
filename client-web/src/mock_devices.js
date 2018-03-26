@@ -8,7 +8,7 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 // vim :set ts=2 sw=2 sts=2 et :
-module.exports.mockDevices = [
+export default [
   {
     category: 'recent',
     device: 'Apple iPhone 8',
@@ -194,6 +194,4 @@ module.exports.mockDevices = [
     hwaddr: 'c1:ac:c1:19:1c:22',
     ring: 'standard',
   },
-]; //mockDevices
-
-
+];

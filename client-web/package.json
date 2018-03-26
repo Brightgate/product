@@ -11,11 +11,14 @@
     "dev": "npm-run-all --parallel watchify serve",
     "build:dir": "rm -fr dist && mkdir -p dist/js dist/css dist/fonts dist/img",
     "build:f7-assets": "rsync -a node_modules/framework7/dist/css/framework7* dist/css/",
-    "build:f7-font-assets": "rsync -a node_modules/framework7-icons/css/ dist/css/ && rsync -a node_modules/framework7-icons/fonts/ dist/fonts/",
+    "build:f7-css": "rsync -a node_modules/framework7-icons/css/ dist/css/",
+    "build:f7-fonts": "rsync -a node_modules/framework7-icons/fonts/ dist/fonts/",
     "build:www-assets": "rsync -a src/html/* dist/ && rsync -a src/css/ dist/css/ && rsync -a src/img/ dist/img/",
     "build:browserify": "cross-env NODE_ENV=development browserify -g envify -p [ vueify/plugins/extract-css -o dist/css/build.css ] -e src/main.js > dist/js/build.js",
+    "eslint": "eslint --ext .js,.vue ./src",
+    "eslint-fix": "eslint --fix --ext .js,.vue ./src",
     "licenses": "license-checker --production",
-    "build": "npm run build:dir && npm run build:www-assets && npm run build:f7-assets && npm run build:f7-font-assets && npm run build:browserify"
+    "build": "npm-run-all -l -s build:dir -p build:www-assets build:f7-assets build:f7-fonts build:f7-css build:browserify eslint"
   },
   "browser": {
     "vue": "vue/dist/vue.common.js"
@@ -53,13 +56,17 @@
     "browserify-hmr": "^0.3.6",
     "cross-env": "^5.1.4",
     "envify": "^4.1.0",
+    "eslint": "^4.19.1",
+    "eslint-config-google": "^0.9.1",
+    "eslint-plugin-import": "^2.9.0",
+    "eslint-plugin-vue": "^4.4.0",
     "http-server": "^0.11.1",
     "license-checker": "^16.0.0",
     "npm-run-all": "^4.1.2",
     "proxyquireify": "^3.2.1",
     "uglify-js": "^3.3.16",
-    "vueify": "^9.4.1",
     "vue-template-compiler": "^2.5.16",
+    "vueify": "^9.4.1",
     "watchify": "^3.10.0"
   }
 }

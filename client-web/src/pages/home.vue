@@ -90,37 +90,43 @@
 import superagent from 'superagent';
 
 export default {
-  data: function () {
+  data: function() {
     return {
       acceptToast: null,
     };
   },
 
   computed: {
-    mocked() { return this.$store.getters.Mock; },
-    loggedIn() { return this.$store.getters.Is_Logged_In; },
-    fakeLogin() { return this.$store.getters.Fake_Login; },
+    mocked() {
+      return this.$store.getters.Mock;
+    },
+    loggedIn() {
+      return this.$store.getters.Is_Logged_In;
+    },
+    fakeLogin() {
+      return this.$store.getters.Fake_Login;
+    },
   },
 
   methods: {
-    toggleMock: function () {
+    toggleMock: function() {
       console.log('toggleMock');
       this.$store.commit('toggleMock');
-      this.$store.dispatch('fetchDevices').catch((err) => {});
+      this.$store.dispatch('fetchDevices').catch(() => {});
     },
 
-    toggleFakeLogin: function () {
+    toggleFakeLogin: function() {
       this.$store.commit('toggleFakeLogin');
     },
 
-    acceptSupreme: function () {
+    acceptSupreme: function() {
       superagent.get('/apid/supreme').end((err, res) => {
-        var message;
+        let message;
         if (err) {
           message = this.$t('message.testing.accept_fail', {'reason': err.message});
         } else {
-          var res_json = JSON.parse(res.text);
-          var c = res_json.changed ? res_json.changed : -1;
+          const res_json = JSON.parse(res.text);
+          const c = res_json.changed ? res_json.changed : -1;
           message = this.$t('message.testing.accept_success', {'devicesChanged': c});
         }
         this.acceptToast = this.$f7.toast.create({
@@ -131,29 +137,29 @@ export default {
       });
     },
 
-    attemptLogout: function () {
+    attemptLogout: function() {
       this.$store.dispatch('logout', {});
     },
 
   },
 
   on: {
-    pageBeforeIn: function () {
+    pageBeforeIn: function() {
       console.log('home.vue pageBeforeIn');
-      if (!this.$store.getters.Is_Logged_In) {
-        this.$f7.loginScreen.open('#bgLoginScreen');
+      if (this.$store.getters.Is_Logged_In) {
+        return this.$store.dispatch('fetchDevices').catch(() => {});
       } else {
-        return this.$store.dispatch('fetchDevices').catch((err) => {});
+        this.$f7.loginScreen.open('#bgLoginScreen');
       }
     },
 
-    pageBeforeOut: function () {
+    pageBeforeOut: function() {
       console.log('home.vue pageBeforeOut');
       if (this.acceptToast) {
         this.acceptToast.close();
       }
     },
-  }
+  },
 };
 </script>
 

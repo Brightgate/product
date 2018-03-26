@@ -114,9 +114,9 @@
 import _ from 'lodash';
 
 export default {
-  data: function () {
-    var d = {
-      new_user: (this.$f7route.params.UUID === 'NEW')
+  data: function() {
+    const d = {
+      new_user: (this.$f7route.params.UUID === 'NEW'),
     };
     if (this.$f7route.params.UUID === 'NEW') {
       d.user_details = {
@@ -134,9 +134,9 @@ export default {
   },
 
   methods: {
-    saveUser: function (event) {
+    saveUser: function(event) { // eslint-disable-line no-unused-vars
       return this.$store.dispatch('saveUser', {
-        user: this.user_details
+        user: this.user_details,
       }).then(() => {
         const txt = this.new_user
           ? this.$t('message.user_details.create_user_ok', {name: this.user_details.UID})
@@ -161,7 +161,7 @@ export default {
   },
 
   on: {
-    pageAfterIn: function () {
+    pageAfterIn: function() {
       console.log(`user_editor page for ${this.$f7route.params.UUID}`);
     },
   },

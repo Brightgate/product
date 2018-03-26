@@ -7,39 +7,35 @@
  * express written permission of Brightgate Inc is prohibited, and any
  * such unauthorized removal or alteration will be a violation of federal law.
  */
-// Import Vue
-import Vue from 'vue'
+import Vue from 'vue';
+import VueI18n from 'vue-i18n';
+import Framework7 from 'framework7';
+import Framework7Vue from 'framework7-vue';
+import BrowserLocale from 'browser-locale';
 
-// Import VueI18n
-import VueI18n from 'vue-i18n'
+import Routes from './routes.js';
+import App from './app.vue';
 
-// Import F7
-import Framework7 from 'framework7'
+// Our store (VueX) implementation
+import store from './store';
 
-// Import F7 Vue Plugin
-import Framework7Vue from 'framework7-vue'
+// Our messages and current locale
+import messages from './i18n';
 
-// Import Routes
-import Routes from './routes.js'
+Vue.use(VueI18n);
+Vue.use(Framework7Vue, Framework7);
 
-// Import App Component
-import App from './app.vue'
-
-import store from './store'
-import { messages, i18n } from './i18n'
-
-// Init F7 Vue Plugin
-Vue.use(Framework7Vue, Framework7)
-
-// Init VueI18n Plugin
-Vue.use(VueI18n)
+const locale = BrowserLocale().substring(0, 2);
+const i18n = new VueI18n({
+  fallbackLocale: 'en',
+  locale,
+  messages,
+});
 
 // Init App
-
-var vm = new Vue({
+new Vue({
   i18n,
   el: '#app',
-  template: '<app/>',
   store,
   // Init Framework7 by passing parameters here
   framework7: {
@@ -50,6 +46,7 @@ var vm = new Vue({
   },
   // Register App Component
   components: {
-    app: App
-  }
+    app: App,
+  },
+  template: '<app/>',
 });

@@ -44,19 +44,17 @@
   </f7-page>
 
 </template>
-
 <script>
 
-import Promise from 'bluebird'
-import libphonenumber from 'libphonenumber-js'
-const phone_ayt = new libphonenumber.AsYouType("US")
+import libphonenumber from 'libphonenumber-js';
+const phone_ayt = new libphonenumber.AsYouType('US');
 
 export default {
   data: function() {
     return {
-      phone_input: "",
+      phone_input: '',
       enrolling: false,
-    }
+    };
   },
 
   // n.b. this is arcane and only sort-of works.  Probably we should switch to
@@ -64,49 +62,48 @@ export default {
   // input should go into its own Vue component.
   computed: {
     valid_number: function() {
-      if (!this.phone_input || this.phone_input === "") {
-        return false
+      if (!this.phone_input || this.phone_input === '') {
+        return false;
       }
-      return libphonenumber.isValidNumber(this.phone_input, "US")
+      return libphonenumber.isValidNumber(this.phone_input, 'US');
     },
   },
 
   methods: {
-    onTelInput: function (event) {
+    onTelInput: function(event) {
       phone_ayt.reset();
       this.phone_input = phone_ayt.input(event.target.value);
     },
 
-    enrollSMS: function () {
-      console.log(`enrollSMS: ${this.phone_input}`)
-      this.enrolling = true
+    enrollSMS: function() {
+      console.log(`enrollSMS: ${this.phone_input}`);
+      this.enrolling = true;
       return this.$store.dispatch('enrollSMS', {
-        phone: this.phone_input
+        phone: this.phone_input,
       }).then(() => {
-        console.log("enrollSMS: success")
-        const self = this;
-        this.enrolling = false
-	this.$f7.toast.show({
+        console.log('enrollSMS: success');
+        this.enrolling = false;
+        this.$f7.toast.show({
           text: this.$t('message.enroll.send_success'),
           closeButton: true,
           destroyOnClose: true,
           on: {
-            close: function () {
-              console.log("toast onclose handler")
-              self.$f7router.back()
-            }
-          }
-        })
+            close: () => {
+              console.log('toast onclose handler');
+              this.$f7router.back();
+            },
+          },
+        });
       }).catch(() => {
-        console.log("enrollSMS: failed")
-        this.enrolling = false
-	this.$f7.toast.show({
+        console.log('enrollSMS: failed');
+        this.enrolling = false;
+        this.$f7.toast.show({
           text: this.$t('message.enroll.send_failure'),
           closeButton: true,
           destroyOnClose: true,
-        })
-      })
+        });
+      });
     },
   },
-}
+};
 </script>

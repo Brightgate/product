@@ -29,24 +29,20 @@
   </f7-page>
 </template>
 <script>
+import Promise from 'bluebird';
 
 export default {
   methods: {
-    openEditorNew: function () {
-      const editor = this.$f7route.url + 'NEW/editor/';
-      console.log('opening new user editor ', editor);
+    openEditorNew: function() {
+      const editor = `${this.$f7route.url}NEW/editor/`;
       this.$f7router.navigate(editor);
     },
-    usersPullRefresh: function (event, done) {
-      return this.$store.dispatch('fetchUsers').then(() => {
-        return done();
-      }).catch((err) => {
-        return done(err);
-      });
+    usersPullRefresh: function(event, done) {
+      return Promise.resolve(this.$store.dispatch('fetchUsers')).asCallback(done);
     },
   },
   on: {
-    pageAfterIn: function () {
+    pageAfterIn: function() {
       console.log('users.vue on pageAfterIn');
       return this.$store.dispatch('fetchUsers');
     },
