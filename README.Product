@@ -156,6 +156,10 @@ that an IoT Core secret be provisioned for your appliance.  Install that to
 in order for your IoT connectivity to work.  See
 `build/gcp-iot/README.iotcore.md` for more details.
 
+## TLS Certificates
+
+Our appliances use LetsEncrypt TLS certificates.  Ensure that you have
+correct certificates installed for your appliance in `/etc/letsencrypt`.
 
 # Running from the Proto Area
 
@@ -185,6 +189,11 @@ aproot not set - using '/home/pi/Product.slave/proto.armv7l/appliance/opt/com.br
 2018/03/05 15:21:27 mcp.go:544: MCP online
 ```
 
+Or, if you are using packages (logs to `/var/log/mcp.log`):
+```
+$ sudo systemctl restart ap.mcp
+```
+
 Either put ap.mcp in the background, or switch to another window, and launch
 the remaining daemons:
 
@@ -209,6 +218,10 @@ $ ./proto.armv7l/appliance/opt/com.brightgate/bin/ap-ctl status all
 
 (It may take a little while for all of the services to come online)
 
+# Return to the Wiki
+
+Once this is working, return to the Wiki to learn how to configure the AP,
+for example, enabling WAN-facing SSH and configuring SSIDs and EAP users.
 
 # External assets
 
