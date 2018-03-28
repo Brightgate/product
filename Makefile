@@ -33,15 +33,11 @@
 #	  https://ph0.b10e.net/w/testing-raspberry-pi/ or
 #	  https://ph0.b10e.net/w/testing-banana-pi/]
 #
-# 2. Each new shell,
-#
-#	 $ . ./env.sh
-#
-# 3. To clean out local binaries, use
+# 2. To clean out local binaries, use
 #
 #	 $ make plat-clobber
 #
-# 4. On x86_64, the build constructs all components, whether for appliance or
+# 3. On x86_64, the build constructs all components, whether for appliance or
 #    for cloud.  On ARM, only appliance components are built.
 
 #
@@ -64,13 +60,21 @@ ifeq ("$(GOROOT)","")
 ifeq ("$(UNAME_S)","Darwin")
 # On macOS, install the .pkg provided by golang.org.
 export GOROOT=/usr/local/go
+GOROOT_SEARCH += /usr/local/go
 $(info operating-system macOS)
 else
 # On Linux
+export GOROOT=$(wildcard /opt/net.b10e/go)
+GOROOT_SEARCH += /opt/net.b10e/go
+ifeq ("$(GOROOT)","")
 export GOROOT=$(HOME)/go
+GOROOT_SEARCH += $(HOME)/go
+endif
 $(info operating-system Linux)
 endif
 endif
+
+export PATH=$(GOPATH)/bin:$(GOROOT)/bin:$(shell echo $$PATH)
 
 GO = $(GOROOT)/bin/go
 GOFMT = $(GOROOT)/bin/gofmt
@@ -78,10 +82,18 @@ GOLINT = $(GOROOT)/bin/golint
 GO_CLEAN_FLAGS = -i -x
 GO_GET_FLAGS = -v
 
-GOOS = $(shell $(GO) env GOOS)
-GOARCH = $(shell $(GO) env GOARCH)
-GOHOSTARCH = $(shell $(GO) env GOHOSTARCH)
-GOVERSION = $(shell $(GO) version)
+ifeq ("$(wildcard $(GO))","")
+ifeq ("$(findstring $(origin GOROOT), "command line|environment")","")
+$(error go does not exist in any known $$GOROOT: $(GOROOT_SEARCH))
+else
+$(error go does not exist at specified $$GOROOT: $(GOROOT))
+endif
+endif
+
+GOOS = $(shell GOROOT=$(GOROOT) $(GO) env GOOS)
+GOARCH = $(shell GOROOT=$(GOROOT) $(GO) env GOARCH)
+GOHOSTARCH = $(shell GOROOT=$(GOROOT) $(GO) env GOHOSTARCH)
+GOVERSION = $(shell GOROOT=$(GOROOT) $(GO) version)
 
 GOWS = golang
 GOSRCBG = $(GOWS)/src/bg

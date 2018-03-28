@@ -21,35 +21,35 @@ pipeline {
     stages {
         stage('build') {
             steps {
-                sh 'source env.sh && make'
+                sh 'make'
                 // Incremental 'make' after above should do nothing
-                sh 'source env.sh && make -q'
+                sh 'make -q'
 
-                sh 'source env.sh && make util'
+                sh 'make util'
                 // Incremental 'make util' after above should do nothing
-                sh 'source env.sh && make -q util'
+                sh 'make -q util'
 
-                sh 'source env.sh && make install'
+                sh 'make install'
                 // Incremental 'make install' after above should do nothing
-                sh 'source env.sh && make -q install'
+                sh 'make -q install'
 
-                sh 'source env.sh && make client-web'
+                sh 'make client-web'
             }
         }
         stage('packaging') {
             steps {
-                sh 'source env.sh && make packages'
+                sh 'make packages'
                 archiveArtifacts '*.deb'
             }
         }
         stage('test') {
             steps {
-                sh 'source env.sh && make test && make coverage'
+                sh 'make test coverage'
             }
         }
         stage('checks') {
             steps {
-                sh 'source env.sh && make vet-go && make lint-go'
+                sh 'make vet-go lint-go'
             }
         }
     }
