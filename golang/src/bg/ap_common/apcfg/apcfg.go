@@ -71,12 +71,14 @@ type RingMap map[string]*RingConfig
 // ClientMap maps a device's mac address to its configuration information
 type ClientMap map[string]*ClientInfo
 
+// ChildMap is a name->structure map of a property's children
+type ChildMap map[string]*PropertyNode
+
 // PropertyNode is a single node in the property tree
 type PropertyNode struct {
-	Name     string
-	Value    string          `json:"Value,omitempty"`
-	Expires  *time.Time      `json:"Expires,omitempty"`
-	Children []*PropertyNode `json:"Children,omitempty"`
+	Value    string     `json:"Value,omitempty"`
+	Expires  *time.Time `json:"Expires,omitempty"`
+	Children ChildMap   `json:"Children,omitempty"`
 }
 
 // IsActive returns 'true' if we believe the client is currently connected to
@@ -85,7 +87,7 @@ func (c *ClientInfo) IsActive() bool {
 	return c != nil && c.IPv4 != nil
 }
 
-func dumpSubtree(node *PropertyNode, level int) {
+func dumpSubtree(name string, node *PropertyNode, level int) {
 	indent := ""
 	for i := 0; i < level; i++ {
 		indent += "  "
@@ -94,27 +96,15 @@ func dumpSubtree(node *PropertyNode, level int) {
 	if node.Expires != nil {
 		e = node.Expires.Format("2006-01-02T15:04:05")
 	}
-	fmt.Printf("%s%s: %s  %s\n", indent, node.Name, node.Value, e)
-	for _, n := range node.Children {
-		dumpSubtree(n, level+1)
+	fmt.Printf("%s%s: %s  %s\n", indent, name, node.Value, e)
+	for childName, child := range node.Children {
+		dumpSubtree(childName, child, level+1)
 	}
 }
 
 // DumpTree displays the contents of a property tree in a human-legible format
-func (n *PropertyNode) DumpTree() {
-	dumpSubtree(n, 0)
-}
-
-// GetChild searches through a node's list of children, looking for one with a
-// name matching the provided key.  Returns a pointer the child node if it finds
-// a match, nil if it doesn't.
-func (n *PropertyNode) GetChild(key string) *PropertyNode {
-	for _, s := range n.Children {
-		if s.Name == key {
-			return s
-		}
-	}
-	return nil
+func (n *PropertyNode) DumpTree(root string) {
+	dumpSubtree(root, n, 0)
 }
 
 // GetChildByValue searches through a node's list of childrenn, looking for one
@@ -128,22 +118,6 @@ func (n *PropertyNode) GetChildByValue(value string) *PropertyNode {
 		}
 	}
 	return nil
-}
-
-// GetName returns the name field of a property node
-func (n *PropertyNode) GetName() string {
-	return n.Name
-}
-
-// GetValue returns the value field of a property node
-func (n *PropertyNode) GetValue() string {
-	return n.Value
-}
-
-// GetExpiry returns the expiration time of a property.  Properties that don't
-// expire will return nil.
-func (n *PropertyNode) GetExpiry() *time.Time {
-	return n.Expires
 }
 
 // APConfig is an opaque type representing a connection to ap.configd
@@ -312,48 +286,39 @@ func (c *APConfig) DeleteProp(prop string) error {
 // Utility functions to fetch specific property subtrees and transform the
 // results into typed maps
 
-func getStringVal(root *PropertyNode, name string) (string, error) {
-	var err error
-	var rval string
-
-	node := root.GetChild(name)
-	if node == nil {
-		err = fmt.Errorf("%s is missing a %s property",
-			root.Name, name)
-	} else {
-		rval = node.Value
+func getProp(root *PropertyNode, name string) (string, error) {
+	if child, ok := root.Children[name]; ok {
+		return child.Value, nil
 	}
+	return "", fmt.Errorf("missing %s property", name)
+}
 
-	return rval, err
+func getStringVal(root *PropertyNode, name string) (string, error) {
+	return getProp(root, name)
 }
 
 func getIntVal(root *PropertyNode, name string) (int, error) {
-	var err error
 	var rval int
+	var err error
 
-	node := root.GetChild(name)
-	if node == nil {
-		err = fmt.Errorf("%s is missing a %s property",
-			root.Name, name)
-	} else {
-		if rval, err = strconv.Atoi(node.Value); err != nil {
-			err = fmt.Errorf("%s has malformed %s property",
-				root.Name, name)
+	if val, err := getProp(root, name); err == nil {
+		if rval, err = strconv.Atoi(val); err != nil {
+			err = fmt.Errorf("malformed %s property: %s",
+				name, val)
 		}
 	}
+
 	return rval, err
 }
 
 func getBoolVal(root *PropertyNode, name string) (bool, error) {
-	var err error
 	var rval bool
+	var err error
 
-	node := root.GetChild(name)
-	if node == nil {
-		err = fmt.Errorf("%s is missing a %s property", root.Name, name)
-	} else {
-		if rval, err = strconv.ParseBool(node.Value); err != nil {
-			err = fmt.Errorf("%s has malformed %s property", root.Name, name)
+	if val, err := getProp(root, name); err == nil {
+		if rval, err = strconv.ParseBool(val); err != nil {
+			err = fmt.Errorf("malformed %s property: %s",
+				name, val)
 		}
 	}
 	return rval, err
@@ -369,13 +334,13 @@ func (c *APConfig) GetRings() RingMap {
 	}
 
 	set := make(map[string]*RingConfig)
-	for _, ring := range props.Children {
+	for ringName, ring := range props.Children {
 		var auth, subnet, bridge string
 		var vlan, duration int
 		var err error
 
-		if !ValidRings[ring.Name] {
-			err = fmt.Errorf("invalid ring name: %s", ring.Name)
+		if !ValidRings[ringName] {
+			err = fmt.Errorf("invalid ring name: %s", ringName)
 		}
 		if err == nil {
 			vlan, err = getIntVal(ring, "vlan")
@@ -383,6 +348,7 @@ func (c *APConfig) GetRings() RingMap {
 				bridge = "brvlan" + strconv.Itoa(vlan)
 			}
 		}
+
 		if err == nil {
 			subnet, err = getStringVal(ring, "subnet")
 		}
@@ -399,9 +365,9 @@ func (c *APConfig) GetRings() RingMap {
 				Subnet:        subnet,
 				Bridge:        bridge,
 				LeaseDuration: duration}
-			set[ring.Name] = &c
+			set[ringName] = &c
 		} else {
-			fmt.Printf("Malformed ring %s: %v\n", ring.Name, err)
+			fmt.Printf("Malformed ring %s: %v\n", ringName, err)
 		}
 	}
 
@@ -420,7 +386,7 @@ func getClient(client *PropertyNode) *ClientInfo {
 	confidence, _ = getStringVal(client, "confidence")
 	dhcp, _ = getStringVal(client, "dhcp_name")
 	dns, _ = getStringVal(client, "dns_name")
-	if addr := client.GetChild("ipv4"); addr != nil {
+	if addr, ok := client.Children["ipv4"]; ok {
 		if ip := net.ParseIP(addr.Value); ip != nil {
 			ipv4 = ip.To4()
 			exp = addr.Expires
@@ -463,8 +429,8 @@ func (c *APConfig) GetClients() ClientMap {
 	}
 
 	set := make(map[string]*ClientInfo)
-	for _, client := range props.Children {
-		set[client.Name] = getClient(client)
+	for name, client := range props.Children {
+		set[name] = getClient(client)
 	}
 
 	return set
@@ -490,35 +456,30 @@ func (c *APConfig) GetDevice(devid int) (*device.Device, error) {
 	return c.GetDevicePath(path)
 }
 
-// GetNics returns a slice of mac addresses, representing the NICs that match
-// the filter parameters
+// GetNics returns a slice of mac addresses representing the configured NICs.
+// The caller may choose to limit the slice to NICs carrying traffic for a
+// single ring and/or NICs that are local to this node.
 func (c *APConfig) GetNics(ring string, local bool) ([]string, error) {
-	var nodes []*PropertyNode
-
-	s := make([]string, 0)
-	prop := "@/nodes"
-	if local {
-		prop += "/" + aputil.GetNodeID().String()
-	}
-	props, err := c.GetProps(prop)
+	prop, err := c.GetProps("@/nodes")
 	if err != nil {
 		return nil, fmt.Errorf("property get %s failed: %v", prop, err)
 	}
 
-	if local {
-		nodes = []*PropertyNode{props}
-	} else {
-		nodes = props.Children
-	}
-	for _, node := range nodes {
-		for _, nic := range node.Children {
+	localNodeName := aputil.GetNodeID().String()
+	s := make([]string, 0)
+	for nodeName, node := range prop.Children {
+		if local && nodeName != localNodeName {
+			continue
+		}
+
+		for nicName, nic := range node.Children {
 			var nicRing string
-			if x := nic.GetChild("ring"); x != nil {
+			if x, ok := nic.Children["ring"]; ok {
 				nicRing = x.Value
 			}
 
 			if ring == "" || ring == nicRing {
-				s = append(s, nic.Name)
+				s = append(s, nicName)
 			}
 		}
 	}
@@ -532,9 +493,9 @@ func (c *APConfig) GetActiveBlocks() []string {
 
 	active, _ := c.GetProps("@/firewall/blocked")
 	now := time.Now()
-	for _, node := range active.Children {
+	for name, node := range active.Children {
 		if node.Expires == nil || now.Before(*node.Expires) {
-			list = append(list, node.Name)
+			list = append(list, name)
 		}
 	}
 

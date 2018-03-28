@@ -72,6 +72,10 @@ func (b *Broker) Ping() {
 // Publish first marshals the protobuf into its wire format and then sends the
 // resulting data on the broker's ZMQ socket
 func (b *Broker) Publish(pb proto.Message, topic string) error {
+	if b == nil {
+		return nil
+	}
+
 	data, err := proto.Marshal(pb)
 	if err != nil {
 		return fmt.Errorf("error marshalling %s: %v", topic, err)
@@ -116,6 +120,10 @@ func eventListener(b *Broker) {
 // Handle adds a new callback function for the identified topic.  This will
 // replace an existing handler for that topic.
 func (b *Broker) Handle(topic string, handler handlerF) {
+	if b == nil {
+		return
+	}
+
 	b.Lock()
 	b.handlers[topic] = handler
 	b.Unlock()
@@ -148,6 +156,10 @@ func (b *Broker) connect() {
 
 // Fini closes the subscriber's connection to the broker
 func (b *Broker) Fini() {
+	if b == nil {
+		return
+	}
+
 	b.subscriber.Close()
 }
 

@@ -388,8 +388,8 @@ func demoRingsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var rings []string
-	for _, ring := range props.Children {
-		rings = append(rings, ring.Name)
+	for name := range props.Children {
+		rings = append(rings, name)
 	}
 
 	b, err := json.Marshal(rings)

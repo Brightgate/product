@@ -587,8 +587,8 @@ func initHostMap() {
 	}
 
 	if cnames, _ := config.GetProps("@/dns/cnames"); cnames != nil {
-		for _, c := range cnames.Children {
-			updateOneCname(c.Name, c.Value)
+		for name, c := range cnames.Children {
+			updateOneCname(name, c.Value)
 		}
 	}
 

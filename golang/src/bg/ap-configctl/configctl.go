@@ -213,7 +213,9 @@ func getProp(cmd string, args []string) error {
 	} else {
 		root, err = apcfgd.GetProps(prop)
 		if err == nil {
-			root.DumpTree()
+			nodes := strings.Split(strings.Trim(prop, "/"), "/")
+			label := nodes[len(nodes)-1]
+			root.DumpTree(label)
 		}
 	}
 

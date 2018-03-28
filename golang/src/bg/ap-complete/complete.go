@@ -113,12 +113,12 @@ func configctl(prefix, prior string) {
 		return
 	}
 
-	for _, c := range root.Children {
-		if strings.HasPrefix(c.Name, partial) {
+	for n, c := range root.Children {
+		if strings.HasPrefix(n, partial) {
 			if len(c.Children) > 0 {
-				fmt.Printf("%s/%s/\n", path, c.Name)
+				fmt.Printf("%s/%s/\n", path, n)
 			} else {
-				fmt.Printf("%s/%s\n", path, c.Name)
+				fmt.Printf("%s/%s\n", path, n)
 			}
 		}
 	}

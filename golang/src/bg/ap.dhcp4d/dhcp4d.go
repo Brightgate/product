@@ -766,9 +766,9 @@ func initHandlers() error {
 		return fmt.Errorf("unable to get NIC ring assignments: %v", err)
 	}
 	for _, node := range nodes.Children {
-		for _, nic := range node.Children {
+		for name, nic := range node.Children {
 			if nic.Value == base_def.RING_WAN {
-				wanMacs[nic.Name] = true
+				wanMacs[name] = true
 			}
 		}
 	}

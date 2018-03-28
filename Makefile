@@ -288,10 +288,10 @@ APPBINARIES = \
 # XXX Common configurations?
 
 GO_TESTABLES = \
-	bg/ap_common/apcfg \
 	bg/ap_common/aputil \
 	bg/ap_common/iotcore \
 	bg/ap_common/network \
+	bg/ap.configd \
 	bg/ap.iotd \
 	bg/ap.networkd \
 	bg/ap.userauthd \
@@ -665,14 +665,9 @@ $(APPBIN)/ap.brokerd: $(GOSRCBG)/ap.brokerd/brokerd.go
 $(APPBIN)/ap.configd: \
 	$(GOSRCBG)/ap.configd/configd.go \
 	$(GOSRCBG)/ap.configd/devices.go \
-	$(GOSRCBG)/ap.configd/upgrade_v1.go \
-	$(GOSRCBG)/ap.configd/upgrade_v2.go \
-	$(GOSRCBG)/ap.configd/upgrade_v4.go \
-	$(GOSRCBG)/ap.configd/upgrade_v5.go \
-	$(GOSRCBG)/ap.configd/upgrade_v6.go \
-	$(GOSRCBG)/ap.configd/upgrade_v7.go \
-	$(GOSRCBG)/ap.configd/upgrade_v8.go \
-	$(GOSRCBG)/ap.configd/upgrade_v9.go
+	$(GOSRCBG)/ap.configd/upgrade_v10.go \
+	$(GOSRCBG)/ap.configd/upgrade_v11.go \
+	$(GOSRCBG)/ap.configd/upgrade_v12.go
 $(APPBIN)/ap.dhcp4d: $(GOSRCBG)/ap.dhcp4d/dhcp4d.go
 $(APPBIN)/ap.dns4d: \
 	$(GOSRCBG)/ap.dns4d/dns4d.go \

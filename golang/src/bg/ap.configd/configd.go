@@ -73,8 +73,8 @@ const (
 	defaultFilename  = "ap_defaults.json"
 	pname            = "ap.configd"
 
-	minConfigVersion = 3
-	curConfigVersion = 11
+	minConfigVersion = 10
+	curConfigVersion = 12
 )
 
 // Allow for significant variation in the processing of subtrees
@@ -136,12 +136,12 @@ var propertyMatchTable = []propertyMatch{
  * date.
  */
 type pnode struct {
-	Name     string
-	Value    string     `json:"Value,omitempty"`
-	Modified *time.Time `json:"Modified,omitempty"`
-	Expires  *time.Time `json:"Expires,omitempty"`
-	Children []*pnode   `json:"Children,omitempty"`
+	Value    string            `json:"Value,omitempty"`
+	Modified *time.Time        `json:"Modified,omitempty"`
+	Expires  *time.Time        `json:"Expires,omitempty"`
+	Children map[string]*pnode `json:"Children,omitempty"`
 	parent   *pnode
+	name     string
 	path     string
 	ops      *propertyOps
 
@@ -152,7 +152,7 @@ type pnode struct {
 type pnodeQueue []*pnode
 
 var (
-	propTreeRoot = pnode{Name: "root"}
+	propTreeRoot = pnode{name: "root"}
 	addr         = flag.String("listen-address",
 		base_def.CONFIGD_PROMETHEUS_PORT,
 		"The address to listen on for HTTP requests.")
@@ -160,7 +160,8 @@ var (
 	propdir = flag.String("propdir", "./",
 		"directory in which the property files should be stored")
 
-	apVersion    string
+	// ApVersion is the git version of the running code
+	ApVersion    string
 	upgradeHooks []func() error
 
 	expirationHeap  pnodeQueue
@@ -232,9 +233,9 @@ func expirationHandler() {
 			delay := now.Sub(*next.Expires)
 			if delay.Seconds() > 1.0 {
 				log.Printf("Missed expiration for %s by %s\n",
-					next.Name, delay)
+					next.name, delay)
 			}
-			log.Printf("Expiring: %s at %v\n", next.Name, time.Now())
+			log.Printf("Expiring: %s at %v\n", next.name, time.Now())
 			heap.Pop(&expirationHeap)
 
 			next.index = -1
@@ -391,29 +392,15 @@ func entityHandler(event []byte) {
 	path := "@/clients/" + hwaddr.String()
 	node := propertyInsert(path)
 
-	/*
-	 * Determine which client properties are already known
-	 */
-	fields := make(map[string]*pnode)
-	for _, c := range node.Children {
-		fields[c.Name] = c
-	}
-
-	var n *pnode
-	var ok bool
 	if entity.Ipv4Address != nil {
-		if n, ok = fields["ipv4_observed"]; !ok {
-			n = propertyAdd(node, "ipv4_observed")
-		}
 		ipv4 := network.Uint32ToIPAddr(*entity.Ipv4Address).String()
-		if n.Value != ipv4 {
+		if n := propertyAdd(node, "ipv4_observed"); n.Value != ipv4 {
 			n.Value = ipv4
 			updated = true
 		}
 	}
 
-	if n, ok = fields["ring"]; !ok {
-		n = propertyAdd(node, "ring")
+	if n := propertyAdd(node, "ring"); n.Value == "" {
 		n.Value = base_def.RING_UNENROLLED
 		updated = true
 	}
@@ -542,15 +529,6 @@ func passphraseUpdate(node *pnode, pass string, expires *time.Time) (bool, error
 	return changed, err
 }
 
-func findChild(parent *pnode, name string) *pnode {
-	for _, c := range parent.Children {
-		if c.Name == name {
-			return c
-		}
-	}
-	return nil
-}
-
 //
 // Check to see whether the given hostname is already inuse as either a device's
 // dns_name or as the left hand side of a cname.  We can optionally indicate a
@@ -565,7 +543,7 @@ func dnsNameInuse(ignore *pnode, hostname string) bool {
 		if device == ignore {
 			continue
 		}
-		if prop := findChild(device, "dns_name"); prop != nil {
+		if prop, ok := device.Children["dns_name"]; ok {
 			if strings.ToLower(prop.Value) == lower {
 				return true
 			}
@@ -573,11 +551,11 @@ func dnsNameInuse(ignore *pnode, hostname string) bool {
 	}
 
 	if cnames := propertySearch("@/dns/cnames"); cnames != nil {
-		for _, record := range cnames.Children {
+		for name, record := range cnames.Children {
 			if record == ignore {
 				continue
 			}
-			if strings.ToLower(record.Name) == lower {
+			if strings.ToLower(name) == lower {
 				return true
 			}
 		}
@@ -603,15 +581,15 @@ func dnsSetter(node *pnode, hostname string, expires *time.Time) (bool, error) {
 // Validate and record both the hostname and the canonical name that will be
 // used to generate DNS CNAME records
 func cnameSetter(node *pnode, hostname string, expires *time.Time) (bool, error) {
-	if !network.ValidHostname(node.Name) {
-		return false, fmt.Errorf("invalid hostname: %s", node.Name)
+	if !network.ValidHostname(node.name) {
+		return false, fmt.Errorf("invalid hostname: %s", node.name)
 	}
 
 	if !network.ValidHostname(hostname) {
 		return false, fmt.Errorf("invalid canonical name: %s", hostname)
 	}
 
-	if dnsNameInuse(node, node.Name) {
+	if dnsNameInuse(node, node.name) {
 		return false, fmt.Errorf("duplicate hostname")
 	}
 
@@ -633,10 +611,10 @@ func ipv4Setter(node *pnode, addr string, expires *time.Time) (bool, error) {
 			continue
 		}
 
-		if ipv4Node := findChild(device, "ipv4"); ipv4Node != nil {
+		if ipv4Node, ok := device.Children["ipv4"]; ok {
 			if ipv4.Equal(net.ParseIP(ipv4Node.Value)) {
 				return false, fmt.Errorf("%s in use by %s",
-					addr, device.Name)
+					addr, device.name)
 			}
 		}
 	}
@@ -656,9 +634,9 @@ func ringExpire(node *pnode) {
  * To determine whether this new property has non-default operations, we walk
  * through the property_match_table, looking for any matching patterns
  */
-func propAttachOps(node *pnode, path string) {
+func propAttachOps(node *pnode) {
 	for _, r := range propertyMatchTable {
-		if r.match.MatchString(path) {
+		if r.match.MatchString(node.path) {
 			node.ops = r.ops
 			return
 		}
@@ -690,26 +668,23 @@ func markUpdated(node *pnode) {
  * Allocate a new property node and insert it into the property tree
  */
 func propertyAdd(parent *pnode, property string) *pnode {
-	path := parent.path + "/" + property
-
-	n := pnode{Name: property,
-		parent: parent,
-		path:   path,
-		index:  -1}
-
-	parent.Children = append(parent.Children, &n)
-	propAttachOps(&n, path)
-	return &n
-}
-
-func childSearch(node *pnode, name string) *pnode {
-	for _, n := range node.Children {
-		if name == n.Name {
-			return n
-		}
-
+	if parent.Children == nil {
+		parent.Children = make(map[string]*pnode)
 	}
-	return nil
+
+	n, ok := parent.Children[property]
+	if !ok {
+		path := parent.path + "/" + property
+		n = &pnode{
+			name:   property,
+			parent: parent,
+			path:   path,
+			index:  -1}
+
+		propAttachOps(n)
+		parent.Children[property] = n
+	}
+	return n
 }
 
 func propertyParse(prop string) []string {
@@ -743,10 +718,7 @@ func propertyInsert(prop string) *pnode {
 	node := &propTreeRoot
 	path := "@"
 	for _, name := range components {
-		next := childSearch(node, name)
-		if next == nil {
-			next = propertyAdd(node, name)
-		}
+		next := propertyAdd(node, name)
 		path += "/" + name
 		node = next
 	}
@@ -764,8 +736,9 @@ func propertySearch(prop string) *pnode {
 	}
 
 	node := &propTreeRoot
+	ok := false
 	for _, name := range components {
-		if node = childSearch(node, name); node == nil {
+		if node, ok = node.Children[name]; !ok {
 			break
 		}
 	}
@@ -780,11 +753,9 @@ func propertySearch(prop string) *pnode {
 }
 
 func deleteChild(parent, child *pnode) {
-	siblings := parent.Children
-	for i, n := range siblings {
-		if n == child {
-			parent.Children =
-				append(siblings[:i], siblings[i+1:]...)
+	for name, ptr := range parent.Children {
+		if ptr == child {
+			delete(parent.Children, name)
 			markUpdated(parent)
 			break
 		}
@@ -876,7 +847,7 @@ func propTreeStore() error {
 	backupfile := *propdir + backupFilename
 
 	node := propertyInsert("@/apversion")
-	node.Value = apVersion
+	node.Value = ApVersion
 
 	s, err := json.MarshalIndent(propTreeRoot, "", "  ")
 	if err != nil {
@@ -900,6 +871,17 @@ func propTreeStore() error {
 	return err
 }
 
+func propTreeImport(data []byte) error {
+	var newRoot pnode
+
+	err := json.Unmarshal(data, &newRoot)
+	if err == nil {
+		patchTree("@", &newRoot, "")
+		propTreeRoot = newRoot
+	}
+	return err
+}
+
 func propTreeLoad(name string) error {
 	var file []byte
 	var err error
@@ -910,11 +892,12 @@ func propTreeLoad(name string) error {
 		return err
 	}
 
-	err = json.Unmarshal(file, &propTreeRoot)
-	if err != nil {
-		log.Printf("Failed to import properties from %s: %v\n",
-			name, err)
-		return err
+	if err = propTreeImport(file); err != nil {
+		if nerr := oldPropTreeParse(file); nerr != nil {
+			log.Printf("Failed to import properties from %s: %v\n",
+				name, err)
+			return err
+		}
 	}
 
 	return nil
@@ -974,20 +957,25 @@ func versionTree() error {
  * the parent pointers, attach any non-default operations, and possibly insert
  * into the expiration heap
  */
-func patchTree(node *pnode, path string) {
-	propAttachOps(node, path)
-	for _, n := range node.Children {
-		n.parent = node
-		patchTree(n, path+"/"+n.Name)
+func patchTree(name string, node *pnode, path string) {
+	node.name = name
+	if len(path) > 0 {
+		node.path = path + "/" + name
+	} else {
+		node.path = name
 	}
-	node.path = path
 	node.index = -1
+	propAttachOps(node)
+	for childName, child := range node.Children {
+		child.parent = node
+		patchTree(childName, child, node.path)
+	}
 	if node.Expires != nil {
 		expirationUpdate(node)
 	}
 }
 
-func dumpTree(node *pnode, level int) {
+func dumpTree(name string, node *pnode, level int) {
 	indent := ""
 	for i := 0; i < level; i++ {
 		indent += "  "
@@ -996,9 +984,9 @@ func dumpTree(node *pnode, level int) {
 	if node.Expires != nil {
 		e = node.Expires.Format("2006-01-02T15:04:05")
 	}
-	fmt.Printf("%s%s: %s  %s\n", indent, node.Name, node.Value, e)
-	for _, n := range node.Children {
-		dumpTree(n, level+1)
+	fmt.Printf("%s%s: %s  %s\n", indent, name, node.Value, e)
+	for name, child := range node.Children {
+		dumpTree(name, child, level+1)
 	}
 }
 
@@ -1045,7 +1033,6 @@ func propTreeInit() {
 		if err != nil {
 			log.Fatal("Unable to load default properties")
 		}
-		patchTree(&propTreeRoot, "@")
 		applianceUUID := uuid.NewV4().String()
 		propertyUpdate("@/uuid", applianceUUID, nil, true)
 
@@ -1055,13 +1042,12 @@ func propTreeInit() {
 	}
 
 	if err == nil {
-		patchTree(&propTreeRoot, "@")
 		if err = versionTree(); err != nil {
 			log.Fatalf("Failed version check: %v\n", err)
 		}
 	}
 
-	dumpTree(&propTreeRoot, 0)
+	dumpTree("root", &propTreeRoot, 0)
 }
 
 /*************************************************************************

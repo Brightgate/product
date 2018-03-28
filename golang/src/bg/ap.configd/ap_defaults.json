@@ -1,236 +1,178 @@
 {
-    "Name": "root",
-    "Children": [
-        {
-            "Name": "uuid",
-            "Value": "00000000-0000-0000-0000-000000000000"
+  "Children": {
+    "uuid": {
+      "Value": "00000000-0000-0000-0000-000000000000"
+    },
+    "siteid": {
+      "Value": "0"
+    },
+    "cfgversion": {
+      "Value": "12"
+    },
+    "apversion": {
+      "Value": ""
+    },
+    "rings": {
+      "Children": {
+        "internal": {
+          "Children": {
+            "auth": {
+              "Value": "open"
+            },
+            "lease_duration": {
+              "Value": "1440"
+            },
+            "subnet": {
+              "Value": "192.168.131.0/29"
+            },
+            "vlan": {
+              "Value": "1"
+            }
+          }
         },
-        {
-            "Name": "siteid",
-            "Value": "0"
+        "unenrolled": {
+          "Children": {
+            "auth": {
+              "Value": "wpa-psk"
+            },
+            "lease_duration": {
+              "Value": "10"
+            },
+            "subnet": {
+              "Value": "192.168.130.0/26"
+            },
+            "vlan": {
+              "Value": "0"
+            }
+          }
         },
-        {
-            "Name": "cfgversion",
-            "Value": "11"
+        "core": {
+          "Children": {
+            "auth": {
+              "Value": "wpa-eap"
+            },
+            "lease_duration": {
+              "Value": "1440"
+            },
+            "subnet": {
+              "Value": "192.168.133.0/26"
+            },
+            "vlan": {
+              "Value": "3"
+            }
+          }
         },
-        {
-            "Name": "apversion",
-            "Value": "0"
+        "standard": {
+          "Children": {
+            "auth": {
+              "Value": "wpa-psk"
+            },
+            "lease_duration": {
+              "Value": "1440"
+            },
+            "subnet": {
+              "Value": "192.168.134.0/26"
+            },
+            "vlan": {
+              "Value": "4"
+            }
+          }
         },
-        {
-            "Name": "rings",
-            "Children": [
-                {
-                    "Name": "internal",
-                    "Children": [
-                        {
-                            "Name": "vlan",
-                            "Value": "1"
-                        },
-                        {
-                            "Name": "auth",
-                            "Value": "open"
-                        },
-                        {
-                            "Name": "subnet",
-                            "Value": "192.168.131.0/29"
-                        },
-                        {
-                            "Name": "lease_duration",
-                            "Value": "1440"
-                        }
-                    ]
+        "devices": {
+          "Children": {
+            "auth": {
+              "Value": "wpa-psk"
+            },
+            "lease_duration": {
+              "Value": "180"
+            },
+            "subnet": {
+              "Value": "192.168.135.0/26"
+            },
+            "vlan": {
+              "Value": "5"
+            }
+          }
+        },
+        "guest": {
+          "Children": {
+            "auth": {
+              "Value": "wpa-psk"
+            },
+            "lease_duration": {
+              "Value": "30"
+            },
+            "subnet": {
+              "Value": "192.168.136.0/26"
+            },
+            "vlan": {
+              "Value": "6"
+            }
+          }
+        },
+        "quarantine": {
+          "Children": {
+            "auth": {
+              "Value": "wpa-psk"
+            },
+            "lease_duration": {
+              "Value": "10"
+            },
+            "subnet": {
+              "Value": "192.168.137.0/26"
+            },
+            "vlan": {
+              "Value": "7"
+            }
+          }
+        }
+      }
+    },
+    "users": {},
+    "clients": {},
+    "network": {
+      "Children": {
+        "dnsserver": {
+          "Value": "8.8.8.8:53"
+        },
+        "passphrase": {
+          "Value": "sosecretive"
+        },
+        "regdomain": {
+          "Value": "US"
+        },
+        "ssid": {
+          "Value": "setme"
+        }
+      }
+    },
+    "firewall": {
+      "Children": {
+        "rules": {
+          "Children": {
+            "ssh-internal": {
+              "Children": {
+                "active": {
+                  "Value": "true"
                 },
-                {
-                    "Name": "unenrolled",
-                    "Children": [
-                        {
-                            "Name": "vlan",
-                            "Value": "0"
-                        },
-                        {
-                            "Name": "auth",
-                            "Value": "wpa-psk"
-                        },
-                        {
-                            "Name": "subnet",
-                            "Value": "192.168.130.0/26"
-                        },
-                        {
-                            "Name": "lease_duration",
-                            "Value": "10"
-                        }
-                    ]
-                },
-                {
-                    "Name": "core",
-                    "Children": [
-                        {
-                            "Name": "vlan",
-                            "Value": "3"
-                        },
-                        {
-                            "Name": "auth",
-                            "Value": "wpa-eap"
-                        },
-                        {
-                            "Name": "subnet",
-                            "Value": "192.168.133.0/26"
-                        },
-                        {
-                            "Name": "lease_duration",
-                            "Value": "1440"
-                        }
-                    ]
-                },
-                {
-                    "Name": "standard",
-                    "Children": [
-                        {
-                            "Name": "vlan",
-                            "Value": "4"
-                        },
-                        {
-                            "Name": "auth",
-                            "Value": "wpa-psk"
-                        },
-                        {
-                            "Name": "subnet",
-                            "Value": "192.168.134.0/26"
-                        },
-                        {
-                            "Name": "lease_duration",
-                            "Value": "1440"
-                        }
-                    ]
-                },
-                {
-                    "Name": "devices",
-                    "Children": [
-                        {
-                            "Name": "vlan",
-                            "Value": "5"
-                        },
-                        {
-                            "Name": "auth",
-                            "Value": "wpa-psk"
-                        },
-                        {
-                            "Name": "subnet",
-                            "Value": "192.168.135.0/26"
-                        },
-                        {
-                            "Name": "lease_duration",
-                            "Value": "180"
-                        }
-                    ]
-                },
-                {
-                    "Name": "guest",
-                    "Children": [
-                        {
-                            "Name": "vlan",
-                            "Value": "6"
-                        },
-                        {
-                            "Name": "auth",
-                            "Value": "wpa-psk"
-                        },
-                        {
-                            "Name": "subnet",
-                            "Value": "192.168.136.0/26"
-                        },
-                        {
-                            "Name": "lease_duration",
-                            "Value": "30"
-                        }
-                    ]
-                },
-                {
-                    "Name": "quarantine",
-                    "Children": [
-                        {
-                            "Name": "vlan",
-                            "Value": "7"
-                        },
-                        {
-                            "Name": "auth",
-                            "Value": "wpa-psk"
-                        },
-                        {
-                            "Name": "subnet",
-                            "Value": "192.168.137.0/26"
-                        },
-                        {
-                            "Name": "lease_duration",
-                            "Value": "10"
-                        }
-                    ]
+                "rule": {
+                  "Value": "ACCEPT TCP FROM IFACE NOT wan TO AP DPORTS 22"
                 }
-            ]
-        },
-        {
-            "Name": "clients"
-        },
-        {
-            "Name": "network",
-            "Children": [
-                {
-                    "Name": "ssid",
-                    "Value": "setme"
-                },
-                {
-                    "Name": "passphrase",
-                    "Value": "sosecretive"
-                },
-                {
-                    "Name": "regdomain",
-                    "Value": "US"
-                },
-                {
-                    "Name": "dnsserver",
-                    "Value": "8.8.8.8:53"
+              }
+            },
+	    "ssh-external": {
+              "Children": {
+                "active": {
+                  "Value": "false"
+                  },
+                "rule": {
+                  "Value": "ACCEPT TCP FROM IFACE wan TO AP DPORTS 22"
                 }
-            ]
-        },
-        {
-            "Name": "firewall",
-            "Children": [
-		{
-                    "Name": "rules",
-                    "Children": [
-                        {
-			    "Name": "ssh-internal",
-			    "Children": [
-				{
-				    "Name": "active",
-				    "Value": "true"
-				},
-				{
-				    "Name": "rule",
-				    "Value": "ACCEPT TCP FROM IFACE NOT wan TO AP DPORTS 22"
-				}
-			    ]
-			},
-			{
-			    "Name": "ssh-external",
-			    "Children": [
-				{
-				    "Name": "active",
-				    "Value": "false"
-				},
-				{
-				    "Name": "rule",
-				    "Value": "ACCEPT TCP FROM IFACE wan TO AP DPORTS 22"
-				}
-			    ]
-			}
-		    ]
-		}
-	    ]
-	},
-	{
-	    "Name": "users"
-	}
-    ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 }

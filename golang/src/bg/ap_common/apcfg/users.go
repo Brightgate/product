@@ -53,14 +53,14 @@ type UserInfo struct {
 type UserMap map[string]*UserInfo
 
 // newUserFromNode creates a UserInfo from config properties
-func newUserFromNode(user *PropertyNode) (*UserInfo, error) {
+func newUserFromNode(name string, user *PropertyNode) (*UserInfo, error) {
 	uid, err := getStringVal(user, "uid")
 	if err != nil {
 		// Most likely manual creation of the @/users/[uid] node.
 		return nil, errors.Wrap(err, "incomplete user property node")
 	}
-	if user.Name != uid {
-		return nil, fmt.Errorf("prop name '%s' != uid '%s'", user.Name, uid)
+	if name != uid {
+		return nil, fmt.Errorf("prop name '%s' != uid '%s'", name, uid)
 	}
 
 	password, _ := getStringVal(user, "userPassword")
@@ -156,7 +156,7 @@ func (c *APConfig) GetUser(uid string) (*UserInfo, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "Failed to get user %s", uid)
 	}
-	ui, err := newUserFromNode(user)
+	ui, err := newUserFromNode(uid, user)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to make UserInfo")
 	}
@@ -173,13 +173,10 @@ func (c *APConfig) GetUserByUUID(uuid string) (*UserInfo, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "Failed to get user list")
 	}
-	for _, user := range users.Children {
-		upn := user.GetChild("uuid")
-		if upn == nil {
-			continue
-		}
-		if upn.Value == uuid {
-			ui, err := newUserFromNode(user)
+	for name, user := range users.Children {
+		upn, ok := user.Children["uuid"]
+		if ok && upn.Value == uuid {
+			ui, err := newUserFromNode(name, user)
 			if err != nil {
 				return nil, errors.Wrap(err, "Failed to make UserInfo")
 			}
@@ -199,13 +196,13 @@ func (c *APConfig) GetUsers() UserMap {
 	}
 
 	set := make(map[string]*UserInfo)
-	for _, user := range props.Children {
-		if us, err := newUserFromNode(user); err == nil {
+	for name, user := range props.Children {
+		if us, err := newUserFromNode(name, user); err == nil {
 			us.config = c
-			set[user.Name] = us
+			set[name] = us
 		} else {
 			// XXX kludge
-			log.Printf("couldn't userinfo %v: %v\n", user.Name, err)
+			log.Printf("couldn't userinfo %v: %v\n", name, err)
 		}
 	}
 

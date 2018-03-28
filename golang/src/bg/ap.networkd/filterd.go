@@ -555,18 +555,14 @@ func configBlocklistChanged(path []string, val string, expires *time.Time) {
 }
 
 func firewallRule(p *apcfg.PropertyNode) (*rule, error) {
-	active := p.GetChild("active")
-	rule := p.GetChild("rule")
-
-	if active == nil || active.GetValue() != "true" {
+	active, ok := p.Children["active"]
+	if !ok || active.Value != "true" {
 		return nil, nil
 	}
-
-	if rule == nil {
-		return nil, fmt.Errorf("missing rule text")
+	if rule, ok := p.Children["rule"]; ok {
+		return parseRule(rule.Value)
 	}
-
-	return parseRule(rule.GetValue())
+	return nil, fmt.Errorf("missing rule text")
 }
 
 func firewallRules() {
@@ -580,11 +576,10 @@ func firewallRules() {
 		return
 	}
 
-	for _, rule := range rules.Children {
+	for name, rule := range rules.Children {
 		r, err := firewallRule(rule)
 		if err != nil {
-			log.Printf("bad firewall rule '%s': %v\n",
-				rule.GetName(), err)
+			log.Printf("bad firewall rule '%s': %v\n", name, err)
 		} else if r != nil {
 			addRule(r)
 		}

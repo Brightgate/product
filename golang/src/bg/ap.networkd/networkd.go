@@ -833,15 +833,15 @@ func getDevices() {
 
 	nics, _ := config.GetProps("@/nodes/" + nodeUUID)
 	if nics != nil {
-		for _, nic := range nics.Children {
-			if d := physDevices[nic.Name]; d != nil {
-				if x := nic.GetChild("ring"); x != nil {
+		for name, nic := range nics.Children {
+			if d := physDevices[name]; d != nil {
+				if x, ok := nic.Children["ring"]; ok {
 					d.ring = x.Value
 				}
-				if x := nic.GetChild("mode"); x != nil {
+				if x, ok := nic.Children["mode"]; ok {
 					d.cfgMode = x.Value
 				}
-				if x := nic.GetChild("channel"); x != nil {
+				if x, ok := nic.Children["channel"]; ok {
 					d.cfgChannel, _ = strconv.Atoi(x.Value)
 				}
 			}
@@ -887,7 +887,7 @@ func globalWifiInit(props *apcfg.PropertyNode) error {
 	makeValidChannelMaps()
 
 	domain := "US"
-	if x := props.GetChild("regdomain"); x != nil {
+	if x, ok := props.Children["regdomain"]; ok {
 		t := []byte(strings.ToUpper(x.Value))
 		if !locationRE.Match(t) {
 			log.Printf("Illegal @/network/regdomain: %s\n", x.Value)
@@ -902,19 +902,19 @@ func globalWifiInit(props *apcfg.PropertyNode) error {
 		log.Printf("Failed to set domain: %v\n%s\n", err, out)
 	}
 
-	if node := props.GetChild("radiusAuthSecret"); node != nil {
-		radiusSecret = node.GetValue()
+	if node, ok := props.Children["radiusAuthSecret"]; ok {
+		radiusSecret = node.Value
 	} else {
 		return fmt.Errorf("no radiusAuthSecret configured")
 	}
-	if node := props.GetChild("ssid"); node != nil {
-		wifiSSID = node.GetValue()
+	if node, ok := props.Children["ssid"]; ok {
+		wifiSSID = node.Value
 	} else {
 		return fmt.Errorf("no SSID configured")
 	}
 
-	if node := props.GetChild("passphrase"); node != nil {
-		wifiPassphrase = node.GetValue()
+	if node, ok := props.Children["passphrase"]; ok {
+		wifiPassphrase = node.Value
 	} else {
 		return fmt.Errorf("no WPA-PSK passphrase configured")
 	}

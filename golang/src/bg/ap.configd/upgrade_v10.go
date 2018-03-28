@@ -32,9 +32,12 @@ func upgradeV10() error {
 	prop.Value = "ACCEPT TCP FROM IFACE wan TO AP DPORTS 22"
 
 	log.Printf("Renaming @/firewall/active to @/firewall/blocked\n")
-	prop = propertySearch("@/firewall/active")
-	if prop != nil {
-		prop.Name = "blocked"
+	if firewall := propertySearch("@/firewall"); firewall != nil {
+		if active, ok := firewall.Children["active"]; ok {
+			delete(firewall.Children, "active")
+			firewall.Children["blocked"] = active
+			active.name = "blocked"
+		}
 	}
 
 	return nil
