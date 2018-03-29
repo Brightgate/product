@@ -1,3 +1,5 @@
 node_modules/
 dist/
 .npm-installed
+npm-debug.log*
+package-lock.json
