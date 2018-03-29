@@ -42,10 +42,12 @@ $ make SYSROOT=build/cross-compile/sysroot.raspbian-stretch GOARCH=arm GOARM=7 p
 ```
 
 ## External resources
+
 - https://wiki.debian.org/Multistrap
 - https://dave.cheney.net/2015/08/22/cross-compilation-with-go-1-5
 
 ## Future work
+
 - Investigate https://github.com/karalabe/xgo
 - Build and publish a sysroot which can be downloaded as needed
 - Set GOARM?  Needs research.
