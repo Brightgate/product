@@ -147,7 +147,9 @@ ifneq ($(GOHOSTARCH),$(GOARCH))
 ifeq ($(SYSROOT),)
 $(error SYSROOT must be set for cross builds)
 endif
-ifneq ($(GOARCH),arm)
+ifeq ($(GOARCH),arm)
+BUILDTOOLS_CROSS = crossbuild-essential-armhf
+else
 $(error 'arm' is the only supported cross target)
 endif
 
@@ -159,6 +161,7 @@ CROSS_CGO_CFLAGS=--sysroot $(CROSS_SYSROOT) -Iusr/local/include
 endif
 
 BUILDTOOLS = \
+	$(BUILDTOOLS_CROSS) \
 	protobuf-compiler \
 	libzmq3-dev \
 	libpcap-dev \

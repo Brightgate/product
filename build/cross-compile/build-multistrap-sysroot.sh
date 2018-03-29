@@ -1,7 +1,7 @@
 #!/bin/bash -p
 
 #
-# COPYRIGHT 2017 Brightgate Inc. All rights reserved.
+# COPYRIGHT 2018 Brightgate Inc. All rights reserved.
 #
 # This copyright notice is Copyright Management Information under 17 USC 1202
 # and is included to protect this work and deter copyright infringement.
@@ -34,6 +34,14 @@ info "SYSROOT_NAME=$SYSROOT_NAME  (Based on $cfgfile)"
 
 [[ -d $SYSROOT_NAME ]] && fatal "looks like $SYSROOT_NAME already exists"
 
+# Fetch tensorflow upfront-- if you don't have the right 'arc' creds, it will fail.
+# In the future we will want to cross compile TensorFlow as part of our CI workflow.
+# For now just download a pre-built binary.
+info "Fetching tensorflow"
+tmpdir=$(mktemp --directory)
+/opt/net.b10e/bin/arc download F1089 --as "$tmpdir/libtensorflow-r1.4.1-raspberrypi.tar.gz" || \
+       fatal "tensorflow download failed"
+
 /usr/sbin/multistrap -f "$cfgfile" || fatal "multistrap failed!"
 
 info "removing extraneous stuff from sysroot"
@@ -51,16 +59,11 @@ find "$SYSROOT_NAME/usr/share" -type f ! -name '*.h' -print0 | xargs -0 --no-run
 info "remove etc"
 rm -fr "${SYSROOT_NAME:??}/etc"
 
-# In the future we will want to cross compile TensorFlow as part of our CI workflow.
-# For now just download a pre-built binary.
 info "Adding tensorflow"
-tmpdir=$(mktemp --directory)
-/opt/net.b10e/bin/arc download F1089 --as "$tmpdir/libtensorflow-r1.4.1-raspberrypi.tar.gz" || \
-	die "tensorflow download failed"
 mkdir -p "$SYSROOT_NAME/usr/local/lib"
 tar --to-stdout -x -f "$tmpdir/libtensorflow-r1.4.1-raspberrypi.tar.gz" \
 	 raspberrypi_cross/libtensorflow.so > "$SYSROOT_NAME/usr/local/lib/libtensorflow.so" || \
-	die "tar extract failed"
+	fatal "tar extract failed"
 chmod a+rx "$SYSROOT_NAME/usr/local/lib/libtensorflow.so"
 rm -fr "$tmpdir"
 
