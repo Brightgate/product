@@ -9,7 +9,7 @@
 -->
 <template>
   <f7-page>
-    <f7-navbar :back-link="$t('message.general.back')" :title="device_details.network_name + $t('message.details.details._details')" sliding>
+    <f7-navbar :back-link="$t('message.general.back')" :title="device_details.network_name + $t('message.dev_details.details._details')" sliding>
     </f7-navbar>
 
     <div v-if="device_details.notification">
@@ -31,11 +31,11 @@
       </f7-block>
     </div>
 
-    <f7-block-title>{{ $t("message.details.details.device_details") }}</f7-block-title>
+    <f7-block-title>{{ $t("message.dev_details.details.device_details") }}</f7-block-title>
     <f7-list inner>
-      <f7-list-item :title="$t('message.details.details.device')">{{ device_details.device }}</f7-list-item>
-      <f7-list-item :title="$t('message.details.details.network_name')">{{ device_details.network_name }}</f7-list-item>
-      <f7-list-item :title="$t('message.details.details.owner')">
+      <f7-list-item :title="$t('message.dev_details.details.device')">{{ device_details.device }}</f7-list-item>
+      <f7-list-item :title="$t('message.dev_details.details.network_name')">{{ device_details.network_name }}</f7-list-item>
+      <f7-list-item :title="$t('message.dev_details.details.owner')">
         <span>
           {{ device_details.owner }} |
           <f7-link v-bind:href="'mailto:' + device_details.owner_email" external>📧</f7-link>
@@ -47,10 +47,10 @@
       </f7-list-item>
     </f7-list>
 
-    <f7-block-title>{{ $t("message.details.access.access_control") }}</f7-block-title>
+    <f7-block-title>{{ $t("message.dev_details.access.access_control") }}</f7-block-title>
     <f7-list form>
       <f7-list-item>
-      <f7-label>{{ $t("message.details.access.security_ring") }}</f7-label>
+      <f7-label>{{ $t("message.dev_details.access.security_ring") }}</f7-label>
       <span v-if="ring_changing" class="preloader"></span>
       <f7-input v-else type="select" :value="device_details.ring" @input="changeRing($event.target.value)">
         <option v-for="ring in $store.getters.Rings" v-bind:value="ring" v-bind:key="ring">{{ring}}</option>
@@ -59,30 +59,30 @@
     </f7-list>
 
     <f7-list media-list>
-      <f7-list-item v-if="device_details.alert" :title="$t('message.details.access.status')" :after="$t('message.details.access.blocked')" :text="$t('message.details.access.blocked_text')" />
-      <f7-list-item v-else :title="$t('message.details.access.status')" :after="$t('message.details.access.normal')" />
+      <f7-list-item v-if="device_details.alert" :title="$t('message.dev_details.access.status')" :after="$t('message.dev_details.access.blocked')" :text="$t('message.dev_details.access.blocked_text')" />
+      <f7-list-item v-else :title="$t('message.dev_details.access.status')" :after="$t('message.dev_details.access.normal')" />
 
     </f7-list>
 
     <f7-block>
       <p>
-        {{ $t('message.details.access.guest_access.time', {'time': render_time(expiration)}) }} <br/><br/>
+        {{ $t('message.dev_details.access.guest_access.time', {'time': render_time(expiration)}) }} <br/><br/>
       </p>
       <f7-row>
         <f7-col>
-          <f7-button big outline color="green" v-on:click="expiration=(expiration+60)">{{ $t('message.details.access.guest_access.extend') }}</f7-button>
+          <f7-button big outline color="green" v-on:click="expiration=(expiration+60)">{{ $t('message.dev_details.access.guest_access.extend') }}</f7-button>
         </f7-col>
         <f7-col>
-          <f7-button v-if="!paused" big outline color="orange" v-on:click="paused=true">{{ $t('message.details.access.guest_access.pause') }}</f7-button>
-          <f7-button v-if="paused" big fill color="orange" v-on:click="paused=false">{{ $t('message.details.access.guest_access.unpause') }}</f7-button>
+          <f7-button v-if="!paused" big outline color="orange" v-on:click="paused=true">{{ $t('message.dev_details.access.guest_access.pause') }}</f7-button>
+          <f7-button v-if="paused" big fill color="orange" v-on:click="paused=false">{{ $t('message.dev_details.access.guest_access.unpause') }}</f7-button>
         </f7-col>
         <f7-col>
-          <f7-button big outline popover-open="#confirm-remove" color="red">{{ $t('message.details.access.guest_access.remove') }}</f7-button>
+          <f7-button big outline popover-open="#confirm-remove" color="red">{{ $t('message.dev_details.access.guest_access.remove') }}</f7-button>
         </f7-col>
       </f7-row>
     </f7-block>
 
-    <f7-block-title>{{ $t("message.details.activity.activity") }}</f7-block-title>
+    <f7-block-title>{{ $t("message.dev_details.activity.activity") }}</f7-block-title>
     <f7-list inner>
       <f7-list-item
           v-for="log_day in log_details"
@@ -93,20 +93,20 @@
         </span>
       </f7-list-item>
       <f7-list-item>
-        <f7-link popover-open="#limited-logs">{{ $t("message.details.activity.older") }}</f7-link>
+        <f7-link popover-open="#limited-logs">{{ $t("message.dev_details.activity.older") }}</f7-link>
       </f7-list-item>
     </f7-list>
 
-    <f7-block-title>{{ $t("message.details.add_info.additional_information") }}</f7-block-title>
+    <f7-block-title>{{ $t("message.dev_details.add_info.additional_information") }}</f7-block-title>
     <f7-list inner>
-      <f7-list-item :title="$t('message.details.details.network_name')">{{ device_details.network_name }}</f7-list-item>
-      <f7-list-item :title="$t('message.details.details.os_version')">{{ device_details.os_version }}</f7-list-item>
-      <f7-list-item :title="$t('message.details.details.activated')">{{ device_details.activated }}</f7-list-item>
-      <f7-list-item :title="$t('message.details.details.owner')">{{ device_details.owner }}</f7-list-item>
-      <f7-list-item :title="$t('message.details.details.owner_email')">
+      <f7-list-item :title="$t('message.dev_details.details.network_name')">{{ device_details.network_name }}</f7-list-item>
+      <f7-list-item :title="$t('message.dev_details.details.os_version')">{{ device_details.os_version }}</f7-list-item>
+      <f7-list-item :title="$t('message.dev_details.details.activated')">{{ device_details.activated }}</f7-list-item>
+      <f7-list-item :title="$t('message.dev_details.details.owner')">{{ device_details.owner }}</f7-list-item>
+      <f7-list-item :title="$t('message.dev_details.details.owner_email')">
           <f7-link v-bind:href="'mailto:' + device_details.owner_email" external>{{ device_details.owner_email }}</f7-link>
       </f7-list-item>
-      <f7-list-item :title="$t('message.details.details.owner_phone')">
+      <f7-list-item :title="$t('message.dev_details.details.owner_phone')">
           <f7-link v-bind:href="'tel:' + device_details.owner_phone" external>{{ device_details.owner_phone }}</f7-link>
       </f7-list-item>
     </f7-list>
@@ -128,14 +128,14 @@
 
     <f7-popover id="limited-logs">
       <f7-block>
-        {{ $t("message.details.activity.not_supported") }}
+        {{ $t("message.dev_details.activity.not_supported") }}
       </f7-block>
     </f7-popover>
 
     <f7-popover id="confirm-remove">
       <f7-block>
         <p>
-        {{ $t('message.details.access.guest_access.confirm_remove', {'device': device_details.network_name}) }}
+        {{ $t('message.dev_details.access.guest_access.confirm_remove', {'device': device_details.network_name}) }}
         </p>
         <f7-row>
           <f7-col width=20>&nbsp;</f7-col>
@@ -179,7 +179,7 @@ export default {
 
   computed: {
     device_details: function() {
-      const uniqid = this.$f7route.query.uniqid;
+      const uniqid = this.$f7route.params.UniqID;
       return this.$store.getters.Device_By_UniqID(uniqid);
     },
     rings: function() {
@@ -207,30 +207,27 @@ export default {
       ring_changing: false,
       paused: false,
       expiration: 314,
-      // In the future, we can use this query to filter specific device info
-      // if we can't get dynamic routes to work properly
-      query: this.$f7route.query,
       log_details: [
-        {log_id: '0', day: this.$t('message.details.activity.dates.today'), time: 71,
+        {log_id: '0', day: this.$t('message.dev_details.activity.dates.today'), time: 71,
           entries: [
             {time: 41, name: 'League of Legends'},
             {time: 20, name: 'Gmail'},
             {time: 10, name: 'Facebook'},
           ],
         },
-        {log_id: '1', day: this.$t('message.details.activity.dates.yesterday'), time: 162,
+        {log_id: '1', day: this.$t('message.dev_details.activity.dates.yesterday'), time: 162,
           entries: [
             {time: 162, name: 'League of Legends'},
           ],
         },
-        {log_id: '2', day: this.$t('message.details.activity.dates.sunday'), time: 211,
+        {log_id: '2', day: this.$t('message.dev_details.activity.dates.sunday'), time: 211,
           entries: [
             {time: 181, name: 'League of Legends'},
             {time: 20, name: 'Gmail'},
             {time: 10, name: 'Facebook'},
           ],
         },
-        {log_id: '3', day: this.$t('message.details.activity.dates.saturday'), time: 424,
+        {log_id: '3', day: this.$t('message.dev_details.activity.dates.saturday'), time: 424,
           entries: [
             {time: 361, name: 'League of Legends'},
             {time: 23, name: 'Gmail'},

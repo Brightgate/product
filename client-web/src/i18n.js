@@ -72,7 +72,7 @@ export default {
           iot: 'Things',
         },
       },
-      details: {
+      dev_details: {
         details: {
           _details: ' - Details',
           device_details: 'Device Details',
@@ -115,7 +115,7 @@ export default {
           additional_information: 'Additional Information',
         },
       },
-      enroll: {
+      enroll_guest: {
         title: 'Brightgate - Enroll Guest',
         header: 'Register Guests with Brightgate',
         subheader: 'Help a guest get online using their phone number',
@@ -214,7 +214,7 @@ export default {
           iot: 'Unidentifiziertes Verbindungsobjekt',
         },
       },
-      details: {
+      dev_details: {
         details: {
           _details: ' - Details',
           device_details: 'Gerätdetails',
@@ -257,7 +257,7 @@ export default {
           additional_information: 'Weitere Informationen',
         },
       },
-      enroll: {
+      enroll_guest: {
         title: 'Brightgate – Gastbenutzer Registrieren',
         header: 'Registrieren Sie Gastbenutzer bei Brightgate',
         subheader: 'Helfen Sie einem Gastbenutzer sich zu registrieren mit seinem Telefonnummer',

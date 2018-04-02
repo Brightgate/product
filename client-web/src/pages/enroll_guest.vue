@@ -9,11 +9,11 @@
 -->
 <template>
   <f7-page name="enroll">
-    <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.enroll.title')" sliding>
+    <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.enroll_guest.title')" sliding>
     </f7-navbar>
 
-    <center><h2>{{ $t('message.enroll.header') }}</h2></center>
-    <center><h4>{{ $t('message.enroll.subheader') }}</h4></center>
+    <center><h2>{{ $t('message.enroll_guest.header') }}</h2></center>
+    <center><h4>{{ $t('message.enroll_guest.subheader') }}</h4></center>
 
     <div v-if="! $store.getters.Is_Logged_In">
       <p>{{ $t('message.general.need_login') }}</p>
@@ -21,20 +21,20 @@
     <div v-else>
       <f7-list inset>
         <f7-list-item>
-          <f7-label>{{ $t('message.enroll.phone') }}</f7-label>
+          <f7-label>{{ $t('message.enroll_guest.phone') }}</f7-label>
           <f7-input type="tel"
                 :value="this.phone_input"
                 @input="onTelInput"
-                :placeholder="$t('message.enroll.phone_placeholder')"
+                :placeholder="$t('message.enroll_guest.phone_placeholder')"
                 required autofocus lazy>
           </f7-input>
         </f7-list-item>
       </f7-list>
       <f7-block inset>
         <f7-button fill big v-bind:color="valid_number ? 'green' : 'blue'" :active="valid_number" @click="enrollSMS">
-          <span v-if="!enrolling">{{ $t('message.enroll.send_sms') }}</span>
+          <span v-if="!enrolling">{{ $t('message.enroll_guest.send_sms') }}</span>
           <span v-if="enrolling">
-            {{ $t('message.enroll.sending') }}
+            {{ $t('message.enroll_guest.sending') }}
           <span class="preloader"></span>
           </span>
         </f7-button>
@@ -84,7 +84,7 @@ export default {
         console.log('enrollSMS: success');
         this.enrolling = false;
         this.$f7.toast.show({
-          text: this.$t('message.enroll.send_success'),
+          text: this.$t('message.enroll_guest.send_success'),
           closeButton: true,
           destroyOnClose: true,
           on: {
@@ -98,7 +98,7 @@ export default {
         console.log('enrollSMS: failed');
         this.enrolling = false;
         this.$f7.toast.show({
-          text: this.$t('message.enroll.send_failure'),
+          text: this.$t('message.enroll_guest.send_failure'),
           closeButton: true,
           destroyOnClose: true,
         });

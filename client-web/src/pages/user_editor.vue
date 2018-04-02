@@ -115,10 +115,11 @@ import _ from 'lodash';
 
 export default {
   data: function() {
+    const routeUUID = this.$f7route.params.UUID;
     const d = {
-      new_user: (this.$f7route.params.UUID === 'NEW'),
+      new_user: (routeUUID === 'NEW'),
     };
-    if (this.$f7route.params.UUID === 'NEW') {
+    if (routeUUID === 'NEW') {
       d.user_details = {
         UID: '',
         UUID: '',
@@ -128,7 +129,7 @@ export default {
         HasTOTP: false,
       };
     } else {
-      d.user_details = _.cloneDeep(this.$store.getters.User_By_UUID(this.$f7route.params.UUID));
+      d.user_details = _.cloneDeep(this.$store.getters.User_By_UUID(routeUUID));
     }
     return d;
   },
@@ -162,7 +163,7 @@ export default {
 
   on: {
     pageAfterIn: function() {
-      console.log(`user_editor page for ${this.$f7route.params.UUID}`);
+      console.log(`user_editor page for '${this.$f7route.params.UUID}'`);
     },
   },
 };

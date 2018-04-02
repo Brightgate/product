@@ -35,6 +35,7 @@ export default {
   methods: {
     openEditorNew: function() {
       const editor = `${this.$f7route.url}NEW/editor/`;
+      console.log('opening editor ', editor);
       this.$f7router.navigate(editor);
     },
     usersPullRefresh: function(event, done) {

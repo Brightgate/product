@@ -30,7 +30,7 @@
             v-for="device in $store.getters.Devices_By_Category(catkey)"
             v-bind:key="device.uniqid"
             v-bind:title="device.network_name"
-            v-bind:link="'/details/?uniqid=' + device.uniqid">
+            v-bind:link="`/devices/${device.uniqid}/`">
         <div slot="media">
           <img v-bind:src="'img/nova-solid-' + device.media + '.png'" width=32 height=32>
         </div>

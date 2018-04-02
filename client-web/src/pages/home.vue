@@ -31,7 +31,7 @@
           v-if="device.alert"
           v-bind:key="device.uniqid"
           :title="$t('message.alerts.wannacry', {'device': device.network_name})"
-          :link="'/details/?uniqid=' + device.uniqid">
+          :link="`/devices/${device.uniqid}/`">
     </f7-list-item>
   </f7-list>
 
@@ -48,7 +48,7 @@
         :class="loggedIn ? '' : 'disabled'">
     </f7-list-item>
     <f7-list-item
-        link="/enroll/"
+        link="/enroll_guest/"
         :title="$t('message.tools.enroll_guest')"
         :class="loggedIn ? '' : 'disabled'">
     </f7-list-item>
@@ -61,7 +61,7 @@
           v-if="device.notification"
           v-bind:key="device.uniqid"
           :title="$t('message.notifications.update_device', {'device': device.network_name})"
-          :link="'/details/?uniqid=' + device.uniqid">
+          :link="`/devices/${device.uniqid}/`">
     </f7-list-item>
   </f7-list>
 

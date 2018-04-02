@@ -8,14 +8,14 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 
+import DevDetails from './pages/dev_details.vue';
 import Devices from './pages/devices.vue';
-import Details from './pages/details.vue';
-import Enroll from './pages/enroll.vue';
+import EnrollGuest from './pages/enroll_guest.vue';
 import Home from './pages/home.vue';
-import MalwareWarn from './pages/malwareWarn.vue';
-import Users from './pages/users.vue';
+import MalwareWarn from './pages/malware_warn.vue';
 import UserDetails from './pages/user_details.vue';
 import UserEditor from './pages/user_editor.vue';
+import Users from './pages/users.vue';
 
 export default [
   {
@@ -23,19 +23,19 @@ export default [
     component: Home,
   },
   {
-    path: '/devices',
+    path: '/devices/',
     component: Devices,
   },
   {
-    path: '/details/',
-    component: Details,
+    path: '/devices/:UniqID/',
+    component: DevDetails,
   },
   {
-    path: '/enroll/',
-    component: Enroll,
+    path: '/enroll_guest/',
+    component: EnrollGuest,
   },
   {
-    path: '/malwareWarn/',
+    path: '/malware_warn/',
     component: MalwareWarn,
   },
   {
