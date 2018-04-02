@@ -42,6 +42,13 @@ if (enable_mock) {
   };
   initUsers = {};
 }
+const mockRings = [
+  'core',
+  'standard',
+  'devices',
+  'quarantine',
+];
+
 makeDeviceCategories(initDevices);
 
 const STD_TIMEOUT = {
@@ -252,6 +259,11 @@ const actions = {
       assert(typeof res.body === 'object');
       context.commit('setRings', res.body);
     }).catch((err) => {
+      if (context.state.enable_mock) {
+        console.log('fetchRings: Using mocked rings');
+        context.commit('setRings', mockRings);
+        return;
+      }
       console.log(`fetchRings: Error ${err}`);
       throw err;
     });
@@ -340,6 +352,10 @@ const actions = {
     ).then(() => {
       console.log(`login: Logged in as ${uid}.`);
       context.commit('setLoggedIn', true);
+      // Let these run async
+      context.dispatch('fetchDevices');
+      context.dispatch('fetchRings');
+      context.dispatch('fetchUsers');
     }).catch((err) => {
       console.log(`login: Error ${err}`);
       throw err;

@@ -12,10 +12,10 @@
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.devices.title')" sliding>
     </f7-navbar>
 
-    <f7-list v-for="catkey in device_category_order"
+    <f7-list>
+    <f7-list-group v-for="catkey in device_category_order"
              v-if="$store.getters.NumUniqIDs_By_Category(catkey) > 0"
              v-bind:key="catkey">
-      <f7-list-item divider/>
 
       <f7-list-item group-title
               v-bind:title="device_category_description[catkey] +
@@ -42,6 +42,7 @@
         </div>
       </f7-list-item>
 
+    </f7-list-group>
     </f7-list>
 
     <f7-popover id="virus">
