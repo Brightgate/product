@@ -12,16 +12,24 @@
 export default {
   en: {
     message: {
-      status: {
-        brightgate_status: 'Brightgate Status',
-      },
-      testing: {
-        testing: 'For Test Purposes',
-        accept_devices: 'Accept Devices',
-        accept_success: 'Devices Acceptance succeeded. {devicesChanged} devices were affected.',
-        accept_fail: 'There was an error accepting devices: <b>{reason}.</b>',
-        enable_mock: 'Enable Mock',
-        enable_fakelogin: 'Simulate being Logged In',
+      home: {
+        status_block: 'Brightgate Status',
+        testing: {
+          testing: 'For Test Purposes',
+          accept_devices: 'Accept Devices',
+          accept_success: 'Devices Acceptance succeeded. {devicesChanged} devices were affected.',
+          accept_fail: 'There was an error accepting devices: <b>{reason}.</b>',
+          enable_mock: 'Enable Mock',
+          enable_fakelogin: 'Simulate being Logged In',
+        },
+        tools: {
+          tools: 'Tools',
+          manage_devices: 'Manage Devices ({device_count})',
+          enroll_guest: 'Enroll a Guest User',
+          login: 'Login',
+          logout: 'Logout',
+          users: 'Users',
+        },
       },
       alerts: {
         serious_alerts: 'Serious Alerts',
@@ -32,14 +40,6 @@ export default {
           '1': 'For your security, Brightgate has disconnected it from the network and attempted to prevent the ransomware from encrypting more files.',
           '2': 'Visit brightgate.com from another computer for more help.',
         },
-      },
-      tools: {
-        tools: 'Tools',
-        manage_devices: 'Manage Devices ({device_count})',
-        enroll_guest: 'Enroll a Guest User',
-        login: 'Login',
-        logout: 'Logout',
-        users: 'Users',
       },
       notifications: {
         notifications: 'Notifications',
@@ -154,16 +154,24 @@ export default {
   },
   de: {
     message: {
-      status: {
-        brightgate_status: 'Brightgate Status',
-      },
-      testing: {
-        testing: 'Für Testzwecke',
-        accept_devices: 'Akzeptiere Geräte',
-        accept_success: 'Akzeptanz war erfolgreich. {devicesChanged} Geräte wurden akzeptiert.',
-        accept_fail: 'Fehlermeldung: <b>{reason}.</b>',
-        enable_mock: 'Testmodus',
-        enable_fakelogin: 'Simulierte Anmeldung',
+      home: {
+        status_block: 'Brightgate Status',
+        testing: {
+          testing: 'Für Testzwecke',
+          accept_devices: 'Akzeptiere Geräte',
+          accept_success: 'Akzeptanz war erfolgreich. {devicesChanged} Geräte wurden akzeptiert.',
+          accept_fail: 'Fehlermeldung: <b>{reason}.</b>',
+          enable_mock: 'Testmodus',
+          enable_fakelogin: 'Simulierte Anmeldung',
+        },
+        tools: {
+          tools: 'Werkzeuge',
+          manage_devices: 'Geräte verwalten ({device_count})',
+          enroll_guest: 'Registrieren Sie einen Gastbenutzer',
+          login: 'Anmelden',
+          logout: 'Abmelden',
+          users: 'Benutzer',
+        },
       },
       alerts: {
         serious_alerts: 'Schwerwiegende Warnungen',
@@ -174,14 +182,6 @@ export default {
           '1': 'Zu Ihrer Sicherheit hat Brightgate es vom Netzwerk getrennt und versucht, es von der Verschlüsselung weiterer Dateien abzuhalten.',
           '2': 'Besuchen Sie brightgate.com auf einem anderen Computer für mehr Hilfe.',
         },
-      },
-      tools: {
-        tools: 'Werkzeuge',
-        manage_devices: 'Geräte verwalten ({device_count})',
-        enroll_guest: 'Registrieren Sie einen Gastbenutzer',
-        login: 'Anmelden',
-        logout: 'Abmelden',
-        users: 'Benutzer',
       },
       notifications: {
         notifications: 'Benachrichtigungen',

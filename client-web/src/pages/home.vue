@@ -17,17 +17,17 @@
     <f7-nav-title><img style="padding-top:4px" src="img/bglogo.png"/></f7-nav-title>
     <f7-nav-right>
       <span font-size="small">
-      <f7-link v-if="$store.getters.Is_Logged_In" @click="attemptLogout()">{{ $t('message.tools.logout') }}</f7-link>
-      <f7-link v-else login-screen-open="#bgLoginScreen">{{ $t('message.tools.login') }}</f7-link>
+      <f7-link v-if="Is_Logged_In" @click="attemptLogout()">{{ $t('message.home.tools.logout') }}</f7-link>
+      <f7-link v-else login-screen-open="#bgLoginScreen">{{ $t('message.home.tools.login') }}</f7-link>
       </span>
     </f7-nav-right>
   </f7-navbar>
-  <f7-block-title>{{ $t("message.status.brightgate_status") }}</f7-block-title>
+  <f7-block-title>{{ $t("message.home.status_block") }}</f7-block-title>
 
   <f7-block-title>{{ $t("message.alerts.serious_alerts") }}</f7-block-title>
   <f7-list>
     <f7-list-item
-          v-for="device in $store.getters.All_Devices"
+          v-for="device in All_Devices"
           v-if="device.alert"
           v-bind:key="device.uniqid"
           :title="$t('message.alerts.wannacry', {'device': device.network_name})"
@@ -35,29 +35,29 @@
     </f7-list-item>
   </f7-list>
 
-  <f7-block-title>{{ $t("message.tools.tools") }}</f7-block-title>
+  <f7-block-title>{{ $t("message.home.tools.tools") }}</f7-block-title>
   <f7-list>
     <f7-list-item
         link="/devices/"
-        :title="$t('message.tools.manage_devices', {'device_count': $store.getters.Device_Count})"
-        :class="loggedIn ? '' : 'disabled'">
+        :title="$t('message.home.tools.manage_devices', {'device_count': Device_Count})"
+        :class="Is_Logged_In ? '' : 'disabled'">
     </f7-list-item>
     <f7-list-item
         link="/users/"
-        :title="$t('message.tools.users')"
-        :class="loggedIn ? '' : 'disabled'">
+        :title="$t('message.home.tools.users')"
+        :class="Is_Logged_In ? '' : 'disabled'">
     </f7-list-item>
     <f7-list-item
         link="/enroll_guest/"
-        :title="$t('message.tools.enroll_guest')"
-        :class="loggedIn ? '' : 'disabled'">
+        :title="$t('message.home.tools.enroll_guest')"
+        :class="Is_Logged_In ? '' : 'disabled'">
     </f7-list-item>
   </f7-list>
 
   <f7-block-title>{{ $t("message.notifications.notifications") }}</f7-block-title>
   <f7-list>
     <f7-list-item
-          v-for="device in $store.getters.All_Devices"
+          v-for="device in All_Devices"
           v-if="device.notification"
           v-bind:key="device.uniqid"
           :title="$t('message.notifications.update_device', {'device': device.network_name})"
@@ -65,17 +65,17 @@
     </f7-list-item>
   </f7-list>
 
-  <f7-block-title>{{ $t("message.testing.testing") }}</f7-block-title>
+  <f7-block-title>{{ $t("message.home.testing.testing") }}</f7-block-title>
   <f7-list>
-    <f7-list-item :title="$t('message.testing.enable_mock')">
-      <f7-toggle slot="after" :checked="mocked" @change="toggleMock"></f7-toggle>
+    <f7-list-item :title="$t('message.home.testing.enable_mock')">
+      <f7-toggle slot="after" :checked="Mock" @change="toggleMock"></f7-toggle>
     </f7-list-item>
-    <f7-list-item :title="$t('message.testing.enable_fakelogin')">
-      <f7-toggle slot="after" :checked="fakeLogin" @change="toggleFakeLogin"></f7-toggle>
+    <f7-list-item :title="$t('message.home.testing.enable_fakelogin')">
+      <f7-toggle slot="after" :checked="Fake_Login" @change="toggleFakeLogin"></f7-toggle>
     </f7-list-item>
     <f7-list-item
-        :title="$t('message.testing.accept_devices')"
-        :class="loggedIn ? '' : 'disabled'">
+        :title="$t('message.home.testing.accept_devices')"
+        :class="Is_Logged_In ? '' : 'disabled'">
       <span slot="after">
         <f7-button @click="acceptSupreme" fill>{{ $t("message.general.accept") }}
         </f7-button>
@@ -88,6 +88,7 @@
 
 <script>
 import superagent from 'superagent';
+import vuex from 'vuex';
 
 export default {
   data: function() {
@@ -97,15 +98,15 @@ export default {
   },
 
   computed: {
-    mocked() {
-      return this.$store.getters.Mock;
-    },
-    loggedIn() {
-      return this.$store.getters.Is_Logged_In;
-    },
-    fakeLogin() {
-      return this.$store.getters.Fake_Login;
-    },
+    // Map various $store elements as computed properties for use in the
+    // template.
+    ...vuex.mapGetters([
+      'Mock',
+      'Is_Logged_In',
+      'Fake_Login',
+      'All_Devices',
+      'Device_Count',
+    ]),
   },
 
   methods: {
@@ -123,11 +124,11 @@ export default {
       superagent.get('/apid/supreme').end((err, res) => {
         let message;
         if (err) {
-          message = this.$t('message.testing.accept_fail', {'reason': err.message});
+          message = this.$t('message.home.testing.accept_fail', {'reason': err.message});
         } else {
           const res_json = JSON.parse(res.text);
           const c = res_json.changed ? res_json.changed : -1;
-          message = this.$t('message.testing.accept_success', {'devicesChanged': c});
+          message = this.$t('message.home.testing.accept_success', {'devicesChanged': c});
         }
         this.acceptToast = this.$f7.toast.create({
           text: message,
