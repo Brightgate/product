@@ -79,9 +79,9 @@ const (
 
 // Allow for significant variation in the processing of subtrees
 type subtreeOps struct {
-	get    func(*base_msg.ConfigQuery) (string, error)
-	set    func(*base_msg.ConfigQuery, bool) error
-	delete func(*base_msg.ConfigQuery) error
+	get    func(string) (string, error)
+	set    func(string, *string, *time.Time, bool) error
+	delete func(string) error
 }
 
 type subtreeMatch struct {
@@ -159,6 +159,8 @@ var (
 	brokerd *broker.Broker
 	propdir = flag.String("propdir", "./",
 		"directory in which the property files should be stored")
+
+	propTreeFile string
 
 	// ApVersion is the git version of the running code
 	ApVersion    string
@@ -353,7 +355,7 @@ func propNotify(prop, val string, expires *time.Time,
 
 	entity := &base_msg.EventConfig{
 		Timestamp: aputil.NowToProtobuf(),
-		Sender:    proto.String(brokerd.Name),
+		Sender:    proto.String(pname),
 		Type:      &action,
 		Property:  proto.String(prop),
 		NewValue:  proto.String(val),
@@ -843,8 +845,9 @@ func propertyGet(property string) (string, error) {
  * Reading and writing the persistent property file
  */
 func propTreeStore() error {
-	propfile := *propdir + propertyFilename
-	backupfile := *propdir + backupFilename
+	if propTreeFile == "" {
+		return nil
+	}
 
 	node := propertyInsert("@/apversion")
 	node.Value = ApVersion
@@ -854,16 +857,17 @@ func propTreeStore() error {
 		log.Fatalf("Failed to construct properties JSON: %v\n", err)
 	}
 
-	if aputil.FileExists(propfile) {
+	if aputil.FileExists(propTreeFile) {
 		/*
 		 * XXX: could store multiple generations of backup files,
 		 * allowing for arbitrary rollback.  Could also take explicit
 		 * 'checkpoint' snapshots.
 		 */
-		os.Rename(propfile, backupfile)
+		backupfile := *propdir + backupFilename
+		os.Rename(propTreeFile, backupfile)
 	}
 
-	err = ioutil.WriteFile(propfile, s, 0644)
+	err = ioutil.WriteFile(propTreeFile, s, 0644)
 	if err != nil {
 		log.Printf("Failed to write properties file: %v\n", err)
 	}
@@ -1002,18 +1006,16 @@ func deleteSubtree(node *pnode) {
 func propTreeInit() {
 	var err error
 
-	propfile := *propdir + propertyFilename
-	backupfile := *propdir + backupFilename
-	defaultFile := *propdir + defaultFilename
-
-	if aputil.FileExists(propfile) {
-		err = propTreeLoad(propfile)
+	propTreeFile = *propdir + propertyFilename
+	if aputil.FileExists(propTreeFile) {
+		err = propTreeLoad(propTreeFile)
 	} else {
 		err = fmt.Errorf("File missing")
 	}
 
 	if err != nil {
 		log.Printf("Unable to load properties: %v", err)
+		backupfile := *propdir + backupFilename
 		if aputil.FileExists(backupfile) {
 			err = propTreeLoad(backupfile)
 		} else {
@@ -1029,6 +1031,7 @@ func propTreeInit() {
 
 	if err != nil {
 		log.Printf("No usable properties files.  Loading defaults.\n")
+		defaultFile := *propdir + defaultFilename
 		err := propTreeLoad(defaultFile)
 		if err != nil {
 			log.Fatal("Unable to load default properties")
@@ -1054,78 +1057,97 @@ func propTreeInit() {
  *
  * Handling incoming requests from other daemons
  */
-func getPropHandler(q *base_msg.ConfigQuery) (string, error) {
-	return propertyGet(*q.Property)
+func getPropHandler(prop string) (string, error) {
+	return propertyGet(prop)
 }
 
-func setPropHandler(q *base_msg.ConfigQuery, add bool) error {
-	expires := aputil.ProtobufToTime(q.Expires)
-	updated, err := propertyUpdate(*q.Property, *q.Value, expires, add)
+func setPropHandler(prop string, val *string, exp *time.Time, add bool) error {
+	if val == nil {
+		return fmt.Errorf("no value supplied")
+	}
+	updated, err := propertyUpdate(prop, *val, exp, add)
 	if updated {
 		propTreeStore()
-		updateNotify(*q.Property, *q.Value, expires)
+		updateNotify(prop, *val, exp)
 	}
 	return err
 }
 
-func delPropHandler(q *base_msg.ConfigQuery) error {
-	err := propertyDelete(*q.Property)
+func delPropHandler(prop string) error {
+	err := propertyDelete(prop)
 	if err == nil {
 		propTreeStore()
-		deleteNotify(*q.Property)
+		deleteNotify(prop)
 	}
 	return err
 }
 
 func processOneEvent(query *base_msg.ConfigQuery) *base_msg.ConfigResponse {
+	const (
+		success     = base_msg.ConfigResponse_OK
+		failed      = base_msg.ConfigResponse_FAILED
+		unsupported = base_msg.ConfigResponse_UNSUPPORTED
+	)
 	var err error
+	var rval string
 
-	prop := *query.Property
-	ops := &defaultSubtreeOps
-	val := "-"
-	rc := base_msg.ConfigResponse_OK
+	rc := success
+	for _, op := range query.Ops {
+		prop := *op.Property
+		val := op.Value
+		expires := aputil.ProtobufToTime(op.Expires)
 
-	for _, r := range subtreeMatchTable {
-		if r.match.MatchString(prop) {
-			ops = r.ops
+		ops := &defaultSubtreeOps
+		for _, r := range subtreeMatchTable {
+			if r.match.MatchString(prop) {
+				ops = r.ops
+				break
+			}
+		}
+
+		switch *op.Operation {
+		case base_msg.ConfigQuery_ConfigOp_GET:
+			if len(query.Ops) > 1 {
+				err = fmt.Errorf("only single-GET " +
+					"operations are supported")
+			} else {
+				rval, err = ops.get(prop)
+			}
+			if err != nil {
+				rc = failed
+			}
+		case base_msg.ConfigQuery_ConfigOp_CREATE:
+			if err = ops.set(prop, val, expires, true); err != nil {
+				rc = failed
+			}
+		case base_msg.ConfigQuery_ConfigOp_SET:
+			if err = ops.set(prop, val, expires, false); err != nil {
+				rc = failed
+			}
+		case base_msg.ConfigQuery_ConfigOp_DELETE:
+			if err = ops.delete(prop); err != nil {
+				rc = failed
+			}
+		default:
+			rc = unsupported
+			err = fmt.Errorf("unrecognized operation")
+		}
+
+		if rc != success {
 			break
 		}
 	}
 
-	switch *query.Operation {
-	case base_msg.ConfigQuery_GET:
-		if val, err = ops.get(query); err != nil {
-			rc = base_msg.ConfigResponse_FAILED
-		}
-	case base_msg.ConfigQuery_CREATE:
-		if err = ops.set(query, true); err != nil {
-			rc = base_msg.ConfigResponse_FAILED
-		}
-	case base_msg.ConfigQuery_SET:
-		if err = ops.set(query, false); err != nil {
-			rc = base_msg.ConfigResponse_FAILED
-		}
-	case base_msg.ConfigQuery_DELETE:
-		if err = ops.delete(query); err != nil {
-			rc = base_msg.ConfigResponse_FAILED
-		}
-	default:
-		rc = base_msg.ConfigResponse_UNSUPPORTED
-		err = fmt.Errorf("unrecognized operation")
-	}
-
-	if rc != base_msg.ConfigResponse_OK {
+	if rc != success {
 		log.Printf("Config operation failed: %v\n", err)
-		val = fmt.Sprintf("%v", err)
+		rval = fmt.Sprintf("%v", err)
 	}
-
 	response := &base_msg.ConfigResponse{
 		Timestamp: aputil.NowToProtobuf(),
 		Sender:    proto.String(pname + "(" + strconv.Itoa(os.Getpid()) + ")"),
 		Debug:     proto.String("-"),
 		Response:  &rc,
-		Property:  proto.String("-"),
-		Value:     proto.String(val),
+		Value:     proto.String(rval),
 	}
 
 	return response

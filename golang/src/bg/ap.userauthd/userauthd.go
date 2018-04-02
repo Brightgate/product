@@ -202,6 +202,14 @@ func generateRadiusHostapdUsers(rc *rConf) string {
 	// Get current users.
 	rc.Users = configd.GetUsers()
 
+	// Incomplete users should not be included in the config file
+	for u, i := range rc.Users {
+		if i.MD4Password == "" {
+			log.Printf("Skipping user '%s': no password set\n", u)
+			delete(rc.Users, u)
+		}
+	}
+
 	log.Printf("user configuration: %v\n", rc)
 
 	// var err error

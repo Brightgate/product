@@ -74,6 +74,29 @@ type ClientMap map[string]*ClientInfo
 // ChildMap is a name->structure map of a property's children
 type ChildMap map[string]*PropertyNode
 
+// List of the supported property operation types
+const (
+	PropGet = iota
+	PropSet
+	PropCreate
+	PropDelete
+)
+
+var opToMsgType = map[int]base_msg.ConfigQuery_ConfigOp_Operation{
+	PropGet:    base_msg.ConfigQuery_ConfigOp_GET,
+	PropSet:    base_msg.ConfigQuery_ConfigOp_SET,
+	PropCreate: base_msg.ConfigQuery_ConfigOp_CREATE,
+	PropDelete: base_msg.ConfigQuery_ConfigOp_DELETE,
+}
+
+// PropertyOp represents an operation on a single property
+type PropertyOp struct {
+	Op      int
+	Name    string
+	Value   string
+	Expires *time.Time
+}
+
 // PropertyNode is a single node in the property tree
 type PropertyNode struct {
 	Value    string     `json:"Value,omitempty"`
@@ -148,13 +171,13 @@ func NewConfig(b *broker.Broker, name string) (*APConfig, error) {
 
 	err = socket.SetSndtimeo(time.Duration(base_def.LOCAL_ZMQ_SEND_TIMEOUT * time.Second))
 	if err != nil {
-		fmt.Printf("Failed to set cfg send timeout: %v\n", err)
+		log.Printf("Failed to set cfg send timeout: %v\n", err)
 		return nil, err
 	}
 
 	err = socket.SetRcvtimeo(time.Duration(base_def.LOCAL_ZMQ_RECEIVE_TIMEOUT * time.Second))
 	if err != nil {
-		fmt.Printf("Failed to set cfg receive timeout: %v\n", err)
+		log.Printf("Failed to set cfg receive timeout: %v\n", err)
 		return nil, err
 	}
 
@@ -180,31 +203,62 @@ func NewConfig(b *broker.Broker, name string) (*APConfig, error) {
 	return &c, nil
 }
 
-func (c *APConfig) msg(oc base_msg.ConfigQuery_Operation, prop, val string,
-	expires *time.Time) (string, error) {
+// GenerateQuery takes a slice of PropertyOp structures and creates a
+// corresponding ConfigQuery protobuf
+func GenerateQuery(ops []PropertyOp) (*base_msg.ConfigQuery, error) {
+	if len(ops) == 0 {
+		return nil, nil
+	}
+	get := false
+	msgOps := make([]*base_msg.ConfigQuery_ConfigOp, len(ops))
+	for i, op := range ops {
+		get = get || (op.Op == PropGet)
 
-	response := &base_msg.ConfigResponse{}
-	query := &base_msg.ConfigQuery{
-		Timestamp: aputil.NowToProtobuf(),
-		Sender:    proto.String(c.sender),
-		Debug:     proto.String("-"),
-		Operation: &oc,
-		Property:  proto.String(prop),
-		Value:     proto.String(val),
-		Expires:   aputil.TimeToProtobuf(expires),
+		opType, ok := opToMsgType[op.Op]
+		if !ok {
+			return nil, fmt.Errorf("invalid operation: %d", op.Op)
+		}
+		msgOps[i] = &base_msg.ConfigQuery_ConfigOp{
+			Operation: &opType,
+			Property:  proto.String(op.Name),
+			Value:     proto.String(op.Value),
+			Expires:   aputil.TimeToProtobuf(op.Expires),
+		}
+	}
+	if get && len(ops) > 1 {
+		return nil, fmt.Errorf("GET ops must be singletons")
 	}
 
+	query := base_msg.ConfigQuery{
+		Timestamp: aputil.NowToProtobuf(),
+		Debug:     proto.String("-"),
+		Ops:       msgOps,
+	}
+
+	return &query, nil
+}
+
+// Execute takes a slice of PropertyOp structures, marshals them into a protobuf
+// query, and sends that to ap.configd.  It then unmarshals the result from
+// ap.configd, and returns that to the caller.
+func (c *APConfig) Execute(ops []PropertyOp) (string, error) {
+	query, err := GenerateQuery(ops)
+	if query == nil {
+		return "", err
+	}
+	query.Sender = proto.String(c.sender)
 	data, err := proto.Marshal(query)
 	if err != nil {
-		fmt.Printf("Failed to marshal config arguments: %v\n", err)
+		log.Printf("Failed to marshal config arguments: %v\n", err)
 		return "", err
 	}
 
+	response := &base_msg.ConfigResponse{}
 	c.mutex.Lock()
 	_, err = c.socket.SendBytes(data, 0)
 	rval := ""
 	if err != nil {
-		fmt.Printf("Failed to send config msg: %v\n", err)
+		log.Printf("Failed to send config msg: %v\n", err)
 	} else {
 		var reply [][]byte
 
@@ -215,13 +269,10 @@ func (c *APConfig) msg(oc base_msg.ConfigQuery_Operation, prop, val string,
 	}
 	c.mutex.Unlock()
 	if err == nil {
-		switch *response.Response {
-		case base_msg.ConfigResponse_OK:
-			if oc == base_msg.ConfigQuery_GET {
-				rval = *response.Value
-			}
-		default:
+		if *response.Response != base_msg.ConfigResponse_OK {
 			err = fmt.Errorf("%s", *response.Value)
+		} else if ops[0].Op == PropGet {
+			rval = *response.Value
 		}
 	}
 
@@ -232,15 +283,16 @@ func (c *APConfig) msg(oc base_msg.ConfigQuery_Operation, prop, val string,
 // returns a PropertyNode representing the root of that subtree
 func (c *APConfig) GetProps(prop string) (*PropertyNode, error) {
 	var root PropertyNode
-	var err error
 
-	tree, err := c.msg(base_msg.ConfigQuery_GET, prop, "-", nil)
-	if err != nil {
-		return &root, fmt.Errorf("Failed to retrieve %s: %v", prop, err)
+	ops := []PropertyOp{
+		{Op: PropGet, Name: prop},
 	}
+	tree, err := c.Execute(ops)
 
-	if err = json.Unmarshal([]byte(tree), &root); err != nil {
-		return &root, fmt.Errorf("Failed to decode %s: %v", prop, err)
+	if err != nil {
+		err = fmt.Errorf("Failed to retrieve %s: %v", prop, err)
+	} else if err = json.Unmarshal([]byte(tree), &root); err != nil {
+		err = fmt.Errorf("Failed to decode %s: %v", prop, err)
 	}
 
 	return &root, err
@@ -261,7 +313,10 @@ func (c *APConfig) GetProp(prop string) (string, error) {
 // SetProp updates a single property, taking an optional expiration time.  If
 // the property doesn't already exist, an error is returned.
 func (c *APConfig) SetProp(prop, val string, expires *time.Time) error {
-	_, err := c.msg(base_msg.ConfigQuery_SET, prop, val, expires)
+	ops := []PropertyOp{
+		{Op: PropSet, Name: prop, Value: val, Expires: expires},
+	}
+	_, err := c.Execute(ops)
 
 	return err
 }
@@ -270,14 +325,20 @@ func (c *APConfig) SetProp(prop, val string, expires *time.Time) error {
 // the property doesn't already exist, it is created - as well as any parent
 // properties needed to provide a path through the tree.
 func (c *APConfig) CreateProp(prop, val string, expires *time.Time) error {
-	_, err := c.msg(base_msg.ConfigQuery_CREATE, prop, val, expires)
+	ops := []PropertyOp{
+		{Op: PropCreate, Name: prop, Value: val, Expires: expires},
+	}
+	_, err := c.Execute(ops)
 
 	return err
 }
 
 // DeleteProp will delete a property, or property subtree
 func (c *APConfig) DeleteProp(prop string) error {
-	_, err := c.msg(base_msg.ConfigQuery_DELETE, prop, "-", nil)
+	ops := []PropertyOp{
+		{Op: PropDelete, Name: prop},
+	}
+	_, err := c.Execute(ops)
 
 	return err
 }
@@ -367,7 +428,7 @@ func (c *APConfig) GetRings() RingMap {
 				LeaseDuration: duration}
 			set[ringName] = &c
 		} else {
-			fmt.Printf("Malformed ring %s: %v\n", ringName, err)
+			log.Printf("Malformed ring %s: %v\n", ringName, err)
 		}
 	}
 
@@ -440,7 +501,11 @@ func (c *APConfig) GetClients() ClientMap {
 func (c *APConfig) GetDevicePath(path string) (*device.Device, error) {
 	var dev device.Device
 
-	tree, err := c.msg(base_msg.ConfigQuery_GET, path, "-", nil)
+	ops := []PropertyOp{
+		{Op: PropGet, Name: path},
+	}
+	tree, err := c.Execute(ops)
+
 	if err != nil {
 		err = fmt.Errorf("failed to retrieve %s: %v", path, err)
 	} else if err = json.Unmarshal([]byte(tree), &dev); err != nil {

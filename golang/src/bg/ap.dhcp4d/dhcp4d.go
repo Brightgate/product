@@ -464,8 +464,21 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 
 	log.Printf("   REQUEST assigned %s to %s (%q) until %s\n",
 		l.ipaddr, hwaddr, l.name, l.expires)
-	config.CreateProp(propPath(hwaddr, "ipv4"), l.ipaddr.String(), l.expires)
-	config.CreateProp(propPath(hwaddr, "dhcp_name"), l.name, nil)
+
+	ops := []apcfg.PropertyOp{
+		{
+			Op:      apcfg.PropCreate,
+			Name:    propPath(hwaddr, "ipv4"),
+			Value:   l.ipaddr.String(),
+			Expires: l.expires,
+		},
+		{
+			Op:    apcfg.PropCreate,
+			Name:  propPath(hwaddr, "dhcp_name"),
+			Value: l.name,
+		},
+	}
+	config.Execute(ops)
 	notifyClaimed(p, l.ipaddr, l.name, h.duration)
 
 	if h.ring == base_def.RING_INTERNAL {

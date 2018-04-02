@@ -110,31 +110,47 @@ func (c *APConfig) AddUser(u, displayName, email, phone, lang string) error {
 		return errors.Wrap(err, "invalid phoneNumber")
 	}
 
-	_ = c.CreateProp(fmt.Sprintf("@/users/%s/uid", u), u, nil)
-	_ = c.CreateProp(fmt.Sprintf("@/users/%s/email", u), email, nil)
-	_ = c.CreateProp(fmt.Sprintf("@/users/%s/uuid", u), uuid.NewV4().String(), nil)
+	id := uuid.NewV4().String()
+	pre := fmt.Sprintf("@/users/%s/", u)
+	ops := []PropertyOp{
+		{Op: PropCreate, Name: pre + "uid", Value: u},
+		{Op: PropCreate, Name: pre + "email", Value: email},
+		{Op: PropCreate, Name: pre + "uuid", Value: id},
+	}
 
 	// XXX Tests for valid displayName?
 	if displayName != "" {
-		_ = c.CreateProp(fmt.Sprintf("@/users/%s/displayName", u), displayName,
-			nil)
+		op := PropertyOp{
+			Op:    PropCreate,
+			Name:  pre + "displayname",
+			Value: displayName,
+		}
+		ops = append(ops, op)
 	}
 
 	if phone != "" {
-		_ = c.CreateProp(
-			fmt.Sprintf("@/users/%s/telephoneNumber", u),
-			libphonenumber.Format(phoneNum, libphonenumber.INTERNATIONAL),
-			nil)
+		num := libphonenumber.Format(phoneNum,
+			libphonenumber.INTERNATIONAL)
+		op := PropertyOp{
+			Op:    PropCreate,
+			Name:  pre + "telephoneNumber",
+			Value: num,
+		}
+		ops = append(ops, op)
 	}
 
 	// XXX Tests for valid preferredLanguage?
 	if lang != "" {
-		_ = c.CreateProp(
-			fmt.Sprintf("@/users/%s/preferredLanguage", u), lang,
-			nil)
+		op := PropertyOp{
+			Op:    PropCreate,
+			Name:  pre + "preferredLanguage",
+			Value: lang,
+		}
+		ops = append(ops, op)
 	}
+	_, err = c.Execute(ops)
 
-	return nil
+	return err
 }
 
 // DeleteUser removes a new user record from the config store for the given uid

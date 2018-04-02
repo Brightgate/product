@@ -30,11 +30,15 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"strings"
 	"testing"
+
+	"bg/ap_common/apcfg"
+	"bg/base_msg"
 )
 
 var (
@@ -56,10 +60,31 @@ func checkLeaf(t *testing.T, prop, val string, leaves leafMap) {
 	}
 }
 
+func execute(ops []apcfg.PropertyOp) (string, error) {
+	var rval string
+	var err error
+
+	query, err := apcfg.GenerateQuery(ops)
+	if err == nil {
+		response := processOneEvent(query)
+		if *response.Response != base_msg.ConfigResponse_OK {
+			err = fmt.Errorf("%s", *response.Value)
+		} else if ops[0].Op == apcfg.PropGet {
+			rval = *response.Value
+		}
+	}
+
+	return rval, err
+}
+
 // utility function to attempt the 'get' of a single property.  The caller
 // decides whether the operation should succeed or fail.
 func checkOneProp(t *testing.T, prop, val string, succeed bool) {
-	treeVal, err := propertyGet(prop)
+	ops := []apcfg.PropertyOp{
+		{Op: apcfg.PropGet, Name: prop},
+	}
+
+	treeVal, err := execute(ops)
 	if err != nil {
 		if succeed {
 			t.Errorf("Failed to get %s: %v", prop, err)
@@ -79,7 +104,11 @@ func checkOneProp(t *testing.T, prop, val string, succeed bool) {
 
 // utility function to change a single property setting and validate the result
 func updateOneProp(t *testing.T, prop, val string, succeed bool) {
-	if _, err := propertyUpdate(prop, val, nil, false); err != nil {
+	ops := []apcfg.PropertyOp{
+		{Op: apcfg.PropSet, Name: prop, Value: val},
+	}
+
+	if _, err := execute(ops); err != nil {
 		if succeed {
 			t.Errorf("Failed to change %s to %s: %v", prop, val, err)
 		}
@@ -92,7 +121,11 @@ func updateOneProp(t *testing.T, prop, val string, succeed bool) {
 
 // utility function to insert a single new property and validate the result
 func insertOneProp(t *testing.T, prop, val string, succeed bool) {
-	if _, err := propertyUpdate(prop, val, nil, true); err != nil {
+	ops := []apcfg.PropertyOp{
+		{Op: apcfg.PropCreate, Name: prop, Value: val},
+	}
+
+	if _, err := execute(ops); err != nil {
 		if succeed {
 			t.Errorf("Failed to insert %s: %v", prop, err)
 		}
@@ -105,7 +138,10 @@ func insertOneProp(t *testing.T, prop, val string, succeed bool) {
 
 // utility function to remove a single new property and validate the result
 func deleteOneProp(t *testing.T, prop string, succeed bool) {
-	if err := propertyDelete(prop); err != nil {
+	ops := []apcfg.PropertyOp{
+		{Op: apcfg.PropDelete, Name: prop},
+	}
+	if _, err := execute(ops); err != nil {
 		if succeed {
 			t.Errorf("Failed to delete %s: %v", prop, err)
 		}
@@ -330,6 +366,80 @@ func TestBadSSID(t *testing.T) {
 	}
 
 	testValidateTree(t, a)
+}
+
+// TestMultiInsert inserts multiple values in a single operation
+func TestMultiInsert(t *testing.T) {
+	ops := []apcfg.PropertyOp{
+		{
+			Op:    apcfg.PropCreate,
+			Name:  "@/branch/subbranch/propa",
+			Value: "valuea",
+		},
+		{
+			Op:    apcfg.PropCreate,
+			Name:  "@/branch/subbranch/propb",
+			Value: "valueb",
+		},
+
+		{
+			Op:    apcfg.PropCreate,
+			Name:  "@/branch/subbranch/propc",
+			Value: "valuec",
+		},
+		{
+			Op:    apcfg.PropCreate,
+			Name:  "@/branch/subbranch/propf",
+			Value: "valued",
+		},
+	}
+
+	a := testTreeInit(t)
+	for _, op := range ops {
+		a[op.Name] = op.Value
+	}
+
+	if _, err := execute(ops); err != nil {
+		t.Error(err)
+	} else {
+		testValidateTree(t, a)
+	}
+}
+
+// TestMultiMixed inserts, sets, and removes multiple values in a single
+// operation
+func TestMultiMixed(t *testing.T) {
+	ops := []apcfg.PropertyOp{
+		{
+			Op:    apcfg.PropCreate,
+			Name:  "@/branch/subbranch/propa",
+			Value: "valuea",
+		},
+		{
+			Op:    apcfg.PropCreate,
+			Name:  "@/branch/subbranch/propb",
+			Value: "valueb",
+		},
+
+		{
+			Op:    apcfg.PropSet,
+			Name:  "@/branch/subbranch/propa",
+			Value: "valuec",
+		},
+		{
+			Op:   apcfg.PropDelete,
+			Name: "@/branch/subbranch/propb",
+		},
+	}
+
+	a := testTreeInit(t)
+	a["@/branch/subbranch/propa"] = "valuec"
+
+	if _, err := execute(ops); err != nil {
+		t.Error(err)
+	} else {
+		testValidateTree(t, a)
+	}
 }
 
 func TestMain(m *testing.M) {

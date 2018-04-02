@@ -15,10 +15,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"bg/ap_common/device"
-
-	"bg/base_msg"
 )
 
 const (
@@ -30,12 +29,12 @@ var (
 )
 
 // Handle a request for a single device.
-func getDevHandler(q *base_msg.ConfigQuery) (rval string, err error) {
+func getDevHandler(prop string) (rval string, err error) {
 
 	// The path must look like @/devices/<devid>
-	c := strings.Split(*q.Property, "/")
+	c := strings.Split(prop, "/")
 	if len(c) != 3 {
-		err = fmt.Errorf("invalid device path: %s", *q.Property)
+		err = fmt.Errorf("invalid device path: %s", prop)
 		return
 	}
 
@@ -57,11 +56,11 @@ func getDevHandler(q *base_msg.ConfigQuery) (rval string, err error) {
 	return
 }
 
-func setDevHandler(q *base_msg.ConfigQuery, add bool) error {
+func setDevHandler(prop string, val *string, exp *time.Time, add bool) error {
 	return fmt.Errorf("the device tree is read-only")
 }
 
-func delDevHandler(q *base_msg.ConfigQuery) error {
+func delDevHandler(prop string) error {
 	return fmt.Errorf("the device tree is read-only")
 }
 
