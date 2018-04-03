@@ -37,7 +37,7 @@ const (
 // "SITE_GUEST", "CUST_ADMIN", "CUST_USER", "CUST_GUEST".
 type UserInfo struct {
 	UID               string // Username
-	UUID              string
+	UUID              uuid.UUID
 	Role              string // User role
 	DisplayName       string // User's friendly name
 	Email             string // User email
@@ -47,6 +47,7 @@ type UserInfo struct {
 	Password          string // bcrypt Password
 	MD4Password       string // MD4 Password for WPA-EAP/MSCHAPv2
 	config            *APConfig
+	newUser           bool // need to do creation activities
 }
 
 // UserMap maps an account's username to its configuration information
@@ -65,7 +66,8 @@ func newUserFromNode(name string, user *PropertyNode) (*UserInfo, error) {
 
 	password, _ := getStringVal(user, "userPassword")
 	md4password, _ := getStringVal(user, "userMD4Password")
-	uuid, _ := getStringVal(user, "uuid")
+	suuid, _ := getStringVal(user, "uuid")
+	xuuid, _ := uuid.FromString(suuid)
 	email, _ := getStringVal(user, "email")
 	telephoneNumber, _ := getStringVal(user, "telephoneNumber")
 	preferredLanguage, _ := getStringVal(user, "preferredLanguage")
@@ -74,7 +76,7 @@ func newUserFromNode(name string, user *PropertyNode) (*UserInfo, error) {
 
 	u := &UserInfo{
 		UID:               uid,
-		UUID:              uuid,
+		UUID:              xuuid,
 		Email:             email,
 		TelephoneNumber:   telephoneNumber,
 		PreferredLanguage: preferredLanguage,
@@ -87,80 +89,42 @@ func newUserFromNode(name string, user *PropertyNode) (*UserInfo, error) {
 	return u, nil
 }
 
-// AddUser creates a new user record in the config store for the given user
-// if the user already exists, their record is modified.
-func (c *APConfig) AddUser(u, displayName, email, phone, lang string) error {
-	// XXX limits on length?
-	if u == "" {
-		return fmt.Errorf("user name (uid) must be supplied")
+// NewUserInfo is intended for use when creating new users in the config
+// store.  It makes a UserInfo, a new UUID, and marks the UserInfo as
+// "new", which triggers special behavior in Userinfo.Update.
+func (c *APConfig) NewUserInfo(uid string) (*UserInfo, error) {
+	if uid == "" {
+		return nil, fmt.Errorf("bad uid")
 	}
-	if email == "" {
-		return fmt.Errorf("email must be supplied")
+	_, err := c.GetProps("@/users/" + uid)
+	if err == nil {
+		return nil, fmt.Errorf("user %s already exists", uid)
 	}
-	if phone == "" {
-		return fmt.Errorf("telephone number must be supplied")
+	if err != ErrNoProp {
+		return nil, errors.Wrapf(err, "failed checking if user %s exists", uid)
 	}
-
-	_, err := mail.ParseAddress(email)
-	if err != nil {
-		return errors.Wrap(err, "email must be legitimate RFC5322 address: %s")
-	}
-	phoneNum, err := libphonenumber.Parse(phone, "US")
-	if err != nil {
-		return errors.Wrap(err, "invalid phoneNumber")
-	}
-
-	id := uuid.NewV4().String()
-	pre := fmt.Sprintf("@/users/%s/", u)
-	ops := []PropertyOp{
-		{Op: PropCreate, Name: pre + "uid", Value: u},
-		{Op: PropCreate, Name: pre + "email", Value: email},
-		{Op: PropCreate, Name: pre + "uuid", Value: id},
-	}
-
-	// XXX Tests for valid displayName?
-	if displayName != "" {
-		op := PropertyOp{
-			Op:    PropCreate,
-			Name:  pre + "displayname",
-			Value: displayName,
-		}
-		ops = append(ops, op)
-	}
-
-	if phone != "" {
-		num := libphonenumber.Format(phoneNum,
-			libphonenumber.INTERNATIONAL)
-		op := PropertyOp{
-			Op:    PropCreate,
-			Name:  pre + "telephoneNumber",
-			Value: num,
-		}
-		ops = append(ops, op)
-	}
-
-	// XXX Tests for valid preferredLanguage?
-	if lang != "" {
-		op := PropertyOp{
-			Op:    PropCreate,
-			Name:  pre + "preferredLanguage",
-			Value: lang,
-		}
-		ops = append(ops, op)
-	}
-	_, err = c.Execute(ops)
-
-	return err
+	return &UserInfo{
+		UID:     uid,
+		UUID:    uuid.NewV4(),
+		config:  c,
+		newUser: true,
+	}, nil
 }
 
-// DeleteUser removes a new user record from the config store for the given uid
-func (c *APConfig) DeleteUser(uid string) error {
-	ut := fmt.Sprintf("@/users/%s", uid)
-	err := c.DeleteProp(ut)
-	if err != nil {
-		return errors.Wrapf(err, "could not delete user '%s'", uid)
+// NoSuchUserError indicates that the named user does not exist in the database
+type NoSuchUserError struct {
+	uuid string
+	uid  string
+}
+
+func (e NoSuchUserError) Error() string {
+	if e.uuid != "" {
+		return fmt.Sprintf("No such user uuid %s", e.uuid)
+	} else if e.uid != "" {
+		return fmt.Sprintf("No such user uid %s", e.uid)
 	}
-	return nil
+	// Shouldn't happen
+	panic("invalid error")
 }
 
 // GetUser fetches the UserInfo structure for a given user
@@ -170,6 +134,9 @@ func (c *APConfig) GetUser(uid string) (*UserInfo, error) {
 	}
 	user, err := c.GetProps("@/users/" + uid)
 	if err != nil {
+		if err == ErrNoProp {
+			return nil, NoSuchUserError{uid: uid}
+		}
 		return nil, errors.Wrapf(err, "Failed to get user %s", uid)
 	}
 	ui, err := newUserFromNode(uid, user)
@@ -181,17 +148,21 @@ func (c *APConfig) GetUser(uid string) (*UserInfo, error) {
 }
 
 // GetUserByUUID fetches the UserInfo structure for a given UUID
-func (c *APConfig) GetUserByUUID(uuid string) (*UserInfo, error) {
-	if uuid == "" {
-		return nil, fmt.Errorf("uuid must be specified")
-	}
+func (c *APConfig) GetUserByUUID(ruuid uuid.UUID) (*UserInfo, error) {
 	users, err := c.GetProps("@/users/")
 	if err != nil {
 		return nil, errors.Wrapf(err, "Failed to get user list")
 	}
 	for name, user := range users.Children {
 		upn, ok := user.Children["uuid"]
-		if ok && upn.Value == uuid {
+		if !ok {
+			continue
+		}
+		pnuuid, err := uuid.FromString(upn.Value)
+		if err != nil {
+			continue
+		}
+		if uuid.Equal(pnuuid, ruuid) {
 			ui, err := newUserFromNode(name, user)
 			if err != nil {
 				return nil, errors.Wrap(err, "Failed to make UserInfo")
@@ -200,7 +171,7 @@ func (c *APConfig) GetUserByUUID(uuid string) (*UserInfo, error) {
 			return ui, nil
 		}
 	}
-	return nil, errors.Errorf("No user with UUID %s", uuid)
+	return nil, NoSuchUserError{uuid: ruuid.String()}
 }
 
 // GetUsers fetches the Users subtree, in the form of a map of UID to UserInfo
@@ -233,18 +204,74 @@ func (u *UserInfo) path(comp string) string {
 	return p
 }
 
+// Update saves a modified userinfo to the config store.
+// If the user if newUser == true then it does the appropriate
+// creation operations.
+func (u *UserInfo) Update() error {
+	var err error
+	var ops []PropertyOp
+
+	if u.UID == "" {
+		return fmt.Errorf("user name (uid) must be supplied")
+	}
+	if u.UID == "" {
+		return fmt.Errorf("UUID must be supplied")
+	}
+	if u.Email == "" {
+		return fmt.Errorf("email must be supplied")
+	}
+	if u.TelephoneNumber == "" {
+		return fmt.Errorf("telephone number must be supplied")
+	}
+
+	if _, err = mail.ParseAddress(u.Email); err != nil {
+		return errors.Wrap(err, "email must be legitimate RFC5322 address: %s")
+	}
+	phoneNum, err := libphonenumber.Parse(u.TelephoneNumber, "US")
+	if err != nil {
+		return errors.Wrap(err, "invalid phoneNumber")
+	}
+	phoneStr := libphonenumber.Format(phoneNum, libphonenumber.INTERNATIONAL)
+
+	// Convenience function to add a value, if non-null to the PropertyOp slice
+	addProp := func(p, v string) {
+		if v == "" {
+			return
+		}
+		p = u.path(p)
+		ops = append(ops, PropertyOp{Op: PropCreate, Name: p, Value: v})
+	}
+	if u.newUser {
+		addProp("uid", u.UID)
+		addProp("uuid", u.UUID.String())
+	}
+	addProp("email", u.Email)
+	addProp("displayName", u.DisplayName)
+	addProp("telephoneNumber", phoneStr)
+	addProp("preferredLanguage", u.PreferredLanguage)
+	addProp("role", u.Role)
+	_, err = u.config.Execute(ops)
+	if err != nil {
+		return errors.Wrap(err, "failed to update user")
+	}
+	return nil
+}
+
+// Delete removes a user record from the config store
+func (u *UserInfo) Delete() error {
+	err := u.config.DeleteProp(u.path(""))
+	if err != nil {
+		return errors.Wrapf(err, "could not delete user '%s'", u.UID)
+	}
+	return nil
+}
+
 // SetPassword assigns all appropriate password hash properties for the given user.
 func (u *UserInfo) SetPassword(passwd string) error {
 	// Generate bcrypt password property.
 	hps, err := bcrypt.GenerateFromPassword([]byte(passwd), bcrypt.DefaultCost)
 	if err != nil {
-		return fmt.Errorf("could not encrypt password: %v", err)
-	}
-
-	err = u.config.CreateProp(u.path("userPassword"), string(hps), nil)
-	if err != nil {
-		return errors.Wrapf(err,
-			"could not create userPassword property for %s", u.UID)
+		return errors.Wrapf(err, "could not encrypt password for %s", u.UID)
 	}
 
 	// Generate MD4 password property.
@@ -257,10 +284,23 @@ func (u *UserInfo) SetPassword(passwd string) error {
 	}
 	md4s := fmt.Sprintf("%x", md4ps.Sum(nil))
 
-	err = u.config.CreateProp(u.path("userMD4Password"), md4s, nil)
+	// Write out properties
+	ops := []PropertyOp{
+		{
+			Op:    PropCreate,
+			Name:  u.path("userPassword"),
+			Value: string(hps),
+		},
+		{
+			Op:    PropCreate,
+			Name:  u.path("userMD4Password"),
+			Value: string(md4s),
+		},
+	}
+	_, err = u.config.Execute(ops)
 	if err != nil {
 		return errors.Wrapf(err,
-			"could not create userMD4Password property for %s", u.UID)
+			"could not create password properties for %s", u.UID)
 	}
 
 	return nil

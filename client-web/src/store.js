@@ -335,11 +335,42 @@ const actions = {
     });
   },
 
-  // Load the list of rings from the server.
-  saveUser(context, {user}) {
-    console.log('store.js saveUsers: stub implementation, updating: ', user.UID, user.UUID);
-    return Promise.delay(1500).then(() => {
-      context.commit('updateUser', user);
+  // Create or Update a user
+  saveUser(context, {user, newUser}) {
+    assert(typeof user === 'object');
+    assert(typeof newUser === 'boolean');
+    const action = newUser ? 'creating' : 'updating';
+    console.log(`store.js saveUsers: ${action} ${user.UUID}`, user);
+    const path = newUser ? '/apid/users/NEW' : `/apid/users/${user.UUID}`;
+    if (newUser) {
+      // Backend is strict about UUID
+      delete user.UUID;
+    }
+
+    return superagent.post(path
+    ).type('json'
+    ).send(user
+    ).then((res) => {
+      console.log('saveUser: Succeeded: ', res.body);
+      assert(typeof res.body === 'object');
+      context.commit('updateUser', res.body);
+    }).catch((err) => {
+      console.log('err is', err);
+      if (err.res && err.res.text) {
+        throw new Error(`Failed to save user: ${err.res.text}`);
+      } else {
+        throw err;
+      }
+    });
+  },
+
+  deleteUser(context, {user, newUser}) {
+    assert(typeof user === 'object');
+    console.log(`store.js deleteUser: ${user.UUID}`, user);
+
+    return superagent.delete(`/apid/users/${user.UUID}`
+    ).then(() => {
+      context.dispatch('fetchUsers');
     });
   },
 

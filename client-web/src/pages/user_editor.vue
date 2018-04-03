@@ -55,7 +55,7 @@
       </f7-list-item>
 
       <!-- phone & sms -->
-      <f7-list-item v-if="user_details.TelephoneNumber">
+      <f7-list-item>
         <f7-label>Phone</f7-label>
         <f7-input type="tel"
             :value="user_details.TelephoneNumber"
@@ -78,7 +78,7 @@
       <f7-list-item>
         <f7-label>{{$t('message.user_details.password')}}</f7-label>
         <f7-input type="password"
-            @input="user_details.Password = $event.target.value"
+            @input="user_details.SetPassword = $event.target.value"
             placeholder="User Password"
             clear-button>
         </f7-input>
@@ -103,7 +103,7 @@
           <f7-button outline back>Cancel</f7-button>
         </f7-col>
         <f7-col v-if="!new_user">
-          <f7-button color="red" outline>Delete</f7-button>
+          <f7-button color="red" @click="deleteUser" outline>Delete</f7-button>
         </f7-col>
       </f7-row>
     </f7-block>
@@ -122,7 +122,6 @@ export default {
     if (routeUUID === 'NEW') {
       d.user_details = {
         UID: '',
-        UUID: '',
         DisplayName: '',
         Email: '',
         TelephoneNumber: '',
@@ -138,10 +137,11 @@ export default {
     saveUser: function(event) { // eslint-disable-line no-unused-vars
       return this.$store.dispatch('saveUser', {
         user: this.user_details,
+        newUser: this.new_user,
       }).then(() => {
         const txt = this.new_user
-          ? this.$t('message.user_details.create_user_ok', {name: this.user_details.UID})
-          : this.$t('message.user_details.save_user_ok', {name: this.user_details.UID});
+          ? this.$t('message.user_details.create_ok', {name: this.user_details.UID})
+          : this.$t('message.user_details.save_ok', {name: this.user_details.UID});
         this.$f7.toast.show({
           text: txt,
           closeTimeout: 2000,
@@ -150,8 +150,30 @@ export default {
         this.$f7router.back();
       }).catch((err) => {
         const txt = this.new_user
-          ? this.$t('message.user_details.create_user_fail', {err: err})
-          : this.$t('message.user_details.save_user_fail', {err: err});
+          ? this.$t('message.user_details.create_fail', {err: err})
+          : this.$t('message.user_details.save_fail', {err: err});
+        this.$f7.toast.show({
+          text: txt,
+          closeButton: true,
+          destroyOnClose: true,
+        });
+      });
+    },
+
+    deleteUser: function(event) { // eslint-disable-line no-unused-vars
+      return this.$store.dispatch('deleteUser', {
+        user: this.user_details,
+      }).then(() => {
+        const txt = this.$t('message.user_details.delete_ok', {name: this.user_details.UID});
+        this.$f7.toast.show({
+          text: txt,
+          closeTimeout: 5000,
+          closeButton: true,
+          destroyOnClose: true,
+        });
+        this.$f7router.navigate('/users/');
+      }).catch((err) => {
+        const txt = this.$t('message.user_details.delete_fail', {err: err});
         this.$f7.toast.show({
           text: txt,
           closeButton: true,

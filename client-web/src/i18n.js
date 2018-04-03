@@ -119,10 +119,12 @@ export default {
         },
         password: 'Password',
         edit_title: 'Edit User',
-        create_user_ok: 'Created user {name}',
-        create_user_fail: 'Failed to create new user: {err}',
-        save_user_ok: 'Updated user {name}',
-        save_user_fail: 'Failed to create new user: {err}',
+        create_ok: 'Created user {name}',
+        create_fail: 'Failed to create new user: {err}',
+        save_ok: 'Updated user {name}',
+        save_fail: 'Failed to update: {err}',
+        delete_ok: 'Deleted user {name}',
+        delete_fail: 'Failed to delete: {err}',
       },
     },
   },
@@ -235,10 +237,12 @@ export default {
         },
         password: 'Passwort',
         edit_title: 'Edit User',                              // XXXI18N
-        create_user_ok: 'Created user {name}',                // XXXI18N
-        create_user_fail: 'Failed to create new user: {err}', // XXXI18N
-        save_user_ok: 'Updated user {name}',                  // XXXI18N
-        save_user_fail: 'Failed to create new user: {err}',   // XXXI18N
+        create_ok: 'Created user {name}',                     // XXXI18N
+        create_fail: 'Failed to create new user: {err}',      // XXXI18N
+        save_ok: 'Updated user {name}',                       // XXXI18N
+        save_fail: 'Failed to update: {err}',                 // XXXI18N
+        delete_ok: 'Deleted user {name}',                     // XXXI18N
+        delete_fail: 'Failed to delete: {err}',               // XXXI18N
       },
     },
   },

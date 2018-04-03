@@ -11,11 +11,12 @@
 // Usage:
 // ap-userctl -add -email jqp@example.com \
 //     [-displayName "John Q.  Public"] uid
+// ap-userctl -update [-email jqp@example.com] \
+//     [-displayName "John Q.  Public"] uid
 // ap-userctl -passwd uid
 // ap-userctl -set-totp uid
 // ap-userctl -clear-totp uid
 // ap-userctl -delete uid
-// ap-userctl uid
 // ap-userctl [-v]
 
 package main
@@ -36,20 +37,47 @@ const (
 )
 
 var (
-	addOp          = flag.Bool("add", false, "add a user")
-	deleteOp       = flag.Bool("delete", false, "delete a user")
-	passwdOp       = flag.Bool("passwd", false, "set a password for user")
-	setTotpOp      = flag.Bool("set-totp", false, "set a TOTP for user")
-	clearTotpOp    = flag.Bool("clear-totp", false, "clear TOTP for user")
-	displayNameArg = flag.String("display-name", "",
-		"displayName value for added user")
-	emailArg = flag.String("email", "", "email value for added user")
-	phoneArg = flag.String("telephone-number", "",
-		"telephoneNumber value for added user")
-	langArg = flag.String("language", "en",
-		"preferredLanguage value for added user")
-	vFlag = flag.Bool("v", false, "enable verbose user display")
+	anyStringFlagSet = false
 )
+
+// https://stackoverflow.com/questions/35809252/check-if-flag-was-provided-in-go
+type stringFlag struct {
+	set   bool
+	value string
+}
+
+func (sf *stringFlag) Set(x string) error {
+	sf.value = x
+	sf.set = true
+	anyStringFlagSet = true
+	return nil
+}
+
+func (sf *stringFlag) String() string {
+	return sf.value
+}
+
+var (
+	uidArg          string
+	displayNameFlag stringFlag
+	emailFlag       stringFlag
+	phoneFlag       stringFlag
+	langFlag        stringFlag
+	addOp           = flag.Bool("add", false, "add a user")
+	updateOp        = flag.Bool("update", false, "update a user")
+	deleteOp        = flag.Bool("delete", false, "delete a user")
+	passwdOp        = flag.Bool("passwd", false, "set a password for user")
+	setTotpOp       = flag.Bool("set-totp", false, "set a TOTP for user")
+	clearTotpOp     = flag.Bool("clear-totp", false, "clear TOTP for user")
+	vFlag           = flag.Bool("v", false, "enable verbose user display")
+)
+
+func init() {
+	flag.Var(&displayNameFlag, "display-name", "displayName value for added user")
+	flag.Var(&emailFlag, "email", "email value for added user")
+	flag.Var(&phoneFlag, "telephone-number", "telephoneNumber value for added user")
+	flag.Var(&langFlag, "language", "preferredLanguage value for added user")
+}
 
 var config *apcfg.APConfig
 
@@ -101,35 +129,69 @@ func getUsersVerbose() error {
 	return nil
 }
 
-func addUser(uid, displayName, email, phone, lang string) error {
-	err := config.AddUser(uid, displayName, email, phone, lang)
-	if err == nil {
-		log.Printf("added user '%s'\n", uid)
-	}
-	return err
-}
-
-func deleteUser(u string) error {
-	err := config.DeleteUser(u)
-	if err == nil {
-		log.Printf("deleted user '%s'\n", u)
-	}
-	return err
-}
-
-func getUser(u string) (*apcfg.UserInfo, error) {
-	ui, err := config.GetUser(u)
-	return ui, err
-}
-
-func setUserPassword(u string) error {
-	const unikey = "\U0001F511"
-
-	ui, err := getUser(u)
+func addUser() error {
+	ui, err := config.NewUserInfo(uidArg)
 	if err != nil {
 		return err
 	}
-	log.Printf("Setting password for user '%s' (%s)\n", u, ui.DisplayName)
+	ui.DisplayName = displayNameFlag.String()
+	ui.Email = emailFlag.String()
+	ui.TelephoneNumber = phoneFlag.String()
+	ui.PreferredLanguage = langFlag.String()
+	err = ui.Update()
+	if err == nil {
+		log.Printf("added user '%s'\n", uidArg)
+	}
+	return err
+}
+
+func updateUser() error {
+	ui, err := config.GetUser(uidArg)
+	if err != nil {
+		return err
+	}
+	if !anyStringFlagSet {
+		return fmt.Errorf("No changes requested")
+	}
+	if displayNameFlag.set {
+		ui.DisplayName = displayNameFlag.String()
+	}
+	if emailFlag.set {
+		ui.Email = emailFlag.String()
+	}
+	if phoneFlag.set {
+		ui.TelephoneNumber = phoneFlag.String()
+	}
+	if langFlag.set {
+		ui.PreferredLanguage = langFlag.String()
+	}
+	err = ui.Update()
+	if err == nil {
+		log.Printf("updated user '%s'\n", uidArg)
+	}
+	return err
+}
+
+func deleteUser() error {
+	ui, err := config.GetUser(uidArg)
+	if err != nil {
+		return err
+	}
+	err = ui.Delete()
+	if err == nil {
+		log.Printf("deleted user '%s'\n", uidArg)
+	}
+	return err
+}
+
+func setUserPassword() error {
+	const unikey = "\U0001F511"
+
+	ui, err := config.GetUser(uidArg)
+	if err != nil {
+		return err
+	}
+	log.Printf("Setting password for user '%s' (%s)\n", uidArg, ui.DisplayName)
 
 	fmt.Print("Enter password: " + unikey)
 	ps1, err := terminal.ReadPassword(0)
@@ -153,14 +215,14 @@ func setUserPassword(u string) error {
 	if err != nil {
 		return errors.Wrap(err, "SetPassword failed")
 	}
-	log.Printf("New password set for user '%s'\n", u)
+	log.Printf("New password set for user '%s'\n", uidArg)
 
 	return nil
 }
 
-func setTOTP(u string) error {
+func setTOTP() error {
 	// Get user email.
-	ui, err := getUser(u)
+	ui, err := config.GetUser(uidArg)
 	if err != nil {
 		return err
 	}
@@ -168,12 +230,12 @@ func setTOTP(u string) error {
 	if err != nil {
 		return errors.Wrap(err, "Failed to create TOTP secret")
 	}
-	log.Printf("Created TOTP for <%s> (%s)\n", ui.Email, u)
+	log.Printf("Created TOTP for <%s> (%s)\n", ui.Email, uidArg)
 	return nil
 }
 
-func clearTOTP(u string) error {
-	ui, err := getUser(u)
+func clearTOTP() error {
+	ui, err := config.GetUser(uidArg)
 	if err != nil {
 		return err
 	}
@@ -181,37 +243,47 @@ func clearTOTP(u string) error {
 	if err != nil {
 		return errors.Wrap(err, "Failed to clear TOTP secret")
 	}
-	log.Printf("Cleared TOTP for <%s> (%s)\n", ui.Email, u)
+	log.Printf("Cleared TOTP for <%s> (%s)\n", ui.Email, uidArg)
 	return nil
 }
 
 func main() {
 	var err error
-
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
 	flag.Parse()
+
+	if *addOp || *updateOp || *deleteOp || *passwdOp || *setTotpOp || *clearTotpOp {
+		if flag.NArg() > 1 {
+			log.Fatalf("only one user can be specified")
+		}
+		uidArg = flag.Arg(0)
+		if uidArg == "" {
+			log.Fatalf("must specify user id")
+		}
+	} else {
+		if flag.NArg() != 0 {
+			log.Fatalf("invalid argument for listing")
+		}
+	}
 
 	config, err = apcfg.NewConfig(nil, pname)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}
 
-	if flag.NArg() > 1 {
-		log.Fatalf("only one user can be specified")
-	}
-
 	if *addOp {
-		err = addUser(flag.Arg(0), *displayNameArg, *emailArg, *phoneArg,
-			*langArg)
+		err = addUser()
+	} else if *updateOp {
+		err = updateUser()
 	} else if *deleteOp {
-		err = deleteUser(flag.Arg(0))
+		err = deleteUser()
 	} else if *passwdOp {
-		err = setUserPassword(flag.Arg(0))
+		err = setUserPassword()
 	} else if *setTotpOp {
-		err = setTOTP(flag.Arg(0))
+		err = setTOTP()
 	} else if *clearTotpOp {
-		err = clearTOTP(flag.Arg(0))
+		err = clearTOTP()
 	} else if *vFlag {
 		err = getUsersVerbose()
 	} else {

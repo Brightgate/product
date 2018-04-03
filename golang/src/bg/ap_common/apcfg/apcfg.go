@@ -306,10 +306,12 @@ func (c *APConfig) GetProps(prop string) (*PropertyNode, error) {
 	}
 	tree, err := c.Execute(ops)
 
-	if err != nil {
-		err = fmt.Errorf("Failed to retrieve %s: %v", prop, err)
+	if err == ErrNoProp {
+		return nil, err
+	} else if err != nil {
+		return nil, fmt.Errorf("Failed to retrieve %s: %v", prop, err)
 	} else if err = json.Unmarshal([]byte(tree), &root); err != nil {
-		err = fmt.Errorf("Failed to decode %s: %v", prop, err)
+		return nil, fmt.Errorf("Failed to decode %s: %v", prop, err)
 	}
 
 	return &root, err

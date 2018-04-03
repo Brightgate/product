@@ -29,6 +29,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/pquerna/otp"
+	"github.com/satori/uuid"
 	"github.com/sfreiberg/gotwilio"
 	"github.com/ttacon/libphonenumber"
 )
@@ -575,13 +576,17 @@ func demoPropertyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type daUser struct {
-	DbgRequest      string
-	UID             string
-	UUID            string
-	DisplayName     string
-	Email           string
-	TelephoneNumber string
-	HasTOTP         bool
+	DbgRequest        string
+	UID               string
+	UUID              *uuid.UUID
+	Role              *string
+	DisplayName       *string
+	Email             *string
+	TelephoneNumber   *string
+	PreferredLanguage *string
+	HasTOTP           bool
+	HasPassword       bool
+	SetPassword       *string
 }
 
 type daUsers struct {
@@ -594,17 +599,17 @@ func buildUserResponse(user *apcfg.UserInfo) daUser {
 
 	// XXX mismatch possible between uid and user.uid?
 	cu.UID = user.UID
-	cu.UUID = user.UUID
-	cu.DisplayName = user.DisplayName
-	cu.Email = user.Email
-	cu.TelephoneNumber = user.TelephoneNumber
-	if user.TOTP == "" {
-		cu.HasTOTP = false
-	} else {
-		// XXX Could be a stricter test for correctness/lack of
-		// corruption.
-		cu.HasTOTP = true
-	}
+	cu.UUID = &user.UUID
+	cu.Role = &user.Role
+	cu.DisplayName = &user.DisplayName
+	cu.Email = &user.Email
+	cu.TelephoneNumber = &user.TelephoneNumber
+	cu.PreferredLanguage = &user.PreferredLanguage
+
+	// XXX These could have stricter tests for correctness/lack of
+	// corruption.
+	cu.HasTOTP = user.TOTP != ""
+	cu.HasPassword = user.Password != ""
 
 	// XXX We are not reporting our password or TOTP back in this
 	// call.
@@ -645,10 +650,11 @@ func demoUserByUIDOTPQRHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(buf.Bytes())
 }
 
-// demoUserByUIDHandler returns a JSON-formatted user object for the
+// demoUserByUUIDGetHandler returns a JSON-formatted user object for the
 // requested uuid, typically in response to a GET request to
 // "[demo_api_root]/users/{uuid}".
-func demoUserByUUIDHandler(w http.ResponseWriter, r *http.Request) {
+//
+func demoUserByUUIDGetHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	uid := getRequestUID(r)
@@ -660,11 +666,16 @@ func demoUserByUUIDHandler(w http.ResponseWriter, r *http.Request) {
 
 	// XXX what uuid if not present?
 	vars := mux.Vars(r)
-	uuid := vars["uuid"]
-
-	userRaw, err := config.GetUserByUUID(uuid)
+	ruuid, err := uuid.FromString(vars["uuid"])
 	if err != nil {
-		log.Printf("no such user '%v': %v\n", uuid, err)
+		log.Printf("bad UUID %s: %v", vars["uuid"], err)
+		http.Error(w, "bad uuid", 400)
+		return
+	}
+
+	userRaw, err := config.GetUserByUUID(ruuid)
+	if err != nil {
+		log.Printf("no such user '%v': %v\n", ruuid, err)
 		http.Error(w, "not found", 404)
 		return
 	}
@@ -687,6 +698,145 @@ func demoUserByUUIDHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// demoUserByUUIDPostHandler updates the user requested, using the
+// JSON-formatted user object supplied.  It returns the updated record.
+// The user must already exist.
+//
+func demoUserByUUIDPostHandler(w http.ResponseWriter, r *http.Request) {
+	var err error
+	w.Header().Set("Content-Type", "application/json")
+
+	uid := getRequestUID(r)
+	log.Printf("/users/{uuid} [uid '%s']\n", uid)
+	if uid == "" {
+		http.Error(w, "forbidden", 403)
+		return
+	}
+	vars := mux.Vars(r)
+
+	var dau daUser
+	if err = json.NewDecoder(r.Body).Decode(&dau); err != nil {
+		log.Printf("daUser decode failed: %v", err)
+		http.Error(w, "invalid user", 400)
+		return
+	}
+
+	var ui *apcfg.UserInfo
+	log.Printf("vars[uuid] = '%s'", vars["uuid"])
+	if vars["uuid"] == "NEW" {
+		ui, err = config.NewUserInfo(dau.UID)
+		if err != nil {
+			log.Printf("config.NewUserInfo(%v): %v:", uid, err)
+			http.Error(w, "invalid uid or user exists", 400)
+			return
+		}
+	} else {
+		var ruuid uuid.UUID
+		ruuid, err = uuid.FromString(vars["uuid"])
+		if err != nil {
+			http.Error(w, "invalid uuid", 400)
+			return
+		}
+		ui, err = config.GetUserByUUID(ruuid)
+		if err != nil {
+			log.Printf("config.GetUserByUUID(%v): %v:", ruuid, err)
+			http.Error(w, "invalid or unknown user", 400)
+			return
+		}
+	}
+
+	// propagate daUser to UserInfo
+	if dau.DisplayName != nil {
+		ui.DisplayName = *dau.DisplayName
+	}
+	if dau.Email != nil {
+		ui.Email = *dau.Email
+	}
+	if dau.PreferredLanguage != nil {
+		ui.PreferredLanguage = *dau.PreferredLanguage
+	}
+	if dau.TelephoneNumber != nil {
+		ui.TelephoneNumber = *dau.TelephoneNumber
+	}
+	if dau.Role != nil {
+		ui.Role = *dau.Role
+	}
+	err = ui.Update()
+	if err != nil {
+		log.Printf("failed to save user '%s': %v\n", dau.UID, err)
+		http.Error(w, fmt.Sprintf("failed to save: %v", err), 400)
+		return
+	}
+
+	if dau.SetPassword != nil {
+		if err = ui.SetPassword(*dau.SetPassword); err != nil {
+			log.Printf("failed to set password for %s: %v\n", dau.UID, err)
+			http.Error(w, "updated user but failed to set password", 400)
+			return
+		}
+	}
+
+	// Reget to reflect password, etc. changes from backend
+	ui, err = config.GetUserByUUID(ui.UUID)
+	if err != nil {
+		log.Printf("failed to get user by uuid: %v\n", err)
+		http.Error(w, "unexpected failure", 500)
+		return
+	}
+
+	cu := buildUserResponse(ui)
+	cu.DbgRequest = fmt.Sprintf("%v", r)
+
+	j, err := json.Marshal(cu)
+	if err != nil {
+		log.Printf("failed to json marshal user '%v': %v\n", cu, err)
+		http.Error(w, "bad request", 400)
+		return
+	}
+
+	_, err = w.Write(j)
+	if err != nil {
+		log.Printf("failed to write user '%v': %v\n", j, err)
+		http.Error(w, "bad request", 400)
+		return
+	}
+}
+
+// demoUserByUUIDDeleteHandler removes the user requested
+// The user must already exist.
+//
+func demoUserByUUIDDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	var err error
+	w.Header().Set("Content-Type", "application/json")
+
+	uid := getRequestUID(r)
+	log.Printf("/users/{uuid} [uid '%s']\n", uid)
+	if uid == "" {
+		http.Error(w, "forbidden", 403)
+		return
+	}
+	vars := mux.Vars(r)
+
+	ruuid, err := uuid.FromString(vars["uuid"])
+	if err != nil {
+		http.Error(w, "invalid uuid", 400)
+		return
+	}
+	ui, err := config.GetUserByUUID(ruuid)
+	if err != nil {
+		log.Printf("config.GetUserByUUID(%v): %v:", ruuid, err)
+		http.Error(w, "invalid or unknown user", 400)
+		return
+	}
+
+	err = ui.Delete()
+	if err != nil {
+		log.Printf("failed to delete user '%s': %v\n", ui.UID, err)
+		http.Error(w, "failed to delete user", 400)
+		return
+	}
+}
+
 // demoUsersHandler returns a JSON-formatted map of configured users, keyed by
 // UUID, typically in response to a GET request to "[demo_api_root]/users".
 func demoUsersHandler(w http.ResponseWriter, r *http.Request) {
@@ -704,7 +854,7 @@ func demoUsersHandler(w http.ResponseWriter, r *http.Request) {
 
 	for _, user := range config.GetUsers() {
 		cu := buildUserResponse(user)
-		users.Users[user.UUID] = cu
+		users.Users[user.UUID.String()] = cu
 	}
 
 	users.DbgRequest = fmt.Sprintf("%v", r)
@@ -878,6 +1028,8 @@ func makeDemoAPIRouter() *mux.Router {
 	router.HandleFunc("/rings", demoRingsHandler)
 	router.HandleFunc("/supreme", demoSupremeHandler)
 	router.HandleFunc("/users", demoUsersHandler)
-	router.HandleFunc("/users/{uuid}", demoUserByUUIDHandler)
+	router.HandleFunc("/users/{uuid}", demoUserByUUIDGetHandler).Methods("GET")
+	router.HandleFunc("/users/{uuid}", demoUserByUUIDPostHandler).Methods("POST")
+	router.HandleFunc("/users/{uuid}", demoUserByUUIDDeleteHandler).Methods("DELETE")
 	return router
 }
