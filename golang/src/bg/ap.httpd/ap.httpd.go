@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -25,14 +25,19 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
+	"bg/ap_common/certificate"
 	"bg/ap_common/mcp"
 	"bg/ap_common/network"
 	"bg/base_def"
+	"bg/base_msg"
 	"bg/data/phishtank"
+
+	"github.com/golang/protobuf/proto"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/securecookie"
@@ -123,6 +128,19 @@ func handleResource(event []byte) { resources++ }
 
 func handleRequest(event []byte) { requests++ }
 
+func handleError(event []byte) {
+	syserror := &base_msg.EventSysError{}
+	proto.Unmarshal(event, syserror)
+
+	log.Printf("sys.error received by handler: %v", *syserror)
+
+	// Check if event is a certificate error
+	if *syserror.Reason == base_msg.EventSysError_RENEWED_SSL_CERTIFICATE {
+		log.Printf("exiting due to renewed certificate")
+		os.Exit(0)
+	}
+}
+
 // hostInMap returns a Gorilla Mux matching function that checks to see if
 // the host is in the given map.
 func hostInMap(hostMap map[string]bool) mux.MatcherFunc {
@@ -131,45 +149,37 @@ func hostInMap(hostMap map[string]bool) mux.MatcherFunc {
 	}
 }
 
-func templateHandler(w http.ResponseWriter, template string) {
-	conf, err := openTemplate(template)
-	if err == nil {
-		err = conf.Execute(w, nil)
-	}
-	if err != nil {
-		http.Error(w, "Internal server error", 500)
-	}
-}
-
 func phishHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Phishing request: %v\n", *r)
-	phishu := fmt.Sprintf("http://phishing.%s/client-web/malwareWarn.html?host=%s", domainname, r.Host)
+	phishu := fmt.Sprintf("%s://phishing.%s/client-web/malwareWarn.html?host=%s",
+		r.URL.Scheme, domainname, r.Host)
 	http.Redirect(w, r, phishu, http.StatusSeeOther)
 }
 
 func defaultHandler(w http.ResponseWriter, r *http.Request) {
 	var gatewayu string
 
-	if r.Host == "localhost" {
-		gatewayu = fmt.Sprintf("http://localhost/client-web/")
+	if r.Host == "localhost" || r.Host == "127.0.0.1" {
+		gatewayu = fmt.Sprintf("%s://%s/client-web/",
+			r.URL.Scheme, r.Host)
 	} else {
-		gatewayu = fmt.Sprintf("http://gateway.%s/client-web/",
-			domainname)
+		gatewayu = fmt.Sprintf("%s://gateway.%s/client-web/",
+			r.URL.Scheme, domainname)
 	}
 	http.Redirect(w, r, gatewayu, http.StatusFound)
 }
 
 func listen(addr string, port string, ring string, cfg *tls.Config,
-	certf string, keyf string, handler http.Handler) {
+	certfn string, keyfn string, handler http.Handler) {
 	if port == ":443" {
 		go func() {
 			srv := &http.Server{
-				Addr:         addr + ":443",
+				Addr:         addr + port,
 				Handler:      handler,
 				TLSConfig:    cfg,
 				TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
 			}
-			err := srv.ListenAndServeTLS(certf, keyf)
+			err := srv.ListenAndServeTLS(certfn, keyfn)
 			log.Printf("TLS Listener on %s (%s) exited: %v\n", addr+port, ring, err)
 		}()
 	} else {
@@ -275,18 +285,19 @@ func main() {
 	}
 
 	// Set up connection with the broker daemon
-	b := broker.New(pname)
-	b.Handle(base_def.TOPIC_PING, handlePing)
-	b.Handle(base_def.TOPIC_CONFIG, handleConfig)
-	b.Handle(base_def.TOPIC_ENTITY, handleEntity)
-	b.Handle(base_def.TOPIC_RESOURCE, handleResource)
-	b.Handle(base_def.TOPIC_REQUEST, handleRequest)
-	defer b.Fini()
+	brokerd := broker.New(pname)
+	brokerd.Handle(base_def.TOPIC_PING, handlePing)
+	brokerd.Handle(base_def.TOPIC_CONFIG, handleConfig)
+	brokerd.Handle(base_def.TOPIC_ENTITY, handleEntity)
+	brokerd.Handle(base_def.TOPIC_RESOURCE, handleResource)
+	brokerd.Handle(base_def.TOPIC_REQUEST, handleRequest)
+	brokerd.Handle(base_def.TOPIC_ERROR, handleError)
+	defer brokerd.Fini()
 
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*addr, nil)
 
-	if config, err = apcfg.NewConfig(b, pname); err == nil {
+	if config, err = apcfg.NewConfig(brokerd, pname); err == nil {
 		rings = config.GetRings()
 	}
 
@@ -301,17 +312,19 @@ func main() {
 		}
 	}
 
-	siteid, err := config.GetProp("@/siteid")
+	domainname, err = config.GetDomain()
 	if err != nil {
-		log.Printf("@/siteid not defined: %v\n", err)
-		siteid = "0000"
+		if mcpd != nil {
+			mcpd.SetState(mcp.BROKEN)
+		}
+		log.Fatalf("failed to fetch gateway domain: %v\n", err)
 	}
-	domainname = fmt.Sprintf("%s.brightgate.net", siteid)
 	demoHostname := fmt.Sprintf("gateway.%s", domainname)
-	certf := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem",
-		demoHostname)
-	keyf := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem",
-		demoHostname)
+	keyfn, _, _, fullchainfn, err := certificate.GetKeyCertPaths(brokerd, demoHostname, time.Now(), false)
+	if err != nil {
+		// We can still run plain HTTP ports, such as the developer port.
+		log.Printf("Couldn't get SSL key/fullchain: %v", err)
+	}
 
 	loadPhishtank()
 
@@ -356,8 +369,9 @@ func main() {
 
 	for ring, config := range rings {
 		router := network.SubnetRouter(config.Subnet)
+		// XXX We want to link the ports, because 80 should redirect to 443 if available for this ring.
 		for _, port := range ports {
-			listen(router, port, ring, tlsCfg, certf, keyf, nMain)
+			listen(router, port, ring, tlsCfg, fullchainfn, keyfn, nMain)
 		}
 	}
 

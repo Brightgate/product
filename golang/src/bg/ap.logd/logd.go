@@ -74,6 +74,13 @@ func handleEntity(event []byte) {
 	eventsHandled.Inc()
 }
 
+func handleError(event []byte) {
+	syserror := &base_msg.EventSysError{}
+	proto.Unmarshal(event, syserror)
+	log.Printf("[sys.error] %v", syserror)
+	eventsHandled.Inc()
+}
+
 func extendMsg(msg *string, field, value string) {
 	new := field + ": " + value
 	if len(*msg) > 0 {
@@ -211,6 +218,7 @@ func main() {
 	b.Handle(base_def.TOPIC_PING, handlePing)
 	b.Handle(base_def.TOPIC_CONFIG, handleConfig)
 	b.Handle(base_def.TOPIC_ENTITY, handleEntity)
+	b.Handle(base_def.TOPIC_ERROR, handleError)
 	b.Handle(base_def.TOPIC_EXCEPTION, handleException)
 	b.Handle(base_def.TOPIC_RESOURCE, handleResource)
 	b.Handle(base_def.TOPIC_REQUEST, handleRequest)

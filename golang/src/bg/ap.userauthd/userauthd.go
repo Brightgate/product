@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -88,8 +88,12 @@ import (
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
+	"bg/ap_common/certificate"
 	"bg/ap_common/mcp"
 	"bg/base_def"
+	"bg/base_msg"
+
+	"github.com/golang/protobuf/proto"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -106,8 +110,12 @@ type rConf struct {
 	RadiusAuthServerPort string // RADIUS authentication server port
 	RadiusAuthSecret     string // RADIUS shared secret
 
-	ServerName string
-	Status     string
+	ServerName     string
+	PrivateKeyFile string
+	CertFile       string
+	ChainFile      string
+
+	Status string
 
 	Users apcfg.UserMap
 }
@@ -120,11 +128,12 @@ var (
 
 	hostapdProcess *aputil.Child // track the hostapd proc
 
-	configd *apcfg.APConfig
-	mcpd    *mcp.MCP
-	running bool
-	secret  []byte
-	rc      *rConf
+	configd    *apcfg.APConfig
+	mcpd       *mcp.MCP
+	running    bool
+	secret     []byte
+	rc         *rConf
+	domainname string
 
 	authRequests = prometheus.NewCounter(
 		prometheus.CounterOpts{
@@ -171,6 +180,21 @@ func configNetworkRadiusChanged(path []string, val string, expires *time.Time) {
 func configUserChanged(path []string, val string, expires *time.Time) {
 	generateRadiusHostapdUsers(rc)
 	hostapdProcess.Signal(syscall.SIGHUP)
+}
+
+// If a new certificate has been generated, we need to restart.
+func sysErrorCertificate(event []byte) {
+	syserror := &base_msg.EventSysError{}
+	proto.Unmarshal(event, syserror)
+
+	log.Printf("sys.error received by handler: %v", *syserror)
+
+	// Check if event is a certificate error
+	if *syserror.Reason == base_msg.EventSysError_RENEWED_SSL_CERTIFICATE {
+		log.Printf("exiting due to renewed certificate")
+		hostapdProcess.Stop()
+		os.Exit(0)
+	}
 }
 
 // Generate the user database needed for hostapd in RADIUS mode.
@@ -315,18 +339,19 @@ func runOne(rc *rConf) {
 	log.Printf("runOne exit\n")
 }
 
-func establishSecret() []byte {
+func establishSecret() ([]byte, error) {
 	// If @/network/radiusAuthSecret is already set, retrieve its value.
 	sp, err := configd.GetProp(radiusAuthSecret)
 	if err == nil {
-		return []byte(sp)
+		return []byte(sp), nil
 	}
 
 	// Otherwise generate a new secret and set it.
 	s := make([]byte, base_def.RADIUS_SECRET_SIZE)
 	n, err := rand.Read(s)
 	if n != base_def.RADIUS_SECRET_SIZE {
-		log.Fatalf("mismatch between requested secret size %v and generated %v\n", base_def.RADIUS_SECRET_SIZE, n)
+		return nil, fmt.Errorf("mismatch between requested secret size %v and generated %v",
+			base_def.RADIUS_SECRET_SIZE, n)
 	}
 
 	// base64 encode radiusAuthSecret
@@ -334,10 +359,10 @@ func establishSecret() []byte {
 	// XXX Handle staleness by expiration?
 	err = configd.CreateProp(radiusAuthSecret, (s64), nil)
 	if err != nil {
-		log.Fatalf("could not create '%s': %v\n", radiusAuthSecret, err)
+		return nil, fmt.Errorf("could not create '%s': %v", radiusAuthSecret, err)
 	}
 
-	return []byte(s64)
+	return []byte(s64), nil
 }
 
 func main() {
@@ -358,11 +383,8 @@ func main() {
 	log.Println("prometheus client launched")
 
 	brokerd := broker.New(pname)
+	brokerd.Handle(base_def.TOPIC_ERROR, sysErrorCertificate)
 	defer brokerd.Fini()
-
-	if mcpd != nil {
-		mcpd.SetState(mcp.ONLINE)
-	}
 
 	configd, err = apcfg.NewConfig(brokerd, pname)
 	if err != nil {
@@ -372,7 +394,25 @@ func main() {
 	configd.HandleChange(`^@/users/.*$`, configUserChanged)
 	configd.HandleChange(`^@/network/radius.*$`, configNetworkRadiusChanged)
 
-	secret = establishSecret()
+	domainName, err := configd.GetDomain()
+	if err != nil {
+		log.Fatalf("failed to fetch gateway domain: %v\n", err)
+	}
+	gatewayName := "gateway." + domainName
+	keyfn, certfn, chainfn, _, err := certificate.GetKeyCertPaths(brokerd,
+		gatewayName, time.Now(), false)
+	if err != nil {
+		log.Fatalf("Cannot get any SSL key/certificate/chain: %v", err)
+	}
+
+	secret, err = establishSecret()
+	if err != nil {
+		log.Fatalf("Cannot establish secret: %v", err)
+	}
+
+	if mcpd != nil {
+		mcpd.SetState(mcp.ONLINE)
+	}
 
 	log.Printf("secret '%v'\n", secret)
 
@@ -382,7 +422,10 @@ func main() {
 		ConfFile:         "hostapd.radius.conf",
 		UserFile:         "hostapd.users.conf",
 		RadiusAuthSecret: string(secret),
-		ServerName:       "gateway.7410.brightgate.net", // XXX Should be from property
+		ServerName:       gatewayName,
+		PrivateKeyFile:   keyfn,
+		CertFile:         certfn,
+		ChainFile:        chainfn,
 		Status:           "",
 		Users:            nil,
 	}

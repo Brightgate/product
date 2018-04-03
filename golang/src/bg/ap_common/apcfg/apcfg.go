@@ -501,3 +501,15 @@ func (c *APConfig) GetActiveBlocks() []string {
 
 	return list
 }
+
+// GetDomain returns the default "appliance domainname" -- i.e.
+// <siteid>.brightgate.net.
+func (c *APConfig) GetDomain() (string, error) {
+	const prop = "@/siteid"
+
+	siteid, err := c.GetProp(prop)
+	if err != nil {
+		return "", fmt.Errorf("property get %s failed: %v", prop, err)
+	}
+	return siteid + "." + base_def.GATEWAY_CLIENT_DOMAIN, nil
+}

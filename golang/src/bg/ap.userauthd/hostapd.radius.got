@@ -9,17 +9,17 @@ eap_server=1
 eap_user_file=/tmp/hostapd.users.conf
 
 # CA certificate (PEM or DER file) for EAP-TLS/PEAP/TTLS
-ca_cert=/etc/letsencrypt/live/{{.ServerName}}/chain.pem
+ca_cert={{.ChainFile}}
 
 # Server certificate (PEM or DER file) for EAP-TLS/PEAP/TTLS
-server_cert=/etc/letsencrypt/live/{{.ServerName}}/cert.pem
+server_cert={{.CertFile}}
 
 # Private key matching with the server certificate for EAP-TLS/PEAP/TTLS
 # This may point to the same file as server_cert if both certificate and key
 # are included in a single file. PKCS#12 (PFX) file (.p12/.pfx) can also be
 # used by commenting out server_cert and specifying the PFX file as the
 # private_key.
-private_key=/etc/letsencrypt/live/{{.ServerName}}/privkey.pem
+private_key={{.PrivateKeyFile}}
 
 # Passphrase for private key
 #private_key_passwd=secret passphrase

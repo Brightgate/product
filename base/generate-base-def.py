@@ -162,6 +162,7 @@ assignments = [
     [Statement.SIMPLE_NUM, "RADIUS_SECRET_SIZE", 8],
     [Statement.SIMPLE_NUM, "HTTPD_HMAC_SIZE", 32],
     [Statement.SIMPLE_NUM, "HTTPD_AES_SIZE", 32],
+    [Statement.SIMPLE_STR, "GATEWAY_CLIENT_DOMAIN", "brightgate.net"],
 
     [Statement.COMMENT, "Appliance operating modes"],
     [Statement.SIMPLE_STR, "MODE_GATEWAY", "gateway"],
@@ -184,6 +185,7 @@ assignments = [
     [Statement.SIMPLE_STR, "TOPIC_PING", "sys.ping"],
     [Statement.SIMPLE_STR, "TOPIC_MCP", "sys.mcp"],
     [Statement.SIMPLE_STR, "TOPIC_CONFIG", "sys.config"],
+    [Statement.SIMPLE_STR, "TOPIC_ERROR", "sys.error"],
     [Statement.SIMPLE_STR, "TOPIC_ENTITY", "net.entity"],
     [Statement.SIMPLE_STR, "TOPIC_REQUEST", "net.request"],
     [Statement.SIMPLE_STR, "TOPIC_RESOURCE", "net.resource"],

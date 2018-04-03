@@ -52,7 +52,7 @@ var (
 	clients   apcfg.ClientMap
 	clientMtx sync.Mutex
 
-	siteid string
+	domainName string
 
 	sharedRouter net.IP     // without vlans, all rings share a
 	sharedSubnet *net.IPNet // subnet and a router node
@@ -723,7 +723,7 @@ func newHandler(name string, rings apcfg.RingMap) *ringHandler {
 		},
 		leases: make([]lease, span, span),
 	}
-	h.options[dhcp.OptionDomainName] = []byte(siteid + ".brightgate.net")
+	h.options[dhcp.OptionDomainName] = []byte(domainName)
 	h.options[dhcp.OptionVendorClassIdentifier] = []byte("Brightgate, Inc.")
 
 	return &h
@@ -885,10 +885,9 @@ func main() {
 
 	clients = config.GetClients()
 
-	siteid, err = config.GetProp("@/siteid")
+	domainName, err = config.GetDomain()
 	if err != nil {
-		log.Printf("failed to get siteid: %v\n", err)
-		siteid = "0000"
+		log.Fatalf("failed to fetch gateway domain: %v\n", err)
 	}
 
 	if ring, err := config.GetProp("@/network/default_ring"); err == nil {

@@ -108,6 +108,7 @@ GOVERFLAGS=-ldflags="-X main.ApVersion=$(GITHASH)"
 # Miscellaneous environment setup
 #
 INSTALL = install
+MD5SUM = md5sum
 MKDIR = mkdir
 RM = rm
 
@@ -236,6 +237,7 @@ COMMON_GOPKGS = \
 	bg/ap_common/apcfg \
 	bg/ap_common/aputil \
 	bg/ap_common/broker \
+	bg/ap_common/certificate \
 	bg/ap_common/device \
 	bg/ap_common/iotcore \
 	bg/ap_common/mcp \
@@ -246,6 +248,7 @@ COMMON_GOPKGS = \
 
 APPCOMMAND_GOPKGS = \
 	bg/ap-arpspoof \
+	bg/ap-certcheck \
 	bg/ap-complete \
 	bg/ap-configctl \
 	bg/ap-ctl \
@@ -289,6 +292,7 @@ APPBINARIES = \
 
 GO_TESTABLES = \
 	bg/ap_common/aputil \
+	bg/ap_common/certificate \
 	bg/ap_common/iotcore \
 	bg/ap_common/network \
 	bg/ap.configd \
@@ -675,6 +679,7 @@ $(APPBIN)/ap.dns4d: \
 $(APPBIN)/ap.httpd: \
 	$(GOSRCBG)/ap.httpd/ap.httpd.go \
 	$(GOSRCBG)/ap.httpd/api-demo.go \
+	$(GOSRCBG)/ap_common/certificate/certificate.go \
 	$(PHISH_SRCS)
 $(APPBIN)/ap.identifierd: $(GOSRCBG)/ap.identifierd/identifierd.go
 $(APPBIN)/ap.iotd: $(GOSRCBG)/ap.iotd/iotd.go
@@ -686,7 +691,8 @@ $(APPBIN)/ap.networkd: \
 	$(GOSRCBG)/ap.networkd/networkd.go \
 	$(GOSRCBG)/ap.networkd/parse.go
 $(APPBIN)/ap.relayd: $(GOSRCBG)/ap.relayd/relayd.go
-$(APPBIN)/ap.userauthd: $(GOSRCBG)/ap.userauthd/userauthd.go
+$(APPBIN)/ap.userauthd: $(GOSRCBG)/ap.userauthd/userauthd.go \
+	$(GOSRCBG)/ap_common/certificate/certificate.go
 $(APPBIN)/ap.watchd: \
 	$(GOSRCBG)/ap.watchd/api.go \
 	$(GOSRCBG)/ap.watchd/block.go \
@@ -697,6 +703,8 @@ $(APPBIN)/ap.watchd: \
 	$(GOSRCBG)/ap.watchd/watchd.go
 
 $(APPBIN)/ap-arpspoof: $(GOSRCBG)/ap-arpspoof/arpspoof.go
+$(APPBIN)/ap-certcheck: $(GOSRCBG)/ap-certcheck/certcheck.go \
+	$(GOSRCBG)/ap_common/certificate/certificate.go
 $(APPBIN)/ap-complete: $(GOSRCBG)/ap-complete/complete.go
 $(APPBIN)/ap-configctl: $(GOSRCBG)/ap-configctl/configctl.go
 $(APPBIN)/ap-ctl: $(GOSRCBG)/ap-ctl/ctl.go
@@ -822,7 +830,7 @@ LOCAL_DAEMONS=$(DAEMONS:$(APPBIN)/%=$(GOPATH)/bin/%)
 
 # Generate a hash of the contents of BUILDTOOLS, so that if the required
 # packages change, we'll rerun the check.
-BUILDTOOLS_HASH=$(shell echo $(BUILDTOOLS) | md5sum | awk '{print $$1}')
+BUILDTOOLS_HASH=$(shell echo $(BUILDTOOLS) | $(MD5SUM) | awk '{print $$1}')
 BUILDTOOLS_FILE=.tools-$(BUILDTOOLS_HASH)
 
 tools: $(BUILDTOOLS_FILE)
@@ -869,6 +877,7 @@ clean:
 		$(CLOUDBINARIES) \
 		$(UTILBINARIES) \
 		$(GO_MOCK_SRCS)
+	find $(GOSRCBG)/ap_common -name \*.pem | xargs $(RM) -f
 
 plat-clobber: clobber
 	-$(GO) clean $(GO_CLEAN_FLAGS) github.com/golang/protobuf/protoc-gen-go

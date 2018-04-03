@@ -634,12 +634,10 @@ func initNetwork() {
 
 	warned = make(map[string]bool)
 
-	siteid, err := config.GetProp("@/siteid")
+	domainname, err = config.GetDomain()
 	if err != nil {
-		log.Printf("failed to fetch siteid: %v\n", err)
-		siteid = "0000"
+		log.Fatalf("failed to fetch gateway domain: %v\n", err)
 	}
-	domainname = siteid + ".brightgate.net"
 
 	if tmp := getNameserver(); tmp != "" {
 		upstreamDNS = tmp

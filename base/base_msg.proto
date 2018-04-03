@@ -124,9 +124,23 @@ message EventConfig {
 	optional Timestamp expires = 0x204;
 }
 
-// XXX sys.error
+// The system error message is sent whenever an appliance service
+// encounters a surprising failure.
 // @topic "sys.error", TOPIC_ERROR
 // @range 0x300
+message EventSysError {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+	optional string identity_uuid = 0x04;
+
+	enum Cause {
+		RENEWED_SSL_CERTIFICATE = 1;
+	}
+	optional Cause reason = 0x341;
+	optional string message = 0x342;
+}
+
 
 // The network entity message is sent whenever an application or service
 // suspects that it has discovered a new or modified entity (IP endpoint)
