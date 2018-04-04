@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -23,7 +23,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"sync/atomic"
+	"sync"
 	"syscall"
 	"time"
 
@@ -54,12 +54,13 @@ type service struct {
 	name    string
 	address net.IP
 	port    int
+	init    func()
 	handler func(*endpoint, []byte) error
 }
 
 var multicastServices = []service{
-	{"mDNS", net.IPv4(224, 0, 0, 251), 5353, mDNSHandler},
-	{"SSDP", net.IPv4(239, 255, 255, 250), 1900, ssdpHandler},
+	{"mDNS", net.IPv4(224, 0, 0, 251), 5353, nil, mDNSHandler},
+	{"SSDP", net.IPv4(239, 255, 255, 250), 1900, ssdpInit, ssdpHandler},
 }
 
 var ringLevel = map[string]int{
@@ -70,8 +71,9 @@ var ringLevel = map[string]int{
 }
 
 var (
-	debug   = flag.Bool("debug", false, "Enable debug logging")
-	ssdpMax = flag.Int("smax", 10, "Max # of open M-SEARCH requests")
+	debug    = flag.Bool("debug", false, "Enable debug logging")
+	ssdpBase = flag.Int("sbase", 31000, "start of SSDP response ports")
+	ssdpMax  = flag.Int("smax", 20, "Max # of open M-SEARCH requests")
 
 	brokerd *broker.Broker
 	config  *apcfg.APConfig
@@ -82,8 +84,18 @@ var (
 	ipv4ToIface    map[string]*net.Interface
 	ifaceBroadcast map[string]net.IP
 
-	ssdpSearchRequests int32
+	ssdpSearches   *ssdpSearchState
+	ssdpSearchLock sync.Mutex
 )
+
+type ssdpSearchState struct {
+	buf       []byte
+	port      int
+	addr      *net.UDPAddr
+	requestor *ipv4.PacketConn
+	listener  *ipv4.PacketConn
+	next      *ssdpSearchState
+}
 
 func debugLog(format string, args ...interface{}) {
 	if *debug {
@@ -97,6 +109,10 @@ func vlanBridge(vlan int) string {
 
 func initListener(s service) (p *ipv4.PacketConn, err error) {
 	var c net.PacketConn
+
+	if s.init != nil {
+		s.init()
+	}
 
 	portStr := ":" + strconv.Itoa(s.port)
 	if c, err = net.ListenPacket("udp4", portStr); err != nil {
@@ -228,6 +244,39 @@ func ssdpEvent(addr net.IP, mtype base_msg.EventSSDP_MessageType,
 	}
 }
 
+func ssdpSearchAlloc(source *endpoint, mx int) (*ssdpSearchState, error) {
+	ssdpSearchLock.Lock()
+	defer ssdpSearchLock.Unlock()
+
+	sss := ssdpSearches
+	if sss == nil {
+		return nil, fmt.Errorf("too many outstanding M-SEARCH requests")
+	}
+
+	// MX is the maximum time the device should wait before responding.  We
+	// will leave our port open for 2x that long.
+	deadline := time.Now().Add(time.Duration(mx*2) * time.Second)
+	if err := sss.listener.SetDeadline(deadline); err != nil {
+		return nil, fmt.Errorf("unable to set UDP deadline: %v", err)
+	}
+
+	ssdpSearches = sss.next
+	sss.requestor = source.conn
+	sss.addr = &net.UDPAddr{IP: source.ip, Port: source.port}
+
+	return sss, nil
+}
+
+func ssdpSearchFree(sss *ssdpSearchState) {
+	ssdpSearchLock.Lock()
+	defer ssdpSearchLock.Unlock()
+
+	sss.requestor = nil
+	sss.addr = nil
+	sss.next = ssdpSearches
+	ssdpSearches = sss
+}
+
 // Currently we just check an SSDP packet to be sure that it's a correctly
 // structured HTTP response.  We don't examine its contents, but an OK may
 // contain information that would be useful to identifierd.
@@ -239,37 +288,39 @@ func ssdpResponseCheck(rdr io.Reader) error {
 	return err
 }
 
-func ssdpResponseRelay(addr *net.UDPAddr, requestor, responder *ipv4.PacketConn) {
-	buf := make([]byte, 4096)
-	atomic.AddInt32(&ssdpSearchRequests, 1)
+func ssdpResponseRelay(sss *ssdpSearchState) {
+	defer ssdpSearchFree(sss)
+
+	buf := sss.buf
+	addr := sss.addr
+
 	for {
-		n, _, src, err := responder.ReadFrom(buf)
+		n, _, src, err := sss.listener.ReadFrom(buf)
 		if err != nil {
 			// This port has a deadline set, so we expect to hit a
 			// timeout.  Any other error is worth noting.
 			e, _ := err.(net.Error)
 			if !e.Timeout() {
 				log.Printf("Failed to read from %v: %v\n",
-					responder.LocalAddr(), err)
+					sss.listener.LocalAddr(), err)
 			}
-			break
+			return
 		}
 		if err = ssdpResponseCheck(bytes.NewReader(buf)); err != nil {
 			log.Printf("Bad SSDP response from %v: %v\n", src, err)
-			break
+			return
 		}
 
-		debugLog("Forwarding SSDP response from %v to %v\n", src, addr)
-		l, err := requestor.WriteTo(buf[:n], nil, addr)
+		debugLog("Forwarding SSDP response from/to %v\n", src, addr)
+		l, err := sss.requestor.WriteTo(buf[:n], nil, addr)
 		if err != nil {
 			log.Printf("    Forward to %v failed: %v\n", addr, err)
-			break
+			return
 		} else if l != n {
 			log.Printf("    Forwarded %d of %d to %v\n", l, n, addr)
-			break
+			return
 		}
 	}
-	atomic.AddInt32(&ssdpSearchRequests, -1)
 }
 
 // The response to an SSDP M-SEARCH request is a unicast packet back to the
@@ -278,31 +329,18 @@ func ssdpResponseRelay(addr *net.UDPAddr, requestor, responder *ipv4.PacketConn)
 // static copy of the originating endpoint structure, so we know where the
 // response packet needs to be forwarded.
 func ssdpSearchHandler(source *endpoint, mx int) error {
-	if ssdpSearchRequests >= int32(*ssdpMax) {
-		return fmt.Errorf("too many outstanding M-SEARCH requests")
-	}
-
-	p, err := net.ListenPacket("udp4", ":0")
+	sss, err := ssdpSearchAlloc(source, mx)
 	if err != nil {
-		return fmt.Errorf("unable to init SEARCH handler: %v", err)
+		return err
 	}
-	response := ipv4.NewPacketConn(p)
-
-	// MX is the maximum time the device should wait before responding.  We
-	// will leave our port open for 2x that long.
-	deadline := time.Now().Add(time.Duration(mx*2) * time.Second)
-	if err = response.SetDeadline(deadline); err != nil {
-		return fmt.Errorf("unable to set UDP deadline: %v", err)
-	}
-
-	addr := &net.UDPAddr{IP: source.ip, Port: source.port}
-	debugLog("Forwarding SSDP M-SEARCH from %v\n", addr)
-	go ssdpResponseRelay(addr, source.conn, response)
+	debugLog("Forwarding SSDP M-SEARCH from %v\n", sss.addr)
 
 	// Replace the original PacketConn in the source structure with our new
 	// PacketConn, causing the SEARCH request to be forwarded from our newly
 	// opened UDP port instead of the standard SSDP port (1900).
-	source.conn = response
+	source.conn = sss.listener
+
+	go ssdpResponseRelay(sss)
 	return nil
 }
 
@@ -362,6 +400,44 @@ func ssdpHandler(source *endpoint, buf []byte) error {
 	}
 
 	return err
+}
+
+func ssdpInit() {
+	low := *ssdpBase
+	high := *ssdpBase + *ssdpMax
+
+	for port := low; port < high; port++ {
+		p, err := net.ListenPacket("udp4", ":"+strconv.Itoa(port))
+		if err != nil {
+			log.Printf("unable to init SEARCH handler on %d: %v",
+				port, err)
+		} else {
+			ssdpSearches = &ssdpSearchState{
+				buf:      make([]byte, 4096),
+				port:     port,
+				next:     ssdpSearches,
+				listener: ipv4.NewPacketConn(p),
+			}
+		}
+	}
+
+	propBase := "@/firewall/rules/sonos/"
+	rule := fmt.Sprintf("ACCEPT UDP FROM IFACE NOT wan TO AP DPORTS %d:%d",
+		low, high-1)
+	ops := []apcfg.PropertyOp{
+		{
+			Op:    apcfg.PropCreate,
+			Name:  propBase + "rule",
+			Value: rule,
+		},
+		{
+			Op:    apcfg.PropCreate,
+			Name:  propBase + "active",
+			Value: "true",
+		},
+	}
+
+	config.Execute(ops)
 }
 
 //

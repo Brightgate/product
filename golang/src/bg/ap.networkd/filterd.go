@@ -328,8 +328,12 @@ func genEndpoint(r *rule, from bool) (ep string, err error) {
 }
 
 func genPorts(r *rule) (portList string, err error) {
+	const (
+		lowMask  = (uint64(1) << 32) - 1
+		highMask = lowMask << 32
+	)
 	var d string
-	var ports *[]int
+	var ports *[]uint64
 
 	if len(r.sports) > 0 {
 		d = " --sport"
@@ -359,7 +363,14 @@ func genPorts(r *rule) (portList string, err error) {
 		if i > 0 {
 			portList += ","
 		}
-		portList += strconv.Itoa(p)
+
+		low := p & lowMask
+		high := (p & highMask) >> 32
+
+		portList += strconv.FormatUint(low, 10)
+		if high != 0 {
+			portList += ":" + strconv.FormatUint(high, 10)
+		}
 	}
 
 	return
@@ -554,6 +565,20 @@ func configBlocklistChanged(path []string, val string, expires *time.Time) {
 	}
 }
 
+func configRuleChanged(path []string, val string, expires *time.Time) {
+	if len(path) >= 3 {
+		log.Printf("Responding to change in firewall rule '%s'\n", path[2])
+	} else {
+		log.Printf("Responding to change in firewall rules\n")
+	}
+	iptablesRebuild()
+	iptablesReset()
+}
+
+func configRuleDeleted(path []string) {
+	configRuleChanged(path, "", nil)
+}
+
 func firewallRule(p *apcfg.PropertyNode) (*rule, error) {
 	active, ok := p.Children["active"]
 	if !ok || active.Value != "true" {
@@ -680,7 +705,6 @@ func loadFilterRules() error {
 }
 
 func applyFilters() {
-
 	iptablesRebuild()
 	iptablesReset()
 }

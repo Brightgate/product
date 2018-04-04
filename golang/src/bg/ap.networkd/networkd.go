@@ -945,6 +945,8 @@ func daemonInit() error {
 	config.HandleChange(`^@/nodes/"+nodeUUID+"/.*/channel$`, configChannelChanged)
 	config.HandleChange(`^@/rings/.*/auth$`, configAuthChanged)
 	config.HandleChange(`^@/network/`, configNetworkChanged)
+	config.HandleChange(`^@/firewall/rules/`, configRuleChanged)
+	config.HandleDelete(`^@/firewall/rules/`, configRuleDeleted)
 	config.HandleChange(`^@/firewall/blocked/`, configBlocklistChanged)
 	config.HandleExpire(`^@/firewall/blocked/`, configBlocklistExpired)
 

@@ -94,8 +94,8 @@ type rule struct {
 	proto  int
 	from   *endpoint
 	to     *endpoint
-	sports []int
-	dports []int
+	sports []uint64
+	dports []uint64
 	start  *time.Time
 	end    *time.Time
 }
@@ -266,8 +266,17 @@ func parseTime(tokens []string, num int) (*time.Time, error) {
 	return &t, err
 }
 
-func getPorts(tokens []string) (sports, dports []int, cnt int, err error) {
-	var ports *[]int
+func parsePort(t string) (uint64, error) {
+	v, err := strconv.Atoi(t)
+	if err == nil && (v < 0 || v > 32768) {
+		err = fmt.Errorf("value out of range")
+	}
+
+	return uint64(v), err
+}
+
+func getPorts(tokens []string) (sports, dports []uint64, cnt int, err error) {
+	var ports *[]uint64
 
 	switch strings.ToUpper(tokens[0]) {
 	case "SPORTS":
@@ -280,14 +289,31 @@ func getPorts(tokens []string) (sports, dports []int, cnt int, err error) {
 
 	cnt = 1
 	for _, t := range tokens[1:] {
-		val, err := strconv.Atoi(t)
-		if err != nil {
-			log.Printf("Failed to xlate %s: %v\n", t, err)
+		var port uint64
+
+		f := strings.Split(t, ":")
+		if len(f) > 2 {
+			err = fmt.Errorf("invalid port range: %s", t)
 			break
 		}
 
+		if port, err = parsePort(f[0]); err != nil {
+			err = fmt.Errorf("invalid port %s: %v", f[0], err)
+			break
+		}
+
+		if len(f) == 2 {
+			var high uint64
+			if high, err = parsePort(f[1]); err != nil {
+				err = fmt.Errorf("invalid port %s: %v", f[1],
+					err)
+				break
+			}
+			port |= (high << 32)
+		}
+
 		cnt++
-		*ports = append(*ports, val)
+		*ports = append(*ports, port)
 	}
 
 	return
