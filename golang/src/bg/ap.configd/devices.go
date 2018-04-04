@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"bg/ap_common/apcfg"
 	"bg/ap_common/device"
 )
 
@@ -29,31 +30,29 @@ var (
 )
 
 // Handle a request for a single device.
-func getDevHandler(prop string) (rval string, err error) {
+func getDevHandler(prop string) (string, error) {
 
 	// The path must look like @/devices/<devid>
 	c := strings.Split(prop, "/")
 	if len(c) != 3 {
-		err = fmt.Errorf("invalid device path: %s", prop)
-		return
+		return "", fmt.Errorf("invalid device path: %s", prop)
 	}
 
 	devid, err := strconv.Atoi(c[2])
 	if err != nil || devid == 0 {
-		err = fmt.Errorf("invalid device id: %s", c[2])
-		return
+		return "", fmt.Errorf("invalid device id: %s", c[2])
 	}
 
 	d := devices[uint32(devid)]
 	if d == nil {
-		err = fmt.Errorf("no such device id: %s", c[2])
-		return
+		return "", apcfg.ErrNoProp
 	}
 
-	if b, err := json.Marshal(d); err == nil {
-		rval = string(b)
+	b, err := json.Marshal(d)
+	if err == nil {
+		return string(b), nil
 	}
-	return
+	return "", err
 }
 
 func setDevHandler(prop string, val *string, exp *time.Time, add bool) error {

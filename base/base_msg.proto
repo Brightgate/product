@@ -291,6 +291,7 @@ message ConfigResponse {
 		OK = 0;
 		FAILED = 1;
 		UNSUPPORTED = 2;
+		NOPROP = 3;
 	}
 	required OpResponse response = 0x2003;
 

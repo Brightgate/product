@@ -50,6 +50,7 @@ import (
 	"time"
 	"unicode"
 
+	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
@@ -795,8 +796,7 @@ func propertyUpdate(property, value string, expires *time.Time,
 		if insert {
 			err = fmt.Errorf("Failed to insert a new property")
 		} else {
-			err = fmt.Errorf("Updating a nonexistent property: %s",
-				property)
+			err = apcfg.ErrNoProp
 		}
 	} else if len(node.Children) > 0 {
 		err = fmt.Errorf("Can only modify leaf properties")
@@ -830,7 +830,7 @@ func propertyGet(property string) (string, error) {
 			rval = string(b)
 		}
 	} else {
-		err = fmt.Errorf("No such property")
+		err = apcfg.ErrNoProp
 	}
 
 	if err != nil {
@@ -1087,6 +1087,7 @@ func processOneEvent(query *base_msg.ConfigQuery) *base_msg.ConfigResponse {
 		success     = base_msg.ConfigResponse_OK
 		failed      = base_msg.ConfigResponse_FAILED
 		unsupported = base_msg.ConfigResponse_UNSUPPORTED
+		noprop      = base_msg.ConfigResponse_NOPROP
 	)
 	var err error
 	var rval string
@@ -1113,26 +1114,26 @@ func processOneEvent(query *base_msg.ConfigQuery) *base_msg.ConfigResponse {
 			} else {
 				rval, err = ops.get(prop)
 			}
-			if err != nil {
-				rc = failed
-			}
 		case base_msg.ConfigQuery_ConfigOp_CREATE:
-			if err = ops.set(prop, val, expires, true); err != nil {
-				rc = failed
-			}
+			err = ops.set(prop, val, expires, true)
 		case base_msg.ConfigQuery_ConfigOp_SET:
-			if err = ops.set(prop, val, expires, false); err != nil {
-				rc = failed
-			}
+			err = ops.set(prop, val, expires, false)
 		case base_msg.ConfigQuery_ConfigOp_DELETE:
-			if err = ops.delete(prop); err != nil {
-				rc = failed
-			}
+			err = ops.delete(prop)
 		default:
-			rc = unsupported
-			err = fmt.Errorf("unrecognized operation")
+			err = apcfg.ErrBadOp
 		}
 
+		switch err {
+		case nil:
+			// no action
+		case apcfg.ErrNoProp:
+			rc = noprop
+		case apcfg.ErrBadOp:
+			rc = unsupported
+		default:
+			rc = failed
+		}
 		if rc != success {
 			break
 		}

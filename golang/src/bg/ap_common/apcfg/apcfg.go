@@ -12,6 +12,7 @@ package apcfg
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -30,6 +31,13 @@ import (
 
 	// Ubuntu: requires libzmq3-dev, which is 0MQ 4.2.1.
 	zmq "github.com/pebbe/zmq4"
+)
+
+// Some specific, common ways in which apcfg operations can fail
+var (
+	ErrComm   = errors.New("communication breakdown")
+	ErrNoProp = errors.New("no such property")
+	ErrBadOp  = errors.New("no such operation")
 )
 
 // ValidRings is a map containing all of the known ring names.  Checking for map
@@ -216,7 +224,7 @@ func GenerateQuery(ops []PropertyOp) (*base_msg.ConfigQuery, error) {
 
 		opType, ok := opToMsgType[op.Op]
 		if !ok {
-			return nil, fmt.Errorf("invalid operation: %d", op.Op)
+			return nil, ErrBadOp
 		}
 		msgOps[i] = &base_msg.ConfigQuery_ConfigOp{
 			Operation: &opType,
@@ -259,20 +267,29 @@ func (c *APConfig) Execute(ops []PropertyOp) (string, error) {
 	rval := ""
 	if err != nil {
 		log.Printf("Failed to send config msg: %v\n", err)
+		err = ErrComm
 	} else {
-		var reply [][]byte
-
-		reply, err = c.socket.RecvMessageBytes(0)
-		if len(reply) > 0 {
+		reply, rerr := c.socket.RecvMessageBytes(0)
+		if rerr != nil {
+			log.Printf("Failed to receive config reply: %v\n", err)
+			err = ErrComm
+		} else if len(reply) > 0 {
 			proto.Unmarshal(reply[0], response)
 		}
 	}
 	c.mutex.Unlock()
 	if err == nil {
-		if *response.Response != base_msg.ConfigResponse_OK {
+		switch *response.Response {
+		case base_msg.ConfigResponse_OK:
+			if ops[0].Op == PropGet {
+				rval = *response.Value
+			}
+		case base_msg.ConfigResponse_UNSUPPORTED:
+			err = ErrBadOp
+		case base_msg.ConfigResponse_NOPROP:
+			err = ErrNoProp
+		default:
 			err = fmt.Errorf("%s", *response.Value)
-		} else if ops[0].Op == PropGet {
-			rval = *response.Value
 		}
 	}
 
