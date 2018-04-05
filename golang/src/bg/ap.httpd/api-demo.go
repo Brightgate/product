@@ -162,35 +162,6 @@ func demoLogoutHandler(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "OK logout\n")
 }
 
-func isLoggedIn(r *http.Request) bool {
-	var value map[string]string
-
-	cookie, err := r.Cookie(cookieName)
-	if err != nil {
-		// No cookie.
-		return false
-	}
-
-	value = make(map[string]string)
-	if err = cutter.Decode(cookieName, cookie.Value, &value); err != nil {
-		log.Printf("request contains undecryptable cookie value: %v\n", err)
-		return false
-	}
-
-	// Lookup uid.
-	uid := value["uid"]
-
-	// Retrieve user node.
-	ui, err := config.GetUser(uid)
-	if err != nil {
-		log.Printf("demo login for '%s' denied: %v\n", uid, err)
-		return false
-	}
-
-	// Accounts with empty passwords can't be logged into.
-	return ui.Password != ""
-}
-
 func getRequestUID(r *http.Request) string {
 	var value map[string]string
 
@@ -337,9 +308,7 @@ func buildDeviceResponse(hwaddr string, client *apcfg.ClientInfo) daDevice {
 // Policy: GET (*_USER, *_ADMIN)
 func demoDevicesByRingHandler(w http.ResponseWriter, r *http.Request) {
 	uid := getRequestUID(r)
-
 	log.Printf("/devices [uid '%s']\n", uid)
-
 	if uid == "" {
 		http.Error(w, "forbidden", 403)
 		return
@@ -446,26 +415,6 @@ func demoDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GET my access parameters (device ID) -> (duration, target ring?)
-// POST access parameters for a device on setup network (device ID,
-func demoAccessByIDHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	vars := mux.Vars(r)
-	if r.Method == "GET" {
-		fmt.Fprintf(w, "{\"demoApiHandler\": \"GET access-by-id\", \"request\": \"%v\", \"vars\": \"%v\"}\n", r, vars)
-	} else if r.Method == "POST" {
-		fmt.Fprintf(w, "{\"demoApiHandler\": \"POST access-by-id\", \"request\": \"%v\"}\n", r)
-	} else {
-		fmt.Fprintf(w, "{\"demoApiHandler\": \"UNKNOWN access-by-id\", \"request\": \"%v\"}\n", r)
-	}
-}
-
-// duration, target ring)
-func demoAccessHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, "{\"demoApiHandler\": \"GET access\", \"request\": \"%v\"}\n", r)
-}
-
 // GET requests moves all unenrolled clients to standard.
 func demoSupremeHandler(w http.ResponseWriter, r *http.Request) {
 
@@ -496,32 +445,9 @@ func demoSupremeHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "{\"demoApiHandler\": \"GET supreme\", \"request\": \"%v\", \"changed\": \"%v\"}\n", r, count)
 }
 
-func demoPropertyByNameHandler(w http.ResponseWriter, r *http.Request) {
+func demoConfigGetHandler(w http.ResponseWriter, r *http.Request) {
 	uid := getRequestUID(r)
-	log.Printf("/config [uid '%s']\n", uid)
-	if uid == "" {
-		http.Error(w, "forbidden", 403)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	vars := mux.Vars(r)
-
-	if r.Method == "GET" {
-		fmt.Fprintf(w, "{\"demoApiHandler\": \"GET property-by-name\", \"request\": \"%v\", \"vars\": \"%v\"}\n", r, vars)
-	} else if r.Method == "POST" {
-		fmt.Fprintf(w, "{\"demoApiHandler\": \"POST property-by-name\", \"request\": \"%v\"}\n", r)
-	} else {
-		fmt.Fprintf(w, "{\"demoApiHandler\": \"UNKNOWN property-by-name\", \"request\": \"%v\"}\n", r)
-	}
-
-}
-
-func demoPropertyHandler(w http.ResponseWriter, r *http.Request) {
-	var err error
-
-	uid := getRequestUID(r)
-	log.Printf("/config [uid '%s']\n", uid)
+	log.Printf("/config GET [uid '%s']\n", uid)
 	if uid == "" {
 		http.Error(w, "forbidden", 403)
 		return
@@ -529,45 +455,64 @@ func demoPropertyHandler(w http.ResponseWriter, r *http.Request) {
 
 	t := time.Now()
 
-	if r.Method != "GET" && r.Method != "POST" {
-		http.Error(w, "Invalid request method.", 405)
+	// Get setting from ap.configd
+	//
+	// From the command line:
+	//     wget -q -O- http://127.0.0.1:8000/config?@/network/wlan0/ssid
+	val, err := config.GetProp(r.URL.RawQuery)
+	if err != nil {
+		estr := fmt.Sprintf("%v", err)
+		http.Error(w, estr, 400)
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, "\"%s\"", val)
+	}
+	if err == nil {
+		latencies.Observe(time.Since(t).Seconds())
+	}
+}
+
+func demoConfigPostHandler(w http.ResponseWriter, r *http.Request) {
+	var ops []apcfg.PropertyOp
+
+	uid := getRequestUID(r)
+	log.Printf("/config POST [uid '%s']\n", uid)
+	if uid == "" {
+		http.Error(w, "forbidden", 403)
 		return
 	}
 
-	if r.Method == "GET" {
-		// Get setting from ap.configd
-		//
-		// From the command line:
-		//     wget -q -O- http://127.0.0.1:8000/config?@/network/wlan0/ssid
+	// Send property updates to ap.configd
+	//
+	// From the command line:
+	//    wget -q --post-data '@/network/wlan0/ssid=newssid' \
+	//           http://127.0.0.1:8000/config
 
-		val, err := config.GetProp(r.URL.RawQuery)
-		if err != nil {
-			estr := fmt.Sprintf("%v", err)
-			http.Error(w, estr, 400)
-		} else {
-			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintf(w, "\"%s\"", val)
-		}
-	} else {
-		// Send property updates to ap.configd
-		//
-		// From the command line:
-		//    wget -q --post-data '@/network/wlan0/ssid=newssid' \
-		//           http://127.0.0.1:8000/config
+	t := time.Now()
 
-		err = r.ParseForm()
-		for key, values := range r.Form {
-			if len(values) != 1 {
-				http.Error(w, "Properties may only have one value", 400)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			err = config.SetProp(key, values[0], nil)
-			if err == nil {
-				// ok!
-				fmt.Fprintf(w, "{}")
-			}
+	err := r.ParseForm()
+	if err != nil {
+		http.Error(w, "failed to parse form", 400)
+		return
+	}
+	for key, values := range r.Form {
+		if len(values) != 1 {
+			http.Error(w, "Properties may only have one value", 400)
+			return
 		}
+		ops = append(ops, apcfg.PropertyOp{
+			Op:    apcfg.PropCreate,
+			Name:  key,
+			Value: values[0],
+		})
+	}
+	if len(ops) == 0 {
+		return
+	}
+	_, err = config.Execute(ops)
+	if err != nil {
+		log.Printf("failed to set properties: %v", err)
+		http.Error(w, "failed to set properties", 400)
 	}
 
 	if err == nil {
@@ -912,10 +857,6 @@ func demoEnrollHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.Method != "POST" {
-		http.Error(w, "Invalid request method.", 405)
-		return
-	}
 	twilioSID := "ACaa018fa0f7631d585a56f6806a5bfc74"
 	twilioAuthToken := "cfe70c8ed40429f0ba961189f554dc90"
 	from := "+16507694283"
@@ -974,7 +915,7 @@ func demoEnrollHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// StatsContent contains information for filling out the stats template.
+// StatsContent contains information for filling out the stats request
 // Policy: GET(*)
 type StatsContent struct {
 	URLPath string
@@ -991,45 +932,40 @@ type StatsContent struct {
 func demoStatsHandler(w http.ResponseWriter, r *http.Request) {
 	lt := time.Now()
 
-	statsTemplate, err := openTemplate("stats")
-	if err == nil {
-		conf := &StatsContent{
-			URLPath:    r.URL.Path,
-			NPings:     strconv.Itoa(pings),
-			NConfigs:   strconv.Itoa(configs),
-			NEntities:  strconv.Itoa(entities),
-			NResources: strconv.Itoa(resources),
-			NRequests:  strconv.Itoa(requests),
-			Host:       r.Host,
-		}
-
-		err = statsTemplate.Execute(w, conf)
+	conf := StatsContent{
+		URLPath:    r.URL.Path,
+		NPings:     strconv.Itoa(pings),
+		NConfigs:   strconv.Itoa(configs),
+		NEntities:  strconv.Itoa(entities),
+		NResources: strconv.Itoa(resources),
+		NRequests:  strconv.Itoa(requests),
+		Host:       r.Host,
 	}
-	if err != nil {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(conf); err != nil {
 		http.Error(w, "Internal server error", 501)
-
-	} else {
-		latencies.Observe(time.Since(lt).Seconds())
+		return
 	}
+
+	latencies.Observe(time.Since(lt).Seconds())
 }
 
 func makeDemoAPIRouter() *mux.Router {
 	router := mux.NewRouter()
-	router.HandleFunc("/access", demoAccessHandler)
-	router.HandleFunc("/access/{devid}", demoAccessByIDHandler)
-	router.HandleFunc("/alerts", demoAlertsHandler)
-	router.HandleFunc("/config/{property:[a-z@/]+}", demoPropertyByNameHandler)
-	router.HandleFunc("/config", demoPropertyHandler)
-	router.HandleFunc("/devices/{ring}", demoDevicesByRingHandler)
-	router.HandleFunc("/devices", demoDevicesHandler)
-	router.HandleFunc("/enroll", demoEnrollHandler)
-	router.HandleFunc("/login", demoLoginHandler)
-	router.HandleFunc("/logout", demoLogoutHandler)
-	router.HandleFunc("/rings", demoRingsHandler)
-	router.HandleFunc("/supreme", demoSupremeHandler)
-	router.HandleFunc("/users", demoUsersHandler)
+	router.HandleFunc("/alerts", demoAlertsHandler).Methods("GET")
+	router.HandleFunc("/config", demoConfigGetHandler).Methods("GET")
+	router.HandleFunc("/config", demoConfigPostHandler).Methods("POST")
+	router.HandleFunc("/devices/{ring}", demoDevicesByRingHandler).Methods("GET")
+	router.HandleFunc("/devices", demoDevicesHandler).Methods("GET")
+	router.HandleFunc("/enroll", demoEnrollHandler).Methods("POST")
+	router.HandleFunc("/login", demoLoginHandler).Methods("POST")
+	router.HandleFunc("/logout", demoLogoutHandler).Methods("GET")
+	router.HandleFunc("/rings", demoRingsHandler).Methods("GET")
+	router.HandleFunc("/supreme", demoSupremeHandler).Methods("GET")
+	router.HandleFunc("/users", demoUsersHandler).Methods("GET")
 	router.HandleFunc("/users/{uuid}", demoUserByUUIDGetHandler).Methods("GET")
 	router.HandleFunc("/users/{uuid}", demoUserByUUIDPostHandler).Methods("POST")
 	router.HandleFunc("/users/{uuid}", demoUserByUUIDDeleteHandler).Methods("DELETE")
+	router.HandleFunc("/stats", demoStatsHandler).Methods("GET")
 	return router
 }

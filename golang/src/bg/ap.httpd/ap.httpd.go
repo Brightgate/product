@@ -18,7 +18,6 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
-	"html/template"
 	"log"
 	"net/http"
 	"os"
@@ -52,8 +51,6 @@ import (
 var (
 	addr = flag.String("promhttp-address", base_def.HTTPD_PROMETHEUS_PORT,
 		"The address to listen on for Prometheus HTTP requests.")
-	templateDir = flag.String("template_dir", "golang/src/ap.httpd",
-		"location of httpd templates")
 	clientWebDir = flag.String("client-web_dir", "client-web",
 		"location of httpd client web root")
 	ports         = listFlag([]string{":80", ":443"})
@@ -92,18 +89,6 @@ const (
 	cookiehmackeyprop = "@/httpd/cookie-hmac-key"
 	cookieaeskeyprop  = "@/httpd/cookie-aes-key"
 )
-
-func openTemplate(name string) (*template.Template, error) {
-	file := name + ".html.got"
-	path := *templateDir + "/" + file
-
-	t, err := template.ParseFiles(path)
-	if err != nil {
-		log.Printf("Failed to parse template %s: %v\n", file, err)
-	}
-
-	return t, err
-}
 
 // listFlag is a flag type that turns a comma-separated input into a slice of
 // strings.
@@ -276,7 +261,6 @@ func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	flag.Var(ports, "http-ports", "The ports to listen on for HTTP requests.")
 	flag.Parse()
-	*templateDir = aputil.ExpandDirPath(*templateDir)
 	*clientWebDir = aputil.ExpandDirPath(*clientWebDir)
 
 	mcpd, err = mcp.New(pname)

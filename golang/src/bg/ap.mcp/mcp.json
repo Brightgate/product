@@ -42,7 +42,6 @@
         "DependsOn": "networkd",
         "Privileged": true,
         "Options": [
-            "-template_dir=/etc/templates/ap.httpd",
             "-client-web_dir=/var/www/client-web"
         ],
         "Modes": [ "gateway", "http-dev" ]
