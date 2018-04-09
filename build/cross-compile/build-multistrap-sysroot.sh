@@ -34,13 +34,15 @@ info "SYSROOT_NAME=$SYSROOT_NAME  (Based on $cfgfile)"
 
 [[ -d $SYSROOT_NAME ]] && fatal "looks like $SYSROOT_NAME already exists"
 
-# Fetch tensorflow upfront-- if you don't have the right 'arc' creds, it will fail.
-# In the future we will want to cross compile TensorFlow as part of our CI workflow.
-# For now just download a pre-built binary.
+# Fetch tensorflow upfront.  In the future we will want to cross compile
+# TensorFlow as part of our CI workflow.  For now just download a pre-built
+# binary.
 info "Fetching tensorflow"
 tmpdir=$(mktemp --directory)
-/opt/net.b10e/bin/arc download F1089 --as "$tmpdir/libtensorflow-r1.4.1-raspberrypi.tar.gz" || \
-       fatal "tensorflow download failed"
+git clone -n ssh://git@ph0.b10e.net:2222/source/Extbin.git $tmpdir/Extbin || fatal "git clone failed"
+git -C $tmpdir/Extbin checkout f2a32eb || fatal "git checkout failed"
+ln $tmpdir/Extbin/tensorflow/libtensorflow-r1.4.1-raspberrypi.tar.gz $tmpdir
+trap "rm -fr $tmpdir" EXIT
 
 /usr/sbin/multistrap -f "$cfgfile" || fatal "multistrap failed!"
 
@@ -65,9 +67,8 @@ tar --to-stdout -x -f "$tmpdir/libtensorflow-r1.4.1-raspberrypi.tar.gz" \
 	 raspberrypi_cross/libtensorflow.so > "$SYSROOT_NAME/usr/local/lib/libtensorflow.so" || \
 	fatal "tar extract failed"
 chmod a+rx "$SYSROOT_NAME/usr/local/lib/libtensorflow.so"
-rm -fr "$tmpdir"
 
-SIZE=$(du -hs "$SYSROOT_NAME")
+SIZE=$(du -hs "$SYSROOT_NAME" | awk '{print $1}')
 info "Final sysroot size: $SIZE"
 
 exit 0
