@@ -576,6 +576,9 @@ func (c *APConfig) GetActiveBlocks() []string {
 	list := make([]string, 0)
 
 	active, _ := c.GetProps("@/firewall/blocked")
+	if active == nil {
+		return list
+	}
 	now := time.Now()
 	for name, node := range active.Children {
 		if node.Expires == nil || now.Before(*node.Expires) {

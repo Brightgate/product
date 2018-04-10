@@ -357,6 +357,8 @@ func demoRingsHandler(w http.ResponseWriter, r *http.Request) {
 	props, err := config.GetProps("@/rings")
 	if err != nil {
 		log.Printf("Failed to get ring list: %v\n", err)
+		http.Error(w, "failed to get rings", 500)
+		return
 	}
 
 	var rings []string
