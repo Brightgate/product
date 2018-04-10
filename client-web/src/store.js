@@ -307,6 +307,7 @@ const actions = {
           kind: dev.Kind,
           confidence: dev.Confidence,
           network_name: dev.HumanName, // XXX
+          ipv4_addr: dev.IPv4Addr,
           os_version: dev.OSVersion,
           owner: dev.OwnerName,
           owner_phone: dev.OwnerPhone,

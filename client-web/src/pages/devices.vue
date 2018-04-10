@@ -32,13 +32,13 @@
             v-bind:title="device.network_name"
             v-bind:link="`/devices/${device.uniqid}/`">
         <div slot="media">
-          <img v-bind:src="'img/nova-solid-' + device.media + '.png'" width=32 height=32>
+          <img :alt="device.category" :src="media_icon(device)" width=32 height=32 />
         </div>
         <div v-if="device.alert">
-          <f7-link open-popover="#virus">🚫</f7-link>
+          <f7-link popover-open="#virus">🚫</f7-link>
         </div>
         <div v-if="device.notification">
-          <f7-link open-popover="#notification">⚠️</f7-link>
+          <f7-link popover-open="#notification">⚠️</f7-link>
         </div>
       </f7-list-item>
 
@@ -97,6 +97,12 @@ export default {
       }).catch((err) => {
         return done(err);
       });
+    },
+
+    media_icon: function(dev) {
+      return dev.active ?
+        `img/nova-solid-${dev.media}-active.png` :
+        `img/nova-solid-${dev.media}.png`;
     },
   },
 };

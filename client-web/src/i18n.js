@@ -35,7 +35,7 @@ export default {
       alerts: {
         serious_alerts: 'Serious Alerts',
         wannacry: '🚫 WannaCry on {device}',
-        important_alert: '🚫 Important Alert!',
+        important_alert: 'Important Alert!',
         msg: {
           '0': 'Brightgate detected WannaCry ransomware on this device.',
           '1': 'For your security, Brightgate has disconnected it from the network and attempted to prevent the ransomware from encrypting more files.',
@@ -69,7 +69,7 @@ export default {
         devices: 'Device Summary',
         devices_reg: 'Registered Devices',
         devices_active: 'Active Devices',
-        devices_scanned: 'Scanned Devices',
+        devices_scanned: 'Vulnerability Scanned Devices',
         config: 'Configuration',
         config_dns_server: 'DNS Server',
         config_default_ring: 'Default Ring',
@@ -89,19 +89,26 @@ export default {
       dev_details: {
         _details: ' - Details',
         device: 'Device',
-        unknown_device: 'Unknown',
+        uncertain_device: '(Tentative Device Identification)', // XXXI18N
+        unknown_model: 'Unknown',
+        unknown_manufacturer: 'Unknown',
         network_name: 'Network Name',
+        ipv4_addr: 'IPv4 Address',
+        hw_addr: 'Hardware Address',
         os_version: 'OS Version',
         os_version_unknown: 'Unknown',
         owner: 'Owner',
-        access: {
-          access_control: 'Access Control',
-          security_ring: 'Security Ring',
-          status: 'Status',
-          blocked: 'Blocked 🚫',
-          blocked_text: 'For your security, Brightgate has blocked this device from your network.  See the alert above for more details.',
-          normal: 'Normal ✅',
-        },
+        access_control: 'Access Control',
+        security_ring: 'Security Ring',
+        vuln_scan: 'Vulnerability Scan',
+        vuln_scan_notyet: 'Not Yet',
+        activity: 'Activity',
+        active_true: 'Active',
+        active_false: 'Inactive',
+        access: 'Access Restriction',
+        access_blocked: 'Blocked 🚫',
+        access_blocked_text: 'For your security, Brightgate has blocked this device from your network.  See the alert above for more details.',
+        access_normal: 'Normal✅',
       },
       enroll_guest: {
         title: 'Brightgate - Enroll Guest',
@@ -167,7 +174,7 @@ export default {
       alerts: {
         serious_alerts: 'Schwerwiegende Warnungen',
         wannacry: '🚫 WannaCry auf {device} entdeckt',
-        important_alert: '🚫 Dringende Warnung!',
+        important_alert: 'Dringende Warnung!',
         msg: {
           '0': 'Brightgate hat Kryptotrojaner WannaCry auf diesem Gerät entdeckt.',
           '1': 'Zu Ihrer Sicherheit hat Brightgate es vom Netzwerk getrennt und versucht, es von der Verschlüsselung weiterer Dateien abzuhalten.',
@@ -201,7 +208,7 @@ export default {
         devices: 'Device Summary',
         devices_reg: 'Registered Devices',
         devices_active: 'Active Devices',
-        devices_scanned: 'Scanned Devices',
+        devices_scanned: 'Vulnerability Scanned Devices',
         config: 'Configuration',
         config_dns_server: 'DNS Server',
         config_default_ring: 'Default Ring',
@@ -221,19 +228,26 @@ export default {
       dev_details: {
         _details: ' - Details',
         device: 'Gerät',
-        unknown_device: 'Unknown', // XXXI18N
+        uncertain_device: '(Tentative Device Identification)', // XXXI18N
+        unknown_model: 'Unknown',        // XXXI18N
+        unknown_manufacturer: 'Unknown Manufacturer', // XXXI18N
         network_name: 'Netzwerk Name',
+        ipv4_addr: 'IPv4 Address',       // XXXI18N
+        hw_addr: 'Hardware Address',     // XXXI18N
         os_version: 'OS Version',
         os_version_unknown: 'Unknown', // XXXI18N
         owner: 'Besitzer',
-        access: {
-          access_control: 'Zugangskontrolle',
-          security_ring: 'Ring',
-          status: 'Status',
-          blocked: 'Geblockt 🚫',
-          blocked_text: 'Zu Ihrer Sicherheit hat Brightgate dieses Gerät von Ihrem Netzwerk getrennt. Sehen Sie die Warnung weiter oben für mehr Details.',
-          normal: 'Normal ✅',
-        },
+        access_control: 'Zugangskontrolle',
+        security_ring: 'Ring',
+        vuln_scan: 'Vulnerability Scan', // XXXI18N
+        vuln_scan_notyet: 'Not Yet',  // XXXI18N
+        activity: 'Activity',         // XXXI18N
+        active_true: 'Active',        // XXXI18N
+        active_false: 'Inactive',     // XXXI18N
+        access: 'Access Restriction', // XXXI18N
+        access_blocked: 'Geblockt 🚫',
+        access_blocked_text: 'Zu Ihrer Sicherheit hat Brightgate dieses Gerät von Ihrem Netzwerk getrennt. Sehen Sie die Warnung weiter oben für mehr Details.',
+        access_normal: 'Normal ✅',
       },
       enroll_guest: {
         title: 'Brightgate – Gastbenutzer Registrieren',

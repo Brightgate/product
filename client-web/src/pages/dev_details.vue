@@ -12,40 +12,67 @@
     <f7-navbar :back-link="$t('message.general.back')" :title="dev.network_name + $t('message.dev_details._details')" sliding>
     </f7-navbar>
 
-    <div v-if="dev.notification">
-      <f7-block-title>{{ $t("message.notifications.security_notifications") }}</f7-block-title>
-      <f7-block inner>
-        <li>{{ $t("message.notifications.msg.0") }}</li>
-        <li>{{ $t("message.notifications.msg.1") }}</li>
-        <li>{{ $t("message.notifications.msg.2") }}</li>
-      </f7-block>
+    <f7-block>
+      <f7-row>
+        <!-- use margin-auto to center the icon -->
+        <f7-col style="margin: auto" width="20">
+          <img :src="media_icon" width=32 height=32>
+        </f7-col>
+        <f7-col width="80">
+          <div style="font-size: 16pt; font-weight: bold">{{ dev_model }}</div>
+          <div style="font-size: 12pt; font-weight: normal; color: rgba(0,0,0,.5);">{{ dev_manufacturer }}</div>
+          <div v-if="dev.certainty === 'medium'" style="font-size: 10pt; font-weight: normal; color: rgba(0,0,0,0.5);">
+            {{ $t('message.dev_details.uncertain_device') }}
+          </div>
+        </f7-col>
+      </f7-row>
 
-    </div>
+      <f7-row v-if="dev.alert">
+        <!-- use margin-auto to center the icon -->
+        <f7-col style="margin: auto" width="20">
+          <f7-icon f7="bolt_round_fill" size="32px" color="red" />
+        </f7-col>
+        <f7-col width="80">
+          <!-- tweak the ul rendering not to inset so much (default is 40px) -->
+          <ul style="-webkit-padding-start: 20px; padding-left: 20px;">
+            <li>{{ $t("message.alerts.msg.0") }}</li>
+            <li>{{ $t("message.alerts.msg.1") }}</li>
+            <li>{{ $t("message.alerts.msg.2") }}</li>
+          </ul>
+        </f7-col>
+      </f7-row>
 
-    <div v-if="dev.alert">
-      <f7-block-title>{{ $t("message.alerts.important_alert") }}</f7-block-title>
-      <f7-block inner>
-        <li>{{ $t("message.alerts.msg.0") }}</li>
-        <li>{{ $t("message.alerts.msg.1") }}</li>
-        <li>{{ $t("message.alerts.msg.2") }}</li>
-      </f7-block>
-    </div>
+      <f7-row v-if="dev.notification">
+        <f7-col style="margin: auto" width="20">
+          <f7-icon f7="bolt_round_fill" size="32px" color="yellow" />
+        </f7-col>
+        <f7-col width="80">
+          <!-- tweak the ul rendering not to inset so much (default is 40px) -->
+          <ul style="-webkit-padding-start: 20px; padding-left: 20px;">
+            <li>{{ $t("message.notifications.msg.0") }}</li>
+            <li>{{ $t("message.notifications.msg.1") }}</li>
+            <li>{{ $t("message.notifications.msg.2") }}</li>
+          </ul>
+        </f7-col>
+      </f7-row>
+    </f7-block>
 
     <f7-list>
 
-      <f7-list-item v-if="dev.certainty !== 'low'"
-          :title="$t('message.dev_details.device')"
-          :footer="dev.manufacturer">
-        <span>{{ dev.model }}
-        <f7-icon v-if="dev.certainty === 'medium'" f7="help" /></span>
+      <f7-list-item :title="$t('message.dev_details.os_version')">{{ os_version }}</f7-list-item>
+      <f7-list-item :title="$t('message.dev_details.network_name')">{{ dev.network_name }}</f7-list-item>
+      <f7-list-item :title="$t('message.dev_details.ipv4_addr')">{{ dev.ipv4_addr }}</f7-list-item>
+      <f7-list-item :title="$t('message.dev_details.hw_addr')">{{ dev.hwaddr }}</f7-list-item>
+
+      <f7-list-item :title="$t('message.dev_details.activity')">
+        {{ activity }}
       </f7-list-item>
-      <f7-list-item v-else
-          :title="$t('message.dev_details.device')">
-        {{ $t('message.dev_details.unknown_device') }}
+
+      <f7-list-item :title="$t('message.dev_details.vuln_scan')">
+        {{ lastVulnScan }}
       </f7-list-item>
 
       <f7-list-item :title="$t('message.dev_details.os_version')">{{ os_version }}</f7-list-item>
-      <f7-list-item :title="$t('message.dev_details.network_name')">{{ dev.network_name }}</f7-list-item>
       <f7-list-item
         :title="$t('message.dev_details.owner')"
         :link="'/users/'">
@@ -76,31 +103,28 @@
       </f7-list-item>
     </f7-list>
 
-    <f7-block-title>{{ $t("message.dev_details.access.access_control") }}</f7-block-title>
+    <f7-block-title>{{ $t("message.dev_details.access_control") }}</f7-block-title>
     <f7-list form>
-      <f7-list-item>
-      <f7-label>{{ $t("message.dev_details.access.security_ring") }}</f7-label>
-      <span v-if="ring_changing" class="preloader"></span>
-      <f7-input v-else type="select" :value="dev.ring" @input="changeRing($event.target.value)">
-        <option v-for="ring in rings" v-bind:value="ring" v-bind:key="ring">{{ring}}</option>
-      </f7-input>
+      <f7-list-item item-input inline-label>
+        <f7-label>{{ $t('message.dev_details.security_ring') }}</f7-label>
+        <span v-if="ring_changing" class="preloader"></span>
+        <f7-input v-else type="select" :value="dev.ring" @input="changeRing($event.target.value)">
+          <option v-for="ring in rings" v-bind:value="ring" v-bind:key="ring">{{ring}}</option>
+        </f7-input>
       </f7-list-item>
-    </f7-list>
-
-    <f7-list>
       <f7-list-item v-if="dev.alert"
-          :title="$t('message.dev_details.access.status')"
-          :after="$t('message.dev_details.access.blocked')"
-          :text="$t('message.dev_details.access.blocked_text')" />
+          :title="$t('message.dev_details.access')"
+          :after="$t('message.dev_details.access_blocked')"
+          :text="$t('message.dev_details.access_blocked_text')" />
       <f7-list-item v-else
-          :title="$t('message.dev_details.access.status')"
-          :after="$t('message.dev_details.access.normal')" />
+          :title="$t('message.dev_details.access')"
+          :after="$t('message.dev_details.access_normal')" />
     </f7-list>
-
   </f7-page>
 </template>
 <script>
 import assert from 'assert';
+import moment from 'moment';
 
 export default {
   beforeCreate: function() {
@@ -137,6 +161,31 @@ export default {
   computed: {
     os_version: function() {
       return this.dev.os_version ? this.dev.os_version : this.$t('message.dev_details.os_version_unknown');
+    },
+    dev_model: function() {
+      return (this.dev.certainty === 'low') ?
+        this.$t('message.dev_details.unknown_model') :
+        this.dev.model;
+    },
+    dev_manufacturer: function() {
+      return (this.dev.certainty === 'low') ?
+        this.$t('message.dev_details.unknown_manufacturer') :
+        this.dev.manufacturer;
+    },
+    media_icon: function() {
+      return this.dev.active ?
+        `img/nova-solid-${this.dev.media}-active.png` :
+        `img/nova-solid-${this.dev.media}.png`;
+    },
+    activity: function() {
+      return this.dev.active ?
+        this.$t('message.dev_details.active_true') :
+        this.$t('message.dev_details.active_false');
+    },
+    lastVulnScan: function() {
+      return this.dev.last_vuln_scan ?
+        moment(this.dev.last_vuln_scan).fromNow() :
+        this.$t('message.dev_details.vuln_scan_notyet');
     },
     dev: function() {
       const uniqid = this.$f7route.params.UniqID;

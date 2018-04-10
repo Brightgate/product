@@ -43,6 +43,7 @@ export default [
     hwaddr: 'c8:bc:c8:83:1c:45',
     ring: 'standard',
     active: true,
+    last_scan: '2018-03-27T20:53:45+00:00',
   },
   {
     manufacturer: 'Samsung',
@@ -128,7 +129,8 @@ export default [
     media: 'laptop-1',
     uniqid: 'aa:aa:c8:83:1c:11',
     hwaddr: 'aa:aa:c8:83:1c:11',
-    ring: 'standard',
+    ring: 'quarantine',
+    last_scan: '2018-04-11T20:53:02+00:00',
     active: false,
   },
   {

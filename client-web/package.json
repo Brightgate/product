@@ -38,6 +38,7 @@
     "framework7-vue": "^2.1.2",
     "libphonenumber-js": "^1.1.5",
     "lodash": "^4.17.5",
+    "moment": "^2.22.0",
     "superagent": "^3.8.2",
     "superagent-bluebird-promise": "^4.2.0",
     "vue": "^2.5.16",
