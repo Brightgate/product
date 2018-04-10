@@ -16,13 +16,16 @@ import retry from 'bluebird-retry';
 import Vue from 'vue';
 import Vuex from 'vuex';
 
-import mockDevices from './mock_devices';
+import mockDevicesRef from './mock_devices';
 import mockUsers from './mock_users';
+
+// Run mockDevices through our property deriver
+const mockDevices = _.map(mockDevicesRef, computeDeviceProps);
 
 Vue.use(Vuex);
 
-// XXX this needs to get replaced with constants from devices.json
-const device_category_all = ['recent', 'phone', 'computer', 'media', 'iot'];
+// XXX this needs further rationalization with devices.json
+const device_category_all = ['recent', 'phone', 'computer', 'printer', 'media', 'iot', 'unknown'];
 
 const mockNetworkConfig = {
   ssid: 'mockSSID',
@@ -249,6 +252,39 @@ function makeDeviceCategories(devices) {
   return devices;
 }
 
+function computeDeviceProps(device) {
+  const k2c = {
+    'android': 'phone',
+    'ios': 'phone',
+    'computer': 'computer',
+    'iot': 'iot',
+    'unknown': 'unknown',
+    'media': 'media',
+    'printer': 'printer',
+  };
+  const k2m = {
+    'android': 'mobile-phone-1',
+    'ios': 'mobile-phone-1',
+    'computer': 'laptop-1',
+    'iot': 'webcam-1',
+    'unknown': 'interface-question-mark',
+    'media': 'television',
+    'printer': 'tablet', // XXX for now
+  };
+  assert(typeof(device.confidence) === 'number');
+  // derived from logic in configctl
+  if (device.confidence < 0.5) {
+    device.category = 'unknown';
+    device.media = k2m['unknown'];
+    device.certainty = 'low';
+  } else {
+    device.certainty = device.confidence < 0.87 ? 'medium' : 'high';
+    device.category = device.kind in k2c ? k2c[device.kind] : k2c['unknown'];
+    device.media = device.kind in k2m ? k2m[device.kind] : k2m['unknown'];
+  }
+  return device;
+}
+
 const actions = {
   // Load the list of devices from the server.  merge it with mock devices
   // defined locally (if using).
@@ -265,21 +301,22 @@ const actions = {
     return retry(devicesGetP, {interval: RETRY_DELAY, max_tries: 10}
     ).then((res_json) => {
       const mapped_devices = _.map(res_json.Devices, (dev) => {
-        return {
-          category: 'phone',
-          device: `${dev.Manufacturer} ${dev.Model}`,
+        return computeDeviceProps({
+          manufacturer: dev.Manufacturer,
+          model: dev.Model,
+          kind: dev.Kind,
+          confidence: dev.Confidence,
           network_name: dev.HumanName, // XXX
           os_version: dev.OSVersion,
           owner: dev.OwnerName,
           owner_phone: dev.OwnerPhone,
           owner_email: '',
           activated: '',
-          media: 'mobile-phone-1',
           uniqid: dev.HwAddr,
           hwaddr: dev.HwAddr,
           ring: dev.Ring,
           active: dev.Active,
-        };
+        });
       });
 
       _.defaults(devices.by_uniqid, _.keyBy(mapped_devices, 'uniqid'));

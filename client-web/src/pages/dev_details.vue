@@ -31,9 +31,19 @@
       </f7-block>
     </div>
 
-    <f7-block-title>{{ $t("message.dev_details.device_details") }}</f7-block-title>
-    <f7-list inner>
-      <f7-list-item :title="$t('message.dev_details.device')">{{ dev.device }}</f7-list-item>
+    <f7-list>
+
+      <f7-list-item v-if="dev.certainty !== 'low'"
+          :title="$t('message.dev_details.device')"
+          :footer="dev.manufacturer">
+        <span>{{ dev.model }}
+        <f7-icon v-if="dev.certainty === 'medium'" f7="help" /></span>
+      </f7-list-item>
+      <f7-list-item v-else
+          :title="$t('message.dev_details.device')">
+        {{ $t('message.dev_details.unknown_device') }}
+      </f7-list-item>
+
       <f7-list-item :title="$t('message.dev_details.os_version')">{{ os_version }}</f7-list-item>
       <f7-list-item :title="$t('message.dev_details.network_name')">{{ dev.network_name }}</f7-list-item>
       <f7-list-item

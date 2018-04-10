@@ -98,15 +98,10 @@ func printClient(mac string, client *apcfg.ClientInfo) {
 		}
 	}
 
-	confidence, err := strconv.ParseFloat(client.Confidence, 32)
-	if err != nil {
-		confidence = 0.0
-	}
-
 	// Don't confuse the user with a device ID unless the confidence
 	// is better than even.
 	identString := ""
-	if confidence >= 0.5 {
+	if client.Confidence >= 0.5 {
 		device, err := apcfgd.GetDevicePath("@/devices/" + client.Identity)
 		if err == nil {
 			identString = fmt.Sprintf("%s %s", device.Vendor, device.ProductName)
@@ -119,7 +114,7 @@ func printClient(mac string, client *apcfg.ClientInfo) {
 	// Words of Estimative Probability), prepend the device ID with
 	// a question mark.
 	confidenceMarker := ""
-	if confidence < 0.87 {
+	if client.Confidence < 0.87 {
 		confidenceMarker = "? "
 	}
 

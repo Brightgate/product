@@ -88,8 +88,8 @@ export default {
       },
       dev_details: {
         _details: ' - Details',
-        device_details: 'Device Details',
         device: 'Device',
+        unknown_device: 'Unknown',
         network_name: 'Network Name',
         os_version: 'OS Version',
         os_version_unknown: 'Unknown',
@@ -220,8 +220,8 @@ export default {
       },
       dev_details: {
         _details: ' - Details',
-        device_details: 'Gerätdetails',
         device: 'Gerät',
+        unknown_device: 'Unknown', // XXXI18N
         network_name: 'Netzwerk Name',
         os_version: 'OS Version',
         os_version_unknown: 'Unknown', // XXXI18N

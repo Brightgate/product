@@ -68,8 +68,8 @@ type ClientInfo struct {
 	IPv4       net.IP     // Network address
 	Expires    *time.Time // DHCP lease expiration time
 	DHCPName   string     // Requested hostname
-	Identity   string     // Our current best guess at the client type
-	Confidence string     // Our confidence for the Identity guess
+	Identity   string     // Current best guess at the client type
+	Confidence float64    // Confidence for the Identity guess
 	DNSPrivate bool       // We don't collect DNS queries
 }
 
@@ -378,10 +378,11 @@ func getStringVal(root *PropertyNode, name string) (string, error) {
 }
 
 func getIntVal(root *PropertyNode, name string) (int, error) {
+	var val string
 	var rval int
 	var err error
 
-	if val, err := getProp(root, name); err == nil {
+	if val, err = getProp(root, name); err == nil {
 		if rval, err = strconv.Atoi(val); err != nil {
 			err = fmt.Errorf("malformed %s property: %s",
 				name, val)
@@ -391,11 +392,27 @@ func getIntVal(root *PropertyNode, name string) (int, error) {
 	return rval, err
 }
 
+func getFloat64Val(root *PropertyNode, name string) (float64, error) {
+	var val string
+	var rval float64
+	var err error
+
+	if val, err = getProp(root, name); err == nil {
+		if rval, err = strconv.ParseFloat(val, 64); err != nil {
+			err = fmt.Errorf("malformed %s property: %s",
+				name, val)
+		}
+	}
+
+	return rval, err
+}
+
 func getBoolVal(root *PropertyNode, name string) (bool, error) {
+	var val string
 	var rval bool
 	var err error
 
-	if val, err := getProp(root, name); err == nil {
+	if val, err = getProp(root, name); err == nil {
 		if rval, err = strconv.ParseBool(val); err != nil {
 			err = fmt.Errorf("malformed %s property: %s",
 				name, val)
@@ -455,7 +472,8 @@ func (c *APConfig) GetRings() RingMap {
 }
 
 func getClient(client *PropertyNode) *ClientInfo {
-	var ring, dns, dhcp, identity, confidence string
+	var ring, dns, dhcp, identity string
+	var confidence float64
 	var ipv4 net.IP
 	var exp *time.Time
 	var private bool
@@ -463,7 +481,7 @@ func getClient(client *PropertyNode) *ClientInfo {
 	private, _ = getBoolVal(client, "dns_private")
 	ring, _ = getStringVal(client, "ring")
 	identity, _ = getStringVal(client, "identity")
-	confidence, _ = getStringVal(client, "confidence")
+	confidence, _ = getFloat64Val(client, "confidence")
 	dhcp, _ = getStringVal(client, "dhcp_name")
 	dns, _ = getStringVal(client, "dns_name")
 	if addr, ok := client.Children["ipv4"]; ok {

@@ -73,11 +73,13 @@ const device_category_description = {
   recent: 'Recent Attempted Connections',
   phone: 'Phones & Tablets',
   computer: 'Computers',
+  printer: 'Printers/Scanners',
   media: 'Media',
   iot: 'Things',
+  unknown: 'Unknown or Unidentifiable',
 };
 
-const device_category_order = ['recent', 'phone', 'computer', 'media', 'iot'];
+const device_category_order = ['recent', 'phone', 'computer', 'printer', 'media', 'iot', 'unknown'];
 
 export default {
   data: function() {

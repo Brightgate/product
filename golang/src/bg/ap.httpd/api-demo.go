@@ -224,6 +224,7 @@ type daDevice struct {
 	Manufacturer string
 	Model        string
 	Kind         string
+	Confidence   float64
 	Ring         string
 	HumanName    string
 	DNSName      string
@@ -298,10 +299,8 @@ func buildDeviceResponse(hwaddr string, client *apcfg.ClientInfo) daDevice {
 		cd.Manufacturer = lpn.Vendor
 		cd.Model = lpn.ProductName
 		cd.Kind = lpn.Devtype
+		cd.Confidence = client.Confidence
 	}
-
-	// XXX We are not reporting our confidence value back.  Maybe of
-	// use in UX.
 
 	return cd
 }
