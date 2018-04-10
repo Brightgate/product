@@ -233,6 +233,7 @@ type daDevice struct {
 	OwnerName    string
 	OwnerPhone   string
 	MediaLink    string
+	Active       bool
 }
 
 type daDevices struct {
@@ -282,6 +283,7 @@ func buildDeviceResponse(hwaddr string, client *apcfg.ClientInfo) daDevice {
 
 	cd.Ring = client.Ring
 	cd.IPv4Addr = client.IPv4.String()
+	cd.Active = client.IsActive()
 
 	identity, err := strconv.Atoi(client.Identity)
 	if err != nil {

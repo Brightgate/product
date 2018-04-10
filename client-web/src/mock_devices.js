@@ -22,6 +22,7 @@ export default [
     uniqid: 'c8:bc:c8:3a:8a:24',
     hwaddr: 'c8:bc:c8:3a:8a:24',
     ring: 'standard',
+    active: false,
   },
   {
     category: 'phone',
@@ -36,6 +37,7 @@ export default [
     uniqid: 'c8:bc:c8:83:1c:45',
     hwaddr: 'c8:bc:c8:83:1c:45',
     ring: 'standard',
+    active: true,
   },
   {
     category: 'phone',
@@ -50,6 +52,7 @@ export default [
     uniqid: 'bc:47:60:8d:d5:5b',
     hwaddr: 'bc:47:60:8d:d5:5b',
     ring: 'standard',
+    active: true,
   },
   {
     category: 'phone',
@@ -65,6 +68,7 @@ export default [
     uniqid: 'c8:bc:c8:83:1c:33',
     hwaddr: 'c8:bc:c8:83:1c:33',
     ring: 'standard',
+    active: false,
   },
   {
     category: 'computer',
@@ -79,6 +83,7 @@ export default [
     uniqid: 'c8:bc:c8:83:1c:11',
     hwaddr: 'c8:bc:c8:83:1c:11',
     ring: 'standard',
+    active: false,
   },
   {
     category: 'computer',
@@ -93,6 +98,7 @@ export default [
     uniqid: 'c8:aa:c8:83:1c:11',
     hwaddr: 'c8:aa:c8:83:1c:11',
     ring: 'standard',
+    active: false,
   },
   {
     category: 'computer',
@@ -108,6 +114,7 @@ export default [
     uniqid: 'aa:aa:c8:83:1c:11',
     hwaddr: 'aa:aa:c8:83:1c:11',
     ring: 'standard',
+    active: false,
   },
   {
     category: 'media',
@@ -122,6 +129,7 @@ export default [
     uniqid: '94:9F:3E:8A:87:27',
     hwaddr: '94:9F:3E:8A:87:27',
     ring: 'standard',
+    active: false,
   },
   {
     category: 'media',
@@ -136,6 +144,7 @@ export default [
     uniqid: 'c8:bc:c8:83:1c:11',
     hwaddr: 'c8:bc:c8:83:1c:11',
     ring: 'standard',
+    active: false,
   },
   {
     category: 'media',
@@ -151,6 +160,7 @@ export default [
     uniqid: 'c8:bc:c8:83:1c:22',
     hwaddr: 'c8:bc:c8:83:1c:22',
     ring: 'standard',
+    active: false,
   },
   {
     category: 'iot',
@@ -165,6 +175,7 @@ export default [
     uniqid: 'c8:bc:c8:89:1c:22',
     hwaddr: 'c8:bc:c8:89:1c:22',
     ring: 'standard',
+    active: false,
   },
   {
     category: 'iot',
@@ -179,6 +190,7 @@ export default [
     uniqid: 'c1:bc:c1:19:1c:22',
     hwaddr: 'c1:bc:c1:19:1c:22',
     ring: 'standard',
+    active: false,
   },
   {
     category: 'iot',
@@ -193,5 +205,6 @@ export default [
     uniqid: 'c1:ac:c1:19:1c:22',
     hwaddr: 'c1:ac:c1:19:1c:22',
     ring: 'standard',
+    active: false,
   },
 ];

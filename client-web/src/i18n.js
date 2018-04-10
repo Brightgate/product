@@ -24,6 +24,7 @@ export default {
         },
         tools: {
           tools: 'Tools',
+          site_status: 'Site Status',
           manage_devices: 'Manage Devices ({device_count})',
           enroll_guest: 'Enroll a Guest User',
           login: 'Login',
@@ -59,6 +60,19 @@ export default {
         confirm: 'Confirm',
         details: 'Details',
         need_login: 'You must be logged in',
+      },
+      site_status: {
+        title: 'Brightgate - Site Status',
+        ssids: 'SSIDs',
+        ssid_psk: 'Pre-Shared Key SSID',
+        ssid_eap: 'Enterprise Auth SSID',
+        devices: 'Device Summary',
+        devices_reg: 'Registered Devices',
+        devices_active: 'Active Devices',
+        devices_scanned: 'Scanned Devices',
+        config: 'Configuration',
+        config_dns_server: 'DNS Server',
+        config_default_ring: 'Default Ring',
       },
       devices: {
         title: 'Brightgate - Devices',
@@ -142,6 +156,7 @@ export default {
         },
         tools: {
           tools: 'Werkzeuge',
+          site_status: 'Site Status', // XXXI18N
           manage_devices: 'Geräte verwalten ({device_count})',
           enroll_guest: 'Registrieren Sie einen Gastbenutzer',
           login: 'Anmelden',
@@ -177,6 +192,19 @@ export default {
         confirm: 'Fortsetzen',
         details: 'Details',
         need_login: 'Sie müssen angemeldet sein',
+      },
+      site_status: { // XXXI18N
+        title: 'Brightgate- Site Status',
+        ssids: 'SSIDs',
+        ssid_psk: 'Pre-Shared Key SSID',
+        ssid_eap: 'Enterprise Auth SSID',
+        devices: 'Device Summary',
+        devices_reg: 'Registered Devices',
+        devices_active: 'Active Devices',
+        devices_scanned: 'Scanned Devices',
+        config: 'Configuration',
+        config_dns_server: 'DNS Server',
+        config_default_ring: 'Default Ring',
       },
       devices: {
         title: 'Brightgate - Geräte',

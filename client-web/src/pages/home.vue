@@ -38,6 +38,11 @@
   <f7-block-title>{{ $t("message.home.tools.tools") }}</f7-block-title>
   <f7-list>
     <f7-list-item
+        link="/site_status/"
+        :title="$t('message.home.tools.site_status')"
+        :class="Is_Logged_In ? '' : 'disabled'">
+    </f7-list-item>
+    <f7-list-item
         link="/devices/"
         :title="$t('message.home.tools.manage_devices', {'device_count': Device_Count})"
         :class="Is_Logged_In ? '' : 'disabled'">

@@ -24,30 +24,40 @@ Vue.use(Vuex);
 // XXX this needs to get replaced with constants from devices.json
 const device_category_all = ['recent', 'phone', 'computer', 'media', 'iot'];
 
-// Determines whether mock devices are enabled or disabled by default
-const enable_mock = false;
+const mockNetworkConfig = {
+  ssid: 'mockSSID',
+  dnsServer: '1.1.1.1:53',
+  defaultRing: 'standard',
+};
 
-let initDevices;
-let initUsers;
-if (enable_mock) {
-  initDevices = {
-    by_uniqid: _.keyBy(mockDevices, 'uniqid'),
-    categories: {},
-  };
-  initUsers = _.cloneDeep(mockUsers);
-} else {
-  initDevices = {
-    by_uniqid: {},
-    categories: {},
-  };
-  initUsers = {};
-}
 const mockRings = [
   'core',
   'standard',
   'devices',
   'quarantine',
 ];
+
+// Determines whether mock devices are enabled or disabled by default
+const enableMock = false;
+
+let initDevices;
+let initUsers;
+let initNetworkConfig;
+if (enableMock) {
+  initDevices = {
+    by_uniqid: _.keyBy(mockDevices, 'uniqid'),
+    categories: {},
+  };
+  initUsers = _.cloneDeep(mockUsers);
+  initNetworkConfig = _.cloneDeep(mockNetworkConfig);
+} else {
+  initDevices = {
+    by_uniqid: {},
+    categories: {},
+  };
+  initUsers = {};
+  initNetworkConfig = {};
+}
 
 makeDeviceCategories(initDevices);
 
@@ -61,21 +71,28 @@ const state = {
   loggedIn: false,
   fakeLogin: false,
   devices: _.cloneDeep(initDevices),
-  deviceCount: Object.keys(initDevices.by_uniqid).length,
+  deviceCount: _.size(initDevices.by_uniqid),
+  deviceCountActive: _.size(_.pickBy(initDevices.byUniqID, 'active')),
   rings: [],
   users: _.cloneDeep(initUsers),
   userCount: Object.keys(initUsers).length,
-  enable_mock: enable_mock,
+  networkConfig: _.cloneDeep(initNetworkConfig),
+  enableMock: enableMock,
 };
 
 const mutations = {
   setDevices(state, newDevices) {
     state.devices = newDevices;
-    state.deviceCount = Object.keys(newDevices.by_uniqid).length;
+    state.deviceCount = _.size(newDevices.by_uniqid);
+    state.deviceCountActive = _.size(_.pickBy(state.devices.by_uniqid, {active: true}));
   },
 
   setRings(state, newRings) {
     state.rings = newRings;
+  },
+
+  setNetworkConfig(state, newConfig) {
+    state.networkConfig = newConfig;
   },
 
   setUsers(state, newUsers) {
@@ -94,7 +111,7 @@ const mutations = {
   },
 
   toggleMock(state) {
-    state.enable_mock = !state.enable_mock;
+    state.enableMock = !state.enableMock;
   },
 
   toggleFakeLogin(state) {
@@ -135,6 +152,7 @@ const getters = {
   },
 
   Device_Count: (state) => {return state.deviceCount;},
+  Device_Count_Active: (state) => {return state.deviceCountActive;},
 
   Rings: (state) => {return state.rings;},
 
@@ -142,8 +160,28 @@ const getters = {
 
   User_By_UUID: (state) => (uuid) => {return state.users[uuid];},
 
-  Mock: (state) => {return state.enable_mock;},
+  Network_Config: (state) => {return state.networkConfig;},
+
+  Mock: (state) => {return state.enableMock;},
 };
+
+// Get a property's value
+function fetchPropP(property, default_value) {
+  console.log(`fetchPropP(${property}, ${default_value})`);
+  return superagent.get('/apid/config'
+  ).query(property
+  ).timeout(STD_TIMEOUT
+  ).then((res) => {
+    console.log(`fetchPropP(${property}): returning ${res.body}`);
+    return res.body;
+  }).catch((err) => {
+    if (default_value !== undefined) {
+      console.log(`fetchPropP(${property}): defaulting`);
+      return Promise.resolve(default_value);
+    }
+    throw err;
+  });
+}
 
 // Make up to maxcount attempts to see if property has changed to an
 // expected value.
@@ -220,8 +258,8 @@ const actions = {
       categories: {},
       by_uniqid: {},
     };
-    if (context.state.enable_mock) {
-      console.log(`Store: fetchDevices: enable_mock = ${context.state.enable_mock}`);
+    if (context.state.enableMock) {
+      console.log(`Store: fetchDevices: enableMock = ${context.state.enableMock}`);
       _.defaults(devices.by_uniqid, _.keyBy(mockDevices, 'uniqid'));
     }
     return retry(devicesGetP, {interval: RETRY_DELAY, max_tries: 10}
@@ -240,6 +278,7 @@ const actions = {
           uniqid: dev.HwAddr,
           hwaddr: dev.HwAddr,
           ring: dev.Ring,
+          active: dev.Active,
         };
       });
 
@@ -259,13 +298,33 @@ const actions = {
       assert(typeof res.body === 'object');
       context.commit('setRings', res.body);
     }).catch((err) => {
-      if (context.state.enable_mock) {
+      if (context.state.enableMock) {
         console.log('fetchRings: Using mocked rings');
         context.commit('setRings', mockRings);
         return;
       }
       console.log(`fetchRings: Error ${err}`);
       throw err;
+    });
+  },
+
+  // Load the list of rings from the server.
+  fetchNetworkConfig(context) {
+    console.log('fetchNetworkConfig: GET /apid/config');
+    return Promise.props({
+      ssid: fetchPropP('@/network/ssid'),
+      dnsServer: fetchPropP('@/network/dnsserver', ''),
+      defaultRing: fetchPropP('@/network/default_ring', ''),
+    }).catch((err) => {
+      if (context.state.enableMock) {
+        console.log('fetchNetworkConfig: Using mocked networkConfig');
+        return mockNetworkConfig;
+      } else {
+        console.log(`fetchNetworkConfig: Error ${err}`);
+        throw err;
+      }
+    }).then((netConfig) => {
+      context.commit('setNetworkConfig', netConfig);
     });
   },
 
@@ -314,11 +373,11 @@ const actions = {
   // Load the list of users from the server.
   fetchUsers(context) {
     const user_result = {};
-    if (context.state.enable_mock) {
+    if (context.state.enableMock) {
       _.defaults(user_result, mockUsers);
     }
     console.log('fetchUsers: GET /apid/users');
-    if (context.state.enable_mock) {
+    if (context.state.enableMock) {
       _.defaults(user_result, mockUsers);
     }
     return superagent.get('/apid/users'

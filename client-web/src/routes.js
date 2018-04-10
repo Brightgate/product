@@ -8,6 +8,7 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 
+import SiteStatus from './pages/site_status.vue';
 import DevDetails from './pages/dev_details.vue';
 import Devices from './pages/devices.vue';
 import EnrollGuest from './pages/enroll_guest.vue';
@@ -37,6 +38,10 @@ export default [
   {
     path: '/malware_warn/',
     component: MalwareWarn,
+  },
+  {
+    path: '/site_status/',
+    component: SiteStatus,
   },
   {
     path: '/users/',
