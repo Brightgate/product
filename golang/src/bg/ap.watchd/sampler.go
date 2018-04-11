@@ -539,7 +539,6 @@ func sampleFini(w *watcher) {
 	samplerRunning = false
 	auditTicker.Stop()
 	printStats()
-	blocklistFini()
 
 	w.running = false
 }

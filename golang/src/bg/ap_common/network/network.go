@@ -263,7 +263,36 @@ var legalHostname = regexp.MustCompile(`^([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$
 // A hostname may contain only letters, digits, and hyphens.  It may neither
 // start nor end with hyphen.
 func ValidHostname(hostname string) bool {
-	lower := strings.ToLower(hostname)
+	if len(hostname) == 0 || len(hostname) > 63 {
+		return false
+	}
 
-	return legalHostname.Match([]byte(lower))
+	lower := []byte(strings.ToLower(hostname))
+	return legalHostname.Match(lower)
+}
+
+var legalDNSlabel = regexp.MustCompile(`^([a-z0-9_]|[_a-z0-9][_a-z0-9\-]*[_a-z0-9])$`)
+var minimalDNSlabel = regexp.MustCompile(`[a-z0-9]`)
+
+func validDNSLabel(label string) bool {
+	if len(label) == 0 || len(label) > 63 {
+		return false
+	}
+
+	lower := []byte(strings.ToLower(label))
+	return legalDNSlabel.Match(lower) && minimalDNSlabel.Match(lower)
+}
+
+// ValidDNSName checks whether the provided name is a valid DNS name.  A DNS
+// name may have multiple labels.  Each label must satisfy the same constraints
+// as a Hostname, but the underscore character may be used anywhere.
+func ValidDNSName(name string) bool {
+	labels := strings.Split(name, ".")
+	for _, label := range labels {
+		if !validDNSLabel(label) {
+			return false
+		}
+	}
+
+	return true
 }

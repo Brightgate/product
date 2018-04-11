@@ -12,7 +12,6 @@
 /*
  * Elementary DNSv4 server
  *
- * Local DNS-specific files are kept in <aproot>/var/spool/dns4d/.
  * Anti-phishing datafiles are kept in <aproot>/var/spool/antiphishing/.
  *
  * XXX Need to handle RFC 2606 (reserved gTLDs that should be intercepted)
@@ -25,6 +24,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"log"
 	"net"
@@ -43,7 +43,6 @@ import (
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
-	"bg/data/phishtank"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/miekg/dns"
@@ -51,9 +50,18 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+const (
+	whitelistName = "whitelist.csv"
+	blacklistName = "dns_blocklist.csv"
+)
+
 var (
-	addr = flag.String("listen-address", base_def.DNSD_PROMETHEUS_PORT,
+	addr = flag.String("pport", base_def.DNSD_PROMETHEUS_PORT,
 		"The address to listen on for HTTP requests.")
+
+	dataDir = flag.String("dir", "/var/spool/antiphishing",
+		"antiphishing data directory")
+
 	brokerd *broker.Broker
 	config  *apcfg.APConfig
 
@@ -62,11 +70,8 @@ var (
 		Help: "DNS query resolution time",
 	})
 
-	captiveSubnet *net.IPNet
-
-	// If site's phishing score is below this, send to our IP
-	phishThreshold = 0
-	phishScorer    phishtank.Scorer
+	dnsWhitelist = make(map[string]bool)
+	dnsBlacklist = make(map[string]bool)
 
 	ringRecords  map[string]dnsRecord // per-ring records for the router
 	perRingHosts map[string]bool      // hosts with per-ring results
@@ -94,10 +99,13 @@ var (
 var (
 	clientMtx sync.Mutex
 	clients   apcfg.ClientMap
-	warned    map[string]bool
 
 	hostsMtx sync.Mutex
-	hosts    map[string]dnsRecord
+	hosts    = make(map[string]dnsRecord)
+
+	unknownWarned = make(map[string]time.Time)
+	blockWarned   = make(map[string]time.Time)
+	warnedMtx     sync.Mutex
 )
 
 const pname = "ap.dns4d"
@@ -106,6 +114,25 @@ type dnsRecord struct {
 	rectype uint16
 	recval  string
 	expires *time.Time
+}
+
+// Returns 'true' if we have issued a warning about this key within the past
+// hour.
+func wasWarned(key string, list map[string]time.Time) bool {
+	warnedMtx.Lock()
+	defer warnedMtx.Unlock()
+
+	if t, ok := list[key]; ok && time.Since(t) < time.Hour {
+		return true
+	}
+	list[key] = time.Now()
+	return false
+}
+
+func clearWarned(key string, list map[string]time.Time) {
+	warnedMtx.Lock()
+	delete(list, key)
+	warnedMtx.Unlock()
 }
 
 func dnsUpdate(resource *base_msg.EventNetResource) {
@@ -179,6 +206,11 @@ func clientDeleteEvent(path []string) {
 		clientMtx.Unlock()
 	}
 }
+
+func blocklistUpdateEvent(path []string, val string, expires *time.Time) {
+	loadDNSBlacklist()
+}
+
 func cnameUpdateEvent(path []string, val string, expires *time.Time) {
 	updateOneCname(path[2], val)
 }
@@ -250,27 +282,27 @@ func logUnknown(ipstr string) bool {
 
 // Determine whether the DNS request came from a known client.  If it did,
 // return the client record.  If it didn't, raise a warning flag and return nil.
-func getClient(w dns.ResponseWriter) *apcfg.ClientInfo {
+func getClient(w dns.ResponseWriter) (string, *apcfg.ClientInfo) {
 	addr, ok := w.RemoteAddr().(*net.UDPAddr)
 	if !ok {
-		return nil
+		return "", nil
 	}
 
 	clientMtx.Lock()
 	defer clientMtx.Unlock()
 
-	for _, c := range clients {
+	for mac, c := range clients {
 		if addr.IP.Equal(c.IPv4) {
-			return c
+			return mac, c
 		}
 	}
 
 	ipStr := addr.IP.String()
-	if !warned[ipStr] {
-		warned[ipStr] = logUnknown(ipStr)
+	if !wasWarned(ipStr, unknownWarned) {
+		log.Printf("DNS request from unknown client: %s\n", ipStr)
 	}
 
-	return nil
+	return "", nil
 }
 
 // Look through the client table to find the mac address corresponding to this
@@ -367,7 +399,7 @@ func upstreamRequest(server string, r, m *dns.Msg) {
 }
 
 func localHandler(w dns.ResponseWriter, r *dns.Msg) {
-	c := getClient(w)
+	_, c := getClient(w)
 	if c == nil {
 		return
 	}
@@ -444,8 +476,12 @@ func localAddress(arpa string) bool {
 	return false
 }
 
+func blockedHostname(name string) bool {
+	return dnsBlacklist[name] && !dnsWhitelist[name]
+}
+
 func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
-	c := getClient(w)
+	mac, c := getClient(w)
 	if c == nil {
 		return
 	}
@@ -458,18 +494,20 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 	start := time.Now()
 	for _, q := range r.Question {
 		hostname := q.Name[:len(q.Name)-1]
-		if phishScorer.Score(hostname, phishtank.Dns) < phishThreshold {
-			// Are any of the questions in our phishing database?
-			// If so, return our IP address; for the HTTP and HTTPS
-			// cases, we can display a "no phishing" page.
-			//
+		if blockedHostname(hostname) {
 			// XXX: maybe we should return a CNAME record for our
 			// local 'phishing.<siteid>.brightgate.net'?
 			localRecord, _ := ringRecords[c.Ring]
-			log.Printf("phish threshold crossed, ring %s, returning %v\n",
-				c.Ring, localRecord)
 			m.Answer = append(m.Answer, answerA(q, localRecord))
-			notifyBlockEvent(c, hostname)
+
+			// We want to log and Event blocked hostnames for each
+			// client that attempts the lookup.
+			key := mac + ":" + hostname
+			if !wasWarned(key, blockWarned) {
+				log.Printf("Blocking suspected phishing site "+
+					"'%s' for %s\n", hostname, mac)
+				notifyBlockEvent(c, hostname)
+			}
 		} else if q.Qtype == dns.TypePTR && localAddress(q.Name) {
 			hostsMtx.Lock()
 			rec, ok := hosts[q.Name]
@@ -501,7 +539,7 @@ func deleteOneClient(c *apcfg.ClientInfo) {
 	}
 	ipv4 := c.IPv4.String()
 
-	delete(warned, ipv4)
+	clearWarned(ipv4, unknownWarned)
 
 	hostsMtx.Lock()
 	if arpa, err := dns.ReverseAddr(ipv4); err == nil {
@@ -525,7 +563,7 @@ func updateOneClient(c *apcfg.ClientInfo) {
 	}
 
 	ipv4 := c.IPv4.String()
-	delete(warned, ipv4)
+	clearWarned(ipv4, unknownWarned)
 	hostsMtx.Lock()
 	if c.DNSName != "" {
 		hostname := c.DNSName + "." + domainname + "."
@@ -632,7 +670,8 @@ errout:
 func initNetwork() {
 	var err error
 
-	warned = make(map[string]bool)
+	unknownWarned = make(map[string]time.Time)
+	blockWarned = make(map[string]time.Time)
 
 	domainname, err = config.GetDomain()
 	if err != nil {
@@ -668,20 +707,70 @@ func initNetwork() {
 	}
 }
 
-// loadPhishtank sets the global phishScorer to score how reliable a domain is
-func loadPhishtank() {
-	antiphishing := aputil.ExpandDirPath("/var/spool/antiphishing/")
+// Pull a list of DNS names from a CSV.  The first field of each line must be
+// a legal dns name.  The rest of the line is ignored.
+func ingestDNSFile(filename string) (map[string]bool, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
 
-	reader := phishtank.NewReader(
-		phishtank.Whitelist(antiphishing+"whitelist.csv"),
-		phishtank.Phishtank(antiphishing+"phishtank.csv"),
-		phishtank.MDL(antiphishing+"mdl.csv"),
-		phishtank.Generic(antiphishing+"example_blacklist.csv", -3, 1))
-	phishScorer = reader.Scorer(phishtank.Dns)
+	list := make(map[string]bool)
+	cnt := 0
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line[0] != '#' {
+			var name string
+			if idx := strings.Index(line, ","); idx > 0 {
+				name = line[:idx]
+			} else {
+				name = line
+			}
+			if network.ValidDNSName(name) {
+				list[name] = true
+				cnt++
+			}
+		}
+	}
+	file.Close()
+
+	log.Printf("Ingested %d hostnames from %s\n", cnt, filename)
+	return list, nil
+}
+
+func loadDNSBlacklist() {
+	wfile := aputil.ExpandDirPath(*dataDir) + "/" + whitelistName
+	bfile := aputil.ExpandDirPath(*dataDir) + "/" + blacklistName
+
+	// The whitelist file has a single whitelisted DNS name on each line, or
+	// a CSV with no Cs.  The blacklist file is a CSV file, where the first
+	// field of each line is a DNS name and the remaining fields are all
+	// sources that have identified that site as dangerous.
+
+	list, err := ingestDNSFile(wfile)
+	if err != nil {
+		log.Printf("Unable to read DNS whitelist %s: %v\n", wfile, err)
+	} else {
+		dnsWhitelist = list
+	}
+	list, err = ingestDNSFile(bfile)
+	if err != nil {
+		log.Printf("Unable to read DNS blacklist %s: %v\n", bfile, err)
+	} else {
+		dnsBlacklist = list
+	}
 }
 
 func init() {
 	prometheus.MustRegister(latencies)
+}
+
+func dnsListener(protocol string) {
+	srv := &dns.Server{Addr: ":53", Net: protocol}
+	if err := srv.ListenAndServe(); err != nil {
+		log.Fatalf("Failed to start %s listener %v\n", protocol, err)
+	}
 }
 
 func main() {
@@ -698,8 +787,6 @@ func main() {
 	//     logging.warning("require CAP_NET_BIND_SERVICE to bind DHCP server port")
 	//     sys.exit(1)
 
-	// XXX configuration retrieval
-
 	flag.Usage = func() {
 		flag.PrintDefaults()
 	}
@@ -712,50 +799,33 @@ func main() {
 	brokerd.Handle(base_def.TOPIC_RESOURCE, resourceEvent)
 	defer brokerd.Fini()
 
-	config, err = apcfg.NewConfig(brokerd, pname)
-	if err != nil {
+	if config, err = apcfg.NewConfig(brokerd, pname); err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}
 	config.HandleChange(`^@/clients/.*/(ipv4|dns_name|dhcp_name|ring)$`,
 		clientUpdateEvent)
 	config.HandleDelete(`^@/clients/.*`, clientDeleteEvent)
 	config.HandleExpire(`^@/clients/.*/(ipv4|dns_name)$`, clientDeleteEvent)
-
 	config.HandleChange(`^@/dns/cnames/.*$`, cnameUpdateEvent)
 	config.HandleDelete(`^@/dns/cnames/.*$`, cnameDeleteEvent)
+	config.HandleChange(`^@/updates/dns_blocklist$`, blocklistUpdateEvent)
 
-	hosts = make(map[string]dnsRecord)
 	initNetwork()
 	initHostMap()
-	loadPhishtank()
+	loadDNSBlacklist()
 
 	dns.HandleFunc(domainname+".", localHandler)
 	dns.HandleFunc(".", proxyHandler)
 
-	if mcpd != nil {
-		mcpd.SetState(mcp.ONLINE)
-	}
+	go dnsListener("udp")
+	go dnsListener("tcp")
 
-	go func() {
-		srv := &dns.Server{Addr: ":53", Net: "udp"}
-		if err := srv.ListenAndServe(); err != nil {
-			log.Fatalf("Failed to set udp listener %s\n", err.Error())
-		}
-	}()
-
-	log.Println("udp dns listener routine launched")
-
-	go func() {
-		srv := &dns.Server{Addr: ":53", Net: "tcp"}
-		if err := srv.ListenAndServe(); err != nil {
-			log.Fatalf("Failed to set tcp listener %s\n", err.Error())
-		}
-	}()
-
-	log.Println("tcp dns listener routine launched")
+	mcpd.SetState(mcp.ONLINE)
 
 	sig := make(chan os.Signal)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	s := <-sig
-	log.Fatalf("Signal (%v) received, stopping\n", s)
+	log.Printf("Signal (%v) received, stopping\n", s)
+
+	mcpd.SetState(mcp.OFFLINE)
 }

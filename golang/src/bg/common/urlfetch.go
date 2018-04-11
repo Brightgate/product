@@ -110,7 +110,8 @@ func FetchURL(url, target, meta string) (bool, error) {
 			old.Time.Format(time.RFC3339))
 		return false, nil
 	} else if resp.StatusCode != 200 {
-		return false, errors.Wrap(err, "unable to fetch "+url)
+		return false, fmt.Errorf("unable to fetch %s: %s", url,
+			resp.Status)
 	}
 
 	tmpFile := target + ".tmp"
@@ -120,7 +121,7 @@ func FetchURL(url, target, meta string) (bool, error) {
 
 	if bytes, err = io.Copy(outFile, resp.Body); err != nil {
 		os.Remove(tmpFile)
-		return false, errors.Wrap(err, "faile to download "+url)
+		return false, errors.Wrap(err, "failed to download "+url)
 	}
 	os.Rename(tmpFile, target)
 

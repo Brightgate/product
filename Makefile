@@ -272,6 +272,7 @@ APPDAEMON_GOPKGS = \
 	bg/ap.mcp \
 	bg/ap.networkd \
 	bg/ap.relayd \
+	bg/ap.updated \
 	bg/ap.userauthd \
 	bg/ap.watchd
 
@@ -682,6 +683,7 @@ $(APPBIN)/ap.networkd: \
 	$(GOSRCBG)/ap.networkd/networkd.go \
 	$(GOSRCBG)/ap.networkd/parse.go
 $(APPBIN)/ap.relayd: $(GOSRCBG)/ap.relayd/relayd.go
+$(APPBIN)/ap.updated: $(GOSRCBG)/ap.updated/update.go
 $(APPBIN)/ap.userauthd: $(GOSRCBG)/ap.userauthd/userauthd.go \
 	$(GOSRCBG)/ap_common/certificate/certificate.go
 $(APPBIN)/ap.watchd: \

@@ -14,7 +14,6 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -26,18 +25,11 @@ import (
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
-	"bg/common"
 
 	"github.com/golang/protobuf/proto"
 )
 
-const (
-	blockfileName = "ip_blocklist.csv"
-
-	googleStorage = "https://storage.googleapis.com"
-	googleBucket  = "bg-blocklist-a198e4a0-5823-4d16-8950-ad34b32ace1c"
-	latestName    = "ip_blacklist.latest"
-)
+const blockfileName = "ip_blocklist.csv"
 
 type ipSet map[uint32]struct{}
 
@@ -53,10 +45,7 @@ var (
 	activeBlocks = make(ipSet) // IPs being actively blocked
 
 	blockPeriod = time.Hour
-
-	blocklistRefreshPeriod = time.Hour
-	blocklistRefreshTicker *time.Ticker
-	blocklistRefresh       bool
+	lastUpdate  string
 )
 
 func newBlocklist() *blocklist {
@@ -224,7 +213,6 @@ func ingestBlocklist(filename string) {
 	}
 	defer file.Close()
 
-	lineNo := 0
 	cnt := 0
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -243,7 +231,6 @@ func ingestBlocklist(filename string) {
 				blocklistAdd(building, addr)
 			}
 		}
-		lineNo++
 	}
 
 	log.Printf("Ingested %d blocked IPs from %s\n", cnt, filename)
@@ -252,70 +239,22 @@ func ingestBlocklist(filename string) {
 	currentListMtx.Unlock()
 }
 
-//
-// Download ip_blacklist.latest from google cloud storage, which contains
-// the actual name of the latest dataset.  If the name has changed, download the
-// most recent data from the new file.
-//
-func refreshBlocklist(target string) (bool, error) {
-	dataRefreshed := false
-	latestFile := "/var/tmp/" + latestName
-	metaFile := latestFile + ".meta"
-
-	url := googleStorage + "/" + googleBucket + "/" + latestName
-	metaRefreshed, err := common.FetchURL(url, latestFile, metaFile)
-	if err != nil {
-		return false, fmt.Errorf("unable to download %s: %v", url, err)
-	}
-
-	if metaRefreshed || !aputil.FileExists(target) {
-		b, err := ioutil.ReadFile(latestFile)
-		if err != nil {
-			err = fmt.Errorf("unable to read %s: %v", latestFile, err)
-		} else {
-			sourceName := string(b)
-			url = googleStorage + "/" + googleBucket + "/" +
-				sourceName
-			_, err = common.FetchURL(url, target, "")
-		}
-		if err == nil {
-			dataRefreshed = true
-		} else {
-			os.Remove(metaFile)
-		}
-	}
-
-	return dataRefreshed, err
-}
-
-func blocklistRefresher() {
-	first := true
-	blockfile := *watchDir + "/" + blockfileName
-
-	for blocklistRefresh {
-		refreshed, err := refreshBlocklist(blockfile)
-		if err != nil {
-			log.Printf("ip blocklist refresh failed: %v\n", err)
-		}
-
-		if (first || refreshed) && aputil.FileExists(blockfile) {
+func blocklistChanged(path []string, value string, expires *time.Time) {
+	if value != lastUpdate {
+		lastUpdate = value
+		blockfile := *watchDir + "/" + blockfileName
+		if aputil.FileExists(blockfile) {
 			ingestBlocklist(blockfile)
 		}
-		first = false
-
-		<-blocklistRefreshTicker.C
 	}
-}
-
-func blocklistFini() {
-	log.Printf("Shutting down blocklist refresh\n")
-	blocklistRefresh = false
-	blocklistRefreshTicker.Stop()
 }
 
 func blocklistInit() {
-	blocklistRefresh = true
-	blocklistRefreshTicker = time.NewTicker(blocklistRefreshPeriod)
+	blockfile := *watchDir + "/" + blockfileName
+	if aputil.FileExists(blockfile) {
+		ingestBlocklist(blockfile)
+	}
 
-	go blocklistRefresher()
+	lastUpdate, _ = config.GetProp("@/updates/ip_blocklist")
+	config.HandleChange(`^@/updates/ip_blocklist$`, blocklistChanged)
 }

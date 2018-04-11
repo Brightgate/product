@@ -186,6 +186,10 @@ func (m *MCP) GetState(daemon string) (string, error) {
 func (m *MCP) SetState(state int) error {
 	var err error
 
+	if m == nil {
+		return nil
+	}
+
 	if _, ok := States[state]; !ok {
 		err = fmt.Errorf("invalid state: %d", state)
 	} else if m.daemon == "" {

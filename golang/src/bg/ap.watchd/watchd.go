@@ -37,14 +37,14 @@ const (
 )
 
 var (
-	brokerd *broker.Broker
-	config  *apcfg.APConfig
-
 	watchDir = flag.String("dir", "/var/spool/watchd",
 		"directory in which the watchd work files should be stored")
-	addr = flag.String("prom_address", base_def.WATCHD_PROMETHEUS_PORT,
+	addr = flag.String("pport", base_def.WATCHD_PROMETHEUS_PORT,
 		"The address to listen on for Prometheus HTTP requests.")
 	verbose = flag.Bool("verbose", false, "Log nmap progress")
+
+	brokerd *broker.Broker
+	config  *apcfg.APConfig
 
 	profiler *aputil.Profiler
 
@@ -246,12 +246,10 @@ func main() {
 	macToIPInit()
 	rings = config.GetRings()
 
-	if mcpd != nil {
-		mcpd.SetState(mcp.ONLINE)
-	}
 	profiler = aputil.NewProfiler(pname)
 	defer profiler.CPUStop()
 
+	mcpd.SetState(mcp.ONLINE)
 	for _, w := range watchers {
 		go w.init(w)
 	}
@@ -275,4 +273,5 @@ func main() {
 			time.Sleep(time.Millisecond)
 		}
 	}
+	mcpd.SetState(mcp.OFFLINE)
 }

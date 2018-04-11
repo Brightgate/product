@@ -92,7 +92,7 @@
         "ThirdParty": true,
         "Options": [
             "-config.file=$APROOT/etc/prometheus.yml",
-            "-storage.local.path=\"$APROOT/var/prometheus-data\""
+            "-storage.local.path=$APROOT/var/prometheus-data"
         ],
         "Modes": [ "gateway" ]
     },
@@ -102,6 +102,13 @@
         "DependsOn": "networkd",
         "Privileged": false,
         "Modes": [ "core", "gateway" ]
+    },
+    "updated": {
+        "Name": "updated",
+        "Binary": "ap.updated",
+        "DependsOn": "configd",
+        "Privileged": true,
+        "Modes": [ "gateway" ]
     },
     "userauthd": {
         "Name": "userauthd",
