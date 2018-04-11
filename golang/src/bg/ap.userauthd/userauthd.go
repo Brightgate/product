@@ -399,9 +399,6 @@ func main() {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}
 
-	configd.HandleChange(`^@/users/.*$`, configUserChanged)
-	configd.HandleChange(`^@/network/radius.*$`, configNetworkRadiusChanged)
-
 	domainName, err := configd.GetDomain()
 	if err != nil {
 		log.Fatalf("failed to fetch gateway domain: %v\n", err)
@@ -417,6 +414,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Cannot establish secret: %v", err)
 	}
+
+	configd.HandleChange(`^@/users/.*$`, configUserChanged)
+	configd.HandleChange(`^@/network/radius.*$`, configNetworkRadiusChanged)
 
 	if mcpd != nil {
 		mcpd.SetState(mcp.ONLINE)

@@ -200,7 +200,11 @@ func configNetworkChanged(path []string, val string, expires *time.Time) {
 
 	case "passphrase":
 		wifiPassphrase = val
-		log.Printf("SSID changed to %s\n", val)
+		log.Printf("passphrase changed to %s\n", val)
+
+	case "radiusAuthSecret":
+		radiusSecret = val
+		log.Printf("radiusAuthSecret changed to %s\n", val)
 
 	default:
 		return
@@ -905,7 +909,7 @@ func globalWifiInit(props *apcfg.PropertyNode) error {
 	if node, ok := props.Children["radiusAuthSecret"]; ok {
 		radiusSecret = node.Value
 	} else {
-		return fmt.Errorf("no radiusAuthSecret configured")
+		log.Printf("no radiusAuthSecret configured")
 	}
 	if node, ok := props.Children["ssid"]; ok {
 		wifiSSID = node.Value

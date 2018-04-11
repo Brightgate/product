@@ -368,7 +368,7 @@ func getAPConfig(d *physDevice) *apConfig {
 		if r.Auth == "wpa-psk" {
 			pskComment = ""
 			ssidCnt++
-		} else if r.Auth == "wpa-eap" {
+		} else if r.Auth == "wpa-eap" && radiusSecret != "" {
 			eapComment = ""
 			ssidCnt++
 		}
