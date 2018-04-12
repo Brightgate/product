@@ -19,23 +19,44 @@
       <p>{{ $t('message.general.need_login') }}</p>
     </div>
     <div v-else>
-      <f7-list inset>
+      <f7-list no-hairlines>
+        <f7-list-item>
+          <f7-label inline>Enroll to the: </f7-label>
+          <f7-input type="select"
+              :value="usertype"
+              @change="usertype = $event.target.value">
+            <option value="psk">{{ $t('message.enroll_guest.psk_network') }}</option>
+            <option value="eap">{{ $t('message.enroll_guest.eap_network') }}</option>
+          </f7-input>
+        </f7-list-item>
+
         <f7-list-item>
           <f7-label>{{ $t('message.enroll_guest.phone') }}</f7-label>
           <f7-input type="tel"
-                :value="this.phone_input"
+                :value="phone_input"
                 @input="onTelInput"
                 :placeholder="$t('message.enroll_guest.phone_placeholder')"
-                required autofocus lazy>
+                required autofocus>
+          </f7-input>
+        </f7-list-item>
+
+        <f7-list-item v-if="usertype === 'eap'">
+          <f7-label>{{ $t('message.enroll_guest.email') }}</f7-label>
+          <f7-input type="email"
+              :value="email_input"
+              @input="email_input = $event.target.value"
+              :placeholder="$t('message.enroll_guest.email_placeholder')"
+              required>
           </f7-input>
         </f7-list-item>
       </f7-list>
+
       <f7-block inset>
-        <f7-button fill big v-bind:color="valid_number ? 'green' : 'blue'" :active="valid_number" @click="enrollSMS">
+        <f7-button fill big :disabled="!valid_form" @click="enrollGuest">
           <span v-if="!enrolling">{{ $t('message.enroll_guest.send_sms') }}</span>
           <span v-if="enrolling">
             {{ $t('message.enroll_guest.sending') }}
-          <span class="preloader"></span>
+            <f7-preloader color="white"></f7-preloader>
           </span>
         </f7-button>
 
@@ -46,22 +67,34 @@
 </template>
 <script>
 
+// n.b. our handling of phone number input only sort-of works.  Probably we
+// should switch to cleave.js or some other framework.  If we roll our own,
+// then phone number input should go into its own Vue component.
+
 import libphonenumber from 'libphonenumber-js';
+import emailvalidator from 'email-validator';
 const phone_ayt = new libphonenumber.AsYouType('US');
 
 export default {
   data: function() {
     return {
+      usertype: 'eap',
       phone_input: '',
+      email_input: '',
       enrolling: false,
     };
   },
 
-  // n.b. this is arcane and only sort-of works.  Probably we should switch to
-  // cleave.js or some other framework.  If we roll our own, then phone number
-  // input should go into its own Vue component.
   computed: {
-    valid_number: function() {
+    valid_form: function() {
+      if (this.usertype === 'eap') {
+        if (!this.email_input || this.email_input === '') {
+          return false;
+        }
+        if (emailvalidator.validate(this.email_input) === false) {
+          return false;
+        }
+      }
       if (!this.phone_input || this.phone_input === '') {
         return false;
       }
@@ -75,30 +108,52 @@ export default {
       this.phone_input = phone_ayt.input(event.target.value);
     },
 
-    enrollSMS: function() {
-      console.log(`enrollSMS: ${this.phone_input}`);
-      this.enrolling = true;
-      return this.$store.dispatch('enrollSMS', {
-        phone: this.phone_input,
-      }).then(() => {
-        console.log('enrollSMS: success');
-        this.enrolling = false;
-        this.$f7.toast.show({
-          text: this.$t('message.enroll_guest.send_success'),
-          closeButton: true,
-          destroyOnClose: true,
-          on: {
-            close: () => {
-              console.log('toast onclose handler');
-              this.$f7router.back();
-            },
+    toastSuccess: function(text) {
+      this.$f7.toast.show({
+        text: text,
+        closeButton: true,
+        destroyOnClose: true,
+        on: {
+          close: () => {
+            this.$f7router.back();
           },
-        });
-      }).catch(() => {
-        console.log('enrollSMS: failed');
+        },
+      });
+    },
+
+    enrollGuestEAP: function() {
+      return this.$store.dispatch('enrollGuest',
+        {type: 'eap', phone: this.phone_input, email: this.email_input}
+      ).then((res) => {
+        const user = res.body.user;
+        this.toastSuccess(
+          this.$t('message.enroll_guest.eap_success', {name: user.UID}));
+      });
+    },
+
+    enrollGuestPSK: function() {
+      return this.$store.dispatch('enrollGuest',
+        {type: 'psk', phone: this.phone_input}
+      ).then(() => {
+        this.toastSuccess(this.$t('message.enroll_guest.psk_success'));
+      });
+    },
+
+    enrollGuest: function() {
+      let p; // promise for guest enrollment
+      console.log(`enrollGuest: ${this.usertype} ${this.phone_input} ${this.email}`);
+      this.enrolling = true;
+      if (this.usertype === 'eap') {
+        p = this.enrollGuestEAP();
+      } else {
+        p = this.enrollGuestPSK();
+      }
+      return p.finally(() => {
         this.enrolling = false;
+      }).catch((err) => {
+        console.log('enrollGuest: failed', err);
         this.$f7.toast.show({
-          text: this.$t('message.enroll_guest.send_failure'),
+          text: this.$t('message.enroll_guest.sms_failure'),
           closeButton: true,
           destroyOnClose: true,
         });

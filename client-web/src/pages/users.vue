@@ -18,8 +18,8 @@
       <f7-icon f7="add"></f7-icon>
     </f7-fab>
 
-    <f7-list contacts-list>
-      <f7-list-item v-for="user in $store.getters.All_Users"
+    <f7-list>
+      <f7-list-item v-for="user in All_Users"
             v-bind:key ="user.UUID"
             v-bind:title="user.DisplayName"
             v-bind:link="`/users/${user.UUID}/`">
@@ -30,8 +30,14 @@
 </template>
 <script>
 import Promise from 'bluebird';
+import _ from 'lodash';
 
 export default {
+  computed: {
+    All_Users: function() {
+      return _.orderBy(this.$store.getters.All_Users, 'DisplayName');
+    },
+  },
   methods: {
     openEditorNew: function() {
       const editor = `${this.$f7route.url}NEW/editor/`;

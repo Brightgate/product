@@ -20,6 +20,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -28,8 +29,10 @@ import (
 	"bg/ap_common/apcfg"
 
 	"github.com/gorilla/mux"
+	"github.com/pkg/errors"
 	"github.com/pquerna/otp"
 	"github.com/satori/uuid"
+	"github.com/sethvargo/go-password/password"
 	"github.com/sfreiberg/gotwilio"
 	"github.com/ttacon/libphonenumber"
 )
@@ -823,13 +826,14 @@ func demoUsersHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type enrollResponse struct {
-	SMSDelivered bool   `json:"smsdelivered"`
-	SMSErrorCode int    `json:"smserrorcode"`
-	SMSError     string `json:"smserror"`
+	SMSDelivered bool    `json:"smsdelivered"`
+	SMSErrorCode int     `json:"smserrorcode"`
+	SMSError     string  `json:"smserror"`
+	User         *daUser `json:"user"` // If a user was created
 }
 
 // sendOneSMS is a utility helper for the Enroll handler.
-func sendOneSMS(twilio *gotwilio.Twilio, from string, to string, message string) (*enrollResponse, error) {
+func sendOneSMS(twilio *gotwilio.Twilio, from, to, message string) (*enrollResponse, error) {
 	var response *enrollResponse
 	smsResponse, exception, err := twilio.SendSMS(from, to, message, "", "")
 	if err != nil {
@@ -840,74 +844,191 @@ func sendOneSMS(twilio *gotwilio.Twilio, from string, to string, message string)
 		if exception.Code >= 21210 && exception.Code <= 21217 {
 			rstr = "Invalid Phone Number"
 		}
-		response = &enrollResponse{false, exception.Code, rstr}
+		response = &enrollResponse{false, exception.Code, rstr, nil}
 	} else {
-		response = &enrollResponse{true, 0,
-			"Current Status: " + smsResponse.Status}
+		response = &enrollResponse{true, 0, "Current Status: " + smsResponse.Status, nil}
 	}
 	return response, nil
 }
 
-func demoEnrollHandler(w http.ResponseWriter, r *http.Request) {
+func mkTwilio() *gotwilio.Twilio {
+	twilioSID := "ACaa018fa0f7631d585a56f6806a5bfc74"
+	twilioAuthToken := "cfe70c8ed40429f0ba961189f554dc90"
+	return gotwilio.NewTwilioClient(twilioSID, twilioAuthToken)
+}
+
+var guestMatcher = regexp.MustCompile("guest([0-9]+)")
+
+func findGuestUID() (int, error) {
+	var maxuid int
+	props, err := config.GetProps("@/users")
+	if err != nil {
+		return 0, errors.Wrap(err, "Failed to get @/users")
+	}
+	for name := range props.Children {
+		uid, err := config.GetProp(fmt.Sprintf("@/users/%s/uid", name))
+		if err != nil {
+			continue
+		}
+		matches := guestMatcher.FindStringSubmatch(uid)
+		if matches == nil || len(matches) == 1 {
+			continue
+		}
+		uidi, err := strconv.Atoi(matches[1])
+		if err != nil {
+			continue
+		}
+		if uidi > maxuid {
+			maxuid = uidi
+		}
+	}
+	return maxuid + 1, nil
+}
+
+func makePassword() (string, error) {
+	p, err := password.Generate(16, 5, 2, false, false)
+	return p, errors.Wrap(err, "failed to generate password")
+}
+
+func makeGuestUser(phone, email string) (*daUser, string, error) {
+	guestNum, err := findGuestUID()
+	if err != nil {
+		return nil, "", err
+	}
+	uid := fmt.Sprintf("guest%d", guestNum)
+	ui, err := config.NewUserInfo(uid)
+	if err != nil {
+		return nil, "", err
+	}
+
+	pass, err := makePassword()
+	if err != nil {
+		return nil, "", err
+	}
+
+	ui.TelephoneNumber = phone
+	ui.Email = email
+	ui.DisplayName = fmt.Sprintf("Guest User %d", guestNum)
+
+	err = ui.Update()
+	if err != nil {
+		return nil, "", errors.Wrapf(err, "failed to save user %s", uid)
+	}
+	err = ui.SetPassword(pass)
+	if err != nil {
+		return nil, "", errors.Wrapf(err, "failed to set password for user %s", uid)
+	}
+	// Fetch out from config store
+	user, err := config.GetUser(uid)
+	if err != nil {
+		return nil, "", errors.Wrapf(err, "failed to get user %s", uid)
+	}
+	daUser := buildUserResponse(user)
+	return &daUser, pass, nil
+}
+
+func demoEnrollGuestHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	var err error
 
 	t := time.Now()
 
 	uid := getRequestUID(r)
-	log.Printf("/enroll [uid '%s']\n", uid)
+	log.Printf("/enroll_guest [uid '%s']\n", uid)
 	if uid == "" {
 		http.Error(w, "forbidden", 403)
 		return
 	}
 
-	twilioSID := "ACaa018fa0f7631d585a56f6806a5bfc74"
-	twilioAuthToken := "cfe70c8ed40429f0ba961189f554dc90"
-	from := "+16507694283"
+	log.Printf("EAP Enroll Handler: phone='%v' email='%v'\n",
+		r.PostFormValue("phone"), r.PostFormValue("email"))
 
-	networkSSID, err := config.GetProp("@/network/ssid")
-	if err != nil {
-		http.Error(w, "Internal Error", 500)
-	}
-	networkPassphrase, err := config.GetProp("@/network/passphrase")
+	rType := r.PostFormValue("type")
+	rEmail := r.PostFormValue("email")
+	rPhone := r.PostFormValue("phone")
 
-	// The SMS to the customer is structured as two messages, one with
-	// help and the network name, and the other with the passphrase.
-	// This is because on most iOS and Android SMS clients, it's easy to
-	// copy a whole SMS message, but range selection is disabled.
-	message1 := fmt.Sprintf("Brightgate Wi-Fi\nHelp: bit.ly/2yhPDQz\n"+
-		"Network: %s\n<password follows>", networkSSID)
-	message2 := fmt.Sprintf("%s", networkPassphrase)
-
-	log.Printf("Enroll Handler: phone='%v'\n", r.PostFormValue("phone"))
-	if r.PostFormValue("phone") == "" {
-		http.Error(w, "Invalid request.", 400)
+	if rType != "eap" && rType != "psk" {
+		http.Error(w, "Invalid request, missing type={eap,psk}", 400)
 		return
 	}
-
-	to, err := libphonenumber.Parse(r.PostFormValue("phone"), "US")
+	// XXX on the client side we do a basic validate on the email address--
+	// should do that here too.
+	if rType == "eap" && rEmail == "" {
+		http.Error(w, "Invalid request, missing email", 400)
+		return
+	}
+	if rPhone == "" {
+		http.Error(w, "Invalid request, missing phone", 400)
+		return
+	}
+	// XXX need to solve phone region eventually
+	to, err := libphonenumber.Parse(rPhone, "US")
 	if err != nil {
-		response := enrollResponse{false, 0, "Invalid Phone Number"}
-		if err := json.NewEncoder(w).Encode(response); err != nil {
+		response := enrollResponse{false, 0, "Invalid Phone Number", nil}
+		if err = json.NewEncoder(w).Encode(response); err != nil {
 			panic(err)
 		}
 		return
 	}
 	formattedTo := libphonenumber.Format(to, libphonenumber.INTERNATIONAL)
-	log.Printf("Enroll Handler: formattedTo='%v'\n", formattedTo)
+	from := "+16507694283"
+	log.Printf("EAP Enroll Handler: from='%v' formattedTo='%v'\n", from, formattedTo)
 
-	twilio := gotwilio.NewTwilioClient(twilioSID, twilioAuthToken)
+	networkSSID, err := config.GetProp("@/network/ssid")
+	if err != nil {
+		http.Error(w, "Internal Error", 500)
+		return
+	}
+	networkEAPSSID := networkSSID + "-eap"
+
+	var daGuest *daUser
+	var messages []string
+	if rType == "eap" {
+		var guestPass string
+		var err error
+		daGuest, guestPass, err = makeGuestUser(rPhone, rEmail)
+		if err != nil {
+			log.Printf("EAP Enroll Handler: failed to make Guest: '%+v'\n", err)
+			http.Error(w, "Internal Error", 500)
+			return
+		}
+		log.Printf("made guest user %v", daGuest)
+		// The SMS to the customer is structured as two messages, one with
+		// help and the network name, and the other with the passphrase.
+		// This is because on most iOS and Android SMS clients, it's easy to
+		// copy a whole SMS message, but range selection is disabled.
+		messages = []string{
+			fmt.Sprintf("Brightgate Wi-Fi\nHelp: bit.ly/2yhPDQz\n"+
+				"Network: %s\nUsername: %s\n<password follows>",
+				networkEAPSSID, daGuest.UID),
+			fmt.Sprintf("%s", guestPass),
+		}
+	} else {
+		// See above for notes on structure
+		networkPassphrase, _ := config.GetProp("@/network/passphrase")
+		messages = []string{
+			fmt.Sprintf("Brightgate Wi-Fi\nHelp: bit.ly/2yhPDQz\n"+
+				"Network: %s\n<password follows>", networkSSID),
+			fmt.Sprintf("%s", networkPassphrase),
+		}
+	}
+
+	twilio := mkTwilio()
 	var response *enrollResponse
-	for _, message := range []string{message1, message2} {
+	for _, message := range messages {
 		response, err = sendOneSMS(twilio, from, formattedTo, message)
 		if err != nil {
 			log.Printf("Enroll Handler: twilio go err='%v'\n", err)
-			http.Error(w, "Twilio Error.", 500)
+			http.Error(w, "Twilio Error", 500)
 			return
 		}
 		// if not sent then give up sending more
 		if response.SMSDelivered == false {
 			break
 		}
+	}
+	if rType == "eap" {
+		response.User = daGuest
 	}
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		panic(err)
@@ -960,7 +1081,7 @@ func makeDemoAPIRouter() *mux.Router {
 	router.HandleFunc("/config", demoConfigPostHandler).Methods("POST")
 	router.HandleFunc("/devices/{ring}", demoDevicesByRingHandler).Methods("GET")
 	router.HandleFunc("/devices", demoDevicesHandler).Methods("GET")
-	router.HandleFunc("/enroll", demoEnrollHandler).Methods("POST")
+	router.HandleFunc("/enroll_guest", demoEnrollGuestHandler).Methods("POST")
 	router.HandleFunc("/login", demoLoginHandler).Methods("POST")
 	router.HandleFunc("/logout", demoLogoutHandler).Methods("GET")
 	router.HandleFunc("/rings", demoRingsHandler).Methods("GET")

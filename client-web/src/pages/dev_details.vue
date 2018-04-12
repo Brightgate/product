@@ -107,7 +107,7 @@
     <f7-list form>
       <f7-list-item item-input inline-label>
         <f7-label>{{ $t('message.dev_details.security_ring') }}</f7-label>
-        <span v-if="ring_changing" class="preloader"></span>
+        <f7-preloader v-if="ring_changing"></f7-preloader>
         <f7-input v-else type="select" :value="dev.ring" @input="changeRing($event.target.value)">
           <option v-for="ring in rings" v-bind:value="ring" v-bind:key="ring">{{ring}}</option>
         </f7-input>

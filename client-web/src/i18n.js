@@ -116,10 +116,15 @@ export default {
         subheader: 'Help a guest get online using their phone number',
         phone: 'Guest Phone Number',
         phone_placeholder: 'Phone #',
+        email: 'Guest Email',
+        email_placeholder: 'user@example.com',
         send_sms: 'Text Guest',
         sending: 'Sending',
-        send_success: 'Great!  Your guest should receive an SMS momentarily with the network name and password.',
-        send_failure: 'Oops, something went wrong sending the SMS message.',
+        psk_network: 'PSK Network',
+        eap_network: 'EAP Network',
+        psk_success: 'Great!  Your guest should receive an SMS momentarily with the network name and password.',
+        eap_success: 'We made a user, <i>{name}</i> and generated a secure password for your guest.  They should receive an SMS momentarily with the network name, username and password.',
+        sms_failure: 'Oops, something went wrong sending the SMS message.',
       },
       login: {
         login: 'Login',
@@ -255,10 +260,15 @@ export default {
         subheader: 'Helfen Sie einem Gastbenutzer sich zu registrieren mit seinem Telefonnummer',
         phone: 'Telefonnummer des Gastbenutzers',
         phone_placeholder: 'Telefonnummer',
+        email: 'Guest Email',         // XXXI18N
+        email_placeholder: 'user@example.com', // XXXI18N
         send_sms: 'SMS versenden',
         sending: 'Bitte Warten',
-        send_success: 'Super! Der Gastbenutzer sollte in einem Moment eine SMS mit Netzwerkname und Paßwort erhalten.',
-        send_failure: 'Oop der Versendung von der SMS ist ein Fehler aufgetreten',
+        psk_network: 'PSK Network', // XXXI18N
+        eap_network: 'EAP Network', // XXXI18N
+        psk_success: 'Super! Der Gastbenutzer sollte in einem Moment eine SMS mit Netzwerkname und Paßwort erhalten.',
+        eap_success: 'We made a user, <i>{name}</i> and generated a secure password for your guest.  They should receive an SMS momentarily with the network name, username and password.', // XXXI18N
+        sms_failure: 'Oop der Versendung von der SMS ist ein Fehler aufgetreten',
       },
       login: {
         login: 'Login',

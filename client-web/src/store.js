@@ -381,11 +381,13 @@ const actions = {
     });
   },
 
-  enrollSMS(context, {phone}) {
-    console.log(`enrollSMS: phone:${phone}`);
-    return superagent.post('/apid/enroll'
+  enrollGuest(context, {type, phone, email}) {
+    const args = {type, phone, email};
+    console.log('enrollGuest', args);
+    return superagent.post('/apid/enroll_guest'
     ).type('form'
-    ).send({phone: phone});
+    ).send(args
+    ).set('Accept', 'application/json');
   },
 
   // Ask the server to change the ring property for a device, then

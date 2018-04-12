@@ -290,6 +290,12 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/sethvargo/go-password"
+  packages = ["password"]
+  revision = "ffbf40db2a6096ca42297c333c46e53f8d732228"
+
+[[projects]]
+  branch = "master"
   name = "github.com/sfreiberg/gotwilio"
   packages = ["."]
   revision = "58125ef28e4b5d7ab5328593099ae8cac5fcf6a2"
@@ -595,6 +601,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "461badbc0eeea964c294abf5fb3fb184686f1b6ffffc0074c2ea87fdf3ee5419"
+  inputs-digest = "11a90ca9bfc5c5e6b30d3071cf3ca48194980d6f0a14428ba2aaa1931a7dfcf3"
   solver-name = "gps-cdcl"
   solver-version = 1
