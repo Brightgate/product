@@ -128,16 +128,18 @@ func macToIPInit() {
 }
 
 func configIPv4Changed(path []string, value string, expires *time.Time) {
-	hwaddr, err := net.ParseMAC(path[1])
+	mac := path[1]
+
+	hwaddr, err := net.ParseMAC(mac)
 	if err != nil {
-		log.Printf("invalid MAC address %s", path[1])
+		log.Printf("invalid MAC address %s", mac)
 		return
 	}
 
 	if ipv4 := net.ParseIP(value); ipv4 != nil {
 		registerIPAddr(hwaddr, ipv4.To4())
-		scannerRequest(ipv4.String())
-		setMacIP(path[1], value)
+		scannerRequest(mac, ipv4.String())
+		setMacIP(mac, value)
 	} else {
 		log.Printf("invalid IPv4 address %s", value)
 	}

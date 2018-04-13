@@ -25,6 +25,7 @@ import (
 	"syscall"
 	"time"
 
+	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/ap_common/network"
 	"bg/base_def"
@@ -53,11 +54,11 @@ var (
 const (
 	cleanFreq = 10 * time.Minute
 
-	// tcp syn scan takes 70sec on average
-	// udp scan takes 1000sec on average
-	tcpFreq  = 2 * time.Minute
-	udpFreq  = 30 * time.Minute
-	vulnFreq = 30 * time.Minute
+	tcpFreq = 2 * time.Minute  // How often to scan TCP ports
+	udpFreq = 30 * time.Minute // How often to scan UDP ports
+
+	vulnFreq     = 30 * time.Minute // How often to scan for vulnerabilities
+	vulnWarnFreq = 3 * time.Hour    // How often to reissue vuln. warnings
 
 	hostLifetime = 1 * time.Hour
 	hostScanFreq = 5 * time.Minute
@@ -103,6 +104,7 @@ func hostmapCreate() *hostmap {
 // ScanRequest is used to send tasks to scanners
 type ScanRequest struct {
 	IP       string
+	Mac      string
 	Args     []string
 	ScanType string
 	Scanner  func(*ScanRequest)
@@ -165,6 +167,10 @@ func getScannedHosts() (*hostmap, error) {
 		}
 	}
 	return h, nil
+}
+
+func nowString() string {
+	return time.Now().Format(time.RFC3339)
 }
 
 // schedule runs toRun with a frequency determined by freq.
@@ -238,8 +244,11 @@ func scanner() {
 			continue
 		}
 
+		propBase := fmt.Sprintf("@/clients/%s/scans/%s/", req.Mac, req.ScanType)
 		scansStarted.WithLabelValues(req.IP, req.ScanType).Inc()
+		config.CreateProp(propBase+"start", nowString(), nil)
 		req.Scanner(req)
+		config.CreateProp(propBase+"finish", nowString(), nil)
 		dur := time.Since(now).Seconds()
 		scanDuration.WithLabelValues(req.IP, req.ScanType).Observe(dur)
 		scansFinished.WithLabelValues(req.IP, req.ScanType).Inc()
@@ -248,7 +257,7 @@ func scanner() {
 	}
 }
 
-func scannerRequest(ip string) {
+func scannerRequest(mac, ip string) {
 	if activeHosts.contains(ip) {
 		return
 	}
@@ -275,22 +284,25 @@ func scannerRequest(ip string) {
 
 	TCPScan := ScanRequest{
 		IP:       ip,
+		Mac:      mac,
 		Args:     tcpArgs,
-		ScanType: "tcp",
+		ScanType: "tcp_ports",
 		Scanner:  portScan,
 		Period:   tcpFreq,
 	}
 
 	UDPScan := ScanRequest{
 		IP:       ip,
+		Mac:      mac,
 		Args:     udpArgs,
-		ScanType: "udp",
+		ScanType: "udp_ports",
 		Scanner:  portScan,
 		Period:   udpFreq,
 	}
 
 	VulnScan := ScanRequest{
 		IP:       ip,
+		Mac:      mac,
 		ScanType: "vulnerability",
 		Scanner:  vulnScan,
 		Period:   vulnFreq,
@@ -366,7 +378,7 @@ func subnetHostScan(ring, subnet string, scannedHosts *hostmap) int {
 		} else {
 			log.Printf("%s is back online, restarting scans", ip)
 		}
-		scannerRequest(ip)
+		scannerRequest(mac, ip)
 	}
 	return seen
 }
@@ -623,44 +635,118 @@ func vulnException(mac, ip string, details []string) {
 			entity, base_def.TOPIC_EXCEPTION, err)
 	}
 }
-func vulnHandle(ip string, vulnerabilities map[string]bool) {
-	var msg, spacer string
-	var warn []string
+
+func vulnPropOp(mac, vuln, field, val string) apcfg.PropertyOp {
+	prop := fmt.Sprintf("@/clients/%s/vulnerabilities/%s/%s",
+		mac, vuln, field)
+
+	return apcfg.PropertyOp{
+		Op:    apcfg.PropCreate,
+		Name:  prop,
+		Value: val,
+	}
+}
+
+// Determine which actions need to be taken for this vulnerability, based on the
+// information stored in the VulnInfo map.
+func vulnActions(name string, vmap apcfg.VulnMap) (first, warn, quarantine bool, text string) {
+	ignore := false
+
+	vi, ok := vmap[name]
+	if ok {
+		ignore = vi.Ignore
+	} else {
+		first = true
+	}
+
+	nickname := ""
+	if v, ok := vulnList[name]; ok {
+		nickname = v.Nickname
+		for _, a := range v.Actions {
+			switch a {
+			case "Warn":
+				if ignore {
+					warn = false
+				} else if vi == nil || vi.WarnedAt == nil {
+					warn = true
+				} else {
+					warn = (time.Since(*vi.WarnedAt) > vulnWarnFreq)
+				}
+			case "Quarantine":
+				quarantine = !ignore
+			}
+		}
+	} else {
+		nickname = "unrecognized vulnerability"
+	}
+	text = name
+	if nickname != "" {
+		text += " (" + nickname + ")"
+	}
+
+	return
+}
+
+func vulnScanProcess(ip string, discovered map[string]bool) {
+	var found, event []string
 	var quarantine bool
 
 	mac := getMacFromIP(ip)
+	vmap := config.GetVulnerabilities(mac)
 
-	for name := range vulnerabilities {
-		nickname := ""
-		v, ok := vulnList[name]
-		if !ok {
-			nickname = " (unrecognized vulnerability)"
-		} else {
-			for _, a := range v.Actions {
-				switch a {
-				case "Warn":
-					warn = append(warn, name)
-				case "Quarantine":
-					quarantine = true
-				}
-			}
-			if v.Nickname != "" {
-				nickname = " (" + v.Nickname + ")"
-			}
-			msg += spacer + name + nickname
-			spacer = ", "
+	// Rather than updating each vulnerability timestamp independently,
+	// batch the updates so we can apply them all at once
+	now := nowString()
+	ops := make([]apcfg.PropertyOp, 0)
+
+	// Iterate over all of the vulnerabilities we discovered in this pass,
+	// queue up the appropriate action for each, and note which properties
+	// will need to be updated.
+	for name := range discovered {
+		first, warn, q, text := vulnActions(name, vmap)
+		ops = append(ops, vulnPropOp(mac, name, "active", "true"))
+		ops = append(ops, vulnPropOp(mac, name, "latest", now))
+		if first {
+			ops = append(ops, vulnPropOp(mac, name, "first", now))
+		}
+		if warn {
+			ops = append(ops, vulnPropOp(mac, name, "warned", now))
+			event = append(event, name)
+		}
+		quarantine = quarantine || q
+
+		found = append(found, text)
+	}
+
+	if quarantine {
+		op := apcfg.PropertyOp{
+			Op:    apcfg.PropSet,
+			Name:  "@/clients/" + mac + "/ring",
+			Value: base_def.RING_QUARANTINE,
+		}
+		ops = append(ops, op)
+		log.Printf("%s being quarantined\n", mac)
+	}
+
+	// Iterate over all of the vulnerabilities discovered in the past.  If
+	// they do not appear in the current list, mark them as 'active = false'
+	// in the config tree.
+	for name, vi := range vmap {
+		if _, ok := discovered[name]; vi.Active && !ok {
+			ops = append(ops, vulnPropOp(mac, name, "active",
+				"false"))
 		}
 	}
-	log.Printf("%s (seen as %s) found with: %s\n", mac, ip, msg)
 
-	if len(warn) > 0 {
-		vulnException(mac, ip, warn)
+	if len(found) > 0 {
+		log.Printf("%s (seen as %s) vulnerable to: %s\n", mac, ip,
+			strings.Join(found, ","))
 	}
-
-	if quarantine && mac != "" {
-		log.Printf("%s being quarantined\n", mac)
-		config.SetProp("@/clients/"+mac+"/ring",
-			base_def.RING_QUARANTINE, nil)
+	if mac != "" && len(ops) > 0 {
+		config.Execute(ops)
+	}
+	if len(event) > 0 {
+		vulnException(mac, ip, event)
 	}
 }
 
@@ -695,9 +781,7 @@ func vulnScan(req *ScanRequest) {
 		return
 	}
 
-	if len(found) > 0 {
-		vulnHandle(req.IP, found)
-	}
+	vulnScanProcess(req.IP, found)
 }
 
 // ByDateModified is for sorting files by date modified.

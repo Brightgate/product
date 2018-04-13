@@ -73,6 +73,16 @@ type ClientInfo struct {
 	DNSPrivate bool       // We don't collect DNS queries
 }
 
+// VulnInfo represents the detection of a single vulnerability in a single
+// client.
+type VulnInfo struct {
+	FirstDetected  *time.Time // When the vuln was first seen
+	LatestDetected *time.Time // When the vuln was most recently seen
+	WarnedAt       *time.Time // When the last log message / Event was sent
+	Ignore         bool       // If the vuln is seen, take no action
+	Active         bool       // vuln was present on last scan
+}
+
 // RingMap maps ring names to the configuration information
 type RingMap map[string]*RingConfig
 
@@ -81,6 +91,10 @@ type ClientMap map[string]*ClientInfo
 
 // ChildMap is a name->structure map of a property's children
 type ChildMap map[string]*PropertyNode
+
+// VulnMap is a name->VulnInfo map representing all of the vulnerabilities we
+// have discovered on a device
+type VulnMap map[string]*VulnInfo
 
 // List of the supported property operation types
 const (
@@ -421,6 +435,21 @@ func getBoolVal(root *PropertyNode, name string) (bool, error) {
 	return rval, err
 }
 
+func getTimeVal(root *PropertyNode, name string) (*time.Time, error) {
+	var val string
+	var rval time.Time
+	var err error
+
+	if val, err = getProp(root, name); err == nil {
+		if rval, err = time.Parse(time.RFC3339, val); err != nil {
+			err = fmt.Errorf("malformed %s property: %s",
+				name, val)
+		}
+	}
+
+	return &rval, err
+}
+
 // GetRings fetches the Rings subtree from ap.configd, and converts the json
 // into a Ring -> RingConfig map
 func (c *APConfig) GetRings() RingMap {
@@ -504,7 +533,27 @@ func getClient(client *PropertyNode) *ClientInfo {
 	return &c
 }
 
-//
+// GetVulnerabilities fetches a map of the vulnerabilities detected on a single
+// client
+func (c *APConfig) GetVulnerabilities(macaddr string) VulnMap {
+	list := make(VulnMap)
+
+	vulns, _ := c.GetProps("@/clients/" + macaddr + "/vulnerabilities")
+	if vulns != nil {
+		for name, props := range vulns.Children {
+			var v VulnInfo
+			v.Ignore, _ = getBoolVal(props, "ignore")
+			v.Active, _ = getBoolVal(props, "active")
+			v.FirstDetected, _ = getTimeVal(props, "first")
+			v.LatestDetected, _ = getTimeVal(props, "latest")
+			v.WarnedAt, _ = getTimeVal(props, "warned")
+			list[name] = &v
+		}
+	}
+
+	return list
+}
+
 // GetClient fetches a single client from ap.configd and converts the json
 // result into a ClientInfo structure
 func (c *APConfig) GetClient(macaddr string) *ClientInfo {
