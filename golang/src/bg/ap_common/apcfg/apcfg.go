@@ -83,6 +83,12 @@ type VulnInfo struct {
 	Active         bool       // vuln was present on last scan
 }
 
+// ScanInfo represents a record of scanning activity for a single client.
+type ScanInfo struct {
+	Start  *time.Time // When the scan was started
+	Finish *time.Time // When the scan completed
+}
+
 // RingMap maps ring names to the configuration information
 type RingMap map[string]*RingConfig
 
@@ -95,6 +101,10 @@ type ChildMap map[string]*PropertyNode
 // VulnMap is a name->VulnInfo map representing all of the vulnerabilities we
 // have discovered on a device
 type VulnMap map[string]*VulnInfo
+
+// ScanMap is a name->ScanInfo map representing all of the scans we
+// have performed on a device
+type ScanMap map[string]*ScanInfo
 
 // List of the supported property operation types
 const (
@@ -552,6 +562,23 @@ func (c *APConfig) GetVulnerabilities(macaddr string) VulnMap {
 	}
 
 	return list
+}
+
+// GetClientScans fetches a list of the scans performed on a single client
+func (c *APConfig) GetClientScans(macaddr string) ScanMap {
+	scanMap := make(ScanMap)
+
+	scans, _ := c.GetProps("@/clients/" + macaddr + "/scans")
+	if scans != nil {
+		for name, props := range scans.Children {
+			var s ScanInfo
+			s.Start, _ = getTimeVal(props, "start")
+			s.Finish, _ = getTimeVal(props, "finish")
+			scanMap[name] = &s
+		}
+	}
+
+	return scanMap
 }
 
 // GetClient fetches a single client from ap.configd and converts the json

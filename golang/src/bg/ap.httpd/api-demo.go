@@ -222,22 +222,36 @@ func demoAlertsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Subset of apcfg.VulnInfo
+type daVulnInfo struct {
+	FirstDetected  *time.Time `json:"first_detected"`
+	LatestDetected *time.Time `json:"latest_detected"`
+	Active         bool       `json:"active"`
+}
+
+type daScanInfo struct {
+	Start  *time.Time `json:"start"`
+	Finish *time.Time `json:"finish"`
+}
+
 type daDevice struct {
-	HwAddr       string
-	Manufacturer string
-	Model        string
-	Kind         string
-	Confidence   float64
-	Ring         string
-	HumanName    string
-	DNSName      string
-	DHCPExpiry   string
-	IPv4Addr     string
-	OSVersion    string
-	OwnerName    string
-	OwnerPhone   string
-	MediaLink    string
-	Active       bool
+	HwAddr          string
+	Manufacturer    string
+	Model           string
+	Kind            string
+	Confidence      float64
+	Ring            string
+	HumanName       string
+	DNSName         string
+	DHCPExpiry      string
+	IPv4Addr        string
+	OSVersion       string
+	OwnerName       string
+	OwnerPhone      string
+	MediaLink       string
+	Active          bool
+	Scans           map[string]daScanInfo
+	Vulnerabilities map[string]daVulnInfo
 }
 
 type daDevices struct {
@@ -245,7 +259,9 @@ type daDevices struct {
 	Devices    []daDevice
 }
 
-func buildDeviceResponse(hwaddr string, client *apcfg.ClientInfo) daDevice {
+func buildDeviceResponse(hwaddr string, client *apcfg.ClientInfo,
+	scanMap apcfg.ScanMap, vulnMap apcfg.VulnMap) daDevice {
+
 	var cd daDevice
 
 	/* JavaScript from devices.vue:
@@ -288,6 +304,22 @@ func buildDeviceResponse(hwaddr string, client *apcfg.ClientInfo) daDevice {
 	cd.Ring = client.Ring
 	cd.IPv4Addr = client.IPv4.String()
 	cd.Active = client.IsActive()
+	cd.Scans = make(map[string]daScanInfo)
+	for k, v := range scanMap {
+		cd.Scans[k] = daScanInfo{
+			Start:  v.Start,
+			Finish: v.Finish,
+		}
+	}
+
+	cd.Vulnerabilities = make(map[string]daVulnInfo)
+	for k, v := range vulnMap {
+		cd.Vulnerabilities[k] = daVulnInfo{
+			FirstDetected:  v.FirstDetected,
+			LatestDetected: v.LatestDetected,
+			Active:         v.Active,
+		}
+	}
 
 	identity, err := strconv.Atoi(client.Identity)
 	if err != nil {
@@ -332,7 +364,9 @@ func demoDevicesByRingHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		cd = buildDeviceResponse(mac, client)
+		scans := config.GetClientScans(mac)
+		vulns := config.GetVulnerabilities(mac)
+		cd = buildDeviceResponse(mac, client, scans, vulns)
 
 		devices.Devices = append(devices.Devices, cd)
 	}
@@ -401,7 +435,9 @@ func demoDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	for mac, client := range clientsRaw {
 		var cd daDevice
 
-		cd = buildDeviceResponse(mac, client)
+		scans := config.GetClientScans(mac)
+		vulns := config.GetVulnerabilities(mac)
+		cd = buildDeviceResponse(mac, client, scans, vulns)
 
 		devices.Devices = append(devices.Devices, cd)
 	}
