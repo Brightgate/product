@@ -13,7 +13,6 @@ export default {
   en: {
     message: {
       home: {
-        status_block: 'Brightgate Status',
         testing: {
           testing: 'For Test Purposes',
           accept_devices: 'Accept Devices',
@@ -34,13 +33,7 @@ export default {
       },
       alerts: {
         serious_alerts: 'Serious Alerts',
-        wannacry: '🚫 WannaCry on {device}',
-        important_alert: 'Important Alert!',
-        msg: {
-          '0': 'Brightgate detected WannaCry ransomware on this device.',
-          '1': 'For your security, Brightgate has disconnected it from the network and attempted to prevent the ransomware from encrypting more files.',
-          '2': 'Visit brightgate.com from another computer for more help.',
-        },
+        problem_on_device: '{problem} on {device}',
       },
       notifications: {
         notifications: 'Notifications',
@@ -157,7 +150,6 @@ export default {
   de: {
     message: {
       home: {
-        status_block: 'Brightgate Status',
         testing: {
           testing: 'Für Testzwecke',
           accept_devices: 'Akzeptiere Geräte',
@@ -178,13 +170,7 @@ export default {
       },
       alerts: {
         serious_alerts: 'Schwerwiegende Warnungen',
-        wannacry: '🚫 WannaCry auf {device} entdeckt',
-        important_alert: 'Dringende Warnung!',
-        msg: {
-          '0': 'Brightgate hat Kryptotrojaner WannaCry auf diesem Gerät entdeckt.',
-          '1': 'Zu Ihrer Sicherheit hat Brightgate es vom Netzwerk getrennt und versucht, es von der Verschlüsselung weiterer Dateien abzuhalten.',
-          '2': 'Besuchen Sie brightgate.com auf einem anderen Computer für mehr Hilfe.',
-        },
+        problem_on_device: '{problem} auf {device}', // XXXI18N
       },
       notifications: {
         notifications: 'Benachrichtigungen',

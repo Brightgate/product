@@ -27,7 +27,7 @@
         </f7-col>
       </f7-row>
 
-      <f7-row v-if="dev.alert">
+      <f7-row v-for="(vuln, vulnid) in activeVulns" :key="vulnid">
         <!-- use margin-auto to center the icon -->
         <f7-col style="margin: auto" width="20">
           <f7-icon f7="bolt_round_fill" size="32px" color="red" />
@@ -35,9 +35,9 @@
         <f7-col width="80">
           <!-- tweak the ul rendering not to inset so much (default is 40px) -->
           <ul style="-webkit-padding-start: 20px; padding-left: 20px;">
-            <li>{{ $t("message.alerts.msg.0") }}</li>
-            <li>{{ $t("message.alerts.msg.1") }}</li>
-            <li>{{ $t("message.alerts.msg.2") }}</li>
+            <li>{{ vulnid }}</li>
+            <li>First seen: {{ timeAbs(vuln.first_detected) }}</li>
+            <li>Recently seen: {{ timeRel(vuln.latest_detected) }}</li>
           </ul>
         </f7-col>
       </f7-row>
@@ -125,6 +125,7 @@
 <script>
 import assert from 'assert';
 import moment from 'moment';
+import _ from 'lodash';
 
 export default {
   beforeCreate: function() {
@@ -132,6 +133,12 @@ export default {
   },
 
   methods: {
+    timeAbs: function(t) {
+      return moment(t).format('LLL');
+    },
+    timeRel: function(t) {
+      return moment(t).fromNow();
+    },
 
     changeRing: function(wanted_ring) {
       assert(typeof wanted_ring === 'string');
@@ -181,6 +188,9 @@ export default {
       return this.dev.active ?
         this.$t('message.dev_details.active_true') :
         this.$t('message.dev_details.active_false');
+    },
+    activeVulns: function() {
+      return _.pickBy(this.dev.vulnerabilities, 'active');
     },
     lastVulnScan: function() {
       return this.dev.last_vuln_scan ?

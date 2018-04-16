@@ -22,16 +22,19 @@
       </span>
     </f7-nav-right>
   </f7-navbar>
-  <f7-block-title>{{ $t("message.home.status_block") }}</f7-block-title>
 
-  <f7-block-title>{{ $t("message.alerts.serious_alerts") }}</f7-block-title>
-  <f7-list>
+  <f7-block-title v-if="Alerts_Count > 0">{{ $t("message.alerts.serious_alerts") }}</f7-block-title>
+  <f7-list v-if="Alerts_Count > 0">
     <f7-list-item
-          v-for="device in All_Devices"
-          v-if="device.alert"
-          v-bind:key="device.uniqid"
-          :title="$t('message.alerts.wannacry', {'device': device.network_name})"
-          :link="`/devices/${device.uniqid}/`">
+          v-for="alert in Alerts"
+          :key="alert.device.uniqid + '-' + alert.vulnid"
+          :link="`/devices/${alert.device.uniqid}/`">
+      <span>
+        <f7-icon f7="bolt_round_fill" color="red"></f7-icon>
+        {{ $t('message.alerts.problem_on_device',
+             {problem: alert.vulnid, device: alert.device.network_name})
+        }}
+      </span>
     </f7-list-item>
   </f7-list>
 
@@ -111,6 +114,8 @@ export default {
       'Fake_Login',
       'All_Devices',
       'Device_Count',
+      'Alerts',
+      'Alerts_Count',
     ]),
   },
 

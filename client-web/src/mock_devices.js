@@ -26,6 +26,7 @@ export default [
     hwaddr: 'c8:bc:c8:3a:8a:24',
     ring: 'standard',
     active: false,
+    vulnerabilities: {},
   },
   {
     manufacturer: 'Apple',
@@ -44,6 +45,7 @@ export default [
     ring: 'standard',
     active: true,
     last_scan: '2018-03-27T20:53:45+00:00',
+    vulnerabilities: {},
   },
   {
     manufacturer: 'Samsung',
@@ -61,6 +63,7 @@ export default [
     hwaddr: 'bc:47:60:8d:d5:5b',
     ring: 'standard',
     active: true,
+    vulnerabilities: {},
   },
   {
     manufacturer: 'Apple',
@@ -79,6 +82,7 @@ export default [
     hwaddr: 'c8:bc:c8:83:1c:33',
     ring: 'standard',
     active: false,
+    vulnerabilities: {},
   },
   {
     manufacturer: 'Apple Inc.',
@@ -96,6 +100,7 @@ export default [
     hwaddr: 'c8:bc:c8:83:1c:11',
     ring: 'standard',
     active: false,
+    vulnerabilities: {},
   },
   {
     manufacturer: 'Toshiba',
@@ -113,6 +118,7 @@ export default [
     hwaddr: 'c8:aa:c8:83:1c:11',
     ring: 'standard',
     active: false,
+    vulnerabilities: {},
   },
   {
     manufacturer: 'Toshiba',
@@ -125,13 +131,20 @@ export default [
     activated: 'August 10, 2017',
     owner_phone: '+1-617-867-5309',
     owner_email: 'jack@brightgate.com',
-    alert: 'alert',
     media: 'laptop-1',
     uniqid: 'aa:aa:c8:83:1c:11',
     hwaddr: 'aa:aa:c8:83:1c:11',
     ring: 'quarantine',
     last_scan: '2018-04-11T20:53:02+00:00',
     active: false,
+    vulnerabilities: {
+      'CVE-2017-0143': {
+        first_detected: '2018-04-11T20:53:02+00:00',
+        latest_detected: '2018-04-11T20:53:02+00:00',
+        ignore: false,
+        active: true,
+      },
+    },
   },
   {
     manufacturer: 'Sonos',
@@ -149,6 +162,7 @@ export default [
     hwaddr: '94:9F:3E:8A:87:27',
     ring: 'standard',
     active: false,
+    vulnerabilities: {},
   },
   {
     manufacturer: 'Apple',
@@ -166,6 +180,7 @@ export default [
     hwaddr: 'c8:bc:c8:83:1c:11',
     ring: 'standard',
     active: false,
+    vulnerabilities: {},
   },
   {
     manufacturer: 'Samsung',
@@ -184,6 +199,7 @@ export default [
     hwaddr: 'c8:bc:c8:83:1c:22',
     ring: 'standard',
     active: false,
+    vulnerabilities: {},
   },
   {
     manufacturer: 'Logitech',
@@ -201,6 +217,7 @@ export default [
     hwaddr: 'c8:bc:c8:89:1c:22',
     ring: 'standard',
     active: false,
+    vulnerabilities: {},
   },
   {
     manufacturer: 'Logitech',
@@ -218,6 +235,7 @@ export default [
     hwaddr: 'c1:bc:c1:19:1c:22',
     ring: 'standard',
     active: false,
+    vulnerabilities: {},
   },
   {
     manufacturer: 'Unknown',
@@ -235,5 +253,6 @@ export default [
     hwaddr: 'c1:ac:c1:19:1c:22',
     ring: 'standard',
     active: false,
+    vulnerabilities: {},
   },
 ];

@@ -63,6 +63,8 @@ if (enableMock) {
 }
 
 makeDeviceCategories(initDevices);
+// might take more than just devices in the future
+makeAlerts(initDevices);
 
 const STD_TIMEOUT = {
   response: 500,
@@ -76,6 +78,7 @@ const state = {
   devices: _.cloneDeep(initDevices),
   deviceCount: _.size(initDevices.by_uniqid),
   deviceCountActive: _.size(_.pickBy(initDevices.byUniqID, 'active')),
+  alerts: [],
   rings: [],
   users: _.cloneDeep(initUsers),
   userCount: Object.keys(initUsers).length,
@@ -88,6 +91,7 @@ const mutations = {
     state.devices = newDevices;
     state.deviceCount = _.size(newDevices.by_uniqid);
     state.deviceCountActive = _.size(_.pickBy(state.devices.by_uniqid, {active: true}));
+    state.alerts = makeAlerts(newDevices);
   },
 
   setRings(state, newRings) {
@@ -156,6 +160,9 @@ const getters = {
 
   Device_Count: (state) => {return state.deviceCount;},
   Device_Count_Active: (state) => {return state.deviceCountActive;},
+
+  Alerts: (state) => {return state.alerts;},
+  Alerts_Count: (state) => {return _.size(state.alerts);},
 
   Rings: (state) => {return state.rings;},
 
@@ -252,6 +259,23 @@ function makeDeviceCategories(devices) {
   return devices;
 }
 
+// Today all of the alerts we make are derived from the devices
+// list.  In the future, that could change.
+function makeAlerts(devices) {
+  const alerts = [];
+
+  _.forEach(devices.by_uniqid, (device, uniqid) => {
+    _.forEach(device.vulnerabilities, (vulninfo, vulnid) => {
+      alerts.push({
+        'device': device,
+        'vulnid': vulnid,
+        'vulninfo': vulninfo,
+      });
+    });
+  });
+  return alerts;
+}
+
 function computeDeviceProps(device) {
   const k2c = {
     'android': 'phone',
@@ -325,6 +349,8 @@ const actions = {
           hwaddr: dev.HwAddr,
           ring: dev.Ring,
           active: dev.Active,
+          scans: dev.Scans,
+          vulnerabilities: dev.Vulnerabilities,
         });
       });
 
