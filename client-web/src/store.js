@@ -285,11 +285,19 @@ function computeDeviceProps(device) {
   return device;
 }
 
+let fetchDevicesPromise = Promise.resolve();
+let fetchPeriodicTimeout = null;
+
 const actions = {
   // Load the list of devices from the server.  merge it with mock devices
   // defined locally (if using).
   fetchDevices(context) {
     console.log('Store: fetchDevices');
+    // Join callers so that only one fetch is ongoing
+    if (fetchDevicesPromise.isPending()) {
+      console.log('Store: fetchDevices (pending)');
+      return fetchDevicesPromise;
+    }
     const devices = {
       categories: {},
       by_uniqid: {},
@@ -298,7 +306,7 @@ const actions = {
       console.log(`Store: fetchDevices: enableMock = ${context.state.enableMock}`);
       _.defaults(devices.by_uniqid, _.keyBy(mockDevices, 'uniqid'));
     }
-    return retry(devicesGetP, {interval: RETRY_DELAY, max_tries: 10}
+    const p = retry(devicesGetP, {interval: RETRY_DELAY, max_tries: 10}
     ).then((res_json) => {
       const mapped_devices = _.map(res_json.Devices, (dev) => {
         return computeDeviceProps({
@@ -324,7 +332,42 @@ const actions = {
     }).finally(() => {
       makeDeviceCategories(devices);
       context.commit('setDevices', devices);
+      console.log('Store: fetchDevices finished');
     });
+    // make sure promise is a bluebird promise, so we can call isPending
+    fetchDevicesPromise = Promise.resolve(p);
+    return fetchDevicesPromise;
+  },
+
+  // Start a timer-driven periodic fetch of devices
+  fetchPeriodic(context) {
+    // if not logged in, just come back later
+    if (!context.getters.Is_Logged_In) {
+      console.log('fetchPeriodic: not logged in, later');
+      fetchPeriodicTimeout = setTimeout(() => {
+        context.dispatch('fetchPeriodic');
+      }, 10000);
+      return;
+    }
+
+    console.log('fetchPeriodic: dispatching fetchDevices');
+    context.dispatch('fetchDevices'
+    ).then(() => {
+      fetchPeriodicTimeout = setTimeout(() => {
+        context.dispatch('fetchPeriodic');
+      }, 10000);
+    }, () => {
+      console.log('fetchPeriodic: failed, back in 30');
+      fetchPeriodicTimeout = setTimeout(() => {
+        context.dispatch('fetchPeriodic');
+      }, 30000);
+    });
+    return;
+  },
+
+  fetchPeriodicStop(context) {
+    clearTimeout(fetchPeriodicTimeout);
+    fetchPeriodicTimeout = null;
   },
 
   // Load the list of rings from the server.
@@ -486,6 +529,7 @@ const actions = {
       context.dispatch('fetchDevices');
       context.dispatch('fetchRings');
       context.dispatch('fetchUsers');
+      context.dispatch('fetchPeriodic');
     }).catch((err) => {
       console.log(`login: Error ${err}`);
       throw err;
@@ -498,6 +542,7 @@ const actions = {
     ).then(() => {
       console.log('logout: Completed');
       context.commit('setLoggedIn', false);
+      context.dispatch('fetchPeriodicStop');
     }).catch((err) => {
       console.log(`logout: Error ${err}`);
       throw err;
