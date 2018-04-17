@@ -34,8 +34,8 @@
         <div slot="media">
           <img :alt="device.category" :src="media_icon(device)" width=32 height=32 />
         </div>
-        <div v-if="device.alert">
-          <f7-link popover-open="#virus">🚫</f7-link>
+        <div v-if="alert(device)">
+          <f7-icon f7="bolt_round_fill" color="red"></f7-icon>
         </div>
         <div v-if="device.notification">
           <f7-link popover-open="#notification">⚠️</f7-link>
@@ -44,16 +44,6 @@
 
     </f7-list-group>
     </f7-list>
-
-    <f7-popover id="virus">
-      <f7-block>
-        <ul>
-            <li>{{ $t("message.alerts.msg.0") }}</li>
-            <li>{{ $t("message.alerts.msg.1") }}</li>
-            <li>{{ $t("message.alerts.msg.2") }}</li>
-        </ul>
-      </f7-block>
-    </f7-popover>
 
     <f7-popover id="notification">
       <f7-block>
@@ -68,6 +58,7 @@
   </f7-page>
 </template>
 <script>
+import _ from 'lodash';
 
 const device_category_description = {
   recent: 'Recent Attempted Connections',
@@ -103,6 +94,9 @@ export default {
       return dev.active ?
         `img/nova-solid-${dev.media}-active.png` :
         `img/nova-solid-${dev.media}.png`;
+    },
+    alert: function(dev) {
+      return _.size(dev.vulnerabilities) > 0;
     },
   },
 };

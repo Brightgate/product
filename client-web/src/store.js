@@ -148,6 +148,7 @@ const getters = {
 
   All_Devices: (state) => {return state.devices.by_uniqid;},
 
+  // Return an array of devices for the category, sorted by network_name.
   Devices_By_Category: (state) => (category) => {
     const d = state.devices;
     if (!(category in d.categories)) {
@@ -156,7 +157,10 @@ const getters = {
     const x = _.map(d.categories[category], (uniqid) => {
       return d.by_uniqid[uniqid];
     });
-    return x;
+    // Sort by lowercase network name, then by uniqid in case of clashes
+    return _.sortBy(x, [(x) => {
+      return _.lowerCase(x.network_name);
+    }, 'uniqid']);
   },
 
   NumUniqIDs_By_Category: (state) => (category) => {
