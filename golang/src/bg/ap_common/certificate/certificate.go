@@ -75,13 +75,14 @@ func willCertificateExpire(cert *x509.Certificate, at time.Time) bool {
 	return false
 }
 
+// For Go, we must use the full certificate chain.
 func getLEKeyCertPaths(hostname string, at time.Time) (keyfn string, certfn string, chainfn string, fullchainfn string, err error) {
 	keyfn = fmt.Sprintf("/%s/%s/privkey.pem", pathLELiveDir, hostname)
 	certfn = fmt.Sprintf("/%s/%s/cert.pem", pathLELiveDir, hostname)
 	chainfn = fmt.Sprintf("/%s/%s/chain.pem", pathLELiveDir, hostname)
 	fullchainfn = fmt.Sprintf("/%s/%s/fullchain.pem", pathLELiveDir, hostname)
 
-	cerr := fileExists(certfn)
+	fcerr := fileExists(fullchainfn)
 	kerr := fileExists(keyfn)
 
 	if kerr != nil {
@@ -89,22 +90,25 @@ func getLEKeyCertPaths(hostname string, at time.Time) (keyfn string, certfn stri
 		return
 	}
 
-	if cerr != nil {
-		err = errors.Wrap(cerr, "certificate file missing")
+	if fcerr != nil {
+		err = errors.Wrap(fcerr, "certificate file missing")
 		return
 	}
 
 	// certificate must be valid
 	// read certificate file into buffer
-	certb, err := ioutil.ReadFile(certfn)
+	certb, err := ioutil.ReadFile(fullchainfn)
 	if err != nil {
 		// failed read
-		err = fmt.Errorf("could not read certificate file: %s", err)
+		err = fmt.Errorf("could not read certificate file '%s': %s",
+			fullchainfn, err)
 		return
 	}
 
+	certd, _ := pem.Decode(certb)
+
 	// parse certificate from buffer
-	cert, err := x509.ParseCertificate(certb)
+	cert, err := x509.ParseCertificate(certd.Bytes)
 	if err != nil {
 		// failed parse
 		err = fmt.Errorf("could not parse certificate: %s", err)
@@ -112,7 +116,8 @@ func getLEKeyCertPaths(hostname string, at time.Time) (keyfn string, certfn stri
 	}
 
 	// check if valid
-	fmt.Printf("cert = %v\n", cert)
+	fmt.Printf("cert: subject = %v issuer = %v notbefore = %v notafter = %v\n",
+		cert.Subject, cert.Issuer, cert.NotBefore, cert.NotAfter)
 	if willCertificateExpire(cert, at) {
 		// XXX how expired?
 		err = fmt.Errorf("certificate expired")
@@ -284,6 +289,8 @@ func GetKeyCertPaths(brokerd *broker.Broker, hostname string, at time.Time,
 	if err == nil && !forceRefresh {
 		return keyfn, certfn, chainfn, fullchainfn, err
 	}
+
+	log.Printf("LE certs not available: %v\n", err)
 
 	return createSSKeyCert(brokerd, applianceTempCryptoDir, hostname, at,
 		forceRefresh)

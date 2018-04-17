@@ -42,6 +42,7 @@ import (
 	"github.com/gorilla/securecookie"
 	"github.com/lestrrat/go-apache-logformat"
 
+	"github.com/unrolled/secure"
 	"github.com/urfave/negroni"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -88,6 +89,12 @@ const (
 
 	cookiehmackeyprop = "@/httpd/cookie-hmac-key"
 	cookieaeskeyprop  = "@/httpd/cookie-aes-key"
+
+	// 'unsafe-inline' is needed because current HTML pages are
+	// using inline <script> tags.  'unsafe-eval' is needed by
+	// vue.js's template compiler.  'img-src' relaxed to allow
+	// inline SVG elements.
+	contentSecurityPolicy = "default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: 'unsafe-inline' 'unsafe-eval'; frame-ancestors 'none'"
 )
 
 // listFlag is a flag type that turns a comma-separated input into a slice of
@@ -136,20 +143,39 @@ func hostInMap(hostMap map[string]bool) mux.MatcherFunc {
 
 func phishHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Phishing request: %v\n", *r)
+
+	scheme := r.URL.Scheme
+	if scheme == "" {
+		if r.TLS != nil {
+			scheme = "https"
+		} else {
+			scheme = "http"
+		}
+	}
+
 	phishu := fmt.Sprintf("%s://phishing.%s/client-web/malwareWarn.html?host=%s",
-		r.URL.Scheme, domainname, r.Host)
+		scheme, domainname, r.Host)
 	http.Redirect(w, r, phishu, http.StatusSeeOther)
 }
 
 func defaultHandler(w http.ResponseWriter, r *http.Request) {
 	var gatewayu string
 
+	scheme := r.URL.Scheme
+	if scheme == "" {
+		if r.TLS != nil {
+			scheme = "https"
+		} else {
+			scheme = "http"
+		}
+	}
+
 	if r.Host == "localhost" || r.Host == "127.0.0.1" {
 		gatewayu = fmt.Sprintf("%s://%s/client-web/",
-			r.URL.Scheme, r.Host)
+			scheme, r.Host)
 	} else {
 		gatewayu = fmt.Sprintf("%s://gateway.%s/client-web/",
-			r.URL.Scheme, domainname)
+			scheme, domainname)
 	}
 	http.Redirect(w, r, gatewayu, http.StatusFound)
 }
@@ -312,6 +338,18 @@ func main() {
 
 	loadPhishtank()
 
+	secureMW := secure.New(secure.Options{
+		SSLRedirect:           true,
+		HostsProxyHeaders:     []string{"X-Forwarded-Host"},
+		STSSeconds:            315360000,
+		STSIncludeSubdomains:  true,
+		STSPreload:            true,
+		FrameDeny:             true,
+		ContentTypeNosniff:    true,
+		BrowserXssFilter:      true,
+		ContentSecurityPolicy: contentSecurityPolicy,
+	})
+
 	// routing
 	mainRouter := mux.NewRouter()
 
@@ -337,6 +375,7 @@ func main() {
 	cutter = securecookie.New(hashKey, blockKey)
 
 	nMain := negroni.New(negroni.NewRecovery())
+	nMain.Use(negroni.HandlerFunc(secureMW.HandlerFuncWithNext))
 	nMain.UseHandler(apachelog.CombinedLog.Wrap(mainRouter, os.Stderr))
 
 	tlsCfg := &tls.Config{
@@ -353,16 +392,33 @@ func main() {
 
 	for ring, config := range rings {
 		router := network.SubnetRouter(config.Subnet)
-		// XXX We want to link the ports, because 80 should redirect to 443 if available for this ring.
+		// The secure middleware effectively links the ports, as
+		// http/80 requests redirect to https/443.
 		for _, port := range ports {
 			listen(router, port, ring, tlsCfg, fullchainfn, keyfn, nMain)
 		}
 	}
 
 	if *developerHTTP != "" {
+		developerMW := secure.New(secure.Options{
+			HostsProxyHeaders:     []string{"X-Forwarded-Host"},
+			STSSeconds:            315360000,
+			STSIncludeSubdomains:  true,
+			STSPreload:            true,
+			FrameDeny:             true,
+			ContentTypeNosniff:    true,
+			BrowserXssFilter:      true,
+			ContentSecurityPolicy: contentSecurityPolicy,
+			IsDevelopment:         true,
+		})
+
+		nDev := negroni.New(negroni.NewRecovery())
+		nDev.Use(negroni.HandlerFunc(developerMW.HandlerFuncWithNext))
+		nDev.UseHandler(apachelog.CombinedLog.Wrap(mainRouter, os.Stderr))
+
 		log.Printf("Developer Port configured at %s", *developerHTTP)
 		go func() {
-			err := http.ListenAndServe(*developerHTTP, nMain)
+			err := http.ListenAndServe(*developerHTTP, nDev)
 			log.Printf("Developer listener on %s exited: %v\n",
 				*developerHTTP, err)
 		}()

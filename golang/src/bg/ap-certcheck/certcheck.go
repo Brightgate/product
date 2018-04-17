@@ -25,8 +25,6 @@ const (
 )
 
 var (
-	aproot = flag.String("root", "proto.armv7l/appliance/opt/com.brightgate",
-		"Root of AP installation")
 	force   = flag.Bool("force", false, "Force refresh self-signed")
 	verbose = flag.Bool("verbose", false, "Verbose output")
 
@@ -62,6 +60,9 @@ func main() {
 		log.Fatalf("failed to fetch gateway domain: %v\n", err)
 	}
 	gatewayName := "gateway." + domainName
+	if *verbose {
+		log.Printf("gateway = %v\n", gatewayName)
+	}
 
 	keyfn, certfn, chainfn, fullchainfn, err := certificate.GetKeyCertPaths(brokerd, gatewayName,
 		time.Now().Add(validDuration), *force)

@@ -34,10 +34,12 @@ import (
 	//	"time"
 
 	// "base_def"
+	"github.com/tomazk/envcfg"
 
 	"github.com/gorilla/mux"
 	apachelog "github.com/lestrrat/go-apache-logformat"
-	"github.com/tomazk/envcfg"
+
+	"github.com/unrolled/secure"
 	// "github.com/urfave/negroni"
 
 	//	"github.com/prometheus/client_golang/prometheus"
@@ -57,6 +59,9 @@ type Cfg struct {
 
 const (
 	pname = "cl.httpd"
+
+	// CSP matched to that of ap.httpd, anticipating web hoist.
+	contentSecurityPolicy = "default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: 'unsafe-inline' 'unsafe-eval'; frame-ancestors 'none'"
 )
 
 var (
@@ -64,8 +69,6 @@ var (
 )
 
 func port443Handler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add(
-		"Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 	http.Redirect(w, r, "https://brightgate.com", 307)
 }
 
@@ -109,11 +112,27 @@ func main() {
 	keyf := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem",
 		environ.CertHostname)
 
+	secureMW := secure.New(secure.Options{
+		SSLRedirect:           true,
+		AllowedHosts:          []string{"svc0.b10e.net"},
+		HostsProxyHeaders:     []string{"X-Forwarded-Host"},
+		STSSeconds:            315360000,
+		STSIncludeSubdomains:  true,
+		STSPreload:            true,
+		FrameDeny:             true,
+		ContentTypeNosniff:    true,
+		BrowserXssFilter:      true,
+		ContentSecurityPolicy: contentSecurityPolicy,
+	})
+
 	port443mux := mux.NewRouter()
 	port443mux.PathPrefix("/.well-known/").Handler(
 		http.StripPrefix("/.well-known/",
 			http.FileServer(http.Dir(wellknown))))
 	port443mux.HandleFunc("/", port443Handler)
+
+	port443app := secureMW.Handler(port443mux)
+
 	cfg := &tls.Config{
 		MinVersion:               tls.VersionTLS12,
 		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
@@ -128,7 +147,7 @@ func main() {
 
 	port443srv := &http.Server{
 		Addr:         ":443",
-		Handler:      apachelog.CombinedLog.Wrap(port443mux, os.Stderr),
+		Handler:      apachelog.CombinedLog.Wrap(port443app, os.Stderr),
 		TLSConfig:    cfg,
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
 	}
