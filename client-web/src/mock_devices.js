@@ -137,6 +137,13 @@ export default [
     ring: 'quarantine',
     last_scan: '2018-04-11T20:53:02+00:00',
     active: false,
+    scans: {
+      // finish after start-- scan complete
+      vulnerability: {
+        start: '2018-04-11T20:52:02+00:00',
+        finish: '2018-04-11T20:52:02+00:00',
+      },
+    },
     vulnerabilities: {
       'CVE-2017-0143': {
         first_detected: '2018-04-11T20:53:02+00:00',
@@ -162,6 +169,12 @@ export default [
     hwaddr: '94:9F:3E:8A:87:27',
     ring: 'standard',
     active: false,
+    scans: {
+      // start w/o finish-- initial scan
+      vulnerability: {
+        start: '2018-04-11T20:52:02+00:00',
+      },
+    },
     vulnerabilities: {},
   },
   {
@@ -180,6 +193,13 @@ export default [
     hwaddr: 'c8:bc:c8:83:1c:11',
     ring: 'standard',
     active: false,
+    scans: {
+      // start is after finish-- rescan in progress
+      vulnerability: {
+        start: '2018-04-11T20:52:02+00:00',
+        finish: '2018-04-11T20:51:02+00:00',
+      },
+    },
     vulnerabilities: {},
   },
   {

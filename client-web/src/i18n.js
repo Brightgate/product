@@ -94,7 +94,9 @@ export default {
         access_control: 'Access Control',
         security_ring: 'Security Ring',
         vuln_scan: 'Vulnerability Scan',
-        vuln_scan_notyet: 'Not Yet',
+        vuln_scan_notyet: 'Not Scanned Yet',
+        vuln_scan_initial: 'Initial Scan in Progress',
+        vuln_scan_rescan: 'Rescan in Progress',
         activity: 'Activity',
         active_true: 'Active',
         active_false: 'Inactive',
@@ -231,7 +233,9 @@ export default {
         access_control: 'Zugangskontrolle',
         security_ring: 'Ring',
         vuln_scan: 'Vulnerability Scan', // XXXI18N
-        vuln_scan_notyet: 'Not Yet',  // XXXI18N
+        vuln_scan_notyet: 'Not Scanned Yet',  // XXXI18N
+        vuln_scan_initial: 'Initial Scan in Progress',  // XXXI18N
+        vuln_scan_rescan: 'Rescan in Progress',  // XXXI18N
         activity: 'Activity',         // XXXI18N
         active_true: 'Active',        // XXXI18N
         active_false: 'Inactive',     // XXXI18N

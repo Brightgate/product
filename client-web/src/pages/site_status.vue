@@ -34,7 +34,7 @@
         {{ Device_Count_Active }}
       </f7-list-item>
       <f7-list-item :title="$t('message.site_status.devices_scanned')">
-        <i>Not Yet</i>
+        {{ Device_Count_VulnScan }}
       </f7-list-item>
     </f7-list-group>
 
@@ -72,6 +72,7 @@ export default {
       'All_Devices',
       'Device_Count',
       'Device_Count_Active',
+      'Device_Count_VulnScan',
       'Network_Config',
     ]),
   },

@@ -77,7 +77,8 @@ const state = {
   fakeLogin: false,
   devices: _.cloneDeep(initDevices),
   deviceCount: _.size(initDevices.by_uniqid),
-  deviceCountActive: _.size(_.pickBy(initDevices.byUniqID, 'active')),
+  deviceCountActive: _.size(_.pickBy(initDevices.by_uniqid, 'active')),
+  vulnScanCount: countVulnScans(initDevices),
   alerts: [],
   rings: [],
   users: _.cloneDeep(initUsers),
@@ -86,11 +87,19 @@ const state = {
   enableMock: enableMock,
 };
 
+// Right now this just counts the number of devices which have completed
+// scans at some point.  We need to develop a more nuanced idea of what this
+// stat should mean.
+function countVulnScans(devices) {
+  return _.size(_.pickBy(devices.by_uniqid, 'scans.vulnerability.finish'));
+}
+
 const mutations = {
   setDevices(state, newDevices) {
     state.devices = newDevices;
     state.deviceCount = _.size(newDevices.by_uniqid);
-    state.deviceCountActive = _.size(_.pickBy(state.devices.by_uniqid, {active: true}));
+    state.deviceCountActive = _.size(_.pickBy(newDevices.by_uniqid, 'active'));
+    state.vulnScanCount = countVulnScans(newDevices),
     state.alerts = makeAlerts(newDevices);
   },
 
@@ -160,6 +169,7 @@ const getters = {
 
   Device_Count: (state) => {return state.deviceCount;},
   Device_Count_Active: (state) => {return state.deviceCountActive;},
+  Device_Count_VulnScan: (stat) => {return state.vulnScanCount;},
 
   Alerts: (state) => {return state.alerts;},
   Alerts_Count: (state) => {return _.size(state.alerts);},

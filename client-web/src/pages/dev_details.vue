@@ -193,9 +193,18 @@ export default {
       return _.pickBy(this.dev.vulnerabilities, 'active');
     },
     lastVulnScan: function() {
-      return this.dev.last_vuln_scan ?
-        moment(this.dev.last_vuln_scan).fromNow() :
-        this.$t('message.dev_details.vuln_scan_notyet');
+      const start = _.get(this.dev, 'scans.vulnerability.start', null);
+      const finish = _.get(this.dev, 'scans.vulnerability.finish', null);
+      if (start === null && finish === null) {
+        return this.$t('message.dev_details.vuln_scan_notyet');
+      }
+      if (finish === null) {
+        return this.$t('message.dev_details.vuln_scan_initial');
+      }
+      if (moment(start).isBefore(finish)) {
+        return moment(finish).format('LLL');
+      }
+      return this.$t('message.dev_details.vuln_scan_rescan');
     },
     dev: function() {
       const uniqid = this.$f7route.params.UniqID;
