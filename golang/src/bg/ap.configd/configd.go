@@ -157,9 +157,11 @@ var (
 	addr         = flag.String("listen-address",
 		base_def.CONFIGD_PROMETHEUS_PORT,
 		"The address to listen on for HTTP requests.")
-	brokerd *broker.Broker
 	propdir = flag.String("propdir", "./",
 		"directory in which the property files should be stored")
+	verbose = flag.Bool("v", false, "verbose log output")
+
+	brokerd *broker.Broker
 
 	propTreeFile string
 
@@ -238,7 +240,10 @@ func expirationHandler() {
 				log.Printf("Missed expiration for %s by %s\n",
 					next.name, delay)
 			}
-			log.Printf("Expiring: %s at %v\n", next.name, time.Now())
+			if *verbose {
+				log.Printf("Expiring: %s at %v\n",
+					next.name, time.Now())
+			}
 			heap.Pop(&expirationHeap)
 
 			next.index = -1
@@ -784,7 +789,9 @@ func propertyUpdate(property, value string, expires *time.Time,
 	var updated, inserted bool
 	var oldExpiration *time.Time
 
-	log.Printf("set property %s -> %s\n", property, value)
+	if *verbose {
+		log.Printf("set property %s -> %s\n", property, value)
+	}
 	node := propertySearch(property)
 	if node == nil && insert {
 		if node = propertyInsert(property); node != nil {
@@ -833,7 +840,7 @@ func propertyGet(property string) (string, error) {
 		err = apcfg.ErrNoProp
 	}
 
-	if err != nil {
+	if err != nil && *verbose {
 		log.Printf("property get for %s failed: %v\n", property, err)
 	}
 
@@ -1140,7 +1147,9 @@ func processOneEvent(query *base_msg.ConfigQuery) *base_msg.ConfigResponse {
 	}
 
 	if rc != success {
-		log.Printf("Config operation failed: %v\n", err)
+		if *verbose {
+			log.Printf("Config operation failed: %v\n", err)
+		}
 		rval = fmt.Sprintf("%v", err)
 	}
 	response := &base_msg.ConfigResponse{

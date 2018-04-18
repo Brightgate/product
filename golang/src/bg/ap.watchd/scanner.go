@@ -109,7 +109,6 @@ type ScanRequest struct {
 	ScanType string
 	Scanner  func(*ScanRequest)
 
-	Again  bool
 	Period time.Duration
 	When   time.Time
 
@@ -208,10 +207,9 @@ func cancelScan(ip string) {
 	pendingLock.Unlock()
 }
 
-func scheduleScan(request *ScanRequest, again bool) {
+func scheduleScan(request *ScanRequest, delay time.Duration) {
 	if activeHosts.contains(request.IP) {
-		request.When = time.Now()
-		request.Again = again
+		request.When = time.Now().Add(delay)
 		pendingLock.Lock()
 		heap.Push(&scansPending, request)
 		pendingLock.Unlock()
@@ -225,20 +223,14 @@ func scanner() {
 
 		pendingLock.Lock()
 		now := time.Now()
-		for i, r := range scansPending {
-			if r.When.After(now) {
-				break
+		if len(scansPending) > 0 {
+			r := scansPending[0]
+			if r.When.Before(now) {
+				req = heap.Remove(&scansPending, 0).(*ScanRequest)
 			}
-
-			if r.Again && r.When.Add(r.Period).After(now) {
-				continue
-			}
-
-			req = heap.Remove(&scansPending, i).(*ScanRequest)
-			break
 		}
-
 		pendingLock.Unlock()
+
 		if req == nil {
 			time.Sleep(time.Second)
 			continue
@@ -247,13 +239,15 @@ func scanner() {
 		propBase := fmt.Sprintf("@/clients/%s/scans/%s/", req.Mac, req.ScanType)
 		scansStarted.WithLabelValues(req.IP, req.ScanType).Inc()
 		config.CreateProp(propBase+"start", nowString(), nil)
+
 		req.Scanner(req)
+
 		config.CreateProp(propBase+"finish", nowString(), nil)
 		dur := time.Since(now).Seconds()
 		scanDuration.WithLabelValues(req.IP, req.ScanType).Observe(dur)
 		scansFinished.WithLabelValues(req.IP, req.ScanType).Inc()
 
-		scheduleScan(req, true)
+		scheduleScan(req, req.Period)
 	}
 }
 
@@ -308,9 +302,9 @@ func scannerRequest(mac, ip string) {
 		Period:   vulnFreq,
 	}
 	activeHosts.add(ip)
-	scheduleScan(&TCPScan, false)
-	scheduleScan(&UDPScan, false)
-	scheduleScan(&VulnScan, false)
+	scheduleScan(&TCPScan, 2*time.Minute)
+	scheduleScan(&UDPScan, 10*time.Minute)
+	scheduleScan(&VulnScan, 0)
 }
 
 func getMacIP(host *nmap.Host) (mac, ip string) {
