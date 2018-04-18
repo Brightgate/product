@@ -67,8 +67,8 @@ makeDeviceCategories(initDevices);
 makeAlerts(initDevices);
 
 const STD_TIMEOUT = {
-  response: 500,
-  deadline: 5000,
+  response: 5000,
+  deadline: 10000,
 };
 const RETRY_DELAY = 1000;
 

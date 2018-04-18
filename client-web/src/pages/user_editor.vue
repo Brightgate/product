@@ -19,7 +19,7 @@
       <!-- uid -- user name -->
       <f7-list-item v-if="new_user">
         <f7-label>{{$t('message.user_details.username')}}</f7-label>
-        <f7-input type="text"
+        <f7-input type="email"
             :value="user_details.UID"
             @input="user_details.UID = $event.target.value"
             placeholder="User's short ID"

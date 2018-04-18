@@ -49,7 +49,7 @@
             <f7-label>{{ $t('message.login.username') }}</f7-label>
             <f7-input
               name="username"
-              type="text"
+              type="email"
               @input="uid = $event.target.value"
               @keyup.enter="attemptLogin"
               autofocus
