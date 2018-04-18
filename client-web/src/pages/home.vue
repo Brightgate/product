@@ -47,7 +47,7 @@
       <span>
         <f7-icon f7="bolt_round_fill" color="red"></f7-icon>
         {{ $t('message.alerts.problem_on_device',
-             {problem: alert.vulnid, device: alert.device.network_name})
+             {problem: vulnHeadline(alert.vulnid), device: alert.device.network_name})
         }}
       </span>
     </f7-list-item>
@@ -113,6 +113,8 @@
 import superagent from 'superagent';
 import vuex from 'vuex';
 
+import vulnerability from '../vulnerability';
+
 export default {
   data: function() {
     return {
@@ -165,6 +167,10 @@ export default {
 
     attemptLogout: function() {
       this.$store.dispatch('logout', {});
+    },
+
+    vulnHeadline: function(vulnid) {
+      return vulnerability.headline(vulnid);
     },
 
   },

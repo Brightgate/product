@@ -34,11 +34,21 @@
         </f7-col>
         <f7-col width="80">
           <!-- tweak the ul rendering not to inset so much (default is 40px) -->
+          <h3>{{ vulnHeadline(vulnid) }}</h3>
           <ul style="-webkit-padding-start: 20px; padding-left: 20px;">
-            <li>{{ vulnid }}</li>
-            <li>First seen: {{ timeAbs(vuln.first_detected) }}</li>
+            <!-- allowed to have HTML content -->
+            <li v-html="vulnExplanation(vulnid)"></li>
+            <!-- allowed to have HTML content -->
+            <li>Remediation: <span v-html="vulnRemediation(vulnid)"></span></li>
+            <li>Reported: {{ timeAbs(vuln.first_detected) }}</li>
             <li>Recently seen: {{ timeRel(vuln.latest_detected) }}</li>
           </ul>
+          <span v-for="vmore in vulnMoreInfo(vulnid)"
+              :key="vmore">
+            <!-- use <a> here instead of f7-link, as that appears to strip out target="_blank".
+                 n.b. that this will probably need more work if we use cordova/phonegap -->
+            <a :href="vmore" rel="noopener" target="_blank" class="link external">More Information &gt;</a><br />
+          </span>
         </f7-col>
       </f7-row>
 
@@ -127,6 +137,8 @@ import assert from 'assert';
 import moment from 'moment';
 import _ from 'lodash';
 
+import vulnerability from '../vulnerability';
+
 export default {
   beforeCreate: function() {
     return this.$store.dispatch('fetchRings');
@@ -138,6 +150,18 @@ export default {
     },
     timeRel: function(t) {
       return moment(t).fromNow();
+    },
+    vulnHeadline: function(vulnid) {
+      return vulnerability.headline(vulnid);
+    },
+    vulnExplanation: function(vulnid) {
+      return vulnerability.explanation(vulnid);
+    },
+    vulnRemediation: function(vulnid) {
+      return vulnerability.remediation(vulnid);
+    },
+    vulnMoreInfo: function(vulnid) {
+      return vulnerability.moreInfo(vulnid);
     },
 
     changeRing: function(wanted_ring) {
