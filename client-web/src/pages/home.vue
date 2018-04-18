@@ -14,7 +14,22 @@
     <!-- f7-nav-title doesn't seem to center properly without also
          including left and right. -->
     <f7-nav-left>&nbsp;</f7-nav-left>
-    <f7-nav-title><img style="padding-top:4px" src="img/bglogo.png"/></f7-nav-title>
+
+    <f7-nav-title>
+      <img v-if="this.$f7router.app.theme === 'ios'"
+          alt="Brightgate"
+          style="padding-top:4px"
+          src="img/bglogo_navbar_ios.png"
+          srcset="img/bglogo_navbar_ios.png,
+                  img/bglogo_navbar_ios@2x.png 2x"/>
+      <img v-else
+          alt="Brightgate"
+          style="padding-top:4px"
+          src="img/bglogo_navbar_md.png"
+          srcset="img/bglogo_navbar_md.png,
+                  img/bglogo_navbar_md@2x.png 2x"/>
+    </f7-nav-title>
+
     <f7-nav-right>
       <span font-size="small">
       <f7-link v-if="Is_Logged_In" @click="attemptLogout()">{{ $t('message.home.tools.logout') }}</f7-link>

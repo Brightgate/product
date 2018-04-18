@@ -13,7 +13,7 @@
     "build:f7-assets": "rsync -a node_modules/framework7/dist/css/framework7* dist/css/",
     "build:f7-css": "rsync -a node_modules/framework7-icons/css/ dist/css/",
     "build:f7-fonts": "rsync -a node_modules/framework7-icons/fonts/ dist/fonts/",
-    "build:www-assets": "rsync -a src/html/* dist/ && rsync -a src/css/ dist/css/ && rsync -a src/img/ dist/img/",
+    "build:www-assets": "rsync -a src/html/* dist/ && rsync -a src/css/ dist/css/ && rsync -a --exclude=README.md src/img/ dist/img/",
     "build:browserify": "cross-env NODE_ENV=development browserify -g envify -p [ vueify/plugins/extract-css -o dist/css/build.css ] -e src/main.js > dist/js/build.js",
     "eslint": "eslint --ext .js,.vue ./src",
     "eslint-fix": "eslint --fix --ext .js,.vue ./src",

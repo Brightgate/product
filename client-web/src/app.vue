@@ -35,7 +35,12 @@
         <div style="margin-left: 5px; text-align: left" v-on:click="closeLogin()">
           <f7-link color="gray" icon-f7="close_round_fill"></f7-link>
         </div>
-        <div><img src="img/bglogo.png"/></div>
+        <div>
+          <img
+            src="img/bglogo_navbar_ios.png"
+            srcset="img/bglogo_navbar_ios.png,
+                    img/bglogo_navbar_ios@2x.png 2x"/>
+        </div>
         {{ $t('message.login.login') }}
         </f7-login-screen-title>
 
