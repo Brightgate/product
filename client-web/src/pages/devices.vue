@@ -14,12 +14,12 @@
 
     <f7-list>
     <f7-list-group v-for="catkey in device_category_order"
-             v-if="$store.getters.NumUniqIDs_By_Category(catkey) > 0"
+             v-if="Device_Count(Devices_By_Category(catkey)) > 0"
              v-bind:key="catkey">
 
       <f7-list-item group-title
               v-bind:title="$t(`message.devices.cats.${catkey}`) +
-              (catkey == 'recent' ? ` (${$store.getters.NumUniqIDs_By_Category(catkey)})` : '')"/>
+              (catkey == 'recent' ? ` (${Device_Count(Devices_By_Category(catkey))})` : '')"/>
       <f7-list-item v-if="catkey == 'recent'">
         <f7-link v-on:click="showRecent = true" v-if="!showRecent">{{ $t('message.devices.show_recent') }}</f7-link>
         <f7-link v-on:click="showRecent = false" v-if="showRecent">{{ $t('message.devices.hide_recent') }}</f7-link>
@@ -27,7 +27,7 @@
 
       <f7-list-item
             v-if="showRecent || catkey != 'recent'"
-            v-for="device in $store.getters.Devices_By_Category(catkey)"
+            v-for="device in Devices_By_Category(catkey)"
             v-bind:key="device.uniqid"
             v-bind:title="device.network_name"
             v-bind:link="`/devices/${device.uniqid}/`">
@@ -58,6 +58,7 @@
   </f7-page>
 </template>
 <script>
+import Vuex from 'vuex';
 import _ from 'lodash';
 
 const device_category_order = ['recent', 'phone', 'computer', 'printer', 'media', 'iot', 'unknown'];
@@ -68,6 +69,23 @@ export default {
       showRecent: false,
       device_category_order,
     };
+  },
+
+  computed: {
+    // Map various $store elements as computed properties for use in the
+    // template.
+    ...Vuex.mapGetters([
+      'Device_Count',
+    ]),
+    Devices_By_Category: function() {
+      return (category) => {
+        const devs = this.$store.getters.Devices_By_Category(category);
+        // Sort by lowercase network name, then by uniqid in case of clashes
+        return _.sortBy(devs, [(device) => {
+          return _.lowerCase(device.network_name);
+        }, 'uniqid']);
+      };
+    },
   },
 
   methods: {
@@ -85,7 +103,7 @@ export default {
         `img/nova-solid-${dev.media}.png`;
     },
     alert: function(dev) {
-      return _.size(dev.vulnerabilities) > 0;
+      return dev.activeVulnCount > 0;
     },
   },
 };

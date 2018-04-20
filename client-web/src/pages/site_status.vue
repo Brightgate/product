@@ -27,14 +27,14 @@
     <f7-list-group>
       <f7-list-item :title="$t('message.site_status.devices')" group-title>
       </f7-list-item>
-      <f7-list-item :title="$t('message.site_status.devices_reg')">
-        {{ Device_Count }}
-      </f7-list-item>
       <f7-list-item :title="$t('message.site_status.devices_active')">
-        {{ Device_Count_Active }}
+        {{ Device_Count(Device_Active(All_Devices)) }}
       </f7-list-item>
       <f7-list-item :title="$t('message.site_status.devices_scanned')">
-        {{ Device_Count_VulnScan }}
+        {{ Device_Count(Device_VulnScanned(Device_Active(All_Devices))) }}
+      </f7-list-item>
+      <f7-list-item :title="$t('message.site_status.devices_reg')">
+        {{ Device_Count(All_Devices) }}
       </f7-list-item>
     </f7-list-group>
 
@@ -71,8 +71,8 @@ export default {
       'Is_Logged_In',
       'All_Devices',
       'Device_Count',
-      'Device_Count_Active',
-      'Device_Count_VulnScan',
+      'Device_Active',
+      'Device_VulnScanned',
       'Network_Config',
     ]),
   },

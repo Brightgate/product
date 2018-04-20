@@ -38,20 +38,22 @@
     </f7-nav-right>
   </f7-navbar>
 
-  <f7-block-title v-if="Alerts_Count > 0">{{ $t("message.alerts.serious_alerts") }}</f7-block-title>
-  <f7-list v-if="Alerts_Count > 0">
-    <f7-list-item
-          v-for="alert in Alerts"
+  <template v-if="Alert_Count(Alert_Active(All_Alerts))">
+    <f7-block-title>{{ $t("message.alerts.serious_alerts") }}</f7-block-title>
+    <f7-list>
+      <f7-list-item
+          v-for="alert in Alert_Active(All_Alerts)"
           :key="alert.device.uniqid + '-' + alert.vulnid"
           :link="`/devices/${alert.device.uniqid}/`">
-      <span>
-        <f7-icon f7="bolt_round_fill" color="red"></f7-icon>
-        {{ $t('message.alerts.problem_on_device',
+        <span>
+          <f7-icon f7="bolt_round_fill" color="red"></f7-icon>
+          {{ $t('message.alerts.problem_on_device',
              {problem: vulnHeadline(alert.vulnid), device: alert.device.network_name})
-        }}
-      </span>
-    </f7-list-item>
-  </f7-list>
+          }}
+        </span>
+      </f7-list-item>
+    </f7-list>
+  </template>
 
   <f7-block-title>{{ $t("message.home.tools.tools") }}</f7-block-title>
   <f7-list>
@@ -61,8 +63,13 @@
         :class="Is_Logged_In ? '' : 'disabled'">
     </f7-list-item>
     <f7-list-item
+        link="/compliance_report/"
+        :title="$t('message.home.tools.compliance_report')"
+        :class="Is_Logged_In ? '' : 'disabled'">
+    </f7-list-item>
+    <f7-list-item
         link="/devices/"
-        :title="$t('message.home.tools.manage_devices', {'device_count': Device_Count})"
+        :title="$t('message.home.tools.manage_devices', {'device_count': Device_Count(All_Devices)})"
         :class="Is_Logged_In ? '' : 'disabled'">
     </f7-list-item>
     <f7-list-item
@@ -131,8 +138,9 @@ export default {
       'Fake_Login',
       'All_Devices',
       'Device_Count',
-      'Alerts',
-      'Alerts_Count',
+      'All_Alerts',
+      'Alert_Count',
+      'Alert_Active',
     ]),
   },
 

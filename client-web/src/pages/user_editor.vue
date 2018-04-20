@@ -68,8 +68,8 @@
       <!-- Role -->
       <f7-list-item>
         <f7-label>{{$t('message.user_details.role')}}</f7-label>
-        <f7-input type="select" value="user">
-          <option value="user">User</option>
+        <f7-input type="select" value="admin">
+          <!-- XXX <option value="user">User</option> -->
           <option value="admin">Administrator</option>
         </f7-input>
       </f7-list-item>

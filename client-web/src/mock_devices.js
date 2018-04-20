@@ -118,7 +118,14 @@ export default [
     hwaddr: 'c8:aa:c8:83:1c:11',
     ring: 'standard',
     active: false,
-    vulnerabilities: {},
+    vulnerabilities: {
+      'CVE-2014-0160': {
+        first_detected: '2018-04-11T20:53:02+00:00',
+        latest_detected: '2018-04-11T20:53:02+00:00',
+        ignore: false,
+        active: true,
+      },
+    },
   },
   {
     manufacturer: 'Toshiba',
@@ -235,9 +242,16 @@ export default [
     media: 'webcam-1',
     uniqid: 'c8:bc:c8:89:1c:22',
     hwaddr: 'c8:bc:c8:89:1c:22',
-    ring: 'standard',
-    active: false,
+    ring: 'devices',
+    active: true,
     vulnerabilities: {},
+    scans: {
+      // finish after start-- scan complete
+      vulnerability: {
+        start: '2018-04-11T20:52:02+00:00',
+        finish: '2018-04-11T20:52:02+00:00',
+      },
+    },
   },
   {
     manufacturer: 'Logitech',
@@ -253,9 +267,16 @@ export default [
     media: 'webcam-1',
     uniqid: 'c1:bc:c1:19:1c:22',
     hwaddr: 'c1:bc:c1:19:1c:22',
-    ring: 'standard',
-    active: false,
+    ring: 'devices',
+    active: true,
     vulnerabilities: {},
+    scans: {
+      // finish after start-- scan complete
+      vulnerability: {
+        start: '2018-04-11T20:52:02+00:00',
+        finish: '2018-04-11T20:52:02+00:00',
+      },
+    },
   },
   {
     manufacturer: 'Unknown',
@@ -269,8 +290,8 @@ export default [
     owner_phone: '+1-617-259-4751',
     owner_email: 'cat@brightgate.com',
     media: 'interface-question-mark',
-    uniqid: 'c1:ac:c1:19:1c:22',
-    hwaddr: 'c1:ac:c1:19:1c:22',
+    uniqid: 'c1:ac:c1:19:1c:44',
+    hwaddr: 'c1:ac:c1:19:1c:44',
     ring: 'standard',
     active: false,
     vulnerabilities: {},

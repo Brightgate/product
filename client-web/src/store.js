@@ -43,28 +43,18 @@ const mockRings = [
 // Determines whether mock devices are enabled or disabled by default
 const enableMock = false;
 
-let initDevices;
-let initUsers;
-let initNetworkConfig;
+let initUsers = {};
+let initNetworkConfig = {};
+let initDevlist = [];
 if (enableMock) {
-  initDevices = {
-    by_uniqid: _.keyBy(mockDevices, 'uniqid'),
-    categories: {},
-  };
+  initDevlist = mockDevices;
   initUsers = _.cloneDeep(mockUsers);
   initNetworkConfig = _.cloneDeep(mockNetworkConfig);
-} else {
-  initDevices = {
-    by_uniqid: {},
-    categories: {},
-  };
-  initUsers = {};
-  initNetworkConfig = {};
 }
 
-makeDeviceCategories(initDevices);
+const initDevices = organizeDevices(initDevlist);
 // might take more than just devices in the future
-makeAlerts(initDevices);
+const initAlerts = makeAlerts(initDevices);
 
 const STD_TIMEOUT = {
   response: 5000,
@@ -76,30 +66,16 @@ const state = {
   loggedIn: false,
   fakeLogin: false,
   devices: _.cloneDeep(initDevices),
-  deviceCount: _.size(initDevices.by_uniqid),
-  deviceCountActive: _.size(_.pickBy(initDevices.by_uniqid, 'active')),
-  vulnScanCount: countVulnScans(initDevices),
-  alerts: [],
+  alerts: initAlerts,
   rings: [],
   users: _.cloneDeep(initUsers),
-  userCount: Object.keys(initUsers).length,
   networkConfig: _.cloneDeep(initNetworkConfig),
   enableMock: enableMock,
 };
 
-// Right now this just counts the number of devices which have completed
-// scans at some point.  We need to develop a more nuanced idea of what this
-// stat should mean.
-function countVulnScans(devices) {
-  return _.size(_.pickBy(devices.by_uniqid, 'scans.vulnerability.finish'));
-}
-
 const mutations = {
   setDevices(state, newDevices) {
     state.devices = newDevices;
-    state.deviceCount = _.size(newDevices.by_uniqid);
-    state.deviceCountActive = _.size(_.pickBy(newDevices.by_uniqid, 'active'));
-    state.vulnScanCount = countVulnScans(newDevices),
     state.alerts = makeAlerts(newDevices);
   },
 
@@ -113,7 +89,6 @@ const mutations = {
 
   setUsers(state, newUsers) {
     state.users = newUsers;
-    state.userCount = Object.keys(newUsers).length;
   },
 
   updateUser(state, user) {
@@ -146,41 +121,61 @@ const getters = {
     return state.devices.by_uniqid[uniqid];
   },
 
-  All_Devices: (state) => {return state.devices.by_uniqid;},
+  All_Devices: (state) => {
+    return state.devices.all_devices;
+  },
+  Device_Count: (state) => (devices) => {
+    return _.size(devices);
+  },
 
   // Return an array of devices for the category, sorted by network_name.
   Devices_By_Category: (state) => (category) => {
-    const d = state.devices;
-    if (!(category in d.categories)) {
+    return state.devices.by_category[category];
+  },
+
+  Devices_By_Ring: (state) => (ring) => {
+    if (state.devices.by_ring[ring] === undefined) {
       return [];
     }
-    const x = _.map(d.categories[category], (uniqid) => {
-      return d.by_uniqid[uniqid];
-    });
-    // Sort by lowercase network name, then by uniqid in case of clashes
-    return _.sortBy(x, [(x) => {
-      return _.lowerCase(x.network_name);
-    }, 'uniqid']);
+    return state.devices.by_ring[ring];
   },
 
-  NumUniqIDs_By_Category: (state) => (category) => {
-    const d = state.devices;
-    if (!(category in d.categories)) {
-      return 0;
-    }
-    return d.categories[category].length;
+  Device_Active: (state) => (devices) => {
+    return _.filter(devices, {active: true});
   },
 
-  Device_Count: (state) => {return state.deviceCount;},
-  Device_Count_Active: (state) => {return state.deviceCountActive;},
-  Device_Count_VulnScan: (stat) => {return state.vulnScanCount;},
+  Device_VulnScanned: (state) => (devices) => {
+    return _.filter(devices, 'scans.vulnerability.finish');
+  },
 
-  Alerts: (state) => {return state.alerts;},
-  Alerts_Count: (state) => {return _.size(state.alerts);},
+  Device_Vulnerable: (state) => (devices) => {
+    return _.filter(devices, 'activeVulnCount');
+  },
+
+  Device_NotVulnerable: (state) => (devices) => {
+    return _.filter(devices, {activeVulnCount: 0});
+  },
+
+  All_Alerts: (state) => {return state.alerts;},
+
+  Alert_Count: (state) => (alerts) => {return _.size(alerts);},
+
+  Alert_Active: (state) => (alerts) => {
+    return _.pickBy(alerts, {vulninfo: {active: true}});
+  },
+
+  Alert_Inactive: (state) => (alerts) => {
+    return _.pickBy(alerts, {vulninfo: {active: false}});
+  },
+
+  Alert_By_Ring: (state) => (ring, alerts) => {
+    return _.pickBy(alerts, {device: {ring: ring}});
+  },
 
   Rings: (state) => {return state.rings;},
 
   All_Users: (state) => {return state.users;},
+  User_Count: (state) => (users) => {return _.size(users);},
 
   User_By_UUID: (state) => (uuid) => {return state.users[uuid];},
 
@@ -255,21 +250,48 @@ function devicesGetP() {
   });
 }
 
-function makeDeviceCategories(devices) {
-  // Reorganize the data into:
+function organizeDevices(all_devices) {
+  assert(_.isArray(all_devices));
+  const devices = {
+    all_devices: all_devices,
+    by_uniqid: {},
+    by_category: {},
+    by_ring: {},
+  };
+
+  // First, organize by unique id.
+  devices.by_uniqid = _.keyBy(devices.all_devices, 'uniqid');
+
+  // Next, Reorganize the data into:
   // { 'phone': [list of phones...], 'computer': [...] ... }
   //
   // Make sure all categories are present.
-  devices.categories = {};
+  devices.by_category = {};
   for (const c of device_category_all) {
-    devices.categories[c] = [];
+    devices.by_category[c] = [];
   }
 
-  _.reduce(devices.by_uniqid, (result, value) => {
-    assert(value.category in devices.categories, `category ${value.category} is missing`);
-    result[value.category].push(value.uniqid);
+  _.reduce(devices.all_devices, (result, value) => {
+    assert(value.category in devices.by_category, `category ${value.category} is missing`);
+    result[value.category].push(value);
     return result;
-  }, devices.categories);
+  }, devices.by_category);
+
+  // Index by ring
+  _.reduce(devices.all_devices, (result, value) => {
+    if (result[value.ring] === undefined) {
+      result[value.ring] = [];
+    }
+    result[value.ring].push(value);
+    return result;
+  }, devices.by_ring);
+
+  // Tabulate vulnerability counts for each device
+  _.forEach(devices.all_devices, (device) => {
+    device.activeVulnCount = _.size(_.pickBy(device.vulnerabilities, {active: true}));
+  });
+
+  console.log(devices);
   return devices;
 }
 
@@ -336,13 +358,10 @@ const actions = {
       console.log('Store: fetchDevices (pending)');
       return fetchDevicesPromise;
     }
-    const devices = {
-      categories: {},
-      by_uniqid: {},
-    };
+    let all_devices = [];
     if (context.state.enableMock) {
       console.log(`Store: fetchDevices: enableMock = ${context.state.enableMock}`);
-      _.defaults(devices.by_uniqid, _.keyBy(mockDevices, 'uniqid'));
+      all_devices = mockDevices;
     }
     const p = retry(devicesGetP, {interval: RETRY_DELAY, max_tries: 10}
     ).then((res_json) => {
@@ -368,9 +387,9 @@ const actions = {
         });
       });
 
-      _.defaults(devices.by_uniqid, _.keyBy(mapped_devices, 'uniqid'));
+      all_devices = all_devices.concat(mapped_devices);
     }).finally(() => {
-      makeDeviceCategories(devices);
+      const devices = organizeDevices(all_devices);
       context.commit('setDevices', devices);
       console.log('Store: fetchDevices finished');
     });

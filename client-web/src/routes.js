@@ -9,6 +9,7 @@
  */
 
 import SiteStatus from './pages/site_status.vue';
+import ComplianceReport from './pages/compliance_report.vue';
 import DevDetails from './pages/dev_details.vue';
 import Devices from './pages/devices.vue';
 import EnrollGuest from './pages/enroll_guest.vue';
@@ -22,6 +23,10 @@ export default [
   {
     path: '/',
     component: Home,
+  },
+  {
+    path: '/compliance_report/',
+    component: ComplianceReport,
   },
   {
     path: '/devices/',
