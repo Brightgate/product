@@ -104,6 +104,10 @@ export default {
         access_blocked: 'Blocked 🚫',
         access_blocked_text: 'For your security, Brightgate has blocked this device from your network.  See the alert above for more details.',
         access_normal: 'Normal✅',
+        vuln_more_info: 'More Information',
+        vuln_remediation: 'Remediation: {text}',
+        vuln_first_detected: 'Reported: {time}',
+        vuln_latest_detected: 'Recently Seen: {time}',
       },
       enroll_guest: {
         title: 'Brightgate - Enroll Guest',
@@ -243,6 +247,10 @@ export default {
         access_blocked: 'Geblockt 🚫',
         access_blocked_text: 'Zu Ihrer Sicherheit hat Brightgate dieses Gerät von Ihrem Netzwerk getrennt. Sehen Sie die Warnung weiter oben für mehr Details.',
         access_normal: 'Normal ✅',
+        vuln_more_info: 'More Information', // XXXI18N
+        vuln_remediation: 'Remediation: {text}', // XXXI18N
+        vuln_first_detected: 'Reported: {time}', // XXXI18N
+        vuln_latest_detected: 'Recently Seen: {time}', // XXXI18N
       },
       enroll_guest: {
         title: 'Brightgate – Gastbenutzer Registrieren',

@@ -36,18 +36,28 @@
           <!-- tweak the ul rendering not to inset so much (default is 40px) -->
           <h3>{{ vulnHeadline(vulnid) }}</h3>
           <ul style="-webkit-padding-start: 20px; padding-left: 20px;">
-            <!-- allowed to have HTML content -->
+            <!-- XXXI18N-- note that presently we don't support localized explanation text -->
+            <!-- Note: allowed to have HTML content.
+                 Future work here is to parse the HTML and decorate <a> links
+                 with target= properly.  Or to support some non-HTML markup -->
             <li v-html="vulnExplanation(vulnid)"></li>
-            <!-- allowed to have HTML content -->
-            <li>Remediation: <span v-html="vulnRemediation(vulnid)"></span></li>
-            <li>Reported: {{ timeAbs(vuln.first_detected) }}</li>
-            <li>Recently seen: {{ timeRel(vuln.latest_detected) }}</li>
+
+            <!-- Note: allowed to have HTML content.
+                 Future work here is to parse the HTML and decorate <a> links
+                 with target= properly.  Or to support some non-HTML markup -->
+            <!-- XXXI18N-- note that presently we don't support localized remediation text -->
+            <li v-html="$t('message.dev_details.vuln_remediation', { text: vulnRemediation(vulnid) })"></li>
+            <li>{{ $t('message.dev_details.vuln_first_detected', {time: timeAbs(vuln.first_detected)}) }}</li>
+            <li>{{ $t('message.dev_details.vuln_latest_detected', {time: timeRel(vuln.latest_detected)}) }}</li>
           </ul>
           <span v-for="vmore in vulnMoreInfo(vulnid)"
               :key="vmore">
             <!-- use <a> here instead of f7-link, as that appears to strip out target="_blank".
                  n.b. that this will probably need more work if we use cordova/phonegap -->
-            <a :href="vmore" rel="noopener" target="_blank" class="link external">More Information &gt;</a><br />
+            <a :href="vmore" rel="noopener" target="_blank" class="link external">
+              {{ $t('message.dev_details.vuln_more_info') }} &gt;
+            </a>
+            <br />
           </span>
         </f7-col>
       </f7-row>

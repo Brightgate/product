@@ -12,6 +12,8 @@ import VueI18n from 'vue-i18n';
 import Framework7 from 'framework7';
 import Framework7Vue from 'framework7-vue';
 import BrowserLocale from 'browser-locale';
+import moment from 'moment';
+import 'moment/min/locales.min';
 
 import Routes from './routes.js';
 import App from './app.vue';
@@ -26,11 +28,14 @@ Vue.use(VueI18n);
 Vue.use(Framework7Vue, Framework7);
 
 const locale = BrowserLocale().substring(0, 2);
+console.log(`Trying locale ${locale}`);
 const i18n = new VueI18n({
   fallbackLocale: 'en',
   locale,
   messages,
 });
+moment.locale(locale);
+console.log(`moment locale: ${moment.locale()}`);
 
 // Init App
 new Vue({
