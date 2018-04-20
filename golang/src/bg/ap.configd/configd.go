@@ -75,7 +75,7 @@ const (
 	pname            = "ap.configd"
 
 	minConfigVersion = 10
-	curConfigVersion = 12
+	curConfigVersion = 13
 )
 
 // Allow for significant variation in the processing of subtrees
@@ -168,6 +168,8 @@ var (
 	// ApVersion is the git version of the running code
 	ApVersion    string
 	upgradeHooks []func() error
+
+	authTypeToDefaultRing map[string]string
 
 	expirationHeap  pnodeQueue
 	expirationTimer *time.Timer
@@ -387,7 +389,6 @@ func expirationNotify(prop, val string) {
 }
 
 func entityHandler(event []byte) {
-	updated := false
 	entity := &base_msg.EventNetEntity{}
 	proto.Unmarshal(event, entity)
 
@@ -397,25 +398,79 @@ func entityHandler(event []byte) {
 		return
 	}
 	hwaddr := network.Uint64ToHWAddr(*entity.MacAddress)
-	path := "@/clients/" + hwaddr.String()
+	path := "@/clients/" + hwaddr.String() + "/"
 	node := propertyInsert(path)
+	ring := selectRing(node, entity.Authtype)
 
-	if entity.Ipv4Address != nil {
+	updates := make(map[string]*string)
+	updates[path+"ring"] = &ring
+	updates[path+"connection/node"] = entity.Node
+	updates[path+"connection/mode"] = entity.Mode
+	updates[path+"connection/authtype"] = entity.Authtype
+	// Ipv4Address is an 'optional' field in the protobuf, but we will
+	// also allow a value of 0.0.0.0 to indicate that the field should be
+	// ignored.
+	if entity.Ipv4Address != nil && *entity.Ipv4Address != 0 {
 		ipv4 := network.Uint32ToIPAddr(*entity.Ipv4Address).String()
-		if n := propertyAdd(node, "ipv4_observed"); n.Value != ipv4 {
-			n.Value = ipv4
-			updated = true
+		updates[path+"ipv4_observed"] = &ipv4
+	}
+
+	updated := false
+	for p, v := range updates {
+		if v != nil && *v != "" {
+			if u, _ := propertyUpdate(p, *v, nil, true); u {
+				updateNotify(p, *v, nil)
+				updated = true
+			}
 		}
 	}
-
-	if n := propertyAdd(node, "ring"); n.Value == "" {
-		n.Value = base_def.RING_UNENROLLED
-		updated = true
-	}
-
 	if updated {
 		propTreeStore()
 	}
+}
+
+/****************************************************************************
+ *
+ * Logic for determining the proper ring on which to place a newly discovered
+ * device.
+ */
+func defaultRingInit() {
+	authTypeToDefaultRing = make(map[string]string)
+
+	if node := propertySearch("@/network/default_ring"); node != nil {
+		for a, n := range node.Children {
+			authTypeToDefaultRing[a] = n.Value
+			log.Printf("default %s ring: %s\n", a, n.Value)
+		}
+	}
+}
+
+func selectRing(client *pnode, authp *string) string {
+	var ring, auth string
+	var ok bool
+
+	if n, ok := client.Children["ring"]; ok {
+		// If the client already has a ring set, don't override it
+		return n.Value
+	}
+
+	if authp != nil {
+		auth = *authp
+	} else if n, ok := client.Children["authtype"]; ok {
+		auth = n.Value
+	}
+
+	if auth == "" {
+		log.Printf("Can't select ring for %s: no auth type\n",
+			client.name)
+	} else if ring, ok = authTypeToDefaultRing[auth]; !ok {
+		log.Printf("Can't select ring for %s: unsupported auth: %s\n",
+			client.name, auth)
+	} else {
+		log.Printf("Setting initial ring for %s to %s\n",
+			client.name, ring)
+	}
+	return ring
 }
 
 /*************************************************************************
@@ -1222,13 +1277,12 @@ func main() {
 
 	if err = deviceDBInit(); err != nil {
 		log.Printf("Failed to import devices database: %v\n", err)
-		if mcpd != nil {
-			mcpd.SetState(mcp.BROKEN)
-			os.Exit(1)
-		}
+		mcpd.SetState(mcp.BROKEN)
+		os.Exit(1)
 	}
 
 	propTreeInit()
+	defaultRingInit()
 
 	incoming, _ := zmq.NewSocket(zmq.REP)
 	port := base_def.INCOMING_ZMQ_URL + base_def.CONFIGD_ZMQ_REP_PORT
@@ -1237,9 +1291,7 @@ func main() {
 	}
 	log.Printf("Listening on %s\n", port)
 
-	if mcpd != nil {
-		mcpd.SetState(mcp.ONLINE)
-	}
-
+	mcpd.SetState(mcp.ONLINE)
 	eventLoop(incoming)
+	mcpd.SetState(mcp.OFFLINE)
 }

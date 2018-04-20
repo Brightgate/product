@@ -7,7 +7,7 @@
       "Value": "0"
     },
     "cfgversion": {
-      "Value": "12"
+      "Value": "13"
     },
     "apversion": {
       "Value": ""
@@ -97,7 +97,7 @@
         "guest": {
           "Children": {
             "auth": {
-              "Value": "wpa-psk"
+              "Value": "wpa-eap"
             },
             "lease_duration": {
               "Value": "30"
@@ -143,6 +143,19 @@
         },
         "ssid": {
           "Value": "setme"
+        },
+        "default_ring": {
+          "Children": {
+            "wpa-psk": {
+              "Value": "unenrolled"
+            },
+            "wpa-eap": {
+              "Value": "guest"
+            },
+            "open": {
+              "Value": "unenrolled"
+            }
+	  }
         }
       }
     },

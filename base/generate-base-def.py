@@ -172,7 +172,6 @@ assignments = [
 
     [Statement.COMMENT, "Security rings"],
     [Statement.SIMPLE_STR, "RING_UNENROLLED", "unenrolled"],
-    [Statement.SIMPLE_STR, "RING_SETUP", "setup"],
     [Statement.SIMPLE_STR, "RING_CORE", "core"],
     [Statement.SIMPLE_STR, "RING_STANDARD", "standard"],
     [Statement.SIMPLE_STR, "RING_DEVICES", "devices"],

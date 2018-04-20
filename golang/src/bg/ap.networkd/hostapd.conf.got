@@ -1,6 +1,5 @@
 interface={{.Interface}}
 driver=nl80211
-ctrl_interface=/var/run/hostapd
 hw_mode={{.Mode}}
 ieee80211n=1
 
@@ -13,6 +12,7 @@ ieee80211n=1
 {{.PskComment}}bssid={{.HWaddr}}
 {{.PskComment}}ssid={{.PSKSSID}}
 {{.PskComment}}utf8_ssid=1
+ctrl_interface=/var/run/hostapd
 
 {{.PskComment}}wmm_enabled=1
 {{.PskComment}}channel={{.Channel}}
@@ -33,6 +33,7 @@ ieee80211n=1
 {{.EapComment}}bss={{.Interface}}_1
 {{.EapComment}}ssid={{.EAPSSID}}
 {{.EapComment}}utf8_ssid=1
+ctrl_interface=/var/run/hostapd
 
 {{.EapComment}}wmm_enabled=1
 {{.EapComment}}channel={{.Channel}}

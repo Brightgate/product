@@ -48,20 +48,28 @@ var (
 
 	brokerd *broker.Broker
 
-	config    *apcfg.APConfig
-	clients   apcfg.ClientMap
-	clientMtx sync.Mutex
+	config  *apcfg.APConfig
+	clients apcfg.ClientMap
+
+	// This lock protects the contents of the clients map as well as all of
+	// the per-ring lease tables.  The lock is taken at the very beginning
+	// of each configd handler or DHCP handler, and is released at the very
+	// end.  This coarse-grained locking avoids complicated ordering issues
+	// that would arise from context-sensitive, fine-grained locking.  Our
+	// request frequency and latency requirements are sufficiently low that
+	// code simplicity is more important than maximal performance.
+	bigLock sync.Mutex
 
 	domainName string
 
 	sharedRouter net.IP     // without vlans, all rings share a
 	sharedSubnet *net.IPNet // subnet and a router node
 
-	wanMacs = make(map[string]bool) // mac(s) connected to the wan
+	// Which authentication type is required by each interface
+	ifaceToAuthType = make(map[string]string)
 
-	defaultRing = base_def.RING_UNENROLLED
-
-	lastRequestOn string // last DHCP request arrived on this interface
+	// Track the interface on which each client's DHCP request arrives
+	clientRequestOn = make(map[string]string)
 )
 
 const pname = "ap.dhcp4d"
@@ -69,37 +77,16 @@ const pname = "ap.dhcp4d"
 func getRing(hwaddr string) string {
 	var ring string
 
-	clientMtx.Lock()
 	if client := clients[hwaddr]; client != nil {
 		ring = client.Ring
 	}
-	clientMtx.Unlock()
 
 	return ring
-}
-
-func setRing(hwaddr, ring string) bool {
-	updated := false
-
-	clientMtx.Lock()
-	if client := clients[hwaddr]; client != nil {
-		if client.Ring != ring {
-			client.Ring = ring
-			updated = true
-		}
-	} else {
-		clients[hwaddr] = &apcfg.ClientInfo{Ring: ring}
-		updated = true
-	}
-	clientMtx.Unlock()
-
-	return updated
 }
 
 func updateRing(hwaddr, old, new string) bool {
 	updated := false
 
-	clientMtx.Lock()
 	client := clients[hwaddr]
 	if client == nil && old == "" {
 		client = &apcfg.ClientInfo{Ring: ""}
@@ -110,7 +97,6 @@ func updateRing(hwaddr, old, new string) bool {
 		client.Ring = new
 		updated = true
 	}
-	clientMtx.Unlock()
 
 	return updated
 }
@@ -125,7 +111,7 @@ func configExpired(path []string) {
 	// clean up expired leases as a side effect of handing out new ones, so
 	// all we do here is log it.
 	if len(path) == 3 && path[0] == "clients" && path[2] == "ipv4" {
-		log.Printf("Lease for %s expired\n", path[2])
+		log.Printf("Lease for %s expired\n", path[1])
 	}
 }
 
@@ -135,6 +121,9 @@ func configIPv4Changed(path []string, val string, expires *time.Time) {
 	// lease change we just registered.  All other cases should be an IP
 	// address being statically assigned.  Anything else is user error.
 	//
+
+	bigLock.Lock()
+	defer bigLock.Unlock()
 
 	ipaddr := val
 	hwaddr := path[1]
@@ -207,9 +196,37 @@ func configIPv4Changed(path []string, val string, expires *time.Time) {
 	h.recordLease(l, hwaddr, "", ipv4, nil)
 }
 
-func configRingChanged(path []string, val string, expires *time.Time) {
-	client := path[1]
+func clientDeleteEvent(path []string) {
+	// If this is the deletion of a child property, ignore it.  We're just
+	// trying to handle the full deletion of a client here.
+	if len(path) > 2 {
+		return
+	}
 
+	bigLock.Lock()
+	defer bigLock.Unlock()
+
+	hwaddr := path[1]
+	if client, ok := clients[hwaddr]; ok {
+		log.Printf("Handling deletion of client %s\n", hwaddr)
+
+		if ring := client.Ring; ring != "" {
+			h := handlers[ring]
+			if l := h.leaseSearch(hwaddr); l != nil {
+				h.releaseLease(l, hwaddr)
+			}
+		}
+		delete(clients, hwaddr)
+	}
+	delete(clientRequestOn, hwaddr)
+}
+
+func configRingChanged(path []string, val string, expires *time.Time) {
+
+	bigLock.Lock()
+	defer bigLock.Unlock()
+
+	client := path[1]
 	old := getRing(client)
 	if (old != val) && updateRing(client, old, val) {
 		if old == "" {
@@ -222,6 +239,10 @@ func configRingChanged(path []string, val string, expires *time.Time) {
 	}
 }
 
+func configNodesChanged(path []string, val string, expires *time.Time) {
+	initAuthMap()
+}
+
 func propPath(hwaddr, prop string) string {
 	return fmt.Sprintf("@/clients/%s/%s", hwaddr, prop)
 }
@@ -230,7 +251,7 @@ func propPath(hwaddr, prop string) string {
  * This is the first time we've seen this device.  Send an ENTITY message with
  * its hardware address, name, and any IP address it's requesting.
  */
-func notifyNewEntity(p dhcp.Packet, options dhcp.Options, ring string) {
+func notifyNewEntity(p dhcp.Packet, options dhcp.Options, authType string) {
 	ipaddr := p.CIAddr()
 	hwaddr := network.HWAddrToUint64(p.CHAddr())
 	hostname := string(options[dhcp.OptionHostName])
@@ -238,13 +259,19 @@ func notifyNewEntity(p dhcp.Packet, options dhcp.Options, ring string) {
 	log.Printf("New client %s (name: %q incoming IP address: %s)\n",
 		p.CHAddr().String(), hostname, ipaddr.String())
 	entity := &base_msg.EventNetEntity{
-		Timestamp:   aputil.NowToProtobuf(),
-		Sender:      proto.String(brokerd.Name),
-		Debug:       proto.String("-"),
-		Ring:        proto.String(ring),
-		MacAddress:  proto.Uint64(hwaddr),
-		Ipv4Address: proto.Uint32(network.IPAddrToUint32(ipaddr)),
-		Hostname:    proto.String(hostname),
+		Timestamp:  aputil.NowToProtobuf(),
+		Sender:     proto.String(brokerd.Name),
+		Debug:      proto.String("-"),
+		MacAddress: proto.Uint64(hwaddr),
+	}
+	if authType != "" {
+		entity.Authtype = proto.String(authType)
+	}
+	if hostname != "" {
+		entity.Hostname = proto.String(hostname)
+	}
+	if ipv4 := network.IPAddrToUint32(ipaddr); ipv4 != 0 {
+		entity.Ipv4Address = proto.Uint32(ipv4)
 	}
 
 	err := brokerd.Publish(entity, base_def.TOPIC_ENTITY)
@@ -441,7 +468,6 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 		reqIP = net.IP(p.CIAddr())
 		action = "CLAIMED"
 	}
-	log.Printf("   REQUEST %s %s\n", action, reqIP.String())
 
 	if len(reqIP) != 4 || reqIP.Equal(net.IPv4zero) {
 		log.Printf("Invalid reqIP %s from %s\n", reqIP.String(), hwaddr)
@@ -454,6 +480,7 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 		return h.nak(p)
 	}
 
+	log.Printf("   REQUEST %s %s\n", action, reqIP.String())
 	l.name = string(options[dhcp.OptionHostName])
 	if l.static {
 		l.expires = nil
@@ -553,39 +580,53 @@ func (h *ringHandler) decline(p dhcp.Packet) {
 }
 
 //
-// Based on the client's MAC address and/or the network the request arrived on,
-// identify its ring and return the appropriate DHCP handler.  The use of
-// lastRequestOn relies on the knowledge that the DHCP library (krolaw/dhcp4)
-// will call the handler immediately after the call to ReadFrom(), where
-// lastRequestOn gets set.
+// Based on the client's MAC address, identify its ring and return the
+// appropriate DHCP handler.
 //
 func selectRingHandler(p dhcp.Packet, options dhcp.Options) *ringHandler {
-	hwaddr := p.CHAddr().String()
-	oldRing := getRing(hwaddr)
-	if oldRing == "" {
-		// If this client isn't already assigned to a ring, we
-		// put it in the default ring
-		updateRing(hwaddr, oldRing, defaultRing)
-	}
+	var handler *ringHandler
+	var ring string
 
-	ring := getRing(hwaddr)
-	if oldRing == "" {
-		log.Printf("New client %s on ring %s\n", hwaddr, ring)
-		notifyNewEntity(p, options, ring)
-	}
+	mac := p.CHAddr().String()
+	requestIface := clientRequestOn[mac]
+	authType := ifaceToAuthType[requestIface]
 
-	ringHandler, ok := handlers[ring]
-	if !ok {
+	if authType == "" {
+		log.Printf("Ignoring DHCP request from %s on unsupported "+
+			"iface %s\n", mac, requestIface)
+	} else if ring = getRing(mac); ring == "" {
+		// If we don't have a ring assignment for this client, then
+		// there are two possibilities.  First, it's a brand new
+		// wireless client, and its DHCP request arrived before configd
+		// finished handling the NetEntity event from networkd.  Second,
+		// it's a wired client which won't trigger a networkd NetEntity
+		// event, since there is no explicit 'join the network' process.
+		// With wired and wifi interfaces attached to the same bridge,
+		// we can't distinguish between the two.  We'll send a NetEntity
+		// event ourselves, which will be harmlessly redundant in the
+		// first case.  Because we have no authentication event, we have
+		// to reverse-engineer the authentication method from the VLAN
+		// the request arrived on.
+		log.Printf("New client %s incoming on %s.  Auth: %s\n",
+			mac, requestIface, authType)
+		notifyNewEntity(p, options, authType)
+	} else if handler = handlers[ring]; handler == nil {
 		log.Printf("Client %s identified on unknown ring '%s'\n",
-			hwaddr, ring)
-	} else if ring != oldRing {
-		config.CreateProp(propPath(hwaddr, "ring"), ring, nil)
+			mac, ring)
 	}
-	return ringHandler
+	// Once we've handled the DHCP request for this client, we can forget
+	// the source interface.  This prevents the map from growing without
+	// bound.
+	delete(clientRequestOn, mac)
+
+	return handler
 }
 
 func (h *ringHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType,
 	options dhcp.Options) (d dhcp.Packet) {
+
+	bigLock.Lock()
+	defer bigLock.Unlock()
 
 	ringHandler := selectRingHandler(p, options)
 	if ringHandler == nil {
@@ -759,33 +800,17 @@ func (h *ringHandler) recoverLeases() {
 	}
 }
 
-func getMac(name string) string {
-	mac := ""
-
-	if name != "" {
-		iface, err := net.InterfaceByName(name)
-		if err != nil {
-			log.Printf("Can't get interface '%s': %v\n", name, err)
-		} else {
-			mac = iface.HardwareAddr.String()
-		}
+func initAuthMap() {
+	newMap := make(map[string]string)
+	for _, ring := range config.GetRings() {
+		newMap[ring.Bridge] = ring.Auth
 	}
-	return mac
+	bigLock.Lock()
+	ifaceToAuthType = newMap
+	bigLock.Unlock()
 }
 
-func initHandlers() error {
-	nodes, err := config.GetProps("@/nodes")
-	if err != nil {
-		return fmt.Errorf("unable to get NIC ring assignments: %v", err)
-	}
-	for _, node := range nodes.Children {
-		for name, nic := range node.Children {
-			if nic.Value == base_def.RING_WAN {
-				wanMacs[name] = true
-			}
-		}
-	}
-
+func initHandlers() {
 	// Iterate over the known rings.  For each one, create a DHCP handler to
 	// manage its subnet.
 	rings := config.GetRings()
@@ -794,8 +819,17 @@ func initHandlers() error {
 		h.recoverLeases()
 		handlers[h.ring] = h
 	}
+}
 
-	return nil
+// Extract the requesting client's MAC address from inside a raw DHCP packet
+func extractClientMac(b []byte, n int) string {
+	var mac string
+
+	p := dhcp.Packet(b[:n])
+	if p.HLen() <= 16 {
+		mac = p.CHAddr().String()
+	}
+	return mac
 }
 
 type multiConn struct {
@@ -803,26 +837,30 @@ type multiConn struct {
 	cm   *ipv4.ControlMessage
 }
 
+// On errors, we set the 'received bytes' value to 0, which tells the
+// library to skip any further parsing of the packet.
 func (s *multiConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 	var iface *net.Interface
-	var requestMac string
+	var clientMac string
 
 	n, s.cm, addr, err = s.conn.ReadFrom(b)
-	if err == nil && s.cm != nil {
-		if iface, err = net.InterfaceByIndex(s.cm.IfIndex); err == nil {
-			requestMac = iface.HardwareAddr.String()
-		}
-	}
-	if requestMac == "" {
+	if err != nil {
+		log.Printf("ReadFrom() failed: %v\n", err)
+	} else if s.cm == nil {
+		log.Printf("DHCP read has no ControlMessage\n")
+	} else if n < 240 {
+		log.Printf("Invalid DHCP packet: only %d bytes\n", n)
+	} else if clientMac = extractClientMac(b, n); clientMac == "" {
+		// This looks like an invalid DHCP packet.
+		log.Printf("Invalid DHCP packet: no mac address found\n")
+		n = 0
+	} else if iface, err = net.InterfaceByIndex(s.cm.IfIndex); err != nil {
+		log.Printf("Failed interface lookup for request from %s: %v\n",
+			clientMac, err)
 		n = 0
 	} else {
-		lastRequestOn = requestMac
-		if wanMacs[requestMac] {
-			// If the request arrives on the WAN port, drop it.
-			n = 0
-		} else {
-			log.Printf("Request arrived on %s\n", requestMac)
-		}
+		clientRequestOn[clientMac] = iface.Name
+		log.Printf("DHCP pkt from %s on %s\n", clientMac, iface.Name)
 	}
 	return
 }
@@ -892,40 +930,26 @@ func main() {
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}
+	config.HandleDelete(`^@/clients/.*`, clientDeleteEvent)
 	config.HandleExpire(`^@/clients/.*/ipv4$`, configExpired)
 	config.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
 	config.HandleChange(`^@/clients/.*/ring$`, configRingChanged)
+	config.HandleChange(`^@/nodes/.*$`, configNodesChanged)
 
 	clients = config.GetClients()
-
 	domainName, err = config.GetDomain()
 	if err != nil {
 		log.Fatalf("failed to fetch gateway domain: %v\n", err)
 	}
 
-	if ring, err := config.GetProp("@/network/default_ring"); err == nil {
-		if _, ok := apcfg.ValidRings[ring]; !ok {
-			log.Printf("Unknown default_ring: %s\n", ring)
-		} else {
-			defaultRing = ring
-		}
-	}
+	initHandlers()
+	initAuthMap()
 
-	err = initHandlers()
-
-	if err != nil {
-		if mcpd != nil {
-			mcpd.SetState(mcp.BROKEN)
-		}
-		log.Fatalf("DHCP server failed to start: %v\n", err)
-	}
-
-	if mcpd != nil {
-		mcpd.SetState(mcp.ONLINE)
-	}
 	log.Printf("DHCP server online\n")
+	mcpd.SetState(mcp.ONLINE)
 	mainLoop()
 	log.Printf("shutting down\n")
+	mcpd.SetState(mcp.OFFLINE)
 
 	os.Exit(0)
 }

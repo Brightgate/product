@@ -125,6 +125,7 @@ var (
 		"The address to listen on for HTTP requests.")
 	templateDir = flag.String("template_dir", "golang/src/ap.userauthd",
 		"location of userauthd templates")
+	verbose = flag.Bool("v", false, "increase verbosity")
 
 	hostapdProcess *aputil.Child // track the hostapd proc
 
@@ -311,9 +312,15 @@ func runOne(rc *rConf) {
 	fn := generateRadiusHostapdConf(rc)
 	log.Printf("runOne configuration %v\n", fn)
 
+	args := make([]string, 0)
+	if *verbose {
+		args = append(args, "-d")
+	}
+	args = append(args, fn)
+
 	startTimes := make([]time.Time, failuresAllowed)
 	for running {
-		hostapdProcess = aputil.NewChild(hostapdPath, "-d", fn)
+		hostapdProcess = aputil.NewChild(hostapdPath, args...)
 		hostapdProcess.LogOutputTo("radius: ",
 			log.Ldate|log.Ltime, os.Stderr)
 

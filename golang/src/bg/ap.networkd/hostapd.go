@@ -55,8 +55,9 @@ type apConfig struct {
 	EapComment string // Used to disable wpa-eap in .conf template
 	ConfDir    string // Location of hostapd.conf, etc.
 
-	confFile string // Name of this NIC's hostapd.conf
-	status   error  // collect hostapd failures
+	authTypes []string // authentication types enabled
+	confFile  string   // Name of this NIC's hostapd.conf
+	status    error    // collect hostapd failures
 
 	RadiusAuthServer     string
 	RadiusAuthServerPort string
@@ -72,16 +73,23 @@ type hostapdCmd struct {
 }
 
 // hostapd has a separate control socket for each of the network interfaces it
-// manages.  For each socket, we can have a single in-process command and any
+// manages.  For each socket, we can have a single in-flight command and any
 // number of queued commands.
 type hostapdConn struct {
-	hostapd     *hostapdHdl
 	active      bool
+	hostapd     *hostapdHdl
 	device      *physDevice
-	conn        *net.UnixConn
-	liveCmd     *hostapdCmd
-	pendingCmds []*hostapdCmd
-	stations    map[string]time.Time
+	name        string        // device name used by this bssid
+	localName   string        // our end of the control socket
+	remoteName  string        // hostapd's end of the control socket
+	authType    string        // authentication type used by this bssid
+	conn        *net.UnixConn // unix-domain control socket to hostapd
+	liveCmd     *hostapdCmd   // the in-flight hostapd command
+	pendingCmds []*hostapdCmd // all queued commands
+
+	// clients we believe to be connected to this bssid, and the last time
+	// we saw them
+	stations map[string]time.Time
 
 	sync.Mutex
 }
@@ -91,6 +99,7 @@ type hostapdHdl struct {
 	process   *aputil.Child
 	devices   []*physDevice
 	confFiles []string
+	authTypes map[string]bool
 	conns     []*hostapdConn
 	done      chan error
 }
@@ -98,22 +107,17 @@ type hostapdHdl struct {
 // Connect to the hostapd command socket for this interface and create a unix
 // domain socket for it to reply to.
 func (c *hostapdConn) connect() {
-	pid := os.Getpid()
-
-	remoteName := "/var/run/hostapd/" + c.device.name
-	localName := "/tmp/hostapd_ctrl_" + c.device.name + "-" + strconv.Itoa(pid)
-
-	laddr := net.UnixAddr{Name: localName, Net: "unixgram"}
-	raddr := net.UnixAddr{Name: remoteName, Net: "unixgram"}
+	laddr := net.UnixAddr{Name: c.localName, Net: "unixgram"}
+	raddr := net.UnixAddr{Name: c.remoteName, Net: "unixgram"}
 
 	c.Lock()
 	for c.active {
 		// Wait for the child process to create its socket
-		if aputil.FileExists(remoteName) {
+		if aputil.FileExists(c.remoteName) {
 			// If our socket still exists (either from a previous
 			// instance of ap.networkd or because we failed a prior
 			// Dial attempt), remove it now.
-			os.Remove(localName)
+			os.Remove(c.localName)
 			c.conn, _ = net.DialUnix("unixgram", &laddr, &raddr)
 			if c.conn != nil {
 				break
@@ -190,13 +194,14 @@ func (c *hostapdConn) handleResult(result string) {
 	}
 }
 
-func sendNetEntity(mac, mode string, disconnect bool) {
+func sendNetEntity(mac, mode, auth string, disconnect bool) {
 	hwaddr, _ := net.ParseMAC(mac)
 	entity := &base_msg.EventNetEntity{
 		Timestamp:  aputil.NowToProtobuf(),
 		Sender:     proto.String(brokerd.Name),
 		Debug:      proto.String("-"),
 		Mode:       &mode,
+		Authtype:   &auth,
 		Node:       &nodeUUID,
 		Disconnect: &disconnect,
 		MacAddress: proto.Uint64(network.HWAddrToUint64(hwaddr)),
@@ -210,14 +215,14 @@ func sendNetEntity(mac, mode string, disconnect bool) {
 
 func (c *hostapdConn) stationPresent(sta string) {
 	if _, ok := c.stations[sta]; !ok {
-		sendNetEntity(sta, c.device.activeMode, false)
+		sendNetEntity(sta, c.device.activeMode, c.authType, false)
 	}
 	c.stations[sta] = time.Now()
 }
 
 func (c *hostapdConn) stationGone(sta string) {
 	delete(c.stations, sta)
-	sendNetEntity(sta, c.device.activeMode, true)
+	sendNetEntity(sta, c.device.activeMode, "", true)
 }
 
 // Handle an async status message from hostapd
@@ -233,17 +238,19 @@ func (c *hostapdConn) handleStatus(status string) {
 			macOctet + ":" + macOctet + ":" + macOctet + ":" +
 			macOctet + ")"
 	)
-	re := regexp.MustCompile(msgs + " " + macAddr)
 
+	re := regexp.MustCompile(msgs + " " + macAddr)
 	m := re.FindStringSubmatch(status)
 	if len(m) == 3 {
-		switch m[1] {
+		msg := m[1]
+		mac := m[2]
+		switch msg {
 		case "AP-STA-CONNECTED":
-			c.stationPresent(m[2])
+			c.stationPresent(mac)
 		case "AP-STA-POLL-OK":
-			c.stationPresent(m[2])
+			c.stationPresent(mac)
 		case "AP-STA-DISCONNECTED":
-			c.stationGone(m[2])
+			c.stationGone(mac)
 		}
 	}
 }
@@ -361,16 +368,16 @@ func macUpdateLastOctet(mac string, nybble uint64) string {
 func getAPConfig(d *physDevice) *apConfig {
 	var radiusServer string
 
-	ssidCnt := 0
+	authTypes := make([]string, 0)
 	pskComment := "#"
 	eapComment := "#"
 	for _, r := range rings {
 		if r.Auth == "wpa-psk" {
+			authTypes = append(authTypes, "wpa-psk")
 			pskComment = ""
-			ssidCnt++
 		} else if r.Auth == "wpa-eap" && radiusSecret != "" {
+			authTypes = append(authTypes, "wpa-eap")
 			eapComment = ""
-			ssidCnt++
 		}
 	}
 
@@ -382,6 +389,7 @@ func getAPConfig(d *physDevice) *apConfig {
 		radiusServer = "127.0.0.1"
 	}
 
+	ssidCnt := len(authTypes)
 	if ssidCnt > d.interfaces {
 		log.Printf("%s can't support %d SSIDs\n", d.hwaddr, ssidCnt)
 		return nil
@@ -419,6 +427,7 @@ func getAPConfig(d *physDevice) *apConfig {
 		EapComment: eapComment,
 		ConfDir:    confdir,
 
+		authTypes:            authTypes,
 		RadiusAuthServer:     radiusServer,
 		RadiusAuthServerPort: "1812",
 		RadiusAuthSecret:     radiusSecret,
@@ -471,6 +480,7 @@ func (h *hostapdHdl) generateHostAPDConf() {
 	tfile := *templateDir + "/hostapd.conf.got"
 
 	files := make([]string, 0)
+	authTypes := make(map[string]bool)
 	devices := make([]*physDevice, 0)
 
 	for _, d := range h.devices {
@@ -490,41 +500,76 @@ func (h *hostapdHdl) generateHostAPDConf() {
 		if err != nil {
 			continue
 		}
-		generateVlanConf(conf, "wpa-psk")
-		generateVlanConf(conf, "wpa-eap")
+
+		for _, t := range conf.authTypes {
+			generateVlanConf(conf, t)
+			authTypes[t] = true
+		}
 
 		files = append(files, confName)
 		devices = append(devices, d)
 	}
 
 	h.devices = devices
+	h.authTypes = authTypes
 	h.confFiles = files
 }
 
-func (h *hostapdHdl) start() {
-	var wg sync.WaitGroup
+func (h *hostapdHdl) cleanup() {
+	for _, c := range h.conns {
+		os.Remove(c.localName)
+	}
+}
 
-	deleteBridges()
+func (h *hostapdHdl) newConn(d *physDevice, auth, suffix string) *hostapdConn {
+	// There are two endpoints for each control socket.  The remoteName is
+	// owned by hostapd, and we need to use the name that it expects.  The
+	// localName is owned by us, and the format is chosen by us.
+	fullName := d.name + suffix
+	remoteName := "/var/run/hostapd/" + fullName
+	localName := "/tmp/hostapd_ctrl_" + fullName + "-" +
+		strconv.Itoa(os.Getpid())
+
+	newConn := hostapdConn{
+		hostapd:     h,
+		name:        fullName,
+		remoteName:  remoteName,
+		localName:   localName,
+		authType:    auth,
+		active:      true,
+		device:      d,
+		pendingCmds: make([]*hostapdCmd, 0),
+		stations:    make(map[string]time.Time),
+	}
+	os.Remove(newConn.name)
+	return &newConn
+}
+
+func (h *hostapdHdl) start() {
+	suffix := map[string]string{
+		"wpa-psk": "",   // The PSK iface is wlanX
+		"wpa-eap": "_1", // The EAP iface is wlanX_1
+	}
 
 	h.generateHostAPDConf()
 	if len(h.devices) == 0 {
 		h.done <- fmt.Errorf("no suitable wireless devices available")
 		return
 	}
+	defer h.cleanup()
 
+	// There is a control interface for each BSSID, which means one for each
+	// authentication type for each devices.
 	for _, d := range h.devices {
-		os.Remove("/var/run/hostapd/" + d.name)
-		newConn := hostapdConn{
-			hostapd:     h,
-			active:      true,
-			device:      d,
-			pendingCmds: make([]*hostapdCmd, 0),
-			stations:    make(map[string]time.Time),
+		for a := range h.authTypes {
+			h.conns = append(h.conns, h.newConn(d, a, suffix[a]))
 		}
-		h.conns = append(h.conns, &newConn)
 	}
+
+	stopNetworkRebuild := make(chan bool, 1)
+	deleteBridges()
 	createBridges()
-	resetInterfaces()
+	resetInterfaces(stopNetworkRebuild)
 
 	h.process = aputil.NewChild(hostapdPath, h.confFiles...)
 	h.process.LogOutputTo("hostapd: ", log.Ldate|log.Ltime, os.Stderr)
@@ -533,10 +578,12 @@ func (h *hostapdHdl) start() {
 
 	startTime := time.Now()
 	if err := h.process.Start(); err != nil {
+		stopNetworkRebuild <- true
 		h.done <- fmt.Errorf("failed to launch: %v", err)
 		return
 	}
 
+	var wg sync.WaitGroup
 	for _, c := range h.conns {
 		wg.Add(1)
 		go c.run(&wg)
@@ -545,6 +592,7 @@ func (h *hostapdHdl) start() {
 	h.process.Wait()
 
 	log.Printf("hostapd exited after %s\n", time.Since(startTime))
+	stopNetworkRebuild <- true
 
 	deadman := time.AfterFunc(*deadmanTimeout, func() {
 		log.Printf("failed to clean up hostapd monitoring\n")
@@ -561,10 +609,11 @@ func (h *hostapdHdl) start() {
 }
 
 func (h *hostapdHdl) reload() {
-	h.generateHostAPDConf()
-	log.Printf("Reloading hostapd\n")
-	h.process.Signal(syscall.SIGINT)
-
+	if h != nil {
+		h.generateHostAPDConf()
+		log.Printf("Reloading hostapd\n")
+		h.process.Signal(syscall.SIGINT)
+	}
 }
 
 func (h *hostapdHdl) reset() {

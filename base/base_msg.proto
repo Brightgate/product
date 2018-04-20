@@ -158,7 +158,8 @@ message EventNetEntity {
 	optional string hostname = 0x403;
 	optional string node = 0x404;
 	optional string mode = 0x405;
-	optional bool disconnect = 0x406;
+	optional string authtype = 0x406;
+	optional bool disconnect = 0x407;
 }
 
 // The network resource is sent whenever an application or service

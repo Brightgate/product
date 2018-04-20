@@ -353,10 +353,29 @@ func getInternalAddr() net.IP {
 	return nil
 }
 
+func addDevToRingBridge(dev *physDevice, ring string) error {
+	var err error
+
+	if config := rings[ring]; config != nil {
+		br := config.Bridge
+		log.Printf("Connecting %s (%s) to the %s bridge: %s\n",
+			dev.name, dev.hwaddr, ring, br)
+		c := exec.Command(brctlCmd, "addif", br, dev.name)
+		if out, rerr := c.CombinedOutput(); rerr != nil {
+			err = fmt.Errorf(string(out))
+		}
+	} else {
+		err = fmt.Errorf("non-existent ring %s", ring)
+	}
+
+	if err != nil {
+		log.Printf("Failed to add %s: %v\n", dev.name, err)
+	}
+	return err
+}
+
 func rebuildInternalNet() {
 	satNode := aputil.IsSatelliteMode()
-
-	br := rings[base_def.RING_INTERNAL].Bridge
 
 	// For each internal network device, create a virtual device for each
 	// LAN ring and attach it to the bridge for that ring
@@ -366,11 +385,8 @@ func rebuildInternalNet() {
 		}
 
 		if !satNode {
-			log.Printf("Adding %s to bridge %s\n", dev.name, br)
-			err := exec.Command(brctlCmd, "addif", br, dev.name).Run()
+			err := addDevToRingBridge(dev, base_def.RING_INTERNAL)
 			if err != nil {
-				log.Printf("failed to add %s to %s: %v\n",
-					dev.name, br, err)
 				continue
 			}
 		}
@@ -385,42 +401,49 @@ func rebuildInternalNet() {
 func rebuildLan() {
 	// Connect all the wired LAN NICs to ring-appropriate bridges.
 	for _, dev := range physDevices {
-		name := dev.name
-		ring := rings[dev.ring]
-
-		if dev.wireless || ring == nil ||
-			dev.ring == base_def.RING_INTERNAL {
-			continue
-		}
-
-		br := ring.Bridge
-		log.Printf("Connecting %s (%s) to the %s bridge: %s\n",
-			name, dev.hwaddr, dev.ring, br)
-		err := exec.Command(brctlCmd, "addif", br, name).Run()
-		if err != nil {
-			log.Printf("Failed to add %s: %v\n", name, err)
+		if !dev.wireless && dev.ring != base_def.RING_INTERNAL &&
+			dev.ring != base_def.RING_WAN {
+			addDevToRingBridge(dev, dev.ring)
 		}
 	}
 }
 
-func resetInterfaces() {
-	br := rings[base_def.RING_UNENROLLED].Bridge
-	for _, d := range physDevices {
-		// If hostapd authorizes a client that isn't assigned to a VLAN,
-		// it gets connected to the physical wifi device rather than a
-		// virtual interface.  Connect those physical devices to the
-		// UNENROLLED bridge.
-		if d.activeMode != "" {
-			err := exec.Command(brctlCmd, "addif", br, d.name).Run()
-			if err != nil {
-				log.Printf("addif %s %s failed: %v", br, d.name,
-					err)
-			}
+// If hostapd authorizes a client that isn't assigned to a VLAN, it gets
+// connected to the physical wifi device rather than a virtual interface.
+// Connect those physical devices to the UNENROLLED bridge once hostapd is
+// running.  We don't have a good way to determine when hostapd has gotten far
+// enough for this operation to succeed, so we just keep trying.
+func rebuildUnenrolled(interrupt chan bool) {
+	devs := make([]*physDevice, 0)
+	for _, dev := range physDevices {
+		if dev.wireless && dev.activeMode != "" {
+			devs = append(devs, dev)
 		}
 	}
 
+	t := time.NewTicker(time.Second)
+	for len(devs) > 0 {
+		select {
+		case <-interrupt:
+			return
+		case <-t.C:
+		}
+
+		bad := make([]*physDevice, 0)
+		for _, dev := range devs {
+			err := addDevToRingBridge(dev, base_def.RING_UNENROLLED)
+			if err != nil {
+				bad = append(bad, dev)
+			}
+		}
+		devs = bad
+	}
+}
+
+func resetInterfaces(interrupt chan bool) {
 	rebuildLan()
 	rebuildInternalNet()
+	go rebuildUnenrolled(interrupt)
 }
 
 func runLoop() bool {
@@ -536,7 +559,7 @@ func createBridge(ringName string) {
 		return
 	}
 
-	// ip addr flush dev wlan0
+	// ip addr flush dev brvlan0
 	cmd := exec.Command(ipCmd, "addr", "flush", "dev", bridge)
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to remove existing IP address: %v\n", err)
@@ -546,7 +569,7 @@ func createBridge(ringName string) {
 	cmd = exec.Command(ipCmd, "route", "del", ring.Subnet)
 	cmd.Run()
 
-	// ip addr add 192.168.136.1 dev wlan0
+	// ip addr add 192.168.136.1 dev brvlan0
 	router := localRouter(ring)
 	cmd = exec.Command(ipCmd, "addr", "add", router, "dev", bridge)
 	log.Printf("Setting %s to %s\n", bridge, router)
@@ -554,12 +577,12 @@ func createBridge(ringName string) {
 		log.Fatalf("Failed to set the router address: %v\n", err)
 	}
 
-	// ip link set up wlan0
+	// ip link set up brvlan0
 	cmd = exec.Command(ipCmd, "link", "set", "up", bridge)
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to enable bridge: %v\n", err)
 	}
-	// ip route add 192.168.136.0/24 dev wlan0
+	// ip route add 192.168.136.0/24 dev brvlan0
 	cmd = exec.Command(ipCmd, "route", "add", ring.Subnet, "dev", bridge)
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to add %s as the new route: %v\n",
