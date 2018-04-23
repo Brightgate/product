@@ -729,6 +729,7 @@ func vulnScanProcess(ip string, discovered map[string]bool) {
 		if _, ok := discovered[name]; vi.Active && !ok {
 			ops = append(ops, vulnPropOp(mac, name, "active",
 				"false"))
+			ops = append(ops, vulnPropOp(mac, name, "cleared", now))
 		}
 	}
 

@@ -46,6 +46,8 @@ var (
 		"location of hostapd templates")
 	rulesDir       = flag.String("rules_dir", "./", "Location of the filter rules")
 	hostapdLatency = flag.Int("hl", 5, "hostapd latency limit (seconds)")
+	deadmanTimeout = flag.Duration("deadman", 5*time.Second,
+		"time to wait for hostapd cleanup to complete")
 
 	physDevices    = make(map[string]*physDevice)
 	perModeDevices = make(map[string]map[*physDevice]bool)

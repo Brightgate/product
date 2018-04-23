@@ -278,7 +278,7 @@ func (c *hostapdConn) run(wg *sync.WaitGroup) {
 	go c.command("ATTACH")
 	c.connect()
 
-	stopCheckins := make(chan bool)
+	stopCheckins := make(chan bool, 1)
 	go c.checkIn(stopCheckins)
 
 	buf := make([]byte, 4096)
@@ -546,11 +546,17 @@ func (h *hostapdHdl) start() {
 
 	log.Printf("hostapd exited after %s\n", time.Since(startTime))
 
+	deadman := time.AfterFunc(*deadmanTimeout, func() {
+		log.Printf("failed to clean up hostapd monitoring\n")
+		syscall.Kill(syscall.Getpid(), syscall.SIGABRT)
+	})
+
 	for _, c := range h.conns {
 		go c.stop()
 	}
 
 	wg.Wait()
+	deadman.Stop()
 	h.done <- nil
 }
 

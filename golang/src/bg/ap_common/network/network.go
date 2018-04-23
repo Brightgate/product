@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -21,8 +21,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-
-	"bg/ap_common/aputil"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -235,16 +233,11 @@ func SubnetBroadcast(subnet string) net.IP {
 
 // WaitForDevice will wait for a network device to reach the 'up' state.
 // Returns an error on timeout or if the device doesn't exist
-func WaitForDevice(dev string, timeout time.Duration,
-	ra *aputil.RunAbort) error {
-
+func WaitForDevice(dev string, timeout time.Duration) error {
 	fn := "/sys/class/net/" + dev + "/operstate"
 
 	start := time.Now()
 	for {
-		if ra.IsAbort() {
-			break
-		}
 		state, err := ioutil.ReadFile(fn)
 		if err == nil && string(state[0:2]) == "up" {
 			break

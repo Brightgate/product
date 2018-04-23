@@ -491,7 +491,7 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 			},
 		}
 
-		vendorOpt, _ := aputil.DHCPEncodeOptions(o)
+		vendorOpt, _ := network.DHCPEncodeOptions(o)
 		h.options[dhcp.OptionVendorSpecificInformation] = vendorOpt
 	}
 

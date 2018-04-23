@@ -13,7 +13,6 @@ package aputil
 import (
 	"bufio"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -27,15 +26,14 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
+	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
 
 	"github.com/golang/protobuf/proto"
-	dhcp "github.com/krolaw/dhcp4"
 	"github.com/satori/uuid"
 )
 
@@ -507,111 +505,6 @@ func LinuxBootTime() time.Time {
 	return time.Now().Add(-uptime)
 }
 
-// DHCPDecodeOptions parses a bytestream into a slice of DHCP options
-func DHCPDecodeOptions(s []byte) (opts []dhcp.Option, err error) {
-	end := len(s)
-	idx := 0
-	for idx+3 < end {
-		code := s[idx]
-		valLen := int(s[idx+1])
-		idx += 2
-		if valLen < 1 || idx+valLen > end {
-			err = fmt.Errorf("illegal option length: %d", valLen)
-			break
-		}
-		val := s[idx : idx+valLen]
-		idx += valLen
-
-		o := dhcp.Option{
-			Code:  dhcp.OptionCode(code),
-			Value: val,
-		}
-		opts = append(opts, o)
-	}
-	return
-}
-
-// DHCPEncodeOptions marshalls a slice of DHCP options into a bytestream as
-// described in RFC-2132
-func DHCPEncodeOptions(opts []dhcp.Option) (s []byte, err error) {
-	for _, opt := range opts {
-		if opt.Code == 0 || opt.Code >= dhcp.End {
-			err = fmt.Errorf("bad option code: %d", opt.Code)
-			break
-		}
-
-		s = append(s, byte(opt.Code))
-		s = append(s, byte(len(opt.Value)))
-		s = append(s, opt.Value...)
-	}
-	s = append(s, byte(dhcp.End))
-
-	return
-}
-
-// Iterate over all of the wired network interfaces, looking for one that has
-// a Brightgate-assigned address.  If we find one, look to see whether it has
-// also assigned us an operating mode.
-func getModeFromDHCP() string {
-	var vendor, vendorOpt string
-
-	// Extract the two components of a DHCP option from lines like:
-	//   domain_name_servers='192.168.52.1'
-	//   vendor_class_identifier='Brightgate, Inc.'
-	//   vendor_encapsulated_options='0109736174656c6c697465ff'
-	optionRE := regexp.MustCompile(`(\w+)='(.*)'`)
-
-	all, err := net.Interfaces()
-	if err != nil {
-		return ""
-	}
-
-	for _, i := range all {
-		vendor = ""
-		vendorOpt = ""
-
-		if !strings.HasPrefix(i.Name, "eth") &&
-			!strings.HasPrefix(i.Name, "enx") {
-			continue
-		}
-
-		out, err := exec.Command(dhcpDump, "-4", "-U", i.Name).Output()
-		if err != nil {
-			continue
-		}
-
-		options := optionRE.FindAllStringSubmatch(string(out), -1)
-		for _, opt := range options {
-			if opt[1] == "vendor_class_identifier" {
-				vendor = opt[2]
-			}
-			if opt[1] == "vendor_encapsulated_options" {
-				vendorOpt = opt[2]
-			}
-		}
-
-		if strings.Contains(vendor, "Brightgate") && vendorOpt != "" {
-			break
-		}
-	}
-
-	if vendorOpt != "" {
-		// The vendor options are encapsulated in a binary stream of
-		// [code, len, value] triples, which is then converted into a
-		// binhex string.
-		if s, err := hex.DecodeString(vendorOpt); err == nil {
-			opts, _ := DHCPDecodeOptions(s)
-			for _, o := range opts {
-				if o.Code == 1 {
-					return string(o.Value)
-				}
-			}
-		}
-	}
-
-	return ""
-}
-
 var legalModes = map[string]bool{
 	base_def.MODE_GATEWAY:   true,
 	base_def.MODE_CORE:      true,
@@ -632,7 +525,12 @@ func GetNodeMode() string {
 
 	proposed = os.Getenv("APMODE")
 	if proposed == "" {
-		proposed = getModeFromDHCP()
+		leases, _ := network.GetAllLeases()
+		for _, lease := range leases {
+			if proposed = lease.Mode; proposed != "" {
+				break
+			}
+		}
 	}
 
 	if proposed == "" {
@@ -655,46 +553,6 @@ func IsNodeMode(check string) bool {
 // IsSatelliteMode checks to see whether this node is running as a mesh node
 func IsSatelliteMode() bool {
 	return IsNodeMode(base_def.MODE_SATELLITE)
-}
-
-// RunAbort is an opaque structure used to coordinate the launch, completion,
-// and interruption of long-running goroutines.
-type RunAbort struct {
-	running uint32
-	abort   uint32
-}
-
-// SetAbort tells the goroutine to exit ASAP
-func (t *RunAbort) SetAbort() {
-	atomic.StoreUint32(&t.abort, 1)
-}
-
-// ClearAbort resets the 'abort now' indicator
-func (t *RunAbort) ClearAbort() {
-	atomic.StoreUint32(&t.abort, 0)
-}
-
-// IsAbort is called periodically by the goroutine to determine whether an abort
-// has been requested.
-func (t *RunAbort) IsAbort() bool {
-	return (t != nil) && (atomic.LoadUint32(&t.abort) != 0)
-}
-
-// SetRunning is called immediately before launching the goroutine
-func (t *RunAbort) SetRunning() {
-	atomic.StoreUint32(&t.running, 1)
-}
-
-// ClearRunning is called by the goroutine immediately before exiting, notifying
-// the launcher that the routine has finished.
-func (t *RunAbort) ClearRunning() {
-	atomic.StoreUint32(&t.running, 0)
-}
-
-// IsRunning is called by the launcher to determine whether the goroutine has
-// exieted yet.
-func (t *RunAbort) IsRunning() bool {
-	return (t != nil) && (atomic.LoadUint32(&t.running) != 0)
 }
 
 // CPUStart begins collecting CPU profiling information

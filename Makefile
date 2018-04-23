@@ -383,6 +383,7 @@ APP_COMMON_SRCS = \
 	$(GOSRCBG)/ap_common/iotcore/iotcred.go \
 	$(GOSRCBG)/ap_common/mcp/mcp_client.go \
 	$(GOSRCBG)/ap_common/model/model.go \
+	$(GOSRCBG)/ap_common/network/dhcp.go \
 	$(GOSRCBG)/ap_common/network/network.go \
 	$(GOSRCBG)/ap_common/watchd/watchd_client.go \
 	$(GOSRCBG)/base_def/base_def.go \
