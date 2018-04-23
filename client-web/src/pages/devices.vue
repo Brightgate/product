@@ -18,7 +18,7 @@
              v-bind:key="catkey">
 
       <f7-list-item group-title
-              v-bind:title="device_category_description[catkey] +
+              v-bind:title="$t(`message.devices.cats.${catkey}`) +
               (catkey == 'recent' ? ` (${$store.getters.NumUniqIDs_By_Category(catkey)})` : '')"/>
       <f7-list-item v-if="catkey == 'recent'">
         <f7-link v-on:click="showRecent = true" v-if="!showRecent">{{ $t('message.devices.show_recent') }}</f7-link>
@@ -60,23 +60,12 @@
 <script>
 import _ from 'lodash';
 
-const device_category_description = {
-  recent: 'Recent Attempted Connections',
-  phone: 'Phones & Tablets',
-  computer: 'Computers',
-  printer: 'Printers/Scanners',
-  media: 'Media',
-  iot: 'Things',
-  unknown: 'Unknown or Unidentifiable',
-};
-
 const device_category_order = ['recent', 'phone', 'computer', 'printer', 'media', 'iot', 'unknown'];
 
 export default {
   data: function() {
     return {
       showRecent: false,
-      device_category_description,
       device_category_order,
     };
   },

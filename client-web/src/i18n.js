@@ -75,8 +75,10 @@ export default {
           recent: 'Recent Attempted Connections',
           phone: 'Phones & Tablets',
           computer: 'Computers',
+          printer: 'Printers/Scanners',
           media: 'Media',
           iot: 'Things',
+          unknown: 'Unknown or Unidentifiable',
         },
       },
       dev_details: {
@@ -218,8 +220,10 @@ export default {
           recent: 'Neueste Verbindungsversuche',
           phone: 'Handies & Tablets',
           computer: 'Computers',
+          printer: 'Printers/Scanners', // XXXI18N
           media: 'Media',
           iot: 'Unidentifiziertes Verbindungsobjekt',
+          unknown: 'Unknown or Unidentifiable', // XXXI18N
         },
       },
       dev_details: {
