@@ -79,10 +79,10 @@
 
     <f7-list>
 
-      <f7-list-item :title="$t('message.dev_details.os_version')">{{ os_version }}</f7-list-item>
       <f7-list-item :title="$t('message.dev_details.network_name')">{{ dev.network_name }}</f7-list-item>
       <f7-list-item :title="$t('message.dev_details.ipv4_addr')">{{ dev.ipv4_addr }}</f7-list-item>
       <f7-list-item :title="$t('message.dev_details.hw_addr')">{{ dev.hwaddr }}</f7-list-item>
+      <f7-list-item :title="$t('message.dev_details.os_version')">{{ os_version }}</f7-list-item>
 
       <f7-list-item :title="$t('message.dev_details.activity')">
         {{ activity }}
@@ -90,36 +90,6 @@
 
       <f7-list-item :title="$t('message.dev_details.vuln_scan')">
         {{ lastVulnScan }}
-      </f7-list-item>
-
-      <f7-list-item :title="$t('message.dev_details.os_version')">{{ os_version }}</f7-list-item>
-      <f7-list-item
-        :title="$t('message.dev_details.owner')"
-        :link="'/users/'">
-        <span>
-          {{ dev.owner }}
-          <f7-link
-            v-if="dev.owner_email"
-            :href="`mailto:${dev.owner_email}`"
-            icon-f7="email_fill"
-            style="padding-left: 0.25em; padding-right: 0.25em;"
-            external>
-          </f7-link>
-          <f7-link
-            v-if="dev.owner_phone"
-            :href="`tel:${dev.owner_phone}`"
-            icon-f7="phone_fill"
-            style="padding-left: 0.25em; padding-right: 0.25em;"
-            external>
-          </f7-link>
-          <f7-link
-            v-if="dev.owner_phone"
-            :href="`sms:${dev.owner_phone}`"
-            icon-f7="chat_fill"
-            style="padding-left: 0.25em; padding-right: 0.25em;"
-            external>
-          </f7-link>
-        </span>
       </f7-list-item>
     </f7-list>
 
@@ -132,13 +102,6 @@
           <option v-for="ring in rings" v-bind:value="ring" v-bind:key="ring">{{ring}}</option>
         </f7-input>
       </f7-list-item>
-      <f7-list-item v-if="dev.alert"
-          :title="$t('message.dev_details.access')"
-          :after="$t('message.dev_details.access_blocked')"
-          :text="$t('message.dev_details.access_blocked_text')" />
-      <f7-list-item v-else
-          :title="$t('message.dev_details.access')"
-          :after="$t('message.dev_details.access_normal')" />
     </f7-list>
   </f7-page>
 </template>
