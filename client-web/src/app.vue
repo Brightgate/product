@@ -51,7 +51,7 @@
               name="username"
               type="email"
               @input="uid = $event.target.value"
-              @keyup.enter="attemptLogin"
+              @keyup.native.enter="attemptLogin"
               autofocus
               autocomplete="username"
               :placeholder="$t('message.login.username')"></f7-input>
@@ -62,7 +62,7 @@
               name="password"
               type="password"
               @input="userPassword = $event.target.value"
-              @keyup.enter="attemptLogin"
+              @keyup.native.enter="attemptLogin"
               autocomplete="current-password"
               :placeholder="$t('message.login.password')"></f7-input>
           </f7-list-item>
@@ -75,7 +75,12 @@
           </f7-button>
 
           <f7-block v-if="loginError">
-            Problems logging in: {{ loginError.message }}
+            <span v-if="loginError.res && loginError.res.unauthorized" style="color: red">
+              {{ $t('message.login.fail_unauthorized') }}
+            </span>
+            <span v-else style="color: red">
+              {{ $t('message.login.fail_other', {err: loginError.message}) }}
+            </span>
           </f7-block>
         </f7-block>
 
@@ -115,6 +120,7 @@ export default {
         this.$f7.loginScreen.close();
         this.attemptingLogin = false;
       }).catch((err) => {
+        console.log('login err is', err);
         this.loginError = err;
         this.attemptingLogin = false;
       });

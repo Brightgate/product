@@ -132,6 +132,8 @@ export default {
         username: 'Username',
         password: 'Password',
         sign_in: 'Sign In',
+        fail_unauthorized: 'Login failed.  Invalid Username or Password.',
+        fail_other: 'Login failed unexpectedly: {err}.',
       },
       users: {
         title: 'Brightgate - Users',
@@ -277,6 +279,8 @@ export default {
         username: 'Name',
         password: 'Passwort',
         sign_in: 'Anmelden',
+        fail_unauthorized: 'Login failed.  Invalid Username or Password.', // XXXI18N
+        fail_other: 'Login failed unexpectedly: {err}.', // XXXI18N
       },
       users: {
         title: 'Brightgate - Benutzer',
