@@ -23,6 +23,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -419,6 +420,27 @@ func (h *ringHandler) discover(p dhcp.Packet, options dhcp.Options) dhcp.Packet 
 		h.options.SelectOrderOrAll(options[dhcp.OptionParameterRequestList]))
 }
 
+// If the client specifies a hostname, sanitize it and return it to the caller.
+// This includes extracting a hostname from a FQDN, truncating the name at the
+// first NULL byte (if any), and verifying that the remaining substring is a
+// valid DNS name.
+func extractHostname(options dhcp.Options) string {
+	name := string(options[dhcp.OptionHostName])
+	if dot := strings.Index(name, "."); dot >= 0 {
+		name = name[:dot]
+	}
+
+	if null := strings.IndexByte(name, 0); null >= 0 {
+		name = name[:null]
+	}
+
+	if !network.ValidDNSName(name) {
+		name = ""
+	}
+
+	return name
+}
+
 /*
  * Handle REQUEST messages
  */
@@ -481,7 +503,6 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	}
 
 	log.Printf("   REQUEST %s %s\n", action, reqIP.String())
-	l.name = string(options[dhcp.OptionHostName])
 	if l.static {
 		l.expires = nil
 	} else {
@@ -489,23 +510,12 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 		l.expires = &expires
 	}
 
+	l.name = extractHostname(options)
 	log.Printf("   REQUEST assigned %s to %s (%q) until %s\n",
 		l.ipaddr, hwaddr, l.name, l.expires)
 
-	ops := []apcfg.PropertyOp{
-		{
-			Op:      apcfg.PropCreate,
-			Name:    propPath(hwaddr, "ipv4"),
-			Value:   l.ipaddr.String(),
-			Expires: l.expires,
-		},
-		{
-			Op:    apcfg.PropCreate,
-			Name:  propPath(hwaddr, "dhcp_name"),
-			Value: l.name,
-		},
-	}
-	config.Execute(ops)
+	config.CreateProp(propPath(hwaddr, "ipv4"), l.ipaddr.String(), l.expires)
+	config.CreateProp(propPath(hwaddr, "dhcp_name"), l.name, l.expires)
 	notifyClaimed(p, l.ipaddr, l.name, h.duration)
 
 	if h.ring == base_def.RING_INTERNAL {

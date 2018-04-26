@@ -126,6 +126,7 @@ var propertyMatchTable = []propertyMatch{
 	{regexp.MustCompile(`^@/rings/.*/auth$`), &authPropOps},
 	{regexp.MustCompile(`^@/clients/.*/ring$`), &ringPropOps},
 	{regexp.MustCompile(`^@/clients/.*/dns_name$`), &dnsPropOps},
+	{regexp.MustCompile(`^@/clients/.*/dhcp_name$`), &dnsPropOps},
 	{regexp.MustCompile(`^@/clients/.*/ipv4$`), &ipv4PropOps},
 	{regexp.MustCompile(`^@/dns/cnames/`), &cnamePropOps},
 }
@@ -609,6 +610,12 @@ func dnsNameInuse(ignore *pnode, hostname string) bool {
 				return true
 			}
 		}
+		if prop, ok := device.Children["dhcp_name"]; ok {
+			if strings.ToLower(prop.Value) == lower {
+				return true
+			}
+		}
+
 	}
 
 	if cnames := propertySearch("@/dns/cnames"); cnames != nil {
@@ -628,7 +635,7 @@ func dnsNameInuse(ignore *pnode, hostname string) bool {
 // Validate and record the hostname that will be used to generate DNS A records
 // for this device
 func dnsSetter(node *pnode, hostname string, expires *time.Time) (bool, error) {
-	if !network.ValidHostname(hostname) {
+	if !network.ValidDNSName(hostname) {
 		return false, fmt.Errorf("invalid hostname: %s", hostname)
 	}
 

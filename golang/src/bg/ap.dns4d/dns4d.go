@@ -141,31 +141,6 @@ func clearWarned(key string, list map[string]time.Time) {
 	warnedMtx.Unlock()
 }
 
-func dnsUpdate(resource *base_msg.EventNetResource) {
-	action := resource.GetAction()
-	ipv4 := network.Uint32ToIPAddr(*resource.Ipv4Address)
-	ttl := time.Duration(resource.GetDuration()) * time.Second
-	expires := time.Now().Add(ttl)
-
-	arpa, err := dns.ReverseAddr(ipv4.String())
-	if err != nil {
-		log.Printf("Invalid IP address %s: %v\n", ipv4, err)
-		return
-	}
-
-	hostsMtx.Lock()
-	if action == base_msg.EventNetResource_CLAIMED {
-		hosts[arpa] = dnsRecord{
-			rectype: dns.TypePTR,
-			recval:  resource.GetHostname() + ".",
-			expires: &expires,
-		}
-	} else if action == base_msg.EventNetResource_RELEASED {
-		delete(hosts, arpa)
-	}
-	hostsMtx.Unlock()
-}
-
 func clientUpdateEvent(path []string, val string, expires *time.Time) {
 	if len(path) != 3 {
 		// All updates should affect /clients/<macaddr>/property
@@ -224,12 +199,6 @@ func cnameUpdateEvent(path []string, val string, expires *time.Time) {
 func cnameDeleteEvent(path []string) {
 	log.Printf("cname delete %s\n", path[2])
 	deleteOneCname(path[2])
-}
-
-func resourceEvent(event []byte) {
-	resource := &base_msg.EventNetResource{}
-	proto.Unmarshal(event, resource)
-	dnsUpdate(resource)
 }
 
 func logRequest(handler string, start time.Time, ip net.IP, r, m *dns.Msg) {
@@ -563,8 +532,11 @@ func deleteOneClient(c *apcfg.ClientInfo) {
 
 	hostsMtx.Lock()
 	if arpa, err := dns.ReverseAddr(ipv4); err == nil {
-		log.Printf("Deleting PTR record %s->%s\n", arpa, c.DHCPName)
-		delete(hosts, arpa)
+		if rec, ok := hosts[arpa]; ok {
+			log.Printf("Deleting PTR record %s->%s\n", arpa,
+				rec.recval)
+			delete(hosts, arpa)
+		}
 	}
 
 	for addr, rec := range hosts {
@@ -578,37 +550,37 @@ func deleteOneClient(c *apcfg.ClientInfo) {
 
 // Convert a client's configd info into DNS records
 func updateOneClient(c *apcfg.ClientInfo) {
-	if c.IPv4 == nil {
+	name := c.DNSName
+	if name == "" {
+		name = c.DHCPName
+	}
+	if !network.ValidDNSName(name) || c.IPv4 == nil {
 		return
 	}
 
 	ipv4 := c.IPv4.String()
 	clearWarned(ipv4, unknownWarned)
 	hostsMtx.Lock()
-	if c.DNSName != "" {
-		hostname := c.DNSName + "." + domainname + "."
+	hostname := name + "." + domainname + "."
 
-		log.Printf("Adding A record %s->%s\n", hostname, ipv4)
-		hosts[hostname] = dnsRecord{
-			rectype: dns.TypeA,
-			recval:  ipv4,
-			expires: c.Expires,
-		}
+	log.Printf("Adding A record %s->%s\n", hostname, ipv4)
+	hosts[hostname] = dnsRecord{
+		rectype: dns.TypeA,
+		recval:  ipv4,
+		expires: c.Expires,
 	}
 
-	if c.DHCPName != "" {
-		arpa, err := dns.ReverseAddr(ipv4)
-		if err != nil {
-			log.Printf("Invalid address %v for %s: %v\n",
-				c.IPv4, c.DHCPName, err)
-		} else {
-			hostname := c.DHCPName + "."
-			log.Printf("Adding PTR record %s->%s\n", arpa, hostname)
-			hosts[arpa] = dnsRecord{
-				rectype: dns.TypePTR,
-				recval:  hostname,
-				expires: c.Expires,
-			}
+	arpa, err := dns.ReverseAddr(ipv4)
+	if err != nil {
+		log.Printf("Invalid address %v for %s: %v\n",
+			c.IPv4, name, err)
+	} else {
+		hostname := name + "."
+		log.Printf("Adding PTR record %s->%s\n", arpa, hostname)
+		hosts[arpa] = dnsRecord{
+			rectype: dns.TypePTR,
+			recval:  hostname,
+			expires: c.Expires,
 		}
 	}
 	hostsMtx.Unlock()
@@ -821,7 +793,6 @@ func main() {
 	go http.ListenAndServe(*addr, nil)
 
 	brokerd = broker.New(pname)
-	brokerd.Handle(base_def.TOPIC_RESOURCE, resourceEvent)
 	defer brokerd.Fini()
 
 	if config, err = apcfg.NewConfig(brokerd, pname); err != nil {
