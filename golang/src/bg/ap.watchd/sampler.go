@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"sync"
@@ -31,23 +32,12 @@ import (
 	"github.com/google/gopacket/pcap"
 )
 
-const (
-	// EthernetTypeLARQ is an EthernetType which we have observed being used by
-	// the Raspberry Pi 3 on its wlan interface. These packets are routed to the
-	// AP from a SRC MAC addresses which is identical to that of the AP wlan MAC
-	// address except in one bit (the U/L bit in the first octet). In addition,
-	// this EthernetType is not defined in gopacket and causes a decoding error.
-	// These packets may relate to a Broadcomm specific wlan driver, LARQ, or
-	// HomePNA.
-	EthernetTypeLARQ layers.EthernetType = 0x886c
-)
-
 var (
-	auditTime = flag.Duration("audit-time", time.Duration(time.Second*120),
+	auditTime = flag.Duration("atime", time.Duration(time.Minute*2),
 		"How often to audit the sample records")
 
-	warnTime = flag.Duration("warn-time", time.Duration(time.Hour),
-		"How often to report a device using a bad IP address")
+	warnTime = flag.Duration("wtime", time.Duration(time.Hour),
+		"How often to warn about a device using a bad IP address")
 
 	// Currently granted DHCP leases (maps Mac -> IPv4)
 	currentAddrs = make(map[uint64]uint32)
@@ -62,182 +52,59 @@ var (
 	historicObservations = make(map[uint64]map[uint32]time.Time)
 	observedMtx          sync.Mutex
 
-	allStats    = make(map[uint64]*perDeviceStats)
-	allStatsMtx sync.Mutex
+	gateways    map[uint32]bool
+	subnets     []*net.IPNet
+	subnetBcast []net.IP
 
-	gateways map[uint32]bool
-	subnets  []*net.IPNet
+	auditTicker *time.Ticker
+	auditDone   chan bool
 
-	auditTicker    *time.Ticker
-	samplerRunning bool
+	samplers         []*samplerState
+	samplerRunning   bool
+	samplerWaitGroup sync.WaitGroup
 )
 
 type samplerState struct {
+	// Persistent state describing the identity of the sampler
 	ring   string
 	iface  string
 	hwaddr net.HardwareAddr
+	handle *pcap.Handle
 
-	parser *gopacket.DecodingLayerParser
-
+	// State of the current packet being analyzed
+	parser      *gopacket.DecodingLayerParser
 	decodedEth  layers.Ethernet
 	decodedIPv4 layers.IPv4
 	decodedARP  layers.ARP
 	decodedUDP  layers.UDP
 	decodedTCP  layers.TCP
-}
-
-type xferStats struct {
-	pktsSent  uint64
-	pktsRcvd  uint64
-	bytesSent uint64
-	bytesRcvd uint64
-}
-
-type perDeviceStats struct {
-	aggregate xferStats
-
-	// traffic broken out by the source/target endpoint
-	localStats  map[uint32]*xferStats // LAN traffic
-	remoteStats map[uint32]*xferStats // WAN traffic
 
 	sync.Mutex
 }
 
-func printLine(label string, x *xferStats) {
-	fmt.Printf("%30s%9d%12d%8s%9d%12d\n",
-		label, x.pktsSent, x.bytesSent, " ", x.pktsRcvd, x.bytesRcvd)
-}
-
-func printStats() {
-	allStatsMtx.Lock()
-	fmt.Printf("%-30s%9s%12s%8s%9s%12s\n", "Device",
-		"Pkts Sent", "Bytes Sent", " ", "Pkts Rcvd", "Bytes Rcvd")
-	for d, s := range allStats {
-		fmt.Printf("%v\n", network.Uint64ToHWAddr(d))
-		fmt.Printf("%12s:\n", "local")
-		for l, x := range s.localStats {
-			printLine(network.Uint32ToIPAddr(l).String(), x)
-		}
-		fmt.Printf("%12s:\n", "remote")
-		for l, x := range s.remoteStats {
-			printLine(network.Uint32ToIPAddr(l).String(), x)
-		}
-		fmt.Printf("%12s:\n", "aggregate")
-		printLine(" ", &s.aggregate)
-	}
-
-	allStatsMtx.Unlock()
-}
-
-// Find the perDeviceStats structure for the identified device.  If it doesn't
-// already exist, create a structure and insert it into the allStats map
-func getDeviceStats(devid uint64) *perDeviceStats {
-	allStatsMtx.Lock()
-	s := allStats[devid]
-	if s == nil {
-		s = &perDeviceStats{
-			localStats:  make(map[uint32]*xferStats),
-			remoteStats: make(map[uint32]*xferStats),
-		}
-		allStats[devid] = s
-	}
-	allStatsMtx.Unlock()
-
-	return s
-}
-
-// Extract the stats structure for the given (device, ip) tuple.  Create
-// the structure if it doesn't already exist
-func getEndpointStats(stats *perDeviceStats, ip uint32, local bool) *xferStats {
-	var statsMap map[uint32]*xferStats
-
-	if local {
-		statsMap = stats.localStats
-	} else {
-		statsMap = stats.remoteStats
-	}
-
-	x := statsMap[ip]
-	if x == nil {
-		x = &xferStats{}
-		statsMap[ip] = x
-	}
-	return x
-}
-
 // Does the given IP address fall into one of the address ranges covered by our
 // local subnets?
-func localIPAddr(ipaddr net.IP) bool {
+func localIPAddr(ip net.IP) bool {
 	for _, s := range subnets {
-		if s.Contains(ipaddr) {
+		if s.Contains(ip) {
 			return true
 		}
 	}
 	return false
 }
 
-func collectStats(state *samplerState, eth *layers.Ethernet, ipv4 *layers.IPv4,
-	len uint64) {
-
-	srcLocal := localIPAddr(ipv4.SrcIP)
-	dstLocal := localIPAddr(ipv4.DstIP)
-
-	if srcLocal {
-		srcDev := network.HWAddrToUint64(eth.SrcMAC)
-		stats := getDeviceStats(srcDev)
-		stats.Lock()
-
-		xfer := &stats.aggregate
-		xfer.pktsSent++
-		xfer.bytesSent += len
-
-		dstIP := network.IPAddrToUint32(ipv4.DstIP)
-		xfer = getEndpointStats(stats, dstIP, dstLocal)
-		xfer.pktsSent++
-		xfer.bytesSent += len
-
-		stats.Unlock()
+// Is this address used for UDP broadcast/multicast?
+func broadcastUDPAddr(ip net.IP) bool {
+	if ip.IsMulticast() || ip.Equal(net.IPv4bcast) {
+		return true
 	}
 
-	if dstLocal {
-		dstDev := network.HWAddrToUint64(eth.DstMAC)
-		stats := getDeviceStats(dstDev)
-		stats.Lock()
-
-		xfer := &stats.aggregate
-		xfer.pktsRcvd++
-		xfer.bytesRcvd += len
-
-		srcIP := network.IPAddrToUint32(ipv4.SrcIP)
-		xfer = getEndpointStats(stats, srcIP, srcLocal)
-		xfer.pktsRcvd++
-		xfer.bytesRcvd += len
-
-		stats.Unlock()
-	}
-}
-
-func handlePort(src, dst net.IP, sport, dport int, proto string) {
-	// XXX: this is just recording the observed source/destination ports.
-	// In many cases, what we really want to know is the service being used.
-	// So, we may be recording that the traffic originates from port 55617,
-	// but it's really more interesting that it is going to port 443.  For
-	// intra-lan traffic, we'll record both ends of the conversation.  For
-	// traffic that is lan<->wan, we might be dropping the interesting half.
-	// This needs some more thought.
-
-	if rec := getDeviceRecordByIP(src.String()); rec != nil {
-		if p := getProtoRecord(rec, proto); p != nil {
-			p.OutPorts[sport] = true
+	for _, b := range subnetBcast {
+		if ip.Equal(b) {
+			return true
 		}
-		releaseDeviceRecord(rec)
 	}
-	if rec := getDeviceRecordByIP(dst.String()); rec != nil {
-		if p := getProtoRecord(rec, proto); p != nil {
-			p.InPorts[dport] = true
-		}
-		releaseDeviceRecord(rec)
-	}
+	return false
 }
 
 func observedIPAddr(state *samplerState, hwaddr net.HardwareAddr, ipaddr net.IP) {
@@ -335,17 +202,42 @@ func processOnePacket(state *samplerState, data []byte) {
 	if arp != nil {
 		srcIP, dstIP = arp.SourceProtAddress, arp.DstProtAddress
 		srcMac, dstMac = arp.SourceHwAddress, arp.DstHwAddress
+		if gateways[network.IPAddrToUint32(srcIP)] {
+			return
+		}
 	} else if ipv4 != nil {
+		// We ignore traffic to/from the gateway to avoid recording all
+		// of our nmap scan noise.
+		// XXX: rather than ignoring all of the gateway traffic, we
+		// could add a flag that the scanner code could toggle, so we
+		// only ignore it while the scanner is running.
+		if gateways[network.IPAddrToUint32(ipv4.SrcIP)] ||
+			gateways[network.IPAddrToUint32(ipv4.DstIP)] {
+			return
+		}
+
 		srcIP, dstIP = ipv4.SrcIP, ipv4.DstIP
 		srcMac, dstMac = eth.SrcMAC, eth.DstMAC
-		if udp != nil {
-			handlePort(srcIP, dstIP, int(udp.SrcPort),
-				int(udp.DstPort), "udp")
-		} else if tcp != nil {
-			handlePort(srcIP, dstIP, int(tcp.SrcPort),
-				int(tcp.DstPort), "tcp")
+		proto := ""
+		src := endpoint{
+			ip:     ipv4.SrcIP,
+			hwaddr: eth.SrcMAC,
 		}
-		collectStats(state, eth, ipv4, uint64(len(data)))
+		dst := endpoint{
+			ip:     ipv4.DstIP,
+			hwaddr: eth.DstMAC,
+		}
+		if udp != nil {
+			proto = "udp"
+			src.port = int(udp.SrcPort)
+			dst.port = int(udp.DstPort)
+		} else if tcp != nil {
+			proto = "tcp"
+			src.port = int(tcp.SrcPort)
+			dst.port = int(tcp.DstPort)
+		}
+		updateStats(src, dst, proto, len(data))
+
 		if !localIPAddr(srcIP) {
 			checkBlock(dstMac, srcIP)
 		}
@@ -437,9 +329,14 @@ func auditRecords(recs map[uint64]map[uint32]bool) {
 }
 
 func auditor() {
-	auditTicker = time.NewTicker(*auditTime)
+	defer samplerWaitGroup.Done()
+
 	for samplerRunning {
-		<-auditTicker.C
+		select {
+		case <-auditDone:
+			return
+		case <-auditTicker.C:
+		}
 
 		// Make a copy of currentObservations and reset the master, so
 		// we can evaluate the list without holding the lock.
@@ -452,7 +349,7 @@ func auditor() {
 	}
 }
 
-func openOne(ring, iface string) (*pcap.Handle, error) {
+func openInterface(ring, iface string) (*pcap.Handle, error) {
 	if ring != base_def.RING_INTERNAL {
 		// The internal ring is special.  See
 		// networkd.go:prepareRingBridge()
@@ -485,33 +382,58 @@ func parserInit(state *samplerState) {
 //
 // Per-interface loop that endlessly consumes and processes packets
 //
-func sampleOne(state *samplerState) {
-	parserInit(state)
+func sampleLoop(state *samplerState) {
+	lastDropped := 0
+	packets := 0
 
+	for samplerRunning {
+		data, _, err := state.handle.ZeroCopyReadPacketData()
+		if err != nil {
+			if err != io.EOF || samplerRunning {
+				log.Println("Error reading packet data:", err)
+			}
+			return
+		}
+
+		processOnePacket(state, data)
+
+		packets++
+		if packets%10000 == 0 {
+			s, err := state.handle.Stats()
+			if err == nil && s.PacketsDropped != lastDropped {
+				log.Printf("%s: dropped %d of %d packets\n",
+					state.iface, s.PacketsDropped,
+					s.PacketsReceived)
+				lastDropped = s.PacketsDropped
+			}
+		}
+	}
+}
+
+func sampleInterface(state *samplerState) {
+	var err error
+
+	defer samplerWaitGroup.Done()
+
+	parserInit(state)
 	warned := false
 	for samplerRunning {
-		handle, err := openOne(state.ring, state.iface)
+		state.handle, err = openInterface(state.ring, state.iface)
 		if err != nil {
 			if !warned {
-				log.Printf("openOne(%s) failed: %v\n",
+				log.Printf("openInterface(%s) failed: %v\n",
 					state.iface, err)
 				warned = true
 			}
+			time.Sleep(time.Second)
 			continue
 		}
 		warned = false
 
-		for samplerRunning {
-			data, _, err := handle.ZeroCopyReadPacketData()
-			if err != nil {
-				log.Println("Error reading packet data:", err)
-				break
-			}
-
-			processOnePacket(state, data)
-		}
-		handle.Close()
+		sampleLoop(state)
+		state.handle.Close()
 	}
+	log.Printf("Sampler for %s (%s) offline\n", state.iface, state.ring)
 }
 
 func getRingSubnet(config *apcfg.RingConfig) (net.HardwareAddr, *net.IPNet, error) {
@@ -537,10 +459,24 @@ func getRingSubnet(config *apcfg.RingConfig) (net.HardwareAddr, *net.IPNet, erro
 func sampleFini(w *watcher) {
 	log.Printf("Shutting down sampler\n")
 	samplerRunning = false
+	for _, s := range samplers {
+		if s.handle != nil {
+			s.handle.Close()
+		}
+	}
+
+	close(auditDone)
 	auditTicker.Stop()
-	printStats()
+
+	samplerWaitGroup.Wait()
 
 	w.running = false
+}
+
+func subnetBroadcastAddr(n *net.IPNet) net.IP {
+	base := network.IPAddrToUint32(n.IP)
+	mask := network.IPAddrToUint32(net.IP(n.Mask))
+	return network.Uint32ToIPAddr(base | ^mask)
 }
 
 func sampleInit(w *watcher) {
@@ -559,17 +495,25 @@ func sampleInit(w *watcher) {
 			log.Printf("Failed to sample on ring '%s': %v\n",
 				ring, err)
 		} else {
+			subnetBcast = append(subnetBcast,
+				subnetBroadcastAddr(subnet))
 			subnets = append(subnets, subnet)
 			s := samplerState{
 				ring:   ring,
 				iface:  config.Bridge,
 				hwaddr: hwaddr,
 			}
-			go sampleOne(&s)
+			samplers = append(samplers, &s)
+			samplerWaitGroup.Add(1)
+			go sampleInterface(&s)
 		}
 	}
 
+	samplerWaitGroup.Add(1)
+	auditTicker = time.NewTicker(*auditTime)
+	auditDone = make(chan bool)
 	go auditor()
+
 	w.running = true
 }
 

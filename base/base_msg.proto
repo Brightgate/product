@@ -428,10 +428,11 @@ message EventNetScan {
 	optional string sender = 0x02;
 	optional string debug = 0x03;
 	optional fixed32 ipv4_address = 0x04;
-	required string scan_location = 0x1000;
-	required string start_info = 0x1001;
-	repeated Host hosts = 0x1002;
-	required string summary = 0x1003;
+	optional string start_info = 0x1000;
+	optional Timestamp start_time = 0x1001;
+	optional Timestamp finish_time = 0x1002;
+	repeated Host hosts = 0x1003;
+	required string summary = 0x1004;
 }
 
 message Pair {

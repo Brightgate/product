@@ -19,7 +19,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -52,8 +51,6 @@ var (
 )
 
 const (
-	cleanFreq = 10 * time.Minute
-
 	tcpFreq = 2 * time.Minute  // How often to scan TCP ports
 	udpFreq = 30 * time.Minute // How often to scan UDP ports
 
@@ -63,7 +60,6 @@ const (
 	hostLifetime = 1 * time.Hour
 	hostScanFreq = 5 * time.Minute
 
-	maxFiles    = 10
 	numScanners = 5
 )
 
@@ -148,24 +144,6 @@ func (q *scanQueue) Pop() interface{} {
 	req.index = -1 // for safety
 	*q = old[0 : n-1]
 	return req
-}
-
-// Examine our collection of archived results to determine which hosts we've
-// scanned in the past.
-func getScannedHosts() (*hostmap, error) {
-	h := hostmapCreate()
-
-	files, err := ioutil.ReadDir(*watchDir)
-	if err != nil {
-		return nil, fmt.Errorf("ReadDir failed: %v", err)
-	}
-
-	for _, file := range files {
-		if file.IsDir() && file.Name() != "netscans" {
-			h.add(file.Name())
-		}
-	}
-	return h, nil
 }
 
 func nowString() string {
@@ -256,14 +234,6 @@ func scannerRequest(mac, ip string) {
 		return
 	}
 
-	path := *watchDir + "/" + ip
-	if !aputil.FileExists(path) {
-		if err := os.Mkdir(path, 0755); err != nil {
-			log.Printf("Error adding directory %s: %v\n", path, err)
-			return
-		}
-	}
-
 	// Scan the host at ip:
 	//   -O  Enable OS detection.
 	//   -sU UDP Scan.
@@ -318,11 +288,8 @@ func getMacIP(host *nmap.Host) (mac, ip string) {
 	return
 }
 
-func subnetHostScan(ring, subnet string, scannedHosts *hostmap) int {
+func subnetHostScan(ring, subnet string) int {
 	seen := 0
-
-	file := fmt.Sprintf("%s/netscans/netscan-%d.xml", *watchDir,
-		int(time.Now().Unix()))
 
 	// Attempt to discover hosts:
 	//   - TCP SYN and ACK probe to the listed ports.
@@ -331,7 +298,7 @@ func subnetHostScan(ring, subnet string, scannedHosts *hostmap) int {
 	args := []string{"-sn", "-PS22,53,3389,80,443",
 		"-PA22,53,3389,80,443", "-PU", "-PY"}
 
-	scanResults, err := nmapScan(subnet, args, file)
+	scanResults, err := nmapScan("subnetscan", subnet, args)
 	if err != nil {
 		log.Printf("Scan of %s ring failed: %v\n", ring, err)
 		return 0
@@ -360,17 +327,13 @@ func subnetHostScan(ring, subnet string, scannedHosts *hostmap) int {
 			continue
 		}
 
-		if scannedHosts.contains(ip) {
-			if _, ok := clients[mac]; !ok {
-				log.Printf("Unknown host %s found on ring %s: %s",
-					mac, ring, ip)
-				logUnknown(ring, mac, ip)
-			} else {
-				log.Printf("host %s now active on ring %s: %s",
-					mac, ring, ip)
-			}
+		if _, ok := clients[mac]; !ok {
+			log.Printf("Unknown host %s found on ring %s: %s",
+				mac, ring, ip)
+			logUnknown(ring, mac, ip)
 		} else {
-			log.Printf("%s is back online, restarting scans", ip)
+			log.Printf("host %s now active on ring %s: %s",
+				mac, ring, ip)
 		}
 		scannerRequest(mac, ip)
 	}
@@ -380,21 +343,12 @@ func subnetHostScan(ring, subnet string, scannedHosts *hostmap) int {
 // hostScan scans each of interfaces for new hosts and schedules regular port
 // scans on the host if one is found.
 func hostScan() {
-	defer hostScanCount.Inc()
-
-	scannedHosts, err := getScannedHosts()
-	if err != nil {
-		log.Println("error getting scannedHosts:", err)
-		return
-	}
-
-	scannedHostsGauge.Set(float64(len(scannedHosts.active) - 1))
-
 	seen := 0
 	for ring, config := range rings {
-		seen += subnetHostScan(ring, config.Subnet, scannedHosts)
+		seen += subnetHostScan(ring, config.Subnet)
 	}
 	hostsUp.Set(float64(seen))
+	hostScanCount.Inc()
 }
 
 func runCmd(cmd string, args []string) error {
@@ -428,40 +382,52 @@ func runCmd(cmd string, args []string) error {
 	return err
 }
 
-// scan uses nmap to scan ip with the given arguments, outputting its results
-// to the given file and parsing its contents into an NmapRun struct.
-// If verbose is true, output of nmap is printed to log, otherwise it is ignored.
-func nmapScan(ip string, nmapArgs []string, file string) (*nmap.NmapRun, error) {
-	args := []string{ip, "-oX", file}
+// scan uses nmap to scan ip with the given arguments, parsing its results into
+// an NmapRun struct.
+func nmapScan(prefix, ip string, nmapArgs []string) (*nmap.NmapRun, error) {
+
+	file, err := ioutil.TempFile("", pname+"."+prefix+".")
+	if err != nil {
+		return nil, fmt.Errorf("unable to create temp file: %v", err)
+	}
+	name := file.Name()
+	defer os.Remove(name)
+
+	args := []string{ip, "-oX", name}
 	args = append(args, nmapArgs...)
 
 	if err := runCmd("/usr/bin/nmap", args); err != nil {
 		return nil, err
 	}
 
-	fileContent, err := ioutil.ReadFile(file)
+	fileContent, err := ioutil.ReadFile(name)
 	if err != nil {
 		return nil, fmt.Errorf("error reading nmap results %s: %v",
-			file, err)
+			name, err)
 	}
 	scanResults, err := nmap.Parse(fileContent)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing nmap results %s: %v",
-			file, err)
+			name, err)
 	}
 	return scanResults, nil
 }
 
 // Find and record all the ports we found open for this host.
-func recordNmapResults(host *nmap.Host) {
+func recordNmapResults(scanType string, host *nmap.Host) {
 	mac, _ := getMacIP(host)
 	dev := getDeviceRecord(mac)
 
+	ports := make([]int, 0)
 	for _, port := range host.Ports {
-		if p, ok := dev.Stats[port.Protocol]; ok {
-			p.OpenPorts[port.PortId] = true
-		}
+		ports = append(ports, port.PortId)
 	}
+	if scanType == "tcp_ports" {
+		dev.OpenTCP = ports
+	} else if scanType == "udp_ports" {
+		dev.OpenUDP = ports
+	}
+
 	releaseDeviceRecord(dev)
 }
 
@@ -564,10 +530,9 @@ func marshalNmapResults(host *nmap.Host) *base_msg.Host {
 // portScan scans the ports of the given IP address using nmap, putting
 // results on the message bus. Scans of IP are stopped if host is down.
 func portScan(req *ScanRequest) {
-	file := fmt.Sprintf("%s/%s/%s-%d.xml", *watchDir, req.IP, req.ScanType,
-		int(time.Now().Unix()))
-
-	res, err := nmapScan(req.IP, req.Args, file)
+	startTime := time.Now()
+	res, err := nmapScan("portscan", req.IP, req.Args)
+	finishTime := time.Now()
 	if err != nil {
 		return
 	}
@@ -586,7 +551,7 @@ func portScan(req *ScanRequest) {
 		return
 	}
 
-	recordNmapResults(host)
+	recordNmapResults(req.ScanType, host)
 	marshalledHosts := make([]*base_msg.Host, 1)
 	marshalledHosts[0] = marshalNmapResults(host)
 
@@ -595,14 +560,15 @@ func portScan(req *ScanRequest) {
 		res.StartStr, res.Args)
 
 	scan := &base_msg.EventNetScan{
-		Timestamp:    aputil.NowToProtobuf(),
-		Sender:       proto.String(brokerd.Name),
-		Debug:        proto.String("-"),
-		Ipv4Address:  proto.Uint32(network.IPAddrToUint32(addr)),
-		ScanLocation: proto.String(file),
-		StartInfo:    proto.String(start),
-		Hosts:        marshalledHosts,
-		Summary:      proto.String(res.RunStats.Finished.Summary),
+		Timestamp:   aputil.NowToProtobuf(),
+		Sender:      proto.String(brokerd.Name),
+		Debug:       proto.String("-"),
+		Ipv4Address: proto.Uint32(network.IPAddrToUint32(addr)),
+		StartInfo:   proto.String(start),
+		StartTime:   aputil.TimeToProtobuf(&startTime),
+		FinishTime:  aputil.TimeToProtobuf(&finishTime),
+		Hosts:       marshalledHosts,
+		Summary:     proto.String(res.RunStats.Finished.Summary),
 	}
 
 	err = brokerd.Publish(scan, base_def.TOPIC_SCAN)
@@ -796,67 +762,6 @@ func (s ByDateModified) Less(i, j int) bool {
 	return (iTime.Before(jTime))
 }
 
-func cleanHostdir(path string) int {
-	all, err := ioutil.ReadDir(path)
-	if err != nil {
-		log.Printf("Unable to read dir %s: %v\n", path, err)
-		return -1
-	}
-
-	// ReadDir returns all the directory contents sorted by name.  We really
-	// want a list of files sorted by age
-	files := make([]os.FileInfo, 0)
-	for _, obj := range all {
-		if !obj.IsDir() {
-			files = append(files, obj)
-		}
-	}
-	sort.Sort(ByDateModified(files))
-
-	remaining := len(files)
-	oldest := time.Now().Add(-1 * hostLifetime)
-	for _, x := range files {
-		if remaining > maxFiles || x.ModTime().Before(oldest) {
-			fullPath := path + "/" + x.Name()
-			if err := os.Remove(fullPath); err != nil {
-				log.Printf("Error removing %s: %v\n", fullPath, err)
-			} else {
-				remaining--
-			}
-		}
-	}
-
-	if remaining == 0 {
-		if err := os.RemoveAll(path); err != nil {
-			log.Printf("Error removing nmap dir %s: %v\n",
-				path, err)
-		}
-	}
-
-	return remaining
-}
-
-// cleanAll deletes all but the most recent maxFiles files of any one scan type,
-// and also deletes files older than hostLifetime. If a directory is empty, it
-// is deleted.
-func cleanAll() {
-	defer cleanScanCount.Inc()
-
-	scannedHosts, err := getScannedHosts()
-	if err != nil {
-		log.Println("error getting scannedHosts:", err)
-		return
-	}
-
-	for host := range scannedHosts.active {
-		if cleanHostdir(*watchDir+"/"+host) == 0 {
-			log.Printf("No recent scans for %s, forgetting host", host)
-			activeHosts.del(host)
-			cancelScan(host)
-		}
-	}
-}
-
 func vulnInit() {
 	vulnListFile = *watchDir + "/vuln-db.json"
 	vulnList = make(map[string]vulnDescription, 0)
@@ -919,13 +824,11 @@ func scannerInit(w *watcher) {
 
 	scansRunning = make(map[*os.Process]bool)
 
-	os.MkdirAll(*watchDir+"/netscans", 0755)
 	for i := 0; i < numScanners; i++ {
 		go scanner()
 	}
 
 	schedule(hostScan, hostScanFreq, true)
-	schedule(cleanAll, cleanFreq, false)
 	w.running = true
 }
 

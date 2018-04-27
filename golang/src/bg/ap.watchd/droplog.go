@@ -99,30 +99,13 @@ type dropRecord struct {
 func countDrop(d *dropRecord) {
 	dstIP := d.dst.String()
 	srcIP := d.src.String()
-	dport := strconv.Itoa(d.dprt)
-	sport := strconv.Itoa(d.sprt)
 
-	// Bump the 'outgoing blocks' count of the originating device
-	if rec := getDeviceRecord(d.smac); rec != nil {
-		p := getProtoRecord(rec, d.proto)
-		if p != nil {
-			tgt := dstIP + ":" + dport
-			p.OutgoingBlocks[tgt]++
-		}
-		releaseDeviceRecord(rec)
+	if mac, ok := ipToMac[srcIP]; ok {
+		incBlockCnt(d.proto, mac, d.dst, d.dprt, d.sprt, true)
 	}
 
-	// If the target device was local to our LAN, bump its 'incoming
-	// blocks' count.
-	if !wanIfaces[d.outdev] {
-		if rec := getDeviceRecordByIP(dstIP); rec != nil {
-			p := getProtoRecord(rec, d.proto)
-			if p != nil {
-				src := srcIP + ":" + sport
-				p.IncomingBlocks[src]++
-			}
-			releaseDeviceRecord(rec)
-		}
+	if mac, ok := ipToMac[dstIP]; ok {
+		incBlockCnt(d.proto, mac, d.src, d.sprt, d.dprt, false)
 	}
 }
 

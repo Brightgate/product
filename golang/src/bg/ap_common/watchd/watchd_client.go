@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -13,6 +13,7 @@ package watchd
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"sync"
 	"time"
@@ -27,28 +28,48 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
-// We maintain some low-level usage statistics for each device.  Periodically
-// the 'current' statistics are rolled into an 'aggregate' structure and the
-// current stats are reset.  This gives us a view into a device's recent
-// activity, as well as its overall activity. (XXX: eventually each snapshot
-// will be saved into a database before before cleared, so we will be able to
-// examine a device's historical behavior in greater detail.)
-
-// ProtoRecord tracks a device's network statistics for a single protocol
-// (currently just TCP and UDP)
-type ProtoRecord struct {
-	OpenPorts      map[int]bool   `json:"OpenPorts,omitempty"`
-	OutPorts       map[int]bool   `json:"OutPorts,omitempty"`
-	InPorts        map[int]bool   `json:"InPorts,omitempty"`
-	OutgoingBlocks map[string]int `json:"OutgoingBlocks,omitempty"`
-	IncomingBlocks map[string]int `json:"IncomingBlocks,omitempty"`
+// Session represents a connection between two devices.  The local address is
+// implicit, as a session struct is always found within a device record.
+type Session struct {
+	RAddr net.IP // Remote address
+	RPort int    // Remote port
+	LPort int    // Local port
 }
 
-// DeviceRecord tracks a device's network statistics for all protocols
-type DeviceRecord map[string]*ProtoRecord
+// XferStats contains a single set of send/recv statistics
+type XferStats struct {
+	PktsSent  uint64
+	PktsRcvd  uint64
+	BytesSent uint64
+	BytesRcvd uint64
+}
 
-// DeviceMap tracks all devices for which we are gathering statistics
-type DeviceMap map[string]DeviceRecord
+// DeviceRecord tracks a device's network statistics
+type DeviceRecord struct {
+	Addr net.IP
+
+	// Open ports found during an nmap scan
+	OpenTCP []int `json:"OpenTCP,omitempty"`
+	OpenUDP []int `json:"OpenUDP,omitempty"`
+
+	// Per-IP counts of packets blocked by the firewall
+	BlockedOut map[uint64]int `json:"BlockedOut,omitempty"`
+	BlockedIn  map[uint64]int `json:"BlockedIn,omitempty"`
+
+	// Data transfer stats, both total and per-session
+	Aggregate XferStats
+	LANStats  map[uint64]XferStats `json:"Local,omitempty"`
+	WANStats  map[uint64]XferStats `json:"Remote,omitempty"`
+
+	sync.Mutex
+}
+
+// Snapshot captures the data for one or more devices over a period of time
+type Snapshot struct {
+	Start time.Time
+	End   time.Time
+	Data  map[string]*DeviceRecord
+}
 
 // Watchd is an opaque handle used by clients to communicate with ap.watchd
 type Watchd struct {
@@ -66,6 +87,34 @@ const (
 	sendTimeout = time.Duration(base_def.LOCAL_ZMQ_SEND_TIMEOUT * time.Second)
 	recvTimeout = time.Duration(base_def.LOCAL_ZMQ_RECEIVE_TIMEOUT * time.Second)
 )
+
+// SessionToKey Session struct into a 64-bit key, which can be used as a map
+// index
+func SessionToKey(s Session) uint64 {
+	addr := s.RAddr.To4()
+
+	rval := uint64(addr[0])
+	rval |= uint64(addr[1]) << 8
+	rval |= uint64(addr[2]) << 16
+	rval |= uint64(addr[3]) << 24
+	rval |= uint64(s.RPort) << 32
+	rval |= uint64(s.LPort) << 48
+	return rval
+}
+
+// KeyToSession Convert a 64-bit map key back into the original Session struct
+func KeyToSession(key uint64) Session {
+	a := uint8(key & 0xff)
+	b := uint8((key >> 8) & 0xff)
+	c := uint8((key >> 16) & 0xff)
+	d := uint8((key >> 24) & 0xff)
+	s := Session{
+		RAddr: net.IPv4(a, b, c, d),
+		RPort: int((key >> 32) & 0xffff),
+		LPort: int((key >> 48) & 0xffff),
+	}
+	return s
+}
 
 // New instantiates a new watchd handle and establishes a 0MQ connection to the
 // watchd daemon
@@ -100,9 +149,7 @@ func New(name string) (*Watchd, error) {
 // GetStats requests the stats for a device (or set of devices) from watchd
 // within the specified time range, and returns the results in a DeviceMap
 // structure.
-func (w *Watchd) GetStats(mac string, start, end *time.Time) (DeviceMap, error) {
-	var devs DeviceMap
-
+func (w *Watchd) GetStats(mac string, start, end *time.Time) ([]Snapshot, error) {
 	op := &base_msg.WatchdRequest{
 		Timestamp: aputil.NowToProtobuf(),
 		Sender:    proto.String(w.sender),
@@ -142,9 +189,10 @@ func (w *Watchd) GetStats(mac string, start, end *time.Time) (DeviceMap, error) 
 	proto.Unmarshal(reply[0], &r)
 	switch *r.Status {
 	case OK:
+		var s []Snapshot
 		rval := []byte(*r.Response)
-		err = json.Unmarshal(rval, &devs)
-		return devs, err
+		err = json.Unmarshal(rval, &s)
+		return s, err
 	case ERR:
 		return nil, fmt.Errorf("%v", *r.Response)
 	default:
@@ -154,15 +202,18 @@ func (w *Watchd) GetStats(mac string, start, end *time.Time) (DeviceMap, error) 
 
 // GetStatsCurrent is a simple wrapper around GetStats that specifically asks
 // for the current set of stats
-func (w *Watchd) GetStatsCurrent(mac string) (DeviceMap, error) {
-	return w.GetStats(mac, nil, nil)
+func (w *Watchd) GetStatsCurrent(mac string) (Snapshot, error) {
+	now := time.Now()
+	slice, err := w.GetStats(mac, &now, nil)
+	if len(slice) == 0 {
+		return Snapshot{}, err
+	}
+
+	return slice[0], nil
 }
 
-// GetStatsAggregate is a simple wrapper around GetStats that specifically asks
-// for the aggregated statistics since the system came online
-func (w *Watchd) GetStatsAggregate(mac string) (DeviceMap, error) {
-	// If the start and end times are equal, we're asking for the aggregate
-	// stats since the system came up
-	t := time.Now()
-	return w.GetStats(mac, &t, &t)
+// GetStatsAll is a simple wrapper around GetStats that specifically asks
+// for all of the snapshots still available locally.
+func (w *Watchd) GetStatsAll(mac string) ([]Snapshot, error) {
+	return w.GetStats(mac, nil, nil)
 }

@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -14,7 +14,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
+	"time"
 
 	"bg/ap_common/watchd"
 )
@@ -24,36 +26,25 @@ const (
 )
 
 var (
-	dev = flag.String("dev", "", "device mac address or 'all' ")
-	agg = flag.Bool("a", false, "aggregate data")
-
-	protocols = []string{"tcp", "udp"}
+	devFlag = flag.String("dev", "", "device mac address or 'all' ")
+	durFlag = flag.Duration("dur", time.Duration(0), "duration")
 )
 
 func usage() {
-	fmt.Printf("usage:\t%s [-a] -dev <[mac address | all]>\n", pname)
+	fmt.Printf("usage:\t%s -dev <[mac address | all]> [-dur <duration>]\n", pname)
 	os.Exit(2)
-}
-
-func mapToList(in map[int]bool) []int {
-	if len(in) == 0 {
-		return nil
-	}
-
-	list := make([]int, 0)
-	for i := range in {
-		list = append(list, i)
-	}
-
-	return list
 }
 
 func printPorts(indent, label string, ports []int) {
 	if len(ports) == 0 {
 		return
 	}
+
+	o := sort.IntSlice(ports)
+	o.Sort()
+
 	out := indent + label + ": "
-	for i, p := range ports {
+	for i, p := range o {
 		if i > 0 {
 			out += ", "
 		}
@@ -67,88 +58,73 @@ func printPorts(indent, label string, ports []int) {
 	fmt.Printf("%s\n", out)
 }
 
-func dumpOneBlock(indent, proto, direction string, blocks map[string]int) {
-	if len(blocks) == 0 {
-		return
-	}
-
-	fmt.Printf("%s%s %s:\n", indent, proto, direction)
-	nextIndent := indent + "    "
-	for addr, cnt := range blocks {
-		fmt.Printf("%s%s (%d)\n", nextIndent, addr, cnt)
-	}
+func printLine(label string, x watchd.XferStats) {
+	fmt.Printf("%30s%9d%12d%8s%9d%12d\n",
+		label, x.PktsSent, x.BytesSent, " ", x.PktsRcvd, x.BytesRcvd)
 }
 
-// Dump all the recorded firewall blocks to/from a device
-func dumpBlocked(indent string, dev watchd.DeviceRecord) {
-	cnt := 0
-	for _, proto := range protocols {
-		for _, x := range dev[proto].OutgoingBlocks {
-			cnt += x
-		}
-		for _, x := range dev[proto].IncomingBlocks {
-			cnt += x
+func showRecord(mac string, rec *watchd.DeviceRecord) {
+	var header string
+	if mac != "" {
+		header += "\nDevice: " + mac
+		if rec.Addr != nil {
+			header += fmt.Sprintf("  (IP: %v)", rec.Addr)
 		}
 	}
+	fmt.Printf("%s\n", header)
 
-	if cnt == 0 {
-		return
+	if len(rec.OpenTCP) > 0 || len(rec.OpenUDP) > 0 {
+		fmt.Printf("  Open ports\n")
+		printPorts("      ", "TCP", rec.OpenTCP)
+		printPorts("      ", "UDP", rec.OpenUDP)
+		fmt.Printf("\n")
 	}
 
-	fmt.Printf("%sFirewall recorded %d blocked packets:\n", indent, cnt)
-	nextIndent := indent + "    "
-	for _, proto := range protocols {
-		dumpOneBlock(nextIndent, proto, "from", dev[proto].IncomingBlocks)
-		dumpOneBlock(nextIndent, proto, "to", dev[proto].OutgoingBlocks)
-	}
-}
+	fmt.Printf("%30s%9s%12s%8s%9s%12s\n", "",
+		"Pkts Sent", "Bytes Sent", " ", "Pkts Rcvd", "Bytes Rcvd")
 
-func dumpOne(indent string, dev watchd.DeviceRecord) {
-	for _, proto := range protocols {
-		ports := mapToList(dev[proto].OpenPorts)
-		printPorts(indent, "Open "+proto+" ports", ports)
-	}
-
-	nextIndent := indent + "    "
-	fmt.Printf("%straffic (sampled):\n", indent)
-	total := 0
-	for _, proto := range protocols {
-		ports := mapToList(dev[proto].InPorts)
-		total += len(ports)
-		printPorts(nextIndent, "Inbound "+proto+" ports", ports)
-		ports = mapToList(dev[proto].OutPorts)
-		total += len(ports)
-		printPorts(nextIndent, "Outbound "+proto+" ports", ports)
-	}
-	if total == 0 {
-		fmt.Printf("%sNone.\n", nextIndent)
-	}
-
-	dumpBlocked(indent, dev)
-}
-
-func dumpAll(all bool, devs watchd.DeviceMap) {
-	for mac, dev := range devs {
-		if all {
-			fmt.Printf("\n%s\n", mac)
+	if len(rec.LANStats) > 0 {
+		fmt.Printf("  Local:\n")
+		for k, x := range rec.LANStats {
+			s := watchd.KeyToSession(k)
+			label := fmt.Sprintf("%v:%-5d", s.RAddr, s.RPort)
+			printLine(label, x)
 		}
-		dumpOne("    ", dev)
 	}
+	if len(rec.WANStats) > 0 {
+		fmt.Printf("  Remote:\n")
+		for k, x := range rec.WANStats {
+			s := watchd.KeyToSession(k)
+			label := fmt.Sprintf("%v:%-5d", s.RAddr, s.RPort)
+			printLine(label, x)
+		}
+	}
+	fmt.Printf("\n")
+	label := fmt.Sprintf("%-30s", "  Total:")
+	printLine(label, rec.Aggregate)
 }
 
 func main() {
-	var devs watchd.DeviceMap
+	var (
+		mac   string
+		start *time.Time
+	)
 
 	flag.Parse()
 
-	if *dev == "" {
+	if *devFlag == "" {
 		usage()
+	} else if *devFlag == "all" {
+		mac = "ff:ff:ff:ff:ff:ff"
+	} else {
+		mac = *devFlag
 	}
 
-	mac := *dev
-	if *dev == "all" {
-		mac = "ff:ff:ff:ff:ff:ff"
+	t := time.Now()
+	if *durFlag != time.Duration(0) {
+		t = t.Add(-1 * *durFlag)
 	}
+	start = &t
 
 	w, err := watchd.New(pname)
 	if err != nil {
@@ -156,18 +132,30 @@ func main() {
 		os.Exit(1)
 	}
 
-	if *agg {
-		devs, err = w.GetStatsAggregate(mac)
-	} else {
-		devs, err = w.GetStatsCurrent(mac)
-	}
-
+	snapshots, err := w.GetStats(mac, start, nil)
 	if err != nil {
 		fmt.Printf("failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	dumpAll((*dev == "all"), devs)
+	for i, s := range snapshots {
+		if len(s.Data) == 0 {
+			continue
+		}
+		if i > 0 {
+			fmt.Printf("\n--------------------\n")
+		}
+		fmt.Printf("%s - %s\n", s.Start.Format(time.Stamp),
+			s.End.Format(time.Stamp))
+
+		for mac, d := range s.Data {
+			var label string
+			if *devFlag == "all" {
+				label = mac
+			}
+			showRecord(label, d)
+		}
+	}
 
 	os.Exit(0)
 }

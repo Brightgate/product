@@ -17,6 +17,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -217,6 +218,8 @@ func signalHandler() {
 }
 
 func main() {
+	// To avoid dropping packets, we need to have extra processes available.
+	runtime.GOMAXPROCS(8)
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	flag.Parse()
 	*watchDir = aputil.ExpandDirPath(*watchDir)
