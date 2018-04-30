@@ -18,6 +18,9 @@
 //
 pipeline {
     agent any
+    environment {
+        GOROOT = '/opt/net.b10e/go'
+    }
     stages {
         stage('build') {
             steps {
@@ -50,6 +53,30 @@ pipeline {
         stage('checks') {
             steps {
                 sh 'make vet-go lint-go'
+            }
+        }
+    }
+    post {
+        always {
+            script {
+                // If PHID is not set then this pipeline was used
+                // in a non-building-for-phabricator context.  In which
+                // case notifying phabricator of the build completion
+                // will just cause problems.
+                if (env.PHID == null || env.PHID == "") {
+                    return
+                }
+                // The PhabricatorNotifier keys result off of
+                // currentBuild.result.  However, in jenkins pipelines
+                // this isn't set, even in the 'post' clause.  However
+                // it is writeable, so we fill it in here.  See
+                // https://github.com/uber/phabricator-jenkins-plugin/issues/198
+                if (currentBuild.result == null) {
+                    currentBuild.result = currentBuild.currentResult
+                }
+                step([$class: 'PhabricatorNotifier',
+                    commentOnSuccess: true,
+                    commentWithConsoleLinkOnFailure: true])
             }
         }
     }
