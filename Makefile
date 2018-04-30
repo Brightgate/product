@@ -809,10 +809,13 @@ base/cloud_rpc_pb2.py: base/cloud_rpc.proto
 		-Ibase \
 		--python_out=. --grpc_python_out=. $<
 
-$(PROTOC_PLUGINS):
+$(PROTOC_PLUGINS): .make-protoc-plugins
+
+.make-protoc-plugins:
 	$(GO) get -u github.com/golang/protobuf/proto
 	$(GO) get -u github.com/golang/protobuf/protoc-gen-go
 	$(GO) get -u sourcegraph.com/sourcegraph/prototools/cmd/protoc-gen-doc
+	touch $@
 
 LOCAL_COMMANDS=$(COMMANDS:$(APPBIN)/%=$(GOPATH)/bin/%)
 LOCAL_DAEMONS=$(DAEMONS:$(APPBIN)/%=$(GOPATH)/bin/%)
@@ -820,7 +823,7 @@ LOCAL_DAEMONS=$(DAEMONS:$(APPBIN)/%=$(GOPATH)/bin/%)
 # Generate a hash of the contents of BUILDTOOLS, so that if the required
 # packages change, we'll rerun the check.
 BUILDTOOLS_HASH=$(shell echo $(BUILDTOOLS) | $(MD5SUM) | awk '{print $$1}')
-BUILDTOOLS_FILE=.tools-$(BUILDTOOLS_HASH)
+BUILDTOOLS_FILE=.make-buildtools-$(BUILDTOOLS_HASH)
 
 tools: $(BUILDTOOLS_FILE)
 
@@ -834,11 +837,12 @@ $(BUILDTOOLS_FILE):
 include Makefile.godeps
 
 NPM = npm
-client-web/.npm-installed: client-web/package.json
-	(cd client-web && $(NPM) install)
+NPM_QUIET = --loglevel warn --no-progress
+.make-npm-installed: client-web/package.json
+	(cd client-web && $(NPM) install $(NPM_QUIET))
 	touch $@
 
-client-web: client-web/.npm-installed FRC | $(HTTPD_CLIENTWEB_DIR)
+client-web: .make-npm-installed FRC | $(HTTPD_CLIENTWEB_DIR)
 	$(RM) -fr $(HTTPD_CLIENTWEB_DIR)/*
 	(cd client-web && $(NPM) run build)
 	tar -C client-web/dist -c -f - . | tar -C $(HTTPD_CLIENTWEB_DIR) -xvf -
@@ -849,13 +853,13 @@ clobber: clean clobber-packages clobber-godeps
 	$(RM) -fr $(ROOT)
 	$(RM) -fr $(GOWS)/pkg
 	$(RM) -fr $(GOWS)/bin
+	$(RM) -f .make-*
 
 clobber-packages:
 	-$(RM) -fr bg-appliance_*.*.*-*_* bg-cloud_*.*.*-*_*
 
 clean:
 	$(RM) -f \
-		.tools-* \
 		base/base_def.py \
 		base/base_msg_pb2.py \
 		base/cloud_rpc_pb2.py \

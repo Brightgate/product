@@ -19,11 +19,11 @@ $(DEPBIN):
 	$(GO) get -u github.com/golang/dep/cmd/dep
 
 # n.b. we use realpath because 'dep' is very picky when faced with symlinks.
-.deps_ensured: $(GOSRCBG)/Gopkg.lock $(GOSRCBG)/Gopkg.toml | $(DEPBIN)
+.make-deps-ensured: $(GOSRCBG)/Gopkg.lock $(GOSRCBG)/Gopkg.toml | $(DEPBIN)
 	cd $(realpath $(GOSRCBG)) && $(DEPBIN) ensure -v
 	touch $@
 	
-deps-ensured: .deps_ensured
+deps-ensured: .make-deps-ensured
 
 #
 # Invoke this target by hand to force vendored packages to update.  This
@@ -32,7 +32,7 @@ deps-ensured: .deps_ensured
 #
 deps-update:
 	cd $(realpath $(GOSRCBG)) && $(DEPBIN) ensure -v -update
-	touch .deps_ensured
+	touch .make-deps-ensured
 
 #
 # Invoke this target by hand to get a table of packages and their metadata.
@@ -48,9 +48,9 @@ deps-status:
 #
 deps-add:
 	cd $(realpath $(GOSRCBG)) && $(DEPBIN) ensure -add $(DEPNAME)
-	touch .deps_ensured
+	touch .make-deps-ensured
 
 clobber-godeps:
-	$(RM) -f .deps_ensured
+	$(RM) -f .make-deps-ensured
 	$(RM) -fr $(GOSRCBGVENDOR)
 	$(RM) -f $(DEPBIN)
