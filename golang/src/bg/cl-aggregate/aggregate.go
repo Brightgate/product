@@ -31,9 +31,10 @@ import (
 )
 
 const (
-	gcpBucket    = "bg-blocklist-a198e4a0-5823-4d16-8950-ad34b32ace1c"
-	ipBlacklist  = "ip_blacklist"
-	dnsBlacklist = "dns_blacklist"
+	googleStorage = "https://storage.googleapis.com/"
+	gcpBucket     = "bg-blocklist-a198e4a0-5823-4d16-8950-ad34b32ace1c"
+	ipBlacklist   = "ip_blacklist"
+	dnsBlacklist  = "dns_blacklist"
 
 	phishPrefix = "http://data.phishtank.com/data/"
 	phishKey    = "bd4ea8a80e25662e85f349c84bf300995ef013528c8201455edaeccf7426ec5e"
@@ -96,6 +97,12 @@ var dnsSources = []source{
 		file:   "online-valid.csv",
 		url:    phishPrefix + phishKey + "/" + phishList,
 		parser: parsePhishtank,
+	},
+	{
+		name:   "Brightgate DNS blacklist",
+		file:   "bg_dns.csv",
+		url:    googleStorage + gcpBucket + "/bg_dns_blacklist.csv",
+		parser: parseBrightgate,
 	},
 }
 
@@ -183,6 +190,26 @@ func parsePhishtank(s *source, list blocklist, file *os.File) int {
 		m := ruleRE.FindStringSubmatch(line)
 		if len(m) == 3 {
 			if addBlock(list, m[2], "phish-"+m[1]) {
+				cnt++
+			}
+		}
+	}
+	return cnt
+}
+
+// Process the Brightgate-created list.
+func parseBrightgate(s *source, list blocklist, file *os.File) int {
+	var cnt int
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line[0] != '#' {
+			name := line
+			if idx := strings.Index(name, ","); idx > 0 {
+				name = name[:idx]
+			}
+			if addBlock(list, name, "brightgate") {
 				cnt++
 			}
 		}

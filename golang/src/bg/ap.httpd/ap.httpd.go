@@ -207,9 +207,7 @@ func loadPhishtank() {
 
 	reader := phishtank.NewReader(
 		phishtank.Whitelist(antiphishing+"whitelist.csv"),
-		phishtank.Phishtank(antiphishing+"phishtank.csv"),
-		phishtank.MDL(antiphishing+"mdl.csv"),
-		phishtank.Generic(antiphishing+"example_blacklist.csv", -3, 1))
+		phishtank.Phishtank(antiphishing+"dns_blocklist.csv"))
 	phishScorer = reader.Scorer()
 }
 

@@ -31,6 +31,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -70,8 +71,8 @@ var (
 		Help: "DNS query resolution time",
 	})
 
-	dnsWhitelist = make(map[string]bool)
-	dnsBlacklist = make(map[string]bool)
+	dnsWhitelist *dnsMatchList
+	dnsBlacklist *dnsMatchList
 
 	ringRecords  map[string]dnsRecord // per-ring records for the router
 	perRingHosts map[string]bool      // hosts with per-ring results
@@ -81,6 +82,11 @@ var (
 	brightgateDNS string
 	upstreamDNS   = "8.8.8.8:53"
 )
+
+type dnsMatchList struct {
+	exactMatches  map[string]bool
+	regexpMatches []*regexp.Regexp
+}
 
 /*
  * The 'clients' map represents all of the clients that we know about.  In
@@ -476,8 +482,22 @@ func localAddress(arpa string) bool {
 	return false
 }
 
+func inList(name string, list *dnsMatchList) bool {
+	if _, ok := list.exactMatches[name]; ok {
+		return true
+	}
+
+	for _, re := range list.regexpMatches {
+		if re.MatchString(name) {
+			return true
+		}
+	}
+
+	return false
+}
+
 func blockedHostname(name string) bool {
-	return dnsBlacklist[name] && !dnsWhitelist[name]
+	return inList(name, dnsBlacklist) && !inList(name, dnsWhitelist)
 }
 
 func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
@@ -707,36 +727,41 @@ func initNetwork() {
 	}
 }
 
-// Pull a list of DNS names from a CSV.  The first field of each line must be
-// a legal dns name.  The rest of the line is ignored.
-func ingestDNSFile(filename string) (map[string]bool, error) {
+// Pull a list of DNS names from a CSV.  The first field of each line must be a
+// legal dns name or a regular expression.  The rest of the line is ignored.
+func ingestDNSFile(filename string) (*dnsMatchList, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
 	}
 
-	list := make(map[string]bool)
-	cnt := 0
+	var list = dnsMatchList{
+		exactMatches:  make(map[string]bool),
+		regexpMatches: make([]*regexp.Regexp, 0),
+	}
+
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if line[0] != '#' {
-			var name string
-			if idx := strings.Index(line, ","); idx > 0 {
-				name = line[:idx]
-			} else {
-				name = line
-			}
-			if network.ValidDNSName(name) {
-				list[name] = true
-				cnt++
+
+		if idx := strings.Index(line, ","); idx > 0 {
+			line = line[:idx]
+		}
+
+		if len(line) > 0 && line[0] != '#' {
+			match := string(line)
+			if network.ValidDNSName(match) {
+				list.exactMatches[match] = true
+			} else if re, err := regexp.Compile(match); err == nil {
+				list.regexpMatches = append(list.regexpMatches, re)
 			}
 		}
 	}
 	file.Close()
 
-	log.Printf("Ingested %d hostnames from %s\n", cnt, filename)
-	return list, nil
+	log.Printf("Ingested %d hostnames and %d regexps from %s\n",
+		len(list.exactMatches), len(list.regexpMatches), filename)
+	return &list, nil
 }
 
 func loadDNSBlacklist() {

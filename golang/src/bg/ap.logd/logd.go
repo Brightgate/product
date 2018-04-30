@@ -97,7 +97,7 @@ func handleException(event []byte) {
 
 	// Construct a user-friendly message to push to the system log
 	time := aputil.ProtobufToTime(exception.Timestamp)
-	timestamp := time.Format("2006/01/02 13:04:05")
+	timestamp := time.Format("2006/01/02 15:04:05")
 
 	msg := ""
 	if exception.Sender != nil {

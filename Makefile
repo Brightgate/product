@@ -332,7 +332,6 @@ APPCONFIGS = \
 	$(APPROOTLIB)/systemd/system/ap.mcp.service \
 	$(APPROOTLIB)/systemd/system/brightgate-appliance.service \
 	$(APPSNMAP)/smb-vuln-ms17-010.nse \
-	$(APPSPOOLANTIPHISH)/example_blacklist.csv \
 	$(APPSPOOLANTIPHISH)/whitelist.csv \
 	$(APPSPOOLWATCHD)/vuln-db.json \
 	$(ROOTETCCROND)/com-brightgate-appliance-cron \
@@ -575,10 +574,7 @@ $(ROOTETCRSYSLOGD)/com-brightgate-rsyslog.conf: $(GOSRCBG)/ap.watchd/com-brightg
 $(APPSNMAP)/smb-vuln-ms17-010.nse: $(GOSRCBG)/ap-vuln-aggregate/smb-vuln-ms17-010.nse | $(APPSNMAP)
 	$(INSTALL) -m 0644 $< $@
 
-$(APPSPOOLANTIPHISH)/example_blacklist.csv: $(GOSRCBG)/data/phishtank/example_blacklist.csv | $(APPSPOOLANTIPHISH)
-	$(INSTALL) -m 0644 $< $@
-
-$(APPSPOOLANTIPHISH)/whitelist.csv: $(GOSRCBG)/data/phishtank/whitelist.csv | $(APPSPOOLANTIPHISH)
+$(APPSPOOLANTIPHISH)/whitelist.csv: $(GOSRCBG)/ap.dns4d/whitelist.csv | $(APPSPOOLANTIPHISH)
 	$(INSTALL) -m 0644 $< $@
 
 $(APPSPOOLWATCHD)/vuln-db.json: $(GOSRCBG)/ap-vuln-aggregate/sample-db.json | $(APPSPOOLWATCHD)
@@ -667,9 +663,7 @@ $(APPBIN)/ap.configd: \
 	$(GOSRCBG)/ap.configd/upgrade_v12.go \
 	$(GOSRCBG)/ap.configd/upgrade_v13.go
 $(APPBIN)/ap.dhcp4d: $(GOSRCBG)/ap.dhcp4d/dhcp4d.go
-$(APPBIN)/ap.dns4d: \
-	$(GOSRCBG)/ap.dns4d/dns4d.go \
-	$(PHISH_SRCS)
+$(APPBIN)/ap.dns4d: $(GOSRCBG)/ap.dns4d/dns4d.go
 $(APPBIN)/ap.httpd: \
 	$(GOSRCBG)/ap.httpd/ap.httpd.go \
 	$(GOSRCBG)/ap.httpd/api-demo.go \
