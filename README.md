@@ -19,7 +19,7 @@ build/                  Scripts to do with building and provisioning
 
 client-web/             Web-based frontend
 
-golang/                 Golang-based command, daemon, and library
+golang/src/bg/          Golang-based command, daemon, and library
                         implementations.
 ```
 
@@ -131,7 +131,7 @@ While not required (you may run from the `proto` area), you may wish to build
 installable packages for ARM:
 
 ```
-$ make install && make client-web && make packages
+$ make packages
 ...
 dpkg-deb: building package 'bg-appliance' in 'bg-appliance_0.0.1803052236-1_amd64.deb'.
 ...
