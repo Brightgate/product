@@ -108,7 +108,11 @@ GOVERFLAGS=-ldflags="-X main.ApVersion=$(GITHASH)"
 # Miscellaneous environment setup
 #
 INSTALL = install
-MD5SUM = md5sum
+ifeq ("$(UNAME_S)","Darwin")
+SHA256SUM = shasum -a 256
+else
+SHA256SUM = sha256sum
+endif
 MKDIR = mkdir
 RM = rm
 
@@ -822,7 +826,7 @@ LOCAL_DAEMONS=$(DAEMONS:$(APPBIN)/%=$(GOPATH)/bin/%)
 
 # Generate a hash of the contents of BUILDTOOLS, so that if the required
 # packages change, we'll rerun the check.
-BUILDTOOLS_HASH=$(shell echo $(BUILDTOOLS) | $(MD5SUM) | awk '{print $$1}')
+BUILDTOOLS_HASH=$(shell echo $(BUILDTOOLS) | $(SHA256SUM) | awk '{print $$1}')
 BUILDTOOLS_FILE=.make-buildtools-$(BUILDTOOLS_HASH)
 
 tools: $(BUILDTOOLS_FILE)
