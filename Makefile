@@ -64,8 +64,8 @@ GOROOT_SEARCH += /usr/local/go
 $(info operating-system macOS)
 else
 # On Linux
-export GOROOT=$(wildcard /opt/net.b10e/go)
-GOROOT_SEARCH += /opt/net.b10e/go
+export GOROOT=$(wildcard /opt/net.b10e/go-1.10.2)
+GOROOT_SEARCH += /opt/net.b10e/go-1.10.2
 ifeq ("$(GOROOT)","")
 export GOROOT=$(HOME)/go
 GOROOT_SEARCH += $(HOME)/go
@@ -100,7 +100,7 @@ GOSRCBG = $(GOWS)/src/bg
 # Vendoring directory, where external deps are placed
 GOSRCBGVENDOR = $(GOSRCBG)/vendor
 # Where we stick build tools
-GOBIN = golang/bin
+GOBIN = $(GOPATH)/bin
 
 GOVERFLAGS=-ldflags="-X main.ApVersion=$(GITHASH)"
 
@@ -123,8 +123,8 @@ NODE = node
 NODEVERSION = $(shell $(NODE) --version)
 
 PROTOC_PLUGINS = \
-	$(GOPATH)/bin/protoc-gen-doc \
-	$(GOPATH)/bin/protoc-gen-go
+	$(GOBIN)/protoc-gen-doc \
+	$(GOBIN)/protoc-gen-go
 
 #
 # ARCH dependent setup
@@ -468,6 +468,8 @@ CLOUD_COMMON_SRCS = \
     $(GOSRCBG)/cl_common/daemonutils/utils.go \
     $(GOSRCBG)/common/urlfetch.go
 
+COVERAGE_DIR = coverage
+
 install: tools mocks $(TARGETS)
 
 appliance: $(APPCOMPONENTS)
@@ -484,7 +486,7 @@ packages-lint: install client-web
 
 test: test-go
 
-MOCKERY=$(GOPATH)/bin/mockery
+MOCKERY=$(GOBIN)/mockery
 
 $(MOCKERY):
 	$(GO) get -u github.com/vektra/mockery/.../
@@ -511,7 +513,9 @@ test-go: install
 coverage: coverage-go
 
 coverage-go: install
-	$(GO) test -cover $(GO_TESTABLES)
+	$(MKDIR) -p $(COVERAGE_DIR)
+	$(GO) test -cover -coverprofile $(COVERAGE_DIR)/cover.out $(GO_TESTABLES)
+	$(GO) tool cover -html=$(COVERAGE_DIR)/cover.out -o $(COVERAGE_DIR)/coverage.html
 
 vet-go:
 	$(GO) vet $(APP_GOPKGS)
@@ -525,7 +529,7 @@ docs: | $(PROTOC_PLUGINS)
 
 $(APPDOC)/: base/base_msg.proto | $(PROTOC_PLUGINS) $(APPDOC) $(BASE_MSG)
 	cd base && \
-		protoc --plugin $(GOPATH)/bin \
+		protoc --plugin $(GOBIN) \
 		    --doc_out $(APPDOC) $(notdir $<)
 
 # Installation of appliance configuration files
@@ -717,7 +721,7 @@ $(APPBIN)/ap-vuln-aggregate: \
 	$(GOSRCBG)/ap-vuln-aggregate/nmap.go \
 	$(GOSRCBG)/ap-vuln-aggregate/aggregate.go
 
-LOCAL_BINARIES=$(APPBINARIES:$(APPBIN)/%=$(GOPATH)/bin/%)
+LOCAL_BINARIES=$(APPBINARIES:$(APPBIN)/%=$(GOBIN)/%)
 
 # Miscellaneous utility components
 
@@ -790,7 +794,7 @@ base/base_def.py: base/generate-base-def.py
 $(GOSRCBG)/base_msg/base_msg.pb.go: base/base_msg.proto | \
 	$(PROTOC_PLUGINS) $(GOSRCBG)/base_msg
 	cd base && \
-		protoc --plugin $(GOPATH)/bin \
+		protoc --plugin $(GOBIN) \
 		    --go_out ../$(GOSRCBG)/base_msg $(notdir $<)
 
 base/base_msg_pb2.py: base/base_msg.proto
@@ -799,7 +803,7 @@ base/base_msg_pb2.py: base/base_msg.proto
 $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go: base/cloud_rpc.proto | \
 	$(PROTOC_PLUGINS) $(GOSRCBG)/cloud_rpc
 	cd base && \
-		protoc --plugin $(GOPATH)/bin \
+		protoc --plugin $(GOBIN) \
 			-I/usr/local/include \
 			-I . \
 			-I$(GOPATH)/src \
@@ -821,8 +825,8 @@ $(PROTOC_PLUGINS): .make-protoc-plugins
 	$(GO) get -u sourcegraph.com/sourcegraph/prototools/cmd/protoc-gen-doc
 	touch $@
 
-LOCAL_COMMANDS=$(COMMANDS:$(APPBIN)/%=$(GOPATH)/bin/%)
-LOCAL_DAEMONS=$(DAEMONS:$(APPBIN)/%=$(GOPATH)/bin/%)
+LOCAL_COMMANDS=$(COMMANDS:$(APPBIN)/%=$(GOBIN)/%)
+LOCAL_DAEMONS=$(DAEMONS:$(APPBIN)/%=$(GOBIN)/%)
 
 # Generate a hash of the contents of BUILDTOOLS, so that if the required
 # packages change, we'll rerun the check.
@@ -874,6 +878,7 @@ clean:
 		$(CLOUDBINARIES) \
 		$(UTILBINARIES) \
 		$(GO_MOCK_SRCS)
+	$(RM) -fr $(COVERAGE_DIR)
 	find $(GOSRCBG)/ap_common -name \*.pem | xargs $(RM) -f
 
 plat-clobber: clobber

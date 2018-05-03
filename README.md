@@ -46,7 +46,7 @@ When dealing with cloud components, $ROOT is equivalent to
 We typically write "Golang" to improve search uniqueness.
 
 If you are using our cloud systems to build, Golang is installed at
-/opt/net.b10e/go.
+/opt/net.b10e/go-1.10.2
 
 To retrieve the Golang SDK for Linux x64, use
 

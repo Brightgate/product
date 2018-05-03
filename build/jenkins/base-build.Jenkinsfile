@@ -19,7 +19,7 @@
 pipeline {
     agent any
     environment {
-        GOROOT = '/opt/net.b10e/go'
+        GOROOT = '/opt/net.b10e/go-1.10.2'
     }
     stages {
         stage('build') {
@@ -48,6 +48,7 @@ pipeline {
         stage('test') {
             steps {
                 sh 'make test coverage'
+                archiveArtifacts 'coverage/coverage.html'
             }
         }
         stage('checks') {

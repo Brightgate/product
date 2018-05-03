@@ -7,3 +7,4 @@ proto.x86_64
 *.deb
 base/base_def.py
 base/cloud_rpc_pb2_grpc.py
+coverage/
