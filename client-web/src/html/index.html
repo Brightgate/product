@@ -11,17 +11,54 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, minimal-ui viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover minimal-ui">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="theme-color" content="#2196f3">
+  <meta name="application-name" content="Brightgate Administration">
+
   <title>Brightgate Administration</title>
   <link rel="stylesheet" href="css/framework7.min.css">
   <link rel="stylesheet" href="css/framework7-icons.css">
   <link rel="stylesheet" href="css/app.css">
   <link rel="stylesheet" href="css/build.css">
+  <link rel="manifest" href="manifest.json">
+
+  <!-- Start loading main app JS immediately. -->
+  <link rel="preload" href="js/build.js" as="script">
+
+  <!-- Preload woff2 icons for performance. Woff2 is the preferred format in
+       the F7 Icon font stack CSS. -->
+  <link rel="preload" href="fonts/Framework7Icons-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+
+  <!-- Preload bg logo for performance: track
+       https://www.chromestatus.com/feature/5164259990306816 for improvements
+       in this space.
+  -->
+  <link rel="preload" href="img/bglogo_navbar_ios.png" as="image" type="image/png" media="(max-resolution: 1.499dppx)" crossorigin="anonymous">
+  <link rel="preload" href="img/bglogo_navbar_ios@2x.png" as="image" type="image/png" media="(min-resolution: 1.5dppx)">
+  <link rel="preload" href="img/bglogo_navbar_md.png" as="image" type="image/png" media="(max-resolution: 1.499dppx)">
+  <link rel="preload" href="img/bglogo_navbar_md@2x.png" as="image" type="image/png" media="(min-resolution: 1.5dppx)">
+
+
 </head>
 <body>
-  <div id="app"></div>
+  <div id="app">
+    <noscript>
+      <div>
+        <img
+          alt="Brightgate"
+          style="padding:8px"
+          src="img/bglogo_navbar_ios.png"
+          srcset="img/bglogo_navbar_ios.png,
+                  img/bglogo_navbar_ios@2x.png 2x"/>
+      </div>
+      <div>
+        <p>The Brightgate administrative application requires Javascript to
+           function properly.</p>
+      </div>
+    </noscript>
+  </div>
   <script>
      window.navigateTo = '/';
   </script>

@@ -42,6 +42,7 @@ import (
 	"github.com/gorilla/securecookie"
 	"github.com/lestrrat/go-apache-logformat"
 
+	"github.com/NYTimes/gziphandler"
 	"github.com/unrolled/secure"
 	"github.com/urfave/negroni"
 
@@ -366,7 +367,8 @@ func main() {
 		http.StripPrefix("/apid", demoAPIRouter))
 	mainRouter.PathPrefix("/client-web/").Handler(
 		http.StripPrefix("/client-web/",
-			http.FileServer(http.Dir(*clientWebDir))))
+			gziphandler.GzipHandler(
+				http.FileServer(http.Dir(*clientWebDir)))))
 
 	hashKey, blockKey := establishHttpdKeys()
 

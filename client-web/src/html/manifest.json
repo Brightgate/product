@@ -1,0 +1,11 @@
+{
+  "name": "Brightgate Administration",
+  "short_name": "Brightgate",
+  "theme_color": "#2196f3",
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "orientation": "portrait",
+  "Scope": "/",
+  "start_url": "/client-web/",
+  "icons": null
+}

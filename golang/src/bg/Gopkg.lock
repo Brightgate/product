@@ -23,6 +23,12 @@
   version = "v0.17.0"
 
 [[projects]]
+  name = "github.com/NYTimes/gziphandler"
+  packages = ["."]
+  revision = "2600fb119af974220d3916a5916d6e31176aac1b"
+  version = "v1.0.1"
+
+[[projects]]
   branch = "master"
   name = "github.com/ajstarks/svgo"
   packages = ["."]
@@ -607,6 +613,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "c139fe19b03526ff0324a6725480965d37d92107c9e27df5a1dd3396c0d96cf2"
+  inputs-digest = "9d96529b0713d6c293920fba6a8f7fbca51177134361f26e3c1442998d24c37a"
   solver-name = "gps-cdcl"
   solver-version = 1
