@@ -14,13 +14,6 @@ PATH=/usr/bin:/usr/sbin:/bin
 export PATH
 
 pname=$(basename "$0")
-while getopts u arg; do
-    case "$arg" in
-        "u") upload="yes" ;;
-    esac
-done
-shift $(($OPTIND - 1))
-cfgfile="$1"
 
 function info() {
 	echo "$pname: info: $*"
@@ -31,7 +24,81 @@ function fatal() {
 	exit 1
 }
 
-[[ -f "$cfgfile" ]] || fatal "must specify a multistrap config file"
+while getopts f: arg; do
+	case "$arg" in
+		"f") cfgfile="$OPTARG" ;;
+	esac
+done
+shift $(($OPTIND - 1))
+
+cmd=$1; shift
+
+OPTIND=1
+while getopts d:u arg; do
+	case "$arg" in
+		"u") upload="yes" ;;
+		"d") dir="$OPTARG"  ;;
+	esac
+done
+shift $(($OPTIND - 1))
+
+[[ -n "$cfgfile" ]] || fatal "must specify a multistrap config file"
+[[ -f "$cfgfile" ]] || fatal "multistrap config file $cfgfile does not exist"
+
+# The sysroot blob is in the same directory as the configuration file
+BLOB_NAME_PREFIX=$(basename $cfgfile)
+BLOB_NAME_PREFIX=$(dirname $cfgfile)/sysroot.${BLOB_NAME_PREFIX%.multistrap}
+BLOB_NAME_PREFIX=${BLOB_NAME_PREFIX#./}
+BLOB_NAME=$BLOB_NAME_PREFIX.${SYSROOT_SUM:-UnknownSysrootSum}.tar.gz
+SYSROOT_BUCKET_NAME=peppy-breaker-161717-sysroot
+GCS_ACCOUNT=sysroot-uploader@peppy-breaker-161717.iam.gserviceaccount.com
+
+function cmd_name() {
+	echo $BLOB_NAME
+	exit
+}
+
+function cmd_download() {
+	gsutil cp gs://$SYSROOT_BUCKET_NAME/$BLOB_NAME .
+	exit
+}
+
+function cmd_unpack() {
+	# If we're told where to put the sysroot, make sure the directory
+	# exists and then extract the contents there.  If we're not told, just
+	# extract to the current directory without stripping the containing
+	# directory.
+	mkdir -p ${dir:-.}
+	tar -ax ${dir:+-C $dir --strip-components=1} -f $BLOB_NAME
+	exit
+}
+
+# This is the just the logic of the upload, factored out so it can be used in
+# two different contexts.
+function upload() {
+	# Make sure we don't use the user's auth tokens
+	export BOTO_CONFIG=/dev/null
+	info "Uploading sysroot as $BLOB_NAME"
+	gcloud auth activate-service-account $GCS_ACCOUNT \
+	    --key-file=$KEY_SYSROOT_UPLOADER && \
+		gsutil cp -n $BLOB_NAME gs://$SYSROOT_BUCKET_NAME/ && \
+		gcloud auth revoke $GCS_ACCOUNT
+}
+
+function cmd_upload() {
+	upload
+	exit
+}
+
+function cmd_build() {
+	# Build is just the rest of the script.
+	:
+}
+
+cmd_$cmd
+
+[[ $PWD == $(realpath $(dirname $0)) ]] || \
+	fatal "must build the sysroot in $(realpath $(dirname $0))"
 
 SYSROOT_NAME=$(awk -F= '/^directory=/ {print $2}' < "$cfgfile")
 info "SYSROOT_NAME=$SYSROOT_NAME  (Based on $cfgfile)"
@@ -85,7 +152,7 @@ chmod a+rx "$SYSROOT_NAME/usr/local/lib/libtensorflow.so"
 
 touch $SYSROOT_NAME/.$NEW_SUM
 
-BLOB_NAME=sysroot.${cfgfile%.multistrap}.$NEW_SUM.tar.gz
+BLOB_NAME=$BLOB_NAME_PREFIX.$NEW_SUM.tar.gz
 tar -ca --owner=root --group=root -f $BLOB_NAME $SYSROOT_NAME
 
 SIZE=$(du -hs "$SYSROOT_NAME" | awk '{print $1}')
@@ -94,16 +161,9 @@ info "Final sysroot size: $SIZE ($COMPRESSED_SIZE compressed)"
 
 # This will attempt to upload a blob that's already in the store if we haven't
 # updated SYSROOT_SUM to match in the top-level Makefile.  The upload won't
-# proceed because of the -n flag.
+# proceed because of the -n flag if the blob is already there.
 if [[ $upload == "yes" && $NEW_SUM != $SYSROOT_SUM ]]; then
-	GCS_ACCOUNT=sysroot-uploader@peppy-breaker-161717.iam.gserviceaccount.com
-	# Make sure we don't use the user's auth tokens
-	export BOTO_CONFIG=/dev/null
-	info "Uploading sysroot as $BLOB_NAME"
-	gcloud auth activate-service-account $GCS_ACCOUNT \
-		--key-file=$KEY_SYSROOT_UPLOADER
-	gsutil cp -n $BLOB_NAME gs://peppy-breaker-161717-sysroot/
-	gcloud auth revoke $GCS_ACCOUNT
+	upload || exit
 	info "Update SYSROOT_SUM to $NEW_SUM in the top-level Makefile to use the new sysroot."
 fi
 

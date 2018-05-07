@@ -137,7 +137,7 @@ TARGETS=appliance cloud
 endif
 
 ifeq ("$(GOARCH)","arm")
-# UNAME_M will read armv7l on Raspbian and on Ubuntu for  Banana Pi.
+# UNAME_M will read armv7l on Raspbian and on Ubuntu for Banana Pi.
 # Both use armhf as the architecture for .deb files.
 ROOT=proto.armv7l
 PKG_DEB_ARCH=armhf
@@ -147,19 +147,20 @@ endif
 #
 # Cross compilation setup
 #
-SYSROOT_CFG=build/cross-compile/raspbian-stretch.multistrap
+SYSROOT_CFG = build/cross-compile/raspbian-stretch.multistrap
+SYSROOT_CFG_LOCAL = $(subst build/cross-compile/,,$(SYSROOT_CFG))
 ifneq ($(GOHOSTARCH),$(GOARCH))
-ifeq ($(SYSROOT),)
-$(error SYSROOT must be set for cross builds)
-endif
+SYSROOT = build/cross-compile/sysroot.$(GOARCH).$(SYSROOT_SUM)
 ifeq ($(GOARCH),arm)
 BUILDTOOLS_CROSS = crossbuild-essential-armhf
 else
 $(error 'arm' is the only supported cross target)
 endif
 
-# SYSROOT doesn't work right if isn't an absolute path
-CROSS_SYSROOT=$(realpath $(SYSROOT))
+# SYSROOT doesn't work right if isn't an absolute path.  We need to use the
+# external realpath so that we can tell it to ignore the possibility that the
+# path and its components don't exist.
+CROSS_SYSROOT=$(shell realpath -m $(SYSROOT))
 CROSS_CC=/usr/bin/arm-linux-gnueabihf-gcc
 CROSS_CGO_LDFLAGS=--sysroot $(CROSS_SYSROOT) -Lusr/local/lib
 CROSS_CGO_CFLAGS=--sysroot $(CROSS_SYSROOT) -Iusr/local/include
@@ -169,6 +170,14 @@ endif
 # cross-compile conditional because the build-sysroot target uses this to see
 # whether the sysroot has changed and needs to be re-uploaded.
 SYSROOT_SUM=a66af97cd6bbab3fc23eba227b663789b266be7c6efa1da68160d3b46c2d1f44
+
+# The command used to build the sysroot.
+BUILD_SYSROOT_CMD = \
+	cd build/cross-compile && \
+	SYSROOT=$(SYSROOT) SYSROOT_SUM=$(SYSROOT_SUM) \
+	    ./build-multistrap-sysroot.sh -f $(SYSROOT_CFG_LOCAL)
+
+SYSROOT_BLOB_NAME = $(shell $(BUILD_SYSROOT_CMD) name)
 
 BUILDTOOLS = \
 	$(BUILDTOOLS_CROSS) \
@@ -199,12 +208,16 @@ define report
 endef
 $(info $(report))
 undefine report
-$(ifneq "$(GOHOSTARCH)","$(GOARCH)")
+ifneq ($(GOHOSTARCH),$(GOARCH))
 define report
 #     CROSSBUILD: $(GOHOSTARCH) -> $(GOARCH)
 #        SYSROOT: $(SYSROOT)
-$(info $(report))
+#  CROSS_SYSROOT: $(CROSS_SYSROOT)
+#    SYSROOT_SUM: $(SYSROOT_SUM)
 endef
+$(info $(report))
+undefine report
+endif
 
 #
 # Appliance components and supporting definitions
@@ -485,16 +498,22 @@ util: $(UTILCOMPONENTS)
 
 # This will create the sysroot.
 build-sysroot:
-	cd build/cross-compile && \
-	SYSROOT_SUM=$(SYSROOT_SUM) ./build-multistrap-sysroot.sh \
-	    $(subst build/cross-compile/,,$(SYSROOT_CFG))
+	$(BUILD_SYSROOT_CMD) build
 
 # This will create the sysroot and, if it's new, upload it as a blob, given a
 # credential file in $KEY_SYSROOT_UPLOADER.
 upload-sysroot:
-	cd build/cross-compile && \
-	SYSROOT_SUM=$(SYSROOT_SUM) ./build-multistrap-sysroot.sh -u \
-	    $(subst build/cross-compile/,,$(SYSROOT_CFG))
+	$(BUILD_SYSROOT_CMD) build -u
+
+download-sysroot: build/cross-compile/$(SYSROOT_BLOB_NAME)
+
+unpack-sysroot: $(SYSROOT)/.$(SYSROOT_SUM)
+
+build/cross-compile/$(SYSROOT_BLOB_NAME):
+	$(BUILD_SYSROOT_CMD) download
+
+$(SYSROOT)/.$(SYSROOT_SUM): build/cross-compile/$(SYSROOT_BLOB_NAME)
+	$(BUILD_SYSROOT_CMD) unpack -d $(subst build/cross-compile/,,$(@D))
 
 packages: install client-web
 	$(PYTHON3) build/deb-pkg/deb-pkg.py --arch $(PKG_DEB_ARCH)
@@ -506,8 +525,10 @@ test: test-go
 
 MOCKERY=$(GOBIN)/mockery
 
+# 'mockery' is run during the build, so shouldn't be cross-compiled; be sure to
+# use the native GOARCH
 $(MOCKERY):
-	$(GO) get -u github.com/vektra/mockery/.../
+	env -u GOARCH $(GO) get -u github.com/vektra/mockery/.../
 
 GO_MOCK_IOTMQTTCLIENT = $(GOSRCBG)/ap_common/iotcore/mocks/IoTMQTTClient.go
 GO_MOCK_SRCS = \
@@ -672,7 +693,7 @@ else
 #
 # See above for rationale about touch.  Possibly not strictly needed here
 # but included for parity.
-$(APPBIN)/%:
+$(APPBIN)/%: $(SYSROOT)/.$(SYSROOT_SUM)
 	SYSROOT=$(CROSS_SYSROOT) CC=$(CROSS_CC) \
 	    CGO_LDFLAGS="$(CROSS_CGO_LDFLAGS)" \
 	    CGO_CFLAGS="$(CROSS_CGO_CFLAGS)" \
@@ -846,9 +867,9 @@ base/cloud_rpc_pb2.py: base/cloud_rpc.proto
 $(PROTOC_PLUGINS): .make-protoc-plugins
 
 .make-protoc-plugins:
-	$(GO) get -u github.com/golang/protobuf/proto
-	$(GO) get -u github.com/golang/protobuf/protoc-gen-go
-	$(GO) get -u sourcegraph.com/sourcegraph/prototools/cmd/protoc-gen-doc
+	env -u GOARCH $(GO) get -u github.com/golang/protobuf/proto
+	env -u GOARCH $(GO) get -u github.com/golang/protobuf/protoc-gen-go
+	env -u GOARCH $(GO) get -u sourcegraph.com/sourcegraph/prototools/cmd/protoc-gen-doc
 	touch $@
 
 LOCAL_COMMANDS=$(COMMANDS:$(APPBIN)/%=$(GOBIN)/%)
@@ -888,6 +909,7 @@ clobber: clean clobber-packages clobber-godeps
 	$(RM) -fr $(GOWS)/pkg
 	$(RM) -fr $(GOWS)/bin
 	$(RM) -f .make-*
+	$(if $(SYSROOT),$(RM) -fr $(SYSROOT))
 
 clobber-packages:
 	-$(RM) -fr bg-appliance_*.*.*-*_* bg-cloud_*.*.*-*_*

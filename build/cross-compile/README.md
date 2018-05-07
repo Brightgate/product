@@ -22,6 +22,11 @@ To cross-compile, you need a few things.  You need:
   cases, go needs to use a C compiler, and in turn a sysroot is required.
   To get a sysroot, you need to build one.
 
+The toolchain should be installed on build machines by default; if the tools
+are not available, the build will complain and fail.  The sysroot is built
+automatically and stored in the cloud; it will be downloaded and used as
+required.
+
 ## Building a sysroot
 
 ```
@@ -32,6 +37,10 @@ $ ./build-multistrap-sysroot.sh raspbian-stretch.multistrap
 ```
 
 When this is done, you will have a directory called `sysroot.raspbian-stretch`.
+You can do this in one step, from the top-level directory:
+```
+$ make build-sysroot
+```
 
 ## Cross-compiling
 

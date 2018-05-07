@@ -125,7 +125,7 @@ $ make plat-clobber
 If Golang is not installed in the expected places as described above, you may
 need to set `$GOROOT` in your environment before running `make`.
 
-## Building debian packages
+## Building Debian packages
 
 While not required (you may run from the `proto` area), you may wish to build
 installable packages for ARM:
@@ -142,6 +142,16 @@ $ sudo dpkg -i bg-appliance_0.0.1803052236-1_amd64.deb (use name from above)
 
 If you replace an existing bg-appliance package, some amount of restarting, up
 to and including rebooting will be needed.
+
+## Cross-building from x86 to ARM
+
+You can build the ARM bits on a (Linux) x86 platform, including packaging.
+Simply put `GOARCH=arm` into the environment, or add it to the end of the `make`
+commandline:
+```
+$ make packages GOARCH=arm
+```
+See `build/cross-compile/README.md` for more details.
 
 ## Connecting to Google IoT Core
 

@@ -22,7 +22,7 @@ pipeline {
         GOROOT = '/opt/net.b10e/go-1.10.2'
     }
     stages {
-        stage('build') {
+        stage('build-amd64') {
             steps {
                 sh 'make'
                 // Incremental 'make' after above should do nothing
@@ -36,13 +36,18 @@ pipeline {
                 // Incremental 'make install' after above should do nothing
                 sh 'make -q install'
 
-                sh 'make client-web'
+                sh 'make packages'
+                archiveArtifacts '*_amd64.deb'
             }
         }
-        stage('packaging') {
+        stage('build-arm') {
+            environment {
+                GOARCH = 'arm'
+                GOARM = '7'
+            }
             steps {
                 sh 'make packages'
-                archiveArtifacts '*.deb'
+                archiveArtifacts '*_armhf.deb'
             }
         }
         stage('test') {
