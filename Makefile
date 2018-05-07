@@ -164,6 +164,14 @@ CROSS_SYSROOT=$(shell realpath -m $(SYSROOT))
 CROSS_CC=/usr/bin/arm-linux-gnueabihf-gcc
 CROSS_CGO_LDFLAGS=--sysroot $(CROSS_SYSROOT) -Lusr/local/lib
 CROSS_CGO_CFLAGS=--sysroot $(CROSS_SYSROOT) -Iusr/local/include
+
+CROSS_ENV = \
+	SYSROOT=$(CROSS_SYSROOT) \
+	CC=$(CROSS_CC) \
+	CGO_LDFLAGS="$(CROSS_CGO_LDFLAGS)" \
+	CGO_CFLAGS="$(CROSS_CGO_CFLAGS)" \
+	CGO_ENABLED=1
+CROSS_DEP = $(SYSROOT)/.$(SYSROOT_SUM)
 endif
 
 # This is the checksum of the sysroot blob to be used; it's outside the
@@ -668,38 +676,12 @@ $(APPBIN)/ap-start: ap-start.sh
 	$(INSTALL) -m 0755 $< $@
 
 # Build rules for go binaries.
-ifeq ($(GOHOSTARCH),$(GOARCH))
-# Non-cross compilation ("normal" build)
 
-# Here we use 'go install' because it is faster than 'go build'
-#
-# The 'touch' is present because of the blanket dependency of all APPBINARIES
-# on APP_COMMON_SRCS.  If a developer updates one of the common sources, then
-# make will conclude that all binaries must be rebuilt, but 'go install' will
-# skip writing the binary in cases where it detects that there is nothing to
-# do.  This should be revisited for golang 1.10.
-$(APPBIN)/%:
-	GOBIN=$(realpath $(@D)) \
-	    $(GO) install bg/$*
-	touch $(@)
-
-else
-# Cross compiling
-
-# We cannot use 'go install' because part of go's cross-compilation scheme
-# involves rebuilding parts of its standard library at compile time, and
-# 'go install' will fail doing that because it wants to write things to
-# the global GOROOT.  We fall back to 'go build'.
-#
-# See above for rationale about touch.  Possibly not strictly needed here
-# but included for parity.
-$(APPBIN)/%: $(SYSROOT)/.$(SYSROOT_SUM)
-	SYSROOT=$(CROSS_SYSROOT) CC=$(CROSS_CC) \
-	    CGO_LDFLAGS="$(CROSS_CGO_LDFLAGS)" \
-	    CGO_CFLAGS="$(CROSS_CGO_CFLAGS)" \
-	    CGO_ENABLED=1 $(GO) build -o $(@) bg/$*
-	touch $(@)
-endif
+# As of golang 1.10, 'go build' and 'go install' both cache their results, so
+# the latter isn't any faster.  We use 'go build' because because 'go install'
+# refuses to install cross-compiled binaries into GOBIN.
+$(APPBIN)/%: $(CROSS_DEP)
+	$(CROSS_ENV) $(GO) build -o $(@) bg/$*
 
 $(GOSRCBG)/common/version.go: $(GITCHANGED)
 	sed "s/GITHASH/$(GITHASH)/" $(GOSRCBG)/common/version.base > $@
@@ -778,8 +760,7 @@ $(UTILDIRS):
 	$(MKDIR) -p $@
 
 $(UTILBIN)/%: $(GOSRCBG)/util/%.go | $(UTILBIN)
-	GOBIN=$(realpath $(@D)) \
-	    $(GO) install $(GOSRCBG)/util/$*.go
+	$(GO) build -o $(@) $(GOSRCBG)/util/$*.go
 
 # Cloud components
 
@@ -794,17 +775,8 @@ $(CLOUDROOTLIB)/systemd/system/%: % | $(CLOUDROOTLIB)/systemd/system
 
 $(CLOUDBINARIES): $(COMMON_SRCS) | deps-ensured
 
-# Here we use 'go install' because it is faster than 'go build'
-#
-# The 'touch' is present because of the blanket dependency of all CLOUDBINARIES
-# on COMMON_SRCS.  If a developer updates one of the common sources, then make
-# will conclude that all binaries must be rebuilt, but 'go install' will skip
-# writing the binary in cases where it detects that there is nothing to do.
-# This should be revisited for golang 1.10.
 $(CLOUDBIN)/%: | $(CLOUDBIN)
-	GOBIN=$(realpath $(@D)) \
-	    $(GO) install bg/$*
-	touch $(@)
+	$(GO) build -o $(@) bg/$*
 
 $(CLOUDBIN)/cl-aggregate: \
 	$(GOSRCBG)/cl-aggregate/aggregate.go \
