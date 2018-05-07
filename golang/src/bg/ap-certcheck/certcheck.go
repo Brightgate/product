@@ -29,9 +29,6 @@ var (
 	verbose = flag.Bool("verbose", false, "Verbose output")
 
 	config *apcfg.APConfig
-
-	// ApVersion will be replaced by go build step.
-	ApVersion = "undefined"
 )
 
 func main() {

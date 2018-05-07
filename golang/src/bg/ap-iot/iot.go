@@ -25,6 +25,7 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/iotcore"
 	"bg/cloud_rpc"
+	"bg/common"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/golang/protobuf/proto"
@@ -56,9 +57,6 @@ var (
 	slogger     *zap.SugaredLogger
 	zapConfig   zap.Config
 	globalLevel zap.AtomicLevel
-
-	// ApVersion will be replaced by go build step.
-	ApVersion = "undefined"
 )
 
 func publishEventProto(iotc iotcore.IoTMQTTClient, subfolder string, evt proto.Message) error {
@@ -82,7 +80,7 @@ func publishUpbeat(iotc iotcore.IoTMQTTClient) error {
 
 	// Retrieve component versions.
 	versions := make([]string, 0)
-	versions = append(versions, "git:rPS@"+ApVersion)
+	versions = append(versions, "git:rPS@"+common.GitVersion)
 
 	upbeat := &cloud_rpc.UpcallRequest{
 		BootTime:         proto.String(bootTime.Format(time.RFC3339)),

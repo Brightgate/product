@@ -27,6 +27,7 @@ import (
 	"bg/ap_common/mcp"
 	"bg/base_def"
 	"bg/base_msg"
+	"bg/common"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/golang/protobuf/proto"
@@ -61,9 +62,6 @@ var (
 	slogger     *zap.SugaredLogger
 	zapConfig   zap.Config
 	globalLevel zap.AtomicLevel
-
-	// ApVersion will be replaced by go build step.
-	ApVersion = "undefined"
 )
 
 const pname = "ap.iotd"
@@ -89,7 +87,7 @@ func publishUpbeat(iotc iotcore.IoTMQTTClient) error {
 
 	// Retrieve component versions.
 	versions := make([]string, 0)
-	versions = append(versions, "git:rPS@"+ApVersion)
+	versions = append(versions, "git:rPS@"+common.GitVersion)
 
 	upbeat := &cloud_rpc.UpcallRequest{
 		BootTime:         proto.String(bootTime.Format(time.RFC3339)),
@@ -220,9 +218,7 @@ func main() {
 		}
 	})
 
-	if mcpd != nil {
-		mcpd.SetState(mcp.ONLINE)
-	}
+	mcpd.SetState(mcp.ONLINE)
 
 	ticker := time.NewTicker(time.Minute * 7)
 	sig := make(chan os.Signal, 2)

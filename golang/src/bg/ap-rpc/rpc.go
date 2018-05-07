@@ -34,6 +34,7 @@ import (
 	"bg/base_def"
 	"bg/base_msg"
 	"bg/cloud_rpc"
+	"bg/common"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/tomazk/envcfg"
@@ -70,9 +71,6 @@ var (
 
 	apuuid   string
 	aphwaddr []string
-
-	// ApVersion will be replaced by go build step.
-	ApVersion = "undefined"
 )
 
 func gethmac(data string) hash.Hash {
@@ -96,7 +94,7 @@ func getWanInterface(config *apcfg.APConfig) string {
 }
 
 func firstVersion() string {
-	return "git:rPS" + ApVersion
+	return "git:rPS" + common.GitVersion
 }
 
 // Retrieve the instance uptime. os.Stat("/proc/1") returns

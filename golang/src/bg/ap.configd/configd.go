@@ -55,9 +55,9 @@ import (
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
 	"bg/ap_common/network"
-
 	"bg/base_def"
 	"bg/base_msg"
+	"bg/common"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
@@ -165,8 +165,6 @@ var (
 
 	propTreeFile string
 
-	// ApVersion is the git version of the running code
-	ApVersion    string
 	upgradeHooks []func() error
 
 	authTypeToDefaultRing map[string]string
@@ -912,7 +910,7 @@ func propTreeStore() error {
 	}
 
 	node := propertyInsert("@/apversion")
-	node.Value = ApVersion
+	node.Value = common.GitVersion
 
 	s, err := json.MarshalIndent(propTreeRoot, "", "  ")
 	if err != nil {

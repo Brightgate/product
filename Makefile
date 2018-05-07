@@ -52,6 +52,7 @@ UNAME_M = $(shell uname -m)
 export GITROOT = $(shell git rev-parse --show-toplevel)
 export GOPATH=$(GITROOT)/golang
 GITHASH=$(shell git describe --always --long --dirty)
+GITCHANGED=$(shell grep -q '"$(GITHASH)"' $(GOSRCBG)/common/version.go || echo FRC)
 
 #
 # Go environment setup
@@ -101,8 +102,6 @@ GOSRCBG = $(GOWS)/src/bg
 GOSRCBGVENDOR = $(GOSRCBG)/vendor
 # Where we stick build tools
 GOBIN = $(GOPATH)/bin
-
-GOVERFLAGS=-ldflags="-X main.ApVersion=$(GITHASH)"
 
 #
 # Miscellaneous environment setup
@@ -660,7 +659,7 @@ ifeq ($(GOHOSTARCH),$(GOARCH))
 # do.  This should be revisited for golang 1.10.
 $(APPBIN)/%:
 	GOBIN=$(realpath $(@D)) \
-	    $(GO) install $(GOVERFLAGS) bg/$*
+	    $(GO) install bg/$*
 	touch $(@)
 
 else
@@ -677,12 +676,16 @@ $(APPBIN)/%:
 	SYSROOT=$(CROSS_SYSROOT) CC=$(CROSS_CC) \
 	    CGO_LDFLAGS="$(CROSS_CGO_LDFLAGS)" \
 	    CGO_CFLAGS="$(CROSS_CGO_CFLAGS)" \
-	    CGO_ENABLED=1 $(GO) build -o $(@) $(GOVERFLAGS) bg/$*
+	    CGO_ENABLED=1 $(GO) build -o $(@) bg/$*
 	touch $(@)
 endif
 
+$(GOSRCBG)/common/version.go: $(GITCHANGED)
+	sed "s/GITHASH/$(GITHASH)/" $(GOSRCBG)/common/version.base > $@
+
 $(APPBIN)/ap.brokerd: $(GOSRCBG)/ap.brokerd/brokerd.go
 $(APPBIN)/ap.configd: \
+	$(GOSRCBG)/common/version.go \
 	$(GOSRCBG)/ap.configd/configd.go \
 	$(GOSRCBG)/ap.configd/devices.go \
 	$(GOSRCBG)/ap.configd/upgrade_v10.go \
@@ -697,7 +700,9 @@ $(APPBIN)/ap.httpd: \
 	$(GOSRCBG)/ap_common/certificate/certificate.go \
 	$(PHISH_SRCS)
 $(APPBIN)/ap.identifierd: $(GOSRCBG)/ap.identifierd/identifierd.go
-$(APPBIN)/ap.iotd: $(GOSRCBG)/ap.iotd/iotd.go
+$(APPBIN)/ap.iotd: \
+	$(GOSRCBG)/ap.iotd/iotd.go \
+	$(GOSRCBG)/common/version.go
 $(APPBIN)/ap.logd: $(GOSRCBG)/ap.logd/logd.go
 $(APPBIN)/ap.mcp: $(GOSRCBG)/ap.mcp/mcp.go
 $(APPBIN)/ap.networkd: \
@@ -729,9 +734,11 @@ $(APPBIN)/ap-msgping: $(GOSRCBG)/ap-msgping/msgping.go
 $(APPBIN)/ap-ouisearch: $(GOSRCBG)/ap-ouisearch/ouisearch.go
 $(APPBIN)/ap-rpc: \
 	$(GOSRCBG)/ap-rpc/rpc.go \
+	$(GOSRCBG)/common/version.go \
 	$(CLOUD_COMMON_SRCS)
 $(APPBIN)/ap-iot: \
 	$(GOSRCBG)/ap-iot/iot.go \
+	$(GOSRCBG)/common/version.go \
 	$(CLOUD_COMMON_SRCS)
 $(APPBIN)/ap-stats: $(GOSRCBG)/ap-stats/stats.go
 $(APPBIN)/ap-userctl: $(GOSRCBG)/ap-userctl/userctl.go
@@ -751,7 +758,7 @@ $(UTILDIRS):
 
 $(UTILBIN)/%: $(GOSRCBG)/util/%.go | $(UTILBIN)
 	GOBIN=$(realpath $(@D)) \
-	    $(GO) install $(GOVERFLAGS) $(GOSRCBG)/util/$*.go
+	    $(GO) install $(GOSRCBG)/util/$*.go
 
 # Cloud components
 
@@ -775,7 +782,7 @@ $(CLOUDBINARIES): $(COMMON_SRCS) | deps-ensured
 # This should be revisited for golang 1.10.
 $(CLOUDBIN)/%: | $(CLOUDBIN)
 	GOBIN=$(realpath $(@D)) \
-	    $(GO) install $(GOVERFLAGS) bg/$*
+	    $(GO) install bg/$*
 	touch $(@)
 
 $(CLOUDBIN)/cl-aggregate: \
@@ -893,6 +900,7 @@ clean:
 		$(GOSRCBG)/base_def/base_def.go \
 		$(GOSRCBG)/base_msg/base_msg.pb.go \
 		$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
+		$(GOSRCBG)/common/version.go \
 		$(APPBINARIES) \
 		$(CLOUDBINARIES) \
 		$(UTILBINARIES) \
