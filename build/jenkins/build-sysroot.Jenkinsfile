@@ -9,7 +9,7 @@ pipeline {
                 KEY_SYSROOT_UPLOADER = credentials('sysroot-uploader')
             }
             steps {
-                sh 'make build-sysroot'
+                sh 'make upload-sysroot'
             }
         }
     }
