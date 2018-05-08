@@ -11,7 +11,7 @@ fi
 
 JENKINS_URL=http://build0.b10e.net:8080/
 # get magic token
-JENKINS_CRUMB=$(curl "$JENKINS_URL/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,\":\",//crumb)")
+JENKINS_CRUMB=$(curl -s "$JENKINS_URL/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,\":\",//crumb)")
 
 exec curl -X POST -H $JENKINS_CRUMB \
     -F "jenkinsfile=<$1" \

@@ -148,6 +148,7 @@ endif
 #
 # Cross compilation setup
 #
+SYSROOT_CFG=build/cross-compile/raspbian-stretch.multistrap
 ifneq ($(GOHOSTARCH),$(GOARCH))
 ifeq ($(SYSROOT),)
 $(error SYSROOT must be set for cross builds)
@@ -164,6 +165,11 @@ CROSS_CC=/usr/bin/arm-linux-gnueabihf-gcc
 CROSS_CGO_LDFLAGS=--sysroot $(CROSS_SYSROOT) -Lusr/local/lib
 CROSS_CGO_CFLAGS=--sysroot $(CROSS_SYSROOT) -Iusr/local/include
 endif
+
+# This is the checksum of the sysroot blob to be used; it's outside the
+# cross-compile conditional because the build-sysroot target uses this to see
+# whether the sysroot has changed and needs to be re-uploaded.
+SYSROOT_SUM=a66af97cd6bbab3fc23eba227b663789b266be7c6efa1da68160d3b46c2d1f44
 
 BUILDTOOLS = \
 	$(BUILDTOOLS_CROSS) \
@@ -477,6 +483,19 @@ appliance: $(APPCOMPONENTS)
 cloud: $(CLOUDCOMPONENTS)
 
 util: $(UTILCOMPONENTS)
+
+# This will create the sysroot.
+build-sysroot:
+	cd build/cross-compile && \
+	SYSROOT_SUM=$(SYSROOT_SUM) ./build-multistrap-sysroot.sh \
+	    $(subst build/cross-compile/,,$(SYSROOT_CFG))
+
+# This will create the sysroot and, if it's new, upload it as a blob, given a
+# credential file in $KEY_SYSROOT_UPLOADER.
+upload-sysroot:
+	cd build/cross-compile && \
+	SYSROOT_SUM=$(SYSROOT_SUM) -u ./build-multistrap-sysroot.sh \
+	    $(subst build/cross-compile/,,$(SYSROOT_CFG))
 
 packages: install client-web
 	$(PYTHON3) build/deb-pkg/deb-pkg.py --arch $(PKG_DEB_ARCH)
