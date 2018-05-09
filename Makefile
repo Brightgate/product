@@ -52,7 +52,7 @@ UNAME_M = $(shell uname -m)
 export GITROOT = $(shell git rev-parse --show-toplevel)
 export GOPATH=$(GITROOT)/golang
 GITHASH=$(shell git describe --always --long --dirty)
-GITCHANGED=$(shell grep -q '"$(GITHASH)"' $(GOSRCBG)/common/version.go || echo FRC)
+GITCHANGED=$(shell grep -s -q '"$(GITHASH)"' $(GOSRCBG)/common/version.go || echo FRC)
 
 #
 # Go environment setup
