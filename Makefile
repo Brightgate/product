@@ -493,7 +493,7 @@ build-sysroot:
 # credential file in $KEY_SYSROOT_UPLOADER.
 upload-sysroot:
 	cd build/cross-compile && \
-	SYSROOT_SUM=$(SYSROOT_SUM) -u ./build-multistrap-sysroot.sh \
+	SYSROOT_SUM=$(SYSROOT_SUM) ./build-multistrap-sysroot.sh -u \
 	    $(subst build/cross-compile/,,$(SYSROOT_CFG))
 
 packages: install client-web
