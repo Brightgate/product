@@ -913,3 +913,11 @@ plat-clobber: clobber
 	-$(GO) clean $(GO_CLEAN_FLAGS) github.com/golang/protobuf/proto
 	-$(GO) clean $(GO_CLEAN_FLAGS) sourcegraph.com/sourcegraph/prototools/cmd/protoc-gen-doc
 	-$(RM) -fr golang/src/github.com golang/src/golang.org golang/src/google.golang.org golang/src/sourcegraph.com
+
+check-dirty:
+	@c=$$(git status -s); \
+	if [ -n "$$c" ]; then \
+		echo "Workspace is dirty:"; \
+		echo "$$c"; \
+		exit 1; \
+	fi

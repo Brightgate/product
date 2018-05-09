@@ -54,6 +54,7 @@ pipeline {
         stage('checks') {
             steps {
                 sh 'make vet-go lint-go'
+                sh 'make check-dirty'
             }
         }
     }
