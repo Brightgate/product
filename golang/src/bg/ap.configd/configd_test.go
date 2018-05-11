@@ -39,6 +39,8 @@ import (
 
 	"bg/ap_common/apcfg"
 	"bg/base_msg"
+
+	"github.com/golang/protobuf/proto"
 )
 
 var (
@@ -64,7 +66,7 @@ func execute(ops []apcfg.PropertyOp) (string, error) {
 	var rval string
 	var err error
 
-	query, err := apcfg.GenerateQuery(ops)
+	query, err := apcfg.GeneratePropQuery(ops)
 	if err == nil {
 		response := processOneEvent(query)
 		if *response.Response != base_msg.ConfigResponse_OK {
@@ -246,6 +248,47 @@ func TestReinitialize(t *testing.T) {
 	a := testTreeInit(t)
 	b := testTreeInit(t)
 	testCompareMaps(t, a, b)
+}
+
+// TestPing verifies that a simple ping succeeds
+func TestPing(t *testing.T) {
+	query := apcfg.GeneratePingQuery()
+	response := processOneEvent(query)
+	if *response.Response != base_msg.ConfigResponse_OK {
+		t.Error(fmt.Errorf("%s", *response.Value))
+	}
+}
+
+func testPingBadVersion(version int32) error {
+	query := apcfg.GeneratePingQuery()
+	majorMinor := base_msg.Version{Major: proto.Int32(version)}
+	query.Version = &majorMinor
+
+	response := processOneEvent(query)
+	if *response.Response == base_msg.ConfigResponse_OK {
+		return fmt.Errorf("configd of version %d accepted version %d",
+			apcfg.Version, version)
+	} else if *response.Response != base_msg.ConfigResponse_BADVERSION {
+		return fmt.Errorf("unexpected error: %d", *response.Response)
+	}
+
+	return nil
+}
+
+// TestOlderVersion verifies that configd will correctly refuse to execute a
+// command with an newer version
+func TestOlderVersion(t *testing.T) {
+	if err := testPingBadVersion(apcfg.Version - 1); err != nil {
+		t.Error(err)
+	}
+}
+
+// TestNewerVersion verifies that configd will correctly refuse to execute a
+// command with an old version
+func TestNewerVersion(t *testing.T) {
+	if err := testPingBadVersion(apcfg.Version + 1); err != nil {
+		t.Error(err)
+	}
 }
 
 // TestChangeProp verifies that we can successfully change a single property

@@ -427,27 +427,27 @@ func handleStop(set daemonSet) {
 func handleRequest(req *base_msg.MCPRequest) (*string,
 	base_msg.MCPResponse_OpResponse) {
 
-	if req.Daemon == nil {
-		if *verbose {
-			log.Printf("Bad req from %s: no daemon\n", *req.Sender)
-		}
-		return nil, mcp.INVALID
+	if *req.Version.Major != mcp.Version {
+		return nil, mcp.BADVER
 	}
 
-	set := selectTargets(req.Daemon)
-	if len(set) == 0 {
-		if *verbose {
-			log.Printf("Bad req from %s: unknown daemon: %s\n",
-				*req.Sender, *req.Daemon)
+	var set daemonSet
+	if *req.Operation != mcp.PING {
+		if req.Daemon == nil {
+			return nil, mcp.INVALID
 		}
-		return nil, mcp.NODAEMON
+
+		set = selectTargets(req.Daemon)
+		if len(set) == 0 {
+			return nil, mcp.NODAEMON
+		}
 	}
 
 	switch *req.Operation {
+	case mcp.PING:
+		return nil, mcp.OK
+
 	case mcp.GET:
-		if *verbose {
-			log.Printf("%s: Get(%s)\n", *req.Sender, *req.Daemon)
-		}
 		s := handleGetState(set)
 		rval := mcp.OK
 		if s == nil {
@@ -456,10 +456,6 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 		return s, rval
 
 	case mcp.SET:
-		if *verbose {
-			log.Printf("%s: Set(%s, %d)\n", *req.Sender,
-				*req.Daemon, *req.State)
-		}
 		if req.State == nil {
 			return nil, mcp.INVALID
 		}
@@ -566,9 +562,11 @@ func mainLoop() {
 		proto.Unmarshal(msg[0], req)
 		rval, rc := handleRequest(req)
 
+		version := base_msg.Version{Major: proto.Int32(mcp.Version)}
 		response := &base_msg.MCPResponse{
 			Timestamp: aputil.NowToProtobuf(),
 			Sender:    proto.String(me),
+			Version:   &version,
 			Debug:     proto.String("-"),
 			Response:  &rc,
 		}
@@ -628,7 +626,7 @@ func loadDefinitions() error {
 			d.setTime = time.Unix(0, 0)
 			daemons[name] = d
 		} else {
-			// Replace any fields the might reasonably have changed
+			// Replace any fields that might reasonably have changed
 			d.Lock()
 			d.Binary = newDaemon.Binary
 			d.Options = newDaemon.Options

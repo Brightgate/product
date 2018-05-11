@@ -33,11 +33,16 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
+// Version gets increased each time there is a non-compatible change to the
+// config tree format, or ap.configd API.
+const Version = int32(13)
+
 // Some specific, common ways in which apcfg operations can fail
 var (
 	ErrComm   = errors.New("communication breakdown")
 	ErrNoProp = errors.New("no such property")
 	ErrBadOp  = errors.New("no such operation")
+	ErrBadVer = errors.New("unsupported version")
 )
 
 // ValidRings is a map containing all of the known ring names.  Checking for map
@@ -224,7 +229,7 @@ func NewConfig(b *broker.Broker, name string) (*APConfig, error) {
 		return nil, err
 	}
 
-	c := APConfig{
+	c := &APConfig{
 		sender:         sender,
 		socket:         socket,
 		broker:         b,
@@ -232,15 +237,99 @@ func NewConfig(b *broker.Broker, name string) (*APConfig, error) {
 		deleteHandlers: make([]delexpMatch, 0),
 		expireHandlers: make([]delexpMatch, 0),
 	}
-	return &c, nil
+
+	err = c.Ping()
+	return c, err
 }
 
-// GenerateQuery takes a slice of PropertyOp structures and creates a
-// corresponding ConfigQuery protobuf
-func GenerateQuery(ops []PropertyOp) (*base_msg.ConfigQuery, error) {
-	if len(ops) == 0 {
-		return nil, nil
+func (c *APConfig) sendOp(query *base_msg.ConfigQuery) (string, error) {
+
+	query.Sender = proto.String(c.sender)
+	op, err := proto.Marshal(query)
+	if err != nil {
+		return "", fmt.Errorf("unable to build ping: %v", err)
 	}
+
+	rval := ""
+	response := &base_msg.ConfigResponse{}
+	c.mutex.Lock()
+	_, err = c.socket.SendBytes(op, 0)
+	if err != nil {
+		log.Printf("Failed to send config msg: %v\n", err)
+		err = ErrComm
+	} else {
+		reply, rerr := c.socket.RecvMessageBytes(0)
+		if rerr != nil {
+			log.Printf("Failed to receive config reply: %v\n", err)
+			err = ErrComm
+		} else if len(reply) > 0 {
+			proto.Unmarshal(reply[0], response)
+		}
+	}
+	c.mutex.Unlock()
+	if err == nil {
+		switch *response.Response {
+		case base_msg.ConfigResponse_OK:
+			rval = *response.Value
+		case base_msg.ConfigResponse_UNSUPPORTED:
+			err = ErrBadOp
+		case base_msg.ConfigResponse_NOPROP:
+			err = ErrNoProp
+		case base_msg.ConfigResponse_BADVERSION:
+			var version string
+
+			if response.MinVersion != nil {
+				version = fmt.Sprintf("%d or greater",
+					*response.MinVersion.Major)
+			} else {
+				version = fmt.Sprintf("%d",
+					*response.Version.Major)
+			}
+			err = fmt.Errorf("ap.configd requires version %s",
+				version)
+		default:
+			err = fmt.Errorf("%s", *response.Value)
+		}
+	}
+
+	return rval, err
+}
+
+// GeneratePingQuery generates a ping query
+func GeneratePingQuery() *base_msg.ConfigQuery {
+	opType := base_msg.ConfigQuery_ConfigOp_PING
+
+	ops := []*base_msg.ConfigQuery_ConfigOp{
+		&base_msg.ConfigQuery_ConfigOp{
+			Property:  proto.String("ping"),
+			Operation: &opType,
+		},
+	}
+	version := base_msg.Version{Major: proto.Int32(Version)}
+	query := base_msg.ConfigQuery{
+		Timestamp: aputil.NowToProtobuf(),
+		Debug:     proto.String("-"),
+		Version:   &version,
+		Ops:       ops,
+	}
+
+	return &query
+}
+
+// Ping sends a no-op command to configd to check for liveness and to check for
+// version compatibility.
+func (c *APConfig) Ping() error {
+	query := GeneratePingQuery()
+	_, err := c.sendOp(query)
+	if err != nil {
+		err = fmt.Errorf("ping failed: %v", err)
+	}
+	return err
+}
+
+// GeneratePropQuery takes a slice of PropertyOp structures and creates a
+// corresponding ConfigQuery protobuf
+func GeneratePropQuery(ops []PropertyOp) (*base_msg.ConfigQuery, error) {
 	get := false
 	msgOps := make([]*base_msg.ConfigQuery_ConfigOp, len(ops))
 	for i, op := range ops {
@@ -261,9 +350,11 @@ func GenerateQuery(ops []PropertyOp) (*base_msg.ConfigQuery, error) {
 		return nil, fmt.Errorf("GET ops must be singletons")
 	}
 
+	version := base_msg.Version{Major: proto.Int32(Version)}
 	query := base_msg.ConfigQuery{
 		Timestamp: aputil.NowToProtobuf(),
 		Debug:     proto.String("-"),
+		Version:   &version,
 		Ops:       msgOps,
 	}
 
@@ -274,50 +365,14 @@ func GenerateQuery(ops []PropertyOp) (*base_msg.ConfigQuery, error) {
 // query, and sends that to ap.configd.  It then unmarshals the result from
 // ap.configd, and returns that to the caller.
 func (c *APConfig) Execute(ops []PropertyOp) (string, error) {
-	query, err := GenerateQuery(ops)
+	if len(ops) == 0 {
+		return "", nil
+	}
+	query, err := GeneratePropQuery(ops)
 	if query == nil {
 		return "", err
 	}
-	query.Sender = proto.String(c.sender)
-	data, err := proto.Marshal(query)
-	if err != nil {
-		log.Printf("Failed to marshal config arguments: %v\n", err)
-		return "", err
-	}
-
-	response := &base_msg.ConfigResponse{}
-	c.mutex.Lock()
-	_, err = c.socket.SendBytes(data, 0)
-	rval := ""
-	if err != nil {
-		log.Printf("Failed to send config msg: %v\n", err)
-		err = ErrComm
-	} else {
-		reply, rerr := c.socket.RecvMessageBytes(0)
-		if rerr != nil {
-			log.Printf("Failed to receive config reply: %v\n", err)
-			err = ErrComm
-		} else if len(reply) > 0 {
-			proto.Unmarshal(reply[0], response)
-		}
-	}
-	c.mutex.Unlock()
-	if err == nil {
-		switch *response.Response {
-		case base_msg.ConfigResponse_OK:
-			if ops[0].Op == PropGet {
-				rval = *response.Value
-			}
-		case base_msg.ConfigResponse_UNSUPPORTED:
-			err = ErrBadOp
-		case base_msg.ConfigResponse_NOPROP:
-			err = ErrNoProp
-		default:
-			err = fmt.Errorf("%s", *response.Value)
-		}
-	}
-
-	return rval, err
+	return c.sendOp(query)
 }
 
 // GetProps retrieves the properties subtree rooted at the given property, and

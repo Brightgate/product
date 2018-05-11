@@ -34,15 +34,20 @@ type MCP struct {
 	sync.Mutex
 }
 
+// Version gets incremented whenver the MCP protocol changes incompatibly
+const Version = int32(1)
+
 // Shorthand forms of base_msg commands and error codes
 const (
 	OK       = base_msg.MCPResponse_OP_OK
 	INVALID  = base_msg.MCPResponse_INVALID
 	NODAEMON = base_msg.MCPResponse_NO_DAEMON
+	BADVER   = base_msg.MCPResponse_BADVERSION
 
-	GET = base_msg.MCPRequest_GET
-	SET = base_msg.MCPRequest_SET
-	DO  = base_msg.MCPRequest_DO
+	PING = base_msg.MCPRequest_PING
+	GET  = base_msg.MCPRequest_GET
+	SET  = base_msg.MCPRequest_SET
+	DO   = base_msg.MCPRequest_DO
 )
 
 // Daemons must be in one of the following states
@@ -128,9 +133,11 @@ func New(name string) (*MCP, error) {
 func (m *MCP) msg(oc base_msg.MCPRequest_Operation,
 	daemon, command string, state int) (string, error) {
 
+	version := base_msg.Version{Major: proto.Int32(Version)}
 	op := &base_msg.MCPRequest{
 		Timestamp: aputil.NowToProtobuf(),
 		Sender:    proto.String(m.sender),
+		Version:   &version,
 		Debug:     proto.String("-"),
 		Operation: &oc,
 		State:     proto.Int32(int32(state)),
@@ -162,9 +169,19 @@ func (m *MCP) msg(oc base_msg.MCPRequest_Operation,
 			proto.Unmarshal(reply[0], &r)
 			switch *r.Response {
 			case INVALID:
-				err = fmt.Errorf("Invalid command")
+				err = fmt.Errorf("invalid command")
 			case NODAEMON:
-				err = fmt.Errorf("No such daemon")
+				err = fmt.Errorf("no such daemon")
+			case BADVER:
+				var version string
+				if r.MinVersion != nil {
+					version = fmt.Sprintf("%d or greater",
+						*r.MinVersion.Major)
+				} else {
+					version = fmt.Sprintf("%d",
+						*r.Version.Major)
+				}
+				err = fmt.Errorf("requires version %s", version)
 			default:
 				if oc == GET {
 					rval = *r.State
@@ -175,6 +192,12 @@ func (m *MCP) msg(oc base_msg.MCPRequest_Operation,
 	m.Unlock()
 
 	return rval, err
+}
+
+// Ping sends a no-op command to the daemon as a liveness check and as a
+// protocol version check.
+func (m *MCP) Ping(daemon string) (string, error) {
+	return m.msg(PING, "", "", -1)
 }
 
 // GetState will query ap.mcp for the current state of a single daemon.

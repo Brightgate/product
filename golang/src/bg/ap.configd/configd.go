@@ -75,7 +75,6 @@ const (
 	pname            = "ap.configd"
 
 	minConfigVersion = 10
-	curConfigVersion = 13
 )
 
 // Allow for significant variation in the processing of subtrees
@@ -974,15 +973,15 @@ func propTreeLoad(name string) error {
 	return nil
 }
 
-func addUpgradeHook(version int, hook func() error) {
-	if version > curConfigVersion {
+func addUpgradeHook(version int32, hook func() error) {
+	if version > apcfg.Version {
 		msg := fmt.Sprintf("Upgrade hook %d > current max of %d\n",
-			version, curConfigVersion)
+			version, apcfg.Version)
 		panic(msg)
 	}
 
 	if upgradeHooks == nil {
-		upgradeHooks = make([]func() error, curConfigVersion+1)
+		upgradeHooks = make([]func() error, apcfg.Version+1)
 	}
 	upgradeHooks[version] = hook
 }
@@ -998,11 +997,11 @@ func versionTree() error {
 	if version < minConfigVersion {
 		return fmt.Errorf("obsolete properties file")
 	}
-	if version > curConfigVersion {
+	if version > int(apcfg.Version) {
 		return fmt.Errorf("properties file is newer than the software")
 	}
 
-	for version < curConfigVersion {
+	for version < int(apcfg.Version) {
 		log.Printf("Upgrading properties from version %d to %d\n",
 			version, version+1)
 		version++
@@ -1149,72 +1148,89 @@ func delPropHandler(prop string) error {
 	return err
 }
 
-func processOneEvent(query *base_msg.ConfigQuery) *base_msg.ConfigResponse {
-	const (
-		success     = base_msg.ConfigResponse_OK
-		failed      = base_msg.ConfigResponse_FAILED
-		unsupported = base_msg.ConfigResponse_UNSUPPORTED
-		noprop      = base_msg.ConfigResponse_NOPROP
-	)
-	var err error
+func executePropOps(ops []*base_msg.ConfigQuery_ConfigOp) (string, error) {
 	var rval string
+	var err error
 
-	rc := success
-	for _, op := range query.Ops {
+	for _, op := range ops {
 		prop := *op.Property
 		val := op.Value
 		expires := aputil.ProtobufToTime(op.Expires)
 
-		ops := &defaultSubtreeOps
+		opsVector := &defaultSubtreeOps
 		for _, r := range subtreeMatchTable {
 			if r.match.MatchString(prop) {
-				ops = r.ops
+				opsVector = r.ops
 				break
 			}
 		}
 
 		switch *op.Operation {
 		case base_msg.ConfigQuery_ConfigOp_GET:
-			if len(query.Ops) > 1 {
+			if len(ops) > 1 {
 				err = fmt.Errorf("only single-GET " +
 					"operations are supported")
 			} else {
-				rval, err = ops.get(prop)
+				rval, err = opsVector.get(prop)
 			}
+
 		case base_msg.ConfigQuery_ConfigOp_CREATE:
-			err = ops.set(prop, val, expires, true)
+			err = opsVector.set(prop, val, expires, true)
+
 		case base_msg.ConfigQuery_ConfigOp_SET:
-			err = ops.set(prop, val, expires, false)
+			err = opsVector.set(prop, val, expires, false)
+
 		case base_msg.ConfigQuery_ConfigOp_DELETE:
-			err = ops.delete(prop)
+			err = opsVector.delete(prop)
+
+		case base_msg.ConfigQuery_ConfigOp_PING:
+		// no-op
+
 		default:
 			err = apcfg.ErrBadOp
 		}
 
-		switch err {
-		case nil:
-			// no action
-		case apcfg.ErrNoProp:
-			rc = noprop
-		case apcfg.ErrBadOp:
-			rc = unsupported
-		default:
-			rc = failed
-		}
-		if rc != success {
+		if err != nil {
 			break
 		}
 	}
 
-	if rc != success {
+	return rval, err
+}
+
+func processOneEvent(query *base_msg.ConfigQuery) *base_msg.ConfigResponse {
+	var err error
+	var rval string
+
+	if *query.Version.Major != apcfg.Version {
+		err = apcfg.ErrBadVer
+	} else {
+		rval, err = executePropOps(query.Ops)
+	}
+
+	rc := base_msg.ConfigResponse_OK
+	if err != nil {
+		switch err {
+		case apcfg.ErrNoProp:
+			rc = base_msg.ConfigResponse_NOPROP
+		case apcfg.ErrBadOp:
+			rc = base_msg.ConfigResponse_UNSUPPORTED
+		case apcfg.ErrBadVer:
+			rc = base_msg.ConfigResponse_BADVERSION
+		default:
+			rc = base_msg.ConfigResponse_FAILED
+		}
+
 		if *verbose {
 			log.Printf("Config operation failed: %v\n", err)
 		}
 		rval = fmt.Sprintf("%v", err)
 	}
+	version := base_msg.Version{Major: proto.Int32(int32(apcfg.Version))}
 	response := &base_msg.ConfigResponse{
 		Timestamp: aputil.NowToProtobuf(),
 		Sender:    proto.String(pname + "(" + strconv.Itoa(os.Getpid()) + ")"),
+		Version:   &version,
 		Debug:     proto.String("-"),
 		Response:  &rc,
 		Value:     proto.String(rval),

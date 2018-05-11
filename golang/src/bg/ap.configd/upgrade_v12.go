@@ -46,7 +46,7 @@ func oldPropTreeParse(data []byte) error {
 		return err
 	}
 
-	log.Printf("Importing pre-v%d config tree.\n", curConfigVersion)
+	log.Printf("Importing pre-v12 config tree.\n")
 
 	convertPnode(&root, &propTreeRoot)
 

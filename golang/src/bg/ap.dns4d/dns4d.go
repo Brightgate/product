@@ -452,6 +452,9 @@ func localAddress(arpa string) bool {
 }
 
 func inList(name string, list *dnsMatchList) bool {
+	if list == nil {
+		return false
+	}
 	if _, ok := list.exactMatches[name]; ok {
 		return true
 	}

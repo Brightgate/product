@@ -40,6 +40,11 @@ message Timestamp {
 	required int32 nanos = 0x02;
 }
 
+message Version {
+	required int32 major = 0x01;
+	optional int32 minor = 0x02;
+}
+
 // XXX In some ways, this enum duplicates content we already have in
 // services(5).  But since services mixes TCP, UDP, and RPC with a
 // syntax beyond an integer, we will build our own list for now.
@@ -69,11 +74,13 @@ message MCPRequest {
 	required Timestamp timestamp = 0x01;
 	optional string sender = 0x02;
 	optional string debug = 0x03;
+	required Version version = 0x05;
 
 	enum Operation {
-		GET = 1;
-		SET = 2;
-		DO = 3;
+		PING = 1;
+		GET = 2;
+		SET = 3;
+		DO = 4;
 	}
 	required Operation operation = 0x140;
 
@@ -88,10 +95,13 @@ message MCPResponse {
 	required Timestamp timestamp = 0x01;
 	optional string sender = 0x02;
 	optional string debug = 0x03;
+	required Version version = 0x05;
+	optional Version min_version = 0x06;
 
 	enum OpResponse {
 		OP_OK = 0;
-		NO_DAEMON = 1;
+		BADVERSION = 1;
+		NO_DAEMON = 2;
 		INVALID = 99;
 	}
 	required OpResponse response = 0x180;
@@ -266,9 +276,11 @@ message ConfigQuery {
 	optional string sender = 0x02;
 	optional string debug = 0x03;
 	optional string identity_uuid = 0x04;
+	required Version version = 0x05;
 
 	message ConfigOp {
 		enum Operation {
+			PING = 0;
 			GET = 1;
 			SET = 2;
 			CREATE = 3;
@@ -287,12 +299,15 @@ message ConfigResponse {
 	optional string sender = 0x02;
 	optional string debug = 0x03;
 	optional string identity_uuid = 0x04;
+	required Version version = 0x05;
+	optional Version min_version = 0x06;
 
 	enum OpResponse {
 		OK = 0;
 		FAILED = 1;
 		UNSUPPORTED = 2;
 		NOPROP = 3;
+		BADVERSION = 4;
 	}
 	required OpResponse response = 0x2003;
 
