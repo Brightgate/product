@@ -24,14 +24,12 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -40,6 +38,7 @@ import (
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
+	"bg/ap_common/data"
 	"bg/ap_common/mcp"
 	"bg/ap_common/network"
 	"bg/base_def"
@@ -51,16 +50,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-const (
-	whitelistName = "whitelist.csv"
-	blacklistName = "dns_blocklist.csv"
-)
-
 var (
 	addr = flag.String("pport", base_def.DNSD_PROMETHEUS_PORT,
 		"The address to listen on for HTTP requests.")
 
-	dataDir = flag.String("dir", "/var/spool/antiphishing",
+	dataDir = flag.String("dir", data.DefaultDataDir,
 		"antiphishing data directory")
 
 	brokerd *broker.Broker
@@ -71,9 +65,6 @@ var (
 		Help: "DNS query resolution time",
 	})
 
-	dnsWhitelist *dnsMatchList
-	dnsBlacklist *dnsMatchList
-
 	ringRecords  map[string]dnsRecord // per-ring records for the router
 	perRingHosts map[string]bool      // hosts with per-ring results
 	subnets      []*net.IPNet
@@ -82,11 +73,6 @@ var (
 	brightgateDNS string
 	upstreamDNS   = "8.8.8.8:53"
 )
-
-type dnsMatchList struct {
-	exactMatches  map[string]bool
-	regexpMatches []*regexp.Regexp
-}
 
 /*
  * The 'clients' map represents all of the clients that we know about.  In
@@ -189,7 +175,7 @@ func clientDeleteEvent(path []string) {
 }
 
 func blocklistUpdateEvent(path []string, val string, expires *time.Time) {
-	loadDNSBlacklist()
+	data.LoadDNSBlacklist(*dataDir)
 }
 
 func cnameUpdateEvent(path []string, val string, expires *time.Time) {
@@ -451,27 +437,6 @@ func localAddress(arpa string) bool {
 	return false
 }
 
-func inList(name string, list *dnsMatchList) bool {
-	if list == nil {
-		return false
-	}
-	if _, ok := list.exactMatches[name]; ok {
-		return true
-	}
-
-	for _, re := range list.regexpMatches {
-		if re.MatchString(name) {
-			return true
-		}
-	}
-
-	return false
-}
-
-func blockedHostname(name string) bool {
-	return inList(name, dnsBlacklist) && !inList(name, dnsWhitelist)
-}
-
 func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 	mac, c := getClient(w)
 	if c == nil {
@@ -486,7 +451,7 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 	start := time.Now()
 	for _, q := range r.Question {
 		hostname := q.Name[:len(q.Name)-1]
-		if blockedHostname(hostname) {
+		if data.BlockedHostname(hostname) {
 			// XXX: maybe we should return a CNAME record for our
 			// local 'phishing.<siteid>.brightgate.net'?
 			localRecord, _ := ringRecords[c.Ring]
@@ -702,66 +667,6 @@ func initNetwork() {
 	}
 }
 
-// Pull a list of DNS names from a CSV.  The first field of each line must be a
-// legal dns name or a regular expression.  The rest of the line is ignored.
-func ingestDNSFile(filename string) (*dnsMatchList, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	var list = dnsMatchList{
-		exactMatches:  make(map[string]bool),
-		regexpMatches: make([]*regexp.Regexp, 0),
-	}
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if idx := strings.Index(line, ","); idx > 0 {
-			line = line[:idx]
-		}
-
-		if len(line) > 0 && line[0] != '#' {
-			match := string(line)
-			if network.ValidDNSName(match) {
-				list.exactMatches[match] = true
-			} else if re, err := regexp.Compile(match); err == nil {
-				list.regexpMatches = append(list.regexpMatches, re)
-			}
-		}
-	}
-	file.Close()
-
-	log.Printf("Ingested %d hostnames and %d regexps from %s\n",
-		len(list.exactMatches), len(list.regexpMatches), filename)
-	return &list, nil
-}
-
-func loadDNSBlacklist() {
-	wfile := aputil.ExpandDirPath(*dataDir) + "/" + whitelistName
-	bfile := aputil.ExpandDirPath(*dataDir) + "/" + blacklistName
-
-	// The whitelist file has a single whitelisted DNS name on each line, or
-	// a CSV with no Cs.  The blacklist file is a CSV file, where the first
-	// field of each line is a DNS name and the remaining fields are all
-	// sources that have identified that site as dangerous.
-
-	list, err := ingestDNSFile(wfile)
-	if err != nil {
-		log.Printf("Unable to read DNS whitelist %s: %v\n", wfile, err)
-	} else {
-		dnsWhitelist = list
-	}
-	list, err = ingestDNSFile(bfile)
-	if err != nil {
-		log.Printf("Unable to read DNS blacklist %s: %v\n", bfile, err)
-	} else {
-		dnsBlacklist = list
-	}
-}
-
 func init() {
 	prometheus.MustRegister(latencies)
 }
@@ -811,7 +716,7 @@ func main() {
 
 	initNetwork()
 	initHostMap()
-	loadDNSBlacklist()
+	data.LoadDNSBlacklist(*dataDir)
 
 	dns.HandleFunc(domainname+".", localHandler)
 	dns.HandleFunc(".", proxyHandler)

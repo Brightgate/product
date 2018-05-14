@@ -664,12 +664,6 @@ COMMON_SRCS = \
 	$(GOSRCBG)/ap_common/mcp/mcp_client.go \
 	$(GOSRCBG)/ap_common/network/network.go
 
-PHISH_SRCS = \
-	$(GOSRCBG)/data/phishtank/datasource.go \
-	$(GOSRCBG)/data/phishtank/csv.go \
-	$(GOSRCBG)/data/phishtank/remote.go \
-	$(GOSRCBG)/data/phishtank/safebrowsing.go
-
 $(APPBINARIES): $(APP_COMMON_SRCS) | $(APPBIN) deps-ensured
 
 $(APPBIN)/ap-start: ap-start.sh
@@ -696,12 +690,14 @@ $(APPBIN)/ap.configd: \
 	$(GOSRCBG)/ap.configd/upgrade_v12.go \
 	$(GOSRCBG)/ap.configd/upgrade_v13.go
 $(APPBIN)/ap.dhcp4d: $(GOSRCBG)/ap.dhcp4d/dhcp4d.go
-$(APPBIN)/ap.dns4d: $(GOSRCBG)/ap.dns4d/dns4d.go
+$(APPBIN)/ap.dns4d: \
+	$(GOSRCBG)/ap.dns4d/dns4d.go \
+	$(GOSRCBG)/ap_common/data/dns.go
 $(APPBIN)/ap.httpd: \
 	$(GOSRCBG)/ap.httpd/ap.httpd.go \
 	$(GOSRCBG)/ap.httpd/api-demo.go \
 	$(GOSRCBG)/ap_common/certificate/certificate.go \
-	$(PHISH_SRCS)
+	$(GOSRCBG)/ap_common/data/dns.go
 $(APPBIN)/ap.identifierd: $(GOSRCBG)/ap.identifierd/identifierd.go
 $(APPBIN)/ap.iotd: \
 	$(GOSRCBG)/ap.iotd/iotd.go \

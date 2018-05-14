@@ -30,11 +30,11 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/certificate"
+	"bg/ap_common/data"
 	"bg/ap_common/mcp"
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
-	"bg/data/phishtank"
 
 	"github.com/golang/protobuf/proto"
 
@@ -66,7 +66,6 @@ var (
 	cutter *securecookie.SecureCookie
 
 	config      *apcfg.APConfig
-	phishScorer phishtank.Scorer
 	domainname  string
 
 	mcpd *mcp.MCP
@@ -202,16 +201,6 @@ func listen(addr string, port string, ring string, cfg *tls.Config,
 	}
 }
 
-// loadPhishtank sets the global phishScorer to score how reliable a domain is
-func loadPhishtank() {
-	antiphishing := aputil.ExpandDirPath("/var/spool/antiphishing/")
-
-	reader := phishtank.NewReader(
-		phishtank.Whitelist(antiphishing+"whitelist.csv"),
-		phishtank.Phishtank(antiphishing+"dns_blocklist.csv"))
-	phishScorer = reader.Scorer()
-}
-
 func establishHttpdKeys() ([]byte, []byte) {
 	var hs, as []byte
 
@@ -275,6 +264,10 @@ func establishHttpdKeys() ([]byte, []byte) {
 	return hs, as
 }
 
+func blocklistUpdateEvent(path []string, val string, expires *time.Time) {
+	data.LoadDNSBlacklist(data.DefaultDataDir)
+}
+
 func init() {
 	prometheus.MustRegister(latencies)
 }
@@ -335,7 +328,8 @@ func main() {
 		log.Printf("Couldn't get SSL key/fullchain: %v", err)
 	}
 
-	loadPhishtank()
+	data.LoadDNSBlacklist(data.DefaultDataDir)
+	config.HandleChange(`^@/updates/dns_blocklist$`, blocklistUpdateEvent)
 
 	secureMW := secure.New(secure.Options{
 		SSLRedirect:           true,
@@ -356,9 +350,7 @@ func main() {
 
 	phishRouter := mainRouter.MatcherFunc(
 		func(r *http.Request, match *mux.RouteMatch) bool {
-			log.Printf("Host: %s Score: %d\n", r.Host,
-				phishScorer.Score(r.Host, phishtank.Dns))
-			return phishScorer.Score(r.Host, phishtank.Dns) < 0
+			return data.BlockedHostname(r.Host)
 		}).Subrouter()
 	phishRouter.HandleFunc("/", phishHandler)
 

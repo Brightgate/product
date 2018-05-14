@@ -112,15 +112,6 @@
   version = "v1.1.14"
 
 [[projects]]
-  branch = "master"
-  name = "github.com/google/safebrowsing"
-  packages = [
-    ".",
-    "internal/safebrowsing_proto"
-  ]
-  revision = "ce39ae7e50e719c4518fcac8a81032c2f43046aa"
-
-[[projects]]
   name = "github.com/googleapis/gax-go"
   packages = ["."]
   revision = "317e0006254c44a0ac427cc52a0e083ff0b9622f"
@@ -620,6 +611,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "6bd922f04f70c014a884ea758657a6a41dcf4a4881973531f8ea11331baae2a4"
+  inputs-digest = "bc837b38d5cd20cda8383d53f87fc111901a86284aec92db11ec80caf7b02e82"
   solver-name = "gps-cdcl"
   solver-version = 1
