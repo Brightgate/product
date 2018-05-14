@@ -7,5 +7,17 @@
   "orientation": "portrait",
   "Scope": "/",
   "start_url": "/client-web/",
-  "icons": null
+  "icons": [{
+    "src": "/client-web/img/Glyph_blue_NoBackArtboard-1-128w.png",
+    "sizes": "128x128",
+    "type": "image/png"
+  }, {
+    "src": "/client-web/img/Glyph_blue_NoBackArtboard-1-192w.png",
+    "sizes": "192x192",
+    "type": "image/png"
+  }, {
+    "src": "/client-web/img/Glyph_blue_NoBackArtboard-1-512w.png",
+    "sizes": "512x512",
+    "type": "image/png"
+  }]
 }
