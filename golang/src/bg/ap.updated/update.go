@@ -81,19 +81,19 @@ var updates = map[string]updateInfo{
 		localDir:   "/var/spool/watchd/",
 		localName:  "ip_blocklist.csv",
 		urlBase:    googleStorage + googleBucket + "/",
-		latestName: "ip_blacklist.latest",
+		latestName: "ip_blocklist.latest",
 	},
 	"dns_blocklist": {
 		localDir:   "/var/spool/antiphishing/",
 		localName:  "dns_blocklist.csv",
 		urlBase:    googleStorage + googleBucket + "/",
-		latestName: "dns_blacklist.latest",
+		latestName: "dns_blocklist.latest",
 	},
-	"dns_whitelist": {
+	"dns_allowlist": {
 		localDir:   "/var/spool/antiphishing/",
-		localName:  "dns_whitelist.csv",
+		localName:  "dns_allowlist.csv",
 		urlBase:    googleStorage + googleBucket + "/",
-		latestName: "dns_whitelist.latest",
+		latestName: "dns_allowlist.latest",
 	},
 	// "vulnerabilities": {
 	// localDir:   "/var/spool/watchd/",

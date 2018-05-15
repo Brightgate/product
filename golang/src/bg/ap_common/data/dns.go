@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	whitelistName = "dns_whitelist.csv"
-	blacklistName = "dns_blocklist.csv"
+	allowlistName = "dns_allowlist.csv"
+	blocklistName = "dns_blocklist.csv"
 )
 
 var (
@@ -32,8 +32,8 @@ var (
 	// found by default.
 	DefaultDataDir = "/var/spool/antiphishing"
 
-	dnsWhitelist *dnsMatchList
-	dnsBlacklist *dnsMatchList
+	dnsAllowlist *dnsMatchList
+	dnsBlocklist *dnsMatchList
 )
 
 type dnsMatchList struct {
@@ -60,7 +60,7 @@ func inList(name string, list *dnsMatchList) bool {
 
 // BlockedHostname reports whether a given host/domain name is blocked.
 func BlockedHostname(name string) bool {
-	return inList(name, dnsBlacklist) && !inList(name, dnsWhitelist)
+	return inList(name, dnsBlocklist) && !inList(name, dnsAllowlist)
 }
 
 // Pull a list of DNS names from a CSV-like file (it allows for comment lines
@@ -101,27 +101,27 @@ func ingestDNSFile(filename string) (*dnsMatchList, error) {
 	return &list, nil
 }
 
-// LoadDNSBlacklist loads the DNS antiphishing databases.
-func LoadDNSBlacklist(dataDir string) {
-	wfile := aputil.ExpandDirPath(dataDir) + "/" + whitelistName
-	bfile := aputil.ExpandDirPath(dataDir) + "/" + blacklistName
+// LoadDNSBlocklist loads the DNS antiphishing databases.
+func LoadDNSBlocklist(dataDir string) {
+	wfile := aputil.ExpandDirPath(dataDir) + "/" + allowlistName
+	bfile := aputil.ExpandDirPath(dataDir) + "/" + blocklistName
 
-	// The whitelist file has a single whitelisted DNS name on each line, or
-	// a CSV with no Cs.  The blacklist file is a CSV-like file, where the
+	// The allowlist file has a single allowed DNS name on each line, or a
+	// CSV with no Cs.  The blocklist file is a CSV-like file, where the
 	// first field of each line is a DNS name and the second field is a
 	// pipe-separated list of sources that have identified that site as
 	// dangerous.
 
 	list, err := ingestDNSFile(wfile)
 	if err != nil {
-		log.Printf("Unable to read DNS whitelist %s: %v\n", wfile, err)
+		log.Printf("Unable to read DNS allowlist %s: %v\n", wfile, err)
 	} else {
-		dnsWhitelist = list
+		dnsAllowlist = list
 	}
 	list, err = ingestDNSFile(bfile)
 	if err != nil {
-		log.Printf("Unable to read DNS blacklist %s: %v\n", bfile, err)
+		log.Printf("Unable to read DNS blocklist %s: %v\n", bfile, err)
 	} else {
-		dnsBlacklist = list
+		dnsBlocklist = list
 	}
 }

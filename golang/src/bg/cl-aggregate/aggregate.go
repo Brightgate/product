@@ -35,9 +35,9 @@ import (
 const (
 	googleStorage = "https://storage.googleapis.com/"
 	gcpBucket     = "bg-blocklist-a198e4a0-5823-4d16-8950-ad34b32ace1c"
-	ipBlacklist   = "ip_blacklist"
-	dnsBlacklist  = "dns_blacklist"
-	dnsWhitelist  = "dns_whitelist"
+	ipBlocklist   = "ip_blocklist"
+	dnsBlocklist  = "dns_blocklist"
+	dnsAllowlist  = "dns_allowlist"
 
 	phishPrefix = "http://data.phishtank.com/data/"
 	phishKey    = "bd4ea8a80e25662e85f349c84bf300995ef013528c8201455edaeccf7426ec5e"
@@ -52,7 +52,7 @@ const (
 
 var (
 	credFile  = flag.String("creds", "", "GCP credentials file")
-	whitelist = flag.String("wl", "", "DNS source whitelist file")
+	allowlist = flag.String("allow", "", "DNS source allowlist file")
 	helpFlag  = flag.Bool("h", false, "help")
 
 	log  *zap.Logger
@@ -91,41 +91,41 @@ var ipSources = []source{
 
 var dnsSources = []source{
 	{
-		name:   "Malware Domains DNS blacklist",
+		name:   "Malware Domains DNS blocklist",
 		file:   "malwaredomains.zones",
 		url:    "http://dns-bh.sagadc.org/malwaredomains.zones",
 		parser: parseMalwaredomainsList,
 	},
 	{
-		name:   "Phishtank DNS blacklist",
+		name:   "Phishtank DNS blocklist",
 		file:   "online-valid.csv",
 		url:    phishPrefix + phishKey + "/" + phishList,
 		parser: parsePhishtank,
 	},
 	{
-		name:   "Brightgate DNS blacklist",
+		name:   "Brightgate DNS blocklist",
 		file:   "bg_dns.csv",
-		url:    googleStorage + gcpBucket + "/bg_dns_blacklist.csv",
+		url:    googleStorage + gcpBucket + "/bg_dns_blocklist.csv",
 		parser: parseBrightgate,
 	},
 }
 
-var whitelistSources = []source{}
+var allowlistSources = []source{}
 
 var datasets = []dataset{
 	{
-		name:    "DNS blacklist",
-		stem:    dnsBlacklist,
+		name:    "DNS blocklist",
+		stem:    dnsBlocklist,
 		sources: &dnsSources,
 	},
 	{
-		name:    "DNS whitelist",
-		stem:    dnsWhitelist,
-		sources: &whitelistSources,
+		name:    "DNS allowlist",
+		stem:    dnsAllowlist,
+		sources: &allowlistSources,
 	},
 	{
-		name:    "IP blacklist",
-		stem:    ipBlacklist,
+		name:    "IP blocklist",
+		stem:    ipBlocklist,
 		sources: &ipSources,
 	},
 }
@@ -296,7 +296,7 @@ func parseBotnets(s *source, list blocklist, file *os.File) int {
 	return cnt
 }
 
-func parseWhitelist(s *source, list blocklist, file *os.File) int {
+func parseAllowlist(s *source, list blocklist, file *os.File) int {
 	cnt := 0
 
 	scanner := bufio.NewScanner(file)
@@ -336,8 +336,8 @@ func fileSrc(name, meta string) (bool, error) {
 	return oldHash != newHash, nil
 }
 
-// Download the latest upstream IP blacklists.  If anything has changed, rebuild
-// our local combined blacklist.  The format is not quite a CSV file, in that it
+// Download the latest upstream IP blocklists.  If anything has changed, rebuild
+// our local combined blocklist.  The format is not quite a CSV file, in that it
 // contains a comment and there are no headers, but many CSV readers can be told
 // how to handle those things.  The one constraint is that the number of columns
 // is consistent.
@@ -480,7 +480,8 @@ func main() {
 
 	flag.Parse()
 	if *helpFlag {
-		fmt.Printf("usage: %s [-creds <gcp credentials file>]\n", os.Args[0])
+		fmt.Printf("usage: %s [-creds <gcp credentials file>] "+
+			"[-allow <DNS source allowlist file>]\n", os.Args[0])
 		os.Exit(0)
 	}
 
@@ -493,13 +494,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	if whitelist != nil {
+	if allowlist != nil {
 		s := source{
-			name:   "local DNS whitelist source",
-			file:   *whitelist,
-			parser: parseWhitelist,
+			name:   "local DNS allowlist source",
+			file:   *allowlist,
+			parser: parseAllowlist,
 		}
-		whitelistSources = append(whitelistSources, s)
+		allowlistSources = append(allowlistSources, s)
 	}
 
 	for _, dataset := range datasets {

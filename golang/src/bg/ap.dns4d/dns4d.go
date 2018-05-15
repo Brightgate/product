@@ -175,7 +175,7 @@ func clientDeleteEvent(path []string) {
 }
 
 func blocklistUpdateEvent(path []string, val string, expires *time.Time) {
-	data.LoadDNSBlacklist(*dataDir)
+	data.LoadDNSBlocklist(*dataDir)
 }
 
 func cnameUpdateEvent(path []string, val string, expires *time.Time) {
@@ -716,7 +716,7 @@ func main() {
 
 	initNetwork()
 	initHostMap()
-	data.LoadDNSBlacklist(*dataDir)
+	data.LoadDNSBlocklist(*dataDir)
 
 	dns.HandleFunc(domainname+".", localHandler)
 	dns.HandleFunc(".", proxyHandler)

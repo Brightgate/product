@@ -265,7 +265,7 @@ func establishHttpdKeys() ([]byte, []byte) {
 }
 
 func blocklistUpdateEvent(path []string, val string, expires *time.Time) {
-	data.LoadDNSBlacklist(data.DefaultDataDir)
+	data.LoadDNSBlocklist(data.DefaultDataDir)
 }
 
 func init() {
@@ -328,7 +328,7 @@ func main() {
 		log.Printf("Couldn't get SSL key/fullchain: %v", err)
 	}
 
-	data.LoadDNSBlacklist(data.DefaultDataDir)
+	data.LoadDNSBlocklist(data.DefaultDataDir)
 	config.HandleChange(`^@/updates/dns_.*list$`, blocklistUpdateEvent)
 
 	secureMW := secure.New(secure.Options{
