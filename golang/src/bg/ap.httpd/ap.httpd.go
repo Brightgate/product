@@ -65,8 +65,8 @@ var (
 
 	cutter *securecookie.SecureCookie
 
-	config      *apcfg.APConfig
-	domainname  string
+	config     *apcfg.APConfig
+	domainname string
 
 	mcpd *mcp.MCP
 )
@@ -329,7 +329,7 @@ func main() {
 	}
 
 	data.LoadDNSBlacklist(data.DefaultDataDir)
-	config.HandleChange(`^@/updates/dns_blocklist$`, blocklistUpdateEvent)
+	config.HandleChange(`^@/updates/dns_.*list$`, blocklistUpdateEvent)
 
 	secureMW := secure.New(secure.Options{
 		SSLRedirect:           true,

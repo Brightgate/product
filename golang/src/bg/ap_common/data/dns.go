@@ -14,8 +14,8 @@ package data
 import (
 	"bufio"
 	"log"
-	"regexp"
 	"os"
+	"regexp"
 	"strings"
 
 	"bg/ap_common/aputil"
@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	whitelistName = "whitelist.csv"
+	whitelistName = "dns_whitelist.csv"
 	blacklistName = "dns_blocklist.csv"
 )
 

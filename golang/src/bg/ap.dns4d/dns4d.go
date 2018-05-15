@@ -712,7 +712,7 @@ func main() {
 	config.HandleExpire(`^@/clients/.*/(ipv4|dns_name)$`, clientDeleteEvent)
 	config.HandleChange(`^@/dns/cnames/.*$`, cnameUpdateEvent)
 	config.HandleDelete(`^@/dns/cnames/.*$`, cnameDeleteEvent)
-	config.HandleChange(`^@/updates/dns_blocklist$`, blocklistUpdateEvent)
+	config.HandleChange(`^@/updates/dns_.*list$`, blocklistUpdateEvent)
 
 	initNetwork()
 	initHostMap()

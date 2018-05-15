@@ -89,6 +89,12 @@ var updates = map[string]updateInfo{
 		urlBase:    googleStorage + googleBucket + "/",
 		latestName: "dns_blacklist.latest",
 	},
+	"dns_whitelist": {
+		localDir:   "/var/spool/antiphishing/",
+		localName:  "dns_whitelist.csv",
+		urlBase:    googleStorage + googleBucket + "/",
+		latestName: "dns_whitelist.latest",
+	},
 	// "vulnerabilities": {
 	// localDir:   "/var/spool/watchd/",
 	// localName:  "vuln-db.json",

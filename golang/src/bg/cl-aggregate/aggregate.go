@@ -12,9 +12,11 @@ package main
 
 import (
 	"bufio"
+	"crypto/md5"
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"os"
 	"regexp"
@@ -35,6 +37,7 @@ const (
 	gcpBucket     = "bg-blocklist-a198e4a0-5823-4d16-8950-ad34b32ace1c"
 	ipBlacklist   = "ip_blacklist"
 	dnsBlacklist  = "dns_blacklist"
+	dnsWhitelist  = "dns_whitelist"
 
 	phishPrefix = "http://data.phishtank.com/data/"
 	phishKey    = "bd4ea8a80e25662e85f349c84bf300995ef013528c8201455edaeccf7426ec5e"
@@ -48,8 +51,9 @@ const (
 )
 
 var (
-	credFile = flag.String("creds", "", "GCP credentials file")
-	helpFlag = flag.Bool("h", false, "help")
+	credFile  = flag.String("creds", "", "GCP credentials file")
+	whitelist = flag.String("wl", "", "DNS source whitelist file")
+	helpFlag  = flag.Bool("h", false, "help")
 
 	log  *zap.Logger
 	slog *zap.SugaredLogger
@@ -67,7 +71,7 @@ type source struct {
 type dataset struct {
 	name    string
 	stem    string
-	sources []source
+	sources *[]source
 }
 
 var ipSources = []source{
@@ -106,16 +110,23 @@ var dnsSources = []source{
 	},
 }
 
+var whitelistSources = []source{}
+
 var datasets = []dataset{
 	{
 		name:    "DNS blacklist",
 		stem:    dnsBlacklist,
-		sources: dnsSources,
+		sources: &dnsSources,
+	},
+	{
+		name:    "DNS whitelist",
+		stem:    dnsWhitelist,
+		sources: &whitelistSources,
 	},
 	{
 		name:    "IP blacklist",
 		stem:    ipBlacklist,
-		sources: ipSources,
+		sources: &ipSources,
 	},
 }
 
@@ -285,6 +296,46 @@ func parseBotnets(s *source, list blocklist, file *os.File) int {
 	return cnt
 }
 
+func parseWhitelist(s *source, list blocklist, file *os.File) int {
+	cnt := 0
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if addBlock(list, line, "") {
+			cnt++
+		}
+	}
+	return cnt
+}
+
+func fileSrc(name, meta string) (bool, error) {
+	var oldHash string
+
+	if file, err := ioutil.ReadFile(meta); err == nil {
+		oldHash = string(file)
+	}
+
+	f, err := os.Open(name)
+	if err != nil {
+		err := fmt.Errorf("unable to read %s: %v", name, err)
+		return false, err
+	}
+	defer f.Close()
+
+	h := md5.New()
+	if _, err := io.Copy(h, f); err != nil {
+		err := fmt.Errorf("unable to construct md5 of %s: %v", name, err)
+		return false, err
+	}
+
+	newHash := fmt.Sprintf("%x", h.Sum(nil))
+	if newHash != oldHash {
+		ioutil.WriteFile(meta, []byte(newHash), 0644)
+	}
+	return oldHash != newHash, nil
+}
+
 // Download the latest upstream IP blacklists.  If anything has changed, rebuild
 // our local combined blacklist.  The format is not quite a CSV file, in that it
 // contains a comment and there are no headers, but many CSV readers can be told
@@ -296,7 +347,15 @@ func buildBlocklist(stem string, sources []source) (bool, error) {
 	// Download the latest datasets
 	updated := false
 	for _, s := range sources {
-		refreshed, err := common.FetchURL(s.url, s.file, s.file+".meta")
+		var refreshed bool
+		var err error
+
+		if s.url == "" {
+			refreshed, err = fileSrc(s.file, s.file+".meta")
+		} else {
+			refreshed, err = common.FetchURL(s.url, s.file,
+				s.file+".meta")
+		}
 		if err != nil {
 			slog.Errorf("failed to refresh %s: %v", s.file, err)
 		}
@@ -434,8 +493,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	if whitelist != nil {
+		s := source{
+			name:   "local DNS whitelist source",
+			file:   *whitelist,
+			parser: parseWhitelist,
+		}
+		whitelistSources = append(whitelistSources, s)
+	}
+
 	for _, dataset := range datasets {
-		updated, err := buildBlocklist(dataset.stem, dataset.sources)
+		updated, err := buildBlocklist(dataset.stem, *dataset.sources)
 		if !updated {
 			if err != nil {
 				slog.Errorf("Failed to build %s: %v\n", dataset.name, err)
