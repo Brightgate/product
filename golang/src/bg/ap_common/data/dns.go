@@ -63,7 +63,8 @@ func BlockedHostname(name string) bool {
 	return inList(name, dnsBlacklist) && !inList(name, dnsWhitelist)
 }
 
-// Pull a list of DNS names from a CSV.  The first field of each line must be a
+// Pull a list of DNS names from a CSV-like file (it allows for comment lines
+// starting with "#" and has no header).  The first field of each line must be a
 // legal dns name or a regular expression.  The rest of the line is ignored.
 func ingestDNSFile(filename string) (*dnsMatchList, error) {
 	file, err := os.Open(filename)
@@ -106,9 +107,10 @@ func LoadDNSBlacklist(dataDir string) {
 	bfile := aputil.ExpandDirPath(dataDir) + "/" + blacklistName
 
 	// The whitelist file has a single whitelisted DNS name on each line, or
-	// a CSV with no Cs.  The blacklist file is a CSV file, where the first
-	// field of each line is a DNS name and the remaining fields are all
-	// sources that have identified that site as dangerous.
+	// a CSV with no Cs.  The blacklist file is a CSV-like file, where the
+	// first field of each line is a DNS name and the second field is a
+	// pipe-separated list of sources that have identified that site as
+	// dangerous.
 
 	list, err := ingestDNSFile(wfile)
 	if err != nil {

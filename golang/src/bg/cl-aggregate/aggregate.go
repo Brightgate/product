@@ -129,7 +129,7 @@ func addBlock(list blocklist, addr string, reason string) bool {
 		r = reason
 		new = true
 	} else {
-		r += (", " + reason)
+		r += ("|" + reason)
 	}
 	list[addr] = r
 
@@ -286,7 +286,10 @@ func parseBotnets(s *source, list blocklist, file *os.File) int {
 }
 
 // Download the latest upstream IP blacklists.  If anything has changed, rebuild
-// our local combined blacklist.
+// our local combined blacklist.  The format is not quite a CSV file, in that it
+// contains a comment and there are no headers, but many CSV readers can be told
+// how to handle those things.  The one constraint is that the number of columns
+// is consistent.
 func buildBlocklist(stem string, sources []source) (bool, error) {
 	tmpFile := stem + ".tmp"
 
