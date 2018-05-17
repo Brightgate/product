@@ -37,14 +37,12 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	dhcp "github.com/krolaw/dhcp4"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/ipv4"
 )
 
 var (
-	addr = flag.String("promhttp-address", base_def.DHCPD_PROMETHEUS_PORT,
-		"Prometheus publication HTTP port.")
-
 	handlers = make(map[string]*ringHandler)
 
 	brokerd *broker.Broker
@@ -71,6 +69,18 @@ var (
 
 	// Track the interface on which each client's DHCP request arrives
 	clientRequestOn = make(map[string]string)
+
+	metrics struct {
+		requests    prometheus.Counter
+		provisioned prometheus.Counter
+		claimed     prometheus.Counter
+		renewed     prometheus.Counter
+		released    prometheus.Counter
+		declined    prometheus.Counter
+		expired     prometheus.Counter
+		rejected    prometheus.Counter
+		exhausted   prometheus.Counter
+	}
 )
 
 const pname = "ap.dhcp4d"
@@ -113,6 +123,7 @@ func configExpired(path []string) {
 	// all we do here is log it.
 	if len(path) == 3 && path[0] == "clients" && path[2] == "ipv4" {
 		log.Printf("Lease for %s expired\n", path[1])
+		metrics.expired.Inc()
 	}
 }
 
@@ -214,6 +225,7 @@ func clientDeleteEvent(path []string) {
 		if ring := client.Ring; ring != "" {
 			h := handlers[ring]
 			if l := h.leaseSearch(hwaddr); l != nil {
+				metrics.released.Inc()
 				h.releaseLease(l, hwaddr)
 			}
 		}
@@ -411,11 +423,13 @@ func (h *ringHandler) discover(p dhcp.Packet, options dhcp.Options) dhcp.Packet 
 	l := h.leaseAssign(hwaddr)
 	if l == nil {
 		log.Printf("Out of %s leases\n", h.ring)
+		metrics.exhausted.Inc()
 		return h.nak(p)
 	}
 	log.Printf("  OFFER %s to %s\n", l.ipaddr, l.hwaddr)
 
 	notifyProvisioned(l.ipaddr)
+	metrics.provisioned.Inc()
 	return dhcp.ReplyPacket(p, dhcp.Offer, h.serverIP, l.ipaddr, h.duration,
 		h.options.SelectOrderOrAll(options[dhcp.OptionParameterRequestList]))
 }
@@ -449,6 +463,7 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 
 	hwaddr := p.CHAddr().String()
 	log.Printf("REQUEST for %s\n", hwaddr)
+	metrics.requests.Inc()
 
 	notifyOptions(p.CHAddr(), options, dhcp.Request)
 
@@ -458,19 +473,19 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	}
 	requestOption := net.IP(options[dhcp.OptionRequestedIPAddress])
 
-	current := h.leaseSearch(hwaddr)
-
 	/*
 	 * If this client already has an IP address assigned (either statically,
 	 * or a previously assigned dynamic address), that overrides any address
 	 * it might ask for.
 	 */
 	action := ""
+	current := h.leaseSearch(hwaddr)
 	if current != nil {
 		reqIP = current.ipaddr
 		if requestOption != nil {
 			if reqIP.Equal(requestOption) {
 				action = "renewing"
+				metrics.renewed.Inc()
 			} else {
 				/*
 				 * XXX: this is potentially worth of a
@@ -493,12 +508,14 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 
 	if len(reqIP) != 4 || reqIP.Equal(net.IPv4zero) {
 		log.Printf("Invalid reqIP %s from %s\n", reqIP.String(), hwaddr)
+		metrics.rejected.Inc()
 		return h.nak(p)
 	}
 
 	l := h.getLease(reqIP)
 	if l == nil || !l.assigned || l.hwaddr != hwaddr {
 		log.Printf("Invalid lease of %s for %s\n", reqIP.String(), hwaddr)
+		metrics.rejected.Inc()
 		return h.nak(p)
 	}
 
@@ -517,6 +534,7 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	config.CreateProp(propPath(hwaddr, "ipv4"), l.ipaddr.String(), l.expires)
 	config.CreateProp(propPath(hwaddr, "dhcp_name"), l.name, l.expires)
 	notifyClaimed(p, l.ipaddr, l.name, h.duration)
+	metrics.claimed.Inc()
 
 	if h.ring == base_def.RING_INTERNAL {
 		// Clients asking for addresses on the internal network are
@@ -572,6 +590,7 @@ func (h *ringHandler) release(p dhcp.Packet) {
 		return
 	}
 	if h.releaseLease(l, hwaddr) {
+		metrics.released.Inc()
 		log.Printf("RELEASE %s\n", hwaddr)
 	}
 }
@@ -585,6 +604,7 @@ func (h *ringHandler) decline(p dhcp.Packet) {
 
 	l := h.leaseSearch(hwaddr)
 	if h.releaseLease(l, hwaddr) {
+		metrics.declined.Inc()
 		log.Printf("DECLINE for %s\n", hwaddr)
 	}
 }
@@ -919,19 +939,67 @@ func mainLoop() {
 	}
 }
 
+func prometheusInit() {
+	metrics.requests = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "dhcp4d_requests",
+		Help: "Number of addresses requested",
+	})
+	metrics.provisioned = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "dhcp4d_provisioned",
+		Help: "Number of addresses provisioned",
+	})
+	metrics.claimed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "dhcp4d_claimed",
+		Help: "Number of addresses claimed",
+	})
+	metrics.renewed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "dhcp4d_renewed",
+		Help: "Number of addresses renewed",
+	})
+	metrics.released = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "dhcp4d_released",
+		Help: "Number of addresses released",
+	})
+	metrics.declined = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "dhcp4d_declined",
+		Help: "Number of addresses declined",
+	})
+	metrics.expired = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "dhcp4d_expired",
+		Help: "Number of addresses expired",
+	})
+	metrics.rejected = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "dhcp4d_rejected",
+		Help: "Number of addresses rejected",
+	})
+	metrics.exhausted = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "dhcp4d_exhausted",
+		Help: "Number of exhaustion failures",
+	})
+
+	prometheus.MustRegister(metrics.requests)
+	prometheus.MustRegister(metrics.provisioned)
+	prometheus.MustRegister(metrics.claimed)
+	prometheus.MustRegister(metrics.released)
+	prometheus.MustRegister(metrics.declined)
+	prometheus.MustRegister(metrics.expired)
+	prometheus.MustRegister(metrics.rejected)
+	prometheus.MustRegister(metrics.exhausted)
+
+	http.Handle("/metrics", promhttp.Handler())
+	go http.ListenAndServe(base_def.DHCPD_PROMETHEUS_PORT, nil)
+}
+
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+	flag.Parse()
 
 	mcpd, err := mcp.New(pname)
 	if err != nil {
 		log.Printf("Failed to connect to mcp\n")
 	}
 
-	flag.Parse()
-
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(*addr, nil)
-
+	prometheusInit()
 	brokerd = broker.New(pname)
 	defer brokerd.Fini()
 

@@ -12,6 +12,7 @@ ACCEPT ICMP FROM IFACE NOT wan TO AP
 # Expose some services to our clients
 ACCEPT UDP FROM IFACE NOT wan TO AP DPORTS 53 67     # DNS, DHCP
 ACCEPT TCP FROM IFACE NOT wan TO AP DPORTS 80 443    # HTTP(s)
+ACCEPT TCP FROM RING core TO AP DPORTS 9090	     # prometheus
 
 # The core ring is allowed to access all the others
 ACCEPT FROM RING core TO RING standard

@@ -114,8 +114,10 @@ func recordDrop(d *dropRecord) *dropTable {
 
 	if wanIfaces[d.indev] {
 		table = wanDrops
+		metrics.wanDrops.Inc()
 	} else {
 		table = lanDrops
+		metrics.lanDrops.Inc()
 	}
 
 	table.maxID++

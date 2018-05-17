@@ -51,8 +51,6 @@ import (
 )
 
 var (
-	addr = flag.String("promhttp-address", base_def.HTTPD_PROMETHEUS_PORT,
-		"The address to listen on for Prometheus HTTP requests.")
 	clientWebDir = flag.String("client-web_dir", "client-web",
 		"location of httpd client web root")
 	ports         = listFlag([]string{":80", ":443"})
@@ -68,13 +66,10 @@ var (
 	config     *apcfg.APConfig
 	domainname string
 
-	mcpd *mcp.MCP
+	metrics struct {
+		latencies prometheus.Summary
+	}
 )
-
-var latencies = prometheus.NewSummary(prometheus.SummaryOpts{
-	Name: "http_render_seconds",
-	Help: "HTTP page render time",
-})
 
 var (
 	pings     = 0
@@ -268,8 +263,15 @@ func blocklistUpdateEvent(path []string, val string, expires *time.Time) {
 	data.LoadDNSBlocklist(data.DefaultDataDir)
 }
 
-func init() {
-	prometheus.MustRegister(latencies)
+func prometheusInit() {
+	metrics.latencies = prometheus.NewSummary(prometheus.SummaryOpts{
+		Name: "http_render_seconds",
+		Help: "HTTP page render time",
+	})
+	prometheus.MustRegister(metrics.latencies)
+
+	http.Handle("/metrics", promhttp.Handler())
+	go http.ListenAndServe(base_def.HTTPD_PROMETHEUS_PORT, nil)
 }
 
 func main() {
@@ -281,10 +283,12 @@ func main() {
 	flag.Parse()
 	*clientWebDir = aputil.ExpandDirPath(*clientWebDir)
 
-	mcpd, err = mcp.New(pname)
+	mcpd, err := mcp.New(pname)
 	if err != nil {
 		log.Printf("Failed to connect to mcp\n")
 	}
+
+	prometheusInit()
 
 	// Set up connection with the broker daemon
 	brokerd := broker.New(pname)
@@ -295,9 +299,6 @@ func main() {
 	brokerd.Handle(base_def.TOPIC_REQUEST, handleRequest)
 	brokerd.Handle(base_def.TOPIC_ERROR, handleError)
 	defer brokerd.Fini()
-
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(*addr, nil)
 
 	if config, err = apcfg.NewConfig(brokerd, pname); err == nil {
 		rings = config.GetRings()

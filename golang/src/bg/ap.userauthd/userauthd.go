@@ -121,8 +121,6 @@ type rConf struct {
 }
 
 var (
-	addr = flag.String("listen-address", base_def.USERAUTHD_PROMETHEUS_PORT,
-		"The address to listen on for HTTP requests.")
 	templateDir = flag.String("template_dir", "golang/src/ap.userauthd",
 		"location of userauthd templates")
 	verbose = flag.Bool("v", false, "increase verbosity")
@@ -136,16 +134,12 @@ var (
 	rc         *rConf
 	domainname string
 
-	authRequests = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "userauthd_radius_auth_requests",
-			Help: "Number of RADIUS authentication requests",
-		})
-	authFailures = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "userauthd_radius_auth_failures",
-			Help: "Number of RADIUS authentication failures",
-		})
+	// XXX: these metrics are currently just aspirational, since hostapd
+	// does all of the authentication work internally.
+	metrics struct {
+		authRequests prometheus.Counter
+		authFailures prometheus.Counter
+	}
 )
 
 const (
@@ -380,6 +374,22 @@ func establishSecret() ([]byte, error) {
 	return []byte(s64), nil
 }
 
+func prometheusInit() {
+	metrics.authRequests = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "userauthd_radius_auth_requests",
+		Help: "Number of RADIUS authentication requests",
+	})
+	metrics.authFailures = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "userauthd_radius_auth_failures",
+		Help: "Number of RADIUS authentication failures",
+	})
+	prometheus.MustRegister(metrics.authRequests)
+	prometheus.MustRegister(metrics.authFailures)
+
+	http.Handle("/metrics", promhttp.Handler())
+	go http.ListenAndServe(base_def.USERAUTHD_PROMETHEUS_PORT, nil)
+}
+
 func main() {
 	var err error
 
@@ -392,11 +402,7 @@ func main() {
 		log.Println("Failed to connect to mcp")
 	}
 
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(*addr, nil)
-
-	log.Println("prometheus client launched")
-
+	prometheusInit()
 	brokerd := broker.New(pname)
 	brokerd.Handle(base_def.TOPIC_ERROR, sysErrorCertificate)
 	defer brokerd.Fini()

@@ -38,8 +38,6 @@ import (
 )
 
 var (
-	addr = flag.String("listen-address", base_def.NETWORKD_PROMETHEUS_PORT,
-		"address to listen on for HTTP requests")
 	platform    = flag.String("platform", "rpi3", "hardware platform name")
 	allow40MHz  = flag.Bool("40mhz", false, "allow 40MHz-wide channels")
 	templateDir = flag.String("template_dir", "golang/src/ap.networkd",
@@ -1054,6 +1052,11 @@ func signalHandler() {
 	hostapd.reset()
 }
 
+func prometheusInit() {
+	http.Handle("/metrics", promhttp.Handler())
+	go http.ListenAndServe(base_def.NETWORKD_PROMETHEUS_PORT, nil)
+}
+
 func main() {
 	rand.Seed(time.Now().Unix())
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
@@ -1062,11 +1065,8 @@ func main() {
 	*templateDir = aputil.ExpandDirPath(*templateDir)
 	*rulesDir = aputil.ExpandDirPath(*rulesDir)
 
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(*addr, nil)
-
+	prometheusInit()
 	networkCleanup()
-
 	if err := daemonInit(); err != nil {
 		if mcpd != nil {
 			mcpd.SetState(mcp.BROKEN)

@@ -73,6 +73,10 @@ type hostmap struct {
 	active map[string]bool
 }
 
+func (h *hostmap) len() float64 {
+	return float64(len(h.active))
+}
+
 func (h *hostmap) add(ip string) {
 	h.Lock()
 	defer h.Unlock()
@@ -215,15 +219,10 @@ func scanner() {
 		}
 
 		propBase := fmt.Sprintf("@/clients/%s/scans/%s/", req.Mac, req.ScanType)
-		scansStarted.WithLabelValues(req.IP, req.ScanType).Inc()
+
 		config.CreateProp(propBase+"start", nowString(), nil)
-
 		req.Scanner(req)
-
 		config.CreateProp(propBase+"finish", nowString(), nil)
-		dur := time.Since(now).Seconds()
-		scanDuration.WithLabelValues(req.IP, req.ScanType).Observe(dur)
-		scansFinished.WithLabelValues(req.IP, req.ScanType).Inc()
 
 		scheduleScan(req, req.Period)
 	}
@@ -272,6 +271,7 @@ func scannerRequest(mac, ip string) {
 		Period:   vulnFreq,
 	}
 	activeHosts.add(ip)
+	metrics.knownHosts.Set(activeHosts.len())
 	scheduleScan(&TCPScan, 2*time.Minute)
 	scheduleScan(&UDPScan, 10*time.Minute)
 	scheduleScan(&VulnScan, 0)
@@ -343,12 +343,14 @@ func subnetHostScan(ring, subnet string) int {
 // hostScan scans each of interfaces for new hosts and schedules regular port
 // scans on the host if one is found.
 func hostScan() {
+	start := time.Now()
 	seen := 0
 	for ring, config := range rings {
 		seen += subnetHostScan(ring, config.Subnet)
 	}
-	hostsUp.Set(float64(seen))
-	hostScanCount.Inc()
+	done := time.Now()
+	metrics.hostScans.Inc()
+	metrics.hostScanTime.Observe(done.Sub(start).Seconds())
 }
 
 func runCmd(cmd string, args []string) error {
@@ -530,13 +532,20 @@ func marshalNmapResults(host *nmap.Host) *base_msg.Host {
 // portScan scans the ports of the given IP address using nmap, putting
 // results on the message bus. Scans of IP are stopped if host is down.
 func portScan(req *ScanRequest) {
-	startTime := time.Now()
+	start := time.Now()
 	res, err := nmapScan("portscan", req.IP, req.Args)
-	finishTime := time.Now()
+	done := time.Now()
 	if err != nil {
 		return
 	}
 
+	if req.ScanType == "tcp_ports" {
+		metrics.tcpScans.Inc()
+		metrics.tcpScanTime.Observe(done.Sub(start).Seconds())
+	} else if req.ScanType == "udp_ports" {
+		metrics.udpScans.Inc()
+		metrics.udpScanTime.Observe(done.Sub(start).Seconds())
+	}
 	if len(res.Hosts) != 1 {
 		log.Printf("Scan of 1 host returned %d results: %v\n",
 			len(res.Hosts), res)
@@ -547,6 +556,7 @@ func portScan(req *ScanRequest) {
 	if host.Status.State != "up" {
 		log.Printf("Host %s is down, stopping scans", req.IP)
 		activeHosts.del(req.IP)
+		metrics.knownHosts.Set(activeHosts.len())
 		cancelScan(req.IP)
 		return
 	}
@@ -556,7 +566,7 @@ func portScan(req *ScanRequest) {
 	marshalledHosts[0] = marshalNmapResults(host)
 
 	addr := net.ParseIP(req.IP)
-	start := fmt.Sprintf("Nmap %s scan initiated %s as: %s", res.Version,
+	startInfo := fmt.Sprintf("Nmap %s scan initiated %s as: %s", res.Version,
 		res.StartStr, res.Args)
 
 	scan := &base_msg.EventNetScan{
@@ -564,9 +574,9 @@ func portScan(req *ScanRequest) {
 		Sender:      proto.String(brokerd.Name),
 		Debug:       proto.String("-"),
 		Ipv4Address: proto.Uint32(network.IPAddrToUint32(addr)),
-		StartInfo:   proto.String(start),
-		StartTime:   aputil.TimeToProtobuf(&startTime),
-		FinishTime:  aputil.TimeToProtobuf(&finishTime),
+		StartInfo:   proto.String(startInfo),
+		StartTime:   aputil.TimeToProtobuf(&start),
+		FinishTime:  aputil.TimeToProtobuf(&done),
 		Hosts:       marshalledHosts,
 		Summary:     proto.String(res.RunStats.Finished.Summary),
 	}
@@ -729,6 +739,7 @@ func vulnScan(req *ScanRequest) {
 	if *verbose {
 		args = append(args, "-v")
 	}
+	start := time.Now()
 	if err := runCmd(prober, args); err != nil {
 		log.Printf("vulnerability scan of %s failed: %v\n",
 			req.IP, err)
@@ -743,6 +754,10 @@ func vulnScan(req *ScanRequest) {
 	}
 
 	vulnScanProcess(req.IP, found)
+
+	done := time.Now()
+	metrics.vulnScans.Inc()
+	metrics.vulnScanTime.Observe(done.Sub(start).Seconds())
 }
 
 // ByDateModified is for sorting files by date modified.

@@ -18,16 +18,12 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
-	"net/http"
 	"os"
 	"sync"
 	"time"
 
 	"bg/ap_common/aputil"
 	"bg/ap_common/watchd"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type endpoint struct {
@@ -50,37 +46,6 @@ var (
 	currentStats    *watchd.Snapshot
 	historicalStats []*watchd.Snapshot
 	statsMtx        sync.RWMutex
-)
-
-var (
-	hostScanCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "host_scans",
-			Help: "Number of host scans completed.",
-		})
-	hostsUp = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "hosts_up",
-			Help: "Number of hosts currently up.",
-		})
-	scanDuration = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name: "scan_duration",
-			Help: "Scan duration in seconds, by IP and scan type.",
-		},
-		[]string{"ip", "type"})
-	scansFinished = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "scans_finished",
-			Help: "Number of scans finished, by IP and scan type.",
-		},
-		[]string{"ip", "type"})
-	scansStarted = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "scans_started",
-			Help: "Number of scans started, by IP and scan type.",
-		},
-		[]string{"ip", "type"})
 )
 
 func newDeviceRecord(mac string) *watchd.DeviceRecord {
@@ -435,12 +400,6 @@ func metricsFini(w *watcher) {
 }
 
 func metricsInit(w *watcher) {
-	prometheus.MustRegister(scansStarted, scansFinished,
-		hostScanCount, hostsUp, scanDuration)
-
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(*addr, nil)
-
 	metricsWaitGroup.Add(1)
 	go snapshotter()
 

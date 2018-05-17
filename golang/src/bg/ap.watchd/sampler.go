@@ -396,15 +396,18 @@ func sampleLoop(state *samplerState) {
 		}
 
 		processOnePacket(state, data)
+		metrics.sampledPkts.Inc()
 
 		packets++
 		if packets%10000 == 0 {
 			s, err := state.handle.Stats()
-			if err == nil && s.PacketsDropped != lastDropped {
+			delta := s.PacketsDropped - lastDropped
+			if err == nil && delta != 0 {
 				log.Printf("%s: dropped %d of %d packets\n",
 					state.iface, s.PacketsDropped,
 					s.PacketsReceived)
 				lastDropped = s.PacketsDropped
+				metrics.missedPkts.Add(float64(delta))
 			}
 		}
 	}

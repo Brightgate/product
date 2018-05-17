@@ -510,7 +510,7 @@ func demoConfigGetHandler(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "\"%s\"", val)
 	}
 	if err == nil {
-		latencies.Observe(time.Since(t).Seconds())
+		metrics.latencies.Observe(time.Since(t).Seconds())
 	}
 }
 
@@ -558,7 +558,7 @@ func demoConfigPostHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err == nil {
-		latencies.Observe(time.Since(t).Seconds())
+		metrics.latencies.Observe(time.Since(t).Seconds())
 	}
 }
 
@@ -1071,7 +1071,7 @@ func demoEnrollGuestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err == nil {
-		latencies.Observe(time.Since(t).Seconds())
+		metrics.latencies.Observe(time.Since(t).Seconds())
 	}
 }
 
@@ -1107,7 +1107,7 @@ func demoStatsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	latencies.Observe(time.Since(lt).Seconds())
+	metrics.latencies.Observe(time.Since(lt).Seconds())
 }
 
 func makeDemoAPIRouter() *mux.Router {

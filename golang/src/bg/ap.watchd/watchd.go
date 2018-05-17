@@ -15,6 +15,7 @@ import (
 	"flag"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
@@ -31,11 +32,11 @@ import (
 	"bg/base_msg"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-const (
-	pname = "ap.watchd"
-)
+const pname = "ap.watchd"
 
 var (
 	watchDir = flag.String("dir", "/var/spool/watchd",
@@ -48,16 +49,29 @@ var (
 	config  *apcfg.APConfig
 
 	profiler *aputil.Profiler
-
 	watchers = make([]*watcher, 0)
-)
 
-var (
-	rings apcfg.RingMap
-
+	rings   apcfg.RingMap
 	macToIP = make(map[string]string)
 	ipToMac = make(map[string]string)
 	mapMtx  sync.Mutex
+
+	metrics struct {
+		lanDrops     prometheus.Counter
+		wanDrops     prometheus.Counter
+		sampledPkts  prometheus.Counter
+		missedPkts   prometheus.Counter
+		tcpScans     prometheus.Counter
+		tcpScanTime  prometheus.Summary
+		udpScans     prometheus.Counter
+		udpScanTime  prometheus.Summary
+		hostScans    prometheus.Counter
+		hostScanTime prometheus.Summary
+		vulnScans    prometheus.Counter
+		vulnScanTime prometheus.Summary
+		blockedIPs   prometheus.Counter
+		knownHosts   prometheus.Gauge
+	}
 )
 
 //
@@ -217,6 +231,82 @@ func signalHandler() {
 	}
 }
 
+func prometheusInit() {
+	metrics.lanDrops = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "watchd_landrops",
+		Help: "Number of internal packets dropped by the firewall",
+	})
+	metrics.wanDrops = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "watchd_wandrops",
+		Help: "Number of external packets dropped by the firewall",
+	})
+	metrics.sampledPkts = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "watchd_sampled_pkts",
+		Help: "Number of packets exampined by the sampler",
+	})
+	metrics.missedPkts = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "watchd_missed_pkts",
+		Help: "Number of packets missed by the sampler",
+	})
+	metrics.tcpScans = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "watchd_tcp_scans",
+		Help: "Number of device tcp port scans completed",
+	})
+	metrics.tcpScanTime = prometheus.NewSummary(prometheus.SummaryOpts{
+		Name: "watchd_tcp_scan_time",
+		Help: "time spent on tcp port scans",
+	})
+	metrics.udpScans = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "watchd_udp_scans",
+		Help: "Number of device udp port scans completed",
+	})
+	metrics.udpScanTime = prometheus.NewSummary(prometheus.SummaryOpts{
+		Name: "watchd_udp_scan_time",
+		Help: "time spent on udp port scans",
+	})
+	metrics.hostScans = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "watchd_host_scans",
+		Help: "Number of host scans completed",
+	})
+	metrics.hostScanTime = prometheus.NewSummary(prometheus.SummaryOpts{
+		Name: "watchd_host_scan_time",
+		Help: "time spent on host scans",
+	})
+	metrics.vulnScans = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "watchd_vuln_scans",
+		Help: "Number of device vulnerability scans completed",
+	})
+	metrics.vulnScanTime = prometheus.NewSummary(prometheus.SummaryOpts{
+		Name: "watchd_vuln_scan_time",
+		Help: "time spent on vulnerability scans",
+	})
+	metrics.blockedIPs = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "watchd_blocked_ips",
+		Help: "Number of dangerous IPs we've detected and blocked",
+	})
+	metrics.knownHosts = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "watchd_known_hosts",
+		Help: "Number of devices we know about and are monitoring",
+	})
+	prometheus.MustRegister(metrics.lanDrops)
+	prometheus.MustRegister(metrics.wanDrops)
+	prometheus.MustRegister(metrics.sampledPkts)
+	prometheus.MustRegister(metrics.missedPkts)
+	prometheus.MustRegister(metrics.tcpScans)
+	prometheus.MustRegister(metrics.tcpScanTime)
+	prometheus.MustRegister(metrics.udpScans)
+	prometheus.MustRegister(metrics.udpScanTime)
+	prometheus.MustRegister(metrics.hostScans)
+	prometheus.MustRegister(metrics.hostScanTime)
+	prometheus.MustRegister(metrics.vulnScans)
+	prometheus.MustRegister(metrics.vulnScanTime)
+	prometheus.MustRegister(metrics.blockedIPs)
+	prometheus.MustRegister(metrics.knownHosts)
+
+	http.Handle("/metrics", promhttp.Handler())
+	go http.ListenAndServe(base_def.WATCHD_PROMETHEUS_PORT, nil)
+}
+
 func main() {
 	// To avoid dropping packets, we need to have extra processes available.
 	runtime.GOMAXPROCS(8)
@@ -234,6 +324,8 @@ func main() {
 	if err != nil {
 		log.Printf("failed to connect to mcp\n")
 	}
+
+	prometheusInit()
 
 	brokerd = broker.New(pname)
 	defer brokerd.Fini()

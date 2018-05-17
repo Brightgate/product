@@ -50,20 +50,20 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-var (
-	addr = flag.String("pport", base_def.DNSD_PROMETHEUS_PORT,
-		"The address to listen on for HTTP requests.")
+const pname = "ap.dns4d"
 
+type dnsRecord struct {
+	rectype uint16
+	recval  string
+	expires *time.Time
+}
+
+var (
 	dataDir = flag.String("dir", data.DefaultDataDir,
 		"antiphishing data directory")
 
 	brokerd *broker.Broker
 	config  *apcfg.APConfig
-
-	latencies = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "dns_resolve_seconds",
-		Help: "DNS query resolution time",
-	})
 
 	ringRecords  map[string]dnsRecord // per-ring records for the router
 	perRingHosts map[string]bool      // hosts with per-ring results
@@ -98,15 +98,18 @@ var (
 	unknownWarned = make(map[string]time.Time)
 	blockWarned   = make(map[string]time.Time)
 	warnedMtx     sync.Mutex
+
+	metrics struct {
+		requests         prometheus.Counter
+		blocked          prometheus.Counter
+		upstreamCnt      prometheus.Counter
+		upstreamFailures prometheus.Counter
+		upstreamTimeouts prometheus.Counter
+		upstreamLatency  prometheus.Summary
+		requestSize      prometheus.Summary
+		responseSize     prometheus.Summary
+	}
 )
-
-const pname = "ap.dns4d"
-
-type dnsRecord struct {
-	rectype uint16
-	recval  string
-	expires *time.Time
-}
 
 // Returns 'true' if we have issued a warning about this key within the past
 // hour.
@@ -188,8 +191,6 @@ func cnameDeleteEvent(path []string) {
 }
 
 func logRequest(handler string, start time.Time, ip net.IP, r, m *dns.Msg) {
-	latencies.Observe(time.Since(start).Seconds())
-
 	protocol := base_msg.Protocol_DNS
 	requests := make([]string, 0)
 	responses := make([]string, 0)
@@ -320,29 +321,20 @@ func answerCNAME(q dns.Question, rec dnsRecord) *dns.CNAME {
 	return &rr
 }
 
-func captiveHandler(client *apcfg.ClientInfo, w dns.ResponseWriter, r *dns.Msg) {
-	record, _ := ringRecords[client.Ring]
-
-	m := new(dns.Msg)
-	m.SetReply(r)
-	m.Authoritative = true
-	start := time.Now()
-	for _, q := range r.Question {
-		if q.Qtype == dns.TypeA {
-			m.Answer = append(m.Answer, answerA(q, record))
-		}
-	}
-	w.WriteMsg(m)
-
-	logRequest("captiveHandler", start, client.IPv4, r, m)
-}
-
 func upstreamRequest(server string, r, m *dns.Msg) {
 	c := new(dns.Client)
 
+	metrics.upstreamCnt.Inc()
+	start := time.Now()
 	r2, _, err := c.Exchange(r, server)
+	metrics.upstreamLatency.Observe(time.Since(start).Seconds())
+
 	if err != nil || r2 == nil {
 		log.Printf("failed to exchange: %v", err)
+		metrics.upstreamFailures.Inc()
+		if os.IsTimeout(err) {
+			metrics.upstreamTimeouts.Inc()
+		}
 		m.Rcode = dns.RcodeServerFailure
 		return
 	}
@@ -360,6 +352,9 @@ func upstreamRequest(server string, r, m *dns.Msg) {
 }
 
 func localHandler(w dns.ResponseWriter, r *dns.Msg) {
+	metrics.requests.Inc()
+	metrics.requestSize.Observe(float64(r.Len()))
+
 	_, c := getClient(w)
 	if c == nil {
 		return
@@ -397,6 +392,7 @@ func localHandler(w dns.ResponseWriter, r *dns.Msg) {
 			upstreamRequest(brightgateDNS, pq, m)
 		}
 	}
+	metrics.responseSize.Observe(float64(m.Len()))
 	w.WriteMsg(m)
 
 	logRequest("localHandler", start, c.IPv4, r, m)
@@ -438,6 +434,9 @@ func localAddress(arpa string) bool {
 }
 
 func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
+	metrics.requests.Inc()
+	metrics.requestSize.Observe(float64(r.Len()))
+
 	mac, c := getClient(w)
 	if c == nil {
 		return
@@ -465,6 +464,7 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 					"'%s' for %s\n", hostname, mac)
 				notifyBlockEvent(c, hostname)
 			}
+			metrics.blocked.Inc()
 		} else if q.Qtype == dns.TypePTR && localAddress(q.Name) {
 			hostsMtx.Lock()
 			rec, ok := hosts[q.Name]
@@ -486,6 +486,7 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 		// shrinking the packet before it gets put on the wire.
 		m.Compress = true
 	}
+	metrics.responseSize.Observe(float64(m.Len()))
 	w.WriteMsg(m)
 	logRequest("proxyHandler", start, c.IPv4, r, m)
 }
@@ -667,10 +668,6 @@ func initNetwork() {
 	}
 }
 
-func init() {
-	prometheus.MustRegister(latencies)
-}
-
 func dnsListener(protocol string) {
 	srv := &dns.Server{Addr: ":53", Net: protocol}
 	if err := srv.ListenAndServe(); err != nil {
@@ -678,27 +675,66 @@ func dnsListener(protocol string) {
 	}
 }
 
+func prometheusInit() {
+	metrics.requests = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "dns4d_requests",
+		Help: "dns requests handled",
+	})
+	metrics.blocked = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "dns4d_blocked",
+		Help: "suspicious dns requests blocked",
+	})
+	metrics.upstreamCnt = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "dns4d_upstream_cnt",
+		Help: "dns requests forwarded to upstream resolver",
+	})
+	metrics.upstreamFailures = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "dns4d_upstream_failures",
+		Help: "upstream DNS failures",
+	})
+	metrics.upstreamTimeouts = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "dns4d_upstream_timeouts",
+		Help: "upstream DNS timeouts",
+	})
+	metrics.upstreamLatency = prometheus.NewSummary(prometheus.SummaryOpts{
+		Name: "dns4d_upstream_latency",
+		Help: "upstream query resolution time",
+	})
+	metrics.requestSize = prometheus.NewSummary(prometheus.SummaryOpts{
+		Name: "dns4d_request_size",
+		Help: "dns4d_dns request size (bytes)",
+	})
+	metrics.responseSize = prometheus.NewSummary(prometheus.SummaryOpts{
+		Name: "dns4d_response_size",
+		Help: "dns response size (bytes)",
+	})
+	prometheus.MustRegister(metrics.requests)
+	prometheus.MustRegister(metrics.blocked)
+	prometheus.MustRegister(metrics.upstreamCnt)
+	prometheus.MustRegister(metrics.upstreamFailures)
+	prometheus.MustRegister(metrics.upstreamTimeouts)
+	prometheus.MustRegister(metrics.upstreamLatency)
+	prometheus.MustRegister(metrics.requestSize)
+	prometheus.MustRegister(metrics.responseSize)
+
+	http.Handle("/metrics", promhttp.Handler())
+	go http.ListenAndServe(base_def.DNSD_PROMETHEUS_PORT, nil)
+}
+
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-
-	mcpd, err := mcp.New(pname)
-	if err != nil {
-		log.Printf("cannot connect to mcp\n")
-	}
-
-	// Need to have certain network capabilities.
-	// priv_net_bind_service = prctl.cap_effective.net_bind_service
-	// if not priv_net_bind_service:
-	//     logging.warning("require CAP_NET_BIND_SERVICE to bind DHCP server port")
-	//     sys.exit(1)
 
 	flag.Usage = func() {
 		flag.PrintDefaults()
 	}
 	flag.Parse()
 
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(*addr, nil)
+	mcpd, err := mcp.New(pname)
+	if err != nil {
+		log.Printf("cannot connect to mcp\n")
+	}
+
+	prometheusInit()
 
 	brokerd = broker.New(pname)
 	defer brokerd.Fini()

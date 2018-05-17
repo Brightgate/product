@@ -182,6 +182,7 @@ func checkBlock(dev net.HardwareAddr, ip net.IP) {
 		log.Printf("%v is talking with blocked IP %v\n", dev, ip)
 		activeBlocks[addr] = struct{}{}
 		notifyBlockEvent(dev, ip)
+		metrics.blockedIPs.Inc()
 
 		// Create a property for this IP, which will cause networkd to
 		// add a new firewall rule blocking it.  We set an expiration

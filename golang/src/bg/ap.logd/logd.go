@@ -39,16 +39,19 @@ import (
 )
 
 var (
-	addr = flag.String("listen-address", base_def.LOGD_PROMETHEUS_PORT,
-		"The address to listen on for HTTP requests.")
 	logDir  = flag.String("logdir", "", "Log file directory")
 	logFile *os.File
 
-	eventsHandled = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "events_handled",
-			Help: "Number of events logged.",
-		})
+	metrics struct {
+		pingEvents      prometheus.Counter
+		configEvents    prometheus.Counter
+		entityEvents    prometheus.Counter
+		errorEvents     prometheus.Counter
+		exceptionEvents prometheus.Counter
+		requestEvents   prometheus.Counter
+		resourceEvents  prometheus.Counter
+		identityEvents  prometheus.Counter
+	}
 )
 
 const pname = "ap.logd"
@@ -57,28 +60,28 @@ func handlePing(event []byte) {
 	ping := &base_msg.EventPing{}
 	proto.Unmarshal(event, ping)
 	log.Printf("[sys.ping] %v", ping)
-	eventsHandled.Inc()
+	metrics.pingEvents.Inc()
 }
 
 func handleConfig(event []byte) {
 	config := &base_msg.EventConfig{}
 	proto.Unmarshal(event, config)
 	log.Printf("[sys.config] %v", config)
-	eventsHandled.Inc()
+	metrics.configEvents.Inc()
 }
 
 func handleEntity(event []byte) {
 	entity := &base_msg.EventNetEntity{}
 	proto.Unmarshal(event, entity)
 	log.Printf("[net.entity] %v", entity)
-	eventsHandled.Inc()
+	metrics.entityEvents.Inc()
 }
 
 func handleError(event []byte) {
 	syserror := &base_msg.EventSysError{}
 	proto.Unmarshal(event, syserror)
 	log.Printf("[sys.error] %v", syserror)
-	eventsHandled.Inc()
+	metrics.errorEvents.Inc()
 }
 
 func extendMsg(msg *string, field, value string) {
@@ -93,7 +96,7 @@ func handleException(event []byte) {
 	exception := &base_msg.EventNetException{}
 	proto.Unmarshal(event, exception)
 	log.Printf("[net.exception] %v", exception)
-	eventsHandled.Inc()
+	metrics.exceptionEvents.Inc()
 
 	// Construct a user-friendly message to push to the system log
 	time := aputil.ProtobufToTime(exception.Timestamp)
@@ -142,21 +145,21 @@ func handleResource(event []byte) {
 	resource := &base_msg.EventNetResource{}
 	proto.Unmarshal(event, resource)
 	log.Printf("[net.resource] %v", resource)
-	eventsHandled.Inc()
+	metrics.resourceEvents.Inc()
 }
 
 func handleRequest(event []byte) {
 	request := &base_msg.EventNetRequest{}
 	proto.Unmarshal(event, request)
 	log.Printf("[net.request] %v", request)
-	eventsHandled.Inc()
+	metrics.requestEvents.Inc()
 }
 
 func handleIdentity(event []byte) {
 	identity := &base_msg.EventNetIdentity{}
 	proto.Unmarshal(event, identity)
 	log.Printf("[net.identity] %v", identity)
-	eventsHandled.Inc()
+	metrics.identityEvents.Inc()
 }
 
 func openLog(path string) (*os.File, error) {
@@ -191,28 +194,69 @@ func reopenLogfile() error {
 	return nil
 }
 
+func prometheusInit() {
+	metrics.pingEvents = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "logd_ping_events",
+		Help: "Number of Ping events logged.",
+	})
+	metrics.configEvents = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "logd_config_events",
+		Help: "Number of Config events logged.",
+	})
+	metrics.entityEvents = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "logd_entity_events",
+		Help: "Number of NetEntity events logged.",
+	})
+	metrics.errorEvents = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "logd_error_events",
+		Help: "Number of SysError events logged.",
+	})
+	metrics.exceptionEvents = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "logd_exception_events",
+		Help: "Number of NetException events logged.",
+	})
+	metrics.requestEvents = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "logd_request_events",
+		Help: "Number of NetRequest events logged.",
+	})
+	metrics.resourceEvents = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "logd_resource_events",
+		Help: "Number of NetResource events logged.",
+	})
+	metrics.identityEvents = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "logd_identity_events",
+		Help: "Number of NetIdentity events logged.",
+	})
+	prometheus.MustRegister(metrics.pingEvents)
+	prometheus.MustRegister(metrics.configEvents)
+	prometheus.MustRegister(metrics.entityEvents)
+	prometheus.MustRegister(metrics.errorEvents)
+	prometheus.MustRegister(metrics.exceptionEvents)
+	prometheus.MustRegister(metrics.requestEvents)
+	prometheus.MustRegister(metrics.resourceEvents)
+	prometheus.MustRegister(metrics.identityEvents)
+
+	http.Handle("/metrics", promhttp.Handler())
+	go http.ListenAndServe(base_def.LOGD_PROMETHEUS_PORT, nil)
+}
+
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
 	flag.Parse()
-	*logDir = aputil.ExpandDirPath(*logDir)
-
-	err := reopenLogfile()
-	if err != nil {
-		log.Fatalf("Failed to setup logging: %s\n", err)
-	}
 
 	mcpd, err := mcp.New(pname)
 	if err != nil {
 		log.Println("Failed to connect to mcp")
 	}
 
-	prometheus.MustRegister(eventsHandled)
+	*logDir = aputil.ExpandDirPath(*logDir)
+	if err = reopenLogfile(); err != nil {
+		log.Printf("Failed to setup logging: %s\n", err)
+		os.Exit(1)
+	}
 
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(*addr, nil)
-
-	log.Println("prometheus client launched")
+	prometheusInit()
 
 	b := broker.New(pname)
 	b.Handle(base_def.TOPIC_PING, handlePing)

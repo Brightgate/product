@@ -37,6 +37,8 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/miekg/dns"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/ipv4"
 )
 
@@ -86,6 +88,15 @@ var (
 
 	ssdpSearches   *ssdpSearchState
 	ssdpSearchLock sync.Mutex
+
+	metrics struct {
+		mdnsRequests  prometheus.Counter
+		mdnsReplies   prometheus.Counter
+		ssdpSearches  prometheus.Counter
+		ssdpTimeouts  prometheus.Counter
+		ssdpNotifies  prometheus.Counter
+		ssdpResponses prometheus.Counter
+	}
 )
 
 type ssdpSearchState struct {
@@ -178,6 +189,7 @@ func mDNSHandler(source *endpoint, b []byte) error {
 	responses := make([]string, 0)
 
 	if len(msg.Question) > 0 {
+		metrics.mdnsRequests.Inc()
 		debugLog("mDNS request from %v\n", source.ip)
 		for _, question := range msg.Question {
 			debugLog("   %s\n", question.String())
@@ -186,6 +198,7 @@ func mDNSHandler(source *endpoint, b []byte) error {
 	}
 
 	if len(msg.Answer) > 0 {
+		metrics.mdnsReplies.Inc()
 		debugLog("mDNS reply from %v\n", source.ip)
 		for _, answer := range msg.Answer {
 			debugLog("   %s\n", answer.String())
@@ -304,6 +317,7 @@ func ssdpResponseRelay(sss *ssdpSearchState) {
 				log.Printf("Failed to read from %v: %v\n",
 					sss.listener.LocalAddr(), err)
 			}
+			metrics.ssdpTimeouts.Inc()
 			return
 		}
 		if err = ssdpResponseCheck(bytes.NewReader(buf)); err != nil {
@@ -312,6 +326,7 @@ func ssdpResponseRelay(sss *ssdpSearchState) {
 		}
 
 		debugLog("Forwarding SSDP response from/to %v\n", src, addr)
+		metrics.ssdpResponses.Inc()
 		l, err := sss.requestor.WriteTo(buf[:n], nil, addr)
 		if err != nil {
 			log.Printf("    Forward to %v failed: %v\n", addr, err)
@@ -377,6 +392,9 @@ func ssdpHandler(source *endpoint, buf []byte) error {
 		} else {
 			err = fmt.Errorf("unrecognized M-SEARCH uri: %s", uri)
 		}
+		if err == nil {
+			metrics.ssdpSearches.Inc()
+		}
 	} else if req.Method == "NOTIFY" {
 		nts := req.Header.Get("NTS")
 		if nts == "ssdp:alive" {
@@ -390,6 +408,9 @@ func ssdpHandler(source *endpoint, buf []byte) error {
 		} else {
 			err = fmt.Errorf("unrecognized NOTIFY nts: %s", nts)
 
+		}
+		if err == nil {
+			metrics.ssdpNotifies.Inc()
 		}
 	} else {
 		err = fmt.Errorf("invalid HTTP Method: %s (%v)", req.Method, req)
@@ -594,6 +615,42 @@ func initInterfaces() {
 	}
 }
 
+func prometheusInit() {
+	metrics.mdnsRequests = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "relayd_mdns_requests",
+		Help: "mDNS requests handled",
+	})
+	metrics.mdnsReplies = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "relayd_mdns_replies",
+		Help: "mDNS replies handled",
+	})
+	metrics.ssdpSearches = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "relayd_ssdp_searches",
+		Help: "SSDP search requests handled",
+	})
+	metrics.ssdpTimeouts = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "relayd_ssdp_timeouts",
+		Help: "SSDP search timeouts",
+	})
+	metrics.ssdpNotifies = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "relayd_ssdp_notifies",
+		Help: "SSDP notifies handled",
+	})
+	metrics.ssdpResponses = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "relayd_ssdp_requests",
+		Help: "SSDP requests handled",
+	})
+
+	prometheus.MustRegister(metrics.mdnsRequests)
+	prometheus.MustRegister(metrics.mdnsReplies)
+	prometheus.MustRegister(metrics.ssdpSearches)
+	prometheus.MustRegister(metrics.ssdpNotifies)
+	prometheus.MustRegister(metrics.ssdpResponses)
+
+	http.Handle("/metrics", promhttp.Handler())
+	go http.ListenAndServe(base_def.RELAYD_PROMETHEUS_PORT, nil)
+}
+
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
@@ -604,6 +661,7 @@ func main() {
 
 	flag.Parse()
 
+	prometheusInit()
 	brokerd = broker.New(pname)
 	defer brokerd.Fini()
 

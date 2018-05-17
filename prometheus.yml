@@ -5,5 +5,5 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:3200", "localhost:3201", "localhost:3202",
                   "localhost:3203", "localhost:3204", "localhost:3205",
-                  "localhost:3207", "localhost:3208", "localhost:3209",
-                  "localhost:3210"]
+                  "localhost:3206", "localhost:3207", "localhost:3208",
+                  "localhost:3209", "localhost:3210"]

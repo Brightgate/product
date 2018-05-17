@@ -44,16 +44,8 @@ import (
 )
 
 var (
-	addr = flag.String("listen-address", base_def.IOTD_PROMETHEUS_PORT,
-		"The address to listen on for HTTP requests.")
 	logDir  = flag.String("logdir", "", "Log file directory")
 	logFile *os.File
-
-	eventsHandled = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "events_handled",
-			Help: "Number of events logged.",
-		})
 
 	credPathFlag = flag.String("cred-path", "etc/secret/iotcore/iotcore.secret.json", "JSON credential file for this IoTCore device")
 
@@ -62,6 +54,10 @@ var (
 	slogger     *zap.SugaredLogger
 	zapConfig   zap.Config
 	globalLevel zap.AtomicLevel
+
+	metrics struct {
+		events prometheus.Counter
+	}
 )
 
 const pname = "ap.iotd"
@@ -105,7 +101,7 @@ func handleNetException(ctx context.Context, iotc iotcore.IoTMQTTClient, event [
 		return errors.Wrap(err, "Failed to unmarshal exception")
 	}
 	slogger.Infof("[net.exception] %v", exception)
-	eventsHandled.Inc()
+	metrics.events.Inc()
 
 	t := aputil.ProtobufToTime(exception.Timestamp)
 	timestamp := t.Format(time.RFC3339)
@@ -174,6 +170,17 @@ func getCred() (*iotcore.IoTCredential, error) {
 	return c, err
 }
 
+func prometheusInit() {
+	metrics.events = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "iotd_events_handled",
+		Help: "Number of events logged.",
+	})
+	prometheus.MustRegister(metrics.events)
+	http.Handle("/metrics", promhttp.Handler())
+	go http.ListenAndServe(base_def.IOTD_PROMETHEUS_PORT, nil)
+	slogger.Debugf("prometheus client launched")
+}
+
 func main() {
 	var wg sync.WaitGroup
 
@@ -192,11 +199,7 @@ func main() {
 		slogger.Fatalf("Failed to build credential: %s", err)
 	}
 
-	prometheus.MustRegister(eventsHandled)
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(*addr, nil)
-	slogger.Debugf("prometheus client launched")
-
+	prometheusInit()
 	b := broker.New(pname)
 	defer b.Fini()
 

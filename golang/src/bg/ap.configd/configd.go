@@ -62,10 +62,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/satori/uuid"
-
-	// Ubuntu: requires libzmq3-dev, which is 0MQ 4.2.1.
 	zmq "github.com/pebbe/zmq4"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/satori/uuid"
 )
 
 const (
@@ -76,6 +75,14 @@ const (
 
 	minConfigVersion = 10
 )
+
+var metrics struct {
+	getCounts prometheus.Counter
+	setCounts prometheus.Counter
+	delCounts prometheus.Counter
+	expCounts prometheus.Counter
+	treeSize  prometheus.Gauge
+}
 
 // Allow for significant variation in the processing of subtrees
 type subtreeOps struct {
@@ -154,10 +161,7 @@ type pnodeQueue []*pnode
 
 var (
 	propTreeRoot = pnode{name: "root"}
-	addr         = flag.String("listen-address",
-		base_def.CONFIGD_PROMETHEUS_PORT,
-		"The address to listen on for HTTP requests.")
-	propdir = flag.String("propdir", "./",
+	propdir      = flag.String("propdir", "./",
 		"directory in which the property files should be stored")
 	verbose = flag.Bool("v", false, "verbose log output")
 
@@ -245,6 +249,7 @@ func expirationHandler() {
 					next.name, time.Now())
 			}
 			heap.Pop(&expirationHeap)
+			metrics.expCounts.Inc()
 
 			next.index = -1
 			next.Expires = nil
@@ -922,6 +927,7 @@ func propTreeStore() error {
 	if err != nil {
 		log.Fatalf("Failed to construct properties JSON: %v\n", err)
 	}
+	metrics.treeSize.Set(float64(len(s)))
 
 	if aputil.FileExists(propTreeFile) {
 		/*
@@ -944,6 +950,7 @@ func propTreeStore() error {
 func propTreeImport(data []byte) error {
 	var newRoot pnode
 
+	metrics.treeSize.Set(float64(len(data)))
 	err := json.Unmarshal(data, &newRoot)
 	if err == nil {
 		patchTree("@", &newRoot, "")
@@ -1167,6 +1174,7 @@ func executePropOps(ops []*base_msg.ConfigQuery_ConfigOp) (string, error) {
 
 		switch *op.Operation {
 		case base_msg.ConfigQuery_ConfigOp_GET:
+			metrics.getCounts.Inc()
 			if len(ops) > 1 {
 				err = fmt.Errorf("only single-GET " +
 					"operations are supported")
@@ -1175,12 +1183,15 @@ func executePropOps(ops []*base_msg.ConfigQuery_ConfigOp) (string, error) {
 			}
 
 		case base_msg.ConfigQuery_ConfigOp_CREATE:
+			metrics.setCounts.Inc()
 			err = opsVector.set(prop, val, expires, true)
 
 		case base_msg.ConfigQuery_ConfigOp_SET:
+			metrics.setCounts.Inc()
 			err = opsVector.set(prop, val, expires, false)
 
 		case base_msg.ConfigQuery_ConfigOp_DELETE:
+			metrics.delCounts.Inc()
 			err = opsVector.delete(prop)
 
 		case base_msg.ConfigQuery_ConfigOp_PING:
@@ -1268,29 +1279,60 @@ func eventLoop(incoming *zmq.Socket) {
 	}
 }
 
+func prometheusInit() {
+	metrics.getCounts = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "configd_gets",
+		Help: "get operations",
+	})
+	metrics.setCounts = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "configd_sets",
+		Help: "set operations",
+	})
+	metrics.delCounts = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "configd_deletes",
+		Help: "delete operations",
+	})
+	metrics.expCounts = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "configd_expires",
+		Help: "property expirations",
+	})
+	metrics.treeSize = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "configd_tree_size",
+		Help: "size of config tree",
+	})
+
+	prometheus.MustRegister(metrics.getCounts)
+	prometheus.MustRegister(metrics.setCounts)
+	prometheus.MustRegister(metrics.delCounts)
+	prometheus.MustRegister(metrics.expCounts)
+
+	prometheus.MustRegister(metrics.treeSize)
+	http.Handle("/metrics", promhttp.Handler())
+	go http.ListenAndServe(base_def.CONFIGD_PROMETHEUS_PORT, nil)
+}
+
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
 	flag.Parse()
-	if !strings.HasSuffix(*propdir, "/") {
-		*propdir = *propdir + "/"
-	}
-	*propdir = aputil.ExpandDirPath(*propdir)
 
 	mcpd, err := mcp.New(pname)
 	if err != nil {
 		log.Printf("Failed to connect to mcp\n")
 	}
 
+	if !strings.HasSuffix(*propdir, "/") {
+		*propdir = *propdir + "/"
+	}
+	*propdir = aputil.ExpandDirPath(*propdir)
 	if !aputil.FileExists(*propdir) {
-		log.Fatalf("Properties directory %s doesn't exist", *propdir)
+		log.Printf("Properties directory %s doesn't exist", *propdir)
+		mcpd.SetState(mcp.BROKEN)
+		os.Exit(1)
 	}
 
+	prometheusInit()
 	expirationInit()
-
-	// Prometheus setup
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(*addr, nil)
 
 	brokerd = broker.New(pname)
 	brokerd.Handle(base_def.TOPIC_ENTITY, entityHandler)
@@ -1308,7 +1350,9 @@ func main() {
 	incoming, _ := zmq.NewSocket(zmq.REP)
 	port := base_def.INCOMING_ZMQ_URL + base_def.CONFIGD_ZMQ_REP_PORT
 	if err = incoming.Bind(port); err != nil {
-		log.Fatalf("Failed to bind incoming port %s: %v\n", port, err)
+		log.Printf("Failed to bind incoming port %s: %v\n", port, err)
+		mcpd.SetState(mcp.BROKEN)
+		os.Exit(1)
 	}
 	log.Printf("Listening on %s\n", port)
 
