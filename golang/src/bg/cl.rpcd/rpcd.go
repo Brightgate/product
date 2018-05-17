@@ -52,6 +52,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	_ "google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/peer"
 )
 
@@ -384,12 +385,6 @@ func main() {
 		opts = append(opts, grpc.Creds(credentials.NewTLS(&tlsc)))
 	}
 
-	// XXX RPCCompressor() and RPCDecompressor() will be deprecated in the next
-	// grpc release. Use UseCompressor() instead.
-	opts = append(opts,
-		grpc.RPCCompressor(grpc.NewGZIPCompressor()),
-		grpc.RPCDecompressor(grpc.NewGZIPDecompressor()))
-
 	grpcServer := grpc.NewServer(opts...)
 
 	ubServer := newUpbeatServer()
@@ -402,6 +397,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	slog.Infof("Listening on port %v", grpcPort)
 
 	go grpcServer.Serve(grpcConn)
 

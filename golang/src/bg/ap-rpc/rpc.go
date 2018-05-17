@@ -47,8 +47,8 @@ import (
 
 type cfg struct {
 	// Override configuration value.
-	LocalMode bool
-	SrvURL    string
+	LocalMode bool   `envcfg:"LOCAL_MODE"`
+	SrvURL    string `envcfg:"SRV_URL"`
 }
 
 const pname = "ap-rpc"
@@ -145,12 +145,7 @@ func dial() (*grpc.ClientConn, error) {
 		opts = append(opts, grpc.WithInsecure())
 	}
 
-	// XXX WithCompressor() and WithDecompressor() will be deprecated in the
-	// next grpc release. Use UseCompressor() instead.
-	opts = append(opts,
-		grpc.WithUserAgent(pname),
-		grpc.WithCompressor(grpc.NewGZIPCompressor()),
-		grpc.WithDecompressor(grpc.NewGZIPDecompressor()))
+	opts = append(opts, grpc.WithUserAgent(pname))
 
 	conn, err := grpc.Dial(serverAddr, opts...)
 	if err != nil {
@@ -207,10 +202,8 @@ func sendChanged(client cloud_rpc.InventoryClient, changed *base_msg.DeviceInven
 		Inventory: changed,
 	}
 
-	// XXX Use compression when it's available in the next grpc release.
-	// opts := []grpc.CallOption{grpc.UseCompressor("gzip")}
-	// response, err := client.Upcall(context.Background(), report, opts...)
-	response, err := client.Upcall(context.Background(), report)
+	response, err := client.Upcall(context.Background(), report,
+		grpc.UseCompressor("gzip"))
 	if err != nil {
 		grpclog.Fatalf("%v.Upcall(_) = _, %v: ", client, err)
 	}
@@ -328,6 +321,7 @@ func main() {
 	}
 
 	envcfg.Unmarshal(&environ)
+	log.Printf("environ: %+v", environ)
 
 	config, err := apcfg.NewConfig(nil, pname)
 	if err != nil {
