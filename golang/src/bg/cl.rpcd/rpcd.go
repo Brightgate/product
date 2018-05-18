@@ -42,7 +42,6 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/tomazk/envcfg"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"go.uber.org/zap"
@@ -54,6 +53,11 @@ import (
 	"google.golang.org/grpc/credentials"
 	_ "google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/peer"
+
+	"github.com/grpc-ecosystem/go-grpc-middleware"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
+	"github.com/grpc-ecosystem/go-grpc-middleware/tags"
+	"github.com/grpc-ecosystem/go-grpc-prometheus"
 )
 
 // Cfg contains the environment variable-based configuration settings
@@ -64,7 +68,7 @@ type Cfg struct {
 	// hierarchy.
 	CertHostname   string `envcfg:"B10E_CERT_HOSTNAME"`
 	PrometheusPort string `envcfg:"B10E_CLRPCD_PROMETHEUS_PORT"`
-	LocalMode      bool   `envcfg:"LOCAL_MODE"`
+	LocalMode      bool   `envcfg:"B10E_CLRPCD_LOCAL_MODE"`
 }
 
 type applianceInfo struct {
@@ -89,15 +93,6 @@ var (
 	serverKeyPair  *tls.Certificate
 	serverCertPool *x509.CertPool
 	serverAddr     string
-
-	latencies = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "upcall_seconds",
-		Help: "GRPC upcall time",
-	})
-	invalidUpcalls = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "upcall_invalids",
-		Help: "GRPC upcall invalid HMAC attempts",
-	})
 )
 
 func validhmac(received []byte, data string) bool {
@@ -142,6 +137,11 @@ func writeInfo(devInfo *base_msg.DeviceInfo, basePath string) (string, error) {
 }
 
 func loggerFromCtx(ctx context.Context) (*zap.Logger, *zap.SugaredLogger) {
+	// An alternative here is to attach the logger to the context and
+	// get it out that way.
+	// In fact, ctx_zap has already done this for us, however the grpc zap
+	// child logger adds an avalanche of information to the logger, and for
+	// now it seems a bit much.
 	log, _ := daemonutils.GetLogs()
 	if ctx != nil {
 		pr, ok := peer.FromContext(ctx)
@@ -157,12 +157,10 @@ func (i *inventoryServer) Upcall(ctx context.Context, req *cloud_rpc.InventoryRe
 	_, slog := loggerFromCtx(ctx)
 
 	if req.HMAC == nil || req.Uuid == nil {
-		invalidUpcalls.Inc()
 		return nil, grpc.Errorf(codes.InvalidArgument, "req missing needed parameters")
 	}
 
 	if !validhmac(req.GetHMAC(), req.Inventory.String()) {
-		invalidUpcalls.Inc()
 		return nil, grpc.Errorf(codes.Unauthenticated, "valid hmac required")
 	}
 
@@ -211,7 +209,6 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 
 	if req.HMAC == nil || req.WanHwaddr == nil ||
 		req.UptimeElapsed == nil || req.Uuid == nil {
-		invalidUpcalls.Inc()
 		return nil, grpc.Errorf(codes.InvalidArgument, "req missing parameters")
 	}
 
@@ -222,7 +219,6 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 	data := fmt.Sprintf("%x %d", req.GetWanHwaddr(), req.GetUptimeElapsed())
 	if !validhmac(req.GetHMAC(), data) {
 		// Discard invalid HMAC messages!
-		invalidUpcalls.Inc()
 		return nil, grpc.Errorf(codes.Unauthenticated, "valid hmac required")
 	}
 
@@ -285,8 +281,6 @@ func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest)
 		}
 	}
 
-	latencies.Observe(time.Since(lt).Seconds())
-
 	// Formulate a response.
 	res := cloud_rpc.UpcallResponse{
 		UpcallElapsed: proto.Int64(time.Now().Sub(lt).Nanoseconds()),
@@ -299,11 +293,6 @@ func newUpbeatServer() *upbeatServer {
 	u := new(upbeatServer)
 	u.Init()
 	return u
-}
-
-func init() {
-	prometheus.MustRegister(latencies)
-	prometheus.MustRegister(invalidUpcalls)
 }
 
 func main() {
@@ -324,12 +313,6 @@ func main() {
 	log, slog = daemonutils.ResetupLogs()
 
 	slog.Infow(pname+" starting", "args", os.Args, "envcfg", environ)
-
-	if len(environ.PrometheusPort) != 0 {
-		http.Handle("/metrics", promhttp.Handler())
-		go http.ListenAndServe(environ.PrometheusPort, nil)
-		slog.Info("prometheus client launched")
-	}
 
 	// It is bad if B10E_CERT_HOSTNAME is not defined.
 	// It is unfortunate if B10E_CERT_HOSTNAME is not defined.
@@ -385,6 +368,18 @@ func main() {
 		opts = append(opts, grpc.Creds(credentials.NewTLS(&tlsc)))
 	}
 
+	grpc_zap.ReplaceGrpcLogger(log)
+	opts = append(opts,
+		grpc_middleware.WithStreamServerChain(
+			grpc_ctxtags.StreamServerInterceptor(),
+			grpc_zap.StreamServerInterceptor(log),
+			grpc_prometheus.StreamServerInterceptor),
+		grpc_middleware.WithUnaryServerChain(
+			grpc_ctxtags.UnaryServerInterceptor(),
+			grpc_zap.UnaryServerInterceptor(log),
+			grpc_prometheus.UnaryServerInterceptor),
+	)
+
 	grpcServer := grpc.NewServer(opts...)
 
 	ubServer := newUpbeatServer()
@@ -392,6 +387,18 @@ func main() {
 
 	invServer := newInventoryServer()
 	cloud_rpc.RegisterInventoryServer(grpcServer, invServer)
+
+	if len(environ.PrometheusPort) != 0 {
+		// Documentation notes that this is somewhat expensive
+		grpc_prometheus.EnableHandlingTimeHistogram()
+		grpc_prometheus.Register(grpcServer)
+
+		http.Handle("/metrics", promhttp.Handler())
+		go http.ListenAndServe(environ.PrometheusPort, nil)
+		slog.Infof("prometheus launched on port %v", environ.PrometheusPort)
+	} else {
+		slog.Warnf("prometheus disabled")
+	}
 
 	grpcConn, err := net.Listen("tcp", grpcPort)
 	if err != nil {

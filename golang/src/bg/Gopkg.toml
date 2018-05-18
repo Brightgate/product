@@ -116,3 +116,11 @@
 [[constraint]]
   name = "github.com/NYTimes/gziphandler"
   version = "1.0.1"
+
+[[constraint]]
+  name = "github.com/grpc-ecosystem/go-grpc-middleware"
+  version = "1.0.0"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/grpc-ecosystem/go-grpc-prometheus"

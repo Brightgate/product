@@ -56,9 +56,9 @@ const pname = "ap-rpc"
 // gRPC has a default maximum message size of 4MiB
 const msgsize = 2097152
 
-var services = map[string]bool{
-	"upbeat":    true,
-	"inventory": true,
+var services = map[string]func(context.Context, *grpc.ClientConn){
+	"upbeat":    sendUpbeat,
+	"inventory": sendInventory,
 }
 
 var (
@@ -154,7 +154,7 @@ func dial() (*grpc.ClientConn, error) {
 	return conn, nil
 }
 
-func sendUpbeat() {
+func sendUpbeat(ctx context.Context, conn *grpc.ClientConn) {
 	var elapsed time.Duration
 
 	// Retrieve appliance uptime.
@@ -174,12 +174,6 @@ func sendUpbeat() {
 		ComponentVersion: versions,
 		NetHostCount:     proto.Int32(0), // XXX not finished
 	}
-
-	conn, err := dial()
-	if err != nil {
-		grpclog.Fatalf("dial() failed: %v", err)
-	}
-	defer conn.Close()
 
 	client := cloud_rpc.NewUpbeatClient(conn)
 
@@ -212,7 +206,7 @@ func sendChanged(client cloud_rpc.InventoryClient, changed *base_msg.DeviceInven
 	grpclog.Println(response)
 }
 
-func sendInventory() {
+func sendInventory(ctx context.Context, conn *grpc.ClientConn) {
 	invPath := filepath.Join(*aproot, "/var/spool/identifierd/")
 	manPath := filepath.Join(*aproot, "/var/spool/rpc/")
 	manFile := filepath.Join(manPath, "identifierd.json")
@@ -236,12 +230,6 @@ func sendInventory() {
 		}
 	}
 
-	// Send the new inventories
-	conn, err := dial()
-	if err != nil {
-		grpclog.Fatalf("dial() failed: %v", err)
-	}
-	defer conn.Close()
 	client := cloud_rpc.NewInventoryClient(conn)
 
 	changed := &base_msg.DeviceInventory{
@@ -316,7 +304,8 @@ func main() {
 		log.Fatalf("Service name required.\n")
 	}
 	svc := flag.Args()[0]
-	if !services[svc] {
+	svcFunc, ok := services[svc]
+	if !ok {
 		log.Fatalf("Unknown service %s\n", svc)
 	}
 
@@ -345,10 +334,12 @@ func main() {
 		serverAddr = environ.SrvURL
 	}
 
-	switch svc {
-	case "upbeat":
-		sendUpbeat()
-	case "inventory":
-		sendInventory()
+	ctx := context.Background()
+
+	conn, err := dial()
+	if err != nil {
+		grpclog.Fatalf("dial() failed: %v", err)
 	}
+	defer conn.Close()
+	svcFunc(ctx, conn)
 }
