@@ -425,9 +425,7 @@ func main() {
 	configd.HandleChange(`^@/users/.*$`, configUserChanged)
 	configd.HandleChange(`^@/network/radius.*$`, configNetworkRadiusChanged)
 
-	if mcpd != nil {
-		mcpd.SetState(mcp.ONLINE)
-	}
+	mcpd.SetState(mcp.ONLINE)
 
 	log.Printf("secret '%v'\n", secret)
 

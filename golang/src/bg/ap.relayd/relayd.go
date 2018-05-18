@@ -617,9 +617,7 @@ func main() {
 		go mrelay(s)
 	}
 
-	if mcpd != nil {
-		mcpd.SetState(mcp.ONLINE)
-	}
+	mcpd.SetState(mcp.ONLINE)
 
 	sig := make(chan os.Signal)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)

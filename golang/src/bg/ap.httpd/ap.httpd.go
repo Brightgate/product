@@ -304,9 +304,7 @@ func main() {
 	}
 
 	if rings == nil {
-		if mcpd != nil {
-			mcpd.SetState(mcp.BROKEN)
-		}
+		mcpd.SetState(mcp.BROKEN)
 		if err != nil {
 			log.Fatalf("cannot connect to configd: %v\n", err)
 		} else {
@@ -316,9 +314,7 @@ func main() {
 
 	domainname, err = config.GetDomain()
 	if err != nil {
-		if mcpd != nil {
-			mcpd.SetState(mcp.BROKEN)
-		}
+		mcpd.SetState(mcp.BROKEN)
 		log.Fatalf("failed to fetch gateway domain: %v\n", err)
 	}
 	demoHostname := fmt.Sprintf("gateway.%s", domainname)
@@ -416,9 +412,7 @@ func main() {
 		}()
 	}
 
-	if mcpd != nil {
-		mcpd.SetState(mcp.ONLINE)
-	}
+	mcpd.SetState(mcp.ONLINE)
 
 	sig := make(chan os.Signal, 2)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)

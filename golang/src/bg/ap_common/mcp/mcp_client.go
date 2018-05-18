@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -11,8 +11,12 @@
 package mcp
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 	"os"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -44,38 +48,40 @@ const (
 	NODAEMON = base_msg.MCPResponse_NO_DAEMON
 	BADVER   = base_msg.MCPResponse_BADVERSION
 
-	PING = base_msg.MCPRequest_PING
-	GET  = base_msg.MCPRequest_GET
-	SET  = base_msg.MCPRequest_SET
-	DO   = base_msg.MCPRequest_DO
+	PING   = base_msg.MCPRequest_PING
+	GET    = base_msg.MCPRequest_GET
+	SET    = base_msg.MCPRequest_SET
+	DO     = base_msg.MCPRequest_DO
+	UPDATE = base_msg.MCPRequest_UPDATE
 )
 
 // Daemons must be in one of the following states
 const (
-	OFFLINE = iota
+	BROKEN = iota
+	OFFLINE
+	BLOCKED
 	STARTING
 	INITING
 	ONLINE
 	STOPPING
-	INACTIVE
-	BROKEN
 )
 
 // States maps the integral value of a daemon's state to a human-readable ascii
 // value
 var States = map[int]string{
+	BROKEN:   "broken",
 	OFFLINE:  "offline",
+	BLOCKED:  "blocked",
 	STARTING: "starting",
 	INITING:  "initializing",
 	ONLINE:   "online",
 	STOPPING: "stopping",
-	BROKEN:   "broken",
-	INACTIVE: "inactive",
 }
 
 // DaemonState describes the current state of a daemon
 type DaemonState struct {
 	Name  string
+	Node  string
 	State int
 	Since time.Time
 	Pid   int
@@ -90,12 +96,27 @@ type DaemonState struct {
 // DaemonList is a slice containing the states for multiple daemons
 type DaemonList []*DaemonState
 
-// New connects to ap.mcp, and returns an opaque handle that can be used for
-// subsequent communication with the daemon.
-func New(name string) (*MCP, error) {
+func (l DaemonList) Len() int {
+	return len(l)
+}
+
+func (l DaemonList) Less(i, j int) bool {
+	return strings.Compare(l[i].Name, l[j].Name) < 0
+}
+
+func (l DaemonList) Swap(i, j int) {
+	l[i], l[j] = l[j], l[i]
+}
+
+// Sort will sort the list of daemons into alphabetical order
+func (l DaemonList) Sort() {
+	sort.Sort(l)
+}
+
+func newConnection(name, url string) (*MCP, error) {
 	var handle *MCP
 
-	port := base_def.LOCAL_ZMQ_URL + base_def.MCP_ZMQ_REP_PORT
+	port := url + base_def.MCP_ZMQ_REP_PORT
 	sendTO := base_def.LOCAL_ZMQ_SEND_TIMEOUT * time.Second
 	recvTO := base_def.LOCAL_ZMQ_RECEIVE_TIMEOUT * time.Second
 
@@ -127,27 +148,37 @@ func New(name string) (*MCP, error) {
 		}
 	}
 
+	if err = handle.Ping(); err != nil {
+		handle = nil
+	}
+
 	return handle, err
 }
 
-func (m *MCP) msg(oc base_msg.MCPRequest_Operation,
-	daemon, command string, state int) (string, error) {
+// New connects to ap.mcp, and returns an opaque handle that can be used for
+// subsequent communication with the daemon.
+func New(name string) (*MCP, error) {
+	return newConnection(name, base_def.LOCAL_ZMQ_URL)
+}
 
-	version := base_msg.Version{Major: proto.Int32(Version)}
-	op := &base_msg.MCPRequest{
-		Timestamp: aputil.NowToProtobuf(),
-		Sender:    proto.String(m.sender),
-		Version:   &version,
-		Debug:     proto.String("-"),
-		Operation: &oc,
-		State:     proto.Int32(int32(state)),
-		Daemon:    proto.String(daemon),
+// NewPeer connects to ap.mcp running on a gateway node, and returns an opaque
+// handle that can be used for subsequent communication with the daemon.
+func NewPeer(name string) (*MCP, error) {
+	if name != "ap.mcp" {
+		log.Printf("Warning: NewPeer() is only intended to be called " +
+			"by ap.mcp on satellite nodes.")
 	}
+	return newConnection(name, base_def.GATEWAY_ZMQ_URL)
+}
 
-	if len(command) > 0 {
-		op.Command = proto.String(command)
+// Close closes the connection to the mcp daemon
+func (m *MCP) Close() {
+	if m != nil {
+		m.socket.Close()
 	}
+}
 
+func (m *MCP) msg(op *base_msg.MCPRequest) (string, error) {
 	data, err := proto.Marshal(op)
 	if err != nil {
 		fmt.Println("Failed to marshal mcp arguments: ", err)
@@ -183,7 +214,7 @@ func (m *MCP) msg(oc base_msg.MCPRequest_Operation,
 				}
 				err = fmt.Errorf("requires version %s", version)
 			default:
-				if oc == GET {
+				if r.State != nil {
 					rval = *r.State
 				}
 			}
@@ -196,13 +227,80 @@ func (m *MCP) msg(oc base_msg.MCPRequest_Operation,
 
 // Ping sends a no-op command to the daemon as a liveness check and as a
 // protocol version check.
-func (m *MCP) Ping(daemon string) (string, error) {
-	return m.msg(PING, "", "", -1)
+func (m *MCP) Ping() error {
+	oc := PING
+	version := base_msg.Version{Major: proto.Int32(Version)}
+	op := &base_msg.MCPRequest{
+		Timestamp: aputil.NowToProtobuf(),
+		Sender:    proto.String(m.sender),
+		Version:   &version,
+		Debug:     proto.String("-"),
+		Operation: &oc,
+	}
+
+	_, err := m.msg(op)
+	return err
+}
+
+// PeerUpdate sends a slice of DaemonState structures representing the states of
+// one or more daemons running on a satellite node.  It returns a different
+// slice of DaemonState structures representing the states of all daemons on the
+// gateway node.
+func (m *MCP) PeerUpdate(lifetime time.Duration,
+	states []*DaemonState) ([]*DaemonState, error) {
+
+	var rval []*DaemonState
+
+	nodeID := aputil.GetNodeID()
+	b, err := json.Marshal(states)
+	if err != nil {
+		err = fmt.Errorf("failed to marshal daemon state: %v", err)
+	} else {
+		oc := UPDATE
+		version := base_msg.Version{Major: proto.Int32(Version)}
+		op := &base_msg.MCPRequest{
+			Timestamp: aputil.NowToProtobuf(),
+			Sender:    proto.String(m.sender),
+			Version:   &version,
+			Debug:     proto.String("-"),
+			State:     proto.String(string(b)),
+			Node:      proto.String(nodeID.String()),
+			Lifetime:  proto.Int32(int32(lifetime.Seconds())),
+			Operation: &oc,
+		}
+		s, rerr := m.msg(op)
+		b = []byte(s)
+		if rerr != nil {
+			err = fmt.Errorf("mcp request failed: %v", err)
+		} else if rerr := json.Unmarshal(b, &rval); rerr != nil {
+			err = fmt.Errorf("failed to unmarshal reply: %v", err)
+		}
+	}
+
+	return rval, err
+}
+
+func (m *MCP) daemonMsg(oc base_msg.MCPRequest_Operation,
+	daemon, command string, state int) (string, error) {
+
+	version := base_msg.Version{Major: proto.Int32(Version)}
+	op := &base_msg.MCPRequest{
+		Timestamp: aputil.NowToProtobuf(),
+		Sender:    proto.String(m.sender),
+		Version:   &version,
+		Debug:     proto.String("-"),
+		Operation: &oc,
+		Daemon:    proto.String(daemon),
+		State:     proto.String(States[state]),
+		Command:   proto.String(command),
+	}
+
+	return m.msg(op)
 }
 
 // GetState will query ap.mcp for the current state of a single daemon.
 func (m *MCP) GetState(daemon string) (string, error) {
-	return m.msg(GET, daemon, "", -1)
+	return m.daemonMsg(GET, daemon, "", -1)
 }
 
 // SetState is used by a daemon to notify ap.mcp of a change in its state
@@ -218,7 +316,7 @@ func (m *MCP) SetState(state int) error {
 	} else if m.daemon == "" {
 		err = fmt.Errorf("only a daemon can update its state")
 	} else {
-		_, err = m.msg(SET, m.daemon, "", state)
+		_, err = m.daemonMsg(SET, m.daemon, "", state)
 	}
 
 	return err
@@ -226,7 +324,7 @@ func (m *MCP) SetState(state int) error {
 
 // Do is used to instruct ap.mcp to initiate an operation on a daemon
 func (m *MCP) Do(daemon, command string) error {
-	_, err := m.msg(DO, daemon, command, -1)
+	_, err := m.daemonMsg(DO, daemon, command, -1)
 
 	return err
 }

@@ -198,5 +198,4 @@ func main() {
 
 	mcpd.SetState(mcp.ONLINE)
 	mainLoop()
-	mcpd.SetState(mcp.OFFLINE)
 }

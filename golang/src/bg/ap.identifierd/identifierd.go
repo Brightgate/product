@@ -505,10 +505,8 @@ func main() {
 		log.Fatalln("failed to mkdir:", err)
 	}
 
-	if mcpd != nil {
-		if err = mcpd.SetState(mcp.ONLINE); err != nil {
-			log.Printf("failed to set status\n")
-		}
+	if err = mcpd.SetState(mcp.ONLINE); err != nil {
+		log.Printf("failed to set status\n")
 	}
 
 	profiler = aputil.NewProfiler(pname)

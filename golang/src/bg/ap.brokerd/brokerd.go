@@ -83,9 +83,7 @@ func main() {
 	}
 	log.Printf("Subscribed on %s\n", port)
 
-	if mcpd != nil {
-		mcpd.SetState(mcp.ONLINE)
-	}
+	mcpd.SetState(mcp.ONLINE)
 
 	go func() {
 		for {
@@ -97,10 +95,8 @@ func main() {
 				break
 			}
 		}
-		if mcpd != nil {
-			mcpd.SetState(mcp.BROKEN)
-			log.Fatalf("Errors coming too quickly.  Giving up.\n")
-		}
+		mcpd.SetState(mcp.BROKEN)
+		log.Fatalf("Errors coming too quickly.  Giving up.\n")
 	}()
 
 	sig := make(chan os.Signal)

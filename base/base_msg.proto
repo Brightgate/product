@@ -81,12 +81,15 @@ message MCPRequest {
 		GET = 2;
 		SET = 3;
 		DO = 4;
+		UPDATE = 5;
 	}
 	required Operation operation = 0x140;
 
-	optional int32 state = 0x141;
+	optional string state = 0x141;
 	optional string command = 0x142;
 	optional string daemon = 0x143;
+	optional string node = 0x144;
+	optional int32 lifetime = 0x145;
 }
 
 // MCPResponse messages are sent by ap.mcp in response to MCPRequest messages

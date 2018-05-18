@@ -1314,5 +1314,4 @@ func main() {
 
 	mcpd.SetState(mcp.ONLINE)
 	eventLoop(incoming)
-	mcpd.SetState(mcp.OFFLINE)
 }

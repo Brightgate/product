@@ -959,7 +959,6 @@ func main() {
 	mcpd.SetState(mcp.ONLINE)
 	mainLoop()
 	log.Printf("shutting down\n")
-	mcpd.SetState(mcp.OFFLINE)
 
 	os.Exit(0)
 }

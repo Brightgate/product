@@ -225,9 +225,7 @@ func main() {
 	b.Handle(base_def.TOPIC_IDENTITY, handleIdentity)
 	defer b.Fini()
 
-	if mcpd != nil {
-		mcpd.SetState(mcp.ONLINE)
-	}
+	mcpd.SetState(mcp.ONLINE)
 
 	sig := make(chan os.Signal)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)

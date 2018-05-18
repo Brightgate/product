@@ -20,7 +20,6 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -45,26 +44,42 @@ type daemon struct {
 	ThirdParty bool     `json:"ThirdParty,omitempty"`
 	Privileged bool
 
-	run         bool
-	going       bool // is being maintained by a goroutine
-	startTime   time.Time
-	setTime     time.Time
-	child       *aputil.Child
-	state       int
-	launchOrder int
+	execpath     string
+	args         []string
+	dependencies []*daemon
+	dependents   []*daemon
+
+	evaluate chan bool
+	goal     chan int
+	state    int
+
+	setTime time.Time
+	child   *aputil.Child
+
 	sync.Mutex
 }
 
 type daemonSet map[string]*daemon
 
-// Allow up to 4 failures in a 1 minute period before giving up
+type remoteDaemonState struct {
+	eol   time.Time
+	state []*mcp.DaemonState
+}
+
 const (
+	pname = "ap.mcp"
+
+	// Allow up to 4 failures in a 1 minute period before giving up
 	failuresAllowed = 4
-	period          = time.Duration(time.Minute)
-	onlineTimeout   = time.Duration(15 * time.Second)
-	nobodyUID       = 65534 // uid for 'nobody'
-	rootUID         = 0     // uid for 'root'
-	pidfile         = "/var/tmp/ap.mcp.pid"
+	restartPeriod   = time.Duration(time.Minute)
+
+	remoteUpdatePeriod = time.Second
+	onlineTimeout      = time.Duration(15 * time.Second)
+	offlineTimeout     = time.Duration(15 * time.Second)
+
+	nobodyUID = 65534 // uid for 'nobody'
+	rootUID   = 0     // uid for 'root'
+	pidfile   = "/var/tmp/ap.mcp.pid"
 )
 
 var (
@@ -76,25 +91,44 @@ var (
 
 	logfile *os.File
 
-	daemons = make(daemonSet)
+	localDaemons  = make(daemonSet)
+	remoteDaemons = make(map[string]remoteDaemonState)
+	daemonLock    sync.RWMutex // Protects the map - not daemon state
+
+	self *daemon
+
+	nodeName        string
+	stateReverseMap map[string]int
 )
 
-var stableStates = map[int]bool{
-	mcp.OFFLINE:  true,
-	mcp.ONLINE:   true,
-	mcp.INACTIVE: true,
-	mcp.BROKEN:   true,
+func (d *daemon) offline() bool {
+	return d.state == mcp.OFFLINE || d.state == mcp.BROKEN
 }
 
-var terminalStates = map[int]bool{
-	mcp.OFFLINE:  true,
-	mcp.INACTIVE: true,
-	mcp.BROKEN:   true,
+func (d *daemon) blocked() bool {
+	for _, dep := range d.dependencies {
+		if dep.state != mcp.ONLINE {
+			return true
+		}
+	}
+
+	return false
 }
 
-func setState(d *daemon, state int) {
-	d.state = state
-	d.setTime = time.Now()
+func (d *daemon) setState(state int) {
+	if d.state != state {
+		if *verbose {
+			log.Printf("%s transitioning from %s to %s\n", d.Name,
+				mcp.States[d.state], mcp.States[state])
+		}
+
+		d.state = state
+		d.setTime = time.Now()
+		d.evaluate <- true
+		for _, dep := range d.dependents {
+			dep.evaluate <- true
+		}
+	}
 }
 
 //
@@ -105,7 +139,7 @@ func setState(d *daemon, state int) {
 func selectTargets(name *string) daemonSet {
 	set := make(daemonSet)
 
-	for _, d := range daemons {
+	for _, d := range localDaemons {
 		if *name == "all" || *name == d.Name {
 			set[d.Name] = d
 		}
@@ -113,40 +147,48 @@ func selectTargets(name *string) daemonSet {
 	return set
 }
 
-//
-// Attempt to launch a child process.  If that fails, return an error.  If it
-// succeeds, return nil when the child process exits
-//
-// Note: we enter and exit this routine with the daemon's mutex held.
-//
-func singleInstance(d *daemon) error {
+// Wait for the child process to exit.
+func (d *daemon) wait() {
+	var msg string
+
+	startTime := time.Now()
+	err := d.child.Wait()
+
+	if err == nil {
+		msg = "exited cleanly"
+	} else {
+		msg = fmt.Sprintf("exited with '%v'", err)
+	}
+	log.Printf("%s exited %s after %s\n", d.Name, msg,
+		time.Since(startTime))
+
+	d.Lock()
+	if d.state != mcp.BROKEN {
+		d.setState(mcp.OFFLINE)
+	}
+	d.child = nil
+	d.Unlock()
+	d.evaluate <- true
+}
+
+// Attempt to start the daemon as a child process
+func (d *daemon) start() {
 	var err error
-	var args []string
-	var execpath string
+
+	log.Printf("starting %s\n", d.Name)
+	if d.child != nil {
+		log.Printf("%s already running as pid %d\n", d.Name,
+			d.child.Process.Pid)
+		return
+	}
 
 	out := os.Stderr
 	if logfile != nil {
 		out = logfile
 	}
 
-	setState(d, mcp.STARTING)
-
-	for _, o := range d.Options {
-		args = append(args, strings.Split(o, " ")...)
-	}
-
-	if d.Binary[0] == byte('/') {
-		execpath = d.Binary
-	} else {
-		execpath = *aproot + "/bin/" + d.Binary
-	}
-
-	child := aputil.NewChild(execpath, args...)
+	child := aputil.NewChild(d.execpath, d.args...)
 	child.LogOutputTo("", 0, out)
-
-	if *verbose {
-		log.Printf("Starting %s\n", execpath)
-	}
 
 	if !d.Privileged {
 		child.SetUID(nobodyUID, nobodyUID)
@@ -155,110 +197,162 @@ func singleInstance(d *daemon) error {
 	// Put each daemon into its own process group
 	child.SetPgid(true)
 
+	d.setState(mcp.STARTING)
 	if err = child.Start(); err != nil {
-		return err
+		log.Printf("%s unable to launch: %v", d.Name, err)
+		d.setState(mcp.OFFLINE)
+		return
 	}
-
+	d.child = child
 	if d.ThirdParty {
 		// A third party daemon doesn't participate in the ZMQ updates,
 		// so we won't get an online notification.  Just set it here.
-		setState(d, mcp.ONLINE)
+		d.setState(mcp.ONLINE)
 	}
 
-	d.child = child
-	d.Unlock()
-
-	err = child.Wait()
-
-	if d.state != mcp.STOPPING && err != nil {
-		log.Printf("%s failed: %v\n", d.Name, err)
-	}
-
-	d.Lock()
-	d.child = nil
-
-	return err
+	go d.wait()
 }
 
-//
-// launch, monitor, and restart a single daemon
-//
-func runDaemon(d *daemon) {
+func (d *daemon) stop() {
+	if d.state == mcp.BLOCKED {
+		d.setState(mcp.OFFLINE)
+	} else if !d.offline() && d.state != mcp.STOPPING {
+		d.setState(mcp.STOPPING)
+		if d.child != nil {
+			log.Printf("Stopping %s (%d)\n", d.Name,
+				d.child.Process.Pid)
+			d.child.Stop()
+		}
+	}
+}
+
+func (d *daemon) daemonLoop() {
+	timeout := time.NewTimer(0)
 	startTimes := make([]time.Time, failuresAllowed)
+	goal := mcp.OFFLINE
 
 	d.Lock()
-	if d.going {
+	for {
+		if d.state == mcp.BROKEN {
+			goal = mcp.OFFLINE
+		}
+
+		// Check to see whether our dependencies have changed state
+		if d.state > mcp.BLOCKED && d.blocked() {
+			// A dependency stopped, so we need to as well
+			d.stop()
+		} else if d.state == mcp.BLOCKED && !d.blocked() {
+			// We're no longer blocked.  Drop to OFFLINE so we can
+			// try starting again.
+			d.setState(mcp.OFFLINE)
+		}
+
+		// Check to see whether we are currently in our intended state
+		if goal == mcp.ONLINE && d.state == mcp.OFFLINE {
+			if d.blocked() {
+				d.setState(mcp.BLOCKED)
+			} else {
+				startTimes = append(startTimes[1:failuresAllowed],
+					time.Now())
+				timeout.Reset(onlineTimeout)
+				d.start()
+			}
+		} else if goal == mcp.OFFLINE && !d.offline() {
+			timeout.Stop()
+			d.stop()
+		}
+
+		// We've taken any actions we can.  Now wait for our state to
+		// change, our goal to change, or for an action to timeout
 		d.Unlock()
-		return
-	}
-	d.going = true
-	d.run = true
-
-	for d.run {
-		var msg string
-
-		startTime := time.Now()
-		startTimes = append(startTimes[1:failuresAllowed], startTime)
-
-		err := singleInstance(d)
-		if err == nil {
-			msg = "cleanly"
-		} else {
-			msg = fmt.Sprintf("with '%v'", err)
+		timedout := false
+		for spin := true; spin; {
+			select {
+			case <-timeout.C:
+				timedout = true
+			case goal = <-d.goal:
+				startTimes = make([]time.Time, failuresAllowed)
+				if *verbose {
+					log.Printf("%s goal: %s\n", d.Name,
+						mcp.States[goal])
+				}
+			case <-d.evaluate:
+			}
+			// If we have more signals pending, consume them now
+			spin = (len(d.evaluate) + len(d.goal)) > 0
 		}
+		d.Lock()
 
-		log.Printf("%s exited %s after %s\n", d.Name, msg,
-			time.Since(startTime))
-		if time.Since(startTimes[0]) < period {
+		if timedout && (d.state == mcp.INITING || d.state == mcp.STARTING) {
+			log.Printf("%s took more than %v to come online.  Giving up.",
+				d.Name, onlineTimeout)
+			d.stop()
+			d.setState(mcp.BROKEN)
+		}
+		if (d.state != mcp.BROKEN) &&
+			(time.Since(startTimes[0]) < restartPeriod) {
 			log.Printf("%s is dying too quickly", d.Name)
-			setState(d, mcp.BROKEN)
-		}
-		if d.state == mcp.BROKEN || d.state == mcp.INACTIVE {
-			d.run = false
+			d.stop()
+			d.setState(mcp.BROKEN)
 		}
 	}
-	d.going = false
-	d.Unlock()
 }
 
-type sortList mcp.DaemonList
-
-func (l sortList) Len() int {
-	return len(l)
+func daemonToState(d *daemon) *mcp.DaemonState {
+	state := mcp.DaemonState{
+		Name:  d.Name,
+		State: d.state,
+		Since: d.setTime,
+		Node:  nodeName,
+		Pid:   d.child.GetPID(),
+	}
+	if s, _ := d.child.GetState(); s != nil {
+		state.VMSize = s.VMSize
+		state.RssSize = s.RssSize
+		state.VMSwap = s.VMSwap
+		state.Utime = s.Utime
+		state.Stime = s.Stime
+	}
+	return &state
 }
 
-func (l sortList) Less(a, b int) bool {
-	A := daemons[l[a].Name]
-	B := daemons[l[b].Name]
+func getCurrentState(set daemonSet) mcp.DaemonList {
+	list := make(mcp.DaemonList, 0)
 
-	return A.launchOrder < B.launchOrder
-}
-
-func (l sortList) Swap(a, b int) {
-	l[a], l[b] = l[b], l[a]
-}
-
-func handleGetState(set daemonSet) *string {
-	var rval *string
-	list := make(sortList, 0)
+	list = append(list, daemonToState(self))
 
 	for _, d := range set {
-		state := mcp.DaemonState{
-			Name:  d.Name,
-			State: d.state,
-			Since: d.setTime,
-			Pid:   d.child.GetPID(),
-		}
-		if s, _ := d.child.GetState(); s != nil {
-			state.VMSize = s.VMSize
-			state.RssSize = s.RssSize
-			state.VMSwap = s.VMSwap
-			state.Utime = s.Utime
-			state.Stime = s.Stime
-		}
-		list = append(list, &state)
+		list = append(list, daemonToState(d))
 	}
-	sort.Sort(list)
+	list.Sort()
+
+	return list
+}
+
+func handleGetState(set daemonSet, includeRemote bool) *string {
+	var rval *string
+
+	// If any node's data has expired, mark everything offline
+	now := time.Now()
+	for _, remoteList := range remoteDaemons {
+		if remoteList.eol.Before(now) {
+			remoteList.eol = now.AddDate(1, 0, 0)
+			for _, d := range remoteList.state {
+				if d.State > mcp.OFFLINE {
+					d.State = mcp.OFFLINE
+					d.Pid = -1
+					d.Since = now
+				}
+			}
+		}
+	}
+
+	list := getCurrentState(set)
+	if includeRemote {
+		for _, remoteList := range remoteDaemons {
+			list = append(list, remoteList.state...)
+		}
+	}
 
 	b, err := json.MarshalIndent(list, "", "  ")
 	if err == nil {
@@ -268,157 +362,127 @@ func handleGetState(set daemonSet) *string {
 	return rval
 }
 
-func handleSetState(set daemonSet, state int) base_msg.MCPResponse_OpResponse {
-	// A daemon can only set its own state, so it's illegal for any 'set'
-	// command to target more than a single daemon
-	_, ok := mcp.States[state]
-	if !ok || len(set) != 1 {
-		return mcp.INVALID
-	}
-
-	for _, d := range set {
-		setState(d, state)
-	}
-	return mcp.OK
-}
-
-//
-// Scan the list of candidate daemons, and identify those that are ready to run.
-//
-func readySet(candidates daemonSet) daemonSet {
-	ready := make(daemonSet)
-
-	for n, d := range candidates {
-		add := false
-		if d.DependsOn == nil {
-			// This daemon has no dependencies, so can run any time
-			add = true
-		} else {
-			// If the dependency isn't in the daemons map, then it's
-			// not expected to be running in this mode.
-			dep, ok := daemons[*d.DependsOn]
-			if !ok || dep.state == mcp.ONLINE {
-				add = true
+func handleSetState(set daemonSet, state *string) base_msg.MCPResponse_OpResponse {
+	// A daemon can only update its own state, so we should never have more
+	// than one in the set.
+	if state != nil && len(set) == 1 {
+		if s, ok := stateReverseMap[*state]; ok {
+			for _, d := range set {
+				d.Lock()
+				d.setState(s)
+				d.Unlock()
 			}
-		}
-		if add {
-			delete(candidates, n)
-			ready[n] = d
+			return mcp.OK
 		}
 	}
-	return ready
+	return mcp.INVALID
 }
 
-//
-// Repeatedly iterate over all daemons in the set.  On each iteration, we
-// identify all the daemons that are eligble to run, launch them, and remove
-// them from the set.  Repeat until all the daemons are running or broken.
-//
+func handlePeerUpdate(node, in *string, lifetime int32) (*string,
+	base_msg.MCPResponse_OpResponse) {
+	var (
+		state mcp.DaemonList
+		rval  *string
+		code  base_msg.MCPResponse_OpResponse
+	)
+
+	b := []byte(*in)
+	if err := json.Unmarshal(b, &state); err != nil {
+		log.Printf("failed to unmarshal state from %s: %v", *node, err)
+		code = mcp.INVALID
+	} else {
+		// The remote node tells us how long we should consider this
+		// data to be valid.
+		lifeDuration := time.Duration(lifetime) * time.Second
+		remoteDaemons[*node] = remoteDaemonState{
+			eol:   time.Now().Add(lifeDuration),
+			state: state,
+		}
+		rval = handleGetState(localDaemons, false)
+		code = mcp.OK
+	}
+	return rval, code
+}
+
 func handleStart(set daemonSet) {
-	launching := make(daemonSet)
-	for {
-		next := readySet(set)
-		if len(next) == 0 && len(launching) == 0 {
-			break
+	for _, d := range set {
+		d.Lock()
+		if d.state == mcp.BROKEN {
+			d.setState(mcp.OFFLINE)
 		}
-
-		for n, d := range next {
-			d.Lock()
-			delete(next, n)
-			if !d.going {
-				log.Printf("Launching %s\n", n)
-				setState(d, mcp.STARTING)
-				d.startTime = time.Now()
-				launching[n] = d
-				go runDaemon(d)
-			}
-			d.Unlock()
-		}
-
-		for n, d := range launching {
-			d.Lock()
-			if time.Since(d.startTime) > onlineTimeout {
-				log.Printf("%s took more than %v to come "+
-					"online.  Giving up.",
-					n, onlineTimeout)
-				setState(d, mcp.BROKEN)
-			}
-			if stableStates[d.state] {
-				delete(launching, n)
-			}
-			d.Unlock()
-		}
-	}
-
-	if len(set) > 0 {
-		log.Printf("The following daemons weren't started:\n")
-		for n, d := range set {
-			dep, _ := daemons[*d.DependsOn]
-			log.Printf("   %s: depends on %s (%s)\n", n, dep.Name,
-				mcp.States[dep.state])
-		}
+		d.Unlock()
+		log.Printf("Tell %s to come online\n", d.Name)
+		d.goal <- mcp.ONLINE
 	}
 }
 
-// killSet is the killer helper function for handleStop, for use with RetryKill
-func killSet(sig syscall.Signal, set daemonSet,
-	children map[string]*aputil.Child) error {
-	errs := make(map[string]error)
+func handleStop(set daemonSet) int {
+	running := make(daemonSet)
 	for n, d := range set {
-		d.Lock()
-		c := d.child
-		if c == nil || c != children[n] {
-			if c == nil {
-				// if the child has changed, it means the daemon
-				// has already been restarted.
-				setState(d, mcp.OFFLINE)
-				log.Printf("%s stopped\n", d.Name)
-			}
-			delete(set, n)
-			delete(errs, n)
-		} else {
-			errs[n] = c.Signal(sig)
+		if !d.offline() {
+			running[n] = d
+			d.goal <- mcp.OFFLINE
 		}
-		d.Unlock()
 	}
 
-	// There's no such thing as partial success: the calling loop will break
-	// if we return failure because it thinks there's no more useful work to
-	// be done.  Thus, only return non-nil if everything is failing.
-	var realerr error
-	for _, e := range errs {
-		if e == nil {
-			return nil
+	// Wait for the daemons to die
+	deadline := time.Now().Add(offlineTimeout)
+	for len(running) > 0 && time.Now().Before(deadline) {
+		for n, d := range running {
+			if d.offline() {
+				delete(running, n)
+			}
 		}
-		realerr = e
+		time.Sleep(100 * time.Millisecond)
 	}
-	return realerr
+	if len(running) > 0 {
+		msg := "failed to shut down: "
+		for n := range running {
+			msg += n + " "
+		}
+		log.Printf("%s\n", msg)
+	}
+	return len(running)
 }
 
-//
-// Kill all daemons in the set using the retryKill() behavior.  When a daemon
-// has stopped, we remove it from the set.  We're done when the set is empty.
-//
-func handleStop(set daemonSet) {
-	children := make(map[string]*aputil.Child)
-	for n, d := range set {
-		d.Lock()
-		if d.state != mcp.OFFLINE {
-			if d.child != nil {
-				log.Printf("Stopping %s\n", d.Name)
-				children[n] = d.child
-			}
-			setState(d, mcp.STOPPING)
-			d.run = false
-		}
-		d.Unlock()
+func handleRestart(set daemonSet) {
+	if handleStop(set) == 0 {
+		handleStart(set)
+	}
+}
+
+func handleDoCmd(set daemonSet, cmd string) base_msg.MCPResponse_OpResponse {
+	code := mcp.OK
+
+	switch cmd {
+	case "start":
+		handleStart(set)
+
+	case "restart":
+		handleRestart(set)
+
+	case "stop":
+		handleStop(set)
+
+	default:
+		code = mcp.INVALID
 	}
 
-	kill := func(sig syscall.Signal) error {
-		return killSet(sig, set, children)
+	return code
+}
+
+func getDaemonSet(req *base_msg.MCPRequest) (daemonSet,
+	base_msg.MCPResponse_OpResponse) {
+	if req.Daemon == nil {
+		return nil, mcp.INVALID
 	}
-	alive := func() bool { return len(set) > 0 }
-	aputil.RetryKill(kill, alive)
+
+	set := selectTargets(req.Daemon)
+	if len(set) == 0 {
+		return nil, mcp.NODAEMON
+	}
+
+	return set, mcp.OK
 }
 
 //
@@ -426,92 +490,57 @@ func handleStop(set daemonSet) {
 //
 func handleRequest(req *base_msg.MCPRequest) (*string,
 	base_msg.MCPResponse_OpResponse) {
+	var (
+		set  daemonSet
+		rval *string
+		code base_msg.MCPResponse_OpResponse
+	)
+
+	daemonLock.RLock()
+	defer daemonLock.RUnlock()
 
 	if *req.Version.Major != mcp.Version {
 		return nil, mcp.BADVER
 	}
 
-	var set daemonSet
-	if *req.Operation != mcp.PING {
-		if req.Daemon == nil {
-			return nil, mcp.INVALID
-		}
-
-		set = selectTargets(req.Daemon)
-		if len(set) == 0 {
-			return nil, mcp.NODAEMON
-		}
-	}
-
 	switch *req.Operation {
 	case mcp.PING:
-		return nil, mcp.OK
 
 	case mcp.GET:
-		s := handleGetState(set)
-		rval := mcp.OK
-		if s == nil {
-			rval = mcp.INVALID
+		all := (req.Daemon) != nil && (*req.Daemon == "all")
+
+		if set, code = getDaemonSet(req); code == mcp.OK {
+			if rval = handleGetState(set, all); rval == nil {
+				code = mcp.INVALID
+			}
 		}
-		return s, rval
 
 	case mcp.SET:
 		if req.State == nil {
-			return nil, mcp.INVALID
+			code = mcp.INVALID
+		} else if set, code = getDaemonSet(req); code == mcp.OK {
+			code = handleSetState(set, req.State)
 		}
-		rval := handleSetState(set, int(*req.State))
-		return nil, rval
 
 	case mcp.DO:
 		if req.Command == nil {
-			if *verbose {
-				log.Printf("Bad DO from %s: no cmd for %s\n",
-					*req.Daemon, *req.Daemon)
-			}
-			return nil, mcp.INVALID
+			code = mcp.INVALID
+		} else if set, code = getDaemonSet(req); code == mcp.OK {
+			code = handleDoCmd(set, *req.Command)
 		}
 
-		switch *req.Command {
-		case "start":
-			// start/restart needs to go asynchronous so this
-			// thread is available to process status updates from
-			// the launched daemons.  XXX: We immediately return OK
-			// to the caller, but that should really be done by the
-			// go routine when the daemons are all back online
-			if *verbose {
-				log.Printf("%s: START(%s)\n", *req.Daemon,
-					*req.Daemon)
-			}
-			go handleStart(set)
-			return nil, mcp.OK
-
-		case "restart":
-			if *verbose {
-				log.Printf("%s: RESTART(%s)\n", *req.Daemon,
-					*req.Daemon)
-			}
-			// The set is emptied as a side effect of the
-			// handleStop, so we make a copy to use during the
-			// subsequent handleStart()
-			restartSet := make(daemonSet)
-			for k, v := range set {
-				restartSet[k] = v
-			}
-			handleStop(set)
-			go handleStart(restartSet)
-			return nil, mcp.OK
-
-		case "stop":
-			if *verbose {
-				log.Printf("%s: STOP(%s)\n", *req.Daemon,
-					*req.Daemon)
-			}
-			handleStop(set)
-			return nil, mcp.OK
+	case mcp.UPDATE:
+		if req.State == nil || req.Node == nil {
+			code = mcp.INVALID
+		} else {
+			rval, code = handlePeerUpdate(req.Node, req.State,
+				*req.Lifetime)
 		}
+	default:
+		code = mcp.INVALID
 	}
 
-	return nil, mcp.INVALID
+	return rval, code
 }
 
 func signalHandler() {
@@ -540,12 +569,83 @@ func signalHandler() {
 	}
 }
 
+func connectToGateway() *mcp.MCP {
+	warnAt := time.Now()
+	warnWait := time.Second
+	for {
+		if mcpd, err := mcp.NewPeer(pname); err == nil {
+			return mcpd
+		}
+
+		now := time.Now()
+		if now.After(warnAt) {
+			log.Printf("failed to connect to mcp on gateway\n")
+			if warnWait < time.Hour {
+				warnWait *= 2
+			}
+			warnAt = now.Add(warnWait)
+		}
+		time.Sleep(time.Second)
+	}
+}
+
+func satelliteLoop() {
+	var (
+		mcpd   *mcp.MCP
+		ticker *time.Ticker
+	)
+
+	// If we intend to update every second, guarantee the upstream gateway
+	// that we will check in every 5 seconds.  This gives us plenty of
+	// wiggle room to allow for high system load or network congestion.
+	lifeDuration := remoteUpdatePeriod * 5
+	for {
+		if mcpd == nil {
+			mcpd = connectToGateway()
+			log.Printf("Connected to gateway\n")
+
+			// Any daemon currently running should be restarted, so
+			// it will pull the freshest state from the gateway.
+			list := make(daemonSet)
+			for n, d := range localDaemons {
+				if !d.offline() {
+					list[n] = d
+				}
+			}
+			handleRestart(list)
+
+			ticker = time.NewTicker(remoteUpdatePeriod)
+		}
+
+		daemonLock.RLock()
+		state := getCurrentState(localDaemons)
+		daemonLock.RUnlock()
+
+		state, err := mcpd.PeerUpdate(lifeDuration, state)
+		if err != nil {
+			log.Printf("Lost connection to gateway\n")
+			mcpd.Close()
+			mcpd = nil
+		} else {
+			eol := time.Now().Add(lifeDuration)
+			daemonLock.Lock()
+			remoteDaemons["gateway"] = remoteDaemonState{
+				eol:   eol,
+				state: state,
+			}
+			daemonLock.Unlock()
+		}
+
+		<-ticker.C
+	}
+}
+
 //
 // Spin waiting for commands from ap-ctl and status updates from spawned daemons
 //
 func mainLoop() {
 	incoming, _ := zmq.NewSocket(zmq.REP)
-	port := base_def.LOCAL_ZMQ_URL + base_def.MCP_ZMQ_REP_PORT
+	port := base_def.INCOMING_ZMQ_URL + base_def.MCP_ZMQ_REP_PORT
 	if err := incoming.Bind(port); err != nil {
 		log.Fatalf("failed to bind incoming port %s: %v\n", port, err)
 	}
@@ -583,7 +683,73 @@ func mainLoop() {
 	}
 }
 
+// Build the lists of dependents and dependencies
+func recomputeDependencies() {
+	for _, d := range localDaemons {
+		d.Lock()
+		d.dependencies = make([]*daemon, 0)
+		d.dependents = make([]*daemon, 0)
+	}
+
+	for _, d := range localDaemons {
+		if d.DependsOn != nil {
+			if x := localDaemons[*d.DependsOn]; x != nil {
+				x.dependents = append(x.dependents, d)
+				d.dependencies = append(d.dependencies, x)
+			}
+		}
+	}
+
+	for _, d := range localDaemons {
+		d.Unlock()
+		d.evaluate <- true
+	}
+}
+
+// Given a daemon definition loaded from the json file, initialize all of the
+// run-time state for the daemon and launch the goroutine that monitors it.  If
+// we are reloading the json file, refresh those fields of the run-time state
+// that may have been changed by modifications to the file.
+func daemonInit(def *daemon) {
+	re := regexp.MustCompile(`\$APROOT`)
+
+	d := localDaemons[def.Name]
+	if d == nil {
+		d = def
+		d.state = mcp.OFFLINE
+		d.setTime = time.Unix(0, 0)
+		d.evaluate = make(chan bool, 20)
+		d.goal = make(chan int, 20)
+		localDaemons[d.Name] = d
+	} else {
+		// Replace any fields that might reasonably have changed
+		d.Binary = def.Binary
+		d.Options = def.Options
+		d.DependsOn = def.DependsOn
+		d.Privileged = def.Privileged
+	}
+
+	d.args = make([]string, 0)
+	for _, o := range d.Options {
+		// replace any instance of $APROOT with the real path
+		o = re.ReplaceAllString(o, *aproot)
+		options := strings.Split(o, " ")
+		d.args = append(d.args, options...)
+	}
+	if d.Binary[0] == byte('/') {
+		d.execpath = d.Binary
+	} else {
+		d.execpath = *aproot + "/bin/" + d.Binary
+	}
+	if d == def {
+		go d.daemonLoop()
+	}
+}
+
 func loadDefinitions() error {
+	daemonLock.Lock()
+	defer daemonLock.Unlock()
+
 	fn := *cfgfile
 	if len(fn) == 0 {
 		fn = *aproot + "/etc/mcp.json"
@@ -602,75 +768,23 @@ func loadDefinitions() error {
 			fn, err)
 	}
 
-	re := regexp.MustCompile(`\$APROOT`)
-	for name, newDaemon := range set {
-		included := false
-
-		for _, mode := range newDaemon.Modes {
-			if aputil.IsNodeMode(mode) {
-				included = true
+	nodeMode := aputil.GetNodeMode()
+	for _, def := range set {
+		for _, mode := range def.Modes {
+			if mode == nodeMode {
+				daemonInit(def)
 				break
 			}
 		}
-		if !included {
-			continue
-		}
-
-		d, ok := daemons[name]
-		if !ok {
-			// This is the first time we've seen this daemon, so
-			// keep the entire record
-			d = newDaemon
-			d.Lock()
-			d.state = mcp.OFFLINE
-			d.setTime = time.Unix(0, 0)
-			daemons[name] = d
-		} else {
-			// Replace any fields that might reasonably have changed
-			d.Lock()
-			d.Binary = newDaemon.Binary
-			d.Options = newDaemon.Options
-			d.DependsOn = newDaemon.DependsOn
-			d.Privileged = newDaemon.Privileged
-		}
-		options := make([]string, 0)
-		for _, o := range d.Options {
-			// replace any instance of $APROOT with the real path
-			o = re.ReplaceAllString(o, *aproot)
-			options = append(options, o)
-		}
-		d.Options = options
-		d.Unlock()
-	}
-	if len(daemons) == 0 {
-		return fmt.Errorf("no daemons for '%s' mode",
-			aputil.GetNodeMode())
 	}
 
-	for _, d := range daemons {
-		d.launchOrder = 0
-	}
-	ordered := 0
-	for ordered < len(daemons) {
-		for _, d := range daemons {
-			if d.launchOrder > 0 {
-				continue
-			}
-			launchable := true
-			if d.DependsOn != nil {
-				daemon, ok := daemons[*d.DependsOn]
-				if ok && daemon.launchOrder == 0 {
-					launchable = false
-				}
-			}
-			if launchable {
-				ordered++
-				d.launchOrder = ordered
-			}
-		}
+	if len(localDaemons) == 0 {
+		err = fmt.Errorf("no daemons for '%s' mode", nodeMode)
+	} else {
+		recomputeDependencies()
 	}
 
-	return nil
+	return err
 }
 
 // Check for the existence of /var/tmp/ap.mcp.pid.  If the file exists, check to
@@ -714,12 +828,11 @@ func reopenLogfile() {
 
 	os.Stdout = f
 	os.Stderr = f
-	for _, d := range daemons {
+	for _, d := range localDaemons {
 		d.Lock()
 		if d.child != nil {
 			d.child.SetOutput(f)
 		}
-		d.Unlock()
 	}
 
 	if logfile == nil {
@@ -753,6 +866,11 @@ func setEnvironment() {
 		*apmode = aputil.GetNodeMode()
 	}
 	os.Setenv("APMODE", *apmode)
+	if aputil.IsSatelliteMode() {
+		nodeName = aputil.GetNodeID().String()
+	} else {
+		nodeName = "gateway"
+	}
 }
 
 func main() {
@@ -769,6 +887,23 @@ func main() {
 		os.Exit(1)
 	}
 
+	stateReverseMap = make(map[string]int)
+	for i, s := range mcp.States {
+		stateReverseMap[s] = i
+	}
+
+	process, _ := os.FindProcess(os.Getpid())
+	binary, _ := os.Executable()
+	self = &daemon{
+		Name:    pname,
+		Binary:  binary,
+		state:   mcp.ONLINE,
+		setTime: time.Now(),
+		child: &aputil.Child{
+			Process: process,
+		},
+	}
+
 	setEnvironment()
 	reopenLogfile()
 
@@ -779,6 +914,10 @@ func main() {
 	}
 
 	go signalHandler()
+
+	if aputil.IsSatelliteMode() {
+		go satelliteLoop()
+	}
 
 	mainLoop()
 }

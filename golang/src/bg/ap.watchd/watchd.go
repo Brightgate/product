@@ -273,5 +273,4 @@ func main() {
 			time.Sleep(time.Millisecond)
 		}
 	}
-	mcpd.SetState(mcp.OFFLINE)
 }

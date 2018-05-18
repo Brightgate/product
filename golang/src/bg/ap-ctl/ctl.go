@@ -17,11 +17,15 @@ import (
 	"strconv"
 	"time"
 
+	"bg/ap_common/aputil"
 	"bg/ap_common/mcp"
+
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 const (
-	pname = "ap-ctl"
+	pname     = "ap-ctl"
+	colFormat = "%12s%6s%8s%7s%7s%13s%20s %s"
 )
 
 var validCmds = map[string]bool{
@@ -46,26 +50,22 @@ func stateString(s int) string {
 	return state
 }
 
-func printState(incoming string) {
-	var states mcp.DaemonList
-
-	if err := json.Unmarshal([]byte(incoming), &states); err != nil {
-		fmt.Printf("Unable to unpack result from ap.mcp\n")
-		return
+func printLine(line string) {
+	termWidth, _, err := terminal.GetSize(0)
+	if err != nil {
+		termWidth = len(line)
+	} else if termWidth < len(line) {
+		line = line[:termWidth]
 	}
 
-	if len(states) == 0 {
-		return
-	}
-	if len(states) == 1 {
-		fmt.Println(stateString(states[0].State))
-		return
-	}
+	fmt.Printf("%s\n", line)
+}
 
-	const format = "%12s\t%5s\t%7s\t%7s\t%7s\t%12s\t%s\n"
-	fmt.Printf(format, "DAEMON", "PID", "RSS", "SWAP", "TIME",
-		"STATE", "SINCE")
+func printNode(states mcp.DaemonList, node string) {
 	for _, s := range states {
+		if s.Node != node {
+			continue
+		}
 		var rss, swap, tm, pid, since string
 
 		if s.Pid != -1 {
@@ -95,8 +95,52 @@ func printState(incoming string) {
 			rss, swap, tm = "-", "-", "-"
 		}
 
-		fmt.Printf(format, s.Name, pid, rss, swap, tm,
-			stateString(s.State), since)
+		printLine(fmt.Sprintf(colFormat, s.Name, pid, rss, swap, tm,
+			stateString(s.State), since, s.Node))
+	}
+}
+
+func printState(incoming string) {
+	var states mcp.DaemonList
+	var localID string
+
+	if err := json.Unmarshal([]byte(incoming), &states); err != nil {
+		fmt.Printf("Unable to unpack result from ap.mcp\n")
+		return
+	}
+
+	if len(states) == 0 {
+		return
+	} else if len(states) == 1 {
+		fmt.Println(stateString(states[0].State))
+		return
+	}
+
+	if aputil.IsSatelliteMode() {
+		localID = aputil.GetNodeID().String()
+	} else {
+		localID = "gateway"
+	}
+
+	// Build a list of the daemon states to display.  Daemons running on the
+	// local node get shown first, then those running on remote nodes.
+	nodes := make(map[string]bool)
+	for _, s := range states {
+		nodes[s.Node] = true
+	}
+	remoteList := make([]string, 0)
+	for node := range nodes {
+		if node != localID {
+			remoteList = append(remoteList, node)
+		}
+	}
+
+	printLine(fmt.Sprintf(colFormat, "DAEMON", "PID", "RSS", "SWAP",
+		"TIME", "STATE", "SINCE", "NODE"))
+
+	printNode(states, localID)
+	for _, node := range remoteList {
+		printNode(states, node)
 	}
 }
 

@@ -730,6 +730,4 @@ func main() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	s := <-sig
 	log.Printf("Signal (%v) received, stopping\n", s)
-
-	mcpd.SetState(mcp.OFFLINE)
 }
