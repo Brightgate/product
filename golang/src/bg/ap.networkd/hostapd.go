@@ -87,11 +87,14 @@ type hostapdConn struct {
 	liveCmd     *hostapdCmd   // the in-flight hostapd command
 	pendingCmds []*hostapdCmd // all queued commands
 
-	// clients we believe to be connected to this bssid, and the last time
-	// we saw them
-	stations map[string]time.Time
+	stations map[string]*stationInfo
 
 	sync.Mutex
+}
+
+type stationInfo struct {
+	lastSeen  time.Time
+	signature string
 }
 
 // We have a single hostapd process, which may be managing multiple interfaces
@@ -166,7 +169,7 @@ func (c *hostapdConn) pushCmd() {
 	}
 }
 
-func (c *hostapdConn) command(cmd string) error {
+func (c *hostapdConn) command(cmd string) (string, error) {
 	hc := hostapdCmd{
 		queued: time.Now(),
 		cmd:    cmd,
@@ -179,7 +182,7 @@ func (c *hostapdConn) command(cmd string) error {
 	c.Unlock()
 
 	err := <-hc.err
-	return err
+	return hc.res, err
 }
 
 // Use a result message from hostapd to complete the current outstanding
@@ -194,17 +197,18 @@ func (c *hostapdConn) handleResult(result string) {
 	}
 }
 
-func sendNetEntity(mac, mode, auth string, disconnect bool) {
+func sendNetEntity(mac string, mode, auth, sig *string, disconnect bool) {
 	hwaddr, _ := net.ParseMAC(mac)
 	entity := &base_msg.EventNetEntity{
-		Timestamp:  aputil.NowToProtobuf(),
-		Sender:     proto.String(brokerd.Name),
-		Debug:      proto.String("-"),
-		Mode:       &mode,
-		Authtype:   &auth,
-		Node:       &nodeUUID,
-		Disconnect: &disconnect,
-		MacAddress: proto.Uint64(network.HWAddrToUint64(hwaddr)),
+		Timestamp:     aputil.NowToProtobuf(),
+		Sender:        proto.String(brokerd.Name),
+		Debug:         proto.String("-"),
+		Mode:          mode,
+		Authtype:      auth,
+		WifiSignature: sig,
+		Node:          &nodeUUID,
+		Disconnect:    &disconnect,
+		MacAddress:    proto.Uint64(network.HWAddrToUint64(hwaddr)),
 	}
 
 	err := brokerd.Publish(entity, base_def.TOPIC_ENTITY)
@@ -213,16 +217,44 @@ func sendNetEntity(mac, mode, auth string, disconnect bool) {
 	}
 }
 
-func (c *hostapdConn) stationPresent(sta string) {
-	if _, ok := c.stations[sta]; !ok {
-		sendNetEntity(sta, c.device.activeMode, c.authType, false)
+func (c *hostapdConn) getSignature(sta string) {
+	sig, err := c.command("SIGNATURE " + sta)
+	if err != nil {
+		log.Printf("Failed to get signature for %s: %v\n", sta, err)
+	} else {
+		info := c.stations[sta]
+		if info.signature != sig {
+			info.signature = sig
+			sendNetEntity(sta, nil, nil, &sig, false)
+		}
 	}
-	c.stations[sta] = time.Now()
+}
+
+func (c *hostapdConn) stationPresent(sta string, newConnection bool) {
+	info := c.stations[sta]
+	if info == nil {
+		sendNetEntity(sta, &c.device.activeMode, &c.authType, nil,
+			false)
+		info = &stationInfo{}
+		c.stations[sta] = info
+	}
+	info.lastSeen = time.Now()
+
+	if newConnection {
+		// Even though the data used to generate the signature comes
+		// from probe and association frames, hostapd will return an
+		// empty signature if you ask too quickly.  So, we wait a
+		// second.
+		time.AfterFunc(time.Second, func() { c.getSignature(sta) })
+	} else {
+		go c.getSignature(sta)
+	}
+
 }
 
 func (c *hostapdConn) stationGone(sta string) {
 	delete(c.stations, sta)
-	sendNetEntity(sta, c.device.activeMode, "", true)
+	sendNetEntity(sta, &c.device.activeMode, nil, nil, true)
 }
 
 // Handle an async status message from hostapd
@@ -246,9 +278,9 @@ func (c *hostapdConn) handleStatus(status string) {
 		mac := m[2]
 		switch msg {
 		case "AP-STA-CONNECTED":
-			c.stationPresent(mac)
+			c.stationPresent(mac, true)
 		case "AP-STA-POLL-OK":
-			c.stationPresent(mac)
+			c.stationPresent(mac, false)
 		case "AP-STA-DISCONNECTED":
 			c.stationGone(mac)
 		}
@@ -539,7 +571,7 @@ func (h *hostapdHdl) newConn(d *physDevice, auth, suffix string) *hostapdConn {
 		active:      true,
 		device:      d,
 		pendingCmds: make([]*hostapdCmd, 0),
-		stations:    make(map[string]time.Time),
+		stations:    make(map[string]*stationInfo),
 	}
 	os.Remove(newConn.name)
 	return &newConn
