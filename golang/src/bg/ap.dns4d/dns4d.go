@@ -24,7 +24,9 @@
 package main
 
 import (
+	"container/heap"
 	"flag"
+	"hash/crc64"
 	"log"
 	"net"
 	"net/http"
@@ -50,7 +52,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-const pname = "ap.dns4d"
+const (
+	pname       = "ap.dns4d"
+	maxCacheTTL = uint32(3600)
+)
 
 type dnsRecord struct {
 	rectype uint16
@@ -59,6 +64,8 @@ type dnsRecord struct {
 }
 
 var (
+	cacheSize = flag.Int("cache_size", 1024*1024,
+		"size of DNS cache (set to 0 to disable caching).")
 	dataDir = flag.String("dir", data.DefaultDataDir,
 		"antiphishing data directory")
 
@@ -95,9 +102,10 @@ var (
 	hostsMtx sync.Mutex
 	hosts    = make(map[string]dnsRecord)
 
-	unknownWarned = make(map[string]time.Time)
-	blockWarned   = make(map[string]time.Time)
-	warnedMtx     sync.Mutex
+	unknownWarned   = make(map[string]time.Time)
+	blockWarned     = make(map[string]time.Time)
+	warnedMtx       sync.Mutex
+	cachedResponses dnsCache
 
 	metrics struct {
 		requests         prometheus.Counter
@@ -108,8 +116,163 @@ var (
 		upstreamLatency  prometheus.Summary
 		requestSize      prometheus.Summary
 		responseSize     prometheus.Summary
+		cacheSize        prometheus.Gauge
+		cacheEntries     prometheus.Gauge
+		cacheLookups     prometheus.Counter
+		cacheCollisions  prometheus.Counter
+		cacheHitRate     prometheus.Gauge
 	}
 )
+
+type cachedResponse struct {
+	question string // question that triggered the response
+	key      uint64 // hash of the question for fast map lookup
+
+	response  *dns.Msg  // the upstream response to the question
+	cachedAt  time.Time // when this cache entry was added
+	eol       time.Time // when does the shortest TTL field expire
+	size      int       // combined size of question and response
+	timeEaten uint32    // used to adjust TTLs when using a cached response
+}
+
+type cacheEOLHeap []*cachedResponse
+
+type dnsCache struct {
+	responses map[uint64]*cachedResponse // cached data index by question
+	eolHeap   cacheEOLHeap               // data ordered by TTL expiration
+	size      int                        // total size of all entries
+	table     *crc64.Table               // used during hash generation
+	lookups   int                        // lookups into the cache
+	hits      int                        // successful lookups
+
+	sync.Mutex
+}
+
+/***********************************************************
+ * utility routines required by the container/heap interface
+ */
+func (h cacheEOLHeap) Len() int { return len(h) }
+
+func (h cacheEOLHeap) Less(i, j int) bool {
+	return (h[i].eol).Before(h[j].eol)
+}
+
+func (h cacheEOLHeap) Swap(i, j int) {
+	h[i], h[j] = h[j], h[i]
+}
+
+func (h *cacheEOLHeap) Push(x interface{}) {
+	r := x.(*cachedResponse)
+	*h = append(*h, r)
+}
+
+func (h *cacheEOLHeap) Pop() interface{} {
+	old := *h
+	n := len(old)
+	r := old[n-1]
+	*h = old[0 : n-1]
+	return r
+}
+
+// Remove any entries that have expired.  If the cache is larger than we want,
+// remove entries in their expiration order until we shrink to the desired size.
+func (d *dnsCache) expire() {
+	now := time.Now()
+
+	for len(d.eolHeap) > 0 {
+		c := d.eolHeap[0]
+		if c.eol.After(now) && d.size < *cacheSize {
+			return
+		}
+
+		heap.Pop(&d.eolHeap)
+		delete(d.responses, c.key)
+		d.size -= c.size
+		metrics.cacheEntries.Set(float64(len(d.responses)))
+		metrics.cacheSize.Set(float64(d.size))
+	}
+}
+
+// Decrease all TTL fields in all records
+func adjustTTL(delta uint32, records []dns.RR) {
+	for _, r := range records {
+		if hdr := r.Header(); hdr != nil && hdr.Ttl > 0 {
+			if delta <= hdr.Ttl {
+				hdr.Ttl -= delta
+			}
+		}
+	}
+}
+
+func (d *dnsCache) lookup(key uint64, question string) *dns.Msg {
+	var r *dns.Msg
+
+	d.lookups++
+	metrics.cacheLookups.Inc()
+	d.Lock()
+	d.expire()
+	if c, ok := d.responses[key]; ok && c.question == question {
+		r = c.response
+
+		// Each time we use a cached response, adjust any TTL fields to
+		// account for time that has elapsed since a) the record was
+		// cached, and/or b) time that has elapsed since we last
+		// adjusted the TTLs.
+		delta := uint32(time.Since(c.cachedAt).Seconds())
+		bite := delta - c.timeEaten
+		c.timeEaten += bite
+		adjustTTL(bite, r.Answer)
+		adjustTTL(bite, r.Ns)
+		adjustTTL(bite, r.Extra)
+		d.hits++
+	}
+	d.Unlock()
+	metrics.cacheHitRate.Set(100.0 * (float64(d.hits) / float64(d.lookups)))
+	return r
+}
+
+func (d *dnsCache) insert(key uint64, question string, response *dns.Msg) {
+	ttl := maxCacheTTL
+	for _, answer := range response.Answer {
+		hdr := answer.Header()
+		if hdr.Ttl < ttl {
+			ttl = hdr.Ttl
+		}
+	}
+	if ttl == 0 {
+		return
+	}
+
+	now := time.Now()
+	c := &cachedResponse{
+		question: question,
+		key:      key,
+		response: response,
+		cachedAt: now,
+		eol:      now.Add(time.Duration(ttl) * time.Second),
+		size:     len(question) + response.Len(),
+	}
+
+	d.Lock()
+	// In the enormously unlikely event that two questions hash to the same
+	// 64-bit key, we won't cache the second one.
+	if _, ok := d.responses[key]; !ok {
+		d.responses[key] = c
+		heap.Push(&d.eolHeap, c)
+		d.size += c.size
+		metrics.cacheEntries.Set(float64(len(d.responses)))
+		metrics.cacheSize.Set(float64(d.size))
+	} else {
+		metrics.cacheCollisions.Inc()
+	}
+	d.Unlock()
+}
+
+func (d *dnsCache) init() {
+	d.responses = make(map[uint64]*cachedResponse)
+	d.eolHeap = make([]*cachedResponse, 0)
+	d.table = crc64.MakeTable(crc64.ISO)
+}
 
 // Returns 'true' if we have issued a warning about this key within the past
 // hour.
@@ -321,15 +484,61 @@ func answerCNAME(q dns.Question, rec dnsRecord) *dns.CNAME {
 	return &rr
 }
 
+func shouldCache(q, r *dns.Msg) bool {
+	if *cacheSize == 0 {
+		return false
+	}
+
+	// Only cache sucessful, complete results
+	if r == nil || r.Rcode != dns.RcodeSuccess || r.Truncated {
+		return false
+	}
+
+	// Only cache results for QUERY operations
+	if q.Opcode != dns.OpcodeQuery {
+		return false
+	}
+
+	// Don't cache results for wildcarded queries
+	if strings.Contains(q.Question[0].Name, "*") {
+		return false
+	}
+
+	// Only cache results that match the single question we've asked
+	if len(r.Question) != 1 {
+		return false
+	}
+
+	a := q.Question[0]
+	b := r.Question[0]
+	if a.Qtype != b.Qtype || a.Qclass != b.Qclass || a.Name != b.Name {
+		return false
+	}
+
+	return true
+}
+
 func upstreamRequest(server string, r, m *dns.Msg) {
-	c := new(dns.Client)
+	var cacheResult bool
+	var upstream *dns.Msg
+	var err error
 
-	metrics.upstreamCnt.Inc()
-	start := time.Now()
-	r2, _, err := c.Exchange(r, server)
-	metrics.upstreamLatency.Observe(time.Since(start).Seconds())
+	question := r.Question[0].String()
+	key := crc64.Checksum([]byte(question), cachedResponses.table)
+	if *cacheSize > 0 {
+		upstream = cachedResponses.lookup(key, question)
+	}
 
-	if err != nil || r2 == nil {
+	if upstream == nil {
+		c := new(dns.Client)
+		start := time.Now()
+		metrics.upstreamCnt.Inc()
+		upstream, _, err = c.Exchange(r, server)
+		metrics.upstreamLatency.Observe(time.Since(start).Seconds())
+		cacheResult = (err == nil) && shouldCache(r, upstream)
+	}
+
+	if err != nil || upstream == nil {
 		log.Printf("failed to exchange: %v", err)
 		metrics.upstreamFailures.Inc()
 		if os.IsTimeout(err) {
@@ -340,21 +549,27 @@ func upstreamRequest(server string, r, m *dns.Msg) {
 	}
 
 	// Copy the flags from the message header
-	m.Compress = r2.Compress
-	m.Authoritative = r2.Authoritative
-	m.Truncated = r2.Truncated
-	m.RecursionDesired = r2.RecursionDesired
-	m.RecursionAvailable = r2.RecursionAvailable
-	m.Rcode = r2.Rcode
-	m.Answer = append(m.Answer, r2.Answer...)
-	m.Ns = append(m.Ns, r2.Ns...)
-	m.Extra = append(m.Extra, r2.Extra...)
+	m.Compress = upstream.Compress
+	m.Authoritative = upstream.Authoritative
+	m.Truncated = upstream.Truncated
+	m.RecursionDesired = upstream.RecursionDesired
+	m.RecursionAvailable = upstream.RecursionAvailable
+	m.Rcode = upstream.Rcode
+	m.Answer = append(m.Answer, upstream.Answer...)
+	m.Ns = append(m.Ns, upstream.Ns...)
+	m.Extra = append(m.Extra, upstream.Extra...)
+
+	if upstream.Rcode == dns.RcodeSuccess && cacheResult {
+		cachedResponses.insert(key, question, upstream)
+	}
 }
 
 func localHandler(w dns.ResponseWriter, r *dns.Msg) {
+	var rec dnsRecord
+	var ok bool
+
 	metrics.requests.Inc()
 	metrics.requestSize.Observe(float64(r.Len()))
-
 	_, c := getClient(w)
 	if c == nil {
 		return
@@ -364,33 +579,39 @@ func localHandler(w dns.ResponseWriter, r *dns.Msg) {
 	m.SetReply(r)
 	m.Authoritative = true
 
+	// The protocol technically allows multiple questions, but the major
+	// resolvers don't.  With multiple questions, some of the message header
+	// bits become ambiguous.
+	if len(r.Question) != 1 {
+		m.Rcode = dns.RcodeFormatError
+		w.WriteMsg(m)
+		return
+	}
+
+	q := r.Question[0]
 	start := time.Now()
-	for _, q := range r.Question {
-		var rec dnsRecord
-		var ok bool
 
-		if perRingHosts[q.Name] {
-			rec, ok = ringRecords[c.Ring]
-		} else {
-			hostsMtx.Lock()
-			rec, ok = hosts[q.Name]
-			hostsMtx.Unlock()
-		}
+	if perRingHosts[q.Name] {
+		rec, ok = ringRecords[c.Ring]
+	} else {
+		hostsMtx.Lock()
+		rec, ok = hosts[q.Name]
+		hostsMtx.Unlock()
+	}
 
-		if ok {
-			if rec.rectype == dns.TypeA {
-				m.Answer = append(m.Answer, answerA(q, rec))
-			} else if rec.rectype == dns.TypeCNAME {
-				m.Answer = append(m.Answer, answerCNAME(q, rec))
-			}
-		} else if brightgateDNS != "" {
-			// Proxy needed if we have decided that we are allowing
-			// our brightgate domain to be handled upstream as well.
-			pq := new(dns.Msg)
-			pq.MsgHdr = r.MsgHdr
-			pq.Question = append(pq.Question, q)
-			upstreamRequest(brightgateDNS, pq, m)
+	if ok {
+		if rec.rectype == dns.TypeA {
+			m.Answer = append(m.Answer, answerA(q, rec))
+		} else if rec.rectype == dns.TypeCNAME {
+			m.Answer = append(m.Answer, answerCNAME(q, rec))
 		}
+	} else if brightgateDNS != "" {
+		// Proxy needed if we have decided that we are allowing
+		// our brightgate domain to be handled upstream as well.
+		pq := new(dns.Msg)
+		pq.MsgHdr = r.MsgHdr
+		pq.Question = append(pq.Question, q)
+		upstreamRequest(brightgateDNS, pq, m)
 	}
 	metrics.responseSize.Observe(float64(m.Len()))
 	w.WriteMsg(m)
@@ -446,39 +667,45 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 	m.SetReply(r)
 	m.Authoritative = false
 
-	upstream := false
-	start := time.Now()
-	for _, q := range r.Question {
-		hostname := q.Name[:len(q.Name)-1]
-		if data.BlockedHostname(hostname) {
-			// XXX: maybe we should return a CNAME record for our
-			// local 'phishing.<siteid>.brightgate.net'?
-			localRecord, _ := ringRecords[c.Ring]
-			m.Answer = append(m.Answer, answerA(q, localRecord))
-
-			// We want to log and Event blocked hostnames for each
-			// client that attempts the lookup.
-			key := mac + ":" + hostname
-			if !wasWarned(key, blockWarned) {
-				log.Printf("Blocking suspected phishing site "+
-					"'%s' for %s\n", hostname, mac)
-				notifyBlockEvent(c, hostname)
-			}
-			metrics.blocked.Inc()
-		} else if q.Qtype == dns.TypePTR && localAddress(q.Name) {
-			hostsMtx.Lock()
-			rec, ok := hosts[q.Name]
-			hostsMtx.Unlock()
-			if ok && rec.rectype == dns.TypePTR {
-				m.Answer = append(m.Answer, answerPTR(q, rec))
-			}
-		} else {
-			upstream = true
-		}
+	// The protocol technically allows multiple questions, but the major
+	// resolvers don't.  With multiple questions, some of the message header
+	// bits become ambiguous.
+	if len(r.Question) != 1 {
+		m.Rcode = dns.RcodeFormatError
+		w.WriteMsg(m)
+		return
 	}
-	if upstream {
+
+	start := time.Now()
+	q := r.Question[0]
+
+	hostname := q.Name[:len(q.Name)-1]
+	if data.BlockedHostname(hostname) {
+		// XXX: maybe we should return a CNAME record for our
+		// local 'phishing.<siteid>.brightgate.net'?
+		localRecord, _ := ringRecords[c.Ring]
+		m.Answer = append(m.Answer, answerA(q, localRecord))
+
+		// We want to log and Event blocked hostnames for each
+		// client that attempts the lookup.
+		key := mac + ":" + hostname
+		if !wasWarned(key, blockWarned) {
+			log.Printf("Blocking suspected phishing site "+
+				"'%s' for %s\n", hostname, mac)
+			notifyBlockEvent(c, hostname)
+			metrics.blocked.Inc()
+		}
+	} else if q.Qtype == dns.TypePTR && localAddress(q.Name) {
+		hostsMtx.Lock()
+		rec, ok := hosts[q.Name]
+		hostsMtx.Unlock()
+		if ok && rec.rectype == dns.TypePTR {
+			m.Answer = append(m.Answer, answerPTR(q, rec))
+		}
+	} else {
 		upstreamRequest(upstreamDNS, r, m)
 	}
+
 	if m.Len() >= 512 {
 		// Some clients cannot handle DNS packets larger than 512 bytes,
 		// and some firewalls will drop them.  Setting this flag will
@@ -708,6 +935,26 @@ func prometheusInit() {
 		Name: "dns4d_response_size",
 		Help: "dns response size (bytes)",
 	})
+	metrics.cacheSize = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "dns4d_cache_size",
+		Help: "data stored in DNS cache (bytes)",
+	})
+	metrics.cacheEntries = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "dns4d_cache_entries",
+		Help: "# of entries in DNS cache",
+	})
+	metrics.cacheCollisions = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "dns4d_cache_collisions",
+		Help: "hash key collisions in the DNS cache map",
+	})
+	metrics.cacheLookups = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "dns4d_cache_lookups",
+		Help: "lookups in the DNS cache",
+	})
+	metrics.cacheHitRate = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "dns4d_cache_hitrate",
+		Help: "success rate of cache lookups",
+	})
 	prometheus.MustRegister(metrics.requests)
 	prometheus.MustRegister(metrics.blocked)
 	prometheus.MustRegister(metrics.upstreamCnt)
@@ -716,6 +963,11 @@ func prometheusInit() {
 	prometheus.MustRegister(metrics.upstreamLatency)
 	prometheus.MustRegister(metrics.requestSize)
 	prometheus.MustRegister(metrics.responseSize)
+	prometheus.MustRegister(metrics.cacheSize)
+	prometheus.MustRegister(metrics.cacheEntries)
+	prometheus.MustRegister(metrics.cacheLookups)
+	prometheus.MustRegister(metrics.cacheCollisions)
+	prometheus.MustRegister(metrics.cacheHitRate)
 
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(base_def.DNSD_PROMETHEUS_PORT, nil)
@@ -734,6 +986,7 @@ func main() {
 		log.Printf("cannot connect to mcp\n")
 	}
 
+	cachedResponses.init()
 	prometheusInit()
 
 	brokerd = broker.New(pname)
