@@ -488,6 +488,7 @@ func TestMultiMixed(t *testing.T) {
 func TestMain(m *testing.M) {
 	var err error
 
+	prometheusInit()
 	testData, err = ioutil.ReadFile(*testFile)
 	if err != nil {
 		log.Printf("Failed to load properties file %s: %v\n",

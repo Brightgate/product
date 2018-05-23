@@ -12,6 +12,7 @@
 package main
 
 import (
+	"os"
 	"testing"
 
 	"bg/ap_common/aputil"
@@ -77,4 +78,9 @@ func TestSendUpbeat(t *testing.T) {
 
 	publishUpbeat(iotcMock)
 	iotcMock.AssertExpectations(t)
+}
+
+func TestMain(m *testing.M) {
+	prometheusInit()
+	os.Exit(m.Run())
 }

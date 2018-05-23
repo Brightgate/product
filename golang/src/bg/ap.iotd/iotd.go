@@ -178,7 +178,6 @@ func prometheusInit() {
 	prometheus.MustRegister(metrics.events)
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(base_def.IOTD_PROMETHEUS_PORT, nil)
-	slogger.Debugf("prometheus client launched")
 }
 
 func main() {
