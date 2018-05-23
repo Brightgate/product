@@ -23,6 +23,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -43,6 +44,8 @@ import (
 )
 
 var (
+	verbose = flag.Bool("v", false, "verbose logging")
+
 	handlers = make(map[string]*ringHandler)
 
 	brokerd *broker.Broker
@@ -359,7 +362,9 @@ func notifyRelease(ipaddr net.IP) {
 }
 
 /*
- * Report on the DHCP options used by the client. Useed for DHCP fingerprinting.
+ * Report on the DHCP options used by the client. Used for DHCP fingerprinting.
+ * Send to the cloud for processing, and, with verbose turned on, to the log for
+ * human consumption.
  */
 func notifyOptions(hwaddr net.HardwareAddr, options dhcp.Options, msgType dhcp.MessageType) {
 	msg := &base_msg.DHCPOptions{
@@ -376,6 +381,25 @@ func notifyOptions(hwaddr net.HardwareAddr, options dhcp.Options, msgType dhcp.M
 	if err != nil {
 		log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_OPTIONS, err)
 	}
+
+	if !*verbose {
+		return
+	}
+
+	optionkeys := make([]int, 0)
+	for opt := range options {
+		optionkeys = append(optionkeys, int(opt))
+	}
+	sort.Ints(optionkeys)
+	log.Printf("    Options: %v\n", optionkeys)
+	log.Printf("    ParameterRequestList: %v\n", options[dhcp.OptionParameterRequestList])
+	if vendorClassIdentifier, ok := options[dhcp.OptionVendorClassIdentifier]; ok {
+		log.Printf("    VendorClassIdentifier: %s\n", string(vendorClassIdentifier))
+	}
+	if hostName, ok := options[dhcp.OptionHostName]; ok {
+		log.Printf("    HostName: %s\n", string(hostName))
+	}
+	log.Printf("    ClientIdentifier: %x\n", options[dhcp.OptionClientIdentifier])
 }
 
 /*******************************************************
