@@ -521,6 +521,7 @@ build/cross-compile/$(SYSROOT_BLOB_NAME):
 
 $(SYSROOT)/.$(SYSROOT_SUM): build/cross-compile/$(SYSROOT_BLOB_NAME)
 	$(BUILD_SYSROOT_CMD) unpack -d $(subst build/cross-compile/,,$(@D))
+	touch --no-create $@
 
 packages: install client-web
 	$(PYTHON3) build/deb-pkg/deb-pkg.py --arch $(PKG_DEB_ARCH)
