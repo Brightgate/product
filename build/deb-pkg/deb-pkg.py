@@ -146,6 +146,7 @@ class ApplianceDebPackage(DebPackage):
     maintainer = "Brightgate Software <contact_us@brightgate.com>"
     depends = [
         "bridge-utils",
+        "chrony",
         "dhcpcd5",
         "hostapd-bg",
         "iproute2",

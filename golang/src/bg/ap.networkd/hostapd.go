@@ -414,9 +414,7 @@ func getAPConfig(d *physDevice) *apConfig {
 	}
 
 	if satellite {
-		internal := rings[base_def.RING_INTERNAL]
-		gateway := network.SubnetRouter(internal.Subnet)
-		radiusServer = gateway
+		radiusServer = getGatewayIP()
 	} else {
 		radiusServer = "127.0.0.1"
 	}

@@ -7,7 +7,7 @@
       "Value": "0"
     },
     "cfgversion": {
-      "Value": "13"
+      "Value": "14"
     },
     "apversion": {
       "Value": ""
@@ -135,6 +135,22 @@
         "dnsserver": {
           "Value": "8.8.8.8:53"
         },
+        "ntpservers": {
+          "Children": {
+            "1": {
+              "Value": "time1.google.com"
+            },
+            "2": {
+              "Value": "time2.google.com"
+            },
+            "3": {
+              "Value": "time3.google.com"
+            },
+            "4": {
+              "Value": "time4.google.com"
+            }
+          }
+        },
         "passphrase": {
           "Value": "sosecretive"
         },
@@ -155,7 +171,7 @@
             "open": {
               "Value": "unenrolled"
             }
-	  }
+          }
         }
       }
     },
@@ -173,7 +189,7 @@
                 }
               }
             },
-	    "ssh-external": {
+            "ssh-external": {
               "Children": {
                 "active": {
                   "Value": "false"

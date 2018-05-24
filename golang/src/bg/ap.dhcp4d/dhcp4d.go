@@ -825,9 +825,10 @@ func newHandler(name string, rings apcfg.RingMap) *ringHandler {
 		rangeSpan:  span,
 		duration:   duration,
 		options: dhcp.Options{
-			dhcp.OptionSubnetMask:       subnet.Mask,
-			dhcp.OptionRouter:           myip,
-			dhcp.OptionDomainNameServer: myip,
+			dhcp.OptionSubnetMask:                 subnet.Mask,
+			dhcp.OptionRouter:                     myip,
+			dhcp.OptionDomainNameServer:           myip,
+			dhcp.OptionNetworkTimeProtocolServers: myip,
 		},
 		leases: make([]lease, span, span),
 	}

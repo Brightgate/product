@@ -13,6 +13,8 @@ ACCEPT ICMP FROM IFACE NOT wan TO AP
 ACCEPT UDP FROM IFACE NOT wan TO AP DPORTS 53 67     # DNS, DHCP
 ACCEPT TCP FROM IFACE NOT wan TO AP DPORTS 80 443    # HTTP(s)
 ACCEPT TCP FROM RING core TO AP DPORTS 9090	     # prometheus
+# Might not want to allow NTP connections from the quarantine ring
+ACCEPT UDP FROM IFACE NOT wan to AP DPORTS 123       # NTP
 
 # The core ring is allowed to access all the others
 ACCEPT FROM RING core TO RING standard

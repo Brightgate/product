@@ -35,7 +35,7 @@ import (
 
 // Version gets increased each time there is a non-compatible change to the
 // config tree format, or ap.configd API.
-const Version = int32(13)
+const Version = int32(14)
 
 // Some specific, common ways in which apcfg operations can fail
 var (

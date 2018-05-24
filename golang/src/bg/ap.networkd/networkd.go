@@ -32,6 +32,7 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
+	"bg/ap_common/network"
 	"bg/base_def"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -949,6 +950,12 @@ func globalWifiInit(props *apcfg.PropertyNode) error {
 	return nil
 }
 
+func getGatewayIP() string {
+	internal := rings[base_def.RING_INTERNAL]
+	gateway := network.SubnetRouter(internal.Subnet)
+	return gateway
+}
+
 // Connect to all of the other brightgate daemons and construct our initial model
 // of the system
 func daemonInit() error {
@@ -1019,6 +1026,8 @@ func daemonInit() error {
 		}
 		networkNodeIdx = ip[3]
 	}
+
+	ntpdSetup()
 
 	return nil
 }

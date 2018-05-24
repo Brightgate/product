@@ -333,14 +333,13 @@ GO_TESTABLES = \
 	bg/cloud_models/cloudiotsvc
 
 NETWORKD_TEMPLATE_FILES = \
-	hostapd.conf.got
+	hostapd.conf.got \
+	chrony.conf.got
 
 USERAUTHD_TEMPLATE_FILES = \
 	hostapd.radius.got \
 	hostapd.radius_clients.got \
 	hostapd.users.got
-
-# hostapd.radius_clients.got \
 
 NETWORKD_TEMPLATES = $(NETWORKD_TEMPLATE_FILES:%=$(NETWORKD_TEMPLATE_DIR)/%)
 USERAUTHD_TEMPLATES = $(USERAUTHD_TEMPLATE_FILES:%=$(USERAUTHD_TEMPLATE_DIR)/%)
@@ -685,7 +684,8 @@ $(APPBIN)/ap.configd: \
 	$(GOSRCBG)/ap.configd/upgrade_v10.go \
 	$(GOSRCBG)/ap.configd/upgrade_v11.go \
 	$(GOSRCBG)/ap.configd/upgrade_v12.go \
-	$(GOSRCBG)/ap.configd/upgrade_v13.go
+	$(GOSRCBG)/ap.configd/upgrade_v13.go \
+	$(GOSRCBG)/ap.configd/upgrade_v14.go
 $(APPBIN)/ap.dhcp4d: $(GOSRCBG)/ap.dhcp4d/dhcp4d.go
 $(APPBIN)/ap.dns4d: \
 	$(GOSRCBG)/ap.dns4d/dns4d.go \
@@ -705,6 +705,7 @@ $(APPBIN)/ap.networkd: \
 	$(GOSRCBG)/ap.networkd/filterd.go \
 	$(GOSRCBG)/ap.networkd/hostapd.go \
 	$(GOSRCBG)/ap.networkd/networkd.go \
+	$(GOSRCBG)/ap.networkd/ntpd.go \
 	$(GOSRCBG)/ap.networkd/parse.go
 $(APPBIN)/ap.relayd: $(GOSRCBG)/ap.relayd/relayd.go
 $(APPBIN)/ap.updated: $(GOSRCBG)/ap.updated/update.go
