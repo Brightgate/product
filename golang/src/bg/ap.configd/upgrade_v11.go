@@ -16,7 +16,7 @@ import (
 
 func upgradeV11() error {
 	log.Printf("Adding @/users\n")
-	_ = propertyInsert("@/users")
+	propertyInsert("@/users")
 
 	return nil
 }

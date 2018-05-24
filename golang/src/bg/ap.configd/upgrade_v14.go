@@ -17,13 +17,13 @@ import (
 func upgradeV14() error {
 	log.Printf("Adding @/network/ntpservers\n")
 
-	prop := propertyInsert("@/network/ntpservers/1")
+	prop, _ := propertyInsert("@/network/ntpservers/1")
 	prop.Value = "time1.google.com"
-	prop = propertyInsert("@/network/ntpservers/2")
+	prop, _ = propertyInsert("@/network/ntpservers/2")
 	prop.Value = "time2.google.com"
-	prop = propertyInsert("@/network/ntpservers/3")
+	prop, _ = propertyInsert("@/network/ntpservers/3")
 	prop.Value = "time3.google.com"
-	prop = propertyInsert("@/network/ntpservers/4")
+	prop, _ = propertyInsert("@/network/ntpservers/4")
 	prop.Value = "time4.google.com"
 
 	return nil

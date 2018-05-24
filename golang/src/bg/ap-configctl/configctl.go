@@ -206,47 +206,93 @@ func getProp(cmd string, args []string) error {
 			printDev(d)
 		}
 	} else {
-		root, err = apcfgd.GetProps(prop)
-		if err == nil {
+		if root, err = apcfgd.GetProps(prop); err == nil {
 			nodes := strings.Split(strings.Trim(prop, "/"), "/")
 			label := nodes[len(nodes)-1]
 			root.DumpTree(label)
+		} else {
+			err = fmt.Errorf("get failed: %v", err)
 		}
 	}
 
 	return err
 }
 
-func delProp(cmd string, args []string) error {
+func makeDelProp(cmd string, args []string) *apcfg.PropertyOp {
 	if len(args) != 1 {
 		usage(cmd)
 	}
-	return apcfgd.DeleteProp(args[0])
+
+	op := apcfg.PropertyOp{
+		Op:   apcfg.PropDelete,
+		Name: args[0],
+	}
+	return &op
 }
 
-func setProp(cmd string, args []string) error {
-	var expires *time.Time
-	var err error
-
+func makeSetProp(cmd string, args []string) *apcfg.PropertyOp {
 	if len(args) < 2 || len(args) > 3 {
 		usage(cmd)
 	}
 
-	prop := args[0]
-	val := args[1]
+	op := apcfg.PropertyOp{
+		Name:  args[0],
+		Value: args[1],
+	}
+
 	if len(args) == 3 {
 		seconds, _ := strconv.Atoi(args[2])
 		dur := time.Duration(seconds) * time.Second
 		tmp := time.Now().Add(dur)
-		expires = &tmp
+		op.Expires = &tmp
 	}
 
 	if cmd == "set" {
-		err = apcfgd.SetProp(prop, val, expires)
+		op.Op = apcfg.PropSet
 	} else {
-		err = apcfgd.CreateProp(prop, val, expires)
+		op.Op = apcfg.PropCreate
 	}
-	return err
+	return &op
+}
+
+func makeOp(cmd string, args []string) *apcfg.PropertyOp {
+	switch cmd {
+	case "set":
+		return makeSetProp(cmd, args)
+	case "add":
+		return makeSetProp(cmd, args)
+	case "del":
+		return makeDelProp(cmd, args)
+	case "get":
+		fmt.Printf("'get' must be a standalone command\n")
+		os.Exit(1)
+	default:
+		usage("")
+	}
+	return nil
+}
+
+func makeOps(args []string) []apcfg.PropertyOp {
+	ops := make([]apcfg.PropertyOp, 0)
+
+	var cmd string
+	var cmdArgs []string
+	for _, f := range args {
+		if cmd == "" {
+			cmd = f
+			cmdArgs = make([]string, 0)
+		} else if f != "," {
+			cmdArgs = append(cmdArgs, f)
+		} else {
+			ops = append(ops, *makeOp(cmd, cmdArgs))
+			cmd = ""
+		}
+	}
+
+	if cmd != "" {
+		ops = append(ops, *makeOp(cmd, cmdArgs))
+	}
+	return ops
 }
 
 var usages = map[string]string{
@@ -260,7 +306,7 @@ func usage(cmd string) {
 	if u, ok := usages[cmd]; ok {
 		fmt.Printf("usage: %s %s %s\n", pname, cmd, u)
 	} else {
-		fmt.Printf("Usage: %s\n", pname)
+		fmt.Printf("Usage: %s <cmd> <args> [, <cmd> <args> ]\n", pname)
 		for c, u := range usages {
 			fmt.Printf("    %s %s\n", c, u)
 		}
@@ -270,15 +316,10 @@ func usage(cmd string) {
 
 func main() {
 	var err error
-	var cmd string
-	var args []string
 
 	if len(os.Args) < 1 {
 		usage("")
 	}
-
-	cmd = os.Args[1]
-	args = os.Args[2:]
 
 	apcfgd, err = apcfg.NewConfig(nil, pname)
 	if err != nil {
@@ -286,23 +327,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	switch cmd {
-	case "set":
-		err = setProp(cmd, args)
-	case "add":
-		err = setProp(cmd, args)
-	case "get":
-		err = getProp(cmd, args)
-	case "del":
-		err = delProp(cmd, args)
-	default:
-		usage("")
+	if os.Args[1] == "get" {
+		err = getProp(os.Args[1], os.Args[2:])
+	} else {
+		ops := makeOps(os.Args[1:])
+		if _, err = apcfgd.Execute(ops); err == nil {
+			fmt.Println("ok")
+		}
 	}
 
 	if err != nil {
-		fmt.Printf("%s failed: %v\n", cmd, err)
+		fmt.Println(err)
 		os.Exit(1)
-	} else if cmd != "get" {
-		fmt.Println("ok")
 	}
 }

@@ -52,8 +52,7 @@ func upgradeV13() error {
 
 	// If there is an existing default set, preserve it for the appropriate
 	// auth type.
-	node := propertyInsert("@/network/default_ring")
-	if node.Value != "" {
+	if node := propertySearch("@/network/default_ring"); node != nil {
 		authType := ringToAuth[node.Value]
 		if authType != "" {
 			authTypeToDefaultRing[authType] = node.Value
@@ -67,9 +66,11 @@ func upgradeV13() error {
 	authTypeToDefaultRing["open"] = base_def.RING_UNENROLLED
 
 	for a, r := range authTypeToDefaultRing {
-		newNode := propertyAdd(node, a)
-		newNode.Value = r
-		log.Printf("Set %s default ring to %s\n", a, r)
+		node, _ := propertyInsert("@/network/default_ring/" + a)
+		if node != nil {
+			node.Value = r
+			log.Printf("Set %s default ring to %s\n", a, r)
+		}
 	}
 
 	return nil

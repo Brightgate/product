@@ -34,11 +34,9 @@
 package main
 
 import (
-	"container/heap"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -46,7 +44,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
 
@@ -57,24 +54,14 @@ import (
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
-	"bg/common"
-
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/golang/protobuf/proto"
 	zmq "github.com/pebbe/zmq4"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/satori/uuid"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-const (
-	propertyFilename = "ap_props.json"
-	backupFilename   = "ap_props.json.bak"
-	defaultFilename  = "ap_defaults.json"
-	pname            = "ap.configd"
-
-	minConfigVersion = 10
-)
+const pname = "ap.configd"
 
 var metrics struct {
 	getCounts prometheus.Counter
@@ -157,205 +144,14 @@ type pnode struct {
 	index int
 }
 
-type pnodeQueue []*pnode
-
 var (
 	propTreeRoot = pnode{name: "root"}
-	propdir      = flag.String("propdir", "./",
-		"directory in which the property files should be stored")
-	verbose = flag.Bool("v", false, "verbose log output")
+	verbose      = flag.Bool("v", false, "verbose log output")
 
 	brokerd *broker.Broker
 
-	propTreeFile string
-
-	upgradeHooks []func() error
-
 	authTypeToDefaultRing map[string]string
-
-	expirationHeap  pnodeQueue
-	expirationTimer *time.Timer
-	expirationLock  sync.Mutex
-	expired         []string
 )
-
-/*******************************************************************
- *
- * Implement the functions required by the container/heap interface
- */
-func (q pnodeQueue) Len() int { return len(q) }
-
-func (q pnodeQueue) Less(i, j int) bool {
-	return (q[i].Expires).Before(*q[j].Expires)
-}
-
-func (q pnodeQueue) Swap(i, j int) {
-	q[i], q[j] = q[j], q[i]
-	q[i].index = i
-	q[j].index = j
-}
-
-func (q *pnodeQueue) Push(x interface{}) {
-	n := len(*q)
-	prop := x.(*pnode)
-	prop.index = n
-	*q = append(*q, prop)
-}
-
-func (q *pnodeQueue) Pop() interface{} {
-	old := *q
-	n := len(old)
-	prop := old[n-1]
-	prop.index = -1 // for safety
-	*q = old[0 : n-1]
-	return prop
-}
-
-/*************************************************************************
- *
- * Functions to implement property expiration and maintain the associated
- * datastructures.
- */
-func expirationHandler() {
-	reset := time.Duration(time.Minute)
-	for true {
-		<-expirationTimer.C
-		expirationLock.Lock()
-
-		for len(expirationHeap) > 0 {
-			next := expirationHeap[0]
-			now := time.Now()
-
-			if next.Expires == nil {
-				// Should never happen
-				log.Printf("Found static property %s in "+
-					"expiration heap at %d\n",
-					next.path, next.index)
-				heap.Pop(&expirationHeap)
-				continue
-			}
-
-			if now.Before(*next.Expires) {
-				break
-			}
-
-			delay := now.Sub(*next.Expires)
-			if delay.Seconds() > 1.0 {
-				log.Printf("Missed expiration for %s by %s\n",
-					next.name, delay)
-			}
-			if *verbose {
-				log.Printf("Expiring: %s at %v\n",
-					next.name, time.Now())
-			}
-			heap.Pop(&expirationHeap)
-			metrics.expCounts.Inc()
-
-			next.index = -1
-			next.Expires = nil
-
-			next.ops.expire(next)
-		}
-
-		if len(expirationHeap) > 0 {
-			next := expirationHeap[0]
-			reset = time.Until(*next.Expires)
-		}
-		expirationTimer.Reset(reset)
-		expirationLock.Unlock()
-	}
-}
-
-func nextExpiration() *pnode {
-	if len(expirationHeap) == 0 {
-		return nil
-	}
-
-	return expirationHeap[0]
-}
-
-/*
- * Update the expiration time of a single property (possibly setting an
- * expiration for the first time).  If this property either starts or ends at
- * the top of the expiration heap, reset the expiration timer accordingly.
- */
-func expirationUpdate(node *pnode) {
-	reset := false
-
-	expirationLock.Lock()
-
-	if node == nextExpiration() {
-		reset = true
-	}
-
-	if node.Expires == nil {
-		// This node doesn't have an expiration.  If it's in the heap,
-		// it's probably because we just made the setting permanent.
-		// Pull it out of the heap.
-		if node.index != -1 {
-			heap.Remove(&expirationHeap, node.index)
-			node.index = -1
-		}
-	} else {
-		if node.index == -1 {
-			heap.Push(&expirationHeap, node)
-		}
-		heap.Fix(&expirationHeap, node.index)
-	}
-
-	if node == nextExpiration() {
-		reset = true
-	}
-
-	if reset {
-		if next := nextExpiration(); next != nil {
-			expirationTimer.Reset(time.Until(*next.Expires))
-		}
-	}
-	expirationLock.Unlock()
-}
-
-/*
- * Remove a single property from the expiration heap
- */
-func expirationRemove(node *pnode) {
-	expirationLock.Lock()
-	if node.index != -1 {
-		heap.Remove(&expirationHeap, node.index)
-		node.index = -1
-	}
-	expirationLock.Unlock()
-}
-
-/*
- * Walk the list of expired properties and remove them from the tree
- */
-func expirationPurge() {
-	count := 0
-	for len(expired) > 0 {
-		expirationLock.Lock()
-		copy := expired
-		expired = make([]string, 0)
-		expirationLock.Unlock()
-
-		for _, prop := range copy {
-			count++
-			propertyDelete(prop)
-		}
-	}
-	if count > 0 {
-		propTreeStore()
-	}
-}
-
-func expirationInit() {
-	expirationHeap = make(pnodeQueue, 0)
-	heap.Init(&expirationHeap)
-
-	expired = make([]string, 0)
-	expirationTimer = time.NewTimer(time.Duration(time.Minute))
-	go expirationHandler()
-}
 
 /*************************************************************************
  *
@@ -402,7 +198,12 @@ func entityHandler(event []byte) {
 	}
 	hwaddr := network.Uint64ToHWAddr(*entity.MacAddress)
 	path := "@/clients/" + hwaddr.String() + "/"
-	node := propertyInsert(path)
+	node, err := propertyInsert(path)
+	if node == nil {
+		log.Printf("Unable to create client record for %s: %v\n",
+			hwaddr.String(), err)
+		return
+	}
 	ring := selectRing(node, entity.Authtype)
 
 	updates := make(map[string]*string)
@@ -418,16 +219,21 @@ func entityHandler(event []byte) {
 		updates[path+"ipv4_observed"] = &ipv4
 	}
 
-	updated := false
+	updated := make(map[string]*string)
 	for p, v := range updates {
 		if v != nil && *v != "" {
-			if u, _ := propertyUpdate(p, *v, nil, true); u {
-				updateNotify(p, *v, nil)
-				updated = true
+			if node, _ := propertyInsert(p); node != nil {
+				if u, _ := propertyUpdate(node, *v, nil); u {
+					updated[p] = v
+				}
 			}
 		}
 	}
-	if updated {
+
+	if len(updated) > 0 {
+		for p, v := range updated {
+			updateNotify(p, *v, nil)
+		}
 		propTreeStore()
 	}
 }
@@ -736,29 +542,6 @@ func markUpdated(node *pnode) {
 	}
 }
 
-/*
- * Allocate a new property node and insert it into the property tree
- */
-func propertyAdd(parent *pnode, property string) *pnode {
-	if parent.Children == nil {
-		parent.Children = make(map[string]*pnode)
-	}
-
-	n, ok := parent.Children[property]
-	if !ok {
-		path := parent.path + "/" + property
-		n = &pnode{
-			name:   property,
-			parent: parent,
-			path:   path,
-			index:  -1}
-
-		propAttachOps(n)
-		parent.Children[property] = n
-	}
-	return n
-}
-
 func propertyParse(prop string) []string {
 	prop = strings.TrimSuffix(prop, "/")
 	if prop == "@" {
@@ -778,24 +561,43 @@ func propertyParse(prop string) []string {
 
 /*
  * Insert an empty property into the tree, returning the leaf node.  If the
- * property already exists, the tree is left unchanged.
+ * property already exists, the tree is left unchanged.  If the node exists, but
+ * is not a leaf, return an error.
  */
-func propertyInsert(prop string) *pnode {
-	components := propertyParse(prop)
+func propertyInsert(prop string) (*pnode, error) {
+	var err error
 
+	components := propertyParse(prop)
 	if components == nil || len(components) < 1 {
-		return nil
+		return nil, fmt.Errorf("invalid property path: %s", prop)
 	}
 
 	node := &propTreeRoot
 	path := "@"
 	for _, name := range components {
-		next := propertyAdd(node, name)
+		if node.Children == nil {
+			node.Children = make(map[string]*pnode)
+		}
 		path += "/" + name
+		next := node.Children[name]
+		if next == nil {
+			next = &pnode{
+				name:   name,
+				parent: node,
+				path:   path,
+				index:  -1}
+
+			propAttachOps(next)
+			node.Children[name] = next
+		}
 		node = next
 	}
 
-	return node
+	if node != nil && len(node.Children) > 0 {
+		err = fmt.Errorf("inserting an internal node: %s", prop)
+	}
+
+	return node, err
 }
 
 /*
@@ -824,66 +626,54 @@ func propertySearch(prop string) *pnode {
 	return node
 }
 
-func deleteChild(parent, child *pnode) {
-	for name, ptr := range parent.Children {
-		if ptr == child {
-			delete(parent.Children, name)
-			markUpdated(parent)
-			break
-		}
+func deleteSubtree(node *pnode) {
+	if node.Expires != nil {
+		expirationRemove(node)
 	}
-	deleteSubtree(child)
+	for _, n := range node.Children {
+		deleteSubtree(n)
+	}
 }
 
 func propertyDelete(property string) error {
-	log.Printf("delete property: %s\n", property)
+	if *verbose {
+		log.Printf("delete property: %s\n", property)
+	}
 	node := propertySearch(property)
 	if node == nil {
 		return fmt.Errorf("deleting a nonexistent property: %s",
 			property)
 	}
 
-	deleteChild(node.parent, node)
+	if parent := node.parent; parent != nil {
+		delete(parent.Children, node.name)
+		markUpdated(parent)
+	}
+	deleteSubtree(node)
+
 	return nil
 }
 
-func propertyUpdate(property, value string, expires *time.Time,
-	insert bool) (bool, error) {
+func propertyUpdate(node *pnode, value string, exp *time.Time) (bool, error) {
 	var err error
-	var updated, inserted bool
+	var updated bool
 	var oldExpiration *time.Time
 
 	if *verbose {
-		log.Printf("set property %s -> %s\n", property, value)
+		log.Printf("set property %s -> %s\n", node.path, value)
 	}
-	node := propertySearch(property)
-	if node == nil && insert {
-		if node = propertyInsert(property); node != nil {
-			inserted = true
-		}
-	}
-
-	if node == nil {
-		if insert {
-			err = fmt.Errorf("Failed to insert a new property")
-		} else {
-			err = apcfg.ErrNoProp
-		}
-	} else if len(node.Children) > 0 {
-		err = fmt.Errorf("Can only modify leaf properties")
+	if len(node.Children) > 0 {
+		err = fmt.Errorf("can only modify leaf properties")
 	} else {
 		oldExpiration = node.Expires
-		updated, err = node.ops.set(node, value, expires)
+		updated, err = node.ops.set(node, value, exp)
 	}
 
 	if err != nil {
-		log.Println("property update failed: ", err)
-		if inserted {
-			deleteChild(node.parent, node)
-		}
+		log.Printf("property update failed: %v\n", err)
 	} else {
 		markUpdated(node)
-		if oldExpiration != nil || expires != nil {
+		if oldExpiration != nil || exp != nil {
 			expirationUpdate(node)
 		}
 	}
@@ -913,221 +703,6 @@ func propertyGet(property string) (string, error) {
 
 /*************************************************************************
  *
- * Reading and writing the persistent property file
- */
-func propTreeStore() error {
-	if propTreeFile == "" {
-		return nil
-	}
-
-	node := propertyInsert("@/apversion")
-	node.Value = common.GitVersion
-
-	s, err := json.MarshalIndent(propTreeRoot, "", "  ")
-	if err != nil {
-		log.Fatalf("Failed to construct properties JSON: %v\n", err)
-	}
-	metrics.treeSize.Set(float64(len(s)))
-
-	if aputil.FileExists(propTreeFile) {
-		/*
-		 * XXX: could store multiple generations of backup files,
-		 * allowing for arbitrary rollback.  Could also take explicit
-		 * 'checkpoint' snapshots.
-		 */
-		backupfile := *propdir + backupFilename
-		os.Rename(propTreeFile, backupfile)
-	}
-
-	err = ioutil.WriteFile(propTreeFile, s, 0644)
-	if err != nil {
-		log.Printf("Failed to write properties file: %v\n", err)
-	}
-
-	return err
-}
-
-func propTreeImport(data []byte) error {
-	var newRoot pnode
-
-	metrics.treeSize.Set(float64(len(data)))
-	err := json.Unmarshal(data, &newRoot)
-	if err == nil {
-		patchTree("@", &newRoot, "")
-		propTreeRoot = newRoot
-	}
-	return err
-}
-
-func propTreeLoad(name string) error {
-	var file []byte
-	var err error
-
-	file, err = ioutil.ReadFile(name)
-	if err != nil {
-		log.Printf("Failed to load properties file %s: %v\n", name, err)
-		return err
-	}
-
-	if err = propTreeImport(file); err != nil {
-		if nerr := oldPropTreeParse(file); nerr != nil {
-			log.Printf("Failed to import properties from %s: %v\n",
-				name, err)
-			return err
-		}
-	}
-
-	return nil
-}
-
-func addUpgradeHook(version int32, hook func() error) {
-	if version > apcfg.Version {
-		msg := fmt.Sprintf("Upgrade hook %d > current max of %d\n",
-			version, apcfg.Version)
-		panic(msg)
-	}
-
-	if upgradeHooks == nil {
-		upgradeHooks = make([]func() error, apcfg.Version+1)
-	}
-	upgradeHooks[version] = hook
-}
-
-func versionTree() error {
-	upgraded := false
-	version := 0
-
-	node := propertyInsert("@/cfgversion")
-	if node.Value != "" {
-		version, _ = strconv.Atoi(node.Value)
-	}
-	if version < minConfigVersion {
-		return fmt.Errorf("obsolete properties file")
-	}
-	if version > int(apcfg.Version) {
-		return fmt.Errorf("properties file is newer than the software")
-	}
-
-	for version < int(apcfg.Version) {
-		log.Printf("Upgrading properties from version %d to %d\n",
-			version, version+1)
-		version++
-		if upgradeHooks[version] != nil {
-			if err := upgradeHooks[version](); err != nil {
-				return fmt.Errorf("upgrade failed: %v", err)
-			}
-		}
-		node.Value = strconv.Itoa(version)
-		upgraded = true
-	}
-
-	if upgraded {
-		if err := propTreeStore(); err != nil {
-			return fmt.Errorf("Failed to write properties: %v", err)
-		}
-	}
-	return nil
-}
-
-/*
- * After loading the initial property values, we need to walk the tree to set
- * the parent pointers, attach any non-default operations, and possibly insert
- * into the expiration heap
- */
-func patchTree(name string, node *pnode, path string) {
-	node.name = name
-	if len(path) > 0 {
-		node.path = path + "/" + name
-	} else {
-		node.path = name
-	}
-	node.index = -1
-	propAttachOps(node)
-	for childName, child := range node.Children {
-		child.parent = node
-		patchTree(childName, child, node.path)
-	}
-	if node.Expires != nil {
-		expirationUpdate(node)
-	}
-}
-
-func dumpTree(name string, node *pnode, level int) {
-	indent := ""
-	for i := 0; i < level; i++ {
-		indent += "  "
-	}
-	e := ""
-	if node.Expires != nil {
-		e = node.Expires.Format("2006-01-02T15:04:05")
-	}
-	fmt.Printf("%s%s: %s  %s\n", indent, name, node.Value, e)
-	for name, child := range node.Children {
-		dumpTree(name, child, level+1)
-	}
-}
-
-func deleteSubtree(node *pnode) {
-	if node.Expires != nil {
-		expirationRemove(node)
-	}
-	for _, n := range node.Children {
-		deleteSubtree(n)
-	}
-}
-
-func propTreeInit() {
-	var err error
-
-	propTreeFile = *propdir + propertyFilename
-	if aputil.FileExists(propTreeFile) {
-		err = propTreeLoad(propTreeFile)
-	} else {
-		err = fmt.Errorf("File missing")
-	}
-
-	if err != nil {
-		log.Printf("Unable to load properties: %v", err)
-		backupfile := *propdir + backupFilename
-		if aputil.FileExists(backupfile) {
-			err = propTreeLoad(backupfile)
-		} else {
-			err = fmt.Errorf("File missing")
-		}
-
-		if err != nil {
-			log.Printf("Unable to load backup properties: %v", err)
-		} else {
-			log.Printf("Loaded properties from backup file")
-		}
-	}
-
-	if err != nil {
-		log.Printf("No usable properties files.  Loading defaults.\n")
-		defaultFile := *propdir + defaultFilename
-		err := propTreeLoad(defaultFile)
-		if err != nil {
-			log.Fatal("Unable to load default properties")
-		}
-		applianceUUID := uuid.NewV4().String()
-		propertyUpdate("@/uuid", applianceUUID, nil, true)
-
-		// XXX: this needs to come from the cloud - not hardcoded
-		applianceSiteID := "7410"
-		propertyUpdate("@/siteid", applianceSiteID, nil, true)
-	}
-
-	if err == nil {
-		if err = versionTree(); err != nil {
-			log.Fatalf("Failed version check: %v\n", err)
-		}
-	}
-
-	dumpTree("root", &propTreeRoot, 0)
-}
-
-/*************************************************************************
- *
  * Handling incoming requests from other daemons
  */
 func getPropHandler(prop string) (string, error) {
@@ -1135,15 +710,31 @@ func getPropHandler(prop string) (string, error) {
 }
 
 func setPropHandler(prop string, val *string, exp *time.Time, add bool) error {
+	var node *pnode
+	var err error
+
 	if val == nil {
-		return fmt.Errorf("no value supplied")
+		err = fmt.Errorf("no value supplied")
+	} else if add {
+		if node, err = propertyInsert(prop); err != nil {
+			node = nil
+		}
+	} else {
+		if node = propertySearch(prop); node == nil {
+			err = fmt.Errorf("no such property: %s", prop)
+		}
 	}
-	updated, err := propertyUpdate(prop, *val, exp, add)
-	if updated {
-		propTreeStore()
-		updateNotify(prop, *val, exp)
+	if node != nil {
+		updated, rerr := propertyUpdate(node, *val, exp)
+		if updated {
+			propTreeStore()
+			updateNotify(prop, *val, exp)
+		} else {
+			err = rerr
+		}
 	}
 	return err
+
 }
 
 func delPropHandler(prop string) error {

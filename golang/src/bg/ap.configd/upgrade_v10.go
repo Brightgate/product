@@ -14,6 +14,25 @@ import (
 	"log"
 )
 
+type rules struct {
+	name   string
+	rule   string
+	active string
+}
+
+var newRules = []rules{
+	{
+		name:   "ssh-internal",
+		rule:   "ACCEPT TCP FROM IFACE NOT wan TO AP DPORTS 22",
+		active: "false",
+	},
+	{
+		name:   "ssh-external",
+		rule:   "ACCEPT TCP FROM IFACE wan TO AP DPORTS 22",
+		active: "true",
+	},
+}
+
 //
 // Add rules allowing ssh access from clients and the WAN.  The client rule is
 // enabled, the WAN rule is disabled.
@@ -21,15 +40,15 @@ import (
 func upgradeV10() error {
 	log.Printf("Adding ssh firewall rules\n")
 
-	prop := propertyInsert("@/firewall/rules/ssh-internal/active")
-	prop.Value = "true"
-	prop = propertyInsert("@/firewall/rules/ssh-internal/rule")
-	prop.Value = "ACCEPT TCP FROM IFACE NOT wan TO AP DPORTS 22"
-
-	prop = propertyInsert("@/firewall/rules/ssh-external/active")
-	prop.Value = "false"
-	prop = propertyInsert("@/firewall/rules/ssh-external/rule")
-	prop.Value = "ACCEPT TCP FROM IFACE wan TO AP DPORTS 22"
+	for _, r := range newRules {
+		base := "@/firewall/rules/" + r.name
+		if prop, _ := propertyInsert(base + "rule"); prop != nil {
+			prop.Value = r.rule
+		}
+		if prop, _ := propertyInsert(base + "active"); prop != nil {
+			prop.Value = r.active
+		}
+	}
 
 	log.Printf("Renaming @/firewall/active to @/firewall/blocked\n")
 	if firewall := propertySearch("@/firewall"); firewall != nil {

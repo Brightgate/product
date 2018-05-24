@@ -681,6 +681,8 @@ $(APPBIN)/ap.configd: \
 	$(GOSRCBG)/common/version.go \
 	$(GOSRCBG)/ap.configd/configd.go \
 	$(GOSRCBG)/ap.configd/devices.go \
+	$(GOSRCBG)/ap.configd/expiration.go \
+	$(GOSRCBG)/ap.configd/file.go \
 	$(GOSRCBG)/ap.configd/upgrade_v10.go \
 	$(GOSRCBG)/ap.configd/upgrade_v11.go \
 	$(GOSRCBG)/ap.configd/upgrade_v12.go \
