@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -13,8 +13,10 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -22,37 +24,48 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"bg/ap_common/aputil"
+	"bg/ap_common/network"
 	"bg/base_def"
-
-	"database/sql"
-	_ "github.com/mattn/go-sqlite3"
-)
-
-const (
-	minRecords = 5000
-	maxRecords = 10000
 )
 
 var (
-	logpipe = flag.String("logpipe", "/var/tmp/bgpipe",
+	pipeName = flag.String("pipeName", "/var/tmp/bgpipe",
 		"rsyslog named pipe to monitor")
-	dropDB = flag.String("dropdb", "drop.db", "database of drop records")
-
-	lanDrops, wanDrops *dropTable
-
-	dbHandle *sql.DB
 
 	wanIfaces map[string]bool
+	logpipe   *os.File
+	dropDir   string
+
+	droplogRunning bool
+	dropThreads    sync.WaitGroup
+
+	lanDrops []*dropRecord
+	wanDrops []*dropRecord
 )
 
-type dropTable struct {
-	name  string
-	minID int
-	maxID int
+type dropRecord struct {
+	Time    time.Time
+	Indev   string
+	Src     string
+	Dst     string
+	Smac    string `json:"Smac,omitempty"`
+	Proto   string
+	srcIP   net.IP
+	dstIP   net.IP
+	srcPort int
+	dstPort int
+}
+
+type archiveRecord struct {
+	Start    time.Time
+	End      time.Time
+	LanDrops []*dropRecord `json:"LanDrops,omitempty"`
+	WanDrops []*dropRecord `json:"WanDrops,omitempty"`
 }
 
 // Default logfile format:
@@ -70,77 +83,6 @@ type dropTable struct {
 //    & ~
 //
 
-const dropSchema = `
-		Id	int PRIMARY KEY,
-		Time	timestamp NOT NULL,
-		InDev	text,
-		OutDev	text,
-		SrcIP	text,
-		DstIP	text,
-		SrcMAC	text,
-		SrcPort	int,
-		DstPort	int,
-		Proto	text
-	`
-
-type dropRecord struct {
-	id     int
-	time   time.Time
-	indev  string
-	outdev string
-	src    net.IP
-	dst    net.IP
-	smac   string
-	sprt   int
-	dprt   int
-	proto  string
-}
-
-func countDrop(d *dropRecord) {
-	dstIP := d.dst.String()
-	srcIP := d.src.String()
-
-	if mac, ok := ipToMac[srcIP]; ok {
-		incBlockCnt(d.proto, mac, d.dst, d.dprt, d.sprt, true)
-	}
-
-	if mac, ok := ipToMac[dstIP]; ok {
-		incBlockCnt(d.proto, mac, d.src, d.sprt, d.dprt, false)
-	}
-}
-
-func recordDrop(d *dropRecord) *dropTable {
-	var table *dropTable
-
-	if wanIfaces[d.indev] {
-		table = wanDrops
-		metrics.wanDrops.Inc()
-	} else {
-		table = lanDrops
-		metrics.lanDrops.Inc()
-	}
-
-	table.maxID++
-	d.id = table.maxID
-	columns := "Id, Time, InDev, OutDev, SrcIP, DstIP, " +
-		"SrcMAC, SrcPort, DstPort, Proto"
-
-	qs := "INSERT INTO " + table.name + "(" + columns +
-		") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-
-	srcIP := d.src.String()
-	dstIP := d.dst.String()
-	srcPort := strconv.Itoa(d.sprt)
-	dstPort := strconv.Itoa(d.dprt)
-	_, err := dbHandle.Exec(qs, d.id, d.time, d.indev, d.outdev,
-		srcIP, dstIP, d.smac, srcPort, dstPort, d.proto)
-	if err != nil {
-		log.Printf("failed to insert drop: %v\n", err)
-	}
-
-	return table
-}
-
 // Use a regular expression to extract the date and details of a dropped packet
 // message.  We use the square brackets to divide the line.  Note also the use
 // of \b (word boundary) to force the datestamp not to have any trailing
@@ -148,7 +90,7 @@ func recordDrop(d *dropRecord) *dropTable {
 var dropRE = regexp.MustCompile(`(.+)\b\s+\[.+\]\s+DROPPED\s+(.*)`)
 
 func getDrop(line string) *dropRecord {
-	var d dropRecord
+	d := &dropRecord{}
 
 	l := dropRE.FindStringSubmatch(line)
 	if l == nil {
@@ -161,7 +103,7 @@ func getDrop(line string) *dropRecord {
 	when, err := time.Parse("Jan 2 15:04:05", l[1])
 	if err == nil {
 		year := time.Now().Year()
-		d.time = when.AddDate(year, 0, 0)
+		d.Time = when.AddDate(year, 0, 0)
 	} else {
 		log.Printf("Failed to read time from substring <%s> of "+
 			"full line <%s>: %v\n", l[1], line, err)
@@ -178,13 +120,11 @@ func getDrop(line string) *dropRecord {
 		}
 		switch key {
 		case "in":
-			d.indev = val
-		case "out":
-			d.outdev = val
+			d.Indev = val
 		case "src":
-			d.src = net.ParseIP(val)
+			d.srcIP = net.ParseIP(val)
 		case "dst":
-			d.dst = net.ParseIP(val)
+			d.dstIP = net.ParseIP(val)
 		case "mac":
 			// The MAC field contains both the source and
 			// destination MAC addresses.  Because we only drop
@@ -193,132 +133,158 @@ func getDrop(line string) *dropRecord {
 			if len(f) > 1 {
 				all := strings.Split(val, ":")
 				if len(all) >= 12 {
-					d.smac = strings.Join(all[6:12], ":")
+					d.Smac = strings.Join(all[6:12], ":")
 				}
 			}
 		case "spt":
-			d.sprt, _ = strconv.Atoi(val)
+			d.srcPort, _ = strconv.Atoi(val)
 		case "dpt":
-			d.dprt, _ = strconv.Atoi(val)
+			d.dstPort, _ = strconv.Atoi(val)
 		case "proto":
-			d.proto = val
+			d.Proto = val
 		}
 	}
-	if d.indev == "" && d.outdev == "" {
+	if d.Indev == "" {
 		log.Printf("bad line: <%s>\n", line)
 		return nil
 	}
+	d.Dst = d.dstIP.String() + ":" + strconv.Itoa(d.dstPort)
+	d.Src = d.srcIP.String() + ":" + strconv.Itoa(d.srcPort)
 
-	return &d
+	// If we are currently scanning this client, ignore any dropped packets
+	// to the gateway.  We assume that the packets are responses to our
+	// probing rather than traffic initiated by the client.
+	if gateways[network.IPAddrToUint32(d.dstIP)] &&
+		scanCheck(d.Proto, d.srcIP.String()) {
+		d = nil
+	}
+
+	return d
 }
 
-func getVal(db *sql.DB, table, val string) int {
-	id := 0
+// Persist a single set of drop records to the watchd spool area
+func archiveOne(start, end time.Time, lan, wan []*dropRecord) {
+	rec := archiveRecord{
+		Start: start,
+		End:   end,
+	}
+	if len(lan) > 0 {
+		rec.LanDrops = lan
+	}
+	if len(wan) > 0 {
+		rec.WanDrops = wan
+	}
 
-	query := "SELECT " + val + "(id) FROM " + table
-	rows, err := db.Query(query)
+	file := dropDir + "/" + start.Format(time.RFC3339) + ".json"
+	s, err := json.MarshalIndent(&rec, "", "  ")
 	if err != nil {
-		log.Printf("'%s' failed: %v\n", query, err)
-	} else {
-		defer rows.Close()
-		rows.Next()
-		if err = rows.Scan(&id); err != nil {
-			log.Printf("failed to find %s ID: %v", val, err)
+		log.Printf("unable to construct droplog JSON: %v", err)
+	} else if err = ioutil.WriteFile(file, s, 0644); err != nil {
+		log.Printf("failed to write droplog file %s: %v", file, err)
+	}
+}
+
+// Periodically archive and reset the lists of firewall drop records
+func archiver(lock *sync.Mutex, done chan bool) {
+	defer dropThreads.Done()
+
+	ticker := time.NewTicker(*sfreq)
+	start := time.Now()
+	for droplogRunning {
+		snapshotClean(dropDir)
+		select {
+		case <-ticker.C:
+			lock.Lock()
+			now := time.Now()
+			saveLan := lanDrops
+			saveWan := wanDrops
+			lanDrops = make([]*dropRecord, 0)
+			wanDrops = make([]*dropRecord, 0)
+			lock.Unlock()
+
+			archiveOne(start, now, saveLan, saveWan)
+			start = now
+		case <-done:
 		}
 	}
-	return id
+	archiveOne(start, time.Now(), lanDrops, wanDrops)
+	log.Printf("Archiver done\n")
 }
 
-func tableInit(db *sql.DB, table string) (*dropTable, error) {
-	var t dropTable
-
-	sqlStmt := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s ( %s );",
-		table, dropSchema)
-	if _, err := db.Exec(sqlStmt); err != nil {
-		return nil, fmt.Errorf("failed to create table: %v", err)
+func countDrop(d *dropRecord) {
+	if mac, ok := ipToMac[d.srcIP.String()]; ok {
+		incBlockCnt(d.Proto, mac, d.dstIP, d.dstPort, d.srcPort, true)
 	}
 
-	t.name = table
-	t.minID = getVal(db, table, "MIN")
-	t.maxID = getVal(db, table, "MAX")
-
-	log.Printf("%s IDs %d - %d\n", table, t.minID, t.maxID)
-	return &t, nil
-}
-
-func dbInit(name string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", name)
-	if err != nil {
-		err = fmt.Errorf("failed to connect to %s: %v", name, err)
-	}
-
-	if lanDrops, err = tableInit(db, "landrops"); err != nil {
-		return nil, err
-	}
-
-	if wanDrops, err = tableInit(db, "wandrops"); err != nil {
-		return nil, err
-	}
-
-	return db, nil
-}
-
-func trimTable(t *dropTable) {
-	if t.maxID-t.minID <= maxRecords {
-		return
-	}
-
-	log.Printf("%s table has %d entries.  Trimming to %d.\n",
-		t.name, t.maxID-t.minID, minRecords)
-
-	newMin := t.maxID - minRecords
-	stmnt := fmt.Sprintf("DELETE FROM %s WHERE id < %d", t.name, newMin)
-	if res, err := dbHandle.Exec(stmnt, 1); err != nil {
-		log.Printf("'%s' failed: %v\n", stmnt, err)
-	} else {
-		deleted, _ := res.RowsAffected()
-		log.Printf("Deleted %d entries\n", deleted)
-		t.minID = newMin
+	if mac, ok := ipToMac[d.dstIP.String()]; ok {
+		incBlockCnt(d.Proto, mac, d.srcIP, d.srcPort, d.dstPort, false)
 	}
 }
 
+// Monitor the named pipe to which rsyslog sends firewall drop messages.  Each
+// valid message is turned into a 'dropRecord' struct, which eventually gets
+// archived.
 func logMonitor(name string) {
-	// The pipe open will block until/unless something is written to the
-	// pipe, so it's worth noting both when we start the open and when it
-	// completes.
-	log.Printf("Opening droplog pipe: %s\n", name)
-	pipe, err := os.OpenFile(name, os.O_RDONLY, os.ModeNamedPipe)
-	if err != nil {
-		log.Printf("Failed to open droplog pipe %s: %v\n", name, err)
-		return
-	}
-	log.Printf("Opened droplog pipe: %s\n", name)
+	var lock sync.Mutex
+	defer dropThreads.Done()
 
-	scanner := bufio.NewScanner(pipe)
-	for scanner.Scan() {
-		d := getDrop(scanner.Text())
-		if d != nil {
-			t := recordDrop(d)
-			trimTable(t)
+	lanDrops = make([]*dropRecord, 0)
+	wanDrops = make([]*dropRecord, 0)
 
-			// We only maintain per-device firewall statistics for
-			// packets that originate within our LAN.
-			if !wanIfaces[d.indev] {
+	openPipe()
+	doneChan := make(chan bool)
+	dropThreads.Add(1)
+	go archiver(&lock, doneChan)
+	scanner := bufio.NewScanner(logpipe)
+
+	for droplogRunning && scanner.Scan() {
+		if d := getDrop(scanner.Text()); d != nil {
+			lock.Lock()
+			if wanIfaces[d.Indev] {
+				wanDrops = append(wanDrops, d)
+			} else {
+				lanDrops = append(lanDrops, d)
 				countDrop(d)
 			}
+			lock.Unlock()
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
 		log.Fatalf("error processing log pipe: %v\n", err)
 	}
+
+	doneChan <- true
 }
 
-func createPipe(name string) error {
-	if !aputil.FileExists(name) {
-		log.Printf("Creating named pipe %s for log input\n", name)
-		if err := syscall.Mkfifo(name, 0600); err != nil {
-			return fmt.Errorf("failed to create %s: %v", name, err)
+// Open the named pipe into which rsyslog deposits DROP messages.
+func openPipe() {
+	var err error
+	var warned bool
+
+	log.Printf("Opening droplog pipe: %s\n", *pipeName)
+	for droplogRunning && logpipe == nil {
+		logpipe, err = os.OpenFile(*pipeName, os.O_RDONLY,
+			os.ModeNamedPipe)
+		if err != nil {
+			if !warned {
+				log.Printf("Failed to open droplog pipe %s: %v",
+					*pipeName, err)
+				warned = true
+			}
+			time.Sleep(time.Second)
+		}
+	}
+	log.Printf("Opened droplog pipe: %s\n", *pipeName)
+}
+
+// When properly configured rsyslog will copy DROP messages to a named pipe, but
+// it is our responsibility to create the pipe.
+func createPipe() error {
+	if !aputil.FileExists(*pipeName) {
+		log.Printf("Creating named pipe %s for log input\n", *pipeName)
+		if err := syscall.Mkfifo(*pipeName, 0600); err != nil {
+			return fmt.Errorf("failed to create %s: %v", *pipeName, err)
 		}
 
 		log.Printf("Restarting rsyslogd\n")
@@ -357,32 +323,36 @@ func findWanNics() {
 			}
 		}
 	}
-	log.Printf("WAN interfaces: %v\n", wanIfaces)
 }
 
 func droplogFini(w *watcher) {
-	dbHandle.Close()
 	w.running = false
+	droplogRunning = false
+	if logpipe != nil {
+		logpipe.Close()
+	}
+	dropThreads.Wait()
 }
 
 func droplogInit(w *watcher) {
 	findWanNics()
 
-	err := createPipe(*logpipe)
-	if err != nil {
-		err = fmt.Errorf("creating syslog pipe %s: %v", *logpipe, err)
-	} else {
-		dbHandle, err = dbInit(*watchDir + "/" + *dropDB)
-		if err != nil {
-			err = fmt.Errorf("database error: %v", err)
+	dropDir = *watchDir + "/droplog"
+	if !aputil.FileExists(dropDir) {
+		if err := os.MkdirAll(dropDir, 0755); err != nil {
+			log.Printf("Unable to make droplog directory %s: %v\n",
+				dropDir, err)
+			return
 		}
 	}
 
-	if err == nil {
-		go logMonitor(*logpipe)
-		w.running = true
+	if err := createPipe(); err != nil {
+		log.Printf("error creating syslog pipe %s: %v", *pipeName, err)
 	} else {
-		log.Printf("Droplog watcher failed to start: %v\n", err)
+		dropThreads.Add(1)
+		go logMonitor(*pipeName)
+		droplogRunning = true
+		w.running = true
 	}
 }
 

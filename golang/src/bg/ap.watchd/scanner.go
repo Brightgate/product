@@ -38,8 +38,12 @@ var (
 	scansPending scanQueue
 	pendingLock  sync.Mutex
 
-	scansRunning map[*os.Process]bool
-	runLock      sync.Mutex
+	tcpScans = make(map[string]bool)
+	udpScans = make(map[string]bool)
+	scanLock sync.RWMutex
+
+	scanProcesses map[*os.Process]bool
+	runLock       sync.Mutex
 
 	internalMacs map[string]bool
 
@@ -366,7 +370,7 @@ func runCmd(cmd string, args []string) error {
 	err := child.Start()
 	if err == nil {
 		childProcess = child.Process
-		scansRunning[childProcess] = true
+		scanProcesses[childProcess] = true
 	}
 	runLock.Unlock()
 
@@ -378,7 +382,7 @@ func runCmd(cmd string, args []string) error {
 		}
 
 		runLock.Lock()
-		delete(scansRunning, childProcess)
+		delete(scanProcesses, childProcess)
 		runLock.Unlock()
 	}
 	return err
@@ -529,12 +533,49 @@ func marshalNmapResults(host *nmap.Host) *base_msg.Host {
 	return &h
 }
 
+// Check to see if a specific port scan is in progresss
+func scanCheck(proto, ip string) bool {
+	var rval bool
+
+	scanLock.RLock()
+	if proto == "tcp" {
+		rval = tcpScans[ip]
+	} else if proto == "udp" {
+		rval = udpScans[ip]
+	}
+	scanLock.RUnlock()
+	return rval
+}
+
+// Update whether a specific port scan is in progresss
+func scanUpdate(scantype, ip string, set bool) {
+	var m map[string]bool
+
+	if scantype == "tcp_ports" {
+		m = tcpScans
+	} else if scantype == "udp_ports" {
+		m = udpScans
+	}
+	if m != nil {
+		scanLock.Lock()
+		if set {
+			m[ip] = true
+		} else {
+			delete(m, ip)
+		}
+		scanLock.Unlock()
+	}
+}
+
 // portScan scans the ports of the given IP address using nmap, putting
 // results on the message bus. Scans of IP are stopped if host is down.
 func portScan(req *ScanRequest) {
 	start := time.Now()
+	scanUpdate(req.ScanType, req.IP, true)
 	res, err := nmapScan("portscan", req.IP, req.Args)
+	scanUpdate(req.ScanType, req.IP, false)
 	done := time.Now()
+
 	if err != nil {
 		return
 	}
@@ -808,14 +849,14 @@ func scannerFini(w *watcher) {
 
 	kill := func(sig syscall.Signal) error {
 		runLock.Lock()
-		for r := range scansRunning {
+		for r := range scanProcesses {
 			r.Signal(sig)
 		}
 		runLock.Unlock()
 		// Don't bother trying to figure out partial errors.
 		return nil
 	}
-	alive := func() bool { return len(scansRunning) > 0 }
+	alive := func() bool { return len(scanProcesses) > 0 }
 
 	aputil.RetryKill(kill, alive)
 
@@ -837,7 +878,7 @@ func scannerInit(w *watcher) {
 	heap.Init(&scansPending)
 	vulnInit()
 
-	scansRunning = make(map[*os.Process]bool)
+	scanProcesses = make(map[*os.Process]bool)
 
 	for i := 0; i < numScanners; i++ {
 		go scanner()

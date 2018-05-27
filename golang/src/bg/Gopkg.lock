@@ -209,12 +209,6 @@
   revision = "dcbfbe505d35de8166ccfc47ff9e4bb020473e18"
 
 [[projects]]
-  name = "github.com/mattn/go-sqlite3"
-  packages = ["."]
-  revision = "5160b48509cf5c877bc22c11c373f8c7738cdb38"
-  version = "v1.3.0"
-
-[[projects]]
   name = "github.com/matttproud/golang_protobuf_extensions"
   packages = ["pbutil"]
   revision = "3247c84500bff8d9fb6d579d800f20b3e091582c"
@@ -633,6 +627,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "8c57ed646de52a9ff81497361f07adb5934652ab5e3237923ad76e4a36ab1240"
+  inputs-digest = "56707fa38d8f496a78a47382965e7a7a2c375fdd3b6e738d3a484934d02e1e36"
   solver-name = "gps-cdcl"
   solver-version = 1
