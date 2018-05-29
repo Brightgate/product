@@ -34,13 +34,17 @@ const (
 	ntpdSystemdService = "chrony.service"
 )
 
-func getNTPServers() []string {
+func getNTPServers() ([]string, error) {
 	ret := make([]string, 0)
-	props, _ := config.GetProps(ntpserversConfig)
+	props, err := config.GetProps(ntpserversConfig)
+	if err != nil {
+		log.Printf("Failed to get properties %s: %v\n", ntpserversConfig, err)
+		return ret, err
+	}
 	for _, c := range props.Children {
 		ret = append(ret, c.Value)
 	}
-	return ret
+	return ret, nil
 }
 
 func generateNTPDConf() error {
@@ -60,7 +64,10 @@ func generateNTPDConf() error {
 		conf.Servers = []string{getGatewayIP()}
 	} else {
 		conf.Rings = rings
-		conf.Servers = getNTPServers()
+		conf.Servers, err = getNTPServers()
+		if err != nil {
+			return err
+		}
 	}
 
 	cf, err := os.Create(ntpdConfPath)
