@@ -36,18 +36,9 @@ const (
 
 func getNTPServers() []string {
 	ret := make([]string, 0)
-	props, err := config.GetProps(ntpserversConfig)
-	if err != nil {
-		ret = append(ret,
-			"time1.google.com",
-			"time2.google.com",
-			"time3.google.com",
-			"time4.google.com",
-		)
-	} else {
-		for _, c := range props.Children {
-			ret = append(ret, c.Value)
-		}
+	props, _ := config.GetProps(ntpserversConfig)
+	for _, c := range props.Children {
+		ret = append(ret, c.Value)
 	}
 	return ret
 }
