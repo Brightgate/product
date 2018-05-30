@@ -12,6 +12,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -24,7 +25,6 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
-	"golang.org/x/net/context"
 )
 
 func setupLogging(t *testing.T) (*zap.Logger, *zap.SugaredLogger) {

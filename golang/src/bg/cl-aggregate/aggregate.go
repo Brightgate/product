@@ -12,6 +12,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/md5"
 	"flag"
 	"fmt"
@@ -29,7 +30,6 @@ import (
 	"go.uber.org/zap"
 
 	"cloud.google.com/go/storage"
-	"golang.org/x/net/context"
 )
 
 const (

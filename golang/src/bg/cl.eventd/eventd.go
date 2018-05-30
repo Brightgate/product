@@ -18,6 +18,7 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
@@ -43,7 +44,6 @@ import (
 	"cloud.google.com/go/pubsub"
 	"github.com/golang/protobuf/proto"
 	"github.com/satori/uuid"
-	"golang.org/x/net/context"
 )
 
 const checkMark = `✔︎ `

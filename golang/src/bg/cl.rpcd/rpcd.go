@@ -18,6 +18,7 @@
 package main
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/tls"
@@ -45,8 +46,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"go.uber.org/zap"
-
-	"golang.org/x/net/context"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

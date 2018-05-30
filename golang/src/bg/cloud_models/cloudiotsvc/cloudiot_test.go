@@ -11,13 +11,13 @@
 package cloudiotsvc
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/fgrosse/zaptest"
 	"go.uber.org/zap"
-	"golang.org/x/net/context"
 	"golang.org/x/oauth2/google"
 	cloudiot "google.golang.org/api/cloudiot/v1"
 	apioption "google.golang.org/api/option"

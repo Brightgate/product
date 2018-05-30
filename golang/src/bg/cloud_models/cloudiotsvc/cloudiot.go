@@ -11,12 +11,12 @@
 package cloudiotsvc
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/pkg/errors"
-	"golang.org/x/net/context"
 	"golang.org/x/oauth2/google"
 	cloudiot "google.golang.org/api/cloudiot/v1"
 )

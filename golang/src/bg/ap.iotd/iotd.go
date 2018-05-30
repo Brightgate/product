@@ -11,6 +11,7 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"flag"
 	"io/ioutil"
@@ -34,7 +35,6 @@ import (
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"golang.org/x/net/context"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"

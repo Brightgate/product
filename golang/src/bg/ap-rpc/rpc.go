@@ -12,6 +12,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/tls"
@@ -39,7 +40,6 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/tomazk/envcfg"
 
-	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/grpclog"
