@@ -687,7 +687,8 @@ $(APPBIN)/ap.configd: \
 	$(GOSRCBG)/ap.configd/upgrade_v11.go \
 	$(GOSRCBG)/ap.configd/upgrade_v12.go \
 	$(GOSRCBG)/ap.configd/upgrade_v13.go \
-	$(GOSRCBG)/ap.configd/upgrade_v14.go
+	$(GOSRCBG)/ap.configd/upgrade_v14.go \
+	$(GOSRCBG)/ap.configd/upgrade_v15.go
 $(APPBIN)/ap.dhcp4d: $(GOSRCBG)/ap.dhcp4d/dhcp4d.go
 $(APPBIN)/ap.dns4d: \
 	$(GOSRCBG)/ap.dns4d/dns4d.go \
