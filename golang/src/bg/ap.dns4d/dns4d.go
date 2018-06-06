@@ -24,9 +24,12 @@
 package main
 
 import (
+	"bytes"
 	"container/heap"
 	"flag"
+	"fmt"
 	"hash/crc64"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -79,6 +82,8 @@ var (
 	domainname    string
 	brightgateDNS string
 	upstreamDNS   = "8.8.8.8:53"
+
+	dnsHTTPClient *http.Client
 )
 
 /*
@@ -269,6 +274,8 @@ func (d *dnsCache) insert(key uint64, question string, response *dns.Msg) {
 }
 
 func (d *dnsCache) init() {
+	metrics.cacheEntries.Set(0.0)
+	metrics.cacheSize.Set(0.0)
 	d.responses = make(map[uint64]*cachedResponse)
 	d.eolHeap = make([]*cachedResponse, 0)
 	d.table = crc64.MakeTable(crc64.ISO)
@@ -351,6 +358,10 @@ func cnameUpdateEvent(path []string, val string, expires *time.Time) {
 func cnameDeleteEvent(path []string) {
 	log.Printf("cname delete %s\n", path[2])
 	deleteOneCname(path[2])
+}
+
+func serverUpdateEvent(path []string, val string, expires *time.Time) {
+	setNameserver(val)
 }
 
 func logRequest(handler string, start time.Time, ip net.IP, r, m *dns.Msg) {
@@ -518,6 +529,49 @@ func shouldCache(q, r *dns.Msg) bool {
 	return true
 }
 
+func dnsOverHTTPSExchange(m *dns.Msg, server string) (*dns.Msg, error) {
+	var rval *dns.Msg
+
+	packed, err := m.Pack()
+	if err != nil {
+		return nil, fmt.Errorf("pack failed: %v", err)
+	}
+	r := bytes.NewReader(packed)
+
+	req, err := http.NewRequest("POST", server, r)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create POST request: %v", err)
+	}
+	req.Header.Add("content-type", "application/dns-udpwireformat")
+	req.Header.Add("accept", "*/*")
+
+	res, err := dnsHTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("POST failed: %v", err)
+	}
+	buf, err := ioutil.ReadAll(res.Body)
+	res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		details := ""
+		if err != nil {
+			details = " (" + string(buf) + ")"
+		}
+		err = fmt.Errorf("DoH server response: %s%s", res.Status,
+			details)
+	} else {
+		rval = &dns.Msg{}
+		err = rval.Unpack(buf)
+		if err != nil {
+			err = fmt.Errorf("unpacking DNS response: %v", err)
+			// log.Printf("%s\n", hex.Dump(buf))
+			rval = nil
+		}
+	}
+
+	return rval, err
+}
+
 func upstreamRequest(server string, r, m *dns.Msg) {
 	var cacheResult bool
 	var upstream *dns.Msg
@@ -533,7 +587,11 @@ func upstreamRequest(server string, r, m *dns.Msg) {
 		c := new(dns.Client)
 		start := time.Now()
 		metrics.upstreamCnt.Inc()
-		upstream, _, err = c.Exchange(r, server)
+		if dnsHTTPClient != nil {
+			upstream, err = dnsOverHTTPSExchange(r, server)
+		} else {
+			upstream, _, err = c.Exchange(r, server)
+		}
 		metrics.upstreamLatency.Observe(time.Since(start).Seconds())
 		cacheResult = (err == nil) && shouldCache(r, upstream)
 	}
@@ -825,34 +883,38 @@ func initHostMap() {
 	}
 }
 
-func getNameserver() string {
-	// Get the nameserver address from configd
-	tmp, _ := config.GetProp("@/network/dnsserver")
-	if tmp == "" {
-		return ""
+func setNameserver(in string) {
+	// If the server looks like dns-over-http, accept it as-is.  Otherwise
+	// we try to interpret it as an <ip>:<port> tuple.
+	if strings.HasPrefix(in, "https://") {
+		netTransport := &http.Transport{
+			Dial: (&net.Dialer{
+				Timeout: 5 * time.Second,
+			}).Dial,
+			TLSHandshakeTimeout: 5 * time.Second,
+			IdleConnTimeout:     300,
+		}
+		dnsHTTPClient = &http.Client{
+			Timeout:   time.Second * 2,
+			Transport: netTransport,
+		}
+	} else {
+		comp := strings.Split(in, ":")
+		ip := net.ParseIP(comp[0])
+		if ip == nil {
+			log.Printf("Invalid nameserver: %s\n", in)
+			return
+		}
+		if len(comp) == 1 {
+			// If the address didn't include a port number,
+			// append the standard port
+			in += ":53"
+		}
+		dnsHTTPClient = nil
 	}
-
-	// Attempt to split the address into <ip>:<port>
-	comp := strings.Split(tmp, ":")
-	if len(comp) < 1 || len(comp) > 2 {
-		goto errout
-	}
-
-	// Verify that that IP address is legal
-	if ip := net.ParseIP(comp[0]); ip == nil {
-		goto errout
-	}
-
-	// If the address didn't include a port number, append the standard port
-	if len(comp) == 1 {
-		tmp += ":53"
-	}
-
-	return tmp
-
-errout:
-	log.Printf("Invalid nameserver: %s\n", tmp)
-	return ""
+	log.Printf("Using nameserver: %s\n", in)
+	upstreamDNS = in
+	cachedResponses.init()
 }
 
 func initNetwork() {
@@ -866,10 +928,9 @@ func initNetwork() {
 		log.Fatalf("failed to fetch gateway domain: %v\n", err)
 	}
 
-	if tmp := getNameserver(); tmp != "" {
-		upstreamDNS = tmp
+	if tmp, _ := config.GetProp("@/network/dnsserver"); tmp != "" {
+		setNameserver(tmp)
 	}
-	log.Printf("Using nameserver: %s\n", upstreamDNS)
 
 	rings := config.GetRings()
 	if rings == nil {
@@ -986,8 +1047,8 @@ func main() {
 		log.Printf("cannot connect to mcp\n")
 	}
 
-	cachedResponses.init()
 	prometheusInit()
+	cachedResponses.init()
 
 	brokerd = broker.New(pname)
 	defer brokerd.Fini()
@@ -1002,6 +1063,7 @@ func main() {
 	config.HandleChange(`^@/dns/cnames/.*$`, cnameUpdateEvent)
 	config.HandleDelete(`^@/dns/cnames/.*$`, cnameDeleteEvent)
 	config.HandleChange(`^@/updates/dns_.*list$`, blocklistUpdateEvent)
+	config.HandleChange(`^@/network/dnsserver$`, serverUpdateEvent)
 
 	initNetwork()
 	initHostMap()
