@@ -21,7 +21,6 @@ var (
 	expirationHeap  pnodeQueue
 	expirationTimer *time.Timer
 	expirationLock  sync.Mutex
-	expired         []string
 )
 
 /*******************************************************************
@@ -64,9 +63,10 @@ func expirationHandler() {
 		<-expirationTimer.C
 		expirationLock.Lock()
 
+		expired := make([]*pnode, 0)
+		now := time.Now()
 		for len(expirationHeap) > 0 {
 			next := expirationHeap[0]
-			now := time.Now()
 
 			if next.Expires == nil {
 				// Should never happen
@@ -90,21 +90,32 @@ func expirationHandler() {
 				log.Printf("Expiring: %s at %v\n",
 					next.name, time.Now())
 			}
+			expired = append(expired, next)
 			heap.Pop(&expirationHeap)
 			metrics.expCounts.Inc()
 
 			next.index = -1
-			next.Expires = nil
-
-			next.ops.expire(next)
 		}
 
 		if len(expirationHeap) > 0 {
 			next := expirationHeap[0]
 			reset = time.Until(*next.Expires)
 		}
+
 		expirationTimer.Reset(reset)
 		expirationLock.Unlock()
+		if len(expired) > 0 {
+			propTreeMutex.Lock()
+			for _, node := range expired {
+				// check to be sure the property hasn't been
+				// reset since we added it to the list.
+				if now.Before(*node.Expires) {
+					node.ops.expire(node)
+				}
+			}
+			propTreeStore()
+			propTreeMutex.Unlock()
+		}
 	}
 }
 
@@ -169,32 +180,10 @@ func expirationRemove(node *pnode) {
 	expirationLock.Unlock()
 }
 
-/*
- * Walk the list of expired properties and remove them from the tree
- */
-func expirationPurge() {
-	count := 0
-	for len(expired) > 0 {
-		expirationLock.Lock()
-		copy := expired
-		expired = make([]string, 0)
-		expirationLock.Unlock()
-
-		for _, prop := range copy {
-			count++
-			propertyDelete(prop)
-		}
-	}
-	if count > 0 {
-		propTreeStore()
-	}
-}
-
 func expirationInit() {
 	expirationHeap = make(pnodeQueue, 0)
 	heap.Init(&expirationHeap)
 
-	expired = make([]string, 0)
 	expirationTimer = time.NewTimer(time.Duration(time.Minute))
 	go expirationHandler()
 }

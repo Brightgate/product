@@ -10,10 +10,29 @@
       "Value": "0"
     },
     "uuid": {
-      "Value": "00000000-0000-0000-0000-000000000000"
+      "Value": "407edeb5-84f5-4167-8a81-1Fbdf66eef0b"
     },
     "users": {},
-    "clients": {},
+    "clients": {
+      "Children": {
+        "64:9a:be:da:b1:9a": {
+          "Children": {
+            "dhcp_name": {
+              "Value": "test-client"
+            },
+            "identity": {
+              "Value": "4"
+            },
+            "ipv4": {
+              "Value": "10.10.6.8"
+            },
+            "ring": {
+              "Value": "guest"
+            }
+          }
+        }
+      }
+    },
     "firewall": {
       "Children": {
         "rules": {

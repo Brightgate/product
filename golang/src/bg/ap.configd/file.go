@@ -82,7 +82,7 @@ func propTreeImport(data []byte) error {
 	err := json.Unmarshal(data, &newRoot)
 	if err == nil {
 		patchTree("@", &newRoot, "")
-		propTreeRoot = newRoot
+		propTreeRoot = &newRoot
 	}
 	return err
 }
@@ -246,5 +246,5 @@ func propTreeInit() {
 		}
 	}
 
-	dumpTree("root", &propTreeRoot, 0)
+	dumpTree("root", propTreeRoot, 0)
 }

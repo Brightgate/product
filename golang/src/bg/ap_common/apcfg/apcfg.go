@@ -39,10 +39,11 @@ const Version = int32(14)
 
 // Some specific, common ways in which apcfg operations can fail
 var (
-	ErrComm   = errors.New("communication breakdown")
-	ErrNoProp = errors.New("no such property")
-	ErrBadOp  = errors.New("no such operation")
-	ErrBadVer = errors.New("unsupported version")
+	ErrComm    = errors.New("communication breakdown")
+	ErrNoProp  = errors.New("no such property")
+	ErrExpired = errors.New("property expired")
+	ErrBadOp   = errors.New("no such operation")
+	ErrBadVer  = errors.New("unsupported version")
 )
 
 // ValidRings is a map containing all of the known ring names.  Checking for map

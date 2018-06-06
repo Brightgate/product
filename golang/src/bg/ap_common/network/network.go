@@ -272,7 +272,8 @@ func ValidHostname(hostname string) bool {
 var legalDNSlabel = regexp.MustCompile(`^([a-z0-9_]|[_a-z0-9][_a-z0-9\-]*[_a-z0-9])$`)
 var minimalDNSlabel = regexp.MustCompile(`[a-z0-9]`)
 
-func validDNSLabel(label string) bool {
+// ValidDNSLabel checks whether the provided string is a valid DNS label.
+func ValidDNSLabel(label string) bool {
 	if len(label) == 0 || len(label) > 63 {
 		return false
 	}
@@ -287,7 +288,7 @@ func validDNSLabel(label string) bool {
 func ValidDNSName(name string) bool {
 	labels := strings.Split(name, ".")
 	for _, label := range labels {
-		if !validDNSLabel(label) {
+		if !ValidDNSLabel(label) {
 			return false
 		}
 	}

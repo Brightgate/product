@@ -176,7 +176,7 @@ func addLeaves(leaves leafMap, node *pnode) {
 func testBuildMap() leafMap {
 	leaves := make(leafMap)
 
-	addLeaves(leaves, &propTreeRoot)
+	addLeaves(leaves, propTreeRoot)
 
 	return leaves
 }
@@ -411,6 +411,27 @@ func TestBadSSID(t *testing.T) {
 	testValidateTree(t, a)
 }
 
+func TestBadDNS(t *testing.T) {
+	const (
+		dnsProp = "@/clients/64:9a:be:da:b1:9a/dns_name"
+	)
+
+	badNames := []string{
+		".startswithdot",
+		"middle.dot",
+		"endswithdot.",
+		"illegal^char",
+		"has a space",
+		"tooLongtooLongtooLongtooLongtooLongtooLongtooLongtooLongtooLongtooLong",
+	}
+
+	a := testTreeInit(t)
+	for _, name := range badNames {
+		insertOneProp(t, dnsProp, name, false)
+		testValidateTree(t, a)
+	}
+}
+
 // TestMultiInsert inserts multiple values in a single operation
 func TestMultiInsert(t *testing.T) {
 	ops := []apcfg.PropertyOp{
@@ -485,6 +506,124 @@ func TestMultiMixed(t *testing.T) {
 	}
 }
 
+// TestMultiInsertFail inserts multiple legal values and one illegal.  It is
+// expected to complete with the config tree unchanged.
+func TestMultiInsertFail(t *testing.T) {
+	ops := []apcfg.PropertyOp{
+		{
+			Op:    apcfg.PropCreate,
+			Name:  "@/branch/subbranch/propa",
+			Value: "valuea",
+		},
+		{
+			Op:    apcfg.PropCreate,
+			Name:  "@/branch/subbranch/propb",
+			Value: "valueb",
+		},
+		{
+			// Illegal 'set' operation that should cause the whole
+			// transaction to fail.
+			Op:    apcfg.PropSet,
+			Name:  "@/uuid",
+			Value: "valuec",
+		},
+		{
+			Op:    apcfg.PropCreate,
+			Name:  "@/branch/subbranch/propf",
+			Value: "valued",
+		},
+	}
+
+	a := testTreeInit(t)
+
+	if _, err := execute(ops); err == nil {
+		t.Error(err)
+	} else {
+		testValidateTree(t, a)
+	}
+}
+
+// TestMultiMixedFail performs a series of legal inserts and deletes, with one
+// illegal PropSet included.  It is expected to complete with the config tree
+// unchanged.  This is specifically exercising the 'undo' of a subtree deletion.
+func TestMultiMixedFail(t *testing.T) {
+	ops := []apcfg.PropertyOp{
+		{
+			Op:    apcfg.PropCreate,
+			Name:  "@/branch/subbranch/propa",
+			Value: "valuea",
+		},
+		{
+			Op:    apcfg.PropCreate,
+			Name:  "@/branch/subbranch/propb",
+			Value: "valueb",
+		},
+
+		{
+			Op:   apcfg.PropDelete,
+			Name: "@/network",
+		},
+		{
+			// Illegal 'set' operation that should cause the whole
+			// transaction to fail.
+			Op:    apcfg.PropSet,
+			Name:  "@/branch/nonexistent",
+			Value: "valued",
+		},
+	}
+
+	a := testTreeInit(t)
+
+	if _, err := execute(ops); err == nil {
+		t.Error(err)
+	} else {
+		testValidateTree(t, a)
+	}
+}
+
+// TestMultiSetFail performs a series of legal inserts and updates, with one
+// illegal PropSet included.  It is expected to complete with the config tree
+// unchanged.  This is to verify that a failure causes us to revert to the
+// original state - not just the last state.
+func TestMultiSetFail(t *testing.T) {
+	ops := []apcfg.PropertyOp{
+		{
+			Op:    apcfg.PropCreate,
+			Name:  "@/branch/subbranch/propa",
+			Value: "valuea",
+		},
+		{
+			Op:    apcfg.PropSet,
+			Name:  "@/branch/subbranch/propa",
+			Value: "valueb",
+		},
+		{
+			Op:    apcfg.PropSet,
+			Name:  "@/branch/subbranch/propa",
+			Value: "valuec",
+		},
+		{
+			// Illegal 'set' operation that should cause the whole
+			// transaction to fail.
+			Op:    apcfg.PropSet,
+			Name:  "@/branch/nonexistent",
+			Value: "valued",
+		},
+		{
+			Op:    apcfg.PropSet,
+			Name:  "@/branch/subbranch/propa",
+			Value: "valued",
+		},
+	}
+
+	a := testTreeInit(t)
+
+	if _, err := execute(ops); err == nil {
+		t.Error(err)
+	} else {
+		testValidateTree(t, a)
+	}
+}
 func TestMain(m *testing.M) {
 	var err error
 

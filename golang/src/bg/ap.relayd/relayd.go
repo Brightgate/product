@@ -534,6 +534,10 @@ func mrelay(s service) {
 		var err error
 
 		n, source := getPacket(conn, buf)
+		if source.iface == nil {
+			log.Printf("multicast packet arrived on bad source: %v\n",
+				source)
+		}
 
 		//
 		// Currently we relay all messages up and down the rings.  It
@@ -603,7 +607,7 @@ func initInterfaces() {
 
 		bridge := vlanBridge(conf.Vlan)
 		iface, err := net.InterfaceByName(bridge)
-		if err != nil {
+		if iface == nil || err != nil {
 			log.Printf("No interface %s: %v\n", bridge, err)
 			continue
 		}
