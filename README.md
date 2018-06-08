@@ -26,84 +26,31 @@ golang/src/bg/          Golang-based command, daemon, and library
 ## Directory naming
 
 Name directories in snake case, as Python module names may not include
-'-' characters.
+`-` characters.
 
 ## The "proto" area
 
-When dealing with appliance components, $ROOT is equivalent to
-`./proto.$(uname -m)/appliance/`.  On an imaged system, $ROOT is
-equivalent to /.  Brightgate specific components are in
+When dealing with appliance components, `$ROOT` is equivalent to
+`./proto.$(uname -m)/appliance/`.  On an imaged system, `$ROOT` is
+equivalent to `/`.  Brightgate specific components are in
 `$ROOT/opt/com.brightgate`.
 
-When dealing with cloud components, $ROOT is equivalent to
+When dealing with cloud components, `$ROOT` is equivalent to
 `./proto.$(uname -m)/cloud/`.  Brightgate specific components are in
 `$ROOT/opt/net.b10e/`.
 
 # Installing Tools
 
-## Installing Golang (Go) Language Tools
+The Wiki has instructions on installing Go, Node.js, and TensorFlow, all of
+which are needed to build.  All the tools should be available for you if you're
+building on one of the cloud VMs, but that will not be the case on your
+Raspberry Pi or other machine you maintain.  Current versions are:
 
-We typically write "Golang" to improve search uniqueness.
-
-If you are using our cloud systems to build, Golang is installed at
-/opt/net.b10e/go-1.10.2
-
-To retrieve the Golang SDK for Linux x64, use
-
-```
-$ curl -O https://storage.googleapis.com/golang/go1.8.3.linux-amd64.tar.gz
-```
-
-To retrieve the Golang SDK for Linux ARM, use
-
-```
-$ curl -O https://storage.googleapis.com/golang/go1.8.3.linux-armv6l.tar.gz
-```
-
-For Linux systems, we recommend unpacking these archives in $HOME.  (If
-you wish to keep multiple Golang versions, then `mv go go-1.8.3; ln -s
-go-1.8.3 go` or the equivalent may be helpful after unpacking.  You will
-want to remove the go symbolic link before unpacking a new version.)
-
-To retrieve the Golang SDK for macOS x64, use
-
-```
-$ curl -O https://storage.googleapis.com/golang/go1.8.3.darwin-amd64.tar.gz
-```
-
-Installation of this package creates `/usr/local/go`.
-
-Because each platform generates local tools, you will want to use "make
-plat-clobber" to switch a repository from one platform to another, such as from
-Linux to macOS, or from x86 to ARM.  (An easier way is to keep parallel
-workspaces in sync by making one the git upstream of the other).
-
-## Installing node.js
-
-On our x86 cloud dev systems, node.js 8.x should be installed; if not, use
-ansible to do so.  For ARM systems, you need to install node.js 8.x.  Here is a
-reasonable way to do so:
-
-```
-pi$ curl -sL https://deb.nodesource.com/setup_8.x | sudo -E bash -
-
-(should connect you to nodesource's pkg repo)
-
-pi$ sudo apt-get install -y nodejs
-
-pi$ nodejs --version
-v8.10.0  (may be higher than this)
-```
-
-## Installing Prometheus
-
-Install Prometheus for ARM:
-
-```
-pi$ curl -LO https://github.com/prometheus/prometheus/releases/download/v1.8.0/prometheus-1.8.0.linux-armv7.tar.gz
-pi$ tar -xf prometheus-1.8.0.linux-armv7.tar.gz
-pi$ sudo cp prometheus-1.8.0.linux-armv7/prometheus /usr/local/bin/
-```
+  | Software    | Version
+  | ----------- | -------
+  | Go (golang) | 1.10.2 (any 1.10.x is likely to work)
+  | Node.js     | 8.11.2 (any 8.x is likely to work)
+  | TensorFlow  | 1.4.1
 
 # Building Product Software
 
@@ -133,14 +80,14 @@ installable packages for ARM:
 ```
 $ make packages
 ...
-dpkg-deb: building package 'bg-appliance' in 'bg-appliance_0.0.1803052236-1_amd64.deb'.
+dpkg-deb: building package 'bg-appliance' in 'bg-appliance_0.0.1803052236-1_armhf.deb'.
 ...
 
-$ sudo dpkg -i bg-appliance_0.0.1803052236-1_amd64.deb (use name from above)
+$ sudo dpkg -i bg-appliance_0.0.1803052236-1_armhf.deb (use name from above)
 
 ```
 
-If you replace an existing bg-appliance package, some amount of restarting, up
+If you replace an existing `bg-appliance` package, some amount of restarting, up
 to and including rebooting will be needed.
 
 ## Cross-building from x86 to ARM
@@ -152,6 +99,13 @@ commandline:
 $ make packages GOARCH=arm
 ```
 See `build/cross-compile/README.md` for more details.
+
+## Shared workspaces
+
+Because each platform generates local tools, you will want to use `make plat-clobber`
+to switch a repository from one platform to another, such as from Linux to
+macOS, or from x86 to ARM.  (An easier way is to keep parallel workspaces in
+sync by making one the git upstream of the other).
 
 ## Connecting to Google IoT Core
 
@@ -170,7 +124,7 @@ correct certificates installed for your appliance in `/etc/letsencrypt`.
 
 `sudo(8)` is used to acquire privilege from the developer during testing.
 
-The ap.relayd daemon forwards UDP broadcast requests between security rings.
+The `ap.relayd` daemon forwards UDP broadcast requests between security rings.
 To allow mDNS forwarding to work correctly, the Linux mDNS responder
 (avahi-daemon) must be disabled before launching our daemons:
 
@@ -179,53 +133,73 @@ $ sudo systemctl disable avahi-daemon
 $ sudo systemctl stop avahi-daemon
 ```
 
-(If you build and install packages, the package scripting will take care of
-this).
-
-Components are installed in `$(ROOT)/opt/com.brightgate/bin`.  ap.mcp in that
+Components are installed in `$(ROOT)/opt/com.brightgate/bin`.  `ap.mcp` in that
 directory is the 'master control process', and is responsible for launching and
-monitoring all of our other daemons.  To run our software, mcp should be run as
-root:
+monitoring all of our other daemons.  Unless you're running in `http-dev` mode,
+`ap.mcp` must run as root for full functionality:
 
 ```
 $ sudo ./proto.armv7l/appliance/opt/com.brightgate/bin/ap.mcp
-aproot not set - using '/home/pi/Product.slave/proto.armv7l/appliance/opt/com.brightgate'
-2018/03/05 15:21:27 mcp.go:763: ap.mcp (3711) coming online...
-2018/03/05 15:21:27 mcp.go:544: MCP online
+aproot not set - using '/home/pi/Product/proto.armv7l/appliance/opt/com.brightgate'
+2018/06/08 21:17:36 mcp.go:763: ap.mcp (3711) coming online...
+2018/06/08 21:17:36 mcp.go:544: MCP online
 ```
 
-Or, if you are using packages (logs to `/var/log/mcp.log`):
-```
-$ sudo systemctl restart ap.mcp
-```
-
-Either put ap.mcp in the background, or switch to another window, and launch
-the remaining daemons:
+Then switch to another window (so the log messages don't clutter up a terminal
+you're actively using; preferably, use the `-l` flag to `ap.mcpd` to send the
+log messages to the file named by its argument) and launch the remaining
+daemons:
 
 ```
 $ ./proto.armv7l/appliance/opt/com.brightgate/bin/ap-ctl start all
 $ ./proto.armv7l/appliance/opt/com.brightgate/bin/ap-ctl status all
-      DAEMON      PID          STATE    SINCE
-     brokerd     3518         online    Sat Sep 16 13:59:14
-      dhcp4d     3721         online    Sat Sep 16 13:59:31
-     filterd     3710         online    Sat Sep 16 13:59:31
-       httpd     3730         online    Sat Sep 16 13:59:31
- identifierd     3554         online    Sat Sep 16 13:59:25
-    networkd     3552         online    Sat Sep 16 13:59:25
-     sampled     3724         online    Sat Sep 16 13:59:29
-     configd     3535         online    Sat Sep 16 13:59:20
-       dns4d     3553         online    Sat Sep 16 13:59:22
-     dnsmasq     3715         online    Sat Sep 16 13:59:26
-        logd     3536         online    Sat Sep 16 13:59:18
-      relayd     3709         online    Sat Sep 16 13:59:31
-       scand     3711         online    Sat Sep 16 13:59:31
+      DAEMON   PID     RSS   SWAP   TIME        STATE               SINCE NODE
+      ap.mcp 14484   25 MB   0 MB     0s       online  Fri Jun 8 21:17:36 gateway
+     brokerd 14564   26 MB   0 MB     0s       online  Fri Jun 8 21:17:51 gateway
+     configd 14581   29 MB   0 MB     0s       online  Fri Jun 8 21:17:53 gateway
+      dhcp4d 14706   27 MB   0 MB     0s       online  Fri Jun 8 21:17:59 gateway
+       dns4d 14619   34 MB   0 MB     0s       online  Fri Jun 8 21:17:57 gateway
+     dnsmasq 14703    3 MB   0 MB     0s       online  Fri Jun 8 21:17:56 gateway
+       httpd 14701   34 MB   0 MB     0s       online  Fri Jun 8 21:18:00 gateway
+ identifierd 14620   61 MB   0 MB     0s       online  Fri Jun 8 21:17:59 gateway
+        iotd 14582   39 MB   0 MB     0s       online  Fri Jun 8 21:17:55 gateway
+        logd 14583   25 MB   0 MB     0s       online  Fri Jun 8 21:17:53 gateway
+    networkd 14618   29 MB   0 MB     0s       online  Fri Jun 8 21:17:56 gateway
+  prometheus 14565   42 MB   0 MB     0s       online  Fri Jun 8 21:17:50 gateway
+      relayd 14702   28 MB   0 MB     0s       online  Fri Jun 8 21:17:59 gateway
+     updated 14621   39 MB   0 MB     0s       online  Fri Jun 8 21:17:56 gateway
+   userauthd 14622   28 MB   0 MB     0s       online  Fri Jun 8 21:17:56 gateway
+      watchd 14704   46 MB   0 MB     0s       online  Fri Jun 8 21:17:59 gateway
 ```
 
-(It may take a little while for all of the services to come online)
+It may take a little while for all of the services to come online; some will
+pause in the `blocked` state waiting for a dependency.
+
+# Running from Installed Packages
+
+We deliver two services on the appliance: `ap.mcp` and `brightgate-appliance`.
+The former simply starts the master control process, while the latter launches
+all the daemons.  They are controlled by systemd; thus:
+
+```
+$ sudo systemctl start ap.mcp
+$ sudo systemctl start brightgate-appliance
+```
+
+and any other systemd subcommand.  Note that the package postinstall scripts
+automatically start the services, as well as stop `avahi-daemon`, so you don't
+need to do any of that manually as you do when running from the proto area.
+
+The services set up `ap.mcp` to log to `/var/log/mcp.log`.  It will be created
+read-only by root, so you'll either have to use `sudo` to read it, or use
+`chmod` to change its permissions once it's been created.
+
+All the executables are installed in `/opt/com.brightgate/bin`, which can be
+appended to `$PATH` for convenience.
 
 # Return to the Wiki
 
-Once this is working, return to the Wiki to learn how to configure the AP,
+Once this is working, return to the Wiki to learn how to configure the AP;
 for example, enabling WAN-facing SSH and configuring SSIDs and EAP users.
 
 # External assets

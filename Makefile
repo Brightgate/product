@@ -19,19 +19,18 @@
 #
 #	 $ make tools
 #	 [Follow the directions]
-#	 [If in the Brightgate cloud, Go is already installed.  Else, retrieve
-#	 Go tar archive from golang.org and unpack in $HOME.]
+#	 [If in the Brightgate cloud, all tools should be installed.  Else,
+#	  follow the directions at
+#	  https://ph0.b10e.net/w/testing-raspberry-pi/#installing-prerequisite
+#	  (and modify from ARM as necessary) to install other build requirements]
 #
-#    (c) On raspberry pi
+#    (c) On Raspberry Pi
 #
 #	 $ make tools
 #	 [Follow the directions]
-#	 $ sudo apt-get install hostapd
-#	 $ sudo pip3 install sh
-#	 [Retrieve Go tar archive from golang.org and unpack in $HOME.]
-#	 [Retrieve the TensorFlow C library from
-#	  https://ph0.b10e.net/w/testing-raspberry-pi/ or
-#	  https://ph0.b10e.net/w/testing-banana-pi/]
+#	 [Follow the directions at
+#	  https://ph0.b10e.net/w/testing-raspberry-pi/#installing-prerequisite
+#	  to install other build requirements]
 #
 # 2. To clean out local binaries, use
 #
