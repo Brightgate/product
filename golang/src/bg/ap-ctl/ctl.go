@@ -51,13 +51,10 @@ func stateString(s int) string {
 }
 
 func printLine(line string) {
-	termWidth, _, err := terminal.GetSize(0)
-	if err != nil {
-		termWidth = len(line)
-	} else if termWidth < len(line) {
+	termWidth, _, _ := terminal.GetSize(1)
+	if 0 < termWidth && termWidth < len(line) {
 		line = line[:termWidth]
 	}
-
 	fmt.Printf("%s\n", line)
 }
 
