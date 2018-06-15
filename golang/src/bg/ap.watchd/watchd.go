@@ -56,6 +56,9 @@ var (
 	ipToMac = make(map[string]string)
 	mapMtx  sync.Mutex
 
+	gateways     map[uint32]bool
+	internalMacs map[uint64]bool
+
 	metrics struct {
 		lanDrops     prometheus.Counter
 		wanDrops     prometheus.Counter
@@ -169,6 +172,42 @@ func configIPv4Delexp(path []string) {
 	}
 }
 
+func getGateways() {
+	gateways = make(map[uint32]bool)
+
+	for _, r := range rings {
+		router := net.ParseIP(network.SubnetRouter(r.Subnet))
+		gateways[network.IPAddrToUint32(router)] = true
+	}
+
+	// Build a set of the MACs belonging to our APs, so we can distinguish
+	// between client and internal network traffic
+	internalMacs = make(map[uint64]bool)
+	nics, _ := config.GetNics("", false)
+	for _, nic := range nics {
+		if hwaddr := network.MacToUint64(nic); hwaddr != 0 {
+			internalMacs[hwaddr] = true
+		}
+	}
+
+}
+
+func getLeases() {
+	clients := config.GetClients()
+	if clients == nil {
+		return
+	}
+
+	for macaddr, client := range clients {
+		hwaddr, err := net.ParseMAC(macaddr)
+		if err != nil {
+			log.Printf("Invalid mac address: %s\n", macaddr)
+		} else if client.IPv4 != nil {
+			registerIPAddr(hwaddr, client.IPv4)
+		}
+	}
+}
+
 //
 // Send a notification that we have an unknown entity on our network.
 func logUnknown(ring, mac, ipstr string) bool {
@@ -202,7 +241,7 @@ func logUnknown(ring, mac, ipstr string) bool {
 func signalHandler() {
 	profiling := false
 
-	sig := make(chan os.Signal)
+	sig := make(chan os.Signal, 3)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR2)
 	for {
 		s := <-sig

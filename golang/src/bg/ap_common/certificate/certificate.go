@@ -183,11 +183,13 @@ func createSSKeyCert(brokerd *broker.Broker, cryptodir string, hostname string, 
 	}
 
 	if !needKey {
+		var cert *x509.Certificate
+		var certb []byte
+
 		// it is possible that the certificate has expired
 		// certificate must be valid
 		// read certificate file into buffer
-		certb, err := ioutil.ReadFile(certfn)
-		if err != nil {
+		if certb, err = ioutil.ReadFile(certfn); err != nil {
 			// failed read
 			err = fmt.Errorf("could not read certificate file: %s", err)
 			needCert = true
@@ -196,7 +198,7 @@ func createSSKeyCert(brokerd *broker.Broker, cryptodir string, hostname string, 
 		certd, _ := pem.Decode(certb)
 
 		// parse certificate from buffer
-		cert, err := x509.ParseCertificate(certd.Bytes)
+		cert, err = x509.ParseCertificate(certd.Bytes)
 		if err != nil {
 			// failed parse
 			err = fmt.Errorf("could not parse certificate: %s", err)

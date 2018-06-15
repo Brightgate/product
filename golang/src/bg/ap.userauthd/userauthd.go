@@ -287,7 +287,7 @@ func generateRadiusClientConf(rc *rConf) string {
 // released before we give mcp a chance to restart the whole stack.
 //
 func signalHandler() {
-	sig := make(chan os.Signal)
+	sig := make(chan os.Signal, 2)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	s := <-sig
 
@@ -358,6 +358,10 @@ func establishSecret() ([]byte, error) {
 	// Otherwise generate a new secret and set it.
 	s := make([]byte, base_def.RADIUS_SECRET_SIZE)
 	n, err := rand.Read(s)
+	if err != nil {
+		return nil, fmt.Errorf("unable to generate random number: %v",
+			err)
+	}
 	if n != base_def.RADIUS_SECRET_SIZE {
 		return nil, fmt.Errorf("mismatch between requested secret size %v and generated %v",
 			base_def.RADIUS_SECRET_SIZE, n)

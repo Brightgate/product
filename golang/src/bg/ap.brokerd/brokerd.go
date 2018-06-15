@@ -99,7 +99,7 @@ func main() {
 		log.Fatalf("Errors coming too quickly.  Giving up.\n")
 	}()
 
-	sig := make(chan os.Signal)
+	sig := make(chan os.Signal, 2)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	s := <-sig
 	log.Fatalf("Signal (%v) received, stopping\n", s)

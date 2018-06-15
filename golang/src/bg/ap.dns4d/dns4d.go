@@ -1077,7 +1077,7 @@ func main() {
 
 	mcpd.SetState(mcp.ONLINE)
 
-	sig := make(chan os.Signal)
+	sig := make(chan os.Signal, 2)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	s := <-sig
 	log.Printf("Signal (%v) received, stopping\n", s)

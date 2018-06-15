@@ -372,6 +372,8 @@ func getMetrics(mac string, start, end *time.Time) (int, string) {
 		// on the statsMtx to prevent any of them from being reacquired.
 		for _, d := range x.Data {
 			d.Lock()
+			//lint:ignore SA2001 empty critical section implicitly
+			// checks the state of other potential structure users
 			d.Unlock()
 		}
 	}

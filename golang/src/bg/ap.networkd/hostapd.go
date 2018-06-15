@@ -436,6 +436,12 @@ func getAPConfig(d *physDevice) *apConfig {
 		}
 	}
 
+	persistNicRing(d.hwaddr, base_def.RING_STANDARD)
+	if ssidCnt > 1 {
+		newMac := macUpdateLastOctet(d.hwaddr, 1)
+		persistNicRing(newMac, base_def.RING_GUEST)
+	}
+
 	pskssid := wifiSSID
 	eapssid := wifiSSID + "-eap"
 	mode := d.activeMode
@@ -597,9 +603,7 @@ func (h *hostapdHdl) start() {
 	}
 
 	stopNetworkRebuild := make(chan bool, 1)
-	deleteBridges()
-	createBridges()
-	resetInterfaces(stopNetworkRebuild)
+	go rebuildUnenrolled(stopNetworkRebuild)
 
 	h.process = aputil.NewChild(hostapdPath, h.confFiles...)
 	h.process.LogOutputTo("hostapd: ", log.Ldate|log.Ltime, os.Stderr)

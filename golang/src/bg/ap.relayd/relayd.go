@@ -478,7 +478,7 @@ func getPacket(conn *ipv4.PacketConn, buf []byte) (int, *endpoint) {
 		}
 
 		ipv4 := ""
-		if host, port, err := net.SplitHostPort(src.String()); err == nil {
+		if host, port, serr := net.SplitHostPort(src.String()); serr == nil {
 			if ip = net.ParseIP(host); ip != nil {
 				ipv4 = ip.To4().String()
 			}
@@ -494,8 +494,8 @@ func getPacket(conn *ipv4.PacketConn, buf []byte) (int, *endpoint) {
 			continue
 		}
 
-		iface, err := net.InterfaceByIndex(cm.IfIndex)
-		if err != nil {
+		iface, ierr := net.InterfaceByIndex(cm.IfIndex)
+		if ierr != nil {
 			log.Printf("Receive error from %s: %v\n", ipv4, err)
 			continue
 		}
@@ -681,7 +681,7 @@ func main() {
 
 	mcpd.SetState(mcp.ONLINE)
 
-	sig := make(chan os.Signal)
+	sig := make(chan os.Signal, 2)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	s := <-sig
 	log.Fatalf("Signal (%v) received, stopping\n", s)

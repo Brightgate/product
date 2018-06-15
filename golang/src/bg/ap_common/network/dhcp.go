@@ -131,12 +131,13 @@ func getLease(iface string) (DHCPInfo, error) {
 	d.Vendor = data["vendor_class_identifier"]
 	vendorOptions := data["vendor_encapsulated_options"]
 	if strings.Contains(d.Vendor, "Brightgate") && vendorOptions != "" {
+		var s []byte
 		// The vendor options are encapsulated in a binary stream of
 		// [code, len, value] triples, which is then converted into a
 		// binhex string.  If our DHCP server is a brightgate device,
 		// it will only have a single option: '1' which is the device
 		// mode.
-		if s, err := hex.DecodeString(vendorOptions); err == nil {
+		if s, err = hex.DecodeString(vendorOptions); err == nil {
 			opts, _ := DHCPDecodeOptions(s)
 			for _, o := range opts {
 				if o.Code == 1 {

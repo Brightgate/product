@@ -959,8 +959,8 @@ func makeGuestUser(phone, email string) (*daUser, string, error) {
 	if err != nil {
 		return nil, "", errors.Wrapf(err, "failed to get user %s", uid)
 	}
-	daUser := buildUserResponse(user)
-	return &daUser, pass, nil
+	userResponse := buildUserResponse(user)
+	return &userResponse, pass, nil
 }
 
 func demoEnrollGuestHandler(w http.ResponseWriter, r *http.Request) {
@@ -1021,7 +1021,6 @@ func demoEnrollGuestHandler(w http.ResponseWriter, r *http.Request) {
 	var messages []string
 	if rType == "eap" {
 		var guestPass string
-		var err error
 		daGuest, guestPass, err = makeGuestUser(rPhone, rEmail)
 		if err != nil {
 			log.Printf("EAP Enroll Handler: failed to make Guest: '%+v'\n", err)
@@ -1066,7 +1065,7 @@ func demoEnrollGuestHandler(w http.ResponseWriter, r *http.Request) {
 	if rType == "eap" {
 		response.User = daGuest
 	}
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+	if err = json.NewEncoder(w).Encode(response); err != nil {
 		panic(err)
 	}
 

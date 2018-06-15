@@ -59,6 +59,7 @@ var (
 	rings    apcfg.RingMap   // ring -> config
 	nodeUUID string
 
+	wifiCapable    bool
 	wifiSSID       string
 	wifiPassphrase string
 	radiusSecret   string
@@ -307,6 +308,7 @@ func selectWifiDevices() []*physDevice {
 			selected = append(selected, nic)
 		}
 	}
+
 	return selected
 }
 
@@ -439,41 +441,45 @@ func rebuildUnenrolled(interrupt chan bool) {
 	}
 }
 
-func resetInterfaces(interrupt chan bool) {
+func resetInterfaces() {
+	deleteBridges()
+	createBridges()
 	rebuildLan()
 	rebuildInternalNet()
-	go rebuildUnenrolled(interrupt)
 }
 
-func runLoop() bool {
+func runLoop() {
 	startTimes := make([]time.Time, failuresAllowed)
+	resetInterfaces()
 
-	mcpd.SetState(mcp.ONLINE)
 	for running {
-		startTime := time.Now()
-		startTimes = append(startTimes[1:failuresAllowed], startTime)
+		var selected []*physDevice
 
-		selected := selectWifiDevices()
-		hostapd = startHostapd(selected)
-
-		if err := hostapd.wait(); err != nil {
-			log.Printf("%v\n", err)
-		}
-		hostapd = nil
-
-		if time.Since(startTimes[0]) < period {
-			log.Printf("hostapd is dying too quickly")
-			return true
+		if wifiCapable {
+			selected = selectWifiDevices()
 		}
 
-		// Give everything a chance to settle before we attempt to
-		// restart the daemon and reconfigure the wifi hardware
+		if len(selected) > 0 {
+			startTimes = append(startTimes[1:failuresAllowed],
+				time.Now())
+
+			hostapd = startHostapd(selected)
+			if err := hostapd.wait(); err != nil {
+				log.Printf("%v\n", err)
+			}
+			hostapd = nil
+
+			if time.Since(startTimes[0]) < period {
+				log.Printf("hostapd is dying too quickly")
+				wifiCapable = false
+			}
+			resetInterfaces()
+		}
+
 		if running {
 			time.Sleep(time.Second)
 		}
 	}
-
-	return false
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -708,6 +714,12 @@ func prepareWireless() {
 			if len(dev.channels[mode]) > 0 {
 				perModeDevices[mode][dev] = true
 			}
+		}
+	}
+
+	for _, mode := range modes {
+		if len(perModeDevices[mode]) > 0 {
+			wifiCapable = true
 		}
 	}
 }
@@ -1052,7 +1064,7 @@ func networkCleanup() {
 // released before we give mcp a chance to restart the whole stack.
 //
 func signalHandler() {
-	sig := make(chan os.Signal)
+	sig := make(chan os.Signal, 2)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	s := <-sig
 
@@ -1087,12 +1099,9 @@ func main() {
 
 	running = true
 	go signalHandler()
-	failed := runLoop()
 
+	mcpd.SetState(mcp.ONLINE)
+	runLoop()
 	log.Printf("Cleaning up\n")
 	networkCleanup()
-
-	if failed {
-		os.Exit(1)
-	}
 }

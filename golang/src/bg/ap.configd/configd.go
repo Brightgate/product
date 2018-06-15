@@ -267,7 +267,6 @@ func defaultRingInit() {
 
 func selectRing(client *pnode, authp *string) string {
 	var ring, auth string
-	var ok bool
 
 	// If the client already has a ring set, don't override it
 	if client.Children != nil {
@@ -287,12 +286,13 @@ func selectRing(client *pnode, authp *string) string {
 	if auth == "" {
 		log.Printf("Can't select ring for %s: no auth type\n",
 			client.name)
-	} else if ring, ok = authTypeToDefaultRing[auth]; !ok {
-		log.Printf("Can't select ring for %s: unsupported auth: %s\n",
-			client.name, auth)
-	} else {
+	} else if r, ok := authTypeToDefaultRing[auth]; ok {
 		log.Printf("Setting initial ring for %s to %s\n",
 			client.name, ring)
+		ring = r
+	} else {
+		log.Printf("Can't select ring for %s: unsupported auth: %s\n",
+			client.name, auth)
 	}
 	return ring
 }
@@ -774,8 +774,9 @@ func getPropHandler(prop string) (string, error) {
 	} else if node.Expires != nil && node.Expires.Before(time.Now()) {
 		err = apcfg.ErrExpired
 	} else {
-		b, err := json.Marshal(node)
-		if err == nil {
+		var b []byte
+
+		if b, err = json.Marshal(node); err == nil {
 			rval = string(b)
 		}
 	}

@@ -484,7 +484,7 @@ func main() {
 
 	recoverClients()
 
-	if err := testData.loadTestData(filepath.Join(*dataDir, testFile)); err != nil {
+	if err = testData.loadTestData(filepath.Join(*dataDir, testFile)); err != nil {
 		log.Println("failed to recover test data:", err)
 	}
 
@@ -501,7 +501,7 @@ func main() {
 	apcfgd.HandleChange(`^@/clients/.*/dns_private$`, configPrivacyChanged)
 	apcfgd.HandleDelete(`^@/clients/.*/dns_private$`, configPrivacyDelete)
 
-	if err := os.MkdirAll(*logDir, 0755); err != nil {
+	if err = os.MkdirAll(*logDir, 0755); err != nil {
 		log.Fatalln("failed to mkdir:", err)
 	}
 

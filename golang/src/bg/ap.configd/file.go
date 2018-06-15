@@ -224,8 +224,7 @@ func propTreeInit() {
 	if err != nil {
 		log.Printf("No usable properties files.  Loading defaults.\n")
 		defaultFile := *propdir + defaultFilename
-		err := propTreeLoad(defaultFile)
-		if err != nil {
+		if err = propTreeLoad(defaultFile); err != nil {
 			log.Fatal("Unable to load default properties")
 		}
 		applianceUUID := uuid.NewV4().String()

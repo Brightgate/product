@@ -168,7 +168,7 @@ func openLog(path string) (*os.File, error) {
 		return nil, fmt.Errorf("couldn't get absolute path: %v", err)
 	}
 
-	if err := os.MkdirAll(fp, 0755); err != nil {
+	if err = os.MkdirAll(fp, 0755); err != nil {
 		return nil, fmt.Errorf("failed to make path: %v", err)
 	}
 
@@ -271,7 +271,7 @@ func main() {
 
 	mcpd.SetState(mcp.ONLINE)
 
-	sig := make(chan os.Signal)
+	sig := make(chan os.Signal, 3)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	for {
 		switch s := <-sig; s {

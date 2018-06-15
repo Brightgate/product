@@ -45,8 +45,6 @@ var (
 	scanProcesses map[*os.Process]bool
 	runLock       sync.Mutex
 
-	internalMacs map[string]bool
-
 	activeHosts *hostmap // hosts we believe to be currently present
 
 	vulnListFile  string
@@ -314,7 +312,7 @@ func subnetHostScan(ring, subnet string) int {
 		}
 		mac, ip := getMacIP(&host)
 
-		if internalMacs[mac] {
+		if internalMacs[network.MacToUint64(mac)] {
 			// Don't probe any other APs
 			continue
 		}
@@ -402,7 +400,7 @@ func nmapScan(prefix, ip string, nmapArgs []string) (*nmap.NmapRun, error) {
 	args := []string{ip, "-oX", name}
 	args = append(args, nmapArgs...)
 
-	if err := runCmd("/usr/bin/nmap", args); err != nil {
+	if err = runCmd("/usr/bin/nmap", args); err != nil {
 		return nil, err
 	}
 
@@ -781,7 +779,7 @@ func vulnScan(req *ScanRequest) {
 		args = append(args, "-v")
 	}
 	start := time.Now()
-	if err := runCmd(prober, args); err != nil {
+	if err = runCmd(prober, args); err != nil {
 		log.Printf("vulnerability scan of %s failed: %v\n",
 			req.IP, err)
 		return
@@ -789,6 +787,10 @@ func vulnScan(req *ScanRequest) {
 
 	found := make(map[string]bool)
 	file, err := ioutil.ReadFile(name)
+	if err != nil {
+		log.Printf("Failed to read scan resuts: %v\n", err)
+		return
+	}
 	if err = json.Unmarshal(file, &found); err != nil {
 		log.Printf("Failed to unmarshal resuts: %v\n", err)
 		return
@@ -865,14 +867,6 @@ func scannerFini(w *watcher) {
 }
 
 func scannerInit(w *watcher) {
-	// Build a set of the MACs belonging to our APs, so we can distinguish
-	// between client and internal network traffic
-	internalMacs = make(map[string]bool)
-	nics, _ := config.GetNics("", false)
-	for _, nic := range nics {
-		internalMacs[nic] = true
-	}
-
 	activeHosts = hostmapCreate()
 	scansPending = make(scanQueue, 0)
 	heap.Init(&scansPending)

@@ -137,7 +137,7 @@ func nmapVuln(v vulnDescription, tgt net.IP) (bool, error) {
 	if err != nil {
 		err = fmt.Errorf("evaluation failed: %v", err)
 	}
-	return vuln, nil
+	return vuln, err
 }
 
 func init() {

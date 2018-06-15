@@ -214,7 +214,7 @@ func updateLoop(wg *sync.WaitGroup, doneChan chan bool) {
 		log.Printf("no update bucket defined\n")
 	}
 
-	refreshSig := make(chan os.Signal)
+	refreshSig := make(chan os.Signal, 1)
 	signal.Notify(refreshSig, syscall.SIGHUP)
 
 	ticker := time.NewTicker(*updatePeriod)

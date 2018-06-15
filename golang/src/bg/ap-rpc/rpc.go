@@ -106,24 +106,23 @@ func retrieveUptime() time.Duration {
 	if err != nil {
 		log.Fatalf("could not open /proc/uptime: %v\n", err)
 	}
+	defer uptime.Close()
 
-	scanner := bufio.NewScanner(uptime)
-	for scanner.Scan() {
-		fields := strings.Split(scanner.Text(), " ")
-		val, err := strconv.ParseFloat(fields[0], 10)
-		if err != nil {
-			log.Fatalf("/proc/uptime contents unusual: %v\n", err)
-		}
-		return time.Duration(val * 1e9)
+	r := bufio.NewReader(uptime)
+	l, err := r.ReadString('\n')
+	if err != nil {
+		log.Fatalf("unable to read uptime: %v\n", err)
 	}
-	if err = scanner.Err(); err != nil {
-		log.Fatalf("/proc/uptime scan failed: %v\n", err)
+	fields := strings.Split(l, " ")
+	if len(fields) != 2 {
+		log.Fatalf("/proc/uptime contents unusual: %v\n", err)
 	}
 
-	log.Fatalf("/proc/uptime possibly empty\n")
-
-	// Not reached.
-	return time.Duration(0)
+	val, err := strconv.ParseFloat(fields[0], 10)
+	if err != nil {
+		log.Fatalf("/proc/uptime contents unusual: %v\n", err)
+	}
+	return time.Duration(val * 1e9)
 }
 
 func dial() (*grpc.ClientConn, error) {
@@ -183,7 +182,7 @@ func sendUpbeat(ctx context.Context, conn *grpc.ClientConn) {
 	}
 
 	log.Println(response)
-	grpclog.Println(response)
+	grpclog.Infoln(response)
 }
 
 func sendChanged(client cloud_rpc.InventoryClient, changed *base_msg.DeviceInventory) {
@@ -203,7 +202,7 @@ func sendChanged(client cloud_rpc.InventoryClient, changed *base_msg.DeviceInven
 	}
 
 	log.Println(response)
-	grpclog.Println(response)
+	grpclog.Infoln(response)
 }
 
 func sendInventory(ctx context.Context, conn *grpc.ClientConn) {
@@ -238,9 +237,10 @@ func sendInventory(ctx context.Context, conn *grpc.ClientConn) {
 
 	now := time.Now()
 	for _, file := range files {
+		var in []byte
+
 		path := filepath.Join(invPath, file.Name())
-		in, err := ioutil.ReadFile(path)
-		if err != nil {
+		if in, err = ioutil.ReadFile(path); err != nil {
 			log.Printf("failed to read device inventory %s: %s\n", path, err)
 			continue
 		}
@@ -280,7 +280,7 @@ func sendInventory(ctx context.Context, conn *grpc.ClientConn) {
 		return
 	}
 
-	if err := os.MkdirAll(manPath, 0755); err != nil {
+	if err = os.MkdirAll(manPath, 0755); err != nil {
 		log.Printf("failed to mkdir %s: %s\n", manPath, err)
 		return
 	}

@@ -52,7 +52,6 @@ var (
 	historicObservations = make(map[uint64]map[uint32]time.Time)
 	observedMtx          sync.Mutex
 
-	gateways    map[uint32]bool
 	subnets     []*net.IPNet
 	subnetBcast []net.IP
 
@@ -118,7 +117,8 @@ func observedIPAddr(state *samplerState, hwaddr net.HardwareAddr, ipaddr net.IP)
 	if mac == network.MacZeroInt || mac == network.MacBcastInt ||
 		bytes.Equal(hwaddr, state.hwaddr) ||
 		network.IsMacMulticast(hwaddr) ||
-		ip == 0 || gateways[ip] ||
+		ip == 0 || gateways[ip] || internalMacs[mac] ||
+		ipaddr.IsLinkLocalMulticast() || ipaddr.IsLinkLocalUnicast() ||
 		ipaddr.IsMulticast() || ipaddr.Equal(net.IPv4bcast) {
 		return
 	}
@@ -247,31 +247,6 @@ func processOnePacket(state *samplerState, data []byte) {
 	}
 	observedIPAddr(state, srcMac, srcIP)
 	observedIPAddr(state, dstMac, dstIP)
-}
-
-func getGateways() {
-	gateways = make(map[uint32]bool)
-
-	for _, r := range rings {
-		router := net.ParseIP(network.SubnetRouter(r.Subnet))
-		gateways[network.IPAddrToUint32(router)] = true
-	}
-}
-
-func getLeases() {
-	clients := config.GetClients()
-	if clients == nil {
-		return
-	}
-
-	for macaddr, client := range clients {
-		hwaddr, err := net.ParseMAC(macaddr)
-		if err != nil {
-			log.Printf("Invalid mac address: %s\n", macaddr)
-		} else if client.IPv4 != nil {
-			registerIPAddr(hwaddr, client.IPv4)
-		}
-	}
 }
 
 func auditRecords(recs map[uint64]map[uint32]bool) {

@@ -321,7 +321,7 @@ func (o *observations) saveTestData(testPath string) error {
 
 	w.Flush()
 	if err := w.Error(); err != nil {
-		if err := os.Remove(tmpPath); err != nil {
+		if err = os.Remove(tmpPath); err != nil {
 			log.Printf("failed to remove tmp file %s: %s\n", tmpPath, err)
 		}
 		return fmt.Errorf("failed to write %s: %s", tmpPath, err)

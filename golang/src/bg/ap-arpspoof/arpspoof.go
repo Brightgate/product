@@ -112,7 +112,7 @@ func main() {
 	// iPhone has been seen re-ARP-ing itself after ~60 seconds.
 	log.Println("Spoof done. Waiting....")
 
-	sig := make(chan os.Signal)
+	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT)
 	<-sig
 

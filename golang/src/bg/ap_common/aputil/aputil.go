@@ -207,7 +207,7 @@ func (c *Child) Wait() error {
 			return syscall.Kill(-pid, sig)
 		}
 		pgalive := func() bool {
-			err := syscall.Kill(-pid, 0)
+			err = syscall.Kill(-pid, 0)
 			return err != syscall.ESRCH
 		}
 		RetryKill(pgkill, pgalive)
