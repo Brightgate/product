@@ -205,7 +205,7 @@ assignments = [
     [Statement.SIMPLE_PORT, "CONFIGD_PROMETHEUS_PORT", 3207],
     [Statement.SIMPLE_PORT, "WATCHD_PROMETHEUS_PORT", 3208],
     [Statement.SIMPLE_PORT, "RELAYD_PROMETHEUS_PORT", 3209],
-    [Statement.SIMPLE_PORT, "IOTD_PROMETHEUS_PORT", 3210],
+    [Statement.SIMPLE_PORT, "RPCD_PROMETHEUS_PORT", 3210],
 
     [Statement.COMMENT, "ZeroMQ definitions"],
     [Statement.SIMPLE_STR, "INCOMING_ZMQ_URL", "tcp://*"],
@@ -219,14 +219,19 @@ assignments = [
     [Statement.SIMPLE_NUM, "LOCAL_ZMQ_SEND_TIMEOUT", 10],
     [Statement.SIMPLE_NUM, "LOCAL_ZMQ_RECEIVE_TIMEOUT", 20],
     [Statement.COMMENT, None],
+
     [Statement.COMMENT, "Cloud definitions"],
-    [Statement.SIMPLE_PORT, "CLRPCD_LISTEND_PROMETHEUS_PORT", 3300],
-    [Statement.SIMPLE_STR, "CL_SVC_URL", "https://svc0.b10e.net:443"],
-    [Statement.SIMPLE_STR, "CL_SVC_RPC", "svc0.b10e.net:4430"],
+    [Statement.SIMPLE_STR, "CL_SVC_URL", "https://svc1.b10e.net:443"],
+    [Statement.SIMPLE_STR, "CL_SVC_RPC", "svc1.b10e.net:4430"],
     [Statement.SIMPLE_PORT, "CLRPCD_PROMETHEUS_PORT", 3600],
-    [Statement.SIMPLE_PORT, "CLRPCD_HTTP_PORT", 4000],
     [Statement.SIMPLE_PORT, "CLRPCD_GRPC_PORT", 4430],
     [Statement.LIST, "CLRPCD_URL", "CL_SVC_URL", "+", "/rpc"],
+    [Statement.SIMPLE_PORT, "CLEVENTD_PROMETHEUS_PORT", 3601],
+
+    [Statement.COMMENT, "API related definitions"],
+    [Statement.SIMPLE_STR, "API_URL", "https://api.brightgate.com"],
+    [Statement.LIST, "API_PROTOBUF_URL", "API_URL", "+", "/protobuf"],
+
     [Statement.SECTION, ")"],
     [Statement.FOOTER, None],
 ]

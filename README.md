@@ -107,13 +107,14 @@ to switch a repository from one platform to another, such as from Linux to
 macOS, or from x86 to ARM.  (An easier way is to keep parallel workspaces in
 sync by making one the git upstream of the other).
 
-## Connecting to Google IoT Core
+## Connecting to Cloud Backend
 
-Our appliances talk to the cloud using Google IoT Core.  At a minimum, request
-that an IoT Core secret be provisioned for your appliance.  Install that to
-`$ROOT/opt/com.brightgate/etc/secret/iotcore/iotcore.secret.json`
-in order for your IoT connectivity to work.  See
-`build/gcp-iot/README.iotcore.md` for more details.
+Our appliances talk to the cloud using a mixture of methods, primarily GRPC.
+At a minimum, request that a cloud secret be provisioned for your
+appliance.  Install that to
+`$ROOT/opt/com.brightgate/etc/secret/cloud/cloud.secret.json` in order
+for your cloud connectivity to work.  See
+`build/gcp-appliance-reg/README.registry.md` for more details.
 
 ## TLS Certificates
 

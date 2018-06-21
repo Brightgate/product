@@ -1,2 +1,1 @@
-*/7 * * * * root /opt/com.brightgate/bin/ap-rpc -root /opt/com.brightgate upbeat
-0 */12 * * * root /opt/com.brightgate/bin/ap-rpc -root /opt/com.brightgate inventory
+0 */12 * * * root APROOT=/opt/com.brightgate /opt/com.brightgate/bin/ap-rpc inventory

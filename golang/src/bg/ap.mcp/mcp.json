@@ -66,12 +66,11 @@
         "Options": [ "-logdir=/var/spool/logd" ],
         "Modes": [ "gateway" ]
     },
-    "iotd": {
-        "Name": "iotd",
-        "Binary": "ap.iotd",
-        "DependsOn": "brokerd",
+    "rpcd": {
+        "Name": "rpcd",
+        "Binary": "ap.rpcd",
+        "DependsOn": "configd",
         "Privileged": true,
-        "Options": [ "-cred-path=/etc/secret/iotcore/iotcore.secret.json" ],
         "Modes": [ "gateway" ]
     },
     "networkd": {

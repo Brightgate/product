@@ -19,31 +19,33 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
+	"path/filepath"
+	"strings"
 	"syscall"
-	"time"
 
+	"bg/base_def"
 	"bg/cl_common/daemonutils"
 	"bg/cloud_models/appliancedb"
-	"bg/cloud_models/cloudiotsvc"
 	"bg/cloud_rpc"
 
+	"github.com/pkg/errors"
+	"github.com/satori/uuid"
 	"github.com/tomazk/envcfg"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"go.uber.org/zap"
 
+	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/pubsub"
+
 	"github.com/golang/protobuf/proto"
-	"github.com/satori/uuid"
+	"github.com/golang/protobuf/ptypes"
 )
 
 const checkMark = `✔︎ `
@@ -52,9 +54,8 @@ const checkMark = `✔︎ `
 type Cfg struct {
 	PrometheusPort     string `envcfg:"B10E_CLEVENTD_PROMETHEUS_PORT"`
 	PostgresConnection string `envcfg:"B10E_CLEVENTD_POSTGRES_CONNECTION"`
-	IoTProject         string `envcfg:"B10E_CLEVENTD_IOT_PROJECT"`
-	IoTRegion          string `envcfg:"B10E_CLEVENTD_IOT_LOCATION"`
-	IoTRegistry        string `envcfg:"B10E_CLEVENTD_IOT_REGISTRY"`
+	PubsubProject      string `envcfg:"B10E_CLEVENTD_PUBSUB_PROJECT"`
+	PubsubTopic        string `envcfg:"B10E_CLEVENTD_PUBSUB_TOPIC"`
 }
 
 const (
@@ -62,256 +63,222 @@ const (
 )
 
 var (
-	environ Cfg
+	inventoryBasePath string
 
 	log  *zap.Logger
 	slog *zap.SugaredLogger
 )
 
-func init() {
-	log, slog = daemonutils.SetupLogs()
-}
-
-// This function translates the "deviceNumId" passed in the message (Google
-// says this is globally unique) to the Cloud UUID which we selected at device
-// provisioning time.  When we see new devices for the first time, we register
-// them in the ID map, copying in some data from the device registry.
+// This function translates the uuid passed in the message to the more expanded
+// "ID Map", which tells us more about the appliance.  (This is included here
+// for future expansion; the full IDMap is not used at this time).
 //
 // To reduce load on the postgres DB, we can start to add caching of this
-// information if it's done with care.  For example, the translation of
-// deviceNumID --> cloudUUID should be 100% stable, although the reverse might
-// not necessarily be true (for example, a device moved from one registry to
-// another could retain its cloudUUID, but its deviceNumId would likely change.
+// information if it's done with care.
 //
-func messageToIDMap(ctx context.Context, applianceDB appliancedb.DataStore,
-	cloudIoT cloudiotsvc.Service, m *pubsub.Message) (*appliancedb.ApplianceID, error) {
-	var idmap *appliancedb.ApplianceID
-	var err error
-
-	numID, err := strconv.ParseUint(m.Attributes["deviceNumId"], 10, 64)
+func uuidToIDMap(ctx context.Context, applianceDB appliancedb.DataStore,
+	uuidstr string) (*appliancedb.ApplianceID, error) {
+	uu, err := uuid.FromString(uuidstr)
 	if err != nil {
 		return nil, err
 	}
-
-	// XXX cache goes here.  See above.
-	idmap, err = applianceDB.ApplianceIDByDeviceNumID(ctx, numID)
-	if err != nil {
-		switch err.(type) {
-		case appliancedb.NotFoundError:
-			// Move the information we have, and what we've looked up,
-			// into the IDMap in the database.
-			if m.Attributes["projectId"] != environ.IoTProject ||
-				m.Attributes["deviceRegistryLocation"] != environ.IoTRegion ||
-				m.Attributes["deviceRegistryId"] != environ.IoTRegistry {
-				return nil, fmt.Errorf("Message from unexpected registry: %v [environ: %+v]", m, environ)
-			}
-			device, err := cloudIoT.GetDevice(m.Attributes["deviceId"])
-			if err != nil {
-				return nil, err
-			}
-			u, err := uuid.FromString(device.Metadata["net_b10e_iot_cloud_uuid"])
-			if err != nil {
-				slog.Errorf("failed to make uuid from %s", device.Metadata["net_b10e_iot_cloud_uuid"])
-				return nil, err
-			}
-			idmap = &appliancedb.ApplianceID{
-				CloudUUID:         u,
-				GCPIoTProject:     m.Attributes["projectId"],
-				GCPIoTRegion:      m.Attributes["deviceRegistryLocation"],
-				GCPIoTRegistry:    m.Attributes["deviceRegistryId"],
-				GCPIoTDeviceID:    m.Attributes["deviceId"],
-				GCPIoTDeviceNumID: numID,
-			}
-			slog.Infow("Transfering device information from Registry to Database", "id", idmap)
-			err = applianceDB.UpsertApplianceID(ctx, idmap)
-			if err != nil {
-				return nil, err
-			}
-		default:
-			slog.Errorf("Error: %s", err)
-			return nil, err
-		}
-	}
-	return idmap, nil
+	// XXX caching goes here.  See above.
+	return applianceDB.ApplianceIDByUUID(ctx, uu)
 }
 
-func upbeatMessage(ctx context.Context, applianceDB appliancedb.DataStore,
+func heartbeatMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 	idmap *appliancedb.ApplianceID, m *pubsub.Message) {
+	var err error
+	heartbeat := &cloud_rpc.Heartbeat{}
 
-	upbeat := &cloud_rpc.UpcallRequest{}
-
-	// For now we have nothing we can really do with malformed messages
-	defer m.Ack()
-
-	// The logic below is convoluted, on a temporary basis, to allow
-	// both JSON and protobufs messages through.  In the future, it
-	// should just be protobufs
-	dst, err := base64.StdEncoding.DecodeString(string(m.Data))
-	if err == nil {
-		slog.Debugf("Looks like a base64 encoded message: <%s>", dst)
-		err = proto.Unmarshal(dst, upbeat)
-		if err != nil {
-			slog.Errorw("failed to unmarshal", "message", m, "error", err, "data", string(m.Data))
-			return
-		}
-	} else {
-		// XXX temporary: Try again, treating m.Data as not-base64-encoded JSON
-		err = json.Unmarshal(m.Data, upbeat)
-		if err != nil {
-			slog.Errorw("failed to decode as protobuf and as JSON", "error", err, "data", string(m.Data))
-			return
-		}
+	err = proto.Unmarshal(m.Data, heartbeat)
+	if err != nil {
+		slog.Errorw("failed to decode message", "error", err, "data", string(m.Data))
+		return
 	}
 
-	if upbeat.BootTime == nil || upbeat.RecordTime == nil {
+	if heartbeat.BootTime == nil || heartbeat.RecordTime == nil {
 		slog.Errorw("field check failed")
 		return
 	}
 
-	bootTS, err := time.Parse(time.RFC3339, *upbeat.BootTime)
+	bootTS, err := ptypes.Timestamp(heartbeat.BootTime)
 	if err != nil {
-		slog.Errorf("Couldn't Parse BootTime %s: %s", *upbeat.BootTime, err)
+		slog.Errorf("Couldn't Convert BootTS %s: %s", heartbeat.BootTime, err)
 		return
 	}
-	recordTS, err := time.Parse(time.RFC3339, *upbeat.RecordTime)
+	recordTS, err := ptypes.Timestamp(heartbeat.RecordTime)
 	if err != nil {
-		slog.Errorf("Couldn't Parse RecordTime %s: %s", *upbeat.RecordTime, err)
+		slog.Errorf("Couldn't Parse RecordTime %s: %s", heartbeat.RecordTime, err)
 		return
 	}
-	upbeatIngest := &appliancedb.UpbeatIngest{
+	heartbeatIngest := &appliancedb.HeartbeatIngest{
 		ApplianceID: idmap.CloudUUID,
-		BootTS:      bootTS,
-		RecordTS:    recordTS,
+		BootTS:      bootTS.UTC(),
+		RecordTS:    recordTS.UTC(),
 	}
-	slog.Infow("Insert upbeat ingest", "upbeat", upbeatIngest)
-	err = applianceDB.InsertUpbeatIngest(ctx, upbeatIngest)
+	slog.Infow("Insert heartbeat ingest", "heartbeat", heartbeatIngest)
+	err = applianceDB.InsertHeartbeatIngest(ctx, heartbeatIngest)
 	if err != nil {
-		slog.Errorw("Failed upbeat ingest insert", "error", err)
+		slog.Errorw("Failed heartbeat ingest insert", "error", err)
 	}
 }
 
 func exceptionMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 	idmap *appliancedb.ApplianceID, m *pubsub.Message) {
+	var err error
 
 	exc := &cloud_rpc.NetException{}
 
-	// For now we have nothing we can really do with malformed messages
-	defer m.Ack()
-
-	excBuf, err := base64.StdEncoding.DecodeString(string(m.Data))
-	if err != nil {
-		slog.Errorw("failed to decode", "message", m, "error", err, "data", string(m.Data))
-		return
-	}
-	err = proto.Unmarshal(excBuf, exc)
+	err = proto.Unmarshal(m.Data, exc)
 	if err != nil {
 		slog.Errorw("failed to unmarshal", "message", m, "error", err)
 		return
 	}
 
-	// This is temporary.  For now we don't store exceptions except as JSON blobs.
+	// This is temporary.  For now we don't store exceptions -- just print them as JSON blobs.
 	jsonExc, err := json.Marshal(exc)
 	if err != nil {
-		slog.Errorw("failed to json.Marhal", "message", m, "error", err, "data", string(m.Data))
+		slog.Errorw("failed to json.Marshal", "message", m, "error", err, "data", string(m.Data))
 		return
 	}
 	slog.Infow("Client Exception", "appliance", idmap, "exception", string(jsonExc))
 }
 
-func checkEnv() {
+func processEnv(environ *Cfg) {
 	if environ.PostgresConnection == "" {
 		slog.Fatalf("B10E_CLEVENTD_POSTGRES_CONNECTION must be set")
 	}
-	if environ.IoTProject == "" {
-		slog.Fatalf("B10E_CLEVENTD_IOT_PROJECT must be set")
+	if environ.PubsubProject == "" {
+		p, err := metadata.ProjectID()
+		if err != nil {
+			slog.Fatalf("Couldn't determine GCE ProjectID")
+		}
+		environ.PubsubProject = p
+		slog.Infof("B10E_CLEVENTD_PUBSUB_PROJECT defaulting to %v", p)
 	}
-	if environ.IoTRegion == "" {
-		slog.Fatalf("B10E_CLEVENTD_IOT_LOCATION must be set")
-	}
-	if environ.IoTRegistry == "" {
-		slog.Fatalf("B10E_CLEVENTD_IOT_REGISTRY must be set")
+	if environ.PubsubTopic == "" {
+		slog.Fatalf("B10E_CLEVENTD_PUBSUB_TOPIC must be set")
 	}
 	if environ.PrometheusPort == "" {
-		slog.Warnf("B10E_CLEVENTD_PROMETHEUS_PORT is not set")
+		environ.PrometheusPort = base_def.CLEVENTD_PROMETHEUS_PORT
 	}
-	slog.Infof(checkMark+"Environ looks good: %+v", environ)
+	slog.Infof(checkMark + "Environ looks good")
+}
+
+func prometheusInit(prometheusPort string) {
+	if len(prometheusPort) == 0 {
+		slog.Warnf("Prometheus disabled")
+		return
+	}
+	http.Handle("/metrics", promhttp.Handler())
+	go http.ListenAndServe(prometheusPort, nil)
+	slog.Infof(checkMark+"Prometheus launched on port %v", prometheusPort)
+}
+
+func makeSub(ctx context.Context, pubsubClient *pubsub.Client, topicName, subName string) (*pubsub.Subscription, error) {
+	sub := pubsubClient.Subscription(subName)
+	ok, err := sub.Exists(ctx)
+	if err != nil {
+		return nil, errors.Wrapf(err, "Failed to test if subscription %s exists", subName)
+	}
+	if !ok {
+		slog.Infof("Creating pubsub Subscription %v", subName)
+		topic := pubsubClient.Topic(topicName)
+		sub, err = pubsubClient.CreateSubscription(ctx, subName,
+			pubsub.SubscriptionConfig{Topic: topic})
+		if err != nil {
+			return nil, errors.Wrapf(err, "Failed to CreateSubscription %s", subName)
+		}
+		slog.Infof(checkMark+"Created pubsub Subscription %v", subName)
+	}
+	return sub, nil
+}
+
+// makeApplianceDB handles connection setup to the appliance database
+func makeApplianceDB(postgresURI string) appliancedb.DataStore {
+	applianceDB, err := appliancedb.Connect(postgresURI)
+	if err != nil {
+		slog.Fatalf("failed to connect to DB: %v", err)
+	}
+	slog.Infof(checkMark + "Connected to Appliance DB")
+	err = applianceDB.Ping()
+	if err != nil {
+		slog.Fatalf("failed to ping DB: %s", err)
+	}
+	slog.Infof(checkMark + "Pinged Appliance DB")
+	return applianceDB
 }
 
 func main() {
-	defer log.Sync()
+	var environ Cfg
+	log, slog = daemonutils.SetupLogs()
 	flag.Parse()
 	log, slog = daemonutils.ResetupLogs()
+	defer log.Sync()
 
 	err := envcfg.Unmarshal(&environ)
 	if err != nil {
 		slog.Fatalf("failed environment configuration: %v", err)
 	}
+	processEnv(&environ)
+	slog.Infow(pname+" starting", "args", strings.Join(os.Args, " "))
 
-	slog.Infow(pname+" starting", "args", os.Args, "envcfg", environ)
-	checkEnv()
+	inventoryBasePath = filepath.Join(daemonutils.ClRoot(), "var", "spool")
+	slog.Infof("inventory storage: %s", inventoryBasePath)
 
-	if environ.PrometheusPort != "" {
-		http.Handle("/metrics", promhttp.Handler())
-		go http.ListenAndServe(environ.PrometheusPort, nil)
-		slog.Info("prometheus client launched")
-	}
+	prometheusInit(environ.PrometheusPort)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
 
-	// Connect to Postgres DB
-	applianceDB, err := appliancedb.Connect(environ.PostgresConnection)
+	applianceDB := makeApplianceDB(environ.PostgresConnection)
+
+	pubsubClient, err := pubsub.NewClient(ctx, environ.PubsubProject)
 	if err != nil {
-		slog.Fatalf("failed to connect to DB: %v", err)
+		slog.Fatalf("failed to make client: %v", err)
 	}
-	err = applianceDB.Ping()
+	subName := environ.PubsubTopic + "-" + pname
+	applianceRegEvents, err := makeSub(ctx, pubsubClient, environ.PubsubTopic, subName)
 	if err != nil {
-		slog.Fatalf("failed to ping DB: %s", err)
-	}
-	slog.Infow(checkMark + "Can connect to and ping SQL DB")
-
-	// Connect to Google Cloud IoT API
-	cloudIoT, err := cloudiotsvc.NewDefaultService(ctx,
-		environ.IoTProject, environ.IoTRegion, environ.IoTRegistry)
-	if err != nil {
-		slog.Fatalf("failed to create IoT service: %s", err)
-	}
-
-	registry, err := cloudIoT.GetRegistry()
-	if err != nil {
-		slog.Fatalf("failed to lookup IoT registry: %s", err)
-	}
-	slog.Infof(checkMark+"Found IoT registry %s", registry.Name)
-
-	events, err := cloudIoT.SubscribeEvents(ctx)
-	if err != nil {
-		slog.Fatalf("failed to subscribe to IoT events: %s", err)
-	}
-
-	slog.Infof(checkMark + "Starting event receiver")
-	err = events.Receive(ctx, func(ctx context.Context, m *pubsub.Message) {
-		var idmap *appliancedb.ApplianceID
-
-		slog.Debugw("Message", "data", string(m.Data), "attrs", m.Attributes)
-		idmap, err = messageToIDMap(ctx, applianceDB, cloudIoT, m)
-		if err != nil {
-			slog.Errorw("failed ID mapping", "error", err, "message", m)
-			return
-		}
-		switch m.Attributes["subFolder"] {
-		case "upbeat":
-			upbeatMessage(ctx, applianceDB, idmap, m)
-		case "exception":
-			exceptionMessage(ctx, applianceDB, idmap, m)
-		default:
-			slog.Errorf("unknown message type (subfolder): %s", m.Attributes["subFolder"])
-		}
-	})
-	if err != nil {
-		slog.Fatalf("failed to Receive(): %s", err)
+		slog.Fatalf("failed to subscribe: %v", err)
 	}
 
 	sig := make(chan os.Signal, 2)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	s := <-sig
-	slog.Infof("Signal (%v) received, stopping", s)
+	go func() {
+		s := <-sig
+		slog.Infof("Signal (%v) received, stopping", s)
+		cancel()
+	}()
+
+	slog.Infof(checkMark + "Starting ApplianceRegistry event receiver")
+	err = applianceRegEvents.Receive(ctx, func(ctx context.Context, m *pubsub.Message) {
+		slog.Debugw("Message", "data", string(m.Data), "attrs", m.Attributes)
+		uuidstr := m.Attributes["uuid"]
+		idmap, ferr := uuidToIDMap(ctx, applianceDB, uuidstr)
+		if ferr != nil {
+			slog.Errorw("failed ID mapping, giving up", "error", ferr, "message", m)
+			// We don't want to see this again
+			m.Ack()
+			return
+		}
+
+		typeName := strings.TrimPrefix(m.Attributes["typeURL"], base_def.API_PROTOBUF_URL+"/")
+		// As we accumulate more of these, transition to a lookup table
+		switch typeName {
+		case "cloud_rpc.Heartbeat":
+			heartbeatMessage(ctx, applianceDB, idmap, m)
+		case "cloud_rpc.InventoryReport":
+			inventoryMessage(ctx, applianceDB, idmap, m)
+		case "cloud_rpc.NetException":
+			exceptionMessage(ctx, applianceDB, idmap, m)
+		default:
+			slog.Errorw("unknown message type", "message", m)
+		}
+		m.Ack()
+	})
+	if err != nil {
+		slog.Fatalf("failed to Receive(): %s", err)
+	}
+	slog.Infof("Shutdown complete.")
 }

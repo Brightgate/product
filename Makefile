@@ -243,8 +243,8 @@ APPETC=$(APPBASE)/etc
 APPROOTLIB=$(APPROOT)/lib
 APPVAR=$(APPBASE)/var
 APPSECRET=$(APPETC)/secret
+APPSECRETCLOUD=$(APPSECRET)/cloud
 APPSECRETSSL=$(APPSECRET)/ssl
-APPSECRETIOTCORE=$(APPSECRET)/iotcore
 APPSPOOL=$(APPVAR)/spool
 APPSPOOLANTIPHISH=$(APPVAR)/spool/antiphishing
 APPSPOOLWATCHD=$(APPVAR)/spool/watchd
@@ -266,8 +266,8 @@ COMMON_GOPKGS = \
 	bg/ap_common/aputil \
 	bg/ap_common/broker \
 	bg/ap_common/certificate \
+	bg/ap_common/cloud/rpcclient \
 	bg/ap_common/device \
-	bg/ap_common/iotcore \
 	bg/ap_common/mcp \
 	bg/ap_common/model \
 	bg/ap_common/network \
@@ -281,7 +281,6 @@ APPCOMMAND_GOPKGS = \
 	bg/ap-configctl \
 	bg/ap-ctl \
 	bg/ap-inspect \
-	bg/ap-iot \
 	bg/ap-msgping \
 	bg/ap-ouisearch \
 	bg/ap-rpc \
@@ -296,11 +295,11 @@ APPDAEMON_GOPKGS = \
 	bg/ap.dns4d \
 	bg/ap.httpd \
 	bg/ap.identifierd \
-	bg/ap.iotd \
 	bg/ap.logd \
 	bg/ap.mcp \
 	bg/ap.networkd \
 	bg/ap.relayd \
+	bg/ap.rpcd \
 	bg/ap.updated \
 	bg/ap.userauthd \
 	bg/ap.watchd
@@ -320,16 +319,15 @@ APPBINARIES = \
 # XXX Common configurations?
 
 GO_TESTABLES = \
-	bg/ap_common/aputil \
 	bg/ap_common/certificate \
-	bg/ap_common/iotcore \
+	bg/ap_common/cloud/rpcclient \
 	bg/ap_common/network \
 	bg/ap.configd \
-	bg/ap.iotd \
 	bg/ap.networkd \
+	bg/ap.rpcd \
 	bg/ap.userauthd \
-	bg/cl_common/daemonutils \
-	bg/cloud_models/cloudiotsvc
+	bg/cl_common/auth/m2mauth \
+	bg/cl_common/daemonutils
 
 NETWORKD_TEMPLATE_FILES = \
 	hostapd.conf.got \
@@ -374,8 +372,8 @@ APPDIRS = \
 	$(APPROOTLIB) \
 	$(APPRULES) \
 	$(APPSECRET) \
+	$(APPSECRETCLOUD) \
 	$(APPSECRETSSL) \
-	$(APPSECRETIOTCORE) \
 	$(APPSNMAP) \
 	$(APPSPOOL) \
 	$(APPVAR) \
@@ -404,9 +402,9 @@ APP_COMMON_SRCS = \
 	$(GOSRCBG)/ap_common/apcfg/users.go \
 	$(GOSRCBG)/ap_common/aputil/aputil.go \
 	$(GOSRCBG)/ap_common/broker/broker.go \
+	$(GOSRCBG)/ap_common/cloud/rpcclient/rpcclient.go \
+	$(GOSRCBG)/ap_common/cloud/rpcclient/cred.go \
 	$(GOSRCBG)/ap_common/device/device.go \
-	$(GOSRCBG)/ap_common/iotcore/iotcore.go \
-	$(GOSRCBG)/ap_common/iotcore/iotcred.go \
 	$(GOSRCBG)/ap_common/mcp/mcp_client.go \
 	$(GOSRCBG)/ap_common/model/model.go \
 	$(GOSRCBG)/ap_common/network/dhcp.go \
@@ -456,9 +454,9 @@ CLOUDDAEMON_GOPKGS = \
 	bg/cl.rpcd
 
 CLOUDCOMMON_GOPKGS = \
+	bg/cl_common/auth/m2mauth \
 	bg/cl_common/daemonutils \
 	bg/cloud_models/appliancedb \
-	bg/cloud_models/cloudiotsvc \
 	bg/common
 
 CLOUDCOMMAND_GOPKGS = bg/cl-aggregate
@@ -488,6 +486,7 @@ CLOUDCOMPONENTS = $(CLOUDBINARIES) $(CLOUDCONFIGS) $(CLOUDDIRS)
 CLOUD_COMMON_SRCS = \
     $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
     $(GOSRCBG)/cloud_models/appliancedb/appliancedb.go \
+    $(GOSRCBG)/cl_common/auth/m2mauth/middleware.go \
     $(GOSRCBG)/cl_common/daemonutils/utils.go \
     $(GOSRCBG)/common/urlfetch.go
 
@@ -536,21 +535,22 @@ MOCKERY=$(GOBIN)/mockery
 $(MOCKERY):
 	env -u GOARCH $(GO) get -u github.com/vektra/mockery/.../
 
-GO_MOCK_IOTMQTTCLIENT = $(GOSRCBG)/ap_common/iotcore/mocks/IoTMQTTClient.go
+GO_MOCK_APPLIANCEDB = $(GOSRCBG)/cloud_models/appliancedb/mocks/DataStore.go
+GO_MOCK_CLOUDRPC = $(GOSRCBG)/cloud_rpc/mocks/EventClient.go
 GO_MOCK_SRCS = \
-	$(GO_MOCK_IOTMQTTCLIENT)
+	$(GO_MOCK_APPLIANCEDB) \
+	$(GO_MOCK_CLOUDRPC)
 
 mocks: $(GO_MOCK_SRCS)
 
 # Mock rules-- not sure how to make this work with pattern substitution
-# After generation, make compliant with
-# https://github.com/golang/go/issues/13560 so that golint will skip this file.
-# Can be pulled after https://github.com/vektra/mockery/issues/183 is fixed
 # The use of 'realpath' avoids an issue in mockery for workspaces with
 # symlinks (https://github.com/vektra/mockery/issues/157).
-$(GO_MOCK_IOTMQTTCLIENT): $(GOSRCBG)/ap_common/iotcore/iotcore.go | $(MOCKERY) deps-ensured
-	cd $(realpath $(dir $<)) && GOPATH=$(realpath $(GOPATH)) $(MOCKERY) -name IoTMQTTClient
-	sed -i 's/\(\/\/ Code generated.*\)/\1.  DO NOT EDIT./' $@
+$(GO_MOCK_CLOUDRPC): $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go $(GOSRCBG)/base_msg/base_msg.pb.go | $(MOCKERY) deps-ensured
+	cd $(realpath $(dir $<)) && GOPATH=$(realpath $(GOPATH)) $(MOCKERY) -name 'EventClient'
+
+$(GO_MOCK_APPLIANCEDB): $(GOSRCBG)/cloud_models/appliancedb/appliancedb.go | $(MOCKERY) deps-ensured
+	cd $(realpath $(dir $<)) && GOPATH=$(realpath $(GOPATH)) $(MOCKERY) -name 'DataStore'
 
 test-go: install
 	$(GO) test $(GO_TESTFLAGS) $(GO_TESTABLES)
@@ -698,9 +698,6 @@ $(APPBIN)/ap.httpd: \
 	$(GOSRCBG)/ap_common/certificate/certificate.go \
 	$(GOSRCBG)/ap_common/data/dns.go
 $(APPBIN)/ap.identifierd: $(GOSRCBG)/ap.identifierd/identifierd.go
-$(APPBIN)/ap.iotd: \
-	$(GOSRCBG)/ap.iotd/iotd.go \
-	$(GOSRCBG)/common/version.go
 $(APPBIN)/ap.logd: $(GOSRCBG)/ap.logd/logd.go
 $(APPBIN)/ap.mcp: $(GOSRCBG)/ap.mcp/mcp.go
 $(APPBIN)/ap.networkd: \
@@ -710,6 +707,9 @@ $(APPBIN)/ap.networkd: \
 	$(GOSRCBG)/ap.networkd/ntpd.go \
 	$(GOSRCBG)/ap.networkd/parse.go
 $(APPBIN)/ap.relayd: $(GOSRCBG)/ap.relayd/relayd.go
+$(APPBIN)/ap.rpcd: \
+	$(GOSRCBG)/ap.rpcd/rpcd.go \
+	$(GOSRCBG)/common/version.go
 $(APPBIN)/ap.updated: $(GOSRCBG)/ap.updated/update.go
 $(APPBIN)/ap.userauthd: $(GOSRCBG)/ap.userauthd/userauthd.go \
 	$(GOSRCBG)/ap_common/certificate/certificate.go
@@ -733,10 +733,6 @@ $(APPBIN)/ap-msgping: $(GOSRCBG)/ap-msgping/msgping.go
 $(APPBIN)/ap-ouisearch: $(GOSRCBG)/ap-ouisearch/ouisearch.go
 $(APPBIN)/ap-rpc: \
 	$(GOSRCBG)/ap-rpc/rpc.go \
-	$(GOSRCBG)/common/version.go \
-	$(CLOUD_COMMON_SRCS)
-$(APPBIN)/ap-iot: \
-	$(GOSRCBG)/ap-iot/iot.go \
 	$(GOSRCBG)/common/version.go \
 	$(CLOUD_COMMON_SRCS)
 $(APPBIN)/ap-stats: $(GOSRCBG)/ap-stats/stats.go
@@ -779,11 +775,13 @@ $(CLOUDBIN)/cl-aggregate: \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.eventd: \
 	$(GOSRCBG)/cl.eventd/eventd.go \
+	$(GOSRCBG)/cl.eventd/inventory.go \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.httpd: \
 	$(GOSRCBG)/cl.httpd/cl.httpd.go
 $(CLOUDBIN)/cl.rpcd: \
 	$(GOSRCBG)/cl.rpcd/rpcd.go \
+	$(GOSRCBG)/cl.rpcd/event.go \
 	$(CLOUD_COMMON_SRCS)
 
 $(CLOUDROOTLIB)/systemd/system: | $(CLOUDROOTLIB)
@@ -909,5 +907,7 @@ check-dirty:
 	if [ -n "$$c" ]; then \
 		echo "Workspace is dirty:"; \
 		echo "$$c"; \
+		echo "--"; \
+		git diff; \
 		exit 1; \
 	fi

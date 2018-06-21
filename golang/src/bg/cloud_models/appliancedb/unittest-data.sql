@@ -15,12 +15,11 @@ INSERT INTO appliance_id_map VALUES (
         'DE:AD:BE:EF:F0:0D',
         NULL,
         'peppy-breaker-161717',
-        'us-central1',
+        'us-west1',
         'unit-testing',
-        'unit-testing-fake-device',
-        2672165165395103);
+        'unit-testing-fake-device');
 
-INSERT INTO upbeat_ingest (system_uuid, boot_ts, record_ts) VALUES
+INSERT INTO heartbeat_ingest (cloud_uuid, boot_ts, record_ts) VALUES
     ('5487addf-9b36-409c-8df8-378d9396b95f'::uuid, '2017-11-21T01:01:59+00:00', '2017-11-21T01:03:47+00:00'),
     ('5487addf-9b36-409c-8df8-378d9396b95f'::uuid, '2017-11-21T01:01:59+00:00', '2017-11-21T01:03:53+00:00'),
     ('5487addf-9b36-409c-8df8-378d9396b95f'::uuid, '2017-11-21T01:01:59+00:00', '2017-11-21T01:03:59+00:00');

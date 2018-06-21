@@ -17,8 +17,7 @@ import (
 	"strings"
 	"time"
 
-	// As advised by pq documentation
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 	"github.com/satori/uuid"
 )
 
@@ -26,10 +25,11 @@ import (
 // See http://www.alexedwards.net/blog/organising-database-access
 type DataStore interface {
 	AllApplianceIDs(context.Context) ([]ApplianceID, error)
+	ApplianceIDByClientID(context.Context, string) (*ApplianceID, error)
 	ApplianceIDByUUID(context.Context, uuid.UUID) (*ApplianceID, error)
-	ApplianceIDByDeviceNumID(context.Context, uint64) (*ApplianceID, error)
 	UpsertApplianceID(context.Context, *ApplianceID) error
-	InsertUpbeatIngest(context.Context, *UpbeatIngest) error
+	KeysByUUID(context.Context, uuid.UUID) ([]AppliancePubKey, error)
+	InsertHeartbeatIngest(context.Context, *HeartbeatIngest) error
 	Ping() error
 	Close()
 }
@@ -43,24 +43,33 @@ type ApplianceDB struct {
 // a table with the various forms of unique identity that we track for
 // an appliance.
 type ApplianceID struct {
-	// CloudUUID is used as the primary key for tracking a system across
-	// cloud properties; in the IoT registry this is
-	// "net_b10e_iot_cloud_uuid"
+	// CloudUUID is used as the primary key for tracking an appliance
+	// across cloud properties
 	CloudUUID uuid.UUID
 
 	// System Identification Intrinsic to the Hardware
 	SystemReprMAC      sql.NullString
 	SystemReprHWSerial sql.NullString
 
-	// Google Cloud Device Identification
-	GCPIoTProject     string
-	GCPIoTRegion      string
-	GCPIoTRegistry    string
-	GCPIoTDeviceID    string
-	GCPIoTDeviceNumID uint64
+	// Google Cloud Identification
+	GCPProject string
+	GCPRegion  string
+
+	// Appliance Registry name and ID in the Registry
+	ApplianceReg   string
+	ApplianceRegID string
 }
 
-// NotFoundError represents
+// AppliancePubKey represents one of the public keys for an Appliance.
+type AppliancePubKey struct {
+	ID         uint64
+	Format     string
+	Key        string
+	Expiration pq.NullTime
+}
+
+// NotFoundError is returned when the requested resource is not present in the
+// database.
 type NotFoundError struct {
 	s string
 }
@@ -69,7 +78,7 @@ func (e NotFoundError) Error() string {
 	return e.s
 }
 
-func (i ApplianceID) String() string {
+func (i *ApplianceID) String() string {
 	var hwser = "-"
 	var mac = "-"
 	if i.SystemReprHWSerial.Valid {
@@ -78,9 +87,15 @@ func (i ApplianceID) String() string {
 	if i.SystemReprMAC.Valid {
 		mac = i.SystemReprMAC.String
 	}
-	gcpID := fmt.Sprintf("%s/%s/%s/{%s,%d}", i.GCPIoTProject, i.GCPIoTRegion,
-		i.GCPIoTRegistry, i.GCPIoTDeviceID, i.GCPIoTDeviceNumID)
-	return fmt.Sprintf("ApplianceID<u=%s hwser=%s mac=%s gcpID=%s>", i.CloudUUID, hwser, mac, gcpID)
+	return fmt.Sprintf("ApplianceID<u=%s hwser=%s mac=%s gcpID=%s>",
+		i.CloudUUID, hwser, mac, i.ClientID())
+}
+
+// ClientID returns the canonical "address" of the represented appliance
+// The format is borrowed from the conventions used by Google's properties.
+func (i *ApplianceID) ClientID() string {
+	return fmt.Sprintf("projects/%s/locations/%s/registries/%s/appliances/%s",
+		i.GCPProject, i.GCPRegion, i.ApplianceReg, i.ApplianceRegID)
 }
 
 // Connect opens a new connection to the DataStore
@@ -106,11 +121,10 @@ var allIDColumns = []string{
 	"cloud_uuid",
 	"system_repr_mac",
 	"system_repr_hwserial",
-	"gcp_iot_project",
-	"gcp_iot_region",
-	"gcp_iot_registry",
-	"gcp_iot_device_id",
-	"gcp_iot_device_num_id",
+	"gcp_project",
+	"gcp_region",
+	"appliance_reg",
+	"appliance_reg_id",
 }
 
 var allIDColumnsSQL = strings.Join(allIDColumns, ", ")
@@ -127,32 +141,29 @@ func (db *ApplianceDB) AllApplianceIDs(ctx context.Context) ([]ApplianceID, erro
 	defer rows.Close()
 	for rows.Next() {
 		var id ApplianceID
-		err := rows.Scan(&id.CloudUUID,
+		err = rows.Scan(&id.CloudUUID,
 			&id.SystemReprMAC,
 			&id.SystemReprHWSerial,
-			&id.GCPIoTProject,
-			&id.GCPIoTRegion,
-			&id.GCPIoTRegistry,
-			&id.GCPIoTDeviceID,
-			&id.GCPIoTDeviceNumID)
+			&id.GCPProject,
+			&id.GCPRegion,
+			&id.ApplianceReg,
+			&id.ApplianceRegID)
 		if err != nil {
 			panic(err)
-		} else {
-			ids = append(ids, id)
 		}
+		ids = append(ids, id)
 	}
-	return ids, err
+	return ids, nil
 }
 
 func doIDScan(label string, query string, row *sql.Row, id *ApplianceID) error {
 	err := row.Scan(&id.CloudUUID,
 		&id.SystemReprMAC,
 		&id.SystemReprHWSerial,
-		&id.GCPIoTProject,
-		&id.GCPIoTRegion,
-		&id.GCPIoTRegistry,
-		&id.GCPIoTDeviceID,
-		&id.GCPIoTDeviceNumID)
+		&id.GCPProject,
+		&id.GCPRegion,
+		&id.ApplianceReg,
+		&id.ApplianceRegID)
 	switch err {
 	case sql.ErrNoRows:
 		return NotFoundError{fmt.Sprintf("%s: Couldn't find %s",
@@ -176,15 +187,20 @@ func (db *ApplianceDB) ApplianceIDByUUID(ctx context.Context,
 	return &id, err
 }
 
-// ApplianceIDByDeviceNumID selects an ApplianceID using its Google-assigned
-// globally unique numeric ID.
-func (db *ApplianceDB) ApplianceIDByDeviceNumID(ctx context.Context,
-	numID uint64) (*ApplianceID, error) {
+// ApplianceIDByClientID selects an ApplianceID using its client ID string
+// which is a string of the form:
+// projects/<projname>/locations/<region>/registries/<regname>/appliances/<regid>
+func (db *ApplianceDB) ApplianceIDByClientID(ctx context.Context, clientID string) (*ApplianceID, error) {
 
 	var id ApplianceID
 	row := db.QueryRowContext(ctx,
-		"SELECT "+allIDColumnsSQL+" FROM appliance_id_map WHERE gcp_iot_device_num_id=$1", numID)
-	err := doIDScan("ApplianceIDByDeviceNumID", string(numID), row, &id)
+		"SELECT "+allIDColumnsSQL+` FROM appliance_id_map WHERE
+		    concat_ws('/',
+			'projects', gcp_project,
+		        'locations', gcp_region,
+			'registries', appliance_reg,
+			'appliances', appliance_reg_id) = $1`, clientID)
+	err := doIDScan("ApplianceIDByClientID", clientID, row, &id)
 	return &id, err
 }
 
@@ -195,48 +211,71 @@ func (db *ApplianceDB) UpsertApplianceID(ctx context.Context,
 	_, err := db.ExecContext(ctx,
 		`INSERT INTO appliance_id_map
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                 ON CONFLICT (cloud_uuid) DO UPDATE
-                 SET (system_repr_mac,
-                      system_repr_hwserial,
-                      gcp_iot_project,
-		      gcp_iot_region,
-                      gcp_iot_registry,
-                      gcp_iot_device_id,
-		      gcp_iot_device_num_id) = (
-                      EXCLUDED.system_repr_mac,
+		 ON CONFLICT (cloud_uuid) DO UPDATE
+		 SET (system_repr_mac,
+		      system_repr_hwserial,
+		      gcp_project,
+		      gcp_region,
+		      appliance_reg,
+		      appliance_reg_id) = (
+		      EXCLUDED.system_repr_mac,
 		      EXCLUDED.system_repr_hwserial,
-		      EXCLUDED.gcp_iot_project,
-                      EXCLUDED.gcp_iot_region,
-                      EXCLUDED.gcp_iot_registry,
-                      EXCLUDED.gcp_iot_device_id,
-                      EXCLUDED.gcp_iot_device_num_id)`,
+		      EXCLUDED.gcp_project,
+		      EXCLUDED.gcp_region,
+		      EXCLUDED.appliance_reg,
+		      EXCLUDED.appliance_reg_id)`,
 		id.CloudUUID,
 		id.SystemReprMAC,
 		id.SystemReprHWSerial,
-		id.GCPIoTProject,
-		id.GCPIoTRegion,
-		id.GCPIoTRegistry,
-		id.GCPIoTDeviceID,
-		id.GCPIoTDeviceNumID)
+		id.GCPProject,
+		id.GCPRegion,
+		id.ApplianceReg,
+		id.ApplianceRegID)
 	return err
 }
 
-// UpbeatIngest a row in the upbeat_ingest table.  In this case "ingest" means
-// that we record upbeats into this table for later coalescing by another
-// process.
-type UpbeatIngest struct {
+// KeysByUUID returns the public keys associated with the Appliance cloud UUID
+func (db *ApplianceDB) KeysByUUID(ctx context.Context, u uuid.UUID) ([]AppliancePubKey, error) {
+	keys := make([]AppliancePubKey, 0)
+	rows, err := db.QueryContext(ctx,
+		"SELECT id, format, key, expiration FROM appliance_pubkey WHERE cloud_uuid=$1", u)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var key AppliancePubKey
+		err := rows.Scan(&key.ID,
+			&key.Format,
+			&key.Key,
+			&key.Expiration)
+		switch err {
+		case sql.ErrNoRows:
+			return nil, NotFoundError{fmt.Sprintf("KeysByUUID: Couldn't find keys for %s", u)}
+		case nil:
+			keys = append(keys, key)
+		default:
+			panic(err)
+		}
+	}
+	return keys, nil
+}
+
+// HeartbeatIngest represents a row in the heartbeat_ingest table.  In this
+// case "ingest" means that we record heartbeats into this table for later
+// coalescing by another process.
+type HeartbeatIngest struct {
 	IngestID    uint64
 	ApplianceID uuid.UUID
 	BootTS      time.Time
 	RecordTS    time.Time
 }
 
-// InsertUpbeatIngest adds a row to the upbeat_ingest table.
-func (db *ApplianceDB) InsertUpbeatIngest(ctx context.Context, upbeat *UpbeatIngest) error {
+// InsertHeartbeatIngest adds a row to the heartbeat_ingest table.
+func (db *ApplianceDB) InsertHeartbeatIngest(ctx context.Context, heartbeat *HeartbeatIngest) error {
 	_, err := db.ExecContext(ctx,
-		"INSERT INTO upbeat_ingest VALUES (DEFAULT, $1, $2, $3)",
-		upbeat.ApplianceID,
-		upbeat.BootTS,
-		upbeat.RecordTS)
+		"INSERT INTO heartbeat_ingest VALUES (DEFAULT, $1, $2, $3)",
+		heartbeat.ApplianceID,
+		heartbeat.BootTS,
+		heartbeat.RecordTS)
 	return err
 }

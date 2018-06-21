@@ -14,13 +14,15 @@
     "iam",
     "internal",
     "internal/optional",
+    "internal/trace",
     "internal/version",
     "pubsub",
     "pubsub/apiv1",
+    "pubsub/internal/distribution",
     "storage"
   ]
-  revision = "050b16d2314d5fc3d4c9a51e4cd5c7468e77f162"
-  version = "v0.17.0"
+  revision = "0fd7230b2a7505833d5f69b75cbd6c9582401479"
+  version = "v0.23.0"
 
 [[projects]]
   name = "github.com/NYTimes/gziphandler"
@@ -61,15 +63,6 @@
   packages = ["."]
   revision = "dbeaa9332f19a944acb5736b4456cfcc02140e29"
   version = "v3.1.0"
-
-[[projects]]
-  name = "github.com/eclipse/paho.mqtt.golang"
-  packages = [
-    ".",
-    "packets"
-  ]
-  revision = "36d01c2b4cbeb3d2a12063e4880ce30800af9560"
-  version = "v1.1.1"
 
 [[projects]]
   name = "github.com/fgrosse/zaptest"
@@ -141,11 +134,13 @@
   name = "github.com/grpc-ecosystem/go-grpc-middleware"
   packages = [
     ".",
+    "auth",
     "logging",
     "logging/zap",
     "logging/zap/ctxzap",
     "tags",
-    "tags/zap"
+    "tags/zap",
+    "util/metautils"
   ]
   revision = "c250d6563d4d4c20252cd865923440e829844f4e"
   version = "v1.0.0"
@@ -376,6 +371,24 @@
   version = "v0.2.0"
 
 [[projects]]
+  name = "go.opencensus.io"
+  packages = [
+    "exporterutil",
+    "internal",
+    "internal/tagencoding",
+    "plugin/ocgrpc",
+    "stats",
+    "stats/internal",
+    "stats/view",
+    "tag",
+    "trace",
+    "trace/internal",
+    "trace/propagation"
+  ]
+  revision = "5897c5ce32247fc8af19c7710abd96e3304fb43c"
+  version = "v0.12.0"
+
+[[projects]]
   name = "go.uber.org/atomic"
   packages = ["."]
   revision = "8474b86a5a6f79c443ce4b2992817ff32cf208b8"
@@ -439,9 +452,7 @@
     "internal/timeseries",
     "ipv4",
     "lex/httplex",
-    "proxy",
-    "trace",
-    "websocket"
+    "trace"
   ]
   revision = "4b14673ba32bee7f5ac0f990a48f033919fd418b"
 
@@ -544,7 +555,6 @@
   branch = "master"
   name = "google.golang.org/api"
   packages = [
-    "cloudiot/v1",
     "gensupport",
     "googleapi",
     "googleapi/internal/uritemplates",
@@ -586,6 +596,7 @@
     "googleapis/api/annotations",
     "googleapis/iam/v1",
     "googleapis/pubsub/v1",
+    "googleapis/rpc/code",
     "googleapis/rpc/status",
     "protobuf/field_mask"
   ]
@@ -627,6 +638,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "56707fa38d8f496a78a47382965e7a7a2c375fdd3b6e738d3a484934d02e1e36"
+  inputs-digest = "f6b898676dc66446af816968b16e5011d560db2334534b978cce794eebba7a4c"
   solver-name = "gps-cdcl"
   solver-version = 1

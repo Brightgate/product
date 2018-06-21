@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -11,45 +11,30 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"hash"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
 
-	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
+	"bg/ap_common/cloud/rpcclient"
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
 	"bg/cloud_rpc"
-	"bg/common"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/tomazk/envcfg"
-
+	"github.com/golang/protobuf/ptypes"
+	any "github.com/golang/protobuf/ptypes/any"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
+	_ "google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/grpclog"
 )
-
-type cfg struct {
-	// Override configuration value.
-	LocalMode bool   `envcfg:"LOCAL_MODE"`
-	SrvURL    string `envcfg:"SRV_URL"`
-}
 
 const pname = "ap-rpc"
 
@@ -57,163 +42,97 @@ const pname = "ap-rpc"
 const msgsize = 2097152
 
 var services = map[string]func(context.Context, *grpc.ClientConn){
-	"upbeat":    sendUpbeat,
-	"inventory": sendInventory,
+	"heartbeat":      sendHeartbeat,
+	"heartbeat-loop": sendHeartbeatLoop,
+	"inventory":      sendInventory,
 }
 
 var (
-	aproot = flag.String("root", "proto.armv7l/appliance/opt/com.brightgate",
-		"Root of AP installation")
-
-	environ    cfg
-	serverAddr string
-	config     *apcfg.APConfig
-
-	apuuid   string
-	aphwaddr []string
+	forceInventory = flag.Bool("force-inventory", false, "Force; always send inventory")
+	connectFlag    = flag.String("connect", base_def.CL_SVC_RPC, "Override connection endpoint in credential")
+	deadlineFlag   = flag.Duration("rpc-deadline", time.Second*20, "RPC completion deadline")
+	enableTLSFlag  = flag.Bool("enable-tls", true, "Enable Secure gRPC")
 )
 
-func gethmac(data string) hash.Hash {
-	year := time.Now().Year()
-	rhmac := hmac.New(sha256.New, cloud_rpc.HMACKeys[year])
-	rhmac.Write([]byte(data))
-	return rhmac
-}
-
-// Return the MAC address for the defined WAN interface.
-func getWanInterface(config *apcfg.APConfig) string {
-	nics, err := config.GetNics(base_def.RING_WAN, true)
+func publishEvent(ctx context.Context, tclient cloud_rpc.EventClient, subtopic string, evt proto.Message) error {
+	name := proto.MessageName(evt)
+	serialized, err := proto.Marshal(evt)
 	if err != nil {
-		log.Fatalf("failed to get list of WAN NICs: %v\n", err)
-	}
-	if len(nics) == 0 {
-		log.Fatalf("No WAN interface identified\n")
+		return err
 	}
 
-	return nics[0]
-}
+	clientDeadline := time.Now().Add(*deadlineFlag)
+	ctx, ctxcancel := context.WithDeadline(ctx, clientDeadline)
+	defer ctxcancel()
 
-func firstVersion() string {
-	return "git:rPS" + common.GitVersion
-}
+	eventRequest := &cloud_rpc.PutEventRequest{
+		SubTopic: subtopic,
+		Payload: &any.Any{
+			TypeUrl: base_def.API_PROTOBUF_URL + "/" + name,
+			Value:   serialized,
+		},
+	}
 
-// Retrieve the instance uptime. os.Stat("/proc/1") returns
-// start-of-epoch for the creation time on Raspbian, so we will instead
-// use the contents of /proc/uptime.  uptime records in seconds, so we
-// multiply by 10^9 to create a time.Duration.
-func retrieveUptime() time.Duration {
-	uptime, err := os.Open("/proc/uptime")
+	response, err := tclient.Put(ctx, eventRequest)
 	if err != nil {
-		log.Fatalf("could not open /proc/uptime: %v\n", err)
+		return fmt.Errorf("Failed to Put() Event: %v", err)
 	}
-	defer uptime.Close()
-
-	r := bufio.NewReader(uptime)
-	l, err := r.ReadString('\n')
-	if err != nil {
-		log.Fatalf("unable to read uptime: %v\n", err)
-	}
-	fields := strings.Split(l, " ")
-	if len(fields) != 2 {
-		log.Fatalf("/proc/uptime contents unusual: %v\n", err)
-	}
-
-	val, err := strconv.ParseFloat(fields[0], 10)
-	if err != nil {
-		log.Fatalf("/proc/uptime contents unusual: %v\n", err)
-	}
-	return time.Duration(val * 1e9)
-}
-
-func dial() (*grpc.ClientConn, error) {
-	var opts []grpc.DialOption
-
-	if !environ.LocalMode {
-		cp, nocperr := x509.SystemCertPool()
-		if nocperr != nil {
-			return nil, fmt.Errorf("no system certificate pool: %v", nocperr)
-		}
-
-		tc := tls.Config{
-			RootCAs: cp,
-		}
-
-		ctls := credentials.NewTLS(&tc)
-		opts = append(opts, grpc.WithTransportCredentials(ctls))
-	} else {
-		opts = append(opts, grpc.WithInsecure())
-	}
-
-	opts = append(opts, grpc.WithUserAgent(pname))
-
-	conn, err := grpc.Dial(serverAddr, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("grpc Dial() to '%s' failed: %v", serverAddr, err)
-	}
-	return conn, nil
-}
-
-func sendUpbeat(ctx context.Context, conn *grpc.ClientConn) {
-	var elapsed time.Duration
-
-	// Retrieve appliance uptime.
-	elapsed = retrieveUptime()
-
-	// Retrieve component versions.
-	versions := make([]string, 0)
-	versions = append(versions, firstVersion())
-
-	// Build UpcallRequest
-	rhmac := gethmac(fmt.Sprintf("%x %d", aphwaddr, int64(elapsed)))
-	request := &cloud_rpc.UpcallRequest{
-		HMAC:             rhmac.Sum(nil),
-		Uuid:             proto.String(apuuid),
-		UptimeElapsed:    proto.Int64(int64(elapsed)),
-		WanHwaddr:        aphwaddr,
-		ComponentVersion: versions,
-		NetHostCount:     proto.Int32(0), // XXX not finished
-	}
-
-	client := cloud_rpc.NewUpbeatClient(conn)
-
-	response, err := client.Upcall(context.Background(), request)
-	if err != nil {
-		grpclog.Fatalf("%v.Upcall(_) = _, %v: ", client, err)
-	}
-
-	log.Println(response)
 	grpclog.Infoln(response)
+	return nil
 }
 
-func sendChanged(client cloud_rpc.InventoryClient, changed *base_msg.DeviceInventory) {
+func sendHeartbeat(ctx context.Context, conn *grpc.ClientConn) {
+	bootTime, err := ptypes.TimestampProto(aputil.LinuxBootTime())
+	if err != nil {
+		grpclog.Fatalf("failed to make Heartbeat: %v", err)
+	}
+	heartbeat := &cloud_rpc.Heartbeat{
+		BootTime:   bootTime,
+		RecordTime: ptypes.TimestampNow(),
+	}
+
+	client := cloud_rpc.NewEventClient(conn)
+	err = publishEvent(ctx, client, "heartbeat", heartbeat)
+	if err != nil {
+		grpclog.Errorf("sendHeartbeat failed: %s", err)
+	} else {
+		log.Printf("heartbeat: %+v", heartbeat)
+	}
+}
+
+func sendHeartbeatLoop(ctx context.Context, conn *grpc.ClientConn) {
+	for {
+		sendHeartbeat(ctx, conn)
+		time.Sleep(10 * time.Second)
+	}
+}
+
+func sendChanged(ctx context.Context, client cloud_rpc.EventClient, changed *base_msg.DeviceInventory) {
+	var err error
 	// Build InventoryReport
-	rhmac := gethmac(changed.String())
 	report := &cloud_rpc.InventoryReport{
-		HMAC:      rhmac.Sum(nil),
-		Uuid:      proto.String(apuuid),
-		WanHwaddr: aphwaddr,
 		Inventory: changed,
 	}
 
-	response, err := client.Upcall(context.Background(), report,
-		grpc.UseCompressor("gzip"))
+	err = publishEvent(ctx, client, "inventory", report)
 	if err != nil {
-		grpclog.Fatalf("%v.Upcall(_) = _, %v: ", client, err)
+		grpclog.Errorf("sendHeartbeat failed: %s", err)
 	}
-
-	log.Println(response)
-	grpclog.Infoln(response)
 }
 
 func sendInventory(ctx context.Context, conn *grpc.ClientConn) {
-	invPath := filepath.Join(*aproot, "/var/spool/identifierd/")
-	manPath := filepath.Join(*aproot, "/var/spool/rpc/")
+	invPath := aputil.ExpandDirPath("/var/spool/identifierd/")
+	manPath := aputil.ExpandDirPath("/var/spool/rpc/")
 	manFile := filepath.Join(manPath, "identifierd.json")
 
 	// Read device inventories from disk
 	files, err := ioutil.ReadDir(invPath)
 	if err != nil {
 		log.Printf("could not read dir %s: %s\n", invPath, err)
+		return
+	}
+	if len(files) == 0 {
+		log.Printf("no files found in %s", invPath)
 		return
 	}
 
@@ -229,7 +148,7 @@ func sendInventory(ctx context.Context, conn *grpc.ClientConn) {
 		}
 	}
 
-	client := cloud_rpc.NewInventoryClient(conn)
+	client := cloud_rpc.NewEventClient(conn)
 
 	changed := &base_msg.DeviceInventory{
 		Timestamp: aputil.NowToProtobuf(),
@@ -245,7 +164,11 @@ func sendInventory(ctx context.Context, conn *grpc.ClientConn) {
 			continue
 		}
 		inventory := &base_msg.DeviceInventory{}
-		proto.Unmarshal(in, inventory)
+		err = proto.Unmarshal(in, inventory)
+		if err != nil {
+			log.Printf("failed to unmarshal device inventory %s: %s\n", path, err)
+			continue
+		}
 
 		for _, devInfo := range inventory.Devices {
 			mac := devInfo.GetMacAddress()
@@ -255,13 +178,16 @@ func sendInventory(ctx context.Context, conn *grpc.ClientConn) {
 			hwaddr := network.Uint64ToHWAddr(mac)
 			updated := aputil.ProtobufToTime(devInfo.Updated)
 			sent := manifest[hwaddr.String()]
-			if updated.After(sent) {
+			if *forceInventory || updated.After(sent) {
+				log.Printf("Reporting %s > %s", file.Name(), hwaddr)
 				changed.Devices = append(changed.Devices, devInfo)
 				manifest[hwaddr.String()] = now
+			} else {
+				log.Printf("Skipping %s > %s", file.Name(), hwaddr)
 			}
 
 			if proto.Size(changed) >= msgsize {
-				sendChanged(client, changed)
+				sendChanged(ctx, client, changed)
 				changed = &base_msg.DeviceInventory{
 					Timestamp: aputil.NowToProtobuf(),
 				}
@@ -270,7 +196,7 @@ func sendInventory(ctx context.Context, conn *grpc.ClientConn) {
 	}
 
 	if len(changed.Devices) != 0 {
-		sendChanged(client, changed)
+		sendChanged(ctx, client, changed)
 	}
 
 	// Write manifest
@@ -292,7 +218,11 @@ func sendInventory(ctx context.Context, conn *grpc.ClientConn) {
 		return
 	}
 
-	os.Rename(tmpPath, manFile)
+	err = os.Rename(tmpPath, manFile)
+	if err != nil {
+		log.Printf("failed to rename %s -> %s: %s\n", tmpPath, manFile, err)
+		return
+	}
 }
 
 func main() {
@@ -309,37 +239,20 @@ func main() {
 		log.Fatalf("Unknown service %s\n", svc)
 	}
 
-	envcfg.Unmarshal(&environ)
-	log.Printf("environ: %+v", environ)
-
-	config, err := apcfg.NewConfig(nil, pname)
+	applianceCred, err := rpcclient.SystemCredential()
 	if err != nil {
-		log.Fatalf("cannot connect to configd: %v\n", err)
+		log.Fatalf("Failed to build get credential: %s", err)
+	}
+	ctx, err := applianceCred.MakeGRPCContext(context.Background())
+	if err != nil {
+		log.Fatalf("Failed to build GRPC context: %s", err)
 	}
 
-	// Retrieve appliance UUID
-	apuuid, err = config.GetProp("@/uuid")
+	conn, err := rpcclient.NewRPCClient(*connectFlag, *enableTLSFlag, pname)
 	if err != nil {
-		log.Fatalf("property get failed: %v\n", err)
-	}
-
-	// Retrieve appliance MAC.
-	aphwaddr = make([]string, 0)
-	aphwaddr = append(aphwaddr, getWanInterface(config))
-
-	if len(environ.SrvURL) == 0 {
-		// XXX ap.configd lookup.
-		serverAddr = "svc0.b10e.net:4430"
-	} else {
-		serverAddr = environ.SrvURL
-	}
-
-	ctx := context.Background()
-
-	conn, err := dial()
-	if err != nil {
-		grpclog.Fatalf("dial() failed: %v", err)
+		grpclog.Fatalf("Failed to make RPC client: %+v", err)
 	}
 	defer conn.Close()
+
 	svcFunc(ctx, conn)
 }

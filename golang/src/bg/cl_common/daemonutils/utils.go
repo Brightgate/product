@@ -15,6 +15,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"go.uber.org/zap"
@@ -36,6 +37,7 @@ var (
 	globalLevel      zap.AtomicLevel
 	levelFlag        *zapcore.Level
 	logTypeFlag      logType
+	clrootFlag       = flag.String("root", "", "Root of cloud installation")
 )
 
 func (l *logType) String() string {
@@ -121,4 +123,23 @@ func ResetupLogs() (*zap.Logger, *zap.SugaredLogger) {
 // GetLogs returns the current global pair of loggers.
 func GetLogs() (*zap.Logger, *zap.SugaredLogger) {
 	return globalLog, globalSugaredLog
+}
+
+// ClRoot computes the "cloud root".
+// If the "-root" option is set, it returns that
+// Else if CLROOT is set in the environment, it returns CLROOT
+// Else it computes the CLROOT based on the executable's path
+func ClRoot() string {
+	if *clrootFlag != "" {
+		return *clrootFlag
+	}
+	clrootEnv := os.Getenv("CLROOT")
+	if clrootEnv != "" {
+		return clrootEnv
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		panic(err)
+	}
+	return filepath.Dir(filepath.Dir(executable))
 }

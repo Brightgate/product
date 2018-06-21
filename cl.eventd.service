@@ -9,7 +9,7 @@
 #
 
 [Unit]
-Description=Brightgate cloud IoT event receiver
+Description=Brightgate Google Cloud PubSub event receiver
 After=network.target
 
 [Service]

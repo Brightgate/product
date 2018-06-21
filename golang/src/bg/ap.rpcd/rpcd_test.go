@@ -17,10 +17,10 @@ import (
 	"testing"
 
 	"bg/ap_common/aputil"
-	"bg/ap_common/iotcore/mocks"
 	"bg/base_msg"
+	"bg/cloud_rpc"
+	"bg/cloud_rpc/mocks"
 
-	"github.com/eclipse/paho.mqtt.golang"
 	"github.com/fgrosse/zaptest"
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/mock"
@@ -36,14 +36,14 @@ func setupLogging(t *testing.T) (*zap.Logger, *zap.SugaredLogger) {
 
 func TestNetException(t *testing.T) {
 	setupLogging(t)
-	iotcMock := &mocks.IoTMQTTClient{}
-	defer iotcMock.AssertExpectations(t)
+	tMock := &mocks.EventClient{}
+	defer tMock.AssertExpectations(t)
 	ctx := context.Background()
 
-	iotcMock.On("PublishEvent",
-		"exception",
-		mock.AnythingOfType("string"),
-	).Return(&mqtt.DummyToken{})
+	tMock.On("Put",
+		mock.Anything,
+		mock.AnythingOfType("*cloud_rpc.PutEventRequest"),
+	).Return(&cloud_rpc.PutEventResponse{Result: 0}, nil)
 
 	protocol := base_msg.Protocol_IP
 	reason := base_msg.EventNetException_BLOCKED_IP
@@ -61,23 +61,25 @@ func TestNetException(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	err = handleNetException(ctx, iotcMock, data)
+	err = handleNetException(ctx, tMock, data)
 	if err != nil {
 		t.Errorf("expected handleException to succeed: %s", err)
 	}
 }
 
-func TestSendUpbeat(t *testing.T) {
+func TestSendHeartbeat(t *testing.T) {
 	setupLogging(t)
-	iotcMock := &mocks.IoTMQTTClient{}
+	ctx := context.Background()
+	tMock := &mocks.EventClient{}
+	defer tMock.AssertExpectations(t)
 
-	iotcMock.On("PublishEvent",
-		"upbeat",
-		mock.AnythingOfType("string"),
-	).Return(&mqtt.DummyToken{})
+	tMock.On("Put",
+		mock.Anything,
+		mock.AnythingOfType("*cloud_rpc.PutEventRequest"),
+	).Return(&cloud_rpc.PutEventResponse{Result: 0}, nil)
 
-	publishUpbeat(iotcMock)
-	iotcMock.AssertExpectations(t)
+	publishHeartbeat(ctx, tMock)
+	tMock.AssertExpectations(t)
 }
 
 func TestMain(m *testing.M) {

@@ -110,10 +110,6 @@
   name = "github.com/fgrosse/zaptest"
 
 [[constraint]]
-  name = "github.com/eclipse/paho.mqtt.golang"
-  version = "1.1.1"
-
-[[constraint]]
   name = "github.com/NYTimes/gziphandler"
   version = "1.0.1"
 
@@ -124,3 +120,8 @@
 [[constraint]]
   branch = "master"
   name = "github.com/grpc-ecosystem/go-grpc-prometheus"
+
+[[constraint]]
+  name = "cloud.google.com/go"
+  version = "0.23.0"
+

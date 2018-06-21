@@ -14,7 +14,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/opt/net.b10e/bin/cl.rpcd -root /opt/net.b10e
+ExecStart=/opt/net.b10e/bin/cl.rpcd
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=process
 Restart=always

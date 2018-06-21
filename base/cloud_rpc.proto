@@ -28,58 +28,49 @@
 // - MAC addresses are the low 6 bytes of a 64-bit fixed integer.
 // - IPv4 addresses are a 32-bit fixed integer.
 
-syntax = "proto2";
+syntax = "proto3";
 
 package cloud_rpc;
 import "base_msg.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
 
-// XXX Can we assume a shared time domain?
-// XXX Need REST annotations.
-
-message UpcallRequest {
-	optional bytes HMAC = 0x10;
-	optional string uuid = 0x100;
-	repeated string wan_hwaddr = 0x101;
-	repeated string component_version = 0x110;
-	optional int64 uptime_elapsed = 0x111;
-	optional string boot_time = 0x112;
-	optional string record_time = 0x113;
-	optional int32 net_host_count = 0x120;
+//
+// Events-- "fire and forget"
+//
+// Heartbeat indicates that the appliance is up and helps track reboots
+message Heartbeat {
+	google.protobuf.Timestamp boot_time = 0x1;
+	google.protobuf.Timestamp record_time = 0x2;
 }
-
-message UpcallResponse {
-	optional int64 upcall_elapsed = 0x210;   // nanoseconds
-	optional int64 downcall_elapsed = 0x211; // nanoseconds
-}
-
-service Upbeat {
-	rpc Upcall(UpcallRequest) returns (UpcallResponse) {};
-}
-
-// Downbeat is when the cloud attempts to probe the appliance.  I am
-// assuming we will use ICMP messages for this purpose.
 
 message InventoryReport {
-	optional bytes HMAC = 0x10;
-	optional string uuid = 0x11;
-	repeated string wan_hwaddr = 0x12;
-	optional base_msg.DeviceInventory inventory = 0x400;
-}
-
-service Inventory {
-	rpc Upcall(InventoryReport) returns (UpcallResponse) {};
+	base_msg.DeviceInventory inventory = 0x1;
 }
 
 // Cloud simplified version of EventNetException
 // XXX would like feedback on how closely to have this mirror EventNetException
 // or if we should commonize them.
 message NetException {
-	optional string timestamp = 0x01;
-	optional string protocol = 0x02;
+	google.protobuf.Timestamp timestamp = 0x01;
+	string protocol = 0x02;
 
-	optional string reason = 0x3;
-	optional string message = 0x4;
-	optional fixed64 mac_address = 0x5;
-	optional fixed32 ipv4_address = 0x6;
+	string reason = 0x3;
+	string message = 0x4;
+	fixed64 mac_address = 0x5;
+	fixed32 ipv4_address = 0x6;
 	repeated string details = 0x7;
+}
+
+message PutEventRequest {
+	string subTopic = 0x01;
+	google.protobuf.Any payload = 0x02;
+}
+
+message PutEventResponse {
+	int32 result = 0x01;
+}
+
+service Event {
+	rpc Put(PutEventRequest) returns (PutEventResponse) {};
 }

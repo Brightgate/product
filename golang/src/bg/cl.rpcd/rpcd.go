@@ -19,8 +19,6 @@ package main
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"flag"
@@ -30,25 +28,26 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
-	"time"
 
-	"bg/ap_common/network"
 	"bg/base_def"
-	"bg/base_msg"
+	"bg/cl_common/auth/m2mauth"
 	"bg/cl_common/daemonutils"
+	"bg/cloud_models/appliancedb"
 	"bg/cloud_rpc"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/tomazk/envcfg"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
+	"cloud.google.com/go/compute/metadata"
+	"cloud.google.com/go/pubsub"
+
+	"github.com/grpc-ecosystem/go-grpc-middleware/util/metautils"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	_ "google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/peer"
@@ -59,24 +58,23 @@ import (
 	"github.com/grpc-ecosystem/go-grpc-prometheus"
 )
 
+const checkMark = `✔︎ `
+
 // Cfg contains the environment variable-based configuration settings
 type Cfg struct {
 	// The certificate hostname is the primary hostname associated
 	// with the SSL certificate, and not necessarily the nodename.
 	// We use this variable to navigate the Let's Encrypt directory
 	// hierarchy.
-	CertHostname   string `envcfg:"B10E_CERT_HOSTNAME"`
-	PrometheusPort string `envcfg:"B10E_CLRPCD_PROMETHEUS_PORT"`
-	LocalMode      bool   `envcfg:"B10E_CLRPCD_LOCAL_MODE"`
-}
-
-type applianceInfo struct {
-	componentVersion []string
-	lastContact      time.Time
-	netHostCount     int32
-	uptime           int64
-	wanHwaddr        []string
-	wanIpv4addr      string
+	CertHostname       string `envcfg:"B10E_CERT_HOSTNAME"`
+	PrometheusPort     string `envcfg:"B10E_CLRPCD_PROMETHEUS_PORT"`
+	GrpcPort           string `envcfg:"B10E_CLRPCD_GRPC_PORT"`
+	PubsubProject      string `envcfg:"B10E_CLRPCD_PUBSUB_PROJECT"`
+	PubsubTopic        string `envcfg:"B10E_CLRPCD_PUBSUB_TOPIC"`
+	PostgresConnection string `envcfg:"B10E_CLRPCD_POSTGRES_CONNECTION"`
+	// XXX it would be nicer if we could have this be ENABLE_TLS with
+	// default=true but envcfg does not support that.
+	DisableTLS bool `envcfg:"B10E_CLRPCD_DISABLE_TLS"`
 }
 
 const (
@@ -84,262 +82,113 @@ const (
 )
 
 var (
-	clroot = flag.String("root", "proto.x86_64/cloud/opt/net.b10e",
-		"Root of cloud installation")
-
-	environ Cfg
-
-	serverKeyPair  *tls.Certificate
-	serverCertPool *x509.CertPool
-	serverAddr     string
+	log  *zap.Logger
+	slog *zap.SugaredLogger
 )
 
-func validhmac(received []byte, data string) bool {
-	year := time.Now().Year()
-	rhmac := hmac.New(sha256.New, cloud_rpc.HMACKeys[year])
-	rhmac.Write([]byte(data))
-	expectedHMAC := rhmac.Sum(nil)
-	return hmac.Equal(received, expectedHMAC)
-}
-
-type inventoryServer struct{}
-
-func writeInfo(devInfo *base_msg.DeviceInfo, basePath string) (string, error) {
-	hwaddr := network.Uint64ToHWAddr(devInfo.GetMacAddress())
-	path := filepath.Join(basePath, hwaddr.String())
-	if err := os.MkdirAll(path, 0755); err != nil {
-		return "", grpc.Errorf(codes.FailedPrecondition, "mkdir failed")
-	}
-
-	filename := fmt.Sprintf("device_info.%d.pb", int(time.Now().Unix()))
-	path = filepath.Join(path, filename)
-	f, err := os.OpenFile(
-		path,
-		os.O_WRONLY|os.O_CREATE|os.O_TRUNC,
-		0644)
-	if err != nil {
-		return "", grpc.Errorf(codes.FailedPrecondition, "open failed")
-	}
-	defer f.Close()
-
-	out, err := proto.Marshal(devInfo)
-	if err != nil {
-		os.Remove(path)
-		return "", grpc.Errorf(codes.FailedPrecondition, "marshal failed")
-	}
-
-	if _, err := f.Write(out); err != nil {
-		os.Remove(path)
-		return "", grpc.Errorf(codes.FailedPrecondition, "write failed")
-	}
-	return path, nil
-}
-
-func loggerFromCtx(ctx context.Context) (*zap.Logger, *zap.SugaredLogger) {
+// endpointLogger is a utility routine to build a zap logger customized for
+// use by an endpoint.  It attaches useful context to the logger.
+func endpointLogger(ctx context.Context) (*zap.Logger, *zap.SugaredLogger) {
 	// An alternative here is to attach the logger to the context and
 	// get it out that way.
 	// In fact, ctx_zap has already done this for us, however the grpc zap
 	// child logger adds an avalanche of information to the logger, and for
 	// now it seems a bit much.
-	log, _ := daemonutils.GetLogs()
-	if ctx != nil {
-		pr, ok := peer.FromContext(ctx)
-		if ok && pr != nil {
-			log = log.With(zap.String("peer", pr.Addr.String()))
-		}
+	fields := make([]zapcore.Field, 0)
+	uuid := metautils.ExtractIncoming(ctx).Get("clouduuid")
+	if uuid != "" {
+		fields = append(fields, zap.String("clouduuid", uuid))
 	}
-	return log, log.Sugar()
+	pr, ok := peer.FromContext(ctx)
+	if ok && pr != nil {
+		fields = append(fields, zap.String("peer", pr.Addr.String()))
+	}
+	childLog := log.With(fields...)
+	return childLog, childLog.Sugar()
 }
 
-func (i *inventoryServer) Upcall(ctx context.Context, req *cloud_rpc.InventoryReport) (*cloud_rpc.UpcallResponse, error) {
-	lt := time.Now()
-	_, slog := loggerFromCtx(ctx)
-
-	if req.HMAC == nil || req.Uuid == nil {
-		return nil, grpc.Errorf(codes.InvalidArgument, "req missing needed parameters")
+// processEnv checks (and in some cases modifies) the environment-derived
+// configuration.
+func processEnv(environ *Cfg) {
+	if environ.PostgresConnection == "" {
+		slog.Fatalf("B10E_CLRPCD_POSTGRES_CONNECTION must be set")
 	}
-
-	if !validhmac(req.GetHMAC(), req.Inventory.String()) {
-		return nil, grpc.Errorf(codes.Unauthenticated, "valid hmac required")
-	}
-
-	slog.Infow("incoming inventory", "uuid", req.GetUuid(), "WanHwAddr", req.GetWanHwaddr())
-
-	// We receive only what has recently changed
-	basePath := filepath.Join(*clroot, "var", "spool", req.GetUuid())
-	for _, devInfo := range req.Inventory.Devices {
-		path, err := writeInfo(devInfo, basePath)
+	if environ.PubsubProject == "" {
+		p, err := metadata.ProjectID()
 		if err != nil {
-			return nil, err
+			slog.Fatalf("Couldn't determine GCE ProjectID")
 		}
-		slog.Infow("wrote report", "path", path)
+		environ.PubsubProject = p
+		slog.Infof("B10E_CLRPCD_PUBSUB_PROJECT defaulting to %v", p)
 	}
-
-	// Formulate a response.
-	res := cloud_rpc.UpcallResponse{
-		UpcallElapsed: proto.Int64(time.Now().Sub(lt).Nanoseconds()),
+	if environ.PubsubTopic == "" {
+		slog.Fatalf("B10E_CLRPCD_PUBSUB_TOPIC must be set")
 	}
-
-	return &res, nil
+	// Supply defaults where applicable
+	if environ.PrometheusPort == "" {
+		environ.PrometheusPort = base_def.CLRPCD_PROMETHEUS_PORT
+	}
+	if environ.GrpcPort == "" {
+		environ.GrpcPort = base_def.CLRPCD_GRPC_PORT
+	}
+	slog.Infof(checkMark + "Environ looks good")
 }
 
-func newInventoryServer() *inventoryServer {
-	ret := &inventoryServer{}
-	return ret
+func prometheusInit(prometheusPort string) {
+	if len(prometheusPort) == 0 {
+		slog.Warnf("Prometheus disabled")
+		return
+	}
+	http.Handle("/metrics", promhttp.Handler())
+	go func() { slog.Fatalf("prometheus listener: %v", http.ListenAndServe(prometheusPort, nil)) }()
+	slog.Infof(checkMark+"Prometheus launched on port %v", prometheusPort)
 }
 
-type upbeatServer struct {
-	// map of MACs to UUIDs
-	macs map[string]string
-	// map of UUIDs to appliance info
-	uuids map[string]applianceInfo
+// makeApplianceDB handles connection setup to the appliance database
+func makeApplianceDB(postgresURI string) appliancedb.DataStore {
+	applianceDB, err := appliancedb.Connect(postgresURI)
+	if err != nil {
+		slog.Fatalf("failed to connect to DB: %v", err)
+	}
+	slog.Infof(checkMark + "Connected to Appliance DB")
+	err = applianceDB.Ping()
+	if err != nil {
+		slog.Fatalf("failed to ping DB: %s", err)
+	}
+	slog.Infof(checkMark + "Pinged Appliance DB")
+	return applianceDB
 }
 
-func (s *upbeatServer) Init() {
-	s.macs = make(map[string]string)
-	s.uuids = make(map[string]applianceInfo)
-}
-
-func (s *upbeatServer) Upcall(ctx context.Context, req *cloud_rpc.UpcallRequest) (*cloud_rpc.UpcallResponse, error) {
-	// Prometheus metric: upcall latency.
-	lt := time.Now()
-	_, slog := loggerFromCtx(ctx)
-	slog.Info("UpcallRequest: ", req.String())
-
-	if req.HMAC == nil || req.WanHwaddr == nil ||
-		req.UptimeElapsed == nil || req.Uuid == nil {
-		return nil, grpc.Errorf(codes.InvalidArgument, "req missing parameters")
-	}
-
-	slog.Infof("hwaddr %v uuid %s version %v uptime %d\n",
-		req.GetWanHwaddr(), req.GetUuid(), req.GetComponentVersion(),
-		req.GetUptimeElapsed())
-
-	data := fmt.Sprintf("%x %d", req.GetWanHwaddr(), req.GetUptimeElapsed())
-	if !validhmac(req.GetHMAC(), data) {
-		// Discard invalid HMAC messages!
-		return nil, grpc.Errorf(codes.Unauthenticated, "valid hmac required")
-	}
-
-	peer, ok := peer.FromContext(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no peer available in %v", ctx)
-	}
-
-	// What do we do with a request?
-	// Turn it into an appliance info.
-	ai := applianceInfo{
-		componentVersion: req.ComponentVersion,
-		lastContact:      time.Now(),
-		netHostCount:     0,
-		uptime:           req.GetUptimeElapsed(),
-		wanHwaddr:        req.GetWanHwaddr(),
-		wanIpv4addr:      peer.Addr.String(),
-	}
-
-	// Update our tables.
-	slog.Infof("len hwaddr %v\n", len(req.GetWanHwaddr()))
-
-	newSystem := false
-	newSoftwareInstall := false
-
-	// req.Uuid not in s.uuids[] --> new system
-	if _, ok := s.uuids[req.GetUuid()]; ok {
-		slog.Info("uuid is known")
-	} else {
-		slog.Infof("uuid %s is a new system", req.GetUuid())
-		newSystem = true
-	}
-
-	// req.WanHwaddr not in s.macs[] --> new system
-	for _, hwaddr := range req.GetWanHwaddr() {
-		if _, ok := s.macs[hwaddr]; ok {
-			// req.WanHwaddr not the same Uuid --> new
-			// software install
-			if s.macs[hwaddr] != req.GetUuid() {
-				// New installation?
-				slog.Info("WanHwaddr not equal to Uuid, new software install")
-				newSoftwareInstall = true
-			}
-		} else {
-			newSystem = true
-		}
-	}
-
-	if newSystem {
-		slog.Infof("recording uuid %s", req.GetUuid())
-
-		// Record it!
-		s.uuids[req.GetUuid()] = ai
-	}
-
-	if newSystem || newSoftwareInstall {
-		for _, hwaddr := range req.WanHwaddr {
-			slog.Infof("recording hwaddr %s", hwaddr)
-			s.macs[hwaddr] = req.GetUuid()
-		}
-	}
-
-	// Formulate a response.
-	res := cloud_rpc.UpcallResponse{
-		UpcallElapsed: proto.Int64(time.Now().Sub(lt).Nanoseconds()),
-	}
-
-	return &res, nil
-}
-
-func newUpbeatServer() *upbeatServer {
-	u := new(upbeatServer)
-	u.Init()
-	return u
-}
-
-func main() {
-	var environ Cfg
+func makeGrpcServer(environ Cfg, applianceDB appliancedb.DataStore) *grpc.Server {
 	var opts []grpc.ServerOption
 	var keypair tls.Certificate
 	var serverCertPool *x509.CertPool
-	var err error
 
-	log, slog := daemonutils.SetupLogs()
-	defer log.Sync()
-
-	flag.Parse()
-	err = envcfg.Unmarshal(&environ)
-	if err != nil {
-		slog.Fatalf("Environment Error: %s", err)
-	}
-	log, slog = daemonutils.ResetupLogs()
-
-	slog.Infow(pname+" starting", "args", os.Args, "envcfg", environ)
-
-	// It is bad if B10E_CERT_HOSTNAME is not defined.
-	// It is unfortunate if B10E_CERT_HOSTNAME is not defined.
-
-	// Port 443 listener.
-	certf := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem",
-		environ.CertHostname)
-	keyf := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem",
-		environ.CertHostname)
-
-	grpcPort := base_def.CLRPCD_GRPC_PORT
-
-	if environ.LocalMode {
-		slog.Info("local mode")
+	if environ.DisableTLS {
+		slog.Warnf("TLS Mode: local, NO TLS!  For developers only.")
 	} else {
-		slog.Info("secure remote mode")
+		slog.Infof(checkMark + "TLS Mode: Secured by TLS")
+		if environ.CertHostname == "" {
+			slog.Fatalf("B10E_CERT_HOSTNAME must be defined")
+		}
+		// Port 443 listener.
+		certf := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem",
+			environ.CertHostname)
+		keyf := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem",
+			environ.CertHostname)
+
 		certb, err := ioutil.ReadFile(certf)
 		if err != nil {
-			slog.Warnw("read cert file failed", "err", err)
+			slog.Fatalw("read cert file failed", "err", err)
 		}
 		keyb, err := ioutil.ReadFile(keyf)
 		if err != nil {
-			slog.Warnw("read key file failed", "err", err)
+			slog.Fatalw("read key file failed", "err", err)
 		}
 
 		keypair, err = tls.X509KeyPair(certb, keyb)
 		if err != nil {
-			slog.Warnw("generate X509 key pair failed", "err", err)
+			slog.Fatalw("generate X509 key pair failed", "err", err)
 		}
 
 		serverCertPool = x509.NewCertPool()
@@ -357,78 +206,105 @@ func main() {
 				tls.CurveP384, tls.CurveP256},
 			PreferServerCipherSuites: true,
 			CipherSuites: []uint16{
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-				tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-				tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
-				tls.TLS_RSA_WITH_AES_256_CBC_SHA,
 			},
 		}
 
 		opts = append(opts, grpc.Creds(credentials.NewTLS(&tlsc)))
 	}
 
-	grpc_zap.ReplaceGrpcLogger(log)
+	streamFuncs := []grpc.StreamServerInterceptor{
+		grpc_ctxtags.StreamServerInterceptor(),
+		grpc_zap.StreamServerInterceptor(log),
+	}
+	unaryFuncs := []grpc.UnaryServerInterceptor{
+		grpc_ctxtags.UnaryServerInterceptor(),
+		grpc_zap.UnaryServerInterceptor(log),
+	}
+
+	// Insert Prometheus interceptor if enabled
+	if len(environ.PrometheusPort) != 0 {
+		streamFuncs = append(streamFuncs, grpc_prometheus.StreamServerInterceptor)
+		unaryFuncs = append(unaryFuncs, grpc_prometheus.UnaryServerInterceptor)
+	}
+
+	streamFuncs = append(streamFuncs, m2mauth.StreamServerInterceptor(applianceDB))
+	unaryFuncs = append(unaryFuncs, m2mauth.UnaryServerInterceptor(applianceDB))
+
 	opts = append(opts,
-		grpc_middleware.WithStreamServerChain(
-			grpc_ctxtags.StreamServerInterceptor(),
-			grpc_zap.StreamServerInterceptor(log),
-			grpc_prometheus.StreamServerInterceptor),
-		grpc_middleware.WithUnaryServerChain(
-			grpc_ctxtags.UnaryServerInterceptor(),
-			grpc_zap.UnaryServerInterceptor(log),
-			grpc_prometheus.UnaryServerInterceptor),
+		grpc_middleware.WithStreamServerChain(streamFuncs...),
+		grpc_middleware.WithUnaryServerChain(unaryFuncs...),
 	)
 
 	grpcServer := grpc.NewServer(opts...)
-
-	ubServer := newUpbeatServer()
-	cloud_rpc.RegisterUpbeatServer(grpcServer, ubServer)
-
-	invServer := newInventoryServer()
-	cloud_rpc.RegisterInventoryServer(grpcServer, invServer)
 
 	if len(environ.PrometheusPort) != 0 {
 		// Documentation notes that this is somewhat expensive
 		grpc_prometheus.EnableHandlingTimeHistogram()
 		grpc_prometheus.Register(grpcServer)
-
-		http.Handle("/metrics", promhttp.Handler())
-		go http.ListenAndServe(environ.PrometheusPort, nil)
-		slog.Infof("prometheus launched on port %v", environ.PrometheusPort)
-	} else {
-		slog.Warnf("prometheus disabled")
 	}
+	return grpcServer
+}
 
-	grpcConn, err := net.Listen("tcp", grpcPort)
+func main() {
+	var environ Cfg
+	var err error
+
+	log, slog = daemonutils.SetupLogs()
+	flag.Parse()
+	log, slog = daemonutils.ResetupLogs()
+	defer log.Sync()
+	grpc_zap.ReplaceGrpcLogger(log)
+
+	err = envcfg.Unmarshal(&environ)
 	if err != nil {
-		panic(err)
+		slog.Fatalf("Environment Error: %s", err)
 	}
-	slog.Infof("Listening on port %v", grpcPort)
+	processEnv(&environ)
 
-	go grpcServer.Serve(grpcConn)
+	slog.Infow(pname+" starting", "args", os.Args)
 
-	fleetMux := http.NewServeMux()
+	applianceDB := makeApplianceDB(environ.PostgresConnection)
+	grpcServer := makeGrpcServer(environ, applianceDB)
 
-	fleetMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	pubsubClient, err := pubsub.NewClient(context.Background(), environ.PubsubProject)
+	if err != nil {
+		slog.Fatalf("failed to make pubsub client")
+	}
 
-		fmt.Fprintf(w, "%-36v %-17v %-39v %v\n", "UUID", "MAC", "LAST", "VERSION")
-		for uu, appinfo := range ubServer.uuids {
-			fmt.Fprintf(w, "%36v %17v %-39v %v\n", uu,
-				appinfo.wanHwaddr[0], appinfo.lastContact,
-				appinfo.componentVersion[0])
+	eventServer, err := newEventServer(pubsubClient, environ.PubsubTopic)
+	if err != nil {
+		slog.Fatalf("failed to start event server: %s", err)
+	}
+
+	cloud_rpc.RegisterEventServer(grpcServer, eventServer)
+	slog.Infof(checkMark+"Ready to put event to Cloud PubSub %s", environ.PubsubTopic)
+
+	prometheusInit(environ.PrometheusPort)
+
+	grpcConn, err := net.Listen("tcp", environ.GrpcPort)
+	if err != nil {
+		slog.Fatalf("Could not open gRPC listen socket: %v", err)
+	}
+	go func() {
+		serr := grpcServer.Serve(grpcConn)
+		if serr == nil {
+			slog.Infof("gRPC Server stopped.")
+			return
 		}
-	})
+		slog.Fatalf("gRPC Server failed: %v", err)
+	}()
+	slog.Infof(checkMark+"Started gRPC service at %v", environ.GrpcPort)
 
-	fleetServer := &http.Server{
-		Addr:    ":7000",
-		Handler: fleetMux,
-	}
-
-	go fleetServer.ListenAndServe()
-
-	sig := make(chan os.Signal)
+	sig := make(chan os.Signal, 2)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	s := <-sig
 	slog.Infof("Signal (%v) received, stopping", s)
+	grpcServer.Stop()
 }
