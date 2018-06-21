@@ -16,13 +16,14 @@ import (
 	"fmt"
 	"time"
 
+	"bg/base_def"
+
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
 
-// cJWTExpiry represents the number of seconds until the JWT is expired.
-const cJWTExpiry = 1 * time.Hour
+const cJWTExpiry = base_def.BEARER_JWT_EXPIRY_SECS * time.Second
 
 // NewRPCClient will create a new Cloud Appliance gRPC client.
 func NewRPCClient(serverAddr string, enableTLS bool, agent string) (*grpc.ClientConn, error) {

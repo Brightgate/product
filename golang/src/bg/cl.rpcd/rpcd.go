@@ -234,8 +234,9 @@ func makeGrpcServer(environ Cfg, applianceDB appliancedb.DataStore) *grpc.Server
 		unaryFuncs = append(unaryFuncs, grpc_prometheus.UnaryServerInterceptor)
 	}
 
-	streamFuncs = append(streamFuncs, m2mauth.StreamServerInterceptor(applianceDB))
-	unaryFuncs = append(unaryFuncs, m2mauth.UnaryServerInterceptor(applianceDB))
+	m2mware := m2mauth.New(applianceDB)
+	streamFuncs = append(streamFuncs, m2mware.StreamServerInterceptor())
+	unaryFuncs = append(unaryFuncs, m2mware.UnaryServerInterceptor())
 
 	opts = append(opts,
 		grpc_middleware.WithStreamServerChain(streamFuncs...),

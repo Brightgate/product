@@ -37,6 +37,12 @@
   revision = "3a771d992973f24aa725d07868b467d1ddfceafb"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/bluele/gcache"
+  packages = ["."]
+  revision = "472614239ac7e5bc6461e237c798a6ebd5aff8c1"
+
+[[projects]]
   name = "github.com/boombuler/barcode"
   packages = [
     ".",
@@ -656,6 +662,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "3fd91a3dd30afb11b060e1c7feca6ed81f6b65faa4d487517c402fee5ef5db5a"
+  inputs-digest = "4c70e37e7696abdd358e9fbd5a10b66e49d9db950b9a2b6b1245bd811554880e"
   solver-name = "gps-cdcl"
   solver-version = 1

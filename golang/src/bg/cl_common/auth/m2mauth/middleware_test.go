@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"bg/base_def"
 	"bg/cloud_models/appliancedb"
 	"bg/cloud_models/appliancedb/mocks"
 
@@ -85,12 +86,38 @@ func assertErrAndCode(t *testing.T, err error, code codes.Code) {
 	t.Logf("Saw expected err (code=%s)", code.String())
 }
 
-func makeBearer(ma *MockAppliance, offset int32) string {
+func mbCommon(ma *MockAppliance, token *jwt.Token) string {
+	tokenString, err := token.SignedString(ma.PrivateKey)
+	if err != nil {
+		panic(err)
+	}
+	return "bearer " + tokenString
+}
+
+func makeBearer(ma *MockAppliance) string {
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"exp": int32(time.Now().Unix()) + base_def.BEARER_JWT_EXPIRY_SECS,
+	})
+	return mbCommon(ma, token)
+}
+
+func makeBearerOffset(ma *MockAppliance, offset int32) string {
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"exp": int32(time.Now().Unix()) + offset,
 	})
+	return mbCommon(ma, token)
+}
 
-	tokenString, err := token.SignedString(ma.PrivateKey)
+func makeBearerNoClaims(ma *MockAppliance) string {
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{})
+	return mbCommon(ma, token)
+}
+
+func makeBearerUnsigned(ma *MockAppliance) string {
+	token := jwt.NewWithClaims(jwt.SigningMethodNone, jwt.MapClaims{
+		"exp": int32(time.Now().Unix()) + base_def.BEARER_JWT_EXPIRY_SECS,
+	})
+	tokenString, err := token.SignedString(jwt.UnsafeAllowNoneSignatureType)
 	if err != nil {
 		panic(err)
 	}
@@ -99,7 +126,6 @@ func makeBearer(ma *MockAppliance, offset int32) string {
 
 func TestBasic(t *testing.T) {
 	_, _ = setupLogging(t)
-	reinitAuthCache()
 	m := mockAppliances[0]
 
 	dMock := &mocks.DataStore{}
@@ -107,22 +133,24 @@ func TestBasic(t *testing.T) {
 	dMock.On("KeysByUUID", mock.Anything, mock.Anything).Return(m.Keys, nil)
 	defer dMock.AssertExpectations(t)
 
+	mw := New(dMock)
+
 	ctx := metautils.ExtractIncoming(context.Background()).
-		Add("authorization", makeBearer(m, 600)).
+		Add("authorization", makeBearer(m)).
 		Add("clientid", m.ClientID).
 		ToIncoming(context.Background())
-	resultctx, err := authFunc(ctx, dMock)
+	resultctx, err := mw.authFunc(ctx)
 	if err != nil {
 		t.Fatalf("saw unexpected error: %+v", err)
 	}
 	if resultctx == nil {
 		t.Fatalf("resultctx is nil")
 	}
-	if len(authCache) != 1 {
+	if mw.authCache.Len() != 1 {
 		t.Fatalf("authCache has unexpected size")
 	}
 	// try again; we expect this to be served from cache
-	resultctx, err = authFunc(ctx, dMock)
+	resultctx, err = mw.authFunc(ctx)
 	if err != nil {
 		t.Fatalf("saw unexpected error: %+v", err)
 	}
@@ -131,9 +159,12 @@ func TestBasic(t *testing.T) {
 	}
 }
 
-func TestBadBearer(t *testing.T) {
+// TestExpLeeway tests the case where the client is initiating a connection, but
+// its clock is slightly ahead of the server, resulting in the Expiry being
+// slightly more than BEARER_JWT_EXPIRY_SECS in the "future" (as seen by the
+// server).  The code allows a leeway period for this purpose.
+func TestExpLeeway(t *testing.T) {
 	_, _ = setupLogging(t)
-	reinitAuthCache()
 	m := mockAppliances[0]
 
 	dMock := &mocks.DataStore{}
@@ -141,44 +172,74 @@ func TestBadBearer(t *testing.T) {
 	dMock.On("KeysByUUID", mock.Anything, mock.Anything).Return(m.Keys, nil)
 	defer dMock.AssertExpectations(t)
 
+	mw := New(dMock)
+
 	ctx := metautils.ExtractIncoming(context.Background()).
-		Add("authorization", "bearer bogus").
+		Add("authorization", makeBearerOffset(m, base_def.BEARER_JWT_EXPIRY_SECS+10)).
 		Add("clientid", m.ClientID).
 		ToIncoming(context.Background())
-	_, err := authFunc(ctx, dMock)
-	assertErrAndCode(t, err, codes.Unauthenticated)
+	resultctx, err := mw.authFunc(ctx)
+	if err != nil {
+		t.Fatalf("saw unexpected error: %+v", err)
+	}
+	if resultctx == nil {
+		t.Fatalf("resultctx is nil")
+	}
 }
 
-func TestExpiredBearer(t *testing.T) {
+// TestBadBearer tests a series of cases where the setup/teardown
+// is all exactly the same.
+func TestBadBearer(t *testing.T) {
 	_, _ = setupLogging(t)
-	reinitAuthCache()
 	m := mockAppliances[0]
 
-	dMock := &mocks.DataStore{}
-	dMock.On("ApplianceIDByClientID", mock.Anything, m.ClientID).Return(&m.ApplianceID, nil)
-	dMock.On("KeysByUUID", mock.Anything, m.CloudUUID).Return(m.Keys, nil)
-	defer dMock.AssertExpectations(t)
-
-	ctx := metautils.ExtractIncoming(context.Background()).
-		Add("authorization", makeBearer(m, -600)).
-		Add("clientid", m.ClientID).
-		ToIncoming(context.Background())
-	_, err := authFunc(ctx, dMock)
-	assertErrAndCode(t, err, codes.Unauthenticated)
+	testCases := []struct {
+		desc   string
+		bearer string
+	}{
+		{"BogusBearer", "bearer bogus"},
+		// We are mostly protected by our JWT library which doesn't
+		// allow unsigned JWTs, but because it is such a substantial
+		// threat, we test it anyway.
+		// https://auth0.com/blog/critical-vulnerabilities-in-json-web-token-libraries/
+		{"UnsignedBearer", makeBearerUnsigned(m)},
+		{"ExpClaimExcessive", makeBearerOffset(m, base_def.BEARER_JWT_EXPIRY_SECS*2)},
+		{"ExpClaimMissing", makeBearerNoClaims(m)},
+		{"ExpClaimExpired", makeBearerOffset(m, -1*base_def.BEARER_JWT_EXPIRY_SECS)},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			dMock := &mocks.DataStore{}
+			dMock.On("ApplianceIDByClientID", mock.Anything, m.ClientID).Return(&m.ApplianceID, nil)
+			dMock.On("KeysByUUID", mock.Anything, mock.Anything).Return(m.Keys, nil)
+			defer dMock.AssertExpectations(t)
+			mw := New(dMock)
+			ctx := metautils.ExtractIncoming(context.Background()).
+				Add("authorization", tc.bearer).
+				Add("clientid", m.ClientID).
+				ToIncoming(context.Background())
+			_, err := mw.authFunc(ctx)
+			assertErrAndCode(t, err, codes.Unauthenticated)
+			if mw.authCache.Len() != 0 {
+				t.Fatalf("authCache has unexpected size")
+			}
+		})
+	}
 }
 
 func TestExpiredBearerCached(t *testing.T) {
 	_, _ = setupLogging(t)
-	reinitAuthCache()
 	m := mockAppliances[0]
 
 	dMock := &mocks.DataStore{}
 	defer dMock.AssertExpectations(t)
 
+	mw := New(dMock)
+
 	// Manufacture an expired token, make a bearer for it, then parse the
 	// token with claims validation disabled, and stuff the cache it.
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"exp": int32(time.Now().Unix()) - 1000,
+		"exp": int32(time.Now().Unix()) - base_def.BEARER_JWT_EXPIRY_SECS,
 	})
 
 	tokenString, err := token.SignedString(m.PrivateKey)
@@ -191,45 +252,46 @@ func TestExpiredBearerCached(t *testing.T) {
 	parsedToken, err := parser.Parse(tokenString, func(*jwt.Token) (interface{}, error) {
 		return m.PrivateKey, nil
 	})
-	authCache[m.ClientID] = &authCacheEntry{
+	_ = mw.authCache.Set(tokenString, &authCacheEntry{
+		ClientID:  m.ClientID,
 		Token:     parsedToken,
 		CloudUUID: m.CloudUUID,
-	}
-	if len(authCache) != 1 {
-		t.Fatalf("authCache has unexpected size != 1: %v", len(authCache))
+	})
+	if mw.authCache.Len() != 1 {
+		t.Fatalf("authCache has unexpected size != 1: %v", mw.authCache.Len())
 	}
 
 	ctx := metautils.ExtractIncoming(context.Background()).
 		Add("authorization", bearer).
 		Add("clientid", m.ClientID).
 		ToIncoming(context.Background())
-	_, err = authFunc(ctx, dMock)
+	_, err = mw.authFunc(ctx)
 	assertErrAndCode(t, err, codes.Unauthenticated)
-	if len(authCache) != 0 {
-		t.Fatalf("authCache has unexpected size > 0: %v", len(authCache))
+	if mw.authCache.Len() != 0 {
+		t.Fatalf("authCache has unexpected size > 0: %v", mw.authCache.Len())
 	}
 }
 
 func TestBadClientID(t *testing.T) {
 	_, _ = setupLogging(t)
-	reinitAuthCache()
 	m := mockAppliances[0]
 
 	dMock := &mocks.DataStore{}
 	dMock.On("ApplianceIDByClientID", mock.Anything, mock.Anything).Return(nil, appliancedb.NotFoundError{})
 	defer dMock.AssertExpectations(t)
 
+	mw := New(dMock)
+
 	ctx := metautils.ExtractIncoming(context.Background()).
-		Add("authorization", makeBearer(m, 600)).
+		Add("authorization", makeBearer(m)).
 		Add("clientid", m.ClientID+"bad").
 		ToIncoming(context.Background())
-	_, err := authFunc(ctx, dMock)
+	_, err := mw.authFunc(ctx)
 	assertErrAndCode(t, err, codes.Unauthenticated)
 }
 
 func TestCertMismatch(t *testing.T) {
 	_, _ = setupLogging(t)
-	reinitAuthCache()
 	m := mockAppliances[0]
 	m1 := mockAppliances[1]
 
@@ -238,59 +300,33 @@ func TestCertMismatch(t *testing.T) {
 	dMock.On("KeysByUUID", mock.Anything, m.CloudUUID).Return(m1.Keys, nil)
 	defer dMock.AssertExpectations(t)
 
-	ctx := metautils.ExtractIncoming(context.Background()).
-		Add("authorization", makeBearer(m, 600)).
-		Add("clientid", m.ClientID).
-		ToIncoming(context.Background())
-	_, err := authFunc(ctx, dMock)
-	assertErrAndCode(t, err, codes.Unauthenticated)
-}
-
-// We are mostly protected by our JWT library which doesn't allow unsigned
-// JWTs, but because it is such a substantial threat, we test it anyway.
-// https://auth0.com/blog/critical-vulnerabilities-in-json-web-token-libraries/
-func TestUnsignedBearer(t *testing.T) {
-	_, _ = setupLogging(t)
-	reinitAuthCache()
-	m := mockAppliances[0]
-
-	dMock := &mocks.DataStore{}
-	dMock.On("ApplianceIDByClientID", mock.Anything, m.ClientID).Return(&m.ApplianceID, nil)
-	dMock.On("KeysByUUID", mock.Anything, mock.Anything).Return(m.Keys, nil)
-	defer dMock.AssertExpectations(t)
-
-	token := jwt.NewWithClaims(jwt.SigningMethodNone, jwt.MapClaims{
-		"exp": int32(time.Now().Unix()) + 10000,
-	})
-	tokenString, err := token.SignedString(jwt.UnsafeAllowNoneSignatureType)
-	if err != nil {
-		panic(err)
-	}
-	bearerToken := "bearer " + tokenString
+	mw := New(dMock)
 
 	ctx := metautils.ExtractIncoming(context.Background()).
-		Add("authorization", bearerToken).
+		Add("authorization", makeBearer(m)).
 		Add("clientid", m.ClientID).
 		ToIncoming(context.Background())
-	_, err = authFunc(ctx, dMock)
+	_, err := mw.authFunc(ctx)
 	assertErrAndCode(t, err, codes.Unauthenticated)
 }
 
 func TestNoKeys(t *testing.T) {
 	_, _ = setupLogging(t)
-	reinitAuthCache()
 	m := mockAppliances[0]
 
 	dMock := &mocks.DataStore{}
 	dMock.On("ApplianceIDByClientID", mock.Anything, m.ClientID).Return(&m.ApplianceID, nil)
+	// Return empty keys
 	dMock.On("KeysByUUID", mock.Anything, m.CloudUUID).Return([]appliancedb.AppliancePubKey{}, nil)
 	defer dMock.AssertExpectations(t)
 
+	mw := New(dMock)
+
 	ctx := metautils.ExtractIncoming(context.Background()).
-		Add("authorization", makeBearer(m, 600)).
+		Add("authorization", makeBearer(m)).
 		Add("clientid", m.ClientID).
 		ToIncoming(context.Background())
-	_, err := authFunc(ctx, dMock)
+	_, err := mw.authFunc(ctx)
 	assertErrAndCode(t, err, codes.Unauthenticated)
 }
 
@@ -300,7 +336,9 @@ func TestEmptyContext(t *testing.T) {
 	dMock := &mocks.DataStore{}
 	dMock.AssertExpectations(t)
 
-	_, err := authFunc(context.Background(), dMock)
+	mw := New(dMock)
+
+	_, err := mw.authFunc(context.Background())
 	assertErrAndCode(t, err, codes.Unauthenticated)
 }
 
