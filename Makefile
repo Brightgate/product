@@ -848,6 +848,10 @@ BUILDTOOLS_FILE=.make-buildtools-$(BUILDTOOLS_HASH)
 
 tools: $(BUILDTOOLS_FILE)
 
+install-tools: FRC
+	build/check-tools.sh -i $(BUILDTOOLS)
+	touch $@
+
 $(BUILDTOOLS_FILE):
 	build/check-tools.sh $(BUILDTOOLS)
 	touch $@

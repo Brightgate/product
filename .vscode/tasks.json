@@ -1,0 +1,158 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Product: make tools",
+			"type": "shell",
+			"command": "make tools",
+			"presentation": {
+				"reveal": "always",
+				"focus": true,
+				"panel": "new"
+			}
+		},
+		{
+			"label": "Product: make install-tools",
+			"type": "shell",
+			"command": "make install-tools",
+			"presentation": {
+				"reveal": "always",
+				"focus": true,
+				"panel": "new"
+			}
+		},
+		{
+			"label": "Product: make install",
+			"type": "shell",
+			"command": "make install",
+			"presentation": {
+				"reveal": "always",
+				"focus": true,
+				"panel": "new"
+			}
+		},
+		{
+			"label": "Product: make appliance",
+			"type": "shell",
+			"command": "make appliance",
+			"presentation": {
+				"reveal": "always",
+				"focus": true,
+				"panel": "new"
+			}
+		},
+		{
+			"label": "Product: make cloud",
+			"type": "shell",
+			"command": "make cloud",
+			"presentation": {
+				"reveal": "always",
+				"focus": true,
+				"panel": "new"
+			}
+		},
+		{
+			"label": "Product: make util",
+			"type": "shell",
+			"command": "make util",
+			"presentation": {
+				"reveal": "always",
+				"focus": true,
+				"panel": "new"
+			}
+		},
+		{
+			"label": "Product: make packages",
+			"type": "shell",
+			"osx": {
+				"command": "echo Can\'t make packages on macOS."
+			},
+			"command": "make packages",
+			"presentation": {
+				"reveal": "always",
+				"focus": true,
+				"panel": "new"
+			}
+		},
+		{
+			"label": "Product: make packages-lint",
+			"type": "shell",
+			"command": "make packages-lint",
+			"presentation": {
+				"reveal": "always",
+				"focus": true,
+				"panel": "new"
+			}
+		},
+		{
+			"label": "Product: make test",
+			"type": "shell",
+			"command": "make test",
+			"presentation": {
+				"reveal": "always",
+				"focus": true,
+				"panel": "new"
+			}
+		},
+		{
+			"label": "Product: make coverage",
+			"type": "shell",
+			"command": "make coverage",
+			"presentation": {
+				"reveal": "always",
+				"focus": true,
+				"panel": "new"
+			}
+		},
+		{
+			"label": "Product: make vet-go",
+			"type": "shell",
+			"command": "make vet-go",
+			"presentation": {
+				"reveal": "always",
+				"focus": true,
+				"panel": "new"
+			}
+		},
+		{
+			"label": "Product: make lint-go",
+			"type": "shell",
+			"command": "make lint-go",
+			"presentation": {
+				"reveal": "always",
+				"focus": true,
+				"panel": "new"
+			}
+		},
+		{
+			"label": "Product: make client-web",
+			"type": "shell",
+			"command": "make client-web",
+			"presentation": {
+				"reveal": "always",
+				"focus": true,
+				"panel": "new"
+			}
+		},
+		{
+			"label": "Product: make docs",
+			"type": "shell",
+			"command": "make docs",
+			"presentation": {
+				"reveal": "always",
+				"focus": true,
+				"panel": "new"
+			}
+		},
+		{
+			"label": "Product: make plat-clobber",
+			"type": "shell",
+			"command": "make plat-clobber",
+			"presentation": {
+				"reveal": "always",
+				"focus": true,
+				"panel": "new"
+			}
+		}
+	]
+}
