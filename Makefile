@@ -189,6 +189,7 @@ SYSROOT_BLOB_NAME = $(shell $(BUILD_SYSROOT_CMD) name)
 BUILDTOOLS = \
 	$(BUILDTOOLS_CROSS) \
 	protobuf-compiler \
+	libprotobuf-dev \
 	libzmq3-dev \
 	libpcap-dev \
 	lintian \
