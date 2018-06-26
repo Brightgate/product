@@ -31,6 +31,7 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/network"
 	"bg/base_def"
+	"bg/common"
 )
 
 var (
@@ -44,29 +45,9 @@ var (
 	droplogRunning bool
 	dropThreads    sync.WaitGroup
 
-	lanDrops []*dropRecord
-	wanDrops []*dropRecord
+	lanDrops []*common.DropRecord
+	wanDrops []*common.DropRecord
 )
-
-type dropRecord struct {
-	Time    time.Time
-	Indev   string
-	Src     string
-	Dst     string
-	Smac    string `json:"Smac,omitempty"`
-	Proto   string
-	srcIP   net.IP
-	dstIP   net.IP
-	srcPort int
-	dstPort int
-}
-
-type archiveRecord struct {
-	Start    time.Time
-	End      time.Time
-	LanDrops []*dropRecord `json:"LanDrops,omitempty"`
-	WanDrops []*dropRecord `json:"WanDrops,omitempty"`
-}
 
 // Default logfile format:
 //
@@ -89,8 +70,8 @@ type archiveRecord struct {
 // whitespace (time.Parse gets mad).
 var dropRE = regexp.MustCompile(`(.+)\b\s+\[.+\]\s+DROPPED\s+(.*)`)
 
-func getDrop(line string) *dropRecord {
-	d := &dropRecord{}
+func getDrop(line string) *common.DropRecord {
+	d := &common.DropRecord{}
 
 	l := dropRE.FindStringSubmatch(line)
 	if l == nil {
@@ -122,9 +103,9 @@ func getDrop(line string) *dropRecord {
 		case "in":
 			d.Indev = val
 		case "src":
-			d.srcIP = net.ParseIP(val)
+			d.SrcIP = net.ParseIP(val)
 		case "dst":
-			d.dstIP = net.ParseIP(val)
+			d.DstIP = net.ParseIP(val)
 		case "mac":
 			// The MAC field contains both the source and
 			// destination MAC addresses.  Because we only drop
@@ -137,9 +118,9 @@ func getDrop(line string) *dropRecord {
 				}
 			}
 		case "spt":
-			d.srcPort, _ = strconv.Atoi(val)
+			d.SrcPort, _ = strconv.Atoi(val)
 		case "dpt":
-			d.dstPort, _ = strconv.Atoi(val)
+			d.DstPort, _ = strconv.Atoi(val)
 		case "proto":
 			d.Proto = val
 		}
@@ -148,14 +129,14 @@ func getDrop(line string) *dropRecord {
 		log.Printf("bad line: <%s>\n", line)
 		return nil
 	}
-	d.Dst = d.dstIP.String() + ":" + strconv.Itoa(d.dstPort)
-	d.Src = d.srcIP.String() + ":" + strconv.Itoa(d.srcPort)
+	d.Dst = d.DstIP.String() + ":" + strconv.Itoa(d.DstPort)
+	d.Src = d.SrcIP.String() + ":" + strconv.Itoa(d.SrcPort)
 
 	// If we are currently scanning this client, ignore any dropped packets
 	// to the gateway.  We assume that the packets are responses to our
 	// probing rather than traffic initiated by the client.
-	if gateways[network.IPAddrToUint32(d.dstIP)] &&
-		scanCheck(d.Proto, d.srcIP.String()) {
+	if gateways[network.IPAddrToUint32(d.DstIP)] &&
+		scanCheck(d.Proto, d.SrcIP.String()) {
 		d = nil
 	}
 
@@ -163,8 +144,8 @@ func getDrop(line string) *dropRecord {
 }
 
 // Persist a single set of drop records to the watchd spool area
-func archiveOne(start, end time.Time, lan, wan []*dropRecord) {
-	rec := archiveRecord{
+func archiveOne(start, end time.Time, lan, wan []*common.DropRecord) {
+	rec := common.DropArchive{
 		Start: start,
 		End:   end,
 	}
@@ -174,9 +155,10 @@ func archiveOne(start, end time.Time, lan, wan []*dropRecord) {
 	if len(wan) > 0 {
 		rec.WanDrops = wan
 	}
-
 	file := dropDir + "/" + start.Format(time.RFC3339) + ".json"
-	s, err := json.MarshalIndent(&rec, "", "  ")
+
+	archive := []common.DropArchive{rec}
+	s, err := json.MarshalIndent(&archive, "", "  ")
 	if err != nil {
 		log.Printf("unable to construct droplog JSON: %v", err)
 	} else if err = ioutil.WriteFile(file, s, 0644); err != nil {
@@ -198,8 +180,8 @@ func archiver(lock *sync.Mutex, done chan bool) {
 			now := time.Now()
 			saveLan := lanDrops
 			saveWan := wanDrops
-			lanDrops = make([]*dropRecord, 0)
-			wanDrops = make([]*dropRecord, 0)
+			lanDrops = make([]*common.DropRecord, 0)
+			wanDrops = make([]*common.DropRecord, 0)
 			lock.Unlock()
 
 			archiveOne(start, now, saveLan, saveWan)
@@ -211,25 +193,25 @@ func archiver(lock *sync.Mutex, done chan bool) {
 	log.Printf("Archiver done\n")
 }
 
-func countDrop(d *dropRecord) {
-	if mac, ok := ipToMac[d.srcIP.String()]; ok {
-		incBlockCnt(d.Proto, mac, d.dstIP, d.dstPort, d.srcPort, true)
+func countDrop(d *common.DropRecord) {
+	if mac, ok := ipToMac[d.SrcIP.String()]; ok {
+		incBlockCnt(d.Proto, mac, d.DstIP, d.DstPort, d.SrcPort, true)
 	}
 
-	if mac, ok := ipToMac[d.dstIP.String()]; ok {
-		incBlockCnt(d.Proto, mac, d.srcIP, d.srcPort, d.dstPort, false)
+	if mac, ok := ipToMac[d.DstIP.String()]; ok {
+		incBlockCnt(d.Proto, mac, d.SrcIP, d.SrcPort, d.DstPort, false)
 	}
 }
 
 // Monitor the named pipe to which rsyslog sends firewall drop messages.  Each
-// valid message is turned into a 'dropRecord' struct, which eventually gets
+// valid message is turned into a 'DropRecord' struct, which eventually gets
 // archived.
 func logMonitor(name string) {
 	var lock sync.Mutex
 	defer dropThreads.Done()
 
-	lanDrops = make([]*dropRecord, 0)
-	wanDrops = make([]*dropRecord, 0)
+	lanDrops = make([]*common.DropRecord, 0)
+	wanDrops = make([]*common.DropRecord, 0)
 
 	openPipe()
 	doneChan := make(chan bool)

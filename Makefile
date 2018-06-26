@@ -272,7 +272,6 @@ COMMON_GOPKGS = \
 	bg/ap_common/model \
 	bg/ap_common/network \
 	bg/ap_common/platform \
-	bg/ap_common/watchd \
 	bg/common
 
 APPCOMMAND_GOPKGS = \
@@ -284,7 +283,6 @@ APPCOMMAND_GOPKGS = \
 	bg/ap-inspect \
 	bg/ap-msgping \
 	bg/ap-ouisearch \
-	bg/ap-stats \
 	bg/ap-userctl \
 	bg/ap-vuln-aggregate
 
@@ -409,9 +407,9 @@ APP_COMMON_SRCS = \
 	$(GOSRCBG)/ap_common/network/dhcp.go \
 	$(GOSRCBG)/ap_common/network/network.go \
 	$(GOSRCBG)/ap_common/platform/platform.go \
-	$(GOSRCBG)/ap_common/watchd/watchd_client.go \
 	$(GOSRCBG)/base_def/base_def.go \
 	$(GOSRCBG)/base_msg/base_msg.pb.go \
+	$(GOSRCBG)/common/archive.go \
 	$(GOSRCBG)/common/urlfetch.go
 
 # Miscellaneous utilities
@@ -460,7 +458,9 @@ CLOUDCOMMON_GOPKGS = \
 	bg/cloud_models/appliancedb \
 	bg/common
 
-CLOUDCOMMAND_GOPKGS = bg/cl-aggregate
+CLOUDCOMMAND_GOPKGS = \
+	bg/cl-aggregate \
+	bg/cl-dtool
 
 CLOUD_GOPKGS = $(CLOUDCOMMON_GOPKGS) $(CLOUDDAEMON_GOPKGS) $(CLOUDCOMMAND_GOPKGS)
 
@@ -489,6 +489,7 @@ CLOUD_COMMON_SRCS = \
     $(GOSRCBG)/cloud_models/appliancedb/appliancedb.go \
     $(GOSRCBG)/cl_common/auth/m2mauth/middleware.go \
     $(GOSRCBG)/cl_common/daemonutils/utils.go \
+    $(GOSRCBG)/common/archive.go \
     $(GOSRCBG)/common/urlfetch.go
 
 COVERAGE_DIR = coverage
@@ -708,7 +709,6 @@ $(APPBIN)/ap.updated: $(GOSRCBG)/ap.updated/update.go
 $(APPBIN)/ap.userauthd: $(GOSRCBG)/ap.userauthd/userauthd.go \
 	$(GOSRCBG)/ap_common/certificate/certificate.go
 $(APPBIN)/ap.watchd: \
-	$(GOSRCBG)/ap.watchd/api.go \
 	$(GOSRCBG)/ap.watchd/block.go \
 	$(GOSRCBG)/ap.watchd/droplog.go \
 	$(GOSRCBG)/ap.watchd/metrics.go \
@@ -727,7 +727,6 @@ $(APPBIN)/ap-msgping: $(GOSRCBG)/ap-msgping/msgping.go
 $(APPBIN)/ap-ouisearch: $(GOSRCBG)/ap-ouisearch/ouisearch.go
 $(APPBIN)/ap-rpc: $(APPBIN)/ap.rpcd
 	ln -f $< $@
-$(APPBIN)/ap-stats: $(GOSRCBG)/ap-stats/stats.go
 $(APPBIN)/ap-userctl: $(GOSRCBG)/ap-userctl/userctl.go
 $(APPBIN)/ap-vuln-aggregate: \
 	$(GOSRCBG)/ap-vuln-aggregate/ap-inspect.go \
@@ -764,6 +763,11 @@ $(CLOUDBIN)/%: | $(CLOUDBIN)
 
 $(CLOUDBIN)/cl-aggregate: \
 	$(GOSRCBG)/cl-aggregate/aggregate.go \
+	$(CLOUD_COMMON_SRCS)
+$(CLOUDBIN)/cl-dtool: \
+	$(GOSRCBG)/cl-dtool/dtool.go \
+	$(GOSRCBG)/cl-dtool/export.go \
+	$(GOSRCBG)/cl-dtool/merge.go \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.eventd: \
 	$(GOSRCBG)/cl.eventd/eventd.go \

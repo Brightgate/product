@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"bg/ap_common/aputil"
-	"bg/ap_common/watchd"
+	"bg/common"
 )
 
 type endpoint struct {
@@ -43,47 +43,47 @@ var (
 	metricsDone      = make(chan bool, 1)
 	metricsWaitGroup sync.WaitGroup
 
-	currentStats    *watchd.Snapshot
-	historicalStats []*watchd.Snapshot
+	currentStats    *common.Snapshot
+	historicalStats []*common.Snapshot
 	statsMtx        sync.RWMutex
 )
 
-func newDeviceRecord(mac string) *watchd.DeviceRecord {
+func newDeviceRecord(mac string) *common.DeviceRecord {
 	var addr net.IP
 
 	if ip, ok := macToIP[mac]; ok {
 		addr = net.ParseIP(ip)
 	}
-	d := watchd.DeviceRecord{
+	d := common.DeviceRecord{
 		Addr:       addr,
 		OpenTCP:    make([]int, 0),
 		OpenUDP:    make([]int, 0),
 		BlockedOut: make(map[uint64]int),
 		BlockedIn:  make(map[uint64]int),
-		LANStats:   make(map[uint64]watchd.XferStats),
-		WANStats:   make(map[uint64]watchd.XferStats),
+		LANStats:   make(map[uint64]common.XferStats),
+		WANStats:   make(map[uint64]common.XferStats),
 	}
 
 	return &d
 }
 
-func newSnapshot() *watchd.Snapshot {
-	s := watchd.Snapshot{
-		Data: make(map[string]*watchd.DeviceRecord),
+func newSnapshot() *common.Snapshot {
+	s := common.Snapshot{
+		Data: make(map[string]*common.DeviceRecord),
 	}
 
 	return &s
 }
 
 // releaseDeviceRecord drops the lock on a device record
-func releaseDeviceRecord(d *watchd.DeviceRecord) {
+func releaseDeviceRecord(d *common.DeviceRecord) {
 	d.Unlock()
 }
 
 // getDeviceRecord looks up a device record based on the provide mac address.
 // If the corresponding device is found, the structure is locked and returned to
 // the caller.  It must be released when the client is finished with it.
-func getDeviceRecord(mac string) *watchd.DeviceRecord {
+func getDeviceRecord(mac string) *common.DeviceRecord {
 	statsMtx.RLock()
 	d, ok := currentStats.Data[mac]
 	statsMtx.RUnlock()
@@ -100,21 +100,21 @@ func getDeviceRecord(mac string) *watchd.DeviceRecord {
 }
 
 // getDeviceRecordByIP looks up a device record based on the provided IP address
-func getDeviceRecordByIP(ip string) *watchd.DeviceRecord {
+func getDeviceRecordByIP(ip string) *common.DeviceRecord {
 	if mac := getMacFromIP(ip); mac != "" {
 		return getDeviceRecord(mac)
 	}
 	return nil
 }
 
-func incSentStats(smap map[uint64]watchd.XferStats, key uint64, len int) {
+func incSentStats(smap map[uint64]common.XferStats, key uint64, len int) {
 	x := smap[key]
 	x.PktsSent++
 	x.BytesSent += uint64(len)
 	smap[key] = x
 }
 
-func incRcvdStats(smap map[uint64]watchd.XferStats, key uint64, len int) {
+func incRcvdStats(smap map[uint64]common.XferStats, key uint64, len int) {
 	x := smap[key]
 	x.PktsRcvd++
 	x.BytesRcvd += uint64(len)
@@ -122,13 +122,13 @@ func incRcvdStats(smap map[uint64]watchd.XferStats, key uint64, len int) {
 }
 
 func getKey(remoteIP net.IP, rport, lport int) uint64 {
-	s := watchd.Session{
+	s := common.Session{
 		RAddr: remoteIP,
 		RPort: rport,
 		LPort: lport,
 	}
 
-	return (watchd.SessionToKey(s))
+	return (common.SessionToKey(s))
 }
 
 func updateStats(src, dst endpoint, proto string, len int) {
@@ -170,8 +170,8 @@ func updateStats(src, dst endpoint, proto string, len int) {
 
 // Update a device's 'packets blocked by the firewall' count
 func incBlockCnt(proto, local string, remote net.IP, rport, lport int, out bool) {
-	s := watchd.Session{RAddr: remote, RPort: rport, LPort: lport}
-	key := watchd.SessionToKey(s)
+	s := common.Session{RAddr: remote, RPort: rport, LPort: lport}
+	key := common.SessionToKey(s)
 
 	rec := getDeviceRecord(local)
 	if out {
@@ -194,10 +194,11 @@ func copyPortlist(in []int) []int {
 	return out
 }
 
-func writeStats(dir string, sn *watchd.Snapshot) error {
+func writeStats(dir string, sn *common.Snapshot) error {
 	file := dir + "/" + sn.Start.Format(time.RFC3339) + ".json"
 
-	s, err := json.MarshalIndent(sn, "", "  ")
+	archive := []*common.Snapshot{sn}
+	s, err := json.MarshalIndent(archive, "", "  ")
 	if err != nil {
 		err = fmt.Errorf("unable to construct snapshot JSON: %v", err)
 	} else if err = ioutil.WriteFile(file, s, 0644); err != nil {
@@ -225,7 +226,7 @@ func snapshotStats(dir string) {
 		// going to reset, we can just copy the pointers.  The elements
 		// that are preserved across snapshots have to be copied by
 		// value.
-		d := watchd.DeviceRecord{
+		d := common.DeviceRecord{
 			Addr:       copyIP(cur.Addr),
 			BlockedOut: cur.BlockedOut,
 			BlockedIn:  cur.BlockedIn,
@@ -238,9 +239,9 @@ func snapshotStats(dir string) {
 
 		cur.BlockedOut = make(map[uint64]int)
 		cur.BlockedIn = make(map[uint64]int)
-		cur.LANStats = make(map[uint64]watchd.XferStats)
-		cur.WANStats = make(map[uint64]watchd.XferStats)
-		cur.Aggregate = watchd.XferStats{}
+		cur.LANStats = make(map[uint64]common.XferStats)
+		cur.WANStats = make(map[uint64]common.XferStats)
+		cur.Aggregate = common.XferStats{}
 		cur.Unlock()
 
 		sn.Data[mac] = &d
@@ -310,91 +311,6 @@ func snapshotter() {
 	metricsWaitGroup.Done()
 }
 
-func selectSnapshot(s *watchd.Snapshot, mac string,
-	start, end *time.Time) *watchd.Snapshot {
-
-	if s.Start.After(*end) || s.End.Before(*start) {
-		return nil
-	}
-
-	// If the caller wants data for just a single device, we need to build a
-	// new snapshot structure containing just that device.
-	if mac != "ff:ff:ff:ff:ff:ff" {
-		x := watchd.Snapshot{
-			Start: s.Start,
-			End:   s.End,
-			Data:  make(map[string]*watchd.DeviceRecord),
-		}
-		if dev, ok := s.Data[mac]; ok {
-			x.Data[mac] = dev
-		}
-		s = &x
-	}
-
-	return s
-}
-
-// Returns a JSON representation of all the data we have for the specified
-// device within the specified time range.  If the MAC address is
-// ff:ff:ff:ff:ff:ff, it means we should return the data for all devices.  If
-// either the start or end time are 'nil', it means there is no limit in that
-// direction.
-func getMetrics(mac string, start, end *time.Time) (int, string) {
-	if currentStats == nil {
-		return OK, ""
-	}
-
-	if start == nil {
-		t := time.Unix(0, 0)
-		start = &t
-	}
-
-	if end == nil {
-		t := time.Now()
-		end = &t
-	}
-
-	// Find all of the snapshots that are within, or overlap, the desired
-	// time range.
-	stats := make([]*watchd.Snapshot, 0)
-	statsMtx.RLock()
-	for _, s := range historicalStats {
-		if x := selectSnapshot(s, mac, start, end); x != nil {
-			stats = append(stats, x)
-		}
-	}
-	if x := selectSnapshot(currentStats, mac, start, end); x != nil {
-		stats = append(stats, x)
-
-		// Before trying build the json representation, we need to be
-		// sure the dev structures aren't being modified.  We can do
-		// this by grabbing and releasing each device lock, and relying
-		// on the statsMtx to prevent any of them from being reacquired.
-		for _, d := range x.Data {
-			d.Lock()
-			//lint:ignore SA2001 empty critical section implicitly
-			// checks the state of other potential structure users
-			d.Unlock()
-		}
-	}
-
-	var (
-		status int
-		rval   string
-	)
-	if m, err := json.MarshalIndent(stats, "", "  "); err != nil {
-		status = ERR
-		rval = fmt.Sprintf("unable to construct snapshot JSON: %v", err)
-		log.Println(rval)
-	} else {
-		status = OK
-		rval = string(m)
-	}
-	statsMtx.RUnlock()
-
-	return status, rval
-}
-
 func metricsFini(w *watcher) {
 	metricsDone <- true
 	metricsWaitGroup.Wait()
@@ -413,7 +329,7 @@ func init() {
 	currentStats.Start = time.Now()
 	currentStats.End = currentStats.Start.Add(*sfreq)
 
-	historicalStats = make([]*watchd.Snapshot, 0)
+	historicalStats = make([]*common.Snapshot, 0)
 
 	addWatcher("metrics", metricsInit, metricsFini)
 }

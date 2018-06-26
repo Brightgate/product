@@ -125,17 +125,26 @@ var updates = map[string]updateInfo{
 type uploadInfo struct {
 	dir    string
 	prefix string
+	ctype  string
 }
 
-var uploads = []uploadInfo{
+var uploadTypes = []uploadInfo{
 	{
 		dir:    "/var/spool/watchd/droplog",
 		prefix: "drops",
+		ctype:  common.DropContentType,
 	},
 	{
 		dir:    "/var/spool/watchd/stats",
 		prefix: "stats",
+		ctype:  common.StatContentType,
 	},
+}
+
+type oneUpload struct {
+	source string
+	url    string
+	ctype  string
 }
 
 func configBucketChanged(path []string, val string, expires *time.Time) {
@@ -236,17 +245,18 @@ func updateLoop(wg *sync.WaitGroup, doneChan chan bool) {
 }
 
 // PUT one file to the provided URL
-func upload(client *http.Client, obj, url string) error {
-	data, err := os.Open(obj)
+func upload(client *http.Client, u oneUpload) error {
+	data, err := os.Open(u.source)
 	if err != nil {
-		return fmt.Errorf("failed to open %s: %v", obj, err)
+		return fmt.Errorf("failed to open %s: %v", u.source, err)
 	}
 	defer data.Close()
 
-	req, err := http.NewRequest("PUT", url, data)
+	req, err := http.NewRequest("PUT", u.url, data)
 	if err != nil {
 		return fmt.Errorf("failed to create PUT request: %v", err)
 	}
+	req.Header.Set("Content-Type", u.ctype)
 
 	res, err := client.Do(req)
 	if err != nil {
@@ -294,11 +304,12 @@ func getPrivateKey() ([]byte, error) {
 // XXX: Eventually, the signed URLs will be generated in the cloud, so we will
 // not have to deploy the private key and google storage values to the
 // appliance.
-func generateSignedURLs(prefix string, objects []string) map[string]string {
+func generateSignedURLs(prefix, ctype string, objects []string) map[string]string {
 	options := &storage.SignedURLOptions{
 		GoogleAccessID: uploadConfig.serviceID,
 		PrivateKey:     uploadConfig.privateKey,
 		Method:         "PUT",
+		ContentType:    ctype,
 		Expires:        time.Now().Add(10 * time.Minute),
 	}
 
@@ -347,14 +358,19 @@ func getFilenames(dir string, max int) []string {
 // (unnecessary) retry would fail.  Alternatively, we could attempt to read the
 // cloud data to determine whether a retry was necessary.
 func doUpload() {
-	pairs := make(map[string]string)
+	uploads := make([]oneUpload, 0)
 
-	for _, t := range uploads {
+	for _, t := range uploadTypes {
 		dir := aputil.ExpandDirPath(t.dir)
-		urls := generateSignedURLs(t.prefix, getFilenames(dir, 5))
+		urls := generateSignedURLs(t.prefix, t.ctype,
+			getFilenames(dir, 5))
 		for file, url := range urls {
-			full := dir + "/" + file
-			pairs[full] = url
+			u := oneUpload{
+				source: dir + "/" + file,
+				url:    url,
+				ctype:  t.ctype,
+			}
+			uploads = append(uploads, u)
 		}
 	}
 
@@ -363,12 +379,12 @@ func doUpload() {
 	}
 
 	errs := 0
-	for file, url := range pairs {
-		if err := upload(client, file, url); err != nil {
-			log.Printf("failed to upload %s: %s\n", file, err)
+	for _, u := range uploads {
+		if err := upload(client, u); err != nil {
+			log.Printf("failed to upload %s: %s\n", u.source, err)
 			errs++
-		} else if err := os.Remove(file); err != nil {
-			log.Printf("unable to remove %s: %v\n", file, err)
+		} else if err := os.Remove(u.source); err != nil {
+			log.Printf("unable to remove %s: %v\n", u.source, err)
 		}
 		if errs >= *uploadErrMax {
 			log.Printf("%d uploads failed.  Giving up.\n", errs)
