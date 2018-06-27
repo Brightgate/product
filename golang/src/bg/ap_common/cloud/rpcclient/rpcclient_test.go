@@ -20,8 +20,8 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	jwt "github.com/dgrijalva/jwt-go"
-	"github.com/fgrosse/zaptest"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest"
 )
 
 const testProject = "peppy-breaker-161717"
@@ -62,7 +62,7 @@ IP5drVZE6NspLWJmKxeGPlw=
 `
 
 func setupLogging(t *testing.T) (*zap.Logger, *zap.SugaredLogger) {
-	logger := zaptest.Logger(t)
+	logger := zaptest.NewLogger(t)
 	slogger := logger.Sugar()
 	return logger, slogger
 }

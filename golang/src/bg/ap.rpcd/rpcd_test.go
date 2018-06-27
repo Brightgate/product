@@ -21,15 +21,15 @@ import (
 	"bg/cloud_rpc"
 	"bg/cloud_rpc/mocks"
 
-	"github.com/fgrosse/zaptest"
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest"
 )
 
 func setupLogging(t *testing.T) (*zap.Logger, *zap.SugaredLogger) {
 	// Assign globals
-	logger = zaptest.Logger(t)
+	logger = zaptest.NewLogger(t)
 	slogger = logger.Sugar()
 	return logger, slogger
 }

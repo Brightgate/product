@@ -22,9 +22,9 @@ import (
 	"bg/cloud_models/appliancedb"
 	"bg/cloud_models/appliancedb/mocks"
 
-	"github.com/fgrosse/zaptest"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/grpc-ecosystem/go-grpc-middleware/util/metautils"
@@ -65,7 +65,7 @@ var (
 
 func setupLogging(t *testing.T) (*zap.Logger, *zap.SugaredLogger) {
 	// Assign globals
-	logger := zaptest.Logger(t)
+	logger := zaptest.NewLogger(t)
 	slogger := logger.Sugar()
 	grpc_zap.ReplaceGrpcLogger(logger)
 	return logger, slogger

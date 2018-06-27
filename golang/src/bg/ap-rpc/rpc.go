@@ -30,7 +30,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	any "github.com/golang/protobuf/ptypes/any"
+	"github.com/golang/protobuf/ptypes/any"
 	"google.golang.org/grpc"
 	_ "google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/grpclog"
