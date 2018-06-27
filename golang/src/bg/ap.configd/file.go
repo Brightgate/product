@@ -176,7 +176,7 @@ func patchTree(name string, node *pnode, path string) {
 		patchTree(childName, child, node.path)
 	}
 	if node.Expires != nil {
-		expirationUpdate(node)
+		expirationInsert(node)
 	}
 }
 

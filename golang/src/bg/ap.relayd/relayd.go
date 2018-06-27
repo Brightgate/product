@@ -554,6 +554,10 @@ func mrelay(s service) {
 		srcLevel := ringLevel[source.ring]
 		for dstRing, dstLevel := range ringLevel {
 			dstIface := ringToIface[dstRing]
+			if dstIface == nil {
+				log.Fatalf("missing interface for ring %s\n",
+					dstRing)
+			}
 			if dstIface.Index == source.iface.Index {
 				// Don't repeat the message on the interface it
 				// arrived on

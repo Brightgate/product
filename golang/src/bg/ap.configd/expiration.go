@@ -58,7 +58,6 @@ func (q *pnodeQueue) Pop() interface{} {
 }
 
 func expirationHandler() {
-	reset := time.Duration(time.Minute)
 	for true {
 		<-expirationTimer.C
 		expirationLock.Lock()
@@ -97,12 +96,10 @@ func expirationHandler() {
 			next.index = -1
 		}
 
-		if len(expirationHeap) > 0 {
-			next := expirationHeap[0]
-			reset = time.Until(*next.Expires)
+		if len(expired) > 0 {
+			expirationReset()
 		}
 
-		expirationTimer.Reset(reset)
 		expirationLock.Unlock()
 		if len(expired) > 0 {
 			propTreeMutex.Lock()
@@ -119,65 +116,47 @@ func expirationHandler() {
 	}
 }
 
-func nextExpiration() *pnode {
-	if len(expirationHeap) == 0 {
-		return nil
-	}
-
-	return expirationHeap[0]
-}
-
-/*
- * Update the expiration time of a single property (possibly setting an
- * expiration for the first time).  If this property either starts or ends at
- * the top of the expiration heap, reset the expiration timer accordingly.
- */
-func expirationUpdate(node *pnode) {
-	reset := false
-
+// Add a property to the expiration heap.
+func expirationInsert(node *pnode) {
 	expirationLock.Lock()
 
-	if node == nextExpiration() {
-		reset = true
+	node.index = -1
+	heap.Push(&expirationHeap, node)
+
+	// If this property is now at the top of the heap, reset the timer
+	if node.index == 0 {
+		expirationReset()
 	}
 
-	if node.Expires == nil {
-		// This node doesn't have an expiration.  If it's in the heap,
-		// it's probably because we just made the setting permanent.
-		// Pull it out of the heap.
-		if node.index != -1 {
-			heap.Remove(&expirationHeap, node.index)
-			node.index = -1
-		}
-	} else {
-		if node.index == -1 {
-			heap.Push(&expirationHeap, node)
-		}
-		heap.Fix(&expirationHeap, node.index)
-	}
-
-	if node == nextExpiration() {
-		reset = true
-	}
-
-	if reset {
-		if next := nextExpiration(); next != nil {
-			expirationTimer.Reset(time.Until(*next.Expires))
-		}
-	}
 	expirationLock.Unlock()
 }
 
-/*
- * Remove a single property from the expiration heap
- */
+// Remove a single property from the expiration heap
 func expirationRemove(node *pnode) {
 	expirationLock.Lock()
+
+	reset := (node.index == 0)
 	if node.index != -1 {
 		heap.Remove(&expirationHeap, node.index)
 		node.index = -1
 	}
+
+	// If this property was at the top of the heap, reset the timer
+	if reset {
+		expirationReset()
+	}
+
 	expirationLock.Unlock()
+}
+
+func expirationReset() {
+	reset := time.Minute
+
+	if len(expirationHeap) > 0 {
+		next := expirationHeap[0]
+		reset = time.Until(*next.Expires)
+	}
+	expirationTimer.Reset(reset)
 }
 
 func expirationInit() {

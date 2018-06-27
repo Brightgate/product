@@ -568,7 +568,13 @@ func commitNode(node *pnode, now time.Time) bool {
 		if old := node.preserved[prop]; old != current {
 			childUpdated := false
 			if old == nil || current.Expires != old.Expires {
-				expirationUpdate(current)
+				if old != nil && old.Expires != nil {
+					expirationRemove(old)
+				}
+				if current.Expires != nil {
+					expirationInsert(current)
+				}
+
 				childUpdated = true
 			}
 			if old == nil || current.Value != old.Value {

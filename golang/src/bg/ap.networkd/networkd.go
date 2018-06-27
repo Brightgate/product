@@ -450,7 +450,6 @@ func resetInterfaces() {
 
 func runLoop() {
 	startTimes := make([]time.Time, failuresAllowed)
-	resetInterfaces()
 
 	for running {
 		var selected []*physDevice
@@ -1100,8 +1099,10 @@ func main() {
 	running = true
 	go signalHandler()
 
+	resetInterfaces()
 	mcpd.SetState(mcp.ONLINE)
 	runLoop()
+
 	log.Printf("Cleaning up\n")
 	networkCleanup()
 }
