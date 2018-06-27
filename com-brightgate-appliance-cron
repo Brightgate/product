@@ -1,1 +1,0 @@
-0 */12 * * * root APROOT=/opt/com.brightgate /opt/com.brightgate/bin/ap-rpc inventory

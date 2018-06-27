@@ -253,7 +253,7 @@ func main() {
 
 	slog.Infof(checkMark + "Starting ApplianceRegistry event receiver")
 	err = applianceRegEvents.Receive(ctx, func(ctx context.Context, m *pubsub.Message) {
-		slog.Debugw("Message", "data", string(m.Data), "attrs", m.Attributes)
+		slog.Debugw("Message", "size", len(m.Data), "attrs", m.Attributes)
 		uuidstr := m.Attributes["uuid"]
 		idmap, ferr := uuidToIDMap(ctx, applianceDB, uuidstr)
 		if ferr != nil {

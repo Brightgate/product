@@ -193,6 +193,11 @@ func Uint64ToHWAddr(a uint64) net.HardwareAddr {
 	return net.HardwareAddr(b[2:])
 }
 
+// Uint64ToMac decodes a uint64 into a mac string
+func Uint64ToMac(a uint64) string {
+	return Uint64ToHWAddr(a).String()
+}
+
 // MacToHWAddr decodes a mac string into a net.HardwareAddr
 func MacToHWAddr(mac string) net.HardwareAddr {
 	hwaddr, _ := net.ParseMAC(mac)

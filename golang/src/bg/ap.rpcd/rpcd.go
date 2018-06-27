@@ -17,11 +17,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
 
-	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/cloud/rpcclient"
 	"bg/ap_common/mcp"
@@ -37,7 +37,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/timestamp"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
@@ -49,6 +48,7 @@ var (
 	deadlineFlag  = flag.Duration("rpc-deadline", time.Second*20, "RPC completion deadline")
 	enableTLSFlag = flag.Bool("enable-tls", true, "Enable Secure gRPC")
 
+	pname       string
 	logger      *zap.Logger
 	slogger     *zap.SugaredLogger
 	zapConfig   zap.Config
@@ -58,8 +58,6 @@ var (
 		events prometheus.Counter
 	}
 )
-
-const pname = "ap.rpcd"
 
 func publishEvent(ctx context.Context, tclient cloud_rpc.EventClient, subtopic string, evt proto.Message) error {
 	name := proto.MessageName(evt)
@@ -85,21 +83,8 @@ func publishEvent(ctx context.Context, tclient cloud_rpc.EventClient, subtopic s
 	if err != nil {
 		return errors.Wrapf(err, "Failed to Put() Event")
 	}
-	slogger.Infow("Sent "+subtopic, "payload", evt, "response", response)
+	slogger.Infow("Sent "+subtopic, "size", len(serialized), "response", response)
 	return nil
-}
-
-func publishHeartbeat(ctx context.Context, tclient cloud_rpc.EventClient) error {
-	bootTime, err := ptypes.TimestampProto(aputil.LinuxBootTime())
-	if err != nil {
-		slogger.Fatalf("failed to make Heartbeat: %v", err)
-	}
-	heartbeat := &cloud_rpc.Heartbeat{
-		BootTime:   bootTime,
-		RecordTime: ptypes.TimestampNow(),
-	}
-
-	return publishEvent(ctx, tclient, "heartbeat", heartbeat)
 }
 
 func handleNetException(ctx context.Context, tclient cloud_rpc.EventClient, event []byte) error {
@@ -160,7 +145,6 @@ func zapSetup() {
 	}
 	slogger = logger.Sugar()
 	_ = zap.RedirectStdLog(logger)
-	grpc_zap.ReplaceGrpcLogger(logger)
 }
 
 func prometheusInit() {
@@ -173,39 +157,27 @@ func prometheusInit() {
 	go http.ListenAndServe(base_def.RPCD_PROMETHEUS_PORT, nil)
 }
 
-func heartbeat(ctx context.Context, tclient cloud_rpc.EventClient, wg *sync.WaitGroup) {
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		err := publishHeartbeat(ctx, tclient)
-		if err != nil {
-			slogger.Errorf("Failed heartbeat: %s", err)
-		}
-	}()
-}
-
-func main() {
+func daemonStart() {
 	var wg sync.WaitGroup
-
-	flag.Parse()
-	zapSetup()
-	ctx := context.Background()
 	slogger.Infof("ap.rpcd starting")
+	ctx := context.Background()
 
+	// We don't do this in cmd mode because it's noisy at start
+	grpc_zap.ReplaceGrpcLogger(logger)
 	mcpd, err := mcp.New(pname)
 	if err != nil {
 		slogger.Fatalf("Failed to connect to mcp: %s", err)
 	}
+
+	prometheusInit()
+	b := broker.New(pname)
+	defer b.Fini()
 
 	applianceCred, err := rpcclient.SystemCredential()
 	if err != nil {
 		_ = mcpd.SetState(mcp.BROKEN)
 		slogger.Fatalf("Failed to build credential: %s", err)
 	}
-
-	prometheusInit()
-	b := broker.New(pname)
-	defer b.Fini()
 
 	if !*enableTLSFlag {
 		slogger.Warnf("Connecting insecurely due to '-enable-tls=false' flag (developers only!)")
@@ -228,8 +200,8 @@ func main() {
 		slogger.Fatalf("Failed to make RPC client: %+v", err)
 	}
 	defer conn.Close()
-	slogger.Infof("RPC client connected")
 	tclient := cloud_rpc.NewEventClient(conn)
+	slogger.Debugf("RPC client connected")
 
 	b.Handle(base_def.TOPIC_EXCEPTION, func(event []byte) {
 		wg.Add(1)
@@ -240,21 +212,89 @@ func main() {
 		}
 	})
 
-	ticker := time.NewTicker(time.Minute * 7)
-	sig := make(chan os.Signal, 2)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	stopHeartbeat := make(chan bool)
+	stopInventory := make(chan bool)
 
-	heartbeat(ctx, tclient, &wg)
-MainLoop:
-	for {
-		select {
-		case s := <-sig:
-			slogger.Infof("Signal (%v) received, waiting for tasks to drain\n", s)
-			wg.Wait()
-			break MainLoop
-		case <-ticker.C:
-			heartbeat(ctx, tclient, &wg)
-		}
-	}
+	wg.Add(2)
+	go heartbeatLoop(ctx, tclient, &wg, stopHeartbeat)
+	go inventoryLoop(ctx, tclient, &wg, stopInventory)
+
+	exitSig := make(chan os.Signal, 2)
+	signal.Notify(exitSig, syscall.SIGINT, syscall.SIGTERM)
+
+	s := <-exitSig
+	slogger.Infof("Signal (%v) received, waiting for tasks to drain", s)
+
+	stopHeartbeat <- true
+	stopInventory <- true
+	wg.Wait()
 	slogger.Infof("Exiting")
+}
+
+func cmdStart() {
+	var wg sync.WaitGroup
+	ctx := context.Background()
+
+	applianceCred, err := rpcclient.SystemCredential()
+	if err != nil {
+		slogger.Fatalf("Failed to build credential: %s", err)
+	}
+
+	if !*enableTLSFlag {
+		slogger.Warnf("Connecting insecurely due to '-enable-tls=false' flag (developers only!)")
+	}
+	slogger.Debugf("Connecting to '%s'", *connectFlag)
+
+	ctx, err = applianceCred.MakeGRPCContext(ctx)
+	if err != nil {
+		slogger.Fatalf("Failed to make GRPC credential: %+v", err)
+	}
+
+	conn, err := rpcclient.NewRPCClient(*connectFlag, *enableTLSFlag, pname)
+	if err != nil {
+		slogger.Fatalf("Failed to make RPC client: %+v", err)
+	}
+	defer conn.Close()
+	tclient := cloud_rpc.NewEventClient(conn)
+	slogger.Debugf("RPC client connected")
+
+	if len(flag.Args()) == 0 {
+		log.Fatalf("Service name required.\n")
+	}
+	stop := make(chan bool)
+	svc := flag.Args()[0]
+	err = nil
+	switch svc {
+	case "heartbeat":
+		err = publishHeartbeat(ctx, tclient)
+	case "heartbeat-loop":
+		wg.Add(1)
+		heartbeatLoop(ctx, tclient, &wg, stop)
+	case "inventory":
+		err = sendInventory(ctx, tclient)
+	default:
+		slogger.Fatalf("Unrecognized command %s", svc)
+	}
+	if err != nil {
+		slogger.Errorf("%s failed: %s", svc, err)
+	}
+}
+
+func main() {
+	exec, err := os.Executable()
+	if err != nil {
+		panic("couldn't get executable name")
+	}
+	pname = filepath.Base(exec)
+
+	flag.Parse()
+	zapSetup()
+
+	if pname == "ap.rpcd" {
+		daemonStart()
+	} else if pname == "ap-rpc" {
+		cmdStart()
+	} else {
+		slogger.Fatalf("Couldn't determine program mode")
+	}
 }

@@ -123,8 +123,8 @@ func handleEntity(event []byte) {
 		return
 	}
 	hwaddr := *msg.MacAddress
-	mac := network.Uint64ToHWAddr(hwaddr)
-	entry, err := ouiDB.Query(mac.String())
+	mac := network.Uint64ToMac(hwaddr)
+	entry, err := ouiDB.Query(mac)
 	if err != nil {
 		log.Printf("MAC address %s not in OUI database\n", mac)
 		id = mfgidDB["Unknown"]
@@ -332,9 +332,9 @@ func logger(stop chan bool, wg *sync.WaitGroup) {
 }
 
 func updateClient(hwaddr uint64, devID string, confidence float32) {
-	hw := network.Uint64ToHWAddr(hwaddr).String()
-	identProp := "@/clients/" + hw + "/identity"
-	confProp := "@/clients/" + hw + "/confidence"
+	mac := network.Uint64ToMac(hwaddr)
+	identProp := "@/clients/" + mac + "/identity"
+	confProp := "@/clients/" + mac + "/confidence"
 
 	if err := apcfgd.CreateProp(identProp, devID, nil); err != nil {
 		log.Printf("error creating prop %s: %s\n", identProp, err)

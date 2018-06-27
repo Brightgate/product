@@ -253,7 +253,6 @@ APPRULES=$(APPETC)/filter.rules.d
 APPMODEL=$(APPETC)/device_model
 
 ROOTETC=$(APPROOT)/etc
-ROOTETCCROND=$(ROOTETC)/cron.d
 ROOTETCIPTABLES=$(ROOTETC)/iptables
 ROOTETCLOGROTATED=$(ROOTETC)/logrotate.d
 ROOTETCRSYSLOGD=$(ROOTETC)/rsyslog.d
@@ -284,7 +283,6 @@ APPCOMMAND_GOPKGS = \
 	bg/ap-inspect \
 	bg/ap-msgping \
 	bg/ap-ouisearch \
-	bg/ap-rpc \
 	bg/ap-stats \
 	bg/ap-userctl \
 	bg/ap-vuln-aggregate
@@ -310,7 +308,8 @@ ALL_GOPKGS = $(APP_GOPKGS) $(CLOUD_GOPKGS)
 APP_GOPKGS = $(COMMON_GOPKGS) $(APPCOMMAND_GOPKGS) $(APPDAEMON_GOPKGS)
 
 MISCCOMMANDS = \
-	ap-start
+	ap-start \
+	ap-rpc
 
 APPBINARIES = \
 	$(APPCOMMAND_GOPKGS:bg/%=$(APPBIN)/%) \
@@ -360,7 +359,6 @@ APPCONFIGS = \
 	$(APPROOTLIB)/systemd/system/brightgate-appliance.service \
 	$(APPSNMAP)/smb-vuln-ms17-010.nse \
 	$(APPSPOOLWATCHD)/vuln-db.json \
-	$(ROOTETCCROND)/com-brightgate-appliance-cron \
 	$(ROOTETCIPTABLES)/rules.v4 \
 	$(ROOTETCRSYSLOGD)/com-brightgate-rsyslog.conf \
 	$(ROOTETCLOGROTATED)/com-brightgate-logrotate-logd \
@@ -383,7 +381,6 @@ APPDIRS = \
 	$(HTTPD_CLIENTWEB_DIR) \
 	$(NETWORKD_TEMPLATE_DIR) \
 	$(ROOTETC) \
-	$(ROOTETCCROND) \
 	$(ROOTETCIPTABLES) \
 	$(ROOTETCLOGROTATED) \
 	$(ROOTETCRSYSLOGD) \
@@ -610,9 +607,6 @@ $(APPETC)/datasources.json: datasources.json | $(APPETC)
 $(APPETC)/prometheus.yml: prometheus.yml | $(APPETC)
 	$(INSTALL) -m 0644 $< $@
 
-$(ROOTETCCROND)/com-brightgate-appliance-cron: com-brightgate-appliance-cron | $(ROOTETCCROND)
-	$(INSTALL) -m 0644 $< $(ROOTETCCROND)
-
 $(ROOTETCIPTABLES)/rules.v4: $(GOSRCBG)/ap.networkd/rules.v4 | $(ROOTETCIPTABLES)
 	$(INSTALL) -m 0644 $< $@
 
@@ -710,7 +704,8 @@ $(APPBIN)/ap.networkd: \
 $(APPBIN)/ap.relayd: $(GOSRCBG)/ap.relayd/relayd.go
 $(APPBIN)/ap.rpcd: \
 	$(GOSRCBG)/ap.rpcd/rpcd.go \
-	$(GOSRCBG)/common/version.go
+	$(GOSRCBG)/ap.rpcd/heartbeat.go \
+	$(GOSRCBG)/ap.rpcd/inventory.go
 $(APPBIN)/ap.updated: $(GOSRCBG)/ap.updated/update.go
 $(APPBIN)/ap.userauthd: $(GOSRCBG)/ap.userauthd/userauthd.go \
 	$(GOSRCBG)/ap_common/certificate/certificate.go
@@ -732,10 +727,8 @@ $(APPBIN)/ap-ctl: $(GOSRCBG)/ap-ctl/ctl.go
 $(APPBIN)/ap-inspect: $(GOSRCBG)/ap-inspect/inspect.go
 $(APPBIN)/ap-msgping: $(GOSRCBG)/ap-msgping/msgping.go
 $(APPBIN)/ap-ouisearch: $(GOSRCBG)/ap-ouisearch/ouisearch.go
-$(APPBIN)/ap-rpc: \
-	$(GOSRCBG)/ap-rpc/rpc.go \
-	$(GOSRCBG)/common/version.go \
-	$(CLOUD_COMMON_SRCS)
+$(APPBIN)/ap-rpc: $(APPBIN)/ap.rpcd
+	ln -f $< $@
 $(APPBIN)/ap-stats: $(GOSRCBG)/ap-stats/stats.go
 $(APPBIN)/ap-userctl: $(GOSRCBG)/ap-userctl/userctl.go
 $(APPBIN)/ap-vuln-aggregate: \
