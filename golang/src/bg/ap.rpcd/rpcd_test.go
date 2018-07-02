@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"bg/ap_common/aputil"
+	"bg/ap_common/cloud/rpcclient"
 	"bg/base_msg"
 	"bg/cloud_rpc"
 	"bg/cloud_rpc/mocks"
@@ -191,6 +192,8 @@ func TestSendInventory(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
+	// Need to setup global
+	applianceCred = rpcclient.NewTestCredential()
 	prometheusInit()
 	os.Exit(m.Run())
 }

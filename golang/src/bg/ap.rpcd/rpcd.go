@@ -48,11 +48,12 @@ var (
 	deadlineFlag  = flag.Duration("rpc-deadline", time.Second*20, "RPC completion deadline")
 	enableTLSFlag = flag.Bool("enable-tls", true, "Enable Secure gRPC")
 
-	pname       string
-	logger      *zap.Logger
-	slogger     *zap.SugaredLogger
-	zapConfig   zap.Config
-	globalLevel zap.AtomicLevel
+	pname         string
+	logger        *zap.Logger
+	slogger       *zap.SugaredLogger
+	zapConfig     zap.Config
+	globalLevel   zap.AtomicLevel
+	applianceCred *rpcclient.Credential
 
 	metrics struct {
 		events prometheus.Counter
@@ -65,6 +66,11 @@ func publishEvent(ctx context.Context, tclient cloud_rpc.EventClient, subtopic s
 	serialized, err := proto.Marshal(evt)
 	if err != nil {
 		return err
+	}
+
+	ctx, err = applianceCred.MakeGRPCContext(ctx)
+	if err != nil {
+		slogger.Fatalf("Failed to make GRPC credential: %+v", err)
 	}
 
 	clientDeadline := time.Now().Add(*deadlineFlag)
@@ -173,7 +179,7 @@ func daemonStart() {
 	b := broker.New(pname)
 	defer b.Fini()
 
-	applianceCred, err := rpcclient.SystemCredential()
+	applianceCred, err = rpcclient.SystemCredential()
 	if err != nil {
 		_ = mcpd.SetState(mcp.BROKEN)
 		slogger.Fatalf("Failed to build credential: %s", err)
@@ -183,11 +189,6 @@ func daemonStart() {
 		slogger.Warnf("Connecting insecurely due to '-enable-tls=false' flag (developers only!)")
 	}
 	slogger.Infof("Connecting to '%s'", *connectFlag)
-
-	ctx, err = applianceCred.MakeGRPCContext(ctx)
-	if err != nil {
-		slogger.Fatalf("Failed to make GRPC credential: %+v", err)
-	}
 
 	slogger.Infof("Setting state ONLINE")
 	err = mcpd.SetState(mcp.ONLINE)
@@ -232,10 +233,11 @@ func daemonStart() {
 }
 
 func cmdStart() {
+	var err error
 	var wg sync.WaitGroup
 	ctx := context.Background()
 
-	applianceCred, err := rpcclient.SystemCredential()
+	applianceCred, err = rpcclient.SystemCredential()
 	if err != nil {
 		slogger.Fatalf("Failed to build credential: %s", err)
 	}
@@ -244,11 +246,6 @@ func cmdStart() {
 		slogger.Warnf("Connecting insecurely due to '-enable-tls=false' flag (developers only!)")
 	}
 	slogger.Debugf("Connecting to '%s'", *connectFlag)
-
-	ctx, err = applianceCred.MakeGRPCContext(ctx)
-	if err != nil {
-		slogger.Fatalf("Failed to make GRPC credential: %+v", err)
-	}
 
 	conn, err := rpcclient.NewRPCClient(*connectFlag, *enableTLSFlag, pname)
 	if err != nil {

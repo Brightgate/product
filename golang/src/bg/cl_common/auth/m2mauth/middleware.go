@@ -160,7 +160,8 @@ func (m *Middleware) authFunc(ctx context.Context) (context.Context, error) {
 			// We require the presentation of the exp claim
 			if !claims.VerifyExpiresAt(now.Unix(), true) {
 				return nil, status.Errorf(codes.Unauthenticated,
-					"missing or expired exp claim")
+					"missing or expired exp claim: now=%v claims=%v",
+					now.Unix(), claims)
 			}
 
 			// Expiration of claim is max one hour (with a small leeway period)

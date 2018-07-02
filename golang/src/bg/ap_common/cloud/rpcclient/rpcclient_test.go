@@ -16,50 +16,18 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc/metadata"
 
-	jwt "github.com/dgrijalva/jwt-go"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
 
-const testProject = "peppy-breaker-161717"
-const testRegion = "us-central1"
-const testRegistry = "unit-testing"
-const testApplianceID = "unit-testing-fake-appliance"
-
-// This key doesn't grant access to any real resource.
-const testPEM = `
------BEGIN PRIVATE KEY-----
-MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC5c7hsfUleaCjy
-W3f9PExBjrXap0MLUpcsub5kO36/v/LUR3mQMUOfN9DsG/PdXdDGAxzHs3sH38Pt
-mCAj0/YkpVED2jtGaYrAHpwbkDBRw8TYS8Zyv9kyT6rZ+2+ZHnGq95XQucOuf/o2
-qkuNr6FDF48Ci17SfV+qpFaPq/EoD6n/WJ3w+ABWEynembpYr0ic0cpiZfX8RRCl
-79pv0OemIXcvWtICAYSpG0F7TkP+yC5SMrrfzZxtUzu9GVYa2z9XSQ8wyfVQrcJe
-/bAlJ1AaN0bPI2dJNjGmUI54GHS833jhV314XzGJrXdgMtsdcy9QL9ka7kO8r0CK
-su7KrI0FAgMBAAECggEAaZPFxI22/TYTSZZlQxfW2eOjCC387y8/vUipaWqtiACA
-//UI8dv6AWTHXgOz26yTNIeFFPPK8PqlElhuw7biBI7RBn5xDG79fM5wVQjLWWE4
-aWMKQT2TKx9Lxvlr2SIJ2ClHcyKukmNtUT218Z2xEv8QfYRWoUKa+gzA8t4SVplK
-Vo8ynC8ahpxbize4n2eFIwvxw2Y5qclfB/9m2O/5iRubzb+PeMAxyjbKMrHZFlYV
-XRjifeFyeRUYPER+sxdYn4aKM+rUEP7dyCxYWW55fua3d6hKPrjuptftGcDQu9Wz
-Z4cPfOX+0AQqQCvjxaUVzuv/F0JIvVV9CZZH5vWAKQKBgQD2dT3c2HoNUMji3Itl
-ME/VF6Wamg0CpFfhWQkvnjJWOqxcB3fi1Wjb2AqrHb7p5PZXstNsgZOCK4tdViq5
-csfzUwTAejH298zByrvLk2HnLvcI6SVMZzmvsOuF95MPgOhdIbGCiFrPBnvplvjk
-ZLqg8QRQDygto4DIGn2fbPzHUwKBgQDAodIf90/j9/kQfXF7PqFfRmycJJCvf19l
-AJXR8Ly6R21VKrC2xWcWuGMZoNC+LjCqWDCqOUILsYBkG7nMuwa+EzsBVzLzxJ/a
-wHU2eBADwh8/3zcVP9s756dzxp43fdF8S1SHL30pZdjuBay29+UlPakA3Yu1kwn6
-lBynTqoHRwKBgQCDDJR4eiNsMSigeOUmSSoqBQjpzEBex0RzbwSTbWsWrtw3k0EM
-PK4lOBt0Ib0CYd0bhNsnNz9YWA8i8k6FjaMEn4BHWLJ4wAsAgOyasyO76h0xf8d1
-eO4Tnd+evKZV+BWWb/QTlK20p53792shBu615XKFn4mduvMfc/aYbzt6QQKBgFTk
-e8feo/Shib/8qJBZ76AfVyoQ6zqMdav7cAtPfrzRUZug7rP9lwrqQ7I9rwDBNm07
-5GaASV0B4sU7esyA9924d96FYU0QsColewKAMv6VBFSPuKTCuYlS8/cP5xYperK+
-OAhDo3MlEU8EbTNNWEzrOZnKCRICNPmbYG1TO5dtAoGASDiWo+NIuNz/WOC1ngie
-G27Cp5ghBqAVohlNO+uV6tCeOMsCa0K+Yovx3IzyRhn2ujJfzTNcwf5mv17qb5C4
-q9pvLui9jB+gdAkgAKeAcOcbVZmbt8dletuKcdIm4htTe0qnqZzLrVVDx8jf0kUo
-IP5drVZE6NspLWJmKxeGPlw=
------END PRIVATE KEY-----
-`
+const testProject = "testproj"
+const testRegion = "testregion"
+const testRegistry = "testreg"
+const testApplianceID = "testappliance"
 
 func setupLogging(t *testing.T) (*zap.Logger, *zap.SugaredLogger) {
 	logger := zaptest.NewLogger(t)
@@ -67,24 +35,9 @@ func setupLogging(t *testing.T) (*zap.Logger, *zap.SugaredLogger) {
 	return logger, slogger
 }
 
-func mkCred(t *testing.T) *Credential {
-	pk, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(testPEM))
-	if err != nil {
-		t.Errorf("Failed to make private key")
-		return nil
-	}
-
-	cred := NewCredential(testProject, testRegion, testRegistry, testApplianceID, pk)
-	if err != nil {
-		t.Errorf("Failed to make cred from JSON")
-		return nil
-	}
-	return cred
-}
-
 func TestNewCredential(t *testing.T) {
 	setupLogging(t)
-	cred := mkCred(t)
+	cred := NewTestCredential()
 
 	// Exercise String() method of cred
 	t.Logf("created cred %s", cred)
@@ -92,7 +45,7 @@ func TestNewCredential(t *testing.T) {
 
 func TestContext(t *testing.T) {
 	setupLogging(t)
-	cred := mkCred(t)
+	cred := NewTestCredential()
 
 	testContext, err := cred.MakeGRPCContext(context.Background())
 	if err != nil {
@@ -111,9 +64,53 @@ func TestContext(t *testing.T) {
 	}
 }
 
+func mustRefreshJWT(t *testing.T, cred *Credential) string {
+	signed, err := cred.refreshJWT()
+	if err != nil {
+		t.Fatalf("failed to refresh: %v", err)
+	}
+	return signed
+}
+
+func TestCredRefresh(t *testing.T) {
+	setupLogging(t)
+
+	// In these tests we manually control time.
+	origTime := time.Now()
+	testTime := origTime
+	oldTimeNowFunc := timeNowFunc
+	timeNowFunc = func() time.Time { return testTime }
+	defer func() { timeNowFunc = oldTimeNowFunc }()
+
+	testCases := []struct {
+		desc         string
+		deltaTime    time.Duration
+		expectChange bool
+	}{
+		{"no time change, expect match", time.Duration(0), false},
+		{"small time change, expect match", time.Duration(1 * time.Second), false},
+		{"past 3/4 point, expect refresh", cJWTExpiry * 7 / 8, true},
+		{"expired, expect refresh", cJWTExpiry * 2, true},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			cred := NewTestCredential()
+			testTime = origTime
+			signed0 := mustRefreshJWT(t, cred)
+			testTime = origTime.Add(tc.deltaTime)
+			signed1 := mustRefreshJWT(t, cred)
+			// See if the JWT changed, or didn't based on our expectation
+			changed := signed0 != signed1
+			if changed != tc.expectChange {
+				t.Fatalf("unexpected: signed1=%v signed0=%v", signed1, signed0)
+			}
+		})
+	}
+}
+
 func TestNewJSON(t *testing.T) {
 	setupLogging(t)
-	pemstr := strings.Replace(testPEM, "\n", "\\n", -1)
+	pemstr := strings.Replace(TestCredentialPEM, "\n", "\\n", -1)
 	credJSON := fmt.Sprintf(`
 		{
 		"project": "%s",

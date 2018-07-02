@@ -55,7 +55,7 @@ func (ts *eventServer) Put(ctx context.Context, req *cloud_rpc.PutEventRequest) 
 		},
 		Data: req.Payload.Value,
 	}
-	slog.Infow("outgoing pubsub", "message", m)
+	slog.Infow("outgoing pubsub", "datalen", len(m.Data), "attributes", m.Attributes)
 	pubsubResult := ts.eventTopic.Publish(ctx, m)
 	_, err := pubsubResult.Get(ctx)
 	if err != nil {
