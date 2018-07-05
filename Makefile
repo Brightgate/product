@@ -263,6 +263,7 @@ USERAUTHD_TEMPLATE_DIR=$(APPETC)/templates/ap.userauthd
 
 COMMON_GOPKGS = \
 	bg/ap_common/apcfg \
+	bg/ap_common/aptest \
 	bg/ap_common/aputil \
 	bg/ap_common/broker \
 	bg/ap_common/certificate \
@@ -326,6 +327,7 @@ GO_TESTABLES = \
 	bg/ap.configd \
 	bg/ap.networkd \
 	bg/ap.rpcd \
+	bg/ap.updated \
 	bg/ap.userauthd \
 	bg/cl_common/auth/m2mauth \
 	bg/cl_common/daemonutils
@@ -446,6 +448,8 @@ CLOUDROOT=$(ROOT)/cloud
 CLOUDBASE=$(CLOUDROOT)/opt/net.b10e
 CLOUDBIN=$(CLOUDBASE)/bin
 CLOUDETC=$(CLOUDBASE)/etc
+CLOUDETCSCHEMA=$(CLOUDETC)/schema
+CLOUDETCSCHEMAAPPLIANCEDB=$(CLOUDETCSCHEMA)/appliancedb
 CLOUDROOTLIB=$(CLOUDROOT)/lib
 CLOUDVAR=$(CLOUDBASE)/var
 CLOUDSPOOL=$(CLOUDVAR)/spool
@@ -477,16 +481,23 @@ CLOUDCONFIGS = \
 	$(CLOUDROOTLIB)/systemd/system/cl.rpcd.service \
 	$(CLOUDROOTLIB)/systemd/system/cl.eventd.service
 
+CLOUDSCHEMAS = \
+	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema000.sql \
+	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema001.sql \
+	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema002.sql
+
 CLOUDBINARIES = $(CLOUDCOMMANDS:%=$(CLOUDBIN)/%) $(CLOUDDAEMONS:%=$(CLOUDBIN)/%)
 
 CLOUDDIRS = \
 	$(CLOUDBIN) \
 	$(CLOUDETC) \
+	$(CLOUDETCSCHEMA) \
+	$(CLOUDETCSCHEMAAPPLIANCEDB) \
 	$(CLOUDROOTLIB) \
 	$(CLOUDSPOOL) \
 	$(CLOUDVAR)
 
-CLOUDCOMPONENTS = $(CLOUDBINARIES) $(CLOUDCONFIGS) $(CLOUDDIRS)
+CLOUDCOMPONENTS = $(CLOUDBINARIES) $(CLOUDCONFIGS) $(CLOUDDIRS) $(CLOUDSCHEMAS)
 
 CLOUD_COMMON_SRCS = \
     $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
@@ -565,7 +576,7 @@ coverage: coverage-go
 
 coverage-go: install
 	$(MKDIR) -p $(COVERAGE_DIR)
-	$(GO) test -cover -coverprofile $(COVERAGE_DIR)/cover.out $(GO_TESTABLES)
+	$(GO) test $(GO_TESTFLAGS) -cover -coverprofile $(COVERAGE_DIR)/cover.out $(GO_TESTABLES)
 	$(GO) tool cover -html=$(COVERAGE_DIR)/cover.out -o $(COVERAGE_DIR)/coverage.html
 
 vet-go:
@@ -761,6 +772,10 @@ $(UTILBIN)/%: $(GOSRCBG)/util/%.go | $(UTILBIN)
 $(CLOUDETC)/datasources.json: datasources.json | $(CLOUDETC)
 	$(INSTALL) -m 0644 $< $(CLOUDETC)
 
+# Install database schema files
+$(CLOUDETCSCHEMAAPPLIANCEDB)/%: golang/src/bg/cloud_models/appliancedb/schema/% | $(CLOUDETCSCHEMAAPPLIANCEDB)
+	$(INSTALL) -m 0644 $< $@
+
 # Install service descriptions
 $(CLOUDROOTLIB)/systemd/system/%: % | $(CLOUDROOTLIB)/systemd/system
 	$(INSTALL) -m 0644 $< $@
@@ -787,6 +802,7 @@ $(CLOUDBIN)/cl.httpd: \
 $(CLOUDBIN)/cl.rpcd: \
 	$(GOSRCBG)/cl.rpcd/rpcd.go \
 	$(GOSRCBG)/cl.rpcd/event.go \
+	$(GOSRCBG)/cl.rpcd/storage.go \
 	$(CLOUD_COMMON_SRCS)
 
 $(CLOUDROOTLIB)/systemd/system: | $(CLOUDROOTLIB)

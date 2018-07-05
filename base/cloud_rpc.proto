@@ -74,3 +74,25 @@ message PutEventResponse {
 service Event {
 	rpc Put(PutEventRequest) returns (PutEventResponse) {};
 }
+
+message SignedURL {
+	string object = 0x01;
+	string url = 0x02;
+}
+
+message GenerateURLRequest {
+	// The object name is the primary key, how a client can match up
+	// request and response.
+	repeated string objects = 0x01;
+	string prefix = 0x02;
+	string content_type = 0x03;
+	string http_method = 0x04;
+}
+
+message GenerateURLResponse {
+	repeated SignedURL urls = 0x01;
+}
+
+service CloudStorage{
+	rpc GenerateURL(GenerateURLRequest) returns (GenerateURLResponse) {};
+}

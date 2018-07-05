@@ -40,25 +40,31 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/pkg/errors"
+
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
+	"bg/ap_common/cloud/rpcclient"
 	"bg/ap_common/mcp"
+	"bg/base_def"
+	"bg/cloud_rpc"
 	"bg/common/archive"
 	"bg/common/urlfetch"
 
-	"cloud.google.com/go/storage"
 	"golang.org/x/net/context"
-	"golang.org/x/oauth2/google"
+	"google.golang.org/grpc"
 )
 
 const (
@@ -66,8 +72,11 @@ const (
 )
 
 var (
-	brokerd *broker.Broker
-	config  *apcfg.APConfig
+	brokerd       *broker.Broker
+	config        *apcfg.APConfig
+	rpcConn       *grpc.ClientConn
+	storageClient cloud_rpc.CloudStorageClient
+	applianceCred *rpcclient.Credential
 
 	updatePeriod = flag.Duration("update", 10*time.Minute,
 		"frequency with which to check updates")
@@ -78,20 +87,13 @@ var (
 		"time allowed for a single file upload")
 	uploadErrMax = flag.Int("emax", 5,
 		"upload errors allowed before we give up for now")
+	uploadBatchSize = flag.Int("bsize", 5, "upload batch size")
+
+	connectFlag   = flag.String("connect", base_def.CL_SVC_RPC, "Override connection endpoint in credential")
+	enableTLSFlag = flag.Bool("enable-tls", true, "Enable Secure gRPC")
+	deadlineFlag  = flag.Duration("rpc-deadline", time.Second*20, "RPC completion deadline")
 
 	updateBucket string
-
-	uploadConfig struct {
-		bucket     string
-		serviceID  string
-		credFile   string
-		privateKey []byte
-	}
-
-	errNoBucket    = fmt.Errorf("no upload bucket configured")
-	errNoServiceID = fmt.Errorf("no upload serviceID configured")
-	errNoCreds     = fmt.Errorf("no cloud credentials defined")
-	errBadCreds    = fmt.Errorf("ill-defined cloud credentials")
 )
 
 type updateInfo struct {
@@ -123,29 +125,29 @@ var updates = map[string]updateInfo{
 	// },
 }
 
-type uploadInfo struct {
+type uploadType struct {
 	dir    string
 	prefix string
 	ctype  string
 }
 
-var uploadTypes = []uploadInfo{
+var uploadTypes = []uploadType{
 	{
-		dir:    "/var/spool/watchd/droplog",
-		prefix: "drops",
-		ctype:  archive.DropContentType,
+		"/var/spool/watchd/droplog",
+		"drops",
+		archive.DropContentType,
 	},
 	{
-		dir:    "/var/spool/watchd/stats",
-		prefix: "stats",
-		ctype:  archive.StatContentType,
+		"/var/spool/watchd/stats",
+		"stats",
+		archive.StatContentType,
 	},
 }
 
 type oneUpload struct {
-	source string
-	url    string
-	ctype  string
+	source    string
+	signedURL *cloud_rpc.SignedURL
+	uType     uploadType
 }
 
 func configBucketChanged(path []string, val string, expires *time.Time) {
@@ -154,9 +156,6 @@ func configBucketChanged(path []string, val string, expires *time.Time) {
 		case "update":
 			updateBucket = val
 			log.Printf("Changed update bucket to %s\n", val)
-		case "upload":
-			uploadConfig.bucket = val
-			log.Printf("Changed upload bucket to %s\n", val)
 		default:
 			log.Printf("unrecognized bucket: %s (%v)\n", path[1], path)
 		}
@@ -253,79 +252,59 @@ func upload(client *http.Client, u oneUpload) error {
 	}
 	defer data.Close()
 
-	req, err := http.NewRequest("PUT", u.url, data)
+	req, err := http.NewRequest("PUT", u.signedURL.Url, data)
 	if err != nil {
 		return fmt.Errorf("failed to create PUT request: %v", err)
 	}
-	req.Header.Set("Content-Type", u.ctype)
+	req.Header.Set("Content-Type", u.uType.ctype)
 
 	res, err := client.Do(req)
 	if err != nil {
-		err = fmt.Errorf("PUT failed: %s", res.Status)
-	} else {
-		if res.StatusCode != http.StatusOK {
-			buf := make([]byte, 256)
-			if res != nil {
-				res.Body.Read(buf)
-			}
-			err = fmt.Errorf("PUT failed: %s (%s)", res.Status,
-				string(buf))
-		}
-		res.Body.Close()
+		return fmt.Errorf("PUT failed: %v", err)
 	}
-
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		buf := make([]byte, 256)
+		res.Body.Read(buf)
+		return fmt.Errorf("PUT failed: %s (%s)", res.Status, string(buf))
+	}
+	// Make sure to read the response so that keepalive will work
+	io.Copy(ioutil.Discard, res.Body)
 	return err
 }
 
-// Extract this service account's private key from the default credentials
-// structure
-func getPrivateKey() ([]byte, error) {
-	var key []byte
-	var err error
+// For each of the objects in the provided list, use the cloud service to
+// generate a signed URL to which the object should be uploaded.  The results
+// are returned as a list of SignedURL objects which name the origin object
+// as well as the URL to use.
+func generateSignedURLs(rpcClient cloud_rpc.CloudStorageClient,
+	uType *uploadType,
+	objects []string) ([]*cloud_rpc.SignedURL, error) {
 
-	ctx := context.Background()
-	creds, _ := google.FindDefaultCredentials(ctx, storage.ScopeFullControl)
-	if creds == nil {
-		err = fmt.Errorf("no cloud credentials defined")
-	} else {
-		jwt, rerr := google.JWTConfigFromJSON(creds.JSON)
-		if rerr != nil {
-			err = fmt.Errorf("bad cloud credentials: %v", err)
-		} else {
-			key = jwt.PrivateKey
-		}
-	}
-	return key, err
-}
-
-// For each of the objects in the provided list, generate a signed URL to which
-// the object should be uploaded.  The results are returned in an object->URL
-// map.
-//
-// XXX: Eventually, the signed URLs will be generated in the cloud, so we will
-// not have to deploy the private key and google storage values to the
-// appliance.
-func generateSignedURLs(prefix, ctype string, objects []string) map[string]string {
-	options := &storage.SignedURLOptions{
-		GoogleAccessID: uploadConfig.serviceID,
-		PrivateKey:     uploadConfig.privateKey,
-		Method:         "PUT",
-		ContentType:    ctype,
-		Expires:        time.Now().Add(10 * time.Minute),
+	if len(objects) == 0 {
+		return []*cloud_rpc.SignedURL{}, nil
 	}
 
-	urls := make(map[string]string)
-	for _, name := range objects {
-		full := prefix + "/" + name
-		url, err := storage.SignedURL(uploadConfig.bucket, full, options)
-		if err != nil {
-			log.Printf("Failed to create signed URL for %s: %v\n",
-				full, err)
-		} else {
-			urls[name] = url
-		}
+	req := cloud_rpc.GenerateURLRequest{
+		Objects:     objects,
+		Prefix:      uType.prefix,
+		ContentType: uType.ctype,
+		HttpMethod:  "PUT",
 	}
-	return urls
+
+	ctx, err := applianceCred.MakeGRPCContext(context.Background())
+	if err != nil {
+		return []*cloud_rpc.SignedURL{}, errors.Wrapf(err, "Failed to make RPC context")
+	}
+	ctx, ctxcancel := context.WithDeadline(ctx, time.Now().Add(*deadlineFlag))
+	defer ctxcancel()
+
+	response, err := rpcClient.GenerateURL(ctx, &req)
+	if err != nil {
+		return []*cloud_rpc.SignedURL{}, errors.Wrapf(err,
+			"Failed to generate signed URLs %v: %v", objects, err)
+	}
+	return response.Urls, nil
 }
 
 // Get a list of the filenames in a directory, up to a caller-specified limit
@@ -358,18 +337,22 @@ func getFilenames(dir string, max int) []string {
 // crash or lose the network before getting confirmation, and a subsequent
 // (unnecessary) retry would fail.  Alternatively, we could attempt to read the
 // cloud data to determine whether a retry was necessary.
-func doUpload() {
+func doUpload(rpcClient cloud_rpc.CloudStorageClient) {
 	uploads := make([]oneUpload, 0)
 
 	for _, t := range uploadTypes {
 		dir := aputil.ExpandDirPath(t.dir)
-		urls := generateSignedURLs(t.prefix, t.ctype,
-			getFilenames(dir, 5))
-		for file, url := range urls {
+		urls, err := generateSignedURLs(rpcClient, &t,
+			getFilenames(dir, *uploadBatchSize))
+		if err != nil {
+			log.Printf("Couldn't generate signed URLs for upload: %v", err)
+			continue
+		}
+		for _, url := range urls {
 			u := oneUpload{
-				source: dir + "/" + file,
-				url:    url,
-				ctype:  t.ctype,
+				source:    filepath.Join(dir, url.Object),
+				signedURL: url,
+				uType:     t,
 			}
 			uploads = append(uploads, u)
 		}
@@ -395,29 +378,23 @@ func doUpload() {
 }
 
 func uploadInit() error {
-
-	if b, _ := config.GetProp("@/cloud/upload/bucket"); b != "" {
-		uploadConfig.bucket = b
-	} else {
-		return errNoBucket
+	var err error
+	applianceCred, err = rpcclient.SystemCredential()
+	if err != nil {
+		log.Printf("Failed to build credential: %s", err)
+		return err
+	}
+	if !*enableTLSFlag {
+		log.Printf("Connecting insecurely due to '-enable-tls=false' flag (developers only!)")
 	}
 
-	if s, _ := config.GetProp("@/cloud/upload/serviceid"); s != "" {
-		uploadConfig.serviceID = s
-	} else {
-		return errNoServiceID
+	rpcConn, err = rpcclient.NewRPCClient(*connectFlag, *enableTLSFlag, pname)
+	if err != nil {
+		log.Printf("Failed to make RPC client: %+v", err)
+		return err
 	}
-
-	if c, _ := config.GetProp("@/cloud/upload/creds"); c != "" {
-		fullPath := aputil.ExpandDirPath(c)
-		os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", fullPath)
-	}
-
-	p, err := getPrivateKey()
-	if err == nil {
-		uploadConfig.privateKey = p
-	}
-	return err
+	storageClient = cloud_rpc.NewCloudStorageClient(rpcConn)
+	return nil
 }
 
 func uploadLoop(wg *sync.WaitGroup, doneChan chan bool) {
@@ -438,13 +415,16 @@ func uploadLoop(wg *sync.WaitGroup, doneChan chan bool) {
 		}
 
 		if initted {
-			doUpload()
+			doUpload(storageClient)
 		}
 
 		select {
 		case <-ticker.C:
 		case done = <-doneChan:
 		}
+	}
+	if rpcConn != nil {
+		rpcConn.Close()
 	}
 	wg.Done()
 }

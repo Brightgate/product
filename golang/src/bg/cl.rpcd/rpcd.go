@@ -284,8 +284,12 @@ func main() {
 		slog.Fatalf("failed to start event server: %s", err)
 	}
 
+	cloudStorageServer := defaultCloudStorageServer(applianceDB)
+
 	cloud_rpc.RegisterEventServer(grpcServer, eventServer)
 	slog.Infof(checkMark+"Ready to put event to Cloud PubSub %s", environ.PubsubTopic)
+	cloud_rpc.RegisterCloudStorageServer(grpcServer, cloudStorageServer)
+	slog.Infof(checkMark + "Ready to serve Cloud Storage related requests")
 
 	prometheusInit(environ.PrometheusPort)
 

@@ -437,6 +437,7 @@
   packages = [
     "assert",
     "mock",
+    "require",
   ]
   pruneopts = ""
   revision = "f35b8ab0b5a2cef36673838d662e249dd9c94686"
@@ -850,6 +851,7 @@
     "github.com/sfreiberg/gotwilio",
     "github.com/spf13/afero",
     "github.com/stretchr/testify/mock",
+    "github.com/stretchr/testify/require",
     "github.com/tensorflow/tensorflow/tensorflow/go",
     "github.com/tensorflow/tensorflow/tensorflow/go/op",
     "github.com/tomazk/envcfg",
@@ -872,6 +874,7 @@
     "gonum.org/v1/plot/plotter",
     "gonum.org/v1/plot/plotutil",
     "gonum.org/v1/plot/vg",
+    "google.golang.org/api/googleapi",
     "google.golang.org/api/iterator",
     "google.golang.org/grpc",
     "google.golang.org/grpc/codes",

@@ -30,6 +30,8 @@ type DataStore interface {
 	UpsertApplianceID(context.Context, *ApplianceID) error
 	KeysByUUID(context.Context, uuid.UUID) ([]AppliancePubKey, error)
 	InsertHeartbeatIngest(context.Context, *HeartbeatIngest) error
+	CloudStorageByUUID(context.Context, uuid.UUID) (*ApplianceCloudStorage, error)
+	UpsertCloudStorage(context.Context, uuid.UUID, *ApplianceCloudStorage) error
 	Ping() error
 	Close()
 }
@@ -66,6 +68,12 @@ type AppliancePubKey struct {
 	Format     string
 	Key        string
 	Expiration pq.NullTime
+}
+
+// ApplianceCloudStorage represents cloud storage information for an Appliance.
+type ApplianceCloudStorage struct {
+	Bucket   string
+	Provider string
 }
 
 // NotFoundError is returned when the requested resource is not present in the
@@ -258,6 +266,43 @@ func (db *ApplianceDB) KeysByUUID(ctx context.Context, u uuid.UUID) ([]Appliance
 		}
 	}
 	return keys, nil
+}
+
+// CloudStorageByUUID selects Cloud Storage Information for an Appliance using
+// its Cloud UUID
+func (db *ApplianceDB) CloudStorageByUUID(ctx context.Context,
+	u uuid.UUID) (*ApplianceCloudStorage, error) {
+	var stor ApplianceCloudStorage
+
+	row := db.QueryRowContext(ctx,
+		"SELECT bucket, provider FROM appliance_cloudstorage WHERE cloud_uuid=$1", u)
+	err := row.Scan(&stor.Bucket, &stor.Provider)
+	switch err {
+	case sql.ErrNoRows:
+		return nil, NotFoundError{fmt.Sprintf("CloudStorageByUUID: Couldn't find bucket for %v", u)}
+	case nil:
+		return &stor, nil
+	default:
+		panic(err)
+	}
+}
+
+// UpsertCloudStorage inserts or updates a CloudStorage Record
+func (db *ApplianceDB) UpsertCloudStorage(ctx context.Context,
+	u uuid.UUID, stor *ApplianceCloudStorage) error {
+
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO appliance_cloudstorage
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (cloud_uuid) DO UPDATE
+		 SET (bucket,
+		      provider) = (
+		      EXCLUDED.bucket,
+		      EXCLUDED.provider)`,
+		u.String(),
+		stor.Bucket,
+		stor.Provider)
+	return err
 }
 
 // HeartbeatIngest represents a row in the heartbeat_ingest table.  In this
