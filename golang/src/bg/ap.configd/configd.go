@@ -1023,5 +1023,7 @@ func main() {
 	log.Printf("Listening on %s\n", port)
 
 	mcpd.SetState(mcp.ONLINE)
+
+	go expirationHandler()
 	eventLoop(incoming)
 }

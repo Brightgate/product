@@ -58,6 +58,9 @@ func (q *pnodeQueue) Pop() interface{} {
 }
 
 func expirationHandler() {
+
+	expirationTimer = time.NewTimer(time.Duration(time.Minute))
+
 	for true {
 		<-expirationTimer.C
 		expirationLock.Lock()
@@ -156,13 +159,12 @@ func expirationReset() {
 		next := expirationHeap[0]
 		reset = time.Until(*next.Expires)
 	}
-	expirationTimer.Reset(reset)
+	if t := expirationTimer; t != nil {
+		t.Reset(reset)
+	}
 }
 
 func expirationInit() {
 	expirationHeap = make(pnodeQueue, 0)
 	heap.Init(&expirationHeap)
-
-	expirationTimer = time.NewTimer(time.Duration(time.Minute))
-	go expirationHandler()
 }

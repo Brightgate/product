@@ -145,7 +145,16 @@ type PropertyNode struct {
 // IsActive returns 'true' if we believe the client is currently connected to
 // this AP
 func (c *ClientInfo) IsActive() bool {
-	return c != nil && c.IPv4 != nil
+	if c == nil || c.IPv4 == nil {
+		return false
+	}
+
+	expired := false
+	if c.Expires != nil {
+		expired = c.Expires.Before(time.Now())
+	}
+
+	return !expired
 }
 
 func dumpSubtree(name string, node *PropertyNode, level int) {

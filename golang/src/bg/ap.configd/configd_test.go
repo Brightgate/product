@@ -155,9 +155,11 @@ func deleteOneProp(t *testing.T, prop string, succeed bool) {
 // construct a fresh config tree from the pre-loaded JSON file.  Return a map of
 // all the property leaves in the fresh tree.
 func testTreeInit(t *testing.T) leafMap {
-	if err := propTreeImport(testData); err != nil {
+	root, err := propTreeImport(testData)
+	if err != nil {
 		t.Fatalf("failed to import config tree: %v", err)
 	}
+	propTreeRoot = root
 
 	return testBuildMap()
 }

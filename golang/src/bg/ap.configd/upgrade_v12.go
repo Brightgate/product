@@ -39,18 +39,19 @@ func convertPnode(old *oldPnode, new *pnode) {
 	}
 }
 
-func oldPropTreeParse(data []byte) error {
+func oldPropTreeParse(data []byte) (*pnode, error) {
 	var root oldPnode
+	var newRoot pnode
 
 	if err := json.Unmarshal(data, &root); err != nil {
-		return err
+		return nil, err
 	}
 
 	log.Printf("Importing pre-v12 config tree.\n")
 
-	convertPnode(&root, propTreeRoot)
+	convertPnode(&root, &newRoot)
 
-	return nil
+	return &newRoot, nil
 }
 
 func upgradeV12() error {

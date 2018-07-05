@@ -36,12 +36,14 @@ const (
 var (
 	propdir = flag.String("propdir", "./",
 		"directory in which the property files should be stored")
-	propTreeFile string
+	propTreeFile   string
+	propTreeLoaded bool
+
 	upgradeHooks []func() error
 )
 
 func propTreeStore() error {
-	if propTreeFile == "" {
+	if !propTreeLoaded {
 		return nil
 	}
 
@@ -75,16 +77,16 @@ func propTreeStore() error {
 	return err
 }
 
-func propTreeImport(data []byte) error {
+func propTreeImport(data []byte) (*pnode, error) {
 	var newRoot pnode
 
 	metrics.treeSize.Set(float64(len(data)))
-	err := json.Unmarshal(data, &newRoot)
-	if err == nil {
-		patchTree("@", &newRoot, "")
-		propTreeRoot = &newRoot
+	if err := json.Unmarshal(data, &newRoot); err != nil {
+		return nil, err
 	}
-	return err
+
+	patchTree("@", &newRoot, "")
+	return &newRoot, nil
 }
 
 func propTreeLoad(name string) error {
@@ -97,14 +99,17 @@ func propTreeLoad(name string) error {
 		return err
 	}
 
-	if err = propTreeImport(file); err != nil {
-		if nerr := oldPropTreeParse(file); nerr != nil {
+	root, err := propTreeImport(file)
+	if err != nil {
+		root, err = oldPropTreeParse(file)
+		if err != nil {
 			log.Printf("Failed to import properties from %s: %v\n",
 				name, err)
 			return err
 		}
 	}
 
+	propTreeRoot = root
 	return nil
 }
 
@@ -246,4 +251,5 @@ func propTreeInit() {
 	}
 
 	dumpTree("root", propTreeRoot, 0)
+	propTreeLoaded = true
 }
