@@ -33,13 +33,13 @@ import (
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
 	"bg/ap_common/network"
+	"bg/ap_common/platform"
 	"bg/base_def"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
-	platform    = flag.String("platform", "rpi3", "hardware platform name")
 	allow40MHz  = flag.Bool("40mhz", false, "allow 40MHz-wide channels")
 	templateDir = flag.String("template_dir", "golang/src/ap.networkd",
 		"location of hostapd templates")
@@ -64,6 +64,7 @@ var (
 	wifiPassphrase string
 	radiusSecret   string
 
+	plat           *platform.Platform
 	hostapd        *hostapdHdl
 	running        bool
 	satellite      bool
@@ -75,12 +76,7 @@ const (
 	failuresAllowed = 4
 	period          = time.Duration(time.Minute)
 
-	brctlCmd   = "/sbin/brctl"
-	sysctlCmd  = "/sbin/sysctl"
-	ipCmd      = "/sbin/ip"
-	iwCmd      = "/sbin/iw"
-	vconfigCmd = "/sbin/vconfig"
-	pname      = "ap.networkd"
+	pname = "ap.networkd"
 )
 
 type physDevice struct {
@@ -128,10 +124,10 @@ var (
 //
 
 func configChannelChanged(path []string, val string, expires *time.Time) {
-	mac := path[2]
+	nicID := path[2]
 	newChannel, _ := strconv.Atoi(val)
 
-	if p := physDevices[mac]; p != nil {
+	if p := physDevices[nicID]; p != nil {
 		if p.cfgChannel != newChannel {
 			p.cfgChannel = newChannel
 			hostapd.reload()
@@ -140,10 +136,10 @@ func configChannelChanged(path []string, val string, expires *time.Time) {
 }
 
 func configModeChanged(path []string, val string, expires *time.Time) {
-	mac := path[2]
+	nicID := path[2]
 	newMode := val
 
-	if p := physDevices[mac]; p != nil {
+	if p := physDevices[nicID]; p != nil {
 		if p.cfgMode != newMode {
 			p.cfgMode = newMode
 			hostapd.reload()
@@ -152,6 +148,18 @@ func configModeChanged(path []string, val string, expires *time.Time) {
 }
 
 func configRingChanged(path []string, val string, expires *time.Time) {
+	nicID := path[2]
+	newRing := val
+
+	if p := physDevices[nicID]; p != nil {
+		if p.ring != newRing {
+			p.ring = newRing
+			hostapd.reload()
+		}
+	}
+}
+
+func configClientChanged(path []string, val string, expires *time.Time) {
 	hwaddr := path[1]
 	newRing := val
 	c, ok := clients[hwaddr]
@@ -357,11 +365,16 @@ func getInternalAddr() net.IP {
 func addDevToRingBridge(dev *physDevice, ring string) error {
 	var err error
 
+	err = exec.Command(plat.IPCmd, "link", "set", "up", dev.name).Run()
+	if err != nil {
+		log.Printf("Failed to enable %s: %v\n", dev.name, err)
+	}
+
 	if config := rings[ring]; config != nil {
 		br := config.Bridge
 		log.Printf("Connecting %s (%s) to the %s bridge: %s\n",
 			dev.name, dev.hwaddr, ring, br)
-		c := exec.Command(brctlCmd, "addif", br, dev.name)
+		c := exec.Command(plat.BrctlCmd, "addif", br, dev.name)
 		if out, rerr := c.CombinedOutput(); rerr != nil {
 			err = fmt.Errorf(string(out))
 		}
@@ -494,31 +507,31 @@ func addVif(nic string, vlan int) {
 	bridge := fmt.Sprintf("brvlan%d", vlan)
 
 	deleteVif(vif)
-	err := exec.Command(vconfigCmd, "add", nic, vid).Run()
+	err := exec.Command(plat.VconfigCmd, "add", nic, vid).Run()
 	if err != nil {
 		log.Printf("Failed to create vif %s: %v\n", vif, err)
 		return
 	}
 
-	err = exec.Command(brctlCmd, "addif", bridge, vif).Run()
+	err = exec.Command(plat.BrctlCmd, "addif", bridge, vif).Run()
 	if err != nil {
 		log.Printf("Failed to add %s to %s: %v\n", vif, bridge, err)
 		return
 	}
 
-	err = exec.Command(ipCmd, "link", "set", "up", vif).Run()
+	err = exec.Command(plat.IPCmd, "link", "set", "up", vif).Run()
 	if err != nil {
 		log.Printf("Failed to enable %s: %v\n", vif, err)
 	}
 }
 
 func deleteVif(vif string) {
-	exec.Command(ipCmd, "link", "del", vif).Run()
+	exec.Command(plat.IPCmd, "link", "del", vif).Run()
 }
 
 func deleteBridge(bridge string) {
-	exec.Command(ipCmd, "link", "set", "down", bridge).Run()
-	exec.Command(brctlCmd, "delbr", bridge).Run()
+	exec.Command(plat.IPCmd, "link", "set", "down", bridge).Run()
+	exec.Command(plat.BrctlCmd, "delbr", bridge).Run()
 }
 
 // Delete the bridges associated with each ring.  This gets us back to a known
@@ -551,43 +564,43 @@ func createBridge(ringName string) {
 
 	log.Printf("Preparing %s ring: %s %s\n", ringName, bridge, ring.Subnet)
 
-	err := exec.Command(brctlCmd, "addbr", bridge).Run()
+	err := exec.Command(plat.BrctlCmd, "addbr", bridge).Run()
 	if err != nil {
 		log.Printf("addbr %s failed: %v", bridge, err)
 		return
 	}
 
-	err = exec.Command(ipCmd, "link", "set", "up", bridge).Run()
+	err = exec.Command(plat.IPCmd, "link", "set", "up", bridge).Run()
 	if err != nil {
 		log.Printf("bridge %s failed to come up: %v", bridge, err)
 		return
 	}
 
 	// ip addr flush dev brvlan0
-	cmd := exec.Command(ipCmd, "addr", "flush", "dev", bridge)
+	cmd := exec.Command(plat.IPCmd, "addr", "flush", "dev", bridge)
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to remove existing IP address: %v\n", err)
 	}
 
 	// ip route del 192.168.136.0/24
-	cmd = exec.Command(ipCmd, "route", "del", ring.Subnet)
+	cmd = exec.Command(plat.IPCmd, "route", "del", ring.Subnet)
 	cmd.Run()
 
 	// ip addr add 192.168.136.1 dev brvlan0
 	router := localRouter(ring)
-	cmd = exec.Command(ipCmd, "addr", "add", router, "dev", bridge)
+	cmd = exec.Command(plat.IPCmd, "addr", "add", router, "dev", bridge)
 	log.Printf("Setting %s to %s\n", bridge, router)
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to set the router address: %v\n", err)
 	}
 
 	// ip link set up brvlan0
-	cmd = exec.Command(ipCmd, "link", "set", "up", bridge)
+	cmd = exec.Command(plat.IPCmd, "link", "set", "up", bridge)
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to enable bridge: %v\n", err)
 	}
 	// ip route add 192.168.136.0/24 dev brvlan0
-	cmd = exec.Command(ipCmd, "route", "add", ring.Subnet, "dev", bridge)
+	cmd = exec.Command(plat.IPCmd, "route", "add", ring.Subnet, "dev", bridge)
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to add %s as the new route: %v\n",
 			ring.Subnet, err)
@@ -608,11 +621,13 @@ func createBridges() {
 	}
 }
 
-func persistNicRing(mac, ring string) {
-	prop := "@/nodes/" + nodeUUID + "/" + mac + "/ring"
-	err := config.CreateProp(prop, ring, nil)
+func persistNicRing(d *physDevice) {
+	id := plat.NicID(d.name, d.hwaddr)
+	log.Printf("Persisting %s -> %s\n", id, d.ring)
+	prop := "@/nodes/" + nodeUUID + "/" + id + "/ring"
+	err := config.CreateProp(prop, d.ring, nil)
 	if err != nil {
-		log.Printf("Failed to persist %s as %s: %v\n", mac, ring, err)
+		log.Printf("Failed to persist %s as %s: %v\n", id, d.ring, err)
 	}
 }
 
@@ -631,7 +646,7 @@ func prepareWan() {
 	}
 
 	// Enable packet forwarding
-	cmd := exec.Command(sysctlCmd, "-w", "net.ipv4.ip_forward=1")
+	cmd := exec.Command(plat.SysctlCmd, "-w", "net.ipv4.ip_forward=1")
 	if err = cmd.Run(); err != nil {
 		log.Fatalf("Failed to enable packet forwarding: %v\n", err)
 	}
@@ -644,24 +659,15 @@ func prepareWan() {
 			continue
 		}
 
-		// On Raspberry Pi 3, use the OUI to identify the
-		// on-board port.
-		if *platform == "rpi3" {
-			if !strings.HasPrefix(dev.hwaddr, "b8:27:eb:") {
-				continue
-			}
-		} else if !strings.HasPrefix(dev.name, "eth") &&
-			!strings.HasPrefix(dev.name, "enx") {
-			continue
-		}
-
-		available = dev
-		if dev.ring == outgoingRing {
-			if wan == nil {
-				wan = dev
-			} else {
-				log.Printf("Multiple outgoing nics configured.  "+
-					"Using: %s\n", wan.hwaddr)
+		if plat.NicIsWan(dev.name, dev.hwaddr) {
+			available = dev
+			if dev.ring == outgoingRing {
+				if wan == nil {
+					wan = dev
+				} else {
+					log.Printf("Multiple wan nics found.  "+
+						"Using: %s\n", wan.hwaddr)
+				}
 			}
 		}
 	}
@@ -674,7 +680,7 @@ func prepareWan() {
 		wan = available
 		log.Printf("No outgoing device configured.  Using %s\n", wan.hwaddr)
 		wan.ring = outgoingRing
-		persistNicRing(wan.hwaddr, wan.ring)
+		persistNicRing(wan)
 	}
 
 	wanNic = wan.name
@@ -741,6 +747,13 @@ func getWireless(i net.Interface) *physDevice {
 		hwaddr:   i.HardwareAddr.String(),
 		wireless: true,
 	}
+
+	if strings.HasPrefix(d.hwaddr, "02:00") {
+		log.Printf("Skipping emulated device %s (%s)\n",
+			d.name, d.hwaddr)
+		return nil
+	}
+
 	d.channels = make(map[string][]int)
 	for _, mode := range modes {
 		d.channels[mode] = make([]int, 0)
@@ -758,7 +771,7 @@ func getWireless(i net.Interface) *physDevice {
 	// The following is a hack.  This should (and will) be accomplished by
 	// asking the nl80211 layer through the netlink interface.
 	//
-	out, err := exec.Command(iwCmd, "phy", phy, "info").Output()
+	out, err := exec.Command(plat.IwCmd, "phy", phy, "info").Output()
 	if err != nil {
 		log.Printf("Failed to get %s capabilities: %v\n", i.Name, err)
 		return nil
@@ -846,6 +859,10 @@ func getWireless(i net.Interface) *physDevice {
 	return &d
 }
 
+func getNicID(d *physDevice) string {
+	return plat.NicID(d.name, d.hwaddr)
+}
+
 //
 // Inventory the physical network devices in the system
 //
@@ -858,22 +875,20 @@ func getDevices() {
 	for _, i := range all {
 		var d *physDevice
 
-		if strings.HasPrefix(i.Name, "eth") ||
-			strings.HasPrefix(i.Name, "enx") {
+		if plat.NicIsWired(i.Name) {
 			d = getEthernet(i)
-		} else if strings.HasPrefix(i.Name, "wlan") ||
-			strings.HasPrefix(i.Name, "wlx") {
+		} else if plat.NicIsWireless(i.Name) {
 			d = getWireless(i)
 		}
 		if d != nil {
-			physDevices[d.hwaddr] = d
+			physDevices[getNicID(d)] = d
 		}
 	}
 
 	nics, _ := config.GetProps("@/nodes/" + nodeUUID)
 	if nics != nil {
-		for name, nic := range nics.Children {
-			if d := physDevices[name]; d != nil {
+		for nicID, nic := range nics.Children {
+			if d := physDevices[nicID]; d != nil {
 				if x, ok := nic.Children["ring"]; ok {
 					d.ring = x.Value
 				}
@@ -936,7 +951,7 @@ func globalWifiInit(props *apcfg.PropertyNode) error {
 	}
 
 	log.Printf("Setting regulatory domain to %s\n", domain)
-	out, err := exec.Command(iwCmd, "reg", "set", domain).CombinedOutput()
+	out, err := exec.Command(plat.IwCmd, "reg", "set", domain).CombinedOutput()
 	if err != nil {
 		log.Printf("Failed to set domain: %v\n%s\n", err, out)
 	}
@@ -967,6 +982,30 @@ func getGatewayIP() string {
 	return gateway
 }
 
+func getNodeID() (string, error) {
+	nodeUUID, err := plat.GetNodeID()
+	if err != nil {
+		return "", err
+	}
+
+	prop := "@/nodes/" + nodeUUID + "/platform"
+	oldName, _ := config.GetProp(prop)
+	newName := plat.GetPlatform()
+
+	if oldName != newName {
+		if oldName == "" {
+			log.Printf("Setting %s to %s\n", prop, newName)
+		} else {
+			log.Printf("Changing %s from %s to %s\n", prop,
+				oldName, newName)
+		}
+		if err := config.CreateProp(prop, newName, nil); err != nil {
+			log.Printf("failed to update %s: %v", prop, err)
+		}
+	}
+	return nodeUUID, nil
+}
+
 // Connect to all of the other brightgate daemons and construct our initial model
 // of the system
 func daemonInit() error {
@@ -980,14 +1019,18 @@ func daemonInit() error {
 
 	brokerd = broker.New(pname)
 
-	config, err = apcfg.NewConfig(brokerd, pname)
-	if err != nil {
+	if config, err = apcfg.NewConfig(brokerd, pname); err != nil {
 		return fmt.Errorf("cannot connect to configd: %v", err)
 	}
-	nodeUUID = aputil.GetNodeID().String()
-	config.HandleChange(`^@/clients/.*/ring$`, configRingChanged)
+
+	if nodeUUID, err = getNodeID(); err != nil {
+		return err
+	}
+
+	config.HandleChange(`^@/clients/.*/ring$`, configClientChanged)
 	config.HandleChange(`^@/nodes/"+nodeUUID+"/.*/mode$`, configModeChanged)
 	config.HandleChange(`^@/nodes/"+nodeUUID+"/.*/channel$`, configChannelChanged)
+	config.HandleChange(`^@/nodes/"+nodeUUID+"/.*/ring$`, configRingChanged)
 	config.HandleChange(`^@/rings/.*/auth$`, configAuthChanged)
 	config.HandleChange(`^@/network/`, configNetworkChanged)
 	config.HandleChange(`^@/firewall/rules/`, configRuleChanged)
@@ -1016,7 +1059,7 @@ func daemonInit() error {
 	for _, dev := range physDevices {
 		if !dev.wireless && dev.ring == "" {
 			dev.ring = base_def.RING_STANDARD
-			persistNicRing(dev.hwaddr, dev.ring)
+			persistNicRing(dev)
 		}
 	}
 
@@ -1085,6 +1128,7 @@ func main() {
 	*templateDir = aputil.ExpandDirPath(*templateDir)
 	*rulesDir = aputil.ExpandDirPath(*rulesDir)
 
+	plat = platform.NewPlatform()
 	prometheusInit()
 	networkCleanup()
 	if err := daemonInit(); err != nil {

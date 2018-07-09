@@ -18,6 +18,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"regexp"
 	"strconv"
@@ -28,6 +29,7 @@ import (
 
 	"bg/ap_common/aputil"
 	"bg/ap_common/mcp"
+	"bg/ap_common/platform"
 	"bg/base_def"
 	"bg/base_msg"
 
@@ -83,11 +85,13 @@ const (
 )
 
 var (
-	aproot  = flag.String("root", "", "Root of AP installation")
-	apmode  = flag.String("mode", "", "Mode in which this AP should operate")
-	cfgfile = flag.String("c", "", "Alternate daemon config file")
-	logname = flag.String("l", "", "where to send log messages")
-	verbose = flag.Bool("v", false, "more verbose logging")
+	aproot   = flag.String("root", "", "Root of AP installation")
+	apmode   = flag.String("mode", "", "Mode in which this AP should operate")
+	cfgfile  = flag.String("c", "", "Alternate daemon config file")
+	logname  = flag.String("l", "", "where to send log messages")
+	nodeFlag = flag.String("nodeid", "", "new value for device nodeID")
+	platFlag = flag.String("platform", "", "hardware platform name")
+	verbose  = flag.Bool("v", false, "more verbose logging")
 
 	logfile *os.File
 
@@ -96,6 +100,7 @@ var (
 	daemonLock    sync.RWMutex // Protects the map - not daemon state
 
 	self *daemon
+	plat *platform.Platform
 
 	nodeName        string
 	stateReverseMap map[string]int
@@ -644,7 +649,15 @@ func satelliteLoop() {
 // Spin waiting for commands from ap-ctl and status updates from spawned daemons
 //
 func mainLoop() {
-	incoming, _ := zmq.NewSocket(zmq.REP)
+	err := exec.Command(plat.IPCmd, "link", "set", "up", "lo").Run()
+	if err != nil {
+		log.Printf("Failed to enable loopback: %v\n", err)
+	}
+
+	incoming, err := zmq.NewSocket(zmq.REP)
+	if err != nil {
+		log.Fatalf("failed to get ZMQ socket: %v\n", err)
+	}
 	port := base_def.INCOMING_ZMQ_URL + base_def.MCP_ZMQ_REP_PORT
 	if err := incoming.Bind(port); err != nil {
 		log.Fatalf("failed to bind incoming port %s: %v\n", port, err)
@@ -655,6 +668,7 @@ func mainLoop() {
 	for {
 		msg, err := incoming.RecvMessageBytes(0)
 		if err != nil {
+			log.Printf("err: %v\n", err)
 			continue
 		}
 
@@ -850,10 +864,19 @@ func reopenLogfile() {
 }
 
 func setEnvironment() {
+
+	if *platFlag != "" {
+		os.Setenv("APPLATFORM", *platFlag)
+	}
+	plat = platform.NewPlatform()
+	if err := verifyNodeID(); err != nil {
+		log.Printf("%v\n", err)
+		os.Exit(1)
+	}
+
 	if *aproot == "" {
-		p, _ := os.Executable()
-		if strings.HasSuffix(p, "/bin/ap.mcp") {
-			*aproot = strings.TrimSuffix(p, "/bin/ap.mcp")
+		if strings.HasSuffix(self.Binary, "/bin/ap.mcp") {
+			*aproot = strings.TrimSuffix(self.Binary, "/bin/ap.mcp")
 		} else {
 			wd, _ := os.Getwd()
 			*aproot = wd
@@ -867,10 +890,40 @@ func setEnvironment() {
 	}
 	os.Setenv("APMODE", *apmode)
 	if aputil.IsSatelliteMode() {
-		nodeName = aputil.GetNodeID().String()
+		nodeName, _ = plat.GetNodeID()
 	} else {
 		nodeName = "gateway"
 	}
+}
+
+func verifyNodeID() error {
+	nodeID, err := plat.GetNodeID()
+
+	if err == nil {
+		var current, proposed string
+
+		if *nodeFlag != "" {
+			current = strings.ToLower(nodeID)
+			proposed = strings.ToLower(*nodeFlag)
+		}
+		if current != proposed {
+			log.Printf("Not overriding existing nodeid: %s\n",
+				current)
+		}
+		return nil
+	}
+	log.Printf("Unable to get a device nodeID: %v\n", err)
+
+	if *nodeFlag == "" {
+		err = fmt.Errorf("must provide a device nodeID")
+
+	} else if err = plat.SetNodeID(*nodeFlag); err != nil {
+		err = fmt.Errorf("unable to set device nodeID: %v", err)
+	} else {
+		log.Printf("Set new device nodeID: %s\n", *nodeFlag)
+	}
+
+	return err
 }
 
 func main() {

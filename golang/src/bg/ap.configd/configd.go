@@ -287,8 +287,8 @@ func selectRing(client *pnode, authp *string) string {
 		log.Printf("Can't select ring for %s: no auth type\n",
 			client.name)
 	} else if r, ok := authTypeToDefaultRing[auth]; ok {
-		log.Printf("Setting initial ring for %s to %s\n",
-			client.name, ring)
+		log.Printf("Setting initial ring for %s %s to %s\n",
+			client.name, auth, r)
 		ring = r
 	} else {
 		log.Printf("Can't select ring for %s: unsupported auth: %s\n",

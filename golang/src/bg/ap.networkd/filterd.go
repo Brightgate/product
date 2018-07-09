@@ -87,11 +87,7 @@ var (
 	}
 )
 
-const (
-	iptablesRulesFile = "/tmp/iptables.rules"
-	restoreCmd        = "/sbin/iptables-restore"
-	iptablesCmd       = "/sbin/iptables"
-)
+const iptablesRulesFile = "/tmp/iptables.rules"
 
 // Implement the Sort interface for the list of rules
 func (list ruleList) Len() int {
@@ -201,7 +197,8 @@ func iptablesReset() {
 		f.WriteString("COMMIT\n")
 	}
 
-	out, err := exec.Command(restoreCmd, iptablesRulesFile).CombinedOutput()
+	cmd := exec.Command(plat.RestoreCmd, iptablesRulesFile)
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("failed to apply rules: %s\n", out)
 	}
@@ -501,8 +498,8 @@ func addRule(r *rule) error {
 
 func iptablesRuleApply(rule string) {
 	args := strings.Split(rule, " ")
-	args = append([]string{iptablesCmd}, args...)
-	cmd := exec.Command(iptablesCmd)
+	args = append([]string{plat.IPTablesCmd}, args...)
+	cmd := exec.Command(plat.IPTablesCmd)
 	cmd.Args = args
 
 	if out, err := cmd.CombinedOutput(); err != nil {

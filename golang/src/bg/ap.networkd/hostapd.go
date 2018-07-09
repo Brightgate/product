@@ -38,7 +38,6 @@ var (
 
 const (
 	confdir        = "/tmp"
-	hostapdPath    = "/usr/sbin/hostapd"
 	hostapdOptions = "-dKt"
 )
 
@@ -221,8 +220,7 @@ func (c *hostapdConn) getSignature(sta string) {
 	sig, err := c.command("SIGNATURE " + sta)
 	if err != nil {
 		log.Printf("Failed to get signature for %s: %v\n", sta, err)
-	} else {
-		info := c.stations[sta]
+	} else if info, ok := c.stations[sta]; ok {
 		if info.signature != sig {
 			info.signature = sig
 			sendNetEntity(sta, nil, nil, &sig, false)
@@ -231,6 +229,7 @@ func (c *hostapdConn) getSignature(sta string) {
 }
 
 func (c *hostapdConn) stationPresent(sta string, newConnection bool) {
+	log.Printf("stationPresent(%s) new: %v\n", sta, newConnection)
 	info := c.stations[sta]
 	if info == nil {
 		sendNetEntity(sta, &c.device.activeMode, &c.authType, nil,
@@ -253,6 +252,7 @@ func (c *hostapdConn) stationPresent(sta string, newConnection bool) {
 }
 
 func (c *hostapdConn) stationGone(sta string) {
+	log.Printf("stationGone(%s)\n", sta)
 	delete(c.stations, sta)
 	sendNetEntity(sta, &c.device.activeMode, nil, nil, true)
 }
@@ -436,10 +436,16 @@ func getAPConfig(d *physDevice) *apConfig {
 		}
 	}
 
-	persistNicRing(d.hwaddr, base_def.RING_STANDARD)
+	d.ring = base_def.RING_STANDARD
+	persistNicRing(d)
 	if ssidCnt > 1 {
 		newMac := macUpdateLastOctet(d.hwaddr, 1)
-		persistNicRing(newMac, base_def.RING_GUEST)
+		pseudo := physDevice{
+			name:   d.name + "_1",
+			hwaddr: newMac,
+			ring:   base_def.RING_GUEST,
+		}
+		persistNicRing(&pseudo)
 	}
 
 	pskssid := wifiSSID
@@ -605,7 +611,7 @@ func (h *hostapdHdl) start() {
 	stopNetworkRebuild := make(chan bool, 1)
 	go rebuildUnenrolled(stopNetworkRebuild)
 
-	h.process = aputil.NewChild(hostapdPath, h.confFiles...)
+	h.process = aputil.NewChild(plat.HostapdCmd, h.confFiles...)
 	h.process.LogOutputTo("hostapd: ", log.Ldate|log.Ltime, os.Stderr)
 
 	log.Printf("Starting hostapd\n")
@@ -644,16 +650,16 @@ func (h *hostapdHdl) start() {
 
 func (h *hostapdHdl) reload() {
 	if h != nil {
-		h.generateHostAPDConf()
 		log.Printf("Reloading hostapd\n")
-		h.process.Signal(syscall.SIGINT)
+		h.generateHostAPDConf()
+		h.process.Signal(plat.ReloadSignal)
 	}
 }
 
 func (h *hostapdHdl) reset() {
 	if h != nil {
 		log.Printf("Killing hostapd\n")
-		h.process.Signal(syscall.SIGINT)
+		h.process.Signal(plat.ResetSignal)
 	}
 }
 

@@ -24,6 +24,7 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/device"
+	"bg/ap_common/platform"
 	"bg/base_def"
 	"bg/base_msg"
 
@@ -196,6 +197,7 @@ type APConfig struct {
 	socket *zmq.Socket
 	sender string
 
+	platform       *platform.Platform
 	broker         *broker.Broker
 	changeHandlers []changeMatch
 	deleteHandlers []delexpMatch
@@ -208,6 +210,7 @@ type APConfig struct {
 func NewConfig(b *broker.Broker, name string) (*APConfig, error) {
 	var host string
 
+	plat := platform.NewPlatform()
 	sender := fmt.Sprintf("%s(%d)", name, os.Getpid())
 
 	socket, err := zmq.NewSocket(zmq.REQ)
@@ -243,6 +246,7 @@ func NewConfig(b *broker.Broker, name string) (*APConfig, error) {
 		sender:         sender,
 		socket:         socket,
 		broker:         b,
+		platform:       plat,
 		changeHandlers: make([]changeMatch, 0),
 		deleteHandlers: make([]delexpMatch, 0),
 		expireHandlers: make([]delexpMatch, 0),
@@ -708,7 +712,10 @@ func (c *APConfig) GetNics(ring string, local bool) ([]string, error) {
 		return nil, fmt.Errorf("property get %s failed: %v", prop, err)
 	}
 
-	localNodeName := aputil.GetNodeID().String()
+	localNodeName, err := c.platform.GetNodeID()
+	if err != nil {
+		return nil, err
+	}
 	s := make([]string, 0)
 	for nodeName, node := range prop.Children {
 		if local && nodeName != localNodeName {

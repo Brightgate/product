@@ -19,6 +19,7 @@ import (
 
 	"bg/ap_common/aputil"
 	"bg/ap_common/mcp"
+	"bg/ap_common/platform"
 
 	"golang.org/x/crypto/ssh/terminal"
 )
@@ -114,7 +115,8 @@ func printState(incoming string) {
 	}
 
 	if aputil.IsSatelliteMode() {
-		localID = aputil.GetNodeID().String()
+		p := platform.NewPlatform()
+		localID, _ = p.GetNodeID()
 	} else {
 		localID = "gateway"
 	}

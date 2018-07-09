@@ -271,6 +271,7 @@ COMMON_GOPKGS = \
 	bg/ap_common/mcp \
 	bg/ap_common/model \
 	bg/ap_common/network \
+	bg/ap_common/platform \
 	bg/ap_common/watchd \
 	bg/common
 
@@ -407,6 +408,7 @@ APP_COMMON_SRCS = \
 	$(GOSRCBG)/ap_common/model/model.go \
 	$(GOSRCBG)/ap_common/network/dhcp.go \
 	$(GOSRCBG)/ap_common/network/network.go \
+	$(GOSRCBG)/ap_common/platform/platform.go \
 	$(GOSRCBG)/ap_common/watchd/watchd_client.go \
 	$(GOSRCBG)/base_def/base_def.go \
 	$(GOSRCBG)/base_msg/base_msg.pb.go \
@@ -421,6 +423,7 @@ UTILCOMMON_SRCS = \
 	$(GOSRCBG)/ap_common/device/device.go \
 	$(GOSRCBG)/ap_common/model/model.go \
 	$(GOSRCBG)/ap_common/network/network.go \
+	$(GOSRCBG)/ap_common/platform/platform.go \
 	$(GOSRCBG)/base_msg/base_msg.pb.go \
 	$(GOSRCBG)/util/deviceDB/device_db.go
 
@@ -647,12 +650,7 @@ $(APPDIRS):
 
 COMMON_SRCS = \
 	$(GOSRCBG)/base_def/base_def.go \
-	$(GOSRCBG)/base_msg/base_msg.pb.go \
-	$(GOSRCBG)/ap_common/broker/broker.go \
-	$(GOSRCBG)/ap_common/apcfg/apcfg.go \
-	$(GOSRCBG)/ap_common/aputil/aputil.go \
-	$(GOSRCBG)/ap_common/mcp/mcp_client.go \
-	$(GOSRCBG)/ap_common/network/network.go
+	$(GOSRCBG)/base_msg/base_msg.pb.go
 
 $(APPBINARIES): $(APP_COMMON_SRCS) | $(APPBIN) deps-ensured
 

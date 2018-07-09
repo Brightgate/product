@@ -15,7 +15,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -34,16 +33,13 @@ import (
 	"bg/base_msg"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/satori/uuid"
 )
 
 const (
-	machineIDFile = "/etc/machine-id"
-	dhcpDump      = "/sbin/dhcpcd"
+	dhcpDump = "/sbin/dhcpcd"
 )
 
 var (
-	nodeID   = uuid.Nil
 	nodeMode string
 	nodeLock sync.Mutex
 
@@ -456,42 +452,6 @@ func ExpandDirPath(path string) string {
 		root = "./"
 	}
 	return root + path
-}
-
-// GetNodeID reads /etc/machine-id, which contains a 128-bit, randomly
-// generated ID that is unique to this device, converts it into the standard
-// UUID format, and returns it to the caller.  On error, a NULL UUID is
-// returned.
-func GetNodeID() uuid.UUID {
-	nodeLock.Lock()
-	defer nodeLock.Unlock()
-
-	if nodeID != uuid.Nil {
-		// We've already read and parsed the machine-id file.  Return
-		// the cached result
-		return nodeID
-	}
-
-	file, err := ioutil.ReadFile(machineIDFile)
-	if err != nil {
-		log.Printf("Failed to read unique device ID from %s: %v\n",
-			machineIDFile, err)
-	} else if len(file) < 32 {
-		log.Printf("Unique ID is only %d bytes long\n", len(file))
-	} else {
-		// The file contains 32 hex digits, which we need to
-		// turn into a string that the UUID code can parse.
-		s := string(file)
-		uuidStr := fmt.Sprintf("%8s-%4s-%4s-%4s-%12s",
-			s[0:8], s[8:12], s[12:16], s[16:20], s[20:32])
-		nodeID, err = uuid.FromString(uuidStr)
-		if err != nil {
-			log.Fatalf("Failed to parse %s as a UUID: %v\n",
-				uuidStr, err)
-		}
-	}
-
-	return nodeID
 }
 
 // LinuxBootTime retrieves the instance boot time using sysinfo(2)

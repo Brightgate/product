@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"bg/ap_common/aputil"
+	"bg/ap_common/platform"
 	"bg/base_def"
 	"bg/base_msg"
 
@@ -32,9 +33,10 @@ import (
 
 // MCP is an opaque handle used by client daemons to communicate with ap.mcp
 type MCP struct {
-	socket *zmq.Socket
-	sender string
-	daemon string
+	socket   *zmq.Socket
+	sender   string
+	daemon   string
+	platform *platform.Platform
 	sync.Mutex
 }
 
@@ -116,6 +118,7 @@ func (l DaemonList) Sort() {
 func newConnection(name, url string) (*MCP, error) {
 	var handle *MCP
 
+	plat := platform.NewPlatform()
 	port := url + base_def.MCP_ZMQ_REP_PORT
 	sendTO := base_def.LOCAL_ZMQ_SEND_TIMEOUT * time.Second
 	recvTO := base_def.LOCAL_ZMQ_RECEIVE_TIMEOUT * time.Second
@@ -141,7 +144,11 @@ func newConnection(name, url string) (*MCP, error) {
 		err = fmt.Errorf("failed to connect new socket %s: %v", port, err)
 	} else {
 		sender := fmt.Sprintf("%s(%d)", name, os.Getpid())
-		handle = &MCP{sender: sender, socket: socket}
+		handle = &MCP{
+			sender:   sender,
+			socket:   socket,
+			platform: plat,
+		}
 		if name[0:3] == "ap." {
 			handle.daemon = name[3:]
 			handle.SetState(INITING)
@@ -251,7 +258,7 @@ func (m *MCP) PeerUpdate(lifetime time.Duration,
 
 	var rval []*DaemonState
 
-	nodeID := aputil.GetNodeID()
+	nodeID, _ := m.platform.GetNodeID()
 	b, err := json.Marshal(states)
 	if err != nil {
 		err = fmt.Errorf("failed to marshal daemon state: %v", err)
@@ -264,7 +271,7 @@ func (m *MCP) PeerUpdate(lifetime time.Duration,
 			Version:   &version,
 			Debug:     proto.String("-"),
 			State:     proto.String(string(b)),
-			Node:      proto.String(nodeID.String()),
+			Node:      proto.String(nodeID),
 			Lifetime:  proto.Int32(int32(lifetime.Seconds())),
 			Operation: &oc,
 		}

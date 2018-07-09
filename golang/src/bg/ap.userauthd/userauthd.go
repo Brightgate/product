@@ -90,6 +90,7 @@ import (
 	"bg/ap_common/broker"
 	"bg/ap_common/certificate"
 	"bg/ap_common/mcp"
+	"bg/ap_common/platform"
 	"bg/base_def"
 	"bg/base_msg"
 
@@ -127,6 +128,7 @@ var (
 
 	hostapdProcess *aputil.Child // track the hostapd proc
 
+	plat       *platform.Platform
 	configd    *apcfg.APConfig
 	mcpd       *mcp.MCP
 	running    bool
@@ -145,7 +147,6 @@ var (
 const (
 	pname            = "ap.userauthd"
 	radiusAuthSecret = "@/network/radiusAuthSecret"
-	hostapdPath      = "/usr/sbin/hostapd"
 	failuresAllowed  = 4
 	period           = time.Duration(time.Minute)
 )
@@ -314,7 +315,7 @@ func runOne(rc *rConf) {
 
 	startTimes := make([]time.Time, failuresAllowed)
 	for running {
-		hostapdProcess = aputil.NewChild(hostapdPath, args...)
+		hostapdProcess = aputil.NewChild(plat.HostapdCmd, args...)
 		hostapdProcess.LogOutputTo("radius: ",
 			log.Ldate|log.Ltime, os.Stderr)
 
@@ -406,6 +407,7 @@ func main() {
 		log.Println("Failed to connect to mcp")
 	}
 
+	plat = platform.NewPlatform()
 	prometheusInit()
 	brokerd := broker.New(pname)
 	brokerd.Handle(base_def.TOPIC_ERROR, sysErrorCertificate)
