@@ -1029,7 +1029,7 @@ func main() {
 	defer brokerd.Fini()
 
 	// Interface to config
-	config, err = apcfg.NewConfig(brokerd, pname)
+	config, err = apcfg.NewConfig(brokerd, pname, apcfg.AccessInternal)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}

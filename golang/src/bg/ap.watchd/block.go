@@ -198,7 +198,7 @@ func checkBlock(dev net.HardwareAddr, ip net.IP) {
 
 		prop := fmt.Sprintf("@/firewall/blocked/%v", ip)
 		expires := time.Now().Add(blockPeriod)
-		config.CreateProp(prop, "", &expires)
+		config.CreateProp(prop, "true", &expires)
 	}
 }
 

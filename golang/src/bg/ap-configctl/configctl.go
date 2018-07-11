@@ -27,7 +27,11 @@ type setfunc func(string, string, *time.Time) error
 
 const pname = "ap-configctl"
 
-var apcfgd *apcfg.APConfig
+var (
+	level = flag.String("l", "user", "change configd access level")
+
+	apcfgd *apcfg.APConfig
+)
 
 func getRings(cmd string, args []string) error {
 	if len(args) != 0 {
@@ -321,16 +325,26 @@ func main() {
 		usage("")
 	}
 
-	apcfgd, err = apcfg.NewConfig(nil, pname)
+	flag.Parse()
+
+	l, ok := apcfg.AccessLevels[*level]
+	if !ok {
+		fmt.Printf("no such access level: %s\n", *level)
+		os.Exit(1)
+	}
+
+	apcfgd, err = apcfg.NewConfig(nil, pname, l)
+
 	if err != nil {
 		fmt.Printf("cannot connect to configd: %v\n", err)
 		os.Exit(1)
 	}
 
-	if os.Args[1] == "get" {
-		err = getProp(os.Args[1], os.Args[2:])
+	args := flag.Args()
+	if args[0] == "get" {
+		err = getProp("get", args[1:])
 	} else {
-		ops := makeOps(os.Args[1:])
+		ops := makeOps(args)
 		if _, err = apcfgd.Execute(ops); err == nil {
 			fmt.Println("ok")
 		}

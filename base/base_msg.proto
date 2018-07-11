@@ -281,6 +281,7 @@ message ConfigQuery {
 	optional string debug = 0x03;
 	optional string identity_uuid = 0x04;
 	required Version version = 0x05;
+	optional int32 level = 0x2005;
 
 	message ConfigOp {
 		enum Operation {

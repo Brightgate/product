@@ -300,7 +300,8 @@ func main() {
 	brokerd.Handle(base_def.TOPIC_ERROR, handleError)
 	defer brokerd.Fini()
 
-	if config, err = apcfg.NewConfig(brokerd, pname); err == nil {
+	config, err = apcfg.NewConfig(brokerd, pname, apcfg.AccessInternal)
+	if err == nil {
 		rings = config.GetRings()
 	}
 

@@ -18,6 +18,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
@@ -29,12 +30,12 @@ import (
 const (
 	propertyFilename = "ap_props.json"
 	backupFilename   = "ap_props.json.bak"
-	defaultFilename  = "ap_defaults.json"
+	baseFilename     = "configd.json"
 	minConfigVersion = 10
 )
 
 var (
-	propdir = flag.String("propdir", "./",
+	propdir = flag.String("propdir", "/etc",
 		"directory in which the property files should be stored")
 	propTreeFile   string
 	propTreeLoaded bool
@@ -200,7 +201,7 @@ func dumpTree(name string, node *pnode, level int) {
 	}
 }
 
-func propTreeInit() {
+func propTreeInit(defaults *pnode) error {
 	var err error
 
 	propTreeFile = *propdir + propertyFilename
@@ -227,11 +228,11 @@ func propTreeInit() {
 	}
 
 	if err != nil {
-		log.Printf("No usable properties files.  Loading defaults.\n")
-		defaultFile := *propdir + defaultFilename
-		if err = propTreeLoad(defaultFile); err != nil {
-			log.Fatal("Unable to load default properties")
-		}
+		log.Printf("No usable properties files.  Using defaults.\n")
+
+		patchTree("@", defaults, "")
+		propTreeRoot = defaults
+
 		applianceUUID := uuid.NewV4().String()
 		if node, _ := propertyInsert("@/uuid"); node != nil {
 			propertyUpdate(node, applianceUUID, nil)
@@ -244,14 +245,50 @@ func propTreeInit() {
 		}
 	}
 
-	if err == nil {
-		if err = versionTree(); err != nil {
-			log.Fatalf("Failed version check: %v\n", err)
-		}
+	if err = versionTree(); err != nil {
+		err = fmt.Errorf("failed version check: %v", err)
 	}
 
 	if *verbose {
 		dumpTree("root", propTreeRoot, 0)
 	}
 	propTreeLoaded = true
+	return err
+}
+
+func loadDefaults() (defaults *pnode, descs []propDescription, err error) {
+	var base struct {
+		Defaults     pnode
+		Descriptions []propDescription
+	}
+
+	if !strings.HasSuffix(*propdir, "/") {
+		*propdir = *propdir + "/"
+	}
+	*propdir = aputil.ExpandDirPath(*propdir)
+	if !aputil.FileExists(*propdir) {
+		err = fmt.Errorf("missing properties directory: %s", *propdir)
+		return
+	}
+
+	baseFile := *propdir + baseFilename
+	if !aputil.FileExists(baseFile) {
+		err = fmt.Errorf("missing defaults file: %s", baseFile)
+		return
+	}
+
+	data, rerr := ioutil.ReadFile(baseFile)
+	if rerr != nil {
+		err = fmt.Errorf("failed to read %s: %v", baseFile, rerr)
+		return
+	}
+
+	if rerr := json.Unmarshal(data, &base); err != nil {
+		err = fmt.Errorf("failed to parse %s: %v", baseFile, rerr)
+		return
+	}
+
+	defaults = &base.Defaults
+	descs = base.Descriptions
+	return
 }

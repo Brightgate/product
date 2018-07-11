@@ -267,7 +267,7 @@ func main() {
 		}
 	}
 
-	config, err = apcfg.NewConfig(nil, pname)
+	config, err = apcfg.NewConfig(nil, pname, apcfg.AccessInternal)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}

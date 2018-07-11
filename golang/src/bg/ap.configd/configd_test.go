@@ -62,11 +62,12 @@ func checkLeaf(t *testing.T, prop, val string, leaves leafMap) {
 	}
 }
 
-func execute(ops []apcfg.PropertyOp) (string, error) {
+func execute(level int, ops []apcfg.PropertyOp) (string, error) {
 	var rval string
 	var err error
 
 	query, err := apcfg.GeneratePropQuery(ops)
+	query.Level = proto.Int(level)
 	if err == nil {
 		response := processOneEvent(query)
 		if *response.Response != base_msg.ConfigResponse_OK {
@@ -79,6 +80,14 @@ func execute(ops []apcfg.PropertyOp) (string, error) {
 	return rval, err
 }
 
+func executeInternal(ops []apcfg.PropertyOp) (string, error) {
+	return execute(apcfg.AccessInternal, ops)
+}
+
+func executeUser(ops []apcfg.PropertyOp) (string, error) {
+	return execute(apcfg.AccessUser, ops)
+}
+
 // utility function to attempt the 'get' of a single property.  The caller
 // decides whether the operation should succeed or fail.
 func checkOneProp(t *testing.T, prop, val string, succeed bool) {
@@ -86,7 +95,7 @@ func checkOneProp(t *testing.T, prop, val string, succeed bool) {
 		{Op: apcfg.PropGet, Name: prop},
 	}
 
-	treeVal, err := execute(ops)
+	treeVal, err := executeInternal(ops)
 	if err != nil {
 		if succeed {
 			t.Errorf("Failed to get %s: %v", prop, err)
@@ -110,7 +119,7 @@ func updateOneProp(t *testing.T, prop, val string, succeed bool) {
 		{Op: apcfg.PropSet, Name: prop, Value: val},
 	}
 
-	if _, err := execute(ops); err != nil {
+	if _, err := executeInternal(ops); err != nil {
 		if succeed {
 			t.Errorf("Failed to change %s to %s: %v", prop, val, err)
 		}
@@ -127,7 +136,7 @@ func insertOneProp(t *testing.T, prop, val string, succeed bool) {
 		{Op: apcfg.PropCreate, Name: prop, Value: val},
 	}
 
-	if _, err := execute(ops); err != nil {
+	if _, err := executeInternal(ops); err != nil {
 		if succeed {
 			t.Errorf("Failed to insert %s: %v", prop, err)
 		}
@@ -143,7 +152,7 @@ func deleteOneProp(t *testing.T, prop string, succeed bool) {
 	ops := []apcfg.PropertyOp{
 		{Op: apcfg.PropDelete, Name: prop},
 	}
-	if _, err := execute(ops); err != nil {
+	if _, err := executeInternal(ops); err != nil {
 		if succeed {
 			t.Errorf("Failed to delete %s: %v", prop, err)
 		}
@@ -313,8 +322,8 @@ func TestChangeProp(t *testing.T) {
 // TestChangeNonProp verifies that we cannot change a non-existent property
 func TestAddNonProp(t *testing.T) {
 	const (
-		newProp = "@/foo"
-		newVal  = "new property value"
+		newProp = "@/siteid"
+		newVal  = "7810"
 	)
 
 	a := testTreeInit(t)
@@ -325,8 +334,8 @@ func TestAddNonProp(t *testing.T) {
 // TestAddProp verifies that we can successfully add a single property
 func TestAddProp(t *testing.T) {
 	const (
-		newProp = "@/foo"
-		newVal  = "new property value"
+		newProp = "@/siteid"
+		newVal  = "7810"
 	)
 
 	a := testTreeInit(t)
@@ -335,10 +344,58 @@ func TestAddProp(t *testing.T) {
 	testValidateTree(t, a)
 }
 
+// TestAddBadProp verifies that we cannot add an invalid property
+func TestAddBadProp(t *testing.T) {
+	const (
+		newProp = "@/rings/invalid/auth"
+		newVal  = "wpa-eap"
+	)
+
+	a := testTreeInit(t)
+	insertOneProp(t, newProp, newVal, false)
+	testValidateTree(t, a)
+}
+
+// TestSetInternalProp verifies that a user cannot set an internal property
+func TestSetInternalProp(t *testing.T) {
+	const (
+		newProp = "@/cfgversion"
+		newVal  = "22"
+	)
+
+	ops := []apcfg.PropertyOp{
+		{Op: apcfg.PropSet, Name: newProp, Value: newVal},
+	}
+
+	a := testTreeInit(t)
+	if _, err := executeUser(ops); err == nil {
+		t.Errorf("Inserted %s.  Should have failed", newProp)
+	}
+	testValidateTree(t, a)
+}
+
+// TestAddInternalProp verifies that a user cannot add an internal property
+func TestAddInternalProp(t *testing.T) {
+	const (
+		newProp = "@/cloud/update/bucket"
+		newVal  = "bucketName"
+	)
+
+	ops := []apcfg.PropertyOp{
+		{Op: apcfg.PropCreate, Name: newProp, Value: newVal},
+	}
+
+	a := testTreeInit(t)
+	if _, err := executeUser(ops); err == nil {
+		t.Errorf("Inserted %s.  Should have failed", newProp)
+	}
+	testValidateTree(t, a)
+}
+
 // TestDeleteNonProp verifies that we can't remove a non-existent property
 func TestDeleteNonProp(t *testing.T) {
 	const (
-		nonProp = "@/foo"
+		nonProp = "@/siteid"
 	)
 
 	a := testTreeInit(t)
@@ -358,12 +415,30 @@ func TestDeleteProp(t *testing.T) {
 	testValidateTree(t, a)
 }
 
+// TestDeleteInternalProp verifies that a user cannot delete an internal
+// property
+func TestDeleteInternalProp(t *testing.T) {
+	const (
+		delProp = "@/cfgversion"
+	)
+
+	ops := []apcfg.PropertyOp{
+		{Op: apcfg.PropDelete, Name: delProp},
+	}
+
+	a := testTreeInit(t)
+	if _, err := executeUser(ops); err == nil {
+		t.Errorf("Deleted %s.  Should have failed", delProp)
+	}
+	testValidateTree(t, a)
+}
+
 // TestAddNestedProp verifies that we can successfully add a new property
 // multiple levels deep
 func TestAddNestedProp(t *testing.T) {
 	const (
-		newProp = "@/foo/bar/baz"
-		newVal  = "new property value"
+		newProp = "@/clients/00:00:00:00:00:00/dns_name"
+		newVal  = "newName"
 	)
 
 	a := testTreeInit(t)
@@ -386,6 +461,24 @@ func TestDeleteSubtree(t *testing.T) {
 	}
 	deleteOneProp(t, subtree, true)
 
+	testValidateTree(t, a)
+}
+
+// TestDeleteInternalSubtree verifies that a user cannot delete a subtree
+// that includes at least one internal property
+func TestDeleteInternalSubtree(t *testing.T) {
+	const (
+		delProp = "@/nodes"
+	)
+
+	ops := []apcfg.PropertyOp{
+		{Op: apcfg.PropDelete, Name: delProp},
+	}
+
+	a := testTreeInit(t)
+	if _, err := executeUser(ops); err == nil {
+		t.Errorf("Deleted %s.  Should have failed", delProp)
+	}
 	testValidateTree(t, a)
 }
 
@@ -439,24 +532,24 @@ func TestMultiInsert(t *testing.T) {
 	ops := []apcfg.PropertyOp{
 		{
 			Op:    apcfg.PropCreate,
-			Name:  "@/branch/subbranch/propa",
-			Value: "valuea",
+			Name:  "@/network/ntpservers/1",
+			Value: "time1.google.com",
 		},
 		{
 			Op:    apcfg.PropCreate,
-			Name:  "@/branch/subbranch/propb",
-			Value: "valueb",
+			Name:  "@/network/ntpservers/2",
+			Value: "time2.google.com",
 		},
 
 		{
 			Op:    apcfg.PropCreate,
-			Name:  "@/branch/subbranch/propc",
-			Value: "valuec",
+			Name:  "@/network/ntpservers/3",
+			Value: "time3.google.com",
 		},
 		{
 			Op:    apcfg.PropCreate,
-			Name:  "@/branch/subbranch/propf",
-			Value: "valued",
+			Name:  "@/network/ntpservers/4",
+			Value: "time4.google.com",
 		},
 	}
 
@@ -465,7 +558,7 @@ func TestMultiInsert(t *testing.T) {
 		a[op.Name] = op.Value
 	}
 
-	if _, err := execute(ops); err != nil {
+	if _, err := executeInternal(ops); err != nil {
 		t.Error(err)
 	} else {
 		testValidateTree(t, a)
@@ -478,30 +571,30 @@ func TestMultiMixed(t *testing.T) {
 	ops := []apcfg.PropertyOp{
 		{
 			Op:    apcfg.PropCreate,
-			Name:  "@/branch/subbranch/propa",
-			Value: "valuea",
+			Name:  "@/network/ntpservers/1",
+			Value: "time1.google.com",
 		},
 		{
 			Op:    apcfg.PropCreate,
-			Name:  "@/branch/subbranch/propb",
-			Value: "valueb",
+			Name:  "@/network/ntpservers/2",
+			Value: "time2.google.com",
 		},
 
 		{
 			Op:    apcfg.PropSet,
-			Name:  "@/branch/subbranch/propa",
-			Value: "valuec",
+			Name:  "@/network/ntpservers/1",
+			Value: "time1.google.com",
 		},
 		{
 			Op:   apcfg.PropDelete,
-			Name: "@/branch/subbranch/propb",
+			Name: "@/network/ntpservers/2",
 		},
 	}
 
 	a := testTreeInit(t)
-	a["@/branch/subbranch/propa"] = "valuec"
+	a["@/network/ntpservers/1"] = "time1.google.com"
 
-	if _, err := execute(ops); err != nil {
+	if _, err := executeInternal(ops); err != nil {
 		t.Error(err)
 	} else {
 		testValidateTree(t, a)
@@ -514,31 +607,31 @@ func TestMultiInsertFail(t *testing.T) {
 	ops := []apcfg.PropertyOp{
 		{
 			Op:    apcfg.PropCreate,
-			Name:  "@/branch/subbranch/propa",
-			Value: "valuea",
+			Name:  "@/network/ntpservers/1",
+			Value: "time1.google.com",
 		},
 		{
 			Op:    apcfg.PropCreate,
-			Name:  "@/branch/subbranch/propb",
-			Value: "valueb",
+			Name:  "@/network/ntpservers/2",
+			Value: "time2.google.com",
 		},
 		{
 			// Illegal 'set' operation that should cause the whole
 			// transaction to fail.
 			Op:    apcfg.PropSet,
 			Name:  "@/uuid",
-			Value: "valuec",
+			Value: "time1.google.com",
 		},
 		{
 			Op:    apcfg.PropCreate,
-			Name:  "@/branch/subbranch/propf",
-			Value: "valued",
+			Name:  "@/network/ntpservers/6",
+			Value: "time6.google.com",
 		},
 	}
 
 	a := testTreeInit(t)
 
-	if _, err := execute(ops); err == nil {
+	if _, err := executeInternal(ops); err == nil {
 		t.Error(err)
 	} else {
 		testValidateTree(t, a)
@@ -552,13 +645,13 @@ func TestMultiMixedFail(t *testing.T) {
 	ops := []apcfg.PropertyOp{
 		{
 			Op:    apcfg.PropCreate,
-			Name:  "@/branch/subbranch/propa",
-			Value: "valuea",
+			Name:  "@/network/ntpservers/1",
+			Value: "time1.google.com",
 		},
 		{
 			Op:    apcfg.PropCreate,
-			Name:  "@/branch/subbranch/propb",
-			Value: "valueb",
+			Name:  "@/network/ntpservers/2",
+			Value: "time2.google.com",
 		},
 
 		{
@@ -570,13 +663,13 @@ func TestMultiMixedFail(t *testing.T) {
 			// transaction to fail.
 			Op:    apcfg.PropSet,
 			Name:  "@/branch/nonexistent",
-			Value: "valued",
+			Value: "time1.google.com",
 		},
 	}
 
 	a := testTreeInit(t)
 
-	if _, err := execute(ops); err == nil {
+	if _, err := executeInternal(ops); err == nil {
 		t.Error(err)
 	} else {
 		testValidateTree(t, a)
@@ -591,43 +684,53 @@ func TestMultiSetFail(t *testing.T) {
 	ops := []apcfg.PropertyOp{
 		{
 			Op:    apcfg.PropCreate,
-			Name:  "@/branch/subbranch/propa",
-			Value: "valuea",
+			Name:  "@/network/ntpservers/1",
+			Value: "time1.google.com",
 		},
 		{
 			Op:    apcfg.PropSet,
-			Name:  "@/branch/subbranch/propa",
-			Value: "valueb",
+			Name:  "@/network/ntpservers/1",
+			Value: "time2.google.com",
 		},
 		{
 			Op:    apcfg.PropSet,
-			Name:  "@/branch/subbranch/propa",
-			Value: "valuec",
+			Name:  "@/network/ntpservers/1",
+			Value: "time3.google.com",
 		},
 		{
 			// Illegal 'set' operation that should cause the whole
 			// transaction to fail.
 			Op:    apcfg.PropSet,
 			Name:  "@/branch/nonexistent",
-			Value: "valued",
+			Value: "time1.google.com",
 		},
 		{
 			Op:    apcfg.PropSet,
-			Name:  "@/branch/subbranch/propa",
-			Value: "valued",
+			Name:  "@/network/ntpservers/1",
+			Value: "time4.google.com",
 		},
 	}
 
 	a := testTreeInit(t)
 
-	if _, err := execute(ops); err == nil {
+	if _, err := executeInternal(ops); err == nil {
 		t.Error(err)
 	} else {
 		testValidateTree(t, a)
 	}
 }
+
 func TestMain(m *testing.M) {
 	var err error
+
+	_, descriptions, err := loadDefaults()
+	if err != nil {
+		fail("Unable to load defaults %v", err)
+	}
+
+	if err = validationInit(descriptions); err != nil {
+		fail("Validation init failed: %v\n", err)
+	}
 
 	prometheusInit()
 	testData, err = ioutil.ReadFile(*testFile)

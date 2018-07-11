@@ -1102,7 +1102,8 @@ func daemonInit() error {
 
 	brokerd = broker.New(pname)
 
-	if config, err = apcfg.NewConfig(brokerd, pname); err != nil {
+	config, err = apcfg.NewConfig(brokerd, pname, apcfg.AccessInternal)
+	if err != nil {
 		return fmt.Errorf("cannot connect to configd: %v", err)
 	}
 

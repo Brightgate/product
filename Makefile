@@ -350,10 +350,10 @@ FILTER_RULES = \
 	$(APPRULES)/relayd.rules
 
 APPCONFIGS = \
-	$(APPETC)/ap_defaults.json \
 	$(APPETC)/ap_identities.csv \
 	$(APPETC)/vendordefaults.csv \
 	$(APPETC)/ap_mfgid.json \
+	$(APPETC)/configd.json \
 	$(APPETC)/devices.json \
 	$(APPETC)/mcp.json \
 	$(APPETC)/oui.txt \
@@ -589,9 +589,6 @@ lint-go:
 
 # Installation of appliance configuration files
 
-$(APPETC)/ap_defaults.json: $(GOSRCBG)/ap.configd/ap_defaults.json | $(APPETC)
-	$(INSTALL) -m 0644 $< $@
-
 $(APPETC)/vendordefaults.csv: $(GOSRCBG)/ap-defaultpass/vendordefaults.csv | $(APPETC)
 	$(INSTALL) -m 0644 $< $@
 
@@ -605,6 +602,9 @@ $(APPROOTLIB)/systemd/system/ap.mcp.service: ap.mcp.service | $(APPROOTLIB)/syst
 	$(INSTALL) -m 0644 $< $@
 
 $(APPROOTLIB)/systemd/system/brightgate-appliance.service: brightgate-appliance.service | $(APPROOTLIB)/systemd/system
+	$(INSTALL) -m 0644 $< $@
+
+$(APPETC)/configd.json: $(GOSRCBG)/ap.configd/configd.json | $(APPETC)
 	$(INSTALL) -m 0644 $< $@
 
 $(APPETC)/devices.json: $(GOSRCBG)/ap.configd/devices.json | $(APPETC)
@@ -693,7 +693,8 @@ $(APPBIN)/ap.configd: \
 	$(GOSRCBG)/ap.configd/upgrade_v13.go \
 	$(GOSRCBG)/ap.configd/upgrade_v14.go \
 	$(GOSRCBG)/ap.configd/upgrade_v15.go \
-	$(GOSRCBG)/ap.configd/upgrade_v16.go
+	$(GOSRCBG)/ap.configd/upgrade_v16.go \
+	$(GOSRCBG)/ap.configd/validate.go
 $(APPBIN)/ap.dhcp4d: $(GOSRCBG)/ap.dhcp4d/dhcp4d.go
 $(APPBIN)/ap.dns4d: \
 	$(GOSRCBG)/ap.dns4d/dns4d.go \

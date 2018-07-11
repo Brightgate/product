@@ -1053,7 +1053,8 @@ func main() {
 	brokerd = broker.New(pname)
 	defer brokerd.Fini()
 
-	if config, err = apcfg.NewConfig(brokerd, pname); err != nil {
+	config, err = apcfg.NewConfig(brokerd, pname, apcfg.AccessInternal)
+	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}
 	config.HandleChange(`^@/clients/.*/(ipv4|dns_name|dhcp_name|ring)$`,

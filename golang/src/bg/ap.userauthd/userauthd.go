@@ -413,7 +413,7 @@ func main() {
 	brokerd.Handle(base_def.TOPIC_ERROR, sysErrorCertificate)
 	defer brokerd.Fini()
 
-	configd, err = apcfg.NewConfig(brokerd, pname)
+	configd, err = apcfg.NewConfig(brokerd, pname, apcfg.AccessInternal)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}

@@ -47,7 +47,7 @@ func main() {
 	}
 
 	brokerd := broker.New(pname)
-	configd, err = apcfg.NewConfig(brokerd, pname)
+	configd, err = apcfg.NewConfig(brokerd, pname, apcfg.AccessInternal)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}

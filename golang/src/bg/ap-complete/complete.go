@@ -103,7 +103,7 @@ func configctl(prefix, prior string) {
 		return
 	}
 
-	apcfgd, err := apcfg.NewConfig(nil, pname)
+	apcfgd, err := apcfg.NewConfig(nil, pname, apcfg.AccessUser)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cannot connect to configd: %v\n", err)
 		return

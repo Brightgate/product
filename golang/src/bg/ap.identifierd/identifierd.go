@@ -477,7 +477,7 @@ func main() {
 	brokerd = broker.New(pname)
 	defer brokerd.Fini()
 
-	apcfgd, err = apcfg.NewConfig(brokerd, pname)
+	apcfgd, err = apcfg.NewConfig(brokerd, pname, apcfg.AccessInternal)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}

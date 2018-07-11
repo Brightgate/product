@@ -38,6 +38,25 @@ import (
 // config tree format, or ap.configd API.
 const Version = int32(16)
 
+// Access levels required to modify/delete configd properties
+const (
+	AccessInternal = iota
+	AccessDeveloper
+	AccessService
+	AccessAdmin
+	AccessUser
+)
+
+// AccessLevels maps user-friendly access level names to the integer values used
+// internally
+var AccessLevels = map[string]int{
+	"internal":  AccessInternal,
+	"developer": AccessDeveloper,
+	"service":   AccessService,
+	"admin":     AccessAdmin,
+	"user":      AccessUser,
+}
+
 // Some specific, common ways in which apcfg operations can fail
 var (
 	ErrComm    = errors.New("communication breakdown")
@@ -57,6 +76,7 @@ var ValidRings = map[string]bool{
 	base_def.RING_DEVICES:    true,
 	base_def.RING_GUEST:      true,
 	base_def.RING_QUARANTINE: true,
+	base_def.RING_WAN:        true,
 }
 
 // RingConfig defines the parameters of a ring's subnet
@@ -203,31 +223,36 @@ type APConfig struct {
 	deleteHandlers []delexpMatch
 	expireHandlers []delexpMatch
 	handling       bool
+	level          int
 }
 
 // NewConfig will connect to ap.configd, and will return a handle used for
 // subsequent interactions with the daemon
-func NewConfig(b *broker.Broker, name string) (*APConfig, error) {
+func NewConfig(b *broker.Broker, name string, level int) (*APConfig, error) {
 	var host string
 
 	plat := platform.NewPlatform()
+	if level < 0 || level > AccessUser {
+		return nil, fmt.Errorf("invalid access level: %d", level)
+	}
+
 	sender := fmt.Sprintf("%s(%d)", name, os.Getpid())
 
 	socket, err := zmq.NewSocket(zmq.REQ)
 	if err != nil {
-		err = fmt.Errorf("Failed to create new cfg socket: %v", err)
+		err = fmt.Errorf("failed to create new cfg socket: %v", err)
 		return nil, err
 	}
 
 	err = socket.SetSndtimeo(time.Duration(base_def.LOCAL_ZMQ_SEND_TIMEOUT * time.Second))
 	if err != nil {
-		log.Printf("Failed to set cfg send timeout: %v\n", err)
+		log.Printf("failed to set cfg send timeout: %v\n", err)
 		return nil, err
 	}
 
 	err = socket.SetRcvtimeo(time.Duration(base_def.LOCAL_ZMQ_RECEIVE_TIMEOUT * time.Second))
 	if err != nil {
-		log.Printf("Failed to set cfg receive timeout: %v\n", err)
+		log.Printf("failed to set cfg receive timeout: %v\n", err)
 		return nil, err
 	}
 
@@ -238,7 +263,7 @@ func NewConfig(b *broker.Broker, name string) (*APConfig, error) {
 	}
 	err = socket.Connect(host + base_def.CONFIGD_ZMQ_REP_PORT)
 	if err != nil {
-		err = fmt.Errorf("Failed to connect new cfg socket: %v", err)
+		err = fmt.Errorf("failed to connect new cfg socket: %v", err)
 		return nil, err
 	}
 
@@ -247,6 +272,7 @@ func NewConfig(b *broker.Broker, name string) (*APConfig, error) {
 		socket:         socket,
 		broker:         b,
 		platform:       plat,
+		level:          level,
 		changeHandlers: make([]changeMatch, 0),
 		deleteHandlers: make([]delexpMatch, 0),
 		expireHandlers: make([]delexpMatch, 0),
@@ -259,6 +285,7 @@ func NewConfig(b *broker.Broker, name string) (*APConfig, error) {
 func (c *APConfig) sendOp(query *base_msg.ConfigQuery) (string, error) {
 
 	query.Sender = proto.String(c.sender)
+	query.Level = proto.Int(c.level)
 	op, err := proto.Marshal(query)
 	if err != nil {
 		return "", fmt.Errorf("unable to build ping: %v", err)

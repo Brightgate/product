@@ -27,15 +27,6 @@
         "Privileged": true,
         "Modes": [ "core", "gateway" ]
     },
-    "dnsmasq": {
-        "Name": "dnsmasq",
-        "Binary": "/usr/sbin/dnsmasq",
-        "DependsOn": "networkd",
-        "Privileged": true,
-        "ThirdParty": true,
-        "Options": [ "-k -h -p 5300 -i lo" ],
-        "Modes": [ "gateway" ]
-    },
     "httpd": {
         "Name": "httpd",
         "Binary": "ap.httpd",

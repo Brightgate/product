@@ -46,7 +46,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
@@ -104,9 +103,6 @@ type propertyMatch struct {
 }
 
 var defaultPropOps = propertyOps{defaultGetter, defaultSetter, defaultExpire}
-var ssidPropOps = propertyOps{defaultGetter, ssidUpdate, defaultExpire}
-var passphrasePropOps = propertyOps{defaultGetter, passphraseUpdate, defaultExpire}
-var authPropOps = propertyOps{defaultGetter, authUpdate, defaultExpire}
 var uuidPropOps = propertyOps{defaultGetter, uuidUpdate, defaultExpire}
 var ringPropOps = propertyOps{defaultGetter, defaultSetter, ringExpire}
 var ipv4PropOps = propertyOps{defaultGetter, ipv4Setter, defaultExpire}
@@ -115,9 +111,6 @@ var cnamePropOps = propertyOps{defaultGetter, cnameSetter, defaultExpire}
 
 var propertyMatchTable = []propertyMatch{
 	{regexp.MustCompile(`^@/uuid$`), &uuidPropOps},
-	{regexp.MustCompile(`^@/network/ssid$`), &ssidPropOps},
-	{regexp.MustCompile(`^@/network/passphrase$`), &passphrasePropOps},
-	{regexp.MustCompile(`^@/rings/.*/auth$`), &authPropOps},
 	{regexp.MustCompile(`^@/clients/.*/ring$`), &ringPropOps},
 	{regexp.MustCompile(`^@/clients/.*/dns_name$`), &dnsPropOps},
 	{regexp.MustCompile(`^@/clients/.*/dhcp_name$`), &dnsPropOps},
@@ -153,6 +146,7 @@ var (
 	propTreeRoot  = &pnode{name: "root"}
 	propTreeMutex sync.Mutex
 
+	mcpd    *mcp.MCP
 	brokerd *broker.Broker
 
 	authTypeToDefaultRing map[string]string
@@ -330,52 +324,6 @@ func uuidUpdate(node *pnode, uuid string, expires *time.Time) error {
 		return fmt.Errorf("cannot change an appliance's UUID")
 	}
 	return defaultSetter(node, uuid, expires)
-}
-
-func authUpdate(node *pnode, auth string, expires *time.Time) error {
-	auth = strings.ToLower(auth)
-
-	if auth != "wpa-psk" && auth != "wpa-eap" {
-		return fmt.Errorf("only wpa-psk and wpa-eap are supported")
-	}
-
-	return defaultSetter(node, auth, expires)
-}
-
-func ssidUpdate(node *pnode, ssid string, expires *time.Time) error {
-	if len(ssid) == 0 || len(ssid) > 32 {
-		return fmt.Errorf("SSID must be between 1 and 32 characters")
-	}
-
-	for _, c := range ssid {
-		// XXX: this is overly strict, but safe.  We'll need to support
-		// a broader range eventually.
-		if c > unicode.MaxASCII || !unicode.IsPrint(c) {
-			return fmt.Errorf("invalid characters in SSID name")
-		}
-	}
-
-	return defaultSetter(node, ssid, expires)
-}
-
-func passphraseUpdate(node *pnode, pass string, expires *time.Time) error {
-	if len(pass) == 64 {
-		re := regexp.MustCompile(`^[a-fA-F0-9]+$`)
-		if !re.Match([]byte(pass)) {
-			return fmt.Errorf("64-character passphrases must be" +
-				" hex strings")
-		}
-	} else if len(pass) < 8 || len(pass) > 63 {
-		return fmt.Errorf("passphrase must be between 8 and 63 characters")
-	}
-
-	for _, c := range pass {
-		if c > unicode.MaxASCII || !unicode.IsPrint(c) {
-			return fmt.Errorf("Invalid characters in passphrase")
-		}
-	}
-
-	return defaultSetter(node, pass, expires)
 }
 
 //
@@ -816,12 +764,20 @@ func delPropHandler(prop string) error {
 	return propertyDelete(prop)
 }
 
-func executePropOps(ops []*base_msg.ConfigQuery_ConfigOp) (string, error) {
+func executePropOps(query *base_msg.ConfigQuery) (string, error) {
 	var rval string
 	var err error
 
+	level := apcfg.AccessUser
+	if query.Level != nil {
+		level = int(*query.Level)
+		if level > apcfg.AccessUser {
+			return "", fmt.Errorf("invalid level: %d", level)
+		}
+	}
+
 	initChangeset()
-	for _, op := range ops {
+	for _, op := range query.Ops {
 		prop := *op.Property
 		val := op.Value
 		expires := aputil.ProtobufToTime(op.Expires)
@@ -837,24 +793,35 @@ func executePropOps(ops []*base_msg.ConfigQuery_ConfigOp) (string, error) {
 		switch *op.Operation {
 		case base_msg.ConfigQuery_ConfigOp_GET:
 			metrics.getCounts.Inc()
-			if len(ops) > 1 {
+			if len(query.Ops) > 1 {
 				err = fmt.Errorf("only single-GET " +
 					"operations are supported")
 			} else {
-				rval, err = opsVector.get(prop)
+				if err = validateProp(prop); err == nil {
+					rval, err = opsVector.get(prop)
+				}
 			}
 
 		case base_msg.ConfigQuery_ConfigOp_CREATE:
 			metrics.setCounts.Inc()
-			err = opsVector.set(prop, val, expires, true)
+			err = validatePropVal(prop, val, level)
+			if err == nil {
+				err = opsVector.set(prop, val, expires, true)
+			}
 
 		case base_msg.ConfigQuery_ConfigOp_SET:
 			metrics.setCounts.Inc()
-			err = opsVector.set(prop, val, expires, false)
+			err = validatePropVal(prop, val, level)
+			if err == nil {
+				err = opsVector.set(prop, val, expires, false)
+			}
 
 		case base_msg.ConfigQuery_ConfigOp_DELETE:
 			metrics.delCounts.Inc()
-			err = opsVector.delete(prop)
+			err = validatePropDel(prop, level)
+			if err == nil {
+				err = opsVector.delete(prop)
+			}
 
 		case base_msg.ConfigQuery_ConfigOp_PING:
 		// no-op
@@ -883,7 +850,7 @@ func processOneEvent(query *base_msg.ConfigQuery) *base_msg.ConfigResponse {
 	if *query.Version.Major != apcfg.Version {
 		err = apcfg.ErrBadVer
 	} else {
-		rval, err = executePropOps(query.Ops)
+		rval, err = executePropOps(query)
 	}
 
 	rc := base_msg.ConfigResponse_OK
@@ -977,48 +944,57 @@ func prometheusInit() {
 	go http.ListenAndServe(base_def.CONFIGD_PROMETHEUS_PORT, nil)
 }
 
+func fail(format string, a ...interface{}) {
+	log.Printf(format, a)
+	mcpd.SetState(mcp.BROKEN)
+	os.Exit(1)
+}
+
+func configInit() {
+	defaults, descriptions, err := loadDefaults()
+	if err != nil {
+		fail("loadDefaults() failed: %v", err)
+	}
+
+	if err = validationInit(descriptions); err != nil {
+		fail("validationInit() failed: %v\n", err)
+	}
+
+	expirationInit()
+
+	if err = propTreeInit(defaults); err != nil {
+		fail("propTreeInit() failed: %v\n", err)
+	}
+
+	defaultRingInit()
+}
+
 func main() {
+	var err error
+
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
 	flag.Parse()
 
-	mcpd, err := mcp.New(pname)
-	if err != nil {
-		log.Printf("Failed to connect to mcp\n")
-	}
-
-	if !strings.HasSuffix(*propdir, "/") {
-		*propdir = *propdir + "/"
-	}
-	*propdir = aputil.ExpandDirPath(*propdir)
-	if !aputil.FileExists(*propdir) {
-		log.Printf("Properties directory %s doesn't exist", *propdir)
-		mcpd.SetState(mcp.BROKEN)
-		os.Exit(1)
+	if mcpd, err = mcp.New(pname); err != nil {
+		log.Printf("Failed to connect to mcp: %v\n", err)
 	}
 
 	prometheusInit()
-	expirationInit()
+	configInit()
 
 	brokerd = broker.New(pname)
 	brokerd.Handle(base_def.TOPIC_ENTITY, entityHandler)
 	defer brokerd.Fini()
 
 	if err = deviceDBInit(); err != nil {
-		log.Printf("Failed to import devices database: %v\n", err)
-		mcpd.SetState(mcp.BROKEN)
-		os.Exit(1)
+		fail("Failed to import devices database: %v\n", err)
 	}
-
-	propTreeInit()
-	defaultRingInit()
 
 	incoming, _ := zmq.NewSocket(zmq.REP)
 	port := base_def.INCOMING_ZMQ_URL + base_def.CONFIGD_ZMQ_REP_PORT
 	if err = incoming.Bind(port); err != nil {
-		log.Printf("Failed to bind incoming port %s: %v\n", port, err)
-		mcpd.SetState(mcp.BROKEN)
-		os.Exit(1)
+		fail("Failed to bind incoming port %s: %v\n", port, err)
 	}
 	log.Printf("Listening on %s\n", port)
 
