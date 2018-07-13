@@ -14,16 +14,20 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io/ioutil"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/lib/pq"
+	"github.com/pkg/errors"
 	"github.com/satori/uuid"
 )
 
 // DataStore facilitates mocking the database
 // See http://www.alexedwards.net/blog/organising-database-access
 type DataStore interface {
+	LoadSchema(context.Context, string) error
 	AllApplianceIDs(context.Context) ([]ApplianceID, error)
 	ApplianceIDByClientID(context.Context, string) (*ApplianceID, error)
 	ApplianceIDByUUID(context.Context, uuid.UUID) (*ApplianceID, error)
@@ -118,6 +122,29 @@ func Connect(dataSource string) (DataStore, error) {
 	sqldb.SetMaxOpenConns(16)
 	var ds DataStore = &ApplianceDB{sqldb}
 	return ds, nil
+}
+
+// LoadSchema loads the SQL schema files from a directory.  ioutil.ReadDir sorts
+// the input, ensuring the schema is loaded in the right sequence.
+// XXX: Not sure this is the right interface in the right place.  Possibly an
+// array of io.Readers would be better?
+func (db *ApplianceDB) LoadSchema(ctx context.Context, schemaDir string) error {
+	files, err := ioutil.ReadDir(schemaDir)
+	if err != nil {
+		return errors.Wrap(err, "could not scan schema dir")
+	}
+
+	for _, file := range files {
+		bytes, err := ioutil.ReadFile(filepath.Join(schemaDir, file.Name()))
+		if err != nil {
+			return errors.Wrap(err, "failed to read sql")
+		}
+		_, err = db.ExecContext(ctx, string(bytes))
+		if err != nil {
+			return errors.Wrap(err, "failed to exec sql")
+		}
+	}
+	return nil
 }
 
 // Close closes the connection to the DataStore
@@ -218,7 +245,7 @@ func (db *ApplianceDB) UpsertApplianceID(ctx context.Context,
 
 	_, err := db.ExecContext(ctx,
 		`INSERT INTO appliance_id_map
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 ON CONFLICT (cloud_uuid) DO UPDATE
 		 SET (system_repr_mac,
 		      system_repr_hwserial,
@@ -242,7 +269,7 @@ func (db *ApplianceDB) UpsertApplianceID(ctx context.Context,
 	return err
 }
 
-// KeysByUUID returns the public keys associated with the Appliance cloud UUID
+// KeysByUUID returns the public keys (may be none) associated with the Appliance cloud UUID
 func (db *ApplianceDB) KeysByUUID(ctx context.Context, u uuid.UUID) ([]AppliancePubKey, error) {
 	keys := make([]AppliancePubKey, 0)
 	rows, err := db.QueryContext(ctx,
@@ -250,20 +277,17 @@ func (db *ApplianceDB) KeysByUUID(ctx context.Context, u uuid.UUID) ([]Appliance
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 	for rows.Next() {
 		var key AppliancePubKey
-		err := rows.Scan(&key.ID,
+		err = rows.Scan(&key.ID,
 			&key.Format,
 			&key.Key,
 			&key.Expiration)
-		switch err {
-		case sql.ErrNoRows:
-			return nil, NotFoundError{fmt.Sprintf("KeysByUUID: Couldn't find keys for %s", u)}
-		case nil:
-			keys = append(keys, key)
-		default:
+		if err != nil {
 			panic(err)
 		}
+		keys = append(keys, key)
 	}
 	return keys, nil
 }

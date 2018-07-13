@@ -269,6 +269,7 @@ COMMON_GOPKGS = \
 	bg/ap_common/network \
 	bg/ap_common/platform \
 	bg/common/archive \
+	bg/common/briefpg \
 	bg/common/urlfetch
 
 APPCOMMAND_GOPKGS = \
@@ -315,7 +316,7 @@ APPBINARIES = \
 
 # XXX Common configurations?
 
-GO_TESTABLES = \
+GO_AP_TESTABLES = \
 	bg/ap_common/certificate \
 	bg/ap_common/cloud/rpcclient \
 	bg/ap_common/network \
@@ -324,8 +325,11 @@ GO_TESTABLES = \
 	bg/ap.rpcd \
 	bg/ap.updated \
 	bg/ap.userauthd \
+
+GO_CLOUD_TESTABLES = \
 	bg/cl_common/auth/m2mauth \
-	bg/cl_common/daemonutils
+	bg/cl_common/daemonutils \
+	bg/cloud_models/appliancedb
 
 NETWORKD_TEMPLATE_FILES = \
 	hostapd.conf.got \
@@ -537,8 +541,6 @@ packages: install client-web
 packages-lint: install client-web
 	$(PYTHON3) build/deb-pkg/deb-pkg.py --lint --arch $(PKG_DEB_ARCH)
 
-test: test-go
-
 GO_MOCK_APPLIANCEDB = $(GOSRCBG)/cloud_models/appliancedb/mocks/DataStore.go
 GO_MOCK_CLOUDRPC = $(GOSRCBG)/cloud_rpc/mocks/EventClient.go
 GO_MOCK_SRCS = \
@@ -555,6 +557,18 @@ $(GO_MOCK_CLOUDRPC): $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go $(GOSRCBG)/base_msg/ba
 
 $(GO_MOCK_APPLIANCEDB): $(GOSRCBG)/cloud_models/appliancedb/appliancedb.go | go-tools deps-ensured
 	cd $(realpath $(dir $<)) && GOPATH=$(realpath $(GOPATH)) $(GOTOOLS_BIN_MOCKERY) -name 'DataStore'
+
+test: test-go
+
+# The user might set GO_TESTABLES, in which case, honor it
+ifeq ("$(GO_TESTABLES)","")
+  ifeq ("$(filter appliance, $(TARGETS))", "appliance")
+    GO_TESTABLES += $(GO_AP_TESTABLES)
+  endif
+  ifeq ("$(filter cloud, $(TARGETS))", "cloud")
+    GO_TESTABLES += $(GO_CLOUD_TESTABLES)
+  endif
+endif
 
 test-go: install
 	$(GO) test $(GO_TESTFLAGS) $(GO_TESTABLES)
