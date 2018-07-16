@@ -31,7 +31,7 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/network"
 	"bg/base_def"
-	"bg/common"
+	"bg/common/archive"
 )
 
 var (
@@ -45,8 +45,8 @@ var (
 	droplogRunning bool
 	dropThreads    sync.WaitGroup
 
-	lanDrops []*common.DropRecord
-	wanDrops []*common.DropRecord
+	lanDrops []*archive.DropRecord
+	wanDrops []*archive.DropRecord
 )
 
 // Default logfile format:
@@ -70,8 +70,8 @@ var (
 // whitespace (time.Parse gets mad).
 var dropRE = regexp.MustCompile(`(.+)\b\s+\[.+\]\s+DROPPED\s+(.*)`)
 
-func getDrop(line string) *common.DropRecord {
-	d := &common.DropRecord{}
+func getDrop(line string) *archive.DropRecord {
+	d := &archive.DropRecord{}
 
 	l := dropRE.FindStringSubmatch(line)
 	if l == nil {
@@ -144,8 +144,8 @@ func getDrop(line string) *common.DropRecord {
 }
 
 // Persist a single set of drop records to the watchd spool area
-func archiveOne(start, end time.Time, lan, wan []*common.DropRecord) {
-	rec := common.DropArchive{
+func archiveOne(start, end time.Time, lan, wan []*archive.DropRecord) {
+	rec := archive.DropArchive{
 		Start: start,
 		End:   end,
 	}
@@ -157,7 +157,7 @@ func archiveOne(start, end time.Time, lan, wan []*common.DropRecord) {
 	}
 	file := dropDir + "/" + start.Format(time.RFC3339) + ".json"
 
-	archive := []common.DropArchive{rec}
+	archive := []archive.DropArchive{rec}
 	s, err := json.MarshalIndent(&archive, "", "  ")
 	if err != nil {
 		log.Printf("unable to construct droplog JSON: %v", err)
@@ -180,8 +180,8 @@ func archiver(lock *sync.Mutex, done chan bool) {
 			now := time.Now()
 			saveLan := lanDrops
 			saveWan := wanDrops
-			lanDrops = make([]*common.DropRecord, 0)
-			wanDrops = make([]*common.DropRecord, 0)
+			lanDrops = make([]*archive.DropRecord, 0)
+			wanDrops = make([]*archive.DropRecord, 0)
 			lock.Unlock()
 
 			archiveOne(start, now, saveLan, saveWan)
@@ -193,7 +193,7 @@ func archiver(lock *sync.Mutex, done chan bool) {
 	log.Printf("Archiver done\n")
 }
 
-func countDrop(d *common.DropRecord) {
+func countDrop(d *archive.DropRecord) {
 	if mac, ok := ipToMac[d.SrcIP.String()]; ok {
 		incBlockCnt(d.Proto, mac, d.DstIP, d.DstPort, d.SrcPort, true)
 	}
@@ -210,8 +210,8 @@ func logMonitor(name string) {
 	var lock sync.Mutex
 	defer dropThreads.Done()
 
-	lanDrops = make([]*common.DropRecord, 0)
-	wanDrops = make([]*common.DropRecord, 0)
+	lanDrops = make([]*archive.DropRecord, 0)
+	wanDrops = make([]*archive.DropRecord, 0)
 
 	openPipe()
 	doneChan := make(chan bool)

@@ -272,7 +272,8 @@ COMMON_GOPKGS = \
 	bg/ap_common/model \
 	bg/ap_common/network \
 	bg/ap_common/platform \
-	bg/common
+	bg/common/archive \
+	bg/common/urlfetch
 
 APPCOMMAND_GOPKGS = \
 	bg/ap-arpspoof \
@@ -409,8 +410,8 @@ APP_COMMON_SRCS = \
 	$(GOSRCBG)/ap_common/platform/platform.go \
 	$(GOSRCBG)/base_def/base_def.go \
 	$(GOSRCBG)/base_msg/base_msg.pb.go \
-	$(GOSRCBG)/common/archive.go \
-	$(GOSRCBG)/common/urlfetch.go
+	$(GOSRCBG)/common/archive/archive.go \
+	$(GOSRCBG)/common/urlfetch/urlfetch.go
 
 # Miscellaneous utilities
 
@@ -456,7 +457,8 @@ CLOUDCOMMON_GOPKGS = \
 	bg/cl_common/auth/m2mauth \
 	bg/cl_common/daemonutils \
 	bg/cloud_models/appliancedb \
-	bg/common
+	bg/common/archive \
+	bg/common/urlfetch
 
 CLOUDCOMMAND_GOPKGS = \
 	bg/cl-aggregate \
@@ -489,8 +491,8 @@ CLOUD_COMMON_SRCS = \
     $(GOSRCBG)/cloud_models/appliancedb/appliancedb.go \
     $(GOSRCBG)/cl_common/auth/m2mauth/middleware.go \
     $(GOSRCBG)/cl_common/daemonutils/utils.go \
-    $(GOSRCBG)/common/archive.go \
-    $(GOSRCBG)/common/urlfetch.go
+    $(GOSRCBG)/common/archive/archive.go \
+    $(GOSRCBG)/common/urlfetch/urlfetch.go
 
 COVERAGE_DIR = coverage
 

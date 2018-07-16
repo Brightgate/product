@@ -8,7 +8,7 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 
-package common
+package archive
 
 import (
 	"net"
@@ -18,8 +18,8 @@ import (
 
 // Each archive has a Content-Type associated with it.
 const (
-	DropContentType = "application/drop-archive"
-	StatContentType = "application/stat-archive"
+	DropContentType = "application/vnd.b10e.drop-archive+json"
+	StatContentType = "application/vnd.b10e.stat-archive+json"
 )
 
 // DropRecord contains information about a single packet blocked by the firewall

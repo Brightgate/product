@@ -14,29 +14,38 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
 
-	"bg/common"
+	"bg/common/archive"
 )
 
-type mergable interface {
+// A datastructure is mergeable if multiple instances can be combined into a
+// single instance of the same datastructure.  The nature of the combination is
+// implementation dependent, but reasonable examples would be
+//
+// union: merge([0, 1, 3], [0, 2, 4], [0, 2, 3]) -> [0, 1, 2, 3]
+// intersection: merge([0, 1, 3], [0, 2, 4], [0, 2, 3]) -> [0]
+// concatenation: merge([0, 1, 3], [0, 2, 4], [0, 2, 3]) ->
+//                                          [0, 1, 3, 0, 2, 4, 0, 2, 3]
+//
+// Both input and output datastructures must be represented in JSON.
+type mergeable interface {
 	Init()
 	AppendJSON([]byte) error
 	ExportJSON() ([]byte, error)
 }
 
 type drops struct {
-	data []common.DropArchive
+	data []archive.DropArchive
 
-	mergable
+	mergeable
 }
 
 func (d *drops) Init() {
-	d.data = make([]common.DropArchive, 0)
+	d.data = make([]archive.DropArchive, 0)
 }
 
 func (d *drops) AppendJSON(data []byte) error {
-	var el []common.DropArchive
+	var el []archive.DropArchive
 
 	err := json.Unmarshal(data, &el)
 	if err != nil {
@@ -52,17 +61,17 @@ func (d *drops) ExportJSON() ([]byte, error) {
 }
 
 type stats struct {
-	data []common.Snapshot
+	data []archive.Snapshot
 
-	mergable
+	mergeable
 }
 
 func (s *stats) Init() {
-	s.data = make([]common.Snapshot, 0)
+	s.data = make([]archive.Snapshot, 0)
 }
 
 func (s *stats) AppendJSON(data []byte) error {
-	var el []common.Snapshot
+	var el []archive.Snapshot
 
 	err := json.Unmarshal(data, &el)
 	if err != nil {
@@ -77,7 +86,7 @@ func (s *stats) ExportJSON() ([]byte, error) {
 	return json.Marshal(s.data)
 }
 
-func writeMerged(ctype string, merged mergable) error {
+func writeMerged(ctype string, merged mergeable) error {
 	data, err := merged.ExportJSON()
 	if err != nil {
 		return fmt.Errorf("unable to marshal merged data: %v", err)
@@ -87,15 +96,11 @@ func writeMerged(ctype string, merged mergable) error {
 	return writeData(ctype, r)
 }
 
-func importSnapshots(objects []string, list mergable) error {
+func importSnapshots(objects []string, list mergeable) error {
 	list.Init()
-	if *verbose {
-		log.Printf("Fetching data\n")
-	}
+	slog.Debugf("Fetching data\n")
 	for _, n := range objects {
-		if *verbose {
-			log.Printf("  fetching %s\n", n)
-		}
+		slog.Debugf("  fetching %s\n", n)
 		data, err := readData(n)
 		if err != nil {
 			return fmt.Errorf("failed to fetch %s: %v", n, err)
@@ -115,13 +120,13 @@ func merge() error {
 		return fmt.Errorf("failed to get object list: %v", err)
 	}
 
-	if ctype == common.StatContentType {
+	if ctype == archive.StatContentType {
 		var s stats
 
 		if err = importSnapshots(objs, &s); err == nil {
 			err = writeMerged(ctype, &s)
 		}
-	} else if ctype == common.DropContentType {
+	} else if ctype == archive.DropContentType {
 		var d drops
 
 		if err = importSnapshots(objs, &d); err == nil {

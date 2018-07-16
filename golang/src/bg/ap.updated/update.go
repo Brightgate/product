@@ -53,7 +53,8 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
-	"bg/common"
+	"bg/common/archive"
+	"bg/common/urlfetch"
 
 	"cloud.google.com/go/storage"
 	"golang.org/x/net/context"
@@ -132,12 +133,12 @@ var uploadTypes = []uploadInfo{
 	{
 		dir:    "/var/spool/watchd/droplog",
 		prefix: "drops",
-		ctype:  common.DropContentType,
+		ctype:  archive.DropContentType,
 	},
 	{
 		dir:    "/var/spool/watchd/stats",
 		prefix: "stats",
-		ctype:  common.StatContentType,
+		ctype:  archive.StatContentType,
 	},
 }
 
@@ -176,7 +177,7 @@ func refresh(u *updateInfo) (bool, error) {
 	}
 
 	url := updateBucket + "/" + u.latestName
-	metaRefreshed, err := common.FetchURL(url, latestFile, metaFile)
+	metaRefreshed, err := urlfetch.FetchURL(url, latestFile, metaFile)
 	if err != nil {
 		return false, fmt.Errorf("unable to download %s: %v", url, err)
 	}
@@ -189,7 +190,7 @@ func refresh(u *updateInfo) (bool, error) {
 		} else {
 			sourceName := string(b)
 			url = updateBucket + "/" + sourceName
-			_, err = common.FetchURL(url, target, "")
+			_, err = urlfetch.FetchURL(url, target, "")
 		}
 		if err == nil {
 			log.Printf("Updated %s\n", target)

@@ -26,7 +26,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"sort"
@@ -34,9 +33,10 @@ import (
 	"strings"
 	"time"
 
-	"bg/common"
+	"bg/common/archive"
 )
 
+// This is the format BigQuery expects
 const timeFmt = "2006-01-02 15:04:05"
 
 var (
@@ -72,7 +72,10 @@ type Exporter interface {
 
 // Generate as many CSV lines from the imported data as will fit into the
 // provided buffer.
-func read(ex Exporter, p []byte) (n int, err error) {
+func read(ex Exporter, p []byte) (int, error) {
+	var err error
+	var n int
+
 	if ex.done() {
 		return 0, io.EOF
 	}
@@ -104,7 +107,7 @@ const (
 )
 
 type dropExporter struct {
-	data []common.DropArchive // imported data
+	data []archive.DropArchive // imported data
 
 	archiveIdx int // archive entry currently being exported
 	dropList   int // exporting lan or wan list?
@@ -113,7 +116,7 @@ type dropExporter struct {
 	Exporter
 }
 
-func (ex *dropExporter) advanceArchive(ind string) {
+func (ex *dropExporter) advanceArchive() {
 	ex.archiveIdx++
 	if ex.archiveIdx >= len(ex.data) {
 		return
@@ -126,13 +129,13 @@ func (ex *dropExporter) advanceArchive(ind string) {
 	} else if len(a.WanDrops) > 0 {
 		ex.dropList = listWan
 	} else {
-		ex.advanceArchive(ind + "  ")
+		ex.advanceArchive()
 	}
 }
 
 func (ex *dropExporter) advance() {
 	if ex.archiveIdx == -1 {
-		ex.advanceArchive("")
+		ex.advanceArchive()
 		return
 	}
 
@@ -147,13 +150,13 @@ func (ex *dropExporter) advance() {
 	}
 	if ex.dropList == listWan {
 		if ex.dropIdx >= len(a.WanDrops) {
-			ex.advanceArchive("")
+			ex.advanceArchive()
 		}
 	}
 }
 
 func (ex *dropExporter) line() string {
-	var rec *common.DropRecord
+	var rec *archive.DropRecord
 	var network, src, sport, dst, dport string
 
 	if ex.archiveIdx == -1 {
@@ -200,12 +203,10 @@ func (ex *dropExporter) ctype() string {
 	return "application/drops-csv"
 }
 
-func importOneDropArchive(obj string) ([]common.DropArchive, error) {
-	var list []common.DropArchive
+func importOneDropArchive(obj string) ([]archive.DropArchive, error) {
+	var list []archive.DropArchive
 
-	if *verbose {
-		log.Printf("  fetching %s\n", obj)
-	}
+	slog.Debugf("  fetching %s\n", obj)
 	data, err := readData(obj)
 	if err != nil {
 		err = fmt.Errorf("failed to fetch %s: %v", obj, err)
@@ -219,9 +220,9 @@ func importOneDropArchive(obj string) ([]common.DropArchive, error) {
 // Import all of the identified drop archives and prepare to start emitting CSV
 // lines.
 func (ex *dropExporter) init(objs []string) error {
-	all := make([]common.DropArchive, 0)
+	all := make([]archive.DropArchive, 0)
 	for _, o := range objs {
-		log.Printf("importing %v\n", o)
+		slog.Infof("importing %v\n", o)
 		archived, err := importOneDropArchive(o)
 		if err != nil {
 			return err
@@ -237,7 +238,7 @@ func (ex *dropExporter) init(objs []string) error {
 
 /***************************************************************************
  *
- * Support for generating Open Port records from archives of common.Snapshot
+ * Support for generating Open Port records from archives of archive.Snapshot
  */
 
 type portExporter struct {
@@ -321,13 +322,13 @@ func (ex *portExporter) Read(p []byte) (n int, err error) {
 	return read(ex, p)
 }
 
-// read one common.Snapshot archive, and extract the open-port information from
+// read one archive.Snapshot archive, and extract the open-port information from
 // each entry.
 func importPortData(obj string) ([]*portRecord, error) {
-	var list []common.Snapshot
+	var list []archive.Snapshot
 
 	if *verbose {
-		log.Printf("  fetching %s\n", obj)
+		slog.Debugf("  fetching %s\n", obj)
 	}
 	data, err := readData(obj)
 	if err != nil {
@@ -387,7 +388,7 @@ func (ex *portExporter) init(objs []string) error {
 	// representation of the open ports information
 	all := make([]*portRecord, 0)
 	for _, o := range objs {
-		log.Printf("importing %v\n", o)
+		slog.Infof("importing %v\n", o)
 		tmp, err := importPortData(o)
 		if err != nil {
 			return err
@@ -403,7 +404,7 @@ func (ex *portExporter) init(objs []string) error {
 /**************************************************************************
  *
  * Support for generating per-session statisticsfrom archives of
- * common.Snapshot
+ * archive.Snapshot
  */
 
 type statExporter struct {
@@ -472,10 +473,10 @@ func (ex *statExporter) Read(p []byte) (n int, err error) {
 	return read(ex, p)
 }
 
-func newStatRecord(s common.Snapshot, mac string, local net.IP,
-	key uint64, stats common.XferStats) *statRecord {
+func newStatRecord(s archive.Snapshot, mac string, local net.IP,
+	key uint64, stats archive.XferStats) *statRecord {
 
-	session := common.KeyToSession(key)
+	session := archive.KeyToSession(key)
 
 	rec := statRecord{
 		start:      s.Start,
@@ -494,11 +495,9 @@ func newStatRecord(s common.Snapshot, mac string, local net.IP,
 }
 
 func importStatData(obj string) ([]*statRecord, error) {
-	var list []common.Snapshot
+	var list []archive.Snapshot
 
-	if *verbose {
-		log.Printf("  fetching %s\n", obj)
-	}
+	slog.Infof("  fetching %s\n", obj)
 	data, err := readData(obj)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch %s: %v", obj, err)
@@ -539,7 +538,7 @@ func (ex *statExporter) init(objs []string) error {
 	// representation of the stats information
 	all := make([]*statRecord, 0)
 	for _, o := range objs {
-		log.Printf("importing %v\n", o)
+		slog.Infof("importing %v\n", o)
 		tmp, err := importStatData(o)
 		if err != nil {
 			return err
@@ -573,12 +572,12 @@ func export(args []string) error {
 	}
 
 	switch ctype {
-	case common.DropContentType:
+	case archive.DropContentType:
 		switch dataset {
 		case "drops":
 			exporter = &dropExporter{}
 		}
-	case common.StatContentType:
+	case archive.StatContentType:
 		switch dataset {
 		case "stats":
 			exporter = &statExporter{}

@@ -22,8 +22,8 @@
  *   2. 'cl-dtool merge' to combine multiple 5-minute snapshots in
  *      bg-appliance-data to a single full-day json archive in
  *      bg-appliance-merge.  This archive will be preserved indefinitely, while
- *      the 5-minute snapshots can be removed.  If desired, he full-day archives
- *      can be subsequently re-merged into full-month archives, etc.
+ *      the 5-minute snapshots can be removed.  If desired, the full-day
+ *      archives can be subsequently re-merged into full-month archives, etc.
  *
  *   3. 'cl-dtool export stats' to extract a single type of data into a CSV file
  *
@@ -44,13 +44,15 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"regexp"
 	"strings"
 	"time"
 
+	"bg/cl_common/daemonutils"
+
 	"cloud.google.com/go/storage"
+	"go.uber.org/zap"
 	"google.golang.org/api/iterator"
 )
 
@@ -75,6 +77,9 @@ var (
 
 	startTime time.Time
 	endTime   time.Time
+
+	log  *zap.Logger
+	slog *zap.SugaredLogger
 
 	objNameRE = regexp.MustCompile(`(.*)/(.*)\.(.*)`)
 )
@@ -171,11 +176,9 @@ func objectWithinBounds(name string) bool {
 func getObjectsBucket(bucket, name string) ([]string, string, error) {
 	var err error
 
-	if *verbose {
-		log.Printf("Fetching objects between %s and %s from %s\n",
-			startTime.Format(time.Stamp),
-			endTime.Format(time.Stamp), bucket)
-	}
+	slog.Debugf("Fetching objects between %s and %s from %s\n",
+		startTime.Format(time.Stamp), endTime.Format(time.Stamp),
+		bucket)
 
 	ctype := *ctypeFlag
 	rval := make([]string, 0)
@@ -257,16 +260,12 @@ func readData(obj string) ([]byte, error) {
 
 	bucket, name, _ := parseName(*srcFlag)
 	if bucket != "" {
-		if *verbose {
-			log.Printf("Reading from google storage %s\n", *srcFlag)
-		}
+		slog.Debugf("Reading from google storage %s\n", *srcFlag)
 
 		hdl := gcpClient.Bucket(bucket).Object(obj)
 		src, err = hdl.NewReader(gcpCtx)
 	} else if name != "" {
-		if *verbose {
-			log.Printf("Reading from file %s\n", obj)
-		}
+		slog.Debugf("Reading from file %s\n", obj)
 		src, err = os.Open(name)
 	} else {
 		err = fmt.Errorf("must provide a data source")
@@ -286,9 +285,7 @@ func readData(obj string) ([]byte, error) {
 }
 
 func writeToBucket(bucket, name, ctype string, src io.Reader) error {
-	if *verbose {
-		log.Printf("Writing to google storage %s\n", *dstFlag)
-	}
+	slog.Debugf("Writing to google storage %s\n", *dstFlag)
 
 	if name == "" {
 		return fmt.Errorf("must specify a target object name")
@@ -315,9 +312,7 @@ func writeToBucket(bucket, name, ctype string, src io.Reader) error {
 }
 
 func writeToFile(name string, src io.Reader) error {
-	if *verbose {
-		log.Printf("Writing to file %s\n", name)
-	}
+	slog.Debugf("Writing to file %s\n", name)
 	out, err := os.Create(name)
 	if err != nil {
 		err = fmt.Errorf("creating file %s: %v", name, err)
@@ -422,7 +417,10 @@ func main() {
 	var err error
 	var cmdArgs []string
 
+	log, slog = daemonutils.SetupLogs()
 	flag.Parse()
+	log, slog = daemonutils.ResetupLogs()
+	defer log.Sync()
 	if *helpFlag {
 		usage(false)
 	}

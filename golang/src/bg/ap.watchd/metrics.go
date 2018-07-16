@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"bg/ap_common/aputil"
-	"bg/common"
+	"bg/common/archive"
 )
 
 type endpoint struct {
@@ -43,47 +43,47 @@ var (
 	metricsDone      = make(chan bool, 1)
 	metricsWaitGroup sync.WaitGroup
 
-	currentStats    *common.Snapshot
-	historicalStats []*common.Snapshot
+	currentStats    *archive.Snapshot
+	historicalStats []*archive.Snapshot
 	statsMtx        sync.RWMutex
 )
 
-func newDeviceRecord(mac string) *common.DeviceRecord {
+func newDeviceRecord(mac string) *archive.DeviceRecord {
 	var addr net.IP
 
 	if ip, ok := macToIP[mac]; ok {
 		addr = net.ParseIP(ip)
 	}
-	d := common.DeviceRecord{
+	d := archive.DeviceRecord{
 		Addr:       addr,
 		OpenTCP:    make([]int, 0),
 		OpenUDP:    make([]int, 0),
 		BlockedOut: make(map[uint64]int),
 		BlockedIn:  make(map[uint64]int),
-		LANStats:   make(map[uint64]common.XferStats),
-		WANStats:   make(map[uint64]common.XferStats),
+		LANStats:   make(map[uint64]archive.XferStats),
+		WANStats:   make(map[uint64]archive.XferStats),
 	}
 
 	return &d
 }
 
-func newSnapshot() *common.Snapshot {
-	s := common.Snapshot{
-		Data: make(map[string]*common.DeviceRecord),
+func newSnapshot() *archive.Snapshot {
+	s := archive.Snapshot{
+		Data: make(map[string]*archive.DeviceRecord),
 	}
 
 	return &s
 }
 
 // releaseDeviceRecord drops the lock on a device record
-func releaseDeviceRecord(d *common.DeviceRecord) {
+func releaseDeviceRecord(d *archive.DeviceRecord) {
 	d.Unlock()
 }
 
 // getDeviceRecord looks up a device record based on the provide mac address.
 // If the corresponding device is found, the structure is locked and returned to
 // the caller.  It must be released when the client is finished with it.
-func getDeviceRecord(mac string) *common.DeviceRecord {
+func getDeviceRecord(mac string) *archive.DeviceRecord {
 	statsMtx.RLock()
 	d, ok := currentStats.Data[mac]
 	statsMtx.RUnlock()
@@ -100,21 +100,21 @@ func getDeviceRecord(mac string) *common.DeviceRecord {
 }
 
 // getDeviceRecordByIP looks up a device record based on the provided IP address
-func getDeviceRecordByIP(ip string) *common.DeviceRecord {
+func getDeviceRecordByIP(ip string) *archive.DeviceRecord {
 	if mac := getMacFromIP(ip); mac != "" {
 		return getDeviceRecord(mac)
 	}
 	return nil
 }
 
-func incSentStats(smap map[uint64]common.XferStats, key uint64, len int) {
+func incSentStats(smap map[uint64]archive.XferStats, key uint64, len int) {
 	x := smap[key]
 	x.PktsSent++
 	x.BytesSent += uint64(len)
 	smap[key] = x
 }
 
-func incRcvdStats(smap map[uint64]common.XferStats, key uint64, len int) {
+func incRcvdStats(smap map[uint64]archive.XferStats, key uint64, len int) {
 	x := smap[key]
 	x.PktsRcvd++
 	x.BytesRcvd += uint64(len)
@@ -122,13 +122,13 @@ func incRcvdStats(smap map[uint64]common.XferStats, key uint64, len int) {
 }
 
 func getKey(remoteIP net.IP, rport, lport int) uint64 {
-	s := common.Session{
+	s := archive.Session{
 		RAddr: remoteIP,
 		RPort: rport,
 		LPort: lport,
 	}
 
-	return (common.SessionToKey(s))
+	return (archive.SessionToKey(s))
 }
 
 func updateStats(src, dst endpoint, proto string, len int) {
@@ -170,8 +170,8 @@ func updateStats(src, dst endpoint, proto string, len int) {
 
 // Update a device's 'packets blocked by the firewall' count
 func incBlockCnt(proto, local string, remote net.IP, rport, lport int, out bool) {
-	s := common.Session{RAddr: remote, RPort: rport, LPort: lport}
-	key := common.SessionToKey(s)
+	s := archive.Session{RAddr: remote, RPort: rport, LPort: lport}
+	key := archive.SessionToKey(s)
 
 	rec := getDeviceRecord(local)
 	if out {
@@ -194,10 +194,10 @@ func copyPortlist(in []int) []int {
 	return out
 }
 
-func writeStats(dir string, sn *common.Snapshot) error {
+func writeStats(dir string, sn *archive.Snapshot) error {
 	file := dir + "/" + sn.Start.Format(time.RFC3339) + ".json"
 
-	archive := []*common.Snapshot{sn}
+	archive := []*archive.Snapshot{sn}
 	s, err := json.MarshalIndent(archive, "", "  ")
 	if err != nil {
 		err = fmt.Errorf("unable to construct snapshot JSON: %v", err)
@@ -226,7 +226,7 @@ func snapshotStats(dir string) {
 		// going to reset, we can just copy the pointers.  The elements
 		// that are preserved across snapshots have to be copied by
 		// value.
-		d := common.DeviceRecord{
+		d := archive.DeviceRecord{
 			Addr:       copyIP(cur.Addr),
 			BlockedOut: cur.BlockedOut,
 			BlockedIn:  cur.BlockedIn,
@@ -239,9 +239,9 @@ func snapshotStats(dir string) {
 
 		cur.BlockedOut = make(map[uint64]int)
 		cur.BlockedIn = make(map[uint64]int)
-		cur.LANStats = make(map[uint64]common.XferStats)
-		cur.WANStats = make(map[uint64]common.XferStats)
-		cur.Aggregate = common.XferStats{}
+		cur.LANStats = make(map[uint64]archive.XferStats)
+		cur.WANStats = make(map[uint64]archive.XferStats)
+		cur.Aggregate = archive.XferStats{}
 		cur.Unlock()
 
 		sn.Data[mac] = &d
@@ -329,7 +329,7 @@ func init() {
 	currentStats.Start = time.Now()
 	currentStats.End = currentStats.Start.Add(*sfreq)
 
-	historicalStats = make([]*common.Snapshot, 0)
+	historicalStats = make([]*archive.Snapshot, 0)
 
 	addWatcher("metrics", metricsInit, metricsFini)
 }

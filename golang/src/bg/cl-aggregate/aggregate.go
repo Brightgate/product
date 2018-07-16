@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"bg/cl_common/daemonutils"
-	"bg/common"
+	"bg/common/urlfetch"
 
 	"go.uber.org/zap"
 
@@ -353,7 +353,7 @@ func buildBlocklist(stem string, sources []source) (bool, error) {
 		if s.url == "" {
 			refreshed, err = fileSrc(s.file, s.file+".meta")
 		} else {
-			refreshed, err = common.FetchURL(s.url, s.file,
+			refreshed, err = urlfetch.FetchURL(s.url, s.file,
 				s.file+".meta")
 		}
 		if err != nil {
