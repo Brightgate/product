@@ -196,6 +196,14 @@
   revision = "23480c0665776210b5fbbac6eaaee40e3e6a96b7"
 
 [[projects]]
+  branch = "master"
+  digest = "1:2e1172d0ec69a3943138a5a05539798007864b702e926f5ecda746e4b60fb171"
+  name = "github.com/jlaffaye/ftp"
+  packages = ["."]
+  pruneopts = ""
+  revision = "2403248fa8cc9f7909862627aa7337f13f8e0bf1"
+
+[[projects]]
   digest = "1:874de5e96dc5ef184617ad01b65673d9e0ba294a6d14411c63322a2ee5141223"
   name = "github.com/jung-kurt/gofpdf"
   packages = ["."]
@@ -548,9 +556,14 @@
   packages = [
     "bcrypt",
     "blowfish",
+    "curve25519",
     "ed25519",
     "ed25519/internal/edwards25519",
+    "internal/chacha20",
+    "internal/subtle",
     "md4",
+    "poly1305",
+    "ssh",
     "ssh/terminal",
   ]
   pruneopts = ""
@@ -819,6 +832,7 @@
     "github.com/grpc-ecosystem/go-grpc-middleware/util/metautils",
     "github.com/grpc-ecosystem/go-grpc-prometheus",
     "github.com/hashicorp/go-version",
+    "github.com/jlaffaye/ftp",
     "github.com/klauspost/oui",
     "github.com/krolaw/dhcp4",
     "github.com/lair-framework/go-nmap",
@@ -847,6 +861,7 @@
     "go.uber.org/zap/zaptest",
     "golang.org/x/crypto/bcrypt",
     "golang.org/x/crypto/md4",
+    "golang.org/x/crypto/ssh",
     "golang.org/x/crypto/ssh/terminal",
     "golang.org/x/net/context",
     "golang.org/x/net/ipv4",

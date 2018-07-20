@@ -281,6 +281,7 @@ APPCOMMAND_GOPKGS = \
 	bg/ap-complete \
 	bg/ap-configctl \
 	bg/ap-ctl \
+	bg/ap-defaultpass \
 	bg/ap-inspect \
 	bg/ap-msgping \
 	bg/ap-ouisearch \
@@ -350,6 +351,7 @@ FILTER_RULES = \
 APPCONFIGS = \
 	$(APPETC)/ap_defaults.json \
 	$(APPETC)/ap_identities.csv \
+	$(APPETC)/vendordefaults.csv \
 	$(APPETC)/ap_mfgid.json \
 	$(APPETC)/devices.json \
 	$(APPETC)/mcp.json \
@@ -586,6 +588,9 @@ $(APPDOC)/: base/base_msg.proto | $(PROTOC_PLUGINS) $(APPDOC) $(BASE_MSG)
 $(APPETC)/ap_defaults.json: $(GOSRCBG)/ap.configd/ap_defaults.json | $(APPETC)
 	$(INSTALL) -m 0644 $< $@
 
+$(APPETC)/vendordefaults.csv: $(GOSRCBG)/ap-defaultpass/vendordefaults.csv | $(APPETC)
+	$(INSTALL) -m 0644 $< $@
+
 $(APPETC)/ap_identities.csv: ap_identities.csv | $(APPETC)
 	$(INSTALL) -m 0644 $< $@
 
@@ -724,6 +729,7 @@ $(APPBIN)/ap-certcheck: $(GOSRCBG)/ap-certcheck/certcheck.go \
 $(APPBIN)/ap-complete: $(GOSRCBG)/ap-complete/complete.go
 $(APPBIN)/ap-configctl: $(GOSRCBG)/ap-configctl/configctl.go
 $(APPBIN)/ap-ctl: $(GOSRCBG)/ap-ctl/ctl.go
+$(APPBIN)/ap-defaultpass: $(GOSRCBG)/ap-defaultpass/defaultpass.go
 $(APPBIN)/ap-inspect: $(GOSRCBG)/ap-inspect/inspect.go
 $(APPBIN)/ap-msgping: $(GOSRCBG)/ap-msgping/msgping.go
 $(APPBIN)/ap-ouisearch: $(GOSRCBG)/ap-ouisearch/ouisearch.go
@@ -731,6 +737,7 @@ $(APPBIN)/ap-rpc: $(APPBIN)/ap.rpcd
 	ln -f $< $@
 $(APPBIN)/ap-userctl: $(GOSRCBG)/ap-userctl/userctl.go
 $(APPBIN)/ap-vuln-aggregate: \
+	$(GOSRCBG)/ap-vuln-aggregate/ap-defaultpass.go \
 	$(GOSRCBG)/ap-vuln-aggregate/ap-inspect.go \
 	$(GOSRCBG)/ap-vuln-aggregate/nmap.go \
 	$(GOSRCBG)/ap-vuln-aggregate/aggregate.go

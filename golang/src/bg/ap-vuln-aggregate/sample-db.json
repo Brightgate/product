@@ -24,5 +24,10 @@
                 "probe": "CVE-2018-6789"
         },
         "Actions": [ "Warn" ]
+    },
+    "defaultpassword": {
+        "Nickname": "unchanged default password",
+        "Tool": "ap-defaultpass",
+        "Actions": [ "Warn" ]
     }
 }
