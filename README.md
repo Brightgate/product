@@ -66,7 +66,6 @@ $ make packages
 
 $ make clean
 $ make clobber
-$ make plat-clobber
 ```
 
 If Golang is not installed in the expected places as described above, you may
@@ -102,7 +101,7 @@ See `build/cross-compile/README.md` for more details.
 
 ## Shared workspaces
 
-Because each platform generates local tools, you will want to use `make plat-clobber`
+Because each platform generates local tools, you will want to use `make clobber`
 to switch a repository from one platform to another, such as from Linux to
 macOS, or from x86 to ARM.  (An easier way is to keep parallel workspaces in
 sync by making one the git upstream of the other).

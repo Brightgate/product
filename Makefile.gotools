@@ -1,0 +1,71 @@
+#
+# COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+#
+# This copyright notice is Copyright Management Information under 17 USC 1202
+# and is included to protect this work and deter copyright infringement.
+# Removal or alteration of this Copyright Management Information without the
+# express written permission of Brightgate Inc is prohibited, and any
+# such unauthorized removal or alteration will be a violation of federal law.
+#
+
+GOTOOLS_DIR=$(GITROOT)/_tools.$(GOHOSTARCH)
+GOTOOLS_BIN=$(GOTOOLS_DIR)/bin
+
+GOTOOLS_dep_repo=github.com/golang/dep
+GOTOOLS_dep_hash=2795244c5c
+
+GOTOOLS_cmddep_repo=github.com/golang/dep/cmd/dep
+# Pin to same as dep
+GOTOOLS_cmddep_hash=$(GOTOOLS_dep_hash)
+# Must build after dep
+GOTOOLS_cmddep_deps=$(GOTOOLS_dep_built)
+GOTOOLS_BIN_DEP=$(GOTOOLS_BIN)/dep
+
+GOTOOLS_pgengo_repo=github.com/golang/protobuf/protoc-gen-go
+GOTOOLS_pgengo_hash=427e165155
+GOTOOLS_BIN_PROTOCGENGO=$(GOTOOLS_BIN)/protoc-gen-go
+
+GOTOOLS_mockery_repo=github.com/vektra/mockery/mockery
+GOTOOLS_mockery_hash=2a9162cbfb
+
+GOTOOLS_cmdmockery_repo=github.com/vektra/mockery/cmd/mockery
+# Pin to same as mockery
+GOTOOLS_cmdmockery_hash=$(GOTOOLS_mockery_hash)
+# Must build after mockery
+GOTOOLS_cmdmockery_deps=$(GOTOOLS_mockery_built)
+GOTOOLS_BIN_MOCKERY=$(GOTOOLS_BIN)/mockery
+
+GOTOOLS_ALL=\
+	    GOTOOLS_dep \
+	    GOTOOLS_cmddep \
+	    GOTOOLS_pgengo \
+	    GOTOOLS_mockery \
+	    GOTOOLS_cmdmockery
+
+$(GOTOOLS_DIR):
+	mkdir -p $@
+
+define GOTOOL_MAKETARGET
+$(target)_built=$(GOTOOLS_DIR)/buildstamp/$$($(target)_repo)/built-$$($(target)_hash)
+
+.PHONY: $(target)
+$(target): $$($(target)_built)
+
+$$($(target)_built): $$($(target)_deps)
+	@echo "go-tools: installing $$($(target)_repo)@$$($(target)_hash)"
+	@trap "rm -fr $(GOTOOLS_DIR)/src/ $(GOTOOLS_DIR)/buildstamp" INT && \
+	env -u GOARCH GOPATH=$(GOTOOLS_DIR) $(GO) get -d $$($(target)_repo) && \
+	(cd $(GOTOOLS_DIR)/src/$$($(target)_repo) && git checkout --quiet $$($(target)_hash)) && \
+	env -u GOARCH GOPATH=$(GOTOOLS_DIR) $(GO) install $$($(target)_repo)
+	@mkdir -p $$(dir $$@) && touch $$@
+
+endef
+
+$(foreach target, $(GOTOOLS_ALL), $(eval $(GOTOOL_MAKETARGET)))
+
+.PHONY: go-tools
+go-tools: $(GOTOOLS_ALL) $(MAKEFILE_LIST) | $(GOTOOLS_DIR)
+
+.PHONY: clobber-gotools
+clobber-gotools:
+	$(RM) -fr $(GOTOOLS_DIR)

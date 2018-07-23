@@ -34,7 +34,7 @@
 #
 # 2. To clean out local binaries, use
 #
-#	 $ make plat-clobber
+#	 $ make clobber
 #
 # 3. On x86_64, the build constructs all components, whether for appliance or
 #    for cloud.  On ARM, only appliance components are built.
@@ -96,7 +96,8 @@ GOHOSTARCH = $(shell GOROOT=$(GOROOT) $(GO) env GOHOSTARCH)
 GOVERSION = $(shell GOROOT=$(GOROOT) $(GO) version)
 
 GOWS = golang
-GOSRCBG = $(GOWS)/src/bg
+GOSRC = $(GOWS)/src
+GOSRCBG = $(GOSRC)/bg
 # Vendoring directory, where external deps are placed
 GOSRCBGVENDOR = $(GOSRCBG)/vendor
 # Where we stick build tools
@@ -119,10 +120,6 @@ PYTHON3VERSION = $(shell $(PYTHON3) -V)
 
 NODE = node
 NODEVERSION = $(shell $(NODE) --version)
-
-PROTOC_PLUGINS = \
-	$(GOBIN)/protoc-gen-doc \
-	$(GOBIN)/protoc-gen-go
 
 #
 # ARCH dependent setup
@@ -234,8 +231,6 @@ endif
 APPROOT=$(ROOT)/appliance
 APPBASE=$(APPROOT)/opt/com.brightgate
 APPBIN=$(APPBASE)/bin
-APPDOC=$(APPBASE)/share/doc
-APPWEB=$(APPBASE)/share/web
 APPSNMAP=$(APPBASE)/share/nmap/scripts
 # APPCSS
 # APPJS
@@ -370,7 +365,6 @@ APPCONFIGS = \
 
 APPDIRS = \
 	$(APPBIN) \
-	$(APPDOC) \
 	$(APPETC) \
 	$(APPROOTLIB) \
 	$(APPRULES) \
@@ -545,13 +539,6 @@ packages-lint: install client-web
 
 test: test-go
 
-MOCKERY=$(GOBIN)/mockery
-
-# 'mockery' is run during the build, so shouldn't be cross-compiled; be sure to
-# use the native GOARCH
-$(MOCKERY):
-	env -u GOARCH $(GO) get -u github.com/vektra/mockery/.../
-
 GO_MOCK_APPLIANCEDB = $(GOSRCBG)/cloud_models/appliancedb/mocks/DataStore.go
 GO_MOCK_CLOUDRPC = $(GOSRCBG)/cloud_rpc/mocks/EventClient.go
 GO_MOCK_SRCS = \
@@ -563,11 +550,11 @@ mocks: $(GO_MOCK_SRCS)
 # Mock rules-- not sure how to make this work with pattern substitution
 # The use of 'realpath' avoids an issue in mockery for workspaces with
 # symlinks (https://github.com/vektra/mockery/issues/157).
-$(GO_MOCK_CLOUDRPC): $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go $(GOSRCBG)/base_msg/base_msg.pb.go | $(MOCKERY) deps-ensured
-	cd $(realpath $(dir $<)) && GOPATH=$(realpath $(GOPATH)) $(MOCKERY) -name 'EventClient'
+$(GO_MOCK_CLOUDRPC): $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go $(GOSRCBG)/base_msg/base_msg.pb.go | go-tools deps-ensured
+	cd $(realpath $(dir $<)) && GOPATH=$(realpath $(GOPATH)) $(GOTOOLS_BIN_MOCKERY) -name 'EventClient'
 
-$(GO_MOCK_APPLIANCEDB): $(GOSRCBG)/cloud_models/appliancedb/appliancedb.go | $(MOCKERY) deps-ensured
-	cd $(realpath $(dir $<)) && GOPATH=$(realpath $(GOPATH)) $(MOCKERY) -name 'DataStore'
+$(GO_MOCK_APPLIANCEDB): $(GOSRCBG)/cloud_models/appliancedb/appliancedb.go | go-tools deps-ensured
+	cd $(realpath $(dir $<)) && GOPATH=$(realpath $(GOPATH)) $(GOTOOLS_BIN_MOCKERY) -name 'DataStore'
 
 test-go: install
 	$(GO) test $(GO_TESTFLAGS) $(GO_TESTABLES)
@@ -585,14 +572,6 @@ vet-go:
 
 lint-go:
 	$(GOLINT) -set_exit_status $(ALL_GOPKGS)
-
-docs: | $(PROTOC_PLUGINS)
-
-
-$(APPDOC)/: base/base_msg.proto | $(PROTOC_PLUGINS) $(APPDOC) $(BASE_MSG)
-	cd base && \
-		protoc --plugin $(GOBIN) \
-		    --doc_out $(APPDOC) $(notdir $<)
 
 # Installation of appliance configuration files
 
@@ -826,22 +805,22 @@ base/base_def.py: base/generate-base-def.py
 #
 
 $(GOSRCBG)/base_msg/base_msg.pb.go: base/base_msg.proto | \
-	$(PROTOC_PLUGINS) $(GOSRCBG)/base_msg
+	go-tools $(GOSRCBG)/base_msg
 	cd base && \
-		protoc --plugin $(GOBIN) \
+		protoc --plugin=$(GOTOOLS_BIN_PROTOCGENGO) \
 		    --go_out ../$(GOSRCBG)/base_msg $(notdir $<)
 
 base/base_msg_pb2.py: base/base_msg.proto
 	protoc --python_out . $<
 
 $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go: base/cloud_rpc.proto | \
-	$(PROTOC_PLUGINS) $(GOSRCBG)/cloud_rpc
+	go-tools $(GOSRCBG)/cloud_rpc
 	cd base && \
-		protoc --plugin $(GOBIN) \
+		protoc --plugin=$(GOTOOLS_BIN_PROTOCGENGO) \
 			-I/usr/local/include \
 			-I . \
-			-I$(GOPATH)/src \
-			-I$(GOPATH)/src/github.com/golang/protobuf/protoc-gen-go/descriptor \
+			-I$(GOTOOLS_DIR)/src \
+			-I$(GOTOOLS_DIR)/src/$(GOTOOLS_pgengo_repo)/descriptor \
 			--go_out=plugins=grpc,Mbase_msg.proto=bg/base_msg:../$(GOSRCBG)/cloud_rpc \
 			$(notdir $<)
 
@@ -851,14 +830,6 @@ base/cloud_rpc_pb2.py: base/cloud_rpc.proto
 		-Ibase \
 		--python_out=. --grpc_python_out=. $<
 
-$(PROTOC_PLUGINS): .make-protoc-plugins
-
-.make-protoc-plugins:
-	env -u GOARCH $(GO) get -u github.com/golang/protobuf/proto
-	env -u GOARCH $(GO) get -u github.com/golang/protobuf/protoc-gen-go
-	env -u GOARCH $(GO) get -u sourcegraph.com/sourcegraph/prototools/cmd/protoc-gen-doc
-	touch $@
-
 LOCAL_COMMANDS=$(COMMANDS:$(APPBIN)/%=$(GOBIN)/%)
 LOCAL_DAEMONS=$(DAEMONS:$(APPBIN)/%=$(GOBIN)/%)
 
@@ -867,7 +838,7 @@ LOCAL_DAEMONS=$(DAEMONS:$(APPBIN)/%=$(GOBIN)/%)
 BUILDTOOLS_HASH=$(shell echo $(BUILDTOOLS) | $(SHA256SUM) | awk '{print $$1}')
 BUILDTOOLS_FILE=.make-buildtools-$(BUILDTOOLS_HASH)
 
-tools: $(BUILDTOOLS_FILE)
+tools: $(BUILDTOOLS_FILE) go-tools
 
 install-tools: FRC
 	build/check-tools.sh -i $(BUILDTOOLS)
@@ -876,6 +847,11 @@ install-tools: FRC
 $(BUILDTOOLS_FILE):
 	build/check-tools.sh $(BUILDTOOLS)
 	touch $@
+
+#
+# Go Tools: Install versioned binaries for 'dep', 'mockery', etc.
+#
+include Makefile.gotools
 
 #
 # Go Dependencies: Pull in definitions for 'dep'
@@ -895,7 +871,7 @@ client-web: .make-npm-installed FRC | $(HTTPD_CLIENTWEB_DIR)
 
 FRC:
 
-clobber: clean clobber-packages clobber-godeps
+clobber: clean clobber-packages clobber-godeps clobber-gotools
 	$(RM) -fr $(ROOT)
 	$(RM) -fr $(GOWS)/pkg
 	$(RM) -fr $(GOWS)/bin
@@ -919,13 +895,7 @@ clean:
 		$(UTILBINARIES) \
 		$(GO_MOCK_SRCS)
 	$(RM) -fr $(COVERAGE_DIR)
-	find $(GOSRCBG)/ap_common -name \*.pem | xargs $(RM) -f
-
-plat-clobber: clobber
-	-$(GO) clean $(GO_CLEAN_FLAGS) github.com/golang/protobuf/protoc-gen-go
-	-$(GO) clean $(GO_CLEAN_FLAGS) github.com/golang/protobuf/proto
-	-$(GO) clean $(GO_CLEAN_FLAGS) sourcegraph.com/sourcegraph/prototools/cmd/protoc-gen-doc
-	-$(RM) -fr golang/src/github.com golang/src/golang.org golang/src/google.golang.org golang/src/sourcegraph.com
+	find $(GOSRCBG)/ap_common -name \*.pem | xargs --no-run-if-empty $(RM) -f
 
 check-dirty:
 	@c=$$(git status -s); \

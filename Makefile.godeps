@@ -11,20 +11,11 @@
 # This makefile contains rules and definitions for go vendoring and dependency
 # management and is meant for inclusion by the main Makefile.
 
-# We need to fetch the 'dep' utility if not present.
-DEP_BINNAME=dep
-DEPBIN=$(GOBIN)/$(DEP_BINNAME)
-
-# 'dep' is run during the build, so shouldn't be cross-compiled; be sure to use
-# the native GOARCH
-$(DEPBIN):
-	env -u GOARCH $(GO) get -u github.com/golang/dep/cmd/dep
-
 # n.b. we use realpath because 'dep' is very picky when faced with symlinks.
-.make-deps-ensured: $(GOSRCBG)/Gopkg.lock $(GOSRCBG)/Gopkg.toml | $(DEPBIN)
-	cd $(realpath $(GOSRCBG)) && $(DEPBIN) ensure -v
+.make-deps-ensured: $(GOSRCBG)/Gopkg.lock $(GOSRCBG)/Gopkg.toml | go-tools
+	cd $(realpath $(GOSRCBG)) && $(GOTOOLS_BIN_DEP) ensure -v
 	touch $@
-	
+
 deps-ensured: .make-deps-ensured
 
 #
@@ -33,14 +24,14 @@ deps-ensured: .make-deps-ensured
 # Gopkg.lock file.
 #
 deps-update:
-	cd $(realpath $(GOSRCBG)) && $(DEPBIN) ensure -v -update
+	cd $(realpath $(GOSRCBG)) && $(GOTOOLS_BIN_DEP) ensure -v -update
 	touch .make-deps-ensured
 
 #
 # Invoke this target by hand to get a table of packages and their metadata.
 #
 deps-status:
-	cd $(realpath $(GOSRCBG)) && $(DEPBIN) status
+	cd $(realpath $(GOSRCBG)) && $(GOTOOLS_BIN_DEP) status
 
 #
 # Invoke this target by hand to add a new dependency.  For example:
@@ -49,10 +40,9 @@ deps-status:
 # Check in the resultant Gopkg.lock and Gopkg.toml changes.
 #
 deps-add:
-	cd $(realpath $(GOSRCBG)) && $(DEPBIN) ensure -add $(DEPNAME)
+	cd $(realpath $(GOSRCBG)) && $(GOTOOLS_BIN_DEP) ensure -add $(DEPNAME)
 	touch .make-deps-ensured
 
 clobber-godeps:
 	$(RM) -f .make-deps-ensured
 	$(RM) -fr $(GOSRCBGVENDOR)
-	$(RM) -f $(DEPBIN)

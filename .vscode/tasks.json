@@ -133,26 +133,6 @@
 				"focus": true,
 				"panel": "new"
 			}
-		},
-		{
-			"label": "Product: make docs",
-			"type": "shell",
-			"command": "make docs",
-			"presentation": {
-				"reveal": "always",
-				"focus": true,
-				"panel": "new"
-			}
-		},
-		{
-			"label": "Product: make plat-clobber",
-			"type": "shell",
-			"command": "make plat-clobber",
-			"presentation": {
-				"reveal": "always",
-				"focus": true,
-				"panel": "new"
-			}
 		}
 	]
 }
