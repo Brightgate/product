@@ -36,7 +36,7 @@ import (
 
 // Version gets increased each time there is a non-compatible change to the
 // config tree format, or ap.configd API.
-const Version = int32(15)
+const Version = int32(16)
 
 // Some specific, common ways in which apcfg operations can fail
 var (
@@ -460,10 +460,16 @@ func (c *APConfig) DeleteProp(prop string) error {
 // results into typed maps
 
 func getProp(root *PropertyNode, name string) (string, error) {
-	if child, ok := root.Children[name]; ok {
-		return child.Value, nil
+	child := root.Children[name]
+	if child == nil {
+		return "", fmt.Errorf("missing %s property", name)
 	}
-	return "", fmt.Errorf("missing %s property", name)
+
+	if child.Expires != nil && child.Expires.Before(time.Now()) {
+		return "", fmt.Errorf("expired %s property", name)
+	}
+
+	return child.Value, nil
 }
 
 func getStringVal(root *PropertyNode, name string) (string, error) {
@@ -722,7 +728,12 @@ func (c *APConfig) GetNics(ring string, local bool) ([]string, error) {
 			continue
 		}
 
-		for nicName, nic := range node.Children {
+		nics := node.Children["nics"]
+		if nics == nil {
+			continue
+		}
+
+		for nicName, nic := range nics.Children {
 			var nicRing string
 			if x, ok := nic.Children["ring"]; ok {
 				nicRing = x.Value

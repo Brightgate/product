@@ -61,6 +61,7 @@ func expirationHandler() {
 
 	expirationTimer = time.NewTimer(time.Duration(time.Minute))
 
+	first := true
 	for true {
 		<-expirationTimer.C
 		expirationLock.Lock()
@@ -84,7 +85,7 @@ func expirationHandler() {
 			}
 
 			delay := now.Sub(*next.Expires)
-			if delay.Seconds() > 1.0 {
+			if delay.Seconds() > 1.0 && !first {
 				log.Printf("Missed expiration for %s by %s\n",
 					next.name, delay)
 			}
@@ -116,6 +117,7 @@ func expirationHandler() {
 			propTreeStore()
 			propTreeMutex.Unlock()
 		}
+		first = false
 	}
 }
 

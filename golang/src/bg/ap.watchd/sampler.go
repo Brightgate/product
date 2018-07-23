@@ -399,13 +399,16 @@ func sampleInterface(state *samplerState) {
 		state.handle, err = openInterface(state.ring, state.iface)
 		if err != nil {
 			if !warned {
-				log.Printf("openInterface(%s) failed: %v\n",
-					state.iface, err)
+				log.Printf("openInterface failed: %v", err)
 				warned = true
 			}
 			time.Sleep(time.Second)
 			continue
+		} else if warned {
+			log.Printf("Sampler for %s (%s) online\n",
+				state.iface, state.ring)
 		}
+
 		warned = false
 
 		sampleLoop(state)

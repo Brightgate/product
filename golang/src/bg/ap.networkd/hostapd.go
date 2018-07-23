@@ -98,11 +98,11 @@ type stationInfo struct {
 
 // We have a single hostapd process, which may be managing multiple interfaces
 type hostapdHdl struct {
-	process   *aputil.Child
-	devices   []*physDevice
-	confFiles []string
-	authTypes map[string]bool
-	conns     []*hostapdConn
+	process   *aputil.Child   // the running hostapd child process
+	devices   []*physDevice   // the physical NICs being used
+	confFiles []string        // config files passed to the child
+	authTypes map[string]bool // authentication types offered by this AP
+	conns     []*hostapdConn  // control sockets
 	done      chan error
 }
 
@@ -394,6 +394,20 @@ func macUpdateLastOctet(mac string, nybble uint64) string {
 	return mac
 }
 
+// hostapd is going to spawn a virtual NIC for our second BSSID.  Add a node for
+// that NIC to our list of devices.
+func initPseudoNic(d *physDevice) {
+	pseudo := &physDevice{
+		name:     d.name + "_1",
+		hwaddr:   macUpdateLastOctet(d.hwaddr, 1),
+		ring:     base_def.RING_GUEST,
+		wireless: true,
+	}
+
+	id := getNicID(pseudo)
+	physDevices[id] = pseudo
+}
+
 //
 // Get network settings from configd and use them to initialize the AP
 //
@@ -424,6 +438,8 @@ func getAPConfig(d *physDevice) *apConfig {
 		log.Printf("%s can't support %d SSIDs\n", d.hwaddr, ssidCnt)
 		return nil
 	}
+
+	d.ring = base_def.RING_STANDARD
 	if ssidCnt > 1 {
 		// If we create multiple SSIDs, hostapd will generate
 		// additional bssids by incrementing the final octet of the
@@ -434,18 +450,7 @@ func getAPConfig(d *physDevice) *apConfig {
 			log.Printf("Changed mac from %s to %s\n", d.hwaddr, newMac)
 			d.hwaddr = newMac
 		}
-	}
-
-	d.ring = base_def.RING_STANDARD
-	persistNicRing(d)
-	if ssidCnt > 1 {
-		newMac := macUpdateLastOctet(d.hwaddr, 1)
-		pseudo := physDevice{
-			name:   d.name + "_1",
-			hwaddr: newMac,
-			ring:   base_def.RING_GUEST,
-		}
-		persistNicRing(&pseudo)
+		initPseudoNic(d)
 	}
 
 	pskssid := wifiSSID
@@ -552,6 +557,8 @@ func (h *hostapdHdl) generateHostAPDConf() {
 		devices = append(devices, d)
 	}
 
+	updateNicProperties()
+
 	h.devices = devices
 	h.authTypes = authTypes
 	h.confFiles = files
@@ -609,7 +616,7 @@ func (h *hostapdHdl) start() {
 	}
 
 	stopNetworkRebuild := make(chan bool, 1)
-	go rebuildUnenrolled(stopNetworkRebuild)
+	go rebuildUnenrolled(h.devices, stopNetworkRebuild)
 
 	h.process = aputil.NewChild(plat.HostapdCmd, h.confFiles...)
 	h.process.LogOutputTo("hostapd: ", log.Ldate|log.Ltime, os.Stderr)

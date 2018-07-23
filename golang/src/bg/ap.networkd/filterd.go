@@ -286,10 +286,9 @@ func genEndpointIface(e *endpoint, src bool) (string, error) {
 		d = "-o"
 	}
 
-	switch e.detail {
-	case "wan":
+	if e.detail == "wan" && wanNic != "" {
 		name = wanNic
-	default:
+	} else {
 		return "", fmt.Errorf("no such interface: %s", e.detail)
 	}
 	return fmt.Sprintf(" %s %s ", d, name), nil
@@ -627,8 +626,12 @@ func iptablesRebuild() {
 	iptablesAddRule("filter", "INPUT", " -s 127.0.0.1 -j ACCEPT")
 
 	// Add the basic routing rules for each interface
-	for ring := range rings {
-		ifaceForwardRules(ring)
+	if wanNic == "" {
+		log.Printf("No WAN interface defined - cannot set up NAT\n")
+	} else {
+		for ring := range rings {
+			ifaceForwardRules(ring)
+		}
 	}
 
 	// Repopulate the list of blocked  IPs
@@ -648,7 +651,10 @@ func iptablesRebuild() {
 	// WAN drops so they can be rate-limited independently.  We can
 	// optionally skip logging of dropped packets on the WAN port
 	// altogether.
-	wanFilter := "-i " + wanNic + " "
+	wanFilter := ""
+	if wanNic != "" {
+		wanFilter = "-i " + wanNic + " "
+	}
 	lanFilter := "! " + wanFilter
 	if _, err := config.GetProp("@/network/nologwan"); err != nil {
 		// Limit logged WAN drops to 1/second

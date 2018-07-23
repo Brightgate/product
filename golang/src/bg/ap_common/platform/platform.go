@@ -43,10 +43,11 @@ type Platform struct {
 	probe         func() bool
 	parseNodeID   func([]byte) (string, error)
 	setNodeID     func(string, string) error
-	nicIsWireless func(string) bool
-	nicIsWired    func(string) bool
-	nicIsWan      func(string, string) bool
-	nicID         func(string, string) string
+	NicIsVirtual  func(string) bool
+	NicIsWireless func(string) bool
+	NicIsWired    func(string) bool
+	NicIsWan      func(string, string) bool
+	NicID         func(string, string) string
 }
 
 var (
@@ -72,10 +73,11 @@ var (
 		probe:         rpiProbe,
 		parseNodeID:   rpiParseNodeID,
 		setNodeID:     rpiSetNodeID,
-		nicIsWireless: rpiNicIsWireless,
-		nicIsWired:    rpiNicIsWired,
-		nicIsWan:      rpiNicIsWan,
-		nicID:         rpiNicGetID,
+		NicIsVirtual:  rpiNicIsVirtual,
+		NicIsWireless: rpiNicIsWireless,
+		NicIsWired:    rpiNicIsWired,
+		NicIsWan:      rpiNicIsWan,
+		NicID:         rpiNicGetID,
 	}
 
 	mtPlatform = Platform{
@@ -96,10 +98,11 @@ var (
 		probe:         mtProbe,
 		parseNodeID:   mtParseNodeID,
 		setNodeID:     mtSetNodeID,
-		nicIsWireless: mtNicIsWireless,
-		nicIsWired:    mtNicIsWired,
-		nicIsWan:      mtNicIsWan,
-		nicID:         mtNicGetID,
+		NicIsVirtual:  mtNicIsVirtual,
+		NicIsWireless: mtNicIsWireless,
+		NicIsWired:    mtNicIsWired,
+		NicIsWan:      mtNicIsWan,
+		NicID:         mtNicGetID,
 	}
 
 	x86Platform = Platform{
@@ -120,10 +123,11 @@ var (
 		probe:         x86Probe,
 		parseNodeID:   x86ParseNodeID,
 		setNodeID:     x86SetNodeID,
-		nicIsWireless: x86NicIsWireless,
-		nicIsWired:    x86NicIsWired,
-		nicIsWan:      x86NicIsWan,
-		nicID:         x86NicGetID,
+		NicIsVirtual:  x86NicIsVirtual,
+		NicIsWireless: x86NicIsWireless,
+		NicIsWired:    x86NicIsWired,
+		NicIsWan:      x86NicIsWan,
+		NicID:         x86NicGetID,
 	}
 	knownPlatforms = []*Platform{&rpiPlatform, &mtPlatform, &x86Platform}
 )
@@ -198,6 +202,10 @@ func rpiSetNodeID(file, uuidStr string) error {
 	return fmt.Errorf("setting the nodeID is unsupported")
 }
 
+func rpiNicIsVirtual(nic string) bool {
+	return strings.HasPrefix(nic, "eth") && strings.Contains(nic, ".")
+}
+
 func rpiNicIsWireless(nic string) bool {
 	return strings.HasPrefix(nic, "wlan")
 }
@@ -256,6 +264,10 @@ func mtSetNodeID(file, uuidStr string) error {
 	return nil
 }
 
+func mtNicIsVirtual(nic string) bool {
+	return strings.HasPrefix(nic, "lan") && strings.Contains(nic, ".")
+}
+
 func mtNicIsWireless(nic string) bool {
 	return strings.HasPrefix(nic, "wlan")
 }
@@ -295,6 +307,10 @@ func x86ParseNodeID(data []byte) (string, error) {
 
 func x86SetNodeID(file, uuidStr string) error {
 	return fmt.Errorf("setting the nodeID is unsupported")
+}
+
+func x86NicIsVirtual(nic string) bool {
+	return false
 }
 
 func x86NicIsWireless(nic string) bool {
@@ -356,26 +372,4 @@ func (p *Platform) GetNodeID() (string, error) {
 
 	nodeID = uuidStr
 	return nodeID, nil
-}
-
-// NicIsWireless returns true if this NIC appears to be a wireless device.
-func (p *Platform) NicIsWireless(nic string) bool {
-	return p.nicIsWireless(nic)
-}
-
-// NicIsWired returns true if this NIC appears to be a wired device.
-func (p *Platform) NicIsWired(nic string) bool {
-	return p.nicIsWired(nic)
-}
-
-// NicIsWan returns true if this NIC appears to belong to a WAN port
-func (p *Platform) NicIsWan(name, mac string) bool {
-	return p.nicIsWan(name, mac)
-}
-
-// NicID returns an ID string for this NIC, which we expect to remain consistent
-// across reboots.  This string is used when storing configuration properties
-// for this NIC.
-func (p *Platform) NicID(name, mac string) string {
-	return p.nicID(name, mac)
 }

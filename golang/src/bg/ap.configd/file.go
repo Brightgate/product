@@ -250,6 +250,8 @@ func propTreeInit() {
 		}
 	}
 
-	dumpTree("root", propTreeRoot, 0)
+	if *verbose {
+		dumpTree("root", propTreeRoot, 0)
+	}
 	propTreeLoaded = true
 }

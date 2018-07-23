@@ -124,7 +124,7 @@ var (
 //
 
 func configChannelChanged(path []string, val string, expires *time.Time) {
-	nicID := path[2]
+	nicID := path[3]
 	newChannel, _ := strconv.Atoi(val)
 
 	if p := physDevices[nicID]; p != nil {
@@ -136,7 +136,7 @@ func configChannelChanged(path []string, val string, expires *time.Time) {
 }
 
 func configModeChanged(path []string, val string, expires *time.Time) {
-	nicID := path[2]
+	nicID := path[3]
 	newMode := val
 
 	if p := physDevices[nicID]; p != nil {
@@ -148,7 +148,7 @@ func configModeChanged(path []string, val string, expires *time.Time) {
 }
 
 func configRingChanged(path []string, val string, expires *time.Time) {
-	nicID := path[2]
+	nicID := path[3]
 	newRing := val
 
 	if p := physDevices[nicID]; p != nil {
@@ -415,7 +415,8 @@ func rebuildInternalNet() {
 func rebuildLan() {
 	// Connect all the wired LAN NICs to ring-appropriate bridges.
 	for _, dev := range physDevices {
-		if !dev.wireless && dev.ring != base_def.RING_INTERNAL &&
+		if !dev.wireless && !plat.NicIsVirtual(dev.name) &&
+			dev.ring != base_def.RING_INTERNAL &&
 			dev.ring != base_def.RING_WAN {
 			addDevToRingBridge(dev, dev.ring)
 		}
@@ -427,14 +428,7 @@ func rebuildLan() {
 // Connect those physical devices to the UNENROLLED bridge once hostapd is
 // running.  We don't have a good way to determine when hostapd has gotten far
 // enough for this operation to succeed, so we just keep trying.
-func rebuildUnenrolled(interrupt chan bool) {
-	devs := make([]*physDevice, 0)
-	for _, dev := range physDevices {
-		if dev.wireless && dev.activeMode != "" {
-			devs = append(devs, dev)
-		}
-	}
-
+func rebuildUnenrolled(devs []*physDevice, interrupt chan bool) {
 	t := time.NewTicker(time.Second)
 	for len(devs) > 0 {
 		select {
@@ -621,13 +615,100 @@ func createBridges() {
 	}
 }
 
-func persistNicRing(d *physDevice) {
-	id := plat.NicID(d.name, d.hwaddr)
-	log.Printf("Persisting %s -> %s\n", id, d.ring)
-	prop := "@/nodes/" + nodeUUID + "/" + id + "/ring"
-	err := config.CreateProp(prop, d.ring, nil)
-	if err != nil {
-		log.Printf("Failed to persist %s as %s: %v\n", id, d.ring, err)
+func newNicOps(id string, nic *physDevice) []apcfg.PropertyOp {
+	base := "@/nodes/" + nodeUUID + "/nics/" + id
+
+	ops := make([]apcfg.PropertyOp, 0)
+	if nic == nil {
+		op := apcfg.PropertyOp{
+			Op:   apcfg.PropDelete,
+			Name: base,
+		}
+		ops = append(ops, op)
+	} else {
+		var kind string
+		if nic.wireless {
+			kind = "wireless"
+		} else {
+			kind = "wired"
+		}
+
+		op := apcfg.PropertyOp{
+			Op:    apcfg.PropCreate,
+			Name:  base + "/kind",
+			Value: kind,
+		}
+		log.Printf("Setting %s to %s\n", id, op.Value)
+		ops = append(ops, op)
+
+		op = apcfg.PropertyOp{
+			Op:    apcfg.PropCreate,
+			Name:  base + "/ring",
+			Value: nic.ring,
+		}
+		ops = append(ops, op)
+	}
+
+	return ops
+}
+
+// Update the config tree with the current NIC inventory
+func updateNicProperties() {
+	inventory := make(map[string]*physDevice)
+	for id, d := range physDevices {
+		inventory[id] = d
+	}
+
+	// Get the information currently recorded in the config tree
+	nics := make(apcfg.ChildMap)
+	if r, _ := config.GetProps("@/nodes/" + nodeUUID + "/nics"); r != nil {
+		nics = r.Children
+	}
+
+	// Examine each entry in the config tree to determine whether it matches
+	// our current inventory.
+	ops := make([]apcfg.PropertyOp, 0)
+	for id, nic := range nics {
+		var ring string
+		var newOps []apcfg.PropertyOp
+
+		if x := nic.Children["ring"]; x != nil {
+			ring = x.Value
+		}
+
+		if dev := inventory[id]; dev != nil {
+			// This nic is in the config tree and our discovered
+			// inventory.  If the properties all match, then we can
+			// leave this alone
+
+			var ok bool
+			if x := nic.Children["kind"]; x != nil {
+				ok = (x.Value == "wireless" && dev.wireless) ||
+					(x.Value == "wired" && !dev.wireless)
+			}
+			if !ok || (ring != dev.ring) {
+				newOps = newNicOps(id, dev)
+			}
+			delete(inventory, id)
+		} else {
+			// This nic is in the config tree, but not in our
+			// current inventory.  Clean it up.
+			newOps = newNicOps(id, nil)
+		}
+		ops = append(ops, newOps...)
+	}
+
+	// If we have any remaining NICs that weren't already in the
+	// tree, add them now.
+	for id, d := range inventory {
+		newOps := newNicOps(id, d)
+		ops = append(ops, newOps...)
+	}
+
+	if len(ops) != 0 {
+		if _, err := config.Execute(ops); err != nil {
+			log.Printf("Error updating NIC inventory: %v\n", err)
+		}
 	}
 }
 
@@ -680,7 +761,6 @@ func prepareWan() {
 		wan = available
 		log.Printf("No outgoing device configured.  Using %s\n", wan.hwaddr)
 		wan.ring = outgoingRing
-		persistNicRing(wan)
 	}
 
 	wanNic = wan.name
@@ -875,6 +955,9 @@ func getDevices() {
 	for _, i := range all {
 		var d *physDevice
 
+		if plat.NicIsVirtual(i.Name) {
+			continue
+		}
 		if plat.NicIsWired(i.Name) {
 			d = getEthernet(i)
 		} else if plat.NicIsWireless(i.Name) {
@@ -885,7 +968,7 @@ func getDevices() {
 		}
 	}
 
-	nics, _ := config.GetProps("@/nodes/" + nodeUUID)
+	nics, _ := config.GetProps("@/nodes/" + nodeUUID + "/nics")
 	if nics != nil {
 		for nicID, nic := range nics.Children {
 			if d := physDevices[nicID]; d != nil {
@@ -1028,9 +1111,9 @@ func daemonInit() error {
 	}
 
 	config.HandleChange(`^@/clients/.*/ring$`, configClientChanged)
-	config.HandleChange(`^@/nodes/"+nodeUUID+"/.*/mode$`, configModeChanged)
-	config.HandleChange(`^@/nodes/"+nodeUUID+"/.*/channel$`, configChannelChanged)
-	config.HandleChange(`^@/nodes/"+nodeUUID+"/.*/ring$`, configRingChanged)
+	config.HandleChange(`^@/nodes/"+nodeUUID+"/nics/.*/mode$`, configModeChanged)
+	config.HandleChange(`^@/nodes/"+nodeUUID+"/nics/.*/channel$`, configChannelChanged)
+	config.HandleChange(`^@/nodes/"+nodeUUID+"/nics/.*/ring$`, configRingChanged)
 	config.HandleChange(`^@/rings/.*/auth$`, configAuthChanged)
 	config.HandleChange(`^@/network/`, configNetworkChanged)
 	config.HandleChange(`^@/firewall/rules/`, configRuleChanged)
@@ -1055,13 +1138,12 @@ func daemonInit() error {
 
 	// All wired devices that haven't yet been assigned to a ring will be
 	// put into "standard" by default
-
 	for _, dev := range physDevices {
 		if !dev.wireless && dev.ring == "" {
 			dev.ring = base_def.RING_STANDARD
-			persistNicRing(dev)
 		}
 	}
+	updateNicProperties()
 
 	if err = loadFilterRules(); err != nil {
 		return fmt.Errorf("unable to load filter rules: %v", err)
@@ -1094,7 +1176,7 @@ func networkCleanup() {
 		if strings.HasPrefix(name, "b") {
 			deleteBridge(name)
 		}
-		if strings.HasPrefix(name, "e") && strings.Contains(name, ".") {
+		if plat.NicIsVirtual(name) {
 			deleteVif(name)
 		}
 	}
