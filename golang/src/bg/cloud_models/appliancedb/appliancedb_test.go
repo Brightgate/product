@@ -201,7 +201,7 @@ func testCloudStorage(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 	assert.Equal(*cs2, *cs3)
 }
 
-// Test insert/update of registry data.  subtest of TestDatabaseModel
+// Test loading and using a more realistic set of registry data.  subtest of TestDatabaseModel
 func testUnittestData(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
 	ctx := context.Background()
 	assert := require.New(t)
@@ -254,11 +254,11 @@ func mkTemplate(ctx context.Context) {
 	if err != nil {
 		log.Fatalf("failed to connect to templatedb: %+v", err)
 	}
+	defer templateDB.Close()
 	err = templateDB.LoadSchema(ctx, "schema")
 	if err != nil {
 		log.Fatalf("failed to load schema: %+v", err)
 	}
-	templateDB.Close()
 }
 
 func TestDatabaseModel(t *testing.T) {

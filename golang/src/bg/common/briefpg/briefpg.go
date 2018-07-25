@@ -117,7 +117,7 @@ func init() {
 
 pathLoop:
 	for _, path := range allPaths {
-		newCmds := make(map[string]string, 1)
+		newCmds := make(map[string]string)
 		for _, cName := range utilities {
 			p := filepath.Join(path, cName)
 			if _, err := os.Stat(p); err != nil {
@@ -197,16 +197,16 @@ func (bp *BriefPG) initDB(ctx context.Context) error {
 		cmdOut, err := cmd.CombinedOutput()
 		bp.Logger.Println("briefpg: " + string(cmdOut))
 		if err != nil {
-			return wrapExecErr("initdb failed", cmd, err)
+			return wrapExecErr("initDB failed", cmd, err)
 		}
-		bp.state = stateInitialized
 	}
 	confFile := filepath.Join(bp.TmpDir, pgVer, "postgresql.conf")
 	// Unix domain sockets appear in the TmpDir
 	confContents := fmt.Sprintf(pgConf, bp.TmpDir)
 	if err := ioutil.WriteFile(confFile, []byte(confContents), 0600); err != nil {
-		return errors.Wrap(err, "initdb failed")
+		return errors.Wrap(err, "initDB failed to write config")
 	}
+	bp.state = stateInitialized
 	return nil
 }
 
