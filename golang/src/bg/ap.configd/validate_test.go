@@ -73,8 +73,8 @@ var (
 				"unenrolled", "core", "standard", "devices",
 				"guest", "quarantine", "internal",
 			},
-			badVals: []string{"a", "aaa", "no", "yes", "",
-				"lan", "c0re"},
+			badVals: []string{"a", "aaa", "no", "yes", "lan",
+				"c0re"},
 			testFunc: validateRing,
 		},
 		{

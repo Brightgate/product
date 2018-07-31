@@ -61,6 +61,7 @@ var (
 		"time":       validateTime,
 		"uuid":       validateUUID,
 		"ring":       validateRing,
+		"nickind":    validateNicKind,
 		"macaddr":    validateMac,
 		"ipaddr":     validateIP,
 		"cidr":       validateCIDR,
@@ -144,10 +145,20 @@ func validateUUID(val string) error {
 	return err
 }
 
+func validateNicKind(val string) error {
+	var err error
+
+	l := strings.ToLower(val)
+	if l != "wired" && l != "wireless" {
+		err = fmt.Errorf("'%s' is not a valid nic kind", val)
+	}
+	return err
+}
+
 func validateRing(val string) error {
 	var err error
 
-	if apcfg.ValidRings[val] == false {
+	if val != "" && apcfg.ValidRings[val] == false {
 		err = fmt.Errorf("'%s' is not a valid ring", val)
 	}
 	return err
