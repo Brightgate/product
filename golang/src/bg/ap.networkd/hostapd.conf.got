@@ -1,7 +1,8 @@
 interface={{.Interface}}
 driver=nl80211
 hw_mode={{.Mode}}
-ieee80211n=1
+{{.ModeNComment}}ieee80211n=1
+{{.ModeNComment}}ht_capab={{.ModeNHTCapab}}
 
 # Parameters are not necessarily inherited across successive bssid
 # declarations.  hostapd_config_defaults_bss() has the parameters that

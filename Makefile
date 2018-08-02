@@ -710,6 +710,7 @@ $(APPBIN)/ap.mcp: $(GOSRCBG)/ap.mcp/mcp.go
 $(APPBIN)/ap.networkd: \
 	$(GOSRCBG)/ap.networkd/filterd.go \
 	$(GOSRCBG)/ap.networkd/hostapd.go \
+	$(GOSRCBG)/ap.networkd/iwinfo.go \
 	$(GOSRCBG)/ap.networkd/networkd.go \
 	$(GOSRCBG)/ap.networkd/ntpd.go \
 	$(GOSRCBG)/ap.networkd/parse.go

@@ -41,6 +41,14 @@ const (
 	hostapdOptions = "-dKt"
 )
 
+var (
+	// In 802.11n, a 40MHz channel is constructed from 2 20MHz channels.
+	// Whether the primary channel is above or below the secondary will
+	// determine one of the ht_capab settings.
+	nModePrimaryAbove map[int]bool
+	nModePrimaryBelow map[int]bool
+)
+
 type apConfig struct {
 	// Fields used to populate the configuration template
 	Interface  string // Linux device name
@@ -53,6 +61,9 @@ type apConfig struct {
 	PskComment string // Used to disable wpa-psk in .conf template
 	EapComment string // Used to disable wpa-eap in .conf template
 	ConfDir    string // Location of hostapd.conf, etc.
+
+	ModeNComment string // Enable 802.11n
+	ModeNHTCapab string // Set the ht_capab field for 802.11n
 
 	authTypes []string // authentication types enabled
 	confFile  string   // Name of this NIC's hostapd.conf
@@ -82,6 +93,7 @@ type hostapdConn struct {
 	localName   string        // our end of the control socket
 	remoteName  string        // hostapd's end of the control socket
 	authType    string        // authentication type used by this bssid
+	wifiBand    string        // wifi mode type used by this bssid
 	conn        *net.UnixConn // unix-domain control socket to hostapd
 	liveCmd     *hostapdCmd   // the in-flight hostapd command
 	pendingCmds []*hostapdCmd // all queued commands
@@ -232,8 +244,7 @@ func (c *hostapdConn) stationPresent(sta string, newConnection bool) {
 	log.Printf("stationPresent(%s) new: %v\n", sta, newConnection)
 	info := c.stations[sta]
 	if info == nil {
-		sendNetEntity(sta, &c.device.activeMode, &c.authType, nil,
-			false)
+		sendNetEntity(sta, &c.wifiBand, &c.authType, nil, false)
 		info = &stationInfo{}
 		c.stations[sta] = info
 	}
@@ -254,7 +265,7 @@ func (c *hostapdConn) stationPresent(sta string, newConnection bool) {
 func (c *hostapdConn) stationGone(sta string) {
 	log.Printf("stationGone(%s)\n", sta)
 	delete(c.stations, sta)
-	sendNetEntity(sta, &c.device.activeMode, nil, nil, true)
+	sendNetEntity(sta, &c.wifiBand, nil, nil, true)
 }
 
 // Handle an async status message from hostapd
@@ -398,10 +409,10 @@ func macUpdateLastOctet(mac string, nybble uint64) string {
 // that NIC to our list of devices.
 func initPseudoNic(d *physDevice) {
 	pseudo := &physDevice{
-		name:     d.name + "_1",
-		hwaddr:   macUpdateLastOctet(d.hwaddr, 1),
-		ring:     base_def.RING_GUEST,
-		wireless: true,
+		name:   d.name + "_1",
+		hwaddr: macUpdateLastOctet(d.hwaddr, 1),
+		ring:   base_def.RING_GUEST,
+		wifi:   d.wifi,
 	}
 
 	id := getNicID(pseudo)
@@ -412,7 +423,10 @@ func initPseudoNic(d *physDevice) {
 // Get network settings from configd and use them to initialize the AP
 //
 func getAPConfig(d *physDevice) *apConfig {
-	var radiusServer string
+	var hwMode, radiusServer string
+	var modeNComment, modeNHTCapab string
+
+	w := d.wifi
 
 	authTypes := make([]string, 0)
 	pskComment := "#"
@@ -434,7 +448,7 @@ func getAPConfig(d *physDevice) *apConfig {
 	}
 
 	ssidCnt := len(authTypes)
-	if ssidCnt > d.interfaces {
+	if ssidCnt > w.interfaces {
 		log.Printf("%s can't support %d SSIDs\n", d.hwaddr, ssidCnt)
 		return nil
 	}
@@ -455,24 +469,48 @@ func getAPConfig(d *physDevice) *apConfig {
 
 	pskssid := wifiSSID
 	eapssid := wifiSSID + "-eap"
-	mode := d.activeMode
-	if mode == "ac" {
-		// 802.11ac is configured using "hw_mode=a"
-		mode = "a"
+	if w.activeBand == loBand {
+		hwMode = "g"
+	} else if w.activeBand == hiBand {
+		hwMode = "a"
 		pskssid += "-5GHz"
 		eapssid += "-5GHz"
+	} else {
+		log.Printf("unsupported wifi band: %s\n", d.wifi.activeBand)
+		return nil
 	}
+
+	if w.wifiModes["n"] {
+		// XXX: config option for short GI?
+		if w.freqWidths[40] {
+			// With a 40MHz channel, we can support a secondary
+			// 20MHz channel either above or below the primary,
+			// depending on what the primary channel is.
+			if nModePrimaryAbove[w.activeChannel] {
+				modeNHTCapab += "[HT40+]"
+			}
+			if nModePrimaryBelow[w.activeChannel] {
+				modeNHTCapab += "[HT40-]"
+			}
+		}
+	} else {
+		modeNComment = "#"
+	}
+
 	data := apConfig{
 		Interface:  d.name,
 		HWaddr:     d.hwaddr,
 		PSKSSID:    pskssid,
 		EAPSSID:    eapssid,
-		Mode:       mode,
-		Channel:    d.activeChannel,
+		Mode:       hwMode,
+		Channel:    d.wifi.activeChannel,
 		Passphrase: wifiPassphrase,
 		PskComment: pskComment,
 		EapComment: eapComment,
 		ConfDir:    confdir,
+
+		ModeNComment: modeNComment,
+		ModeNHTCapab: modeNHTCapab,
 
 		authTypes:            authTypes,
 		RadiusAuthServer:     radiusServer,
@@ -585,6 +623,7 @@ func (h *hostapdHdl) newConn(d *physDevice, auth, suffix string) *hostapdConn {
 		remoteName:  remoteName,
 		localName:   localName,
 		authType:    auth,
+		wifiBand:    d.wifi.activeBand,
 		active:      true,
 		device:      d,
 		pendingCmds: make([]*hostapdCmd, 0),
@@ -675,12 +714,32 @@ func (h *hostapdHdl) wait() error {
 	return err
 }
 
+func initChannelLists() {
+	// The 2.4GHz band is crowded, so the use of 40MHz bonded channels is
+	// discouraged.  Thus, the following lists only include channels in the
+	// 5GHz band.
+	above := []int{36, 44, 52, 60, 100, 108, 116, 124, 132, 140, 149, 157}
+	below := []int{40, 48, 56, 64, 104, 112, 120, 128, 136, 144, 153, 161}
+
+	nModePrimaryAbove = make(map[int]bool)
+	for _, c := range above {
+		nModePrimaryAbove[c] = true
+	}
+
+	nModePrimaryBelow = make(map[int]bool)
+	for _, c := range below {
+		nModePrimaryBelow[c] = true
+	}
+}
+
 func startHostapd(devs []*physDevice) *hostapdHdl {
 	h := &hostapdHdl{
 		devices: devs,
 		conns:   make([]*hostapdConn, 0),
 		done:    make(chan error, 1),
 	}
+
+	initChannelLists()
 
 	go h.start()
 	return h
