@@ -413,6 +413,7 @@ func initPseudoNic(d *physDevice) {
 		hwaddr: macUpdateLastOctet(d.hwaddr, 1),
 		ring:   base_def.RING_GUEST,
 		wifi:   d.wifi,
+		pseudo: true,
 	}
 
 	id := getNicID(pseudo)

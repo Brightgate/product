@@ -71,6 +71,7 @@ var (
 		"passphrase": validatePassphrase,
 		"auth":       validateAuth,
 		"wifimode":   validateWifiMode,
+		"wifiband":   validateWifiBand,
 		"user":       validateString,
 		"uid":        validateString,
 		"email":      validateString,
@@ -257,14 +258,26 @@ func validateAuth(val string) error {
 	return err
 }
 
-func validateWifiMode(val string) error {
+func validateWifiBand(val string) error {
 	var err error
 
-	if val != "g" && val != "ac" {
-		err = fmt.Errorf("only wifi modes 'ac' and 'g' are supported")
+	if val != "2.4GHz" && val != "5GHz" {
+		err = fmt.Errorf("invalid wifi band")
 	}
 
 	return err
+}
+
+func validateWifiMode(val string) error {
+	modes := []string{"a", "b", "g", "n", "ac"}
+
+	for _, mode := range modes {
+		if val == mode {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("invalid wifi mode")
 }
 
 // Walking a concrete path, find the vnode that matches this field in the path.

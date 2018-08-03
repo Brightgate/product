@@ -65,6 +65,7 @@ var (
 	nodeUUID string
 
 	wifiEvaluate   bool
+	wifiChannels   map[string]int
 	wifiSSID       string
 	wifiPassphrase string
 	radiusSecret   string
@@ -88,6 +89,7 @@ type physDevice struct {
 	name   string // Linux device name
 	hwaddr string // mac address
 	ring   string // configured ring
+	pseudo bool
 
 	wifi *wifiInfo
 }
@@ -212,24 +214,53 @@ func configAuthChanged(path []string, val string, expires *time.Time) {
 }
 
 func configNetworkChanged(path []string, val string, expires *time.Time) {
-	// Watch for changes to the network conf
-	switch path[1] {
-	case "ssid":
-		wifiSSID = val
-		log.Printf("SSID changed to %s\n", val)
+	var reload bool
 
-	case "passphrase":
-		wifiPassphrase = val
-		log.Printf("passphrase changed to %s\n", val)
+	if len(path) == 2 {
+		switch path[1] {
+		case "ssid":
+			wifiSSID = val
+			reload = true
+			log.Printf("SSID changed to %s\n", val)
 
-	case "radiusAuthSecret":
-		radiusSecret = val
-		log.Printf("radiusAuthSecret changed to %s\n", val)
+		case "passphrase":
+			wifiPassphrase = val
+			reload = true
+			log.Printf("passphrase changed to %s\n", val)
 
-	default:
-		return
+		case "radiusAuthSecret":
+			radiusSecret = val
+			reload = true
+			log.Printf("radiusAuthSecret changed to %s\n", val)
+		}
+	} else if len(path) == 3 && path[2] == "channel" {
+		channel, _ := strconv.Atoi(val)
+		band := path[1]
+
+		if band == loBand || band == hiBand {
+			if legalChannels[band][channel] {
+				wifiChannels[band] = channel
+				reload = true
+				wifiEvaluate = true
+			} else {
+				log.Printf("ignoring illegal channel '%d' "+
+					"for %s\n", channel, band)
+			}
+		}
 	}
-	hostapd.reload()
+
+	if reload {
+		hostapd.reload()
+	}
+}
+
+func setChannel(w *wifiInfo, channel int) error {
+	band := w.activeBand
+	if w.channels[channel] && legalChannels[band][channel] {
+		w.activeChannel = channel
+		return nil
+	}
+	return fmt.Errorf("channel %d not valid on %s", channel, band)
 }
 
 // From a list of possible channels, select one at random that is supported by
@@ -240,9 +271,7 @@ func randomChannel(w *wifiInfo, list []int) error {
 	start := rand.Int() % len(list)
 	idx := start
 	for {
-		c := list[idx]
-		if w.channels[c] && legalChannels[band][c] {
-			w.activeChannel = c
+		if setChannel(w, list[idx]) == nil {
 			return nil
 		}
 
@@ -271,13 +300,20 @@ func selectWifiChannel(d *physDevice) error {
 		return fmt.Errorf("doesn't support %s", band)
 	}
 
-	// If the user has configured a channel, try that first.
-	if w.cfgChannel > 0 {
-		if _, ok := legalChannels[band][w.cfgChannel]; ok {
-			w.activeChannel = w.cfgChannel
+	// If the user has configured a channel for this nic, try that first.
+	if w.cfgChannel != 0 {
+		if err = setChannel(w, w.cfgChannel); err == nil {
 			return nil
 		}
-		log.Printf("Channel %d not valid for %s\n", w.cfgChannel, band)
+		log.Printf("nic-specific %v\n", err)
+	}
+
+	// If the user has configured a channel for this band, try that next.
+	if wifiChannels[band] != 0 {
+		if err = setChannel(w, wifiChannels[band]); err == nil {
+			return nil
+		}
+		log.Printf("band-specific %v\n", err)
 	}
 
 	if band == loBand {
@@ -306,7 +342,7 @@ func selectWifiChannel(d *physDevice) error {
 func score(d *physDevice, band string) int {
 	var score int
 
-	if d == nil || d.wifi == nil {
+	if d == nil || d.pseudo || d.wifi == nil {
 		return 0
 	}
 
@@ -963,6 +999,15 @@ func globalWifiInit(props *apcfg.PropertyNode) error {
 		wifiPassphrase = node.Value
 	} else {
 		return fmt.Errorf("no WPA-PSK passphrase configured")
+	}
+
+	wifiChannels = make(map[string]int)
+	for _, band := range bands {
+		if bprop, ok := props.Children[band]; ok {
+			if c, ok := bprop.Children["channel"]; ok {
+				wifiChannels[band], _ = strconv.Atoi(c.Value)
+			}
+		}
 	}
 
 	return nil
