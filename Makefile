@@ -306,7 +306,6 @@ ALL_GOPKGS = $(APP_GOPKGS) $(CLOUD_GOPKGS)
 APP_GOPKGS = $(COMMON_GOPKGS) $(APPCOMMAND_GOPKGS) $(APPDAEMON_GOPKGS)
 
 MISCCOMMANDS = \
-	ap-start \
 	ap-rpc
 
 APPBINARIES = \
@@ -665,9 +664,6 @@ COMMON_SRCS = \
 	$(GOSRCBG)/base_msg/base_msg.pb.go
 
 $(APPBINARIES): $(APP_COMMON_SRCS) | $(APPBIN) deps-ensured
-
-$(APPBIN)/ap-start: ap-start.sh
-	$(INSTALL) -m 0755 $< $@
 
 # Build rules for go binaries.
 

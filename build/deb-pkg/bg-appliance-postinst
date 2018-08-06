@@ -36,6 +36,7 @@ if [ "x$1" = "xconfigure" ]; then
 
 # Brightgate Options Start
 ipv4only
+nohook wpa_supplicant
 allowinterfaces eth* enx*
 denyinterfaces eth*.* enx*.*
 option vendor_class_identifier, vendor_encapsulated_options

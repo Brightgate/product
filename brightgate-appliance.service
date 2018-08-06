@@ -1,5 +1,5 @@
 #
-# COPYRIGHT 2017 Brightgate Inc. All rights reserved.
+# COPYRIGHT 2018 Brightgate Inc. All rights reserved.
 #
 # This copyright notice is Copyright Management Information under 17 USC 1202
 # and is included to protect this work and deter copyright infringement.
@@ -14,7 +14,7 @@ After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=/opt/com.brightgate/bin/ap-start
+ExecStart=/opt/com.brightgate/bin/ap-ctl start all
 
 [Unit]
 Requires=ap.mcp.service
