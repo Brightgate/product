@@ -120,10 +120,15 @@ var legalChannels map[string]map[int]bool
 var channelLists = map[string][]int{
 	"loBand20MHz":     {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
 	"loBandNoOverlap": {1, 6, 11},
-	"hiBand20MHz": {36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60, 62,
-		64, 100, 102, 104, 106, 108, 110, 112, 114, 116, 118, 120, 122,
-		124, 126, 128, 130, 132, 134, 136, 138, 140, 142, 144, 149, 151,
-		153, 155, 157, 159, 161, 163, 165},
+	"hiBand20MHz": {36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116,
+		120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165},
+	// These numbers are not the centers of the 40MHz channels, as shown in
+	// many channel diagrams and the List of WLAN channels Wikipedia page.
+	// Instead, they are the channel number of the primary 20MHz channel
+	// component of the 40MHz channel (whether above or below the primary).
+	// This is how hostapd expects you to tell it what channel to run on, as
+	// well as how the Mac client interface numbers them.  See also
+	// initChannelLists() in hostapd.go.
 	"hiBand40MHz": {36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116,
 		120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161},
 }
@@ -942,14 +947,17 @@ func getDevices() {
 }
 
 func makeValidChannelMaps() {
-	// XXX: These channel lists are legal for the US.  We will need to ship
-	// per-country lists, presumably indexed by regulatory domain.
+	// XXX: These (valid 20MHz) channel lists are legal for the US.  We will
+	// need to ship per-country lists, presumably indexed by regulatory
+	// domain.  In the US, with the exception of channel 165, all these
+	// channels are valid primaries for 40MHz channels (see initChannelLists
+	// in hostapd.go), though that is not true for all countries, and is not
+	// true for 160MHz channels, once we start supporting those.
 	channels := map[string][]int{
 		loBand: {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
-		hiBand: {36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60,
-			62, 64, 100, 102, 104, 106, 108, 110, 112, 114, 116,
-			118, 120, 122, 124, 126, 128, 132, 136, 138, 140, 142,
-			144, 149, 151, 153, 155, 159, 161, 165},
+		hiBand: {36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112,
+			116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157,
+			161, 165},
 	}
 
 	// Convert the arrays of channels into channel-indexed maps, for easier
