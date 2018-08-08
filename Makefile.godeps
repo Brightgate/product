@@ -12,26 +12,37 @@
 # management and is meant for inclusion by the main Makefile.
 
 # n.b. we use realpath because 'dep' is very picky when faced with symlinks.
-.make-deps-ensured: $(GOSRCBG)/Gopkg.lock $(GOSRCBG)/Gopkg.toml | go-tools
+GODEPS_ENSURED=.make-deps-ensured
+$(GODEPS_ENSURED): $(GOSRCBG)/Gopkg.lock $(GOSRCBG)/Gopkg.toml $(GOTOOLS)
 	cd $(realpath $(GOSRCBG)) && $(GOTOOLS_BIN_DEP) ensure -v
 	touch $@
 
-deps-ensured: .make-deps-ensured
+.PHONY: godeps-ensured
+godeps-ensured: $(GODEPS_ENSURED)
 
 #
 # Invoke this target by hand to force vendored packages to update.  This
 # could cause breakage, so test accordingly.  Check in the resultant
 # Gopkg.lock file.
 #
-deps-update:
+.PHONY: godeps-update
+godeps-update: $(GOTOOLS)
 	cd $(realpath $(GOSRCBG)) && $(GOTOOLS_BIN_DEP) ensure -v -update
-	touch .make-deps-ensured
+	touch $(GODEPS_ENSURED)
 
 #
 # Invoke this target by hand to get a table of packages and their metadata.
 #
-deps-status:
+.PHONY: godeps-status
+godeps-status: $(GOTOOLS)
 	cd $(realpath $(GOSRCBG)) && $(GOTOOLS_BIN_DEP) status
+
+#
+# Invoke this target to check that vendor is synced up properly
+#
+.PHONY: godeps-check
+godeps-check: $(GOTOOLS)
+	cd $(realpath $(GOSRCBG)) && $(GOTOOLS_BIN_DEP) check
 
 #
 # Invoke this target by hand to add a new dependency.  For example:
@@ -39,10 +50,11 @@ deps-status:
 #
 # Check in the resultant Gopkg.lock and Gopkg.toml changes.
 #
-deps-add:
+.PHONY: deps-add
+godeps-add: $(GOTOOLS)
 	cd $(realpath $(GOSRCBG)) && $(GOTOOLS_BIN_DEP) ensure -add $(DEPNAME)
-	touch .make-deps-ensured
+	touch $(GODEPS_ENSURED)
 
-clobber-godeps:
-	$(RM) -f .make-deps-ensured
-	$(RM) -fr $(GOSRCBGVENDOR)
+.PHONY: godeps-clobber
+godeps-clobber:
+	$(RM) -fr $(GOSRCBGVENDOR) $(GODEPS_ENSURED)

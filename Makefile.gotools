@@ -12,7 +12,8 @@ GOTOOLS_DIR=$(GITROOT)/_tools.$(GOHOSTARCH)
 GOTOOLS_BIN=$(GOTOOLS_DIR)/bin
 
 GOTOOLS_dep_repo=github.com/golang/dep
-GOTOOLS_dep_hash=2795244c5c
+# dep v0.5.0
+GOTOOLS_dep_hash=224a564abe
 
 GOTOOLS_cmddep_repo=github.com/golang/dep/cmd/dep
 # Pin to same as dep
@@ -42,30 +43,38 @@ GOTOOLS_ALL=\
 	    GOTOOLS_mockery \
 	    GOTOOLS_cmdmockery
 
+GOTOOLS_ALL_BUILT=
+
 $(GOTOOLS_DIR):
 	mkdir -p $@
 
 define GOTOOL_MAKETARGET
-$(target)_built=$(GOTOOLS_DIR)/buildstamp/$$($(target)_repo)/built-$$($(target)_hash)
+# escape the name of the repo, / -> -
+$(target)_repo_e=$$(subst /,-,$$($(target)_repo))
+# glob pattern so we can delete all buildstamps for this repo name
+$(target)_built_glob=$(GOTOOLS_DIR)/buildstamp/$$($(target)_repo_e)-GITHASH-*
+# buildstamp for repo and hash
+$(target)_built=$(GOTOOLS_DIR)/buildstamp/$$($(target)_repo_e)-GITHASH-$$($(target)_hash)
+GOTOOLS_ALL_BUILT+=$$($(target)_built)
 
-.PHONY: $(target)
-$(target): $$($(target)_built)
-
-$$($(target)_built): $$($(target)_deps)
+$$($(target)_built): $$($(target)_deps) | $(GOTOOLS_DIR)
 	@echo "go-tools: installing $$($(target)_repo)@$$($(target)_hash)"
-	@trap "rm -fr $(GOTOOLS_DIR)/src/ $(GOTOOLS_DIR)/buildstamp" INT && \
-	env -u GOARCH GOPATH=$(GOTOOLS_DIR) $(GO) get -d $$($(target)_repo) && \
-	(cd $(GOTOOLS_DIR)/src/$$($(target)_repo) && git checkout --quiet $$($(target)_hash)) && \
-	env -u GOARCH GOPATH=$(GOTOOLS_DIR) $(GO) install $$($(target)_repo)
-	@mkdir -p $$(dir $$@) && touch $$@
+	@$(RM) -f $$($(target)_built_glob)
+	@trap "$(RM) -fr $(GOTOOLS_DIR)/src/ $(GOTOOLS_DIR)/buildstamp" INT && \
+		unset GOARCH && export GOPATH=$(GOTOOLS_DIR) && \
+	        $(GO) get -d $$($(target)_repo) && \
+	        git -C $(GOTOOLS_DIR)/src/$$($(target)_repo) checkout --force --quiet $$($(target)_hash) && \
+	        $(GO) install $$($(target)_repo)
+	@$(MKDIR) -p $$(dir $$@) && touch $$@
 
 endef
 
 $(foreach target, $(GOTOOLS_ALL), $(eval $(GOTOOL_MAKETARGET)))
 
-.PHONY: go-tools
-go-tools: $(GOTOOLS_ALL) $(MAKEFILE_LIST) | $(GOTOOLS_DIR)
+GOTOOLS=.make-go-tools
+$(GOTOOLS): $(GOTOOLS_ALL_BUILT)
+	touch $@
 
-.PHONY: clobber-gotools
-clobber-gotools:
-	$(RM) -fr $(GOTOOLS_DIR)
+.PHONY: gotools-clobber
+gotools-clobber:
+	$(RM) -fr $(GOTOOLS_DIR) $(GOTOOLS)

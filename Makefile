@@ -42,16 +42,20 @@
 #
 # OS definitions
 #
-UNAME_S = $(shell uname -s)
-UNAME_M = $(shell uname -m)
+# note: These are constants; := avoids repeated shell invocations
+UNAME_S := $(shell uname -s)
+UNAME_M := $(shell uname -m)
 
 #
 # Git related definitions
 #
-export GITROOT = $(shell git rev-parse --show-toplevel)
+# note: These are constants; := avoids repeated shell invocations
+GITROOT := $(shell git rev-parse --show-toplevel)
+GITHASH := $(shell git describe --always --long --dirty)
+# Needs deferred expansion, can't use :=
+GITCHANGED = $(shell grep -s -q '"$(GITHASH)"' $(GOSRCBG)/common/version.go || echo FRC)
+
 export GOPATH=$(GITROOT)/golang
-GITHASH=$(shell git describe --always --long --dirty)
-GITCHANGED=$(shell grep -s -q '"$(GITHASH)"' $(GOSRCBG)/common/version.go || echo FRC)
 
 #
 # Go environment setup
@@ -90,10 +94,11 @@ $(error go does not exist at specified $$GOROOT: $(GOROOT))
 endif
 endif
 
-GOOS = $(shell GOROOT=$(GOROOT) $(GO) env GOOS)
-GOARCH = $(shell GOROOT=$(GOROOT) $(GO) env GOARCH)
-GOHOSTARCH = $(shell GOROOT=$(GOROOT) $(GO) env GOHOSTARCH)
-GOVERSION = $(shell GOROOT=$(GOROOT) $(GO) version)
+# note: These are constants; := avoids repeated invocation of shell
+GOOS := $(shell GOROOT=$(GOROOT) $(GO) env GOOS)
+GOARCH := $(shell GOROOT=$(GOROOT) $(GO) env GOARCH)
+GOHOSTARCH := $(shell GOROOT=$(GOROOT) $(GO) env GOHOSTARCH)
+GOVERSION := $(shell GOROOT=$(GOROOT) $(GO) version)
 
 GOWS = golang
 GOSRC = $(GOWS)/src
@@ -156,10 +161,10 @@ endif
 # SYSROOT doesn't work right if isn't an absolute path.  We need to use the
 # external realpath so that we can tell it to ignore the possibility that the
 # path and its components don't exist.
-CROSS_SYSROOT=$(shell realpath -m $(SYSROOT))
-CROSS_CC=/usr/bin/arm-linux-gnueabihf-gcc
-CROSS_CGO_LDFLAGS=--sysroot $(CROSS_SYSROOT) -Lusr/local/lib
-CROSS_CGO_CFLAGS=--sysroot $(CROSS_SYSROOT) -Iusr/local/include
+CROSS_SYSROOT = $(shell realpath -m $(SYSROOT))
+CROSS_CC = /usr/bin/arm-linux-gnueabihf-gcc
+CROSS_CGO_LDFLAGS = --sysroot $(CROSS_SYSROOT) -Lusr/local/lib
+CROSS_CGO_CFLAGS = --sysroot $(CROSS_SYSROOT) -Iusr/local/include
 
 CROSS_ENV = \
 	SYSROOT=$(CROSS_SYSROOT) \
@@ -506,6 +511,18 @@ CLOUD_COMMON_SRCS = \
 
 COVERAGE_DIR = coverage
 
+#
+# Go Tools: Install versioned binaries for 'dep', 'mockery', etc.
+#
+include ./Makefile.gotools
+
+#
+# Go Dependencies: Pull in definitions for 'dep'
+#
+include ./Makefile.godeps
+
+.DEFAULT_GOAL = install
+
 install: tools mocks $(TARGETS)
 
 appliance: $(APPCOMPONENTS)
@@ -551,10 +568,10 @@ mocks: $(GO_MOCK_SRCS)
 # Mock rules-- not sure how to make this work with pattern substitution
 # The use of 'realpath' avoids an issue in mockery for workspaces with
 # symlinks (https://github.com/vektra/mockery/issues/157).
-$(GO_MOCK_CLOUDRPC): $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go $(GOSRCBG)/base_msg/base_msg.pb.go | go-tools deps-ensured
+$(GO_MOCK_CLOUDRPC): $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go $(GOSRCBG)/base_msg/base_msg.pb.go $(GOTOOLS) $(GODEPS_ENSURED)
 	cd $(realpath $(dir $<)) && GOPATH=$(realpath $(GOPATH)) $(GOTOOLS_BIN_MOCKERY) -name 'EventClient'
 
-$(GO_MOCK_APPLIANCEDB): $(GOSRCBG)/cloud_models/appliancedb/appliancedb.go | go-tools deps-ensured
+$(GO_MOCK_APPLIANCEDB): $(GOSRCBG)/cloud_models/appliancedb/appliancedb.go $(GOTOOLS) $(GODEPS_ENSURED)
 	cd $(realpath $(dir $<)) && GOPATH=$(realpath $(GOPATH)) $(GOTOOLS_BIN_MOCKERY) -name 'DataStore'
 
 test: test-go
@@ -663,7 +680,7 @@ COMMON_SRCS = \
 	$(GOSRCBG)/base_def/base_def.go \
 	$(GOSRCBG)/base_msg/base_msg.pb.go
 
-$(APPBINARIES): $(APP_COMMON_SRCS) | $(APPBIN) deps-ensured
+$(APPBINARIES): $(APP_COMMON_SRCS) $(GODEPS_ENSURED) | $(APPBIN)
 
 # Build rules for go binaries.
 
@@ -749,7 +766,7 @@ LOCAL_BINARIES=$(APPBINARIES:$(APPBIN)/%=$(GOBIN)/%)
 
 # Miscellaneous utility components
 
-$(UTILBINARIES): $(UTILCOMMON_SRCS) | deps-ensured
+$(UTILBINARIES): $(UTILCOMMON_SRCS) $(GODEPS_ENSURED)
 
 $(UTILDIRS):
 	$(MKDIR) -p $@
@@ -772,7 +789,7 @@ $(CLOUDETCSCHEMAAPPLIANCEDB)/%: golang/src/bg/cloud_models/appliancedb/schema/% 
 $(CLOUDROOTLIB)/systemd/system/%: % | $(CLOUDROOTLIB)/systemd/system
 	$(INSTALL) -m 0644 $< $@
 
-$(CLOUDBINARIES): $(COMMON_SRCS) | deps-ensured
+$(CLOUDBINARIES): $(COMMON_SRCS) $(GODEPS_ENSURED)
 
 $(CLOUDBIN)/%: | $(CLOUDBIN)
 	$(GO) build -o $(@) bg/$*
@@ -817,8 +834,8 @@ base/base_def.py: base/generate-base-def.py
 # Protocol buffers
 #
 
-$(GOSRCBG)/base_msg/base_msg.pb.go: base/base_msg.proto | \
-	go-tools $(GOSRCBG)/base_msg
+$(GOSRCBG)/base_msg/base_msg.pb.go: base/base_msg.proto $(GOTOOLS) | \
+	$(GOSRCBG)/base_msg
 	cd base && \
 		protoc --plugin=$(GOTOOLS_BIN_PROTOCGENGO) \
 		    --go_out ../$(GOSRCBG)/base_msg $(notdir $<)
@@ -826,8 +843,8 @@ $(GOSRCBG)/base_msg/base_msg.pb.go: base/base_msg.proto | \
 base/base_msg_pb2.py: base/base_msg.proto
 	protoc --python_out . $<
 
-$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go: base/cloud_rpc.proto | \
-	go-tools $(GOSRCBG)/cloud_rpc
+$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go: base/cloud_rpc.proto $(GOTOOLS) | \
+	$(GOSRCBG)/cloud_rpc
 	cd base && \
 		protoc --plugin=$(GOTOOLS_BIN_PROTOCGENGO) \
 			-I/usr/local/include \
@@ -848,10 +865,12 @@ LOCAL_DAEMONS=$(DAEMONS:$(APPBIN)/%=$(GOBIN)/%)
 
 # Generate a hash of the contents of BUILDTOOLS, so that if the required
 # packages change, we'll rerun the check.
-BUILDTOOLS_HASH=$(shell echo $(BUILDTOOLS) | $(SHA256SUM) | awk '{print $$1}')
-BUILDTOOLS_FILE=.make-buildtools-$(BUILDTOOLS_HASH)
+# note: The hash is constant; := avoids repeated shell invocations
+BUILDTOOLS_HASH := $(shell echo $(BUILDTOOLS) | $(SHA256SUM) | awk '{print $$1}')
+BUILDTOOLS_FILE = .make-buildtools-$(BUILDTOOLS_HASH)
 
-tools: $(BUILDTOOLS_FILE) go-tools
+.PHONY: tools
+tools: $(BUILDTOOLS_FILE) $(GOTOOLS)
 
 install-tools: FRC
 	build/check-tools.sh -i $(BUILDTOOLS)
@@ -860,16 +879,6 @@ install-tools: FRC
 $(BUILDTOOLS_FILE):
 	build/check-tools.sh $(BUILDTOOLS)
 	touch $@
-
-#
-# Go Tools: Install versioned binaries for 'dep', 'mockery', etc.
-#
-include Makefile.gotools
-
-#
-# Go Dependencies: Pull in definitions for 'dep'
-#
-include Makefile.godeps
 
 NPM = npm
 NPM_QUIET = --loglevel warn --no-progress
@@ -884,15 +893,14 @@ client-web: .make-npm-installed FRC | $(HTTPD_CLIENTWEB_DIR)
 
 FRC:
 
-clobber: clean clobber-packages clobber-godeps clobber-gotools
-	$(RM) -fr $(ROOT)
-	$(RM) -fr $(GOWS)/pkg
-	$(RM) -fr $(GOWS)/bin
+.PHONY: clobber
+clobber: clean packages-clobber godeps-clobber gotools-clobber
+	$(RM) -fr $(ROOT) $(GOWS)/pkg $(GOWS)/bin $(SYSROOT)
 	$(RM) -f .make-*
-	$(if $(SYSROOT),$(RM) -fr $(SYSROOT))
 
-clobber-packages:
-	-$(RM) -fr bg-appliance_*.*.*-*_* bg-cloud_*.*.*-*_*
+.PHONY: packages-clobber
+packages-clobber:
+	$(RM) -fr bg-appliance_*.*.*-*_* bg-cloud_*.*.*-*_*
 
 clean:
 	$(RM) -f \
@@ -910,6 +918,7 @@ clean:
 	$(RM) -fr $(COVERAGE_DIR)
 	find $(GOSRCBG)/ap_common -name \*.pem | xargs --no-run-if-empty $(RM) -f
 
+.PHONY: check-dirty
 check-dirty:
 	@c=$$(git status -s); \
 	if [ -n "$$c" ]; then \
