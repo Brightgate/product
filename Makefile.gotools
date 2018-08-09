@@ -63,6 +63,7 @@ $$($(target)_built): $$($(target)_deps) | $(GOTOOLS_DIR)
 	@trap "$(RM) -fr $(GOTOOLS_DIR)/src/ $(GOTOOLS_DIR)/buildstamp" INT && \
 		unset GOARCH && export GOPATH=$(GOTOOLS_DIR) && \
 	        $(GO) get -d $$($(target)_repo) && \
+		git -C $(GOTOOLS_DIR)/src/$$($(target)_repo) fetch --tags --quiet && \
 	        git -C $(GOTOOLS_DIR)/src/$$($(target)_repo) checkout --force --quiet $$($(target)_hash) && \
 	        $(GO) install $$($(target)_repo)
 	@$(MKDIR) -p $$(dir $$@) && touch $$@
