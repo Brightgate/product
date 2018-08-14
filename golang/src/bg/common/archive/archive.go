@@ -67,6 +67,9 @@ type XferStats struct {
 type DeviceRecord struct {
 	Addr net.IP
 
+	// Ports -> Services map
+	Services map[int]string `json:"Services,omitempty"`
+
 	// Open ports found during an nmap scan
 	OpenTCP []int `json:"OpenTCP,omitempty"`
 	OpenUDP []int `json:"OpenUDP,omitempty"`

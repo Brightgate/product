@@ -28,6 +28,7 @@ var (
 	ipaddr   = flag.String("i", "", "IP to probe")
 	vulnlist = flag.String("d", "", "vulnerability list")
 	outfile  = flag.String("o", "", "output file")
+	services = flag.String("services", "", "services from nmap scan")
 	verbose  = flag.Bool("v", false, "verbose output")
 	tools    = make(map[string]execFunc)
 )
@@ -75,6 +76,10 @@ func testOne(name string, desc vulnDescription, ip net.IP) bool {
 	}
 	if *verbose {
 		fmt.Printf("Testing for %s...", show)
+	}
+
+	if desc.Tool == "ap-defaultpass" {
+		desc.Options["services"] = *services
 	}
 
 	if tool, ok := tools[desc.Tool]; ok {

@@ -417,7 +417,7 @@ func nmapScan(prefix, ip string, nmapArgs []string) (*nmap.NmapRun, error) {
 	return scanResults, nil
 }
 
-// Find and record all the ports we found open for this host.
+// Find and record all the ports/services we found open for this host.
 func recordNmapResults(scanType string, host *nmap.Host) {
 	mac, _ := getMacIP(host)
 	dev := getDeviceRecord(mac)
@@ -425,6 +425,7 @@ func recordNmapResults(scanType string, host *nmap.Host) {
 	ports := make([]int, 0)
 	for _, port := range host.Ports {
 		ports = append(ports, port.PortId)
+		dev.Services[port.PortId] = port.Service.Name
 	}
 	if scanType == "tcp_ports" {
 		dev.OpenTCP = ports
@@ -778,6 +779,20 @@ func vulnScan(req *ScanRequest) {
 	if *verbose {
 		args = append(args, "-v")
 	}
+
+	if dev := getDeviceRecord(req.Mac); dev != nil {
+		services := make(map[string][]int) // convert port:service map to service:portlist map
+		for port, service := range dev.Services {
+			services[service] = append(services[service], port)
+		}
+		var b strings.Builder
+		for service, ports := range services {
+			portstr := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(ports)), ","), "[]") // int slice to comma separated string
+			b.WriteString(service + ":" + portstr + ".")
+		}
+		args = append(args, "-services", strings.TrimSuffix(b.String(), ".")) // remove trailing "."
+	}
+
 	start := time.Now()
 	if err = runCmd(prober, args); err != nil {
 		log.Printf("vulnerability scan of %s failed: %v\n",

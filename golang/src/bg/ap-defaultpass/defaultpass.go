@@ -28,24 +28,19 @@ import (
 
 	"bg/ap_common/aputil"
 
-	"golang.org/x/crypto/ssh"
 	"github.com/jlaffaye/ftp"
+	"golang.org/x/crypto/ssh"
 )
 
-/* 
- *  TODO: 
- *  1. Eventually, the goal is to use a device identity or MAC address to directly lookup the relevant credentials.
- *     For now, we will brute force all known default credentials (around 1000 entries).
- *  2. Add timeout (to prevent entire vuln scan from getting hung up).
- *  3. Use nmap to detect open ports/services being run, then only test for those particular ports/services.
- *  4. Handle the cases which dial attempts get blocked with a message other than connection refused.
- *  5. Potentially change credentials after vulnerability has been discovered (do-able on SSH using "passwd" command, not on FTP)
- *  6. Log vulnports list + vulnerable credentials somewhere.
- *  7. Continue to try different individual usernames upon being blocked, rather than assuming a blanket block occurred.
- *  8. Add automated testing.
- */
+/*	TODO:
+	1. Eventually, the goal is to use a device identity or MAC address to directly lookup the relevant credentials.
+	   For now, we will brute force all known default credentials (around 1000 entries).
+	2. Handle the cases which dial attempts get blocked with a message other than connection refused.
+	3. Change credentials after vulnerability has been discovered (doable through SSH using "passwd", but not through FTP)
+	4. Add automated testing.
+*/
 
-type probefunc func([]credentials, *[]dpvulnerability, net.IP, int) (int)
+type probefunc func([]credentials, int, *[]dpvulnerability, net.IP, int) int
 
 type credentials struct {
 	username string
@@ -53,23 +48,21 @@ type credentials struct {
 }
 type dpvulnerability struct {
 	protocol string
-	port int
-	info credentials
+	port     int
+	info     credentials
 }
 
 var (
 	dpfile     = flag.String("f", "", "file to retrieve credentials from (required)")
 	ipaddr     = flag.String("i", "", "ip address to probe (required)")
-	portlist   = flag.String("p", "80,21,22", "list of ports to probe (optional)")
-	startfrom  = flag.Int("s", 0, "credential index to start from (optional)")
-	testfrom   = flag.String("t", "", "protocol test to begin with (optional)")
 	verbose    = flag.Bool("v", false, "verbose output (optional)")
+	teststorun = flag.String("t", "http:80.ftp:21.ssh:22", "format, dot-separated = test:(starting index:)port(,more,ports)")
 )
 
-var testMap = map[string]probefunc {
+var testMap = map[string]probefunc{
 	"http": httpProbe,
-	"ftp": ftpProbe,
-	"ssh": sshProbe,
+	"ftp":  ftpProbe,
+	"ssh":  sshProbe,
 }
 
 func fetchdefaults() ([]credentials, error) {
@@ -91,27 +84,21 @@ func fetchdefaults() ([]credentials, error) {
 			return clist, err
 		}
 		if len(line) != 3 {
-			log.Printf("Warning: line %d in vendor passwords file has unexpected format!", l)
+			log.Printf("Warning: line %d in vendor passwords file has unexpected format!\n", l)
 		} else {
 			tempcreds := credentials{line[1], line[2]}
 			clist = append(clist, tempcreds)
 		}
 		l++
 	}
-	if *startfrom < 0 || len(clist) <= *startfrom {
-		return clist, fmt.Errorf("invalid password starting index:%d, range: 0-%d", *startfrom, len(clist)-1)
-	}
 	return clist, nil
 }
 
-func httpProbe(clist []credentials, vulnports *[]dpvulnerability, ip net.IP, p int) (int) {
-	httpclient := &http.Client {
+func httpProbe(clist []credentials, startfrom int, vulnports *[]dpvulnerability, ip net.IP, p int) int {
+	httpclient := &http.Client{
 		Timeout: time.Second,
 	}
-	if *verbose {
-		fmt.Printf("HTTP Basic Auth... ")
-	}
-	req, err := http.NewRequest("GET", "http://" + fmt.Sprintf("%s:%d", ip.String(), p), nil)
+	req, err := http.NewRequest("GET", "http://"+fmt.Sprintf("%s:%d", ip.String(), p), nil)
 	if err != nil {
 		return 0
 	}
@@ -125,17 +112,17 @@ func httpProbe(clist []credentials, vulnports *[]dpvulnerability, ip net.IP, p i
 				if *verbose {
 					fmt.Println("HTTP Basic Auth detected, probing... ")
 				}
-				for i, creds := range(clist[*startfrom:]) {
+				for i, creds := range clist[startfrom:] {
 					if *verbose {
-						fmt.Printf("HTTP Basic Auth test: [ %d / %d ]\n", i + 1, len(clist))
+						fmt.Printf("HTTP Basic Auth test: [ %d / %d ]\n", i+startfrom+1, len(clist))
 					}
 					req.SetBasicAuth(creds.username, creds.password)
 					resp, err := httpclient.Do(req)
 					if err != nil {
 						if strings.Contains(err.Error(), "connection refused") {
 							// note: error may be something other than connection refused. Possibly handle this in the future.
-							fmt.Printf("Banned. Will resume probing during the next scan.\n")
-							return i
+							fmt.Printf("Banned. Will resume probing this service during the next scan.\n")
+							return i + startfrom
 						}
 						continue
 					}
@@ -153,17 +140,14 @@ func httpProbe(clist []credentials, vulnports *[]dpvulnerability, ip net.IP, p i
 	return 0
 }
 
-func ftpProbe(clist []credentials, vulnports *[]dpvulnerability, ip net.IP, p int) (int) {
+func ftpProbe(clist []credentials, startfrom int, vulnports *[]dpvulnerability, ip net.IP, p int) int {
 	validftpport := false
-	if *verbose {
-		fmt.Printf("FTP... ")
-	}
-	for i, creds := range(clist[*startfrom:]) {
+	for i, creds := range clist[startfrom:] {
 		// note: there is an issue where DialTimeout doesn't always time out
 		if ftpclient, err := ftp.DialTimeout(fmt.Sprintf("%s:%d", ip.String(), p), time.Second); err != nil { // port is closed
 			if validftpport {
-				fmt.Printf("Banned. Will resume probing during the next scan.\n")
-				return i // banned
+				fmt.Printf("Banned. Will resume probing this service during the next scan.\n")
+				return i + startfrom
 			}
 			break
 		} else { // valid ftp port
@@ -171,7 +155,7 @@ func ftpProbe(clist []credentials, vulnports *[]dpvulnerability, ip net.IP, p in
 				if !validftpport && *verbose {
 					fmt.Println("FTP detected, probing... ")
 				}
-				fmt.Printf("FTP test: [ %d / %d ]\n", i + 1, len(clist))
+				fmt.Printf("FTP test: [ %d / %d ]\n", i+startfrom+1, len(clist))
 			}
 			validftpport = true
 			if err := ftpclient.Login(creds.username, creds.password); err != nil { // incorrect login
@@ -188,32 +172,29 @@ func ftpProbe(clist []credentials, vulnports *[]dpvulnerability, ip net.IP, p in
 	return 0
 }
 
-func sshProbe(clist []credentials, vulnports *[]dpvulnerability, ip net.IP, p int) (int) {
+func sshProbe(clist []credentials, startfrom int, vulnports *[]dpvulnerability, ip net.IP, p int) int {
 	validsshport := false
-	sshconfig := &ssh.ClientConfig { // safe, since publically available default passwords are being used
+	sshconfig := &ssh.ClientConfig{ // safe, since publically available default passwords are being used
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout: time.Second,
+		Timeout:         time.Second,
 	}
-	if *verbose {
-		fmt.Printf("SSH... ")
-	}
-	for i, creds := range(clist[*startfrom:]) {
+	for i, creds := range clist[startfrom:] {
 		if *verbose && validsshport {
-			fmt.Printf("SSH test: [ %d / %d ]\n", i + 1, len(clist))
+			fmt.Printf("SSH test: [ %d / %d ]\n", i+startfrom+1, len(clist))
 		}
 		sshconfig.User = creds.username
-		sshconfig.Auth = []ssh.AuthMethod{ ssh.Password(creds.password) }
+		sshconfig.Auth = []ssh.AuthMethod{ssh.Password(creds.password)}
 		if sshclient, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", ip.String(), p), sshconfig); err != nil {
 			if strings.Contains(err.Error(), "unable to authenticate") { // note: there may be various other response errors
 				if *verbose && !validsshport {
 					fmt.Println("SSH detected, probing... ")
-					fmt.Printf("SSH test: [ %d / %d ]\n", i + 1, len(clist))
+					fmt.Printf("SSH test: [ %d / %d ]\n", i+startfrom+1, len(clist))
 				}
 				validsshport = true
 				continue
 			} else if validsshport {
-				fmt.Printf("Banned. Will resume probing during the next scan.\n")
-				return i
+				fmt.Printf("Banned. Will resume probing this service during the next scan.\n")
+				return i + startfrom
 			}
 			break // invalid ssh port
 		} else { // dial succeeded, try a command
@@ -238,60 +219,76 @@ func sshProbe(clist []credentials, vulnports *[]dpvulnerability, ip net.IP, p in
 	return 0
 }
 
-func logban(test string, ip net.IP, portsleft []int, i int, banfiledir string) {
-	portsleftstr := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(portsleft)), ","), "[]") // int slice to string
-	content := []byte(fmt.Sprintf("%s|%s|%d", portsleftstr, test, i))
-	err := ioutil.WriteFile(banfiledir + "banfile-" + ip.String(), content, 0777)
-	if err != nil {
-		log.Fatalf("Failed to write http ban to file:%s\n", err)
+func logban(ip net.IP, tests map[string][]int, banfiledir string) bool { // true if banned
+	banned := false
+	var b strings.Builder
+	for test, ports := range tests {
+		if len(ports) > 0 {
+			banned = true
+			b.WriteString("." + test + ":" + strconv.Itoa(ports[0]) + ":") // test + where to start from next time
+			ports = ports[1:]
+			portsleftstr := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(ports)), ","), "[]") // int slice to comma separated string
+			b.WriteString(portsleftstr)                                                              // add portlist
+		}
 	}
+	if banned {
+		content := []byte(b.String()[1:]) // remove leading "."
+		err := ioutil.WriteFile(banfiledir+"banfile-"+ip.String(), content, 0644)
+		if err != nil {
+			log.Fatalf("Failed to write banfile! %s\n", err)
+		}
+	}
+	return banned
 }
 
-func dpProbe(ip net.IP, ports []int) ([]dpvulnerability) {
+func dpProbe(ip net.IP, tests map[string][]int) []dpvulnerability {
 	clist, err := fetchdefaults()
 	if err != nil {
 		log.Fatalf("Error:%s\n", err)
 	}
 	banfiledir := aputil.ExpandDirPath("/var/spool/defaultpass/")
-	if err := os.MkdirAll(banfiledir, 0777); err != nil {
+	if err := os.MkdirAll(banfiledir, 0755); err != nil {
 		log.Fatalf("Error creating banfile directory:%s\n", err)
 	}
 	var vulnports []dpvulnerability
-	var portsleft []int
-	portsleft = append(portsleft, ports...) // make a copy of portlist
-	for _, p := range ports {
-		if *verbose {
-			fmt.Printf("Probing %s, port %d - ", ip, p)
-		}
-		for test, probe := range testMap {
-			if *testfrom == "" || *testfrom == test {
-				if i := probe(clist, &vulnports, ip, p); i != 0 {
-					logban(test, ip, portsleft, i, banfiledir)
-					return vulnports
-				}
-				*startfrom = 0
-				*testfrom = ""
-			}
-		}
-		if *verbose {
-			if len(vulnports) == 0 {
-				fmt.Printf("port %d is ok.", p)
-			}
-			fmt.Println()
-		}
-		portsleft = portsleft[1:]
+
+	if *verbose {
+		fmt.Printf("Probing %s:\n", ip)
 	}
-	// if this was reached without returning, all tests were able to run.
-	if err := os.RemoveAll(banfiledir + "banfile-" + ip.String()); err != nil {
-		log.Fatalf("File removal error:%s\n", err)
+	for test := range tests {
+		startfrom := tests[test][0] // first element of portlist is starting index
+		if startfrom < 0 || len(clist) <= startfrom {
+			log.Printf("Invalid starting index: %d\n", startfrom)
+			startfrom = 0 // if invalid, just start from the beginning
+		}
+		tests[test] = tests[test][1:]
+		for _, port := range tests[test] {
+			if *verbose {
+				fmt.Printf("Testing port %d for %s...\n", port, test)
+			}
+			if startfrom = testMap[test](clist, startfrom, &vulnports, ip, port); startfrom != 0 {
+				tests[test] = append([]int{startfrom}, tests[test]...)
+				break // continue with the other tests
+			}
+			if *verbose {
+				if len(vulnports) == 0 {
+					fmt.Printf("Port %d is safe against %s.\n", port, test)
+				}
+			}
+			tests[test] = tests[test][1:]
+		}
+	}
+	if !logban(ip, tests, banfiledir) { // write to banfile if banned at any point
+		if err := os.RemoveAll(banfiledir + "banfile-" + ip.String()); err != nil { // all tests ran, remove banfile if present
+			log.Fatalf("File removal error:%s\n", err)
+		}
 	}
 	return vulnports
 }
 
 func main() {
-	var ports []int
 	var ip net.IP
-	var vulnports []dpvulnerability
+	tests := make(map[string][]int) // map of tests to port lists
 
 	flag.Parse()
 
@@ -308,19 +305,44 @@ func main() {
 		}
 	}
 
-	if *portlist != "" {
-		list := strings.Split(*portlist, ",")
-		for _, p := range list {
+	testlist := strings.Split(*teststorun, ".")
+	for _, t := range testlist {
+		testinfo := strings.Split(t, ":")             // 0: service to test, 1: index to start from (optional), 2: portlist
+		if len(testinfo) != 2 && len(testinfo) != 3 { // invalid testinfo length, skip entry
+			continue
+		}
+		if _, inmap := testMap[testinfo[0]]; !inmap { // invalid test
+			log.Printf("Unable to test unknown service: %s\n", testinfo[0])
+			continue
+		} else if len(tests[testinfo[0]]) > 0 { // unique tests
+			log.Printf("Duplicate test: %s\n", testinfo[0])
+			continue
+		}
+
+		if len(testinfo) == 3 { // optional starting index was passed in
+			startfrom, err := strconv.Atoi(testinfo[1])
+			if err != nil {
+				log.Printf("Invalid starting index: %s\n", testinfo[1])
+				continue
+			}
+			tests[testinfo[0]] = append(tests[testinfo[0]], startfrom)
+		} else {
+			tests[testinfo[0]] = append(tests[testinfo[0]], 0) // otherwise, start from the beginning of the list
+		}
+
+		portlist := strings.Split(testinfo[len(testinfo)-1], ",")
+		for _, p := range portlist {
 			portNo, err := strconv.Atoi(p)
 			if err != nil {
-				log.Fatalf("Invalid port #:%s\n", p)
+				log.Printf("Invalid port: %s\n", p)
+				continue
 			}
-			ports = append(ports, portNo)
+			tests[testinfo[0]] = append(tests[testinfo[0]], portNo)
 		}
 	}
 
-	vulnports = dpProbe(ip, ports)
-	fmt.Println("Vulnports list:", vulnports)
+	vulnports := dpProbe(ip, tests) // probe for vulnerable ports
+	log.Println("Vulnports list:", vulnports)
 	if len(vulnports) > 0 {
 		fmt.Printf("%s is vulnerable!\n", ip.String())
 	} else {

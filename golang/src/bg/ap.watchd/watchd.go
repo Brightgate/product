@@ -208,7 +208,6 @@ func getLeases() {
 	}
 }
 
-//
 // Send a notification that we have an unknown entity on our network.
 func logUnknown(ring, mac, ipstr string) bool {
 	var addr net.IP

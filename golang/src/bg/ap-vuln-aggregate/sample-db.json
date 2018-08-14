@@ -28,6 +28,8 @@
     "defaultpassword": {
         "Nickname": "unchanged default password",
         "Tool": "ap-defaultpass",
-        "Actions": [ "Warn" ]
+        "Options": {
+                "services": ""
+        }
     }
 }

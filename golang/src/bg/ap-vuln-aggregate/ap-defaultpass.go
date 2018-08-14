@@ -16,15 +16,18 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"bg/ap_common/aputil"
 )
 
+// TODO: Add timeout (to prevent entire vuln scan from getting hung up).
+
 const dpcmd = "ap-defaultpass"
 
-func dpvuln(v vulnDescription, tgt net.IP) (vuln bool, err error) {
-	var bannedargs string
+func dpvuln(v vulnDescription, tgt net.IP) (bool, error) {
+	var bannedarg string
 	vendorfile := aputil.ExpandDirPath("/etc/vendordefaults.csv") // source: https://www.liquidmatrix.org/blog/default-passwords/
 	banfiledir := aputil.ExpandDirPath("/var/spool/defaultpass/")
 	bannedfile, err := os.Open(banfiledir + "banfile-" + tgt.String())
@@ -32,27 +35,38 @@ func dpvuln(v vulnDescription, tgt net.IP) (vuln bool, err error) {
 		defer bannedfile.Close()
 		scanner := bufio.NewScanner(bannedfile)
 		for scanner.Scan() {
-			bannedargs = scanner.Text()
+			bannedarg = scanner.Text()
 		}
 	}
 
-	cmd := []string{ "-i", tgt.String(), "-f", vendorfile }
-	if bannedargs != "" {
-		s := strings.Split(bannedargs, "|")
-		cmd = append(cmd, "-p", s[0], "-t", s[1], "-s", s[2])
-	} else if len(v.Ports) > 0 {
-		portlist := strings.Join(v.Ports, ",")
-		cmd = append(cmd, "-p", portlist)
+	cmd := []string{"-i", tgt.String(), "-f", vendorfile}
+	if bannedarg != "" { // banfile results take priority
+		r := regexp.MustCompile(`([A-Za-z]+:([0-9]+:)?[0-9]+([,][0-9]+)*\.?)+`)
+		if r.MatchString(bannedarg) {
+			cmd = append(cmd, "-t", bannedarg)
+		} else {
+			log.Println("Banfile has incorrect format! Deleting.")
+			if err := os.RemoveAll(banfiledir + "banfile-" + tgt.String()); err != nil {
+				log.Printf("Banfile removal error:%s\n", err)
+			}
+		}
+	} else if v.Options["services"] != "" { // if no banfile, use nmap's results for ports/services
+		cmd = append(cmd, "-t", v.Options["services"])
+	} else { // otherwise, ports are closed (nothing to check)
+		return false, nil
 	}
 
-	output, _ := exec.Command(dpcmd, cmd...).CombinedOutput()
+	output, err := exec.Command(dpcmd, cmd...).CombinedOutput()
+	if err != nil {
+		log.Fatal(err)
+	}
 	if strings.Contains(string(output), "Banned") {
 		log.Printf("%s\n", string(output))
 	}
 	if strings.Contains(string(output), "vulnerable") {
 		return true, nil
 	}
-	return
+	return false, nil
 }
 
 func init() {
