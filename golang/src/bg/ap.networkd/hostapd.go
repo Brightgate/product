@@ -429,17 +429,21 @@ func getAPConfig(d *physDevice) *apConfig {
 
 	w := d.wifi
 
-	authTypes := make([]string, 0)
+	authMap := make(map[string]bool)
 	pskComment := "#"
 	eapComment := "#"
 	for _, r := range rings {
 		if r.Auth == "wpa-psk" {
-			authTypes = append(authTypes, "wpa-psk")
+			authMap["wpa-psk"] = true
 			pskComment = ""
 		} else if r.Auth == "wpa-eap" && radiusSecret != "" {
-			authTypes = append(authTypes, "wpa-eap")
+			authMap["wpa-eap"] = true
 			eapComment = ""
 		}
+	}
+	authList := make([]string, 0)
+	for a := range authMap {
+		authList = append(authList, a)
 	}
 
 	if satellite {
@@ -448,7 +452,7 @@ func getAPConfig(d *physDevice) *apConfig {
 		radiusServer = "127.0.0.1"
 	}
 
-	ssidCnt := len(authTypes)
+	ssidCnt := len(authList)
 	if ssidCnt > w.interfaces {
 		log.Printf("%s can't support %d SSIDs\n", d.hwaddr, ssidCnt)
 		return nil
@@ -513,7 +517,7 @@ func getAPConfig(d *physDevice) *apConfig {
 		ModeNComment: modeNComment,
 		ModeNHTCapab: modeNHTCapab,
 
-		authTypes:            authTypes,
+		authTypes:            authList,
 		RadiusAuthServer:     radiusServer,
 		RadiusAuthServerPort: "1812",
 		RadiusAuthSecret:     radiusSecret,
