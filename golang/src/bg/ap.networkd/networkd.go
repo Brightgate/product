@@ -34,14 +34,10 @@ import (
 	"bg/ap_common/mcp"
 	"bg/ap_common/network"
 	"bg/ap_common/platform"
+	"bg/ap_common/wificaps"
 	"bg/base_def"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-)
-
-const (
-	loBand = "2.4GHz"
-	hiBand = "5GHz"
 )
 
 var (
@@ -55,7 +51,7 @@ var (
 	physDevices = make(map[string]*physDevice)
 	activeWifi  []*physDevice
 
-	bands = []string{loBand, hiBand}
+	bands = []string{wificaps.LoBand, wificaps.HiBand}
 
 	mcpd     *mcp.MCP
 	brokerd  *broker.Broker
@@ -101,37 +97,12 @@ type wifiInfo struct {
 	activeBand    string // band actually being used
 	activeChannel int    // channel actually being used
 
-	supportVLANs bool            // does the nic support VLANs?
-	interfaces   int             // number of APs it can support
-	channels     map[int]bool    // channels the device claims to support
-	freqWidths   map[int]bool    // frequency widths it claims to support
-	wifiBands    map[string]bool // frequency bands it supports
-	wifiModes    map[string]bool // 802.11[a,b,g,n,ac] modes supported
+	cap *wificaps.WifiCapabilities // What features the device supports
 }
 
 // For each band (i.e., these are the channels we are legally allowed to use
 // in this region.
 var legalChannels map[string]map[int]bool
-
-// Functional classification of channels used in the channel selection
-// algorithm.  The intersection of these lists, the regulatory legalChannel
-// list, and the per-device list of supported frequencies is used to choose a
-// channel.
-var channelLists = map[string][]int{
-	"loBand20MHz":     {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
-	"loBandNoOverlap": {1, 6, 11},
-	"hiBand20MHz": {36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116,
-		120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165},
-	// These numbers are not the centers of the 40MHz channels, as shown in
-	// many channel diagrams and the List of WLAN channels Wikipedia page.
-	// Instead, they are the channel number of the primary 20MHz channel
-	// component of the 40MHz channel (whether above or below the primary).
-	// This is how hostapd expects you to tell it what channel to run on, as
-	// well as how the Mac client interface numbers them.  See also
-	// initChannelLists() in hostapd.go.
-	"hiBand40MHz": {36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116,
-		120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161},
-}
 
 //////////////////////////////////////////////////////////////////////////
 //
@@ -242,7 +213,7 @@ func configNetworkChanged(path []string, val string, expires *time.Time) {
 		channel, _ := strconv.Atoi(val)
 		band := path[1]
 
-		if band == loBand || band == hiBand {
+		if band == wificaps.LoBand || band == wificaps.HiBand {
 			if legalChannels[band][channel] {
 				wifiChannels[band] = channel
 				reload = true
@@ -261,7 +232,7 @@ func configNetworkChanged(path []string, val string, expires *time.Time) {
 
 func setChannel(w *wifiInfo, channel int) error {
 	band := w.activeBand
-	if w.channels[channel] && legalChannels[band][channel] {
+	if w.cap.Channels[channel] && legalChannels[band][channel] {
 		w.activeChannel = channel
 		return nil
 	}
@@ -301,7 +272,7 @@ func selectWifiChannel(d *physDevice) error {
 	band := w.activeBand
 
 	w.activeChannel = 0
-	if !w.wifiBands[band] {
+	if !w.cap.WifiBands[band] {
 		return fmt.Errorf("doesn't support %s", band)
 	}
 
@@ -321,22 +292,22 @@ func selectWifiChannel(d *physDevice) error {
 		log.Printf("band-specific %v\n", err)
 	}
 
-	if band == loBand {
+	if band == wificaps.LoBand {
 		// We first try to choose one of the non-overlapping channels.
 		// If that fails, we'll take any channel in this range.
-		err = randomChannel(w, channelLists["loBandNoOverlap"])
+		err = randomChannel(w, wificaps.ChannelLists["loBandNoOverlap"])
 		if err != nil {
-			err = randomChannel(w, channelLists["loBand20MHz"])
+			err = randomChannel(w, wificaps.ChannelLists["loBand20MHz"])
 		}
 	} else {
 		// Start by trying to get a wide channel.  If that fails, take
 		// any narrow channel.
 		// XXX: this gets more complicated with 802.11ac support.
-		if w.freqWidths[40] {
-			randomChannel(w, channelLists["hiBand40MHz"])
+		if w.cap.FreqWidths[40] {
+			randomChannel(w, wificaps.ChannelLists["hiBand40MHz"])
 		}
 		if w.activeChannel == 0 {
-			err = randomChannel(w, channelLists["hiBand20MHz"])
+			err = randomChannel(w, wificaps.ChannelLists["hiBand20MHz"])
 		}
 	}
 
@@ -352,7 +323,7 @@ func score(d *physDevice, band string) int {
 	}
 
 	w := d.wifi
-	if !w.supportVLANs || w.interfaces <= 1 || !w.wifiBands[band] {
+	if !w.cap.SupportVLANs || w.cap.Interfaces <= 1 || !w.cap.WifiBands[band] {
 		return 0
 	}
 
@@ -360,17 +331,17 @@ func score(d *physDevice, band string) int {
 		return 0
 	}
 
-	if band == loBand {
+	if band == wificaps.LoBand {
 		// We always want at least one NIC in the 2.4GHz range, so they
 		// get an automatic bump
 		score = 10
 	}
 
-	if w.wifiModes["n"] {
+	if w.cap.WifiModes["n"] {
 		score = score + 1
 	}
 
-	if w.wifiModes["ac"] {
+	if w.cap.WifiModes["ac"] {
 		score = score + 2
 	}
 
@@ -392,15 +363,15 @@ func selectWifiDevices() {
 			if a == b {
 				continue
 			}
-			scoreA := score(a, loBand)
-			scoreB := score(b, hiBand)
+			scoreA := score(a, wificaps.LoBand)
+			scoreB := score(b, wificaps.HiBand)
 			if scoreA+scoreB > best {
 				selected = make(map[string]*physDevice)
 				if scoreA > 0 {
-					selected[loBand] = a
+					selected[wificaps.LoBand] = a
 				}
 				if scoreB > 0 {
-					selected[hiBand] = b
+					selected[wificaps.HiBand] = b
 				}
 				best = scoreA + scoreB
 			}
@@ -891,11 +862,21 @@ func getWireless(i net.Interface) *physDevice {
 		return nil
 	}
 
-	if d.wifi, err = iwinfo(d.name); err != nil {
+	d.wifi = new(wifiInfo)
+	if d.wifi.cap, err = wificaps.GetCapabilities(d.name); err != nil {
 		log.Printf("Couldn't determine wifi capabilities of %s: %v\n",
 			d.name, err)
 		return nil
 	}
+
+	log.Print("device: ", d.name)
+	// Emit one line at a time to the log, or only the first line will get
+	// the log prefix.
+	capstr := fmt.Sprintf("%s", d.wifi.cap)
+	for _, line := range strings.Split(strings.TrimSuffix(capstr, "\n"), "\n") {
+		log.Print(line)
+	}
+
 	return &d
 }
 
@@ -954,10 +935,10 @@ func makeValidChannelMaps() {
 	// in hostapd.go), though that is not true for all countries, and is not
 	// true for 160MHz channels, once we start supporting those.
 	channels := map[string][]int{
-		loBand: {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
-		hiBand: {36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112,
-			116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157,
-			161, 165},
+		wificaps.LoBand: {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
+		wificaps.HiBand: {36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108,
+			112, 116, 120, 124, 128, 132, 136, 140, 144, 149, 153,
+			157, 161, 165},
 	}
 
 	// Convert the arrays of channels into channel-indexed maps, for easier

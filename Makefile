@@ -273,6 +273,7 @@ COMMON_GOPKGS = \
 	bg/ap_common/model \
 	bg/ap_common/network \
 	bg/ap_common/platform \
+	bg/ap_common/wificaps \
 	bg/common/archive \
 	bg/common/briefpg \
 	bg/common/urlfetch
@@ -284,6 +285,7 @@ APPCOMMAND_GOPKGS = \
 	bg/ap-configctl \
 	bg/ap-ctl \
 	bg/ap-defaultpass \
+	bg/ap-diag \
 	bg/ap-inspect \
 	bg/ap-msgping \
 	bg/ap-ouisearch \
@@ -723,10 +725,10 @@ $(APPBIN)/ap.mcp: $(GOSRCBG)/ap.mcp/mcp.go
 $(APPBIN)/ap.networkd: \
 	$(GOSRCBG)/ap.networkd/filterd.go \
 	$(GOSRCBG)/ap.networkd/hostapd.go \
-	$(GOSRCBG)/ap.networkd/iwinfo.go \
 	$(GOSRCBG)/ap.networkd/networkd.go \
 	$(GOSRCBG)/ap.networkd/ntpd.go \
-	$(GOSRCBG)/ap.networkd/parse.go
+	$(GOSRCBG)/ap.networkd/parse.go \
+	$(GOSRCBG)/ap_common/wificaps/wificaps.go
 $(APPBIN)/ap.relayd: $(GOSRCBG)/ap.relayd/relayd.go
 $(APPBIN)/ap.rpcd: \
 	$(GOSRCBG)/ap.rpcd/rpcd.go \
@@ -750,6 +752,10 @@ $(APPBIN)/ap-complete: $(GOSRCBG)/ap-complete/complete.go
 $(APPBIN)/ap-configctl: $(GOSRCBG)/ap-configctl/configctl.go
 $(APPBIN)/ap-ctl: $(GOSRCBG)/ap-ctl/ctl.go
 $(APPBIN)/ap-defaultpass: $(GOSRCBG)/ap-defaultpass/defaultpass.go
+$(APPBIN)/ap-diag: \
+	$(GOSRCBG)/ap-diag/diag.go \
+	$(GOSRCBG)/ap-diag/wifi.go \
+	$(GOSRCBG)/ap_common/wificaps/wificaps.go
 $(APPBIN)/ap-inspect: $(GOSRCBG)/ap-inspect/inspect.go
 $(APPBIN)/ap-msgping: $(GOSRCBG)/ap-msgping/msgping.go
 $(APPBIN)/ap-ouisearch: $(GOSRCBG)/ap-ouisearch/ouisearch.go

@@ -26,6 +26,7 @@ import (
 
 	"bg/ap_common/aputil"
 	"bg/ap_common/network"
+	"bg/ap_common/wificaps"
 	"bg/base_def"
 	"bg/base_msg"
 
@@ -453,7 +454,7 @@ func getAPConfig(d *physDevice) *apConfig {
 	}
 
 	ssidCnt := len(authList)
-	if ssidCnt > w.interfaces {
+	if ssidCnt > w.cap.Interfaces {
 		log.Printf("%s can't support %d SSIDs\n", d.hwaddr, ssidCnt)
 		return nil
 	}
@@ -474,9 +475,9 @@ func getAPConfig(d *physDevice) *apConfig {
 
 	pskssid := wifiSSID
 	eapssid := wifiSSID + "-eap"
-	if w.activeBand == loBand {
+	if w.activeBand == wificaps.LoBand {
 		hwMode = "g"
-	} else if w.activeBand == hiBand {
+	} else if w.activeBand == wificaps.HiBand {
 		hwMode = "a"
 		pskssid += "-5GHz"
 		eapssid += "-5GHz"
@@ -485,9 +486,9 @@ func getAPConfig(d *physDevice) *apConfig {
 		return nil
 	}
 
-	if w.wifiModes["n"] {
+	if w.cap.WifiModes["n"] {
 		// XXX: config option for short GI?
-		if w.freqWidths[40] {
+		if w.cap.FreqWidths[40] {
 			// With a 40MHz channel, we can support a secondary
 			// 20MHz channel either above or below the primary,
 			// depending on what the primary channel is.
