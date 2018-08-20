@@ -136,3 +136,11 @@
 [[constraint]]
   name = "golang.org/x/text"
   version = "~0.3.0"
+
+[[constraint]]
+  name = "github.com/labstack/echo"
+  version = "3.3.5"
+
+[[constraint]]
+  name = "github.com/markbates/goth"
+  version = "1.46.0"

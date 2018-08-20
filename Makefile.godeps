@@ -18,7 +18,9 @@ $(GODEPS_ENSURED): $(GOSRCBG)/Gopkg.lock $(GOSRCBG)/Gopkg.toml $(GOTOOLS)
 	touch $@
 
 .PHONY: godeps-ensured
-godeps-ensured: $(GODEPS_ENSURED)
+godeps-ensured: FRC
+	cd $(realpath $(GOSRCBG)) && $(GOTOOLS_BIN_DEP) ensure -v
+	touch $(GODEPS_ENSURED)
 
 #
 # Invoke this target by hand to force vendored packages to update.  This

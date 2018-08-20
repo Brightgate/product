@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -12,38 +12,36 @@
 // cl.httpd: cloud HTTP server
 
 // XXX Review 12 factor application.  The SSL key and certificate
-// material  will come from Let's Encrypt directory to start.
+// material will come from Let's Encrypt directory to start.
 
 // Because we have to serve static files to meet ACME HTTP-01
-// authentication on renewal, we need to anchor the http:///.well-known
+// authentication on renewal, we need to anchor the https:///.well-known
 // directory hierarchy.  In the current Debian-based deployment, this
-// location is "/var/www/html/.well-known".
+// location defaults to "/var/www/html/.well-known".
 //
 
 package main
 
 import (
-	//	"crypto/sha256"
+	"context"
 	"crypto/tls"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
-	//	"time"
+	"time"
 
-	// "base_def"
+	"bg/cl_common/daemonutils"
+
 	"github.com/tomazk/envcfg"
 
-	"github.com/gorilla/mux"
-	apachelog "github.com/lestrrat/go-apache-logformat"
+	"github.com/labstack/echo"
+	"github.com/labstack/echo/middleware"
 
 	"github.com/unrolled/secure"
-	// "github.com/urfave/negroni"
-
-	//	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Cfg contains the environment variable-based configuration settings
@@ -52,9 +50,17 @@ type Cfg struct {
 	// with the SSL certificate, and not necessarily the nodename.
 	// We use this variable to navigate the Let's Encrypt directory
 	// hierarchy.
-	CertHostname   string `envcfg:"B10E_CERT_HOSTNAME"`
-	PrometheusPort string `envcfg:"B10E_CLHTTPD_PROMETHEUS_PORT"`
-	WellknownPath  string `envcfg:"B10E_CERTBOT_WELLKNOWN_PATH"`
+	CertHostname              string `envcfg:"B10E_CERT_HOSTNAME"`
+	Developer                 bool   `envcfg:"B10E_CLHTTPD_DEVMODE"`
+	HTTPListen                string `envcfg:"B10E_CLHTTPD_HTTP_LISTEN"`
+	HTTPSListen               string `envcfg:"B10E_CLHTTPD_HTTPS_LISTEN"`
+	WellKnownPath             string `envcfg:"B10E_CERTBOT_WELLKNOWN_PATH"`
+	GPlusKey                  string `envcfg:"B10E_CLHTTPD_GPLUS_KEY"`
+	GPlusSecret               string `envcfg:"B10E_CLHTTPD_GPLUS_SECRET"`
+	OpenIDConnectKey          string `envcfg:"B10E_CLHTTPD_OPENID_CONNECT_KEY"`
+	OpenIDConnectSecret       string `envcfg:"B10E_CLHTTPD_OPENID_CONNECT_SECRET"`
+	OpenIDConnectDiscoveryURL string `envcfg:"B10E_CLHTTPD_OPENID_CONNECT_DISCOVERY_URL"`
+	AppPath                   string `enccfg:"B10E_CLHTTPD_APP"`
 }
 
 const (
@@ -68,23 +74,76 @@ var (
 	environ Cfg
 )
 
-func port443Handler(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "https://brightgate.com", 307)
-}
-
-func port80Handler(w http.ResponseWriter, r *http.Request) {
-	redirectURL := "https://" + r.Host + r.URL.Path
-	if len(r.URL.RawQuery) > 0 {
-		redirectURL += "?" + r.URL.RawQuery
+func gracefulShutdown(h *http.Server) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := h.Shutdown(ctx); err != nil {
+		log.Fatalf("Shutdown failed: %v", err)
 	}
-	http.Redirect(w, r, redirectURL, 301)
 }
 
-// XXX Restore init() if we are registering Prometheus metrics.
+func mkSecureMW() echo.MiddlewareFunc {
+	secureMW := secure.New(secure.Options{
+		AllowedHosts:          []string{"svc0.b10e.net", "svc1.b10e.net"},
+		HostsProxyHeaders:     []string{"X-Forwarded-Host"},
+		STSSeconds:            315360000,
+		STSIncludeSubdomains:  true,
+		STSPreload:            true,
+		FrameDeny:             true,
+		ContentTypeNosniff:    true,
+		BrowserXssFilter:      true,
+		ContentSecurityPolicy: contentSecurityPolicy,
+	})
+	return echo.WrapMiddleware(secureMW.Handler)
+}
+
+func mkRouterHTTPS() *echo.Echo {
+	wellKnownPath := "/var/www/html/.well-known"
+	if environ.WellKnownPath != "" {
+		wellKnownPath = environ.WellKnownPath
+	}
+	appPath := filepath.Join(daemonutils.ClRoot(), "lib", "cl.httpd-web")
+	if environ.AppPath != "" {
+		appPath = environ.AppPath
+	}
+
+	htmlFormat := `<html><body>%v</body></html>`
+
+	r := echo.New()
+	r.Debug = environ.Developer
+	r.HideBanner = true
+	r.Use(middleware.Logger())
+	r.Use(mkSecureMW())
+	r.Use(middleware.Recover())
+	r.Static("/.well-known", wellKnownPath)
+	r.Static("/app", appPath)
+	log.Printf("Serving %s as /app/", appPath)
+	r.GET("/", func(c echo.Context) error {
+		html := fmt.Sprintf(htmlFormat, `
+<p><a href="/auth/gplus">Login with Google</a></p>
+<p><a href="/auth/openid-connect">Login with Google (OpenID Connect)</a></p>
+`)
+		return c.HTML(http.StatusOK, html)
+	})
+	routeAuth(r)
+
+	//ginPrometheus.Use(r)
+	return r
+}
+
+func mkRouterHTTP() *echo.Echo {
+	r := echo.New()
+	r.Debug = environ.Developer
+	r.HideBanner = true
+	r.Use(middleware.Logger())
+	r.Use(mkSecureMW())
+	r.Use(middleware.Recover())
+	r.Use(middleware.HTTPSRedirect())
+	return r
+}
 
 func main() {
 	var err error
-	var wellknown string
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
@@ -95,43 +154,22 @@ func main() {
 
 	log.Printf("environ %v", environ)
 
-	if len(environ.PrometheusPort) != 0 {
-		http.Handle("/metrics", promhttp.Handler())
-		go http.ListenAndServe(environ.PrometheusPort, nil)
+	if environ.HTTPListen == "" {
+		environ.HTTPListen = ":80"
+	}
+	if environ.HTTPSListen == "" {
+		environ.HTTPSListen = ":443"
 	}
 
-	if len(environ.WellknownPath) == 0 {
-		wellknown = "/var/www/html/.well-known"
-	} else {
-		wellknown = environ.WellknownPath
-	}
-
-	// Port 443 listener.
+	// https (typically port 443) listener.
 	certf := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem",
 		environ.CertHostname)
 	keyf := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem",
 		environ.CertHostname)
-
-	secureMW := secure.New(secure.Options{
-		SSLRedirect:           true,
-		AllowedHosts:          []string{"svc0.b10e.net"},
-		HostsProxyHeaders:     []string{"X-Forwarded-Host"},
-		STSSeconds:            315360000,
-		STSIncludeSubdomains:  true,
-		STSPreload:            true,
-		FrameDeny:             true,
-		ContentTypeNosniff:    true,
-		BrowserXssFilter:      true,
-		ContentSecurityPolicy: contentSecurityPolicy,
-	})
-
-	port443mux := mux.NewRouter()
-	port443mux.PathPrefix("/.well-known/").Handler(
-		http.StripPrefix("/.well-known/",
-			http.FileServer(http.Dir(wellknown))))
-	port443mux.HandleFunc("/", port443Handler)
-
-	port443app := secureMW.Handler(port443mux)
+	keyPair, err := tls.LoadX509KeyPair(certf, keyf)
+	if err != nil {
+		panic("XXX keys!")
+	}
 
 	cfg := &tls.Config{
 		MinVersion:               tls.VersionTLS12,
@@ -148,38 +186,31 @@ func main() {
 			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 		},
+		Certificates: []tls.Certificate{keyPair},
 	}
 
-	port443srv := &http.Server{
-		Addr:         ":443",
-		Handler:      apachelog.CombinedLog.Wrap(port443app, os.Stderr),
+	httpsSrv := &http.Server{
+		Addr:         environ.HTTPSListen,
 		TLSConfig:    cfg,
-		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
+		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
 	}
+	eHTTPS := mkRouterHTTPS()
 
 	go func() {
-		err := port443srv.ListenAndServeTLS(certf, keyf)
-		if err != nil {
-			log.Printf("port 443 server failed: %v\n", err)
+		if err := eHTTPS.StartServer(httpsSrv); err != nil {
+			eHTTPS.Logger.Info("shutting down HTTPS service")
 		}
 	}()
 
-	// Port 80 listener.
-	port80mux := mux.NewRouter()
-	port80mux.PathPrefix("/.well-known/").Handler(
-		http.StripPrefix("/.well-known/",
-			http.FileServer(http.Dir(wellknown))))
-	port80mux.HandleFunc("/", port80Handler)
-
-	port80srv := &http.Server{
-		Addr:    ":80",
-		Handler: apachelog.CombinedLog.Wrap(port80mux, os.Stderr),
+	// http (typically port 80) listener.
+	httpSrv := &http.Server{
+		Addr: environ.HTTPListen,
 	}
+	eHTTP := mkRouterHTTP()
 
 	go func() {
-		err := port80srv.ListenAndServe()
-		if err != nil {
-			log.Printf("port 80 server failed: %v\n", err)
+		if err := eHTTP.StartServer(httpSrv); err != nil {
+			eHTTP.Logger.Info("shutting down HTTP service")
 		}
 	}()
 
@@ -187,5 +218,9 @@ func main() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
 	s := <-sig
-	log.Fatalf("Signal (%v) received", s)
+	log.Printf("Signal (%v) received, shutting down", s)
+
+	gracefulShutdown(httpSrv)
+	gracefulShutdown(httpsSrv)
+	log.Printf("All servers shut down, goodbye.")
 }

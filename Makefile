@@ -453,6 +453,8 @@ CLOUDROOT=$(ROOT)/cloud
 CLOUDBASE=$(CLOUDROOT)/opt/net.b10e
 CLOUDBIN=$(CLOUDBASE)/bin
 CLOUDETC=$(CLOUDBASE)/etc
+CLOUDLIB=$(CLOUDBASE)/lib
+CLOUDLIBCLHTTPDWEB=$(CLOUDLIB)/cl.httpd-web
 CLOUDETCSCHEMA=$(CLOUDETC)/schema
 CLOUDETCSCHEMAAPPLIANCEDB=$(CLOUDETCSCHEMA)/appliancedb
 CLOUDROOTLIB=$(CLOUDROOT)/lib
@@ -496,6 +498,8 @@ CLOUDBINARIES = $(CLOUDCOMMANDS:%=$(CLOUDBIN)/%) $(CLOUDDAEMONS:%=$(CLOUDBIN)/%)
 CLOUDDIRS = \
 	$(CLOUDBIN) \
 	$(CLOUDETC) \
+	$(CLOUDLIB) \
+	$(CLOUDLIBCLHTTPDWEB) \
 	$(CLOUDETCSCHEMA) \
 	$(CLOUDETCSCHEMAAPPLIANCEDB) \
 	$(CLOUDROOTLIB) \
@@ -814,7 +818,8 @@ $(CLOUDBIN)/cl.eventd: \
 	$(GOSRCBG)/cl.eventd/inventory.go \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.httpd: \
-	$(GOSRCBG)/cl.httpd/cl.httpd.go
+	$(GOSRCBG)/cl.httpd/cl.httpd.go \
+	$(GOSRCBG)/cl.httpd/auth.go
 $(CLOUDBIN)/cl.rpcd: \
 	$(GOSRCBG)/cl.rpcd/rpcd.go \
 	$(GOSRCBG)/cl.rpcd/event.go \
