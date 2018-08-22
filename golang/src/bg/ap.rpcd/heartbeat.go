@@ -25,6 +25,14 @@ import (
 var bootTime *timestamp.Timestamp
 
 func publishHeartbeat(ctx context.Context, tclient cloud_rpc.EventClient) error {
+	var err error
+	if bootTime == nil {
+		bootTime, err = ptypes.TimestampProto(aputil.LinuxBootTime())
+		if err != nil {
+			slogger.Fatalf("couldn't get linux boot time")
+		}
+	}
+
 	heartbeat := &cloud_rpc.Heartbeat{
 		BootTime:   bootTime,
 		RecordTime: ptypes.TimestampNow(),
@@ -35,17 +43,10 @@ func publishHeartbeat(ctx context.Context, tclient cloud_rpc.EventClient) error 
 
 func heartbeatLoop(ctx context.Context, tclient cloud_rpc.EventClient, wg *sync.WaitGroup, doneChan chan bool) {
 	var done bool
-	var err error
-
-	bootTime, err = ptypes.TimestampProto(aputil.LinuxBootTime())
-	if err != nil {
-		slogger.Fatalf("couldn't get linux boot time")
-	}
 
 	ticker := time.NewTicker(time.Minute * 7)
 	for !done {
-		err := publishHeartbeat(ctx, tclient)
-		if err != nil {
+		if err := publishHeartbeat(ctx, tclient); err != nil {
 			slogger.Errorf("Failed heartbeat: %s", err)
 		}
 		select {
