@@ -41,7 +41,7 @@ func dpvuln(v vulnDescription, tgt net.IP) (bool, error) {
 
 	cmd := []string{"-i", tgt.String(), "-f", vendorfile}
 	if bannedarg != "" { // banfile results take priority
-		r := regexp.MustCompile(`([A-Za-z]+:([0-9]+:)?[0-9]+([,][0-9]+)*\.?)+`)
+		r := regexp.MustCompile(`([A-Za-z]+:([0-9]+:)?[0-9]+(\,[0-9]+)*\.?)+`) // ensure banfile has correct format
 		if r.MatchString(bannedarg) {
 			cmd = append(cmd, "-t", bannedarg)
 		} else {

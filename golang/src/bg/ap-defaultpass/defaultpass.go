@@ -37,7 +37,6 @@ import (
 	   For now, we will brute force all known default credentials (around 1000 entries).
 	2. Handle the cases which dial attempts get blocked with a message other than connection refused.
 	3. Change credentials after vulnerability has been discovered (doable through SSH using "passwd", but not through FTP)
-	4. Add automated testing.
 */
 
 type probefunc func([]credentials, int, *[]dpvulnerability, net.IP, int) int
@@ -46,6 +45,7 @@ type credentials struct {
 	username string
 	password string
 }
+
 type dpvulnerability struct {
 	protocol string
 	port     int
@@ -65,9 +65,9 @@ var testMap = map[string]probefunc{
 	"ssh":  sshProbe,
 }
 
-func fetchdefaults() ([]credentials, error) {
+func fetchdefaults(dpfile string) ([]credentials, error) {
 	var clist []credentials
-	defaultslist, err := os.Open(*dpfile)
+	defaultslist, err := os.Open(dpfile)
 	if err != nil {
 		log.Fatalf("Error opening vendor passwords file:%s\n", err)
 	}
@@ -242,7 +242,7 @@ func logban(ip net.IP, tests map[string][]int, banfiledir string) bool { // true
 }
 
 func dpProbe(ip net.IP, tests map[string][]int) []dpvulnerability {
-	clist, err := fetchdefaults()
+	clist, err := fetchdefaults(*dpfile)
 	if err != nil {
 		log.Fatalf("Error:%s\n", err)
 	}

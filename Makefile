@@ -327,6 +327,7 @@ GO_AP_TESTABLES = \
 	bg/ap_common/cloud/rpcclient \
 	bg/ap_common/network \
 	bg/ap.configd \
+	bg/ap-defaultpass\
 	bg/ap.networkd \
 	bg/ap.rpcd \
 	bg/ap.updated \

@@ -1,3 +1,5 @@
+Vendor,username,password
+--- needed for go test,dptest,dptest
 3com,,
 3com,,0
 3COM,,0
@@ -398,14 +400,14 @@ Linksys,,smcadmin
 Linksys,superman,talent
 Livingstone,root,
 Livingston,!root,
-Lockdown Networks,setup,changeme(exclamation)
+Lockdown Networks,setup,changeme!
 LogiLink,admin,
 Logitech,admin,admin
 longshine,admin,0
 Lucent,admin,AitbISP4eCiG
 Lucent,admin,Ascend
 Lucent,Administrator,
-Lucent,(any 3 characters),cascade
+Lucent,abc,cascade
 Lucent,bciim,bciimpw
 Lucent,bcim,bcimpw
 Lucent,bcms,bcmspw

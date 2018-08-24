@@ -38,6 +38,14 @@
 
 [[projects]]
   branch = "master"
+  digest = "1:3c292d5c4fe036d536e3a5945caa056f295e82142f1cbb493cf3d9ec7198e0e3"
+  name = "github.com/anmitsu/go-shlex"
+  packages = ["."]
+  pruneopts = ""
+  revision = "648efa622239a2f6ff949fed78ee37b48d499ba4"
+
+[[projects]]
+  branch = "master"
   digest = "1:c0bec5f9b98d0bc872ff5e834fac186b807b656683bd29cb82fb207a1513fabb"
   name = "github.com/beorn7/perks"
   packages = ["quantile"]
@@ -79,6 +87,30 @@
   pruneopts = ""
   revision = "06ea1031745cb8b3dab3f6a236daf2b0aa468b7e"
   version = "v3.2.0"
+
+[[projects]]
+  digest = "1:8fca1a11f4f8011e273c92799abb21be58df214079a6226a7f13b0f697c5921a"
+  name = "github.com/gliderlabs/ssh"
+  packages = ["."]
+  pruneopts = ""
+  revision = "d3a6756290240931faaf90ec97ddd5d9290623d8"
+  version = "v0.1.1"
+
+[[projects]]
+  branch = "master"
+  digest = "1:3fae24e79523e8d2bf738d4d17f4b3a6e9b80efda75a5731ea4662a243499664"
+  name = "github.com/goftp/file-driver"
+  packages = ["."]
+  pruneopts = ""
+  revision = "5d604a0fc0c9bdd141ddcb569a5ec32726bd8a1a"
+
+[[projects]]
+  branch = "master"
+  digest = "1:c17f4ed32a41d35cfa91f9f263c58283faeb014af70d37af1072335a7d84219f"
+  name = "github.com/goftp/server"
+  packages = ["."]
+  pruneopts = ""
+  revision = "6ce292dea1e650698017f287e143d5aad42dc2fc"
 
 [[projects]]
   branch = "master"
@@ -817,6 +849,9 @@
     "github.com/NYTimes/gziphandler",
     "github.com/bluele/gcache",
     "github.com/dgrijalva/jwt-go",
+    "github.com/gliderlabs/ssh",
+    "github.com/goftp/file-driver",
+    "github.com/goftp/server",
     "github.com/golang/protobuf/proto",
     "github.com/golang/protobuf/ptypes",
     "github.com/golang/protobuf/ptypes/any",
