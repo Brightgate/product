@@ -37,10 +37,11 @@ type DataStore interface {
 	CloudStorageByUUID(context.Context, uuid.UUID) (*ApplianceCloudStorage, error)
 	UpsertCloudStorage(context.Context, uuid.UUID, *ApplianceCloudStorage) error
 	Ping() error
-	Close()
+	Close() error
 }
 
 // ApplianceDB implements DataStore with the actual DB backend
+// sql.DB implements Ping() and Close()
 type ApplianceDB struct {
 	*sql.DB
 }
@@ -145,11 +146,6 @@ func (db *ApplianceDB) LoadSchema(ctx context.Context, schemaDir string) error {
 		}
 	}
 	return nil
-}
-
-// Close closes the connection to the DataStore
-func (db *ApplianceDB) Close() {
-	db.DB.Close()
 }
 
 var allIDColumns = []string{

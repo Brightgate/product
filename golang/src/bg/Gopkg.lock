@@ -45,6 +45,14 @@
   revision = "648efa622239a2f6ff949fed78ee37b48d499ba4"
 
 [[projects]]
+  digest = "1:4b1c01ac5aadd45d07391f69b97c3af4702e4ce963846f04099de26895979e15"
+  name = "github.com/antonlindstrom/pgstore"
+  packages = ["."]
+  pruneopts = ""
+  revision = "a407030ba6d0efd9a1aad3d0cfc18a9b13d2f2e7"
+  version = "1.0.0"
+
+[[projects]]
   branch = "master"
   digest = "1:c0bec5f9b98d0bc872ff5e834fac186b807b656683bd29cb82fb207a1513fabb"
   name = "github.com/beorn7/perks"
@@ -282,6 +290,14 @@
   version = "3.3.5"
 
 [[projects]]
+  digest = "1:349640bbfc79df678ac9afcd757f7cdae9d204dcdf4ee4a61fadfa6eb6e3fea4"
+  name = "github.com/labstack/echo-contrib"
+  packages = ["session"]
+  pruneopts = ""
+  revision = "7d9d9632a4aadf9b026436e43d5f96eca2d895a6"
+  version = "0.5.2"
+
+[[projects]]
   digest = "1:2380b9c75b541a363edb1d1c1854c412f927e2265d3b69a9f9c2e42e384c15b4"
   name = "github.com/labstack/gommon"
   packages = [
@@ -351,6 +367,7 @@
   packages = [
     ".",
     "gothic",
+    "providers/auth0",
     "providers/gplus",
     "providers/openidConnect",
   ]
@@ -926,6 +943,7 @@
     "cloud.google.com/go/pubsub",
     "cloud.google.com/go/storage",
     "github.com/NYTimes/gziphandler",
+    "github.com/antonlindstrom/pgstore",
     "github.com/bluele/gcache",
     "github.com/dgrijalva/jwt-go",
     "github.com/gliderlabs/ssh",
@@ -951,12 +969,14 @@
     "github.com/klauspost/oui",
     "github.com/krolaw/dhcp4",
     "github.com/labstack/echo",
+    "github.com/labstack/echo-contrib/session",
     "github.com/labstack/echo/middleware",
     "github.com/lair-framework/go-nmap",
     "github.com/lestrrat/go-apache-logformat",
     "github.com/lib/pq",
     "github.com/markbates/goth",
     "github.com/markbates/goth/gothic",
+    "github.com/markbates/goth/providers/auth0",
     "github.com/markbates/goth/providers/gplus",
     "github.com/markbates/goth/providers/openidConnect",
     "github.com/miekg/dns",

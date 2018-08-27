@@ -336,7 +336,8 @@ GO_AP_TESTABLES = \
 GO_CLOUD_TESTABLES = \
 	bg/cl_common/auth/m2mauth \
 	bg/cl_common/daemonutils \
-	bg/cloud_models/appliancedb
+	bg/cloud_models/appliancedb \
+	bg/cloud_models/sessiondb
 
 NETWORKD_TEMPLATE_FILES = \
 	hostapd.conf.got \
@@ -470,6 +471,7 @@ CLOUDCOMMON_GOPKGS = \
 	bg/cl_common/auth/m2mauth \
 	bg/cl_common/daemonutils \
 	bg/cloud_models/appliancedb \
+	bg/cloud_models/sessiondb \
 	bg/common/archive \
 	bg/common/urlfetch
 
@@ -511,6 +513,7 @@ CLOUDCOMPONENTS = $(CLOUDBINARIES) $(CLOUDCONFIGS) $(CLOUDDIRS) $(CLOUDSCHEMAS)
 CLOUD_COMMON_SRCS = \
     $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
     $(GOSRCBG)/cloud_models/appliancedb/appliancedb.go \
+    $(GOSRCBG)/cloud_models/sessiondb/sessiondb.go \
     $(GOSRCBG)/cl_common/auth/m2mauth/middleware.go \
     $(GOSRCBG)/cl_common/daemonutils/utils.go \
     $(GOSRCBG)/common/archive/archive.go \
@@ -819,7 +822,8 @@ $(CLOUDBIN)/cl.eventd: \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.httpd: \
 	$(GOSRCBG)/cl.httpd/cl.httpd.go \
-	$(GOSRCBG)/cl.httpd/auth.go
+	$(GOSRCBG)/cl.httpd/auth.go \
+	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.rpcd: \
 	$(GOSRCBG)/cl.rpcd/rpcd.go \
 	$(GOSRCBG)/cl.rpcd/event.go \
