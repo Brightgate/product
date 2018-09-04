@@ -9,7 +9,8 @@
 -->
 <template>
   <f7-page
-      ptr @ptr:refresh="usersPullRefresh">
+      ptr @ptr:refresh="usersPullRefresh"
+      @page:afterin="onPageAfterIn">
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.users.title')" sliding>
     </f7-navbar>
 
@@ -47,9 +48,8 @@ export default {
     usersPullRefresh: function(event, done) {
       return Promise.resolve(this.$store.dispatch('fetchUsers')).asCallback(done);
     },
-  },
-  on: {
-    pageAfterIn: function() {
+
+    onPageAfterIn: function() {
       console.log('users.vue on pageAfterIn');
       return this.$store.dispatch('fetchUsers');
     },

@@ -274,7 +274,7 @@ export default [
       // finish after start-- scan complete
       vulnerability: {
         start: '2018-04-11T20:52:02+00:00',
-        finish: '2018-04-11T20:52:02+00:00',
+        finish: '2018-04-11T20:53:02+00:00',
       },
     },
   },

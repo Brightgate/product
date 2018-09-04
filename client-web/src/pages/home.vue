@@ -8,7 +8,7 @@
   such unauthorized removal or alteration will be a violation of federal law.
 -->
 <template>
-<f7-page>
+<f7-page @page:beforein="onPageBeforeIn" @page:beforeout="onPageBeforeOut">
 
   <f7-navbar>
     <!-- f7-nav-title doesn't seem to center properly without also
@@ -117,7 +117,7 @@
 </template>
 
 <script>
-import superagent from 'superagent';
+import superagent from 'superagent-bluebird-promise';
 import vuex from 'vuex';
 
 import vulnerability from '../vulnerability';
@@ -156,15 +156,19 @@ export default {
     },
 
     acceptSupreme: function() {
-      superagent.get('/apid/supreme').end((err, res) => {
-        let message;
-        if (err) {
-          message = this.$t('message.home.testing.accept_fail', {'reason': err.message});
-        } else {
-          const res_json = JSON.parse(res.text);
-          const c = res_json.changed ? res_json.changed : -1;
-          message = this.$t('message.home.testing.accept_success', {'devicesChanged': c});
+      superagent.get('/apid/supreme'
+      ).then((res) => {
+        let res_json;
+        try {
+          res_json = JSON.parse(res.text);
+        } catch (err) {
+          throw new Error('Invalid response');
         }
+        const c = res_json.changed ? res_json.changed : -1;
+        return this.$t('message.home.testing.accept_success', {'devicesChanged': c});
+      }).catch((err) => {
+        return this.$t('message.home.testing.accept_fail', {'reason': err.message});
+      }).then((message) => {
         this.acceptToast = this.$f7.toast.create({
           text: message,
           closeButton: true,
@@ -181,10 +185,7 @@ export default {
       return vulnerability.headline(vulnid);
     },
 
-  },
-
-  on: {
-    pageBeforeIn: function() {
+    onPageBeforeIn: function() {
       console.log('home.vue pageBeforeIn');
       if (this.$store.getters.Is_Logged_In) {
         return this.$store.dispatch('fetchDevices').catch(() => {});
@@ -193,7 +194,7 @@ export default {
       }
     },
 
-    pageBeforeOut: function() {
+    onPageBeforeOut: function() {
       console.log('home.vue pageBeforeOut');
       if (this.acceptToast) {
         this.acceptToast.close();
@@ -202,4 +203,3 @@ export default {
   },
 };
 </script>
-

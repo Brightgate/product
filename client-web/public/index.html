@@ -10,7 +10,18 @@
 -->
 <html>
 <head>
+  <!--
+  Customize this policy to fit your own app's needs. For more guidance, see:
+      https://github.com/apache/cordova-plugin-whitelist/blob/master/README.md#content-security-policy
+  Some notes:
+      * gap: is required only on iOS (when using UIWebView) and is needed for JS->native communication
+      * https://ssl.gstatic.com is required only on Android and is needed for TalkBack to function properly
+      * Disables use of inline scripts in order to mitigate risk of XSS vulnerabilities. To change this:
+          * Enable inline JS: add 'unsafe-inline' to default-src
+  (<meta http-equiv="Content-Security-Policy" content="default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: gap: content:">)
+  -->
   <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover minimal-ui">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -18,18 +29,9 @@
   <meta name="application-name" content="Brightgate Administration">
 
   <title>Brightgate Administration</title>
-  <link rel="stylesheet" href="css/framework7.min.css">
-  <link rel="stylesheet" href="css/framework7-icons.css">
-  <link rel="stylesheet" href="css/app.css">
-  <link rel="stylesheet" href="css/build.css">
   <link rel="manifest" href="manifest.json">
 
-  <!-- Start loading main app JS immediately. -->
-  <link rel="preload" href="js/build.js" as="script">
-
-  <!-- Preload woff2 icons for performance. Woff2 is the preferred format in
-       the F7 Icon font stack CSS. -->
-  <link rel="preload" href="fonts/Framework7Icons-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+  <link rel="icon" href="<%= BASE_URL %>favicon.ico">
 
   <!-- Preload bg logo for performance: track
        https://www.chromestatus.com/feature/5164259990306816 for improvements
@@ -39,7 +41,6 @@
   <link rel="preload" href="img/bglogo_navbar_ios@2x.png" as="image" type="image/png" media="(min-resolution: 1.5dppx)">
   <link rel="preload" href="img/bglogo_navbar_md.png" as="image" type="image/png" media="(max-resolution: 1.499dppx)">
   <link rel="preload" href="img/bglogo_navbar_md@2x.png" as="image" type="image/png" media="(min-resolution: 1.5dppx)">
-
 
 </head>
 <body>
@@ -62,6 +63,6 @@
   <script>
      window.navigateTo = '/';
   </script>
-  <script src="js/build.js"></script>
+  <!-- built script files will be auto injected -->
 </body>
 </html>

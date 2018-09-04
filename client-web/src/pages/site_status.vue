@@ -8,7 +8,7 @@
   such unauthorized removal or alteration will be a violation of federal law.
 -->
 <template>
-  <f7-page ptr>
+  <f7-page ptr @ptr:refresh="onPtrRefresh" @page:beforein="onPageBeforeIn" @page:beforeout="onPageBeforeOut">
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.site_status.title')" sliding>
     </f7-navbar>
 
@@ -78,27 +78,23 @@ export default {
   },
 
   methods: {
-  },
-
-  on: {
-    'ptr:refresh': function(el, done) {
+    onPtrRefresh: function(el, done) {
       return Promise.all([
         this.$store.dispatch('fetchNetworkConfig').catch(() => {}),
         this.$store.dispatch('fetchDevices').catch(() => {}),
       ]).asCallback(done);
     },
 
-    'pageBeforeIn': function() {
+    onPageBeforeIn: function() {
       console.log('site_status pageBeforeIn');
       if (this.$store.getters.Is_Logged_In) {
         return this.$store.dispatch('fetchNetworkConfig').catch(() => {});
       }
     },
 
-    'pageBeforeOut': function() {
+    onPageBeforeOut: function() {
       console.log('site_status pageBeforeOut');
     },
   },
 };
 </script>
-

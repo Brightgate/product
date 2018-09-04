@@ -900,6 +900,7 @@ NPM_QUIET = --loglevel warn --no-progress
 
 client-web: .make-npm-installed FRC | $(HTTPD_CLIENTWEB_DIR)
 	$(RM) -fr $(HTTPD_CLIENTWEB_DIR)/*
+	(cd client-web && $(NPM) run lint)
 	(cd client-web && $(NPM) run build)
 	tar -C client-web/dist -c -f - . | tar -C $(HTTPD_CLIENTWEB_DIR) -xvf -
 

@@ -71,9 +71,9 @@
 // should switch to cleave.js or some other framework.  If we roll our own,
 // then phone number input should go into its own Vue component.
 
-import libphonenumber from 'libphonenumber-js';
+import {isValidNumber, AsYouType} from 'libphonenumber-js';
 import emailvalidator from 'email-validator';
-const phone_ayt = new libphonenumber.AsYouType('US');
+let phone_ayt = null;
 
 export default {
   data: function() {
@@ -98,12 +98,15 @@ export default {
       if (!this.phone_input || this.phone_input === '') {
         return false;
       }
-      return libphonenumber.isValidNumber(this.phone_input, 'US');
+      return isValidNumber(this.phone_input, 'US');
     },
   },
 
   methods: {
     onTelInput: function(event) {
+      if (phone_ayt === null) {
+        phone_ayt = new AsYouType('US');
+      }
       phone_ayt.reset();
       this.phone_input = phone_ayt.input(event.target.value);
     },

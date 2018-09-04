@@ -107,8 +107,10 @@
 </template>
 <script>
 import assert from 'assert';
-import moment from 'moment';
+import isBefore from 'date-fns/isBefore';
+import isEqual from 'date-fns/isEqual';
 import _ from 'lodash';
+import {format, formatRelative} from '../date-fns-wrapper';
 
 import vulnerability from '../vulnerability';
 
@@ -119,10 +121,10 @@ export default {
 
   methods: {
     timeAbs: function(t) {
-      return moment(t).format('LLL');
+      return format(t, 'Pp');
     },
     timeRel: function(t) {
-      return moment(t).fromNow();
+      return formatRelative(t, Date.now());
     },
     vulnHeadline: function(vulnid) {
       return vulnerability.headline(vulnid);
@@ -198,8 +200,8 @@ export default {
       if (finish === null) {
         return this.$t('message.dev_details.vuln_scan_initial');
       }
-      if (moment(start).isBefore(finish)) {
-        return moment(finish).format('LLL');
+      if (isBefore(start, finish) || isEqual(start, finish)) {
+        return format(finish, 'Pp');
       }
       return this.$t('message.dev_details.vuln_scan_rescan');
     },

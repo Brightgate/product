@@ -9,7 +9,7 @@
 -->
 <template>
   <!-- App -->
-  <div id="app">
+  <f7-app :params="f7params">
 
     <!-- Statusbar -->
     <f7-statusbar></f7-statusbar>
@@ -24,7 +24,7 @@
             There's probably a better way to pass this information in besides
             a window level property, but I couldn't figure it out.
     -->
-    <f7-view id="main-view" :url="startRoute" :stackPages="true" main>
+    <f7-view id="main-view" :url="startRoute" :stackPages="true" :main="true">
     </f7-view>
 
   <!-- Login Screen -->
@@ -88,11 +88,12 @@
     </f7-view>
   </f7-login-screen>
 
-  </div>
+  </f7-app>
 </template>
 
 <script>
 import Promise from 'bluebird';
+import routes from './routes';
 
 export default {
   computed: {
@@ -103,6 +104,12 @@ export default {
 
   data: function() {
     return {
+      f7params: {
+        id: 'net.b10e.appliance-admin',
+        name: 'Brightgate Appliance Admin Tool',
+        theme: 'auto',
+        routes: routes,
+      },
       uid: '',
       userPassword: '',
       loginError: null,

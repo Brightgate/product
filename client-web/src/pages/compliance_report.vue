@@ -8,7 +8,7 @@
   such unauthorized removal or alteration will be a violation of federal law.
 -->
 <template>
-  <f7-page ptr>
+  <f7-page ptr @page:beforein="onPageBeforeIn" @ptr:refresh="onPtrRefresh">
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.compliance_report.title')" sliding>
     </f7-navbar>
     <f7-card :title="$t('message.compliance_report.summary')">
@@ -171,10 +171,7 @@ export default {
     vulnHeadline: function(vulnid) {
       return vulnerability.headline(vulnid);
     },
-  },
-
-  on: {
-    'ptr:refresh': function(el, done) {
+    onPtrRefresh: function(el, done) {
       return Promise.all([
         this.$store.dispatch('fetchNetworkConfig').catch(() => {}),
         this.$store.dispatch('fetchDevices').catch(() => {}),
@@ -182,11 +179,10 @@ export default {
       ]).asCallback(done);
     },
 
-    'pageBeforeIn': function() {
+    onPageBeforeIn: function() {
       this.$store.dispatch('fetchDevices').catch(() => {});
       this.$store.dispatch('fetchRings').catch(() => {});
     },
   },
 };
 </script>
-

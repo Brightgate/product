@@ -8,7 +8,7 @@
   such unauthorized removal or alteration will be a violation of federal law.
 -->
 <template>
-  <f7-page>
+  <f7-page @page:afterin="onPageAfterIn">
     <f7-navbar
         :back-link="$t('message.general.back')"
         :title="$t('message.user_details.edit_title')"
@@ -181,10 +181,8 @@ export default {
         });
       });
     },
-  },
 
-  on: {
-    pageAfterIn: function() {
+    onPageAfterIn: function() {
       console.log(`user_editor page for '${this.$f7route.params.UUID}'`);
     },
   },
