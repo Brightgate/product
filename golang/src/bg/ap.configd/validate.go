@@ -63,6 +63,7 @@ var (
 		"ring":       validateRing,
 		"nickind":    validateNicKind,
 		"macaddr":    validateMac,
+		"nic":        validateNic,
 		"ipaddr":     validateIP,
 		"cidr":       validateCIDR,
 		"hostname":   validateHostname,
@@ -172,6 +173,18 @@ func validateMac(val string) error {
 			val, err)
 	}
 	return err
+}
+
+func validateNic(val string) error {
+	// This is really the inverse of platform.NicID(), but in this context
+	// we don't know the platform type.  The best we can do now is flag
+	// those values that aren't valid on any platform.
+	if val == "wan" || strings.HasPrefix(val, "lan") ||
+		strings.HasPrefix(val, "wlan") {
+		return nil
+	}
+
+	return validateMac(val)
 }
 
 func validateIP(val string) error {

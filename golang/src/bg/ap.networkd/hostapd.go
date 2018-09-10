@@ -416,8 +416,6 @@ func initPseudoNic(d *physDevice) *physDevice {
 		pseudo: true,
 	}
 
-	id := getNicID(pseudo)
-	physDevices[id] = pseudo
 	return pseudo
 }
 
@@ -475,6 +473,7 @@ func getAPConfig(d *physDevice) *apConfig {
 
 		p := initPseudoNic(d)
 		p.hwaddr = macUpdateLastOctet(d.hwaddr, maskBits, 1)
+		physDevices[getNicID(p)] = p
 	}
 
 	pskssid := wifiSSID
