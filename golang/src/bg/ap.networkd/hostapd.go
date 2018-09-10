@@ -14,6 +14,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"math/bits"
 	"net"
 	"os"
 	"regexp"
@@ -381,17 +382,15 @@ func (c *hostapdConn) run(wg *sync.WaitGroup) {
 	wg.Done()
 }
 
-//
-// Replace the final nybble of a mac address to match the transformations
-// hostapd performs to support multple SSIDs
-//
-func macUpdateLastOctet(mac string, nybble uint64) string {
+// Update the final bits of a mac address
+func macUpdateLastOctet(mac string, maskSize, val uint64) string {
 	octets := strings.Split(mac, ":")
 	if len(octets) == 6 {
 		b, _ := strconv.ParseUint(octets[5], 16, 32)
-		newNybble := (b & 0xf0) | nybble
-		if newNybble != b {
-			octets[5] = fmt.Sprintf("%02x", newNybble)
+		mask := ^((uint64(1) << maskSize) - 1)
+		new := (b & mask) | val
+		if new != b {
+			octets[5] = fmt.Sprintf("%02x", new)
 
 			// Since we changed the mac address, we need to set the
 			// 'locally administered' bit in the first octet
@@ -403,15 +402,15 @@ func macUpdateLastOctet(mac string, nybble uint64) string {
 	} else {
 		log.Printf("invalid mac address: %s", mac)
 	}
+
 	return mac
 }
 
 // hostapd is going to spawn a virtual NIC for our second BSSID.  Add a node for
 // that NIC to our list of devices.
-func initPseudoNic(d *physDevice) {
+func initPseudoNic(d *physDevice) *physDevice {
 	pseudo := &physDevice{
 		name:   d.name + "_1",
-		hwaddr: macUpdateLastOctet(d.hwaddr, 1),
 		ring:   base_def.RING_GUEST,
 		wifi:   d.wifi,
 		pseudo: true,
@@ -419,6 +418,7 @@ func initPseudoNic(d *physDevice) {
 
 	id := getNicID(pseudo)
 	physDevices[id] = pseudo
+	return pseudo
 }
 
 //
@@ -461,16 +461,20 @@ func getAPConfig(d *physDevice) *apConfig {
 
 	d.ring = base_def.RING_STANDARD
 	if ssidCnt > 1 {
-		// If we create multiple SSIDs, hostapd will generate
-		// additional bssids by incrementing the final octet of the
-		// nic's mac address.  To accommodate that, hostapd wants the
-		// final nybble of the final octet to be 0.
-		newMac := macUpdateLastOctet(d.hwaddr, 0)
-		if newMac != d.hwaddr {
-			log.Printf("Changed mac from %s to %s\n", d.hwaddr, newMac)
-			d.hwaddr = newMac
+		// If we create multiple SSIDs, hostapd will generate additional
+		// bssids by incrementing the final octet of the nic's mac
+		// address.  hostapd requires that the base and generated mac
+		// addresses share the upper 47 bits, so we need to ensure that
+		// the base address has the lowest bits set to 0.
+		maskBits := uint64(bits.Len(uint(ssidCnt - 1)))
+		oldMac := d.hwaddr
+		d.hwaddr = macUpdateLastOctet(d.hwaddr, maskBits, 0)
+		if d.hwaddr != oldMac {
+			log.Printf("Changed mac from %s to %s\n", oldMac, d.hwaddr)
 		}
-		initPseudoNic(d)
+
+		p := initPseudoNic(d)
+		p.hwaddr = macUpdateLastOctet(d.hwaddr, maskBits, 1)
 	}
 
 	pskssid := wifiSSID
