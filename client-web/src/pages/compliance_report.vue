@@ -9,14 +9,13 @@
 -->
 <template>
   <f7-page ptr @page:beforein="onPageBeforeIn" @ptr:refresh="onPtrRefresh">
-    <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.compliance_report.title')" sliding>
-    </f7-navbar>
+    <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.compliance_report.title')" sliding />
     <f7-card :title="$t('message.compliance_report.summary')">
       <f7-list no-hairlines no-hairlines-between>
         <f7-list-item media>
           <div slot="media">
-            <f7-icon v-if="Policy_Violations !== 0" f7="bolt_round_fill" color="red"></f7-icon>
-            <f7-icon v-else f7="check_round_fill" color="green"></f7-icon>
+            <f7-icon v-if="Policy_Violations !== 0" f7="bolt_round_fill" color="red" />
+            <f7-icon v-else f7="check_round_fill" color="green" />
           </div>
           <span v-if="Policy_Violations !== 0" style="font-weight: bold">
             {{ $tc("message.compliance_report.summary_violations", Policy_Violations, {num: Policy_Violations}) }}
@@ -37,38 +36,36 @@
     </f7-card>
 
     <f7-card v-if="Alert_Count(Alert_Active(All_Alerts)) === 0"
-        :title="$t('message.compliance_report.active_violations')"
-        :content="$t('message.compliance_report.no_active_violations')">
-    </f7-card>
+             :title="$t('message.compliance_report.active_violations')"
+             :content="$t('message.compliance_report.no_active_violations')" />
     <f7-card v-else :title="$t('message.compliance_report.active_violations')">
-    <f7-list>
-      <f7-list-item
+      <f7-list>
+        <f7-list-item
           v-for="alert in Alert_Active(All_Alerts)"
           :key="alert.device.uniqid + '-' + alert.vulnid"
           :link="`/devices/${alert.device.uniqid}/`">
-        <span>
-          <f7-icon f7="bolt_round_fill" color="red"></f7-icon>
-          {{ $t('message.alerts.problem_on_device',
-               {problem: vulnHeadline(alert.vulnid), device: alert.device.network_name})
-          }}
-        </span>
-      </f7-list-item>
-    </f7-list>
+          <span>
+            <f7-icon f7="bolt_round_fill" color="red" />
+            {{ $t('message.alerts.problem_on_device',
+                  {problem: vulnHeadline(alert.vulnid), device: alert.device.network_name})
+            }}
+          </span>
+        </f7-list-item>
+      </f7-list>
     </f7-card>
 
     <f7-card v-if="Alert_Count(Alert_Inactive(All_Alerts)) === 0"
-        :title="$t('message.compliance_report.resolved_violations')"
-        :content="$t('message.compliance_report.no_resolved_violations')">
-    </f7-card>
+             :title="$t('message.compliance_report.resolved_violations')"
+             :content="$t('message.compliance_report.no_resolved_violations')" />
     <f7-card v-else :title="$t('message.compliance_report.resolved_violations')">
       <f7-list>
         <f7-list-item
-            v-for="alert in Alert_Inactive(All_Alerts)"
-            :key="alert.device.uniqid + '-' + alert.vulnid">
+          v-for="alert in Alert_Inactive(All_Alerts)"
+          :key="alert.device.uniqid + '-' + alert.vulnid">
           <span>
-            <f7-icon f7="bolt_round_fill" color="gray"></f7-icon>
+            <f7-icon f7="bolt_round_fill" color="gray" />
             {{ $t('message.alerts.problem_on_device',
-                 {problem: vulnHeadline(alert.vulnid), device: alert.device.network_name})
+                  {problem: vulnHeadline(alert.vulnid), device: alert.device.network_name})
             }}
           </span>
         </f7-list-item>
@@ -78,15 +75,15 @@
     <f7-card :title="$t('message.compliance_report.ring_summary')">
       <f7-block style="margin-top: 5px; font-size: 12pt;">
         <span style="color: rgba(0,0,0,0.5);">
-          <f7-icon f7="check_round_fill" size="1em" color="green"/>
-            {{ $t('message.compliance_report.ring_ok') }}<br />
-          <f7-icon f7="help_fill" size="1em" color="orange"/>
-            {{ $t('message.compliance_report.ring_not_scanned') }}<br />
-          <f7-icon f7="bolt_round_fill" size="1em" color="red"/>
-            {{ $t('message.compliance_report.ring_vulnerable') }}<br />
-          <f7-icon f7="circle" size="1em" color="gray"/>
-            {{ $t('message.compliance_report.ring_inactive') }}<br />
-          <br />
+          <f7-icon f7="check_round_fill" size="1em" color="green" />
+          {{ $t('message.compliance_report.ring_ok') }}<br>
+          <f7-icon f7="help_fill" size="1em" color="orange" />
+          {{ $t('message.compliance_report.ring_not_scanned') }}<br>
+          <f7-icon f7="bolt_round_fill" size="1em" color="red" />
+          {{ $t('message.compliance_report.ring_vulnerable') }}<br>
+          <f7-icon f7="circle" size="1em" color="gray" />
+          {{ $t('message.compliance_report.ring_inactive') }}<br>
+          <br>
         </span>
 
         <f7-row style="padding-top: 7px; padding-bottom: 7px;">
@@ -100,8 +97,8 @@
         </f7-row>
 
         <f7-row v-for="ring in SortedRings"
-            :key="ring"
-            style="padding-top: 7px; padding-bottom: 7px;">
+                :key="ring"
+                style="padding-top: 7px; padding-bottom: 7px;">
           <f7-col width="40">
             {{ ring }}
           </f7-col>
@@ -123,13 +120,13 @@ import vulnerability from '../vulnerability';
 import BGRingSummary from '../components/ring_summary.vue';
 
 export default {
-  data: function() {
-    return {
-    };
-  },
 
   components: {
     'bg-ring-summary': BGRingSummary,
+  },
+  data: function() {
+    return {
+    };
   },
 
   computed: {

@@ -8,112 +8,106 @@
   such unauthorized removal or alteration will be a violation of federal law.
 -->
 <template>
-<f7-page @page:beforein="onPageBeforeIn" @page:beforeout="onPageBeforeOut">
+  <f7-page @page:beforein="onPageBeforeIn" @page:beforeout="onPageBeforeOut">
 
-  <f7-navbar>
-    <!-- f7-nav-title doesn't seem to center properly without also
+    <f7-navbar>
+      <!-- f7-nav-title doesn't seem to center properly without also
          including left and right. -->
-    <f7-nav-left>&nbsp;</f7-nav-left>
+      <f7-nav-left>&nbsp;</f7-nav-left>
 
-    <f7-nav-title>
-      <img v-if="this.$f7router.app.theme === 'ios'"
-          alt="Brightgate"
-          style="padding-top:4px"
-          src="img/bglogo_navbar_ios.png"
-          srcset="img/bglogo_navbar_ios.png,
-                  img/bglogo_navbar_ios@2x.png 2x"/>
-      <img v-else
-          alt="Brightgate"
-          style="padding-top:4px"
-          src="img/bglogo_navbar_md.png"
-          srcset="img/bglogo_navbar_md.png,
-                  img/bglogo_navbar_md@2x.png 2x"/>
-    </f7-nav-title>
+      <f7-nav-title>
+        <img v-if="this.$f7router.app.theme === 'ios'"
+             alt="Brightgate"
+             style="padding-top:4px"
+             src="img/bglogo_navbar_ios.png"
+             srcset="img/bglogo_navbar_ios.png,
+                  img/bglogo_navbar_ios@2x.png 2x">
+        <img v-else
+             alt="Brightgate"
+             style="padding-top:4px"
+             src="img/bglogo_navbar_md.png"
+             srcset="img/bglogo_navbar_md.png,
+                  img/bglogo_navbar_md@2x.png 2x">
+      </f7-nav-title>
 
-    <f7-nav-right>
-      <span font-size="small">
-      <f7-link v-if="Is_Logged_In" @click="attemptLogout()">{{ $t('message.home.tools.logout') }}</f7-link>
-      <f7-link v-else login-screen-open="#bgLoginScreen">{{ $t('message.home.tools.login') }}</f7-link>
-      </span>
-    </f7-nav-right>
-  </f7-navbar>
+      <f7-nav-right>
+        <span font-size="small">
+          <f7-link v-if="Is_Logged_In" @click="attemptLogout()">{{ $t('message.home.tools.logout') }}</f7-link>
+          <f7-link v-else login-screen-open="#bgLoginScreen">{{ $t('message.home.tools.login') }}</f7-link>
+        </span>
+      </f7-nav-right>
+    </f7-navbar>
 
-  <template v-if="Alert_Count(Alert_Active(All_Alerts))">
-    <f7-block-title>{{ $t("message.alerts.serious_alerts") }}</f7-block-title>
-    <f7-list>
-      <f7-list-item
+    <template v-if="Alert_Count(Alert_Active(All_Alerts))">
+      <f7-block-title>{{ $t("message.alerts.serious_alerts") }}</f7-block-title>
+      <f7-list>
+        <f7-list-item
           v-for="alert in Alert_Active(All_Alerts)"
           :key="alert.device.uniqid + '-' + alert.vulnid"
           :link="`/devices/${alert.device.uniqid}/`">
-        <span>
-          <f7-icon f7="bolt_round_fill" color="red"></f7-icon>
-          {{ $t('message.alerts.problem_on_device',
-             {problem: vulnHeadline(alert.vulnid), device: alert.device.network_name})
-          }}
+          <span>
+            <f7-icon f7="bolt_round_fill" color="red" />
+            {{ $t('message.alerts.problem_on_device',
+                  {problem: vulnHeadline(alert.vulnid), device: alert.device.network_name})
+            }}
+          </span>
+        </f7-list-item>
+      </f7-list>
+    </template>
+
+    <f7-block-title>{{ $t("message.home.tools.tools") }}</f7-block-title>
+    <f7-list>
+      <f7-list-item
+        :title="$t('message.home.tools.site_status')"
+        :class="Is_Logged_In ? '' : 'disabled'"
+        link="/site_status/" />
+      <f7-list-item
+        :title="$t('message.home.tools.compliance_report')"
+        :class="Is_Logged_In ? '' : 'disabled'"
+        link="/compliance_report/" />
+      <f7-list-item
+        :title="$t('message.home.tools.manage_devices', {'device_count': Device_Count(All_Devices)})"
+        :class="Is_Logged_In ? '' : 'disabled'"
+        link="/devices/" />
+      <f7-list-item
+        :title="$t('message.home.tools.users')"
+        :class="Is_Logged_In ? '' : 'disabled'"
+        link="/users/" />
+      <f7-list-item
+        :title="$t('message.home.tools.enroll_guest')"
+        :class="Is_Logged_In ? '' : 'disabled'"
+        link="/enroll_guest/" />
+    </f7-list>
+
+    <f7-block-title>{{ $t("message.notifications.notifications") }}</f7-block-title>
+    <f7-list>
+      <f7-list-item
+        v-for="device in All_Devices"
+        v-if="device.notification"
+        :key="device.uniqid"
+        :title="$t('message.notifications.update_device', {'device': device.network_name})"
+        :link="`/devices/${device.uniqid}/`" />
+    </f7-list>
+
+    <f7-block-title>{{ $t("message.home.testing.testing") }}</f7-block-title>
+    <f7-list>
+      <f7-list-item :title="$t('message.home.testing.enable_mock')">
+        <f7-toggle slot="after" :checked="Mock" @change="toggleMock" />
+      </f7-list-item>
+      <f7-list-item :title="$t('message.home.testing.enable_fakelogin')">
+        <f7-toggle slot="after" :checked="Fake_Login" @change="toggleFakeLogin" />
+      </f7-list-item>
+      <f7-list-item
+        :title="$t('message.home.testing.accept_devices')"
+        :class="Is_Logged_In ? '' : 'disabled'">
+        <span slot="after">
+          <f7-button fill @click="acceptSupreme">{{ $t("message.general.accept") }}
+          </f7-button>
         </span>
       </f7-list-item>
     </f7-list>
-  </template>
 
-  <f7-block-title>{{ $t("message.home.tools.tools") }}</f7-block-title>
-  <f7-list>
-    <f7-list-item
-        link="/site_status/"
-        :title="$t('message.home.tools.site_status')"
-        :class="Is_Logged_In ? '' : 'disabled'">
-    </f7-list-item>
-    <f7-list-item
-        link="/compliance_report/"
-        :title="$t('message.home.tools.compliance_report')"
-        :class="Is_Logged_In ? '' : 'disabled'">
-    </f7-list-item>
-    <f7-list-item
-        link="/devices/"
-        :title="$t('message.home.tools.manage_devices', {'device_count': Device_Count(All_Devices)})"
-        :class="Is_Logged_In ? '' : 'disabled'">
-    </f7-list-item>
-    <f7-list-item
-        link="/users/"
-        :title="$t('message.home.tools.users')"
-        :class="Is_Logged_In ? '' : 'disabled'">
-    </f7-list-item>
-    <f7-list-item
-        link="/enroll_guest/"
-        :title="$t('message.home.tools.enroll_guest')"
-        :class="Is_Logged_In ? '' : 'disabled'">
-    </f7-list-item>
-  </f7-list>
-
-  <f7-block-title>{{ $t("message.notifications.notifications") }}</f7-block-title>
-  <f7-list>
-    <f7-list-item
-          v-for="device in All_Devices"
-          v-if="device.notification"
-          v-bind:key="device.uniqid"
-          :title="$t('message.notifications.update_device', {'device': device.network_name})"
-          :link="`/devices/${device.uniqid}/`">
-    </f7-list-item>
-  </f7-list>
-
-  <f7-block-title>{{ $t("message.home.testing.testing") }}</f7-block-title>
-  <f7-list>
-    <f7-list-item :title="$t('message.home.testing.enable_mock')">
-      <f7-toggle slot="after" :checked="Mock" @change="toggleMock"></f7-toggle>
-    </f7-list-item>
-    <f7-list-item :title="$t('message.home.testing.enable_fakelogin')">
-      <f7-toggle slot="after" :checked="Fake_Login" @change="toggleFakeLogin"></f7-toggle>
-    </f7-list-item>
-    <f7-list-item
-        :title="$t('message.home.testing.accept_devices')"
-        :class="Is_Logged_In ? '' : 'disabled'">
-      <span slot="after">
-        <f7-button @click="acceptSupreme" fill>{{ $t("message.general.accept") }}
-        </f7-button>
-      </span>
-    </f7-list-item>
-  </f7-list>
-
-</f7-page>
+  </f7-page>
 </template>
 
 <script>

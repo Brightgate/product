@@ -9,48 +9,44 @@
 -->
 <template>
   <f7-page ptr @ptr:refresh="onPtrRefresh" @page:beforein="onPageBeforeIn" @page:beforeout="onPageBeforeOut">
-    <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.site_status.title')" sliding>
-    </f7-navbar>
+    <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.site_status.title')" sliding />
 
-  <f7-list>
-    <f7-list-group>
-      <f7-list-item :title="$t('message.site_status.ssids')" group-title>
-      </f7-list-item>
-      <f7-list-item :title="$t('message.site_status.ssid_psk')">
-        {{ Network_Config.ssid }}
-      </f7-list-item>
-      <f7-list-item :title="$t('message.site_status.ssid_eap')">
-        {{ Network_Config.ssid }}-eap
-      </f7-list-item>
-    </f7-list-group>
+    <f7-list>
+      <f7-list-group>
+        <f7-list-item :title="$t('message.site_status.ssids')" group-title />
+        <f7-list-item :title="$t('message.site_status.ssid_psk')">
+          {{ Network_Config.ssid }}
+        </f7-list-item>
+        <f7-list-item :title="$t('message.site_status.ssid_eap')">
+          {{ Network_Config.ssid }}-eap
+        </f7-list-item>
+      </f7-list-group>
 
-    <f7-list-group>
-      <f7-list-item :title="$t('message.site_status.devices')" group-title>
-      </f7-list-item>
-      <f7-list-item :title="$t('message.site_status.devices_active')">
-        {{ Device_Count(Device_Active(All_Devices)) }}
-      </f7-list-item>
-      <f7-list-item :title="$t('message.site_status.devices_scanned')">
-        {{ Device_Count(Device_VulnScanned(Device_Active(All_Devices))) }}
-      </f7-list-item>
-      <f7-list-item :title="$t('message.site_status.devices_reg')">
-        {{ Device_Count(All_Devices) }}
-      </f7-list-item>
-    </f7-list-group>
+      <f7-list-group>
+        <f7-list-item :title="$t('message.site_status.devices')" group-title />
+        <f7-list-item :title="$t('message.site_status.devices_active')">
+          {{ Device_Count(Device_Active(All_Devices)) }}
+        </f7-list-item>
+        <f7-list-item :title="$t('message.site_status.devices_scanned')">
+          {{ Device_Count(Device_VulnScanned(Device_Active(All_Devices))) }}
+        </f7-list-item>
+        <f7-list-item :title="$t('message.site_status.devices_reg')">
+          {{ Device_Count(All_Devices) }}
+        </f7-list-item>
+      </f7-list-group>
 
-    <f7-list-group>
-      <f7-list-item :title="$t('message.site_status.config')" group-title>
-      </f7-list-item>
-      <f7-list-item :title="$t('message.site_status.config_dns_server')">
-        {{ Network_Config.dnsServer }}
-      </f7-list-item>
-      <f7-list-item :title="$t('message.site_status.config_default_ring')">
-        {{ Network_Config.defaultRing }}
-      </f7-list-item>
-    </f7-list-group>
-  </f7-list>
+      <f7-list-group>
+        <f7-list-item :title="$t('message.site_status.config')" group-title />
+        <f7-list-item :title="$t('message.site_status.config_dns_server')">
+          {{ Network_Config.dnsServer }}
+        </f7-list-item>
+        <f7-list-item :title="$t('message.site_status.config_default_ring')">
+          {{ Network_Config.defaultRing }}
+        </f7-list-item>
+      </f7-list-group>
+    </f7-list>
 
-</f7-page>
+  </f7-page>
 </template>
 
 <script>

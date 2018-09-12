@@ -9,14 +9,13 @@
 -->
 <template>
   <f7-page>
-    <f7-navbar :back-link="$t('message.general.back')" :title="dev.network_name + $t('message.dev_details._details')" sliding>
-    </f7-navbar>
+    <f7-navbar :back-link="$t('message.general.back')" :title="dev.network_name + $t('message.dev_details._details')" sliding />
 
     <f7-block>
       <f7-row>
         <!-- use margin-auto to center the icon -->
         <f7-col style="margin: auto" width="20">
-          <img :src="media_icon" width=32 height=32>
+          <img :src="media_icon" width="32" height="32">
         </f7-col>
         <f7-col width="80">
           <div style="font-size: 16pt; font-weight: bold">{{ dev_model }}</div>
@@ -40,24 +39,24 @@
             <!-- Note: allowed to have HTML content.
                  Future work here is to parse the HTML and decorate <a> links
                  with target= properly.  Or to support some non-HTML markup -->
-            <li v-html="vulnExplanation(vulnid)"></li>
+            <li v-html="vulnExplanation(vulnid)" />
 
             <!-- Note: allowed to have HTML content.
                  Future work here is to parse the HTML and decorate <a> links
                  with target= properly.  Or to support some non-HTML markup -->
             <!-- XXXI18N-- note that presently we don't support localized remediation text -->
-            <li v-html="$t('message.dev_details.vuln_remediation', { text: vulnRemediation(vulnid) })"></li>
+            <li v-html="$t('message.dev_details.vuln_remediation', { text: vulnRemediation(vulnid) })" />
             <li>{{ $t('message.dev_details.vuln_first_detected', {time: timeAbs(vuln.first_detected)}) }}</li>
             <li>{{ $t('message.dev_details.vuln_latest_detected', {time: timeRel(vuln.latest_detected)}) }}</li>
           </ul>
           <span v-for="vmore in vulnMoreInfo(vulnid)"
-              :key="vmore">
+                :key="vmore">
             <!-- use <a> here instead of f7-link, as that appears to strip out target="_blank".
                  n.b. that this will probably need more work if we use cordova/phonegap -->
             <a :href="vmore" rel="noopener" target="_blank" class="link external">
               {{ $t('message.dev_details.vuln_more_info') }} &gt;
             </a>
-            <br />
+            <br>
           </span>
         </f7-col>
       </f7-row>
@@ -97,9 +96,9 @@
     <f7-list form>
       <f7-list-item item-input inline-label>
         <f7-label>{{ $t('message.dev_details.security_ring') }}</f7-label>
-        <f7-preloader v-if="ring_changing"></f7-preloader>
-        <f7-input v-else type="select" :value="dev.ring" @input="changeRing($event.target.value)">
-          <option v-for="ring in rings" v-bind:value="ring" v-bind:key="ring">{{ring}}</option>
+        <f7-preloader v-if="ring_changing" />
+        <f7-input v-else :value="dev.ring" type="select" @input="changeRing($event.target.value)">
+          <option v-for="ring in rings" :value="ring" :key="ring">{{ ring }}</option>
         </f7-input>
       </f7-list-item>
     </f7-list>
@@ -115,53 +114,10 @@ import {format, formatRelative} from '../date-fns-wrapper';
 import vulnerability from '../vulnerability';
 
 export default {
-  beforeCreate: function() {
-    return this.$store.dispatch('fetchRings');
-  },
-
-  methods: {
-    timeAbs: function(t) {
-      return format(t, 'Pp');
-    },
-    timeRel: function(t) {
-      return formatRelative(t, Date.now());
-    },
-    vulnHeadline: function(vulnid) {
-      return vulnerability.headline(vulnid);
-    },
-    vulnExplanation: function(vulnid) {
-      return vulnerability.explanation(vulnid);
-    },
-    vulnRemediation: function(vulnid) {
-      return vulnerability.remediation(vulnid);
-    },
-    vulnMoreInfo: function(vulnid) {
-      return vulnerability.moreInfo(vulnid);
-    },
-
-    changeRing: function(wanted_ring) {
-      assert(typeof wanted_ring === 'string');
-      console.log(`Change Ring to ${wanted_ring}`);
-      if (this.ring_changing) {
-        return;
-      }
-      this.ring_changing = true;
-      this.$store.dispatch('changeRing', {
-        deviceUniqID: this.dev.uniqid,
-        newRing: wanted_ring,
-      }).then(() => {
-        this.ring_changing = false;
-      }).catch((err) => {
-        const txt = `Failed to change security ring for ${this.dev.network_name} to ${wanted_ring}: ${err}`;
-        this.ring_changing = false;
-        this.$f7.toast.show({
-          text: txt,
-          closeButton: true,
-          destroyOnClose: true,
-        });
-        this.$f7router.back();
-      });
-    },
+  data: function() {
+    return {
+      ring_changing: false,
+    };
   },
 
   computed: {
@@ -213,10 +169,53 @@ export default {
       return this.$store.getters.Rings;
     },
   },
-  data: function() {
-    return {
-      ring_changing: false,
-    };
+  beforeCreate: function() {
+    return this.$store.dispatch('fetchRings');
+  },
+
+  methods: {
+    timeAbs: function(t) {
+      return format(t, 'Pp');
+    },
+    timeRel: function(t) {
+      return formatRelative(t, Date.now());
+    },
+    vulnHeadline: function(vulnid) {
+      return vulnerability.headline(vulnid);
+    },
+    vulnExplanation: function(vulnid) {
+      return vulnerability.explanation(vulnid);
+    },
+    vulnRemediation: function(vulnid) {
+      return vulnerability.remediation(vulnid);
+    },
+    vulnMoreInfo: function(vulnid) {
+      return vulnerability.moreInfo(vulnid);
+    },
+
+    changeRing: function(wanted_ring) {
+      assert(typeof wanted_ring === 'string');
+      console.log(`Change Ring to ${wanted_ring}`);
+      if (this.ring_changing) {
+        return;
+      }
+      this.ring_changing = true;
+      this.$store.dispatch('changeRing', {
+        deviceUniqID: this.dev.uniqid,
+        newRing: wanted_ring,
+      }).then(() => {
+        this.ring_changing = false;
+      }).catch((err) => {
+        const txt = `Failed to change security ring for ${this.dev.network_name} to ${wanted_ring}: ${err}`;
+        this.ring_changing = false;
+        this.$f7.toast.show({
+          text: txt,
+          closeButton: true,
+          destroyOnClose: true,
+        });
+        this.$f7router.back();
+      });
+    },
   },
 };
 </script>

@@ -9,11 +9,10 @@
 -->
 <template>
   <f7-page @page:afterin="onPageAfterIn">
-    <f7-navbar :back-link="$t('message.general.back')" :title="user_details.DisplayName" sliding>
-    </f7-navbar>
+    <f7-navbar :back-link="$t('message.general.back')" :title="user_details.DisplayName" sliding />
 
     <f7-fab color="pink" @click="openEditor">
-      <f7-icon f7="compose_fill"></f7-icon>
+      <f7-icon f7="compose_fill" />
     </f7-fab>
 
     <f7-list>
@@ -24,30 +23,30 @@
 
       <!-- Email -->
       <f7-list-item v-if="user_details.Email">
-        <div slot="media"><f7-icon f7="email_fill" color="blue"></f7-icon></div>
+        <div slot="media"><f7-icon f7="email_fill" color="blue" /></div>
         <span>
-          <f7-link v-bind:href="`mailto: ${user_details.Email}`" external>{{user_details.Email}}</f7-link>
+          <f7-link :href="`mailto: ${user_details.Email}`" external>{{ user_details.Email }}</f7-link>
         </span>
       </f7-list-item>
       <f7-list-item v-else>
-        <div slot="media"><f7-icon f7="email_fill" color="grey"></f7-icon></div>
+        <div slot="media"><f7-icon f7="email_fill" color="grey" /></div>
         None
       </f7-list-item>
 
       <!-- Phone & SMS -->
       <f7-list-item v-if="user_details.TelephoneNumber">
-        <div slot="media"><f7-icon f7="phone_fill" color="blue"></f7-icon></div>
+        <div slot="media"><f7-icon f7="phone_fill" color="blue" /></div>
         <div slot="title">
-          <f7-link v-bind:href="`tel: ${user_details.TelephoneNumber}`" external>{{user_details.TelephoneNumber}}</f7-link>
+          <f7-link :href="`tel: ${user_details.TelephoneNumber}`" external>{{ user_details.TelephoneNumber }}</f7-link>
         </div>
         <div slot="after">
-          <f7-link v-bind:href="`sms: ${user_details.TelephoneNumber}`" external>
-            <f7-icon f7="chat_fill" color="blue"></f7-icon>
+          <f7-link :href="`sms: ${user_details.TelephoneNumber}`" external>
+            <f7-icon f7="chat_fill" color="blue" />
           </f7-link>
         </div>
       </f7-list-item>
       <f7-list-item v-else>
-        <div slot="media"><f7-icon f7="phone_fill" color="grey"></f7-icon></div>
+        <div slot="media"><f7-icon f7="phone_fill" color="grey" /></div>
         <div slot="title">
           None
         </div>
@@ -55,7 +54,7 @@
 
       <!-- Role -->
       <f7-list-item :title="$t('message.user_details.role')">
-        {{$t('message.user_details.roles.admin')}}
+        {{ $t('message.user_details.roles.admin') }}
       </f7-list-item>
 
       <!-- 2-factor -- Disabled for now

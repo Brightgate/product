@@ -9,8 +9,7 @@
 -->
 <template>
   <f7-page name="enroll">
-    <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.enroll_guest.title')" sliding>
-    </f7-navbar>
+    <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.enroll_guest.title')" sliding />
 
     <center><h2>{{ $t('message.enroll_guest.header') }}</h2></center>
     <center><h4>{{ $t('message.enroll_guest.subheader') }}</h4></center>
@@ -22,9 +21,10 @@
       <f7-list no-hairlines>
         <f7-list-item>
           <f7-label inline>Enroll to the: </f7-label>
-          <f7-input type="select"
-              :value="usertype"
-              @change="usertype = $event.target.value">
+          <f7-input
+            :value="usertype"
+            type="select"
+            @change="usertype = $event.target.value">
             <option value="psk">{{ $t('message.enroll_guest.psk_network') }}</option>
             <option value="eap">{{ $t('message.enroll_guest.eap_network') }}</option>
           </f7-input>
@@ -32,31 +32,31 @@
 
         <f7-list-item>
           <f7-label>{{ $t('message.enroll_guest.phone') }}</f7-label>
-          <f7-input type="tel"
-                :value="phone_input"
-                @input="onTelInput"
-                :placeholder="$t('message.enroll_guest.phone_placeholder')"
-                required autofocus>
-          </f7-input>
+          <f7-input
+            :value="phone_input"
+            :placeholder="$t('message.enroll_guest.phone_placeholder')"
+            type="tel"
+            required
+            autofocus @input="onTelInput" />
         </f7-list-item>
 
         <f7-list-item v-if="usertype === 'eap'">
           <f7-label>{{ $t('message.enroll_guest.email') }}</f7-label>
-          <f7-input type="email"
-              :value="email_input"
-              @input="email_input = $event.target.value"
-              :placeholder="$t('message.enroll_guest.email_placeholder')"
-              required>
-          </f7-input>
+          <f7-input
+            :value="email_input"
+            :placeholder="$t('message.enroll_guest.email_placeholder')"
+            type="email"
+            required
+            @input="email_input = $event.target.value" />
         </f7-list-item>
       </f7-list>
 
       <f7-block inset>
-        <f7-button fill big :disabled="!valid_form" @click="enrollGuest">
+        <f7-button :disabled="!valid_form" fill big @click="enrollGuest">
           <span v-if="!enrolling">{{ $t('message.enroll_guest.send_sms') }}</span>
           <span v-if="enrolling">
             {{ $t('message.enroll_guest.sending') }}
-            <f7-preloader color="white"></f7-preloader>
+            <f7-preloader color="white" />
           </span>
         </f7-button>
 

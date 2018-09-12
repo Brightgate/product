@@ -11,7 +11,7 @@ module.exports = {
     'eslint:recommended',
     // https://github.com/google/eslint-config-google
     'google',
-    'plugin:vue/essential',
+    'plugin:vue/recommended',
     'plugin:import/recommended',
   ],
   'parserOptions': {
@@ -113,6 +113,10 @@ module.exports = {
     'import/order': 'error',
     'import/first': 'error',
     'import/no-commonjs': 'error',
-    'import/prefer-default-export': 'warn',
+    'import/prefer-default-export': 'error',
+
+    // Tweak vue lint rules
+    'vue/max-attributes-per-line': 'off',
+    'vue/html-closing-bracket-spacing': 'error',
   },
 };

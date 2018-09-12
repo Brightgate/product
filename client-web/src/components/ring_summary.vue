@@ -22,44 +22,44 @@
 -->
 
 <template>
-<span v-if="empty && !showZero">
-  <span style="color: rgba(0,0,0,0.3); text-align: center;">
-    empty
-  </span>
-</span>
-<span v-else>
-  <span style="width: 3em; display: inline-block;">
-    <span v-if="okCount > 0 || showZero">
-      <f7-icon f7="check_round_fill" size="1em" color="green"/>
-      {{ okCount }}
+  <span v-if="empty && !showZero">
+    <span style="color: rgba(0,0,0,0.3); text-align: center;">
+      empty
     </span>
   </span>
-  <span style="width: 3em; display: inline-block;">
-    <span v-if="unscannedCount > 0 || showZero">
-      <f7-icon f7="help_fill" size="1em" color="orange"/>
-      {{ unscannedCount }}
+  <span v-else>
+    <span style="width: 3em; display: inline-block;">
+      <span v-if="okCount > 0 || showZero">
+        <f7-icon f7="check_round_fill" size="1em" color="green" />
+        {{ okCount }}
+      </span>
+    </span>
+    <span style="width: 3em; display: inline-block;">
+      <span v-if="unscannedCount > 0 || showZero">
+        <f7-icon f7="help_fill" size="1em" color="orange" />
+        {{ unscannedCount }}
+      </span>
+    </span>
+    <span style="width: 3em; display: inline-block;">
+      <span v-if="vulnCount > 0 || showZero">
+        <f7-icon f7="bolt_round_fill" size="1em" color="red" />
+        {{ vulnCount }}
+      </span>
+    </span>
+    <span style="width: 3em; display: inline-block;">
+      <span v-if="inactiveCount > 0 || showZero">
+        <f7-icon f7="circle" size="1em" color="gray" />
+        {{ inactiveCount }}
+      </span>
     </span>
   </span>
-  <span style="width: 3em; display: inline-block;">
-    <span v-if="vulnCount > 0 || showZero">
-      <f7-icon f7="bolt_round_fill" size="1em" color="red"/>
-      {{ vulnCount }}
-    </span>
-  </span>
-  <span style="width: 3em; display: inline-block;">
-    <span v-if="inactiveCount > 0 || showZero">
-      <f7-icon f7="circle" size="1em" color="gray"/>
-      {{ inactiveCount }}
-    </span>
-  </span>
-</span>
 </template>
 
 <script>
 import Vuex from 'vuex';
 
 export default {
-  name: 'bg-ring-summary',
+  name: 'BgRingSummary',
 
   props: {
     devices: {

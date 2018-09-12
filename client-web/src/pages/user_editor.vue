@@ -10,64 +10,63 @@
 <template>
   <f7-page @page:afterin="onPageAfterIn">
     <f7-navbar
-        :back-link="$t('message.general.back')"
-        :title="$t('message.user_details.edit_title')"
-        sliding>
-    </f7-navbar>
+      :back-link="$t('message.general.back')"
+      :title="$t('message.user_details.edit_title')"
+      sliding />
 
     <f7-list>
       <!-- uid -- user name -->
       <f7-list-item v-if="new_user">
-        <f7-label>{{$t('message.user_details.username')}}</f7-label>
-        <f7-input type="email"
-            :value="user_details.UID"
-            @input="user_details.UID = $event.target.value"
-            placeholder="User's short ID"
-            required
-            clear-button>
-        </f7-input>
+        <f7-label>{{ $t('message.user_details.username') }}</f7-label>
+        <f7-input
+          :value="user_details.UID"
+          type="email"
+          placeholder="User's short ID"
+          required
+          clear-button
+          @input="user_details.UID = $event.target.value" />
       </f7-list-item>
       <f7-list-item v-else
-          :title="$t('message.user_details.username')">
+                    :title="$t('message.user_details.username')">
         {{ user_details.UID }}
       </f7-list-item>
 
       <!-- display name -->
       <f7-list-item>
         <f7-label>Name</f7-label>
-        <f7-input type="text"
-            :value="user_details.DisplayName"
-            @input="user_details.DisplayName = $event.target.value"
-            placeholder="User's full name"
-            clear-button>
-        </f7-input>
+        <f7-input
+          :value="user_details.DisplayName"
+          type="text"
+          placeholder="User's full name"
+          clear-button
+          @input="user_details.DisplayName = $event.target.value" />
       </f7-list-item>
 
       <!-- email -->
       <f7-list-item>
         <f7-label>Email</f7-label>
-        <f7-input type="email"
-            :value="user_details.Email"
-            @input="user_details.Email = $event.target.value"
-            placeholder="User Email"
-            clear-button>
-        </f7-input>
+        <f7-input
+          :value="user_details.Email"
+          type="email"
+          placeholder="User Email"
+          clear-button
+          @input="user_details.Email = $event.target.value" />
       </f7-list-item>
 
       <!-- phone & sms -->
       <f7-list-item>
         <f7-label>Phone</f7-label>
-        <f7-input type="tel"
-            :value="user_details.TelephoneNumber"
-            @input="user_details.TelephoneNumber = $event.target.value"
-            placeholder="User Mobile Phone"
-            clear-button>
-        </f7-input>
+        <f7-input
+          :value="user_details.TelephoneNumber"
+          type="tel"
+          placeholder="User Mobile Phone"
+          clear-button
+          @input="user_details.TelephoneNumber = $event.target.value" />
       </f7-list-item>
 
       <!-- Role -->
       <f7-list-item>
-        <f7-label>{{$t('message.user_details.role')}}</f7-label>
+        <f7-label>{{ $t('message.user_details.role') }}</f7-label>
         <f7-input type="select" value="admin">
           <!-- XXX <option value="user">User</option> -->
           <option value="admin">Administrator</option>
@@ -76,12 +75,11 @@
 
       <!-- Password -->
       <f7-list-item>
-        <f7-label>{{$t('message.user_details.password')}}</f7-label>
+        <f7-label>{{ $t('message.user_details.password') }}</f7-label>
         <f7-input type="password"
-            @input="user_details.SetPassword = $event.target.value"
-            placeholder="User Password"
-            clear-button>
-        </f7-input>
+                  placeholder="User Password"
+                  clear-button
+                  @input="user_details.SetPassword = $event.target.value" />
       </f7-list-item>
 
       <!-- 2-factor, disabled for now
@@ -96,14 +94,14 @@
     <f7-block>
       <f7-row>
         <f7-col>
-          <f7-button v-if="new_user" @click="saveUser" fill>Create</f7-button>
-          <f7-button v-else @click="saveUser" fill>Save</f7-button>
+          <f7-button v-if="new_user" fill @click="saveUser">Create</f7-button>
+          <f7-button v-else fill @click="saveUser">Save</f7-button>
         </f7-col>
         <f7-col>
           <f7-button outline back>Cancel</f7-button>
         </f7-col>
         <f7-col v-if="!new_user">
-          <f7-button color="red" @click="deleteUser" outline>Delete</f7-button>
+          <f7-button color="red" outline @click="deleteUser">Delete</f7-button>
         </f7-col>
       </f7-row>
     </f7-block>
