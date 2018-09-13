@@ -149,6 +149,7 @@ func wifi(args []string) bool {
 			}
 			fmt.Printf("device: %s is %s%s\n", iface.Name, valid, reasonStr)
 			if verbose > 1 {
+				fmt.Println("   Location:", plat.NicLocation(iface.Name))
 				fmt.Print(cap)
 			}
 		}

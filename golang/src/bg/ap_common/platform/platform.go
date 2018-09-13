@@ -15,6 +15,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -48,6 +49,7 @@ type Platform struct {
 	NicIsWired    func(string) bool
 	NicIsWan      func(string, string) bool
 	NicID         func(string, string) string
+	NicLocation   func(string) string
 }
 
 var (
@@ -78,6 +80,7 @@ var (
 		NicIsWired:    rpiNicIsWired,
 		NicIsWan:      rpiNicIsWan,
 		NicID:         rpiNicGetID,
+		NicLocation:   rpiNicLocation,
 	}
 
 	mtPlatform = Platform{
@@ -103,6 +106,7 @@ var (
 		NicIsWired:    mtNicIsWired,
 		NicIsWan:      mtNicIsWan,
 		NicID:         mtNicGetID,
+		NicLocation:   mtNicLocation,
 	}
 
 	x86Platform = Platform{
@@ -128,6 +132,7 @@ var (
 		NicIsWired:    x86NicIsWired,
 		NicIsWan:      x86NicIsWan,
 		NicID:         x86NicGetID,
+		NicLocation:   x86NicLocation,
 	}
 	knownPlatforms = []*Platform{&rpiPlatform, &mtPlatform, &x86Platform}
 )
@@ -224,6 +229,31 @@ func rpiNicGetID(name, mac string) string {
 	return mac
 }
 
+func rpiNicLocation(name string) string {
+	path, err := filepath.EvalSymlinks("/sys/class/net/" + name + "/device")
+	if err != nil {
+		return ""
+	}
+	fn := filepath.Base(path)
+	if strings.Contains(path, "/mmc") {
+		if fn == "mmc1:0001:1" {
+			return "onboard wifi"
+		}
+	} else if strings.Contains(path, "/usb") {
+		desc := map[string]string{
+			"1-1.2:1.0": "upper left USB port",
+			"1-1.3:1.0": "upper right USB port",
+			"1-1.4:1.0": "lower left USB port",
+			"1-1.5:1.0": "lower right USB port",
+		}[fn]
+		if desc == "" {
+			desc = "unknown USB"
+		}
+		return fmt.Sprintf("%s (%s)", desc, fn)
+	}
+	return ""
+}
+
 /******************************************************************
  *
  * Unielec / MediaTek support
@@ -284,6 +314,28 @@ func mtNicGetID(name, mac string) string {
 	return name
 }
 
+func mtNicLocation(name string) string {
+	path, err := filepath.EvalSymlinks("/sys/class/net/" + name + "/device")
+	if err != nil {
+		return ""
+	}
+	fn := filepath.Base(path)
+	if strings.Contains(path, "/pci") {
+		// This gives us the slot name, assuming it's in a PCI path
+		// 0000:02:00.0 == "slot" 2
+		// domain:bus:slot.function
+		addr := strings.Split(fn, ":")
+		if len(addr) == 3 && addr[0] == "0000" && addr[2] == "00.0" {
+			return fmt.Sprintf("PCI slot %s (%s)",
+				strings.TrimLeft(addr[1], "0"), fn)
+		}
+		return fmt.Sprintf("PCI (%s)", fn)
+	} else if strings.Contains(path, "/usb") {
+		return fmt.Sprintf("unknown USB (%s)", fn)
+	}
+	return ""
+}
+
 /******************************************************************
  *
  * x86 Debian support
@@ -327,6 +379,10 @@ func x86NicIsWan(name, mac string) bool {
 
 func x86NicGetID(name, mac string) string {
 	return name
+}
+
+func x86NicLocation(name string) string {
+	return ""
 }
 
 /******************************************************************
