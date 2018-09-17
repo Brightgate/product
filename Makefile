@@ -346,7 +346,8 @@ GO_CLOUD_TESTABLES = \
 	bg/cl_common/auth/m2mauth \
 	bg/cl_common/daemonutils \
 	bg/cloud_models/appliancedb \
-	bg/cloud_models/sessiondb
+	bg/cloud_models/sessiondb \
+	bg/cl.httpd
 
 NETWORKD_TEMPLATE_FILES = \
 	hostapd.conf.got \
@@ -822,6 +823,7 @@ $(CLOUDBIN)/cl.eventd: \
 $(CLOUDBIN)/cl.httpd: \
 	$(GOSRCBG)/cl.httpd/cl.httpd.go \
 	$(GOSRCBG)/cl.httpd/auth.go \
+	$(GOSRCBG)/cl.httpd/api.go \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.rpcd: \
 	$(GOSRCBG)/cl.rpcd/event.go \

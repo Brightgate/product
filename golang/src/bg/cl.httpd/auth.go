@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gorilla/sessions"
 	"github.com/labstack/echo"
 
 	"github.com/markbates/goth"
@@ -34,6 +35,10 @@ type providerContextKey struct{}
 func init() {
 	// Replace Gothic GetProviderName routine
 	gothic.GetProviderName = getProviderName
+}
+
+type authHandler struct {
+	sessionStore sessions.Store
 }
 
 // getProviderName fetches the name of the auth provider.  This function
@@ -123,71 +128,99 @@ func auth0Provider() {
 	goth.UseProviders(auth0Provider)
 }
 
-func routeAuth(r *echo.Echo) {
-	gothic.Store = pgSessionStore
+// getProvider implements /auth/:provider, which starts the oauth flow.
+func (a *authHandler) getProvider(c echo.Context) error {
+	// Transfer the provider name to the Go context.  Done so that
+	// gothic can determine the provider name later.  This is done
+	// by our override of gothic.GetProviderName, getProviderName.
+	// Yes, this is annoying and complicated.
+	providerToGoContext(c)
+	// try to get the user without re-authenticating
+	user, err := gothic.CompleteUserAuth(c.Response(), c.Request())
+	if err != nil {
+		gothic.BeginAuthHandler(c.Response(), c.Request())
+		return nil
+	}
+	return c.JSON(http.StatusOK, user)
+}
+
+// getProviderCallback implements /auth/:provider/callback, which completes
+// the oauth flow.
+func (a *authHandler) getProviderCallback(c echo.Context) error {
+	// Put the provider name into the go context so gothic can find it
+	// See comment in getProvider().
+	providerToGoContext(c)
+
+	user, err := gothic.CompleteUserAuth(c.Response(), c.Request())
+	c.Logger().Printf("user is %#v", user)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+	splitEmail := strings.SplitN(user.Email, "@", 2)
+	if len(splitEmail) != 2 || splitEmail[1] != "brightgate.com" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "🙀 bad user domain, sorry.")
+	}
+	userID := c.Param("provider") + "|" + user.UserID
+
+	// TODO: We need to reconcile the user information with our database's
+	// notion of a user (which doesn't exist yet).
+
+	// As per
+	// http://www.gorillatoolkit.org/pkg/sessions#CookieStore.Get,
+	// Get() 'returns a new session and an error if the session
+	// exists but could not be decoded.'  For our purposes, we just
+	// want to blow over top of an invalid session, so drive on in
+	// that case.
+	session, err := a.sessionStore.Get(c.Request(), "bg_login")
+	if err != nil && session == nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+	session.Values["email"] = user.Email
+	session.Values["userid"] = userID
+	session.Values["auth_time"] = time.Now().Format(time.RFC3339)
+
+	if err = session.Save(c.Request(), c.Response()); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+	return c.JSON(http.StatusOK, user)
+}
+
+// getLogout implements /auth/logout
+func (a *authHandler) getLogout(c echo.Context) error {
+	gothic.Logout(c.Response(), c.Request())
+	session, err := a.sessionStore.Get(c.Request(), "bg_login")
+	if session != nil {
+		session.Options.MaxAge = -1
+		session.Values = make(map[interface{}]interface{})
+		if err = session.Save(c.Request(), c.Response()); err != nil {
+			c.Logger().Warnf("logout: Failed to save session: %v", err)
+		}
+	}
+	return c.Redirect(http.StatusTemporaryRedirect, "/")
+}
+
+// getUserID implements /auth/userid; for now this is for development purposes.
+func (a *authHandler) getUserID(c echo.Context) error {
+	session, err := a.sessionStore.Get(c.Request(), "bg_login")
+	if session == nil || err != nil || session.Values["userid"] == nil {
+		return echo.NewHTTPError(http.StatusUnauthorized)
+	}
+	return c.JSON(http.StatusOK, session.Values["userid"].(string))
+}
+
+// newAuthHandler creates an authHandler to handle authentication endpoints
+// and routes the handler into the echo instance.  Note that it manipulates
+// global gothic state.
+func newAuthHandler(r *echo.Echo, sessionStore sessions.Store) *authHandler {
+	gothic.Store = sessionStore
 	auth0Provider()
 	gplusProvider()
 	openidConnectProvider()
+	h := &authHandler{sessionStore}
 
-	r.GET("/auth/:provider", func(c echo.Context) error {
-		providerToGoContext(c)
-		// try to get the user without re-authenticating
-		user, err := gothic.CompleteUserAuth(c.Response(), c.Request())
-		if err != nil {
-			gothic.BeginAuthHandler(c.Response(), c.Request())
-			return nil
-		}
-		return c.JSON(http.StatusOK, user)
-	})
-
-	r.GET("/auth/:provider/logout", func(c echo.Context) error {
-		gothic.Logout(c.Response(), c.Request())
-		session, err := pgSessionStore.Get(c.Request(), "bg_login")
-		if session != nil {
-			session.Options.MaxAge = -1
-			session.Values = make(map[interface{}]interface{})
-			if err = session.Save(c.Request(), c.Response()); err != nil {
-				c.Logger().Warnf("logout: Failed to save session: %v", err)
-			}
-		}
-		return c.Redirect(http.StatusTemporaryRedirect, "/")
-	})
-
-	r.GET("/auth/:provider/callback", func(c echo.Context) error {
-		// Put the provider name into the go context so gothic can find it
-		providerToGoContext(c)
-
-		user, err := gothic.CompleteUserAuth(c.Response(), c.Request())
-		c.Logger().Printf("user is %#v", user)
-		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err)
-		}
-		splitEmail := strings.SplitN(user.Email, "@", 2)
-		if len(splitEmail) != 2 || splitEmail[1] != "brightgate.com" {
-			return echo.NewHTTPError(http.StatusUnauthorized, "🙀 bad user domain, sorry.")
-		}
-		userID := c.Param("provider") + "|" + user.UserID
-
-		// TODO: We need to reconcile the user information with our database's
-		// notion of a user (which doesn't exist yet).
-
-		// As per
-		// http://www.gorillatoolkit.org/pkg/sessions#CookieStore.Get,
-		// Get() 'returns a new session and an error if the session
-		// exists but could not be decoded.'  For our purposes, we just
-		// want to blow over top of an invalid session, so drive on in
-		// that case.
-		session, err := pgSessionStore.Get(c.Request(), "bg_login")
-		if err != nil && session == nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err)
-		}
-		session.Values["email"] = user.Email
-		session.Values["userid"] = userID
-		session.Values["auth_time"] = time.Now().Format(time.RFC3339)
-
-		if err = session.Save(c.Request(), c.Response()); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err)
-		}
-		return c.JSON(http.StatusOK, user)
-	})
+	r.GET("/auth/:provider", h.getProvider)
+	r.GET("/auth/:provider/callback", h.getProviderCallback)
+	r.GET("/auth/logout", h.getLogout)
+	r.GET("/auth/userid", h.getUserID)
+	return h
 }

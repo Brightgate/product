@@ -966,6 +966,7 @@
     "github.com/google/gopacket/pcap",
     "github.com/gorilla/mux",
     "github.com/gorilla/securecookie",
+    "github.com/gorilla/sessions",
     "github.com/grpc-ecosystem/go-grpc-middleware",
     "github.com/grpc-ecosystem/go-grpc-middleware/auth",
     "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap",

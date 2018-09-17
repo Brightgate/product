@@ -40,8 +40,10 @@ import (
 	"time"
 
 	"bg/cl_common/daemonutils"
+	"bg/cloud_models/appliancedb"
 	"bg/cloud_models/sessiondb"
 
+	"github.com/gorilla/sessions"
 	"github.com/tomazk/envcfg"
 
 	// Echo
@@ -73,7 +75,8 @@ type Cfg struct {
 	OpenIDConnectKey          string `envcfg:"B10E_CLHTTPD_OPENID_CONNECT_KEY"`
 	OpenIDConnectSecret       string `envcfg:"B10E_CLHTTPD_OPENID_CONNECT_SECRET"`
 	OpenIDConnectDiscoveryURL string `envcfg:"B10E_CLHTTPD_OPENID_CONNECT_DISCOVERY_URL"`
-	PostgresConnection        string `envcfg:"B10E_CLHTTPD_POSTGRES_CONNECTION"`
+	SessionDB                 string `envcfg:"B10E_CLHTTPD_POSTGRES_SESSIONDB"`
+	ApplianceDB               string `envcfg:"B10E_CLHTTPD_POSTGRES_APPLIANCEDB"`
 	AppPath                   string `enccfg:"B10E_CLHTTPD_APP"`
 }
 
@@ -85,8 +88,7 @@ const (
 )
 
 var (
-	environ        Cfg
-	pgSessionStore *pgstore.PGStore
+	environ Cfg
 )
 
 func gracefulShutdown(h *http.Server) {
@@ -135,9 +137,9 @@ func mkSessionStore() *pgstore.PGStore {
 	if environ.SessionSecret == "" {
 		log.Fatalf("You must set B10E_CLHTTPD_SESSION_SECRET")
 	}
-	sessionDB, err := sessiondb.Connect(environ.PostgresConnection, false)
+	sessionDB, err := sessiondb.Connect(environ.SessionDB, false)
 	if err != nil {
-		log.Fatalf("failed to connect to DB: %v", err)
+		log.Fatalf("failed to connect to session DB: %v", err)
 	}
 	log.Printf(checkMark + "Connected to Session DB")
 	err = sessionDB.Ping()
@@ -168,7 +170,7 @@ func mkSecureMW() echo.MiddlewareFunc {
 	return echo.WrapMiddleware(secureMW.Handler)
 }
 
-func mkRouterHTTPS() *echo.Echo {
+func mkRouterHTTPS(sessionStore sessions.Store) *echo.Echo {
 	wellKnownPath := "/var/www/html/.well-known"
 	if environ.WellKnownPath != "" {
 		wellKnownPath = environ.WellKnownPath
@@ -186,7 +188,7 @@ func mkRouterHTTPS() *echo.Echo {
 	r.Use(middleware.Logger())
 	r.Use(mkSecureMW())
 	r.Use(middleware.Recover())
-	r.Use(session.Middleware(pgSessionStore))
+	r.Use(session.Middleware(sessionStore))
 	r.Static("/.well-known", wellKnownPath)
 	r.Static("/app", appPath)
 	log.Printf("Serving %s as /app/", appPath)
@@ -195,9 +197,10 @@ func mkRouterHTTPS() *echo.Echo {
 <p><a href="/auth/auth0">Login with Auth0</a></p>
 <p><a href="/auth/gplus">Login with Google</a></p>
 <p><a href="/auth/openid-connect">Login with Google (OpenID Connect)</a></p>
+<p><a href="/auth/logout">Logout</a></p>
 `)
 
-		sess, err := pgSessionStore.Get(c.Request(), "bg_login")
+		sess, err := sessionStore.Get(c.Request(), "bg_login")
 		if err == nil {
 			var email string
 			email, ok := sess.Values["email"].(string)
@@ -211,7 +214,19 @@ func mkRouterHTTPS() *echo.Echo {
 		}
 		return c.HTML(http.StatusOK, html)
 	})
-	routeAuth(r)
+	_ = newAuthHandler(r, sessionStore)
+
+	applianceDB, err := appliancedb.Connect(environ.ApplianceDB)
+	if err != nil {
+		log.Fatalf("failed to connect to appliance DB: %v", err)
+	}
+	log.Printf(checkMark + "Connected to Appliance DB")
+	err = applianceDB.Ping()
+	if err != nil {
+		log.Fatalf("failed to ping DB: %s", err)
+	}
+	log.Printf(checkMark + "Pinged Appliance DB")
+	_ = newAPIHandler(r, applianceDB, sessionStore)
 
 	//ginPrometheus.Use(r)
 	return r
@@ -255,11 +270,11 @@ func main() {
 		}
 	}
 
-	pgSessionStore = mkSessionStore()
+	pgSessionStore := mkSessionStore()
 	defer pgSessionStore.Close()
 	defer pgSessionStore.StopCleanup(pgSessionStore.Cleanup(time.Minute * 5))
 
-	eHTTPS := mkRouterHTTPS()
+	eHTTPS := mkRouterHTTPS(pgSessionStore)
 	// In developer mode, disable TLS
 	var cfg *tls.Config
 	if !environ.Developer {
