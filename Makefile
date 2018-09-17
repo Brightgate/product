@@ -262,6 +262,18 @@ NETWORKD_TEMPLATE_DIR=$(APPETC)/templates/ap.networkd
 USERAUTHD_TEMPLATE_DIR=$(APPETC)/templates/ap.userauthd
 
 COMMON_GOPKGS = \
+	bg/common/archive \
+	bg/common/briefpg \
+	bg/common/cfgtree \
+	bg/common/urlfetch
+
+COMMON_SRCS = \
+	$(GOSRCBG)/common/archive/archive.go \
+	$(GOSRCBG)/common/cfgtree/cfgtree.go \
+	$(GOSRCBG)/common/urlfetch/urlfetch.go
+
+APPCOMMON_GOPKGS = \
+	$(COMMON_GOPKGS) \
 	bg/ap_common/apcfg \
 	bg/ap_common/aptest \
 	bg/ap_common/aputil \
@@ -273,10 +285,7 @@ COMMON_GOPKGS = \
 	bg/ap_common/model \
 	bg/ap_common/network \
 	bg/ap_common/platform \
-	bg/ap_common/wificaps \
-	bg/common/archive \
-	bg/common/briefpg \
-	bg/common/urlfetch
+	bg/ap_common/wificaps
 
 APPCOMMAND_GOPKGS = \
 	bg/ap-arpspoof \
@@ -405,6 +414,7 @@ APPCOMPONENTS = \
 	$(FILTER_RULES)
 
 APP_COMMON_SRCS = \
+	$(COMMON_SRCS) \
 	$(GOSRCBG)/ap_common/apcfg/apcfg.go \
 	$(GOSRCBG)/ap_common/apcfg/events.go \
 	$(GOSRCBG)/ap_common/apcfg/users.go \
@@ -419,9 +429,7 @@ APP_COMMON_SRCS = \
 	$(GOSRCBG)/ap_common/network/network.go \
 	$(GOSRCBG)/ap_common/platform/platform.go \
 	$(GOSRCBG)/base_def/base_def.go \
-	$(GOSRCBG)/base_msg/base_msg.pb.go \
-	$(GOSRCBG)/common/archive/archive.go \
-	$(GOSRCBG)/common/urlfetch/urlfetch.go
+	$(GOSRCBG)/base_msg/base_msg.pb.go
 
 # Miscellaneous utilities
 
@@ -468,12 +476,11 @@ CLOUDDAEMON_GOPKGS = \
 	bg/cl.rpcd
 
 CLOUDCOMMON_GOPKGS = \
+	${COMMON_GOPKGS} \
 	bg/cl_common/auth/m2mauth \
 	bg/cl_common/daemonutils \
 	bg/cloud_models/appliancedb \
-	bg/cloud_models/sessiondb \
-	bg/common/archive \
-	bg/common/urlfetch
+	bg/cloud_models/sessiondb
 
 CLOUDCOMMAND_GOPKGS = \
 	bg/cl-aggregate \
@@ -511,13 +518,12 @@ CLOUDDIRS = \
 CLOUDCOMPONENTS = $(CLOUDBINARIES) $(CLOUDCONFIGS) $(CLOUDDIRS) $(CLOUDSCHEMAS)
 
 CLOUD_COMMON_SRCS = \
-    $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
-    $(GOSRCBG)/cloud_models/appliancedb/appliancedb.go \
-    $(GOSRCBG)/cloud_models/sessiondb/sessiondb.go \
-    $(GOSRCBG)/cl_common/auth/m2mauth/middleware.go \
-    $(GOSRCBG)/cl_common/daemonutils/utils.go \
-    $(GOSRCBG)/common/archive/archive.go \
-    $(GOSRCBG)/common/urlfetch/urlfetch.go
+	$(COMMON_SRCS) \
+	$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
+	$(GOSRCBG)/cloud_models/appliancedb/appliancedb.go \
+	$(GOSRCBG)/cloud_models/sessiondb/sessiondb.go \
+	$(GOSRCBG)/cl_common/auth/m2mauth/middleware.go \
+	$(GOSRCBG)/cl_common/daemonutils/utils.go
 
 COVERAGE_DIR = coverage
 
@@ -686,10 +692,6 @@ $(APPROOTLIB)/systemd/system: | $(APPROOTLIB)
 $(APPDIRS):
 	$(MKDIR) -p $@
 
-COMMON_SRCS = \
-	$(GOSRCBG)/base_def/base_def.go \
-	$(GOSRCBG)/base_msg/base_msg.pb.go
-
 $(APPBINARIES): $(APP_COMMON_SRCS) $(GODEPS_ENSURED) | $(APPBIN)
 
 # Build rules for go binaries.
@@ -710,9 +712,6 @@ $(APPBIN)/ap.configd: \
 	$(GOSRCBG)/ap.configd/devices.go \
 	$(GOSRCBG)/ap.configd/expiration.go \
 	$(GOSRCBG)/ap.configd/file.go \
-	$(GOSRCBG)/ap.configd/upgrade_v10.go \
-	$(GOSRCBG)/ap.configd/upgrade_v11.go \
-	$(GOSRCBG)/ap.configd/upgrade_v12.go \
 	$(GOSRCBG)/ap.configd/upgrade_v13.go \
 	$(GOSRCBG)/ap.configd/upgrade_v14.go \
 	$(GOSRCBG)/ap.configd/upgrade_v15.go \
@@ -825,8 +824,8 @@ $(CLOUDBIN)/cl.httpd: \
 	$(GOSRCBG)/cl.httpd/auth.go \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.rpcd: \
-	$(GOSRCBG)/cl.rpcd/rpcd.go \
 	$(GOSRCBG)/cl.rpcd/event.go \
+	$(GOSRCBG)/cl.rpcd/rpcd.go \
 	$(GOSRCBG)/cl.rpcd/storage.go \
 	$(CLOUD_COMMON_SRCS)
 

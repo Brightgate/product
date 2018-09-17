@@ -39,6 +39,7 @@ import (
 
 	"bg/ap_common/apcfg"
 	"bg/base_msg"
+	"bg/common/cfgtree"
 
 	"github.com/golang/protobuf/proto"
 )
@@ -103,7 +104,7 @@ func checkOneProp(t *testing.T, prop, val string, succeed bool) {
 	} else if !succeed {
 		t.Errorf("Got %s -> %s.  Expected failure.", prop, treeVal)
 	} else {
-		var node pnode
+		var node cfgtree.PNode
 		if err = json.Unmarshal([]byte(treeVal), &node); err != nil {
 			t.Errorf("Failed to decode %s: %v", prop, err)
 		} else if node.Value != val {
@@ -164,18 +165,18 @@ func deleteOneProp(t *testing.T, prop string, succeed bool) {
 // construct a fresh config tree from the pre-loaded JSON file.  Return a map of
 // all the property leaves in the fresh tree.
 func testTreeInit(t *testing.T) leafMap {
-	root, err := propTreeImport(testData)
+	tree, err := cfgtree.NewPTree("@", testData)
 	if err != nil {
 		t.Fatalf("failed to import config tree: %v", err)
 	}
-	propTreeRoot = root
+	propTree = tree
 
-	return testBuildMap()
+	return testBuildMap(t)
 }
 
-func addLeaves(leaves leafMap, node *pnode) {
+func addLeaves(leaves leafMap, node *cfgtree.PNode) {
 	if len(node.Children) == 0 {
-		leaves[node.path] = node.Value
+		leaves[node.Path()] = node.Value
 	} else {
 		for _, n := range node.Children {
 			addLeaves(leaves, n)
@@ -184,10 +185,15 @@ func addLeaves(leaves leafMap, node *pnode) {
 }
 
 // return a map containing all of the leaf paths and their values
-func testBuildMap() leafMap {
+func testBuildMap(t *testing.T) leafMap {
 	leaves := make(leafMap)
 
-	addLeaves(leaves, propTreeRoot)
+	root, err := propTree.GetNode("@/")
+	if err != nil {
+		t.Fatalf("failed to get root node")
+	}
+
+	addLeaves(leaves, root)
 
 	return leaves
 }
@@ -242,14 +248,20 @@ func testCompareMaps(t *testing.T, expected, got leafMap) {
 }
 
 func testValidateTree(t *testing.T, expected leafMap) {
-	testCompareMaps(t, expected, testBuildMap())
+
+	root, _ := propTree.GetNode("@/")
+	if !root.Validate() {
+		t.Error("hash mismatch")
+	}
+
+	testCompareMaps(t, expected, testBuildMap(t))
 }
 
 // TestNull is a sanity test of the testCompareMaps function.  It ensures that
 // two comparisons of the same data succeed.
 func TestNull(t *testing.T) {
 	a := testTreeInit(t)
-	b := testBuildMap()
+	b := testBuildMap(t)
 	testCompareMaps(t, a, b)
 }
 

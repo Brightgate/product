@@ -34,7 +34,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -44,7 +43,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"bg/ap_common/apcfg"
@@ -54,6 +52,7 @@ import (
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
+	"bg/common/cfgtree"
 
 	"github.com/golang/protobuf/proto"
 	zmq "github.com/pebbe/zmq4"
@@ -79,8 +78,8 @@ type subtreeOps struct {
 }
 
 type subtreeMatch struct {
-	match *regexp.Regexp
-	ops   *subtreeOps
+	path *regexp.Regexp
+	ops  *subtreeOps
 }
 
 var defaultSubtreeOps = subtreeOps{getPropHandler, setPropHandler, delPropHandler}
@@ -90,70 +89,29 @@ var subtreeMatchTable = []subtreeMatch{
 	{regexp.MustCompile(`^@/devices`), &devSubtreeOps},
 }
 
-// Allow for specific properties to have their own handlers as well
-type propertyOps struct {
-	get    func(*pnode) (string, error)
-	set    func(*pnode, string, *time.Time) error
-	expire func(*pnode)
-}
-
-type propertyMatch struct {
-	match *regexp.Regexp
-	ops   *propertyOps
-}
-
-var defaultPropOps = propertyOps{defaultGetter, defaultSetter, defaultExpire}
-var uuidPropOps = propertyOps{defaultGetter, uuidUpdate, defaultExpire}
-var ringPropOps = propertyOps{defaultGetter, defaultSetter, ringExpire}
-var ipv4PropOps = propertyOps{defaultGetter, ipv4Setter, defaultExpire}
-var dnsPropOps = propertyOps{defaultGetter, dnsSetter, defaultExpire}
-var cnamePropOps = propertyOps{defaultGetter, cnameSetter, defaultExpire}
-
-var propertyMatchTable = []propertyMatch{
-	{regexp.MustCompile(`^@/uuid$`), &uuidPropOps},
-	{regexp.MustCompile(`^@/clients/.*/ring$`), &ringPropOps},
-	{regexp.MustCompile(`^@/clients/.*/dns_name$`), &dnsPropOps},
-	{regexp.MustCompile(`^@/clients/.*/dhcp_name$`), &dnsPropOps},
-	{regexp.MustCompile(`^@/clients/.*/ipv4$`), &ipv4PropOps},
-	{regexp.MustCompile(`^@/dns/cnames/`), &cnamePropOps},
-}
-
-/*
- * All properties are currently represented as strings, but will presumably have
- * more varied types in the future.  Expires contains the time at which a
- * property will expire.  A property with a nil Expires field has no expiraton
- * date.
- */
-type pnode struct {
-	Value    string            `json:"Value,omitempty"`
-	Modified *time.Time        `json:"Modified,omitempty"`
-	Expires  *time.Time        `json:"Expires,omitempty"`
-	Children map[string]*pnode `json:"Children,omitempty"`
-	parent   *pnode
-	name     string
-	path     string
-	ops      *propertyOps
-
-	preserved map[string]*pnode
-
-	// Used and maintained by the heap interface methods
-	index int
+var updateCheckTable = []struct {
+	path  *regexp.Regexp
+	check func(*cfgtree.PNode, string) error
+}{
+	{regexp.MustCompile(`^@/uuid$`), uuidCheck},
+	{regexp.MustCompile(`^@/clients/.*/(dns|dhcp)_name$`), dnsCheck},
+	{regexp.MustCompile(`^@/clients/.*/ipv4$`), ipv4Check},
+	{regexp.MustCompile(`^@/dns/cnames/`), cnameCheck},
 }
 
 var (
 	verbose = flag.Bool("v", false, "verbose log output")
 
-	propTreeRoot  = &pnode{name: "root"}
-	propTreeMutex sync.Mutex
+	propTree *cfgtree.PTree
 
 	mcpd    *mcp.MCP
 	brokerd *broker.Broker
 
 	authTypeToDefaultRing map[string]string
 
-	rollbackState struct {
-		preserved []*pnode
-		deleted   []*pnode
+	propCallbacks = cfgtree.Callbacks{
+		Updated: propUpdated,
+		Deleted: propDeleted,
 	}
 )
 
@@ -179,17 +137,18 @@ func propNotify(prop, val string, expires *time.Time,
 	}
 }
 
-func updateNotify(node *pnode) {
-	propNotify(node.path, node.Value, node.Expires,
+func propUpdated(node *cfgtree.PNode) {
+	propNotify(node.Path(), node.Value, node.Expires,
 		base_msg.EventConfig_CHANGE)
 }
 
-func deleteNotify(node *pnode) {
-	propNotify(node.path, "-", nil, base_msg.EventConfig_DELETE)
+func propDeleted(node *cfgtree.PNode) {
+	expirationRemove(node)
+	propNotify(node.Path(), "-", nil, base_msg.EventConfig_DELETE)
 }
 
-func expirationNotify(node *pnode) {
-	propNotify(node.path, node.Value, nil, base_msg.EventConfig_EXPIRE)
+func expirationNotify(node *cfgtree.PNode) {
+	propNotify(node.Path(), node.Value, nil, base_msg.EventConfig_EXPIRE)
 }
 
 func entityHandler(event []byte) {
@@ -203,11 +162,8 @@ func entityHandler(event []byte) {
 	}
 	hwaddr := network.Uint64ToHWAddr(*entity.MacAddress)
 	path := "@/clients/" + hwaddr.String() + "/"
-	node := propertySearch(path)
-	if node == nil {
-		node, _ = propertyInsert(path)
-	}
-	ring := selectRing(node, entity.Authtype)
+	node, _ := propTree.GetNode(path)
+	ring := selectRing(hwaddr.String(), node, entity.Authtype)
 
 	updates := make(map[string]*string)
 	updates[path+"ring"] = &ring
@@ -222,24 +178,25 @@ func entityHandler(event []byte) {
 		updates[path+"ipv4_observed"] = &ipv4
 	}
 
-	initChangeset()
+	propTree.ChangesetInit()
 	failed := false
 	for p, v := range updates {
 		if v != nil && *v != "" {
-			node, err := propertyInsert(p)
-			if err != nil {
+			if err := propTree.Add(p, *v, nil); err != nil {
 				log.Printf("failed to insert %s: %v\n", p, err)
-				failed = true
-			} else if err = propertyUpdate(node, *v, nil); err != nil {
-				log.Printf("failed to update %s: %v\n", p, err)
 				failed = true
 			}
 		}
 	}
 	if failed {
-		revertChangeset()
+		propTree.ChangesetRevert()
 	} else {
-		commitChangeset()
+		if propTree.ChangesetCommit() {
+			if rerr := propTreeStore(); rerr != nil {
+				log.Printf("failed to write properties: %v",
+					rerr)
+			}
+		}
 	}
 }
 
@@ -251,7 +208,7 @@ func entityHandler(event []byte) {
 func defaultRingInit() {
 	authTypeToDefaultRing = make(map[string]string)
 
-	if node := propertySearch("@/network/default_ring"); node != nil {
+	if node, _ := propTree.GetNode("@/network/default_ring"); node != nil {
 		for a, n := range node.Children {
 			authTypeToDefaultRing[a] = n.Value
 			log.Printf("default %s ring: %s\n", a, n.Value)
@@ -259,71 +216,44 @@ func defaultRingInit() {
 	}
 }
 
-func selectRing(client *pnode, authp *string) string {
+func selectRing(mac string, client *cfgtree.PNode, authp *string) string {
 	var ring, auth string
 
-	// If the client already has a ring set, don't override it
-	if client.Children != nil {
+	if client != nil && client.Children != nil {
+		// If the client already has a ring set, don't override it
 		if n := client.Children["ring"]; n != nil && n.Value != "" {
 			return n.Value
 		}
+		if conn, ok := client.Children["connection"]; ok {
+			if a, ok := conn.Children["authtype"]; ok {
+				auth = a.Value
+			}
+		}
 	}
-
 	if authp != nil {
 		auth = *authp
-	} else if conn, ok := client.Children["connection"]; ok {
-		if a, ok := conn.Children["authtype"]; ok {
-			auth = a.Value
-		}
 	}
 
 	if auth == "" {
-		log.Printf("Can't select ring for %s: no auth type\n",
-			client.name)
+		log.Printf("Can't select ring for %s: no auth type\n", mac)
 	} else if r, ok := authTypeToDefaultRing[auth]; ok {
 		log.Printf("Setting initial ring for %s %s to %s\n",
-			client.name, auth, r)
+			mac, auth, r)
 		ring = r
 	} else {
 		log.Printf("Can't select ring for %s: unsupported auth: %s\n",
-			client.name, auth)
+			mac, auth)
 	}
 	return ring
 }
 
-/*************************************************************************
- *
- * Generic and property-specific setter/getter routines
- */
-func defaultSetter(node *pnode, val string, expires *time.Time) error {
-	node.Value = val
-	node.Expires = expires
-
-	return nil
-}
-
-func defaultGetter(node *pnode) (string, error) {
-	var rval string
-
-	b, err := json.Marshal(node)
-	if err == nil {
-		rval = string(b)
-	}
-
-	return rval, err
-}
-
-func defaultExpire(node *pnode) {
-	expirationNotify(node)
-}
-
-func uuidUpdate(node *pnode, uuid string, expires *time.Time) error {
+func uuidCheck(node *cfgtree.PNode, uuid string) error {
 	const nullUUID = "00000000-0000-0000-0000-000000000000"
 
-	if node.Value != nullUUID {
+	if node != nil && node.Value != nullUUID {
 		return fmt.Errorf("cannot change an appliance's UUID")
 	}
-	return defaultSetter(node, uuid, expires)
+	return nil
 }
 
 //
@@ -332,10 +262,13 @@ func uuidUpdate(node *pnode, uuid string, expires *time.Time) error {
 // device to ignore, allowing us to answer the question "is any other device
 // using this hostname?"
 //
-func dnsNameInuse(ignore *pnode, hostname string) bool {
+func dnsNameInuse(ignore *cfgtree.PNode, hostname string) bool {
 	lower := strings.ToLower(hostname)
 
-	clients := propertySearch("@/clients")
+	clients, _ := propTree.GetNode("@/clients")
+	if clients == nil {
+		return false
+	}
 	for _, device := range clients.Children {
 		if device == ignore {
 			continue
@@ -350,10 +283,9 @@ func dnsNameInuse(ignore *pnode, hostname string) bool {
 				return true
 			}
 		}
-
 	}
 
-	if cnames := propertySearch("@/dns/cnames"); cnames != nil {
+	if cnames, _ := propTree.GetNode("@/dns/cnames"); cnames != nil {
 		for name, record := range cnames.Children {
 			if record == ignore {
 				continue
@@ -367,49 +299,58 @@ func dnsNameInuse(ignore *pnode, hostname string) bool {
 	return false
 }
 
-// Validate and record the hostname that will be used to generate DNS A records
+// Validate the hostname that will be used to generate DNS A records
 // for this device
-func dnsSetter(node *pnode, hostname string, expires *time.Time) error {
+func dnsCheck(node *cfgtree.PNode, hostname string) error {
+	var parent *cfgtree.PNode
+	var err error
+
+	if node != nil {
+		parent = node.Parent()
+	}
+
 	if !network.ValidDNSLabel(hostname) {
-		return fmt.Errorf("invalid hostname: %s", hostname)
+		err = fmt.Errorf("invalid hostname: %s", hostname)
+	} else if dnsNameInuse(parent, hostname) {
+		err = fmt.Errorf("duplicate hostname")
 	}
 
-	if dnsNameInuse(node.parent, hostname) {
-		return fmt.Errorf("duplicate hostname")
-	}
-
-	return defaultSetter(node, hostname, expires)
+	return err
 }
 
-// Validate and record both the hostname and the canonical name that will be
+// Validate both the hostname and the canonical name that will be
 // used to generate DNS CNAME records
-func cnameSetter(node *pnode, hostname string, expires *time.Time) error {
-	if !network.ValidHostname(node.name) {
-		return fmt.Errorf("invalid hostname: %s", node.name)
+func cnameCheck(node *cfgtree.PNode, hostname string) error {
+	var err error
+
+	name := node.Name()
+
+	if !network.ValidHostname(name) {
+		err = fmt.Errorf("invalid hostname: %s", name)
+	} else if !network.ValidHostname(hostname) {
+		err = fmt.Errorf("invalid canonical name: %s", hostname)
+	} else if dnsNameInuse(node, name) {
+		err = fmt.Errorf("duplicate hostname")
 	}
 
-	if !network.ValidHostname(hostname) {
-		return fmt.Errorf("invalid canonical name: %s", hostname)
-	}
-
-	if dnsNameInuse(node, node.name) {
-		return fmt.Errorf("duplicate hostname")
-	}
-
-	return defaultSetter(node, hostname, expires)
+	return err
 }
 
-// Validate and record an ipv4 assignment for this device
-func ipv4Setter(node *pnode, addr string, expires *time.Time) error {
+// Validate an ipv4 assignment for this device
+func ipv4Check(node *cfgtree.PNode, addr string) error {
 	ipv4 := net.ParseIP(addr)
 	if ipv4 == nil {
 		return fmt.Errorf("invalid address: %s", addr)
 	}
 
 	// Make sure the address isn't already assigned
-	clients := propertySearch("@/clients")
-	for _, device := range clients.Children {
-		if device == node.parent {
+	clients, _ := propTree.GetNode("@/clients")
+	if clients == nil {
+		return nil
+	}
+
+	for name, device := range clients.Children {
+		if node != nil && node.Name() == name {
 			// Reassigning the device's address to itself is fine
 			continue
 		}
@@ -420,297 +361,12 @@ func ipv4Setter(node *pnode, addr string, expires *time.Time) error {
 				ipv4Node.Expires.Before(time.Now())
 
 			if ipv4.Equal(addr) && !expired {
-				return fmt.Errorf("%s in use by %s", addr,
-					device.name)
+				return fmt.Errorf("%s in use by %s", addr, name)
 			}
 		}
 	}
-
-	return defaultSetter(node, addr, expires)
-}
-
-//
-// When a client's ring assignment expires, it returns to the default ring
-//
-func ringExpire(node *pnode) {
-	propTreeMutex.Lock()
-	old := node.Value
-	node.Value = ""
-	node.Value = selectRing(node.parent, nil)
-	node.Expires = nil
-	if node.Value != old {
-		updateNotify(node)
-	}
-	propTreeMutex.Unlock()
-}
-
-/*
- * To determine whether this new property has non-default operations, we walk
- * through the property_match_table, looking for any matching patterns
- */
-func propAttachOps(node *pnode) {
-	for _, r := range propertyMatchTable {
-		if r.match.MatchString(node.path) {
-			node.ops = r.ops
-			return
-		}
-	}
-	node.ops = &defaultPropOps
-}
-
-/*************************************************************************
- *
- * Functions to walk and maintain the property tree
- */
-
-func propertyParse(prop string) []string {
-	prop = strings.TrimSuffix(prop, "/")
-	if prop == "@" {
-		return make([]string, 0)
-	}
-
-	/*
-	 * Only accept properties that start with exactly one '@', meaning they
-	 * are local to this device
-	 */
-	if len(prop) < 2 || prop[0] != '@' || prop[1] != '/' {
-		return nil
-	}
-
-	return strings.Split(prop[2:], "/")
-}
-
-func preserveChildren(node *pnode) {
-	if node.preserved == nil {
-		node.preserved = make(map[string]*pnode)
-		rollbackState.preserved = append(rollbackState.preserved, node)
-		for k, v := range node.Children {
-			node.preserved[k] = v
-		}
-	}
-}
-
-func preserveNode(node *pnode) *pnode {
-	p := node.parent
-	if p == nil {
-		log.Fatalf("attempted to modify the root node")
-	}
-	preserveChildren(p)
-
-	r := *node
-	p.Children[r.name] = &r
-	return &r
-}
-
-func initChangeset() {
-	propTreeMutex.Lock()
-	rollbackState.preserved = make([]*pnode, 0)
-	rollbackState.deleted = make([]*pnode, 0)
-}
-
-func commitNode(node *pnode, now time.Time) bool {
-	updated := false
-
-	// Look for any children that have been added or updated
-	for prop, current := range node.Children {
-		if old := node.preserved[prop]; old != current {
-			childUpdated := false
-			if old == nil || current.Expires != old.Expires {
-				if old != nil && old.Expires != nil {
-					expirationRemove(old)
-				}
-				if current.Expires != nil {
-					expirationInsert(current)
-				}
-
-				childUpdated = true
-			}
-			if old == nil || current.Value != old.Value {
-				updateNotify(current)
-				childUpdated = true
-			}
-
-			if childUpdated {
-				copy := now
-				current.Modified = &copy
-				updated = true
-			}
-		}
-	}
-
-	// Using the original list of child nodes, look for any that have been
-	// deleted
-	for prop := range node.preserved {
-		if _, ok := node.Children[prop]; !ok {
-			updated = true
-		}
-	}
-
-	// If there have been any changes to child nodes, mark this and all
-	// ancestors as updated
-	if updated {
-		for x := node; x != nil; x = x.parent {
-			copy := now
-			x.Modified = &copy
-		}
-	}
-	return updated
-}
-
-func commitChangeset() {
-	now := time.Now()
-	updated := false
-
-	// Iterate over all of the nodes that were preserved, looking to see
-	// whether any of them have been changed.
-	for _, node := range rollbackState.preserved {
-		if commitNode(node, now) {
-			updated = true
-		}
-		node.preserved = nil
-	}
-
-	// If any nodes were deleted, we need to clean up any associated
-	// expiration state
-	for _, node := range rollbackState.deleted {
-		updated = true
-		deleteNotify(node)
-		deleteSubtree(node)
-	}
-
-	if updated {
-		propTreeStore()
-	}
-
-	rollbackState.preserved = nil
-	rollbackState.deleted = nil
-	propTreeMutex.Unlock()
-}
-
-func revertChangeset() {
-	for _, node := range rollbackState.preserved {
-		node.Children = node.preserved
-		node.preserved = nil
-	}
-	rollbackState.preserved = nil
-	rollbackState.deleted = nil
-	propTreeMutex.Unlock()
-}
-
-/*
- * Insert an empty property into the tree, returning the leaf node.  If the
- * property already exists, the tree is left unchanged.  If the node exists, but
- * is not a leaf, return an error.
- */
-func propertyInsert(prop string) (*pnode, error) {
-	var err error
-
-	components := propertyParse(prop)
-	if components == nil || len(components) < 1 {
-		return nil, fmt.Errorf("invalid property path: %s", prop)
-	}
-
-	node := propTreeRoot
-	path := "@"
-	for _, name := range components {
-		if node.Children == nil {
-			node.Children = make(map[string]*pnode)
-		}
-		path += "/" + name
-		next := node.Children[name]
-		if next == nil {
-			preserveChildren(node)
-			next = &pnode{
-				name:   name,
-				parent: node,
-				path:   path,
-				index:  -1}
-
-			propAttachOps(next)
-			node.Children[name] = next
-		}
-		node = next
-	}
-
-	if node != nil && len(node.Children) > 0 {
-		err = fmt.Errorf("inserting an internal node: %s", prop)
-	}
-
-	return node, err
-}
-
-/*
- * Walk the tree looking for the given property.
- */
-func propertySearch(prop string) *pnode {
-	components := propertyParse(prop)
-	if components == nil {
-		return nil
-	}
-
-	node := propTreeRoot
-	ok := false
-	for _, name := range components {
-		if node, ok = node.Children[name]; !ok {
-			break
-		}
-	}
-
-	// If the caller explicitly asked for an internal node and we found a
-	// leaf, don't operate on it.
-	if node != nil && len(node.Children) == 0 && strings.HasSuffix(prop, "/") {
-		node = nil
-	}
-
-	return node
-}
-
-func deleteSubtree(node *pnode) {
-	if node.Expires != nil {
-		expirationRemove(node)
-	}
-	for _, n := range node.Children {
-		deleteSubtree(n)
-	}
-}
-
-func propertyDelete(property string) error {
-	if *verbose {
-		log.Printf("delete property: %s\n", property)
-	}
-	node := propertySearch(property)
-	if node == nil {
-		return fmt.Errorf("deleting a nonexistent property: %s",
-			property)
-	}
-
-	if parent := node.parent; parent != nil {
-		preserveChildren(parent)
-		delete(parent.Children, node.name)
-	}
-	rollbackState.deleted = append(rollbackState.deleted, node)
 
 	return nil
-}
-
-func propertyUpdate(node *pnode, value string, exp *time.Time) error {
-	var err error
-
-	if *verbose {
-		log.Printf("set property %s -> %s\n", node.path, value)
-	}
-	if len(node.Children) > 0 {
-		err = fmt.Errorf("can only modify leaf properties")
-	} else {
-		node = preserveNode(node)
-		err = node.ops.set(node, value, exp)
-	}
-
-	if err != nil {
-		log.Printf("property update failed: %v\n", err)
-	}
-
-	return err
 }
 
 /*************************************************************************
@@ -718,50 +374,43 @@ func propertyUpdate(node *pnode, value string, exp *time.Time) error {
  * Handling incoming requests from other daemons
  */
 func getPropHandler(prop string) (string, error) {
-	var err error
-	var rval string
-
-	node := propertySearch(prop)
-
-	if node == nil {
+	prop, err := propTree.Get(prop)
+	if err == cfgtree.ErrNoProp {
 		err = apcfg.ErrNoProp
-	} else if node.Expires != nil && node.Expires.Before(time.Now()) {
+	} else if err == cfgtree.ErrExpired {
 		err = apcfg.ErrExpired
-	} else {
-		var b []byte
-
-		if b, err = json.Marshal(node); err == nil {
-			rval = string(b)
-		}
 	}
 
-	if err != nil && *verbose {
-		log.Printf("property get for %s failed: %v\n", prop, err)
-	}
-
-	return rval, err
+	return prop, err
 }
 
 func setPropHandler(prop string, val *string, exp *time.Time, add bool) error {
-	var node *pnode
 	var err error
 
 	if val == nil {
-		err = fmt.Errorf("no value supplied")
-	} else if add {
-		node, err = propertyInsert(prop)
-	} else if node = propertySearch(prop); node == nil {
-		err = fmt.Errorf("no such property: %s", prop)
+		return fmt.Errorf("no value supplied")
 	}
-	if node != nil {
-		err = propertyUpdate(node, *val, exp)
-	}
-	return err
 
+	for _, r := range updateCheckTable {
+		if r.path.MatchString(prop) {
+			node, _ := propTree.GetNode(prop)
+			if err = r.check(node, *val); err != nil {
+				return err
+			}
+		}
+	}
+
+	if add {
+		err = propTree.Add(prop, *val, exp)
+	} else {
+		err = propTree.Set(prop, *val, exp)
+	}
+
+	return err
 }
 
 func delPropHandler(prop string) error {
-	return propertyDelete(prop)
+	return propTree.Delete(prop)
 }
 
 func executePropOps(query *base_msg.ConfigQuery) (string, error) {
@@ -776,7 +425,8 @@ func executePropOps(query *base_msg.ConfigQuery) (string, error) {
 		}
 	}
 
-	initChangeset()
+	paths := make([]string, 0)
+	propTree.ChangesetInit()
 	for _, op := range query.Ops {
 		prop := *op.Property
 		val := op.Value
@@ -784,7 +434,7 @@ func executePropOps(query *base_msg.ConfigQuery) (string, error) {
 
 		opsVector := &defaultSubtreeOps
 		for _, r := range subtreeMatchTable {
-			if r.match.MatchString(prop) {
+			if r.path.MatchString(prop) {
 				opsVector = r.ops
 				break
 			}
@@ -807,6 +457,7 @@ func executePropOps(query *base_msg.ConfigQuery) (string, error) {
 			err = validatePropVal(prop, val, level)
 			if err == nil {
 				err = opsVector.set(prop, val, expires, true)
+				paths = append(paths, prop)
 			}
 
 		case base_msg.ConfigQuery_ConfigOp_SET:
@@ -814,6 +465,7 @@ func executePropOps(query *base_msg.ConfigQuery) (string, error) {
 			err = validatePropVal(prop, val, level)
 			if err == nil {
 				err = opsVector.set(prop, val, expires, false)
+				paths = append(paths, prop)
 			}
 
 		case base_msg.ConfigQuery_ConfigOp_DELETE:
@@ -835,9 +487,15 @@ func executePropOps(query *base_msg.ConfigQuery) (string, error) {
 		}
 	}
 	if err != nil {
-		revertChangeset()
+		propTree.ChangesetRevert()
 	} else {
-		commitChangeset()
+		expirationsEval(paths)
+		if propTree.ChangesetCommit() {
+			if rerr := propTreeStore(); rerr != nil {
+				log.Printf("failed to write properties: %v",
+					rerr)
+			}
+		}
 	}
 
 	return rval, err
@@ -965,6 +623,8 @@ func configInit() {
 	if err = propTreeInit(defaults); err != nil {
 		fail("propTreeInit() failed: %v\n", err)
 	}
+
+	propTree.RegisterCallbacks(propCallbacks)
 
 	defaultRingInit()
 }

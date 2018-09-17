@@ -31,7 +31,7 @@ func upgradeV13() error {
 	}
 
 	ringToAuth := make(map[string]string)
-	if rings := propertySearch("@/rings"); rings != nil {
+	if rings, _ := propTree.GetNode("@/rings"); rings != nil {
 		for name, config := range rings.Children {
 			if anode, ok := config.Children["auth"]; ok {
 				ringToAuth[name] = anode.Value
@@ -52,7 +52,7 @@ func upgradeV13() error {
 
 	// If there is an existing default set, preserve it for the appropriate
 	// auth type.
-	if node := propertySearch("@/network/default_ring"); node != nil {
+	if node, _ := propTree.GetNode("@/network/default_ring"); node != nil {
 		authType := ringToAuth[node.Value]
 		if authType != "" {
 			authTypeToDefaultRing[authType] = node.Value
@@ -66,7 +66,7 @@ func upgradeV13() error {
 	authTypeToDefaultRing["open"] = base_def.RING_UNENROLLED
 
 	for a, r := range authTypeToDefaultRing {
-		node, _ := propertyInsert("@/network/default_ring/" + a)
+		node, _ := propTree.GetNode("@/network/default_ring/" + a)
 		if node != nil {
 			node.Value = r
 			log.Printf("Set %s default ring to %s\n", a, r)

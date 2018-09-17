@@ -23,6 +23,7 @@ import (
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/common"
+	"bg/common/cfgtree"
 
 	"github.com/satori/uuid"
 )
@@ -31,7 +32,7 @@ const (
 	propertyFilename = "ap_props.json"
 	backupFilename   = "ap_props.json.bak"
 	baseFilename     = "configd.json"
-	minConfigVersion = 10
+	minConfigVersion = 12
 )
 
 var (
@@ -48,16 +49,8 @@ func propTreeStore() error {
 		return nil
 	}
 
-	node, err := propertyInsert("@/apversion")
-	if err != nil {
-		return err
-	}
-	node.Value = common.GitVersion
-
-	s, err := json.MarshalIndent(propTreeRoot, "", "  ")
-	if err != nil {
-		log.Fatalf("Failed to construct properties JSON: %v\n", err)
-	}
+	propTree.Add("@/apversion", common.GitVersion, nil)
+	s := propTree.Export()
 	metrics.treeSize.Set(float64(len(s)))
 
 	if aputil.FileExists(propTreeFile) {
@@ -70,7 +63,7 @@ func propTreeStore() error {
 		os.Rename(propTreeFile, backupfile)
 	}
 
-	err = ioutil.WriteFile(propTreeFile, s, 0644)
+	err := ioutil.WriteFile(propTreeFile, s, 0644)
 	if err != nil {
 		log.Printf("Failed to write properties file: %v\n", err)
 	}
@@ -78,40 +71,25 @@ func propTreeStore() error {
 	return err
 }
 
-func propTreeImport(data []byte) (*pnode, error) {
-	var newRoot pnode
+func propTreeLoad(name string) (*cfgtree.PTree, error) {
+	if !aputil.FileExists(propTreeFile) {
+		return nil, fmt.Errorf("file missing")
+	}
 
-	metrics.treeSize.Set(float64(len(data)))
-	if err := json.Unmarshal(data, &newRoot); err != nil {
+	file, err := ioutil.ReadFile(name)
+	if err != nil {
+		log.Printf("Failed to load %s: %v\n", name, err)
 		return nil, err
 	}
 
-	patchTree("@", &newRoot, "")
-	return &newRoot, nil
-}
-
-func propTreeLoad(name string) error {
-	var file []byte
-	var err error
-
-	file, err = ioutil.ReadFile(name)
-	if err != nil {
-		log.Printf("Failed to load properties file %s: %v\n", name, err)
-		return err
+	tree, err := cfgtree.NewPTree("@", file)
+	if err == nil {
+		metrics.treeSize.Set(float64(len(file)))
+	} else {
+		err = fmt.Errorf("importing %s: %v", name, err)
 	}
 
-	root, err := propTreeImport(file)
-	if err != nil {
-		root, err = oldPropTreeParse(file)
-		if err != nil {
-			log.Printf("Failed to import properties from %s: %v\n",
-				name, err)
-			return err
-		}
-	}
-
-	propTreeRoot = root
-	return nil
+	return tree, err
 }
 
 func addUpgradeHook(version int32, hook func() error) {
@@ -129,11 +107,15 @@ func addUpgradeHook(version int32, hook func() error) {
 
 func versionTree() error {
 	upgraded := false
-	version := 0
 
-	node, _ := propertyInsert("@/cfgversion")
-	if node != nil && node.Value != "" {
-		version, _ = strconv.Atoi(node.Value)
+	node, _ := propTree.GetNode("@/cfgversion")
+	if node == nil {
+		return fmt.Errorf("properties file missing @/cfgversion")
+	}
+
+	version, err := strconv.Atoi(node.Value)
+	if err != nil {
+		return fmt.Errorf("illegal version '%s': %v", node.Value, err)
 	}
 	if version < minConfigVersion {
 		return fmt.Errorf("obsolete properties file")
@@ -151,7 +133,7 @@ func versionTree() error {
 				return fmt.Errorf("upgrade failed: %v", err)
 			}
 		}
-		node.Value = strconv.Itoa(version)
+		propTree.Set("@/cfgversion", strconv.Itoa(version), nil)
 		upgraded = true
 	}
 
@@ -163,63 +145,27 @@ func versionTree() error {
 	return nil
 }
 
-/*
- * After loading the initial property values, we need to walk the tree to set
- * the parent pointers, attach any non-default operations, and possibly insert
- * into the expiration heap
- */
-func patchTree(name string, node *pnode, path string) {
-	node.name = name
-	if len(path) > 0 {
-		node.path = path + "/" + name
-	} else {
-		node.path = name
-	}
-	node.index = -1
-	propAttachOps(node)
-	for childName, child := range node.Children {
-		child.parent = node
-		patchTree(childName, child, node.path)
-	}
-	if node.Expires != nil {
-		expirationInsert(node)
-	}
-}
-
-func dumpTree(name string, node *pnode, level int) {
-	indent := ""
-	for i := 0; i < level; i++ {
-		indent += "  "
-	}
+func dumpTree(indent string, node *cfgtree.PNode) {
 	e := ""
 	if node.Expires != nil {
 		e = node.Expires.Format("2006-01-02T15:04:05")
 	}
-	fmt.Printf("%s%s: %s  %s\n", indent, name, node.Value, e)
-	for name, child := range node.Children {
-		dumpTree(name, child, level+1)
+	fmt.Printf("%s%s: %s  %s\n", indent, node.Name(), node.Value, e)
+	for _, child := range node.Children {
+		dumpTree(indent+"  ", child)
 	}
 }
 
-func propTreeInit(defaults *pnode) error {
+func propTreeInit(defaults *cfgtree.PNode) error {
 	var err error
 
 	propTreeFile = *propdir + propertyFilename
-	if aputil.FileExists(propTreeFile) {
-		err = propTreeLoad(propTreeFile)
-	} else {
-		err = fmt.Errorf("File missing")
-	}
+	tree, err := propTreeLoad(propTreeFile)
 
 	if err != nil {
 		log.Printf("Unable to load properties: %v", err)
 		backupfile := *propdir + backupFilename
-		if aputil.FileExists(backupfile) {
-			err = propTreeLoad(backupfile)
-		} else {
-			err = fmt.Errorf("File missing")
-		}
-
+		tree, err = propTreeLoad(backupfile)
 		if err != nil {
 			log.Printf("Unable to load backup properties: %v", err)
 		} else {
@@ -230,35 +176,35 @@ func propTreeInit(defaults *pnode) error {
 	if err != nil {
 		log.Printf("No usable properties files.  Using defaults.\n")
 
-		patchTree("@", defaults, "")
-		propTreeRoot = defaults
-
+		tree = cfgtree.GraftTree("@", defaults)
 		applianceUUID := uuid.NewV4().String()
-		if node, _ := propertyInsert("@/uuid"); node != nil {
-			propertyUpdate(node, applianceUUID, nil)
+		if err := tree.Add("@/uuid", applianceUUID, nil); err != nil {
+			log.Fatalf("Unable to set UUID: %v\n", err)
 		}
 
 		// XXX: this needs to come from the cloud - not hardcoded
 		applianceSiteID := "7410"
-		if node, _ := propertyInsert("@/siteid"); node != nil {
-			propertyUpdate(node, applianceSiteID, nil)
+		if err := tree.Add("@/siteid", applianceSiteID, nil); err != nil {
+			log.Fatalf("Unable to set SiteID: %v\n", err)
 		}
 	}
 
+	propTree = tree
+	propTreeLoaded = true
 	if err = versionTree(); err != nil {
 		err = fmt.Errorf("failed version check: %v", err)
 	}
 
 	if *verbose {
-		dumpTree("root", propTreeRoot, 0)
+		root, _ := tree.GetNode("@/")
+		dumpTree("", root)
 	}
-	propTreeLoaded = true
 	return err
 }
 
-func loadDefaults() (defaults *pnode, descs []propDescription, err error) {
+func loadDefaults() (defaults *cfgtree.PNode, descs []propDescription, err error) {
 	var base struct {
-		Defaults     pnode
+		Defaults     cfgtree.PNode
 		Descriptions []propDescription
 	}
 

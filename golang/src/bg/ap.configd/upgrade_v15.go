@@ -14,12 +14,12 @@ import (
 	"log"
 )
 
+const bkt = "https://storage.googleapis.com/bg-blocklist-a198e4a0-5823-4d16-8950-ad34b32ace1c"
+
 func upgradeV15() error {
 	log.Printf("Adding @/cloud/update/bucket")
 
-	prop, _ := propertyInsert("@/cloud/update/bucket")
-	prop.Value = "https://storage.googleapis.com/bg-blocklist-a198e4a0-5823-4d16-8950-ad34b32ace1c"
-
+	propTree.Add("@/cloud/update/bucket", bkt, nil)
 	return nil
 }
 

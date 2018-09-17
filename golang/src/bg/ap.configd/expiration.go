@@ -13,8 +13,11 @@ package main
 import (
 	"container/heap"
 	"log"
+	"regexp"
 	"sync"
 	"time"
+
+	"bg/common/cfgtree"
 )
 
 var (
@@ -23,11 +26,51 @@ var (
 	expirationLock  sync.Mutex
 )
 
+//
+// When a client's ring assignment expires, it returns to the default ring
+//
+func ringExpired(node *cfgtree.PNode) {
+
+	client := node.Parent()
+	old := node.Value
+	node.Value = ""
+	node.Value = selectRing(client.Name(), client, nil)
+	node.Expires = nil
+	if node.Value != old {
+		propUpdated(node)
+	}
+}
+
+var expirationHandlers = []struct {
+	path    *regexp.Regexp
+	handler func(*cfgtree.PNode)
+}{
+	{regexp.MustCompile(`^@/clients/.*/ring$`), ringExpired},
+}
+
+func getIndex(node *cfgtree.PNode) int {
+	x := node.Data()
+
+	if idx, ok := x.(int); ok {
+		return idx
+	}
+
+	return -1
+}
+
+func setIndex(node *cfgtree.PNode, idx int) {
+	node.SetData(idx)
+}
+
+func clearIndex(node *cfgtree.PNode) {
+	node.SetData(nil)
+}
+
 /*******************************************************************
  *
  * Implement the functions required by the container/heap interface
  */
-type pnodeQueue []*pnode
+type pnodeQueue []*cfgtree.PNode
 
 func (q pnodeQueue) Len() int { return len(q) }
 
@@ -37,14 +80,14 @@ func (q pnodeQueue) Less(i, j int) bool {
 
 func (q pnodeQueue) Swap(i, j int) {
 	q[i], q[j] = q[j], q[i]
-	q[i].index = i
-	q[j].index = j
+	setIndex(q[i], i)
+	setIndex(q[j], j)
 }
 
 func (q *pnodeQueue) Push(x interface{}) {
 	n := len(*q)
-	prop := x.(*pnode)
-	prop.index = n
+	prop := x.(*cfgtree.PNode)
+	setIndex(prop, n)
 	*q = append(*q, prop)
 }
 
@@ -52,105 +95,146 @@ func (q *pnodeQueue) Pop() interface{} {
 	old := *q
 	n := len(old)
 	prop := old[n-1]
-	prop.index = -1 // for safety
+	clearIndex(prop) // for safety
 	*q = old[0 : n-1]
 	return prop
+}
+
+// Repeatedly pop the top entry off the heap, for as long as the top entry's
+// expiration is in the past.  Return a slice of all the expired properties.
+func findExpirations() []*cfgtree.PNode {
+	now := time.Now()
+
+	expired := make([]*cfgtree.PNode, 0)
+	for len(expirationHeap) > 0 {
+		next := expirationHeap[0]
+
+		if next.Expires == nil {
+			// Should never happen
+			log.Printf("Found static property %s in "+
+				"expiration heap at %d\n",
+				next.Path(), getIndex(next))
+			heap.Pop(&expirationHeap)
+			continue
+		}
+
+		if now.Before(*next.Expires) {
+			break
+		}
+
+		if *verbose {
+			log.Printf("Expiring: %s at %v\n",
+				next.Name(), time.Now())
+		}
+		expired = append(expired, next)
+		heap.Pop(&expirationHeap)
+		metrics.expCounts.Inc()
+
+		clearIndex(next)
+	}
+
+	return expired
+}
+
+func processExpirations(expired []*cfgtree.PNode) {
+	now := time.Now()
+	cnt := 0
+
+	propTree.Lock()
+	for _, node := range expired {
+		// check to be sure the property hasn't been
+		// reset since we added it to the list.
+		if now.Before(*node.Expires) {
+			continue
+		}
+
+		// Check for any special actions to take when this property
+		// expires
+		for _, r := range expirationHandlers {
+			if r.path.MatchString(node.Path()) {
+				r.handler(node)
+			}
+		}
+
+		expirationNotify(node)
+		cnt++
+	}
+
+	if cnt > 0 {
+		propTreeStore()
+	}
+	propTree.Unlock()
 }
 
 func expirationHandler() {
 
 	expirationTimer = time.NewTimer(time.Duration(time.Minute))
 
-	first := true
 	for true {
 		<-expirationTimer.C
 		expirationLock.Lock()
 
-		expired := make([]*pnode, 0)
-		now := time.Now()
-		for len(expirationHeap) > 0 {
-			next := expirationHeap[0]
-
-			if next.Expires == nil {
-				// Should never happen
-				log.Printf("Found static property %s in "+
-					"expiration heap at %d\n",
-					next.path, next.index)
-				heap.Pop(&expirationHeap)
-				continue
-			}
-
-			if now.Before(*next.Expires) {
-				break
-			}
-
-			delay := now.Sub(*next.Expires)
-			if delay.Seconds() > 1.0 && !first {
-				log.Printf("Missed expiration for %s by %s\n",
-					next.name, delay)
-			}
-			if *verbose {
-				log.Printf("Expiring: %s at %v\n",
-					next.name, time.Now())
-			}
-			expired = append(expired, next)
-			heap.Pop(&expirationHeap)
-			metrics.expCounts.Inc()
-
-			next.index = -1
-		}
+		expired := findExpirations()
 
 		if len(expired) > 0 {
 			expirationReset()
 		}
 
 		expirationLock.Unlock()
-		if len(expired) > 0 {
-			propTreeMutex.Lock()
-			for _, node := range expired {
-				// check to be sure the property hasn't been
-				// reset since we added it to the list.
-				if now.Before(*node.Expires) {
-					node.ops.expire(node)
-				}
-			}
-			propTreeStore()
-			propTreeMutex.Unlock()
-		}
-		first = false
+
+		processExpirations(expired)
 	}
 }
 
-// Add a property to the expiration heap.
-func expirationInsert(node *pnode) {
+func expirationRemove(node *cfgtree.PNode) {
+	reset := false
+
 	expirationLock.Lock()
-
-	node.index = -1
-	heap.Push(&expirationHeap, node)
-
-	// If this property is now at the top of the heap, reset the timer
-	if node.index == 0 {
-		expirationReset()
+	if index := getIndex(node); index != -1 {
+		reset = (index == 0)
+		heap.Remove(&expirationHeap, index)
+		clearIndex(node)
 	}
-
 	expirationLock.Unlock()
-}
 
-// Remove a single property from the expiration heap
-func expirationRemove(node *pnode) {
-	expirationLock.Lock()
-
-	reset := (node.index == 0)
-	if node.index != -1 {
-		heap.Remove(&expirationHeap, node.index)
-		node.index = -1
-	}
-
-	// If this property was at the top of the heap, reset the timer
 	if reset {
 		expirationReset()
 	}
+}
 
+func expirationsEval(paths []string) {
+	reset := false
+
+	// Iterate over all of the properties in the list and (re)evaluate their
+	// position in the expiration heap.
+	expirationLock.Lock()
+	for _, path := range paths {
+		node, _ := propTree.GetNode(path)
+		if node == nil {
+			// This property was inserted and then deleted as part
+			// of a compound operation
+			continue
+		}
+
+		// If the node was in the expiration list, pull it out
+		if index := getIndex(node); index != -1 {
+			reset = (index == 0)
+			heap.Remove(&expirationHeap, index)
+			clearIndex(node)
+		}
+
+		// If the property has an expiration time, insert it into the
+		// heap
+		if node.Expires != nil {
+			heap.Push(&expirationHeap, node)
+			if getIndex(node) == 0 {
+				reset = true
+			}
+		}
+	}
+	if reset {
+		expirationReset()
+	}
 	expirationLock.Unlock()
 }
 
