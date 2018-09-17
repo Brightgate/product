@@ -19,7 +19,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lib/pq"
+	"github.com/guregu/null"
+	// As per pq documentation
+	_ "github.com/lib/pq"
 	"github.com/pkg/errors"
 	"github.com/satori/uuid"
 )
@@ -52,33 +54,33 @@ type ApplianceDB struct {
 type ApplianceID struct {
 	// CloudUUID is used as the primary key for tracking an appliance
 	// across cloud properties
-	CloudUUID uuid.UUID
+	CloudUUID uuid.UUID `json:"cloud_uuid"`
 
 	// System Identification Intrinsic to the Hardware
-	SystemReprMAC      sql.NullString
-	SystemReprHWSerial sql.NullString
+	SystemReprMAC      null.String `json:"system_repr_mac"`
+	SystemReprHWSerial null.String `json:"system_repr_hwserial"`
 
 	// Google Cloud Identification
-	GCPProject string
-	GCPRegion  string
+	GCPProject string `json:"gcp_project"`
+	GCPRegion  string `json:"gcp_region"`
 
 	// Appliance Registry name and ID in the Registry
-	ApplianceReg   string
-	ApplianceRegID string
+	ApplianceReg   string `json:"appliance_reg"`
+	ApplianceRegID string `json:"appliance_reg_id"`
 }
 
 // AppliancePubKey represents one of the public keys for an Appliance.
 type AppliancePubKey struct {
-	ID         uint64
-	Format     string
-	Key        string
-	Expiration pq.NullTime
+	ID         uint64    `json:"id"`
+	Format     string    `json:"format"`
+	Key        string    `json:"key"`
+	Expiration null.Time `json:"expiration"`
 }
 
 // ApplianceCloudStorage represents cloud storage information for an Appliance.
 type ApplianceCloudStorage struct {
-	Bucket   string
-	Provider string
+	Bucket   string `json:"bucket"`
+	Provider string `json:"provider"`
 }
 
 // NotFoundError is returned when the requested resource is not present in the

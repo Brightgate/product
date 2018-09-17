@@ -13,7 +13,7 @@ package appliancedb
 
 import (
 	"context"
-	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -23,6 +23,7 @@ import (
 
 	"bg/common/briefpg"
 
+	"github.com/guregu/null"
 	"github.com/satori/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -77,6 +78,40 @@ func dumpfail(ctx context.Context, t *testing.T, bpg *briefpg.BriefPG, dbName st
 	}
 }
 
+// Test serialization to JSON
+func TestJSON(t *testing.T) {
+	_, _ = setupLogging(t)
+	assert := require.New(t)
+
+	ai := &ApplianceID{
+		CloudUUID:          testUUID,
+		SystemReprHWSerial: null.NewString("", false),
+		SystemReprMAC:      null.NewString("", false),
+	}
+	j, _ := json.Marshal(ai)
+	assert.JSONEq(`{
+		"cloud_uuid":"00000001-0001-0001-0001-000000000001",
+		"gcp_project":"",
+		"gcp_region":"",
+		"appliance_reg":"",
+		"appliance_reg_id":"",
+		"system_repr_hwserial":null,
+		"system_repr_mac":null}`, string(j))
+
+	ap := &AppliancePubKey{
+		Expiration: null.NewTime(time.Time{}, false),
+	}
+	j, _ = json.Marshal(ap)
+	assert.JSONEq(`{"id":0, "format":"", "key":"", "expiration":null}`, string(j))
+	ap.Expiration = null.TimeFrom(time.Date(2018, 1, 1, 0, 0, 0, 0, time.UTC))
+	j, _ = json.Marshal(ap)
+	assert.JSONEq(`{"id":0, "format":"", "key":"", "expiration": "2018-01-01T00:00:00Z"}`, string(j))
+
+	acs := &ApplianceCloudStorage{}
+	j, _ = json.Marshal(acs)
+	assert.JSONEq(`{"bucket":"", "provider":""}`, string(j))
+}
+
 func TestApplianceID(t *testing.T) {
 	_, _ = setupLogging(t)
 	assert := require.New(t)
@@ -89,8 +124,8 @@ func TestApplianceID(t *testing.T) {
 		ApplianceRegID: testRegID,
 	}
 	assert.NotEmpty(x.String())
-	x.SystemReprMAC = sql.NullString{String: "123", Valid: true}
-	x.SystemReprHWSerial = sql.NullString{String: "123", Valid: true}
+	x.SystemReprMAC = null.NewString("123", true)
+	x.SystemReprHWSerial = null.NewString("123", true)
 	assert.NotEmpty(x.String())
 	assert.Equal(testClientID, x.ClientID())
 }

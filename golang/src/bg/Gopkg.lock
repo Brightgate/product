@@ -236,6 +236,14 @@
   version = "v1.2.0"
 
 [[projects]]
+  digest = "1:1582dd711e6e5ef92d6245a5dd0646da19d0d0acb94ea615d43896b7b6c6620b"
+  name = "github.com/guregu/null"
+  packages = ["."]
+  pruneopts = ""
+  revision = "80515d440932108546bcade467bb7d6968e812e2"
+  version = "v3.4.0"
+
+[[projects]]
   branch = "master"
   digest = "1:94158926759c3333201f81eee5a21112f7ae9d000b4d6926455008c7ab3fb7fc"
   name = "github.com/hashicorp/go-version"
@@ -964,6 +972,7 @@
     "github.com/grpc-ecosystem/go-grpc-middleware/tags",
     "github.com/grpc-ecosystem/go-grpc-middleware/util/metautils",
     "github.com/grpc-ecosystem/go-grpc-prometheus",
+    "github.com/guregu/null",
     "github.com/hashicorp/go-version",
     "github.com/jlaffaye/ftp",
     "github.com/klauspost/oui",
