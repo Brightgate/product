@@ -150,7 +150,7 @@ export default {
     },
 
     acceptSupreme: function() {
-      superagent.get('/apid/supreme'
+      superagent.get('/api/appliances/0/supreme'
       ).then((res) => {
         let res_json;
         try {
@@ -184,7 +184,10 @@ export default {
       if (this.$store.getters.Is_Logged_In) {
         return this.$store.dispatch('fetchDevices').catch(() => {});
       } else {
-        this.$f7.loginScreen.open('#bgLoginScreen');
+        return this.$store.dispatch('checkLogin'
+        ).catch(() => {
+          this.$f7.loginScreen.open('#bgLoginScreen');
+        });
       }
     },
 

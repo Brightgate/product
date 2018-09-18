@@ -187,7 +187,7 @@ const getters = {
 // Get a property's value
 function fetchPropP(property, default_value) {
   console.log(`fetchPropP(${property}, ${default_value})`);
-  return superagent.get('/apid/config'
+  return superagent.get('/api/appliances/0/config'
   ).query(property
   ).timeout(STD_TIMEOUT
   ).then((res) => {
@@ -212,7 +212,7 @@ function checkPropChangeP(property, value, maxcount, count) {
 
   const attempt_str = `#${(maxcount - count) + 1}`;
   console.log(`checkPropChangeP: waiting for ${property} to become ${value}, try ${attempt_str}`);
-  return superagent.get('/apid/config'
+  return superagent.get('/api/appliances/0/config'
   ).query(property
   ).timeout(STD_TIMEOUT
   ).then((res) => {
@@ -235,8 +235,8 @@ function checkPropChangeP(property, value, maxcount, count) {
 
 // Make up to maxcount attempts to load the devices configuration object
 function devicesGetP() {
-  console.log('devicesGetP: GET /devices');
-  return superagent.get('/apid/devices'
+  console.log('devicesGetP: GET /api/appliances/0/devices');
+  return superagent.get('/api/appliances/0/devices'
   ).timeout(STD_TIMEOUT
   ).then((res) => {
     console.log('devicesGetP: got response');
@@ -431,8 +431,8 @@ const actions = {
 
   // Load the list of rings from the server.
   fetchRings(context) {
-    console.log('fetchRings: GET /apid/rings');
-    return superagent.get('/apid/rings'
+    console.log('fetchRings: GET /api/appliances/0/rings');
+    return superagent.get('/api/appliances/0/rings'
     ).then((res) => {
       console.log('fetchRings: Succeeded: ', res.body);
       assert(typeof res.body === 'object');
@@ -450,7 +450,7 @@ const actions = {
 
   // Load the list of rings from the server.
   fetchNetworkConfig(context) {
-    console.log('fetchNetworkConfig: GET /apid/config');
+    console.log('fetchNetworkConfig: GET /api/appliances/0/config');
     return Promise.props({
       ssid: fetchPropP('@/network/ssid'),
       dnsServer: fetchPropP('@/network/dnsserver', ''),
@@ -471,8 +471,8 @@ const actions = {
   // Set a simple property to the specified value.
   setConfigProp(context, {property, value}) {
     assert.equal(typeof property, 'string');
-    console.log(`setConfigProp: POST /apid/config ${property}=${value}`);
-    return superagent.post('/apid/config'
+    console.log(`setConfigProp: POST /api/appliances/0/config ${property}=${value}`);
+    return superagent.post('/api/appliances/0/config'
     ).type('form'
     ).send({[property]: value}
     ).then(() => {
@@ -486,7 +486,7 @@ const actions = {
   enrollGuest(context, {type, phone, email}) {
     const args = {type, phone, email};
     console.log('enrollGuest', args);
-    return superagent.post('/apid/enroll_guest'
+    return superagent.post('/api/appliances/0/enroll_guest'
     ).type('form'
     ).send(args
     ).set('Accept', 'application/json');
@@ -518,11 +518,11 @@ const actions = {
     if (context.state.enableMock) {
       _.defaults(user_result, mockUsers);
     }
-    console.log('fetchUsers: GET /apid/users');
+    console.log('fetchUsers: GET /api/appliances/0/users');
     if (context.state.enableMock) {
       _.defaults(user_result, mockUsers);
     }
-    return superagent.get('/apid/users'
+    return superagent.get('/api/appliances/0/users'
     ).then((res) => {
       console.log('fetchUsers: Succeeded: ', res.body);
       assert(typeof res.body === 'object');
@@ -542,7 +542,7 @@ const actions = {
     assert(typeof newUser === 'boolean');
     const action = newUser ? 'creating' : 'updating';
     console.log(`store.js saveUsers: ${action} ${user.UUID}`, user);
-    const path = newUser ? '/apid/users/NEW' : `/apid/users/${user.UUID}`;
+    const path = newUser ? '/api/appliances/0/users/NEW' : `/api/appliances/0/users/${user.UUID}`;
     if (newUser) {
       // Backend is strict about UUID
       delete user.UUID;
@@ -569,16 +569,26 @@ const actions = {
     assert(typeof user === 'object');
     console.log(`store.js deleteUser: ${user.UUID}`, user);
 
-    return superagent.delete(`/apid/users/${user.UUID}`
+    return superagent.delete(`/api/appliances/0/users/${user.UUID}`
     ).then(() => {
       context.dispatch('fetchUsers');
+    });
+  },
+
+  checkLogin(context) {
+    return superagent.get('/auth/userid'
+    ).then(() => {
+      console.log(`check_login: Yes!`);
+      context.commit('setLoggedIn', true);
+    }).catch((err) => {
+      console.log(`checkLogin: Error ${err}`);
     });
   },
 
   login(context, {uid, userPassword}) {
     assert.equal(typeof uid, 'string');
     assert.equal(typeof userPassword, 'string');
-    return superagent.post('/apid/login'
+    return superagent.post('/auth/appliance/login'
     ).type('form'
     ).send({uid, userPassword}
     ).then(() => {
@@ -596,8 +606,8 @@ const actions = {
   },
 
   logout(context) {
-    console.log('logout: /apid/logout');
-    return superagent.get('/apid/logout'
+    console.log('logout: /auth/logout');
+    return superagent.get('/auth/logout'
     ).then(() => {
       console.log('logout: Completed');
       context.commit('setLoggedIn', false);

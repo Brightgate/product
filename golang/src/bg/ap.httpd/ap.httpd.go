@@ -16,12 +16,14 @@ package main
 import (
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -126,6 +128,41 @@ func handleError(event []byte) {
 		log.Printf("exiting due to renewed certificate")
 		os.Exit(0)
 	}
+}
+
+// StatsContent contains information for filling out the stats request
+// Policy: GET(*)
+type StatsContent struct {
+	URLPath string
+
+	NPings     string
+	NConfigs   string
+	NEntities  string
+	NResources string
+	NRequests  string
+
+	Host string
+}
+
+func statsHandler(w http.ResponseWriter, r *http.Request) {
+	lt := time.Now()
+
+	conf := StatsContent{
+		URLPath:    r.URL.Path,
+		NPings:     strconv.Itoa(pings),
+		NConfigs:   strconv.Itoa(configs),
+		NEntities:  strconv.Itoa(entities),
+		NResources: strconv.Itoa(resources),
+		NRequests:  strconv.Itoa(requests),
+		Host:       r.Host,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(conf); err != nil {
+		http.Error(w, "Internal server error", 501)
+		return
+	}
+
+	metrics.latencies.Observe(time.Since(lt).Seconds())
 }
 
 // hostInMap returns a Gorilla Mux matching function that checks to see if
@@ -345,6 +382,7 @@ func main() {
 	mainRouter := mux.NewRouter()
 
 	demoAPIRouter := makeDemoAPIRouter()
+	applianceAuthRouter := makeApplianceAuthRouter()
 
 	phishRouter := mainRouter.MatcherFunc(
 		func(r *http.Request, match *mux.RouteMatch) bool {
@@ -353,8 +391,11 @@ func main() {
 	phishRouter.HandleFunc("/", phishHandler)
 
 	mainRouter.HandleFunc("/", defaultHandler)
-	mainRouter.PathPrefix("/apid/").Handler(
-		http.StripPrefix("/apid", demoAPIRouter))
+	mainRouter.HandleFunc("/stats", statsHandler).Methods("GET")
+	mainRouter.PathPrefix("/api/").Handler(
+		http.StripPrefix("/api", demoAPIRouter))
+	mainRouter.PathPrefix("/auth/").Handler(
+		http.StripPrefix("/auth", applianceAuthRouter))
 	mainRouter.PathPrefix("/client-web/").Handler(
 		http.StripPrefix("/client-web/",
 			gziphandler.GzipHandler(

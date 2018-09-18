@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -17,14 +17,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"image/png"
-	"io"
 	"log"
 	"net/http"
 	"regexp"
 	"strconv"
 	"time"
-
-	"golang.org/x/crypto/bcrypt"
 
 	"bg/ap_common/apcfg"
 
@@ -37,165 +34,11 @@ import (
 	"github.com/ttacon/libphonenumber"
 )
 
-const (
-	cookieName = "com.brightgate.appliance"
-)
-
 // DAAlerts is a placeholder.
 // XXX What would an Alert be?  A reference ID to a full Alert?
 type daAlerts struct {
 	DbgRequest string
 	Alerts     []string
-}
-
-// POST login () -> (...)
-// POST uid, userPassword[, totppass]
-func demoLoginHandler(w http.ResponseWriter, r *http.Request) {
-	err := r.ParseForm()
-	if err != nil {
-		log.Printf("cannot parse form: %v\n", err)
-		http.Error(w, "bad request", 400)
-		return
-	}
-
-	// Must have user and password.
-	uids, present := r.Form["uid"]
-	if !present || len(uids) == 0 {
-		log.Printf("incomplete form, uid\n")
-		http.Error(w, "bad request", 400)
-		return
-	}
-
-	uid := uids[0]
-	if len(uids) > 1 {
-		log.Printf("multiple uids in form submission: %v\n", uids)
-		http.Error(w, "bad request", 400)
-	}
-
-	userPasswords, present := r.Form["userPassword"]
-	if !present || len(userPasswords) == 0 {
-		log.Printf("incomplete form, userPassword\n")
-		http.Error(w, "bad request", 400)
-		return
-	}
-
-	userPassword := userPasswords[0]
-	if len(userPasswords) > 1 {
-		log.Printf("multiple userPasswords in form submission: %v\n", userPasswords)
-		http.Error(w, "bad request", 400)
-	}
-
-	// Retrieve user record
-	ui, err := config.GetUser(uid)
-	if err != nil {
-		log.Printf("demo login for '%s' denied: %v\n", uid, err)
-		http.Error(w, "login denied", 401)
-		return
-	}
-
-	cmp := bcrypt.CompareHashAndPassword([]byte(ui.Password),
-		[]byte(userPassword))
-	if cmp != nil {
-		log.Printf("demo login for '%s' denied: password comparison\n", uid)
-		http.Error(w, "login denied", 401)
-		return
-	}
-
-	// XXX How would 2FA work?  If TOTP defined for this user, send
-	// back 2FA required?
-
-	filling := map[string]string{
-		"uid": uid,
-	}
-
-	if encoded, err := cutter.Encode(cookieName, filling); err == nil {
-		cookie := &http.Cookie{
-			Name:  cookieName,
-			Value: encoded,
-			// Default lifetime is 30 days.
-		}
-
-		if cookie.String() == "" {
-			log.Printf("cookie is empty and will be dropped: %v -> %v\n", cookie, cookie.String())
-		}
-
-		http.SetCookie(w, cookie)
-
-	} else {
-		log.Printf("cookie encoding failed: %v\n", err)
-	}
-
-	io.WriteString(w, "OK login\n")
-}
-
-// GET logout () -> (...)
-func demoLogoutHandler(w http.ResponseWriter, r *http.Request) {
-	var value map[string]string
-
-	// XXX Should only logout if logged in.
-	if cookie, err := r.Cookie(cookieName); err == nil {
-		value = make(map[string]string)
-		if err = cutter.Decode(cookieName, cookie.Value, &value); err == nil {
-			log.Printf("Logging out '%s'\n", value["uid"])
-		} else {
-			log.Printf("Could not decode cookie\n")
-			http.Error(w, "bad request", 400)
-			return
-		}
-	} else {
-		// No cookie defined.
-		log.Printf("Could not find cookie for logout\n")
-		http.Error(w, "bad request", 400)
-		return
-	}
-
-	filling := map[string]string{
-		"uid": "",
-	}
-
-	if encoded, err := cutter.Encode(cookieName, filling); err == nil {
-		cookie := &http.Cookie{
-			Name:   cookieName,
-			Value:  encoded,
-			MaxAge: -1,
-		}
-		http.SetCookie(w, cookie)
-	}
-
-	io.WriteString(w, "OK logout\n")
-}
-
-func getRequestUID(r *http.Request) string {
-	var value map[string]string
-
-	cookie, err := r.Cookie(cookieName)
-	if err != nil {
-		// No cookie.
-		return ""
-	}
-
-	value = make(map[string]string)
-	if err = cutter.Decode(cookieName, cookie.Value, &value); err != nil {
-		log.Printf("request contains undecryptable cookie value: %v\n", err)
-		return ""
-	}
-
-	// Lookup uid.
-	uid := value["uid"]
-
-	// Retrieve user node.
-	ui, err := config.GetUser(uid)
-	if err != nil {
-		log.Printf("demo login for '%s' denied: %v\n", uid, err)
-		return ""
-	}
-
-	if ui.Password != "" {
-		return ui.UID
-	}
-
-	// Accounts with empty passwords can't be logged into.
-	return ""
 }
 
 // GET alerts  () -> (...)
@@ -343,13 +186,6 @@ func buildDeviceResponse(hwaddr string, client *apcfg.ClientInfo,
 // GET devices on ring (ring) -> (...)
 // Policy: GET (*_USER, *_ADMIN)
 func demoDevicesByRingHandler(w http.ResponseWriter, r *http.Request) {
-	uid := getRequestUID(r)
-	log.Printf("/devices [uid '%s']\n", uid)
-	if uid == "" {
-		http.Error(w, "forbidden", 403)
-		return
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 
 	vars := mux.Vars(r)
@@ -418,15 +254,6 @@ func demoRingsHandler(w http.ResponseWriter, r *http.Request) {
 // GET devices () -> (...)
 // Policy: GET (*_USER, *_ADMIN)
 func demoDevicesHandler(w http.ResponseWriter, r *http.Request) {
-	uid := getRequestUID(r)
-
-	log.Printf("/devices [uid '%s']\n", uid)
-
-	if uid == "" {
-		http.Error(w, "forbidden", 403)
-		return
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 
 	clientsRaw := config.GetClients()
@@ -459,14 +286,6 @@ func demoDevicesHandler(w http.ResponseWriter, r *http.Request) {
 
 // GET requests moves all unenrolled clients to standard.
 func demoSupremeHandler(w http.ResponseWriter, r *http.Request) {
-
-	uid := getRequestUID(r)
-	log.Printf("/supreme [uid '%s']\n", uid)
-	if uid == "" {
-		http.Error(w, "forbidden", 403)
-		return
-	}
-
 	clientsRaw := config.GetClients()
 	count := 0
 
@@ -488,13 +307,6 @@ func demoSupremeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func demoConfigGetHandler(w http.ResponseWriter, r *http.Request) {
-	uid := getRequestUID(r)
-	log.Printf("/config GET [uid '%s']\n", uid)
-	if uid == "" {
-		http.Error(w, "forbidden", 403)
-		return
-	}
-
 	t := time.Now()
 
 	// Get setting from ap.configd
@@ -516,13 +328,6 @@ func demoConfigGetHandler(w http.ResponseWriter, r *http.Request) {
 
 func demoConfigPostHandler(w http.ResponseWriter, r *http.Request) {
 	var ops []apcfg.PropertyOp
-
-	uid := getRequestUID(r)
-	log.Printf("/config POST [uid '%s']\n", uid)
-	if uid == "" {
-		http.Error(w, "forbidden", 403)
-		return
-	}
 
 	// Send property updates to ap.configd
 	//
@@ -638,21 +443,14 @@ func demoUserByUIDOTPQRHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // demoUserByUUIDGetHandler returns a JSON-formatted user object for the
-// requested uuid, typically in response to a GET request to
+// requested user uuid, typically in response to a GET request to
 // "[demo_api_root]/users/{uuid}".
 //
 func demoUserByUUIDGetHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-
-	uid := getRequestUID(r)
-	log.Printf("/users/{uuid} [uid '%s']\n", uid)
-	if uid == "" {
-		http.Error(w, "forbidden", 403)
-		return
-	}
+	vars := mux.Vars(r)
 
 	// XXX what uuid if not present?
-	vars := mux.Vars(r)
 	ruuid, err := uuid.FromString(vars["uuid"])
 	if err != nil {
 		log.Printf("bad UUID %s: %v", vars["uuid"], err)
@@ -692,13 +490,6 @@ func demoUserByUUIDGetHandler(w http.ResponseWriter, r *http.Request) {
 func demoUserByUUIDPostHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
 	w.Header().Set("Content-Type", "application/json")
-
-	uid := getRequestUID(r)
-	log.Printf("/users/{uuid} [uid '%s']\n", uid)
-	if uid == "" {
-		http.Error(w, "forbidden", 403)
-		return
-	}
 	vars := mux.Vars(r)
 
 	var dau daUser
@@ -713,7 +504,7 @@ func demoUserByUUIDPostHandler(w http.ResponseWriter, r *http.Request) {
 	if vars["uuid"] == "NEW" {
 		ui, err = config.NewUserInfo(dau.UID)
 		if err != nil {
-			log.Printf("config.NewUserInfo(%v): %v:", uid, err)
+			log.Printf("config.NewUserInfo(%v): %v:", dau.UID, err)
 			http.Error(w, "invalid uid or user exists", 400)
 			return
 		}
@@ -795,13 +586,6 @@ func demoUserByUUIDPostHandler(w http.ResponseWriter, r *http.Request) {
 func demoUserByUUIDDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
 	w.Header().Set("Content-Type", "application/json")
-
-	uid := getRequestUID(r)
-	log.Printf("/users/{uuid} [uid '%s']\n", uid)
-	if uid == "" {
-		http.Error(w, "forbidden", 403)
-		return
-	}
 	vars := mux.Vars(r)
 
 	ruuid, err := uuid.FromString(vars["uuid"])
@@ -828,13 +612,6 @@ func demoUserByUUIDDeleteHandler(w http.ResponseWriter, r *http.Request) {
 // UUID, typically in response to a GET request to "[demo_api_root]/users".
 func demoUsersHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-
-	uid := getRequestUID(r)
-	log.Printf("/users [uid '%s']\n", uid)
-	if uid == "" {
-		http.Error(w, "forbidden", 403)
-		return
-	}
 
 	var users daUsers
 	users.Users = make(map[string]daUser)
@@ -969,13 +746,6 @@ func demoEnrollGuestHandler(w http.ResponseWriter, r *http.Request) {
 
 	t := time.Now()
 
-	uid := getRequestUID(r)
-	log.Printf("/enroll_guest [uid '%s']\n", uid)
-	if uid == "" {
-		http.Error(w, "forbidden", 403)
-		return
-	}
-
 	log.Printf("EAP Enroll Handler: phone='%v' email='%v'\n",
 		r.PostFormValue("phone"), r.PostFormValue("email"))
 
@@ -1074,57 +844,39 @@ func demoEnrollGuestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// StatsContent contains information for filling out the stats request
-// Policy: GET(*)
-type StatsContent struct {
-	URLPath string
-
-	NPings     string
-	NConfigs   string
-	NEntities  string
-	NResources string
-	NRequests  string
-
-	Host string
+func demoAppliancesHandler(w http.ResponseWriter, r *http.Request) {
+	var appliances = []string{"0"}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(appliances); err != nil {
+		panic(err)
+	}
 }
 
-func demoStatsHandler(w http.ResponseWriter, r *http.Request) {
-	lt := time.Now()
-
-	conf := StatsContent{
-		URLPath:    r.URL.Path,
-		NPings:     strconv.Itoa(pings),
-		NConfigs:   strconv.Itoa(configs),
-		NEntities:  strconv.Itoa(entities),
-		NResources: strconv.Itoa(resources),
-		NRequests:  strconv.Itoa(requests),
-		Host:       r.Host,
-	}
+func demoAppliancesUUIDHandler(w http.ResponseWriter, r *http.Request) {
+	var appliance = map[string]string{}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(conf); err != nil {
-		http.Error(w, "Internal server error", 501)
-		return
+	if err := json.NewEncoder(w).Encode(appliance); err != nil {
+		panic(err)
 	}
-
-	metrics.latencies.Observe(time.Since(lt).Seconds())
 }
 
 func makeDemoAPIRouter() *mux.Router {
 	router := mux.NewRouter()
-	router.HandleFunc("/alerts", demoAlertsHandler).Methods("GET")
-	router.HandleFunc("/config", demoConfigGetHandler).Methods("GET")
-	router.HandleFunc("/config", demoConfigPostHandler).Methods("POST")
-	router.HandleFunc("/devices/{ring}", demoDevicesByRingHandler).Methods("GET")
-	router.HandleFunc("/devices", demoDevicesHandler).Methods("GET")
-	router.HandleFunc("/enroll_guest", demoEnrollGuestHandler).Methods("POST")
-	router.HandleFunc("/login", demoLoginHandler).Methods("POST")
-	router.HandleFunc("/logout", demoLogoutHandler).Methods("GET")
-	router.HandleFunc("/rings", demoRingsHandler).Methods("GET")
-	router.HandleFunc("/supreme", demoSupremeHandler).Methods("GET")
-	router.HandleFunc("/users", demoUsersHandler).Methods("GET")
-	router.HandleFunc("/users/{uuid}", demoUserByUUIDGetHandler).Methods("GET")
-	router.HandleFunc("/users/{uuid}", demoUserByUUIDPostHandler).Methods("POST")
-	router.HandleFunc("/users/{uuid}", demoUserByUUIDDeleteHandler).Methods("DELETE")
-	router.HandleFunc("/stats", demoStatsHandler).Methods("GET")
+	// Per-appliance operations
+	router.HandleFunc("/appliances", demoAppliancesHandler).Methods("GET")
+	router.HandleFunc("/appliances/{auuid}", demoAppliancesUUIDHandler).Methods("GET")
+	router.HandleFunc("/appliances/{auuid}/alerts", demoAlertsHandler).Methods("GET")
+	router.HandleFunc("/appliances/{auuid}/config", demoConfigGetHandler).Methods("GET")
+	router.HandleFunc("/appliances/{auuid}/config", demoConfigPostHandler).Methods("POST")
+	router.HandleFunc("/appliances/{auuid}/devices/{ring}", demoDevicesByRingHandler).Methods("GET")
+	router.HandleFunc("/appliances/{auuid}/devices", demoDevicesHandler).Methods("GET")
+	router.HandleFunc("/appliances/{auuid}/enroll_guest", demoEnrollGuestHandler).Methods("POST")
+	router.HandleFunc("/appliances/{auuid}/rings", demoRingsHandler).Methods("GET")
+	router.HandleFunc("/appliances/{auuid}/supreme", demoSupremeHandler).Methods("GET")
+	router.HandleFunc("/appliances/{auuid}/users", demoUsersHandler).Methods("GET")
+	router.HandleFunc("/appliances/{auuid}/users/{uuid}", demoUserByUUIDGetHandler).Methods("GET")
+	router.HandleFunc("/appliances/{auuid}/users/{uuid}", demoUserByUUIDPostHandler).Methods("POST")
+	router.HandleFunc("/appliances/{auuid}/users/{uuid}", demoUserByUUIDDeleteHandler).Methods("DELETE")
+	router.Use(cookieAuthMiddleware)
 	return router
 }
