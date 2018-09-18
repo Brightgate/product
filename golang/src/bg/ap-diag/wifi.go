@@ -29,11 +29,70 @@
 // the 5GHz bands.
 //
 // By default, the output is a list of the interfaces and whether or not they
-// are valid.  With the -v flag, more information is provided: what 802.11 modes
-// are supported, the validity criteria, and a list of channels collated by
-// channel width and frequency band.  With the -q flag, nothing is output; the
-// exit code indicates validity.
+// are valid.  With the -v flag, more information is provided: the physical
+// location of the device, if known; the permanent MAC address, if known; what
+// 802.11 modes are supported; the validity criteria; and a list of channels
+// collated by channel width and frequency band.  With the -q flag, nothing is
+// output; the exit code indicates validity.
 package main
+
+// #include <stdlib.h>
+// #include <string.h>
+// #include <unistd.h>
+// #include <net/if.h>
+// #include <sys/ioctl.h>
+// #include <sys/socket.h>
+// #include <sys/types.h>
+// #include <linux/ethtool.h>
+// #include <linux/netdevice.h>
+// #include <linux/sockios.h>
+//
+// void *
+// get_perm_addr(_GoString_ name, int *addrlen) {
+//     struct ifreq ifr;
+//     struct ethtool_perm_addr *cmd = NULL;
+//     void *ret = NULL;
+//     int fd = -1;
+//
+//     // If we would overflow ifr.ifr_name, we won't get a well-defined answer.
+//     if (_GoStringLen(name) > sizeof(ifr.ifr_name)) {
+//         goto cleanup;
+//     }
+//     memset(&ifr, 0, sizeof(ifr));
+//     // ifr.ifr_name is not a null-terminated string
+//     strncpy(ifr.ifr_name, _GoStringPtr(name), sizeof(ifr.ifr_name));
+//     ifr.ifr_name[_GoStringLen(name)] = '\0';
+//
+//     if ((cmd = malloc(sizeof(*cmd) + MAX_ADDR_LEN)) == NULL) {
+//         goto cleanup;
+//     }
+//     cmd->cmd = ETHTOOL_GPERMADDR;
+//     cmd->size = MAX_ADDR_LEN;
+//     ifr.ifr_data = (void *)cmd;
+//
+//     if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+//         goto cleanup;
+//     }
+//     if (ioctl(fd, SIOCETHTOOL, &ifr) == -1) {
+//         goto cleanup;
+//     }
+//     if ((ret = malloc(cmd->size)) == NULL) {
+//         goto cleanup;
+//     }
+//     memcpy(ret, cmd->data, cmd->size);
+//     *addrlen = cmd->size;
+//
+// cleanup:
+//     if (cmd != NULL) {
+//         free(cmd);
+//     }
+//     if (fd != -1) {
+//         close(fd);
+//     }
+//
+//     return ret;
+// }
+import "C"
 
 import (
 	"flag"
@@ -71,10 +130,24 @@ func wifiUsage() {
 	wPrintf("the 5GHz bands.\n")
 	wPrintf("\n")
 	wPrintf("By default, the output is a list of the interfaces and whether or not they\n")
-	wPrintf("are valid.  With the -v flag, more information is provided: what 802.11 modes\n")
-	wPrintf("are supported, the validity criteria, and a list of channels collated by\n")
-	wPrintf("channel width and frequency band.  With the -q flag, nothing is output; the\n")
-	wPrintf("exit code indicates validity.\n")
+	wPrintf("are valid.  With the -v flag, more information is provided: the physical\n")
+	wPrintf("location of the device, if known; the permanent MAC address, if known; what\n")
+	wPrintf("802.11 modes are supported; the validity criteria; and a list of channels\n")
+	wPrintf("collated by channel width and frequency band.  With the -q flag, nothing is\n")
+	wPrintf("output; the exit code indicates validity.\n")
+}
+
+// getPermAddr returns the MAC address the kernel considers the "permanent" MAC
+// address for a given device.  This may or may not be the address the hardware
+// had programmed into it when it left the factory.
+func getPermAddr(devName string) net.HardwareAddr {
+	var addrLen C.int
+	addr := C.get_perm_addr(devName, &addrLen)
+	if addr == nil {
+		return net.HardwareAddr{}
+	}
+	defer C.free(addr)
+	return net.HardwareAddr(C.GoBytes(addr, addrLen))
 }
 
 func wifi(args []string) bool {
@@ -150,6 +223,7 @@ func wifi(args []string) bool {
 			fmt.Printf("device: %s is %s%s\n", iface.Name, valid, reasonStr)
 			if verbose > 1 {
 				fmt.Println("   Location:", plat.NicLocation(iface.Name))
+				fmt.Println("   Permanent MAC Address:", getPermAddr(iface.Name))
 				fmt.Print(cap)
 			}
 		}
