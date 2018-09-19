@@ -96,3 +96,133 @@ message GenerateURLResponse {
 service CloudStorage{
 	rpc GenerateURL(GenerateURLRequest) returns (GenerateURLResponse) {};
 }
+
+message CfgPropOps {
+	enum AccessLevel {
+		INTERNAL	= 0;
+		DEVELOPER	= 1;
+		SERVICE		= 2;
+		ADMIN		= 3;
+		USER		= 4;
+	}
+
+	message CfgPropOp {
+		enum Operation {
+			GET	= 0;
+			SET	= 1;
+			CREATE	= 2;
+			DELETE	= 3;
+		}
+		Operation operation			= 0x10;
+		string property				= 0x11;
+		string value				= 0x12;
+		google.protobuf.Timestamp expires	= 0x13;
+	}
+
+	google.protobuf.Timestamp time	= 0x01;
+	string cloud_uuid		= 0x02;
+	AccessLevel level		= 0x03;
+	string hashPath			= 0x04;
+	bytes hash			= 0x05;
+	repeated CfgPropOp ops		= 0x06;
+}
+
+message CfgPropResponse {
+	enum OpResponse {
+		QUEUED		= 0;
+		INPROGRESS	= 1;
+		OK		= 2;
+		FAILED		= 3;
+		UNSUPPORTED	= 4;
+		NOPROP		= 5;
+	}
+
+	google.protobuf.Timestamp time		= 0x01;
+	google.protobuf.Timestamp deadline	= 0x02;
+	int64 cmdID				= 0x03;
+	OpResponse response			= 0x04;
+	string errmsg				= 0x05;
+	string payload				= 0x06;
+}
+
+message CfgBackEndHello {
+	google.protobuf.Timestamp time	= 0x01;
+	string cloud_uuid		= 0x02;
+	// version of the config tree on the appliance
+	int32 version			= 0x03;
+
+	// hash value calculated at the tree root
+	bytes hash			= 0x04;
+}
+
+message CfgBackEndDownload {
+	google.protobuf.Timestamp time	= 0x01;
+	string cloud_uuid		= 0x02;
+
+	// max config version the appliance can support
+	int32 version			= 0x03;
+}
+
+message CfgBackEndUpdate {
+	message CfgUpdate {
+		enum Type {
+			UPDATE = 0;
+			DELETE = 1;
+		}
+
+		Type type				= 0x10;
+		string property				= 0x11;
+		string value				= 0x12;
+		google.protobuf.Timestamp expires	= 0x13;
+	}
+
+	google.protobuf.Timestamp time	= 0x01;
+	string cloud_uuid		= 0x02;
+	int32 version			= 0x03;
+	bytes hash			= 0x04;
+	repeated CfgUpdate updates	= 0x05;
+}
+
+message CfgBackEndFetchCmds {
+	google.protobuf.Timestamp time  = 0x01;
+	string cloud_uuid		= 0x02;
+	int32 version			= 0x03;
+	uint64 lastCmdID		= 0x04;
+	int32 maxCmds			= 0x05;
+}
+
+message CfgBackEndResponse {
+	enum OpResponse {
+		OK		= 0;
+		ERROR		= 1;
+		BADVERSION	= 2;
+	}
+
+	google.protobuf.Timestamp time	= 0x01;
+	OpResponse response		= 0x02;
+	bytes payload			= 0x03;
+	google.protobuf.Any cmds	= 0x04;
+}
+
+service ConfigBackEnd{
+	rpc Hello(CfgBackEndHello) returns (CfgBackEndResponse) {};
+	rpc Download(CfgBackEndDownload) returns (CfgBackEndResponse) {};
+	rpc Update(CfgBackEndUpdate) returns (CfgBackEndResponse) {};
+	rpc FetchCmds(CfgBackEndFetchCmds) returns (CfgBackEndResponse) {};
+}
+
+message CfgFrontEndPing {
+	google.protobuf.Timestamp time	= 0x01;
+}
+
+message CfgCmdID {
+	google.protobuf.Timestamp time	= 0x01;
+	int64 cmdID			= 0x02;
+}
+
+service ConfigFrontEnd{
+	rpc Ping(CfgFrontEndPing) returns (CfgPropResponse) {};
+	rpc Submit(CfgPropOps) returns (CfgPropResponse) {};
+	rpc Status(CfgCmdID) returns (CfgPropResponse) {};
+	rpc Cancel(CfgCmdID) returns (CfgPropResponse) {};
+}

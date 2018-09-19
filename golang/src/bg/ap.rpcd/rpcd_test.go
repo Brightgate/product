@@ -22,10 +22,10 @@ import (
 
 	"bg/ap_common/aptest"
 	"bg/ap_common/aputil"
-	"bg/ap_common/cloud/rpcclient"
 	"bg/base_msg"
 	"bg/cloud_rpc"
 	"bg/cloud_rpc/mocks"
+	"bg/common/grpcutils"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/mock"
@@ -168,7 +168,7 @@ func TestSendInventory(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	// Need to setup global
-	applianceCred = rpcclient.NewTestCredential()
+	applianceCred = grpcutils.NewTestCredential()
 	prometheusInit()
 	os.Exit(m.Run())
 }

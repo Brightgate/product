@@ -265,11 +265,14 @@ COMMON_GOPKGS = \
 	bg/common/archive \
 	bg/common/briefpg \
 	bg/common/cfgtree \
+	bg/common/grpcutils \
 	bg/common/urlfetch
 
 COMMON_SRCS = \
 	$(GOSRCBG)/common/archive/archive.go \
 	$(GOSRCBG)/common/cfgtree/cfgtree.go \
+	$(GOSRCBG)/common/grpcutils/client.go \
+	$(GOSRCBG)/common/grpcutils/cred.go \
 	$(GOSRCBG)/common/urlfetch/urlfetch.go
 
 APPCOMMON_GOPKGS = \
@@ -279,7 +282,6 @@ APPCOMMON_GOPKGS = \
 	bg/ap_common/aputil \
 	bg/ap_common/broker \
 	bg/ap_common/certificate \
-	bg/ap_common/cloud/rpcclient \
 	bg/ap_common/device \
 	bg/ap_common/mcp \
 	bg/ap_common/model \
@@ -333,7 +335,6 @@ APPBINARIES = \
 
 GO_AP_TESTABLES = \
 	bg/ap_common/certificate \
-	bg/ap_common/cloud/rpcclient \
 	bg/ap_common/network \
 	bg/ap.configd \
 	bg/ap-defaultpass\
@@ -341,6 +342,7 @@ GO_AP_TESTABLES = \
 	bg/ap.rpcd \
 	bg/ap.updated \
 	bg/ap.userauthd \
+	bg/common/grpcutils
 
 GO_CLOUD_TESTABLES = \
 	bg/cl_common/auth/m2mauth \
@@ -421,8 +423,6 @@ APP_COMMON_SRCS = \
 	$(GOSRCBG)/ap_common/apcfg/users.go \
 	$(GOSRCBG)/ap_common/aputil/aputil.go \
 	$(GOSRCBG)/ap_common/broker/broker.go \
-	$(GOSRCBG)/ap_common/cloud/rpcclient/rpcclient.go \
-	$(GOSRCBG)/ap_common/cloud/rpcclient/cred.go \
 	$(GOSRCBG)/ap_common/device/device.go \
 	$(GOSRCBG)/ap_common/mcp/mcp_client.go \
 	$(GOSRCBG)/ap_common/model/model.go \
@@ -472,6 +472,7 @@ CLOUDVAR=$(CLOUDBASE)/var
 CLOUDSPOOL=$(CLOUDVAR)/spool
 
 CLOUDDAEMON_GOPKGS = \
+	bg/cl.configd \
 	bg/cl.eventd \
 	bg/cl.httpd \
 	bg/cl.rpcd
@@ -485,6 +486,7 @@ CLOUDCOMMON_GOPKGS = \
 
 CLOUDCOMMAND_GOPKGS = \
 	bg/cl-aggregate \
+	bg/cl-configctl \
 	bg/cl-dtool
 
 CLOUD_GOPKGS = $(CLOUDCOMMON_GOPKGS) $(CLOUDDAEMON_GOPKGS) $(CLOUDCOMMAND_GOPKGS)
@@ -811,10 +813,20 @@ $(CLOUDBIN)/%: | $(CLOUDBIN)
 $(CLOUDBIN)/cl-aggregate: \
 	$(GOSRCBG)/cl-aggregate/aggregate.go \
 	$(CLOUD_COMMON_SRCS)
+$(CLOUDBIN)/cl-configctl: \
+	$(GOSRCBG)/cl-configctl/configctl.go \
+	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl-dtool: \
 	$(GOSRCBG)/cl-dtool/dtool.go \
 	$(GOSRCBG)/cl-dtool/export.go \
 	$(GOSRCBG)/cl-dtool/merge.go \
+	$(CLOUD_COMMON_SRCS)
+$(CLOUDBIN)/cl.configd: \
+	$(GOSRCBG)/cl.configd/backend.go \
+	$(GOSRCBG)/cl.configd/configd.go \
+	$(GOSRCBG)/cl.configd/file.go \
+	$(GOSRCBG)/cl.configd/frontend.go \
+	$(GOSRCBG)/cl.configd/grpc.go \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.eventd: \
 	$(GOSRCBG)/cl.eventd/eventd.go \

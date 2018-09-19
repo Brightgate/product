@@ -8,7 +8,7 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 
-package rpcclient
+package grpcutils
 
 import (
 	"crypto/tls"
@@ -20,8 +20,8 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-// NewRPCClient will create a new Cloud Appliance gRPC client.
-func NewRPCClient(serverAddr string, enableTLS bool, agent string) (*grpc.ClientConn, error) {
+// NewClientConn will create a new Cloud Appliance gRPC client.
+func NewClientConn(serverAddr string, enableTLS bool, agent string) (*grpc.ClientConn, error) {
 	var err error
 
 	var opts []grpc.DialOption

@@ -56,11 +56,11 @@ import (
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
-	"bg/ap_common/cloud/rpcclient"
 	"bg/ap_common/mcp"
 	"bg/base_def"
 	"bg/cloud_rpc"
 	"bg/common/archive"
+	"bg/common/grpcutils"
 	"bg/common/urlfetch"
 
 	"golang.org/x/net/context"
@@ -76,7 +76,7 @@ var (
 	config        *apcfg.APConfig
 	rpcConn       *grpc.ClientConn
 	storageClient cloud_rpc.CloudStorageClient
-	applianceCred *rpcclient.Credential
+	applianceCred *grpcutils.Credential
 
 	updatePeriod = flag.Duration("update", 10*time.Minute,
 		"frequency with which to check updates")
@@ -379,7 +379,7 @@ func doUpload(rpcClient cloud_rpc.CloudStorageClient) {
 
 func uploadInit() error {
 	var err error
-	applianceCred, err = rpcclient.SystemCredential()
+	applianceCred, err = grpcutils.SystemCredential()
 	if err != nil {
 		log.Printf("Failed to build credential: %s", err)
 		return err
@@ -388,7 +388,7 @@ func uploadInit() error {
 		log.Printf("Connecting insecurely due to '-enable-tls=false' flag (developers only!)")
 	}
 
-	rpcConn, err = rpcclient.NewRPCClient(*connectFlag, *enableTLSFlag, pname)
+	rpcConn, err = grpcutils.NewClientConn(*connectFlag, *enableTLSFlag, pname)
 	if err != nil {
 		log.Printf("Failed to make RPC client: %+v", err)
 		return err

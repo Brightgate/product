@@ -23,11 +23,11 @@ import (
 	"time"
 
 	"bg/ap_common/broker"
-	"bg/ap_common/cloud/rpcclient"
 	"bg/ap_common/mcp"
 	"bg/base_def"
 	"bg/base_msg"
 	"bg/cloud_rpc"
+	"bg/common/grpcutils"
 
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
@@ -53,7 +53,7 @@ var (
 	slogger       *zap.SugaredLogger
 	zapConfig     zap.Config
 	globalLevel   zap.AtomicLevel
-	applianceCred *rpcclient.Credential
+	applianceCred *grpcutils.Credential
 
 	metrics struct {
 		events prometheus.Counter
@@ -179,7 +179,7 @@ func daemonStart() {
 	b := broker.New(pname)
 	defer b.Fini()
 
-	applianceCred, err = rpcclient.SystemCredential()
+	applianceCred, err = grpcutils.SystemCredential()
 	if err != nil {
 		_ = mcpd.SetState(mcp.BROKEN)
 		slogger.Fatalf("Failed to build credential: %s", err)
@@ -196,7 +196,7 @@ func daemonStart() {
 		slogger.Fatalf("Failed to set ONLINE: %+v", err)
 	}
 
-	conn, err := rpcclient.NewRPCClient(*connectFlag, *enableTLSFlag, pname)
+	conn, err := grpcutils.NewClientConn(*connectFlag, *enableTLSFlag, pname)
 	if err != nil {
 		slogger.Fatalf("Failed to make RPC client: %+v", err)
 	}
@@ -237,7 +237,7 @@ func cmdStart() {
 	var wg sync.WaitGroup
 	ctx := context.Background()
 
-	applianceCred, err = rpcclient.SystemCredential()
+	applianceCred, err = grpcutils.SystemCredential()
 	if err != nil {
 		slogger.Fatalf("Failed to build credential: %s", err)
 	}
@@ -247,7 +247,7 @@ func cmdStart() {
 	}
 	slogger.Debugf("Connecting to '%s'", *connectFlag)
 
-	conn, err := rpcclient.NewRPCClient(*connectFlag, *enableTLSFlag, pname)
+	conn, err := grpcutils.NewClientConn(*connectFlag, *enableTLSFlag, pname)
 	if err != nil {
 		slogger.Fatalf("Failed to make RPC client: %+v", err)
 	}

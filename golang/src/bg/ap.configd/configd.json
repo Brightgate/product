@@ -49,9 +49,6 @@
         "Children": {
           "default_ring": {
             "Children": {
-              "open": {
-                "Value": "unenrolled"
-              },
               "wpa-eap": {
                 "Value": "guest"
               },

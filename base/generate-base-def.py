@@ -226,6 +226,7 @@ assignments = [
     [Statement.SIMPLE_STR, "CL_SVC_RPC", "svc1.b10e.net:4430"],
     [Statement.SIMPLE_PORT, "CLRPCD_PROMETHEUS_PORT", 3600],
     [Statement.SIMPLE_PORT, "CLRPCD_GRPC_PORT", 4430],
+    [Statement.SIMPLE_PORT, "CLCONFIGD_GRPC_PORT", 4431],
     [Statement.LIST, "CLRPCD_URL", "CL_SVC_URL", "+", "/rpc"],
     [Statement.SIMPLE_PORT, "CLEVENTD_PROMETHEUS_PORT", 3601],
 

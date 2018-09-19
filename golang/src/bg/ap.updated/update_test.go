@@ -24,8 +24,8 @@ import (
 	"time"
 
 	"bg/ap_common/aptest"
-	"bg/ap_common/cloud/rpcclient"
 	"bg/cloud_rpc"
+	"bg/common/grpcutils"
 
 	"google.golang.org/grpc"
 
@@ -162,6 +162,6 @@ func TestUpload(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	// Need to setup global
-	applianceCred = rpcclient.NewTestCredential()
+	applianceCred = grpcutils.NewTestCredential()
 	os.Exit(m.Run())
 }
