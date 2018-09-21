@@ -105,6 +105,24 @@
           </f7-button>
         </span>
       </f7-list-item>
+
+      <!-- this looks weak, and the right answer would be to use
+           f7's smart-select, but it's a beast to get right -->
+      <f7-list-item :class="Is_Logged_In ? '' : 'disabled'" item-input
+                    inline-label>
+        <f7-label>{{ $t('message.home.testing.switch_appliance') }}</f7-label>
+        <f7-input
+          :value="CurrentApplianceID"
+          type="select"
+          @change="onApplianceChange">
+          <option
+            v-for="appliance in ApplianceIDs"
+            :key="appliance"
+            :value="appliance">
+            {{ appliance === "0" ? "Local Appliance" : appliance }}
+          </option>
+        </f7-input>
+      </f7-list-item>
     </f7-list>
 
   </f7-page>
@@ -129,6 +147,8 @@ export default {
     // Map various $store elements as computed properties for use in the
     // template.
     ...vuex.mapGetters([
+      'ApplianceIDs',
+      'CurrentApplianceID',
       'Mock',
       'Is_Logged_In',
       'Fake_Login',
@@ -144,6 +164,7 @@ export default {
     toggleMock: function() {
       debug('toggleMock');
       this.$store.commit('toggleMock');
+      this.$store.dispatch('fetchApplianceIDs').catch(() => {});
       this.$store.dispatch('fetchDevices').catch(() => {});
     },
 
@@ -181,16 +202,25 @@ export default {
       return vulnerability.headline(vulnid);
     },
 
+    onApplianceChange: function(evt) {
+      debug('onApplianceChange', evt.target.value);
+      // Changing window.location.href causes the browser to reload.
+      // This is a hack while we work on restructuring the store to be
+      // multi-appliance aware.
+      const u = new URL(window.location.href);
+      u.searchParams.set('appliance', evt.target.value);
+      window.location.href = u.toString();
+    },
+
     onPageBeforeIn: function() {
       debug('pageBeforeIn');
-      if (this.$store.getters.Is_Logged_In) {
-        return this.$store.dispatch('fetchDevices').catch(() => {});
-      } else {
-        return this.$store.dispatch('checkLogin'
-        ).catch(() => {
-          this.$f7.loginScreen.open('#bgLoginScreen');
-        });
-      }
+      // We do these optimistically, letting them fail if not logged in.
+      this.$store.dispatch('fetchApplianceIDs').catch(() => {});
+      this.$store.dispatch('fetchDevices').catch(() => {});
+      return this.$store.dispatch('checkLogin'
+      ).catch(() => {
+        this.$f7.loginScreen.open('#bgLoginScreen');
+      });
     },
 
     onPageBeforeOut: function() {

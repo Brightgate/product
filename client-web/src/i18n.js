@@ -20,6 +20,7 @@ export default {
           accept_fail: 'There was an error accepting devices: <b>{reason}.</b>',
           enable_mock: 'Enable Mock',
           enable_fakelogin: 'Simulate being Logged In',
+          switch_appliance: 'Switch Appliance',
         },
         tools: {
           tools: 'Tools',
@@ -66,7 +67,8 @@ export default {
         devices_scanned: 'Vulnerability Scanned Devices',
         config: 'Configuration',
         config_dns_server: 'DNS Server',
-        config_default_ring: 'Default Ring',
+        config_default_ring_wpa_eap: 'Default Ring (WPA-EAP)',
+        config_default_ring_wpa_psk: 'Default Ring (WPA-PSK)',
       },
       compliance_report: {
         title: 'Brightgate - Compliance Report',
@@ -185,6 +187,7 @@ export default {
           accept_fail: 'Fehlermeldung: <b>{reason}.</b>',
           enable_mock: 'Testmodus',
           enable_fakelogin: 'Simulierte Anmeldung',
+          switch_appliance: 'Switch Appliance', // XXXI18N
         },
         tools: {
           tools: 'Werkzeuge',
@@ -231,7 +234,8 @@ export default {
         devices_scanned: 'Vulnerability Scanned Devices',
         config: 'Configuration',
         config_dns_server: 'DNS Server',
-        config_default_ring: 'Default Ring',
+        config_default_ring_wpa_eap: 'Default Ring (WPA-EAP)',
+        config_default_ring_wpa_psk: 'Default Ring (WPA-PSK)',
       },
       compliance_report: { // XXX I18N
         title: 'Brightgate - Compliance Report',

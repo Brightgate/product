@@ -32,8 +32,11 @@ const device_category_all = ['recent', 'phone', 'computer', 'printer', 'media', 
 const mockNetworkConfig = {
   ssid: 'mockSSID',
   dnsServer: '1.1.1.1:53',
-  defaultRing: 'standard',
+  defaultRingWPAEAP: 'guest',
+  defaultRingWPAPSK: 'unenrolled',
 };
+
+const mockAppliances = ['0'];
 
 const mockRings = [
   'core',
@@ -41,6 +44,9 @@ const mockRings = [
   'devices',
   'quarantine',
 ];
+
+const windowURLAppliance = window && window.location && window.location.href && new URL(window.location.href);
+const windowApplianceID = windowURLAppliance.searchParams.get('appliance') || '0';
 
 // Determines whether mock devices are enabled or disabled by default
 const enableMock = false;
@@ -67,6 +73,8 @@ const RETRY_DELAY = 1000;
 const state = {
   loggedIn: false,
   fakeLogin: false,
+  currentApplianceID: windowApplianceID,
+  applianceIDs: [],
   devices: cloneDeep(initDevices),
   alerts: initAlerts,
   rings: [],
@@ -76,6 +84,14 @@ const state = {
 };
 
 const mutations = {
+  setApplianceIDs(state, newIDs) {
+    state.applianceIDs = newIDs;
+    state.applianceIDs.push('Other Appliance');
+    if (state.applianceIDs.length === 1) {
+      state.currentApplianceID = state.applianceIDs[0];
+    }
+  },
+
   setDevices(state, newDevices) {
     state.devices = newDevices;
     state.alerts = makeAlerts(newDevices);
@@ -118,6 +134,14 @@ const getters = {
   },
 
   Fake_Login: (state) => {return state.fakeLogin;},
+
+  ApplianceIDs: (state) => {return state.applianceIDs;},
+
+  CurrentApplianceID: (state) => {return state.currentApplianceID;},
+
+  RealAppliance: (state) => {
+    return (state.applianceIDs.length === 1 && state.applianceIDs[0] === '0');
+  },
 
   Device_By_UniqID: (state) => (uniqid) => {
     return state.devices.by_uniqid[uniqid];
@@ -194,9 +218,10 @@ const getters = {
 };
 
 // Get a property's value
-function fetchPropP(property, default_value) {
-  debug(`fetchPropP(${property}, ${default_value})`);
-  return superagent.get('/api/appliances/0/config'
+function fetchPropP(context, property, default_value) {
+  const u = `/api/appliances/${context.state.currentApplianceID}/config`;
+  debug(`fetchPropP(${property}, ${default_value}) -> ${u}`);
+  return superagent.get(u
   ).query(property
   ).timeout(STD_TIMEOUT
   ).then((res) => {
@@ -213,15 +238,15 @@ function fetchPropP(property, default_value) {
 
 // Make up to maxcount attempts to see if property has changed to an
 // expected value.
-function checkPropChangeP(property, value, maxcount, count) {
+function checkPropChangeP(context, appliance, property, value, maxcount, count) {
   assert.equal(typeof property, 'string');
   assert.equal(typeof maxcount, 'number');
   count = count === undefined ? maxcount : count;
   assert.equal(typeof count, 'number');
-
+  const u = `/api/appliances/${context.state.currentApplianceID}/config`;
   const attempt_str = `#${(maxcount - count) + 1}`;
-  debug(`checkPropChangeP: waiting for ${property} to become ${value}, try ${attempt_str}`);
-  return superagent.get('/api/appliances/0/config'
+  debug(`checkPropChangeP: waiting for ${property} == ${value}, try ${attempt_str} ${u}`);
+  return superagent.get(u
   ).query(property
   ).timeout(STD_TIMEOUT
   ).then((res) => {
@@ -243,9 +268,10 @@ function checkPropChangeP(property, value, maxcount, count) {
 }
 
 // Make up to maxcount attempts to load the devices configuration object
-function devicesGetP() {
-  debug('devicesGetP: GET /api/appliances/0/devices');
-  return superagent.get('/api/appliances/0/devices'
+function devicesGetP(context) {
+  const u = `/api/appliances/${context.state.currentApplianceID}/devices`;
+  debug(`devicesGetP: GET ${u}`);
+  return superagent.get(u
   ).timeout(STD_TIMEOUT
   ).then((res) => {
     debug('devicesGetP: got response');
@@ -359,6 +385,25 @@ let fetchDevicesPromise = Promise.resolve();
 let fetchPeriodicTimeout = null;
 
 const actions = {
+  // Load the list of appliances from the server.
+  fetchApplianceIDs(context) {
+    debug('fetchApplianceIDs: GET /api/appliances');
+    return superagent.get('/api/appliances'
+    ).then((res) => {
+      debug('fetchApplianceIDs: Succeeded: ', res.body);
+      assert(typeof res.body === 'object');
+      context.commit('setApplianceIDs', res.body);
+    }).catch((err) => {
+      if (context.state.enableMock) {
+        debug('fetchApplianceIDs: Using mocked appliances');
+        context.commit('setApplianceIDs', mockAppliances);
+        return;
+      }
+      debug(`fetchAppliances: Error ${err}`);
+      throw err;
+    });
+  },
+
   // Load the list of devices from the server.  merge it with mock devices
   // defined locally (if using).
   fetchDevices(context) {
@@ -373,7 +418,7 @@ const actions = {
       debug(`Store: fetchDevices: enableMock = ${context.state.enableMock}`);
       all_devices = mockDevices;
     }
-    const p = retry(devicesGetP, {interval: RETRY_DELAY, max_tries: 10}
+    const p = retry(devicesGetP, {interval: RETRY_DELAY, max_tries: 10, args: context}
     ).then((res_json) => {
       const mapped_devices = res_json.Devices.map((dev) => {
         return computeDeviceProps({
@@ -441,8 +486,9 @@ const actions = {
 
   // Load the list of rings from the server.
   fetchRings(context) {
-    debug('fetchRings: GET /api/appliances/0/rings');
-    return superagent.get('/api/appliances/0/rings'
+    const u = `/api/appliances/${context.state.currentApplianceID}/rings`;
+    debug(`fetchRings: GET ${u}`);
+    return superagent.get(u
     ).then((res) => {
       debug('fetchRings: Succeeded: ', res.body);
       assert(typeof res.body === 'object');
@@ -458,13 +504,14 @@ const actions = {
     });
   },
 
-  // Load the list of rings from the server.
-  fetchNetworkConfig(context) {
-    debug('fetchNetworkConfig: GET /api/appliances/0/config');
+  // Load the various aspects of the network configuration from the server.
+  fetchNetworkConfig(context, appliance) {
+    debug(`fetchNetworkConfig`);
     return Promise.props({
-      ssid: fetchPropP('@/network/ssid'),
-      dnsServer: fetchPropP('@/network/dnsserver', ''),
-      defaultRing: fetchPropP('@/network/default_ring', ''),
+      ssid: fetchPropP(context, '@/network/ssid'),
+      dnsServer: fetchPropP(context, '@/network/dnsserver', ''),
+      defaultRingWPAEAP: fetchPropP(context, '@/network/default_ring/wpa-eap', ''),
+      defaultRingWPAPSK: fetchPropP(context, '@/network/default_ring/wpa-psk', ''),
     }).catch((err) => {
       if (context.state.enableMock) {
         debug('fetchNetworkConfig: Using mocked networkConfig');
@@ -481,8 +528,9 @@ const actions = {
   // Set a simple property to the specified value.
   setConfigProp(context, {property, value}) {
     assert.equal(typeof property, 'string');
-    debug(`setConfigProp: POST /api/appliances/0/config ${property}=${value}`);
-    return superagent.post('/api/appliances/0/config'
+    const u = `/api/appliances/${context.state.currentApplianceID}/config`;
+    debug(`setConfigProp: POST ${u} ${property}=${value}`);
+    return superagent.post(u
     ).type('form'
     ).send({[property]: value}
     ).then(() => {
@@ -495,8 +543,9 @@ const actions = {
 
   enrollGuest(context, {type, phone, email}) {
     const args = {type, phone, email};
-    debug('enrollGuest', args);
-    return superagent.post('/api/appliances/0/enroll_guest'
+    const u = `/api/appliances/${context.state.currentApplianceID}/enroll_guest`;
+    debug(`enrollGuest ${u}`, args);
+    return superagent.post(u
     ).type('form'
     ).send(args
     ).set('Accept', 'application/json');
@@ -515,7 +564,7 @@ const actions = {
       property: propname,
       value: newRing,
     }).then(() => {
-      return checkPropChangeP(propname, newRing, 10);
+      return checkPropChangeP(context, propname, newRing, 10);
     }).finally(() => {
       // let this run async?
       context.dispatch('fetchDevices');
@@ -529,11 +578,9 @@ const actions = {
       debug('fetchUsers: Adding mock users');
       defaults(user_result, mockUsers);
     }
-    debug('fetchUsers: GET /api/appliances/0/users');
-    if (context.state.enableMock) {
-      defaults(user_result, mockUsers);
-    }
-    return superagent.get('/api/appliances/0/users'
+    const u = `/api/appliances/${context.state.currentApplianceID}/users`;
+    debug(`fetchUsers: GET ${u}`);
+    return superagent.get(u
     ).then((res) => {
       debug('fetchUsers: Succeeded: ', res);
       if (res && res.body && res.body.Users) {
@@ -555,14 +602,14 @@ const actions = {
     assert(typeof user === 'object');
     assert(typeof newUser === 'boolean');
     const action = newUser ? 'creating' : 'updating';
-    debug(`store.js saveUsers: ${action} ${user.UUID}`, user);
-    const path = newUser ? '/api/appliances/0/users/NEW' : `/api/appliances/0/users/${user.UUID}`;
+    const u = `/api/appliances/${context.state.currentApplianceID}/users/${newUser ? 'NEW' : user.UUID}`;
+    debug(`store.js saveUsers: ${action} ${user.UUID} ${u}`, user);
     if (newUser) {
       // Backend is strict about UUID
       delete user.UUID;
     }
 
-    return superagent.post(path
+    return superagent.post(u
     ).type('json'
     ).send(user
     ).then((res) => {
@@ -581,9 +628,9 @@ const actions = {
 
   deleteUser(context, {user, newUser}) {
     assert(typeof user === 'object');
-    debug(`store.js deleteUser: ${user.UUID}`, user);
-
-    return superagent.delete(`/api/appliances/0/users/${user.UUID}`
+    const u = `/api/appliances/${context.state.currentApplianceID}/users/${user.UUID}`;
+    debug(`deleteUser: ${user.UUID} ${u}`, user);
+    return superagent.delete(u
     ).then(() => {
       context.dispatch('fetchUsers');
     });
@@ -595,7 +642,7 @@ const actions = {
       debug('checkLogin: logged in');
       context.commit('setLoggedIn', true);
     }).catch((err) => {
-      debug(`checkLogin: Error ${err}`);
+      debug('checkLogin: not logged in');
       throw err;
     });
   },
@@ -603,6 +650,7 @@ const actions = {
   login(context, {uid, userPassword}) {
     assert.equal(typeof uid, 'string');
     assert.equal(typeof userPassword, 'string');
+    debug('login: /auth/appliance/login');
     return superagent.post('/auth/appliance/login'
     ).type('form'
     ).send({uid, userPassword}
@@ -635,7 +683,7 @@ const actions = {
 };
 
 export default new Vuex.Store({
-  strict: true, // for debugging only, expensive, see manual
+  strict: true, // XXX: for debugging only, expensive, see manual
   actions,
   state,
   getters,

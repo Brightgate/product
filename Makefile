@@ -465,6 +465,7 @@ CLOUDBIN=$(CLOUDBASE)/bin
 CLOUDETC=$(CLOUDBASE)/etc
 CLOUDLIB=$(CLOUDBASE)/lib
 CLOUDLIBCLHTTPDWEB=$(CLOUDLIB)/cl.httpd-web
+CLOUDLIBCLHTTPDWEBCLIENTWEB=$(CLOUDLIBCLHTTPDWEB)/client-web
 CLOUDETCSCHEMA=$(CLOUDETC)/schema
 CLOUDETCSCHEMAAPPLIANCEDB=$(CLOUDETCSCHEMA)/appliancedb
 CLOUDROOTLIB=$(CLOUDROOT)/lib
@@ -512,6 +513,7 @@ CLOUDDIRS = \
 	$(CLOUDETC) \
 	$(CLOUDLIB) \
 	$(CLOUDLIBCLHTTPDWEB) \
+	$(CLOUDLIBCLHTTPDWEBCLIENTWEB) \
 	$(CLOUDETCSCHEMA) \
 	$(CLOUDETCSCHEMAAPPLIANCEDB) \
 	$(CLOUDROOTLIB) \
@@ -915,11 +917,12 @@ NPM_QUIET = --loglevel warn --no-progress
 	(cd client-web && $(NPM) install $(NPM_QUIET))
 	touch $@
 
-client-web: .make-npm-installed FRC | $(HTTPD_CLIENTWEB_DIR)
-	$(RM) -fr $(HTTPD_CLIENTWEB_DIR)/*
+client-web: .make-npm-installed FRC | $(HTTPD_CLIENTWEB_DIR) $(CLOUDLIBCLHTTPDWEBCLIENTWEB)
+	$(RM) -fr $(HTTPD_CLIENTWEB_DIR)/* $(CLOUDLIBCLHTTPDWEBCLIENTWEB)/*
 	(cd client-web && $(NPM) run lint)
 	(cd client-web && $(NPM) run build)
 	tar -C client-web/dist -c -f - . | tar -C $(HTTPD_CLIENTWEB_DIR) -xvf -
+	tar -C client-web/dist -c -f - . | tar -C $(CLOUDLIBCLHTTPDWEBCLIENTWEB) -xvf -
 
 FRC:
 

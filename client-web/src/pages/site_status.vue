@@ -40,8 +40,11 @@
         <f7-list-item :title="$t('message.site_status.config_dns_server')">
           {{ Network_Config.dnsServer }}
         </f7-list-item>
-        <f7-list-item :title="$t('message.site_status.config_default_ring')">
-          {{ Network_Config.defaultRing }}
+        <f7-list-item :title="$t('message.site_status.config_default_ring_wpa_psk')">
+          {{ Network_Config.defaultRingWPAPSK }}
+        </f7-list-item>
+        <f7-list-item :title="$t('message.site_status.config_default_ring_wpa_eap')">
+          {{ Network_Config.defaultRingWPAEAP }}
         </f7-list-item>
       </f7-list-group>
     </f7-list>

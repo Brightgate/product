@@ -192,6 +192,9 @@ func mkRouterHTTPS(sessionStore sessions.Store) *echo.Echo {
 	r.Static("/.well-known", wellKnownPath)
 	r.Static("/app", appPath)
 	log.Printf("Serving %s as /app/", appPath)
+	cwp := filepath.Join(appPath, "client-web")
+	r.Static("/client-web", cwp)
+	log.Printf("Serving %s as /client-web/", cwp)
 	r.GET("/", func(c echo.Context) error {
 		html := fmt.Sprintf(htmlFormat, `
 <p><a href="/auth/auth0">Login with Auth0</a></p>
