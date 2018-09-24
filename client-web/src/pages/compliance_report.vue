@@ -115,7 +115,7 @@
 <script>
 import Vuex from 'vuex';
 import Promise from 'bluebird';
-import _ from 'lodash';
+import {sortBy} from 'lodash-es';
 import vulnerability from '../vulnerability';
 import BGRingSummary from '../components/ring_summary.vue';
 
@@ -158,8 +158,8 @@ export default {
       return this.Alert_Count(this.Alert_Active(this.All_Alerts));
     },
     SortedRings: function() {
-      return _.sortBy(this.Rings, (r) => {
-        return -1 * _.size(this.Devices_By_Ring(r));
+      return sortBy(this.Rings, (r) => {
+        return -1 * this.Devices_By_Ring(r).length;
       });
     },
   },

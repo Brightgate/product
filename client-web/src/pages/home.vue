@@ -113,8 +113,10 @@
 <script>
 import superagent from 'superagent-bluebird-promise';
 import vuex from 'vuex';
+import Debug from 'debug';
 
 import vulnerability from '../vulnerability';
+const debug = Debug('page:home');
 
 export default {
   data: function() {
@@ -140,7 +142,7 @@ export default {
 
   methods: {
     toggleMock: function() {
-      console.log('toggleMock');
+      debug('toggleMock');
       this.$store.commit('toggleMock');
       this.$store.dispatch('fetchDevices').catch(() => {});
     },
@@ -180,7 +182,7 @@ export default {
     },
 
     onPageBeforeIn: function() {
-      console.log('home.vue pageBeforeIn');
+      debug('pageBeforeIn');
       if (this.$store.getters.Is_Logged_In) {
         return this.$store.dispatch('fetchDevices').catch(() => {});
       } else {
@@ -192,7 +194,7 @@ export default {
     },
 
     onPageBeforeOut: function() {
-      console.log('home.vue pageBeforeOut');
+      debug('pageBeforeOut');
       if (this.acceptToast) {
         this.acceptToast.close();
       }

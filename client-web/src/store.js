@@ -9,18 +9,20 @@
  */
 import assert from 'assert';
 
-import _ from 'lodash';
+import {cloneDeep, defaults, filter, keyBy, pickBy} from 'lodash-es';
 import Promise from 'bluebird';
 import superagent from 'superagent-bluebird-promise';
 import retry from 'bluebird-retry';
 import Vue from 'vue';
 import Vuex from 'vuex';
+import Debug from 'debug';
 
 import mockDevicesRef from './mock_devices';
 import mockUsers from './mock_users';
 
+const debug = Debug('store');
 // Run mockDevices through our property deriver
-const mockDevices = _.map(mockDevicesRef, computeDeviceProps);
+const mockDevices = mockDevicesRef.map(computeDeviceProps);
 
 Vue.use(Vuex);
 
@@ -48,8 +50,8 @@ let initNetworkConfig = {};
 let initDevlist = [];
 if (enableMock) {
   initDevlist = mockDevices;
-  initUsers = _.cloneDeep(mockUsers);
-  initNetworkConfig = _.cloneDeep(mockNetworkConfig);
+  initUsers = cloneDeep(mockUsers);
+  initNetworkConfig = cloneDeep(mockNetworkConfig);
 }
 
 const initDevices = organizeDevices(initDevlist);
@@ -65,11 +67,11 @@ const RETRY_DELAY = 1000;
 const state = {
   loggedIn: false,
   fakeLogin: false,
-  devices: _.cloneDeep(initDevices),
+  devices: cloneDeep(initDevices),
   alerts: initAlerts,
   rings: [],
-  users: _.cloneDeep(initUsers),
-  networkConfig: _.cloneDeep(initNetworkConfig),
+  users: cloneDeep(initUsers),
+  networkConfig: cloneDeep(initNetworkConfig),
   enableMock: enableMock,
 };
 
@@ -97,7 +99,7 @@ const mutations = {
   },
 
   setLoggedIn(state, newLoggedIn) {
-    console.log(`setLoggedIn: now ${newLoggedIn}`);
+    debug(`setLoggedIn: now ${newLoggedIn}`);
     state.loggedIn = newLoggedIn;
   },
 
@@ -125,7 +127,8 @@ const getters = {
     return state.devices.all_devices;
   },
   Device_Count: (state) => (devices) => {
-    return _.size(devices);
+    assert(Array.isArray(devices), 'expected devices to be array');
+    return devices.length;
   },
 
   // Return an array of devices for the category, sorted by network_name.
@@ -141,41 +144,47 @@ const getters = {
   },
 
   Device_Active: (state) => (devices) => {
-    return _.filter(devices, {active: true});
+    return filter(devices, {active: true});
   },
 
   Device_VulnScanned: (state) => (devices) => {
-    return _.filter(devices, 'scans.vulnerability.finish');
+    return filter(devices, 'scans.vulnerability.finish');
   },
 
   Device_Vulnerable: (state) => (devices) => {
-    return _.filter(devices, 'activeVulnCount');
+    return filter(devices, 'activeVulnCount');
   },
 
   Device_NotVulnerable: (state) => (devices) => {
-    return _.filter(devices, {activeVulnCount: 0});
+    return filter(devices, {activeVulnCount: 0});
   },
 
   All_Alerts: (state) => {return state.alerts;},
 
-  Alert_Count: (state) => (alerts) => {return _.size(alerts);},
+  Alert_Count: (state) => (alerts) => {
+    assert(typeof(alerts) === 'object' && !Array.isArray(alerts), 'expected alerts to be object');
+    return Object.keys(alerts).length;
+  },
 
   Alert_Active: (state) => (alerts) => {
-    return _.pickBy(alerts, {vulninfo: {active: true}});
+    return pickBy(alerts, {vulninfo: {active: true}});
   },
 
   Alert_Inactive: (state) => (alerts) => {
-    return _.pickBy(alerts, {vulninfo: {active: false}});
+    return pickBy(alerts, {vulninfo: {active: false}});
   },
 
   Alert_By_Ring: (state) => (ring, alerts) => {
-    return _.pickBy(alerts, {device: {ring: ring}});
+    return pickBy(alerts, {device: {ring: ring}});
   },
 
   Rings: (state) => {return state.rings;},
 
   All_Users: (state) => {return state.users;},
-  User_Count: (state) => (users) => {return _.size(users);},
+  User_Count: (state) => (users) => {
+    assert(typeof(users) === 'object' && !Array.isArray(users), 'expected users to be object');
+    return Object.keys(users).length;
+  },
 
   User_By_UUID: (state) => (uuid) => {return state.users[uuid];},
 
@@ -186,16 +195,16 @@ const getters = {
 
 // Get a property's value
 function fetchPropP(property, default_value) {
-  console.log(`fetchPropP(${property}, ${default_value})`);
+  debug(`fetchPropP(${property}, ${default_value})`);
   return superagent.get('/api/appliances/0/config'
   ).query(property
   ).timeout(STD_TIMEOUT
   ).then((res) => {
-    console.log(`fetchPropP(${property}): returning ${res.body}`);
+    debug(`fetchPropP(${property}): returning ${res.body}`);
     return res.body;
   }).catch((err) => {
     if (default_value !== undefined) {
-      console.log(`fetchPropP(${property}): defaulting`);
+      debug(`fetchPropP(${property}): defaulting`);
       return Promise.resolve(default_value);
     }
     throw err;
@@ -211,7 +220,7 @@ function checkPropChangeP(property, value, maxcount, count) {
   assert.equal(typeof count, 'number');
 
   const attempt_str = `#${(maxcount - count) + 1}`;
-  console.log(`checkPropChangeP: waiting for ${property} to become ${value}, try ${attempt_str}`);
+  debug(`checkPropChangeP: waiting for ${property} to become ${value}, try ${attempt_str}`);
   return superagent.get('/api/appliances/0/config'
   ).query(property
   ).timeout(STD_TIMEOUT
@@ -219,13 +228,13 @@ function checkPropChangeP(property, value, maxcount, count) {
     if (res.body !== value) {
       throw new Error(`Tried ${maxcount} times but did not see property change`);
     }
-    console.log(`checkPropChangeP: I saw ${property} -> ${value}`);
+    debug(`checkPropChangeP: I saw ${property} -> ${value}`);
     return value;
   }).catch((err) => {
     if (count === 0) {
       throw new Error(`Couldn't see property change after ${maxcount} tries.  Last error was: ${err}`);
     }
-    console.log(`checkPropChangeP: failed ${attempt_str}, will retry.  ${err}`);
+    debug(`checkPropChangeP: failed ${attempt_str}, will retry.  ${err}`);
     return Promise.delay(RETRY_DELAY
     ).then(() => {
       return checkPropChangeP(property, value, maxcount, count - 1);
@@ -235,11 +244,11 @@ function checkPropChangeP(property, value, maxcount, count) {
 
 // Make up to maxcount attempts to load the devices configuration object
 function devicesGetP() {
-  console.log('devicesGetP: GET /api/appliances/0/devices');
+  debug('devicesGetP: GET /api/appliances/0/devices');
   return superagent.get('/api/appliances/0/devices'
   ).timeout(STD_TIMEOUT
   ).then((res) => {
-    console.log('devicesGetP: got response');
+    debug('devicesGetP: got response');
     if (res.body === null ||
         (typeof res.body !== 'object') ||
         !('Devices' in res.body)) {
@@ -251,7 +260,7 @@ function devicesGetP() {
 }
 
 function organizeDevices(all_devices) {
-  assert(_.isArray(all_devices));
+  assert(Array.isArray(all_devices));
   const devices = {
     all_devices: all_devices,
     by_uniqid: {},
@@ -260,7 +269,7 @@ function organizeDevices(all_devices) {
   };
 
   // First, organize by unique id.
-  devices.by_uniqid = _.keyBy(devices.all_devices, 'uniqid');
+  devices.by_uniqid = keyBy(devices.all_devices, 'uniqid');
 
   // Next, Reorganize the data into:
   // { 'phone': [list of phones...], 'computer': [...] ... }
@@ -271,14 +280,14 @@ function organizeDevices(all_devices) {
     devices.by_category[c] = [];
   }
 
-  _.reduce(devices.all_devices, (result, value) => {
+  devices.all_devices.reduce((result, value) => {
     assert(value.category in devices.by_category, `category ${value.category} is missing`);
     result[value.category].push(value);
     return result;
   }, devices.by_category);
 
   // Index by ring
-  _.reduce(devices.all_devices, (result, value) => {
+  devices.all_devices.reduce((result, value) => {
     if (result[value.ring] === undefined) {
       result[value.ring] = [];
     }
@@ -287,11 +296,12 @@ function organizeDevices(all_devices) {
   }, devices.by_ring);
 
   // Tabulate vulnerability counts for each device
-  _.forEach(devices.all_devices, (device) => {
-    device.activeVulnCount = _.size(_.pickBy(device.vulnerabilities, {active: true}));
+  devices.all_devices.forEach((device) => {
+    const actives = pickBy(device.vulnerabilities, {active: true});
+    device.activeVulnCount = Object.keys(actives).length;
   });
 
-  console.log(devices);
+  debug(devices);
   return devices;
 }
 
@@ -300,15 +310,15 @@ function organizeDevices(all_devices) {
 function makeAlerts(devices) {
   const alerts = [];
 
-  _.forEach(devices.by_uniqid, (device, uniqid) => {
-    _.forEach(device.vulnerabilities, (vulninfo, vulnid) => {
+  for (const [, device] of Object.entries(devices.by_uniqid)) {
+    for (const [vulnid, vulninfo] of Object.entries(device.vulnerabilities)) {
       alerts.push({
         'device': device,
         'vulnid': vulnid,
         'vulninfo': vulninfo,
       });
-    });
-  });
+    }
+  }
   return alerts;
 }
 
@@ -352,20 +362,20 @@ const actions = {
   // Load the list of devices from the server.  merge it with mock devices
   // defined locally (if using).
   fetchDevices(context) {
-    console.log('Store: fetchDevices');
+    debug('Store: fetchDevices');
     // Join callers so that only one fetch is ongoing
     if (fetchDevicesPromise.isPending()) {
-      console.log('Store: fetchDevices (pending)');
+      debug('Store: fetchDevices (pending)');
       return fetchDevicesPromise;
     }
     let all_devices = [];
     if (context.state.enableMock) {
-      console.log(`Store: fetchDevices: enableMock = ${context.state.enableMock}`);
+      debug(`Store: fetchDevices: enableMock = ${context.state.enableMock}`);
       all_devices = mockDevices;
     }
     const p = retry(devicesGetP, {interval: RETRY_DELAY, max_tries: 10}
     ).then((res_json) => {
-      const mapped_devices = _.map(res_json.Devices, (dev) => {
+      const mapped_devices = res_json.Devices.map((dev) => {
         return computeDeviceProps({
           manufacturer: dev.Manufacturer,
           model: dev.Model,
@@ -391,7 +401,7 @@ const actions = {
     }).finally(() => {
       const devices = organizeDevices(all_devices);
       context.commit('setDevices', devices);
-      console.log('Store: fetchDevices finished');
+      debug('Store: fetchDevices finished');
     });
     // make sure promise is a bluebird promise, so we can call isPending
     fetchDevicesPromise = Promise.resolve(p);
@@ -402,21 +412,21 @@ const actions = {
   fetchPeriodic(context) {
     // if not logged in, just come back later
     if (!context.getters.Is_Logged_In) {
-      console.log('fetchPeriodic: not logged in, later');
+      debug('fetchPeriodic: not logged in, later');
       fetchPeriodicTimeout = setTimeout(() => {
         context.dispatch('fetchPeriodic');
       }, 10000);
       return;
     }
 
-    console.log('fetchPeriodic: dispatching fetchDevices');
+    debug('fetchPeriodic: dispatching fetchDevices');
     context.dispatch('fetchDevices'
     ).then(() => {
       fetchPeriodicTimeout = setTimeout(() => {
         context.dispatch('fetchPeriodic');
       }, 10000);
     }, () => {
-      console.log('fetchPeriodic: failed, back in 30');
+      debug('fetchPeriodic: failed, back in 30');
       fetchPeriodicTimeout = setTimeout(() => {
         context.dispatch('fetchPeriodic');
       }, 30000);
@@ -431,36 +441,36 @@ const actions = {
 
   // Load the list of rings from the server.
   fetchRings(context) {
-    console.log('fetchRings: GET /api/appliances/0/rings');
+    debug('fetchRings: GET /api/appliances/0/rings');
     return superagent.get('/api/appliances/0/rings'
     ).then((res) => {
-      console.log('fetchRings: Succeeded: ', res.body);
+      debug('fetchRings: Succeeded: ', res.body);
       assert(typeof res.body === 'object');
       context.commit('setRings', res.body);
     }).catch((err) => {
       if (context.state.enableMock) {
-        console.log('fetchRings: Using mocked rings');
+        debug('fetchRings: Using mocked rings');
         context.commit('setRings', mockRings);
         return;
       }
-      console.log(`fetchRings: Error ${err}`);
+      debug(`fetchRings: Error ${err}`);
       throw err;
     });
   },
 
   // Load the list of rings from the server.
   fetchNetworkConfig(context) {
-    console.log('fetchNetworkConfig: GET /api/appliances/0/config');
+    debug('fetchNetworkConfig: GET /api/appliances/0/config');
     return Promise.props({
       ssid: fetchPropP('@/network/ssid'),
       dnsServer: fetchPropP('@/network/dnsserver', ''),
       defaultRing: fetchPropP('@/network/default_ring', ''),
     }).catch((err) => {
       if (context.state.enableMock) {
-        console.log('fetchNetworkConfig: Using mocked networkConfig');
+        debug('fetchNetworkConfig: Using mocked networkConfig');
         return mockNetworkConfig;
       } else {
-        console.log(`fetchNetworkConfig: Error ${err}`);
+        debug(`fetchNetworkConfig: Error ${err}`);
         throw err;
       }
     }).then((netConfig) => {
@@ -471,21 +481,21 @@ const actions = {
   // Set a simple property to the specified value.
   setConfigProp(context, {property, value}) {
     assert.equal(typeof property, 'string');
-    console.log(`setConfigProp: POST /api/appliances/0/config ${property}=${value}`);
+    debug(`setConfigProp: POST /api/appliances/0/config ${property}=${value}`);
     return superagent.post('/api/appliances/0/config'
     ).type('form'
     ).send({[property]: value}
     ).then(() => {
-      console.log(`setConfigProp: finished setting ${property} = ${value}.`);
+      debug(`setConfigProp: finished setting ${property} = ${value}.`);
     }).catch((err) => {
-      console.log(`setConfigProp: Error ${err}`);
+      debug(`setConfigProp: Error ${err}`);
       throw err;
     });
   },
 
   enrollGuest(context, {type, phone, email}) {
     const args = {type, phone, email};
-    console.log('enrollGuest', args);
+    debug('enrollGuest', args);
     return superagent.post('/api/appliances/0/enroll_guest'
     ).type('form'
     ).send(args
@@ -499,7 +509,7 @@ const actions = {
   changeRing(context, {deviceUniqID, newRing}) {
     assert.equal(typeof deviceUniqID, 'string');
     assert.equal(typeof newRing, 'string');
-    console.log(`changeRing: ${deviceUniqID} -> ${newRing}`);
+    debug(`changeRing: ${deviceUniqID} -> ${newRing}`);
     const propname = `@/clients/${deviceUniqID}/ring`;
     return context.dispatch('setConfigProp', {
       property: propname,
@@ -516,22 +526,26 @@ const actions = {
   fetchUsers(context) {
     const user_result = {};
     if (context.state.enableMock) {
-      _.defaults(user_result, mockUsers);
+      debug('fetchUsers: Adding mock users');
+      defaults(user_result, mockUsers);
     }
-    console.log('fetchUsers: GET /api/appliances/0/users');
+    debug('fetchUsers: GET /api/appliances/0/users');
     if (context.state.enableMock) {
-      _.defaults(user_result, mockUsers);
+      defaults(user_result, mockUsers);
     }
     return superagent.get('/api/appliances/0/users'
     ).then((res) => {
-      console.log('fetchUsers: Succeeded: ', res.body);
-      assert(typeof res.body === 'object');
-      assert(typeof res.body.Users === 'object');
-      _.defaults(user_result, res.body.Users);
+      debug('fetchUsers: Succeeded: ', res);
+      if (res && res.body && res.body.Users) {
+        assert(typeof res.body.Users === 'object');
+        defaults(user_result, res.body.Users);
+      } else {
+        debug('fetchUsers: res.body had unexpected contents');
+      }
     }).finally(() => {
       context.commit('setUsers', user_result);
     }).catch((err) => {
-      console.log(`fetchUsers: Error ${err}`);
+      debug(`fetchUsers: Error ${err}`);
       throw err;
     });
   },
@@ -541,7 +555,7 @@ const actions = {
     assert(typeof user === 'object');
     assert(typeof newUser === 'boolean');
     const action = newUser ? 'creating' : 'updating';
-    console.log(`store.js saveUsers: ${action} ${user.UUID}`, user);
+    debug(`store.js saveUsers: ${action} ${user.UUID}`, user);
     const path = newUser ? '/api/appliances/0/users/NEW' : `/api/appliances/0/users/${user.UUID}`;
     if (newUser) {
       // Backend is strict about UUID
@@ -552,11 +566,11 @@ const actions = {
     ).type('json'
     ).send(user
     ).then((res) => {
-      console.log('saveUser: Succeeded: ', res.body);
+      debug('saveUser: Succeeded: ', res.body);
       assert(typeof res.body === 'object');
       context.commit('updateUser', res.body);
     }).catch((err) => {
-      console.log('err is', err);
+      debug('err is', err);
       if (err.res && err.res.text) {
         throw new Error(`Failed to save user: ${err.res.text}`);
       } else {
@@ -567,7 +581,7 @@ const actions = {
 
   deleteUser(context, {user, newUser}) {
     assert(typeof user === 'object');
-    console.log(`store.js deleteUser: ${user.UUID}`, user);
+    debug(`store.js deleteUser: ${user.UUID}`, user);
 
     return superagent.delete(`/api/appliances/0/users/${user.UUID}`
     ).then(() => {
@@ -578,10 +592,11 @@ const actions = {
   checkLogin(context) {
     return superagent.get('/auth/userid'
     ).then(() => {
-      console.log(`check_login: Yes!`);
+      debug('checkLogin: logged in');
       context.commit('setLoggedIn', true);
     }).catch((err) => {
-      console.log(`checkLogin: Error ${err}`);
+      debug(`checkLogin: Error ${err}`);
+      throw err;
     });
   },
 
@@ -592,7 +607,7 @@ const actions = {
     ).type('form'
     ).send({uid, userPassword}
     ).then(() => {
-      console.log(`login: Logged in as ${uid}.`);
+      debug(`login: Logged in as ${uid}.`);
       context.commit('setLoggedIn', true);
       // Let these run async
       context.dispatch('fetchDevices');
@@ -600,20 +615,20 @@ const actions = {
       context.dispatch('fetchUsers');
       context.dispatch('fetchPeriodic');
     }).catch((err) => {
-      console.log(`login: Error ${err}`);
+      debug(`login: Error ${err}`);
       throw err;
     });
   },
 
   logout(context) {
-    console.log('logout: /auth/logout');
+    debug('logout: /auth/logout');
     return superagent.get('/auth/logout'
     ).then(() => {
-      console.log('logout: Completed');
+      debug('logout: Completed');
       context.commit('setLoggedIn', false);
       context.dispatch('fetchPeriodicStop');
     }).catch((err) => {
-      console.log(`logout: Error ${err}`);
+      debug(`logout: Error ${err}`);
       throw err;
     });
   },

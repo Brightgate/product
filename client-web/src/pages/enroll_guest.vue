@@ -73,6 +73,8 @@
 
 import {isValidNumber, AsYouType} from 'libphonenumber-js';
 import emailvalidator from 'email-validator';
+import Debug from 'debug';
+const debug = Debug('page:enroll-guest');
 let phone_ayt = null;
 
 export default {
@@ -128,6 +130,7 @@ export default {
       return this.$store.dispatch('enrollGuest',
         {type: 'eap', phone: this.phone_input, email: this.email_input}
       ).then((res) => {
+        debug('enrollGuestEAP result', res.body);
         const user = res.body.user;
         this.toastSuccess(
           this.$t('message.enroll_guest.eap_success', {name: user.UID}));
@@ -137,14 +140,15 @@ export default {
     enrollGuestPSK: function() {
       return this.$store.dispatch('enrollGuest',
         {type: 'psk', phone: this.phone_input}
-      ).then(() => {
+      ).then((res) => {
+        debug('enrollGuestEAP result', res.body);
         this.toastSuccess(this.$t('message.enroll_guest.psk_success'));
       });
     },
 
     enrollGuest: function() {
       let p; // promise for guest enrollment
-      console.log(`enrollGuest: ${this.usertype} ${this.phone_input} ${this.email}`);
+      debug(`enrollGuest: ${this.usertype} ${this.phone_input} ${this.email}`);
       this.enrolling = true;
       if (this.usertype === 'eap') {
         p = this.enrollGuestEAP();
@@ -154,7 +158,7 @@ export default {
       return p.finally(() => {
         this.enrolling = false;
       }).catch((err) => {
-        console.log('enrollGuest: failed', err);
+        debug('enrollGuest: failed', err);
         this.$f7.toast.show({
           text: this.$t('message.enroll_guest.sms_failure'),
           closeButton: true,

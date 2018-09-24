@@ -91,10 +91,14 @@
 </template>
 
 <script>
+import {f7App, f7Statusbar, f7LoginScreen, f7LoginScreenTitle} from 'framework7-vue';
 import Promise from 'bluebird';
+import Debug from 'debug';
 import routes from './routes';
+const debug = Debug('page:app.vue');
 
 export default {
+  components: {f7App, f7Statusbar, f7LoginScreen, f7LoginScreenTitle},
 
   data: function() {
     return {
@@ -118,6 +122,7 @@ export default {
 
   methods: {
     attemptLogin: function() {
+      debug('attempting login');
       this.attemptingLogin = true;
       return Promise.delay(250).then(() => {
         return this.$store.dispatch('login',
@@ -126,7 +131,7 @@ export default {
         this.$f7.loginScreen.close();
         this.attemptingLogin = false;
       }).catch((err) => {
-        console.log('login err is', err);
+        debug('login err is', err);
         this.loginError = err;
         this.attemptingLogin = false;
       });

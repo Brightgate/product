@@ -117,7 +117,14 @@ export default [
     uniqid: 'c8:aa:c8:83:1c:11',
     hwaddr: 'c8:aa:c8:83:1c:11',
     ring: 'standard',
-    active: false,
+    active: true,
+    scans: {
+      // finish after start-- scan complete
+      vulnerability: {
+        start: '2018-04-11T20:52:02+00:00',
+        finish: '2018-04-11T20:55:00+00:00',
+      },
+    },
     vulnerabilities: {
       'CVE-2014-0160': {
         first_detected: '2018-04-11T20:53:02+00:00',

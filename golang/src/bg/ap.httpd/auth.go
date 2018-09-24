@@ -144,9 +144,13 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 		cookie := &http.Cookie{
 			Name:   cookieName,
 			Value:  encoded,
+			Path:   "/",
 			MaxAge: -1,
 		}
 		http.SetCookie(w, cookie)
+	} else {
+		log.Printf("failed to encode cookie: %s", err)
+		http.Error(w, "bad request", 400)
 	}
 }
 

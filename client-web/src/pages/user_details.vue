@@ -69,6 +69,8 @@
   </f7-page>
 </template>
 <script>
+import Debug from 'debug';
+const debug = Debug('page:user-details');
 
 export default {
   computed: {
@@ -80,12 +82,12 @@ export default {
   methods: {
     openEditor: function() {
       const editor = `${this.$f7route.url}editor/`;
-      console.log('opening editor ', editor);
+      debug('opening editor ', editor);
       this.$f7router.navigate(editor);
     },
 
     onPageAfterIn: function() {
-      console.log(`user_details page for ${this.$f7route.params.UUID}`);
+      debug(`user_details page for ${this.$f7route.params.UUID}`);
     },
   },
 };

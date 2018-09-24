@@ -108,10 +108,12 @@
 import assert from 'assert';
 import isBefore from 'date-fns/isBefore';
 import isEqual from 'date-fns/isEqual';
-import _ from 'lodash';
+import {pickBy} from 'lodash-es';
+import Debug from 'debug';
 import {format, formatRelative} from '../date-fns-wrapper';
 
 import vulnerability from '../vulnerability';
+const debug = Debug('page:dev-details');
 
 export default {
   data: function() {
@@ -145,11 +147,15 @@ export default {
         this.$t('message.dev_details.active_false');
     },
     activeVulns: function() {
-      return _.pickBy(this.dev.vulnerabilities, 'active');
+      return pickBy(this.dev.vulnerabilities, 'active');
     },
     lastVulnScan: function() {
-      const start = _.get(this.dev, 'scans.vulnerability.start', null);
-      const finish = _.get(this.dev, 'scans.vulnerability.finish', null);
+      let start = null;
+      let finish = null;
+      if (this.dev && this.dev.scans && this.dev.scans.vulnerability) {
+        start = this.dev.scans.vulnerability.start || null;
+        finish = this.dev.scans.vulnerability.finish || null;
+      }
       if (start === null && finish === null) {
         return this.$t('message.dev_details.vuln_scan_notyet');
       }
@@ -195,7 +201,7 @@ export default {
 
     changeRing: function(wanted_ring) {
       assert(typeof wanted_ring === 'string');
-      console.log(`Change Ring to ${wanted_ring}`);
+      debug(`Change Ring to ${wanted_ring}`);
       if (this.ring_changing) {
         return;
       }
@@ -206,6 +212,7 @@ export default {
       }).then(() => {
         this.ring_changing = false;
       }).catch((err) => {
+        debug('Change Ring failed', err);
         const txt = `Failed to change security ring for ${this.dev.network_name} to ${wanted_ring}: ${err}`;
         this.ring_changing = false;
         this.$f7.toast.show({

@@ -53,9 +53,7 @@ module.exports = {
 
     // Below are our local choices, mostly around checkers for potential bugs
     // and language choices.
-    // XXX We want to remove this so that console statements trigger
-    // warnings.
-    'no-console': 'off',
+    'no-console': 'warn',
 
     // these three rules are basically: eval is bad
     'no-eval': 'error',

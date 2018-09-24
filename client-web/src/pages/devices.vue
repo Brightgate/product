@@ -58,12 +58,15 @@
   </f7-page>
 </template>
 <script>
+import {f7Popover} from 'framework7-vue';
 import Vuex from 'vuex';
-import _ from 'lodash';
+import {sortBy} from 'lodash-es';
 
 const device_category_order = ['recent', 'phone', 'computer', 'printer', 'media', 'iot', 'unknown'];
 
 export default {
+  components: {f7Popover},
+
   data: function() {
     return {
       showRecent: false,
@@ -81,8 +84,8 @@ export default {
       return (category) => {
         const devs = this.$store.getters.Devices_By_Category(category);
         // Sort by lowercase network name, then by uniqid in case of clashes
-        return _.sortBy(devs, [(device) => {
-          return _.lowerCase(device.network_name);
+        return sortBy(devs, [(device) => {
+          return device.network_name.toLowerCase();
         }, 'uniqid']);
       };
     },

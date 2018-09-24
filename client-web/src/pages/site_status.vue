@@ -8,7 +8,7 @@
   such unauthorized removal or alteration will be a violation of federal law.
 -->
 <template>
-  <f7-page ptr @ptr:refresh="onPtrRefresh" @page:beforein="onPageBeforeIn" @page:beforeout="onPageBeforeOut">
+  <f7-page ptr @ptr:refresh="onPtrRefresh" @page:beforein="onPageBeforeIn">
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.site_status.title')" sliding />
 
     <f7-list>
@@ -52,6 +52,8 @@
 <script>
 import vuex from 'vuex';
 import Promise from 'bluebird';
+import Debug from 'debug';
+const debug = Debug('page:site-status');
 
 export default {
   data: function() {
@@ -82,14 +84,9 @@ export default {
     },
 
     onPageBeforeIn: function() {
-      console.log('site_status pageBeforeIn');
-      if (this.$store.getters.Is_Logged_In) {
-        return this.$store.dispatch('fetchNetworkConfig').catch(() => {});
-      }
-    },
-
-    onPageBeforeOut: function() {
-      console.log('site_status pageBeforeOut');
+      debug('pageBeforeIn');
+      this.$store.dispatch('fetchDevices').catch(() => {});
+      this.$store.dispatch('fetchNetworkConfig').catch(() => {});
     },
   },
 };

@@ -109,7 +109,9 @@
   </f7-page>
 </template>
 <script>
-import _ from 'lodash';
+import {cloneDeep} from 'lodash-es';
+import Debug from 'debug';
+const debug = Debug('page:user-editor');
 
 export default {
   data: function() {
@@ -126,13 +128,14 @@ export default {
         HasTOTP: false,
       };
     } else {
-      d.user_details = _.cloneDeep(this.$store.getters.User_By_UUID(routeUUID));
+      d.user_details = cloneDeep(this.$store.getters.User_By_UUID(routeUUID));
     }
     return d;
   },
 
   methods: {
     saveUser: function(event) { // eslint-disable-line no-unused-vars
+      debug('saveUser');
       return this.$store.dispatch('saveUser', {
         user: this.user_details,
         newUser: this.new_user,
@@ -159,6 +162,7 @@ export default {
     },
 
     deleteUser: function(event) { // eslint-disable-line no-unused-vars
+      debug('deleteUser');
       return this.$store.dispatch('deleteUser', {
         user: this.user_details,
       }).then(() => {
@@ -181,7 +185,7 @@ export default {
     },
 
     onPageAfterIn: function() {
-      console.log(`user_editor page for '${this.$f7route.params.UUID}'`);
+      debug(`user_editor page for '${this.$f7route.params.UUID}'`);
     },
   },
 };

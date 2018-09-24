@@ -32,18 +32,20 @@
 </template>
 <script>
 import Promise from 'bluebird';
-import _ from 'lodash';
+import {orderBy} from 'lodash-es';
+import Debug from 'debug';
+const debug = Debug('page:users');
 
 export default {
   computed: {
     All_Users: function() {
-      return _.orderBy(this.$store.getters.All_Users, 'DisplayName');
+      return orderBy(this.$store.getters.All_Users, 'DisplayName');
     },
   },
   methods: {
     openEditorNew: function() {
       const editor = `${this.$f7route.url}NEW/editor/`;
-      console.log('opening editor ', editor);
+      debug('opening editor ', editor);
       this.$f7router.navigate(editor);
     },
     usersPullRefresh: function(event, done) {
@@ -51,7 +53,7 @@ export default {
     },
 
     onPageAfterIn: function() {
-      console.log('users.vue on pageAfterIn');
+      debug('pageAfterIn');
       return this.$store.dispatch('fetchUsers');
     },
   },
