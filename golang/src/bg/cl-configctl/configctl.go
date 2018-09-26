@@ -76,6 +76,7 @@ var (
 	level   = flag.String("l", "user", "change configd access level")
 	uuid    = flag.String("a", "", "uuid of appliance to configure")
 	timeout = flag.Duration("t", 10*time.Second, "timeout")
+	verbose = flag.Bool("v", false, "verbose output")
 )
 
 // Establish a connection to the configd grpc server and instantiate a
@@ -85,6 +86,9 @@ func grpcConnect(uuid, url string, tlsEnabled bool) (*configd, error) {
 		return nil, fmt.Errorf("no appliance uuid provided")
 	}
 
+	if *verbose {
+		log.Printf("connecting to %s\n", url)
+	}
 	conn, err := grpcutils.NewClientConn(url, tlsEnabled, pname)
 	if err != nil {
 		return nil, fmt.Errorf("grpc connection () to '%s' failed: %v",
@@ -112,9 +116,41 @@ func doPing(c *configd, level rpc.CfgPropOps_AccessLevel, args []string) error {
 
 	r, err := c.client.Ping(ctx, pingOp)
 	if err == nil {
-		log.Printf("%s\n", r.Payload)
+		fmt.Printf("%s\n", r.Payload)
 	}
 	return err
+}
+
+func getStatus(ctx context.Context, c *configd,
+	cmdID int64) (*rpc.CfgPropResponse, error) {
+
+	cmd := rpc.CfgCmdID{
+		Time:      ptypes.TimestampNow(),
+		CloudUuid: c.uuid,
+		CmdID:     cmdID,
+	}
+
+	if *verbose {
+		log.Printf("checking status of cmdID %d\n", cmdID)
+	}
+	r, err := c.client.Status(ctx, &cmd)
+	if *verbose {
+		var s string
+		switch r.Response {
+		case rpc.CfgPropResponse_OK:
+			s = "OK"
+		case rpc.CfgPropResponse_NOCMD:
+			s = "bad command"
+		case rpc.CfgPropResponse_FAILED:
+			s = "failed"
+		case rpc.CfgPropResponse_QUEUED:
+			s = "queued"
+		case rpc.CfgPropResponse_INPROGRESS:
+			s = "in progress"
+		}
+		log.Printf("status: %s\n", s)
+	}
+	return r, err
 }
 
 // Send a CfgPropOps message to configd.  On success, the Payload is returned to
@@ -125,6 +161,7 @@ func exec(c *configd, level rpc.CfgPropOps_AccessLevel,
 
 	var rval string
 
+	// This deadline applies to the full operation - not to each RPC.
 	deadline := time.Now().Add(*timeout)
 	ctx, ctxcancel := context.WithDeadline(context.Background(), deadline)
 	defer ctxcancel()
@@ -138,12 +175,33 @@ func exec(c *configd, level rpc.CfgPropOps_AccessLevel,
 		Ops:       ops,
 	}
 
+	if *verbose {
+		log.Printf("submitting command\n")
+	}
 	r, err := c.client.Submit(ctx, &cmd)
-	if err == nil {
-		if r.Response == rpc.CfgPropResponse_OK {
-			rval = r.Payload
-		} else {
+	if *verbose {
+		log.Printf("submitted command.  Assigned cmdID: %d\n", r.CmdID)
+	}
+	for err == nil {
+		switch r.Response {
+		case rpc.CfgPropResponse_OK:
+			return r.Payload, nil
+
+		case rpc.CfgPropResponse_NOCMD:
+			err = fmt.Errorf("no matching commandID: %d", r.CmdID)
+
+		case rpc.CfgPropResponse_FAILED:
 			err = fmt.Errorf("%s", r.Errmsg)
+
+		case rpc.CfgPropResponse_QUEUED, rpc.CfgPropResponse_INPROGRESS:
+
+			if time.Now().After(deadline) {
+				err = fmt.Errorf("timed out with %d in-flight",
+					r.CmdID)
+			} else {
+				time.Sleep(time.Second)
+				r, err = getStatus(ctx, c, r.CmdID)
+			}
 		}
 	}
 

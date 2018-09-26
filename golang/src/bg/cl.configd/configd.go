@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"bg/base_def"
@@ -34,9 +35,16 @@ import (
 const pname = "cl.configd"
 
 type perAPState struct {
-	cachedTree *cfgtree.PTree
-	submitted  []*rpc.CfgPropOps
-	completed  []*rpc.CfgPropResponse
+	uuid       string         // cloud UUID
+	cachedTree *cfgtree.PTree // in-core cache of the config tree
+
+	// XXX: the per-appliance command queue will eventually live in a
+	// database - not in-core.
+	lastCmdID int64     // last ID assigned to a cmd
+	sq        *cmdQueue // submitted, but not completed ops
+	cq        *cmdQueue // completed ops
+
+	sync.Mutex
 }
 
 var environ struct {
@@ -55,31 +63,36 @@ var environ struct {
 }
 
 var (
-	state map[string]*perAPState
+	cqMax = flag.Int("cq", 1000, "max number of completions to retain")
+
+	state     map[string]*perAPState
+	stateLock sync.Mutex
 
 	log  *zap.Logger
 	slog *zap.SugaredLogger
 )
 
 func getAPState(uuid string) (*perAPState, error) {
-	var err error
+	stateLock.Lock()
+	defer stateLock.Unlock()
 
 	s, ok := state[uuid]
-	if !ok {
-		// XXX: eventually this state will be retrieved from the
-		// database
+	if ok {
+		return s, nil
+	}
 
-		slog.Infof("Loading state for %s from file", uuid)
-		if tree, lerr := configFromFile(uuid); lerr == nil {
-			s = &perAPState{
-				cachedTree: tree,
-				submitted:  make([]*rpc.CfgPropOps, 0),
-				completed:  make([]*rpc.CfgPropResponse, 0),
-			}
-			state[uuid] = s
-		} else {
-			err = lerr
+	// XXX: eventually this state will be retrieved from the database
+	slog.Infof("Loading state for %s from file", uuid)
+	tree, err := configFromFile(uuid)
+	if err == nil {
+		s = &perAPState{
+			uuid:       uuid,
+			cachedTree: tree,
+			sq:         newCmdQueue(uuid, 0),
+			cq:         newCmdQueue(uuid, *cqMax),
 		}
+		state[uuid] = s
+		go emulateAppliance(s)
 	}
 
 	return s, err

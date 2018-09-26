@@ -827,6 +827,7 @@ $(CLOUDBIN)/cl-dtool: \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.configd: \
 	$(GOSRCBG)/cl.configd/backend.go \
+	$(GOSRCBG)/cl.configd/cmdqueue.go \
 	$(GOSRCBG)/cl.configd/configd.go \
 	$(GOSRCBG)/cl.configd/file.go \
 	$(GOSRCBG)/cl.configd/frontend.go \
