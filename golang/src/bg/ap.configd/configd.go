@@ -52,9 +52,11 @@ import (
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
+	"bg/common/cfgmsg"
 	"bg/common/cfgtree"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes"
 	zmq "github.com/pebbe/zmq4"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -73,7 +75,7 @@ var metrics struct {
 // Allow for significant variation in the processing of subtrees
 type subtreeOps struct {
 	get    func(string) (string, error)
-	set    func(string, *string, *time.Time, bool) error
+	set    func(string, string, *time.Time, bool) error
 	delete func(string) error
 }
 
@@ -384,26 +386,26 @@ func getPropHandler(prop string) (string, error) {
 	return prop, err
 }
 
-func setPropHandler(prop string, val *string, exp *time.Time, add bool) error {
+func setPropHandler(prop string, val string, exp *time.Time, add bool) error {
 	var err error
 
-	if val == nil {
+	if val == "" {
 		return fmt.Errorf("no value supplied")
 	}
 
 	for _, r := range updateCheckTable {
 		if r.path.MatchString(prop) {
 			node, _ := propTree.GetNode(prop)
-			if err = r.check(node, *val); err != nil {
+			if err = r.check(node, val); err != nil {
 				return err
 			}
 		}
 	}
 
 	if add {
-		err = propTree.Add(prop, *val, exp)
+		err = propTree.Add(prop, val, exp)
 	} else {
-		err = propTree.Set(prop, *val, exp)
+		err = propTree.Set(prop, val, exp)
 	}
 
 	return err
@@ -413,24 +415,34 @@ func delPropHandler(prop string) error {
 	return propTree.Delete(prop)
 }
 
-func executePropOps(query *base_msg.ConfigQuery) (string, error) {
+func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 	var rval string
 	var err error
 
-	level := apcfg.AccessUser
-	if query.Level != nil {
-		level = int(*query.Level)
-		if level > apcfg.AccessUser {
-			return "", fmt.Errorf("invalid level: %d", level)
-		}
+	level := apcfg.AccessLevel(query.Level)
+	if _, ok := apcfg.AccessLevelNames[level]; !ok {
+		return "", fmt.Errorf("invalid access level: %d", level)
 	}
 
 	paths := make([]string, 0)
 	propTree.ChangesetInit()
 	for _, op := range query.Ops {
-		prop := *op.Property
+		var expires *time.Time
+
 		val := op.Value
-		expires := aputil.ProtobufToTime(op.Expires)
+		prop := op.Property
+		if prop == "" {
+			err = apcfg.ErrNoProp
+			break
+		}
+		if op.Expires != nil {
+			expt, terr := ptypes.Timestamp(op.Expires)
+			if terr != nil {
+				err = apcfg.ErrBadTime
+				break
+			}
+			expires = &expt
+		}
 
 		opsVector := &defaultSubtreeOps
 		for _, r := range subtreeMatchTable {
@@ -440,8 +452,8 @@ func executePropOps(query *base_msg.ConfigQuery) (string, error) {
 			}
 		}
 
-		switch *op.Operation {
-		case base_msg.ConfigQuery_ConfigOp_GET:
+		switch op.Operation {
+		case cfgmsg.ConfigOp_GET:
 			metrics.getCounts.Inc()
 			if len(query.Ops) > 1 {
 				err = fmt.Errorf("only single-GET " +
@@ -452,7 +464,7 @@ func executePropOps(query *base_msg.ConfigQuery) (string, error) {
 				}
 			}
 
-		case base_msg.ConfigQuery_ConfigOp_CREATE:
+		case cfgmsg.ConfigOp_CREATE:
 			metrics.setCounts.Inc()
 			err = validatePropVal(prop, val, level)
 			if err == nil {
@@ -460,7 +472,7 @@ func executePropOps(query *base_msg.ConfigQuery) (string, error) {
 				paths = append(paths, prop)
 			}
 
-		case base_msg.ConfigQuery_ConfigOp_SET:
+		case cfgmsg.ConfigOp_SET:
 			metrics.setCounts.Inc()
 			err = validatePropVal(prop, val, level)
 			if err == nil {
@@ -468,14 +480,14 @@ func executePropOps(query *base_msg.ConfigQuery) (string, error) {
 				paths = append(paths, prop)
 			}
 
-		case base_msg.ConfigQuery_ConfigOp_DELETE:
+		case cfgmsg.ConfigOp_DELETE:
 			metrics.delCounts.Inc()
 			err = validatePropDel(prop, level)
 			if err == nil {
 				err = opsVector.delete(prop)
 			}
 
-		case base_msg.ConfigQuery_ConfigOp_PING:
+		case cfgmsg.ConfigOp_PING:
 		// no-op
 
 		default:
@@ -501,27 +513,35 @@ func executePropOps(query *base_msg.ConfigQuery) (string, error) {
 	return rval, err
 }
 
-func processOneEvent(query *base_msg.ConfigQuery) *base_msg.ConfigResponse {
+func processOneEvent(query *cfgmsg.ConfigQuery) *cfgmsg.ConfigResponse {
 	var err error
 	var rval string
 
-	if *query.Version.Major != apcfg.Version {
+	if query.Version.Major != apcfg.Version {
 		err = apcfg.ErrBadVer
-	} else {
+	}
+	if err == nil && query.Timestamp != nil {
+		_, err = ptypes.Timestamp(query.Timestamp)
+		if err != nil {
+			err = apcfg.ErrBadTime
+		}
+	}
+	if err == nil {
 		rval, err = executePropOps(query)
 	}
-
-	rc := base_msg.ConfigResponse_OK
+	rc := cfgmsg.ConfigResponse_OK
 	if err != nil {
 		switch err {
-		case apcfg.ErrNoProp:
-			rc = base_msg.ConfigResponse_NOPROP
 		case apcfg.ErrBadOp:
-			rc = base_msg.ConfigResponse_UNSUPPORTED
+			rc = cfgmsg.ConfigResponse_UNSUPPORTED
+		case apcfg.ErrNoProp:
+			rc = cfgmsg.ConfigResponse_NOPROP
+		case apcfg.ErrBadTime:
+			rc = cfgmsg.ConfigResponse_BADTIME
 		case apcfg.ErrBadVer:
-			rc = base_msg.ConfigResponse_BADVERSION
+			rc = cfgmsg.ConfigResponse_BADVERSION
 		default:
-			rc = base_msg.ConfigResponse_FAILED
+			rc = cfgmsg.ConfigResponse_FAILED
 		}
 
 		if *verbose {
@@ -529,14 +549,14 @@ func processOneEvent(query *base_msg.ConfigQuery) *base_msg.ConfigResponse {
 		}
 		rval = fmt.Sprintf("%v", err)
 	}
-	version := base_msg.Version{Major: proto.Int32(int32(apcfg.Version))}
-	response := &base_msg.ConfigResponse{
-		Timestamp: aputil.NowToProtobuf(),
-		Sender:    proto.String(pname + "(" + strconv.Itoa(os.Getpid()) + ")"),
+	version := cfgmsg.Version{Major: int32(apcfg.Version)}
+	response := &cfgmsg.ConfigResponse{
+		Timestamp: ptypes.TimestampNow(),
+		Sender:    pname + "(" + strconv.Itoa(os.Getpid()) + ")",
 		Version:   &version,
-		Debug:     proto.String("-"),
-		Response:  &rc,
-		Value:     proto.String(rval),
+		Debug:     "-",
+		Response:  rc,
+		Value:     rval,
 	}
 
 	return response
@@ -556,7 +576,7 @@ func eventLoop(incoming *zmq.Socket) {
 		}
 
 		errs = 0
-		query := &base_msg.ConfigQuery{}
+		query := &cfgmsg.ConfigQuery{}
 		proto.Unmarshal(msg[0], query)
 
 		response := processOneEvent(query)

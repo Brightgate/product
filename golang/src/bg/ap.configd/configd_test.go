@@ -38,10 +38,8 @@ import (
 	"testing"
 
 	"bg/ap_common/apcfg"
-	"bg/base_msg"
+	"bg/common/cfgmsg"
 	"bg/common/cfgtree"
-
-	"github.com/golang/protobuf/proto"
 )
 
 var (
@@ -63,18 +61,18 @@ func checkLeaf(t *testing.T, prop, val string, leaves leafMap) {
 	}
 }
 
-func execute(level int, ops []apcfg.PropertyOp) (string, error) {
+func execute(level apcfg.AccessLevel, ops []apcfg.PropertyOp) (string, error) {
 	var rval string
 	var err error
 
 	query, err := apcfg.GeneratePropQuery(ops)
-	query.Level = proto.Int(level)
+	query.Level = int32(level)
 	if err == nil {
 		response := processOneEvent(query)
-		if *response.Response != base_msg.ConfigResponse_OK {
-			err = fmt.Errorf("%s", *response.Value)
+		if response.Response != cfgmsg.ConfigResponse_OK {
+			err = fmt.Errorf("%s", response.Value)
 		} else if ops[0].Op == apcfg.PropGet {
-			rval = *response.Value
+			rval = response.Value
 		}
 	}
 
@@ -277,22 +275,22 @@ func TestReinitialize(t *testing.T) {
 func TestPing(t *testing.T) {
 	query := apcfg.GeneratePingQuery()
 	response := processOneEvent(query)
-	if *response.Response != base_msg.ConfigResponse_OK {
-		t.Error(fmt.Errorf("%s", *response.Value))
+	if response.Response != cfgmsg.ConfigResponse_OK {
+		t.Error(fmt.Errorf("%s", response.Value))
 	}
 }
 
 func testPingBadVersion(version int32) error {
 	query := apcfg.GeneratePingQuery()
-	majorMinor := base_msg.Version{Major: proto.Int32(version)}
+	majorMinor := cfgmsg.Version{Major: version}
 	query.Version = &majorMinor
 
 	response := processOneEvent(query)
-	if *response.Response == base_msg.ConfigResponse_OK {
+	if response.Response == cfgmsg.ConfigResponse_OK {
 		return fmt.Errorf("configd of version %d accepted version %d",
 			apcfg.Version, version)
-	} else if *response.Response != base_msg.ConfigResponse_BADVERSION {
-		return fmt.Errorf("unexpected error: %d", *response.Response)
+	} else if response.Response != cfgmsg.ConfigResponse_BADVERSION {
+		return fmt.Errorf("unexpected error: %d", response.Response)
 	}
 
 	return nil
@@ -729,6 +727,36 @@ func TestMultiSetFail(t *testing.T) {
 		t.Error(err)
 	} else {
 		testValidateTree(t, a)
+	}
+}
+
+// TestInvalidAccessLevel verifies that requests with invalid levels
+// cannot get or manipulate properties
+func TestInvalidAccessLevel(t *testing.T) {
+	testops := []apcfg.PropertyOp{
+		{Op: apcfg.PropSet, Name: "@/network/ssid", Value: "test123"},
+		{Op: apcfg.PropGet, Name: "@/network/ssid"},
+		{Op: apcfg.PropDelete, Name: "@/network/ssid"},
+		{Op: apcfg.PropCreate, Name: "@/siteid", Value: "7810"},
+	}
+
+	badLevels := []apcfg.AccessLevel{
+		apcfg.AccessLevel(-1),
+		apcfg.AccessUser + 1,
+		apcfg.AccessInternal + 1,
+	}
+
+	for _, level := range badLevels {
+		for _, x := range testops {
+			ops := []apcfg.PropertyOp{x}
+			a := testTreeInit(t)
+			if _, err := execute(level, ops); err == nil {
+				t.Errorf("%#v at level %d succeeded unexpectedly", x, level)
+			} else if !strings.Contains(err.Error(), "invalid access level") {
+				t.Errorf("%#v at level %d failed with unexpected error %v", x, level, err)
+			}
+			testValidateTree(t, a)
+		}
 	}
 }
 

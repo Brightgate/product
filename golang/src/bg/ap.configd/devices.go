@@ -55,7 +55,7 @@ func getDevHandler(prop string) (string, error) {
 	return "", err
 }
 
-func setDevHandler(prop string, val *string, exp *time.Time, add bool) error {
+func setDevHandler(prop string, val string, exp *time.Time, add bool) error {
 	return fmt.Errorf("the device tree is read-only")
 }
 

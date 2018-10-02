@@ -1,0 +1,68 @@
+//
+// COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+//
+// This copyright notice is Copyright Management Information under 17 USC 1202
+// and is included to protect this work and deter copyright infringement.
+// Removal or alteration of this Copyright Management Information without the
+// express written permission of Brightgate Inc is prohibited, and any
+// such unauthorized removal or alteration will be a violation of federal law.
+//
+// vim:set comments=b\://:
+
+syntax = "proto3";
+
+package cfgmsg;
+import "google/protobuf/timestamp.proto";
+
+message Version {
+	int32 major = 0x01;
+	int32 minor = 0x02;
+}
+
+message ConfigOp {
+	enum Operation {
+		UNKNOWN = 0;
+		GET = 1;
+		SET = 2;
+		CREATE = 3;
+		DELETE = 4;
+		PING = 5;
+	}
+	Operation operation = 0x20;
+	string property = 0x21;
+	string value = 0x22;
+	google.protobuf.Timestamp expires = 0x23;
+}
+
+message ConfigQuery {
+	google.protobuf.Timestamp timestamp = 0x01;
+	string sender = 0x02;
+	string debug = 0x03;
+	string identity_uuid = 0x04;
+	Version version = 0x05;
+	int32 level = 0x06;
+	repeated ConfigOp ops = 0x24;
+}
+
+message ConfigResponse {
+	google.protobuf.Timestamp timestamp = 0x01;
+	string sender = 0x02;
+	string debug = 0x03;
+	string identity_uuid = 0x04;
+	Version version = 0x05;
+	Version min_version = 0x06;
+
+	enum OpResponse {
+                UNKNOWN = 0;
+		OK = 1;
+		FAILED = 2;
+		UNSUPPORTED = 3;
+		NOPROP = 4;
+		BADVERSION = 5;
+		BADTIME = 6;
+	}
+	OpResponse response = 0x23;
+
+	string property = 0x21;
+	string value = 0x22;
+}

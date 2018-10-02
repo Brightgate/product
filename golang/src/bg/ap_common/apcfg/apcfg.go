@@ -26,9 +26,11 @@ import (
 	"bg/ap_common/device"
 	"bg/ap_common/platform"
 	"bg/base_def"
-	"bg/base_msg"
+	"bg/common/cfgmsg"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes"
+	"github.com/golang/protobuf/ptypes/timestamp"
 
 	// Ubuntu: requires libzmq3-dev, which is 0MQ 4.2.1.
 	zmq "github.com/pebbe/zmq4"
@@ -38,23 +40,39 @@ import (
 // config tree format, or ap.configd API.
 const Version = int32(16)
 
-// Access levels required to modify/delete configd properties
+// AccessLevel represents a level of privilege needed or obtained for configd operations
+type AccessLevel int32
+
+// Access levels required to modify/delete configd properties. 'iota' is not
+// used because these are wire protocol constants.
 const (
-	AccessInternal = iota
-	AccessDeveloper
-	AccessService
-	AccessAdmin
-	AccessUser
+	AccessNone      AccessLevel = 0 // All requests denied
+	AccessUser      AccessLevel = 10
+	AccessAdmin     AccessLevel = 20
+	AccessService   AccessLevel = 30
+	AccessDeveloper AccessLevel = 40
+	AccessInternal  AccessLevel = 50
 )
 
 // AccessLevels maps user-friendly access level names to the integer values used
 // internally
-var AccessLevels = map[string]int{
-	"internal":  AccessInternal,
-	"developer": AccessDeveloper,
-	"service":   AccessService,
-	"admin":     AccessAdmin,
+var AccessLevels = map[string]AccessLevel{
+	"none":      AccessNone,
 	"user":      AccessUser,
+	"admin":     AccessAdmin,
+	"service":   AccessService,
+	"developer": AccessDeveloper,
+	"internal":  AccessInternal,
+}
+
+// AccessLevelNames translates numeric access levels to strings
+var AccessLevelNames = map[AccessLevel]string{
+	AccessNone:      "none",
+	AccessUser:      "user",
+	AccessAdmin:     "admin",
+	AccessService:   "service",
+	AccessDeveloper: "developer",
+	AccessInternal:  "internal",
 }
 
 // Some specific, common ways in which apcfg operations can fail
@@ -64,6 +82,7 @@ var (
 	ErrExpired = errors.New("property expired")
 	ErrBadOp   = errors.New("no such operation")
 	ErrBadVer  = errors.New("unsupported version")
+	ErrBadTime = errors.New("bad timestamp")
 )
 
 // ValidRings is a map containing all of the known ring names.  Checking for map
@@ -141,11 +160,11 @@ const (
 	PropDelete
 )
 
-var opToMsgType = map[int]base_msg.ConfigQuery_ConfigOp_Operation{
-	PropGet:    base_msg.ConfigQuery_ConfigOp_GET,
-	PropSet:    base_msg.ConfigQuery_ConfigOp_SET,
-	PropCreate: base_msg.ConfigQuery_ConfigOp_CREATE,
-	PropDelete: base_msg.ConfigQuery_ConfigOp_DELETE,
+var opToMsgType = map[int]cfgmsg.ConfigOp_Operation{
+	PropGet:    cfgmsg.ConfigOp_GET,
+	PropSet:    cfgmsg.ConfigOp_SET,
+	PropCreate: cfgmsg.ConfigOp_CREATE,
+	PropDelete: cfgmsg.ConfigOp_DELETE,
 }
 
 // PropertyOp represents an operation on a single property
@@ -223,16 +242,16 @@ type APConfig struct {
 	deleteHandlers []delexpMatch
 	expireHandlers []delexpMatch
 	handling       bool
-	level          int
+	level          AccessLevel
 }
 
 // NewConfig will connect to ap.configd, and will return a handle used for
 // subsequent interactions with the daemon
-func NewConfig(b *broker.Broker, name string, level int) (*APConfig, error) {
+func NewConfig(b *broker.Broker, name string, level AccessLevel) (*APConfig, error) {
 	var host string
 
 	plat := platform.NewPlatform()
-	if level < 0 || level > AccessUser {
+	if _, ok := AccessLevelNames[level]; !ok {
 		return nil, fmt.Errorf("invalid access level: %d", level)
 	}
 
@@ -282,17 +301,17 @@ func NewConfig(b *broker.Broker, name string, level int) (*APConfig, error) {
 	return c, err
 }
 
-func (c *APConfig) sendOp(query *base_msg.ConfigQuery) (string, error) {
+func (c *APConfig) sendOp(query *cfgmsg.ConfigQuery) (string, error) {
 
-	query.Sender = proto.String(c.sender)
-	query.Level = proto.Int(c.level)
+	query.Sender = c.sender
+	query.Level = int32(c.level)
 	op, err := proto.Marshal(query)
 	if err != nil {
 		return "", fmt.Errorf("unable to build ping: %v", err)
 	}
 
 	rval := ""
-	response := &base_msg.ConfigResponse{}
+	response := &cfgmsg.ConfigResponse{}
 	c.mutex.Lock()
 	_, err = c.socket.SendBytes(op, 0)
 	if err != nil {
@@ -309,27 +328,31 @@ func (c *APConfig) sendOp(query *base_msg.ConfigQuery) (string, error) {
 	}
 	c.mutex.Unlock()
 	if err == nil {
-		switch *response.Response {
-		case base_msg.ConfigResponse_OK:
-			rval = *response.Value
-		case base_msg.ConfigResponse_UNSUPPORTED:
+		switch response.Response {
+		case cfgmsg.ConfigResponse_OK:
+			rval = response.Value
+		case cfgmsg.ConfigResponse_UNSUPPORTED:
 			err = ErrBadOp
-		case base_msg.ConfigResponse_NOPROP:
+		case cfgmsg.ConfigResponse_NOPROP:
 			err = ErrNoProp
-		case base_msg.ConfigResponse_BADVERSION:
+		case cfgmsg.ConfigResponse_BADTIME:
+			err = ErrBadTime
+		case cfgmsg.ConfigResponse_BADVERSION:
 			var version string
 
 			if response.MinVersion != nil {
 				version = fmt.Sprintf("%d or greater",
-					*response.MinVersion.Major)
+					response.MinVersion.Major)
 			} else {
 				version = fmt.Sprintf("%d",
-					*response.Version.Major)
+					response.Version.Major)
 			}
 			err = fmt.Errorf("ap.configd requires version %s",
 				version)
+		case cfgmsg.ConfigResponse_FAILED:
+			err = fmt.Errorf("Failed: %s", response.Value)
 		default:
-			err = fmt.Errorf("%s", *response.Value)
+			err = fmt.Errorf("Unexpected response: %#v", response)
 		}
 	}
 
@@ -337,19 +360,19 @@ func (c *APConfig) sendOp(query *base_msg.ConfigQuery) (string, error) {
 }
 
 // GeneratePingQuery generates a ping query
-func GeneratePingQuery() *base_msg.ConfigQuery {
-	opType := base_msg.ConfigQuery_ConfigOp_PING
+func GeneratePingQuery() *cfgmsg.ConfigQuery {
+	opType := cfgmsg.ConfigOp_PING
 
-	ops := []*base_msg.ConfigQuery_ConfigOp{
-		&base_msg.ConfigQuery_ConfigOp{
-			Property:  proto.String("ping"),
-			Operation: &opType,
+	ops := []*cfgmsg.ConfigOp{
+		&cfgmsg.ConfigOp{
+			Property:  "ping",
+			Operation: opType,
 		},
 	}
-	version := base_msg.Version{Major: proto.Int32(Version)}
-	query := base_msg.ConfigQuery{
-		Timestamp: aputil.NowToProtobuf(),
-		Debug:     proto.String("-"),
+	version := cfgmsg.Version{Major: Version}
+	query := cfgmsg.ConfigQuery{
+		Timestamp: ptypes.TimestampNow(),
+		Debug:     "-",
 		Version:   &version,
 		Ops:       ops,
 	}
@@ -370,9 +393,9 @@ func (c *APConfig) Ping() error {
 
 // GeneratePropQuery takes a slice of PropertyOp structures and creates a
 // corresponding ConfigQuery protobuf
-func GeneratePropQuery(ops []PropertyOp) (*base_msg.ConfigQuery, error) {
+func GeneratePropQuery(ops []PropertyOp) (*cfgmsg.ConfigQuery, error) {
 	get := false
-	msgOps := make([]*base_msg.ConfigQuery_ConfigOp, len(ops))
+	msgOps := make([]*cfgmsg.ConfigOp, len(ops))
 	for i, op := range ops {
 		get = get || (op.Op == PropGet)
 
@@ -380,21 +403,30 @@ func GeneratePropQuery(ops []PropertyOp) (*base_msg.ConfigQuery, error) {
 		if !ok {
 			return nil, ErrBadOp
 		}
-		msgOps[i] = &base_msg.ConfigQuery_ConfigOp{
-			Operation: &opType,
-			Property:  proto.String(op.Name),
-			Value:     proto.String(op.Value),
-			Expires:   aputil.TimeToProtobuf(op.Expires),
+
+		var tspb *timestamp.Timestamp
+		if op.Expires != nil {
+			var err error
+			tspb, err = ptypes.TimestampProto(*op.Expires)
+			if err != nil {
+				return nil, ErrBadTime
+			}
+		}
+		msgOps[i] = &cfgmsg.ConfigOp{
+			Operation: opType,
+			Property:  op.Name,
+			Value:     op.Value,
+			Expires:   tspb,
 		}
 	}
 	if get && len(ops) > 1 {
 		return nil, fmt.Errorf("GET ops must be singletons")
 	}
 
-	version := base_msg.Version{Major: proto.Int32(Version)}
-	query := base_msg.ConfigQuery{
-		Timestamp: aputil.NowToProtobuf(),
-		Debug:     proto.String("-"),
+	version := cfgmsg.Version{Major: Version}
+	query := cfgmsg.ConfigQuery{
+		Timestamp: ptypes.TimestampNow(),
+		Debug:     "-",
 		Version:   &version,
 		Ops:       msgOps,
 	}

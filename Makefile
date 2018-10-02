@@ -264,12 +264,14 @@ USERAUTHD_TEMPLATE_DIR=$(APPETC)/templates/ap.userauthd
 COMMON_GOPKGS = \
 	bg/common/archive \
 	bg/common/briefpg \
+	bg/common/cfgmsg \
 	bg/common/cfgtree \
 	bg/common/grpcutils \
 	bg/common/urlfetch
 
 COMMON_SRCS = \
 	$(GOSRCBG)/common/archive/archive.go \
+	$(GOSRCBG)/common/cfgmsg/cfgmsg.pb.go \
 	$(GOSRCBG)/common/cfgtree/cfgtree.go \
 	$(GOSRCBG)/common/grpcutils/client.go \
 	$(GOSRCBG)/common/grpcutils/cred.go \
@@ -322,7 +324,7 @@ APPDAEMON_GOPKGS = \
 
 ALL_GOPKGS = $(APP_GOPKGS) $(CLOUD_GOPKGS)
 
-APP_GOPKGS = $(COMMON_GOPKGS) $(APPCOMMAND_GOPKGS) $(APPDAEMON_GOPKGS)
+APP_GOPKGS = $(APPCOMMON_GOPKGS) $(APPCOMMAND_GOPKGS) $(APPDAEMON_GOPKGS)
 
 MISCCOMMANDS = \
 	ap-rpc
@@ -480,7 +482,7 @@ CLOUDDAEMON_GOPKGS = \
 	bg/cl.rpcd
 
 CLOUDCOMMON_GOPKGS = \
-	${COMMON_GOPKGS} \
+	$(COMMON_GOPKGS) \
 	bg/cl_common/auth/m2mauth \
 	bg/cl_common/daemonutils \
 	bg/cloud_models/appliancedb \
@@ -868,8 +870,7 @@ base/base_def.py: base/generate-base-def.py
 # Protocol buffers
 #
 
-$(GOSRCBG)/base_msg/base_msg.pb.go: base/base_msg.proto $(GOTOOLS) | \
-	$(GOSRCBG)/base_msg
+$(GOSRCBG)/base_msg/base_msg.pb.go: base/base_msg.proto $(GOTOOLS)
 	cd base && \
 		protoc --plugin=$(GOTOOLS_BIN_PROTOCGENGO) \
 		    --go_out ../$(GOSRCBG)/base_msg $(notdir $<)
@@ -877,8 +878,13 @@ $(GOSRCBG)/base_msg/base_msg.pb.go: base/base_msg.proto $(GOTOOLS) | \
 base/base_msg_pb2.py: base/base_msg.proto
 	protoc --python_out . $<
 
-$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go: base/cloud_rpc.proto $(GOTOOLS) | \
-	$(GOSRCBG)/cloud_rpc
+$(GOSRCBG)/common/cfgmsg/cfgmsg.pb.go: base/cfgmsg.proto $(GOTOOLS)
+	cd base && \
+		protoc --plugin=$(GOTOOLS_BIN_PROTOCGENGO) \
+		    --go_out=../$(GOSRCBG)/common/cfgmsg \
+		    $(notdir $<)
+
+$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go: base/cloud_rpc.proto $(GOTOOLS)
 	cd base && \
 		protoc --plugin=$(GOTOOLS_BIN_PROTOCGENGO) \
 			-I/usr/local/include \
