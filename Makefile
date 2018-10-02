@@ -298,6 +298,7 @@ APPCOMMAND_GOPKGS = \
 	bg/ap-defaultpass \
 	bg/ap-diag \
 	bg/ap-inspect \
+	bg/ap-factory \
 	bg/ap-msgping \
 	bg/ap-ouisearch \
 	bg/ap-userctl \
@@ -769,6 +770,7 @@ $(APPBIN)/ap-diag: \
 	$(GOSRCBG)/ap-diag/wifi.go \
 	$(GOSRCBG)/ap_common/wificaps/wificaps.go
 $(APPBIN)/ap-inspect: $(GOSRCBG)/ap-inspect/inspect.go
+$(APPBIN)/ap-factory: $(GOSRCBG)/ap-factory/factory.go
 $(APPBIN)/ap-msgping: $(GOSRCBG)/ap-msgping/msgping.go
 $(APPBIN)/ap-ouisearch: $(GOSRCBG)/ap-ouisearch/ouisearch.go
 $(APPBIN)/ap-rpc: $(APPBIN)/ap.rpcd

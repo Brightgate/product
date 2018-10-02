@@ -48,11 +48,11 @@ godeps-check: $(GOTOOLS)
 
 #
 # Invoke this target by hand to add a new dependency.  For example:
-# make deps-add DEPNAME=github.com/foo/baz@0.5.2
+# make godeps-add DEPNAME=github.com/foo/baz@0.5.2
 #
 # Check in the resultant Gopkg.lock and Gopkg.toml changes.
 #
-.PHONY: deps-add
+.PHONY: godeps-add
 godeps-add: $(GOTOOLS)
 	cd $(realpath $(GOSRCBG)) && $(GOTOOLS_BIN_DEP) ensure -add $(DEPNAME)
 	touch $(GODEPS_ENSURED)

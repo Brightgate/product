@@ -252,6 +252,14 @@
   revision = "23480c0665776210b5fbbac6eaaee40e3e6a96b7"
 
 [[projects]]
+  digest = "1:870d441fe217b8e689d7949fef6e43efbc787e50f200cb1e70dbca9204a1d6be"
+  name = "github.com/inconshreveable/mousetrap"
+  packages = ["."]
+  pruneopts = ""
+  revision = "76626ae9c91c4f2a10f34cad8ce83ea42c93bb75"
+  version = "v1.0"
+
+[[projects]]
   branch = "master"
   digest = "1:64b78d98b8956492576911baf6a1e3499816d4575e485d12792e4abe7d8b6c46"
   name = "github.com/jlaffaye/ftp"
@@ -424,6 +432,17 @@
   revision = "5b443b6471cea4b4f9f85025530c04c93233f76a"
 
 [[projects]]
+  digest = "1:68663e6e04c8a14911064888fb2426978b89aa23b04f0753cf82ec94ced5f483"
+  name = "github.com/pin/tftp"
+  packages = [
+    ".",
+    "netascii",
+  ]
+  pruneopts = ""
+  revision = "9ea92f6b1029bc1bf3072bba195c84bb9b0370e3"
+  version = "v2.1.0"
+
+[[projects]]
   digest = "1:7365acd48986e205ccb8652cc746f09c8b7876030d53710ea6ef7d0bd0dcd7ca"
   name = "github.com/pkg/errors"
   packages = ["."]
@@ -540,6 +559,22 @@
   pruneopts = ""
   revision = "787d034dfe70e44075ccc060d346146ef53270ad"
   version = "v1.1.1"
+
+[[projects]]
+  digest = "1:a1403cc8a94b8d7956ee5e9694badef0e7b051af289caad1cf668331e3ffa4f6"
+  name = "github.com/spf13/cobra"
+  packages = ["."]
+  pruneopts = ""
+  revision = "ef82de70bb3f60c65fb8eebacbb2d122ef517385"
+  version = "v0.0.3"
+
+[[projects]]
+  digest = "1:0a52bcb568386d98f4894575d53ce3e456f56471de6897bb8b9de13c33d9340e"
+  name = "github.com/spf13/pflag"
+  packages = ["."]
+  pruneopts = ""
+  revision = "9a97c102cda95a86cec2345a6f09f55a939babf5"
+  version = "v1.0.2"
 
 [[projects]]
   digest = "1:711eebe744c0151a9d09af2315f0bb729b2ec7637ef4c410fa90a18ef74b65b6"
@@ -991,6 +1026,7 @@
     "github.com/markbates/goth/providers/openidConnect",
     "github.com/miekg/dns",
     "github.com/pebbe/zmq4",
+    "github.com/pin/tftp",
     "github.com/pkg/errors",
     "github.com/pquerna/otp",
     "github.com/pquerna/otp/totp",
@@ -1000,6 +1036,7 @@
     "github.com/sethvargo/go-password/password",
     "github.com/sfreiberg/gotwilio",
     "github.com/spf13/afero",
+    "github.com/spf13/cobra",
     "github.com/stretchr/testify/mock",
     "github.com/stretchr/testify/require",
     "github.com/tensorflow/tensorflow/tensorflow/go",
