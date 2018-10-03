@@ -93,7 +93,7 @@ var subtreeMatchTable = []subtreeMatch{
 
 var updateCheckTable = []struct {
 	path  *regexp.Regexp
-	check func(*cfgtree.PNode, string) error
+	check func(string, string) error
 }{
 	{regexp.MustCompile(`^@/uuid$`), uuidCheck},
 	{regexp.MustCompile(`^@/clients/.*/(dns|dhcp)_name$`), dnsCheck},
@@ -249,9 +249,10 @@ func selectRing(mac string, client *cfgtree.PNode, authp *string) string {
 	return ring
 }
 
-func uuidCheck(node *cfgtree.PNode, uuid string) error {
+func uuidCheck(prop, uuid string) error {
 	const nullUUID = "00000000-0000-0000-0000-000000000000"
 
+	node, _ := propTree.GetNode(prop)
 	if node != nil && node.Value != nullUUID {
 		return fmt.Errorf("cannot change an appliance's UUID")
 	}
@@ -303,11 +304,11 @@ func dnsNameInuse(ignore *cfgtree.PNode, hostname string) bool {
 
 // Validate the hostname that will be used to generate DNS A records
 // for this device
-func dnsCheck(node *cfgtree.PNode, hostname string) error {
+func dnsCheck(prop, hostname string) error {
 	var parent *cfgtree.PNode
 	var err error
 
-	if node != nil {
+	if node, _ := propTree.GetNode(prop); node != nil {
 		parent = node.Parent()
 	}
 
@@ -322,24 +323,32 @@ func dnsCheck(node *cfgtree.PNode, hostname string) error {
 
 // Validate both the hostname and the canonical name that will be
 // used to generate DNS CNAME records
-func cnameCheck(node *cfgtree.PNode, hostname string) error {
+func cnameCheck(prop, hostname string) error {
 	var err error
+	var cname string
 
-	name := node.Name()
+	// The validation code and the regexp that got us here should guarantee
+	// that the structure of the path is @/dns/cnames/<hostname>
+	path := strings.Split(prop, "/")
+	if len(path) != 4 {
+		err = fmt.Errorf("invalid property path: %s", prop)
+	} else {
+		cname = path[3]
 
-	if !network.ValidHostname(name) {
-		err = fmt.Errorf("invalid hostname: %s", name)
-	} else if !network.ValidHostname(hostname) {
-		err = fmt.Errorf("invalid canonical name: %s", hostname)
-	} else if dnsNameInuse(node, name) {
-		err = fmt.Errorf("duplicate hostname")
+		if !network.ValidHostname(cname) {
+			err = fmt.Errorf("invalid hostname: %s", cname)
+		} else if !network.ValidHostname(hostname) {
+			err = fmt.Errorf("invalid canonical name: %s", hostname)
+		} else if dnsNameInuse(nil, cname) {
+			err = fmt.Errorf("duplicate hostname")
+		}
 	}
 
 	return err
 }
 
 // Validate an ipv4 assignment for this device
-func ipv4Check(node *cfgtree.PNode, addr string) error {
+func ipv4Check(prop, addr string) error {
 	ipv4 := net.ParseIP(addr)
 	if ipv4 == nil {
 		return fmt.Errorf("invalid address: %s", addr)
@@ -351,6 +360,7 @@ func ipv4Check(node *cfgtree.PNode, addr string) error {
 		return nil
 	}
 
+	node, _ := propTree.GetNode(prop)
 	for name, device := range clients.Children {
 		if node != nil && node.Name() == name {
 			// Reassigning the device's address to itself is fine
@@ -395,8 +405,7 @@ func setPropHandler(prop string, val string, exp *time.Time, add bool) error {
 
 	for _, r := range updateCheckTable {
 		if r.path.MatchString(prop) {
-			node, _ := propTree.GetNode(prop)
-			if err = r.check(node, val); err != nil {
+			if err = r.check(prop, val); err != nil {
 				return err
 			}
 		}
