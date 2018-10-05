@@ -507,7 +507,8 @@ CLOUDCONFIGS = \
 CLOUDSCHEMAS = \
 	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema000.sql \
 	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema001.sql \
-	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema002.sql
+	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema002.sql \
+	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema003.sql
 
 CLOUDBINARIES = $(CLOUDCOMMANDS:%=$(CLOUDBIN)/%) $(CLOUDDAEMONS:%=$(CLOUDBIN)/%)
 
@@ -831,6 +832,7 @@ $(CLOUDBIN)/cl.configd: \
 	$(GOSRCBG)/cl.configd/backend.go \
 	$(GOSRCBG)/cl.configd/cmdqueue.go \
 	$(GOSRCBG)/cl.configd/configd.go \
+	$(GOSRCBG)/cl.configd/db.go \
 	$(GOSRCBG)/cl.configd/file.go \
 	$(GOSRCBG)/cl.configd/frontend.go \
 	$(GOSRCBG)/cl.configd/grpc.go \

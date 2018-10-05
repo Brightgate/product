@@ -12,6 +12,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"net/http"
 	"os"
@@ -47,6 +48,10 @@ type perAPState struct {
 	sync.Mutex
 }
 
+type configStore interface {
+	get(context.Context, string) (*cfgtree.PTree, error)
+}
+
 var environ struct {
 	// The certificate hostname is the primary hostname associated
 	// with the SSL certificate, and not necessarily the nodename.
@@ -70,6 +75,8 @@ var (
 
 	log  *zap.Logger
 	slog *zap.SugaredLogger
+
+	store configStore
 )
 
 func getAPState(uuid string) (*perAPState, error) {
@@ -81,9 +88,7 @@ func getAPState(uuid string) (*perAPState, error) {
 		return s, nil
 	}
 
-	// XXX: eventually this state will be retrieved from the database
-	slog.Infof("Loading state for %s from file", uuid)
-	tree, err := configFromFile(uuid)
+	tree, err := store.get(context.Background(), uuid)
 	if err == nil {
 		s = &perAPState{
 			uuid:       uuid,
@@ -128,6 +133,15 @@ func main() {
 	}
 
 	go prometheusInit(environ.PrometheusPort)
+
+	if environ.PostgresConnection != "" {
+		store, err = newDBStore(environ.PostgresConnection)
+	} else {
+		store, err = newFileStore(daemonutils.ClRoot() + "/etc/configs")
+	}
+	if err != nil {
+		slog.Fatalf("Failed to connect to config store: %v", err)
+	}
 
 	state = make(map[string]*perAPState)
 

@@ -11,16 +11,22 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
 
-	"bg/cl_common/daemonutils"
 	"bg/common/cfgtree"
 )
 
-func configFromFile(uuid string) (*cfgtree.PTree, error) {
-	path := daemonutils.ClRoot() + "/etc/configs/" + uuid + ".json"
+type fileStore struct {
+	dir string
+}
+
+func (store *fileStore) get(ctx context.Context, uuid string) (*cfgtree.PTree, error) {
+	slog.Infof("Loading state for %s from file", uuid)
+
+	path := store.dir + "/" + uuid + ".json"
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		slog.Warnf("No config file at %s", path)
 		return nil, fmt.Errorf("no such appliance: %s", uuid)
@@ -38,4 +44,9 @@ func configFromFile(uuid string) (*cfgtree.PTree, error) {
 	}
 
 	return tree, err
+}
+
+func newFileStore(dir string) (configStore, error) {
+	var store configStore = &fileStore{dir}
+	return store, nil
 }

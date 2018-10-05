@@ -38,6 +38,8 @@ type DataStore interface {
 	InsertHeartbeatIngest(context.Context, *HeartbeatIngest) error
 	CloudStorageByUUID(context.Context, uuid.UUID) (*ApplianceCloudStorage, error)
 	UpsertCloudStorage(context.Context, uuid.UUID, *ApplianceCloudStorage) error
+	ConfigStoreByUUID(context.Context, uuid.UUID) (*ApplianceConfigStore, error)
+	UpsertConfigStore(context.Context, uuid.UUID, *ApplianceConfigStore) error
 	Ping() error
 	Close() error
 }
@@ -81,6 +83,14 @@ type AppliancePubKey struct {
 type ApplianceCloudStorage struct {
 	Bucket   string `json:"bucket"`
 	Provider string `json:"provider"`
+}
+
+// ApplianceConfigStore represents the configuration storage information for an
+// Appliance.
+type ApplianceConfigStore struct {
+	RootHash  []byte    `json:"roothash"`
+	TimeStamp time.Time `json:"timestamp"`
+	Config    []byte    `json:"config"`
 }
 
 // NotFoundError is returned when the requested resource is not present in the
@@ -288,6 +298,46 @@ func (db *ApplianceDB) KeysByUUID(ctx context.Context, u uuid.UUID) ([]Appliance
 		keys = append(keys, key)
 	}
 	return keys, nil
+}
+
+// ConfigStoreByUUID returns the configuration of the appliance referred to by
+// the UUID.
+func (db *ApplianceDB) ConfigStoreByUUID(ctx context.Context,
+	u uuid.UUID) (*ApplianceConfigStore, error) {
+	var cfg ApplianceConfigStore
+
+	row := db.QueryRowContext(ctx,
+		"SELECT root_hash, ts, config FROM appliance_config_store WHERE cloud_uuid=$1", u)
+	err := row.Scan(&cfg.RootHash, &cfg.TimeStamp, &cfg.Config)
+	switch err {
+	case sql.ErrNoRows:
+		return nil, NotFoundError{fmt.Sprintf(
+			"ConfigStoreByUUID: Couldn't find config for %v", u)}
+	case nil:
+		return &cfg, nil
+	default:
+		panic(err)
+	}
+}
+
+// UpsertConfigStore inserts or updates a configuration store record.
+func (db *ApplianceDB) UpsertConfigStore(ctx context.Context, u uuid.UUID,
+	cfg *ApplianceConfigStore) error {
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO appliance_config_store
+		 VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (cloud_uuid) DO UPDATE
+		 SET (root_hash,
+		      ts,
+		      config) = (
+		      EXCLUDED.root_hash,
+		      EXCLUDED.ts,
+		      EXCLUDED.config)`,
+		u.String(),
+		cfg.RootHash,
+		cfg.TimeStamp,
+		cfg.Config)
+	return err
 }
 
 // CloudStorageByUUID selects Cloud Storage Information for an Appliance using

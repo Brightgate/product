@@ -274,8 +274,56 @@ func testUnittestData(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 	assert.IsType(err, NotFoundError{})
 	assert.Nil(cs)
 
+	// Test "appliance with config store" case
+	cfg, err := ds.ConfigStoreByUUID(ctx, testUUID)
+	assert.NoError(err)
+	assert.Equal(cfg.RootHash, []byte{0xde, 0xad, 0xbe, 0xef})
+
+	// Test "appliance with no config store" case
+	cfg, err = ds.ConfigStoreByUUID(ctx, testUUID2)
+	assert.Error(err)
+	assert.IsType(err, NotFoundError{})
+	assert.Nil(cfg)
+
 	// This testing is light for now, but we can expand it over time as
 	// the DB becomes more complex.
+}
+
+// Test the configuration store.  subtest of TestDatabaseModel
+func testConfigStore(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
+	ctx := context.Background()
+	assert := require.New(t)
+
+	// Prep the database: add appliance 1 to the appliance_id_map table
+	a := &ApplianceID{
+		CloudUUID: testUUID,
+	}
+	err := ds.UpsertApplianceID(ctx, a)
+	assert.NoError(err, "expected Upsert to succeed")
+
+	// Add appliance 1 to the appliance_config_store table
+	acs := ApplianceConfigStore{
+		RootHash:  []byte{0xca, 0xfe, 0xbe, 0xef},
+		TimeStamp: time.Now(),
+		Config:    []byte{0xde, 0xad, 0xbe, 0xef},
+	}
+	err = ds.UpsertConfigStore(ctx, testUUID, &acs)
+	assert.NoError(err)
+
+	// Make sure we can pull it back out again.
+	cfg, err := ds.ConfigStoreByUUID(ctx, testUUID)
+	assert.NoError(err)
+	assert.Equal(cfg.RootHash, []byte{0xca, 0xfe, 0xbe, 0xef})
+
+	// Test that changing the config succeeds: change the config and upsert,
+	// then test pulling it out again.
+	acs.Config = []byte{0xfe, 0xed, 0xfa, 0xce}
+	err = ds.UpsertConfigStore(ctx, testUUID, &acs)
+	assert.NoError(err)
+
+	cfg, err = ds.ConfigStoreByUUID(ctx, testUUID)
+	assert.NoError(err)
+	assert.Equal(cfg.Config, []byte{0xfe, 0xed, 0xfa, 0xce})
 }
 
 // make a template database, loaded with the schema.  Subsequently
@@ -315,6 +363,7 @@ func TestDatabaseModel(t *testing.T) {
 		{"testUpsertApplianceID", testUpsertApplianceID},
 		{"testCloudStorage", testCloudStorage},
 		{"testUnittestData", testUnittestData},
+		{"testConfigStore", testConfigStore},
 	}
 
 	for _, tc := range testCases {
