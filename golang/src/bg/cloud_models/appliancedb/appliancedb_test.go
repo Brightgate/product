@@ -16,7 +16,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"testing"
 	"time"
@@ -328,20 +327,21 @@ func testConfigStore(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 
 // make a template database, loaded with the schema.  Subsequently
 // we can knock out copies.
-func mkTemplate(ctx context.Context) {
+func mkTemplate(ctx context.Context) error {
 	templateURI, err := bpg.CreateDB(ctx, templateDBName, "")
 	if err != nil {
-		log.Fatalf("failed to make templatedb: %+v", err)
+		return fmt.Errorf("failed to make templatedb: %+v", err)
 	}
 	templateDB, err := Connect(templateURI)
 	if err != nil {
-		log.Fatalf("failed to connect to templatedb: %+v", err)
+		return fmt.Errorf("failed to connect to templatedb: %+v", err)
 	}
 	defer templateDB.Close()
 	err = templateDB.LoadSchema(ctx, "schema")
 	if err != nil {
-		log.Fatalf("failed to load schema: %+v", err)
+		return fmt.Errorf("failed to load schema: %+v", err)
 	}
+	return nil
 }
 
 func TestDatabaseModel(t *testing.T) {
@@ -350,9 +350,12 @@ func TestDatabaseModel(t *testing.T) {
 	defer bpg.Fini(ctx)
 	err := bpg.Start(ctx)
 	if err != nil {
-		log.Fatalf("failed to setup: %+v", err)
+		t.Fatalf("failed to setup: %+v", err)
 	}
-	mkTemplate(ctx)
+	err = mkTemplate(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	testCases := []struct {
 		name  string
