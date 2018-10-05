@@ -36,6 +36,7 @@ import (
 	"bg/ap_common/platform"
 	"bg/ap_common/wificaps"
 	"bg/base_def"
+	"bg/common/cfgapi"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -55,9 +56,9 @@ var (
 
 	mcpd     *mcp.MCP
 	brokerd  *broker.Broker
-	config   *apcfg.APConfig
-	clients  apcfg.ClientMap // macaddr -> ClientInfo
-	rings    apcfg.RingMap   // ring -> config
+	config   *cfgapi.Handle
+	clients  cfgapi.ClientMap // macaddr -> ClientInfo
+	rings    cfgapi.RingMap   // ring -> config
 	nodeUUID string
 
 	wifiEvaluate   bool
@@ -152,7 +153,7 @@ func configClientChanged(path []string, val string, expires *time.Time) {
 	newRing := val
 	c, ok := clients[hwaddr]
 	if !ok {
-		c := apcfg.ClientInfo{Ring: newRing}
+		c := cfgapi.ClientInfo{Ring: newRing}
 		log.Printf("New client %s in %s\n", hwaddr, newRing)
 		clients[hwaddr] = &c
 	} else if c.Ring != newRing {
@@ -614,7 +615,7 @@ func deleteBridges() {
 // If the AP has an address of 192.168.131.x on the internal subnet, then the
 // router for each ring will be the corresponding .x address in that ring's
 // subnet.
-func localRouter(ring *apcfg.RingConfig) string {
+func localRouter(ring *cfgapi.RingConfig) string {
 	_, network, _ := net.ParseCIDR(ring.Subnet)
 	raw := network.IP.To4()
 	raw[3] = networkNodeIdx
@@ -688,13 +689,13 @@ func createBridges() {
 	}
 }
 
-func newNicOps(id string, nic *physDevice) []apcfg.PropertyOp {
+func newNicOps(id string, nic *physDevice) []cfgapi.PropertyOp {
 	base := "@/nodes/" + nodeUUID + "/nics/" + id
 
-	ops := make([]apcfg.PropertyOp, 0)
+	ops := make([]cfgapi.PropertyOp, 0)
 	if nic == nil {
-		op := apcfg.PropertyOp{
-			Op:   apcfg.PropDelete,
+		op := cfgapi.PropertyOp{
+			Op:   cfgapi.PropDelete,
 			Name: base,
 		}
 		ops = append(ops, op)
@@ -706,16 +707,16 @@ func newNicOps(id string, nic *physDevice) []apcfg.PropertyOp {
 			kind = "wireless"
 		}
 
-		op := apcfg.PropertyOp{
-			Op:    apcfg.PropCreate,
+		op := cfgapi.PropertyOp{
+			Op:    cfgapi.PropCreate,
 			Name:  base + "/kind",
 			Value: kind,
 		}
 		log.Printf("Setting %s to %s\n", id, op.Value)
 		ops = append(ops, op)
 
-		op = apcfg.PropertyOp{
-			Op:    apcfg.PropCreate,
+		op = cfgapi.PropertyOp{
+			Op:    cfgapi.PropCreate,
 			Name:  base + "/ring",
 			Value: nic.ring,
 		}
@@ -733,17 +734,17 @@ func updateNicProperties() {
 	}
 
 	// Get the information currently recorded in the config tree
-	nics := make(apcfg.ChildMap)
+	nics := make(cfgapi.ChildMap)
 	if r, _ := config.GetProps("@/nodes/" + nodeUUID + "/nics"); r != nil {
 		nics = r.Children
 	}
 
 	// Examine each entry in the config tree to determine whether it matches
 	// our current inventory.
-	ops := make([]apcfg.PropertyOp, 0)
+	ops := make([]cfgapi.PropertyOp, 0)
 	for id, nic := range nics {
 		var ring string
-		var newOps []apcfg.PropertyOp
+		var newOps []cfgapi.PropertyOp
 
 		if x := nic.Children["ring"]; x != nil {
 			ring = x.Value
@@ -779,7 +780,7 @@ func updateNicProperties() {
 	}
 
 	if len(ops) != 0 {
-		if _, err := config.Execute(ops); err != nil {
+		if _, err := config.Execute(nil, ops).Wait(nil); err != nil {
 			log.Printf("Error updating NIC inventory: %v\n", err)
 		}
 	}
@@ -952,7 +953,7 @@ func makeValidChannelMaps() {
 	}
 }
 
-func globalWifiInit(props *apcfg.PropertyNode) error {
+func globalWifiInit(props *cfgapi.PropertyNode) error {
 	locationRE := regexp.MustCompile(`^[A-Z][A-Z]$`)
 
 	makeValidChannelMaps()
@@ -1045,7 +1046,7 @@ func daemonInit() error {
 
 	brokerd = broker.New(pname)
 
-	config, err = apcfg.NewConfig(brokerd, pname, apcfg.AccessInternal)
+	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err != nil {
 		return fmt.Errorf("cannot connect to configd: %v", err)
 	}

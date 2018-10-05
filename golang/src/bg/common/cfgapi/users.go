@@ -8,7 +8,7 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 
-package apcfg
+package cfgapi
 
 import (
 	"fmt"
@@ -46,7 +46,7 @@ type UserInfo struct {
 	TOTP              string // Time-based One Time Password URL
 	Password          string // bcrypt Password
 	MD4Password       string // MD4 Password for WPA-EAP/MSCHAPv2
-	config            *APConfig
+	config            *Handle
 	newUser           bool // need to do creation activities
 }
 
@@ -92,7 +92,7 @@ func newUserFromNode(name string, user *PropertyNode) (*UserInfo, error) {
 // NewUserInfo is intended for use when creating new users in the config
 // store.  It makes a UserInfo, a new UUID, and marks the UserInfo as
 // "new", which triggers special behavior in Userinfo.Update.
-func (c *APConfig) NewUserInfo(uid string) (*UserInfo, error) {
+func (c *Handle) NewUserInfo(uid string) (*UserInfo, error) {
 	if uid == "" {
 		return nil, fmt.Errorf("bad uid")
 	}
@@ -128,7 +128,7 @@ func (e NoSuchUserError) Error() string {
 }
 
 // GetUser fetches the UserInfo structure for a given user
-func (c *APConfig) GetUser(uid string) (*UserInfo, error) {
+func (c *Handle) GetUser(uid string) (*UserInfo, error) {
 	if uid == "" {
 		return nil, fmt.Errorf("uid must be specified")
 	}
@@ -148,7 +148,7 @@ func (c *APConfig) GetUser(uid string) (*UserInfo, error) {
 }
 
 // GetUserByUUID fetches the UserInfo structure for a given UUID
-func (c *APConfig) GetUserByUUID(ruuid uuid.UUID) (*UserInfo, error) {
+func (c *Handle) GetUserByUUID(ruuid uuid.UUID) (*UserInfo, error) {
 	users, err := c.GetProps("@/users/")
 	if err != nil {
 		return nil, errors.Wrapf(err, "Failed to get user list")
@@ -176,7 +176,7 @@ func (c *APConfig) GetUserByUUID(ruuid uuid.UUID) (*UserInfo, error) {
 
 // GetUsers fetches the Users subtree, in the form of a map of UID to UserInfo
 // structures.
-func (c *APConfig) GetUsers() UserMap {
+func (c *Handle) GetUsers() UserMap {
 	props, err := c.GetProps("@/users")
 	if err != nil {
 		return nil
@@ -250,7 +250,7 @@ func (u *UserInfo) Update() error {
 	addProp("telephoneNumber", phoneStr)
 	addProp("preferredLanguage", u.PreferredLanguage)
 	addProp("role", u.Role)
-	_, err = u.config.Execute(ops)
+	_, err = u.config.Execute(nil, ops).Wait(nil)
 	if err != nil {
 		return errors.Wrap(err, "failed to update user")
 	}
@@ -297,7 +297,7 @@ func (u *UserInfo) SetPassword(passwd string) error {
 			Value: string(md4s),
 		},
 	}
-	_, err = u.config.Execute(ops)
+	_, err = u.config.Execute(nil, ops).Wait(nil)
 	if err != nil {
 		return errors.Wrapf(err,
 			"could not create password properties for %s", u.UID)

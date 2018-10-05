@@ -264,13 +264,17 @@ USERAUTHD_TEMPLATE_DIR=$(APPETC)/templates/ap.userauthd
 COMMON_GOPKGS = \
 	bg/common/archive \
 	bg/common/briefpg \
+	bg/common/cfgapi \
 	bg/common/cfgmsg \
 	bg/common/cfgtree \
+	bg/common/configctl \
 	bg/common/grpcutils \
 	bg/common/urlfetch
 
 COMMON_SRCS = \
 	$(GOSRCBG)/common/archive/archive.go \
+	$(GOSRCBG)/common/cfgapi/cfgapi.go \
+	$(GOSRCBG)/common/cfgapi/users.go \
 	$(GOSRCBG)/common/cfgmsg/cfgmsg.pb.go \
 	$(GOSRCBG)/common/cfgtree/cfgtree.go \
 	$(GOSRCBG)/common/grpcutils/client.go \
@@ -423,7 +427,6 @@ APP_COMMON_SRCS = \
 	$(COMMON_SRCS) \
 	$(GOSRCBG)/ap_common/apcfg/apcfg.go \
 	$(GOSRCBG)/ap_common/apcfg/events.go \
-	$(GOSRCBG)/ap_common/apcfg/users.go \
 	$(GOSRCBG)/ap_common/aputil/aputil.go \
 	$(GOSRCBG)/ap_common/broker/broker.go \
 	$(GOSRCBG)/ap_common/device/device.go \
@@ -484,6 +487,7 @@ CLOUDDAEMON_GOPKGS = \
 CLOUDCOMMON_GOPKGS = \
 	$(COMMON_GOPKGS) \
 	bg/cl_common/auth/m2mauth \
+	bg/cl_common/clcfg \
 	bg/cl_common/daemonutils \
 	bg/cloud_models/appliancedb \
 	bg/cloud_models/sessiondb
@@ -532,6 +536,7 @@ CLOUD_COMMON_SRCS = \
 	$(GOSRCBG)/cloud_models/appliancedb/appliancedb.go \
 	$(GOSRCBG)/cloud_models/sessiondb/sessiondb.go \
 	$(GOSRCBG)/cl_common/auth/m2mauth/middleware.go \
+	$(GOSRCBG)/cl_common/clcfg/clcfg.go \
 	$(GOSRCBG)/cl_common/daemonutils/utils.go
 
 COVERAGE_DIR = coverage
@@ -582,6 +587,11 @@ packages: install client-web
 packages-lint: install client-web
 	$(PYTHON3) build/deb-pkg/deb-pkg.py --lint --arch $(PKG_DEB_ARCH)
 
+GO_MOCK_CLOUDRPC_SRCS = \
+	$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
+	$(GOSRCBG)/base_def/base_def.go \
+	$(GOSRCBG)/base_msg/base_msg.pb.go \
+	$(GOSRCBG)/common/cfgmsg/cfgmsg.pb.go
 GO_MOCK_APPLIANCEDB = $(GOSRCBG)/cloud_models/appliancedb/mocks/DataStore.go
 GO_MOCK_CLOUDRPC = $(GOSRCBG)/cloud_rpc/mocks/EventClient.go
 GO_MOCK_SRCS = \
@@ -593,7 +603,7 @@ mocks: $(GO_MOCK_SRCS)
 # Mock rules-- not sure how to make this work with pattern substitution
 # The use of 'realpath' avoids an issue in mockery for workspaces with
 # symlinks (https://github.com/vektra/mockery/issues/157).
-$(GO_MOCK_CLOUDRPC): $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go $(GOSRCBG)/base_msg/base_msg.pb.go $(GOTOOLS) $(GODEPS_ENSURED)
+$(GO_MOCK_CLOUDRPC): $(GO_MOCK_CLOUDRPC_SRCS) $(GOTOOLS) $(GODEPS_ENSURED)
 	cd $(realpath $(dir $<)) && GOPATH=$(realpath $(GOPATH)) $(GOTOOLS_BIN_MOCKERY) -name 'EventClient'
 
 $(GO_MOCK_APPLIANCEDB): $(GOSRCBG)/cloud_models/appliancedb/appliancedb.go $(GOTOOLS) $(GODEPS_ENSURED)
@@ -765,7 +775,9 @@ $(APPBIN)/ap-arpspoof: $(GOSRCBG)/ap-arpspoof/arpspoof.go
 $(APPBIN)/ap-certcheck: $(GOSRCBG)/ap-certcheck/certcheck.go \
 	$(GOSRCBG)/ap_common/certificate/certificate.go
 $(APPBIN)/ap-complete: $(GOSRCBG)/ap-complete/complete.go
-$(APPBIN)/ap-configctl: $(GOSRCBG)/ap-configctl/configctl.go
+$(APPBIN)/ap-configctl:	\
+	$(GOSRCBG)/ap-configctl/configctl.go \
+	$(GOSRCBG)/common/configctl/configctl.go
 $(APPBIN)/ap-ctl: $(GOSRCBG)/ap-ctl/ctl.go
 $(APPBIN)/ap-defaultpass: $(GOSRCBG)/ap-defaultpass/defaultpass.go
 $(APPBIN)/ap-diag: \
@@ -822,6 +834,7 @@ $(CLOUDBIN)/cl-aggregate: \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl-configctl: \
 	$(GOSRCBG)/cl-configctl/configctl.go \
+	$(GOSRCBG)/common/configctl/configctl.go \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl-dtool: \
 	$(GOSRCBG)/cl-dtool/dtool.go \
@@ -894,7 +907,7 @@ $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go: base/cloud_rpc.proto $(GOTOOLS)
 			-I . \
 			-I$(GOTOOLS_DIR)/src \
 			-I$(GOTOOLS_DIR)/src/$(GOTOOLS_pgengo_repo)/descriptor \
-			--go_out=plugins=grpc,Mbase_msg.proto=bg/base_msg:../$(GOSRCBG)/cloud_rpc \
+			--go_out=plugins=grpc,Mbase_msg.proto=bg/base_msg,Mcfgmsg.proto=bg/common/cfgmsg:../$(GOSRCBG)/cloud_rpc \
 			$(notdir $<)
 
 base/cloud_rpc_pb2.py: base/cloud_rpc.proto

@@ -30,6 +30,7 @@ import (
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
+	"bg/common/cfgapi"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
@@ -46,12 +47,12 @@ var (
 	verbose = flag.Bool("verbose", false, "Log nmap progress")
 
 	brokerd *broker.Broker
-	config  *apcfg.APConfig
+	config  *cfgapi.Handle
 
 	profiler *aputil.Profiler
 	watchers = make([]*watcher, 0)
 
-	rings   apcfg.RingMap
+	rings   cfgapi.RingMap
 	macToIP = make(map[string]string)
 	ipToMac = make(map[string]string)
 	mapMtx  sync.Mutex
@@ -183,7 +184,7 @@ func getGateways() {
 	// Build a set of the MACs belonging to our APs, so we can distinguish
 	// between client and internal network traffic
 	internalMacs = make(map[uint64]bool)
-	nics, _ := config.GetNics("", false)
+	nics, _ := config.GetNics("", "")
 	for _, nic := range nics {
 		if hwaddr := network.MacToUint64(nic); hwaddr != 0 {
 			internalMacs[hwaddr] = true
@@ -368,7 +369,7 @@ func main() {
 	brokerd = broker.New(pname)
 	defer brokerd.Fini()
 
-	config, err = apcfg.NewConfig(brokerd, pname, apcfg.AccessInternal)
+	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}

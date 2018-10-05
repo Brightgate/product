@@ -32,6 +32,7 @@ syntax = "proto3";
 
 package cloud_rpc;
 import "base_msg.proto";
+import "cfgmsg.proto";
 import "google/protobuf/any.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -213,7 +214,7 @@ service ConfigBackEnd{
 }
 
 message CfgFrontEndPing {
-	google.protobuf.Timestamp time	= 0x01;
+       google.protobuf.Timestamp time	= 0x01;
 }
 
 message CfgCmdID {
@@ -223,8 +224,8 @@ message CfgCmdID {
 }
 
 service ConfigFrontEnd{
-	rpc Ping(CfgFrontEndPing) returns (CfgPropResponse) {};
-	rpc Submit(CfgPropOps) returns (CfgPropResponse) {};
-	rpc Status(CfgCmdID) returns (CfgPropResponse) {};
-	rpc Cancel(CfgCmdID) returns (CfgPropResponse) {};
+	rpc Ping(CfgFrontEndPing) returns (CfgFrontEndPing) {};
+	rpc Submit(cfgmsg.ConfigQuery) returns (cfgmsg.ConfigResponse) {};
+	rpc Status(CfgCmdID) returns (cfgmsg.ConfigResponse) {};
+	rpc Cancel(CfgCmdID) returns (cfgmsg.ConfigResponse) {};
 }

@@ -283,7 +283,7 @@ func createPipe() error {
 func findWanNics() {
 	wanIfaces = make(map[string]bool)
 
-	nics, err := config.GetNics(base_def.RING_WAN, false)
+	nics, err := config.GetNics(base_def.RING_WAN, "")
 	if err != nil {
 		log.Printf("failed to get list of WAN NICs: %v\n", err)
 		return

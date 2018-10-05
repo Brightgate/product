@@ -22,9 +22,9 @@ import (
 	"sync"
 	"time"
 
-	"bg/ap_common/apcfg"
 	"bg/ap_common/network"
 	"bg/base_def"
+	"bg/common/cfgapi"
 
 	// Requires libpcap
 	"github.com/google/gopacket"
@@ -417,7 +417,7 @@ func sampleInterface(state *samplerState) {
 	log.Printf("Sampler for %s (%s) offline\n", state.iface, state.ring)
 }
 
-func getRingSubnet(config *apcfg.RingConfig) (net.HardwareAddr, *net.IPNet, error) {
+func getRingSubnet(config *cfgapi.RingConfig) (net.HardwareAddr, *net.IPNet, error) {
 	var hwaddr net.HardwareAddr
 	var subnet *net.IPNet
 	var err error

@@ -189,7 +189,7 @@ func getObjectsBucket(bucket, name string) ([]string, string, error) {
 		if ierr == iterator.Done {
 			break
 		} else if ierr != nil {
-			err = fmt.Errorf("iterator failed: %v", err)
+			err = fmt.Errorf("iterator failed: %v", ierr)
 			break
 		}
 

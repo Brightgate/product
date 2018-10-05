@@ -20,9 +20,9 @@ import (
 	"strconv"
 	"strings"
 
-	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/common"
+	"bg/common/cfgapi"
 	"bg/common/cfgtree"
 
 	"github.com/satori/uuid"
@@ -93,14 +93,14 @@ func propTreeLoad(name string) (*cfgtree.PTree, error) {
 }
 
 func addUpgradeHook(version int32, hook func() error) {
-	if version > apcfg.Version {
+	if version > cfgapi.Version {
 		msg := fmt.Sprintf("Upgrade hook %d > current max of %d\n",
-			version, apcfg.Version)
+			version, cfgapi.Version)
 		panic(msg)
 	}
 
 	if upgradeHooks == nil {
-		upgradeHooks = make([]func() error, apcfg.Version+1)
+		upgradeHooks = make([]func() error, cfgapi.Version+1)
 	}
 	upgradeHooks[version] = hook
 }
@@ -120,11 +120,11 @@ func versionTree() error {
 	if version < minConfigVersion {
 		return fmt.Errorf("obsolete properties file")
 	}
-	if version > int(apcfg.Version) {
+	if version > int(cfgapi.Version) {
 		return fmt.Errorf("properties file is newer than the software")
 	}
 
-	for version < int(apcfg.Version) {
+	for version < int(cfgapi.Version) {
 		log.Printf("Upgrading properties from version %d to %d\n",
 			version, version+1)
 		version++

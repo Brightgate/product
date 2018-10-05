@@ -23,7 +23,8 @@ import (
 	"strconv"
 	"time"
 
-	"bg/ap_common/apcfg"
+	"bg/ap_common/device"
+	"bg/common/cfgapi"
 
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
@@ -65,7 +66,7 @@ func demoAlertsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Subset of apcfg.VulnInfo
+// Subset of cfgapi.VulnInfo
 type daVulnInfo struct {
 	FirstDetected  *time.Time `json:"first_detected"`
 	LatestDetected *time.Time `json:"latest_detected"`
@@ -102,8 +103,8 @@ type daDevices struct {
 	Devices    []daDevice
 }
 
-func buildDeviceResponse(hwaddr string, client *apcfg.ClientInfo,
-	scanMap apcfg.ScanMap, vulnMap apcfg.VulnMap) daDevice {
+func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
+	scanMap cfgapi.ScanMap, vulnMap cfgapi.VulnMap) daDevice {
 
 	var cd daDevice
 
@@ -170,7 +171,7 @@ func buildDeviceResponse(hwaddr string, client *apcfg.ClientInfo,
 		return cd
 	}
 
-	lpn, err := config.GetDevice(identity)
+	lpn, err := device.GetDeviceByID(config, identity)
 	if err != nil {
 		log.Printf("buildDeviceResponse couldn't lookup @/devices/%d: %v\n", identity, err)
 	} else {
@@ -327,7 +328,7 @@ func demoConfigGetHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func demoConfigPostHandler(w http.ResponseWriter, r *http.Request) {
-	var ops []apcfg.PropertyOp
+	var ops []cfgapi.PropertyOp
 
 	// Send property updates to ap.configd
 	//
@@ -347,8 +348,8 @@ func demoConfigPostHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Properties may only have one value", 400)
 			return
 		}
-		ops = append(ops, apcfg.PropertyOp{
-			Op:    apcfg.PropCreate,
+		ops = append(ops, cfgapi.PropertyOp{
+			Op:    cfgapi.PropCreate,
 			Name:  key,
 			Value: values[0],
 		})
@@ -356,7 +357,7 @@ func demoConfigPostHandler(w http.ResponseWriter, r *http.Request) {
 	if len(ops) == 0 {
 		return
 	}
-	_, err = config.Execute(ops)
+	_, err = config.Execute(nil, ops).Wait(nil)
 	if err != nil {
 		log.Printf("failed to set properties: %v", err)
 		http.Error(w, "failed to set properties", 400)
@@ -386,7 +387,7 @@ type daUsers struct {
 	Users      map[string]daUser
 }
 
-func buildUserResponse(user *apcfg.UserInfo) daUser {
+func buildUserResponse(user *cfgapi.UserInfo) daUser {
 	var cu daUser
 
 	// XXX mismatch possible between uid and user.uid?
@@ -499,7 +500,7 @@ func demoUserByUUIDPostHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var ui *apcfg.UserInfo
+	var ui *cfgapi.UserInfo
 	log.Printf("vars[uuid] = '%s'", vars["uuid"])
 	if vars["uuid"] == "NEW" {
 		ui, err = config.NewUserInfo(dau.UID)

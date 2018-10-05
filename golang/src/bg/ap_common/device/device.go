@@ -15,6 +15,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"time"
+
+	"bg/common/cfgapi"
 )
 
 // IDBase is the minimum device ID
@@ -54,4 +56,28 @@ func DevicesLoad(name string) (Collection, error) {
 	}
 
 	return devices, err
+}
+
+// GetDeviceByPath fetches a single device by its path
+func GetDeviceByPath(c *cfgapi.Handle, path string) (*Device, error) {
+	var dev Device
+
+	ops := []cfgapi.PropertyOp{
+		{Op: cfgapi.PropGet, Name: path},
+	}
+	tree, err := c.Execute(nil, ops).Wait(nil)
+
+	if err != nil {
+		err = fmt.Errorf("failed to retrieve %s: %v", path, err)
+	} else if err = json.Unmarshal([]byte(tree), &dev); err != nil {
+		err = fmt.Errorf("failed to decode %s: %v", tree, err)
+	}
+
+	return &dev, err
+}
+
+// GetDeviceByID fetches a single device by its ID #
+func GetDeviceByID(c *cfgapi.Handle, devid int) (*Device, error) {
+	path := fmt.Sprintf("@/devices/%d", devid)
+	return GetDeviceByPath(c, path)
 }

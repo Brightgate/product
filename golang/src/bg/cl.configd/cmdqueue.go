@@ -16,7 +16,7 @@ import (
 	"math/rand"
 	"time"
 
-	rpc "bg/cloud_rpc"
+	"bg/common/cfgmsg"
 
 	"github.com/golang/protobuf/ptypes"
 )
@@ -25,12 +25,12 @@ const maxDelay = 3
 
 // State of a single submitted command.
 type cmdState struct {
-	cmdID     int64                // monotonically increasing ID
-	op        *rpc.CfgPropOps      // config operation(s)
-	response  *rpc.CfgPropResponse // result of the operation(s)
-	submitted *time.Time           // when added to the submission queue
-	fetched   *time.Time           // last time it was pulled from the queue
-	completed *time.Time           // when the completion arrived
+	cmdID     int64                  // monotonically increasing ID
+	cmd       *cfgmsg.ConfigQuery    // config operation(s)
+	response  *cfgmsg.ConfigResponse // result of the operation(s)
+	submitted *time.Time             // when added to the submission queue
+	fetched   *time.Time             // last time it was pulled from the queue
+	completed *time.Time             // when the completion arrived
 }
 
 // A queue of cmdState structures.  We maintain both a proper queue, to enforce
@@ -93,7 +93,7 @@ func cmdSearch(s *perAPState, cmdID int64) *cmdState {
 
 // Add a single command to an AP's submitted queue and to its map of outstanding
 // commands.
-func cmdSubmit(s *perAPState, ops *rpc.CfgPropOps) int64 {
+func cmdSubmit(s *perAPState, q *cfgmsg.ConfigQuery) int64 {
 	s.Lock()
 	defer s.Unlock()
 
@@ -102,10 +102,10 @@ func cmdSubmit(s *perAPState, ops *rpc.CfgPropOps) int64 {
 	now := time.Now()
 	cmd := cmdState{
 		cmdID:     cmdID,
-		op:        ops,
+		cmd:       q,
 		submitted: &now,
 	}
-	ops.CmdID = cmdID
+	cmd.cmdID = cmdID
 	s.lastCmdID = cmdID
 	s.sq.enqueue(&cmd)
 
@@ -115,8 +115,8 @@ func cmdSubmit(s *perAPState, ops *rpc.CfgPropOps) int64 {
 // Fetch one or more commands from the submitted queue.  Commands are left in
 // the queue until they are completed, allowing them to be refetched if the
 // appliance crashes/restarts before they are executed.
-func cmdFetch(s *perAPState, start, max int64) []*rpc.CfgPropOps {
-	o := make([]*rpc.CfgPropOps, 0)
+func cmdFetch(s *perAPState, start, max int64) []*cfgmsg.ConfigQuery {
+	o := make([]*cfgmsg.ConfigQuery, 0)
 
 	s.Lock()
 	defer s.Unlock()
@@ -131,7 +131,7 @@ func cmdFetch(s *perAPState, start, max int64) []*rpc.CfgPropOps {
 			}
 			c.fetched = &t
 
-			o = append(o, c.op)
+			o = append(o, c.cmd)
 			if len(o) >= int(max) {
 				break
 			}
@@ -141,10 +141,10 @@ func cmdFetch(s *perAPState, start, max int64) []*rpc.CfgPropOps {
 }
 
 // Get the status of a submitted command
-func cmdStatus(s *perAPState, cmdID int64) *rpc.CfgPropResponse {
-	rval := &rpc.CfgPropResponse{
-		Time:  ptypes.TimestampNow(),
-		CmdID: cmdID,
+func cmdStatus(s *perAPState, cmdID int64) *cfgmsg.ConfigResponse {
+	rval := &cfgmsg.ConfigResponse{
+		Timestamp: ptypes.TimestampNow(),
+		CmdID:     cmdID,
 	}
 
 	s.Lock()
@@ -154,13 +154,13 @@ func cmdStatus(s *perAPState, cmdID int64) *rpc.CfgPropResponse {
 
 	switch {
 	case cmd == nil:
-		rval.Response = rpc.CfgPropResponse_NOCMD
+		rval.Response = cfgmsg.ConfigResponse_NOCMD
 
 	case cmd.fetched == nil:
-		rval.Response = rpc.CfgPropResponse_QUEUED
+		rval.Response = cfgmsg.ConfigResponse_QUEUED
 
 	case cmd.completed == nil:
-		rval.Response = rpc.CfgPropResponse_INPROGRESS
+		rval.Response = cfgmsg.ConfigResponse_INPROGRESS
 
 	default:
 		rval = cmd.response
@@ -169,10 +169,10 @@ func cmdStatus(s *perAPState, cmdID int64) *rpc.CfgPropResponse {
 }
 
 // Attempt to cancel a command
-func cmdCancel(s *perAPState, cmdID int64) *rpc.CfgPropResponse {
-	rval := &rpc.CfgPropResponse{
-		Time:  ptypes.TimestampNow(),
-		CmdID: cmdID,
+func cmdCancel(s *perAPState, cmdID int64) *cfgmsg.ConfigResponse {
+	rval := &cfgmsg.ConfigResponse{
+		Timestamp: ptypes.TimestampNow(),
+		CmdID:     cmdID,
 	}
 
 	s.Lock()
@@ -182,30 +182,30 @@ func cmdCancel(s *perAPState, cmdID int64) *rpc.CfgPropResponse {
 
 	switch {
 	case cmd == nil:
-		rval.Response = rpc.CfgPropResponse_NOCMD
+		rval.Response = cfgmsg.ConfigResponse_NOCMD
 
 	case cmd.fetched == nil:
 		// command is still queued, so we can cancel it
-		rval.Response = rpc.CfgPropResponse_OK
+		rval.Response = cfgmsg.ConfigResponse_OK
 		s.sq.dequeue(cmdID)
 
 	case cmd.completed == nil:
 		// command has been fetched, so we can't cancel
 		// it.  We'll still remove it from the queue so
 		// it can't be fetched again.
-		rval.Response = rpc.CfgPropResponse_INPROGRESS
+		rval.Response = cfgmsg.ConfigResponse_INPROGRESS
 		s.sq.dequeue(cmdID)
 
 	default:
 		// Too late - the command has already been executed
-		rval.Response = rpc.CfgPropResponse_FAILED
+		rval.Response = cfgmsg.ConfigResponse_FAILED
 		rval.Errmsg = "command has already completed"
 	}
 	return rval
 }
 
 // Handle a completion for an outstanding command
-func cmdComplete(s *perAPState, rval *rpc.CfgPropResponse) {
+func cmdComplete(s *perAPState, rval *cfgmsg.ConfigResponse) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -244,9 +244,9 @@ func cmdComplete(s *perAPState, rval *rpc.CfgPropResponse) {
 // will revert to the original tree next time cl.configd launches.
 // XXX: is there a need for a Reset() rpc to trigger this cleanup without
 // restarting the daemon?
-func execute(state *perAPState, ops *rpc.CfgPropOps) *rpc.CfgPropResponse {
+func execute(state *perAPState, ops *cfgmsg.ConfigQuery) *cfgmsg.ConfigResponse {
 	var err error
-	var rval rpc.CfgPropResponse
+	var rval cfgmsg.ConfigResponse
 
 	t := state.cachedTree
 	t.ChangesetInit()
@@ -260,13 +260,13 @@ func execute(state *perAPState, ops *rpc.CfgPropOps) *rpc.CfgPropResponse {
 
 		switch op.Operation {
 
-		case rpc.CfgPropOps_CfgPropOp_SET:
+		case cfgmsg.ConfigOp_SET:
 			err = t.Set(prop, val, expires)
 
-		case rpc.CfgPropOps_CfgPropOp_CREATE:
+		case cfgmsg.ConfigOp_CREATE:
 			err = t.Add(prop, val, expires)
 
-		case rpc.CfgPropOps_CfgPropOp_DELETE:
+		case cfgmsg.ConfigOp_DELETE:
 			err = t.Delete(prop)
 		}
 
@@ -276,16 +276,16 @@ func execute(state *perAPState, ops *rpc.CfgPropOps) *rpc.CfgPropResponse {
 	}
 
 	if err == nil {
-		rval.Response = rpc.CfgPropResponse_OK
+		rval.Response = cfgmsg.ConfigResponse_OK
 		t.ChangesetCommit()
 	} else {
 		rval.Errmsg = fmt.Sprintf("%v", err)
-		rval.Response = rpc.CfgPropResponse_FAILED
+		rval.Response = cfgmsg.ConfigResponse_FAILED
 		t.ChangesetRevert()
 	}
 
 	rval.CmdID = ops.CmdID
-	rval.Time = ptypes.TimestampNow()
+	rval.Timestamp = ptypes.TimestampNow()
 
 	return &rval
 }

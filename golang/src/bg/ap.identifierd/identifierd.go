@@ -44,6 +44,7 @@ import (
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
+	"bg/common/cfgapi"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/klauspost/oui"
@@ -55,7 +56,7 @@ var (
 	logDir   = flag.String("logdir", "./", "Directory for device learning log data")
 
 	brokerd  *broker.Broker
-	apcfgd   *apcfg.APConfig
+	configd  *cfgapi.Handle
 	profiler *aputil.Profiler
 
 	ouiDB   oui.DynamicDB
@@ -336,11 +337,11 @@ func updateClient(hwaddr uint64, devID string, confidence float32) {
 	identProp := "@/clients/" + mac + "/identity"
 	confProp := "@/clients/" + mac + "/confidence"
 
-	if err := apcfgd.CreateProp(identProp, devID, nil); err != nil {
+	if err := configd.CreateProp(identProp, devID, nil); err != nil {
 		log.Printf("error creating prop %s: %s\n", identProp, err)
 	}
 
-	if err := apcfgd.CreateProp(confProp, fmt.Sprintf("%.2f", confidence), nil); err != nil {
+	if err := configd.CreateProp(confProp, fmt.Sprintf("%.2f", confidence), nil); err != nil {
 		log.Printf("error creating prop %s: %s\n", confProp, err)
 	}
 }
@@ -378,7 +379,7 @@ func identify() {
 }
 
 func recoverClients() {
-	clients := apcfgd.GetClients()
+	clients := configd.GetClients()
 
 	for macaddr, client := range clients {
 		hwaddr, err := net.ParseMAC(macaddr)
@@ -477,7 +478,7 @@ func main() {
 	brokerd = broker.New(pname)
 	defer brokerd.Fini()
 
-	apcfgd, err = apcfg.NewConfig(brokerd, pname, apcfg.AccessInternal)
+	configd, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}
@@ -494,12 +495,12 @@ func main() {
 	brokerd.Handle(base_def.TOPIC_LISTEN, handleListen)
 	brokerd.Handle(base_def.TOPIC_OPTIONS, handleOptions)
 
-	apcfgd.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
-	apcfgd.HandleChange(`^@/clients/.*/dhcp_name$`, configDHCPChanged)
-	apcfgd.HandleDelete(`^@/clients/.*/ipv4$`, configIPv4Delexp)
-	apcfgd.HandleExpire(`^@/clients/.*/ipv4$`, configIPv4Delexp)
-	apcfgd.HandleChange(`^@/clients/.*/dns_private$`, configPrivacyChanged)
-	apcfgd.HandleDelete(`^@/clients/.*/dns_private$`, configPrivacyDelete)
+	configd.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
+	configd.HandleChange(`^@/clients/.*/dhcp_name$`, configDHCPChanged)
+	configd.HandleDelete(`^@/clients/.*/ipv4$`, configIPv4Delexp)
+	configd.HandleExpire(`^@/clients/.*/ipv4$`, configIPv4Delexp)
+	configd.HandleChange(`^@/clients/.*/dns_private$`, configPrivacyChanged)
+	configd.HandleDelete(`^@/clients/.*/dns_private$`, configPrivacyDelete)
 
 	if err = os.MkdirAll(*logDir, 0755); err != nil {
 		log.Fatalln("failed to mkdir:", err)

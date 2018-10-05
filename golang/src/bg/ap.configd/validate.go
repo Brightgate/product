@@ -21,8 +21,8 @@ import (
 
 	"github.com/satori/uuid"
 
-	"bg/ap_common/apcfg"
 	"bg/ap_common/network"
+	"bg/common/cfgapi"
 )
 
 type propDescription struct {
@@ -33,11 +33,11 @@ type propDescription struct {
 
 // Each field in a property path is represented by a Validation Node.
 type vnode struct {
-	keyType  string            // datatype of the path field
-	keyText  string            // text of the path field
-	level    apcfg.AccessLevel // access level required to modify
-	children map[string]*vnode // list of child nodes
-	valType  string            // for leaf nodes, data type of the value
+	keyType  string             // datatype of the path field
+	keyText  string             // text of the path field
+	level    cfgapi.AccessLevel // access level required to modify
+	children map[string]*vnode  // list of child nodes
+	valType  string             // for leaf nodes, data type of the value
 }
 
 // validate that the provided string is a legal instance of this datatype
@@ -47,7 +47,7 @@ var (
 	vRoot = &vnode{
 		keyType:  "const",
 		keyText:  "@",
-		level:    apcfg.AccessInternal,
+		level:    cfgapi.AccessInternal,
 		valType:  "none",
 		children: make(map[string]*vnode),
 	}
@@ -152,7 +152,7 @@ func validateNicKind(val string) error {
 func validateRing(val string) error {
 	var err error
 
-	if val != "" && apcfg.ValidRings[val] == false {
+	if val != "" && cfgapi.ValidRings[val] == false {
 		err = fmt.Errorf("'%s' is not a valid ring", val)
 	}
 	return err
@@ -330,7 +330,7 @@ func getMatchingVnode(prop string) (*vnode, error) {
 // Given a property->value, validate that the property path is valid, that the
 // value matches the expected type for this property, and that the caller is
 // allowed to perform the update.
-func validatePropVal(prop string, val string, level apcfg.AccessLevel) error {
+func validatePropVal(prop string, val string, level cfgapi.AccessLevel) error {
 	if val == "" {
 		return fmt.Errorf("missing value")
 	}
@@ -341,8 +341,9 @@ func validatePropVal(prop string, val string, level apcfg.AccessLevel) error {
 			err = fmt.Errorf("%s is not a leaf property", prop)
 
 		} else if level < node.level {
-			err = fmt.Errorf("%s requires level '%s' or better",
-				prop, apcfg.AccessLevelNames[node.level])
+			err = fmt.Errorf("modifying %s requires level '%s' "+
+				"or better",
+				prop, cfgapi.AccessLevelNames[node.level])
 
 		} else {
 			vfunc := validationFuncs[node.valType]
@@ -358,7 +359,7 @@ func validatePropVal(prop string, val string, level apcfg.AccessLevel) error {
 // Recursively examine all descendents of this property, looking for any that
 // are not modifiable at the given level.  The routine returns the path to the
 // first such property found.
-func validateChildren(node *vnode, level apcfg.AccessLevel) (string, apcfg.AccessLevel) {
+func validateChildren(node *vnode, level cfgapi.AccessLevel) (string, cfgapi.AccessLevel) {
 	if level < node.level {
 		return node.keyText, node.level
 	}
@@ -376,14 +377,14 @@ func validateChildren(node *vnode, level apcfg.AccessLevel) (string, apcfg.Acces
 // to be created in the first place.)  More importantly, we check to be sure
 // that a user does not delete a subtree in which any of the properties are not
 // user settable
-func validatePropDel(prop string, level apcfg.AccessLevel) error {
+func validatePropDel(prop string, level cfgapi.AccessLevel) error {
 	node, err := getMatchingVnode(prop)
 	if err == nil {
 		// We need to verify that this, and all descendent, nodes may be
 		// modified at this access level.
 		if p, l := validateChildren(node, level); p != "" {
 			err = fmt.Errorf("%s requires '%s' access to delete",
-				prop+"/"+p, apcfg.AccessLevelNames[l])
+				prop+"/"+p, cfgapi.AccessLevelNames[l])
 		}
 	}
 
@@ -432,7 +433,7 @@ func newVnode(prop string) (*vnode, error) {
 		node = &vnode{
 			keyText:  f,
 			keyType:  keyType,
-			level:    apcfg.AccessInternal,
+			level:    cfgapi.AccessInternal,
 			children: make(map[string]*vnode),
 		}
 		parent.children[f] = node
@@ -448,7 +449,7 @@ func addOneProperty(prop, val, level string) error {
 		return err
 	}
 
-	if v, ok := apcfg.AccessLevels[strings.ToLower(level)]; ok {
+	if v, ok := cfgapi.AccessLevels[strings.ToLower(level)]; ok {
 		node.level = v
 	} else {
 		err = fmt.Errorf("invalid level '%s' for %s", level, prop)

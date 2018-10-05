@@ -63,9 +63,9 @@ import (
 	"strings"
 	"time"
 
-	"bg/ap_common/apcfg"
 	"bg/ap_common/network"
 	"bg/base_def"
+	"bg/common/cfgapi"
 )
 
 var (
@@ -575,7 +575,7 @@ func configRuleDeleted(path []string) {
 	configRuleChanged(path, "", nil)
 }
 
-func firewallRule(p *apcfg.PropertyNode) (*rule, error) {
+func firewallRule(p *cfgapi.PropertyNode) (*rule, error) {
 	active, ok := p.Children["active"]
 	if !ok || active.Value != "true" {
 		return nil, nil

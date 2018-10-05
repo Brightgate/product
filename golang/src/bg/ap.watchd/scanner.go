@@ -24,11 +24,11 @@ import (
 	"syscall"
 	"time"
 
-	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
+	"bg/common/cfgapi"
 
 	"github.com/golang/protobuf/proto"
 	nmap "github.com/lair-framework/go-nmap"
@@ -646,12 +646,12 @@ func vulnException(mac, ip string, details []string) {
 	}
 }
 
-func vulnPropOp(mac, vuln, field, val string) apcfg.PropertyOp {
+func vulnPropOp(mac, vuln, field, val string) cfgapi.PropertyOp {
 	prop := fmt.Sprintf("@/clients/%s/vulnerabilities/%s/%s",
 		mac, vuln, field)
 
-	return apcfg.PropertyOp{
-		Op:    apcfg.PropCreate,
+	return cfgapi.PropertyOp{
+		Op:    cfgapi.PropCreate,
 		Name:  prop,
 		Value: val,
 	}
@@ -659,7 +659,7 @@ func vulnPropOp(mac, vuln, field, val string) apcfg.PropertyOp {
 
 // Determine which actions need to be taken for this vulnerability, based on the
 // information stored in the VulnInfo map.
-func vulnActions(name string, vmap apcfg.VulnMap) (first, warn, quarantine bool, text string) {
+func vulnActions(name string, vmap cfgapi.VulnMap) (first, warn, quarantine bool, text string) {
 	ignore := false
 
 	vi, ok := vmap[name]
@@ -707,7 +707,7 @@ func vulnScanProcess(ip string, discovered map[string]bool) {
 	// Rather than updating each vulnerability timestamp independently,
 	// batch the updates so we can apply them all at once
 	now := nowString()
-	ops := make([]apcfg.PropertyOp, 0)
+	ops := make([]cfgapi.PropertyOp, 0)
 
 	// Iterate over all of the vulnerabilities we discovered in this pass,
 	// queue up the appropriate action for each, and note which properties
@@ -729,8 +729,8 @@ func vulnScanProcess(ip string, discovered map[string]bool) {
 	}
 
 	if quarantine {
-		op := apcfg.PropertyOp{
-			Op:    apcfg.PropSet,
+		op := cfgapi.PropertyOp{
+			Op:    cfgapi.PropSet,
 			Name:  "@/clients/" + mac + "/ring",
 			Value: base_def.RING_QUARANTINE,
 		}
@@ -754,7 +754,7 @@ func vulnScanProcess(ip string, discovered map[string]bool) {
 			strings.Join(found, ","))
 	}
 	if mac != "" && len(ops) > 0 {
-		config.Execute(ops)
+		config.Execute(nil, ops)
 	}
 	if len(event) > 0 {
 		vulnException(mac, ip, event)

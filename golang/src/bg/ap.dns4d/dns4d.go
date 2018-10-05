@@ -48,6 +48,7 @@ import (
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
+	"bg/common/cfgapi"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/miekg/dns"
@@ -73,7 +74,7 @@ var (
 		"antiphishing data directory")
 
 	brokerd *broker.Broker
-	config  *apcfg.APConfig
+	config  *cfgapi.Handle
 
 	ringRecords  map[string]dnsRecord // per-ring records for the router
 	perRingHosts map[string]bool      // hosts with per-ring results
@@ -102,7 +103,7 @@ var (
  */
 var (
 	clientMtx sync.Mutex
-	clients   apcfg.ClientMap
+	clients   cfgapi.ClientMap
 
 	hostsMtx sync.Mutex
 	hosts    = make(map[string]dnsRecord)
@@ -418,7 +419,7 @@ func logUnknown(ipstr string) bool {
 
 // Determine whether the DNS request came from a known client.  If it did,
 // return the client record.  If it didn't, raise a warning flag and return nil.
-func getClient(w dns.ResponseWriter) (string, *apcfg.ClientInfo) {
+func getClient(w dns.ResponseWriter) (string, *cfgapi.ClientInfo) {
 	addr, ok := w.RemoteAddr().(*net.UDPAddr)
 	if !ok {
 		return "", nil
@@ -443,7 +444,7 @@ func getClient(w dns.ResponseWriter) (string, *apcfg.ClientInfo) {
 
 // Look through the client table to find the mac address corresponding to this
 // client record.
-func getMac(record *apcfg.ClientInfo) net.HardwareAddr {
+func getMac(record *cfgapi.ClientInfo) net.HardwareAddr {
 	clientMtx.Lock()
 	defer clientMtx.Unlock()
 
@@ -677,7 +678,7 @@ func localHandler(w dns.ResponseWriter, r *dns.Msg) {
 	logRequest("localHandler", start, c.IPv4, r, m)
 }
 
-func notifyBlockEvent(c *apcfg.ClientInfo, hostname string) {
+func notifyBlockEvent(c *cfgapi.ClientInfo, hostname string) {
 	protocol := base_msg.Protocol_DNS
 	reason := base_msg.EventNetException_PHISHING_ADDRESS
 	topic := base_def.TOPIC_EXCEPTION
@@ -776,7 +777,7 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 	logRequest("proxyHandler", start, c.IPv4, r, m)
 }
 
-func deleteOneClient(c *apcfg.ClientInfo) {
+func deleteOneClient(c *cfgapi.ClientInfo) {
 	if c.IPv4 == nil {
 		return
 	}
@@ -803,7 +804,7 @@ func deleteOneClient(c *apcfg.ClientInfo) {
 }
 
 // Convert a client's configd info into DNS records
-func updateOneClient(c *apcfg.ClientInfo) {
+func updateOneClient(c *cfgapi.ClientInfo) {
 	name := c.DNSName
 	if name == "" {
 		name = c.DHCPName
@@ -1053,7 +1054,7 @@ func main() {
 	brokerd = broker.New(pname)
 	defer brokerd.Fini()
 
-	config, err = apcfg.NewConfig(brokerd, pname, apcfg.AccessInternal)
+	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}

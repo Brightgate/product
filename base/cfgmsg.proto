@@ -41,6 +41,9 @@ message ConfigQuery {
 	string identity_uuid = 0x04;
 	Version version = 0x05;
 	int32 level = 0x06;
+	int64 cmdID = 0x07;
+	string hashPath	= 0x08;
+	bytes hash = 0x09;
 	repeated ConfigOp ops = 0x24;
 }
 
@@ -53,16 +56,19 @@ message ConfigResponse {
 	Version min_version = 0x06;
 
 	enum OpResponse {
-                UNKNOWN = 0;
-		OK = 1;
-		FAILED = 2;
-		UNSUPPORTED = 3;
-		NOPROP = 4;
-		BADVERSION = 5;
-		BADTIME = 6;
+                UNKNOWN		= 0;
+		OK		= 1;
+                NOCMD		= 2;
+		QUEUED		= 3;
+		INPROGRESS	= 4;
+		FAILED		= 5;
+		UNSUPPORTED	= 6;
+		NOPROP		= 7;
+		BADVERSION	= 8;
+		BADTIME		= 9;
 	}
-	OpResponse response = 0x23;
-
-	string property = 0x21;
-	string value = 0x22;
+	OpResponse response	= 0x21;
+	int64 cmdID		= 0x22;
+	string value		= 0x23;
+	string errmsg		= 0x24;
 }

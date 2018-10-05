@@ -45,13 +45,13 @@ import (
 	"strings"
 	"time"
 
-	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
+	"bg/common/cfgapi"
 	"bg/common/cfgmsg"
 	"bg/common/cfgtree"
 
@@ -388,9 +388,9 @@ func ipv4Check(prop, addr string) error {
 func getPropHandler(prop string) (string, error) {
 	prop, err := propTree.Get(prop)
 	if err == cfgtree.ErrNoProp {
-		err = apcfg.ErrNoProp
+		err = cfgapi.ErrNoProp
 	} else if err == cfgtree.ErrExpired {
-		err = apcfg.ErrExpired
+		err = cfgapi.ErrExpired
 	}
 
 	return prop, err
@@ -428,8 +428,8 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 	var rval string
 	var err error
 
-	level := apcfg.AccessLevel(query.Level)
-	if _, ok := apcfg.AccessLevelNames[level]; !ok {
+	level := cfgapi.AccessLevel(query.Level)
+	if _, ok := cfgapi.AccessLevelNames[level]; !ok {
 		return "", fmt.Errorf("invalid access level: %d", level)
 	}
 
@@ -441,13 +441,13 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 		val := op.Value
 		prop := op.Property
 		if prop == "" {
-			err = apcfg.ErrNoProp
+			err = cfgapi.ErrNoProp
 			break
 		}
 		if op.Expires != nil {
 			expt, terr := ptypes.Timestamp(op.Expires)
 			if terr != nil {
-				err = apcfg.ErrBadTime
+				err = cfgapi.ErrBadTime
 				break
 			}
 			expires = &expt
@@ -500,7 +500,7 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 		// no-op
 
 		default:
-			err = apcfg.ErrBadOp
+			err = cfgapi.ErrBadOp
 		}
 
 		if err != nil {
@@ -526,13 +526,13 @@ func processOneEvent(query *cfgmsg.ConfigQuery) *cfgmsg.ConfigResponse {
 	var err error
 	var rval string
 
-	if query.Version.Major != apcfg.Version {
-		err = apcfg.ErrBadVer
+	if query.Version.Major != cfgapi.Version {
+		err = cfgapi.ErrBadVer
 	}
 	if err == nil && query.Timestamp != nil {
 		_, err = ptypes.Timestamp(query.Timestamp)
 		if err != nil {
-			err = apcfg.ErrBadTime
+			err = cfgapi.ErrBadTime
 		}
 	}
 	if err == nil {
@@ -541,13 +541,13 @@ func processOneEvent(query *cfgmsg.ConfigQuery) *cfgmsg.ConfigResponse {
 	rc := cfgmsg.ConfigResponse_OK
 	if err != nil {
 		switch err {
-		case apcfg.ErrBadOp:
+		case cfgapi.ErrBadOp:
 			rc = cfgmsg.ConfigResponse_UNSUPPORTED
-		case apcfg.ErrNoProp:
+		case cfgapi.ErrNoProp:
 			rc = cfgmsg.ConfigResponse_NOPROP
-		case apcfg.ErrBadTime:
+		case cfgapi.ErrBadTime:
 			rc = cfgmsg.ConfigResponse_BADTIME
-		case apcfg.ErrBadVer:
+		case cfgapi.ErrBadVer:
 			rc = cfgmsg.ConfigResponse_BADVERSION
 		default:
 			rc = cfgmsg.ConfigResponse_FAILED
@@ -558,14 +558,17 @@ func processOneEvent(query *cfgmsg.ConfigQuery) *cfgmsg.ConfigResponse {
 		}
 		rval = fmt.Sprintf("%v", err)
 	}
-	version := cfgmsg.Version{Major: int32(apcfg.Version)}
 	response := &cfgmsg.ConfigResponse{
 		Timestamp: ptypes.TimestampNow(),
 		Sender:    pname + "(" + strconv.Itoa(os.Getpid()) + ")",
-		Version:   &version,
+		Version:   &cfgmsg.APIVersion,
 		Debug:     "-",
 		Response:  rc,
-		Value:     rval,
+	}
+	if err == nil {
+		response.Value = rval
+	} else {
+		response.Errmsg = rval
 	}
 
 	return response

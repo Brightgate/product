@@ -19,6 +19,7 @@ import (
 
 	"bg/ap_common/apcfg"
 	"bg/ap_common/mcp"
+	"bg/common/cfgapi"
 )
 
 const pname = "ap-complete"
@@ -103,12 +104,12 @@ func configctl(prefix, prior string) {
 		return
 	}
 
-	apcfgd, err := apcfg.NewConfig(nil, pname, apcfg.AccessUser)
+	configd, err := apcfg.NewConfigd(nil, pname, cfgapi.AccessUser)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cannot connect to configd: %v\n", err)
 		return
 	}
-	root, _ := apcfgd.GetProps(path)
+	root, _ := configd.GetProps(path)
 	if root == nil {
 		return
 	}

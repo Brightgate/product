@@ -35,6 +35,7 @@ import (
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
+	"bg/common/cfgapi"
 
 	"github.com/golang/protobuf/proto"
 	dhcp "github.com/krolaw/dhcp4"
@@ -50,8 +51,8 @@ var (
 
 	brokerd *broker.Broker
 
-	config  *apcfg.APConfig
-	clients apcfg.ClientMap
+	config  *cfgapi.Handle
+	clients cfgapi.ClientMap
 
 	// This lock protects the contents of the clients map as well as all of
 	// the per-ring lease tables.  The lock is taken at the very beginning
@@ -103,7 +104,7 @@ func updateRing(hwaddr, old, new string) bool {
 
 	client := clients[hwaddr]
 	if client == nil && old == "" {
-		client = &apcfg.ClientInfo{Ring: ""}
+		client = &cfgapi.ClientInfo{Ring: ""}
 		clients[hwaddr] = client
 	}
 
@@ -794,7 +795,7 @@ func ipRange(ring, subnet string) (start net.IP, ipnet *net.IPNet, span int) {
 //
 // Instantiate a new DHCP handler for the given ring
 //
-func newHandler(name string, rings apcfg.RingMap) *ringHandler {
+func newHandler(name string, rings cfgapi.RingMap) *ringHandler {
 	ring := rings[name]
 	duration := time.Duration(ring.LeaseDuration) * time.Minute
 	start, subnet, span := ipRange(name, ring.Subnet)
@@ -1029,7 +1030,7 @@ func main() {
 	defer brokerd.Fini()
 
 	// Interface to config
-	config, err = apcfg.NewConfig(brokerd, pname, apcfg.AccessInternal)
+	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}

@@ -60,6 +60,7 @@ import (
 	"bg/base_def"
 	"bg/cloud_rpc"
 	"bg/common/archive"
+	"bg/common/cfgapi"
 	"bg/common/grpcutils"
 	"bg/common/urlfetch"
 
@@ -73,7 +74,7 @@ const (
 
 var (
 	brokerd       *broker.Broker
-	config        *apcfg.APConfig
+	config        *cfgapi.Handle
 	rpcConn       *grpc.ClientConn
 	storageClient cloud_rpc.CloudStorageClient
 	applianceCred *grpcutils.Credential
@@ -443,7 +444,7 @@ func main() {
 	brokerd := broker.New(pname)
 	defer brokerd.Fini()
 
-	config, err = apcfg.NewConfig(brokerd, pname, apcfg.AccessInternal)
+	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}

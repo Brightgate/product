@@ -18,6 +18,7 @@ import (
 	"bg/ap_common/apcfg"
 	"bg/ap_common/broker"
 	"bg/ap_common/certificate"
+	"bg/common/cfgapi"
 )
 
 const (
@@ -27,27 +28,19 @@ const (
 var (
 	force   = flag.Bool("force", false, "Force refresh self-signed")
 	verbose = flag.Bool("verbose", false, "Verbose output")
-
-	config *apcfg.APConfig
 )
 
 func main() {
-	var (
-		err           error
-		validDuration time.Duration
-		configd       *apcfg.APConfig
-	)
-
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	flag.Parse()
 
-	validDuration, err = time.ParseDuration("25h")
+	validDuration, err := time.ParseDuration("25h")
 	if err != nil {
 		log.Fatalf("could not parse '25h' duration: %v\n", err)
 	}
 
 	brokerd := broker.New(pname)
-	configd, err = apcfg.NewConfig(brokerd, pname, apcfg.AccessInternal)
+	configd, err := apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}

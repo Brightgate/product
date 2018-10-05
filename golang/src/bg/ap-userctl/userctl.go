@@ -27,6 +27,7 @@ import (
 	"log"
 
 	"bg/ap_common/apcfg"
+	"bg/common/cfgapi"
 
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh/terminal"
@@ -79,7 +80,7 @@ func init() {
 	flag.Var(&langFlag, "language", "preferredLanguage value for added user")
 }
 
-var config *apcfg.APConfig
+var config *cfgapi.Handle
 
 func getUsers() error {
 	const getUsersFormat = "%-12s %-8s %-24s %-30s\n"
@@ -267,7 +268,7 @@ func main() {
 		}
 	}
 
-	config, err = apcfg.NewConfig(nil, pname, apcfg.AccessInternal)
+	config, err = apcfg.NewConfigd(nil, pname, cfgapi.AccessInternal)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}

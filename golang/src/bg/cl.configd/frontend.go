@@ -16,6 +16,7 @@ import (
 	"time"
 
 	rpc "bg/cloud_rpc"
+	"bg/common/cfgmsg"
 
 	"github.com/golang/protobuf/ptypes"
 )
@@ -23,38 +24,38 @@ import (
 type frontEndServer struct {
 }
 
-func execGet(state *perAPState, prop string) *rpc.CfgPropResponse {
+func execGet(state *perAPState, prop string) *cfgmsg.ConfigResponse {
 	slog.Infof("Getting %s", prop)
 	val, err := state.cachedTree.Get(prop)
 
-	rval := &rpc.CfgPropResponse{
-		Time: ptypes.TimestampNow(),
+	rval := &cfgmsg.ConfigResponse{
+		Timestamp: ptypes.TimestampNow(),
 	}
 
 	if err == nil {
-		rval.Response = rpc.CfgPropResponse_OK
-		rval.Payload = val
+		rval.Response = cfgmsg.ConfigResponse_OK
+		rval.Value = val
 	} else {
 		rval.Errmsg = fmt.Sprintf("%v", err)
-		rval.Response = rpc.CfgPropResponse_FAILED
+		rval.Response = cfgmsg.ConfigResponse_FAILED
 	}
 
 	return rval
 }
 
 func (s *frontEndServer) Ping(ctx context.Context,
-	ops *rpc.CfgFrontEndPing) (*rpc.CfgPropResponse, error) {
+	ops *rpc.CfgFrontEndPing) (*rpc.CfgFrontEndPing, error) {
 
-	return &rpc.CfgPropResponse{
-		Time:     ptypes.TimestampNow(),
-		Response: rpc.CfgPropResponse_OK,
-		Payload:  "pong",
-	}, nil
+	rval := rpc.CfgFrontEndPing{
+		Time: ptypes.TimestampNow(),
+	}
+
+	return &rval, nil
 }
 
 // Extract the property, value, and (optional) expiration parameters from the
-// CfgPropOp message.
-func getParams(op *rpc.CfgPropOps_CfgPropOp) (string, string, *time.Time, error) {
+// ConfigOp message.
+func getParams(op *cfgmsg.ConfigOp) (string, string, *time.Time, error) {
 	var expires *time.Time
 	var err error
 
@@ -77,14 +78,14 @@ func getParams(op *rpc.CfgPropOps_CfgPropOp) (string, string, *time.Time, error)
 // result to the caller.  Otherwise, push the command onto the pending command
 // queue for asynchronous execution.
 func (s *frontEndServer) Submit(ctx context.Context,
-	ops *rpc.CfgPropOps) (rval *rpc.CfgPropResponse, rerr error) {
+	ops *cfgmsg.ConfigQuery) (rval *cfgmsg.ConfigResponse, rerr error) {
 
-	rval = &rpc.CfgPropResponse{
-		Time:     ptypes.TimestampNow(),
-		Response: rpc.CfgPropResponse_FAILED,
+	rval = &cfgmsg.ConfigResponse{
+		Timestamp: ptypes.TimestampNow(),
+		Response:  cfgmsg.ConfigResponse_FAILED,
 	}
 
-	state, err := getAPState(ops.CloudUuid)
+	state, err := getAPState(ops.IdentityUuid)
 	if err != nil {
 		rval.Errmsg = fmt.Sprintf("%v", err)
 		return
@@ -92,7 +93,7 @@ func (s *frontEndServer) Submit(ctx context.Context,
 
 	// Check for no-op
 	if len(ops.Ops) == 0 {
-		rval.Response = rpc.CfgPropResponse_OK
+		rval.Response = cfgmsg.ConfigResponse_OK
 		return
 	}
 
@@ -107,17 +108,17 @@ func (s *frontEndServer) Submit(ctx context.Context,
 		}
 
 		switch o.Operation {
-		case rpc.CfgPropOps_CfgPropOp_GET:
+		case cfgmsg.ConfigOp_GET:
 			getProp = prop
 			if len(ops.Ops) > 1 {
 				rval.Errmsg = "compound GETs not supported"
 				return
 			}
-		case rpc.CfgPropOps_CfgPropOp_DELETE:
+		case cfgmsg.ConfigOp_DELETE:
 			// nothing to do
 
-		case rpc.CfgPropOps_CfgPropOp_SET,
-			rpc.CfgPropOps_CfgPropOp_CREATE:
+		case cfgmsg.ConfigOp_SET,
+			cfgmsg.ConfigOp_CREATE:
 
 			if o.GetValue() == "" {
 				rval.Errmsg = errHead + "missing value"
@@ -137,14 +138,14 @@ func (s *frontEndServer) Submit(ctx context.Context,
 		payload, err := state.cachedTree.Get(getProp)
 		state.Unlock()
 		if err == nil {
-			rval.Response = rpc.CfgPropResponse_OK
-			rval.Payload = payload
+			rval.Response = cfgmsg.ConfigResponse_OK
+			rval.Value = payload
 		} else {
 			rval.Errmsg = fmt.Sprintf("%v", err)
 		}
 	} else {
 		rval.CmdID = cmdSubmit(state, ops)
-		rval.Response = rpc.CfgPropResponse_QUEUED
+		rval.Response = cfgmsg.ConfigResponse_QUEUED
 	}
 
 	return
@@ -152,16 +153,16 @@ func (s *frontEndServer) Submit(ctx context.Context,
 
 // Attempt to cancel a pending operation.
 func (s *frontEndServer) Cancel(ctx context.Context,
-	cmd *rpc.CfgCmdID) (*rpc.CfgPropResponse, error) {
+	cmd *rpc.CfgCmdID) (*cfgmsg.ConfigResponse, error) {
 
-	var rval *rpc.CfgPropResponse
+	var rval *cfgmsg.ConfigResponse
 
 	state, err := getAPState(cmd.CloudUuid)
 	if err != nil {
-		rval = &rpc.CfgPropResponse{
-			Time:     ptypes.TimestampNow(),
-			Errmsg:   fmt.Sprintf("%v", err),
-			Response: rpc.CfgPropResponse_FAILED,
+		rval = &cfgmsg.ConfigResponse{
+			Timestamp: ptypes.TimestampNow(),
+			Errmsg:    fmt.Sprintf("%v", err),
+			Response:  cfgmsg.ConfigResponse_FAILED,
 		}
 	} else {
 		rval = cmdCancel(state, cmd.CmdID)
@@ -172,16 +173,16 @@ func (s *frontEndServer) Cancel(ctx context.Context,
 
 // Get the status of a submitted operation.
 func (s *frontEndServer) Status(ctx context.Context,
-	cmd *rpc.CfgCmdID) (*rpc.CfgPropResponse, error) {
+	cmd *rpc.CfgCmdID) (*cfgmsg.ConfigResponse, error) {
 
-	var rval *rpc.CfgPropResponse
+	var rval *cfgmsg.ConfigResponse
 
 	state, err := getAPState(cmd.CloudUuid)
 	if err != nil {
-		rval = &rpc.CfgPropResponse{
-			Time:     ptypes.TimestampNow(),
-			Errmsg:   fmt.Sprintf("%v", err),
-			Response: rpc.CfgPropResponse_FAILED,
+		rval = &cfgmsg.ConfigResponse{
+			Timestamp: ptypes.TimestampNow(),
+			Errmsg:    fmt.Sprintf("%v", err),
+			Response:  cfgmsg.ConfigResponse_FAILED,
 		}
 	} else {
 		rval = cmdStatus(state, cmd.CmdID)

@@ -37,7 +37,7 @@ import (
 	"strings"
 	"testing"
 
-	"bg/ap_common/apcfg"
+	"bg/common/cfgapi"
 	"bg/common/cfgmsg"
 	"bg/common/cfgtree"
 )
@@ -61,17 +61,17 @@ func checkLeaf(t *testing.T, prop, val string, leaves leafMap) {
 	}
 }
 
-func execute(level apcfg.AccessLevel, ops []apcfg.PropertyOp) (string, error) {
+func execute(level cfgapi.AccessLevel, ops []cfgapi.PropertyOp) (string, error) {
 	var rval string
 	var err error
 
-	query, err := apcfg.GeneratePropQuery(ops)
+	query, err := cfgmsg.NewPropQuery(ops)
 	query.Level = int32(level)
 	if err == nil {
 		response := processOneEvent(query)
 		if response.Response != cfgmsg.ConfigResponse_OK {
-			err = fmt.Errorf("%s", response.Value)
-		} else if ops[0].Op == apcfg.PropGet {
+			err = fmt.Errorf("%s", response.Errmsg)
+		} else if ops[0].Op == cfgapi.PropGet {
 			rval = response.Value
 		}
 	}
@@ -79,19 +79,19 @@ func execute(level apcfg.AccessLevel, ops []apcfg.PropertyOp) (string, error) {
 	return rval, err
 }
 
-func executeInternal(ops []apcfg.PropertyOp) (string, error) {
-	return execute(apcfg.AccessInternal, ops)
+func executeInternal(ops []cfgapi.PropertyOp) (string, error) {
+	return execute(cfgapi.AccessInternal, ops)
 }
 
-func executeUser(ops []apcfg.PropertyOp) (string, error) {
-	return execute(apcfg.AccessUser, ops)
+func executeUser(ops []cfgapi.PropertyOp) (string, error) {
+	return execute(cfgapi.AccessUser, ops)
 }
 
 // utility function to attempt the 'get' of a single property.  The caller
 // decides whether the operation should succeed or fail.
 func checkOneProp(t *testing.T, prop, val string, succeed bool) {
-	ops := []apcfg.PropertyOp{
-		{Op: apcfg.PropGet, Name: prop},
+	ops := []cfgapi.PropertyOp{
+		{Op: cfgapi.PropGet, Name: prop},
 	}
 
 	treeVal, err := executeInternal(ops)
@@ -114,8 +114,8 @@ func checkOneProp(t *testing.T, prop, val string, succeed bool) {
 
 // utility function to change a single property setting and validate the result
 func updateOneProp(t *testing.T, prop, val string, succeed bool) {
-	ops := []apcfg.PropertyOp{
-		{Op: apcfg.PropSet, Name: prop, Value: val},
+	ops := []cfgapi.PropertyOp{
+		{Op: cfgapi.PropSet, Name: prop, Value: val},
 	}
 
 	if _, err := executeInternal(ops); err != nil {
@@ -131,8 +131,8 @@ func updateOneProp(t *testing.T, prop, val string, succeed bool) {
 
 // utility function to insert a single new property and validate the result
 func insertOneProp(t *testing.T, prop, val string, succeed bool) {
-	ops := []apcfg.PropertyOp{
-		{Op: apcfg.PropCreate, Name: prop, Value: val},
+	ops := []cfgapi.PropertyOp{
+		{Op: cfgapi.PropCreate, Name: prop, Value: val},
 	}
 
 	if _, err := executeInternal(ops); err != nil {
@@ -148,8 +148,8 @@ func insertOneProp(t *testing.T, prop, val string, succeed bool) {
 
 // utility function to remove a single new property and validate the result
 func deleteOneProp(t *testing.T, prop string, succeed bool) {
-	ops := []apcfg.PropertyOp{
-		{Op: apcfg.PropDelete, Name: prop},
+	ops := []cfgapi.PropertyOp{
+		{Op: cfgapi.PropDelete, Name: prop},
 	}
 	if _, err := executeInternal(ops); err != nil {
 		if succeed {
@@ -273,7 +273,7 @@ func TestReinitialize(t *testing.T) {
 
 // TestPing verifies that a simple ping succeeds
 func TestPing(t *testing.T) {
-	query := apcfg.GeneratePingQuery()
+	query := cfgmsg.NewPingQuery()
 	response := processOneEvent(query)
 	if response.Response != cfgmsg.ConfigResponse_OK {
 		t.Error(fmt.Errorf("%s", response.Value))
@@ -281,14 +281,14 @@ func TestPing(t *testing.T) {
 }
 
 func testPingBadVersion(version int32) error {
-	query := apcfg.GeneratePingQuery()
+	query := cfgmsg.NewPingQuery()
 	majorMinor := cfgmsg.Version{Major: version}
 	query.Version = &majorMinor
 
 	response := processOneEvent(query)
 	if response.Response == cfgmsg.ConfigResponse_OK {
 		return fmt.Errorf("configd of version %d accepted version %d",
-			apcfg.Version, version)
+			cfgapi.Version, version)
 	} else if response.Response != cfgmsg.ConfigResponse_BADVERSION {
 		return fmt.Errorf("unexpected error: %d", response.Response)
 	}
@@ -299,7 +299,7 @@ func testPingBadVersion(version int32) error {
 // TestOlderVersion verifies that configd will correctly refuse to execute a
 // command with an newer version
 func TestOlderVersion(t *testing.T) {
-	if err := testPingBadVersion(apcfg.Version - 1); err != nil {
+	if err := testPingBadVersion(cfgapi.Version - 1); err != nil {
 		t.Error(err)
 	}
 }
@@ -307,7 +307,7 @@ func TestOlderVersion(t *testing.T) {
 // TestNewerVersion verifies that configd will correctly refuse to execute a
 // command with an old version
 func TestNewerVersion(t *testing.T) {
-	if err := testPingBadVersion(apcfg.Version + 1); err != nil {
+	if err := testPingBadVersion(cfgapi.Version + 1); err != nil {
 		t.Error(err)
 	}
 }
@@ -373,8 +373,8 @@ func TestSetInternalProp(t *testing.T) {
 		newVal  = "22"
 	)
 
-	ops := []apcfg.PropertyOp{
-		{Op: apcfg.PropSet, Name: newProp, Value: newVal},
+	ops := []cfgapi.PropertyOp{
+		{Op: cfgapi.PropSet, Name: newProp, Value: newVal},
 	}
 
 	a := testTreeInit(t)
@@ -391,8 +391,8 @@ func TestAddInternalProp(t *testing.T) {
 		newVal  = "bucketName"
 	)
 
-	ops := []apcfg.PropertyOp{
-		{Op: apcfg.PropCreate, Name: newProp, Value: newVal},
+	ops := []cfgapi.PropertyOp{
+		{Op: cfgapi.PropCreate, Name: newProp, Value: newVal},
 	}
 
 	a := testTreeInit(t)
@@ -432,8 +432,8 @@ func TestDeleteInternalProp(t *testing.T) {
 		delProp = "@/cfgversion"
 	)
 
-	ops := []apcfg.PropertyOp{
-		{Op: apcfg.PropDelete, Name: delProp},
+	ops := []cfgapi.PropertyOp{
+		{Op: cfgapi.PropDelete, Name: delProp},
 	}
 
 	a := testTreeInit(t)
@@ -481,8 +481,8 @@ func TestDeleteInternalSubtree(t *testing.T) {
 		delProp = "@/nodes"
 	)
 
-	ops := []apcfg.PropertyOp{
-		{Op: apcfg.PropDelete, Name: delProp},
+	ops := []cfgapi.PropertyOp{
+		{Op: cfgapi.PropDelete, Name: delProp},
 	}
 
 	a := testTreeInit(t)
@@ -539,25 +539,25 @@ func TestBadDNS(t *testing.T) {
 
 // TestMultiInsert inserts multiple values in a single operation
 func TestMultiInsert(t *testing.T) {
-	ops := []apcfg.PropertyOp{
+	ops := []cfgapi.PropertyOp{
 		{
-			Op:    apcfg.PropCreate,
+			Op:    cfgapi.PropCreate,
 			Name:  "@/network/ntpservers/1",
 			Value: "time1.google.com",
 		},
 		{
-			Op:    apcfg.PropCreate,
+			Op:    cfgapi.PropCreate,
 			Name:  "@/network/ntpservers/2",
 			Value: "time2.google.com",
 		},
 
 		{
-			Op:    apcfg.PropCreate,
+			Op:    cfgapi.PropCreate,
 			Name:  "@/network/ntpservers/3",
 			Value: "time3.google.com",
 		},
 		{
-			Op:    apcfg.PropCreate,
+			Op:    cfgapi.PropCreate,
 			Name:  "@/network/ntpservers/4",
 			Value: "time4.google.com",
 		},
@@ -578,25 +578,25 @@ func TestMultiInsert(t *testing.T) {
 // TestMultiMixed inserts, sets, and removes multiple values in a single
 // operation
 func TestMultiMixed(t *testing.T) {
-	ops := []apcfg.PropertyOp{
+	ops := []cfgapi.PropertyOp{
 		{
-			Op:    apcfg.PropCreate,
+			Op:    cfgapi.PropCreate,
 			Name:  "@/network/ntpservers/1",
 			Value: "time1.google.com",
 		},
 		{
-			Op:    apcfg.PropCreate,
+			Op:    cfgapi.PropCreate,
 			Name:  "@/network/ntpservers/2",
 			Value: "time2.google.com",
 		},
 
 		{
-			Op:    apcfg.PropSet,
+			Op:    cfgapi.PropSet,
 			Name:  "@/network/ntpservers/1",
 			Value: "time1.google.com",
 		},
 		{
-			Op:   apcfg.PropDelete,
+			Op:   cfgapi.PropDelete,
 			Name: "@/network/ntpservers/2",
 		},
 	}
@@ -614,26 +614,26 @@ func TestMultiMixed(t *testing.T) {
 // TestMultiInsertFail inserts multiple legal values and one illegal.  It is
 // expected to complete with the config tree unchanged.
 func TestMultiInsertFail(t *testing.T) {
-	ops := []apcfg.PropertyOp{
+	ops := []cfgapi.PropertyOp{
 		{
-			Op:    apcfg.PropCreate,
+			Op:    cfgapi.PropCreate,
 			Name:  "@/network/ntpservers/1",
 			Value: "time1.google.com",
 		},
 		{
-			Op:    apcfg.PropCreate,
+			Op:    cfgapi.PropCreate,
 			Name:  "@/network/ntpservers/2",
 			Value: "time2.google.com",
 		},
 		{
 			// Illegal 'set' operation that should cause the whole
 			// transaction to fail.
-			Op:    apcfg.PropSet,
+			Op:    cfgapi.PropSet,
 			Name:  "@/uuid",
 			Value: "time1.google.com",
 		},
 		{
-			Op:    apcfg.PropCreate,
+			Op:    cfgapi.PropCreate,
 			Name:  "@/network/ntpservers/6",
 			Value: "time6.google.com",
 		},
@@ -652,26 +652,26 @@ func TestMultiInsertFail(t *testing.T) {
 // illegal PropSet included.  It is expected to complete with the config tree
 // unchanged.  This is specifically exercising the 'undo' of a subtree deletion.
 func TestMultiMixedFail(t *testing.T) {
-	ops := []apcfg.PropertyOp{
+	ops := []cfgapi.PropertyOp{
 		{
-			Op:    apcfg.PropCreate,
+			Op:    cfgapi.PropCreate,
 			Name:  "@/network/ntpservers/1",
 			Value: "time1.google.com",
 		},
 		{
-			Op:    apcfg.PropCreate,
+			Op:    cfgapi.PropCreate,
 			Name:  "@/network/ntpservers/2",
 			Value: "time2.google.com",
 		},
 
 		{
-			Op:   apcfg.PropDelete,
+			Op:   cfgapi.PropDelete,
 			Name: "@/network",
 		},
 		{
 			// Illegal 'set' operation that should cause the whole
 			// transaction to fail.
-			Op:    apcfg.PropSet,
+			Op:    cfgapi.PropSet,
 			Name:  "@/branch/nonexistent",
 			Value: "time1.google.com",
 		},
@@ -691,31 +691,31 @@ func TestMultiMixedFail(t *testing.T) {
 // unchanged.  This is to verify that a failure causes us to revert to the
 // original state - not just the last state.
 func TestMultiSetFail(t *testing.T) {
-	ops := []apcfg.PropertyOp{
+	ops := []cfgapi.PropertyOp{
 		{
-			Op:    apcfg.PropCreate,
+			Op:    cfgapi.PropCreate,
 			Name:  "@/network/ntpservers/1",
 			Value: "time1.google.com",
 		},
 		{
-			Op:    apcfg.PropSet,
+			Op:    cfgapi.PropSet,
 			Name:  "@/network/ntpservers/1",
 			Value: "time2.google.com",
 		},
 		{
-			Op:    apcfg.PropSet,
+			Op:    cfgapi.PropSet,
 			Name:  "@/network/ntpservers/1",
 			Value: "time3.google.com",
 		},
 		{
 			// Illegal 'set' operation that should cause the whole
 			// transaction to fail.
-			Op:    apcfg.PropSet,
+			Op:    cfgapi.PropSet,
 			Name:  "@/branch/nonexistent",
 			Value: "time1.google.com",
 		},
 		{
-			Op:    apcfg.PropSet,
+			Op:    cfgapi.PropSet,
 			Name:  "@/network/ntpservers/1",
 			Value: "time4.google.com",
 		},
@@ -733,22 +733,22 @@ func TestMultiSetFail(t *testing.T) {
 // TestInvalidAccessLevel verifies that requests with invalid levels
 // cannot get or manipulate properties
 func TestInvalidAccessLevel(t *testing.T) {
-	testops := []apcfg.PropertyOp{
-		{Op: apcfg.PropSet, Name: "@/network/ssid", Value: "test123"},
-		{Op: apcfg.PropGet, Name: "@/network/ssid"},
-		{Op: apcfg.PropDelete, Name: "@/network/ssid"},
-		{Op: apcfg.PropCreate, Name: "@/siteid", Value: "7810"},
+	testops := []cfgapi.PropertyOp{
+		{Op: cfgapi.PropSet, Name: "@/network/ssid", Value: "test123"},
+		{Op: cfgapi.PropGet, Name: "@/network/ssid"},
+		{Op: cfgapi.PropDelete, Name: "@/network/ssid"},
+		{Op: cfgapi.PropCreate, Name: "@/siteid", Value: "7810"},
 	}
 
-	badLevels := []apcfg.AccessLevel{
-		apcfg.AccessLevel(-1),
-		apcfg.AccessUser + 1,
-		apcfg.AccessInternal + 1,
+	badLevels := []cfgapi.AccessLevel{
+		cfgapi.AccessLevel(-1),
+		cfgapi.AccessUser + 1,
+		cfgapi.AccessInternal + 1,
 	}
 
 	for _, level := range badLevels {
 		for _, x := range testops {
-			ops := []apcfg.PropertyOp{x}
+			ops := []cfgapi.PropertyOp{x}
 			a := testTreeInit(t)
 			if _, err := execute(level, ops); err == nil {
 				t.Errorf("%#v at level %d succeeded unexpectedly", x, level)

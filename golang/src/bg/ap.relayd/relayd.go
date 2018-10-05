@@ -34,6 +34,7 @@ import (
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
+	"bg/common/cfgapi"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/miekg/dns"
@@ -78,8 +79,8 @@ var (
 	ssdpMax  = flag.Int("smax", 20, "Max # of open M-SEARCH requests")
 
 	brokerd *broker.Broker
-	config  *apcfg.APConfig
-	rings   apcfg.RingMap
+	config  *cfgapi.Handle
+	rings   cfgapi.RingMap
 
 	ifaceToRing    map[int]string
 	ringToIface    map[string]*net.Interface
@@ -445,20 +446,20 @@ func ssdpInit() {
 	propBase := "@/firewall/rules/sonos/"
 	rule := fmt.Sprintf("ACCEPT UDP FROM IFACE NOT wan TO AP DPORTS %d:%d",
 		low, high-1)
-	ops := []apcfg.PropertyOp{
+	ops := []cfgapi.PropertyOp{
 		{
-			Op:    apcfg.PropCreate,
+			Op:    cfgapi.PropCreate,
 			Name:  propBase + "rule",
 			Value: rule,
 		},
 		{
-			Op:    apcfg.PropCreate,
+			Op:    cfgapi.PropCreate,
 			Name:  propBase + "active",
 			Value: "true",
 		},
 	}
 
-	config.Execute(ops)
+	config.Execute(nil, ops)
 }
 
 //
@@ -673,7 +674,7 @@ func main() {
 	brokerd = broker.New(pname)
 	defer brokerd.Fini()
 
-	config, err = apcfg.NewConfig(brokerd, pname, apcfg.AccessInternal)
+	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}

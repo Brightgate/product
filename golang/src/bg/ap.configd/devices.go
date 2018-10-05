@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"bg/ap_common/apcfg"
 	"bg/ap_common/device"
+	"bg/common/cfgapi"
 )
 
 const (
@@ -45,7 +45,7 @@ func getDevHandler(prop string) (string, error) {
 
 	d := devices[uint32(devid)]
 	if d == nil {
-		return "", apcfg.ErrNoProp
+		return "", cfgapi.ErrNoProp
 	}
 
 	b, err := json.Marshal(d)

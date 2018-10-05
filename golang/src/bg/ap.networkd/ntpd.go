@@ -18,12 +18,12 @@ import (
 	"text/template"
 	"time"
 
-	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
+	"bg/common/cfgapi"
 )
 
 type ntpdConf struct {
-	Rings   apcfg.RingMap
+	Rings   cfgapi.RingMap
 	Servers []string
 }
 

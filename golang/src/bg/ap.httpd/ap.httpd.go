@@ -37,6 +37,7 @@ import (
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
+	"bg/common/cfgapi"
 
 	"github.com/golang/protobuf/proto"
 
@@ -65,7 +66,7 @@ var (
 
 	cutter *securecookie.SecureCookie
 
-	config     *apcfg.APConfig
+	config     *cfgapi.Handle
 	domainname string
 
 	metrics struct {
@@ -313,7 +314,7 @@ func prometheusInit() {
 
 func main() {
 	var err error
-	var rings apcfg.RingMap
+	var rings cfgapi.RingMap
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	flag.Var(ports, "http-ports", "The ports to listen on for HTTP requests.")
@@ -337,7 +338,7 @@ func main() {
 	brokerd.Handle(base_def.TOPIC_ERROR, handleError)
 	defer brokerd.Fini()
 
-	config, err = apcfg.NewConfig(brokerd, pname, apcfg.AccessInternal)
+	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err == nil {
 		rings = config.GetRings()
 	}

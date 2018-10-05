@@ -93,6 +93,7 @@ import (
 	"bg/ap_common/platform"
 	"bg/base_def"
 	"bg/base_msg"
+	"bg/common/cfgapi"
 
 	"github.com/golang/protobuf/proto"
 
@@ -118,7 +119,7 @@ type rConf struct {
 
 	Status string
 
-	Users apcfg.UserMap
+	Users cfgapi.UserMap
 }
 
 var (
@@ -129,7 +130,7 @@ var (
 	hostapdProcess *aputil.Child // track the hostapd proc
 
 	plat       *platform.Platform
-	configd    *apcfg.APConfig
+	configd    *cfgapi.Handle
 	mcpd       *mcp.MCP
 	running    bool
 	secret     []byte
@@ -413,7 +414,7 @@ func main() {
 	brokerd.Handle(base_def.TOPIC_ERROR, sysErrorCertificate)
 	defer brokerd.Fini()
 
-	configd, err = apcfg.NewConfig(brokerd, pname, apcfg.AccessInternal)
+	configd, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}
