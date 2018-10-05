@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS appliance_pubkey (
     cloud_uuid            uuid REFERENCES appliance_id_map(cloud_uuid) NOT NULL,
     format                varchar(32),
     key                   text,
-    expiration            timestamp
+    expiration            timestamp with time zone
 );
 
 -- n.b. not a *unique* index
