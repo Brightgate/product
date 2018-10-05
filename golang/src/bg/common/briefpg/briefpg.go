@@ -25,7 +25,6 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"net/url"
 	"os"
 	"os/exec"
 	"os/user"
@@ -192,7 +191,7 @@ func (bp *BriefPG) initDB(ctx context.Context) error {
 	}
 
 	if _, err := os.Stat(bp.dbDir()); err != nil {
-		cmd := exec.Command(pgCmds["initdb"], "--nosync", "-D", bp.dbDir(), "-E", bp.Encoding, "-A", "trust")
+		cmd := exec.Command(pgCmds["initdb"], "--nosync", "-U", "postgres", "-D", bp.dbDir(), "-E", bp.Encoding, "-A", "trust")
 		bp.Logger.Println("briefpg: " + strings.Join(cmd.Args, " "))
 		cmdOut, err := cmd.CombinedOutput()
 		bp.Logger.Println("briefpg: " + string(cmdOut))
@@ -285,7 +284,7 @@ func (bp *BriefPG) DumpDB(ctx context.Context, dbName string, w io.Writer) error
 
 // DBUri returns the connection URI for a named database
 func (bp *BriefPG) DBUri(dbName string) string {
-	return fmt.Sprintf("postgresql:///%s?host=%s", dbName, url.PathEscape(bp.TmpDir))
+	return fmt.Sprintf("postgresql:///%s?host=%s&user=postgres", dbName, bp.TmpDir)
 }
 
 // Fini stops the database server, if running, and
