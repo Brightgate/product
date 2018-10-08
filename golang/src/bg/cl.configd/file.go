@@ -23,6 +23,10 @@ type fileStore struct {
 	dir string
 }
 
+func (store *fileStore) String() string {
+	return store.dir
+}
+
 func (store *fileStore) get(ctx context.Context, uuid string) (*cfgtree.PTree, error) {
 	slog.Infof("Loading state for %s from file", uuid)
 

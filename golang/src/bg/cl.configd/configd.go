@@ -76,7 +76,7 @@ var (
 	log  *zap.Logger
 	slog *zap.SugaredLogger
 
-	store configStore
+	store multiStore
 )
 
 func getAPState(uuid string) (*perAPState, error) {
@@ -134,13 +134,14 @@ func main() {
 
 	go prometheusInit(environ.PrometheusPort)
 
+	fileStore, _ := newFileStore(daemonutils.ClRoot() + "/etc/configs")
+	store.add(fileStore)
 	if environ.PostgresConnection != "" {
-		store, err = newDBStore(environ.PostgresConnection)
-	} else {
-		store, err = newFileStore(daemonutils.ClRoot() + "/etc/configs")
-	}
-	if err != nil {
-		slog.Fatalf("Failed to connect to config store: %v", err)
+		dbStore, err := newDBStore(environ.PostgresConnection)
+		if err != nil {
+			slog.Fatalf("Failed to connect to config store database: %v", err)
+		}
+		store.add(dbStore)
 	}
 
 	state = make(map[string]*perAPState)

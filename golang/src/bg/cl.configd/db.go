@@ -18,6 +18,7 @@ import (
 
 	"github.com/satori/uuid"
 
+	"bg/cl_common/pgutils"
 	"bg/cloud_models/appliancedb"
 	"bg/common/cfgtree"
 )
@@ -25,6 +26,10 @@ import (
 type dbStore struct {
 	connInfo string
 	handle   appliancedb.DataStore
+}
+
+func (db *dbStore) String() string {
+	return pgutils.CensorPassword(db.connInfo)
 }
 
 func (db *dbStore) get(ctx context.Context, uuidStr string) (*cfgtree.PTree, error) {

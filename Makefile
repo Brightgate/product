@@ -490,6 +490,7 @@ CLOUDCOMMON_GOPKGS = \
 	bg/cl_common/auth/m2mauth \
 	bg/cl_common/clcfg \
 	bg/cl_common/daemonutils \
+	bg/cl_common/pgutils \
 	bg/cloud_models/appliancedb \
 	bg/cloud_models/sessiondb
 
@@ -541,7 +542,8 @@ CLOUD_COMMON_SRCS = \
 	$(GOSRCBG)/cloud_models/sessiondb/sessiondb.go \
 	$(GOSRCBG)/cl_common/auth/m2mauth/middleware.go \
 	$(GOSRCBG)/cl_common/clcfg/clcfg.go \
-	$(GOSRCBG)/cl_common/daemonutils/utils.go
+	$(GOSRCBG)/cl_common/daemonutils/utils.go \
+	$(GOSRCBG)/cl_common/pgutils/utils.go
 
 COVERAGE_DIR = coverage
 
@@ -853,6 +855,7 @@ $(CLOUDBIN)/cl.configd: \
 	$(GOSRCBG)/cl.configd/file.go \
 	$(GOSRCBG)/cl.configd/frontend.go \
 	$(GOSRCBG)/cl.configd/grpc.go \
+	$(GOSRCBG)/cl.configd/multi.go \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.eventd: \
 	$(GOSRCBG)/cl.eventd/eventd.go \
