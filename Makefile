@@ -764,6 +764,7 @@ $(APPBIN)/ap.networkd: \
 $(APPBIN)/ap.relayd: $(GOSRCBG)/ap.relayd/relayd.go
 $(APPBIN)/ap.rpcd: \
 	$(GOSRCBG)/ap.rpcd/rpcd.go \
+	$(GOSRCBG)/ap.rpcd/config.go \
 	$(GOSRCBG)/ap.rpcd/heartbeat.go \
 	$(GOSRCBG)/ap.rpcd/inventory.go
 $(APPBIN)/ap.updated: $(GOSRCBG)/ap.updated/update.go
@@ -868,6 +869,7 @@ $(CLOUDBIN)/cl.httpd: \
 	$(GOSRCBG)/cl.httpd/access.go \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.rpcd: \
+	$(GOSRCBG)/cl.rpcd/cfg_relay.go \
 	$(GOSRCBG)/cl.rpcd/event.go \
 	$(GOSRCBG)/cl.rpcd/rpcd.go \
 	$(GOSRCBG)/cl.rpcd/storage.go \

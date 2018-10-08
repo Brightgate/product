@@ -102,6 +102,11 @@ func parse(prop string) []string {
 
 }
 
+// Tree returns the tree to which this property node belongs.
+func (node *PNode) Tree() *PTree {
+	return node.tree
+}
+
 // Name returns the name of this property node.
 func (node *PNode) Name() string {
 	return node.name

@@ -26,10 +26,11 @@ import (
 )
 
 type cmdHdl struct {
-	cfg    *Configd
-	cmdID  int64
-	result string
-	err    error
+	cfg      *Configd
+	cmdID    int64
+	inflight bool
+	result   string
+	err      error
 }
 
 // Configd represents an established gRPC connection to cl.configd.
@@ -91,6 +92,27 @@ func (c *Configd) SetLevel(level cfgapi.AccessLevel) error {
 	return err
 }
 
+func (c *cmdHdl) String() string {
+	return fmt.Sprintf("%s:%d", c.cfg.uuid, c.cmdID)
+}
+
+func (c *cmdHdl) update(r *cfgmsg.ConfigResponse) {
+	if !c.inflight {
+		log.Printf("Updating completed cmd %v\n", c)
+	}
+
+	c.result, c.err = r.Parse()
+	c.inflight = (c.err == cfgapi.ErrQueued || c.err == cfgapi.ErrInProgress)
+}
+
+func (c *Configd) getContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	deadline := time.Now().Add(c.timeout)
+	return context.WithDeadline(ctx, deadline)
+}
+
 // Status returns the current status of a command.  Once we have the command's
 // final status, we cache the result locally.  Until the command completes, we
 // perform an rpc to cl.configd to get the current status.
@@ -98,14 +120,14 @@ func (c *cmdHdl) Status(ctx context.Context) (string, error) {
 	var msg string
 	var err error
 
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if c.cfg.verbose {
-		log.Printf("checking status of cmdID %d\n", c.cmdID)
+		log.Printf("checking status of %v\n", c)
 	}
 
-	if c.err != nil || c.result != "" {
-		err = c.err
-		msg = c.result
-	} else {
+	if c.inflight {
 		cmd := rpc.CfgCmdID{
 			Time:      ptypes.TimestampNow(),
 			CloudUuid: c.cfg.uuid,
@@ -117,8 +139,11 @@ func (c *cmdHdl) Status(ctx context.Context) (string, error) {
 			err = cfgapi.ErrComm
 			msg = fmt.Sprintf("%v", rerr)
 		} else {
-			msg, err = r.Parse()
+			c.update(r)
 		}
+	} else {
+		msg = c.result
+		err = c.err
 	}
 
 	if c.cfg.verbose {
@@ -136,56 +161,28 @@ func (c *cmdHdl) Wait(ctx context.Context) (string, error) {
 	var msg string
 	var err error
 
-	deadline := time.Now().Add(time.Second * c.cfg.timeout)
+	deadline := time.Now().Add(c.cfg.timeout)
 	for {
+		ctx, ctxcancel := c.cfg.getContext(ctx)
 		msg, err = c.Status(ctx)
-		if err != cfgapi.ErrQueued && err != cfgapi.ErrInProgress {
+		ctxcancel()
+		if !c.inflight {
 			break
 		}
 
 		if time.Now().After(deadline) {
-			err = fmt.Errorf("timed out with %d in-flight",
-				c.cmdID)
+			err = fmt.Errorf("timed out with %v in-flight", c)
 			break
 		}
-
 		time.Sleep(time.Second)
 	}
 	return msg, err
 }
 
-// Send a packaged ConfigQuery to cl.configd.  Build and return a cmdHdl to the
-// caller.
-func (c *Configd) submit(ctx context.Context, cmd *cfgmsg.ConfigQuery) *cmdHdl {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	deadline := time.Now().Add(c.timeout)
-	ctx, ctxcancel := context.WithDeadline(ctx, deadline)
-	defer ctxcancel()
-
-	r, err := c.client.Submit(ctx, cmd)
-	hdl := cmdHdl{
-		cfg:   c,
-		cmdID: r.CmdID,
-	}
-	if err == nil {
-		hdl.result, hdl.err = r.Parse()
-	} else {
-		hdl.err = cfgapi.ErrComm
-		hdl.result = fmt.Sprintf("%v", err)
-	}
-	return &hdl
-}
-
 // Ping sends a single ping message to configd just to verify that a round-trip
 // grpc call can succeed.
 func (c *Configd) Ping(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	deadline := time.Now().Add(c.timeout)
-	ctx, ctxcancel := context.WithDeadline(ctx, deadline)
+	ctx, ctxcancel := c.getContext(ctx)
 	defer ctxcancel()
 
 	ping := rpc.CfgFrontEndPing{Time: ptypes.TimestampNow()}
@@ -204,21 +201,41 @@ func (c *Configd) Ping(ctx context.Context) error {
 // Execute takes a slice of PropertyOp structs, converts them to a
 // cfgapi.ConfigQuery, and sends it to cl.configd.
 func (c *Configd) Execute(ctx context.Context, ops []cfgapi.PropertyOp) cfgapi.CmdHdl {
+	hdl := &cmdHdl{
+		cfg:      c,
+		inflight: true,
+	}
+
 	cmd, err := cfgmsg.NewPropQuery(ops)
 	if err != nil {
-		return &cmdHdl{cfg: c, err: err}
+		hdl.err = err
+		return hdl
 	}
 
 	cmd.Sender = c.sender
 	cmd.Level = int32(c.level)
-	cmd.IdentityUuid = c.uuid
+	cmd.CloudUuid = c.uuid
+
+	ctx, ctxcancel := c.getContext(ctx)
+	defer ctxcancel()
 
 	if c.verbose {
 		log.Printf("submitting command\n")
 	}
-	hdl := c.submit(ctx, cmd)
-	if c.verbose {
-		log.Printf("submitted command.  Assigned cmdID: %d\n", hdl.cmdID)
+	r, err := c.client.Submit(ctx, cmd)
+	if err == nil {
+		hdl.cmdID = r.CmdID
+		hdl.update(r)
+		if c.verbose {
+			log.Printf("submitted command: %v\n", hdl)
+		}
+	} else {
+		hdl.err = cfgapi.ErrComm
+		hdl.result = fmt.Sprintf("%v", err)
+		hdl.inflight = false
+		if c.verbose {
+			log.Printf("submit failed: %v\n", err)
+		}
 	}
 
 	return hdl

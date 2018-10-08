@@ -25,7 +25,7 @@ type frontEndServer struct {
 }
 
 func execGet(state *perAPState, prop string) *cfgmsg.ConfigResponse {
-	slog.Infof("Getting %s", prop)
+	slog.Debugf("Getting %s", prop)
 	val, err := state.cachedTree.Get(prop)
 
 	rval := &cfgmsg.ConfigResponse{
@@ -78,28 +78,37 @@ func getParams(op *cfgmsg.ConfigOp) (string, string, *time.Time, error) {
 // result to the caller.  Otherwise, push the command onto the pending command
 // queue for asynchronous execution.
 func (s *frontEndServer) Submit(ctx context.Context,
-	ops *cfgmsg.ConfigQuery) (rval *cfgmsg.ConfigResponse, rerr error) {
+	query *cfgmsg.ConfigQuery) (rval *cfgmsg.ConfigResponse, rerr error) {
 
+	slog.Debugf("Submit(%s:%d)", query.CloudUuid, query.CmdID)
 	rval = &cfgmsg.ConfigResponse{
 		Timestamp: ptypes.TimestampNow(),
 		Response:  cfgmsg.ConfigResponse_FAILED,
 	}
 
-	state, err := getAPState(ops.IdentityUuid)
+	state, err := getAPState(query.CloudUuid)
 	if err != nil {
 		rval.Errmsg = fmt.Sprintf("%v", err)
 		return
 	}
+	if state == nil {
+		rval.Errmsg = "Empty state with no error"
+		return
+	}
+	if state.cachedTree == nil {
+		rval.Errmsg = "missing tree"
+		return
+	}
 
 	// Check for no-op
-	if len(ops.Ops) == 0 {
+	if len(query.Ops) == 0 {
 		rval.Response = cfgmsg.ConfigResponse_OK
 		return
 	}
 
 	// Sanity check all operations
 	getProp := ""
-	for i, o := range ops.Ops {
+	for i, o := range query.Ops {
 		errHead := fmt.Sprintf("op %d: ", i)
 		prop := o.Property
 		if prop == "" {
@@ -110,7 +119,7 @@ func (s *frontEndServer) Submit(ctx context.Context,
 		switch o.Operation {
 		case cfgmsg.ConfigOp_GET:
 			getProp = prop
-			if len(ops.Ops) > 1 {
+			if len(query.Ops) > 1 {
 				rval.Errmsg = "compound GETs not supported"
 				return
 			}
@@ -144,7 +153,9 @@ func (s *frontEndServer) Submit(ctx context.Context,
 			rval.Errmsg = fmt.Sprintf("%v", err)
 		}
 	} else {
-		rval.CmdID = cmdSubmit(state, ops)
+		// strip out the cloud UUID before sending it to the client
+		query.CloudUuid = ""
+		rval.CmdID = cmdSubmit(state, query)
 		rval.Response = cfgmsg.ConfigResponse_QUEUED
 	}
 

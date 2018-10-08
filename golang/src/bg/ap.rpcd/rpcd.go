@@ -22,11 +22,13 @@ import (
 	"syscall"
 	"time"
 
+	"bg/ap_common/apcfg"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
 	"bg/base_def"
 	"bg/base_msg"
 	"bg/cloud_rpc"
+	"bg/common/cfgapi"
 	"bg/common/grpcutils"
 
 	"github.com/pkg/errors"
@@ -48,12 +50,14 @@ var (
 	deadlineFlag  = flag.Duration("rpc-deadline", time.Second*20, "RPC completion deadline")
 	enableTLSFlag = flag.Bool("enable-tls", true, "Enable Secure gRPC")
 
-	pname         string
+	pname string
+
 	logger        *zap.Logger
 	slogger       *zap.SugaredLogger
 	zapConfig     zap.Config
 	globalLevel   zap.AtomicLevel
 	applianceCred *grpcutils.Credential
+	config        *cfgapi.Handle
 
 	metrics struct {
 		events prometheus.Counter
@@ -177,12 +181,16 @@ func daemonStart() {
 
 	prometheusInit()
 	b := broker.New(pname)
+	b.Handle(base_def.TOPIC_CONFIG, configEvent)
 	defer b.Fini()
 
-	applianceCred, err = grpcutils.SystemCredential()
-	if err != nil {
+	if applianceCred, err = grpcutils.SystemCredential(); err != nil {
 		_ = mcpd.SetState(mcp.BROKEN)
-		slogger.Fatalf("Failed to build credential: %s", err)
+		slogger.Fatalf("Failed to load appliance credentials: %v", err)
+	}
+
+	if config, err = apcfg.NewConfigd(b, pname, cfgapi.AccessAdmin); err != nil {
+		slogger.Fatalf("Failed to connect to configd: %v", err)
 	}
 
 	if !*enableTLSFlag {
@@ -202,6 +210,7 @@ func daemonStart() {
 	}
 	defer conn.Close()
 	tclient := cloud_rpc.NewEventClient(conn)
+	cclient := cloud_rpc.NewConfigBackEndClient(conn)
 	slogger.Debugf("RPC client connected")
 
 	b.Handle(base_def.TOPIC_EXCEPTION, func(event []byte) {
@@ -215,10 +224,12 @@ func daemonStart() {
 
 	stopHeartbeat := make(chan bool)
 	stopInventory := make(chan bool)
+	stopConfig := make(chan bool)
 
-	wg.Add(2)
+	wg.Add(3)
 	go heartbeatLoop(ctx, tclient, &wg, stopHeartbeat)
 	go inventoryLoop(ctx, tclient, &wg, stopInventory)
+	go configLoop(ctx, cclient, &wg, stopConfig)
 
 	exitSig := make(chan os.Signal, 2)
 	signal.Notify(exitSig, syscall.SIGINT, syscall.SIGTERM)
@@ -228,6 +239,7 @@ func daemonStart() {
 
 	stopHeartbeat <- true
 	stopInventory <- true
+	stopConfig <- true
 	wg.Wait()
 	slogger.Infof("Exiting")
 }
@@ -253,6 +265,7 @@ func cmdStart() {
 	}
 	defer conn.Close()
 	tclient := cloud_rpc.NewEventClient(conn)
+	cclient := cloud_rpc.NewConfigBackEndClient(conn)
 	slogger.Debugf("RPC client connected")
 
 	if len(flag.Args()) == 0 {
@@ -262,6 +275,8 @@ func cmdStart() {
 	svc := flag.Args()[0]
 	err = nil
 	switch svc {
+	case "hello":
+		err = hello(ctx, cclient)
 	case "heartbeat":
 		err = publishHeartbeat(ctx, tclient)
 	case "heartbeat-loop":

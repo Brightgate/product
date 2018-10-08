@@ -25,6 +25,7 @@ const maxDelay = 3
 
 // State of a single submitted command.
 type cmdState struct {
+	cloudUUID *string
 	cmdID     int64                  // monotonically increasing ID
 	cmd       *cfgmsg.ConfigQuery    // config operation(s)
 	response  *cfgmsg.ConfigResponse // result of the operation(s)
@@ -36,19 +37,23 @@ type cmdState struct {
 // A queue of cmdState structures.  We maintain both a proper queue, to enforce
 // FIFO ordering, and a cmdID-indexed map, to enable fast lookups.
 type cmdQueue struct {
-	uuid   string
-	queue  []*cmdState
-	pool   map[int64]*cmdState
-	maxLen int
+	cloudUUID string
+	queue     []*cmdState
+	pool      map[int64]*cmdState
+	maxLen    int
+}
+
+func (c *cmdState) String() string {
+	return fmt.Sprintf("%s:%d", *c.cloudUUID, c.cmdID)
 }
 
 // Instantiate a new command queue
-func newCmdQueue(uuid string, maxLen int) *cmdQueue {
+func newCmdQueue(cloudUUID string, maxLen int) *cmdQueue {
 	q := cmdQueue{
-		uuid:   uuid,
-		queue:  make([]*cmdState, 0),
-		pool:   make(map[int64]*cmdState),
-		maxLen: maxLen,
+		cloudUUID: cloudUUID,
+		queue:     make([]*cmdState, 0),
+		pool:      make(map[int64]*cmdState),
+		maxLen:    maxLen,
 	}
 	return &q
 }
@@ -64,7 +69,7 @@ func (q *cmdQueue) dequeue(cmdID int64) int {
 			return i
 		}
 	}
-	slog.Warnf("%s:%d not in queue", q.uuid, cmdID)
+	slog.Warnf("%s:%d not in queue", q.cloudUUID, cmdID)
 	return -1
 }
 
@@ -98,16 +103,18 @@ func cmdSubmit(s *perAPState, q *cfgmsg.ConfigQuery) int64 {
 	defer s.Unlock()
 
 	cmdID := s.lastCmdID + 1
+	q.CmdID = cmdID
 
 	now := time.Now()
 	cmd := cmdState{
+		cloudUUID: &s.cloudUUID,
 		cmdID:     cmdID,
 		cmd:       q,
 		submitted: &now,
 	}
-	cmd.cmdID = cmdID
 	s.lastCmdID = cmdID
 	s.sq.enqueue(&cmd)
+	slog.Debugf("submit(%v)", &cmd)
 
 	return cmdID
 }
@@ -123,11 +130,10 @@ func cmdFetch(s *perAPState, start, max int64) []*cfgmsg.ConfigQuery {
 
 	t := time.Now()
 	for _, c := range s.sq.queue {
-		if c.cmdID >= start {
+		if c.cmdID > start {
 			if c.fetched != nil {
-				slog.Infof("%s:%d being refetched "+
-					"- last fetched at %s", s.uuid, c.cmdID,
-					c.fetched.Format(time.RFC3339))
+				slog.Infof("%v refetched - last fetched at %s",
+					c, c.fetched.Format(time.RFC3339))
 			}
 			c.fetched = &t
 
@@ -154,15 +160,19 @@ func cmdStatus(s *perAPState, cmdID int64) *cfgmsg.ConfigResponse {
 
 	switch {
 	case cmd == nil:
+		slog.Debugf("%s:%d: no such cmd\n", s.cloudUUID, cmdID)
 		rval.Response = cfgmsg.ConfigResponse_NOCMD
 
 	case cmd.fetched == nil:
+		slog.Debugf("%v: queued\n", cmd)
 		rval.Response = cfgmsg.ConfigResponse_QUEUED
 
 	case cmd.completed == nil:
+		slog.Debugf("%v: in-progress\n", cmd)
 		rval.Response = cfgmsg.ConfigResponse_INPROGRESS
 
 	default:
+		slog.Debugf("%v: done\n", cmd)
 		rval = cmd.response
 	}
 	return rval
@@ -204,6 +214,22 @@ func cmdCancel(s *perAPState, cmdID int64) *cfgmsg.ConfigResponse {
 	return rval
 }
 
+// Is this command meant to be a refresh of the entire tree?
+func isRefresh(cmd *cfgmsg.ConfigQuery) bool {
+	if len(cmd.Ops) != 1 {
+		return false
+	}
+	if cmd.Ops[0].Operation != cfgmsg.ConfigOp_GET {
+		return false
+	}
+
+	if cmd.Ops[0].Property != "@/" {
+		return false
+	}
+
+	return true
+}
+
 // Handle a completion for an outstanding command
 func cmdComplete(s *perAPState, rval *cfgmsg.ConfigResponse) {
 	s.Lock()
@@ -211,11 +237,12 @@ func cmdComplete(s *perAPState, rval *cfgmsg.ConfigResponse) {
 
 	cmdID := rval.CmdID
 	cmd := cmdSearch(s, cmdID)
-
 	if cmd == nil {
-		slog.Warnf("%s:%d completion for unknown command", s.uuid, cmdID)
+		slog.Warnf("%s:%d completion for unknown command",
+			s.cloudUUID, cmdID)
 		return
 	}
+	slog.Debugf("complete(%v)", cmd)
 
 	// record the command result
 	if cmd.completed == nil {
@@ -225,20 +252,24 @@ func cmdComplete(s *perAPState, rval *cfgmsg.ConfigResponse) {
 			// commands are expected to be completed in their
 			// arrival order, so note when they don't.
 			prior := s.sq.queue[idx-1]
-			slog.Warnf("%s:%d completed before %d", s.uuid, cmdID,
-				prior.cmdID)
+			slog.Warnf("%v completed before %d", cmd, prior.cmdID)
 		}
 		s.cq.enqueue(cmd)
+
+		// Special-case handling for refetching a full tree.
+		if rval.Response == cfgmsg.ConfigResponse_OK && isRefresh(cmd.cmd) {
+			refreshAPState(s, rval.Value)
+		}
 	} else {
-		slog.Infof("%s:%d multiple completions - last at %s",
-			s.uuid, cmd.cmdID, cmd.completed.Format(time.RFC3339))
+		slog.Infof("%v multiple completions - last at %s", cmd,
+			cmd.completed.Format(time.RFC3339))
 	}
 
 	t := time.Now()
 	cmd.completed = &t
 }
 
-// Execute a single CfgPropOps command, which may include multiple property
+// Execute a single ConfigQuery command, which may include multiple property
 // updates.  This mimics work that would really be done by ap.configd on the
 // appliance.  The changes made to the in-core tree are not persisted, so we
 // will revert to the original tree next time cl.configd launches.
@@ -303,7 +334,7 @@ func emulateAppliance(app *perAPState) {
 
 	for {
 		delay()
-		ops := cmdFetch(app, lastCmd+1, 1)
+		ops := cmdFetch(app, lastCmd, 1)
 		if len(ops) > 0 {
 			delay()
 			for _, o := range ops {

@@ -38,7 +38,7 @@ message ConfigQuery {
 	google.protobuf.Timestamp timestamp = 0x01;
 	string sender = 0x02;
 	string debug = 0x03;
-	string identity_uuid = 0x04;
+	string cloud_uuid = 0x04;
 	Version version = 0x05;
 	int32 level = 0x06;
 	int64 cmdID = 0x07;
@@ -51,7 +51,6 @@ message ConfigResponse {
 	google.protobuf.Timestamp timestamp = 0x01;
 	string sender = 0x02;
 	string debug = 0x03;
-	string identity_uuid = 0x04;
 	Version version = 0x05;
 	Version min_version = 0x06;
 

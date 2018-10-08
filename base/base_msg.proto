@@ -134,6 +134,7 @@ message EventConfig {
 	optional string property = 0x202;
 	optional string new_value = 0x203;
 	optional Timestamp expires = 0x204;
+	optional bytes hash = 0x205;
 }
 
 // The system error message is sent whenever an appliance service

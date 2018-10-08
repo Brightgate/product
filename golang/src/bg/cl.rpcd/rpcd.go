@@ -75,6 +75,9 @@ type Cfg struct {
 	// XXX it would be nicer if we could have this be ENABLE_TLS with
 	// default=true but envcfg does not support that.
 	DisableTLS bool `envcfg:"B10E_CLRPCD_DISABLE_TLS"`
+
+	ConfigdConnection string `envcfg:"B10E_CLCONFIGD_CONNECTION"`
+	RPCTimeout        string `envcfg:"B10E_CLCONFIGD_TIMEOUT"`
 }
 
 const (
@@ -123,6 +126,9 @@ func processEnv(environ *Cfg) {
 	}
 	if environ.PubsubTopic == "" {
 		slog.Fatalf("B10E_CLRPCD_PUBSUB_TOPIC must be set")
+	}
+	if environ.ConfigdConnection == "" {
+		slog.Fatalf("B10E_CLCONFIGD_CONNECTION must be set")
 	}
 	// Supply defaults where applicable
 	if environ.PrometheusPort == "" {
@@ -290,6 +296,11 @@ func main() {
 	slog.Infof(checkMark+"Ready to put event to Cloud PubSub %s", environ.PubsubTopic)
 	cloud_rpc.RegisterCloudStorageServer(grpcServer, cloudStorageServer)
 	slog.Infof(checkMark + "Ready to serve Cloud Storage related requests")
+
+	configdServer := defaultConfigServer(environ.ConfigdConnection,
+		environ.RPCTimeout, environ.DisableTLS)
+	cloud_rpc.RegisterConfigBackEndServer(grpcServer, configdServer)
+	slog.Infof(checkMark + "Ready to relay configd requests")
 
 	prometheusInit(environ.PrometheusPort)
 

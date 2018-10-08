@@ -121,16 +121,22 @@ var (
  *
  * Broker notifications
  */
-func propNotify(prop, val string, expires *time.Time,
-	action base_msg.EventConfig_Type) {
+func propNotify(node *cfgtree.PNode, action base_msg.EventConfig_Type) {
+	path := node.Path()
+	expires := node.Expires
+	hash := node.Tree().Root().Hash()
 
 	entity := &base_msg.EventConfig{
 		Timestamp: aputil.NowToProtobuf(),
 		Sender:    proto.String(pname),
 		Type:      &action,
-		Property:  proto.String(prop),
-		NewValue:  proto.String(val),
+		Property:  proto.String(path),
 		Expires:   aputil.TimeToProtobuf(expires),
+		Hash:      hash,
+	}
+
+	if action == base_msg.EventConfig_CHANGE {
+		entity.NewValue = proto.String(node.Value)
 	}
 
 	err := brokerd.Publish(entity, base_def.TOPIC_CONFIG)
@@ -140,17 +146,16 @@ func propNotify(prop, val string, expires *time.Time,
 }
 
 func propUpdated(node *cfgtree.PNode) {
-	propNotify(node.Path(), node.Value, node.Expires,
-		base_msg.EventConfig_CHANGE)
+	propNotify(node, base_msg.EventConfig_CHANGE)
 }
 
 func propDeleted(node *cfgtree.PNode) {
 	expirationRemove(node)
-	propNotify(node.Path(), "-", nil, base_msg.EventConfig_DELETE)
+	propNotify(node, base_msg.EventConfig_DELETE)
 }
 
 func expirationNotify(node *cfgtree.PNode) {
-	propNotify(node.Path(), node.Value, nil, base_msg.EventConfig_EXPIRE)
+	propNotify(node, base_msg.EventConfig_EXPIRE)
 }
 
 func entityHandler(event []byte) {

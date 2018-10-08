@@ -47,9 +47,13 @@ func (c *APConfig) configEvent(raw []byte) {
 	etype := *event.Type
 	property := *event.Property
 	path := strings.Split(property[2:], "/")
-	value := *event.NewValue
 
 	if etype == base_msg.EventConfig_CHANGE {
+		var value string
+
+		if event.NewValue != nil {
+			value = *event.NewValue
+		}
 		expires := aputil.ProtobufToTime(event.Expires)
 		for _, m := range c.changeHandlers {
 			if m.match.MatchString(property) {

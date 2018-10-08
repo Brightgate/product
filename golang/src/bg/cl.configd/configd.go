@@ -14,11 +14,13 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"bg/base_def"
 	"bg/cl_common/daemonutils"
@@ -36,7 +38,7 @@ import (
 const pname = "cl.configd"
 
 type perAPState struct {
-	uuid       string         // cloud UUID
+	cloudUUID  string         // cloud UUID
 	cachedTree *cfgtree.PTree // in-core cache of the config tree
 
 	// XXX: the per-appliance command queue will eventually live in a
@@ -79,24 +81,67 @@ var (
 	store multiStore
 )
 
-func getAPState(uuid string) (*perAPState, error) {
+func refreshAPState(s *perAPState, jsonTree string) {
+	tree, err := cfgtree.NewPTree("@", []byte(jsonTree))
+	if err != nil {
+		slog.Warnf("failed to refresh %s: %v", s.cloudUUID, err)
+	} else {
+		s.cachedTree = tree
+	}
+}
+
+// XXX: this is an interim function.  When we get an update from an unknown
+// appliance, we construct a new in-core cache for it.  Eventually this probably
+// needs to be instantiated as part of the device provisioning process.
+func initAPState(cloudUUID string) (*perAPState, error) {
 	stateLock.Lock()
 	defer stateLock.Unlock()
 
-	s, ok := state[uuid]
+	s, ok := state[cloudUUID]
 	if ok {
 		return s, nil
 	}
 
-	tree, err := store.get(context.Background(), uuid)
+	s = &perAPState{
+		cloudUUID: cloudUUID,
+		sq:        newCmdQueue(cloudUUID, 0),
+		cq:        newCmdQueue(cloudUUID, *cqMax),
+		lastCmdID: time.Now().Unix(),
+	}
+	state[cloudUUID] = s
+
+	return s, nil
+}
+
+func getAPState(cloudUUID string) (*perAPState, error) {
+	stateLock.Lock()
+	defer stateLock.Unlock()
+
+	if cloudUUID == "" {
+		return nil, fmt.Errorf("No UUID provided")
+	}
+
+	s, ok := state[cloudUUID]
+	if ok {
+		return s, nil
+	}
+
+	tree, err := store.get(context.Background(), cloudUUID)
 	if err == nil {
 		s = &perAPState{
-			uuid:       uuid,
+			cloudUUID:  cloudUUID,
 			cachedTree: tree,
-			sq:         newCmdQueue(uuid, 0),
-			cq:         newCmdQueue(uuid, *cqMax),
+			sq:         newCmdQueue(cloudUUID, 0),
+			cq:         newCmdQueue(cloudUUID, *cqMax),
+			lastCmdID:  time.Now().Unix(),
 		}
-		state[uuid] = s
+		state[cloudUUID] = s
+		// XXX: currently we assume that any config tree we load from
+		// cloud storage has no real appliance connected to it, so we
+		// launch a go routine to emulate the missing appliance.  When
+		// we start persisting real config trees to the database, we'll
+		// need some way to distinguish between real configs and
+		// emulated http-dev configs.
 		go emulateAppliance(s)
 	}
 
