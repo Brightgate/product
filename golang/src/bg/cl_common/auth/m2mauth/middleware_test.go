@@ -31,6 +31,7 @@ import (
 	"github.com/grpc-ecosystem/go-grpc-middleware/util/metautils"
 	"github.com/satori/uuid"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -73,16 +74,13 @@ func setupLogging(t *testing.T) (*zap.Logger, *zap.SugaredLogger) {
 }
 
 func assertErrAndCode(t *testing.T, err error, code codes.Code) {
-	if err == nil {
-		t.Fatalf("Expected error, but got nil")
-	}
+	assert := require.New(t)
+	assert.Error(err, "Expected error")
+
 	s, ok := status.FromError(err)
-	if !ok {
-		t.Fatalf("Could not get GRPC status from Error!")
-	}
-	if s.Code() != code {
-		t.Fatalf("Expected code %v, but got %v", code.String(), s.Code().String())
-	}
+	assert.True(ok, "Could not get GRPC status from Error!")
+	assert.Equal(code.String(), s.Code().String())
+
 	t.Logf("Saw expected err (code=%s)", code.String())
 }
 
@@ -127,6 +125,7 @@ func makeBearerUnsigned(ma *MockAppliance) string {
 func TestBasic(t *testing.T) {
 	_, _ = setupLogging(t)
 	m := mockAppliances[0]
+	assert := require.New(t)
 
 	dMock := &mocks.DataStore{}
 	dMock.On("ApplianceIDByClientID", mock.Anything, m.ClientID).Return(&m.ApplianceID, nil)
@@ -134,29 +133,33 @@ func TestBasic(t *testing.T) {
 	defer dMock.AssertExpectations(t)
 
 	mw := New(dMock)
-
 	ctx := metautils.ExtractIncoming(context.Background()).
 		Add("authorization", makeBearer(m)).
 		Add("clientid", m.ClientID).
 		ToIncoming(context.Background())
+	uu := metautils.ExtractIncoming(ctx).Get("clouduuid")
+	assert.Equal(uu, "", "saw unexpected clouduuid in ctx")
+
 	resultctx, err := mw.authFunc(ctx)
-	if err != nil {
-		t.Fatalf("saw unexpected error: %+v", err)
-	}
-	if resultctx == nil {
-		t.Fatalf("resultctx is nil")
-	}
-	if mw.authCache.Len() != 1 {
-		t.Fatalf("authCache has unexpected size")
-	}
+	assert.NoError(err)
+
+	// check resultant context looks good
+	assert.NotNil(resultctx)
+	uu = metautils.ExtractIncoming(resultctx).Get("clouduuid")
+	assert.Equal(m.ApplianceID.CloudUUID.String(), uu,
+		"clouduuid was not set as expected in context")
+	assert.Equal(1, mw.authCache.Len(), "authCache has unexpected size")
+
 	// try again; we expect this to be served from cache
 	resultctx, err = mw.authFunc(ctx)
-	if err != nil {
-		t.Fatalf("saw unexpected error: %+v", err)
-	}
-	if resultctx == nil {
-		t.Fatalf("resultctx is nil")
-	}
+	assert.NoError(err)
+
+	// check resultant context, generated from cache, looks good
+	assert.NotNil(resultctx)
+	uu = metautils.ExtractIncoming(resultctx).Get("clouduuid")
+	assert.Equal(m.ApplianceID.CloudUUID.String(), uu,
+		"clouduuid was not set as expected in context")
+	assert.Equal(1, mw.authCache.Len(), "authCache has unexpected size")
 }
 
 // TestExpLeeway tests the case where the client is initiating a connection, but
@@ -166,6 +169,7 @@ func TestBasic(t *testing.T) {
 func TestExpLeeway(t *testing.T) {
 	_, _ = setupLogging(t)
 	m := mockAppliances[0]
+	assert := require.New(t)
 
 	dMock := &mocks.DataStore{}
 	dMock.On("ApplianceIDByClientID", mock.Anything, m.ClientID).Return(&m.ApplianceID, nil)
@@ -179,12 +183,8 @@ func TestExpLeeway(t *testing.T) {
 		Add("clientid", m.ClientID).
 		ToIncoming(context.Background())
 	resultctx, err := mw.authFunc(ctx)
-	if err != nil {
-		t.Fatalf("saw unexpected error: %+v", err)
-	}
-	if resultctx == nil {
-		t.Fatalf("resultctx is nil")
-	}
+	assert.NoError(err)
+	assert.NotNil(resultctx)
 }
 
 // TestBadBearer tests a series of cases where the setup/teardown
@@ -192,6 +192,7 @@ func TestExpLeeway(t *testing.T) {
 func TestBadBearer(t *testing.T) {
 	_, _ = setupLogging(t)
 	m := mockAppliances[0]
+	assert := require.New(t)
 
 	testCases := []struct {
 		desc   string
@@ -220,9 +221,7 @@ func TestBadBearer(t *testing.T) {
 				ToIncoming(context.Background())
 			_, err := mw.authFunc(ctx)
 			assertErrAndCode(t, err, codes.Unauthenticated)
-			if mw.authCache.Len() != 0 {
-				t.Fatalf("authCache has unexpected size")
-			}
+			assert.Equal(0, mw.authCache.Len(), "authCache has unexpected size")
 		})
 	}
 }
@@ -230,6 +229,7 @@ func TestBadBearer(t *testing.T) {
 func TestExpiredBearerCached(t *testing.T) {
 	_, _ = setupLogging(t)
 	m := mockAppliances[0]
+	assert := require.New(t)
 
 	dMock := &mocks.DataStore{}
 	defer dMock.AssertExpectations(t)
@@ -243,9 +243,7 @@ func TestExpiredBearerCached(t *testing.T) {
 	})
 
 	tokenString, err := token.SignedString(m.PrivateKey)
-	if err != nil {
-		panic(err)
-	}
+	assert.NoError(err)
 	bearer := "bearer " + tokenString
 
 	parser := &jwt.Parser{SkipClaimsValidation: true}
@@ -257,9 +255,7 @@ func TestExpiredBearerCached(t *testing.T) {
 		Token:     parsedToken,
 		CloudUUID: m.CloudUUID,
 	})
-	if mw.authCache.Len() != 1 {
-		t.Fatalf("authCache has unexpected size != 1: %v", mw.authCache.Len())
-	}
+	assert.Equalf(1, mw.authCache.Len(), "authCache has unexpected size")
 
 	ctx := metautils.ExtractIncoming(context.Background()).
 		Add("authorization", bearer).
@@ -267,9 +263,7 @@ func TestExpiredBearerCached(t *testing.T) {
 		ToIncoming(context.Background())
 	_, err = mw.authFunc(ctx)
 	assertErrAndCode(t, err, codes.Unauthenticated)
-	if mw.authCache.Len() != 0 {
-		t.Fatalf("authCache has unexpected size > 0: %v", mw.authCache.Len())
-	}
+	assert.Equalf(0, mw.authCache.Len(), "authCache has unexpected size")
 }
 
 func TestBadClientID(t *testing.T) {
