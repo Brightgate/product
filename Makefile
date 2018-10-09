@@ -845,6 +845,7 @@ $(CLOUDBIN)/cl.httpd: \
 	$(GOSRCBG)/cl.httpd/cl.httpd.go \
 	$(GOSRCBG)/cl.httpd/auth.go \
 	$(GOSRCBG)/cl.httpd/api.go \
+	$(GOSRCBG)/cl.httpd/access.go \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.rpcd: \
 	$(GOSRCBG)/cl.rpcd/event.go \

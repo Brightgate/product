@@ -231,6 +231,7 @@ func mkRouterHTTPS(sessionStore sessions.Store) *echo.Echo {
 	log.Printf(checkMark + "Pinged Appliance DB")
 	_ = newAPIHandler(r, applianceDB, sessionStore)
 
+	_ = newAccessHandler(r, applianceDB, sessionStore)
 	//ginPrometheus.Use(r)
 	return r
 }
