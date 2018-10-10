@@ -9,16 +9,18 @@
 #
 
 [Unit]
-Description=Brightgate Google Cloud PubSub event receiver
+Description=Brightgate cloud RPC server
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/opt/net.b10e/bin/cl.eventd
+ExecStart=/opt/net.b10e/bin/cl.rpcd
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=process
 Restart=always
 RestartPreventExitStatus=255
+# Per-node Environment= settings are needed to configure the daemon. Those
+# should be placed in /etc/systemd/system/cl.rpcd.service.d/local.conf.
 
 [Install]
 WantedBy=multi-user.target
