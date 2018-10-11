@@ -238,7 +238,7 @@ function fetchPropP(context, property, default_value) {
 
 // Make up to maxcount attempts to see if property has changed to an
 // expected value.
-function checkPropChangeP(context, appliance, property, value, maxcount, count) {
+function checkPropChangeP(context, property, value, maxcount, count) {
   assert.equal(typeof property, 'string');
   assert.equal(typeof maxcount, 'number');
   count = count === undefined ? maxcount : count;
@@ -262,7 +262,7 @@ function checkPropChangeP(context, appliance, property, value, maxcount, count) 
     debug(`checkPropChangeP: failed ${attempt_str}, will retry.  ${err}`);
     return Promise.delay(RETRY_DELAY
     ).then(() => {
-      return checkPropChangeP(property, value, maxcount, count - 1);
+      return checkPropChangeP(context, property, value, maxcount, count - 1);
     });
   });
 }
@@ -418,7 +418,7 @@ const actions = {
       debug(`Store: fetchDevices: enableMock = ${context.state.enableMock}`);
       all_devices = mockDevices;
     }
-    const p = retry(devicesGetP, {interval: RETRY_DELAY, max_tries: 10, args: context}
+    const p = retry(devicesGetP, {interval: RETRY_DELAY, max_tries: 10, args: [context]}
     ).then((res_json) => {
       const mapped_devices = res_json.Devices.map((dev) => {
         return computeDeviceProps({
@@ -426,12 +426,9 @@ const actions = {
           model: dev.Model,
           kind: dev.Kind,
           confidence: dev.Confidence,
-          network_name: dev.HumanName, // XXX
+          network_name: dev.HumanName ? dev.HumanName : `Unknown (${dev.HwAddr})`, // XXX this has issues, including i18n)
           ipv4_addr: dev.IPv4Addr,
           os_version: dev.OSVersion,
-          owner: dev.OwnerName,
-          owner_phone: dev.OwnerPhone,
-          owner_email: '',
           activated: '',
           uniqid: dev.HwAddr,
           hwaddr: dev.HwAddr,

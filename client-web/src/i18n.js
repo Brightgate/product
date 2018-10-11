@@ -113,10 +113,10 @@ export default {
         unknown_manufacturer: 'Unknown',
         network_name: 'Network Name',
         ipv4_addr: 'IPv4 Address',
+        ipv4_addr_none: 'None',
         hw_addr: 'Hardware Address',
         os_version: 'OS Version',
         os_version_unknown: 'Unknown',
-        owner: 'Owner',
         access_control: 'Access Control',
         security_ring: 'Security Ring',
         vuln_scan: 'Vulnerability Scan',
@@ -280,10 +280,10 @@ export default {
         unknown_manufacturer: 'Unknown Manufacturer', // XXXI18N
         network_name: 'Netzwerk Name',
         ipv4_addr: 'IPv4 Address',       // XXXI18N
+        ipv4_addr_none: 'None',          // XXXI18N
         hw_addr: 'Hardware Address',     // XXXI18N
         os_version: 'OS Version',
         os_version_unknown: 'Unknown', // XXXI18N
-        owner: 'Besitzer',
         access_control: 'Zugangskontrolle',
         security_ring: 'Ring',
         vuln_scan: 'Vulnerability Scan', // XXXI18N

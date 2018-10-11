@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"image/png"
 	"log"
+	"net"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -79,23 +80,21 @@ type daScanInfo struct {
 }
 
 type daDevice struct {
-	HwAddr          string
-	Manufacturer    string
-	Model           string
-	Kind            string
-	Confidence      float64
-	Ring            string
-	HumanName       string
-	DNSName         string
-	DHCPExpiry      string
-	IPv4Addr        string
-	OSVersion       string
-	OwnerName       string
-	OwnerPhone      string
-	MediaLink       string
-	Active          bool
-	Scans           map[string]daScanInfo
-	Vulnerabilities map[string]daVulnInfo
+	HwAddr          string                `json:"HwAddr"`
+	Manufacturer    string                `json:"Manufacturer"`
+	Model           string                `json:"Model"`
+	Kind            string                `json:"Kind"`
+	Confidence      float64               `json:"Confidence"`
+	Ring            string                `json:"Ring"`
+	HumanName       string                `json:"HumanName,omitempty"`
+	DNSName         string                `json:"DNSName,omitempty"`
+	DHCPExpiry      string                `json:"DHCPExpiry,omitempty"`
+	IPv4Addr        *net.IP               `json:"IPv4Addr,omitempty"`
+	OSVersion       string                `json:"OSVersion,omitempty"`
+	MediaLink       string                `json:"MedialLink,omitempty"`
+	Active          bool                  `json:"Active"`
+	Scans           map[string]daScanInfo `json:"Scans,omitempty"`
+	Vulnerabilities map[string]daVulnInfo `json:"Vulnerabilties,omitempty"`
 }
 
 type daDevices struct {
@@ -106,37 +105,25 @@ type daDevices struct {
 func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
 	scanMap cfgapi.ScanMap, vulnMap cfgapi.VulnMap) daDevice {
 
-	var cd daDevice
+	cd := daDevice{
+		HwAddr:          hwaddr,
+		Ring:            client.Ring,
+		IPv4Addr:        &client.IPv4,
+		Active:          client.IsActive(),
+		Scans:           make(map[string]daScanInfo),
+		Vulnerabilities: make(map[string]daVulnInfo),
+	}
 
-	/* JavaScript from devices.vue:
-	{
-		device: 'Apple iPhone 8',
-		network_name: 'nosy-neighbor',
-		os_version: 'iOS 11.0.1',
-		owner: 'unknown',
-		activated: '',
-		owner_phone: '',
-		owner_email: '',
-		media: '<img src="img/nova-solid-mobile-phone-1.png" width=32 height=32>'
-	},
-	*/
 	cd.HwAddr = hwaddr
-
 	if client.DNSName != "" {
 		cd.HumanName = client.DNSName
 		cd.DNSName = client.DNSName
 	} else if client.DHCPName != "" {
 		cd.HumanName = client.DHCPName
-		cd.DNSName = "-"
+		cd.DNSName = ""
 	} else {
-		cd.HumanName = "Unnamed"
-		cd.DNSName = "-"
-	}
-
-	if client.IPv4 != nil {
-		cd.IPv4Addr = client.IPv4.String()
-	} else {
-		cd.IPv4Addr = "-"
+		cd.HumanName = ""
+		cd.DNSName = ""
 	}
 
 	if client.Expires != nil {
@@ -145,10 +132,6 @@ func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
 		cd.DHCPExpiry = "static"
 	}
 
-	cd.Ring = client.Ring
-	cd.IPv4Addr = client.IPv4.String()
-	cd.Active = client.IsActive()
-	cd.Scans = make(map[string]daScanInfo)
 	for k, v := range scanMap {
 		cd.Scans[k] = daScanInfo{
 			Start:  v.Start,
@@ -156,7 +139,6 @@ func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
 		}
 	}
 
-	cd.Vulnerabilities = make(map[string]daVulnInfo)
 	for k, v := range vulnMap {
 		cd.Vulnerabilities[k] = daVulnInfo{
 			FirstDetected:  v.FirstDetected,

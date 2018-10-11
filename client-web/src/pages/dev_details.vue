@@ -79,7 +79,9 @@
     <f7-list>
 
       <f7-list-item :title="$t('message.dev_details.network_name')">{{ dev.network_name }}</f7-list-item>
-      <f7-list-item :title="$t('message.dev_details.ipv4_addr')">{{ dev.ipv4_addr }}</f7-list-item>
+      <f7-list-item :title="$t('message.dev_details.ipv4_addr')">
+        {{ dev.ipv4_addr ? dev.ipv4_addr : $t("message.dev_details.ipv4_addr_none") }}
+      </f7-list-item>
       <f7-list-item :title="$t('message.dev_details.hw_addr')">{{ dev.hwaddr }}</f7-list-item>
       <f7-list-item :title="$t('message.dev_details.os_version')">{{ os_version }}</f7-list-item>
 
