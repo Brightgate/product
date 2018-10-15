@@ -359,6 +359,7 @@ func selectWifiDevices() {
 
 	// Iterate over all possible combinations to find the pair of devices
 	// that supports the most desirable combination of modes.
+	oldScore := best
 	for _, a := range physDevices {
 		for _, b := range physDevices {
 			if a == b {
@@ -379,14 +380,16 @@ func selectWifiDevices() {
 		}
 	}
 
-	activeWifi = make([]*physDevice, 0)
-	for idx, band := range bands {
-		if d := selected[band]; d != nil {
-			d.wifi.activeBand = bands[idx]
-			if err := selectWifiChannel(d); err != nil {
-				log.Printf("%v\n", err)
-			} else {
-				activeWifi = append(activeWifi, d)
+	if best > oldScore {
+		activeWifi = make([]*physDevice, 0)
+		for idx, band := range bands {
+			if d := selected[band]; d != nil {
+				d.wifi.activeBand = bands[idx]
+				if err := selectWifiChannel(d); err != nil {
+					log.Printf("%v\n", err)
+				} else {
+					activeWifi = append(activeWifi, d)
+				}
 			}
 		}
 	}
@@ -699,7 +702,7 @@ func newNicOps(id string, nic *physDevice) []cfgapi.PropertyOp {
 			Name: base,
 		}
 		ops = append(ops, op)
-	} else {
+	} else if nic.ring != "" {
 		var kind string
 		if nic.wifi == nil {
 			kind = "wired"
@@ -712,7 +715,7 @@ func newNicOps(id string, nic *physDevice) []cfgapi.PropertyOp {
 			Name:  base + "/kind",
 			Value: kind,
 		}
-		log.Printf("Setting %s to %s\n", id, op.Value)
+		log.Printf("Setting %s to %s\n", op.Name, op.Value)
 		ops = append(ops, op)
 
 		op = cfgapi.PropertyOp{
@@ -720,6 +723,7 @@ func newNicOps(id string, nic *physDevice) []cfgapi.PropertyOp {
 			Name:  base + "/ring",
 			Value: nic.ring,
 		}
+		log.Printf("Setting %s to %s\n", op.Name, op.Value)
 		ops = append(ops, op)
 	}
 

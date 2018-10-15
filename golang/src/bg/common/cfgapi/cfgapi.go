@@ -315,6 +315,9 @@ func dumpSubtree(name string, node *PropertyNode, level int) {
 	}
 	e := ""
 	if node.Expires != nil {
+		if time.Now().After(*node.Expires) {
+			return
+		}
 		e = node.Expires.Format("2006-01-02T15:04:05")
 	}
 	fmt.Printf("%s%s: %s  %s\n", indent, name, node.Value, e)

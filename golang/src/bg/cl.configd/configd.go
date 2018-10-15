@@ -87,6 +87,7 @@ func refreshAPState(s *perAPState, jsonTree string) {
 		slog.Warnf("failed to refresh %s: %v", s.cloudUUID, err)
 	} else {
 		s.cachedTree = tree
+		slog.Debugf("new tree.  hash %x", s.cachedTree.Root().Hash())
 	}
 }
 

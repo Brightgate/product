@@ -256,19 +256,24 @@ func configEvent(raw []byte) {
 	event := &base_msg.EventConfig{}
 	proto.Unmarshal(raw, event)
 
-	// Ignore messages without an explicit type
-	if event.Type == nil {
+	// Ignore messages without an explicit type.  Also ignore messages
+	// without a hash, as they represent interim changes that will be
+	// subsumed by a larger-scale update that will have a hash.
+	if event.Type == nil || event.Hash == nil {
 		return
 	}
 
-	etype := *event.Type
+	hash := make([]byte, len(event.Hash))
+	copy(hash, event.Hash)
 
+	etype := *event.Type
 	if etype == base_msg.EventConfig_CHANGE {
 		slogger.Debugf("updated %v", *event.Property)
 		update = &rpc.CfgBackEndUpdate_CfgUpdate{
 			Type:     rpc.CfgBackEndUpdate_CfgUpdate_UPDATE,
 			Property: *event.Property,
 			Value:    *event.NewValue,
+			Hash:     hash,
 		}
 		if event.Expires != nil {
 			t := aputil.ProtobufToTime(event.Expires)
@@ -280,11 +285,10 @@ func configEvent(raw []byte) {
 		update = &rpc.CfgBackEndUpdate_CfgUpdate{
 			Type:     rpc.CfgBackEndUpdate_CfgUpdate_DELETE,
 			Property: *event.Property,
+			Hash:     hash,
 		}
 	}
 	if update != nil {
-		update.Hash = make([]byte, len(event.Hash))
-		copy(update.Hash, event.Hash)
 		queued.Lock()
 		queued.updates = append(queued.updates, update)
 		queued.Unlock()

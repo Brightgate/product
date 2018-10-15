@@ -31,13 +31,9 @@ var (
 // PTree represents an in-core configuration tree, on which operations may be
 // performed
 type PTree struct {
-	root      *PNode
-	callbacks Callbacks
+	root *PNode
 
-	rollback struct {
-		preserved []*PNode
-		deleted   []*PNode
-	}
+	preserved []*PNode // nodes preserved to allow for a rollback
 
 	sync.Mutex
 }
@@ -61,19 +57,8 @@ type PNode struct {
 	// nodes are preserved in this path->PNode map.  These copies are freed
 	// when changes are committed, or are used to recover when a changeset
 	// fails and must be reverted.
-	preserved map[string]*PNode
-}
-
-// Callbacks allow cfgtree consumers to provide hooks that may be invoked when a
-// property is updated or deleted.
-type Callbacks struct {
-	Updated func(node *PNode)
-	Deleted func(node *PNode)
-}
-
-var nullCallbacks = Callbacks{
-	Updated: func(n *PNode) {},
-	Deleted: func(n *PNode) {},
+	origChildren map[string]*PNode
+	origHash     []byte
 }
 
 func parse(prop string) []string {
@@ -135,9 +120,15 @@ func (node *PNode) Data() interface{} {
 	return node.data
 }
 
+func hashCopy(in []byte) []byte {
+	out := make([]byte, len(in))
+	copy(out, in)
+	return out
+}
+
 // Hash returns the previously computed hash value for this node
 func (node *PNode) Hash() []byte {
-	return node.hash
+	return hashCopy(node.hash)
 }
 
 // Rehash recomputes the hash value associated with this node
@@ -172,13 +163,7 @@ func (node *PNode) hashSelf() {
 		node.hash = make([]byte, md5.Size)
 		for _, c := range node.Children {
 			if c.hash == nil {
-				// When committing a multi-step operation, we
-				// can't update the parent hashes until all of
-				// the children have been computed.  If we find
-				// a child with no hash yet, bail out.  We'll
-				// finish rehashing this node when we generate
-				// that child's hash
-				return
+				log.Fatalf("missing hash for %s\n", c.path)
 			}
 			for i := 0; i < md5.Size; i++ {
 				node.hash[i] ^= c.hash[i]
@@ -230,27 +215,27 @@ func (node *PNode) Move(newPath string) error {
 	node.moveChildren(newPath)
 	node.path = newPath
 	node.hashDown()
+
 	return nil
 }
 
-func (node *PNode) delete() {
-	if cb := node.tree.callbacks.Deleted; cb != nil {
-		cb(node)
+func (node *PNode) subtree() []string {
+	all := []string{node.path}
+	for _, c := range node.Children {
+		all = append(all, c.subtree()...)
 	}
 
-	for _, n := range node.Children {
-		n.delete()
-	}
+	return all
 }
 
 func (node *PNode) preserveChildren() {
-	if node.preserved == nil {
+	if node.origChildren == nil {
 		tree := node.tree
 
-		node.preserved = make(map[string]*PNode)
-		tree.rollback.preserved = append(tree.rollback.preserved, node)
+		node.origChildren = make(map[string]*PNode)
+		tree.preserved = append(tree.preserved, node)
 		for k, v := range node.Children {
-			node.preserved[k] = v
+			node.origChildren[k] = v
 		}
 	}
 }
@@ -260,7 +245,15 @@ func (node *PNode) preserve() {
 
 	p := node.parent
 	p.preserveChildren()
-	p.preserved[node.name] = &nodeCopy
+	if p.origChildren[node.name] == node {
+		p.origChildren[node.name] = &nodeCopy
+	}
+
+	for x := p; x != nil; x = x.parent {
+		if x.origHash == nil {
+			x.origHash = hashCopy(x.hash)
+		}
+	}
 }
 
 func (node *PNode) update(value string, exp *time.Time) error {
@@ -282,16 +275,11 @@ func (node *PNode) update(value string, exp *time.Time) error {
 func (node *PNode) commit(now time.Time) bool {
 	updated := false
 
-	tree := node.tree
-
 	// Look for any children that have been added or updated
 	for prop, current := range node.Children {
-		if old := node.preserved[prop]; old != current {
+		if old := node.origChildren[prop]; old != current {
 			if old == nil || current.Value != old.Value ||
 				current.Expires != old.Expires {
-				if cb := tree.callbacks.Updated; cb != nil {
-					cb(current)
-				}
 				copy := now
 				current.Modified = &copy
 				updated = true
@@ -301,18 +289,17 @@ func (node *PNode) commit(now time.Time) bool {
 
 	// Using the original list of child nodes, look for any that have been
 	// deleted
-	for prop := range node.preserved {
+	for prop := range node.origChildren {
 		if _, ok := node.Children[prop]; !ok {
 			updated = true
 		}
 	}
 
-	// If there have been any changes to child nodes, mark this and all
-	// ancestors as updated
-	if updated {
-		node.hashDown()
-		node.hashUp()
-		for x := node; x != nil; x = x.parent {
+	// Set the modified time for all nodes between here and the root.  Clean
+	// up any preserved hashes as well.
+	for x := node; x != nil; x = x.parent {
+		x.origHash = nil
+		if updated {
 			copy := now
 			x.Modified = &copy
 		}
@@ -326,8 +313,7 @@ func (node *PNode) commit(now time.Time) bool {
 // abandoned.
 func (t *PTree) ChangesetInit() {
 	t.Lock()
-	t.rollback.preserved = make([]*PNode, 0)
-	t.rollback.deleted = make([]*PNode, 0)
+	t.preserved = make([]*PNode, 0)
 }
 
 // ChangesetCommit accepts all changes that have been made to the tree since
@@ -339,22 +325,14 @@ func (t *PTree) ChangesetCommit() bool {
 
 	// Iterate over all of the nodes that were preserved, looking to see
 	// whether any of them have been changed.
-	for _, node := range t.rollback.preserved {
+	for _, node := range t.preserved {
 		if node.commit(now) {
 			updated = true
 		}
-		node.preserved = nil
+		node.origChildren = nil
 	}
 
-	// If any nodes were deleted, we need to clean up any associated
-	// expiration state
-	for _, node := range t.rollback.deleted {
-		updated = true
-		node.delete()
-	}
-
-	t.rollback.preserved = nil
-	t.rollback.deleted = nil
+	t.preserved = nil
 	t.Unlock()
 
 	return updated
@@ -363,12 +341,19 @@ func (t *PTree) ChangesetCommit() bool {
 // ChangesetRevert will revert any changes that were made to the tree since
 // ChangesetInit() was called.
 func (t *PTree) ChangesetRevert() {
-	for _, node := range t.rollback.preserved {
-		node.Children = node.preserved
-		node.preserved = nil
+	for _, node := range t.preserved {
+		// restore the original children
+		node.Children = node.origChildren
+		node.origChildren = nil
+
+		// restore the original hash values
+		for x := node; x != nil; x = x.parent {
+			if x.origHash != nil {
+				x.hash = x.origHash
+			}
+		}
 	}
-	t.rollback.preserved = nil
-	t.rollback.deleted = nil
+	t.preserved = nil
 	t.Unlock()
 }
 
@@ -439,20 +424,22 @@ func (t *PTree) search(prop string) *PNode {
 }
 
 // Delete will delete a PNode from the config tree, along with any children of
-// that node.
-func (t *PTree) Delete(prop string) error {
+// that node.  On success, it returns a slice containing all of the nodes
+// deleted from the tree.
+func (t *PTree) Delete(prop string) ([]string, error) {
 	node := t.search(prop)
 	if node == nil {
-		return fmt.Errorf("deleting a nonexistent property: %s", prop)
+		return nil, fmt.Errorf("deleting nonexistent prop: %s", prop)
 	}
 
 	if parent := node.parent; parent != nil {
 		parent.preserveChildren()
 		delete(parent.Children, node.name)
+		parent.hashUp()
 	}
-	t.rollback.deleted = append(t.rollback.deleted, node)
+	all := node.subtree()
 
-	return nil
+	return all, nil
 }
 
 // Root returns the root PNode of the config tree
@@ -503,6 +490,9 @@ func (t *PTree) addset(prop string, val string, exp *time.Time, add bool) error 
 	}
 	if node != nil {
 		err = node.update(val, exp)
+		if err == nil {
+			node.hashUp()
+		}
 	}
 	return err
 
@@ -547,18 +537,12 @@ func (t *PTree) patch(node *PNode, name string, path string) {
 	node.hashSelf()
 }
 
-// RegisterCallbacks attaches a Callbacks structure to the tree
-func (t *PTree) RegisterCallbacks(callbacks Callbacks) {
-	t.callbacks = callbacks
-}
-
 // GraftTree will finalize a partially instantiated tree.  It will compute the
 // hashes, generate the 'path' fields, and set the parent pointers for each
 // node.
 func GraftTree(path string, root *PNode) *PTree {
 	t := PTree{
-		root:      root,
-		callbacks: nullCallbacks,
+		root: root,
 	}
 	t.patch(root, path, "")
 

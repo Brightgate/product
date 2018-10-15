@@ -298,7 +298,7 @@ func execute(state *perAPState, ops *cfgmsg.ConfigQuery) *cfgmsg.ConfigResponse 
 			err = t.Add(prop, val, expires)
 
 		case cfgmsg.ConfigOp_DELETE:
-			err = t.Delete(prop)
+			_, err = t.Delete(prop)
 		}
 
 		if err != nil {

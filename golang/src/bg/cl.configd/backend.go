@@ -90,16 +90,19 @@ func (s *backEndServer) Download(ctx context.Context,
 
 // Attempt to apply a single appliance-generated update to our cached copy of
 // its config tree.
-func update(ap *perAPState, update *rpc.CfgBackEndUpdate_CfgUpdate) {
+func update(ap *perAPState, update *rpc.CfgBackEndUpdate_CfgUpdate) error {
 	var err error
 
-	th := ap.cachedTree.Root().Hash()
-	if !bytes.Equal(th, update.GetHash()) {
-		// XXX: should trigger a re-fetch of the full tree from the
-		// appliance
-		slog.Warnf("hash mismatch")
-	}
 	prop := update.GetProperty()
+
+	t := ap.cachedTree
+	if t == nil {
+		// We got our first tree update before getting the tree from the
+		// appliance.  This should go away when we start loading the
+		// initial config from the database.
+		return nil
+	}
+	t.ChangesetInit()
 
 	switch update.Type {
 	case rpc.CfgBackEndUpdate_CfgUpdate_UPDATE:
@@ -114,12 +117,22 @@ func update(ap *perAPState, update *rpc.CfgBackEndUpdate_CfgUpdate) {
 		err = ap.cachedTree.Add(prop, val, expires)
 
 	case rpc.CfgBackEndUpdate_CfgUpdate_DELETE:
-		slog.Debugf("Deleting %d", update.GetProperty())
-		err = ap.cachedTree.Delete(prop)
+		slog.Debugf("Deleting %s", update.GetProperty())
+		_, err = ap.cachedTree.Delete(prop)
 	}
-	if err != nil {
+	if err == nil {
+		th := ap.cachedTree.Root().Hash()
+		t.ChangesetCommit()
+		if !bytes.Equal(th, update.GetHash()) {
+			slog.Warnf("hash mismatch.  Got %x  expected %x",
+				th, update.GetHash())
+			err = fmt.Errorf("hash mismatch")
+		}
+	} else {
+		t.ChangesetRevert()
 		slog.Warnf("update to %s failed: %v", prop, err)
 	}
+	return err
 }
 
 // The appliance has sent a batch of config updates.  Iterate over them,
@@ -135,9 +148,14 @@ func (s *backEndServer) Update(ctx context.Context,
 	} else {
 		rval.Response = rpc.CfgBackEndResponse_OK
 		for _, u := range req.Updates {
-			update(ap, u)
+			if err = update(ap, u); err != nil {
+				refreshConfig(ap, req.GetCloudUuid())
+				break
+			}
 		}
-		// XXX: persist the changes we just applied
+		if err == nil {
+			// XXX: persist the changes we just applied
+		}
 	}
 
 	rval.Time = ptypes.TimestampNow()

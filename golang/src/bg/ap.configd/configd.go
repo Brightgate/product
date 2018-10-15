@@ -76,7 +76,7 @@ var metrics struct {
 type subtreeOps struct {
 	get    func(string) (string, error)
 	set    func(string, string, *time.Time, bool) error
-	delete func(string) error
+	delete func(string) ([]string, error)
 }
 
 type subtreeMatch struct {
@@ -110,55 +110,75 @@ var (
 	brokerd *broker.Broker
 
 	authTypeToDefaultRing map[string]string
-
-	propCallbacks = cfgtree.Callbacks{
-		Updated: propUpdated,
-		Deleted: propDeleted,
-	}
 )
 
 /*************************************************************************
  *
  * Broker notifications
  */
-func propNotify(node *cfgtree.PNode, action base_msg.EventConfig_Type) {
-	path := node.Path()
-	expires := node.Expires
-	hash := node.Tree().Root().Hash()
+const (
+	urChange = base_msg.EventConfig_CHANGE
+	urDelete = base_msg.EventConfig_DELETE
+	urExpire = base_msg.EventConfig_EXPIRE
+)
 
-	entity := &base_msg.EventConfig{
-		Timestamp: aputil.NowToProtobuf(),
-		Sender:    proto.String(pname),
-		Type:      &action,
-		Property:  proto.String(path),
-		Expires:   aputil.TimeToProtobuf(expires),
-		Hash:      hash,
+type updateRecord struct {
+	kind    base_msg.EventConfig_Type
+	path    string
+	value   string
+	hash    []byte
+	expires *time.Time
+}
+
+func updateChange(path string, val *string, exp *time.Time) *updateRecord {
+	rec := &updateRecord{
+		kind:    urChange,
+		path:    path,
+		expires: exp,
+	}
+	if val != nil {
+		rec.value = *val
 	}
 
-	if action == base_msg.EventConfig_CHANGE {
-		entity.NewValue = proto.String(node.Value)
+	return rec
+}
+
+func updateDelete(path string) *updateRecord {
+	return &updateRecord{
+		kind: urDelete,
+		path: path,
 	}
+}
 
-	err := brokerd.Publish(entity, base_def.TOPIC_CONFIG)
-	if err != nil {
-		log.Printf("Failed to propagate config update: %v", err)
+func updateExpire(path string) *updateRecord {
+	return &updateRecord{
+		kind: urExpire,
+		path: path,
 	}
 }
 
-func propUpdated(node *cfgtree.PNode) {
-	propNotify(node, base_msg.EventConfig_CHANGE)
+// convert one or more internal updateRecord structures into EventConfig
+// protobufs, and send them to ap.brokerd.
+func updateNotify(records []*updateRecord) {
+	for _, rec := range records {
+		entity := &base_msg.EventConfig{
+			Timestamp: aputil.NowToProtobuf(),
+			Sender:    proto.String(pname),
+			Type:      &rec.kind,
+			Property:  proto.String(rec.path),
+			NewValue:  proto.String(rec.value),
+			Expires:   aputil.TimeToProtobuf(rec.expires),
+			Hash:      rec.hash,
+		}
+
+		err := brokerd.Publish(entity, base_def.TOPIC_CONFIG)
+		if err != nil {
+			log.Printf("Failed to propagate config update: %v", err)
+		}
+	}
 }
 
-func propDeleted(node *cfgtree.PNode) {
-	expirationRemove(node)
-	propNotify(node, base_msg.EventConfig_DELETE)
-}
-
-func expirationNotify(node *cfgtree.PNode) {
-	propNotify(node, base_msg.EventConfig_EXPIRE)
-}
-
-func entityHandler(event []byte) {
+func eventHandler(event []byte) {
 	entity := &base_msg.EventNetEntity{}
 	proto.Unmarshal(event, entity)
 
@@ -172,32 +192,38 @@ func entityHandler(event []byte) {
 	node, _ := propTree.GetNode(path)
 	ring := selectRing(hwaddr.String(), node, entity.Authtype)
 
-	updates := make(map[string]*string)
-	updates[path+"ring"] = &ring
-	updates[path+"connection/node"] = entity.Node
-	updates[path+"connection/mode"] = entity.Mode
-	updates[path+"connection/authtype"] = entity.Authtype
+	updates := []*updateRecord{
+		updateChange(path+"ring", &ring, nil),
+		updateChange(path+"connection/node", entity.Node, nil),
+		updateChange(path+"connection/mode", entity.Mode, nil),
+		updateChange(path+"connection/authtype", entity.Authtype, nil),
+	}
+
 	// Ipv4Address is an 'optional' field in the protobuf, but we will
 	// also allow a value of 0.0.0.0 to indicate that the field should be
 	// ignored.
 	if entity.Ipv4Address != nil && *entity.Ipv4Address != 0 {
 		ipv4 := network.Uint32ToIPAddr(*entity.Ipv4Address).String()
-		updates[path+"ipv4_observed"] = &ipv4
+		updates = append(updates,
+			updateChange(path+"ipv4_observed", &ipv4, nil))
 	}
 
 	propTree.ChangesetInit()
 	failed := false
-	for p, v := range updates {
-		if v != nil && *v != "" {
-			if err := propTree.Add(p, *v, nil); err != nil {
-				log.Printf("failed to insert %s: %v\n", p, err)
+	for _, u := range updates {
+		if len(u.value) > 0 {
+			err := propTree.Add(u.path, u.value, nil)
+			if err != nil {
+				log.Printf("failed to insert %s: %v\n", u.path, err)
 				failed = true
 			}
 		}
 	}
+
 	if failed {
 		propTree.ChangesetRevert()
 	} else {
+		updateNotify(updates)
 		if propTree.ChangesetCommit() {
 			if rerr := propTreeStore(); rerr != nil {
 				log.Printf("failed to write properties: %v",
@@ -425,12 +451,34 @@ func setPropHandler(prop string, val string, exp *time.Time, add bool) error {
 	return err
 }
 
-func delPropHandler(prop string) error {
+func delPropHandler(prop string) ([]string, error) {
 	return propTree.Delete(prop)
 }
 
+// utility function to extract the property parameters from a ConfigOp struct
+func getParams(op *cfgmsg.ConfigOp) (string, string, *time.Time, error) {
+	var expires *time.Time
+	var err error
+
+	prop := op.Property
+	if prop == "" {
+		err = cfgapi.ErrNoProp
+	}
+	val := op.Value
+	if op.Expires != nil {
+		expt, terr := ptypes.Timestamp(op.Expires)
+		if terr != nil {
+			err = cfgapi.ErrBadTime
+		}
+		expires = &expt
+	}
+
+	return prop, val, expires, err
+}
+
 func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
-	var rval string
+	var prop, val, rval string
+	var expires *time.Time
 	var err error
 
 	level := cfgapi.AccessLevel(query.Level)
@@ -438,24 +486,12 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 		return "", fmt.Errorf("invalid access level: %d", level)
 	}
 
-	paths := make([]string, 0)
+	updates := make([]*updateRecord, 0)
+
 	propTree.ChangesetInit()
 	for _, op := range query.Ops {
-		var expires *time.Time
-
-		val := op.Value
-		prop := op.Property
-		if prop == "" {
-			err = cfgapi.ErrNoProp
+		if prop, val, expires, err = getParams(op); err != nil {
 			break
-		}
-		if op.Expires != nil {
-			expt, terr := ptypes.Timestamp(op.Expires)
-			if terr != nil {
-				err = cfgapi.ErrBadTime
-				break
-			}
-			expires = &expt
 		}
 
 		opsVector := &defaultSubtreeOps
@@ -472,33 +508,43 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 			if len(query.Ops) > 1 {
 				err = fmt.Errorf("only single-GET " +
 					"operations are supported")
-			} else {
-				if err = validateProp(prop); err == nil {
-					rval, err = opsVector.get(prop)
-				}
+			} else if err = validateProp(prop); err == nil {
+				rval, err = opsVector.get(prop)
 			}
 
-		case cfgmsg.ConfigOp_CREATE:
+		case cfgmsg.ConfigOp_CREATE, cfgmsg.ConfigOp_SET:
 			metrics.setCounts.Inc()
-			err = validatePropVal(prop, val, level)
-			if err == nil {
-				err = opsVector.set(prop, val, expires, true)
-				paths = append(paths, prop)
+			if err = validatePropVal(prop, val, level); err == nil {
+				err = opsVector.set(prop, val, expires,
+					(op.Operation == cfgmsg.ConfigOp_CREATE))
 			}
-
-		case cfgmsg.ConfigOp_SET:
-			metrics.setCounts.Inc()
-			err = validatePropVal(prop, val, level)
 			if err == nil {
-				err = opsVector.set(prop, val, expires, false)
-				paths = append(paths, prop)
+				update := updateChange(prop, &val, expires)
+				update.hash = propTree.Root().Hash()
+				updates = append(updates, update)
 			}
 
 		case cfgmsg.ConfigOp_DELETE:
+			var paths []string
+
 			metrics.delCounts.Inc()
-			err = validatePropDel(prop, level)
-			if err == nil {
-				err = opsVector.delete(prop)
+			if err = validatePropDel(prop, level); err == nil {
+				paths, err = opsVector.delete(prop)
+			}
+
+			for _, path := range paths {
+				update := updateDelete(prop)
+				if path == prop {
+					// If we delete a subtree, we send
+					// notifications for each node in that
+					// tree.  We only want the hash
+					// after the root node is removed, since
+					// that subsumes all of the child
+					// deletions.
+					update.hash = propTree.Root().Hash()
+				}
+
+				updates = append(updates, update)
 			}
 
 		case cfgmsg.ConfigOp_PING:
@@ -515,7 +561,15 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 	if err != nil {
 		propTree.ChangesetRevert()
 	} else {
-		expirationsEval(paths)
+		changedPaths := make([]string, 0)
+		for _, u := range updates {
+			if u.kind == urChange {
+				changedPaths = append(changedPaths, u.path)
+			}
+		}
+		expirationsEval(changedPaths)
+
+		updateNotify(updates)
 		if propTree.ChangesetCommit() {
 			if rerr := propTreeStore(); rerr != nil {
 				log.Printf("failed to write properties: %v",
@@ -661,8 +715,6 @@ func configInit() {
 		fail("propTreeInit() failed: %v\n", err)
 	}
 
-	propTree.RegisterCallbacks(propCallbacks)
-
 	defaultRingInit()
 }
 
@@ -681,7 +733,7 @@ func main() {
 	configInit()
 
 	brokerd = broker.New(pname)
-	brokerd.Handle(base_def.TOPIC_ENTITY, entityHandler)
+	brokerd.Handle(base_def.TOPIC_ENTITY, eventHandler)
 	defer brokerd.Fini()
 
 	if err = deviceDBInit(); err != nil {

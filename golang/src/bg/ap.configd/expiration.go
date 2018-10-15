@@ -37,7 +37,10 @@ func ringExpired(node *cfgtree.PNode) {
 	node.Value = selectRing(client.Name(), client, nil)
 	node.Expires = nil
 	if node.Value != old {
-		propUpdated(node)
+		updates := []*updateRecord{
+			updateChange(node.Path(), &node.Value, nil),
+		}
+		updateNotify(updates)
 	}
 }
 
@@ -102,10 +105,10 @@ func (q *pnodeQueue) Pop() interface{} {
 
 // Repeatedly pop the top entry off the heap, for as long as the top entry's
 // expiration is in the past.  Return a slice of all the expired properties.
-func findExpirations() []*cfgtree.PNode {
+func findExpirations() []string {
 	now := time.Now()
 
-	expired := make([]*cfgtree.PNode, 0)
+	expired := make([]string, 0)
 	for len(expirationHeap) > 0 {
 		next := expirationHeap[0]
 
@@ -126,7 +129,7 @@ func findExpirations() []*cfgtree.PNode {
 			log.Printf("Expiring: %s at %v\n",
 				next.Name(), time.Now())
 		}
-		expired = append(expired, next)
+		expired = append(expired, next.Path())
 		heap.Pop(&expirationHeap)
 		metrics.expCounts.Inc()
 
@@ -136,12 +139,18 @@ func findExpirations() []*cfgtree.PNode {
 	return expired
 }
 
-func processExpirations(expired []*cfgtree.PNode) {
+func processExpirations(expired []string) {
 	now := time.Now()
 	cnt := 0
 
+	updates := make([]*updateRecord, 0)
 	propTree.Lock()
-	for _, node := range expired {
+	for _, path := range expired {
+		node, _ := propTree.GetNode(path)
+		if node == nil {
+			continue
+		}
+
 		// check to be sure the property hasn't been
 		// reset since we added it to the list.
 		if now.Before(*node.Expires) {
@@ -151,18 +160,20 @@ func processExpirations(expired []*cfgtree.PNode) {
 		// Check for any special actions to take when this property
 		// expires
 		for _, r := range expirationHandlers {
-			if r.path.MatchString(node.Path()) {
+			if r.path.MatchString(path) {
 				r.handler(node)
 			}
 		}
 
-		expirationNotify(node)
+		updates = append(updates, updateExpire(path))
 		cnt++
 	}
 
 	if cnt > 0 {
+		updateNotify(updates)
 		propTreeStore()
 	}
+
 	propTree.Unlock()
 }
 
