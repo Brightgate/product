@@ -108,8 +108,7 @@
 </template>
 <script>
 import assert from 'assert';
-import isBefore from 'date-fns/isBefore';
-import isEqual from 'date-fns/isEqual';
+import {isBefore, isEqual} from 'date-fns';
 import {pickBy} from 'lodash-es';
 import Debug from 'debug';
 import {format, formatRelative} from '../date-fns-wrapper';

@@ -48,6 +48,7 @@
               <f7-label>{{ $t('message.login.username') }}</f7-label>
               <f7-input
                 :placeholder="$t('message.login.username')"
+                :value="uid"
                 name="username"
                 type="email"
                 autofocus
@@ -59,6 +60,7 @@
               <f7-label>{{ $t('message.login.password') }}</f7-label>
               <f7-input
                 :placeholder="$t('message.login.password')"
+                :value="userPassword"
                 name="password"
                 type="password"
                 autocomplete="current-password"

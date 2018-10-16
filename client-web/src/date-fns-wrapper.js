@@ -8,10 +8,8 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 
-import format from 'date-fns/format';
-import formatRelative from 'date-fns/formatRelative';
-import enUS from 'date-fns/locale/en-US';
-import de from 'date-fns/locale/de';
+import {format, formatRelative} from 'date-fns';
+import {enUS, de} from 'date-fns/locale';
 
 const locales = {
   'en': enUS,

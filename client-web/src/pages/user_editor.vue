@@ -76,10 +76,12 @@
       <!-- Password -->
       <f7-list-item>
         <f7-label>{{ $t('message.user_details.password') }}</f7-label>
-        <f7-input type="password"
-                  placeholder="User Password"
-                  clear-button
-                  @input="user_details.SetPassword = $event.target.value" />
+        <f7-input
+          :value="user_details.SetPassword"
+          type="password"
+          placeholder="User Password"
+          clear-button
+          @input="user_details.SetPassword = $event.target.value" />
       </f7-list-item>
 
       <!-- 2-factor, disabled for now
@@ -125,6 +127,7 @@ export default {
         DisplayName: '',
         Email: '',
         TelephoneNumber: '',
+        SetPassword: null,
         HasTOTP: false,
       };
     } else {
