@@ -17,30 +17,12 @@ import (
 
 	rpc "bg/cloud_rpc"
 	"bg/common/cfgmsg"
+	"bg/common/cfgtree"
 
 	"github.com/golang/protobuf/ptypes"
 )
 
 type frontEndServer struct {
-}
-
-func execGet(state *perAPState, prop string) *cfgmsg.ConfigResponse {
-	slog.Debugf("Getting %s", prop)
-	val, err := state.cachedTree.Get(prop)
-
-	rval := &cfgmsg.ConfigResponse{
-		Timestamp: ptypes.TimestampNow(),
-	}
-
-	if err == nil {
-		rval.Response = cfgmsg.ConfigResponse_OK
-		rval.Value = val
-	} else {
-		rval.Errmsg = fmt.Sprintf("%v", err)
-		rval.Response = cfgmsg.ConfigResponse_FAILED
-	}
-
-	return rval
 }
 
 func (s *frontEndServer) Ping(ctx context.Context,
@@ -150,6 +132,9 @@ func (s *frontEndServer) Submit(ctx context.Context,
 			rval.Response = cfgmsg.ConfigResponse_OK
 			rval.Value = payload
 		} else {
+			if err == cfgtree.ErrNoProp {
+				rval.Response = cfgmsg.ConfigResponse_NOPROP
+			}
 			rval.Errmsg = fmt.Sprintf("%v", err)
 		}
 	} else {
