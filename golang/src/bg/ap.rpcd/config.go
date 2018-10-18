@@ -259,7 +259,7 @@ func configEvent(raw []byte) {
 	// Ignore messages without an explicit type.  Also ignore messages
 	// without a hash, as they represent interim changes that will be
 	// subsumed by a larger-scale update that will have a hash.
-	if event.Type == nil || event.Hash == nil {
+	if event.Type == nil || event.Hash == nil || event.Property == nil {
 		return
 	}
 
@@ -268,7 +268,13 @@ func configEvent(raw []byte) {
 
 	etype := *event.Type
 	if etype == base_msg.EventConfig_CHANGE {
-		slogger.Debugf("updated %v", *event.Property)
+		if *event.Property == urlProperty {
+			slogger.Infof("Moving to new RPC server: " +
+				*event.NewValue)
+			go daemonStop()
+			return
+		}
+		slogger.Debugf("updated %s - %x", *event.Property, hash)
 		update = &rpc.CfgBackEndUpdate_CfgUpdate{
 			Type:     rpc.CfgBackEndUpdate_CfgUpdate_UPDATE,
 			Property: *event.Property,
@@ -281,7 +287,7 @@ func configEvent(raw []byte) {
 			update.Expires = p
 		}
 	} else if etype == base_msg.EventConfig_DELETE {
-		slogger.Debugf("deleted %v", *event.Property)
+		slogger.Debugf("deleted %s - %x", *event.Property, hash)
 		update = &rpc.CfgBackEndUpdate_CfgUpdate{
 			Type:     rpc.CfgBackEndUpdate_CfgUpdate_DELETE,
 			Property: *event.Property,
@@ -305,7 +311,6 @@ func configLoop(ctx context.Context, client rpc.ConfigBackEndClient,
 	// commands, and another doing on-demand pushing of updates and
 	// completions?
 
-	slogger.Info("starting config loop")
 	ticker := time.NewTicker(time.Second)
 	nextLog := time.Now()
 	for !done {
@@ -350,4 +355,5 @@ func configLoop(ctx context.Context, client rpc.ConfigBackEndClient,
 			}
 		}
 	}
+	slogger.Infof("config loop exiting")
 }

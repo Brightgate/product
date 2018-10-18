@@ -216,6 +216,8 @@ func eventHandler(event []byte) {
 			if err != nil {
 				log.Printf("failed to insert %s: %v\n", u.path, err)
 				failed = true
+			} else {
+				u.hash = propTree.Root().Hash()
 			}
 		}
 	}

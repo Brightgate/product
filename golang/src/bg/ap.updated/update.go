@@ -57,7 +57,6 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
-	"bg/base_def"
 	"bg/cloud_rpc"
 	"bg/common/archive"
 	"bg/common/cfgapi"
@@ -90,7 +89,7 @@ var (
 		"upload errors allowed before we give up for now")
 	uploadBatchSize = flag.Int("bsize", 5, "upload batch size")
 
-	connectFlag   = flag.String("connect", base_def.CL_SVC_RPC, "Override connection endpoint in credential")
+	connectFlag   = flag.String("connect", "", "Override connection endpoint in credential")
 	enableTLSFlag = flag.Bool("enable-tls", true, "Enable Secure gRPC")
 	deadlineFlag  = flag.Duration("rpc-deadline", time.Second*20, "RPC completion deadline")
 
@@ -387,6 +386,13 @@ func uploadInit() error {
 	}
 	if !*enableTLSFlag {
 		log.Printf("Connecting insecurely due to '-enable-tls=false' flag (developers only!)")
+	}
+
+	if *connectFlag == "" {
+		*connectFlag, err = config.GetProp("@/cloud/svc_rpc")
+		if err != nil {
+			return fmt.Errorf("need @/cloud/svc_rpc or -connect")
+		}
 	}
 
 	rpcConn, err = grpcutils.NewClientConn(*connectFlag, *enableTLSFlag, pname)

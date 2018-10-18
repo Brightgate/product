@@ -69,7 +69,13 @@ message PutEventRequest {
 }
 
 message PutEventResponse {
-	int32 result = 0x01;
+	enum Result {
+		SUCCESS = 0;
+		BAD_ENDPOINT = 1;
+	}
+
+	Result result = 0x01;
+	string url = 0x02;
 }
 
 service Event {

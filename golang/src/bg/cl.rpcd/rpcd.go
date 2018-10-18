@@ -131,7 +131,7 @@ func processEnv(environ *Cfg) {
 		slog.Fatalf("B10E_CLRPCD_PUBSUB_TOPIC must be set")
 	}
 	if environ.ConfigdConnection == "" {
-		slog.Fatalf("B10E_CLCONFIGD_CONNECTION must be set")
+		slog.Fatalf("B10E_CLRPCD_CLCONFIGD_CONNECTION must be set")
 	}
 	// Supply defaults where applicable
 	if environ.PrometheusPort == "" {

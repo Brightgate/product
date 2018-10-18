@@ -41,7 +41,8 @@ func publishHeartbeat(ctx context.Context, tclient cloud_rpc.EventClient) error 
 	return publishEvent(ctx, tclient, "heartbeat", heartbeat)
 }
 
-func heartbeatLoop(ctx context.Context, tclient cloud_rpc.EventClient, wg *sync.WaitGroup, doneChan chan bool) {
+func heartbeatLoop(ctx context.Context, tclient cloud_rpc.EventClient,
+	wg *sync.WaitGroup, doneChan chan bool) {
 	var done bool
 
 	ticker := time.NewTicker(time.Minute * 7)
@@ -54,5 +55,6 @@ func heartbeatLoop(ctx context.Context, tclient cloud_rpc.EventClient, wg *sync.
 		case <-ticker.C:
 		}
 	}
+	slogger.Infof("heartbeat loop exiting")
 	wg.Done()
 }

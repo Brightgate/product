@@ -200,5 +200,6 @@ func inventoryLoop(ctx context.Context, client cloud_rpc.EventClient, wg *sync.W
 		case <-ticker.C:
 		}
 	}
+	slogger.Infof("inventory loop exiting")
 	wg.Done()
 }
