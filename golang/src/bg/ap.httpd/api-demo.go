@@ -92,7 +92,6 @@ type daDevice struct {
 	DHCPExpiry      string                `json:"DHCPExpiry,omitempty"`
 	IPv4Addr        *net.IP               `json:"IPv4Addr,omitempty"`
 	OSVersion       string                `json:"OSVersion,omitempty"`
-	MediaLink       string                `json:"MedialLink,omitempty"`
 	Active          bool                  `json:"Active"`
 	Scans           map[string]daScanInfo `json:"Scans,omitempty"`
 	Vulnerabilities map[string]daVulnInfo `json:"Vulnerabilities,omitempty"`

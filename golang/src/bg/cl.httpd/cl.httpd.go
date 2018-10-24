@@ -39,9 +39,11 @@ import (
 	"syscall"
 	"time"
 
+	"bg/cl_common/clcfg"
 	"bg/cl_common/daemonutils"
 	"bg/cloud_models/appliancedb"
 	"bg/cloud_models/sessiondb"
+	"bg/common/cfgapi"
 
 	"github.com/gorilla/sessions"
 	"github.com/tomazk/envcfg"
@@ -51,8 +53,11 @@ import (
 	"github.com/labstack/echo"
 	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/middleware"
+	"github.com/satori/uuid"
 	"github.com/unrolled/secure"
 )
+
+const pname = "cl.httpd"
 
 // Cfg contains the environment variable-based configuration settings
 type Cfg struct {
@@ -77,6 +82,7 @@ type Cfg struct {
 	OpenIDConnectDiscoveryURL string `envcfg:"B10E_CLHTTPD_OPENID_CONNECT_DISCOVERY_URL"`
 	SessionDB                 string `envcfg:"B10E_CLHTTPD_POSTGRES_SESSIONDB"`
 	ApplianceDB               string `envcfg:"B10E_CLHTTPD_POSTGRES_APPLIANCEDB"`
+	ConfigdConnection         string `envcfg:"B10E_CLHTTPD_CLCONFIGD_CONNECTION"`
 	AppPath                   string `enccfg:"B10E_CLHTTPD_APP"`
 }
 
@@ -229,7 +235,18 @@ func mkRouterHTTPS(sessionStore sessions.Store) *echo.Echo {
 		log.Fatalf("failed to ping DB: %s", err)
 	}
 	log.Printf(checkMark + "Pinged Appliance DB")
-	_ = newAPIHandler(r, applianceDB, sessionStore)
+
+	_ = newAPIHandler(r, applianceDB, sessionStore, getConfigClientHandle)
+	hdl, err := getConfigClientHandle("0")
+	if err != nil {
+		log.Fatalf("failed to make Config Client: %s", err)
+	}
+	defer hdl.Close()
+	err = hdl.Ping(context.Background())
+	if err != nil {
+		log.Fatalf("failed to Ping Config Client: %s", err)
+	}
+	log.Printf(checkMark + "Can connect to cl.configd")
 
 	_ = newAccessHandler(r, applianceDB, sessionStore)
 	//ginPrometheus.Use(r)
@@ -245,6 +262,20 @@ func mkRouterHTTP() *echo.Echo {
 	r.Use(middleware.Recover())
 	r.Use(middleware.HTTPSRedirect())
 	return r
+}
+
+func getConfigClientHandle(cuuid string) (*cfgapi.Handle, error) {
+	uu, err := uuid.FromString(cuuid)
+	if err != nil {
+		return nil, err
+	}
+	configd, err := clcfg.NewConfigd(pname, uu.String(),
+		environ.ConfigdConnection, !environ.Developer)
+	if err != nil {
+		return nil, err
+	}
+	configHandle := cfgapi.NewHandle(configd)
+	return configHandle, nil
 }
 
 func main() {

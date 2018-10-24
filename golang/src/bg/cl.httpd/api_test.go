@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"bg/common/cfgapi"
+
 	"github.com/gorilla/securecookie"
 	"github.com/gorilla/sessions"
 	"github.com/labstack/echo"
@@ -61,6 +63,12 @@ var (
 		},
 	}
 )
+
+// For now we return nil, since we don't test all the config related endpoints.
+// The hope is to have a nicely working mock handle in the future.
+func getMockClientHandle(uuid string) (*cfgapi.Handle, error) {
+	return nil, nil
+}
 
 // addValidSession does a handstand to setup a valid session cookie on the
 // request.  We make a new httptest.ResponseRecorder, save a session into it,
@@ -105,7 +113,7 @@ func TestAppliances(t *testing.T) {
 	// Setup Echo
 	ss := sessions.NewCookieStore(securecookie.GenerateRandomKey(32))
 	e := echo.New()
-	_ = newAPIHandler(e, dMock, ss)
+	_ = newAPIHandler(e, dMock, ss, getMockClientHandle)
 
 	// Setup request
 	req, rec := setupReqRec(echo.GET, "/api/appliances", nil, ss)
@@ -130,7 +138,7 @@ func TestApplianceUUID(t *testing.T) {
 	// Setup Echo
 	ss := sessions.NewCookieStore(securecookie.GenerateRandomKey(32))
 	e := echo.New()
-	_ = newAPIHandler(e, dMock, ss)
+	_ = newAPIHandler(e, dMock, ss, getMockClientHandle)
 
 	// Setup request
 	req, rec := setupReqRec(echo.GET,
@@ -163,7 +171,7 @@ func TestUnauthorized(t *testing.T) {
 	ss := sessions.NewCookieStore(securecookie.GenerateRandomKey(32))
 	e := echo.New()
 	dMock := &mocks.DataStore{}
-	h := newAPIHandler(e, dMock, ss)
+	h := newAPIHandler(e, dMock, ss, getMockClientHandle)
 
 	testCases := []struct {
 		path    string

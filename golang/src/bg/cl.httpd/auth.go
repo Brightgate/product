@@ -182,7 +182,7 @@ func (a *authHandler) getProviderCallback(c echo.Context) error {
 	if err = session.Save(c.Request(), c.Response()); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
-	return c.JSON(http.StatusOK, user)
+	return c.Redirect(http.StatusTemporaryRedirect, "/client-web/")
 }
 
 // getLogout implements /auth/logout

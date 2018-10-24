@@ -288,6 +288,11 @@ func (c *Handle) DeleteProp(prop string) error {
 	return err
 }
 
+// Close closes the underlying connection
+func (c *Handle) Close() {
+	c.exec.Close()
+}
+
 // IsActive returns 'true' if we believe the client is currently connected to
 // this AP
 func (c *ClientInfo) IsActive() bool {
