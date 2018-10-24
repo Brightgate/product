@@ -48,6 +48,9 @@
             <li v-html="$t('message.dev_details.vuln_remediation', { text: vulnRemediation(vulnid) })" />
             <li>{{ $t('message.dev_details.vuln_first_detected', {time: timeAbs(vuln.first_detected)}) }}</li>
             <li>{{ $t('message.dev_details.vuln_latest_detected', {time: timeRel(vuln.latest_detected)}) }}</li>
+            <li v-if="vuln.details">
+              {{ $t('message.dev_details.vuln_details', {details: vuln.details}) }}
+            </li>
           </ul>
           <span v-for="vmore in vulnMoreInfo(vulnid)"
                 :key="vmore">

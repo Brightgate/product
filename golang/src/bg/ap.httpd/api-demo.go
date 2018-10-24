@@ -72,6 +72,7 @@ type daVulnInfo struct {
 	FirstDetected  *time.Time `json:"first_detected"`
 	LatestDetected *time.Time `json:"latest_detected"`
 	Active         bool       `json:"active"`
+	Details        string     `json:"details"`
 }
 
 type daScanInfo struct {
@@ -94,7 +95,7 @@ type daDevice struct {
 	MediaLink       string                `json:"MedialLink,omitempty"`
 	Active          bool                  `json:"Active"`
 	Scans           map[string]daScanInfo `json:"Scans,omitempty"`
-	Vulnerabilities map[string]daVulnInfo `json:"Vulnerabilties,omitempty"`
+	Vulnerabilities map[string]daVulnInfo `json:"Vulnerabilities,omitempty"`
 }
 
 type daDevices struct {
@@ -144,6 +145,7 @@ func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
 			FirstDetected:  v.FirstDetected,
 			LatestDetected: v.LatestDetected,
 			Active:         v.Active,
+			Details:        v.Details,
 		}
 	}
 

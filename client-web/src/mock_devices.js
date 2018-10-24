@@ -141,11 +141,12 @@ export default [
       },
     },
     vulnerabilities: {
-      'CVE-2017-0143': {
+      'defaultpassword': {
         first_detected: '2018-04-11T20:53:02+00:00',
         latest_detected: '2018-04-11T20:53:02+00:00',
         ignore: false,
         active: true,
+        details: 'Username: druidia; Password: 12345',
       },
     },
   },

@@ -144,6 +144,7 @@ type VulnInfo struct {
 	WarnedAt       *time.Time // When the last log message / Event was sent
 	Ignore         bool       // If the vuln is seen, take no action
 	Active         bool       // vuln was present on last scan
+	Details        string     // Additional details from the scanner
 }
 
 // ScanInfo represents a record of scanning activity for a single client.
@@ -524,6 +525,7 @@ func (c *Handle) GetVulnerabilities(macaddr string) VulnMap {
 			v.FirstDetected, _ = getTimeVal(props, "first")
 			v.LatestDetected, _ = getTimeVal(props, "latest")
 			v.WarnedAt, _ = getTimeVal(props, "warned")
+			v.Details, _ = getStringVal(props, "details")
 			list[name] = &v
 		}
 	}
