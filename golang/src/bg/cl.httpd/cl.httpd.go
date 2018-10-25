@@ -83,7 +83,9 @@ type Cfg struct {
 	SessionDB                 string `envcfg:"B10E_CLHTTPD_POSTGRES_SESSIONDB"`
 	ApplianceDB               string `envcfg:"B10E_CLHTTPD_POSTGRES_APPLIANCEDB"`
 	ConfigdConnection         string `envcfg:"B10E_CLHTTPD_CLCONFIGD_CONNECTION"`
-	AppPath                   string `enccfg:"B10E_CLHTTPD_APP"`
+	// Whether to Disable TLS for outbound connections to cl.configd
+	ConfigdDisableTLS bool   `envcfg:"B10E_CLHTTPD_CLCONFIGD_DISABLE_TLS"`
+	AppPath           string `enccfg:"B10E_CLHTTPD_APP"`
 }
 
 const (
@@ -94,7 +96,8 @@ const (
 )
 
 var (
-	environ Cfg
+	environ          Cfg
+	enableConfigdTLS bool
 )
 
 func gracefulShutdown(h *http.Server) {
@@ -236,8 +239,13 @@ func mkRouterHTTPS(sessionStore sessions.Store) *echo.Echo {
 	}
 	log.Printf(checkMark + "Pinged Appliance DB")
 
+	enableConfigdTLS = !environ.ConfigdDisableTLS && !environ.Developer
+	if !enableConfigdTLS {
+		log.Printf("Disabling TLS for connection to Configd")
+	}
+
 	_ = newAPIHandler(r, applianceDB, sessionStore, getConfigClientHandle)
-	hdl, err := getConfigClientHandle("0")
+	hdl, err := getConfigClientHandle("00000000-0000-0000-0000-000000000000")
 	if err != nil {
 		log.Fatalf("failed to make Config Client: %s", err)
 	}
@@ -270,7 +278,7 @@ func getConfigClientHandle(cuuid string) (*cfgapi.Handle, error) {
 		return nil, err
 	}
 	configd, err := clcfg.NewConfigd(pname, uu.String(),
-		environ.ConfigdConnection, !environ.Developer)
+		environ.ConfigdConnection, enableConfigdTLS)
 	if err != nil {
 		return nil, err
 	}

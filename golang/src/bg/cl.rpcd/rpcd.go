@@ -72,12 +72,15 @@ type Cfg struct {
 	PubsubProject      string `envcfg:"B10E_CLRPCD_PUBSUB_PROJECT"`
 	PubsubTopic        string `envcfg:"B10E_CLRPCD_PUBSUB_TOPIC"`
 	PostgresConnection string `envcfg:"B10E_CLRPCD_POSTGRES_CONNECTION"`
+	// Whether to disable TLS for incoming requests (danger!)
 	// XXX it would be nicer if we could have this be ENABLE_TLS with
 	// default=true but envcfg does not support that.
 	DisableTLS bool `envcfg:"B10E_CLRPCD_DISABLE_TLS"`
 
-	ConfigdConnection string `envcfg:"B10E_CLCONFIGD_CONNECTION"`
-	RPCTimeout        string `envcfg:"B10E_CLCONFIGD_TIMEOUT"`
+	ConfigdConnection string `envcfg:"B10E_CLRPCD_CLCONFIGD_CONNECTION"`
+	// Whether to disable TLS for outbound requests to cl.configd
+	ConfigdDisableTLS bool   `envcfg:"B10E_CLRPCD_CLCONFIGD_DISABLE_TLS"`
+	RPCTimeout        string `envcfg:"B10E_CLRPCD_CLCONFIGD_TIMEOUT"`
 }
 
 const (
@@ -297,8 +300,11 @@ func main() {
 	cloud_rpc.RegisterCloudStorageServer(grpcServer, cloudStorageServer)
 	slog.Infof(checkMark + "Ready to serve Cloud Storage related requests")
 
+	if environ.ConfigdDisableTLS {
+		slog.Warnf("Disabling TLS for connection to Configd")
+	}
 	configdServer := defaultConfigServer(environ.ConfigdConnection,
-		environ.RPCTimeout, environ.DisableTLS)
+		environ.RPCTimeout, environ.ConfigdDisableTLS)
 	cloud_rpc.RegisterConfigBackEndServer(grpcServer, configdServer)
 	slog.Infof(checkMark + "Ready to relay configd requests")
 
