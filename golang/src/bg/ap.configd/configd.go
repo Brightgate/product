@@ -694,7 +694,7 @@ func prometheusInit() {
 }
 
 func fail(format string, a ...interface{}) {
-	log.Printf(format, a)
+	log.Printf(format, a...)
 	mcpd.SetState(mcp.BROKEN)
 	os.Exit(1)
 }

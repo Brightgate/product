@@ -4,7 +4,7 @@
       "Value": ""
     },
     "cfgversion": {
-      "Value": "16"
+      "Value": "15"
     },
     "uuid": {
       "Value": "407edeb5-84f5-4167-8a81-1Fbdf66eef0b"
@@ -185,6 +185,21 @@
             },
             "vlan": {
               "Value": "0"
+            }
+          }
+        }
+      }
+    },
+    "nodes": {
+      "Children": {
+        "4b59d521-15e5-44c4-9376-7873745a0764": {
+          "Children": {
+            "b8:27:eb:c5:c6:74": {
+              "Children": {
+                "ring": {
+                  "Value": "wan"
+                }
+              }
             }
           }
         }

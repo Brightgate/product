@@ -124,18 +124,21 @@ func versionTree() error {
 		return fmt.Errorf("properties file is newer than the software")
 	}
 
+	propTree.ChangesetInit()
 	for version < int(cfgapi.Version) {
 		log.Printf("Upgrading properties from version %d to %d\n",
 			version, version+1)
 		version++
 		if upgradeHooks[version] != nil {
 			if err := upgradeHooks[version](); err != nil {
+				propTree.ChangesetRevert()
 				return fmt.Errorf("upgrade failed: %v", err)
 			}
 		}
 		propTree.Set("@/cfgversion", strconv.Itoa(version), nil)
 		upgraded = true
 	}
+	propTree.ChangesetCommit()
 
 	if upgraded {
 		if err := propTreeStore(); err != nil {

@@ -104,7 +104,7 @@ func sendInventory(ctx context.Context, client cloud_rpc.EventClient) error {
 	manPath := filepath.Join(manDir, "identifierd.json.v1")
 
 	if err = os.MkdirAll(manDir, 0755); err != nil {
-		return errors.Wrapf(err, "failed to make manifest dir %s", manPath, err)
+		return errors.Wrapf(err, "failed to make manifest dir %s", manPath)
 	}
 
 	// Read device inventories from disk

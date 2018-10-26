@@ -46,7 +46,7 @@ func NewClientConn(serverAddr string, enableTLS bool, agent string) (*grpc.Clien
 
 	conn, err := grpc.Dial(serverAddr, opts...)
 	if err != nil {
-		return nil, errors.Wrapf(err, "grpc Dial() to '%s' failed", serverAddr, err)
+		return nil, errors.Wrapf(err, "grpc Dial() to '%s' failed", serverAddr)
 	}
 	return conn, nil
 }

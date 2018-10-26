@@ -168,6 +168,7 @@ func testTreeInit(t *testing.T) leafMap {
 		t.Fatalf("failed to import config tree: %v", err)
 	}
 	propTree = tree
+	versionTree()
 
 	return testBuildMap(t)
 }

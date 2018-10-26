@@ -203,6 +203,7 @@ func (node *PNode) Move(newPath string) error {
 	if err != nil {
 		return err
 	}
+	x.hashUp()
 
 	oldParent := node.parent
 	delete(oldParent.Children, node.name)
@@ -215,6 +216,7 @@ func (node *PNode) Move(newPath string) error {
 	node.moveChildren(newPath)
 	node.path = newPath
 	node.hashDown()
+	node.hashUp()
 
 	return nil
 }
