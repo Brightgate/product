@@ -23,8 +23,8 @@ import (
 	"bg/cloud_models/appliancedb"
 	"bg/cloud_models/appliancedb/mocks"
 
-	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapgrpc"
 	"go.uber.org/zap/zaptest"
 
 	"github.com/dgrijalva/jwt-go"
@@ -33,6 +33,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/status"
 )
 
@@ -69,7 +70,13 @@ func setupLogging(t *testing.T) (*zap.Logger, *zap.SugaredLogger) {
 	// Assign globals
 	logger := zaptest.NewLogger(t)
 	slogger := logger.Sugar()
-	grpc_zap.ReplaceGrpcLogger(logger)
+
+	// Redirect grpc internal log messages to zap, at DEBUG
+	glogger := logger.WithOptions(
+		// zapgrpc adds extra frames, which need to be skipped
+		zap.AddCallerSkip(3),
+	)
+	grpclog.SetLogger(zapgrpc.NewLogger(glogger, zapgrpc.WithDebug()))
 	return logger, slogger
 }
 

@@ -34,8 +34,10 @@ import (
 	"bg/common/grpcutils"
 
 	"github.com/pkg/errors"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zapgrpc"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -43,8 +45,8 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/timestamp"
-	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/grpclog"
 )
 
 var (
@@ -183,6 +185,13 @@ func zapSetup() {
 	}
 	slogger = logger.Sugar()
 	_ = zap.RedirectStdLog(logger)
+
+	// Redirect grpc internal log messages to zap, at DEBUG
+	glogger := logger.WithOptions(
+		// zapgrpc adds extra frames, which need to be skipped
+		zap.AddCallerSkip(3),
+	)
+	grpclog.SetLogger(zapgrpc.NewLogger(glogger, zapgrpc.WithDebug()))
 }
 
 func prometheusInit() {
@@ -274,8 +283,6 @@ func daemonStart() {
 	slogger.Infof("ap.rpcd starting")
 	ctx := context.Background()
 
-	// We don't do this in cmd mode because it's noisy at start
-	grpc_zap.ReplaceGrpcLogger(logger)
 	mcpd, err := mcp.New(pname)
 	if err != nil {
 		slogger.Fatalf("Failed to connect to mcp: %s", err)

@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"bg/base_def"
@@ -42,19 +43,21 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zapgrpc"
 
 	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/pubsub"
 
-	"github.com/grpc-ecosystem/go-grpc-middleware/util/metautils"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	_ "google.golang.org/grpc/encoding/gzip"
+	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/peer"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
 	"github.com/grpc-ecosystem/go-grpc-middleware/tags"
+	"github.com/grpc-ecosystem/go-grpc-middleware/util/metautils"
 	"github.com/grpc-ecosystem/go-grpc-prometheus"
 )
 
@@ -228,13 +231,21 @@ func makeGrpcServer(environ Cfg, applianceDB appliancedb.DataStore) *grpc.Server
 		opts = append(opts, grpc.Creds(credentials.NewTLS(&tlsc)))
 	}
 
+	logOpts := []grpc_zap.Option{
+		grpc_zap.WithDecider(func(fullMethodName string, err error) bool {
+			if err == nil && strings.HasPrefix(fullMethodName, "/cloud_rpc.ConfigBackEnd/") {
+				return false
+			}
+			return true
+		}),
+	}
 	streamFuncs := []grpc.StreamServerInterceptor{
 		grpc_ctxtags.StreamServerInterceptor(),
 		grpc_zap.StreamServerInterceptor(log),
 	}
 	unaryFuncs := []grpc.UnaryServerInterceptor{
 		grpc_ctxtags.UnaryServerInterceptor(),
-		grpc_zap.UnaryServerInterceptor(log),
+		grpc_zap.UnaryServerInterceptor(log, logOpts...),
 	}
 
 	// Insert Prometheus interceptor if enabled
@@ -262,6 +273,15 @@ func makeGrpcServer(environ Cfg, applianceDB appliancedb.DataStore) *grpc.Server
 	return grpcServer
 }
 
+func setupGrpcLog(log *zap.Logger) {
+	// Redirect grpc internal log messages to zap, at DEBUG
+	glog := log.WithOptions(
+		// zapgrpc adds extra frames, which need to be skipped
+		zap.AddCallerSkip(3),
+	)
+	grpclog.SetLogger(zapgrpc.NewLogger(glog, zapgrpc.WithDebug()))
+}
+
 func main() {
 	var environ Cfg
 	var err error
@@ -270,7 +290,7 @@ func main() {
 	flag.Parse()
 	log, slog = daemonutils.ResetupLogs()
 	defer log.Sync()
-	grpc_zap.ReplaceGrpcLogger(log)
+	setupGrpcLog(log)
 
 	err = envcfg.Unmarshal(&environ)
 	if err != nil {

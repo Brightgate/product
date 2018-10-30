@@ -703,7 +703,7 @@
   version = "v1.1.0"
 
 [[projects]]
-  digest = "1:6c2f76bad9a8ae48ec06108899e065a327d01afa43300f652443a05678cdca17"
+  digest = "1:246f378f80fba6fcf0f191c486b6613265abd2bc0f2fa55a36b928c67352021e"
   name = "go.uber.org/zap"
   packages = [
     ".",
@@ -713,11 +713,12 @@
     "internal/exit",
     "internal/ztest",
     "zapcore",
+    "zapgrpc",
     "zaptest",
   ]
   pruneopts = ""
-  revision = "eeedf312bc6c57391d84767a4cd413f02a917974"
-  version = "v1.8.0"
+  revision = "ff33455a0e382e8a81d14dd7c922020b6b5e7982"
+  version = "v1.9.1"
 
 [[projects]]
   branch = "master"
@@ -1047,6 +1048,7 @@
     "github.com/urfave/negroni",
     "go.uber.org/zap",
     "go.uber.org/zap/zapcore",
+    "go.uber.org/zap/zapgrpc",
     "go.uber.org/zap/zaptest",
     "golang.org/x/crypto/bcrypt",
     "golang.org/x/crypto/md4",

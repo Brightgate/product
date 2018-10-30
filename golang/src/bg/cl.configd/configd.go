@@ -31,8 +31,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/tomazk/envcfg"
 	"go.uber.org/zap"
-
-	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
+	"go.uber.org/zap/zapgrpc"
+	"google.golang.org/grpc/grpclog"
 )
 
 const pname = "cl.configd"
@@ -170,7 +170,13 @@ func main() {
 	flag.Parse()
 	log, slog = daemonutils.ResetupLogs()
 	defer log.Sync()
-	grpc_zap.ReplaceGrpcLogger(log)
+
+	// Redirect grpc internal log messages to zap, at DEBUG
+	glog := log.WithOptions(
+		// zapgrpc adds extra frames, which need to be skipped
+		zap.AddCallerSkip(3),
+	)
+	grpclog.SetLogger(zapgrpc.NewLogger(glog, zapgrpc.WithDebug()))
 
 	slog.Infow(pname+" starting", "args", os.Args)
 
