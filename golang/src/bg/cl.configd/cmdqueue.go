@@ -165,6 +165,9 @@ func (memq *memCmdQueue) fetch(ctx context.Context, s *perAPState, start int64, 
 			}
 		}
 	}
+	if len(o) > 1 {
+		slog.Debugw("fetch", "commands", &o)
+	}
 	return o, nil
 }
 

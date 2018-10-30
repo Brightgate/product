@@ -157,7 +157,10 @@ func (s *backEndServer) Update(ctx context.Context,
 			}
 		}
 		if err == nil {
-			// XXX: persist the changes we just applied
+			// Persist the changes we just applied
+			if err = ap.store(ctx); err != nil {
+				slog.Errorf("Failed to store updated config: %v", err)
+			}
 		}
 	}
 

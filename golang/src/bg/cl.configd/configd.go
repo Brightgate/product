@@ -39,6 +39,7 @@ const pname = "cl.configd"
 
 type configStore interface {
 	get(context.Context, string) (*cfgtree.PTree, error)
+	set(context.Context, string, *cfgtree.PTree) error
 }
 
 type cmdQueue interface {

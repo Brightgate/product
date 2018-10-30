@@ -512,12 +512,18 @@ func (t *PTree) Set(prop string, val string, exp *time.Time) error {
 
 // Export will return a JSON-marshaled representation of the entire config tree,
 // which may be used to either persist the tree or send it across a network.
-func (t *PTree) Export() []byte {
-	s, err := json.MarshalIndent(t.root, "", "  ")
+func (t *PTree) Export(humanize bool) []byte {
+	var j []byte
+	var err error
+	if humanize {
+		j, err = json.MarshalIndent(t.root, "", "  ")
+	} else {
+		j, err = json.Marshal(t.root)
+	}
 	if err != nil {
 		log.Fatalf("Failed to construct properties JSON: %v\n", err)
 	}
-	return s
+	return j
 }
 
 // After loading the initial property values, we need to walk the tree to set

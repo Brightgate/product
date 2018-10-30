@@ -15,6 +15,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"time"
 
 	"github.com/satori/uuid"
 
@@ -76,6 +77,40 @@ func (db *dbStore) get(ctx context.Context, uuidStr string) (*cfgtree.PTree, err
 	}
 
 	return tree, nil
+}
+
+func (db *dbStore) set(ctx context.Context, uuidStr string, tree *cfgtree.PTree) error {
+	slog.Infof("Storing state for %s to DB", uuidStr)
+
+	err := db.handle.Ping()
+	if err != nil {
+		slog.Warnf("failed to ping DB: %s", err)
+		// Try once to reconnect
+		if err = db.connect(); err != nil {
+			slog.Errorf("failed to reconnect to DB")
+			return err
+		}
+		slog.Infof("reconnected to DB")
+	}
+
+	u, err := uuid.FromString(uuidStr)
+	if err != nil {
+		slog.Errorf("invalid UUID: %s", uuidStr)
+		return err
+	}
+
+	store := &appliancedb.ApplianceConfigStore{
+		RootHash:  tree.Root().Hash(),
+		TimeStamp: time.Now(),
+		Config:    tree.Export(false),
+	}
+
+	err = db.handle.UpsertConfigStore(ctx, u, store)
+	if err != nil {
+		slog.Errorf("failed to store appliance config: %v", err)
+		return err
+	}
+	return nil
 }
 
 func (db *dbStore) connect() error {

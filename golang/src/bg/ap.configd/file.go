@@ -50,7 +50,7 @@ func propTreeStore() error {
 	}
 
 	propTree.Add("@/apversion", common.GitVersion, nil)
-	s := propTree.Export()
+	s := propTree.Export(true)
 	metrics.treeSize.Set(float64(len(s)))
 
 	if aputil.FileExists(propTreeFile) {

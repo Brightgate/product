@@ -327,6 +327,10 @@ func Exec(p string, hdl *cfgapi.Handle, args []string) error {
 	configd = hdl
 	pname = p
 
+	if len(args) < 1 {
+		usage("")
+	}
+
 	switch args[0] {
 	case "get":
 		err = getProp("get", args[1:])

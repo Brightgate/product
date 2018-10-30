@@ -50,6 +50,12 @@ func (store *fileStore) get(ctx context.Context, uuid string) (*cfgtree.PTree, e
 	return tree, err
 }
 
+// set is not implemented for fileStore; it is primarily designed for
+// development activities.
+func (store *fileStore) set(ctx context.Context, uuid string, tree *cfgtree.PTree) error {
+	return nil
+}
+
 func newFileStore(dir string) (configStore, error) {
 	var store configStore = &fileStore{dir}
 	if _, err := os.Stat(dir); os.IsNotExist(err) {

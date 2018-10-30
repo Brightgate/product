@@ -101,9 +101,21 @@ func getAPState(ctx context.Context, cloudUUID string) (*perAPState, error) {
 	return s, err
 }
 
+// Set the whole tree; part of the refresh logic
 func (s *perAPState) setCachedTree(t *cfgtree.PTree) {
 	s.cachedTree = t
-	slog.Info("new tree for %s.  hash %x", s.cloudUUID, t.Root().Hash())
+	slog.Infof("New tree for %s.  hash %x", s.cloudUUID, t.Root().Hash())
+	_ = s.store(context.TODO())
+}
+
+func (s *perAPState) store(ctx context.Context) error {
+	err := store.set(ctx, s.cloudUUID, s.cachedTree)
+	if err != nil {
+		slog.Errorf("Failed to store config for %v: %v", s.cloudUUID, err)
+		return err
+	}
+	slog.Debugf("Stored config for %v - %x", s.cloudUUID, s.cachedTree.Root().Hash())
+	return nil
 }
 
 // Execute a single ConfigQuery command, which may include multiple property
