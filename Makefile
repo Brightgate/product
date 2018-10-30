@@ -853,6 +853,7 @@ $(CLOUDBIN)/cl-dtool: \
 	$(GOSRCBG)/cl-dtool/merge.go \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.configd: \
+	$(GOSRCBG)/cl.configd/apstate.go \
 	$(GOSRCBG)/cl.configd/backend.go \
 	$(GOSRCBG)/cl.configd/cmdqueue.go \
 	$(GOSRCBG)/cl.configd/cmdqueuedb.go \
@@ -861,7 +862,6 @@ $(CLOUDBIN)/cl.configd: \
 	$(GOSRCBG)/cl.configd/file.go \
 	$(GOSRCBG)/cl.configd/frontend.go \
 	$(GOSRCBG)/cl.configd/grpc.go \
-	$(GOSRCBG)/cl.configd/multi.go \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.eventd: \
 	$(GOSRCBG)/cl.eventd/eventd.go \

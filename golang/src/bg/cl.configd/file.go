@@ -52,5 +52,9 @@ func (store *fileStore) get(ctx context.Context, uuid string) (*cfgtree.PTree, e
 
 func newFileStore(dir string) (configStore, error) {
 	var store configStore = &fileStore{dir}
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		slog.Warnf("Store directory %s does not exist", dir)
+		return nil, err
+	}
 	return store, nil
 }

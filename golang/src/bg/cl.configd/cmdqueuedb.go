@@ -23,6 +23,7 @@ import (
 	"bg/cl_common/pgutils"
 	"bg/cloud_models/appliancedb"
 	"bg/common/cfgmsg"
+	"bg/common/cfgtree"
 )
 
 var (
@@ -103,7 +104,9 @@ func (dbq *dbCmdQueue) fetch(ctx context.Context, s *perAPState, start, max int6
 	}
 
 	cmds, err := dbq.handle.CommandFetch(ctx, u, start, max)
-	slog.Debugf("Fetched %d commands from %q", len(cmds), u)
+	if len(cmds) > 0 {
+		slog.Debugf("Fetched %d commands from %q", len(cmds), u)
+	}
 	if err != nil {
 		slog.Warnf("Failure fetching commands from %q: %v", u, err)
 		if len(cmds) == 0 {
@@ -257,7 +260,13 @@ func (dbq *dbCmdQueue) complete(ctx context.Context, s *perAPState, rval *cfgmsg
 			return err
 		}
 		if isRefresh(&cfgQuery) {
-			refreshAPState(s, rval.Value)
+			var tree *cfgtree.PTree
+			tree, err = cfgtree.NewPTree("@", []byte(rval.Value))
+			if err != nil {
+				slog.Warnf("failed to refresh %s: %v", s.cloudUUID, err)
+				return err
+			}
+			s.setCachedTree(tree)
 		}
 	} else {
 		slog.Infof("%s:%d multiple completions - last at %s",
@@ -309,9 +318,9 @@ func dbConnect(connInfo string) error {
 
 // This only creates a new queue object the first time it's called; it caches
 // the value and returns that thereafter.
-func newDBCmdQueue(connInfo string) (cmdQueue, error) {
+func newDBCmdQueue(connInfo string) cmdQueue {
 	if cachedDBCmdQueue != nil {
-		return cachedDBCmdQueue, nil
+		return cachedDBCmdQueue
 	}
 	onceQueue.Do(func() {
 		cachedDBCmdQueue = &dbCmdQueue{connInfo: connInfo}
@@ -324,5 +333,5 @@ func newDBCmdQueue(connInfo string) (cmdQueue, error) {
 	}
 
 	var queue cmdQueue = cachedDBCmdQueue
-	return queue, nil
+	return queue
 }

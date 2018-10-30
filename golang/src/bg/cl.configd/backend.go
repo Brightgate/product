@@ -65,10 +65,10 @@ func (s *backEndServer) Hello(ctx context.Context,
 		ap, err := getAPState(ctx, uuid)
 		if err != nil {
 			// XXX: Currently we respond to an unknown appliance
-			// appearing by uploading its state to the cloud.
-			// Eventually this should be an error that results in
-			// an event being sent.
-			ap, err = initAPState(uuid)
+			// appearing by asking it to upload its state to the
+			// cloud.  Eventually this should be an error that
+			// results in an event being sent.
+			ap = initAPState(uuid)
 			refreshConfig(ctx, ap, uuid)
 		}
 		if err != nil {
@@ -111,15 +111,17 @@ func update(ap *perAPState, update *rpc.CfgBackEndUpdate_CfgUpdate) error {
 
 		val := update.GetValue()
 		if pexpires := update.GetExpires(); pexpires != nil {
-			t, _ := ptypes.Timestamp(pexpires)
-			expires = &t
+			ts, _ := ptypes.Timestamp(pexpires)
+			expires = &ts
+			slog.Debugf("Updating %s to %q (expires %s)", prop, val, ts)
+		} else {
+			slog.Debugf("Updating %s to %q", prop, val)
 		}
-		slog.Debugf("Updating %s to %s", prop, update.GetValue())
-		err = ap.cachedTree.Add(prop, val, expires)
+		err = t.Add(prop, val, expires)
 
 	case rpc.CfgBackEndUpdate_CfgUpdate_DELETE:
 		slog.Debugf("Deleting %s", update.GetProperty())
-		_, err = ap.cachedTree.Delete(prop)
+		_, err = t.Delete(prop)
 	}
 	if err == nil {
 		th := ap.cachedTree.Root().Hash()

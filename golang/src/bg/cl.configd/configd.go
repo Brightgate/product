@@ -18,7 +18,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
+	"path/filepath"
 	"syscall"
 
 	"bg/base_def"
@@ -36,17 +36,6 @@ import (
 )
 
 const pname = "cl.configd"
-
-type perAPState struct {
-	cloudUUID  string         // cloud UUID
-	cachedTree *cfgtree.PTree // in-core cache of the config tree
-
-	cmdQueue cmdQueue
-
-	// XXX This is used only once, in frontend.go, protecting just a
-	// cachedTree.Get() call.  What's the actual locking strategy here?
-	sync.Mutex
-}
 
 type configStore interface {
 	get(context.Context, string) (*cfgtree.PTree, error)
@@ -69,6 +58,8 @@ var environ struct {
 	PrometheusPort     string `envcfg:"B10E_CLCONFIGD_PROMETHEUS_PORT"`
 	GrpcPort           string `envcfg:"B10E_CLCONFIGD_GRPC_PORT"`
 	PostgresConnection string `envcfg:"B10E_CLCONFIGD_POSTGRES_CONNECTION"`
+	Store              string `envcfg:"B10E_CLCONFIGD_STORE"`
+	Emulate            bool   `envcfg:"B10E_CLCONFIGD_EMULATE"`
 
 	// XXX it would be nicer if we could have this be ENABLE_TLS with
 	// default=true but envcfg does not support that.
@@ -78,87 +69,11 @@ var environ struct {
 var (
 	cqMax = flag.Int("cq", 1000, "max number of completions to retain")
 
-	state     map[string]*perAPState
-	stateLock sync.Mutex
-
 	log  *zap.Logger
 	slog *zap.SugaredLogger
 
-	store multiStore
+	store configStore
 )
-
-func refreshAPState(s *perAPState, jsonTree string) {
-	tree, err := cfgtree.NewPTree("@", []byte(jsonTree))
-	if err != nil {
-		slog.Warnf("failed to refresh %s: %v", s.cloudUUID, err)
-	} else {
-		s.cachedTree = tree
-		slog.Debugf("new tree.  hash %x", s.cachedTree.Root().Hash())
-	}
-}
-
-func newAPState(cloudUUID string, tree *cfgtree.PTree) (*perAPState, error) {
-	var queue cmdQueue
-	if environ.PostgresConnection != "" {
-		queue, _ = newDBCmdQueue(environ.PostgresConnection)
-	} else {
-		queue = newMemCmdQueue(cloudUUID, *cqMax)
-	}
-
-	s := &perAPState{
-		cloudUUID:  cloudUUID,
-		cachedTree: tree,
-		cmdQueue:   queue,
-	}
-	return s, nil
-}
-
-// XXX: this is an interim function.  When we get an update from an unknown
-// appliance, we construct a new in-core cache for it.  Eventually this probably
-// needs to be instantiated as part of the device provisioning process.
-func initAPState(cloudUUID string) (*perAPState, error) {
-	stateLock.Lock()
-	defer stateLock.Unlock()
-
-	s, ok := state[cloudUUID]
-	if ok {
-		return s, nil
-	}
-
-	s, _ = newAPState(cloudUUID, nil)
-	state[cloudUUID] = s
-
-	return s, nil
-}
-
-func getAPState(ctx context.Context, cloudUUID string) (*perAPState, error) {
-	stateLock.Lock()
-	defer stateLock.Unlock()
-
-	if cloudUUID == "" {
-		return nil, fmt.Errorf("No UUID provided")
-	}
-
-	s, ok := state[cloudUUID]
-	if ok {
-		return s, nil
-	}
-
-	tree, err := store.get(ctx, cloudUUID)
-	if err == nil {
-		s, _ = newAPState(cloudUUID, tree)
-		state[cloudUUID] = s
-		// XXX: currently we assume that any config tree we load from
-		// cloud storage has no real appliance connected to it, so we
-		// launch a go routine to emulate the missing appliance.  When
-		// we start persisting real config trees to the database, we'll
-		// need some way to distinguish between real configs and
-		// emulated http-dev configs.
-		go emulateAppliance(context.Background(), s)
-	}
-
-	return s, err
-}
 
 func prometheusInit(prometheusPort string) {
 	if len(prometheusPort) == 0 {
@@ -172,6 +87,30 @@ func prometheusInit(prometheusPort string) {
 	if err != nil {
 		slog.Warnf("prometheus listener failed: %v\n", err)
 	}
+}
+
+func mkStore() configStore {
+	var err error
+	var store configStore
+
+	switch environ.Store {
+	case "file":
+		store, err = newFileStore(
+			filepath.Join(daemonutils.ClRoot(), "/etc/configs"))
+	case "", "db":
+		if environ.PostgresConnection == "" {
+			err = fmt.Errorf("B10E_CLCONFIGD_POSTGRES_CONNECTION must be set")
+		} else {
+			store, err = newDBStore(environ.PostgresConnection)
+		}
+	default:
+		err = fmt.Errorf("Unrecognized store type")
+	}
+	if err != nil {
+		slog.Fatalf("Failed to configure '%s' store: %v", environ.Store, err)
+	}
+	slog.Infof("Using '%s' store %s", environ.Store, store)
+	return store
 }
 
 func main() {
@@ -197,17 +136,11 @@ func main() {
 
 	go prometheusInit(environ.PrometheusPort)
 
-	fileStore, _ := newFileStore(daemonutils.ClRoot() + "/etc/configs")
-	store.add(fileStore)
-	if environ.PostgresConnection != "" {
-		dbStore, err := newDBStore(environ.PostgresConnection)
-		if err != nil {
-			slog.Fatalf("Failed to connect to config store database: %v", err)
-		}
-		store.add(dbStore)
-	}
+	store = mkStore()
 
-	state = make(map[string]*perAPState)
+	if environ.Emulate {
+		slog.Infof("Appliance emulator enabled")
+	}
 
 	port := environ.GrpcPort
 	if port == "" {

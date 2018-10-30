@@ -14,16 +14,14 @@ package main
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"sync"
 	"time"
 
 	"bg/common/cfgmsg"
+	"bg/common/cfgtree"
 
 	"github.com/golang/protobuf/ptypes"
 )
-
-const maxDelay = 3
 
 // State of a single submitted command.
 type cmdState struct {
@@ -279,7 +277,12 @@ func (memq *memCmdQueue) complete(ctx context.Context, s *perAPState, rval *cfgm
 
 		// Special-case handling for refetching a full tree.
 		if rval.Response == cfgmsg.ConfigResponse_OK && isRefresh(cmd.cmd) {
-			refreshAPState(s, rval.Value)
+			tree, err := cfgtree.NewPTree("@", []byte(rval.Value))
+			if err != nil {
+				slog.Warnf("failed to refresh %s: %v", s.cloudUUID, err)
+			} else {
+				s.setCachedTree(tree)
+			}
 		}
 	} else {
 		slog.Infof("%v multiple completions - last at %s", cmd,
@@ -289,83 +292,4 @@ func (memq *memCmdQueue) complete(ctx context.Context, s *perAPState, rval *cfgm
 	t := time.Now()
 	cmd.completed = &t
 	return nil
-}
-
-// Execute a single ConfigQuery command, which may include multiple property
-// updates.  This mimics work that would really be done by ap.configd on the
-// appliance.  The changes made to the in-core tree are not persisted, so we
-// will revert to the original tree next time cl.configd launches.
-// XXX: is there a need for a Reset() rpc to trigger this cleanup without
-// restarting the daemon?
-func execute(state *perAPState, ops *cfgmsg.ConfigQuery) *cfgmsg.ConfigResponse {
-	var err error
-	var rval cfgmsg.ConfigResponse
-
-	t := state.cachedTree
-	t.ChangesetInit()
-
-	for _, op := range ops.Ops {
-		prop, val, expires, perr := getParams(op)
-		if perr != nil {
-			err = perr
-			break
-		}
-
-		switch op.Operation {
-
-		case cfgmsg.ConfigOp_SET:
-			err = t.Set(prop, val, expires)
-
-		case cfgmsg.ConfigOp_CREATE:
-			err = t.Add(prop, val, expires)
-
-		case cfgmsg.ConfigOp_DELETE:
-			_, err = t.Delete(prop)
-		}
-
-		if err != nil {
-			break
-		}
-	}
-
-	if err == nil {
-		rval.Response = cfgmsg.ConfigResponse_OK
-		t.ChangesetCommit()
-	} else {
-		rval.Errmsg = fmt.Sprintf("%v", err)
-		rval.Response = cfgmsg.ConfigResponse_FAILED
-		t.ChangesetRevert()
-	}
-
-	rval.CmdID = ops.CmdID
-	rval.Timestamp = ptypes.TimestampNow()
-
-	return &rval
-}
-
-func delay() {
-	seconds := rand.Int() % maxDelay
-	time.Sleep(time.Duration(seconds) * time.Second)
-}
-
-// Repeatedly pull commands from the queue, execute them, and post the results.
-// Sleep for some number of seconds between iterations to emulate the
-// asynchronous nature of interacting with a remote device.
-func emulateAppliance(ctx context.Context, app *perAPState) {
-	lastCmd := int64(-1)
-
-	for {
-		delay()
-		ops, _ := app.cmdQueue.fetch(ctx, app, lastCmd, 1)
-		if len(ops) > 0 {
-			delay()
-			for _, o := range ops {
-				r := execute(app, o)
-				app.cmdQueue.complete(ctx, app, r)
-				if o.CmdID > lastCmd {
-					lastCmd = o.CmdID
-				}
-			}
-		}
-	}
 }
