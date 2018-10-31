@@ -147,9 +147,12 @@ type VulnInfo struct {
 	FirstDetected  *time.Time // When the vuln was first seen
 	LatestDetected *time.Time // When the vuln was most recently seen
 	WarnedAt       *time.Time // When the last log message / Event was sent
+	ClearedAt      *time.Time // When the vuln was most recently cleared
+	RepairedAt     *time.Time // When the vuln was most recently repaired
 	Ignore         bool       // If the vuln is seen, take no action
 	Active         bool       // vuln was present on last scan
 	Details        string     // Additional details from the scanner
+	Repair	       bool       // T: watcher listen>repair; F: repair failed
 }
 
 // ScanInfo represents a record of scanning activity for a single client.
@@ -560,12 +563,15 @@ func (c *Handle) GetVulnerabilities(macaddr string) VulnMap {
 	if vulns != nil {
 		for name, props := range vulns.Children {
 			var v VulnInfo
-			v.Ignore, _ = getBoolVal(props, "ignore")
-			v.Active, _ = getBoolVal(props, "active")
 			v.FirstDetected, _ = getTimeVal(props, "first")
 			v.LatestDetected, _ = getTimeVal(props, "latest")
 			v.WarnedAt, _ = getTimeVal(props, "warned")
+			v.ClearedAt, _ = getTimeVal(props, "cleared")
+			v.RepairedAt, _ = getTimeVal(props, "repaired")
+			v.Ignore, _ = getBoolVal(props, "ignore")
+			v.Active, _ = getBoolVal(props, "active")
 			v.Details, _ = getStringVal(props, "details")
+			v.Repair, _ = getBoolVal(props, "repair")
 			list[name] = &v
 		}
 	}

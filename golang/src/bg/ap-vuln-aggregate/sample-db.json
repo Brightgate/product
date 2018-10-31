@@ -29,7 +29,7 @@
         "Nickname": "unchanged default password",
         "Tool": "ap-defaultpass",
         "Options": {
-                "services": ""
+                "services": "ssh:22"
         }
     }
 }

@@ -1,9 +1,20 @@
+/*
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ *
+ * This copyright notice is Copyright Management Information under 17 USC 1202
+ * and is included to protect this work and deter copyright infringement.
+ * Removal or alteration of this Copyright Management Information without the
+ * express written permission of Brightgate Inc is prohibited, and any
+ * such unauthorized removal or alteration will be a violation of federal law.
+ */
+
 package aputil
 
 import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -40,7 +51,7 @@ func zapCallerEncoder(caller zapcore.EntryCaller, enc zapcore.PrimitiveArrayEnco
 
 // newChildLogger returns a 'sugared' zap logger, intended to be used to log the
 // output from child daemons.  This logger differs from that returned by
-// ChildLogger by omitting the caller name, allowing us to tag the output using
+// NewLogger by omitting the caller name, allowing us to tag the output using
 // the name of the child instead.  e.g.:
 //	2018/11/02 12:51:46     INFO    hostapd: wlan1: AP-ENABLED
 func newChildLogger() (*zap.SugaredLogger, error) {
@@ -87,4 +98,27 @@ func NewLogger(name string) *zap.SugaredLogger {
 func init() {
 	flag.Var(&levelFlag, "log-level",
 		"Log level [debug,info,warn,error,panic,fatal]")
+}
+
+/* The following aputil output functions should be used in ancillary
+ * programs whose output is being processed and logged. This avoids
+ * doubly decorating the output.
+ */
+
+// Errorf is like fmt.Printf except it goes to os.Stderr
+// It does *NOT* return an error object the way fmt.Errorf does
+func Errorf(format string, v ...interface{}) {
+	fmt.Fprintf(os.Stderr, format, v...)
+}
+
+// Fatalf is Errorf + os.Exit(1)
+func Fatalf(format string, v ...interface{}) {
+	Errorf(format, v...)
+	os.Exit(1)
+}
+
+// Usagef prints usage, an error message, then exits
+func Usagef(format string, v ...interface{}) {
+	flag.Usage()
+	Fatalf(format, v...)
 }

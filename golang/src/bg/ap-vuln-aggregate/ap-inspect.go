@@ -8,18 +8,15 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"bg/ap_common/aputil"
+	"bg/ap_common/apvuln"
 )
 
 const inspectCmd = "ap-inspect"
 
-type vulnProbe struct {
-	Error      string
-	Vulnerable bool
-	VulnIDs    []string
-}
-
-func bgEval(name string) (bool, error) {
-	var v vulnProbe
+func bgEval(name string) (bool, string, error) {
+	var v apvuln.InspectVulnProbe
 
 	vuln := false
 	file, err := ioutil.ReadFile(name)
@@ -31,10 +28,15 @@ func bgEval(name string) (bool, error) {
 		vuln = v.Vulnerable
 	}
 
-	return vuln, err
+	var jsonVulns []byte
+	if jsonVulns, err = apvuln.MarshalVulns(v.Vulns); err != nil {
+		err = fmt.Errorf("bgEval: marshaling vulns failed: %v", err)
+	}
+
+	return vuln, string(jsonVulns), err
 }
 
-func bgVuln(v vulnDescription, tgt net.IP) (vuln bool, err error) {
+func bgVuln(v aggVulnDescription, tgt net.IP) (vuln bool, details string, err error) {
 	resFile, err := ioutil.TempFile("", "ap-inspect.")
 	if err != nil {
 		err = fmt.Errorf("failed to create result file: %v", err)
@@ -49,18 +51,21 @@ func bgVuln(v vulnDescription, tgt net.IP) (vuln bool, err error) {
 		return
 	}
 
+	details = ""
+
 	cmd := []string{"-i", tgt.String(), "-n", probe, "-o", resName}
 	if len(v.Ports) > 0 {
 		portlist := strings.Join(v.Ports, ",")
 		cmd = append(cmd, "-p", portlist)
 	}
 
+	aputil.Errorf("bgVuln running %s %v\n", inspectCmd, cmd)
 	if err = exec.Command(inspectCmd, cmd...).Run(); err != nil {
 		err = fmt.Errorf("scan failed: %v", err)
 		return
 	}
 
-	if vuln, err = bgEval(resName); err != nil {
+	if vuln, details, err = bgEval(resName); err != nil {
 		err = fmt.Errorf("evaluation failed: %v", err)
 	}
 	return

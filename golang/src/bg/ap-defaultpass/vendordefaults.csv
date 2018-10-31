@@ -1,5 +1,10 @@
 Vendor,username,password
---- needed for go test,dptest,dptest
+--- needed for go test,dptest,dppass
+--- used for demo,admin,password
+--- used for demo,admin,admin
+--- used for demo,admin,
+--- used for demo,root,root
+--- used for demo,root,
 3com,,
 3com,,0
 3COM,,0

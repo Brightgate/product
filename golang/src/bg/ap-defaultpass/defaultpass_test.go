@@ -16,18 +16,20 @@ import (
 	"net/http"
 	"testing"
 
+	"bg/ap_common/apvuln"
+
 	sshserver "github.com/gliderlabs/ssh"
 	ftpdriver "github.com/goftp/file-driver"
 	ftpserver "github.com/goftp/server"
 )
 
-var clist []credentials
+var clist []apvuln.DPcredentials
 var localhost = net.ParseIP("127.0.0.1")
 
 func runHTTP(listener net.Listener) {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if user, pass, ok := r.BasicAuth(); ok {
-			if user == "dptest" && pass == "dptest" {
+			if user == "dptest" && pass == "dppass" {
 				return // status 200 (OK) automatically returned
 			}
 		}
@@ -55,7 +57,7 @@ func runSSH(listener net.Listener) {
 	sshserver.Handle(func(s sshserver.Session) {})
 	sshserver.Serve(listener, nil,
 		sshserver.PasswordAuth(func(ctx sshserver.Context, pass string) bool {
-			return ctx.User() == "dptest" && pass == "dptest"
+			return ctx.User() == "dptest" && pass == "dppass"
 		}),
 	)
 }
@@ -67,13 +69,21 @@ func TestHTTP(t *testing.T) {
 	}
 	go runHTTP(listener) // start the service
 
-	var dpvuln []dpvulnerability
+	var dpvuln apvuln.Vulnerabilities
 	port := listener.Addr().(*net.TCPAddr).Port
 
 	httpProbe(clist, 0, &dpvuln, localhost, port) // probe for vulnerability
 
-	if len(dpvuln) == 0 {
-		t.Errorf("HTTP test failed. Vulnerability not found.\n")
+	if len(dpvuln) != 1 {
+		t.Errorf("HTTP test failed. Single vulnerability not found.\n")
+	}
+	if v, ok := dpvuln[0].(apvuln.DPvulnerability); ok {
+		if v.Credentials.Username != "dptest" ||
+		   v.Credentials.Password != "dppass" {
+			t.Errorf("HTTP test failed. Credentials not found.\n%v\n", v)
+		}
+	} else {
+		t.Errorf("HTTP test failed; returned wrong type.\n")
 	}
 }
 
@@ -82,15 +92,23 @@ func TestFTP(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error getting open port: %s\n", err)
 	}
-	go runFTP(listener, "dptest", "dptest") // start the service
+	go runFTP(listener, "dptest", "dppass") // start the service
 
-	var dpvuln []dpvulnerability
+	var dpvuln apvuln.Vulnerabilities
 	port := listener.Addr().(*net.TCPAddr).Port
 
 	ftpProbe(clist, 0, &dpvuln, localhost, port) // probe for vulnerability
 
-	if len(dpvuln) == 0 {
-		t.Errorf("FTP test failed. Vulnerability not found.\n")
+	if len(dpvuln) != 1 {
+		t.Errorf("FTP test failed. Single vulnerability not found.\n")
+	}
+	if v, ok := dpvuln[0].(apvuln.DPvulnerability); ok {
+		if v.Credentials.Username != "dptest" ||
+		   v.Credentials.Password != "dppass" {
+			t.Errorf("FTP test failed. Credentials not found.\n%v\n", v)
+		}
+	} else {
+		t.Errorf("FTP test failed; returned wrong type.\n")
 	}
 }
 
@@ -101,13 +119,21 @@ func TestSSH(t *testing.T) {
 	}
 	go runSSH(listener) // start the service
 
-	var dpvuln []dpvulnerability
+	var dpvuln apvuln.Vulnerabilities
 	port := listener.Addr().(*net.TCPAddr).Port
 
 	sshProbe(clist, 0, &dpvuln, localhost, port) // probe for vulnerability
 
-	if len(dpvuln) == 0 {
-		t.Errorf("SSH test failed. Vulnerability not found.\n")
+	if len(dpvuln) != 1 {
+		t.Errorf("SSH test failed. Single vulnerability not found.\n")
+	}
+	if v, ok := dpvuln[0].(apvuln.DPvulnerability); ok {
+		if v.Credentials.Username != "dptest" ||
+		   v.Credentials.Password != "dppass" {
+			t.Errorf("SSH test failed. Credentials not found.\n%v\n", v)
+		}
+	} else {
+		t.Errorf("SSH test failed; returned wrong type.\n")
 	}
 }
 
@@ -118,13 +144,17 @@ func TestFalsePositive(t *testing.T) {
 	}
 	go runFTP(listener, "non-default_username", "non-default_password") // non-default credentials, FTP
 
-	var dpvuln []dpvulnerability
+	var dpvuln apvuln.Vulnerabilities
 	port := listener.Addr().(*net.TCPAddr).Port
 
 	ftpProbe(clist, 0, &dpvuln, localhost, port) // probe for vulnerability
 
-	if len(dpvuln) != 0 {
-		t.Errorf("False Positive test failed. Vulnerability found.\n")
+	for _, vuln := range dpvuln {
+		if v, ok := vuln.(apvuln.DPvulnerability); ok {
+			t.Errorf("False Positive test failed. Vulnerability found:\n%v\n", v)
+		} else {
+			t.Errorf("False Positive test failed. Unexpected %T returned:\n%v\n", vuln, vuln)
+		}
 	}
 }
 

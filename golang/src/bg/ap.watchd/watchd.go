@@ -216,13 +216,13 @@ func logUnknown(ring, mac, ipstr string) bool {
 
 	addr = net.ParseIP(ipstr).To4()
 	if addr == nil {
-		slog.Warnf("Couldn't parse IP address: %s", ipstr)
+		slog.Errorf("Couldn't parse IP address: %s", ipstr)
 		return false
 	}
 
 	hwaddr, err := net.ParseMAC(mac)
 	if err != nil {
-		slog.Warnf("Couldn't parse MAC: %s", mac)
+		slog.Errorf("Couldn't parse MAC: %s", mac)
 		return false
 	}
 
@@ -359,6 +359,7 @@ func main() {
 	rings = config.GetRings()
 
 	mcpd.SetState(mcp.ONLINE)
+	slog.Infof("watchd online")
 	for _, w := range watchers {
 		go w.init(w)
 	}

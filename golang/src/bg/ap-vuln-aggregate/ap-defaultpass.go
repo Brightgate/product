@@ -20,13 +20,14 @@ import (
 	"strings"
 
 	"bg/ap_common/aputil"
+	"bg/ap_common/apvuln"
 )
 
 // TODO: Add timeout (to prevent entire vuln scan from getting hung up).
 
 const dpcmd = "ap-defaultpass"
 
-func dpvuln(v vulnDescription, tgt net.IP) (bool, error) {
+func dpvuln(v aggVulnDescription, tgt net.IP) (bool, string, error) {
 	var bannedarg string
 	vendorfile := aputil.ExpandDirPath("/etc/vendordefaults.csv") // source: https://www.liquidmatrix.org/blog/default-passwords/
 	banfiledir := aputil.ExpandDirPath("/var/spool/defaultpass/")
@@ -40,6 +41,9 @@ func dpvuln(v vulnDescription, tgt net.IP) (bool, error) {
 	}
 
 	cmd := []string{"-i", tgt.String(), "-f", vendorfile}
+	if raw, ok := v.Options["raw"]; ok {
+		cmd = append(cmd, raw)
+	}
 	if bannedarg != "" { // banfile results take priority
 		r := regexp.MustCompile(`([A-Za-z]+:([0-9]+:)?[0-9]+(\,[0-9]+)*\.?)+`) // ensure banfile has correct format
 		if r.MatchString(bannedarg) {
@@ -53,20 +57,33 @@ func dpvuln(v vulnDescription, tgt net.IP) (bool, error) {
 	} else if v.Options["services"] != "" { // if no banfile, use nmap's results for ports/services
 		cmd = append(cmd, "-t", v.Options["services"])
 	} else { // otherwise, ports are closed (nothing to check)
-		return false, nil
+		return false, apvuln.MarshalNotVulnerable("No ports to check"), nil
 	}
 
 	output, err := exec.Command(dpcmd, cmd...).CombinedOutput()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Output: ", string(output), "\nError: ", err)
 	}
 	if strings.Contains(string(output), "Banned") {
+		// Drop through to return false
 		log.Printf("%s\n", string(output))
 	}
 	if strings.Contains(string(output), "vulnerable") {
-		return true, nil
+		// The JSON details are on the third line
+		// TODO: This integration is super brittle.
+		splitOutput := strings.Split(string(output), "\n")
+		if len(splitOutput) < 2 {
+			log.Fatal("Expected 2 or more lines; too short:\n",
+				   string(output))
+		}
+		jsonVulns   := splitOutput[len(splitOutput) - 2]
+		if _, err := apvuln.UnmarshalDPvulns([]byte(jsonVulns)); err != nil {
+			log.Fatal("Failed to unmarshal vulns: ",
+				  err, "\n", jsonVulns)
+		}
+		return true, jsonVulns, nil
 	}
-	return false, nil
+	return false, apvuln.MarshalNotVulnerable(output), nil
 }
 
 func init() {

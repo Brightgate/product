@@ -101,6 +101,7 @@ import (
 	"os"
 	"strings"
 
+	"bg/ap_common/aputil"
 	"bg/ap_common/platform"
 	"bg/ap_common/wificaps"
 )
@@ -170,7 +171,7 @@ func wifi(args []string) bool {
 	if wifiCmd.NArg() > 0 {
 		iface, err := net.InterfaceByName(wifiCmd.Arg(0))
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Unable to find network device '%s': %v\n",
+			aputil.Errorf("Unable to find network device '%s': %v\n",
 				wifiCmd.Arg(0), err)
 			return false
 		}
@@ -179,7 +180,7 @@ func wifi(args []string) bool {
 		var err error
 		ifaces, err = net.Interfaces()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Unable to inventory network devices: %v\n", err)
+			aputil.Errorf("Unable to inventory network devices: %v\n", err)
 			return false
 		}
 	}
@@ -193,7 +194,7 @@ func wifi(args []string) bool {
 		}
 		cap, err := wificaps.GetCapabilities(iface.Name)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Couldn't determine wifi capabilities of %s: %v\n",
+			aputil.Errorf("Couldn't determine wifi capabilities of %s: %v\n",
 				iface.Name, err)
 			return false
 		}

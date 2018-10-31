@@ -69,6 +69,10 @@
   name = "github.com/satori/uuid"
   version = "1.2.0"
 
+[[constraint]]
+  name = "github.com/sethvargo/go-diceware"
+  version = "~0.1.1"
+
 # This constraint is much stricter than others which appear here
 # because we deliver a matched libtensorflow.so
 [[constraint]]

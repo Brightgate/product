@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"bg/ap_common/aputil"
+	"bg/ap_common/apvuln"
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
@@ -68,10 +69,10 @@ var (
 )
 
 const (
-	tcpFreq = 2 * time.Minute  // How often to scan TCP ports
-	udpFreq = 30 * time.Minute // How often to scan UDP ports
+	tcpFreq = 10 * time.Minute // How often to scan TCP ports
+	udpFreq = 60 * time.Minute // How often to scan UDP ports
 
-	vulnFreq     = 30 * time.Minute // How often to scan for vulnerabilities
+	vulnFreq     = 60 * time.Minute // How often to scan for vulnerabilities
 	vulnWarnFreq = 3 * time.Hour    // How often to reissue vuln. warnings
 
 	hostLifetime = 1 * time.Hour
@@ -261,8 +262,9 @@ func scheduleScan(request *ScanRequest, delay time.Duration, force bool) {
 
 	if force || activeHosts.contains(request.IP) {
 		request.When = time.Now().Add(delay)
-		slog.Debugf("scheduling %s %s at %s", request.IP,
-			request.ScanType, request.When.Format(time.RFC3339))
+		slog.Debugf("scheduling %s %s %s at %s, args: %v\n",
+			request.IP, request.Mac, request.ScanType,
+			request.When.Format(time.RFC3339), request.Args)
 		pendingLock.Lock()
 		if request.ID == 0 {
 			scanID++
@@ -367,6 +369,8 @@ func newVulnScan(mac, ip string) *ScanRequest {
 
 func scannerRequest(mac, ip string) {
 	if err := activeHosts.add(ip); err != nil {
+		slog.Debugf("scannerRequest(\"%s\", \"%s\") ignored: %s",
+			mac, ip, "IP already in activeHosts")
 		return
 	}
 	tcpScan := newTCPScan(mac, ip)
@@ -374,9 +378,9 @@ func scannerRequest(mac, ip string) {
 	vulnScan := newVulnScan(mac, ip)
 
 	metrics.knownHosts.Set(activeHosts.len())
-	scheduleScan(tcpScan, 2*time.Minute, false)
-	scheduleScan(udpScan, 10*time.Minute, false)
-	scheduleScan(vulnScan, 0, false)
+	scheduleScan(tcpScan, 10*time.Minute, false)
+	scheduleScan(udpScan, 20*time.Minute, false)
+	scheduleScan(vulnScan, 0, false) // 0 means now
 }
 
 func getMacIP(host *nmap.Host) (mac, ip string) {
@@ -801,7 +805,7 @@ func vulnActions(name string, vmap cfgapi.VulnMap) (first, warn, quarantine bool
 	return
 }
 
-func vulnScanProcess(ip string, discovered map[string]bool) {
+func vulnScanProcess(ip string, discovered map[string]apvuln.TestResult) {
 	var found, event []string
 	var quarantine bool
 
@@ -817,9 +821,18 @@ func vulnScanProcess(ip string, discovered map[string]bool) {
 	// queue up the appropriate action for each, and note which properties
 	// will need to be updated.
 	for name := range discovered {
+		current := discovered[name]
+		if !current.Vuln { // Don't report info if not vulnerable
+			continue
+		}
 		first, warn, q, text := vulnActions(name, vmap)
 		ops = append(ops, vulnPropOp(mac, name, "active", "true"))
 		ops = append(ops, vulnPropOp(mac, name, "latest", now))
+		if ds := current.DetailsSummary(); len(ds) > 0 {
+			// Config tree doesn't like extra space
+			ds = strings.TrimSpace(ds)
+			ops = append(ops, vulnPropOp(mac, name, "details", ds))
+		}
 		if first {
 			ops = append(ops, vulnPropOp(mac, name, "first", now))
 		}
@@ -846,7 +859,8 @@ func vulnScanProcess(ip string, discovered map[string]bool) {
 	// they do not appear in the current list, mark them as 'active = false'
 	// in the config tree.
 	for name, vi := range vmap {
-		if _, ok := discovered[name]; vi.Active && !ok {
+		current, ok := discovered[name]
+		if vi.Active && (!ok || !current.Vuln) {
 			ops = append(ops, vulnPropOp(mac, name, "active",
 				"false"))
 			ops = append(ops, vulnPropOp(mac, name, "cleared", now))
@@ -880,9 +894,6 @@ func vulnScan(req *ScanRequest) {
 	defer os.Remove(name)
 
 	args := []string{"-d", vulnListFile, "-i", req.IP, "-o", name}
-	// if *verbose {
-	// args = append(args, "-v")
-	// }
 
 	if dev := getDeviceRecord(req.Mac); dev != nil {
 		// build <service:port> list to scan for vulnerabilities
@@ -900,13 +911,15 @@ func vulnScan(req *ScanRequest) {
 	}
 
 	start := time.Now()
+	slog.Debugf("vulnerability scan starting: %s %v", prober, args)
 	if err = runCmd(prober, args); err != nil {
-		slog.Warnf("vulnerability scan of %s failed: %v",
-			req.IP, err)
+		slog.Warnf("vulnerability scan of %s failed: %v %v: %v",
+			req.IP, prober, strings.Join(args, " "), err)
+
 		return
 	}
 
-	found := make(map[string]bool)
+	found := make(map[string]apvuln.TestResult)
 	file, err := ioutil.ReadFile(name)
 	if err != nil {
 		slog.Warnf("Failed to read scan resuts: %v", err)
@@ -922,6 +935,8 @@ func vulnScan(req *ScanRequest) {
 	done := time.Now()
 	metrics.vulnScans.Inc()
 	metrics.vulnScanTime.Observe(done.Sub(start).Seconds())
+	slog.Debugf("vulnerability scan of %s ended, %.1f seconds",
+		req.IP, done.Sub(start).Seconds())
 }
 
 // ByDateModified is for sorting files by date modified.

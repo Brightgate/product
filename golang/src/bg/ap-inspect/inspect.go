@@ -17,19 +17,21 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"bg/ap_common/aputil"
+	"bg/ap_common/apvuln"
+
 	"github.com/hashicorp/go-version"
 )
 
 const (
 	pname         = "ap-inspect"
-	bannerTimeout = 2 * time.Second
+	bannerTimeout = 10 * time.Second
 )
 
 var (
@@ -48,23 +50,16 @@ var probes = map[string]probeFunc{
 	"CVE-2018-6789": eximProbe,
 }
 
-type vulnProbe struct {
-	Error      string
-	Vulnerable bool
-	VulnIDs    []string
-}
-
-func outputResults(v *vulnProbe) error {
-	var err error
+func outputResults(v *apvuln.InspectVulnProbe) error {
+	jsonVuln, err := json.Marshal(v)
+	if err != nil {
+		aputil.Fatalf("ap-inspect:outputResults couldn't marshal %v\n", v)
+	}
 
 	if *outfile != "" {
-		var s []byte
-
-		if s, err = json.MarshalIndent(v, "", "  "); err == nil {
-			err = ioutil.WriteFile(*outfile, s, 0644)
-		}
+		err = ioutil.WriteFile(*outfile, jsonVuln, 0644)
 	} else if v.Vulnerable {
-		fmt.Printf("%s is vulnerable to %v\n", *ipaddr, v.VulnIDs)
+		fmt.Printf("%s is vulnerable!\n%s\n", *ipaddr, jsonVuln)
 	} else {
 		fmt.Printf("%s is ok\n", *ipaddr)
 	}
@@ -105,7 +100,9 @@ func getBanner(ip net.IP, port int) (string, error) {
 func eximProbe(ip net.IP, ports []int) {
 	const cve = "CVE-2018-6789"
 
-	var result vulnProbe
+	var result apvuln.InspectVulnProbe
+	result.Vulnerable = false
+	result.Vulns = make(apvuln.Vulnerabilities, 0)
 
 	if len(ports) == 0 {
 		if smtp, _ := net.LookupPort("tcp", "smtp"); smtp != 0 {
@@ -142,12 +139,17 @@ func eximProbe(ip net.IP, ports []int) {
 			} else if testVersion.LessThan(goodVersion) {
 				msg = fmt.Sprintf("exim %s is vulnerable to %s",
 					v, cve)
+				dv := apvuln.InspectVulnerability{
+					Identifier: cve, IP: ip.String(),
+					Protocol: "tcp", Service: "smtp",
+					Port:    strconv.Itoa(p),
+					Program: "exim", ProgramVer: v}
 				result.Vulnerable = true
-				result.VulnIDs = []string{cve}
+				result.Vulns = append(result.Vulns, dv)
 			}
 		}
 		if *verbose && len(msg) > 0 {
-			log.Printf("eximProbe of %v:%d: %s\n", ip, p, msg)
+			aputil.Errorf("eximProbe of %v:%d: %s\n", ip, p, msg)
 		}
 	}
 
@@ -155,7 +157,7 @@ func eximProbe(ip net.IP, ports []int) {
 }
 
 func usage(exitStatus int) {
-	fmt.Printf("usage: %s [-hlv] [-i ipaddr] [-p ports] "+
+	fmt.Printf("usage: %s [-hlv] [-i ipaddr] [-p ports] [-o outputfile] "+
 		"-n <probeName>\n", pname)
 	os.Exit(exitStatus)
 }
@@ -169,9 +171,9 @@ func main() {
 		usage(0)
 	}
 	if *listProbes {
-		fmt.Printf("Supported probes:\n")
+		aputil.Errorf("Supported probes:\n")
 		for p := range probes {
-			fmt.Printf("    %s\n", p)
+			aputil.Errorf("    %s\n", p)
 		}
 		os.Exit(0)
 	}
@@ -182,8 +184,7 @@ func main() {
 
 	if *ipaddr != "" {
 		if ip = net.ParseIP(*ipaddr); ip == nil {
-			fmt.Printf("'%s' is not a valid IP address\n", *ipaddr)
-			os.Exit(1)
+			aputil.Fatalf("'%s' is not a valid IP address\n", *ipaddr)
 		}
 	}
 
@@ -192,8 +193,7 @@ func main() {
 		for _, p := range list {
 			portNo, err := strconv.Atoi(p)
 			if err != nil {
-				fmt.Printf("Invalid port #: %s\n", p)
-				os.Exit(1)
+				aputil.Fatalf("Invalid port #: %s\n", p)
 			}
 			ports = append(ports, portNo)
 		}
@@ -201,8 +201,16 @@ func main() {
 
 	f := probes[*probeName]
 	if f == nil {
-		fmt.Printf("unrecognized probe type: '%s'\n", *probeName)
-		os.Exit(1)
+		aputil.Fatalf("unrecognized probe type: '%s'\n", *probeName)
+	}
+
+	if *verbose {
+		aputil.Errorf("Probing %s for %s, ports: %v",
+			*ipaddr, *probeName, *portList)
+		if len(*outfile) > 0 {
+			aputil.Errorf("...probe output in %s", *outfile)
+		}
+		aputil.Errorf("\n")
 	}
 
 	f(ip, ports)

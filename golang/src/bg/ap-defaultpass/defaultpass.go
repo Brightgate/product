@@ -1,12 +1,13 @@
-//
-// COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
-//
-// This copyright notice is Copyright Management Information under 17 USC 1202
-// and is included to protect this work and deter copyright infringement.
-// Removal or alteration of this Copyright Management Information without the
-// express written permission of Brightgate Inc is prohibited, and any
-// such unauthorized removal or alteration will be a violation of federal law.
-//
+/*
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ *
+ * This copyright notice is Copyright Management Information under 17 USC 1202
+ * and is included to protect this work and deter copyright infringement.
+ * Removal or alteration of this Copyright Management Information without the
+ * express written permission of Brightgate Inc is prohibited, and any
+ * such unauthorized removal or alteration will be a violation of federal law.
+ *
+ */
 
 package main
 
@@ -18,7 +19,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"bg/ap_common/aputil"
+	"bg/ap_common/apvuln"
 
 	"github.com/jlaffaye/ftp"
 	"golang.org/x/crypto/ssh"
@@ -39,24 +40,16 @@ import (
 	3. Change credentials after vulnerability has been discovered (doable through SSH using "passwd", but not through FTP)
 */
 
-type probefunc func([]credentials, int, *[]dpvulnerability, net.IP, int) int
-
-type credentials struct {
-	username string
-	password string
-}
-
-type dpvulnerability struct {
-	protocol string
-	port     int
-	info     credentials
-}
+type probefunc func([]apvuln.DPcredentials, int, *apvuln.Vulnerabilities, net.IP, int) int
 
 var (
-	dpfile     = flag.String("f", "", "file to retrieve credentials from (required)")
-	ipaddr     = flag.String("i", "", "ip address to probe (required)")
-	verbose    = flag.Bool("v", false, "verbose output (optional)")
-	teststorun = flag.String("t", "http:80.ftp:21.ssh:22", "format, dot-separated = test:(starting index:)port(,more,ports)")
+	dpfile      = flag.String("f", "", "file to retrieve credentials from (required except in reset mode)")
+	ipaddr      = flag.String("i", "", "target ip address (required)")
+	verbose     = flag.Bool("v", false, "verbose output (optional)")
+	teststorun  = flag.String("t", "http:80.ftp:21.ssh:22", "format, dot-separated = test:(starting index:)port(,more,ports)")
+	reset       = flag.String("r", "", "reset mode, service:port:user:password, e.g. ssh:22:admin:password (optional)")
+	newUsername = flag.String("u", "", "new username (reset mode only)")
+	humanPass   = flag.Bool("human-password", false, "generate human-friendly password (reset mode only)")
 )
 
 var testMap = map[string]probefunc{
@@ -65,11 +58,11 @@ var testMap = map[string]probefunc{
 	"ssh":  sshProbe,
 }
 
-func fetchdefaults(dpfile string) ([]credentials, error) {
-	var clist []credentials
+func fetchdefaults(dpfile string) ([]apvuln.DPcredentials, error) {
+	var clist []apvuln.DPcredentials
 	defaultslist, err := os.Open(dpfile)
 	if err != nil {
-		log.Fatalf("Error opening vendor passwords file:%s\n", err)
+		aputil.Fatalf("Error opening vendor passwords file: %s\n", err)
 	}
 	defer defaultslist.Close()
 	defaultsreader := csv.NewReader(bufio.NewReader(defaultslist))
@@ -84,9 +77,12 @@ func fetchdefaults(dpfile string) ([]credentials, error) {
 			return clist, err
 		}
 		if len(line) != 3 {
-			log.Printf("Warning: line %d in vendor passwords file has unexpected format!\n", l)
+			aputil.Errorf("Warning: line %d in vendor passwords file has unexpected format\n", l)
 		} else {
-			tempcreds := credentials{line[1], line[2]}
+			tempcreds := apvuln.DPcredentials{
+				Username: line[1],
+				Password: line[2],
+			}
 			clist = append(clist, tempcreds)
 		}
 		l++
@@ -94,7 +90,7 @@ func fetchdefaults(dpfile string) ([]credentials, error) {
 	return clist, nil
 }
 
-func httpProbe(clist []credentials, startfrom int, vulnports *[]dpvulnerability, ip net.IP, p int) int {
+func httpProbe(clist []apvuln.DPcredentials, startfrom int, vulnports *apvuln.Vulnerabilities, ip net.IP, p int) int {
 	httpclient := &http.Client{
 		Timeout: time.Second,
 	}
@@ -110,13 +106,13 @@ func httpProbe(clist []credentials, startfrom int, vulnports *[]dpvulnerability,
 		for _, authstr := range resp.Header["Www-Authenticate"] {
 			if strings.Contains(strings.ToLower(authstr), "basic") { // case insensitive matching
 				if *verbose {
-					fmt.Println("HTTP Basic Auth detected, probing... ")
+					fmt.Printf("HTTP Basic Auth detected, probing...\n")
 				}
 				for i, creds := range clist[startfrom:] {
 					if *verbose {
 						fmt.Printf("HTTP Basic Auth test: [ %d / %d ]\n", i+startfrom+1, len(clist))
 					}
-					req.SetBasicAuth(creds.username, creds.password)
+					req.SetBasicAuth(creds.Username, creds.Password)
 					resp, err := httpclient.Do(req)
 					if err != nil {
 						if strings.Contains(err.Error(), "connection refused") {
@@ -128,9 +124,15 @@ func httpProbe(clist []credentials, startfrom int, vulnports *[]dpvulnerability,
 					}
 					if resp.StatusCode == 200 { // vulnerable
 						if *verbose {
-							fmt.Printf("%s is vulnerable on port %d to HTTP Basic Auth default username/password!\n", ip.String(), p)
+							fmt.Printf("%s is vulnerable on port %d to HTTP Basic Auth default username/password\n", ip.String(), p)
 						}
-						*vulnports = append(*vulnports, dpvulnerability{"http", p, creds})
+						*vulnports = append(*vulnports,
+							apvuln.DPvulnerability{
+								IP:          ip.String(),
+								Protocol:    "tcp",
+								Service:     "http",
+								Port:        strconv.Itoa(p),
+								Credentials: creds})
 						break
 					}
 				}
@@ -140,7 +142,7 @@ func httpProbe(clist []credentials, startfrom int, vulnports *[]dpvulnerability,
 	return 0
 }
 
-func ftpProbe(clist []credentials, startfrom int, vulnports *[]dpvulnerability, ip net.IP, p int) int {
+func ftpProbe(clist []apvuln.DPcredentials, startfrom int, vulnports *apvuln.Vulnerabilities, ip net.IP, p int) int {
 	validftpport := false
 	for i, creds := range clist[startfrom:] {
 		// note: there is an issue where DialTimeout doesn't always time out
@@ -158,13 +160,19 @@ func ftpProbe(clist []credentials, startfrom int, vulnports *[]dpvulnerability, 
 				fmt.Printf("FTP test: [ %d / %d ]\n", i+startfrom+1, len(clist))
 			}
 			validftpport = true
-			if err := ftpclient.Login(creds.username, creds.password); err != nil { // incorrect login
+			if err := ftpclient.Login(creds.Username, creds.Password); err != nil { // incorrect login
 				continue
 			} else {
 				if *verbose { // vulnerable
-					fmt.Printf("%s is vulnerable on port %d to FTP default username/password!\n", ip.String(), p)
+					fmt.Printf("%s is vulnerable on port %d to FTP default username/password\n", ip.String(), p)
 				}
-				*vulnports = append(*vulnports, dpvulnerability{"ftp", p, creds})
+				*vulnports = append(*vulnports,
+					apvuln.DPvulnerability{
+						IP:          ip.String(),
+						Protocol:    "tcp",
+						Service:     "ftp",
+						Port:        strconv.Itoa(p),
+						Credentials: creds})
 				break
 			}
 		}
@@ -172,7 +180,7 @@ func ftpProbe(clist []credentials, startfrom int, vulnports *[]dpvulnerability, 
 	return 0
 }
 
-func sshProbe(clist []credentials, startfrom int, vulnports *[]dpvulnerability, ip net.IP, p int) int {
+func sshProbe(clist []apvuln.DPcredentials, startfrom int, vulnports *apvuln.Vulnerabilities, ip net.IP, p int) int {
 	validsshport := false
 	sshconfig := &ssh.ClientConfig{ // safe, since publically available default passwords are being used
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
@@ -182,8 +190,8 @@ func sshProbe(clist []credentials, startfrom int, vulnports *[]dpvulnerability, 
 		if *verbose && validsshport {
 			fmt.Printf("SSH test: [ %d / %d ]\n", i+startfrom+1, len(clist))
 		}
-		sshconfig.User = creds.username
-		sshconfig.Auth = []ssh.AuthMethod{ssh.Password(creds.password)}
+		sshconfig.User = creds.Username
+		sshconfig.Auth = []ssh.AuthMethod{ssh.Password(creds.Password)}
 		if sshclient, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", ip.String(), p), sshconfig); err != nil {
 			if strings.Contains(err.Error(), "unable to authenticate") { // note: there may be various other response errors
 				if *verbose && !validsshport {
@@ -208,9 +216,15 @@ func sshProbe(clist []credentials, startfrom int, vulnports *[]dpvulnerability, 
 					continue
 				} else {
 					if *verbose {
-						fmt.Printf("%s is vulnerable on port %d to SSH default username/password!\n", ip.String(), p)
+						fmt.Printf("%s is vulnerable on port %d to SSH default username/password\n", ip.String(), p)
 					}
-					*vulnports = append(*vulnports, dpvulnerability{"ssh", p, creds})
+					*vulnports = append(*vulnports,
+						apvuln.DPvulnerability{
+							IP:          ip.String(),
+							Protocol:    "tcp",
+							Service:     "ssh",
+							Port:        strconv.Itoa(p),
+							Credentials: creds})
 					break
 				}
 			}
@@ -235,22 +249,22 @@ func logban(ip net.IP, tests map[string][]int, banfiledir string) bool { // true
 		content := []byte(b.String()[1:]) // remove leading "."
 		err := ioutil.WriteFile(banfiledir+"banfile-"+ip.String(), content, 0644)
 		if err != nil {
-			log.Fatalf("Failed to write banfile! %s\n", err)
+			aputil.Fatalf("Failed to write banfile %s\n", err)
 		}
 	}
 	return banned
 }
 
-func dpProbe(ip net.IP, tests map[string][]int) []dpvulnerability {
+func dpProbe(ip net.IP, tests map[string][]int) apvuln.Vulnerabilities {
 	clist, err := fetchdefaults(*dpfile)
 	if err != nil {
-		log.Fatalf("Error:%s\n", err)
+		aputil.Fatalf("dpProbe: error fetching defaults: %s\n", err)
 	}
 	banfiledir := aputil.ExpandDirPath("/var/spool/defaultpass/")
 	if err := os.MkdirAll(banfiledir, 0755); err != nil {
-		log.Fatalf("Error creating banfile directory:%s\n", err)
+		aputil.Fatalf("dpProbe: error creating banfile directory: %s\n", err)
 	}
-	var vulnports []dpvulnerability
+	var vulnports apvuln.Vulnerabilities
 
 	if *verbose {
 		fmt.Printf("Probing %s:\n", ip)
@@ -258,7 +272,7 @@ func dpProbe(ip net.IP, tests map[string][]int) []dpvulnerability {
 	for test := range tests {
 		startfrom := tests[test][0] // first element of portlist is starting index
 		if startfrom < 0 || len(clist) <= startfrom {
-			log.Printf("Invalid starting index: %d\n", startfrom)
+			aputil.Errorf("dpProbe: invalid starting index: %d\n", startfrom)
 			startfrom = 0 // if invalid, just start from the beginning
 		}
 		tests[test] = tests[test][1:]
@@ -280,10 +294,71 @@ func dpProbe(ip net.IP, tests map[string][]int) []dpvulnerability {
 	}
 	if !logban(ip, tests, banfiledir) { // write to banfile if banned at any point
 		if err := os.RemoveAll(banfiledir + "banfile-" + ip.String()); err != nil { // all tests ran, remove banfile if present
-			log.Fatalf("File removal error:%s\n", err)
+			aputil.Fatalf("dpProbe: file removal error: %s\n", err)
 		}
 	}
 	return vulnports
+}
+
+// Reset an SSH password
+func resetSSH() {
+	resetData := strings.SplitN(*reset, ":", 4)
+	if len(resetData) < 4 {
+		aputil.Fatalf("-r for ssh requires ssh:<port>:<user>:<pass>\n")
+	}
+	if strings.ToLower(resetData[0]) != "ssh" {
+		aputil.Fatalf("resetSSH() called with service %s\n", resetData[0])
+	}
+	address  := fmt.Sprintf("%s:%s", *ipaddr, resetData[1])
+	username := resetData[2]
+	oldPass  := resetData[3]
+	if *newUsername != "" {
+		aputil.Errorf("-u not supported for ssh; using %s\n", username)
+	}
+
+	var newPass string
+	var err     error
+	if *humanPass {
+		if newPass, err = HumanPassword(HumanPasswordSpec); err != nil {
+       		aputil.Fatalf("HumanPassword() failed: %v\n", err)
+		}
+	} else {
+		var newPassCheck string
+		if newPass, err = getPassword("New Password: "); err != nil {
+       		aputil.Fatalf("failed to get password from stdin: %v\n", err)
+		}
+		if newPassCheck, err = getPassword("Retype New Password: "); err != nil {
+       		aputil.Fatalf("failed to get password from stdin: %v\n", err)
+		}
+		if newPass != newPassCheck {
+			aputil.Fatalf("New passwords do not match\n")
+		}
+    }
+
+	err = SSHResetPassword(address, username, oldPass, newPass)
+	if err != nil {
+		aputil.Fatalf("SSHResetPassword() failed: %v\n", err)
+	}
+	fmt.Printf("success %s:%s\n", username, newPass)
+}
+
+// resetMode handles, well, the default password reset mode
+// Broke this out of main() for readability
+// Uses same global flags *ipaddr and *reset as main
+func resetMode() {
+	resetData := strings.SplitN(*reset, ":", 2)
+	if len(resetData) < 2 {
+		aputil.Fatalf("-r requires <service>:...\n")
+	}
+
+	service := resetData[0]
+	switch service {
+	case "ssh":
+		resetSSH()
+	// additional cases could be resetTelnet, resetHTTP, etc.
+	default:
+		aputil.Fatalf("-r: unsupported service %v\n", service)
+	}
 }
 
 func main() {
@@ -292,17 +367,22 @@ func main() {
 
 	flag.Parse()
 
-	if *dpfile == "" {
-		flag.Usage()
-		log.Fatalf("Filename required.\n")
-	}
 	if *ipaddr == "" {
-		flag.Usage()
-		log.Fatalf("IP address required.\n")
+		aputil.Usagef("IP address required\n")
 	} else {
 		if ip = net.ParseIP(*ipaddr); ip == nil {
-			log.Fatalf("'%s' is not a valid IP address\n", *ipaddr)
+			aputil.Fatalf("'%s' is not a valid IP address\n", *ipaddr)
 		}
+	}
+
+	if *reset != "" {
+		resetMode()
+		os.Exit(0)
+	}
+	// Otherwise we are in probe mode
+
+	if *dpfile == "" {
+		aputil.Usagef("Filename required\n")
 	}
 
 	testlist := strings.Split(*teststorun, ".")
@@ -312,17 +392,17 @@ func main() {
 			continue
 		}
 		if _, inmap := testMap[testinfo[0]]; !inmap { // invalid test
-			log.Printf("Unable to test unknown service: %s\n", testinfo[0])
+			aputil.Errorf("Unable to test unknown service: %s\n", testinfo[0])
 			continue
 		} else if len(tests[testinfo[0]]) > 0 { // unique tests
-			log.Printf("Duplicate test: %s\n", testinfo[0])
+			aputil.Errorf("Duplicate test: %s\n", testinfo[0])
 			continue
 		}
 
 		if len(testinfo) == 3 { // optional starting index was passed in
 			startfrom, err := strconv.Atoi(testinfo[1])
 			if err != nil {
-				log.Printf("Invalid starting index: %s\n", testinfo[1])
+				aputil.Errorf("Invalid starting index: %s\n", testinfo[1])
 				continue
 			}
 			tests[testinfo[0]] = append(tests[testinfo[0]], startfrom)
@@ -334,7 +414,7 @@ func main() {
 		for _, p := range portlist {
 			portNo, err := strconv.Atoi(p)
 			if err != nil {
-				log.Printf("Invalid port: %s\n", p)
+				aputil.Errorf("Invalid port: %s\n", p)
 				continue
 			}
 			tests[testinfo[0]] = append(tests[testinfo[0]], portNo)
@@ -342,9 +422,13 @@ func main() {
 	}
 
 	vulnports := dpProbe(ip, tests) // probe for vulnerable ports
-	log.Println("Vulnports list:", vulnports)
+	aputil.Errorf("Vulnports list: %v\n", vulnports)
 	if len(vulnports) > 0 {
-		fmt.Printf("%s is vulnerable!\n", ip.String())
+		jsonVulns, err := apvuln.MarshalVulns(vulnports)
+		if err != nil {
+			aputil.Fatalf("Error marshaling vulnports: %s\n", err)
+		}
+		fmt.Printf("%s is vulnerable\n%s\n", ip.String(), jsonVulns)
 	} else {
 		fmt.Printf("%s is ok.\n", ip.String())
 	}

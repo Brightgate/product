@@ -16,9 +16,11 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"os"
+
+	"bg/ap_common/aputil"
+	"bg/ap_common/apvuln"
 )
 
 const pname = "ap-vuln-aggregate"
@@ -29,25 +31,24 @@ var (
 	vulnlist = flag.String("d", "", "vulnerability list")
 	outfile  = flag.String("o", "", "output file")
 	services = flag.String("services", "", "services from nmap scan")
-	verbose  = flag.Bool("v", false, "verbose output")
 	tools    = make(map[string]execFunc)
 )
 
-type vulnDescription struct {
+type aggVulnDescription struct {
 	Tool     string
 	Nickname string            `json:"Nickname,omitempty"`
 	Ports    []string          `json:"Ports,omitempty"`
 	Options  map[string]string `json:"Options,omitempty"`
 }
 
-type execFunc func(vulnDescription, net.IP) (bool, error)
+type execFunc func(aggVulnDescription, net.IP) (bool, string, error)
 
 func addTool(name string, exec execFunc) {
 	tools[name] = exec
 }
 
-func vulnDBLoad(name string) (map[string]vulnDescription, error) {
-	vulns := make(map[string]vulnDescription, 0)
+func vulnDBLoad(name string) (map[string]aggVulnDescription, error) {
+	vulns := make(map[string]aggVulnDescription, 0)
 
 	file, err := ioutil.ReadFile(name)
 	if err != nil {
@@ -62,11 +63,12 @@ func vulnDBLoad(name string) (map[string]vulnDescription, error) {
 	return vulns, nil
 }
 
-func testOne(name string, desc vulnDescription, ip net.IP) bool {
+func testOne(name string, desc aggVulnDescription, ip net.IP) apvuln.TestResult {
 	var (
-		err  error
-		vuln bool
-		show string
+		err     error
+		vuln    bool
+		show    string
+		details string
 	)
 
 	if desc.Nickname == "" {
@@ -74,43 +76,45 @@ func testOne(name string, desc vulnDescription, ip net.IP) bool {
 	} else {
 		show = desc.Nickname
 	}
-	if *verbose {
-		fmt.Printf("Testing for %s...", show)
-	}
+	aputil.Errorf("Testing for %s %s...\n", desc.Nickname, name)
 
-	if desc.Tool == "ap-defaultpass" {
+	if desc.Tool == "ap-defaultpass" && len(*services) > 0 {
 		desc.Options["services"] = *services
 	}
 
 	if tool, ok := tools[desc.Tool]; ok {
-		vuln, err = tool(desc, ip)
+		vuln, details, err = tool(desc, ip)
 		if err != nil {
 			fmt.Printf("%s test failed: %v\n", show, err)
-		} else if *verbose {
-			if vuln {
-				fmt.Printf("  vulnerable\n")
-			} else {
-				fmt.Printf("  not vulnerable\n")
-			}
+		} else if vuln {
+			fmt.Printf("  vulnerable\n%s\n", details)
+		} else {
+			fmt.Printf("  not vulnerable\n%s\n", details)
 		}
 	} else {
-		fmt.Fprintf(os.Stderr, "%s: no support for '%s' tool\n",
-			name, desc.Tool)
+		aputil.Errorf("%s: no support for '%s' tool\n", name, desc.Tool)
 	}
 
-	return vuln
+	var detailsMap map[string]interface{}
+	err = json.Unmarshal([]byte(details), &detailsMap)
+	if err != nil {
+		aputil.Errorf("Couldn't unmarshal for %s:\n%s\n", show, details)
+	}
+
+	return apvuln.TestResult{Vuln: vuln, Tool: desc.Tool, Name: name,
+		Nickname: desc.Nickname, Details: detailsMap}
 }
 
-func output(found map[string]bool) {
+func output(found map[string]apvuln.TestResult) {
 	if *outfile != "" {
 		s, err := json.MarshalIndent(found, "", "  ")
 		if err != nil {
-			log.Fatalf("Failed to marshal results: %v\n", err)
+			aputil.Fatalf("Failed to marshal results: %v\n", err)
 		}
 
 		err = ioutil.WriteFile(*outfile, s, 0644)
 		if err != nil {
-			log.Fatalf("Failed to write results file '%s': %v\n",
+			aputil.Fatalf("Failed to write results file '%s': %v\n",
 				*outfile, err)
 		}
 	} else {
@@ -119,8 +123,8 @@ func output(found map[string]bool) {
 			fmt.Printf("None")
 		}
 		spacer := ""
-		for name, vuln := range found {
-			if vuln {
+		for name, result := range found {
+			if result.Vuln {
 				fmt.Printf(spacer + name)
 				spacer = " "
 			}
@@ -130,12 +134,13 @@ func output(found map[string]bool) {
 }
 
 func usage() {
-	log.Printf("usage: %s [-hv] [-o <output file>] -d <vuln list> -i <ip>\n",
+	aputil.Errorf("usage: %s [-h] [-o <output file>] -d <vuln list> -i <ip>\n",
 		pname)
 }
 
 func main() {
 	flag.Parse()
+
 	if *help || *ipaddr == "" || *vulnlist == "" {
 		usage()
 		os.Exit(1)
@@ -143,21 +148,19 @@ func main() {
 
 	ip := net.ParseIP(*ipaddr)
 	if ip == nil {
-		log.Printf("'%s' is not a valid IP address\n", *ipaddr)
-		os.Exit(1)
+		aputil.Fatalf("'%s' is not a valid IP address\n", *ipaddr)
 	}
 
 	vulnList, err := vulnDBLoad(*vulnlist)
 	if err != nil {
-		log.Printf("Unable to import vulnerability list '%s': %v\n",
+		aputil.Fatalf("Unable to import vulnerability list '%s': %v\n",
 			*vulnlist, err)
-		os.Exit(1)
 	}
 
-	found := make(map[string]bool)
+	found := make(map[string]apvuln.TestResult)
 	for n, desc := range vulnList {
-		if testOne(n, desc, ip) {
-			found[n] = true
+		if result := testOne(n, desc, ip); result.Vuln {
+			found[n] = result
 		}
 	}
 

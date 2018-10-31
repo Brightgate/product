@@ -289,6 +289,7 @@ APPCOMMON_GOPKGS = \
 	bg/ap_common/apcfg \
 	bg/ap_common/aptest \
 	bg/ap_common/aputil \
+	bg/ap_common/apvuln \
 	bg/ap_common/broker \
 	bg/ap_common/certificate \
 	bg/ap_common/mcp \
@@ -432,6 +433,7 @@ APP_COMMON_SRCS = \
 	$(GOSRCBG)/ap_common/aputil/aputil.go \
 	$(GOSRCBG)/ap_common/aputil/cred.go \
 	$(GOSRCBG)/ap_common/aputil/logging.go \
+	$(GOSRCBG)/ap_common/apvuln/apvuln.go \
 	$(GOSRCBG)/ap_common/broker/broker.go \
 	$(GOSRCBG)/ap_common/mcp/mcp_client.go \
 	$(GOSRCBG)/ap_common/model/model.go \
@@ -792,15 +794,20 @@ $(APPBIN)/ap.watchd: \
 	$(GOSRCBG)/ap.watchd/block.go \
 	$(GOSRCBG)/ap.watchd/droplog.go \
 	$(GOSRCBG)/ap.watchd/metrics.go \
+	$(GOSRCBG)/ap.watchd/repair-defaultpassword.go \
 	$(GOSRCBG)/ap.watchd/sampler.go \
 	$(GOSRCBG)/ap.watchd/scanner.go \
 	$(GOSRCBG)/ap.watchd/watchd.go
 
-$(APPBIN)/ap-defaultpass: $(GOSRCBG)/ap-defaultpass/defaultpass.go
+$(APPBIN)/ap-defaultpass: $(GOSRCBG)/ap-defaultpass/changepass.go \
+	$(GOSRCBG)/ap-defaultpass/defaultpass.go \
+	$(GOSRCBG)/ap-defaultpass/generate-password.go
+
 $(APPBIN)/ap-diag: \
 	$(GOSRCBG)/ap-diag/diag.go \
 	$(GOSRCBG)/ap-diag/wifi.go \
 	$(GOSRCBG)/ap_common/wificaps/wificaps.go
+
 $(APPBIN)/ap-inspect: $(GOSRCBG)/ap-inspect/inspect.go
 $(APPBIN)/ap-factory: $(GOSRCBG)/ap-factory/factory.go
 $(APPBIN)/ap-ouisearch: $(GOSRCBG)/ap-ouisearch/ouisearch.go
