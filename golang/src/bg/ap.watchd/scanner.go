@@ -35,8 +35,14 @@ import (
 )
 
 var (
+	scanID       int
 	scansPending scanQueue
-	pendingLock  sync.Mutex
+	scansRunning map[int]*ScanRequest
+
+	// The follow locks protect scansPending and scansRunning, respectively.
+	// If both locks are taken, pendingLock must be taken first.
+	pendingLock sync.Mutex
+	runningLock sync.Mutex
 
 	tcpScans = make(map[string]bool)
 	udpScans = make(map[string]bool)
@@ -50,6 +56,15 @@ var (
 	vulnListFile  string
 	vulnList      map[string]vulnDescription
 	vulnScannable bool
+)
+
+var (
+	//   -O  Enable OS detection.
+	//   -sV Probe open ports to determine service/version info.
+	//   -T4 Timing template (controls RTT timeouts and retry limits).
+	//   -v  Be verbose.
+	tcpNmapArgs = []string{"-v", "-sV", "-O", "-T4"}
+	udpNmapArgs = append(tcpNmapArgs, "-sU")
 )
 
 const (
@@ -105,6 +120,7 @@ func hostmapCreate() *hostmap {
 
 // ScanRequest is used to send tasks to scanners
 type ScanRequest struct {
+	ID       int
 	IP       string
 	Mac      string
 	Args     []string
@@ -170,9 +186,37 @@ func schedule(toRun func(), freq time.Duration, startNow bool) {
 	}()
 }
 
+func rescheduleScan(scanID int, when *time.Time) error {
+	pendingLock.Lock()
+	runningLock.Lock()
+	defer runningLock.Unlock()
+	defer pendingLock.Unlock()
+
+	if req := scansRunning[scanID]; req != nil {
+		return fmt.Errorf("scan is already running")
+	}
+
+	for i, req := range scansPending {
+		if req.ID == scanID {
+			heap.Remove(&scansPending, i)
+			if when != nil {
+				req.When = time.Now()
+				heap.Push(&scansPending, req)
+			}
+			return nil
+		}
+	}
+
+	return fmt.Errorf("no such scanID")
+}
+
+func cancelScan(scanID int) error {
+	return rescheduleScan(scanID, nil)
+}
+
 // Look through the pending queue and remove any requests for the given IP
 // address
-func cancelScan(ip string) {
+func cancelAllScans(ip string) {
 	pendingLock.Lock()
 	removed := true
 
@@ -189,12 +233,35 @@ func cancelScan(ip string) {
 		}
 	}
 	pendingLock.Unlock()
+
+	// We let an in-process scan complete, but we prevent it from being
+	// rescheduled
+	runningLock.Lock()
+	for _, req := range scansRunning {
+		if req.IP == ip {
+			req.Period = 0
+		}
+	}
+	runningLock.Unlock()
 }
 
-func scheduleScan(request *ScanRequest, delay time.Duration) {
-	if activeHosts.contains(request.IP) {
+func scheduleScan(request *ScanRequest, delay time.Duration, force bool) {
+	if request.Mac == "" {
+		request.Mac = getMacFromIP(request.IP)
+	}
+
+	if force || activeHosts.contains(request.IP) {
 		request.When = time.Now().Add(delay)
+		if *verbose {
+			log.Printf("scheduling %s %s at %s\n",
+				request.IP, request.ScanType,
+				request.When.Format(time.RFC3339))
+		}
 		pendingLock.Lock()
+		if request.ID == 0 {
+			scanID++
+			request.ID = scanID
+		}
 		heap.Push(&scansPending, request)
 		pendingLock.Unlock()
 	}
@@ -220,13 +287,82 @@ func scanner() {
 			continue
 		}
 
+		if *verbose {
+			log.Printf("starting %s %s at %s\n",
+				req.IP, req.ScanType, nowString())
+		}
+
 		propBase := fmt.Sprintf("@/clients/%s/scans/%s/", req.Mac, req.ScanType)
 
+		runningLock.Lock()
+		scansRunning[req.ID] = req
+		runningLock.Unlock()
 		config.CreateProp(propBase+"start", nowString(), nil)
-		req.Scanner(req)
-		config.CreateProp(propBase+"finish", nowString(), nil)
 
-		scheduleScan(req, req.Period)
+		req.Scanner(req)
+
+		config.CreateProp(propBase+"finish", nowString(), nil)
+		runningLock.Lock()
+		delete(scansRunning, req.ID)
+		runningLock.Unlock()
+
+		if *verbose {
+			log.Printf("finished %s %s at %s\n",
+				req.IP, req.ScanType, nowString())
+		}
+
+		if req.Period != 0 {
+			scheduleScan(req, req.Period, false)
+		}
+	}
+}
+
+func scanGetLists() ([]ScanRequest, []ScanRequest) {
+	pending := make([]ScanRequest, 0)
+	running := make([]ScanRequest, 0)
+
+	pendingLock.Lock()
+	runningLock.Lock()
+	for _, req := range scansPending {
+		pending = append(pending, *req)
+	}
+	for _, req := range scansRunning {
+		running = append(running, *req)
+	}
+	runningLock.Unlock()
+	pendingLock.Unlock()
+	return pending, running
+}
+
+func newTCPScan(mac, ip string) *ScanRequest {
+	return &ScanRequest{
+		IP:       ip,
+		Mac:      mac,
+		Args:     tcpNmapArgs,
+		ScanType: "tcp_ports",
+		Scanner:  portScan,
+		Period:   tcpFreq,
+	}
+}
+
+func newUDPScan(mac, ip string) *ScanRequest {
+	return &ScanRequest{
+		IP:       ip,
+		Mac:      mac,
+		Args:     udpNmapArgs,
+		ScanType: "udp_ports",
+		Scanner:  portScan,
+		Period:   udpFreq,
+	}
+}
+
+func newVulnScan(mac, ip string) *ScanRequest {
+	return &ScanRequest{
+		IP:       ip,
+		Mac:      mac,
+		ScanType: "vulnerability",
+		Scanner:  vulnScan,
+		Period:   vulnFreq,
 	}
 }
 
@@ -235,48 +371,15 @@ func scannerRequest(mac, ip string) {
 		return
 	}
 
-	// Scan the host at ip:
-	//   -O  Enable OS detection.
-	//   -sU UDP Scan.
-	//   -sV Probe open ports to determine service/version info.
-	//   -T4 Timing template (controls RTT timeouts and retry limits).
-	//   -v  Be verbose.
-	//
-	// XXXX eventually, set scans and scan frequencies based on
-	// type of device detected
-	tcpArgs := []string{"-v", "-sV", "-O", "-T4"}
-	udpArgs := append(tcpArgs, "-sU")
+	tcpScan := newTCPScan(mac, ip)
+	udpScan := newUDPScan(mac, ip)
+	vulnScan := newVulnScan(mac, ip)
 
-	TCPScan := ScanRequest{
-		IP:       ip,
-		Mac:      mac,
-		Args:     tcpArgs,
-		ScanType: "tcp_ports",
-		Scanner:  portScan,
-		Period:   tcpFreq,
-	}
-
-	UDPScan := ScanRequest{
-		IP:       ip,
-		Mac:      mac,
-		Args:     udpArgs,
-		ScanType: "udp_ports",
-		Scanner:  portScan,
-		Period:   udpFreq,
-	}
-
-	VulnScan := ScanRequest{
-		IP:       ip,
-		Mac:      mac,
-		ScanType: "vulnerability",
-		Scanner:  vulnScan,
-		Period:   vulnFreq,
-	}
 	activeHosts.add(ip)
 	metrics.knownHosts.Set(activeHosts.len())
-	scheduleScan(&TCPScan, 2*time.Minute)
-	scheduleScan(&UDPScan, 10*time.Minute)
-	scheduleScan(&VulnScan, 0)
+	scheduleScan(tcpScan, 2*time.Minute, false)
+	scheduleScan(udpScan, 10*time.Minute, false)
+	scheduleScan(vulnScan, 0, false)
 }
 
 func getMacIP(host *nmap.Host) (mac, ip string) {
@@ -307,6 +410,10 @@ func subnetHostScan(ring, subnet string) int {
 	}
 	clients := config.GetClients()
 	for _, host := range scanResults.Hosts {
+		if *verbose {
+			log.Printf("nmap found %v: %s\n", host.Addresses,
+				host.Status.State)
+		}
 		if host.Status.State != "up" {
 			continue
 		}
@@ -345,12 +452,18 @@ func subnetHostScan(ring, subnet string) int {
 // hostScan scans each of interfaces for new hosts and schedules regular port
 // scans on the host if one is found.
 func hostScan() {
+	if *verbose {
+		log.Printf("starting subnet scan\n")
+	}
 	start := time.Now()
 	seen := 0
 	for ring, config := range rings {
 		seen += subnetHostScan(ring, config.Subnet)
 	}
 	done := time.Now()
+	if *verbose {
+		log.Printf("completed subnet scan\n")
+	}
 	metrics.hostScans.Inc()
 	metrics.hostScanTime.Observe(done.Sub(start).Seconds())
 }
@@ -360,7 +473,7 @@ func runCmd(cmd string, args []string) error {
 
 	child := aputil.NewChild(cmd, args...)
 
-	if *verbose {
+	if *nmapVerbose {
 		child.LogOutputTo("", 0, os.Stderr)
 	}
 
@@ -597,7 +710,7 @@ func portScan(req *ScanRequest) {
 		log.Printf("Host %s is down, stopping scans", req.IP)
 		activeHosts.del(req.IP)
 		metrics.knownHosts.Set(activeHosts.len())
-		cancelScan(req.IP)
+		cancelAllScans(req.IP)
 		return
 	}
 
@@ -883,6 +996,7 @@ func scannerFini(w *watcher) {
 
 func scannerInit(w *watcher) {
 	activeHosts = hostmapCreate()
+	scansRunning = make(map[int]*ScanRequest)
 	scansPending = make(scanQueue, 0)
 	heap.Init(&scansPending)
 	vulnInit()
@@ -892,6 +1006,12 @@ func scannerInit(w *watcher) {
 	for i := 0; i < numScanners; i++ {
 		go scanner()
 	}
+
+	mapMtx.Lock()
+	for mac, ip := range macToIP {
+		scannerRequest(mac, ip)
+	}
+	mapMtx.Unlock()
 
 	schedule(hostScan, hostScanFreq, true)
 	w.running = true

@@ -308,7 +308,8 @@ APPCOMMAND_GOPKGS = \
 	bg/ap-msgping \
 	bg/ap-ouisearch \
 	bg/ap-userctl \
-	bg/ap-vuln-aggregate
+	bg/ap-vuln-aggregate \
+	bg/ap-watchctl
 
 APPDAEMON_GOPKGS = \
 	bg/ap.brokerd \
@@ -772,6 +773,7 @@ $(APPBIN)/ap.updated: $(GOSRCBG)/ap.updated/update.go
 $(APPBIN)/ap.userauthd: $(GOSRCBG)/ap.userauthd/userauthd.go \
 	$(GOSRCBG)/ap_common/certificate/certificate.go
 $(APPBIN)/ap.watchd: \
+	$(GOSRCBG)/ap.watchd/api.go \
 	$(GOSRCBG)/ap.watchd/block.go \
 	$(GOSRCBG)/ap.watchd/droplog.go \
 	$(GOSRCBG)/ap.watchd/metrics.go \
@@ -804,6 +806,7 @@ $(APPBIN)/ap-vuln-aggregate: \
 	$(GOSRCBG)/ap-vuln-aggregate/ap-inspect.go \
 	$(GOSRCBG)/ap-vuln-aggregate/nmap.go \
 	$(GOSRCBG)/ap-vuln-aggregate/aggregate.go
+$(APPBIN)/ap-watchctl:	$(GOSRCBG)/ap-watchctl/watchctl.go
 
 LOCAL_BINARIES=$(APPBINARIES:$(APPBIN)/%=$(GOBIN)/%)
 

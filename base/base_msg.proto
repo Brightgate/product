@@ -414,6 +414,45 @@ message EventListen {
 	optional EventmDNS mdns = 0xa02;
 }
 
+message WatchdScanInfo {
+	enum ScanState {
+		ACTIVE		= 1;
+		SCHEDULED	= 2;
+	}
+	enum ScanType {
+		TCP_PORTS	= 1;
+		UDP_PORTS	= 2;
+		VULN		= 3;
+	}
+
+	optional int32 id		= 0x01;
+	optional string ip		= 0x02;
+	optional string mac		= 0x03;
+	optional ScanType type		= 0x04;
+	optional ScanState state	= 0x05;
+	optional Timestamp when		= 0x06;
+}
+
+message WatchdRequest {
+	enum Cmd {
+		SCAN_LIST	= 1;
+		SCAN_ADD	= 2;
+		SCAN_DEL	= 3;
+		SCAN_RESCHED	= 4;
+	}
+
+	required Timestamp timestamp	= 0x01;
+	optional string sender		= 0x02;
+	required Cmd cmd 		= 0x03;
+	optional WatchdScanInfo scan	= 0x04;
+}
+
+message WatchdResponse {
+	required Timestamp timestamp	= 0x01;
+	optional string errmsg		= 0x02;
+	repeated WatchdScanInfo scans	= 0x03;
+}
+
 // Namer suggestion messages (0x3000 - 0x37ff)
 
 message NameRequest {

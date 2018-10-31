@@ -44,7 +44,8 @@ var (
 		"directory in which the watchd work files should be stored")
 	addr = flag.String("pport", base_def.WATCHD_PROMETHEUS_PORT,
 		"The address to listen on for Prometheus HTTP requests.")
-	verbose = flag.Bool("verbose", false, "Log nmap progress")
+	verbose     = flag.Bool("verbose", false, "verbose output")
+	nmapVerbose = flag.Bool("nmapVerbose", false, "log nmap output")
 
 	brokerd *broker.Broker
 	config  *cfgapi.Handle
@@ -388,6 +389,7 @@ func main() {
 		go w.init(w)
 	}
 
+	apiInit()
 	signalHandler()
 
 	for _, w := range watchers {
