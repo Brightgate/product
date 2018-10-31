@@ -20,10 +20,10 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
-	"time"
 
 	"bg/base_def"
 	"bg/cl_common/daemonutils"
+	"bg/common/cfgmsg"
 	"bg/common/cfgtree"
 
 	rpc "bg/cloud_rpc"
@@ -41,17 +41,23 @@ type perAPState struct {
 	cloudUUID  string         // cloud UUID
 	cachedTree *cfgtree.PTree // in-core cache of the config tree
 
-	// XXX: the per-appliance command queue will eventually live in a
-	// database - not in-core.
-	lastCmdID int64     // last ID assigned to a cmd
-	sq        *cmdQueue // submitted, but not completed ops
-	cq        *cmdQueue // completed ops
+	cmdQueue cmdQueue
 
+	// XXX This is used only once, in frontend.go, protecting just a
+	// cachedTree.Get() call.  What's the actual locking strategy here?
 	sync.Mutex
 }
 
 type configStore interface {
 	get(context.Context, string) (*cfgtree.PTree, error)
+}
+
+type cmdQueue interface {
+	submit(context.Context, *perAPState, *cfgmsg.ConfigQuery) (int64, error)
+	fetch(context.Context, *perAPState, int64, int64) ([]*cfgmsg.ConfigQuery, error)
+	status(context.Context, *perAPState, int64) (*cfgmsg.ConfigResponse, error)
+	cancel(context.Context, *perAPState, int64) (*cfgmsg.ConfigResponse, error)
+	complete(context.Context, *perAPState, *cfgmsg.ConfigResponse) error
 }
 
 var environ struct {
@@ -91,6 +97,22 @@ func refreshAPState(s *perAPState, jsonTree string) {
 	}
 }
 
+func newAPState(cloudUUID string, tree *cfgtree.PTree) (*perAPState, error) {
+	var queue cmdQueue
+	if environ.PostgresConnection != "" {
+		queue, _ = newDBCmdQueue(environ.PostgresConnection)
+	} else {
+		queue = newMemCmdQueue(cloudUUID, *cqMax)
+	}
+
+	s := &perAPState{
+		cloudUUID:  cloudUUID,
+		cachedTree: tree,
+		cmdQueue:   queue,
+	}
+	return s, nil
+}
+
 // XXX: this is an interim function.  When we get an update from an unknown
 // appliance, we construct a new in-core cache for it.  Eventually this probably
 // needs to be instantiated as part of the device provisioning process.
@@ -103,18 +125,13 @@ func initAPState(cloudUUID string) (*perAPState, error) {
 		return s, nil
 	}
 
-	s = &perAPState{
-		cloudUUID: cloudUUID,
-		sq:        newCmdQueue(cloudUUID, 0),
-		cq:        newCmdQueue(cloudUUID, *cqMax),
-		lastCmdID: time.Now().Unix(),
-	}
+	s, _ = newAPState(cloudUUID, nil)
 	state[cloudUUID] = s
 
 	return s, nil
 }
 
-func getAPState(cloudUUID string) (*perAPState, error) {
+func getAPState(ctx context.Context, cloudUUID string) (*perAPState, error) {
 	stateLock.Lock()
 	defer stateLock.Unlock()
 
@@ -127,15 +144,9 @@ func getAPState(cloudUUID string) (*perAPState, error) {
 		return s, nil
 	}
 
-	tree, err := store.get(context.Background(), cloudUUID)
+	tree, err := store.get(ctx, cloudUUID)
 	if err == nil {
-		s = &perAPState{
-			cloudUUID:  cloudUUID,
-			cachedTree: tree,
-			sq:         newCmdQueue(cloudUUID, 0),
-			cq:         newCmdQueue(cloudUUID, *cqMax),
-			lastCmdID:  time.Now().Unix(),
-		}
+		s, _ = newAPState(cloudUUID, tree)
 		state[cloudUUID] = s
 		// XXX: currently we assume that any config tree we load from
 		// cloud storage has no real appliance connected to it, so we
@@ -143,7 +154,7 @@ func getAPState(cloudUUID string) (*perAPState, error) {
 		// we start persisting real config trees to the database, we'll
 		// need some way to distinguish between real configs and
 		// emulated http-dev configs.
-		go emulateAppliance(s)
+		go emulateAppliance(context.Background(), s)
 	}
 
 	return s, err

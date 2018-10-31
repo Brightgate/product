@@ -79,20 +79,9 @@ func (db *dbStore) get(ctx context.Context, uuidStr string) (*cfgtree.PTree, err
 }
 
 func (db *dbStore) connect() error {
-	handle, err := appliancedb.Connect(db.connInfo)
-	if err != nil {
-		slog.Warnf("failed to connect to appliance DB: %v", err)
-		return err
-	}
-
-	err = handle.Ping()
-	if err != nil {
-		slog.Errorf("failed to ping DB: %s", err)
-		return err
-	}
-
-	db.handle = handle
-	return nil
+	err := dbConnect(db.connInfo)
+	db.handle = cachedDBHandle
+	return err
 }
 
 func newDBStore(connInfo string) (configStore, error) {
@@ -103,7 +92,7 @@ func newDBStore(connInfo string) (configStore, error) {
 		return nil, err
 	}
 
-	slog.Infof("Connected to appliance DB")
+	slog.Infof("Connected to appliance DB for config store")
 
 	var store configStore = &dbs
 	return store, nil

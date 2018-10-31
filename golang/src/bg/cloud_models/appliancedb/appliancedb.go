@@ -40,6 +40,14 @@ type DataStore interface {
 	UpsertCloudStorage(context.Context, uuid.UUID, *ApplianceCloudStorage) error
 	ConfigStoreByUUID(context.Context, uuid.UUID) (*ApplianceConfigStore, error)
 	UpsertConfigStore(context.Context, uuid.UUID, *ApplianceConfigStore) error
+
+	CommandSearch(context.Context, int64) (*ApplianceCommand, error)
+	CommandSubmit(context.Context, uuid.UUID, *ApplianceCommand) error
+	CommandFetch(context.Context, uuid.UUID, int64, int64) ([]*ApplianceCommand, error)
+	CommandCancel(context.Context, int64) (*ApplianceCommand, *ApplianceCommand, error)
+	CommandComplete(context.Context, int64, []byte) (*ApplianceCommand, *ApplianceCommand, error)
+	CommandDelete(context.Context, uuid.UUID, int64) (int64, error)
+
 	Ping() error
 	Close() error
 }
@@ -91,6 +99,19 @@ type ApplianceConfigStore struct {
 	RootHash  []byte    `json:"roothash"`
 	TimeStamp time.Time `json:"timestamp"`
 	Config    []byte    `json:"config"`
+}
+
+// ApplianceCommand represents an entry in the persisted command queue.
+type ApplianceCommand struct {
+	UUID         uuid.UUID `json:"cloud_uuid"`
+	ID           int64     `json:"id"`
+	EnqueuedTime time.Time `json:"enq_ts"`
+	SentTime     null.Time `json:"sent_ts"`
+	NResent      null.Int  `json:"resent_n"`
+	DoneTime     null.Time `json:"done_ts"`
+	State        string    `json:"state"`
+	Query        []byte    `json:"config_query"`
+	Response     []byte    `json:"config_response"`
 }
 
 // NotFoundError is returned when the requested resource is not present in the
@@ -148,13 +169,18 @@ func (db *ApplianceDB) LoadSchema(ctx context.Context, schemaDir string) error {
 	}
 
 	for _, file := range files {
-		bytes, err := ioutil.ReadFile(filepath.Join(schemaDir, file.Name()))
+		// Mostly to not load vim's .swp files.
+		if !strings.HasSuffix(file.Name(), ".sql") {
+			continue
+		}
+		path := filepath.Join(schemaDir, file.Name())
+		bytes, err := ioutil.ReadFile(path)
 		if err != nil {
-			return errors.Wrap(err, "failed to read sql")
+			return errors.Wrapf(err, "failed to read sql in file %s", path)
 		}
 		_, err = db.ExecContext(ctx, string(bytes))
 		if err != nil {
-			return errors.Wrap(err, "failed to exec sql")
+			return errors.Wrapf(err, "failed to exec sql in file %s", path)
 		}
 	}
 	return nil
@@ -240,7 +266,7 @@ func (db *ApplianceDB) ApplianceIDByClientID(ctx context.Context, clientID strin
 		"SELECT "+allIDColumnsSQL+` FROM appliance_id_map WHERE
 		    concat_ws('/',
 			'projects', gcp_project,
-		        'locations', gcp_region,
+			'locations', gcp_region,
 			'registries', appliance_reg,
 			'appliances', appliance_reg_id) = $1`, clientID)
 	err := doIDScan("ApplianceIDByClientID", clientID, row, &id)
@@ -308,7 +334,14 @@ func (db *ApplianceDB) ConfigStoreByUUID(ctx context.Context,
 
 	row := db.QueryRowContext(ctx,
 		"SELECT root_hash, ts, config FROM appliance_config_store WHERE cloud_uuid=$1", u)
-	err := row.Scan(&cfg.RootHash, &cfg.TimeStamp, &cfg.Config)
+	var hash, config []byte
+	err := row.Scan(&hash, &cfg.TimeStamp, &config)
+	// The memory for reference types is owned by the driver, so we have to
+	// copy the data explicitly: https://golang.org/pkg/database/sql/#Scanner
+	cfg.RootHash = make([]byte, len(hash))
+	copy(cfg.RootHash, hash)
+	cfg.Config = make([]byte, len(config))
+	copy(cfg.Config, config)
 	switch err {
 	case sql.ErrNoRows:
 		return nil, NotFoundError{fmt.Sprintf(
@@ -375,6 +408,201 @@ func (db *ApplianceDB) UpsertCloudStorage(ctx context.Context,
 		stor.Bucket,
 		stor.Provider)
 	return err
+}
+
+// CommandSearch returns the ApplianceCommand, if any, in the command queue for
+// the given command ID.
+func (db *ApplianceDB) CommandSearch(ctx context.Context, cmdID int64) (*ApplianceCommand, error) {
+	row := db.QueryRowContext(ctx,
+		`SELECT * FROM appliance_commands WHERE id=$1`, cmdID)
+	var cmd ApplianceCommand
+	var query, response []byte
+	err := row.Scan(&cmd.ID, &cmd.UUID, &cmd.EnqueuedTime, &cmd.SentTime,
+		&cmd.NResent, &cmd.DoneTime, &cmd.State, &query, &response)
+	switch err {
+	case sql.ErrNoRows:
+		return nil, NotFoundError{"command not found"}
+	case nil:
+		cmd.Query, cmd.Response = copyQueryResponse(query, response)
+		return &cmd, nil
+	default:
+		panic(err)
+	}
+}
+
+// CommandSubmit adds a command to the command queue, and returns its ID.
+func (db *ApplianceDB) CommandSubmit(ctx context.Context, u uuid.UUID, cmd *ApplianceCommand) error {
+	rows, err := db.QueryContext(ctx,
+		`INSERT INTO appliance_commands
+		 (cloud_uuid, enq_ts, config_query)
+		 VALUES ($1, $2, $3)
+		 RETURNING id`,
+		u,
+		cmd.EnqueuedTime,
+		cmd.Query)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err = rows.Err(); err != nil {
+			return err
+		}
+		// This is probably impossible.
+		return fmt.Errorf("INSERT INTO appliance_commands didn't insert?")
+	}
+	var id int64
+	if err = rows.Scan(&id); err != nil {
+		return err
+	}
+	cmd.ID = id
+	if rows.Next() {
+		// This should be impossible.
+		return fmt.Errorf("EnqueueCommand inserted more than one row?")
+	}
+	return nil
+}
+
+func copyQueryResponse(query, response []byte) ([]byte, []byte) {
+	query2 := make([]byte, len(query))
+	copy(query2, query)
+	response2 := make([]byte, len(response))
+	copy(response2, response)
+	return query2, response2
+}
+
+// CommandFetch returns from the command queue up to max commands, sorted by ID,
+// for the appliance referenced by the UUID u, with a minimum ID of start.
+func (db *ApplianceDB) CommandFetch(ctx context.Context, u uuid.UUID, start, max int64) ([]*ApplianceCommand, error) {
+	cmds := make([]*ApplianceCommand, 0)
+	// In order that two concurrent fetch requests don't grab the same
+	// command, we need to use SKIP LOCKED per the advice in
+	// https://blog.2ndquadrant.com/what-is-select-skip-locked-for-in-postgresql-9-5/
+	// https://dba.stackexchange.com/questions/69471/postgres-update-limit-1
+	// We can't use a correlated subquery as suggested in the latter because
+	// we're not always limiting the result of the subquery to one row.  We
+	// can't use a plain subquery because the LIMIT might not be honored.
+	rows, err := db.QueryContext(ctx,
+		`WITH old AS (
+		     SELECT id, sent_ts, state
+		     FROM appliance_commands
+		     WHERE cloud_uuid = $1 AND
+		           state IN ('ENQD', 'WORK') AND
+		           id > $2
+		     ORDER BY id
+		     LIMIT $3
+		     FOR UPDATE SKIP LOCKED
+		 )
+		 UPDATE appliance_commands new
+		 SET state = 'WORK',
+		     sent_ts = now(),
+		     resent_n = CASE
+		         WHEN old.state = 'WORK' THEN COALESCE(resent_n, 0) + 1
+		     END
+		 FROM old
+		 WHERE new.id = old.id
+		 RETURNING new.id, new.enq_ts, new.sent_ts, new.resent_n,
+		           new.done_ts, new.state, new.config_query,
+		           new.config_response`,
+		u, start, max)
+	if err != nil {
+		return cmds, err
+	}
+	defer rows.Close()
+	var query, response []byte
+	for rows.Next() {
+		cmd := &ApplianceCommand{}
+		if err = rows.Scan(&cmd.ID, &cmd.EnqueuedTime, &cmd.SentTime,
+			&cmd.NResent, &cmd.DoneTime, &cmd.State, &query,
+			&response); err != nil {
+			// We might be returning a partial result here, but
+			// we can't assume that further calls to Scan() might
+			// succeed, and don't return non-contiguous commands.
+			return cmds, err
+		}
+		cmd.Query, cmd.Response = copyQueryResponse(query, response)
+		cmds = append(cmds, cmd)
+	}
+	err = rows.Err()
+	// This might also be a partial result.
+	return cmds, err
+}
+
+// commandFinish moves the command cmdID to a "done" state -- either done or
+// canceled -- and returns both the old and new commands.
+func (db *ApplianceDB) commandFinish(ctx context.Context, cmdID int64, resp []byte) (*ApplianceCommand, *ApplianceCommand, error) {
+	// We need to move the state to DONE.  In addition, we need to retrieve
+	// the old state and return that so the caller can understand what
+	// transition (if any) actually happened.  This operation is slightly
+	// different from completion because config_response remains empty.
+	//
+	// https://stackoverflow.com/questions/11532550/atomic-update-select-in-postgres
+	// https://stackoverflow.com/questions/7923237/return-pre-update-column-values-using-sql-only-postgresql-version
+	state := "DONE"
+	if resp == nil {
+		state = "CNCL"
+	}
+	row := db.QueryRowContext(ctx,
+		`UPDATE appliance_commands new
+		 SET state = $2, done_ts = now(), config_response = $3
+		 FROM (SELECT * FROM appliance_commands WHERE id=$1 FOR UPDATE) old
+		 WHERE new.id = old.id
+		 RETURNING old.*, new.*`, cmdID, state, resp)
+	var newCmd, oldCmd ApplianceCommand
+	var oquery, nquery, oresponse, nresponse []byte
+	if err := row.Scan(&oldCmd.ID, &oldCmd.UUID, &oldCmd.EnqueuedTime,
+		&oldCmd.SentTime, &oldCmd.NResent, &oldCmd.DoneTime, &oldCmd.State,
+		&oquery, &oresponse, &newCmd.ID, &newCmd.UUID,
+		&newCmd.EnqueuedTime, &newCmd.SentTime, &newCmd.NResent,
+		&newCmd.DoneTime, &newCmd.State, &nquery, &nresponse); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil, NotFoundError{fmt.Sprintf("Could not find command ID %d", cmdID)}
+		}
+		return nil, nil, err
+	}
+	oldCmd.Query, oldCmd.Response = copyQueryResponse(oquery, oresponse)
+	newCmd.Query, newCmd.Response = copyQueryResponse(nquery, nresponse)
+	return &newCmd, &oldCmd, nil
+}
+
+// CommandCancel cancels the command cmdID, returning both the old and new
+// commands.
+func (db *ApplianceDB) CommandCancel(ctx context.Context, cmdID int64) (*ApplianceCommand, *ApplianceCommand, error) {
+	return db.commandFinish(ctx, cmdID, nil)
+}
+
+// CommandComplete marks the command cmdID done, setting the response column and
+// returning both the old and new commands.
+func (db *ApplianceDB) CommandComplete(ctx context.Context, cmdID int64, resp []byte) (*ApplianceCommand, *ApplianceCommand, error) {
+	return db.commandFinish(ctx, cmdID, resp)
+}
+
+// CommandDelete removes completed and canceled commands from an appliance's
+// queue, keeping only the `keep` newest.  It returns the number of commands
+// deleted.
+func (db *ApplianceDB) CommandDelete(ctx context.Context, u uuid.UUID, keep int64) (int64, error) {
+	// https://stackoverflow.com/questions/578867/sql-query-delete-all-records-from-the-table-except-latest-n/8303440
+	// https://stackoverflow.com/questions/2251567/how-to-get-the-number-of-deleted-rows-in-postgresql/22546994
+	row := db.QueryRowContext(ctx,
+		`WITH deleted AS (
+		     DELETE FROM appliance_commands
+		     WHERE id <= (
+		         SELECT id
+		         FROM (
+		             SELECT id
+		             FROM appliance_commands
+		             WHERE cloud_uuid = $1 AND state IN ('DONE', 'CNCL')
+		             ORDER BY id DESC
+		             LIMIT 1 OFFSET $2
+		         ) foo -- yes, this is necessary
+		     )
+		     RETURNING id
+		 )
+		 SELECT count(id)
+		 FROM deleted`, u, keep)
+	var numDeleted int64
+	err := row.Scan(&numDeleted)
+	return numDeleted, err
 }
 
 // HeartbeatIngest represents a row in the heartbeat_ingest table.  In this

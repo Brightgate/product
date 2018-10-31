@@ -28,3 +28,6 @@ INSERT INTO appliance_cloudstorage (cloud_uuid, bucket, provider) VALUES
 
 INSERT INTO appliance_config_store (cloud_uuid, root_hash, ts, config) VALUES
     ('00000001-0001-0001-0001-000000000001'::uuid, '\xDEADBEEF', '2017-11-21T01:03:59+00:00', '\xDEADBEEF');
+
+INSERT INTO appliance_commands (cloud_uuid, enq_ts, config_query) VALUES
+    ('00000001-0001-0001-0001-000000000001'::uuid, '2017-11-21T01:03:59+00:00', '\xDEADBEEF');

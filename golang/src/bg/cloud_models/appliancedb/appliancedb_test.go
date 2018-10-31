@@ -276,7 +276,7 @@ func testUnittestData(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 	// Test "appliance with config store" case
 	cfg, err := ds.ConfigStoreByUUID(ctx, testUUID)
 	assert.NoError(err)
-	assert.Equal(cfg.RootHash, []byte{0xde, 0xad, 0xbe, 0xef})
+	assert.Equal([]byte{0xde, 0xad, 0xbe, 0xef}, cfg.RootHash)
 
 	// Test "appliance with no config store" case
 	cfg, err = ds.ConfigStoreByUUID(ctx, testUUID2)
@@ -312,7 +312,7 @@ func testConfigStore(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	// Make sure we can pull it back out again.
 	cfg, err := ds.ConfigStoreByUUID(ctx, testUUID)
 	assert.NoError(err)
-	assert.Equal(cfg.RootHash, []byte{0xca, 0xfe, 0xbe, 0xef})
+	assert.Equal([]byte{0xca, 0xfe, 0xbe, 0xef}, cfg.RootHash)
 
 	// Test that changing the config succeeds: change the config and upsert,
 	// then test pulling it out again.
@@ -322,7 +322,142 @@ func testConfigStore(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 
 	cfg, err = ds.ConfigStoreByUUID(ctx, testUUID)
 	assert.NoError(err)
-	assert.Equal(cfg.Config, []byte{0xfe, 0xed, 0xfa, 0xce})
+	assert.Equal([]byte{0xfe, 0xed, 0xfa, 0xce}, cfg.Config)
+}
+
+func testCommandQueue(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
+	ctx := context.Background()
+	assert := require.New(t)
+
+	a := &ApplianceID{
+		CloudUUID: testUUID,
+	}
+	err := ds.UpsertApplianceID(ctx, a)
+	assert.NoError(err, "expected Upsert to succeed")
+
+	makeCmd := func(query string) (*ApplianceCommand, time.Time) {
+		enqTime := time.Now()
+		cmd := &ApplianceCommand{
+			EnqueuedTime: enqTime,
+			Query:        []byte(query),
+		}
+		return cmd, enqTime
+	}
+	makeManyCmds := func(query string, count int) []int64 {
+		cmdIDs := make([]int64, count)
+		for i := 0; i < count; i++ {
+			cmd, _ := makeCmd(fmt.Sprintf("%s %d", query, i))
+			err := ds.CommandSubmit(ctx, testUUID, cmd)
+			assert.NoError(err)
+			cmdIDs[i] = cmd.ID
+		}
+		return cmdIDs
+	}
+
+	cmd, enqTime := makeCmd("Ask Me Anything")
+	// Make sure we can submit a command and have an ID assigned
+	err = ds.CommandSubmit(ctx, testUUID, cmd)
+	assert.NoError(err)
+	assert.Equal(int64(1), cmd.ID)
+
+	// Make sure we get a NotFoundError when looking up a command that was
+	// never submitted
+	cmd, err = ds.CommandSearch(ctx, 99)
+	assert.Error(err)
+	assert.IsType(NotFoundError{}, err)
+	assert.Nil(cmd)
+
+	// Make sure that we get back what we put in.
+	cmd, err = ds.CommandSearch(ctx, 1)
+	assert.NoError(err)
+	assert.Equal(int64(1), cmd.ID)
+	// Some part of the round-trip is rounding the times to the nearest
+	// microsecond.
+	assert.WithinDuration(enqTime, cmd.EnqueuedTime, time.Microsecond)
+	assert.Equal("ENQD", cmd.State)
+	assert.Equal([]byte("Ask Me Anything"), cmd.Query)
+
+	// Make sure that canceling a command returns the old state and changes
+	// the state to "CNCL".
+	newCmd, oldCmd, err := ds.CommandCancel(ctx, 1)
+	assert.NoError(err)
+	assert.Equal("ENQD", oldCmd.State)
+	assert.Equal("CNCL", newCmd.State)
+
+	// Make sure that canceling a canceled command is a no-op.
+	newCmd, oldCmd, err = ds.CommandCancel(ctx, 1)
+	assert.NoError(err)
+	assert.Equal("CNCL", oldCmd.State)
+
+	// Make sure that canceling a non-existent command gives us a
+	// NotFoundError
+	_, _, err = ds.CommandCancel(ctx, 12345)
+	assert.Error(err)
+	assert.IsType(NotFoundError{}, err)
+
+	// Queue up a new command
+	cmd, enqTime = makeCmd("What Me Worry")
+	err = ds.CommandSubmit(ctx, testUUID, cmd)
+	assert.NoError(err)
+	assert.Equal(int64(2), cmd.ID)
+
+	// Make sure fetching something for testUUID2 doesn't return anything.
+	cmds, err := ds.CommandFetch(ctx, testUUID2, 1, 1)
+	assert.NoError(err)
+	assert.Len(cmds, 0)
+
+	// Make sure that fetching the command gets the one we expect, that it
+	// has been moved to the correct state, and that the number-of-refetches
+	// counter has not been touched.
+	cmds, err = ds.CommandFetch(ctx, testUUID, 1, 1)
+	assert.NoError(err)
+	assert.Len(cmds, 1)
+	cmd = cmds[0]
+	assert.Equal(int64(2), cmd.ID)
+	assert.Equal("WORK", cmd.State)
+	assert.Nil(cmd.NResent.Ptr())
+
+	// Do it again, this time making sure that the resent counter has the
+	// correct non-null value.
+	cmds, err = ds.CommandFetch(ctx, testUUID, 1, 1)
+	assert.NoError(err)
+	assert.Len(cmds, 1)
+	cmd = cmds[0]
+	assert.Equal(int64(2), cmd.ID)
+	assert.Equal("WORK", cmd.State)
+	assert.Equal(null.IntFrom(1), cmd.NResent)
+
+	// Complete the command.
+	newCmd, oldCmd, err = ds.CommandComplete(ctx, 2, []byte{})
+	assert.NoError(err)
+	assert.Equal("WORK", oldCmd.State)
+	assert.Nil(oldCmd.DoneTime.Ptr())
+	assert.Equal("DONE", newCmd.State)
+	assert.NotNil(newCmd.DoneTime.Ptr())
+
+	// Delete commands
+	// Specify keep == number of commands left.
+	deleted, err := ds.CommandDelete(ctx, testUUID, 2)
+	assert.NoError(err)
+	assert.Equal(int64(0), deleted)
+	// Specify keep > number of commands left.
+	deleted, err = ds.CommandDelete(ctx, testUUID, 5)
+	assert.NoError(err)
+	assert.Equal(int64(0), deleted)
+	// Specify keep == 0.
+	deleted, err = ds.CommandDelete(ctx, testUUID, 0)
+	assert.NoError(err)
+	assert.Equal(int64(2), deleted)
+	// Make some more to play with.
+	cmdIDs := makeManyCmds("Whatcha Talkin' About", 20)
+	// Cancel half
+	for i := 0; i < 10; i++ {
+		_, _, err = ds.CommandCancel(ctx, cmdIDs[i])
+	}
+	// Keep 5; this shouldn't delete still-queued commands.
+	deleted, err = ds.CommandDelete(ctx, testUUID, 5)
+	assert.NoError(err)
+	assert.Equal(int64(5), deleted)
 }
 
 // make a template database, loaded with the schema.  Subsequently
@@ -367,6 +502,7 @@ func TestDatabaseModel(t *testing.T) {
 		{"testCloudStorage", testCloudStorage},
 		{"testUnittestData", testUnittestData},
 		{"testConfigStore", testConfigStore},
+		{"testCommandQueue", testCommandQueue},
 	}
 
 	for _, tc := range testCases {

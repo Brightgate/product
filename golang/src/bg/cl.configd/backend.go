@@ -28,7 +28,7 @@ type backEndServer struct {
 
 // Issue a "GET @/" to the appliance, which we will use to completely refresh
 // our cached copy of the tree
-func refreshConfig(ap *perAPState, uuid string) {
+func refreshConfig(ctx context.Context, ap *perAPState, uuid string) {
 	slog.Infof("requesting a fresh tree from %s", uuid)
 
 	getOp := []cfgapi.PropertyOp{
@@ -41,7 +41,8 @@ func refreshConfig(ap *perAPState, uuid string) {
 		return
 	}
 
-	cmdSubmit(ap, q)
+	_, err = ap.cmdQueue.submit(ctx, ap, q)
+	slog.Warnf("failed to submit GET(@/) for %s: %v", uuid, err)
 }
 
 // Respond to a Hello() from an appliance.
@@ -61,14 +62,14 @@ func (s *backEndServer) Hello(ctx context.Context,
 		slog.Infof("Hello() from %s", uuid)
 		// XXX: as a side effect of the Hello(), we should compare
 		// cloud and appliance hash values.
-		ap, err := getAPState(uuid)
+		ap, err := getAPState(ctx, uuid)
 		if err != nil {
 			// XXX: Currently we respond to an unknown appliance
 			// appearing by uploading its state to the cloud.
 			// Eventually this should be an error that results in
 			// an event being sent.
 			ap, err = initAPState(uuid)
-			refreshConfig(ap, uuid)
+			refreshConfig(ctx, ap, uuid)
 		}
 		if err != nil {
 			rval.Response = rpc.CfgBackEndResponse_ERROR
@@ -141,7 +142,7 @@ func (s *backEndServer) Update(ctx context.Context,
 	req *rpc.CfgBackEndUpdate) (*rpc.CfgBackEndResponse, error) {
 	rval := &rpc.CfgBackEndResponse{}
 
-	ap, err := getAPState(req.GetCloudUuid())
+	ap, err := getAPState(ctx, req.GetCloudUuid())
 	if err != nil {
 		rval.Response = rpc.CfgBackEndResponse_ERROR
 		rval.Errmsg = fmt.Sprintf("%v", err)
@@ -149,7 +150,7 @@ func (s *backEndServer) Update(ctx context.Context,
 		rval.Response = rpc.CfgBackEndResponse_OK
 		for _, u := range req.Updates {
 			if err = update(ap, u); err != nil {
-				refreshConfig(ap, req.GetCloudUuid())
+				refreshConfig(ctx, ap, req.GetCloudUuid())
 				break
 			}
 		}
@@ -170,13 +171,22 @@ func (s *backEndServer) FetchCmds(ctx context.Context,
 
 	rval := &rpc.CfgBackEndResponse{}
 
-	ap, err := getAPState(req.GetCloudUuid())
+	ap, err := getAPState(ctx, req.GetCloudUuid())
 	if err != nil {
 		rval.Response = rpc.CfgBackEndResponse_ERROR
 		rval.Errmsg = fmt.Sprintf("%v", err)
 	} else {
-		cmds := cmdFetch(ap, int64(req.LastCmdID), int64(req.MaxCmds))
-		rval.Response = rpc.CfgBackEndResponse_OK
+		cmds, err := ap.cmdQueue.fetch(ctx, ap, int64(req.LastCmdID), int64(req.MaxCmds))
+		// XXX We return OK even with an error as long as we have some
+		// commands to fetch, in order to allow the client to make some
+		// forward progress.  For it to succeed after that, we will need
+		// to return the erroring command, and possibly use a new
+		// response code.
+		if err != nil && len(cmds) == 0 {
+			rval.Response = rpc.CfgBackEndResponse_ERROR
+		} else {
+			rval.Response = rpc.CfgBackEndResponse_OK
+		}
 		rval.Cmds = cmds
 	}
 
@@ -194,13 +204,22 @@ func (s *backEndServer) CompleteCmds(ctx context.Context,
 		Response: rpc.CfgBackEndResponse_OK,
 	}
 
-	ap, err := getAPState(req.GetCloudUuid())
+	ap, err := getAPState(ctx, req.GetCloudUuid())
 	if err != nil {
 		rval.Response = rpc.CfgBackEndResponse_ERROR
 		rval.Errmsg = fmt.Sprintf("%v", err)
 	} else {
 		for _, comp := range req.Completions {
-			cmdComplete(ap, comp)
+			// Complete all the commands we can, but return as soon
+			// as we get an error.  XXX Ideally we would return a
+			// list of commands that successfully completed as well
+			// as a list of commands that didn't along with the
+			// errors.
+			err = ap.cmdQueue.complete(ctx, ap, comp)
+			if err != nil && rval.Errmsg == "" {
+				rval.Response = rpc.CfgBackEndResponse_OK
+				rval.Errmsg = err.Error()
+			}
 		}
 	}
 	return rval, nil

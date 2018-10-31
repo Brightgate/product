@@ -55,6 +55,14 @@ func getParams(op *cfgmsg.ConfigOp) (string, string, *time.Time, error) {
 	return prop, val, expires, err
 }
 
+func makeFailedResponse(err error) *cfgmsg.ConfigResponse {
+	return &cfgmsg.ConfigResponse{
+		Timestamp: ptypes.TimestampNow(),
+		Errmsg:    fmt.Sprintf("%v", err),
+		Response:  cfgmsg.ConfigResponse_FAILED,
+	}
+}
+
 // Accept a command from a front-end client and do some basic sanity checking.
 // If we can handle the command from our in-core state, do so and return the
 // result to the caller.  Otherwise, push the command onto the pending command
@@ -62,13 +70,13 @@ func getParams(op *cfgmsg.ConfigOp) (string, string, *time.Time, error) {
 func (s *frontEndServer) Submit(ctx context.Context,
 	query *cfgmsg.ConfigQuery) (rval *cfgmsg.ConfigResponse, rerr error) {
 
-	slog.Debugf("Submit(%s:%d)", query.CloudUuid, query.CmdID)
+	slog.Debugw("Frontend submit", "query", query)
 	rval = &cfgmsg.ConfigResponse{
 		Timestamp: ptypes.TimestampNow(),
 		Response:  cfgmsg.ConfigResponse_FAILED,
 	}
 
-	state, err := getAPState(query.CloudUuid)
+	state, err := getAPState(ctx, query.CloudUuid)
 	if err != nil {
 		rval.Errmsg = fmt.Sprintf("%v", err)
 		return
@@ -140,8 +148,12 @@ func (s *frontEndServer) Submit(ctx context.Context,
 	} else {
 		// strip out the cloud UUID before sending it to the client
 		query.CloudUuid = ""
-		rval.CmdID = cmdSubmit(state, query)
-		rval.Response = cfgmsg.ConfigResponse_QUEUED
+		rval.CmdID, err = state.cmdQueue.submit(ctx, state, query)
+		if err != nil {
+			rval = makeFailedResponse(err)
+		} else {
+			rval.Response = cfgmsg.ConfigResponse_QUEUED
+		}
 	}
 
 	return
@@ -153,15 +165,14 @@ func (s *frontEndServer) Cancel(ctx context.Context,
 
 	var rval *cfgmsg.ConfigResponse
 
-	state, err := getAPState(cmd.CloudUuid)
+	state, err := getAPState(ctx, cmd.CloudUuid)
 	if err != nil {
-		rval = &cfgmsg.ConfigResponse{
-			Timestamp: ptypes.TimestampNow(),
-			Errmsg:    fmt.Sprintf("%v", err),
-			Response:  cfgmsg.ConfigResponse_FAILED,
-		}
+		rval = makeFailedResponse(err)
 	} else {
-		rval = cmdCancel(state, cmd.CmdID)
+		rval, err = state.cmdQueue.cancel(ctx, state, cmd.CmdID)
+		if err != nil {
+			rval = makeFailedResponse(err)
+		}
 	}
 
 	return rval, nil
@@ -173,15 +184,14 @@ func (s *frontEndServer) Status(ctx context.Context,
 
 	var rval *cfgmsg.ConfigResponse
 
-	state, err := getAPState(cmd.CloudUuid)
+	state, err := getAPState(ctx, cmd.CloudUuid)
 	if err != nil {
-		rval = &cfgmsg.ConfigResponse{
-			Timestamp: ptypes.TimestampNow(),
-			Errmsg:    fmt.Sprintf("%v", err),
-			Response:  cfgmsg.ConfigResponse_FAILED,
-		}
+		rval = makeFailedResponse(err)
 	} else {
-		rval = cmdStatus(state, cmd.CmdID)
+		rval, err = state.cmdQueue.status(ctx, state, cmd.CmdID)
+		if err != nil {
+			rval = makeFailedResponse(err)
+		}
 	}
 
 	return rval, nil

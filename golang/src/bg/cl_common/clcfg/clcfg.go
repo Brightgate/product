@@ -140,6 +140,9 @@ func (c *cmdHdl) Status(ctx context.Context) (string, error) {
 			msg = fmt.Sprintf("%v", rerr)
 		} else {
 			c.update(r)
+			if c.err != nil {
+				msg = c.err.Error()
+			}
 		}
 	} else {
 		msg = c.result
@@ -148,7 +151,7 @@ func (c *cmdHdl) Status(ctx context.Context) (string, error) {
 
 	if c.cfg.verbose {
 		if err == nil {
-			log.Printf("ok\n")
+			log.Printf("ok: %s\n", msg)
 		} else {
 			log.Printf("failed: %v\n", err)
 		}

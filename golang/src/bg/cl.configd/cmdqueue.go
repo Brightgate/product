@@ -12,8 +12,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
+	"sync"
 	"time"
 
 	"bg/common/cfgmsg"
@@ -36,7 +38,7 @@ type cmdState struct {
 
 // A queue of cmdState structures.  We maintain both a proper queue, to enforce
 // FIFO ordering, and a cmdID-indexed map, to enable fast lookups.
-type cmdQueue struct {
+type simpleQueue struct {
 	cloudUUID string
 	queue     []*cmdState
 	pool      map[int64]*cmdState
@@ -48,8 +50,8 @@ func (c *cmdState) String() string {
 }
 
 // Instantiate a new command queue
-func newCmdQueue(cloudUUID string, maxLen int) *cmdQueue {
-	q := cmdQueue{
+func newSimpleQueue(cloudUUID string, maxLen int) *simpleQueue {
+	q := simpleQueue{
 		cloudUUID: cloudUUID,
 		queue:     make([]*cmdState, 0),
 		pool:      make(map[int64]*cmdState),
@@ -61,7 +63,7 @@ func newCmdQueue(cloudUUID string, maxLen int) *cmdQueue {
 // Remove one item from a queue and its associated pool.  Note: this is not a
 // standard "pull the next item from the head of the queue" operation.  The item
 // to be removed may be anywhere in the queue and is identified by cmdID.
-func (q *cmdQueue) dequeue(cmdID int64) int {
+func (q *simpleQueue) dequeue(cmdID int64) int {
 	for i, cmd := range q.queue {
 		if cmd.cmdID == cmdID {
 			delete(q.pool, cmdID)
@@ -74,7 +76,7 @@ func (q *cmdQueue) dequeue(cmdID int64) int {
 }
 
 // Add one item to the tail of a queue, and add it to the map as well.
-func (q *cmdQueue) enqueue(cmd *cmdState) {
+func (q *simpleQueue) enqueue(cmd *cmdState) {
 	q.queue = append(q.queue, cmd)
 	q.pool[cmd.cmdID] = cmd
 
@@ -84,12 +86,31 @@ func (q *cmdQueue) enqueue(cmd *cmdState) {
 	}
 }
 
+type memCmdQueue struct {
+	lastCmdID int64        // last ID assigned to a cmd
+	sq        *simpleQueue // submitted, but not completed ops
+	cq        *simpleQueue // completed ops
+
+	sync.Mutex
+}
+
+func newMemCmdQueue(uuid string, cqMax int) *memCmdQueue {
+	memq := &memCmdQueue{
+		lastCmdID: time.Now().Unix(),
+		sq:        newSimpleQueue(uuid, 0),
+		cq:        newSimpleQueue(uuid, cqMax),
+	}
+	return memq
+}
+
 // Look for a command in both the submission and completion queues.
-func cmdSearch(s *perAPState, cmdID int64) *cmdState {
-	if cmd, ok := s.sq.pool[cmdID]; ok {
+func (memq *memCmdQueue) search(ctx context.Context, cmdID int64) *cmdState {
+	// There's no need to take the lock because the only time we're ever
+	// called is by other memCmdQueue methods which have already taken it.
+	if cmd, ok := memq.sq.pool[cmdID]; ok {
 		return cmd
 	}
-	if cmd, ok := s.cq.pool[cmdID]; ok {
+	if cmd, ok := memq.cq.pool[cmdID]; ok {
 		return cmd
 	}
 
@@ -98,11 +119,11 @@ func cmdSearch(s *perAPState, cmdID int64) *cmdState {
 
 // Add a single command to an AP's submitted queue and to its map of outstanding
 // commands.
-func cmdSubmit(s *perAPState, q *cfgmsg.ConfigQuery) int64 {
-	s.Lock()
-	defer s.Unlock()
+func (memq *memCmdQueue) submit(ctx context.Context, s *perAPState, q *cfgmsg.ConfigQuery) (int64, error) {
+	memq.Lock()
+	defer memq.Unlock()
 
-	cmdID := s.lastCmdID + 1
+	cmdID := memq.lastCmdID + 1
 	q.CmdID = cmdID
 
 	now := time.Now()
@@ -112,24 +133,24 @@ func cmdSubmit(s *perAPState, q *cfgmsg.ConfigQuery) int64 {
 		cmd:       q,
 		submitted: &now,
 	}
-	s.lastCmdID = cmdID
-	s.sq.enqueue(&cmd)
+	memq.lastCmdID = cmdID
+	memq.sq.enqueue(&cmd)
 	slog.Debugf("submit(%v)", &cmd)
 
-	return cmdID
+	return cmdID, nil
 }
 
 // Fetch one or more commands from the submitted queue.  Commands are left in
 // the queue until they are completed, allowing them to be refetched if the
 // appliance crashes/restarts before they are executed.
-func cmdFetch(s *perAPState, start, max int64) []*cfgmsg.ConfigQuery {
+func (memq *memCmdQueue) fetch(ctx context.Context, s *perAPState, start, max int64) ([]*cfgmsg.ConfigQuery, error) {
 	o := make([]*cfgmsg.ConfigQuery, 0)
 
-	s.Lock()
-	defer s.Unlock()
+	memq.Lock()
+	defer memq.Unlock()
 
 	t := time.Now()
-	for _, c := range s.sq.queue {
+	for _, c := range memq.sq.queue {
 		if c.cmdID > start {
 			if c.fetched != nil {
 				slog.Infof("%v refetched - last fetched at %s",
@@ -143,20 +164,20 @@ func cmdFetch(s *perAPState, start, max int64) []*cfgmsg.ConfigQuery {
 			}
 		}
 	}
-	return o
+	return o, nil
 }
 
 // Get the status of a submitted command
-func cmdStatus(s *perAPState, cmdID int64) *cfgmsg.ConfigResponse {
+func (memq *memCmdQueue) status(ctx context.Context, s *perAPState, cmdID int64) (*cfgmsg.ConfigResponse, error) {
 	rval := &cfgmsg.ConfigResponse{
 		Timestamp: ptypes.TimestampNow(),
 		CmdID:     cmdID,
 	}
 
-	s.Lock()
-	defer s.Unlock()
+	memq.Lock()
+	defer memq.Unlock()
 
-	cmd := cmdSearch(s, cmdID)
+	cmd := memq.search(ctx, cmdID)
 
 	switch {
 	case cmd == nil:
@@ -175,20 +196,20 @@ func cmdStatus(s *perAPState, cmdID int64) *cfgmsg.ConfigResponse {
 		slog.Debugf("%v: done\n", cmd)
 		rval = cmd.response
 	}
-	return rval
+	return rval, nil
 }
 
 // Attempt to cancel a command
-func cmdCancel(s *perAPState, cmdID int64) *cfgmsg.ConfigResponse {
+func (memq *memCmdQueue) cancel(ctx context.Context, s *perAPState, cmdID int64) (*cfgmsg.ConfigResponse, error) {
 	rval := &cfgmsg.ConfigResponse{
 		Timestamp: ptypes.TimestampNow(),
 		CmdID:     cmdID,
 	}
 
-	s.Lock()
-	defer s.Unlock()
+	memq.Lock()
+	defer memq.Unlock()
 
-	cmd := cmdSearch(s, cmdID)
+	cmd := memq.search(ctx, cmdID)
 
 	switch {
 	case cmd == nil:
@@ -197,21 +218,21 @@ func cmdCancel(s *perAPState, cmdID int64) *cfgmsg.ConfigResponse {
 	case cmd.fetched == nil:
 		// command is still queued, so we can cancel it
 		rval.Response = cfgmsg.ConfigResponse_OK
-		s.sq.dequeue(cmdID)
+		memq.sq.dequeue(cmdID)
 
 	case cmd.completed == nil:
 		// command has been fetched, so we can't cancel
 		// it.  We'll still remove it from the queue so
 		// it can't be fetched again.
 		rval.Response = cfgmsg.ConfigResponse_INPROGRESS
-		s.sq.dequeue(cmdID)
+		memq.sq.dequeue(cmdID)
 
 	default:
 		// Too late - the command has already been executed
 		rval.Response = cfgmsg.ConfigResponse_FAILED
 		rval.Errmsg = "command has already completed"
 	}
-	return rval
+	return rval, nil
 }
 
 // Is this command meant to be a refresh of the entire tree?
@@ -231,16 +252,16 @@ func isRefresh(cmd *cfgmsg.ConfigQuery) bool {
 }
 
 // Handle a completion for an outstanding command
-func cmdComplete(s *perAPState, rval *cfgmsg.ConfigResponse) {
-	s.Lock()
-	defer s.Unlock()
+func (memq *memCmdQueue) complete(ctx context.Context, s *perAPState, rval *cfgmsg.ConfigResponse) error {
+	memq.Lock()
+	defer memq.Unlock()
 
 	cmdID := rval.CmdID
-	cmd := cmdSearch(s, cmdID)
+	cmd := memq.search(ctx, cmdID)
 	if cmd == nil {
 		slog.Warnf("%s:%d completion for unknown command",
 			s.cloudUUID, cmdID)
-		return
+		return nil
 	}
 	slog.Debugf("complete(%v)", cmd)
 
@@ -248,13 +269,13 @@ func cmdComplete(s *perAPState, rval *cfgmsg.ConfigResponse) {
 	if cmd.completed == nil {
 		cmd.response = rval
 
-		if idx := s.sq.dequeue(cmdID); idx > 0 {
+		if idx := memq.sq.dequeue(cmdID); idx > 0 {
 			// commands are expected to be completed in their
 			// arrival order, so note when they don't.
-			prior := s.sq.queue[idx-1]
+			prior := memq.sq.queue[idx-1]
 			slog.Warnf("%v completed before %d", cmd, prior.cmdID)
 		}
-		s.cq.enqueue(cmd)
+		memq.cq.enqueue(cmd)
 
 		// Special-case handling for refetching a full tree.
 		if rval.Response == cfgmsg.ConfigResponse_OK && isRefresh(cmd.cmd) {
@@ -267,6 +288,7 @@ func cmdComplete(s *perAPState, rval *cfgmsg.ConfigResponse) {
 
 	t := time.Now()
 	cmd.completed = &t
+	return nil
 }
 
 // Execute a single ConfigQuery command, which may include multiple property
@@ -329,17 +351,17 @@ func delay() {
 // Repeatedly pull commands from the queue, execute them, and post the results.
 // Sleep for some number of seconds between iterations to emulate the
 // asynchronous nature of interacting with a remote device.
-func emulateAppliance(app *perAPState) {
+func emulateAppliance(ctx context.Context, app *perAPState) {
 	lastCmd := int64(-1)
 
 	for {
 		delay()
-		ops := cmdFetch(app, lastCmd, 1)
+		ops, _ := app.cmdQueue.fetch(ctx, app, lastCmd, 1)
 		if len(ops) > 0 {
 			delay()
 			for _, o := range ops {
 				r := execute(app, o)
-				cmdComplete(app, r)
+				app.cmdQueue.complete(ctx, app, r)
 				if o.CmdID > lastCmd {
 					lastCmd = o.CmdID
 				}
