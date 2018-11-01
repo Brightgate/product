@@ -29,7 +29,7 @@
             v-for="device in devicesByCategory(catkey)"
             :key="device.uniqid"
             :title="device.networkName"
-            :link="`/devices/${device.uniqid}/`">
+            :link="`${$f7route.url}${device.uniqid}/`">
             <div slot="media">
               <img :alt="device.category" :src="mediaIcon(device)" width="32" height="32">
             </div>

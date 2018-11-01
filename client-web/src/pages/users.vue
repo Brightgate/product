@@ -25,7 +25,7 @@
         v-for="user in users"
         :key ="user.UUID"
         :title="user.DisplayName ? user.DisplayName : user.UID"
-        :link="`/users/${user.UUID}/`" />
+        :link="`${$f7route.url}${user.UUID}/`" />
     </f7-list>
 
   </f7-page>

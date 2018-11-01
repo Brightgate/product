@@ -14,26 +14,36 @@
 export default {
   en: {
     message: {
+      test_tools: { // Note: we don't internationalize this group
+        testing: 'For Test Purposes',
+        mocks_group: 'Mock behaviors',
+        appmode_group: 'App Major Mode',
+        other_group: 'Other Tools',
+        accept_devices: 'Accept Devices',
+        accept_success: 'Devices Acceptance succeeded. {devicesChanged} devices were affected.',
+        accept_fail: 'There was an error accepting devices: <b>{reason}.</b>',
+        enable_mock: 'Mock API Responses',
+        enable_fakelogin: 'Simulate being Logged In',
+        switch_appliance: 'Switch Appliance',
+        auto_mode: 'Automatic Mode',
+        appliance_mode: 'Force Local Appliance Mode',
+        cloud_mode: 'Force Cloud Mode',
+      },
       home: {
-        testing: {
-          testing: 'For Test Purposes',
-          accept_devices: 'Accept Devices',
-          accept_success: 'Devices Acceptance succeeded. {devicesChanged} devices were affected.',
-          accept_fail: 'There was an error accepting devices: <b>{reason}.</b>',
-          enable_mock: 'Enable Mock',
-          enable_fakelogin: 'Simulate being Logged In',
-          switch_appliance: 'Switch Appliance',
-        },
-        tools: {
-          tools: 'Tools',
-          site_status: 'Site Status',
-          compliance_report: 'Compliance Report',
-          manage_devices: 'Manage Devices ({device_count})',
-          enroll_guest: 'Enroll a Guest User',
-          login: 'Login',
-          logout: 'Logout',
-          users: 'Users',
-        },
+        local_appliance: 'Local Network Appliance',
+        local_appliance_explanation: 'You are administering the Brightgate Wi-fi appliances on your local network.  Changes will also be reflected in the Brightgate cloud.',
+        select_site: 'Select Site',
+        tools: 'Tools',
+      },
+      site_list: {
+        current: 'Current',
+      },
+      site_controls: {
+        site_status: 'Site Status',
+        compliance_report: 'Compliance Report',
+        manage_devices: 'Manage Devices ({device_count})',
+        enroll_guest: 'Enroll a Guest User',
+        users: 'Users',
       },
       alerts: {
         serious_alerts: 'Serious Alerts',
@@ -56,6 +66,8 @@ export default {
         close: 'Close',
         confirm: 'Confirm',
         details: 'Details',
+        login: 'Login',
+        logout: 'Logout',
         need_login: 'You must be logged in',
       },
       site_status: {
@@ -184,26 +196,22 @@ export default {
   },
   de: {
     message: {
+      test_tools: {}, // Note: We don't internationalize this group
       home: {
-        testing: {
-          testing: 'Für Testzwecke',
-          accept_devices: 'Akzeptiere Geräte',
-          accept_success: 'Akzeptanz war erfolgreich. {devicesChanged} Geräte wurden akzeptiert.',
-          accept_fail: 'Fehlermeldung: <b>{reason}.</b>',
-          enable_mock: 'Testmodus',
-          enable_fakelogin: 'Simulierte Anmeldung',
-          switch_appliance: 'Switch Appliance', // XXXI18N
-        },
-        tools: {
-          tools: 'Werkzeuge',
-          site_status: 'Site Status', // XXXI18N
-          compliance_report: 'Compliance Report', // XXXI18N
-          manage_devices: 'Geräte verwalten ({device_count})',
-          enroll_guest: 'Registrieren Sie einen Gastbenutzer',
-          login: 'Anmelden',
-          logout: 'Abmelden',
-          users: 'Benutzer',
-        },
+        local_appliance: 'Local Network Appliance', // XXXI18N
+        local_appliance_explanation: 'You are administering the Brightgate Wi-fi appliances on your local network.  Changes will also be reflected in the Brightgate cloud.', // XXXI18N
+        select_site: 'Select Site', // XXXI18N
+        tools: 'Tools',
+      },
+      site_list: { // XXXI18N
+        current: 'Current',
+      },
+      site_controls: { // XXXI18N
+        site_status: 'Site Status',
+        compliance_report: 'Compliance Report',
+        manage_devices: 'Manage Devices ({device_count})',
+        enroll_guest: 'Enroll a Guest User',
+        users: 'Users',
       },
       alerts: {
         serious_alerts: 'Schwerwiegende Warnungen',
@@ -226,6 +234,8 @@ export default {
         close: 'Schließen',
         confirm: 'Fortsetzen',
         details: 'Details',
+        login: 'Anmelden',
+        logout: 'Abmelden',
         need_login: 'Sie müssen angemeldet sein',
       },
       site_status: { // XXXI18N

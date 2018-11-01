@@ -116,11 +116,15 @@ function getAppliance(state, applianceID) {
 
 const initAppliance = new Appliance(initApplianceID);
 const state = {
+  appMode: 'cloud',
+  testAppMode: 'automatic',
   loggedIn: false,
   fakeLogin: false,
   mock: false,
+  leftPanelVisible: false,
   localAppliance: true,
   applianceIDs: [],
+  sites: {},
   appliances: {
     [initApplianceID]: initAppliance,
   },
@@ -131,8 +135,15 @@ const state = {
 const mutations = {
   setApplianceIDs(state, newIDs) {
     debug('setApplianceIDs, newIDs', newIDs);
-    // need to make a copy, as when mocking we get back a singleton
-    newIDs = newIDs.concat(['OtherAppliance']);
+    if (newIDs.length === 1 && newIDs[0] === '0') {
+      state.appMode = 'appliance';
+    } else {
+      state.appMode = 'cloud';
+    }
+    if (state.testAppMode === 'cloud') {
+      // need to make a copy, as when mocking we get back a singleton
+      newIDs = newIDs.concat(['OtherAppliance']);
+    }
     state.applianceIDs = newIDs;
     state.localAppliance = state.applianceIDs.length === 1 && state.applianceIDs[0] === '0';
     state.applianceIDs.forEach((applianceID) => {
@@ -143,6 +154,16 @@ const mutations = {
       state.currentApplianceID = state.applianceIDs[0];
       state.currentAppliance = state.appliances[state.currentApplianceID];
     }
+    const newSites = {};
+    for (const id of newIDs) {
+      debug(`adding ${id}`);
+      newSites[id] = {
+        uniqid: id,
+        name: id === '0' ? 'Local Appliance' : id,
+      };
+    }
+    debug(`newSites is now this: ${newSites}`, newSites);
+    state.sites = newSites;
   },
 
   setCurrentApplianceID(state, newID) {
@@ -180,6 +201,10 @@ const mutations = {
     state.loggedIn = newValue;
   },
 
+  setTestAppMode(state, newMode) {
+    state.testAppMode = newMode;
+  },
+
   setMock(state, newValue) {
     state.mock = newValue;
     if (state.mock) {
@@ -192,6 +217,10 @@ const mutations = {
   setFakeLogin(state, newValue) {
     state.fakeLogin = newValue;
   },
+
+  setLeftPanelVisible(state, newValue) {
+    state.leftPanelVisible = newValue;
+  },
 };
 
 const getters = {
@@ -201,6 +230,7 @@ const getters = {
   localAppliance: (state) => state.localAppliance,
   currentApplianceID: (state) => state.currentApplianceID,
   applianceIDs: (state) => state.applianceIDs,
+  leftPanelVisible: (state) => state.leftPanelVisible,
 
   applianceAlerts: (state) => (applianceID) => {
     return getAppliance(state, applianceID).alerts;
@@ -221,6 +251,17 @@ const getters = {
   },
   deviceByUniqID: (state) => (uniqid) => {
     return state.currentAppliance.devicesByUniqID[uniqid];
+  },
+
+  appMode: (state) => {
+    if (state.testAppMode !== 'automatic') {
+      return state.testAppMode;
+    }
+    return state.appMode;
+  },
+
+  testAppMode: (state) => {
+    return state.testAppMode;
   },
 
   applianceDevicesByCategory: (state) => (applianceID, category) => {
@@ -263,6 +304,13 @@ const getters = {
   },
   userByUUID: (state) => (uuid) => {
     return state.currentAppliance.users[uuid];
+  },
+
+  sites: (state) => {
+    return state.sites;
+  },
+  siteByUniqID: (state) => (uniqid) => {
+    return state.sites[uniqid];
   },
 
   // device utility functions
