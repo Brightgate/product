@@ -43,7 +43,7 @@ type configStore interface {
 
 type cmdQueue interface {
 	submit(context.Context, *perAPState, *cfgmsg.ConfigQuery) (int64, error)
-	fetch(context.Context, *perAPState, int64, int64) ([]*cfgmsg.ConfigQuery, error)
+	fetch(context.Context, *perAPState, int64, uint32) ([]*cfgmsg.ConfigQuery, error)
 	status(context.Context, *perAPState, int64) (*cfgmsg.ConfigResponse, error)
 	cancel(context.Context, *perAPState, int64) (*cfgmsg.ConfigResponse, error)
 	complete(context.Context, *perAPState, *cfgmsg.ConfigResponse) error

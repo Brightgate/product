@@ -147,7 +147,8 @@ message CfgBackEndFetchCmds {
 	string cloud_uuid		= 0x02;
 	int32 version			= 0x03;
 	int64 lastCmdID			= 0x04;
-	int32 maxCmds			= 0x05;
+	// If non-zero, the number of commands which can be returned; else 1
+	uint32 maxCmds			= 0x05;
 }
 
 message CfgBackEndCompletions {

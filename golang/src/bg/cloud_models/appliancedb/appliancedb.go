@@ -43,7 +43,7 @@ type DataStore interface {
 
 	CommandSearch(context.Context, int64) (*ApplianceCommand, error)
 	CommandSubmit(context.Context, uuid.UUID, *ApplianceCommand) error
-	CommandFetch(context.Context, uuid.UUID, int64, int64) ([]*ApplianceCommand, error)
+	CommandFetch(context.Context, uuid.UUID, int64, uint32) ([]*ApplianceCommand, error)
 	CommandCancel(context.Context, int64) (*ApplianceCommand, *ApplianceCommand, error)
 	CommandComplete(context.Context, int64, []byte) (*ApplianceCommand, *ApplianceCommand, error)
 	CommandDelete(context.Context, uuid.UUID, int64) (int64, error)
@@ -473,7 +473,7 @@ func copyQueryResponse(query, response []byte) ([]byte, []byte) {
 
 // CommandFetch returns from the command queue up to max commands, sorted by ID,
 // for the appliance referenced by the UUID u, with a minimum ID of start.
-func (db *ApplianceDB) CommandFetch(ctx context.Context, u uuid.UUID, start, max int64) ([]*ApplianceCommand, error) {
+func (db *ApplianceDB) CommandFetch(ctx context.Context, u uuid.UUID, start int64, max uint32) ([]*ApplianceCommand, error) {
 	cmds := make([]*ApplianceCommand, 0)
 	// In order that two concurrent fetch requests don't grab the same
 	// command, we need to use SKIP LOCKED per the advice in

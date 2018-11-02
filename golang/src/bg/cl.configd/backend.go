@@ -178,7 +178,13 @@ func (s *backEndServer) FetchCmds(ctx context.Context,
 		rval.Response = rpc.CfgBackEndResponse_ERROR
 		rval.Errmsg = fmt.Sprintf("%v", err)
 	} else {
-		cmds, err := ap.cmdQueue.fetch(ctx, ap, int64(req.LastCmdID), int64(req.MaxCmds))
+		maxCmds := req.MaxCmds
+		// Default unset Maxcmds
+		if maxCmds == 0 {
+			maxCmds = 1
+		}
+
+		cmds, err := ap.cmdQueue.fetch(ctx, ap, int64(req.LastCmdID), maxCmds)
 		// XXX We return OK even with an error as long as we have some
 		// commands to fetch, in order to allow the client to make some
 		// forward progress.  For it to succeed after that, we will need

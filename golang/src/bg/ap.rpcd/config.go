@@ -27,6 +27,9 @@ import (
 	"github.com/pkg/errors"
 )
 
+// MaxCmds represents the maximum number of commands to fetch at once
+const MaxCmds = 64
+
 // Map for translating cloud operations into local cfgapi operations
 var opMap = map[cfgmsg.ConfigOp_Operation]int{
 	cfgmsg.ConfigOp_GET:    cfgapi.PropGet,
@@ -154,6 +157,7 @@ func fetch(ctx context.Context, cclient rpc.ConfigBackEndClient) ([]*cfgmsg.Conf
 		Time:      ptypes.TimestampNow(),
 		Version:   cfgapi.Version,
 		LastCmdID: queued.lastOp,
+		MaxCmds:   MaxCmds,
 	}
 
 	resp, err := cclient.FetchCmds(ctx, fetchOp)

@@ -95,8 +95,11 @@ func (dbq *dbCmdQueue) submit(ctx context.Context, s *perAPState, q *cfgmsg.Conf
 	return cmd.ID, nil
 }
 
-func (dbq *dbCmdQueue) fetch(ctx context.Context, s *perAPState, start, max int64) ([]*cfgmsg.ConfigQuery, error) {
+func (dbq *dbCmdQueue) fetch(ctx context.Context, s *perAPState, start int64, max uint32) ([]*cfgmsg.ConfigQuery, error) {
 	o := make([]*cfgmsg.ConfigQuery, 0)
+	if max == 0 {
+		panic("invalid max of 0")
+	}
 
 	u, err := uuid.FromString(s.cloudUUID)
 	if err != nil {

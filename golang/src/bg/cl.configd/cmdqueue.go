@@ -141,8 +141,11 @@ func (memq *memCmdQueue) submit(ctx context.Context, s *perAPState, q *cfgmsg.Co
 // Fetch one or more commands from the submitted queue.  Commands are left in
 // the queue until they are completed, allowing them to be refetched if the
 // appliance crashes/restarts before they are executed.
-func (memq *memCmdQueue) fetch(ctx context.Context, s *perAPState, start, max int64) ([]*cfgmsg.ConfigQuery, error) {
+func (memq *memCmdQueue) fetch(ctx context.Context, s *perAPState, start int64, max uint32) ([]*cfgmsg.ConfigQuery, error) {
 	o := make([]*cfgmsg.ConfigQuery, 0)
+	if max == 0 {
+		panic("invalid max of 0")
+	}
 
 	memq.Lock()
 	defer memq.Unlock()
@@ -157,7 +160,7 @@ func (memq *memCmdQueue) fetch(ctx context.Context, s *perAPState, start, max in
 			c.fetched = &t
 
 			o = append(o, c.cmd)
-			if len(o) >= int(max) {
+			if uint32(len(o)) == max {
 				break
 			}
 		}
