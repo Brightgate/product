@@ -14,7 +14,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -25,6 +24,7 @@ import (
 	"time"
 
 	"bg/ap_common/apcfg"
+	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
 	"bg/base_def"
@@ -36,7 +36,6 @@ import (
 	"github.com/pkg/errors"
 
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zapgrpc"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -51,16 +50,12 @@ import (
 
 var (
 	connectFlag   = flag.String("connect", "", "Override connection endpoint in credential")
-	levelFlag     = zap.LevelFlag("log-level", zapcore.InfoLevel, "Log level [debug,info,warn,error,panic,fatal]")
 	deadlineFlag  = flag.Duration("rpc-deadline", time.Second*20, "RPC completion deadline")
 	enableTLSFlag = flag.Bool("enable-tls", true, "Enable Secure gRPC")
 
 	pname string
 
-	logger        *zap.Logger
-	slogger       *zap.SugaredLogger
-	zapConfig     zap.Config
-	globalLevel   zap.AtomicLevel
+	slog          *zap.SugaredLogger
 	applianceCred *grpcutils.Credential
 	config        *cfgapi.Handle
 	brokerd       *broker.Broker
@@ -83,7 +78,7 @@ const (
 
 func publishEvent(ctx context.Context, tclient cloud_rpc.EventClient, subtopic string, evt proto.Message) error {
 	name := proto.MessageName(evt)
-	slogger.Debugw("Sending "+subtopic, "type", name, "payload", evt)
+	slog.Debugw("Sending "+subtopic, "type", name, "payload", evt)
 	serialized, err := proto.Marshal(evt)
 	if err != nil {
 		return err
@@ -91,7 +86,7 @@ func publishEvent(ctx context.Context, tclient cloud_rpc.EventClient, subtopic s
 
 	ctx, err = applianceCred.MakeGRPCContext(ctx)
 	if err != nil {
-		slogger.Fatalf("Failed to make GRPC credential: %+v", err)
+		slog.Fatalf("Failed to make GRPC credential: %+v", err)
 	}
 
 	clientDeadline := time.Now().Add(*deadlineFlag)
@@ -110,16 +105,16 @@ func publishEvent(ctx context.Context, tclient cloud_rpc.EventClient, subtopic s
 	if err != nil {
 		return errors.Wrapf(err, "Failed to Put() Event")
 	}
-	slogger.Debugf("Sent: %s  size %d  response: %v", subtopic,
+	slog.Debugf("Sent: %s  size %d  response: %v", subtopic,
 		len(serialized), response)
 	if response.Result == cloud_rpc.PutEventResponse_BAD_ENDPOINT {
 		// Allow our cl.rpcd partner to redirect us to a new endpoint
-		slogger.Infof("Moving to new RPC server: " + response.Url)
+		slog.Infof("Moving to new RPC server: " + response.Url)
 		err := config.CreateProp(urlProperty, response.Url, nil)
 		if err == nil {
 			go daemonStop()
 		} else {
-			slogger.Warnf("failed to update %s: %v", urlProperty,
+			slog.Warnf("failed to update %s: %v", urlProperty,
 				err)
 		}
 	}
@@ -133,7 +128,7 @@ func handleNetException(ctx context.Context, tclient cloud_rpc.EventClient, even
 	if err != nil {
 		return errors.Wrap(err, "Failed to unmarshal exception")
 	}
-	slogger.Infof("[net.exception] %v", exception)
+	slog.Infof("[net.exception] %v", exception)
 	metrics.events.Inc()
 
 	cloudNetExc := &cloud_rpc.NetException{
@@ -174,26 +169,6 @@ func handleNetException(ctx context.Context, tclient cloud_rpc.EventClient, even
 	return publishEvent(ctx, tclient, "exception", cloudNetExc)
 }
 
-func zapSetup() {
-	var err error
-	zapConfig = zap.NewDevelopmentConfig()
-	globalLevel = zap.NewAtomicLevelAt(*levelFlag)
-	zapConfig.Level = globalLevel
-	logger, err = zapConfig.Build()
-	if err != nil {
-		log.Panicf("can't zap: %s", err)
-	}
-	slogger = logger.Sugar()
-	_ = zap.RedirectStdLog(logger)
-
-	// Redirect grpc internal log messages to zap, at DEBUG
-	glogger := logger.WithOptions(
-		// zapgrpc adds extra frames, which need to be skipped
-		zap.AddCallerSkip(3),
-	)
-	grpclog.SetLogger(zapgrpc.NewLogger(glogger, zapgrpc.WithDebug()))
-}
-
 func prometheusInit() {
 	metrics.events = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "rpcd_events_handled",
@@ -210,7 +185,7 @@ func grpcInit() (*grpc.ClientConn, error) {
 	connectURL := *connectFlag
 	enableTLS := *enableTLSFlag
 
-	applianceCred, err = grpcutils.SystemCredential()
+	applianceCred, err = aputil.SystemCredential()
 	if err != nil {
 		return nil, fmt.Errorf("loading appliance credentials: %v", err)
 	}
@@ -233,7 +208,7 @@ func grpcInit() (*grpc.ClientConn, error) {
 	}
 
 	if !enableTLS {
-		slogger.Warnf("Connecting insecurely due to '-enable-tls=false'" +
+		slog.Warnf("Connecting insecurely due to '-enable-tls=false'" +
 			"flag (developers only!)")
 	}
 
@@ -242,11 +217,11 @@ func grpcInit() (*grpc.ClientConn, error) {
 		// have a list, or iterate over svc[0-X].b10e.net until we find
 		// one willing to respond.
 		connectURL = defaultURL
-		slogger.Warnf(urlProperty + " not set - defaulting to " +
+		slog.Warnf(urlProperty + " not set - defaulting to " +
 			defaultURL)
 	}
 
-	slogger.Infof("Connecting to '%s'", connectURL)
+	slog.Infof("Connecting to '%s'", connectURL)
 
 	conn, err := grpcutils.NewClientConn(connectURL, enableTLS, pname)
 	if err != nil {
@@ -269,23 +244,23 @@ func addDoneChan() chan bool {
 }
 
 func daemonStop() {
-	slogger.Infof("shutting down threads")
+	slog.Infof("shutting down threads")
 	for _, c := range cleanup.chans {
 		c <- true
 	}
 
 	cleanup.wg.Wait()
-	slogger.Infof("Exiting")
+	slog.Infof("Exiting")
 	os.Exit(0)
 }
 
 func daemonStart() {
-	slogger.Infof("ap.rpcd starting")
+	slog.Infof("ap.rpcd starting")
 	ctx := context.Background()
 
 	mcpd, err := mcp.New(pname)
 	if err != nil {
-		slogger.Fatalf("Failed to connect to mcp: %s", err)
+		slog.Fatalf("Failed to connect to mcp: %s", err)
 	}
 
 	prometheusInit()
@@ -296,20 +271,20 @@ func daemonStart() {
 	conn, err := grpcInit()
 	if err != nil {
 		mcpd.SetState(mcp.BROKEN)
-		slogger.Fatalf("grpc init failed: %v", err)
+		slog.Fatalf("grpc init failed: %v", err)
 	}
 	defer conn.Close()
 
 	tclient := cloud_rpc.NewEventClient(conn)
 	cclient := cloud_rpc.NewConfigBackEndClient(conn)
-	slogger.Debugf("RPC client connected")
+	slog.Debugf("RPC client connected")
 
 	brokerd.Handle(base_def.TOPIC_EXCEPTION, func(event []byte) {
 		cleanup.wg.Add(1)
 		defer cleanup.wg.Done()
 		err := handleNetException(ctx, tclient, event)
 		if err != nil {
-			slogger.Errorf("Failed handleNetException: %s", err)
+			slog.Errorf("Failed handleNetException: %s", err)
 		}
 	})
 
@@ -317,16 +292,16 @@ func daemonStart() {
 	go inventoryLoop(ctx, tclient, &cleanup.wg, addDoneChan())
 	go configLoop(ctx, cclient, &cleanup.wg, addDoneChan())
 
-	slogger.Infof("Setting state ONLINE")
+	slog.Infof("Setting state ONLINE")
 	err = mcpd.SetState(mcp.ONLINE)
 	if err != nil {
-		slogger.Fatalf("Failed to set ONLINE: %+v", err)
+		slog.Fatalf("Failed to set ONLINE: %+v", err)
 	}
 
 	exitSig := make(chan os.Signal, 2)
 	signal.Notify(exitSig, syscall.SIGINT, syscall.SIGTERM)
 	s := <-exitSig
-	slogger.Infof("Signal (%v) received, waiting for tasks to drain", s)
+	slog.Infof("Signal (%v) received, waiting for tasks to drain", s)
 
 	daemonStop()
 }
@@ -337,13 +312,13 @@ func cmdStart() {
 
 	conn, err := grpcInit()
 	if err != nil {
-		slogger.Fatalf("grpc init failed: %v", err)
+		slog.Fatalf("grpc init failed: %v", err)
 	}
 	defer conn.Close()
-	slogger.Debugf("RPC client connected")
+	slog.Debugf("RPC client connected")
 
 	if len(flag.Args()) == 0 {
-		log.Fatalf("Service name required.\n")
+		slog.Fatalf("Service name required.")
 	}
 	stop := make(chan bool)
 	svc := flag.Args()[0]
@@ -362,10 +337,10 @@ func cmdStart() {
 		tclient := cloud_rpc.NewEventClient(conn)
 		err = sendInventory(ctx, tclient)
 	default:
-		slogger.Fatalf("Unrecognized command %s", svc)
+		slog.Fatalf("Unrecognized command %s", svc)
 	}
 	if err != nil {
-		slogger.Errorf("%s failed: %s", svc, err)
+		slog.Errorf("%s failed: %s", svc, err)
 	}
 }
 
@@ -377,13 +352,19 @@ func main() {
 	pname = filepath.Base(exec)
 
 	flag.Parse()
-	zapSetup()
+	slog = aputil.NewLogger()
+	// Redirect grpc internal log messages to zap, at DEBUG
+	glogger := slog.Desugar().WithOptions(
+		// zapgrpc adds extra frames, which need to be skipped
+		zap.AddCallerSkip(3),
+	)
+	grpclog.SetLogger(zapgrpc.NewLogger(glogger, zapgrpc.WithDebug()))
 
 	if pname == "ap.rpcd" {
 		daemonStart()
 	} else if pname == "ap-rpc" {
 		cmdStart()
 	} else {
-		slogger.Fatalf("Couldn't determine program mode")
+		slog.Fatalf("Couldn't determine program mode")
 	}
 }

@@ -13,7 +13,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"math/bits"
 	"net"
 	"os"
@@ -32,10 +31,7 @@ import (
 	"bg/base_msg"
 
 	"github.com/golang/protobuf/proto"
-)
-
-var (
-	hostapdLog *log.Logger
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -202,7 +198,7 @@ func (c *hostapdConn) command(cmd string) (string, error) {
 // command.
 func (c *hostapdConn) handleResult(result string) {
 	if c.liveCmd == nil {
-		log.Printf("hostapd result with no command: '%s'", result)
+		slog.Warnf("hostapd result with no command: '%s'", result)
 	} else {
 		c.liveCmd.res = result
 		c.liveCmd.err <- nil
@@ -226,14 +222,14 @@ func sendNetEntity(mac string, mode, auth, sig *string, disconnect bool) {
 
 	err := brokerd.Publish(entity, base_def.TOPIC_ENTITY)
 	if err != nil {
-		log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_ENTITY, err)
+		slog.Warnf("couldn't publish %s: %v", base_def.TOPIC_ENTITY, err)
 	}
 }
 
 func (c *hostapdConn) getSignature(sta string) {
 	sig, err := c.command("SIGNATURE " + sta)
 	if err != nil {
-		log.Printf("Failed to get signature for %s: %v\n", sta, err)
+		slog.Warnf("Failed to get signature for %s: %v", sta, err)
 	} else if info, ok := c.stations[sta]; ok {
 		if info.signature != sig {
 			info.signature = sig
@@ -243,7 +239,7 @@ func (c *hostapdConn) getSignature(sta string) {
 }
 
 func (c *hostapdConn) stationPresent(sta string, newConnection bool) {
-	log.Printf("stationPresent(%s) new: %v\n", sta, newConnection)
+	slog.Infof("stationPresent(%s) new: %v", sta, newConnection)
 	info := c.stations[sta]
 	if info == nil {
 		sendNetEntity(sta, &c.wifiBand, &c.authType, nil, false)
@@ -265,7 +261,7 @@ func (c *hostapdConn) stationPresent(sta string, newConnection bool) {
 }
 
 func (c *hostapdConn) stationGone(sta string) {
-	log.Printf("stationGone(%s)\n", sta)
+	slog.Infof("stationGone(%s)", sta)
 	delete(c.stations, sta)
 	sendNetEntity(sta, &c.wifiBand, nil, nil, true)
 }
@@ -348,7 +344,7 @@ func (c *hostapdConn) run(wg *sync.WaitGroup) {
 			// ignore those errors.
 			netErr, ok := err.(net.Error)
 			if !ok || !netErr.Timeout() {
-				log.Printf("%s Read error: %v\n",
+				slog.Warnf("%s Read error: %v",
 					c.device.name, err)
 				break
 			}
@@ -359,7 +355,7 @@ func (c *hostapdConn) run(wg *sync.WaitGroup) {
 			delta := (now.Sub(c.liveCmd.sent)).Seconds()
 
 			if delta > float64(*hostapdLatency) {
-				log.Printf("hostapd blocked for %1.2f seconds",
+				slog.Warnf("hostapd blocked for %1.2f seconds",
 					delta)
 				c.hostapd.reset()
 				break
@@ -400,7 +396,7 @@ func macUpdateLastOctet(mac string, maskSize, val uint64) string {
 			mac = strings.Join(octets, ":")
 		}
 	} else {
-		log.Printf("invalid mac address: %s", mac)
+		slog.Warnf("invalid mac address: %s", mac)
 	}
 
 	return mac
@@ -453,7 +449,7 @@ func getAPConfig(d *physDevice) *apConfig {
 
 	ssidCnt := len(authList)
 	if ssidCnt > w.cap.Interfaces {
-		log.Printf("%s can't support %d SSIDs\n", d.hwaddr, ssidCnt)
+		slog.Warnf("%s can't support %d SSIDs", d.hwaddr, ssidCnt)
 		return nil
 	}
 
@@ -468,7 +464,7 @@ func getAPConfig(d *physDevice) *apConfig {
 		oldMac := d.hwaddr
 		d.hwaddr = macUpdateLastOctet(d.hwaddr, maskBits, 0)
 		if d.hwaddr != oldMac {
-			log.Printf("Changed mac from %s to %s\n", oldMac, d.hwaddr)
+			slog.Debugf("Changed mac from %s to %s", oldMac, d.hwaddr)
 		}
 
 		p := initPseudoNic(d)
@@ -485,7 +481,7 @@ func getAPConfig(d *physDevice) *apConfig {
 		pskssid += "-5GHz"
 		eapssid += "-5GHz"
 	} else {
-		log.Printf("unsupported wifi band: %s\n", d.wifi.activeBand)
+		slog.Warnf("unsupported wifi band: %s", d.wifi.activeBand)
 		return nil
 	}
 
@@ -542,7 +538,7 @@ func generateVlanConf(conf *apConfig, auth string) {
 	mfn := confdir + "/" + "hostapd." + auth + "." + mode + ".macs"
 	mf, err := os.Create(mfn)
 	if err != nil {
-		log.Fatalf("Unable to create %s: %v\n", mfn, err)
+		slog.Fatalf("Unable to create %s: %v", mfn, err)
 	}
 	defer mf.Close()
 
@@ -550,7 +546,7 @@ func generateVlanConf(conf *apConfig, auth string) {
 	vfn := confdir + "/" + "hostapd." + auth + "." + mode + ".vlan"
 	vf, err := os.Create(vfn)
 	if err != nil {
-		log.Fatalf("Unable to create %s: %v\n", vfn, err)
+		slog.Fatalf("Unable to create %s: %v", vfn, err)
 	}
 	defer vf.Close()
 
@@ -667,9 +663,9 @@ func (h *hostapdHdl) start() {
 	go rebuildUnenrolled(h.devices, stopNetworkRebuild)
 
 	h.process = aputil.NewChild(plat.HostapdCmd, h.confFiles...)
-	h.process.LogOutputTo("hostapd: ", log.Ldate|log.Ltime, os.Stderr)
+	h.process.UseZapLog("hostapd: ", slog, zapcore.InfoLevel)
 
-	log.Printf("Starting hostapd\n")
+	slog.Infof("Starting hostapd")
 
 	startTime := time.Now()
 	if err := h.process.Start(); err != nil {
@@ -686,11 +682,11 @@ func (h *hostapdHdl) start() {
 
 	h.process.Wait()
 
-	log.Printf("hostapd exited after %s\n", time.Since(startTime))
+	slog.Infof("hostapd exited after %s", time.Since(startTime))
 	stopNetworkRebuild <- true
 
 	deadman := time.AfterFunc(*deadmanTimeout, func() {
-		log.Printf("failed to clean up hostapd monitoring\n")
+		slog.Warnf("failed to clean up hostapd monitoring")
 		syscall.Kill(syscall.Getpid(), syscall.SIGABRT)
 	})
 
@@ -705,7 +701,7 @@ func (h *hostapdHdl) start() {
 
 func (h *hostapdHdl) reload() {
 	if h != nil {
-		log.Printf("Reloading hostapd\n")
+		slog.Infof("Reloading hostapd")
 		h.generateHostAPDConf()
 		h.process.Signal(plat.ReloadSignal)
 	}
@@ -713,7 +709,7 @@ func (h *hostapdHdl) reload() {
 
 func (h *hostapdHdl) reset() {
 	if h != nil {
-		log.Printf("Killing hostapd\n")
+		slog.Infof("Killing hostapd")
 		h.process.Signal(plat.ResetSignal)
 	}
 }

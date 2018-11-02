@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -106,6 +107,40 @@ var (
 	stateReverseMap map[string]int
 )
 
+// The following logging routines are designed to allow this daemon's log output
+// to match the formatting of the child daemons' Zap output.  We don't use Zap
+// here because we are trying to interleave our own output with the child
+// output, and don't want Zap to re-annotate the child output.
+func logMsg(level, msg string) {
+	file := "???"
+	line := 0
+	if _, path, l, ok := runtime.Caller(2); ok {
+		pathFields := strings.Split(path, "/")
+		if n := len(pathFields); n >= 2 {
+			file = strings.Join(pathFields[n-2:], "/")
+		} else {
+			file = path
+		}
+		line = l
+	}
+
+	log.Printf("\t%s\t%s:%d\t%s\n", level, file, line, msg)
+}
+
+func logInfo(format string, v ...interface{}) {
+	logMsg("INFO", fmt.Sprintf(format, v...))
+}
+
+func logWarn(format string, v ...interface{}) {
+	logMsg("WARN", fmt.Sprintf(format, v...))
+}
+
+func logDebug(format string, v ...interface{}) {
+	if *verbose {
+		logMsg("DEBUG", fmt.Sprintf(format, v...))
+	}
+}
+
 func (d *daemon) offline() bool {
 	return d.state == mcp.OFFLINE || d.state == mcp.BROKEN
 }
@@ -122,10 +157,8 @@ func (d *daemon) blocked() bool {
 
 func (d *daemon) setState(state int) {
 	if d.state != state {
-		if *verbose {
-			log.Printf("%s transitioning from %s to %s\n", d.Name,
-				mcp.States[d.state], mcp.States[state])
-		}
+		logDebug("%s transitioning from %s to %s", d.Name,
+			mcp.States[d.state], mcp.States[state])
 
 		d.state = state
 		d.setTime = time.Now()
@@ -164,7 +197,7 @@ func (d *daemon) wait() {
 	} else {
 		msg = fmt.Sprintf("exited with '%v'", err)
 	}
-	log.Printf("%s exited %s after %s\n", d.Name, msg,
+	logInfo("%s exited %s after %s", d.Name, msg,
 		time.Since(startTime))
 
 	d.Lock()
@@ -180,9 +213,9 @@ func (d *daemon) wait() {
 func (d *daemon) start() {
 	var err error
 
-	log.Printf("starting %s\n", d.Name)
+	logInfo("starting %s", d.Name)
 	if d.child != nil {
-		log.Printf("%s already running as pid %d\n", d.Name,
+		logWarn("%s already running as pid %d", d.Name,
 			d.child.Process.Pid)
 		return
 	}
@@ -193,7 +226,7 @@ func (d *daemon) start() {
 	}
 
 	child := aputil.NewChild(d.execpath, d.args...)
-	child.LogOutputTo("", 0, out)
+	child.UseStdLog("", 0, out)
 
 	if !d.Privileged {
 		child.SetUID(nobodyUID, nobodyUID)
@@ -204,7 +237,7 @@ func (d *daemon) start() {
 
 	d.setState(mcp.STARTING)
 	if err = child.Start(); err != nil {
-		log.Printf("%s unable to launch: %v", d.Name, err)
+		logWarn("%s unable to launch: %v", d.Name, err)
 		d.setState(mcp.OFFLINE)
 		return
 	}
@@ -224,7 +257,7 @@ func (d *daemon) stop() {
 	} else if !d.offline() && d.state != mcp.STOPPING {
 		d.setState(mcp.STOPPING)
 		if d.child != nil {
-			log.Printf("Stopping %s (%d)\n", d.Name,
+			logInfo("Stopping %s (%d)", d.Name,
 				d.child.Process.Pid)
 			d.child.Stop()
 		}
@@ -277,10 +310,8 @@ func (d *daemon) daemonLoop() {
 				timedout = true
 			case goal = <-d.goal:
 				startTimes = make([]time.Time, failuresAllowed)
-				if *verbose {
-					log.Printf("%s goal: %s\n", d.Name,
-						mcp.States[goal])
-				}
+				logDebug("%s goal: %s", d.Name,
+					mcp.States[goal])
 			case <-d.evaluate:
 			}
 			// If we have more signals pending, consume them now
@@ -289,14 +320,14 @@ func (d *daemon) daemonLoop() {
 		d.Lock()
 
 		if timedout && (d.state == mcp.INITING || d.state == mcp.STARTING) {
-			log.Printf("%s took more than %v to come online.  Giving up.",
+			logWarn("%s took more than %v to come online.  Giving up.",
 				d.Name, onlineTimeout)
 			d.stop()
 			d.setState(mcp.BROKEN)
 		}
 		if (d.state != mcp.BROKEN) &&
 			(time.Since(startTimes[0]) < restartPeriod) {
-			log.Printf("%s is dying too quickly", d.Name)
+			logWarn("%s is dying too quickly", d.Name)
 			d.stop()
 			d.setState(mcp.BROKEN)
 		}
@@ -393,7 +424,7 @@ func handlePeerUpdate(node, in *string, lifetime int32) (*string,
 
 	b := []byte(*in)
 	if err := json.Unmarshal(b, &state); err != nil {
-		log.Printf("failed to unmarshal state from %s: %v", *node, err)
+		logWarn("failed to unmarshal state from %s: %v", *node, err)
 		code = mcp.INVALID
 	} else {
 		// The remote node tells us how long we should consider this
@@ -416,7 +447,7 @@ func handleStart(set daemonSet) {
 			d.setState(mcp.OFFLINE)
 		}
 		d.Unlock()
-		log.Printf("Tell %s to come online\n", d.Name)
+		logInfo("Tell %s to come online", d.Name)
 		d.goal <- mcp.ONLINE
 	}
 }
@@ -445,7 +476,7 @@ func handleStop(set daemonSet) int {
 		for n := range running {
 			msg += n + " "
 		}
-		log.Printf("%s\n", msg)
+		logInfo("%s", msg)
 	}
 	return len(running)
 }
@@ -557,14 +588,14 @@ func signalHandler() {
 
 		case syscall.SIGHUP:
 			reopenLogfile()
-			log.Printf("Reloading mcp.json\n")
+			logInfo("Reloading mcp.json")
 			loadDefinitions()
 
 		default:
-			log.Printf("Signal %v received, stopping childen\n", s)
+			logInfo("Signal %v received, stopping childen", s)
 			all := "all"
 			handleStop(selectTargets(&all))
-			log.Printf("Exiting\n")
+			logInfo("Exiting")
 			if logfile != nil {
 				logfile.Close()
 			}
@@ -584,7 +615,7 @@ func connectToGateway() *mcp.MCP {
 
 		now := time.Now()
 		if now.After(warnAt) {
-			log.Printf("failed to connect to mcp on gateway\n")
+			logWarn("failed to connect to mcp on gateway")
 			if warnWait < time.Hour {
 				warnWait *= 2
 			}
@@ -607,7 +638,7 @@ func satelliteLoop() {
 	for {
 		if mcpd == nil {
 			mcpd = connectToGateway()
-			log.Printf("Connected to gateway\n")
+			logInfo("Connected to gateway")
 
 			// Any daemon currently running should be restarted, so
 			// it will pull the freshest state from the gateway.
@@ -628,7 +659,7 @@ func satelliteLoop() {
 
 		state, err := mcpd.PeerUpdate(lifeDuration, state)
 		if err != nil {
-			log.Printf("Lost connection to gateway\n")
+			logWarn("Lost connection to gateway")
 			mcpd.Close()
 			mcpd = nil
 		} else {
@@ -651,24 +682,24 @@ func satelliteLoop() {
 func mainLoop() {
 	err := exec.Command(plat.IPCmd, "link", "set", "up", "lo").Run()
 	if err != nil {
-		log.Printf("Failed to enable loopback: %v\n", err)
+		logWarn("Failed to enable loopback: %v", err)
 	}
 
 	incoming, err := zmq.NewSocket(zmq.REP)
 	if err != nil {
-		log.Fatalf("failed to get ZMQ socket: %v\n", err)
+		log.Fatalf("failed to get ZMQ socket: %v", err)
 	}
 	port := base_def.INCOMING_ZMQ_URL + base_def.MCP_ZMQ_REP_PORT
 	if err := incoming.Bind(port); err != nil {
-		log.Fatalf("failed to bind incoming port %s: %v\n", port, err)
+		log.Fatalf("failed to bind incoming port %s: %v", port, err)
 	}
 	me := "mcp." + strconv.Itoa(os.Getpid()) + ")"
 
-	log.Println("MCP online")
+	logInfo("MCP online")
 	for {
 		msg, err := incoming.RecvMessageBytes(0)
 		if err != nil {
-			log.Printf("err: %v\n", err)
+			logWarn("err: %v", err)
 			continue
 		}
 
@@ -690,7 +721,7 @@ func mainLoop() {
 
 		data, err := proto.Marshal(response)
 		if err != nil {
-			log.Printf("Failed to marshal response: %v\n", err)
+			logWarn("Failed to marshal response: %v", err)
 		} else {
 			incoming.SendBytes(data, 0)
 		}
@@ -836,7 +867,7 @@ func reopenLogfile() {
 	path := aputil.ExpandDirPath(*logname)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
-		log.Printf("Unable to redirect logging to %s: %v", path, err)
+		logWarn("Unable to redirect logging to %s: %v", path, err)
 		return
 	}
 
@@ -845,21 +876,22 @@ func reopenLogfile() {
 	for _, d := range localDaemons {
 		d.Lock()
 		if d.child != nil {
-			d.child.SetOutput(f)
+			d.child.UseStdLog("", 0, f)
 		}
+		d.Unlock()
 	}
 
 	if logfile == nil {
 		os.Stdin, err = os.OpenFile("/dev/null", os.O_RDONLY, 0)
 		if err != nil {
-			log.Printf("Couldn't close stdin\n")
+			logWarn("Couldn't close stdin")
 		}
 	} else {
-		log.Printf("Closing log\n")
+		logInfo("Closing log")
 		logfile.Close()
 	}
 	log.SetOutput(f)
-	log.Printf("Opened %s\n", path)
+	logInfo("Opened %s", path)
 	logfile = f
 }
 
@@ -870,7 +902,7 @@ func setEnvironment() {
 	}
 	plat = platform.NewPlatform()
 	if err := verifyNodeID(); err != nil {
-		log.Printf("%v\n", err)
+		logWarn("%v", err)
 		os.Exit(1)
 	}
 
@@ -881,7 +913,7 @@ func setEnvironment() {
 			wd, _ := os.Getwd()
 			*aproot = wd
 		}
-		fmt.Printf("aproot not set - using '%s'\n", *aproot)
+		logInfo("aproot not set - using '%s'", *aproot)
 	}
 	os.Setenv("APROOT", *aproot)
 
@@ -907,12 +939,12 @@ func verifyNodeID() error {
 			proposed = strings.ToLower(*nodeFlag)
 		}
 		if current != proposed {
-			log.Printf("Not overriding existing nodeid: %s\n",
+			logInfo("Not overriding existing nodeid: %s",
 				current)
 		}
 		return nil
 	}
-	log.Printf("Unable to get a device nodeID: %v\n", err)
+	logWarn("Unable to get a device nodeID: %v", err)
 
 	if *nodeFlag == "" {
 		err = fmt.Errorf("must provide a device nodeID")
@@ -920,7 +952,7 @@ func verifyNodeID() error {
 	} else if err = plat.SetNodeID(*nodeFlag); err != nil {
 		err = fmt.Errorf("unable to set device nodeID: %v", err)
 	} else {
-		log.Printf("Set new device nodeID: %s\n", *nodeFlag)
+		logInfo("Set new device nodeID: %s", *nodeFlag)
 	}
 
 	return err
@@ -928,16 +960,16 @@ func verifyNodeID() error {
 
 func main() {
 	flag.Parse()
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+	log.SetFlags(log.Ldate | log.Ltime)
 
+	reopenLogfile()
 	if os.Geteuid() != rootUID {
-		log.Printf("mcp must be run as root\n")
+		logWarn("mcp must be run as root")
 		os.Exit(1)
 	}
 
 	if err := pidLock(); err != nil {
-		log.Printf("%v\n", err)
-		os.Exit(1)
+		log.Fatalf("%v", err)
 	}
 
 	stateReverseMap = make(map[string]int)
@@ -958,12 +990,11 @@ func main() {
 	}
 
 	setEnvironment()
-	reopenLogfile()
 
-	log.Printf("ap.mcp (%d) coming online...\n", os.Getpid())
+	logInfo("ap.mcp (%d) coming online...", os.Getpid())
 
 	if err := loadDefinitions(); err != nil {
-		log.Fatalf("Failed to load daemon config: %v\n", err)
+		log.Fatalf("Failed to load daemon config: %v", err)
 	}
 
 	go signalHandler()

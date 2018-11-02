@@ -36,7 +36,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -60,6 +59,7 @@ import (
 	zmq "github.com/pebbe/zmq4"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/zap"
 )
 
 const pname = "ap.configd"
@@ -108,6 +108,7 @@ var (
 
 	mcpd    *mcp.MCP
 	brokerd *broker.Broker
+	slog    *zap.SugaredLogger
 
 	authTypeToDefaultRing map[string]string
 )
@@ -173,7 +174,7 @@ func updateNotify(records []*updateRecord) {
 
 		err := brokerd.Publish(entity, base_def.TOPIC_CONFIG)
 		if err != nil {
-			log.Printf("Failed to propagate config update: %v", err)
+			slog.Warnf("Failed to propagate config update: %v", err)
 		}
 	}
 }
@@ -183,7 +184,7 @@ func eventHandler(event []byte) {
 	proto.Unmarshal(event, entity)
 
 	if entity.MacAddress == nil {
-		log.Printf("Received a NET.ENTITY event with no MAC: %v\n",
+		slog.Warnf("Received a NET.ENTITY event with no MAC: %v",
 			entity)
 		return
 	}
@@ -214,7 +215,7 @@ func eventHandler(event []byte) {
 		if len(u.value) > 0 {
 			err := propTree.Add(u.path, u.value, nil)
 			if err != nil {
-				log.Printf("failed to insert %s: %v\n", u.path, err)
+				slog.Warnf("failed to insert %s: %v", u.path, err)
 				failed = true
 			} else {
 				u.hash = propTree.Root().Hash()
@@ -228,7 +229,7 @@ func eventHandler(event []byte) {
 		updateNotify(updates)
 		if propTree.ChangesetCommit() {
 			if rerr := propTreeStore(); rerr != nil {
-				log.Printf("failed to write properties: %v",
+				slog.Warnf("failed to write properties: %v",
 					rerr)
 			}
 		}
@@ -246,7 +247,7 @@ func defaultRingInit() {
 	if node, _ := propTree.GetNode("@/network/default_ring"); node != nil {
 		for a, n := range node.Children {
 			authTypeToDefaultRing[a] = n.Value
-			log.Printf("default %s ring: %s\n", a, n.Value)
+			slog.Debugf("default %s ring: %s", a, n.Value)
 		}
 	}
 }
@@ -270,13 +271,13 @@ func selectRing(mac string, client *cfgtree.PNode, authp *string) string {
 	}
 
 	if auth == "" {
-		log.Printf("Can't select ring for %s: no auth type\n", mac)
+		slog.Warnf("Can't select ring for %s: no auth type", mac)
 	} else if r, ok := authTypeToDefaultRing[auth]; ok {
-		log.Printf("Setting initial ring for %s %s to %s\n",
+		slog.Infof("Setting initial ring for %s %s to %s",
 			mac, auth, r)
 		ring = r
 	} else {
-		log.Printf("Can't select ring for %s: unsupported auth: %s\n",
+		slog.Warnf("Can't select ring for %s: unsupported auth: %s",
 			mac, auth)
 	}
 	return ring
@@ -574,7 +575,7 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 		updateNotify(updates)
 		if propTree.ChangesetCommit() {
 			if rerr := propTreeStore(); rerr != nil {
-				log.Printf("failed to write properties: %v",
+				slog.Warnf("failed to write properties: %v",
 					rerr)
 			}
 		}
@@ -615,7 +616,7 @@ func processOneEvent(query *cfgmsg.ConfigQuery) *cfgmsg.ConfigResponse {
 		}
 
 		if *verbose {
-			log.Printf("Config operation failed: %v\n", err)
+			slog.Warnf("Config operation failed: %v", err)
 		}
 		rval = fmt.Sprintf("%v", err)
 	}
@@ -640,10 +641,10 @@ func eventLoop(incoming *zmq.Socket) {
 	for {
 		msg, err := incoming.RecvMessageBytes(0)
 		if err != nil {
-			log.Printf("Error receiving message: %v\n", err)
+			slog.Warnf("Error receiving message: %v", err)
 			errs++
 			if errs > 10 {
-				log.Fatalf("Too many errors - giving up\n")
+				slog.Fatalf("Too many errors - giving up")
 			}
 			continue
 		}
@@ -655,7 +656,7 @@ func eventLoop(incoming *zmq.Socket) {
 		response := processOneEvent(query)
 		data, err := proto.Marshal(response)
 		if err != nil {
-			log.Printf("Failed to marshall response to %v: %v\n",
+			slog.Warnf("Failed to marshal response to %v: %v",
 				*query, err)
 		} else {
 			incoming.SendBytes(data, 0)
@@ -696,7 +697,7 @@ func prometheusInit() {
 }
 
 func fail(format string, a ...interface{}) {
-	log.Printf(format, a...)
+	slog.Warnf(format, a...)
 	mcpd.SetState(mcp.BROKEN)
 	os.Exit(1)
 }
@@ -708,13 +709,13 @@ func configInit() {
 	}
 
 	if err = validationInit(descriptions); err != nil {
-		fail("validationInit() failed: %v\n", err)
+		fail("validationInit() failed: %v", err)
 	}
 
 	expirationInit()
 
 	if err = propTreeInit(defaults); err != nil {
-		fail("propTreeInit() failed: %v\n", err)
+		fail("propTreeInit() failed: %v", err)
 	}
 
 	defaultRingInit()
@@ -723,12 +724,13 @@ func configInit() {
 func main() {
 	var err error
 
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-
 	flag.Parse()
+	slog = aputil.NewLogger()
+	defer slog.Sync()
+	slog.Infof("starting")
 
 	if mcpd, err = mcp.New(pname); err != nil {
-		log.Printf("Failed to connect to mcp: %v\n", err)
+		slog.Warnf("Failed to connect to mcp: %v", err)
 	}
 
 	prometheusInit()
@@ -739,15 +741,15 @@ func main() {
 	defer brokerd.Fini()
 
 	if err = deviceDBInit(); err != nil {
-		fail("Failed to import devices database: %v\n", err)
+		fail("Failed to import devices database: %v", err)
 	}
 
 	incoming, _ := zmq.NewSocket(zmq.REP)
 	port := base_def.INCOMING_ZMQ_URL + base_def.CONFIGD_ZMQ_REP_PORT
 	if err = incoming.Bind(port); err != nil {
-		fail("Failed to bind incoming port %s: %v\n", port, err)
+		fail("Failed to bind incoming port %s: %v", port, err)
 	}
-	log.Printf("Listening on %s\n", port)
+	slog.Debugf("Listening on %s", port)
 
 	mcpd.SetState(mcp.ONLINE)
 

@@ -17,7 +17,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -76,7 +75,7 @@ func getDrop(line string) *archive.DropRecord {
 	l := dropRE.FindStringSubmatch(line)
 	if l == nil {
 		// Ignore any log messages that don't look like drops
-		log.Printf("ignored message <%s>\n", line)
+		slog.Debugf("ignored message <%s>", line)
 		return nil
 	}
 
@@ -86,8 +85,8 @@ func getDrop(line string) *archive.DropRecord {
 		year := time.Now().Year()
 		d.Time = when.AddDate(year, 0, 0)
 	} else {
-		log.Printf("Failed to read time from substring <%s> of "+
-			"full line <%s>: %v\n", l[1], line, err)
+		slog.Warnf("Failed to read time from substring <%s> of "+
+			"full line <%s>: %v", l[1], line, err)
 	}
 
 	// The second match contains the contents of the DROP message.
@@ -126,7 +125,7 @@ func getDrop(line string) *archive.DropRecord {
 		}
 	}
 	if d.Indev == "" {
-		log.Printf("bad line: <%s>\n", line)
+		slog.Warnf("bad line: <%s>", line)
 		return nil
 	}
 	d.Dst = d.DstIP.String() + ":" + strconv.Itoa(d.DstPort)
@@ -160,9 +159,9 @@ func archiveOne(start, end time.Time, lan, wan []*archive.DropRecord) {
 	archive := []archive.DropArchive{rec}
 	s, err := json.MarshalIndent(&archive, "", "  ")
 	if err != nil {
-		log.Printf("unable to construct droplog JSON: %v", err)
+		slog.Warnf("unable to construct droplog JSON: %v", err)
 	} else if err = ioutil.WriteFile(file, s, 0644); err != nil {
-		log.Printf("failed to write droplog file %s: %v", file, err)
+		slog.Warnf("failed to write droplog file %s: %v", file, err)
 	}
 }
 
@@ -190,7 +189,7 @@ func archiver(lock *sync.Mutex, done chan bool) {
 		}
 	}
 	archiveOne(start, time.Now(), lanDrops, wanDrops)
-	log.Printf("Archiver done\n")
+	slog.Infof("Archiver done")
 }
 
 func countDrop(d *archive.DropRecord) {
@@ -233,7 +232,7 @@ func logMonitor(name string) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		log.Fatalf("error processing log pipe: %v\n", err)
+		slog.Fatalf("error processing log pipe: %v", err)
 	}
 
 	doneChan <- true
@@ -244,32 +243,32 @@ func openPipe() {
 	var err error
 	var warned bool
 
-	log.Printf("Opening droplog pipe: %s\n", *pipeName)
+	slog.Infof("Opening droplog pipe: %s", *pipeName)
 	for droplogRunning && logpipe == nil {
 		logpipe, err = os.OpenFile(*pipeName, os.O_RDONLY,
 			os.ModeNamedPipe)
 		if err != nil {
 			if !warned {
-				log.Printf("Failed to open droplog pipe %s: %v",
+				slog.Warnf("Failed to open droplog pipe %s: %v",
 					*pipeName, err)
 				warned = true
 			}
 			time.Sleep(time.Second)
 		}
 	}
-	log.Printf("Opened droplog pipe: %s\n", *pipeName)
+	slog.Infof("Opened droplog pipe: %s", *pipeName)
 }
 
 // When properly configured rsyslog will copy DROP messages to a named pipe, but
 // it is our responsibility to create the pipe.
 func createPipe() error {
 	if !aputil.FileExists(*pipeName) {
-		log.Printf("Creating named pipe %s for log input\n", *pipeName)
+		slog.Infof("Creating named pipe %s for log input", *pipeName)
 		if err := syscall.Mkfifo(*pipeName, 0600); err != nil {
 			return fmt.Errorf("failed to create %s: %v", *pipeName, err)
 		}
 
-		log.Printf("Restarting rsyslogd\n")
+		slog.Infof("Restarting rsyslogd")
 		c := exec.Command("/bin/systemctl", "restart", "rsyslog")
 		if err := c.Run(); err != nil {
 			return fmt.Errorf("failed to restart rsyslogd: %v", err)
@@ -285,13 +284,13 @@ func findWanNics() {
 
 	nics, err := config.GetNics(base_def.RING_WAN, "")
 	if err != nil {
-		log.Printf("failed to get list of WAN NICs: %v\n", err)
+		slog.Warnf("failed to get list of WAN NICs: %v", err)
 		return
 	}
 
 	all, err := net.Interfaces()
 	if err != nil {
-		log.Printf("failed to get local interface list: %v\n", err)
+		slog.Warnf("failed to get local interface list: %v", err)
 		return
 	}
 
@@ -322,14 +321,14 @@ func droplogInit(w *watcher) {
 	dropDir = *watchDir + "/droplog"
 	if !aputil.FileExists(dropDir) {
 		if err := os.MkdirAll(dropDir, 0755); err != nil {
-			log.Printf("Unable to make droplog directory %s: %v\n",
+			slog.Errorf("Unable to make droplog directory %s: %v",
 				dropDir, err)
 			return
 		}
 	}
 
 	if err := createPipe(); err != nil {
-		log.Printf("error creating syslog pipe %s: %v", *pipeName, err)
+		slog.Errorf("creating syslog pipe %s: %v", *pipeName, err)
 	} else {
 		dropThreads.Add(1)
 		go logMonitor(*pipeName)

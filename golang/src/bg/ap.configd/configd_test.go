@@ -37,6 +37,7 @@ import (
 	"strings"
 	"testing"
 
+	"bg/ap_common/aputil"
 	"bg/common/cfgapi"
 	"bg/common/cfgmsg"
 	"bg/common/cfgtree"
@@ -775,6 +776,7 @@ func TestMain(m *testing.M) {
 	}
 
 	prometheusInit()
+	slog = aputil.NewLogger()
 	testData, err = ioutil.ReadFile(*testFile)
 	if err != nil {
 		log.Printf("Failed to load properties file %s: %v\n",

@@ -25,7 +25,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -48,6 +47,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/klauspost/oui"
+	"go.uber.org/zap"
 )
 
 var (
@@ -58,6 +58,7 @@ var (
 	brokerd  *broker.Broker
 	configd  *cfgapi.Handle
 	profiler *aputil.Profiler
+	slog     *zap.SugaredLogger
 
 	ouiDB   oui.DynamicDB
 	mfgidDB = make(map[string]int)
@@ -127,7 +128,7 @@ func handleEntity(event []byte) {
 	mac := network.Uint64ToMac(hwaddr)
 	entry, err := ouiDB.Query(mac)
 	if err != nil {
-		log.Printf("MAC address %s not in OUI database\n", mac)
+		slog.Infof("MAC address %s not in OUI database", mac)
 		id = mfgidDB["Unknown"]
 	} else {
 		id = mfgidDB[entry.Manufacturer]
@@ -148,13 +149,13 @@ func handleRequest(event []byte) {
 	// See record_client() in dns4d
 	ip := net.ParseIP(*request.Requestor)
 	if ip == nil {
-		log.Printf("empty Requestor: %v\n", request)
+		slog.Warnf("empty Requestor: %v", request)
 		return
 	}
 
 	hwaddr, ok := getHWaddr(network.IPAddrToUint32(ip))
 	if !ok {
-		log.Println("unknown entity:", ip)
+		slog.Warnf("unknown entity:", ip)
 		return
 	}
 
@@ -169,7 +170,7 @@ func handleRequest(event []byte) {
 func configDHCPChanged(path []string, val string, expires *time.Time) {
 	mac, err := net.ParseMAC(path[1])
 	if err != nil {
-		log.Printf("invalid MAC address %s\n", path[1])
+		slog.Warnf("invalid MAC address %s", path[1])
 		return
 	}
 
@@ -180,13 +181,13 @@ func configDHCPChanged(path []string, val string, expires *time.Time) {
 func configIPv4Changed(path []string, val string, expires *time.Time) {
 	mac, err := net.ParseMAC(path[1])
 	if err != nil {
-		log.Printf("invalid MAC address %s\n", path[1])
+		slog.Warnf("invalid MAC address %s", path[1])
 		return
 	}
 
 	ipv4 := net.ParseIP(val)
 	if ipv4 == nil {
-		log.Printf("invalid IPv4 address %s\n", val)
+		slog.Warnf("invalid IPv4 address %s", val)
 		return
 	}
 	ipaddr := network.IPAddrToUint32(ipv4)
@@ -196,7 +197,7 @@ func configIPv4Changed(path []string, val string, expires *time.Time) {
 func configIPv4Delexp(path []string) {
 	mac, err := net.ParseMAC(path[1])
 	if err != nil {
-		log.Printf("invalid MAC address %s\n", path[1])
+		slog.Warnf("invalid MAC address %s", path[1])
 		return
 	}
 
@@ -206,13 +207,13 @@ func configIPv4Delexp(path []string) {
 func configPrivacyChanged(path []string, val string, expires *time.Time) {
 	mac, err := net.ParseMAC(path[1])
 	if err != nil {
-		log.Printf("invalid MAC address %s: %s\n", path[1], err)
+		slog.Warnf("invalid MAC address %s: %s", path[1], err)
 		return
 	}
 
 	private, err := strconv.ParseBool(val)
 	if err != nil {
-		log.Printf("invalid bool value %s: %s\n", val, err)
+		slog.Warnf("invalid bool value %s: %s", val, err)
 		return
 	}
 
@@ -222,7 +223,7 @@ func configPrivacyChanged(path []string, val string, expires *time.Time) {
 func configPrivacyDelete(path []string) {
 	mac, err := net.ParseMAC(path[1])
 	if err != nil {
-		log.Printf("invalid MAC address %s\n", path[1])
+		slog.Warnf("invalid MAC address %s", path[1])
 		return
 	}
 
@@ -278,11 +279,11 @@ func handleOptions(event []byte) {
 
 func save() {
 	if err := newData.writeInventory(filepath.Join(*logDir, observeFile)); err != nil {
-		log.Println("could not save observation data:", err)
+		slog.Warnf("could not save observation data:", err)
 	}
 
 	if err := testData.saveTestData(filepath.Join(*dataDir, testFile)); err != nil {
-		log.Println("could not save test data:", err)
+		slog.Warnf("could not save test data:", err)
 	}
 }
 
@@ -309,7 +310,7 @@ func clean() {
 	}
 
 	if err := filepath.Walk(*logDir, walkFunc); err != nil {
-		log.Printf("error walking %s: %v\n", *logDir, err)
+		slog.Warnf("error walking %s: %v", *logDir, err)
 	}
 }
 
@@ -338,11 +339,11 @@ func updateClient(hwaddr uint64, devID string, confidence float32) {
 	confProp := "@/clients/" + mac + "/confidence"
 
 	if err := configd.CreateProp(identProp, devID, nil); err != nil {
-		log.Printf("error creating prop %s: %s\n", identProp, err)
+		slog.Errorf("creating prop %s: %s", identProp, err)
 	}
 
 	if err := configd.CreateProp(confProp, fmt.Sprintf("%.2f", confidence), nil); err != nil {
-		log.Printf("error creating prop %s: %s\n", confProp, err)
+		slog.Errorf("creating prop %s: %s", confProp, err)
 	}
 }
 
@@ -352,7 +353,7 @@ func identify() {
 		id := <-newIdentities
 		devid, err := strconv.Atoi(id.devID)
 		if err != nil || devid == 0 {
-			log.Printf("returned a bogus identity for %v: %s\n",
+			slog.Warnf("returned a bogus identity for %v: %s",
 				id.hwaddr, id.devID)
 			continue
 		}
@@ -373,7 +374,8 @@ func identify() {
 
 		err = brokerd.Publish(identity, base_def.TOPIC_IDENTITY)
 		if err != nil {
-			log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_IDENTITY, err)
+			slog.Errorf("couldn't publish %s: %v",
+				base_def.TOPIC_IDENTITY, err)
 		}
 	}
 }
@@ -384,7 +386,7 @@ func recoverClients() {
 	for macaddr, client := range clients {
 		hwaddr, err := net.ParseMAC(macaddr)
 		if err != nil {
-			log.Printf("Invalid mac address in @/clients: %s\n", macaddr)
+			slog.Warnf("Invalid mac address in @/clients: %s", macaddr)
 			continue
 		}
 		hw := network.HWAddrToUint64(hwaddr)
@@ -408,7 +410,7 @@ func signalHandler() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR2)
 	for {
 		s := <-sig
-		log.Printf("Signal (%v) received.\n", s)
+		slog.Infof("Signal (%v) received.", s)
 		switch s {
 
 		case syscall.SIGUSR2:
@@ -418,7 +420,7 @@ func signalHandler() {
 
 			if !profiling {
 				if err := profiler.CPUStart(); err != nil {
-					log.Printf("profiler failed: %v\n", err)
+					slog.Warnf("profiler failed: %v", err)
 				} else {
 					profiling = true
 				}
@@ -436,40 +438,42 @@ func signalHandler() {
 func main() {
 	var err error
 
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-	log.Println("start")
-
 	flag.Parse()
+	slog = aputil.NewLogger()
+	defer slog.Sync()
+
+	slog.Infof("starting")
+
 	*dataDir = aputil.ExpandDirPath(*dataDir)
 	*modelDir = aputil.ExpandDirPath(*modelDir)
 	*logDir = aputil.ExpandDirPath(*logDir)
 
 	mcpd, err := mcp.New(pname)
 	if err != nil {
-		log.Printf("failed to connect to mcp\n")
+		slog.Warnf("failed to connect to mcp")
 	}
 
 	// OUI database
 	ouiPath := filepath.Join(*dataDir, ouiFile)
 	ouiDB, err = oui.OpenFile(ouiPath)
 	if err != nil {
-		log.Fatalf("failed to open OUI file %s: %s", ouiPath, err)
+		slog.Fatalf("failed to open OUI file %s: %s", ouiPath, err)
 	}
 
 	// Manufacturer database
 	mfgidPath := filepath.Join(*dataDir, mfgidFile)
 	file, err := ioutil.ReadFile(mfgidPath)
 	if err != nil {
-		log.Fatalf("failed to open manufacturer ID file %s: %v\n", mfgidPath, err)
+		slog.Fatalf("failed to open manufacturer ID file %s: %v", mfgidPath, err)
 	}
 
 	err = json.Unmarshal(file, &mfgidDB)
 	if err != nil {
-		log.Fatalf("failed to import manufacturer IDs from %s: %v\n", mfgidPath, err)
+		slog.Fatalf("failed to import manufacturer IDs from %s: %v", mfgidPath, err)
 	}
 
 	if err = testData.loadModel(filepath.Join(*dataDir, trainFile), *modelDir); err != nil {
-		log.Fatalln("failed to load model", err)
+		slog.Fatalf("failed to load model", err)
 	}
 
 	// Use the broker to listen for appropriate messages to create and update
@@ -480,13 +484,13 @@ func main() {
 
 	configd, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err != nil {
-		log.Fatalf("cannot connect to configd: %v\n", err)
+		slog.Fatalf("cannot connect to configd: %v", err)
 	}
 
 	recoverClients()
 
 	if err = testData.loadTestData(filepath.Join(*dataDir, testFile)); err != nil {
-		log.Println("failed to recover test data:", err)
+		slog.Warnf("failed to recover test data:", err)
 	}
 
 	brokerd.Handle(base_def.TOPIC_ENTITY, handleEntity)
@@ -503,11 +507,11 @@ func main() {
 	configd.HandleDelete(`^@/clients/.*/dns_private$`, configPrivacyDelete)
 
 	if err = os.MkdirAll(*logDir, 0755); err != nil {
-		log.Fatalln("failed to mkdir:", err)
+		slog.Fatalf("failed to mkdir:", err)
 	}
 
 	if err = mcpd.SetState(mcp.ONLINE); err != nil {
-		log.Printf("failed to set status\n")
+		slog.Warnf("failed to set status")
 	}
 
 	profiler = aputil.NewProfiler(pname)

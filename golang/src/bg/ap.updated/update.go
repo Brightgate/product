@@ -42,7 +42,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -64,6 +63,7 @@ import (
 	"bg/common/grpcutils"
 	"bg/common/urlfetch"
 
+	"go.uber.org/zap"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
@@ -80,6 +80,7 @@ var (
 	rpcConn       *grpc.ClientConn
 	storageClient cloud_rpc.CloudStorageClient
 	applianceCred *grpcutils.Credential
+	slog          *zap.SugaredLogger
 
 	updatePeriod = flag.Duration("update", 10*time.Minute,
 		"frequency with which to check updates")
@@ -158,9 +159,9 @@ func configBucketChanged(path []string, val string, expires *time.Time) {
 		switch path[1] {
 		case "update":
 			updateBucket = val
-			log.Printf("Changed update bucket to %s\n", val)
+			slog.Infof("Changed update bucket to %s", val)
 		default:
-			log.Printf("unrecognized bucket: %s (%v)\n", path[1], path)
+			slog.Warnf("unrecognized bucket: %s (%v)", path[1], path)
 		}
 	}
 }
@@ -195,7 +196,7 @@ func refresh(u *updateInfo) (bool, error) {
 			_, err = urlfetch.FetchURL(url, target, "")
 		}
 		if err == nil {
-			log.Printf("Updated %s\n", target)
+			slog.Infof("Updated %s", target)
 			dataRefreshed = true
 		} else {
 			os.Remove(metaFile)
@@ -209,9 +210,9 @@ func refreshOne(name string) {
 	update := updates[name]
 	refreshed, err := refresh(&update)
 	if err != nil {
-		log.Printf("Failed to update %s: %v\n", name, err)
+		slog.Warnf("Failed to update %s: %v", name, err)
 	} else if refreshed {
-		log.Printf("%s refreshed\n", name)
+		slog.Infof("%s refreshed", name)
 		tstr := time.Now().Format(time.RFC3339)
 		prop := "@/updates/" + name
 		config.CreateProp(prop, tstr, nil)
@@ -223,7 +224,7 @@ func updateLoop(wg *sync.WaitGroup, doneChan chan bool) {
 
 	updateBucket, _ = config.GetProp("@/cloud/update/bucket")
 	if updateBucket == "" {
-		log.Printf("no update bucket defined\n")
+		slog.Warnf("no update bucket defined")
 	}
 
 	refreshSig := make(chan os.Signal, 1)
@@ -239,7 +240,7 @@ func updateLoop(wg *sync.WaitGroup, doneChan chan bool) {
 
 		select {
 		case <-refreshSig:
-			log.Printf("Received SIGHUP.  Refreshing updates.\n")
+			slog.Infof("Received SIGHUP.  Refreshing updates.")
 		case <-ticker.C:
 		case done = <-doneChan:
 		}
@@ -316,7 +317,7 @@ func getFilenames(dir string, max int) []string {
 
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
-		log.Printf("Unable to get contents of %s: %v\n", dir, err)
+		slog.Warnf("Unable to get contents of %s: %v", dir, err)
 	} else {
 		for i, f := range files {
 			if i == max {
@@ -348,7 +349,7 @@ func doUpload(rpcClient cloud_rpc.CloudStorageClient) {
 		urls, err := generateSignedURLs(rpcClient, &t,
 			getFilenames(dir, *uploadBatchSize))
 		if err != nil {
-			log.Printf("Couldn't generate signed URLs for upload: %v", err)
+			slog.Warnf("Couldn't generate signed URLs for upload: %v", err)
 			continue
 		}
 		for _, url := range urls {
@@ -368,13 +369,13 @@ func doUpload(rpcClient cloud_rpc.CloudStorageClient) {
 	errs := 0
 	for _, u := range uploads {
 		if err := upload(client, u); err != nil {
-			log.Printf("failed to upload %s: %s\n", u.source, err)
+			slog.Warnf("failed to upload %s: %s", u.source, err)
 			errs++
 		} else if err := os.Remove(u.source); err != nil {
-			log.Printf("unable to remove %s: %v\n", u.source, err)
+			slog.Warnf("unable to remove %s: %v", u.source, err)
 		}
 		if errs >= *uploadErrMax {
-			log.Printf("%d uploads failed.  Giving up.\n", errs)
+			slog.Warnf("%d uploads failed.  Giving up.", errs)
 			break
 		}
 	}
@@ -382,9 +383,9 @@ func doUpload(rpcClient cloud_rpc.CloudStorageClient) {
 
 func uploadInit() error {
 	var err error
-	applianceCred, err = grpcutils.SystemCredential()
+	applianceCred, err = aputil.SystemCredential()
 	if err != nil {
-		log.Printf("Failed to build credential: %s", err)
+		slog.Warnf("Failed to build credential: %s", err)
 		return err
 	}
 
@@ -401,8 +402,7 @@ func uploadInit() error {
 	}
 
 	if !enableTLS {
-		log.Printf("Connecting insecurely due to '-enable-tls=false'" +
-			"flag (developers only!)")
+		slog.Infof("Connecting insecurely due to '-enable-tls=false' flag (developers only!)")
 	}
 
 	if connectURL == "" {
@@ -411,7 +411,7 @@ func uploadInit() error {
 
 	rpcConn, err = grpcutils.NewClientConn(connectURL, enableTLS, pname)
 	if err != nil {
-		log.Printf("Failed to make RPC client: %+v", err)
+		slog.Warnf("Failed to make RPC client: %+v", err)
 		return err
 	}
 	storageClient = cloud_rpc.NewCloudStorageClient(rpcConn)
@@ -430,7 +430,7 @@ func uploadLoop(wg *sync.WaitGroup, doneChan chan bool) {
 			if err == nil {
 				initted = true
 			} else if err != lastError {
-				log.Printf("%v\n", err)
+				slog.Warnf("%v", err)
 				lastError = err
 			}
 		}
@@ -453,12 +453,13 @@ func uploadLoop(wg *sync.WaitGroup, doneChan chan bool) {
 func main() {
 	var wg sync.WaitGroup
 
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	flag.Parse()
+	slog = aputil.NewLogger()
+	defer slog.Sync()
 
 	mcpd, err := mcp.New(pname)
 	if err != nil {
-		log.Printf("cannot connect to mcp\n")
+		slog.Warnf("cannot connect to mcp")
 	}
 
 	brokerd := broker.New(pname)
@@ -466,7 +467,7 @@ func main() {
 
 	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err != nil {
-		log.Fatalf("cannot connect to configd: %v\n", err)
+		slog.Fatalf("cannot connect to configd: %v", err)
 	}
 	config.HandleChange(`^@/cloud/.*/bucket`, configBucketChanged)
 
@@ -483,7 +484,7 @@ func main() {
 	signal.Notify(exitSig, syscall.SIGINT, syscall.SIGTERM)
 
 	s := <-exitSig
-	log.Printf("Received signal '%v'.  Exiting.\n", s)
+	slog.Infof("Received signal '%v'.  Exiting.", s)
 
 	stopUpdate <- true
 	stopUpload <- true

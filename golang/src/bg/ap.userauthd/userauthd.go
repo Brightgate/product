@@ -77,7 +77,6 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -96,6 +95,8 @@ import (
 	"bg/common/cfgapi"
 
 	"github.com/golang/protobuf/proto"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -132,6 +133,7 @@ var (
 	plat       *platform.Platform
 	configd    *cfgapi.Handle
 	mcpd       *mcp.MCP
+	slog       *zap.SugaredLogger
 	running    bool
 	secret     []byte
 	rc         *rConf
@@ -163,9 +165,9 @@ func configNetworkRadiusChanged(path []string, val string, expires *time.Time) {
 		resetFunc = generateRadiusHostapdConf
 	case "radiusAuthSecret":
 		resetFunc = generateRadiusClientConf
-		log.Printf("surprising change to network/radiusAuthSecret\n")
+		slog.Infof("surprising change to network/radiusAuthSecret")
 	default:
-		log.Printf("ignoring change to %v\n", path)
+		slog.Debugf("ignoring change to %v", path)
 	}
 
 	if resetFunc != nil {
@@ -184,11 +186,11 @@ func sysErrorCertificate(event []byte) {
 	syserror := &base_msg.EventSysError{}
 	proto.Unmarshal(event, syserror)
 
-	log.Printf("sys.error received by handler: %v", *syserror)
+	slog.Debugf("sys.error received by handler: %v", *syserror)
 
 	// Check if event is a certificate error
 	if *syserror.Reason == base_msg.EventSysError_RENEWED_SSL_CERTIFICATE {
-		log.Printf("exiting due to renewed certificate")
+		slog.Infof("exiting due to renewed certificate")
 		hostapdProcess.Stop()
 		os.Exit(0)
 	}
@@ -202,19 +204,19 @@ func generateRadiusHostapdUsers(rc *rConf) string {
 	// Incomplete users should not be included in the config file
 	for u, i := range rc.Users {
 		if i.MD4Password == "" {
-			log.Printf("Skipping user '%s': no password set\n", u)
+			slog.Warnf("Skipping user '%s': no password set", u)
 			delete(rc.Users, u)
 		}
 	}
 
-	log.Printf("user configuration: %v\n", rc)
+	slog.Debugf("user configuration: %v", rc)
 
 	// var err error
 	ufile := *templateDir + "/hostapd.users.got"
 
 	u, err := template.ParseFiles(ufile)
 	if err != nil {
-		log.Fatalf("users template parse failed: %v\n", err)
+		slog.Fatalf("users template parse failed: %v", err)
 	}
 
 	un := rc.ConfDir + "/" + rc.UserFile
@@ -223,7 +225,7 @@ func generateRadiusHostapdUsers(rc *rConf) string {
 
 	err = u.Execute(uf, rc)
 	if err != nil {
-		log.Fatalf("users template execution failed: %v\n", err)
+		slog.Fatalf("users template execution failed: %v", err)
 	}
 
 	return ufile
@@ -234,13 +236,13 @@ func generateRadiusHostapdConf(rc *rConf) string {
 	var err error
 	tfile := *templateDir + "/hostapd.radius.got"
 
-	log.Printf("radius configuration: %v\n", rc)
+	slog.Debugf("radius configuration: %v", rc)
 
 	// Create hostapd.conf, using the APConfig contents to fill out the .got
 	// template
 	t, err := template.ParseFiles(tfile)
 	if err != nil {
-		log.Fatalf("radius template parse failed: %v\n", err)
+		slog.Fatalf("radius template parse failed: %v", err)
 	}
 
 	fn := rc.ConfDir + "/" + rc.ConfFile
@@ -249,7 +251,7 @@ func generateRadiusHostapdConf(rc *rConf) string {
 
 	err = t.Execute(cf, rc)
 	if err != nil {
-		log.Fatalf("radius template execution failed: %v\n", err)
+		slog.Fatalf("radius template execution failed: %v", err)
 	}
 
 	return fn
@@ -262,13 +264,13 @@ func generateRadiusClientConf(rc *rConf) string {
 	var err error
 	cfile := *templateDir + "/hostapd.radius_clients.got"
 
-	log.Printf("radius configuration: %v\n", rc)
+	slog.Debugf("radius configuration: %v", rc)
 
 	// Create hostapd.radius_client.conf, using the rConf contents
 	// to fill out the template.
 	c, err := template.ParseFiles(cfile)
 	if err != nil {
-		log.Fatalf("client template parse failed: %v\n", err)
+		slog.Fatalf("client template parse failed: %v", err)
 	}
 
 	fn := rc.ConfDir + "/" + rc.ClientFile
@@ -277,7 +279,7 @@ func generateRadiusClientConf(rc *rConf) string {
 
 	err = c.Execute(cf, rc)
 	if err != nil {
-		log.Fatalf("client template execution failed: %v\n", err)
+		slog.Fatalf("client template execution failed: %v", err)
 	}
 
 	return fn
@@ -293,7 +295,7 @@ func signalHandler() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	s := <-sig
 
-	log.Printf("Received signal %v\n", s)
+	slog.Infof("Received signal %v", s)
 	running = false
 	hostapdProcess.Stop()
 }
@@ -302,11 +304,11 @@ func signalHandler() {
 // Launch, monitor, and maintain the hostapd process for a single interface
 //
 func runOne(rc *rConf) {
-	log.Printf("runOne entry\n")
+	slog.Debugf("runOne entry")
 	generateRadiusHostapdUsers(rc)
 	generateRadiusClientConf(rc)
 	fn := generateRadiusHostapdConf(rc)
-	log.Printf("runOne configuration %v\n", fn)
+	slog.Debugf("runOne configuration %v", fn)
 
 	args := make([]string, 0)
 	if *verbose {
@@ -317,13 +319,12 @@ func runOne(rc *rConf) {
 	startTimes := make([]time.Time, failuresAllowed)
 	for running {
 		hostapdProcess = aputil.NewChild(plat.HostapdCmd, args...)
-		hostapdProcess.LogOutputTo("radius: ",
-			log.Ldate|log.Ltime, os.Stderr)
+		hostapdProcess.UseZapLog("radius: ", slog, zapcore.InfoLevel)
 
 		startTime := time.Now()
 		startTimes = append(startTimes[1:failuresAllowed], startTime)
 
-		log.Printf("Starting RADIUS hostapd\n")
+		slog.Infof("Starting RADIUS hostapd")
 
 		if err := hostapdProcess.Start(); err != nil {
 			rc.Status = fmt.Sprintf("RADIUS hostapd failed to launch: %v", err)
@@ -332,7 +333,7 @@ func runOne(rc *rConf) {
 
 		hostapdProcess.Wait()
 
-		log.Printf("RADIUS hostapd exited after %s\n",
+		slog.Infof("RADIUS hostapd exited after %s",
 			time.Since(startTime))
 
 		if !running {
@@ -347,7 +348,7 @@ func runOne(rc *rConf) {
 		// restart the daemon.
 		time.Sleep(time.Second)
 	}
-	log.Printf("runOne exit\n")
+	slog.Infof("runOne exit")
 }
 
 func establishSecret() ([]byte, error) {
@@ -400,12 +401,12 @@ func main() {
 	var err error
 
 	flag.Parse()
-
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+	slog = aputil.NewLogger()
+	defer slog.Sync()
 
 	mcpd, err := mcp.New(pname)
 	if err != nil {
-		log.Println("Failed to connect to mcp")
+		slog.Warnf("Failed to connect to mcp")
 	}
 
 	plat = platform.NewPlatform()
@@ -416,23 +417,23 @@ func main() {
 
 	configd, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err != nil {
-		log.Fatalf("cannot connect to configd: %v\n", err)
+		slog.Fatalf("cannot connect to configd: %v", err)
 	}
 
 	domainName, err := configd.GetDomain()
 	if err != nil {
-		log.Fatalf("failed to fetch gateway domain: %v\n", err)
+		slog.Fatalf("failed to fetch gateway domain: %v", err)
 	}
 	gatewayName := "gateway." + domainName
 	keyfn, certfn, chainfn, _, err := certificate.GetKeyCertPaths(brokerd,
 		gatewayName, time.Now(), false)
 	if err != nil {
-		log.Fatalf("Cannot get any SSL key/certificate/chain: %v", err)
+		slog.Fatalf("Cannot get any SSL key/certificate/chain: %v", err)
 	}
 
 	secret, err = establishSecret()
 	if err != nil {
-		log.Fatalf("Cannot establish secret: %v", err)
+		slog.Fatalf("Cannot establish secret: %v", err)
 	}
 
 	configd.HandleChange(`^@/users/.*$`, configUserChanged)
@@ -440,7 +441,7 @@ func main() {
 
 	mcpd.SetState(mcp.ONLINE)
 
-	log.Printf("secret '%v'\n", secret)
+	slog.Debugf("secret '%v'", secret)
 
 	rc = &rConf{
 		ConfDir:          "/tmp",

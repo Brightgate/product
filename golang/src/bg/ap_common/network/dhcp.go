@@ -76,7 +76,7 @@ func DHCPDecodeOptions(s []byte) (opts []dhcp.Option, err error) {
 	return
 }
 
-// DHCPEncodeOptions marshalls a slice of DHCP options into a bytestream as
+// DHCPEncodeOptions marshals a slice of DHCP options into a bytestream as
 // described in RFC-2132
 func DHCPEncodeOptions(opts []dhcp.Option) (s []byte, err error) {
 	for _, opt := range opts {

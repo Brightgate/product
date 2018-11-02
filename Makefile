@@ -429,6 +429,8 @@ APP_COMMON_SRCS = \
 	$(GOSRCBG)/ap_common/apcfg/apcfg.go \
 	$(GOSRCBG)/ap_common/apcfg/events.go \
 	$(GOSRCBG)/ap_common/aputil/aputil.go \
+	$(GOSRCBG)/ap_common/aputil/cred.go \
+	$(GOSRCBG)/ap_common/aputil/logging.go \
 	$(GOSRCBG)/ap_common/broker/broker.go \
 	$(GOSRCBG)/ap_common/device/device.go \
 	$(GOSRCBG)/ap_common/mcp/mcp_client.go \

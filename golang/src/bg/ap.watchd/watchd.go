@@ -13,7 +13,6 @@ package main
 
 import (
 	"flag"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -35,6 +34,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/zap"
 )
 
 const pname = "ap.watchd"
@@ -44,11 +44,11 @@ var (
 		"directory in which the watchd work files should be stored")
 	addr = flag.String("pport", base_def.WATCHD_PROMETHEUS_PORT,
 		"The address to listen on for Prometheus HTTP requests.")
-	verbose     = flag.Bool("verbose", false, "verbose output")
 	nmapVerbose = flag.Bool("nmapVerbose", false, "log nmap output")
 
 	brokerd *broker.Broker
 	config  *cfgapi.Handle
+	slog    *zap.SugaredLogger
 
 	profiler *aputil.Profiler
 	watchers = make([]*watcher, 0)
@@ -152,7 +152,7 @@ func configIPv4Changed(path []string, value string, expires *time.Time) {
 
 	hwaddr, err := net.ParseMAC(mac)
 	if err != nil {
-		log.Printf("invalid MAC address %s", mac)
+		slog.Warnf("invalid MAC address %s", mac)
 		return
 	}
 
@@ -161,7 +161,7 @@ func configIPv4Changed(path []string, value string, expires *time.Time) {
 		scannerRequest(mac, ipv4.String())
 		setMacIP(mac, value)
 	} else {
-		log.Printf("invalid IPv4 address %s", value)
+		slog.Warnf("invalid IPv4 address %s", value)
 	}
 }
 
@@ -170,7 +170,7 @@ func configIPv4Delexp(path []string) {
 		unregisterIPAddr(hwaddr)
 		clearMac(path[1])
 	} else {
-		log.Printf("invalid MAC address %s", path[1])
+		slog.Warnf("invalid MAC address %s", path[1])
 	}
 }
 
@@ -203,7 +203,7 @@ func getLeases() {
 	for macaddr, client := range clients {
 		hwaddr, err := net.ParseMAC(macaddr)
 		if err != nil {
-			log.Printf("Invalid mac address: %s\n", macaddr)
+			slog.Warnf("Invalid mac address: %s", macaddr)
 		} else if client.IPv4 != nil {
 			registerIPAddr(hwaddr, client.IPv4)
 		}
@@ -216,13 +216,13 @@ func logUnknown(ring, mac, ipstr string) bool {
 
 	addr = net.ParseIP(ipstr).To4()
 	if addr == nil {
-		log.Printf("Couldn't parse IP address: %s\n", ipstr)
+		slog.Warnf("Couldn't parse IP address: %s", ipstr)
 		return false
 	}
 
 	hwaddr, err := net.ParseMAC(mac)
 	if err != nil {
-		log.Printf("Couldn't parse MAC: %s\n", mac)
+		slog.Warnf("Couldn't parse MAC: %s", mac)
 		return false
 	}
 
@@ -246,7 +246,7 @@ func signalHandler() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR2)
 	for {
 		s := <-sig
-		log.Printf("Signal (%v) received.\n", s)
+		slog.Infof("Signal (%v) received.", s)
 		switch s {
 
 		case syscall.SIGUSR2:
@@ -256,7 +256,7 @@ func signalHandler() {
 
 			if !profiling {
 				if err := profiler.CPUStart(); err != nil {
-					log.Printf("profiler failed: %v\n", err)
+					slog.Warnf("profiler failed: %v", err)
 				} else {
 					profiling = true
 				}
@@ -350,19 +350,21 @@ func prometheusInit() {
 func main() {
 	// To avoid dropping packets, we need to have extra processes available.
 	runtime.GOMAXPROCS(8)
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-	flag.Parse()
-	*watchDir = aputil.ExpandDirPath(*watchDir)
 
+	flag.Parse()
+	slog = aputil.NewLogger()
+	defer slog.Sync()
+
+	*watchDir = aputil.ExpandDirPath(*watchDir)
 	if !aputil.FileExists(*watchDir) {
 		if err := os.MkdirAll(*watchDir, 0755); err != nil {
-			log.Fatalf("Error adding directory %s: %v\n",
+			slog.Fatalf("Error adding directory %s: %v",
 				*watchDir, err)
 		}
 	}
 	mcpd, err := mcp.New(pname)
 	if err != nil {
-		log.Printf("failed to connect to mcp\n")
+		slog.Warnf("failed to connect to mcp")
 	}
 
 	prometheusInit()
@@ -372,7 +374,7 @@ func main() {
 
 	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err != nil {
-		log.Fatalf("cannot connect to configd: %v\n", err)
+		slog.Fatalf("cannot connect to configd: %v", err)
 	}
 
 	config.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
@@ -394,7 +396,7 @@ func main() {
 
 	for _, w := range watchers {
 		if w.running {
-			log.Printf("Stopping %s\n", w.name)
+			slog.Infof("Stopping %s", w.name)
 			go w.fini(w)
 		}
 	}
@@ -403,7 +405,7 @@ func main() {
 		logged := false
 		for w.running {
 			if !logged {
-				log.Printf("Waiting for %s\n", w.name)
+				slog.Infof("Waiting for %s", w.name)
 				logged = true
 			}
 			time.Sleep(time.Millisecond)

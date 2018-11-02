@@ -33,6 +33,8 @@ import (
 	"bg/base_msg"
 
 	"github.com/golang/protobuf/proto"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -58,10 +60,12 @@ type Child struct {
 	Cmd     *exec.Cmd
 	Process *os.Process
 
-	pipes  int
-	done   chan bool
-	logger *log.Logger
-	prefix string
+	pipes     int
+	done      chan bool
+	stdLogger *log.Logger
+	zapLogger *zap.SugaredLogger
+	zapLevel  zapcore.Level
+	prefix    string
 
 	stat   *os.File
 	status *os.File
@@ -90,10 +94,21 @@ type ChildState struct {
 func handlePipe(c *Child, r io.ReadCloser) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
-		if c.logger != nil {
-			c.logger.Printf("%s%s\n", c.prefix, scanner.Text())
-		} else {
-			fmt.Printf("%s\n", scanner.Text())
+		line := c.prefix + scanner.Text()
+		if c.stdLogger != nil {
+			c.stdLogger.Printf("%s\n", line)
+		}
+		if c.zapLogger != nil {
+			switch c.zapLevel {
+			case zapcore.DebugLevel:
+				c.zapLogger.Debugf("%s", line)
+			case zapcore.InfoLevel:
+				c.zapLogger.Infof("%s", line)
+			case zapcore.WarnLevel:
+				c.zapLogger.Warnf("%s", line)
+			case zapcore.ErrorLevel:
+				c.zapLogger.Errorf("%s", line)
+			}
 		}
 	}
 
@@ -315,30 +330,40 @@ func (c *Child) GetState() (*ChildState, error) {
 	return &rval, nil
 }
 
-// SetOutput will reset a child's log target
-func (c *Child) SetOutput(w io.Writer) {
-	if c.logger == nil {
-		return
-	}
+// UseZapLog will shut down any open Go logging, and will prepare to log child
+// output using zap.
+func (c *Child) UseZapLog(prefix string, slog *zap.SugaredLogger,
+	level zapcore.Level) {
 
-	c.logger.SetOutput(w)
+	c.stdLogger = nil
+	c.prefix = prefix
+	childLogger, err := newChildLogger()
+	if err != nil {
+		slog.Warnf("failed to init child logger: %v", err)
+		c.zapLogger = slog
+	} else {
+		c.zapLogger = childLogger
+	}
+	if level < zapcore.DebugLevel || level > zapcore.ErrorLevel {
+		slog.Warnf("invalid zap level.  Defaulting to InfoLevel\n")
+		level = zapcore.InfoLevel
+	}
+	c.zapLevel = level
 }
 
-// LogOutputTo will cause us to capture the stdin/stdout streams from a child
-// process
-func (c *Child) LogOutputTo(prefix string, flags int, w io.Writer) {
-	c.logger = log.New(w, "", flags)
-	c.prefix = prefix
-
-	c.pipes = 0
-	c.done = make(chan bool)
-	if stdout, err := c.Cmd.StdoutPipe(); err == nil {
-		c.pipes++
-		go handlePipe(c, stdout)
+// UseStdLog will shut down any open zap logging, and will prepare to log child
+// output using the standard Go log.
+func (c *Child) UseStdLog(prefix string, flags int, w io.Writer) {
+	if c.zapLogger != nil {
+		c.zapLogger.Sync()
+		c.zapLogger = nil
 	}
-	if stderr, err := c.Cmd.StderrPipe(); err == nil {
-		c.pipes++
-		go handlePipe(c, stderr)
+
+	c.prefix = prefix
+	if c.stdLogger == nil {
+		c.stdLogger = log.New(w, "", flags)
+	} else {
+		c.stdLogger.SetOutput(w)
 	}
 }
 
@@ -358,11 +383,22 @@ func (c *Child) SetPgid(setpgid bool) {
 
 // NewChild instantiates the tracking structure for a child process
 func NewChild(execpath string, args ...string) *Child {
-	var c Child
+	c := &Child{
+		pipes: 0,
+		done:  make(chan bool),
+	}
 
 	c.Cmd = exec.Command(execpath, args...)
+	if stdout, err := c.Cmd.StdoutPipe(); err == nil {
+		c.pipes++
+		go handlePipe(c, stdout)
+	}
+	if stderr, err := c.Cmd.StderrPipe(); err == nil {
+		c.pipes++
+		go handlePipe(c, stderr)
+	}
 
-	return &c
+	return c
 }
 
 // FileExists checks to see whether the file/directory at the path location

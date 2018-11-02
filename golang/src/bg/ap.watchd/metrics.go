@@ -16,7 +16,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"os"
 	"sync"
@@ -270,13 +269,13 @@ func snapshotClean(dir string) {
 	// will be performed as a side effect of that process.
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
-		log.Printf("Unable to get contents of %s: %v\n", dir, err)
+		slog.Warnf("Unable to get contents of %s: %v", dir, err)
 	}
 	for _, f := range files {
 		if f.ModTime().Before(diskLimit) {
 			name := dir + "/" + f.Name()
 			if err := os.Remove(name); err != nil {
-				log.Printf("Unable to remove old %s: %v\n",
+				slog.Warnf("Unable to remove old %s: %v",
 					name, err)
 			}
 		}
@@ -290,7 +289,7 @@ func snapshotter() {
 
 	if !aputil.FileExists(statsDir) {
 		if err := os.MkdirAll(statsDir, 0755); err != nil {
-			log.Printf("Unable to make stats directory %s: %v\n",
+			slog.Errorf("Unable to make stats directory %s: %v",
 				statsDir, err)
 			done = true
 		}
@@ -307,7 +306,7 @@ func snapshotter() {
 		snapshotStats(statsDir)
 		sn := historicalStats[len(historicalStats)-1]
 		if err := writeStats(statsDir, sn); err != nil {
-			log.Printf("Unable to persist snapshot: %v\n", err)
+			slog.Warnf("Unable to persist snapshot: %v", err)
 		}
 	}
 	metricsWaitGroup.Done()

@@ -18,7 +18,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"math/rand"
 	"net"
 	"net/http"
@@ -41,6 +40,7 @@ import (
 	dhcp "github.com/krolaw/dhcp4"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/zap"
 	"golang.org/x/net/ipv4"
 )
 
@@ -50,6 +50,7 @@ var (
 	handlers = make(map[string]*ringHandler)
 
 	brokerd *broker.Broker
+	slog    *zap.SugaredLogger
 
 	config  *cfgapi.Handle
 	clients cfgapi.ClientMap
@@ -126,7 +127,7 @@ func configExpired(path []string) {
 	// clean up expired leases as a side effect of handing out new ones, so
 	// all we do here is log it.
 	if len(path) == 3 && path[0] == "clients" && path[2] == "ipv4" {
-		log.Printf("Lease for %s expired\n", path[1])
+		slog.Infof("Lease for %s expired", path[1])
 		metrics.expired.Inc()
 	}
 }
@@ -145,7 +146,7 @@ func configIPv4Changed(path []string, val string, expires *time.Time) {
 	hwaddr := path[1]
 	ipv4 := net.ParseIP(val)
 	if ipv4 == nil {
-		log.Printf("Invalid IP address %s for %s\n", ipaddr, hwaddr)
+		slog.Warnf("Invalid IP address %s for %s", ipaddr, hwaddr)
 		return
 	}
 
@@ -154,14 +155,14 @@ func configIPv4Changed(path []string, val string, expires *time.Time) {
 		// While we could assign an address to a client we've never seen
 		// before, it's up to somebody else to create the initial client
 		// record for us to work with.
-		log.Printf("Attempted to assign %s to non-existent client %s\n",
+		slog.Warnf("Attempted to assign %s to non-existent client %s",
 			ipaddr, hwaddr)
 		return
 	}
 
 	h := handlers[ring]
 	if !dhcp.IPInRange(h.rangeStart, h.rangeEnd, ipv4) {
-		log.Printf("%s assigned %s, out of its ring range (%v - %v)\n",
+		slog.Warnf("%s assigned %s, out of its ring range (%v - %v)",
 			hwaddr, ipaddr, h.rangeStart, h.rangeEnd)
 		return
 	}
@@ -194,7 +195,7 @@ func configIPv4Changed(path []string, val string, expires *time.Time) {
 			// already changed the assignment since this
 			// notification was sent.  Either way, we're ignoring
 			// it.
-			log.Printf("Rejecting ipv4 assignment %s->%s\n",
+			slog.Infof("Rejecting ipv4 assignment %s->%s",
 				ipaddr, hwaddr)
 			return
 		}
@@ -224,7 +225,7 @@ func clientDeleteEvent(path []string) {
 
 	hwaddr := path[1]
 	if client, ok := clients[hwaddr]; ok {
-		log.Printf("Handling deletion of client %s\n", hwaddr)
+		slog.Debugf("Handling deletion of client %s", hwaddr)
 
 		if ring := client.Ring; ring != "" {
 			h := handlers[ring]
@@ -247,10 +248,10 @@ func configRingChanged(path []string, val string, expires *time.Time) {
 	old := getRing(client)
 	if (old != val) && updateRing(client, old, val) {
 		if old == "" {
-			log.Printf("config reports new client %s is %s\n",
+			slog.Infof("config reports new client %s is %s",
 				client, val)
 		} else {
-			log.Printf("config moves client %s from %s to  %s\n",
+			slog.Infof("config moves client %s from %s to  %s",
 				client, old, val)
 		}
 	}
@@ -273,7 +274,7 @@ func notifyNewEntity(p dhcp.Packet, options dhcp.Options, authType string) {
 	hwaddr := network.HWAddrToUint64(p.CHAddr())
 	hostname := string(options[dhcp.OptionHostName])
 
-	log.Printf("New client %s (name: %q incoming IP address: %s)\n",
+	slog.Infof("New client %s (name: %q incoming IP address: %s)",
 		p.CHAddr().String(), hostname, ipaddr.String())
 	entity := &base_msg.EventNetEntity{
 		Timestamp:  aputil.NowToProtobuf(),
@@ -293,7 +294,7 @@ func notifyNewEntity(p dhcp.Packet, options dhcp.Options, authType string) {
 
 	err := brokerd.Publish(entity, base_def.TOPIC_ENTITY)
 	if err != nil {
-		log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_ENTITY, err)
+		slog.Warnf("couldn't publish %s: %v", base_def.TOPIC_ENTITY, err)
 	}
 }
 
@@ -318,7 +319,7 @@ func notifyClaimed(p dhcp.Packet, ipaddr net.IP, name string,
 
 	err := brokerd.Publish(resource, base_def.TOPIC_RESOURCE)
 	if err != nil {
-		log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_RESOURCE, err)
+		slog.Warnf("couldn't publish %s: %v", base_def.TOPIC_RESOURCE, err)
 	}
 }
 
@@ -338,7 +339,7 @@ func notifyProvisioned(ipaddr net.IP) {
 
 	err := brokerd.Publish(resource, base_def.TOPIC_RESOURCE)
 	if err != nil {
-		log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_RESOURCE, err)
+		slog.Warnf("couldn't publish %s: %v", base_def.TOPIC_RESOURCE, err)
 	}
 }
 
@@ -358,7 +359,7 @@ func notifyRelease(ipaddr net.IP) {
 
 	err := brokerd.Publish(resource, base_def.TOPIC_RESOURCE)
 	if err != nil {
-		log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_RESOURCE, err)
+		slog.Warnf("couldn't publish %s: %v", base_def.TOPIC_RESOURCE, err)
 	}
 }
 
@@ -380,7 +381,7 @@ func notifyOptions(hwaddr net.HardwareAddr, options dhcp.Options, msgType dhcp.M
 
 	err := brokerd.Publish(msg, base_def.TOPIC_OPTIONS)
 	if err != nil {
-		log.Printf("couldn't publish %s: %v\n", base_def.TOPIC_OPTIONS, err)
+		slog.Warnf("couldn't publish %s: %v", base_def.TOPIC_OPTIONS, err)
 	}
 
 	if !*verbose {
@@ -392,15 +393,15 @@ func notifyOptions(hwaddr net.HardwareAddr, options dhcp.Options, msgType dhcp.M
 		optionkeys = append(optionkeys, int(opt))
 	}
 	sort.Ints(optionkeys)
-	log.Printf("    Options: %v\n", optionkeys)
-	log.Printf("    ParameterRequestList: %v\n", options[dhcp.OptionParameterRequestList])
+	slog.Debugf("    Options: %v", optionkeys)
+	slog.Debugf("    ParameterRequestList: %v", options[dhcp.OptionParameterRequestList])
 	if vendorClassIdentifier, ok := options[dhcp.OptionVendorClassIdentifier]; ok {
-		log.Printf("    VendorClassIdentifier: %s\n", string(vendorClassIdentifier))
+		slog.Debugf("    VendorClassIdentifier: %s", string(vendorClassIdentifier))
 	}
 	if hostName, ok := options[dhcp.OptionHostName]; ok {
-		log.Printf("    HostName: %s\n", string(hostName))
+		slog.Debugf("    HostName: %s", string(hostName))
 	}
-	log.Printf("    ClientIdentifier: %x\n", options[dhcp.OptionClientIdentifier])
+	slog.Debugf("    ClientIdentifier: %x", options[dhcp.OptionClientIdentifier])
 }
 
 /*******************************************************
@@ -441,17 +442,17 @@ func (h *ringHandler) nak(p dhcp.Packet) dhcp.Packet {
  */
 func (h *ringHandler) discover(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	hwaddr := p.CHAddr().String()
-	log.Printf("DISCOVER %s\n", hwaddr)
+	slog.Infof("DISCOVER %s", hwaddr)
 
 	notifyOptions(p.CHAddr(), options, dhcp.Discover)
 
 	l := h.leaseAssign(hwaddr)
 	if l == nil {
-		log.Printf("Out of %s leases\n", h.ring)
+		slog.Warnf("Out of %s leases", h.ring)
 		metrics.exhausted.Inc()
 		return h.nak(p)
 	}
-	log.Printf("  OFFER %s to %s\n", l.ipaddr, l.hwaddr)
+	slog.Infof("  OFFER %s to %s", l.ipaddr, l.hwaddr)
 
 	notifyProvisioned(l.ipaddr)
 	metrics.provisioned.Inc()
@@ -487,7 +488,7 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	var reqIP net.IP
 
 	hwaddr := p.CHAddr().String()
-	log.Printf("REQUEST for %s\n", hwaddr)
+	slog.Infof("REQUEST for %s", hwaddr)
 	metrics.requests.Inc()
 
 	notifyOptions(p.CHAddr(), options, dhcp.Request)
@@ -532,19 +533,19 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	}
 
 	if len(reqIP) != 4 || reqIP.Equal(net.IPv4zero) {
-		log.Printf("Invalid reqIP %s from %s\n", reqIP.String(), hwaddr)
+		slog.Warnf("Invalid reqIP %s from %s", reqIP.String(), hwaddr)
 		metrics.rejected.Inc()
 		return h.nak(p)
 	}
 
 	l := h.getLease(reqIP)
 	if l == nil || !l.assigned || l.hwaddr != hwaddr {
-		log.Printf("Invalid lease of %s for %s\n", reqIP.String(), hwaddr)
+		slog.Warnf("Invalid lease of %s for %s", reqIP.String(), hwaddr)
 		metrics.rejected.Inc()
 		return h.nak(p)
 	}
 
-	log.Printf("   REQUEST %s %s\n", action, reqIP.String())
+	slog.Infof("   REQUEST %s %s", action, reqIP.String())
 	if l.static {
 		l.expires = nil
 	} else {
@@ -553,7 +554,7 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	}
 
 	l.name = extractHostname(options)
-	log.Printf("   REQUEST assigned %s to %s (%q) until %s\n",
+	slog.Infof("   REQUEST assigned %s to %s (%q) until %s",
 		l.ipaddr, hwaddr, l.name, l.expires)
 
 	config.CreateProp(propPath(hwaddr, "ipv4"), l.ipaddr.String(), l.expires)
@@ -610,13 +611,13 @@ func (h *ringHandler) release(p dhcp.Packet) {
 
 	l := h.getLease(ipaddr)
 	if l == nil {
-		log.Printf("Client %s RELEASE unsupported address: %s\n",
+		slog.Debugf("Client %s RELEASE unsupported address: %s",
 			hwaddr, ipaddr.String())
 		return
 	}
 	if h.releaseLease(l, hwaddr) {
 		metrics.released.Inc()
-		log.Printf("RELEASE %s\n", hwaddr)
+		slog.Infof("RELEASE %s", hwaddr)
 	}
 }
 
@@ -630,7 +631,7 @@ func (h *ringHandler) decline(p dhcp.Packet) {
 	l := h.leaseSearch(hwaddr)
 	if h.releaseLease(l, hwaddr) {
 		metrics.declined.Inc()
-		log.Printf("DECLINE for %s\n", hwaddr)
+		slog.Infof("DECLINE for %s", hwaddr)
 	}
 }
 
@@ -647,8 +648,8 @@ func selectRingHandler(p dhcp.Packet, options dhcp.Options) *ringHandler {
 	authType := ifaceToAuthType[requestIface]
 
 	if authType == "" {
-		log.Printf("Ignoring DHCP request from %s on unsupported "+
-			"iface %s\n", mac, requestIface)
+		slog.Debugf("Ignoring DHCP request from %s on unsupported "+
+			"iface %s", mac, requestIface)
 	} else if ring = getRing(mac); ring == "" {
 		// If we don't have a ring assignment for this client, then
 		// there are two possibilities.  First, it's a brand new
@@ -662,11 +663,11 @@ func selectRingHandler(p dhcp.Packet, options dhcp.Options) *ringHandler {
 		// first case.  Because we have no authentication event, we have
 		// to reverse-engineer the authentication method from the VLAN
 		// the request arrived on.
-		log.Printf("New client %s incoming on %s.  Auth: %s\n",
+		slog.Infof("New client %s incoming on %s.  Auth: %s",
 			mac, requestIface, authType)
 		notifyNewEntity(p, options, authType)
 	} else if handler = handlers[ring]; handler == nil {
-		log.Printf("Client %s identified on unknown ring '%s'\n",
+		slog.Infof("Client %s identified on unknown ring '%s'",
 			mac, ring)
 	}
 	// Once we've handled the DHCP request for this client, we can forget
@@ -783,7 +784,7 @@ func ipRange(ring, subnet string) (start net.IP, ipnet *net.IPNet, span int) {
 
 	start, ipnet, err = net.ParseCIDR(subnet)
 	if err != nil {
-		log.Fatalf("Invalid subnet %v for ring %s: %v\n",
+		slog.Fatalf("Invalid subnet %v for ring %s: %v",
 			subnet, ring, err)
 	}
 
@@ -901,22 +902,22 @@ func (s *multiConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 
 	n, s.cm, addr, err = s.conn.ReadFrom(b)
 	if err != nil {
-		log.Printf("ReadFrom() failed: %v\n", err)
+		slog.Warnf("ReadFrom() failed: %v", err)
 	} else if s.cm == nil {
-		log.Printf("DHCP read has no ControlMessage\n")
+		slog.Warnf("DHCP read has no ControlMessage")
 	} else if n < 240 {
-		log.Printf("Invalid DHCP packet: only %d bytes\n", n)
+		slog.Warnf("Invalid DHCP packet: only %d bytes", n)
 	} else if clientMac = extractClientMac(b, n); clientMac == "" {
 		// This looks like an invalid DHCP packet.
-		log.Printf("Invalid DHCP packet: no mac address found\n")
+		slog.Warnf("Invalid DHCP packet: no mac address found")
 		n = 0
 	} else if iface, err = net.InterfaceByIndex(s.cm.IfIndex); err != nil {
-		log.Printf("Failed interface lookup for request from %s: %v\n",
+		slog.Warnf("Failed interface lookup for request from %s: %v",
 			clientMac, err)
 		n = 0
 	} else {
 		clientRequestOn[clientMac] = iface.Name
-		log.Printf("DHCP pkt from %s on %s\n", clientMac, iface.Name)
+		slog.Debugf("DHCP pkt from %s on %s", clientMac, iface.Name)
 	}
 	return
 }
@@ -958,9 +959,9 @@ func mainLoop() {
 	for {
 		err := listenAndServeIf(&h)
 		if err != nil {
-			log.Fatalf("DHCP server failed: %v\n", err)
+			slog.Fatalf("DHCP server failed: %v", err)
 		} else {
-			log.Printf("%s DHCP server exited\n", err)
+			slog.Infof("%s DHCP server exited", err)
 		}
 	}
 }
@@ -1017,12 +1018,14 @@ func prometheusInit() {
 }
 
 func main() {
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	flag.Parse()
+	slog = aputil.NewLogger()
+	defer slog.Sync()
+	slog.Infof("Starting")
 
 	mcpd, err := mcp.New(pname)
 	if err != nil {
-		log.Printf("Failed to connect to mcp\n")
+		slog.Warnf("Failed to connect to mcp")
 	}
 
 	prometheusInit()
@@ -1032,7 +1035,7 @@ func main() {
 	// Interface to config
 	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err != nil {
-		log.Fatalf("cannot connect to configd: %v\n", err)
+		slog.Fatalf("cannot connect to configd: %v", err)
 	}
 	config.HandleDelete(`^@/clients/.*`, clientDeleteEvent)
 	config.HandleExpire(`^@/clients/.*/ipv4$`, configExpired)
@@ -1043,16 +1046,16 @@ func main() {
 	clients = config.GetClients()
 	domainName, err = config.GetDomain()
 	if err != nil {
-		log.Fatalf("failed to fetch gateway domain: %v\n", err)
+		slog.Fatalf("failed to fetch gateway domain: %v", err)
 	}
 
 	initHandlers()
 	initAuthMap()
 
-	log.Printf("DHCP server online\n")
+	slog.Infof("DHCP server online")
 	mcpd.SetState(mcp.ONLINE)
 	mainLoop()
-	log.Printf("shutting down\n")
+	slog.Infof("shutting down")
 
 	os.Exit(0)
 }

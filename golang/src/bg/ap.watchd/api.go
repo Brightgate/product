@@ -12,7 +12,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"net"
 
 	"bg/ap_common/aputil"
@@ -136,10 +135,10 @@ func apiLoop(incoming *zmq.Socket) {
 
 		msg, err := incoming.RecvMessageBytes(0)
 		if err != nil {
-			log.Printf("Error receiving message: %v\n", err)
+			slog.Warnf("Error receiving message: %v", err)
 			errs++
 			if errs > 10 {
-				log.Fatalf("Too many errors - giving up\n")
+				slog.Fatalf("Too many errors - giving up")
 			}
 			continue
 		}
@@ -166,7 +165,7 @@ func apiLoop(incoming *zmq.Socket) {
 		resp.Timestamp = aputil.NowToProtobuf()
 		data, err := proto.Marshal(resp)
 		if err != nil {
-			log.Printf("Failed to marshal response to %v: %v\n",
+			slog.Warnf("Failed to marshal response to %v: %v",
 				*req, err)
 		} else {
 			incoming.SendBytes(data, 0)
@@ -180,9 +179,9 @@ func apiInit() error {
 	incoming, _ := zmq.NewSocket(zmq.REP)
 	port := base_def.INCOMING_ZMQ_URL + base_def.WATCHD_ZMQ_REP_PORT
 	if err = incoming.Bind(port); err != nil {
-		log.Printf("Failed to bind incoming port %s: %v\n", port, err)
+		slog.Warnf("Failed to bind incoming port %s: %v", port, err)
 	} else {
-		log.Printf("Listening on %s\n", port)
+		slog.Infof("Listening on %s", port)
 		go apiLoop(incoming)
 	}
 

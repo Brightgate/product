@@ -17,7 +17,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"sync"
 	"time"
@@ -295,7 +294,7 @@ func auditRecords(recs map[uint64]map[uint32]bool) {
 
 				hwaddr := network.Uint64ToHWAddr(mac)
 				ipaddr := network.Uint32ToIPAddr(ip)
-				log.Printf("Found device %v using %saddr %v\n",
+				slog.Infof("Found device %v using %saddr %v",
 					hwaddr, oldstr, ipaddr)
 				historic[ip] = now
 			}
@@ -365,7 +364,7 @@ func sampleLoop(state *samplerState) {
 		data, _, err := state.handle.ZeroCopyReadPacketData()
 		if err != nil {
 			if err != io.EOF || samplerRunning {
-				log.Println("Error reading packet data:", err)
+				slog.Warnf("Error reading packet data: %v", err)
 			}
 			return
 		}
@@ -378,7 +377,7 @@ func sampleLoop(state *samplerState) {
 			s, err := state.handle.Stats()
 			delta := s.PacketsDropped - lastDropped
 			if err == nil && delta != 0 {
-				log.Printf("%s: dropped %d of %d packets\n",
+				slog.Infof("%s: dropped %d of %d packets",
 					state.iface, s.PacketsDropped,
 					s.PacketsReceived)
 				lastDropped = s.PacketsDropped
@@ -399,13 +398,13 @@ func sampleInterface(state *samplerState) {
 		state.handle, err = openInterface(state.ring, state.iface)
 		if err != nil {
 			if !warned {
-				log.Printf("openInterface failed: %v", err)
+				slog.Warnf("openInterface failed: %v", err)
 				warned = true
 			}
 			time.Sleep(time.Second)
 			continue
 		} else if warned {
-			log.Printf("Sampler for %s (%s) online\n",
+			slog.Infof("Sampler for %s (%s) online",
 				state.iface, state.ring)
 		}
 
@@ -414,7 +413,7 @@ func sampleInterface(state *samplerState) {
 		sampleLoop(state)
 		state.handle.Close()
 	}
-	log.Printf("Sampler for %s (%s) offline\n", state.iface, state.ring)
+	slog.Infof("Sampler for %s (%s) offline", state.iface, state.ring)
 }
 
 func getRingSubnet(config *cfgapi.RingConfig) (net.HardwareAddr, *net.IPNet, error) {
@@ -428,7 +427,7 @@ func getRingSubnet(config *cfgapi.RingConfig) (net.HardwareAddr, *net.IPNet, err
 		iface, x := net.InterfaceByName(config.Bridge)
 		if x != nil {
 			err = fmt.Errorf("InterfaceByName(%s) failed on: %v",
-				config.Bridge, err)
+				config.Bridge, x)
 		} else {
 			hwaddr = iface.HardwareAddr
 		}
@@ -438,7 +437,7 @@ func getRingSubnet(config *cfgapi.RingConfig) (net.HardwareAddr, *net.IPNet, err
 }
 
 func sampleFini(w *watcher) {
-	log.Printf("Shutting down sampler\n")
+	slog.Infof("Shutting down sampler")
 	samplerRunning = false
 	for _, s := range samplers {
 		if s.handle != nil {
@@ -473,7 +472,7 @@ func sampleInit(w *watcher) {
 
 		hwaddr, subnet, err := getRingSubnet(config)
 		if err != nil {
-			log.Printf("Failed to sample on ring '%s': %v\n",
+			slog.Warnf("Failed to sample on ring '%s': %v",
 				ring, err)
 		} else {
 			subnetBcast = append(subnetBcast,

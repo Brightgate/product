@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"bg/ap_common/aptest"
+	"bg/ap_common/aputil"
 	"bg/cloud_rpc"
 	"bg/common/grpcutils"
 
@@ -162,6 +163,7 @@ func TestUpload(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	// Need to setup global
+	slog = aputil.NewLogger()
 	applianceCred = grpcutils.NewTestCredential()
 	os.Exit(m.Run())
 }

@@ -57,13 +57,13 @@ func getManifest(manPath string) (diskManifest, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to import manifest")
 	}
-	slogger.Debugf("getManifest", "contents", manifest)
+	slog.Debugf("getManifest", "contents", manifest)
 	return manifest, nil
 }
 
 func putManifest(manPath string, manifest diskManifest) error {
 	// Write manifest
-	slogger.Debugw("Writing manifest", "manifest", manifest)
+	slog.Debugw("Writing manifest", "manifest", manifest)
 	s, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return errors.Wrapf(err, "failed to make manifest JSON")
@@ -113,13 +113,13 @@ func sendInventory(ctx context.Context, client cloud_rpc.EventClient) error {
 		return errors.Wrapf(err, "Could not read dir %s", invDir)
 	}
 	if len(files) == 0 {
-		slogger.Infof("no files found in %s", invDir)
+		slog.Infof("no files found in %s", invDir)
 		return nil
 	}
 
 	manifest, err := getManifest(manPath)
 	if err != nil {
-		slogger.Warnf("failed to import manifest %s: %s", manPath, err)
+		slog.Warnf("failed to import manifest %s: %s", manPath, err)
 		manifest = make(diskManifest)
 	}
 
@@ -132,13 +132,13 @@ func sendInventory(ctx context.Context, client cloud_rpc.EventClient) error {
 
 		path := filepath.Join(invDir, file.Name())
 		if in, err = ioutil.ReadFile(path); err != nil {
-			slogger.Warnf("failed to read device inventory %s: %s", path, err)
+			slog.Warnf("failed to read device inventory %s: %s", path, err)
 			continue
 		}
 		inventory := &base_msg.DeviceInventory{}
 		err = proto.Unmarshal(in, inventory)
 		if err != nil {
-			slogger.Warnf("failed to unmarshal device inventory %s: %s", path, err)
+			slog.Warnf("failed to unmarshal device inventory %s: %s", path, err)
 			continue
 		}
 
@@ -154,16 +154,16 @@ func sendInventory(ctx context.Context, client cloud_rpc.EventClient) error {
 				sent = time.Time{}
 			}
 			if *forceInventory || updated.After(sent) {
-				slogger.Infof("Reporting %s > %s", file.Name(), mac)
+				slog.Infof("Reporting %s > %s", file.Name(), mac)
 				changed.Devices = append(changed.Devices, devInfo)
 			} else {
-				slogger.Debugf("Skipping %s > %s", file.Name(), mac)
+				slog.Debugf("Skipping %s > %s", file.Name(), mac)
 			}
 
 			if proto.Size(changed) >= msgsize {
 				err = sendChanged(ctx, client, changed, manifest)
 				if err != nil {
-					slogger.Warnf("failed to sendChanged(): %v", err)
+					slog.Warnf("failed to sendChanged(): %v", err)
 				}
 				changed = &base_msg.DeviceInventory{
 					Timestamp: aputil.NowToProtobuf(),
@@ -175,7 +175,7 @@ func sendInventory(ctx context.Context, client cloud_rpc.EventClient) error {
 	if len(changed.Devices) != 0 {
 		err = sendChanged(ctx, client, changed, manifest)
 		if err != nil {
-			slogger.Warnf("failed final sendChanged(): %v", err)
+			slog.Warnf("failed final sendChanged(): %v", err)
 		}
 	}
 
@@ -193,13 +193,13 @@ func inventoryLoop(ctx context.Context, client cloud_rpc.EventClient, wg *sync.W
 	for !done {
 		err := sendInventory(ctx, client)
 		if err != nil {
-			slogger.Errorf("Failed inventory: %s", err)
+			slog.Errorf("Failed inventory: %s", err)
 		}
 		select {
 		case done = <-doneChan:
 		case <-ticker.C:
 		}
 	}
-	slogger.Infof("inventory loop exiting")
+	slog.Infof("inventory loop exiting")
 	wg.Done()
 }

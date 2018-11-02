@@ -11,8 +11,6 @@
 package main
 
 import (
-	"log"
-
 	"bg/base_def"
 )
 
@@ -38,7 +36,7 @@ func upgradeV13() error {
 			}
 		}
 	} else {
-		log.Printf("@/rings missing\n")
+		slog.Infof("@/rings missing")
 	}
 
 	// For each authentication type, identify the least trusted ring that
@@ -69,7 +67,7 @@ func upgradeV13() error {
 		node, _ := propTree.GetNode("@/network/default_ring/" + a)
 		if node != nil {
 			node.Value = r
-			log.Printf("Set %s default ring to %s\n", a, r)
+			slog.Infof("Set %s default ring to %s", a, r)
 		}
 	}
 

@@ -54,7 +54,7 @@ var queued = cloudQueue{
 func setCtx(ctx context.Context) (context.Context, context.CancelFunc) {
 	ctx, err := applianceCred.MakeGRPCContext(ctx)
 	if err != nil {
-		slogger.Fatalf("Failed to make GRPC credential: %+v", err)
+		slog.Fatalf("Failed to make GRPC credential: %+v", err)
 	}
 
 	clientDeadline := time.Now().Add(*deadlineFlag)
@@ -169,7 +169,7 @@ func fetch(ctx context.Context, cclient rpc.ConfigBackEndClient) ([]*cfgmsg.Conf
 	}
 
 	if len(resp.Cmds) > 0 {
-		slogger.Debugf("Got %d cmds, starting with %d", len(resp.Cmds),
+		slog.Debugf("Got %d cmds, starting with %d", len(resp.Cmds),
 			resp.Cmds[0].CmdID)
 	}
 
@@ -273,12 +273,12 @@ func configEvent(raw []byte) {
 	etype := *event.Type
 	if etype == base_msg.EventConfig_CHANGE {
 		if *event.Property == urlProperty {
-			slogger.Infof("Moving to new RPC server: " +
+			slog.Infof("Moving to new RPC server: " +
 				*event.NewValue)
 			go daemonStop()
 			return
 		}
-		slogger.Debugf("updated %s - %x", *event.Property, hash)
+		slog.Debugf("updated %s - %x", *event.Property, hash)
 		update = &rpc.CfgBackEndUpdate_CfgUpdate{
 			Type:     rpc.CfgBackEndUpdate_CfgUpdate_UPDATE,
 			Property: *event.Property,
@@ -291,7 +291,7 @@ func configEvent(raw []byte) {
 			update.Expires = p
 		}
 	} else if etype == base_msg.EventConfig_DELETE {
-		slogger.Debugf("deleted %s - %x", *event.Property, hash)
+		slog.Debugf("deleted %s - %x", *event.Property, hash)
 		update = &rpc.CfgBackEndUpdate_CfgUpdate{
 			Type:     rpc.CfgBackEndUpdate_CfgUpdate_DELETE,
 			Property: *event.Property,
@@ -317,6 +317,7 @@ func configLoop(ctx context.Context, client rpc.ConfigBackEndClient,
 
 	ticker := time.NewTicker(time.Second)
 	nextLog := time.Now()
+	slog.Infof("config loop starting")
 	for !done {
 
 		// Try to (re)establish a config gRPC connection to cl.rpcd
@@ -324,9 +325,9 @@ func configLoop(ctx context.Context, client rpc.ConfigBackEndClient,
 			if err := hello(ctx, client); err == nil {
 				live = true
 				nextLog = time.Now()
-				slogger.Infof("cl.configd connection live")
+				slog.Infof("cl.configd connection live")
 			} else if nextLog.Before(time.Now()) {
-				slogger.Errorf("Failed hello: %s", err)
+				slog.Errorf("Failed hello: %s", err)
 				nextLog = time.Now().Add(10 * time.Minute)
 			}
 		}
@@ -334,17 +335,17 @@ func configLoop(ctx context.Context, client rpc.ConfigBackEndClient,
 		if live {
 			// Push any queued updates or completions to the cloud
 			if err := pushCompletions(ctx, client); err != nil {
-				slogger.Error(err)
+				slog.Error(err)
 			}
 			if err := pushUpdates(ctx, client); err != nil {
-				slogger.Error(err)
+				slog.Error(err)
 			}
 
 			// Check for any new commands pending in the cloud
 			cmds, err := fetch(ctx, client)
 			if err != nil {
 				live = false
-				slogger.Warnf("fetch failed: %v", err)
+				slog.Warnf("fetch failed: %v", err)
 			} else if cmds != nil {
 				for _, cmd := range cmds {
 					exec(cmd)
@@ -359,5 +360,5 @@ func configLoop(ctx context.Context, client rpc.ConfigBackEndClient,
 			}
 		}
 	}
-	slogger.Infof("config loop exiting")
+	slog.Infof("config loop exiting")
 }

@@ -29,18 +29,15 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/mock"
-	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 )
 
-func setupLogging(t *testing.T) (*zap.Logger, *zap.SugaredLogger) {
+func setupLogging(t *testing.T) {
 	// Assign globals
-	logger = zaptest.NewLogger(t)
-	slogger = logger.Sugar()
-	return logger, slogger
+	slog = zaptest.NewLogger(t).Sugar()
 }
 
 func TestNetException(t *testing.T) {

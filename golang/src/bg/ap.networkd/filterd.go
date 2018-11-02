@@ -54,7 +54,6 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -165,11 +164,11 @@ func (list ruleList) Swap(i, j int) {
 //    COMMIT
 //
 func iptablesReset() {
-	log.Printf("Resetting iptables rules\n")
+	slog.Infof("Resetting iptables rules")
 
 	f, err := os.Create(iptablesRulesFile)
 	if err != nil {
-		log.Printf("Unable to create %s: %v\n", iptablesRulesFile, err)
+		slog.Warnf("Unable to create %s: %v", iptablesRulesFile, err)
 		return
 	}
 	defer f.Close()
@@ -200,7 +199,7 @@ func iptablesReset() {
 	cmd := exec.Command(plat.RestoreCmd, iptablesRulesFile)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("failed to apply rules: %s\n", out)
+		slog.Warnf("failed to apply rules: %s", out)
 	}
 }
 
@@ -390,7 +389,7 @@ func addCaptureRules(r *rule) error {
 		return fmt.Errorf("CAPTURE rules must specify a source ring")
 	}
 	if ring.Bridge == "" {
-		log.Printf("No bridge defined for %s.  Skipping.\n",
+		slog.Warnf("No bridge defined for %s.  Skipping.",
 			r.from.detail)
 		return nil
 	}
@@ -455,7 +454,7 @@ func addRule(r *rule) error {
 	if from != nil {
 		e, err := genEndpoint(r, true)
 		if err != nil {
-			log.Printf("Bad 'from' endpoint: %v\n", err)
+			slog.Warnf("Bad 'from' endpoint: %v", err)
 			return err
 		}
 		iptablesRule += e
@@ -464,7 +463,7 @@ func addRule(r *rule) error {
 	if to != nil {
 		e, err := genEndpoint(r, false)
 		if err != nil {
-			log.Printf("Bad 'to' endpoint: %v\n", err)
+			slog.Warnf("Bad 'to' endpoint: %v", err)
 			return err
 		}
 
@@ -477,7 +476,7 @@ func addRule(r *rule) error {
 
 	e, err := genPorts(r)
 	if err != nil {
-		log.Printf("Bad port list: %v\n", err)
+		slog.Warnf("Bad port list: %v", err)
 		return err
 	}
 	iptablesRule += e
@@ -502,7 +501,7 @@ func iptablesRuleApply(rule string) {
 	cmd.Args = args
 
 	if out, err := cmd.CombinedOutput(); err != nil {
-		log.Printf("iptables rule '%s' failed: %s\n", rule, out)
+		slog.Warnf("iptables rule '%s' failed: %s", rule, out)
 	}
 }
 
@@ -511,10 +510,10 @@ func iptablesRuleApply(rule string) {
 func updateBlockRules(addr string, add bool) {
 	var action string
 	if add {
-		log.Printf("Adding active block on %s\n", addr)
+		slog.Infof("Adding active block on %s", addr)
 		action = "-I"
 	} else {
-		log.Printf("Removing active block on %s\n", addr)
+		slog.Infof("Removing active block on %s", addr)
 		action = "-D"
 	}
 
@@ -563,9 +562,9 @@ func configBlocklistChanged(path []string, val string, expires *time.Time) {
 
 func configRuleChanged(path []string, val string, expires *time.Time) {
 	if len(path) >= 3 {
-		log.Printf("Responding to change in firewall rule '%s'\n", path[2])
+		slog.Infof("Responding to change in firewall rule '%s'", path[2])
 	} else {
-		log.Printf("Responding to change in firewall rules\n")
+		slog.Infof("Responding to change in firewall rules")
 	}
 	iptablesRebuild()
 	iptablesReset()
@@ -592,7 +591,7 @@ func firewallRules() {
 	rules, err := config.GetProps(root)
 	if rules == nil {
 		if err != nil {
-			log.Printf("Failed to get %s: %v\n", root, err)
+			slog.Warnf("Failed to get %s: %v", root, err)
 		}
 		return
 	}
@@ -600,7 +599,7 @@ func firewallRules() {
 	for name, rule := range rules.Children {
 		r, err := firewallRule(rule)
 		if err != nil {
-			log.Printf("bad firewall rule '%s': %v\n", name, err)
+			slog.Warnf("bad firewall rule '%s': %v", name, err)
 		} else if r != nil {
 			addRule(r)
 		}
@@ -608,7 +607,7 @@ func firewallRules() {
 }
 
 func iptablesRebuild() {
-	log.Printf("Rebuilding iptables rules\n")
+	slog.Infof("Rebuilding iptables rules")
 
 	applied = make(map[string]map[string][]string)
 	for _, t := range tables {
@@ -627,7 +626,7 @@ func iptablesRebuild() {
 
 	// Add the basic routing rules for each interface
 	if wanNic == "" {
-		log.Printf("No WAN interface defined - cannot set up NAT\n")
+		slog.Warnf("No WAN interface defined - cannot set up NAT")
 	} else {
 		for ring := range rings {
 			ifaceForwardRules(ring)

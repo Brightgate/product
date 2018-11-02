@@ -15,7 +15,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -65,7 +64,7 @@ func propTreeStore() error {
 
 	err := ioutil.WriteFile(propTreeFile, s, 0644)
 	if err != nil {
-		log.Printf("Failed to write properties file: %v\n", err)
+		slog.Warnf("Failed to write properties file: %v", err)
 	}
 
 	return err
@@ -78,7 +77,7 @@ func propTreeLoad(name string) (*cfgtree.PTree, error) {
 
 	file, err := ioutil.ReadFile(name)
 	if err != nil {
-		log.Printf("Failed to load %s: %v\n", name, err)
+		slog.Warnf("Failed to load %s: %v", name, err)
 		return nil, err
 	}
 
@@ -126,7 +125,7 @@ func versionTree() error {
 
 	propTree.ChangesetInit()
 	for version < int(cfgapi.Version) {
-		log.Printf("Upgrading properties from version %d to %d\n",
+		slog.Infof("Upgrading properties from version %d to %d",
 			version, version+1)
 		version++
 		if upgradeHooks[version] != nil {
@@ -166,29 +165,29 @@ func propTreeInit(defaults *cfgtree.PNode) error {
 	tree, err := propTreeLoad(propTreeFile)
 
 	if err != nil {
-		log.Printf("Unable to load properties: %v", err)
+		slog.Warnf("Unable to load properties: %v", err)
 		backupfile := *propdir + backupFilename
 		tree, err = propTreeLoad(backupfile)
 		if err != nil {
-			log.Printf("Unable to load backup properties: %v", err)
+			slog.Warnf("Unable to load backup properties: %v", err)
 		} else {
-			log.Printf("Loaded properties from backup file")
+			slog.Infof("Loaded properties from backup file")
 		}
 	}
 
 	if err != nil {
-		log.Printf("No usable properties files.  Using defaults.\n")
+		slog.Infof("No usable properties files.  Using defaults.")
 
 		tree = cfgtree.GraftTree("@", defaults)
 		applianceUUID := uuid.NewV4().String()
 		if err := tree.Add("@/uuid", applianceUUID, nil); err != nil {
-			log.Fatalf("Unable to set UUID: %v\n", err)
+			slog.Fatalf("Unable to set UUID: %v", err)
 		}
 
 		// XXX: this needs to come from the cloud - not hardcoded
 		applianceSiteID := "7410"
 		if err := tree.Add("@/siteid", applianceSiteID, nil); err != nil {
-			log.Fatalf("Unable to set SiteID: %v\n", err)
+			slog.Fatalf("Unable to set SiteID: %v", err)
 		}
 	}
 

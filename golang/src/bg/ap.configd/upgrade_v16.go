@@ -10,12 +10,8 @@
 
 package main
 
-import (
-	"log"
-)
-
 func upgradeV16() error {
-	log.Printf("Moving @/nodes/<node>/<nic> -> @/nodes/<node>/nics/<nic>")
+	slog.Infof("Moving @/nodes/<node>/<nic> -> @/nodes/<node>/nics/<nic>")
 
 	if nodes, _ := propTree.GetNode("@/nodes"); nodes != nil {
 		for uuid, node := range nodes.Children {

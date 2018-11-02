@@ -12,7 +12,6 @@
 package main
 
 import (
-	"log"
 	"os"
 	"os/exec"
 	"text/template"
@@ -38,7 +37,7 @@ func getNTPServers() ([]string, error) {
 	ret := make([]string, 0)
 	props, err := config.GetProps(ntpserversConfig)
 	if err != nil {
-		log.Printf("Failed to get properties %s: %v\n", ntpserversConfig, err)
+		slog.Warnf("Failed to get properties %s: %v\n", ntpserversConfig, err)
 		return ret, err
 	}
 	for _, c := range props.Children {
@@ -92,13 +91,13 @@ func configNTPServersDeleted(path []string) {
 
 func runNTPDaemon() {
 	if err := generateNTPDConf(); err != nil {
-		log.Printf("Failed to generate %s: %v\n", ntpdConfPath, err)
+		slog.Errorf("Failed to generate %s: %v\n", ntpdConfPath, err)
 		return
 	}
 	// "restart" will start the service if it's not already running.
 	cmd := exec.Command("/bin/systemctl", "restart", ntpdSystemdService)
 	if err := cmd.Run(); err != nil {
-		log.Printf("Failed to restart %s: %v\n", ntpdSystemdService, err)
+		slog.Errorf("Failed to restart %s: %v\n", ntpdSystemdService, err)
 	}
 }
 

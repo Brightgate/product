@@ -12,7 +12,6 @@ package main
 
 import (
 	"container/heap"
-	"log"
 	"regexp"
 	"sync"
 	"time"
@@ -114,8 +113,8 @@ func findExpirations() []string {
 
 		if next.Expires == nil {
 			// Should never happen
-			log.Printf("Found static property %s in "+
-				"expiration heap at %d\n",
+			slog.Warnf("Found static property %s in "+
+				"expiration heap at %d",
 				next.Path(), getIndex(next))
 			heap.Pop(&expirationHeap)
 			continue
@@ -126,7 +125,7 @@ func findExpirations() []string {
 		}
 
 		if *verbose {
-			log.Printf("Expiring: %s at %v\n",
+			slog.Debugf("Expiring: %s at %v\n",
 				next.Name(), time.Now())
 		}
 		expired = append(expired, next.Path())

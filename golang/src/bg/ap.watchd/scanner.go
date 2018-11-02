@@ -16,7 +16,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"os"
 	"strings"
@@ -32,6 +31,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	nmap "github.com/lair-framework/go-nmap"
+	"go.uber.org/zap/zapcore"
 )
 
 var (
@@ -252,11 +252,8 @@ func scheduleScan(request *ScanRequest, delay time.Duration, force bool) {
 
 	if force || activeHosts.contains(request.IP) {
 		request.When = time.Now().Add(delay)
-		if *verbose {
-			log.Printf("scheduling %s %s at %s\n",
-				request.IP, request.ScanType,
-				request.When.Format(time.RFC3339))
-		}
+		slog.Debugf("scheduling %s %s at %s", request.IP,
+			request.ScanType, request.When.Format(time.RFC3339))
 		pendingLock.Lock()
 		if request.ID == 0 {
 			scanID++
@@ -287,13 +284,9 @@ func scanner() {
 			continue
 		}
 
-		if *verbose {
-			log.Printf("starting %s %s at %s\n",
-				req.IP, req.ScanType, nowString())
-		}
-
 		propBase := fmt.Sprintf("@/clients/%s/scans/%s/", req.Mac, req.ScanType)
 
+		slog.Debugf("starting %s %s", req.IP, req.ScanType)
 		runningLock.Lock()
 		scansRunning[req.ID] = req
 		runningLock.Unlock()
@@ -306,10 +299,7 @@ func scanner() {
 		delete(scansRunning, req.ID)
 		runningLock.Unlock()
 
-		if *verbose {
-			log.Printf("finished %s %s at %s\n",
-				req.IP, req.ScanType, nowString())
-		}
+		slog.Debugf("finished %s %s", req.IP, req.ScanType)
 
 		if req.Period != 0 {
 			scheduleScan(req, req.Period, false)
@@ -405,15 +395,13 @@ func subnetHostScan(ring, subnet string) int {
 
 	scanResults, err := nmapScan("subnetscan", subnet, args)
 	if err != nil {
-		log.Printf("Scan of %s ring failed: %v\n", ring, err)
+		slog.Warnf("Scan of %s ring failed: %v", ring, err)
 		return 0
 	}
 	clients := config.GetClients()
 	for _, host := range scanResults.Hosts {
-		if *verbose {
-			log.Printf("nmap found %v: %s\n", host.Addresses,
-				host.Status.State)
-		}
+		slog.Debugf("nmap found %v: %s", host.Addresses,
+			host.Status.State)
 		if host.Status.State != "up" {
 			continue
 		}
@@ -437,11 +425,11 @@ func subnetHostScan(ring, subnet string) int {
 		}
 
 		if _, ok := clients[mac]; !ok {
-			log.Printf("Unknown host %s found on ring %s: %s",
+			slog.Infof("Unknown host %s found on ring %s: %s",
 				mac, ring, ip)
 			logUnknown(ring, mac, ip)
 		} else {
-			log.Printf("host %s now active on ring %s: %s",
+			slog.Infof("host %s now active on ring %s: %s",
 				mac, ring, ip)
 		}
 		scannerRequest(mac, ip)
@@ -452,18 +440,14 @@ func subnetHostScan(ring, subnet string) int {
 // hostScan scans each of interfaces for new hosts and schedules regular port
 // scans on the host if one is found.
 func hostScan() {
-	if *verbose {
-		log.Printf("starting subnet scan\n")
-	}
+	slog.Debugf("starting subnet scan")
 	start := time.Now()
 	seen := 0
 	for ring, config := range rings {
 		seen += subnetHostScan(ring, config.Subnet)
 	}
 	done := time.Now()
-	if *verbose {
-		log.Printf("completed subnet scan\n")
-	}
+	slog.Debugf("completed subnet scan")
 	metrics.hostScans.Inc()
 	metrics.hostScanTime.Observe(done.Sub(start).Seconds())
 }
@@ -474,7 +458,7 @@ func runCmd(cmd string, args []string) error {
 	child := aputil.NewChild(cmd, args...)
 
 	if *nmapVerbose {
-		child.LogOutputTo("", 0, os.Stderr)
+		child.UseZapLog("", slog, zapcore.DebugLevel)
 	}
 
 	runLock.Lock()
@@ -700,14 +684,14 @@ func portScan(req *ScanRequest) {
 		metrics.udpScanTime.Observe(done.Sub(start).Seconds())
 	}
 	if len(res.Hosts) != 1 {
-		log.Printf("Scan of 1 host returned %d results: %v\n",
+		slog.Infof("Scan of 1 host returned %d results: %v",
 			len(res.Hosts), res)
 		return
 	}
 
 	host := &res.Hosts[0]
 	if host.Status.State != "up" {
-		log.Printf("Host %s is down, stopping scans", req.IP)
+		slog.Infof("Host %s is down, stopping scans", req.IP)
 		activeHosts.del(req.IP)
 		metrics.knownHosts.Set(activeHosts.len())
 		cancelAllScans(req.IP)
@@ -736,7 +720,7 @@ func portScan(req *ScanRequest) {
 
 	err = brokerd.Publish(scan, base_def.TOPIC_SCAN)
 	if err != nil {
-		log.Printf("Error sending scan: %v\n", err)
+		slog.Warnf("Error sending scan: %v", err)
 	}
 }
 
@@ -754,7 +738,7 @@ func vulnException(mac, ip string, details []string) {
 
 	err := brokerd.Publish(entity, base_def.TOPIC_EXCEPTION)
 	if err != nil {
-		log.Printf("couldn't publish %v to %s: %v\n",
+		slog.Warnf("couldn't publish %v to %s: %v",
 			entity, base_def.TOPIC_EXCEPTION, err)
 	}
 }
@@ -848,7 +832,7 @@ func vulnScanProcess(ip string, discovered map[string]bool) {
 			Value: base_def.RING_QUARANTINE,
 		}
 		ops = append(ops, op)
-		log.Printf("%s being quarantined\n", mac)
+		slog.Infof("%s being quarantined", mac)
 	}
 
 	// Iterate over all of the vulnerabilities discovered in the past.  If
@@ -863,7 +847,7 @@ func vulnScanProcess(ip string, discovered map[string]bool) {
 	}
 
 	if len(found) > 0 {
-		log.Printf("%s (seen as %s) vulnerable to: %s\n", mac, ip,
+		slog.Infof("%s (seen as %s) vulnerable to: %s", mac, ip,
 			strings.Join(found, ","))
 	}
 	if mac != "" && len(ops) > 0 {
@@ -882,16 +866,16 @@ func vulnScan(req *ScanRequest) {
 	prober := aputil.ExpandDirPath("/bin/ap-vuln-aggregate")
 	resFile, err := ioutil.TempFile("", "vuln.")
 	if err != nil {
-		log.Printf("failed to create result file: %v", err)
+		slog.Warnf("failed to create result file: %v", err)
 		return
 	}
 	name := resFile.Name()
 	defer os.Remove(name)
 
 	args := []string{"-d", vulnListFile, "-i", req.IP, "-o", name}
-	if *verbose {
-		args = append(args, "-v")
-	}
+	// if *verbose {
+	// args = append(args, "-v")
+	// }
 
 	if dev := getDeviceRecord(req.Mac); dev != nil {
 		services := make(map[string][]int) // convert port:service map to service:portlist map
@@ -908,7 +892,7 @@ func vulnScan(req *ScanRequest) {
 
 	start := time.Now()
 	if err = runCmd(prober, args); err != nil {
-		log.Printf("vulnerability scan of %s failed: %v\n",
+		slog.Warnf("vulnerability scan of %s failed: %v",
 			req.IP, err)
 		return
 	}
@@ -916,11 +900,11 @@ func vulnScan(req *ScanRequest) {
 	found := make(map[string]bool)
 	file, err := ioutil.ReadFile(name)
 	if err != nil {
-		log.Printf("Failed to read scan resuts: %v\n", err)
+		slog.Warnf("Failed to read scan resuts: %v", err)
 		return
 	}
 	if err = json.Unmarshal(file, &found); err != nil {
-		log.Printf("Failed to unmarshal resuts: %v\n", err)
+		slog.Warnf("Failed to unmarshal resuts: %v", err)
 		return
 	}
 
@@ -954,14 +938,14 @@ func vulnInit() {
 
 	file, err := ioutil.ReadFile(vulnListFile)
 	if err != nil {
-		log.Printf("Failed to read vulnerability list '%s': %v\n",
+		slog.Errorf("Failed to read vulnerability list '%s': %v",
 			vulnListFile, err)
 		return
 	}
 
 	err = json.Unmarshal(file, &vulnList)
 	if err != nil {
-		log.Printf("Failed to load vulnerability list '%s': %v\n",
+		slog.Errorf("Failed to load vulnerability list '%s': %v",
 			vulnListFile, err)
 		return
 	}
@@ -975,7 +959,7 @@ func vulnInit() {
 }
 
 func scannerFini(w *watcher) {
-	log.Printf("Stopping active scans\n")
+	slog.Infof("Stopping active scans")
 
 	kill := func(sig syscall.Signal) error {
 		runLock.Lock()
@@ -990,7 +974,7 @@ func scannerFini(w *watcher) {
 
 	aputil.RetryKill(kill, alive)
 
-	log.Printf("Shutting down scanner\n")
+	slog.Infof("Shutting down scanner")
 	w.running = false
 }
 

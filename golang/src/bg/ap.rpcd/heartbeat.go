@@ -29,7 +29,7 @@ func publishHeartbeat(ctx context.Context, tclient cloud_rpc.EventClient) error 
 	if bootTime == nil {
 		bootTime, err = ptypes.TimestampProto(aputil.LinuxBootTime())
 		if err != nil {
-			slogger.Fatalf("couldn't get linux boot time")
+			slog.Fatalf("couldn't get linux boot time")
 		}
 	}
 
@@ -48,13 +48,13 @@ func heartbeatLoop(ctx context.Context, tclient cloud_rpc.EventClient,
 	ticker := time.NewTicker(time.Minute * 7)
 	for !done {
 		if err := publishHeartbeat(ctx, tclient); err != nil {
-			slogger.Errorf("Failed heartbeat: %s", err)
+			slog.Errorf("Failed heartbeat: %s", err)
 		}
 		select {
 		case done = <-doneChan:
 		case <-ticker.C:
 		}
 	}
-	slogger.Infof("heartbeat loop exiting")
+	slog.Infof("heartbeat loop exiting")
 	wg.Done()
 }

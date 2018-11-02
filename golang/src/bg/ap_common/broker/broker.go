@@ -78,7 +78,7 @@ func (b *Broker) Publish(pb proto.Message, topic string) error {
 
 	data, err := proto.Marshal(pb)
 	if err != nil {
-		return fmt.Errorf("error marshalling %s: %v", topic, err)
+		return fmt.Errorf("error marshaling %s: %v", topic, err)
 	}
 
 	b.publisherMtx.Lock()

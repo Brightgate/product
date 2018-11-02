@@ -14,7 +14,6 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"strings"
@@ -138,7 +137,7 @@ func blockExpired(path []string) {
 		ip = net.ParseIP(path[2])
 	}
 	if ip != nil {
-		log.Printf("removing %v from actively blocked IPs\n", ip)
+		slog.Infof("removing %v from actively blocked IPs", ip)
 		addr := network.IPAddrToUint32(ip)
 		delete(activeBlocks, addr)
 	}
@@ -160,7 +159,7 @@ func notifyBlockEvent(dev net.HardwareAddr, ip net.IP) {
 	}
 
 	if err := brokerd.Publish(entity, topic); err != nil {
-		log.Printf("couldn't publish %s (%v): %v\n", topic, entity, err)
+		slog.Warnf("couldn't publish %s (%v): %v", topic, entity, err)
 	}
 }
 
@@ -179,7 +178,7 @@ func checkBlock(dev net.HardwareAddr, ip net.IP) {
 			return
 		}
 
-		log.Printf("%v is talking with blocked IP %v\n", dev, ip)
+		slog.Infof("%v is talking with blocked IP %v", dev, ip)
 		activeBlocks[addr] = struct{}{}
 		notifyBlockEvent(dev, ip)
 		metrics.blockedIPs.Inc()
@@ -209,7 +208,7 @@ func ingestBlocklist(filename string) {
 
 	file, err := os.Open(filename)
 	if err != nil {
-		log.Printf("Unable to open %s: %v\n", filename, err)
+		slog.Warnf("Unable to open %s: %v", filename, err)
 		return
 	}
 	defer file.Close()
@@ -234,7 +233,7 @@ func ingestBlocklist(filename string) {
 		}
 	}
 
-	log.Printf("Ingested %d blocked IPs from %s\n", cnt, filename)
+	slog.Infof("Ingested %d blocked IPs from %s", cnt, filename)
 	currentListMtx.Lock()
 	currentList = building
 	currentListMtx.Unlock()

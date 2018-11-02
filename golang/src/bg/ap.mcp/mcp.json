@@ -82,7 +82,8 @@
         "ThirdParty": true,
         "Options": [
             "-config.file=$APROOT/etc/prometheus.yml",
-            "-storage.local.path=$APROOT/var/prometheus-data"
+            "-storage.local.path=$APROOT/var/prometheus-data",
+	    "-log.level=warn"
         ],
         "Modes": [ "gateway" ]
     },

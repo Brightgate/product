@@ -17,7 +17,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -40,6 +39,7 @@ import (
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/zap"
 	"golang.org/x/net/ipv4"
 )
 
@@ -74,13 +74,13 @@ var ringLevel = map[string]int{
 }
 
 var (
-	debug    = flag.Bool("debug", false, "Enable debug logging")
 	ssdpBase = flag.Int("sbase", 31000, "start of SSDP response ports")
 	ssdpMax  = flag.Int("smax", 20, "Max # of open M-SEARCH requests")
 
 	brokerd *broker.Broker
 	config  *cfgapi.Handle
 	rings   cfgapi.RingMap
+	slog    *zap.SugaredLogger
 
 	ifaceToRing    map[int]string
 	ringToIface    map[string]*net.Interface
@@ -107,12 +107,6 @@ type ssdpSearchState struct {
 	requestor *ipv4.PacketConn
 	listener  *ipv4.PacketConn
 	next      *ssdpSearchState
-}
-
-func debugLog(format string, args ...interface{}) {
-	if *debug {
-		log.Printf(format, args)
-	}
 }
 
 func vlanBridge(vlan int) string {
@@ -176,7 +170,7 @@ func mDNSEvent(addr net.IP, requests, responses []string) {
 	}
 
 	if err := brokerd.Publish(listen, base_def.TOPIC_LISTEN); err != nil {
-		log.Printf("Error sending mDNS listen event: %v\n", err)
+		slog.Warnf("Error sending mDNS listen event: %v", err)
 	}
 }
 
@@ -191,18 +185,18 @@ func mDNSHandler(source *endpoint, b []byte) error {
 
 	if len(msg.Question) > 0 {
 		metrics.mdnsRequests.Inc()
-		debugLog("mDNS request from %v\n", source.ip)
+		slog.Debugf("mDNS request from %v", source.ip)
 		for _, question := range msg.Question {
-			debugLog("   %s\n", question.String())
+			slog.Debugf("   %s", question.String())
 			requests = append(requests, question.String())
 		}
 	}
 
 	if len(msg.Answer) > 0 {
 		metrics.mdnsReplies.Inc()
-		debugLog("mDNS reply from %v\n", source.ip)
+		slog.Debugf("mDNS reply from %v", source.ip)
 		for _, answer := range msg.Answer {
-			debugLog("   %s\n", answer.String())
+			slog.Debugf("   %s", answer.String())
 			responses = append(responses, answer.String())
 		}
 	}
@@ -254,7 +248,7 @@ func ssdpEvent(addr net.IP, mtype base_msg.EventSSDP_MessageType,
 	}
 
 	if err := brokerd.Publish(listen, base_def.TOPIC_LISTEN); err != nil {
-		log.Printf("Error sending SSDP listen event: %v\n", err)
+		slog.Warnf("Error sending SSDP listen event: %v", err)
 	}
 }
 
@@ -315,25 +309,25 @@ func ssdpResponseRelay(sss *ssdpSearchState) {
 			// timeout.  Any other error is worth noting.
 			e, _ := err.(net.Error)
 			if !e.Timeout() {
-				log.Printf("Failed to read from %v: %v\n",
+				slog.Warnf("Failed to read from %v: %v",
 					sss.listener.LocalAddr(), err)
 			}
 			metrics.ssdpTimeouts.Inc()
 			return
 		}
 		if err = ssdpResponseCheck(bytes.NewReader(buf)); err != nil {
-			log.Printf("Bad SSDP response from %v: %v\n", src, err)
+			slog.Warnf("Bad SSDP response from %v: %v", src, err)
 			return
 		}
 
-		debugLog("Forwarding SSDP response from/to %v\n", src, addr)
+		slog.Debugf("Forwarding SSDP response from/to %v", src, addr)
 		metrics.ssdpResponses.Inc()
 		l, err := sss.requestor.WriteTo(buf[:n], nil, addr)
 		if err != nil {
-			log.Printf("    Forward to %v failed: %v\n", addr, err)
+			slog.Warnf("    Forward to %v failed: %v", addr, err)
 			return
 		} else if l != n {
-			log.Printf("    Forwarded %d of %d to %v\n", l, n, addr)
+			slog.Warnf("    Forwarded %d of %d to %v", l, n, addr)
 			return
 		}
 	}
@@ -349,7 +343,7 @@ func ssdpSearchHandler(source *endpoint, mx int) error {
 	if err != nil {
 		return err
 	}
-	debugLog("Forwarding SSDP M-SEARCH from %v\n", sss.addr)
+	slog.Debugf("Forwarding SSDP M-SEARCH from %v", sss.addr)
 
 	// Replace the original PacketConn in the source structure with our new
 	// PacketConn, causing the SEARCH request to be forwarded from our newly
@@ -400,10 +394,10 @@ func ssdpHandler(source *endpoint, buf []byte) error {
 		nts := req.Header.Get("NTS")
 		if nts == "ssdp:alive" {
 			mtype = base_msg.EventSSDP_ALIVE
-			debugLog("Forwarding SSDP ALIVE from %v\n", source.ip)
+			slog.Debugf("Forwarding SSDP ALIVE from %v", source.ip)
 		} else if nts == "ssdp:byebye" {
 			mtype = base_msg.EventSSDP_BYEBYE
-			debugLog("Forwarding SSDP BYEBYE from %v\n", source.ip)
+			slog.Debugf("Forwarding SSDP BYEBYE from %v", source.ip)
 		} else if nts == "" {
 			err = fmt.Errorf("missing NOTIFY nts")
 		} else {
@@ -431,7 +425,7 @@ func ssdpInit() {
 	for port := low; port < high; port++ {
 		p, err := net.ListenPacket("udp4", ":"+strconv.Itoa(port))
 		if err != nil {
-			log.Printf("unable to init SEARCH handler on %d: %v",
+			slog.Warnf("unable to init SEARCH handler on %d: %v",
 				port, err)
 		} else {
 			ssdpSearches = &ssdpSearchState{
@@ -473,7 +467,7 @@ func getPacket(conn *ipv4.PacketConn, buf []byte) (int, *endpoint) {
 		n, cm, src, err := conn.ReadFrom(buf)
 		if n == 0 || err != nil {
 			if err != nil {
-				log.Printf("Read failed: %v\n", err)
+				slog.Warnf("Read failed: %v", err)
 			}
 			continue
 		}
@@ -486,7 +480,7 @@ func getPacket(conn *ipv4.PacketConn, buf []byte) (int, *endpoint) {
 			portno, _ = strconv.Atoi(port)
 		}
 		if ipv4 == "" {
-			log.Printf("Not an valid source: %s\n", src.String())
+			slog.Warnf("Not an valid source: %s", src.String())
 			continue
 		}
 		if _, ok := ipv4ToIface[ipv4]; ok {
@@ -497,7 +491,7 @@ func getPacket(conn *ipv4.PacketConn, buf []byte) (int, *endpoint) {
 
 		iface, ierr := net.InterfaceByIndex(cm.IfIndex)
 		if ierr != nil {
-			log.Printf("Receive error from %s: %v\n", ipv4, err)
+			slog.Warnf("Receive error from %s: %v", ipv4, err)
 			continue
 		}
 
@@ -525,7 +519,7 @@ func getPacket(conn *ipv4.PacketConn, buf []byte) (int, *endpoint) {
 func mrelay(s service) {
 	conn, err := initListener(s)
 	if err != nil {
-		log.Printf("Unable to init relay for %s: %v\n", s.name, err)
+		slog.Warnf("Unable to init relay for %s: %v", s.name, err)
 		return
 	}
 
@@ -536,7 +530,7 @@ func mrelay(s service) {
 
 		n, source := getPacket(conn, buf)
 		if source.iface == nil {
-			log.Printf("multicast packet arrived on bad source: %v\n",
+			slog.Warnf("multicast packet arrived on bad source: %v",
 				source)
 		}
 
@@ -548,7 +542,7 @@ func mrelay(s service) {
 		relayDown := true
 
 		if err = s.handler(source, buf); err != nil {
-			log.Printf("Bad %s packet: %v\n", s.name, err)
+			slog.Warnf("Bad %s packet: %v", s.name, err)
 			continue
 		}
 
@@ -556,7 +550,7 @@ func mrelay(s service) {
 		for dstRing, dstLevel := range ringLevel {
 			dstIface := ringToIface[dstRing]
 			if dstIface == nil {
-				log.Fatalf("missing interface for ring %s\n",
+				slog.Fatalf("missing interface for ring %s",
 					dstRing)
 			}
 			if dstIface.Index == source.iface.Index {
@@ -577,10 +571,10 @@ func mrelay(s service) {
 			source.conn.SetMulticastTTL(255)
 			l, err := source.conn.WriteTo(buf[:n], nil, fw)
 			if err != nil {
-				log.Printf("    Forward to %s failed: %v\n",
+				slog.Warnf("    Forward to %s failed: %v",
 					dstIface.Name, err)
 			} else if l != n {
-				log.Printf("    Forwarded %d of %d to %s\n",
+				slog.Warnf("    Forwarded %d of %d to %s",
 					l, n, dstIface.Name)
 			}
 		}
@@ -606,14 +600,14 @@ func initInterfaces() {
 		// Find the interface that serves this ring, so we can add the
 		// interface to the multicast groups on which we listen.
 		if _, ok := ringLevel[ring]; !ok {
-			debugLog("No relaying from %s\n", ring)
+			slog.Debugf("No relaying from %s", ring)
 			continue
 		}
 
 		bridge := vlanBridge(conf.Vlan)
 		iface, err := net.InterfaceByName(bridge)
 		if iface == nil || err != nil {
-			log.Printf("No interface %s: %v\n", bridge, err)
+			slog.Warnf("No interface %s: %v", bridge, err)
 			continue
 		}
 
@@ -661,14 +655,15 @@ func prometheusInit() {
 }
 
 func main() {
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+	flag.Parse()
+	slog = aputil.NewLogger()
+	defer slog.Sync()
+	slog.Infof("starting")
 
 	mcpd, err := mcp.New(pname)
 	if err != nil {
-		log.Printf("cannot connect to mcp: %v\n", err)
+		slog.Warnf("cannot connect to mcp: %v", err)
 	}
-
-	flag.Parse()
 
 	prometheusInit()
 	brokerd = broker.New(pname)
@@ -676,7 +671,7 @@ func main() {
 
 	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err != nil {
-		log.Fatalf("cannot connect to configd: %v\n", err)
+		slog.Fatalf("cannot connect to configd: %v", err)
 	}
 
 	initInterfaces()
@@ -689,5 +684,5 @@ func main() {
 	sig := make(chan os.Signal, 2)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	s := <-sig
-	log.Fatalf("Signal (%v) received, stopping\n", s)
+	slog.Fatalf("Signal (%v) received, stopping", s)
 }

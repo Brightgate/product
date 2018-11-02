@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -40,6 +39,7 @@ import (
 	"bg/common/cfgapi"
 
 	"github.com/golang/protobuf/proto"
+	"go.uber.org/zap"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/securecookie"
@@ -68,6 +68,7 @@ var (
 
 	config     *cfgapi.Handle
 	domainname string
+	slog       *zap.SugaredLogger
 
 	metrics struct {
 		latencies prometheus.Summary
@@ -122,11 +123,11 @@ func handleError(event []byte) {
 	syserror := &base_msg.EventSysError{}
 	proto.Unmarshal(event, syserror)
 
-	log.Printf("sys.error received by handler: %v", *syserror)
+	slog.Debugf("sys.error received by handler: %v", *syserror)
 
 	// Check if event is a certificate error
 	if *syserror.Reason == base_msg.EventSysError_RENEWED_SSL_CERTIFICATE {
-		log.Printf("exiting due to renewed certificate")
+		slog.Infof("exiting due to renewed certificate")
 		os.Exit(0)
 	}
 }
@@ -175,7 +176,7 @@ func hostInMap(hostMap map[string]bool) mux.MatcherFunc {
 }
 
 func phishHandler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Phishing request: %v\n", *r)
+	slog.Infof("Phishing request: %v\n", *r)
 
 	scheme := r.URL.Scheme
 	if scheme == "" {
@@ -224,12 +225,12 @@ func listen(addr string, port string, ring string, cfg *tls.Config,
 				TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
 			}
 			err := srv.ListenAndServeTLS(certfn, keyfn)
-			log.Printf("TLS Listener on %s (%s) exited: %v\n", addr+port, ring, err)
+			slog.Infof("TLS Listener on %s (%s) exited: %v\n", addr+port, ring, err)
 		}()
 	} else {
 		go func() {
 			err := http.ListenAndServe(addr+port, handler)
-			log.Printf("Listener on %s (%s) exited: %v\n", addr+port, ring, err)
+			slog.Infof("Listener on %s (%s) exited: %v\n", addr+port, ring, err)
 		}()
 	}
 }
@@ -242,26 +243,26 @@ func establishHttpdKeys() ([]byte, []byte) {
 	if err != nil {
 		hs = securecookie.GenerateRandomKey(base_def.HTTPD_HMAC_SIZE)
 		if hs == nil {
-			log.Fatalf("could not generate random key of size %d\n",
+			slog.Fatalf("could not generate random key of size %d\n",
 				base_def.HTTPD_HMAC_SIZE)
 		}
 		hs64 = base64.StdEncoding.EncodeToString(hs)
 
 		err = config.CreateProp(cookiehmackeyprop, hs64, nil)
 		if err != nil {
-			log.Fatalf("could not create '%s': %v\n", cookiehmackeyprop, err)
+			slog.Fatalf("could not create '%s': %v\n", cookiehmackeyprop, err)
 		}
 	} else {
 		hs, err = base64.StdEncoding.DecodeString(hs64)
 		if err != nil {
-			log.Fatalf("'%s' contains invalid b64 representation: %v\n", cookiehmackeyprop, err)
+			slog.Fatalf("'%s' contains invalid b64 representation: %v\n", cookiehmackeyprop, err)
 		}
 
 		if len(hs) != base_def.HTTPD_HMAC_SIZE {
 			// Delete
 			err = config.DeleteProp(cookiehmackeyprop)
 			if err != nil {
-				log.Fatalf("could not delete invalid size HMAC key: %v\n", err)
+				slog.Fatalf("could not delete invalid size HMAC key: %v\n", err)
 			} else {
 				return establishHttpdKeys()
 			}
@@ -275,19 +276,19 @@ func establishHttpdKeys() ([]byte, []byte) {
 
 		err = config.CreateProp(cookieaeskeyprop, as64, nil)
 		if err != nil {
-			log.Fatalf("could not create '%s': %v\n", cookieaeskeyprop, err)
+			slog.Fatalf("could not create '%s': %v\n", cookieaeskeyprop, err)
 		}
 	} else {
 		as, err = base64.StdEncoding.DecodeString(as64)
 		if err != nil {
-			log.Fatalf("'%s' contains invalid b64 representation: %v\n", cookieaeskeyprop, err)
+			slog.Fatalf("'%s' contains invalid b64 representation: %v\n", cookieaeskeyprop, err)
 		}
 
 		if len(as) != base_def.HTTPD_AES_SIZE {
 			// Delete
 			err = config.DeleteProp(cookieaeskeyprop)
 			if err != nil {
-				log.Fatalf("could not delete invalid size AES key: %v\n", err)
+				slog.Fatalf("could not delete invalid size AES key: %v\n", err)
 			} else {
 				return establishHttpdKeys()
 			}
@@ -316,14 +317,17 @@ func main() {
 	var err error
 	var rings cfgapi.RingMap
 
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	flag.Var(ports, "http-ports", "The ports to listen on for HTTP requests.")
 	flag.Parse()
+	slog = aputil.NewLogger()
+	defer slog.Sync()
+	slog.Infof("starting")
+
 	*clientWebDir = aputil.ExpandDirPath(*clientWebDir)
 
 	mcpd, err := mcp.New(pname)
 	if err != nil {
-		log.Printf("Failed to connect to mcp\n")
+		slog.Warnf("Failed to connect to mcp\n")
 	}
 
 	prometheusInit()
@@ -346,22 +350,22 @@ func main() {
 	if rings == nil {
 		mcpd.SetState(mcp.BROKEN)
 		if err != nil {
-			log.Fatalf("cannot connect to configd: %v\n", err)
+			slog.Fatalf("cannot connect to configd: %v\n", err)
 		} else {
-			log.Fatal("can't get ring configuration\n")
+			slog.Fatal("can't get ring configuration\n")
 		}
 	}
 
 	domainname, err = config.GetDomain()
 	if err != nil {
 		mcpd.SetState(mcp.BROKEN)
-		log.Fatalf("failed to fetch gateway domain: %v\n", err)
+		slog.Fatalf("failed to fetch gateway domain: %v\n", err)
 	}
 	demoHostname := fmt.Sprintf("gateway.%s", domainname)
 	keyfn, _, _, fullchainfn, err := certificate.GetKeyCertPaths(brokerd, demoHostname, time.Now(), false)
 	if err != nil {
 		// We can still run plain HTTP ports, such as the developer port.
-		log.Printf("Couldn't get SSL key/fullchain: %v", err)
+		slog.Warnf("Couldn't get SSL key/fullchain: %v", err)
 	}
 
 	data.LoadDNSBlocklist(data.DefaultDataDir)
@@ -448,10 +452,10 @@ func main() {
 		nDev.Use(negroni.HandlerFunc(developerMW.HandlerFuncWithNext))
 		nDev.UseHandler(apachelog.CombinedLog.Wrap(mainRouter, os.Stderr))
 
-		log.Printf("Developer Port configured at %s", *developerHTTP)
+		slog.Debugf("Developer Port configured at %s", *developerHTTP)
 		go func() {
 			err := http.ListenAndServe(*developerHTTP, nDev)
-			log.Printf("Developer listener on %s exited: %v\n",
+			slog.Infof("Developer listener on %s exited: %v\n",
 				*developerHTTP, err)
 		}()
 	}
@@ -462,5 +466,5 @@ func main() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
 	s := <-sig
-	log.Fatalf("Signal (%v) received", s)
+	slog.Fatalf("Signal (%v) received", s)
 }

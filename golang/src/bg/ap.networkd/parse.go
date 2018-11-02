@@ -47,7 +47,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"strconv"
@@ -411,9 +410,11 @@ func parseRule(text string) (rp *rule, err error) {
 // ParseRules reads a list of filter rules from a file, and returns a slice
 // of Rules.
 func parseRulesFile(rulesFile string) (rules ruleList, err error) {
+	errcnt := 0
+
 	file, err := os.Open(rulesFile)
 	if err != nil {
-		log.Printf("Couldn't open %s: %v\n", rulesFile, err)
+		slog.Errorf("Couldn't open %s: %v", rulesFile, err)
 		os.Exit(1)
 	}
 	defer file.Close()
@@ -426,15 +427,19 @@ func parseRulesFile(rulesFile string) (rules ruleList, err error) {
 		}
 
 		if err != nil {
-			log.Printf("Failed to read %s: %v\n", rulesFile, err)
+			slog.Errorf("Failed to read %s: %v", rulesFile, err)
 			break
 		}
 		s, err := parseRule(rule)
 		if err != nil {
-			log.Printf("Failed to parse '%s': %v\n", rule, err)
-			break
+			slog.Warnf("Failed to parse '%s': %v", rule, err)
+			if errcnt++; errcnt > 10 {
+				slog.Errorf("Too many errors.  Giving up.")
+				break
+			}
+		} else {
+			rules = append(rules, s)
 		}
-		rules = append(rules, s)
 	}
 
 	return

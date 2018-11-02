@@ -14,14 +14,11 @@ import (
 	"context"
 	"crypto/rsa"
 	"encoding/json"
-	"flag"
 	"fmt"
-	"io/ioutil"
 	"strings"
 	"sync"
 	"time"
 
-	"bg/ap_common/aputil"
 	"bg/base_def"
 
 	"github.com/dgrijalva/jwt-go"
@@ -34,12 +31,6 @@ const cJWTExpiry = base_def.BEARER_JWT_EXPIRY_SECS * time.Second
 
 // Overrideable for testing
 var timeNowFunc = time.Now
-
-var (
-	credPathFlag = flag.String("cloud-cred-path",
-		"/etc/secret/cloud/cloud.secret.json",
-		"cloud service JSON credential")
-)
 
 // Credential contains the necessary identifiers to connect the
 // Appliance Cloud endpoint
@@ -89,22 +80,6 @@ func NewCredentialFromJSON(data []byte) (*Credential, error) {
 	}
 	credj.Credential.PrivateKey = pk
 	return &credj.Credential, nil
-}
-
-// SystemCredential creates a new credential based on the system default
-// storage location, or -cred-path, if given.
-func SystemCredential() (*Credential, error) {
-	credPath := aputil.ExpandDirPath(*credPathFlag)
-
-	credFile, err := ioutil.ReadFile(credPath)
-	if err != nil {
-		return nil, errors.Wrapf(err, "Failed to read credential file '%s'", credPath)
-	}
-	cred, err := NewCredentialFromJSON(credFile)
-	if err != nil {
-		return nil, errors.Wrap(err, "Failed to build credential")
-	}
-	return cred, nil
 }
 
 // refreshJWT creates a JSON Web Token (RFC 7519) authentication token

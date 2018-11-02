@@ -15,7 +15,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"math/rand"
 	"net"
 	"net/http"
@@ -39,6 +38,7 @@ import (
 	"bg/common/cfgapi"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/zap"
 )
 
 var (
@@ -60,6 +60,7 @@ var (
 	clients  cfgapi.ClientMap // macaddr -> ClientInfo
 	rings    cfgapi.RingMap   // ring -> config
 	nodeUUID string
+	slog     *zap.SugaredLogger
 
 	wifiEvaluate   bool
 	wifiChannels   map[string]int
@@ -154,10 +155,10 @@ func configClientChanged(path []string, val string, expires *time.Time) {
 	c, ok := clients[hwaddr]
 	if !ok {
 		c := cfgapi.ClientInfo{Ring: newRing}
-		log.Printf("New client %s in %s\n", hwaddr, newRing)
+		slog.Infof("New client %s in %s", hwaddr, newRing)
 		clients[hwaddr] = &c
 	} else if c.Ring != newRing {
-		log.Printf("Moving %s from %s to %s\n", hwaddr, c.Ring, newRing)
+		slog.Infof("Moving %s from %s to %s", hwaddr, c.Ring, newRing)
 		c.Ring = newRing
 	} else {
 		// False alarm.
@@ -172,18 +173,18 @@ func configAuthChanged(path []string, val string, expires *time.Time) {
 	newAuth := val
 
 	if newAuth != "wpa-psk" && newAuth != "wpa-eap" {
-		log.Printf("Unknown auth set on %s: %s\n", ring, newAuth)
+		slog.Warnf("Unknown auth set on %s: %s", ring, newAuth)
 		return
 	}
 
 	r, ok := rings[ring]
 	if !ok {
-		log.Printf("Authentication set on unknown ring: %s\n", ring)
+		slog.Warnf("Authentication set on unknown ring: %s", ring)
 		return
 	}
 
 	if r.Auth != newAuth {
-		log.Printf("Changing auth for ring %s from %s to %s\n", ring,
+		slog.Infof("Changing auth for ring %s from %s to %s", ring,
 			r.Auth, newAuth)
 		r.Auth = newAuth
 		hostapd.reload()
@@ -198,17 +199,17 @@ func configNetworkChanged(path []string, val string, expires *time.Time) {
 		case "ssid":
 			wifiSSID = val
 			reload = true
-			log.Printf("SSID changed to %s\n", val)
+			slog.Infof("SSID changed to %s", val)
 
 		case "passphrase":
 			wifiPassphrase = val
 			reload = true
-			log.Printf("passphrase changed to %s\n", val)
+			slog.Infof("passphrase changed to %s", val)
 
 		case "radiusAuthSecret":
 			radiusSecret = val
 			reload = true
-			log.Printf("radiusAuthSecret changed to %s\n", val)
+			slog.Infof("radiusAuthSecret changed to %s", val)
 		}
 	} else if len(path) == 3 && path[2] == "channel" {
 		channel, _ := strconv.Atoi(val)
@@ -220,8 +221,8 @@ func configNetworkChanged(path []string, val string, expires *time.Time) {
 				reload = true
 				wifiEvaluate = true
 			} else {
-				log.Printf("ignoring illegal channel '%d' "+
-					"for %s\n", channel, band)
+				slog.Warnf("ignoring illegal channel '%d' "+
+					"for %s", channel, band)
 			}
 		}
 	}
@@ -282,7 +283,7 @@ func selectWifiChannel(d *physDevice) error {
 		if err = setChannel(w, w.cfgChannel); err == nil {
 			return nil
 		}
-		log.Printf("nic-specific %v\n", err)
+		slog.Debugf("nic-specific %v", err)
 	}
 
 	// If the user has configured a channel for this band, try that next.
@@ -290,7 +291,7 @@ func selectWifiChannel(d *physDevice) error {
 		if err = setChannel(w, wifiChannels[band]); err == nil {
 			return nil
 		}
-		log.Printf("band-specific %v\n", err)
+		slog.Debugf("band-specific %v", err)
 	}
 
 	if band == wificaps.LoBand {
@@ -386,15 +387,13 @@ func selectWifiDevices() {
 			if d := selected[band]; d != nil {
 				d.wifi.activeBand = bands[idx]
 				if err := selectWifiChannel(d); err != nil {
-					log.Printf("%v\n", err)
+					slog.Warnf("%v", err)
 				} else {
 					activeWifi = append(activeWifi, d)
 				}
 			}
 		}
-	}
-	if len(activeWifi) == 0 {
-		log.Printf("no wireless devices available")
+		slog.Info("now using wifi devices: %v", activeWifi)
 	}
 }
 
@@ -408,14 +407,14 @@ func getInternalAddr() net.IP {
 
 		iface, err := net.InterfaceByName(dev.name)
 		if err != nil {
-			log.Printf("Failed to get interface for %s: %v\n",
+			slog.Warnf("Failed to get interface for %s: %v",
 				dev.name, err)
 			continue
 		}
 
 		addrs, err := iface.Addrs()
 		if err != nil {
-			log.Printf("Failed to get address for %s: %v\n",
+			slog.Warnf("Failed to get address for %s: %v",
 				iface.Name, err)
 			continue
 		}
@@ -445,12 +444,12 @@ func addDevToRingBridge(dev *physDevice, ring string) error {
 
 	err = exec.Command(plat.IPCmd, "link", "set", "up", dev.name).Run()
 	if err != nil {
-		log.Printf("Failed to enable %s: %v\n", dev.name, err)
+		slog.Warnf("Failed to enable %s: %v", dev.name, err)
 	}
 
 	if config := rings[ring]; config != nil {
 		br := config.Bridge
-		log.Printf("Connecting %s (%s) to the %s bridge: %s\n",
+		slog.Debugf("Connecting %s (%s) to the %s bridge: %s",
 			dev.name, dev.hwaddr, ring, br)
 		c := exec.Command(plat.BrctlCmd, "addif", br, dev.name)
 		if out, rerr := c.CombinedOutput(); rerr != nil {
@@ -461,7 +460,7 @@ func addDevToRingBridge(dev *physDevice, ring string) error {
 	}
 
 	if err != nil {
-		log.Printf("Failed to add %s: %v\n", dev.name, err)
+		slog.Warnf("Failed to add %s: %v", dev.name, err)
 	}
 	return err
 }
@@ -536,10 +535,17 @@ func resetInterfaces() {
 func runLoop() {
 	startTimes := make([]time.Time, failuresAllowed)
 
+	warned := false
 	wifiEvaluate = true
 	for running {
 		if wifiEvaluate {
 			selectWifiDevices()
+			if len(activeWifi) > 0 {
+				warned = false
+			} else if !warned {
+				slog.Warnf("no wireless devices available")
+				warned = true
+			}
 		}
 
 		if len(activeWifi) > 0 {
@@ -548,12 +554,12 @@ func runLoop() {
 
 			hostapd = startHostapd(activeWifi)
 			if err := hostapd.wait(); err != nil {
-				log.Printf("%v\n", err)
+				slog.Warnf("%v", err)
 			}
 			hostapd = nil
 
 			if time.Since(startTimes[0]) < period {
-				log.Printf("hostapd is dying too quickly")
+				slog.Warnf("hostapd is dying too quickly")
 				wifiEvaluate = false
 			}
 			resetInterfaces()
@@ -580,19 +586,19 @@ func addVif(nic string, vlan int) {
 	deleteVif(vif)
 	err := exec.Command(plat.VconfigCmd, "add", nic, vid).Run()
 	if err != nil {
-		log.Printf("Failed to create vif %s: %v\n", vif, err)
+		slog.Warnf("Failed to create vif %s: %v", vif, err)
 		return
 	}
 
 	err = exec.Command(plat.BrctlCmd, "addif", bridge, vif).Run()
 	if err != nil {
-		log.Printf("Failed to add %s to %s: %v\n", vif, bridge, err)
+		slog.Warnf("Failed to add %s to %s: %v", vif, bridge, err)
 		return
 	}
 
 	err = exec.Command(plat.IPCmd, "link", "set", "up", vif).Run()
 	if err != nil {
-		log.Printf("Failed to enable %s: %v\n", vif, err)
+		slog.Warnf("Failed to enable %s: %v", vif, err)
 	}
 }
 
@@ -633,24 +639,24 @@ func createBridge(ringName string) {
 	ring := rings[ringName]
 	bridge := ring.Bridge
 
-	log.Printf("Preparing %s ring: %s %s\n", ringName, bridge, ring.Subnet)
+	slog.Infof("Preparing %s ring: %s %s", ringName, bridge, ring.Subnet)
 
 	err := exec.Command(plat.BrctlCmd, "addbr", bridge).Run()
 	if err != nil {
-		log.Printf("addbr %s failed: %v", bridge, err)
+		slog.Warnf("addbr %s failed: %v", bridge, err)
 		return
 	}
 
 	err = exec.Command(plat.IPCmd, "link", "set", "up", bridge).Run()
 	if err != nil {
-		log.Printf("bridge %s failed to come up: %v", bridge, err)
+		slog.Warnf("bridge %s failed to come up: %v", bridge, err)
 		return
 	}
 
 	// ip addr flush dev brvlan0
 	cmd := exec.Command(plat.IPCmd, "addr", "flush", "dev", bridge)
 	if err := cmd.Run(); err != nil {
-		log.Fatalf("Failed to remove existing IP address: %v\n", err)
+		slog.Fatalf("Failed to remove existing IP address: %v", err)
 	}
 
 	// ip route del 192.168.136.0/24
@@ -660,20 +666,20 @@ func createBridge(ringName string) {
 	// ip addr add 192.168.136.1 dev brvlan0
 	router := localRouter(ring)
 	cmd = exec.Command(plat.IPCmd, "addr", "add", router, "dev", bridge)
-	log.Printf("Setting %s to %s\n", bridge, router)
+	slog.Debugf("Setting %s to %s", bridge, router)
 	if err := cmd.Run(); err != nil {
-		log.Fatalf("Failed to set the router address: %v\n", err)
+		slog.Fatalf("Failed to set the router address: %v", err)
 	}
 
 	// ip link set up brvlan0
 	cmd = exec.Command(plat.IPCmd, "link", "set", "up", bridge)
 	if err := cmd.Run(); err != nil {
-		log.Fatalf("Failed to enable bridge: %v\n", err)
+		slog.Fatalf("Failed to enable bridge: %v", err)
 	}
 	// ip route add 192.168.136.0/24 dev brvlan0
 	cmd = exec.Command(plat.IPCmd, "route", "add", ring.Subnet, "dev", bridge)
 	if err := cmd.Run(); err != nil {
-		log.Fatalf("Failed to add %s as the new route: %v\n",
+		slog.Fatalf("Failed to add %s as the new route: %v",
 			ring.Subnet, err)
 	}
 }
@@ -715,7 +721,7 @@ func newNicOps(id string, nic *physDevice) []cfgapi.PropertyOp {
 			Name:  base + "/kind",
 			Value: kind,
 		}
-		log.Printf("Setting %s to %s\n", op.Name, op.Value)
+		slog.Debugf("Setting %s to %s", op.Name, op.Value)
 		ops = append(ops, op)
 
 		op = cfgapi.PropertyOp{
@@ -723,7 +729,7 @@ func newNicOps(id string, nic *physDevice) []cfgapi.PropertyOp {
 			Name:  base + "/ring",
 			Value: nic.ring,
 		}
-		log.Printf("Setting %s to %s\n", op.Name, op.Value)
+		slog.Debugf("Setting %s to %s", op.Name, op.Value)
 		ops = append(ops, op)
 	}
 
@@ -785,7 +791,7 @@ func updateNicProperties() {
 
 	if len(ops) != 0 {
 		if _, err := config.Execute(nil, ops).Wait(nil); err != nil {
-			log.Printf("Error updating NIC inventory: %v\n", err)
+			slog.Warnf("Error updating NIC inventory: %v", err)
 		}
 	}
 }
@@ -807,7 +813,7 @@ func prepareWan() {
 	// Enable packet forwarding
 	cmd := exec.Command(plat.SysctlCmd, "-w", "net.ipv4.ip_forward=1")
 	if err = cmd.Run(); err != nil {
-		log.Fatalf("Failed to enable packet forwarding: %v\n", err)
+		slog.Fatalf("Failed to enable packet forwarding: %v", err)
 	}
 
 	// Find the WAN device
@@ -824,20 +830,20 @@ func prepareWan() {
 				if wan == nil {
 					wan = dev
 				} else {
-					log.Printf("Multiple wan nics found.  "+
-						"Using: %s\n", wan.hwaddr)
+					slog.Infof("Multiple wan nics found.  "+
+						"Using: %s", wan.hwaddr)
 				}
 			}
 		}
 	}
 
 	if available == nil {
-		log.Printf("couldn't find a outgoing device to use")
+		slog.Warnf("couldn't find a outgoing device to use")
 		return
 	}
 	if wan == nil {
 		wan = available
-		log.Printf("No outgoing device configured.  Using %s\n", wan.hwaddr)
+		slog.Infof("No outgoing device configured.  Using %s", wan.hwaddr)
 		wan.ring = outgoingRing
 	}
 
@@ -862,24 +868,24 @@ func getWireless(i net.Interface) *physDevice {
 	}
 
 	if strings.HasPrefix(d.hwaddr, "02:00") {
-		log.Printf("Skipping emulated device %s (%s)\n",
+		slog.Debugf("Skipping emulated device %s (%s)",
 			d.name, d.hwaddr)
 		return nil
 	}
 
 	d.wifi = new(wifiInfo)
 	if d.wifi.cap, err = wificaps.GetCapabilities(d.name); err != nil {
-		log.Printf("Couldn't determine wifi capabilities of %s: %v\n",
+		slog.Warnf("Couldn't determine wifi capabilities of %s: %v",
 			d.name, err)
 		return nil
 	}
 
-	log.Print("device: ", d.name)
+	slog.Infof("device: %s", d.name)
 	// Emit one line at a time to the log, or only the first line will get
 	// the log prefix.
 	capstr := fmt.Sprintf("%s", d.wifi.cap)
 	for _, line := range strings.Split(strings.TrimSuffix(capstr, "\n"), "\n") {
-		log.Print(line)
+		slog.Debugf(line)
 	}
 
 	return &d
@@ -895,7 +901,7 @@ func getNicID(d *physDevice) string {
 func getDevices() {
 	all, err := net.Interfaces()
 	if err != nil {
-		log.Fatalf("Unable to inventory network devices: %v\n", err)
+		slog.Fatalf("Unable to inventory network devices: %v", err)
 	}
 
 	for _, i := range all {
@@ -966,22 +972,22 @@ func globalWifiInit(props *cfgapi.PropertyNode) error {
 	if x, ok := props.Children["regdomain"]; ok {
 		t := []byte(strings.ToUpper(x.Value))
 		if !locationRE.Match(t) {
-			log.Printf("Illegal @/network/regdomain: %s\n", x.Value)
+			slog.Warnf("Illegal @/network/regdomain: %s", x.Value)
 		} else {
 			domain = x.Value
 		}
 	}
 
-	log.Printf("Setting regulatory domain to %s\n", domain)
+	slog.Infof("Setting regulatory domain to %s", domain)
 	out, err := exec.Command(plat.IwCmd, "reg", "set", domain).CombinedOutput()
 	if err != nil {
-		log.Printf("Failed to set domain: %v\n%s\n", err, out)
+		slog.Warnf("Failed to set domain: %v%s\n", err, out)
 	}
 
 	if node, ok := props.Children["radiusAuthSecret"]; ok {
 		radiusSecret = node.Value
 	} else {
-		log.Printf("no radiusAuthSecret configured")
+		slog.Warnf("no radiusAuthSecret configured")
 	}
 	if node, ok := props.Children["ssid"]; ok {
 		wifiSSID = node.Value
@@ -1025,13 +1031,13 @@ func getNodeID() (string, error) {
 
 	if oldName != newName {
 		if oldName == "" {
-			log.Printf("Setting %s to %s\n", prop, newName)
+			slog.Debugf("Setting %s to %s", prop, newName)
 		} else {
-			log.Printf("Changing %s from %s to %s\n", prop,
+			slog.Debugf("Changing %s from %s to %s", prop,
 				oldName, newName)
 		}
 		if err := config.CreateProp(prop, newName, nil); err != nil {
-			log.Printf("failed to update %s: %v", prop, err)
+			slog.Warnf("failed to update %s: %v", prop, err)
 		}
 	}
 	return nodeUUID, nil
@@ -1043,7 +1049,7 @@ func daemonInit() error {
 	var err error
 
 	if mcpd, err = mcp.New(pname); err != nil {
-		log.Printf("cannot connect to mcp: %v\n", err)
+		slog.Warnf("cannot connect to mcp: %v", err)
 	} else {
 		mcpd.SetState(mcp.INITING)
 	}
@@ -1140,7 +1146,7 @@ func signalHandler() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	s := <-sig
 
-	log.Printf("Received signal %v\n", s)
+	slog.Infof("Received signal %v", s)
 	running = false
 	hostapd.reset()
 }
@@ -1152,9 +1158,12 @@ func prometheusInit() {
 
 func main() {
 	rand.Seed(time.Now().Unix())
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
 	flag.Parse()
+	slog = aputil.NewLogger()
+	defer slog.Sync()
+	slog.Infof("starting")
+
 	*templateDir = aputil.ExpandDirPath(*templateDir)
 	*rulesDir = aputil.ExpandDirPath(*rulesDir)
 
@@ -1165,7 +1174,7 @@ func main() {
 		if mcpd != nil {
 			mcpd.SetState(mcp.BROKEN)
 		}
-		log.Fatalf("networkd failed to start: %v\n", err)
+		slog.Fatalf("networkd failed to start: %v", err)
 	}
 
 	applyFilters()
@@ -1177,6 +1186,6 @@ func main() {
 	mcpd.SetState(mcp.ONLINE)
 	runLoop()
 
-	log.Printf("Cleaning up\n")
+	slog.Infof("Cleaning up")
 	networkCleanup()
 }

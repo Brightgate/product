@@ -114,13 +114,13 @@ func LoadDNSBlocklist(dataDir string) {
 
 	list, err := ingestDNSFile(wfile)
 	if err != nil {
-		log.Printf("Unable to read DNS allowlist %s: %v\n", wfile, err)
+		log.Printf("Unable to read DNS allowlist: %v\n", err)
 	} else {
 		dnsAllowlist = list
 	}
 	list, err = ingestDNSFile(bfile)
 	if err != nil {
-		log.Printf("Unable to read DNS blocklist %s: %v\n", bfile, err)
+		log.Printf("Unable to read DNS blocklist: %v\n", err)
 	} else {
 		dnsBlocklist = list
 	}

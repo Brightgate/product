@@ -30,7 +30,6 @@ import (
 	"fmt"
 	"hash/crc64"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -54,6 +53,7 @@ import (
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/zap"
 )
 
 const (
@@ -75,6 +75,7 @@ var (
 
 	brokerd *broker.Broker
 	config  *cfgapi.Handle
+	slog    *zap.SugaredLogger
 
 	ringRecords  map[string]dnsRecord // per-ring records for the router
 	perRingHosts map[string]bool      // hosts with per-ring results
@@ -310,7 +311,7 @@ func clientUpdateEvent(path []string, val string, expires *time.Time) {
 	mac := path[1]
 	new := config.GetClient(mac)
 	if new == nil {
-		log.Printf("Got update for nonexistent client: %s\n", mac)
+		slog.Warnf("Got update for nonexistent client: %s", mac)
 		return
 	}
 
@@ -357,7 +358,6 @@ func cnameUpdateEvent(path []string, val string, expires *time.Time) {
 }
 
 func cnameDeleteEvent(path []string) {
-	log.Printf("cname delete %s\n", path[2])
 	deleteOneCname(path[2])
 }
 
@@ -389,9 +389,8 @@ func logRequest(handler string, start time.Time, ip net.IP, r, m *dns.Msg) {
 		Response:     responses,
 	}
 
-	err := brokerd.Publish(entity, base_def.TOPIC_REQUEST)
-	if err != nil {
-		log.Println(err)
+	if err := brokerd.Publish(entity, base_def.TOPIC_REQUEST); err != nil {
+		slog.Errorf("failed to publish event: %v", err)
 	}
 }
 
@@ -436,7 +435,7 @@ func getClient(w dns.ResponseWriter) (string, *cfgapi.ClientInfo) {
 
 	ipStr := addr.IP.String()
 	if !wasWarned(ipStr, unknownWarned) {
-		log.Printf("DNS request from unknown client: %s\n", ipStr)
+		slog.Warnf("DNS request from unknown client: %s", ipStr)
 	}
 
 	return "", nil
@@ -565,7 +564,7 @@ func dnsOverHTTPSExchange(m *dns.Msg, server string) (*dns.Msg, error) {
 		err = rval.Unpack(buf)
 		if err != nil {
 			err = fmt.Errorf("unpacking DNS response: %v", err)
-			// log.Printf("%s\n", hex.Dump(buf))
+			// slog.Debugf("%s", hex.Dump(buf))
 			rval = nil
 		}
 	}
@@ -598,7 +597,7 @@ func upstreamRequest(server string, r, m *dns.Msg) {
 	}
 
 	if err != nil || upstream == nil {
-		log.Printf("failed to exchange: %v", err)
+		slog.Warnf("failed to exchange: %v", err)
 		metrics.upstreamFailures.Inc()
 		if os.IsTimeout(err) {
 			metrics.upstreamTimeouts.Inc()
@@ -696,7 +695,7 @@ func notifyBlockEvent(c *cfgapi.ClientInfo, hostname string) {
 	}
 
 	if err := brokerd.Publish(entity, topic); err != nil {
-		log.Printf("couldn't publish %s (%v): %v\n", topic, entity, err)
+		slog.Errorf("couldn't publish %s (%v): %v", topic, entity, err)
 	}
 }
 
@@ -749,8 +748,8 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 		// client that attempts the lookup.
 		key := mac + ":" + hostname
 		if !wasWarned(key, blockWarned) {
-			log.Printf("Blocking suspected phishing site "+
-				"'%s' for %s\n", hostname, mac)
+			slog.Infof("Blocking suspected phishing site "+
+				"'%s' for %s", hostname, mac)
 			notifyBlockEvent(c, hostname)
 			metrics.blocked.Inc()
 		}
@@ -788,7 +787,7 @@ func deleteOneClient(c *cfgapi.ClientInfo) {
 	hostsMtx.Lock()
 	if arpa, err := dns.ReverseAddr(ipv4); err == nil {
 		if rec, ok := hosts[arpa]; ok {
-			log.Printf("Deleting PTR record %s->%s\n", arpa,
+			slog.Infof("Deleting PTR record %s->%s", arpa,
 				rec.recval)
 			delete(hosts, arpa)
 		}
@@ -796,7 +795,7 @@ func deleteOneClient(c *cfgapi.ClientInfo) {
 
 	for addr, rec := range hosts {
 		if rec.rectype == dns.TypeA && rec.recval == ipv4 {
-			log.Printf("Deleting A record %s->%s\n", addr, ipv4)
+			slog.Infof("Deleting A record %s->%s", addr, ipv4)
 			delete(hosts, addr)
 		}
 	}
@@ -818,7 +817,7 @@ func updateOneClient(c *cfgapi.ClientInfo) {
 	hostsMtx.Lock()
 	hostname := name + "." + domainname + "."
 
-	log.Printf("Adding A record %s->%s\n", hostname, ipv4)
+	slog.Infof("Adding A record %s->%s", hostname, ipv4)
 	hosts[hostname] = dnsRecord{
 		rectype: dns.TypeA,
 		recval:  ipv4,
@@ -827,11 +826,11 @@ func updateOneClient(c *cfgapi.ClientInfo) {
 
 	arpa, err := dns.ReverseAddr(ipv4)
 	if err != nil {
-		log.Printf("Invalid address %v for %s: %v\n",
+		slog.Warnf("Invalid address %v for %s: %v",
 			c.IPv4, name, err)
 	} else {
 		hostname := name + "."
-		log.Printf("Adding PTR record %s->%s\n", arpa, hostname)
+		slog.Infof("Adding PTR record %s->%s", arpa, hostname)
 		hosts[arpa] = dnsRecord{
 			rectype: dns.TypePTR,
 			recval:  hostname,
@@ -844,7 +843,7 @@ func updateOneClient(c *cfgapi.ClientInfo) {
 func updateOneCname(hostname, canonical string) {
 	hostname = hostname + "." + domainname + "."
 	canonical = canonical + "." + domainname + "."
-	log.Printf("cname update %s -> %s\n", hostname, canonical)
+	slog.Infof("Adding cname %s -> %s", hostname, canonical)
 
 	hostsMtx.Lock()
 	hosts[hostname] = dnsRecord{
@@ -856,7 +855,7 @@ func updateOneCname(hostname, canonical string) {
 
 func deleteOneCname(hostname string) {
 	hostname = hostname + "." + domainname + "."
-	log.Printf("cname delete %s\n", hostname)
+	slog.Infof("Deleting cname %s", hostname)
 
 	hostsMtx.Lock()
 	delete(hosts, hostname)
@@ -903,7 +902,7 @@ func setNameserver(in string) {
 		comp := strings.Split(in, ":")
 		ip := net.ParseIP(comp[0])
 		if ip == nil {
-			log.Printf("Invalid nameserver: %s\n", in)
+			slog.Warnf("Invalid nameserver: %s", in)
 			return
 		}
 		if len(comp) == 1 {
@@ -913,7 +912,7 @@ func setNameserver(in string) {
 		}
 		dnsHTTPClient = nil
 	}
-	log.Printf("Using nameserver: %s\n", in)
+	slog.Infof("Using nameserver: %s", in)
 	upstreamDNS = in
 	cachedResponses.init()
 }
@@ -926,7 +925,7 @@ func initNetwork() {
 
 	domainname, err = config.GetDomain()
 	if err != nil {
-		log.Fatalf("failed to fetch gateway domain: %v\n", err)
+		slog.Fatalf("failed to fetch gateway domain: %v", err)
 	}
 
 	if tmp, _ := config.GetProp("@/network/dnsserver"); tmp != "" {
@@ -935,9 +934,9 @@ func initNetwork() {
 
 	rings := config.GetRings()
 	if rings == nil {
-		log.Fatalf("Can't retrieve ring information\n")
+		slog.Fatalf("Can't retrieve ring information")
 	} else {
-		log.Printf("defined rings %v\n", rings)
+		slog.Debugf("defined rings %v", rings)
 	}
 
 	// Each ring will have an A record for that ring's router.  That
@@ -960,7 +959,7 @@ func initNetwork() {
 func dnsListener(protocol string) {
 	srv := &dns.Server{Addr: ":53", Net: protocol}
 	if err := srv.ListenAndServe(); err != nil {
-		log.Fatalf("Failed to start %s listener %v\n", protocol, err)
+		slog.Fatalf("Failed to start %s listener %v", protocol, err)
 	}
 }
 
@@ -1036,16 +1035,18 @@ func prometheusInit() {
 }
 
 func main() {
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-
 	flag.Usage = func() {
 		flag.PrintDefaults()
 	}
 	flag.Parse()
 
+	slog = aputil.NewLogger()
+	defer slog.Sync()
+	slog.Infof("Starting")
+
 	mcpd, err := mcp.New(pname)
 	if err != nil {
-		log.Printf("cannot connect to mcp\n")
+		slog.Errorf("cannot connect to mcp")
 	}
 
 	prometheusInit()
@@ -1056,7 +1057,7 @@ func main() {
 
 	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err != nil {
-		log.Fatalf("cannot connect to configd: %v\n", err)
+		slog.Fatalf("cannot connect to configd: %v", err)
 	}
 	config.HandleChange(`^@/clients/.*/(ipv4|dns_name|dhcp_name|ring)$`,
 		clientUpdateEvent)
@@ -1082,5 +1083,5 @@ func main() {
 	sig := make(chan os.Signal, 2)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	s := <-sig
-	log.Printf("Signal (%v) received, stopping\n", s)
+	slog.Infof("Signal (%v) received, stopping", s)
 }

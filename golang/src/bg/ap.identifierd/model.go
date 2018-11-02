@@ -14,7 +14,6 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"runtime/debug"
@@ -322,7 +321,7 @@ func (o *observations) saveTestData(testPath string) error {
 	w.Flush()
 	if err := w.Error(); err != nil {
 		if err = os.Remove(tmpPath); err != nil {
-			log.Printf("failed to remove tmp file %s: %s\n", tmpPath, err)
+			slog.Warnf("failed to remove tmp file %s: %s\n", tmpPath, err)
 		}
 		return fmt.Errorf("failed to write %s: %s", tmpPath, err)
 	}
@@ -352,7 +351,7 @@ func (o *observations) loadTestData(testPath string) error {
 
 		hwaddr, err := net.ParseMAC(row[0])
 		if err != nil {
-			log.Printf("invalid MAC address %s: %s\n", row[0], err)
+			slog.Warnf("invalid MAC address %s: %s\n", row[0], err)
 			continue
 		}
 
@@ -420,7 +419,7 @@ func (o *observations) predictClients(ch chan *prediction) {
 	for _, c := range o.clients {
 		devID, prob, err := o.inference(c)
 		if err != nil {
-			log.Printf("failed to run inference: %s\n", err)
+			slog.Warnf("failed to run inference: %s\n", err)
 		}
 
 		// The model returns the most probable identity. If the identity has

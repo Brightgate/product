@@ -13,7 +13,6 @@ package main
 import (
 	"encoding/json"
 	"io"
-	"log"
 	"net/http"
 
 	"golang.org/x/crypto/bcrypt"
@@ -38,7 +37,7 @@ func makeApplianceAuthRouter() *mux.Router {
 func applianceLoginHandler(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseForm()
 	if err != nil {
-		log.Printf("cannot parse form: %v\n", err)
+		slog.Infof("cannot parse form: %v", err)
 		http.Error(w, "bad request", 400)
 		return
 	}
@@ -46,34 +45,34 @@ func applianceLoginHandler(w http.ResponseWriter, r *http.Request) {
 	// Must have user and password.
 	uids, present := r.Form["uid"]
 	if !present || len(uids) == 0 {
-		log.Printf("incomplete form, uid\n")
+		slog.Infof("incomplete form, uid")
 		http.Error(w, "bad request", 400)
 		return
 	}
 
 	uid := uids[0]
 	if len(uids) > 1 {
-		log.Printf("multiple uids in form submission: %v\n", uids)
+		slog.Infof("multiple uids in form submission: %v", uids)
 		http.Error(w, "bad request", 400)
 	}
 
 	userPasswords, present := r.Form["userPassword"]
 	if !present || len(userPasswords) == 0 {
-		log.Printf("incomplete form, userPassword\n")
+		slog.Infof("incomplete form, userPassword")
 		http.Error(w, "bad request", 400)
 		return
 	}
 
 	userPassword := userPasswords[0]
 	if len(userPasswords) > 1 {
-		log.Printf("multiple userPasswords in form submission: %v\n", userPasswords)
+		slog.Infof("multiple userPasswords in form submission: %v", userPasswords)
 		http.Error(w, "bad request", 400)
 	}
 
 	// Retrieve user record
 	ui, err := config.GetUser(uid)
 	if err != nil {
-		log.Printf("demo login for '%s' denied: %v\n", uid, err)
+		slog.Infof("demo login for '%s' denied: %v", uid, err)
 		http.Error(w, "login denied", 401)
 		return
 	}
@@ -81,7 +80,7 @@ func applianceLoginHandler(w http.ResponseWriter, r *http.Request) {
 	cmp := bcrypt.CompareHashAndPassword([]byte(ui.Password),
 		[]byte(userPassword))
 	if cmp != nil {
-		log.Printf("demo login for '%s' denied: password comparison\n", uid)
+		slog.Infof("demo login for '%s' denied: password comparison", uid)
 		http.Error(w, "login denied", 401)
 		return
 	}
@@ -102,14 +101,14 @@ func applianceLoginHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if cookie.String() == "" {
-			log.Printf("cookie is empty and will be dropped: %v -> %v\n", cookie, cookie.String())
+			slog.Infof("cookie is empty and will be dropped: %v -> %v", cookie, cookie.String())
 		}
 
-		log.Printf("setting cookie %v\n", cookie.String())
+		slog.Infof("setting cookie %v", cookie.String())
 		http.SetCookie(w, cookie)
 
 	} else {
-		log.Printf("cookie encoding failed: %v\n", err)
+		slog.Infof("cookie encoding failed: %v", err)
 	}
 
 	io.WriteString(w, "OK login\n")
@@ -123,15 +122,15 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(cookieName); err == nil {
 		value = make(map[string]string)
 		if err = cutter.Decode(cookieName, cookie.Value, &value); err == nil {
-			log.Printf("Logging out '%s'\n", value["uid"])
+			slog.Infof("Logging out '%s'", value["uid"])
 		} else {
-			log.Printf("Could not decode cookie\n")
+			slog.Infof("Could not decode cookie")
 			http.Error(w, "bad request", 400)
 			return
 		}
 	} else {
 		// No cookie defined.
-		log.Printf("Could not find cookie for logout\n")
+		slog.Infof("Could not find cookie for logout")
 		http.Error(w, "bad request", 400)
 		return
 	}
@@ -149,7 +148,7 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		http.SetCookie(w, cookie)
 	} else {
-		log.Printf("failed to encode cookie: %s", err)
+		slog.Infof("failed to encode cookie: %s", err)
 		http.Error(w, "bad request", 400)
 	}
 }
@@ -164,7 +163,7 @@ func userIDHandler(w http.ResponseWriter, r *http.Request) {
 
 	b, err := json.Marshal(uid)
 	if err != nil {
-		log.Printf("failed to json marshal uid: %v\n", err)
+		slog.Infof("failed to json marshal uid: %v", err)
 		return
 	}
 	_, _ = w.Write(b)
@@ -179,7 +178,7 @@ func getRequestUID(r *http.Request) string {
 
 	value := make(map[string]string)
 	if err = cutter.Decode(cookieName, cookie.Value, &value); err != nil {
-		log.Printf("request contains undecryptable cookie value: %v\n", err)
+		slog.Infof("request contains undecryptable cookie value: %v", err)
 		return ""
 	}
 
@@ -189,13 +188,13 @@ func getRequestUID(r *http.Request) string {
 	// Retrieve user node.
 	ui, err := config.GetUser(uid)
 	if err != nil {
-		log.Printf("demo login for '%s' denied: %v\n", uid, err)
+		slog.Infof("demo login for '%s' denied: %v", uid, err)
 		return ""
 	}
 
 	// Accounts with empty passwords can't be logged into.
 	if ui.Password == "" {
-		log.Printf("demo login for '%s' denied: no password\n", uid)
+		slog.Infof("demo login for '%s' denied: no password", uid)
 		return ""
 	}
 
@@ -212,7 +211,7 @@ func cookieAuthMiddleware(next http.Handler) http.Handler {
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
-		log.Printf("%s [uid '%s']\n", r.RequestURI, uid)
+		slog.Infof("%s [uid '%s']", r.RequestURI, uid)
 		// Call the next handler, which can be another middleware in the chain, or the final handler.
 		next.ServeHTTP(w, r)
 	})

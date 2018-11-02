@@ -10,12 +10,8 @@
 
 package main
 
-import (
-	"log"
-)
-
 func upgradeV14() error {
-	log.Printf("Adding @/network/ntpservers\n")
+	slog.Infof("Adding @/network/ntpservers")
 
 	propTree.Add("@/network/ntpservers/1", "time1.google.com", nil)
 	propTree.Add("@/network/ntpservers/2", "time2.google.com", nil)
