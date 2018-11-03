@@ -42,7 +42,9 @@ func refreshConfig(ctx context.Context, ap *perAPState, uuid string) {
 	}
 
 	_, err = ap.cmdQueue.submit(ctx, ap, q)
-	slog.Warnf("failed to submit GET(@/) for %s: %v", uuid, err)
+	if err != nil {
+		slog.Warnf("failed to submit GET(@/) for %s: %v", uuid, err)
+	}
 }
 
 // Respond to a Hello() from an appliance.
