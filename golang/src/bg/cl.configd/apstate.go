@@ -109,6 +109,9 @@ func (s *perAPState) setCachedTree(t *cfgtree.PTree) {
 }
 
 func (s *perAPState) store(ctx context.Context) error {
+	if s.cachedTree == nil {
+		return nil
+	}
 	err := store.set(ctx, s.cloudUUID, s.cachedTree)
 	if err != nil {
 		slog.Errorf("Failed to store config for %v: %v", s.cloudUUID, err)
