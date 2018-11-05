@@ -47,6 +47,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -68,7 +69,9 @@ import (
 )
 
 const (
-	pname = "ap.updated"
+	pname       = "ap.updated"
+	urlProperty = "@/cloud/svc_rpc/url"
+	tlsProperty = "@/cloud/svc_rpc/tls"
 )
 
 var (
@@ -384,18 +387,29 @@ func uploadInit() error {
 		log.Printf("Failed to build credential: %s", err)
 		return err
 	}
-	if !*enableTLSFlag {
-		log.Printf("Connecting insecurely due to '-enable-tls=false' flag (developers only!)")
-	}
 
-	if *connectFlag == "" {
-		*connectFlag, err = config.GetProp("@/cloud/svc_rpc")
-		if err != nil {
-			return fmt.Errorf("need @/cloud/svc_rpc or -connect")
+	connectURL := *connectFlag
+	enableTLS := *enableTLSFlag
+
+	if config != nil {
+		if url, err := config.GetProp(urlProperty); err == nil {
+			connectURL = url
+		}
+		if tls, err := config.GetProp(tlsProperty); err == nil {
+			enableTLS = (strings.ToLower(tls) == "true")
 		}
 	}
 
-	rpcConn, err = grpcutils.NewClientConn(*connectFlag, *enableTLSFlag, pname)
+	if !enableTLS {
+		log.Printf("Connecting insecurely due to '-enable-tls=false'" +
+			"flag (developers only!)")
+	}
+
+	if connectURL == "" {
+		return fmt.Errorf("need %s or -connect", urlProperty)
+	}
+
+	rpcConn, err = grpcutils.NewClientConn(connectURL, enableTLS, pname)
 	if err != nil {
 		log.Printf("Failed to make RPC client: %+v", err)
 		return err

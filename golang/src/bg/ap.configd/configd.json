@@ -268,9 +268,7 @@
     {"Path": "@/clients/%macaddr%/vulnerabilities/%string%/cleared", "Type": "time", "Level": "internal"},
     {"Path": "@/cloud/svc_rpc/url", "Type": "string", "Level": "internal"},
     {"Path": "@/cloud/svc_rpc/tls", "Type": "bool", "Level": "internal"},
-    {"Path": "@/cloud/upload/bucket", "Type": "string", "Level": "internal"},
-    {"Path": "@/cloud/upload/serviceid", "Type": "string", "Level": "internal"},
-    {"Path": "@/cloud/upload/creds", "Type": "string", "Level": "internal"},
+    {"Path": "@/cloud/update/bucket", "Type": "string", "Level": "internal"},
     {"Path": "@/updates/%string%", "Type": "time", "Level": "internal"}
   ]
 }
