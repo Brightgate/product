@@ -77,9 +77,11 @@ func SetupLogs() (*zap.Logger, *zap.SugaredLogger) {
 		return GetLogs()
 	}
 
+	isTerm := terminal.IsTerminal(int(os.Stderr.Fd()))
+
 	lt := logTypeFlag
 	if lt == logTypeAuto {
-		if terminal.IsTerminal(int(os.Stderr.Fd())) {
+		if isTerm {
 			lt = logTypeDev
 		} else {
 			lt = logTypeProd
@@ -90,7 +92,9 @@ func SetupLogs() (*zap.Logger, *zap.SugaredLogger) {
 	if lt == logTypeDev {
 		config := zap.NewDevelopmentConfig()
 		config.Level = globalLevel
-		config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		if isTerm {
+			config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		}
 		log, err = config.Build(zap.AddStacktrace(zapcore.ErrorLevel))
 		log.Debug(fmt.Sprintf("Zap %s Logging at %s", lt, config.Level))
 	} else {
