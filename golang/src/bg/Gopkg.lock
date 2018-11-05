@@ -408,6 +408,14 @@
   version = "v0.0.3"
 
 [[projects]]
+  digest = "1:82b912465c1da0668582a7d1117339c278e786c2536b3c3623029a0c7141c2d0"
+  name = "github.com/mattn/go-runewidth"
+  packages = ["."]
+  pruneopts = ""
+  revision = "ce7b0b5c7b45a81508558cd1dba6bb1e4ddb51bb"
+  version = "v0.0.3"
+
+[[projects]]
   digest = "1:63722a4b1e1717be7b98fc686e0b30d5e7f734b9e93d7dee86293b6deab7ea28"
   name = "github.com/matttproud/golang_protobuf_extensions"
   packages = ["pbutil"]
@@ -595,6 +603,14 @@
   pruneopts = ""
   revision = "f35b8ab0b5a2cef36673838d662e249dd9c94686"
   version = "v1.2.2"
+
+[[projects]]
+  branch = "master"
+  digest = "1:fc5f2762e4df86193d78ad84cbf2616d1ba1c9413737fc13faae35d24cb1d70e"
+  name = "github.com/tatsushid/go-prettytable"
+  packages = ["."]
+  pruneopts = ""
+  revision = "ed2d14c2993972f5ff95f34f17e6ce81b962779a"
 
 [[projects]]
   digest = "1:8b22887c5d7a1c5791882c07bcd949c6e5b1de57190d619a1ab309ad05c76cf3"
@@ -1040,6 +1056,7 @@
     "github.com/spf13/cobra",
     "github.com/stretchr/testify/mock",
     "github.com/stretchr/testify/require",
+    "github.com/tatsushid/go-prettytable",
     "github.com/tensorflow/tensorflow/tensorflow/go",
     "github.com/tensorflow/tensorflow/tensorflow/go/op",
     "github.com/tomazk/envcfg",

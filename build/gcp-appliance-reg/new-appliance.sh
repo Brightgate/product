@@ -18,20 +18,17 @@ CRED_FILE=$1
 APPLIANCE_ID=$2
 CLOUD_UUID=$3
 
-if [[ -z $CRED_FILE || ! -f $CRED_FILE || -z $APPLIANCE_ID || -z $REG_PROJECT_ID || -z $REG_REGION_ID || -z $REG_REGISTRY_ID || -z $REG_DBURI ]]; then
+if [[ -z $CRED_FILE || ! -f $CRED_FILE || -z $APPLIANCE_ID || -z $REG_PROJECT_ID || -z $REG_REGION_ID || -z $REG_REGISTRY_ID || -z $REG_CLOUDSQL_INSTANCE || -z $REG_DBURI ]]; then
 	cat <<-EOF
 		usage: $0 <credentials-file> <appliance-id> [<appliance-uuid>]
 		Must also set environment variables (or source from reg file):
 		    REG_PROJECT_ID=<name of gcp project>
 		    REG_REGION_ID=<name of gcp region>
 		    REG_REGISTRY_ID=<registry name>
+		    REG_CLOUDSQL_INSTANCE=<cloudsql instance name>
 		    REG_DBURI=<postgres uri>
 	EOF
 	exit 2
-fi
-
-if [[ -z $CLOUD_UUID ]]; then
-	CLOUD_UUID=$(uuidgen -r)
 fi
 
 GCP_ACCT=$(gcloud auth list --filter=status:ACTIVE --format="value(account)")
@@ -52,57 +49,5 @@ SVC_ACCT=$(gcloud auth list --filter=status:ACTIVE --format="value(account)")
 # spin up a proxy using the credentials we've been given
 start_cloudsql_proxy "$CRED_FILE" "${REG_PROJECT_ID}:${REG_REGION_ID}:${REG_CLOUDSQL_INSTANCE}"
 
-echo "Creating $OUTPUT_DIR/"
-mkdir -p "$OUTPUT_DIR" || fatal "couldn't make $OUTPUT_DIR"
-cd "$OUTPUT_DIR" || fatal "couldn't cd $OUTPUT_DIR"
-
-echo "Generating Key/Pair and Certificate for $APPLIANCE_ID"
-openssl req -x509 -nodes -newkey rsa:2048 -keyout "$APPLIANCE_ID.rsa_private.pem" \
-    -out "$APPLIANCE_ID.rsa_cert.pem" -subj "/CN=unused"
-[[ $? -eq 0 ]] || fatal "OpenSSL failed."
-
-# Replace the row separator (newline) with literal backslash-enn, as
-# JSON cannot accomodate multiline strings.
-PRIVKEY_ESCAPED=$(awk -v ORS='\\n' '{print}' "$APPLIANCE_ID.rsa_private.pem")
-
-PUBKEY=$(< "$APPLIANCE_ID.rsa_cert.pem")
-echo "-------------------------------------------------------------"
-echo "Recording appliance to SQL database; you may need to give a password."
-
-cat <<EOF | psql --single-transaction -q -d "$REG_DBURI" -v ON_ERROR_STOP=1
-INSERT INTO
-  appliance_id_map
-    (cloud_uuid, gcp_project, gcp_region, appliance_reg, appliance_reg_id)
-  VALUES
-    ('$CLOUD_UUID', '$REG_PROJECT_ID', '$REG_REGION_ID', '$REG_REGISTRY_ID', '$APPLIANCE_ID');
-INSERT INTO
-  appliance_pubkey
-    (cloud_uuid, format, key)
-  VALUES
-    ('$CLOUD_UUID', 'RS256_X509', '$PUBKEY');
-EOF
-[[ $? -eq 0 ]] || fatal "psql failed."
-echo "-------------------------------------------------------------"
-
-OUTJSON=$APPLIANCE_ID.cloud.secret.json
-cat <<EOF > "$OUTJSON"
-{
-	"project": "$REG_PROJECT_ID",
-	"region": "$REG_REGION_ID",
-	"registry": "$REG_REGISTRY_ID",
-	"appliance_id": "$APPLIANCE_ID",
-	"private_key": "$PRIVKEY_ESCAPED"
-}
-EOF
-[[ $? -eq 0 ]] || fatal "write $OUTJSON failed."
-
-echo "Summary:"
-cat <<EOF
-	Created appliance: projects/$REG_PROJECT_ID/locations/$REG_REGION_ID/registries/$REG_REGISTRY_ID/appliances/$APPLIANCE_ID
-	       Cloud UUID: $CLOUD_UUID
-             Secrets file: $OUTPUT_DIR/$OUTJSON
-EOF
-
-echo "-------------------------------------------------------------"
-echo "Next, provision $OUTJSON to the appliance at:" \
-    "/opt/com.brightgate/etc/secret/cloud/cloud.secret.json"
+CL_REG=$(git rev-parse --show-toplevel)/proto.$(uname -m)/cloud/opt/net.b10e/bin/cl-reg
+$CL_REG app new ${CLOUD_UUID:+-u $CLOUD_UUID} -d "$OUTPUT_DIR" "$APPLIANCE_ID"

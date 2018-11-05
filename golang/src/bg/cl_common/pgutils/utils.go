@@ -49,3 +49,32 @@ func CensorPassword(connInfo string) string {
 	re := regexp.MustCompile(`\bpassword=[^ ]*`)
 	return re.ReplaceAllString(connInfo, "password="+dummy)
 }
+
+// HasPassword checks the connection URI to see if it specifies the password.
+func HasPassword(connInfo string) bool {
+	if strings.HasPrefix(connInfo, "postgres://") ||
+		strings.HasPrefix(connInfo, "postgresql://") {
+		theURL, _ := url.Parse(connInfo)
+
+		// See if the query string has the password.
+		q := theURL.Query()
+		return q.Get("password") != ""
+	}
+
+	re := regexp.MustCompile(`\bpassword=[^ ]*`)
+	return re.MatchString(connInfo)
+}
+
+// AddPassword adds the password to the connection URI.
+func AddPassword(connInfo, password string) string {
+	if strings.HasPrefix(connInfo, "postgres://") ||
+		strings.HasPrefix(connInfo, "postgresql://") {
+		theURL, _ := url.Parse(connInfo)
+
+		q := theURL.Query()
+		q.Set("password", password)
+		theURL.RawQuery = q.Encode()
+		return theURL.String()
+	}
+	return connInfo
+}

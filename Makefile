@@ -492,13 +492,15 @@ CLOUDCOMMON_GOPKGS = \
 	bg/cl_common/clcfg \
 	bg/cl_common/daemonutils \
 	bg/cl_common/pgutils \
+	bg/cl_common/registry \
 	bg/cloud_models/appliancedb \
 	bg/cloud_models/sessiondb
 
 CLOUDCOMMAND_GOPKGS = \
 	bg/cl-aggregate \
 	bg/cl-configctl \
-	bg/cl-dtool
+	bg/cl-dtool \
+	bg/cl-reg
 
 CLOUD_GOPKGS = $(CLOUDCOMMON_GOPKGS) $(CLOUDDAEMON_GOPKGS) $(CLOUDCOMMAND_GOPKGS)
 
@@ -545,7 +547,8 @@ CLOUD_COMMON_SRCS = \
 	$(GOSRCBG)/cl_common/auth/m2mauth/middleware.go \
 	$(GOSRCBG)/cl_common/clcfg/clcfg.go \
 	$(GOSRCBG)/cl_common/daemonutils/utils.go \
-	$(GOSRCBG)/cl_common/pgutils/utils.go
+	$(GOSRCBG)/cl_common/pgutils/utils.go \
+	$(GOSRCBG)/cl_common/registry/registry.go
 
 COVERAGE_DIR = coverage
 
@@ -851,6 +854,9 @@ $(CLOUDBIN)/cl-dtool: \
 	$(GOSRCBG)/cl-dtool/dtool.go \
 	$(GOSRCBG)/cl-dtool/export.go \
 	$(GOSRCBG)/cl-dtool/merge.go \
+	$(CLOUD_COMMON_SRCS)
+$(CLOUDBIN)/cl-reg: \
+	$(GOSRCBG)/cl-reg/main.go \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.configd: \
 	$(GOSRCBG)/cl.configd/apstate.go \

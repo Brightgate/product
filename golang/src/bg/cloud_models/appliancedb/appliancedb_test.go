@@ -170,38 +170,32 @@ func testHeartbeatIngest(t *testing.T, ds DataStore, logger *zap.Logger, slogger
 	a := ApplianceID{
 		CloudUUID: testUUID,
 	}
-	err = ds.UpsertApplianceID(ctx, &a)
-	assert.NoError(err, "expected Upsert to succeed")
+	err = ds.InsertApplianceID(ctx, &a)
+	assert.NoError(err, "expected Insert to succeed")
 
 	err = ds.InsertHeartbeatIngest(ctx, &hb)
 	// expect to succeed now
 	assert.NoError(err)
 }
 
-// Test insert/update of registry data.  subtest of TestDatabaseModel
-func testUpsertApplianceID(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
+// Test insert of registry data.  subtest of TestDatabaseModel
+func testInsertApplianceID(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
 	ctx := context.Background()
 	assert := require.New(t)
 
 	a := &ApplianceID{
 		CloudUUID: testUUID,
 	}
-	err := ds.UpsertApplianceID(ctx, a)
-	assert.NoError(err, "expected Upsert to succeed")
+	err := ds.InsertApplianceID(ctx, a)
+	assert.NoError(err, "expected Insert to succeed")
 
 	a2, err := ds.ApplianceIDByUUID(ctx, testUUID)
 	assert.NoError(err, "expected ApplianceIDByUUID to succeed")
 	assert.Equal(a2.CloudUUID, testUUID)
 
-	// Test the "update" part of upsert
-	a2.GCPProject = testProject
-	err = ds.UpsertApplianceID(ctx, a2)
-	assert.NoError(err, "expected Upsert to succeed")
-
-	a2, err = ds.ApplianceIDByUUID(ctx, testUUID)
-	assert.NoError(err, "expected ApplianceIDByUUID to succeed")
-	assert.Equal(a2.CloudUUID, testUUID)
-	assert.Equal(a2.GCPProject, testProject)
+	// Test that a second insert of the same UUID fails
+	err = ds.InsertApplianceID(ctx, a)
+	assert.Error(err, "expected Insert to fail")
 }
 
 // Test insertion into cloudstorage table.  subtest of TestDatabaseModel
@@ -212,8 +206,8 @@ func testCloudStorage(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 	a := &ApplianceID{
 		CloudUUID: testUUID,
 	}
-	err := ds.UpsertApplianceID(ctx, a)
-	assert.NoError(err, "expected Upsert to succeed")
+	err := ds.InsertApplianceID(ctx, a)
+	assert.NoError(err, "expected Insert to succeed")
 
 	cs1 := &ApplianceCloudStorage{
 		Bucket:   "test-bucket",
@@ -245,7 +239,7 @@ func testUnittestData(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 	adb := ds.(*ApplianceDB)
 	bytes, err := ioutil.ReadFile(unitTestSQLFile)
 	assert.NoError(err)
-	_, err = adb.Exec(string(bytes))
+	_, err = adb.ExecContext(ctx, string(bytes))
 	assert.NoError(err)
 
 	ids, err := ds.AllApplianceIDs(ctx)
@@ -297,8 +291,8 @@ func testConfigStore(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	a := &ApplianceID{
 		CloudUUID: testUUID,
 	}
-	err := ds.UpsertApplianceID(ctx, a)
-	assert.NoError(err, "expected Upsert to succeed")
+	err := ds.InsertApplianceID(ctx, a)
+	assert.NoError(err, "expected Insert to succeed")
 
 	// Add appliance 1 to the appliance_config_store table
 	acs := ApplianceConfigStore{
@@ -332,8 +326,8 @@ func testCommandQueue(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 	a := &ApplianceID{
 		CloudUUID: testUUID,
 	}
-	err := ds.UpsertApplianceID(ctx, a)
-	assert.NoError(err, "expected Upsert to succeed")
+	err := ds.InsertApplianceID(ctx, a)
+	assert.NoError(err, "expected Insert to succeed")
 
 	makeCmd := func(query string) (*ApplianceCommand, time.Time) {
 		enqTime := time.Now()
@@ -498,7 +492,7 @@ func TestDatabaseModel(t *testing.T) {
 	}{
 		{"testEmpty", testEmpty},
 		{"testHeartbeatIngest", testHeartbeatIngest},
-		{"testUpsertApplianceID", testUpsertApplianceID},
+		{"testInsertApplianceID", testInsertApplianceID},
 		{"testCloudStorage", testCloudStorage},
 		{"testUnittestData", testUnittestData},
 		{"testConfigStore", testConfigStore},

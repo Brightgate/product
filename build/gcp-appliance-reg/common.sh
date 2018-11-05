@@ -34,7 +34,7 @@ function stop_cloudsql_proxy() {
 		wait $PROXYPID 2>/dev/null
 		ret=$?
 		if [[ $ret -ne 0 && $ret != 129 ]]; then
-			cat $$SOCKDIR/proxy.out
+			cat "$SOCKDIR/proxy.out"
 			fatal "sql proxy exited $ret; see output above."
 		fi
 		PROXYPID=

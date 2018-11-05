@@ -26,6 +26,13 @@ import (
 	"github.com/satori/uuid"
 )
 
+// DBX describes the interface common to sql.DB and sql.Tx.
+type DBX interface {
+	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
+	QueryRowContext(context.Context, string, ...interface{}) *sql.Row
+	QueryContext(context.Context, string, ...interface{}) (*sql.Rows, error)
+}
+
 // DataStore facilitates mocking the database
 // See http://www.alexedwards.net/blog/organising-database-access
 type DataStore interface {
@@ -33,8 +40,10 @@ type DataStore interface {
 	AllApplianceIDs(context.Context) ([]ApplianceID, error)
 	ApplianceIDByClientID(context.Context, string) (*ApplianceID, error)
 	ApplianceIDByUUID(context.Context, uuid.UUID) (*ApplianceID, error)
-	UpsertApplianceID(context.Context, *ApplianceID) error
+	InsertApplianceID(context.Context, *ApplianceID) error
+	InsertApplianceIDTx(context.Context, DBX, *ApplianceID) error
 	KeysByUUID(context.Context, uuid.UUID) ([]AppliancePubKey, error)
+	InsertApplianceKeyTx(context.Context, DBX, uuid.UUID, *AppliancePubKey) error
 	InsertHeartbeatIngest(context.Context, *HeartbeatIngest) error
 	CloudStorageByUUID(context.Context, uuid.UUID) (*ApplianceCloudStorage, error)
 	UpsertCloudStorage(context.Context, uuid.UUID, *ApplianceCloudStorage) error
@@ -50,6 +59,8 @@ type DataStore interface {
 
 	Ping() error
 	Close() error
+
+	BeginTx(context.Context) (*sql.Tx, error)
 }
 
 // ApplianceDB implements DataStore with the actual DB backend
@@ -186,6 +197,12 @@ func (db *ApplianceDB) LoadSchema(ctx context.Context, schemaDir string) error {
 	return nil
 }
 
+// BeginTx creates a transaction in the database.
+func (db *ApplianceDB) BeginTx(ctx context.Context) (*sql.Tx, error) {
+	tx, err := db.DB.BeginTx(ctx, nil)
+	return tx, err
+}
+
 var allIDColumns = []string{
 	"cloud_uuid",
 	"system_repr_mac",
@@ -273,26 +290,29 @@ func (db *ApplianceDB) ApplianceIDByClientID(ctx context.Context, clientID strin
 	return &id, err
 }
 
-// UpsertApplianceID inserts or updates an ApplianceID.
-func (db *ApplianceDB) UpsertApplianceID(ctx context.Context,
+// InsertApplianceID inserts an ApplianceID.
+func (db *ApplianceDB) InsertApplianceID(ctx context.Context,
+	id *ApplianceID) error {
+	return db.InsertApplianceIDTx(ctx, nil, id)
+}
+
+// InsertApplianceIDTx inserts an ApplianceID, possibly inside a transaction.
+func (db *ApplianceDB) InsertApplianceIDTx(ctx context.Context, dbx DBX,
 	id *ApplianceID) error {
 
-	_, err := db.ExecContext(ctx,
+	if dbx == nil {
+		dbx = db
+	}
+	_, err := dbx.ExecContext(ctx,
 		`INSERT INTO appliance_id_map
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
-		 ON CONFLICT (cloud_uuid) DO UPDATE
-		 SET (system_repr_mac,
+		 (cloud_uuid,
+		      system_repr_mac,
 		      system_repr_hwserial,
 		      gcp_project,
 		      gcp_region,
 		      appliance_reg,
-		      appliance_reg_id) = (
-		      EXCLUDED.system_repr_mac,
-		      EXCLUDED.system_repr_hwserial,
-		      EXCLUDED.gcp_project,
-		      EXCLUDED.gcp_region,
-		      EXCLUDED.appliance_reg,
-		      EXCLUDED.appliance_reg_id)`,
+		      appliance_reg_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		id.CloudUUID,
 		id.SystemReprMAC,
 		id.SystemReprHWSerial,
@@ -300,6 +320,19 @@ func (db *ApplianceDB) UpsertApplianceID(ctx context.Context,
 		id.GCPRegion,
 		id.ApplianceReg,
 		id.ApplianceRegID)
+	return err
+}
+
+// InsertApplianceKeyTx adds an appliance's public key to the registry.
+func (db *ApplianceDB) InsertApplianceKeyTx(ctx context.Context, dbx DBX, u uuid.UUID, key *AppliancePubKey) error {
+	if dbx == nil {
+		dbx = db
+	}
+	_, err := dbx.ExecContext(ctx,
+		`INSERT INTO appliance_pubkey
+		 (cloud_uuid, format, key)
+		 VALUES ($1, $2, $3)`,
+		u, key.Format, key.Key)
 	return err
 }
 

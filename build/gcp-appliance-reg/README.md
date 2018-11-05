@@ -76,32 +76,51 @@ The appliance provisioning process involves creating a key pair, provisioning
 the public side of the key pair to the appliance registry, and provisioning the
 private side of the key pair to the appliance.  The private side of the key
 pair, as well as the rest of the credential parameters, are bundled in a JSON
-envelope.
+envelope.  This is done with the `cl-reg` tool, installed in the usual place on
+a cloud installation, or in the proto area in a workspace.
 
 Example:
 
-First, allocate the key pair and insert the appliance into the registry:
+```shell
+$ cl-reg app add -d output_secrets -i appliance-reg-peppy-breaker-161717-us-west1-testreg3.json test-appliance
+Enter DB password:
+-------------------------------------------------------------
+      Created device: projects/peppy-breaker-161717/locations/us-west1/registries/testreg3/appliances/test-appliance
+Appliance Cloud UUID: 0fb7871a-ddcd-418e-88ae-f270a4f9b8a6
+        Secrets file: output_secrets/test-appliance.cloud.secret.json
+-------------------------------------------------------------
+Next, provision output_secrets/test-appliance.cloud.secret.json to the appliance at:
+    /opt/com.brightgate/etc/secret/cloud/cloud.secret.json
+```
+
+You can also specify the project, region, and registry name via the environment
+variables exported in the `.sh` file created by the registry provisioning
+script, or by command-line flags.
+
+If you need to provision an appliance on a CloudSQL instance for which there's
+not a proxy already running, use the shell script wrapper:
 
 ```shell
 $ . appliance-reg-peppy-breaker-161717-us-west1-testreg3.sh
 $ ./new-appliance.sh ~/secrets/Engineering-f51a19014a36.json test-appliance
-Creating output_secrets/
-Generating Key/Pair and Certificate for test-appliance
-Generating a 2048 bit RSA private key
-........................+++
-............+++
-writing new private key to 'test-appliance.rsa_private.pem'
------
+Activated service account credentials for: [cloudappliance-reg-admin@peppy-breaker-161717.iam.gserviceaccount.com]
+started sql proxy
+Enter DB password:
 -------------------------------------------------------------
-Recording appliance to SQL database; you may need to give a password.
-Password:
--------------------------------------------------------------
-Summary:
       Created device: projects/peppy-breaker-161717/locations/us-west1/registries/testreg3/appliances/test-appliance
-Appliance Cloud UUID: e6ec7450-af1c-4dcc-9aed-3216a158df6f
+Appliance Cloud UUID: 007913c9-b3ce-4e11-9e05-5e9effda9a13
         Secrets file: output_secrets/test-appliance.cloud.secret.json
 -------------------------------------------------------------
-Next, provision test-appliance.cloud.secret.json to the appliance at: /opt/com.brightgate/etc/secret/cloud/cloud.secret.json
+Next, provision output_secrets/test-appliance.cloud.secret.json to the appliance at:
+    /opt/com.brightgate/etc/secret/cloud/cloud.secret.json
+stopped sql proxy
+Updated property [core/account].
+Revoked credentials:
+ - cloudappliance-reg-admin@peppy-breaker-161717.iam.gserviceaccount.com
+                  Credentialed Accounts
+ACTIVE  ACCOUNT
+*       664411676991-compute@developer.gserviceaccount.com
+        me@brightgate.com
 ```
 
 As directed, copy the `.cloud.secret.json` file to the appliance, and
