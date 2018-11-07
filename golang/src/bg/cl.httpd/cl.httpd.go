@@ -72,8 +72,8 @@ type Cfg struct {
 	HTTPSListen               string `envcfg:"B10E_CLHTTPD_HTTPS_LISTEN"`
 	WellKnownPath             string `envcfg:"B10E_CERTBOT_WELLKNOWN_PATH"`
 	SessionSecret             string `envcfg:"B10E_CLHTTPD_SESSION_SECRET"`
-	GPlusKey                  string `envcfg:"B10E_CLHTTPD_GPLUS_KEY"`
-	GPlusSecret               string `envcfg:"B10E_CLHTTPD_GPLUS_SECRET"`
+	GoogleKey                 string `envcfg:"B10E_CLHTTPD_GOOGLE_KEY"`
+	GoogleSecret              string `envcfg:"B10E_CLHTTPD_GOOGLE_SECRET"`
 	Auth0Key                  string `envcfg:"B10E_CLHTTPD_AUTH0_KEY"`
 	Auth0Secret               string `envcfg:"B10E_CLHTTPD_AUTH0_SECRET"`
 	Auth0Domain               string `envcfg:"B10E_CLHTTPD_AUTH0_DOMAIN"`
@@ -207,7 +207,7 @@ func mkRouterHTTPS(sessionStore sessions.Store) *echo.Echo {
 	r.GET("/", func(c echo.Context) error {
 		html := fmt.Sprintf(htmlFormat, `
 <p><a href="/auth/auth0">Login with Auth0</a></p>
-<p><a href="/auth/gplus">Login with Google</a></p>
+<p><a href="/auth/google">Login with Google</a></p>
 <p><a href="/auth/openid-connect">Login with Google (OpenID Connect)</a></p>
 <p><a href="/auth/logout">Logout</a></p>
 `)

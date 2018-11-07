@@ -26,7 +26,7 @@ import (
 	"github.com/markbates/goth"
 	"github.com/markbates/goth/gothic"
 	"github.com/markbates/goth/providers/auth0"
-	"github.com/markbates/goth/providers/gplus"
+	"github.com/markbates/goth/providers/google"
 	"github.com/markbates/goth/providers/openidConnect"
 )
 
@@ -87,15 +87,15 @@ func callback(provider string) string {
 	return callback
 }
 
-func gplusProvider() {
-	if environ.GPlusKey == "" && environ.GPlusSecret == "" {
-		log.Printf("not enabling gplus authentication: missing B10E_CLHTTPD_GPLUS_KEY or B10E_CLHTTPD_GPLUS_SECRET")
+func googleProvider() {
+	if environ.GoogleKey == "" && environ.GoogleSecret == "" {
+		log.Printf("not enabling google authentication: missing B10E_CLHTTPD_GOOGLE_KEY or B10E_CLHTTPD_GOOGLE_SECRET")
 		return
 	}
 
-	log.Printf("enabling gplus authentication")
-	gplusProvider := gplus.New(environ.GPlusKey, environ.GPlusSecret, callback("gplus"))
-	goth.UseProviders(gplusProvider)
+	log.Printf("enabling google authentication")
+	googleProvider := google.New(environ.GoogleKey, environ.GoogleSecret, callback("google"))
+	goth.UseProviders(googleProvider)
 }
 
 func openidConnectProvider() {
@@ -214,7 +214,7 @@ func (a *authHandler) getUserID(c echo.Context) error {
 func newAuthHandler(r *echo.Echo, sessionStore sessions.Store) *authHandler {
 	gothic.Store = sessionStore
 	auth0Provider()
-	gplusProvider()
+	googleProvider()
 	openidConnectProvider()
 	h := &authHandler{sessionStore}
 

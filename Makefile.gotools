@@ -27,7 +27,7 @@ GOTOOLS_pgengo_hash=427e165155
 GOTOOLS_BIN_PROTOCGENGO=$(GOTOOLS_BIN)/protoc-gen-go
 
 GOTOOLS_mockery_repo=github.com/vektra/mockery/mockery
-GOTOOLS_mockery_hash=2a9162cbfb
+GOTOOLS_mockery_hash=ea265755d5
 
 GOTOOLS_cmdmockery_repo=github.com/vektra/mockery/cmd/mockery
 # Pin to same as mockery
