@@ -878,16 +878,18 @@ func vulnScan(req *ScanRequest) {
 	// }
 
 	if dev := getDeviceRecord(req.Mac); dev != nil {
-		services := make(map[string][]int) // convert port:service map to service:portlist map
+		// build <service:port> list to scan for vulnerabilities
+		services := make([]string, 0)
 		for port, service := range dev.Services {
-			services[service] = append(services[service], port)
+			services = append(services,
+				fmt.Sprintf("%s:%d", service, port))
 		}
-		var b strings.Builder
-		for service, ports := range services {
-			portstr := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(ports)), ","), "[]") // int slice to comma separated string
-			b.WriteString(service + ":" + portstr + ".")
+		releaseDeviceRecord(dev)
+
+		if len(services) > 0 {
+			arg := strings.Join(services, ".")
+			args = append(args, "-services", arg)
 		}
-		args = append(args, "-services", strings.TrimSuffix(b.String(), ".")) // remove trailing "."
 	}
 
 	start := time.Now()
