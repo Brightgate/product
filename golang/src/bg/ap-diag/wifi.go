@@ -25,8 +25,8 @@
 //
 // For an interface to be considered valid, it must support VLANs (for the
 // different security rings), multiple simultaneous SSIDs (we need one each for
-// the PSK and EAP networks), and at least one channel in either the 2.4GHz or
-// the 5GHz bands.
+// the PSK and EAP networks, and we expect to need two PSK and one Open
+// networks), and at least one channel in either the 2.4GHz or the 5GHz bands.
 //
 // By default, the output is a list of the interfaces and whether or not they
 // are valid.  With the -v flag, more information is provided: the physical
@@ -115,26 +115,27 @@ func wifiUsage() {
 	wPrintf("Usage: %s wifi [-q] [-v] [interface]\n", os.Args[0])
 	wPrintf("\n")
 	wifiCmd.PrintDefaults()
-	wPrintf("\n")
-	wPrintf("The wifi subcommand collects information about the wireless interfaces on the\n")
-	wPrintf("system, and classifies them as valid or not for use with the Brightgate AP\n")
-	wPrintf("stack.  If an argument is provided naming a wireless interface, only that\n")
-	wPrintf("interface will be considered.\n")
-	wPrintf("\n")
-	wPrintf("The exit code is 0 if all of the interfaces support the stack, or 1\n")
-	wPrintf("otherwise, or if an error occurred.\n")
-	wPrintf("\n")
-	wPrintf("For an interface to be considered valid, it must support VLANs (for the\n")
-	wPrintf("different security rings), multiple simultaneous SSIDs (we need one each for\n")
-	wPrintf("the PSK and EAP networks), and at least one channel in either the 2.4GHz or\n")
-	wPrintf("the 5GHz bands.\n")
-	wPrintf("\n")
-	wPrintf("By default, the output is a list of the interfaces and whether or not they\n")
-	wPrintf("are valid.  With the -v flag, more information is provided: the physical\n")
-	wPrintf("location of the device, if known; the permanent MAC address, if known; what\n")
-	wPrintf("802.11 modes are supported; the validity criteria; and a list of channels\n")
-	wPrintf("collated by channel width and frequency band.  With the -q flag, nothing is\n")
-	wPrintf("output; the exit code indicates validity.\n")
+	wPrintf(`
+The wifi subcommand collects information about the wireless interfaces on the
+system, and classifies them as valid or not for use with the Brightgate AP
+stack.  If an argument is provided naming a wireless interface, only that
+interface will be considered.
+
+The exit code is 0 if all of the interfaces support the stack, or 1
+otherwise, or if an error occurred.
+
+For an interface to be considered valid, it must support VLANs (for the
+different security rings), multiple simultaneous SSIDs (we need one each for
+the PSK and EAP networks, and we expect to need two PSK and one Open
+networks), and at least one channel in either the 2.4GHz or the 5GHz bands.
+
+By default, the output is a list of the interfaces and whether or not they
+are valid.  With the -v flag, more information is provided: the physical
+location of the device, if known; the permanent MAC address, if known; what
+802.11 modes are supported; the validity criteria; and a list of channels
+collated by channel width and frequency band.  With the -q flag, nothing is
+output; the exit code indicates validity.
+`)
 }
 
 // getPermAddr returns the MAC address the kernel considers the "permanent" MAC
@@ -201,8 +202,10 @@ func wifi(args []string) bool {
 		if !cap.SupportVLANs {
 			reasons = append(reasons, "doesn't support VLANs")
 		}
-		if cap.Interfaces < 2 {
-			reasons = append(reasons, "supports at most one SSID")
+		if cap.Interfaces < 4 {
+			reasons = append(reasons,
+				fmt.Sprintf("supports only %d SSIDs (need 4 minimum)",
+					cap.Interfaces))
 		}
 		if !cap.WifiBands[wificaps.LoBand] && cap.WifiBands[wificaps.HiBand] {
 			reasons = append(reasons, "no supported channels")
