@@ -9,102 +9,46 @@
  */
 import assert from 'assert';
 
-import {cloneDeep, defaults, filter, keyBy, pickBy} from 'lodash-es';
+import {filter, keyBy, pickBy} from 'lodash-es';
 import Promise from 'bluebird';
-import superagent from 'superagent-bluebird-promise';
 import retry from 'bluebird-retry';
 import Vue from 'vue';
 import Vuex from 'vuex';
 import Debug from 'debug';
 
-import mockDevicesRef from './mock_devices';
-import mockUsers from './mock_users';
+import applianceApi from './api/appliance';
 
 const debug = Debug('store');
-// Run mockDevices through our property deriver
-const mockDevices = mockDevicesRef.map(computeDeviceProps);
 
 Vue.use(Vuex);
 
 // XXX this needs further rationalization with devices.json
 const device_category_all = ['recent', 'phone', 'computer', 'printer', 'media', 'iot', 'unknown'];
 
-const mockNetworkConfig = {
-  ssid: 'mockSSID',
-  dnsServer: '1.1.1.1:53',
-  defaultRingWPAEAP: 'guest',
-  defaultRingWPAPSK: 'unenrolled',
-};
-
-const mockAppliances = ['0'];
-
-const mockRings = {
-  'core': {
-    'auth': 'wpa-eap',
-    'subnet': '192.168.133.0/26',
-    'leaseDuration': 1440,
-  },
-  'devices': {
-    'auth': 'wpa-psk',
-    'subnet': '192.168.135.0/26',
-    'leaseDuration': 180,
-  },
-  'guest': {
-    'auth': 'wpa-eap',
-    'subnet': '192.168.136.0/26',
-    'leaseDuration': 30,
-  },
-  'standard': {
-    'auth': 'wpa-psk',
-    'subnet': '192.168.134.0/26',
-    'leaseDuration': 1440,
-  },
-};
-
 const windowURLAppliance = window && window.location && window.location.href && new URL(window.location.href);
-const windowApplianceID = windowURLAppliance.searchParams.get('appliance') || '0';
+const initApplianceID = windowURLAppliance.searchParams.get('appliance') || '0';
 
-// Determines whether mock devices are enabled or disabled by default
-const enableMock = false;
-
-let initUsers = {};
-let initNetworkConfig = {};
-let initDevlist = [];
-if (enableMock) {
-  initDevlist = mockDevices;
-  initUsers = cloneDeep(mockUsers);
-  initNetworkConfig = cloneDeep(mockNetworkConfig);
-}
-
-const initDevices = organizeDevices(initDevlist);
-// might take more than just devices in the future
-const initAlerts = makeAlerts(initDevices);
-
-const STD_TIMEOUT = {
-  response: 5000,
-  deadline: 10000,
-};
 const RETRY_DELAY = 1000;
 
 const state = {
   loggedIn: false,
   fakeLogin: false,
-  currentApplianceID: windowApplianceID,
+  enableMock: false,
+  currentApplianceID: initApplianceID,
   applianceIDs: [],
-  devices: cloneDeep(initDevices),
-  alerts: initAlerts,
+  devices: organizeDevices([]),
+  alerts: [],
   rings: {},
-  users: cloneDeep(initUsers),
-  networkConfig: cloneDeep(initNetworkConfig),
-  enableMock: enableMock,
+  users: {},
+  networkConfig: {},
 };
 
 const mutations = {
   setApplianceIDs(state, newIDs) {
     state.applianceIDs = newIDs;
-    state.applianceIDs.push('Other Appliance');
     if (state.applianceIDs.length === 1) {
       state.currentApplianceID = state.applianceIDs[0];
+      state.applianceIDs.push('Other Appliance');
     }
   },
 
@@ -137,6 +81,11 @@ const mutations = {
 
   toggleMock(state) {
     state.enableMock = !state.enableMock;
+    if (state.enableMock) {
+      applianceApi.enableMock();
+    } else {
+      applianceApi.disableMock();
+    }
   },
 
   toggleFakeLogin(state) {
@@ -233,74 +182,6 @@ const getters = {
   Mock: (state) => {return state.enableMock;},
 };
 
-// Get a property's value
-function fetchPropP(context, property, default_value) {
-  const u = `/api/appliances/${context.state.currentApplianceID}/config`;
-  debug(`fetchPropP(${property}, ${default_value}) -> ${u}`);
-  return superagent.get(u
-  ).query(property
-  ).timeout(STD_TIMEOUT
-  ).then((res) => {
-    debug(`fetchPropP(${property}): returning ${res.body}`);
-    return res.body;
-  }).catch((err) => {
-    if (default_value !== undefined) {
-      debug(`fetchPropP(${property}): defaulting`);
-      return Promise.resolve(default_value);
-    }
-    throw err;
-  });
-}
-
-// Make up to maxcount attempts to see if property has changed to an
-// expected value.
-function checkPropChangeP(context, property, value, maxcount, count) {
-  assert.equal(typeof property, 'string');
-  assert.equal(typeof maxcount, 'number');
-  count = count === undefined ? maxcount : count;
-  assert.equal(typeof count, 'number');
-  const u = `/api/appliances/${context.state.currentApplianceID}/config`;
-  const attempt_str = `#${(maxcount - count) + 1}`;
-  debug(`checkPropChangeP: waiting for ${property} == ${value}, try ${attempt_str} ${u}`);
-  return superagent.get(u
-  ).query(property
-  ).timeout(STD_TIMEOUT
-  ).then((res) => {
-    if (res.body !== value) {
-      throw new Error(`Tried ${maxcount} times but did not see property change`);
-    }
-    debug(`checkPropChangeP: I saw ${property} -> ${value}`);
-    return value;
-  }).catch((err) => {
-    if (count === 0) {
-      throw new Error(`Couldn't see property change after ${maxcount} tries.  Last error was: ${err}`);
-    }
-    debug(`checkPropChangeP: failed ${attempt_str}, will retry.  ${err}`);
-    return Promise.delay(RETRY_DELAY
-    ).then(() => {
-      return checkPropChangeP(context, property, value, maxcount, count - 1);
-    });
-  });
-}
-
-// Make up to maxcount attempts to load the devices configuration object
-function devicesGetP(context) {
-  const u = `/api/appliances/${context.state.currentApplianceID}/devices`;
-  debug(`devicesGetP: GET ${u}`);
-  return superagent.get(u
-  ).timeout(STD_TIMEOUT
-  ).then((res) => {
-    debug('devicesGetP: got response');
-    if (res.body === null ||
-        (typeof res.body !== 'object') ||
-        !('Devices' in res.body)) {
-      throw new Error('Saw incomplete or bad GET /devices response.');
-    } else {
-      return res.body;
-    }
-  });
-}
-
 function organizeDevices(all_devices) {
   assert(Array.isArray(all_devices));
   const devices = {
@@ -343,7 +224,7 @@ function organizeDevices(all_devices) {
     device.activeVulnCount = Object.keys(actives).length;
   });
 
-  debug(devices);
+  debug('organizeDevices returning', devices);
   return devices;
 }
 
@@ -352,7 +233,13 @@ function organizeDevices(all_devices) {
 function makeAlerts(devices) {
   const alerts = [];
 
+  if (!devices || !devices.by_uniqid) {
+    return alerts;
+  }
   for (const [, device] of Object.entries(devices.by_uniqid)) {
+    if (!device.vulnerabilities) {
+      continue;
+    }
     for (const [vulnid, vulninfo] of Object.entries(device.vulnerabilities)) {
       alerts.push({
         'device': device,
@@ -364,7 +251,29 @@ function makeAlerts(devices) {
   return alerts;
 }
 
-function computeDeviceProps(device) {
+// Take an API device and transform it for local use.
+// Much of this is legacy and could be fixed.
+function computeDeviceProps(apiDevice) {
+  const device = {
+    manufacturer: apiDevice.Manufacturer,
+    model: apiDevice.Model,
+    kind: apiDevice.Kind,
+    confidence: apiDevice.Confidence,
+    network_name: apiDevice.HumanName ? apiDevice.HumanName : `Unknown (${apiDevice.HwAddr})`, // XXX this has issues, including i18n)
+    ipv4_addr: apiDevice.IPv4Addr,
+    os_version: apiDevice.OSVersion,
+    activated: '',
+    uniqid: apiDevice.HwAddr,
+    hwaddr: apiDevice.HwAddr,
+    ring: apiDevice.Ring,
+    active: apiDevice.Active,
+    connAuthType: apiDevice.ConnAuthType,
+    connMode: apiDevice.ConnMode,
+    connNode: apiDevice.ConnNode,
+    scans: apiDevice.Scans,
+    vulnerabilities: apiDevice.Vulnerabilities,
+  };
+
   const k2c = {
     'android': 'phone',
     'ios': 'phone',
@@ -402,66 +311,29 @@ let fetchPeriodicTimeout = null;
 
 const actions = {
   // Load the list of appliances from the server.
-  fetchApplianceIDs(context) {
-    debug('fetchApplianceIDs: GET /api/appliances');
-    return superagent.get('/api/appliances'
-    ).then((res) => {
-      debug('fetchApplianceIDs: Succeeded: ', res.body);
-      assert(typeof res.body === 'object');
-      context.commit('setApplianceIDs', res.body);
-    }).catch((err) => {
-      if (context.state.enableMock) {
-        debug('fetchApplianceIDs: Using mocked appliances');
-        context.commit('setApplianceIDs', mockAppliances);
-        return;
-      }
-      debug(`fetchAppliances: Error ${err}`);
-      throw err;
-    });
+  async fetchApplianceIDs(context) {
+    context.commit('setApplianceIDs', await applianceApi.appliancesGet());
   },
 
-  // Load the list of devices from the server.  merge it with mock devices
-  // defined locally (if using).
+  // Load the list of devices from the server.
   fetchDevices(context) {
     debug('Store: fetchDevices');
+
     // Join callers so that only one fetch is ongoing
     if (fetchDevicesPromise.isPending()) {
       debug('Store: fetchDevices (pending)');
       return fetchDevicesPromise;
     }
-    let all_devices = [];
-    if (context.state.enableMock) {
-      debug(`Store: fetchDevices: enableMock = ${context.state.enableMock}`);
-      all_devices = mockDevices;
-    }
-    const p = retry(devicesGetP, {interval: RETRY_DELAY, max_tries: 10, args: [context]}
-    ).then((res_json) => {
-      const mapped_devices = res_json.Devices.map((dev) => {
-        return computeDeviceProps({
-          manufacturer: dev.Manufacturer,
-          model: dev.Model,
-          kind: dev.Kind,
-          confidence: dev.Confidence,
-          network_name: dev.HumanName ? dev.HumanName : `Unknown (${dev.HwAddr})`, // XXX this has issues, including i18n)
-          ipv4_addr: dev.IPv4Addr,
-          os_version: dev.OSVersion,
-          activated: '',
-          uniqid: dev.HwAddr,
-          hwaddr: dev.HwAddr,
-          ring: dev.Ring,
-          active: dev.Active,
-          connAuthType: dev.ConnAuthType,
-          connMode: dev.ConnMode,
-          connNode: dev.ConnNode,
-          scans: dev.Scans,
-          vulnerabilities: dev.Vulnerabilities,
-        });
-      });
 
-      all_devices = all_devices.concat(mapped_devices);
+    let devices = [];
+    const applianceID = context.state.currentApplianceID;
+    const p = retry(applianceApi.applianceDevicesGet,
+      {interval: RETRY_DELAY, max_tries: 5, args: [applianceID]}
+    ).then((apiDevices) => {
+      devices = apiDevices.map(computeDeviceProps);
     }).finally(() => {
-      const devices = organizeDevices(all_devices);
-      context.commit('setDevices', devices);
+      const organized_devices = organizeDevices(devices);
+      context.commit('setDevices', organized_devices);
       debug('Store: fetchDevices finished');
     });
     // make sure promise is a bluebird promise, so we can call isPending
@@ -472,6 +344,10 @@ const actions = {
   // Start a timer-driven periodic fetch of devices
   fetchPeriodic(context) {
     // if not logged in, just come back later
+    if (fetchPeriodicTimeout !== null) {
+      clearTimeout(fetchPeriodicTimeout);
+      fetchPeriodicTimeout = null;
+    }
     if (!context.getters.Is_Logged_In) {
       debug('fetchPeriodic: not logged in, later');
       fetchPeriodicTimeout = setTimeout(() => {
@@ -501,200 +377,114 @@ const actions = {
   },
 
   // Load the list of rings from the server.
-  fetchRings(context) {
-    const u = `/api/appliances/${context.state.currentApplianceID}/rings`;
-    debug(`fetchRings: GET ${u}`);
-    return superagent.get(u
-    ).then((res) => {
-      debug('fetchRings: Succeeded: ', res.body);
-      assert(typeof res.body === 'object');
-      context.commit('setRings', res.body);
-    }).catch((err) => {
-      if (context.state.enableMock) {
-        debug('fetchRings: Using mocked rings');
-        context.commit('setRings', mockRings);
-        return;
-      }
-      debug(`fetchRings: Error ${err}`);
-      throw err;
-    });
+  async fetchRings(context) {
+    const id = context.state.currentApplianceID;
+    const rings = await applianceApi.applianceRingsGet(id);
+    context.commit('setRings', rings);
   },
 
   // Load the various aspects of the network configuration from the server.
-  fetchNetworkConfig(context, appliance) {
+  async fetchNetworkConfig(context) {
     debug(`fetchNetworkConfig`);
-    return Promise.props({
-      ssid: fetchPropP(context, '@/network/ssid'),
-      dnsServer: fetchPropP(context, '@/network/dnsserver', ''),
-      defaultRingWPAEAP: fetchPropP(context, '@/network/default_ring/wpa-eap', ''),
-      defaultRingWPAPSK: fetchPropP(context, '@/network/default_ring/wpa-psk', ''),
-    }).catch((err) => {
-      if (context.state.enableMock) {
-        debug('fetchNetworkConfig: Using mocked networkConfig');
-        return mockNetworkConfig;
-      } else {
-        debug(`fetchNetworkConfig: Error ${err}`);
-        throw err;
-      }
-    }).then((netConfig) => {
-      context.commit('setNetworkConfig', netConfig);
+    const id = context.state.currentApplianceID;
+    const nc = await Promise.props({
+      ssid: applianceApi.applianceConfigGet(id, '@/network/ssid'),
+      dnsServer: applianceApi.applianceConfigGet(id, '@/network/dnsserver', ''),
+      defaultRingWPAEAP: applianceApi.applianceConfigGet(id, '@/network/default_ring/wpa-eap', ''),
+      defaultRingWPAPSK: applianceApi.applianceConfigGet(id, '@/network/default_ring/wpa-psk', ''),
     });
+    debug('fetchNetworkConfig committing', nc);
+    context.commit('setNetworkConfig', nc);
+    return nc;
   },
 
-  // Set a simple property to the specified value.
-  setConfigProp(context, {property, value}) {
-    assert.equal(typeof property, 'string');
-    const u = `/api/appliances/${context.state.currentApplianceID}/config`;
-    debug(`setConfigProp: POST ${u} ${property}=${value}`);
-    return superagent.post(u
-    ).type('form'
-    ).send({[property]: value}
-    ).then(() => {
-      debug(`setConfigProp: finished setting ${property} = ${value}.`);
-    }).catch((err) => {
-      debug(`setConfigProp: Error ${err}`);
-      throw err;
-    });
-  },
-
-  enrollGuest(context, {type, phone, email}) {
-    const args = {type, phone, email};
-    const u = `/api/appliances/${context.state.currentApplianceID}/enroll_guest`;
-    debug(`enrollGuest ${u}`, args);
-    return superagent.post(u
-    ).type('form'
-    ).send(args
-    ).set('Accept', 'application/json');
+  async enrollGuest(context, {type, phone, email}) {
+    const id = context.state.currentApplianceID;
+    return await applianceApi.applianceEnrollGuest(id, {type, phone, email});
   },
 
   // Ask the server to change the ring property for a device, then
   // attempt to wait for that change to propagate.  In practice this
   // seems to take several seconds, during which time the server may
   // become unreachable; thus we use retrys to make things work properly.
-  changeRing(context, {deviceUniqID, newRing}) {
-    assert.equal(typeof deviceUniqID, 'string');
-    assert.equal(typeof newRing, 'string');
-    debug(`changeRing: ${deviceUniqID} -> ${newRing}`);
-    const propname = `@/clients/${deviceUniqID}/ring`;
-    return context.dispatch('setConfigProp', {
-      property: propname,
-      value: newRing,
-    }).then(() => {
-      return checkPropChangeP(context, propname, newRing, 10);
-    }).finally(() => {
-      // let this run async?
-      context.dispatch('fetchDevices');
-    });
+  async changeRing(context, {deviceUniqID, newRing}) {
+    const id = context.state.currentApplianceID;
+    await applianceApi.applianceClientsRingSet(id, deviceUniqID, newRing);
+    context.dispatch('fetchDevices');
   },
 
-  // Load the list of users from the server.
-  fetchUsers(context) {
-    const user_result = {};
-    if (context.state.enableMock) {
-      debug('fetchUsers: Adding mock users');
-      defaults(user_result, mockUsers);
-    }
-    const u = `/api/appliances/${context.state.currentApplianceID}/users`;
-    debug(`fetchUsers: GET ${u}`);
-    return superagent.get(u
-    ).then((res) => {
-      debug('fetchUsers: Succeeded: ', res);
-      if (res && res.body && res.body.Users) {
-        assert(typeof res.body.Users === 'object');
-        defaults(user_result, res.body.Users);
-      } else {
-        debug('fetchUsers: res.body had unexpected contents');
-      }
-    }).finally(() => {
-      context.commit('setUsers', user_result);
-    }).catch((err) => {
-      debug(`fetchUsers: Error ${err}`);
-      throw err;
-    });
+  async fetchUsers(context) {
+    const id = context.state.currentApplianceID;
+    const users = await applianceApi.applianceUsersGet(id);
+    context.commit('setUsers', users);
   },
 
   // Create or Update a user
-  saveUser(context, {user, newUser}) {
+  async saveUser(context, {user, newUser}) {
     assert(typeof user === 'object');
     assert(typeof newUser === 'boolean');
+    const id = context.state.currentApplianceID;
     const action = newUser ? 'creating' : 'updating';
-    const u = `/api/appliances/${context.state.currentApplianceID}/users/${newUser ? 'NEW' : user.UUID}`;
-    debug(`store.js saveUsers: ${action} ${user.UUID} ${u}`, user);
+    debug(`saveUser: ${action} ${user.UUID}`, user);
     if (newUser) {
-      // Backend is strict about UUID
-      delete user.UUID;
+      delete user.UUID; // Backend is strict about UUID
     }
-
-    return superagent.post(u
-    ).type('json'
-    ).send(user
-    ).then((res) => {
-      debug('saveUser: Succeeded: ', res.body);
-      assert(typeof res.body === 'object');
-      context.commit('updateUser', res.body);
-    }).catch((err) => {
-      debug('err is', err);
+    try {
+      const postUser = await applianceApi.applianceUsersPost(id, user, newUser);
+      context.commit('updateUser', postUser);
+    } catch (err) {
+      debug('saveUser failed', err);
       if (err.res && err.res.text) {
         throw new Error(`Failed to save user: ${err.res.text}`);
       } else {
         throw err;
       }
-    });
+    }
   },
 
-  deleteUser(context, {user, newUser}) {
+  async deleteUser(context, {user, newUser}) {
     assert(typeof user === 'object');
-    const u = `/api/appliances/${context.state.currentApplianceID}/users/${user.UUID}`;
-    debug(`deleteUser: ${user.UUID} ${u}`, user);
-    return superagent.delete(u
-    ).then(() => {
-      context.dispatch('fetchUsers');
-    });
+    const id = context.state.currentApplianceID;
+    await applianceApi.applianceUsersDelete(id, user.UUID);
+    context.dispatch('fetchUsers');
   },
 
-  checkLogin(context) {
-    return superagent.get('/auth/userid'
-    ).then(() => {
-      debug('checkLogin: logged in');
-      context.commit('setLoggedIn', true);
-    }).catch((err) => {
-      debug('checkLogin: not logged in');
-      throw err;
-    });
+  async checkLogin(context) {
+    let loggedin = false;
+    try {
+      await applianceApi.authUserid();
+      loggedin = true;
+    } catch (err) {
+      loggedin = false;
+    }
+    context.commit('setLoggedIn', loggedin);
+    debug(`checkLogin: ${loggedin}`);
+    return loggedin;
   },
 
-  login(context, {uid, userPassword}) {
+  async supreme(context) {
+    const id = context.state.currentApplianceID;
+    return await applianceApi.applianceSupreme(id);
+  },
+
+  async login(context, {uid, userPassword}) {
     assert.equal(typeof uid, 'string');
     assert.equal(typeof userPassword, 'string');
-    debug('login: /auth/appliance/login');
-    return superagent.post('/auth/appliance/login'
-    ).type('form'
-    ).send({uid, userPassword}
-    ).then(() => {
-      debug(`login: Logged in as ${uid}.`);
-      context.commit('setLoggedIn', true);
-      // Let these run async
-      context.dispatch('fetchDevices');
-      context.dispatch('fetchRings');
-      context.dispatch('fetchUsers');
-      context.dispatch('fetchPeriodic');
-    }).catch((err) => {
-      debug(`login: Error ${err}`);
-      throw err;
-    });
+    await applianceApi.authApplianceLogin(uid, userPassword);
+    context.commit('setLoggedIn', true);
+    // Let these run async
+    context.dispatch('fetchDevices');
+    context.dispatch('fetchRings');
+    context.dispatch('fetchUsers');
+    context.dispatch('fetchPeriodic');
   },
 
   logout(context) {
-    debug('logout: /auth/logout');
-    return superagent.get('/auth/logout'
-    ).then(() => {
-      debug('logout: Completed');
-      context.commit('setLoggedIn', false);
-      context.dispatch('fetchPeriodicStop');
-    }).catch((err) => {
-      debug(`logout: Error ${err}`);
-      throw err;
-    });
+    debug('logout');
+    applianceApi.authApplianceLogout();
+    debug('logout: Completed');
+    context.commit('setLoggedIn', false);
+    context.dispatch('fetchPeriodicStop');
   },
 };
 

@@ -31,7 +31,6 @@
   </f7-page>
 </template>
 <script>
-import Promise from 'bluebird';
 import {orderBy} from 'lodash-es';
 import Debug from 'debug';
 const debug = Debug('page:users');
@@ -48,12 +47,17 @@ export default {
       debug('opening editor ', editor);
       this.$f7router.navigate(editor);
     },
-    usersPullRefresh: function(event, done) {
-      return Promise.resolve(this.$store.dispatch('fetchUsers')).asCallback(done);
+
+    usersPullRefresh: async function(event, done) {
+      try {
+        await this.$store.dispatch('fetchUsers');
+      } catch (err) {
+        debug('usersPullRefresh failed', err);
+      }
+      done();
     },
 
     onPageAfterIn: function() {
-      debug('pageAfterIn');
       return this.$store.dispatch('fetchUsers');
     },
   },

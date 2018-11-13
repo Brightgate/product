@@ -109,6 +109,7 @@ export default {
         name: 'Brightgate Appliance Admin Tool',
         theme: 'auto',
         routes: routes,
+        debugger: true,
       },
       uid: '',
       userPassword: '',
@@ -122,21 +123,29 @@ export default {
     },
   },
 
+  beforeMount: function() {
+    // Allow to run async
+    this.$store.dispatch('checkLogin'
+    ).then(() => {
+      this.$store.dispatch('fetchPeriodic');
+    });
+  },
+
   methods: {
-    attemptLogin: function() {
+    attemptLogin: async function() {
       debug('attempting login');
       this.attemptingLogin = true;
-      return Promise.delay(250).then(() => {
-        return this.$store.dispatch('login',
+      try {
+        await Promise.delay(350);
+        await this.$store.dispatch('login',
           {uid: this.uid, userPassword: this.userPassword});
-      }).then(() => {
         this.$f7.loginScreen.close();
         this.attemptingLogin = false;
-      }).catch((err) => {
+      } catch (err) {
         debug('login err is', err);
         this.loginError = err;
         this.attemptingLogin = false;
-      });
+      }
     },
 
     closeLogin: function() {

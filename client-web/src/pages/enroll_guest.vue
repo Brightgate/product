@@ -130,8 +130,8 @@ export default {
       return this.$store.dispatch('enrollGuest',
         {type: 'eap', phone: this.phone_input, email: this.email_input}
       ).then((res) => {
-        debug('enrollGuestEAP result', res.body);
-        const user = res.body.user;
+        debug('enrollGuestEAP result', res);
+        const user = res.user;
         this.toastSuccess(
           this.$t('message.enroll_guest.eap_success', {name: user.UID}));
       });
@@ -141,7 +141,7 @@ export default {
       return this.$store.dispatch('enrollGuest',
         {type: 'psk', phone: this.phone_input}
       ).then((res) => {
-        debug('enrollGuestEAP result', res.body);
+        debug('enrollGuestEAP result', res);
         this.toastSuccess(this.$t('message.enroll_guest.psk_success'));
       });
     },

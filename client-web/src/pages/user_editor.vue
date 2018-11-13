@@ -131,6 +131,7 @@ export default {
         HasTOTP: false,
       };
     } else {
+      debug('cloning', routeUUID);
       d.user_details = cloneDeep(this.$store.getters.User_By_UUID(routeUUID));
     }
     return d;
@@ -153,6 +154,7 @@ export default {
         });
         this.$f7router.back();
       }).catch((err) => {
+        debug('saveUser: Error', err);
         const txt = this.new_user
           ? this.$t('message.user_details.create_fail', {err: err})
           : this.$t('message.user_details.save_fail', {err: err});
@@ -176,7 +178,7 @@ export default {
           closeButton: true,
           destroyOnClose: true,
         });
-        this.$f7router.navigate('/users/');
+        this.$f7router.back('/users/', {force: true});
       }).catch((err) => {
         const txt = this.$t('message.user_details.delete_fail', {err: err});
         this.$f7.toast.show({

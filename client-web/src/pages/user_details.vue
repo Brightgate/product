@@ -8,7 +8,7 @@
   such unauthorized removal or alteration will be a violation of federal law.
 -->
 <template>
-  <f7-page @page:afterin="onPageAfterIn">
+  <f7-page>
     <f7-navbar :back-link="$t('message.general.back')" :title="user_details.DisplayName" sliding />
 
     <f7-fab color="pink" @click="openEditor">
@@ -73,21 +73,18 @@ import Debug from 'debug';
 const debug = Debug('page:user-details');
 
 export default {
-  computed: {
-    user_details: function() {
-      return this.$store.getters.User_By_UUID(this.$f7route.params.UUID);
-    },
+  data: function() {
+    return {
+      user_details: this.$store.getters.User_By_UUID(this.$f7route.params.UUID),
+    };
   },
 
   methods: {
     openEditor: function() {
+      debug('openEditor; current route', this.$f7route);
       const editor = `${this.$f7route.url}editor/`;
-      debug('opening editor ', editor);
+      debug('openEditor; navigate to', editor);
       this.$f7router.navigate(editor);
-    },
-
-    onPageAfterIn: function() {
-      debug(`user_details page for ${this.$f7route.params.UUID}`);
     },
   },
 };

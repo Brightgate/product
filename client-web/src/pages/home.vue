@@ -129,7 +129,6 @@
 </template>
 
 <script>
-import superagent from 'superagent-bluebird-promise';
 import vuex from 'vuex';
 import Debug from 'debug';
 
@@ -172,26 +171,21 @@ export default {
       this.$store.commit('toggleFakeLogin');
     },
 
-    acceptSupreme: function() {
-      superagent.get('/api/appliances/0/supreme'
-      ).then((res) => {
-        let res_json;
-        try {
-          res_json = JSON.parse(res.text);
-        } catch (err) {
-          throw new Error('Invalid response');
-        }
-        const c = res_json.changed ? res_json.changed : -1;
-        return this.$t('message.home.testing.accept_success', {'devicesChanged': c});
-      }).catch((err) => {
-        return this.$t('message.home.testing.accept_fail', {'reason': err.message});
-      }).then((message) => {
-        this.acceptToast = this.$f7.toast.create({
-          text: message,
-          closeButton: true,
-        });
-        this.acceptToast.open();
+    acceptSupreme: async function() {
+      let message = null;
+      try {
+        const result = await this.$store.dispatch('supreme');
+        const c = result.changed ? result.changed : -1;
+        message = this.$t('message.home.testing.accept_success', {'devicesChanged': c});
+      } catch (err) {
+        debug('supreme fail', err);
+        message = this.$t('message.home.testing.accept_fail', {'reason': err.message});
+      }
+      this.acceptToast = this.$f7.toast.create({
+        text: message,
+        closeButton: true,
       });
+      this.acceptToast.open();
     },
 
     attemptLogout: function() {
@@ -212,19 +206,17 @@ export default {
       window.location.href = u.toString();
     },
 
-    onPageBeforeIn: function() {
-      debug('pageBeforeIn');
+    onPageBeforeIn: async function() {
       // We do these optimistically, letting them fail if not logged in.
       this.$store.dispatch('fetchApplianceIDs').catch(() => {});
       this.$store.dispatch('fetchDevices').catch(() => {});
-      return this.$store.dispatch('checkLogin'
-      ).catch(() => {
+      await this.$store.dispatch('checkLogin');
+      if (!this.$store.getters.Is_Logged_In) {
         this.$f7.loginScreen.open('#bgLoginScreen');
-      });
+      }
     },
 
     onPageBeforeOut: function() {
-      debug('pageBeforeOut');
       if (this.acceptToast) {
         this.acceptToast.close();
       }

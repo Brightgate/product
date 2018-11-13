@@ -57,8 +57,11 @@ import './registerServiceWorker';
 // Our messages and current locale
 import messages from './i18n';
 
+import F7Debug from './f7-debug';
+
 Vue.use(VueI18n);
 Framework7.use(Framework7Vue);
+Framework7.use(F7Debug);
 
 const comps = [
   f7Block,

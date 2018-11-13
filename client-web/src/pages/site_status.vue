@@ -69,10 +69,8 @@
 <script>
 import vuex from 'vuex';
 import Promise from 'bluebird';
-import Debug from 'debug';
 import {f7AccordionContent} from 'framework7-vue';
 import {formatDistanceStrict} from '../date-fns-wrapper';
-const debug = Debug('page:site-status');
 
 export default {
   components: {f7AccordionContent},
@@ -113,7 +111,6 @@ export default {
     },
 
     onPageBeforeIn: function() {
-      debug('pageBeforeIn');
       this.$store.dispatch('fetchRings').catch(() => {});
       this.$store.dispatch('fetchDevices').catch(() => {});
       this.$store.dispatch('fetchNetworkConfig').catch(() => {});
