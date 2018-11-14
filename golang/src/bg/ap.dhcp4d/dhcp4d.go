@@ -1019,7 +1019,7 @@ func prometheusInit() {
 
 func main() {
 	flag.Parse()
-	slog = aputil.NewLogger()
+	slog = aputil.NewLogger(pname)
 	defer slog.Sync()
 	slog.Infof("Starting")
 

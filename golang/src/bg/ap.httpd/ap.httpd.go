@@ -319,7 +319,7 @@ func main() {
 
 	flag.Var(ports, "http-ports", "The ports to listen on for HTTP requests.")
 	flag.Parse()
-	slog = aputil.NewLogger()
+	slog = aputil.NewLogger(pname)
 	defer slog.Sync()
 	slog.Infof("starting")
 

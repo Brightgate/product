@@ -352,7 +352,7 @@ func main() {
 	pname = filepath.Base(exec)
 
 	flag.Parse()
-	slog = aputil.NewLogger()
+	slog = aputil.NewLogger(pname)
 	// Redirect grpc internal log messages to zap, at DEBUG
 	glogger := slog.Desugar().WithOptions(
 		// zapgrpc adds extra frames, which need to be skipped

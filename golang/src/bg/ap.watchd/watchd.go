@@ -352,7 +352,7 @@ func main() {
 	runtime.GOMAXPROCS(8)
 
 	flag.Parse()
-	slog = aputil.NewLogger()
+	slog = aputil.NewLogger(pname)
 	defer slog.Sync()
 
 	*watchDir = aputil.ExpandDirPath(*watchDir)

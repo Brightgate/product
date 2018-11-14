@@ -35,6 +35,8 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
+const pname = "ap.brokerd"
+
 var (
 	addr = flag.String("listen-address", base_def.BROKER_PROMETHEUS_PORT,
 		"The address to listen on for HTTP requests.")
@@ -47,11 +49,11 @@ func main() {
 	var err error
 
 	flag.Parse()
-	slog = aputil.NewLogger()
+	slog = aputil.NewLogger(pname)
 	defer slog.Sync()
 	slog.Infof("starting")
 
-	mcpd, err := mcp.New("ap.brokerd")
+	mcpd, err := mcp.New(pname)
 	if err != nil {
 		slog.Warnf("Failed to connect to mcp")
 	}

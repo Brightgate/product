@@ -401,7 +401,7 @@ func main() {
 	var err error
 
 	flag.Parse()
-	slog = aputil.NewLogger()
+	slog = aputil.NewLogger(pname)
 	defer slog.Sync()
 
 	mcpd, err := mcp.New(pname)

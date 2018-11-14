@@ -454,7 +454,7 @@ func main() {
 	var wg sync.WaitGroup
 
 	flag.Parse()
-	slog = aputil.NewLogger()
+	slog = aputil.NewLogger(pname)
 	defer slog.Sync()
 
 	mcpd, err := mcp.New(pname)

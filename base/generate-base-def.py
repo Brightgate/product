@@ -218,7 +218,7 @@ assignments = [
     [Statement.SIMPLE_PORT, "WATCHD_ZMQ_REP_PORT", 3134],
     [Statement.SIMPLE_PORT, "MCP_ZMQ_REP_PORT", 3135],
     [Statement.SIMPLE_NUM, "LOCAL_ZMQ_SEND_TIMEOUT", 10],
-    [Statement.SIMPLE_NUM, "LOCAL_ZMQ_RECEIVE_TIMEOUT", 20],
+    [Statement.SIMPLE_NUM, "LOCAL_ZMQ_RECV_TIMEOUT", 20],
     [Statement.COMMENT, None],
 
     [Statement.SIMPLE_PORT, "CLRPCD_PROMETHEUS_PORT", 3600],

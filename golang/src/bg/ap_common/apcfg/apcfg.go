@@ -16,6 +16,7 @@ import (
 	"log"
 	"os"
 	"sync"
+	"syscall"
 	"time"
 
 	"bg/ap_common/aputil"
@@ -31,9 +32,13 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
+const (
+	sendTimeout = base_def.LOCAL_ZMQ_SEND_TIMEOUT * time.Second
+	recvTimeout = base_def.LOCAL_ZMQ_RECV_TIMEOUT * time.Second
+)
+
 // APConfig is an opaque type representing a connection to ap.configd
 type APConfig struct {
-	mutex  sync.Mutex
 	socket *zmq.Socket
 	sender string
 
@@ -44,6 +49,8 @@ type APConfig struct {
 	expireHandlers []delexpMatch
 	handling       bool
 	level          cfgapi.AccessLevel
+
+	sync.Mutex
 }
 
 type cmdStatus struct {
@@ -64,47 +71,13 @@ func (c *cmdStatus) Wait(ctx context.Context) (string, error) {
 func NewConfigd(b *broker.Broker, name string,
 	level cfgapi.AccessLevel) (*cfgapi.Handle, error) {
 
-	var host string
-
 	plat := platform.NewPlatform()
 	if _, ok := cfgapi.AccessLevelNames[level]; !ok {
 		return nil, fmt.Errorf("invalid access level: %d", level)
 	}
 
-	sender := fmt.Sprintf("%s(%d)", name, os.Getpid())
-
-	socket, err := zmq.NewSocket(zmq.REQ)
-	if err != nil {
-		err = fmt.Errorf("failed to create new cfg socket: %v", err)
-		return nil, err
-	}
-
-	err = socket.SetSndtimeo(time.Duration(base_def.LOCAL_ZMQ_SEND_TIMEOUT * time.Second))
-	if err != nil {
-		log.Printf("failed to set cfg send timeout: %v\n", err)
-		return nil, err
-	}
-
-	err = socket.SetRcvtimeo(time.Duration(base_def.LOCAL_ZMQ_RECEIVE_TIMEOUT * time.Second))
-	if err != nil {
-		log.Printf("failed to set cfg receive timeout: %v\n", err)
-		return nil, err
-	}
-
-	if aputil.IsSatelliteMode() {
-		host = base_def.GATEWAY_ZMQ_URL
-	} else {
-		host = base_def.LOCAL_ZMQ_URL
-	}
-	err = socket.Connect(host + base_def.CONFIGD_ZMQ_REP_PORT)
-	if err != nil {
-		err = fmt.Errorf("failed to connect new cfg socket: %v", err)
-		return nil, err
-	}
-
 	c := &APConfig{
-		sender:         sender,
-		socket:         socket,
+		sender:         fmt.Sprintf("%s(%d)", name, os.Getpid()),
 		broker:         b,
 		platform:       plat,
 		level:          level,
@@ -113,40 +86,116 @@ func NewConfigd(b *broker.Broker, name string,
 		expireHandlers: make([]delexpMatch, 0),
 	}
 
-	if err = c.Ping(nil); err != nil {
+	if err := c.reconnect(); err != nil {
+		return nil, err
+	}
+
+	if err := c.Ping(nil); err != nil {
 		return nil, err
 	}
 
 	return cfgapi.NewHandle(c), nil
 }
 
+func (c *APConfig) reconnect() error {
+	var url string
+
+	c.disconnect()
+
+	socket, err := zmq.NewSocket(zmq.REQ)
+	if err != nil {
+		return fmt.Errorf("failed to create new cfg socket: %v", err)
+	}
+
+	if err = socket.SetSndtimeo(sendTimeout); err != nil {
+		log.Printf("failed to set cfg send timeout: %v\n", err)
+	}
+
+	if err = socket.SetRcvtimeo(recvTimeout); err != nil {
+		log.Printf("failed to set cfg receive timeout: %v\n", err)
+	}
+
+	if aputil.IsSatelliteMode() {
+		url = base_def.GATEWAY_ZMQ_URL + base_def.CONFIGD_ZMQ_REP_PORT
+	} else {
+		url = base_def.LOCAL_ZMQ_URL + base_def.CONFIGD_ZMQ_REP_PORT
+	}
+
+	if err = socket.Connect(url); err != nil {
+		return fmt.Errorf("failed to connect to configd: %v", err)
+	}
+	c.socket = socket
+
+	return nil
+}
+
+func (c *APConfig) disconnect() {
+	if c.socket != nil {
+		c.socket.Close()
+		c.socket = nil
+	}
+}
+
 func (c *APConfig) sendOp(query *cfgmsg.ConfigQuery) (string, error) {
+	const retryLimit = 3
+	var reply [][]byte
 
 	query.Sender = c.sender
 	query.Level = int32(c.level)
 	op, err := proto.Marshal(query)
 	if err != nil {
-		return "", fmt.Errorf("unable to build ping: %v", err)
+		return "", fmt.Errorf("unable to build op: %v", err)
 	}
 
-	response := &cfgmsg.ConfigResponse{}
-	c.mutex.Lock()
-	_, err = c.socket.SendBytes(op, 0)
-	if err != nil {
-		log.Printf("Failed to send config msg: %v\n", err)
-		err = cfgapi.ErrComm
-	} else {
-		reply, rerr := c.socket.RecvMessageBytes(0)
-		if rerr != nil {
-			log.Printf("Failed to receive config reply: %v\n", err)
-			err = cfgapi.ErrComm
-		} else if len(reply) > 0 {
-			proto.Unmarshal(reply[0], response)
+	// Because of ZeroMQ's rigid state machine, a failed message can leave a
+	// socket permanently broken.  To avoid this, we will close and reopen
+	// the socket on an error.  If it fails repeatedly, we give up and
+	// return the error to the caller.  (this most likely means that configd
+	// is crashed, and mcp will be restarting everything anyway.)
+	c.Lock()
+	for retries := 0; retries < retryLimit; retries++ {
+		if c.socket == nil {
+			if err = c.reconnect(); err != nil {
+				log.Printf("%v\n", err)
+				continue
+			}
 		}
-	}
-	c.mutex.Unlock()
 
-	return response.Parse()
+		phase := "sending"
+		_, err = c.socket.SendBytes(op, 0)
+		if err == nil {
+			phase = "receiving"
+			// If the read fails with EINTR, it most likely means
+			// that we got a SIGCHLD when a worker process exited.
+			// Some versions of ZeroMQ will silently retry this
+			// read internally.  Since our version returns the
+			// error, we do the retry ourselves.  If we fail
+			// with EINTR multiple times, we'll give up and attempt
+			// to build a new connection.
+			for ; retries < retryLimit; retries++ {
+				reply, err = c.socket.RecvMessageBytes(0)
+				if err != zmq.Errno(syscall.EINTR) {
+					break
+				}
+			}
+		}
+		if err == nil {
+			break
+		}
+
+		log.Printf("while %s: %v\n", phase, err)
+		c.disconnect()
+	}
+	c.Unlock()
+
+	var rval string
+	if err == nil && len(reply) > 0 {
+		response := &cfgmsg.ConfigResponse{}
+		proto.Unmarshal(reply[0], response)
+		rval, err = response.Parse()
+	}
+
+	return rval, err
 }
 
 // Ping performs a simple round-trip communication with ap.configd, just to

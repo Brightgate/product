@@ -1160,7 +1160,7 @@ func main() {
 	rand.Seed(time.Now().Unix())
 
 	flag.Parse()
-	slog = aputil.NewLogger()
+	slog = aputil.NewLogger(pname)
 	defer slog.Sync()
 	slog.Infof("starting")
 

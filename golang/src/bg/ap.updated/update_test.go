@@ -163,7 +163,7 @@ func TestUpload(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	// Need to setup global
-	slog = aputil.NewLogger()
+	slog = aputil.NewLogger(pname)
 	applianceCred = grpcutils.NewTestCredential()
 	os.Exit(m.Run())
 }

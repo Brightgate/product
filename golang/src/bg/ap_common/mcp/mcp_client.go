@@ -121,7 +121,7 @@ func newConnection(name, url string) (*MCP, error) {
 	plat := platform.NewPlatform()
 	port := url + base_def.MCP_ZMQ_REP_PORT
 	sendTO := base_def.LOCAL_ZMQ_SEND_TIMEOUT * time.Second
-	recvTO := base_def.LOCAL_ZMQ_RECEIVE_TIMEOUT * time.Second
+	recvTO := base_def.LOCAL_ZMQ_RECV_TIMEOUT * time.Second
 
 	socket, err := zmq.NewSocket(zmq.REQ)
 	if err != nil {

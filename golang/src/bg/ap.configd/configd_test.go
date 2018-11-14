@@ -776,7 +776,7 @@ func TestMain(m *testing.M) {
 	}
 
 	prometheusInit()
-	slog = aputil.NewLogger()
+	slog = aputil.NewLogger(pname)
 	testData, err = ioutil.ReadFile(*testFile)
 	if err != nil {
 		log.Printf("Failed to load properties file %s: %v\n",

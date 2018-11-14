@@ -439,7 +439,7 @@ func main() {
 	var err error
 
 	flag.Parse()
-	slog = aputil.NewLogger()
+	slog = aputil.NewLogger(pname)
 	defer slog.Sync()
 
 	slog.Infof("starting")
