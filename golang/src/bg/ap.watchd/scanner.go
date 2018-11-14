@@ -94,16 +94,24 @@ func (h *hostmap) len() float64 {
 	return float64(len(h.active))
 }
 
-func (h *hostmap) add(ip string) {
+func (h *hostmap) add(ip string) error {
 	h.Lock()
 	defer h.Unlock()
+	if h.active[ip] {
+		return fmt.Errorf("hostmap already contains %s", ip)
+	}
 	h.active[ip] = true
+	return nil
 }
 
-func (h *hostmap) del(ip string) {
+func (h *hostmap) del(ip string) error {
 	h.Lock()
 	defer h.Unlock()
+	if !h.active[ip] {
+		return fmt.Errorf("hostmap doesn't contain %s", ip)
+	}
 	delete(h.active, ip)
+	return nil
 }
 
 func (h *hostmap) contains(ip string) bool {
@@ -357,15 +365,13 @@ func newVulnScan(mac, ip string) *ScanRequest {
 }
 
 func scannerRequest(mac, ip string) {
-	if activeHosts.contains(ip) {
+	if err := activeHosts.add(ip); err != nil {
 		return
 	}
-
 	tcpScan := newTCPScan(mac, ip)
 	udpScan := newUDPScan(mac, ip)
 	vulnScan := newVulnScan(mac, ip)
 
-	activeHosts.add(ip)
 	metrics.knownHosts.Set(activeHosts.len())
 	scheduleScan(tcpScan, 2*time.Minute, false)
 	scheduleScan(udpScan, 10*time.Minute, false)
