@@ -53,11 +53,11 @@
             </li>
           </ul>
           <span v-for="vmore in vulnMoreInfo(vulnid)"
-                :key="vmore">
+                :key="vmore.url">
             <!-- use <a> here instead of f7-link, as that appears to strip out target="_blank".
                  n.b. that this will probably need more work if we use cordova/phonegap -->
-            <a :href="vmore" rel="noopener" target="_blank" class="link external">
-              {{ $t('message.dev_details.vuln_more_info') }} &gt;
+            <a :href="vmore.url" rel="noopener" target="_blank" class="link external">
+              {{ $t('message.dev_details.vuln_more_info', { source: vmore.source } ) }} &gt;
             </a>
             <br>
           </span>

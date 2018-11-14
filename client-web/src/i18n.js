@@ -126,7 +126,7 @@ export default {
         activity: 'Activity',
         active_true: 'Active',
         active_false: 'Inactive',
-        vuln_more_info: 'More Information',
+        vuln_more_info: 'More Information ({source})',
         vuln_remediation: 'Remediation: {text}',
         vuln_first_detected: 'Reported: {time}',
         vuln_latest_detected: 'Recently Seen: {time}',
@@ -294,7 +294,7 @@ export default {
         activity: 'Activity',         // XXXI18N
         active_true: 'Active',        // XXXI18N
         active_false: 'Inactive',     // XXXI18N
-        vuln_more_info: 'More Information', // XXXI18N
+        vuln_more_info: 'More Information ({source})', // XXXI18N
         vuln_remediation: 'Remediation: {text}', // XXXI18N
         vuln_first_detected: 'Reported: {time}', // XXXI18N
         vuln_latest_detected: 'Recently Seen: {time}', // XXXI18N
