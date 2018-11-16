@@ -104,6 +104,7 @@ func mkStore() configStore {
 		} else {
 			store, err = newDBStore(environ.PostgresConnection)
 		}
+		environ.Store = "db"
 	default:
 		err = fmt.Errorf("Unrecognized store type")
 	}

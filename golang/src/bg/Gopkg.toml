@@ -152,3 +152,7 @@
 [[constraint]]
   branch = "master"
   name = "github.com/tatsushid/go-prettytable"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/dhduvall/gcloudzap"

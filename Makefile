@@ -275,6 +275,7 @@ COMMON_SRCS = \
 	$(GOSRCBG)/common/archive/archive.go \
 	$(GOSRCBG)/common/cfgapi/cfgapi.go \
 	$(GOSRCBG)/common/cfgapi/users.go \
+	$(GOSRCBG)/common/cfgmsg/cfgmsg.go \
 	$(GOSRCBG)/common/cfgmsg/cfgmsg.pb.go \
 	$(GOSRCBG)/common/cfgtree/cfgtree.go \
 	$(GOSRCBG)/common/grpcutils/client.go \
@@ -604,6 +605,7 @@ GO_MOCK_CLOUDRPC_SRCS = \
 	$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
 	$(GOSRCBG)/base_def/base_def.go \
 	$(GOSRCBG)/base_msg/base_msg.pb.go \
+	$(GOSRCBG)/common/cfgmsg/cfgmsg.go \
 	$(GOSRCBG)/common/cfgmsg/cfgmsg.pb.go
 GO_MOCK_APPLIANCEDB = $(GOSRCBG)/cloud_models/appliancedb/mocks/DataStore.go
 GO_MOCK_CLOUDRPC = $(GOSRCBG)/cloud_rpc/mocks/EventClient.go

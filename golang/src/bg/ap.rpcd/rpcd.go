@@ -208,7 +208,7 @@ func grpcInit() (*grpc.ClientConn, error) {
 	}
 
 	if !enableTLS {
-		slog.Warnf("Connecting insecurely due to '-enable-tls=false'" +
+		slog.Warnf("Connecting insecurely due to '-enable-tls=false' " +
 			"flag (developers only!)")
 	}
 

@@ -29,7 +29,7 @@ godeps-ensured: FRC
 #
 .PHONY: godeps-update
 godeps-update: $(GOTOOLS)
-	cd $(realpath $(GOSRCBG)) && $(GOTOOLS_BIN_DEP) ensure -v -update
+	cd $(realpath $(GOSRCBG)) && $(GOTOOLS_BIN_DEP) ensure -v -update $(DEPNAME)
 	touch $(GODEPS_ENSURED)
 
 #

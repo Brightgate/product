@@ -11,6 +11,9 @@
     "internal/optional",
     "internal/trace",
     "internal/version",
+    "logging",
+    "logging/apiv2",
+    "logging/internal",
     "pubsub",
     "pubsub/apiv1",
     "pubsub/internal/distribution",
@@ -95,6 +98,14 @@
   pruneopts = ""
   revision = "06ea1031745cb8b3dab3f6a236daf2b0aa468b7e"
   version = "v3.2.0"
+
+[[projects]]
+  branch = "master"
+  digest = "1:2c940102dbb1eaabb006bb650ec121606ec3f013aee987e26c3535965d1c0271"
+  name = "github.com/dhduvall/gcloudzap"
+  packages = ["."]
+  pruneopts = ""
+  revision = "295b15c042499a53f36e5fc64a7377fb0cb5a4f1"
 
 [[projects]]
   digest = "1:8fca1a11f4f8011e273c92799abb21be58df214079a6226a7f13b0f697c5921a"
@@ -950,7 +961,13 @@
   name = "google.golang.org/genproto"
   packages = [
     "googleapis/api/annotations",
+    "googleapis/api/distribution",
+    "googleapis/api/label",
+    "googleapis/api/metric",
+    "googleapis/api/monitoredres",
     "googleapis/iam/v1",
+    "googleapis/logging/type",
+    "googleapis/logging/v2",
     "googleapis/pubsub/v1",
     "googleapis/rpc/code",
     "googleapis/rpc/status",
@@ -1001,12 +1018,14 @@
   analyzer-version = 1
   input-imports = [
     "cloud.google.com/go/compute/metadata",
+    "cloud.google.com/go/logging",
     "cloud.google.com/go/pubsub",
     "cloud.google.com/go/storage",
     "github.com/NYTimes/gziphandler",
     "github.com/antonlindstrom/pgstore",
     "github.com/bluele/gcache",
     "github.com/dgrijalva/jwt-go",
+    "github.com/dhduvall/gcloudzap",
     "github.com/gliderlabs/ssh",
     "github.com/goftp/file-driver",
     "github.com/goftp/server",

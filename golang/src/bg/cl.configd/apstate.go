@@ -94,7 +94,7 @@ func getAPState(ctx context.Context, cloudUUID string) (*perAPState, error) {
 
 		if environ.Emulate {
 			slog.Infof("Enabled emulator for appliance %s", cloudUUID)
-			go s.emulateAppliance(ctx)
+			go s.emulateAppliance(context.Background())
 		}
 	}
 
