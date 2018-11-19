@@ -38,12 +38,28 @@ const mockNetworkConfig = {
 
 const mockAppliances = ['0'];
 
-const mockRings = [
-  'core',
-  'standard',
-  'devices',
-  'quarantine',
-];
+const mockRings = {
+  'core': {
+    'auth': 'wpa-eap',
+    'subnet': '192.168.133.0/26',
+    'leaseDuration': 1440,
+  },
+  'devices': {
+    'auth': 'wpa-psk',
+    'subnet': '192.168.135.0/26',
+    'leaseDuration': 180,
+  },
+  'guest': {
+    'auth': 'wpa-eap',
+    'subnet': '192.168.136.0/26',
+    'leaseDuration': 30,
+  },
+  'standard': {
+    'auth': 'wpa-psk',
+    'subnet': '192.168.134.0/26',
+    'leaseDuration': 1440,
+  },
+};
 
 const windowURLAppliance = window && window.location && window.location.href && new URL(window.location.href);
 const windowApplianceID = windowURLAppliance.searchParams.get('appliance') || '0';
@@ -77,7 +93,7 @@ const state = {
   applianceIDs: [],
   devices: cloneDeep(initDevices),
   alerts: initAlerts,
-  rings: [],
+  rings: {},
   users: cloneDeep(initUsers),
   networkConfig: cloneDeep(initNetworkConfig),
   enableMock: enableMock,
@@ -434,6 +450,9 @@ const actions = {
           hwaddr: dev.HwAddr,
           ring: dev.Ring,
           active: dev.Active,
+          connAuthType: dev.ConnAuthType,
+          connMode: dev.ConnMode,
+          connNode: dev.ConnNode,
           scans: dev.Scans,
           vulnerabilities: dev.Vulnerabilities,
         });

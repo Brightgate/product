@@ -81,15 +81,27 @@
 
     <f7-list>
 
-      <f7-list-item :title="$t('message.dev_details.network_name')">{{ dev.network_name }}</f7-list-item>
+      <f7-list-item :title="$t('message.dev_details.network_name')">
+        {{ dev.network_name }}
+      </f7-list-item>
       <f7-list-item :title="$t('message.dev_details.ipv4_addr')">
         {{ dev.ipv4_addr ? dev.ipv4_addr : $t("message.dev_details.ipv4_addr_none") }}
       </f7-list-item>
-      <f7-list-item :title="$t('message.dev_details.hw_addr')">{{ dev.hwaddr }}</f7-list-item>
-      <f7-list-item :title="$t('message.dev_details.os_version')">{{ os_version }}</f7-list-item>
+      <f7-list-item :title="$t('message.dev_details.hw_addr')">
+        {{ dev.hwaddr }}
+      </f7-list-item>
+      <f7-list-item :title="$t('message.dev_details.os_version')">
+        {{ os_version }}
+      </f7-list-item>
 
       <f7-list-item :title="$t('message.dev_details.activity')">
         {{ activity }}
+      </f7-list-item>
+      <f7-list-item v-if="dev.active && dev.connAuthType" :title="$t('message.dev_details.conn_auth')">
+        {{ dev.connAuthType }}
+      </f7-list-item>
+      <f7-list-item v-if="dev.active && dev.connMode" :title="$t('message.dev_details.conn_mode')">
+        {{ dev.connMode }}
       </f7-list-item>
 
       <f7-list-item :title="$t('message.dev_details.vuln_scan')">
@@ -103,7 +115,7 @@
         <f7-label>{{ $t('message.dev_details.security_ring') }}</f7-label>
         <f7-preloader v-if="ring_changing" />
         <f7-input v-else :value="dev.ring" type="select" @input="changeRing($event.target.value)">
-          <option v-for="ring in rings" :value="ring" :key="ring">{{ ring }}</option>
+          <option v-for="(ring, ringName) in rings" :value="ringName" :key="ringName">{{ ringName }}</option>
         </f7-input>
       </f7-list-item>
     </f7-list>

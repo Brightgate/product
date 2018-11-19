@@ -8,7 +8,7 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 
-import {format, formatRelative} from 'date-fns';
+import {format, formatRelative, formatDistance, formatDistanceStrict} from 'date-fns';
 import {enUS, de} from 'date-fns/locale';
 
 const locales = {
@@ -40,4 +40,20 @@ function _formatRelative(date, baseDate, options) {
     Object.assign(getLocale(), options));
 }
 
-export {_format as format, _formatRelative as formatRelative};
+function _formatDistance(date, baseDate, options) {
+  return formatDistance(date, baseDate,
+    Object.assign(getLocale(), options));
+}
+
+function _formatDistanceStrict(date, baseDate, options) {
+  return formatDistanceStrict(date, baseDate,
+    Object.assign(getLocale(), options));
+}
+
+
+export {
+  _format as format,
+  _formatDistance as formatDistance,
+  _formatDistanceStrict as formatDistanceStrict,
+  _formatRelative as formatRelative,
+};

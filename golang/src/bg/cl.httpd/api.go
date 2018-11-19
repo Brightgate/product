@@ -170,6 +170,9 @@ type apiDevice struct {
 	IPv4Addr        *net.IP                `json:"IPv4Addr,omitempty"`
 	OSVersion       string                 `json:"OSVersion,omitempty"`
 	Active          bool                   `json:"Active"`
+	ConnAuthType    string                 `json:"ConnAuthType,omitempty"`
+	ConnMode        string                 `json:"ConnMode,omitempty"`
+	ConnNode        *uuid.UUID             `json:"ConnNode,omitempty"`
 	Scans           map[string]apiScanInfo `json:"Scans,omitempty"`
 	Vulnerabilities map[string]apiVulnInfo `json:"Vulnerabilities,omitempty"`
 }
@@ -192,6 +195,9 @@ func buildDeviceResponse(c echo.Context, hdl *cfgapi.Handle,
 		Ring:            client.Ring,
 		IPv4Addr:        &client.IPv4,
 		Active:          client.IsActive(),
+		ConnAuthType:    client.ConnAuthType,
+		ConnMode:        client.ConnMode,
+		ConnNode:        client.ConnNode,
 		Scans:           make(map[string]apiScanInfo),
 		Vulnerabilities: make(map[string]apiVulnInfo),
 	}
@@ -431,6 +437,15 @@ func (a *apiHandler) deleteUserByUUID(c echo.Context) error {
 	return nil
 }
 
+// mirrors RingConfig but omits Bridge and Vlan
+type apiRing struct {
+	Auth          string `json:"auth"`
+	Subnet        string `json:"subnet"`
+	LeaseDuration int    `json:"leaseDuration"`
+}
+
+type apiRings map[string]apiRing
+
 // getRings implements /api/appliances/:uuid/rings
 func (a *apiHandler) getRings(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
@@ -439,11 +454,15 @@ func (a *apiHandler) getRings(c echo.Context) error {
 	}
 	defer hdl.Close()
 
-	var rings []string
-	for name := range hdl.GetRings() {
-		rings = append(rings, name)
+	var resp apiRings = make(map[string]apiRing)
+	for ringName, ring := range hdl.GetRings() {
+		resp[ringName] = apiRing{
+			Auth:          ring.Auth,
+			Subnet:        ring.Subnet,
+			LeaseDuration: ring.LeaseDuration,
+		}
 	}
-	return c.JSON(http.StatusOK, rings)
+	return c.JSON(http.StatusOK, resp)
 }
 
 func (a *apiHandler) sessionMiddleware(next echo.HandlerFunc) echo.HandlerFunc {

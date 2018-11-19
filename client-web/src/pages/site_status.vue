@@ -11,42 +11,56 @@
   <f7-page ptr @ptr:refresh="onPtrRefresh" @page:beforein="onPageBeforeIn">
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.site_status.title')" sliding />
 
+    <f7-block-title>{{ $t('message.site_status.ssids') }} </f7-block-title>
     <f7-list>
-      <f7-list-group>
-        <f7-list-item :title="$t('message.site_status.ssids')" group-title />
-        <f7-list-item :title="$t('message.site_status.ssid_psk')">
-          {{ Network_Config.ssid }}
-        </f7-list-item>
-        <f7-list-item :title="$t('message.site_status.ssid_eap')">
-          {{ Network_Config.ssid }}-eap
-        </f7-list-item>
-      </f7-list-group>
+      <f7-list-item :title="$t('message.site_status.ssid_psk')">
+        {{ Network_Config.ssid }}
+      </f7-list-item>
+      <f7-list-item :title="$t('message.site_status.ssid_eap')">
+        {{ Network_Config.ssid }}-eap
+      </f7-list-item>
+    </f7-list>
 
-      <f7-list-group>
-        <f7-list-item :title="$t('message.site_status.devices')" group-title />
-        <f7-list-item :title="$t('message.site_status.devices_active')">
-          {{ Device_Count(Device_Active(All_Devices)) }}
-        </f7-list-item>
-        <f7-list-item :title="$t('message.site_status.devices_scanned')">
-          {{ Device_Count(Device_VulnScanned(Device_Active(All_Devices))) }}
-        </f7-list-item>
-        <f7-list-item :title="$t('message.site_status.devices_reg')">
-          {{ Device_Count(All_Devices) }}
-        </f7-list-item>
-      </f7-list-group>
+    <f7-block-title>{{ $t('message.site_status.devices') }} </f7-block-title>
+    <f7-list>
+      <f7-list-item :title="$t('message.site_status.devices_active')">
+        {{ Device_Count(Device_Active(All_Devices)) }}
+      </f7-list-item>
+      <f7-list-item :title="$t('message.site_status.devices_scanned')">
+        {{ Device_Count(Device_VulnScanned(Device_Active(All_Devices))) }}
+      </f7-list-item>
+      <f7-list-item :title="$t('message.site_status.devices_reg')">
+        {{ Device_Count(All_Devices) }}
+      </f7-list-item>
+    </f7-list>
 
-      <f7-list-group>
-        <f7-list-item :title="$t('message.site_status.config')" group-title />
-        <f7-list-item :title="$t('message.site_status.config_dns_server')">
-          {{ Network_Config.dnsServer }}
-        </f7-list-item>
-        <f7-list-item :title="$t('message.site_status.config_default_ring_wpa_psk')">
-          {{ Network_Config.defaultRingWPAPSK }}
-        </f7-list-item>
-        <f7-list-item :title="$t('message.site_status.config_default_ring_wpa_eap')">
-          {{ Network_Config.defaultRingWPAEAP }}
-        </f7-list-item>
-      </f7-list-group>
+    <f7-block-title>{{ $t('message.site_status.config') }} </f7-block-title>
+    <f7-list>
+      <f7-list-item :title="$t('message.site_status.config_dns_server')">
+        {{ Network_Config.dnsServer }}
+      </f7-list-item>
+      <f7-list-item :title="$t('message.site_status.config_default_ring_wpa_psk')">
+        {{ Network_Config.defaultRingWPAPSK }}
+      </f7-list-item>
+      <f7-list-item :title="$t('message.site_status.config_default_ring_wpa_eap')">
+        {{ Network_Config.defaultRingWPAEAP }}
+      </f7-list-item>
+    </f7-list>
+
+    <f7-block-title>Ring Configuration</f7-block-title>
+    <f7-list>
+      <f7-list-item v-for="(ring, ringName) in Rings" :key="ringName" :title="ringName" accordion-item>
+        <f7-accordion-content>
+          <f7-list inset>
+            <f7-list-item title="Authentication">{{ ring.auth }}</f7-list-item>
+            <f7-list-item title="Subnet">{{ ring.subnet }}</f7-list-item>
+            <f7-list-item title="Lease Duration">
+              {{ leaseDurationMinutes(ring.leaseDuration) }}
+              {{ ring.leaseDuration >= 120 ? '(' + leaseDuration(ring.leaseDuration) + ')' : "" }}
+            </f7-list-item>
+          </f7-list>
+        </f7-accordion-content>
+      </f7-list-item>
     </f7-list>
 
   </f7-page>
@@ -56,9 +70,12 @@
 import vuex from 'vuex';
 import Promise from 'bluebird';
 import Debug from 'debug';
+import {f7AccordionContent} from 'framework7-vue';
+import {formatDistanceStrict} from '../date-fns-wrapper';
 const debug = Debug('page:site-status');
 
 export default {
+  components: {f7AccordionContent},
   data: function() {
     return {
     };
@@ -75,12 +92,21 @@ export default {
       'Device_Active',
       'Device_VulnScanned',
       'Network_Config',
+      'Rings',
     ]),
   },
 
   methods: {
+    leaseDurationMinutes: function(minutes) {
+      return formatDistanceStrict(minutes * 60 * 1000, 0, {'unit': 'minute'});
+    },
+    leaseDuration: function(minutes) {
+      return formatDistanceStrict(minutes * 60 * 1000, 0);
+    },
+
     onPtrRefresh: function(el, done) {
       return Promise.all([
+        this.$store.dispatch('fetchRings').catch(() => {}),
         this.$store.dispatch('fetchNetworkConfig').catch(() => {}),
         this.$store.dispatch('fetchDevices').catch(() => {}),
       ]).asCallback(done);
@@ -88,6 +114,7 @@ export default {
 
     onPageBeforeIn: function() {
       debug('pageBeforeIn');
+      this.$store.dispatch('fetchRings').catch(() => {});
       this.$store.dispatch('fetchDevices').catch(() => {});
       this.$store.dispatch('fetchNetworkConfig').catch(() => {});
     },

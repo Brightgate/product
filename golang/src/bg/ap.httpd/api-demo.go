@@ -93,6 +93,9 @@ type daDevice struct {
 	IPv4Addr        *net.IP               `json:"IPv4Addr,omitempty"`
 	OSVersion       string                `json:"OSVersion,omitempty"`
 	Active          bool                  `json:"Active"`
+	ConnAuthType    string                `json:"ConnAuthType,omitempty"`
+	ConnMode        string                `json:"ConnMode,omitempty"`
+	ConnNode        *uuid.UUID            `json:"ConnNode,omitempty"`
 	Scans           map[string]daScanInfo `json:"Scans,omitempty"`
 	Vulnerabilities map[string]daVulnInfo `json:"Vulnerabilities,omitempty"`
 }
@@ -102,6 +105,15 @@ type daDevices struct {
 	Devices    []daDevice
 }
 
+// mirrors RingConfig but omits Bridge and Vlan
+type daRing struct {
+	Auth          string `json:"auth"`
+	Subnet        string `json:"subnet"`
+	LeaseDuration int    `json:"leaseDuration"`
+}
+
+type daRings map[string]daRing
+
 func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
 	scanMap cfgapi.ScanMap, vulnMap cfgapi.VulnMap) daDevice {
 
@@ -110,6 +122,9 @@ func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
 		Ring:            client.Ring,
 		IPv4Addr:        &client.IPv4,
 		Active:          client.IsActive(),
+		ConnAuthType:    client.ConnAuthType,
+		ConnMode:        client.ConnMode,
+		ConnNode:        client.ConnNode,
 		Scans:           make(map[string]daScanInfo),
 		Vulnerabilities: make(map[string]daVulnInfo),
 	}
@@ -210,21 +225,18 @@ func demoDevicesByRingHandler(w http.ResponseWriter, r *http.Request) {
 func demoRingsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	props, err := config.GetProps("@/rings")
-	if err != nil {
-		log.Printf("Failed to get ring list: %v\n", err)
-		http.Error(w, "failed to get rings", 500)
-		return
+	var resp daRings = make(map[string]daRing)
+	for ringName, ring := range config.GetRings() {
+		resp[ringName] = daRing{
+			Auth:          ring.Auth,
+			Subnet:        ring.Subnet,
+			LeaseDuration: ring.LeaseDuration,
+		}
 	}
 
-	var rings []string
-	for name := range props.Children {
-		rings = append(rings, name)
-	}
-
-	b, err := json.Marshal(rings)
+	b, err := json.Marshal(resp)
 	if err != nil {
-		log.Printf("failed to json marshal rings '%v': %v\n", rings, err)
+		log.Printf("failed to json marshal response '%v': %v\n", resp, err)
 		return
 	}
 

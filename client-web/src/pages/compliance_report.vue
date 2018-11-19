@@ -96,7 +96,7 @@
           </f7-col>
         </f7-row>
 
-        <f7-row v-for="ring in SortedRings"
+        <f7-row v-for="ring in SortedRingNames"
                 :key="ring"
                 style="padding-top: 7px; padding-bottom: 7px;">
           <f7-col width="40">
@@ -157,8 +157,8 @@ export default {
     Policy_Violations: function() {
       return this.Alert_Count(this.Alert_Active(this.All_Alerts));
     },
-    SortedRings: function() {
-      return sortBy(this.Rings, (r) => {
+    SortedRingNames: function() {
+      return sortBy(Object.keys(this.Rings), (r) => {
         return -1 * this.Devices_By_Ring(r).length;
       });
     },

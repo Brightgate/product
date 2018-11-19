@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"bg/base_def"
+
+	"github.com/satori/uuid"
 )
 
 // Version gets increased each time there is a non-compatible change to the
@@ -126,14 +128,17 @@ type RingConfig struct {
 
 // ClientInfo contains all of the configuration information for a client device
 type ClientInfo struct {
-	Ring       string     // Assigned security ring
-	DNSName    string     // Assigned hostname
-	IPv4       net.IP     // Network address
-	Expires    *time.Time // DHCP lease expiration time
-	DHCPName   string     // Requested hostname
-	Identity   string     // Current best guess at the client type
-	Confidence float64    // Confidence for the Identity guess
-	DNSPrivate bool       // We don't collect DNS queries
+	Ring         string     // Assigned security ring
+	DNSName      string     // Assigned hostname
+	IPv4         net.IP     // Network address
+	Expires      *time.Time // DHCP lease expiration time
+	DHCPName     string     // Requested hostname
+	Identity     string     // Current best guess at the client type
+	Confidence   float64    // Confidence for the Identity guess
+	DNSPrivate   bool       // We don't collect DNS queries
+	ConnAuthType string     // Connection Auth Type
+	ConnMode     string     // Connection Radio Mode
+	ConnNode     *uuid.UUID // Connection Node
 }
 
 // VulnInfo represents the detection of a single vulnerability in a single
@@ -436,6 +441,22 @@ func getTimeVal(root *PropertyNode, name string) (*time.Time, error) {
 	return &rval, err
 }
 
+func getUUIDVal(root *PropertyNode, name string) (*uuid.UUID, error) {
+	var val string
+	var err error
+	var uu uuid.UUID
+
+	if val, err = getProp(root, name); err != nil {
+		return nil, err
+	}
+
+	if uu, err = uuid.FromString(val); err != nil {
+		return nil, fmt.Errorf("malformed %s property: %s", name, val)
+	}
+
+	return &uu, nil
+}
+
 // GetRings fetches the Rings subtree from ap.configd, and converts the json
 // into a Ring -> RingConfig map
 func (c *Handle) GetRings() RingMap {
@@ -492,6 +513,9 @@ func getClient(client *PropertyNode) *ClientInfo {
 	var ipv4 net.IP
 	var exp *time.Time
 	var private bool
+	var connAuthType string
+	var connMode string
+	var connNode *uuid.UUID
 
 	private, _ = getBoolVal(client, "dns_private")
 	ring, _ = getStringVal(client, "ring")
@@ -505,16 +529,24 @@ func getClient(client *PropertyNode) *ClientInfo {
 			exp = addr.Expires
 		}
 	}
+	if conn, ok := client.Children["connection"]; ok {
+		connAuthType, _ = getStringVal(conn, "authtype")
+		connMode, _ = getStringVal(conn, "mode")
+		connNode, _ = getUUIDVal(conn, "node")
+	}
 
 	c := ClientInfo{
-		Ring:       ring,
-		DHCPName:   dhcp,
-		DNSName:    dns,
-		IPv4:       ipv4,
-		Expires:    exp,
-		Identity:   identity,
-		Confidence: confidence,
-		DNSPrivate: private,
+		Ring:         ring,
+		DHCPName:     dhcp,
+		DNSName:      dns,
+		IPv4:         ipv4,
+		Expires:      exp,
+		Identity:     identity,
+		Confidence:   confidence,
+		DNSPrivate:   private,
+		ConnAuthType: connAuthType,
+		ConnMode:     connMode,
+		ConnNode:     connNode,
 	}
 	return &c
 }

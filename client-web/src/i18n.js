@@ -126,6 +126,8 @@ export default {
         activity: 'Activity',
         active_true: 'Active',
         active_false: 'Inactive',
+        conn_auth: 'Authentication Protocol',
+        conn_mode: 'Connection Mode',
         vuln_more_info: 'More Information ({source})',
         vuln_remediation: 'Remediation: {text}',
         vuln_first_detected: 'Reported: {time}',
@@ -294,6 +296,8 @@ export default {
         activity: 'Activity',         // XXXI18N
         active_true: 'Active',        // XXXI18N
         active_false: 'Inactive',     // XXXI18N
+        conn_auth: 'Authentication Protocol', // XXXI18N
+        conn_mode: 'Connection Mode',         // XXXI18N
         vuln_more_info: 'More Information ({source})', // XXXI18N
         vuln_remediation: 'Remediation: {text}', // XXXI18N
         vuln_first_detected: 'Reported: {time}', // XXXI18N

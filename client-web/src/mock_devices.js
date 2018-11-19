@@ -39,6 +39,9 @@ export default [
     ipv4_addr: '1.2.3.4',
     ring: 'standard',
     active: true,
+    connAuthType: 'wpa-eap',
+    connMode: '2.4GHz',
+    connNode: 'ab3ec38e-0a8f-43f1-a183-98f14e358524',
     last_scan: '2018-03-27T20:53:45+00:00',
     vulnerabilities: {},
   },
@@ -103,6 +106,9 @@ export default [
     ipv4_addr: '3.4.5.6',
     ring: 'standard',
     active: true,
+    connAuthType: 'wpa-eap',
+    connMode: '5GHz',
+    connNode: 'ab3ec38e-0a8f-43f1-a183-98f14e358524',
     scans: {
       // finish after start-- scan complete
       vulnerability: {
