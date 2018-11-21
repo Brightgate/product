@@ -24,11 +24,16 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	"github.com/pkg/errors"
 )
 
 // MaxCmds represents the maximum number of commands to fetch at once
 const MaxCmds = 64
+
+type rpcClient struct {
+	connected bool
+	ctx       context.Context
+	client    rpc.ConfigBackEndClient
+}
 
 // Map for translating cloud operations into local cfgapi operations
 var opMap = map[cfgmsg.ConfigOp_Operation]int{
@@ -42,19 +47,21 @@ type cloudQueue struct {
 	updates     []*rpc.CfgBackEndUpdate_CfgUpdate
 	completions []*cfgmsg.ConfigResponse
 	lastOp      int64
+	updated     chan bool
 	sync.Mutex
 }
 
 var queued = cloudQueue{
 	updates:     make([]*rpc.CfgBackEndUpdate_CfgUpdate, 0),
 	completions: make([]*cfgmsg.ConfigResponse, 0),
+	updated:     make(chan bool, 4),
 }
 
 // utility function to attach a deadline to the current context
-func setCtx(ctx context.Context) (context.Context, context.CancelFunc) {
-	ctx, err := applianceCred.MakeGRPCContext(ctx)
+func (c *rpcClient) getCtx() (context.Context, context.CancelFunc) {
+	ctx, err := applianceCred.MakeGRPCContext(c.ctx)
 	if err != nil {
-		slog.Fatalf("Failed to make GRPC credential: %+v", err)
+		slog.Fatalf("Failed to make GRPC context: %+v", err)
 	}
 
 	clientDeadline := time.Now().Add(*deadlineFlag)
@@ -62,18 +69,18 @@ func setCtx(ctx context.Context) (context.Context, context.CancelFunc) {
 }
 
 // execute a single Hello() gRPC.
-func hello(ctx context.Context, cclient rpc.ConfigBackEndClient) error {
-	ctx, ctxcancel := setCtx(ctx)
-	defer ctxcancel()
-
+func (c *rpcClient) hello() error {
 	helloOp := &rpc.CfgBackEndHello{
 		Time:    ptypes.TimestampNow(),
 		Version: cfgapi.Version,
 	}
 
-	rval, err := cclient.Hello(ctx, helloOp)
+	ctx, ctxcancel := c.getCtx()
+	rval, err := c.client.Hello(ctx, helloOp)
+	ctxcancel()
+
 	if err != nil {
-		err = errors.Wrapf(err, "failed to send Hello() rpc")
+		err = fmt.Errorf("failed to send Hello() rpc: %v", err)
 	} else if rval.Response == rpc.CfgBackEndResponse_ERROR {
 		err = fmt.Errorf("Hello() failed: %s", rval.Errmsg)
 	}
@@ -82,58 +89,67 @@ func hello(ctx context.Context, cclient rpc.ConfigBackEndClient) error {
 }
 
 // send any queued Completions to the cloud
-func pushCompletions(ctx context.Context, cclient rpc.ConfigBackEndClient) error {
+func (c *rpcClient) pushCompletions() error {
 	if len(queued.completions) == 0 {
 		return nil
 	}
 
 	queued.Lock()
-	c := queued.completions
+	completions := queued.completions
 	queued.completions = make([]*cfgmsg.ConfigResponse, 0)
 	queued.Unlock()
 
+	slog.Debugf("completing cmd %d", completions[0].CmdID)
 	completeOp := &rpc.CfgBackEndCompletions{
 		Time:        ptypes.TimestampNow(),
-		Completions: c,
+		Completions: completions,
 	}
 
-	ctx, ctxcancel := setCtx(ctx)
-	defer ctxcancel()
-	resp, err := cclient.CompleteCmds(ctx, completeOp)
-	if err == nil && resp.Response == rpc.CfgBackEndResponse_ERROR {
+	ctx, ctxcancel := c.getCtx()
+	resp, err := c.client.CompleteCmds(ctx, completeOp)
+	ctxcancel()
+
+	if err != nil {
+		c.connected = false
+		slog.Infof("lost connection to cl.configd")
+	} else if resp.Response == rpc.CfgBackEndResponse_ERROR {
 		err = fmt.Errorf("CompleteCmds() failed: %s", resp.Errmsg)
 	}
 
 	// If the push fails re-queue the completions for a subsequent retry.
 	if err != nil {
 		queued.Lock()
-		queued.completions = append(c, queued.completions...)
+		queued.completions = append(completions, queued.completions...)
 		queued.Unlock()
 	}
 	return err
 }
 
 // send all of the accumulated config tree updates to the cloud
-func pushUpdates(ctx context.Context, cclient rpc.ConfigBackEndClient) error {
+func (c *rpcClient) pushUpdates() error {
 	if len(queued.updates) == 0 {
 		return nil
 	}
 
 	queued.Lock()
-	u := queued.updates
+	updates := queued.updates
 	queued.updates = make([]*rpc.CfgBackEndUpdate_CfgUpdate, 0)
 	queued.Unlock()
 
 	updateOp := &rpc.CfgBackEndUpdate{
 		Time:    ptypes.TimestampNow(),
 		Version: cfgapi.Version,
-		Updates: u,
+		Updates: updates,
 	}
 
-	ctx, ctxcancel := setCtx(ctx)
-	defer ctxcancel()
-	resp, err := cclient.Update(ctx, updateOp)
-	if err == nil && resp.Response == rpc.CfgBackEndResponse_ERROR {
+	ctx, ctxcancel := c.getCtx()
+	resp, err := c.client.Update(ctx, updateOp)
+	ctxcancel()
+
+	if err != nil {
+		c.connected = false
+		slog.Infof("lost connection to cl.configd")
+	} else if resp.Response == rpc.CfgBackEndResponse_ERROR {
 		err = fmt.Errorf("Update() failed: %s", resp.Errmsg)
 	}
 
@@ -141,18 +157,15 @@ func pushUpdates(ctx context.Context, cclient rpc.ConfigBackEndClient) error {
 	// try again later
 	if err != nil {
 		queued.Lock()
-		queued.updates = append(u, queued.updates...)
+		queued.updates = append(updates, queued.updates...)
 		queued.Unlock()
 	}
 
 	return err
 }
 
-// connect to cl.rpcd to collect any pending update commands from the cloud
-func fetch(ctx context.Context, cclient rpc.ConfigBackEndClient) ([]*cfgmsg.ConfigQuery, error) {
-	ctx, ctxcancel := setCtx(ctx)
-	defer ctxcancel()
-
+// Open a gRPC stream to cl.configd to receive commands from the cloud
+func (c *rpcClient) fetchStream() error {
 	fetchOp := &rpc.CfgBackEndFetchCmds{
 		Time:      ptypes.TimestampNow(),
 		Version:   cfgapi.Version,
@@ -160,20 +173,36 @@ func fetch(ctx context.Context, cclient rpc.ConfigBackEndClient) ([]*cfgmsg.Conf
 		MaxCmds:   MaxCmds,
 	}
 
-	resp, err := cclient.FetchCmds(ctx, fetchOp)
+	ctx, err := applianceCred.MakeGRPCContext(c.ctx)
+	stream, err := c.client.FetchStream(ctx, fetchOp)
 	if err != nil {
-		return nil, errors.Wrapf(err, "sending FetchCmds() rpc")
-	}
-	if resp.Response == rpc.CfgBackEndResponse_ERROR {
-		return nil, fmt.Errorf("FetchCmds() failed: %s", resp.Errmsg)
+		slog.Fatalf("Failed to make GRPC context: %+v", err)
 	}
 
-	if len(resp.Cmds) > 0 {
-		slog.Debugf("Got %d cmds, starting with %d", len(resp.Cmds),
-			resp.Cmds[0].CmdID)
-	}
+	for {
+		// XXX - can we attach a context to this, so we can do a clean
+		// disconnect when this daemon goes down?
+		slog.Debugf("blocking on config stream")
+		resp, rerr := stream.Recv()
+		if rerr != nil {
+			c.connected = false
+			slog.Infof("lost connection to cl.configd")
+			return fmt.Errorf("failed to read from FetchStream: %v", err)
+		}
 
-	return resp.Cmds, nil
+		if resp.Response == rpc.CfgBackEndResponse_ERROR {
+			return fmt.Errorf("FetchStream() failed: %s", resp.Errmsg)
+		}
+
+		if len(resp.Cmds) > 0 {
+			cmds := resp.Cmds
+			slog.Debugf("Got %d cmds, starting with %d", len(cmds),
+				cmds[0].CmdID)
+			for _, cmd := range cmds {
+				exec(cmd)
+			}
+		}
+	}
 }
 
 // utility function to determine whether any of the operations in a query are
@@ -213,6 +242,7 @@ func exec(cmd *cfgmsg.ConfigQuery) {
 	var err error
 	var payload string
 
+	slog.Debugf("executing cmd %d", cmd.CmdID)
 	resp := cfgmsg.ConfigResponse{
 		CmdID: cmd.CmdID,
 	}
@@ -245,11 +275,15 @@ func exec(cmd *cfgmsg.ConfigQuery) {
 	}
 
 	queued.Lock()
+	if len(queued.completions) == 0 {
+		queued.updated <- true
+	}
 	queued.completions = append(queued.completions, &resp)
 	if resp.CmdID > queued.lastOp {
 		queued.lastOp = resp.CmdID
 	}
 	queued.Unlock()
+
 }
 
 // An EventConfig event arrived on the 0MQ bus.  Convert the contents into a
@@ -300,65 +334,119 @@ func configEvent(raw []byte) {
 	}
 	if update != nil {
 		queued.Lock()
+		if len(queued.updates) == 0 {
+			queued.updated <- true
+		}
 		queued.updates = append(queued.updates, update)
 		queued.Unlock()
 	}
 }
 
-func configLoop(ctx context.Context, client rpc.ConfigBackEndClient,
-	wg *sync.WaitGroup, doneChan chan bool) {
-	var live, done bool
+// Establish and maintain a connection to cl.configd
+func (c *rpcClient) connectLoop(wg *sync.WaitGroup, doneChan chan bool) {
 
 	defer wg.Done()
-
-	// XXX: can we have one go routine doing a long poll for fetching
-	// commands, and another doing on-demand pushing of updates and
-	// completions?
+	done := false
 
 	ticker := time.NewTicker(time.Second)
 	nextLog := time.Now()
-	slog.Infof("config loop starting")
+	slog.Infof("connect loop starting")
 	for !done {
-
-		// Try to (re)establish a config gRPC connection to cl.rpcd
-		if !live {
-			if err := hello(ctx, client); err == nil {
-				live = true
+		if !c.connected {
+			if err := c.hello(); err == nil {
+				c.connected = true
 				nextLog = time.Now()
-				slog.Infof("cl.configd connection live")
+				slog.Infof("established connection to cl.configd")
+				queued.updated <- true
 			} else if nextLog.Before(time.Now()) {
 				slog.Errorf("Failed hello: %s", err)
 				nextLog = time.Now().Add(10 * time.Minute)
 			}
 		}
 
-		if live {
-			// Push any queued updates or completions to the cloud
-			if err := pushCompletions(ctx, client); err != nil {
-				slog.Error(err)
-			}
-			if err := pushUpdates(ctx, client); err != nil {
-				slog.Error(err)
-			}
+		select {
+		case done = <-doneChan:
+		case <-ticker.C:
+		}
+	}
+	slog.Infof("connect loop done")
+}
 
-			// Check for any new commands pending in the cloud
-			cmds, err := fetch(ctx, client)
-			if err != nil {
-				live = false
-				slog.Warnf("fetch failed: %v", err)
-			} else if cmds != nil {
-				for _, cmd := range cmds {
-					exec(cmd)
+// push property updates and command completions to the cloud
+func (c *rpcClient) pushLoop(wg *sync.WaitGroup, doneChan chan bool) {
+
+	done := false
+	defer wg.Done()
+
+	warned := false
+	slog.Infof("push loop starting")
+	ticker := time.NewTicker(time.Second)
+	for !done {
+		queued.Lock()
+		pending := len(queued.updates) + len(queued.completions)
+		queued.Unlock()
+
+		if pending > 0 {
+			if c.connected {
+				// Push any queued updates or completions to the cloud
+				if err := c.pushCompletions(); err != nil {
+					slog.Error(err)
+				}
+				if err := c.pushUpdates(); err != nil {
+					slog.Error(err)
+				}
+			} else {
+				if !warned {
+					slog.Infof("blocking on connect")
+					warned = true
+				}
+				select {
+				case done = <-doneChan:
+				case <-ticker.C:
 				}
 			}
-		}
-
-		if (len(queued.updates) + len(queued.completions)) == 0 {
+		} else {
 			select {
 			case done = <-doneChan:
-			case <-ticker.C:
+			case <-queued.updated:
 			}
 		}
 	}
-	slog.Infof("config loop exiting")
+	slog.Infof("push loop done")
+}
+
+func (c *rpcClient) pullLoop(wg *sync.WaitGroup, doneChan chan bool) {
+
+	done := false
+	defer wg.Done()
+
+	slog.Infof("pull loop starting")
+
+	ticker := time.NewTicker(time.Second)
+	for !done {
+		if c.connected {
+			if err := c.fetchStream(); err != nil {
+				slog.Warnf("fetchStream failed: %v", err)
+				continue
+			}
+		}
+		select {
+		case done = <-doneChan:
+		case <-ticker.C:
+		}
+	}
+	slog.Infof("pull loop done")
+}
+
+func configLoop(ctx context.Context, client rpc.ConfigBackEndClient,
+	wg *sync.WaitGroup, doneChan chan bool) {
+
+	c := rpcClient{
+		ctx:    ctx,
+		client: client,
+	}
+
+	go c.pushLoop(wg, addDoneChan())
+	go c.pullLoop(wg, addDoneChan())
+	c.connectLoop(wg, doneChan)
 }

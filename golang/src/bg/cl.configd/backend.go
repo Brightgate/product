@@ -189,7 +189,9 @@ func (s *backEndServer) FetchCmds(ctx context.Context,
 			maxCmds = 1
 		}
 
-		cmds, err := ap.cmdQueue.fetch(ctx, ap, int64(req.LastCmdID), maxCmds)
+		cmds, err := ap.cmdQueue.fetch(ctx, ap, int64(req.LastCmdID),
+			maxCmds, false)
+
 		// XXX We return OK even with an error as long as we have some
 		// commands to fetch, in order to allow the client to make some
 		// forward progress.  For it to succeed after that, we will need
@@ -198,6 +200,12 @@ func (s *backEndServer) FetchCmds(ctx context.Context,
 		if err != nil && len(cmds) == 0 {
 			rval.Response = rpc.CfgBackEndResponse_ERROR
 		} else {
+			if len(cmds) > 0 {
+				slog.Debugf("%s fetches %d commands starting at %d",
+					req.GetCloudUuid(), len(cmds), cmds[0].CmdID)
+			} else {
+				slog.Debugf("%s fetches 0 commands", req.GetCloudUuid())
+			}
 			rval.Response = rpc.CfgBackEndResponse_OK
 		}
 		rval.Cmds = cmds
@@ -205,6 +213,59 @@ func (s *backEndServer) FetchCmds(ctx context.Context,
 
 	rval.Time = ptypes.TimestampNow()
 	return rval, nil
+}
+
+// As new commands are pushed into our submission queue, forward them to the
+// appliance using a gRPC stream
+func (s *backEndServer) FetchStream(req *rpc.CfgBackEndFetchCmds,
+	stream rpc.ConfigBackEnd_FetchStreamServer) error {
+
+	rval := &rpc.CfgBackEndResponse{}
+
+	ctx := stream.Context()
+	uuid := req.GetCloudUuid()
+
+	ap, err := getAPState(ctx, uuid)
+	if err != nil {
+		rval.Response = rpc.CfgBackEndResponse_ERROR
+		rval.Errmsg = fmt.Sprintf("%v", err)
+		stream.Send(rval)
+		return nil
+	}
+
+	cmdID := int64(req.LastCmdID)
+	max := uint32(req.MaxCmds)
+	for err == nil {
+		var cmds []*cfgmsg.ConfigQuery
+
+		cmds, err = ap.cmdQueue.fetch(ctx, ap, cmdID, max, true)
+		if err == nil && len(cmds) == 0 {
+			// shouldn't happen
+			slog.Warnf("fetch() returned no commands or errors")
+			time.Sleep(time.Second)
+		} else if err == context.Canceled {
+			slog.Infof("client %s disconnected", uuid)
+			err = nil
+			break
+		} else {
+			if last := len(cmds) - 1; last >= 0 {
+				cmdID = cmds[last].CmdID
+			}
+			if err == nil {
+				rval.Response = rpc.CfgBackEndResponse_OK
+				rval.Cmds = cmds
+			} else {
+				rval.Response = rpc.CfgBackEndResponse_ERROR
+				rval.Errmsg = fmt.Sprintf("%v", err)
+			}
+			if rerr := stream.Send(rval); rerr != nil {
+				slog.Infof("stream.Send failed: %v", rerr)
+				err = rerr
+			}
+		}
+	}
+
+	return err
 }
 
 // The appliance has sent one or more command completions.  Iterate over the

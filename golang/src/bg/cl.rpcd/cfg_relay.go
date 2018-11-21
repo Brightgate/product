@@ -15,6 +15,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"io"
 	"time"
 
 	rpc "bg/cloud_rpc"
@@ -204,4 +205,50 @@ func (s *applianceEndpoint) CompleteCmds(ctx context.Context,
 	req *rpc.CfgBackEndCompletions) (*rpc.CfgBackEndResponse, error) {
 
 	return s.relay(ctx, req), nil
+}
+
+func (s *applianceEndpoint) FetchStream(req *rpc.CfgBackEndFetchCmds,
+	stream rpc.ConfigBackEnd_FetchStreamServer) error {
+
+	slog.Infof("starting stream relay")
+	ctx := stream.Context()
+	conn, err := s.getConfigdConn(ctx)
+	req.CloudUuid = conn.cloudUUID
+
+	relayStream, err := conn.client.FetchStream(ctx, req)
+	if err != nil {
+		slog.Errorf("failed to establish FetchStream to cl.config: %v",
+			err)
+		return err
+	}
+
+	for err == nil {
+		var resp *rpc.CfgBackEndResponse
+
+		slog.Debugf("waiting for commands from cl.config")
+
+		if resp, err = relayStream.Recv(); err != nil {
+			if ctx.Err() == context.Canceled {
+				slog.Infof("client %s disconnected",
+					conn.cloudUUID)
+				err = nil
+				break
+			}
+
+			slog.Errorf("FetchStream.Recv() failed: %v", err)
+			resp = &rpc.CfgBackEndResponse{
+				Response: rpc.CfgBackEndResponse_ERROR,
+				Errmsg:   fmt.Sprintf("%v", err),
+			}
+		}
+
+		if serr := stream.Send(resp); serr != nil {
+			if serr != io.EOF {
+				slog.Errorf("FetchStream.Send() failed: %v", err)
+			}
+			err = serr
+		}
+	}
+
+	return err
 }

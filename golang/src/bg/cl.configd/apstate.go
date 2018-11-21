@@ -42,10 +42,11 @@ var (
 
 func newAPState(cloudUUID string, tree *cfgtree.PTree) *perAPState {
 	var queue cmdQueue
-	if environ.PostgresConnection != "" {
-		queue = newDBCmdQueue(environ.PostgresConnection)
-	} else {
+
+	if environ.MemCmdQueue || environ.PostgresConnection == "" {
 		queue = newMemCmdQueue(cloudUUID, *cqMax)
+	} else {
+		queue = newDBCmdQueue(environ.PostgresConnection)
 	}
 
 	return &perAPState{
@@ -187,7 +188,7 @@ func (s *perAPState) emulateAppliance(ctx context.Context) {
 
 	for {
 		delay()
-		ops, err := s.cmdQueue.fetch(ctx, s, lastCmd, 1)
+		ops, err := s.cmdQueue.fetch(ctx, s, lastCmd, 1, true)
 		if err != nil {
 			slog.Warnf("Emulator: Unexpected failure to fetch: %v", err)
 			continue

@@ -324,8 +324,12 @@ func cmdStart() {
 	svc := flag.Args()[0]
 	switch svc {
 	case "hello":
-		cclient := cloud_rpc.NewConfigBackEndClient(conn)
-		err = hello(ctx, cclient)
+		c := rpcClient{
+			ctx:    ctx,
+			client: cloud_rpc.NewConfigBackEndClient(conn),
+		}
+		err = c.hello()
+
 	case "heartbeat":
 		tclient := cloud_rpc.NewEventClient(conn)
 		err = publishHeartbeat(ctx, tclient)

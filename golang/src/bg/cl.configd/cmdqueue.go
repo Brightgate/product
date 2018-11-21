@@ -89,6 +89,9 @@ type memCmdQueue struct {
 	sq        *simpleQueue // submitted, but not completed ops
 	cq        *simpleQueue // completed ops
 
+	sqBlocked bool      // go routine blocked on empty submission queue
+	sqUpdated chan bool // new commands enqueued
+
 	sync.Mutex
 }
 
@@ -97,8 +100,31 @@ func newMemCmdQueue(uuid string, cqMax int) *memCmdQueue {
 		lastCmdID: time.Now().Unix(),
 		sq:        newSimpleQueue(uuid, 0),
 		cq:        newSimpleQueue(uuid, cqMax),
+		sqUpdated: make(chan bool, 10),
 	}
 	return memq
+}
+
+// block until one or more items are added to the submission queue.  The queue
+// must be locked when this routine is called.
+func (memq *memCmdQueue) block(ctx context.Context) error {
+	var err error
+
+	slog.Debugf("blocking on empty queue")
+	memq.sqBlocked = true
+	memq.Unlock()
+	select {
+	case <-memq.sqUpdated:
+		slog.Debugf("woke on queue update")
+	case <-ctx.Done():
+		// Likely means that we lost the connection from cl.rpcd
+		slog.Debugf("woke on context done")
+		err = ctx.Err()
+	}
+	memq.Lock()
+	memq.sqBlocked = false
+
+	return err
 }
 
 // Look for a command in both the submission and completion queues.
@@ -133,7 +159,27 @@ func (memq *memCmdQueue) submit(ctx context.Context, s *perAPState, q *cfgmsg.Co
 	}
 	memq.lastCmdID = cmdID
 	memq.sq.enqueue(&cmd)
-	slog.Debugf("submit(%v)", &cmd)
+
+	// If any goroutines are blocked waiting for new commands, wake them up
+	if memq.sqBlocked {
+		// We could enqueue multiple commands before the blocked thread
+		// wakes up.  To avoid blocking ourselves on a clogged channel,
+		// we drain it before pushing a new message.
+		cnt := 0
+		drained := false
+		for !drained {
+			select {
+			case <-memq.sqUpdated:
+				cnt++
+			default:
+				drained = true
+			}
+		}
+		if cnt > 0 {
+			slog.Debugf("drained %d channel messages")
+		}
+		memq.sqUpdated <- true
+	}
 
 	return cmdID, nil
 }
@@ -141,34 +187,43 @@ func (memq *memCmdQueue) submit(ctx context.Context, s *perAPState, q *cfgmsg.Co
 // Fetch one or more commands from the submitted queue.  Commands are left in
 // the queue until they are completed, allowing them to be refetched if the
 // appliance crashes/restarts before they are executed.
-func (memq *memCmdQueue) fetch(ctx context.Context, s *perAPState, start int64, max uint32) ([]*cfgmsg.ConfigQuery, error) {
+func (memq *memCmdQueue) fetch(ctx context.Context, s *perAPState, start int64, max uint32,
+	block bool) ([]*cfgmsg.ConfigQuery, error) {
+
+	var err error
+
 	o := make([]*cfgmsg.ConfigQuery, 0)
 	if max == 0 {
 		panic("invalid max of 0")
 	}
 
 	memq.Lock()
-	defer memq.Unlock()
+	for err == nil {
+		t := time.Now()
+		for _, c := range memq.sq.queue {
+			if c.cmdID > start {
+				if c.fetched != nil {
+					slog.Infof("%v refetched - last fetched at %s",
+						c, c.fetched.Format(time.RFC3339))
+				}
+				c.fetched = &t
 
-	t := time.Now()
-	for _, c := range memq.sq.queue {
-		if c.cmdID > start {
-			if c.fetched != nil {
-				slog.Infof("%v refetched - last fetched at %s",
-					c, c.fetched.Format(time.RFC3339))
-			}
-			c.fetched = &t
-
-			o = append(o, c.cmd)
-			if uint32(len(o)) == max {
-				break
+				o = append(o, c.cmd)
+				if uint32(len(o)) == max {
+					break
+				}
 			}
 		}
+		if len(o) > 0 || !block {
+			break
+		}
+		err = memq.block(ctx)
 	}
+	memq.Unlock()
 	if len(o) > 1 {
 		slog.Debugw("fetch", "commands", &o)
 	}
-	return o, nil
+	return o, err
 }
 
 // Get the status of a submitted command

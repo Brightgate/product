@@ -95,32 +95,52 @@ func (dbq *dbCmdQueue) submit(ctx context.Context, s *perAPState, q *cfgmsg.Conf
 	return cmd.ID, nil
 }
 
-func (dbq *dbCmdQueue) fetch(ctx context.Context, s *perAPState, start int64, max uint32) ([]*cfgmsg.ConfigQuery, error) {
-	o := make([]*cfgmsg.ConfigQuery, 0)
+func (dbq *dbCmdQueue) fetch(ctx context.Context, s *perAPState, start int64,
+	max uint32, block bool) ([]*cfgmsg.ConfigQuery, error) {
+
+	var cmds []*appliancedb.ApplianceCommand
 	if max == 0 {
 		panic("invalid max of 0")
 	}
 
 	u, err := uuid.FromString(s.cloudUUID)
 	if err != nil {
-		return o, fmt.Errorf("Failed to convert %q to UUID: %v", s.cloudUUID, err)
+		return nil, fmt.Errorf("Failed to convert %q to UUID: %v",
+			s.cloudUUID, err)
 	}
 
-	cmds, err := dbq.handle.CommandFetch(ctx, u, start, max)
-	if len(cmds) > 0 {
-		slog.Debugf("Fetched %d commands from %q", len(cmds), u)
-	}
-	if err != nil {
-		slog.Warnf("Failure fetching commands from %q: %v", u, err)
-		if len(cmds) == 0 {
-			// Complete error: SQL error or first scan failed
-			return o, err
+	ticker := time.NewTicker(time.Second)
+	for {
+		cmds, err = dbq.handle.CommandFetch(ctx, u, start, max)
+		if len(cmds) > 0 {
+			slog.Debugf("Fetched %d commands from %q", len(cmds), u)
+		}
+		if err != nil {
+			slog.Warnf("Failure fetching commands from %q: %v", u, err)
+			if len(cmds) == 0 {
+				// Complete error: SQL error or first scan failed
+				return nil, err
+			}
+		}
+		if len(cmds) > 0 || !block {
+			break
+		}
+
+		select {
+		case <-ticker.C:
+			// XXX: is there a way to get a notification from the DB
+			// when a table is updated, so we don't have to actively
+			// poll each second?
+		case <-ctx.Done():
+			// Likely means that we lost the connection from cl.rpcd
+			return nil, ctx.Err()
 		}
 	}
 
 	// It's possible, if unlikely, that some (even all, but that's handled
 	// above) commands were marked as fetched in the database but weren't
 	// returned due to an intermediate error.
+	o := make([]*cfgmsg.ConfigQuery, 0)
 	for _, cmd := range cmds {
 		var cfgQuery cfgmsg.ConfigQuery
 		jerr := json.Unmarshal(cmd.Query, &cfgQuery)

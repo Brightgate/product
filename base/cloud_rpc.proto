@@ -175,6 +175,7 @@ service ConfigBackEnd{
 	rpc Download(CfgBackEndDownload) returns (CfgBackEndResponse) {};
 	rpc Update(CfgBackEndUpdate) returns (CfgBackEndResponse) {};
 	rpc FetchCmds(CfgBackEndFetchCmds) returns (CfgBackEndResponse) {};
+	rpc FetchStream(CfgBackEndFetchCmds) returns (stream CfgBackEndResponse) {};
 	rpc CompleteCmds(CfgBackEndCompletions) returns (CfgBackEndResponse) {};
 }
 
