@@ -41,6 +41,16 @@ import (
 	"go.uber.org/zap"
 )
 
+type wifiConfig struct {
+	ssid         string
+	ssidEAP      string
+	ssid5GHz     string
+	ssid5GHzEAP  string
+	channels     map[string]int
+	passphrase   string
+	radiusSecret string
+}
+
 var (
 	templateDir = flag.String("template_dir", "golang/src/ap.networkd",
 		"location of hostapd templates")
@@ -62,11 +72,8 @@ var (
 	nodeUUID string
 	slog     *zap.SugaredLogger
 
-	wifiEvaluate   bool
-	wifiChannels   map[string]int
-	wifiSSID       string
-	wifiPassphrase string
-	radiusSecret   string
+	wifiEvaluate bool
+	wconf        wifiConfig
 
 	plat           *platform.Platform
 	hostapd        *hostapdHdl
@@ -191,35 +198,52 @@ func configAuthChanged(path []string, val string, expires *time.Time) {
 	}
 }
 
+func configSet(name, val string) bool {
+	var prop *string
+
+	switch name {
+	case "ssid":
+		prop = &wconf.ssid
+	case "ssid-eap":
+		prop = &wconf.ssidEAP
+	case "ssid-5ghz":
+		prop = &wconf.ssid5GHz
+	case "ssid-eap-5ghz":
+		prop = &wconf.ssid5GHzEAP
+	case "passphrase":
+		prop = &wconf.passphrase
+	case "radiusAuthSecret":
+		prop = &wconf.radiusSecret
+	}
+
+	if prop != nil && *prop != val {
+		slog.Infof("%s changed to '%s'", name, val)
+		*prop = val
+		return true
+	}
+	return false
+}
+
+func configNetworkDeleted(path []string) {
+	if configSet(path[1], "") {
+		wifiEvaluate = true
+		hostapd.reload()
+	}
+}
+
 func configNetworkChanged(path []string, val string, expires *time.Time) {
 	var reload bool
 
 	if len(path) == 2 {
-		switch path[1] {
-		case "ssid":
-			wifiSSID = val
-			reload = true
-			slog.Infof("SSID changed to %s", val)
-
-		case "passphrase":
-			wifiPassphrase = val
-			reload = true
-			slog.Infof("passphrase changed to %s", val)
-
-		case "radiusAuthSecret":
-			radiusSecret = val
-			reload = true
-			slog.Infof("radiusAuthSecret changed to %s", val)
-		}
+		reload = configSet(path[1], val)
 	} else if len(path) == 3 && path[2] == "channel" {
 		channel, _ := strconv.Atoi(val)
 		band := path[1]
 
 		if band == wificaps.LoBand || band == wificaps.HiBand {
 			if legalChannels[band][channel] {
-				wifiChannels[band] = channel
+				wconf.channels[band] = channel
 				reload = true
-				wifiEvaluate = true
 			} else {
 				slog.Warnf("ignoring illegal channel '%d' "+
 					"for %s", channel, band)
@@ -228,6 +252,7 @@ func configNetworkChanged(path []string, val string, expires *time.Time) {
 	}
 
 	if reload {
+		wifiEvaluate = true
 		hostapd.reload()
 	}
 }
@@ -287,8 +312,8 @@ func selectWifiChannel(d *physDevice) error {
 	}
 
 	// If the user has configured a channel for this band, try that next.
-	if wifiChannels[band] != 0 {
-		if err = setChannel(w, wifiChannels[band]); err == nil {
+	if wconf.channels[band] != 0 {
+		if err = setChannel(w, wconf.channels[band]); err == nil {
 			return nil
 		}
 		slog.Debugf("band-specific %v", err)
@@ -319,6 +344,11 @@ func selectWifiChannel(d *physDevice) error {
 // How desirable is it to use this device in this band?
 func score(d *physDevice, band string) int {
 	var score int
+
+	psk, eap := genSSIDs(band)
+	if psk == "" && eap == "" {
+		return 0
+	}
 
 	if d == nil || d.pseudo || d.wifi == nil {
 		return 0
@@ -381,7 +411,7 @@ func selectWifiDevices() {
 		}
 	}
 
-	if best > oldScore {
+	if best != oldScore {
 		activeWifi = make([]*physDevice, 0)
 		for idx, band := range bands {
 			if d := selected[band]; d != nil {
@@ -393,7 +423,11 @@ func selectWifiDevices() {
 				}
 			}
 		}
-		slog.Info("now using wifi devices: %v", activeWifi)
+		list := make([]string, 0)
+		for _, d := range activeWifi {
+			list = append(list, d.name)
+		}
+		slog.Infof("now using wifi devices: %v", list)
 	}
 }
 
@@ -539,6 +573,7 @@ func runLoop() {
 	wifiEvaluate = true
 	for running {
 		if wifiEvaluate {
+			wifiEvaluate = false
 			selectWifiDevices()
 			if len(activeWifi) > 0 {
 				warned = false
@@ -555,6 +590,8 @@ func runLoop() {
 			hostapd = startHostapd(activeWifi)
 			if err := hostapd.wait(); err != nil {
 				slog.Warnf("%v", err)
+				activeWifi = nil
+				wifiEvaluate = true
 			}
 			hostapd = nil
 
@@ -985,27 +1022,36 @@ func globalWifiInit(props *cfgapi.PropertyNode) error {
 	}
 
 	if node, ok := props.Children["radiusAuthSecret"]; ok {
-		radiusSecret = node.Value
+		wconf.radiusSecret = node.Value
 	} else {
 		slog.Warnf("no radiusAuthSecret configured")
 	}
 	if node, ok := props.Children["ssid"]; ok {
-		wifiSSID = node.Value
+		wconf.ssid = node.Value
 	} else {
-		return fmt.Errorf("no SSID configured")
+		slog.Warnf("no SSID configured")
+	}
+	if node, ok := props.Children["ssid-eap"]; ok {
+		wconf.ssidEAP = node.Value
+	}
+	if node, ok := props.Children["ssid-5ghz"]; ok {
+		wconf.ssid5GHz = node.Value
+	}
+	if node, ok := props.Children["ssid-eap-5ghz"]; ok {
+		wconf.ssid5GHzEAP = node.Value
 	}
 
 	if node, ok := props.Children["passphrase"]; ok {
-		wifiPassphrase = node.Value
+		wconf.passphrase = node.Value
 	} else {
-		return fmt.Errorf("no WPA-PSK passphrase configured")
+		slog.Warnf("no WPA-PSK passphrase configured")
 	}
 
-	wifiChannels = make(map[string]int)
+	wconf.channels = make(map[string]int)
 	for _, band := range bands {
 		if bprop, ok := props.Children[band]; ok {
 			if c, ok := bprop.Children["channel"]; ok {
-				wifiChannels[band], _ = strconv.Atoi(c.Value)
+				wconf.channels[band], _ = strconv.Atoi(c.Value)
 			}
 		}
 	}
@@ -1071,6 +1117,7 @@ func daemonInit() error {
 	config.HandleChange(`^@/nodes/"+nodeUUID+"/nics/.*/ring$`, configRingChanged)
 	config.HandleChange(`^@/rings/.*/auth$`, configAuthChanged)
 	config.HandleChange(`^@/network/`, configNetworkChanged)
+	config.HandleDelete(`^@/network/`, configNetworkDeleted)
 	config.HandleChange(`^@/firewall/rules/`, configRuleChanged)
 	config.HandleDelete(`^@/firewall/rules/`, configRuleDeleted)
 	config.HandleChange(`^@/firewall/blocked/`, configBlocklistChanged)

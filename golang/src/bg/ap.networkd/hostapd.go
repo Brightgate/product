@@ -415,6 +415,34 @@ func initPseudoNic(d *physDevice) *physDevice {
 	return pseudo
 }
 
+func genSSIDs(band string) (string, string) {
+	var psk, eap, loPSK, loEAP, hiPSK, hiEAP string
+
+	loPSK = wconf.ssid
+	loEAP = wconf.ssidEAP
+	if loEAP == "" && loPSK != "" {
+		loEAP = loPSK + "-eap"
+	}
+
+	hiPSK = wconf.ssid5GHz
+	if hiPSK == "" && loPSK != "" {
+		hiPSK = loPSK + "-5GHz"
+	}
+
+	hiEAP = wconf.ssid5GHzEAP
+	if hiEAP == "" && loEAP != "" {
+		hiEAP = loEAP + "-5GHz"
+	}
+
+	if band == wificaps.LoBand {
+		psk, eap = loPSK, loEAP
+	} else if band == wificaps.HiBand {
+		psk, eap = hiPSK, hiEAP
+	}
+
+	return psk, eap
+}
+
 //
 // Get network settings from configd and use them to initialize the AP
 //
@@ -423,19 +451,28 @@ func getAPConfig(d *physDevice) *apConfig {
 	var modeNComment, modeNHTCapab string
 
 	w := d.wifi
+	pskssid, eapssid := genSSIDs(w.activeBand)
 
 	authMap := make(map[string]bool)
 	pskComment := "#"
 	eapComment := "#"
 	for _, r := range rings {
-		if r.Auth == "wpa-psk" {
+		if r.Auth == "wpa-psk" && wconf.passphrase != "" &&
+			pskssid != "" {
 			authMap["wpa-psk"] = true
 			pskComment = ""
-		} else if r.Auth == "wpa-eap" && radiusSecret != "" {
+		} else if r.Auth == "wpa-eap" && wconf.radiusSecret != "" &&
+			eapssid != "" {
 			authMap["wpa-eap"] = true
 			eapComment = ""
 		}
 	}
+
+	if pskComment == "#" && eapComment == "#" {
+		slog.Warnf("%s not configured for either PSK or EAP", d.name)
+		return nil
+	}
+
 	authList := make([]string, 0)
 	for a := range authMap {
 		authList = append(authList, a)
@@ -472,14 +509,10 @@ func getAPConfig(d *physDevice) *apConfig {
 		physDevices[getNicID(p)] = p
 	}
 
-	pskssid := wifiSSID
-	eapssid := wifiSSID + "-eap"
 	if w.activeBand == wificaps.LoBand {
 		hwMode = "g"
 	} else if w.activeBand == wificaps.HiBand {
 		hwMode = "a"
-		pskssid += "-5GHz"
-		eapssid += "-5GHz"
 	} else {
 		slog.Warnf("unsupported wifi band: %s", d.wifi.activeBand)
 		return nil
@@ -509,7 +542,7 @@ func getAPConfig(d *physDevice) *apConfig {
 		EAPSSID:    eapssid,
 		Mode:       hwMode,
 		Channel:    d.wifi.activeChannel,
-		Passphrase: wifiPassphrase,
+		Passphrase: wconf.passphrase,
 		PskComment: pskComment,
 		EapComment: eapComment,
 		ConfDir:    confdir,
@@ -520,7 +553,7 @@ func getAPConfig(d *physDevice) *apConfig {
 		authTypes:            authList,
 		RadiusAuthServer:     radiusServer,
 		RadiusAuthServerPort: "1812",
-		RadiusAuthSecret:     radiusSecret,
+		RadiusAuthSecret:     wconf.radiusSecret,
 	}
 
 	return &data
@@ -586,6 +619,9 @@ func (h *hostapdHdl) generateHostAPDConf() {
 		defer cf.Close()
 
 		conf := getAPConfig(d)
+		if conf == nil {
+			continue
+		}
 		err = t.Execute(cf, conf)
 		if err != nil {
 			continue
