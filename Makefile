@@ -769,6 +769,7 @@ $(APPBIN)/ap.networkd: \
 	$(GOSRCBG)/ap.networkd/networkd.go \
 	$(GOSRCBG)/ap.networkd/ntpd.go \
 	$(GOSRCBG)/ap.networkd/parse.go \
+	$(GOSRCBG)/ap.networkd/wifi.go \
 	$(GOSRCBG)/ap_common/wificaps/wificaps.go
 $(APPBIN)/ap.relayd: $(GOSRCBG)/ap.relayd/relayd.go
 $(APPBIN)/ap.rpcd: \

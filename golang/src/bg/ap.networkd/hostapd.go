@@ -785,3 +785,41 @@ func startHostapd(devs []*physDevice) *hostapdHdl {
 	go h.start()
 	return h
 }
+
+func hostapdLoop() {
+	var active []*physDevice
+
+	startTimes := make([]time.Time, failuresAllowed)
+	warned := false
+	for running {
+		active = selectWifiDevices(active)
+		if len(active) == 0 {
+			if !warned {
+				slog.Warnf("no wireless devices available")
+				warned = true
+			}
+			if running {
+				time.Sleep(time.Second)
+			}
+			continue
+		}
+		warned = false
+
+		startTimes = append(startTimes[1:failuresAllowed],
+			time.Now())
+
+		hostapd = startHostapd(active)
+		if err := hostapd.wait(); err != nil {
+			slog.Warnf("%v", err)
+			active = nil
+			wifiEvaluate = true
+		}
+		hostapd = nil
+
+		if time.Since(startTimes[0]) < period {
+			slog.Warnf("hostapd is dying too quickly")
+			wifiEvaluate = false
+		}
+		resetInterfaces()
+	}
+}
