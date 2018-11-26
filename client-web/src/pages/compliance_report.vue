@@ -14,11 +14,11 @@
       <f7-list no-hairlines no-hairlines-between>
         <f7-list-item media>
           <div slot="media">
-            <f7-icon v-if="Policy_Violations !== 0" f7="bolt_round_fill" color="red" />
+            <f7-icon v-if="policyViolations !== 0" f7="bolt_round_fill" color="red" />
             <f7-icon v-else f7="check_round_fill" color="green" />
           </div>
-          <span v-if="Policy_Violations !== 0" style="font-weight: bold">
-            {{ $tc("message.compliance_report.summary_violations", Policy_Violations, {num: Policy_Violations}) }}
+          <span v-if="policyViolations !== 0" style="font-weight: bold">
+            {{ $tc("message.compliance_report.summary_violations", policyViolations, {num: policyViolations}) }}
           </span>
           <span v-else>
             {{ $t("message.compliance_report.summary_no_violations") }}
@@ -26,46 +26,46 @@
         </f7-list-item>
 
         <f7-list-item>
-          {{ $t("message.compliance_report.summary_enrolled", {num: User_Count(All_Users)}) }}
-          {{ $t("message.compliance_report.summary_phish", {num: Phishing_Incidents}) }}
+          {{ $t("message.compliance_report.summary_enrolled", {num: userCount(users)}) }}
+          {{ $t("message.compliance_report.summary_phish", {num: phishingIncidents}) }}
         </f7-list-item>
         <f7-list-item>
-          {{ $t("message.compliance_report.summary_vuln", {num: Alert_Count(Alert_Active(All_Alerts))}) }}
+          {{ $t("message.compliance_report.summary_vuln", {num: alertCount(alertActive(allAlerts))}) }}
         </f7-list-item>
       </f7-list>
     </f7-card>
 
-    <f7-card v-if="Alert_Count(Alert_Active(All_Alerts)) === 0"
+    <f7-card v-if="alertCount(alertActive(allAlerts)) === 0"
              :title="$t('message.compliance_report.active_violations')"
              :content="$t('message.compliance_report.no_active_violations')" />
     <f7-card v-else :title="$t('message.compliance_report.active_violations')">
       <f7-list>
         <f7-list-item
-          v-for="alert in Alert_Active(All_Alerts)"
+          v-for="alert in alertActive(allAlerts)"
           :key="alert.device.uniqid + '-' + alert.vulnid"
           :link="`/devices/${alert.device.uniqid}/`">
           <span>
             <f7-icon f7="bolt_round_fill" color="red" />
             {{ $t('message.alerts.problem_on_device',
-                  {problem: vulnHeadline(alert.vulnid), device: alert.device.network_name})
+                  {problem: vulnHeadline(alert.vulnid), device: alert.device.networkName})
             }}
           </span>
         </f7-list-item>
       </f7-list>
     </f7-card>
 
-    <f7-card v-if="Alert_Count(Alert_Inactive(All_Alerts)) === 0"
+    <f7-card v-if="alertCount(alertInactive(allAlerts)) === 0"
              :title="$t('message.compliance_report.resolved_violations')"
              :content="$t('message.compliance_report.no_resolved_violations')" />
     <f7-card v-else :title="$t('message.compliance_report.resolved_violations')">
       <f7-list>
         <f7-list-item
-          v-for="alert in Alert_Inactive(All_Alerts)"
+          v-for="alert in alertInactive(allAlerts)"
           :key="alert.device.uniqid + '-' + alert.vulnid">
           <span>
             <f7-icon f7="bolt_round_fill" color="gray" />
             {{ $t('message.alerts.problem_on_device',
-                  {problem: vulnHeadline(alert.vulnid), device: alert.device.network_name})
+                  {problem: vulnHeadline(alert.vulnid), device: alert.device.networkName})
             }}
           </span>
         </f7-list-item>
@@ -92,7 +92,7 @@
             {{ $t('message.compliance_report.population') }}
           </f7-col>
           <f7-col width="60" style="text-align: center">
-            <bg-ring-summary :devices="All_Devices" show-zero />
+            <bg-ring-summary :devices="allDevices" show-zero />
           </f7-col>
         </f7-row>
 
@@ -103,7 +103,7 @@
             {{ ring }}
           </f7-col>
           <f7-col width="60" style="text-align: center">
-            <bg-ring-summary :devices="Devices_By_Ring(ring)" />
+            <bg-ring-summary :devices="devicesByRing(ring)" />
           </f7-col>
         </f7-row>
       </f7-block>
@@ -133,33 +133,32 @@ export default {
     // Map various $store elements as computed properties for use in the
     // template.
     ...Vuex.mapGetters([
-      'Mock',
-      'Is_Logged_In',
-      'All_Devices',
-      'Device_Count',
-      'Device_VulnScanned',
-      'Device_Vulnerable',
-      'Device_NotVulnerable',
-      'Device_Active',
-      'Devices_By_Ring',
-      'Network_Config',
-      'All_Alerts',
-      'Alert_Active',
-      'Alert_Count',
-      'Alert_Inactive',
-      'All_Users',
-      'User_Count',
-      'Rings',
+      'mock',
+      'allDevices',
+      'deviceCount',
+      'deviceVulnScanned',
+      'deviceVulnerable',
+      'deviceNotVulnerable',
+      'deviceActive',
+      'devicesByRing',
+      'networkConfig',
+      'allAlerts',
+      'alertActive',
+      'alertCount',
+      'alertInactive',
+      'users',
+      'userCount',
+      'rings',
     ]),
-    Phishing_Incidents: function() {
+    phishingIncidents: function() {
       return 0;
     },
-    Policy_Violations: function() {
-      return this.Alert_Count(this.Alert_Active(this.All_Alerts));
+    policyViolations: function() {
+      return this.alertCount(this.alertActive(this.allAlerts));
     },
     SortedRingNames: function() {
-      return sortBy(Object.keys(this.Rings), (r) => {
-        return -1 * this.Devices_By_Ring(r).length;
+      return sortBy(Object.keys(this.rings), (r) => {
+        return -1 * this.devicesByRing(r).length;
       });
     },
   },
@@ -177,6 +176,7 @@ export default {
     },
 
     onPageBeforeIn: function() {
+      this.$store.dispatch('fetchNetworkConfig').catch(() => {}),
       this.$store.dispatch('fetchDevices').catch(() => {});
       this.$store.dispatch('fetchRings').catch(() => {});
     },

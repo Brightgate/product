@@ -8,6 +8,8 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 
+/* eslint camelcase: ['error', {'properties': 'never'}] */
+
 // Ready translated locale messages
 export default {
   en: {

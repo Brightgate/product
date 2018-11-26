@@ -22,9 +22,9 @@
 
     <f7-list>
       <f7-list-item
-        v-for="user in All_Users"
+        v-for="user in users"
         :key ="user.UUID"
-        :title="user.DisplayName"
+        :title="user.DisplayName ? user.DisplayName : user.UID"
         :link="`/users/${user.UUID}/`" />
     </f7-list>
 
@@ -37,8 +37,8 @@ const debug = Debug('page:users');
 
 export default {
   computed: {
-    All_Users: function() {
-      return orderBy(this.$store.getters.All_Users, 'DisplayName');
+    users: function() {
+      return orderBy(this.$store.getters.users, 'DisplayName');
     },
   },
   methods: {

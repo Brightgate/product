@@ -23,17 +23,17 @@ const debug = Debug('store');
 Vue.use(Vuex);
 
 // XXX this needs further rationalization with devices.json
-const device_category_all = ['recent', 'phone', 'computer', 'printer', 'media', 'iot', 'unknown'];
+const DEVICE_CATEGORY_ALL = ['recent', 'phone', 'computer', 'printer', 'media', 'iot', 'unknown'];
+const RETRY_DELAY = 1000;
 
 const windowURLAppliance = window && window.location && window.location.href && new URL(window.location.href);
 const initApplianceID = windowURLAppliance.searchParams.get('appliance') || '0';
 
-const RETRY_DELAY = 1000;
-
 const state = {
   loggedIn: false,
   fakeLogin: false,
-  enableMock: false,
+  mock: false,
+  localAppliance: true,
   currentApplianceID: initApplianceID,
   applianceIDs: [],
   devices: organizeDevices([]),
@@ -46,6 +46,7 @@ const state = {
 const mutations = {
   setApplianceIDs(state, newIDs) {
     state.applianceIDs = newIDs;
+    state.localAppliance = state.applianceIDs.length === 1 && state.applianceIDs[0] === '0';
     if (state.applianceIDs.length === 1) {
       state.currentApplianceID = state.applianceIDs[0];
       state.applianceIDs.push('Other Appliance');
@@ -69,157 +70,145 @@ const mutations = {
     state.users = newUsers;
   },
 
-  updateUser(state, user) {
+  setUser(state, user) {
     assert(user.UUID);
     state.users[user.UUID] = user;
   },
 
-  setLoggedIn(state, newLoggedIn) {
-    debug(`setLoggedIn: now ${newLoggedIn}`);
-    state.loggedIn = newLoggedIn;
+  setLoggedIn(state, newValue) {
+    state.loggedIn = newValue;
   },
 
-  toggleMock(state) {
-    state.enableMock = !state.enableMock;
-    if (state.enableMock) {
+  setMock(state, newValue) {
+    state.mock = newValue;
+    if (state.mock) {
       applianceApi.enableMock();
     } else {
       applianceApi.disableMock();
     }
   },
 
-  toggleFakeLogin(state) {
-    state.fakeLogin = !state.fakeLogin;
+  setFakeLogin(state, newValue) {
+    state.fakeLogin = newValue;
   },
 };
 
 const getters = {
-  Is_Logged_In: (state) => {
-    return state.loggedIn || state.fakeLogin;
+  loggedIn: (state) => state.loggedIn || state.fakeLogin,
+  fakeLogin: (state) => state.fakeLogin,
+  mock: (state) => state.mock,
+  localAppliance: (state) => state.localAppliance,
+  currentApplianceID: (state) => state.currentApplianceID,
+  applianceIDs: (state) => state.applianceIDs,
+  allDevices: (state) => state.devices.allDevices,
+
+  deviceByUniqID: (state) => (uniqid) => {
+    return state.devices.byUniqID[uniqid];
   },
 
-  Fake_Login: (state) => {return state.fakeLogin;},
-
-  ApplianceIDs: (state) => {return state.applianceIDs;},
-
-  CurrentApplianceID: (state) => {return state.currentApplianceID;},
-
-  RealAppliance: (state) => {
-    return (state.applianceIDs.length === 1 && state.applianceIDs[0] === '0');
-  },
-
-  Device_By_UniqID: (state) => (uniqid) => {
-    return state.devices.by_uniqid[uniqid];
-  },
-
-  All_Devices: (state) => {
-    return state.devices.all_devices;
-  },
-  Device_Count: (state) => (devices) => {
+  deviceCount: (state) => (devices) => {
     assert(Array.isArray(devices), 'expected devices to be array');
     return devices.length;
   },
 
-  // Return an array of devices for the category, sorted by network_name.
-  Devices_By_Category: (state) => (category) => {
-    return state.devices.by_category[category];
+  // Return an array of devices for the category, sorted by networkName.
+  devicesByCategory: (state) => (category) => {
+    return state.devices.byCategory[category];
   },
 
-  Devices_By_Ring: (state) => (ring) => {
-    if (state.devices.by_ring[ring] === undefined) {
+  devicesByRing: (state) => (ring) => {
+    if (state.devices.byRing[ring] === undefined) {
       return [];
     }
-    return state.devices.by_ring[ring];
+    return state.devices.byRing[ring];
   },
 
-  Device_Active: (state) => (devices) => {
+  deviceActive: (state) => (devices) => {
     return filter(devices, {active: true});
   },
 
-  Device_VulnScanned: (state) => (devices) => {
+  deviceVulnScanned: (state) => (devices) => {
     return filter(devices, 'scans.vulnerability.finish');
   },
 
-  Device_Vulnerable: (state) => (devices) => {
+  deviceVulnerable: (state) => (devices) => {
     return filter(devices, 'activeVulnCount');
   },
 
-  Device_NotVulnerable: (state) => (devices) => {
+  deviceNotVulnerable: (state) => (devices) => {
     return filter(devices, {activeVulnCount: 0});
   },
 
-  All_Alerts: (state) => {return state.alerts;},
+  allAlerts: (state) => state.alerts,
 
-  Alert_Count: (state) => (alerts) => {
+  alertCount: (state) => (alerts) => {
     assert(typeof(alerts) === 'object' && !Array.isArray(alerts), 'expected alerts to be object');
     return Object.keys(alerts).length;
   },
 
-  Alert_Active: (state) => (alerts) => {
+  alertActive: (state) => (alerts) => {
     return pickBy(alerts, {vulninfo: {active: true}});
   },
 
-  Alert_Inactive: (state) => (alerts) => {
+  alertInactive: (state) => (alerts) => {
     return pickBy(alerts, {vulninfo: {active: false}});
   },
 
-  Alert_By_Ring: (state) => (ring, alerts) => {
+  alertByRing: (state) => (ring, alerts) => {
     return pickBy(alerts, {device: {ring: ring}});
   },
 
-  Rings: (state) => {return state.rings;},
+  rings: (state) => state.rings,
 
-  All_Users: (state) => {return state.users;},
-  User_Count: (state) => (users) => {
+  users: (state) => state.users,
+  userCount: (state) => (users) => {
     assert(typeof(users) === 'object' && !Array.isArray(users), 'expected users to be object');
     return Object.keys(users).length;
   },
 
-  User_By_UUID: (state) => (uuid) => {return state.users[uuid];},
+  userByUUID: (state) => (uuid) => {return state.users[uuid];},
 
-  Network_Config: (state) => {return state.networkConfig;},
-
-  Mock: (state) => {return state.enableMock;},
+  networkConfig: (state) => state.networkConfig,
 };
 
-function organizeDevices(all_devices) {
-  assert(Array.isArray(all_devices));
+function organizeDevices(allDevices) {
+  assert(Array.isArray(allDevices));
   const devices = {
-    all_devices: all_devices,
-    by_uniqid: {},
-    by_category: {},
-    by_ring: {},
+    allDevices: allDevices,
+    byUniqID: {},
+    byCategory: {},
+    byRing: {},
   };
 
   // First, organize by unique id.
-  devices.by_uniqid = keyBy(devices.all_devices, 'uniqid');
+  devices.byUniqID = keyBy(devices.allDevices, 'uniqid');
 
   // Next, Reorganize the data into:
   // { 'phone': [list of phones...], 'computer': [...] ... }
   //
   // Make sure all categories are present.
-  devices.by_category = {};
-  for (const c of device_category_all) {
-    devices.by_category[c] = [];
+  devices.byCategory = {};
+  for (const c of DEVICE_CATEGORY_ALL) {
+    devices.byCategory[c] = [];
   }
 
-  devices.all_devices.reduce((result, value) => {
-    assert(value.category in devices.by_category, `category ${value.category} is missing`);
+  devices.allDevices.reduce((result, value) => {
+    assert(value.category in devices.byCategory, `category ${value.category} is missing`);
     result[value.category].push(value);
     return result;
-  }, devices.by_category);
+  }, devices.byCategory);
 
   // Index by ring
-  devices.all_devices.reduce((result, value) => {
+  devices.allDevices.reduce((result, value) => {
     if (result[value.ring] === undefined) {
       result[value.ring] = [];
     }
     result[value.ring].push(value);
     return result;
-  }, devices.by_ring);
+  }, devices.byRing);
 
   // Tabulate vulnerability counts for each device
-  devices.all_devices.forEach((device) => {
+  devices.allDevices.forEach((device) => {
     const actives = pickBy(device.vulnerabilities, {active: true});
     device.activeVulnCount = Object.keys(actives).length;
   });
@@ -233,10 +222,10 @@ function organizeDevices(all_devices) {
 function makeAlerts(devices) {
   const alerts = [];
 
-  if (!devices || !devices.by_uniqid) {
+  if (!devices || !devices.byUniqID) {
     return alerts;
   }
-  for (const [, device] of Object.entries(devices.by_uniqid)) {
+  for (const [, device] of Object.entries(devices.byUniqID)) {
     if (!device.vulnerabilities) {
       continue;
     }
@@ -259,9 +248,9 @@ function computeDeviceProps(apiDevice) {
     model: apiDevice.Model,
     kind: apiDevice.Kind,
     confidence: apiDevice.Confidence,
-    network_name: apiDevice.HumanName ? apiDevice.HumanName : `Unknown (${apiDevice.HwAddr})`, // XXX this has issues, including i18n)
-    ipv4_addr: apiDevice.IPv4Addr,
-    os_version: apiDevice.OSVersion,
+    networkName: apiDevice.HumanName ? apiDevice.HumanName : `Unknown (${apiDevice.HwAddr})`, // XXX this has issues, including i18n)
+    ipv4Addr: apiDevice.IPv4Addr,
+    osVersion: apiDevice.OSVersion,
     activated: '',
     uniqid: apiDevice.HwAddr,
     hwaddr: apiDevice.HwAddr,
@@ -327,13 +316,15 @@ const actions = {
 
     let devices = [];
     const applianceID = context.state.currentApplianceID;
-    const p = retry(applianceApi.applianceDevicesGet,
-      {interval: RETRY_DELAY, max_tries: 5, args: [applianceID]}
-    ).then((apiDevices) => {
+    const p = retry(applianceApi.applianceDevicesGet, {
+      interval: RETRY_DELAY,
+      max_tries: 5, // eslint-disable-line camelcase
+      args: [applianceID],
+    }).then((apiDevices) => {
       devices = apiDevices.map(computeDeviceProps);
     }).finally(() => {
-      const organized_devices = organizeDevices(devices);
-      context.commit('setDevices', organized_devices);
+      const organizedDevices = organizeDevices(devices);
+      context.commit('setDevices', organizedDevices);
       debug('Store: fetchDevices finished');
     });
     // make sure promise is a bluebird promise, so we can call isPending
@@ -348,7 +339,7 @@ const actions = {
       clearTimeout(fetchPeriodicTimeout);
       fetchPeriodicTimeout = null;
     }
-    if (!context.getters.Is_Logged_In) {
+    if (!context.getters.loggedIn) {
       debug('fetchPeriodic: not logged in, later');
       fetchPeriodicTimeout = setTimeout(() => {
         context.dispatch('fetchPeriodic');
@@ -431,7 +422,7 @@ const actions = {
     }
     try {
       const postUser = await applianceApi.applianceUsersPost(id, user, newUser);
-      context.commit('updateUser', postUser);
+      context.commit('setUser', postUser);
     } catch (err) {
       debug('saveUser failed', err);
       if (err.res && err.res.text) {

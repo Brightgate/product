@@ -16,52 +16,52 @@
 
     <f7-list>
       <!-- uid -- user name -->
-      <f7-list-item v-if="new_user">
+      <f7-list-item v-if="newUser">
         <f7-label>{{ $t('message.user_details.username') }}</f7-label>
         <f7-input
-          :value="user_details.UID"
+          :value="user.UID"
           type="email"
           placeholder="User's short ID"
           required
           clear-button
-          @input="user_details.UID = $event.target.value" />
+          @input="user.UID = $event.target.value" />
       </f7-list-item>
       <f7-list-item v-else
                     :title="$t('message.user_details.username')">
-        {{ user_details.UID }}
+        {{ user.UID }}
       </f7-list-item>
 
       <!-- display name -->
       <f7-list-item>
         <f7-label>Name</f7-label>
         <f7-input
-          :value="user_details.DisplayName"
+          :value="user.DisplayName"
           type="text"
           placeholder="User's full name"
           clear-button
-          @input="user_details.DisplayName = $event.target.value" />
+          @input="user.DisplayName = $event.target.value" />
       </f7-list-item>
 
       <!-- email -->
       <f7-list-item>
         <f7-label>Email</f7-label>
         <f7-input
-          :value="user_details.Email"
+          :value="user.Email"
           type="email"
           placeholder="User Email"
           clear-button
-          @input="user_details.Email = $event.target.value" />
+          @input="user.Email = $event.target.value" />
       </f7-list-item>
 
       <!-- phone & sms -->
       <f7-list-item>
         <f7-label>Phone</f7-label>
         <f7-input
-          :value="user_details.TelephoneNumber"
+          :value="user.TelephoneNumber"
           type="tel"
           placeholder="User Mobile Phone"
           clear-button
-          @input="user_details.TelephoneNumber = $event.target.value" />
+          @input="user.TelephoneNumber = $event.target.value" />
       </f7-list-item>
 
       <!-- Role -->
@@ -77,16 +77,16 @@
       <f7-list-item>
         <f7-label>{{ $t('message.user_details.password') }}</f7-label>
         <f7-input
-          :value="user_details.SetPassword"
+          :value="user.SetPassword"
           type="password"
           placeholder="User Password"
           clear-button
-          @input="user_details.SetPassword = $event.target.value" />
+          @input="user.SetPassword = $event.target.value" />
       </f7-list-item>
 
       <!-- 2-factor, disabled for now
       <f7-list-item :title="$t('message.user_details.twofactor')">
-        <f7-link v-if="user_details.HasTOTP" :href="$f7route.url + 'twofactor/'">Enabled</f7-link>
+        <f7-link v-if="user.HasTOTP" :href="$f7route.url + 'twofactor/'">Enabled</f7-link>
         <f7-link v-else :href="$f7route.url + 'twofactor/'">Disabled</f7-link>
       </f7-list-item>
       -->
@@ -96,13 +96,13 @@
     <f7-block>
       <f7-row>
         <f7-col>
-          <f7-button v-if="new_user" fill @click="saveUser">Create</f7-button>
+          <f7-button v-if="newUser" fill @click="saveUser">Create</f7-button>
           <f7-button v-else fill @click="saveUser">Save</f7-button>
         </f7-col>
         <f7-col>
           <f7-button outline back>Cancel</f7-button>
         </f7-col>
-        <f7-col v-if="!new_user">
+        <f7-col v-if="!newUser">
           <f7-button color="red" outline @click="deleteUser">Delete</f7-button>
         </f7-col>
       </f7-row>
@@ -119,10 +119,10 @@ export default {
   data: function() {
     const routeUUID = this.$f7route.params.UUID;
     const d = {
-      new_user: (routeUUID === 'NEW'),
+      newUser: (routeUUID === 'NEW'),
     };
     if (routeUUID === 'NEW') {
-      d.user_details = {
+      d.user = {
         UID: '',
         DisplayName: '',
         Email: '',
@@ -132,7 +132,7 @@ export default {
       };
     } else {
       debug('cloning', routeUUID);
-      d.user_details = cloneDeep(this.$store.getters.User_By_UUID(routeUUID));
+      d.user = cloneDeep(this.$store.getters.userByUUID(routeUUID));
     }
     return d;
   },
@@ -141,12 +141,12 @@ export default {
     saveUser: function(event) { // eslint-disable-line no-unused-vars
       debug('saveUser');
       return this.$store.dispatch('saveUser', {
-        user: this.user_details,
-        newUser: this.new_user,
+        user: this.user,
+        newUser: this.newUser,
       }).then(() => {
-        const txt = this.new_user
-          ? this.$t('message.user_details.create_ok', {name: this.user_details.UID})
-          : this.$t('message.user_details.save_ok', {name: this.user_details.UID});
+        const txt = this.newUser
+          ? this.$t('message.user_details.create_ok', {name: this.user.UID})
+          : this.$t('message.user_details.save_ok', {name: this.user.UID});
         this.$f7.toast.show({
           text: txt,
           closeTimeout: 2000,
@@ -155,7 +155,7 @@ export default {
         this.$f7router.back();
       }).catch((err) => {
         debug('saveUser: Error', err);
-        const txt = this.new_user
+        const txt = this.newUser
           ? this.$t('message.user_details.create_fail', {err: err})
           : this.$t('message.user_details.save_fail', {err: err});
         this.$f7.toast.show({
@@ -169,9 +169,9 @@ export default {
     deleteUser: function(event) { // eslint-disable-line no-unused-vars
       debug('deleteUser');
       return this.$store.dispatch('deleteUser', {
-        user: this.user_details,
+        user: this.user,
       }).then(() => {
-        const txt = this.$t('message.user_details.delete_ok', {name: this.user_details.UID});
+        const txt = this.$t('message.user_details.delete_ok', {name: this.user.UID});
         this.$f7.toast.show({
           text: txt,
           closeTimeout: 5000,

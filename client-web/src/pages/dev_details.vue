@@ -9,17 +9,17 @@
 -->
 <template>
   <f7-page>
-    <f7-navbar :back-link="$t('message.general.back')" :title="dev.network_name + $t('message.dev_details._details')" sliding />
+    <f7-navbar :back-link="$t('message.general.back')" :title="dev.networkName + $t('message.dev_details._details')" sliding />
 
     <f7-block>
       <f7-row>
         <!-- use margin-auto to center the icon -->
         <f7-col style="margin: auto" width="20">
-          <img :src="media_icon" width="32" height="32">
+          <img :src="mediaIcon" width="32" height="32">
         </f7-col>
         <f7-col width="80">
-          <div style="font-size: 16pt; font-weight: bold">{{ dev_model }}</div>
-          <div style="font-size: 12pt; font-weight: normal; color: rgba(0,0,0,.5);">{{ dev_manufacturer }}</div>
+          <div style="font-size: 16pt; font-weight: bold">{{ devModel }}</div>
+          <div style="font-size: 12pt; font-weight: normal; color: rgba(0,0,0,.5);">{{ devManufacturer }}</div>
           <div v-if="dev.certainty === 'medium'" style="font-size: 10pt; font-weight: normal; color: rgba(0,0,0,0.5);">
             {{ $t('message.dev_details.uncertain_device') }}
           </div>
@@ -82,16 +82,16 @@
     <f7-list>
 
       <f7-list-item :title="$t('message.dev_details.network_name')">
-        {{ dev.network_name }}
+        {{ dev.networkName }}
       </f7-list-item>
       <f7-list-item :title="$t('message.dev_details.ipv4_addr')">
-        {{ dev.ipv4_addr ? dev.ipv4_addr : $t("message.dev_details.ipv4_addr_none") }}
+        {{ dev.ipv4Addr ? dev.ipv4Addr : $t("message.dev_details.ipv4_addr_none") }}
       </f7-list-item>
       <f7-list-item :title="$t('message.dev_details.hw_addr')">
         {{ dev.hwaddr }}
       </f7-list-item>
       <f7-list-item :title="$t('message.dev_details.os_version')">
-        {{ os_version }}
+        {{ dev.osVersion ? dev.osVersion : $t('message.dev_details.os_version_unknown') }}
       </f7-list-item>
 
       <f7-list-item :title="$t('message.dev_details.activity')">
@@ -113,7 +113,7 @@
     <f7-list form>
       <f7-list-item item-input inline-label>
         <f7-label>{{ $t('message.dev_details.security_ring') }}</f7-label>
-        <f7-preloader v-if="ring_changing" />
+        <f7-preloader v-if="ringChanging" />
         <f7-input v-else :value="dev.ring" type="select" @input="changeRing($event.target.value)">
           <option v-for="(ring, ringName) in rings" :value="ringName" :key="ringName">{{ ringName }}</option>
         </f7-input>
@@ -134,25 +134,22 @@ const debug = Debug('page:dev-details');
 export default {
   data: function() {
     return {
-      ring_changing: false,
+      ringChanging: false,
     };
   },
 
   computed: {
-    os_version: function() {
-      return this.dev.os_version ? this.dev.os_version : this.$t('message.dev_details.os_version_unknown');
-    },
-    dev_model: function() {
+    devModel: function() {
       return (this.dev.certainty === 'low') ?
         this.$t('message.dev_details.unknown_model') :
         this.dev.model;
     },
-    dev_manufacturer: function() {
+    devManufacturer: function() {
       return (this.dev.certainty === 'low') ?
         this.$t('message.dev_details.unknown_manufacturer') :
         this.dev.manufacturer;
     },
-    media_icon: function() {
+    mediaIcon: function() {
       return this.dev.active ?
         `img/nova-solid-${this.dev.media}-active.png` :
         `img/nova-solid-${this.dev.media}.png`;
@@ -185,10 +182,10 @@ export default {
     },
     dev: function() {
       const uniqid = this.$f7route.params.UniqID;
-      return this.$store.getters.Device_By_UniqID(uniqid);
+      return this.$store.getters.deviceByUniqID(uniqid);
     },
     rings: function() {
-      return this.$store.getters.Rings;
+      return this.$store.getters.rings;
     },
   },
   beforeCreate: function() {
@@ -215,22 +212,22 @@ export default {
       return vulnerability.moreInfo(vulnid);
     },
 
-    changeRing: function(wanted_ring) {
-      assert(typeof wanted_ring === 'string');
-      debug(`Change Ring to ${wanted_ring}`);
-      if (this.ring_changing) {
+    changeRing: function(newRing) {
+      assert(typeof newRing === 'string');
+      debug(`Change Ring to ${newRing}`);
+      if (this.ringChanging) {
         return;
       }
-      this.ring_changing = true;
+      this.ringChanging = true;
       this.$store.dispatch('changeRing', {
         deviceUniqID: this.dev.uniqid,
-        newRing: wanted_ring,
+        newRing: newRing,
       }).then(() => {
-        this.ring_changing = false;
+        this.ringChanging = false;
       }).catch((err) => {
         debug('Change Ring failed', err);
-        const txt = `Failed to change security ring for ${this.dev.network_name} to ${wanted_ring}: ${err}`;
-        this.ring_changing = false;
+        const txt = `Failed to change security ring for ${this.dev.networkName} to ${newRing}: ${err}`;
+        this.ringChanging = false;
         this.$f7.toast.show({
           text: txt,
           closeButton: true,

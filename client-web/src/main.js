@@ -95,7 +95,7 @@ comps.forEach((m) => {
 Vue.config.productionTip = false;
 
 const locale = BrowserLocale().substring(0, 2);
-window.__b10e_locale__ = BrowserLocale().toLowerCase();
+window.__b10e_locale__ = BrowserLocale().toLowerCase(); // eslint-disable-line camelcase
 const i18n = new VueI18n({
   fallbackLocale: 'en',
   locale,

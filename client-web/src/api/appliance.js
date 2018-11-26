@@ -45,23 +45,23 @@ function buildUrl(u) {
 }
 
 // Get a property's value
-async function applianceConfigGet(applianceID, property, default_value) {
+async function applianceConfigGet(applianceID, property, defaultValue) {
   assert.equal(typeof applianceID, 'string');
   assert.equal(typeof property, 'string');
-  assert(default_value === undefined || typeof default_value === 'string');
+  assert(defaultValue === undefined || typeof defaultValue === 'string');
 
   const u = buildUrl(`/api/appliances/${applianceID}/config?${property}`);
-  debug(`applianceConfigGet(${applianceID}, ${property}, ${default_value})`);
+  debug(`applianceConfigGet(${applianceID}, ${property}, ${defaultValue})`);
   let val = null;
   try {
     const resp = await axios.get(u);
     val = resp.data;
   } catch (err) {
-    if (default_value === undefined) {
+    if (defaultValue === undefined) {
       throw err;
     } else {
-      debug(`applianceConfigGet(${applianceID}, ${property}): defaulting to ${default_value}`);
-      val = default_value;
+      debug(`applianceConfigGet(${applianceID}, ${property}): defaulting to ${defaultValue}`);
+      val = defaultValue;
     }
   }
   debug(`applianceConfigGet(${applianceID}, ${property}): returning`, val);
@@ -114,8 +114,8 @@ async function applianceConfigWaitProp(applianceID, property, expected) {
   try {
     await retry(applianceConfigMustEqual, {
       interval: RETRY_DELAY,
-      max_tries: maxTries,
-      throw_original: true,
+      max_tries: maxTries, // eslint-disable-line camelcase
+      throw_original: true, // eslint-disable-line camelcase
       args: [applianceID, property, expected],
     });
     debug(`applianceConfigWaitProp: saw ${property} become ${expected}`);

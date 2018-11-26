@@ -77,40 +77,40 @@ export default {
     // Map various $store elements as computed properties for use in the
     // template.
     ...Vuex.mapGetters([
-      'Device_Count',
-      'Device_VulnScanned',
-      'Device_Vulnerable',
-      'Device_NotVulnerable',
-      'Device_Active',
+      'deviceCount',
+      'deviceVulnScanned',
+      'deviceVulnerable',
+      'deviceNotVulnerable',
+      'deviceActive',
     ]),
 
     empty: function() {
-      return this.Device_Count(this.devices) === 0;
+      return this.deviceCount(this.devices) === 0;
     },
     okCount: function() {
-      return this.Device_Count(
-        this.Device_NotVulnerable(
-          this.Device_VulnScanned(
-            this.Device_Active(this.devices))));
+      return this.deviceCount(
+        this.deviceNotVulnerable(
+          this.deviceVulnScanned(
+            this.deviceActive(this.devices))));
     },
     unscannedCount: function() {
-      const active = this.Device_Count(
-        this.Device_Active(this.devices));
-      const scanned = this.Device_Count(
-        this.Device_VulnScanned(
-          this.Device_Active(this.devices)));
+      const active = this.deviceCount(
+        this.deviceActive(this.devices));
+      const scanned = this.deviceCount(
+        this.deviceVulnScanned(
+          this.deviceActive(this.devices)));
       return active - scanned;
     },
     vulnCount: function() {
-      return this.Device_Count(
-        this.Device_Vulnerable(
-          this.Device_VulnScanned(
-            this.Device_Active(this.devices))));
+      return this.deviceCount(
+        this.deviceVulnerable(
+          this.deviceVulnScanned(
+            this.deviceActive(this.devices))));
     },
     inactiveCount: function() {
-      return this.Device_Count(this.devices) -
-        this.Device_Count(
-          this.Device_Active(this.devices));
+      return this.deviceCount(this.devices) -
+        this.deviceCount(
+          this.deviceActive(this.devices));
     },
   },
 };

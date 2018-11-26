@@ -14,42 +14,42 @@
     <f7-block-title>{{ $t('message.site_status.ssids') }} </f7-block-title>
     <f7-list>
       <f7-list-item :title="$t('message.site_status.ssid_psk')">
-        {{ Network_Config.ssid }}
+        {{ networkConfig.ssid }}
       </f7-list-item>
       <f7-list-item :title="$t('message.site_status.ssid_eap')">
-        {{ Network_Config.ssid }}-eap
+        {{ networkConfig.ssid }}-eap
       </f7-list-item>
     </f7-list>
 
     <f7-block-title>{{ $t('message.site_status.devices') }} </f7-block-title>
     <f7-list>
       <f7-list-item :title="$t('message.site_status.devices_active')">
-        {{ Device_Count(Device_Active(All_Devices)) }}
+        {{ deviceCount(deviceActive(allDevices)) }}
       </f7-list-item>
       <f7-list-item :title="$t('message.site_status.devices_scanned')">
-        {{ Device_Count(Device_VulnScanned(Device_Active(All_Devices))) }}
+        {{ deviceCount(deviceVulnScanned(deviceActive(allDevices))) }}
       </f7-list-item>
       <f7-list-item :title="$t('message.site_status.devices_reg')">
-        {{ Device_Count(All_Devices) }}
+        {{ deviceCount(allDevices) }}
       </f7-list-item>
     </f7-list>
 
     <f7-block-title>{{ $t('message.site_status.config') }} </f7-block-title>
     <f7-list>
       <f7-list-item :title="$t('message.site_status.config_dns_server')">
-        {{ Network_Config.dnsServer }}
+        {{ networkConfig.dnsServer }}
       </f7-list-item>
       <f7-list-item :title="$t('message.site_status.config_default_ring_wpa_psk')">
-        {{ Network_Config.defaultRingWPAPSK }}
+        {{ networkConfig.defaultRingWPAPSK }}
       </f7-list-item>
       <f7-list-item :title="$t('message.site_status.config_default_ring_wpa_eap')">
-        {{ Network_Config.defaultRingWPAEAP }}
+        {{ networkConfig.defaultRingWPAEAP }}
       </f7-list-item>
     </f7-list>
 
     <f7-block-title>Ring Configuration</f7-block-title>
     <f7-list>
-      <f7-list-item v-for="(ring, ringName) in Rings" :key="ringName" :title="ringName" accordion-item>
+      <f7-list-item v-for="(ring, ringName) in rings" :key="ringName" :title="ringName" accordion-item>
         <f7-accordion-content>
           <f7-list inset>
             <f7-list-item title="Authentication">{{ ring.auth }}</f7-list-item>
@@ -83,14 +83,14 @@ export default {
     // Map various $store elements as computed properties for use in the
     // template.
     ...vuex.mapGetters([
-      'Mock',
-      'Is_Logged_In',
-      'All_Devices',
-      'Device_Count',
-      'Device_Active',
-      'Device_VulnScanned',
-      'Network_Config',
-      'Rings',
+      'mock',
+      'loggedIn',
+      'allDevices',
+      'deviceCount',
+      'deviceActive',
+      'deviceVulnScanned',
+      'networkConfig',
+      'rings',
     ]),
   },
 

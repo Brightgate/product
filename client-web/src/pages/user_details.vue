@@ -9,7 +9,7 @@
 -->
 <template>
   <f7-page>
-    <f7-navbar :back-link="$t('message.general.back')" :title="user_details.DisplayName" sliding />
+    <f7-navbar :back-link="$t('message.general.back')" :title="user.DisplayName" sliding />
 
     <f7-fab color="pink" @click="openEditor">
       <f7-icon f7="compose_fill" />
@@ -18,14 +18,14 @@
     <f7-list>
       <!-- Username -->
       <f7-list-item :title="$t('message.user_details.username')">
-        {{ user_details.UID }}
+        {{ user.UID }}
       </f7-list-item>
 
       <!-- Email -->
-      <f7-list-item v-if="user_details.Email">
+      <f7-list-item v-if="user.Email">
         <div slot="media"><f7-icon f7="email_fill" color="blue" /></div>
         <span>
-          <f7-link :href="`mailto: ${user_details.Email}`" external>{{ user_details.Email }}</f7-link>
+          <f7-link :href="`mailto: ${user.Email}`" external>{{ user.Email }}</f7-link>
         </span>
       </f7-list-item>
       <f7-list-item v-else>
@@ -34,13 +34,13 @@
       </f7-list-item>
 
       <!-- Phone & SMS -->
-      <f7-list-item v-if="user_details.TelephoneNumber">
+      <f7-list-item v-if="user.TelephoneNumber">
         <div slot="media"><f7-icon f7="phone_fill" color="blue" /></div>
         <div slot="title">
-          <f7-link :href="`tel: ${user_details.TelephoneNumber}`" external>{{ user_details.TelephoneNumber }}</f7-link>
+          <f7-link :href="`tel: ${user.TelephoneNumber}`" external>{{ user.TelephoneNumber }}</f7-link>
         </div>
         <div slot="after">
-          <f7-link :href="`sms: ${user_details.TelephoneNumber}`" external>
+          <f7-link :href="`sms: ${user.TelephoneNumber}`" external>
             <f7-icon f7="chat_fill" color="blue" />
           </f7-link>
         </div>
@@ -59,7 +59,7 @@
 
       <!-- 2-factor -- Disabled for now
       <f7-list-item :title="$t('message.user_details.twofactor')">
-        <f7-link v-if="user_details.HasTOTP" :href="`${$f7route.url}twofactor/`">Enabled</f7-link>
+        <f7-link v-if="user.HasTOTP" :href="`${$f7route.url}twofactor/`">Enabled</f7-link>
         <f7-link v-else :href="`${$f7route.url}twofactor/`">Disabled</f7-link>
       </f7-list-item>
       -->
@@ -75,7 +75,7 @@ const debug = Debug('page:user-details');
 export default {
   data: function() {
     return {
-      user_details: this.$store.getters.User_By_UUID(this.$f7route.params.UUID),
+      user: this.$store.getters.userByUUID(this.$f7route.params.UUID),
     };
   },
 

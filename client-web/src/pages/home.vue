@@ -32,23 +32,23 @@
 
       <f7-nav-right>
         <span font-size="small">
-          <f7-link v-if="Is_Logged_In" @click="attemptLogout()">{{ $t('message.home.tools.logout') }}</f7-link>
+          <f7-link v-if="loggedIn" @click="attemptLogout()">{{ $t('message.home.tools.logout') }}</f7-link>
           <f7-link v-else login-screen-open="#bgLoginScreen">{{ $t('message.home.tools.login') }}</f7-link>
         </span>
       </f7-nav-right>
     </f7-navbar>
 
-    <template v-if="Alert_Count(Alert_Active(All_Alerts))">
+    <template v-if="alertCount(alertActive(allAlerts))">
       <f7-block-title>{{ $t("message.alerts.serious_alerts") }}</f7-block-title>
       <f7-list>
         <f7-list-item
-          v-for="alert in Alert_Active(All_Alerts)"
+          v-for="alert in alertActive(allAlerts)"
           :key="alert.device.uniqid + '-' + alert.vulnid"
           :link="`/devices/${alert.device.uniqid}/`">
           <span>
             <f7-icon f7="bolt_round_fill" color="red" />
             {{ $t('message.alerts.problem_on_device',
-                  {problem: vulnHeadline(alert.vulnid), device: alert.device.network_name})
+                  {problem: vulnHeadline(alert.vulnid), device: alert.device.networkName})
             }}
           </span>
         </f7-list-item>
@@ -59,47 +59,47 @@
     <f7-list>
       <f7-list-item
         :title="$t('message.home.tools.site_status')"
-        :class="Is_Logged_In ? '' : 'disabled'"
+        :class="loggedIn ? '' : 'disabled'"
         link="/site_status/" />
       <f7-list-item
         :title="$t('message.home.tools.compliance_report')"
-        :class="Is_Logged_In ? '' : 'disabled'"
+        :class="loggedIn ? '' : 'disabled'"
         link="/compliance_report/" />
       <f7-list-item
-        :title="$t('message.home.tools.manage_devices', {'device_count': Device_Count(All_Devices)})"
-        :class="Is_Logged_In ? '' : 'disabled'"
+        :title="$t('message.home.tools.manage_devices', {'device_count': deviceCount(allDevices)})"
+        :class="loggedIn ? '' : 'disabled'"
         link="/devices/" />
       <f7-list-item
         :title="$t('message.home.tools.users')"
-        :class="Is_Logged_In ? '' : 'disabled'"
+        :class="loggedIn ? '' : 'disabled'"
         link="/users/" />
       <f7-list-item
         :title="$t('message.home.tools.enroll_guest')"
-        :class="Is_Logged_In ? '' : 'disabled'"
+        :class="loggedIn ? '' : 'disabled'"
         link="/enroll_guest/" />
     </f7-list>
 
     <f7-block-title>{{ $t("message.notifications.notifications") }}</f7-block-title>
     <f7-list>
       <f7-list-item
-        v-for="device in All_Devices"
+        v-for="device in allDevices"
         v-if="device.notification"
         :key="device.uniqid"
-        :title="$t('message.notifications.update_device', {'device': device.network_name})"
+        :title="$t('message.notifications.update_device', {'device': device.networkName})"
         :link="`/devices/${device.uniqid}/`" />
     </f7-list>
 
     <f7-block-title>{{ $t("message.home.testing.testing") }}</f7-block-title>
     <f7-list>
       <f7-list-item :title="$t('message.home.testing.enable_mock')">
-        <f7-toggle slot="after" :checked="Mock" @change="toggleMock" />
+        <f7-toggle slot="after" :checked="mock" @change="toggleMock" />
       </f7-list-item>
       <f7-list-item :title="$t('message.home.testing.enable_fakelogin')">
-        <f7-toggle slot="after" :checked="Fake_Login" @change="toggleFakeLogin" />
+        <f7-toggle slot="after" :checked="fakeLogin" @change="toggleFakeLogin" />
       </f7-list-item>
       <f7-list-item
         :title="$t('message.home.testing.accept_devices')"
-        :class="Is_Logged_In ? '' : 'disabled'">
+        :class="loggedIn ? '' : 'disabled'">
         <span slot="after">
           <f7-button fill @click="acceptSupreme">{{ $t("message.general.accept") }}
           </f7-button>
@@ -108,15 +108,15 @@
 
       <!-- this looks weak, and the right answer would be to use
            f7's smart-select, but it's a beast to get right -->
-      <f7-list-item :class="Is_Logged_In ? '' : 'disabled'" item-input
+      <f7-list-item :class="loggedIn ? '' : 'disabled'" item-input
                     inline-label>
         <f7-label>{{ $t('message.home.testing.switch_appliance') }}</f7-label>
         <f7-input
-          :value="CurrentApplianceID"
+          :value="currentApplianceID"
           type="select"
           @change="onApplianceChange">
           <option
-            v-for="appliance in ApplianceIDs"
+            v-for="appliance in applianceIDs"
             :key="appliance"
             :value="appliance">
             {{ appliance === "0" ? "Local Appliance" : appliance }}
@@ -146,29 +146,30 @@ export default {
     // Map various $store elements as computed properties for use in the
     // template.
     ...vuex.mapGetters([
-      'ApplianceIDs',
-      'CurrentApplianceID',
-      'Mock',
-      'Is_Logged_In',
-      'Fake_Login',
-      'All_Devices',
-      'Device_Count',
-      'All_Alerts',
-      'Alert_Count',
-      'Alert_Active',
+      'applianceIDs',
+      'currentApplianceID',
+      'mock',
+      'loggedIn',
+      'fakeLogin',
+      'allDevices',
+      'deviceCount',
+      'allAlerts',
+      'alertCount',
+      'alertActive',
     ]),
   },
 
   methods: {
-    toggleMock: function() {
-      debug('toggleMock');
-      this.$store.commit('toggleMock');
+    toggleMock: function(evt) {
+      debug('toggleMock', evt);
+      this.$store.commit('setMock', evt.target.checked);
       this.$store.dispatch('fetchApplianceIDs').catch(() => {});
       this.$store.dispatch('fetchDevices').catch(() => {});
     },
 
-    toggleFakeLogin: function() {
-      this.$store.commit('toggleFakeLogin');
+    toggleFakeLogin: function(evt) {
+      debug('toggleFakeLogin', evt);
+      this.$store.commit('setFakeLogin', evt.target.checked);
     },
 
     acceptSupreme: async function() {
@@ -211,7 +212,7 @@ export default {
       this.$store.dispatch('fetchApplianceIDs').catch(() => {});
       this.$store.dispatch('fetchDevices').catch(() => {});
       await this.$store.dispatch('checkLogin');
-      if (!this.$store.getters.Is_Logged_In) {
+      if (!this.$store.getters.loggedIn) {
         this.$f7.loginScreen.open('#bgLoginScreen');
       }
     },

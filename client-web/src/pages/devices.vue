@@ -12,12 +12,12 @@
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.devices.title')" sliding />
 
     <f7-list>
-      <f7-list-group v-for="catkey in device_category_order"
-                     v-if="Device_Count(Devices_By_Category(catkey)) > 0"
+      <f7-list-group v-for="catkey in DEVICE_CATEGORY_ORDER"
+                     v-if="deviceCount(devicesByCategory(catkey)) > 0"
                      :key="catkey">
 
         <f7-list-item :title="$t(`message.devices.cats.${catkey}`) +
-                      (catkey == 'recent' ? ` (${Device_Count(Devices_By_Category(catkey))})` : '')"
+                      (catkey == 'recent' ? ` (${deviceCount(devicesByCategory(catkey))})` : '')"
                       group-title />
         <f7-list-item v-if="catkey == 'recent'">
           <f7-link v-if="!showRecent" @click="showRecent = true">{{ $t('message.devices.show_recent') }}</f7-link>
@@ -26,12 +26,12 @@
 
         <template v-if="showRecent || catkey != 'recent'">
           <f7-list-item
-            v-for="device in Devices_By_Category(catkey)"
+            v-for="device in devicesByCategory(catkey)"
             :key="device.uniqid"
-            :title="device.network_name"
+            :title="device.networkName"
             :link="`/devices/${device.uniqid}/`">
             <div slot="media">
-              <img :alt="device.category" :src="media_icon(device)" width="32" height="32">
+              <img :alt="device.category" :src="mediaIcon(device)" width="32" height="32">
             </div>
             <div v-if="alert(device)">
               <f7-icon f7="bolt_round_fill" color="red" />
@@ -62,7 +62,7 @@ import {f7Popover} from 'framework7-vue';
 import Vuex from 'vuex';
 import {sortBy} from 'lodash-es';
 
-const device_category_order = ['recent', 'phone', 'computer', 'printer', 'media', 'iot', 'unknown'];
+const DEVICE_CATEGORY_ORDER = ['recent', 'phone', 'computer', 'printer', 'media', 'iot', 'unknown'];
 
 export default {
   components: {f7Popover},
@@ -70,7 +70,7 @@ export default {
   data: function() {
     return {
       showRecent: false,
-      device_category_order,
+      DEVICE_CATEGORY_ORDER,
     };
   },
 
@@ -78,14 +78,14 @@ export default {
     // Map various $store elements as computed properties for use in the
     // template.
     ...Vuex.mapGetters([
-      'Device_Count',
+      'deviceCount',
     ]),
-    Devices_By_Category: function() {
+    devicesByCategory: function() {
       return (category) => {
-        const devs = this.$store.getters.Devices_By_Category(category);
+        const devs = this.$store.getters.devicesByCategory(category);
         // Sort by lowercase network name, then by uniqid in case of clashes
         return sortBy(devs, [(device) => {
-          return device.network_name.toLowerCase();
+          return device.networkName.toLowerCase();
         }, 'uniqid']);
       };
     },
@@ -100,7 +100,7 @@ export default {
       });
     },
 
-    media_icon: function(dev) {
+    mediaIcon: function(dev) {
       return dev.active ?
         `img/nova-solid-${dev.media}-active.png` :
         `img/nova-solid-${dev.media}.png`;

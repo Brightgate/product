@@ -44,9 +44,14 @@ module.exports = {
 
     // XXX For now we're not compliant with Google's choice of 80.
     'max-len': 'off',
-    // XXX We'd like to comply with camelCase new-cap but we don't have time to right now
-    'camelcase': 'off',
-    'new-cap': 'off',
+    // Setting 'properties' to 'always' exceeds Google's strictness; it
+    // can cause issues with 3rd parties APIs.  For now, it seems that the
+    // consistency achieved outweighs the pain caused, so I've enabled it.
+    'camelcase': ['error', {'properties': 'always'}],
+    // Some modules we use violate this rule, so make exceptions.
+    'new-cap': ['error', {'capIsNewExceptions': ['Debug', 'BrowserLocale']}],
+    'func-name-matching': 'error',
+
     // We lower this to a warning because it's super annoying to have to fix
     // in the middle of doing something else.  However it should be kept clean.
     'no-trailing-spaces': 'warn',
