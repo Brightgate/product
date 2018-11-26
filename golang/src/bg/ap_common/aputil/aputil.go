@@ -521,9 +521,11 @@ func GetNodeMode() string {
 
 	proposed = os.Getenv("APMODE")
 	if proposed == "" {
-		leases, _ := network.GetAllLeases()
-		for _, lease := range leases {
-			if proposed = lease.Mode; proposed != "" {
+		interfaces, _ := net.Interfaces()
+		for _, iface := range interfaces {
+			lease, err := network.GetLease(iface.Name)
+			if err == nil && lease.Mode != "" {
+				proposed = lease.Mode
 				break
 			}
 		}

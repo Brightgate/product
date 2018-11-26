@@ -439,6 +439,9 @@ APP_COMMON_SRCS = \
 	$(GOSRCBG)/ap_common/network/dhcp.go \
 	$(GOSRCBG)/ap_common/network/network.go \
 	$(GOSRCBG)/ap_common/platform/platform.go \
+	$(GOSRCBG)/ap_common/platform/mt.go \
+	$(GOSRCBG)/ap_common/platform/rpi.go \
+	$(GOSRCBG)/ap_common/platform/x86.go \
 	$(GOSRCBG)/base_def/base_def.go \
 	$(GOSRCBG)/base_msg/base_msg.pb.go
 
