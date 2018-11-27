@@ -26,8 +26,12 @@ import (
 	"github.com/golang/protobuf/ptypes"
 )
 
-// MaxCmds represents the maximum number of commands to fetch at once
-const MaxCmds = 64
+const (
+	maxCmds        = 64
+	maxCompletions = 64
+	maxUpdates     = 64
+	maxBacklog     = (2 * maxCompletions)
+)
 
 type rpcClient struct {
 	connected bool
@@ -90,16 +94,24 @@ func (c *rpcClient) hello() error {
 
 // send any queued Completions to the cloud
 func (c *rpcClient) pushCompletions() error {
+	var completions []*cfgmsg.ConfigResponse
+
 	if len(queued.completions) == 0 {
 		return nil
 	}
 
 	queued.Lock()
-	completions := queued.completions
-	queued.completions = make([]*cfgmsg.ConfigResponse, 0)
+	if len(queued.completions) < maxCompletions {
+		completions = queued.completions
+		queued.completions = make([]*cfgmsg.ConfigResponse, 0)
+	} else {
+		completions = queued.completions[:maxCompletions]
+		queued.completions = queued.completions[maxCompletions:]
+	}
 	queued.Unlock()
 
-	slog.Debugf("completing cmd %d", completions[0].CmdID)
+	slog.Debugf("completing %d cmds starting at %d",
+		len(completions), completions[0].CmdID)
 	completeOp := &rpc.CfgBackEndCompletions{
 		Time:        ptypes.TimestampNow(),
 		Completions: completions,
@@ -127,13 +139,20 @@ func (c *rpcClient) pushCompletions() error {
 
 // send all of the accumulated config tree updates to the cloud
 func (c *rpcClient) pushUpdates() error {
+	var updates []*rpc.CfgBackEndUpdate_CfgUpdate
+
 	if len(queued.updates) == 0 {
 		return nil
 	}
 
 	queued.Lock()
-	updates := queued.updates
-	queued.updates = make([]*rpc.CfgBackEndUpdate_CfgUpdate, 0)
+	if len(queued.updates) < maxUpdates {
+		updates = queued.updates
+		queued.updates = make([]*rpc.CfgBackEndUpdate_CfgUpdate, 0)
+	} else {
+		updates = queued.updates[:maxUpdates]
+		queued.updates = queued.updates[maxUpdates:]
+	}
 	queued.Unlock()
 
 	updateOp := &rpc.CfgBackEndUpdate{
@@ -170,7 +189,7 @@ func (c *rpcClient) fetchStream() error {
 		Time:      ptypes.TimestampNow(),
 		Version:   cfgapi.Version,
 		LastCmdID: queued.lastOp,
-		MaxCmds:   MaxCmds,
+		MaxCmds:   maxCmds,
 	}
 
 	ctx, err := applianceCred.MakeGRPCContext(c.ctx)
@@ -201,6 +220,10 @@ func (c *rpcClient) fetchStream() error {
 			for _, cmd := range cmds {
 				exec(cmd)
 			}
+		}
+		for len(queued.completions) > maxBacklog {
+			slog.Debugf("blocking on completion backlog")
+			time.Sleep(time.Second)
 		}
 	}
 }
