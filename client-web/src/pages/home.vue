@@ -38,17 +38,17 @@
       </f7-nav-right>
     </f7-navbar>
 
-    <template v-if="alertCount(alertActive(allAlerts))">
+    <template v-if="alertCount(alertActive(alerts))">
       <f7-block-title>{{ $t("message.alerts.serious_alerts") }}</f7-block-title>
       <f7-list>
         <f7-list-item
-          v-for="alert in alertActive(allAlerts)"
-          :key="alert.device.uniqid + '-' + alert.vulnid"
-          :link="`/devices/${alert.device.uniqid}/`">
+          v-for="alert in alertActive(alerts)"
+          :key="alert.deviceID + '-' + alert.vulnid"
+          :link="`/devices/${alert.deviceID}/`">
           <span>
             <f7-icon f7="bolt_round_fill" color="red" />
             {{ $t('message.alerts.problem_on_device',
-                  {problem: vulnHeadline(alert.vulnid), device: alert.device.networkName})
+                  {problem: vulnHeadline(alert.vulnid), device: deviceByUniqID(alert.deviceID).networkName})
             }}
           </span>
         </f7-list-item>
@@ -66,7 +66,7 @@
         :class="loggedIn ? '' : 'disabled'"
         link="/compliance_report/" />
       <f7-list-item
-        :title="$t('message.home.tools.manage_devices', {'device_count': deviceCount(allDevices)})"
+        :title="$t('message.home.tools.manage_devices', {'device_count': deviceCount(devices)})"
         :class="loggedIn ? '' : 'disabled'"
         link="/devices/" />
       <f7-list-item
@@ -82,7 +82,7 @@
     <f7-block-title>{{ $t("message.notifications.notifications") }}</f7-block-title>
     <f7-list>
       <f7-list-item
-        v-for="device in allDevices"
+        v-for="device in devices"
         v-if="device.notification"
         :key="device.uniqid"
         :title="$t('message.notifications.update_device', {'device': device.networkName})"
@@ -146,16 +146,17 @@ export default {
     // Map various $store elements as computed properties for use in the
     // template.
     ...vuex.mapGetters([
+      'alertActive',
+      'alertCount',
+      'alerts',
       'applianceIDs',
       'currentApplianceID',
-      'mock',
-      'loggedIn',
-      'fakeLogin',
-      'allDevices',
+      'deviceByUniqID',
       'deviceCount',
-      'allAlerts',
-      'alertCount',
-      'alertActive',
+      'devices',
+      'fakeLogin',
+      'loggedIn',
+      'mock',
     ]),
   },
 
@@ -199,12 +200,7 @@ export default {
 
     onApplianceChange: function(evt) {
       debug('onApplianceChange', evt.target.value);
-      // Changing window.location.href causes the browser to reload.
-      // This is a hack while we work on restructuring the store to be
-      // multi-appliance aware.
-      const u = new URL(window.location.href);
-      u.searchParams.set('appliance', evt.target.value);
-      window.location.href = u.toString();
+      this.$store.dispatch('setCurrentApplianceID', {id: evt.target.value});
     },
 
     onPageBeforeIn: async function() {

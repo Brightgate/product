@@ -30,42 +30,42 @@
           {{ $t("message.compliance_report.summary_phish", {num: phishingIncidents}) }}
         </f7-list-item>
         <f7-list-item>
-          {{ $t("message.compliance_report.summary_vuln", {num: alertCount(alertActive(allAlerts))}) }}
+          {{ $t("message.compliance_report.summary_vuln", {num: alertCount(alertActive(alerts))}) }}
         </f7-list-item>
       </f7-list>
     </f7-card>
 
-    <f7-card v-if="alertCount(alertActive(allAlerts)) === 0"
+    <f7-card v-if="alertCount(alertActive(alerts)) === 0"
              :title="$t('message.compliance_report.active_violations')"
              :content="$t('message.compliance_report.no_active_violations')" />
     <f7-card v-else :title="$t('message.compliance_report.active_violations')">
       <f7-list>
         <f7-list-item
-          v-for="alert in alertActive(allAlerts)"
-          :key="alert.device.uniqid + '-' + alert.vulnid"
-          :link="`/devices/${alert.device.uniqid}/`">
+          v-for="alert in alertActive(alerts)"
+          :key="alert.deviceID + '-' + alert.vulnid"
+          :link="`/devices/${alert.deviceID}/`">
           <span>
             <f7-icon f7="bolt_round_fill" color="red" />
             {{ $t('message.alerts.problem_on_device',
-                  {problem: vulnHeadline(alert.vulnid), device: alert.device.networkName})
+                  {problem: vulnHeadline(alert.vulnid), device: deviceByUniqID(alert.deviceID).networkName})
             }}
           </span>
         </f7-list-item>
       </f7-list>
     </f7-card>
 
-    <f7-card v-if="alertCount(alertInactive(allAlerts)) === 0"
+    <f7-card v-if="alertCount(alertInactive(alerts)) === 0"
              :title="$t('message.compliance_report.resolved_violations')"
              :content="$t('message.compliance_report.no_resolved_violations')" />
     <f7-card v-else :title="$t('message.compliance_report.resolved_violations')">
       <f7-list>
         <f7-list-item
-          v-for="alert in alertInactive(allAlerts)"
-          :key="alert.device.uniqid + '-' + alert.vulnid">
+          v-for="alert in alertInactive(alerts)"
+          :key="alert.deviceID + '-' + alert.vulnid">
           <span>
             <f7-icon f7="bolt_round_fill" color="gray" />
             {{ $t('message.alerts.problem_on_device',
-                  {problem: vulnHeadline(alert.vulnid), device: alert.device.networkName})
+                  {problem: vulnHeadline(alert.vulnid), device: deviceByUniqID(alert.deviceID).networkName})
             }}
           </span>
         </f7-list-item>
@@ -92,7 +92,7 @@
             {{ $t('message.compliance_report.population') }}
           </f7-col>
           <f7-col width="60" style="text-align: center">
-            <bg-ring-summary :devices="allDevices" show-zero />
+            <bg-ring-summary :devices="devices" show-zero />
           </f7-col>
         </f7-row>
 
@@ -133,28 +133,30 @@ export default {
     // Map various $store elements as computed properties for use in the
     // template.
     ...Vuex.mapGetters([
-      'mock',
-      'allDevices',
-      'deviceCount',
-      'deviceVulnScanned',
-      'deviceVulnerable',
-      'deviceNotVulnerable',
-      'deviceActive',
-      'devicesByRing',
-      'networkConfig',
-      'allAlerts',
       'alertActive',
       'alertCount',
       'alertInactive',
-      'users',
-      'userCount',
+      'alerts',
+      'deviceActive',
+      'deviceByUniqID',
+      'deviceCount',
+      'deviceNotVulnerable',
+      'devices',
+      'devicesByRing',
+      'devicesByRing',
+      'deviceVulnerable',
+      'deviceVulnScanned',
+      'mock',
+      'networkConfig',
       'rings',
+      'userCount',
+      'users',
     ]),
     phishingIncidents: function() {
       return 0;
     },
     policyViolations: function() {
-      return this.alertCount(this.alertActive(this.allAlerts));
+      return this.alertCount(this.alertActive(this.alerts));
     },
     SortedRingNames: function() {
       return sortBy(Object.keys(this.rings), (r) => {

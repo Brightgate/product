@@ -11,7 +11,7 @@
   <f7-page
     ptr
     @ptr:refresh="usersPullRefresh"
-    @page:afterin="onPageAfterIn">
+    @page:beforein="onPageBeforeIn">
 
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.users.title')" sliding />
 
@@ -57,8 +57,8 @@ export default {
       done();
     },
 
-    onPageAfterIn: function() {
-      return this.$store.dispatch('fetchUsers');
+    onPageBeforeIn: function() {
+      this.$store.dispatch('fetchUsers');
     },
   },
 };

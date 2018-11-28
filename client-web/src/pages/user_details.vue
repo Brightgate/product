@@ -73,10 +73,10 @@ import Debug from 'debug';
 const debug = Debug('page:user-details');
 
 export default {
-  data: function() {
-    return {
-      user: this.$store.getters.userByUUID(this.$f7route.params.UUID),
-    };
+  computed: {
+    user: function() {
+      return this.$store.getters.userByUUID(this.$f7route.params.UUID);
+    },
   },
 
   methods: {

@@ -29,50 +29,151 @@ const RETRY_DELAY = 1000;
 const windowURLAppliance = window && window.location && window.location.href && new URL(window.location.href);
 const initApplianceID = windowURLAppliance.searchParams.get('appliance') || '0';
 
+class Appliance {
+  constructor(id) {
+    assert.equal(typeof id, 'string');
+    this.id = id;
+    this.devices = []; // formerly allDevices
+    this.alerts = [];
+    this.rings = {};
+    this.users = {};
+    this.networkConfig = {};
+  }
+
+  get devices() {
+    return this._devices;
+  }
+
+  // Setting devices sets off a cascade of updates.
+  set devices(val) {
+    debug('set devices', val);
+    assert(Array.isArray(val));
+    this._devices = val;
+
+    // First, organize by unique id.
+    Vue.set(this, 'devicesByUniqID', keyBy(this._devices, 'uniqid'));
+
+    // Next, Reorganize the data into:
+    // { 'phone': [list of phones...], 'computer': [...] ... }
+    //
+    // Make sure all categories are present.
+    const byCat = {};
+    for (const c of DEVICE_CATEGORY_ALL) {
+      byCat[c] = [];
+    }
+
+    this._devices.reduce((result, value) => {
+      assert(value.category in byCat, `category ${value.category} is missing`);
+      result[value.category].push(value);
+      return result;
+    }, byCat);
+    Vue.set(this, 'devicesByCategory', byCat);
+
+    // Index by ring
+    const byRing = {};
+    this._devices.reduce((result, value) => {
+      if (result[value.ring] === undefined) {
+        result[value.ring] = [];
+      }
+      result[value.ring].push(value);
+      return result;
+    }, byRing);
+    Vue.set(this, 'devicesByRing', byRing);
+
+    // Tabulate vulnerability counts and create vulnerability alerts for each
+    // device
+    const alerts = [];
+    this._devices.forEach((device) => {
+      const actives = pickBy(device.vulnerabilities, {active: true});
+      Vue.set(device, 'activeVulnCount', Object.keys(actives).length);
+
+      // Today all of the alerts we make are derived from the devices
+      // list.  In the future, that could change.
+      if (device.vulnerabilities) {
+        for (const [vulnid, vulninfo] of Object.entries(device.vulnerabilities)) {
+          alerts.push({
+            'deviceID': device.uniqid,
+            'vulnid': vulnid,
+            'vulninfo': vulninfo,
+          });
+        }
+      }
+    });
+    Vue.set(this, 'alerts', alerts);
+    debug('set devices completed');
+  }
+}
+
+function getAppliance(state, applianceID) {
+  if (state.appliances[applianceID] === undefined) {
+    // Using Vue.set here is super important because we're adding the
+    // appliance as a new property of state.appliances, and we need
+    // it to be reactive.
+    Vue.set(state.appliances, applianceID, new Appliance(applianceID));
+  }
+  return state.appliances[applianceID];
+}
+
+const initAppliance = new Appliance(initApplianceID);
 const state = {
   loggedIn: false,
   fakeLogin: false,
   mock: false,
   localAppliance: true,
-  currentApplianceID: initApplianceID,
   applianceIDs: [],
-  devices: organizeDevices([]),
-  alerts: [],
-  rings: {},
-  users: {},
-  networkConfig: {},
+  appliances: {
+    [initApplianceID]: initAppliance,
+  },
+  currentApplianceID: initApplianceID,
+  currentAppliance: initAppliance,
 };
 
 const mutations = {
   setApplianceIDs(state, newIDs) {
+    debug('setApplianceIDs, newIDs', newIDs);
+    // need to make a copy, as when mocking we get back a singleton
+    newIDs = newIDs.concat(['OtherAppliance']);
     state.applianceIDs = newIDs;
     state.localAppliance = state.applianceIDs.length === 1 && state.applianceIDs[0] === '0';
+    state.applianceIDs.forEach((applianceID) => {
+      // Will create as needed
+      getAppliance(state, applianceID);
+    });
     if (state.applianceIDs.length === 1) {
       state.currentApplianceID = state.applianceIDs[0];
-      state.applianceIDs.push('Other Appliance');
+      state.currentAppliance = state.appliances[state.currentApplianceID];
     }
   },
 
-  setDevices(state, newDevices) {
-    state.devices = newDevices;
-    state.alerts = makeAlerts(newDevices);
+  setCurrentApplianceID(state, newID) {
+    // getAppliance will create as needed; maybe in the future this code
+    // should instead check for the appliance existing, and fail if not?
+    getAppliance(state, newID);
+    state.currentApplianceID = newID;
+    state.currentAppliance = state.appliances[state.currentApplianceID];
   },
 
-  setRings(state, newRings) {
-    state.rings = newRings;
+  setApplianceDevices(state, {id, devices}) {
+    getAppliance(state, id).devices = devices;
   },
 
-  setNetworkConfig(state, newConfig) {
-    state.networkConfig = newConfig;
+  setApplianceRings(state, {id, rings}) {
+    getAppliance(state, id).rings = rings;
   },
 
-  setUsers(state, newUsers) {
-    state.users = newUsers;
+  setApplianceNetworkConfig(state, {id, networkConfig}) {
+    getAppliance(state, id).networkConfig = networkConfig;
   },
 
-  setUser(state, user) {
+  setApplianceUsers(state, {id, users}) {
+    assert(users);
+    debug('setApplianceUsers', id, users);
+    Vue.set(getAppliance(state, id), 'users', users);
+  },
+
+  setApplianceUser(state, {id, user}) {
     assert(user.UUID);
-    state.users[user.UUID] = user;
+    getAppliance(state, id).users[user.UUID] = user;
   },
 
   setLoggedIn(state, newValue) {
@@ -100,145 +201,111 @@ const getters = {
   localAppliance: (state) => state.localAppliance,
   currentApplianceID: (state) => state.currentApplianceID,
   applianceIDs: (state) => state.applianceIDs,
-  allDevices: (state) => state.devices.allDevices,
 
-  deviceByUniqID: (state) => (uniqid) => {
-    return state.devices.byUniqID[uniqid];
+  applianceAlerts: (state) => (applianceID) => {
+    return getAppliance(state, applianceID).alerts;
+  },
+  alerts: (state) => {
+    return state.currentAppliance.alerts;
   },
 
+  applianceDevices: (state) => (applianceID) => {
+    return getAppliance(state, applianceID).devices;
+  },
+  devices: (state) => {
+    return state.currentAppliance.devices;
+  },
+
+  applianceDeviceByUniqID: (state) => (applianceID, uniqid) => {
+    return getAppliance(state, applianceID).devicesByUniqID[uniqid];
+  },
+  deviceByUniqID: (state) => (uniqid) => {
+    return state.currentAppliance.devicesByUniqID[uniqid];
+  },
+
+  applianceDevicesByCategory: (state) => (applianceID, category) => {
+    return getAppliance(state, applianceID).devicesByCategory[category];
+  },
+  devicesByCategory: (state) => (category) => {
+    return state.currentAppliance.devicesByCategory[category];
+  },
+
+  applianceDevicesByRing: (state) => (applianceID, ring) => {
+    return getAppliance(state, applianceID).devicesByRing[ring] || [];
+  },
+  devicesByRing: (state) => (ring) => {
+    return state.currentAppliance.devicesByRing[ring] || [];
+  },
+
+  applianceNetworkConfig: (state) => (applianceID) => {
+    return getAppliance(state, applianceID).networkConfig;
+  },
+  networkConfig: (state) => {
+    return state.currentAppliance.networkConfig;
+  },
+
+  applianceRings: (state) => (applianceID) => {
+    return getAppliance(state, applianceID).rings;
+  },
+  rings: (state) => {
+    return state.currentAppliance.rings;
+  },
+
+  applianceUsers: (state) => (applianceID) => {
+    return getAppliance(state, applianceID).users;
+  },
+  users: (state) => {
+    return state.currentAppliance.users;
+  },
+
+  applianceUserByUUID: (state) => (applianceID, uuid) => {
+    return getAppliance(state, applianceID).users[uuid];
+  },
+  userByUUID: (state) => (uuid) => {
+    return state.currentAppliance.users[uuid];
+  },
+
+  // device utility functions
+  // XXX since these don't reference state explicitly, they should move to
+  // a library, probably.
   deviceCount: (state) => (devices) => {
     assert(Array.isArray(devices), 'expected devices to be array');
     return devices.length;
   },
-
-  // Return an array of devices for the category, sorted by networkName.
-  devicesByCategory: (state) => (category) => {
-    return state.devices.byCategory[category];
-  },
-
-  devicesByRing: (state) => (ring) => {
-    if (state.devices.byRing[ring] === undefined) {
-      return [];
-    }
-    return state.devices.byRing[ring];
-  },
-
   deviceActive: (state) => (devices) => {
     return filter(devices, {active: true});
   },
-
   deviceVulnScanned: (state) => (devices) => {
     return filter(devices, 'scans.vulnerability.finish');
   },
-
   deviceVulnerable: (state) => (devices) => {
     return filter(devices, 'activeVulnCount');
   },
-
   deviceNotVulnerable: (state) => (devices) => {
     return filter(devices, {activeVulnCount: 0});
   },
 
-  allAlerts: (state) => state.alerts,
-
+  // alert utility functions
   alertCount: (state) => (alerts) => {
     assert(typeof(alerts) === 'object' && !Array.isArray(alerts), 'expected alerts to be object');
     return Object.keys(alerts).length;
   },
-
   alertActive: (state) => (alerts) => {
     return pickBy(alerts, {vulninfo: {active: true}});
   },
-
   alertInactive: (state) => (alerts) => {
     return pickBy(alerts, {vulninfo: {active: false}});
   },
-
   alertByRing: (state) => (ring, alerts) => {
     return pickBy(alerts, {device: {ring: ring}});
   },
 
-  rings: (state) => state.rings,
-
-  users: (state) => state.users,
+  // user utility functions
   userCount: (state) => (users) => {
     assert(typeof(users) === 'object' && !Array.isArray(users), 'expected users to be object');
     return Object.keys(users).length;
   },
-
-  userByUUID: (state) => (uuid) => {return state.users[uuid];},
-
-  networkConfig: (state) => state.networkConfig,
 };
-
-function organizeDevices(allDevices) {
-  assert(Array.isArray(allDevices));
-  const devices = {
-    allDevices: allDevices,
-    byUniqID: {},
-    byCategory: {},
-    byRing: {},
-  };
-
-  // First, organize by unique id.
-  devices.byUniqID = keyBy(devices.allDevices, 'uniqid');
-
-  // Next, Reorganize the data into:
-  // { 'phone': [list of phones...], 'computer': [...] ... }
-  //
-  // Make sure all categories are present.
-  devices.byCategory = {};
-  for (const c of DEVICE_CATEGORY_ALL) {
-    devices.byCategory[c] = [];
-  }
-
-  devices.allDevices.reduce((result, value) => {
-    assert(value.category in devices.byCategory, `category ${value.category} is missing`);
-    result[value.category].push(value);
-    return result;
-  }, devices.byCategory);
-
-  // Index by ring
-  devices.allDevices.reduce((result, value) => {
-    if (result[value.ring] === undefined) {
-      result[value.ring] = [];
-    }
-    result[value.ring].push(value);
-    return result;
-  }, devices.byRing);
-
-  // Tabulate vulnerability counts for each device
-  devices.allDevices.forEach((device) => {
-    const actives = pickBy(device.vulnerabilities, {active: true});
-    device.activeVulnCount = Object.keys(actives).length;
-  });
-
-  debug('organizeDevices returning', devices);
-  return devices;
-}
-
-// Today all of the alerts we make are derived from the devices
-// list.  In the future, that could change.
-function makeAlerts(devices) {
-  const alerts = [];
-
-  if (!devices || !devices.byUniqID) {
-    return alerts;
-  }
-  for (const [, device] of Object.entries(devices.byUniqID)) {
-    if (!device.vulnerabilities) {
-      continue;
-    }
-    for (const [vulnid, vulninfo] of Object.entries(device.vulnerabilities)) {
-      alerts.push({
-        'device': device,
-        'vulnid': vulnid,
-        'vulninfo': vulninfo,
-      });
-    }
-  }
-  return alerts;
-}
 
 // Take an API device and transform it for local use.
 // Much of this is legacy and could be fixed.
@@ -301,7 +368,14 @@ let fetchPeriodicTimeout = null;
 const actions = {
   // Load the list of appliances from the server.
   async fetchApplianceIDs(context) {
-    context.commit('setApplianceIDs', await applianceApi.appliancesGet());
+    debug('Store: fetchApplianceIDs');
+    const ids = await applianceApi.appliancesGet();
+    debug('Store: fetchApplianceIDs got', ids);
+    context.commit('setApplianceIDs', ids);
+  },
+
+  async setCurrentApplianceID(context, {id}) {
+    context.commit('setCurrentApplianceID', id);
   },
 
   // Load the list of devices from the server.
@@ -315,30 +389,27 @@ const actions = {
     }
 
     let devices = [];
-    const applianceID = context.state.currentApplianceID;
-    const p = retry(applianceApi.applianceDevicesGet, {
+    const id = context.state.currentApplianceID;
+    fetchDevicesPromise = retry(applianceApi.applianceDevicesGet, {
       interval: RETRY_DELAY,
       max_tries: 5, // eslint-disable-line camelcase
-      args: [applianceID],
+      args: [id],
     }).then((apiDevices) => {
       devices = apiDevices.map(computeDeviceProps);
-    }).finally(() => {
-      const organizedDevices = organizeDevices(devices);
-      context.commit('setDevices', organizedDevices);
-      debug('Store: fetchDevices finished');
+      context.commit('setApplianceDevices', {id: id, devices: devices});
+    }).tapCatch((err) => {
+      debug('Store: fetchDevices failed', err);
     });
-    // make sure promise is a bluebird promise, so we can call isPending
-    fetchDevicesPromise = Promise.resolve(p);
     return fetchDevicesPromise;
   },
 
   // Start a timer-driven periodic fetch of devices
   fetchPeriodic(context) {
-    // if not logged in, just come back later
     if (fetchPeriodicTimeout !== null) {
       clearTimeout(fetchPeriodicTimeout);
       fetchPeriodicTimeout = null;
     }
+    // if not logged in, just come back later
     if (!context.getters.loggedIn) {
       debug('fetchPeriodic: not logged in, later');
       fetchPeriodicTimeout = setTimeout(() => {
@@ -371,7 +442,7 @@ const actions = {
   async fetchRings(context) {
     const id = context.state.currentApplianceID;
     const rings = await applianceApi.applianceRingsGet(id);
-    context.commit('setRings', rings);
+    context.commit('setApplianceRings', {id: id, rings: rings});
   },
 
   // Load the various aspects of the network configuration from the server.
@@ -385,7 +456,7 @@ const actions = {
       defaultRingWPAPSK: applianceApi.applianceConfigGet(id, '@/network/default_ring/wpa-psk', ''),
     });
     debug('fetchNetworkConfig committing', nc);
-    context.commit('setNetworkConfig', nc);
+    context.commit('setApplianceNetworkConfig', {id: id, networkConfig: nc});
     return nc;
   },
 
@@ -407,7 +478,7 @@ const actions = {
   async fetchUsers(context) {
     const id = context.state.currentApplianceID;
     const users = await applianceApi.applianceUsersGet(id);
-    context.commit('setUsers', users);
+    context.commit('setApplianceUsers', {id: id, users: users});
   },
 
   // Create or Update a user
@@ -422,7 +493,7 @@ const actions = {
     }
     try {
       const postUser = await applianceApi.applianceUsersPost(id, user, newUser);
-      context.commit('setUser', postUser);
+      context.commit('setApplianceUser', {id: id, user: postUser});
     } catch (err) {
       debug('saveUser failed', err);
       if (err.res && err.res.text) {
@@ -464,10 +535,12 @@ const actions = {
     await applianceApi.authApplianceLogin(uid, userPassword);
     context.commit('setLoggedIn', true);
     // Let these run async
-    context.dispatch('fetchDevices');
-    context.dispatch('fetchRings');
-    context.dispatch('fetchUsers');
-    context.dispatch('fetchPeriodic');
+    context.dispatch('fetchApplianceIDs').then(() => {
+      context.dispatch('fetchDevices');
+      context.dispatch('fetchRings');
+      context.dispatch('fetchUsers');
+      context.dispatch('fetchPeriodic');
+    });
   },
 
   logout(context) {

@@ -24,13 +24,13 @@
     <f7-block-title>{{ $t('message.site_status.devices') }} </f7-block-title>
     <f7-list>
       <f7-list-item :title="$t('message.site_status.devices_active')">
-        {{ deviceCount(deviceActive(allDevices)) }}
+        {{ deviceCount(deviceActive(devices)) }}
       </f7-list-item>
       <f7-list-item :title="$t('message.site_status.devices_scanned')">
-        {{ deviceCount(deviceVulnScanned(deviceActive(allDevices))) }}
+        {{ deviceCount(deviceVulnScanned(deviceActive(devices))) }}
       </f7-list-item>
       <f7-list-item :title="$t('message.site_status.devices_reg')">
-        {{ deviceCount(allDevices) }}
+        {{ deviceCount(devices) }}
       </f7-list-item>
     </f7-list>
 
@@ -85,7 +85,7 @@ export default {
     ...vuex.mapGetters([
       'mock',
       'loggedIn',
-      'allDevices',
+      'devices',
       'deviceCount',
       'deviceActive',
       'deviceVulnScanned',
