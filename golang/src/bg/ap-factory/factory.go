@@ -234,21 +234,24 @@ func writeSlices(imd string, side int) {
 	}
 }
 
-func uBootEnvRead(vbl string) string {
+func uBootEnvRead(vbl string) (string, error) {
+	// This invocation can fail, if the environment variable is not
+	// defined.
 	printenv := exec.Command("/usr/sbin/fw_printenv", "-n", vbl)
 	cb, err := printenv.Output()
 	if err != nil {
 		log.Printf("fw_printenv %s failed: %v\n", vbl, err)
+		return "", err
 	}
 
-	return strings.TrimSpace(string(cb))
+	return strings.TrimSpace(string(cb)), nil
 }
 
 func uBootEnvWrite(vbl string, value string, checkNeeded bool) {
 	if checkNeeded {
-		cval := uBootEnvRead(vbl)
+		cval, err := uBootEnvRead(vbl)
 
-		if value == cval {
+		if err == nil && value == cval {
 			return
 		}
 	}
@@ -281,8 +284,14 @@ func writeUBootEnvironment(side int) {
 
 	uBootEnvWrite("boot_wr_img", "image_check; if test ${img_result} = good; then image_blks 512 ${filesize};mmc device 0;mmc write ${loadaddr} ${readoff} ${img_blks}; fi", true)
 
+	// Confine relocations to first 256MB of kernel lowmem.
+	uBootEnvWrite("bootm_size", "0x10000000", true)
+
+	// Set default boot arguments and command.
 	args := fmt.Sprintf("console=ttyS0,115200n8 root=%s earlyprintk", rootpart)
 	uBootEnvWrite("bootargs", args, true)
+	uBootEnvWrite("bootcmd", "run boot2", true)
+
 	uBootEnvWrite("readoff", readoff, true)
 }
 
@@ -462,7 +471,13 @@ func retrieve(cmd *cobra.Command, args []string) error {
 }
 
 func chooseSide(pickSame bool) int {
-	readoff := uBootEnvRead("readoff")
+	readoff, err := uBootEnvRead("readoff")
+	if err != nil {
+		// When programming environment for the first time, the
+		// readoff variable is not defined, and the various eMMC
+		// boot variants are hard-coded to side A.
+		readoff = mt7623KernelOffsetBlk
+	}
 
 	switch readoff {
 	case mt7623KernelOffsetBlk:
@@ -552,7 +567,11 @@ func status(cmd *cobra.Command, args []string) error {
 	// Read readoff.
 	roSide := noSide
 	baSide := sideB
-	readoff := uBootEnvRead("readoff")
+	readoff, err := uBootEnvRead("readoff")
+
+	if err != nil {
+		readoff = mt7623KernelOffsetBlk
+	}
 
 	switch readoff {
 	case mt7623KernelOffsetBlk:
@@ -566,7 +585,8 @@ func status(cmd *cobra.Command, args []string) error {
 	}
 
 	// Read bootargs.
-	bootargs := uBootEnvRead("bootargs")
+	bootargs, _ := uBootEnvRead("bootargs")
+
 	if strings.Contains(bootargs, mt7623RootfsDevice) {
 		log.Printf("root variable suggests side A\n")
 		baSide = sideA
