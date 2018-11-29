@@ -35,10 +35,6 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-const (
-	dhcpDump = "/sbin/dhcpcd"
-)
-
 var (
 	nodeMode string
 	nodeLock sync.Mutex

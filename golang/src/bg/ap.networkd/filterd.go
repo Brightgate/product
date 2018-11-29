@@ -71,7 +71,6 @@ var (
 	rules      ruleList
 	applied    map[string]map[string][]string
 	blockedIPs map[uint32]struct{}
-	wanNic     string
 )
 
 //
@@ -218,14 +217,14 @@ func ifaceForwardRules(ring string) {
 	config := rings[ring]
 
 	// Traffic from the managed network has its IP addresses masqueraded
-	masqRule := " -o " + wanNic
+	masqRule := " -o " + wan.getNic()
 	masqRule += " -s " + config.Subnet
 	masqRule += " -j MASQUERADE"
 	iptablesAddRule("nat", "POSTROUTING", masqRule)
 
 	// Route traffic from the managed network to the WAN
 	connRule := " -i " + config.Bridge
-	connRule += " -o " + wanNic
+	connRule += " -o " + wan.getNic()
 	connRule += " -s " + config.Subnet
 	connRule += " -m conntrack --ctstate NEW"
 	connRule += " -j ACCEPT"
@@ -267,7 +266,7 @@ func genEndpointRing(e *endpoint, src bool) (string, error) {
 			// The gateway node has an internal bridge that all
 			// satellite links connect to.  Satellite nodes use
 			// their 'wan' nic for internal traffic.
-			b = wanNic
+			b = wan.getNic()
 		}
 
 		return fmt.Sprintf(" %s %s ", d, b), nil
@@ -285,8 +284,8 @@ func genEndpointIface(e *endpoint, src bool) (string, error) {
 		d = "-o"
 	}
 
-	if e.detail == "wan" && wanNic != "" {
-		name = wanNic
+	if e.detail == "wan" && wan.getNic() != "" {
+		name = wan.getNic()
 	} else {
 		return "", fmt.Errorf("no such interface: %s", e.detail)
 	}
@@ -608,6 +607,8 @@ func firewallRules() {
 
 func iptablesRebuild() {
 	slog.Infof("Rebuilding iptables rules")
+
+	wanNic := wan.getNic()
 
 	applied = make(map[string]map[string][]string)
 	for _, t := range tables {

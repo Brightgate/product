@@ -104,7 +104,7 @@ func rpiNicLocation(name string) string {
 	return ""
 }
 
-func rpiGetLeaseInfo(iface string) (map[string]string, error) {
+func rpiGetDHCPInfo(iface string) (map[string]string, error) {
 	const dhcpDump = "/sbin/dhcpcd"
 	const leaseDir = "/var/lib/dhcpcd5/"
 
@@ -134,6 +134,10 @@ func rpiGetLeaseInfo(iface string) (map[string]string, error) {
 	return data, nil
 }
 
+func rpiDHCPPidfile(nic string) string {
+	return "/var/run/dhcpcd.pid"
+}
+
 func init() {
 	addPlatform(&Platform{
 		name:          "rpi3",
@@ -159,6 +163,8 @@ func init() {
 		NicIsWan:      rpiNicIsWan,
 		NicID:         rpiNicGetID,
 		NicLocation:   rpiNicLocation,
-		GetLeaseInfo:  rpiGetLeaseInfo,
+
+		GetDHCPInfo: rpiGetDHCPInfo,
+		DHCPPidfile: rpiDHCPPidfile,
 	})
 }

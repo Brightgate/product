@@ -13,9 +13,11 @@ package network
 import (
 	"encoding/hex"
 	"fmt"
-	"net"
+	"io/ioutil"
+	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"bg/ap_common/platform"
@@ -25,8 +27,8 @@ import (
 
 // DHCPInfo contains a summary of an outstanding DHCP lease held by this device.
 type DHCPInfo struct {
-	Addr          net.IP
-	Router        net.IP
+	Addr          string
+	Route         string
 	DomainName    string
 	LeaseStart    time.Time
 	LeaseDuration time.Duration
@@ -82,14 +84,19 @@ func GetLease(iface string) (*DHCPInfo, error) {
 
 	plat := platform.NewPlatform()
 
-	data, err := plat.GetLeaseInfo(iface)
+	data, err := plat.GetDHCPInfo(iface)
 	if err != nil {
 		return nil, err
 	}
 
+	addr := data["ip_address"]
+	if bits, ok := data["subnet_cidr"]; ok {
+		addr += "/" + bits
+	}
+
 	d := &DHCPInfo{
-		Addr:       net.ParseIP(data["ip_address"]),
-		Router:     net.ParseIP(data["routers"]),
+		Addr:       addr,
+		Route:      data["routers"],
 		DomainName: data["domain_name"],
 		Vendor:     data["vendor_class_identifier"],
 	}
@@ -122,4 +129,27 @@ func GetLease(iface string) (*DHCPInfo, error) {
 	}
 
 	return d, nil
+}
+
+// RenewLease sends the DHCP daemon a SIGHUP, causing it to attempt to renew its
+// current lease, and set the IP address and route accordingly.
+func RenewLease(nic string) error {
+	plat := platform.NewPlatform()
+	pidfile := plat.DHCPPidfile(nic)
+
+	data, err := ioutil.ReadFile(pidfile)
+	if err != nil {
+		return fmt.Errorf("unable to read %s: %v", pidfile, err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return fmt.Errorf("bad pid in %s: %v", pidfile, err)
+	}
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return fmt.Errorf("no dhcp process %d: %v", pid, err)
+	}
+
+	p.Signal(syscall.SIGHUP)
+	return nil
 }

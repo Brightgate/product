@@ -161,7 +161,7 @@ func getDHCP(nic string) (*dhcpInterface, error) {
 	return nil, nil
 }
 
-func mtGetLeaseInfo(iface string) (map[string]string, error) {
+func mtGetDHCPInfo(iface string) (map[string]string, error) {
 	w, err := getDHCP(iface)
 	if w == nil {
 		return nil, err
@@ -170,10 +170,10 @@ func mtGetLeaseInfo(iface string) (map[string]string, error) {
 	data := make(map[string]string)
 	if len(w.Ipv4) > 0 {
 		data["ip_address"] = w.Ipv4[0].Address
-		data["subnet_bits"] = strconv.Itoa(w.Ipv4[0].MaskBits)
+		data["subnet_cidr"] = strconv.Itoa(w.Ipv4[0].MaskBits)
 	}
 	if len(w.Routes) > 0 {
-		data["routers"] = w.Routes[0].Target
+		data["routers"] = w.Routes[0].NextHop
 	}
 	if len(w.Domains) > 0 {
 		data["domain_name"] = w.Domains[0]
@@ -188,6 +188,10 @@ func mtGetLeaseInfo(iface string) (map[string]string, error) {
 	data["dhcp_lease_time"] = strconv.Itoa(w.Data.LeaseTime)
 
 	return data, nil
+}
+
+func mtDHCPPidfile(nic string) string {
+	return "/var/run/udhcpc-" + nic + ".pid"
 }
 
 func init() {
@@ -215,6 +219,8 @@ func init() {
 		NicIsWan:      mtNicIsWan,
 		NicID:         mtNicGetID,
 		NicLocation:   mtNicLocation,
-		GetLeaseInfo:  mtGetLeaseInfo,
+
+		GetDHCPInfo: mtGetDHCPInfo,
+		DHCPPidfile: mtDHCPPidfile,
 	})
 }

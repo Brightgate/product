@@ -62,8 +62,12 @@ func x86NicLocation(name string) string {
 	return ""
 }
 
-func x86GetLeaseInfo(iface string) (map[string]string, error) {
-	return rpiGetLeaseInfo(iface)
+func x86GetDHCPInfo(iface string) (map[string]string, error) {
+	return rpiGetDHCPInfo(iface)
+}
+
+func x86DHCPPidfile(nic string) string {
+	return ""
 }
 
 func init() {
@@ -91,6 +95,8 @@ func init() {
 		NicIsWan:      x86NicIsWan,
 		NicID:         x86NicGetID,
 		NicLocation:   x86NicLocation,
-		GetLeaseInfo:  x86GetLeaseInfo,
+
+		GetDHCPInfo: x86GetDHCPInfo,
+		DHCPPidfile: x86DHCPPidfile,
 	})
 }

@@ -198,6 +198,8 @@ func configNetworkDeleted(path []string) {
 	if configSet(path[1], "") {
 		wifiEvaluate = true
 		hostapd.reload()
+	} else if len(path) == 4 && path[1] == "wan" && path[2] == "static" {
+		wanStaticDeleted(path[3])
 	}
 }
 
@@ -206,6 +208,8 @@ func configNetworkChanged(path []string, val string, expires *time.Time) {
 
 	if len(path) == 2 {
 		reload = configSet(path[1], val)
+	} else if len(path) == 4 && path[1] == "wan" && path[2] == "static" {
+		wanStaticChanged(path[3], val)
 	} else if len(path) == 3 && path[2] == "channel" {
 		channel, _ := strconv.Atoi(val)
 		band := path[1]
@@ -587,60 +591,6 @@ func updateNicProperties() {
 	}
 }
 
-//
-// Identify and prepare the WAN port.
-//
-func prepareWan() {
-	var err error
-	var available, wan *physDevice
-	var outgoingRing string
-
-	if aputil.IsSatelliteMode() {
-		outgoingRing = base_def.RING_INTERNAL
-	} else {
-		outgoingRing = base_def.RING_WAN
-	}
-
-	// Enable packet forwarding
-	cmd := exec.Command(plat.SysctlCmd, "-w", "net.ipv4.ip_forward=1")
-	if err = cmd.Run(); err != nil {
-		slog.Fatalf("Failed to enable packet forwarding: %v", err)
-	}
-
-	// Find the WAN device
-	for _, dev := range physDevices {
-		if dev.wifi != nil {
-			// XXX - at some point we should investigate using a
-			// wireless link as a mesh backhaul
-			continue
-		}
-
-		if plat.NicIsWan(dev.name, dev.hwaddr) {
-			available = dev
-			if dev.ring == outgoingRing {
-				if wan == nil {
-					wan = dev
-				} else {
-					slog.Infof("Multiple wan nics found.  "+
-						"Using: %s", wan.hwaddr)
-				}
-			}
-		}
-	}
-
-	if available == nil {
-		slog.Warnf("couldn't find a outgoing device to use")
-		return
-	}
-	if wan == nil {
-		wan = available
-		slog.Infof("No outgoing device configured.  Using %s", wan.hwaddr)
-		wan.ring = outgoingRing
-	}
-
-	wanNic = wan.name
-}
-
 func getEthernet(i net.Interface) *physDevice {
 	d := physDevice{
 		name:   i.Name,
@@ -804,7 +754,7 @@ func daemonInit() error {
 	}
 
 	getDevices()
-	prepareWan()
+	wanInit(props)
 
 	// All wired devices that haven't yet been assigned to a ring will be
 	// put into "standard" by default
@@ -897,9 +847,16 @@ func main() {
 	go signalHandler()
 
 	resetInterfaces()
+
+	if !aputil.IsSatelliteMode() {
+		wan.monitor()
+		defer wan.stop()
+	}
+
 	mcpd.SetState(mcp.ONLINE)
 	hostapdLoop()
 
 	slog.Infof("Cleaning up")
+
 	networkCleanup()
 }

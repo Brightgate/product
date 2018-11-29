@@ -48,7 +48,9 @@ type Platform struct {
 	NicIsWan      func(string, string) bool
 	NicID         func(string, string) string
 	NicLocation   func(string) string
-	GetLeaseInfo  func(string) (map[string]string, error)
+
+	GetDHCPInfo func(string) (map[string]string, error)
+	DHCPPidfile func(string) string
 }
 
 var (
