@@ -19,17 +19,11 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
-	"os/signal"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 
-	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
-	"bg/ap_common/broker"
-	"bg/ap_common/mcp"
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
@@ -38,12 +32,8 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"go.uber.org/zap"
 	"golang.org/x/net/ipv4"
 )
-
-const pname = "ap.relayd"
 
 type endpoint struct {
 	conn  *ipv4.PacketConn
@@ -77,10 +67,7 @@ var (
 	ssdpBase = flag.Int("sbase", 31000, "start of SSDP response ports")
 	ssdpMax  = flag.Int("smax", 20, "Max # of open M-SEARCH requests")
 
-	brokerd *broker.Broker
-	config  *cfgapi.Handle
-	rings   cfgapi.RingMap
-	slog    *zap.SugaredLogger
+	rings cfgapi.RingMap
 
 	ifaceToRing    map[int]string
 	ringToIface    map[string]*net.Interface
@@ -90,7 +77,7 @@ var (
 	ssdpSearches   *ssdpSearchState
 	ssdpSearchLock sync.Mutex
 
-	metrics struct {
+	relayMetric struct {
 		mdnsRequests  prometheus.Counter
 		mdnsReplies   prometheus.Counter
 		ssdpSearches  prometheus.Counter
@@ -184,7 +171,7 @@ func mDNSHandler(source *endpoint, b []byte) error {
 	responses := make([]string, 0)
 
 	if len(msg.Question) > 0 {
-		metrics.mdnsRequests.Inc()
+		relayMetric.mdnsRequests.Inc()
 		slog.Debugf("mDNS request from %v", source.ip)
 		for _, question := range msg.Question {
 			slog.Debugf("   %s", question.String())
@@ -193,7 +180,7 @@ func mDNSHandler(source *endpoint, b []byte) error {
 	}
 
 	if len(msg.Answer) > 0 {
-		metrics.mdnsReplies.Inc()
+		relayMetric.mdnsReplies.Inc()
 		slog.Debugf("mDNS reply from %v", source.ip)
 		for _, answer := range msg.Answer {
 			slog.Debugf("   %s", answer.String())
@@ -312,7 +299,7 @@ func ssdpResponseRelay(sss *ssdpSearchState) {
 				slog.Warnf("Failed to read from %v: %v",
 					sss.listener.LocalAddr(), err)
 			}
-			metrics.ssdpTimeouts.Inc()
+			relayMetric.ssdpTimeouts.Inc()
 			return
 		}
 		if err = ssdpResponseCheck(bytes.NewReader(buf)); err != nil {
@@ -321,7 +308,7 @@ func ssdpResponseRelay(sss *ssdpSearchState) {
 		}
 
 		slog.Debugf("Forwarding SSDP response from/to %v", src, addr)
-		metrics.ssdpResponses.Inc()
+		relayMetric.ssdpResponses.Inc()
 		l, err := sss.requestor.WriteTo(buf[:n], nil, addr)
 		if err != nil {
 			slog.Warnf("    Forward to %v failed: %v", addr, err)
@@ -388,7 +375,7 @@ func ssdpHandler(source *endpoint, buf []byte) error {
 			err = fmt.Errorf("unrecognized M-SEARCH uri: %s", uri)
 		}
 		if err == nil {
-			metrics.ssdpSearches.Inc()
+			relayMetric.ssdpSearches.Inc()
 		}
 	} else if req.Method == "NOTIFY" {
 		nts := req.Header.Get("NTS")
@@ -405,7 +392,7 @@ func ssdpHandler(source *endpoint, buf []byte) error {
 
 		}
 		if err == nil {
-			metrics.ssdpNotifies.Inc()
+			relayMetric.ssdpNotifies.Inc()
 		}
 	} else {
 		err = fmt.Errorf("invalid HTTP Method: %s (%v)", req.Method, req)
@@ -576,6 +563,9 @@ func mrelay(s service) {
 			} else if l != n {
 				slog.Warnf("    Forwarded %d of %d to %s",
 					l, n, dstIface.Name)
+			} else {
+				slog.Debugf("    Forwarded %d bytes to %s",
+					n, dstIface.Name)
 			}
 		}
 	}
@@ -618,71 +608,43 @@ func initInterfaces() {
 	}
 }
 
-func prometheusInit() {
-	metrics.mdnsRequests = prometheus.NewCounter(prometheus.CounterOpts{
+func relayPrometheusInit() {
+	relayMetric.mdnsRequests = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "relayd_mdns_requests",
 		Help: "mDNS requests handled",
 	})
-	metrics.mdnsReplies = prometheus.NewCounter(prometheus.CounterOpts{
+	relayMetric.mdnsReplies = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "relayd_mdns_replies",
 		Help: "mDNS replies handled",
 	})
-	metrics.ssdpSearches = prometheus.NewCounter(prometheus.CounterOpts{
+	relayMetric.ssdpSearches = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "relayd_ssdp_searches",
 		Help: "SSDP search requests handled",
 	})
-	metrics.ssdpTimeouts = prometheus.NewCounter(prometheus.CounterOpts{
+	relayMetric.ssdpTimeouts = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "relayd_ssdp_timeouts",
 		Help: "SSDP search timeouts",
 	})
-	metrics.ssdpNotifies = prometheus.NewCounter(prometheus.CounterOpts{
+	relayMetric.ssdpNotifies = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "relayd_ssdp_notifies",
 		Help: "SSDP notifies handled",
 	})
-	metrics.ssdpResponses = prometheus.NewCounter(prometheus.CounterOpts{
+	relayMetric.ssdpResponses = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "relayd_ssdp_requests",
 		Help: "SSDP requests handled",
 	})
 
-	prometheus.MustRegister(metrics.mdnsRequests)
-	prometheus.MustRegister(metrics.mdnsReplies)
-	prometheus.MustRegister(metrics.ssdpSearches)
-	prometheus.MustRegister(metrics.ssdpNotifies)
-	prometheus.MustRegister(metrics.ssdpResponses)
-
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(base_def.RELAYD_DIAG_PORT, nil)
+	prometheus.MustRegister(relayMetric.mdnsRequests)
+	prometheus.MustRegister(relayMetric.mdnsReplies)
+	prometheus.MustRegister(relayMetric.ssdpSearches)
+	prometheus.MustRegister(relayMetric.ssdpNotifies)
+	prometheus.MustRegister(relayMetric.ssdpResponses)
 }
 
-func main() {
-	flag.Parse()
-	slog = aputil.NewLogger(pname)
-	defer slog.Sync()
-	slog.Infof("starting")
-
-	mcpd, err := mcp.New(pname)
-	if err != nil {
-		slog.Warnf("cannot connect to mcp: %v", err)
-	}
-
-	prometheusInit()
-	brokerd = broker.New(pname)
-	defer brokerd.Fini()
-
-	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
-	if err != nil {
-		slog.Fatalf("cannot connect to configd: %v", err)
-	}
-
+func relayInit() {
 	initInterfaces()
+	relayPrometheusInit()
 	for _, s := range multicastServices {
 		go mrelay(s)
 	}
-
-	mcpd.SetState(mcp.ONLINE)
-
-	sig := make(chan os.Signal, 2)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	s := <-sig
-	slog.Fatalf("Signal (%v) received, stopping", s)
 }

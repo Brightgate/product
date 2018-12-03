@@ -24,9 +24,7 @@ import (
 	"time"
 
 	"bg/ap_common/aptest"
-	"bg/ap_common/aputil"
 	"bg/cloud_rpc"
-	"bg/common/grpcutils"
 
 	"google.golang.org/grpc"
 
@@ -159,11 +157,4 @@ func TestUpload(t *testing.T) {
 			assert.Equal(tc.nPUTs, nPUTs, "unexpected number of PUTs")
 		})
 	}
-}
-
-func TestMain(m *testing.M) {
-	// Need to setup global
-	slog = aputil.NewLogger(pname)
-	applianceCred = grpcutils.NewTestCredential()
-	os.Exit(m.Run())
 }

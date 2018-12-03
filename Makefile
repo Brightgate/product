@@ -308,16 +308,13 @@ APPCOMMAND_GOPKGS = \
 APPDAEMON_GOPKGS = \
 	bg/ap.brokerd \
 	bg/ap.configd \
-	bg/ap.dhcp4d \
-	bg/ap.dns4d \
 	bg/ap.httpd \
 	bg/ap.identifierd \
 	bg/ap.logd \
 	bg/ap.mcp \
 	bg/ap.networkd \
-	bg/ap.relayd \
 	bg/ap.rpcd \
-	bg/ap.updated \
+	bg/ap.serviced \
 	bg/ap.userauthd \
 	bg/ap.watchd
 
@@ -352,7 +349,6 @@ GO_AP_TESTABLES = \
 	bg/ap-defaultpass\
 	bg/ap.networkd \
 	bg/ap.rpcd \
-	bg/ap.updated \
 	bg/ap.userauthd \
 	bg/common/grpcutils
 
@@ -379,7 +375,7 @@ APPTEMPLATES = $(NETWORKD_TEMPLATES) $(USERAUTHD_TEMPLATES)
 FILTER_RULES = \
 	$(APPRULES)/base.rules \
 	$(APPRULES)/local.rules \
-	$(APPRULES)/relayd.rules
+	$(APPRULES)/relay.rules
 
 APPCONFIGS = \
 	$(APPETC)/ap_identities.csv \
@@ -760,10 +756,6 @@ $(APPBIN)/ap.configd: \
 	$(GOSRCBG)/ap.configd/upgrade_v15.go \
 	$(GOSRCBG)/ap.configd/upgrade_v16.go \
 	$(GOSRCBG)/ap.configd/validate.go
-$(APPBIN)/ap.dhcp4d: $(GOSRCBG)/ap.dhcp4d/dhcp4d.go
-$(APPBIN)/ap.dns4d: \
-	$(GOSRCBG)/ap.dns4d/dns4d.go \
-	$(GOSRCBG)/ap_common/data/dns.go
 $(APPBIN)/ap.httpd: \
 	$(GOSRCBG)/ap.httpd/ap.httpd.go \
 	$(GOSRCBG)/ap.httpd/api-demo.go \
@@ -780,13 +772,18 @@ $(APPBIN)/ap.networkd: \
 	$(GOSRCBG)/ap.networkd/parse.go \
 	$(GOSRCBG)/ap.networkd/wifi.go \
 	$(GOSRCBG)/ap_common/wificaps/wificaps.go
-$(APPBIN)/ap.relayd: $(GOSRCBG)/ap.relayd/relayd.go
 $(APPBIN)/ap.rpcd: \
 	$(GOSRCBG)/ap.rpcd/rpcd.go \
 	$(GOSRCBG)/ap.rpcd/config.go \
 	$(GOSRCBG)/ap.rpcd/heartbeat.go \
-	$(GOSRCBG)/ap.rpcd/inventory.go
-$(APPBIN)/ap.updated: $(GOSRCBG)/ap.updated/update.go
+	$(GOSRCBG)/ap.rpcd/inventory.go \
+	$(GOSRCBG)/ap.rpcd/update.go
+$(APPBIN)/ap.serviced: \
+	$(GOSRCBG)/ap_common/data/dns.go \
+	$(GOSRCBG)/ap.serviced/dhcp4.go \
+	$(GOSRCBG)/ap.serviced/dns4.go \
+	$(GOSRCBG)/ap.serviced/relay.go \
+	$(GOSRCBG)/ap.serviced/serviced.go
 $(APPBIN)/ap.userauthd: $(GOSRCBG)/ap.userauthd/userauthd.go \
 	$(GOSRCBG)/ap_common/certificate/certificate.go
 $(APPBIN)/ap.watchd: \

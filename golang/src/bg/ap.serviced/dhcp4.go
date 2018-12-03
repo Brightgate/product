@@ -9,10 +9,6 @@
  *
  */
 
-/*
- * DHCPv4 daemon
- */
-
 package main
 
 import (
@@ -20,18 +16,12 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
-	"net/http"
-	_ "net/http/pprof"
-	"os"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
-	"bg/ap_common/broker"
-	"bg/ap_common/mcp"
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
@@ -40,31 +30,13 @@ import (
 	"github.com/golang/protobuf/proto"
 	dhcp "github.com/krolaw/dhcp4"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"go.uber.org/zap"
 	"golang.org/x/net/ipv4"
 )
 
 var (
 	verbose = flag.Bool("v", false, "verbose logging")
 
-	handlers = make(map[string]*ringHandler)
-
-	brokerd *broker.Broker
-	slog    *zap.SugaredLogger
-
-	config  *cfgapi.Handle
-	clients cfgapi.ClientMap
-
-	// This lock protects the contents of the clients map as well as all of
-	// the per-ring lease tables.  The lock is taken at the very beginning
-	// of each configd handler or DHCP handler, and is released at the very
-	// end.  This coarse-grained locking avoids complicated ordering issues
-	// that would arise from context-sensitive, fine-grained locking.  Our
-	// request frequency and latency requirements are sufficiently low that
-	// code simplicity is more important than maximal performance.
-	bigLock sync.Mutex
-
+	handlers   = make(map[string]*ringHandler)
 	domainName string
 
 	sharedRouter net.IP     // without vlans, all rings share a
@@ -76,7 +48,7 @@ var (
 	// Track the interface on which each client's DHCP request arrives
 	clientRequestOn = make(map[string]string)
 
-	metrics struct {
+	dhcpMetrics struct {
 		requests    prometheus.Counter
 		provisioned prometheus.Counter
 		claimed     prometheus.Counter
@@ -89,8 +61,6 @@ var (
 	}
 )
 
-const pname = "ap.dhcp4d"
-
 func getRing(hwaddr string) string {
 	var ring string
 
@@ -101,55 +71,27 @@ func getRing(hwaddr string) string {
 	return ring
 }
 
-func updateRing(hwaddr, old, new string) bool {
-	updated := false
-
-	client := clients[hwaddr]
-	if client == nil && old == "" {
-		client = &cfgapi.ClientInfo{Ring: ""}
-		clients[hwaddr] = client
-	}
-
-	if client != nil && client.Ring == old {
-		client.Ring = new
-		updated = true
-	}
-
-	return updated
-}
-
 /*******************************************************
  *
  * Communication with message broker
  */
-func configExpired(path []string) {
-	//
+func dhcpIPv4Expired(hwaddr string) {
 	// Watch for lease expirations in @/clients/<macaddr>/ipv4.  We actually
 	// clean up expired leases as a side effect of handing out new ones, so
 	// all we do here is log it.
-	if len(path) == 3 && path[0] == "clients" && path[2] == "ipv4" {
-		slog.Infof("Lease for %s expired", path[1])
-		metrics.expired.Inc()
-	}
+	slog.Infof("Lease for %s expired", hwaddr)
+	dhcpMetrics.expired.Inc()
 }
 
-func configIPv4Changed(path []string, val string, expires *time.Time) {
+func dhcpIPv4Changed(hwaddr string, client *cfgapi.ClientInfo) {
 	//
 	// In most cases, this change will just be a broadcast notification of a
 	// lease change we just registered.  All other cases should be an IP
 	// address being statically assigned.  Anything else is user error.
 	//
 
-	bigLock.Lock()
-	defer bigLock.Unlock()
-
-	ipaddr := val
-	hwaddr := path[1]
-	ipv4 := net.ParseIP(val)
-	if ipv4 == nil {
-		slog.Warnf("Invalid IP address %s for %s", ipaddr, hwaddr)
-		return
-	}
+	ipaddr := client.IPv4
+	expires := client.Expires
 
 	ring := getRing(hwaddr)
 	if ring == "" {
@@ -162,16 +104,19 @@ func configIPv4Changed(path []string, val string, expires *time.Time) {
 	}
 
 	h := handlers[ring]
-	if !dhcp.IPInRange(h.rangeStart, h.rangeEnd, ipv4) {
+	if !dhcp.IPInRange(h.rangeStart, h.rangeEnd, ipaddr) {
 		slog.Warnf("%s assigned %s, out of its ring range (%v - %v)",
 			hwaddr, ipaddr, h.rangeStart, h.rangeEnd)
 		return
 	}
 
+	h.Lock()
+	defer h.Unlock()
+
 	var oldipv4 net.IP
 	l := h.leaseSearch(hwaddr)
 	if l != nil {
-		if ipv4.Equal(l.ipaddr) {
+		if ipaddr.Equal(l.ipaddr) {
 			new := time.Now()
 			lease := new
 
@@ -204,58 +149,39 @@ func configIPv4Changed(path []string, val string, expires *time.Time) {
 		oldipv4 = l.ipaddr
 	}
 
-	if !ipv4.Equal(oldipv4) {
+	if !ipaddr.Equal(oldipv4) {
 		if oldipv4 != nil {
 			notifyRelease(oldipv4)
 		}
-		notifyProvisioned(ipv4)
+		notifyProvisioned(ipaddr)
 	}
-	l = h.getLease(ipv4)
-	h.recordLease(l, hwaddr, "", ipv4, nil)
+	l = h.getLease(ipaddr)
+	h.recordLease(l, hwaddr, "", ipaddr, nil)
 }
 
-func clientDeleteEvent(path []string) {
-	// If this is the deletion of a child property, ignore it.  We're just
-	// trying to handle the full deletion of a client here.
-	if len(path) > 2 {
-		return
-	}
+func dhcpDeleteEvent(hwaddr string) {
+	clientMtx.Lock()
+	client, ok := clients[hwaddr]
+	clientMtx.Unlock()
 
-	bigLock.Lock()
-	defer bigLock.Unlock()
-
-	hwaddr := path[1]
-	if client, ok := clients[hwaddr]; ok {
+	if ok {
 		slog.Debugf("Handling deletion of client %s", hwaddr)
 
 		if ring := client.Ring; ring != "" {
 			h := handlers[ring]
+			h.Lock()
 			if l := h.leaseSearch(hwaddr); l != nil {
-				metrics.released.Inc()
+				dhcpMetrics.released.Inc()
 				h.releaseLease(l, hwaddr)
 			}
+			h.Unlock()
 		}
-		delete(clients, hwaddr)
 	}
 	delete(clientRequestOn, hwaddr)
 }
 
-func configRingChanged(path []string, val string, expires *time.Time) {
-
-	bigLock.Lock()
-	defer bigLock.Unlock()
-
-	client := path[1]
-	old := getRing(client)
-	if (old != val) && updateRing(client, old, val) {
-		if old == "" {
-			slog.Infof("config reports new client %s is %s",
-				client, val)
-		} else {
-			slog.Infof("config moves client %s from %s to  %s",
-				client, old, val)
-		}
-	}
+func dhcpRingChanged(hwaddr string, client *cfgapi.ClientInfo, old string) {
+	slog.Infof("changing %s to %s", hwaddr, client.Ring)
 }
 
 func configNodesChanged(path []string, val string, expires *time.Time) {
@@ -429,6 +355,8 @@ type ringHandler struct {
 	rangeSpan  int           // Number of IPs to distribute (starting from start)
 	duration   time.Duration // Lease period
 	leases     []lease       // Per-lease state
+
+	sync.Mutex
 }
 
 /*
@@ -450,13 +378,13 @@ func (h *ringHandler) discover(p dhcp.Packet, options dhcp.Options) dhcp.Packet 
 	l := h.leaseAssign(hwaddr)
 	if l == nil {
 		slog.Warnf("Out of %s leases", h.ring)
-		metrics.exhausted.Inc()
+		dhcpMetrics.exhausted.Inc()
 		return h.nak(p)
 	}
 	slog.Infof("  OFFER %s to %s", l.ipaddr, l.hwaddr)
 
 	notifyProvisioned(l.ipaddr)
-	metrics.provisioned.Inc()
+	dhcpMetrics.provisioned.Inc()
 	return dhcp.ReplyPacket(p, dhcp.Offer, h.serverIP, l.ipaddr, h.duration,
 		h.options.SelectOrderOrAll(options[dhcp.OptionParameterRequestList]))
 }
@@ -489,8 +417,8 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	var reqIP net.IP
 
 	hwaddr := p.CHAddr().String()
-	slog.Infof("REQUEST for %s", hwaddr)
-	metrics.requests.Inc()
+	slog.Infof("REQUEST for %s on %s", hwaddr, h.ring)
+	dhcpMetrics.requests.Inc()
 
 	notifyOptions(p.CHAddr(), options, dhcp.Request)
 
@@ -498,6 +426,17 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	if ok && !net.IP(server).Equal(h.serverIP) {
 		return nil // Message not for this dhcp server
 	}
+
+	clientMtx.Lock()
+	ring := getRing(hwaddr)
+	clientMtx.Unlock()
+	if ring != h.ring {
+		slog.Infof("   '%s' client requesting on '%s' ring",
+			ring, h.ring)
+		dhcpMetrics.rejected.Inc()
+		return h.nak(p)
+	}
+
 	requestOption := net.IP(options[dhcp.OptionRequestedIPAddress])
 
 	/*
@@ -512,7 +451,7 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 		if requestOption != nil {
 			if reqIP.Equal(requestOption) {
 				action = "renewing"
-				metrics.renewed.Inc()
+				dhcpMetrics.renewed.Inc()
 			} else {
 				/*
 				 * XXX: this is potentially worth of a
@@ -535,14 +474,14 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 
 	if len(reqIP) != 4 || reqIP.Equal(net.IPv4zero) {
 		slog.Warnf("Invalid reqIP %s from %s", reqIP.String(), hwaddr)
-		metrics.rejected.Inc()
+		dhcpMetrics.rejected.Inc()
 		return h.nak(p)
 	}
 
 	l := h.getLease(reqIP)
 	if l == nil || !l.assigned || l.hwaddr != hwaddr {
 		slog.Warnf("Invalid lease of %s for %s", reqIP.String(), hwaddr)
-		metrics.rejected.Inc()
+		dhcpMetrics.rejected.Inc()
 		return h.nak(p)
 	}
 
@@ -561,7 +500,7 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	config.CreateProp(propPath(hwaddr, "ipv4"), l.ipaddr.String(), l.expires)
 	config.CreateProp(propPath(hwaddr, "dhcp_name"), l.name, l.expires)
 	notifyClaimed(p, l.ipaddr, l.name, h.duration)
-	metrics.claimed.Inc()
+	dhcpMetrics.claimed.Inc()
 
 	if h.ring == base_def.RING_INTERNAL {
 		// Clients asking for addresses on the internal network are
@@ -617,7 +556,7 @@ func (h *ringHandler) release(p dhcp.Packet) {
 		return
 	}
 	if h.releaseLease(l, hwaddr) {
-		metrics.released.Inc()
+		dhcpMetrics.released.Inc()
 		slog.Infof("RELEASE %s", hwaddr)
 	}
 }
@@ -631,7 +570,7 @@ func (h *ringHandler) decline(p dhcp.Packet) {
 
 	l := h.leaseSearch(hwaddr)
 	if h.releaseLease(l, hwaddr) {
-		metrics.declined.Inc()
+		dhcpMetrics.declined.Inc()
 		slog.Infof("DECLINE for %s", hwaddr)
 	}
 }
@@ -642,16 +581,19 @@ func (h *ringHandler) decline(p dhcp.Packet) {
 //
 func selectRingHandler(p dhcp.Packet, options dhcp.Options) *ringHandler {
 	var handler *ringHandler
-	var ring string
 
 	mac := p.CHAddr().String()
 	requestIface := clientRequestOn[mac]
 	authType := ifaceToAuthType[requestIface]
 
+	clientMtx.Lock()
+	ring := getRing(mac)
+	clientMtx.Unlock()
+
 	if authType == "" {
 		slog.Debugf("Ignoring DHCP request from %s on unsupported "+
 			"iface %s", mac, requestIface)
-	} else if ring = getRing(mac); ring == "" {
+	} else if ring == "" {
 		// If we don't have a ring assignment for this client, then
 		// there are two possibilities.  First, it's a brand new
 		// wireless client, and its DHCP request arrived before configd
@@ -682,14 +624,13 @@ func selectRingHandler(p dhcp.Packet, options dhcp.Options) *ringHandler {
 func (h *ringHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType,
 	options dhcp.Options) (d dhcp.Packet) {
 
-	bigLock.Lock()
-	defer bigLock.Unlock()
-
 	ringHandler := selectRingHandler(p, options)
 	if ringHandler == nil {
 		return nil
 	}
 
+	ringHandler.Lock()
+	defer ringHandler.Unlock()
 	switch msgType {
 
 	case dhcp.Discover:
@@ -846,6 +787,7 @@ func (h *ringHandler) recoverLeases() {
 	h.leases[0].assigned = true
 	h.leases[1].assigned = true
 
+	clientMtx.Lock()
 	for macaddr, client := range clients {
 		if client.IPv4 == nil {
 			continue
@@ -856,6 +798,7 @@ func (h *ringHandler) recoverLeases() {
 				client.Expires)
 		}
 	}
+	clientMtx.Unlock()
 }
 
 func initAuthMap() {
@@ -863,9 +806,7 @@ func initAuthMap() {
 	for _, ring := range config.GetRings() {
 		newMap[ring.Bridge] = ring.Auth
 	}
-	bigLock.Lock()
 	ifaceToAuthType = newMap
-	bigLock.Unlock()
 }
 
 func initHandlers() {
@@ -947,7 +888,7 @@ func listenAndServeIf(handler dhcp.Handler) error {
 	return dhcp.Serve(&serveConn, handler)
 }
 
-func mainLoop() {
+func dhcpLoop() {
 	/*
 	 * Even with multiple VLANs and/or address ranges, we still only have a
 	 * single UDP broadcast address.  We create a metahandler that receives
@@ -967,84 +908,59 @@ func mainLoop() {
 	}
 }
 
-func prometheusInit() {
-	metrics.requests = prometheus.NewCounter(prometheus.CounterOpts{
+func dhcpPrometheusInit() {
+	dhcpMetrics.requests = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "dhcp4d_requests",
 		Help: "Number of addresses requested",
 	})
-	metrics.provisioned = prometheus.NewCounter(prometheus.CounterOpts{
+	dhcpMetrics.provisioned = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "dhcp4d_provisioned",
 		Help: "Number of addresses provisioned",
 	})
-	metrics.claimed = prometheus.NewCounter(prometheus.CounterOpts{
+	dhcpMetrics.claimed = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "dhcp4d_claimed",
 		Help: "Number of addresses claimed",
 	})
-	metrics.renewed = prometheus.NewCounter(prometheus.CounterOpts{
+	dhcpMetrics.renewed = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "dhcp4d_renewed",
 		Help: "Number of addresses renewed",
 	})
-	metrics.released = prometheus.NewCounter(prometheus.CounterOpts{
+	dhcpMetrics.released = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "dhcp4d_released",
 		Help: "Number of addresses released",
 	})
-	metrics.declined = prometheus.NewCounter(prometheus.CounterOpts{
+	dhcpMetrics.declined = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "dhcp4d_declined",
 		Help: "Number of addresses declined",
 	})
-	metrics.expired = prometheus.NewCounter(prometheus.CounterOpts{
+	dhcpMetrics.expired = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "dhcp4d_expired",
 		Help: "Number of addresses expired",
 	})
-	metrics.rejected = prometheus.NewCounter(prometheus.CounterOpts{
+	dhcpMetrics.rejected = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "dhcp4d_rejected",
 		Help: "Number of addresses rejected",
 	})
-	metrics.exhausted = prometheus.NewCounter(prometheus.CounterOpts{
+	dhcpMetrics.exhausted = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "dhcp4d_exhausted",
 		Help: "Number of exhaustion failures",
 	})
 
-	prometheus.MustRegister(metrics.requests)
-	prometheus.MustRegister(metrics.provisioned)
-	prometheus.MustRegister(metrics.claimed)
-	prometheus.MustRegister(metrics.released)
-	prometheus.MustRegister(metrics.declined)
-	prometheus.MustRegister(metrics.expired)
-	prometheus.MustRegister(metrics.rejected)
-	prometheus.MustRegister(metrics.exhausted)
-
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(base_def.DHCPD_DIAG_PORT, nil)
+	prometheus.MustRegister(dhcpMetrics.requests)
+	prometheus.MustRegister(dhcpMetrics.provisioned)
+	prometheus.MustRegister(dhcpMetrics.claimed)
+	prometheus.MustRegister(dhcpMetrics.released)
+	prometheus.MustRegister(dhcpMetrics.declined)
+	prometheus.MustRegister(dhcpMetrics.expired)
+	prometheus.MustRegister(dhcpMetrics.rejected)
+	prometheus.MustRegister(dhcpMetrics.exhausted)
 }
 
-func main() {
-	flag.Parse()
-	slog = aputil.NewLogger(pname)
-	defer slog.Sync()
-	slog.Infof("Starting")
+func dhcpInit() {
+	var err error
 
-	mcpd, err := mcp.New(pname)
-	if err != nil {
-		slog.Warnf("Failed to connect to mcp")
-	}
+	dhcpPrometheusInit()
 
-	prometheusInit()
-	brokerd = broker.New(pname)
-	defer brokerd.Fini()
-
-	// Interface to config
-	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
-	if err != nil {
-		slog.Fatalf("cannot connect to configd: %v", err)
-	}
-	config.HandleDelete(`^@/clients/.*`, clientDeleteEvent)
-	config.HandleExpire(`^@/clients/.*/ipv4$`, configExpired)
-	config.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
-	config.HandleChange(`^@/clients/.*/ring$`, configRingChanged)
-	config.HandleChange(`^@/nodes/.*$`, configNodesChanged)
-
-	clients = config.GetClients()
 	domainName, err = config.GetDomain()
 	if err != nil {
 		slog.Fatalf("failed to fetch gateway domain: %v", err)
@@ -1053,10 +969,7 @@ func main() {
 	initHandlers()
 	initAuthMap()
 
-	slog.Infof("DHCP server online")
-	mcpd.SetState(mcp.ONLINE)
-	mainLoop()
-	slog.Infof("shutting down")
+	go dhcpLoop()
 
-	os.Exit(0)
+	config.HandleChange(`^@/nodes/.*$`, configNodesChanged)
 }

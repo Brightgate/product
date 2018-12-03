@@ -13,20 +13,6 @@
         "Options": [ "-propdir=/etc/" ],
         "Modes": [ "core", "gateway", "http-dev" ]
     },
-    "dhcp4d": {
-        "Name": "dhcp4d",
-        "Binary": "ap.dhcp4d",
-        "DependsOn": "networkd",
-        "Privileged": true,
-        "Modes": [ "core", "gateway" ]
-    },
-    "dns4d": {
-        "Name": "dns4d",
-        "Binary": "ap.dns4d",
-        "DependsOn": "configd",
-        "Privileged": true,
-        "Modes": [ "core", "gateway" ]
-    },
     "httpd": {
         "Name": "httpd",
         "Binary": "ap.httpd",
@@ -87,19 +73,12 @@
         ],
         "Modes": [ "gateway" ]
     },
-    "relayd": {
-        "Name": "relayd",
-        "Binary": "ap.relayd",
+    "serviced": {
+        "Name": "serviced",
+        "Binary": "ap.serviced",
         "DependsOn": "networkd",
-        "Privileged": false,
-        "Modes": [ "core", "gateway" ]
-    },
-    "updated": {
-        "Name": "updated",
-        "Binary": "ap.updated",
-        "DependsOn": "configd",
         "Privileged": true,
-        "Modes": [ "gateway" ]
+        "Modes": [ "core", "gateway" ]
     },
     "userauthd": {
         "Name": "userauthd",

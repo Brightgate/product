@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 var (
@@ -25,8 +26,21 @@ func addTool(tool string, main func()) {
 	tools[tool] = main
 }
 
-func main() {
+func listTools() {
+	list := make([]string, 0)
+	for n := range tools {
+		if n != pname {
+			list = append(list, n)
+		}
+	}
+	sort.Strings(list)
+	fmt.Printf("Tools:\n")
+	for _, n := range list {
+		fmt.Printf("    %s\n", n)
+	}
+}
 
+func main() {
 	pname = filepath.Base(os.Args[0])
 
 	if fn, ok := tools[pname]; ok {
@@ -34,4 +48,8 @@ func main() {
 	} else {
 		fmt.Printf("unknown tool: %s", pname)
 	}
+}
+
+func init() {
+	addTool("ap-tools", listTools)
 }

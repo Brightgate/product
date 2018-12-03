@@ -200,6 +200,8 @@ func grpcInit() (*grpc.ClientConn, error) {
 	}
 
 	if config != nil {
+		config.HandleChange(`^@/cloud/.*/bucket`, configBucketChanged)
+
 		if url, err := config.GetProp(urlProperty); err == nil {
 			connectURL = url
 		}
@@ -278,6 +280,7 @@ func daemonStart() {
 
 	tclient := cloud_rpc.NewEventClient(conn)
 	cclient := cloud_rpc.NewConfigBackEndClient(conn)
+	sclient := cloud_rpc.NewCloudStorageClient(conn)
 	slog.Debugf("RPC client connected")
 
 	brokerd.Handle(base_def.TOPIC_EXCEPTION, func(event []byte) {
@@ -292,6 +295,8 @@ func daemonStart() {
 	go heartbeatLoop(ctx, tclient, &cleanup.wg, addDoneChan())
 	go inventoryLoop(ctx, tclient, &cleanup.wg, addDoneChan())
 	go configLoop(ctx, cclient, &cleanup.wg, addDoneChan())
+	go updateLoop(&cleanup.wg, addDoneChan())
+	go uploadLoop(sclient, &cleanup.wg, addDoneChan())
 
 	slog.Infof("Setting state ONLINE")
 	err = mcpd.SetState(mcp.ONLINE)

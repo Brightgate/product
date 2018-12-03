@@ -34,17 +34,12 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
-	"os/signal"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
-	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
-	"bg/ap_common/broker"
 	"bg/ap_common/data"
-	"bg/ap_common/mcp"
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
@@ -53,12 +48,9 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"go.uber.org/zap"
 )
 
 const (
-	pname       = "ap.dns4d"
 	maxCacheTTL = uint32(3600)
 )
 
@@ -74,10 +66,6 @@ var (
 	dataDir = flag.String("dir", data.DefaultDataDir,
 		"antiphishing data directory")
 
-	brokerd *broker.Broker
-	config  *cfgapi.Handle
-	slog    *zap.SugaredLogger
-
 	ringRecords  map[string]dnsRecord // per-ring records for the router
 	perRingHosts map[string]bool      // hosts with per-ring results
 	subnets      []*net.IPNet
@@ -89,24 +77,10 @@ var (
 	dnsHTTPClient *http.Client
 )
 
-/*
- * The 'clients' map represents all of the clients that we know about.  In
- * particular, we track which clients have been assigned an IP address either
- * statically or by DHCP.  This map is used to populate our initial DNS dataset
- * and to determine which incoming requests we will answer.
-
- * The 'hosts' map contains the DNS records we use to answer DNS requests.  The
- * initial data comes from the properties file, via the clients map.  Over time
- * additional PTR records will be added in response to NetEntity events.
- *
- * The two maps are protected by mutexes.  If an operation requires holding both
- * mutexes, the ClientMtx should be taken first.
- *
- */
+// The 'hosts' map contains the DNS records we use to answer DNS requests.  The
+// initial data comes from the properties file, via the clients map.  Over time
+// additional PTR records will be added in response to NetEntity events.
 var (
-	clientMtx sync.Mutex
-	clients   cfgapi.ClientMap
-
 	hostsMtx sync.Mutex
 	hosts    = make(map[string]dnsRecord)
 
@@ -115,7 +89,7 @@ var (
 	warnedMtx       sync.Mutex
 	cachedResponses dnsCache
 
-	metrics struct {
+	dnsMetrics struct {
 		requests         prometheus.Counter
 		blocked          prometheus.Counter
 		upstreamCnt      prometheus.Counter
@@ -196,8 +170,8 @@ func (d *dnsCache) expire() {
 		heap.Pop(&d.eolHeap)
 		delete(d.responses, c.key)
 		d.size -= c.size
-		metrics.cacheEntries.Set(float64(len(d.responses)))
-		metrics.cacheSize.Set(float64(d.size))
+		dnsMetrics.cacheEntries.Set(float64(len(d.responses)))
+		dnsMetrics.cacheSize.Set(float64(d.size))
 	}
 }
 
@@ -216,7 +190,7 @@ func (d *dnsCache) lookup(key uint64, question string) *dns.Msg {
 	var r *dns.Msg
 
 	d.lookups++
-	metrics.cacheLookups.Inc()
+	dnsMetrics.cacheLookups.Inc()
 	d.Lock()
 	d.expire()
 	if c, ok := d.responses[key]; ok && c.question == question {
@@ -235,7 +209,7 @@ func (d *dnsCache) lookup(key uint64, question string) *dns.Msg {
 		d.hits++
 	}
 	d.Unlock()
-	metrics.cacheHitRate.Set(100.0 * (float64(d.hits) / float64(d.lookups)))
+	dnsMetrics.cacheHitRate.Set(100.0 * (float64(d.hits) / float64(d.lookups)))
 	return r
 }
 
@@ -268,17 +242,17 @@ func (d *dnsCache) insert(key uint64, question string, response *dns.Msg) {
 		d.responses[key] = c
 		heap.Push(&d.eolHeap, c)
 		d.size += c.size
-		metrics.cacheEntries.Set(float64(len(d.responses)))
-		metrics.cacheSize.Set(float64(d.size))
+		dnsMetrics.cacheEntries.Set(float64(len(d.responses)))
+		dnsMetrics.cacheSize.Set(float64(d.size))
 	} else {
-		metrics.cacheCollisions.Inc()
+		dnsMetrics.cacheCollisions.Inc()
 	}
 	d.Unlock()
 }
 
 func (d *dnsCache) init() {
-	metrics.cacheEntries.Set(0.0)
-	metrics.cacheSize.Set(0.0)
+	dnsMetrics.cacheEntries.Set(0.0)
+	dnsMetrics.cacheSize.Set(0.0)
 	d.responses = make(map[uint64]*cachedResponse)
 	d.eolHeap = make([]*cachedResponse, 0)
 	d.table = crc64.MakeTable(crc64.ISO)
@@ -301,53 +275,6 @@ func clearWarned(key string, list map[string]time.Time) {
 	warnedMtx.Lock()
 	delete(list, key)
 	warnedMtx.Unlock()
-}
-
-func clientUpdateEvent(path []string, val string, expires *time.Time) {
-	if len(path) != 3 {
-		// All updates should affect /clients/<macaddr>/property
-		return
-	}
-
-	mac := path[1]
-	new := config.GetClient(mac)
-	if new == nil {
-		slog.Warnf("Got update for nonexistent client: %s", mac)
-		return
-	}
-
-	clientMtx.Lock()
-	old := clients[mac]
-	if old != nil {
-		deleteOneClient(old)
-	}
-	updateOneClient(new)
-	clients[mac] = new
-
-	clientMtx.Unlock()
-}
-
-func clientDeleteEvent(path []string) {
-	ignore := true
-
-	if len(path) == 2 {
-		// Handle full client delete (@/clients/<mac>)
-		ignore = false
-	} else if len(path) == 3 &&
-		(path[2] == "dns_name" || path[2] == "ipv4") {
-		ignore = false
-	}
-
-	if !ignore {
-		mac := path[1]
-
-		clientMtx.Lock()
-		if old := clients[mac]; old != nil {
-			delete(clients, mac)
-			deleteOneClient(old)
-		}
-		clientMtx.Unlock()
-	}
 }
 
 func blocklistUpdateEvent(path []string, val string, expires *time.Time) {
@@ -587,21 +514,21 @@ func upstreamRequest(server string, r, m *dns.Msg) {
 	if upstream == nil {
 		c := new(dns.Client)
 		start := time.Now()
-		metrics.upstreamCnt.Inc()
+		dnsMetrics.upstreamCnt.Inc()
 		if dnsHTTPClient != nil {
 			upstream, err = dnsOverHTTPSExchange(r, server)
 		} else {
 			upstream, _, err = c.Exchange(r, server)
 		}
-		metrics.upstreamLatency.Observe(time.Since(start).Seconds())
+		dnsMetrics.upstreamLatency.Observe(time.Since(start).Seconds())
 		cacheResult = (err == nil) && shouldCache(r, upstream)
 	}
 
 	if err != nil || upstream == nil {
 		slog.Warnf("failed to exchange: %v", err)
-		metrics.upstreamFailures.Inc()
+		dnsMetrics.upstreamFailures.Inc()
 		if os.IsTimeout(err) {
-			metrics.upstreamTimeouts.Inc()
+			dnsMetrics.upstreamTimeouts.Inc()
 		}
 		m.Rcode = dns.RcodeServerFailure
 		return
@@ -627,8 +554,8 @@ func localHandler(w dns.ResponseWriter, r *dns.Msg) {
 	var rec dnsRecord
 	var ok bool
 
-	metrics.requests.Inc()
-	metrics.requestSize.Observe(float64(r.Len()))
+	dnsMetrics.requests.Inc()
+	dnsMetrics.requestSize.Observe(float64(r.Len()))
 	_, c := getClient(w)
 	if c == nil {
 		return
@@ -672,7 +599,7 @@ func localHandler(w dns.ResponseWriter, r *dns.Msg) {
 		pq.Question = append(pq.Question, q)
 		upstreamRequest(brightgateDNS, pq, m)
 	}
-	metrics.responseSize.Observe(float64(m.Len()))
+	dnsMetrics.responseSize.Observe(float64(m.Len()))
 	w.WriteMsg(m)
 
 	logRequest("localHandler", start, c.IPv4, r, m)
@@ -714,8 +641,8 @@ func localAddress(arpa string) bool {
 }
 
 func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
-	metrics.requests.Inc()
-	metrics.requestSize.Observe(float64(r.Len()))
+	dnsMetrics.requests.Inc()
+	dnsMetrics.requestSize.Observe(float64(r.Len()))
 
 	mac, c := getClient(w)
 	if c == nil {
@@ -752,7 +679,7 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 			slog.Infof("Blocking suspected phishing site "+
 				"'%s' for %s", hostname, mac)
 			notifyBlockEvent(c, hostname)
-			metrics.blocked.Inc()
+			dnsMetrics.blocked.Inc()
 		}
 	} else if q.Qtype == dns.TypePTR && localAddress(q.Name) {
 		hostsMtx.Lock()
@@ -772,12 +699,12 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 		// shrinking the packet before it gets put on the wire.
 		m.Compress = true
 	}
-	metrics.responseSize.Observe(float64(m.Len()))
+	dnsMetrics.responseSize.Observe(float64(m.Len()))
 	w.WriteMsg(m)
 	logRequest("proxyHandler", start, c.IPv4, r, m)
 }
 
-func deleteOneClient(c *cfgapi.ClientInfo) {
+func dnsDeleteClient(c *cfgapi.ClientInfo) {
 	if c.IPv4 == nil {
 		return
 	}
@@ -804,7 +731,7 @@ func deleteOneClient(c *cfgapi.ClientInfo) {
 }
 
 // Convert a client's configd info into DNS records
-func updateOneClient(c *cfgapi.ClientInfo) {
+func dnsUpdateClient(c *cfgapi.ClientInfo) {
 	name := c.DNSName
 	if name == "" {
 		name = c.DHCPName
@@ -864,12 +791,13 @@ func deleteOneCname(hostname string) {
 }
 
 func initHostMap() {
-	clients = config.GetClients()
+	clientMtx.Lock()
 	for _, c := range clients {
 		if c.Expires == nil || c.Expires.After(time.Now()) {
-			updateOneClient(c)
+			dnsUpdateClient(c)
 		}
 	}
+	clientMtx.Unlock()
 
 	if cnames, _ := config.GetProps("@/dns/cnames"); cnames != nil {
 		for name, c := range cnames.Children {
@@ -964,111 +892,82 @@ func dnsListener(protocol string) {
 	}
 }
 
-func prometheusInit() {
-	metrics.requests = prometheus.NewCounter(prometheus.CounterOpts{
+func dnsPrometheusInit() {
+	slog.Info("dns prometheus init")
+	dnsMetrics.requests = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "dns4d_requests",
 		Help: "dns requests handled",
 	})
-	metrics.blocked = prometheus.NewCounter(prometheus.CounterOpts{
+	dnsMetrics.blocked = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "dns4d_blocked",
 		Help: "suspicious dns requests blocked",
 	})
-	metrics.upstreamCnt = prometheus.NewCounter(prometheus.CounterOpts{
+	dnsMetrics.upstreamCnt = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "dns4d_upstream_cnt",
 		Help: "dns requests forwarded to upstream resolver",
 	})
-	metrics.upstreamFailures = prometheus.NewCounter(prometheus.CounterOpts{
+	dnsMetrics.upstreamFailures = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "dns4d_upstream_failures",
 		Help: "upstream DNS failures",
 	})
-	metrics.upstreamTimeouts = prometheus.NewCounter(prometheus.CounterOpts{
+	dnsMetrics.upstreamTimeouts = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "dns4d_upstream_timeouts",
 		Help: "upstream DNS timeouts",
 	})
-	metrics.upstreamLatency = prometheus.NewSummary(prometheus.SummaryOpts{
+	dnsMetrics.upstreamLatency = prometheus.NewSummary(prometheus.SummaryOpts{
 		Name: "dns4d_upstream_latency",
 		Help: "upstream query resolution time",
 	})
-	metrics.requestSize = prometheus.NewSummary(prometheus.SummaryOpts{
+	dnsMetrics.requestSize = prometheus.NewSummary(prometheus.SummaryOpts{
 		Name: "dns4d_request_size",
 		Help: "dns4d_dns request size (bytes)",
 	})
-	metrics.responseSize = prometheus.NewSummary(prometheus.SummaryOpts{
+	dnsMetrics.responseSize = prometheus.NewSummary(prometheus.SummaryOpts{
 		Name: "dns4d_response_size",
 		Help: "dns response size (bytes)",
 	})
-	metrics.cacheSize = prometheus.NewGauge(prometheus.GaugeOpts{
+	dnsMetrics.cacheSize = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "dns4d_cache_size",
 		Help: "data stored in DNS cache (bytes)",
 	})
-	metrics.cacheEntries = prometheus.NewGauge(prometheus.GaugeOpts{
+	dnsMetrics.cacheEntries = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "dns4d_cache_entries",
 		Help: "# of entries in DNS cache",
 	})
-	metrics.cacheCollisions = prometheus.NewCounter(prometheus.CounterOpts{
+	slog.Info("dns cache entries: %v", dnsMetrics.cacheEntries)
+	dnsMetrics.cacheCollisions = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "dns4d_cache_collisions",
 		Help: "hash key collisions in the DNS cache map",
 	})
-	metrics.cacheLookups = prometheus.NewCounter(prometheus.CounterOpts{
+	dnsMetrics.cacheLookups = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "dns4d_cache_lookups",
 		Help: "lookups in the DNS cache",
 	})
-	metrics.cacheHitRate = prometheus.NewGauge(prometheus.GaugeOpts{
+	dnsMetrics.cacheHitRate = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "dns4d_cache_hitrate",
 		Help: "success rate of cache lookups",
 	})
-	prometheus.MustRegister(metrics.requests)
-	prometheus.MustRegister(metrics.blocked)
-	prometheus.MustRegister(metrics.upstreamCnt)
-	prometheus.MustRegister(metrics.upstreamFailures)
-	prometheus.MustRegister(metrics.upstreamTimeouts)
-	prometheus.MustRegister(metrics.upstreamLatency)
-	prometheus.MustRegister(metrics.requestSize)
-	prometheus.MustRegister(metrics.responseSize)
-	prometheus.MustRegister(metrics.cacheSize)
-	prometheus.MustRegister(metrics.cacheEntries)
-	prometheus.MustRegister(metrics.cacheLookups)
-	prometheus.MustRegister(metrics.cacheCollisions)
-	prometheus.MustRegister(metrics.cacheHitRate)
 
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(base_def.DNSD_DIAG_PORT, nil)
+	prometheus.MustRegister(dnsMetrics.requests)
+	prometheus.MustRegister(dnsMetrics.blocked)
+	prometheus.MustRegister(dnsMetrics.upstreamCnt)
+	prometheus.MustRegister(dnsMetrics.upstreamFailures)
+	prometheus.MustRegister(dnsMetrics.upstreamTimeouts)
+	prometheus.MustRegister(dnsMetrics.upstreamLatency)
+	prometheus.MustRegister(dnsMetrics.requestSize)
+	prometheus.MustRegister(dnsMetrics.responseSize)
+	prometheus.MustRegister(dnsMetrics.cacheSize)
+	prometheus.MustRegister(dnsMetrics.cacheEntries)
+	prometheus.MustRegister(dnsMetrics.cacheLookups)
+	prometheus.MustRegister(dnsMetrics.cacheCollisions)
+	prometheus.MustRegister(dnsMetrics.cacheHitRate)
 }
 
-func main() {
-	flag.Usage = func() {
-		flag.PrintDefaults()
-	}
-	flag.Parse()
+func dnsInit() {
+	slog.Info("dns init")
+	dnsPrometheusInit()
 
-	slog = aputil.NewLogger(pname)
-	defer slog.Sync()
-	slog.Infof("Starting")
-
-	mcpd, err := mcp.New(pname)
-	if err != nil {
-		slog.Errorf("cannot connect to mcp")
-	}
-
-	prometheusInit()
 	cachedResponses.init()
-
-	brokerd = broker.New(pname)
-	defer brokerd.Fini()
-
-	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
-	if err != nil {
-		slog.Fatalf("cannot connect to configd: %v", err)
-	}
-	config.HandleChange(`^@/clients/.*/(ipv4|dns_name|dhcp_name|ring)$`,
-		clientUpdateEvent)
-	config.HandleDelete(`^@/clients/.*`, clientDeleteEvent)
-	config.HandleExpire(`^@/clients/.*/(ipv4|dns_name)$`, clientDeleteEvent)
-	config.HandleChange(`^@/dns/cnames/.*$`, cnameUpdateEvent)
-	config.HandleDelete(`^@/dns/cnames/.*$`, cnameDeleteEvent)
-	config.HandleChange(`^@/updates/dns_.*list$`, blocklistUpdateEvent)
-	config.HandleChange(`^@/network/dnsserver$`, serverUpdateEvent)
-
 	initNetwork()
 	initHostMap()
 	data.LoadDNSBlocklist(*dataDir)
@@ -1079,10 +978,8 @@ func main() {
 	go dnsListener("udp")
 	go dnsListener("tcp")
 
-	mcpd.SetState(mcp.ONLINE)
-
-	sig := make(chan os.Signal, 2)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	s := <-sig
-	slog.Infof("Signal (%v) received, stopping", s)
+	config.HandleChange(`^@/dns/cnames/.*$`, cnameUpdateEvent)
+	config.HandleDelete(`^@/dns/cnames/.*$`, cnameDeleteEvent)
+	config.HandleChange(`^@/updates/dns_.*list$`, blocklistUpdateEvent)
+	config.HandleChange(`^@/network/dnsserver$`, serverUpdateEvent)
 }

@@ -180,7 +180,6 @@ func score(d *physDevice, band string) int {
 func selectWifiDevices(oldList []*physDevice) []*physDevice {
 	var selected map[string]*physDevice
 
-	slog.Infof("eval: %v.  Old: %v\n", wifiEvaluate, oldList)
 	if !wifiEvaluate {
 		return oldList
 	}
@@ -201,7 +200,6 @@ func selectWifiDevices(oldList []*physDevice) []*physDevice {
 			}
 			scoreA := score(a, wificaps.LoBand)
 			scoreB := score(b, wificaps.HiBand)
-			slog.Infof("%v:%d %v:%d\n", a, scoreA, b, scoreB)
 			if scoreA+scoreB > best {
 				selected = make(map[string]*physDevice)
 				if scoreA > 0 {
@@ -216,7 +214,6 @@ func selectWifiDevices(oldList []*physDevice) []*physDevice {
 	}
 
 	if best == oldScore {
-		slog.Info("returning old")
 		return oldList
 	}
 
@@ -235,7 +232,6 @@ func selectWifiDevices(oldList []*physDevice) []*physDevice {
 	for _, d := range newList {
 		list = append(list, d.name)
 	}
-	slog.Infof("now using wifi devices: %v", list)
 
 	return newList
 }

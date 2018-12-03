@@ -46,42 +46,21 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/pkg/errors"
 
-	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
-	"bg/ap_common/broker"
-	"bg/ap_common/mcp"
 	"bg/cloud_rpc"
 	"bg/common/archive"
-	"bg/common/cfgapi"
-	"bg/common/grpcutils"
 	"bg/common/urlfetch"
 
-	"go.uber.org/zap"
 	"golang.org/x/net/context"
-	"google.golang.org/grpc"
-)
-
-const (
-	pname       = "ap.updated"
-	urlProperty = "@/cloud/svc_rpc/url"
-	tlsProperty = "@/cloud/svc_rpc/tls"
 )
 
 var (
-	brokerd       *broker.Broker
-	config        *cfgapi.Handle
-	rpcConn       *grpc.ClientConn
-	storageClient cloud_rpc.CloudStorageClient
-	applianceCred *grpcutils.Credential
-	slog          *zap.SugaredLogger
-
 	updatePeriod = flag.Duration("update", 10*time.Minute,
 		"frequency with which to check updates")
 	uploadPeriod = flag.Duration("upload", 5*time.Minute,
@@ -92,10 +71,6 @@ var (
 	uploadErrMax = flag.Int("emax", 5,
 		"upload errors allowed before we give up for now")
 	uploadBatchSize = flag.Int("bsize", 5, "upload batch size")
-
-	connectFlag   = flag.String("connect", "", "Override connection endpoint in credential")
-	enableTLSFlag = flag.Bool("enable-tls", true, "Enable Secure gRPC")
-	deadlineFlag  = flag.Duration("rpc-deadline", time.Second*20, "RPC completion deadline")
 
 	updateBucket string
 )
@@ -227,6 +202,7 @@ func updateLoop(wg *sync.WaitGroup, doneChan chan bool) {
 		slog.Warnf("no update bucket defined")
 	}
 
+	slog.Infof("update loop starting")
 	refreshSig := make(chan os.Signal, 1)
 	signal.Notify(refreshSig, syscall.SIGHUP)
 
@@ -245,6 +221,7 @@ func updateLoop(wg *sync.WaitGroup, doneChan chan bool) {
 		case done = <-doneChan:
 		}
 	}
+	slog.Infof("update loop done")
 	wg.Done()
 }
 
@@ -381,113 +358,21 @@ func doUpload(rpcClient cloud_rpc.CloudStorageClient) {
 	}
 }
 
-func uploadInit() error {
-	var err error
-	applianceCred, err = aputil.SystemCredential()
-	if err != nil {
-		slog.Warnf("Failed to build credential: %s", err)
-		return err
-	}
+func uploadLoop(client cloud_rpc.CloudStorageClient, wg *sync.WaitGroup,
+	doneChan chan bool) {
 
-	connectURL := *connectFlag
-	enableTLS := *enableTLSFlag
-
-	if config != nil {
-		if url, err := config.GetProp(urlProperty); err == nil {
-			connectURL = url
-		}
-		if tls, err := config.GetProp(tlsProperty); err == nil {
-			enableTLS = (strings.ToLower(tls) == "true")
-		}
-	}
-
-	if !enableTLS {
-		slog.Infof("Connecting insecurely due to '-enable-tls=false' flag (developers only!)")
-	}
-
-	if connectURL == "" {
-		return fmt.Errorf("need %s or -connect", urlProperty)
-	}
-
-	rpcConn, err = grpcutils.NewClientConn(connectURL, enableTLS, pname)
-	if err != nil {
-		slog.Warnf("Failed to make RPC client: %+v", err)
-		return err
-	}
-	storageClient = cloud_rpc.NewCloudStorageClient(rpcConn)
-	return nil
-}
-
-func uploadLoop(wg *sync.WaitGroup, doneChan chan bool) {
 	var done bool
-	var lastError error
 
-	initted := false
+	slog.Infof("upload loop starting")
 	ticker := time.NewTicker(*uploadPeriod)
 	for !done {
-		if !initted {
-			err := uploadInit()
-			if err == nil {
-				initted = true
-			} else if err != lastError {
-				slog.Warnf("%v", err)
-				lastError = err
-			}
-		}
-
-		if initted {
-			doUpload(storageClient)
-		}
+		doUpload(client)
 
 		select {
 		case <-ticker.C:
 		case done = <-doneChan:
 		}
 	}
-	if rpcConn != nil {
-		rpcConn.Close()
-	}
+	slog.Infof("upload loop done")
 	wg.Done()
-}
-
-func main() {
-	var wg sync.WaitGroup
-
-	flag.Parse()
-	slog = aputil.NewLogger(pname)
-	defer slog.Sync()
-
-	mcpd, err := mcp.New(pname)
-	if err != nil {
-		slog.Warnf("cannot connect to mcp")
-	}
-
-	brokerd := broker.New(pname)
-	defer brokerd.Fini()
-
-	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
-	if err != nil {
-		slog.Fatalf("cannot connect to configd: %v", err)
-	}
-	config.HandleChange(`^@/cloud/.*/bucket`, configBucketChanged)
-
-	mcpd.SetState(mcp.ONLINE)
-
-	stopUpdate := make(chan bool)
-	stopUpload := make(chan bool)
-
-	wg.Add(2)
-	go updateLoop(&wg, stopUpdate)
-	go uploadLoop(&wg, stopUpload)
-
-	exitSig := make(chan os.Signal, 2)
-	signal.Notify(exitSig, syscall.SIGINT, syscall.SIGTERM)
-
-	s := <-exitSig
-	slog.Infof("Received signal '%v'.  Exiting.", s)
-
-	stopUpdate <- true
-	stopUpload <- true
-
-	wg.Wait()
 }
