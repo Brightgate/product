@@ -35,10 +35,6 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
-const (
-	pname = "ap-watchctl"
-)
-
 // Simple wrapper type, allowing us to sort a list of WatchdScanInfo structs
 type scanList []*base_msg.WatchdScanInfo
 
@@ -122,7 +118,7 @@ func listScans(s *zmq.Socket) error {
 // to specify a time, so "schedule" really means "run as soon as possible."
 func addScan(s *zmq.Socket, args []string) error {
 	if len(args) < 1 || len(args) > 2 {
-		usage()
+		watchUsage()
 	}
 
 	if ip := net.ParseIP(args[0]); ip == nil {
@@ -162,7 +158,7 @@ func addScan(s *zmq.Socket, args []string) error {
 // Attempt to delete a scheduled scan.  The scan is identified by its ID.
 func delScan(s *zmq.Socket, args []string) error {
 	if len(args) != 1 {
-		usage()
+		watchUsage()
 	}
 
 	id, err := strconv.Atoi(args[0])
@@ -188,7 +184,7 @@ func delScan(s *zmq.Socket, args []string) error {
 // Instruct watchd to reschedule a scan so that it will run ASAP.
 func nowScan(s *zmq.Socket, args []string) error {
 	if len(args) != 1 {
-		usage()
+		watchUsage()
 	}
 
 	id, err := strconv.Atoi(args[0])
@@ -257,7 +253,7 @@ func connect() (*zmq.Socket, error) {
 	return socket, err
 }
 
-func usage() {
+func watchUsage() {
 	fmt.Printf("usage:\t%s\n", pname)
 	fmt.Printf("\tscan list\n")
 	fmt.Printf("\tscan add <ip> [<tcp|udp|vuln>]\n")
@@ -266,16 +262,16 @@ func usage() {
 	os.Exit(2)
 }
 
-func main() {
+func watchctl() {
 	var err error
 
 	if len(os.Args) < 3 {
-		usage()
+		watchUsage()
 	}
 
 	cmd := os.Args[1]
 	if cmd != "scan" {
-		usage()
+		watchUsage()
 	}
 
 	socket, err := connect()
@@ -296,11 +292,15 @@ func main() {
 	case "now":
 		err = nowScan(socket, os.Args[3:])
 	default:
-		usage()
+		watchUsage()
 	}
 
 	if err != nil {
 		fmt.Printf("%s %s failed: %v\n", cmd, subcmd, err)
 		os.Exit(1)
 	}
+}
+
+func init() {
+	addTool("ap-watchctl", watchctl)
 }

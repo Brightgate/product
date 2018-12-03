@@ -13,7 +13,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 
@@ -21,8 +20,6 @@ import (
 	"bg/ap_common/mcp"
 	"bg/common/cfgapi"
 )
-
-const pname = "ap-complete"
 
 // Either expand the list of legal commands, or verify that we are operating on
 // a legal command.  Returns 'true' if the caller should continue expanding the
@@ -49,7 +46,7 @@ func cmdCheck(util, prefix, prior string, commands []string) bool {
 	return false
 }
 
-func ctl(prefix, prior string) {
+func completeMCP(prefix, prior string) {
 	commands := []string{"status", "stop", "start", "restart"}
 
 	if !cmdCheck("ap-ctl", prefix, prior, commands) {
@@ -70,7 +67,7 @@ func ctl(prefix, prior string) {
 	}
 }
 
-func configctl(prefix, prior string) {
+func completeConfig(prefix, prior string) {
 	commands := []string{"add", "set", "get", "del"}
 
 	if !cmdCheck("ap-configctl", prefix, prior, commands) {
@@ -126,9 +123,7 @@ func configctl(prefix, prior string) {
 
 }
 
-func main() {
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-
+func complete() {
 	if len(os.Args) != 4 {
 		fmt.Printf("Usage: %s <command> <prefix> <previous>\n", pname)
 		os.Exit(1)
@@ -136,8 +131,12 @@ func main() {
 
 	switch os.Args[1] {
 	case "ap-configctl":
-		configctl(os.Args[2], os.Args[3])
+		completeConfig(os.Args[2], os.Args[3])
 	case "ap-ctl":
-		ctl(os.Args[2], os.Args[3])
+		completeMCP(os.Args[2], os.Args[3])
 	}
+}
+
+func init() {
+	addTool("ap-complete", complete)
 }

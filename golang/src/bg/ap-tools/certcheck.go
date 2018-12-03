@@ -21,19 +21,21 @@ import (
 	"bg/common/cfgapi"
 )
 
-const (
-	pname = "ap-certcheck"
-)
-
 var (
-	force   = flag.Bool("force", false, "Force refresh self-signed")
-	verbose = flag.Bool("verbose", false, "Verbose output")
+	force   bool
+	verbose bool
 )
 
-func main() {
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+func certFlagInit() {
+	flag.BoolVar(&force, "force", false, "Force refresh self-signed")
+	flag.BoolVar(&verbose, "verbose", false, "Verbose output")
 	flag.Parse()
+}
 
+func certcheck() {
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
+	certFlagInit()
 	validDuration, err := time.ParseDuration("25h")
 	if err != nil {
 		log.Fatalf("could not parse '25h' duration: %v\n", err)
@@ -50,18 +52,22 @@ func main() {
 		log.Fatalf("failed to fetch gateway domain: %v\n", err)
 	}
 	gatewayName := "gateway." + domainName
-	if *verbose {
+	if verbose {
 		log.Printf("gateway = %v\n", gatewayName)
 	}
 
 	keyfn, certfn, chainfn, fullchainfn, err := certificate.GetKeyCertPaths(brokerd, gatewayName,
-		time.Now().Add(validDuration), *force)
+		time.Now().Add(validDuration), force)
 
 	if err != nil {
 		log.Fatalf("GetKeyCertPaths failed: %v", err)
 	}
 
-	if *verbose {
+	if verbose {
 		log.Printf("key = %v\ncertificate = '%v'\nchain = '%v'\nfullchain = '%v'\n", keyfn, certfn, chainfn, fullchainfn)
 	}
+}
+
+func init() {
+	addTool("ap-certcheck", certcheck)
 }

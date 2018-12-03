@@ -20,20 +20,23 @@ import (
 	"bg/common/configctl"
 )
 
-const pname = "ap-configctl"
-
 var (
-	level = flag.String("l", "user", "change configd access level")
+	accessLevel string
 )
 
-func main() {
+func configctlFlagInit() {
+	flag.StringVar(&accessLevel, "l", "user", "configd access level")
+	flag.Parse()
+}
+
+func configctlMain() {
 	var err error
 
-	flag.Parse()
+	configctlFlagInit()
 
-	l, ok := cfgapi.AccessLevels[*level]
+	l, ok := cfgapi.AccessLevels[accessLevel]
 	if !ok {
-		fmt.Printf("no such access level: %s\n", *level)
+		fmt.Printf("no such access level: %s\n", accessLevel)
 		os.Exit(1)
 	}
 
@@ -51,4 +54,8 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+}
+
+func init() {
+	addTool("ap-configctl", configctlMain)
 }

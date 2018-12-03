@@ -80,7 +80,7 @@ class DebPackage:
 
     def copy_tree(self):
         """Copy package contents, as subtree, from proto area."""
-        shutil.copytree(self.proto_dir, self.work_dir)
+        shutil.copytree(self.proto_dir, self.work_dir, symlinks=True)
 
     def emit_metadata(self):
         """Write the package metadata files."""

@@ -25,7 +25,6 @@ import (
 )
 
 const (
-	pname     = "ap-ctl"
 	colFormat = "%12s%6s%8s%7s%7s%13s%20s %s"
 )
 
@@ -36,7 +35,7 @@ var validCmds = map[string]bool{
 	"restart": true,
 }
 
-func usage() {
+func ctlUsage() {
 	fmt.Printf("usage:\t%s <status | stop | start | restart> daemon...\n"+
 		"\t%s <status | stop | start | restart> all\n",
 		pname, pname)
@@ -143,17 +142,17 @@ func printState(incoming string) {
 	}
 }
 
-func main() {
+func ctl() {
 	var cmd, daemon string
 	var err error
 
 	if len(os.Args) < 3 {
-		usage()
+		ctlUsage()
 	}
 
 	cmd = os.Args[1]
 	if _, ok := validCmds[cmd]; !ok {
-		usage()
+		ctlUsage()
 	}
 
 	mcp, err := mcp.New("ap-ctl")
@@ -184,4 +183,8 @@ func main() {
 		}
 	}
 	os.Exit(0)
+}
+
+func init() {
+	addTool("ap-ctl", ctl)
 }

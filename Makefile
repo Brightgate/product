@@ -297,20 +297,13 @@ APPCOMMON_GOPKGS = \
 	bg/ap_common/wificaps
 
 APPCOMMAND_GOPKGS = \
-	bg/ap-arpspoof \
-	bg/ap-certcheck \
-	bg/ap-complete \
-	bg/ap-configctl \
-	bg/ap-ctl \
 	bg/ap-defaultpass \
 	bg/ap-diag \
 	bg/ap-inspect \
 	bg/ap-factory \
-	bg/ap-msgping \
 	bg/ap-ouisearch \
-	bg/ap-userctl \
-	bg/ap-vuln-aggregate \
-	bg/ap-watchctl
+	bg/ap-tools \
+	bg/ap-vuln-aggregate 
 
 APPDAEMON_GOPKGS = \
 	bg/ap.brokerd \
@@ -332,12 +325,22 @@ ALL_GOPKGS = $(APP_GOPKGS) $(CLOUD_GOPKGS)
 
 APP_GOPKGS = $(APPCOMMON_GOPKGS) $(APPCOMMAND_GOPKGS) $(APPDAEMON_GOPKGS)
 
+APPTOOLS = \
+	ap-arpspoof \
+	ap-certcheck \
+	ap-complete \
+	ap-configctl \
+	ap-ctl \
+	ap-userctl \
+	ap-watchctl
+
 MISCCOMMANDS = \
 	ap-rpc
 
 APPBINARIES = \
 	$(APPCOMMAND_GOPKGS:bg/%=$(APPBIN)/%) \
 	$(APPDAEMON_GOPKGS:bg/%=$(APPBIN)/%) \
+	$(APPTOOLS:%=$(APPBIN)/%) \
 	$(MISCCOMMANDS:%=$(APPBIN)/%)
 
 # XXX Common configurations?
@@ -733,6 +736,9 @@ $(APPBINARIES): $(APP_COMMON_SRCS) $(GODEPS_ENSURED) | $(APPBIN)
 
 # Build rules for go binaries.
 
+$(APPTOOLS:%=$(APPBIN)/%): $(APPBIN)/ap-tools
+	ln -sf $(<F) $@
+
 # As of golang 1.10, 'go build' and 'go install' both cache their results, so
 # the latter isn't any faster.  We use 'go build' because because 'go install'
 # refuses to install cross-compiled binaries into GOBIN.
@@ -792,14 +798,6 @@ $(APPBIN)/ap.watchd: \
 	$(GOSRCBG)/ap.watchd/scanner.go \
 	$(GOSRCBG)/ap.watchd/watchd.go
 
-$(APPBIN)/ap-arpspoof: $(GOSRCBG)/ap-arpspoof/arpspoof.go
-$(APPBIN)/ap-certcheck: $(GOSRCBG)/ap-certcheck/certcheck.go \
-	$(GOSRCBG)/ap_common/certificate/certificate.go
-$(APPBIN)/ap-complete: $(GOSRCBG)/ap-complete/complete.go
-$(APPBIN)/ap-configctl:	\
-	$(GOSRCBG)/ap-configctl/configctl.go \
-	$(GOSRCBG)/common/configctl/configctl.go
-$(APPBIN)/ap-ctl: $(GOSRCBG)/ap-ctl/ctl.go
 $(APPBIN)/ap-defaultpass: $(GOSRCBG)/ap-defaultpass/defaultpass.go
 $(APPBIN)/ap-diag: \
 	$(GOSRCBG)/ap-diag/diag.go \
@@ -807,17 +805,23 @@ $(APPBIN)/ap-diag: \
 	$(GOSRCBG)/ap_common/wificaps/wificaps.go
 $(APPBIN)/ap-inspect: $(GOSRCBG)/ap-inspect/inspect.go
 $(APPBIN)/ap-factory: $(GOSRCBG)/ap-factory/factory.go
-$(APPBIN)/ap-msgping: $(GOSRCBG)/ap-msgping/msgping.go
 $(APPBIN)/ap-ouisearch: $(GOSRCBG)/ap-ouisearch/ouisearch.go
 $(APPBIN)/ap-rpc: $(APPBIN)/ap.rpcd
-	ln -f $< $@
-$(APPBIN)/ap-userctl: $(GOSRCBG)/ap-userctl/userctl.go
+	ln -sf $(<F) $@
+$(APPBIN)/ap-tools: \
+	$(GOSRCBG)/ap-tools/arpspoof.go \
+	$(GOSRCBG)/ap-tools/certcheck.go \
+	$(GOSRCBG)/ap-tools/complete.go \
+	$(GOSRCBG)/ap-tools/configctl.go \
+	$(GOSRCBG)/ap-tools/ctl.go \
+	$(GOSRCBG)/ap-tools/tools.go \
+	$(GOSRCBG)/ap-tools/userctl.go \
+	$(GOSRCBG)/ap-tools/watchctl.go
 $(APPBIN)/ap-vuln-aggregate: \
 	$(GOSRCBG)/ap-vuln-aggregate/ap-defaultpass.go \
 	$(GOSRCBG)/ap-vuln-aggregate/ap-inspect.go \
 	$(GOSRCBG)/ap-vuln-aggregate/nmap.go \
 	$(GOSRCBG)/ap-vuln-aggregate/aggregate.go
-$(APPBIN)/ap-watchctl:	$(GOSRCBG)/ap-watchctl/watchctl.go
 
 LOCAL_BINARIES=$(APPBINARIES:$(APPBIN)/%=$(GOBIN)/%)
 

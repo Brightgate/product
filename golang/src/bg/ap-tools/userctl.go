@@ -33,10 +33,6 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 )
 
-const (
-	pname = "ap-userctl"
-)
-
 var (
 	anyStringFlagSet = false
 )
@@ -64,20 +60,29 @@ var (
 	emailFlag       stringFlag
 	phoneFlag       stringFlag
 	langFlag        stringFlag
-	addOp           = flag.Bool("add", false, "add a user")
-	updateOp        = flag.Bool("update", false, "update a user")
-	deleteOp        = flag.Bool("delete", false, "delete a user")
-	passwdOp        = flag.Bool("passwd", false, "set a password for user")
-	setTotpOp       = flag.Bool("set-totp", false, "set a TOTP for user")
-	clearTotpOp     = flag.Bool("clear-totp", false, "clear TOTP for user")
-	vFlag           = flag.Bool("v", false, "enable verbose user display")
+	addOp           bool
+	updateOp        bool
+	deleteOp        bool
+	passwdOp        bool
+	setTotpOp       bool
+	clearTotpOp     bool
+	vFlag           bool
 )
 
-func init() {
+func flagInit() {
+	flag.BoolVar(&addOp, "add", false, "add a user")
+	flag.BoolVar(&updateOp, "update", false, "update a user")
+	flag.BoolVar(&deleteOp, "delete", false, "delete a user")
+	flag.BoolVar(&passwdOp, "passwd", false, "set a password for user")
+	flag.BoolVar(&setTotpOp, "set-totp", false, "set a TOTP for user")
+	flag.BoolVar(&clearTotpOp, "clear-totp", false, "clear TOTP for user")
+	flag.BoolVar(&vFlag, "v", false, "enable verbose user display")
 	flag.Var(&displayNameFlag, "display-name", "displayName value for added user")
 	flag.Var(&emailFlag, "email", "email value for added user")
 	flag.Var(&phoneFlag, "telephone-number", "telephoneNumber value for added user")
 	flag.Var(&langFlag, "language", "preferredLanguage value for added user")
+
+	flag.Parse()
 }
 
 var config *cfgapi.Handle
@@ -248,13 +253,13 @@ func clearTOTP() error {
 	return nil
 }
 
-func main() {
+func userctl() {
 	var err error
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
-	flag.Parse()
+	flagInit()
 
-	if *addOp || *updateOp || *deleteOp || *passwdOp || *setTotpOp || *clearTotpOp {
+	if addOp || updateOp || deleteOp || passwdOp || setTotpOp || clearTotpOp {
 		if flag.NArg() > 1 {
 			log.Fatalf("only one user can be specified")
 		}
@@ -273,19 +278,19 @@ func main() {
 		log.Fatalf("cannot connect to configd: %v\n", err)
 	}
 
-	if *addOp {
+	if addOp {
 		err = addUser()
-	} else if *updateOp {
+	} else if updateOp {
 		err = updateUser()
-	} else if *deleteOp {
+	} else if deleteOp {
 		err = deleteUser()
-	} else if *passwdOp {
+	} else if passwdOp {
 		err = setUserPassword()
-	} else if *setTotpOp {
+	} else if setTotpOp {
 		err = setTOTP()
-	} else if *clearTotpOp {
+	} else if clearTotpOp {
 		err = clearTOTP()
-	} else if *vFlag {
+	} else if vFlag {
 		err = getUsersVerbose()
 	} else {
 		err = getUsers()
@@ -293,4 +298,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Operation failed: %+v", err)
 	}
+}
+
+func init() {
+	addTool("ap-userctl", userctl)
 }

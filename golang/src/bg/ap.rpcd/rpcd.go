@@ -349,11 +349,7 @@ func cmdStart() {
 }
 
 func main() {
-	exec, err := os.Executable()
-	if err != nil {
-		panic("couldn't get executable name")
-	}
-	pname = filepath.Base(exec)
+	pname = filepath.Base(os.Args[0])
 
 	flag.Parse()
 	slog = aputil.NewLogger(pname)
