@@ -17,9 +17,24 @@ import mockUsers from './users_mock';
 
 const debug = Debug('appliance-mock');
 
-const mockAppliances = [
-  '0',
+const mockLocalAppliances = [
+  {
+    uuid: '0',
+    name: 'Local Appliance',
+  },
 ];
+
+const mockCloudAppliances = [
+  {
+    uuid: '5182ab0b-39db-4256-86e0-8154171b35ac',
+    name: 'Apple',
+  },
+  {
+    uuid: 'ef9b1046-95fa-41c5-a226-ad88198da9e2',
+    name: 'Banana',
+  },
+];
+
 
 const mockRings = {
   'core': {
@@ -64,9 +79,12 @@ function configHandler(config) {
   return [200, value];
 }
 
-function mockAxios(normalAxios) {
+function mockAxios(normalAxios, mode) {
   const mockAx = axios.create();
   const mock = new MockAdapter(mockAx);
+
+  const mockAppliances = (mode === 'cloud') ? mockCloudAppliances : mockLocalAppliances;
+  debug('mockAppliances is!', mockAppliances, mode);
 
   mock
     .onGet('/api/appliances').reply(200, mockAppliances)

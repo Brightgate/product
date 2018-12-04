@@ -34,7 +34,7 @@
     </template>
 
     <f7-block-title>{{ $t("message.home.tools") }}</f7-block-title>
-    <bg-site-controls :siteid="site.uniqid" :device-count="deviceCount(devices)" :disabled="!loggedIn" />
+    <bg-site-controls :siteid="site.id" :device-count="deviceCount(devices)" :disabled="!loggedIn" />
   </f7-page>
 </template>
 <script>
@@ -71,7 +71,7 @@ export default {
 
     site: function() {
       const siteid = this.$f7route.params.SiteID;
-      const x = this.$store.getters.siteByUniqID(siteid);
+      const x = this.$store.getters.siteByID(siteid);
       debug(`siteid ${siteid}`, x);
       return x;
     },

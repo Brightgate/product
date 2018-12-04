@@ -33,6 +33,11 @@ type apiHandler struct {
 	getClientHandle getClientHandleFunc
 }
 
+type apiAppliance struct {
+	UUID uuid.UUID `json:"uuid"`
+	Name string    `json:"name"`
+}
+
 // getAppliances implements /api/appliances
 // XXX needs filtering by userid
 func (a *apiHandler) getAppliances(c echo.Context) error {
@@ -40,11 +45,17 @@ func (a *apiHandler) getAppliances(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError)
 	}
-	idus := []uuid.UUID{}
-	for _, id := range ids {
-		idus = append(idus, id.CloudUUID)
+	apiAppliances := make([]apiAppliance, len(ids))
+	for i, id := range ids {
+		// XXX Today, we derive Name from the registry name.  However,
+		// customers will want to have control over the site name, and
+		// this is best seen as a temporary measure.
+		apiAppliances[i] = apiAppliance{
+			UUID: id.CloudUUID,
+			Name: id.ApplianceRegID,
+		}
 	}
-	return c.JSON(http.StatusOK, &idus)
+	return c.JSON(http.StatusOK, &apiAppliances)
 }
 
 // getAppliancesUUID implements /api/appliances/:uuid

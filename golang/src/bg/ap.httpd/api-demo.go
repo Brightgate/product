@@ -840,8 +840,20 @@ func demoEnrollGuestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type daAppliance struct {
+	// The appliance breaks the UUID contract by using '0' as its
+	// reserved UUID; hence we have to use a string here.
+	UUID string `json:"uuid"`
+	Name string `json:"name"`
+}
+
 func demoAppliancesHandler(w http.ResponseWriter, r *http.Request) {
-	var appliances = []string{"0"}
+	var appliances = []daAppliance{
+		{
+			UUID: "0",
+			Name: "Local Appliance",
+		},
+	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(appliances); err != nil {
 		panic(err)

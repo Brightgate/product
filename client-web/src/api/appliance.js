@@ -20,24 +20,30 @@ import makeAxiosMock from './appliance_mock';
 const normalAxios = axiosMod.create({
   timeout: 5000,
 });
-let mockAxios = null;
 
 let axios = normalAxios;
-// Get a property's value
-function enableMock() {
-  if (mockAxios === null) {
-    mockAxios = makeAxiosMock(normalAxios);
-  }
-  axios = mockAxios;
-}
+let mockMode = null;
 
-function disableMock() {
-  axios = normalAxios;
-}
+const MOCKMODE_NONE = null;
+const MOCKMODE_APPLIANCE = 'appliance';
+const MOCKMODE_CLOUD = 'cloud';
+
+const RETRY_DELAY = 1000;
 
 const debug = Debug('api/appliance');
 
-const RETRY_DELAY = 1000;
+function setMockMode(mode) {
+  assert(mode === null || mode === 'cloud' || mode === 'appliance');
+  if (mockMode === mode) {
+    return;
+  }
+  if (mode === null) {
+    axios = normalAxios;
+  } else {
+    axios = makeAxiosMock(normalAxios, mode);
+  }
+  mockMode = mode;
+}
 
 const urlPrefix = '';
 function buildUrl(u) {
@@ -282,6 +288,9 @@ async function authUserid() {
 }
 
 export default {
+  MOCKMODE_NONE,
+  MOCKMODE_APPLIANCE,
+  MOCKMODE_CLOUD,
   applianceConfigGet,
   applianceConfigSet,
   applianceConfigWaitProp,
@@ -297,6 +306,5 @@ export default {
   authApplianceLogin,
   authApplianceLogout,
   authUserid,
-  enableMock,
-  disableMock,
+  setMockMode,
 };

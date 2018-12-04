@@ -111,7 +111,6 @@ export default {
       'alertActive',
       'alertCount',
       'alerts',
-      'applianceIDs',
       'appMode',
       'currentApplianceID',
       'deviceByUniqID',
@@ -142,7 +141,7 @@ export default {
     onPageBeforeIn: async function() {
       // We do these optimistically, letting them fail if not logged in.
       this.$store.dispatch('fetchDevices').catch(() => {});
-      this.$store.dispatch('fetchApplianceIDs').catch(() => {});
+      this.$store.dispatch('fetchAppliances').catch(() => {});
       await this.$store.dispatch('checkLogin');
       if (!this.$store.getters.loggedIn) {
         this.$f7.loginScreen.open('#bgLoginScreen');

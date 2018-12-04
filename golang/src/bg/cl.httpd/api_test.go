@@ -121,7 +121,14 @@ func TestAppliances(t *testing.T) {
 	// Test
 	e.ServeHTTP(rec, req)
 	assert.Equal(http.StatusOK, rec.Code)
-	exp := fmt.Sprintf(`["%s", "%s"]`, m0.CloudUUID, m1.CloudUUID)
+	exp := fmt.Sprintf(`[
+	{
+		"uuid": "%s",
+		"name": "%s"
+	},{
+		"uuid": "%s",
+		"name": "%s"
+	}]`, m0.CloudUUID, m0.ApplianceRegID, m1.CloudUUID, m1.ApplianceRegID)
 	t.Logf("return body: %s", rec.Body.String())
 	assert.JSONEq(exp, rec.Body.String())
 }

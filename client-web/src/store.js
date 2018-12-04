@@ -25,19 +25,31 @@ Vue.use(Vuex);
 // XXX this needs further rationalization with devices.json
 const DEVICE_CATEGORY_ALL = ['recent', 'phone', 'computer', 'printer', 'media', 'iot', 'unknown'];
 const RETRY_DELAY = 1000;
+const LOCAL_APPLIANCE_ID = '0';
 
 const windowURLAppliance = window && window.location && window.location.href && new URL(window.location.href);
-const initApplianceID = windowURLAppliance.searchParams.get('appliance') || '0';
+const initApplianceID = windowURLAppliance.searchParams.get('appliance') || LOCAL_APPLIANCE_ID;
 
 class Appliance {
   constructor(id) {
     assert.equal(typeof id, 'string');
     this.id = id;
-    this.devices = []; // formerly allDevices
+    this.regInfo = {}; // registry Information
+    if (this.id === LOCAL_APPLIANCE_ID) {
+      this.regInfo = {
+        uuid: LOCAL_APPLIANCE_ID,
+        name: 'Local Appliance',
+      };
+    }
+    this.devices = [];
     this.alerts = [];
     this.rings = {};
     this.users = {};
     this.networkConfig = {};
+  }
+
+  get name() {
+    return this.regInfo.name ? this.regInfo.name : this.id;
   }
 
   get devices() {
@@ -114,6 +126,10 @@ function getAppliance(state, applianceID) {
   return state.appliances[applianceID];
 }
 
+function computeAppMode(state) {
+  return state.testAppMode === 'automatic' ? state.appMode : state.testAppMode;
+}
+
 const initAppliance = new Appliance(initApplianceID);
 const state = {
   appMode: 'cloud',
@@ -122,9 +138,6 @@ const state = {
   fakeLogin: false,
   mock: false,
   leftPanelVisible: false,
-  localAppliance: true,
-  applianceIDs: [],
-  sites: {},
   appliances: {
     [initApplianceID]: initAppliance,
   },
@@ -133,37 +146,27 @@ const state = {
 };
 
 const mutations = {
-  setApplianceIDs(state, newIDs) {
-    debug('setApplianceIDs, newIDs', newIDs);
-    if (newIDs.length === 1 && newIDs[0] === '0') {
+  setAppliances(state, newAppliances) {
+    debug('setAppliances, newAppliances', newAppliances);
+    assert(Array.isArray(newAppliances));
+    if (newAppliances.length === 1 && newAppliances[0].uuid === LOCAL_APPLIANCE_ID) {
       state.appMode = 'appliance';
     } else {
       state.appMode = 'cloud';
     }
-    if (state.testAppMode === 'cloud') {
-      // need to make a copy, as when mocking we get back a singleton
-      newIDs = newIDs.concat(['OtherAppliance']);
-    }
-    state.applianceIDs = newIDs;
-    state.localAppliance = state.applianceIDs.length === 1 && state.applianceIDs[0] === '0';
-    state.applianceIDs.forEach((applianceID) => {
+    newAppliances.forEach((val) => {
       // Will create as needed
-      getAppliance(state, applianceID);
+      assert(typeof val === 'object');
+      assert(val.name !== undefined);
+      assert(val.uuid !== undefined);
+      const appliance = getAppliance(state, val.uuid);
+      appliance.regInfo = val;
     });
-    if (state.applianceIDs.length === 1) {
-      state.currentApplianceID = state.applianceIDs[0];
+    // If there's only one appliance, default to it.
+    if (newAppliances.length === 1) {
+      state.currentApplianceID = newAppliances[0].uuid;
       state.currentAppliance = state.appliances[state.currentApplianceID];
     }
-    const newSites = {};
-    for (const id of newIDs) {
-      debug(`adding ${id}`);
-      newSites[id] = {
-        uniqid: id,
-        name: id === '0' ? 'Local Appliance' : id,
-      };
-    }
-    debug(`newSites is now this: ${newSites}`, newSites);
-    state.sites = newSites;
   },
 
   setCurrentApplianceID(state, newID) {
@@ -207,10 +210,15 @@ const mutations = {
 
   setMock(state, newValue) {
     state.mock = newValue;
+    debug('setMock', newValue, computeAppMode(state));
     if (state.mock) {
-      applianceApi.enableMock();
+      if (computeAppMode(state) === 'cloud') {
+        applianceApi.setMockMode(applianceApi.MOCKMODE_CLOUD);
+      } else {
+        applianceApi.setMockMode(applianceApi.MOCKMODE_APPLIANCE);
+      }
     } else {
-      applianceApi.disableMock();
+      applianceApi.setMockMode(applianceApi.MOCKMODE_NONE);
     }
   },
 
@@ -227,9 +235,7 @@ const getters = {
   loggedIn: (state) => state.loggedIn || state.fakeLogin,
   fakeLogin: (state) => state.fakeLogin,
   mock: (state) => state.mock,
-  localAppliance: (state) => state.localAppliance,
   currentApplianceID: (state) => state.currentApplianceID,
-  applianceIDs: (state) => state.applianceIDs,
   leftPanelVisible: (state) => state.leftPanelVisible,
 
   applianceAlerts: (state) => (applianceID) => {
@@ -254,10 +260,7 @@ const getters = {
   },
 
   appMode: (state) => {
-    if (state.testAppMode !== 'automatic') {
-      return state.testAppMode;
-    }
-    return state.appMode;
+    return computeAppMode(state);
   },
 
   testAppMode: (state) => {
@@ -307,10 +310,10 @@ const getters = {
   },
 
   sites: (state) => {
-    return state.sites;
+    return state.appliances; // hack for now
   },
-  siteByUniqID: (state) => (uniqid) => {
-    return state.sites[uniqid];
+  siteByID: (state) => (id) => {
+    return state.appliances[id]; // hack for now
   },
 
   // device utility functions
@@ -415,11 +418,11 @@ let fetchPeriodicTimeout = null;
 
 const actions = {
   // Load the list of appliances from the server.
-  async fetchApplianceIDs(context) {
-    debug('Store: fetchApplianceIDs');
-    const ids = await applianceApi.appliancesGet();
-    debug('Store: fetchApplianceIDs got', ids);
-    context.commit('setApplianceIDs', ids);
+  async fetchAppliances(context) {
+    debug('Store: fetchAppliances');
+    const appliances = await applianceApi.appliancesGet();
+    debug('Store: fetchAppliances got', appliances);
+    context.commit('setAppliances', appliances);
   },
 
   async setCurrentApplianceID(context, {id}) {
@@ -583,7 +586,7 @@ const actions = {
     await applianceApi.authApplianceLogin(uid, userPassword);
     context.commit('setLoggedIn', true);
     // Let these run async
-    context.dispatch('fetchApplianceIDs').then(() => {
+    context.dispatch('fetchAppliances').then(() => {
       context.dispatch('fetchDevices');
       context.dispatch('fetchRings');
       context.dispatch('fetchUsers');

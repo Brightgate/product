@@ -102,7 +102,6 @@ export default {
     // Map various $store elements as computed properties for use in the
     // template.
     ...vuex.mapGetters([
-      'applianceIDs',
       'appMode',
       'currentApplianceID',
       'fakeLogin',
@@ -125,7 +124,7 @@ export default {
     toggleMock: function(evt) {
       debug('toggleMock', evt);
       this.$store.commit('setMock', evt.target.checked);
-      this.$store.dispatch('fetchApplianceIDs').catch(() => {});
+      this.$store.dispatch('fetchAppliances').catch(() => {});
       this.$store.dispatch('fetchDevices').catch(() => {});
     },
 

@@ -30,12 +30,12 @@
   <f7-list>
     <f7-list-item
       v-for="site in sites"
-      :key="site.uniqid"
+      :key="site.id"
       :title="site.name"
-      :link="`/sites/${site.uniqid}/`"
+      :link="`/sites/${site.id}/`"
       :class="currentSite === site.uniqid ? 'selected' : undefined"
       :badge="currentSite === site.uniqid ? $t('message.site_list.current') : undefined"
-      @click="$emit('site-change', site.uniqid)" />
+      @click="$emit('site-change', site.id)" />
   </f7-list>
 </template>
 
