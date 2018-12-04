@@ -18,6 +18,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -851,11 +852,9 @@ func networkCleanup() {
 	}
 }
 
-//
 // When we get a signal, set the 'running' flag to false and signal any hostapd
 // process we're monitoring.  We want to be sure the wireless interface has been
 // released before we give mcp a chance to restart the whole stack.
-//
 func signalHandler() {
 	sig := make(chan os.Signal, 2)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
@@ -868,7 +867,7 @@ func signalHandler() {
 
 func prometheusInit() {
 	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(base_def.NETWORKD_PROMETHEUS_PORT, nil)
+	go http.ListenAndServe(base_def.NETWORKD_DIAG_PORT, nil)
 }
 
 func main() {

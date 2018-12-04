@@ -20,8 +20,6 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
-	"runtime"
-	"runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,13 +45,6 @@ var (
 
 	procStatusRE = regexp.MustCompile(`^(\w+):\s+(\d+)`)
 )
-
-// Profiler is a handle used by daemons to initiate profiling operations
-type Profiler struct {
-	name   string
-	index  int
-	active bool
-}
 
 // Child is used to build and track the state of an child subprocess
 type Child struct {
@@ -551,53 +542,4 @@ func IsNodeMode(check string) bool {
 // IsSatelliteMode checks to see whether this node is running as a mesh node
 func IsSatelliteMode() bool {
 	return IsNodeMode(base_def.MODE_SATELLITE)
-}
-
-// CPUStart begins collecting CPU profiling information
-func (p *Profiler) CPUStart() error {
-	p.index++
-	name := fmt.Sprintf("%s.cpu.%03d.prof", p.name, p.index)
-	file, err := os.Create(name)
-	if err != nil {
-		return fmt.Errorf("failed to create %s: %v", name, err)
-	}
-	log.Printf("Collecting cpu profile data in %s\n", name)
-	pprof.StartCPUProfile(file)
-	p.active = true
-	return nil
-}
-
-// CPUStop stops collecting profiling information and writes out the results
-func (p *Profiler) CPUStop() {
-	if p.active {
-		log.Printf("Stopping profiler\n")
-
-		pprof.StopCPUProfile()
-	}
-	p.active = false
-}
-
-// HeapProfile writes the current heap profile to disk
-func (p *Profiler) HeapProfile() {
-	name := fmt.Sprintf("%s.mem.%03d.prof", p.name, p.index)
-	file, err := os.Create(name)
-	if err != nil {
-		log.Printf("Failed to create heap profile: %v\n",
-			err)
-	} else {
-		runtime.GC()
-		pprof.WriteHeapProfile(file)
-	}
-}
-
-// NewProfiler allocates an opaque handler daemons can use to perfom CPU and
-// memory profiling operations.
-func NewProfiler(name string) *Profiler {
-	p := Profiler{
-		name:   name,
-		index:  0,
-		active: false,
-	}
-
-	return &p
 }

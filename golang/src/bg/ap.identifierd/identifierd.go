@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -55,10 +56,9 @@ var (
 	modelDir = flag.String("modeldir", "./", "Directory containing a saved model")
 	logDir   = flag.String("logdir", "./", "Directory for device learning log data")
 
-	brokerd  *broker.Broker
-	configd  *cfgapi.Handle
-	profiler *aputil.Profiler
-	slog     *zap.SugaredLogger
+	brokerd *broker.Broker
+	configd *cfgapi.Handle
+	slog    *zap.SugaredLogger
 
 	ouiDB   oui.DynamicDB
 	mfgidDB = make(map[string]int)
@@ -404,35 +404,10 @@ func recoverClients() {
 }
 
 func signalHandler() {
-	profiling := false
-
-	sig := make(chan os.Signal, 3)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR2)
-	for {
-		s := <-sig
-		slog.Infof("Signal (%v) received.", s)
-		switch s {
-
-		case syscall.SIGUSR2:
-			if profiler == nil {
-				continue
-			}
-
-			if !profiling {
-				if err := profiler.CPUStart(); err != nil {
-					slog.Warnf("profiler failed: %v", err)
-				} else {
-					profiling = true
-				}
-			} else {
-				profiler.CPUStop()
-				profiler.HeapProfile()
-				profiling = false
-			}
-		default:
-			return
-		}
-	}
+	sig := make(chan os.Signal, 2)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	s := <-sig
+	slog.Infof("Signal (%v) received.", s)
 }
 
 func main() {
@@ -513,9 +488,6 @@ func main() {
 	if err = mcpd.SetState(mcp.ONLINE); err != nil {
 		slog.Warnf("failed to set status")
 	}
-
-	profiler = aputil.NewProfiler(pname)
-	defer profiler.CPUStop()
 
 	stop := make(chan bool)
 	wg := &sync.WaitGroup{}

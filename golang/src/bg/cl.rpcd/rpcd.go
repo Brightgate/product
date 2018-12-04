@@ -26,6 +26,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strings"
@@ -70,7 +71,7 @@ type Cfg struct {
 	// We use this variable to navigate the Let's Encrypt directory
 	// hierarchy.
 	CertHostname       string `envcfg:"B10E_CERT_HOSTNAME"`
-	PrometheusPort     string `envcfg:"B10E_CLRPCD_PROMETHEUS_PORT"`
+	DiagPort           string `envcfg:"B10E_CLRPCD_DIAG_PORT"`
 	GrpcPort           string `envcfg:"B10E_CLRPCD_GRPC_PORT"`
 	PubsubProject      string `envcfg:"B10E_CLRPCD_PUBSUB_PROJECT"`
 	PubsubTopic        string `envcfg:"B10E_CLRPCD_PUBSUB_TOPIC"`
@@ -137,8 +138,8 @@ func processEnv(environ *Cfg) {
 		slog.Fatalf("B10E_CLRPCD_CLCONFIGD_CONNECTION must be set")
 	}
 	// Supply defaults where applicable
-	if environ.PrometheusPort == "" {
-		environ.PrometheusPort = base_def.CLRPCD_PROMETHEUS_PORT
+	if environ.DiagPort == "" {
+		environ.DiagPort = base_def.CLRPCD_DIAG_PORT
 	}
 	if environ.GrpcPort == "" {
 		environ.GrpcPort = base_def.CLRPCD_GRPC_PORT
@@ -249,7 +250,7 @@ func makeGrpcServer(environ Cfg, applianceDB appliancedb.DataStore) *grpc.Server
 	}
 
 	// Insert Prometheus interceptor if enabled
-	if len(environ.PrometheusPort) != 0 {
+	if len(environ.DiagPort) != 0 {
 		streamFuncs = append(streamFuncs, grpc_prometheus.StreamServerInterceptor)
 		unaryFuncs = append(unaryFuncs, grpc_prometheus.UnaryServerInterceptor)
 	}
@@ -265,7 +266,7 @@ func makeGrpcServer(environ Cfg, applianceDB appliancedb.DataStore) *grpc.Server
 
 	grpcServer := grpc.NewServer(opts...)
 
-	if len(environ.PrometheusPort) != 0 {
+	if len(environ.DiagPort) != 0 {
 		// Documentation notes that this is somewhat expensive
 		grpc_prometheus.EnableHandlingTimeHistogram()
 		grpc_prometheus.Register(grpcServer)
@@ -328,7 +329,7 @@ func main() {
 	cloud_rpc.RegisterConfigBackEndServer(grpcServer, configdServer)
 	slog.Infof(checkMark + "Ready to relay configd requests")
 
-	prometheusInit(environ.PrometheusPort)
+	prometheusInit(environ.DiagPort)
 
 	grpcConn, err := net.Listen("tcp", environ.GrpcPort)
 	if err != nil {

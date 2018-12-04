@@ -15,6 +15,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -176,7 +177,7 @@ func prometheusInit() {
 	})
 	prometheus.MustRegister(metrics.events)
 	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(base_def.RPCD_PROMETHEUS_PORT, nil)
+	go http.ListenAndServe(base_def.RPCD_DIAG_PORT, nil)
 }
 
 func grpcInit() (*grpc.ClientConn, error) {

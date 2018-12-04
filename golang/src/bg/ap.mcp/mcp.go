@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -958,6 +960,11 @@ func verifyNodeID() error {
 	return err
 }
 
+func profile() {
+	err := http.ListenAndServe(base_def.MCP_DIAG_PORT, nil)
+	logWarn("Profiler exited: %v", err)
+}
+
 func main() {
 	flag.Parse()
 	log.SetFlags(log.Ldate | log.Ltime)
@@ -998,6 +1005,7 @@ func main() {
 	}
 
 	go signalHandler()
+	go profile()
 
 	if aputil.IsSatelliteMode() {
 		go satelliteLoop()

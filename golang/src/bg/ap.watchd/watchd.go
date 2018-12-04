@@ -15,6 +15,7 @@ import (
 	"flag"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"runtime"
@@ -42,7 +43,7 @@ const pname = "ap.watchd"
 var (
 	watchDir = flag.String("dir", "/var/spool/watchd",
 		"directory in which the watchd work files should be stored")
-	addr = flag.String("pport", base_def.WATCHD_PROMETHEUS_PORT,
+	addr = flag.String("pport", base_def.WATCHD_DIAG_PORT,
 		"The address to listen on for Prometheus HTTP requests.")
 	nmapVerbose = flag.Bool("nmapVerbose", false, "log nmap output")
 
@@ -50,7 +51,6 @@ var (
 	config  *cfgapi.Handle
 	slog    *zap.SugaredLogger
 
-	profiler *aputil.Profiler
 	watchers = make([]*watcher, 0)
 
 	rings   cfgapi.RingMap
@@ -240,35 +240,10 @@ func logUnknown(ring, mac, ipstr string) bool {
 }
 
 func signalHandler() {
-	profiling := false
-
-	sig := make(chan os.Signal, 3)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR2)
-	for {
-		s := <-sig
-		slog.Infof("Signal (%v) received.", s)
-		switch s {
-
-		case syscall.SIGUSR2:
-			if profiler == nil {
-				continue
-			}
-
-			if !profiling {
-				if err := profiler.CPUStart(); err != nil {
-					slog.Warnf("profiler failed: %v", err)
-				} else {
-					profiling = true
-				}
-			} else {
-				profiler.CPUStop()
-				profiler.HeapProfile()
-				profiling = false
-			}
-		default:
-			return
-		}
-	}
+	sig := make(chan os.Signal, 2)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	s := <-sig
+	slog.Infof("Signal (%v) received.", s)
 }
 
 func prometheusInit() {
@@ -344,7 +319,7 @@ func prometheusInit() {
 	prometheus.MustRegister(metrics.knownHosts)
 
 	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(base_def.WATCHD_PROMETHEUS_PORT, nil)
+	go http.ListenAndServe(base_def.WATCHD_DIAG_PORT, nil)
 }
 
 func main() {
@@ -382,9 +357,6 @@ func main() {
 	config.HandleExpire(`^@/clients/.*/ipv4$`, configIPv4Delexp)
 	macToIPInit()
 	rings = config.GetRings()
-
-	profiler = aputil.NewProfiler(pname)
-	defer profiler.CPUStop()
 
 	mcpd.SetState(mcp.ONLINE)
 	for _, w := range watchers {

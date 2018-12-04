@@ -651,7 +651,7 @@ func prometheusInit() {
 	prometheus.MustRegister(metrics.ssdpResponses)
 
 	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(base_def.RELAYD_PROMETHEUS_PORT, nil)
+	go http.ListenAndServe(base_def.RELAYD_DIAG_PORT, nil)
 }
 
 func main() {

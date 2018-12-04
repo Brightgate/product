@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -237,7 +238,7 @@ func prometheusInit() {
 	prometheus.MustRegister(metrics.identityEvents)
 
 	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(base_def.LOGD_PROMETHEUS_PORT, nil)
+	go http.ListenAndServe(base_def.LOGD_DIAG_PORT, nil)
 }
 
 func main() {

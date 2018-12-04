@@ -38,7 +38,7 @@ import (
 const pname = "ap.brokerd"
 
 var (
-	addr = flag.String("listen-address", base_def.BROKER_PROMETHEUS_PORT,
+	addr = flag.String("listen-address", base_def.BROKERD_DIAG_PORT,
 		"The address to listen on for HTTP requests.")
 
 	mcpd *mcp.MCP

@@ -16,6 +16,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -56,7 +57,7 @@ var environ struct {
 	// We use this variable to navigate the Let's Encrypt directory
 	// hierarchy.
 	CertHostname       string `envcfg:"B10E_CERT_HOSTNAME"`
-	PrometheusPort     string `envcfg:"B10E_CLCONFIGD_PROMETHEUS_PORT"`
+	DiagPort           string `envcfg:"B10E_CLCONFIGD_DIAG_PORT"`
 	GrpcPort           string `envcfg:"B10E_CLCONFIGD_GRPC_PORT"`
 	PostgresConnection string `envcfg:"B10E_CLCONFIGD_POSTGRES_CONNECTION"`
 	Store              string `envcfg:"B10E_CLCONFIGD_STORE"`
@@ -77,15 +78,15 @@ var (
 	store configStore
 )
 
-func prometheusInit(prometheusPort string) {
-	if len(prometheusPort) == 0 {
+func prometheusInit(diagPort string) {
+	if len(diagPort) == 0 {
 		slog.Warnf("Prometheus disabled")
 		return
 	}
-	slog.Infof("Prometheus launching on port %v", prometheusPort)
+	slog.Infof("Prometheus launching on port %v", diagPort)
 
 	http.Handle("/metrics", promhttp.Handler())
-	err := http.ListenAndServe(prometheusPort, nil)
+	err := http.ListenAndServe(diagPort, nil)
 	if err != nil {
 		slog.Warnf("prometheus listener failed: %v\n", err)
 	}
@@ -137,7 +138,7 @@ func main() {
 		slog.Fatalf("Environment Error: %s", err)
 	}
 
-	go prometheusInit(environ.PrometheusPort)
+	go prometheusInit(environ.DiagPort)
 
 	store = mkStore()
 

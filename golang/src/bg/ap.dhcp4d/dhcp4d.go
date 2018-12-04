@@ -21,6 +21,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"sort"
 	"strings"
@@ -1014,7 +1015,7 @@ func prometheusInit() {
 	prometheus.MustRegister(metrics.exhausted)
 
 	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(base_def.DHCPD_PROMETHEUS_PORT, nil)
+	go http.ListenAndServe(base_def.DHCPD_DIAG_PORT, nil)
 }
 
 func main() {

@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"flag"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -52,7 +53,7 @@ const checkMark = `✔︎ `
 
 // Cfg contains the environment variable-based configuration settings
 type Cfg struct {
-	PrometheusPort     string `envcfg:"B10E_CLEVENTD_PROMETHEUS_PORT"`
+	DiagPort           string `envcfg:"B10E_CLEVENTD_DIAG_PORT"`
 	PostgresConnection string `envcfg:"B10E_CLEVENTD_POSTGRES_CONNECTION"`
 	PubsubProject      string `envcfg:"B10E_CLEVENTD_PUBSUB_PROJECT"`
 	PubsubTopic        string `envcfg:"B10E_CLEVENTD_PUBSUB_TOPIC"`
@@ -160,8 +161,8 @@ func processEnv(environ *Cfg) {
 	if environ.PubsubTopic == "" {
 		slog.Fatalf("B10E_CLEVENTD_PUBSUB_TOPIC must be set")
 	}
-	if environ.PrometheusPort == "" {
-		environ.PrometheusPort = base_def.CLEVENTD_PROMETHEUS_PORT
+	if environ.DiagPort == "" {
+		environ.DiagPort = base_def.CLEVENTD_DIAG_PORT
 	}
 	slog.Infof(checkMark + "Environ looks good")
 }
@@ -227,7 +228,7 @@ func main() {
 	inventoryBasePath = filepath.Join(daemonutils.ClRoot(), "var", "spool")
 	slog.Infof("inventory storage: %s", inventoryBasePath)
 
-	prometheusInit(environ.PrometheusPort)
+	prometheusInit(environ.DiagPort)
 
 	ctx, cancel := context.WithCancel(context.Background())
 

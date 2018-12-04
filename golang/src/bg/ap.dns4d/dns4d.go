@@ -32,6 +32,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strings"
@@ -1031,7 +1032,7 @@ func prometheusInit() {
 	prometheus.MustRegister(metrics.cacheHitRate)
 
 	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(base_def.DNSD_PROMETHEUS_PORT, nil)
+	go http.ListenAndServe(base_def.DNSD_DIAG_PORT, nil)
 }
 
 func main() {

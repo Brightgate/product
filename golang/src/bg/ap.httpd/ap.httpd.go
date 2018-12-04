@@ -20,6 +20,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strconv"
@@ -310,7 +311,7 @@ func prometheusInit() {
 	prometheus.MustRegister(metrics.latencies)
 
 	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(base_def.HTTPD_PROMETHEUS_PORT, nil)
+	go http.ListenAndServe(base_def.HTTPD_DIAG_PORT, nil)
 }
 
 func main() {

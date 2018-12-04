@@ -38,6 +38,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"regexp"
 	"strconv"
@@ -693,7 +694,7 @@ func prometheusInit() {
 
 	prometheus.MustRegister(metrics.treeSize)
 	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(base_def.CONFIGD_PROMETHEUS_PORT, nil)
+	go http.ListenAndServe(base_def.CONFIGD_DIAG_PORT, nil)
 }
 
 func fail(format string, a ...interface{}) {
