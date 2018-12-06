@@ -285,6 +285,7 @@ func snapshotClean(dir string) {
 func snapshotter() {
 	done := false
 	ticker := time.NewTicker(*sfreq)
+	defer ticker.Stop()
 	statsDir := *watchDir + "/stats"
 
 	if !aputil.FileExists(statsDir) {

@@ -372,6 +372,7 @@ func (c *rpcClient) connectLoop(wg *sync.WaitGroup, doneChan chan bool) {
 	done := false
 
 	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 	nextLog := time.Now()
 	slog.Infof("connect loop starting")
 	for !done {
@@ -404,6 +405,7 @@ func (c *rpcClient) pushLoop(wg *sync.WaitGroup, doneChan chan bool) {
 	warned := false
 	slog.Infof("push loop starting")
 	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 	for !done {
 		queued.Lock()
 		pending := len(queued.updates) + len(queued.completions)
@@ -446,6 +448,7 @@ func (c *rpcClient) pullLoop(wg *sync.WaitGroup, doneChan chan bool) {
 	slog.Infof("pull loop starting")
 
 	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 	for !done {
 		if c.connected {
 			if err := c.fetchStream(); err != nil {

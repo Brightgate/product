@@ -341,6 +341,7 @@ func rebuildLan() {
 // enough for this operation to succeed, so we just keep trying.
 func rebuildUnenrolled(devs []*physDevice, interrupt chan bool) {
 	t := time.NewTicker(time.Second)
+	defer t.Stop()
 	for len(devs) > 0 {
 		select {
 		case <-interrupt:

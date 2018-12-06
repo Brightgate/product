@@ -490,7 +490,7 @@ func sampleInit(w *watcher) {
 	}
 
 	samplerWaitGroup.Add(1)
-	auditTicker = time.NewTicker(*auditTime)
+	auditTicker = time.NewTicker(*auditTime) // stopped in sampleFini
 	auditDone = make(chan bool)
 	go auditor()
 

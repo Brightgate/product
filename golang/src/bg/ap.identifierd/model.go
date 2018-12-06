@@ -443,6 +443,7 @@ func (o *observations) predict() <-chan *prediction {
 
 	go func(ch chan *prediction) {
 		tick := time.NewTicker(predictInterval)
+		defer tick.Stop()
 		for {
 			<-tick.C
 			o.clientLock.Lock()

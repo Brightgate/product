@@ -207,6 +207,7 @@ func updateLoop(wg *sync.WaitGroup, doneChan chan bool) {
 	signal.Notify(refreshSig, syscall.SIGHUP)
 
 	ticker := time.NewTicker(*updatePeriod)
+	defer ticker.Stop()
 	for !done {
 		if updateBucket != "" {
 			for name := range updates {
@@ -365,6 +366,7 @@ func uploadLoop(client cloud_rpc.CloudStorageClient, wg *sync.WaitGroup,
 
 	slog.Infof("upload loop starting")
 	ticker := time.NewTicker(*uploadPeriod)
+	defer ticker.Stop()
 	for !done {
 		doUpload(client)
 

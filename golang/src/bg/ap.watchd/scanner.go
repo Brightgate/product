@@ -183,6 +183,7 @@ func nowString() string {
 // schedule runs toRun with a frequency determined by freq.
 func schedule(toRun func(), freq time.Duration, startNow bool) {
 	ticker := time.NewTicker(freq)
+	defer ticker.Stop()
 	go func() {
 		if startNow {
 			toRun()

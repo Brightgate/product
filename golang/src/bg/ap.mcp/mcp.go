@@ -653,6 +653,7 @@ func satelliteLoop() {
 			handleRestart(list)
 
 			ticker = time.NewTicker(remoteUpdatePeriod)
+			defer ticker.Stop()
 		}
 
 		daemonLock.RLock()

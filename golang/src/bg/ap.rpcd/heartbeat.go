@@ -46,6 +46,7 @@ func heartbeatLoop(ctx context.Context, tclient cloud_rpc.EventClient,
 	var done bool
 
 	ticker := time.NewTicker(time.Minute * 7)
+	defer ticker.Stop()
 	for !done {
 		if err := publishHeartbeat(ctx, tclient); err != nil {
 			slog.Errorf("Failed heartbeat: %s", err)

@@ -320,6 +320,7 @@ func clean() {
 func logger(stop chan bool, wg *sync.WaitGroup) {
 	defer wg.Done()
 	tick := time.NewTicker(logInterval)
+	defer tick.Stop()
 
 	for {
 		select {

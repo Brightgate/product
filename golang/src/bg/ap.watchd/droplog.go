@@ -170,6 +170,7 @@ func archiver(lock *sync.Mutex, done chan bool) {
 	defer dropThreads.Done()
 
 	ticker := time.NewTicker(*sfreq)
+	defer ticker.Stop()
 	start := time.Now()
 	for droplogRunning {
 		snapshotClean(dropDir)

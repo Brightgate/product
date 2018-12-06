@@ -190,6 +190,7 @@ func inventoryLoop(ctx context.Context, client cloud_rpc.EventClient, wg *sync.W
 	var done bool
 
 	ticker := time.NewTicker(12 * time.Hour)
+	defer ticker.Stop()
 	for !done {
 		err := sendInventory(ctx, client)
 		if err != nil {

@@ -110,6 +110,7 @@ func (dbq *dbCmdQueue) fetch(ctx context.Context, s *perAPState, start int64,
 	}
 
 	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 	for {
 		cmds, err = dbq.handle.CommandFetch(ctx, u, start, max)
 		if len(cmds) > 0 {
