@@ -129,16 +129,8 @@ type oneUpload struct {
 	uType     uploadType
 }
 
-func configBucketChanged(path []string, val string, expires *time.Time) {
-	if len(path) == 3 {
-		switch path[1] {
-		case "update":
-			updateBucket = val
-			slog.Infof("Changed update bucket to %s", val)
-		default:
-			slog.Warnf("unrecognized bucket: %s (%v)", path[1], path)
-		}
-	}
+func configBucketChanged(val string) {
+	updateBucket = val
 }
 
 func refresh(u *updateInfo) (bool, error) {

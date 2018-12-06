@@ -153,6 +153,10 @@ func (s *backEndServer) Update(ctx context.Context,
 	} else {
 		rval.Response = rpc.CfgBackEndResponse_OK
 		for _, u := range req.Updates {
+			// If an update fails, it means our cached copy of the
+			// tree is out of sync with the appliance.  Ignore all
+			// of the remaining updates (since they'll fail as
+			// well), and ask for a fresh copy of the full tree.
 			if err = update(ap, u); err != nil {
 				refreshConfig(ctx, ap, req.GetCloudUuid())
 				break

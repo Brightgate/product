@@ -16,14 +16,12 @@ package main
 import (
 	"crypto/tls"
 	"encoding/base64"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -110,16 +108,6 @@ func (l listFlag) Set(value string) error {
 	return nil
 }
 
-func handlePing(event []byte) { pings++ }
-
-func handleConfig(event []byte) { configs++ }
-
-func handleEntity(event []byte) { entities++ }
-
-func handleResource(event []byte) { resources++ }
-
-func handleRequest(event []byte) { requests++ }
-
 func handleError(event []byte) {
 	syserror := &base_msg.EventSysError{}
 	proto.Unmarshal(event, syserror)
@@ -131,41 +119,6 @@ func handleError(event []byte) {
 		slog.Infof("exiting due to renewed certificate")
 		os.Exit(0)
 	}
-}
-
-// StatsContent contains information for filling out the stats request
-// Policy: GET(*)
-type StatsContent struct {
-	URLPath string
-
-	NPings     string
-	NConfigs   string
-	NEntities  string
-	NResources string
-	NRequests  string
-
-	Host string
-}
-
-func statsHandler(w http.ResponseWriter, r *http.Request) {
-	lt := time.Now()
-
-	conf := StatsContent{
-		URLPath:    r.URL.Path,
-		NPings:     strconv.Itoa(pings),
-		NConfigs:   strconv.Itoa(configs),
-		NEntities:  strconv.Itoa(entities),
-		NResources: strconv.Itoa(resources),
-		NRequests:  strconv.Itoa(requests),
-		Host:       r.Host,
-	}
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(conf); err != nil {
-		http.Error(w, "Internal server error", 501)
-		return
-	}
-
-	metrics.latencies.Observe(time.Since(lt).Seconds())
 }
 
 // hostInMap returns a Gorilla Mux matching function that checks to see if
@@ -335,11 +288,6 @@ func main() {
 
 	// Set up connection with the broker daemon
 	brokerd := broker.New(pname)
-	brokerd.Handle(base_def.TOPIC_PING, handlePing)
-	brokerd.Handle(base_def.TOPIC_CONFIG, handleConfig)
-	brokerd.Handle(base_def.TOPIC_ENTITY, handleEntity)
-	brokerd.Handle(base_def.TOPIC_RESOURCE, handleResource)
-	brokerd.Handle(base_def.TOPIC_REQUEST, handleRequest)
 	brokerd.Handle(base_def.TOPIC_ERROR, handleError)
 	defer brokerd.Fini()
 
@@ -397,7 +345,6 @@ func main() {
 	phishRouter.HandleFunc("/", phishHandler)
 
 	mainRouter.HandleFunc("/", defaultHandler)
-	mainRouter.HandleFunc("/stats", statsHandler).Methods("GET")
 	mainRouter.PathPrefix("/api/").Handler(
 		http.StripPrefix("/api", demoAPIRouter))
 	mainRouter.PathPrefix("/auth/").Handler(

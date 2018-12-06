@@ -125,6 +125,9 @@ func (b *Broker) Handle(topic string, handler handlerF) {
 	}
 
 	b.Lock()
+	if b.handlers[topic] != nil {
+		log.Fatalf("adding multiple handlers for %s\n", topic)
+	}
 	b.handlers[topic] = handler
 	b.Unlock()
 }

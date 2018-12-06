@@ -50,9 +50,17 @@ import (
 )
 
 var (
-	connectFlag   = flag.String("connect", "", "Override connection endpoint in credential")
-	deadlineFlag  = flag.Duration("rpc-deadline", time.Second*20, "RPC completion deadline")
+	connectFlag = flag.String("connect", "",
+		"Override connection endpoint in credential")
+	deadlineFlag = flag.Duration("rpc-deadline",
+		time.Second*20, "RPC completion deadline")
 	enableTLSFlag = flag.Bool("enable-tls", true, "Enable Secure gRPC")
+	maxCmds       = flag.Int("maxcmds", 64,
+		"maximum # of commands to fetch at once")
+	maxCompletions = flag.Int("maxcomp", 64,
+		"maximum # of completions to push")
+	maxUpdates = flag.Int("maxupdate", 32,
+		"maximum # of updates to push")
 
 	pname string
 
@@ -72,14 +80,16 @@ var (
 )
 
 const (
-	urlProperty = "@/cloud/svc_rpc/url"
-	tlsProperty = "@/cloud/svc_rpc/tls"
-	defaultURL  = "svc1.b10e.net:4430"
+	urlProperty    = "@/cloud/svc_rpc/url"
+	tlsProperty    = "@/cloud/svc_rpc/tls"
+	bucketProperty = "@/cloud/update/bucket"
+	defaultURL     = "svc1.b10e.net:4430"
 )
 
 func publishEvent(ctx context.Context, tclient cloud_rpc.EventClient, subtopic string, evt proto.Message) error {
 	name := proto.MessageName(evt)
-	slog.Debugw("Sending "+subtopic, "type", name, "payload", evt)
+	//slog.Debugw("Sending "+subtopic, "type", name, "payload", evt)
+	slog.Debugw("Sending "+subtopic, "type", name)
 	serialized, err := proto.Marshal(evt)
 	if err != nil {
 		return err
@@ -200,8 +210,6 @@ func grpcInit() (*grpc.ClientConn, error) {
 	}
 
 	if config != nil {
-		config.HandleChange(`^@/cloud/.*/bucket`, configBucketChanged)
-
 		if url, err := config.GetProp(urlProperty); err == nil {
 			connectURL = url
 		}
@@ -268,7 +276,6 @@ func daemonStart() {
 
 	prometheusInit()
 	brokerd = broker.New(pname)
-	brokerd.Handle(base_def.TOPIC_CONFIG, configEvent)
 	defer brokerd.Fini()
 
 	conn, err := grpcInit()

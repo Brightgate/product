@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"bg/ap_common/aputil"
+	"bg/base_def"
 	"bg/base_msg"
 	rpc "bg/cloud_rpc"
 	"bg/common/cfgapi"
@@ -24,13 +25,6 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-)
-
-const (
-	maxCmds        = 64
-	maxCompletions = 64
-	maxUpdates     = 64
-	maxBacklog     = (2 * maxCompletions)
 )
 
 type rpcClient struct {
@@ -101,12 +95,12 @@ func (c *rpcClient) pushCompletions() error {
 	}
 
 	queued.Lock()
-	if len(queued.completions) < maxCompletions {
+	if len(queued.completions) < *maxCompletions {
 		completions = queued.completions
 		queued.completions = make([]*cfgmsg.ConfigResponse, 0)
 	} else {
-		completions = queued.completions[:maxCompletions]
-		queued.completions = queued.completions[maxCompletions:]
+		completions = queued.completions[:*maxCompletions]
+		queued.completions = queued.completions[*maxCompletions:]
 	}
 	queued.Unlock()
 
@@ -146,12 +140,12 @@ func (c *rpcClient) pushUpdates() error {
 	}
 
 	queued.Lock()
-	if len(queued.updates) < maxUpdates {
+	if len(queued.updates) < *maxUpdates {
 		updates = queued.updates
 		queued.updates = make([]*rpc.CfgBackEndUpdate_CfgUpdate, 0)
 	} else {
-		updates = queued.updates[:maxUpdates]
-		queued.updates = queued.updates[maxUpdates:]
+		updates = queued.updates[:*maxUpdates]
+		queued.updates = queued.updates[*maxUpdates:]
 	}
 	queued.Unlock()
 
@@ -183,13 +177,52 @@ func (c *rpcClient) pushUpdates() error {
 	return err
 }
 
+// If the cloud has asked for multiple copies of the full config tree, turn all
+// but the first request into no-ops.
+func trimRefreshDups(cmds []*cfgmsg.ConfigQuery) {
+	refreshed := false
+
+	// Find all "Get @/" operations
+	nulled := 0
+	for _, cmd := range cmds {
+		if len(cmd.Ops) == 1 &&
+			cmd.Ops[0].Operation == cfgmsg.ConfigOp_GET &&
+			cmd.Ops[0].Property == "@/" {
+
+			if refreshed {
+				cmd.Ops = nil
+				nulled++
+			} else {
+				refreshed = true
+			}
+		}
+	}
+
+	if nulled != 0 {
+		slog.Debugf("nulled %d redundant gets", nulled)
+	}
+	if refreshed {
+		// If we are sending back a full tree, then we should drop all
+		// pending updates, as the contents of the updates will be
+		// included in the full tree.  In addition, a tree request means
+		// that the cloud has gotten out of sync, so all of the pending
+		// updates will fail with a hash mismatch anyway.
+		queued.Lock()
+		if len(queued.updates) > 0 {
+			slog.Infof("dropping %d stale updates", len(queued.updates))
+			queued.updates = make([]*rpc.CfgBackEndUpdate_CfgUpdate, 0)
+		}
+		queued.Unlock()
+	}
+}
+
 // Open a gRPC stream to cl.configd to receive commands from the cloud
 func (c *rpcClient) fetchStream() error {
 	fetchOp := &rpc.CfgBackEndFetchCmds{
 		Time:      ptypes.TimestampNow(),
 		Version:   cfgapi.Version,
 		LastCmdID: queued.lastOp,
-		MaxCmds:   maxCmds,
+		MaxCmds:   uint32(*maxCmds),
 	}
 
 	ctx, err := applianceCred.MakeGRPCContext(c.ctx)
@@ -217,11 +250,12 @@ func (c *rpcClient) fetchStream() error {
 			cmds := resp.Cmds
 			slog.Debugf("Got %d cmds, starting with %d", len(cmds),
 				cmds[0].CmdID)
+			trimRefreshDups(cmds)
 			for _, cmd := range cmds {
 				exec(cmd)
 			}
 		}
-		for len(queued.completions) > maxBacklog {
+		for len(queued.completions) > 2**maxCompletions {
 			slog.Debugf("blocking on completion backlog")
 			time.Sleep(time.Second)
 		}
@@ -298,15 +332,27 @@ func exec(cmd *cfgmsg.ConfigQuery) {
 	}
 
 	queued.Lock()
-	if len(queued.completions) == 0 {
-		queued.updated <- true
-	}
+	emptyQueue := (len(queued.updates) == 0)
 	queued.completions = append(queued.completions, &resp)
 	if resp.CmdID > queued.lastOp {
 		queued.lastOp = resp.CmdID
 	}
 	queued.Unlock()
+	if emptyQueue {
+		queued.updated <- true
+	}
+}
 
+// Look for the property changes that affect this daemon's behaviour
+func handleChanges(prop, val string) {
+	switch prop {
+	case urlProperty:
+		slog.Infof("Moving to new RPC server: %s", val)
+		go daemonStop()
+
+	case bucketProperty:
+		configBucketChanged(val)
+	}
 }
 
 // An EventConfig event arrived on the 0MQ bus.  Convert the contents into a
@@ -329,13 +375,8 @@ func configEvent(raw []byte) {
 
 	etype := *event.Type
 	if etype == base_msg.EventConfig_CHANGE {
-		if *event.Property == urlProperty {
-			slog.Infof("Moving to new RPC server: " +
-				*event.NewValue)
-			go daemonStop()
-			return
-		}
 		slog.Debugf("updated %s - %x", *event.Property, hash)
+		handleChanges(*event.Property, *event.NewValue)
 		update = &rpc.CfgBackEndUpdate_CfgUpdate{
 			Type:     rpc.CfgBackEndUpdate_CfgUpdate_UPDATE,
 			Property: *event.Property,
@@ -357,11 +398,12 @@ func configEvent(raw []byte) {
 	}
 	if update != nil {
 		queued.Lock()
-		if len(queued.updates) == 0 {
-			queued.updated <- true
-		}
+		emptyQueue := (len(queued.updates) == 0)
 		queued.updates = append(queued.updates, update)
 		queued.Unlock()
+		if emptyQueue {
+			queued.updated <- true
+		}
 	}
 }
 
@@ -471,6 +513,8 @@ func configLoop(ctx context.Context, client rpc.ConfigBackEndClient,
 		ctx:    ctx,
 		client: client,
 	}
+
+	brokerd.Handle(base_def.TOPIC_CONFIG, configEvent)
 
 	go c.pushLoop(wg, addDoneChan())
 	go c.pullLoop(wg, addDoneChan())
