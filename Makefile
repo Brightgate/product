@@ -687,9 +687,6 @@ $(APPETC)/mcp.json: $(GOSRCBG)/ap.mcp/mcp.json | $(APPETC)
 $(APPETC)/oui.txt: | $(APPETC)
 	cd $(APPETC) && curl -s -S -O http://standards-oui.ieee.org/oui.txt
 
-$(APPETC)/datasources.json: datasources.json | $(APPETC)
-	$(INSTALL) -m 0644 $< $@
-
 $(APPETC)/prometheus.yml: prometheus.yml | $(APPETC)
 	$(INSTALL) -m 0644 $< $@
 
@@ -839,9 +836,6 @@ $(UTILBIN)/%: $(GOSRCBG)/util/%.go | $(UTILBIN)
 # Cloud components
 
 # Installation of cloud configuration files
-
-$(CLOUDETC)/datasources.json: datasources.json | $(CLOUDETC)
-	$(INSTALL) -m 0644 $< $@
 
 $(CLOUDETCDEVICESJSON): $(GOSRCBG)/ap.configd/devices.json | $(CLOUDETC)
 	$(INSTALL) -m 0644 $< $@
