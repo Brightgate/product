@@ -31,10 +31,10 @@ import (
 	"strings"
 	"time"
 
-	"bg/ap_common/device"
 	"bg/ap_common/model"
 	"bg/ap_common/network"
 	"bg/base_msg"
+	"bg/common/deviceid"
 	"bg/util/deviceDB"
 
 	"github.com/golang/protobuf/proto"
@@ -193,7 +193,7 @@ func newDevice(user *bufio.Reader, entry *oui.Entry, s *sample) {
 	devType := promptUser(user, "Enter device type: ")
 
 	maxDev++
-	d := &device.Device{
+	d := &deviceid.Device{
 		Obsolete:       false,
 		UpdateTime:     time.Now(),
 		Devtype:        devType,

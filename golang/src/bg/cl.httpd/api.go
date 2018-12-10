@@ -15,10 +15,12 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"bg/cloud_models/appliancedb"
 	"bg/common/cfgapi"
+	"bg/common/deviceid"
 
 	"github.com/gorilla/sessions"
 	"github.com/labstack/echo"
@@ -211,6 +213,20 @@ func buildDeviceResponse(c echo.Context, hdl *cfgapi.Handle,
 		ConnNode:        client.ConnNode,
 		Scans:           make(map[string]apiScanInfo),
 		Vulnerabilities: make(map[string]apiVulnInfo),
+	}
+
+	id, err := strconv.Atoi(client.Identity)
+	if err != nil {
+		c.Logger().Warnf("buildDeviceResponse: bad Identity %s", client.Identity)
+	} else {
+		lpn, err := deviceid.GetDeviceByID(hdl, id)
+		if err != nil {
+			c.Logger().Warnf("buildDeviceResponse couldn't lookup @/devices/%d: %v\n", id, err)
+		} else {
+			d.Manufacturer = lpn.Vendor
+			d.Model = lpn.ProductName
+			d.Kind = lpn.Devtype
+		}
 	}
 
 	if client.DNSName != "" {

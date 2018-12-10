@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -13,16 +13,17 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
+	"bg/cl_common/daemonutils"
 	"bg/common/cfgapi"
 	"bg/common/deviceid"
 )
 
 const (
-	deviceDB = "devices.json"
+	deviceDB = "etc/devices.json"
 )
 
 var (
@@ -30,8 +31,7 @@ var (
 )
 
 // Handle a request for a single device.
-func getDevHandler(prop string) (string, error) {
-
+func getDevice(prop string) (string, error) {
 	// The path must look like @/devices/<devid>
 	c := strings.Split(prop, "/")
 	if len(c) != 3 {
@@ -55,17 +55,10 @@ func getDevHandler(prop string) (string, error) {
 	return "", err
 }
 
-func setDevHandler(prop string, val string, exp *time.Time, add bool) error {
-	return fmt.Errorf("the device tree is read-only")
-}
-
-func delDevHandler(prop string) ([]string, error) {
-	return nil, fmt.Errorf("the device tree is read-only")
-}
-
 func deviceDBInit() error {
 	var err error
 
-	devices, err = deviceid.DevicesLoad(*propdir + deviceDB)
+	path := filepath.Join(daemonutils.ClRoot(), deviceDB)
+	devices, err = deviceid.DevicesLoad(path)
 	return err
 }

@@ -268,6 +268,7 @@ COMMON_GOPKGS = \
 	bg/common/cfgmsg \
 	bg/common/cfgtree \
 	bg/common/configctl \
+	bg/common/deviceid \
 	bg/common/grpcutils \
 	bg/common/urlfetch
 
@@ -278,6 +279,7 @@ COMMON_SRCS = \
 	$(GOSRCBG)/common/cfgmsg/cfgmsg.go \
 	$(GOSRCBG)/common/cfgmsg/cfgmsg.pb.go \
 	$(GOSRCBG)/common/cfgtree/cfgtree.go \
+	$(GOSRCBG)/common/deviceid/device.go \
 	$(GOSRCBG)/common/grpcutils/client.go \
 	$(GOSRCBG)/common/grpcutils/cred.go \
 	$(GOSRCBG)/common/urlfetch/urlfetch.go
@@ -289,7 +291,6 @@ APPCOMMON_GOPKGS = \
 	bg/ap_common/aputil \
 	bg/ap_common/broker \
 	bg/ap_common/certificate \
-	bg/ap_common/device \
 	bg/ap_common/mcp \
 	bg/ap_common/model \
 	bg/ap_common/network \
@@ -432,7 +433,6 @@ APP_COMMON_SRCS = \
 	$(GOSRCBG)/ap_common/aputil/cred.go \
 	$(GOSRCBG)/ap_common/aputil/logging.go \
 	$(GOSRCBG)/ap_common/broker/broker.go \
-	$(GOSRCBG)/ap_common/device/device.go \
 	$(GOSRCBG)/ap_common/mcp/mcp_client.go \
 	$(GOSRCBG)/ap_common/model/model.go \
 	$(GOSRCBG)/ap_common/network/dhcp.go \
@@ -450,7 +450,6 @@ UTILROOT=$(ROOT)/util
 UTILBIN=$(UTILROOT)/bin
 
 UTILCOMMON_SRCS = \
-	$(GOSRCBG)/ap_common/device/device.go \
 	$(GOSRCBG)/ap_common/model/model.go \
 	$(GOSRCBG)/ap_common/network/network.go \
 	$(GOSRCBG)/ap_common/platform/platform.go \
@@ -478,6 +477,7 @@ CLOUDETC=$(CLOUDBASE)/etc
 CLOUDLIB=$(CLOUDBASE)/lib
 CLOUDLIBCLHTTPDWEB=$(CLOUDLIB)/cl.httpd-web
 CLOUDLIBCLHTTPDWEBCLIENTWEB=$(CLOUDLIBCLHTTPDWEB)/client-web
+CLOUDETCDEVICESJSON=$(CLOUDETC)/devices.json
 CLOUDETCSCHEMA=$(CLOUDETC)/schema
 CLOUDETCSCHEMAAPPLIANCEDB=$(CLOUDETCSCHEMA)/appliancedb
 CLOUDROOTLIB=$(CLOUDROOT)/lib
@@ -521,6 +521,9 @@ CLOUDSERVICES = \
 
 CLOUDSYSTEMDSERVICES = $(CLOUDSERVICES:%=$(CLOUDROOTLIBSYSTEMDSYSTEM)/%)
 
+CLOUDETCFILES = \
+	$(CLOUDETCDEVICESJSON)
+
 CLOUDSCHEMAS = \
 	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema000.sql \
 	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema001.sql \
@@ -542,7 +545,7 @@ CLOUDDIRS = \
 	$(CLOUDSPOOL) \
 	$(CLOUDVAR)
 
-CLOUDCOMPONENTS = $(CLOUDBINARIES) $(CLOUDSYSTEMDSERVICES) $(CLOUDDIRS) $(CLOUDSCHEMAS)
+CLOUDCOMPONENTS = $(CLOUDBINARIES) $(CLOUDSYSTEMDSERVICES) $(CLOUDDIRS) $(CLOUDSCHEMAS) $(CLOUDETCFILES)
 
 CLOUD_COMMON_SRCS = \
 	$(COMMON_SRCS) \
@@ -825,7 +828,7 @@ LOCAL_BINARIES=$(APPBINARIES:$(APPBIN)/%=$(GOBIN)/%)
 
 # Miscellaneous utility components
 
-$(UTILBINARIES): $(UTILCOMMON_SRCS) $(GODEPS_ENSURED)
+$(UTILBINARIES): $(UTILCOMMON_SRCS) $(COMMON_SRCS) $(GODEPS_ENSURED)
 
 $(UTILDIRS):
 	$(MKDIR) -p $@
@@ -838,7 +841,10 @@ $(UTILBIN)/%: $(GOSRCBG)/util/%.go | $(UTILBIN)
 # Installation of cloud configuration files
 
 $(CLOUDETC)/datasources.json: datasources.json | $(CLOUDETC)
-	$(INSTALL) -m 0644 $< $(CLOUDETC)
+	$(INSTALL) -m 0644 $< $@
+
+$(CLOUDETCDEVICESJSON): $(GOSRCBG)/ap.configd/devices.json | $(CLOUDETC)
+	$(INSTALL) -m 0644 $< $@
 
 # Install database schema files
 $(CLOUDETCSCHEMAAPPLIANCEDB)/%: golang/src/bg/cloud_models/appliancedb/schema/% | $(CLOUDETCSCHEMAAPPLIANCEDB)
@@ -875,6 +881,7 @@ $(CLOUDBIN)/cl.configd: \
 	$(GOSRCBG)/cl.configd/cmdqueuedb.go \
 	$(GOSRCBG)/cl.configd/configd.go \
 	$(GOSRCBG)/cl.configd/db.go \
+	$(GOSRCBG)/cl.configd/device.go \
 	$(GOSRCBG)/cl.configd/file.go \
 	$(GOSRCBG)/cl.configd/frontend.go \
 	$(GOSRCBG)/cl.configd/grpc.go \

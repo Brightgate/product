@@ -13,6 +13,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	rpc "bg/cloud_rpc"
@@ -127,6 +128,19 @@ func (s *frontEndServer) Submit(ctx context.Context,
 			rval.Errmsg = errHead + "illegal operation type"
 			return
 		}
+	}
+
+	// Special case handling for /devices, which is served from the
+	// devicedb instead of from the config tree.
+	if getProp != "" && strings.HasPrefix(getProp, "@/devices/") {
+		json, err := getDevice(getProp)
+		if err != nil {
+			rval.Response = cfgmsg.ConfigResponse_NOPROP
+		} else {
+			rval.Response = cfgmsg.ConfigResponse_OK
+			rval.Value = json
+		}
+		return
 	}
 
 	// GET operations can be satisfied from our cached copy of the config

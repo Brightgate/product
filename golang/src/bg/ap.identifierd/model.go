@@ -23,10 +23,10 @@ import (
 	"time"
 
 	"bg/ap_common/aputil"
-	"bg/ap_common/device"
 	"bg/ap_common/model"
 	"bg/ap_common/network"
 	"bg/base_msg"
+	"bg/common/deviceid"
 
 	"github.com/golang/protobuf/proto"
 	tf "github.com/tensorflow/tensorflow/tensorflow/go"
@@ -426,7 +426,7 @@ func (o *observations) predictClients(ch chan *prediction) {
 		// changed then the old identity is now less probable than (or equal to)
 		// the new identity, so send an update. If the identity hasn't changed
 		// but the model's confience has, send an update
-		newID := strconv.FormatInt(devID+device.IDBase, 10)
+		newID := strconv.FormatInt(devID+deviceid.IDBase, 10)
 		if newID != c.identity.devID || prob != c.identity.probability {
 			c.identity.devID = newID
 			c.identity.probability = prob

@@ -19,8 +19,8 @@ import (
 	"strings"
 	"time"
 
-	"bg/ap_common/device"
 	"bg/common/cfgapi"
+	"bg/common/deviceid"
 )
 
 var (
@@ -101,7 +101,7 @@ func printClient(mac string, client *cfgapi.ClientInfo) {
 	// is better than even.
 	identString := ""
 	if client.Confidence >= 0.5 {
-		device, err := device.GetDeviceByPath(configd,
+		device, err := deviceid.GetDeviceByPath(configd,
 			"@/devices/"+client.Identity)
 		if err == nil {
 			identString = fmt.Sprintf("%s %s", device.Vendor, device.ProductName)
@@ -162,7 +162,7 @@ func getFormatted(cmd string, args []string) error {
 	}
 }
 
-func printDev(d *device.Device) {
+func printDev(d *deviceid.Device) {
 	fmt.Printf("  Type: %s\n", d.Devtype)
 	fmt.Printf("  Vendor: %s\n", d.Vendor)
 	fmt.Printf("  Product: %s\n", d.ProductName)
@@ -201,8 +201,8 @@ func getProp(cmd string, args []string) error {
 	}
 
 	if strings.HasPrefix(prop, "@/devices") {
-		var d *device.Device
-		if d, err = device.GetDeviceByPath(configd, prop); err == nil {
+		var d *deviceid.Device
+		if d, err = deviceid.GetDeviceByPath(configd, prop); err == nil {
 			printDev(d)
 		}
 	} else {

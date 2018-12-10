@@ -8,7 +8,7 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 
-package device
+package deviceid
 
 import (
 	"encoding/json"

@@ -24,8 +24,8 @@ import (
 	"strconv"
 	"time"
 
-	"bg/ap_common/device"
 	"bg/common/cfgapi"
+	"bg/common/deviceid"
 
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
@@ -169,7 +169,7 @@ func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
 		return cd
 	}
 
-	lpn, err := device.GetDeviceByID(config, identity)
+	lpn, err := deviceid.GetDeviceByID(config, identity)
 	if err != nil {
 		log.Printf("buildDeviceResponse couldn't lookup @/devices/%d: %v\n", identity, err)
 	} else {

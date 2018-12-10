@@ -99,7 +99,7 @@ import (
 	"strconv"
 	"strings"
 
-	"bg/ap_common/device"
+	"bg/common/deviceid"
 
 	"github.com/lib/pq"
 )
@@ -157,7 +157,7 @@ type Match struct {
 }
 
 var (
-	devices         device.Collection
+	devices         deviceid.Collection
 	manufacturers   map[string]int
 	characteristics []string
 	matches         []Match
@@ -297,7 +297,7 @@ func getStrArrayValue(f *string) []string {
 //
 
 // InsertOneDevice inserts a row into the 'devices' table.
-func InsertOneDevice(db *sql.DB, devid uint32, dev *device.Device) error {
+func InsertOneDevice(db *sql.DB, devid uint32, dev *deviceid.Device) error {
 	tm := string(pq.FormatTimestamp(dev.UpdateTime))
 
 	columns := "Devid, Obsolete, UpdateTime, Devtype"
@@ -397,7 +397,7 @@ func importDevices(fileName string) error {
 	if fileName == "" {
 		err = fmt.Errorf("import requires a device database")
 	} else {
-		devices, err = device.DevicesLoad(fileName)
+		devices, err = deviceid.DevicesLoad(fileName)
 	}
 
 	return err
@@ -613,7 +613,7 @@ func fetchMatches(db *sql.DB) error {
 // Build a single Device struct from its database row
 //
 func extractOneDevice(rows *sql.Rows) error {
-	var d device.Device
+	var d deviceid.Device
 
 	var (
 		devid          uint32
@@ -660,7 +660,7 @@ func fetchDevices(db *sql.DB) error {
 	}
 	defer rows.Close()
 
-	devices = make(device.Collection)
+	devices = make(deviceid.Collection)
 	for rows.Next() {
 		if err := extractOneDevice(rows); err != nil {
 			return fmt.Errorf("Failed to process row: %v", err)

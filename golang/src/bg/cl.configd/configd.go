@@ -138,6 +138,10 @@ func main() {
 		slog.Fatalf("Environment Error: %s", err)
 	}
 
+	if err = deviceDBInit(); err != nil {
+		slog.Fatalf("Error loading devices.json: %v", err)
+	}
+
 	go prometheusInit(environ.DiagPort)
 
 	store = mkStore()
