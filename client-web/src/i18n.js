@@ -146,7 +146,8 @@ export default {
         vuln_remediation: 'Remediation: {text}',
         vuln_first_detected: 'Reported: {time}',
         vuln_latest_detected: 'Recently Seen: {time}',
-        vuln_details: 'Details: {details}',
+        vuln_repaired: 'Repaired: {time}',
+        vuln_details: 'Details:',
       },
       enroll_guest: {
         title: 'Brightgate - Enroll Guest',
@@ -314,7 +315,8 @@ export default {
         vuln_remediation: 'Remediation: {text}', // XXXI18N
         vuln_first_detected: 'Reported: {time}', // XXXI18N
         vuln_latest_detected: 'Recently Seen: {time}', // XXXI18N
-        vuln_details: 'Details: {details}', // XXXI18N
+        vuln_repaired: 'Repaired: {time}', // XXXI18N
+        vuln_details: 'Details:', // XXXI18N
       },
       enroll_guest: {
         title: 'Brightgate – Gastbenutzer Registrieren',

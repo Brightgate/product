@@ -7,6 +7,27 @@
   express written permission of Brightgate Inc is prohibited, and any
   such unauthorized removal or alteration will be a violation of federal law.
 -->
+<style scoped>
+/*
+ * See the Framework7 kitchen sink vue and CSS for more on card styling.
+ * See the Vue docs for advice on deep >>> selectors.
+ */
+/* light grey header with bold font */
+.vuln-card >>> .card-header {
+        display: block;
+        padding: 10px;
+        font-size: 16px;
+        font-weight: bold;
+        background: #f8f8f8;
+}
+
+/* icon should push headline over a bit */
+.vuln-icon {
+        display: inline-block;
+        padding-right: 4px;
+}
+
+</style>
 <template>
   <f7-page>
     <f7-navbar :back-link="$t('message.general.back')" :title="dev.networkName + $t('message.dev_details._details')" sliding />
@@ -26,21 +47,18 @@
         </f7-col>
       </f7-row>
 
-      <f7-row v-for="(vuln, vulnid) in activeVulns" :key="vulnid">
-        <!-- use margin-auto to center the icon -->
-        <f7-col style="margin: auto" width="20">
-          <f7-icon f7="bolt_round_fill" size="32px" color="red" />
-        </f7-col>
-        <f7-col width="80">
-          <!-- tweak the ul rendering not to inset so much (default is 40px) -->
-          <h3>{{ vulnHeadline(vulnid) }}</h3>
+      <f7-card v-for="(vuln, vulnid) in activeVulns" :key="vulnid" class="vuln-card">
+        <f7-card-header>
+          <f7-icon class="vuln-icon" f7="bolt_round_fill" size="32px" color="red" />
+          {{ vulnHeadline(vulnid) }}
+        </f7-card-header>
+        <f7-card-content>
+          <!-- Note: allowed to have HTML content.
+               Future work here is to parse the HTML and decorate <a> links
+               with target= properly.  Or to support some non-HTML markup -->
+          <!-- XXXI18N-- note that presently we don't support localized explanation text -->
+          <div v-html="vulnExplanation(vulnid)" />
           <ul style="-webkit-padding-start: 20px; padding-left: 20px;">
-            <!-- XXXI18N-- note that presently we don't support localized explanation text -->
-            <!-- Note: allowed to have HTML content.
-                 Future work here is to parse the HTML and decorate <a> links
-                 with target= properly.  Or to support some non-HTML markup -->
-            <li v-html="vulnExplanation(vulnid)" />
-
             <!-- Note: allowed to have HTML content.
                  Future work here is to parse the HTML and decorate <a> links
                  with target= properly.  Or to support some non-HTML markup -->
@@ -48,21 +66,37 @@
             <li v-html="$t('message.dev_details.vuln_remediation', { text: vulnRemediation(vulnid) })" />
             <li>{{ $t('message.dev_details.vuln_first_detected', {time: timeAbs(vuln.first_detected)}) }}</li>
             <li>{{ $t('message.dev_details.vuln_latest_detected', {time: timeRel(vuln.latest_detected)}) }}</li>
-            <li v-if="vuln.details">
-              {{ $t('message.dev_details.vuln_details', {details: vuln.details}) }}
+            <li v-if="vuln.repaired">
+              {{ $t('message.dev_details.vuln_repaired', {time: timeAbs(vuln.repaired)}) }}</li>
+            <li v-if="vuln.details">{{ $t('message.dev_details.vuln_details') }}
+              <ul>
+                <li v-for="detail in vulnSplitDetails(vuln.details)" :key="detail">
+                  {{ detail }}
+                </li>
+              </ul>
+            </li>
+            <li v-for="vmore in vulnMoreInfo(vulnid)"
+                :key="vmore.url">
+              <!-- use <a> here instead of f7-link, as that appears to strip out target="_blank".
+                 n.b. that this will probably need more work if we use cordova/phonegap -->
+              <a :href="vmore.url" rel="noopener" target="_blank" class="link external">
+                {{ $t('message.dev_details.vuln_more_info', { source: vmore.source } ) }} &gt;
+              </a>
             </li>
           </ul>
-          <span v-for="vmore in vulnMoreInfo(vulnid)"
-                :key="vmore.url">
-            <!-- use <a> here instead of f7-link, as that appears to strip out target="_blank".
-                 n.b. that this will probably need more work if we use cordova/phonegap -->
-            <a :href="vmore.url" rel="noopener" target="_blank" class="link external">
-              {{ $t('message.dev_details.vuln_more_info', { source: vmore.source } ) }} &gt;
-            </a>
-            <br>
-          </span>
-        </f7-col>
-      </f7-row>
+          <f7-row v-if="vulnRepairable(vulnid, vuln)">
+            <f7-col width="100" desktop-width="50" tablet-width="50">
+              <f7-button
+                :disabled="vulnRepairing(vulnid, vuln)"
+                fill
+                @click="vulnRepair(vulnid, vuln)">
+                Repair Vulnerability
+                <f7-preloader v-if="vulnRepairing(vulnid, vuln)" />
+              </f7-button>
+            </f7-col>
+          </f7-row>
+        </f7-card-content>
+      </f7-card>
 
       <f7-row v-if="dev.notification">
         <f7-col style="margin: auto" width="20">
@@ -89,9 +123,6 @@
       </f7-list-item>
       <f7-list-item :title="$t('message.dev_details.hw_addr')">
         {{ dev.hwaddr }}
-      </f7-list-item>
-      <f7-list-item :title="$t('message.dev_details.os_version')">
-        {{ dev.osVersion ? dev.osVersion : $t('message.dev_details.os_version_unknown') }}
       </f7-list-item>
 
       <f7-list-item :title="$t('message.dev_details.activity')">
@@ -130,6 +161,12 @@ import {format, formatRelative} from '../date-fns-wrapper';
 
 import vulnerability from '../vulnerability';
 const debug = Debug('page:dev-details');
+
+function repairable(vulnid, vuln) {
+  return (vulnid === 'defaultpassword' &&
+    vuln.details.includes('Service: ssh') &&
+    (vuln.repaired === undefined || vuln.repaired < vuln.latest_detected));
+}
 
 export default {
   data: function() {
@@ -211,7 +248,27 @@ export default {
     vulnMoreInfo: function(vulnid) {
       return vulnerability.moreInfo(vulnid);
     },
-
+    vulnRepairable: function(vulnid, vuln) {
+      return repairable(vulnid, vuln);
+    },
+    vulnRepair: function(vulnid, vuln) {
+      const uniqid = this.$f7route.params.UniqID;
+      if (!repairable(vulnid, vuln)) {
+        debug('in repair but vulnerability is not repairable');
+        return;
+      }
+      this.$store.dispatch('repairVuln', {deviceID: uniqid, vulnID: vulnid});
+    },
+    vulnRepairing: function(vulnid, vuln) {
+      const uniqid = this.$f7route.params.UniqID;
+      const dev = this.$store.getters.deviceByUniqID(uniqid);
+      return dev.vulnerabilities &&
+        dev.vulnerabilities[vulnid] &&
+        dev.vulnerabilities[vulnid].repair === true;
+    },
+    vulnSplitDetails: function(details) {
+      return details.split('|');
+    },
     changeRing: function(newRing) {
       assert(typeof newRing === 'string');
       debug(`Change Ring to ${newRing}`);

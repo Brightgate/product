@@ -204,6 +204,18 @@ const mutations = {
     state.loggedIn = newValue;
   },
 
+  setVulnRepair(state, {id, deviceID, vulnID, value}) {
+    const app = getAppliance(state, id);
+    const vuln = app && app.devicesByUniqID && app.devicesByUniqID[deviceID] &&
+      app.devicesByUniqID[deviceID].vulnerabilities &&
+      app.devicesByUniqID[deviceID].vulnerabilities[vulnID];
+    if (!vuln) {
+      debug('failed to get vulnerability', id, deviceID, vulnID);
+      return;
+    }
+    Vue.set(vuln, 'repair', true);
+  },
+
   setTestAppMode(state, newMode) {
     state.testAppMode = newMode;
   },
@@ -524,6 +536,24 @@ const actions = {
     const id = context.state.currentApplianceID;
     await applianceApi.applianceClientsRingSet(id, deviceUniqID, newRing);
     context.dispatch('fetchDevices');
+  },
+
+  // Ask the server to repair a vulnerability by setting the appropriate
+  // property.
+  async repairVuln(context, {deviceID, vulnID}) {
+    assert(typeof deviceID === 'string');
+    assert(typeof vulnID === 'string');
+
+    debug(`repairVuln: ${deviceID} ${vulnID}`);
+    const id = context.state.currentApplianceID;
+    context.commit('setVulnRepair', {id: id, deviceID: deviceID, vulnID: vulnID, value: true});
+    try {
+      await applianceApi.applianceConfigSet(id, `@/clients/${deviceID}/vulnerabilities/${vulnID}/repair`, 'true');
+    } catch (err) {
+      debug('failed to set repair bit', err);
+    } finally {
+      context.dispatch('fetchDevices');
+    }
   },
 
   async fetchUsers(context) {

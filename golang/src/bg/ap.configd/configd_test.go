@@ -882,6 +882,7 @@ func TestInvalidAccessLevel(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	var err error
+	slog = aputil.NewLogger(pname)
 
 	*propdir = "."
 	_, descriptions, err := loadDefaults()
@@ -894,7 +895,6 @@ func TestMain(m *testing.M) {
 	}
 
 	prometheusInit()
-	slog = aputil.NewLogger(pname)
 	testData, err = ioutil.ReadFile(*testFile)
 	if err != nil {
 		log.Printf("Failed to load properties file %s: %v\n",

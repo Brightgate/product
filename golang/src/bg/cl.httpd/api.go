@@ -159,7 +159,10 @@ func (a *apiHandler) postConfig(c echo.Context) error {
 type apiVulnInfo struct {
 	FirstDetected  *time.Time `json:"first_detected"`
 	LatestDetected *time.Time `json:"latest_detected"`
+	Repaired       *time.Time `json:"repaired"`
 	Active         bool       `json:"active"`
+	Details        string     `json:"details"`
+	Repair         *bool      `json:"repair,omitempty"`
 }
 
 // apiScanInfo describes a scan.
@@ -215,17 +218,19 @@ func buildDeviceResponse(c echo.Context, hdl *cfgapi.Handle,
 		Vulnerabilities: make(map[string]apiVulnInfo),
 	}
 
-	id, err := strconv.Atoi(client.Identity)
-	if err != nil {
-		c.Logger().Warnf("buildDeviceResponse: bad Identity %s", client.Identity)
-	} else {
-		lpn, err := deviceid.GetDeviceByID(hdl, id)
+	if client.Identity != "" {
+		id, err := strconv.Atoi(client.Identity)
 		if err != nil {
-			c.Logger().Warnf("buildDeviceResponse couldn't lookup @/devices/%d: %v\n", id, err)
+			c.Logger().Warnf("buildDeviceResponse: bad Identity %s", client.Identity)
 		} else {
-			d.Manufacturer = lpn.Vendor
-			d.Model = lpn.ProductName
-			d.Kind = lpn.Devtype
+			lpn, err := deviceid.GetDeviceByID(hdl, id)
+			if err != nil {
+				c.Logger().Warnf("buildDeviceResponse couldn't lookup @/devices/%d: %v\n", id, err)
+			} else {
+				d.Manufacturer = lpn.Vendor
+				d.Model = lpn.ProductName
+				d.Kind = lpn.Devtype
+			}
 		}
 	}
 
@@ -257,7 +262,10 @@ func buildDeviceResponse(c echo.Context, hdl *cfgapi.Handle,
 		d.Vulnerabilities[k] = apiVulnInfo{
 			FirstDetected:  v.FirstDetected,
 			LatestDetected: v.LatestDetected,
+			Repaired:       v.RepairedAt,
 			Active:         v.Active,
+			Details:        v.Details,
+			Repair:         v.Repair,
 		}
 	}
 

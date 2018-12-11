@@ -71,8 +71,10 @@ func demoAlertsHandler(w http.ResponseWriter, r *http.Request) {
 type daVulnInfo struct {
 	FirstDetected  *time.Time `json:"first_detected"`
 	LatestDetected *time.Time `json:"latest_detected"`
+	Repaired       *time.Time `json:"repaired"`
 	Active         bool       `json:"active"`
 	Details        string     `json:"details"`
+	Repair         *bool      `json:"repair,omitempty"`
 }
 
 type daScanInfo struct {
@@ -119,6 +121,10 @@ func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
 
 	cd := daDevice{
 		HwAddr:          hwaddr,
+		Manufacturer:    "unknown",
+		Model:           fmt.Sprintf("unknown (id=%s)", client.Identity),
+		Kind:            "unknown",
+		Confidence:      client.Confidence,
 		Ring:            client.Ring,
 		IPv4Addr:        &client.IPv4,
 		Active:          client.IsActive(),
@@ -158,25 +164,28 @@ func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
 		cd.Vulnerabilities[k] = daVulnInfo{
 			FirstDetected:  v.FirstDetected,
 			LatestDetected: v.LatestDetected,
+			Repaired:       v.RepairedAt,
 			Active:         v.Active,
 			Details:        v.Details,
+			Repair:         v.Repair,
 		}
 	}
 
-	identity, err := strconv.Atoi(client.Identity)
-	if err != nil {
-		log.Printf("buildDeviceResponse unusual client identity '%v': %v\n", client.Identity, err)
-		return cd
-	}
+	if client.Identity != "" {
+		identity, err := strconv.Atoi(client.Identity)
+		if err != nil {
+			log.Printf("buildDeviceResponse unusual client identity '%v': %v\n", client.Identity, err)
+			return cd
+		}
 
-	lpn, err := deviceid.GetDeviceByID(config, identity)
-	if err != nil {
-		log.Printf("buildDeviceResponse couldn't lookup @/devices/%d: %v\n", identity, err)
-	} else {
-		cd.Manufacturer = lpn.Vendor
-		cd.Model = lpn.ProductName
-		cd.Kind = lpn.Devtype
-		cd.Confidence = client.Confidence
+		lpn, err := deviceid.GetDeviceByID(config, identity)
+		if err != nil {
+			log.Printf("buildDeviceResponse couldn't lookup @/devices/%d: %v\n", identity, err)
+		} else {
+			cd.Manufacturer = lpn.Vendor
+			cd.Model = lpn.ProductName
+			cd.Kind = lpn.Devtype
+		}
 	}
 
 	return cd
