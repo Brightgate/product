@@ -16,32 +16,28 @@ The development server is ideal during prototyping and working through user
 interface problems, as it cuts the edit-compile-reload cycle down to less then
 5 seconds.  You will probably need to augment this with some additional
 configuration.  Webpack's dev HTTP server can be configured to proxy API
-requests to a backend server of your choice.  An example of how this might look
-is as follows, but the exact backend server may vary depending on your
-environment.
+requests to a backend server of your choice, and we have created a default
+version of that, activated by an environment variable:
 
 ```
---- a/client-web/vue.config.js
-+++ b/client-web/vue.config.js
-@@ -29,6 +29,18 @@ module.exports = {
-       openAnalyzer: false,
-     },
-   },
-+  devServer: {
-+    proxy: {
-+      '/api': {
-+        target: 'http://localhost:9090',
-+        changeOrigin: true,
-+      },
-+      '/auth': {
-+        target: 'http://localhost:9090',
-+        changeOrigin: true,
-+      },
-+    },
-+  },
-   chainWebpack: (config) => {
-     // Fiddle with the webpack "chain".  The idea is to add an instance of the
-     // Preload Plugin which is smart enough to generate preloads for our icon
+APISERVER=http://localhost:9090 npm run server
+```
+
+This creates a clause in the webpack.devServer configuration which looks like this:
+```
+  devServer: {
+    ...
+    proxy: {
+      '/api': {
+        target: 'http://localhost:9090',
+        changeOrigin: true,
+      },
+      '/auth': {
+        target: 'http://localhost:9090',
+        changeOrigin: true,
+      },
+    },
+  }
 ```
 
 ### Compiles and minifies for production

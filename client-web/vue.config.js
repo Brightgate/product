@@ -8,7 +8,9 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 /* eslint-disable import/no-commonjs */
-module.exports = {
+
+
+const config = {
   baseUrl: '/client-web/',
   pages: {
     index: {
@@ -29,6 +31,9 @@ module.exports = {
       openAnalyzer: false,
     },
   },
+  devServer: {
+    compress: true,
+  },
   chainWebpack: (config) => {
     // Fiddle with the webpack "chain".  The idea is to add an instance of the
     // Preload Plugin which is smart enough to generate preloads for our icon
@@ -46,3 +51,24 @@ module.exports = {
   },
   lintOnSave: false,
 };
+
+// Set the APISERVER environment variable to the HTTP address
+// of the backend you want to use.  For example,
+// $ APISERVER=http://localhost:9090 npm run server
+if (process.env.APISERVER) {
+  config.devServer = {
+    ...config.devServer,
+    proxy: {
+      '/api': {
+        target: process.env.APISERVER,
+        changeOrigin: true,
+      },
+      '/auth': {
+        target: process.env.APISERVER,
+        changeOrigin: true,
+      },
+    },
+  };
+}
+
+module.exports = config;
