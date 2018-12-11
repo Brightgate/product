@@ -430,6 +430,7 @@ APP_COMMON_SRCS = \
 	$(COMMON_SRCS) \
 	$(GOSRCBG)/ap_common/apcfg/apcfg.go \
 	$(GOSRCBG)/ap_common/apcfg/events.go \
+	$(GOSRCBG)/ap_common/apcfg/settings.go \
 	$(GOSRCBG)/ap_common/aputil/aputil.go \
 	$(GOSRCBG)/ap_common/aputil/cred.go \
 	$(GOSRCBG)/ap_common/aputil/logging.go \

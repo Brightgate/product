@@ -77,7 +77,7 @@ func addScan(req *base_msg.WatchdScanInfo) *base_msg.WatchdResponse {
 		}
 	}
 	if scan != nil {
-		scan.Period = 0
+		scan.Period = nil
 		scheduleScan(scan, 0, true)
 	}
 

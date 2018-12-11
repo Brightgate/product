@@ -38,7 +38,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -52,6 +51,7 @@ import (
 
 	"github.com/pkg/errors"
 
+	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/cloud_rpc"
 	"bg/common/archive"
@@ -61,16 +61,15 @@ import (
 )
 
 var (
-	updatePeriod = flag.Duration("update", 10*time.Minute,
-		"frequency with which to check updates")
-	uploadPeriod = flag.Duration("upload", 5*time.Minute,
-		"frequency with which to upload refreshed data")
-
-	uploadTimeout = flag.Duration("timeout", 10*time.Second,
-		"time allowed for a single file upload")
-	uploadErrMax = flag.Int("emax", 5,
-		"upload errors allowed before we give up for now")
-	uploadBatchSize = flag.Int("bsize", 5, "upload batch size")
+	// XXX: these two could benefit from being made dynamic
+	updatePeriod = apcfg.Duration("update_period", 10*time.Minute,
+		false, nil)
+	uploadPeriod = apcfg.Duration("upload_period", 5*time.Minute,
+		false, nil)
+	uploadTimeout = apcfg.Duration("upload_timeout", 10*time.Second,
+		true, nil)
+	uploadErrMax    = apcfg.Int("upload_errmax", 5, true, nil)
+	uploadBatchSize = apcfg.Int("bsize", 5, true, nil)
 
 	updateBucket string
 )
@@ -270,7 +269,7 @@ func generateSignedURLs(rpcClient cloud_rpc.CloudStorageClient,
 	if err != nil {
 		return []*cloud_rpc.SignedURL{}, errors.Wrapf(err, "Failed to make RPC context")
 	}
-	ctx, ctxcancel := context.WithDeadline(ctx, time.Now().Add(*deadlineFlag))
+	ctx, ctxcancel := context.WithDeadline(ctx, time.Now().Add(*rpcDeadline))
 	defer ctxcancel()
 
 	response, err := rpcClient.GenerateURL(ctx, &req)

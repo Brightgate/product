@@ -77,6 +77,7 @@ var (
 		"uid":        validateString,
 		"email":      validateString,
 		"phone":      validateString,
+		"duration":   validateDuration,
 	}
 )
 
@@ -285,6 +286,16 @@ func validateWifiMode(val string) error {
 	return fmt.Errorf("invalid wifi mode")
 }
 
+func validateDuration(val string) error {
+	var err error
+
+	if _, err = time.ParseDuration(val); err != nil {
+		err = fmt.Errorf("invalid duration: %v", err)
+	}
+
+	return err
+}
+
 // Walking a concrete path, find the vnode that matches this field in the path.
 func getNextVnode(parent *vnode, field string) *vnode {
 	for _, node := range parent.children {
@@ -409,6 +420,10 @@ func newVnode(prop string) (*vnode, error) {
 	for _, f := range fields[1:] {
 		var keyType string
 
+		if len(f) == 0 {
+			continue
+		}
+
 		parent := node
 		if node = parent.children[f]; node != nil {
 			continue
@@ -440,6 +455,28 @@ func newVnode(prop string) (*vnode, error) {
 	}
 
 	return node, nil
+}
+
+func addSetting(setting, valType string) error {
+	if !strings.HasPrefix(setting, "@/settings/") {
+		return fmt.Errorf("invalid settings path: %s", setting)
+	}
+
+	if _, ok := validationFuncs[valType]; !ok {
+		return fmt.Errorf("unknown value type: %s", setting)
+	}
+
+	// Unlike addOneProperty(), it is not an error to add the same setting
+	// twice.  It most likely means that a daemon has been restarted.
+	node, err := newVnode(setting)
+	if err != nil {
+		return err
+	}
+
+	node.valType = valType
+	node.level = cfgapi.AccessDeveloper
+
+	return err
 }
 
 // Add a new property to the validation tree

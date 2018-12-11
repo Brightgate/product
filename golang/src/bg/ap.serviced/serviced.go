@@ -12,7 +12,6 @@
 package main
 
 import (
-	"flag"
 	"net"
 	"net/http"
 	"os"
@@ -38,11 +37,11 @@ var (
 	brokerd *broker.Broker
 	config  *cfgapi.Handle
 	slog    *zap.SugaredLogger
-)
 
-var (
 	clientMtx sync.Mutex
 	clients   cfgapi.ClientMap
+
+	_ = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
 )
 
 func clientUpdateEvent(path []string, val string, expires *time.Time) {
@@ -122,7 +121,6 @@ func prometheusInit() {
 }
 
 func main() {
-	flag.Parse()
 	slog = aputil.NewLogger(pname)
 	defer slog.Sync()
 	slog.Infof("starting")

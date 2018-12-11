@@ -22,7 +22,6 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -52,9 +51,10 @@ import (
 )
 
 var (
-	dataDir  = flag.String("datadir", "./", "Directory containing data files")
-	modelDir = flag.String("modeldir", "./", "Directory containing a saved model")
-	logDir   = flag.String("logdir", "./", "Directory for device learning log data")
+	dataDir  = apcfg.String("datadir", "/etc", false, nil)
+	modelDir = apcfg.String("modeldir", "/etc/device_model", false, nil)
+	logDir   = apcfg.String("logdir", "/var/spool/identifierd", false, nil)
+	_        = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
 
 	brokerd *broker.Broker
 	configd *cfgapi.Handle
@@ -414,11 +414,21 @@ func signalHandler() {
 func main() {
 	var err error
 
-	flag.Parse()
 	slog = aputil.NewLogger(pname)
 	defer slog.Sync()
 
 	slog.Infof("starting")
+
+	// Use the broker to listen for appropriate messages to create and update
+	// our observations. To respect a client's privacy we won't register any
+	// handlers until we have recovered each client's privacy configuration.
+	brokerd = broker.New(pname)
+	defer brokerd.Fini()
+
+	configd, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
+	if err != nil {
+		slog.Fatalf("cannot connect to configd: %v", err)
+	}
 
 	*dataDir = aputil.ExpandDirPath(*dataDir)
 	*modelDir = aputil.ExpandDirPath(*modelDir)
@@ -450,17 +460,6 @@ func main() {
 
 	if err = testData.loadModel(filepath.Join(*dataDir, trainFile), *modelDir); err != nil {
 		slog.Fatalf("failed to load model", err)
-	}
-
-	// Use the broker to listen for appropriate messages to create and update
-	// our observations. To respect a client's privacy we won't register any
-	// handlers until we have recovered each client's privacy configuration.
-	brokerd = broker.New(pname)
-	defer brokerd.Fini()
-
-	configd, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
-	if err != nil {
-		slog.Fatalf("cannot connect to configd: %v", err)
 	}
 
 	recoverClients()

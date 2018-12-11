@@ -27,6 +27,7 @@ message ConfigOp {
 		CREATE = 3;
 		DELETE = 4;
 		PING = 5;
+		ADDPROP = 6;
 	}
 	Operation operation = 0x20;
 	string property = 0x21;

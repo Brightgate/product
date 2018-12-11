@@ -11,7 +11,6 @@
 package aputil
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -23,8 +22,8 @@ import (
 )
 
 var (
-	levelFlag  = zapcore.InfoLevel
-	daemonName string
+	atomicLevel = zap.NewAtomicLevel()
+	daemonName  string
 )
 
 func zapTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
@@ -58,7 +57,7 @@ func newChildLogger() (*zap.SugaredLogger, error) {
 	var slogger *zap.SugaredLogger
 
 	zapConfig := zap.NewDevelopmentConfig()
-	zapConfig.Level = zap.NewAtomicLevelAt(levelFlag)
+	zapConfig.Level = atomicLevel
 	zapConfig.DisableStacktrace = true
 	zapConfig.DisableCaller = true
 	zapConfig.EncoderConfig.EncodeTime = zapTimeEncoder
@@ -71,6 +70,18 @@ func newChildLogger() (*zap.SugaredLogger, error) {
 	return slogger, err
 }
 
+// LogSetLevel allows the log level to be adjusted dynamically as the
+// application runs
+func LogSetLevel(_, level string) error {
+	var newLevel zapcore.Level
+
+	err := (&newLevel).UnmarshalText([]byte(level))
+	if err == nil {
+		atomicLevel.SetLevel(newLevel)
+	}
+	return err
+}
+
 // NewLogger returns a 'sugared' zap logger.  Each logged line will include a
 // timestamp, the log level, and enough context to track down the source of the
 // message.
@@ -81,7 +92,7 @@ func NewLogger(name string) *zap.SugaredLogger {
 	daemonName = name
 
 	zapConfig := zap.NewDevelopmentConfig()
-	zapConfig.Level = zap.NewAtomicLevelAt(levelFlag)
+	zapConfig.Level = atomicLevel
 	zapConfig.DisableStacktrace = true
 	zapConfig.EncoderConfig.EncodeTime = zapTimeEncoder
 	zapConfig.EncoderConfig.EncodeCaller = zapCallerEncoder
@@ -90,14 +101,10 @@ func NewLogger(name string) *zap.SugaredLogger {
 	if err != nil {
 		log.Panicf("can't zap: %s", err)
 	}
+
 	_ = zap.RedirectStdLog(logger)
 
 	return logger.Sugar()
-}
-
-func init() {
-	flag.Var(&levelFlag, "log-level",
-		"Log level [debug,info,warn,error,panic,fatal]")
 }
 
 /* The following aputil output functions should be used in ancillary
@@ -115,10 +122,4 @@ func Errorf(format string, v ...interface{}) {
 func Fatalf(format string, v ...interface{}) {
 	Errorf(format, v...)
 	os.Exit(1)
-}
-
-// Usagef prints usage, an error message, then exits
-func Usagef(format string, v ...interface{}) {
-	flag.Usage()
-	Fatalf(format, v...)
 }

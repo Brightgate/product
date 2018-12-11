@@ -49,7 +49,7 @@ type Broker struct {
 	publisherMtx sync.Mutex
 	publisher    *zmq.Socket
 	subscriber   *zmq.Socket
-	handlers     map[string]handlerF
+	handlers     map[string][]handlerF
 	sync.Mutex
 }
 
@@ -101,10 +101,12 @@ func eventListener(b *Broker) {
 
 		topic := string(msg[0])
 		b.Lock()
-		hdlr, ok := b.handlers[topic]
+		hdlrs, ok := b.handlers[topic]
 		b.Unlock()
-		if ok && hdlr != nil {
-			hdlr(msg[1])
+		if ok && len(hdlrs) > 0 {
+			for _, hdlr := range hdlrs {
+				hdlr(msg[1])
+			}
 		} else if debug {
 			if ok {
 				log.Printf("[%s] ignoring topic: %s\n",
@@ -117,18 +119,17 @@ func eventListener(b *Broker) {
 	}
 }
 
-// Handle adds a new callback function for the identified topic.  This will
-// replace an existing handler for that topic.
+// Handle adds a new callback function for the identified topic.
 func (b *Broker) Handle(topic string, handler handlerF) {
 	if b == nil {
 		return
 	}
 
 	b.Lock()
-	if b.handlers[topic] != nil {
-		log.Fatalf("adding multiple handlers for %s\n", topic)
+	if b.handlers[topic] == nil {
+		b.handlers[topic] = make([]handlerF, 0)
 	}
-	b.handlers[topic] = handler
+	b.handlers[topic] = append(b.handlers[topic], handler)
 	b.Unlock()
 }
 
@@ -176,7 +177,7 @@ func New(name string) *Broker {
 
 	b := Broker{
 		Name:     fmt.Sprintf("%s(%d)", name, os.Getpid()),
-		handlers: make(map[string]handlerF),
+		handlers: make(map[string][]handlerF),
 	}
 
 	// Add placeholder handlers in the map for known topics

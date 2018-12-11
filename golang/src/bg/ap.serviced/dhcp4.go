@@ -12,7 +12,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"math/rand"
 	"net"
@@ -21,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/ap_common/network"
 	"bg/base_def"
@@ -34,8 +34,6 @@ import (
 )
 
 var (
-	verbose = flag.Bool("v", false, "verbose logging")
-
 	handlers   = make(map[string]*ringHandler)
 	domainName string
 
@@ -47,6 +45,8 @@ var (
 
 	// Track the interface on which each client's DHCP request arrives
 	clientRequestOn = make(map[string]string)
+
+	verbose = apcfg.Bool("verbose", false, true, nil)
 
 	dhcpMetrics struct {
 		requests    prometheus.Counter

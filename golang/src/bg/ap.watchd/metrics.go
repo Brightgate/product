@@ -13,7 +13,6 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -21,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/common/archive"
 )
@@ -32,12 +32,9 @@ type endpoint struct {
 }
 
 var (
-	sfreq = flag.Duration("sfreq", 5*time.Minute,
-		"snapshot frequency (in minutes)")
-	mretain = flag.Duration("mretain", 3*time.Hour,
-		"stats history to retain in memory")
-	dretain = flag.Duration("dretain", 24*time.Hour,
-		"stats history to retain on disk")
+	sfreq   = apcfg.Duration("snapshot_freq", 5*time.Minute, false, nil)
+	mretain = apcfg.Duration("mem_retain", 3*time.Hour, true, nil)
+	dretain = apcfg.Duration("disk_retain", 24*time.Hour, true, nil)
 
 	metricsDone      = make(chan bool, 1)
 	metricsWaitGroup sync.WaitGroup

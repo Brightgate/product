@@ -40,6 +40,7 @@ const (
 // APConfig is an opaque type representing a connection to ap.configd
 type APConfig struct {
 	socket *zmq.Socket
+	name   string
 	sender string
 
 	platform       *platform.Platform
@@ -77,6 +78,7 @@ func NewConfigd(b *broker.Broker, name string,
 	}
 
 	c := &APConfig{
+		name:           name,
 		sender:         fmt.Sprintf("%s(%d)", name, os.Getpid()),
 		broker:         b,
 		platform:       plat,
@@ -94,7 +96,10 @@ func NewConfigd(b *broker.Broker, name string,
 		return nil, err
 	}
 
-	return cfgapi.NewHandle(c), nil
+	hdl := cfgapi.NewHandle(c)
+	settingsInit(hdl, c)
+
+	return hdl, nil
 }
 
 func (c *APConfig) reconnect() error {

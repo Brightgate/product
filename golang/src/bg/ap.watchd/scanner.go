@@ -24,6 +24,7 @@ import (
 	"syscall"
 	"time"
 
+	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/ap_common/apvuln"
 	"bg/ap_common/network"
@@ -74,16 +75,14 @@ var (
 	//   -v  Be verbose.
 	tcpNmapArgs = []string{"-v", "-sV", "-O", "-T4"}
 	udpNmapArgs = append(tcpNmapArgs, "-sU")
-)
 
-const (
-	tcpFreq = 10 * time.Minute // How often to scan TCP ports
-	udpFreq = 60 * time.Minute // How often to scan UDP ports
+	tcpFreq      = apcfg.Duration("tcp_freq", 2*time.Minute, true, nil)
+	udpFreq      = apcfg.Duration("udp_freq", 30*time.Minute, true, nil)
+	vulnFreq     = apcfg.Duration("vuln_freq", 30*time.Minute, true, nil)
+	vulnWarnFreq = apcfg.Duration("vuln_freq_warn", time.Hour, true, nil)
 
-	vulnFreq     = 60 * time.Minute // How often to scan for vulnerabilities
-	vulnWarnFreq = 3 * time.Hour    // How often to reissue vuln. warnings
-
-	subnetScanFreq = 5 * time.Minute
+	hostLifetime = apcfg.Duration("host_lifetime", time.Hour, true, nil)
+	hostScanFreq = apcfg.Duration("hostscan_freq", 5*time.Minute, true, nil)
 )
 
 type vulnDescription struct {
@@ -143,7 +142,7 @@ type ScanRequest struct {
 	ScanType string
 	Scanner  func(*ScanRequest)
 
-	Period time.Duration
+	Period *time.Duration
 	When   time.Time
 
 	index int // Used for heap maintenance
@@ -260,7 +259,7 @@ func cancelAllScans(ip string) {
 		// We let an in-process scan complete, but we prevent it from
 		// being rescheduled
 		if idx := pool.active.SearchIP(ip); idx >= 0 {
-			pool.active[idx].Period = 0
+			pool.active[idx].Period = nil
 		}
 		pool.Unlock()
 	}
@@ -367,8 +366,8 @@ func scanner(pool *scanPool, threadID int) {
 
 		slog.Debugf("finished %s %s", req.IP, req.ScanType)
 
-		if req.Period != 0 {
-			scheduleScan(req, req.Period, false)
+		if req.Period != nil {
+			scheduleScan(req, *req.Period, false)
 		}
 	}
 }
@@ -398,7 +397,7 @@ func newSubnetScan(ring, subnet string) *ScanRequest {
 		IP:       subnet,
 		ScanType: "subnet",
 		Scanner:  subnetScan,
-		Period:   subnetScanFreq,
+		Period:   hostScanFreq,
 	}
 }
 
@@ -822,7 +821,7 @@ func vulnActions(name string, vmap cfgapi.VulnMap) (first, warn, quarantine bool
 				} else if vi == nil || vi.WarnedAt == nil {
 					warn = true
 				} else {
-					warn = (time.Since(*vi.WarnedAt) > vulnWarnFreq)
+					warn = (time.Since(*vi.WarnedAt) > *vulnWarnFreq)
 				}
 			case "Quarantine":
 				quarantine = !ignore

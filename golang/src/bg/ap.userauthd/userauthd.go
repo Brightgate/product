@@ -75,7 +75,6 @@ package main
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -124,9 +123,10 @@ type rConf struct {
 }
 
 var (
-	templateDir = flag.String("template_dir", "golang/src/ap.userauthd",
-		"location of userauthd templates")
-	verbose = flag.Bool("v", false, "increase verbosity")
+	templateDir = apcfg.String("template_dir", "/etc/templates/ap.userauthd",
+		false, nil)
+	verbose = apcfg.Bool("verbose", false, true, nil)
+	_       = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
 
 	hostapdProcess *aputil.Child // track the hostapd proc
 
@@ -400,7 +400,6 @@ func prometheusInit() {
 func main() {
 	var err error
 
-	flag.Parse()
 	slog = aputil.NewLogger(pname)
 	defer slog.Sync()
 
@@ -419,6 +418,8 @@ func main() {
 	if err != nil {
 		slog.Fatalf("cannot connect to configd: %v", err)
 	}
+
+	*templateDir = aputil.ExpandDirPath(*templateDir)
 
 	domainName, err := configd.GetDomain()
 	if err != nil {

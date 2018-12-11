@@ -12,7 +12,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -42,12 +41,14 @@ import (
 )
 
 var (
-	templateDir = flag.String("template_dir", "golang/src/ap.networkd",
-		"location of hostapd templates")
-	rulesDir       = flag.String("rules_dir", "./", "Location of the filter rules")
-	hostapdLatency = flag.Int("hl", 5, "hostapd latency limit (seconds)")
-	deadmanTimeout = flag.Duration("deadman", 5*time.Second,
-		"time to wait for hostapd cleanup to complete")
+	templateDir = apcfg.String("template_dir", "/etc/templates/ap.networkd",
+		true, nil)
+	rulesDir = apcfg.String("rules_dir", "/etc/filter.rules.d",
+		true, nil)
+	hostapdLatency = apcfg.Int("hostapd_latency", 5, true, nil)
+	deadmanTimeout = apcfg.Duration("deadman", 5*time.Second, true, nil)
+	_              = apcfg.String("log_level", "info", true,
+		aputil.LogSetLevel)
 
 	physDevices = make(map[string]*physDevice)
 
@@ -731,6 +732,9 @@ func daemonInit() error {
 		return err
 	}
 
+	*templateDir = aputil.ExpandDirPath(*templateDir)
+	*rulesDir = aputil.ExpandDirPath(*rulesDir)
+
 	config.HandleChange(`^@/clients/.*/ring$`, configClientChanged)
 	config.HandleChange(`^@/nodes/"+nodeUUID+"/nics/.*/band$`, configBandChanged)
 	config.HandleChange(`^@/nodes/"+nodeUUID+"/nics/.*/channel$`, configChannelChanged)
@@ -824,13 +828,9 @@ func prometheusInit() {
 func main() {
 	rand.Seed(time.Now().Unix())
 
-	flag.Parse()
 	slog = aputil.NewLogger(pname)
 	defer slog.Sync()
 	slog.Infof("starting")
-
-	*templateDir = aputil.ExpandDirPath(*templateDir)
-	*rulesDir = aputil.ExpandDirPath(*rulesDir)
 
 	plat = platform.NewPlatform()
 	prometheusInit()

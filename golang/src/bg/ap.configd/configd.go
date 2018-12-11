@@ -103,7 +103,8 @@ var updateCheckTable = []struct {
 }
 
 var (
-	verbose = flag.Bool("v", false, "verbose log output")
+	verbose  = flag.Bool("v", false, "verbose log output")
+	logLevel = flag.String("log-level", "info", "zap log level")
 
 	propTree *cfgtree.PTree
 
@@ -554,6 +555,14 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 		case cfgmsg.ConfigOp_PING:
 		// no-op
 
+		case cfgmsg.ConfigOp_ADDPROP:
+			if level != cfgapi.AccessInternal {
+				err = fmt.Errorf("must be internal to add " +
+					"new settings")
+			}
+			slog.Debugf("Adding %s: %s", prop, val)
+			err = addSetting(prop, val)
+
 		default:
 			err = cfgapi.ErrBadOp
 		}
@@ -729,6 +738,7 @@ func main() {
 	slog = aputil.NewLogger(pname)
 	defer slog.Sync()
 	slog.Infof("starting")
+	aputil.LogSetLevel("", *logLevel)
 
 	if mcpd, err = mcp.New(pname); err != nil {
 		slog.Warnf("Failed to connect to mcp: %v", err)

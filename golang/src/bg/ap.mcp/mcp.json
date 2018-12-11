@@ -18,9 +18,6 @@
         "Binary": "ap.httpd",
         "DependsOn": "networkd",
         "Privileged": true,
-        "Options": [
-            "-client-web_dir=/var/www/client-web"
-        ],
         "Modes": [ "gateway", "http-dev" ]
     },
     "identifierd": {
@@ -28,11 +25,6 @@
         "Binary": "ap.identifierd",
         "DependsOn": "configd",
         "Privileged": true,
-        "Options": [
-            "-datadir=/etc",
-            "-modeldir=/etc/device_model",
-            "-logdir=/var/spool/identifierd"
-        ],
         "Modes": [ "gateway" ]
     },
     "logd": {
@@ -55,10 +47,6 @@
         "Binary": "ap.networkd",
         "DependsOn": "configd",
         "Privileged": true,
-        "Options": [
-            "-template_dir=/etc/templates/ap.networkd",
-            "-rules_dir=/etc/filter.rules.d"
-        ],
         "Modes": [ "core", "gateway", "satellite" ]
     },
     "prometheus": {

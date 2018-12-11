@@ -14,7 +14,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -23,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/ap_common/network"
 	"bg/base_def"
@@ -64,8 +64,8 @@ var ringLevel = map[string]int{
 }
 
 var (
-	ssdpBase = flag.Int("sbase", 31000, "start of SSDP response ports")
-	ssdpMax  = flag.Int("smax", 20, "Max # of open M-SEARCH requests")
+	ssdpBase = apcfg.Int("ssdp_base", 31000, false, nil)
+	ssdpMax  = apcfg.Int("ssdp_max", 20, false, nil)
 
 	rings cfgapi.RingMap
 

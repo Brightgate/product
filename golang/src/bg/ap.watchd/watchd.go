@@ -12,7 +12,6 @@
 package main
 
 import (
-	"flag"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -41,11 +40,11 @@ import (
 const pname = "ap.watchd"
 
 var (
-	watchDir = flag.String("dir", "/var/spool/watchd",
-		"directory in which the watchd work files should be stored")
-	addr = flag.String("pport", base_def.WATCHD_DIAG_PORT,
-		"The address to listen on for Prometheus HTTP requests.")
-	nmapVerbose = flag.Bool("nmapVerbose", false, "log nmap output")
+	watchDir = apcfg.String("data_dir", "/var/spool/watchd", false, nil)
+	addr     = apcfg.String("diag_port", base_def.WATCHD_DIAG_PORT,
+		false, nil)
+	nmapVerbose = apcfg.Bool("nmap_verbose", false, true, nil)
+	logLevel    = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
 
 	brokerd *broker.Broker
 	config  *cfgapi.Handle
@@ -326,7 +325,6 @@ func main() {
 	// To avoid dropping packets, we need to have extra processes available.
 	runtime.GOMAXPROCS(8)
 
-	flag.Parse()
 	slog = aputil.NewLogger(pname)
 	defer slog.Sync()
 

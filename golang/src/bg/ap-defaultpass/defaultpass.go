@@ -309,31 +309,31 @@ func resetSSH() {
 	if strings.ToLower(resetData[0]) != "ssh" {
 		aputil.Fatalf("resetSSH() called with service %s\n", resetData[0])
 	}
-	address  := fmt.Sprintf("%s:%s", *ipaddr, resetData[1])
+	address := fmt.Sprintf("%s:%s", *ipaddr, resetData[1])
 	username := resetData[2]
-	oldPass  := resetData[3]
+	oldPass := resetData[3]
 	if *newUsername != "" {
 		aputil.Errorf("-u not supported for ssh; using %s\n", username)
 	}
 
 	var newPass string
-	var err     error
+	var err error
 	if *humanPass {
 		if newPass, err = HumanPassword(HumanPasswordSpec); err != nil {
-       		aputil.Fatalf("HumanPassword() failed: %v\n", err)
+			aputil.Fatalf("HumanPassword() failed: %v\n", err)
 		}
 	} else {
 		var newPassCheck string
 		if newPass, err = getPassword("New Password: "); err != nil {
-       		aputil.Fatalf("failed to get password from stdin: %v\n", err)
+			aputil.Fatalf("failed to get password from stdin: %v\n", err)
 		}
 		if newPassCheck, err = getPassword("Retype New Password: "); err != nil {
-       		aputil.Fatalf("failed to get password from stdin: %v\n", err)
+			aputil.Fatalf("failed to get password from stdin: %v\n", err)
 		}
 		if newPass != newPassCheck {
 			aputil.Fatalf("New passwords do not match\n")
 		}
-    }
+	}
 
 	err = SSHResetPassword(address, username, oldPass, newPass)
 	if err != nil {
@@ -361,6 +361,11 @@ func resetMode() {
 	}
 }
 
+func usagef(format string, v ...interface{}) {
+	flag.Usage()
+	aputil.Fatalf(format, v...)
+}
+
 func main() {
 	var ip net.IP
 	tests := make(map[string][]int) // map of tests to port lists
@@ -368,7 +373,7 @@ func main() {
 	flag.Parse()
 
 	if *ipaddr == "" {
-		aputil.Usagef("IP address required\n")
+		usagef("IP address required\n")
 	} else {
 		if ip = net.ParseIP(*ipaddr); ip == nil {
 			aputil.Fatalf("'%s' is not a valid IP address\n", *ipaddr)
@@ -382,7 +387,7 @@ func main() {
 	// Otherwise we are in probe mode
 
 	if *dpfile == "" {
-		aputil.Usagef("Filename required\n")
+		usagef("Filename required\n")
 	}
 
 	testlist := strings.Split(*teststorun, ".")

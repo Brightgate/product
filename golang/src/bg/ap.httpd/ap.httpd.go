@@ -16,12 +16,12 @@ package main
 import (
 	"crypto/tls"
 	"encoding/base64"
-	"flag"
 	"fmt"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -53,11 +53,11 @@ import (
 )
 
 var (
-	clientWebDir = flag.String("client-web_dir", "client-web",
-		"location of httpd client web root")
-	ports         = listFlag([]string{":80", ":443"})
-	developerHTTP = flag.String("developer-http", "",
-		"Developer http port (disabled by default)")
+	clientWebDir = apcfg.String("client-web_dir", "/var/www/client-web",
+		false, nil)
+	portList      = apcfg.String("ports", "80,443", false, nil)
+	developerHTTP = apcfg.String("developer-http", "", false, nil)
+	_             = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
 
 	cert      string
 	key       string
@@ -256,6 +256,25 @@ func blocklistUpdateEvent(path []string, val string, expires *time.Time) {
 	data.LoadDNSBlocklist(data.DefaultDataDir)
 }
 
+// From a comma-separated list of ports, return a slice of ":<portNum>"
+// strings.
+func getPortList() []string {
+	ports := make([]string, 0)
+	s := strings.Split(*portList, ",")
+	for _, p := range s {
+		// Be flexible about allowing spaces and leading colons.  Strip
+		// off any that are present, and add in the single colon we want
+		clean := strings.TrimSpace(p)
+		clean = strings.TrimLeft(clean, ":")
+		if _, err := strconv.Atoi(clean); err != nil {
+			slog.Fatalf("Invalid port: %s", p)
+		}
+		port := ":" + clean
+		ports = append(ports, port)
+	}
+	return ports
+}
+
 func prometheusInit() {
 	metrics.latencies = prometheus.NewSummary(prometheus.SummaryOpts{
 		Name: "http_render_seconds",
@@ -271,13 +290,9 @@ func main() {
 	var err error
 	var rings cfgapi.RingMap
 
-	flag.Var(ports, "http-ports", "The ports to listen on for HTTP requests.")
-	flag.Parse()
 	slog = aputil.NewLogger(pname)
 	defer slog.Sync()
 	slog.Infof("starting")
-
-	*clientWebDir = aputil.ExpandDirPath(*clientWebDir)
 
 	mcpd, err := mcp.New(pname)
 	if err != nil {
@@ -344,6 +359,7 @@ func main() {
 		}).Subrouter()
 	phishRouter.HandleFunc("/", phishHandler)
 
+	*clientWebDir = aputil.ExpandDirPath(*clientWebDir)
 	mainRouter.HandleFunc("/", defaultHandler)
 	mainRouter.PathPrefix("/api/").Handler(
 		http.StripPrefix("/api", demoAPIRouter))
@@ -374,6 +390,7 @@ func main() {
 		},
 	}
 
+	ports := getPortList()
 	for ring, config := range rings {
 		router := network.SubnetRouter(config.Subnet)
 		// The secure middleware effectively links the ports, as

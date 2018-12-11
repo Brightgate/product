@@ -26,7 +26,6 @@ package main
 import (
 	"bytes"
 	"container/heap"
-	"flag"
 	"fmt"
 	"hash/crc64"
 	"io/ioutil"
@@ -38,6 +37,7 @@ import (
 	"sync"
 	"time"
 
+	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/ap_common/data"
 	"bg/ap_common/network"
@@ -61,10 +61,8 @@ type dnsRecord struct {
 }
 
 var (
-	cacheSize = flag.Int("cache_size", 1024*1024,
-		"size of DNS cache (set to 0 to disable caching).")
-	dataDir = flag.String("dir", data.DefaultDataDir,
-		"antiphishing data directory")
+	cacheSize = apcfg.Int("cache_size", 1024*1024, false, nil)
+	dataDir   = apcfg.String("dir", data.DefaultDataDir, false, nil)
 
 	ringRecords  map[string]dnsRecord // per-ring records for the router
 	perRingHosts map[string]bool      // hosts with per-ring results

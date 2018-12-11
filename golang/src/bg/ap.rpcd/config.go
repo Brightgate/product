@@ -62,7 +62,7 @@ func (c *rpcClient) getCtx() (context.Context, context.CancelFunc) {
 		slog.Fatalf("Failed to make GRPC context: %+v", err)
 	}
 
-	clientDeadline := time.Now().Add(*deadlineFlag)
+	clientDeadline := time.Now().Add(*rpcDeadline)
 	return context.WithDeadline(ctx, clientDeadline)
 }
 

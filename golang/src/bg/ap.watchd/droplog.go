@@ -14,7 +14,6 @@ package main
 import (
 	"bufio"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -27,6 +26,7 @@ import (
 	"syscall"
 	"time"
 
+	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/ap_common/network"
 	"bg/base_def"
@@ -34,8 +34,7 @@ import (
 )
 
 var (
-	pipeName = flag.String("pipeName", "/var/tmp/bgpipe",
-		"rsyslog named pipe to monitor")
+	pipeName = apcfg.String("syslog_pipe", "/var/tmp/bgpipe", false, nil)
 
 	wanIfaces map[string]bool
 	logpipe   *os.File

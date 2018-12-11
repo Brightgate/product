@@ -52,15 +52,13 @@ import (
 var (
 	connectFlag = flag.String("connect", "",
 		"Override connection endpoint in credential")
-	deadlineFlag = flag.Duration("rpc-deadline",
-		time.Second*20, "RPC completion deadline")
 	enableTLSFlag = flag.Bool("enable-tls", true, "Enable Secure gRPC")
-	maxCmds       = flag.Int("maxcmds", 64,
-		"maximum # of commands to fetch at once")
-	maxCompletions = flag.Int("maxcomp", 64,
-		"maximum # of completions to push")
-	maxUpdates = flag.Int("maxupdate", 32,
-		"maximum # of updates to push")
+
+	rpcDeadline    = apcfg.Duration("rpc_deadline", time.Second*20, true, nil)
+	maxCmds        = apcfg.Int("max_cmds", 64, true, nil)
+	maxCompletions = apcfg.Int("max_completions", 64, true, nil)
+	maxUpdates     = apcfg.Int("max_updates", 32, true, nil)
+	logLevel       = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
 
 	pname string
 
@@ -100,7 +98,7 @@ func publishEvent(ctx context.Context, tclient cloud_rpc.EventClient, subtopic s
 		slog.Fatalf("Failed to make GRPC credential: %+v", err)
 	}
 
-	clientDeadline := time.Now().Add(*deadlineFlag)
+	clientDeadline := time.Now().Add(*rpcDeadline)
 	ctx, ctxcancel := context.WithDeadline(ctx, clientDeadline)
 	defer ctxcancel()
 

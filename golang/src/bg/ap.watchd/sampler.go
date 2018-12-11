@@ -14,13 +14,13 @@ package main
 
 import (
 	"bytes"
-	"flag"
 	"fmt"
 	"io"
 	"net"
 	"sync"
 	"time"
 
+	"bg/ap_common/apcfg"
 	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/common/cfgapi"
@@ -32,11 +32,10 @@ import (
 )
 
 var (
-	auditTime = flag.Duration("atime", time.Duration(time.Minute*2),
-		"How often to audit the sample records")
-
-	warnTime = flag.Duration("wtime", time.Duration(time.Hour),
-		"How often to warn about a device using a bad IP address")
+	auditTime = apcfg.Duration("audit_freq", time.Duration(time.Minute*2),
+		false, nil)
+	warnTime = apcfg.Duration("warn_time", time.Duration(time.Hour), true,
+		nil)
 
 	// Currently granted DHCP leases (maps Mac -> IPv4)
 	currentAddrs = make(map[uint64]uint32)
