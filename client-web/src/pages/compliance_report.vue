@@ -77,7 +77,7 @@
         <span style="color: rgba(0,0,0,0.5);">
           <f7-icon f7="check_round_fill" size="1em" color="green" />
           {{ $t('message.compliance_report.ring_ok') }}<br>
-          <f7-icon f7="help_fill" size="1em" color="orange" />
+          <f7-icon f7="help_round_fill" size="1em" color="orange" />
           {{ $t('message.compliance_report.ring_not_scanned') }}<br>
           <f7-icon f7="bolt_round_fill" size="1em" color="red" />
           {{ $t('message.compliance_report.ring_vulnerable') }}<br>

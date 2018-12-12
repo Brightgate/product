@@ -36,7 +36,7 @@
     </span>
     <span style="width: 3em; display: inline-block;">
       <span v-if="unscannedCount > 0 || showZero">
-        <f7-icon f7="help_fill" size="1em" color="orange" />
+        <f7-icon f7="help_round_fill" size="1em" color="orange" />
         {{ unscannedCount }}
       </span>
     </span>
