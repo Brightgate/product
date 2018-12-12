@@ -1,5 +1,4 @@
-Vendor,username,password
---- needed for go test,dptest,dppass
+# Vendor,username,password
 --- used for demo,admin,password
 --- used for demo,admin,admin
 --- used for demo,admin,

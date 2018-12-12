@@ -43,10 +43,10 @@ import (
 type probefunc func([]apvuln.DPcredentials, int, *apvuln.Vulnerabilities, net.IP, int) int
 
 var (
-	dpfile      = flag.String("f", "", "file to retrieve credentials from (required except in reset mode)")
-	ipaddr      = flag.String("i", "", "target ip address (required)")
+	dpPath      = flag.String("f", "", "credentials path (required except in reset mode)")
+	ipAddr      = flag.String("i", "", "target ip address (required)")
 	verbose     = flag.Bool("v", false, "verbose output (optional)")
-	teststorun  = flag.String("t", "http:80.ftp:21.ssh:22", "format, dot-separated = test:(starting index:)port(,more,ports)")
+	testsToRun  = flag.String("t", "http:80.ftp:21.ssh:22", "format, dot-separated = test:(starting index:)port(,more,ports)")
 	reset       = flag.String("r", "", "reset mode, service:port:user:password, e.g. ssh:22:admin:password (optional)")
 	newUsername = flag.String("u", "", "new username (reset mode only)")
 	humanPass   = flag.Bool("human-password", false, "generate human-friendly password (reset mode only)")
@@ -58,34 +58,27 @@ var testMap = map[string]probefunc{
 	"ssh":  sshProbe,
 }
 
-func fetchdefaults(dpfile string) ([]apvuln.DPcredentials, error) {
+func fetchDefaults(defaultsPath string) ([]apvuln.DPcredentials, error) {
 	var clist []apvuln.DPcredentials
-	defaultslist, err := os.Open(dpfile)
+	defaultsList, err := os.Open(defaultsPath)
 	if err != nil {
-		aputil.Fatalf("Error opening vendor passwords file: %s\n", err)
+		return nil, err
 	}
-	defer defaultslist.Close()
-	defaultsreader := csv.NewReader(bufio.NewReader(defaultslist))
-	defaultsreader.Read() // get rid of headers line
-	l := 1
+	defer defaultsList.Close()
+	defaultsReader := csv.NewReader(bufio.NewReader(defaultsList))
+	defaultsReader.FieldsPerRecord = 3
+	defaultsReader.Comment = '#'
 	for {
-		line, err := defaultsreader.Read()
+		line, err := defaultsReader.Read()
 		if err == io.EOF {
 			break
+		} else if err != nil {
+			return nil, err
 		}
-		if err != nil {
-			return clist, err
-		}
-		if len(line) != 3 {
-			aputil.Errorf("Warning: line %d in vendor passwords file has unexpected format\n", l)
-		} else {
-			tempcreds := apvuln.DPcredentials{
-				Username: line[1],
-				Password: line[2],
-			}
-			clist = append(clist, tempcreds)
-		}
-		l++
+		clist = append(clist, apvuln.DPcredentials{
+			Username: line[1],
+			Password: line[2],
+		})
 	}
 	return clist, nil
 }
@@ -256,7 +249,7 @@ func logban(ip net.IP, tests map[string][]int, banfiledir string) bool { // true
 }
 
 func dpProbe(ip net.IP, tests map[string][]int) apvuln.Vulnerabilities {
-	clist, err := fetchdefaults(*dpfile)
+	clist, err := fetchDefaults(*dpPath)
 	if err != nil {
 		aputil.Fatalf("dpProbe: error fetching defaults: %s\n", err)
 	}
@@ -309,7 +302,7 @@ func resetSSH() {
 	if strings.ToLower(resetData[0]) != "ssh" {
 		aputil.Fatalf("resetSSH() called with service %s\n", resetData[0])
 	}
-	address := fmt.Sprintf("%s:%s", *ipaddr, resetData[1])
+	address := fmt.Sprintf("%s:%s", *ipAddr, resetData[1])
 	username := resetData[2]
 	oldPass := resetData[3]
 	if *newUsername != "" {
@@ -344,7 +337,7 @@ func resetSSH() {
 
 // resetMode handles, well, the default password reset mode
 // Broke this out of main() for readability
-// Uses same global flags *ipaddr and *reset as main
+// Uses same global flags *ipAddr and *reset as main
 func resetMode() {
 	resetData := strings.SplitN(*reset, ":", 2)
 	if len(resetData) < 2 {
@@ -372,11 +365,11 @@ func main() {
 
 	flag.Parse()
 
-	if *ipaddr == "" {
+	if *ipAddr == "" {
 		usagef("IP address required\n")
 	} else {
-		if ip = net.ParseIP(*ipaddr); ip == nil {
-			aputil.Fatalf("'%s' is not a valid IP address\n", *ipaddr)
+		if ip = net.ParseIP(*ipAddr); ip == nil {
+			aputil.Fatalf("'%s' is not a valid IP address\n", *ipAddr)
 		}
 	}
 
@@ -386,11 +379,11 @@ func main() {
 	}
 	// Otherwise we are in probe mode
 
-	if *dpfile == "" {
+	if *dpPath == "" {
 		usagef("Filename required\n")
 	}
 
-	testlist := strings.Split(*teststorun, ".")
+	testlist := strings.Split(*testsToRun, ".")
 	for _, t := range testlist {
 		testinfo := strings.Split(t, ":")             // 0: service to test, 1: index to start from (optional), 2: portlist
 		if len(testinfo) != 2 && len(testinfo) != 3 { // invalid testinfo length, skip entry

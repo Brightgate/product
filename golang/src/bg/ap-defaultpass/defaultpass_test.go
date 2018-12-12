@@ -29,12 +29,12 @@ var localhost = net.ParseIP("127.0.0.1")
 func runHTTP(listener net.Listener) {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if user, pass, ok := r.BasicAuth(); ok {
-			if user == "dptest" && pass == "dppass" {
+			if user == "testuser" && pass == "testpass" {
 				return // status 200 (OK) automatically returned
 			}
 		}
-		w.Header().Set("WWW-Authenticate", "Basic realm=dptest") // authenticate response header
-		w.WriteHeader(http.StatusUnauthorized)                   // status 401 (unauthorized)
+		w.Header().Set("WWW-Authenticate", "Basic realm=TEST") // authenticate response header
+		w.WriteHeader(http.StatusUnauthorized)                 // status 401 (unauthorized)
 	})
 	http.Serve(listener, nil)
 }
@@ -57,7 +57,7 @@ func runSSH(listener net.Listener) {
 	sshserver.Handle(func(s sshserver.Session) {})
 	sshserver.Serve(listener, nil,
 		sshserver.PasswordAuth(func(ctx sshserver.Context, pass string) bool {
-			return ctx.User() == "dptest" && pass == "dppass"
+			return ctx.User() == "testuser" && pass == "testpass"
 		}),
 	)
 }
@@ -78,8 +78,8 @@ func TestHTTP(t *testing.T) {
 		t.Errorf("HTTP test failed. Single vulnerability not found.\n")
 	}
 	if v, ok := dpvuln[0].(apvuln.DPvulnerability); ok {
-		if v.Credentials.Username != "dptest" ||
-		   v.Credentials.Password != "dppass" {
+		if v.Credentials.Username != "testuser" ||
+			v.Credentials.Password != "testpass" {
 			t.Errorf("HTTP test failed. Credentials not found.\n%v\n", v)
 		}
 	} else {
@@ -92,7 +92,7 @@ func TestFTP(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error getting open port: %s\n", err)
 	}
-	go runFTP(listener, "dptest", "dppass") // start the service
+	go runFTP(listener, "testuser", "testpass") // start the service
 
 	var dpvuln apvuln.Vulnerabilities
 	port := listener.Addr().(*net.TCPAddr).Port
@@ -103,8 +103,8 @@ func TestFTP(t *testing.T) {
 		t.Errorf("FTP test failed. Single vulnerability not found.\n")
 	}
 	if v, ok := dpvuln[0].(apvuln.DPvulnerability); ok {
-		if v.Credentials.Username != "dptest" ||
-		   v.Credentials.Password != "dppass" {
+		if v.Credentials.Username != "testuser" ||
+			v.Credentials.Password != "testpass" {
 			t.Errorf("FTP test failed. Credentials not found.\n%v\n", v)
 		}
 	} else {
@@ -128,8 +128,8 @@ func TestSSH(t *testing.T) {
 		t.Errorf("SSH test failed. Single vulnerability not found.\n")
 	}
 	if v, ok := dpvuln[0].(apvuln.DPvulnerability); ok {
-		if v.Credentials.Username != "dptest" ||
-		   v.Credentials.Password != "dppass" {
+		if v.Credentials.Username != "testuser" ||
+			v.Credentials.Password != "testpass" {
 			t.Errorf("SSH test failed. Credentials not found.\n%v\n", v)
 		}
 	} else {
@@ -158,10 +158,35 @@ func TestFalsePositive(t *testing.T) {
 	}
 }
 
+// TestVendorDefaultsFile tests that we can successfuly parse the production
+// vendordefaults CSV file.
+func TestVendorDefaultsFile(t *testing.T) {
+	_, err := fetchDefaults("vendordefaults.csv") // load credentials from file
+	if err != nil {
+		t.Errorf("Error reading vendordefaults.csv: %s\n", err)
+	}
+}
+
+// TestDefaultsFile tests successful and unsuccessful parsing of the
+// test fixtures files.
+func TestDefaultsFile(t *testing.T) {
+	defs, err := fetchDefaults("testdefaults.csv")
+	if err != nil {
+		t.Errorf("Error reading testdefaults.csv: %s\n", err)
+	}
+	if len(defs) != 2 {
+		t.Errorf("Unexpected defs length %d", len(defs))
+	}
+	_, err = fetchDefaults("testdefaults_bad.csv")
+	if err == nil {
+		t.Errorf("Expected error reading testdefaults_bad.csv: %s\n", err)
+	}
+}
+
 func init() {
 	var err error
-	clist, err = fetchdefaults("vendordefaults.csv") // load credentials from file
+	clist, err = fetchDefaults("testdefaults.csv") // load credentials from file
 	if err != nil {
-		log.Fatalf("Error reading defaults list: %s\n", err)
+		log.Fatalf("Error reading testdefaults.csv: %s\n", err)
 	}
 }
