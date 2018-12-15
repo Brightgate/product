@@ -25,7 +25,7 @@ var (
 )
 
 func configctlFlagInit() {
-	flag.StringVar(&accessLevel, "l", "user", "configd access level")
+	flag.StringVar(&accessLevel, "l", "admin", "configd access level")
 	flag.Parse()
 }
 

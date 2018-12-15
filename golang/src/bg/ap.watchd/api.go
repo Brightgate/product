@@ -30,10 +30,9 @@ func reschedScan(req *base_msg.WatchdScanInfo) *base_msg.WatchdResponse {
 	} else if req.When == nil {
 		resp.Errmsg = proto.String("missing scan time")
 	} else {
-		id := int(*req.Id)
 		when := aputil.ProtobufToTime(req.When)
 
-		if err := rescheduleScan(id, when); err != nil {
+		if err := rescheduleScan(*req.Id, when); err != nil {
 			resp.Errmsg = proto.String(fmt.Sprintf("%v", err))
 		}
 	}
@@ -46,7 +45,7 @@ func delScan(req *base_msg.WatchdScanInfo) *base_msg.WatchdResponse {
 
 	if req.Id == nil {
 		resp.Errmsg = proto.String("missing scanID")
-	} else if err := cancelScan(int(*req.Id)); err != nil {
+	} else if err := cancelScan(*req.Id); err != nil {
 		resp.Errmsg = proto.String(fmt.Sprintf("%v", err))
 	}
 
@@ -71,6 +70,8 @@ func addScan(req *base_msg.WatchdScanInfo) *base_msg.WatchdResponse {
 			scan = newUDPScan("", *req.Ip)
 		case base_msg.WatchdScanInfo_VULN:
 			scan = newVulnScan("", *req.Ip)
+		case base_msg.WatchdScanInfo_SUBNET:
+			scan = newSubnetScan("", *req.Ip)
 		default:
 			resp.Errmsg = proto.String("illegal scan type")
 		}
@@ -96,15 +97,17 @@ func convertScan(in *ScanRequest, active bool) *base_msg.WatchdScanInfo {
 	}
 
 	switch in.ScanType {
-	case "tcp_ports":
+	case "tcp":
 		scanType = base_msg.WatchdScanInfo_TCP_PORTS
-	case "udp_ports":
+	case "udp":
 		scanType = base_msg.WatchdScanInfo_UDP_PORTS
-	case "vulnerability":
+	case "vuln":
 		scanType = base_msg.WatchdScanInfo_VULN
+	case "subnet":
+		scanType = base_msg.WatchdScanInfo_SUBNET
 	}
 	out := base_msg.WatchdScanInfo{
-		Id:    proto.Int32(int32(in.ID)),
+		Id:    proto.Uint32(uint32(in.ID)),
 		Ip:    proto.String(in.IP),
 		Mac:   proto.String(in.Mac),
 		Type:  &scanType,

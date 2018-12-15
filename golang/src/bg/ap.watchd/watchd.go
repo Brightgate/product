@@ -62,20 +62,20 @@ var (
 	internalMacs map[uint64]bool
 
 	metrics struct {
-		lanDrops     prometheus.Counter
-		wanDrops     prometheus.Counter
-		sampledPkts  prometheus.Counter
-		missedPkts   prometheus.Counter
-		tcpScans     prometheus.Counter
-		tcpScanTime  prometheus.Summary
-		udpScans     prometheus.Counter
-		udpScanTime  prometheus.Summary
-		hostScans    prometheus.Counter
-		hostScanTime prometheus.Summary
-		vulnScans    prometheus.Counter
-		vulnScanTime prometheus.Summary
-		blockedIPs   prometheus.Counter
-		knownHosts   prometheus.Gauge
+		lanDrops       prometheus.Counter
+		wanDrops       prometheus.Counter
+		sampledPkts    prometheus.Counter
+		missedPkts     prometheus.Counter
+		tcpScans       prometheus.Counter
+		tcpScanTime    prometheus.Summary
+		udpScans       prometheus.Counter
+		udpScanTime    prometheus.Summary
+		subnetScans    prometheus.Counter
+		subnetScanTime prometheus.Summary
+		vulnScans      prometheus.Counter
+		vulnScanTime   prometheus.Summary
+		blockedIPs     prometheus.Counter
+		knownHosts     prometheus.Gauge
 	}
 )
 
@@ -279,13 +279,13 @@ func prometheusInit() {
 		Name: "watchd_udp_scan_time",
 		Help: "time spent on udp port scans",
 	})
-	metrics.hostScans = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "watchd_host_scans",
-		Help: "Number of host scans completed",
+	metrics.subnetScans = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "watchd_subnet_scans",
+		Help: "Number of subnet scans completed",
 	})
-	metrics.hostScanTime = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "watchd_host_scan_time",
-		Help: "time spent on host scans",
+	metrics.subnetScanTime = prometheus.NewSummary(prometheus.SummaryOpts{
+		Name: "watchd_subnet_scan_time",
+		Help: "time spent on subnet scans",
 	})
 	metrics.vulnScans = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "watchd_vuln_scans",
@@ -311,8 +311,8 @@ func prometheusInit() {
 	prometheus.MustRegister(metrics.tcpScanTime)
 	prometheus.MustRegister(metrics.udpScans)
 	prometheus.MustRegister(metrics.udpScanTime)
-	prometheus.MustRegister(metrics.hostScans)
-	prometheus.MustRegister(metrics.hostScanTime)
+	prometheus.MustRegister(metrics.subnetScans)
+	prometheus.MustRegister(metrics.subnetScanTime)
 	prometheus.MustRegister(metrics.vulnScans)
 	prometheus.MustRegister(metrics.vulnScanTime)
 	prometheus.MustRegister(metrics.blockedIPs)

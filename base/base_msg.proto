@@ -423,9 +423,10 @@ message WatchdScanInfo {
 		TCP_PORTS	= 1;
 		UDP_PORTS	= 2;
 		VULN		= 3;
+		SUBNET		= 4;
 	}
 
-	optional int32 id		= 0x01;
+	optional uint32 id		= 0x01;
 	optional string ip		= 0x02;
 	optional string mac		= 0x03;
 	optional ScanType type		= 0x04;
