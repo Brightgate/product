@@ -71,7 +71,7 @@ func execute(level cfgapi.AccessLevel, ops []cfgapi.PropertyOp) (string, error) 
 	if err == nil {
 		response := processOneEvent(query)
 		if response.Response != cfgmsg.ConfigResponse_OK {
-			err = fmt.Errorf("%s", response.Errmsg)
+			_, err = response.Parse()
 		} else if ops[0].Op == cfgapi.PropGet {
 			rval = response.Value
 		}
@@ -490,6 +490,124 @@ func TestDeleteInternalSubtree(t *testing.T) {
 	a := testTreeInit(t)
 	if _, err := executeUser(ops); err == nil {
 		t.Errorf("Deleted %s.  Should have failed", delProp)
+	}
+	testValidateTree(t, a)
+}
+
+// TestTestBasic verifies the functionality of ConfigOp_Test
+func TestTestBasic(t *testing.T) {
+	testCases := []struct {
+		prop string
+		err  error
+	}{
+		{"@/clients/00:00:00:00:00:00/dhcp_name", cfgapi.ErrNoProp},
+		{"@/clients/64:9a:be:da:b1:9a/dhcp_name", nil},
+		{"@/", nil},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.prop, func(t *testing.T) {
+			a := testTreeInit(t)
+			ops := []cfgapi.PropertyOp{
+				{Op: cfgapi.PropTest, Name: tc.prop},
+			}
+			_, err := executeInternal(ops)
+			if err != tc.err {
+				t.Errorf("Test had error %#v.  Should have had %#v", err, tc.err)
+			}
+			testValidateTree(t, a)
+		})
+	}
+}
+
+// TestTestCompound verifies the functionality of ConfigOp_Test in compound
+// operations.
+func TestTestCompound(t *testing.T) {
+	propTest := "@/clients/64:9a:be:da:b1:9a/dhcp_name"
+	badPropTest := "@/clients/00:00:00:00:00:00/dhcp_name"
+	oldVal := "test-client"
+	newVal1 := "test1"
+	newVal2 := "test2"
+	a := testTreeInit(t)
+
+	// Sanity check
+	checkOneProp(t, propTest, oldVal, true)
+
+	ops := []cfgapi.PropertyOp{
+		{Op: cfgapi.PropTest, Name: propTest},
+		{Op: cfgapi.PropCreate, Name: propTest, Value: newVal1},
+	}
+	_, err := executeInternal(ops)
+	if err != nil {
+		t.Errorf("Test had unexpected error %v", err)
+	}
+	a[propTest] = newVal1
+	testValidateTree(t, a)
+
+	// If badPropTest exists (it doesn't), then set propTest (which does
+	// exist) to "test2"
+	ops = []cfgapi.PropertyOp{
+		{Op: cfgapi.PropTest, Name: badPropTest},
+		{Op: cfgapi.PropCreate, Name: propTest, Value: newVal2},
+	}
+	_, err = executeInternal(ops)
+	if err != cfgapi.ErrNoProp {
+		t.Errorf("Test did not have expected error: %v", err)
+	}
+	testValidateTree(t, a)
+}
+
+// TestTestEqBasic verifies the functionality of ConfigOp_TestEq
+func TestTestEqBasic(t *testing.T) {
+	testCases := []struct {
+		prop string
+		val  string
+		err  error
+	}{
+		{"@/clients/00:00:00:00:00:00/dhcp_name", "foo", cfgapi.ErrNoProp},
+		{"@/clients/64:9a:be:da:b1:9a/dhcp_name", "", cfgapi.ErrNotEqual},
+		{"@/clients/64:9a:be:da:b1:9a/dhcp_name", "badvalue", cfgapi.ErrNotEqual},
+		{"@/clients/64:9a:be:da:b1:9a/dhcp_name", "test-client", nil},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("%s==%s", tc.prop, tc.val), func(t *testing.T) {
+			a := testTreeInit(t)
+			ops := []cfgapi.PropertyOp{
+				{Op: cfgapi.PropTestEq, Value: tc.val, Name: tc.prop},
+			}
+			_, err := executeInternal(ops)
+			if err != tc.err {
+				t.Errorf("Test had error %#v.  Should have had %#v", err, tc.err)
+			}
+			testValidateTree(t, a)
+		})
+	}
+}
+
+// TestTestEqCompound verifies the functionality of ConfigOp_TestEq in compound
+// operations.
+func TestTestEqCompound(t *testing.T) {
+	propTest := "@/clients/64:9a:be:da:b1:9a/dhcp_name"
+	oldVal := "test-client"
+	newVal1 := "test1"
+	a := testTreeInit(t)
+
+	ops := []cfgapi.PropertyOp{
+		{Op: cfgapi.PropTestEq, Name: propTest, Value: oldVal},
+		{Op: cfgapi.PropCreate, Name: propTest, Value: newVal1},
+	}
+	_, err := executeInternal(ops)
+	if err != nil {
+		t.Errorf("Test had unexpected error %v", err)
+	}
+	a[propTest] = newVal1
+	testValidateTree(t, a)
+
+	// Do it again-- this time it should fail
+	_, err = executeInternal(ops)
+	if err != cfgapi.ErrNotEqual {
+		t.Errorf("Test had unexpected error %v", err)
 	}
 	testValidateTree(t, a)
 }

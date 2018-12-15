@@ -102,6 +102,7 @@ var (
 	ErrQueued     = errors.New("command still queued")
 	ErrInProgress = errors.New("command in progress")
 	ErrNotSupp    = errors.New("not supported")
+	ErrNotEqual   = errors.New("not equal to expected value")
 )
 
 // ValidRings is a map containing all of the known ring names.  Checking for map
@@ -152,7 +153,7 @@ type VulnInfo struct {
 	Ignore         bool       // If the vuln is seen, take no action
 	Active         bool       // vuln was present on last scan
 	Details        string     // Additional details from the scanner
-	Repair	       bool       // T: watcher listen>repair; F: repair failed
+	Repair         bool       // T: watcher listen>repair; F: repair failed
 }
 
 // ScanInfo represents a record of scanning activity for a single client.
@@ -184,6 +185,8 @@ const (
 	PropSet
 	PropCreate
 	PropDelete
+	PropTest
+	PropTestEq
 )
 
 // PropertyOp represents an operation on a single property

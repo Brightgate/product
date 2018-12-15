@@ -336,15 +336,20 @@ func logger(stop chan bool, wg *sync.WaitGroup) {
 
 func updateClient(hwaddr uint64, devID string, confidence float32) {
 	mac := network.Uint64ToMac(hwaddr)
-	identProp := "@/clients/" + mac + "/identity"
-	confProp := "@/clients/" + mac + "/confidence"
 
-	if err := configd.CreateProp(identProp, devID, nil); err != nil {
-		slog.Errorf("creating prop %s: %s", identProp, err)
+	propTest := fmt.Sprintf("@/clients/%s", mac)
+	identProp := fmt.Sprintf("@/clients/%s/identity", mac)
+	confProp := fmt.Sprintf("@/clients/%s/confidence", mac)
+	props := []cfgapi.PropertyOp{
+		// avoid recreating clients which have been deleted.
+		{Op: cfgapi.PropTest, Name: propTest},
+		{Op: cfgapi.PropCreate, Name: identProp, Value: devID},
+		{Op: cfgapi.PropCreate, Name: confProp, Value: fmt.Sprintf("%.2f", confidence)},
 	}
-
-	if err := configd.CreateProp(confProp, fmt.Sprintf("%.2f", confidence), nil); err != nil {
-		slog.Errorf("creating prop %s: %s", confProp, err)
+	if _, err := configd.Execute(nil, props).Wait(nil); err != nil {
+		if err != cfgapi.ErrNoProp {
+			slog.Errorf("Failed to update client properties: %s", err)
+		}
 	}
 }
 

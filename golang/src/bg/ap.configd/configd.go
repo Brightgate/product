@@ -34,6 +34,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net"
@@ -66,11 +67,12 @@ import (
 const pname = "ap.configd"
 
 var metrics struct {
-	getCounts prometheus.Counter
-	setCounts prometheus.Counter
-	delCounts prometheus.Counter
-	expCounts prometheus.Counter
-	treeSize  prometheus.Gauge
+	getCounts  prometheus.Counter
+	setCounts  prometheus.Counter
+	delCounts  prometheus.Counter
+	expCounts  prometheus.Counter
+	testCounts prometheus.Counter
+	treeSize   prometheus.Gauge
 }
 
 // Allow for significant variation in the processing of subtrees
@@ -552,6 +554,31 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 				updates = append(updates, update)
 			}
 
+		case cfgmsg.ConfigOp_TEST:
+			metrics.testCounts.Inc()
+			if err = validateProp(prop); err == nil {
+				_, err = opsVector.get(prop)
+			}
+
+		case cfgmsg.ConfigOp_TESTEQ:
+			var testVal string
+			metrics.testCounts.Inc()
+			if err = validateProp(prop); err != nil {
+				break
+			}
+			if testVal, err = opsVector.get(prop); err != nil {
+				break
+			}
+			var testNode cfgapi.PropertyNode
+			err = json.Unmarshal([]byte(testVal), &testNode)
+			if err != nil {
+				// will become ConfigResponse_FAILED
+				break
+			}
+			if val != testNode.Value {
+				err = cfgapi.ErrNotEqual
+			}
+
 		case cfgmsg.ConfigOp_PING:
 		// no-op
 
@@ -621,6 +648,8 @@ func processOneEvent(query *cfgmsg.ConfigQuery) *cfgmsg.ConfigResponse {
 			rc = cfgmsg.ConfigResponse_BADTIME
 		case cfgapi.ErrBadVer:
 			rc = cfgmsg.ConfigResponse_BADVERSION
+		case cfgapi.ErrNotEqual:
+			rc = cfgmsg.ConfigResponse_NOTEQUAL
 		default:
 			rc = cfgmsg.ConfigResponse_FAILED
 		}
@@ -691,6 +720,10 @@ func prometheusInit() {
 		Name: "configd_expires",
 		Help: "property expirations",
 	})
+	metrics.testCounts = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "configd_tests",
+		Help: "test operations",
+	})
 	metrics.treeSize = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "configd_tree_size",
 		Help: "size of config tree",
@@ -699,6 +732,7 @@ func prometheusInit() {
 	prometheus.MustRegister(metrics.getCounts)
 	prometheus.MustRegister(metrics.setCounts)
 	prometheus.MustRegister(metrics.delCounts)
+	prometheus.MustRegister(metrics.testCounts)
 	prometheus.MustRegister(metrics.expCounts)
 
 	prometheus.MustRegister(metrics.treeSize)

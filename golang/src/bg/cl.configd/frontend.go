@@ -117,6 +117,15 @@ func (s *frontEndServer) Submit(ctx context.Context,
 		case cfgmsg.ConfigOp_DELETE:
 			// nothing to do
 
+		case cfgmsg.ConfigOp_TEST:
+			// nothing to do
+
+		case cfgmsg.ConfigOp_TESTEQ:
+			if o.GetValue() == "" {
+				rval.Errmsg = errHead + "missing value"
+				return
+			}
+
 		case cfgmsg.ConfigOp_SET,
 			cfgmsg.ConfigOp_CREATE:
 

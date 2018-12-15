@@ -13,6 +13,7 @@ package main
 
 import (
 	"container/heap"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -333,6 +334,20 @@ func poolGetNext(pool *scanPool) *ScanRequest {
 	return req
 }
 
+// mkScanProp creates properties for @/clients/<mac>/scans/<scantype>/[start|finish]
+// if @/clients/<mac> exists.
+func mkScanProp(mac, scanType, startfinish, value string) {
+	propTest := fmt.Sprintf("@/clients/%s", mac)
+	propCreate := fmt.Sprintf("@/clients/%s/scans/%s/%s", mac, scanType, startfinish)
+	props := []cfgapi.PropertyOp{
+		// avoid recreating clients which have been deleted.
+		{Op: cfgapi.PropTest, Name: propTest},
+		{Op: cfgapi.PropCreate, Name: propCreate, Value: nowString()},
+	}
+	slog.Debugf("props: %v", props)
+	_ = config.Execute(context.TODO(), props)
+}
+
 // scanner performs ScanRequests as they come in through the pending queue
 func scanner(pool *scanPool, threadID int) {
 	for {
@@ -343,7 +358,6 @@ func scanner(pool *scanPool, threadID int) {
 			continue
 		}
 
-		propBase := fmt.Sprintf("@/clients/%s/scans/%s/", req.Mac, req.ScanType)
 		slog.Debugf("starting %s %s", req.IP, req.ScanType)
 
 		pool.Lock()
@@ -351,13 +365,13 @@ func scanner(pool *scanPool, threadID int) {
 		pool.Unlock()
 
 		if req.Mac != "" {
-			config.CreateProp(propBase+"start", nowString(), nil)
+			mkScanProp(req.Mac, req.ScanType, "start", nowString())
 		}
 
 		req.Scanner(req)
 
 		if req.Mac != "" {
-			config.CreateProp(propBase+"finish", nowString(), nil)
+			mkScanProp(req.Mac, req.ScanType, "finish", nowString())
 		}
 
 		pool.Lock()
@@ -849,6 +863,12 @@ func vulnScanProcess(ip string, discovered map[string]apvuln.TestResult) {
 	// batch the updates so we can apply them all at once
 	now := nowString()
 	ops := make([]cfgapi.PropertyOp, 0)
+
+	// Don't update clients which might have been deleted while scanning
+	ops = append(ops, cfgapi.PropertyOp{
+		Op:   cfgapi.PropTest,
+		Name: fmt.Sprintf("@/clients/%s", mac),
+	})
 
 	// Iterate over all of the vulnerabilities we discovered in this pass,
 	// queue up the appropriate action for each, and note which properties

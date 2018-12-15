@@ -29,6 +29,8 @@ var opToMsgType = map[int]ConfigOp_Operation{
 	cfgapi.PropSet:    ConfigOp_SET,
 	cfgapi.PropCreate: ConfigOp_CREATE,
 	cfgapi.PropDelete: ConfigOp_DELETE,
+	cfgapi.PropTest:   ConfigOp_TEST,
+	cfgapi.PropTestEq: ConfigOp_TESTEQ,
 }
 
 // NewPingQuery generates a ping query
@@ -115,6 +117,8 @@ func (r *ConfigResponse) Parse() (string, error) {
 		err = cfgapi.ErrBadOp
 	case ConfigResponse_NOPROP:
 		err = cfgapi.ErrNoProp
+	case ConfigResponse_NOTEQUAL:
+		err = cfgapi.ErrNotEqual
 	case ConfigResponse_BADVERSION:
 		var version string
 		if r.MinVersion != nil {

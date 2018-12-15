@@ -39,6 +39,8 @@ var opMap = map[cfgmsg.ConfigOp_Operation]int{
 	cfgmsg.ConfigOp_SET:    cfgapi.PropSet,
 	cfgmsg.ConfigOp_CREATE: cfgapi.PropCreate,
 	cfgmsg.ConfigOp_DELETE: cfgapi.PropDelete,
+	cfgmsg.ConfigOp_TEST:   cfgapi.PropTest,
+	cfgmsg.ConfigOp_TESTEQ: cfgapi.PropTestEq,
 }
 
 type cloudQueue struct {

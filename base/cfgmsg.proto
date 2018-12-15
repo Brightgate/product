@@ -28,6 +28,8 @@ message ConfigOp {
 		DELETE = 4;
 		PING = 5;
 		ADDPROP = 6;
+		TEST = 7;
+		TESTEQ = 8;
 	}
 	Operation operation = 0x20;
 	string property = 0x21;
@@ -66,6 +68,7 @@ message ConfigResponse {
 		NOPROP		= 7;
 		BADVERSION	= 8;
 		BADTIME		= 9;
+		NOTEQUAL	= 10;
 	}
 	OpResponse response	= 0x21;
 	int64 cmdID		= 0x22;
