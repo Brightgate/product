@@ -38,6 +38,14 @@
 #
 # 3. On x86_64, the build constructs all components, whether for appliance or
 #    for cloud.  On ARM, only appliance components are built.
+#
+# 4. The DISTRO variable dictates which form of packages are built.  For
+#    x86_64, the default of "debian" is sufficient.  For ARM, OpenWrt (ipk
+#    packages) and Raspbian (deb packages) are supported distros.  These can be
+#    built, respectively, by the invocations
+#
+#	$ make packages DISTRO=openwrt GOARCH=arm
+#	$ make packages DISTRO=debian GOARCH=arm
 
 #
 # OS definitions
@@ -108,6 +116,7 @@ GOSRCBGVENDOR = $(GOSRCBG)/vendor
 # Where we stick build tools
 GOBIN = $(GOPATH)/bin
 
+
 #
 # Miscellaneous environment setup
 #
@@ -120,11 +129,14 @@ endif
 MKDIR = mkdir
 RM = rm
 
-PYTHON3 = python3
-PYTHON3VERSION = $(shell $(PYTHON3) -V)
-
 NODE = node
 NODEVERSION = $(shell $(NODE) --version)
+
+# Python3 installation.
+VENV_NAME := _venv.$(shell sha256sum build/requirements.txt | awk '{print $$1}')
+HOSTPYTHON3 = python3
+PYTHON3VERSION = $(shell $(HOSTPYTHON3) -V)
+PYTHON3 = $(VENV_NAME)/bin/python3
 
 #
 # ARCH dependent setup
@@ -148,12 +160,51 @@ endif
 #
 # Cross compilation setup
 #
+
+DISTRO = debian
+
+# Break if undefined and cross compiling.
+ifneq ($(GOHOSTARCH),$(GOARCH))
+ifeq ($(GOARCH),arm)
+ifeq ("$(DISTRO)","debian")
+$(info distro: debian + arm -> raspbian [deprecated])
 SYSROOT_CFG = build/cross-compile/raspbian-stretch.multistrap
 SYSROOT_CFG_LOCAL = $(subst build/cross-compile/,,$(SYSROOT_CFG))
-ifneq ($(GOHOSTARCH),$(GOARCH))
 SYSROOT = build/cross-compile/sysroot.$(GOARCH).$(SYSROOT_SUM)
-ifeq ($(GOARCH),arm)
 BUILDTOOLS_CROSS = crossbuild-essential-armhf
+CROSS_CC = /usr/bin/arm-linux-gnueabihf-gcc
+CROSS_CXX = /usr/bin/arm-linux-gnueabihf-g++
+CROSS_CGO_LDFLAGS = --sysroot $(CROSS_SYSROOT) -Lusr/local/lib -Lusr/lib
+CROSS_CGO_CFLAGS = --sysroot $(CROSS_SYSROOT) -Iusr/local/include -Iusr/include
+
+# This is the checksum of the sysroot blob to be used; it's outside the
+# cross-compile conditional because the build-sysroot target uses this to see
+# whether the sysroot has changed and needs to be re-uploaded.
+SYSROOT_SUM=a66af97cd6bbab3fc23eba227b663789b266be7c6efa1da68160d3b46c2d1f44
+SYSROOT_LOCAL_FLAGS = -f $(SYSROOT_CFG_LOCAL)
+else
+ifeq ("$(DISTRO)","openwrt")
+$(info distro: openwrt)
+CROSS_CC = $(CROSS_SYSROOT)/../toolchain.$(DISTRO)/bin/arm-openwrt-linux-gcc
+CROSS_CXX = $(CROSS_SYSROOT)/../toolchain.$(DISTRO)/bin/arm-openwrt-linux-g++
+CROSS_CGO_LDFLAGS = --sysroot $(CROSS_SYSROOT)
+CROSS_CGO_CFLAGS = --sysroot $(CROSS_SYSROOT) -I$(CROSS_SYSROOT)/usr/include
+
+SYSROOT = build/cross-compile/sysroot.$(DISTRO).$(SYSROOT_SUM)
+SYSROOT_SUM=7d6e9a8ee80d8c214b0a154d2e3b653bb8750ecc
+SYSROOT_LOCAL_FLAGS =
+else
+$(error DISTRO must be set to 'openwrt' or 'debian' [deprecated] for cross)
+endif
+endif
+
+# The command used to build the sysroot.
+BUILD_SYSROOT_CMD = \
+	cd build/cross-compile && \
+	DISTRO=$(DISTRO) SYSROOT=$(SYSROOT) SYSROOT_SUM=$(SYSROOT_SUM) \
+	    ./build-multistrap-sysroot.sh $(SYSROOT_LOCAL_FLAGS)
+CROSS_SYSROOT = $(shell realpath -m $(SYSROOT))
+SYSROOT_BLOB_NAME = $(shell $(BUILD_SYSROOT_CMD) name)
 else
 $(error 'arm' is the only supported cross target)
 endif
@@ -161,32 +212,17 @@ endif
 # SYSROOT doesn't work right if isn't an absolute path.  We need to use the
 # external realpath so that we can tell it to ignore the possibility that the
 # path and its components don't exist.
-CROSS_SYSROOT = $(shell realpath -m $(SYSROOT))
-CROSS_CC = /usr/bin/arm-linux-gnueabihf-gcc
-CROSS_CGO_LDFLAGS = --sysroot $(CROSS_SYSROOT) -Lusr/local/lib
-CROSS_CGO_CFLAGS = --sysroot $(CROSS_SYSROOT) -Iusr/local/include
 
 CROSS_ENV = \
 	SYSROOT=$(CROSS_SYSROOT) \
-	CC=$(CROSS_CC) \
+	STAGING_DIR=$(CROSS_SYSROOT) \
+	CC="$(CROSS_CC) -DSTAGING_DIR=$(CROSS_SYSROOT)" \
+	CXX="$(CROSS_CXX) -DSTAGING_DIR=$(CROSS_SYSROOT)" \
 	CGO_LDFLAGS="$(CROSS_CGO_LDFLAGS)" \
 	CGO_CFLAGS="$(CROSS_CGO_CFLAGS)" \
 	CGO_ENABLED=1
 CROSS_DEP = $(SYSROOT)/.$(SYSROOT_SUM)
 endif
-
-# This is the checksum of the sysroot blob to be used; it's outside the
-# cross-compile conditional because the build-sysroot target uses this to see
-# whether the sysroot has changed and needs to be re-uploaded.
-SYSROOT_SUM=a66af97cd6bbab3fc23eba227b663789b266be7c6efa1da68160d3b46c2d1f44
-
-# The command used to build the sysroot.
-BUILD_SYSROOT_CMD = \
-	cd build/cross-compile && \
-	SYSROOT=$(SYSROOT) SYSROOT_SUM=$(SYSROOT_SUM) \
-	    ./build-multistrap-sysroot.sh -f $(SYSROOT_CFG_LOCAL)
-
-SYSROOT_BLOB_NAME = $(shell $(BUILD_SYSROOT_CMD) name)
 
 BUILDTOOLS = \
 	$(BUILDTOOLS_CROSS) \
@@ -253,6 +289,7 @@ APPRULES=$(APPETC)/filter.rules.d
 APPMODEL=$(APPETC)/device_model
 
 ROOTETC=$(APPROOT)/etc
+ROOTETCINITD=$(ROOTETC)/init.d
 ROOTETCIPTABLES=$(ROOTETC)/iptables
 ROOTETCLOGROTATED=$(ROOTETC)/logrotate.d
 ROOTETCRSYSLOGD=$(ROOTETC)/rsyslog.d
@@ -305,13 +342,16 @@ APPCOMMAND_GOPKGS = \
 	bg/ap-factory \
 	bg/ap-ouisearch \
 	bg/ap-tools \
-	bg/ap-vuln-aggregate 
+	bg/ap-vuln-aggregate
+
+APPDAEMON_GOPKGS_debian = \
+	bg/ap.identifierd
 
 APPDAEMON_GOPKGS = \
+	$(APPDAEMON_GOPKGS_$(DISTRO)) \
 	bg/ap.brokerd \
 	bg/ap.configd \
 	bg/ap.httpd \
-	bg/ap.identifierd \
 	bg/ap.logd \
 	bg/ap.mcp \
 	bg/ap.networkd \
@@ -379,7 +419,16 @@ FILTER_RULES = \
 	$(APPRULES)/local.rules \
 	$(APPRULES)/relay.rules
 
+APPCONFIGS_debian = \
+	$(APPROOTLIB)/systemd/system/ap.mcp.service \
+	$(APPROOTLIB)/systemd/system/brightgate-appliance.service
+
+APPCONFIGS_openwrt = \
+	$(ROOTETCINITD)/ap.mcp \
+	$(ROOTETCINITD)/brightgate-appliance
+
 APPCONFIGS = \
+	$(APPCONFIGS_$(DISTRO)) \
 	$(APPETC)/ap_identities.csv \
 	$(APPETC)/vendordefaults.csv \
 	$(APPETC)/ap_mfgid.json \
@@ -388,8 +437,6 @@ APPCONFIGS = \
 	$(APPETC)/mcp.json \
 	$(APPETC)/oui.txt \
 	$(APPETC)/prometheus.yml \
-	$(APPROOTLIB)/systemd/system/ap.mcp.service \
-	$(APPROOTLIB)/systemd/system/brightgate-appliance.service \
 	$(APPSNMAP)/smb-vuln-ms17-010.nse \
 	$(APPSPOOLWATCHD)/vuln-db.json \
 	$(ROOTETCIPTABLES)/rules.v4 \
@@ -397,7 +444,13 @@ APPCONFIGS = \
 	$(ROOTETCLOGROTATED)/com-brightgate-logrotate-logd \
 	$(ROOTETCLOGROTATED)/com-brightgate-logrotate-mcp
 
+ifeq ("$(DISTRO)","openwrt")
+DISTROAPPDIRS = \
+	$(ROOTETCINITD)
+endif
+
 APPDIRS = \
+	$(DISTROAPPDIRS) \
 	$(APPBIN) \
 	$(APPETC) \
 	$(APPROOTLIB) \
@@ -589,8 +642,14 @@ build-sysroot:
 
 # This will create the sysroot and, if it's new, upload it as a blob, given a
 # credential file in $KEY_SYSROOT_UPLOADER.
+ifeq ("$(DISTRO)","debian")
 upload-sysroot:
 	$(BUILD_SYSROOT_CMD) build -u
+endif
+ifeq ("$(DISTRO)","openwrt")
+upload-sysroot:
+	$(BUILD_SYSROOT_CMD) upload
+endif
 
 download-sysroot: build/cross-compile/$(SYSROOT_BLOB_NAME)
 
@@ -603,11 +662,14 @@ $(SYSROOT)/.$(SYSROOT_SUM): build/cross-compile/$(SYSROOT_BLOB_NAME)
 	$(BUILD_SYSROOT_CMD) unpack -d $(subst build/cross-compile/,,$(@D))
 	touch --no-create $@
 
-packages: install client-web
-	$(PYTHON3) build/deb-pkg/deb-pkg.py --arch $(PKG_DEB_ARCH)
+archives: install client-web | $(VENV_NAME)
+	$(PYTHON3) build/package.py --distro archive --arch $(PKG_DEB_ARCH)
 
-packages-lint: install client-web
-	$(PYTHON3) build/deb-pkg/deb-pkg.py --lint --arch $(PKG_DEB_ARCH)
+packages: install client-web | $(VENV_NAME)
+	$(PYTHON3) build/package.py --distro $(DISTRO) --arch $(PKG_DEB_ARCH)
+
+packages-lint: install client-web | $(VENV_NAME)
+	$(PYTHON3) build/package.py --lint --distro $(DISTRO) --arch $(PKG_DEB_ARCH)
 
 GO_MOCK_CLOUDRPC_SRCS = \
 	$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
@@ -672,11 +734,6 @@ $(APPETC)/ap_identities.csv: ap_identities.csv | $(APPETC)
 $(APPETC)/ap_mfgid.json: ap_mfgid.json | $(APPETC)
 	$(INSTALL) -m 0644 $< $@
 
-$(APPROOTLIB)/systemd/system/ap.mcp.service: ap.mcp.service | $(APPROOTLIB)/systemd/system
-	$(INSTALL) -m 0644 $< $@
-
-$(APPROOTLIB)/systemd/system/brightgate-appliance.service: brightgate-appliance.service | $(APPROOTLIB)/systemd/system
-	$(INSTALL) -m 0644 $< $@
 
 $(APPETC)/configd.json: $(GOSRCBG)/ap.configd/configd.json | $(APPETC)
 	$(INSTALL) -m 0644 $< $@
@@ -725,8 +782,22 @@ $(APPMODEL): $(GOSRCBG)/ap.identifierd/linear_model_deviceID/* | $(DIRS)
 	cp -r $^ $@
 	touch $@
 
+# Raspbian/Debian-specific appliance files
 $(APPROOTLIB)/systemd/system: | $(APPROOTLIB)
 	$(MKDIR) -p $(APPROOTLIB)/systemd/system
+
+$(APPROOTLIB)/systemd/system/ap.mcp.service: build/debian-deb/ap.mcp.service | $(APPROOTLIB)/systemd/system
+	$(INSTALL) -m 0644 $< $@
+
+$(APPROOTLIB)/systemd/system/brightgate-appliance.service: build/debian-deb/brightgate-appliance.service | $(APPROOTLIB)/systemd/system
+	$(INSTALL) -m 0644 $< $@
+
+# OpenWrt-specific appliance files
+$(ROOTETCINITD)/ap.mcp: build/openwrt-ipk/ap.mcp | $(ROOTETCINITD)
+	$(INSTALL) -m 0755 $< $@
+
+$(ROOTETCINITD)/brightgate-appliance: build/openwrt-ipk/brightgate-appliance | $(ROOTETCINITD)
+	$(INSTALL) -m 0755 $< $@
 
 $(APPDIRS):
 	$(MKDIR) -p $@
@@ -742,7 +813,7 @@ $(APPTOOLS:%=$(APPBIN)/%): $(APPBIN)/ap-tools
 # the latter isn't any faster.  We use 'go build' because because 'go install'
 # refuses to install cross-compiled binaries into GOBIN.
 $(APPBIN)/%: $(CROSS_DEP)
-	$(CROSS_ENV) $(GO) build -o $(@) bg/$*
+	export $(CROSS_ENV) && $(GO) build -o $(@) bg/$*
 
 $(GOSRCBG)/common/version.go: $(GITCHANGED)
 	sed "s/GITHASH/$(GITHASH)/" $(GOSRCBG)/common/version.base > $@
@@ -915,10 +986,10 @@ $(CLOUDDIRS):
 # Common definitions
 #
 
-$(GOSRCBG)/base_def/base_def.go: base/generate-base-def.py | $(GOSRCBG)/base_def
+$(GOSRCBG)/base_def/base_def.go: base/generate-base-def.py | $(GOSRCBG)/base_def $(VENV_NAME)
 	$(PYTHON3) $< --go | $(GOFMT) > $@
 
-base/base_def.py: base/generate-base-def.py
+base/base_def.py: base/generate-base-def.py | $(VENV_NAME)
 	$(PYTHON3) $< --python3 > $@
 
 #
@@ -949,12 +1020,6 @@ $(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go: base/cloud_rpc.proto $(GOTOOLS)
 			--go_out=plugins=grpc,Mbase_msg.proto=bg/base_msg,Mcfgmsg.proto=bg/common/cfgmsg:../$(GOSRCBG)/cloud_rpc \
 			$(notdir $<)
 
-base/cloud_rpc_pb2.py: base/cloud_rpc.proto
-	$(PYTHON3) -m grpc_tools.protoc \
-		-I. \
-		-Ibase \
-		--python_out=. --grpc_python_out=. $<
-
 LOCAL_COMMANDS=$(COMMANDS:$(APPBIN)/%=$(GOBIN)/%)
 LOCAL_DAEMONS=$(DAEMONS:$(APPBIN)/%=$(GOBIN)/%)
 
@@ -975,6 +1040,10 @@ $(BUILDTOOLS_FILE):
 	build/check-tools.sh $(BUILDTOOLS)
 	touch $@
 
+$(VENV_NAME):
+	$(HOSTPYTHON3) -m venv $(VENV_NAME)
+	$(VENV_NAME)/bin/pip install -r build/requirements.txt
+
 NPM = npm
 NPM_QUIET = --loglevel warn --no-progress
 .make-npm-installed: client-web/package.json
@@ -993,6 +1062,7 @@ FRC:
 .PHONY: clobber
 clobber: clean packages-clobber godeps-clobber gotools-clobber
 	$(RM) -fr $(ROOT) $(GOWS)/pkg $(GOWS)/bin $(SYSROOT)
+	$(RM) -fr _venv.*
 	$(RM) -f .make-*
 
 .PHONY: packages-clobber

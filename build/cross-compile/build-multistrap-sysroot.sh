@@ -10,6 +10,22 @@
 # such unauthorized removal or alteration will be a violation of federal law.
 #
 
+# Environment
+# -----------
+#
+# DISTRO
+#   'openwrt' or 'raspbian'.  raspbian will allow sysroot construction via a
+#   multistrap(1) invocation.  openwrt requires that the sysroot and toolchain
+#   archives from the rWRT build be present for upload.
+#
+# KEY_SYSROOT_UPLOADER
+#   Path to a GCP JSON key file for the relevant service account.
+#
+# SYSROOT_SUM
+#   For Raspbian, the sum is calculated from the SHA-256 hash of the installed
+#   packages.  For OpenWrt, the sum is the Git hash of the rWRT repository that
+#   produced the sysroot.
+
 PATH=/usr/bin:/usr/sbin:/bin
 export PATH
 
@@ -42,8 +58,13 @@ while getopts d:u arg; do
 done
 shift $(($OPTIND - 1))
 
-[[ -n "$cfgfile" ]] || fatal "must specify a multistrap config file"
-[[ -f "$cfgfile" ]] || fatal "multistrap config file $cfgfile does not exist"
+[[ -n "$DISTRO" ]] || fatal "must specify a target distribution using DISTRO"
+if [[ "$DISTRO" == "debian" ]]; then
+	[[ -n "$cfgfile" ]] || fatal "must specify a multistrap config file with 'debian' distro"
+	[[ -f "$cfgfile" ]] || fatal "multistrap config file $cfgfile does not exist"
+else
+	cfgfile=$DISTRO.multistrap
+fi
 
 # The sysroot blob is in the same directory as the configuration file
 BLOB_NAME_PREFIX=$(basename $cfgfile)
@@ -53,13 +74,37 @@ BLOB_NAME=$BLOB_NAME_PREFIX.${SYSROOT_SUM:-UnknownSysrootSum}.tar.gz
 SYSROOT_BUCKET_NAME=peppy-breaker-161717-sysroot
 GCS_ACCOUNT=sysroot-uploader@peppy-breaker-161717.iam.gserviceaccount.com
 
+function cmd_help() {
+	cat <<EOF
+Usage: build-multistrap-sysroot.sh [-f multistrap_cfg] command [args]
+	help
+	name
+	download
+	unpack
+	upload
+	build
+
+DISTRO {openwrt, debian} and SYSROOT_SUM environment variables control
+execution.
+EOF
+	exit 2
+}
+
 function cmd_name() {
 	echo $BLOB_NAME
 	exit
 }
 
 function cmd_download() {
-	gsutil cp gs://$SYSROOT_BUCKET_NAME/$BLOB_NAME .
+	gsutil cp gs://$SYSROOT_BUCKET_NAME/$BLOB_NAME . || \
+		fatal "could not download gs://$SYSROOT_BUCKET_NAME/$BLOB_NAME"
+
+	if [[ "$DISTRO" == "openwrt" ]]; then
+		TOOLCHAIN_BLOB_NAME=${BLOB_NAME/sysroot/toolchain}
+		gsutil cp gs://$SYSROOT_BUCKET_NAME/$TOOLCHAIN_BLOB_NAME . || \
+		fatal "could not download gs://$SYSROOT_BUCKET_NAME/$TOOLCHAIN_BLOB_NAME"
+	fi
+
 	exit
 }
 
@@ -69,7 +114,17 @@ function cmd_unpack() {
 	# extract to the current directory without stripping the containing
 	# directory.
 	mkdir -p ${dir:-.}
-	tar -ax ${dir:+-C $dir --strip-components=1} -f $BLOB_NAME
+	tar -ax ${dir:+-C $dir --strip-components=1} -f $BLOB_NAME || \
+		fatal "could not untar $BLOB_NAME"
+
+	if [[ "$DISTRO" == "openwrt" ]]; then
+		echo unpacking toolchain
+		TOOLCHAIN_BLOB_NAME=${BLOB_NAME/sysroot/toolchain}
+		mkdir -p ${dir:-.}/../toolchain.$DISTRO
+		tar -ax ${dir:+-C $dir/../toolchain.$DISTRO} -f $TOOLCHAIN_BLOB_NAME || \
+			fatal "could not untar $TOOLCHAIN_BLOB_NAME"
+	fi
+
 	exit
 }
 
@@ -80,9 +135,17 @@ function upload() {
 	export BOTO_CONFIG=/dev/null
 	info "Uploading sysroot as $BLOB_NAME"
 	gcloud auth activate-service-account $GCS_ACCOUNT \
-	    --key-file=$KEY_SYSROOT_UPLOADER && \
-		gsutil cp -n $BLOB_NAME gs://$SYSROOT_BUCKET_NAME/ && \
+	    --key-file=$KEY_SYSROOT_UPLOADER
+	if [[ $? == 0 ]]; then
+		gsutil cp -n $BLOB_NAME gs://$SYSROOT_BUCKET_NAME || \
+			fatal "could not upload gs://$SYSROOT_BUCKET_NAME/$BLOB_NAME"
+		if [[ "$DISTRO" == "openwrt" ]]; then
+			TOOLCHAIN_BLOB_NAME=${BLOB_NAME/sysroot/toolchain}
+			gsutil cp -n $TOOLCHAIN_BLOB_NAME gs://$SYSROOT_BUCKET_NAME/ || \
+				fatal "could not upload gs://$SYSROOT_BUCKET_NAME/$TOOLCHAIN_BLOB_NAME"
+		fi
 		gcloud auth revoke $GCS_ACCOUNT
+	fi
 }
 
 function cmd_upload() {
@@ -91,6 +154,10 @@ function cmd_upload() {
 }
 
 function cmd_build() {
+	if [[ "$DISTRO" != "raspbian" ]]; then
+		fatal "build only supported for 'raspbian' distro"
+	fi
+
 	# Build is just the rest of the script.
 	:
 }

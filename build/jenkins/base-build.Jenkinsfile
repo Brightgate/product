@@ -50,6 +50,16 @@ pipeline {
                 archiveArtifacts '*_armhf.deb'
             }
         }
+        stage('build-arm-openwrt') {
+            environment {
+                GOARCH = 'arm'
+                GOARM = '7'
+            }
+            steps {
+                sh 'make packages DISTRO=openwrt'
+                archiveArtifacts '*_arm_*.ipk'
+            }
+        }
         stage('test') {
             steps {
                 sh 'make test coverage'

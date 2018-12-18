@@ -1,11 +1,14 @@
 .tags
 .make-*
+.mypy_cache
 *.org
 *.sw[a-z]
 proto.armv7l
 proto.x86_64
 *.deb
+*.ipk
 base/base_def.py
 base/cloud_rpc_pb2_grpc.py
 coverage/
 _tools.*/
+_venv.*
