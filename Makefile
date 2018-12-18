@@ -214,13 +214,14 @@ endif
 # path and its components don't exist.
 
 CROSS_ENV = \
+	export \
 	SYSROOT=$(CROSS_SYSROOT) \
 	STAGING_DIR=$(CROSS_SYSROOT) \
 	CC="$(CROSS_CC) -DSTAGING_DIR=$(CROSS_SYSROOT)" \
 	CXX="$(CROSS_CXX) -DSTAGING_DIR=$(CROSS_SYSROOT)" \
 	CGO_LDFLAGS="$(CROSS_CGO_LDFLAGS)" \
 	CGO_CFLAGS="$(CROSS_CGO_CFLAGS)" \
-	CGO_ENABLED=1
+	CGO_ENABLED=1 &&
 CROSS_DEP = $(SYSROOT)/.$(SYSROOT_SUM)
 endif
 
@@ -813,7 +814,7 @@ $(APPTOOLS:%=$(APPBIN)/%): $(APPBIN)/ap-tools
 # the latter isn't any faster.  We use 'go build' because because 'go install'
 # refuses to install cross-compiled binaries into GOBIN.
 $(APPBIN)/%: $(CROSS_DEP)
-	export $(CROSS_ENV) && $(GO) build -o $(@) bg/$*
+	$(CROSS_ENV) $(GO) build -o $(@) bg/$*
 
 $(GOSRCBG)/common/version.go: $(GITCHANGED)
 	sed "s/GITHASH/$(GITHASH)/" $(GOSRCBG)/common/version.base > $@
