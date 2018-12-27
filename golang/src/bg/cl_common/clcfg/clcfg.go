@@ -101,7 +101,7 @@ func (c *cmdHdl) update(r *cfgmsg.ConfigResponse) {
 		log.Printf("Updating completed cmd %v\n", c)
 	}
 
-	c.result, c.err = r.Parse()
+	c.result, c.err = cfgapi.ParseConfigResponse(r)
 	c.inflight = (c.err == cfgapi.ErrQueued || c.err == cfgapi.ErrInProgress)
 }
 
@@ -137,11 +137,12 @@ func (c *cmdHdl) Status(ctx context.Context) (string, error) {
 		r, rerr := c.cfg.client.Status(ctx, &cmd)
 		if rerr != nil {
 			err = cfgapi.ErrComm
-			msg = fmt.Sprintf("%v", rerr)
+			msg = fmt.Sprintf("getting status: %v", rerr)
 		} else {
 			c.update(r)
 			if c.err != nil {
 				msg = c.err.Error()
+				err = c.err
 			}
 		}
 	} else {
@@ -209,7 +210,7 @@ func (c *Configd) Execute(ctx context.Context, ops []cfgapi.PropertyOp) cfgapi.C
 		inflight: true,
 	}
 
-	cmd, err := cfgmsg.NewPropQuery(ops)
+	cmd, err := cfgapi.PropOpsToQuery(ops)
 	if err != nil {
 		hdl.err = err
 		return hdl

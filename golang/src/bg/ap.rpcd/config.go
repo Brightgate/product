@@ -33,16 +33,6 @@ type rpcClient struct {
 	client    rpc.ConfigBackEndClient
 }
 
-// Map for translating cloud operations into local cfgapi operations
-var opMap = map[cfgmsg.ConfigOp_Operation]int{
-	cfgmsg.ConfigOp_GET:    cfgapi.PropGet,
-	cfgmsg.ConfigOp_SET:    cfgapi.PropSet,
-	cfgmsg.ConfigOp_CREATE: cfgapi.PropCreate,
-	cfgmsg.ConfigOp_DELETE: cfgapi.PropDelete,
-	cfgmsg.ConfigOp_TEST:   cfgapi.PropTest,
-	cfgmsg.ConfigOp_TESTEQ: cfgapi.PropTestEq,
-}
-
 type cloudQueue struct {
 	updates     []*rpc.CfgBackEndUpdate_CfgUpdate
 	completions []*cfgmsg.ConfigResponse
@@ -264,78 +254,25 @@ func (c *rpcClient) fetchStream() error {
 	}
 }
 
-// utility function to determine whether any of the operations in a query are
-// GETs
-func isGet(ops []*cfgmsg.ConfigOp) bool {
-	for _, op := range ops {
-		if op.Operation == cfgmsg.ConfigOp_GET {
-			return true
-		}
-	}
-	return false
-}
-
-// Translate a cfgmsg protobuf into the equivalent cfgapi structure.  This is
-// where a command to cl.configd becomes a command to ap.configd.
-func translateOp(cloudOp *cfgmsg.ConfigOp) (cfgapi.PropertyOp, error) {
-	var op cfgapi.PropertyOp
-	var err error
-
-	if cfgOp, ok := opMap[cloudOp.Operation]; ok {
-		op.Op = cfgOp
-		op.Name = cloudOp.GetProperty()
-		op.Value = cloudOp.GetValue()
-		if cloudOp.Expires != nil {
-			t, _ := ptypes.Timestamp(cloudOp.Expires)
-			op.Expires = &t
-		}
-	} else {
-		err = fmt.Errorf("unrecognized operation")
-	}
-
-	return op, err
-}
-
 // Execute a single ConfigQuery fetched from the cloud
 func exec(cmd *cfgmsg.ConfigQuery) {
-	var err error
 	var payload string
 
 	slog.Debugf("executing cmd %d", cmd.CmdID)
-	resp := cfgmsg.ConfigResponse{
-		CmdID: cmd.CmdID,
-	}
 
-	// Convert the ConfigQuery into an array of one or more PropertyOp
-	// operations
-	ops := make([]cfgapi.PropertyOp, 0)
-	for _, cloudOp := range cmd.Ops {
-		var op cfgapi.PropertyOp
-
-		op, err = translateOp(cloudOp)
-		if err == nil {
-			ops = append(ops, op)
-		} else {
-			break
-		}
-	}
+	ops, err := cfgapi.QueryToPropOps(cmd)
 
 	// Send the command to ap.configd and wait for the result
 	if err == nil {
 		payload, err = config.Execute(nil, ops).Wait(nil)
 	}
 
-	if err == nil {
-		resp.Response = cfgmsg.ConfigResponse_OK
-		resp.Value = payload
-	} else {
-		resp.Response = cfgmsg.ConfigResponse_FAILED
-		resp.Errmsg = fmt.Sprintf("%v", err)
-	}
+	resp := cfgapi.GenerateConfigResponse(payload, err)
+	resp.CmdID = cmd.CmdID
 
 	queued.Lock()
 	emptyQueue := (len(queued.updates) == 0)
-	queued.completions = append(queued.completions, &resp)
+	queued.completions = append(queued.completions, resp)
 	if resp.CmdID > queued.lastOp {
 		queued.lastOp = resp.CmdID
 	}

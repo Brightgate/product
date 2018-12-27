@@ -66,12 +66,12 @@ func execute(level cfgapi.AccessLevel, ops []cfgapi.PropertyOp) (string, error) 
 	var rval string
 	var err error
 
-	query, err := cfgmsg.NewPropQuery(ops)
+	query, err := cfgapi.PropOpsToQuery(ops)
 	query.Level = int32(level)
 	if err == nil {
 		response := processOneEvent(query)
 		if response.Response != cfgmsg.ConfigResponse_OK {
-			_, err = response.Parse()
+			_, err = cfgapi.ParseConfigResponse(response)
 		} else if ops[0].Op == cfgapi.PropGet {
 			rval = response.Value
 		}
@@ -275,7 +275,7 @@ func TestReinitialize(t *testing.T) {
 
 // TestPing verifies that a simple ping succeeds
 func TestPing(t *testing.T) {
-	query := cfgmsg.NewPingQuery()
+	query := cfgapi.NewPingQuery()
 	response := processOneEvent(query)
 	if response.Response != cfgmsg.ConfigResponse_OK {
 		t.Error(fmt.Errorf("%s", response.Value))
@@ -283,7 +283,7 @@ func TestPing(t *testing.T) {
 }
 
 func testPingBadVersion(version int32) error {
-	query := cfgmsg.NewPingQuery()
+	query := cfgapi.NewPingQuery()
 	majorMinor := cfgmsg.Version{Major: version}
 	query.Version = &majorMinor
 

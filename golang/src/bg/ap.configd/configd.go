@@ -423,15 +423,20 @@ func ipv4Check(prop, addr string) error {
  *
  * Handling incoming requests from other daemons
  */
-func getPropHandler(prop string) (string, error) {
-	prop, err := propTree.Get(prop)
+func xlateError(err error) error {
 	if err == cfgtree.ErrNoProp {
 		err = cfgapi.ErrNoProp
 	} else if err == cfgtree.ErrExpired {
 		err = cfgapi.ErrExpired
 	}
+	return err
+}
 
-	return prop, err
+func getPropHandler(prop string) (string, error) {
+	rval, err := propTree.Get(prop)
+	err = xlateError(err)
+
+	return rval, err
 }
 
 func setPropHandler(prop string, val string, exp *time.Time, add bool) error {
@@ -444,7 +449,7 @@ func setPropHandler(prop string, val string, exp *time.Time, add bool) error {
 	for _, r := range updateCheckTable {
 		if r.path.MatchString(prop) {
 			if err = r.check(prop, val); err != nil {
-				return err
+				return xlateError(err)
 			}
 		}
 	}
@@ -455,11 +460,12 @@ func setPropHandler(prop string, val string, exp *time.Time, add bool) error {
 		err = propTree.Set(prop, val, exp)
 	}
 
-	return err
+	return xlateError(err)
 }
 
 func delPropHandler(prop string) ([]string, error) {
-	return propTree.Delete(prop)
+	rval, err := propTree.Delete(prop)
+	return rval, xlateError(err)
 }
 
 // utility function to extract the property parameters from a ConfigOp struct
@@ -637,41 +643,13 @@ func processOneEvent(query *cfgmsg.ConfigQuery) *cfgmsg.ConfigResponse {
 	if err == nil {
 		rval, err = executePropOps(query)
 	}
-	rc := cfgmsg.ConfigResponse_OK
-	if err != nil {
-		switch err {
-		case cfgapi.ErrBadOp:
-			rc = cfgmsg.ConfigResponse_UNSUPPORTED
-		case cfgapi.ErrNoProp:
-			rc = cfgmsg.ConfigResponse_NOPROP
-		case cfgapi.ErrBadTime:
-			rc = cfgmsg.ConfigResponse_BADTIME
-		case cfgapi.ErrBadVer:
-			rc = cfgmsg.ConfigResponse_BADVERSION
-		case cfgapi.ErrNotEqual:
-			rc = cfgmsg.ConfigResponse_NOTEQUAL
-		default:
-			rc = cfgmsg.ConfigResponse_FAILED
-		}
 
-		if *verbose {
-			slog.Warnf("Config operation failed: %v", err)
-		}
-		rval = fmt.Sprintf("%v", err)
-	}
-	response := &cfgmsg.ConfigResponse{
-		Timestamp: ptypes.TimestampNow(),
-		Sender:    pname + "(" + strconv.Itoa(os.Getpid()) + ")",
-		Version:   &cfgmsg.APIVersion,
-		Debug:     "-",
-		Response:  rc,
-	}
-	if err == nil {
-		response.Value = rval
-	} else {
-		response.Errmsg = rval
+	if err == nil && *verbose {
+		slog.Warnf("Config operation failed: %v", err)
 	}
 
+	response := cfgapi.GenerateConfigResponse(rval, err)
+	response.Sender = pname + "(" + strconv.Itoa(os.Getpid()) + ")"
 	return response
 }
 

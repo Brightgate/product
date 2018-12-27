@@ -195,9 +195,9 @@ func (c *APConfig) sendOp(query *cfgmsg.ConfigQuery) (string, error) {
 
 	var rval string
 	if err == nil && len(reply) > 0 {
-		response := &cfgmsg.ConfigResponse{}
-		proto.Unmarshal(reply[0], response)
-		rval, err = response.Parse()
+		r := &cfgmsg.ConfigResponse{}
+		proto.Unmarshal(reply[0], r)
+		rval, err = cfgapi.ParseConfigResponse(r)
 	}
 
 	return rval, err
@@ -206,7 +206,7 @@ func (c *APConfig) sendOp(query *cfgmsg.ConfigQuery) (string, error) {
 // Ping performs a simple round-trip communication with ap.configd, just to
 // verify that the connection is up and running.
 func (c *APConfig) Ping(ctx context.Context) error {
-	query := cfgmsg.NewPingQuery()
+	query := cfgapi.NewPingQuery()
 	_, err := c.sendOp(query)
 	if err != nil {
 		err = fmt.Errorf("ping failed: %v", err)
@@ -222,7 +222,7 @@ func (c *APConfig) Execute(ctx context.Context, ops []cfgapi.PropertyOp) cfgapi.
 	rval := &cmdStatus{}
 
 	if len(ops) != 0 {
-		query, err := cfgmsg.NewPropQuery(ops)
+		query, err := cfgapi.PropOpsToQuery(ops)
 		if query == nil {
 			rval.err = err
 		} else {

@@ -18,8 +18,6 @@ import (
 
 	"bg/common/cfgapi"
 	"bg/common/cfgmsg"
-
-	"github.com/golang/protobuf/ptypes"
 )
 
 type callbackFn func(name, val string) error
@@ -255,24 +253,21 @@ func Duration(name string, defval time.Duration, dynamic bool,
 }
 
 func genAddProps(root string) *cfgmsg.ConfigQuery {
-	msgOps := make([]*cfgmsg.ConfigOp, 0)
+	ops := make([]cfgapi.PropertyOp, 0)
 	for _, s := range settings {
-		setting := root + "/" + s.name
-		op := &cfgmsg.ConfigOp{
-			Operation: cfgmsg.ConfigOp_ADDPROP,
-			Property:  setting,
-			Value:     s.val.Type(),
+		op := cfgapi.PropertyOp{
+			Op:    cfgapi.PropAdd,
+			Name:  root + "/" + s.name,
+			Value: s.val.Type(),
 		}
-		msgOps = append(msgOps, op)
+		ops = append(ops, op)
 	}
 
-	query := &cfgmsg.ConfigQuery{
-		Timestamp: ptypes.TimestampNow(),
-		Debug:     "-",
-		Version:   &cfgmsg.APIVersion,
-		Ops:       msgOps,
-		Level:     int32(cfgapi.AccessInternal),
+	query, err := cfgapi.PropOpsToQuery(ops)
+	if err != nil {
+		log.Fatalf("Failed to initialize setting '%s': %v\n", root, err)
 	}
+	query.Level = int32(cfgapi.AccessInternal)
 
 	return query
 }

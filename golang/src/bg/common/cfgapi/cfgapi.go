@@ -185,6 +185,7 @@ const (
 	PropSet
 	PropCreate
 	PropDelete
+	PropAdd
 	PropTest
 	PropTestEq
 )

@@ -313,6 +313,7 @@ COMMON_GOPKGS = \
 COMMON_SRCS = \
 	$(GOSRCBG)/common/archive/archive.go \
 	$(GOSRCBG)/common/cfgapi/cfgapi.go \
+	$(GOSRCBG)/common/cfgapi/translate.go \
 	$(GOSRCBG)/common/cfgapi/users.go \
 	$(GOSRCBG)/common/cfgmsg/cfgmsg.go \
 	$(GOSRCBG)/common/cfgmsg/cfgmsg.pb.go \

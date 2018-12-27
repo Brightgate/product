@@ -431,7 +431,7 @@ func (t *PTree) search(prop string) *PNode {
 func (t *PTree) Delete(prop string) ([]string, error) {
 	node := t.search(prop)
 	if node == nil {
-		return nil, fmt.Errorf("deleting nonexistent prop: %s", prop)
+		return nil, ErrNoProp
 	}
 
 	if parent := node.parent; parent != nil {

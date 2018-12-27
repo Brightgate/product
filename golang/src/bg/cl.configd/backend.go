@@ -35,7 +35,7 @@ func refreshConfig(ctx context.Context, ap *perAPState, uuid string) {
 		{Op: cfgapi.PropGet, Name: "@/"},
 	}
 
-	q, err := cfgmsg.NewPropQuery(getOp)
+	q, err := cfgapi.PropOpsToQuery(getOp)
 	if err != nil {
 		slog.Warnf("failed to generate GET(@/) for ", uuid, ": ", err)
 		return
