@@ -274,7 +274,7 @@ func (dbq *dbCmdQueue) complete(ctx context.Context, s *perAPState, rval *cfgmsg
 	slog.Debugf("complete(%s:%d)", newCmd.UUID, newCmd.ID)
 	dbq.cleanup(s)
 
-	if !oldCmd.DoneTime.Valid && rval.Response == cfgmsg.ConfigResponse_OK {
+	if !oldCmd.DoneTime.Valid {
 		// Special-case handling for refetching a full tree.
 		var cfgQuery cfgmsg.ConfigQuery
 		err = json.Unmarshal(newCmd.Query, &cfgQuery)
@@ -283,7 +283,8 @@ func (dbq *dbCmdQueue) complete(ctx context.Context, s *perAPState, rval *cfgmsg
 				newCmd.UUID, newCmd.ID, err)
 			return err
 		}
-		if isRefresh(&cfgQuery) && len(rval.Value) > 0 {
+		if rval.Response == cfgmsg.ConfigResponse_OK && isRefresh(&cfgQuery) &&
+			len(rval.Value) > 0 {
 			var tree *cfgtree.PTree
 			tree, err = cfgtree.NewPTree("@", []byte(rval.Value))
 			if err != nil {
