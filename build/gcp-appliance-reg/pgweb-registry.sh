@@ -17,8 +17,8 @@
 pdir=$(dirname "$0")
 source "$pdir/common.sh"
 
-pgweb_url="https://github.com/sosedoff/pgweb/releases/download/v0.9.12/pgweb_linux_amd64.zip"
-pgweb_sum="97ac5785bc37ab0b377e4191e97a98ba31b48ffc0b6ed9a84ad1a78063200405 pgweb_linux_amd64.zip"
+pgweb_url="https://github.com/sosedoff/pgweb/releases/download/v0.11.0/pgweb_linux_amd64.zip"
+pgweb_sum="553c9eb8c7e35c53af67f93ec5409130f62bfb3f2c0022a41732ad63e646b98d pgweb_linux_amd64.zip"
 
 [[ -n $1 ]] || fatal "usage: $0 <gcp-cred-file>"
 CRED_FILE=$1

@@ -538,6 +538,7 @@ CLOUDLIBCLHTTPDWEBCLIENTWEB=$(CLOUDLIBCLHTTPDWEB)/client-web
 CLOUDETCDEVICESJSON=$(CLOUDETC)/devices.json
 CLOUDETCSCHEMA=$(CLOUDETC)/schema
 CLOUDETCSCHEMAAPPLIANCEDB=$(CLOUDETCSCHEMA)/appliancedb
+CLOUDETCSCHEMASESSIONDB=$(CLOUDETCSCHEMA)/sessiondb
 CLOUDROOTLIB=$(CLOUDROOT)/lib
 CLOUDROOTLIBSYSTEMDSYSTEM=$(CLOUDROOTLIB)/systemd/system
 CLOUDVAR=$(CLOUDBASE)/var
@@ -600,6 +601,7 @@ CLOUDDIRS = \
 	$(CLOUDLIBCLHTTPDWEBCLIENTWEB) \
 	$(CLOUDETCSCHEMA) \
 	$(CLOUDETCSCHEMAAPPLIANCEDB) \
+	$(CLOUDETCSCHEMASESSIONDB) \
 	$(CLOUDROOTLIB) \
 	$(CLOUDSPOOL) \
 	$(CLOUDVAR)
@@ -924,8 +926,12 @@ $(UTILBIN)/%: $(GOSRCBG)/util/%.go | $(UTILBIN)
 $(CLOUDETCDEVICESJSON): $(GOSRCBG)/ap.configd/devices.json | $(CLOUDETC)
 	$(INSTALL) -m 0644 $< $@
 
-# Install database schema files
+# Install appliancedb database schema files
 $(CLOUDETCSCHEMAAPPLIANCEDB)/%: golang/src/bg/cloud_models/appliancedb/schema/% | $(CLOUDETCSCHEMAAPPLIANCEDB)
+	$(INSTALL) -m 0644 $< $@
+
+# Install sessiondb database schema files
+$(CLOUDETCSCHEMASESSIONDB)/%: golang/src/bg/cloud_models/sessiondb/schema/% | $(CLOUDETCSCHEMASESSIONDB)
 	$(INSTALL) -m 0644 $< $@
 
 # Install service descriptions
