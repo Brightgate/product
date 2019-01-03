@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -66,8 +66,9 @@ type Cfg struct {
 	// We use this variable to navigate the Let's Encrypt directory
 	// hierarchy.
 	CertHostname string `envcfg:"B10E_CERT_HOSTNAME"`
-	// Disable TLS, Enable various debug stuff, relax secure MW, etc.
+	// Enable various debug stuff, non-priv port #s, relax secure MW, etc.
 	Developer                 bool   `envcfg:"B10E_CLHTTPD_DEVELOPER"`
+	DisableTLS                bool   `envcfg:"B10E_CLHTTPD_DISABLE_TLS"`
 	HTTPListen                string `envcfg:"B10E_CLHTTPD_HTTP_LISTEN"`
 	HTTPSListen               string `envcfg:"B10E_CLHTTPD_HTTPS_LISTEN"`
 	WellKnownPath             string `envcfg:"B10E_CERTBOT_WELLKNOWN_PATH"`
@@ -318,9 +319,9 @@ func main() {
 	defer pgSessionStore.StopCleanup(pgSessionStore.Cleanup(time.Minute * 5))
 
 	eHTTPS := mkRouterHTTPS(pgSessionStore)
-	// In developer mode, disable TLS
+
 	var cfg *tls.Config
-	if !environ.Developer {
+	if !environ.DisableTLS {
 		cfg = mkTLSConfig()
 	}
 

@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -78,8 +78,12 @@ func callback(provider string) string {
 		if err != nil {
 			log.Fatalf("could not parse port %s", portstr)
 		}
-		callback = fmt.Sprintf("http://%s.b10e.net:%d/auth/%s/callback",
-			hoststr, port, provider)
+		scheme := "https"
+		if environ.DisableTLS {
+			scheme = "http"
+		}
+		callback = fmt.Sprintf("%s://%s.b10e.net:%d/auth/%s/callback",
+			scheme, hoststr, port, provider)
 	} else {
 		callback = fmt.Sprintf("https://%s/auth/%s/callback",
 			environ.CertHostname, provider)
@@ -94,7 +98,8 @@ func googleProvider() {
 	}
 
 	log.Printf("enabling google authentication")
-	googleProvider := google.New(environ.GoogleKey, environ.GoogleSecret, callback("google"))
+	googleProvider := google.New(environ.GoogleKey, environ.GoogleSecret,
+		callback("google"), "openid", "profile", "email", "phone")
 	goth.UseProviders(googleProvider)
 }
 
@@ -153,6 +158,7 @@ func (a *authHandler) getProviderCallback(c echo.Context) error {
 
 	user, err := gothic.CompleteUserAuth(c.Response(), c.Request())
 	c.Logger().Printf("user is %#v", user)
+
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
