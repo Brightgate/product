@@ -68,6 +68,13 @@ var (
 	perRingHosts map[string]bool      // hosts with per-ring results
 	subnets      []*net.IPNet
 
+	// rings subject to anti-phishing rules
+	phishingRings = map[string]bool{
+		base_def.RING_DEVICES:    true,
+		base_def.RING_UNENROLLED: true,
+		base_def.RING_QUARANTINE: true,
+	}
+
 	domainname    string
 	brightgateDNS string
 	upstreamDNS   = "8.8.8.8:53"
@@ -664,7 +671,7 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 	q := r.Question[0]
 
 	hostname := q.Name[:len(q.Name)-1]
-	if data.BlockedHostname(hostname) {
+	if phishingRings[c.Ring] && data.BlockedHostname(hostname) {
 		// XXX: maybe we should return a CNAME record for our
 		// local 'phishing.<siteid>.brightgate.net'?
 		localRecord, _ := ringRecords[c.Ring]
