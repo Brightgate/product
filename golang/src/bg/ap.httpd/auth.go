@@ -27,14 +27,14 @@ const (
 func makeApplianceAuthRouter() *mux.Router {
 	router := mux.NewRouter()
 	router.HandleFunc("/userid", userIDHandler).Methods("GET")
-	router.HandleFunc("/appliance/login", applianceLoginHandler).Methods("POST")
+	router.HandleFunc("/site/login", siteLoginHandler).Methods("POST")
 	router.HandleFunc("/logout", logoutHandler).Methods("GET")
 	return router
 }
 
 // POST login () -> (...)
 // POST uid, userPassword[, totppass]
-func applianceLoginHandler(w http.ResponseWriter, r *http.Request) {
+func siteLoginHandler(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseForm()
 	if err != nil {
 		slog.Infof("cannot parse form: %v", err)

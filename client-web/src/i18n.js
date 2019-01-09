@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -26,12 +26,12 @@ export default {
         enable_fakelogin: 'Simulate being Logged In',
         switch_appliance: 'Switch Appliance',
         auto_mode: 'Automatic Mode',
-        appliance_mode: 'Force Local Appliance Mode',
+        local_mode: 'Force Local Site Mode',
         cloud_mode: 'Force Cloud Mode',
       },
       home: {
-        local_appliance: 'Local Network Appliance',
-        local_appliance_explanation: 'You are administering the Brightgate Wi-fi appliances on your local network.  Changes will also be reflected in the Brightgate cloud.',
+        local_site: 'Local Site',
+        local_site_explanation: 'You are administering the Brightgate Wi-fi appliances on your local network (the Local Site).  Changes will also be reflected in the Brightgate cloud.',
         select_site: 'Select Site',
         tools: 'Tools',
       },
@@ -199,8 +199,8 @@ export default {
     message: {
       test_tools: {}, // Note: We don't internationalize this group
       home: {
-        local_appliance: 'Local Network Appliance', // XXXI18N
-        local_appliance_explanation: 'You are administering the Brightgate Wi-fi appliances on your local network.  Changes will also be reflected in the Brightgate cloud.', // XXXI18N
+        local_site: 'Local Site', // XXXI18N
+        local_site_explanation: 'You are administering the Brightgate Wi-fi appliances on your local network (the Local Site).  Changes will also be reflected in the Brightgate cloud.', // XXXI18N
         select_site: 'Select Site', // XXXI18N
         tools: 'Tools',
       },

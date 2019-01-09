@@ -1,5 +1,5 @@
 <!--
-  COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+  COPYRIGHT 2019 Brightgate Inc. All rights reserved.
 
   This copyright notice is Copyright Management Information under 17 USC 1202
   and is included to protect this work and deter copyright infringement.
@@ -40,17 +40,17 @@
         v-if="device.notification"
         :key="device.uniqid"
         :title="$t('message.notifications.update_device', {'device': device.networkName})"
-        :link="`/sites/${currentApplianceID}/devices/${device.uniqid}/`" />
+        :link="`/sites/${currentSiteID}/devices/${device.uniqid}/`" />
     </f7-list>
 
-    <template v-if="appMode === 'appliance'">
+    <template v-if="appMode === 'local'">
       <template v-if="alertCount(alertActive(alerts))">
         <f7-block-title>{{ $t("message.alerts.serious_alerts") }}</f7-block-title>
         <f7-list>
           <f7-list-item
             v-for="alert in alertActive(alerts)"
             :key="alert.deviceID + '-' + alert.vulnid"
-            :link="`/sites/${currentApplianceID}/devices/${alert.deviceID}/`">
+            :link="`/sites/${currentSiteID}/devices/${alert.deviceID}/`">
             <span>
               <f7-icon f7="bolt_round_fill" color="red" />
               {{ $t('message.alerts.problem_on_device',
@@ -62,8 +62,8 @@
       </template>
 
       <f7-block>
-        <h2>{{ $t("message.home.local_appliance") }}</h2>
-        {{ $t("message.home.local_appliance_explanation") }}
+        <h2>{{ $t("message.home.local_site") }}</h2>
+        {{ $t("message.home.local_site_explanation") }}
       </f7-block>
       <f7-block-title>{{ $t("message.home.tools") }}</f7-block-title>
       <bg-site-controls :siteid="'0'" :device-count="deviceCount(devices)" :disabled="!loggedIn" />
@@ -76,7 +76,7 @@
       <bg-site-list
         :sites="sites"
         :class="loggedIn ? '' : 'disabled'"
-        :current-site="currentApplianceID"
+        :current-site="currentSiteID"
         @site-change="onSiteChange"
       />
     </template>
@@ -112,7 +112,7 @@ export default {
       'alertCount',
       'alerts',
       'appMode',
-      'currentApplianceID',
+      'currentSiteID',
       'deviceByUniqID',
       'deviceCount',
       'devices',
@@ -135,13 +135,13 @@ export default {
 
     onSiteChange: function(siteID) {
       debug('onSiteChange', siteID);
-      this.$store.dispatch('setCurrentApplianceID', {id: siteID});
+      this.$store.dispatch('setCurrentSiteID', {id: siteID});
     },
 
     onPageBeforeIn: async function() {
       // We do these optimistically, letting them fail if not logged in.
       this.$store.dispatch('fetchDevices').catch(() => {});
-      this.$store.dispatch('fetchAppliances').catch(() => {});
+      this.$store.dispatch('fetchSites').catch(() => {});
       await this.$store.dispatch('checkLogin');
       if (!this.$store.getters.loggedIn) {
         this.$f7.loginScreen.open('#bgLoginScreen');

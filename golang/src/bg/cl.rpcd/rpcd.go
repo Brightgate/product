@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -38,6 +38,7 @@ import (
 	"bg/cloud_models/appliancedb"
 	"bg/cloud_rpc"
 
+	"github.com/satori/uuid"
 	"github.com/tomazk/envcfg"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -50,10 +51,12 @@ import (
 	"cloud.google.com/go/pubsub"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	_ "google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
@@ -105,9 +108,13 @@ func endpointLogger(ctx context.Context) (*zap.Logger, *zap.SugaredLogger) {
 	// child logger adds an avalanche of information to the logger, and for
 	// now it seems a bit much.
 	fields := make([]zapcore.Field, 0)
-	uuid := metautils.ExtractIncoming(ctx).Get("clouduuid")
-	if uuid != "" {
-		fields = append(fields, zap.String("clouduuid", uuid))
+	siteUUID := metautils.ExtractIncoming(ctx).Get("site_uuid")
+	if siteUUID != "" {
+		fields = append(fields, zap.String("site_uuid", siteUUID))
+	}
+	applianceUUID := metautils.ExtractIncoming(ctx).Get("appliance_uuid")
+	if applianceUUID != "" {
+		fields = append(fields, zap.String("appliance_uuid", applianceUUID))
 	}
 	pr, ok := peer.FromContext(ctx)
 	if ok && pr != nil {
@@ -115,6 +122,22 @@ func endpointLogger(ctx context.Context) (*zap.Logger, *zap.SugaredLogger) {
 	}
 	childLog := log.With(fields...)
 	return childLog, childLog.Sugar()
+}
+
+func getSiteUUID(ctx context.Context, allowNullSiteUUID bool) (uuid.UUID, error) {
+	siteUUID := metautils.ExtractIncoming(ctx).Get("site_uuid")
+	if siteUUID == "" {
+		return uuid.Nil, status.Errorf(codes.Internal, "missing site_uuid")
+	}
+	u, err := uuid.FromString(siteUUID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("bad site_uuid")
+	}
+	if allowNullSiteUUID == false && u == appliancedb.NullSiteUUID {
+		return uuid.Nil, status.Errorf(codes.PermissionDenied,
+			"not permitted for null site_uuid")
+	}
+	return u, nil
 }
 
 // processEnv checks (and in some cases modifies) the environment-derived

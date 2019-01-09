@@ -1,5 +1,5 @@
 <!--
-  COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+  COPYRIGHT 2019 Brightgate Inc. All rights reserved.
 
   This copyright notice is Copyright Management Information under 17 USC 1202
   and is included to protect this work and deter copyright infringement.
@@ -63,11 +63,11 @@
             @change="setTestAppMode('cloud')"
           />
           <f7-list-item
-            :checked="testAppMode === 'appliance'"
-            :title="$t('message.test_tools.appliance_mode')"
+            :checked="testAppMode === 'local'"
+            :title="$t('message.test_tools.local_mode')"
             radio
             name="mode-radio"
-            @change="setTestAppMode('appliance')"
+            @change="setTestAppMode('local')"
           />
         </f7-list-group>
         <f7-list-group>
@@ -103,7 +103,7 @@ export default {
     // template.
     ...vuex.mapGetters([
       'appMode',
-      'currentApplianceID',
+      'currentSiteID',
       'fakeLogin',
       'leftPanelVisible',
       'loggedIn',
@@ -124,7 +124,7 @@ export default {
     toggleMock: function(evt) {
       debug('toggleMock', evt);
       this.$store.commit('setMock', evt.target.checked);
-      this.$store.dispatch('fetchAppliances').catch(() => {});
+      this.$store.dispatch('fetchSites').catch(() => {});
       this.$store.dispatch('fetchDevices').catch(() => {});
     },
 
@@ -133,9 +133,9 @@ export default {
       this.$store.commit('setFakeLogin', evt.target.checked);
     },
 
-    onApplianceChange: function(evt) {
-      debug('onApplianceChange', evt.target.value);
-      this.$store.dispatch('setCurrentApplianceID', {id: evt.target.value});
+    onSiteChange: function(evt) {
+      debug('onSiteChange', evt.target.value);
+      this.$store.dispatch('setCurrentSiteID', {id: evt.target.value});
     },
 
     acceptSupreme: async function() {

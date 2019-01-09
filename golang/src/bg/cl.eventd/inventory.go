@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -75,7 +75,7 @@ func writeInventoryInfo(devInfo *base_msg.DeviceInfo, uuid uuid.UUID) (string, e
 }
 
 func inventoryMessage(ctx context.Context, applianceDB appliancedb.DataStore,
-	idmap *appliancedb.ApplianceID, m *pubsub.Message) {
+	siteUUID uuid.UUID, m *pubsub.Message) {
 	var err error
 
 	// For now we have nothing we can really do with malformed messages
@@ -89,7 +89,7 @@ func inventoryMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 	}
 
 	for _, devInfo := range inventory.Inventory.Devices {
-		path, err := writeInventoryInfo(devInfo, idmap.CloudUUID)
+		path, err := writeInventoryInfo(devInfo, siteUUID)
 		if err != nil {
 			slog.Errorw("failed to write report", "path", path, "error", err)
 			return

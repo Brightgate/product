@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+# COPYRIGHT 2019 Brightgate Inc. All rights reserved.
 #
 # This copyright notice is Copyright Management Information under 17 USC 1202
 # and is included to protect this work and deter copyright infringement.
@@ -14,13 +14,9 @@ source "$pdir/common.sh"
 
 OUTPUT_DIR="$pdir/output_secrets"
 
-CRED_FILE=$1
-APPLIANCE_ID=$2
-CLOUD_UUID=$3
-
-if [[ -z $CRED_FILE || ! -f $CRED_FILE || -z $APPLIANCE_ID || -z $REG_PROJECT_ID || -z $REG_REGION_ID || -z $REG_REGISTRY_ID || -z $REG_CLOUDSQL_INSTANCE || -z $REG_DBURI ]]; then
+function usage() {
 	cat <<-EOF
-		usage: $0 <credentials-file> <appliance-id> [<appliance-uuid>]
+		usage: $0 [-u <appliance-uuid>] [-s <site-uuid>] -c <credentials-file> <appliance-id>
 		Must also set environment variables (or source from reg file):
 		    REG_PROJECT_ID=<name of gcp project>
 		    REG_REGION_ID=<name of gcp region>
@@ -29,6 +25,30 @@ if [[ -z $CRED_FILE || ! -f $CRED_FILE || -z $APPLIANCE_ID || -z $REG_PROJECT_ID
 		    REG_DBURI=<postgres uri>
 	EOF
 	exit 2
+}
+
+while getopts c:s:u: FLAG; do
+	case $FLAG in
+		c)
+			CRED_FILE=$OPTARG
+			;;
+		s)
+			SITE_UUID=$OPTARG
+			;;
+		u)
+			APPLIANCE_UUID=$OPTARG
+			;;
+		*)
+			usage
+			;;
+	esac
+done
+shift $((OPTIND-1))
+
+APPLIANCE_ID=$1
+
+if [[ -z $CRED_FILE || ! -f $CRED_FILE || -z $APPLIANCE_ID || -z $REG_PROJECT_ID || -z $REG_REGION_ID || -z $REG_REGISTRY_ID || -z $REG_CLOUDSQL_INSTANCE || -z $REG_DBURI ]]; then
+	usage
 fi
 
 GCP_ACCT=$(gcloud auth list --filter=status:ACTIVE --format="value(account)")
@@ -50,4 +70,4 @@ SVC_ACCT=$(gcloud auth list --filter=status:ACTIVE --format="value(account)")
 start_cloudsql_proxy "$CRED_FILE" "${REG_PROJECT_ID}:${REG_REGION_ID}:${REG_CLOUDSQL_INSTANCE}"
 
 CL_REG=$(git rev-parse --show-toplevel)/proto.$(uname -m)/cloud/opt/net.b10e/bin/cl-reg
-$CL_REG app new ${CLOUD_UUID:+-u $CLOUD_UUID} -d "$OUTPUT_DIR" "$APPLIANCE_ID"
+$CL_REG app new ${APPLIANCE_UUID:+-u $APPLIANCE_UUID} ${SITE_UUID:+-s $SITE_UUID} -d "$OUTPUT_DIR" "$APPLIANCE_ID"

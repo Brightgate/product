@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -849,51 +849,50 @@ func demoEnrollGuestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-type daAppliance struct {
-	// The appliance breaks the UUID contract by using '0' as its
+type daSite struct {
+	// The site breaks the UUID contract by using '0' as its
 	// reserved UUID; hence we have to use a string here.
 	UUID string `json:"uuid"`
 	Name string `json:"name"`
 }
 
-func demoAppliancesHandler(w http.ResponseWriter, r *http.Request) {
-	var appliances = []daAppliance{
-		{
-			UUID: "0",
-			Name: "Local Appliance",
-		},
-	}
+var site0 = daSite{
+	UUID: "0",
+	Name: "Local Site",
+}
+
+func demoSitesHandler(w http.ResponseWriter, r *http.Request) {
+	var sites = []daSite{site0}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(appliances); err != nil {
+	if err := json.NewEncoder(w).Encode(sites); err != nil {
 		panic(err)
 	}
 }
 
-func demoAppliancesUUIDHandler(w http.ResponseWriter, r *http.Request) {
-	var appliance = map[string]string{}
+func demoSitesUUIDHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(appliance); err != nil {
+	if err := json.NewEncoder(w).Encode(site0); err != nil {
 		panic(err)
 	}
 }
 
 func makeDemoAPIRouter() *mux.Router {
 	router := mux.NewRouter()
-	// Per-appliance operations
-	router.HandleFunc("/appliances", demoAppliancesHandler).Methods("GET")
-	router.HandleFunc("/appliances/{auuid}", demoAppliancesUUIDHandler).Methods("GET")
-	router.HandleFunc("/appliances/{auuid}/alerts", demoAlertsHandler).Methods("GET")
-	router.HandleFunc("/appliances/{auuid}/config", demoConfigGetHandler).Methods("GET")
-	router.HandleFunc("/appliances/{auuid}/config", demoConfigPostHandler).Methods("POST")
-	router.HandleFunc("/appliances/{auuid}/devices/{ring}", demoDevicesByRingHandler).Methods("GET")
-	router.HandleFunc("/appliances/{auuid}/devices", demoDevicesHandler).Methods("GET")
-	router.HandleFunc("/appliances/{auuid}/enroll_guest", demoEnrollGuestHandler).Methods("POST")
-	router.HandleFunc("/appliances/{auuid}/rings", demoRingsHandler).Methods("GET")
-	router.HandleFunc("/appliances/{auuid}/supreme", demoSupremeHandler).Methods("GET")
-	router.HandleFunc("/appliances/{auuid}/users", demoUsersHandler).Methods("GET")
-	router.HandleFunc("/appliances/{auuid}/users/{uuid}", demoUserByUUIDGetHandler).Methods("GET")
-	router.HandleFunc("/appliances/{auuid}/users/{uuid}", demoUserByUUIDPostHandler).Methods("POST")
-	router.HandleFunc("/appliances/{auuid}/users/{uuid}", demoUserByUUIDDeleteHandler).Methods("DELETE")
+	// Per-site operations
+	router.HandleFunc("/sites", demoSitesHandler).Methods("GET")
+	router.HandleFunc("/sites/{s}", demoSitesUUIDHandler).Methods("GET")
+	router.HandleFunc("/sites/{s}/alerts", demoAlertsHandler).Methods("GET")
+	router.HandleFunc("/sites/{s}/config", demoConfigGetHandler).Methods("GET")
+	router.HandleFunc("/sites/{s}/config", demoConfigPostHandler).Methods("POST")
+	router.HandleFunc("/sites/{s}/devices/{ring}", demoDevicesByRingHandler).Methods("GET")
+	router.HandleFunc("/sites/{s}/devices", demoDevicesHandler).Methods("GET")
+	router.HandleFunc("/sites/{s}/enroll_guest", demoEnrollGuestHandler).Methods("POST")
+	router.HandleFunc("/sites/{s}/rings", demoRingsHandler).Methods("GET")
+	router.HandleFunc("/sites/{s}/supreme", demoSupremeHandler).Methods("GET")
+	router.HandleFunc("/sites/{s}/users", demoUsersHandler).Methods("GET")
+	router.HandleFunc("/sites/{s}/users/{uuid}", demoUserByUUIDGetHandler).Methods("GET")
+	router.HandleFunc("/sites/{s}/users/{uuid}", demoUserByUUIDPostHandler).Methods("POST")
+	router.HandleFunc("/sites/{s}/users/{uuid}", demoUserByUUIDDeleteHandler).Methods("DELETE")
 	router.Use(cookieAuthMiddleware)
 	return router
 }

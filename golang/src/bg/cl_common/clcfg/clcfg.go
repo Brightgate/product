@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -48,7 +48,7 @@ type Configd struct {
 // handle representing the connection
 func NewConfigd(pname, uuid, url string, tlsEnabled bool) (*Configd, error) {
 	if uuid == "" {
-		return nil, fmt.Errorf("no appliance uuid provided")
+		return nil, fmt.Errorf("no site uuid provided")
 	}
 
 	conn, err := grpcutils.NewClientConn(url, tlsEnabled, pname)
@@ -129,9 +129,9 @@ func (c *cmdHdl) Status(ctx context.Context) (string, error) {
 
 	if c.inflight {
 		cmd := rpc.CfgCmdID{
-			Time:      ptypes.TimestampNow(),
-			CloudUuid: c.cfg.uuid,
-			CmdID:     c.cmdID,
+			Time:     ptypes.TimestampNow(),
+			SiteUUID: c.cfg.uuid,
+			CmdID:    c.cmdID,
 		}
 
 		r, rerr := c.cfg.client.Status(ctx, &cmd)
@@ -218,7 +218,7 @@ func (c *Configd) Execute(ctx context.Context, ops []cfgapi.PropertyOp) cfgapi.C
 
 	cmd.Sender = c.sender
 	cmd.Level = int32(c.level)
-	cmd.CloudUuid = c.uuid
+	cmd.SiteUUID = c.uuid
 
 	ctx, ctxcancel := c.getContext(ctx)
 	defer ctxcancel()

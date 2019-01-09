@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -24,8 +24,8 @@ import (
 	"github.com/golang/protobuf/ptypes"
 )
 
-type perAPState struct {
-	cloudUUID  string         // cloud UUID
+type siteState struct {
+	siteUUID   string         // site UUID
 	cachedTree *cfgtree.PTree // in-core cache of the config tree
 
 	cmdQueue cmdQueue
@@ -36,65 +36,65 @@ type perAPState struct {
 }
 
 var (
-	state     = make(map[string]*perAPState)
+	state     = make(map[string]*siteState)
 	stateLock sync.Mutex
 )
 
-func newAPState(cloudUUID string, tree *cfgtree.PTree) *perAPState {
+func newSiteState(siteUUID string, tree *cfgtree.PTree) *siteState {
 	var queue cmdQueue
 
 	if environ.MemCmdQueue || environ.PostgresConnection == "" {
-		queue = newMemCmdQueue(cloudUUID, *cqMax)
+		queue = newMemCmdQueue(siteUUID, *cqMax)
 	} else {
 		queue = newDBCmdQueue(environ.PostgresConnection)
 	}
 
-	return &perAPState{
-		cloudUUID:  cloudUUID,
+	return &siteState{
+		siteUUID:   siteUUID,
 		cachedTree: tree,
 		cmdQueue:   queue,
 	}
 }
 
 // XXX: this is an interim function.  When we get an update from an unknown
-// appliance, we construct a new in-core cache for it.  Eventually this probably
+// site, we construct a new in-core cache for it.  Eventually this probably
 // needs to be instantiated as part of the device provisioning process.
-func initAPState(cloudUUID string) *perAPState {
+func initSiteState(siteUUID string) *siteState {
 	stateLock.Lock()
 	defer stateLock.Unlock()
 
-	s, ok := state[cloudUUID]
+	s, ok := state[siteUUID]
 	if ok {
 		return s
 	}
 
-	s = newAPState(cloudUUID, nil)
-	state[cloudUUID] = s
+	s = newSiteState(siteUUID, nil)
+	state[siteUUID] = s
 	return s
 }
 
-// Get the in-core state for an appliance; if not present, try to load
+// Get the in-core state for a site; if not present, try to load
 // it from the storage backend.
-func getAPState(ctx context.Context, cloudUUID string) (*perAPState, error) {
+func getSiteState(ctx context.Context, siteUUID string) (*siteState, error) {
 	stateLock.Lock()
 	defer stateLock.Unlock()
 
-	if cloudUUID == "" {
+	if siteUUID == "" {
 		return nil, fmt.Errorf("No UUID provided")
 	}
 
-	s, ok := state[cloudUUID]
+	s, ok := state[siteUUID]
 	if ok {
 		return s, nil
 	}
 
-	tree, err := store.get(ctx, cloudUUID)
+	tree, err := store.get(ctx, siteUUID)
 	if err == nil {
-		s = newAPState(cloudUUID, tree)
-		state[cloudUUID] = s
+		s = newSiteState(siteUUID, tree)
+		state[siteUUID] = s
 
 		if environ.Emulate {
-			slog.Infof("Enabled emulator for appliance %s", cloudUUID)
+			slog.Infof("Enabled emulator for site %s", siteUUID)
 			go s.emulateAppliance(context.Background())
 		}
 	}
@@ -103,22 +103,22 @@ func getAPState(ctx context.Context, cloudUUID string) (*perAPState, error) {
 }
 
 // Set the whole tree; part of the refresh logic
-func (s *perAPState) setCachedTree(t *cfgtree.PTree) {
+func (s *siteState) setCachedTree(t *cfgtree.PTree) {
 	s.cachedTree = t
-	slog.Infof("New tree for %s.  hash %x", s.cloudUUID, t.Root().Hash())
+	slog.Infof("New tree for %s.  hash %x", s.siteUUID, t.Root().Hash())
 	_ = s.store(context.TODO())
 }
 
-func (s *perAPState) store(ctx context.Context) error {
+func (s *siteState) store(ctx context.Context) error {
 	if s.cachedTree == nil {
 		return nil
 	}
-	err := store.set(ctx, s.cloudUUID, s.cachedTree)
+	err := store.set(ctx, s.siteUUID, s.cachedTree)
 	if err != nil {
-		slog.Errorf("Failed to store config for %v: %v", s.cloudUUID, err)
+		slog.Errorf("Failed to store config for %v: %v", s.siteUUID, err)
 		return err
 	}
-	slog.Debugf("Stored config for %v - %x", s.cloudUUID, s.cachedTree.Root().Hash())
+	slog.Debugf("Stored config for %v - %x", s.siteUUID, s.cachedTree.Root().Hash())
 	return nil
 }
 
@@ -183,7 +183,7 @@ func delay() {
 // Repeatedly pull commands from the queue, execute them, and post the results.
 // Sleep for some number of seconds between iterations to emulate the
 // asynchronous nature of interacting with a remote device.
-func (s *perAPState) emulateAppliance(ctx context.Context) {
+func (s *siteState) emulateAppliance(ctx context.Context) {
 	lastCmd := int64(-1)
 
 	for {

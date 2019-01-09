@@ -1,5 +1,5 @@
 #
-# COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+# COPYRIGHT 2019 Brightgate Inc. All rights reserved.
 #
 # This copyright notice is Copyright Management Information under 17 USC 1202
 # and is included to protect this work and deter copyright infringement.
@@ -587,7 +587,8 @@ CLOUDSCHEMAS = \
 	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema001.sql \
 	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema002.sql \
 	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema003.sql \
-	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema004.sql
+	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema004.sql \
+	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema005.sql
 
 CLOUDBINARIES = $(CLOUDCOMMANDS:%=$(CLOUDBIN)/%) $(CLOUDDAEMONS:%=$(CLOUDBIN)/%)
 
@@ -952,7 +953,6 @@ $(CLOUDBIN)/cl-reg: \
 	$(GOSRCBG)/cl-reg/main.go \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.configd: \
-	$(GOSRCBG)/cl.configd/apstate.go \
 	$(GOSRCBG)/cl.configd/backend.go \
 	$(GOSRCBG)/cl.configd/cmdqueue.go \
 	$(GOSRCBG)/cl.configd/cmdqueuedb.go \
@@ -962,6 +962,7 @@ $(CLOUDBIN)/cl.configd: \
 	$(GOSRCBG)/cl.configd/file.go \
 	$(GOSRCBG)/cl.configd/frontend.go \
 	$(GOSRCBG)/cl.configd/grpc.go \
+	$(GOSRCBG)/cl.configd/sitestate.go \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.eventd: \
 	$(GOSRCBG)/cl.eventd/eventd.go \

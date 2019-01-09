@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -77,7 +77,7 @@ func (s *frontEndServer) Submit(ctx context.Context,
 		Response:  cfgmsg.ConfigResponse_FAILED,
 	}
 
-	state, err := getAPState(ctx, query.CloudUuid)
+	state, err := getSiteState(ctx, query.SiteUUID)
 	if err != nil {
 		rval.Errmsg = fmt.Sprintf("%v", err)
 		return
@@ -170,7 +170,7 @@ func (s *frontEndServer) Submit(ctx context.Context,
 		}
 	} else {
 		// strip out the cloud UUID before sending it to the client
-		query.CloudUuid = ""
+		query.SiteUUID = ""
 		rval.CmdID, err = state.cmdQueue.submit(ctx, state, query)
 		if err != nil {
 			rval = makeFailedResponse(err)
@@ -188,7 +188,7 @@ func (s *frontEndServer) Cancel(ctx context.Context,
 
 	var rval *cfgmsg.ConfigResponse
 
-	state, err := getAPState(ctx, cmd.CloudUuid)
+	state, err := getSiteState(ctx, cmd.SiteUUID)
 	if err != nil {
 		rval = makeFailedResponse(err)
 	} else {
@@ -207,7 +207,7 @@ func (s *frontEndServer) Status(ctx context.Context,
 
 	var rval *cfgmsg.ConfigResponse
 
-	state, err := getAPState(ctx, cmd.CloudUuid)
+	state, err := getSiteState(ctx, cmd.SiteUUID)
 	if err != nil {
 		rval = makeFailedResponse(err)
 	} else {

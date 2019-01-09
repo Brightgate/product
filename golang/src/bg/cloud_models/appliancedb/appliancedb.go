@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -37,24 +37,34 @@ type DBX interface {
 // See http://www.alexedwards.net/blog/organising-database-access
 type DataStore interface {
 	LoadSchema(context.Context, string) error
+
+	InsertCustomerSite(context.Context, *CustomerSite) error
+	InsertCustomerSiteTx(context.Context, DBX, *CustomerSite) error
+	AllCustomerSites(context.Context) ([]CustomerSite, error)
+	CustomerSiteByUUID(context.Context, uuid.UUID) (*CustomerSite, error)
+
 	AllApplianceIDs(context.Context) ([]ApplianceID, error)
 	ApplianceIDByClientID(context.Context, string) (*ApplianceID, error)
 	ApplianceIDByUUID(context.Context, uuid.UUID) (*ApplianceID, error)
 	InsertApplianceID(context.Context, *ApplianceID) error
 	InsertApplianceIDTx(context.Context, DBX, *ApplianceID) error
-	KeysByUUID(context.Context, uuid.UUID) ([]AppliancePubKey, error)
-	InsertApplianceKeyTx(context.Context, DBX, uuid.UUID, *AppliancePubKey) error
-	InsertHeartbeatIngest(context.Context, *HeartbeatIngest) error
-	CloudStorageByUUID(context.Context, uuid.UUID) (*ApplianceCloudStorage, error)
-	UpsertCloudStorage(context.Context, uuid.UUID, *ApplianceCloudStorage) error
-	ConfigStoreByUUID(context.Context, uuid.UUID) (*ApplianceConfigStore, error)
-	UpsertConfigStore(context.Context, uuid.UUID, *ApplianceConfigStore) error
 
-	CommandSearch(context.Context, int64) (*ApplianceCommand, error)
-	CommandSubmit(context.Context, uuid.UUID, *ApplianceCommand) error
-	CommandFetch(context.Context, uuid.UUID, int64, uint32) ([]*ApplianceCommand, error)
-	CommandCancel(context.Context, int64) (*ApplianceCommand, *ApplianceCommand, error)
-	CommandComplete(context.Context, int64, []byte) (*ApplianceCommand, *ApplianceCommand, error)
+	InsertApplianceKeyTx(context.Context, DBX, uuid.UUID, *AppliancePubKey) error
+	KeysByUUID(context.Context, uuid.UUID) ([]AppliancePubKey, error)
+
+	InsertHeartbeatIngest(context.Context, *HeartbeatIngest) error
+
+	UpsertCloudStorage(context.Context, uuid.UUID, *SiteCloudStorage) error
+	CloudStorageByUUID(context.Context, uuid.UUID) (*SiteCloudStorage, error)
+
+	UpsertConfigStore(context.Context, uuid.UUID, *SiteConfigStore) error
+	ConfigStoreByUUID(context.Context, uuid.UUID) (*SiteConfigStore, error)
+
+	CommandSearch(context.Context, int64) (*SiteCommand, error)
+	CommandSubmit(context.Context, uuid.UUID, *SiteCommand) error
+	CommandFetch(context.Context, uuid.UUID, int64, uint32) ([]*SiteCommand, error)
+	CommandCancel(context.Context, int64) (*SiteCommand, *SiteCommand, error)
+	CommandComplete(context.Context, int64, []byte) (*SiteCommand, *SiteCommand, error)
 	CommandDelete(context.Context, uuid.UUID, int64) (int64, error)
 
 	Ping() error
@@ -69,13 +79,29 @@ type ApplianceDB struct {
 	*sql.DB
 }
 
+// CustomerSite represents a customer installation of a group of
+// Appliances at a single physical location.
+type CustomerSite struct {
+	UUID uuid.UUID `json:"uuid"`
+	Name string    `json:"name"`
+}
+
+// NullSiteUUID is a reserved UUID for appliances which have no associated
+// site.  This is expected to be for appliances which are in a "factory"
+// registry with no site.
+var NullSiteUUID = uuid.Must(uuid.FromString("00000000-0000-0000-0000-000000000000"))
+
 // ApplianceID represents the identity "map" for an Appliance.  This is
 // a table with the various forms of unique identity that we track for
 // an appliance.
 type ApplianceID struct {
-	// CloudUUID is used as the primary key for tracking an appliance
+	// ApplianceUUID is used as the primary key for tracking an appliance
 	// across cloud properties
-	CloudUUID uuid.UUID `json:"cloud_uuid"`
+	ApplianceUUID uuid.UUID `json:"appliance_uuid"`
+
+	// SiteUUID is used as the primary key for tracking a customer site
+	// across cloud properties
+	SiteUUID uuid.UUID `json:"site_uuid"`
 
 	// System Identification Intrinsic to the Hardware
 	SystemReprMAC      null.String `json:"system_repr_mac"`
@@ -98,23 +124,23 @@ type AppliancePubKey struct {
 	Expiration null.Time `json:"expiration"`
 }
 
-// ApplianceCloudStorage represents cloud storage information for an Appliance.
-type ApplianceCloudStorage struct {
+// SiteCloudStorage represents cloud storage information for an Appliance.
+type SiteCloudStorage struct {
 	Bucket   string `json:"bucket"`
 	Provider string `json:"provider"`
 }
 
-// ApplianceConfigStore represents the configuration storage information for an
+// SiteConfigStore represents the configuration storage information for an
 // Appliance.
-type ApplianceConfigStore struct {
+type SiteConfigStore struct {
 	RootHash  []byte    `json:"roothash"`
 	TimeStamp time.Time `json:"timestamp"`
 	Config    []byte    `json:"config"`
 }
 
-// ApplianceCommand represents an entry in the persisted command queue.
-type ApplianceCommand struct {
-	UUID         uuid.UUID `json:"cloud_uuid"`
+// SiteCommand represents an entry in the persisted command queue.
+type SiteCommand struct {
+	UUID         uuid.UUID `json:"site_uuid"`
 	ID           int64     `json:"id"`
 	EnqueuedTime time.Time `json:"enq_ts"`
 	SentTime     null.Time `json:"sent_ts"`
@@ -145,7 +171,7 @@ func (i *ApplianceID) String() string {
 		mac = i.SystemReprMAC.String
 	}
 	return fmt.Sprintf("ApplianceID<u=%s hwser=%s mac=%s gcpID=%s>",
-		i.CloudUUID, hwser, mac, i.ClientID())
+		i.ApplianceUUID, hwser, mac, i.ClientID())
 }
 
 // ClientID returns the canonical "address" of the represented appliance
@@ -203,8 +229,72 @@ func (db *ApplianceDB) BeginTx(ctx context.Context) (*sql.Tx, error) {
 	return tx, err
 }
 
+// InsertCustomerSite inserts a record into the customer_site table.
+func (db *ApplianceDB) InsertCustomerSite(ctx context.Context,
+	cs *CustomerSite) error {
+	return db.InsertCustomerSiteTx(ctx, nil, cs)
+}
+
+// InsertCustomerSiteTx inserts a record into the customer_site table,
+// possibly inside a transaction.
+func (db *ApplianceDB) InsertCustomerSiteTx(ctx context.Context, dbx DBX,
+	cs *CustomerSite) error {
+
+	if dbx == nil {
+		dbx = db
+	}
+	_, err := dbx.ExecContext(ctx,
+		`INSERT INTO customer_site
+		 (uuid, name)
+		 VALUES ($1, $2)`,
+		cs.UUID,
+		cs.Name)
+	return err
+}
+
+// AllCustomerSites returns a complete list of the Customer Sites in the
+// database
+func (db *ApplianceDB) AllCustomerSites(ctx context.Context) ([]CustomerSite, error) {
+	var sites []CustomerSite
+	rows, err := db.QueryContext(ctx,
+		"SELECT uuid, name FROM customer_site")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var site CustomerSite
+		err = rows.Scan(&site.UUID, &site.Name)
+		if err != nil {
+			panic(err)
+		}
+		sites = append(sites, site)
+	}
+	return sites, nil
+}
+
+// CustomerSiteByUUID selects a CustomerSite using its UUID
+func (db *ApplianceDB) CustomerSiteByUUID(ctx context.Context,
+	u uuid.UUID) (*CustomerSite, error) {
+
+	var site CustomerSite
+	row := db.QueryRowContext(ctx,
+		"SELECT uuid, name FROM customer_site WHERE uuid=$1", u)
+	err := row.Scan(&site.UUID, &site.Name)
+	switch err {
+	case sql.ErrNoRows:
+		return nil, NotFoundError{fmt.Sprintf(
+			"CustomerSiteByUUID: Couldn't find site for %v", u)}
+	case nil:
+		return &site, nil
+	default:
+		panic(err)
+	}
+}
+
 var allIDColumns = []string{
-	"cloud_uuid",
+	"appliance_uuid",
+	"site_uuid",
 	"system_repr_mac",
 	"system_repr_hwserial",
 	"gcp_project",
@@ -227,7 +317,8 @@ func (db *ApplianceDB) AllApplianceIDs(ctx context.Context) ([]ApplianceID, erro
 	defer rows.Close()
 	for rows.Next() {
 		var id ApplianceID
-		err = rows.Scan(&id.CloudUUID,
+		err = rows.Scan(&id.ApplianceUUID,
+			&id.SiteUUID,
 			&id.SystemReprMAC,
 			&id.SystemReprHWSerial,
 			&id.GCPProject,
@@ -243,7 +334,8 @@ func (db *ApplianceDB) AllApplianceIDs(ctx context.Context) ([]ApplianceID, erro
 }
 
 func doIDScan(label string, query string, row *sql.Row, id *ApplianceID) error {
-	err := row.Scan(&id.CloudUUID,
+	err := row.Scan(&id.ApplianceUUID,
+		&id.SiteUUID,
 		&id.SystemReprMAC,
 		&id.SystemReprHWSerial,
 		&id.GCPProject,
@@ -262,13 +354,13 @@ func doIDScan(label string, query string, row *sql.Row, id *ApplianceID) error {
 	return nil
 }
 
-// ApplianceIDByUUID selects an ApplianceID using its Cloud UUID
+// ApplianceIDByUUID selects an ApplianceID using its UUID
 func (db *ApplianceDB) ApplianceIDByUUID(ctx context.Context,
 	u uuid.UUID) (*ApplianceID, error) {
 
 	var id ApplianceID
 	row := db.QueryRowContext(ctx,
-		"SELECT "+allIDColumnsSQL+" FROM appliance_id_map WHERE cloud_uuid=$1", u)
+		"SELECT "+allIDColumnsSQL+" FROM appliance_id_map WHERE appliance_uuid=$1", u)
 	err := doIDScan("ApplianceIDByUUID", u.String(), row, &id)
 	return &id, err
 }
@@ -305,15 +397,17 @@ func (db *ApplianceDB) InsertApplianceIDTx(ctx context.Context, dbx DBX,
 	}
 	_, err := dbx.ExecContext(ctx,
 		`INSERT INTO appliance_id_map
-		 (cloud_uuid,
+		 (appliance_uuid,
+		      site_uuid,
 		      system_repr_mac,
 		      system_repr_hwserial,
 		      gcp_project,
 		      gcp_region,
 		      appliance_reg,
 		      appliance_reg_id)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		id.CloudUUID,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		id.ApplianceUUID,
+		id.SiteUUID,
 		id.SystemReprMAC,
 		id.SystemReprHWSerial,
 		id.GCPProject,
@@ -330,7 +424,7 @@ func (db *ApplianceDB) InsertApplianceKeyTx(ctx context.Context, dbx DBX, u uuid
 	}
 	_, err := dbx.ExecContext(ctx,
 		`INSERT INTO appliance_pubkey
-		 (cloud_uuid, format, key)
+		 (appliance_uuid, format, key)
 		 VALUES ($1, $2, $3)`,
 		u, key.Format, key.Key)
 	return err
@@ -340,7 +434,7 @@ func (db *ApplianceDB) InsertApplianceKeyTx(ctx context.Context, dbx DBX, u uuid
 func (db *ApplianceDB) KeysByUUID(ctx context.Context, u uuid.UUID) ([]AppliancePubKey, error) {
 	keys := make([]AppliancePubKey, 0)
 	rows, err := db.QueryContext(ctx,
-		"SELECT id, format, key, expiration FROM appliance_pubkey WHERE cloud_uuid=$1", u)
+		"SELECT id, format, key, expiration FROM appliance_pubkey WHERE appliance_uuid=$1", u)
 	if err != nil {
 		return nil, err
 	}
@@ -362,11 +456,11 @@ func (db *ApplianceDB) KeysByUUID(ctx context.Context, u uuid.UUID) ([]Appliance
 // ConfigStoreByUUID returns the configuration of the appliance referred to by
 // the UUID.
 func (db *ApplianceDB) ConfigStoreByUUID(ctx context.Context,
-	u uuid.UUID) (*ApplianceConfigStore, error) {
-	var cfg ApplianceConfigStore
+	u uuid.UUID) (*SiteConfigStore, error) {
+	var cfg SiteConfigStore
 
 	row := db.QueryRowContext(ctx,
-		"SELECT root_hash, ts, config FROM appliance_config_store WHERE cloud_uuid=$1", u)
+		"SELECT root_hash, ts, config FROM site_config_store WHERE site_uuid=$1", u)
 	var hash, config []byte
 	err := row.Scan(&hash, &cfg.TimeStamp, &config)
 	// The memory for reference types is owned by the driver, so we have to
@@ -388,11 +482,11 @@ func (db *ApplianceDB) ConfigStoreByUUID(ctx context.Context,
 
 // UpsertConfigStore inserts or updates a configuration store record.
 func (db *ApplianceDB) UpsertConfigStore(ctx context.Context, u uuid.UUID,
-	cfg *ApplianceConfigStore) error {
+	cfg *SiteConfigStore) error {
 	_, err := db.ExecContext(ctx,
-		`INSERT INTO appliance_config_store
+		`INSERT INTO site_config_store
 		 VALUES ($1, $2, $3, $4)
-		 ON CONFLICT (cloud_uuid) DO UPDATE
+		 ON CONFLICT (site_uuid) DO UPDATE
 		 SET (root_hash,
 		      ts,
 		      config) = (
@@ -407,13 +501,13 @@ func (db *ApplianceDB) UpsertConfigStore(ctx context.Context, u uuid.UUID,
 }
 
 // CloudStorageByUUID selects Cloud Storage Information for an Appliance using
-// its Cloud UUID
+// its UUID
 func (db *ApplianceDB) CloudStorageByUUID(ctx context.Context,
-	u uuid.UUID) (*ApplianceCloudStorage, error) {
-	var stor ApplianceCloudStorage
+	u uuid.UUID) (*SiteCloudStorage, error) {
+	var stor SiteCloudStorage
 
 	row := db.QueryRowContext(ctx,
-		"SELECT bucket, provider FROM appliance_cloudstorage WHERE cloud_uuid=$1", u)
+		"SELECT bucket, provider FROM site_cloudstorage WHERE site_uuid=$1", u)
 	err := row.Scan(&stor.Bucket, &stor.Provider)
 	switch err {
 	case sql.ErrNoRows:
@@ -427,12 +521,12 @@ func (db *ApplianceDB) CloudStorageByUUID(ctx context.Context,
 
 // UpsertCloudStorage inserts or updates a CloudStorage Record
 func (db *ApplianceDB) UpsertCloudStorage(ctx context.Context,
-	u uuid.UUID, stor *ApplianceCloudStorage) error {
+	u uuid.UUID, stor *SiteCloudStorage) error {
 
 	_, err := db.ExecContext(ctx,
-		`INSERT INTO appliance_cloudstorage
+		`INSERT INTO site_cloudstorage
 		 VALUES ($1, $2, $3)
-		 ON CONFLICT (cloud_uuid) DO UPDATE
+		 ON CONFLICT (site_uuid) DO UPDATE
 		 SET (bucket,
 		      provider) = (
 		      EXCLUDED.bucket,
@@ -445,10 +539,10 @@ func (db *ApplianceDB) UpsertCloudStorage(ctx context.Context,
 
 // CommandSearch returns the ApplianceCommand, if any, in the command queue for
 // the given command ID.
-func (db *ApplianceDB) CommandSearch(ctx context.Context, cmdID int64) (*ApplianceCommand, error) {
+func (db *ApplianceDB) CommandSearch(ctx context.Context, cmdID int64) (*SiteCommand, error) {
 	row := db.QueryRowContext(ctx,
-		`SELECT * FROM appliance_commands WHERE id=$1`, cmdID)
-	var cmd ApplianceCommand
+		`SELECT * FROM site_commands WHERE id=$1`, cmdID)
+	var cmd SiteCommand
 	var query, response []byte
 	err := row.Scan(&cmd.ID, &cmd.UUID, &cmd.EnqueuedTime, &cmd.SentTime,
 		&cmd.NResent, &cmd.DoneTime, &cmd.State, &query, &response)
@@ -464,10 +558,10 @@ func (db *ApplianceDB) CommandSearch(ctx context.Context, cmdID int64) (*Applian
 }
 
 // CommandSubmit adds a command to the command queue, and returns its ID.
-func (db *ApplianceDB) CommandSubmit(ctx context.Context, u uuid.UUID, cmd *ApplianceCommand) error {
+func (db *ApplianceDB) CommandSubmit(ctx context.Context, u uuid.UUID, cmd *SiteCommand) error {
 	rows, err := db.QueryContext(ctx,
-		`INSERT INTO appliance_commands
-		 (cloud_uuid, enq_ts, config_query)
+		`INSERT INTO site_commands
+		 (site_uuid, enq_ts, config_query)
 		 VALUES ($1, $2, $3)
 		 RETURNING id`,
 		u,
@@ -482,7 +576,7 @@ func (db *ApplianceDB) CommandSubmit(ctx context.Context, u uuid.UUID, cmd *Appl
 			return err
 		}
 		// This is probably impossible.
-		return fmt.Errorf("INSERT INTO appliance_commands didn't insert?")
+		return fmt.Errorf("INSERT INTO site_commands didn't insert?")
 	}
 	var id int64
 	if err = rows.Scan(&id); err != nil {
@@ -506,8 +600,8 @@ func copyQueryResponse(query, response []byte) ([]byte, []byte) {
 
 // CommandFetch returns from the command queue up to max commands, sorted by ID,
 // for the appliance referenced by the UUID u, with a minimum ID of start.
-func (db *ApplianceDB) CommandFetch(ctx context.Context, u uuid.UUID, start int64, max uint32) ([]*ApplianceCommand, error) {
-	cmds := make([]*ApplianceCommand, 0)
+func (db *ApplianceDB) CommandFetch(ctx context.Context, u uuid.UUID, start int64, max uint32) ([]*SiteCommand, error) {
+	cmds := make([]*SiteCommand, 0)
 	// In order that two concurrent fetch requests don't grab the same
 	// command, we need to use SKIP LOCKED per the advice in
 	// https://blog.2ndquadrant.com/what-is-select-skip-locked-for-in-postgresql-9-5/
@@ -518,15 +612,15 @@ func (db *ApplianceDB) CommandFetch(ctx context.Context, u uuid.UUID, start int6
 	rows, err := db.QueryContext(ctx,
 		`WITH old AS (
 		     SELECT id, sent_ts, state
-		     FROM appliance_commands
-		     WHERE cloud_uuid = $1 AND
+		     FROM site_commands
+		     WHERE site_uuid = $1 AND
 		           state IN ('ENQD', 'WORK') AND
 		           id > $2
 		     ORDER BY id
 		     LIMIT $3
 		     FOR UPDATE SKIP LOCKED
 		 )
-		 UPDATE appliance_commands new
+		 UPDATE site_commands new
 		 SET state = 'WORK',
 		     sent_ts = now(),
 		     resent_n = CASE
@@ -544,7 +638,7 @@ func (db *ApplianceDB) CommandFetch(ctx context.Context, u uuid.UUID, start int6
 	defer rows.Close()
 	var query, response []byte
 	for rows.Next() {
-		cmd := &ApplianceCommand{}
+		cmd := &SiteCommand{}
 		if err = rows.Scan(&cmd.ID, &cmd.EnqueuedTime, &cmd.SentTime,
 			&cmd.NResent, &cmd.DoneTime, &cmd.State, &query,
 			&response); err != nil {
@@ -563,7 +657,7 @@ func (db *ApplianceDB) CommandFetch(ctx context.Context, u uuid.UUID, start int6
 
 // commandFinish moves the command cmdID to a "done" state -- either done or
 // canceled -- and returns both the old and new commands.
-func (db *ApplianceDB) commandFinish(ctx context.Context, cmdID int64, resp []byte) (*ApplianceCommand, *ApplianceCommand, error) {
+func (db *ApplianceDB) commandFinish(ctx context.Context, cmdID int64, resp []byte) (*SiteCommand, *SiteCommand, error) {
 	// We need to move the state to DONE.  In addition, we need to retrieve
 	// the old state and return that so the caller can understand what
 	// transition (if any) actually happened.  This operation is slightly
@@ -576,12 +670,12 @@ func (db *ApplianceDB) commandFinish(ctx context.Context, cmdID int64, resp []by
 		state = "CNCL"
 	}
 	row := db.QueryRowContext(ctx,
-		`UPDATE appliance_commands new
+		`UPDATE site_commands new
 		 SET state = $2, done_ts = now(), config_response = $3
-		 FROM (SELECT * FROM appliance_commands WHERE id=$1 FOR UPDATE) old
+		 FROM (SELECT * FROM site_commands WHERE id=$1 FOR UPDATE) old
 		 WHERE new.id = old.id
 		 RETURNING old.*, new.*`, cmdID, state, resp)
-	var newCmd, oldCmd ApplianceCommand
+	var newCmd, oldCmd SiteCommand
 	var oquery, nquery, oresponse, nresponse []byte
 	if err := row.Scan(&oldCmd.ID, &oldCmd.UUID, &oldCmd.EnqueuedTime,
 		&oldCmd.SentTime, &oldCmd.NResent, &oldCmd.DoneTime, &oldCmd.State,
@@ -600,13 +694,13 @@ func (db *ApplianceDB) commandFinish(ctx context.Context, cmdID int64, resp []by
 
 // CommandCancel cancels the command cmdID, returning both the old and new
 // commands.
-func (db *ApplianceDB) CommandCancel(ctx context.Context, cmdID int64) (*ApplianceCommand, *ApplianceCommand, error) {
+func (db *ApplianceDB) CommandCancel(ctx context.Context, cmdID int64) (*SiteCommand, *SiteCommand, error) {
 	return db.commandFinish(ctx, cmdID, nil)
 }
 
 // CommandComplete marks the command cmdID done, setting the response column and
 // returning both the old and new commands.
-func (db *ApplianceDB) CommandComplete(ctx context.Context, cmdID int64, resp []byte) (*ApplianceCommand, *ApplianceCommand, error) {
+func (db *ApplianceDB) CommandComplete(ctx context.Context, cmdID int64, resp []byte) (*SiteCommand, *SiteCommand, error) {
 	return db.commandFinish(ctx, cmdID, resp)
 }
 
@@ -618,13 +712,13 @@ func (db *ApplianceDB) CommandDelete(ctx context.Context, u uuid.UUID, keep int6
 	// https://stackoverflow.com/questions/2251567/how-to-get-the-number-of-deleted-rows-in-postgresql/22546994
 	row := db.QueryRowContext(ctx,
 		`WITH deleted AS (
-		     DELETE FROM appliance_commands
+		     DELETE FROM site_commands
 		     WHERE id <= (
 		         SELECT id
 		         FROM (
 		             SELECT id
-		             FROM appliance_commands
-		             WHERE cloud_uuid = $1 AND state IN ('DONE', 'CNCL')
+		             FROM site_commands
+		             WHERE site_uuid = $1 AND state IN ('DONE', 'CNCL')
 		             ORDER BY id DESC
 		             LIMIT 1 OFFSET $2
 		         ) foo -- yes, this is necessary
@@ -638,21 +732,21 @@ func (db *ApplianceDB) CommandDelete(ctx context.Context, u uuid.UUID, keep int6
 	return numDeleted, err
 }
 
-// HeartbeatIngest represents a row in the heartbeat_ingest table.  In this
+// HeartbeatIngest represents a row in the site_heartbeat_ingest table.  In this
 // case "ingest" means that we record heartbeats into this table for later
 // coalescing by another process.
 type HeartbeatIngest struct {
-	IngestID    uint64
-	ApplianceID uuid.UUID
-	BootTS      time.Time
-	RecordTS    time.Time
+	IngestID uint64
+	SiteUUID uuid.UUID
+	BootTS   time.Time
+	RecordTS time.Time
 }
 
-// InsertHeartbeatIngest adds a row to the heartbeat_ingest table.
+// InsertHeartbeatIngest adds a row to the site_heartbeat_ingest table.
 func (db *ApplianceDB) InsertHeartbeatIngest(ctx context.Context, heartbeat *HeartbeatIngest) error {
 	_, err := db.ExecContext(ctx,
-		"INSERT INTO heartbeat_ingest VALUES (DEFAULT, $1, $2, $3)",
-		heartbeat.ApplianceID,
+		"INSERT INTO site_heartbeat_ingest VALUES (DEFAULT, $1, $2, $3)",
+		heartbeat.SiteUUID,
 		heartbeat.BootTS,
 		heartbeat.RecordTS)
 	return err

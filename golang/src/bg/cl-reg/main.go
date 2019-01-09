@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -101,43 +101,91 @@ func first(opts ...string) string {
 	return ""
 }
 
-func listAppliances(cmd *cobra.Command, args []string) error {
+func assembleRegistry(cmd *cobra.Command) (appliancedb.DataStore, *registry.ApplianceRegistry, error) {
+	var reg registry.ApplianceRegistry
 	project, _ := cmd.Flags().GetString("project")
 	region, _ := cmd.Flags().GetString("region")
 	regID, _ := cmd.Flags().GetString("registry")
-	appID, _ := cmd.Flags().GetString("name")
 	inputPath, _ := cmd.Flags().GetString("input")
 
-	reg, err := readJSON(inputPath)
+	fileReg, err := readJSON(inputPath)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
+	// This means there is no way to override a non-empty parameter from the
+	// environment or the JSON file with, say, `-p ""`.
+	reg.Project = first(project, fileReg.Project, environ.Project)
+	reg.Region = first(region, fileReg.Region, environ.Region)
+	reg.Registry = first(regID, fileReg.Registry, environ.Registry)
 
-	pgconn := first(reg.DbURI, environ.PostgresConnection)
+	pgconn := first(fileReg.DbURI, environ.PostgresConnection)
 	if pgconn == "" {
-		return requiredUsage{
+		return nil, nil, requiredUsage{
 			cmd: cmd,
 			msg: "Missing database URI",
 			explanation: "You must provide the registry database URI through the environment\n" +
 				"variable REG_DBURI or via the JSON file specified with -i.\n",
 		}
 	}
-
-	// This means there is no way to override a non-empty parameter from the
-	// environment or the JSON file with, say, `-p ""`.
-	project = first(project, reg.Project, environ.Project)
-	region = first(region, reg.Region, environ.Region)
-	regID = first(regID, reg.Registry, environ.Registry)
-
-	dbURI, err := passwordPrompt(pgconn)
+	pgconn, err = passwordPrompt(pgconn)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-	db, err := appliancedb.Connect(dbURI)
+	reg.DbURI = pgconn
+	db, err := appliancedb.Connect(reg.DbURI)
+	if err != nil {
+		return nil, nil, err
+	}
+	return db, &reg, nil
+}
+
+func newSite(cmd *cobra.Command, args []string) error {
+	name, _ := cmd.Flags().GetString("name")
+
+	db, _, err := assembleRegistry(cmd)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
+
+	siteUU, err := registry.NewSite(context.Background(), db, name)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Created Site: uuid=%s, name='%s'\n", siteUU, name)
+	return nil
+}
+
+func listSites(cmd *cobra.Command, args []string) error {
+	db, _, err := assembleRegistry(cmd)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	sites, err := db.AllCustomerSites(context.Background())
+
+	table, _ := prettytable.NewTable(
+		prettytable.Column{Header: "UUID"},
+		prettytable.Column{Header: "Name"},
+	)
+	table.Separator = "  "
+
+	for _, site := range sites {
+		table.AddRow(site.UUID, site.Name)
+	}
+	table.Print()
+	return nil
+}
+
+func listAppliances(cmd *cobra.Command, args []string) error {
+	appID, _ := cmd.Flags().GetString("name")
+	siteUUID, _ := cmd.Flags().GetString("site-uuid")
+
+	db, reg, err := assembleRegistry(cmd)
+	if err != nil {
+		return err
+	}
 
 	apps, err := db.AllApplianceIDs(context.Background())
 	if err != nil {
@@ -149,9 +197,10 @@ func listAppliances(cmd *cobra.Command, args []string) error {
 	// XXX And sorting
 	matchingApps := make([]appliancedb.ApplianceID, 0)
 	for _, app := range apps {
-		if (project == "" || project == app.GCPProject) &&
-			(region == "" || region == app.GCPRegion) &&
-			(regID == "" || regID == app.ApplianceReg) &&
+		if (reg.Project == "" || reg.Project == app.GCPProject) &&
+			(reg.Region == "" || reg.Region == app.GCPRegion) &&
+			(reg.Registry == "" || reg.Registry == app.ApplianceReg) &&
+			(siteUUID == "" || app.SiteUUID.String() == siteUUID) &&
 			(appID == "" || appID == app.ApplianceRegID) {
 			matchingApps = append(matchingApps, app)
 		}
@@ -163,6 +212,7 @@ func listAppliances(cmd *cobra.Command, args []string) error {
 
 	table, _ := prettytable.NewTable(
 		prettytable.Column{Header: "UUID"},
+		prettytable.Column{Header: "Site"},
 		prettytable.Column{Header: "Project"},
 		prettytable.Column{Header: "Region"},
 		prettytable.Column{Header: "Registry"},
@@ -171,7 +221,8 @@ func listAppliances(cmd *cobra.Command, args []string) error {
 	table.Separator = "  "
 
 	for _, app := range matchingApps {
-		table.AddRow(app.CloudUUID, app.GCPProject, app.GCPRegion,
+		table.AddRow(app.ApplianceUUID, app.SiteUUID,
+			app.GCPProject, app.GCPRegion,
 			app.ApplianceReg, app.ApplianceRegID)
 	}
 	table.Print()
@@ -180,70 +231,49 @@ func listAppliances(cmd *cobra.Command, args []string) error {
 
 func newAppliance(cmd *cobra.Command, args []string) error {
 	appID := args[0]
-	project, _ := cmd.Flags().GetString("project")
-	region, _ := cmd.Flags().GetString("region")
-	regID, _ := cmd.Flags().GetString("registry")
 	outdir, _ := cmd.Flags().GetString("directory")
-	inputPath, _ := cmd.Flags().GetString("input")
 	appUUID, _ := cmd.Flags().GetString("uuid")
+	siteUUID, _ := cmd.Flags().GetString("site-uuid")
 
-	var u uuid.UUID
+	var appUU uuid.UUID
 	if appUUID != "" {
+		var err error
+		if appUU, err = uuid.FromString(appUUID); err != nil {
+			return err
+		}
+	} else {
+		appUU = uuid.NewV4()
+	}
+
+	// nil siteUU means "pick me a siteid"
+	var siteUU *uuid.UUID
+	if siteUUID != "" {
+		var u uuid.UUID
 		var err error
 		if u, err = uuid.FromString(appUUID); err != nil {
 			return err
 		}
+		siteUU = &u
 	}
 
-	reg, err := readJSON(inputPath)
-	if err != nil {
-		return err
-	}
-
-	pgconn := first(reg.DbURI, environ.PostgresConnection)
-	project = first(project, reg.Project, environ.Project)
-	region = first(region, reg.Region, environ.Region)
-	regID = first(regID, reg.Registry, environ.Registry)
-	if project == "" || region == "" || regID == "" || pgconn == "" {
-		return requiredUsage{
-			cmd: cmd,
-			explanation: "The GCP project and region, and appliance registry name must be\n" +
-				"provided, along with the registry database URI.  You can do this\n" +
-				"with command-line arguments, through environment variables:\n" +
-				"    REG_PROJECT_ID=<name of gcp project>\n" +
-				"    REG_REGION_ID=<name of gcp region>\n" +
-				"    REG_REGISTRY_ID=<registry name>\n" +
-				"    REG_DBURI=<postgres uri>\n" +
-				"or through a JSON file specified with the -i flag.\n",
-		}
-	}
-
-	dbURI, err := passwordPrompt(pgconn)
-	if err != nil {
-		return err
-	}
-	db, err := appliancedb.Connect(dbURI)
+	db, reg, err := assembleRegistry(cmd)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
 	var keyPEM []byte
-	if appUUID == "" {
-		u, keyPEM, _, err = registry.NewAppliance(context.Background(), db,
-			project, region, regID, appID)
-	} else {
-		keyPEM, _, err = registry.NewApplianceWithUUID(context.Background(),
-			db, u, project, region, regID, appID)
-	}
+	var resultSiteUU uuid.UUID
+	appUU, resultSiteUU, keyPEM, _, err = registry.NewAppliance(context.Background(),
+		db, appUU, siteUU, reg.Project, reg.Region, reg.Registry, appID)
 	if err != nil {
 		return err
 	}
 
 	jmap := map[string]string{
-		"project":      project,
-		"region":       region,
-		"registry":     regID,
+		"project":      reg.Project,
+		"region":       reg.Region,
+		"registry":     reg.Registry,
 		"appliance_id": appID,
 		"private_key":  string(keyPEM),
 	}
@@ -260,11 +290,12 @@ func newAppliance(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("-------------------------------------------------------------\n")
-	fmt.Printf("      Created device: projects/%s/locations/%s/registries/%s/appliances/%s\n",
-		project, region, regID, appID)
-	fmt.Printf("Appliance Cloud UUID: %s\n", u)
+	fmt.Printf("Created device: projects/%s/locations/%s/registries/%s/appliances/%s\n",
+		reg.Project, reg.Region, reg.Registry, appID)
+	fmt.Printf("     Site UUID: %s\n", resultSiteUU)
+	fmt.Printf("Appliance UUID: %s\n", appUU)
 	if ioerr == nil {
-		fmt.Printf("        Secrets file: %s\n", secretsFile)
+		fmt.Printf("  Secrets file: %s\n", secretsFile)
 		fmt.Printf("-------------------------------------------------------------\n")
 		fmt.Printf("Next, provision %s to the appliance at:\n", secretsFile)
 		fmt.Printf("    /opt/com.brightgate/etc/secret/cloud/cloud.secret.json\n")
@@ -285,6 +316,32 @@ func main() {
 		PersistentPreRun: silenceUsage,
 	}
 
+	siteCmd := &cobra.Command{
+		Use:   "site <subcmd> [flags] [args]",
+		Short: "Administer sites in the registry",
+		Args:  cobra.NoArgs,
+	}
+	rootCmd.AddCommand(siteCmd)
+
+	newSiteCmd := &cobra.Command{
+		Use:   "new [flags] <site name>",
+		Args:  cobra.ExactArgs(1),
+		Short: "Create a site and add it to the registry",
+		RunE:  newSite,
+	}
+	newSiteCmd.Flags().StringP("name", "n", "", "site name")
+	newSiteCmd.Flags().StringP("input", "i", "", "registry data JSON file")
+	siteCmd.AddCommand(newSiteCmd)
+
+	listSiteCmd := &cobra.Command{
+		Use:   "list",
+		Args:  cobra.NoArgs,
+		Short: "List sites in the registry",
+		RunE:  listSites,
+	}
+	listSiteCmd.Flags().StringP("input", "i", "", "registry data JSON file")
+	siteCmd.AddCommand(listSiteCmd)
+
 	appCmd := &cobra.Command{
 		Use:   "app <subcmd> [flags] [args]",
 		Short: "Administer appliances in the registry",
@@ -304,6 +361,7 @@ func main() {
 	newAppCmd.Flags().StringP("registry", "r", "", "appliance registry")
 	newAppCmd.Flags().StringP("input", "i", "", "registry data JSON file")
 	newAppCmd.Flags().StringP("uuid", "u", "", "appliance UUID")
+	newAppCmd.Flags().StringP("site-uuid", "s", "", "site UUID")
 	appCmd.AddCommand(newAppCmd)
 
 	listAppCmd := &cobra.Command{
@@ -318,6 +376,7 @@ func main() {
 	listAppCmd.Flags().StringP("registry", "r", "", "appliance registry")
 	listAppCmd.Flags().StringP("name", "n", "", "appliance name")
 	listAppCmd.Flags().StringP("input", "i", "", "registry data JSON file")
+	listAppCmd.Flags().StringP("site-uuid", "s", "", "site UUID")
 	appCmd.AddCommand(listAppCmd)
 
 	if err := envcfg.Unmarshal(&environ); err != nil {

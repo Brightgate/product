@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -99,7 +99,7 @@ func (db *dbStore) set(ctx context.Context, uuidStr string, tree *cfgtree.PTree)
 		return err
 	}
 
-	store := &appliancedb.ApplianceConfigStore{
+	store := &appliancedb.SiteConfigStore{
 		RootHash:  tree.Root().Hash(),
 		TimeStamp: time.Now(),
 		Config:    tree.Export(false),
@@ -107,7 +107,7 @@ func (db *dbStore) set(ctx context.Context, uuidStr string, tree *cfgtree.PTree)
 
 	err = db.handle.UpsertConfigStore(ctx, u, store)
 	if err != nil {
-		slog.Errorf("failed to store appliance config: %v", err)
+		slog.Errorf("failed to store config: %v", err)
 		return err
 	}
 	return nil

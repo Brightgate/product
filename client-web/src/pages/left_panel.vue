@@ -20,7 +20,7 @@
       <f7-list-item v-if="appMode === 'cloud'">
         <f7-link panel-close href="/">Select Site</f7-link>
       </f7-list-item>
-      <f7-list-item v-if="appMode === 'appliance'">
+      <f7-list-item v-if="appMode === 'local'">
         <f7-link panel-close href="/">Home</f7-link>
       </f7-list-item>
       <f7-list-item>

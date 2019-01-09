@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -50,9 +50,10 @@ type Middleware struct {
 }
 
 type authCacheEntry struct {
-	ClientID  string
-	Token     *jwt.Token
-	CloudUUID uuid.UUID
+	ClientID      string
+	Token         *jwt.Token
+	ApplianceUUID uuid.UUID
+	SiteUUID      uuid.UUID
 }
 
 type authorizedJWTContextKeyType struct{}
@@ -125,7 +126,9 @@ func (m *Middleware) authFunc(ctx context.Context) (context.Context, error) {
 				return nil, status.Errorf(codes.Unauthenticated, "Invalid JWT Claims (could be expired)")
 			}
 			newCtx := context.WithValue(ctx, authorizedJWTContextKey, cacheEnt.Token)
-			md := metautils.ExtractIncoming(newCtx).Add("clouduuid", cacheEnt.CloudUUID.String())
+			md := metautils.ExtractIncoming(newCtx).
+				Add("appliance_uuid", cacheEnt.ApplianceUUID.String()).
+				Add("site_uuid", cacheEnt.SiteUUID.String())
 			newCtx = md.ToIncoming(newCtx)
 			return newCtx, nil
 		}
@@ -138,7 +141,7 @@ func (m *Middleware) authFunc(ctx context.Context) (context.Context, error) {
 		return nil, status.Errorf(codes.Unauthenticated, "invalid applianceDB Device: %v", err)
 	}
 
-	keys, err := m.applianceDB.KeysByUUID(ctx, applianceID.CloudUUID)
+	keys, err := m.applianceDB.KeysByUUID(ctx, applianceID.ApplianceUUID)
 	if err != nil {
 		return nil, status.Errorf(codes.Unauthenticated, "couldn't get keys for %v: %v", applianceID, err)
 	}
@@ -180,12 +183,15 @@ func (m *Middleware) authFunc(ctx context.Context) (context.Context, error) {
 		})
 		if token != nil && token.Valid {
 			m.cacheSet(&authCacheEntry{
-				ClientID:  clientID,
-				Token:     token,
-				CloudUUID: applianceID.CloudUUID,
+				ClientID:      clientID,
+				Token:         token,
+				ApplianceUUID: applianceID.ApplianceUUID,
+				SiteUUID:      applianceID.SiteUUID,
 			})
 			newCtx := context.WithValue(ctx, authorizedJWTContextKey, token)
-			md := metautils.ExtractIncoming(newCtx).Add("clouduuid", applianceID.CloudUUID.String())
+			md := metautils.ExtractIncoming(newCtx).
+				Add("appliance_uuid", applianceID.ApplianceUUID.String()).
+				Add("site_uuid", applianceID.SiteUUID.String())
 			newCtx = md.ToIncoming(newCtx)
 			grpclog.Infof("Authenticated %s with %s key %d", clientID, applianceID, n)
 			return newCtx, nil

@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -51,14 +51,16 @@ var (
 	mockAppliances = []*MockAppliance{
 		{
 			ApplianceID: appliancedb.ApplianceID{
-				CloudUUID: uuid.Must(uuid.FromString("b3798a8e-41e0-4939-a038-e7675af864d5")),
+				ApplianceUUID: uuid.Must(uuid.FromString("b3798a8e-41e0-4939-a038-e7675af864d5")),
+				SiteUUID:      uuid.Must(uuid.FromString("3ca1ba0c-629d-44a2-8945-fc22d0c4bf0c")),
 			},
 			ClientID: "projects/foo/locations/bar/registries/baz/appliances/mock0",
 			Prefix:   "mock0",
 		},
 		{
 			ApplianceID: appliancedb.ApplianceID{
-				CloudUUID: uuid.Must(uuid.FromString("099239f6-d8cd-4e57-a696-ef84a3bf39d0")),
+				ApplianceUUID: uuid.Must(uuid.FromString("099239f6-d8cd-4e57-a696-ef84a3bf39d0")),
+				SiteUUID:      uuid.Must(uuid.FromString("9b941221-e7ab-4760-a1c8-9757e96bcfd8")),
 			},
 			ClientID: "projects/foo/locations/bar/registries/baz/appliances/mock1",
 			Prefix:   "mock1",
@@ -144,17 +146,22 @@ func TestBasic(t *testing.T) {
 		Add("authorization", makeBearer(m)).
 		Add("clientid", m.ClientID).
 		ToIncoming(context.Background())
-	uu := metautils.ExtractIncoming(ctx).Get("clouduuid")
-	assert.Equal(uu, "", "saw unexpected clouduuid in ctx")
+	uu := metautils.ExtractIncoming(ctx).Get("appliance_uuid")
+	assert.Equal(uu, "", "saw unexpected appliance_uuid in ctx")
+	uu = metautils.ExtractIncoming(ctx).Get("site_uuid")
+	assert.Equal(uu, "", "saw unexpected site_uuid in ctx")
 
 	resultctx, err := mw.authFunc(ctx)
 	assert.NoError(err)
 
 	// check resultant context looks good
 	assert.NotNil(resultctx)
-	uu = metautils.ExtractIncoming(resultctx).Get("clouduuid")
-	assert.Equal(m.ApplianceID.CloudUUID.String(), uu,
-		"clouduuid was not set as expected in context")
+	uu = metautils.ExtractIncoming(resultctx).Get("appliance_uuid")
+	assert.Equal(m.ApplianceID.ApplianceUUID.String(), uu,
+		"appliance_uuid was not set as expected in context")
+	uu = metautils.ExtractIncoming(resultctx).Get("site_uuid")
+	assert.Equal(m.ApplianceID.SiteUUID.String(), uu,
+		"site_uuid was not set as expected in context")
 	assert.Equal(1, mw.authCache.Len(), "authCache has unexpected size")
 
 	// try again; we expect this to be served from cache
@@ -163,9 +170,12 @@ func TestBasic(t *testing.T) {
 
 	// check resultant context, generated from cache, looks good
 	assert.NotNil(resultctx)
-	uu = metautils.ExtractIncoming(resultctx).Get("clouduuid")
-	assert.Equal(m.ApplianceID.CloudUUID.String(), uu,
-		"clouduuid was not set as expected in context")
+	uu = metautils.ExtractIncoming(resultctx).Get("appliance_uuid")
+	assert.Equal(m.ApplianceID.ApplianceUUID.String(), uu,
+		"appliance_uuid was not set as expected in context")
+	uu = metautils.ExtractIncoming(resultctx).Get("site_uuid")
+	assert.Equal(m.ApplianceID.SiteUUID.String(), uu,
+		"site_uuid was not set as expected in context")
 	assert.Equal(1, mw.authCache.Len(), "authCache has unexpected size")
 }
 
@@ -234,7 +244,7 @@ func TestBadBearer(t *testing.T) {
 }
 
 func TestExpiredBearerCached(t *testing.T) {
-	_, _ = setupLogging(t)
+	_, slog := setupLogging(t)
 	m := mockAppliances[0]
 	assert := require.New(t)
 
@@ -248,19 +258,30 @@ func TestExpiredBearerCached(t *testing.T) {
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"exp": int32(time.Now().Unix()) - base_def.BEARER_JWT_EXPIRY_SECS,
 	})
+	slog.Infof("token is %#v", token)
 
+	assert.NotEmpty(m.PrivateKey)
 	tokenString, err := token.SignedString(m.PrivateKey)
 	assert.NoError(err)
 	bearer := "bearer " + tokenString
 
 	parser := &jwt.Parser{SkipClaimsValidation: true}
 	parsedToken, err := parser.Parse(tokenString, func(*jwt.Token) (interface{}, error) {
-		return m.PrivateKey, nil
+		pub, err := jwt.ParseRSAPublicKeyFromPEM(m.PublicKeyPEM)
+		if err != nil {
+			panic(err)
+		}
+		return pub, nil
 	})
+	assert.NoError(err)
+	assert.NotEmpty(parsedToken)
+	assert.Error(parsedToken.Claims.Valid())
+	slog.Infof("parsedToken is %#v", parsedToken)
 	_ = mw.authCache.Set(tokenString, &authCacheEntry{
-		ClientID:  m.ClientID,
-		Token:     parsedToken,
-		CloudUUID: m.CloudUUID,
+		ClientID:      m.ClientID,
+		Token:         parsedToken,
+		ApplianceUUID: m.ApplianceUUID,
+		SiteUUID:      m.SiteUUID,
 	})
 	assert.Equalf(1, mw.authCache.Len(), "authCache has unexpected size")
 
@@ -298,7 +319,7 @@ func TestCertMismatch(t *testing.T) {
 
 	dMock := &mocks.DataStore{}
 	dMock.On("ApplianceIDByClientID", mock.Anything, m.ClientID).Return(&m.ApplianceID, nil)
-	dMock.On("KeysByUUID", mock.Anything, m.CloudUUID).Return(m1.Keys, nil)
+	dMock.On("KeysByUUID", mock.Anything, m.ApplianceUUID).Return(m1.Keys, nil)
 	defer dMock.AssertExpectations(t)
 
 	mw := New(dMock)
@@ -318,7 +339,7 @@ func TestNoKeys(t *testing.T) {
 	dMock := &mocks.DataStore{}
 	dMock.On("ApplianceIDByClientID", mock.Anything, m.ClientID).Return(&m.ApplianceID, nil)
 	// Return empty keys
-	dMock.On("KeysByUUID", mock.Anything, m.CloudUUID).Return([]appliancedb.AppliancePubKey{}, nil)
+	dMock.On("KeysByUUID", mock.Anything, m.ApplianceUUID).Return([]appliancedb.AppliancePubKey{}, nil)
 	defer dMock.AssertExpectations(t)
 
 	mw := New(dMock)

@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -28,7 +28,7 @@ type backEndServer struct {
 
 // Issue a "GET @/" to the appliance, which we will use to completely refresh
 // our cached copy of the tree
-func refreshConfig(ctx context.Context, ap *perAPState, uuid string) {
+func refreshConfig(ctx context.Context, site *siteState, uuid string) {
 	slog.Infof("requesting a fresh tree from %s", uuid)
 
 	getOp := []cfgapi.PropertyOp{
@@ -41,7 +41,7 @@ func refreshConfig(ctx context.Context, ap *perAPState, uuid string) {
 		return
 	}
 
-	_, err = ap.cmdQueue.submit(ctx, ap, q)
+	_, err = site.cmdQueue.submit(ctx, site, q)
 	if err != nil {
 		slog.Warnf("failed to submit GET(@/) for %s: %v", uuid, err)
 	}
@@ -56,7 +56,7 @@ func (s *backEndServer) Hello(ctx context.Context,
 		Response: rpc.CfgBackEndResponse_OK,
 	}
 
-	uuid := req.GetCloudUuid()
+	uuid := req.GetSiteUUID()
 	if uuid == "" {
 		rval.Response = rpc.CfgBackEndResponse_ERROR
 		rval.Errmsg = "No UUID provided"
@@ -64,14 +64,14 @@ func (s *backEndServer) Hello(ctx context.Context,
 		slog.Infof("Hello() from %s", uuid)
 		// XXX: as a side effect of the Hello(), we should compare
 		// cloud and appliance hash values.
-		ap, err := getAPState(ctx, uuid)
+		siteState, err := getSiteState(ctx, uuid)
 		if err != nil {
 			// XXX: Currently we respond to an unknown appliance
 			// appearing by asking it to upload its state to the
 			// cloud.  Eventually this should be an error that
 			// results in an event being sent.
-			ap = initAPState(uuid)
-			refreshConfig(ctx, ap, uuid)
+			siteState = initSiteState(uuid)
+			refreshConfig(ctx, siteState, uuid)
 		}
 		if err != nil {
 			rval.Response = rpc.CfgBackEndResponse_ERROR
@@ -93,15 +93,15 @@ func (s *backEndServer) Download(ctx context.Context,
 
 // Attempt to apply a single appliance-generated update to our cached copy of
 // its config tree.
-func update(ap *perAPState, update *rpc.CfgBackEndUpdate_CfgUpdate) error {
+func update(site *siteState, update *rpc.CfgBackEndUpdate_CfgUpdate) error {
 	var err error
 
 	prop := update.GetProperty()
 
-	t := ap.cachedTree
+	t := site.cachedTree
 	if t == nil {
 		// We got our first tree update before getting the tree from the
-		// appliance.  This should go away when we start loading the
+		// site.  This should go away when we start loading the
 		// initial config from the database.
 		return nil
 	}
@@ -126,7 +126,7 @@ func update(ap *perAPState, update *rpc.CfgBackEndUpdate_CfgUpdate) error {
 		_, err = t.Delete(prop)
 	}
 	if err == nil {
-		th := ap.cachedTree.Root().Hash()
+		th := site.cachedTree.Root().Hash()
 		t.ChangesetCommit()
 		if !bytes.Equal(th, update.GetHash()) {
 			slog.Warnf("hash mismatch.  Got %x  expected %x",
@@ -140,13 +140,13 @@ func update(ap *perAPState, update *rpc.CfgBackEndUpdate_CfgUpdate) error {
 	return err
 }
 
-// The appliance has sent a batch of config updates.  Iterate over them,
+// The site has sent a batch of config updates.  Iterate over them,
 // applying each to our cached copy of the tree.
 func (s *backEndServer) Update(ctx context.Context,
 	req *rpc.CfgBackEndUpdate) (*rpc.CfgBackEndResponse, error) {
 	rval := &rpc.CfgBackEndResponse{}
 
-	ap, err := getAPState(ctx, req.GetCloudUuid())
+	site, err := getSiteState(ctx, req.GetSiteUUID())
 	if err != nil {
 		rval.Response = rpc.CfgBackEndResponse_ERROR
 		rval.Errmsg = fmt.Sprintf("%v", err)
@@ -157,14 +157,14 @@ func (s *backEndServer) Update(ctx context.Context,
 			// tree is out of sync with the appliance.  Ignore all
 			// of the remaining updates (since they'll fail as
 			// well), and ask for a fresh copy of the full tree.
-			if err = update(ap, u); err != nil {
-				refreshConfig(ctx, ap, req.GetCloudUuid())
+			if err = update(site, u); err != nil {
+				refreshConfig(ctx, site, req.GetSiteUUID())
 				break
 			}
 		}
 		if err == nil {
 			// Persist the changes we just applied
-			if err = ap.store(ctx); err != nil {
+			if err = site.store(ctx); err != nil {
 				slog.Errorf("Failed to store updated config: %v", err)
 			}
 		}
@@ -182,7 +182,7 @@ func (s *backEndServer) FetchCmds(ctx context.Context,
 
 	rval := &rpc.CfgBackEndResponse{}
 
-	ap, err := getAPState(ctx, req.GetCloudUuid())
+	site, err := getSiteState(ctx, req.GetSiteUUID())
 	if err != nil {
 		rval.Response = rpc.CfgBackEndResponse_ERROR
 		rval.Errmsg = fmt.Sprintf("%v", err)
@@ -193,7 +193,7 @@ func (s *backEndServer) FetchCmds(ctx context.Context,
 			maxCmds = 1
 		}
 
-		cmds, err := ap.cmdQueue.fetch(ctx, ap, int64(req.LastCmdID),
+		cmds, err := site.cmdQueue.fetch(ctx, site, int64(req.LastCmdID),
 			maxCmds, false)
 
 		// XXX We return OK even with an error as long as we have some
@@ -206,9 +206,9 @@ func (s *backEndServer) FetchCmds(ctx context.Context,
 		} else {
 			if len(cmds) > 0 {
 				slog.Debugf("%s fetches %d commands starting at %d",
-					req.GetCloudUuid(), len(cmds), cmds[0].CmdID)
+					req.GetSiteUUID(), len(cmds), cmds[0].CmdID)
 			} else {
-				slog.Debugf("%s fetches 0 commands", req.GetCloudUuid())
+				slog.Debugf("%s fetches 0 commands", req.GetSiteUUID())
 			}
 			rval.Response = rpc.CfgBackEndResponse_OK
 		}
@@ -227,9 +227,9 @@ func (s *backEndServer) FetchStream(req *rpc.CfgBackEndFetchCmds,
 	rval := &rpc.CfgBackEndResponse{}
 
 	ctx := stream.Context()
-	uuid := req.GetCloudUuid()
+	uuid := req.GetSiteUUID()
 
-	ap, err := getAPState(ctx, uuid)
+	site, err := getSiteState(ctx, uuid)
 	if err != nil {
 		rval.Response = rpc.CfgBackEndResponse_ERROR
 		rval.Errmsg = fmt.Sprintf("%v", err)
@@ -242,7 +242,7 @@ func (s *backEndServer) FetchStream(req *rpc.CfgBackEndFetchCmds,
 	for err == nil {
 		var cmds []*cfgmsg.ConfigQuery
 
-		cmds, err = ap.cmdQueue.fetch(ctx, ap, cmdID, max, true)
+		cmds, err = site.cmdQueue.fetch(ctx, site, cmdID, max, true)
 		if err == nil && len(cmds) == 0 {
 			// shouldn't happen
 			slog.Warnf("fetch() returned no commands or errors")
@@ -282,7 +282,7 @@ func (s *backEndServer) CompleteCmds(ctx context.Context,
 		Response: rpc.CfgBackEndResponse_OK,
 	}
 
-	ap, err := getAPState(ctx, req.GetCloudUuid())
+	site, err := getSiteState(ctx, req.GetSiteUUID())
 	if err != nil {
 		rval.Response = rpc.CfgBackEndResponse_ERROR
 		rval.Errmsg = fmt.Sprintf("%v", err)
@@ -293,7 +293,7 @@ func (s *backEndServer) CompleteCmds(ctx context.Context,
 			// list of commands that successfully completed as well
 			// as a list of commands that didn't along with the
 			// errors.
-			err = ap.cmdQueue.complete(ctx, ap, comp)
+			err = site.cmdQueue.complete(ctx, site, comp)
 			if err != nil && rval.Errmsg == "" {
 				rval.Response = rpc.CfgBackEndResponse_OK
 				rval.Errmsg = err.Error()

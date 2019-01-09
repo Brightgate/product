@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+// COPYRIGHT 2019 Brightgate Inc. All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -106,7 +106,7 @@ service CloudStorage{
 
 message CfgBackEndHello {
 	google.protobuf.Timestamp time	= 0x01;
-	string cloud_uuid		= 0x02;
+	string siteUUID   	        = 0x02;
 	// version of the config tree on the appliance
 	int32 version			= 0x03;
 
@@ -116,7 +116,7 @@ message CfgBackEndHello {
 
 message CfgBackEndDownload {
 	google.protobuf.Timestamp time	= 0x01;
-	string cloud_uuid		= 0x02;
+	string siteUUID  		= 0x02;
 
 	// max config version the appliance can support
 	int32 version			= 0x03;
@@ -137,14 +137,14 @@ message CfgBackEndUpdate {
 	}
 
 	google.protobuf.Timestamp time	= 0x01;
-	string cloud_uuid		= 0x02;
+	string siteUUID		        = 0x02;
 	int32 version			= 0x03;
 	repeated CfgUpdate updates	= 0x05;
 }
 
 message CfgBackEndFetchCmds {
 	google.protobuf.Timestamp time  = 0x01;
-	string cloud_uuid		= 0x02;
+	string siteUUID		        = 0x02;
 	int32 version			= 0x03;
 	int64 lastCmdID			= 0x04;
 	// If non-zero, the number of commands which can be returned; else 1
@@ -153,7 +153,7 @@ message CfgBackEndFetchCmds {
 
 message CfgBackEndCompletions {
 	google.protobuf.Timestamp time			= 0x01;
-	string cloud_uuid				= 0x02;
+	string siteUUID				        = 0x02;
 	repeated cfgmsg.ConfigResponse completions	= 0x03;
 }
 
@@ -185,7 +185,7 @@ message CfgFrontEndPing {
 
 message CfgCmdID {
 	google.protobuf.Timestamp time	= 0x01;
-	string cloud_uuid		= 0x02;
+	string siteUUID		        = 0x02;
 	int64 cmdID			= 0x03;
 }
 

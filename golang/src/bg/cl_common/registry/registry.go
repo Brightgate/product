@@ -71,26 +71,45 @@ func genPEMKey() ([]byte, []byte, error) {
 	return keyPEM, certPEM, nil
 }
 
-// NewAppliance registers a new appliance in the registry.  It returns the UUID
-// it generated, as well as the private and public PEM-encoded keys.
-func NewAppliance(ctx context.Context, db appliancedb.DataStore, project, region, regID, appID string) (uuid.UUID, []byte, []byte, error) {
+// NewSite registers a new site in the registry.  It returns the site UUID.
+func NewSite(ctx context.Context, db appliancedb.DataStore, name string) (uuid.UUID, error) {
 	u := uuid.NewV4()
 
-	keyPEM, certPEM, err := NewApplianceWithUUID(ctx, db, u, project, region, regID, appID)
-
-	return u, keyPEM, certPEM, err
+	err := db.InsertCustomerSite(ctx, &appliancedb.CustomerSite{
+		UUID: u,
+		Name: name,
+	})
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return u, nil
 }
 
-// NewApplianceWithUUID registers a new appliance like NewAppliance, but
-// provides the UUID.
-func NewApplianceWithUUID(ctx context.Context, db appliancedb.DataStore, u uuid.UUID, project, region, regID, appID string) ([]byte, []byte, error) {
+// NewAppliance registers a new appliance.
+// If appliance is uuid.Nil, a uuid is selected.
+// If site is nil, a Site UUID will be picked automatically.
+func NewAppliance(ctx context.Context, db appliancedb.DataStore,
+	appliance uuid.UUID, site *uuid.UUID,
+	project, region, regID, appID string) (uuid.UUID, uuid.UUID, []byte, []byte, error) {
+
+	createSite := false
 	keyPEM, certPEM, err := genPEMKey()
 	if err != nil {
-		return nil, nil, err
+		return uuid.Nil, uuid.Nil, nil, nil, err
+	}
+
+	if appliance == uuid.Nil {
+		appliance = uuid.NewV4()
+	}
+	if site == nil {
+		u := uuid.NewV4()
+		site = &u
+		createSite = true
 	}
 
 	id := &appliancedb.ApplianceID{
-		CloudUUID:      u,
+		ApplianceUUID:  appliance,
+		SiteUUID:       *site,
 		GCPProject:     project,
 		GCPRegion:      region,
 		ApplianceReg:   regID,
@@ -103,18 +122,29 @@ func NewApplianceWithUUID(ctx context.Context, db appliancedb.DataStore, u uuid.
 
 	tx, err := db.BeginTx(ctx)
 	if err != nil {
-		return nil, nil, err
+		return uuid.Nil, uuid.Nil, nil, nil, err
 	}
 	defer tx.Rollback()
-	if err = db.InsertApplianceIDTx(ctx, tx, id); err != nil {
-		return nil, nil, err
+
+	if createSite {
+		s := appliancedb.CustomerSite{
+			UUID: *site,
+			Name: "",
+		}
+		if err = db.InsertCustomerSiteTx(ctx, tx, &s); err != nil {
+			return uuid.Nil, uuid.Nil, nil, nil, err
+		}
 	}
-	if err = db.InsertApplianceKeyTx(ctx, tx, u, key); err != nil {
-		return nil, nil, err
+
+	if err = db.InsertApplianceIDTx(ctx, tx, id); err != nil {
+		return uuid.Nil, uuid.Nil, nil, nil, err
+	}
+	if err = db.InsertApplianceKeyTx(ctx, tx, appliance, key); err != nil {
+		return uuid.Nil, uuid.Nil, nil, nil, err
 	}
 	err = tx.Commit()
 	if err != nil {
-		return nil, nil, err
+		return uuid.Nil, uuid.Nil, nil, nil, err
 	}
-	return keyPEM, certPEM, nil
+	return appliance, *site, keyPEM, certPEM, nil
 }

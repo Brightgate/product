@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -41,7 +41,7 @@ func (dbq *dbCmdQueue) String() string {
 	return pgutils.CensorPassword(dbq.connInfo)
 }
 
-func (dbq *dbCmdQueue) search(ctx context.Context, s *perAPState, cmdID int64) (*cmdState, error) {
+func (dbq *dbCmdQueue) search(ctx context.Context, s *siteState, cmdID int64) (*cmdState, error) {
 	dbCmd, err := dbq.handle.CommandSearch(ctx, cmdID)
 	if err != nil {
 		return nil, err
@@ -64,7 +64,7 @@ func (dbq *dbCmdQueue) search(ctx context.Context, s *perAPState, cmdID int64) (
 	// XXX NResent isn't represented, and neither is state
 	uuidStr := dbCmd.UUID.String()
 	cmd := &cmdState{
-		cloudUUID: &uuidStr,
+		siteUUID:  &uuidStr,
 		cmdID:     dbCmd.ID,
 		submitted: &dbCmd.EnqueuedTime,
 		fetched:   dbCmd.SentTime.Ptr(),
@@ -75,18 +75,18 @@ func (dbq *dbCmdQueue) search(ctx context.Context, s *perAPState, cmdID int64) (
 	return cmd, nil
 }
 
-func (dbq *dbCmdQueue) submit(ctx context.Context, s *perAPState, q *cfgmsg.ConfigQuery) (int64, error) {
+func (dbq *dbCmdQueue) submit(ctx context.Context, s *siteState, q *cfgmsg.ConfigQuery) (int64, error) {
 	jsonQuery, err := json.Marshal(q)
 	if err != nil {
 		return -1, fmt.Errorf("Failed to marshal commands to JSON: %v", err)
 	}
-	cmd := &appliancedb.ApplianceCommand{
+	cmd := &appliancedb.SiteCommand{
 		EnqueuedTime: time.Now(),
 		Query:        jsonQuery,
 	}
-	u, err := uuid.FromString(s.cloudUUID)
+	u, err := uuid.FromString(s.siteUUID)
 	if err != nil {
-		return -1, fmt.Errorf("Failed to convert %q to UUID: %v", s.cloudUUID, err)
+		return -1, fmt.Errorf("Failed to convert %q to UUID: %v", s.siteUUID, err)
 	}
 	err = dbq.handle.CommandSubmit(ctx, u, cmd)
 	if err != nil {
@@ -95,18 +95,18 @@ func (dbq *dbCmdQueue) submit(ctx context.Context, s *perAPState, q *cfgmsg.Conf
 	return cmd.ID, nil
 }
 
-func (dbq *dbCmdQueue) fetch(ctx context.Context, s *perAPState, start int64,
+func (dbq *dbCmdQueue) fetch(ctx context.Context, s *siteState, start int64,
 	max uint32, block bool) ([]*cfgmsg.ConfigQuery, error) {
 
-	var cmds []*appliancedb.ApplianceCommand
+	var cmds []*appliancedb.SiteCommand
 	if max == 0 {
 		panic("invalid max of 0")
 	}
 
-	u, err := uuid.FromString(s.cloudUUID)
+	u, err := uuid.FromString(s.siteUUID)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to convert %q to UUID: %v",
-			s.cloudUUID, err)
+			s.siteUUID, err)
 	}
 
 	ticker := time.NewTicker(time.Second)
@@ -166,7 +166,7 @@ func (dbq *dbCmdQueue) fetch(ctx context.Context, s *perAPState, start int64,
 	return o, err
 }
 
-func (dbq *dbCmdQueue) status(ctx context.Context, s *perAPState, cmdID int64) (*cfgmsg.ConfigResponse, error) {
+func (dbq *dbCmdQueue) status(ctx context.Context, s *siteState, cmdID int64) (*cfgmsg.ConfigResponse, error) {
 	rval := &cfgmsg.ConfigResponse{
 		Timestamp: ptypes.TimestampNow(),
 		CmdID:     cmdID,
@@ -175,7 +175,7 @@ func (dbq *dbCmdQueue) status(ctx context.Context, s *perAPState, cmdID int64) (
 	dbCmd, err := dbq.handle.CommandSearch(ctx, cmdID)
 	if err != nil {
 		if _, ok := err.(appliancedb.NotFoundError); ok {
-			slog.Debugf("%s:%d: no such command", s.cloudUUID, cmdID)
+			slog.Debugf("%s:%d: no such command", s.siteUUID, cmdID)
 			rval.Response = cfgmsg.ConfigResponse_NOCMD
 			return rval, nil
 		}
@@ -184,11 +184,11 @@ func (dbq *dbCmdQueue) status(ctx context.Context, s *perAPState, cmdID int64) (
 
 	switch {
 	case dbCmd.State == "ENQD":
-		slog.Debugf("%s:%d: queued", s.cloudUUID, cmdID)
+		slog.Debugf("%s:%d: queued", s.siteUUID, cmdID)
 		rval.Response = cfgmsg.ConfigResponse_QUEUED
 
 	case dbCmd.State == "WORK":
-		slog.Debugf("%s:%d: in-progress", s.cloudUUID, cmdID)
+		slog.Debugf("%s:%d: in-progress", s.siteUUID, cmdID)
 		rval.Response = cfgmsg.ConfigResponse_INPROGRESS
 
 	case dbCmd.State == "DONE":
@@ -211,16 +211,16 @@ func (dbq *dbCmdQueue) status(ctx context.Context, s *perAPState, cmdID int64) (
 			}
 			state += xstate
 		}
-		slog.Debugf("%s:%d: %s", s.cloudUUID, cmdID, state)
+		slog.Debugf("%s:%d: %s", s.siteUUID, cmdID, state)
 
 	default:
-		slog.Debugf("%s:%d: unknown state %q", s.cloudUUID, cmdID, dbCmd.State)
+		slog.Debugf("%s:%d: unknown state %q", s.siteUUID, cmdID, dbCmd.State)
 	}
 
 	return rval, nil
 }
 
-func (dbq *dbCmdQueue) cancel(ctx context.Context, s *perAPState, cmdID int64) (*cfgmsg.ConfigResponse, error) {
+func (dbq *dbCmdQueue) cancel(ctx context.Context, s *siteState, cmdID int64) (*cfgmsg.ConfigResponse, error) {
 	rval := &cfgmsg.ConfigResponse{
 		Timestamp: ptypes.TimestampNow(),
 		CmdID:     cmdID,
@@ -230,7 +230,7 @@ func (dbq *dbCmdQueue) cancel(ctx context.Context, s *perAPState, cmdID int64) (
 	if err != nil {
 		if _, ok := err.(appliancedb.NotFoundError); ok {
 			slog.Warnf("%s:%d cancellation for unknown command",
-				s.cloudUUID, cmdID)
+				s.siteUUID, cmdID)
 			rval.Response = cfgmsg.ConfigResponse_NOCMD
 			return rval, nil
 		}
@@ -259,14 +259,14 @@ func (dbq *dbCmdQueue) cancel(ctx context.Context, s *perAPState, cmdID int64) (
 	return rval, nil
 }
 
-func (dbq *dbCmdQueue) complete(ctx context.Context, s *perAPState, rval *cfgmsg.ConfigResponse) error {
+func (dbq *dbCmdQueue) complete(ctx context.Context, s *siteState, rval *cfgmsg.ConfigResponse) error {
 	cmdID := rval.CmdID
 	jsonResp, err := json.Marshal(rval)
 	newCmd, oldCmd, err := dbq.handle.CommandComplete(ctx, cmdID, jsonResp)
 	if err != nil {
 		if _, ok := err.(appliancedb.NotFoundError); ok {
 			slog.Warnf("%s:%d completion for unknown command",
-				s.cloudUUID, cmdID)
+				s.siteUUID, cmdID)
 			return nil
 		}
 		return err
@@ -288,20 +288,20 @@ func (dbq *dbCmdQueue) complete(ctx context.Context, s *perAPState, rval *cfgmsg
 			var tree *cfgtree.PTree
 			tree, err = cfgtree.NewPTree("@", []byte(rval.Value))
 			if err != nil {
-				slog.Warnf("failed to refresh %s: %v", s.cloudUUID, err)
+				slog.Warnf("failed to refresh %s: %v", s.siteUUID, err)
 				return err
 			}
 			s.setCachedTree(tree)
 		}
 	} else {
 		slog.Infof("%s:%d multiple completions - last at %s",
-			s.cloudUUID, cmdID, oldCmd.DoneTime.Time.Format(time.RFC3339))
+			s.siteUUID, cmdID, oldCmd.DoneTime.Time.Format(time.RFC3339))
 	}
 	return err
 }
 
-func (dbq *dbCmdQueue) cleanup(s *perAPState) {
-	u, err := uuid.FromString(s.cloudUUID)
+func (dbq *dbCmdQueue) cleanup(s *siteState) {
+	u, err := uuid.FromString(s.siteUUID)
 	if err != nil {
 		return
 	}
@@ -310,10 +310,10 @@ func (dbq *dbCmdQueue) cleanup(s *perAPState) {
 		del, err := dbq.handle.CommandDelete(context.Background(), u, int64(*cqMax))
 		if err != nil {
 			slog.Errorf("Failed to delete commands from queue for %s: %v",
-				s.cloudUUID, err)
+				s.siteUUID, err)
 		} else {
 			slog.Debugf("Deleted %d commands from queue for %s",
-				del, s.cloudUUID)
+				del, s.siteUUID)
 		}
 	}()
 }

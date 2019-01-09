@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -44,11 +44,11 @@ type configStore interface {
 }
 
 type cmdQueue interface {
-	submit(context.Context, *perAPState, *cfgmsg.ConfigQuery) (int64, error)
-	fetch(context.Context, *perAPState, int64, uint32, bool) ([]*cfgmsg.ConfigQuery, error)
-	status(context.Context, *perAPState, int64) (*cfgmsg.ConfigResponse, error)
-	cancel(context.Context, *perAPState, int64) (*cfgmsg.ConfigResponse, error)
-	complete(context.Context, *perAPState, *cfgmsg.ConfigResponse) error
+	submit(context.Context, *siteState, *cfgmsg.ConfigQuery) (int64, error)
+	fetch(context.Context, *siteState, int64, uint32, bool) ([]*cfgmsg.ConfigQuery, error)
+	status(context.Context, *siteState, int64) (*cfgmsg.ConfigResponse, error)
+	cancel(context.Context, *siteState, int64) (*cfgmsg.ConfigResponse, error)
+	complete(context.Context, *siteState, *cfgmsg.ConfigResponse) error
 }
 
 var environ struct {
@@ -147,7 +147,7 @@ func main() {
 	store = mkStore()
 
 	if environ.Emulate {
-		slog.Infof("Appliance emulator enabled")
+		slog.Infof("Site emulator enabled")
 	}
 
 	port := environ.GrpcPort

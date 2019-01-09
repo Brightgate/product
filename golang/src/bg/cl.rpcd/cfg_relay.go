@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -20,32 +20,32 @@ import (
 
 	rpc "bg/cloud_rpc"
 
-	"github.com/grpc-ecosystem/go-grpc-middleware/util/metautils"
 	"github.com/pkg/errors"
+	"github.com/satori/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
 
-// grpc endpoint for calls coming in from appliances
-type applianceEndpoint struct {
+// grpc endpoint for site-scoped config calls coming in from appliances
+type siteEndpoint struct {
 	configdURL string
 	timeout    time.Duration
 	tls        bool
 }
 
 type configdEndpoint struct {
-	cloudUUID string
-	url       string
-	tls       bool
-	conn      *grpc.ClientConn
-	client    rpc.ConfigBackEndClient
+	siteUUID uuid.UUID
+	url      string
+	tls      bool
+	conn     *grpc.ClientConn
+	client   rpc.ConfigBackEndClient
 }
 
 var (
-	configdEndpoints = make(map[string]*configdEndpoint)
+	configdEndpoints = make(map[uuid.UUID]*configdEndpoint)
 )
 
-func defaultConfigServer(url, timeout string, disableTLS bool) *applianceEndpoint {
+func defaultConfigServer(url, timeout string, disableTLS bool) *siteEndpoint {
 	t := 5 * time.Second
 	if timeout != "" {
 		opt, err := time.ParseDuration(timeout)
@@ -56,7 +56,7 @@ func defaultConfigServer(url, timeout string, disableTLS bool) *applianceEndpoin
 		}
 	}
 
-	return &applianceEndpoint{
+	return &siteEndpoint{
 		configdURL: url,
 		timeout:    t,
 		tls:        !disableTLS,
@@ -104,36 +104,35 @@ func (c *configdEndpoint) Disconnect() {
 	c.client = nil
 }
 
-// Find or establish a gRPC connection to the cl.configd supporting this
-// appliance
-func (s *applianceEndpoint) getConfigdConn(ctx context.Context) (*configdEndpoint, error) {
-
-	uuid := metautils.ExtractIncoming(ctx).Get("clouduuid")
-	if uuid == "" {
-		return nil, fmt.Errorf("missing cloud UUID")
+// Find or establish a gRPC connection to the cl.configd supporting the
+// appliance's site.
+func (s *siteEndpoint) getConfigdConn(ctx context.Context) (*configdEndpoint, error) {
+	siteUUID, err := getSiteUUID(ctx, false)
+	if err != nil {
+		return nil, err
 	}
 
-	if conn := configdEndpoints[uuid]; conn != nil {
+	if conn := configdEndpoints[siteUUID]; conn != nil {
 		return conn, nil
 	}
 
 	conn := &configdEndpoint{
 		// XXX: use uuid to lookup configd URL in the database
-		cloudUUID: uuid,
-		url:       s.configdURL,
-		tls:       s.tls,
+		siteUUID: siteUUID,
+		url:      s.configdURL,
+		tls:      s.tls,
 	}
 
 	if err := conn.Connect(); err != nil {
 		return nil, fmt.Errorf("connecting to configd: %v", err)
 	}
 
-	configdEndpoints[uuid] = conn
+	configdEndpoints[siteUUID] = conn
 	return conn, nil
 }
 
-// Relay a backend gRPC to the correct cl.configd for the appliance that sent it
-func (s *applianceEndpoint) relay(ctx context.Context, cmd interface{}) *rpc.CfgBackEndResponse {
+// Relay a backend gRPC to the correct cl.configd for the site that sent it
+func (s *siteEndpoint) relay(ctx context.Context, cmd interface{}) *rpc.CfgBackEndResponse {
 
 	var rval *rpc.CfgBackEndResponse
 
@@ -145,19 +144,19 @@ func (s *applianceEndpoint) relay(ctx context.Context, cmd interface{}) *rpc.Cfg
 
 		switch req := cmd.(type) {
 		case *rpc.CfgBackEndHello:
-			req.CloudUuid = conn.cloudUUID
+			req.SiteUUID = conn.siteUUID.String()
 			rval, err = conn.client.Hello(ctx, req)
 		case *rpc.CfgBackEndDownload:
-			req.CloudUuid = conn.cloudUUID
+			req.SiteUUID = conn.siteUUID.String()
 			rval, err = conn.client.Download(ctx, req)
 		case *rpc.CfgBackEndUpdate:
-			req.CloudUuid = conn.cloudUUID
+			req.SiteUUID = conn.siteUUID.String()
 			rval, err = conn.client.Update(ctx, req)
 		case *rpc.CfgBackEndFetchCmds:
-			req.CloudUuid = conn.cloudUUID
+			req.SiteUUID = conn.siteUUID.String()
 			rval, err = conn.client.FetchCmds(ctx, req)
 		case *rpc.CfgBackEndCompletions:
-			req.CloudUuid = conn.cloudUUID
+			req.SiteUUID = conn.siteUUID.String()
 			rval, err = conn.client.CompleteCmds(ctx, req)
 		default:
 			err = fmt.Errorf("unrecognized configd command")
@@ -177,43 +176,43 @@ func (s *applianceEndpoint) relay(ctx context.Context, cmd interface{}) *rpc.Cfg
 	return rval
 }
 
-func (s *applianceEndpoint) Hello(ctx context.Context,
+func (s *siteEndpoint) Hello(ctx context.Context,
 	req *rpc.CfgBackEndHello) (*rpc.CfgBackEndResponse, error) {
 
 	return s.relay(ctx, req), nil
 }
 
-func (s *applianceEndpoint) Download(ctx context.Context,
+func (s *siteEndpoint) Download(ctx context.Context,
 	req *rpc.CfgBackEndDownload) (*rpc.CfgBackEndResponse, error) {
 
 	return s.relay(ctx, req), nil
 }
 
-func (s *applianceEndpoint) Update(ctx context.Context,
+func (s *siteEndpoint) Update(ctx context.Context,
 	req *rpc.CfgBackEndUpdate) (*rpc.CfgBackEndResponse, error) {
 
 	return s.relay(ctx, req), nil
 }
 
-func (s *applianceEndpoint) FetchCmds(ctx context.Context,
+func (s *siteEndpoint) FetchCmds(ctx context.Context,
 	req *rpc.CfgBackEndFetchCmds) (*rpc.CfgBackEndResponse, error) {
 
 	return s.relay(ctx, req), nil
 }
 
-func (s *applianceEndpoint) CompleteCmds(ctx context.Context,
+func (s *siteEndpoint) CompleteCmds(ctx context.Context,
 	req *rpc.CfgBackEndCompletions) (*rpc.CfgBackEndResponse, error) {
 
 	return s.relay(ctx, req), nil
 }
 
-func (s *applianceEndpoint) FetchStream(req *rpc.CfgBackEndFetchCmds,
+func (s *siteEndpoint) FetchStream(req *rpc.CfgBackEndFetchCmds,
 	stream rpc.ConfigBackEnd_FetchStreamServer) error {
 
 	slog.Infof("starting stream relay")
 	ctx := stream.Context()
 	conn, err := s.getConfigdConn(ctx)
-	req.CloudUuid = conn.cloudUUID
+	req.SiteUUID = conn.siteUUID.String()
 
 	relayStream, err := conn.client.FetchStream(ctx, req)
 	if err != nil {
@@ -230,7 +229,7 @@ func (s *applianceEndpoint) FetchStream(req *rpc.CfgBackEndFetchCmds,
 		if resp, err = relayStream.Recv(); err != nil {
 			if ctx.Err() == context.Canceled {
 				slog.Infof("client %s disconnected",
-					conn.cloudUUID)
+					conn.siteUUID)
 				err = nil
 				break
 			}

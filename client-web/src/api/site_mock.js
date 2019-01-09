@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -15,23 +15,23 @@ import Debug from 'debug';
 import mockDevices from './devices_mock';
 import mockUsers from './users_mock';
 
-const debug = Debug('appliance-mock');
+const debug = Debug('site-mock');
 
-const mockLocalAppliances = [
+const mockLocalSites = [
   {
     uuid: '0',
-    name: 'Local Appliance',
+    name: 'Local Site',
   },
 ];
 
-const mockCloudAppliances = [
+const mockCloudSites = [
   {
     uuid: '5182ab0b-39db-4256-86e0-8154171b35ac',
-    name: 'Apple',
+    name: 'Apple-Mock-Site',
   },
   {
     uuid: 'ef9b1046-95fa-41c5-a226-ad88198da9e2',
-    name: 'Banana',
+    name: 'Banana-Mock-Site',
   },
 ];
 
@@ -83,16 +83,16 @@ function mockAxios(normalAxios, mode) {
   const mockAx = axios.create();
   const mock = new MockAdapter(mockAx);
 
-  const mockAppliances = (mode === 'cloud') ? mockCloudAppliances : mockLocalAppliances;
-  debug('mockAppliances is!', mockAppliances, mode);
+  const mockSites = (mode === 'cloud') ? mockCloudSites : mockLocalSites;
+  debug('mockSites is!', mockSites, mode);
 
   mock
-    .onGet('/api/appliances').reply(200, mockAppliances)
-    .onGet(/\/api\/appliances\/.+\/users/).reply(200, mockUsers)
-    .onGet(/\/api\/appliances\/.+\/config\?.*/).reply(configHandler)
-    .onGet(/\/api\/appliances\/.+\/devices/).reply(200, mockDevices)
-    .onGet(/\/api\/appliances\/.+\/rings/).reply(200, mockRings)
-    .onGet('/auth/appliance/login').reply(200)
+    .onGet('/api/sites').reply(200, mockSites)
+    .onGet(/\/api\/sites\/.+\/users/).reply(200, mockUsers)
+    .onGet(/\/api\/sites\/.+\/config\?.*/).reply(configHandler)
+    .onGet(/\/api\/sites\/.+\/devices/).reply(200, mockDevices)
+    .onGet(/\/api\/sites\/.+\/rings/).reply(200, mockRings)
+    .onGet('/auth/sites/login').reply(200)
     .onGet('/auth/logout').reply(200)
     .onGet('/auth/userid').reply(200)
     .onAny().reply(500);

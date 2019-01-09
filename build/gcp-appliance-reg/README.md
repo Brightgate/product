@@ -1,5 +1,5 @@
 ```
-COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+COPYRIGHT 2019 Brightgate Inc. All rights reserved.
 
 This copyright notice is Copyright Management Information under 17 USC 1202
 and is included to protect this work and deter copyright infringement.
@@ -85,9 +85,10 @@ Example:
 $ cl-reg app add -d output_secrets -i appliance-reg-peppy-breaker-161717-us-west1-testreg3.json test-appliance
 Enter DB password:
 -------------------------------------------------------------
-      Created device: projects/peppy-breaker-161717/locations/us-west1/registries/testreg3/appliances/test-appliance
-Appliance Cloud UUID: 0fb7871a-ddcd-418e-88ae-f270a4f9b8a6
-        Secrets file: output_secrets/test-appliance.cloud.secret.json
+Created device: projects/peppy-breaker-161717/locations/us-west1/registries/testreg3/appliances/test-appliance
+     Site UUID: 7be7369a-fd81-48cb-a5e0-15e9c71fd75d
+Appliance UUID: 0fb7871a-ddcd-418e-88ae-f270a4f9b8a6
+  Secrets file: output_secrets/test-appliance.cloud.secret.json
 -------------------------------------------------------------
 Next, provision output_secrets/test-appliance.cloud.secret.json to the appliance at:
     /opt/com.brightgate/etc/secret/cloud/cloud.secret.json
@@ -95,21 +96,23 @@ Next, provision output_secrets/test-appliance.cloud.secret.json to the appliance
 
 You can also specify the project, region, and registry name via the environment
 variables exported in the `.sh` file created by the registry provisioning
-script, or by command-line flags.
+script, or by command-line flags.  By default a site will be auto-provisioned,
+but you can override it by passing the `-s` flag.
 
 If you need to provision an appliance on a CloudSQL instance for which there's
 not a proxy already running, use the shell script wrapper:
 
 ```shell
 $ . appliance-reg-peppy-breaker-161717-us-west1-testreg3.sh
-$ ./new-appliance.sh ~/secrets/Engineering-f51a19014a36.json test-appliance
+$ ./new-appliance.sh -c ~/secrets/Engineering-f51a19014a36.json test-appliance
 Activated service account credentials for: [cloudappliance-reg-admin@peppy-breaker-161717.iam.gserviceaccount.com]
 started sql proxy
 Enter DB password:
 -------------------------------------------------------------
-      Created device: projects/peppy-breaker-161717/locations/us-west1/registries/testreg3/appliances/test-appliance
-Appliance Cloud UUID: 007913c9-b3ce-4e11-9e05-5e9effda9a13
-        Secrets file: output_secrets/test-appliance.cloud.secret.json
+Created device: projects/peppy-breaker-161717/locations/us-west1/registries/testreg3/appliances/test-appliance
+     Site UUID: f9c10fcd-2297-4e28-807e-a6091838f243
+Appliance UUID: 007913c9-b3ce-4e11-9e05-5e9effda9a13
+  Secrets file: output_secrets/test-appliance.cloud.secret.json
 -------------------------------------------------------------
 Next, provision output_secrets/test-appliance.cloud.secret.json to the appliance at:
     /opt/com.brightgate/etc/secret/cloud/cloud.secret.json

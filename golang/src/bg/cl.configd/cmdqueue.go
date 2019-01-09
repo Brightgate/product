@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -25,7 +25,7 @@ import (
 
 // State of a single submitted command.
 type cmdState struct {
-	cloudUUID *string
+	siteUUID  *string
 	cmdID     int64                  // monotonically increasing ID
 	cmd       *cfgmsg.ConfigQuery    // config operation(s)
 	response  *cfgmsg.ConfigResponse // result of the operation(s)
@@ -37,23 +37,23 @@ type cmdState struct {
 // A queue of cmdState structures.  We maintain both a proper queue, to enforce
 // FIFO ordering, and a cmdID-indexed map, to enable fast lookups.
 type simpleQueue struct {
-	cloudUUID string
-	queue     []*cmdState
-	pool      map[int64]*cmdState
-	maxLen    int
+	siteUUID string
+	queue    []*cmdState
+	pool     map[int64]*cmdState
+	maxLen   int
 }
 
 func (c *cmdState) String() string {
-	return fmt.Sprintf("%s:%d", *c.cloudUUID, c.cmdID)
+	return fmt.Sprintf("%s:%d", *c.siteUUID, c.cmdID)
 }
 
 // Instantiate a new command queue
-func newSimpleQueue(cloudUUID string, maxLen int) *simpleQueue {
+func newSimpleQueue(siteUUID string, maxLen int) *simpleQueue {
 	q := simpleQueue{
-		cloudUUID: cloudUUID,
-		queue:     make([]*cmdState, 0),
-		pool:      make(map[int64]*cmdState),
-		maxLen:    maxLen,
+		siteUUID: siteUUID,
+		queue:    make([]*cmdState, 0),
+		pool:     make(map[int64]*cmdState),
+		maxLen:   maxLen,
 	}
 	return &q
 }
@@ -69,7 +69,7 @@ func (q *simpleQueue) dequeue(cmdID int64) int {
 			return i
 		}
 	}
-	slog.Warnf("%s:%d not in queue", q.cloudUUID, cmdID)
+	slog.Warnf("%s:%d not in queue", q.siteUUID, cmdID)
 	return -1
 }
 
@@ -143,7 +143,7 @@ func (memq *memCmdQueue) search(ctx context.Context, cmdID int64) *cmdState {
 
 // Add a single command to an AP's submitted queue and to its map of outstanding
 // commands.
-func (memq *memCmdQueue) submit(ctx context.Context, s *perAPState, q *cfgmsg.ConfigQuery) (int64, error) {
+func (memq *memCmdQueue) submit(ctx context.Context, s *siteState, q *cfgmsg.ConfigQuery) (int64, error) {
 	memq.Lock()
 	defer memq.Unlock()
 
@@ -152,7 +152,7 @@ func (memq *memCmdQueue) submit(ctx context.Context, s *perAPState, q *cfgmsg.Co
 
 	now := time.Now()
 	cmd := cmdState{
-		cloudUUID: &s.cloudUUID,
+		siteUUID:  &s.siteUUID,
 		cmdID:     cmdID,
 		cmd:       q,
 		submitted: &now,
@@ -187,7 +187,7 @@ func (memq *memCmdQueue) submit(ctx context.Context, s *perAPState, q *cfgmsg.Co
 // Fetch one or more commands from the submitted queue.  Commands are left in
 // the queue until they are completed, allowing them to be refetched if the
 // appliance crashes/restarts before they are executed.
-func (memq *memCmdQueue) fetch(ctx context.Context, s *perAPState, start int64, max uint32,
+func (memq *memCmdQueue) fetch(ctx context.Context, s *siteState, start int64, max uint32,
 	block bool) ([]*cfgmsg.ConfigQuery, error) {
 
 	var err error
@@ -227,7 +227,7 @@ func (memq *memCmdQueue) fetch(ctx context.Context, s *perAPState, start int64, 
 }
 
 // Get the status of a submitted command
-func (memq *memCmdQueue) status(ctx context.Context, s *perAPState, cmdID int64) (*cfgmsg.ConfigResponse, error) {
+func (memq *memCmdQueue) status(ctx context.Context, s *siteState, cmdID int64) (*cfgmsg.ConfigResponse, error) {
 	rval := &cfgmsg.ConfigResponse{
 		Timestamp: ptypes.TimestampNow(),
 		CmdID:     cmdID,
@@ -240,7 +240,7 @@ func (memq *memCmdQueue) status(ctx context.Context, s *perAPState, cmdID int64)
 
 	switch {
 	case cmd == nil:
-		slog.Debugf("%s:%d: no such cmd\n", s.cloudUUID, cmdID)
+		slog.Debugf("%s:%d: no such cmd\n", s.siteUUID, cmdID)
 		rval.Response = cfgmsg.ConfigResponse_NOCMD
 
 	case cmd.fetched == nil:
@@ -259,7 +259,7 @@ func (memq *memCmdQueue) status(ctx context.Context, s *perAPState, cmdID int64)
 }
 
 // Attempt to cancel a command
-func (memq *memCmdQueue) cancel(ctx context.Context, s *perAPState, cmdID int64) (*cfgmsg.ConfigResponse, error) {
+func (memq *memCmdQueue) cancel(ctx context.Context, s *siteState, cmdID int64) (*cfgmsg.ConfigResponse, error) {
 	rval := &cfgmsg.ConfigResponse{
 		Timestamp: ptypes.TimestampNow(),
 		CmdID:     cmdID,
@@ -311,7 +311,7 @@ func isRefresh(cmd *cfgmsg.ConfigQuery) bool {
 }
 
 // Handle a completion for an outstanding command
-func (memq *memCmdQueue) complete(ctx context.Context, s *perAPState, rval *cfgmsg.ConfigResponse) error {
+func (memq *memCmdQueue) complete(ctx context.Context, s *siteState, rval *cfgmsg.ConfigResponse) error {
 	memq.Lock()
 	defer memq.Unlock()
 
@@ -319,7 +319,7 @@ func (memq *memCmdQueue) complete(ctx context.Context, s *perAPState, rval *cfgm
 	cmd := memq.search(ctx, cmdID)
 	if cmd == nil {
 		slog.Warnf("%s:%d completion for unknown command",
-			s.cloudUUID, cmdID)
+			s.siteUUID, cmdID)
 		return nil
 	}
 	slog.Debugf("complete(%v)", cmd)
@@ -342,7 +342,7 @@ func (memq *memCmdQueue) complete(ctx context.Context, s *perAPState, rval *cfgm
 
 			tree, err := cfgtree.NewPTree("@", []byte(rval.Value))
 			if err != nil {
-				slog.Warnf("failed to refresh %s: %v", s.cloudUUID, err)
+				slog.Warnf("failed to refresh %s: %v", s.siteUUID, err)
 			} else {
 				s.setCachedTree(tree)
 			}

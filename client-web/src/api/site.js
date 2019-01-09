@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -15,7 +15,7 @@ import qs from 'qs';
 
 import retry from 'bluebird-retry';
 import Debug from 'debug';
-import makeAxiosMock from './appliance_mock';
+import makeAxiosMock from './site_mock';
 
 const normalAxios = axiosMod.create({
   timeout: 5000,
@@ -25,7 +25,7 @@ let axios = normalAxios;
 let mockMode = null;
 
 const MOCKMODE_NONE = null;
-const MOCKMODE_APPLIANCE = 'appliance';
+const MOCKMODE_LOCAL = 'local';
 const MOCKMODE_CLOUD = 'cloud';
 
 const RETRY_DELAY = 1000;
@@ -33,7 +33,7 @@ const RETRY_DELAY = 1000;
 const debug = Debug('api/appliance');
 
 function setMockMode(mode) {
-  assert(mode === null || mode === 'cloud' || mode === 'appliance');
+  assert(mode === MOCKMODE_NONE || mode === MOCKMODE_CLOUD || mode === MOCKMODE_LOCAL);
   if (mockMode === mode) {
     return;
   }
@@ -51,13 +51,13 @@ function buildUrl(u) {
 }
 
 // Get a property's value
-async function applianceConfigGet(applianceID, property, defaultValue) {
-  assert.equal(typeof applianceID, 'string');
+async function siteConfigGet(siteID, property, defaultValue) {
+  assert.equal(typeof siteID, 'string');
   assert.equal(typeof property, 'string');
   assert(defaultValue === undefined || typeof defaultValue === 'string');
 
-  const u = buildUrl(`/api/appliances/${applianceID}/config?${property}`);
-  debug(`applianceConfigGet(${applianceID}, ${property}, ${defaultValue})`);
+  const u = buildUrl(`/api/sites/${siteID}/config?${property}`);
+  debug(`siteConfigGet(${siteID}, ${property}, ${defaultValue})`);
   let val = null;
   try {
     const resp = await axios.get(u);
@@ -66,22 +66,22 @@ async function applianceConfigGet(applianceID, property, defaultValue) {
     if (defaultValue === undefined) {
       throw err;
     } else {
-      debug(`applianceConfigGet(${applianceID}, ${property}): defaulting to ${defaultValue}`);
+      debug(`siteConfigGet(${siteID}, ${property}): defaulting to ${defaultValue}`);
       val = defaultValue;
     }
   }
-  debug(`applianceConfigGet(${applianceID}, ${property}): returning`, val);
+  debug(`siteConfigGet(${siteID}, ${property}): returning`, val);
   return val;
 }
 
 // Set a simple property to the specified value.
-async function applianceConfigSet(applianceID, property, value) {
-  assert.equal(typeof applianceID, 'string');
+async function siteConfigSet(siteID, property, value) {
+  assert.equal(typeof siteID, 'string');
   assert.equal(typeof property, 'string');
   assert.equal(typeof value, 'string');
 
-  const u = buildUrl(`/api/appliances/${applianceID}/config`);
-  debug(`applianceConfigSet: POST ${u} ${property}=${value}`);
+  const u = buildUrl(`/api/sites/${siteID}/config`);
+  debug(`siteConfigSet: POST ${u} ${property}=${value}`);
   const data = {[property]: value};
   try {
     await axios({
@@ -90,48 +90,48 @@ async function applianceConfigSet(applianceID, property, value) {
       data: qs.stringify(data),
       url: u,
     });
-    debug(`applianceConfigSet: set ${property} = ${value}.`);
+    debug(`siteConfigSet: set ${property} = ${value}.`);
   } catch (err) {
-    debug(`applianceConfigSet: Error ${err}`);
+    debug(`siteConfigSet: Error ${err}`);
     throw err;
   }
   return;
 }
 
-async function applianceConfigMustEqual(applianceID, property, expected) {
-  assert.equal(typeof applianceID, 'string');
+async function siteConfigMustEqual(siteID, property, expected) {
+  assert.equal(typeof siteID, 'string');
   assert.equal(typeof property, 'string');
   assert.equal(typeof expected, 'string');
 
-  const val = await applianceConfigGet(applianceID, property);
+  const val = await siteConfigGet(siteID, property);
   if (val !== expected) {
-    throw new Error(`applianceConfigMustEqual(${applianceID}, ${property}, ${expected}) != ${val}`);
+    throw new Error(`siteConfigMustEqual(${siteID}, ${property}, ${expected}) != ${val}`);
   }
   return true;
 }
 
 // Make repeated attempts to see if property has changed to an expected value.
-async function applianceConfigWaitProp(applianceID, property, expected) {
-  assert.equal(typeof applianceID, 'string');
+async function siteConfigWaitProp(siteID, property, expected) {
+  assert.equal(typeof siteID, 'string');
   assert.equal(typeof property, 'string');
   assert.equal(typeof expected, 'string');
 
   const maxTries = 10;
   try {
-    await retry(applianceConfigMustEqual, {
+    await retry(siteConfigMustEqual, {
       interval: RETRY_DELAY,
       max_tries: maxTries, // eslint-disable-line camelcase
       throw_original: true, // eslint-disable-line camelcase
-      args: [applianceID, property, expected],
+      args: [siteID, property, expected],
     });
-    debug(`applianceConfigWaitProp: saw ${property} become ${expected}`);
+    debug(`siteConfigWaitProp: saw ${property} become ${expected}`);
   } catch (err) {
     throw new Error(`Did not see property change.  Last error was: ${err}`);
   }
 }
 
-async function appliancesGet() {
-  const u = buildUrl('/api/appliances');
+async function sitesGet() {
+  const u = buildUrl('/api/sites');
   const res = await axios.get(u);
   if (res.data === undefined || res.data === null || typeof res.data !== 'object') {
     throw new Error(`Saw incomplete or bad GET ${u} response.`);
@@ -139,11 +139,11 @@ async function appliancesGet() {
   return res.data;
 }
 
-async function commonApplianceGet(applianceID, suffix) {
-  assert.equal(typeof applianceID, 'string');
+async function commonApplianceGet(siteID, suffix) {
+  assert.equal(typeof siteID, 'string');
   assert.equal(typeof suffix, 'string');
 
-  const u = buildUrl(`/api/appliances/${applianceID}/${suffix}`);
+  const u = buildUrl(`/api/sites/${siteID}/${suffix}`);
   const res = await axios.get(u);
   const data = res.data;
   if (data === undefined || data === null || typeof data !== 'object') {
@@ -154,10 +154,10 @@ async function commonApplianceGet(applianceID, suffix) {
 }
 
 // Load the list of devices from the server.
-async function applianceDevicesGet(applianceID) {
-  assert.equal(typeof applianceID, 'string');
+async function siteDevicesGet(siteID) {
+  assert.equal(typeof siteID, 'string');
 
-  const res = await commonApplianceGet(applianceID, 'devices');
+  const res = await commonApplianceGet(siteID, 'devices');
   if (res.Devices === null) {
     return [];
   }
@@ -166,69 +166,69 @@ async function applianceDevicesGet(applianceID) {
 }
 
 // Load the list of rings from the server.
-async function applianceRingsGet(applianceID) {
-  assert.equal(typeof applianceID, 'string');
+async function siteRingsGet(siteID) {
+  assert.equal(typeof siteID, 'string');
 
-  return await commonApplianceGet(applianceID, 'rings');
+  return await commonApplianceGet(siteID, 'rings');
 }
 
 // Ask the server to change the ring property for a device, then
 // attempt to wait for that change to propagate.  In practice this
 // seems to take several seconds, during which time the server may
 // become unreachable; thus we use retrys to make things work properly.
-async function applianceClientsRingSet(applianceID, deviceID, newRing) {
-  assert.equal(typeof applianceID, 'string');
+async function siteClientsRingSet(siteID, deviceID, newRing) {
+  assert.equal(typeof siteID, 'string');
   assert.equal(typeof deviceID, 'string');
   assert.equal(typeof newRing, 'string');
 
   const propName = `@/clients/${deviceID}/ring`;
-  debug(`applianceClientsRingSet: ${propName} -> ${newRing}`);
-  await applianceConfigSet(applianceID, propName, newRing);
-  await applianceConfigWaitProp(applianceID, propName, newRing);
+  debug(`siteClientsRingSet: ${propName} -> ${newRing}`);
+  await siteConfigSet(siteID, propName, newRing);
+  await siteConfigWaitProp(siteID, propName, newRing);
 }
 
 // Load the list of users from the server.
-async function applianceUsersGet(applianceID) {
-  assert.equal(typeof applianceID, 'string');
+async function siteUsersGet(siteID) {
+  assert.equal(typeof siteID, 'string');
 
-  const res = await commonApplianceGet(applianceID, 'users');
+  const res = await commonApplianceGet(siteID, 'users');
   assert(res.Users && typeof res.Users === 'object');
   return res.Users;
 }
 
 // Update or create user on server
-async function applianceUsersPost(applianceID, userInfo, newUser) {
-  assert.equal(typeof applianceID, 'string');
+async function siteUsersPost(siteID, userInfo, newUser) {
+  assert.equal(typeof siteID, 'string');
   assert.equal(typeof userInfo, 'object');
   assert.equal(typeof newUser, 'boolean');
 
   const uid = newUser ? 'NEW' : userInfo.UUID;
-  const u = buildUrl(`/api/appliances/${applianceID}/users/${uid}`);
-  debug(`applianceUsersPost ${u}`, userInfo);
+  const u = buildUrl(`/api/sites/${siteID}/users/${uid}`);
+  debug(`siteUsersPost ${u}`, userInfo);
   const res = await axios.post(u, userInfo);
   assert(typeof res.data === 'object');
   return res.data;
 }
 
-async function applianceUsersDelete(applianceID, userID) {
-  assert.equal(typeof applianceID, 'string');
+async function siteUsersDelete(siteID, userID) {
+  assert.equal(typeof siteID, 'string');
   assert.equal(typeof userID, 'string');
 
-  const u = buildUrl(`/api/appliances/${applianceID}/users/${userID}`);
-  debug(`applianceUsersDelete ${u}`, userID);
+  const u = buildUrl(`/api/sites/${siteID}/users/${userID}`);
+  debug(`siteUsersDelete ${u}`, userID);
   await axios.delete(u);
   return;
 }
 
-async function applianceEnrollGuest(applianceID, {type, phone, email}) {
-  assert.equal(typeof applianceID, 'string');
+async function siteEnrollGuest(siteID, {type, phone, email}) {
+  assert.equal(typeof siteID, 'string');
   assert.equal(typeof type, 'string');
   assert.equal(typeof phone, 'string');
   assert(email === undefined || typeof email === 'string');
 
   const args = {type, phone, email};
-  const u = buildUrl(`/api/appliances/${applianceID}/enroll_guest`);
-  debug(`applianceEnrollGuest ${u}`, args);
+  const u = buildUrl(`/api/sites/${siteID}/enroll_guest`);
+  debug(`siteEnrollGuest ${u}`, args);
   const res = await axios({
     method: 'POST',
     headers: {'content-type': 'application/x-www-form-urlencoded'},
@@ -243,7 +243,7 @@ async function authApplianceLogin(uid, userPassword) {
   assert.equal(typeof uid, 'string');
   assert.equal(typeof userPassword, 'string');
 
-  const u = buildUrl('/auth/appliance/login');
+  const u = buildUrl('/auth/site/login');
   const data = {uid, userPassword};
   try {
     await axios({
@@ -259,10 +259,10 @@ async function authApplianceLogin(uid, userPassword) {
   }
 }
 
-async function applianceSupreme(applianceID) {
-  assert.equal(typeof applianceID, 'string');
+async function siteSupreme(siteID) {
+  assert.equal(typeof siteID, 'string');
 
-  const u = buildUrl(`/api/appliances/${applianceID}/supreme`);
+  const u = buildUrl(`/api/sites/${siteID}/supreme`);
   const res = await axios.get(u);
   return res.data;
 }
@@ -289,20 +289,20 @@ async function authUserid() {
 
 export default {
   MOCKMODE_NONE,
-  MOCKMODE_APPLIANCE,
+  MOCKMODE_LOCAL,
   MOCKMODE_CLOUD,
-  applianceConfigGet,
-  applianceConfigSet,
-  applianceConfigWaitProp,
-  appliancesGet,
-  applianceDevicesGet,
-  applianceRingsGet,
-  applianceClientsRingSet,
-  applianceUsersGet,
-  applianceUsersPost,
-  applianceUsersDelete,
-  applianceEnrollGuest,
-  applianceSupreme,
+  siteConfigGet,
+  siteConfigSet,
+  siteConfigWaitProp,
+  sitesGet,
+  siteDevicesGet,
+  siteRingsGet,
+  siteClientsRingSet,
+  siteUsersGet,
+  siteUsersPost,
+  siteUsersDelete,
+  siteEnrollGuest,
+  siteSupreme,
   authApplianceLogin,
   authApplianceLogout,
   authUserid,

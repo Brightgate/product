@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -33,7 +33,7 @@ func (store *fileStore) get(ctx context.Context, uuid string) (*cfgtree.PTree, e
 	path := store.dir + "/" + uuid + ".json"
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		slog.Warnf("No config file at %s", path)
-		return nil, fmt.Errorf("no such appliance: %s", uuid)
+		return nil, fmt.Errorf("no such site: %s", uuid)
 	}
 
 	file, err := ioutil.ReadFile(path)

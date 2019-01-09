@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -35,49 +35,49 @@ type apiHandler struct {
 	getClientHandle getClientHandleFunc
 }
 
-type apiAppliance struct {
+type apiSite struct {
 	UUID uuid.UUID `json:"uuid"`
 	Name string    `json:"name"`
 }
 
-// getAppliances implements /api/appliances
+// getSites implements /api/sites
 // XXX needs filtering by userid
-func (a *apiHandler) getAppliances(c echo.Context) error {
-	ids, err := a.db.AllApplianceIDs(context.Background())
+func (a *apiHandler) getSites(c echo.Context) error {
+	sites, err := a.db.AllCustomerSites(context.Background())
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError)
 	}
-	apiAppliances := make([]apiAppliance, len(ids))
-	for i, id := range ids {
+	apiSites := make([]apiSite, len(sites))
+	for i, site := range sites {
 		// XXX Today, we derive Name from the registry name.  However,
 		// customers will want to have control over the site name, and
 		// this is best seen as a temporary measure.
-		apiAppliances[i] = apiAppliance{
-			UUID: id.CloudUUID,
-			Name: id.ApplianceRegID,
+		apiSites[i] = apiSite{
+			UUID: site.UUID,
+			Name: site.Name,
 		}
 	}
-	return c.JSON(http.StatusOK, &apiAppliances)
+	return c.JSON(http.StatusOK, &apiSites)
 }
 
-// getAppliancesUUID implements /api/appliances/:uuid
-func (a *apiHandler) getAppliancesUUID(c echo.Context) error {
+// getSitesUUID implements /api/sites/:uuid
+func (a *apiHandler) getSitesUUID(c echo.Context) error {
 	// Parsing UUID from string input
 	u, err := uuid.FromString(c.Param("uuid"))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest)
 	}
-	id, err := a.db.ApplianceIDByUUID(context.Background(), u)
+	site, err := a.db.CustomerSiteByUUID(context.Background(), u)
 	if err != nil {
 		if _, ok := err.(appliancedb.NotFoundError); ok {
-			return echo.NewHTTPError(http.StatusNotFound, "No such appliance")
+			return echo.NewHTTPError(http.StatusNotFound, "No such site")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError)
 	}
-	return c.JSON(http.StatusOK, &id)
+	return c.JSON(http.StatusOK, &site)
 }
 
-// getConfig implements GET /api/appliances/:uuid/config
+// getConfig implements GET /api/sites/:uuid/config
 func (a *apiHandler) getConfig(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
@@ -94,7 +94,7 @@ func (a *apiHandler) getConfig(c echo.Context) error {
 	return c.JSON(http.StatusOK, pnode.Value)
 }
 
-// getConfig implements GET /api/appliances/:uuid/configtree
+// getConfig implements GET /api/sites/:uuid/configtree
 func (a *apiHandler) getConfigTree(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
@@ -111,7 +111,7 @@ func (a *apiHandler) getConfigTree(c echo.Context) error {
 	return c.JSON(http.StatusOK, pnode)
 }
 
-// postConfig implements POST /api/appliances/:uuid/config
+// postConfig implements POST /api/sites/:uuid/config
 func (a *apiHandler) postConfig(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
@@ -272,7 +272,7 @@ func buildDeviceResponse(c echo.Context, hdl *cfgapi.Handle,
 	return &d
 }
 
-// getDevices implements /api/appliances/:uuid/devices
+// getDevices implements /api/sites/:uuid/devices
 func (a *apiHandler) getDevices(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
@@ -336,7 +336,7 @@ type apiUsers struct {
 	Users map[string]*apiUserInfo
 }
 
-// getUsers implements /api/appliances/:uuid/users
+// getUsers implements /api/sites/:uuid/users
 func (a *apiHandler) getUsers(c echo.Context) error {
 	var users apiUsers
 	users.Users = make(map[string]*apiUserInfo)
@@ -354,7 +354,7 @@ func (a *apiHandler) getUsers(c echo.Context) error {
 	return c.JSON(http.StatusOK, users)
 }
 
-// getUserByUUID implements GET /api/appliances/:uuid/users/:useruuid
+// getUserByUUID implements GET /api/sites/:uuid/users/:useruuid
 func (a *apiHandler) getUserByUUID(c echo.Context) error {
 	// Parsing User UUID from string input
 	ruuid, err := uuid.FromString(c.Param("useruuid"))
@@ -377,7 +377,7 @@ func (a *apiHandler) getUserByUUID(c echo.Context) error {
 	return c.JSON(http.StatusOK, &cu)
 }
 
-// postUserByUUID implements POST /api/appliances/:uuid/users/:useruuid
+// postUserByUUID implements POST /api/sites/:uuid/users/:useruuid
 func (a *apiHandler) postUserByUUID(c echo.Context) error {
 	var au apiUserInfo
 	if err := c.Bind(&au); err != nil {
@@ -448,7 +448,7 @@ func (a *apiHandler) postUserByUUID(c echo.Context) error {
 	return c.JSON(http.StatusOK, &cu)
 }
 
-// deleteUserByUUID implements DELETE /api/appliances/:uuid/users/:useruuid
+// deleteUserByUUID implements DELETE /api/sites/:uuid/users/:useruuid
 func (a *apiHandler) deleteUserByUUID(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
@@ -481,7 +481,7 @@ type apiRing struct {
 
 type apiRings map[string]apiRing
 
-// getRings implements /api/appliances/:uuid/rings
+// getRings implements /api/sites/:uuid/rings
 func (a *apiHandler) getRings(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
@@ -515,17 +515,17 @@ func (a *apiHandler) sessionMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 func newAPIHandler(r *echo.Echo, db appliancedb.DataStore, sessionStore sessions.Store, getClientHandle getClientHandleFunc) *apiHandler {
 	h := &apiHandler{db, sessionStore, getClientHandle}
 	api := r.Group("/api", h.sessionMiddleware)
-	api.GET("/appliances", h.getAppliances)
-	api.GET("/appliances/:uuid", h.getAppliancesUUID)
-	api.GET("/appliances/:uuid/config", h.getConfig)
-	api.POST("/appliances/:uuid/config", h.postConfig)
-	api.GET("/appliances/:uuid/configtree", h.getConfigTree)
-	api.GET("/appliances/:uuid/devices", h.getDevices)
-	api.GET("/appliances/:uuid/users", h.getUsers)
-	api.GET("/appliances/:uuid/users/:useruuid", h.getUserByUUID)
-	api.POST("/appliances/:uuid/users/:useruuid", h.postUserByUUID)
-	api.DELETE("/appliances/:uuid/users/:useruuid", h.deleteUserByUUID)
-	api.GET("/appliances/:uuid/rings", h.getRings)
+	api.GET("/sites", h.getSites)
+	api.GET("/sites/:uuid", h.getSitesUUID)
+	api.GET("/sites/:uuid/config", h.getConfig)
+	api.POST("/sites/:uuid/config", h.postConfig)
+	api.GET("/sites/:uuid/configtree", h.getConfigTree)
+	api.GET("/sites/:uuid/devices", h.getDevices)
+	api.GET("/sites/:uuid/users", h.getUsers)
+	api.GET("/sites/:uuid/users/:useruuid", h.getUserByUUID)
+	api.POST("/sites/:uuid/users/:useruuid", h.postUserByUUID)
+	api.DELETE("/sites/:uuid/users/:useruuid", h.deleteUserByUUID)
+	api.GET("/sites/:uuid/rings", h.getRings)
 
 	return h
 }

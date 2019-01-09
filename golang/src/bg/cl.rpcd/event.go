@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -41,23 +41,28 @@ func newEventServer(pubsubClient *pubsub.Client, topicName string) (*eventServer
 
 func (ts *eventServer) Put(ctx context.Context, req *cloud_rpc.PutEventRequest) (*cloud_rpc.PutEventResponse, error) {
 	_, slog := endpointLogger(ctx)
-
-	uuid := metautils.ExtractIncoming(ctx).Get("clouduuid")
-	if uuid == "" {
-		return nil, status.Errorf(codes.Internal, "missing clouduuid")
-	}
 	slog.Infow("incoming event", "SubTopic", req.SubTopic)
+
+	siteUUID, err := getSiteUUID(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	applianceUUID := metautils.ExtractIncoming(ctx).Get("appliance_uuid")
+	if applianceUUID == "" {
+		return nil, status.Errorf(codes.Internal, "missing appliance_uuid")
+	}
 
 	m := &pubsub.Message{
 		Attributes: map[string]string{
 			"typeURL": req.Payload.TypeUrl,
-			"uuid":    uuid,
+			"uuid":    applianceUUID,
+			"site":    siteUUID.String(),
 		},
 		Data: req.Payload.Value,
 	}
 	slog.Infow("outgoing pubsub", "datalen", len(m.Data), "attributes", m.Attributes)
 	pubsubResult := ts.eventTopic.Publish(ctx, m)
-	_, err := pubsubResult.Get(ctx)
+	_, err = pubsubResult.Get(ctx)
 	if err != nil {
 		slog.Warnw("Publish failed", "message", m, "error", err)
 		return nil, status.Errorf(codes.Unavailable, "Publish failed")

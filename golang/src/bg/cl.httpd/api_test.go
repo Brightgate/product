@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -36,30 +36,24 @@ type MockAppliance struct {
 	appliancedb.ApplianceID
 }
 
+type MockSite struct {
+	appliancedb.CustomerSite
+}
+
 func init() {
 	zeroUUIDStr = uuid.UUID{}.String()
 }
 
 var (
-	zeroUUIDStr    string
-	mockAppliances = []*MockAppliance{
-		{
-			ApplianceID: appliancedb.ApplianceID{
-				CloudUUID:      uuid.Must(uuid.FromString("b3798a8e-41e0-4939-a038-e7675af864d5")),
-				GCPProject:     "foo",
-				GCPRegion:      "bar",
-				ApplianceReg:   "baz",
-				ApplianceRegID: "mock0",
-			},
+	zeroUUIDStr string
+	mockSites   = []appliancedb.CustomerSite{
+		appliancedb.CustomerSite{
+			UUID: uuid.Must(uuid.FromString("b3798a8e-41e0-4939-a038-e7675af864d5")),
+			Name: "mock-site-0",
 		},
-		{
-			ApplianceID: appliancedb.ApplianceID{
-				CloudUUID:      uuid.Must(uuid.FromString("099239f6-d8cd-4e57-a696-ef84a3bf39d0")),
-				GCPProject:     "foo",
-				GCPRegion:      "bar",
-				ApplianceReg:   "baz",
-				ApplianceRegID: "mock1",
-			},
+		appliancedb.CustomerSite{
+			UUID: uuid.Must(uuid.FromString("099239f6-d8cd-4e57-a696-ef84a3bf39d0")),
+			Name: "mock-site-1",
 		},
 	}
 )
@@ -100,14 +94,13 @@ func setupReqRec(method string, target string, body io.Reader, ss sessions.Store
 	return req, rec
 }
 
-func TestAppliances(t *testing.T) {
+func TestSites(t *testing.T) {
 	assert := require.New(t)
 	// Mock DB
-	m0 := mockAppliances[0]
-	m1 := mockAppliances[1]
+	m0 := mockSites[0]
+	m1 := mockSites[1]
 	dMock := &mocks.DataStore{}
-	dMock.On("AllApplianceIDs", mock.Anything).Return(
-		[]appliancedb.ApplianceID{m0.ApplianceID, m1.ApplianceID}, nil)
+	dMock.On("AllCustomerSites", mock.Anything).Return(mockSites, nil)
 	defer dMock.AssertExpectations(t)
 
 	// Setup Echo
@@ -116,7 +109,7 @@ func TestAppliances(t *testing.T) {
 	_ = newAPIHandler(e, dMock, ss, getMockClientHandle)
 
 	// Setup request
-	req, rec := setupReqRec(echo.GET, "/api/appliances", nil, ss)
+	req, rec := setupReqRec(echo.GET, "/api/sites", nil, ss)
 
 	// Test
 	e.ServeHTTP(rec, req)
@@ -128,18 +121,18 @@ func TestAppliances(t *testing.T) {
 	},{
 		"uuid": "%s",
 		"name": "%s"
-	}]`, m0.CloudUUID, m0.ApplianceRegID, m1.CloudUUID, m1.ApplianceRegID)
+	}]`, m0.UUID, m0.Name, m1.UUID, m1.Name)
 	t.Logf("return body: %s", rec.Body.String())
 	assert.JSONEq(exp, rec.Body.String())
 }
 
-func TestApplianceUUID(t *testing.T) {
+func TestSitesUUID(t *testing.T) {
 	assert := require.New(t)
 	// Mock DB
-	m0 := mockAppliances[0].ApplianceID
+	m0 := mockSites[0]
 	dMock := &mocks.DataStore{}
-	dMock.On("ApplianceIDByUUID", mock.Anything, m0.CloudUUID).Return(&m0, nil)
-	dMock.On("ApplianceIDByUUID", mock.Anything, mock.Anything).Return(nil, appliancedb.NotFoundError{})
+	dMock.On("CustomerSiteByUUID", mock.Anything, m0.UUID).Return(&m0, nil)
+	dMock.On("CustomerSiteByUUID", mock.Anything, mock.Anything).Return(nil, appliancedb.NotFoundError{})
 	defer dMock.AssertExpectations(t)
 
 	// Setup Echo
@@ -149,7 +142,7 @@ func TestApplianceUUID(t *testing.T) {
 
 	// Setup request
 	req, rec := setupReqRec(echo.GET,
-		fmt.Sprintf("/api/appliances/%s", m0.CloudUUID), nil, ss)
+		fmt.Sprintf("/api/sites/%s", m0.UUID), nil, ss)
 
 	// Test
 	e.ServeHTTP(rec, req)
@@ -161,8 +154,8 @@ func TestApplianceUUID(t *testing.T) {
 
 	// Test various error cases
 	req4xx := map[string]int{
-		"/api/appliances/invalid":                              400,
-		"/api/appliances/61df362c-338d-4f53-b1d9-c77c0522bb03": 404,
+		"/api/sites/invalid":                              400,
+		"/api/sites/61df362c-338d-4f53-b1d9-c77c0522bb03": 404,
 	}
 
 	for url, ret := range req4xx {
@@ -184,8 +177,8 @@ func TestUnauthorized(t *testing.T) {
 		path    string
 		handler echo.HandlerFunc
 	}{
-		{"/api/appliances", h.getAppliances},
-		{"/api/appliances/" + zeroUUIDStr, h.getAppliancesUUID},
+		{"/api/sites", h.getSites},
+		{"/api/sites/" + zeroUUIDStr, h.getSitesUUID},
 	}
 
 	for _, tc := range testCases {

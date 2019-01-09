@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -70,25 +70,8 @@ var (
 	slog *zap.SugaredLogger
 )
 
-// This function translates the uuid passed in the message to the more expanded
-// "ID Map", which tells us more about the appliance.  (This is included here
-// for future expansion; the full IDMap is not used at this time).
-//
-// To reduce load on the postgres DB, we can start to add caching of this
-// information if it's done with care.
-//
-func uuidToIDMap(ctx context.Context, applianceDB appliancedb.DataStore,
-	uuidstr string) (*appliancedb.ApplianceID, error) {
-	uu, err := uuid.FromString(uuidstr)
-	if err != nil {
-		return nil, err
-	}
-	// XXX caching goes here.  See above.
-	return applianceDB.ApplianceIDByUUID(ctx, uu)
-}
-
 func heartbeatMessage(ctx context.Context, applianceDB appliancedb.DataStore,
-	idmap *appliancedb.ApplianceID, m *pubsub.Message) {
+	siteUUID uuid.UUID, m *pubsub.Message) {
 	var err error
 	heartbeat := &cloud_rpc.Heartbeat{}
 
@@ -114,9 +97,9 @@ func heartbeatMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 		return
 	}
 	heartbeatIngest := &appliancedb.HeartbeatIngest{
-		ApplianceID: idmap.CloudUUID,
-		BootTS:      bootTS.UTC(),
-		RecordTS:    recordTS.UTC(),
+		SiteUUID: siteUUID,
+		BootTS:   bootTS.UTC(),
+		RecordTS: recordTS.UTC(),
 	}
 	slog.Infow("Insert heartbeat ingest", "heartbeat", heartbeatIngest)
 	err = applianceDB.InsertHeartbeatIngest(ctx, heartbeatIngest)
@@ -126,7 +109,7 @@ func heartbeatMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 }
 
 func exceptionMessage(ctx context.Context, applianceDB appliancedb.DataStore,
-	idmap *appliancedb.ApplianceID, m *pubsub.Message) {
+	siteUUID uuid.UUID, m *pubsub.Message) {
 	var err error
 
 	exc := &cloud_rpc.NetException{}
@@ -143,7 +126,7 @@ func exceptionMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 		slog.Errorw("failed to json.Marshal", "message", m, "error", err, "data", string(m.Data))
 		return
 	}
-	slog.Infow("Client Exception", "appliance", idmap, "exception", string(jsonExc))
+	slog.Infow("Client Exception", "site", siteUUID, "exception", string(jsonExc))
 }
 
 func processEnv(environ *Cfg) {
@@ -255,10 +238,18 @@ func main() {
 	slog.Infof(checkMark + "Starting ApplianceRegistry event receiver")
 	err = applianceRegEvents.Receive(ctx, func(ctx context.Context, m *pubsub.Message) {
 		slog.Debugw("Message", "size", len(m.Data), "attrs", m.Attributes)
-		uuidstr := m.Attributes["uuid"]
-		idmap, ferr := uuidToIDMap(ctx, applianceDB, uuidstr)
-		if ferr != nil {
-			slog.Errorw("failed ID mapping, giving up", "error", ferr, "message", m)
+		applianceUUIDstr := m.Attributes["uuid"]
+		siteUUIDstr := m.Attributes["site"]
+		if applianceUUIDstr == "" || siteUUIDstr == "" {
+			slog.Errorw("missing uuid or site attribute", "message", m)
+			// We don't want to see this again
+			m.Ack()
+			return
+		}
+		_, errA := uuid.FromString(applianceUUIDstr)
+		siteUUID, errS := uuid.FromString(siteUUIDstr)
+		if errA != nil || errS != nil {
+			slog.Errorw("bad appliance or site uuid", "message", m)
 			// We don't want to see this again
 			m.Ack()
 			return
@@ -268,11 +259,11 @@ func main() {
 		// As we accumulate more of these, transition to a lookup table
 		switch typeName {
 		case "cloud_rpc.Heartbeat":
-			heartbeatMessage(ctx, applianceDB, idmap, m)
+			heartbeatMessage(ctx, applianceDB, siteUUID, m)
 		case "cloud_rpc.InventoryReport":
-			inventoryMessage(ctx, applianceDB, idmap, m)
+			inventoryMessage(ctx, applianceDB, siteUUID, m)
 		case "cloud_rpc.NetException":
-			exceptionMessage(ctx, applianceDB, idmap, m)
+			exceptionMessage(ctx, applianceDB, siteUUID, m)
 		default:
 			slog.Errorw("unknown message type", "message", m)
 		}

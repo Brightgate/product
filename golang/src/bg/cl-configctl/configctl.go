@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -34,14 +34,14 @@ const pname = "cl-configctl"
 
 var environ struct {
 	// XXX: this will eventually be a postgres connection, and we will look
-	// up the per-appliance cl.configd connection via the database
+	// up the per-site cl.configd connection via the database
 	ConfigdConnection string `envcfg:"B10E_CLCONFIGD_CONNECTION"`
 	DisableTLS        bool   `envcfg:"B10E_CLCONFIGD_DISABLE_TLS"`
 }
 
 var (
 	level   = flag.String("l", "user", "change configd access level")
-	uuid    = flag.String("a", "", "uuid of appliance to configure")
+	uuid    = flag.String("u", "", "uuid of site to configure")
 	timeout = flag.Duration("t", 10*time.Second, "timeout")
 	verbose = flag.Bool("v", false, "verbose output")
 )

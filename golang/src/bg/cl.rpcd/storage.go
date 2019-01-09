@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -26,7 +26,6 @@ import (
 	"github.com/satori/uuid"
 
 	"cloud.google.com/go/storage"
-	"github.com/grpc-ecosystem/go-grpc-middleware/util/metautils"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/grpc/codes"
@@ -96,14 +95,14 @@ func (cs *cloudStorageServer) makeBucket(ctx context.Context, applianceID *appli
 	// the database can be updated.
 	// This case should be rare, but helps handle manually provisioned
 	// buckets.
-	bktName = bktPrefix + applianceID.CloudUUID.String()
+	bktName = bktPrefix + applianceID.SiteUUID.String()
 	bkt = cs.storageClient.Bucket(bktName)
 	_, err = bkt.Attrs(ctx)
 	if err != nil {
 		// The first time around, just try the appliance name; if something goes wrong,
 		// try again with a different name.
 		for suffix := ""; ; suffix = "-" + mkRandString(8) {
-			bktName = bktPrefix + applianceID.CloudUUID.String() + suffix
+			bktName = bktPrefix + applianceID.SiteUUID.String() + suffix
 			bkt = cs.storageClient.Bucket(bktName)
 			err = bkt.Create(ctx, cs.projectID, nil)
 			if err == nil {
@@ -134,25 +133,25 @@ func (cs *cloudStorageServer) makeBucket(ctx context.Context, applianceID *appli
 	// These are intended to be informational, and an aid to debugging.  The set of
 	// allowed characters in labels and values are very restrictive.
 	uattr.SetLabel("appliance_reg_id", strings.ToLower(applianceID.ApplianceRegID))
-	uattr.SetLabel("cloud_uuid", applianceID.CloudUUID.String())
+	uattr.SetLabel("site_uuid", applianceID.SiteUUID.String())
 	_, err = bkt.Update(ctx, uattr)
 	if err != nil {
 		return "", errors.Wrap(err, "Failed to update bucket attrs")
 	}
 
-	cloudStor := &appliancedb.ApplianceCloudStorage{
+	cloudStor := &appliancedb.SiteCloudStorage{
 		Bucket:   bktName,
 		Provider: "gcs",
 	}
-	if err = cs.applianceDB.UpsertCloudStorage(ctx, applianceID.CloudUUID, cloudStor); err != nil {
-		return "", errors.Wrap(err, "Failed to upsert ApplianceCloudStorage")
+	if err = cs.applianceDB.UpsertCloudStorage(ctx, applianceID.SiteUUID, cloudStor); err != nil {
+		return "", errors.Wrap(err, "Failed to upsert CloudStorage record")
 	}
 	return bktName, nil
 }
 
 // If use of this becomes more widespread, the next step is to move this
 // function into a package of its own, or into appliancedb code.
-func (cs *cloudStorageServer) GetBucketName(ctx context.Context, u uuid.UUID) (string, error) {
+func (cs *cloudStorageServer) GetBucketName(ctx context.Context, siteUUID uuid.UUID) (string, error) {
 	// An unsolved problem here is how to manage appliances which move from
 	// one GCP project to another; the bucket namespace is global but the
 	// new GCP project won't have access rights to the old bucket.  For now
@@ -160,7 +159,7 @@ func (cs *cloudStorageServer) GetBucketName(ctx context.Context, u uuid.UUID) (s
 	// registry and the storage client's Project ID.  This helps to prevent
 	// weird cases from happening in the first place, but the code is still
 	// fragile if things become misaligned.
-	applianceID, err := cs.applianceDB.ApplianceIDByUUID(ctx, u)
+	applianceID, err := cs.applianceDB.ApplianceIDByUUID(ctx, siteUUID)
 	if err != nil {
 		return "", err
 	}
@@ -169,7 +168,7 @@ func (cs *cloudStorageServer) GetBucketName(ctx context.Context, u uuid.UUID) (s
 			applianceID.GCPProject, cs.projectID)
 	}
 
-	cloudStor, err := cs.applianceDB.CloudStorageByUUID(ctx, u)
+	cloudStor, err := cs.applianceDB.CloudStorageByUUID(ctx, siteUUID)
 	if err == nil {
 		return cloudStor.Bucket, nil
 	}
@@ -184,14 +183,12 @@ func (cs *cloudStorageServer) GetBucketName(ctx context.Context, u uuid.UUID) (s
 
 func (cs *cloudStorageServer) GenerateURL(ctx context.Context, req *cloud_rpc.GenerateURLRequest) (*cloud_rpc.GenerateURLResponse, error) {
 	_, slog := endpointLogger(ctx)
-
 	slog.Debugw("incoming URL request", "req", req)
 
-	ustr := metautils.ExtractIncoming(ctx).Get("clouduuid")
-	if ustr == "" {
-		return nil, status.Errorf(codes.Internal, "missing clouduuid")
+	siteUUID, err := getSiteUUID(ctx, false)
+	if err != nil {
+		return nil, err
 	}
-	u := uuid.Must(uuid.FromString(ustr))
 
 	exp := time.Now().Add(10 * time.Minute)
 
@@ -199,10 +196,10 @@ func (cs *cloudStorageServer) GenerateURL(ctx context.Context, req *cloud_rpc.Ge
 		Urls: make([]*cloud_rpc.SignedURL, 0),
 	}
 
-	// Lookup (or create) bucket for appliance using cloud UUID
-	bucket, err := cs.GetBucketName(ctx, u)
+	// Lookup (or create) bucket for appliance using site UUID
+	bucket, err := cs.GetBucketName(ctx, siteUUID)
 	if err != nil {
-		slog.Errorf("GenerateURL: couldn't get bucket for %s: %v", ustr, err)
+		slog.Errorf("GenerateURL: couldn't get bucket for %s: %v", siteUUID, err)
 		return nil, status.Errorf(codes.FailedPrecondition, "storage not available")
 	}
 

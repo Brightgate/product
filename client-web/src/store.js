@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -16,7 +16,7 @@ import Vue from 'vue';
 import Vuex from 'vuex';
 import Debug from 'debug';
 
-import applianceApi from './api/appliance';
+import siteApi from './api/site';
 
 const debug = Debug('store');
 
@@ -25,20 +25,20 @@ Vue.use(Vuex);
 // XXX this needs further rationalization with devices.json
 const DEVICE_CATEGORY_ALL = ['recent', 'phone', 'computer', 'printer', 'media', 'iot', 'unknown'];
 const RETRY_DELAY = 1000;
-const LOCAL_APPLIANCE_ID = '0';
+const LOCAL_SITE_ID = '0';
 
-const windowURLAppliance = window && window.location && window.location.href && new URL(window.location.href);
-const initApplianceID = windowURLAppliance.searchParams.get('appliance') || LOCAL_APPLIANCE_ID;
+// const windowURLSite = window && window.location && window.location.href && new URL(window.location.href);
+// const initSiteID = windowURLSite.searchParams.get('site') || LOCAL_SITE_ID;
 
-class Appliance {
+class Site {
   constructor(id) {
     assert.equal(typeof id, 'string');
     this.id = id;
     this.regInfo = {}; // registry Information
-    if (this.id === LOCAL_APPLIANCE_ID) {
+    if (this.id === LOCAL_SITE_ID) {
       this.regInfo = {
-        uuid: LOCAL_APPLIANCE_ID,
-        name: 'Local Appliance',
+        uuid: LOCAL_SITE_ID,
+        name: 'Local Site',
       };
     }
     this.devices = [];
@@ -116,21 +116,21 @@ class Appliance {
   }
 }
 
-function getAppliance(state, applianceID) {
-  if (state.appliances[applianceID] === undefined) {
+function getSite(state, siteID) {
+  if (state.sites[siteID] === undefined) {
     // Using Vue.set here is super important because we're adding the
-    // appliance as a new property of state.appliances, and we need
+    // site as a new property of state.sites, and we need
     // it to be reactive.
-    Vue.set(state.appliances, applianceID, new Appliance(applianceID));
+    Vue.set(state.sites, siteID, new Site(siteID));
   }
-  return state.appliances[applianceID];
+  return state.sites[siteID];
 }
 
 function computeAppMode(state) {
   return state.testAppMode === 'automatic' ? state.appMode : state.testAppMode;
 }
 
-const initAppliance = new Appliance(initApplianceID);
+const nullSite = new Site('null');
 const state = {
   appMode: 'cloud',
   testAppMode: 'automatic',
@@ -138,66 +138,76 @@ const state = {
   fakeLogin: false,
   mock: false,
   leftPanelVisible: false,
-  appliances: {
-    [initApplianceID]: initAppliance,
-  },
-  currentApplianceID: initApplianceID,
-  currentAppliance: initAppliance,
+  sites: {},
+  currentSiteID: nullSite.id,
+  currentSite: nullSite,
 };
 
 const mutations = {
-  setAppliances(state, newAppliances) {
-    debug('setAppliances, newAppliances', newAppliances);
-    assert(Array.isArray(newAppliances));
-    if (newAppliances.length === 1 && newAppliances[0].uuid === LOCAL_APPLIANCE_ID) {
-      state.appMode = 'appliance';
+  setSites(state, newSites) {
+    debug('setSites, newSites', newSites);
+    assert(Array.isArray(newSites));
+    if (newSites.length === 1 && newSites[0].uuid === LOCAL_SITE_ID) {
+      state.appMode = 'local';
     } else {
       state.appMode = 'cloud';
     }
-    newAppliances.forEach((val) => {
+    const newSitesDict = {};
+    let nSites = 0;
+    newSites.forEach((val) => {
       // Will create as needed
       assert(typeof val === 'object');
       assert(val.name !== undefined);
       assert(val.uuid !== undefined);
-      const appliance = getAppliance(state, val.uuid);
-      appliance.regInfo = val;
+      // If the site exists, already, grab that one.
+      const siteID = val.uuid;
+      const site = state.sites[siteID] === undefined ? new Site(siteID) : state.sites[siteID];
+      site.regInfo = val;
+      Vue.set(newSitesDict, siteID, site);
+      nSites++;
     });
-    // If there's only one appliance, default to it.
-    if (newAppliances.length === 1) {
-      state.currentApplianceID = newAppliances[0].uuid;
-      state.currentAppliance = state.appliances[state.currentApplianceID];
+    Vue.set(state, 'sites', newSitesDict);
+    // If there's only one site, default to it.
+    if (nSites === 1) {
+      state.currentSiteID = newSites[0].uuid;
+      state.currentSite = state.sites[state.currentSiteID];
+    }
+    // If the current site ID is gone... (this is a "can't happen" for now)
+    if (state.sites[state.currentSiteID] === undefined) {
+      state.currentSiteID = nullSite.id;
+      state.currentSite = nullSite;
     }
   },
 
-  setCurrentApplianceID(state, newID) {
-    // getAppliance will create as needed; maybe in the future this code
-    // should instead check for the appliance existing, and fail if not?
-    getAppliance(state, newID);
-    state.currentApplianceID = newID;
-    state.currentAppliance = state.appliances[state.currentApplianceID];
+  setCurrentSiteID(state, newID) {
+    // getSite will create as needed; maybe in the future this code
+    // should instead check for the site existing, and fail if not?
+    getSite(state, newID);
+    state.currentSiteID = newID;
+    state.currentSite = state.sites[state.currentSiteID];
   },
 
-  setApplianceDevices(state, {id, devices}) {
-    getAppliance(state, id).devices = devices;
+  setSiteDevices(state, {id, devices}) {
+    getSite(state, id).devices = devices;
   },
 
-  setApplianceRings(state, {id, rings}) {
-    getAppliance(state, id).rings = rings;
+  setSiteRings(state, {id, rings}) {
+    getSite(state, id).rings = rings;
   },
 
-  setApplianceNetworkConfig(state, {id, networkConfig}) {
-    getAppliance(state, id).networkConfig = networkConfig;
+  setSiteNetworkConfig(state, {id, networkConfig}) {
+    getSite(state, id).networkConfig = networkConfig;
   },
 
-  setApplianceUsers(state, {id, users}) {
+  setSiteUsers(state, {id, users}) {
     assert(users);
-    debug('setApplianceUsers', id, users);
-    Vue.set(getAppliance(state, id), 'users', users);
+    debug('setSiteUsers', id, users);
+    Vue.set(getSite(state, id), 'users', users);
   },
 
-  setApplianceUser(state, {id, user}) {
+  setSiteUser(state, {id, user}) {
     assert(user.UUID);
-    getAppliance(state, id).users[user.UUID] = user;
+    getSite(state, id).users[user.UUID] = user;
   },
 
   setLoggedIn(state, newValue) {
@@ -205,7 +215,7 @@ const mutations = {
   },
 
   setVulnRepair(state, {id, deviceID, vulnID, value}) {
-    const app = getAppliance(state, id);
+    const app = getSite(state, id);
     const vuln = app && app.devicesByUniqID && app.devicesByUniqID[deviceID] &&
       app.devicesByUniqID[deviceID].vulnerabilities &&
       app.devicesByUniqID[deviceID].vulnerabilities[vulnID];
@@ -225,12 +235,12 @@ const mutations = {
     debug('setMock', newValue, computeAppMode(state));
     if (state.mock) {
       if (computeAppMode(state) === 'cloud') {
-        applianceApi.setMockMode(applianceApi.MOCKMODE_CLOUD);
+        siteApi.setMockMode(siteApi.MOCKMODE_CLOUD);
       } else {
-        applianceApi.setMockMode(applianceApi.MOCKMODE_APPLIANCE);
+        siteApi.setMockMode(siteApi.MOCKMODE_LOCAL);
       }
     } else {
-      applianceApi.setMockMode(applianceApi.MOCKMODE_NONE);
+      siteApi.setMockMode(siteApi.MOCKMODE_NONE);
     }
   },
 
@@ -247,28 +257,28 @@ const getters = {
   loggedIn: (state) => state.loggedIn || state.fakeLogin,
   fakeLogin: (state) => state.fakeLogin,
   mock: (state) => state.mock,
-  currentApplianceID: (state) => state.currentApplianceID,
+  currentSiteID: (state) => state.currentSiteID,
   leftPanelVisible: (state) => state.leftPanelVisible,
 
-  applianceAlerts: (state) => (applianceID) => {
-    return getAppliance(state, applianceID).alerts;
+  siteAlerts: (state) => (siteID) => {
+    return getSite(state, siteID).alerts;
   },
   alerts: (state) => {
-    return state.currentAppliance.alerts;
+    return state.currentSite.alerts;
   },
 
-  applianceDevices: (state) => (applianceID) => {
-    return getAppliance(state, applianceID).devices;
+  siteDevices: (state) => (siteID) => {
+    return getSite(state, siteID).devices;
   },
   devices: (state) => {
-    return state.currentAppliance.devices;
+    return state.currentSite.devices;
   },
 
-  applianceDeviceByUniqID: (state) => (applianceID, uniqid) => {
-    return getAppliance(state, applianceID).devicesByUniqID[uniqid];
+  siteDeviceByUniqID: (state) => (siteID, uniqid) => {
+    return getSite(state, siteID).devicesByUniqID[uniqid];
   },
   deviceByUniqID: (state) => (uniqid) => {
-    return state.currentAppliance.devicesByUniqID[uniqid];
+    return state.currentSite.devicesByUniqID[uniqid];
   },
 
   appMode: (state) => {
@@ -279,53 +289,53 @@ const getters = {
     return state.testAppMode;
   },
 
-  applianceDevicesByCategory: (state) => (applianceID, category) => {
-    return getAppliance(state, applianceID).devicesByCategory[category];
+  siteDevicesByCategory: (state) => (siteID, category) => {
+    return getSite(state, siteID).devicesByCategory[category];
   },
   devicesByCategory: (state) => (category) => {
-    return state.currentAppliance.devicesByCategory[category];
+    return state.currentSite.devicesByCategory[category];
   },
 
-  applianceDevicesByRing: (state) => (applianceID, ring) => {
-    return getAppliance(state, applianceID).devicesByRing[ring] || [];
+  siteDevicesByRing: (state) => (siteID, ring) => {
+    return getSite(state, siteID).devicesByRing[ring] || [];
   },
   devicesByRing: (state) => (ring) => {
-    return state.currentAppliance.devicesByRing[ring] || [];
+    return state.currentSite.devicesByRing[ring] || [];
   },
 
-  applianceNetworkConfig: (state) => (applianceID) => {
-    return getAppliance(state, applianceID).networkConfig;
+  siteNetworkConfig: (state) => (siteID) => {
+    return getSite(state, siteID).networkConfig;
   },
   networkConfig: (state) => {
-    return state.currentAppliance.networkConfig;
+    return state.currentSite.networkConfig;
   },
 
-  applianceRings: (state) => (applianceID) => {
-    return getAppliance(state, applianceID).rings;
+  siteRings: (state) => (siteID) => {
+    return getSite(state, siteID).rings;
   },
   rings: (state) => {
-    return state.currentAppliance.rings;
+    return state.currentSite.rings;
   },
 
-  applianceUsers: (state) => (applianceID) => {
-    return getAppliance(state, applianceID).users;
+  siteUsers: (state) => (siteID) => {
+    return getSite(state, siteID).users;
   },
   users: (state) => {
-    return state.currentAppliance.users;
+    return state.currentSite.users;
   },
 
-  applianceUserByUUID: (state) => (applianceID, uuid) => {
-    return getAppliance(state, applianceID).users[uuid];
+  siteUserByUUID: (state) => (siteID, uuid) => {
+    return getSite(state, siteID).users[uuid];
   },
   userByUUID: (state) => (uuid) => {
-    return state.currentAppliance.users[uuid];
+    return state.currentSite.users[uuid];
   },
 
   sites: (state) => {
-    return state.appliances; // hack for now
+    return state.sites;
   },
   siteByID: (state) => (id) => {
-    return state.appliances[id]; // hack for now
+    return state.sites[id];
   },
 
   // device utility functions
@@ -429,39 +439,51 @@ let fetchDevicesPromise = Promise.resolve();
 let fetchPeriodicTimeout = null;
 
 const actions = {
-  // Load the list of appliances from the server.
-  async fetchAppliances(context) {
-    debug('Store: fetchAppliances');
-    const appliances = await applianceApi.appliancesGet();
-    debug('Store: fetchAppliances got', appliances);
-    context.commit('setAppliances', appliances);
+  // Load the list of sites from the server.
+  async fetchSites(context) {
+    debug('Store: fetchSites');
+    const sites = await siteApi.sitesGet();
+    debug('Store: fetchSites got', sites);
+    context.commit('setSites', sites);
   },
 
-  async setCurrentApplianceID(context, {id}) {
-    context.commit('setCurrentApplianceID', id);
+  async setCurrentSiteID(context, {id}) {
+    context.commit('setCurrentSiteID', id);
+    await context.dispatch('fetchPeriodicStop');
+    await context.dispatch('fetchPeriodic');
   },
 
   // Load the list of devices from the server.
   fetchDevices(context) {
     debug('Store: fetchDevices');
-
-    // Join callers so that only one fetch is ongoing
+    // Join to existing fetch, so that only one fetch is ongoing
+    // Important: we await the fetch, and then drive on, because
+    // the ID might have changed, and so we want to process this
+    // fetch too.
+    let p = null;
     if (fetchDevicesPromise.isPending()) {
-      debug('Store: fetchDevices (pending)');
-      return fetchDevicesPromise;
+      debug('Store: chaining onto pending fetchDevices');
+      p = fetchDevicesPromise;
+    } else {
+      p = Promise.resolve();
     }
-
+    if (context.state.currentSite === nullSite) {
+      return p;
+    }
+    const id = context.state.currentSiteID;
+    debug('Store: fetchDevices', id);
     let devices = [];
-    const id = context.state.currentApplianceID;
-    fetchDevicesPromise = retry(applianceApi.applianceDevicesGet, {
-      interval: RETRY_DELAY,
-      max_tries: 5, // eslint-disable-line camelcase
-      args: [id],
-    }).then((apiDevices) => {
-      devices = apiDevices.map(computeDeviceProps);
-      context.commit('setApplianceDevices', {id: id, devices: devices});
-    }).tapCatch((err) => {
-      debug('Store: fetchDevices failed', err);
+    fetchDevicesPromise = p.then(() => {
+      return retry(siteApi.siteDevicesGet, {
+        interval: RETRY_DELAY,
+        max_tries: 5, // eslint-disable-line camelcase
+        args: [id],
+      }).then((apiDevices) => {
+        devices = apiDevices.map(computeDeviceProps);
+        context.commit('setSiteDevices', {id: id, devices: devices});
+      }).tapCatch((err) => {
+        debug('Store: fetchDevices failed', err);
+      });
     });
     return fetchDevicesPromise;
   },
@@ -503,29 +525,41 @@ const actions = {
 
   // Load the list of rings from the server.
   async fetchRings(context) {
-    const id = context.state.currentApplianceID;
-    const rings = await applianceApi.applianceRingsGet(id);
-    context.commit('setApplianceRings', {id: id, rings: rings});
+    if (context.state.currentSite === nullSite) {
+      debug('fetchRings: skipped, nullSite');
+      return;
+    }
+    const id = context.state.currentSiteID;
+    const rings = await siteApi.siteRingsGet(id);
+    context.commit('setSiteRings', {id: id, rings: rings});
   },
 
   // Load the various aspects of the network configuration from the server.
   async fetchNetworkConfig(context) {
+    if (context.state.currentSite === nullSite) {
+      debug('fetchNetworkConfig: skipped, nullSite');
+      return;
+    }
     debug(`fetchNetworkConfig`);
-    const id = context.state.currentApplianceID;
+    const id = context.state.currentSiteID;
     const nc = await Promise.props({
-      ssid: applianceApi.applianceConfigGet(id, '@/network/ssid'),
-      dnsServer: applianceApi.applianceConfigGet(id, '@/network/dnsserver', ''),
-      defaultRingWPAEAP: applianceApi.applianceConfigGet(id, '@/network/default_ring/wpa-eap', ''),
-      defaultRingWPAPSK: applianceApi.applianceConfigGet(id, '@/network/default_ring/wpa-psk', ''),
+      ssid: siteApi.siteConfigGet(id, '@/network/ssid'),
+      dnsServer: siteApi.siteConfigGet(id, '@/network/dnsserver', ''),
+      defaultRingWPAEAP: siteApi.siteConfigGet(id, '@/network/default_ring/wpa-eap', ''),
+      defaultRingWPAPSK: siteApi.siteConfigGet(id, '@/network/default_ring/wpa-psk', ''),
     });
     debug('fetchNetworkConfig committing', nc);
-    context.commit('setApplianceNetworkConfig', {id: id, networkConfig: nc});
+    context.commit('setSiteNetworkConfig', {id: id, networkConfig: nc});
     return nc;
   },
 
   async enrollGuest(context, {type, phone, email}) {
-    const id = context.state.currentApplianceID;
-    return await applianceApi.applianceEnrollGuest(id, {type, phone, email});
+    if (context.state.currentSite === nullSite) {
+      debug('enrollGuest: skipped, nullSite');
+      return;
+    }
+    const id = context.state.currentSiteID;
+    return await siteApi.siteEnrollGuest(id, {type, phone, email});
   },
 
   // Ask the server to change the ring property for a device, then
@@ -533,8 +567,12 @@ const actions = {
   // seems to take several seconds, during which time the server may
   // become unreachable; thus we use retrys to make things work properly.
   async changeRing(context, {deviceUniqID, newRing}) {
-    const id = context.state.currentApplianceID;
-    await applianceApi.applianceClientsRingSet(id, deviceUniqID, newRing);
+    if (context.state.currentSite === nullSite) {
+      debug('changeRing: skipped, nullSite');
+      return;
+    }
+    const id = context.state.currentSiteID;
+    await siteApi.siteClientsRingSet(id, deviceUniqID, newRing);
     context.dispatch('fetchDevices');
   },
 
@@ -544,11 +582,16 @@ const actions = {
     assert(typeof deviceID === 'string');
     assert(typeof vulnID === 'string');
 
+    if (context.state.currentSite === nullSite) {
+      debug('repairVuln: skipped, nullSite');
+      return;
+    }
+
     debug(`repairVuln: ${deviceID} ${vulnID}`);
-    const id = context.state.currentApplianceID;
+    const id = context.state.currentSiteID;
     context.commit('setVulnRepair', {id: id, deviceID: deviceID, vulnID: vulnID, value: true});
     try {
-      await applianceApi.applianceConfigSet(id, `@/clients/${deviceID}/vulnerabilities/${vulnID}/repair`, 'true');
+      await siteApi.siteConfigSet(id, `@/clients/${deviceID}/vulnerabilities/${vulnID}/repair`, 'true');
     } catch (err) {
       debug('failed to set repair bit', err);
     } finally {
@@ -557,24 +600,33 @@ const actions = {
   },
 
   async fetchUsers(context) {
-    const id = context.state.currentApplianceID;
-    const users = await applianceApi.applianceUsersGet(id);
-    context.commit('setApplianceUsers', {id: id, users: users});
+    if (context.state.currentSite === nullSite) {
+      debug('fetchUsers: skipped, nullSite');
+      return;
+    }
+    const id = context.state.currentSiteID;
+    const users = await siteApi.siteUsersGet(id);
+    context.commit('setSiteUsers', {id: id, users: users});
   },
 
   // Create or Update a user
   async saveUser(context, {user, newUser}) {
     assert(typeof user === 'object');
     assert(typeof newUser === 'boolean');
-    const id = context.state.currentApplianceID;
+
+    if (context.state.currentSite === nullSite) {
+      debug('saveUser: skipped, nullSite');
+      return;
+    }
+    const id = context.state.currentSiteID;
     const action = newUser ? 'creating' : 'updating';
     debug(`saveUser: ${action} ${user.UUID}`, user);
     if (newUser) {
       delete user.UUID; // Backend is strict about UUID
     }
     try {
-      const postUser = await applianceApi.applianceUsersPost(id, user, newUser);
-      context.commit('setApplianceUser', {id: id, user: postUser});
+      const postUser = await siteApi.siteUsersPost(id, user, newUser);
+      context.commit('setSiteUser', {id: id, user: postUser});
     } catch (err) {
       debug('saveUser failed', err);
       if (err.res && err.res.text) {
@@ -587,15 +639,19 @@ const actions = {
 
   async deleteUser(context, {user, newUser}) {
     assert(typeof user === 'object');
-    const id = context.state.currentApplianceID;
-    await applianceApi.applianceUsersDelete(id, user.UUID);
+    if (context.state.currentSite === nullSite) {
+      debug('deleteUser: skipped, nullSite');
+      return;
+    }
+    const id = context.state.currentSiteID;
+    await siteApi.siteUsersDelete(id, user.UUID);
     context.dispatch('fetchUsers');
   },
 
   async checkLogin(context) {
     let loggedin = false;
     try {
-      await applianceApi.authUserid();
+      await siteApi.authUserid();
       loggedin = true;
     } catch (err) {
       loggedin = false;
@@ -606,17 +662,17 @@ const actions = {
   },
 
   async supreme(context) {
-    const id = context.state.currentApplianceID;
-    return await applianceApi.applianceSupreme(id);
+    const id = context.state.currentSiteID;
+    return await siteApi.siteSupreme(id);
   },
 
   async login(context, {uid, userPassword}) {
     assert.equal(typeof uid, 'string');
     assert.equal(typeof userPassword, 'string');
-    await applianceApi.authApplianceLogin(uid, userPassword);
+    await siteApi.authApplianceLogin(uid, userPassword);
     context.commit('setLoggedIn', true);
     // Let these run async
-    context.dispatch('fetchAppliances').then(() => {
+    context.dispatch('fetchSites').then(() => {
       context.dispatch('fetchDevices');
       context.dispatch('fetchRings');
       context.dispatch('fetchUsers');
@@ -626,7 +682,7 @@ const actions = {
 
   logout(context) {
     debug('logout');
-    applianceApi.authApplianceLogout();
+    siteApi.authApplianceLogout();
     debug('logout: Completed');
     context.commit('setLoggedIn', false);
     context.dispatch('fetchPeriodicStop');
