@@ -939,7 +939,6 @@ func dnsPrometheusInit() {
 		Name: "dns4d_cache_entries",
 		Help: "# of entries in DNS cache",
 	})
-	slog.Info("dns cache entries: %v", dnsMetrics.cacheEntries)
 	dnsMetrics.cacheCollisions = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "dns4d_cache_collisions",
 		Help: "hash key collisions in the DNS cache map",

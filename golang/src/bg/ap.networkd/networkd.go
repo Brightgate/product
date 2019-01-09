@@ -70,6 +70,7 @@ var (
 const (
 	// Allow up to 4 failures in a 1 minute period before giving up
 	failuresAllowed = 4
+	maxSSIDs        = 4
 	period          = time.Duration(time.Minute)
 
 	pname = "ap.networkd"
@@ -146,25 +147,18 @@ func configClientChanged(path []string, val string, expires *time.Time) {
 	hostapd.reload()
 }
 
-func configAuthChanged(path []string, val string, expires *time.Time) {
+func configRingVAPChanged(path []string, val string, expires *time.Time) {
 	ring := path[1]
-	newAuth := val
-
-	if newAuth != "wpa-psk" && newAuth != "wpa-eap" {
-		slog.Warnf("Unknown auth set on %s: %s", ring, newAuth)
-		return
-	}
-
 	r, ok := rings[ring]
 	if !ok {
-		slog.Warnf("Authentication set on unknown ring: %s", ring)
+		slog.Warnf("Unknown ring: %s", ring)
 		return
 	}
 
-	if r.Auth != newAuth {
-		slog.Infof("Changing auth for ring %s from %s to %s", ring,
-			r.Auth, newAuth)
-		r.Auth = newAuth
+	if r.VirtualAP != val {
+		slog.Infof("Changing virtualAP for ring %s from %s to %s",
+			ring, r.VirtualAP, val)
+		r.VirtualAP = val
 		hostapd.reload()
 	}
 }
@@ -173,16 +167,6 @@ func configSet(name, val string) bool {
 	var prop *string
 
 	switch name {
-	case "ssid":
-		prop = &wconf.ssid
-	case "ssid-eap":
-		prop = &wconf.ssidEAP
-	case "ssid-5ghz":
-		prop = &wconf.ssid5GHz
-	case "ssid-eap-5ghz":
-		prop = &wconf.ssid5GHzEAP
-	case "passphrase":
-		prop = &wconf.passphrase
 	case "radiusAuthSecret":
 		prop = &wconf.radiusSecret
 	}
@@ -207,22 +191,29 @@ func configNetworkDeleted(path []string) {
 func configNetworkChanged(path []string, val string, expires *time.Time) {
 	var reload bool
 
-	if len(path) == 2 {
+	switch len(path) {
+	case 2:
 		reload = configSet(path[1], val)
-	} else if len(path) == 4 && path[1] == "wan" && path[2] == "static" {
-		wanStaticChanged(path[3], val)
-	} else if len(path) == 3 && path[2] == "channel" {
-		channel, _ := strconv.Atoi(val)
-		band := path[1]
+	case 3:
+		if path[2] == "channel" {
+			channel, _ := strconv.Atoi(val)
+			band := path[1]
 
-		if band == wificaps.LoBand || band == wificaps.HiBand {
-			if legalChannels[band][channel] {
-				wconf.channels[band] = channel
-				reload = true
-			} else {
-				slog.Warnf("ignoring illegal channel '%d' "+
-					"for %s", channel, band)
+			if band == wificaps.LoBand || band == wificaps.HiBand {
+				if legalChannels[band][channel] {
+					wconf.channels[band] = channel
+					reload = true
+				} else {
+					slog.Warnf("ignoring illegal channel "+
+						"'%d' for %s", channel, band)
+				}
 			}
+		}
+	case 4:
+		if path[1] == "vap" {
+			hostapd.reload()
+		} else if path[1] == "wan" && path[2] == "static" {
+			wanStaticChanged(path[3], val)
 		}
 	}
 
@@ -630,6 +621,17 @@ func getWireless(i net.Interface) *physDevice {
 		slog.Debugf(line)
 	}
 
+	// When we create multiple SSIDs, hostapd will generate additional
+	// bssids by incrementing the final octet of the nic's mac address.
+	// hostapd requires that the base and generated mac addresses share the
+	// upper 47 bits, so we need to ensure that the base address has the
+	// lowest bits set to 0.
+	oldMac := d.hwaddr
+	d.hwaddr = macUpdateLastOctet(d.hwaddr, 0)
+	if d.hwaddr != oldMac {
+		slog.Debugf("Changed mac from %s to %s", oldMac, d.hwaddr)
+	}
+
 	return &d
 }
 
@@ -739,9 +741,9 @@ func daemonInit() error {
 	config.HandleChange(`^@/nodes/"+nodeUUID+"/nics/.*/band$`, configBandChanged)
 	config.HandleChange(`^@/nodes/"+nodeUUID+"/nics/.*/channel$`, configChannelChanged)
 	config.HandleChange(`^@/nodes/"+nodeUUID+"/nics/.*/ring$`, configRingChanged)
-	config.HandleChange(`^@/rings/.*/auth$`, configAuthChanged)
-	config.HandleChange(`^@/network/`, configNetworkChanged)
-	config.HandleDelete(`^@/network/`, configNetworkDeleted)
+	config.HandleChange(`^@/rings/.*/vap$`, configRingVAPChanged)
+	config.HandleChange(`^@/network/.*`, configNetworkChanged)
+	config.HandleDelete(`^@/network/.*`, configNetworkDeleted)
 	config.HandleChange(`^@/firewall/rules/`, configRuleChanged)
 	config.HandleDelete(`^@/firewall/rules/`, configRuleDeleted)
 	config.HandleChange(`^@/firewall/blocked/`, configBlocklistChanged)

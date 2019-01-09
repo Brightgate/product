@@ -391,7 +391,6 @@ GO_AP_TESTABLES = \
 	bg/ap_common/network \
 	bg/ap.configd \
 	bg/ap-defaultpass\
-	bg/ap.networkd \
 	bg/ap.rpcd \
 	bg/ap.userauthd \
 	bg/common/grpcutils
@@ -405,6 +404,7 @@ GO_CLOUD_TESTABLES = \
 
 NETWORKD_TEMPLATE_FILES = \
 	hostapd.conf.got \
+	virtualap.conf.got \
 	chrony.conf.got
 
 USERAUTHD_TEMPLATE_FILES = \
@@ -831,6 +831,7 @@ $(APPBIN)/ap.configd: \
 	$(GOSRCBG)/ap.configd/upgrade_v14.go \
 	$(GOSRCBG)/ap.configd/upgrade_v15.go \
 	$(GOSRCBG)/ap.configd/upgrade_v16.go \
+	$(GOSRCBG)/ap.configd/upgrade_v17.go \
 	$(GOSRCBG)/ap.configd/validate.go
 $(APPBIN)/ap.httpd: \
 	$(GOSRCBG)/ap.httpd/ap.httpd.go \
@@ -895,7 +896,8 @@ $(APPBIN)/ap-tools: \
 	$(GOSRCBG)/ap-tools/ctl.go \
 	$(GOSRCBG)/ap-tools/tools.go \
 	$(GOSRCBG)/ap-tools/userctl.go \
-	$(GOSRCBG)/ap-tools/watchctl.go
+	$(GOSRCBG)/ap-tools/watchctl.go \
+	$(GOSRCBG)/common/configctl/configctl.go
 $(APPBIN)/ap-vuln-aggregate: \
 	$(GOSRCBG)/ap-vuln-aggregate/ap-defaultpass.go \
 	$(GOSRCBG)/ap-vuln-aggregate/ap-inspect.go \

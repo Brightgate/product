@@ -317,7 +317,7 @@ func TestNewerVersion(t *testing.T) {
 // TestChangeProp verifies that we can successfully change a single property
 func TestChangeProp(t *testing.T) {
 	const (
-		ssidProp = "@/network/ssid"
+		ssidProp = "@/network/vap/psk/ssid"
 		origSSID = "setme"
 		newSSID  = "newssid"
 	)
@@ -418,7 +418,7 @@ func TestDeleteNonProp(t *testing.T) {
 // TestDeleteProp verifies that we can successfully remove a single property
 func TestDeleteProp(t *testing.T) {
 	const (
-		delProp = "@/network/ssid"
+		delProp = "@/network/dnsserver"
 	)
 
 	a := testTreeInit(t)
@@ -617,7 +617,7 @@ func TestTestEqCompound(t *testing.T) {
 // the errors they are expected to.
 func TestBadSSID(t *testing.T) {
 	const (
-		ssidProp = "@/network/ssid"
+		ssidProp = "@/network/vap/psk/ssid"
 		origSSID = "setme"
 	)
 

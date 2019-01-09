@@ -1,0 +1,25 @@
+
+# Configuration for Virtual AP "{{.ID}}"
+
+{{.BSSID}}
+ssid={{.SSID}}
+utf8_ssid=1
+ctrl_interface=/var/run/hostapd
+
+wpa=2
+wpa_pairwise=TKIP CCMP
+rsn_pairwise=CCMP
+wpa_key_mgmt={{.KeyMgmt}}
+
+{{.PskComment}}wpa_passphrase={{.Passphrase}}
+
+{{.EapComment}}ieee8021x=1
+{{.EapComment}}eapol_version=2
+{{.EapComment}}own_ip_addr=127.0.0.1
+{{.EapComment}}auth_server_addr={{.RadiusAuthServer}}
+{{.EapComment}}auth_server_port={{.RadiusAuthServerPort}}
+{{.EapComment}}auth_server_shared_secret={{.RadiusAuthSecret}}
+
+dynamic_vlan=0
+vlan_file={{.ConfPrefix}}.vlan
+accept_mac_file={{.ConfPrefix}}.macs

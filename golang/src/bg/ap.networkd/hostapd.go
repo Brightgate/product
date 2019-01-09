@@ -29,6 +29,7 @@ import (
 	"bg/ap_common/wificaps"
 	"bg/base_def"
 	"bg/base_msg"
+	"bg/common/cfgapi"
 
 	"github.com/golang/protobuf/proto"
 	"go.uber.org/zap/zapcore"
@@ -47,29 +48,46 @@ var (
 	nModePrimaryBelow map[int]bool
 )
 
-type apConfig struct {
-	// Fields used to populate the configuration template
-	Interface  string // Linux device name
-	HWaddr     string // Mac address to use
-	PSKSSID    string
-	EAPSSID    string
+// abstract configuration data for each virtual AP
+type virtualAP struct {
+	id         string // @/network/vap/<ID>/*
+	ssid       string // ssid to advertise
+	tag5GHz    bool   // Add -5GHz tag to the ssid?
+	keyMgmt    string // wpa-eap or wpa-psk
+	passphrase string // passphrase to use for wpa-psk network
+}
+
+var virtualAPs []*virtualAP
+
+// Used to invoke hostapd, instantiating a virtual AP on a specific device
+type vapConfig struct {
+	idx    int         // per-device VAP index
+	ID     string      // @/network/vap/<ID>/*
+	vap    *virtualAP  // device-independent config for this AP
+	device *physDevice // physical device hosting this virtual AP
+
+	BSSID      string
+	SSID       string
 	Passphrase string
-	Mode       string
-	Channel    int
+	KeyMgmt    string
 	PskComment string // Used to disable wpa-psk in .conf template
 	EapComment string // Used to disable wpa-eap in .conf template
-	ConfDir    string // Location of hostapd.conf, etc.
+	ConfPrefix string // Location of vlan and mac config files
 
-	ModeNComment string // Enable 802.11n
-	ModeNHTCapab string // Set the ht_capab field for 802.11n
-
-	authTypes []string // authentication types enabled
-	confFile  string   // Name of this NIC's hostapd.conf
-	status    error    // collect hostapd failures
+	confFile string // Name of this NIC's hostapd.conf
+	status   error  // collect hostapd failures
 
 	RadiusAuthServer     string
 	RadiusAuthServerPort string
 	RadiusAuthSecret     string // RADIUS shared secret
+}
+
+type devConfig struct {
+	Interface    string // Linux device name
+	Mode         string
+	Channel      int
+	ModeNComment string // Enable 802.11n
+	ModeNHTCapab string // Set the ht_capab field for 802.11n
 }
 
 type hostapdCmd struct {
@@ -90,7 +108,7 @@ type hostapdConn struct {
 	name        string        // device name used by this bssid
 	localName   string        // our end of the control socket
 	remoteName  string        // hostapd's end of the control socket
-	authType    string        // authentication type used by this bssid
+	vapID       string        // virtual AP
 	wifiBand    string        // wifi mode type used by this bssid
 	conn        *net.UnixConn // unix-domain control socket to hostapd
 	liveCmd     *hostapdCmd   // the in-flight hostapd command
@@ -108,12 +126,86 @@ type stationInfo struct {
 
 // We have a single hostapd process, which may be managing multiple interfaces
 type hostapdHdl struct {
-	process   *aputil.Child   // the running hostapd child process
-	devices   []*physDevice   // the physical NICs being used
-	confFiles []string        // config files passed to the child
-	authTypes map[string]bool // authentication types offered by this AP
-	conns     []*hostapdConn  // control sockets
+	process   *aputil.Child  // the running hostapd child process
+	devices   []*physDevice  // the physical NICs being used
+	vaps      []*vapConfig   // the virtual APs being hosted
+	confFiles []string       // config files passed to the child
+	conns     []*hostapdConn // control sockets
 	done      chan error
+}
+
+func initVap(root *cfgapi.PropertyNode) (*virtualAP, error) {
+	vap := &virtualAP{}
+
+	if x := root.Children["ssid"]; x != nil {
+		vap.ssid = x.Value
+	} else {
+		return nil, fmt.Errorf("missing ssid")
+	}
+
+	if x := root.Children["keymgmt"]; x != nil {
+		vap.keyMgmt = x.Value
+	} else {
+		return nil, fmt.Errorf("missing keymgmt")
+	}
+	if vap.keyMgmt == "wpa-psk" {
+		if node, ok := root.Children["passphrase"]; ok {
+			vap.passphrase = node.Value
+		} else {
+			return nil, fmt.Errorf("missing WPA-PSK passphrase")
+		}
+	}
+
+	if x := root.Children["5ghz"]; x != nil {
+		b, err := strconv.ParseBool(x.Value)
+		if err != nil {
+			return nil, fmt.Errorf("malformed 5ghz: %s", x.Value)
+		}
+		vap.tag5GHz = b
+	}
+
+	return vap, nil
+}
+
+func initVirtualAPs() {
+	// Identify which VAPs have rings assigned to them, and thus need to be
+	// instantiated.
+	activeVaps := make(map[string]bool)
+	for _, ring := range rings {
+		if vap := ring.VirtualAP; vap != "" {
+			activeVaps[vap] = true
+		}
+	}
+
+	props, err := config.GetProps("@/network/vap")
+	if err != nil {
+		slog.Warnf("failed to get virtual AP config: %v", err)
+		return
+	}
+
+	// Generate hostapd config structures for each of the active VAPs
+	vaps := make([]*virtualAP, 0)
+	for vapName := range activeVaps {
+		if conf, ok := props.Children[vapName]; ok {
+			vap, err := initVap(conf)
+			if err != nil {
+				slog.Warnf("unable to init vap %s: %v",
+					vapName, err)
+			} else {
+				vap.id = vapName
+				vaps = append(vaps, vap)
+			}
+		} else {
+			slog.Warnf("rings assigned to nonexistent vap: %s",
+				vapName)
+		}
+	}
+
+	virtualAPs = vaps
+}
+
+func (c *hostapdConn) String() string {
+	return fmt.Sprintf("%s:%s", c.name, c.vapID)
 }
 
 // Connect to the hostapd command socket for this interface and create a unix
@@ -206,14 +298,28 @@ func (c *hostapdConn) handleResult(result string) {
 	}
 }
 
-func sendNetEntity(mac string, mode, auth, sig *string, disconnect bool) {
+func sendNetEntity(mac string, vapID, mode, sig *string, disconnect bool) {
+	band := "?"
+	if mode != nil {
+		band = *mode
+	}
+	action := "connect"
+	if disconnect {
+		action = "disconnect"
+	}
+	vap := "?"
+	if vapID != nil {
+		vap = *vapID
+	}
+
+	slog.Debugf("NetEntity(%s, vap: %s, mode: %s, %s)", mac, vap, band, action)
 	hwaddr, _ := net.ParseMAC(mac)
 	entity := &base_msg.EventNetEntity{
 		Timestamp:     aputil.NowToProtobuf(),
 		Sender:        proto.String(brokerd.Name),
 		Debug:         proto.String("-"),
 		Mode:          mode,
-		Authtype:      auth,
+		VirtualAP:     vapID,
 		WifiSignature: sig,
 		Node:          &nodeUUID,
 		Disconnect:    &disconnect,
@@ -233,16 +339,16 @@ func (c *hostapdConn) getSignature(sta string) {
 	} else if info, ok := c.stations[sta]; ok {
 		if info.signature != sig {
 			info.signature = sig
-			sendNetEntity(sta, nil, nil, &sig, false)
+			sendNetEntity(sta, &c.vapID, nil, &sig, false)
 		}
 	}
 }
 
 func (c *hostapdConn) stationPresent(sta string, newConnection bool) {
-	slog.Infof("stationPresent(%s) new: %v", sta, newConnection)
+	slog.Infof("%v stationPresent(%s) new: %v", c, sta, newConnection)
 	info := c.stations[sta]
 	if info == nil {
-		sendNetEntity(sta, &c.wifiBand, &c.authType, nil, false)
+		sendNetEntity(sta, &c.vapID, &c.wifiBand, nil, false)
 		info = &stationInfo{}
 		c.stations[sta] = info
 	}
@@ -261,9 +367,9 @@ func (c *hostapdConn) stationPresent(sta string, newConnection bool) {
 }
 
 func (c *hostapdConn) stationGone(sta string) {
-	slog.Infof("stationGone(%s)", sta)
+	slog.Infof("%v stationGone(%s)", c, sta)
 	delete(c.stations, sta)
-	sendNetEntity(sta, &c.wifiBand, nil, nil, true)
+	sendNetEntity(sta, nil, &c.wifiBand, nil, true)
 }
 
 // Handle an async status message from hostapd
@@ -379,7 +485,8 @@ func (c *hostapdConn) run(wg *sync.WaitGroup) {
 }
 
 // Update the final bits of a mac address
-func macUpdateLastOctet(mac string, maskSize, val uint64) string {
+func macUpdateLastOctet(mac string, val uint64) string {
+	maskSize := uint64(bits.Len(uint(maxSSIDs - 1)))
 	octets := strings.Split(mac, ":")
 	if len(octets) == 6 {
 		b, _ := strconv.ParseUint(octets[5], 16, 32)
@@ -415,100 +522,10 @@ func initPseudoNic(d *physDevice) *physDevice {
 	return pseudo
 }
 
-func genSSIDs(band string) (string, string) {
-	var psk, eap, loPSK, loEAP, hiPSK, hiEAP string
-
-	loPSK = wconf.ssid
-	loEAP = wconf.ssidEAP
-	if loEAP == "" && loPSK != "" {
-		loEAP = loPSK + "-eap"
-	}
-
-	hiPSK = wconf.ssid5GHz
-	if hiPSK == "" && loPSK != "" {
-		hiPSK = loPSK + "-5GHz"
-	}
-
-	hiEAP = wconf.ssid5GHzEAP
-	if hiEAP == "" && loEAP != "" {
-		hiEAP = loEAP + "-5GHz"
-	}
-
-	if band == wificaps.LoBand {
-		psk, eap = loPSK, loEAP
-	} else if band == wificaps.HiBand {
-		psk, eap = hiPSK, hiEAP
-	}
-
-	return psk, eap
-}
-
-//
-// Get network settings from configd and use them to initialize the AP
-//
-func getAPConfig(d *physDevice) *apConfig {
-	var hwMode, radiusServer string
-	var modeNComment, modeNHTCapab string
+func getDevConfig(d *physDevice) *devConfig {
+	var hwMode, modeNComment, modeNHTCapab string
 
 	w := d.wifi
-	pskssid, eapssid := genSSIDs(w.activeBand)
-
-	authMap := make(map[string]bool)
-	pskComment := "#"
-	eapComment := "#"
-	for _, r := range rings {
-		if r.Auth == "wpa-psk" && wconf.passphrase != "" &&
-			pskssid != "" {
-			authMap["wpa-psk"] = true
-			pskComment = ""
-		} else if r.Auth == "wpa-eap" && wconf.radiusSecret != "" &&
-			eapssid != "" {
-			authMap["wpa-eap"] = true
-			eapComment = ""
-		}
-	}
-
-	if pskComment == "#" && eapComment == "#" {
-		slog.Warnf("%s not configured for either PSK or EAP", d.name)
-		return nil
-	}
-
-	authList := make([]string, 0)
-	for a := range authMap {
-		authList = append(authList, a)
-	}
-
-	if satellite {
-		radiusServer = getGatewayIP()
-	} else {
-		radiusServer = "127.0.0.1"
-	}
-
-	ssidCnt := len(authList)
-	if ssidCnt > w.cap.Interfaces {
-		slog.Warnf("%s can't support %d SSIDs", d.hwaddr, ssidCnt)
-		return nil
-	}
-
-	d.ring = base_def.RING_STANDARD
-	if ssidCnt > 1 {
-		// If we create multiple SSIDs, hostapd will generate additional
-		// bssids by incrementing the final octet of the nic's mac
-		// address.  hostapd requires that the base and generated mac
-		// addresses share the upper 47 bits, so we need to ensure that
-		// the base address has the lowest bits set to 0.
-		maskBits := uint64(bits.Len(uint(ssidCnt - 1)))
-		oldMac := d.hwaddr
-		d.hwaddr = macUpdateLastOctet(d.hwaddr, maskBits, 0)
-		if d.hwaddr != oldMac {
-			slog.Debugf("Changed mac from %s to %s", oldMac, d.hwaddr)
-		}
-
-		p := initPseudoNic(d)
-		p.hwaddr = macUpdateLastOctet(d.hwaddr, maskBits, 1)
-		physDevices[getNicID(p)] = p
-	}
-
 	if w.activeBand == wificaps.LoBand {
 		hwMode = "g"
 	} else if w.activeBand == wificaps.HiBand {
@@ -535,22 +552,69 @@ func getAPConfig(d *physDevice) *apConfig {
 		modeNComment = "#"
 	}
 
-	data := apConfig{
-		Interface:  d.name,
-		HWaddr:     d.hwaddr,
-		PSKSSID:    pskssid,
-		EAPSSID:    eapssid,
-		Mode:       hwMode,
-		Channel:    d.wifi.activeChannel,
-		Passphrase: wconf.passphrase,
-		PskComment: pskComment,
-		EapComment: eapComment,
-		ConfDir:    confdir,
-
+	data := devConfig{
+		Interface:    d.name,
+		Mode:         hwMode,
+		Channel:      d.wifi.activeChannel,
 		ModeNComment: modeNComment,
 		ModeNHTCapab: modeNHTCapab,
+	}
 
-		authTypes:            authList,
+	return &data
+}
+
+//
+// Get network settings from configd and use them to initialize the AP
+//
+func getVAPConfig(d *physDevice, vap *virtualAP, idx int) *vapConfig {
+	var bssid, eapComment, pskComment, passphrase, radiusServer string
+
+	ssid := vap.ssid
+	if vap.tag5GHz && d.wifi.activeBand == wificaps.HiBand {
+		ssid += "-5ghz"
+	}
+
+	if vap.keyMgmt == "wpa-psk" {
+		eapComment = "#"
+		passphrase = vap.passphrase
+	} else {
+		pskComment = "#"
+	}
+
+	if satellite {
+		radiusServer = getGatewayIP()
+	} else {
+		radiusServer = "127.0.0.1"
+	}
+
+	if idx == 0 {
+		bssid = "bssid=" + d.hwaddr
+	} else {
+		bssid = fmt.Sprintf("bss=%s_%d", d.name, idx)
+		// If we create multiple SSIDs, hostapd will generate additional
+		// bssids by incrementing the final octet of the nic's mac
+		// address.  hostapd requires that the base and generated mac
+		// addresses share the upper 47 bits, so we need to ensure that
+		// the base address has the lowest bits set to 0.
+		p := initPseudoNic(d)
+		p.hwaddr = macUpdateLastOctet(d.hwaddr, uint64(idx))
+		physDevices[getNicID(p)] = p
+	}
+	confPrefix := fmt.Sprintf("%s/hostapd.%s.%s", confdir, d.name, vap.id)
+
+	data := vapConfig{
+		ID:         vap.id,
+		idx:        idx,
+		device:     d,
+		vap:        vap,
+		BSSID:      bssid,
+		SSID:       ssid,
+		Passphrase: passphrase,
+		KeyMgmt:    strings.ToUpper(vap.keyMgmt),
+		PskComment: pskComment,
+		EapComment: eapComment,
+		ConfPrefix: confPrefix,
+
 		RadiusAuthServer:     radiusServer,
 		RadiusAuthServerPort: "1812",
 		RadiusAuthSecret:     wconf.radiusSecret,
@@ -562,74 +626,88 @@ func getAPConfig(d *physDevice) *apConfig {
 //
 // Generate the configuration files needed for hostapd.
 //
-func generateVlanConf(conf *apConfig, auth string) {
-
-	mode := conf.Mode
-
-	// Create the 'accept_macs' file, which tells hostapd how to map clients
-	// to VLANs.
-	mfn := confdir + "/" + "hostapd." + auth + "." + mode + ".macs"
-	mf, err := os.Create(mfn)
-	if err != nil {
-		slog.Fatalf("Unable to create %s: %v", mfn, err)
-	}
-	defer mf.Close()
-
+func generateVlanConf(vap *vapConfig) {
 	// Create the 'vlan' file, which tells hostapd which vlans to create
-	vfn := confdir + "/" + "hostapd." + auth + "." + mode + ".vlan"
+	vfn := vap.ConfPrefix + ".vlan"
 	vf, err := os.Create(vfn)
 	if err != nil {
 		slog.Fatalf("Unable to create %s: %v", vfn, err)
 	}
-	defer vf.Close()
 
-	for ring, config := range rings {
-		if config.Auth != auth || config.Vlan <= 0 {
-			continue
-		}
-
-		fmt.Fprintf(vf, "%d\tvlan.%s.%d\n", config.Vlan, mode, config.Vlan)
-
-		// One client per line, containing "<mac addr> <vlan_id>"
-		for client, info := range clients {
-			if info.Ring == ring {
-				fmt.Fprintf(mf, "%s %d\n", client, config.Vlan)
-			}
+	vapRings := make(cfgapi.RingMap)
+	noVlan := rings[base_def.RING_UNENROLLED]
+	for name, ring := range rings {
+		if ring.VirtualAP == vap.ID && ring != noVlan {
+			vapRings[name] = ring
+			fmt.Fprintf(vf, "%d %s.%d\n", ring.Vlan,
+				vap.device.name, ring.Vlan)
 		}
 	}
+	vf.Close()
+
+	// Create the 'accept_macs' file, which tells hostapd how to map clients
+	// to VLANs.
+	mfn := vap.ConfPrefix + ".macs"
+	mf, err := os.Create(mfn)
+	if err != nil {
+		slog.Fatalf("Unable to create %s: %v", mfn, err)
+	}
+
+	// One client per line, containing "<mac addr> <vlan_id>"
+	for client, info := range clients {
+		if ring, ok := vapRings[info.Ring]; ok {
+			fmt.Fprintf(mf, "%s %d\n", client, ring.Vlan)
+		}
+	}
+	mf.Close()
 }
 
 func (h *hostapdHdl) generateHostAPDConf() {
-	tfile := *templateDir + "/hostapd.conf.got"
+	devfile := *templateDir + "/hostapd.conf.got"
+	apfile := *templateDir + "/virtualap.conf.got"
 
 	files := make([]string, 0)
-	authTypes := make(map[string]bool)
 	devices := make([]*physDevice, 0)
+	vaps := make([]*vapConfig, 0)
 
+	devTemplate, err := template.ParseFiles(devfile)
+	if err != nil {
+		slog.Errorf("Unable to parse %s: %v", devfile, err)
+		return
+	}
+	vapTemplate, err := template.ParseFiles(apfile)
+	if err != nil {
+		slog.Errorf("Unable to parse %s: %v", apfile, err)
+		return
+	}
 	for _, d := range h.devices {
-		// Create hostapd.conf, using the apConfig contents to fill
-		// out the .got template
-		t, err := template.ParseFiles(tfile)
-		if err != nil {
-			continue
-		}
-
 		confName := confdir + "/" + "hostapd.conf." + d.name
 		cf, _ := os.Create(confName)
 		defer cf.Close()
 
-		conf := getAPConfig(d)
-		if conf == nil {
-			continue
-		}
-		err = t.Execute(cf, conf)
-		if err != nil {
+		dev := getDevConfig(d)
+		if err = devTemplate.Execute(cf, dev); err != nil {
+			slog.Warnf("%v", err)
 			continue
 		}
 
-		for _, t := range conf.authTypes {
-			generateVlanConf(conf, t)
-			authTypes[t] = true
+		max := d.wifi.cap.Interfaces
+		for idx, v := range virtualAPs {
+			if idx == max {
+				slog.Warnf("%s can only support %d of %d SSIDs",
+					d.hwaddr, max, len(virtualAPs))
+				break
+			}
+			if vap := getVAPConfig(d, v, idx); vap != nil {
+				generateVlanConf(vap)
+				err = vapTemplate.Execute(cf, vap)
+				if err == nil {
+					vaps = append(vaps, vap)
+					idx++
+				} else {
+					slog.Warnf("%v", err)
+				}
+			}
 		}
 
 		files = append(files, confName)
@@ -638,8 +716,8 @@ func (h *hostapdHdl) generateHostAPDConf() {
 
 	updateNicProperties()
 
+	h.vaps = vaps
 	h.devices = devices
-	h.authTypes = authTypes
 	h.confFiles = files
 }
 
@@ -649,11 +727,14 @@ func (h *hostapdHdl) cleanup() {
 	}
 }
 
-func (h *hostapdHdl) newConn(d *physDevice, auth, suffix string) *hostapdConn {
+func (h *hostapdHdl) newConn(vap *vapConfig) *hostapdConn {
 	// There are two endpoints for each control socket.  The remoteName is
 	// owned by hostapd, and we need to use the name that it expects.  The
 	// localName is owned by us, and the format is chosen by us.
-	fullName := d.name + suffix
+	fullName := vap.device.name
+	if vap.idx != 0 {
+		fullName += "_" + strconv.Itoa(vap.idx)
+	}
 	remoteName := "/var/run/hostapd/" + fullName
 	localName := "/tmp/hostapd_ctrl_" + fullName + "-" +
 		strconv.Itoa(os.Getpid())
@@ -663,23 +744,19 @@ func (h *hostapdHdl) newConn(d *physDevice, auth, suffix string) *hostapdConn {
 		name:        fullName,
 		remoteName:  remoteName,
 		localName:   localName,
-		authType:    auth,
-		wifiBand:    d.wifi.activeBand,
+		vapID:       vap.ID,
+		wifiBand:    vap.device.wifi.activeBand,
 		active:      true,
-		device:      d,
+		device:      vap.device,
 		pendingCmds: make([]*hostapdCmd, 0),
 		stations:    make(map[string]*stationInfo),
 	}
+	slog.Debugf("%v: %s -> %s", &newConn, remoteName, localName)
 	os.Remove(newConn.name)
 	return &newConn
 }
 
 func (h *hostapdHdl) start() {
-	suffix := map[string]string{
-		"wpa-psk": "",   // The PSK iface is wlanX
-		"wpa-eap": "_1", // The EAP iface is wlanX_1
-	}
-
 	h.generateHostAPDConf()
 	if len(h.devices) == 0 {
 		h.done <- fmt.Errorf("no suitable wireless devices available")
@@ -687,12 +764,10 @@ func (h *hostapdHdl) start() {
 	}
 	defer h.cleanup()
 
-	// There is a control interface for each BSSID, which means one for each
-	// authentication type for each devices.
-	for _, d := range h.devices {
-		for a := range h.authTypes {
-			h.conns = append(h.conns, h.newConn(d, a, suffix[a]))
-		}
+	slog.Debugf("starting hostapd")
+	// There is a control interface for each BSSID
+	for _, v := range h.vaps {
+		h.conns = append(h.conns, h.newConn(v))
 	}
 
 	stopNetworkRebuild := make(chan bool, 1)
@@ -738,6 +813,7 @@ func (h *hostapdHdl) start() {
 func (h *hostapdHdl) reload() {
 	if h != nil {
 		slog.Infof("Reloading hostapd")
+		initVirtualAPs()
 		h.generateHostAPDConf()
 		h.process.Signal(plat.ReloadSignal)
 	}
@@ -746,6 +822,7 @@ func (h *hostapdHdl) reload() {
 func (h *hostapdHdl) reset() {
 	if h != nil {
 		slog.Infof("Killing hostapd")
+		initVirtualAPs()
 		h.process.Signal(plat.ResetSignal)
 	}
 }
@@ -791,6 +868,7 @@ func hostapdLoop() {
 
 	startTimes := make([]time.Time, failuresAllowed)
 	warned := false
+	initVirtualAPs()
 	for running {
 		active = selectWifiDevices(active)
 		if len(active) == 0 {

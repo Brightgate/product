@@ -40,11 +40,8 @@ var (
 	sharedRouter net.IP     // without vlans, all rings share a
 	sharedSubnet *net.IPNet // subnet and a router node
 
-	// Which authentication type is required by each interface
-	ifaceToAuthType = make(map[string]string)
-
 	// Track the interface on which each client's DHCP request arrives
-	clientRequestOn = make(map[string]string)
+	clientRequestOn = make(map[string]*net.Interface)
 
 	verbose = apcfg.Bool("verbose", false, true, nil)
 
@@ -184,10 +181,6 @@ func dhcpRingChanged(hwaddr string, client *cfgapi.ClientInfo, old string) {
 	slog.Infof("changing %s to %s", hwaddr, client.Ring)
 }
 
-func configNodesChanged(path []string, val string, expires *time.Time) {
-	initAuthMap()
-}
-
 func propPath(hwaddr, prop string) string {
 	return fmt.Sprintf("@/clients/%s/%s", hwaddr, prop)
 }
@@ -196,7 +189,7 @@ func propPath(hwaddr, prop string) string {
  * This is the first time we've seen this device.  Send an ENTITY message with
  * its hardware address, name, and any IP address it's requesting.
  */
-func notifyNewEntity(p dhcp.Packet, options dhcp.Options, authType string) {
+func notifyNewEntity(p dhcp.Packet, options dhcp.Options, ring string) {
 	ipaddr := p.CIAddr()
 	hwaddr := network.HWAddrToUint64(p.CHAddr())
 	hostname := string(options[dhcp.OptionHostName])
@@ -209,8 +202,8 @@ func notifyNewEntity(p dhcp.Packet, options dhcp.Options, authType string) {
 		Debug:      proto.String("-"),
 		MacAddress: proto.Uint64(hwaddr),
 	}
-	if authType != "" {
-		entity.Authtype = proto.String(authType)
+	if ring != "" {
+		entity.Ring = proto.String(ring)
 	}
 	if hostname != "" {
 		entity.Hostname = proto.String(hostname)
@@ -584,34 +577,34 @@ func selectRingHandler(p dhcp.Packet, options dhcp.Options) *ringHandler {
 
 	mac := p.CHAddr().String()
 	requestIface := clientRequestOn[mac]
-	authType := ifaceToAuthType[requestIface]
+	requestRing := ifaceToRing[requestIface.Index]
 
 	clientMtx.Lock()
 	ring := getRing(mac)
 	clientMtx.Unlock()
 
-	if authType == "" {
-		slog.Debugf("Ignoring DHCP request from %s on unsupported "+
-			"iface %s", mac, requestIface)
-	} else if ring == "" {
+	if ring == "" {
 		// If we don't have a ring assignment for this client, then
 		// there are two possibilities.  First, it's a brand new
 		// wireless client, and its DHCP request arrived before configd
 		// finished handling the NetEntity event from networkd.  Second,
 		// it's a wired client which won't trigger a networkd NetEntity
-		// event, since there is no explicit 'join the network' process.
+		// event, since there is no explicit 'join the network' step.
 		// With wired and wifi interfaces attached to the same bridge,
 		// we can't distinguish between the two.  We'll send a NetEntity
 		// event ourselves, which will be harmlessly redundant in the
 		// first case.  Because we have no authentication event, we have
-		// to reverse-engineer the authentication method from the VLAN
-		// the request arrived on.
-		slog.Infof("New client %s incoming on %s.  Auth: %s",
-			mac, requestIface, authType)
-		notifyNewEntity(p, options, authType)
+		// to reverse-engineer the ring from the VLAN the request
+		// arrived on.
+		if requestRing != "" {
+			slog.Infof("New client %s on %s", mac, requestIface.Name)
+			notifyNewEntity(p, options, requestRing)
+		} else {
+			slog.Infof("Ignoring request from unknown client %s "+
+				"on %s", mac, requestIface.Name)
+		}
 	} else if handler = handlers[ring]; handler == nil {
-		slog.Infof("Client %s identified on unknown ring '%s'",
-			mac, ring)
+		slog.Errorf("Client %s on unknown ring '%s'", mac, ring)
 	}
 	// Once we've handled the DHCP request for this client, we can forget
 	// the source interface.  This prevents the map from growing without
@@ -801,14 +794,6 @@ func (h *ringHandler) recoverLeases() {
 	clientMtx.Unlock()
 }
 
-func initAuthMap() {
-	newMap := make(map[string]string)
-	for _, ring := range config.GetRings() {
-		newMap[ring.Bridge] = ring.Auth
-	}
-	ifaceToAuthType = newMap
-}
-
 func initHandlers() {
 	// Iterate over the known rings.  For each one, create a DHCP handler to
 	// manage its subnet.
@@ -858,7 +843,7 @@ func (s *multiConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 			clientMac, err)
 		n = 0
 	} else {
-		clientRequestOn[clientMac] = iface.Name
+		clientRequestOn[clientMac] = iface
 		slog.Debugf("DHCP pkt from %s on %s", clientMac, iface.Name)
 	}
 	return
@@ -967,9 +952,6 @@ func dhcpInit() {
 	}
 
 	initHandlers()
-	initAuthMap()
 
 	go dhcpLoop()
-
-	config.HandleChange(`^@/nodes/.*$`, configNodesChanged)
 }

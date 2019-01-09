@@ -62,6 +62,7 @@ var (
 		"uuid":       validateUUID,
 		"ring":       validateRing,
 		"nickind":    validateNicKind,
+		"keymgmt":    validateKeyMgmt,
 		"macaddr":    validateMac,
 		"nic":        validateNic,
 		"ipaddr":     validateIP,
@@ -155,6 +156,16 @@ func validateRing(val string) error {
 
 	if val != "" && cfgapi.ValidRings[val] == false {
 		err = fmt.Errorf("'%s' is not a valid ring", val)
+	}
+	return err
+}
+
+func validateKeyMgmt(val string) error {
+	var err error
+
+	lower := strings.ToLower(val)
+	if lower != "wpa-psk" && lower != "wpa-eap" {
+		err = fmt.Errorf("'%s' is not a valid key management", val)
 	}
 	return err
 }

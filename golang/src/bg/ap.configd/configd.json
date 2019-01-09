@@ -3,7 +3,7 @@
     "Children": {
       "apversion": {},
       "cfgversion": {
-        "Value": "16"
+        "Value": "17"
       },
       "clients": {},
       "cloud": {
@@ -47,18 +47,47 @@
       },
       "network": {
         "Children": {
-          "default_ring": {
-            "Children": {
-              "wpa-eap": {
-                "Value": "guest"
-              },
-              "wpa-psk": {
-                "Value": "unenrolled"
-              }
-            }
-          },
           "dnsserver": {
             "Value": "8.8.8.8:53"
+          },
+          "vap": {
+            "Children": {
+              "psk": {
+                "Children": {
+                  "default_ring": {
+                    "Value": "unenrolled"
+                  },
+                  "5ghz": {
+                    "Value": "false"
+                  },
+                  "keymgmt": {
+                    "Value": "wpa-psk"
+                  },
+                  "passphrase": {
+                    "Value": "sosecretive"
+                  },
+                  "ssid": {
+                    "Value": "setme"
+                  }
+                }
+              },
+              "eap": {
+                "Children": {
+                  "default_ring": {
+                    "Value": "guest"
+                  },
+                  "5ghz": {
+                    "Value": "false"
+                  },
+                  "keymgmt": {
+                    "Value": "wpa-eap"
+                  },
+                  "ssid": {
+                    "Value": "setme-eap"
+                  }
+                }
+              }
+            }
           },
           "ntpservers": {
             "Children": {
@@ -76,14 +105,8 @@
               }
             }
           },
-          "passphrase": {
-            "Value": "sosecretive"
-          },
           "regdomain": {
             "Value": "US"
-          },
-          "ssid": {
-            "Value": "setme"
           }
         }
       },
@@ -91,8 +114,8 @@
         "Children": {
           "core": {
             "Children": {
-              "auth": {
-                "Value": "wpa-eap"
+              "vap": {
+                "Value": "eap"
               },
               "lease_duration": {
                 "Value": "1440"
@@ -107,8 +130,8 @@
           },
           "devices": {
             "Children": {
-              "auth": {
-                "Value": "wpa-psk"
+              "vap": {
+                "Value": "psk"
               },
               "lease_duration": {
                 "Value": "180"
@@ -123,8 +146,8 @@
           },
           "guest": {
             "Children": {
-              "auth": {
-                "Value": "wpa-eap"
+              "vap": {
+                "Value": "eap"
               },
               "lease_duration": {
                 "Value": "30"
@@ -139,8 +162,8 @@
           },
           "internal": {
             "Children": {
-              "auth": {
-                "Value": "open"
+              "vap": {
+                "Value": ""
               },
               "lease_duration": {
                 "Value": "1440"
@@ -155,8 +178,8 @@
           },
           "quarantine": {
             "Children": {
-              "auth": {
-                "Value": "wpa-psk"
+              "vap": {
+                "Value": "psk"
               },
               "lease_duration": {
                 "Value": "10"
@@ -171,8 +194,8 @@
           },
           "standard": {
             "Children": {
-              "auth": {
-                "Value": "wpa-psk"
+              "vap": {
+                "Value": "eap"
               },
               "lease_duration": {
                 "Value": "1440"
@@ -187,8 +210,8 @@
           },
           "unenrolled": {
             "Children": {
-              "auth": {
-                "Value": "wpa-psk"
+              "vap": {
+                "Value": "psk"
               },
               "lease_duration": {
                 "Value": "10"
@@ -222,7 +245,6 @@
     {"Path": "@/firewall/rules/%string%/active", "Type": "bool", "Level": "admin"},
     {"Path": "@/firewall/rules/%string%/rule", "Type": "string", "Level": "internal"},
     {"Path": "@/firewall/blocked/%ipaddr%", "Type": "bool", "Level": "internal"},
-    {"Path": "@/network/default_ring/%auth%", "Type": "ring", "Level": "admin"},
     {"Path": "@/network/wan/current/address", "Type": "cidr", "Level": "internal"},
     {"Path": "@/network/wan/dhcp/address", "Type": "cidr", "Level": "internal"},
     {"Path": "@/network/wan/dhcp/route", "Type": "ipaddr", "Level": "internal"},
@@ -235,18 +257,18 @@
     {"Path": "@/network/dnsserver", "Type": "ipaddr", "Level": "admin"},
     {"Path": "@/network/nologwan", "Type": "bool", "Level": "admin"},
     {"Path": "@/network/ntpservers/%int%", "Type": "dnsaddr", "Level": "admin"},
-    {"Path": "@/network/ssid", "Type": "ssid", "Level": "admin"},
-    {"Path": "@/network/ssid-eap", "Type": "ssid", "Level": "admin"},
-    {"Path": "@/network/ssid-5ghz", "Type": "ssid", "Level": "admin"},
-    {"Path": "@/network/ssid-eap-5ghz", "Type": "ssid", "Level": "admin"},
+    {"Path": "@/network/vap/%string%/ssid", "Type": "ssid", "Level": "admin"},
+    {"Path": "@/network/vap/%string%/5ghz", "Type": "bool", "Level": "admin"},
+    {"Path": "@/network/vap/%string%/keymgmt", "Type": "keymgmt", "Level": "admin"},
+    {"Path": "@/network/vap/%string%/passphrase", "Type": "passphrase", "Level": "admin"},
+    {"Path": "@/network/vap/%string%/default_ring", "Type": "ring", "Level": "admin"},
     {"Path": "@/network/regdomain", "Type": "string", "Level": "admin"},
-    {"Path": "@/network/passphrase", "Type": "passphrase", "Level": "admin"},
     {"Path": "@/network/radiusAuthSecret", "Type": "string", "Level": "internal"},
     {"Path": "@/network/%wifiband%/channel", "Type": "int", "Level": "admin"},
-    {"Path": "@/rings/%ring%/auth", "Type": "auth", "Level": "admin"},
     {"Path": "@/rings/%ring%/lease_duration", "Type": "int", "Level": "admin"},
     {"Path": "@/rings/%ring%/subnet", "Type": "cidr", "Level": "admin"},
-    {"Path": "@/rings/%ring%/vlan", "Type": "int", "Level": "admin"},
+    {"Path": "@/rings/%ring%/vlan", "Type": "int", "Level": "developer"},
+    {"Path": "@/rings/%ring%/vap", "Type": "string", "Level": "developer"},
     {"Path": "@/users/%user%/email", "Type": "email", "Level": "user"},
     {"Path": "@/users/%user%/telephoneNumber", "Type": "phone", "Level": "user"},
     {"Path": "@/users/%user%/uid", "Type": "user", "Level": "internal"},

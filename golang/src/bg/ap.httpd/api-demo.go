@@ -109,7 +109,7 @@ type daDevices struct {
 
 // mirrors RingConfig but omits Bridge and Vlan
 type daRing struct {
-	Auth          string `json:"auth"`
+	VirtualAP     string `json:"vap"`
 	Subnet        string `json:"subnet"`
 	LeaseDuration int    `json:"leaseDuration"`
 }
@@ -237,7 +237,7 @@ func demoRingsHandler(w http.ResponseWriter, r *http.Request) {
 	var resp daRings = make(map[string]daRing)
 	for ringName, ring := range config.GetRings() {
 		resp[ringName] = daRing{
-			Auth:          ring.Auth,
+			VirtualAP:     ring.VirtualAP,
 			Subnet:        ring.Subnet,
 			LeaseDuration: ring.LeaseDuration,
 		}

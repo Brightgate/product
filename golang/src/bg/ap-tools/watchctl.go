@@ -178,7 +178,7 @@ func listScans(s *zmq.Socket, args []string) error {
 	}
 
 	sort.Sort(scanList(rval.Scans))
-	fmt.Printf("%5s %-15s %-17s %-6s %-9s %s\n",
+	fmt.Printf("%5s %-17s %-17s %-6s %-9s %s\n",
 		"ID", "IP", "mac", "type", "state", "when")
 	for _, scan := range rval.Scans {
 		ip := "unknown"
@@ -199,7 +199,7 @@ func listScans(s *zmq.Socket, args []string) error {
 			w := aputil.ProtobufToTime(scan.When)
 			when = w.Format(time.RFC3339)
 		}
-		fmt.Printf("%5d %-15s %-17s %-6s %-9s %s\n",
+		fmt.Printf("%5d %-17s %-17s %-6s %-9s %s\n",
 			*scan.Id, ip, mac, scanType, state, when)
 	}
 

@@ -27,7 +27,7 @@ import (
 
 // Version gets increased each time there is a non-compatible change to the
 // config tree format, or configd API.
-const Version = int32(16)
+const Version = int32(17)
 
 // CmdHdl is returned when one or more operations are submitted to Execute().
 // This handle can be used to check on the status of a pending operation, or to
@@ -120,9 +120,9 @@ var ValidRings = map[string]bool{
 
 // RingConfig defines the parameters of a ring's subnet
 type RingConfig struct {
-	Auth          string
 	Subnet        string
 	Bridge        string
+	VirtualAP     string
 	Vlan          int
 	LeaseDuration int
 }
@@ -475,7 +475,7 @@ func (c *Handle) GetRings() RingMap {
 
 	set := make(map[string]*RingConfig)
 	for ringName, ring := range props.Children {
-		var auth, subnet, bridge string
+		var subnet, bridge, vap string
 		var vlan, duration int
 		var err error
 
@@ -488,6 +488,9 @@ func (c *Handle) GetRings() RingMap {
 				bridge = "brvlan" + strconv.Itoa(vlan)
 			}
 		}
+		if err == nil {
+			vap, err = getStringVal(ring, "vap")
+		}
 
 		if err == nil {
 			subnet, err = getStringVal(ring, "subnet")
@@ -496,14 +499,11 @@ func (c *Handle) GetRings() RingMap {
 			duration, err = getIntVal(ring, "lease_duration")
 		}
 		if err == nil {
-			auth, err = getStringVal(ring, "auth")
-		}
-		if err == nil {
 			c := RingConfig{
-				Auth:          auth,
 				Vlan:          vlan,
 				Subnet:        subnet,
 				Bridge:        bridge,
+				VirtualAP:     vap,
 				LeaseDuration: duration}
 			set[ringName] = &c
 		} else {

@@ -474,7 +474,7 @@ func (a *apiHandler) deleteUserByUUID(c echo.Context) error {
 
 // mirrors RingConfig but omits Bridge and Vlan
 type apiRing struct {
-	Auth          string `json:"auth"`
+	VirtualAP     string `json:"vap"`
 	Subnet        string `json:"subnet"`
 	LeaseDuration int    `json:"leaseDuration"`
 }
@@ -492,7 +492,7 @@ func (a *apiHandler) getRings(c echo.Context) error {
 	var resp apiRings = make(map[string]apiRing)
 	for ringName, ring := range hdl.GetRings() {
 		resp[ringName] = apiRing{
-			Auth:          ring.Auth,
+			VirtualAP:     ring.VirtualAP,
 			Subnet:        ring.Subnet,
 			LeaseDuration: ring.LeaseDuration,
 		}

@@ -33,7 +33,7 @@ func ringExpired(node *cfgtree.PNode) {
 	client := node.Parent()
 	old := node.Value
 	node.Value = ""
-	node.Value = selectRing(client.Name(), client, nil)
+	node.Value = selectRing(client.Name(), client, "", "")
 	node.Expires = nil
 	if node.Value != old {
 		updates := []*updateRecord{

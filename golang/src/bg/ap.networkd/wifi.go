@@ -24,12 +24,7 @@ import (
 )
 
 type wifiConfig struct {
-	ssid         string
-	ssidEAP      string
-	ssid5GHz     string
-	ssid5GHzEAP  string
 	channels     map[string]int
-	passphrase   string
 	radiusSecret string
 }
 
@@ -141,11 +136,6 @@ func selectWifiChannel(d *physDevice) error {
 // How desirable is it to use this device in this band?
 func score(d *physDevice, band string) int {
 	var score int
-
-	psk, eap := genSSIDs(band)
-	if psk == "" && eap == "" {
-		return 0
-	}
 
 	if d == nil || d.pseudo || d.wifi == nil {
 		return 0
@@ -286,26 +276,6 @@ func globalWifiInit(props *cfgapi.PropertyNode) error {
 		wconf.radiusSecret = node.Value
 	} else {
 		slog.Warnf("no radiusAuthSecret configured")
-	}
-	if node, ok := props.Children["ssid"]; ok {
-		wconf.ssid = node.Value
-	} else {
-		slog.Warnf("no SSID configured")
-	}
-	if node, ok := props.Children["ssid-eap"]; ok {
-		wconf.ssidEAP = node.Value
-	}
-	if node, ok := props.Children["ssid-5ghz"]; ok {
-		wconf.ssid5GHz = node.Value
-	}
-	if node, ok := props.Children["ssid-eap-5ghz"]; ok {
-		wconf.ssid5GHzEAP = node.Value
-	}
-
-	if node, ok := props.Children["passphrase"]; ok {
-		wconf.passphrase = node.Value
-	} else {
-		slog.Warnf("no WPA-PSK passphrase configured")
 	}
 
 	wconf.channels = make(map[string]int)

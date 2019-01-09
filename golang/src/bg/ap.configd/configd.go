@@ -114,7 +114,7 @@ var (
 	brokerd *broker.Broker
 	slog    *zap.SugaredLogger
 
-	authTypeToDefaultRing map[string]string
+	virtualAPToDefaultRing map[string]string
 )
 
 /*************************************************************************
@@ -162,6 +162,18 @@ func updateExpire(path string) *updateRecord {
 	}
 }
 
+func protoPath(path string) *string {
+	fields := make([]string, 0)
+
+	for _, field := range strings.Split(path, "/") {
+		if len(field) > 0 {
+			fields = append(fields, field)
+		}
+	}
+
+	return proto.String(strings.Join(fields, "/"))
+}
+
 // convert one or more internal updateRecord structures into EventConfig
 // protobufs, and send them to ap.brokerd.
 func updateNotify(records []*updateRecord) {
@@ -170,7 +182,7 @@ func updateNotify(records []*updateRecord) {
 			Timestamp: aputil.NowToProtobuf(),
 			Sender:    proto.String(pname),
 			Type:      &rec.kind,
-			Property:  proto.String(rec.path),
+			Property:  protoPath(rec.path),
 			NewValue:  proto.String(rec.value),
 			Expires:   aputil.TimeToProtobuf(rec.expires),
 			Hash:      rec.hash,
@@ -184,6 +196,8 @@ func updateNotify(records []*updateRecord) {
 }
 
 func eventHandler(event []byte) {
+	var vap, ring string
+
 	entity := &base_msg.EventNetEntity{}
 	proto.Unmarshal(event, entity)
 
@@ -195,13 +209,21 @@ func eventHandler(event []byte) {
 	hwaddr := network.Uint64ToHWAddr(*entity.MacAddress)
 	path := "@/clients/" + hwaddr.String() + "/"
 	node, _ := propTree.GetNode(path)
-	ring := selectRing(hwaddr.String(), node, entity.Authtype)
+
+	if entity.Ring != nil {
+		ring = *entity.Ring
+	}
+	if entity.VirtualAP != nil {
+		vap = *entity.VirtualAP
+	}
+
+	ring = selectRing(hwaddr.String(), node, vap, ring)
 
 	updates := []*updateRecord{
 		updateChange(path+"ring", &ring, nil),
 		updateChange(path+"connection/node", entity.Node, nil),
 		updateChange(path+"connection/mode", entity.Mode, nil),
-		updateChange(path+"connection/authtype", entity.Authtype, nil),
+		updateChange(path+"connection/vap", &vap, nil),
 	}
 
 	// Ipv4Address is an 'optional' field in the protobuf, but we will
@@ -246,43 +268,44 @@ func eventHandler(event []byte) {
  * device.
  */
 func defaultRingInit() {
-	authTypeToDefaultRing = make(map[string]string)
+	virtualAPToDefaultRing = make(map[string]string)
 
-	if node, _ := propTree.GetNode("@/network/default_ring"); node != nil {
-		for a, n := range node.Children {
-			authTypeToDefaultRing[a] = n.Value
-			slog.Debugf("default %s ring: %s", a, n.Value)
+	// For each virtual AP, find @/network/vap/<id>/default_ring
+	if node, _ := propTree.GetNode("@/network/vap"); node != nil {
+		for id, vap := range node.Children {
+			if ring, ok := vap.Children["default_ring"]; ok {
+				virtualAPToDefaultRing[id] = ring.Value
+			}
 		}
 	}
 }
 
-func selectRing(mac string, client *cfgtree.PNode, authp *string) string {
-	var ring, auth string
-
+func selectRing(mac string, client *cfgtree.PNode, vap, ring string) string {
 	if client != nil && client.Children != nil {
 		// If the client already has a ring set, don't override it
 		if n := client.Children["ring"]; n != nil && n.Value != "" {
 			return n.Value
 		}
-		if conn, ok := client.Children["connection"]; ok {
-			if a, ok := conn.Children["authtype"]; ok {
-				auth = a.Value
+		if vap == "" {
+			if conn, ok := client.Children["connection"]; ok {
+				if node, ok := conn.Children["vap"]; ok {
+					vap = node.Value
+				}
 			}
 		}
 	}
-	if authp != nil {
-		auth = *authp
-	}
 
-	if auth == "" {
-		slog.Warnf("Can't select ring for %s: no auth type", mac)
-	} else if r, ok := authTypeToDefaultRing[auth]; ok {
-		slog.Infof("Setting initial ring for %s %s to %s",
-			mac, auth, r)
+	if cfgapi.ValidRings[ring] {
+		slog.Infof("Accepting proposed ring %s for %s", ring, mac)
+	} else if vap == "" {
+		slog.Warnf("Can't select ring for %s: no virtualAP", mac)
+	} else if r, ok := virtualAPToDefaultRing[vap]; ok {
+		slog.Infof("Setting initial ring for %s on virtualAP %s to %s",
+			mac, vap, r)
 		ring = r
 	} else {
-		slog.Warnf("Can't select ring for %s: unsupported auth: %s",
-			mac, auth)
+		slog.Warnf("Can't select ring for %s: bad virtualAP: %s",
+			mac, vap)
 	}
 	return ring
 }

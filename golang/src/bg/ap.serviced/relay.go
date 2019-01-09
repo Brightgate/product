@@ -69,11 +69,6 @@ var (
 
 	rings cfgapi.RingMap
 
-	ifaceToRing    map[int]string
-	ringToIface    map[string]*net.Interface
-	ipv4ToIface    map[string]*net.Interface
-	ifaceBroadcast map[string]net.IP
-
 	ssdpSearches   *ssdpSearchState
 	ssdpSearchLock sync.Mutex
 
@@ -571,43 +566,6 @@ func mrelay(s service) {
 	}
 }
 
-func initInterfaces() {
-	rings = config.GetRings()
-
-	ifaceToRing = make(map[int]string)
-	ringToIface = make(map[string]*net.Interface)
-	ipv4ToIface = make(map[string]*net.Interface)
-	ifaceBroadcast = make(map[string]net.IP)
-
-	//
-	// Iterate over all of the rings to/which we will relay UDP broadcasts.
-	// Find the interface that serves that ring and the IP address of the
-	// router for that subnet.
-	//
-	for ring, conf := range rings {
-		var name string
-
-		// Find the interface that serves this ring, so we can add the
-		// interface to the multicast groups on which we listen.
-		if _, ok := ringLevel[ring]; !ok {
-			slog.Debugf("No relaying from %s", ring)
-			continue
-		}
-
-		bridge := vlanBridge(conf.Vlan)
-		iface, err := net.InterfaceByName(bridge)
-		if iface == nil || err != nil {
-			slog.Warnf("No interface %s: %v", bridge, err)
-			continue
-		}
-
-		ifaceBroadcast[name] = network.SubnetBroadcast(conf.Subnet)
-		ipv4ToIface[network.SubnetRouter(conf.Subnet)] = iface
-		ringToIface[ring] = iface
-		ifaceToRing[iface.Index] = ring
-	}
-}
-
 func relayPrometheusInit() {
 	relayMetric.mdnsRequests = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "relayd_mdns_requests",
@@ -642,7 +600,6 @@ func relayPrometheusInit() {
 }
 
 func relayInit() {
-	initInterfaces()
 	relayPrometheusInit()
 	for _, s := range multicastServices {
 		go mrelay(s)
