@@ -262,6 +262,11 @@ func (dbq *dbCmdQueue) cancel(ctx context.Context, s *siteState, cmdID int64) (*
 func (dbq *dbCmdQueue) complete(ctx context.Context, s *siteState, rval *cfgmsg.ConfigResponse) error {
 	cmdID := rval.CmdID
 	jsonResp, err := json.Marshal(rval)
+	if err != nil {
+		slog.Errorf("Unable to marshal config response for command %d: %v",
+			cmdID, err)
+		return err
+	}
 	newCmd, oldCmd, err := dbq.handle.CommandComplete(ctx, cmdID, jsonResp)
 	if err != nil {
 		if _, ok := err.(appliancedb.NotFoundError); ok {
