@@ -81,6 +81,8 @@ type Cfg struct {
 	OpenIDConnectKey          string `envcfg:"B10E_CLHTTPD_OPENID_CONNECT_KEY"`
 	OpenIDConnectSecret       string `envcfg:"B10E_CLHTTPD_OPENID_CONNECT_SECRET"`
 	OpenIDConnectDiscoveryURL string `envcfg:"B10E_CLHTTPD_OPENID_CONNECT_DISCOVERY_URL"`
+	AzureADV2Key              string `envcfg:"B10E_CLHTTPD_AZUREADV2_KEY"`
+	AzureADV2Secret           string `envcfg:"B10E_CLHTTPD_AZUREADV2_SECRET"`
 	SessionDB                 string `envcfg:"B10E_CLHTTPD_POSTGRES_SESSIONDB"`
 	ApplianceDB               string `envcfg:"B10E_CLHTTPD_POSTGRES_APPLIANCEDB"`
 	ConfigdConnection         string `envcfg:"B10E_CLHTTPD_CLCONFIGD_CONNECTION"`
@@ -161,6 +163,8 @@ func mkSessionStore() *pgstore.PGStore {
 	if err != nil {
 		log.Fatalf("failed to start PG Store: %s", err)
 	}
+	// Defaults to 4K but some providers (Azure) issue enormous tokens
+	pgStore.MaxLength(32768)
 	return pgStore
 }
 
@@ -210,6 +214,7 @@ func mkRouterHTTPS(sessionStore sessions.Store) *echo.Echo {
 <p><a href="/auth/auth0">Login with Auth0</a></p>
 <p><a href="/auth/google">Login with Google</a></p>
 <p><a href="/auth/openid-connect">Login with Google (OpenID Connect)</a></p>
+<p><a href="/auth/azureadv2">Login with Azure AD V2</a></p>
 <p><a href="/auth/logout">Logout</a></p>
 `)
 

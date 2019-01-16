@@ -389,17 +389,19 @@
   revision = "274031cf2abe8acd15c4a911e1f7f1295fc4830c"
 
 [[projects]]
-  digest = "1:2fbbb180a3233872e61097ab69b70b70f5795b0c3ea2422179dea3292c75fcf5"
+  digest = "1:b5f0db644057287e018690cca0f76b037dff0115be4c06cf78dcc5897161dffb"
   name = "github.com/markbates/goth"
   packages = [
     ".",
     "gothic",
     "providers/auth0",
+    "providers/azureadv2",
     "providers/google",
     "providers/openidConnect",
   ]
   pruneopts = ""
-  revision = "f91a5b1fb6461522ecd9d9ae8f9e8cba75f23f20"
+  revision = "157987f620ff2fc5e1f6a1427a3685219fbf6ff4"
+  version = "v1.49.0"
 
 [[projects]]
   digest = "1:9ea83adf8e96d6304f394d40436f2eb44c1dc3250d223b74088cc253a6cd0a1c"
@@ -1066,6 +1068,7 @@
     "github.com/markbates/goth",
     "github.com/markbates/goth/gothic",
     "github.com/markbates/goth/providers/auth0",
+    "github.com/markbates/goth/providers/azureadv2",
     "github.com/markbates/goth/providers/google",
     "github.com/markbates/goth/providers/openidConnect",
     "github.com/miekg/dns",

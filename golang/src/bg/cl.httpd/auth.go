@@ -26,6 +26,7 @@ import (
 	"github.com/markbates/goth"
 	"github.com/markbates/goth/gothic"
 	"github.com/markbates/goth/providers/auth0"
+	"github.com/markbates/goth/providers/azureadv2"
 	"github.com/markbates/goth/providers/google"
 	"github.com/markbates/goth/providers/openidConnect"
 )
@@ -133,6 +134,21 @@ func auth0Provider() {
 	goth.UseProviders(auth0Provider)
 }
 
+func azureadv2Provider() {
+	if environ.AzureADV2Key == "" || environ.AzureADV2Secret == "" {
+		log.Printf("not enabling AzureADV2 authentication: missing B10E_CLHTTPD_AZUREADV2_KEY, B10E_CLHTTPD_AZUREADV2_SECRET")
+		return
+	}
+
+	log.Printf("enabling AzureADV2 authentication")
+	opts := azureadv2.ProviderOptions{}
+	// This provider is experimental; some of the information we need is
+	// inside of the AccessToken (such as the 'iss' field, which names the
+	// tenant), and will require more work to get out.
+	azureADV2Provider := azureadv2.New(environ.AzureADV2Key, environ.AzureADV2Secret, callback("azureadv2"), opts)
+	goth.UseProviders(azureADV2Provider)
+}
+
 // getProvider implements /auth/:provider, which starts the oauth flow.
 func (a *authHandler) getProvider(c echo.Context) error {
 	// Transfer the provider name to the Go context.  Done so that
@@ -222,6 +238,7 @@ func newAuthHandler(r *echo.Echo, sessionStore sessions.Store) *authHandler {
 	auth0Provider()
 	googleProvider()
 	openidConnectProvider()
+	azureadv2Provider()
 	h := &authHandler{sessionStore}
 
 	r.GET("/auth/:provider", h.getProvider)
