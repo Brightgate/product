@@ -311,6 +311,7 @@ COMMON_GOPKGS = \
 	bg/common/urlfetch
 
 COMMON_SRCS = \
+	$(GOSRCBG)/base_msg/base_msg.pb.go \
 	$(GOSRCBG)/common/archive/archive.go \
 	$(GOSRCBG)/common/cfgapi/cfgapi.go \
 	$(GOSRCBG)/common/cfgapi/translate.go \
@@ -858,7 +859,8 @@ $(APPBIN)/ap.rpcd: \
 	$(GOSRCBG)/ap.rpcd/config.go \
 	$(GOSRCBG)/ap.rpcd/heartbeat.go \
 	$(GOSRCBG)/ap.rpcd/inventory.go \
-	$(GOSRCBG)/ap.rpcd/update.go
+	$(GOSRCBG)/ap.rpcd/update.go \
+	$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go
 $(APPBIN)/ap.serviced: \
 	$(GOSRCBG)/ap_common/data/dns.go \
 	$(GOSRCBG)/ap.serviced/dhcp4.go \
