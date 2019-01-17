@@ -307,6 +307,13 @@
     {"Path": "@/cloud/svc_rpc/url", "Type": "string", "Level": "internal"},
     {"Path": "@/cloud/svc_rpc/tls", "Type": "bool", "Level": "internal"},
     {"Path": "@/cloud/update/bucket", "Type": "string", "Level": "internal"},
+    {"Path": "@/cloud/service/cloud_host", "Type": "sshaddr", "Level": "internal"},
+    {"Path": "@/cloud/service/cloud_user", "Type": "string", "Level": "internal"},
+    {"Path": "@/cloud/service/cloud_host_key", "Type": "string", "Level": "internal"},
+    {"Path": "@/cloud/service/cloud_user_name", "Type": "string", "Level": "internal"},
+    {"Path": "@/cloud/service/cloud_user_key", "Type": "string", "Level": "internal"},
+    {"Path": "@/cloud/service/tunnel_port", "Type": "port", "Level": "internal"},
+    {"Path": "@/cloud/service/tunnel_user_key", "Type": "string", "Level": "internal"},
     {"Path": "@/updates/%string%", "Type": "time", "Level": "internal"}
   ]
 }

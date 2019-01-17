@@ -31,6 +31,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"bg/base_def"
 	"bg/cl_common/auth/m2mauth"
@@ -55,6 +56,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	_ "google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/grpclog"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
@@ -286,6 +288,12 @@ func makeGrpcServer(environ Cfg, applianceDB appliancedb.DataStore) *grpc.Server
 		grpc_middleware.WithStreamServerChain(streamFuncs...),
 		grpc_middleware.WithUnaryServerChain(unaryFuncs...),
 	)
+
+	kep := keepalive.EnforcementPolicy{
+		MinTime:             30 * time.Second,
+		PermitWithoutStream: true,
+	}
+	opts = append(opts, grpc.KeepaliveEnforcementPolicy(kep))
 
 	grpcServer := grpc.NewServer(opts...)
 

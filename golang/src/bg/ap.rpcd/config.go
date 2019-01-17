@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -244,7 +244,7 @@ func (c *rpcClient) fetchStream() error {
 				cmds[0].CmdID)
 			trimRefreshDups(cmds)
 			for _, cmd := range cmds {
-				exec(cmd)
+				execQuery(cmd)
 			}
 		}
 		for len(queued.completions) > 2**maxCompletions {
@@ -255,7 +255,7 @@ func (c *rpcClient) fetchStream() error {
 }
 
 // Execute a single ConfigQuery fetched from the cloud
-func exec(cmd *cfgmsg.ConfigQuery) {
+func execQuery(cmd *cfgmsg.ConfigQuery) {
 	var payload string
 
 	slog.Debugf("executing cmd %d", cmd.CmdID)

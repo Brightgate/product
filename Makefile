@@ -299,6 +299,7 @@ ROOTETCRSYSLOGD=$(ROOTETC)/rsyslog.d
 
 HTTPD_CLIENTWEB_DIR=$(APPVAR)/www/client-web
 NETWORKD_TEMPLATE_DIR=$(APPETC)/templates/ap.networkd
+RPCD_TEMPLATE_DIR=$(APPETC)/templates/ap.rpcd
 USERAUTHD_TEMPLATE_DIR=$(APPETC)/templates/ap.userauthd
 
 COMMON_GOPKGS = \
@@ -311,6 +312,7 @@ COMMON_GOPKGS = \
 	bg/common/deviceid \
 	bg/common/grpcutils \
 	bg/common/passwordgen \
+	bg/common/ssh \
 	bg/common/urlfetch
 
 COMMON_SRCS = \
@@ -326,6 +328,9 @@ COMMON_SRCS = \
 	$(GOSRCBG)/common/grpcutils/client.go \
 	$(GOSRCBG)/common/grpcutils/cred.go \
 	$(GOSRCBG)/common/passwordgen/passwordgen.go \
+	$(GOSRCBG)/common/ssh/keys.go \
+	$(GOSRCBG)/common/ssh/sshd.go \
+	$(GOSRCBG)/common/ssh/tunnel.go \
 	$(GOSRCBG)/common/urlfetch/urlfetch.go
 
 APPCOMMON_GOPKGS = \
@@ -412,14 +417,17 @@ NETWORKD_TEMPLATE_FILES = \
 	virtualap.conf.got \
 	chrony.conf.got
 
+RPCD_TEMPLATE_FILES = sshd_config.got
+
 USERAUTHD_TEMPLATE_FILES = \
 	hostapd.radius.got \
 	hostapd.radius_clients.got \
 	hostapd.users.got
 
 NETWORKD_TEMPLATES = $(NETWORKD_TEMPLATE_FILES:%=$(NETWORKD_TEMPLATE_DIR)/%)
+RPCD_TEMPLATES = $(RPCD_TEMPLATE_FILES:%=$(RPCD_TEMPLATE_DIR)/%)
 USERAUTHD_TEMPLATES = $(USERAUTHD_TEMPLATE_FILES:%=$(USERAUTHD_TEMPLATE_DIR)/%)
-APPTEMPLATES = $(NETWORKD_TEMPLATES) $(USERAUTHD_TEMPLATES)
+APPTEMPLATES = $(NETWORKD_TEMPLATES) $(RPCD_TEMPLATES) $(USERAUTHD_TEMPLATES)
 
 FILTER_RULES = \
 	$(APPRULES)/base.rules \
@@ -476,6 +484,7 @@ APPDIRS = \
 	$(ROOTETCIPTABLES) \
 	$(ROOTETCLOGROTATED) \
 	$(ROOTETCRSYSLOGD) \
+	$(RPCD_TEMPLATE_DIR) \
 	$(USERAUTHD_TEMPLATE_DIR)
 
 APPCOMPONENTS = \
@@ -544,6 +553,7 @@ CLOUDETCDEVICESJSON=$(CLOUDETC)/devices.json
 CLOUDETCSCHEMA=$(CLOUDETC)/schema
 CLOUDETCSCHEMAAPPLIANCEDB=$(CLOUDETCSCHEMA)/appliancedb
 CLOUDETCSCHEMASESSIONDB=$(CLOUDETCSCHEMA)/sessiondb
+CLOUDETCSSHDCONFIG=$(CLOUDETC)/sshd_config.got
 CLOUDROOTLIB=$(CLOUDROOT)/lib
 CLOUDROOTLIBSYSTEMDSYSTEM=$(CLOUDROOTLIB)/systemd/system
 CLOUDVAR=$(CLOUDBASE)/var
@@ -569,7 +579,8 @@ CLOUDCOMMAND_GOPKGS = \
 	bg/cl-aggregate \
 	bg/cl-configctl \
 	bg/cl-dtool \
-	bg/cl-reg
+	bg/cl-reg \
+	bg/cl-service
 
 CLOUD_GOPKGS = $(CLOUDCOMMON_GOPKGS) $(CLOUDDAEMON_GOPKGS) $(CLOUDCOMMAND_GOPKGS)
 
@@ -586,6 +597,7 @@ CLOUDSERVICES = \
 CLOUDSYSTEMDSERVICES = $(CLOUDSERVICES:%=$(CLOUDROOTLIBSYSTEMDSYSTEM)/%)
 
 CLOUDETCFILES = \
+	$(CLOUDETCSSHDCONFIG) \
 	$(CLOUDETCDEVICESJSON)
 
 CLOUDSCHEMAS = \
@@ -788,6 +800,9 @@ $(APPSPOOLWATCHD)/vuln-db.json: $(GOSRCBG)/ap-vuln-aggregate/sample-db.json | $(
 $(NETWORKD_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.networkd/% | $(APPETC)
 	$(INSTALL) -m 0644 $< $@
 
+$(RPCD_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.rpcd/% | $(APPETC)
+	$(INSTALL) -m 0644 $< $@
+
 $(USERAUTHD_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.userauthd/% | $(APPETC)
 	$(INSTALL) -m 0644 $< $@
 
@@ -870,6 +885,7 @@ $(APPBIN)/ap.rpcd: \
 	$(GOSRCBG)/ap.rpcd/config.go \
 	$(GOSRCBG)/ap.rpcd/heartbeat.go \
 	$(GOSRCBG)/ap.rpcd/inventory.go \
+	$(GOSRCBG)/ap.rpcd/tunnel.go \
 	$(GOSRCBG)/ap.rpcd/update.go \
 	$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go
 $(APPBIN)/ap.serviced: \
@@ -946,6 +962,9 @@ $(CLOUDETCSCHEMAAPPLIANCEDB)/%: golang/src/bg/cloud_models/appliancedb/schema/% 
 $(CLOUDETCSCHEMASESSIONDB)/%: golang/src/bg/cloud_models/sessiondb/schema/% | $(CLOUDETCSCHEMASESSIONDB)
 	$(INSTALL) -m 0644 $< $@
 
+$(CLOUDETCSSHDCONFIG): $(GOSRCBG)/cl-service/sshd_config.got | $(CLOUDETC)
+	$(INSTALL) -m 0644 $< $@
+
 # Install service descriptions
 $(CLOUDROOTLIBSYSTEMDSYSTEM)/%: build/cl-systemd/% | $(CLOUDROOTLIBSYSTEMDSYSTEM)
 	$(INSTALL) -m 0644 $< $@
@@ -970,6 +989,8 @@ $(CLOUDBIN)/cl-dtool: \
 $(CLOUDBIN)/cl-reg: \
 	$(GOSRCBG)/cl-reg/main.go \
 	$(CLOUD_COMMON_SRCS)
+$(CLOUDBIN)/cl-service: \
+	$(GOSRCBG)/cl-service/service.go
 $(CLOUDBIN)/cl.configd: \
 	$(GOSRCBG)/cl.configd/backend.go \
 	$(GOSRCBG)/cl.configd/cmdqueue.go \

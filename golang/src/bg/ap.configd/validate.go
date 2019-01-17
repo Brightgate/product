@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -67,8 +67,10 @@ var (
 		"nic":        validateNic,
 		"ipaddr":     validateIP,
 		"cidr":       validateCIDR,
+		"port":       validatePort,
 		"hostname":   validateHostname,
 		"dnsaddr":    validateDNS,
+		"sshaddr":    validateSSHAddr,
 		"ssid":       validateSSID,
 		"passphrase": validatePassphrase,
 		"auth":       validateAuth,
@@ -208,6 +210,14 @@ func validateCIDR(val string) error {
 	return err
 }
 
+func validatePort(val string) error {
+	port, err := strconv.Atoi(val)
+	if err != nil || port <= 0 || port >= 65536 {
+		err = fmt.Errorf("'%s' is not a valid port number", val)
+	}
+	return err
+}
+
 func validateHostname(val string) error {
 	var err error
 
@@ -223,6 +233,22 @@ func validateDNS(val string) error {
 	if !network.ValidDNSName(val) {
 		err = fmt.Errorf("'%s' is not a valid DNS name", val)
 	}
+	return err
+}
+
+func validateSSHAddr(val string) error {
+	var err error
+
+	fields := strings.Split(val, ":")
+	addr := fields[0]
+	if !network.ValidDNSName(addr) && net.ParseIP(addr) == nil {
+		err = fmt.Errorf("'%s' is not a valid address", addr)
+	} else if len(fields) == 2 {
+		err = validatePort(fields[1])
+	} else if len(fields) > 2 {
+		err = fmt.Errorf("ssh address must contain <addr>[:<port>]")
+	}
+
 	return err
 }
 

@@ -1,0 +1,27 @@
+# Settings that are set dynamically when the config file is generated
+Port {{.Port}}
+HostKey {{.WorkingDir}}/{{.HostKeyFile}}
+AuthorizedKeysFile {{.WorkingDir}}/{{.AuthKeysFile}}
+AllowUsers {{.UserName}}
+
+Protocol 2
+AuthenticationMethods "publickey"
+ForceCommand /bin/false
+StrictModes no
+LoginGraceTime 5
+X11Forwarding no
+UsePrivilegeSeparation yes
+SyslogFacility AUTH
+LogLevel INFO
+IgnoreUserKnownHosts yes
+IgnoreRhosts yes
+HostbasedAuthentication no
+PermitEmptyPasswords no
+PermitRootLogin no
+PermitTTY no
+PermitUserRC no
+ChallengeResponseAuthentication no
+PasswordAuthentication no
+PrintMotd no
+PrintLastLog yes
+TCPKeepAlive yes

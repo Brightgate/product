@@ -324,7 +324,7 @@ func (c *Child) UseZapLog(prefix string, slog *zap.SugaredLogger,
 
 	c.stdLogger = nil
 	c.prefix = prefix
-	childLogger, err := newChildLogger()
+	childLogger, err := NewChildLogger()
 	if err != nil {
 		slog.Warnf("failed to init child logger: %v", err)
 		c.zapLogger = slog

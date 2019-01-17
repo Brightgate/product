@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -54,11 +54,13 @@ var (
 		"Override connection endpoint in credential")
 	enableTLSFlag = flag.Bool("enable-tls", true, "Enable Secure gRPC")
 
+	templateDir    = apcfg.String("template_dir", "/etc/templates/ap.rpcd", true, nil)
+	tunnelLife     = apcfg.Duration("tunnel_lifespan", time.Hour*3, true, nil)
 	rpcDeadline    = apcfg.Duration("rpc_deadline", time.Second*20, true, nil)
 	maxCmds        = apcfg.Int("max_cmds", 64, true, nil)
 	maxCompletions = apcfg.Int("max_completions", 64, true, nil)
 	maxUpdates     = apcfg.Int("max_updates", 32, true, nil)
-	logLevel       = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
+	logLevel       = apcfg.String("log_level", "info", false, aputil.LogSetLevel)
 
 	pname string
 
@@ -208,10 +210,10 @@ func grpcInit() (*grpc.ClientConn, error) {
 	}
 
 	if config != nil {
-		if url, err := config.GetProp(urlProperty); err == nil {
+		if url, cerr := config.GetProp(urlProperty); cerr == nil {
 			connectURL = url
 		}
-		if tls, err := config.GetProp(tlsProperty); err == nil {
+		if tls, cerr := config.GetProp(tlsProperty); cerr == nil {
 			enableTLS = (strings.ToLower(tls) == "true")
 		}
 	}
@@ -291,17 +293,17 @@ func daemonStart() {
 	brokerd.Handle(base_def.TOPIC_EXCEPTION, func(event []byte) {
 		cleanup.wg.Add(1)
 		defer cleanup.wg.Done()
-		err := handleNetException(ctx, tclient, event)
-		if err != nil {
+		if err = handleNetException(ctx, tclient, event); err != nil {
 			slog.Errorf("Failed handleNetException: %s", err)
 		}
 	})
 
 	go heartbeatLoop(ctx, tclient, &cleanup.wg, addDoneChan())
 	go inventoryLoop(ctx, tclient, &cleanup.wg, addDoneChan())
-	go configLoop(ctx, cclient, &cleanup.wg, addDoneChan())
 	go updateLoop(&cleanup.wg, addDoneChan())
 	go uploadLoop(sclient, &cleanup.wg, addDoneChan())
+	go configLoop(ctx, cclient, &cleanup.wg, addDoneChan())
+	go tunnelLoop(&cleanup.wg, addDoneChan())
 
 	slog.Infof("Setting state ONLINE")
 	err = mcpd.SetState(mcp.ONLINE)

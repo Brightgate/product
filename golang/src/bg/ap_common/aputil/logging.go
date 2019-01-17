@@ -48,12 +48,12 @@ func zapCallerEncoder(caller zapcore.EntryCaller, enc zapcore.PrimitiveArrayEnco
 		caller.Line))
 }
 
-// newChildLogger returns a 'sugared' zap logger, intended to be used to log the
+// NewChildLogger returns a 'sugared' zap logger, intended to be used to log the
 // output from child daemons.  This logger differs from that returned by
 // NewLogger by omitting the caller name, allowing us to tag the output using
 // the name of the child instead.  e.g.:
 //	2018/11/02 12:51:46     INFO    hostapd: wlan1: AP-ENABLED
-func newChildLogger() (*zap.SugaredLogger, error) {
+func NewChildLogger() (*zap.SugaredLogger, error) {
 	var slogger *zap.SugaredLogger
 
 	zapConfig := zap.NewDevelopmentConfig()

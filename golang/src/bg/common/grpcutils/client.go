@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -14,10 +14,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"time"
 
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 )
 
 // NewClientConn will create a new Cloud Appliance gRPC client.
@@ -42,6 +44,8 @@ func NewClientConn(serverAddr string, enableTLS bool, agent string) (*grpc.Clien
 		opts = append(opts, grpc.WithInsecure())
 	}
 
+	kopts := keepalive.ClientParameters{Time: time.Minute}
+	opts = append(opts, grpc.WithKeepaliveParams(kopts))
 	opts = append(opts, grpc.WithUserAgent(agent))
 
 	conn, err := grpc.Dial(serverAddr, opts...)
