@@ -120,6 +120,7 @@ GOBIN = $(GOPATH)/bin
 #
 # Miscellaneous environment setup
 #
+AWK = awk
 INSTALL = install
 ifeq ("$(UNAME_S)","Darwin")
 SHA256SUM = shasum -a 256
@@ -620,7 +621,17 @@ CLOUD_COMMON_SRCS = \
 	$(GOSRCBG)/cl_common/pgutils/utils.go \
 	$(GOSRCBG)/cl_common/registry/registry.go
 
+DOC_SRCS = \
+	doc/end_customer_guide.html
+
+DOC_OUTPUTS = $(DOC_SRCS:doc/%.html=doc/%-body.html)
+
 COVERAGE_DIR = coverage
+
+docs: $(DOC_OUTPUTS)
+
+doc/%-body.html: doc/%.html
+	$(AWK) -e '/BRIGHTGATE CONTENT END/ {p=0}; p; /BRIGHTGATE CONTENT START/ {p=1}' $< > $@
 
 #
 # Go Tools: Install versioned binaries for 'dep', 'mockery', etc.
@@ -1094,6 +1105,7 @@ clean:
 		$(APPBINARIES) \
 		$(CLOUDBINARIES) \
 		$(UTILBINARIES) \
+		$(DOC_OUTPUTS) \
 		$(GO_MOCK_SRCS)
 	$(RM) -fr $(COVERAGE_DIR)
 	find $(GOSRCBG)/ap_common -name \*.pem | xargs --no-run-if-empty $(RM) -f

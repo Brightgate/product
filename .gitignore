@@ -9,6 +9,7 @@ proto.x86_64
 *.ipk
 base/base_def.py
 base/cloud_rpc_pb2_grpc.py
+doc/*-body.html
 coverage/
 _tools.*/
 _venv.*
