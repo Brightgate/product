@@ -44,19 +44,39 @@ const (
 	app3Str         = "00000003-0003-0003-0003-000000000003"
 	site1Str        = "10000001-0001-0001-0001-000000000001"
 	site2Str        = "10000002-0002-0002-0002-000000000002"
+	org1Str         = "20000001-0001-0001-0001-000000000001"
+	org2Str         = "20000002-0002-0002-0002-000000000002"
+	person1Str      = "30000001-0001-0001-0001-000000000001"
+	person2Str      = "30000002-0002-0002-0002-000000000002"
+	account1Str     = "40000001-0001-0001-0001-000000000001"
+	account2Str     = "40000002-0002-0002-0002-000000000002"
+	badStr          = "ffffffff-ffff-ffff-ffff-ffffffffffff"
 )
 
 var (
 	databaseURI string
 	bpg         *briefpg.BriefPG
 
+	badUUID = uuid.Must(uuid.FromString(badStr))
+
+	testOrg1 = Organization{
+		UUID: uuid.Must(uuid.FromString(org1Str)),
+		Name: "org1",
+	}
+	testOrg2 = Organization{
+		UUID: uuid.Must(uuid.FromString(org2Str)),
+		Name: "org2",
+	}
+
 	testSite1 = CustomerSite{
-		UUID: uuid.Must(uuid.FromString(site1Str)),
-		Name: "site1",
+		UUID:             uuid.Must(uuid.FromString(site1Str)),
+		OrganizationUUID: testOrg1.UUID,
+		Name:             "site1",
 	}
 	testSite2 = CustomerSite{
-		UUID: uuid.Must(uuid.FromString(site2Str)),
-		Name: "site2",
+		UUID:             uuid.Must(uuid.FromString(site2Str)),
+		OrganizationUUID: testOrg2.UUID,
+		Name:             "site2",
 	}
 
 	testID1 = ApplianceID{
@@ -82,6 +102,30 @@ var (
 		GCPRegion:      testRegion,
 		ApplianceReg:   testReg,
 		ApplianceRegID: testRegID + "-3",
+	}
+	testPerson1 = Person{
+		UUID:         uuid.Must(uuid.FromString(person1Str)),
+		Name:         "Foo Bar",
+		PrimaryEmail: "foo@foo.net",
+	}
+	testPerson2 = Person{
+		UUID:         uuid.Must(uuid.FromString(person2Str)),
+		Name:         "Bar Baz",
+		PrimaryEmail: "bar@bar.net",
+	}
+	testAccount1 = Account{
+		UUID:             uuid.Must(uuid.FromString(account1Str)),
+		Email:            "foo@foo.net",
+		PhoneNumber:      "555-1212",
+		PersonUUID:       testPerson1.UUID,
+		OrganizationUUID: testOrg1.UUID,
+	}
+	testAccount2 = Account{
+		UUID:             uuid.Must(uuid.FromString(account2Str)),
+		Email:            "bar@bar.net",
+		PhoneNumber:      "555-2222",
+		PersonUUID:       testPerson2.UUID,
+		OrganizationUUID: testOrg1.UUID,
 	}
 )
 
@@ -151,17 +195,30 @@ func TestApplianceIDStruct(t *testing.T) {
 
 type dbTestFunc func(*testing.T, DataStore, *zap.Logger, *zap.SugaredLogger)
 
-func mkSiteApp(t *testing.T, ds DataStore, site *CustomerSite, app *ApplianceID) {
+// mkOrgSiteApp is a help function to prep the database: if not nil, add
+// org, site, and/or appliance to the DB
+func mkOrgSiteApp(t *testing.T, ds DataStore, org *Organization, site *CustomerSite, app *ApplianceID) {
 	ctx := context.Background()
 	assert := require.New(t)
 
-	// Prep the database: add appliance to the appliance_id_map table
-	err := ds.InsertCustomerSite(ctx, site)
-	assert.NoError(err, "expected Insert to succeed")
+	if org != nil {
+		err := ds.InsertOrganization(ctx, org)
+		assert.NoError(err, "expected Insert Organization to succeed")
+	}
+	if site != nil {
+		err := ds.InsertCustomerSite(ctx, site)
+		assert.NoError(err, "expected Insert Site to succeed")
+	}
+	if app != nil {
+		err := ds.InsertApplianceID(ctx, app)
+		assert.NoError(err, "expected Insert App to succeed")
+	}
+}
 
-	// Prep the database: add appliance to the appliance_id_map table
-	err = ds.InsertApplianceID(ctx, app)
-	assert.NoError(err, "expected Insert to succeed")
+func testPing(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
+	assert := require.New(t)
+	err := ds.Ping()
+	assert.NoError(err)
 }
 
 // Test insertion into Heartbeat ingest table.  subtest of TestDatabaseModel
@@ -178,16 +235,10 @@ func testHeartbeatIngest(t *testing.T, ds DataStore, logger *zap.Logger, slogger
 	// expect to fail because UUID doesn't exist
 	assert.Error(err)
 
-	mkSiteApp(t, ds, &testSite1, &testID1)
+	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, &testID1)
 
 	err = ds.InsertHeartbeatIngest(ctx, &hb)
 	// expect to succeed now
-	assert.NoError(err)
-}
-
-func testPing(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
-	assert := require.New(t)
-	err := ds.Ping()
 	assert.NoError(err)
 }
 
@@ -208,7 +259,7 @@ func testApplianceID(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	assert.Error(err)
 	assert.IsType(err, NotFoundError{})
 
-	mkSiteApp(t, ds, &testSite1, &testID1)
+	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, &testID1)
 
 	// Test that a second insert of the same UUID fails
 	err = ds.InsertApplianceID(ctx, &testID1)
@@ -223,7 +274,7 @@ func testApplianceID(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	assert.NoError(err)
 	assert.Equal(id1.ApplianceUUID, testID1.ApplianceUUID)
 
-	mkSiteApp(t, ds, &testSite2, &testID2)
+	mkOrgSiteApp(t, ds, &testOrg2, &testSite2, &testID2)
 
 	// Test getting complete set of appliance
 	ids, err = ds.AllApplianceIDs(ctx)
@@ -235,43 +286,12 @@ func testApplianceID(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	assert.NoError(err)
 }
 
-// Test insert of customer site data.  subtest of TestDatabaseModel
-func testCustomerSite(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
-	ctx := context.Background()
-	assert := require.New(t)
-
-	ids, err := ds.AllCustomerSites(ctx)
-	assert.NoError(err)
-	// Sentinel UUID
-	assert.Len(ids, 1)
-	assert.Equal(uuid.Nil, ids[0].UUID)
-
-	_, err = ds.CustomerSiteByUUID(ctx, testID1.SiteUUID)
-	assert.Error(err)
-	assert.IsType(err, NotFoundError{})
-
-	mkSiteApp(t, ds, &testSite1, &testID1)
-
-	// Test that a second insert of the same UUID fails
-	err = ds.InsertCustomerSite(ctx, &testSite1)
-	assert.Error(err, "expected Insert to fail")
-
-	s1, err := ds.CustomerSiteByUUID(ctx, testID1.SiteUUID)
-	assert.NoError(err)
-	assert.Equal(s1.UUID, testID1.SiteUUID)
-
-	mkSiteApp(t, ds, &testSite2, &testID2)
-	ids, err = ds.AllCustomerSites(ctx)
-	assert.NoError(err)
-	assert.Len(ids, 3)
-}
-
 // Test operations related to appliance public keys.  subtest of TestDatabaseModel
 func testAppliancePubKey(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
 	ctx := context.Background()
 	assert := require.New(t)
 
-	mkSiteApp(t, ds, &testSite1, &testID1)
+	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, &testID1)
 
 	k := &AppliancePubKey{
 		Format:     "RS256_X509",
@@ -290,13 +310,297 @@ func testAppliancePubKey(t *testing.T, ds DataStore, logger *zap.Logger, slogger
 	assert.Len(keys, 0)
 }
 
+// Test Organization APIs.  subtest of TestDatabaseModel
+func testOrganization(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
+	ctx := context.Background()
+	assert := require.New(t)
+
+	// Null organization is 1
+	orgs, err := ds.AllOrganizations(ctx)
+	assert.NoError(err, "expected success")
+	assert.Len(orgs, 1)
+
+	org, err := ds.OrganizationByUUID(ctx, testOrg1.UUID)
+	assert.Error(err)
+	assert.IsType(err, NotFoundError{})
+
+	err = ds.InsertOrganization(ctx, &testOrg1)
+	assert.NoError(err, "expected Insert to succeed")
+
+	orgs, err = ds.AllOrganizations(ctx)
+	assert.NoError(err, "expected success")
+	assert.Len(orgs, 2)
+
+	// Test that a second insert of the same UUID fails
+	err = ds.InsertOrganization(ctx, &testOrg1)
+	assert.Error(err, "expected Insert to fail")
+
+	org, err = ds.OrganizationByUUID(ctx, testOrg1.UUID)
+	assert.NoError(err, "expected success")
+	assert.Equal(testOrg1, *org)
+}
+
+// Test insert of customer site data.  subtest of TestDatabaseModel
+func testCustomerSite(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
+	ctx := context.Background()
+	assert := require.New(t)
+
+	ids, err := ds.AllCustomerSites(ctx)
+	assert.NoError(err)
+	// Sentinel UUID
+	assert.Len(ids, 1)
+	assert.Equal(uuid.Nil, ids[0].UUID)
+
+	_, err = ds.CustomerSiteByUUID(ctx, testID1.SiteUUID)
+	assert.Error(err)
+	assert.IsType(err, NotFoundError{})
+
+	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, &testID1)
+
+	// Test that a second insert of the same UUID fails
+	err = ds.InsertCustomerSite(ctx, &testSite1)
+	assert.Error(err, "expected Insert to fail")
+
+	s1, err := ds.CustomerSiteByUUID(ctx, testID1.SiteUUID)
+	assert.NoError(err)
+	assert.Equal(s1.UUID, testID1.SiteUUID)
+
+	mkOrgSiteApp(t, ds, &testOrg2, &testSite2, &testID2)
+	ids, err = ds.AllCustomerSites(ctx)
+	assert.NoError(err)
+	assert.Len(ids, 3)
+
+	// Lookup by Organization
+	sites, err := ds.CustomerSitesByOrganization(ctx, testOrg1.UUID)
+	assert.NoError(err, "expected success")
+	assert.Len(sites, 1)
+
+	// Lookup non-existent org, should get no sites
+	sites, err = ds.CustomerSitesByOrganization(ctx, uuid.NewV4())
+	assert.Len(sites, 0)
+	assert.NoError(err)
+}
+
+// Test OAuth2OrganizationRule APIs.  subtest of TestDatabaseModel
+func testOAuth2OrganizationRule(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
+	ctx := context.Background()
+	assert := require.New(t)
+	var err error
+
+	const testDomain = "brightgate-test.net"
+	const testTenant = "tenant.brightgate-test.net"
+	const testEmail = "foo@brightgate-test.net"
+	const testProvider = "google"
+
+	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, nil)
+	// Add second customer site under same org, for later testing
+	s2 := &CustomerSite{
+		UUID:             uuid.NewV4(),
+		OrganizationUUID: testOrg1.UUID,
+		Name:             "7411",
+	}
+	err = ds.InsertCustomerSite(ctx, s2)
+	assert.NoError(err, "expected Insert to succeed")
+
+	doms, err := ds.AllOAuth2OrganizationRules(ctx)
+	assert.NoError(err, "expected success")
+	assert.Len(doms, 0)
+
+	testCases := map[OAuth2OrgRuleType]string{
+		RuleTypeTenant: testTenant,
+		RuleTypeDomain: testDomain,
+		RuleTypeEmail:  testEmail,
+	}
+
+	rules, err := ds.AllOAuth2OrganizationRules(ctx)
+	assert.NoError(err, "expected success")
+	assert.Len(rules, 0)
+
+	for ruleType, ruleVal := range testCases {
+		rTest := &OAuth2OrganizationRule{testProvider, ruleType, ruleVal, testOrg1.UUID}
+
+		err = ds.InsertOAuth2OrganizationRule(ctx, rTest)
+		assert.NoError(err, "expected Insert to succeed")
+		// Test that a second insert of the same UUID fails
+		err = ds.InsertOAuth2OrganizationRule(ctx, rTest)
+		assert.Error(err, "expected Insert to fail")
+
+		// Test successful rule
+		rule, err := ds.OAuth2OrganizationRuleTest(ctx, testProvider, ruleType, ruleVal)
+		assert.NoError(err, "expected success")
+		assert.Equal(*rTest, *rule)
+
+		// Test unsuccessful rule
+		rule, err = ds.OAuth2OrganizationRuleTest(ctx, testProvider, ruleType, "foo")
+		assert.Error(err, "expected error")
+		assert.IsType(err, NotFoundError{})
+	}
+
+	rules, err = ds.AllOAuth2OrganizationRules(ctx)
+	assert.NoError(err, "expected success")
+	assert.Len(rules, 3)
+}
+
+// Test Person APIs.  subtest of TestDatabaseModel
+func testPerson(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
+	ctx := context.Background()
+	assert := require.New(t)
+	var err error
+
+	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, nil)
+
+	person, err := ds.PersonByUUID(ctx, testPerson1.UUID)
+	assert.Error(err)
+	assert.IsType(err, NotFoundError{})
+
+	err = ds.InsertPerson(ctx, &testPerson1)
+	assert.NoError(err, "expected success")
+
+	// Try again
+	err = ds.InsertPerson(ctx, &testPerson1)
+	assert.Error(err)
+
+	err = ds.InsertPerson(ctx, &testPerson2)
+	assert.NoError(err, "expected success")
+
+	person, err = ds.PersonByUUID(ctx, testPerson1.UUID)
+	assert.NoError(err)
+	assert.Equal(testPerson1, *person)
+}
+
+// Test Account APIs.  subtest of TestDatabaseModel
+func testAccount(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
+	ctx := context.Background()
+	assert := require.New(t)
+	var err error
+
+	// Setup
+	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, nil)
+	err = ds.InsertPerson(ctx, &testPerson1)
+	assert.NoError(err, "expected success")
+	err = ds.InsertPerson(ctx, &testPerson2)
+	assert.NoError(err, "expected success")
+
+	accts, err := ds.AccountsByOrganization(ctx, testOrg1.UUID)
+	assert.NoError(err)
+	assert.Len(accts, 0)
+
+	sites, err := ds.CustomerSitesByAccount(ctx, testAccount1.UUID)
+	assert.NoError(err)
+	assert.Len(sites, 0)
+
+	err = ds.InsertAccount(ctx, &testAccount1)
+	assert.NoError(err, "expected success")
+
+	// Try again
+	err = ds.InsertAccount(ctx, &testAccount1)
+	assert.Error(err)
+
+	err = ds.InsertAccount(ctx, &testAccount2)
+	assert.NoError(err, "expected success")
+
+	accts, err = ds.AccountsByOrganization(ctx, testOrg1.UUID)
+	assert.NoError(err)
+	assert.Len(accts, 2)
+
+	sites, err = ds.CustomerSitesByAccount(ctx, testAccount1.UUID)
+	assert.NoError(err)
+	assert.Len(sites, 1)
+	assert.Equal(testSite1, sites[0])
+
+	acct, err := ds.AccountByUUID(ctx, testAccount1.UUID)
+	assert.NoError(err)
+	assert.Equal(testAccount1, *acct)
+
+	acct, err = ds.AccountByUUID(ctx, badUUID)
+	assert.Error(err)
+	assert.IsType(err, NotFoundError{})
+}
+
+func testOAuth2Identity(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
+	ctx := context.Background()
+	assert := require.New(t)
+	var err error
+
+	// Setup
+	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, nil)
+	err = ds.InsertPerson(ctx, &testPerson1)
+	assert.NoError(err, "expected success")
+	err = ds.InsertPerson(ctx, &testPerson2)
+	assert.NoError(err, "expected success")
+	err = ds.InsertAccount(ctx, &testAccount1)
+	assert.NoError(err, "expected success")
+	err = ds.InsertAccount(ctx, &testAccount2)
+	assert.NoError(err, "expected success")
+
+	// similar to the userids google uses
+	const testSubj1 = "123456789012345678900"
+	id1 := &OAuth2Identity{
+		Subject:     testSubj1,
+		Provider:    "google",
+		AccountUUID: testAccount1.UUID,
+	}
+	const testSubj2 = "987654321098765432100"
+	id2 := &OAuth2Identity{
+		Subject:     testSubj2,
+		Provider:    "google",
+		AccountUUID: testAccount2.UUID,
+	}
+
+	err = ds.InsertOAuth2Identity(ctx, id1)
+	assert.NoError(err, "expected success")
+
+	err = ds.InsertOAuth2Identity(ctx, id2)
+	assert.NoError(err, "expected success")
+
+	assert.NotEqual(id1.ID, id2.ID)
+
+	// Try #1 again, expect error
+	err = ds.InsertOAuth2Identity(ctx, id1)
+	assert.Error(err, "expected error")
+
+	ids, err := ds.OAuth2IdentitiesByAccount(ctx, testAccount1.UUID)
+	assert.NoError(err)
+	assert.Len(ids, 1)
+	assert.Equal(*id1, ids[0])
+
+	li, err := ds.LoginInfoByProviderAndSubject(ctx, "google", testSubj1)
+	assert.NoError(err, "expected success")
+	assert.Equal(&LoginInfo{
+		Person:           testPerson1,
+		Account:          testAccount1,
+		OAuth2IdentityID: id1.ID,
+	}, li)
+
+	li, err = ds.LoginInfoByProviderAndSubject(ctx, "invalid", "invalid")
+	assert.Error(err)
+	assert.IsType(err, NotFoundError{})
+
+	at := &OAuth2AccessToken{
+		OAuth2IdentityID: id2.ID,
+		Token:            "I like coconuts",
+		Expires:          time.Now(),
+	}
+	err = ds.InsertOAuth2AccessToken(ctx, at)
+	assert.NoError(err, "expected success")
+
+	rt := &OAuth2RefreshToken{
+		OAuth2IdentityID: id1.ID,
+		Token:            "I like coconuts! A lot!",
+	}
+	err = ds.UpsertOAuth2RefreshToken(ctx, rt)
+	assert.NoError(err, "expected success")
+	err = ds.UpsertOAuth2RefreshToken(ctx, rt)
+	assert.NoError(err, "expected success")
+}
+
 // Test insertion into cloudstorage table.  subtest of TestDatabaseModel
 func testCloudStorage(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
 	var err error
 	ctx := context.Background()
 	assert := require.New(t)
 
-	mkSiteApp(t, ds, &testSite1, &testID1)
+	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, &testID1)
 
 	cs1 := &SiteCloudStorage{
 		Bucket:   "test-bucket",
@@ -377,7 +681,7 @@ func testConfigStore(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	ctx := context.Background()
 	assert := require.New(t)
 
-	mkSiteApp(t, ds, &testSite1, &testID1)
+	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, &testID1)
 
 	// Add appliance 1 to the appliance_config_store table
 	acs := SiteConfigStore{
@@ -409,7 +713,7 @@ func testCommandQueue(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 	ctx := context.Background()
 	assert := require.New(t)
 
-	mkSiteApp(t, ds, &testSite1, &testID1)
+	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, &testID1)
 
 	makeCmd := func(query string) (*SiteCommand, time.Time) {
 		enqTime := time.Now()
@@ -575,11 +879,19 @@ func TestDatabaseModel(t *testing.T) {
 		{"testPing", testPing},
 		{"testHeartbeatIngest", testHeartbeatIngest},
 		{"testApplianceID", testApplianceID},
-		{"testCustomerSite", testCustomerSite},
 		{"testAppliancePubKey", testAppliancePubKey},
+
+		{"testOrganization", testOrganization},
+		{"testCustomerSite", testCustomerSite},
+		{"testOAuth2OrganizationRule", testOAuth2OrganizationRule},
+		{"testPerson", testPerson},
+		{"testAccount", testAccount},
+		{"testOAuth2Identity", testOAuth2Identity},
+
 		{"testCloudStorage", testCloudStorage},
 		{"testUnittestData", testUnittestData},
 		{"testConfigStore", testConfigStore},
+
 		{"testCommandQueue", testCommandQueue},
 	}
 

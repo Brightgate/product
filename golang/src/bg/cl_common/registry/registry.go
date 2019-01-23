@@ -71,11 +71,11 @@ func genPEMKey() ([]byte, []byte, error) {
 	return keyPEM, certPEM, nil
 }
 
-// NewSite registers a new site in the registry.  It returns the site UUID.
-func NewSite(ctx context.Context, db appliancedb.DataStore, name string) (uuid.UUID, error) {
+// NewOrganization registers a new organization in the registry.  It returns the organization UUID.
+func NewOrganization(ctx context.Context, db appliancedb.DataStore, name string) (uuid.UUID, error) {
 	u := uuid.NewV4()
 
-	err := db.InsertCustomerSite(ctx, &appliancedb.CustomerSite{
+	err := db.InsertOrganization(ctx, &appliancedb.Organization{
 		UUID: u,
 		Name: name,
 	})
@@ -83,6 +83,74 @@ func NewSite(ctx context.Context, db appliancedb.DataStore, name string) (uuid.U
 		return uuid.Nil, err
 	}
 	return u, nil
+}
+
+// NewSite registers a new site in the registry.  It returns the site UUID.
+func NewSite(ctx context.Context, db appliancedb.DataStore, name string, orgUUID uuid.UUID) (uuid.UUID, error) {
+	u := uuid.NewV4()
+
+	err := db.InsertCustomerSite(ctx, &appliancedb.CustomerSite{
+		UUID:             u,
+		OrganizationUUID: orgUUID,
+		Name:             name,
+	})
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return u, nil
+}
+
+// NewOAuth2OrganizationRule registers a new oauth2_organization_rule in the registry.
+func NewOAuth2OrganizationRule(ctx context.Context, db appliancedb.DataStore,
+	provider string, ruleType appliancedb.OAuth2OrgRuleType,
+	ruleValue string, organization uuid.UUID) error {
+
+	err := db.InsertOAuth2OrganizationRule(ctx, &appliancedb.OAuth2OrganizationRule{
+		Provider:         provider,
+		RuleType:         ruleType,
+		RuleValue:        ruleValue,
+		OrganizationUUID: organization,
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// AccountInformation is a convenience type to return detailed information
+// about a single user account; it includes associated structures Person,
+// Organization, and any OAuth2Identity records.
+type AccountInformation struct {
+	Account      *appliancedb.Account
+	Person       *appliancedb.Person
+	Organization *appliancedb.Organization
+	OAuth2IDs    []appliancedb.OAuth2Identity
+}
+
+// GetAccountInformation returns information about the account specified.
+func GetAccountInformation(ctx context.Context, db appliancedb.DataStore, acctUUID uuid.UUID) (*AccountInformation, error) {
+	acct, err := db.AccountByUUID(ctx, acctUUID)
+	if err != nil {
+		return nil, err
+	}
+	person, err := db.PersonByUUID(ctx, acct.PersonUUID)
+	if err != nil {
+		return nil, err
+	}
+	org, err := db.OrganizationByUUID(ctx, acct.OrganizationUUID)
+	if err != nil {
+		return nil, err
+	}
+	ids, err := db.OAuth2IdentitiesByAccount(ctx, acctUUID)
+	if err != nil {
+		return nil, err
+	}
+	return &AccountInformation{
+		Account:      acct,
+		Person:       person,
+		Organization: org,
+		OAuth2IDs:    ids,
+	}, nil
 }
 
 // NewAppliance registers a new appliance.
@@ -120,7 +188,7 @@ func NewAppliance(ctx context.Context, db appliancedb.DataStore,
 		Key:    string(certPEM),
 	}
 
-	tx, err := db.BeginTx(ctx)
+	tx, err := db.BeginTxx(ctx, nil)
 	if err != nil {
 		return uuid.Nil, uuid.Nil, nil, nil, err
 	}

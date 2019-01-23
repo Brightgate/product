@@ -78,6 +78,7 @@ func addValidSession(req *http.Request, ss sessions.Store) {
 	sess.Values["userid"] = "test"
 	sess.Values["email"] = "test@brightgate.com"
 	sess.Values["auth_time"] = time.Now().Format(time.RFC3339)
+	sess.Values["account_uuid"] = uuid.Nil.String()
 	err = sess.Save(req, rec)
 	if err != nil {
 		panic("Failed session save")
@@ -100,7 +101,7 @@ func TestSites(t *testing.T) {
 	m0 := mockSites[0]
 	m1 := mockSites[1]
 	dMock := &mocks.DataStore{}
-	dMock.On("AllCustomerSites", mock.Anything).Return(mockSites, nil)
+	dMock.On("CustomerSitesByAccount", mock.Anything, mock.Anything).Return(mockSites, nil)
 	defer dMock.AssertExpectations(t)
 
 	// Setup Echo
@@ -131,6 +132,7 @@ func TestSitesUUID(t *testing.T) {
 	// Mock DB
 	m0 := mockSites[0]
 	dMock := &mocks.DataStore{}
+	dMock.On("CustomerSitesByAccount", mock.Anything, mock.Anything).Return(mockSites, nil)
 	dMock.On("CustomerSiteByUUID", mock.Anything, m0.UUID).Return(&m0, nil)
 	dMock.On("CustomerSiteByUUID", mock.Anything, mock.Anything).Return(nil, appliancedb.NotFoundError{})
 	defer dMock.AssertExpectations(t)

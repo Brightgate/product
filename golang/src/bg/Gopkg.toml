@@ -160,3 +160,7 @@
 [[constraint]]
   branch = "master"
   name = "github.com/dhduvall/gcloudzap"
+
+[[constraint]]
+  name = "github.com/jmoiron/sqlx"
+  version = "1.2.0"

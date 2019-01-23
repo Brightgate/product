@@ -17,6 +17,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"strings"
 	"syscall"
 
 	"github.com/satori/uuid"
@@ -139,8 +140,8 @@ func assembleRegistry(cmd *cobra.Command) (appliancedb.DataStore, *registry.Appl
 	return db, &reg, nil
 }
 
-func newSite(cmd *cobra.Command, args []string) error {
-	name, _ := cmd.Flags().GetString("name")
+func newOrg(cmd *cobra.Command, args []string) error {
+	orgName := args[0]
 
 	db, _, err := assembleRegistry(cmd)
 	if err != nil {
@@ -148,11 +149,111 @@ func newSite(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
-	siteUU, err := registry.NewSite(context.Background(), db, name)
+	orgUU, err := registry.NewOrganization(context.Background(), db, orgName)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Created Site: uuid=%s, name='%s'\n", siteUU, name)
+	fmt.Printf("Created Org: uuid=%s, name='%s'\n", orgUU, orgName)
+	return nil
+}
+
+func listOrgs(cmd *cobra.Command, args []string) error {
+	db, _, err := assembleRegistry(cmd)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	orgs, err := db.AllOrganizations(context.Background())
+	if err != nil {
+		return err
+	}
+
+	table, _ := prettytable.NewTable(
+		prettytable.Column{Header: "UUID"},
+		prettytable.Column{Header: "Name"},
+	)
+	table.Separator = "  "
+
+	for _, org := range orgs {
+		table.AddRow(org.UUID, org.Name)
+	}
+	table.Print()
+	return nil
+}
+
+func newOAuth2OrgRule(cmd *cobra.Command, args []string) error {
+	provider := args[0]
+	ruleType := appliancedb.OAuth2OrgRuleType(args[1])
+	ruleValue := args[2]
+	organization := args[3]
+	orgUU := uuid.Must(uuid.FromString(organization))
+
+	if ruleType != appliancedb.RuleTypeTenant &&
+		ruleType != appliancedb.RuleTypeDomain &&
+		ruleType != appliancedb.RuleTypeEmail {
+		return fmt.Errorf("Invalid rule type %q; use 'tenant', 'domain', or 'email'", ruleType)
+	}
+
+	db, _, err := assembleRegistry(cmd)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	err = registry.NewOAuth2OrganizationRule(context.Background(), db, provider,
+		ruleType, ruleValue, orgUU)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Created OAuth2OrgRule: provider=%q, ruleType=%q ruleValue=%q, org=%q\n",
+		provider, ruleType, ruleValue, orgUU)
+	return nil
+}
+
+func listOAuth2OrgRules(cmd *cobra.Command, args []string) error {
+	db, _, err := assembleRegistry(cmd)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	rules, err := db.AllOAuth2OrganizationRules(context.Background())
+	if err != nil {
+		return err
+	}
+
+	table, _ := prettytable.NewTable(
+		prettytable.Column{Header: "Provider"},
+		prettytable.Column{Header: "RuleType"},
+		prettytable.Column{Header: "RuleValue"},
+		prettytable.Column{Header: "OrganizationUUID"},
+	)
+	table.Separator = "  "
+
+	for _, rule := range rules {
+		_ = table.AddRow(rule.Provider, string(rule.RuleType),
+			rule.RuleValue, rule.OrganizationUUID.String())
+	}
+	table.Print()
+	return nil
+}
+
+func newSite(cmd *cobra.Command, args []string) error {
+	siteName := args[0]
+	orgUUID := uuid.Must(uuid.FromString(args[1]))
+
+	db, _, err := assembleRegistry(cmd)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	siteUU, err := registry.NewSite(context.Background(), db, siteName, orgUUID)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Created Site: uuid=%s, name='%s' organization='%s'\n", siteUU, siteName, orgUUID)
 	return nil
 }
 
@@ -164,15 +265,102 @@ func listSites(cmd *cobra.Command, args []string) error {
 	defer db.Close()
 
 	sites, err := db.AllCustomerSites(context.Background())
+	if err != nil {
+		return err
+	}
 
 	table, _ := prettytable.NewTable(
 		prettytable.Column{Header: "UUID"},
+		prettytable.Column{Header: "OrganizationUUID"},
 		prettytable.Column{Header: "Name"},
 	)
 	table.Separator = "  "
 
 	for _, site := range sites {
-		table.AddRow(site.UUID, site.Name)
+		table.AddRow(site.UUID, site.OrganizationUUID, site.Name)
+	}
+	table.Print()
+	return nil
+}
+
+func printPrefixedTable(table *prettytable.Table, prefix string) {
+	tabStr := table.String()
+	tabRows := strings.Split(tabStr, "\n")
+	for _, row := range tabRows {
+		fmt.Printf("%s%s\n", prefix, row)
+	}
+}
+
+func listAccounts(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
+	db, _, err := assembleRegistry(cmd)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	orgs, err := db.AllOrganizations(ctx)
+	if err != nil {
+		return err
+	}
+	for _, org := range orgs {
+		accts, err := db.AccountsByOrganization(ctx, org.UUID)
+		if err != nil {
+			return err
+		}
+		if org.UUID == uuid.Nil {
+			continue
+		}
+		if len(accts) == 0 {
+			fmt.Printf("Organization: %s (%s):\n  No accounts\n", org.Name, org.UUID)
+			continue
+		}
+		fmt.Printf("Organization: %q (%s)\n", org.Name, org.UUID)
+		table, _ := prettytable.NewTable(
+			prettytable.Column{Header: "UUID"},
+			prettytable.Column{Header: "Email"},
+			prettytable.Column{Header: "Phone"},
+		)
+		for _, acct := range accts {
+			table.AddRow(acct.UUID, acct.Email, acct.PhoneNumber)
+		}
+		printPrefixedTable(table, "  ")
+	}
+	return nil
+}
+
+func infoAccount(cmd *cobra.Command, args []string) error {
+	acctUUID := uuid.Must(uuid.FromString(args[0]))
+	ctx := context.Background()
+	db, _, err := assembleRegistry(cmd)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	ai, err := registry.GetAccountInformation(ctx, db, acctUUID)
+	if err != nil {
+		return err
+	}
+
+	table, _ := prettytable.NewTable(
+		prettytable.Column{Header: "KEY"},
+		prettytable.Column{Header: "VALUE"},
+	)
+	table.Separator = "  "
+	table.AddRow("UUID", ai.Account.UUID)
+	table.AddRow("Email", ai.Account.Email)
+	table.AddRow("Phone", ai.Account.PhoneNumber)
+	table.AddRow("Organization.UUID", ai.Organization.UUID)
+	table.AddRow("Organization.Name", ai.Organization.Name)
+	table.AddRow("Person.UUID", ai.Person.UUID)
+	table.AddRow("Person.Name", ai.Person.Name)
+	table.AddRow("Person.PrimaryEmail", ai.Person.PrimaryEmail)
+	for i, id := range ai.OAuth2IDs {
+		prefix := fmt.Sprintf("OAuth2ID.%d.", i)
+		table.AddRow(prefix+"ID", id.ID)
+		table.AddRow(prefix+"Provider", id.Provider)
+		table.AddRow(prefix+"Subject", id.Subject)
 	}
 	table.Print()
 	return nil
@@ -316,6 +504,31 @@ func main() {
 		PersistentPreRun: silenceUsage,
 	}
 
+	orgCmd := &cobra.Command{
+		Use:   "org <subcmd> [flags] [args]",
+		Short: "Administer organizations in the registry",
+		Args:  cobra.NoArgs,
+	}
+	rootCmd.AddCommand(orgCmd)
+
+	newOrgCmd := &cobra.Command{
+		Use:   "new [flags] <org name>",
+		Args:  cobra.ExactArgs(1),
+		Short: "Create an org and add it to the registry",
+		RunE:  newOrg,
+	}
+	newOrgCmd.Flags().StringP("input", "i", "", "registry data JSON file")
+	orgCmd.AddCommand(newOrgCmd)
+
+	listOrgCmd := &cobra.Command{
+		Use:   "list",
+		Args:  cobra.NoArgs,
+		Short: "List organizations in the registry",
+		RunE:  listOrgs,
+	}
+	listOrgCmd.Flags().StringP("input", "i", "", "registry data JSON file")
+	orgCmd.AddCommand(listOrgCmd)
+
 	siteCmd := &cobra.Command{
 		Use:   "site <subcmd> [flags] [args]",
 		Short: "Administer sites in the registry",
@@ -324,12 +537,11 @@ func main() {
 	rootCmd.AddCommand(siteCmd)
 
 	newSiteCmd := &cobra.Command{
-		Use:   "new [flags] <site name>",
-		Args:  cobra.ExactArgs(1),
+		Use:   "new [flags] <site name> <organization-uuid>",
+		Args:  cobra.ExactArgs(2),
 		Short: "Create a site and add it to the registry",
 		RunE:  newSite,
 	}
-	newSiteCmd.Flags().StringP("name", "n", "", "site name")
 	newSiteCmd.Flags().StringP("input", "i", "", "registry data JSON file")
 	siteCmd.AddCommand(newSiteCmd)
 
@@ -341,6 +553,56 @@ func main() {
 	}
 	listSiteCmd.Flags().StringP("input", "i", "", "registry data JSON file")
 	siteCmd.AddCommand(listSiteCmd)
+
+	oauth2OrgRuleCmd := &cobra.Command{
+		Use:   "oauth2_org_rule <subcmd> [flags] [args]",
+		Short: "Administer OAuth2OrgRules in the registry",
+		Args:  cobra.NoArgs,
+	}
+	rootCmd.AddCommand(oauth2OrgRuleCmd)
+
+	newOAuth2OrgRuleCmd := &cobra.Command{
+		Use:   "new [flags] <provider> [tenant|domain|email] <value> <organization-uuid>",
+		Args:  cobra.ExactArgs(4),
+		Short: "Create an OAuth2OrgRule and add it to the registry",
+		RunE:  newOAuth2OrgRule,
+	}
+	newOAuth2OrgRuleCmd.Flags().StringP("input", "i", "", "registry data JSON file")
+	oauth2OrgRuleCmd.AddCommand(newOAuth2OrgRuleCmd)
+
+	listOAuth2OrgRuleCmd := &cobra.Command{
+		Use:   "list",
+		Args:  cobra.NoArgs,
+		Short: "List OAuth2OrgRules in the registry",
+		RunE:  listOAuth2OrgRules,
+	}
+	listOAuth2OrgRuleCmd.Flags().StringP("input", "i", "", "registry data JSON file")
+	oauth2OrgRuleCmd.AddCommand(listOAuth2OrgRuleCmd)
+
+	accountCmd := &cobra.Command{
+		Use:   "account <subcmd> [flags] [args]",
+		Short: "Administer accounts in the registry",
+		Args:  cobra.NoArgs,
+	}
+	rootCmd.AddCommand(accountCmd)
+
+	listAccountCmd := &cobra.Command{
+		Use:   "list",
+		Args:  cobra.NoArgs,
+		Short: "List accounts in the registry",
+		RunE:  listAccounts,
+	}
+	listAccountCmd.Flags().StringP("input", "i", "", "registry data JSON file")
+	accountCmd.AddCommand(listAccountCmd)
+
+	infoAccountCmd := &cobra.Command{
+		Use:   "info",
+		Args:  cobra.ExactArgs(1),
+		Short: "Get extended information about an account in the registry",
+		RunE:  infoAccount,
+	}
+	infoAccountCmd.Flags().StringP("input", "i", "", "registry data JSON file")
+	accountCmd.AddCommand(infoAccountCmd)
 
 	appCmd := &cobra.Command{
 		Use:   "app <subcmd> [flags] [args]",

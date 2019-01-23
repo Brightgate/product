@@ -9,10 +9,13 @@
 --
 
 -- Example Data
+INSERT INTO organization (uuid, name) VALUES
+    ('20000001-0001-0001-0001-000000000001'::uuid, 'org1'),
+    ('20000002-0002-0002-0002-000000000002'::uuid, 'org2');
 
-INSERT INTO customer_site (uuid, name) VALUES
-    ('10000001-0001-0001-0001-000000000001'::uuid, 'site1'),
-    ('10000002-0002-0002-0002-000000000002'::uuid, 'site2');
+INSERT INTO customer_site (uuid, name, organization_uuid) VALUES
+    ('10000001-0001-0001-0001-000000000001'::uuid, 'site1', '20000001-0001-0001-0001-000000000001'::uuid),
+    ('10000002-0002-0002-0002-000000000002'::uuid, 'site2', '20000002-0002-0002-0002-000000000002'::uuid);
 
 INSERT INTO appliance_id_map (appliance_uuid, site_uuid, system_repr_mac, system_repr_hwserial, gcp_project, gcp_region, appliance_reg, appliance_reg_id) VALUES
     ('00000001-0001-0001-0001-000000000001'::uuid, '10000001-0001-0001-0001-000000000001'::uuid, 'DE:AD:BE:EF:F0:0D', NULL, 'test-project', 'test-region', 'test-registry', 'test-appliance1'),

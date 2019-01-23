@@ -40,12 +40,26 @@ type apiSite struct {
 	Name string    `json:"name"`
 }
 
-// getSites implements /api/sites
-// XXX needs filtering by userid
+// getSites implements /api/sites, which presents a filtered list of
+// applicable sites for the account.
 func (a *apiHandler) getSites(c echo.Context) error {
-	sites, err := a.db.AllCustomerSites(context.Background())
+	session, err := a.sessionStore.Get(c.Request(), "bg_login")
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError)
+		return echo.NewHTTPError(http.StatusUnauthorized)
+	}
+	au, ok := session.Values["account_uuid"].(string)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized)
+	}
+	accountUUID, err := uuid.FromString(au)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusUnauthorized)
+	}
+
+	sites, err := a.db.CustomerSitesByAccount(context.Background(), accountUUID)
+	if err != nil {
+		c.Logger().Errorf("Failed to get Sites by Account: %+v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 	apiSites := make([]apiSite, len(sites))
 	for i, site := range sites {
@@ -503,10 +517,42 @@ func (a *apiHandler) getRings(c echo.Context) error {
 func (a *apiHandler) sessionMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		session, err := a.sessionStore.Get(c.Request(), "bg_login")
-		if session == nil || err != nil || session.Values["userid"] == nil {
+		if err != nil {
 			return echo.NewHTTPError(http.StatusUnauthorized)
 		}
-		return next(c)
+		au, ok := session.Values["account_uuid"].(string)
+		if !ok {
+			return echo.NewHTTPError(http.StatusUnauthorized)
+		}
+		accountUUID, err := uuid.FromString(au)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusUnauthorized)
+		}
+
+		sites, err := a.db.CustomerSitesByAccount(context.Background(), accountUUID)
+		if err != nil {
+			c.Logger().Errorf("Failed to get Sites by Account: %+v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, err)
+		}
+		// Special, doesn't present a site UUID
+		if c.Path() == "/api/sites" {
+			return next(c)
+		}
+		// All the other endpoints come through here.
+		// This checks that the user has access in some form to this
+		// resource.  It does not check suitability beyond that.
+		siteUUIDParam := c.Param("uuid")
+		siteUUID, err := uuid.FromString(siteUUIDParam)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest)
+		}
+		for _, site := range sites {
+			if site.UUID == siteUUID {
+				return next(c)
+			}
+		}
+		// Pretend it isn't there.
+		return echo.NewHTTPError(http.StatusNotFound)
 	}
 }
 

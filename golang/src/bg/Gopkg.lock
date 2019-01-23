@@ -279,6 +279,17 @@
   revision = "2403248fa8cc9f7909862627aa7337f13f8e0bf1"
 
 [[projects]]
+  digest = "1:4611e727460d3634059cbe6e0a4799aaeb426ef8150e3b26056c83e1106831c4"
+  name = "github.com/jmoiron/sqlx"
+  packages = [
+    ".",
+    "reflectx",
+  ]
+  pruneopts = ""
+  revision = "d161d7a76b5661016ad0b085869f77fd410f3e6a"
+  version = "v1.2.0"
+
+[[projects]]
   digest = "1:be398c961548daea844f4301089e60f1cc476842522392ce009d67576c00b3c8"
   name = "github.com/jung-kurt/gofpdf"
   packages = ["."]
@@ -1057,6 +1068,7 @@
     "github.com/guregu/null",
     "github.com/hashicorp/go-version",
     "github.com/jlaffaye/ftp",
+    "github.com/jmoiron/sqlx",
     "github.com/klauspost/oui",
     "github.com/krolaw/dhcp4",
     "github.com/labstack/echo",

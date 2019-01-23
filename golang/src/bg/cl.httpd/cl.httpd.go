@@ -194,6 +194,17 @@ func mkRouterHTTPS(sessionStore sessions.Store) *echo.Echo {
 		appPath = environ.AppPath
 	}
 
+	applianceDB, err := appliancedb.Connect(environ.ApplianceDB)
+	if err != nil {
+		log.Fatalf("failed to connect to appliance DB: %v", err)
+	}
+	log.Printf(checkMark + "Connected to Appliance DB")
+	err = applianceDB.Ping()
+	if err != nil {
+		log.Fatalf("failed to ping DB: %s", err)
+	}
+	log.Printf(checkMark + "Pinged Appliance DB")
+
 	htmlFormat := `<html><body>%v</body></html>`
 
 	r := echo.New()
@@ -232,18 +243,7 @@ func mkRouterHTTPS(sessionStore sessions.Store) *echo.Echo {
 		}
 		return c.HTML(http.StatusOK, html)
 	})
-	_ = newAuthHandler(r, sessionStore)
-
-	applianceDB, err := appliancedb.Connect(environ.ApplianceDB)
-	if err != nil {
-		log.Fatalf("failed to connect to appliance DB: %v", err)
-	}
-	log.Printf(checkMark + "Connected to Appliance DB")
-	err = applianceDB.Ping()
-	if err != nil {
-		log.Fatalf("failed to ping DB: %s", err)
-	}
-	log.Printf(checkMark + "Pinged Appliance DB")
+	_ = newAuthHandler(r, sessionStore, applianceDB)
 
 	enableConfigdTLS = !environ.ConfigdDisableTLS && !environ.Developer
 	if !enableConfigdTLS {

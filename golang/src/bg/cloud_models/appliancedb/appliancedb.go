@@ -20,17 +20,19 @@ import (
 	"time"
 
 	"github.com/guregu/null"
+	"github.com/jmoiron/sqlx"
 	// As per pq documentation
 	_ "github.com/lib/pq"
 	"github.com/pkg/errors"
 	"github.com/satori/uuid"
 )
 
-// DBX describes the interface common to sql.DB and sql.Tx.
+// DBX describes the interface common to sqlx.DB and sqlx.Tx.
 type DBX interface {
-	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
+	sqlx.QueryerContext
+	sqlx.ExecerContext
+	NamedExecContext(context.Context, string, interface{}) (sql.Result, error)
 	QueryRowContext(context.Context, string, ...interface{}) *sql.Row
-	QueryContext(context.Context, string, ...interface{}) (*sql.Rows, error)
 }
 
 // DataStore facilitates mocking the database
@@ -42,6 +44,8 @@ type DataStore interface {
 	InsertCustomerSiteTx(context.Context, DBX, *CustomerSite) error
 	AllCustomerSites(context.Context) ([]CustomerSite, error)
 	CustomerSiteByUUID(context.Context, uuid.UUID) (*CustomerSite, error)
+	CustomerSitesByOrganization(context.Context, uuid.UUID) ([]CustomerSite, error)
+	CustomerSitesByAccount(context.Context, uuid.UUID) ([]CustomerSite, error)
 
 	AllApplianceIDs(context.Context) ([]ApplianceID, error)
 	ApplianceIDByClientID(context.Context, string) (*ApplianceID, error)
@@ -51,8 +55,6 @@ type DataStore interface {
 
 	InsertApplianceKeyTx(context.Context, DBX, uuid.UUID, *AppliancePubKey) error
 	KeysByUUID(context.Context, uuid.UUID) ([]AppliancePubKey, error)
-
-	InsertHeartbeatIngest(context.Context, *HeartbeatIngest) error
 
 	UpsertCloudStorage(context.Context, uuid.UUID, *SiteCloudStorage) error
 	CloudStorageByUUID(context.Context, uuid.UUID) (*SiteCloudStorage, error)
@@ -67,23 +69,56 @@ type DataStore interface {
 	CommandComplete(context.Context, int64, []byte) (*SiteCommand, *SiteCommand, error)
 	CommandDelete(context.Context, uuid.UUID, int64) (int64, error)
 
+	InsertHeartbeatIngest(context.Context, *HeartbeatIngest) error
+
+	AllOrganizations(context.Context) ([]Organization, error)
+	OrganizationByUUID(context.Context, uuid.UUID) (*Organization, error)
+	InsertOrganization(context.Context, *Organization) error
+	InsertOrganizationTx(context.Context, DBX, *Organization) error
+
+	AllOAuth2OrganizationRules(context.Context) ([]OAuth2OrganizationRule, error)
+	OAuth2OrganizationRuleTest(context.Context, string, OAuth2OrgRuleType, string) (*OAuth2OrganizationRule, error)
+	InsertOAuth2OrganizationRule(context.Context, *OAuth2OrganizationRule) error
+	InsertOAuth2OrganizationRuleTx(context.Context, DBX, *OAuth2OrganizationRule) error
+
+	PersonByUUID(context.Context, uuid.UUID) (*Person, error)
+	InsertPerson(context.Context, *Person) error
+	InsertPersonTx(context.Context, DBX, *Person) error
+
+	AccountsByOrganization(context.Context, uuid.UUID) ([]Account, error)
+	AccountByUUID(context.Context, uuid.UUID) (*Account, error)
+	InsertAccount(context.Context, *Account) error
+	InsertAccountTx(context.Context, DBX, *Account) error
+
+	OAuth2IdentitiesByAccount(context.Context, uuid.UUID) ([]OAuth2Identity, error)
+	InsertOAuth2Identity(context.Context, *OAuth2Identity) error
+	InsertOAuth2IdentityTx(context.Context, DBX, *OAuth2Identity) error
+
+	LoginInfoByProviderAndSubject(context.Context, string, string) (*LoginInfo, error)
+
+	InsertOAuth2AccessToken(context.Context, *OAuth2AccessToken) error
+	InsertOAuth2AccessTokenTx(context.Context, DBX, *OAuth2AccessToken) error
+	UpsertOAuth2RefreshToken(context.Context, *OAuth2RefreshToken) error
+	UpsertOAuth2RefreshTokenTx(context.Context, DBX, *OAuth2RefreshToken) error
+
 	Ping() error
 	Close() error
 
-	BeginTx(context.Context) (*sql.Tx, error)
+	BeginTxx(context.Context, *sql.TxOptions) (*sqlx.Tx, error)
 }
 
 // ApplianceDB implements DataStore with the actual DB backend
 // sql.DB implements Ping() and Close()
 type ApplianceDB struct {
-	*sql.DB
+	*sqlx.DB
 }
 
 // CustomerSite represents a customer installation of a group of
 // Appliances at a single physical location.
 type CustomerSite struct {
-	UUID uuid.UUID `json:"uuid"`
-	Name string    `json:"name"`
+	UUID             uuid.UUID `db:"uuid"`
+	OrganizationUUID uuid.UUID `db:"organization_uuid"`
+	Name             string    `db:"name"`
 }
 
 // NullSiteUUID is a reserved UUID for appliances which have no associated
@@ -97,23 +132,23 @@ var NullSiteUUID = uuid.Must(uuid.FromString("00000000-0000-0000-0000-0000000000
 type ApplianceID struct {
 	// ApplianceUUID is used as the primary key for tracking an appliance
 	// across cloud properties
-	ApplianceUUID uuid.UUID `json:"appliance_uuid"`
+	ApplianceUUID uuid.UUID `json:"appliance_uuid" db:"appliance_uuid"`
 
 	// SiteUUID is used as the primary key for tracking a customer site
 	// across cloud properties
-	SiteUUID uuid.UUID `json:"site_uuid"`
+	SiteUUID uuid.UUID `json:"site_uuid" db:"site_uuid"`
 
 	// System Identification Intrinsic to the Hardware
-	SystemReprMAC      null.String `json:"system_repr_mac"`
-	SystemReprHWSerial null.String `json:"system_repr_hwserial"`
+	SystemReprMAC      null.String `json:"system_repr_mac" db:"system_repr_mac"`
+	SystemReprHWSerial null.String `json:"system_repr_hwserial" db:"system_repr_hwserial"`
 
 	// Google Cloud Identification
-	GCPProject string `json:"gcp_project"`
-	GCPRegion  string `json:"gcp_region"`
+	GCPProject string `json:"gcp_project" db:"gcp_project"`
+	GCPRegion  string `json:"gcp_region" db:"gcp_region"`
 
 	// Appliance Registry name and ID in the Registry
-	ApplianceReg   string `json:"appliance_reg"`
-	ApplianceRegID string `json:"appliance_reg_id"`
+	ApplianceReg   string `json:"appliance_reg" db:"appliance_reg"`
+	ApplianceRegID string `json:"appliance_reg_id" db:"appliance_reg_id"`
 }
 
 // AppliancePubKey represents one of the public keys for an Appliance.
@@ -183,7 +218,7 @@ func (i *ApplianceID) ClientID() string {
 
 // Connect opens a new connection to the DataStore
 func Connect(dataSource string) (DataStore, error) {
-	sqldb, err := sql.Open("postgres", dataSource)
+	sqldb, err := sqlx.Open("postgres", dataSource)
 	if err != nil {
 		return nil, err
 	}
@@ -245,9 +280,10 @@ func (db *ApplianceDB) InsertCustomerSiteTx(ctx context.Context, dbx DBX,
 	}
 	_, err := dbx.ExecContext(ctx,
 		`INSERT INTO customer_site
-		 (uuid, name)
-		 VALUES ($1, $2)`,
+		 (uuid, organization_uuid, name)
+		 VALUES ($1, $2, $3)`,
 		cs.UUID,
+		cs.OrganizationUUID,
 		cs.Name)
 	return err
 }
@@ -256,19 +292,10 @@ func (db *ApplianceDB) InsertCustomerSiteTx(ctx context.Context, dbx DBX,
 // database
 func (db *ApplianceDB) AllCustomerSites(ctx context.Context) ([]CustomerSite, error) {
 	var sites []CustomerSite
-	rows, err := db.QueryContext(ctx,
-		"SELECT uuid, name FROM customer_site")
+	err := db.SelectContext(ctx, &sites,
+		"SELECT uuid, organization_uuid, name FROM customer_site")
 	if err != nil {
 		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var site CustomerSite
-		err = rows.Scan(&site.UUID, &site.Name)
-		if err != nil {
-			panic(err)
-		}
-		sites = append(sites, site)
 	}
 	return sites, nil
 }
@@ -292,66 +319,54 @@ func (db *ApplianceDB) CustomerSiteByUUID(ctx context.Context,
 	}
 }
 
-var allIDColumns = []string{
-	"appliance_uuid",
-	"site_uuid",
-	"system_repr_mac",
-	"system_repr_hwserial",
-	"gcp_project",
-	"gcp_region",
-	"appliance_reg",
-	"appliance_reg_id",
+// CustomerSitesByOrganization returns a list of the customer_site
+// records for the given organization.
+func (db *ApplianceDB) CustomerSitesByOrganization(ctx context.Context,
+	orgUUID uuid.UUID) ([]CustomerSite, error) {
+
+	var sites []CustomerSite
+	err := db.SelectContext(ctx, &sites,
+		`SELECT * FROM customer_site WHERE organization_uuid=$1`,
+		orgUUID)
+	if err != nil {
+		return nil, err
+	}
+	return sites, nil
 }
 
-var allIDColumnsSQL = strings.Join(allIDColumns, ", ")
+// CustomerSitesByAccount returns a list of the customer_site
+// records for the given Account's organization.
+func (db *ApplianceDB) CustomerSitesByAccount(ctx context.Context,
+	accountUUID uuid.UUID) ([]CustomerSite, error) {
+
+	var sites []CustomerSite
+	err := db.SelectContext(ctx, &sites,
+		`SELECT 
+		  customer_site.uuid AS uuid,
+		  customer_site.organization_uuid AS organization_uuid,
+		  customer_site.name AS name
+		FROM
+		  customer_site
+		JOIN
+		  account
+		  ON account.organization_uuid = customer_site.organization_uuid
+		WHERE account.uuid=$1`, accountUUID)
+	if err != nil {
+		return nil, err
+	}
+	return sites, nil
+}
 
 // AllApplianceIDs returns a complete list of the Appliance IDs in the
 // database
 func (db *ApplianceDB) AllApplianceIDs(ctx context.Context) ([]ApplianceID, error) {
 	var ids []ApplianceID
-	rows, err := db.QueryContext(ctx,
-		"SELECT "+allIDColumnsSQL+" FROM appliance_id_map")
+	err := db.SelectContext(ctx, &ids,
+		"SELECT * FROM appliance_id_map")
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var id ApplianceID
-		err = rows.Scan(&id.ApplianceUUID,
-			&id.SiteUUID,
-			&id.SystemReprMAC,
-			&id.SystemReprHWSerial,
-			&id.GCPProject,
-			&id.GCPRegion,
-			&id.ApplianceReg,
-			&id.ApplianceRegID)
-		if err != nil {
-			panic(err)
-		}
-		ids = append(ids, id)
-	}
 	return ids, nil
-}
-
-func doIDScan(label string, query string, row *sql.Row, id *ApplianceID) error {
-	err := row.Scan(&id.ApplianceUUID,
-		&id.SiteUUID,
-		&id.SystemReprMAC,
-		&id.SystemReprHWSerial,
-		&id.GCPProject,
-		&id.GCPRegion,
-		&id.ApplianceReg,
-		&id.ApplianceRegID)
-	switch err {
-	case sql.ErrNoRows:
-		return NotFoundError{fmt.Sprintf("%s: Couldn't find %s",
-			label, query)}
-	case nil:
-		break
-	default:
-		panic(err)
-	}
-	return nil
 }
 
 // ApplianceIDByUUID selects an ApplianceID using its UUID
@@ -359,27 +374,40 @@ func (db *ApplianceDB) ApplianceIDByUUID(ctx context.Context,
 	u uuid.UUID) (*ApplianceID, error) {
 
 	var id ApplianceID
-	row := db.QueryRowContext(ctx,
-		"SELECT "+allIDColumnsSQL+" FROM appliance_id_map WHERE appliance_uuid=$1", u)
-	err := doIDScan("ApplianceIDByUUID", u.String(), row, &id)
-	return &id, err
+	err := db.GetContext(ctx, &id,
+		"SELECT * FROM appliance_id_map WHERE appliance_uuid=$1", u)
+	switch err {
+	case sql.ErrNoRows:
+		return nil, NotFoundError{fmt.Sprintf(
+			"ApplianceIDByUUID: Couldn't find %s", u)}
+	case nil:
+		return &id, nil
+	default:
+		panic(err)
+	}
 }
 
-// ApplianceIDByClientID selects an ApplianceID using its client ID string
-// which is a string of the form:
+// ApplianceIDByClientID selects an ApplianceID using its client ID string,
+// which is of the form:
 // projects/<projname>/locations/<region>/registries/<regname>/appliances/<regid>
 func (db *ApplianceDB) ApplianceIDByClientID(ctx context.Context, clientID string) (*ApplianceID, error) {
-
 	var id ApplianceID
-	row := db.QueryRowContext(ctx,
-		"SELECT "+allIDColumnsSQL+` FROM appliance_id_map WHERE
-		    concat_ws('/',
-			'projects', gcp_project,
-			'locations', gcp_region,
-			'registries', appliance_reg,
-			'appliances', appliance_reg_id) = $1`, clientID)
-	err := doIDScan("ApplianceIDByClientID", clientID, row, &id)
-	return &id, err
+	err := db.GetContext(ctx, &id,
+		`SELECT * FROM appliance_id_map
+		 WHERE concat_ws('/',
+		   'projects', gcp_project,
+		   'locations', gcp_region,
+		   'registries', appliance_reg,
+		   'appliances', appliance_reg_id) = $1`, clientID)
+	switch err {
+	case sql.ErrNoRows:
+		return nil, NotFoundError{fmt.Sprintf(
+			"ApplianceIDByClientID: Couldn't find %s", clientID)}
+	case nil:
+		return &id, nil
+	default:
+		panic(err)
+	}
 }
 
 // InsertApplianceID inserts an ApplianceID.
@@ -749,5 +777,396 @@ func (db *ApplianceDB) InsertHeartbeatIngest(ctx context.Context, heartbeat *Hea
 		heartbeat.SiteUUID,
 		heartbeat.BootTS,
 		heartbeat.RecordTS)
+	return err
+}
+
+// Organization represents a group or business
+type Organization struct {
+	// UUID is used as the primary key for tracking a customer
+	// across cloud properties
+	UUID uuid.UUID `db:"uuid"`
+	Name string    `db:"name"` // Familiar name of customer
+}
+
+// AllOrganizations returns a complete list of the organization records in the
+// database
+func (db *ApplianceDB) AllOrganizations(ctx context.Context) ([]Organization, error) {
+	var orgs []Organization
+	err := db.SelectContext(ctx, &orgs, "SELECT uuid, name FROM organization")
+	if err != nil {
+		return nil, err
+	}
+	return orgs, nil
+}
+
+// OrganizationByUUID returns the specified org from the organization table.
+func (db *ApplianceDB) OrganizationByUUID(ctx context.Context, orgUUID uuid.UUID) (*Organization, error) {
+	var org Organization
+	err := db.GetContext(ctx, &org,
+		`SELECT *
+		    FROM organization 
+		    WHERE uuid=$1`, orgUUID)
+	switch err {
+	case sql.ErrNoRows:
+		return nil, NotFoundError{fmt.Sprintf(
+			"OrganizationByUUID: Couldn't find record for %s", orgUUID)}
+	case nil:
+		return &org, nil
+	default:
+		panic(err)
+	}
+}
+
+// InsertOrganization inserts an Organization.
+func (db *ApplianceDB) InsertOrganization(ctx context.Context,
+	org *Organization) error {
+	return db.InsertOrganizationTx(ctx, nil, org)
+}
+
+// InsertOrganizationTx inserts an Organization, possibly inside a transaction.
+func (db *ApplianceDB) InsertOrganizationTx(ctx context.Context, dbx DBX,
+	org *Organization) error {
+
+	if dbx == nil {
+		dbx = db
+	}
+	_, err := dbx.NamedExecContext(ctx,
+		`INSERT INTO organization (uuid, name) VALUES (:uuid,:name)`, org)
+	return err
+}
+
+// OAuth2OrgRuleType represents the different kind of OAuth2 Identity to
+// Organization mapping rules.
+type OAuth2OrgRuleType string
+
+// Matches SQL values
+const (
+	RuleTypeTenant OAuth2OrgRuleType = "tenant"
+	RuleTypeDomain OAuth2OrgRuleType = "domain"
+	RuleTypeEmail  OAuth2OrgRuleType = "email"
+)
+
+// OAuth2OrganizationRule represents a rule to map OAuth2 facts to Organizations.
+type OAuth2OrganizationRule struct {
+	Provider         string            `db:"provider"`
+	RuleType         OAuth2OrgRuleType `db:"rule_type"`
+	RuleValue        string            `db:"rule_value"`
+	OrganizationUUID uuid.UUID         `db:"organization_uuid"`
+}
+
+// AllOAuth2OrganizationRules returns a complete list of the
+// oauth2_organization_rule records in the database
+func (db *ApplianceDB) AllOAuth2OrganizationRules(ctx context.Context) ([]OAuth2OrganizationRule, error) {
+	var rules []OAuth2OrganizationRule
+	err := db.SelectContext(ctx, &rules, "SELECT * FROM oauth2_organization_rule")
+	if err != nil {
+		return nil, err
+	}
+	return rules, nil
+}
+
+// OAuth2OrganizationRuleTest tries to find a match for the OAuth2
+// provider, rule_type and rule_value.  And example would be
+// (provider=google, rule_type=RuleTypeTenant, rule_value='testech.org')
+func (db *ApplianceDB) OAuth2OrganizationRuleTest(ctx context.Context,
+	provider string, ruleType OAuth2OrgRuleType, ruleValue string) (*OAuth2OrganizationRule, error) {
+
+	var rule OAuth2OrganizationRule
+	err := db.GetContext(ctx, &rule,
+		`SELECT *
+		    FROM oauth2_organization_rule
+		    WHERE provider=$1 AND rule_type=$2 AND rule_value=$3`,
+		provider, ruleType, ruleValue)
+	switch err {
+	case sql.ErrNoRows:
+		return nil, NotFoundError{fmt.Sprintf(
+			"OAuth2OrganizationRuleTest: Couldn't find record for (%v,%v,%v)",
+			provider, ruleType, ruleValue)}
+	case nil:
+		return &rule, nil
+	default:
+		panic(err)
+	}
+}
+
+// InsertOAuth2OrganizationRule inserts an OAuth2OrganizationRule.
+func (db *ApplianceDB) InsertOAuth2OrganizationRule(ctx context.Context,
+	rule *OAuth2OrganizationRule) error {
+	return db.InsertOAuth2OrganizationRuleTx(ctx, nil, rule)
+}
+
+// InsertOAuth2OrganizationRuleTx inserts an OAuth2OrganizationRule, possibly inside a transaction.
+func (db *ApplianceDB) InsertOAuth2OrganizationRuleTx(ctx context.Context, dbx DBX,
+	rule *OAuth2OrganizationRule) error {
+
+	if dbx == nil {
+		dbx = db
+	}
+	_, err := dbx.NamedExecContext(ctx,
+		`INSERT INTO oauth2_organization_rule
+		 (provider, rule_type, rule_value, organization_uuid)
+		 VALUES
+		 (:provider, :rule_type, :rule_value, :organization_uuid)`, rule)
+	return err
+}
+
+// Person represents a natural person
+type Person struct {
+	UUID         uuid.UUID `db:"uuid"`
+	Name         string    `db:"name"`
+	PrimaryEmail string    `db:"primary_email"`
+}
+
+// PersonByUUID returns a person record by primary key (UUID)
+func (db *ApplianceDB) PersonByUUID(ctx context.Context, personUUID uuid.UUID) (*Person, error) {
+	var person Person
+	err := db.GetContext(ctx, &person,
+		`SELECT *
+		    FROM person
+		    WHERE uuid=$1`, personUUID)
+	switch err {
+	case sql.ErrNoRows:
+		return nil, NotFoundError{fmt.Sprintf(
+			"PersonByUUID: Couldn't find record for %s", personUUID)}
+	case nil:
+		return &person, nil
+	default:
+		panic(err)
+	}
+}
+
+// InsertPerson inserts a Person
+func (db *ApplianceDB) InsertPerson(ctx context.Context,
+	person *Person) error {
+	return db.InsertPersonTx(ctx, nil, person)
+}
+
+// InsertPersonTx inserts a Person, possibly inside a transaction.
+func (db *ApplianceDB) InsertPersonTx(ctx context.Context, dbx DBX,
+	person *Person) error {
+
+	if dbx == nil {
+		dbx = db
+	}
+	_, err := dbx.NamedExecContext(ctx,
+		`INSERT INTO person
+		 (uuid, name, primary_email)
+		 VALUES (:uuid, :name, :primary_email)`, person)
+	return err
+}
+
+// Account represents a user account
+type Account struct {
+	UUID             uuid.UUID `db:"uuid"`
+	Email            string    `db:"email"`
+	PhoneNumber      string    `db:"phone_number"`
+	PersonUUID       uuid.UUID `db:"person_uuid"`
+	OrganizationUUID uuid.UUID `db:"organization_uuid"`
+}
+
+// AccountsByOrganization returns a list of all accounts for a given organization
+func (db *ApplianceDB) AccountsByOrganization(ctx context.Context, org uuid.UUID) ([]Account, error) {
+	var accts []Account
+	err := db.SelectContext(ctx, &accts, `
+		SELECT *
+		FROM account
+		WHERE account.organization_uuid = $1`, org)
+	if err != nil {
+		return nil, err
+	}
+	return accts, nil
+}
+
+// AccountByUUID returns an Account by primary key (uuid)
+func (db *ApplianceDB) AccountByUUID(ctx context.Context, acctUUID uuid.UUID) (*Account, error) {
+	var acct Account
+	err := db.GetContext(ctx, &acct,
+		`SELECT *
+		    FROM account
+		    WHERE uuid=$1`, acctUUID)
+	switch err {
+	case sql.ErrNoRows:
+		return nil, NotFoundError{fmt.Sprintf(
+			"AccountByUUID: Couldn't find record for %s", acctUUID)}
+	case nil:
+		return &acct, nil
+	default:
+		panic(err)
+	}
+}
+
+// InsertAccount inserts a Account
+func (db *ApplianceDB) InsertAccount(ctx context.Context,
+	account *Account) error {
+	return db.InsertAccountTx(ctx, nil, account)
+}
+
+// InsertAccountTx inserts a Account, possibly inside a transaction.
+func (db *ApplianceDB) InsertAccountTx(ctx context.Context, dbx DBX,
+	account *Account) error {
+
+	if dbx == nil {
+		dbx = db
+	}
+	_, err := dbx.NamedExecContext(ctx,
+		`INSERT INTO account
+		 (uuid, email, phone_number, person_uuid, organization_uuid)
+		 VALUES (:uuid, :email, :phone_number, :person_uuid, :organization_uuid)`,
+		account)
+	return err
+}
+
+// OAuth2Identity represents an OAuth2 identity provider's record of a User.
+type OAuth2Identity struct {
+	ID          int       `db:"id"`
+	Subject     string    `db:"subject"`
+	Provider    string    `db:"provider"`
+	AccountUUID uuid.UUID `db:"account_uuid"`
+}
+
+// OAuth2IdentitiesByAccount returns a list of the oauth2_identity
+// records for the given Account
+func (db *ApplianceDB) OAuth2IdentitiesByAccount(ctx context.Context,
+	accountUUID uuid.UUID) ([]OAuth2Identity, error) {
+
+	var ids []OAuth2Identity
+	err := db.SelectContext(ctx, &ids,
+		`SELECT 
+		  id, provider, subject, account_uuid
+		FROM
+		  oauth2_identity
+		WHERE account_uuid=$1`, accountUUID)
+	if err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+// InsertOAuth2Identity inserts a row in OAuth2Identity
+func (db *ApplianceDB) InsertOAuth2Identity(ctx context.Context,
+	identity *OAuth2Identity) error {
+	return db.InsertOAuth2IdentityTx(ctx, nil, identity)
+}
+
+// InsertOAuth2IdentityTx inserts a row in OAuth2Identity, possibly inside a transaction.
+func (db *ApplianceDB) InsertOAuth2IdentityTx(ctx context.Context, dbx DBX,
+	identity *OAuth2Identity) error {
+
+	if dbx == nil {
+		dbx = db
+	}
+	row := dbx.QueryRowContext(ctx,
+		`INSERT INTO oauth2_identity
+		 (subject, provider, account_uuid)
+		 VALUES ($1, $2, $3)
+		 RETURNING id`, identity.Subject, identity.Provider, identity.AccountUUID)
+	return row.Scan(&identity.ID)
+}
+
+// LoginInfo is a compound struct representing basic information needed
+// when a user logs in.
+type LoginInfo struct {
+	Account          Account
+	Person           Person
+	OAuth2IdentityID int
+}
+
+// LoginInfoByProviderAndSubject looks up the subject for the given provider
+// and returns LoginInfo for that user.
+func (db *ApplianceDB) LoginInfoByProviderAndSubject(ctx context.Context,
+	provider, subject string) (*LoginInfo, error) {
+
+	var li LoginInfo
+	row := db.QueryRowContext(ctx, `
+		SELECT
+		  a.uuid,
+		  a.email,
+		  a.phone_number,
+		  a.person_uuid,
+		  a.organization_uuid,
+		  p.uuid,
+		  p.name,
+		  p.primary_email,
+		  o.id
+		FROM account a, person p, oauth2_identity o
+		WHERE o.provider=$1
+		  AND o.subject=$2
+		  AND a.uuid=o.account_uuid
+		  AND a.person_uuid=p.uuid`,
+		provider, subject)
+	err := row.Scan(
+		&li.Account.UUID,
+		&li.Account.Email,
+		&li.Account.PhoneNumber,
+		&li.Account.PersonUUID,
+		&li.Account.OrganizationUUID,
+		&li.Person.UUID,
+		&li.Person.Name,
+		&li.Person.PrimaryEmail,
+		&li.OAuth2IdentityID)
+	switch err {
+	case sql.ErrNoRows:
+		return nil, NotFoundError{fmt.Sprintf(
+			"LoginInfoByProviderAndSubject: Couldn't find info for %v,%v",
+			provider, subject)}
+	case nil:
+		return &li, nil
+	default:
+		panic(err)
+	}
+}
+
+// OAuth2AccessToken represents an OAuth2 Access Token obtained from a provider
+type OAuth2AccessToken struct {
+	OAuth2IdentityID int       `db:"identity_id"`
+	Token            string    `db:"token"`
+	Expires          time.Time `db:"expires"`
+}
+
+// InsertOAuth2AccessToken inserts a row in OAuth2AccessToken
+func (db *ApplianceDB) InsertOAuth2AccessToken(ctx context.Context,
+	tok *OAuth2AccessToken) error {
+	return db.InsertOAuth2AccessTokenTx(ctx, nil, tok)
+}
+
+// InsertOAuth2AccessTokenTx inserts a row in OAuth2AccessToken, possibly inside a transaction.
+func (db *ApplianceDB) InsertOAuth2AccessTokenTx(ctx context.Context, dbx DBX,
+	tok *OAuth2AccessToken) error {
+
+	if dbx == nil {
+		dbx = db
+	}
+	_, err := dbx.NamedExecContext(ctx,
+		`INSERT INTO oauth2_access_token
+		 (identity_id, token, expires)
+		 VALUES (:identity_id, :token, :expires)`, tok)
+	return err
+}
+
+// OAuth2RefreshToken represents an OAuth2 Refresh Token obtained from a provider
+type OAuth2RefreshToken struct {
+	OAuth2IdentityID int    `db:"identity_id"`
+	Token            string `db:"token"`
+}
+
+// UpsertOAuth2RefreshToken upserts a row in oauth2_refresh_token
+func (db *ApplianceDB) UpsertOAuth2RefreshToken(ctx context.Context,
+	tok *OAuth2RefreshToken) error {
+	return db.UpsertOAuth2RefreshTokenTx(ctx, nil, tok)
+}
+
+// UpsertOAuth2RefreshTokenTx upserts a row in oauth2_refresh_token, possibly inside a transaction.
+func (db *ApplianceDB) UpsertOAuth2RefreshTokenTx(ctx context.Context, dbx DBX,
+	tok *OAuth2RefreshToken) error {
+
+	if dbx == nil {
+		dbx = db
+	}
+	_, err := dbx.NamedExecContext(ctx,
+		`INSERT INTO oauth2_refresh_token
+		 (identity_id, token)
+		 VALUES (:identity_id, :token)
+		 ON CONFLICT (identity_id)
+		 DO UPDATE SET (token) = (EXCLUDED.token)`, tok)
 	return err
 }
