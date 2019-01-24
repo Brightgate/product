@@ -43,7 +43,7 @@ div .panel-visible-by-breakpoint {
             There's probably a better way to pass this information in besides
             a window level property, but I couldn't figure it out.
     -->
-    <f7-view id="main-view" :url="startRoute" :stack-pages="true" :main="true" />
+    <f7-view id="main-view" :url="startRoute" :stack-pages="true" :push-state="true" :push-state-on-load="false" :push-state-separator="'#'" :main="true" />
 
     <!-- Login Screen -->
     <f7-login-screen id="bgLoginScreen">
@@ -62,47 +62,71 @@ div .panel-visible-by-breakpoint {
             {{ $t('message.login.login') }}
           </f7-login-screen-title>
 
-          <f7-list form>
-            <f7-list-item>
-              <f7-label>{{ $t('message.login.username') }}</f7-label>
-              <f7-input
-                :placeholder="$t('message.login.username')"
-                :value="uid"
-                name="username"
-                type="email"
-                autofocus
-                autocomplete="username"
-                @input="uid = $event.target.value"
-                @keyup.native.enter="attemptLogin" />
-            </f7-list-item>
-            <f7-list-item>
-              <f7-label>{{ $t('message.login.password') }}</f7-label>
-              <f7-input
-                :placeholder="$t('message.login.password')"
-                :value="userPassword"
-                name="password"
-                type="password"
-                autocomplete="current-password"
-                @input="userPassword = $event.target.value"
-                @keyup.native.enter="attemptLogin" />
-            </f7-list-item>
-          </f7-list>
+          <template v-if="appMode === appDefs.APPMODE_LOCAL">
+            <f7-list form>
+              <f7-list-item>
+                <f7-label>{{ $t('message.login.username') }}</f7-label>
+                <f7-input
+                  :placeholder="$t('message.login.username')"
+                  :value="uid"
+                  name="username"
+                  type="email"
+                  autofocus
+                  autocomplete="username"
+                  @input="uid = $event.target.value"
+                  @keyup.native.enter="attemptLogin" />
+              </f7-list-item>
+              <f7-list-item>
+                <f7-label>{{ $t('message.login.password') }}</f7-label>
+                <f7-input
+                  :placeholder="$t('message.login.password')"
+                  :value="userPassword"
+                  name="password"
+                  type="password"
+                  autocomplete="current-password"
+                  @input="userPassword = $event.target.value"
+                  @keyup.native.enter="attemptLogin" />
+              </f7-list-item>
+            </f7-list>
+            <f7-block>
+              <f7-button fill @click="attemptLogin">
+                {{ $t('message.login.sign_in') }}
+                <f7-preloader v-if="attemptingLogin" color="white" />
+              </f7-button>
 
-          <f7-block>
-            <f7-button fill @click="attemptLogin">
-              {{ $t('message.login.sign_in') }}
-              <f7-preloader v-if="attemptingLogin" color="white" />
-            </f7-button>
-
-            <f7-block v-if="loginError">
-              <span v-if="loginError.res && loginError.res.unauthorized" style="color: red">
-                {{ $t('message.login.fail_unauthorized') }}
-              </span>
-              <span v-else style="color: red">
-                {{ $t('message.login.fail_other', {err: loginError.message}) }}
-              </span>
+              <f7-block v-if="loginError">
+                <span v-if="loginError.res && loginError.res.unauthorized" style="color: red">
+                  {{ $t('message.login.fail_unauthorized') }}
+                </span>
+                <span v-else style="color: red">
+                  {{ $t('message.login.fail_other', {err: loginError.message}) }}
+                </span>
+              </f7-block>
             </f7-block>
-          </f7-block>
+
+          </template>
+          <template v-else-if="appMode === appDefs.APPMODE_CLOUD">
+            <f7-block v-for="ap in authProviders" :key="ap">
+              <f7-button v-if="ap === 'google'" :fill="true" :external="true" href="/auth/google">
+                {{ $t('message.login.oauth2_with_google') }}
+              </f7-button>
+              <f7-button v-else-if="ap === 'azureadv2'" :fill="true" :external="true" href="/auth/azureadv2">
+                {{ $t('message.login.oauth2_with_microsoft') }}
+              </f7-button>
+              <f7-button v-else :fill="true" :external="true" :href="'/auth/'+ap">
+                {{ $t('message.login.oauth2_with_other', {provider: ap}) }}
+              </f7-button>
+            </f7-block>
+          </template>
+
+          <!-- covers the case when for some reason the app can't work out if
+               it's in cloud or local mode
+          -->
+          <template v-else>
+            <f7-block>
+              {{ $t('message.login.down') }}
+            </f7-block>
+          </template>
 
         </f7-page>
       </f7-view>
@@ -114,8 +138,10 @@ div .panel-visible-by-breakpoint {
 <script>
 import assert from 'assert';
 import {f7App, f7Statusbar, f7LoginScreen, f7LoginScreenTitle} from 'framework7-vue';
+import vuex from 'vuex';
 import Promise from 'bluebird';
 import Debug from 'debug';
+import appDefs from './app_defs';
 import routes from './routes';
 const debug = Debug('page:app.vue');
 
@@ -138,9 +164,16 @@ export default {
       userPassword: '',
       loginError: null,
       attemptingLogin: false,
+      appDefs: appDefs,
     };
   },
   computed: {
+    // Map various $store elements as computed properties for use in the
+    // template.
+    ...vuex.mapGetters([
+      'appMode',
+      'authProviders',
+    ]),
     startRoute() {
       return window.navigateTo ? window.navigateTo : '/';
     },

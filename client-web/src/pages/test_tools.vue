@@ -49,25 +49,25 @@
         <f7-list-group>
           <f7-list-item :title="$t('message.test_tools.appmode_group')" group-title />
           <f7-list-item
-            :checked="testAppMode === 'automatic'"
+            :checked="testAppMode === appDefs.APPMODE_NONE"
             :title="$t('message.test_tools.auto_mode')"
             radio
             name="mode-radio"
-            @change="setTestAppMode('automatic')"
+            @change="setTestAppMode(appDefs.APPMODE_NONE)"
           />
           <f7-list-item
-            :checked="testAppMode === 'cloud'"
+            :checked="testAppMode === appDefs.APPMODE_CLOUD"
             :title="$t('message.test_tools.cloud_mode')"
             radio
             name="mode-radio"
-            @change="setTestAppMode('cloud')"
+            @change="setTestAppMode(appDefs.APPMODE_CLOUD)"
           />
           <f7-list-item
-            :checked="testAppMode === 'local'"
+            :checked="testAppMode === appDefs.APPMODE_LOCAL"
             :title="$t('message.test_tools.local_mode')"
             radio
             name="mode-radio"
-            @change="setTestAppMode('local')"
+            @change="setTestAppMode(appDefs.APPMODE_LOCAL)"
           />
         </f7-list-group>
         <f7-list-group>
@@ -90,12 +90,15 @@
 <script>
 import vuex from 'vuex';
 import Debug from 'debug';
+import appDefs from '../app_defs';
 
 const debug = Debug('page:test_tools');
 
 export default {
   data: function() {
-    return {};
+    return {
+      appDefs: appDefs,
+    };
   },
 
   computed: {
@@ -113,10 +116,6 @@ export default {
   },
 
   methods: {
-    ...vuex.mapMutations([
-      'setTestAppMode',
-    ]),
-
     ...vuex.mapActions([
       'logout',
     ]),
@@ -124,6 +123,7 @@ export default {
     toggleMock: function(evt) {
       debug('toggleMock', evt);
       this.$store.commit('setMock', evt.target.checked);
+      this.$store.dispatch('fetchProviders').catch(() => {});
       this.$store.dispatch('fetchSites').catch(() => {});
       this.$store.dispatch('fetchDevices').catch(() => {});
     },
@@ -133,9 +133,14 @@ export default {
       this.$store.commit('setFakeLogin', evt.target.checked);
     },
 
-    onSiteChange: function(evt) {
-      debug('onSiteChange', evt.target.value);
-      this.$store.dispatch('setCurrentSiteID', {id: evt.target.value});
+    setTestAppMode: function(mode) {
+      debug('setTestAppMode', mode);
+      this.$store.commit('setTestAppMode', mode);
+      // Force the mock to update too
+      this.$store.commit('setMock', this.$store.getters.mock);
+      this.$store.dispatch('fetchProviders').catch(() => {});
+      this.$store.dispatch('fetchSites').catch(() => {});
+      this.$store.dispatch('fetchDevices').catch(() => {});
     },
 
     acceptSupreme: async function() {

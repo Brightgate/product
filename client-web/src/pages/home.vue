@@ -43,7 +43,7 @@
         :link="`/sites/${currentSiteID}/devices/${device.uniqid}/`" />
     </f7-list>
 
-    <template v-if="appMode === 'local'">
+    <template v-if="appMode === appDefs.APPMODE_LOCAL">
       <template v-if="alertCount(alertActive(alerts))">
         <f7-block-title>{{ $t("message.alerts.serious_alerts") }}</f7-block-title>
         <f7-list>
@@ -69,7 +69,7 @@
       <bg-site-controls :siteid="'0'" :device-count="deviceCount(devices)" :disabled="!loggedIn" />
     </template>
 
-    <template v-if="appMode === 'cloud'">
+    <template v-if="appMode === appDefs.APPMODE_CLOUD">
       <f7-block>
         <h2>{{ $t("message.home.select_site") }}</h2>
       </f7-block>
@@ -91,6 +91,7 @@ import Debug from 'debug';
 import vulnerability from '../vulnerability';
 import BGSiteControls from '../components/site_controls.vue';
 import BGSiteList from '../components/site_list.vue';
+import appDefs from '../app_defs';
 const debug = Debug('page:home');
 
 export default {
@@ -101,6 +102,7 @@ export default {
   data: function() {
     return {
       acceptToast: null,
+      appDefs: appDefs,
     };
   },
 

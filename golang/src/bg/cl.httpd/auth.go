@@ -44,6 +44,7 @@ func init() {
 type authHandler struct {
 	sessionStore sessions.Store
 	applianceDB  appliancedb.DataStore
+	providers    []goth.Provider
 }
 
 // getProviderName fetches the name of the auth provider.  This function
@@ -96,21 +97,23 @@ func callback(provider string) string {
 	return callback
 }
 
-func googleProvider() {
+type providerFunc func() goth.Provider
+
+func googleProvider() goth.Provider {
 	if environ.GoogleKey == "" && environ.GoogleSecret == "" {
 		log.Printf("not enabling google authentication: missing B10E_CLHTTPD_GOOGLE_KEY or B10E_CLHTTPD_GOOGLE_SECRET")
-		return
+		return nil
 	}
 
-	googleProvider := google.New(environ.GoogleKey, environ.GoogleSecret,
+	log.Printf("enabling google authentication")
+	return google.New(environ.GoogleKey, environ.GoogleSecret,
 		callback("google"), "openid", "profile", "email", "phone")
-	goth.UseProviders(googleProvider)
 }
 
-func openidConnectProvider() {
+func openidConnectProvider() goth.Provider {
 	if environ.OpenIDConnectKey == "" || environ.OpenIDConnectSecret == "" || environ.OpenIDConnectDiscoveryURL == "" {
 		log.Printf("not enabling openid authentication: missing B10E_CLHTTPD_OPENID_CONNECT_KEY, B10E_CLHTTPD_OPENID_CONNECT_SECRET or B10E_CLHTTPD_OPENID_CONNECT_DISCOVERY_URL")
-		return
+		return nil
 	}
 	log.Printf("enabling openid connect authentication via %s", environ.OpenIDConnectDiscoveryURL)
 	openidConnect, err := openidConnect.New(
@@ -122,30 +125,81 @@ func openidConnectProvider() {
 	if err != nil || openidConnect == nil {
 		log.Fatalf("failed to initialized openid-connect")
 	}
-	goth.UseProviders(openidConnect)
+	return openidConnect
 }
 
-func auth0Provider() {
+func auth0Provider() goth.Provider {
 	if environ.Auth0Key == "" || environ.Auth0Secret == "" || environ.Auth0Domain == "" {
 		log.Printf("not enabling Auth0 authentication: missing B10E_CLHTTPD_AUTH0_KEY, B10E_CLHTTPD_AUTH0_SECRET or B10E_CLHTTPD_AUTH0_DOMAIN")
-		return
+		return nil
 	}
 
 	log.Printf("enabling Auth0 authentication")
-	auth0Provider := auth0.New(environ.Auth0Key, environ.Auth0Secret, callback("auth0"),
-		environ.Auth0Domain, "openid", "profile", "email")
-	goth.UseProviders(auth0Provider)
+	return auth0.New(environ.Auth0Key, environ.Auth0Secret, callback("auth0"),
+		environ.Auth0Domain, "openid", "profile", "email", "zug.zug")
 }
 
-func azureadv2Provider() {
+func azureadv2Provider() goth.Provider {
 	if environ.AzureADV2Key == "" || environ.AzureADV2Secret == "" {
 		log.Printf("not enabling AzureADV2 authentication: missing B10E_CLHTTPD_AZUREADV2_KEY, B10E_CLHTTPD_AZUREADV2_SECRET")
-		return
+		return nil
 	}
 
 	log.Printf("enabling AzureADV2 authentication")
-	azureADV2Provider := azureadv2.New(environ.AzureADV2Key, environ.AzureADV2Secret, callback("azureadv2"), azureadv2.ProviderOptions{})
-	goth.UseProviders(azureADV2Provider)
+	opts := azureadv2.ProviderOptions{}
+	// This provider is experimental; some of the information we need is
+	// inside of the AccessToken (such as the 'iss' field, which names the
+	// tenant), and will require more work to get out.
+	return azureadv2.New(environ.AzureADV2Key, environ.AzureADV2Secret, callback("azureadv2"), opts)
+}
+
+// getProviders implements /auth/providers, which indicates which oauth
+// providers are available.
+func (a *authHandler) getProviders(c echo.Context) error {
+	provNames := make([]string, 0)
+	for _, prov := range a.providers {
+		provNames = append(provNames, prov.Name())
+	}
+	providers := struct {
+		Mode      string   `json:"mode"`
+		Providers []string `json:"providers"`
+	}{
+		Mode: "cloud",
+		// XXX make more dynamic as providers register
+		Providers: provNames,
+	}
+	return c.JSON(http.StatusOK, providers)
+}
+
+// getAuth implements /auth and gives (developer-focused)
+// auth choices and controls.
+func (a *authHandler) getAuth(c echo.Context) error {
+	html := `<!doctype html>
+		<head>
+		<meta charset=utf-8>
+		<title>Auth</title>
+		</head>
+		<body>`
+
+	for _, prov := range a.providers {
+		html += fmt.Sprintf("<p><a href=\"/auth/%s\">Login with %s</a></p>\n", prov.Name(), prov.Name())
+	}
+	html += "<p><a href=\"/auth/logout\">Logout</a></p>\n"
+
+	sess, err := a.sessionStore.Get(c.Request(), "bg_login")
+	if err == nil {
+		var email string
+		email, ok := sess.Values["email"].(string)
+		if ok {
+			html += fmt.Sprintf("<p>Hello there; I think you are: '%v'</p>\n", email)
+		} else {
+			html += fmt.Sprintf("<p>Hello there; Log in so I know who you are.</p>\n")
+		}
+	} else {
+		html += fmt.Sprintf("<p>Error was: %v</p>\n", err)
+	}
+	html += `</body></html>`
+	return c.HTML(http.StatusOK, html)
 }
 
 // getProvider implements /auth/:provider, which starts the oauth flow.
@@ -393,13 +447,26 @@ func (a *authHandler) getUserID(c echo.Context) error {
 // and routes the handler into the echo instance.  Note that it manipulates
 // global gothic state.
 func newAuthHandler(r *echo.Echo, sessionStore sessions.Store, applianceDB appliancedb.DataStore) *authHandler {
+	h := &authHandler{
+		sessionStore: sessionStore,
+		providers:    make([]goth.Provider, 0),
+		applianceDB:  applianceDB,
+	}
 	gothic.Store = sessionStore
-	auth0Provider()
-	googleProvider()
-	openidConnectProvider()
-	azureadv2Provider()
-	h := &authHandler{sessionStore, applianceDB}
+	providers := []providerFunc{googleProvider, azureadv2Provider, openidConnectProvider, auth0Provider}
+	for _, provFunc := range providers {
+		p := provFunc()
+		if p != nil {
+			h.providers = append(h.providers, p)
+		}
+	}
+	if len(h.providers) == 0 {
+		log.Printf("No auth providers configured!  No one can log in.")
+	}
+	goth.UseProviders(h.providers...)
 
+	r.GET("/auth", h.getAuth)
+	r.GET("/auth/providers", h.getProviders)
 	r.GET("/auth/:provider", h.getProvider)
 	r.GET("/auth/:provider/callback", h.getProviderCallback)
 	r.GET("/auth/logout", h.getLogout)

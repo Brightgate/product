@@ -172,6 +172,10 @@ export default {
         sign_in: 'Sign In',
         fail_unauthorized: 'Login failed.  Invalid Username or Password.',
         fail_other: 'Login failed unexpectedly: {err}.',
+        oauth2_with_google: 'Login with Google',
+        oauth2_with_microsoft: 'Login with Microsoft',
+        oauth2_with_other: 'Login with {provider}',
+        down: 'The login system is not working right now.  It will be back shortly.',
       },
       users: {
         title: 'Brightgate - Users',
@@ -341,6 +345,10 @@ export default {
         sign_in: 'Anmelden',
         fail_unauthorized: 'Login failed.  Invalid Username or Password.', // XXXI18N
         fail_other: 'Login failed unexpectedly: {err}.', // XXXI18N
+        oauth2_with_google: 'Login with Google', // XXXI18N
+        oauth2_with_microsoft: 'Login with Microsoft', // XXXI18N
+        oauth2_with_other: 'Login with {provider}', // XXXI18N
+        down: 'The login system is not working right now.  It will be back shortly.', // XXXI18N
       },
       users: {
         title: 'Brightgate - Benutzer',

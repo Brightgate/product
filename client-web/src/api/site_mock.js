@@ -12,11 +12,13 @@ import MockAdapter from 'axios-mock-adapter';
 import axios from 'axios';
 import Debug from 'debug';
 
+import appDefs from '../app_defs';
 import mockDevices from './devices_mock';
 import mockUsers from './users_mock';
 
 const debug = Debug('site-mock');
 
+// mock response to /api/sites when in APPMODE_LOCAL
 const mockLocalSites = [
   {
     uuid: '0',
@@ -24,6 +26,7 @@ const mockLocalSites = [
   },
 ];
 
+// mock response to /api/sites when in APPMODE_CLOUD
 const mockCloudSites = [
   {
     uuid: '5182ab0b-39db-4256-86e0-8154171b35ac',
@@ -35,6 +38,17 @@ const mockCloudSites = [
   },
 ];
 
+// mock response to /auth/providers when in APPMODE_LOCAL
+const mockLocalProviders = {
+  mode: appDefs.APPMODE_LOCAL,
+  providers: 'password',
+};
+
+// mock response to /auth/providers when in APPMODE_CLOUD
+const mockCloudProviders = {
+  mode: appDefs.APPMODE_CLOUD,
+  providers: ['google', 'azureadv2'],
+};
 
 const mockRings = {
   'core': {
@@ -82,9 +96,12 @@ function configHandler(config) {
 function mockAxios(normalAxios, mode) {
   const mockAx = axios.create();
   const mock = new MockAdapter(mockAx);
+  debug('mock mode', mode);
 
-  const mockSites = (mode === 'cloud') ? mockCloudSites : mockLocalSites;
-  debug('mockSites is!', mockSites, mode);
+  const mockSites = (mode === appDefs.APPMODE_CLOUD) ? mockCloudSites : mockLocalSites;
+  debug('mockSites', mockSites);
+  const mockProviders = (mode === appDefs.APPMODE_CLOUD) ? mockCloudProviders : mockLocalProviders;
+  debug('mockProviders', mockProviders);
 
   mock
     .onGet('/api/sites').reply(200, mockSites)
@@ -95,6 +112,7 @@ function mockAxios(normalAxios, mode) {
     .onGet('/auth/sites/login').reply(200)
     .onGet('/auth/logout').reply(200)
     .onGet('/auth/userid').reply(200)
+    .onGet('/auth/providers').reply(200, mockProviders)
     .onAny().reply(500);
 
   return mockAx;

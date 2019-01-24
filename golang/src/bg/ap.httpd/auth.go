@@ -26,10 +26,25 @@ const (
 
 func makeApplianceAuthRouter() *mux.Router {
 	router := mux.NewRouter()
+	router.HandleFunc("/providers", providersHandler).Methods("GET")
 	router.HandleFunc("/userid", userIDHandler).Methods("GET")
 	router.HandleFunc("/site/login", siteLoginHandler).Methods("POST")
 	router.HandleFunc("/logout", logoutHandler).Methods("GET")
 	return router
+}
+
+func providersHandler(w http.ResponseWriter, r *http.Request) {
+	providers := struct {
+		Mode      string   `json:"mode"`
+		Providers []string `json:"providers"`
+	}{
+		Mode:      "local",
+		Providers: []string{"password"},
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(providers); err != nil {
+		panic(err)
+	}
 }
 
 // POST login () -> (...)

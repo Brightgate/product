@@ -205,8 +205,6 @@ func mkRouterHTTPS(sessionStore sessions.Store) *echo.Echo {
 	}
 	log.Printf(checkMark + "Pinged Appliance DB")
 
-	htmlFormat := `<html><body>%v</body></html>`
-
 	r := echo.New()
 	r.Debug = environ.Developer
 	r.HideBanner = true
@@ -215,33 +213,11 @@ func mkRouterHTTPS(sessionStore sessions.Store) *echo.Echo {
 	r.Use(middleware.Recover())
 	r.Use(session.Middleware(sessionStore))
 	r.Static("/.well-known", wellKnownPath)
-	r.Static("/app", appPath)
-	log.Printf("Serving %s as /app/", appPath)
 	cwp := filepath.Join(appPath, "client-web")
 	r.Static("/client-web", cwp)
 	log.Printf("Serving %s as /client-web/", cwp)
 	r.GET("/", func(c echo.Context) error {
-		html := fmt.Sprintf(htmlFormat, `
-<p><a href="/auth/auth0">Login with Auth0</a></p>
-<p><a href="/auth/google">Login with Google</a></p>
-<p><a href="/auth/openid-connect">Login with Google (OpenID Connect)</a></p>
-<p><a href="/auth/azureadv2">Login with Azure AD V2</a></p>
-<p><a href="/auth/logout">Logout</a></p>
-`)
-
-		sess, err := sessionStore.Get(c.Request(), "bg_login")
-		if err == nil {
-			var email string
-			email, ok := sess.Values["email"].(string)
-			if ok {
-				html += fmt.Sprintf("<p>Hello there; I think you are: '%v'</p>", email)
-			} else {
-				html += fmt.Sprintf("<p>Hello there; Log in so I know who you are.</p>")
-			}
-		} else {
-			html += fmt.Sprintf("<p>Error was: %v</p>", err)
-		}
-		return c.HTML(http.StatusOK, html)
+		return c.Redirect(http.StatusTemporaryRedirect, "/client-web/")
 	})
 	_ = newAuthHandler(r, sessionStore, applianceDB)
 

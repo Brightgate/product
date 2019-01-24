@@ -15,6 +15,7 @@ import qs from 'qs';
 
 import retry from 'bluebird-retry';
 import Debug from 'debug';
+import appDefs from '../app_defs';
 import makeAxiosMock from './site_mock';
 
 const normalAxios = axiosMod.create({
@@ -24,16 +25,12 @@ const normalAxios = axiosMod.create({
 let axios = normalAxios;
 let mockMode = null;
 
-const MOCKMODE_NONE = null;
-const MOCKMODE_LOCAL = 'local';
-const MOCKMODE_CLOUD = 'cloud';
-
 const RETRY_DELAY = 1000;
 
-const debug = Debug('api/appliance');
+const debug = Debug('api/site');
 
 function setMockMode(mode) {
-  assert(mode === MOCKMODE_NONE || mode === MOCKMODE_CLOUD || mode === MOCKMODE_LOCAL);
+  assert([appDefs.APPMODE_NONE, appDefs.APPMODE_CLOUD, appDefs.APPMODE_LOCAL].includes(mode));
   if (mockMode === mode) {
     return;
   }
@@ -239,6 +236,21 @@ async function siteEnrollGuest(siteID, {type, phone, email}) {
   return res.data;
 }
 
+async function authProviders() {
+  const u = buildUrl('/auth/providers');
+  try {
+    const resp = await axios.get(u);
+    return resp.data;
+  } catch (err) {
+    debug('authProviders failed', err);
+    // UI can indicate that is not working
+    return {
+      mode: appDefs.APPMODE_FAILURE,
+      providers: '',
+    };
+  }
+}
+
 async function authApplianceLogin(uid, userPassword) {
   assert.equal(typeof uid, 'string');
   assert.equal(typeof userPassword, 'string');
@@ -288,9 +300,6 @@ async function authUserid() {
 }
 
 export default {
-  MOCKMODE_NONE,
-  MOCKMODE_LOCAL,
-  MOCKMODE_CLOUD,
   siteConfigGet,
   siteConfigSet,
   siteConfigWaitProp,
@@ -303,6 +312,7 @@ export default {
   siteUsersDelete,
   siteEnrollGuest,
   siteSupreme,
+  authProviders,
   authApplianceLogin,
   authApplianceLogout,
   authUserid,

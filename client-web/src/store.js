@@ -16,6 +16,7 @@ import Vue from 'vue';
 import Vuex from 'vuex';
 import Debug from 'debug';
 
+import appDefs from './app_defs';
 import siteApi from './api/site';
 
 const debug = Debug('store');
@@ -29,7 +30,6 @@ const LOCAL_SITE_ID = '0';
 
 // const windowURLSite = window && window.location && window.location.href && new URL(window.location.href);
 // const initSiteID = windowURLSite.searchParams.get('site') || LOCAL_SITE_ID;
-
 class Site {
   constructor(id) {
     assert.equal(typeof id, 'string');
@@ -112,28 +112,31 @@ class Site {
       }
     });
     Vue.set(this, 'alerts', alerts);
-    debug('set devices completed');
+    debug(`Site ${this.id}: set devices completed`);
   }
 }
 
 function getSite(state, siteID) {
   if (state.sites[siteID] === undefined) {
-    // Using Vue.set here is super important because we're adding the
-    // site as a new property of state.sites, and we need
-    // it to be reactive.
-    Vue.set(state.sites, siteID, new Site(siteID));
+    // Make up a garbage site which can be used to swallow up the
+    // results of whatever operation is ongoing-- this helps to
+    // gracefully handle edge cases when the list of sites is
+    // changing and we have asynchronous completions of sites no
+    // longer in the sites dictionary.
+    return new Site(siteID);
   }
   return state.sites[siteID];
 }
 
 function computeAppMode(state) {
-  return state.testAppMode === 'automatic' ? state.appMode : state.testAppMode;
+  return state.testAppMode === appDefs.APPMODE_NONE ? state.appMode : state.testAppMode;
 }
 
 const nullSite = new Site('null');
 const state = {
-  appMode: 'cloud',
-  testAppMode: 'automatic',
+  appMode: appDefs.APPMODE_FAILURE,
+  authProviders: [],
+  testAppMode: appDefs.APPMODE_NONE,
   loggedIn: false,
   fakeLogin: false,
   mock: false,
@@ -147,11 +150,6 @@ const mutations = {
   setSites(state, newSites) {
     debug('setSites, newSites', newSites);
     assert(Array.isArray(newSites));
-    if (newSites.length === 1 && newSites[0].uuid === LOCAL_SITE_ID) {
-      state.appMode = 'local';
-    } else {
-      state.appMode = 'cloud';
-    }
     const newSitesDict = {};
     let nSites = 0;
     newSites.forEach((val) => {
@@ -166,23 +164,34 @@ const mutations = {
       Vue.set(newSitesDict, siteID, site);
       nSites++;
     });
+    debug('setSites, newSitesDict', newSitesDict);
     Vue.set(state, 'sites', newSitesDict);
     // If there's only one site, default to it.
     if (nSites === 1) {
       state.currentSiteID = newSites[0].uuid;
       state.currentSite = state.sites[state.currentSiteID];
     }
-    // If the current site ID is gone... (this is a "can't happen" for now)
+    // If the current site ID is gone (this should be rare; it can definitely
+    // happen when switching from 'local' to 'cloud' mock modes.
     if (state.sites[state.currentSiteID] === undefined) {
       state.currentSiteID = nullSite.id;
       state.currentSite = nullSite;
     }
   },
 
+  setAppMode(state, newMode) {
+    state.appMode = newMode;
+  },
+
+  setAuthProviders(state, newProviders) {
+    state.authProviders = newProviders;
+  },
+
   setCurrentSiteID(state, newID) {
-    // getSite will create as needed; maybe in the future this code
-    // should instead check for the site existing, and fail if not?
-    getSite(state, newID);
+    if (state.sites[newID] === undefined) {
+      debug(`Failed to set current site to unknown site ${newID}`);
+      return;
+    }
     state.currentSiteID = newID;
     state.currentSite = state.sites[state.currentSiteID];
   },
@@ -227,6 +236,7 @@ const mutations = {
   },
 
   setTestAppMode(state, newMode) {
+    assert([appDefs.APPMODE_CLOUD, appDefs.APPMODE_LOCAL, appDefs.APPMODE_NONE].includes(newMode));
     state.testAppMode = newMode;
   },
 
@@ -234,13 +244,13 @@ const mutations = {
     state.mock = newValue;
     debug('setMock', newValue, computeAppMode(state));
     if (state.mock) {
-      if (computeAppMode(state) === 'cloud') {
-        siteApi.setMockMode(siteApi.MOCKMODE_CLOUD);
+      if (computeAppMode(state) === appDefs.APPMODE_CLOUD) {
+        siteApi.setMockMode(appDefs.APPMODE_CLOUD);
       } else {
-        siteApi.setMockMode(siteApi.MOCKMODE_LOCAL);
+        siteApi.setMockMode(appDefs.APPMODE_LOCAL);
       }
     } else {
-      siteApi.setMockMode(siteApi.MOCKMODE_NONE);
+      siteApi.setMockMode(appDefs.APPMODE_NONE);
     }
   },
 
@@ -259,6 +269,7 @@ const getters = {
   mock: (state) => state.mock,
   currentSiteID: (state) => state.currentSiteID,
   leftPanelVisible: (state) => state.leftPanelVisible,
+  authProviders: (state) => state.authProviders,
 
   siteAlerts: (state) => (siteID) => {
     return getSite(state, siteID).alerts;
@@ -687,12 +698,33 @@ const actions = {
     context.commit('setLoggedIn', false);
     context.dispatch('fetchPeriodicStop');
   },
+
+  async fetchProviders(context) {
+    debug('Trying to get auth providers and app mode.');
+    const providers = await siteApi.authProviders();
+    debug('Got auth provider response', providers);
+    assert(providers.mode !== undefined);
+    assert(providers.providers !== undefined);
+    context.commit('setAppMode', providers.mode);
+    context.commit('setAuthProviders', providers.providers);
+  },
 };
 
-export default new Vuex.Store({
+const store = new Vuex.Store({
   strict: true, // XXX: for debugging only, expensive, see manual
   actions,
   state,
   getters,
   mutations,
 });
+
+// At store startup, try to get the list of auth providers and appMode.
+Promise.resolve().then(async () => {
+  debug('Startup: Try to get auth providers and app Mode.');
+  store.dispatch('fetchProviders');
+}).catch(() => {
+  // XXX We will need to try harder in the future.
+  debug('Startup: Failed to fetch auth providers and app Mode.');
+});
+
+export default store;

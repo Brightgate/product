@@ -17,10 +17,10 @@
       </f7-nav-title>
     </f7-navbar>
     <f7-list no-hairlines no-hairlines-between>
-      <f7-list-item v-if="appMode === 'cloud'">
+      <f7-list-item v-if="appMode === appDefs.APPMODE_CLOUD">
         <f7-link panel-close href="/">Select Site</f7-link>
       </f7-list-item>
-      <f7-list-item v-if="appMode === 'local'">
+      <f7-list-item v-if="appMode === appDefs.APPMODE_LOCAL">
         <f7-link panel-close href="/">Home</f7-link>
       </f7-list-item>
       <f7-list-item>
@@ -39,10 +39,13 @@
 </template>
 <script>
 import vuex from 'vuex';
+import appDefs from '../app_defs';
 
 export default {
   data: function() {
-    return {};
+    return {
+      appDefs: appDefs,
+    };
   },
 
   computed: {
