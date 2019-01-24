@@ -133,8 +133,10 @@ RM = rm
 NODE = node
 NODEVERSION = $(shell $(NODE) --version)
 
-# Python3 installation.
-VENV_NAME := _venv.$(shell sha256sum build/requirements.txt | awk '{print $$1}')
+# Python3 installation.  Use only the first 8 chars of the SHA256 sum because
+# we can wind up with extremely long pathnames otherwise, potentially breaking
+# shell scripts with large #! lines; see Linux's BINPRM_BUF_SIZE.
+VENV_NAME := _venv.$(shell sha256sum build/requirements.txt | awk '{print substr($$1,1,8)}')
 HOSTPYTHON3 = python3
 PYTHON3VERSION = $(shell $(HOSTPYTHON3) -V)
 PYTHON3 = $(VENV_NAME)/bin/python3
@@ -1067,7 +1069,9 @@ $(BUILDTOOLS_FILE):
 
 $(VENV_NAME):
 	$(HOSTPYTHON3) -m venv $(VENV_NAME)
-	$(VENV_NAME)/bin/pip install -r build/requirements.txt
+	# Use python to invoke pip; else, the long pathnames involved can cause
+	# pip to fail thanks to Linux's BINPRM_BUF_SIZE limit on #! lines.
+	$(PYTHON3) -m pip install -r build/requirements.txt
 
 NPM = npm
 NPM_QUIET = --loglevel warn --no-progress
