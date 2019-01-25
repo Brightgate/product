@@ -24,7 +24,9 @@ import (
 
 	"github.com/gorilla/sessions"
 	"github.com/labstack/echo"
+	"github.com/pkg/errors"
 	"github.com/satori/uuid"
+	"golang.org/x/oauth2"
 
 	"github.com/markbates/goth"
 	"github.com/markbates/goth/gothic"
@@ -32,6 +34,8 @@ import (
 	"github.com/markbates/goth/providers/azureadv2"
 	"github.com/markbates/goth/providers/google"
 	"github.com/markbates/goth/providers/openidConnect"
+
+	"google.golang.org/api/people/v1"
 )
 
 type providerContextKey struct{}
@@ -107,7 +111,8 @@ func googleProvider() goth.Provider {
 
 	log.Printf("enabling google authentication")
 	return google.New(environ.GoogleKey, environ.GoogleSecret,
-		callback("google"), "openid", "profile", "email", "phone")
+		callback("google"), "profile", "email",
+		people.UserPhonenumbersReadScope)
 }
 
 func openidConnectProvider() goth.Provider {
@@ -218,6 +223,14 @@ func (a *authHandler) getProvider(c echo.Context) error {
 	return c.JSON(http.StatusOK, user)
 }
 
+func splitEmail(email string) (string, string, error) {
+	split := strings.SplitN(email, "@", 2)
+	if len(split) != 2 {
+		return "", "", fmt.Errorf("bad email address")
+	}
+	return split[0], split[1], nil
+}
+
 // findOrganization does three tests against the incoming user, looking
 // at the OAuth2Organization Rules.
 //
@@ -273,8 +286,73 @@ func (a *authHandler) findOrganization(ctx context.Context, c echo.Context,
 	return uuid.Nil, fmt.Errorf("no rule matched user's tenant, domain or email")
 }
 
-func (a *authHandler) mkNewUser(c echo.Context, user goth.User,
-	organization uuid.UUID) (*appliancedb.LoginInfo, error) {
+func getGoogleUserPhone(logger echo.Logger, user goth.User) (string, error) {
+	logger.Debugf("Trying to get a googlePerson and PhoneNumber for %s", user.UserID)
+	tokenSource := oauth2.StaticTokenSource(&oauth2.Token{
+		AccessToken: user.AccessToken,
+	})
+	client := &http.Client{
+		Transport: &oauth2.Transport{
+			Source: tokenSource,
+		},
+	}
+	svc, err := people.New(client)
+	if err != nil {
+		return "", errors.Wrap(err, "Failed to make people client")
+	}
+	peopleService := people.NewPeopleService(svc)
+	googlePerson, err := peopleService.Get("people/me").PersonFields("phoneNumbers").Do()
+	if err != nil {
+		return "", errors.Wrap(err, "Failed to get googlePerson")
+	}
+	logger.Infof("Fetched googlePerson: %#v", googlePerson)
+	logger.Debugf("PhoneNumbers: %#v", googlePerson.PhoneNumbers)
+	if len(googlePerson.PhoneNumbers) == 0 {
+		logger.Warnf("No phone number in response %#v; account may not have a phone number", googlePerson)
+		return "", nil
+	}
+	// If none are marked "primary", this will cause us to take the first
+	bestIndex := 0
+	for i, num := range googlePerson.PhoneNumbers {
+		logger.Infof("phone #%d, %#v", i, num)
+		if num.Metadata.Primary {
+			bestIndex = i
+			break
+		}
+	}
+
+	if googlePerson.PhoneNumbers[bestIndex].CanonicalForm != "" {
+		return googlePerson.PhoneNumbers[bestIndex].CanonicalForm, nil
+	} else if googlePerson.PhoneNumbers[bestIndex].Value != "" {
+		return googlePerson.PhoneNumbers[bestIndex].Value, nil
+	}
+	return "", fmt.Errorf("Couldn't understand phonenumber record %#v", googlePerson.PhoneNumbers[bestIndex])
+}
+
+func (a *authHandler) mkNewUser(c echo.Context, user goth.User) (*appliancedb.LoginInfo, error) {
+	// See if we can find an organization for this user.
+	var err error
+	var phoneNumber string
+	ctx := c.Request().Context()
+
+	orgUUID, err := a.findOrganization(ctx, c, user)
+	if err != nil {
+		return nil, fmt.Errorf("identity '%s' (via %s) is not affiliated with a recognized customer; or %s is not registered as a login provider for your organization",
+			user.Email, user.Provider, user.Provider)
+	}
+	organization, err := a.db.OrganizationByUUID(ctx, orgUUID)
+
+	c.Logger().Infof("Creating new account for '%s' from '%s' <%s> (%s|%s)",
+		user.Name, organization.Name, user.Email, user.Provider,
+		user.UserID)
+
+	if user.Provider == "google" {
+		var err error
+		phoneNumber, err = getGoogleUserPhone(c.Logger(), user)
+		if err != nil {
+			c.Logger().Warnf("Couldn't get google user phone: %s", err)
+		}
+	}
 
 	person := &appliancedb.Person{
 		UUID:         uuid.NewV4(),
@@ -285,9 +363,9 @@ func (a *authHandler) mkNewUser(c echo.Context, user goth.User,
 	account := &appliancedb.Account{
 		UUID:             uuid.NewV4(),
 		Email:            user.Email,
-		PhoneNumber:      "", // XXX
+		PhoneNumber:      phoneNumber,
 		PersonUUID:       person.UUID,
-		OrganizationUUID: organization,
+		OrganizationUUID: organization.UUID,
 	}
 
 	oauth2ID := &appliancedb.OAuth2Identity{
@@ -295,9 +373,9 @@ func (a *authHandler) mkNewUser(c echo.Context, user goth.User,
 		Provider:    user.Provider,
 		AccountUUID: account.UUID,
 	}
-	c.Logger().Infof("Creating new user: person=%#v account=%#v oauth2ID=%#v", person, account, oauth2ID)
+	c.Logger().Debugf("Add new user: person=%v, account=%v, oauth2ID=%v",
+		person, account, oauth2ID)
 
-	ctx := c.Request().Context()
 	tx, err := a.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -326,12 +404,24 @@ func (a *authHandler) mkNewUser(c echo.Context, user goth.User,
 		context.TODO(), user.Provider, user.UserID)
 }
 
-func splitEmail(email string) (string, string, error) {
-	split := strings.SplitN(email, "@", 2)
-	if len(split) != 2 {
-		return "", "", fmt.Errorf("bad email address")
+func (a *authHandler) getUser(c echo.Context, user goth.User) (*appliancedb.LoginInfo, error) {
+	// See if we can find an organization for this user.
+	var err error
+	ctx := c.Request().Context()
+
+	c.Logger().Debugf("getUser for %v|%v", user.Provider, user.UserID)
+
+	loginInfo, err := a.db.LoginInfoByProviderAndSubject(
+		ctx, user.Provider, user.UserID)
+	if _, ok := err.(appliancedb.NotFoundError); ok {
+		return a.mkNewUser(c, user)
 	}
-	return split[0], split[1], nil
+
+	// XXX in the future, this is a place to do post-login checks on the
+	// account, and possibly go back to the oauth provider for up-to-date
+	// info about the user.
+
+	return loginInfo, err
 }
 
 // getProviderCallback implements /auth/:provider/callback, which completes
@@ -349,29 +439,10 @@ func (a *authHandler) getProviderCallback(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	c.Logger().Infof("Lookup loginInfo for (%v,%v)", user.Provider, user.UserID)
-	loginInfo, err := a.db.LoginInfoByProviderAndSubject(
-		ctx, user.Provider, user.UserID)
+	loginInfo, err := a.getUser(c, user)
 	if err != nil {
-		if _, ok := err.(appliancedb.NotFoundError); ok {
-			c.Logger().Infof(
-				"Didn't find user (%v,%v).  Try to create one",
-				user.Provider, user.UserID)
-			// See if we can find an organization for this user.
-			var orgUU uuid.UUID
-			orgUU, err = a.findOrganization(ctx, c, user)
-			if err != nil {
-				s := fmt.Sprintf("Your identity '%s' (via %s) is not affiliated with a recognized customer; or %s is not registered as a login provider for your organization.",
-					user.Email, user.Provider, user.Provider)
-				return echo.NewHTTPError(http.StatusUnauthorized, s)
-			}
-			loginInfo, err = a.mkNewUser(c, user, orgUU)
-		}
-		if err != nil {
-			c.Logger().Errorf("Error: %s", err)
-			return echo.NewHTTPError(http.StatusUnauthorized,
-				"Login Failed. Please contact support.") // XXX
-		}
+		c.Logger().Errorf("Error: %s", err)
+		return echo.NewHTTPError(http.StatusUnauthorized, err.Error())
 	}
 	c.Logger().Infof("loginInfo is %#v", loginInfo)
 
