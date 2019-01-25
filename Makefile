@@ -1061,11 +1061,11 @@ $(BUILDTOOLS_FILE):
 	build/check-tools.sh $(BUILDTOOLS)
 	touch $@
 
+# Use python3 to invoke pip; else, the long pathnames involved can cause
+# pip to fail thanks to Linux's BINPRM_BUF_SIZE limit on #! lines.
 $(VENV_NAME):
 	$(HOSTPYTHON3) -m venv $(VENV_NAME)
-	# Use python to invoke pip; else, the long pathnames involved can cause
-	# pip to fail thanks to Linux's BINPRM_BUF_SIZE limit on #! lines.
-	$(PYTHON3) -m pip install -r build/requirements.txt
+	$(PYTHON3) -m pip --log $(VENV_NAME)/pip.log install -r build/requirements.txt > /dev/null
 
 NPM = npm
 NPM_QUIET = --loglevel warn --no-progress
