@@ -120,7 +120,6 @@ GOBIN = $(GOPATH)/bin
 #
 # Miscellaneous environment setup
 #
-AWK = awk
 INSTALL = install
 ifeq ("$(UNAME_S)","Darwin")
 SHA256SUM = shasum -a 256
@@ -624,17 +623,7 @@ CLOUD_COMMON_SRCS = \
 	$(GOSRCBG)/cl_common/pgutils/utils.go \
 	$(GOSRCBG)/cl_common/registry/registry.go
 
-DOC_SRCS = \
-	doc/end_customer_guide.html
-
-DOC_OUTPUTS = $(DOC_SRCS:doc/%.html=doc/%-body.html)
-
 COVERAGE_DIR = coverage
-
-docs: $(DOC_OUTPUTS)
-
-doc/%-body.html: doc/%.html
-	$(AWK) -e '/BRIGHTGATE CONTENT END/ {p=0}; p; /BRIGHTGATE CONTENT START/ {p=1}' $< > $@
 
 #
 # Go Tools: Install versioned binaries for 'dep', 'mockery', etc.
@@ -645,6 +634,11 @@ include ./Makefile.gotools
 # Go Dependencies: Pull in definitions for 'dep'
 #
 include ./Makefile.godeps
+
+#
+# Documentation: Targets for product documentation builds.
+#
+include ./Makefile.doc
 
 .DEFAULT_GOAL = install
 
@@ -1089,7 +1083,7 @@ client-web: .make-npm-installed FRC | $(HTTPD_CLIENTWEB_DIR) $(CLOUDLIBCLHTTPDWE
 FRC:
 
 .PHONY: clobber
-clobber: clean packages-clobber godeps-clobber gotools-clobber
+clobber: clean packages-clobber godeps-clobber gotools-clobber doc-clobber
 	$(RM) -fr $(ROOT) $(GOWS)/pkg $(GOWS)/bin $(SYSROOT)
 	$(RM) -fr _venv.*
 	$(RM) -f .make-*

@@ -19,15 +19,24 @@ required.
 Each document is a single HTML5 file.  Shared content between documents is not
 supported in this implementation.
 
+Interactive and continuous integration build machines are expected to have the
+prerequisite packages needed for WeasyPrint.
+
 ## Invocations
 
 Invoking
 
-$ make docs
+$ make doc
 
-at the root of the source tree will cause the body content to be written to
-a separate HTML file, named `[filestem]-body.html`.  At present these outputs
-are placed in `doc/`, beside their respective source files.
+at the root of the source tree will create all of the documentation products.
+These include a PDF print version, named `[filestem]-print.pdf`, and an HTML
+fragment containing only the body content, named `[filestem]-body.html`.  At
+present these outputs are placed in `doc/`, beside their respective source
+files.
+
+$ make doc-clobber
+
+will remove all documentation products and intermediate files.
 
 ## Substitution points
 

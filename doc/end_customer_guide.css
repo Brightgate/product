@@ -1,0 +1,6 @@
+@page {
+	size: Letter;
+	margin: 1in;
+}
+
+html { hyphens: auto; }

@@ -1,0 +1,38 @@
+#
+# COPYRIGHT 2019 Brightgate Inc. All rights reserved.
+#
+# This copyright notice is Copyright Management Information under 17 USC 1202
+# and is included to protect this work and deter copyright infringement.
+# Removal or alteration of this Copyright Management Information without the
+# express written permission of Brightgate Inc is prohibited, and any
+# such unauthorized removal or alteration will be a violation of federal law.
+#
+
+# make(1) targets for product documentation.  Not standalone; include in
+# top-level Makefile.
+
+AWK = awk
+SED = sed
+WEASYPRINT = $(VENV_NAME)/bin/weasyprint
+
+DOC_SRCS = \
+	doc/end_customer_guide.html
+
+DOC_OUTPUTS = \
+	$(DOC_SRCS:doc/%.html=doc/%-body.html) \
+	$(DOC_SRCS:doc/%.html=doc/%-print.html) \
+	$(DOC_SRCS:doc/%.html=doc/%-print.pdf)
+
+doc: $(DOC_OUTPUTS)
+
+doc-clobber:
+	$(RM) -f doc/*-body.html doc/*-print.html doc/*-print.pdf
+
+doc/%.pdf: doc/%.html | $(VENV_NAME)
+	$(PYTHON3) $(WEASYPRINT) $< $@
+
+doc/%-body.html: doc/%.html
+	$(AWK) -e '/BRIGHTGATE CONTENT END/ {p=0}; p; /BRIGHTGATE CONTENT START/ {p=1}' $< > $@
+
+doc/%-print.html: doc/%.html
+	$(SED) -e 's/!-- BRIGHTGATE HEAD INSERTION POINT --/link rel="stylesheet" href="end_customer_guide.css"/' $< > $@

@@ -72,6 +72,12 @@ pipeline {
                 sh 'make check-dirty'
             }
         }
+        stage('doc') {
+            steps {
+                sh 'make doc'
+                archiveArtifacts 'doc/*.pdf'
+            }
+        }
     }
     post {
         always {
