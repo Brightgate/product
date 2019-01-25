@@ -1065,7 +1065,7 @@ $(BUILDTOOLS_FILE):
 # pip to fail thanks to Linux's BINPRM_BUF_SIZE limit on #! lines.
 $(VENV_NAME):
 	$(HOSTPYTHON3) -m venv $(VENV_NAME)
-	$(PYTHON3) -m pip --log $(VENV_NAME)/pip.log install -r build/requirements.txt > /dev/null
+	$(PYTHON3) -m pip --no-cache-dir --log $(VENV_NAME)/pip.log install -r build/requirements.txt > /dev/null
 
 NPM = npm
 NPM_QUIET = --loglevel warn --no-progress
