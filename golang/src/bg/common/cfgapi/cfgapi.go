@@ -93,6 +93,7 @@ var AccessLevelNames = map[AccessLevel]string{
 // Some specific, common ways in which apcfg operations can fail
 var (
 	ErrComm       = errors.New("communication breakdown")
+	ErrNoConfig   = errors.New("no configuration available")
 	ErrNoProp     = errors.New("no such property")
 	ErrExpired    = errors.New("property expired")
 	ErrBadOp      = errors.New("no such operation")
@@ -243,7 +244,7 @@ func (c *Handle) GetProps(prop string) (*PropertyNode, error) {
 
 	tree, err := c.Execute(nil, ops).Wait(nil)
 
-	if err == ErrNoProp {
+	if err == ErrNoProp || err == ErrNoConfig {
 		return nil, err
 	} else if err != nil {
 		return nil, fmt.Errorf("Failed to retrieve %s: %v", prop, err)

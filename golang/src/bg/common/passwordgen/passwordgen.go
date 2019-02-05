@@ -8,7 +8,7 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 
-package main
+package passwordgen
 
 import (
 	"bytes"

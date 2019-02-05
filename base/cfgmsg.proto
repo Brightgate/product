@@ -69,6 +69,7 @@ message ConfigResponse {
 		BADVERSION	= 8;
 		BADTIME		= 9;
 		NOTEQUAL	= 10;
+		NOCONFIG	= 11;
 	}
 	OpResponse response	= 0x21;
 	int64 cmdID		= 0x22;

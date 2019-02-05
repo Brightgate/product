@@ -515,6 +515,22 @@ func testAccount(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Su
 	acct, err = ds.AccountByUUID(ctx, badUUID)
 	assert.Error(err)
 	assert.IsType(err, NotFoundError{})
+
+	as, err := ds.AccountSecretsByUUID(ctx, testAccount1.UUID)
+	assert.Error(err)
+	assert.IsType(err, NotFoundError{})
+
+	testAs := &AccountSecrets{testAccount1.UUID, "k1", "k2"}
+	err = ds.UpsertAccountSecrets(ctx, testAs)
+	assert.NoError(err, "expected success")
+
+	// Try again
+	err = ds.UpsertAccountSecrets(ctx, testAs)
+	assert.NoError(err, "expected success")
+
+	as, err = ds.AccountSecretsByUUID(ctx, testAccount1.UUID)
+	assert.NoError(err)
+	assert.Equal(*testAs, *as)
 }
 
 func testOAuth2Identity(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {

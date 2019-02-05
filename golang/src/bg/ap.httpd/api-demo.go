@@ -544,19 +544,20 @@ func demoUserByUUIDPostHandler(w http.ResponseWriter, r *http.Request) {
 	if dau.Role != nil {
 		ui.Role = *dau.Role
 	}
-	err = ui.Update()
-	if err != nil {
-		log.Printf("failed to save user '%s': %v\n", dau.UID, err)
-		http.Error(w, fmt.Sprintf("failed to save: %v", err), 400)
-		return
-	}
-
+	var extraOps []cfgapi.PropertyOp
 	if dau.SetPassword != nil {
-		if err = ui.SetPassword(*dau.SetPassword); err != nil {
-			log.Printf("failed to set password for %s: %v\n", dau.UID, err)
-			http.Error(w, "updated user but failed to set password", 400)
+		extraOps, err = ui.PropOpsFromPassword(*dau.SetPassword)
+		if err != nil {
+			log.Printf("failed to get generate PropOps from password")
+			http.Error(w, "unexpected failure", 500)
 			return
 		}
+	}
+	err = ui.Update(extraOps...)
+	if err != nil {
+		log.Printf("failed to save user '%s': %v\n", dau.UID, err)
+		http.Error(w, fmt.Sprintf("failed to save: %v", err), 500)
+		return
 	}
 
 	// Reget to reflect password, etc. changes from backend
@@ -570,18 +571,8 @@ func demoUserByUUIDPostHandler(w http.ResponseWriter, r *http.Request) {
 	cu := buildUserResponse(ui)
 	cu.DbgRequest = fmt.Sprintf("%v", r)
 
-	j, err := json.Marshal(cu)
-	if err != nil {
-		log.Printf("failed to json marshal user '%v': %v\n", cu, err)
-		http.Error(w, "bad request", 400)
-		return
-	}
-
-	_, err = w.Write(j)
-	if err != nil {
-		log.Printf("failed to write user '%v': %v\n", j, err)
-		http.Error(w, "bad request", 400)
-		return
+	if err = json.NewEncoder(w).Encode(cu); err != nil {
+		panic(err)
 	}
 }
 
@@ -728,13 +719,14 @@ func makeGuestUser(phone, email string) (*daUser, string, error) {
 	ui.Email = email
 	ui.DisplayName = fmt.Sprintf("Guest User %d", guestNum)
 
-	err = ui.Update()
+	extraOps, err := ui.PropOpsFromPassword(pass)
 	if err != nil {
 		return nil, "", errors.Wrapf(err, "failed to save user %s", uid)
 	}
-	err = ui.SetPassword(pass)
+
+	err = ui.Update(extraOps...)
 	if err != nil {
-		return nil, "", errors.Wrapf(err, "failed to set password for user %s", uid)
+		return nil, "", errors.Wrapf(err, "failed to save user %s", uid)
 	}
 	// Fetch out from config store
 	user, err := config.GetUser(uid)

@@ -36,7 +36,8 @@ const (
 // account.  Expected roles are: "SITE_ADMIN", "SITE_USER",
 // "SITE_GUEST", "CUST_ADMIN", "CUST_USER", "CUST_GUEST".
 type UserInfo struct {
-	UID               string // Username
+	UID string // Username
+	// If SelfProvisioning is true, UUID should match cloud account UUID
 	UUID              uuid.UUID
 	Role              string // User role
 	DisplayName       string // User's friendly name
@@ -46,8 +47,11 @@ type UserInfo struct {
 	TOTP              string // Time-based One Time Password URL
 	Password          string // bcrypt Password
 	MD4Password       string // MD4 Password for WPA-EAP/MSCHAPv2
-	config            *Handle
-	newUser           bool // need to do creation activities
+	// User was created by cloud self-provisioning; if true, UUID matches
+	// cloud user UUID
+	SelfProvisioning bool
+	config           *Handle
+	newUser          bool // need to do creation activities
 }
 
 // UserMap maps an account's username to its configuration information
@@ -73,6 +77,7 @@ func newUserFromNode(name string, user *PropertyNode) (*UserInfo, error) {
 	preferredLanguage, _ := getStringVal(user, "preferredLanguage")
 	displayName, _ := getStringVal(user, "displayName")
 	totp, _ := getStringVal(user, "totp")
+	selfProvisioning, _ := getBoolVal(user, "selfProvisioning")
 
 	u := &UserInfo{
 		UID:               uid,
@@ -84,6 +89,7 @@ func newUserFromNode(name string, user *PropertyNode) (*UserInfo, error) {
 		TOTP:              totp,
 		Password:          password,
 		MD4Password:       md4password,
+		SelfProvisioning:  selfProvisioning,
 	}
 
 	return u, nil
@@ -101,13 +107,31 @@ func (c *Handle) NewUserInfo(uid string) (*UserInfo, error) {
 		return nil, fmt.Errorf("user %s already exists", uid)
 	}
 	if err != ErrNoProp {
-		return nil, errors.Wrapf(err, "failed checking if user %s exists", uid)
+		return nil, err
 	}
 	return &UserInfo{
 		UID:     uid,
 		UUID:    uuid.NewV4(),
 		config:  c,
 		newUser: true,
+	}, nil
+}
+
+// NewSelfProvisionUserInfo is for use in the Cloud->Appliance provisioning
+// scenario.  It avoids the upfront test for user existence.
+func (c *Handle) NewSelfProvisionUserInfo(uid string, uu uuid.UUID) (*UserInfo, error) {
+	if uid == "" {
+		return nil, fmt.Errorf("bad uid")
+	}
+	if uu == uuid.Nil {
+		return nil, fmt.Errorf("bad uuid")
+	}
+	return &UserInfo{
+		UID:              uid,
+		UUID:             uu,
+		SelfProvisioning: true,
+		config:           c,
+		newUser:          true,
 	}, nil
 }
 
@@ -207,14 +231,17 @@ func (u *UserInfo) path(comp string) string {
 // Update saves a modified userinfo to the config store.
 // If the user if newUser == true then it does the appropriate
 // creation operations.
-func (u *UserInfo) Update() error {
+//
+// extraOps is intended as a way to optionally supply password
+// related properties.
+func (u *UserInfo) Update(extraOps ...PropertyOp) error {
 	var err error
 	var ops []PropertyOp
 
 	if u.UID == "" {
 		return fmt.Errorf("user name (uid) must be supplied")
 	}
-	if u.UID == "" {
+	if u.UUID == uuid.Nil {
 		return fmt.Errorf("UUID must be supplied")
 	}
 	if u.Email == "" {
@@ -241,6 +268,17 @@ func (u *UserInfo) Update() error {
 		p = u.path(p)
 		ops = append(ops, PropertyOp{Op: PropCreate, Name: p, Value: v})
 	}
+
+	if u.SelfProvisioning {
+		if u.newUser != true {
+			panic("SelfProvisioning; expected newUser to be true")
+		}
+		// If Self Provisioning is true for this user, blow away the
+		// existing user entry and overwrite it.
+		ops = append(ops, PropertyOp{Op: PropDelete, Name: u.path("")})
+		addProp("selfProvisioning", "true")
+	}
+
 	if u.newUser {
 		addProp("uid", u.UID)
 		addProp("uuid", u.UUID.String())
@@ -250,6 +288,7 @@ func (u *UserInfo) Update() error {
 	addProp("telephoneNumber", phoneStr)
 	addProp("preferredLanguage", u.PreferredLanguage)
 	addProp("role", u.Role)
+	ops = append(ops, extraOps...)
 	_, err = u.config.Execute(nil, ops).Wait(nil)
 	if err != nil {
 		return errors.Wrap(err, "failed to update user")
@@ -266,43 +305,76 @@ func (u *UserInfo) Delete() error {
 	return nil
 }
 
-// SetPassword assigns all appropriate password hash properties for the given user.
-func (u *UserInfo) SetPassword(passwd string) error {
+// HashUserPassword generates a bcrypted password suitable for use in the
+// userPassword property.
+func HashUserPassword(passwd string) (string, error) {
 	// Generate bcrypt password property.
 	hps, err := bcrypt.GenerateFromPassword([]byte(passwd), bcrypt.DefaultCost)
 	if err != nil {
-		return errors.Wrapf(err, "could not encrypt password for %s", u.UID)
+		return "", err
 	}
+	return string(hps), nil
+}
 
-	// Generate MD4 password property.
+// HashMSCHAPv2Password generates the MD4-hashed MSCHAP-v2 password.  Note that
+// the strength of this hashing is very low.
+func HashMSCHAPv2Password(passwd string) (string, error) {
 	enc := unicode.UTF16(unicode.LittleEndian, unicode.IgnoreBOM).NewEncoder()
 	md4ps := md4.New()
 	t := transform.NewWriter(md4ps, enc)
-	_, err = t.Write([]byte(passwd))
+	_, err := t.Write([]byte(passwd))
 	if err != nil {
-		return errors.Wrapf(err, "could not write MD4 for %s", u.UID)
+		return "", err
 	}
-	md4s := fmt.Sprintf("%x", md4ps.Sum(nil))
+	return fmt.Sprintf("%x", md4ps.Sum(nil)), nil
+}
 
-	// Write out properties
-	ops := []PropertyOp{
+// PropOpsFromPasswordHashes generates PropOps for setting passwords given the
+// tuple of password hash values (generated by HashUserPassword() and
+// HashMSCHAPv2Password())
+func (u *UserInfo) PropOpsFromPasswordHashes(userPassHash, mschapv2Hash string) []PropertyOp {
+	return []PropertyOp{
 		{
 			Op:    PropCreate,
 			Name:  u.path("userPassword"),
-			Value: string(hps),
+			Value: userPassHash,
 		},
 		{
 			Op:    PropCreate,
 			Name:  u.path("userMD4Password"),
-			Value: string(md4s),
+			Value: mschapv2Hash,
 		},
 	}
+}
+
+// PropOpsFromPassword generates PropOps for setting passwords given the user's
+// plaintext password.
+func (u *UserInfo) PropOpsFromPassword(passwd string) ([]PropertyOp, error) {
+	// Generate bcrypt password property.
+	user, err := HashUserPassword(passwd)
+	if err != nil {
+		return nil, errors.Wrapf(err, "could not encrypt password for %s", u.UID)
+	}
+
+	mschapv2, err := HashMSCHAPv2Password(passwd)
+	if err != nil {
+		return nil, errors.Wrapf(err, "could not generate MSCHAP-v2 password for %s", u.UID)
+	}
+	return u.PropOpsFromPasswordHashes(user, mschapv2), nil
+}
+
+// SetPassword assigns all appropriate password hash properties for the given user.
+func (u *UserInfo) SetPassword(passwd string) error {
+	ops, err := u.PropOpsFromPassword(passwd)
+	if err != nil {
+		return err
+	}
+
 	_, err = u.config.Execute(nil, ops).Wait(nil)
 	if err != nil {
 		return errors.Wrapf(err,
-			"could not create password properties for %s", u.UID)
+			"could not update password for %s", u.UID)
 	}
-
 	return nil
 }
 

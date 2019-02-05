@@ -12,27 +12,267 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
+	"math"
+	"math/big"
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
+
+	"golang.org/x/crypto/openpgp"
+	"golang.org/x/crypto/openpgp/armor"
 
 	"bg/cloud_models/appliancedb"
 	"bg/common/cfgapi"
 	"bg/common/deviceid"
+	"bg/common/passwordgen"
 
 	"github.com/gorilla/sessions"
 	"github.com/labstack/echo"
+	"github.com/pkg/errors"
 	"github.com/satori/uuid"
 )
 
 type getClientHandleFunc func(uuid string) (*cfgapi.Handle, error)
 
 type apiHandler struct {
-	db              appliancedb.DataStore
-	sessionStore    sessions.Store
-	getClientHandle getClientHandleFunc
+	db               appliancedb.DataStore
+	sessionStore     sessions.Store
+	getClientHandle  getClientHandleFunc
+	accountSecretKey []byte
+}
+
+type apiSelfProvisionInfo struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Verifier string `json:"verifier"`
+}
+
+// getAccountPasswordGen generates a password for the user, and sends it back
+// to the user for inspection and, if desired, acceptance.  We desire to have
+// the password in plaintext as little as possible, so we store (in the
+// session) the crypted values, and send the user a "verifier" (sort of a
+// nonce) code which it can send back to say "yes, ok, that one is fine."  The
+// user agent may well send us the cleartext username and password as well, in
+// order to get password managers to notice.  However we ignore those inputs.
+//
+// This endpoint mates up with postAccountSelfProvision().
+func (a *apiHandler) getAccountPasswordGen(c echo.Context) error {
+	ctx := c.Request().Context()
+	accountUUID, ok := c.Get("account_uuid").(uuid.UUID)
+	if !ok || accountUUID == uuid.Nil {
+		return echo.NewHTTPError(http.StatusUnauthorized)
+	}
+
+	account, err := a.db.AccountByUUID(ctx, accountUUID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	pw, err := passwordgen.HumanPassword(passwordgen.HumanPasswordSpec)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+	// In the session, we store the bcrypt and mschapv2 versions of the
+	// most recently generated password.  When we get the provisioning
+	// request, we can see if the values match up.
+	pwHash, err := cfgapi.HashUserPassword(pw)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+	mschapHash, err := cfgapi.HashMSCHAPv2Password(pw)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	// The verifier is used to validate that the value saved in the
+	// session and the value "confirmed" by the user are the same
+	// password value.  The worst case is that the wrong password
+	// is provisioned.
+	verifier, err := rand.Int(rand.Reader, big.NewInt(math.MaxUint32))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	session, err := a.sessionStore.Get(c.Request(), "bg_login")
+	if err != nil {
+		return echo.NewHTTPError(http.StatusUnauthorized)
+	}
+	session.Values["account-pw-user"] = pwHash
+	session.Values["account-pw-mschapv2"] = mschapHash
+	session.Values["account-pw-verifier"] = verifier.String()
+	err = session.Save(c.Request(), c.Response())
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+	c.Logger().Infof("saved crypted pw %s,%s", pwHash, mschapHash)
+	return c.JSON(http.StatusOK, &apiSelfProvisionInfo{
+		Username: account.Email,
+		Password: pw,
+		Verifier: verifier.String(),
+	})
+}
+
+func pgpSymEncrypt(plaintext string, passphrase []byte) (string, error) {
+	b := &strings.Builder{}
+	armorW, err := armor.Encode(b, "PGP MESSAGE", nil)
+	if err != nil {
+		return "", errors.Wrap(err, "Could not prepare message armor")
+	}
+	defer armorW.Close()
+
+	plaintextW, err := openpgp.SymmetricallyEncrypt(armorW, passphrase, nil, nil)
+	if err != nil {
+		return "", errors.Wrap(err, "Could not prepare message encryptor")
+	}
+
+	defer plaintextW.Close()
+	_, err = plaintextW.Write([]byte(plaintext))
+	if err != nil {
+		return "", errors.Wrap(err, "Could not write plaintext")
+	}
+	plaintextW.Close()
+	armorW.Close()
+	return b.String(), nil
+}
+
+func (a *apiHandler) savePasswords(ctx context.Context, accountUUID uuid.UUID, userpw, mschapv2pw string) error {
+	userpwCipherText, err := pgpSymEncrypt(userpw, a.accountSecretKey)
+	if err != nil {
+		return err
+	}
+	mschapv2pwCipherText, err := pgpSymEncrypt(mschapv2pw, a.accountSecretKey)
+	if err != nil {
+		return err
+	}
+	accountSecrets := &appliancedb.AccountSecrets{
+		AccountUUID:           accountUUID,
+		ApplianceUserBcrypt:   userpwCipherText,
+		ApplianceUserMSCHAPv2: mschapv2pwCipherText,
+	}
+	err = a.db.UpsertAccountSecrets(ctx, accountSecrets)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// postAccountSelfProvision takes the verifier code discussed
+// above as input, as well as information from the session.
+//
+// After a bunch of pre-flight checks, it creates and saves
+// the user to all of the customer sites.
+//
+// XXX ui.Update() waits, which is probably not what we want.
+//
+// XXX probably move this out of here since it is cloud only.
+func (a *apiHandler) postAccountSelfProvision(c echo.Context) error {
+	accountUUID, ok := c.Get("account_uuid").(uuid.UUID)
+	if !ok || accountUUID == uuid.Nil {
+		return echo.NewHTTPError(http.StatusUnauthorized)
+	}
+	ctx := c.Request().Context()
+
+	session, err := a.sessionStore.Get(c.Request(), "bg_login")
+	if err != nil {
+		return echo.NewHTTPError(http.StatusUnauthorized)
+	}
+	userpwSessionVal, ok := session.Values["account-pw-user"].(string)
+	if !ok {
+		c.Logger().Warnf("Didn't find account-pw-user in session")
+		return echo.NewHTTPError(http.StatusBadRequest, err)
+	}
+	mschapSessionVal, ok := session.Values["account-pw-mschapv2"].(string)
+	if !ok {
+		c.Logger().Warnf("Didn't find account-pw-mschapv2 in session")
+		return echo.NewHTTPError(http.StatusBadRequest, err)
+	}
+	verifierSessionVal, ok := session.Values["account-pw-verifier"].(string)
+	if !ok {
+		c.Logger().Warnf("Didn't find account-pw-verifier in session")
+		return echo.NewHTTPError(http.StatusBadRequest, err)
+	}
+
+	var provInfo apiSelfProvisionInfo
+	if err := c.Bind(&provInfo); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err)
+	}
+	if provInfo.Verifier == "" || provInfo.Verifier != verifierSessionVal {
+		c.Logger().Warnf("provInfo.Verifier %s != verifierSessionVal %s", provInfo.Verifier, verifierSessionVal)
+		return echo.NewHTTPError(http.StatusBadRequest, "stale request, verifier did not match")
+	}
+
+	sites, err := a.db.CustomerSitesByAccount(ctx, accountUUID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	account, err := a.db.AccountByUUID(ctx, accountUUID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	person, err := a.db.PersonByUUID(ctx, account.PersonUUID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	// We've now got confirmation that the user wants to provision this
+	// password; so stash it in the database.
+	err = a.savePasswords(ctx, accountUUID, userpwSessionVal, mschapSessionVal)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	// Try to build up all of the config we want first, then run the
+	// updates.  We want to do our best to see that this operation succeeds
+	// or fails as a whole.
+	uis := make([]*cfgapi.UserInfo, 0)
+	for _, site := range sites {
+		var hdl *cfgapi.Handle
+		hdl, err := a.getClientHandle(site.UUID.String())
+		if err != nil {
+			c.Logger().Errorf("getClientHandle failed: %v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, err)
+		}
+		// Try to get a single property; helps us detect if there is no
+		// config at all for this site.
+		_, err = hdl.GetProp("@/apversion")
+		if err != nil && errors.Cause(err) == cfgapi.ErrNoConfig {
+			// No config for this site, keep going.
+			continue
+		} else if err != nil {
+			c.Logger().Errorf("GetProp @/apversion failed: %v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, err)
+		}
+		var ui *cfgapi.UserInfo
+		ui, err = hdl.NewSelfProvisionUserInfo(account.Email, accountUUID)
+		if err != nil {
+			c.Logger().Errorf("NewSelfProvisionUserInfo failed: %#v %#v", err, errors.Cause(err))
+			return echo.NewHTTPError(http.StatusInternalServerError, err)
+		}
+		ui.DisplayName = person.Name
+		ui.Email = account.Email
+		ui.TelephoneNumber = account.PhoneNumber
+		if ui.TelephoneNumber == "" {
+			ui.TelephoneNumber = "650-555-1212"
+		}
+		c.Logger().Infof("Adding new user %v to site %v", ui.UID, site.UUID)
+		uis = append(uis, ui)
+	}
+	for _, ui := range uis {
+		c.Logger().Infof("Hitting send on %v", ui)
+		ops := ui.PropOpsFromPasswordHashes(userpwSessionVal, mschapSessionVal)
+
+		err = ui.Update(ops...)
+		if err != nil {
+			c.Logger().Errorf("Failed to update: %v", err)
+		}
+	}
+	return c.Redirect(http.StatusFound, "/client-web")
 }
 
 type apiSite struct {
@@ -43,20 +283,13 @@ type apiSite struct {
 // getSites implements /api/sites, which presents a filtered list of
 // applicable sites for the account.
 func (a *apiHandler) getSites(c echo.Context) error {
-	session, err := a.sessionStore.Get(c.Request(), "bg_login")
-	if err != nil {
+	accountUUID, ok := c.Get("account_uuid").(uuid.UUID)
+	if !ok || accountUUID == uuid.Nil {
 		return echo.NewHTTPError(http.StatusUnauthorized)
 	}
-	au, ok := session.Values["account_uuid"].(string)
-	if !ok {
-		return echo.NewHTTPError(http.StatusUnauthorized)
-	}
-	accountUUID, err := uuid.FromString(au)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusUnauthorized)
-	}
+	ctx := c.Request().Context()
 
-	sites, err := a.db.CustomerSitesByAccount(context.Background(), accountUUID)
+	sites, err := a.db.CustomerSitesByAccount(ctx, accountUUID)
 	if err != nil {
 		c.Logger().Errorf("Failed to get Sites by Account: %+v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
@@ -440,16 +673,17 @@ func (a *apiHandler) postUserByUUID(c echo.Context) error {
 	if au.Role != nil {
 		ui.Role = *au.Role
 	}
-	err = ui.Update()
+	var extraOps []cfgapi.PropertyOp
+	if au.SetPassword != nil {
+		extraOps, err = ui.PropOpsFromPassword(*au.SetPassword)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "failed generate passwords")
+		}
+	}
+	err = ui.Update(extraOps...)
 	if err != nil {
 		c.Logger().Errorf("failed to save user '%s': %v\n", au.UID, err)
 		return echo.NewHTTPError(http.StatusBadRequest, "failed to save user")
-	}
-	if au.SetPassword != nil {
-		if err = ui.SetPassword(*au.SetPassword); err != nil {
-			c.Logger().Errorf("failed to set password for '%s': %v\n", au.UID, err)
-			return echo.NewHTTPError(http.StatusBadRequest, "updated user but failed to set password", 400)
-		}
 	}
 
 	// Reget to reflect password, etc. changes from backend
@@ -528,7 +762,17 @@ func (a *apiHandler) sessionMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		if err != nil {
 			return echo.NewHTTPError(http.StatusUnauthorized)
 		}
+		c.Set("account_uuid", accountUUID)
+		return next(c)
+	}
+}
 
+func (a *apiHandler) siteMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		accountUUID, ok := c.Get("account_uuid").(uuid.UUID)
+		if !ok || accountUUID == uuid.Nil {
+			return echo.NewHTTPError(http.StatusUnauthorized)
+		}
 		sites, err := a.db.CustomerSitesByAccount(context.Background(), accountUUID)
 		if err != nil {
 			c.Logger().Errorf("Failed to get Sites by Account: %+v", err)
@@ -558,20 +802,28 @@ func (a *apiHandler) sessionMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 
 // newAPIHandler creates an apiHandler for the given DataStore and session
 // Store, and routes the handler into the echo instance.
-func newAPIHandler(r *echo.Echo, db appliancedb.DataStore, sessionStore sessions.Store, getClientHandle getClientHandleFunc) *apiHandler {
-	h := &apiHandler{db, sessionStore, getClientHandle}
-	api := r.Group("/api", h.sessionMiddleware)
-	api.GET("/sites", h.getSites)
-	api.GET("/sites/:uuid", h.getSitesUUID)
-	api.GET("/sites/:uuid/config", h.getConfig)
-	api.POST("/sites/:uuid/config", h.postConfig)
-	api.GET("/sites/:uuid/configtree", h.getConfigTree)
-	api.GET("/sites/:uuid/devices", h.getDevices)
-	api.GET("/sites/:uuid/users", h.getUsers)
-	api.GET("/sites/:uuid/users/:useruuid", h.getUserByUUID)
-	api.POST("/sites/:uuid/users/:useruuid", h.postUserByUUID)
-	api.DELETE("/sites/:uuid/users/:useruuid", h.deleteUserByUUID)
-	api.GET("/sites/:uuid/rings", h.getRings)
+func newAPIHandler(r *echo.Echo, db appliancedb.DataStore, sessionStore sessions.Store, getClientHandle getClientHandleFunc, accountSecretKey []byte) *apiHandler {
+	if len(accountSecretKey) != 32 {
+		panic("bad accountSecretKey")
+	}
 
+	h := &apiHandler{db, sessionStore, getClientHandle, accountSecretKey}
+	api := r.Group("/api")
+	api.Use(h.sessionMiddleware)
+	api.GET("/account/:uuid/passwordgen", h.getAccountPasswordGen)
+	api.POST("/account/:uuid/selfprovision", h.postAccountSelfProvision)
+	api.GET("/sites", h.getSites)
+
+	siteU := r.Group("/api/sites/:uuid", h.sessionMiddleware, h.siteMiddleware)
+	siteU.GET("", h.getSitesUUID)
+	siteU.GET("/config", h.getConfig)
+	siteU.POST("/config", h.postConfig)
+	siteU.GET("/configtree", h.getConfigTree)
+	siteU.GET("/devices", h.getDevices)
+	siteU.GET("/users", h.getUsers)
+	siteU.GET("/users/:useruuid", h.getUserByUUID)
+	siteU.POST("/users/:useruuid", h.postUserByUUID)
+	siteU.DELETE("/users/:useruuid", h.deleteUserByUUID)
+	siteU.GET("/rings", h.getRings)
 	return h
 }

@@ -28,6 +28,10 @@ export default {
         auto_mode: 'Automatic Mode',
         local_mode: 'Force Local Site Mode',
         cloud_mode: 'Force Cloud Mode',
+        provision_group: 'Employee Self-Provisioning',
+        generated_pass: 'Generated Password',
+        generate_pass_button: 'Generate Password',
+        accept_pass_button: 'Accept and Provision',
       },
       home: {
         local_site: 'Local Site',

@@ -8,6 +8,8 @@
 -- such unauthorized removal or alteration will be a violation of federal law.
 --
 
+BEGIN;
+
 -- This structure is cribbed from the code of
 -- https://github.com/antonlindstrom/pgstore
 -- We use that module but prefer to keep the table creation
@@ -25,3 +27,5 @@ CREATE TABLE IF NOT EXISTS http_sessions (
 -- things fast.
 CREATE INDEX IF NOT EXISTS http_sessions_expiry_idx ON http_sessions (expires_on);
 CREATE INDEX IF NOT EXISTS http_sessions_key_idx ON http_sessions (key);
+
+COMMIT;

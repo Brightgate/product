@@ -20,7 +20,7 @@ requests to a backend server of your choice, and we have created a default
 version of that, activated by an environment variable:
 
 ```
-APISERVER=http://localhost:9090 npm run server
+APISERVER=http://localhost:9090 npm run serve
 ```
 
 This creates a clause in the webpack.devServer configuration which looks like this:

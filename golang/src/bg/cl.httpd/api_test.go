@@ -11,6 +11,8 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,21 +34,8 @@ import (
 	"bg/cloud_models/appliancedb/mocks"
 )
 
-type MockAppliance struct {
-	appliancedb.ApplianceID
-}
-
-type MockSite struct {
-	appliancedb.CustomerSite
-}
-
-func init() {
-	zeroUUIDStr = uuid.UUID{}.String()
-}
-
 var (
-	zeroUUIDStr string
-	mockSites   = []appliancedb.CustomerSite{
+	mockSites = []appliancedb.CustomerSite{
 		appliancedb.CustomerSite{
 			UUID: uuid.Must(uuid.FromString("b3798a8e-41e0-4939-a038-e7675af864d5")),
 			Name: "mock-site-0",
@@ -56,12 +45,69 @@ var (
 			Name: "mock-site-1",
 		},
 	}
+	orgUUID     = uuid.Must(uuid.FromString("10000000-0000-0000-0000-000000000000"))
+	accountUUID = uuid.Must(uuid.FromString("20000000-0000-0000-0000-000000000000"))
+	personUUID  = uuid.Must(uuid.FromString("30000000-0000-0000-0000-000000000000"))
+
+	mockPerson = appliancedb.Person{
+		UUID:         personUUID,
+		Name:         "Foo Bar",
+		PrimaryEmail: "foo@example.com",
+	}
+
+	mockAccount = appliancedb.Account{
+		UUID:             accountUUID,
+		Email:            "foo@example.com",
+		OrganizationUUID: orgUUID,
+		PhoneNumber:      "650-555-1212",
+		PersonUUID:       personUUID,
+	}
 )
 
-// For now we return nil, since we don't test all the config related endpoints.
-// The hope is to have a nicely working mock handle in the future.
+// TestCmdHdl Implements a mocked CmdHdl; this handle always returns
+// cfgapi.ErrNoConfig.
+type TestCmdHdl struct{}
+
+func (h *TestCmdHdl) Status(ctx context.Context) (string, error) {
+	return "", cfgapi.ErrNoConfig
+}
+
+func (h *TestCmdHdl) Wait(ctx context.Context) (string, error) {
+	return "", cfgapi.ErrNoConfig
+}
+
+// TestConfigExec Implements ConfigExec; it does nothing except return
+// TestCmdHdl, which just returns cfgapi.ErrNoConfig.
+type TestConfigExec struct{}
+
+func (t *TestConfigExec) Ping(ctx context.Context) error {
+	return nil
+}
+
+func (t *TestConfigExec) Execute(ctx context.Context, ops []cfgapi.PropertyOp) cfgapi.CmdHdl {
+	return &TestCmdHdl{}
+}
+
+func (t *TestConfigExec) HandleChange(path string, handler func([]string, string, *time.Time)) error {
+	return nil
+}
+
+func (t *TestConfigExec) HandleDelete(path string, handler func([]string)) error {
+	return nil
+}
+
+func (t *TestConfigExec) HandleExpire(path string, handler func([]string)) error {
+	return nil
+}
+
+func (t *TestConfigExec) Close() {
+}
+
+// Return the a TestConfigExec backed handle.  This will always reply with
+// cfgapi.ErrNoConfig.  In the future we'd like a fully flexible config mock
+// handle.
 func getMockClientHandle(uuid string) (*cfgapi.Handle, error) {
-	return nil, nil
+	return cfgapi.NewHandle(&TestConfigExec{}), nil
 }
 
 // addValidSession does a handstand to setup a valid session cookie on the
@@ -78,7 +124,7 @@ func addValidSession(req *http.Request, ss sessions.Store) {
 	sess.Values["userid"] = "test"
 	sess.Values["email"] = "test@brightgate.com"
 	sess.Values["auth_time"] = time.Now().Format(time.RFC3339)
-	sess.Values["account_uuid"] = uuid.Nil.String()
+	sess.Values["account_uuid"] = accountUUID.String()
 	err = sess.Save(req, rec)
 	if err != nil {
 		panic("Failed session save")
@@ -90,7 +136,7 @@ func addValidSession(req *http.Request, ss sessions.Store) {
 // valid session to the request; it also allocates an httptest recorder.
 func setupReqRec(method string, target string, body io.Reader, ss sessions.Store) (*http.Request, *httptest.ResponseRecorder) {
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(echo.GET, target, body)
+	req := httptest.NewRequest(method, target, body)
 	addValidSession(req, ss)
 	return req, rec
 }
@@ -105,9 +151,10 @@ func TestSites(t *testing.T) {
 	defer dMock.AssertExpectations(t)
 
 	// Setup Echo
-	ss := sessions.NewCookieStore(securecookie.GenerateRandomKey(32))
+	ss := sessions.NewCookieStore(securecookie.GenerateRandomKey(32),
+		securecookie.GenerateRandomKey(32))
 	e := echo.New()
-	_ = newAPIHandler(e, dMock, ss, getMockClientHandle)
+	_ = newAPIHandler(e, dMock, ss, getMockClientHandle, securecookie.GenerateRandomKey(32))
 
 	// Setup request
 	req, rec := setupReqRec(echo.GET, "/api/sites", nil, ss)
@@ -140,7 +187,7 @@ func TestSitesUUID(t *testing.T) {
 	// Setup Echo
 	ss := sessions.NewCookieStore(securecookie.GenerateRandomKey(32))
 	e := echo.New()
-	_ = newAPIHandler(e, dMock, ss, getMockClientHandle)
+	_ = newAPIHandler(e, dMock, ss, getMockClientHandle, securecookie.GenerateRandomKey(32))
 
 	// Setup request
 	req, rec := setupReqRec(echo.GET,
@@ -168,19 +215,84 @@ func TestSitesUUID(t *testing.T) {
 	}
 }
 
+func TestAccountsGenAndProvision(t *testing.T) {
+	var err error
+	assert := require.New(t)
+	// Mock DB
+	dMock := &mocks.DataStore{}
+	dMock.On("AccountByUUID", mock.Anything, mock.Anything).Return(&mockAccount, nil)
+	dMock.On("CustomerSitesByAccount", mock.Anything, mock.Anything).Return(mockSites, nil)
+	dMock.On("PersonByUUID", mock.Anything, mock.Anything).Return(&mockPerson, nil)
+	dMock.On("UpsertAccountSecrets", mock.Anything, mock.Anything).Return(nil)
+	defer dMock.AssertExpectations(t)
+
+	// Setup Echo
+	ss := sessions.NewCookieStore(securecookie.GenerateRandomKey(32))
+	e := echo.New()
+	_ = newAPIHandler(e, dMock, ss, getMockClientHandle, securecookie.GenerateRandomKey(32))
+
+	// Setup request for password generation
+	req, rec := setupReqRec(echo.GET,
+		fmt.Sprintf("/api/account/0/passwordgen"), nil, ss)
+
+	// Test
+	e.ServeHTTP(rec, req)
+	assert.Equal(http.StatusOK, rec.Code)
+	t.Logf("return body:Svc %s", rec.Body.String())
+
+	var ret apiSelfProvisionInfo
+	err = json.Unmarshal(rec.Body.Bytes(), &ret)
+	assert.NoError(err)
+	assert.NotEmpty(ret.Password)
+	assert.Equal(mockAccount.Email, ret.Username)
+
+	// Go around again, see that it's different
+	req, rec = setupReqRec(echo.GET,
+		fmt.Sprintf("/api/account/0/passwordgen"), nil, ss)
+
+	// Test
+	e.ServeHTTP(rec, req)
+	assert.Equal(http.StatusOK, rec.Code)
+	t.Logf("return body:Svc %s", rec.Body.String())
+	var ret2 apiSelfProvisionInfo
+	cookies := rec.Result().Cookies()
+	err = json.Unmarshal(rec.Body.Bytes(), &ret2)
+
+	assert.Equal(ret.Username, ret2.Username)
+	assert.NotEqual(ret.Password, ret2.Password)
+
+	body := apiSelfProvisionInfo{
+		Username: ret2.Username,
+		Password: "anything",
+		Verifier: ret2.Verifier,
+	}
+	bodyBytes, err := json.Marshal(body)
+	assert.NoError(err)
+
+	// Now accept the generated password
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(echo.POST, "/api/account/0/selfprovision", bytes.NewReader(bodyBytes))
+	req.AddCookie(cookies[0])
+	req.Header.Add("Content-Type", "application/json")
+	// Test
+	e.ServeHTTP(rec, req)
+	t.Logf("return body:Svc %s", rec.Body.String())
+	assert.Equal(http.StatusFound, rec.Code)
+}
+
 func TestUnauthorized(t *testing.T) {
 	assert := require.New(t)
 	ss := sessions.NewCookieStore(securecookie.GenerateRandomKey(32))
 	e := echo.New()
 	dMock := &mocks.DataStore{}
-	h := newAPIHandler(e, dMock, ss, getMockClientHandle)
+	h := newAPIHandler(e, dMock, ss, getMockClientHandle, securecookie.GenerateRandomKey(32))
 
 	testCases := []struct {
 		path    string
 		handler echo.HandlerFunc
 	}{
 		{"/api/sites", h.getSites},
-		{"/api/sites/" + zeroUUIDStr, h.getSitesUUID},
+		{"/api/sites/" + uuid.Nil.String(), h.getSitesUUID},
 	}
 
 	for _, tc := range testCases {

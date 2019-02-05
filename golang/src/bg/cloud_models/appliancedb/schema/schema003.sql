@@ -8,6 +8,8 @@
 -- such unauthorized removal or alteration will be a violation of federal law.
 --
 
+BEGIN;
+
 CREATE TABLE IF NOT EXISTS appliance_config_store (
     cloud_uuid  uuid REFERENCES appliance_id_map(cloud_uuid) PRIMARY KEY,
     root_hash   bytea NOT NULL,
@@ -20,3 +22,5 @@ COMMENT ON COLUMN appliance_config_store.cloud_uuid IS 'used as the primary key 
 COMMENT ON COLUMN appliance_config_store.root_hash IS 'a collision-resistant hash function of the config tree';
 COMMENT ON COLUMN appliance_config_store.ts IS 'time of latest config tree modification';
 COMMENT ON COLUMN appliance_config_store.config IS 'config tree data blob';
+
+COMMIT;

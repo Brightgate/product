@@ -299,6 +299,35 @@ async function authUserid() {
   }
 }
 
+async function accountGeneratePassword() {
+  const u = buildUrl('/api/account/0/passwordgen');
+  try {
+    const res = await axios.get(u);
+    return res.data;
+  } catch (err) {
+    debug('passwordGen failed', err);
+    throw err;
+  }
+}
+
+async function accountSelfProvision(username, password, verifier) {
+  const u = buildUrl('/api/account/0/selfprovision');
+  try {
+    const res = await axios({
+      timeout: 20000,
+      method: 'POST',
+      headers: {'content-type': 'application/x-www-form-urlencoded'},
+      data: qs.stringify({username, password, verifier}),
+      url: u,
+    });
+    debug(`accountSelfProvision: Succeeded.`);
+    return res.data;
+  } catch (err) {
+    debug(`accountSelfProvision: Failed`, err);
+    throw err;
+  }
+}
+
 export default {
   siteConfigGet,
   siteConfigSet,
@@ -316,5 +345,7 @@ export default {
   authApplianceLogin,
   authApplianceLogout,
   authUserid,
+  accountGeneratePassword,
+  accountSelfProvision,
   setMockMode,
 };

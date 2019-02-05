@@ -8,6 +8,8 @@
 -- such unauthorized removal or alteration will be a violation of federal law.
 --
 
+BEGIN;
+
 CREATE TABLE IF NOT EXISTS appliance_commands (
     id               bigserial PRIMARY KEY,
     cloud_uuid       uuid REFERENCES appliance_id_map(cloud_uuid),
@@ -35,4 +37,6 @@ COMMENT ON COLUMN appliance_commands.done_ts IS 'time a response was received';
 COMMENT ON COLUMN appliance_commands.state IS 'state of the command';
 COMMENT ON COLUMN appliance_commands.config_query IS 'configuration query blob';
 COMMENT ON COLUMN appliance_commands.config_response IS 'configuration response blob';
-COMMENT ON INDEX appliance_commands_fetch_idx IS 'Partial index for fetchable commands'
+COMMENT ON INDEX appliance_commands_fetch_idx IS 'Partial index for fetchable commands';
+
+COMMIT;

@@ -310,6 +310,7 @@ COMMON_GOPKGS = \
 	bg/common/configctl \
 	bg/common/deviceid \
 	bg/common/grpcutils \
+	bg/common/passwordgen \
 	bg/common/urlfetch
 
 COMMON_SRCS = \
@@ -324,6 +325,7 @@ COMMON_SRCS = \
 	$(GOSRCBG)/common/deviceid/device.go \
 	$(GOSRCBG)/common/grpcutils/client.go \
 	$(GOSRCBG)/common/grpcutils/cred.go \
+	$(GOSRCBG)/common/passwordgen/passwordgen.go \
 	$(GOSRCBG)/common/urlfetch/urlfetch.go
 
 APPCOMMON_GOPKGS = \
@@ -593,7 +595,8 @@ CLOUDSCHEMAS = \
 	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema003.sql \
 	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema004.sql \
 	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema005.sql \
-	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema006.sql
+	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema006.sql \
+	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema007.sql
 
 CLOUDBINARIES = $(CLOUDCOMMANDS:%=$(CLOUDBIN)/%) $(CLOUDDAEMONS:%=$(CLOUDBIN)/%)
 
@@ -888,8 +891,7 @@ $(APPBIN)/ap.watchd: \
 	$(GOSRCBG)/ap.watchd/watchd.go
 
 $(APPBIN)/ap-defaultpass: $(GOSRCBG)/ap-defaultpass/changepass.go \
-	$(GOSRCBG)/ap-defaultpass/defaultpass.go \
-	$(GOSRCBG)/ap-defaultpass/generate-password.go
+	$(GOSRCBG)/ap-defaultpass/defaultpass.go
 
 $(APPBIN)/ap-diag: \
 	$(GOSRCBG)/ap-diag/diag.go \

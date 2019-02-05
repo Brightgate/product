@@ -8,6 +8,8 @@
 -- such unauthorized removal or alteration will be a violation of federal law.
 --
 
+BEGIN;
+
 DROP TABLE IF EXISTS heartbeat_ingest;
 DROP TABLE IF EXISTS identity_map;
 DROP TABLE IF EXISTS appliance_id_map;
@@ -44,3 +46,5 @@ CREATE TABLE heartbeat_ingest (
 COMMENT ON TABLE heartbeat_ingest IS 'ingest table for appliance heartbeat (heartbeat and uptime tracking)';
 COMMENT ON COLUMN heartbeat_ingest.boot_ts IS 'time system booted';
 COMMENT ON COLUMN heartbeat_ingest.record_ts IS 'time recorded on system at heartbeat';
+
+COMMIT;

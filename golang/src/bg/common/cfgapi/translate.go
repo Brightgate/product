@@ -29,6 +29,7 @@ var (
 		ErrBadTime:    cfgmsg.ConfigResponse_BADTIME,
 		ErrBadVer:     cfgmsg.ConfigResponse_BADVERSION,
 		ErrNotEqual:   cfgmsg.ConfigResponse_NOTEQUAL,
+		ErrNoConfig:   cfgmsg.ConfigResponse_NOCONFIG,
 	}
 
 	apiToMsg = map[int]cfgmsg.ConfigOp_Operation{

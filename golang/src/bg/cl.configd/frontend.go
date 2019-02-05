@@ -17,6 +17,7 @@ import (
 	"time"
 
 	rpc "bg/cloud_rpc"
+	"bg/common/cfgapi"
 	"bg/common/cfgmsg"
 	"bg/common/cfgtree"
 
@@ -78,7 +79,10 @@ func (s *frontEndServer) Submit(ctx context.Context,
 	}
 
 	state, err := getSiteState(ctx, query.SiteUUID)
-	if err != nil {
+	if err == cfgapi.ErrNoConfig {
+		rval.Errmsg = err.Error()
+		rval.Response = cfgmsg.ConfigResponse_NOCONFIG
+	} else if err != nil {
 		rval.Errmsg = fmt.Sprintf("%v", err)
 		return
 	}

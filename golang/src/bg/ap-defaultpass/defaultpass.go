@@ -28,6 +28,7 @@ import (
 
 	"bg/ap_common/aputil"
 	"bg/ap_common/apvuln"
+	"bg/common/passwordgen"
 
 	"github.com/jlaffaye/ftp"
 	"golang.org/x/crypto/ssh"
@@ -312,7 +313,7 @@ func resetSSH() {
 	var newPass string
 	var err error
 	if *humanPass {
-		if newPass, err = HumanPassword(HumanPasswordSpec); err != nil {
+		if newPass, err = passwordgen.HumanPassword(passwordgen.HumanPasswordSpec); err != nil {
 			aputil.Fatalf("HumanPassword() failed: %v\n", err)
 		}
 	} else {

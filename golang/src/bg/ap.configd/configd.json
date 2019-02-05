@@ -276,6 +276,7 @@
     {"Path": "@/users/%user%/userPassword", "Type": "string", "Level": "user"},
     {"Path": "@/users/%user%/uuid", "Type": "uuid", "Level": "internal"},
     {"Path": "@/users/%user%/displayName", "Type": "string", "Level": "user"},
+    {"Path": "@/users/%user%/selfProvisioning", "Type": "bool", "Level": "internal"},
     {"Path": "@/httpd/cookie-aes-key", "Type": "string", "Level": "internal"},
     {"Path": "@/httpd/cookie-hmac-key", "Type": "string", "Level": "internal"},
     {"Path": "@/nodes/%uuid%/nics/%nic%/ring", "Type": "ring", "Level": "admin"},

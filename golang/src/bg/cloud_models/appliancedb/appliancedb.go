@@ -90,6 +90,10 @@ type DataStore interface {
 	InsertAccount(context.Context, *Account) error
 	InsertAccountTx(context.Context, DBX, *Account) error
 
+	AccountSecretsByUUID(context.Context, uuid.UUID) (*AccountSecrets, error)
+	UpsertAccountSecrets(context.Context, *AccountSecrets) error
+	UpsertAccountSecretsTx(context.Context, DBX, *AccountSecrets) error
+
 	OAuth2IdentitiesByAccount(context.Context, uuid.UUID) ([]OAuth2Identity, error)
 	InsertOAuth2Identity(context.Context, *OAuth2Identity) error
 	InsertOAuth2IdentityTx(context.Context, DBX, *OAuth2Identity) error
@@ -1013,6 +1017,60 @@ func (db *ApplianceDB) InsertAccountTx(ctx context.Context, dbx DBX,
 		 (uuid, email, phone_number, person_uuid, organization_uuid)
 		 VALUES (:uuid, :email, :phone_number, :person_uuid, :organization_uuid)`,
 		account)
+	return err
+}
+
+// AccountSecrets represents an entry in the account_secrets table.
+// This data is encrypted (on the client-side).
+type AccountSecrets struct {
+	AccountUUID           uuid.UUID `db:"account_uuid"`
+	ApplianceUserBcrypt   string    `db:"appliance_user_bcrypt"`
+	ApplianceUserMSCHAPv2 string    `db:"appliance_user_mschapv2"`
+}
+
+// AccountSecretsByUUID selects a row from account_secrets by user account
+// UUID.
+func (db *ApplianceDB) AccountSecretsByUUID(ctx context.Context, acctUUID uuid.UUID) (*AccountSecrets, error) {
+	var as AccountSecrets
+	err := db.GetContext(ctx, &as,
+		`SELECT *
+		    FROM account_secrets
+		    WHERE account_uuid=$1`, acctUUID)
+	switch err {
+	case sql.ErrNoRows:
+		return nil, NotFoundError{fmt.Sprintf(
+			"AccountSecretsByUUID: Couldn't find record for %s", acctUUID)}
+	case nil:
+		return &as, nil
+	default:
+		panic(err)
+	}
+}
+
+// UpsertAccountSecrets upserts a row in account_secrets
+func (db *ApplianceDB) UpsertAccountSecrets(ctx context.Context, as *AccountSecrets) error {
+	return db.UpsertAccountSecretsTx(ctx, nil, as)
+}
+
+// UpsertAccountSecretsTx upserts a row in account_secrets, possibly inside a transaction.
+func (db *ApplianceDB) UpsertAccountSecretsTx(ctx context.Context, dbx DBX,
+	as *AccountSecrets) error {
+
+	if dbx == nil {
+		dbx = db
+	}
+	_, err := dbx.NamedExecContext(ctx,
+		`INSERT INTO account_secrets
+                   (account_uuid, appliance_user_bcrypt, appliance_user_mschapv2)
+                 VALUES (:account_uuid, :appliance_user_bcrypt, :appliance_user_mschapv2)
+                 ON CONFLICT (account_uuid)
+                 DO UPDATE SET (
+                   appliance_user_bcrypt,
+                   appliance_user_mschapv2
+                 ) = (
+                   EXCLUDED.appliance_user_bcrypt,
+                   EXCLUDED.appliance_user_mschapv2
+                 )`, as)
 	return err
 }
 

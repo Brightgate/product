@@ -21,6 +21,7 @@ import (
 
 	"bg/cl_common/pgutils"
 	"bg/cloud_models/appliancedb"
+	"bg/common/cfgapi"
 	"bg/common/cfgtree"
 )
 
@@ -56,10 +57,9 @@ func (db *dbStore) get(ctx context.Context, uuidStr string) (*cfgtree.PTree, err
 	store, err := db.handle.ConfigStoreByUUID(ctx, u)
 	if err != nil {
 		if _, ok := err.(appliancedb.NotFoundError); ok {
-			slog.Warn(err)
-		} else {
-			slog.Errorf("failed to query appliance DB: %v", err)
+			return nil, cfgapi.ErrNoConfig
 		}
+		slog.Errorf("failed to query appliance DB: %v", err)
 		return nil, err
 	}
 

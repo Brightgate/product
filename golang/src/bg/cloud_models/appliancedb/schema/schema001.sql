@@ -8,6 +8,8 @@
 -- such unauthorized removal or alteration will be a violation of federal law.
 --
 
+BEGIN;
+
 -- The format is inspired by the Google IoT core device registry
 CREATE TABLE IF NOT EXISTS appliance_pubkey (
     id                    bigserial PRIMARY KEY,
@@ -25,3 +27,4 @@ COMMENT ON COLUMN appliance_pubkey.format IS 'Key format (RS256_X509)';
 COMMENT ON COLUMN appliance_pubkey.key IS 'Key text representation';
 COMMENT ON COLUMN appliance_pubkey.expiration IS 'Optional key expiration date (reserved for future use)';
 
+COMMIT;

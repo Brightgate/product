@@ -30,6 +30,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net/http"
@@ -73,6 +74,8 @@ type Cfg struct {
 	HTTPSListen               string `envcfg:"B10E_CLHTTPD_HTTPS_LISTEN"`
 	WellKnownPath             string `envcfg:"B10E_CERTBOT_WELLKNOWN_PATH"`
 	SessionSecret             string `envcfg:"B10E_CLHTTPD_SESSION_SECRET"`
+	SessionBlockSecret        string `envcfg:"B10E_CLHTTPD_SESSION_BLOCK_SECRET"`
+	AccountSecret             string `envcfg:"B10E_CLHTTPD_ACCOUNT_SECRET"`
 	GoogleKey                 string `envcfg:"B10E_CLHTTPD_GOOGLE_KEY"`
 	GoogleSecret              string `envcfg:"B10E_CLHTTPD_GOOGLE_SECRET"`
 	Auth0Key                  string `envcfg:"B10E_CLHTTPD_AUTH0_KEY"`
@@ -149,6 +152,13 @@ func mkSessionStore() *pgstore.PGStore {
 	if environ.SessionSecret == "" {
 		log.Fatalf("You must set B10E_CLHTTPD_SESSION_SECRET")
 	}
+	if environ.SessionBlockSecret == "" {
+		log.Fatalf("You must set B10E_CLHTTPD_SESSION_BLOCK_SECRET")
+	}
+	blockSecret, err := hex.DecodeString(environ.SessionBlockSecret)
+	if err != nil || len(blockSecret) != 32 {
+		log.Fatalf("Failed to decode B10E_CLHTTPD_SESSION_BLOCK_SECRET; should be hex encoded and 32 bytes long")
+	}
 	sessionDB, err := sessiondb.Connect(environ.SessionDB, false)
 	if err != nil {
 		log.Fatalf("failed to connect to session DB: %v", err)
@@ -159,7 +169,7 @@ func mkSessionStore() *pgstore.PGStore {
 		log.Fatalf("failed to ping DB: %s", err)
 	}
 	log.Printf(checkMark + "Pinged Session DB")
-	pgStore, err := pgstore.NewPGStoreFromPool(sessionDB.GetPG(), []byte(environ.SessionSecret))
+	pgStore, err := pgstore.NewPGStoreFromPool(sessionDB.GetPG(), []byte(environ.SessionSecret), blockSecret)
 	if err != nil {
 		log.Fatalf("failed to start PG Store: %s", err)
 	}
@@ -221,12 +231,20 @@ func mkRouterHTTPS(sessionStore sessions.Store) *echo.Echo {
 	})
 	_ = newAuthHandler(r, sessionStore, applianceDB)
 
+	if environ.AccountSecret == "" {
+		log.Fatalf("Must specify B10E_CLHTTPD_ACCOUNT_SECRET")
+	}
+	accountSecret, err := hex.DecodeString(environ.AccountSecret)
+	if err != nil || len(accountSecret) != 32 {
+		log.Fatalf("Failed to decode B10E_CLHTTPD_ACCOUNT_SECRET; should be hex encoded and 32 bytes long %d", len(accountSecret))
+	}
+
 	enableConfigdTLS = !environ.ConfigdDisableTLS && !environ.Developer
 	if !enableConfigdTLS {
 		log.Printf("Disabling TLS for connection to Configd")
 	}
 
-	_ = newAPIHandler(r, applianceDB, sessionStore, getConfigClientHandle)
+	_ = newAPIHandler(r, applianceDB, sessionStore, getConfigClientHandle, accountSecret)
 	hdl, err := getConfigClientHandle("00000000-0000-0000-0000-000000000000")
 	if err != nil {
 		log.Fatalf("failed to make Config Client: %s", err)
