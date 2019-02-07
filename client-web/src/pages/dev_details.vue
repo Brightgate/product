@@ -157,7 +157,7 @@ import assert from 'assert';
 import {isBefore, isEqual} from 'date-fns';
 import {pickBy} from 'lodash-es';
 import Debug from 'debug';
-import {format, formatRelative} from '../date-fns-wrapper';
+import {format, formatRelative, parseISO} from '../date-fns-wrapper';
 
 import vulnerability from '../vulnerability';
 const debug = Debug('page:dev-details');
@@ -203,8 +203,14 @@ export default {
       let start = null;
       let finish = null;
       if (this.dev && this.dev.scans && this.dev.scans.vulnerability) {
-        start = this.dev.scans.vulnerability.start || null;
-        finish = this.dev.scans.vulnerability.finish || null;
+        const sp = parseISO(this.dev.scans.vulnerability.start);
+        if (!Number.isNaN(sp.valueOf())) {
+          start = sp;
+        }
+        const fp = parseISO(this.dev.scans.vulnerability.finish);
+        if (!Number.isNaN(fp.valueOf())) {
+          finish = fp;
+        }
       }
       if (start === null && finish === null) {
         return this.$t('message.dev_details.vuln_scan_notyet');
@@ -231,10 +237,10 @@ export default {
 
   methods: {
     timeAbs: function(t) {
-      return format(t, 'Pp');
+      return format(parseISO(t), 'Pp');
     },
     timeRel: function(t) {
-      return formatRelative(t, Date.now());
+      return formatRelative(parseISO(t), Date.now());
     },
     vulnHeadline: function(vulnid) {
       return vulnerability.headline(vulnid);

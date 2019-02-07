@@ -11,7 +11,7 @@
 
 
 const config = {
-  baseUrl: '/client-web/',
+  publicPath: '/client-web/',
   pages: {
     index: {
       entry: 'src/main.js',
