@@ -291,56 +291,42 @@ func connectToConfigd() error {
 	config = cfgapi.NewHandle(conn)
 	config.Ping(nil)
 	slog.Debugf("connected to cl.configd")
+
+	keyProp := "@/cloud/service/tunnel_user_key"
+	config.HandleChange(keyProp, userKeyChanged)
+	config.HandleDelete(keyProp, userKeyDeleted)
+
 	return nil
 }
 
-func updateUserAuthKey(oldkey string) (string, error) {
-	key, err := config.GetProp("@/cloud/service/tunnel_user_key")
-	if err != nil {
-		err = fmt.Errorf("fetching appliance user key: %v", err)
-		key = oldkey
-	} else if key != oldkey {
-		if err = daemon.SetAuthUserKey(key); err != nil {
-			err = fmt.Errorf("importing appliance user key: %v",
-				err)
-		}
+func updateUserAuthKey(newKey string) {
+	if err := daemon.SetAuthUserKey(newKey); err != nil {
+		slog.Errorf("importing appliance user key: %v", err)
 	}
+}
 
-	return key, err
+func userKeyDeleted(path []string) {
+	updateUserAuthKey("")
+}
+
+func userKeyChanged(path []string, val string, exp *time.Time) {
+	updateUserAuthKey(val)
 }
 
 // Wait until the tunnel's lifetime expires, or until the user terminates it.
-// Periodically check to see whether the incoming user key has changed.
-func loop(d time.Duration) {
-	var done, warned bool
-	var authKey string
-	var err error
-
+func wait(d time.Duration) {
 	doneAt := time.Now().Add(d)
 	slog.Infof("Leaving tunnel open until %s", doneAt.Format(time.Stamp))
 
 	sig := make(chan os.Signal, 2)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	ticker := time.NewTicker(time.Second)
 
-	for !done {
-		if authKey, err = updateUserAuthKey(authKey); err == nil {
-			warned = false
-		} else if !warned {
-			slog.Warnf("%v", err)
-			warned = true
-		}
+	select {
+	case <-time.After(d):
+		slog.Infof("Tunnel lifetime expired")
 
-		select {
-		case <-ticker.C:
-			if time.Now().After(doneAt) {
-				done = true
-			}
-
-		case s := <-sig:
-			slog.Infof("Signal (%v) received.  Stopping", s)
-			done = true
-		}
+	case s := <-sig:
+		slog.Infof("Signal (%v) received.  Stopping", s)
 	}
 }
 
@@ -434,7 +420,7 @@ func main() {
 		"     /usr/bin/ssh -i %s/id_rsa -p %d root@localhost",
 		userCreds.tmpDir, *tunnelPort)
 
-	loop(*lifespan)
+	wait(*lifespan)
 
 	slog.Debugf("waiting for sshd loop to exit")
 	daemon.Finalize()

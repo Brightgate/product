@@ -223,3 +223,40 @@ func (s *frontEndServer) Status(ctx context.Context,
 
 	return rval, nil
 }
+
+func (s *frontEndServer) Monitor(req *rpc.CfgFrontEndMonitor,
+	stream rpc.ConfigFrontEnd_MonitorServer) error {
+
+	var update rpc.CfgFrontEndUpdate
+
+	ctx := stream.Context()
+	site, err := getSiteState(ctx, req.SiteUUID)
+	if err != nil {
+		update.Response = rpc.CfgFrontEndUpdate_FAILED
+		update.Errmsg = fmt.Sprintf("%v", err)
+		stream.Send(&update)
+		return nil
+	}
+
+	queue := site.newUpdateQueue()
+	defer queue.finalize()
+
+	for {
+		updates := queue.fetch()
+		update.Response = rpc.CfgFrontEndUpdate_OK
+		update.Updates = updates
+
+		if err = stream.Send(&update); err != nil {
+			if err == context.Canceled {
+				slog.Infof("client %s disconnected",
+					req.SiteUUID)
+				err = nil
+			} else {
+				slog.Infof("stream.Send failed: %v", err)
+			}
+			break
+		}
+	}
+
+	return err
+}

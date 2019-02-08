@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	rpc "bg/cloud_rpc"
@@ -35,13 +36,16 @@ type cmdHdl struct {
 
 // Configd represents an established gRPC connection to cl.configd.
 type Configd struct {
-	sender  string
-	uuid    string
-	verbose bool
-	conn    *grpc.ClientConn
-	client  rpc.ConfigFrontEndClient
-	timeout time.Duration
-	level   cfgapi.AccessLevel
+	sender   string
+	uuid     string
+	verbose  bool
+	conn     *grpc.ClientConn
+	client   rpc.ConfigFrontEndClient
+	timeout  time.Duration
+	level    cfgapi.AccessLevel
+	monState *monitorState
+
+	sync.Mutex
 }
 
 // NewConfigd establishes a gRPC connection to cl.configd, and returns a
@@ -245,24 +249,13 @@ func (c *Configd) Execute(ctx context.Context, ops []cfgapi.PropertyOp) cfgapi.C
 	return hdl
 }
 
-// HandleChange is not supported in the cloud
-func (c *Configd) HandleChange(path string,
-	fn func([]string, string, *time.Time)) error {
-
-	return cfgapi.ErrNotSupp
-}
-
-// HandleDelete is not supported in the cloud
-func (c *Configd) HandleDelete(path string, fn func([]string)) error {
-	return cfgapi.ErrNotSupp
-}
-
-// HandleExpire is not supported in the cloud
-func (c *Configd) HandleExpire(path string, fn func([]string)) error {
-	return cfgapi.ErrNotSupp
-}
-
 // Close cleans up the gRPC connection to cl.configd
 func (c *Configd) Close() {
+	c.Lock()
+	defer c.Unlock()
+
 	c.conn.Close()
+	if c.monState != nil {
+		c.monState.cancelFunc()
+	}
 }

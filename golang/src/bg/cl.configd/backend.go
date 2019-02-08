@@ -93,7 +93,7 @@ func (s *backEndServer) Download(ctx context.Context,
 
 // Attempt to apply a single appliance-generated update to our cached copy of
 // its config tree.
-func update(site *siteState, update *rpc.CfgBackEndUpdate_CfgUpdate) error {
+func update(site *siteState, update *rpc.CfgUpdate) error {
 	var err error
 
 	prop := update.GetProperty()
@@ -108,7 +108,7 @@ func update(site *siteState, update *rpc.CfgBackEndUpdate_CfgUpdate) error {
 	t.ChangesetInit()
 
 	switch update.Type {
-	case rpc.CfgBackEndUpdate_CfgUpdate_UPDATE:
+	case rpc.CfgUpdate_UPDATE:
 		var expires *time.Time
 
 		val := update.GetValue()
@@ -121,7 +121,7 @@ func update(site *siteState, update *rpc.CfgBackEndUpdate_CfgUpdate) error {
 		}
 		err = t.Add(prop, val, expires)
 
-	case rpc.CfgBackEndUpdate_CfgUpdate_DELETE:
+	case rpc.CfgUpdate_DELETE:
 		slog.Debugf("Deleting %s", update.GetProperty())
 		_, err = t.Delete(prop)
 	}
@@ -133,6 +133,7 @@ func update(site *siteState, update *rpc.CfgBackEndUpdate_CfgUpdate) error {
 				th, update.GetHash())
 			err = fmt.Errorf("hash mismatch")
 		}
+		site.postUpdate(update)
 	} else {
 		t.ChangesetRevert()
 		slog.Warnf("update to %s failed: %v", prop, err)

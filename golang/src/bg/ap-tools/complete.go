@@ -68,7 +68,7 @@ func completeMCP(prefix, prior string) {
 }
 
 func completeConfig(prefix, prior string) {
-	commands := []string{"add", "set", "get", "del"}
+	commands := []string{"add", "set", "get", "del", "mon"}
 
 	if !cmdCheck("ap-configctl", prefix, prior, commands) {
 		return

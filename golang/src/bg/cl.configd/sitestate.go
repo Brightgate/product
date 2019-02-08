@@ -18,21 +18,33 @@ import (
 	"sync"
 	"time"
 
+	rpc "bg/cloud_rpc"
 	"bg/common/cfgmsg"
 	"bg/common/cfgtree"
 
 	"github.com/golang/protobuf/ptypes"
 )
 
+// Each subscriber to a tree's changes has its own update queue.  Each update
+// may appear on multiple queues.  Rather than adding an explicit reference
+// count to each update, we rely on Go's garbage collector to recognize when all
+// subscribers have dropped their pointers to an update.
+type updateQueue struct {
+	id      int64            // used to remove this queue from updateQueues[]
+	site    *siteState       // tree being monitored
+	updates []*rpc.CfgUpdate // pending updates
+	newData chan bool        // tickled when data is added to updates[]
+
+	sync.Mutex
+}
+
 type siteState struct {
 	siteUUID   string         // site UUID
 	cachedTree *cfgtree.PTree // in-core cache of the config tree
 
-	cmdQueue cmdQueue
-
-	// XXX This is used only once, in frontend.go, protecting just a
-	// cachedTree.Get() call.  What's the actual locking strategy here?
-	sync.Mutex
+	cmdQueue     cmdQueue
+	updateQueues map[int64]*updateQueue
+	sync.Mutex   // protects the updateQueues map
 }
 
 var (
@@ -50,9 +62,10 @@ func newSiteState(siteUUID string, tree *cfgtree.PTree) *siteState {
 	}
 
 	return &siteState{
-		siteUUID:   siteUUID,
-		cachedTree: tree,
-		cmdQueue:   queue,
+		siteUUID:     siteUUID,
+		cachedTree:   tree,
+		cmdQueue:     queue,
+		updateQueues: make(map[int64]*updateQueue),
 	}
 }
 
@@ -204,4 +217,54 @@ func (s *siteState) emulateAppliance(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// Allocate a new queue to receive updates posted to a site's config tree.
+func (s *siteState) newUpdateQueue() *updateQueue {
+	q := &updateQueue{
+		site:    s,
+		id:      time.Now().UnixNano(),
+		updates: make([]*rpc.CfgUpdate, 0),
+		newData: make(chan bool, 2),
+	}
+
+	s.Lock()
+	s.updateQueues[q.id] = q
+	s.Unlock()
+	return q
+}
+
+// Remove one queue from a site's list of update queues
+func (q *updateQueue) finalize() {
+	q.site.Lock()
+	delete(q.site.updateQueues, q.id)
+	q.site.Unlock()
+}
+
+// Block until there are updates in the queue.  Return all posted updates.
+func (q *updateQueue) fetch() []*rpc.CfgUpdate {
+	<-q.newData
+	q.Lock()
+	u := q.updates
+	q.updates = make([]*rpc.CfgUpdate, 0)
+	q.Unlock()
+
+	return u
+}
+
+// A site's config tree has been updated.  Post the update to all the queues for
+// that site.
+func (s *siteState) postUpdate(update *rpc.CfgUpdate) {
+	s.Lock()
+	for _, q := range s.updateQueues {
+		q.Lock()
+		q.updates = append(q.updates, update)
+		// Only signal on the first update posted to a queue to avoid
+		// blocking on a clogged channel.
+		if len(q.updates) == 1 {
+			q.newData <- true
+		}
+		q.Unlock()
+	}
+	s.Unlock()
 }

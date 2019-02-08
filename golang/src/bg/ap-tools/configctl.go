@@ -16,6 +16,7 @@ import (
 	"os"
 
 	"bg/ap_common/apcfg"
+	"bg/ap_common/broker"
 	"bg/common/cfgapi"
 	"bg/common/configctl"
 )
@@ -40,7 +41,9 @@ func configctlMain() {
 		os.Exit(1)
 	}
 
-	configd, err := apcfg.NewConfigd(nil, pname, l)
+	brokerd := broker.New(pname)
+	defer brokerd.Fini()
+	configd, err := apcfg.NewConfigd(brokerd, pname, l)
 
 	if err != nil {
 		fmt.Printf("cannot connect to configd: %v\n", err)

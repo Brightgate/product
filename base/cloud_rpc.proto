@@ -104,6 +104,19 @@ service CloudStorage{
 	rpc GenerateURL(GenerateURLRequest) returns (GenerateURLResponse) {};
 }
 
+message CfgUpdate {
+	enum Type {
+		UPDATE = 0;
+		DELETE = 1;
+	}
+
+	Type type				= 0x10;
+	string property				= 0x11;
+	string value				= 0x12;
+	google.protobuf.Timestamp expires	= 0x13;
+	bytes hash				= 0x14;
+}
+
 message CfgBackEndHello {
 	google.protobuf.Timestamp time	= 0x01;
 	string siteUUID   	        = 0x02;
@@ -123,19 +136,6 @@ message CfgBackEndDownload {
 }
 
 message CfgBackEndUpdate {
-	message CfgUpdate {
-		enum Type {
-			UPDATE = 0;
-			DELETE = 1;
-		}
-
-		Type type				= 0x10;
-		string property				= 0x11;
-		string value				= 0x12;
-		google.protobuf.Timestamp expires	= 0x13;
-		bytes hash				= 0x14;
-	}
-
 	google.protobuf.Timestamp time	= 0x01;
 	string siteUUID		        = 0x02;
 	int32 version			= 0x03;
@@ -189,9 +189,27 @@ message CfgCmdID {
 	int64 cmdID			= 0x03;
 }
 
+message CfgFrontEndMonitor {
+	google.protobuf.Timestamp time	= 0x01;
+	string siteUUID		        = 0x02;
+}
+
+message CfgFrontEndUpdate {
+	google.protobuf.Timestamp time	= 0x01;
+
+	enum UpdateResponse {
+		OK		= 0;
+		FAILED		= 1;
+	}
+	UpdateResponse response		= 0x02;
+	string errmsg			= 0x03;
+	repeated CfgUpdate updates	= 0x04;
+}
+
 service ConfigFrontEnd{
 	rpc Ping(CfgFrontEndPing) returns (CfgFrontEndPing) {};
 	rpc Submit(cfgmsg.ConfigQuery) returns (cfgmsg.ConfigResponse) {};
 	rpc Status(CfgCmdID) returns (cfgmsg.ConfigResponse) {};
 	rpc Cancel(CfgCmdID) returns (cfgmsg.ConfigResponse) {};
+	rpc Monitor(CfgFrontEndMonitor) returns (stream CfgFrontEndUpdate) {};
 }

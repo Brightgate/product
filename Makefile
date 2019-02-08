@@ -635,6 +635,7 @@ CLOUD_COMMON_SRCS = \
 	$(GOSRCBG)/cloud_models/sessiondb/sessiondb.go \
 	$(GOSRCBG)/cl_common/auth/m2mauth/middleware.go \
 	$(GOSRCBG)/cl_common/clcfg/clcfg.go \
+	$(GOSRCBG)/cl_common/clcfg/events.go \
 	$(GOSRCBG)/cl_common/daemonutils/utils.go \
 	$(GOSRCBG)/cl_common/pgutils/utils.go \
 	$(GOSRCBG)/cl_common/registry/registry.go

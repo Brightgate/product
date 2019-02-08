@@ -34,7 +34,7 @@ type rpcClient struct {
 }
 
 type cloudQueue struct {
-	updates     []*rpc.CfgBackEndUpdate_CfgUpdate
+	updates     []*rpc.CfgUpdate
 	completions []*cfgmsg.ConfigResponse
 	lastOp      int64
 	updated     chan bool
@@ -42,7 +42,7 @@ type cloudQueue struct {
 }
 
 var queued = cloudQueue{
-	updates:     make([]*rpc.CfgBackEndUpdate_CfgUpdate, 0),
+	updates:     make([]*rpc.CfgUpdate, 0),
 	completions: make([]*cfgmsg.ConfigResponse, 0),
 	updated:     make(chan bool, 4),
 }
@@ -125,7 +125,7 @@ func (c *rpcClient) pushCompletions() error {
 
 // send all of the accumulated config tree updates to the cloud
 func (c *rpcClient) pushUpdates() error {
-	var updates []*rpc.CfgBackEndUpdate_CfgUpdate
+	var updates []*rpc.CfgUpdate
 
 	if len(queued.updates) == 0 {
 		return nil
@@ -134,7 +134,7 @@ func (c *rpcClient) pushUpdates() error {
 	queued.Lock()
 	if len(queued.updates) < *maxUpdates {
 		updates = queued.updates
-		queued.updates = make([]*rpc.CfgBackEndUpdate_CfgUpdate, 0)
+		queued.updates = make([]*rpc.CfgUpdate, 0)
 	} else {
 		updates = queued.updates[:*maxUpdates]
 		queued.updates = queued.updates[*maxUpdates:]
@@ -202,7 +202,7 @@ func trimRefreshDups(cmds []*cfgmsg.ConfigQuery) {
 		queued.Lock()
 		if len(queued.updates) > 0 {
 			slog.Infof("dropping %d stale updates", len(queued.updates))
-			queued.updates = make([]*rpc.CfgBackEndUpdate_CfgUpdate, 0)
+			queued.updates = make([]*rpc.CfgUpdate, 0)
 		}
 		queued.Unlock()
 	}
@@ -297,7 +297,7 @@ func handleChanges(prop, val string) {
 // An EventConfig event arrived on the 0MQ bus.  Convert the contents into a
 // CfgUpdate message, which will be forwarded to the cloud config daemon.
 func configEvent(raw []byte) {
-	var update *rpc.CfgBackEndUpdate_CfgUpdate
+	var update *rpc.CfgUpdate
 
 	event := &base_msg.EventConfig{}
 	proto.Unmarshal(raw, event)
@@ -316,8 +316,8 @@ func configEvent(raw []byte) {
 	if etype == base_msg.EventConfig_CHANGE {
 		slog.Debugf("updated %s - %x", *event.Property, hash)
 		handleChanges(*event.Property, *event.NewValue)
-		update = &rpc.CfgBackEndUpdate_CfgUpdate{
-			Type:     rpc.CfgBackEndUpdate_CfgUpdate_UPDATE,
+		update = &rpc.CfgUpdate{
+			Type:     rpc.CfgUpdate_UPDATE,
 			Property: *event.Property,
 			Value:    *event.NewValue,
 			Hash:     hash,
@@ -329,8 +329,8 @@ func configEvent(raw []byte) {
 		}
 	} else if etype == base_msg.EventConfig_DELETE {
 		slog.Debugf("deleted %s - %x", *event.Property, hash)
-		update = &rpc.CfgBackEndUpdate_CfgUpdate{
-			Type:     rpc.CfgBackEndUpdate_CfgUpdate_DELETE,
+		update = &rpc.CfgUpdate{
+			Type:     rpc.CfgUpdate_DELETE,
 			Property: *event.Property,
 			Hash:     hash,
 		}

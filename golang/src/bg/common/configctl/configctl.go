@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -14,9 +14,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"bg/common/cfgapi"
@@ -27,6 +29,14 @@ var (
 	configd *cfgapi.Handle
 	pname   string
 )
+
+func timeString(t time.Time) string {
+	return t.Format("2006-01-02T15:04:05")
+}
+
+func now() string {
+	return timeString(time.Now())
+}
 
 func getRings(cmd string, args []string) error {
 	if len(args) != 0 {
@@ -91,7 +101,7 @@ func printClient(mac string, client *cfgapi.ClientInfo) {
 	if client.IPv4 != nil {
 		ipv4 = client.IPv4.String()
 		if client.Expires != nil {
-			exp = client.Expires.Format("2006-01-02T15:04")
+			exp = timeString(*client.Expires)
 		} else {
 			exp = "static"
 		}
@@ -218,6 +228,54 @@ func getProp(cmd string, args []string) error {
 	return err
 }
 
+func hdlExpire(path []string) {
+	fmt.Printf("%s Expired: %s\n", now(), strings.Join(path, "/"))
+}
+
+func hdlDelete(path []string) {
+	fmt.Printf("%s Deleted: %s\n", now(), strings.Join(path, "/"))
+}
+
+func hdlUpdate(path []string, val string, exp *time.Time) {
+	var at string
+
+	if exp != nil {
+		at = "  expires at: " + timeString(*exp)
+	}
+	fmt.Printf("%s Updated: %s -> %s%s\n", now(), strings.Join(path, "/"), val, at)
+
+}
+
+func monProp(cmd string, args []string) error {
+	if len(args) != 1 {
+		usage(cmd)
+	}
+
+	prop := args[0]
+	if !strings.HasPrefix(prop, "@") {
+		return fmt.Errorf("invalid property path: %s", prop)
+	}
+
+	fmt.Printf("monitoring %s\n", prop)
+	if err := configd.HandleChange(prop, hdlUpdate); err != nil {
+		return err
+	}
+	if err := configd.HandleDelete(prop, hdlDelete); err != nil {
+		return err
+	}
+	if pname != "cl-configctl" {
+		// Expiration events are only available on the client
+		if err := configd.HandleExpire(prop, hdlExpire); err != nil {
+			return err
+		}
+	}
+
+	sig := make(chan os.Signal, 2)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	<-sig
+	return nil
+}
+
 func makeDelProp(cmd string, args []string) *cfgapi.PropertyOp {
 	if len(args) != 1 {
 		usage(cmd)
@@ -301,6 +359,7 @@ var usages = map[string]string{
 	"add":  "<prop> <value [duration]>",
 	"get":  "<prop> | clients [-a] | rings",
 	"del":  "<prop>",
+	"mon":  "<prop>",
 }
 
 func usage(cmd string) {
@@ -334,6 +393,8 @@ func Exec(p string, hdl *cfgapi.Handle, args []string) error {
 	switch args[0] {
 	case "get":
 		err = getProp("get", args[1:])
+	case "mon":
+		err = monProp("mon", args[1:])
 	case "ping":
 		if err = hdl.Ping(nil); err == nil {
 			fmt.Printf("ok\n")
