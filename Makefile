@@ -1092,8 +1092,16 @@ $(VENV_NAME):
 
 NPM = npm
 NPM_QUIET = --loglevel warn --no-progress
+# Prefer to use npm ci if it is available; there's no good test for its
+# presence other than seeing how much help exists for the command.
 .make-npm-installed: client-web/package.json
-	(cd client-web && $(NPM) install $(NPM_QUIET))
+	(cd client-web && \
+		ci=$$($(NPM) help ci | wc -l) && \
+		if [ $$ci -gt 10 ]; then \
+			$(NPM) ci $(NPM_QUIET); \
+		else \
+			$(NPM) install $(NPM_QUIET); \
+		fi; )
 	touch $@
 
 client-web: .make-npm-installed FRC | $(HTTPD_CLIENTWEB_DIR) $(CLOUDLIBCLHTTPDWEBCLIENTWEB)
