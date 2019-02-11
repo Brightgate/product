@@ -1,26 +1,323 @@
 <!DOCTYPE html>
 <!--
   COPYRIGHT 2019 Brightgate Inc. All rights reserved.
-
-  This copyright notice is Copyright Management Information under 17 USC
-  1202 and is included to protect this work and deter copyright
-  infringement.  Removal or alteration of this Copyright Management
-  Information without the express written permission of Brightgate Inc
-  is prohibited, and any such unauthorized removal or alteration will be
-  a violation of federal law.
--->
-<html>
+  This copyright notice is Copyright Management Information under 17 USC  1202 and is included to protect this work and deter copyright
+  infringement.  Removal or alteration of this Copyright Management  Information without the express written permission of Brightgate Inc
+  is prohibited, and any such unauthorized removal or alteration will be  a violation of federal law.
+--><html>
   <head>
     <meta http-equiv="content-type" content="text/html; charset=UTF-8">
-    <title>Brightgate User Guide</title>
+    <title>Brightgate Alpha Guide</title>
     <!-- BRIGHTGATE HEAD INSERTION POINT -->
   </head>
-  <body>
-    <!-- BRIGHTGATE CONTENT START -->
-    <h1 id="brightgate-user-guide">Brightgate User Guide (Alpha)</h1>
-    <a name="brightgate-user-guide"></a>
-    <h2 id="about-this-guide">About This Guide</h2>
-    <a name="about-this-guide"></a>
+  <body> <!-- BRIGHTGATE CONTENT START -->
+    <h1 id="brightgate-alpha-guide">Brightgate Alpha Guide</h1>
+    <a name="brightgate-alpha-guide"></a>
+    <p>NDA REQUIRED</p>
+    <p>insert logo image</p>
+    <p>Q1 2019</p>
+    <p>Version 1.0</p>
+    <h2 id="about-this-guide">About this guide<a name="about-this-guide"></a></h2>
+    <p>This guide helps you learn about Brightgate's technologies as well as
+      administer your network. You're welcome to jump to topics of interest or read
+      it in its entirety.</p>
+    <ul>
+      <li>Technology concepts
+        <ul>
+          <li><a href="#why-brightgate">Why Brightgate</a></li>
+          <li><a href="#how-we-secure">How we secure your business and customers</a></li>
+        </ul>
+      </li>
+      <li>Network Administration
+        <ul>
+          <li><a href="#installing-brightgate">Installing Brightgate</a></li>
+          <li><a href="#administering-your-network">Administering your network</a></li>
+          <li><a href="#securing-your-network">Securing your network</a></li>
+          <li><a href="#providing-guest-access">Providing guest access</a></li>
+        </ul>
+      </li>
+    </ul>
+    <h3>Audience</h3>
+    <p>This guide helps you manage your Brightgate platform during our Alpha program.</p>
+    <h2 id="why-brightgate"><a name="why-brightgate">Why Brightgate</a></h2>
+    <p> Business networks are under attack. And attacks are
+      becoming more and more automated. As a result, your data — the lifeblood
+      of your business, from accounts receivable to contracts to your customer's
+      data <i>and</i> the devices that process it — present an
+      ever-increasing risk. While big enterprises can spend millions on a team
+      of IT experts, and the systems those experts require, small businesses
+      don't have that kind of budget or technical knowledge. So hackers
+      increasingly target small businesses. Small businesses need an automated
+      response to fend off bots, phishing, viruses, ransomware, and malware. That’s why
+      small businesses need precisely the type of platform that we’ve developed
+      at Brightgate, one that enables automated protection to prevent bad actors
+      from misusing both your Wi-Fi and wired network. </p>
+    <h3 id="the-power-of-machine-learning">Harness the power of machine learning</h3>
+    <p>Brightgate observes your devices and their behavior all the time when
+      they are on the network. Our machine learning creates a model of usual
+      behavior on your network, so odd behavior is immediately identified. But
+      we don’t stop with simply identifying odd behavior. We move a potentially
+      infected device into quarantine to prevent it from infecting other devices
+      on the network, then limit its network access until the issue is
+      resolved. In addition, we notify the device's owner and network
+      administrator of the issue, using language that’s easily understood, and
+      suggest appropriate actions to take so the device can be safely updated or
+      sanitized and again permitted access to the network. We'll even help you with remote IT to resolve the problem. Brightgate also
+      blocks online destinations that we know are bad news—phishing, malware,
+      and spyware. The Brightgate security team also stays on top of the latest
+      threats. We automatically update every platform to defend against each new threat,
+      covering your entire network—all your devices—all the time.</p>
+    <h3 id="protect-your-data">Protect your data</h3>
+    <p>Brightgate gets it. Small businesses like yours are very good at the
+      skills your business was founded on—whether it’s designing
+      systems, serving a meal, or offering consulting services. The core
+      competence of your business is not in network security, <em>ours is</em>.
+      We understand that you need to adopt technologies that matter to your
+      business without fear that you're putting your business at risk. As the
+      technology you adopt becomes more sophisticated and interconnected, your
+      risk of exposure to bad actors increases. Cybersecurity should, then, be a
+      critical part of your technology focus. Until now, though, this has not
+      been the case. Network security has been, at best, an afterthought as
+      cybersecurity offerings have been both too complex and too expensive, and
+      many small business owners like you have been unable to find a solution that scales
+      appropriately, focusing too much either on home user needs or on
+      enterprise requirements.</p>
+    <h3 id="easy-onboarding">Easy onboarding</h3>
+    <p>Brightgate solves the problem of overly complex solutions with an
+      intelligent, easy-to-use solution that secures your network. We use a simple approach 
+      to configuration and onboarding, automating most decisions and implementation. This 
+      removes the need for highly technical, expensive staff. And our simple subscription model maximizes
+      your network security spend. Last, our technology scales to your business,
+      hitting the sweet spot between a home office and a large
+      enterprise.</p>
+    <h3 id="constant-monitoring">Constant monitoring, immediate notification</h3>
+    <p>With Brightgate, you know which devices are on your network; what those
+      devices are doing on the Internet, whether data is being passed out of
+      your network, and to where; whether devices on your network using a
+      default password; and who has been provided guest network access.
+      Importantly, Brightgate technology quarantines devices that are acting out
+      of character, protecting your network from infection. We also notice if
+      data has been or is being sent to known bad actors, and we can identify
+      the amount of data sent.</p>
+    <h3 id="ease-ofuse">Ease of use</h3>
+    <p>Brightgate is designed to ensure your business can easily reap the benefits of automated cybersecurity. 
+      The simplicity of managing our cybersecurity solution, with
+      alerts that make the issue easy to understand and specify the level of
+      urgency make Brightgate’s technology easy to administer. </p>
+    <p>Your Brightgate appliance helps you easily and quickly:</p>
+    <ul>
+      <li>Add people and their devices to your network</li>
+      <li>Terminate network access</li>
+      <li>Grant temporary (“guest”) network access</li>
+      <li>Identify devices that are acting suspiciously to reduce cybersecurity
+        risks</li>
+      <li>Protect your network from suspicious behavior</li>
+      <li>Audit your network for compliance</li>
+    </ul>
+    <h3 id="prevent-ransomware-attacks">Prevent ransomware attacks</h3>
+    <p>Besides the potential privacy issues, if your data is being held for
+      ransom, reconstructing your data can be almost impossible and the ransom
+      itself may be excruciatingly expensive. Brightgate is a valued partner to
+      small businesses like yours searching for a zero administration answer to
+      today’s cybersecurity risks.</p>
+    <h2 id="how-we-secure"><a name="brightgate-basics">How we secure your
+        business and customers</a></h2>
+    <p> We built our product from the ground up, after extensive research, to ensure
+      that a cybersecurity platform used by small businesses would be both easy
+      to use and easy to administer. A couple of key ideas informed our design:</p>
+    <ul>
+      <li><b>Access:</b> What devices should have access to this device access? And, looking at
+        it from the opposite angle, what devices should this have device have access to?</li>
+      <li><b>Trust:</b> How much do you trust this device when it's on your
+        network?</li>
+    </ul>
+    <p>We recognized that building a secure network meant that devices that
+      fulfill different functions in your business should be provided different
+      types of access to one another. It's fundamental to our design: access is 
+      given where it's needed. Sometimes that's one-way. Important computers 
+      should be able to configure a thermostat, for example, but that thermostat 
+      shouldn't be allowed to attack those computers.</p>
+    <p>Next, we designed a more secure method of authorizing devices to use your networks. 
+      We make it easy for every employee to have their own username and password to connect 
+      devices like laptops, tablets, or phones. Devices that share a common Wi-Fi password, 
+      like thermostats or light switches, are on a separate network.</p>
+    <p>The end result?... TRUST GROUPS!</p>
+    <h3 id="trust-groups"><a name="trust-groups">Trust groups</a></h3>
+    <p>The Brightgate platform assigns each device connected to your network
+      into a <em>trust group</em>—a logical grouping of connected
+      devices. We make it easy to manage your network by providing default trust
+      groups and automating trust group assignment of every device.<strong>
+        Note: </strong>Until a device is assigned to a trust group, the device
+      can't use your network. </p>
+    <p>Trust groups are how we protect the devices on your network and reduce the risk that malware or viruses will spread. The trust group to which a
+      device is assigned affects both the level of trust for this device and the
+      device's access to to other devices when it is on your network. Devices
+      within a trust group communicate with and have access to both other
+      devices assigned to that trust group and devices assigned to trust groups
+      that are less trusted and known.</p>
+    <p>The less we know and trust a device, the less access we should give that device. 
+      That keeps untrusted devices from accessing or attacking other devices on your network.</p>
+    <h4 id="network-authentication-and-trust-groups"><a name="network-authentication-and-trust-groups">Network
+        authentication and trust groups work together</a></h4>
+    <p>The way you add a device to your network affects the trust group we assign that device into. Think of it
+      this way: phones and laptops owned by employees present a different type
+      of risk and trust than a Wi-Fi enabled thermostat. While the various types
+      of authentication are beyond the scope of this guide, it's helpful to
+      understand that Brightgate supports different types of network
+      authentication, which all use WPA2. </p>
+    <ol>
+      <li>Extensible Authentication Protocol (EAP), where each network user has
+        their own login ID and password.You can read more about EAP in this <a
+          href="http://en.wikipedia.org/wiki/Extensible_Authentication_Protocol">helpful
+          article from Wikipedia</a> </li>
+      <li>Pre-Shared Key (PSK) authentication, where all network users share the
+        same password. A pre-shared key (PSK) allows anyone who has the key to
+        use the wireless network.</li>
+      <li>guest, where all visitors are provided a rotating password that
+        periodically expires.</li>
+    </ol>
+    <p><strong>Note:</strong><span>&nbsp;</span>We recommend including the
+      suffix in the network name so it is clear to people choosing from among
+      them when adding a device or logging on for the first time. For example,
+      Acme Corp should name the networks<span>&nbsp;</span><code>Acme-eap</code>,<span>&nbsp;</span><code>Acme-psk</code>,
+      and<span>&nbsp;</span><code>Acme-guest</code><span>&nbsp;</span>when first
+      setting up their network.<span> </span>During the Alpha program,
+      Brightgate will set up your networks following this recommendation.</p>
+    <p></p>
+    <h3 id="automated-trust-group-assignment"><a name="automated-trust-group-assignment">Automated
+        trust group assignment</a></h3>
+    <p>Brightgate automatically assigns each device into a trust group,
+      following security policies that make sense based on the device’s
+      function; thermostats, security cameras, and other Internet-enabled tools
+      serve your organization in one way - phones and laptops serve your
+      organization in an entirely different way. Each of these devices presents
+      a different type of risk and requires a different ability to communicate
+      with other devices. The result? We’ll assign them different trust groups.</p>
+    <p>Our assignment of devices into a trust group is the result of thoughtful
+      planning, from both usability and security perspectives. A network
+      administrator's laptop, for example, must be able to communicate a with
+      Wi-Fi enabled thermostat to set it up properly, so the thermostat must be
+      accessible to the laptop that wishes to use it. When a device is added to
+      your network, Brightgate uses the type of authentication provided by the
+      device as part of the process to assign it to a trust group. If that
+      assignment doesn't suit your company policies, you can move the device as
+      discussed in<span> </span><a href="#changing-a-devices-trust-group-assignment">changing
+        a device's trust group assignment</a>.</p>
+    <p>A Wi-Fi enabled thermostat is a good example of why assignment into a
+      trust group makes your network safer. You want a thermostat to be
+      available to a known and trusted employee device, but you likely don't
+      want a laptop assigned the <code>guest</code> trust group to communicate
+      to that same thermostat. This makes sense — you typically don’t want
+      guests adjusting your thermostat, nor do you want guest laptops
+      communicating with and potentially infecting devices that you already
+      trust. Moreover, the thermostat's <code>devices</code> trust group means that a 
+      rogue thermostat won't be attacking either guest or employee devices.</p>
+    <p>The <code>core</code> trust group is most typically populated with
+      devices owned by network administrators or devices that are critical to
+      your business. Devices assigned to the <code>standard</code> trust group
+      are typically employee laptops and phones. In this set up, should an
+      employee laptop become infected with malware, that laptop will never be
+      able to infect the network administrator devices in the <code>core</code>
+      trust group. And the moment that laptop starts acting oddly, Brightgate
+      moves it to <code>quarantine</code>, so it can't infect the devices in
+      the <code>standard</code> trust group either.</p>
+    <p>Devices that aren’t assigned to a trust group are<span>&nbsp;</span><code>unenrolled</code>,
+      which means they have not been explicitly granted access to the network. They will not have 
+      credentials or be able to use your network. The most common <code>unenrolled</code> devices 
+      will be IoT devices that have the correct shared Wi-Fi password (PSK) but have not 
+      been authorized by an administrator. To keep your network secure, we only permit network access to devices that
+      have been assigned into a Brightgate trust group. This way, we can
+      determine how trusted or known the device is, assign it to an appropriate
+      trust group, and watch the device's behavior to keep your network secure.</p>
+    <p>Devices added to the EAP network are automatically added to the<span>&nbsp;</span><code>standard</code><span>&nbsp;</span>trust
+      group, though administrators may move them to a different trust group as
+      discussed in<span>&nbsp;</span><a href="#changing-a-devices-trust-group-assignment">changing
+        a device's trust group assignment</a>. Devices added to the PSK network
+      are automatically assigned to the<span>&nbsp;</span><code>devices</code><span>&nbsp;</span>trust
+      group. And guests are assigned to the<span>&nbsp;</span><code>guest</code><span>&nbsp;</span>trust
+      group.</p>
+    <p>This table provides examples of device types, network type, and default
+      trust group assignment:</p>
+    <table>
+      <thead>
+        <tr>
+          <th style="text-align: left;">Device Type</th>
+          <th style="text-align: left;">Network Type</th>
+          <th style="text-align: left;">Default Ring</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="text-align: left;">Laptop</td>
+          <td style="text-align: left;">EAP</td>
+          <td style="text-align: left;">standard</td>
+        </tr>
+        <tr>
+          <td style="text-align: left;">Tablet</td>
+          <td style="text-align: left;">EAP</td>
+          <td style="text-align: left;">standard</td>
+        </tr>
+        <tr>
+          <td style="text-align: left;">iPhone</td>
+          <td style="text-align: left;">EAP</td>
+          <td style="text-align: left;">standard</td>
+        </tr>
+        <tr>
+          <td style="text-align: left;">Nest Thermostat</td>
+          <td style="text-align: left;">PSK</td>
+          <td style="text-align: left;">devices</td>
+        </tr>
+        <tr>
+          <td style="text-align: left;">Guest contractor</td>
+          <td style="text-align: left;">guest</td>
+          <td style="text-align: left;">guest</td>
+        </tr>
+      </tbody>
+    </table>
+    <h4 id="default-trust-groups"><a name="default-trust-groups">Default trust
+        groups</a></h4>
+    <p>The Brightgate appliance provides a default set of trust groups, so
+      network administration isn’t a chore. During the alpha program, the
+      default trust group is the trust group into which a device is initially
+      enrolled. Devices authenticated using EAP are automatically added to the<span>&nbsp;</span><code>standard</code><span>&nbsp;</span>trust
+      group. Devices authenticated using PSK are automatically assigned to the<span>&nbsp;</span><code>devices</code><span>&nbsp;</span>trust
+      group. Administrators can move devices to a different trust group as
+      discussed in<span>&nbsp;</span><a href="#changing-a-devices-trust-group-assignment">changing
+        a device's trust group assignment</a>.</p>
+    <p>View the trust groups by selecting your site from the list, then the<span>&nbsp;</span><strong>Site
+        Status</strong><span>&nbsp;</span>page. The<span>&nbsp;</span><em>Trust
+        Group Configuration</em><span>&nbsp;</span>lists the trusts groups:</p>
+    <ul>
+      <li><code>core</code>: The trust group reserved for the most trusted devices.</li>
+      <li><code>devices</code>: The trust group for Internet of
+        Things (IoT) devices, such as thermostats or security cameras</li>
+      <li><code>guest</code>: The trust group for devices that require temporary
+        network access</li>
+      <li><code>quarantine</code>: The trust group for devices
+        that are behaving oddly</li>
+      <li><code>standard</code>: The trust group most appropriate for devices
+        owned by regular members of your team</li>
+      <li><code>unenrolled</code>: The trust group for all manually configured IoT devices or other unknown devices.</li>
+    </ul>
+    <h3 id="quarantined-devices"><a name="quarantined-devices">Quarantined
+        devices</a></h3>
+    <p>Quarantined devices are separated from other devices on your network to
+      prevent potential infection and maintain security. Quarantine serves as a
+      virtual “jail”. It’s where we put devices that look like they might be infected with a virus or bot. In
+      short, we’re preventing devices that exhibit odd or suspicious behavior
+      from communicating with the Internet as well as with other devices on your
+      network. Quarantine stops devices from infecting other devices, allowing
+      you to investigate them (with our helpful suggestions) and fix the issue
+      at hand.</p>
+    <p>For example, if a thermostat assigned to the <code>Devices</code> trust
+      group begins slowly dripping data to a URL with an unusual address or if
+      an automated security check of a laptop fails, the suspicious device is
+      automatically removed from its assigned trust group and moved to<span>&nbsp;</span><code>quarantine</code>.</p>
+    <p>You’ll get an alert when a vulnerability is identified and we'll move the
+      affected device into quarantine. We’ll also include information about why
+      we moved the device into quarantine. Once the identified issue is
+      resolved, the device is returned to the network and its previously
+      assigned trust group.</p>
     <!-- BRIGHTGATE CONTENT END -->
     <!-- BRIGHTGATE FOOT INSERTION POINT -->
   </body>
