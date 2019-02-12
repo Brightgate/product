@@ -105,19 +105,9 @@
 			}
 		},
 		{
-			"label": "Product: make vet-go",
+			"label": "Product: make check-go",
 			"type": "shell",
-			"command": "make vet-go",
-			"presentation": {
-				"reveal": "always",
-				"focus": true,
-				"panel": "new"
-			}
-		},
-		{
-			"label": "Product: make lint-go",
-			"type": "shell",
-			"command": "make lint-go",
+			"command": "make check-go",
 			"presentation": {
 				"reveal": "always",
 				"focus": true,

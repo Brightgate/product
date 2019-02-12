@@ -1,7 +1,7 @@
 /*
  * License: MIT Open Source
  * Copyright (c) Joe Linoff 2016
- * Wrap around golang.org/x/crypto/ssh/terminal to handle ^C interrupts 
+ * Wrap around golang.org/x/crypto/ssh/terminal to handle ^C interrupts
  * based on a suggestion by Konstantin Shaposhnikov in
  * this thread: https://groups.google.com/forum/#!topic/golang-nuts/kTVAbtee9UA.
  * Correctly resets terminal echo after ^C interrupts.
@@ -13,10 +13,10 @@ package main
 
 import (
 	"fmt"
+	"golang.org/x/crypto/ssh/terminal"
 	"os"
 	"os/signal"
 	"syscall"
-	"golang.org/x/crypto/ssh/terminal"
 )
 
 func getPassword(prompt string) (string, error) {

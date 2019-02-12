@@ -752,6 +752,12 @@ vet-go:
 lint-go:
 	$(GOLINT) -set_exit_status $(ALL_GOPKGS)
 
+fmt-go:
+	build/check-gofmt.sh
+
+# ordered in most-to-least useful to most developers
+check-go: vet-go lint-go fmt-go
+
 # Installation of appliance configuration files
 
 $(APPETC)/vendordefaults.csv: $(GOSRCBG)/ap-defaultpass/vendordefaults.csv | $(APPETC)

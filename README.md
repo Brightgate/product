@@ -63,7 +63,7 @@ $ make install
 $ make client-web
 $ make test
 $ make coverage
-$ make lint-go
+$ make check-go   # runs vet-go, lint-go, fmt-go
 $ make packages
 
 $ make clean

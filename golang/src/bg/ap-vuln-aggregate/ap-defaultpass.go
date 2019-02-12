@@ -74,12 +74,12 @@ func dpvuln(v aggVulnDescription, tgt net.IP) (bool, string, error) {
 		splitOutput := strings.Split(string(output), "\n")
 		if len(splitOutput) < 2 {
 			log.Fatal("Expected 2 or more lines; too short:\n",
-				   string(output))
+				string(output))
 		}
-		jsonVulns   := splitOutput[len(splitOutput) - 2]
+		jsonVulns := splitOutput[len(splitOutput)-2]
 		if _, err := apvuln.UnmarshalDPvulns([]byte(jsonVulns)); err != nil {
 			log.Fatal("Failed to unmarshal vulns: ",
-				  err, "\n", jsonVulns)
+				err, "\n", jsonVulns)
 		}
 		return true, jsonVulns, nil
 	}
