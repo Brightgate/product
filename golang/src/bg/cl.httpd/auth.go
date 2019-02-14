@@ -43,7 +43,7 @@ func init() {
 
 type authHandler struct {
 	sessionStore sessions.Store
-	applianceDB  appliancedb.DataStore
+	db           appliancedb.DataStore
 	providers    []goth.Provider
 }
 
@@ -242,7 +242,7 @@ func (a *authHandler) findOrganization(ctx context.Context, c echo.Context,
 	}
 
 	if tenant != "" {
-		rule, err := a.applianceDB.OAuth2OrganizationRuleTest(ctx,
+		rule, err := a.db.OAuth2OrganizationRuleTest(ctx,
 			user.Provider, appliancedb.RuleTypeTenant, tenant)
 		if err == nil {
 			return rule.OrganizationUUID, nil
@@ -252,7 +252,7 @@ func (a *authHandler) findOrganization(ctx context.Context, c echo.Context,
 	// Next see if there is a domain level rule for the user
 	_, domainPart, err := splitEmail(user.Email)
 	if err == nil && domainPart != "" {
-		rule, err := a.applianceDB.OAuth2OrganizationRuleTest(ctx,
+		rule, err := a.db.OAuth2OrganizationRuleTest(ctx,
 			user.Provider, appliancedb.RuleTypeDomain, domainPart)
 		if err == nil {
 			return rule.OrganizationUUID, nil
@@ -261,7 +261,7 @@ func (a *authHandler) findOrganization(ctx context.Context, c echo.Context,
 
 	// Finally, see if there is an email address level rule for the user
 	if user.Email != "" {
-		rule, err := a.applianceDB.OAuth2OrganizationRuleTest(ctx,
+		rule, err := a.db.OAuth2OrganizationRuleTest(ctx,
 			user.Provider, appliancedb.RuleTypeEmail, user.Email)
 		if err == nil {
 			return rule.OrganizationUUID, nil
@@ -298,7 +298,7 @@ func (a *authHandler) mkNewUser(c echo.Context, user goth.User,
 	c.Logger().Infof("Creating new user: person=%#v account=%#v oauth2ID=%#v", person, account, oauth2ID)
 
 	ctx := c.Request().Context()
-	tx, err := a.applianceDB.BeginTxx(ctx, nil)
+	tx, err := a.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -306,15 +306,15 @@ func (a *authHandler) mkNewUser(c echo.Context, user goth.User,
 	if err != nil {
 		return nil, err
 	}
-	err = a.applianceDB.InsertPersonTx(ctx, tx, person)
+	err = a.db.InsertPersonTx(ctx, tx, person)
 	if err != nil {
 		return nil, err
 	}
-	err = a.applianceDB.InsertAccountTx(ctx, tx, account)
+	err = a.db.InsertAccountTx(ctx, tx, account)
 	if err != nil {
 		return nil, err
 	}
-	err = a.applianceDB.InsertOAuth2IdentityTx(ctx, tx, oauth2ID)
+	err = a.db.InsertOAuth2IdentityTx(ctx, tx, oauth2ID)
 	if err != nil {
 		return nil, err
 	}
@@ -322,7 +322,7 @@ func (a *authHandler) mkNewUser(c echo.Context, user goth.User,
 	if err != nil {
 		return nil, err
 	}
-	return a.applianceDB.LoginInfoByProviderAndSubject(
+	return a.db.LoginInfoByProviderAndSubject(
 		context.TODO(), user.Provider, user.UserID)
 }
 
@@ -350,7 +350,7 @@ func (a *authHandler) getProviderCallback(c echo.Context) error {
 	}
 
 	c.Logger().Infof("Lookup loginInfo for (%v,%v)", user.Provider, user.UserID)
-	loginInfo, err := a.applianceDB.LoginInfoByProviderAndSubject(
+	loginInfo, err := a.db.LoginInfoByProviderAndSubject(
 		ctx, user.Provider, user.UserID)
 	if err != nil {
 		if _, ok := err.(appliancedb.NotFoundError); ok {
@@ -385,7 +385,7 @@ func (a *authHandler) getProviderCallback(c echo.Context) error {
 			OAuth2IdentityID: loginInfo.OAuth2IdentityID,
 			Token:            user.RefreshToken,
 		}
-		err = a.applianceDB.UpsertOAuth2RefreshToken(ctx, &tok)
+		err = a.db.UpsertOAuth2RefreshToken(ctx, &tok)
 		if err != nil {
 			c.Logger().Warnf("failed to store refresh token: %v", err)
 		}
@@ -434,13 +434,60 @@ func (a *authHandler) getLogout(c echo.Context) error {
 	return c.Redirect(http.StatusTemporaryRedirect, "/")
 }
 
-// getUserID implements /auth/userid; for now this is for development purposes.
+type userIDResponse struct {
+	Username        string `json:"username"`
+	Email           string `json:"email"`
+	PhoneNumber     string `json:"phoneNumber"`
+	Name            string `json:"name"`
+	Organization    string `json:"organization"`
+	SelfProvisioned bool   `json:"selfProvisioned"`
+}
+
+// getUserID implements /auth/userid, which returns information about the
+// logged-in user.
 func (a *authHandler) getUserID(c echo.Context) error {
+	ctx := c.Request().Context()
 	session, err := a.sessionStore.Get(c.Request(), "bg_login")
-	if err != nil || session.Values["userid"] == nil {
+	if err != nil {
 		return echo.NewHTTPError(http.StatusUnauthorized)
 	}
-	return c.JSON(http.StatusOK, session.Values["userid"].(string))
+	au, ok := session.Values["account_uuid"].(string)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized)
+	}
+	accountUUID, err := uuid.FromString(au)
+	if err != nil || accountUUID == uuid.Nil {
+		return echo.NewHTTPError(http.StatusUnauthorized)
+	}
+
+	account, err := a.db.AccountByUUID(ctx, accountUUID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+	person, err := a.db.PersonByUUID(ctx, account.PersonUUID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+	resp := userIDResponse{
+		Username:    account.Email,
+		Email:       account.Email,
+		PhoneNumber: account.PhoneNumber,
+		Name:        person.Name,
+	}
+	if account.OrganizationUUID != appliancedb.NullOrganizationUUID {
+		organization, err := a.db.OrganizationByUUID(ctx, account.OrganizationUUID)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err)
+		}
+		resp.Organization = organization.Name
+	}
+
+	_, err = a.db.AccountSecretsByUUID(ctx, accountUUID)
+	if err == nil {
+		resp.SelfProvisioned = true
+	}
+
+	return c.JSON(http.StatusOK, &resp)
 }
 
 // newAuthHandler creates an authHandler to handle authentication endpoints
@@ -450,7 +497,7 @@ func newAuthHandler(r *echo.Echo, sessionStore sessions.Store, applianceDB appli
 	h := &authHandler{
 		sessionStore: sessionStore,
 		providers:    make([]goth.Provider, 0),
-		applianceDB:  applianceDB,
+		db:           applianceDB,
 	}
 	gothic.Store = sessionStore
 	providers := []providerFunc{googleProvider, azureadv2Provider, openidConnectProvider, auth0Provider}

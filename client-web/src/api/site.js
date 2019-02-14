@@ -292,7 +292,8 @@ async function authApplianceLogout() {
 async function authUserid() {
   const u = buildUrl('/auth/userid');
   try {
-    await axios.get(u);
+    const res = await axios.get(u);
+    return res.data;
   } catch (err) {
     debug('authUserid failed', err);
     throw err;

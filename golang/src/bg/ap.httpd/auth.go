@@ -168,20 +168,41 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type daUserID struct {
+	Username        string `json:"username"`
+	Email           string `json:"email"`
+	PhoneNumber     string `json:"phoneNumber"`
+	Name            string `json:"name"`
+	Organization    string `json:"organization"`
+	SelfProvisioned bool   `json:"selfProvisioned"`
+}
+
 // GET /userid
 func userIDHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	uid := getRequestUID(r)
 	if uid == "" {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-	}
-
-	b, err := json.Marshal(uid)
-	if err != nil {
-		slog.Infof("failed to json marshal uid: %v", err)
 		return
 	}
-	_, _ = w.Write(b)
+	user, err := config.GetUser(uid)
+	if err != nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+
+	resp := &daUserID{
+		Username:        user.UID,
+		Email:           user.Email,
+		PhoneNumber:     user.TelephoneNumber,
+		Name:            user.DisplayName,
+		Organization:    "",
+		SelfProvisioned: user.SelfProvisioning,
+	}
+
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		panic(err)
+	}
 }
 
 func getRequestUID(r *http.Request) string {

@@ -874,6 +874,7 @@ $(APPBIN)/ap.configd: \
 $(APPBIN)/ap.httpd: \
 	$(GOSRCBG)/ap.httpd/ap.httpd.go \
 	$(GOSRCBG)/ap.httpd/api-demo.go \
+	$(GOSRCBG)/ap.httpd/auth.go \
 	$(GOSRCBG)/ap_common/certificate/certificate.go \
 	$(GOSRCBG)/ap_common/data/dns.go
 $(APPBIN)/ap.identifierd: $(GOSRCBG)/ap.identifierd/identifierd.go

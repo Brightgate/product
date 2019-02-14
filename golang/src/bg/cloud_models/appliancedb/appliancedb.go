@@ -784,6 +784,10 @@ func (db *ApplianceDB) InsertHeartbeatIngest(ctx context.Context, heartbeat *Hea
 	return err
 }
 
+// NullOrganizationUUID is a reserved UUID for users which have no associated
+// organization.  This is not expected to be a common case.
+var NullOrganizationUUID = uuid.Must(uuid.FromString("00000000-0000-0000-0000-000000000000"))
+
 // Organization represents a group or business
 type Organization struct {
 	// UUID is used as the primary key for tracking a customer

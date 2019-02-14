@@ -80,6 +80,15 @@ const mockConfig = {
   '@/network/default_ring/wpa-psk': 'guest',
 };
 
+const mockUserid = {
+  'username': 'test@example.com',
+  'email': 'test@example.com',
+  'phoneNumber': '+1 650-555-1212',
+  'name': 'Foo Bar',
+  'organization': 'example corp',
+  'selfProvisioned': true,
+};
+
 function configHandler(config) {
   const parsedURL = new URL(config.url, 'http://example.com/');
   const search = parsedURL.search.slice(1, Infinity);
@@ -111,7 +120,7 @@ function mockAxios(normalAxios, mode) {
     .onGet(/\/api\/sites\/.+\/rings/).reply(200, mockRings)
     .onGet('/auth/sites/login').reply(200)
     .onGet('/auth/logout').reply(200)
-    .onGet('/auth/userid').reply(200)
+    .onGet('/auth/userid').reply(200, mockUserid)
     .onGet('/auth/providers').reply(200, mockProviders)
     .onAny().reply(500);
 

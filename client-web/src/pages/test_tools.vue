@@ -173,6 +173,7 @@ export default {
       'loggedIn',
       'mock',
       'testAppMode',
+      'userInfo',
     ]),
   },
 

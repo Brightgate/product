@@ -33,6 +33,7 @@ const LOCAL_SITE_ID = '0';
 class Site {
   constructor(id) {
     assert.equal(typeof id, 'string');
+    debug(`constructing new Site id=${id}`);
     this.id = id;
     this.regInfo = {}; // registry Information
     if (this.id === LOCAL_SITE_ID) {
@@ -41,11 +42,14 @@ class Site {
         name: 'Local Site',
       };
     }
+    this._devices = [];
+    // Run the devices setter
     this.devices = [];
     this.alerts = [];
     this.rings = {};
     this.users = {};
     this.networkConfig = {};
+    debug(`done constructing new Site id=${id}`);
   }
 
   get name() {
@@ -144,6 +148,7 @@ const state = {
   sites: {},
   currentSiteID: nullSite.id,
   currentSite: nullSite,
+  userInfo: {},
 };
 
 const mutations = {
@@ -219,6 +224,10 @@ const mutations = {
     getSite(state, id).users[user.UUID] = user;
   },
 
+  setUserInfo(state, newValue) {
+    state.userInfo = newValue;
+  },
+
   setLoggedIn(state, newValue) {
     state.loggedIn = newValue;
   },
@@ -270,6 +279,7 @@ const getters = {
   currentSiteID: (state) => state.currentSiteID,
   leftPanelVisible: (state) => state.leftPanelVisible,
   authProviders: (state) => state.authProviders,
+  userInfo: (state) => state.userInfo,
 
   siteAlerts: (state) => (siteID) => {
     return getSite(state, siteID).alerts;
@@ -662,7 +672,8 @@ const actions = {
   async checkLogin(context) {
     let loggedin = false;
     try {
-      await siteApi.authUserid();
+      const userInfo = await siteApi.authUserid();
+      context.commit('setUserInfo', userInfo);
       loggedin = true;
     } catch (err) {
       loggedin = false;
