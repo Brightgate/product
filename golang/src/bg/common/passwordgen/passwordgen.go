@@ -68,6 +68,7 @@ func randomRune(a []rune) rune {
 // Don't create inconsistent specs, e.g.: AllowedDigits = []{}; NumDigits = 1
 //
 type PasswordSpec struct {
+	NamePrefix     string // prefix of name of this spec, used with String()
 	HumanWords     string // "" for random; ISO language code, e.g. "en_US" for words
 	AllowedLetters []rune // IGNORED if HumanWords == true
 	UpperLower     bool   // Must have both uppercase and lowercase
@@ -84,6 +85,7 @@ type PasswordSpec struct {
 // WordPasswordSpec has 4.7 bits of entropy per character
 // Used if our wordlist fails
 var WordPasswordSpec = PasswordSpec{
+	NamePrefix: "Word",
 	HumanWords: "",
 	AllowedLetters: []rune{
 		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
@@ -101,6 +103,7 @@ var WordPasswordSpec = PasswordSpec{
 //
 // Avoids confusing character overlaps like 0,O, 1,I,l, t,+
 var LimitedPasswordSpec8 = PasswordSpec{
+	NamePrefix: "Limited",
 	HumanWords: "",
 	AllowedLetters: []rune{
 		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'm', 'n', 'p', 'q',
@@ -119,6 +122,7 @@ var LimitedPasswordSpec8 = PasswordSpec{
 //
 // Avoids confusing character overlaps like 0,O, 1,I,l, t,+
 var LimitedPasswordSpec10 = PasswordSpec{
+	NamePrefix: "Limited",
 	HumanWords: "",
 	AllowedLetters: []rune{
 		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'm', 'n', 'p', 'q',
@@ -137,6 +141,7 @@ var LimitedPasswordSpec10 = PasswordSpec{
 //
 // A 20-char pw = ~118 bits with 2 required digits + 2 symbols
 var FlexiblePasswordSpec = PasswordSpec{
+	NamePrefix: "Flexible",
 	HumanWords: "",
 	AllowedLetters: []rune{
 		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
@@ -166,6 +171,7 @@ var FlexiblePasswordSpec = PasswordSpec{
 // TODO: verify allowed symbols are all permitted
 //
 var SecurityTheaterPasswordSpec = PasswordSpec{
+	NamePrefix: "SecurityTheater",
 	HumanWords: "",
 	AllowedLetters: []rune{
 		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
@@ -196,6 +202,7 @@ var SecurityTheaterPasswordSpec = PasswordSpec{
 //
 // Minimum: 4 words + 1 digit = ~ 55 bits of entropy
 var HumanPasswordSpec = PasswordSpec{
+	NamePrefix: "Human",
 	HumanWords: "en_US",
 	AllowedLetters: []rune{
 		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
@@ -326,6 +333,12 @@ func rollDiceware() (string, error) {
 
 // rollDicewareEntropy estimates each word at log2(7776) (6^5)
 const rollDicewareEntropy = float64(12.9)
+
+// String produces a printable or recordable description of the spec (n.b. it
+// is not a complete description).
+func (spec *PasswordSpec) String() string {
+	return fmt.Sprintf("%s-%d-%d", spec.NamePrefix, spec.MaxLength, spec.TargetEntropy)
+}
 
 // HumanPassword is based on EFF diceware but to also satisfy password
 // "security" rules that may require a special character and an integer

@@ -516,11 +516,11 @@ func testAccount(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Su
 	assert.Error(err)
 	assert.IsType(err, NotFoundError{})
 
-	as, err := ds.AccountSecretsByUUID(ctx, testAccount1.UUID)
+	_, err = ds.AccountSecretsByUUID(ctx, testAccount1.UUID)
 	assert.Error(err)
 	assert.IsType(err, NotFoundError{})
 
-	testAs := &AccountSecrets{testAccount1.UUID, "k1", "k2"}
+	testAs := &AccountSecrets{testAccount1.UUID, "k1", "regime", time.Now(), "k2", "regime", time.Now()}
 	err = ds.UpsertAccountSecrets(ctx, testAs)
 	assert.NoError(err, "expected success")
 
@@ -528,9 +528,12 @@ func testAccount(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Su
 	err = ds.UpsertAccountSecrets(ctx, testAs)
 	assert.NoError(err, "expected success")
 
-	as, err = ds.AccountSecretsByUUID(ctx, testAccount1.UUID)
+	as, err := ds.AccountSecretsByUUID(ctx, testAccount1.UUID)
 	assert.NoError(err)
-	assert.Equal(*testAs, *as)
+	assert.Equal(testAs.ApplianceUserBcrypt, as.ApplianceUserBcrypt)
+	assert.Equal(testAs.ApplianceUserMSCHAPv2, as.ApplianceUserMSCHAPv2)
+	assert.WithinDuration(time.Now(), as.ApplianceUserMSCHAPv2Ts, time.Second)
+	assert.WithinDuration(time.Now(), as.ApplianceUserBcryptTs, time.Second)
 }
 
 func testOAuth2Identity(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {

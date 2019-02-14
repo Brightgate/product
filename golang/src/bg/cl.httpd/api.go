@@ -51,6 +51,8 @@ type apiSelfProvisionInfo struct {
 	Verifier string `json:"verifier"`
 }
 
+var pwRegime = passwordgen.HumanPasswordSpec.String()
+
 // getAccountPasswordGen generates a password for the user, and sends it back
 // to the user for inspection and, if desired, acceptance.  We desire to have
 // the password in plaintext as little as possible, so we store (in the
@@ -139,7 +141,7 @@ func pgpSymEncrypt(plaintext string, passphrase []byte) (string, error) {
 	return b.String(), nil
 }
 
-func (a *apiHandler) savePasswords(ctx context.Context, accountUUID uuid.UUID, userpw, mschapv2pw string) error {
+func (a *apiHandler) savePasswords(ctx context.Context, accountUUID uuid.UUID, userpw, userpwRegime, mschapv2pw, mschapv2pwRegime string) error {
 	userpwCipherText, err := pgpSymEncrypt(userpw, a.accountSecretKey)
 	if err != nil {
 		return err
@@ -148,10 +150,15 @@ func (a *apiHandler) savePasswords(ctx context.Context, accountUUID uuid.UUID, u
 	if err != nil {
 		return err
 	}
+	now := time.Now()
 	accountSecrets := &appliancedb.AccountSecrets{
-		AccountUUID:           accountUUID,
-		ApplianceUserBcrypt:   userpwCipherText,
-		ApplianceUserMSCHAPv2: mschapv2pwCipherText,
+		AccountUUID:                 accountUUID,
+		ApplianceUserBcrypt:         userpwCipherText,
+		ApplianceUserBcryptRegime:   userpwRegime,
+		ApplianceUserBcryptTs:       now,
+		ApplianceUserMSCHAPv2:       mschapv2pwCipherText,
+		ApplianceUserMSCHAPv2Regime: mschapv2pwRegime,
+		ApplianceUserMSCHAPv2Ts:     now,
 	}
 	err = a.db.UpsertAccountSecrets(ctx, accountSecrets)
 	if err != nil {
@@ -222,7 +229,7 @@ func (a *apiHandler) postAccountSelfProvision(c echo.Context) error {
 
 	// We've now got confirmation that the user wants to provision this
 	// password; so stash it in the database.
-	err = a.savePasswords(ctx, accountUUID, userpwSessionVal, mschapSessionVal)
+	err = a.savePasswords(ctx, accountUUID, userpwSessionVal, pwRegime, mschapSessionVal, pwRegime)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}

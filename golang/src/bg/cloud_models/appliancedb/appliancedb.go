@@ -1023,9 +1023,13 @@ func (db *ApplianceDB) InsertAccountTx(ctx context.Context, dbx DBX,
 // AccountSecrets represents an entry in the account_secrets table.
 // This data is encrypted (on the client-side).
 type AccountSecrets struct {
-	AccountUUID           uuid.UUID `db:"account_uuid"`
-	ApplianceUserBcrypt   string    `db:"appliance_user_bcrypt"`
-	ApplianceUserMSCHAPv2 string    `db:"appliance_user_mschapv2"`
+	AccountUUID                 uuid.UUID `db:"account_uuid"`
+	ApplianceUserBcrypt         string    `db:"appliance_user_bcrypt"`
+	ApplianceUserBcryptRegime   string    `db:"appliance_user_bcrypt_regime"`
+	ApplianceUserBcryptTs       time.Time `db:"appliance_user_bcrypt_ts"`
+	ApplianceUserMSCHAPv2       string    `db:"appliance_user_mschapv2"`
+	ApplianceUserMSCHAPv2Regime string    `db:"appliance_user_mschapv2_regime"`
+	ApplianceUserMSCHAPv2Ts     time.Time `db:"appliance_user_mschapv2_ts"`
 }
 
 // AccountSecretsByUUID selects a row from account_secrets by user account
@@ -1061,16 +1065,21 @@ func (db *ApplianceDB) UpsertAccountSecretsTx(ctx context.Context, dbx DBX,
 	}
 	_, err := dbx.NamedExecContext(ctx,
 		`INSERT INTO account_secrets
-                   (account_uuid, appliance_user_bcrypt, appliance_user_mschapv2)
-                 VALUES (:account_uuid, :appliance_user_bcrypt, :appliance_user_mschapv2)
-                 ON CONFLICT (account_uuid)
-                 DO UPDATE SET (
-                   appliance_user_bcrypt,
-                   appliance_user_mschapv2
-                 ) = (
-                   EXCLUDED.appliance_user_bcrypt,
-                   EXCLUDED.appliance_user_mschapv2
-                 )`, as)
+		  (account_uuid,
+		   appliance_user_bcrypt, appliance_user_bcrypt_regime, appliance_user_bcrypt_ts,
+		   appliance_user_mschapv2, appliance_user_mschapv2_regime, appliance_user_mschapv2_ts)
+		 VALUES
+		  (:account_uuid,
+		  :appliance_user_bcrypt, :appliance_user_bcrypt_regime, :appliance_user_bcrypt_ts,
+		  :appliance_user_mschapv2, :appliance_user_mschapv2_regime, :appliance_user_mschapv2_ts)
+		 ON CONFLICT (account_uuid)
+		 DO UPDATE SET (
+		   appliance_user_bcrypt, appliance_user_bcrypt_regime, appliance_user_bcrypt_ts,
+		   appliance_user_mschapv2, appliance_user_mschapv2_regime, appliance_user_mschapv2_ts
+		 ) = (
+		   EXCLUDED.appliance_user_bcrypt, EXCLUDED.appliance_user_bcrypt_regime, EXCLUDED.appliance_user_bcrypt_ts,
+		   EXCLUDED.appliance_user_mschapv2, EXCLUDED.appliance_user_mschapv2_regime, EXCLUDED.appliance_user_mschapv2_ts
+		 )`, as)
 	return err
 }
 
