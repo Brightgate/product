@@ -244,7 +244,11 @@ func mkRouterHTTPS(sessionStore sessions.Store) *echo.Echo {
 		log.Printf("Disabling TLS for connection to Configd")
 	}
 
-	_ = newAPIHandler(r, applianceDB, sessionStore, getConfigClientHandle, accountSecret)
+	wares := []echo.MiddlewareFunc{
+		newSessionMiddleware(sessionStore).Process,
+	}
+	_ = newSiteHandler(r, applianceDB, wares, getConfigClientHandle)
+	_ = newAccountHandler(r, applianceDB, wares, sessionStore, getConfigClientHandle, accountSecret)
 	hdl, err := getConfigClientHandle("00000000-0000-0000-0000-000000000000")
 	if err != nil {
 		log.Fatalf("failed to make Config Client: %s", err)

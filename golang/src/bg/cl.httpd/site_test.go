@@ -11,7 +11,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -153,8 +152,11 @@ func TestSites(t *testing.T) {
 	// Setup Echo
 	ss := sessions.NewCookieStore(securecookie.GenerateRandomKey(32),
 		securecookie.GenerateRandomKey(32))
+	mw := []echo.MiddlewareFunc{
+		newSessionMiddleware(ss).Process,
+	}
 	e := echo.New()
-	_ = newAPIHandler(e, dMock, ss, getMockClientHandle, securecookie.GenerateRandomKey(32))
+	_ = newSiteHandler(e, dMock, mw, getMockClientHandle)
 
 	// Setup request
 	req, rec := setupReqRec(echo.GET, "/api/sites", nil, ss)
@@ -186,8 +188,11 @@ func TestSitesUUID(t *testing.T) {
 
 	// Setup Echo
 	ss := sessions.NewCookieStore(securecookie.GenerateRandomKey(32))
+	mw := []echo.MiddlewareFunc{
+		newSessionMiddleware(ss).Process,
+	}
 	e := echo.New()
-	_ = newAPIHandler(e, dMock, ss, getMockClientHandle, securecookie.GenerateRandomKey(32))
+	_ = newSiteHandler(e, dMock, mw, getMockClientHandle)
 
 	// Setup request
 	req, rec := setupReqRec(echo.GET,
@@ -215,77 +220,15 @@ func TestSitesUUID(t *testing.T) {
 	}
 }
 
-func TestAccountsGenAndProvision(t *testing.T) {
-	var err error
+func TestSiteUnauthorized(t *testing.T) {
 	assert := require.New(t)
-	// Mock DB
-	dMock := &mocks.DataStore{}
-	dMock.On("AccountByUUID", mock.Anything, mock.Anything).Return(&mockAccount, nil)
-	dMock.On("CustomerSitesByAccount", mock.Anything, mock.Anything).Return(mockSites, nil)
-	dMock.On("PersonByUUID", mock.Anything, mock.Anything).Return(&mockPerson, nil)
-	dMock.On("UpsertAccountSecrets", mock.Anything, mock.Anything).Return(nil)
-	defer dMock.AssertExpectations(t)
-
-	// Setup Echo
 	ss := sessions.NewCookieStore(securecookie.GenerateRandomKey(32))
-	e := echo.New()
-	_ = newAPIHandler(e, dMock, ss, getMockClientHandle, securecookie.GenerateRandomKey(32))
-
-	// Setup request for password generation
-	req, rec := setupReqRec(echo.GET,
-		fmt.Sprintf("/api/account/0/passwordgen"), nil, ss)
-
-	// Test
-	e.ServeHTTP(rec, req)
-	assert.Equal(http.StatusOK, rec.Code)
-	t.Logf("return body:Svc %s", rec.Body.String())
-
-	var ret apiSelfProvisionInfo
-	err = json.Unmarshal(rec.Body.Bytes(), &ret)
-	assert.NoError(err)
-	assert.NotEmpty(ret.Password)
-	assert.Equal(mockAccount.Email, ret.Username)
-
-	// Go around again, see that it's different
-	req, rec = setupReqRec(echo.GET,
-		fmt.Sprintf("/api/account/0/passwordgen"), nil, ss)
-
-	// Test
-	e.ServeHTTP(rec, req)
-	assert.Equal(http.StatusOK, rec.Code)
-	t.Logf("return body:Svc %s", rec.Body.String())
-	var ret2 apiSelfProvisionInfo
-	cookies := rec.Result().Cookies()
-	err = json.Unmarshal(rec.Body.Bytes(), &ret2)
-
-	assert.Equal(ret.Username, ret2.Username)
-	assert.NotEqual(ret.Password, ret2.Password)
-
-	body := apiSelfProvisionInfo{
-		Username: ret2.Username,
-		Password: "anything",
-		Verifier: ret2.Verifier,
+	mw := []echo.MiddlewareFunc{
+		newSessionMiddleware(ss).Process,
 	}
-	bodyBytes, err := json.Marshal(body)
-	assert.NoError(err)
-
-	// Now accept the generated password
-	rec = httptest.NewRecorder()
-	req = httptest.NewRequest(echo.POST, "/api/account/0/selfprovision", bytes.NewReader(bodyBytes))
-	req.AddCookie(cookies[0])
-	req.Header.Add("Content-Type", "application/json")
-	// Test
-	e.ServeHTTP(rec, req)
-	t.Logf("return body:Svc %s", rec.Body.String())
-	assert.Equal(http.StatusFound, rec.Code)
-}
-
-func TestUnauthorized(t *testing.T) {
-	assert := require.New(t)
-	ss := sessions.NewCookieStore(securecookie.GenerateRandomKey(32))
 	e := echo.New()
 	dMock := &mocks.DataStore{}
-	h := newAPIHandler(e, dMock, ss, getMockClientHandle, securecookie.GenerateRandomKey(32))
+	h := newSiteHandler(e, dMock, mw, getMockClientHandle)
 
 	testCases := []struct {
 		path    string

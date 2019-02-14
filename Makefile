@@ -1015,10 +1015,11 @@ $(CLOUDBIN)/cl.eventd: \
 	$(GOSRCBG)/cl.eventd/inventory.go \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.httpd: \
-	$(GOSRCBG)/cl.httpd/cl.httpd.go \
-	$(GOSRCBG)/cl.httpd/auth.go \
-	$(GOSRCBG)/cl.httpd/api.go \
 	$(GOSRCBG)/cl.httpd/access.go \
+	$(GOSRCBG)/cl.httpd/account.go \
+	$(GOSRCBG)/cl.httpd/auth.go \
+	$(GOSRCBG)/cl.httpd/cl.httpd.go \
+	$(GOSRCBG)/cl.httpd/site.go \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.rpcd: \
 	$(GOSRCBG)/cl.rpcd/cfg_relay.go \

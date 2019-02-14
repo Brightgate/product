@@ -473,3 +473,34 @@ func newAuthHandler(r *echo.Echo, sessionStore sessions.Store, applianceDB appli
 	r.GET("/auth/userid", h.getUserID)
 	return h
 }
+
+type sessionMiddleware struct {
+	sessionStore sessions.Store
+}
+
+func newSessionMiddleware(sessionStore sessions.Store) *sessionMiddleware {
+	return &sessionMiddleware{
+		sessionStore,
+	}
+}
+
+// Process checks that the user has a valid login session, and places the
+// account_uuid into the echo context for use in subsequent handlers.
+func (sm *sessionMiddleware) Process(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		session, err := sm.sessionStore.Get(c.Request(), "bg_login")
+		if err != nil {
+			return echo.NewHTTPError(http.StatusUnauthorized)
+		}
+		au, ok := session.Values["account_uuid"].(string)
+		if !ok {
+			return echo.NewHTTPError(http.StatusUnauthorized)
+		}
+		accountUUID, err := uuid.FromString(au)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusUnauthorized)
+		}
+		c.Set("account_uuid", accountUUID)
+		return next(c)
+	}
+}
