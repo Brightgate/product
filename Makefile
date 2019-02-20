@@ -893,6 +893,7 @@ $(APPBIN)/ap.mcp:	\
 	$(GOSRCBG)/ap.mcp/api.go \
 	$(GOSRCBG)/ap.mcp/daemon.go \
 	$(GOSRCBG)/ap.mcp/mcp.go \
+	$(GOSRCBG)/ap.mcp/orphan.go \
 	$(GOSRCBG)/ap.mcp/satellite.go
 $(APPBIN)/ap.networkd: \
 	$(GOSRCBG)/ap.networkd/filterd.go \

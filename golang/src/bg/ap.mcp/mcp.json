@@ -3,7 +3,9 @@
         "Name": "brokerd",
         "Binary": "ap.brokerd",
         "Privileged": false,
-        "Modes": [ "core", "gateway", "http-dev" ]
+        "Modes": [ "core", "gateway", "http-dev" ],
+	"MemWarn": 18,
+	"MemKill": 25
     },
     "configd": {
         "Name": "configd",
@@ -11,21 +13,27 @@
         "DependsOn": "brokerd",
         "Privileged": true,
         "Options": [ "-propdir=/etc/" ],
-        "Modes": [ "core", "gateway", "http-dev" ]
+        "Modes": [ "core", "gateway", "http-dev" ],
+	"MemWarn": 28,
+	"MemKill": 40
     },
     "httpd": {
         "Name": "httpd",
         "Binary": "ap.httpd",
         "DependsOn": "networkd",
         "Privileged": true,
-        "Modes": [ "gateway", "http-dev" ]
+        "Modes": [ "gateway", "http-dev" ],
+	"MemWarn": 25,
+	"MemKill": 30
     },
     "identifierd": {
         "Name": "identifierd",
         "Binary": "ap.identifierd",
         "DependsOn": "configd",
         "Privileged": true,
-        "Modes": [ "gateway" ]
+        "Modes": [ "gateway" ],
+	"MemWarn": 60,
+	"MemKill": 65
     },
     "logd": {
         "Name": "logd",
@@ -33,21 +41,27 @@
         "DependsOn": "brokerd",
         "Privileged": true,
         "Options": [ "-logdir=/var/spool/logd" ],
-        "Modes": [ "gateway" ]
+        "Modes": [ "gateway" ],
+	"MemWarn": 18,
+	"MemKill": 22
     },
     "rpcd": {
         "Name": "rpcd",
         "Binary": "ap.rpcd",
         "DependsOn": "configd",
         "Privileged": true,
-        "Modes": [ "gateway" ]
+        "Modes": [ "gateway" ],
+	"MemWarn": 25,
+	"MemKill": 30
     },
     "networkd": {
         "Name": "networkd",
         "Binary": "ap.networkd",
         "DependsOn": "configd",
         "Privileged": true,
-        "Modes": [ "core", "gateway", "satellite" ]
+        "Modes": [ "core", "gateway", "satellite" ],
+	"MemWarn": 25,
+	"MemKill": 30
     },
     "prometheus": {
         "Name": "prometheus",
@@ -59,14 +73,18 @@
             "-storage.local.path=$APROOT/var/prometheus-data",
 	    "-log.level=warn"
         ],
-        "Modes": [ "gateway" ]
+        "Modes": [ "gateway" ],
+	"MemWarn": 35,
+	"MemKill": 45
     },
     "serviced": {
         "Name": "serviced",
         "Binary": "ap.serviced",
         "DependsOn": "networkd",
         "Privileged": true,
-        "Modes": [ "core", "gateway" ]
+        "Modes": [ "core", "gateway" ],
+	"MemWarn": 30,
+	"MemKill": 35
     },
     "userauthd": {
         "Name": "userauthd",
@@ -74,7 +92,9 @@
         "DependsOn": "configd",
         "Privileged": true,
         "Options":  [ "-template_dir=$APROOT/etc/templates/ap.userauthd" ],
-        "Modes": [ "core", "gateway" ]
+        "Modes": [ "core", "gateway" ],
+	"MemWarn": 20,
+	"MemKill": 25
     },
     "watchd": {
         "Name": "watchd",
@@ -82,6 +102,8 @@
         "DependsOn": "networkd",
         "Privileged": true,
         "Options": [ "-dir /var/spool/watchd" ],
-        "Modes": [ "gateway" ]
+        "Modes": [ "gateway" ],
+	"MemWarn": 75,
+	"MemKill": 90
     }
 }

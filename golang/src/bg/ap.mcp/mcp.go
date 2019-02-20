@@ -92,6 +92,7 @@ func logDebug(format string, v ...interface{}) {
 func signalHandler() {
 	sig := make(chan os.Signal, 3)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+
 	for done := false; !done; {
 		s := <-sig
 		switch s {
@@ -102,9 +103,7 @@ func signalHandler() {
 			loadDefinitions()
 
 		default:
-			logInfo("Signal %v received, stopping childen", s)
-			all := "all"
-			handleStop(selectTargets(&all))
+			logInfo("Signal %v received, shutting down", s)
 			done = true
 		}
 	}
@@ -243,6 +242,18 @@ func profile() {
 	logWarn("Profiler exited: %v", err)
 }
 
+// Shutdown all of the running daemons, and then exit
+func shutdown(rval int) {
+	all := "all"
+	handleStop(selectTargets(&all))
+	logInfo("MCP exiting")
+	if logfile != nil {
+		logfile.Close()
+	}
+	os.Remove(pidfile)
+	os.Exit(rval)
+}
+
 func main() {
 	flag.Parse()
 	log.SetFlags(log.Ldate | log.Ltime)
@@ -263,6 +274,8 @@ func main() {
 
 	logInfo("ap.mcp (%d) coming online...", os.Getpid())
 
+	orphanCleanup()
+
 	go profile()
 
 	if aputil.IsSatelliteMode() {
@@ -273,9 +286,5 @@ func main() {
 
 	logInfo("MCP online")
 	signalHandler()
-	logInfo("MCP exiting")
-
-	if logfile != nil {
-		logfile.Close()
-	}
+	shutdown(0)
 }

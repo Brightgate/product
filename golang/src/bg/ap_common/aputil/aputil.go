@@ -12,6 +12,7 @@ package aputil
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -19,7 +20,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,8 +38,6 @@ import (
 var (
 	nodeMode string
 	nodeLock sync.Mutex
-
-	procStatusRE = regexp.MustCompile(`^(\w+):\s+(\d+)`)
 )
 
 // Child is used to build and track the state of an child subprocess
@@ -54,8 +52,10 @@ type Child struct {
 	zapLevel  zapcore.Level
 	prefix    string
 
-	stat   *os.File
-	status *os.File
+	statName   string
+	statusName string
+	stat       *os.File
+	status     *os.File
 
 	setpgid bool
 
@@ -260,54 +260,56 @@ func (c *Child) GetState() (*ChildState, error) {
 		return nil, nil
 	}
 
+	// Get the cpu usage stats from /proc/<pid>/stat
 	if c.stat == nil {
-		path := fmt.Sprintf("/proc/%d/stat", c.Process.Pid)
-		c.stat, err = os.Open(path)
+		c.statName = fmt.Sprintf("/proc/%d/stat", c.Process.Pid)
+		c.stat, err = os.Open(c.statName)
 		if err != nil {
 			return nil, err
 		}
 	}
-	b := make([]byte, 1024)
+	b := make([]byte, 2048)
 	_, err = c.stat.ReadAt(b, 0)
-	if err == nil || err == io.EOF {
-		tokens := strings.Split(string(b), " ")
-		if len(tokens) < 52 {
-			return nil,
-				fmt.Errorf("unrecognized /proc/*/stat format")
-		}
-		rval.State = tokens[3]
-		rval.Utime, _ = strconv.ParseUint(tokens[14], 10, 64)
-		rval.Stime, _ = strconv.ParseUint(tokens[15], 10, 64)
-	} else {
-		log.Printf("Failed to read /proc/%d/stat: %v\n", c.Process.Pid, err)
+	if err != nil && err != io.EOF {
+		return nil, fmt.Errorf("reading %s: %v", c.statName, err)
 	}
+	tokens := strings.Split(string(b), " ")
+	if len(tokens) < 52 {
+		return nil,
+			fmt.Errorf("unrecognized /proc/*/stat format")
+	}
+	rval.State = tokens[3]
+	rval.Utime, _ = strconv.ParseUint(tokens[14], 10, 64)
+	rval.Stime, _ = strconv.ParseUint(tokens[15], 10, 64)
 
+	// Get the memory usage stats from /proc/<pid>/status
 	if c.status == nil {
-		path := fmt.Sprintf("/proc/%d/status", c.Process.Pid)
-		c.status, err = os.Open(path)
+		c.statusName = fmt.Sprintf("/proc/%d/status", c.Process.Pid)
+		c.status, err = os.Open(c.statusName)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	fields := map[string]*uint64{
-		"VmPeak": &rval.VMPeak,
-		"VmSize": &rval.VMSize,
-		"VmSwap": &rval.VMSwap,
-		"VmHWM":  &rval.RssPeak,
-		"VmRSS":  &rval.RssSize,
+		"VmPeak:": &rval.VMPeak,
+		"VmSize:": &rval.VMSize,
+		"VmSwap:": &rval.VMSwap,
+		"VmHWM:":  &rval.RssPeak,
+		"VmRSS:":  &rval.RssSize,
 	}
 
 	found := 0
-	c.status.Seek(0, 0)
-	scanner := bufio.NewScanner(c.status)
+	_, err = c.status.ReadAt(b, 0)
+	if err != nil && err != io.EOF {
+		return nil, fmt.Errorf("reading %s: %v", c.statusName, err)
+	}
+	scanner := bufio.NewScanner(bytes.NewReader(b))
 	for (found < len(fields)) && scanner.Scan() {
 		line := scanner.Text()
-		tokens := procStatusRE.FindStringSubmatch(line)
-		if len(tokens) > 2 {
-			field, val := tokens[1], tokens[2]
-			if ptr := fields[field]; ptr != nil {
-				kb, _ := strconv.ParseUint(val, 10, 64)
+		if tokens := strings.Fields(line); len(tokens) >= 2 {
+			if ptr, ok := fields[tokens[0]]; ok {
+				kb, _ := strconv.ParseUint(tokens[1], 10, 64)
 				*ptr = kb * 1024
 				found++
 			}

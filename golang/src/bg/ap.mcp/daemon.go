@@ -30,6 +30,7 @@ const (
 	// Allow up to 4 failures in a 1 minute period before giving up
 	failuresAllowed = 4
 	restartPeriod   = time.Duration(time.Minute)
+	warnPeriod      = time.Duration(5 * time.Minute)
 
 	onlineTimeout  = time.Duration(15 * time.Second)
 	offlineTimeout = time.Duration(15 * time.Second)
@@ -42,6 +43,8 @@ type daemon struct {
 	Options    []string `json:"Options,omitempty"`
 	DependsOn  *string  `json:"DependsOn,omitempty"`
 	ThirdParty bool     `json:"ThirdParty,omitempty"`
+	MemWarn    uint64   `json:"MemWarn,omitempty"`
+	MemKill    uint64   `json:"MemKill,omitempty"`
 	Privileged bool
 
 	execpath     string
@@ -53,8 +56,10 @@ type daemon struct {
 	goal     chan int
 	state    int
 
-	setTime time.Time
-	child   *aputil.Child
+	memWarnTime time.Time
+	setTime     time.Time
+	child       *aputil.Child
+	childState  *aputil.ChildState
 
 	sync.Mutex
 }
@@ -329,6 +334,8 @@ func daemonDefine(def *daemon) {
 		d.Options = def.Options
 		d.DependsOn = def.DependsOn
 		d.Privileged = def.Privileged
+		d.MemWarn = def.MemWarn
+		d.MemKill = def.MemKill
 	}
 
 	d.args = make([]string, 0)
@@ -389,6 +396,51 @@ func loadDefinitions() error {
 	return err
 }
 
+func updateDaemonResources(d *daemon) {
+	d.Lock()
+	defer d.Unlock()
+
+	mem := uint64(0)
+	if d.child != nil {
+		d.childState, _ = d.child.GetState()
+
+		if c := d.childState; c != nil {
+			mem = (c.RssSize + c.VMSwap) / (1024 * 1024)
+		}
+	}
+
+	if d.MemKill > 0 && mem > d.MemKill {
+		logWarn("%s using %dMB of memory - killing it", d.Name, mem)
+		if d == self {
+			shutdown(1)
+		} else {
+			d.stop()
+		}
+	} else if d.MemWarn > 0 && mem > d.MemWarn {
+		now := time.Now()
+		nextWarn := d.memWarnTime.Add(warnPeriod)
+		if nextWarn.Before(now) {
+			logWarn("%s using %dMB of memory", d.Name, mem)
+			d.memWarnTime = now
+		}
+	}
+}
+
+func resourceLoop() {
+	t := time.NewTicker(5 * time.Second)
+
+	for {
+		if self != nil {
+			updateDaemonResources(self)
+		}
+		for _, d := range daemons.local {
+			updateDaemonResources(d)
+		}
+
+		<-t.C
+	}
+}
+
 func daemonInit() *daemon {
 	daemons.local = make(daemonSet)
 	daemons.remote = make(map[string]remoteState)
@@ -408,7 +460,11 @@ func daemonInit() *daemon {
 		child: &aputil.Child{
 			Process: process,
 		},
+		MemWarn: 20,
+		MemKill: 25,
 	}
+
+	go resourceLoop()
 
 	return self
 }
