@@ -21,24 +21,41 @@
     </f7-fab>
 
     <f7-list>
-      <f7-list-item
-        v-for="user in users"
-        :key ="user.UUID"
-        :title="user.DisplayName ? user.DisplayName : user.UID"
-        :link="`${$f7route.url}${user.UUID}/`" />
+      <f7-list-item :group-title="true" :title="$t('message.users.site_local')" />
+      <f7-list-item v-for="user in localUsers"
+                    :key ="user.UUID"
+                    :link="`${$f7route.url}${user.UUID}/`">
+        <div slot="title">
+          <f7-icon material="router" color="gray" /> {{ user.DisplayName ? user.DisplayName : user.UID }}
+        </div>
+      </f7-list-item>
+
+      <f7-list-item :group-title="true" :title="$t('message.users.cloud_self_provisioned')" />
+      <f7-list-item v-for="user in spUsers"
+                    :key ="user.UUID"
+                    :link="`${$f7route.url}${user.UUID}/`">
+        <div slot="title">
+          <f7-icon ios="f7:cloud_fill" md="material:cloud" color="gray" /> {{ user.DisplayName ? user.DisplayName : user.UID }}
+        </div>
+      </f7-list-item>
     </f7-list>
 
   </f7-page>
 </template>
 <script>
-import {orderBy} from 'lodash-es';
+import {pickBy, orderBy} from 'lodash-es';
 import Debug from 'debug';
 const debug = Debug('page:users');
 
 export default {
   computed: {
-    users: function() {
-      return orderBy(this.$store.getters.users, 'DisplayName');
+    spUsers: function() {
+      const spu = pickBy(this.$store.getters.users, {SelfProvisioning: true});
+      return orderBy(spu, 'DisplayName');
+    },
+    localUsers: function() {
+      const lu = pickBy(this.$store.getters.users, {SelfProvisioning: false});
+      return orderBy(lu, 'DisplayName');
     },
   },
   methods: {

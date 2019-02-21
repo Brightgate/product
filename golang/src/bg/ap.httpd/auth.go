@@ -87,8 +87,14 @@ func siteLoginHandler(w http.ResponseWriter, r *http.Request) {
 	// Retrieve user record
 	ui, err := config.GetUser(uid)
 	if err != nil {
-		slog.Infof("demo login for '%s' denied: %v", uid, err)
+		slog.Infof("login for '%s' denied: %v", uid, err)
 		http.Error(w, "login denied", 401)
+		return
+	}
+
+	if ui.SelfProvisioning {
+		slog.Infof("login for '%s' denied: self provisioned user", uid, err)
+		http.Error(w, "login denied: cloud-self-provisioned users may not login", 401)
 		return
 	}
 

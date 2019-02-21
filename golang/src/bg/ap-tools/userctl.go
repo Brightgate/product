@@ -88,7 +88,7 @@ func flagInit() {
 var config *cfgapi.Handle
 
 func getUsers() error {
-	const getUsersFormat = "%-12s %-8s %-24s %-30s\n"
+	const getUsersFormat = "%-30s %-8s %-8s %-24s\n"
 
 	users := config.GetUsers()
 	if users == nil {
@@ -96,11 +96,15 @@ func getUsers() error {
 	}
 
 	fmt.Printf(getUsersFormat,
-		"UID", "ROLE", "DISPLAYNAME", "EMAIL")
+		"UID", "SOURCE", "ROLE", "DISPLAYNAME")
 
 	for name, user := range users {
+		src := "local"
+		if user.SelfProvisioning {
+			src = "selfprov"
+		}
 		fmt.Printf(getUsersFormat,
-			name, user.Role, user.DisplayName, user.Email)
+			name, src, user.Role, user.DisplayName)
 	}
 	return nil
 }
@@ -127,6 +131,7 @@ func getUsersVerbose() error {
 		fmt.Printf("\tEmail: %s\n", user.Email)
 		fmt.Printf("\tPreferredLanguage: %s\n", user.PreferredLanguage)
 		fmt.Printf("\tTelephoneNumber: %s\n", user.TelephoneNumber)
+		fmt.Printf("\tSelfProvisioning: %v\n", user.SelfProvisioning)
 		printSecret("Password", user.Password)
 		printSecret("MD4Password", user.MD4Password)
 		printSecret("TOTP", user.TOTP)

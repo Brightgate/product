@@ -381,6 +381,7 @@ type daUser struct {
 	Email             *string
 	TelephoneNumber   *string
 	PreferredLanguage *string
+	SelfProvisioning  bool
 	HasTOTP           bool
 	HasPassword       bool
 	SetPassword       *string
@@ -410,6 +411,8 @@ func buildUserResponse(user *cfgapi.UserInfo) daUser {
 
 	// XXX We are not reporting our password or TOTP back in this
 	// call.
+
+	cu.SelfProvisioning = user.SelfProvisioning
 
 	return cu
 }

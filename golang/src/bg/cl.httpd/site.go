@@ -310,6 +310,7 @@ type apiUserInfo struct {
 	HasTOTP           bool
 	HasPassword       bool
 	SetPassword       *string
+	SelfProvisioning  bool
 }
 
 // newAPIUserInfo constructs an apiUserInfo from a cfgapi.UserInfo
@@ -332,6 +333,8 @@ func newAPIUserInfo(user *cfgapi.UserInfo) *apiUserInfo {
 
 	// XXX We are not reporting our password or TOTP back in this
 	// call.
+
+	cu.SelfProvisioning = user.SelfProvisioning
 
 	return &cu
 }

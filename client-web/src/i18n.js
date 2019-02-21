@@ -183,6 +183,8 @@ export default {
       },
       users: {
         title: 'Brightgate - Users',
+        site_local: 'Site-Local Users',
+        cloud_self_provisioned: 'Cloud-Self-Provisioned Users',
       },
       user_details: {
         username: 'Username',
@@ -356,6 +358,8 @@ export default {
       },
       users: {
         title: 'Brightgate - Benutzer',
+        site_local: 'Site-Local Users', // XXXI18N
+        cloud_self_provisioned: 'Cloud-Self-Provisioned Users', // XXXI18N
       },
       user_details: {
         username: 'Name',

@@ -11,9 +11,32 @@
   <f7-page>
     <f7-navbar :back-link="$t('message.general.back')" :title="user.DisplayName" sliding />
 
-    <f7-fab color="pink" @click="openEditor">
+    <f7-fab v-if="user.SelfProvisioning === false" color="pink" @click="openEditor">
       <f7-icon f7="compose_fill" />
     </f7-fab>
+
+    <f7-card v-if="user.SelfProvisioning">
+      <f7-card-header>
+        <span><f7-icon ios="f7:cloud" md="material:cloud" color="gray" /> Cloud Self-Provisioned User</span>
+      </f7-card-header>
+      <f7-card-content>This user was created using Cloud Self Provisioning via the Brightgate
+      cloud portal.  The user cannot be administered from this screen.
+        <!-- XXX there's really no-where that the user can be administered at present. -->
+      </f7-card-content>
+    </f7-card>
+    <f7-card v-else>
+      <f7-card-header>
+        <span><f7-icon material="router" color="gray" /> Site-Local User</span>
+      </f7-card-header>
+      <f7-card-content>This user was created locally to this Site, and has
+      privileges to login to the Site's local web interface; this user is
+      backed-up to to the Brightgate cloud, and can be edited there.  Because
+      the user is site-local, it is not synchronized to other sites in your
+      organization.
+        <!-- XXX in the future we could say more about roles -->
+      </f7-card-content>
+    </f7-card>
+
 
     <f7-list>
       <!-- Username -->
@@ -52,10 +75,11 @@
         </div>
       </f7-list-item>
 
-      <!-- Role -->
+      <!-- Role -- Disabled for now
       <f7-list-item :title="$t('message.user_details.role')">
         {{ $t('message.user_details.roles.admin') }}
       </f7-list-item>
+      -->
 
       <!-- 2-factor -- Disabled for now
       <f7-list-item :title="$t('message.user_details.twofactor')">

@@ -48,7 +48,7 @@ import BrowserLocale from 'browser-locale';
 // This forces webpack to include these assets
 import F7Styles from 'framework7/css/framework7.css';
 import F7Icons from 'framework7-icons';
-import MDIcons from 'material-design-icons';
+import MDIcons from 'material-design-icons/iconfont/material-icons.css';
 import AppStyles from './css/app.css';
 /* eslint-enable no-unused-vars */
 
