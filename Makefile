@@ -879,7 +879,11 @@ $(APPBIN)/ap.httpd: \
 	$(GOSRCBG)/ap_common/data/dns.go
 $(APPBIN)/ap.identifierd: $(GOSRCBG)/ap.identifierd/identifierd.go
 $(APPBIN)/ap.logd: $(GOSRCBG)/ap.logd/logd.go
-$(APPBIN)/ap.mcp: $(GOSRCBG)/ap.mcp/mcp.go
+$(APPBIN)/ap.mcp:	\
+	$(GOSRCBG)/ap.mcp/api.go \
+	$(GOSRCBG)/ap.mcp/daemon.go \
+	$(GOSRCBG)/ap.mcp/mcp.go \
+	$(GOSRCBG)/ap.mcp/satellite.go
 $(APPBIN)/ap.networkd: \
 	$(GOSRCBG)/ap.networkd/filterd.go \
 	$(GOSRCBG)/ap.networkd/hostapd.go \
