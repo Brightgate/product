@@ -206,8 +206,7 @@ class Package:
             sh.fakeroot("dpkg-deb", "-Z", compresstype, "-z", compresslevel,
                         "--build", self.work_dir, _fg=True)
         elif self.distro == "openwrt":
-            ipkg_build = sh.Command("./build/openwrt-ipk/ipkg-build")
-            ipkg_build(self.work_dir, _fg=True)
+            sh.fakeroot("./build/openwrt-ipk/ipkg-build", self.work_dir, _fg=True)
         elif self.distro == "archive":
             sh.fakeroot("tar", "zcvf", self.archive_name, self.work_dir, _fg=True)
 
@@ -253,7 +252,6 @@ class AppliancePackage(Package):
         "bridge-utils",
         "chrony",
         "dhcpcd5",
-        "hostapd-bg",
         "iproute2",
         "iptables",
         "iptables-persistent",
@@ -264,9 +262,25 @@ class AppliancePackage(Package):
         "netfilter-persistent",
         "nmap",
         "procps",
-        "vlan"
+        "vlan",
+
+        "bg-hostapd",
     ]
-    ipk_depends = []
+    ipk_depends = [
+        "libgcc",
+        "libpcap",
+        "libsodium",
+        "libzmq-curve",
+        "uclibcxx",
+
+        "chrony",
+        "iw-full",
+        "logrotate",
+        "nmap-ssl",
+        "rsyslog",
+
+        "bg-hostapd",
+    ]
 
     def __init__(self, distro, arch, version):
         logging.debug("appliance package distro = %s, arch = %s, version = %s", distro, arch, version)

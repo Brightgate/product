@@ -51,6 +51,9 @@ type Platform struct {
 
 	GetDHCPInfo func(string) (map[string]string, error)
 	DHCPPidfile func(string) string
+
+	RunNTPDaemon func() error
+	NtpdConfPath string
 }
 
 var (

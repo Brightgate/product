@@ -169,7 +169,6 @@ DISTRO = debian
 ifneq ($(GOHOSTARCH),$(GOARCH))
 ifeq ($(GOARCH),arm)
 ifeq ("$(DISTRO)","debian")
-$(info distro: debian + arm -> raspbian [deprecated])
 SYSROOT_CFG = build/cross-compile/raspbian-stretch.multistrap
 SYSROOT_CFG_LOCAL = $(subst build/cross-compile/,,$(SYSROOT_CFG))
 SYSROOT = build/cross-compile/sysroot.$(GOARCH).$(SYSROOT_SUM)
@@ -186,14 +185,14 @@ SYSROOT_SUM=a66af97cd6bbab3fc23eba227b663789b266be7c6efa1da68160d3b46c2d1f44
 SYSROOT_LOCAL_FLAGS = -f $(SYSROOT_CFG_LOCAL)
 else
 ifeq ("$(DISTRO)","openwrt")
-$(info distro: openwrt)
 CROSS_CC = $(CROSS_SYSROOT)/../toolchain.$(DISTRO)/bin/arm-openwrt-linux-gcc
 CROSS_CXX = $(CROSS_SYSROOT)/../toolchain.$(DISTRO)/bin/arm-openwrt-linux-g++
 CROSS_CGO_LDFLAGS = --sysroot $(CROSS_SYSROOT)
 CROSS_CGO_CFLAGS = --sysroot $(CROSS_SYSROOT) -I$(CROSS_SYSROOT)/usr/include
 
 SYSROOT = build/cross-compile/sysroot.$(DISTRO).$(SYSROOT_SUM)
-SYSROOT_SUM=7d6e9a8ee80d8c214b0a154d2e3b653bb8750ecc
+SYSROOT_SUM_arm_openwrt=d562c2318e976d048fc62a31dc867bab309b979f
+SYSROOT_SUM=$(SYSROOT_SUM_arm_openwrt)
 SYSROOT_LOCAL_FLAGS =
 else
 $(error DISTRO must be set to 'openwrt' or 'debian' [deprecated] for cross)
@@ -243,6 +242,7 @@ BUILDTOOLS = \
 #
 define report
 #        TARGETS: $(TARGETS)
+#         DISTRO: $(DISTRO)
 #         KERNEL: UNAME_S=$(UNAME_S) UNAME_M=$(UNAME_M)
 #        GITHASH: $(GITHASH)
 #             GO: $(GO)
@@ -292,6 +292,7 @@ APPRULES=$(APPETC)/filter.rules.d
 APPMODEL=$(APPETC)/device_model
 
 ROOTETC=$(APPROOT)/etc
+ROOTETCCRONTABS=$(ROOTETC)/crontabs
 ROOTETCINITD=$(ROOTETC)/init.d
 ROOTETCIPTABLES=$(ROOTETC)/iptables
 ROOTETCLOGROTATED=$(ROOTETC)/logrotate.d
@@ -439,6 +440,8 @@ APPCONFIGS_debian = \
 	$(APPROOTLIB)/systemd/system/brightgate-appliance.service
 
 APPCONFIGS_openwrt = \
+	$(APPETC)/com-brightgate-profile \
+	$(ROOTETCCRONTABS)/root \
 	$(ROOTETCINITD)/ap.mcp \
 	$(ROOTETCINITD)/brightgate-appliance
 
@@ -461,6 +464,7 @@ APPCONFIGS = \
 
 ifeq ("$(DISTRO)","openwrt")
 DISTROAPPDIRS = \
+	$(ROOTETCCRONTABS) \
 	$(ROOTETCINITD)
 endif
 
@@ -833,6 +837,12 @@ $(APPROOTLIB)/systemd/system/brightgate-appliance.service: build/debian-deb/brig
 	$(INSTALL) -m 0644 $< $@
 
 # OpenWrt-specific appliance files
+$(APPETC)/com-brightgate-profile: build/openwrt-ipk/com-brightgate-profile | $(APPETC)
+	$(INSTALL) -m 0644 $< $@
+
+$(ROOTETCCRONTABS)/root: build/openwrt-ipk/etc-crontabs-root | $(ROOTETCCRONTABS)
+	$(INSTALL) -m 0644 $< $@
+
 $(ROOTETCINITD)/ap.mcp: build/openwrt-ipk/ap.mcp | $(ROOTETCINITD)
 	$(INSTALL) -m 0755 $< $@
 

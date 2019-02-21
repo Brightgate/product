@@ -382,9 +382,16 @@ func retrieveImagesHTTP() {
 			srcURL := fmt.Sprintf("%s/%s", retrieveURL, s.src)
 			hr, err := http.Get(srcURL)
 			if err != nil {
-				log.Fatalf("couldn't make http connection: %v\n", err)
+				log.Fatalf("couldn't make http connection: %v\n",
+					err)
 			}
 			defer hr.Body.Close()
+
+			if hr.StatusCode != http.StatusOK {
+				log.Fatalf("HTTP operation unsuccessful: %d %v\n",
+					hr.StatusCode,
+					http.StatusText(hr.StatusCode))
+			}
 
 			outfn := fmt.Sprintf("%s/%s", imageDir, s.src)
 			outf, err := os.Create(outfn)

@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -28,6 +28,10 @@ var (
 	//   vendor_class_identifier='Brightgate, Inc.'
 	//   vendor_encapsulated_options='0109736174656c6c697465ff'
 	rpiOptionRE = regexp.MustCompile(`(\w+)='(.*)'`)
+)
+
+const (
+	ntpdSystemdService = "chrony.service"
 )
 
 func rpiProbe() bool {
@@ -138,6 +142,16 @@ func rpiDHCPPidfile(nic string) string {
 	return "/var/run/dhcpcd.pid"
 }
 
+func rpiRunNTPDaemon() error {
+	// "restart" will start the service if it's not already running.
+	cmd := exec.Command("/bin/systemctl", "restart", ntpdSystemdService)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to restart %s: %v", ntpdSystemdService, err)
+	}
+
+	return nil
+}
+
 func init() {
 	addPlatform(&Platform{
 		name:          "rpi3",
@@ -166,5 +180,8 @@ func init() {
 
 		GetDHCPInfo: rpiGetDHCPInfo,
 		DHCPPidfile: rpiDHCPPidfile,
+
+		RunNTPDaemon: rpiRunNTPDaemon,
+		NtpdConfPath: "/etc/chrony/chrony.conf",
 	})
 }

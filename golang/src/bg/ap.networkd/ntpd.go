@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -13,7 +13,6 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"text/template"
 	"time"
 
@@ -27,10 +26,7 @@ type ntpdConf struct {
 }
 
 const (
-	ntpserversConfig   = "@/network/ntpservers"
-	ntpdPath           = "/usr/sbin/chronyd"
-	ntpdConfPath       = "/etc/chrony/chrony.conf"
-	ntpdSystemdService = "chrony.service"
+	ntpserversConfig = "@/network/ntpservers"
 )
 
 func getNTPServers() ([]string, error) {
@@ -69,7 +65,7 @@ func generateNTPDConf() error {
 		}
 	}
 
-	cf, err := os.Create(ntpdConfPath)
+	cf, err := os.Create(plat.NtpdConfPath)
 	if err != nil {
 		return err
 	}
@@ -82,23 +78,20 @@ func generateNTPDConf() error {
 // new configuration we need for this through chronyc isn't really possible, so
 // we have to just restart the daemon.
 func configNTPServersChanged(path []string, val string, expires *time.Time) {
-	runNTPDaemon()
+	if err := generateNTPDConf(); err != nil {
+		slog.Errorf("Failed to generate %s: %v\n", plat.NtpdConfPath, err)
+		return
+	}
+
+	plat.RunNTPDaemon()
 }
 
 func configNTPServersDeleted(path []string) {
-	runNTPDaemon()
-}
-
-func runNTPDaemon() {
 	if err := generateNTPDConf(); err != nil {
-		slog.Errorf("Failed to generate %s: %v\n", ntpdConfPath, err)
+		slog.Errorf("Failed to generate %s: %v\n", plat.NtpdConfPath, err)
 		return
 	}
-	// "restart" will start the service if it's not already running.
-	cmd := exec.Command("/bin/systemctl", "restart", ntpdSystemdService)
-	if err := cmd.Run(); err != nil {
-		slog.Errorf("Failed to restart %s: %v\n", ntpdSystemdService, err)
-	}
+	plat.RunNTPDaemon()
 }
 
 func ntpdSetup() {
@@ -106,7 +99,12 @@ func ntpdSetup() {
 	config.HandleDelete(`^@/network/ntpservers/`, configNTPServersDeleted)
 	config.HandleExpire(`^@/network/ntpservers/`, configNTPServersDeleted)
 
+	if err := generateNTPDConf(); err != nil {
+		slog.Errorf("Failed to generate %s: %v\n", plat.NtpdConfPath, err)
+		return
+	}
+
 	// We kick the daemon to start with, because, even if it's already
 	// running, it might be running with pre-Brightgate configuration.
-	runNTPDaemon()
+	plat.RunNTPDaemon()
 }

@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -23,6 +23,10 @@ import (
 	"syscall"
 
 	"github.com/satori/uuid"
+)
+
+const (
+	mtChronyInitd = "/etc/init.d/chronyd"
 )
 
 func mtProbe() bool {
@@ -194,6 +198,17 @@ func mtDHCPPidfile(nic string) string {
 	return "/var/run/udhcpc-" + nic + ".pid"
 }
 
+func mtRunNTPDaemon() error {
+	// "restart" will start the service if it's not already running.
+	cmd := exec.Command(mtChronyInitd, "restart")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to restart %s: %v", mtChronyInitd,
+			err)
+	}
+
+	return nil
+}
+
 func init() {
 	addPlatform(&Platform{
 		name:          "mediatek",
@@ -201,7 +216,7 @@ func init() {
 
 		ResetSignal:  syscall.SIGINT,
 		ReloadSignal: syscall.SIGHUP,
-		HostapdCmd:   "/opt/bin/hostapd",
+		HostapdCmd:   "/usr/sbin/hostapd",
 		BrctlCmd:     "/usr/sbin/brctl",
 		SysctlCmd:    "/sbin/sysctl",
 		IPCmd:        "/sbin/ip",
@@ -222,5 +237,8 @@ func init() {
 
 		GetDHCPInfo: mtGetDHCPInfo,
 		DHCPPidfile: mtDHCPPidfile,
+
+		RunNTPDaemon: mtRunNTPDaemon,
+		NtpdConfPath: "/var/etc/chrony.conf",
 	})
 }

@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -13,6 +13,7 @@ package platform
 import (
 	"fmt"
 	"io/ioutil"
+	"os/exec"
 	"regexp"
 	"syscall"
 )
@@ -70,6 +71,16 @@ func x86DHCPPidfile(nic string) string {
 	return ""
 }
 
+func x86RunNTPDaemon() error {
+	// "restart" will start the service if it's not already running.
+	cmd := exec.Command("/bin/systemctl", "restart", ntpdSystemdService)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to restart %s: %v", ntpdSystemdService, err)
+	}
+
+	return nil
+}
+
 func init() {
 	addPlatform(&Platform{
 		name:          "x86-debian",
@@ -98,5 +109,8 @@ func init() {
 
 		GetDHCPInfo: x86GetDHCPInfo,
 		DHCPPidfile: x86DHCPPidfile,
+
+		RunNTPDaemon: x86RunNTPDaemon,
+		NtpdConfPath: "/etc/chrony/chrony.conf",
 	})
 }
