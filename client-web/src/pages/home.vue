@@ -66,7 +66,7 @@
         {{ $t("message.home.local_site_explanation") }}
       </f7-block>
       <f7-block-title>{{ $t("message.home.tools") }}</f7-block-title>
-      <bg-site-controls :siteid="'0'" :device-count="deviceCount(devices)" :disabled="!loggedIn" />
+      <bg-site-controls :siteid="'0'" :device-count="deviceCount(devices)" :disabled="!loggedIn" :app-mode="appMode" />
     </template>
 
     <template v-if="appMode === appDefs.APPMODE_CLOUD">

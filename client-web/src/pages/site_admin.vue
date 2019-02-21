@@ -34,7 +34,7 @@
     </template>
 
     <f7-block-title>{{ $t("message.home.tools") }}</f7-block-title>
-    <bg-site-controls :siteid="site.id" :device-count="deviceCount(devices)" :disabled="!loggedIn" />
+    <bg-site-controls :siteid="site.id" :device-count="deviceCount(devices)" :disabled="!loggedIn" :app-mode="appMode" />
   </f7-page>
 </template>
 <script>
@@ -62,6 +62,7 @@ export default {
       'alertActive',
       'alertCount',
       'alerts',
+      'appMode',
       'currentSiteID',
       'deviceByUniqID',
       'deviceCount',

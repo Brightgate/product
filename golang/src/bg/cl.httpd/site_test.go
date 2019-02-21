@@ -156,7 +156,7 @@ func TestSites(t *testing.T) {
 		newSessionMiddleware(ss).Process,
 	}
 	e := echo.New()
-	_ = newSiteHandler(e, dMock, mw, getMockClientHandle)
+	_ = newSiteHandler(e, dMock, mw, getMockClientHandle, nil)
 
 	// Setup request
 	req, rec := setupReqRec(echo.GET, "/api/sites", nil, ss)
@@ -192,7 +192,7 @@ func TestSitesUUID(t *testing.T) {
 		newSessionMiddleware(ss).Process,
 	}
 	e := echo.New()
-	_ = newSiteHandler(e, dMock, mw, getMockClientHandle)
+	_ = newSiteHandler(e, dMock, mw, getMockClientHandle, nil)
 
 	// Setup request
 	req, rec := setupReqRec(echo.GET,
@@ -228,7 +228,7 @@ func TestSiteUnauthorized(t *testing.T) {
 	}
 	e := echo.New()
 	dMock := &mocks.DataStore{}
-	h := newSiteHandler(e, dMock, mw, getMockClientHandle)
+	h := newSiteHandler(e, dMock, mw, getMockClientHandle, nil)
 
 	testCases := []struct {
 		path    string

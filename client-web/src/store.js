@@ -574,13 +574,13 @@ const actions = {
     return nc;
   },
 
-  async enrollGuest(context, {type, phone, email}) {
+  async enrollGuest(context, {kind, phoneNumber, email}) {
     if (context.state.currentSite === nullSite) {
       debug('enrollGuest: skipped, nullSite');
       return;
     }
     const id = context.state.currentSiteID;
-    return await siteApi.siteEnrollGuest(id, {type, phone, email});
+    return await siteApi.siteEnrollGuest(id, {kind, phoneNumber, email});
   },
 
   // Ask the server to change the ring property for a device, then

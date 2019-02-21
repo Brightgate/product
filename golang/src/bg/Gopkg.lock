@@ -573,14 +573,6 @@
   version = "0.1.1"
 
 [[projects]]
-  digest = "1:341c50f33eb9ea2dcba019e8e7e20f38e1e28b4be6ca8176aed314a34a48c948"
-  name = "github.com/sethvargo/go-password"
-  packages = ["password"]
-  pruneopts = ""
-  revision = "d207206009266fab3e355f1a0488b47ac24139c7"
-  version = "v0.1.1"
-
-[[projects]]
   branch = "master"
   digest = "1:a87f17797a88aa5503dc05623bac27a4056953f00cb6b10f01e9828fb4825a66"
   name = "github.com/sfreiberg/gotwilio"
@@ -1101,7 +1093,6 @@
     "github.com/prometheus/client_golang/prometheus/promhttp",
     "github.com/satori/uuid",
     "github.com/sethvargo/go-diceware/diceware",
-    "github.com/sethvargo/go-password/password",
     "github.com/sfreiberg/gotwilio",
     "github.com/spf13/afero",
     "github.com/spf13/cobra",

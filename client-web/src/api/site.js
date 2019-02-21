@@ -217,13 +217,13 @@ async function siteUsersDelete(siteID, userID) {
   return;
 }
 
-async function siteEnrollGuest(siteID, {type, phone, email}) {
+async function siteEnrollGuest(siteID, {kind, phoneNumber, email}) {
   assert.equal(typeof siteID, 'string');
-  assert.equal(typeof type, 'string');
-  assert.equal(typeof phone, 'string');
+  assert.equal(typeof kind, 'string');
+  assert.equal(typeof phoneNumber, 'string');
   assert(email === undefined || typeof email === 'string');
 
-  const args = {type, phone, email};
+  const args = {kind, phoneNumber, email};
   const u = buildUrl(`/api/sites/${siteID}/enroll_guest`);
   debug(`siteEnrollGuest ${u}`, args);
   const res = await axios({

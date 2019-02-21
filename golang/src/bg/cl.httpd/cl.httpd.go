@@ -47,6 +47,7 @@ import (
 	"bg/common/cfgapi"
 
 	"github.com/gorilla/sessions"
+	"github.com/sfreiberg/gotwilio"
 	"github.com/tomazk/envcfg"
 
 	// Echo
@@ -89,6 +90,8 @@ type Cfg struct {
 	SessionDB                 string `envcfg:"B10E_CLHTTPD_POSTGRES_SESSIONDB"`
 	ApplianceDB               string `envcfg:"B10E_CLHTTPD_POSTGRES_APPLIANCEDB"`
 	ConfigdConnection         string `envcfg:"B10E_CLHTTPD_CLCONFIGD_CONNECTION"`
+	TwilioSID                 string `envcfg:"B10E_CLHTTPD_TWILIO_SID"`
+	TwilioAuthToken           string `envcfg:"B10E_CLHTTPD_TWILIO_AUTHTOKEN"`
 	// Whether to Disable TLS for outbound connections to cl.configd
 	ConfigdDisableTLS bool   `envcfg:"B10E_CLHTTPD_CLCONFIGD_DISABLE_TLS"`
 	AppPath           string `enccfg:"B10E_CLHTTPD_APP"`
@@ -244,10 +247,18 @@ func mkRouterHTTPS(sessionStore sessions.Store) *echo.Echo {
 		log.Printf("Disabling TLS for connection to Configd")
 	}
 
+	var twil *gotwilio.Twilio
+	if environ.TwilioSID != "" && environ.TwilioAuthToken != "" {
+		twil = gotwilio.NewTwilioClient(environ.TwilioSID,
+			environ.TwilioAuthToken)
+	} else {
+		log.Printf("Disabling Twilio Client")
+	}
+
 	wares := []echo.MiddlewareFunc{
 		newSessionMiddleware(sessionStore).Process,
 	}
-	_ = newSiteHandler(r, applianceDB, wares, getConfigClientHandle)
+	_ = newSiteHandler(r, applianceDB, wares, getConfigClientHandle, twil)
 	_ = newAccountHandler(r, applianceDB, wares, sessionStore, getConfigClientHandle, accountSecret)
 	hdl, err := getConfigClientHandle("00000000-0000-0000-0000-000000000000")
 	if err != nil {

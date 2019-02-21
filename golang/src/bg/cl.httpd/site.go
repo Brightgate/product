@@ -24,6 +24,8 @@ import (
 
 	"github.com/labstack/echo"
 	"github.com/satori/uuid"
+	"github.com/sfreiberg/gotwilio"
+	"github.com/ttacon/libphonenumber"
 )
 
 type getClientHandleFunc func(uuid string) (*cfgapi.Handle, error)
@@ -31,6 +33,7 @@ type getClientHandleFunc func(uuid string) (*cfgapi.Handle, error)
 type siteHandler struct {
 	db              appliancedb.DataStore
 	getClientHandle getClientHandleFunc
+	twilio          *gotwilio.Twilio
 }
 
 type siteResponse struct {
@@ -297,6 +300,108 @@ func (a *siteHandler) getDevices(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
+type siteEnrollGuestRequest struct {
+	Kind        string `json:"kind"`
+	Email       string `json:"email"`
+	PhoneNumber string `json:"phoneNumber"`
+}
+
+type siteEnrollGuestResponse struct {
+	SMSDelivered bool   `json:"smsdelivered"`
+	SMSErrorCode int    `json:"smserrorcode"`
+	SMSError     string `json:"smserror"`
+}
+
+// sendOneSMS is a utility helper for the Enroll handler.
+func (a *siteHandler) sendOneSMS(from, to, message string) (*siteEnrollGuestResponse, error) {
+	var response *siteEnrollGuestResponse
+	smsResponse, exception, err := a.twilio.SendSMS(from, to, message, "", "")
+	if err != nil {
+		return nil, err
+	}
+	if exception != nil {
+		rstr := "Twilio failed sending SMS."
+		if exception.Code >= 21210 && exception.Code <= 21217 {
+			rstr = "Invalid Phone Number"
+		}
+		response = &siteEnrollGuestResponse{false, exception.Code, rstr}
+	} else {
+		response = &siteEnrollGuestResponse{true, 0, "Current Status: " + smsResponse.Status}
+	}
+	return response, nil
+}
+
+func (a *siteHandler) postEnrollGuest(c echo.Context) error {
+	var err error
+
+	if a.twilio == nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "no twilio client configured")
+	}
+
+	accountUUID := c.Get("account_uuid").(uuid.UUID)
+	siteUUID := c.Param("uuid")
+
+	var gr siteEnrollGuestRequest
+	if err := c.Bind(&gr); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "bad guest info")
+	}
+
+	config, err := a.getClientHandle(c.Param("uuid"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	defer config.Close()
+
+	c.Logger().Infof("Guest Entrollment by %v for %v at site %v", accountUUID, gr, siteUUID)
+	if gr.Kind != "psk" {
+		return echo.NewHTTPError(http.StatusBadRequest, "missing kind={psk}")
+	}
+	if gr.PhoneNumber == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "missing phoneNumber")
+	}
+
+	// XXX need to solve phone region eventually
+	to, err := libphonenumber.Parse(gr.PhoneNumber, "US")
+	if err != nil {
+		return c.JSON(http.StatusOK, &siteEnrollGuestResponse{false, 0, "Invalid Phone Number"})
+	}
+	formattedTo := libphonenumber.Format(to, libphonenumber.INTERNATIONAL)
+	from := "+16507694283"
+	c.Logger().Infof("Guest Enroll Handler: from='%v' formattedTo='%v'\n", from, formattedTo)
+
+	// XXX in the future this check may need improvement, to see if the VAP exists,
+	// is enabled, etc.
+	networkSSID, err := config.GetProp("@/network/vap/guest/ssid")
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "No Guest SSID?")
+	}
+	networkPassphrase, _ := config.GetProp("@/network/vap/guest/passphrase")
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "No Guest Passphrase?")
+	}
+
+	// See above for notes on structure
+	messages := []string{
+		fmt.Sprintf("Brightgate Wi-Fi\nHelp: bit.ly/2yhPDQz\n"+
+			"Network: %s\n<password follows>", networkSSID),
+		fmt.Sprintf("%s", networkPassphrase),
+	}
+
+	var response *siteEnrollGuestResponse
+	for _, message := range messages {
+		response, err = a.sendOneSMS(from, formattedTo, message)
+		if err != nil {
+			c.Logger().Warnf("Enroll Guest Handler: twilio err='%v'\n", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "Twilio Error")
+		}
+		// if not sent then give up sending more
+		if response.SMSDelivered == false {
+			break
+		}
+	}
+	return c.JSON(http.StatusOK, response)
+}
+
 // apiUserInfo describes a user.  It is similar to cfgapi.UserInfo but with
 // fields customized for partial updates and password setting.
 type apiUserInfo struct {
@@ -540,8 +645,8 @@ func (a *siteHandler) siteMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 
 // newSiteHandler creates a siteHandler instance for the given DataStore and
 // session Store, and routes the handler into the echo instance.
-func newSiteHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []echo.MiddlewareFunc, getClientHandle getClientHandleFunc) *siteHandler {
-	h := &siteHandler{db, getClientHandle}
+func newSiteHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []echo.MiddlewareFunc, getClientHandle getClientHandleFunc, twilio *gotwilio.Twilio) *siteHandler {
+	h := &siteHandler{db, getClientHandle, twilio}
 	r.GET("/api/sites", h.getSites, middlewares...)
 
 	mw := middlewares
@@ -552,6 +657,7 @@ func newSiteHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []echo.M
 	siteU.POST("/config", h.postConfig)
 	siteU.GET("/configtree", h.getConfigTree)
 	siteU.GET("/devices", h.getDevices)
+	siteU.POST("/enroll_guest", h.postEnrollGuest)
 	siteU.GET("/users", h.getUsers)
 	siteU.GET("/users/:useruuid", h.getUserByUUID)
 	siteU.POST("/users/:useruuid", h.postUserByUUID)

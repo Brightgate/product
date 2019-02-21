@@ -36,14 +36,19 @@
       :title="$t('message.site_controls.users')"
       :class="disabled ? 'disabled' : undefined"
       :link="`/sites/${siteid}/users/`" />
+      <!-- Disabled until guest PSK is working
     <f7-list-item
+      v-if="appMode === appDefs.APPMODE_CLOUD"
       :title="$t('message.site_controls.enroll_guest')"
       :class="disabled ? 'disabled' : undefined"
       :link="`/sites/${siteid}/enroll_guest/`" />
+    -->
   </f7-list>
 </template>
 
 <script>
+import appDefs from '../app_defs';
+
 export default {
   name: 'BgSiteControls',
 
@@ -61,6 +66,16 @@ export default {
       type: String,
       required: true,
     },
+    appMode: {
+      type: String,
+      required: true,
+    },
+  },
+
+  data: function() {
+    return {
+      appDefs: appDefs,
+    };
   },
 };
 </script>

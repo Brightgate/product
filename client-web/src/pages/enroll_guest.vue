@@ -20,17 +20,6 @@
     <div v-else>
       <f7-list no-hairlines>
         <f7-list-item>
-          <f7-label inline>Enroll to the: </f7-label>
-          <f7-input
-            :value="userType"
-            type="select"
-            @change="userType = $event.target.value">
-            <option value="psk">{{ $t('message.enroll_guest.psk_network') }}</option>
-            <option value="eap">{{ $t('message.enroll_guest.eap_network') }}</option>
-          </f7-input>
-        </f7-list-item>
-
-        <f7-list-item>
           <f7-label>{{ $t('message.enroll_guest.phone') }}</f7-label>
           <f7-input
             :value="phoneInput"
@@ -38,16 +27,6 @@
             type="tel"
             required
             autofocus @input="onTelInput" />
-        </f7-list-item>
-
-        <f7-list-item v-if="userType === 'eap'">
-          <f7-label>{{ $t('message.enroll_guest.email') }}</f7-label>
-          <f7-input
-            :value="emailInput"
-            :placeholder="$t('message.enroll_guest.email_placeholder')"
-            type="email"
-            required
-            @input="emailInput = $event.target.value" />
         </f7-list-item>
       </f7-list>
 
@@ -73,7 +52,6 @@
 
 import Vuex from 'vuex';
 import {isValidNumber, AsYouType} from 'libphonenumber-js';
-import emailvalidator from 'email-validator';
 import Debug from 'debug';
 const debug = Debug('page:enroll-guest');
 let phoneAYT = null;
@@ -81,7 +59,6 @@ let phoneAYT = null;
 export default {
   data: function() {
     return {
-      userType: 'eap',
       phoneInput: '',
       emailInput: '',
       enrolling: false,
@@ -96,14 +73,6 @@ export default {
     ]),
 
     validForm: function() {
-      if (this.userType === 'eap') {
-        if (!this.emailInput || this.emailInput === '') {
-          return false;
-        }
-        if (emailvalidator.validate(this.emailInput) === false) {
-          return false;
-        }
-      }
       if (!this.phoneInput || this.phoneInput === '') {
         return false;
       }
@@ -120,50 +89,24 @@ export default {
       this.phoneInput = phoneAYT.input(event.target.value);
     },
 
-    toastSuccess: function(text) {
-      this.$f7.toast.show({
-        text: text,
-        closeButton: true,
-        destroyOnClose: true,
-        on: {
-          close: () => {
-            this.$f7router.back();
-          },
-        },
-      });
-    },
-
-    enrollGuestEAP: function() {
-      return this.$store.dispatch('enrollGuest',
-        {type: 'eap', phone: this.phoneInput, email: this.emailInput}
-      ).then((res) => {
-        debug('enrollGuestEAP result', res);
-        const user = res.user;
-        this.toastSuccess(
-          this.$t('message.enroll_guest.eap_success', {name: user.UID}));
-      });
-    },
-
-    enrollGuestPSK: function() {
-      return this.$store.dispatch('enrollGuest',
-        {type: 'psk', phone: this.phoneInput}
-      ).then((res) => {
-        debug('enrollGuestEAP result', res);
-        this.toastSuccess(this.$t('message.enroll_guest.psk_success'));
-      });
-    },
-
     enrollGuest: async function() {
-      debug(`enrollGuest: ${this.userType} ${this.phoneInput} ${this.email}`);
+      debug(`enrollGuest: ${this.phoneInput} ${this.email}`);
       this.enrolling = true;
       try {
-        if (this.userType === 'eap') {
-          await this.enrollGuestEAP();
-        } else {
-          await this.enrollGuestPSK();
-        }
+        const resp = await this.$store.dispatch('enrollGuest', {kind: 'psk', phoneNumber: this.phoneInput});
+        debug('enrollGuest response', resp);
+        this.$f7.toast.show({
+          text: this.$t('message.enroll_guest.psk_success'),
+          closeButton: true,
+          destroyOnClose: true,
+          on: {
+            close: () => {
+              this.$f7router.back();
+            },
+          },
+        });
       } catch (err) {
-        debug('enrollGuest: failed', err);
+        debug('enrollGuestPSK: failed', err);
         this.$f7.toast.show({
           text: this.$t('message.enroll_guest.sms_failure'),
           closeButton: true,
