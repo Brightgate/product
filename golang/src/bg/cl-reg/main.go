@@ -438,7 +438,7 @@ func newAppliance(cmd *cobra.Command, args []string) error {
 	if siteUUID != "" {
 		var u uuid.UUID
 		var err error
-		if u, err = uuid.FromString(appUUID); err != nil {
+		if u, err = uuid.FromString(siteUUID); err != nil {
 			return err
 		}
 		siteUU = &u
