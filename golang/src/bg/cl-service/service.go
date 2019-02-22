@@ -111,6 +111,7 @@ import (
 
 	"bg/cl_common/clcfg"
 	"bg/common/cfgapi"
+	"bg/common/network"
 	"bg/common/ssh"
 
 	"github.com/tomazk/envcfg"
@@ -154,23 +155,6 @@ var (
 	slog *zap.SugaredLogger
 )
 
-// Select a random, available port to use for our side of the tunnel
-func choosePort() int {
-	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
-	if err != nil {
-		slog.Fatalf("unable to resolve localhost: %v", err)
-	}
-
-	l, err := net.ListenTCP("tcp", addr)
-	if err != nil {
-		slog.Fatalf("unable to open a new port: %v", err)
-	}
-	port := l.Addr().(*net.TCPAddr).Port
-	l.Close()
-
-	return port
-}
-
 // Get the current user's name
 func getUsername() string {
 	u, err := user.Current()
@@ -178,14 +162,6 @@ func getUsername() string {
 		slog.Fatalf("unable to get username: %v\n", err)
 	}
 	return u.Username
-}
-
-func isPrivate(ip net.IP) bool {
-	_, a, _ := net.ParseCIDR("10.0.0.0/8")
-	_, b, _ := net.ParseCIDR("172.16.0.0/12")
-	_, c, _ := net.ParseCIDR("192.168.0.0/16")
-
-	return a.Contains(ip) || b.Contains(ip) || c.Contains(ip)
 }
 
 // Try to get the outbound IP address.  If this system is behind a NAT, then the
@@ -238,12 +214,17 @@ func updateConfigTree(props map[string]string) {
 // appliance to establish an ssh tunnel to us.
 func prepProps() map[string]string {
 	var host string
+	var err error
 
 	if *sshPort == 0 {
-		*sshPort = choosePort()
+		if *sshPort, err = network.ChoosePort(); err != nil {
+			slog.Fatalf("getting ssh port: %v", err)
+		}
 	}
 	if *tunnelPort == 0 {
-		*tunnelPort = choosePort()
+		if *tunnelPort, err = network.ChoosePort(); err != nil {
+			slog.Fatalf("getting tunnel port: %v", err)
+		}
 	}
 	prefix := "provided"
 	if host = *sshAddr; host == "" {
@@ -255,7 +236,7 @@ func prepProps() map[string]string {
 	if ip == nil {
 		slog.Fatalf("%s host address invalid: %s", prefix, host)
 	}
-	if isPrivate(ip) {
+	if network.IsPrivate(ip) {
 		slog.Warnf("%s host address %v is non-routable.  "+
 			"Use -ssh_addr to provide a routable address.",
 			prefix, ip)

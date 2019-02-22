@@ -312,6 +312,7 @@ COMMON_GOPKGS = \
 	bg/common/configctl \
 	bg/common/deviceid \
 	bg/common/grpcutils \
+	bg/common/network \
 	bg/common/passwordgen \
 	bg/common/ssh \
 	bg/common/urlfetch
@@ -328,6 +329,7 @@ COMMON_SRCS = \
 	$(GOSRCBG)/common/deviceid/device.go \
 	$(GOSRCBG)/common/grpcutils/client.go \
 	$(GOSRCBG)/common/grpcutils/cred.go \
+	$(GOSRCBG)/common/network/network.go \
 	$(GOSRCBG)/common/passwordgen/passwordgen.go \
 	$(GOSRCBG)/common/ssh/keys.go \
 	$(GOSRCBG)/common/ssh/sshd.go \
@@ -342,9 +344,9 @@ APPCOMMON_GOPKGS = \
 	bg/ap_common/apvuln \
 	bg/ap_common/broker \
 	bg/ap_common/certificate \
+	bg/ap_common/dhcp \
 	bg/ap_common/mcp \
 	bg/ap_common/model \
-	bg/ap_common/network \
 	bg/ap_common/platform \
 	bg/ap_common/wificaps
 
@@ -399,12 +401,12 @@ APPBINARIES = \
 
 GO_AP_TESTABLES = \
 	bg/ap_common/certificate \
-	bg/ap_common/network \
 	bg/ap.configd \
 	bg/ap-defaultpass\
 	bg/ap.rpcd \
 	bg/ap.userauthd \
-	bg/common/grpcutils
+	bg/common/grpcutils \
+	bg/common/network
 
 GO_CLOUD_TESTABLES = \
 	bg/cl_common/auth/m2mauth \
@@ -511,8 +513,7 @@ APP_COMMON_SRCS = \
 	$(GOSRCBG)/ap_common/broker/broker.go \
 	$(GOSRCBG)/ap_common/mcp/mcp_client.go \
 	$(GOSRCBG)/ap_common/model/model.go \
-	$(GOSRCBG)/ap_common/network/dhcp.go \
-	$(GOSRCBG)/ap_common/network/network.go \
+	$(GOSRCBG)/ap_common/dhcp/dhcp.go \
 	$(GOSRCBG)/ap_common/platform/platform.go \
 	$(GOSRCBG)/ap_common/platform/mt.go \
 	$(GOSRCBG)/ap_common/platform/rpi.go \
@@ -527,9 +528,9 @@ UTILBIN=$(UTILROOT)/bin
 
 UTILCOMMON_SRCS = \
 	$(GOSRCBG)/ap_common/model/model.go \
-	$(GOSRCBG)/ap_common/network/network.go \
 	$(GOSRCBG)/ap_common/platform/platform.go \
 	$(GOSRCBG)/base_msg/base_msg.pb.go \
+	$(GOSRCBG)/common/network/network.go \
 	$(GOSRCBG)/util/deviceDB/device_db.go
 
 UTILCOMMAND_SRCS = \
@@ -880,6 +881,7 @@ $(APPBIN)/ap.configd: \
 	$(GOSRCBG)/ap.configd/upgrade_v15.go \
 	$(GOSRCBG)/ap.configd/upgrade_v16.go \
 	$(GOSRCBG)/ap.configd/upgrade_v17.go \
+	$(GOSRCBG)/ap.configd/upgrade_v18.go \
 	$(GOSRCBG)/ap.configd/validate.go
 $(APPBIN)/ap.httpd: \
 	$(GOSRCBG)/ap.httpd/ap.httpd.go \

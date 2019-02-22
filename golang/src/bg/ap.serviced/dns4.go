@@ -40,10 +40,10 @@ import (
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/ap_common/data"
-	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
 	"bg/common/cfgapi"
+	"bg/common/network"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/miekg/dns"

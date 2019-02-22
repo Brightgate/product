@@ -24,10 +24,10 @@ import (
 
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
-	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
 	"bg/common/cfgapi"
+	"bg/common/network"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/miekg/dns"
@@ -89,10 +89,6 @@ type ssdpSearchState struct {
 	requestor *ipv4.PacketConn
 	listener  *ipv4.PacketConn
 	next      *ssdpSearchState
-}
-
-func vlanBridge(vlan int) string {
-	return "brvlan" + strconv.Itoa(vlan)
 }
 
 func initListener(s service) (p *ipv4.PacketConn, err error) {

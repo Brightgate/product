@@ -26,7 +26,7 @@ import (
 	"syscall"
 	"time"
 
-	"bg/ap_common/network"
+	"bg/ap_common/dhcp"
 	"bg/base_def"
 	"bg/base_msg"
 
@@ -512,7 +512,7 @@ func GetNodeMode() string {
 	if proposed == "" {
 		interfaces, _ := net.Interfaces()
 		for _, iface := range interfaces {
-			lease, err := network.GetLease(iface.Name)
+			lease, err := dhcp.GetLease(iface.Name)
 			if err == nil && lease.Mode != "" {
 				proposed = lease.Mode
 				break

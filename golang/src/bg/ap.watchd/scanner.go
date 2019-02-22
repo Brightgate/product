@@ -28,10 +28,10 @@ import (
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/ap_common/apvuln"
-	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
 	"bg/common/cfgapi"
+	"bg/common/network"
 
 	"github.com/golang/protobuf/proto"
 	nmap "github.com/lair-framework/go-nmap"
@@ -53,7 +53,7 @@ var (
 
 	scanPools   map[string]*scanPool
 	scanThreads = map[string]int{
-		"tcp":    3,
+		"tcp":    2,
 		"udp":    2,
 		"vuln":   3,
 		"subnet": 1,

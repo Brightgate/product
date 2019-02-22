@@ -28,9 +28,9 @@ import (
 
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
-	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/common/archive"
+	"bg/common/network"
 )
 
 var (

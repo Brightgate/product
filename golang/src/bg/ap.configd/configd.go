@@ -49,12 +49,12 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
-	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
 	"bg/common/cfgapi"
 	"bg/common/cfgmsg"
 	"bg/common/cfgtree"
+	"bg/common/network"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
@@ -101,6 +101,8 @@ var updateCheckTable = []struct {
 	{regexp.MustCompile(`^@/uuid$`), uuidCheck},
 	{regexp.MustCompile(`^@/clients/.*/(dns|dhcp)_name$`), dnsCheck},
 	{regexp.MustCompile(`^@/clients/.*/ipv4$`), ipv4Check},
+	{regexp.MustCompile(`^@/network/base_address$`), subnetCheck},
+	{regexp.MustCompile(`^@/site_index$`), subnetCheck},
 	{regexp.MustCompile(`^@/dns/cnames/`), cnameCheck},
 }
 
@@ -402,6 +404,49 @@ func cnameCheck(prop, hostname string) error {
 			err = fmt.Errorf("invalid canonical name: %s", hostname)
 		} else if dnsNameInuse(nil, cname) {
 			err = fmt.Errorf("duplicate hostname")
+		}
+	}
+
+	return err
+}
+
+// Validate that a given site_index and base_address will allow us to generate
+// legal subnet addresses
+func subnetCheck(prop, val string) error {
+	const basePath = "@/network/base_address"
+	const sitePath = "@/site_index"
+	var baseProp, siteProp string
+
+	if prop == basePath {
+		baseProp = val
+	} else if p, err := propTree.GetProp(basePath); err == nil {
+		baseProp = p
+	} else {
+		baseProp = "192.168.0.2/24"
+	}
+
+	if prop == sitePath {
+		siteProp = val
+	} else if p, err := propTree.GetProp(sitePath); err == nil {
+		siteProp = p
+	} else {
+		siteProp = "0"
+	}
+	siteIdx, err := strconv.Atoi(siteProp)
+	if err != nil {
+		return fmt.Errorf("invalid %s: %v", sitePath, err)
+	}
+
+	// Make sure the base network address generates a valid subnet for both
+	// the lowest and highest subnet indices.
+	_, err = cfgapi.GenSubnet(baseProp, siteIdx, 0)
+	if err != nil {
+		err = fmt.Errorf("invalid %s: %v", prop, err)
+	} else {
+		_, err = cfgapi.GenSubnet(baseProp, siteIdx, cfgapi.MaxRings-1)
+		if err != nil {
+			err = fmt.Errorf("invalid %s for max subnet: %v",
+				prop, err)
 		}
 	}
 

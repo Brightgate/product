@@ -21,9 +21,9 @@ import (
 	"time"
 
 	"bg/ap_common/aputil"
-	"bg/ap_common/network"
 	"bg/base_msg"
 	"bg/cloud_rpc"
+	"bg/common/network"
 
 	"github.com/pkg/errors"
 

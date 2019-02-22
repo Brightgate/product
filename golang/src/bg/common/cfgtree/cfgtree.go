@@ -26,6 +26,7 @@ import (
 var (
 	ErrNoProp  = errors.New("no such property")
 	ErrExpired = errors.New("property expired")
+	ErrNotLeaf = errors.New("not a leaf node")
 )
 
 // PTree represents an in-core configuration tree, on which operations may be
@@ -447,6 +448,23 @@ func (t *PTree) Delete(prop string) ([]string, error) {
 // Root returns the root PNode of the config tree
 func (t *PTree) Root() *PNode {
 	return t.root
+}
+
+// GetProp will return the property of a leaf node indicated by the provided
+// property path
+func (t *PTree) GetProp(prop string) (string, error) {
+	var val string
+
+	n, err := t.GetNode(prop)
+	if err == nil {
+		if len(n.Children) == 0 {
+			val = n.Value
+		} else {
+			err = ErrNotLeaf
+		}
+	}
+
+	return val, err
 }
 
 // GetNode will return the node indicated by the provided property path

@@ -8,7 +8,7 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 
-package network
+package dhcp
 
 import (
 	"encoding/hex"
@@ -25,8 +25,8 @@ import (
 	dhcp "github.com/krolaw/dhcp4"
 )
 
-// DHCPInfo contains a summary of an outstanding DHCP lease held by this device.
-type DHCPInfo struct {
+// Info contains a summary of an outstanding DHCP lease held by this device.
+type Info struct {
 	Addr          string
 	Route         string
 	DomainName    string
@@ -36,8 +36,8 @@ type DHCPInfo struct {
 	Mode          string
 }
 
-// DHCPDecodeOptions parses a bytestream into a slice of DHCP options
-func DHCPDecodeOptions(s []byte) (opts []dhcp.Option, err error) {
+// DecodeOptions parses a bytestream into a slice of DHCP options
+func DecodeOptions(s []byte) (opts []dhcp.Option, err error) {
 	end := len(s)
 	idx := 0
 	for idx+3 < end {
@@ -60,9 +60,9 @@ func DHCPDecodeOptions(s []byte) (opts []dhcp.Option, err error) {
 	return
 }
 
-// DHCPEncodeOptions marshals a slice of DHCP options into a bytestream as
+// EncodeOptions marshals a slice of DHCP options into a bytestream as
 // described in RFC-2132
-func DHCPEncodeOptions(opts []dhcp.Option) (s []byte, err error) {
+func EncodeOptions(opts []dhcp.Option) (s []byte, err error) {
 	for _, opt := range opts {
 		if opt.Code == 0 || opt.Code >= dhcp.End {
 			err = fmt.Errorf("bad option code: %d", opt.Code)
@@ -80,7 +80,7 @@ func DHCPEncodeOptions(opts []dhcp.Option) (s []byte, err error) {
 
 // GetLease queries the dhcp client about the provided interface, and returns a
 // DHCPInfo structure containing whatever information we were able to retrieve.
-func GetLease(iface string) (*DHCPInfo, error) {
+func GetLease(iface string) (*Info, error) {
 
 	plat := platform.NewPlatform()
 
@@ -94,7 +94,7 @@ func GetLease(iface string) (*DHCPInfo, error) {
 		addr += "/" + bits
 	}
 
-	d := &DHCPInfo{
+	d := &Info{
 		Addr:       addr,
 		Route:      data["routers"],
 		DomainName: data["domain_name"],
@@ -109,7 +109,7 @@ func GetLease(iface string) (*DHCPInfo, error) {
 		// it will only have a single option: '1' which is the device
 		// mode.
 		if s, err := hex.DecodeString(vendorOptions); err == nil {
-			opts, _ := DHCPDecodeOptions(s)
+			opts, _ := DecodeOptions(s)
 			for _, o := range opts {
 				if o.Code == 1 {
 					d.Mode = string(o.Value)

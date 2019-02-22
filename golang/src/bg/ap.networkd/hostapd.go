@@ -25,11 +25,11 @@ import (
 	"time"
 
 	"bg/ap_common/aputil"
-	"bg/ap_common/network"
 	"bg/ap_common/wificaps"
 	"bg/base_def"
 	"bg/base_msg"
 	"bg/common/cfgapi"
+	"bg/common/network"
 
 	"github.com/golang/protobuf/proto"
 	"go.uber.org/zap/zapcore"
@@ -154,6 +154,8 @@ func initVap(root *cfgapi.PropertyNode) (*virtualAP, error) {
 		} else {
 			return nil, fmt.Errorf("missing WPA-PSK passphrase")
 		}
+	} else if wconf.radiusSecret == "" {
+		return nil, fmt.Errorf("radius secret undefined")
 	}
 
 	if x := root.Children["5ghz"]; x != nil {

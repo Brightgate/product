@@ -47,6 +47,9 @@
       },
       "network": {
         "Children": {
+          "base_address": {
+            "value": "192.168.2.0/24"
+          },
           "dnsserver": {
             "Value": "8.8.8.8:53"
           },
@@ -120,9 +123,6 @@
               "lease_duration": {
                 "Value": "1440"
               },
-              "subnet": {
-                "Value": "192.168.133.0/26"
-              },
               "vlan": {
                 "Value": "3"
               }
@@ -135,9 +135,6 @@
               },
               "lease_duration": {
                 "Value": "180"
-              },
-              "subnet": {
-                "Value": "192.168.135.0/26"
               },
               "vlan": {
                 "Value": "5"
@@ -152,9 +149,6 @@
               "lease_duration": {
                 "Value": "30"
               },
-              "subnet": {
-                "Value": "192.168.136.0/26"
-              },
               "vlan": {
                 "Value": "6"
               }
@@ -167,9 +161,6 @@
               },
               "lease_duration": {
                 "Value": "1440"
-              },
-              "subnet": {
-                "Value": "192.168.131.0/29"
               },
               "vlan": {
                 "Value": "1"
@@ -184,9 +175,6 @@
               "lease_duration": {
                 "Value": "10"
               },
-              "subnet": {
-                "Value": "192.168.137.0/26"
-              },
               "vlan": {
                 "Value": "7"
               }
@@ -199,9 +187,6 @@
               },
               "lease_duration": {
                 "Value": "1440"
-              },
-              "subnet": {
-                "Value": "192.168.134.0/26"
               },
               "vlan": {
                 "Value": "4"
@@ -216,9 +201,6 @@
               "lease_duration": {
                 "Value": "10"
               },
-              "subnet": {
-                "Value": "192.168.130.0/26"
-              },
               "vlan": {
                 "Value": "0"
               }
@@ -227,6 +209,9 @@
         }
       },
       "siteid": {
+        "Value": "0"
+      },
+      "site_index": {
         "Value": "0"
       },
       "users": {},
@@ -238,6 +223,7 @@
   "Descriptions": [
     {"Path": "@/uuid", "Type": "uuid", "Level": "internal"},
     {"Path": "@/siteid", "Type": "int", "Level": "internal"},
+    {"Path": "@/site_index", "Type": "int", "Level": "internal"},
     {"Path": "@/apversion", "Type": "string", "Level": "internal"},
     {"Path": "@/cfgversion", "Type": "int", "Level": "internal"},
     {"Path": "@/dns/cnames/%hostname%", "Type": "hostname", "Level": "user"},
@@ -254,6 +240,7 @@
     {"Path": "@/network/wan/dhcp/start", "Type": "time", "Level": "internal"},
     {"Path": "@/network/wan/static/address", "Type": "cidr", "Level": "admin"},
     {"Path": "@/network/wan/static/route", "Type": "ipaddr", "Level": "admin"},
+    {"Path": "@/network/base_address", "Type": "cidr", "Level": "internal"},
     {"Path": "@/network/dnsserver", "Type": "ipaddr", "Level": "admin"},
     {"Path": "@/network/nologwan", "Type": "bool", "Level": "admin"},
     {"Path": "@/network/ntpservers/%int%", "Type": "dnsaddr", "Level": "admin"},
@@ -266,7 +253,6 @@
     {"Path": "@/network/radiusAuthSecret", "Type": "string", "Level": "internal"},
     {"Path": "@/network/%wifiband%/channel", "Type": "int", "Level": "admin"},
     {"Path": "@/rings/%ring%/lease_duration", "Type": "int", "Level": "admin"},
-    {"Path": "@/rings/%ring%/subnet", "Type": "cidr", "Level": "admin"},
     {"Path": "@/rings/%ring%/vlan", "Type": "int", "Level": "developer"},
     {"Path": "@/rings/%ring%/vap", "Type": "string", "Level": "developer"},
     {"Path": "@/users/%user%/email", "Type": "email", "Level": "user"},

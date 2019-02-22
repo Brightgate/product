@@ -71,7 +71,7 @@ func getRings(cmd string, args []string) error {
 
 		ring := rings[name]
 		if ring.Vlan >= 0 {
-			vlan = strconv.Itoa(ring.Vlan)
+			vlan = strconv.Itoa(int(ring.Vlan))
 		} else {
 			vlan = "-"
 		}

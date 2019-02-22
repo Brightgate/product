@@ -15,13 +15,14 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"net"
 	"os"
 	"os/exec"
 	"sync"
 	"syscall"
 	"text/template"
 	"time"
+
+	"bg/common/network"
 
 	"go.uber.org/zap"
 )
@@ -182,23 +183,6 @@ func (d *Daemon) newSshdInstance() (*sshdInstance, error) {
 	return i, nil
 }
 
-// Find an unused TCP port
-func choosePort() (int, error) {
-	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
-	if err != nil {
-		return 0, fmt.Errorf("unable to resolve localhost: %v", err)
-	}
-
-	l, err := net.ListenTCP("tcp", addr)
-	if err != nil {
-		return 0, fmt.Errorf("unable to open a new port: %v", err)
-	}
-	port := l.Addr().(*net.TCPAddr).Port
-	l.Close()
-
-	return port, nil
-}
-
 func (d *Daemon) loop() {
 	var err error
 	var child *sshdInstance
@@ -295,7 +279,7 @@ func NewSshd(config *DaemonConfig) (*Daemon, error) {
 		return nil, fmt.Errorf("must provide an sshd_config template")
 	}
 	if port = config.Port; port == 0 {
-		if port, err = choosePort(); err != nil {
+		if port, err = network.ChoosePort(); err != nil {
 			return nil, err
 		}
 	}

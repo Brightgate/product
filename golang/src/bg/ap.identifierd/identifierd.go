@@ -40,10 +40,10 @@ import (
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
 	"bg/ap_common/model"
-	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
 	"bg/common/cfgapi"
+	"bg/common/network"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/klauspost/oui"

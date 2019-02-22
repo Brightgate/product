@@ -24,7 +24,7 @@ import (
 	"syscall"
 	"time"
 
-	"bg/ap_common/network"
+	"bg/common/network"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"

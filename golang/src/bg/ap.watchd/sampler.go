@@ -21,9 +21,9 @@ import (
 	"time"
 
 	"bg/ap_common/apcfg"
-	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/common/cfgapi"
+	"bg/common/network"
 
 	// Requires libpcap
 	"github.com/google/gopacket"

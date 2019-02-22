@@ -30,11 +30,11 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
-	"bg/ap_common/network"
 	"bg/ap_common/platform"
 	"bg/ap_common/wificaps"
 	"bg/base_def"
 	"bg/common/cfgapi"
+	"bg/common/network"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
@@ -164,19 +164,23 @@ func configRingVAPChanged(path []string, val string, expires *time.Time) {
 }
 
 func configSet(name, val string) bool {
-	var prop *string
+	var reload bool
 
 	switch name {
+	case "base_address", "ring_width":
+		rings = config.GetRings()
+		reload = true
+
 	case "radiusAuthSecret":
-		prop = &wconf.radiusSecret
+		prop := &wconf.radiusSecret
+		if prop != nil && *prop != val {
+			slog.Infof("%s changed to '%s'", name, val)
+			*prop = val
+			reload = true
+		}
 	}
 
-	if prop != nil && *prop != val {
-		slog.Infof("%s changed to '%s'", name, val)
-		*prop = val
-		return true
-	}
-	return false
+	return reload
 }
 
 func configNetworkDeleted(path []string) {
@@ -186,6 +190,11 @@ func configNetworkDeleted(path []string) {
 	} else if len(path) == 4 && path[1] == "wan" && path[2] == "static" {
 		wanStaticDeleted(path[3])
 	}
+}
+
+func configSiteIndexChanged(path []string, val string, expires *time.Time) {
+	rings = config.GetRings()
+	hostapd.reload()
 }
 
 func configNetworkChanged(path []string, val string, expires *time.Time) {
@@ -309,7 +318,7 @@ func rebuildInternalNet() {
 		}
 		for name, ring := range rings {
 			if name != base_def.RING_INTERNAL {
-				addVif(dev.name, ring.Vlan)
+				addVif(dev.name, ring.Vlan, ring.Bridge)
 			}
 		}
 	}
@@ -366,10 +375,9 @@ func resetInterfaces() {
 
 // Create a virtual port for the given NIC / VLAN pair.  Attach the new virtual
 // port to the bridge for the associated VLAN.
-func addVif(nic string, vlan int) {
+func addVif(nic string, vlan int, bridge string) {
 	vid := strconv.Itoa(vlan)
 	vif := nic + "." + vid
-	bridge := fmt.Sprintf("brvlan%d", vlan)
 
 	deleteVif(vif)
 	err := exec.Command(plat.VconfigCmd, "add", nic, vid).Run()
@@ -737,6 +745,7 @@ func daemonInit() error {
 	*templateDir = aputil.ExpandDirPath(*templateDir)
 	*rulesDir = aputil.ExpandDirPath(*rulesDir)
 
+	config.HandleChange(`^@/site_index`, configSiteIndexChanged)
 	config.HandleChange(`^@/clients/.*/ring$`, configClientChanged)
 	config.HandleChange(`^@/nodes/"+nodeUUID+"/nics/.*/band$`, configBandChanged)
 	config.HandleChange(`^@/nodes/"+nodeUUID+"/nics/.*/channel$`, configChannelChanged)

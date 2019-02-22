@@ -21,8 +21,8 @@ import (
 
 	"github.com/satori/uuid"
 
-	"bg/ap_common/network"
 	"bg/common/cfgapi"
+	"bg/common/network"
 )
 
 type propDescription struct {

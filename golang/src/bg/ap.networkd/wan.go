@@ -22,9 +22,10 @@ import (
 	"time"
 
 	"bg/ap_common/aputil"
-	"bg/ap_common/network"
+	"bg/ap_common/dhcp"
 	"bg/base_def"
 	"bg/common/cfgapi"
+	"bg/common/network"
 )
 
 type wanInfo struct {
@@ -99,7 +100,7 @@ func wanStaticDeleted(prop string) {
 			if reset {
 				wan.ipClear()
 			}
-			err := network.RenewLease(wan.nic)
+			err := dhcp.RenewLease(wan.nic)
 			if err != nil {
 				slog.Warnf("failed to renew lease: %v", err)
 			}
@@ -296,7 +297,7 @@ func dhcpOp(prop, val string) cfgapi.PropertyOp {
 }
 
 func (w *wanInfo) dhcpRefresh() {
-	d, err := network.GetLease(w.nic)
+	d, err := dhcp.GetLease(w.nic)
 	if err != nil {
 		slog.Errorf("failed to get lease info: %v", err)
 		return

@@ -16,18 +16,20 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/bits"
 	"net"
 	"strconv"
 	"time"
 
 	"bg/base_def"
+	"bg/common/network"
 
 	"github.com/satori/uuid"
 )
 
 // Version gets increased each time there is a non-compatible change to the
 // config tree format, or configd API.
-const Version = int32(17)
+const Version = int32(18)
 
 // CmdHdl is returned when one or more operations are submitted to Execute().
 // This handle can be used to check on the status of a pending operation, or to
@@ -117,6 +119,24 @@ var ValidRings = map[string]bool{
 	base_def.RING_GUEST:      true,
 	base_def.RING_QUARANTINE: true,
 	base_def.RING_WAN:        true,
+}
+
+// MaxRings is the largest number of rings we support.  This includes currently
+// defined rings and proposed rings, rounded up to the next power of 2.  If we
+// reserve 8 bits for each subnet, this allows us to have 15 sites in the
+// 192.x.x.x range, 255 in the 172.x.x.x range, or 4095 in the 10.x.x.x range.
+// In all cases we have room at the top of the range for Brightgate subnets for
+// VPNs, etc.
+const MaxRings = 16
+
+var ringToSubnetIdx = map[string]int{
+	base_def.RING_INTERNAL:   0,
+	base_def.RING_UNENROLLED: 1,
+	base_def.RING_CORE:       2,
+	base_def.RING_STANDARD:   3,
+	base_def.RING_DEVICES:    4,
+	base_def.RING_GUEST:      5,
+	base_def.RING_QUARANTINE: 6,
 }
 
 // RingConfig defines the parameters of a ring's subnet
@@ -465,9 +485,65 @@ func getUUIDVal(root *PropertyNode, name string) (*uuid.UUID, error) {
 	return &uu, nil
 }
 
+// fetch the various properties we need to calculate the subnet addresses for
+// each ring at this site.
+func (c *Handle) getSubnetInfo() (string, int, error) {
+	var baseProp, siteProp string
+	var siteIndex int
+	var err error
+
+	if siteProp, err = c.GetProp("@/site_index"); err != nil {
+		err = fmt.Errorf("fetching site index: %v", err)
+
+	} else if siteIndex, err = strconv.Atoi(siteProp); err != nil {
+		err = fmt.Errorf("parsing site index: %v", err)
+
+	} else if baseProp, err = c.GetProp("@/network/base_address"); err != nil {
+		err = fmt.Errorf("fetching base_address: %v", err)
+
+	} else if _, _, err = net.ParseCIDR(baseProp); err != nil {
+		err = fmt.Errorf("parsing base address %s: %v", baseProp, err)
+	}
+
+	return baseProp, siteIndex, err
+}
+
+// GenSubnet calculates the subnet address for a ring.
+func GenSubnet(base string, siteIdx, subnetIdx int) (string, error) {
+	maxSubnetIdx := MaxRings - 1
+	if subnetIdx > maxSubnetIdx {
+		return "", fmt.Errorf("subnetIdx must be <= %d", maxSubnetIdx)
+	}
+	idxBits := uint(bits.Len(uint(maxSubnetIdx)))
+
+	ipaddr, ipnet, err := net.ParseCIDR(base)
+	if err != nil {
+		return "", fmt.Errorf("parsing base address %s: %v", base, err)
+	}
+	ones, bits := ipnet.Mask.Size()
+	width := uint(bits - ones)
+
+	baseInt := network.IPAddrToUint32(ipaddr)
+	subnetInt := baseInt + uint32(((siteIdx<<idxBits)+subnetIdx)<<width)
+	subnet := network.Uint32ToIPAddr(subnetInt)
+
+	if !network.IsPrivate(subnet) {
+		return "", fmt.Errorf("%s is not a private subnet", subnet)
+	}
+
+	cidr := fmt.Sprintf("%v/%d", subnet, ones)
+	return cidr, nil
+}
+
 // GetRings fetches the Rings subtree from ap.configd, and converts the json
 // into a Ring -> RingConfig map
 func (c *Handle) GetRings() RingMap {
+	base, siteIdx, err := c.getSubnetInfo()
+	if err != nil {
+		log.Printf("Failed to get subnet info: %v\n", err)
+		return nil
+	}
+
 	props, err := c.GetProps("@/rings")
 	if err != nil {
 		log.Printf("Failed to get ring list: %v\n", err)
@@ -486,7 +562,7 @@ func (c *Handle) GetRings() RingMap {
 		if err == nil {
 			vlan, err = getIntVal(ring, "vlan")
 			if vlan >= 0 {
-				bridge = "brvlan" + strconv.Itoa(vlan)
+				bridge = "brvlan" + strconv.Itoa(int(vlan))
 			}
 		}
 		if err == nil {
@@ -494,8 +570,10 @@ func (c *Handle) GetRings() RingMap {
 		}
 
 		if err == nil {
-			subnet, err = getStringVal(ring, "subnet")
+			subnetIdx := ringToSubnetIdx[ringName]
+			subnet, err = GenSubnet(base, siteIdx, subnetIdx)
 		}
+
 		if err == nil {
 			duration, err = getIntVal(ring, "lease_duration")
 		}
@@ -505,7 +583,8 @@ func (c *Handle) GetRings() RingMap {
 				Subnet:        subnet,
 				Bridge:        bridge,
 				VirtualAP:     vap,
-				LeaseDuration: duration}
+				LeaseDuration: duration,
+			}
 			set[ringName] = &c
 		} else {
 			log.Printf("Malformed ring %s: %v\n", ringName, err)

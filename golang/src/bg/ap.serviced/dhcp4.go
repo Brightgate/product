@@ -22,16 +22,21 @@ import (
 
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
-	"bg/ap_common/network"
+	bgdhcp "bg/ap_common/dhcp"
 	"bg/base_def"
 	"bg/base_msg"
 	"bg/common/cfgapi"
+	"bg/common/network"
 
 	"github.com/golang/protobuf/proto"
 	dhcp "github.com/krolaw/dhcp4"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/net/ipv4"
 )
+
+// The lowest portion of each subnet's IP range is reserved for the router
+// addresses used by each satellite.
+const maxSatelliteNodes = 8
 
 var (
 	handlers   = make(map[string]*ringHandler)
@@ -505,7 +510,7 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 			},
 		}
 
-		vendorOpt, _ := network.DHCPEncodeOptions(o)
+		vendorOpt, _ := bgdhcp.EncodeOptions(o)
 		h.options[dhcp.OptionVendorSpecificInformation] = vendorOpt
 	}
 
@@ -739,16 +744,13 @@ func newHandler(name string, rings cfgapi.RingMap) *ringHandler {
 	myip := dhcp.IPAdd(start, 1)
 	if name == base_def.RING_INTERNAL {
 		// Shrink the range to exclude the router
-		span--
+		span = maxSatelliteNodes - 1
 		start = dhcp.IPAdd(start, 1)
 	} else {
 		// Exclude the lower addresses that are reserved for the routers
 		// on each of the mesh APs
-		iname := base_def.RING_INTERNAL
-		isub := rings[base_def.RING_INTERNAL].Subnet
-		_, _, reserved := ipRange(iname, isub)
-		start = dhcp.IPAdd(start, reserved)
-		span -= reserved
+		span -= maxSatelliteNodes
+		start = dhcp.IPAdd(start, maxSatelliteNodes)
 	}
 	// Exclude the broadcast address
 	span--

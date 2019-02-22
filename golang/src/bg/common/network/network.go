@@ -47,6 +47,16 @@ var (
 	macMcast = net.HardwareAddr([]byte{0x01, 0x00, 0x5E})
 )
 
+// IsPrivate determines whether the provided IP address falls into one of the 3
+// IPv4 address ranges for private networks.
+func IsPrivate(ip net.IP) bool {
+	_, a, _ := net.ParseCIDR("10.0.0.0/8")
+	_, b, _ := net.ParseCIDR("172.16.0.0/12")
+	_, c, _ := net.ParseCIDR("192.168.0.0/16")
+
+	return a.Contains(ip) || b.Contains(ip) || c.Contains(ip)
+}
+
 // IsMacMulticast checks if the supplied MAC address begins 01:00:5E
 func IsMacMulticast(a net.HardwareAddr) bool {
 	return a[3]&0x80 == 0x80 && bytes.HasPrefix(a, macMcast)
@@ -186,4 +196,21 @@ func ValidDNSName(name string) bool {
 	}
 
 	return true
+}
+
+// ChoosePort returns a local port number, which is currenty not being used.
+func ChoosePort() (int, error) {
+	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
+	if err != nil {
+		return 0, fmt.Errorf("unable to resolve localhost: %v", err)
+	}
+
+	l, err := net.ListenTCP("tcp", addr)
+	if err != nil {
+		return 0, fmt.Errorf("unable to open a new port: %v", err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	l.Close()
+
+	return port, nil
 }

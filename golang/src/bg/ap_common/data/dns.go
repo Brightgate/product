@@ -19,7 +19,7 @@ import (
 	"strings"
 
 	"bg/ap_common/aputil"
-	"bg/ap_common/network"
+	"bg/common/network"
 )
 
 const (

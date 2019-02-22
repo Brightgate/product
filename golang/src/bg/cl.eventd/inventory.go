@@ -18,10 +18,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"bg/ap_common/network"
 	"bg/base_msg"
 	"bg/cloud_models/appliancedb"
 	"bg/cloud_rpc"
+	"bg/common/network"
 	"cloud.google.com/go/pubsub"
 
 	"github.com/satori/uuid"

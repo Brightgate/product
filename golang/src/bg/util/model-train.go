@@ -32,9 +32,9 @@ import (
 	"time"
 
 	"bg/ap_common/model"
-	"bg/ap_common/network"
 	"bg/base_msg"
 	"bg/common/deviceid"
+	"bg/common/network"
 	"bg/util/deviceDB"
 
 	"github.com/golang/protobuf/proto"

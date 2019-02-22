@@ -21,9 +21,9 @@ import (
 	"time"
 
 	"bg/ap_common/aputil"
-	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/base_msg"
+	"bg/common/network"
 
 	"github.com/golang/protobuf/proto"
 )

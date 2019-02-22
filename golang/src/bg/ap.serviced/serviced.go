@@ -24,9 +24,9 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
-	"bg/ap_common/network"
 	"bg/base_def"
 	"bg/common/cfgapi"
+	"bg/common/network"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
@@ -144,10 +144,9 @@ func initInterfaces() {
 			continue
 		}
 
-		bridge := vlanBridge(conf.Vlan)
-		iface, err := net.InterfaceByName(bridge)
+		iface, err := net.InterfaceByName(conf.Bridge)
 		if iface == nil || err != nil {
-			slog.Warnf("No interface %s: %v", bridge, err)
+			slog.Warnf("No interface %s: %v", conf.Bridge, err)
 			continue
 		}
 

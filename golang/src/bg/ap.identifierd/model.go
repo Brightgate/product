@@ -24,9 +24,9 @@ import (
 
 	"bg/ap_common/aputil"
 	"bg/ap_common/model"
-	"bg/ap_common/network"
 	"bg/base_msg"
 	"bg/common/deviceid"
+	"bg/common/network"
 
 	"github.com/golang/protobuf/proto"
 	tf "github.com/tensorflow/tensorflow/tensorflow/go"
