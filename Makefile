@@ -882,6 +882,7 @@ $(APPBIN)/ap.configd: \
 	$(GOSRCBG)/ap.configd/upgrade_v16.go \
 	$(GOSRCBG)/ap.configd/upgrade_v17.go \
 	$(GOSRCBG)/ap.configd/upgrade_v18.go \
+	$(GOSRCBG)/ap.configd/upgrade_v19.go \
 	$(GOSRCBG)/ap.configd/validate.go
 $(APPBIN)/ap.httpd: \
 	$(GOSRCBG)/ap.httpd/ap.httpd.go \

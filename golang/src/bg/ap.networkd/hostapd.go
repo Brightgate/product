@@ -134,7 +134,7 @@ type hostapdHdl struct {
 	done      chan error
 }
 
-func initVap(root *cfgapi.PropertyNode) (*virtualAP, error) {
+func initVAP(root *cfgapi.PropertyNode) (*virtualAP, error) {
 	vap := &virtualAP{}
 
 	if x := root.Children["ssid"]; x != nil {
@@ -172,10 +172,10 @@ func initVap(root *cfgapi.PropertyNode) (*virtualAP, error) {
 func initVirtualAPs() {
 	// Identify which VAPs have rings assigned to them, and thus need to be
 	// instantiated.
-	activeVaps := make(map[string]bool)
+	activeVAPs := make(map[string]bool)
 	for _, ring := range rings {
 		if vap := ring.VirtualAP; vap != "" {
-			activeVaps[vap] = true
+			activeVAPs[vap] = true
 		}
 	}
 
@@ -187,19 +187,17 @@ func initVirtualAPs() {
 
 	// Generate hostapd config structures for each of the active VAPs
 	vaps := make([]*virtualAP, 0)
-	for vapName := range activeVaps {
-		if conf, ok := props.Children[vapName]; ok {
-			vap, err := initVap(conf)
+	for name, conf := range props.Children {
+		if activeVAPs[name] {
+			vap, err := initVAP(conf)
 			if err != nil {
-				slog.Warnf("unable to init vap %s: %v",
-					vapName, err)
+				slog.Warnf("unable to init vap %s: %v", name, err)
 			} else {
-				vap.id = vapName
+				vap.id = name
 				vaps = append(vaps, vap)
 			}
 		} else {
-			slog.Warnf("rings assigned to nonexistent vap: %s",
-				vapName)
+			slog.Infof("ignoring VAP %s: no rings assigned", name)
 		}
 	}
 

@@ -3,7 +3,7 @@
     "Children": {
       "apversion": {},
       "cfgversion": {
-        "Value": "17"
+        "Value": "19"
       },
       "clients": {},
       "cloud": {
@@ -48,7 +48,7 @@
       "network": {
         "Children": {
           "base_address": {
-            "value": "192.168.2.0/24"
+            "Value": "192.168.2.0/24"
           },
           "dnsserver": {
             "Value": "8.8.8.8:53"
@@ -77,7 +77,7 @@
               "eap": {
                 "Children": {
                   "default_ring": {
-                    "Value": "guest"
+                    "Value": "standard"
                   },
                   "5ghz": {
                     "Value": "false"
@@ -87,6 +87,25 @@
                   },
                   "ssid": {
                     "Value": "setme-eap"
+                  }
+                }
+              },
+              "guest": {
+                "Children": {
+                  "default_ring": {
+                    "Value": "guest"
+                  },
+                  "5ghz": {
+                    "Value": "false"
+                  },
+                  "keymgmt": {
+                    "Value": "wpa-psk"
+                  },
+                  "passphrase": {
+                    "Value": "sosecretive"
+                  },
+                  "ssid": {
+                    "Value": "setme-guest"
                   }
                 }
               }
@@ -144,7 +163,7 @@
           "guest": {
             "Children": {
               "vap": {
-                "Value": "eap"
+                "Value": "guest"
               },
               "lease_duration": {
                 "Value": "30"
