@@ -274,7 +274,11 @@ func (u *UserInfo) Update(extraOps ...PropertyOp) error {
 			panic("SelfProvisioning; expected newUser to be true")
 		}
 		// If Self Provisioning is true for this user, blow away the
-		// existing user entry and overwrite it.
+		// existing user entry and overwrite it; for the PropDelete
+		// to not fail with ErrNoProp on new users, we have to first
+		// create a property (selfProvisioning, arbitrarily) to ensure
+		// that the subtree exists.
+		addProp("selfProvisioning", "true")
 		ops = append(ops, PropertyOp{Op: PropDelete, Name: u.path("")})
 		addProp("selfProvisioning", "true")
 	}
