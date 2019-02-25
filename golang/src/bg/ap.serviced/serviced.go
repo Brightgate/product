@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -48,6 +49,8 @@ var (
 	ringToIface    map[string]*net.Interface
 	ipv4ToIface    map[string]*net.Interface
 	ifaceBroadcast map[string]net.IP
+
+	exitChan = make(chan struct{})
 )
 
 func clientUpdateEvent(path []string, val string, expires *time.Time) {
@@ -101,6 +104,8 @@ func clientUpdateEvent(path []string, val string, expires *time.Time) {
 func clientDeleteEvent(path []string) {
 	mac := path[1]
 	clientMtx.Lock()
+	defer clientMtx.Unlock()
+
 	client := clients[mac]
 	if len(path) == 2 {
 		dhcpDeleteEvent(mac)
@@ -113,12 +118,28 @@ func clientDeleteEvent(path []string) {
 			dnsDeleteClient(client)
 			client.DNSName = ""
 		} else if path[2] == "ipv4" {
-			dhcpIPv4Expired(mac)
+			dhcpDeleteEvent(mac)
 			dnsDeleteClient(client)
 			client.IPv4 = nil
 		}
 	}
-	clientMtx.Unlock()
+}
+
+func clientExpireEvent(path []string) {
+	if len(path) != 3 || path[2] != "ipv4" {
+		// For anything other than a DHCP lease, an 'expiration' is
+		// identical to a deletion.
+		clientDeleteEvent(path)
+	} else {
+		clientMtx.Lock()
+		defer clientMtx.Unlock()
+
+		mac := path[1]
+		client := clients[mac]
+		dhcpIPv4Expired(mac)
+		dnsDeleteClient(client)
+		client.IPv4 = nil
+	}
 }
 
 func initInterfaces() {
@@ -157,6 +178,12 @@ func initInterfaces() {
 	}
 }
 
+func configSiteChanged(path []string, val string, expires *time.Time) {
+	slog.Infof("%s changed - restarting to reset DHCP configuration",
+		strings.Join(path, "/"))
+	close(exitChan)
+}
+
 func configNodesChanged(path []string, val string, expires *time.Time) {
 	initInterfaces()
 }
@@ -193,13 +220,20 @@ func main() {
 
 	config.HandleChange(`^@/clients/.*`, clientUpdateEvent)
 	config.HandleDelete(`^@/clients/.*`, clientDeleteEvent)
-	config.HandleExpire(`^@/clients/.*`, clientDeleteEvent)
+	config.HandleExpire(`^@/clients/.*`, clientExpireEvent)
 	config.HandleChange(`^@/nodes/.*$`, configNodesChanged)
+	config.HandleChange(`^@/site_index$`, configSiteChanged)
+	config.HandleChange(`^@/network/base_address$`, configSiteChanged)
 
 	mcpd.SetState(mcp.ONLINE)
 
 	sig := make(chan os.Signal, 2)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	s := <-sig
-	slog.Fatalf("Signal (%v) received, stopping", s)
+
+	select {
+	case s := <-sig:
+		slog.Fatalf("Signal (%v) received, stopping", s)
+	case <-exitChan:
+		slog.Infof("stopping")
+	}
 }

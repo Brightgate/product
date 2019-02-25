@@ -16,6 +16,7 @@ import (
 	"math/rand"
 	"net"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -77,6 +78,16 @@ func getRing(hwaddr string) string {
  *
  * Communication with message broker
  */
+func leaseDurationChanged(path []string, val string, expires *time.Time) {
+	h := handlers[path[1]]
+	minutes, _ := strconv.Atoi(val)
+	if h != nil && minutes > 0 {
+		h.Lock()
+		h.duration = time.Minute * time.Duration(minutes)
+		h.Unlock()
+	}
+}
+
 func dhcpIPv4Expired(hwaddr string) {
 	// Watch for lease expirations in @/clients/<macaddr>/ipv4.  We actually
 	// clean up expired leases as a side effect of handing out new ones, so
@@ -162,24 +173,34 @@ func dhcpIPv4Changed(hwaddr string, client *cfgapi.ClientInfo) {
 }
 
 func dhcpDeleteEvent(hwaddr string) {
-	clientMtx.Lock()
-	client, ok := clients[hwaddr]
-	clientMtx.Unlock()
+	slog.Infof("Handling deletion of client %s", hwaddr)
 
-	if ok {
-		slog.Debugf("Handling deletion of client %s", hwaddr)
-
-		if ring := client.Ring; ring != "" {
-			h := handlers[ring]
-			h.Lock()
-			if l := h.leaseSearch(hwaddr); l != nil {
-				dhcpMetrics.released.Inc()
-				h.releaseLease(l, hwaddr)
-			}
-			h.Unlock()
-		}
-	}
 	delete(clientRequestOn, hwaddr)
+
+	client, ok := clients[hwaddr]
+	if !ok {
+		return
+	}
+
+	if ring := client.Ring; ring != "" {
+		h := handlers[ring]
+		h.Lock()
+		if l := h.leaseSearch(hwaddr); l != nil {
+			dhcpMetrics.released.Inc()
+			if l.expires == nil {
+				// If this was a statically assigned lease, give
+				// the client an expiration time of 'now' to
+				// prevent it from being given a static address
+				// on its next request.
+				now := time.Now()
+				l.expires = &now
+				l.static = false
+			}
+			l.assigned = false
+			notifyRelease(l.ipaddr)
+		}
+		h.Unlock()
+	}
 }
 
 func dhcpRingChanged(hwaddr string, client *cfgapi.ClientInfo, old string) {
@@ -535,6 +556,7 @@ func (h *ringHandler) releaseLease(l *lease, hwaddr string) bool {
 	}
 
 	l.assigned = false
+	l.static = false
 	notifyRelease(l.ipaddr)
 	config.DeleteProp(propPath(l.hwaddr, "ipv4"))
 	return true
@@ -953,6 +975,7 @@ func dhcpInit() {
 		slog.Fatalf("failed to fetch gateway domain: %v", err)
 	}
 
+	config.HandleChange(`^@/rings/.*/lease_duration$`, leaseDurationChanged)
 	initHandlers()
 
 	go dhcpLoop()

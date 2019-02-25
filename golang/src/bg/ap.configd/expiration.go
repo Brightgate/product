@@ -152,7 +152,7 @@ func processExpirations(expired []string) {
 
 		// check to be sure the property hasn't been
 		// reset since we added it to the list.
-		if now.Before(*node.Expires) {
+		if node.Expires == nil || now.Before(*node.Expires) {
 			continue
 		}
 

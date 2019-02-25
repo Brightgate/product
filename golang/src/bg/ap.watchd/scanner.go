@@ -288,15 +288,13 @@ func scheduleScan(request *ScanRequest, delay time.Duration, force bool) {
 	if force || activeHosts.contains(request.IP) ||
 		request.ScanType == "subnet" {
 		request.When = time.Now().Add(delay)
-		slog.Debugf("scheduling %s %s %s at %s, args: %v\n",
-			request.IP, request.Mac, request.ScanType,
-			request.When.Format(time.RFC3339), request.Args)
 		if request.ID == 0 {
 			request.ID = atomic.AddUint32(&scanID, 1)
 		}
 		request.When = time.Now().Add(delay)
-		slog.Debugf("scheduling %d: %s %s at %s", scanID, st,
-			request.IP, request.When.Format(time.RFC3339))
+		slog.Debugf("scheduling %s %s %s at %s, args: %v\n",
+			request.IP, request.Mac, st,
+			request.When.Format(time.RFC3339), request.Args)
 
 		pool.Lock()
 		heap.Push(&pool.pending, request)

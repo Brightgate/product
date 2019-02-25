@@ -284,9 +284,11 @@ func nowScan(s *zmq.Socket, args []string) error {
 		return fmt.Errorf("invalid scan ID: %s", args[0])
 	}
 
+	var epoch time.Time
+
 	scan := base_msg.WatchdScanInfo{
 		Id:   proto.Uint32(uint32(id)),
-		When: aputil.NowToProtobuf(),
+		When: aputil.TimeToProtobuf(&epoch),
 	}
 
 	cmd := base_msg.WatchdRequest_SCAN_RESCHED

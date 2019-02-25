@@ -455,6 +455,8 @@ func subnetCheck(prop, val string) error {
 
 // Validate an ipv4 assignment for this device
 func ipv4Check(prop, addr string) error {
+	var updating string
+
 	ipv4 := net.ParseIP(addr)
 	if ipv4 == nil {
 		return fmt.Errorf("invalid address: %s", addr)
@@ -466,9 +468,12 @@ func ipv4Check(prop, addr string) error {
 		return nil
 	}
 
-	node, _ := propTree.GetNode(prop)
+	if path := strings.Split(prop, "/"); len(path) > 3 {
+		updating = path[2]
+	}
+
 	for name, device := range clients.Children {
-		if node != nil && node.Name() == name {
+		if updating == name {
 			// Reassigning the device's address to itself is fine
 			continue
 		}
