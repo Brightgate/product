@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"bg/ap_common/aputil"
+	"bg/base_def"
 	"bg/common"
 	"bg/common/cfgapi"
 	"bg/common/cfgtree"
@@ -184,8 +185,7 @@ func propTreeInit(defaults *cfgtree.PNode) error {
 			slog.Fatalf("Unable to set UUID: %v", err)
 		}
 
-		// XXX: this needs to come from the cloud - not hardcoded
-		applianceSiteID := "7410"
+		applianceSiteID := "setup." + base_def.GATEWAY_CLIENT_DOMAIN
 		if err := tree.Add("@/siteid", applianceSiteID, nil); err != nil {
 			slog.Fatalf("Unable to set SiteID: %v", err)
 		}

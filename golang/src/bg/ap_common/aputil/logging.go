@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -27,7 +27,7 @@ var (
 )
 
 func zapTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
-	enc.AppendString(t.Format("2006/01/02 15:04:05"))
+	enc.AppendString(t.Format("2006/01/02 15:04:05.000"))
 }
 
 // Annotate each log message with the daemon and file that generated it.  If the

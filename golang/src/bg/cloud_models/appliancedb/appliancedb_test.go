@@ -41,7 +41,7 @@ const (
 	testClientID1   = "projects/test-project/locations/test-region/registries/test-registry/appliances/test-appliance-1"
 	app1Str         = "00000001-0001-0001-0001-000000000001"
 	app2Str         = "00000002-0002-0002-0002-000000000002"
-	app3Str         = "00000003-0003-0003-0003-000000000003"
+	appNStr         = "00000009-0009-0009-0009-000000000009"
 	site1Str        = "10000001-0001-0001-0001-000000000001"
 	site2Str        = "10000002-0002-0002-0002-000000000002"
 	org1Str         = "20000001-0001-0001-0001-000000000001"
@@ -95,13 +95,13 @@ var (
 		ApplianceReg:   testReg,
 		ApplianceRegID: testRegID + "-2",
 	}
-	testID3 = ApplianceID{
-		ApplianceUUID:  uuid.Must(uuid.FromString(app3Str)),
+	testIDN = ApplianceID{
+		ApplianceUUID:  uuid.Must(uuid.FromString(appNStr)),
 		SiteUUID:       NullSiteUUID, // Sentinel UUID
 		GCPProject:     testProject,
 		GCPRegion:      testRegion,
 		ApplianceReg:   testReg,
-		ApplianceRegID: testRegID + "-3",
+		ApplianceRegID: testRegID + "-N",
 	}
 	testPerson1 = Person{
 		UUID:         uuid.Must(uuid.FromString(person1Str)),
@@ -282,7 +282,7 @@ func testApplianceID(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	assert.Len(ids, 2)
 
 	// Test null site sentinel
-	err = ds.InsertApplianceID(ctx, &testID3)
+	err = ds.InsertApplianceID(ctx, &testIDN)
 	assert.NoError(err)
 }
 
@@ -912,6 +912,7 @@ func TestDatabaseModel(t *testing.T) {
 		{"testConfigStore", testConfigStore},
 
 		{"testCommandQueue", testCommandQueue},
+		{"testServerCerts", testServerCerts},
 	}
 
 	for _, tc := range testCases {

@@ -84,6 +84,14 @@
   version = "v1.0.0"
 
 [[projects]]
+  digest = "1:59df7ab87ddca233bb586ff32c6feba12bf787260f6694dc45ceecea9d3e1a7e"
+  name = "github.com/cenkalti/backoff"
+  packages = ["."]
+  pruneopts = ""
+  revision = "1e4cf3da559842a91afcb6ea6141451e6c30c618"
+  version = "v2.1.1"
+
+[[projects]]
   digest = "1:56c130d885a4aacae1dd9c7b71cfe39912c7ebc1ff7d2b46083c8812996dc43b"
   name = "github.com/davecgh/go-spew"
   packages = ["spew"]
@@ -101,11 +109,11 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:2c940102dbb1eaabb006bb650ec121606ec3f013aee987e26c3535965d1c0271"
+  digest = "1:512a089b2397eb5c8a3ec115c5f55b8e37e1e85ef1748b29158dba2675e56509"
   name = "github.com/dhduvall/gcloudzap"
   packages = ["."]
   pruneopts = ""
-  revision = "295b15c042499a53f36e5fc64a7377fb0cb5a4f1"
+  revision = "da9a454c7d192668c0c5eb9733b21692b0f71474"
 
 [[projects]]
   digest = "1:8fca1a11f4f8011e273c92799abb21be58df214079a6226a7f13b0f697c5921a"
@@ -447,12 +455,12 @@
   version = "v1.0.1"
 
 [[projects]]
-  digest = "1:4c8d8358c45ba11ab7bb15df749d4df8664ff1582daead28bae58cf8cbe49890"
+  digest = "1:8a1a2e0cafdb89add019757353036c7281c0c6f5e78458fb1cd57ae68c6fe8d3"
   name = "github.com/miekg/dns"
   packages = ["."]
   pruneopts = ""
-  revision = "5a2b9fab83ff0f8bfc99684bd5f43a37abe560f1"
-  version = "v1.0.8"
+  revision = "56be65265e34e731425e0269a301774938827c60"
+  version = "v1.1.3"
 
 [[projects]]
   branch = "master"
@@ -703,6 +711,33 @@
   revision = "dcecefd839c4193db0d35b88ec65b4c12d360ab0"
 
 [[projects]]
+  digest = "1:724f3a4b46b74891b3acebf3ce3b6319a0efdec6004561961be0bbac2e9d9318"
+  name = "github.com/xenolf/lego"
+  packages = [
+    "acme",
+    "acme/api",
+    "acme/api/internal/nonces",
+    "acme/api/internal/secure",
+    "acme/api/internal/sender",
+    "certcrypto",
+    "certificate",
+    "challenge",
+    "challenge/dns01",
+    "challenge/http01",
+    "challenge/resolver",
+    "challenge/tlsalpn01",
+    "lego",
+    "log",
+    "platform/config/env",
+    "platform/wait",
+    "providers/dns/exec",
+    "providers/dns/gcloud",
+    "registration",
+  ]
+  pruneopts = ""
+  revision = "1c6f67f47a267af445b3636fdc0d45f853c967a9"
+
+[[projects]]
   digest = "1:7ae9ab20a379344cd296d7cd041180d547ba5489b8fd6e8919e0de24a94991b2"
   name = "go.opencensus.io"
   packages = [
@@ -775,12 +810,14 @@
     "internal/chacha20",
     "internal/subtle",
     "md4",
+    "ocsp",
     "openpgp",
     "openpgp/armor",
     "openpgp/elgamal",
     "openpgp/errors",
     "openpgp/packet",
     "openpgp/s2k",
+    "pbkdf2",
     "poly1305",
     "ssh",
     "ssh/terminal",
@@ -937,6 +974,7 @@
   digest = "1:a220be47c0493d9d7549b73db62b1f2c3c28223e3d4f085c825cdaaeb21e0651"
   name = "google.golang.org/api"
   packages = [
+    "dns/v1",
     "gensupport",
     "googleapi",
     "googleapi/internal/uritemplates",
@@ -1033,6 +1071,18 @@
   revision = "2e463a05d100327ca47ac218281906921038fd95"
   version = "v1.16.0"
 
+[[projects]]
+  digest = "1:f05c7e4dada99d485db5b9af5f958212e880d3b5ef8a6518f90d100d205a04f0"
+  name = "gopkg.in/square/go-jose.v2"
+  packages = [
+    ".",
+    "cipher",
+    "json",
+  ]
+  pruneopts = ""
+  revision = "f61ac651e23224d43848a8dc387dee016d7eacf9"
+  version = "v2.2.0"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
@@ -1096,6 +1146,7 @@
     "github.com/sfreiberg/gotwilio",
     "github.com/spf13/afero",
     "github.com/spf13/cobra",
+    "github.com/spf13/pflag",
     "github.com/stretchr/testify/mock",
     "github.com/stretchr/testify/require",
     "github.com/tatsushid/go-prettytable",
@@ -1105,6 +1156,17 @@
     "github.com/ttacon/libphonenumber",
     "github.com/unrolled/secure",
     "github.com/urfave/negroni",
+    "github.com/xenolf/lego/acme",
+    "github.com/xenolf/lego/acme/api",
+    "github.com/xenolf/lego/certcrypto",
+    "github.com/xenolf/lego/certificate",
+    "github.com/xenolf/lego/challenge",
+    "github.com/xenolf/lego/challenge/dns01",
+    "github.com/xenolf/lego/lego",
+    "github.com/xenolf/lego/log",
+    "github.com/xenolf/lego/providers/dns/exec",
+    "github.com/xenolf/lego/providers/dns/gcloud",
+    "github.com/xenolf/lego/registration",
     "go.uber.org/zap",
     "go.uber.org/zap/zapcore",
     "go.uber.org/zap/zapgrpc",

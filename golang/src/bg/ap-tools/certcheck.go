@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -56,15 +56,16 @@ func certcheck() {
 		log.Printf("gateway = %v\n", gatewayName)
 	}
 
-	keyfn, certfn, chainfn, fullchainfn, err := certificate.GetKeyCertPaths(brokerd, gatewayName,
-		time.Now().Add(validDuration), force)
+	certPaths, err := certificate.GetKeyCertPaths(
+		configd, gatewayName, time.Now().Add(validDuration), force)
 
 	if err != nil {
 		log.Fatalf("GetKeyCertPaths failed: %v", err)
 	}
 
 	if verbose {
-		log.Printf("key = %v\ncertificate = '%v'\nchain = '%v'\nfullchain = '%v'\n", keyfn, certfn, chainfn, fullchainfn)
+		log.Printf("key = %v\ncertificate = '%v'\nchain = '%v'\nfullchain = '%v'\n",
+			certPaths.Key, certPaths.Cert, certPaths.Chain, certPaths.FullChain)
 	}
 }
 

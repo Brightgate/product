@@ -164,3 +164,8 @@
 [[constraint]]
   name = "github.com/jmoiron/sqlx"
   version = "1.2.0"
+
+[[constraint]]
+  name = "github.com/xenolf/lego"
+  # This rev should be in 2.3, once it comes out.
+  revision = "1c6f67f47a267af445b3636fdc0d45f853c967a9"

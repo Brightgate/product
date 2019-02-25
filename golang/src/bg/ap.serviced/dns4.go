@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -851,6 +851,11 @@ func setNameserver(in string) {
 	cachedResponses.init()
 }
 
+func siteIDChange(path []string, val string, expires *time.Time) {
+	slog.Info("restarting due to changed domain")
+	os.Exit(0)
+}
+
 func initNetwork() {
 	var err error
 
@@ -861,6 +866,7 @@ func initNetwork() {
 	if err != nil {
 		slog.Fatalf("failed to fetch gateway domain: %v", err)
 	}
+	config.HandleChange(`^@/siteid`, siteIDChange)
 
 	if tmp, _ := config.GetProp("@/network/dnsserver"); tmp != "" {
 		setNameserver(tmp)

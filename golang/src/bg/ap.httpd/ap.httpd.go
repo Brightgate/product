@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -33,11 +33,9 @@ import (
 	"bg/ap_common/data"
 	"bg/ap_common/mcp"
 	"bg/base_def"
-	"bg/base_msg"
 	"bg/common/cfgapi"
 	"bg/common/network"
 
-	"github.com/golang/protobuf/proto"
 	"go.uber.org/zap"
 
 	"github.com/gorilla/mux"
@@ -108,15 +106,9 @@ func (l listFlag) Set(value string) error {
 	return nil
 }
 
-func handleError(event []byte) {
-	syserror := &base_msg.EventSysError{}
-	proto.Unmarshal(event, syserror)
-
-	slog.Debugf("sys.error received by handler: %v", *syserror)
-
-	// Check if event is a certificate error
-	if *syserror.Reason == base_msg.EventSysError_RENEWED_SSL_CERTIFICATE {
-		slog.Infof("exiting due to renewed certificate")
+func certStateChange(path []string, val string, expires *time.Time) {
+	if val == "installed" {
+		slog.Infof("restarting due to renewed certificate")
 		os.Exit(0)
 	}
 }
@@ -179,12 +171,12 @@ func listen(addr string, port string, ring string, cfg *tls.Config,
 				TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
 			}
 			err := srv.ListenAndServeTLS(certfn, keyfn)
-			slog.Infof("TLS Listener on %s (%s) exited: %v\n", addr+port, ring, err)
+			slog.Infof("TLS Listener on %s (%s) exited: %v", addr+port, ring, err)
 		}()
 	} else {
 		go func() {
 			err := http.ListenAndServe(addr+port, handler)
-			slog.Infof("Listener on %s (%s) exited: %v\n", addr+port, ring, err)
+			slog.Infof("Listener on %s (%s) exited: %v", addr+port, ring, err)
 		}()
 	}
 }
@@ -303,7 +295,6 @@ func main() {
 
 	// Set up connection with the broker daemon
 	brokerd := broker.New(pname)
-	brokerd.Handle(base_def.TOPIC_ERROR, handleError)
 	defer brokerd.Fini()
 
 	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
@@ -325,12 +316,15 @@ func main() {
 		mcpd.SetState(mcp.BROKEN)
 		slog.Fatalf("failed to fetch gateway domain: %v\n", err)
 	}
-	demoHostname := fmt.Sprintf("gateway.%s", domainname)
-	keyfn, _, _, fullchainfn, err := certificate.GetKeyCertPaths(brokerd, demoHostname, time.Now(), false)
+	certPaths, err := certificate.GetKeyCertPaths(config, domainname,
+		time.Now(), false)
 	if err != nil {
 		// We can still run plain HTTP ports, such as the developer port.
 		slog.Warnf("Couldn't get SSL key/fullchain: %v", err)
 	}
+	// We expect that a change to the domain will precede a new certificate,
+	// so the restart for the latter will handle the former.
+	config.HandleChange(`^@/certs/.*/state`, certStateChange)
 
 	data.LoadDNSBlocklist(data.DefaultDataDir)
 	config.HandleChange(`^@/updates/dns_.*list$`, blocklistUpdateEvent)
@@ -396,7 +390,8 @@ func main() {
 		// The secure middleware effectively links the ports, as
 		// http/80 requests redirect to https/443.
 		for _, port := range ports {
-			listen(router, port, ring, tlsCfg, fullchainfn, keyfn, nMain)
+			listen(router, port, ring, tlsCfg, certPaths.FullChain,
+				certPaths.Key, nMain)
 		}
 	}
 

@@ -288,6 +288,7 @@ func daemonStart() {
 	tclient := cloud_rpc.NewEventClient(conn)
 	cclient := cloud_rpc.NewConfigBackEndClient(conn)
 	sclient := cloud_rpc.NewCloudStorageClient(conn)
+	certificateInit(ctx, conn)
 	slog.Debugf("RPC client connected")
 
 	brokerd.Handle(base_def.TOPIC_EXCEPTION, func(event []byte) {

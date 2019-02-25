@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -334,8 +334,10 @@ func TestChangeProp(t *testing.T) {
 // TestChangeNonProp verifies that we cannot change a non-existent property
 func TestAddNonProp(t *testing.T) {
 	const (
-		newProp = "@/siteid"
-		newVal  = "7810"
+		// This has to be a legal property that's not set in the testing
+		// data or added by an upgrade routine.
+		newProp = "@/certs/blah/state"
+		newVal  = "unavailable"
 	)
 
 	a := testTreeInit(t)
@@ -347,7 +349,7 @@ func TestAddNonProp(t *testing.T) {
 func TestAddProp(t *testing.T) {
 	const (
 		newProp = "@/siteid"
-		newVal  = "7810"
+		newVal  = "7810.b10e.net"
 	)
 
 	a := testTreeInit(t)
@@ -407,7 +409,9 @@ func TestAddInternalProp(t *testing.T) {
 // TestDeleteNonProp verifies that we can't remove a non-existent property
 func TestDeleteNonProp(t *testing.T) {
 	const (
-		nonProp = "@/siteid"
+		// This has to be a legal property that's not set in the testing
+		// data or added by an upgrade routine.
+		nonProp = "@/certs/blah/state"
 	)
 
 	a := testTreeInit(t)
@@ -857,7 +861,7 @@ func TestInvalidAccessLevel(t *testing.T) {
 		{Op: cfgapi.PropSet, Name: "@/network/ssid", Value: "test123"},
 		{Op: cfgapi.PropGet, Name: "@/network/ssid"},
 		{Op: cfgapi.PropDelete, Name: "@/network/ssid"},
-		{Op: cfgapi.PropCreate, Name: "@/siteid", Value: "7810"},
+		{Op: cfgapi.PropCreate, Name: "@/siteid", Value: "7810.b10e.net"},
 	}
 
 	badLevels := []cfgapi.AccessLevel{

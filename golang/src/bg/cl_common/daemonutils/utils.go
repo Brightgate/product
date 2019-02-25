@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -22,39 +22,42 @@ import (
 	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/logging"
 	"github.com/dhduvall/gcloudzap"
+	"github.com/spf13/pflag"
+	"github.com/tomazk/envcfg"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
-type logType string
+type logType struct {
+	set   bool
+	value string
+}
 
 const (
-	logTypeAuto logType = ""
-	logTypeDev  logType = "dev"
+	logTypeAuto string = ""
+	logTypeDev  string = "dev"
 	// If "stackdriver" ever gets renamed into "prod", making it the default,
 	// provisions need to be made for cl-aggregate and cl-dtool, both of
 	// which call SetupLogs().
-	logTypeProd logType = "prod"
-	logTypeSD   logType = "stackdriver"
+	logTypeProd string = "prod"
+	logTypeSD   string = "stackdriver"
 )
 
 var (
 	globalLog        *zap.Logger
 	globalSugaredLog *zap.SugaredLogger
 	globalLevel      zap.AtomicLevel
-	levelFlag        *zapcore.Level
-	logTypeFlag      logType
-	logTagPfxFlag    = flag.String("log-tag-prefix", "b10e", "Log tag prefix (for Stackdriver)")
+	logConfig        LogConfig
 	clrootFlag       = flag.String("root", "", "Root of cloud installation")
 )
 
 func (l *logType) String() string {
-	if *l == logTypeDev {
+	if l.value == logTypeDev {
 		return "development"
-	} else if *l == logTypeProd {
+	} else if l.value == logTypeProd {
 		return "production"
-	} else if *l == logTypeSD {
+	} else if l.value == logTypeSD {
 		return "stackdriver"
 	} else {
 		return "auto"
@@ -64,26 +67,121 @@ func (l *logType) String() string {
 func (l *logType) Set(s string) error {
 	ss := strings.ToLower(s)[0:3]
 	if ss == "dev" {
-		*l = logTypeDev
+		*l = logType{set: true, value: logTypeDev}
 		return nil
 	} else if ss == "pro" {
-		*l = logTypeProd
+		*l = logType{set: true, value: logTypeProd}
 		return nil
 	} else if ss == "sta" {
-		*l = logTypeSD
+		*l = logType{set: true, value: logTypeSD}
 		return nil
 	}
 	return fmt.Errorf("Unknown Log Type '%s'.  Try [dev|prod|stackdriver]", s)
 }
 
+func (l *logType) Type() string {
+	return "logType"
+}
+
+func (l *logType) UnmarshalText(text []byte) error {
+	return l.Set(string(text))
+}
+
+type optionalString struct {
+	set   bool
+	value string
+}
+
+func (os *optionalString) Set(s string) error {
+	os.value = s
+	os.set = true
+	return nil
+}
+
+func (os *optionalString) String() string {
+	return os.value
+}
+
+func (os *optionalString) Type() string {
+	return "string"
+}
+
+func (os *optionalString) UnmarshalText(text []byte) error {
+	if len(text) == 0 {
+		return nil
+	}
+	return os.Set(string(text))
+}
+
+type optionalLevel struct {
+	set   bool
+	value zapcore.Level
+}
+
+func (ol *optionalLevel) Set(s string) error {
+	ol.set = true
+	return ol.value.Set(s)
+}
+
+func (ol *optionalLevel) String() string {
+	return ol.value.String()
+}
+
+func (ol *optionalLevel) Type() string {
+	return "zapcore.Level"
+}
+
+func (ol *optionalLevel) UnmarshalText(text []byte) error {
+	return ol.Set(string(text))
+}
+
+// LogConfig represents the logging configuration which can be set by
+// environment variables and command-line flags.
+type LogConfig struct {
+	Level     optionalLevel  `envcfg:"B10E_LOG_LEVEL"`
+	TagPrefix optionalString `envcfg:"B10E_LOG_TAG_PREFIX"`
+	Type      logType        `envcfg:"B10E_LOG_TYPE"`
+}
+
 func init() {
-	levelFlag = zap.LevelFlag("log-level", zapcore.InfoLevel, "Log level [debug,info,warn,error,panic,fatal]")
-	flag.Var(&logTypeFlag, "log-type", "Logging style [dev|prod|stackdriver]")
+	envcfg.Unmarshal(&logConfig)
+
+	// If we didn't find the environment variables, set some defaults.
+	if !logConfig.Level.set {
+		logConfig.Level.value = zapcore.InfoLevel
+		logConfig.Level.set = true
+	}
+	if !logConfig.Type.set {
+		// The default value is "", and Set() doesn't allow that.
+		logConfig.Type.set = true
+	}
+	if !logConfig.TagPrefix.set {
+		logConfig.TagPrefix.Set("b10e")
+	}
+
+	// Set up commandline flags for programs using the flag package.
+	flag.Var(&logConfig.Level, "log-level", "Log level [debug,info,warn,error,panic,fatal]")
+	flag.Var(&logConfig.Type, "log-type", "Logging style [dev|prod|stackdriver]")
+	flag.Var(&logConfig.TagPrefix, "log-tag-prefix", "Log tag prefix (for Stackdriver)")
+}
+
+// GetLogFlagSet returns a pflag.FlagSet of the log-relevant flags for programs
+// using cobra to add to their flag sets.
+func GetLogFlagSet() *pflag.FlagSet {
+	logFlagSet := pflag.NewFlagSet("log", pflag.ExitOnError)
+	levelFlag := flag.Lookup("log-level")
+	logFlagSet.Var(&logConfig.Level, "log-level", levelFlag.Usage)
+	typeFlag := flag.Lookup("log-type")
+	logFlagSet.Var(&logConfig.Type, "log-type", typeFlag.Usage)
+	prefixFlag := flag.Lookup("log-tag-prefix")
+	logFlagSet.Var(&logConfig.TagPrefix, "log-tag-prefix", prefixFlag.Usage)
+
+	return logFlagSet
 }
 
 // SetupLogs creates a pair of zap loggers-- one structured and one
 // "sugared" for use by cloud daemons.
-func SetupLogs() (*zap.Logger, *zap.SugaredLogger) {
+func SetupLogs(opts ...zap.Option) (*zap.Logger, *zap.SugaredLogger) {
 	var log *zap.Logger
 	var err error
 
@@ -93,7 +191,7 @@ func SetupLogs() (*zap.Logger, *zap.SugaredLogger) {
 
 	isTerm := terminal.IsTerminal(int(os.Stderr.Fd()))
 
-	lt := logTypeFlag
+	lt := logConfig.Type.value
 	if lt == logTypeAuto {
 		if isTerm {
 			lt = logTypeDev
@@ -110,10 +208,10 @@ func SetupLogs() (*zap.Logger, *zap.SugaredLogger) {
 	pname = filepath.Base(pname)
 
 	var config zap.Config
-	globalLevel = zap.NewAtomicLevelAt(*levelFlag)
-	zapOptions := []zap.Option{
-		zap.AddStacktrace(zapcore.ErrorLevel),
-	}
+	globalLevel = zap.NewAtomicLevelAt(logConfig.Level.value)
+	zapOptions := make([]zap.Option, 0)
+	zapOptions = append(zapOptions, opts...)
+	zapOptions = append(zapOptions, zap.AddStacktrace(zapcore.ErrorLevel))
 
 	if lt == logTypeDev {
 		config = zap.NewDevelopmentConfig()
@@ -146,7 +244,7 @@ func SetupLogs() (*zap.Logger, *zap.SugaredLogger) {
 			}
 
 			// Tag the logger; eg, "b10e.cloud.eventd"
-			tag := *logTagPfxFlag + "." + strings.Replace(pname, "cl.", "cloud.", 1)
+			tag := logConfig.TagPrefix.String() + "." + strings.Replace(pname, "cl.", "cloud.", 1)
 
 			log, err = gcloudzap.New(config, gcl, tag, zapOptions...)
 		} else {

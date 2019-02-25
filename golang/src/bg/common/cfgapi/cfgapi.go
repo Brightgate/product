@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -29,7 +29,7 @@ import (
 
 // Version gets increased each time there is a non-compatible change to the
 // config tree format, or configd API.
-const Version = int32(19)
+const Version = int32(20)
 
 // CmdHdl is returned when one or more operations are submitted to Execute().
 // This handle can be used to check on the status of a pending operation, or to
@@ -106,6 +106,7 @@ var (
 	ErrInProgress = errors.New("command in progress")
 	ErrNotSupp    = errors.New("not supported")
 	ErrNotEqual   = errors.New("not equal to expected value")
+	ErrTimeout    = errors.New("communication timeout")
 )
 
 // ValidRings is a map containing all of the known ring names.  Checking for map
@@ -767,7 +768,7 @@ func (c *Handle) GetActiveBlocks() []string {
 }
 
 // GetDomain returns the default "appliance domainname" -- i.e.
-// <siteid>.brightgate.net.
+// <integer>.[<jurisdiction>.]brightgate.net.
 func (c *Handle) GetDomain() (string, error) {
 	const prop = "@/siteid"
 
@@ -775,5 +776,5 @@ func (c *Handle) GetDomain() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("property get %s failed: %v", prop, err)
 	}
-	return siteid + "." + base_def.GATEWAY_CLIENT_DOMAIN, nil
+	return siteid, nil
 }

@@ -105,6 +105,9 @@ type DataStore interface {
 	UpsertOAuth2RefreshToken(context.Context, *OAuth2RefreshToken) error
 	UpsertOAuth2RefreshTokenTx(context.Context, DBX, *OAuth2RefreshToken) error
 
+	// Methods related to TLS certificates
+	certManager
+
 	Ping() error
 	Close() error
 
@@ -222,7 +225,9 @@ func (i *ApplianceID) ClientID() string {
 
 // Connect opens a new connection to the DataStore
 func Connect(dataSource string) (DataStore, error) {
-	sqldb, err := sqlx.Open("postgres", dataSource)
+	// Force all sessions to operate in UTC, so we don't rely on whatever
+	// weird timezone is configured on the server, like GMT.
+	sqldb, err := sqlx.Open("postgres", dataSource+"&timezone=UTC")
 	if err != nil {
 		return nil, err
 	}
@@ -345,7 +350,7 @@ func (db *ApplianceDB) CustomerSitesByAccount(ctx context.Context,
 
 	var sites []CustomerSite
 	err := db.SelectContext(ctx, &sites,
-		`SELECT 
+		`SELECT
 		  customer_site.uuid AS uuid,
 		  customer_site.organization_uuid AS organization_uuid,
 		  customer_site.name AS name
@@ -753,7 +758,7 @@ func (db *ApplianceDB) CommandDelete(ctx context.Context, u uuid.UUID, keep int6
 		             WHERE site_uuid = $1 AND state IN ('DONE', 'CNCL')
 		             ORDER BY id DESC
 		             LIMIT 1 OFFSET $2
-		         ) foo -- yes, this is necessary
+		         ) AS junk -- subqueries in FROM must have an alias
 		     )
 		     RETURNING id
 		 )
@@ -812,7 +817,7 @@ func (db *ApplianceDB) OrganizationByUUID(ctx context.Context, orgUUID uuid.UUID
 	var org Organization
 	err := db.GetContext(ctx, &org,
 		`SELECT *
-		    FROM organization 
+		    FROM organization
 		    WHERE uuid=$1`, orgUUID)
 	switch err {
 	case sql.ErrNoRows:
@@ -1102,7 +1107,7 @@ func (db *ApplianceDB) OAuth2IdentitiesByAccount(ctx context.Context,
 
 	var ids []OAuth2Identity
 	err := db.SelectContext(ctx, &ids,
-		`SELECT 
+		`SELECT
 		  id, provider, subject, account_uuid
 		FROM
 		  oauth2_identity

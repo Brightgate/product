@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -90,10 +90,8 @@ import (
 	"bg/ap_common/mcp"
 	"bg/ap_common/platform"
 	"bg/base_def"
-	"bg/base_msg"
 	"bg/common/cfgapi"
 
-	"github.com/golang/protobuf/proto"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -130,14 +128,13 @@ var (
 
 	hostapdProcess *aputil.Child // track the hostapd proc
 
-	plat       *platform.Platform
-	configd    *cfgapi.Handle
-	mcpd       *mcp.MCP
-	slog       *zap.SugaredLogger
-	running    bool
-	secret     []byte
-	rc         *rConf
-	domainname string
+	plat    *platform.Platform
+	configd *cfgapi.Handle
+	mcpd    *mcp.MCP
+	slog    *zap.SugaredLogger
+	running bool
+	secret  []byte
+	rc      *rConf
 
 	// XXX: these metrics are currently just aspirational, since hostapd
 	// does all of the authentication work internally.
@@ -181,15 +178,8 @@ func configUserChanged(path []string, val string, expires *time.Time) {
 	hostapdProcess.Signal(syscall.SIGHUP)
 }
 
-// If a new certificate has been generated, we need to restart.
-func sysErrorCertificate(event []byte) {
-	syserror := &base_msg.EventSysError{}
-	proto.Unmarshal(event, syserror)
-
-	slog.Debugf("sys.error received by handler: %v", *syserror)
-
-	// Check if event is a certificate error
-	if *syserror.Reason == base_msg.EventSysError_RENEWED_SSL_CERTIFICATE {
+func certStateChange(path []string, val string, expires *time.Time) {
+	if val == "installed" {
 		slog.Infof("exiting due to renewed certificate")
 		hostapdProcess.Stop()
 		os.Exit(0)
@@ -397,6 +387,11 @@ func prometheusInit() {
 	go http.ListenAndServe(base_def.USERAUTHD_DIAG_PORT, nil)
 }
 
+func siteIDChange(path []string, val string, expires *time.Time) {
+	slog.Info("restarting due to changed domain")
+	os.Exit(0)
+}
+
 func main() {
 	var err error
 
@@ -411,7 +406,6 @@ func main() {
 	plat = platform.NewPlatform()
 	prometheusInit()
 	brokerd := broker.New(pname)
-	brokerd.Handle(base_def.TOPIC_ERROR, sysErrorCertificate)
 	defer brokerd.Fini()
 
 	configd, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
@@ -426,8 +420,8 @@ func main() {
 		slog.Fatalf("failed to fetch gateway domain: %v", err)
 	}
 	gatewayName := "gateway." + domainName
-	keyfn, certfn, chainfn, _, err := certificate.GetKeyCertPaths(brokerd,
-		gatewayName, time.Now(), false)
+	certPaths, err := certificate.GetKeyCertPaths(configd, domainName,
+		time.Now(), false)
 	if err != nil {
 		slog.Fatalf("Cannot get any SSL key/certificate/chain: %v", err)
 	}
@@ -439,6 +433,8 @@ func main() {
 
 	configd.HandleChange(`^@/users/.*$`, configUserChanged)
 	configd.HandleChange(`^@/network/radius.*$`, configNetworkRadiusChanged)
+	configd.HandleChange(`^@/certs/.*/state`, certStateChange)
+	configd.HandleChange(`^@/siteid`, siteIDChange)
 
 	mcpd.SetState(mcp.ONLINE)
 
@@ -451,9 +447,9 @@ func main() {
 		UserFile:         "hostapd.users.conf",
 		RadiusAuthSecret: string(secret),
 		ServerName:       gatewayName,
-		PrivateKeyFile:   keyfn,
-		CertFile:         certfn,
-		ChainFile:        chainfn,
+		PrivateKeyFile:   certPaths.Key,
+		CertFile:         certPaths.Cert,
+		ChainFile:        certPaths.Chain,
 		Status:           "",
 		Users:            nil,
 	}

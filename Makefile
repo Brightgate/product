@@ -315,7 +315,8 @@ COMMON_GOPKGS = \
 	bg/common/network \
 	bg/common/passwordgen \
 	bg/common/ssh \
-	bg/common/urlfetch
+	bg/common/urlfetch \
+	bg/common/zaperr
 
 COMMON_SRCS = \
 	$(GOSRCBG)/base_msg/base_msg.pb.go \
@@ -334,7 +335,8 @@ COMMON_SRCS = \
 	$(GOSRCBG)/common/ssh/keys.go \
 	$(GOSRCBG)/common/ssh/sshd.go \
 	$(GOSRCBG)/common/ssh/tunnel.go \
-	$(GOSRCBG)/common/urlfetch/urlfetch.go
+	$(GOSRCBG)/common/urlfetch/urlfetch.go \
+	$(GOSRCBG)/common/zaperr/zaperr.go
 
 APPCOMMON_GOPKGS = \
 	$(COMMON_GOPKGS) \
@@ -406,13 +408,15 @@ GO_AP_TESTABLES = \
 	bg/ap.rpcd \
 	bg/ap.userauthd \
 	bg/common/grpcutils \
-	bg/common/network
+	bg/common/network \
+	bg/common/zaperr
 
 GO_CLOUD_TESTABLES = \
 	bg/cl_common/auth/m2mauth \
 	bg/cl_common/daemonutils \
 	bg/cloud_models/appliancedb \
 	bg/cloud_models/sessiondb \
+	bg/cl-cert \
 	bg/cl.httpd
 
 NETWORKD_TEMPLATE_FILES = \
@@ -582,6 +586,7 @@ CLOUDCOMMON_GOPKGS = \
 
 CLOUDCOMMAND_GOPKGS = \
 	bg/cl-aggregate \
+	bg/cl-cert \
 	bg/cl-configctl \
 	bg/cl-dtool \
 	bg/cl-reg \
@@ -594,6 +599,8 @@ CLOUDDAEMONS = $(CLOUDDAEMON_GOPKGS:bg/%=%)
 CLOUDCOMMANDS = $(CLOUDCOMMAND_GOPKGS:bg/%=%)
 
 CLOUDSERVICES = \
+	cl-cert.service \
+	cl-cert.timer \
 	cl.configd.service \
 	cl.eventd.service \
 	cl.httpd.service \
@@ -614,7 +621,8 @@ CLOUDSCHEMAS = \
 	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema005.sql \
 	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema006.sql \
 	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema007.sql \
-	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema008.sql
+	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema008.sql \
+	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema009.sql
 
 CLOUDBINARIES = $(CLOUDCOMMANDS:%=$(CLOUDBIN)/%) $(CLOUDDAEMONS:%=$(CLOUDBIN)/%)
 
@@ -713,6 +721,10 @@ GO_MOCK_CLOUDRPC_SRCS = \
 	$(GOSRCBG)/base_msg/base_msg.pb.go \
 	$(GOSRCBG)/common/cfgmsg/cfgmsg.go \
 	$(GOSRCBG)/common/cfgmsg/cfgmsg.pb.go
+GO_MOCK_APPLIANCEDB_SRCS = \
+	$(GOSRCBG)/cloud_models/appliancedb/appliancedb.go \
+	$(GOSRCBG)/cloud_models/appliancedb/certs.go \
+	$(GOSRCBG)/base_def/base_def.go
 GO_MOCK_APPLIANCEDB = $(GOSRCBG)/cloud_models/appliancedb/mocks/DataStore.go
 GO_MOCK_CLOUDRPC = $(GOSRCBG)/cloud_rpc/mocks/EventClient.go
 GO_MOCK_SRCS = \
@@ -721,14 +733,16 @@ GO_MOCK_SRCS = \
 
 mocks: $(GO_MOCK_SRCS)
 
-# Mock rules-- not sure how to make this work with pattern substitution
+$(GO_MOCK_CLOUDRPC): MOCK_NAME = 'EventClient'
+$(GO_MOCK_CLOUDRPC): $(GO_MOCK_CLOUDRPC_SRCS)
+$(GO_MOCK_APPLIANCEDB): MOCK_NAME = 'DataStore'
+$(GO_MOCK_APPLIANCEDB):  $(GO_MOCK_APPLIANCEDB_SRCS)
+$(GO_MOCK_SRCS): $(GOTOOLS) $(GODEPS_ENSURED)
+
 # The use of 'realpath' avoids an issue in mockery for workspaces with
 # symlinks (https://github.com/vektra/mockery/issues/157).
-$(GO_MOCK_CLOUDRPC): $(GO_MOCK_CLOUDRPC_SRCS) $(GOTOOLS) $(GODEPS_ENSURED)
-	cd $(realpath $(dir $<)) && GOPATH=$(realpath $(GOPATH)) $(GOTOOLS_BIN_MOCKERY) -name 'EventClient'
-
-$(GO_MOCK_APPLIANCEDB): $(GOSRCBG)/cloud_models/appliancedb/appliancedb.go $(GOTOOLS) $(GODEPS_ENSURED)
-	cd $(realpath $(dir $<)) && GOPATH=$(realpath $(GOPATH)) $(GOTOOLS_BIN_MOCKERY) -name 'DataStore'
+$(GO_MOCK_SRCS):
+	cd $(realpath $(dir $<)) && GOPATH=$(realpath $(GOPATH)) $(GOTOOLS_BIN_MOCKERY) -name $(MOCK_NAME)
 
 test: test-go
 
@@ -883,6 +897,7 @@ $(APPBIN)/ap.configd: \
 	$(GOSRCBG)/ap.configd/upgrade_v17.go \
 	$(GOSRCBG)/ap.configd/upgrade_v18.go \
 	$(GOSRCBG)/ap.configd/upgrade_v19.go \
+	$(GOSRCBG)/ap.configd/upgrade_v20.go \
 	$(GOSRCBG)/ap.configd/validate.go
 $(APPBIN)/ap.httpd: \
 	$(GOSRCBG)/ap.httpd/ap.httpd.go \
@@ -909,12 +924,15 @@ $(APPBIN)/ap.networkd: \
 	$(GOSRCBG)/ap_common/wificaps/wificaps.go
 $(APPBIN)/ap.rpcd: \
 	$(GOSRCBG)/ap.rpcd/rpcd.go \
+	$(GOSRCBG)/ap.rpcd/cert.go \
 	$(GOSRCBG)/ap.rpcd/config.go \
 	$(GOSRCBG)/ap.rpcd/heartbeat.go \
 	$(GOSRCBG)/ap.rpcd/inventory.go \
 	$(GOSRCBG)/ap.rpcd/tunnel.go \
 	$(GOSRCBG)/ap.rpcd/update.go \
-	$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go
+	$(GOSRCBG)/ap_common/certificate/certificate.go \
+	$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
+	$(GOSRCBG)/common/zaperr/zaperr.go
 $(APPBIN)/ap.serviced: \
 	$(GOSRCBG)/ap_common/data/dns.go \
 	$(GOSRCBG)/ap.serviced/dhcp4.go \
@@ -1004,6 +1022,11 @@ $(CLOUDBIN)/%: | $(CLOUDBIN)
 $(CLOUDBIN)/cl-aggregate: \
 	$(GOSRCBG)/cl-aggregate/aggregate.go \
 	$(CLOUD_COMMON_SRCS)
+$(CLOUDBIN)/cl-cert: \
+	$(GOSRCBG)/cl-cert/acme.go \
+	$(GOSRCBG)/cl-cert/cert.go \
+	$(GOSRCBG)/cloud_models/appliancedb/certs.go \
+	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl-configctl: \
 	$(GOSRCBG)/cl-configctl/configctl.go \
 	$(GOSRCBG)/common/configctl/configctl.go \
@@ -1042,10 +1065,12 @@ $(CLOUDBIN)/cl.httpd: \
 	$(GOSRCBG)/cl.httpd/site.go \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl.rpcd: \
+	$(GOSRCBG)/cl.rpcd/cert.go \
 	$(GOSRCBG)/cl.rpcd/cfg_relay.go \
 	$(GOSRCBG)/cl.rpcd/event.go \
 	$(GOSRCBG)/cl.rpcd/rpcd.go \
 	$(GOSRCBG)/cl.rpcd/storage.go \
+	$(GOSRCBG)/cloud_models/appliancedb/certs.go \
 	$(CLOUD_COMMON_SRCS)
 
 $(CLOUDROOTLIBSYSTEMDSYSTEM): | $(CLOUDROOTLIB)

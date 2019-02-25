@@ -180,7 +180,7 @@ service ConfigBackEnd{
 }
 
 message CfgFrontEndPing {
-       google.protobuf.Timestamp time	= 0x01;
+	google.protobuf.Timestamp time	= 0x01;
 }
 
 message CfgCmdID {
@@ -212,4 +212,19 @@ service ConfigFrontEnd{
 	rpc Status(CfgCmdID) returns (cfgmsg.ConfigResponse) {};
 	rpc Cancel(CfgCmdID) returns (cfgmsg.ConfigResponse) {};
 	rpc Monitor(CfgFrontEndMonitor) returns (stream CfgFrontEndUpdate) {};
+}
+
+message CertificateRequest {
+	bytes cert_fingerprint	= 0x01;
+}
+
+message CertificateResponse {
+	bytes fingerprint	= 0x02;
+	bytes certificate	= 0x03;
+	bytes issuer_cert	= 0x04;
+	bytes key		= 0x05;
+}
+
+service CertificateManager {
+	rpc Download(CertificateRequest) returns (CertificateResponse) {};
 }

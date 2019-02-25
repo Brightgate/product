@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+// COPYRIGHT 2019 Brightgate Inc. All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -26,14 +26,13 @@ func TestSelfSigned(t *testing.T) {
 		t.Errorf("couldn't create temporary directory '%s': %v\n", dn, err)
 	}
 
-	keyfn, certfn, chainfn, fullchainfn, err := createSSKeyCert(nil, dn,
-		"testhost.local", time.Now(), true)
+	paths, err := createSSKeyCert(nil, dn, "testhost.local", time.Now(), true)
 
 	if err != nil {
 		t.Errorf("err = %v\n", err)
 	} else {
 		t.Logf("keyfn = %s, certfn = %s, chainfn = %s, fullchainfn = %s\n",
-			keyfn, certfn, chainfn, fullchainfn)
+			paths.Key, paths.Cert, paths.Chain, paths.FullChain)
 	}
 
 	// remove temporary directory

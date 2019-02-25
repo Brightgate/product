@@ -67,8 +67,6 @@ import (
 	"github.com/grpc-ecosystem/go-grpc-prometheus"
 )
 
-const checkMark = `✔︎ `
-
 // Cfg contains the environment variable-based configuration settings
 type Cfg struct {
 	// The certificate hostname is the primary hostname associated
@@ -93,12 +91,15 @@ type Cfg struct {
 }
 
 const (
-	pname = "cl.rpcd"
+	checkMark = `✔︎ `
+	pname     = "cl.rpcd"
 )
 
 var (
 	log  *zap.Logger
 	slog *zap.SugaredLogger
+
+	environ Cfg
 )
 
 // endpointLogger is a utility routine to build a zap logger customized for
@@ -144,7 +145,7 @@ func getSiteUUID(ctx context.Context, allowNullSiteUUID bool) (uuid.UUID, error)
 
 // processEnv checks (and in some cases modifies) the environment-derived
 // configuration.
-func processEnv(environ *Cfg) {
+func processEnv() {
 	if environ.PostgresConnection == "" {
 		slog.Fatalf("B10E_CLRPCD_POSTGRES_CONNECTION must be set")
 	}
@@ -197,7 +198,7 @@ func makeApplianceDB(postgresURI string) appliancedb.DataStore {
 	return applianceDB
 }
 
-func makeGrpcServer(environ Cfg, applianceDB appliancedb.DataStore) *grpc.Server {
+func makeGrpcServer(applianceDB appliancedb.DataStore) *grpc.Server {
 	var opts []grpc.ServerOption
 	var keypair tls.Certificate
 	var serverCertPool *x509.CertPool
@@ -315,7 +316,6 @@ func setupGrpcLog(log *zap.Logger) {
 }
 
 func main() {
-	var environ Cfg
 	var err error
 
 	log, slog = daemonutils.SetupLogs()
@@ -328,12 +328,12 @@ func main() {
 	if err != nil {
 		slog.Fatalf("Environment Error: %s", err)
 	}
-	processEnv(&environ)
+	processEnv()
 
 	slog.Infow(pname+" starting", "args", os.Args)
 
 	applianceDB := makeApplianceDB(environ.PostgresConnection)
-	grpcServer := makeGrpcServer(environ, applianceDB)
+	grpcServer := makeGrpcServer(applianceDB)
 
 	pubsubClient, err := pubsub.NewClient(context.Background(), environ.PubsubProject)
 	if err != nil {
@@ -346,11 +346,14 @@ func main() {
 	}
 
 	cloudStorageServer := defaultCloudStorageServer(applianceDB)
+	certificateServer := newCertServer(applianceDB)
 
 	cloud_rpc.RegisterEventServer(grpcServer, eventServer)
 	slog.Infof(checkMark+"Ready to put event to Cloud PubSub %s", environ.PubsubTopic)
 	cloud_rpc.RegisterCloudStorageServer(grpcServer, cloudStorageServer)
 	slog.Infof(checkMark + "Ready to serve Cloud Storage related requests")
+	cloud_rpc.RegisterCertificateManagerServer(grpcServer, certificateServer)
+	slog.Infof(checkMark + "Ready to serve certificate requests")
 
 	if environ.ConfigdDisableTLS {
 		slog.Warnf("Disabling TLS for connection to Configd")

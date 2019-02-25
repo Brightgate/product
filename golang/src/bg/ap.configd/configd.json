@@ -3,7 +3,7 @@
     "Children": {
       "apversion": {},
       "cfgversion": {
-        "Value": "19"
+        "Value": "20"
       },
       "clients": {},
       "cloud": {
@@ -241,10 +241,12 @@
   },
   "Descriptions": [
     {"Path": "@/uuid", "Type": "uuid", "Level": "internal"},
-    {"Path": "@/siteid", "Type": "int", "Level": "internal"},
+    {"Path": "@/siteid", "Type": "dnsaddr", "Level": "internal"},
     {"Path": "@/site_index", "Type": "int", "Level": "internal"},
     {"Path": "@/apversion", "Type": "string", "Level": "internal"},
     {"Path": "@/cfgversion", "Type": "int", "Level": "internal"},
+    {"Path": "@/certs/%string%/state", "Type": "string", "Level": "internal"},
+    {"Path": "@/certs/%string%/origin", "Type": "string", "Level": "internal"},
     {"Path": "@/dns/cnames/%hostname%", "Type": "hostname", "Level": "user"},
     {"Path": "@/devices/%int%", "Type": "int", "Level": "internal"},
     {"Path": "@/firewall/rules/%string%/active", "Type": "bool", "Level": "admin"},

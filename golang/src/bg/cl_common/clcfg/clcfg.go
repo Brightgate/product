@@ -179,7 +179,7 @@ func (c *cmdHdl) Wait(ctx context.Context) (string, error) {
 		}
 
 		if time.Now().After(deadline) {
-			err = fmt.Errorf("timed out with %v in-flight", c)
+			err = cfgapi.ErrTimeout
 			break
 		}
 		time.Sleep(time.Second)
