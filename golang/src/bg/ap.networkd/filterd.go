@@ -195,8 +195,14 @@ func iptablesReset() {
 		f.WriteString("COMMIT\n")
 	}
 
-	cmd := exec.Command(plat.RestoreCmd, iptablesRulesFile)
+	cmd := exec.Command(plat.IPTablesCmd, "-F")
 	out, err := cmd.CombinedOutput()
+	if err != nil {
+		slog.Warnf("failed to clear old rules: %v", out)
+	}
+
+	cmd = exec.Command(plat.RestoreCmd, iptablesRulesFile)
+	out, err = cmd.CombinedOutput()
 	if err != nil {
 		slog.Warnf("failed to apply rules: %s", out)
 	}

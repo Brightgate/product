@@ -149,6 +149,16 @@ type RingConfig struct {
 	LeaseDuration int
 }
 
+// VirtualAP captures the configuration information of a virtual access point
+type VirtualAP struct {
+	SSID        string
+	Tag5GHz     bool
+	KeyMgmt     string
+	Passphrase  string
+	DefaultRing string
+	Rings       []string
+}
+
 // ClientInfo contains all of the configuration information for a client device
 type ClientInfo struct {
 	Ring         string     // Assigned security ring
@@ -593,6 +603,84 @@ func (c *Handle) GetRings() RingMap {
 	}
 
 	return set
+}
+
+func newVAP(name string, root *PropertyNode) *VirtualAP {
+	var ssid, keymgmt, pass, defaultRing string
+	var tag bool
+
+	if x := root.Children["ssid"]; x != nil {
+		ssid = x.Value
+	} else {
+		log.Printf("vap %s: missing ssid", name)
+	}
+
+	if x := root.Children["keymgmt"]; x != nil {
+		keymgmt = x.Value
+	} else {
+		log.Printf("vap %s: missing keymgmt", name)
+	}
+
+	if keymgmt == "wpa-psk" {
+		if node, ok := root.Children["passphrase"]; ok {
+			pass = node.Value
+		} else {
+			log.Printf("vap %s: missing WPA-PSK passphrase", name)
+		}
+	}
+
+	if x := root.Children["5ghz"]; x != nil {
+		b, err := strconv.ParseBool(x.Value)
+		if err != nil {
+			log.Printf("vap %s: malformed 5ghz: %s", name, x.Value)
+		}
+		tag = b
+	}
+
+	if x := root.Children["default_ring"]; x != nil {
+		defaultRing = x.Value
+	} else {
+		log.Printf("vap %s: missing default_ring", name)
+	}
+
+	return &VirtualAP{
+		SSID:        ssid,
+		KeyMgmt:     keymgmt,
+		Passphrase:  pass,
+		Tag5GHz:     tag,
+		Rings:       make([]string, 0),
+		DefaultRing: defaultRing,
+	}
+}
+
+// GetVirtualAPs returns a map of all the virtual APs configured for this
+// appliances
+func (c *Handle) GetVirtualAPs() map[string]*VirtualAP {
+
+	props, err := c.GetProps("@/network/vap")
+	if err != nil {
+		log.Printf("Failed to get VirtualAP list: %v\n", err)
+		return nil
+	}
+
+	vaps := make(map[string]*VirtualAP)
+	for vapName, conf := range props.Children {
+		vaps[vapName] = newVAP(vapName, conf)
+	}
+
+	// populate the Rings[] slice of each VirtualAP
+	rings := c.GetRings()
+	if err != nil {
+		log.Printf("Failed to get ring list: %v\n", err)
+	}
+	for ringName, ringConfig := range rings {
+		vap, ok := vaps[ringConfig.VirtualAP]
+		if ok && ValidRings[ringName] {
+			vap.Rings = append(vap.Rings, ringName)
+		}
+	}
+
+	return vaps
 }
 
 func getClient(client *PropertyNode) *ClientInfo {

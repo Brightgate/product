@@ -98,7 +98,7 @@ func configChannelChanged(path []string, val string, expires *time.Time) {
 		if p.wifi.cfgChannel != newChannel {
 			p.wifi.cfgChannel = newChannel
 			wifiEvaluate = true
-			hostapd.reload()
+			hostapd.reset()
 		}
 	}
 }
@@ -111,7 +111,7 @@ func configBandChanged(path []string, val string, expires *time.Time) {
 		if p.wifi.cfgBand != newBand {
 			p.wifi.cfgBand = newBand
 			wifiEvaluate = true
-			hostapd.reload()
+			hostapd.reset()
 		}
 	}
 }
@@ -159,7 +159,7 @@ func configRingVAPChanged(path []string, val string, expires *time.Time) {
 		slog.Infof("Changing virtualAP for ring %s from %s to %s",
 			ring, r.VirtualAP, val)
 		r.VirtualAP = val
-		hostapd.reload()
+		hostapd.reset()
 	}
 }
 
