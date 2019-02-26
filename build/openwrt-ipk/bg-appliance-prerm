@@ -24,7 +24,7 @@ line_remove () {
 line_remove "$PKG_ROOT/root/.profile" "/. \/opt\/com.brightgate\/etc\/com-brightgate-profile/ d"
 
 # Drop /etc/rsyslog.d from /etc/rsyslog.conf.
-line_remove "$PKG_ROOT/etc/rsyslog.conf" "/\\\$IncludeConfig \/etc\/rsyslog.d\/@ d"
+line_remove "$PKG_ROOT/etc/rsyslog.conf" "/\\\$IncludeConfig \/etc\/rsyslog.d\// d"
 
 if [ "$PKG_ROOT" = "/" ]; then
 	# Restart rsyslog.
