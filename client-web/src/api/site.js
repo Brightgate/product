@@ -311,7 +311,18 @@ async function accountGeneratePassword() {
   }
 }
 
-async function accountSelfProvision(username, password, verifier) {
+async function accountSelfProvisionGet() {
+  const u = buildUrl('/api/account/0/selfprovision');
+  try {
+    const res = await axios.get(u);
+    return res.data;
+  } catch (err) {
+    debug('GET selfprovision failed', err);
+    throw err;
+  }
+}
+
+async function accountSelfProvisionPost(username, password, verifier) {
   const u = buildUrl('/api/account/0/selfprovision');
   try {
     const res = await axios({
@@ -321,10 +332,10 @@ async function accountSelfProvision(username, password, verifier) {
       data: qs.stringify({username, password, verifier}),
       url: u,
     });
-    debug(`accountSelfProvision: Succeeded.`);
+    debug(`accountSelfProvisionPost: Succeeded.`);
     return res.data;
   } catch (err) {
-    debug(`accountSelfProvision: Failed`, err);
+    debug(`accountSelfProvisionPost: Failed`, err);
     throw err;
   }
 }
@@ -347,6 +358,7 @@ export default {
   authApplianceLogout,
   authUserid,
   accountGeneratePassword,
-  accountSelfProvision,
+  accountSelfProvisionGet,
+  accountSelfProvisionPost,
   setMockMode,
 };

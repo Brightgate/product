@@ -55,7 +55,7 @@ func TestAccountsGenAndProvision(t *testing.T) {
 	assert.Equal(http.StatusOK, rec.Code)
 	t.Logf("return body:Svc %s", rec.Body.String())
 
-	var ret accountSelfProvisionInfo
+	var ret accountSelfProvisionRequest
 	err = json.Unmarshal(rec.Body.Bytes(), &ret)
 	assert.NoError(err)
 	assert.NotEmpty(ret.Password)
@@ -69,14 +69,14 @@ func TestAccountsGenAndProvision(t *testing.T) {
 	e.ServeHTTP(rec, req)
 	assert.Equal(http.StatusOK, rec.Code)
 	t.Logf("return body:Svc %s", rec.Body.String())
-	var ret2 accountSelfProvisionInfo
+	var ret2 accountSelfProvisionRequest
 	cookies := rec.Result().Cookies()
 	err = json.Unmarshal(rec.Body.Bytes(), &ret2)
 
 	assert.Equal(ret.Username, ret2.Username)
 	assert.NotEqual(ret.Password, ret2.Password)
 
-	body := accountSelfProvisionInfo{
+	body := accountSelfProvisionRequest{
 		Username: ret2.Username,
 		Password: "anything",
 		Verifier: ret2.Verifier,

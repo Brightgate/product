@@ -39,10 +39,16 @@ type accountHandler struct {
 	accountSecretKey []byte
 }
 
-type accountSelfProvisionInfo struct {
+type accountSelfProvisionRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	Verifier string `json:"verifier"`
+}
+
+type accountSelfProvisionResponse struct {
+	Status    string    `json:"status"`
+	Completed time.Time `json:"completed,omitempty"`
+	Username  string    `json:"username"`
 }
 
 var pwRegime = passwordgen.HumanPasswordSpec.String()
@@ -105,7 +111,7 @@ func (a *accountHandler) getAccountPasswordGen(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 	c.Logger().Infof("saved crypted pw %s,%s", pwHash, mschapHash)
-	return c.JSON(http.StatusOK, &accountSelfProvisionInfo{
+	return c.JSON(http.StatusOK, &accountSelfProvisionRequest{
 		Username: account.Email,
 		Password: pw,
 		Verifier: verifier.String(),
@@ -168,8 +174,6 @@ func (a *accountHandler) savePasswords(ctx context.Context, accountUUID uuid.UUI
 // the user to all of the customer sites.
 //
 // XXX ui.Update() waits, which is probably not what we want.
-//
-// XXX probably move this out of here since it is cloud only.
 func (a *accountHandler) postAccountSelfProvision(c echo.Context) error {
 	accountUUID, ok := c.Get("account_uuid").(uuid.UUID)
 	if !ok || accountUUID == uuid.Nil {
@@ -197,12 +201,12 @@ func (a *accountHandler) postAccountSelfProvision(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, err)
 	}
 
-	var provInfo accountSelfProvisionInfo
-	if err := c.Bind(&provInfo); err != nil {
+	var provReq accountSelfProvisionRequest
+	if err := c.Bind(&provReq); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err)
 	}
-	if provInfo.Verifier == "" || provInfo.Verifier != verifierSessionVal {
-		c.Logger().Warnf("provInfo.Verifier %s != verifierSessionVal %s", provInfo.Verifier, verifierSessionVal)
+	if provReq.Verifier == "" || provReq.Verifier != verifierSessionVal {
+		c.Logger().Warnf("provInfo.Verifier %s != verifierSessionVal %s", provReq.Verifier, verifierSessionVal)
 		return echo.NewHTTPError(http.StatusBadRequest, "stale request, verifier did not match")
 	}
 
@@ -276,6 +280,41 @@ func (a *accountHandler) postAccountSelfProvision(c echo.Context) error {
 	return c.Redirect(http.StatusFound, "/client-web")
 }
 
+// getAccountSelfProvision returns self provisioning information for
+// the user's account.
+func (a *accountHandler) getAccountSelfProvision(c echo.Context) error {
+	accountUUID, ok := c.Get("account_uuid").(uuid.UUID)
+	if !ok || accountUUID == uuid.Nil {
+		return echo.NewHTTPError(http.StatusUnauthorized)
+	}
+	ctx := c.Request().Context()
+
+	_, err := a.sessionStore.Get(c.Request(), "bg_login")
+	if err != nil {
+		return echo.NewHTTPError(http.StatusUnauthorized)
+	}
+
+	account, err := a.db.AccountByUUID(ctx, accountUUID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, err)
+	}
+
+	resp := &accountSelfProvisionResponse{
+		Status: "unprovisioned",
+	}
+	secret, err := a.db.AccountSecretsByUUID(ctx, accountUUID)
+	if err != nil {
+		return c.JSON(http.StatusOK, resp)
+	}
+	if secret.ApplianceUserMSCHAPv2 == "" {
+		return c.JSON(http.StatusOK, resp)
+	}
+	resp.Status = "provisioned"
+	resp.Username = account.Email
+	resp.Completed = secret.ApplianceUserMSCHAPv2Ts
+	return c.JSON(http.StatusOK, resp)
+}
+
 // newAccountAPIHandler creates an accountHandler for the given DataStore and session
 // Store, and routes the handler into the echo instance.
 func newAccountHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []echo.MiddlewareFunc, sessionStore sessions.Store, getClientHandle getClientHandleFunc, accountSecretKey []byte) *accountHandler {
@@ -287,6 +326,7 @@ func newAccountHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []ech
 	acct := r.Group("/api/account")
 	acct.Use(middlewares...)
 	acct.GET("/:uuid/passwordgen", h.getAccountPasswordGen)
+	acct.GET("/:uuid/selfprovision", h.getAccountSelfProvision)
 	acct.POST("/:uuid/selfprovision", h.postAccountSelfProvision)
 	return h
 }

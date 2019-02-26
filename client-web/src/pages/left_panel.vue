@@ -23,6 +23,9 @@
       <f7-list-item v-if="appMode === appDefs.APPMODE_LOCAL">
         <f7-link panel-close href="/">Home</f7-link>
       </f7-list-item>
+      <f7-list-item v-if="appMode === appDefs.APPMODE_CLOUD">
+        <f7-link panel-close href="/account_prefs/">My Account</f7-link>
+      </f7-list-item>
       <f7-list-item>
         <f7-link v-if="loggedIn" @click="$store.dispatch('logout', {}); $f7.panel.close('left');">
           {{ $t('message.general.logout') }}

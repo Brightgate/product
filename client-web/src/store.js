@@ -149,6 +149,7 @@ const state = {
   currentSiteID: nullSite.id,
   currentSite: nullSite,
   userInfo: {},
+  accountSelfProvision: {},
 };
 
 const mutations = {
@@ -207,6 +208,10 @@ const mutations = {
 
   setSiteRings(state, {id, rings}) {
     getSite(state, id).rings = rings;
+  },
+
+  setAccountSelfProvision(state, newSP) {
+    state.accountSelfProvision = newSP;
   },
 
   setSiteNetworkConfig(state, {id, networkConfig}) {
@@ -280,6 +285,7 @@ const getters = {
   leftPanelVisible: (state) => state.leftPanelVisible,
   authProviders: (state) => state.authProviders,
   userInfo: (state) => state.userInfo,
+  accountSelfProvision: (state) => state.accountSelfProvision,
 
   siteAlerts: (state) => (siteID) => {
     return getSite(state, siteID).alerts;
@@ -471,7 +477,8 @@ const actions = {
   async setCurrentSiteID(context, {id}) {
     context.commit('setCurrentSiteID', id);
     await context.dispatch('fetchPeriodicStop');
-    await context.dispatch('fetchPeriodic');
+    // Re-get the world
+    context.dispatch('fetchPostLogin');
   },
 
   // Load the list of devices from the server.
@@ -553,6 +560,13 @@ const actions = {
     const id = context.state.currentSiteID;
     const rings = await siteApi.siteRingsGet(id);
     context.commit('setSiteRings', {id: id, rings: rings});
+  },
+
+  async fetchAccountSelfProvision(context) {
+    if (context.state.appMode === appDefs.APPMODE_CLOUD) {
+      const res = await siteApi.accountSelfProvisionGet();
+      context.commit('setAccountSelfProvision', res);
+    }
   },
 
   // Load the various aspects of the network configuration from the server.
@@ -693,12 +707,20 @@ const actions = {
     assert.equal(typeof userPassword, 'string');
     await siteApi.authApplianceLogin(uid, userPassword);
     context.commit('setLoggedIn', true);
+    const userInfo = await siteApi.authUserid();
+    context.commit('setUserInfo', userInfo);
     // Let these run async
+    context.dispatch('fetchPostLogin');
+  },
+
+  async fetchPostLogin(context) {
+    debug('fetchPostLogin');
+    context.dispatch('fetchAccountSelfProvision').catch(() => {});
     context.dispatch('fetchSites').then(() => {
-      context.dispatch('fetchDevices');
-      context.dispatch('fetchRings');
-      context.dispatch('fetchUsers');
-      context.dispatch('fetchPeriodic');
+      context.dispatch('fetchDevices').catch(() => {});
+      context.dispatch('fetchRings').catch(() => {});
+      context.dispatch('fetchUsers').catch(() => {});
+      context.dispatch('fetchPeriodic').catch(() => {});
     });
   },
 

@@ -30,7 +30,7 @@ div .panel-visible-by-breakpoint {
       cover
       @panel:breakpoint="onPanelBreakpoint"
     >
-      <f7-view url="/left-panel/" links-view=".view-main" />
+      <f7-view url="/left_panel/" links-view=".view-main" />
     </f7-panel>
 
     <!-- Main View -->

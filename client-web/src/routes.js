@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -8,15 +8,17 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 
-import LeftPanel from './pages/left_panel.vue';
-import SiteStatus from './pages/site_status.vue';
+import AccountPrefs from './pages/account_prefs.vue';
 import ComplianceReport from './pages/compliance_report.vue';
 import DevDetails from './pages/dev_details.vue';
 import Devices from './pages/devices.vue';
 import EnrollGuest from './pages/enroll_guest.vue';
 import Home from './pages/home.vue';
+import LeftPanel from './pages/left_panel.vue';
 import MalwareWarn from './pages/malware_warn.vue';
+import SelfProvision from './pages/self_provision.vue';
 import SiteAdmin from './pages/site_admin.vue';
+import SiteStatus from './pages/site_status.vue';
 import TestTools from './pages/test_tools.vue';
 import UserDetails from './pages/user_details.vue';
 import UserEditor from './pages/user_editor.vue';
@@ -32,8 +34,16 @@ export default [
     component: MalwareWarn,
   },
   {
-    path: '/left-panel/',
+    path: '/left_panel/',
     component: LeftPanel,
+  },
+  {
+    path: '/account_prefs/',
+    component: AccountPrefs,
+  },
+  {
+    path: '/account_prefs/self_provision',
+    component: SelfProvision,
   },
   {
     path: '/sites/:SiteID/compliance_report/',

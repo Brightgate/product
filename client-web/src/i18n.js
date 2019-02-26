@@ -57,6 +57,8 @@ export default {
         notifications: 'Notifications',
         update_device: '⚠️  Update device {device}',
         security_notifications: '⚠️ Security Notifications',
+        self_provision_title: 'Your Account',
+        self_provision_text: 'Your Wi-Fi login needs to be provisioned',
         msg: {
           '0': 'This device is less secure because it is running old software.',
           '1': 'Brightgate can\'t automatically update this device.',
@@ -73,6 +75,13 @@ export default {
         login: 'Login',
         logout: 'Logout',
         need_login: 'You must be logged in',
+      },
+      account_prefs: {
+        title: 'Account Preferences',
+        self_provision: 'Wi-Fi Self Provisioning',
+      },
+      self_provision: {
+        title: 'Wi-Fi Self Provisioning',
       },
       site_status: {
         title: 'Brightgate - Site Status',
@@ -231,6 +240,8 @@ export default {
       notifications: {
         notifications: 'Benachrichtigungen',
         update_device: '⚠️  {device} aktualisieren',
+        self_provision_title: 'Your Account', // XXXI18N
+        self_provision_text: 'Your Wi-Fi login needs to be provisioned', // XXXI18N
         security_notifications: '⚠️ Sicherheitshinweis',
         msg: {
           '0': 'Dieses Gerät ist unsicher wegen veralteter Software.',
@@ -248,6 +259,13 @@ export default {
         login: 'Anmelden',
         logout: 'Abmelden',
         need_login: 'Sie müssen angemeldet sein',
+      },
+      account_prefs: { // XXXI18N
+        title: 'Account Preferences',
+        self_provision: 'Wi-Fi Self Provisioning',
+      },
+      self_provision: { // XXXI18N
+        title: 'Wi-Fi Self Provisioning',
       },
       site_status: { // XXXI18N
         title: 'Brightgate- Site Status',

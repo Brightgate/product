@@ -18,6 +18,7 @@ import Framework7Vue, {
   f7Button,
   f7Card,
   f7CardContent,
+  f7CardFooter,
   f7CardHeader,
   f7Col,
   f7Fab,
@@ -37,6 +38,8 @@ import Framework7Vue, {
   f7Panel,
   f7Preloader,
   f7Row,
+  f7Swiper,
+  f7SwiperSlide,
   f7Toggle,
   f7View,
 } from 'framework7-vue';
@@ -73,6 +76,7 @@ const comps = [
   f7Button,
   f7Card,
   f7CardContent,
+  f7CardFooter,
   f7CardHeader,
   f7Col,
   f7Fab,
@@ -92,6 +96,8 @@ const comps = [
   f7Panel,
   f7Preloader,
   f7Row,
+  f7Swiper,
+  f7SwiperSlide,
   f7Toggle,
   f7View,
 ];

@@ -191,7 +191,7 @@ export default {
     },
 
     acceptPassword: async function(evt) {
-      await siteApi.accountSelfProvision(this.generatedUsername, this.generatedPassword, this.verifier);
+      await siteApi.accountSelfProvisionPost(this.generatedUsername, this.generatedPassword, this.verifier);
     },
 
     toggleMock: function(evt) {

@@ -34,7 +34,18 @@
     </f7-navbar>
 
     <f7-block-title>{{ $t("message.notifications.notifications") }}</f7-block-title>
-    <f7-list>
+    <f7-list media-list chevron-center>
+      <f7-list-item
+        v-if="accountSelfProvision && accountSelfProvision.status && accountSelfProvision.status === 'unprovisioned'"
+        key="selfProvision"
+        :title="$t('message.notifications.self_provision_title')"
+        :text="$t('message.notifications.self_provision_text')"
+        link="/account_prefs/self_provision">
+        <div slot="media">
+          <f7-icon ios="f7:alert_fill" md="material:warning" color="yellow" />
+        </div>
+      </f7-list-item>
+      <!-- XXX the below notifications can never trigger in the current app -->
       <f7-list-item
         v-for="device in devices"
         v-if="device.notification"
@@ -110,6 +121,7 @@ export default {
     // Map various $store elements as computed properties for use in the
     // template.
     ...vuex.mapGetters([
+      'accountSelfProvision',
       'alertActive',
       'alertCount',
       'alerts',
@@ -142,10 +154,10 @@ export default {
 
     onPageBeforeIn: async function() {
       // We do these optimistically, letting them fail if not logged in.
-      this.$store.dispatch('fetchDevices').catch(() => {});
-      this.$store.dispatch('fetchSites').catch(() => {});
       await this.$store.dispatch('checkLogin');
-      if (!this.$store.getters.loggedIn) {
+      if (this.$store.getters.loggedIn) {
+        this.$store.dispatch('fetchPostLogin');
+      } else {
         this.$f7.loginScreen.open('#bgLoginScreen');
       }
     },

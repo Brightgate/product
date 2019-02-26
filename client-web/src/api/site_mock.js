@@ -102,6 +102,42 @@ function configHandler(config) {
   return [200, value];
 }
 
+const pws = ['correct horse battery staple', 'i like coconuts', 'my voice is my password'];
+let pwid = 0;
+
+function passwordgenHandler() {
+  const resp = {
+    username: 'test@example.com',
+    password: pws[pwid % pws.length],
+    verifier: 'anything',
+  };
+  pwid++;
+  return [200, resp];
+}
+
+function timeout(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function selfProvGetHandler() {
+  let resp = {
+    status: 'unprovisioned',
+  };
+  if (localStorage.getItem('debug_provisioned') === 'true') {
+    resp = {
+      status: 'provisioned',
+      username: 'test@example.com',
+      completed: '2019-02-01T01:01:01Z',
+    };
+  }
+  return [200, resp];
+}
+
+async function selfProvPostHandler() {
+  await timeout(3000);
+  return [200];
+}
+
 function mockAxios(normalAxios, mode) {
   const mockAx = axios.create();
   const mock = new MockAdapter(mockAx);
@@ -122,6 +158,9 @@ function mockAxios(normalAxios, mode) {
     .onGet('/auth/logout').reply(200)
     .onGet('/auth/userid').reply(200, mockUserid)
     .onGet('/auth/providers').reply(200, mockProviders)
+    .onGet(/\/api\/account\/.+\/passwordgen/).reply(passwordgenHandler)
+    .onGet(/\/api\/account\/.+\/selfprovision/).reply(selfProvGetHandler)
+    .onPost(/\/api\/account\/.+\/selfprovision/).reply(selfProvPostHandler)
     .onAny().reply(500);
 
   return mockAx;

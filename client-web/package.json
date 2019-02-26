@@ -16,6 +16,7 @@
     "axios-mock-adapter": "^1.16.0",
     "bluebird-retry": "^0.11.0",
     "browser-locale": "^1.0.3",
+    "clipboard-polyfill": "^2.7.0",
     "core-js": "=2.6.4",
     "date-fns": "^2.0.0-alpha.27",
     "debug": "^4.1.1",
