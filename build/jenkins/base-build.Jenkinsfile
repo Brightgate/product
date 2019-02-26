@@ -19,7 +19,7 @@
 pipeline {
     agent any
     environment {
-        GOROOT = '/opt/net.b10e/go-1.10.2'
+        GOROOT = '/opt/net.b10e/go-1.10.8'
         DOWNLOAD_CACHEDIR = '/ex1/product-dl-cache'
     }
     stages {

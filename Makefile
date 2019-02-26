@@ -76,8 +76,8 @@ GOROOT_SEARCH += /usr/local/go
 $(info operating-system macOS)
 else
 # On Linux
-export GOROOT=$(wildcard /opt/net.b10e/go-1.10.2)
-GOROOT_SEARCH += /opt/net.b10e/go-1.10.2
+export GOROOT=$(wildcard /opt/net.b10e/go-1.10.8)
+GOROOT_SEARCH += /opt/net.b10e/go-1.10.8
 ifeq ("$(GOROOT)","")
 export GOROOT=$(HOME)/go
 GOROOT_SEARCH += $(HOME)/go

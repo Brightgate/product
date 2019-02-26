@@ -50,7 +50,7 @@ Raspberry Pi or other machine you maintain.  Current versions are:
 
   | Software    | Version
   | ----------- | -------
-  | Go (golang) | 1.10.2 (any 1.10.x is likely to work)
+  | Go (golang) | 1.10.8 (any 1.10.x is likely to work)
   | Node.js     | 8.11.2 (any 8.x is likely to work)
   | TensorFlow  | 1.4.1
 
