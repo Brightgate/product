@@ -763,9 +763,25 @@ test-go: install
 
 coverage: coverage-go
 
+space := $() $()
+comma := ,
+
 coverage-go: install
 	$(MKDIR) -p $(COVERAGE_DIR)
-	$(GO) test $(GO_TESTFLAGS) -cover -coverprofile $(COVERAGE_DIR)/cover.out $(GO_TESTABLES)
+	err=""; of=$$(mktemp coverXXXXXX); for p in $(GO_TESTABLES); do \
+		pkgs=$(subst $(space),$(comma),$(APPCOMMON_GOPKGS)); \
+		pkgs=$$pkgs,$(subst $(space),$(comma),$(CLOUDCOMMON_GOPKGS)); \
+		pkgs=$$pkgs,$$p; \
+		$(GO) test $(GO_TESTFLAGS) -cover \
+			-coverprofile $(COVERAGE_DIR)/$$(echo $$p | tr / -).out \
+			-coverpkg $$pkgs \
+			$$p > $$of 2>&1 || err="$$err $$p"; \
+		grep -v "no packages being tested depend on matches for pattern" $$of; \
+	done; \
+	rm $$of; \
+	if [ -n "$${err}" ]; then echo "Failures in the following packages:$$err"; exit 1; fi
+	echo "mode: set" > $(COVERAGE_DIR)/cover.out
+	grep -h -v "^mode:" $(COVERAGE_DIR)/bg*.out | sort -u >> $(COVERAGE_DIR)/cover.out
 	$(GO) tool cover -html=$(COVERAGE_DIR)/cover.out -o $(COVERAGE_DIR)/coverage.html
 
 vet-go:
