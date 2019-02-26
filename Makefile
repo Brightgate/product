@@ -129,6 +129,8 @@ endif
 MKDIR = mkdir
 RM = rm
 
+DOWNLOAD_CACHEDIR ?= $(GITROOT)/../download-cache
+
 NODE = node
 NODEVERSION = $(shell $(NODE) --version)
 
@@ -801,7 +803,15 @@ $(APPETC)/mcp.json: $(GOSRCBG)/ap.mcp/mcp.json | $(APPETC)
 	$(INSTALL) -m 0644 $< $@
 
 $(APPETC)/oui.txt: | $(APPETC)
-	cd $(APPETC) && curl -s -S -O http://standards-oui.ieee.org/oui.txt
+	-curl --connect-timeout 5 -s -S -R -o $@ http://standards-oui.ieee.org/oui.txt
+	@if [ -s $@ ]; then \
+		mkdir -p $(DOWNLOAD_CACHEDIR); \
+		echo Copying $@ to $(DOWNLOAD_CACHEDIR); \
+		cp -p $@ $(DOWNLOAD_CACHEDIR)/oui.txt; \
+	else \
+		echo Copying $@ from $(DOWNLOAD_CACHEDIR); \
+		cp -p $(DOWNLOAD_CACHEDIR)/oui.txt $@; \
+	fi
 
 $(APPETC)/prometheus.yml: prometheus.yml | $(APPETC)
 	$(INSTALL) -m 0644 $< $@

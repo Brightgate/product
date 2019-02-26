@@ -20,6 +20,7 @@ pipeline {
     agent any
     environment {
         GOROOT = '/opt/net.b10e/go-1.10.2'
+        DOWNLOAD_CACHEDIR = '/ex1/product-dl-cache'
     }
     stages {
         stage('build-amd64') {
