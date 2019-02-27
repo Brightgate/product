@@ -44,6 +44,7 @@ export default {
       },
       site_controls: {
         site_status: 'Site Status',
+        network: 'Network Configuration',
         compliance_report: 'Compliance Report',
         manage_devices: 'Manage Devices ({device_count})',
         enroll_guest: 'Enroll a Guest User',
@@ -83,19 +84,49 @@ export default {
       self_provision: {
         title: 'Wi-Fi Self Provisioning',
       },
+      network: {
+        title: 'Networks',
+        names: {
+          eap: 'Authorized User Network',
+          psk: 'Devices Network',
+          guest: 'Guest Network',
+        },
+        config: 'Configuration',
+        config_dns_server: 'DNS Server',
+        config_wan_current: 'Current WAN Address',
+        config_24GHz: '2.4GHz Channel',
+        config_5GHz: '5GHz Channel',
+        descriptions: {
+          eap: 'Unique ID and password; laptops, tablets, phones',
+          psk: 'Shared password; IoT devices, printers, ...',
+          guest: 'Wi-Fi guest users; password rotates periodically',
+        },
+        networks: 'Networks',
+      },
+      network_vap: {
+        title: 'Network Details',
+        descriptions: {
+          eap: 'Each network user has their own login ID and password, created using the Brightgate App or Cloud Portal. Use it for laptops, tablets, and phones.',
+          psk: 'All devices on this network share the same password.  Use it for IoT devices, such as printers, security cameras, or "smart" appliances.',
+          guest: 'Guests use this network. The password rotates periodically.',
+        },
+        properties: 'Network Properties',
+        key_mgmt: 'Authentication Method',
+        default_tg: 'Default Trust Group',
+        passphrase: 'Passphrase',
+        ring_config: 'Trust Group Configuration',
+      },
       site_status: {
         title: 'Brightgate - Site Status',
-        ssids: 'SSIDs',
-        ssid_psk: 'Pre-Shared Key SSID',
-        ssid_eap: 'Enterprise Auth SSID',
+        networks: 'Networks',
+        net_eap: 'Trusted User Network',
+        net_psk: 'Devices Network',
+        net_guest: 'Guest Network',
         devices: 'Device Summary',
         devices_reg: 'Registered Devices',
         devices_active: 'Active Devices',
         devices_scanned: 'Vulnerability Scanned Devices',
         config: 'Configuration',
-        config_dns_server: 'DNS Server',
-        config_default_ring_wpa_eap: 'Default Ring (WPA-EAP)',
-        config_default_ring_wpa_psk: 'Default Ring (WPA-PSK)',
       },
       compliance_report: {
         title: 'Brightgate - Compliance Report',
@@ -106,7 +137,7 @@ export default {
         summary_phish: '{num} incidents of phishing activity detected.',
         summary_vuln: 'There are {num} active vulnerabilities.',
         population: 'All Devices',
-        ring_summary: 'Security Ring Summary',
+        ring_summary: 'Trust Group Summary',
         ring_ok: 'Devices scanned, no current vulnerabilties',
         ring_not_scanned: 'Devices not yet scanned',
         ring_vulnerable: 'Devices scanned, Vulnerability detected',
@@ -116,7 +147,7 @@ export default {
         no_active_violations: 'No active vulnerabilities.',
         resolved_violations: 'Resolved Violations',
         no_resolved_violations: 'No resolved violations.',
-        security_rings: 'Security Rings',
+        security_rings: 'Trust Groups',
       },
       devices: {
         title: 'Brightgate - Devices',
@@ -135,7 +166,7 @@ export default {
       dev_details: {
         _details: ' - Details',
         device: 'Device',
-        uncertain_device: '(Tentative Device Identification)', // XXXI18N
+        uncertain_device: '(Tentative Device Identification)',
         unknown_model: 'Unknown',
         unknown_manufacturer: 'Unknown',
         network_name: 'Network Name',
@@ -145,7 +176,7 @@ export default {
         os_version: 'OS Version',
         os_version_unknown: 'Unknown',
         access_control: 'Access Control',
-        security_ring: 'Security Ring',
+        security_ring: 'Trust Group',
         vuln_scan: 'Vulnerability Scan',
         vuln_scan_notyet: 'Not Scanned Yet',
         vuln_scan_initial: 'Initial Scan in Progress',
@@ -164,18 +195,16 @@ export default {
       },
       enroll_guest: {
         title: 'Brightgate - Enroll Guest',
-        header: 'Register Guests with Brightgate',
-        subheader: 'Help a guest get online using their phone number',
+        header: 'Enroll Guest Users with Brightgate',
+        direct_subhead: 'Manually',
+        sms_subhead: 'Via SMS',
+        qr_subhead: 'Via QR Code',
         phone: 'Guest Phone Number',
         phone_placeholder: 'Phone #',
-        email: 'Guest Email',
-        email_placeholder: 'user@example.com',
         send_sms: 'Text Guest',
         sending: 'Sending',
         psk_network: 'PSK Network',
-        eap_network: 'EAP Network',
         psk_success: 'Great!  Your guest should receive an SMS momentarily with the network name and password.',
-        eap_success: 'We made a user, <i>{name}</i> and generated a secure password for your guest.  They should receive an SMS momentarily with the network name, username and password.',
         sms_failure: 'Oops, something went wrong sending the SMS message.',
       },
       login: {
@@ -224,14 +253,8 @@ export default {
         tools: 'Tools',
       },
       site_list: { // XXXI18N
-        current: 'Current',
       },
       site_controls: { // XXXI18N
-        site_status: 'Site Status',
-        compliance_report: 'Compliance Report',
-        manage_devices: 'Manage Devices ({device_count})',
-        enroll_guest: 'Enroll a Guest User',
-        users: 'Users',
       },
       alerts: {
         serious_alerts: 'Schwerwiegende Warnungen',
@@ -261,46 +284,16 @@ export default {
         need_login: 'Sie müssen angemeldet sein',
       },
       account_prefs: { // XXXI18N
-        title: 'Account Preferences',
-        self_provision: 'Wi-Fi Self Provisioning',
       },
       self_provision: { // XXXI18N
-        title: 'Wi-Fi Self Provisioning',
+      },
+      network: { // XXXI18N
+      },
+      network_vap: { // XXXI18N
       },
       site_status: { // XXXI18N
-        title: 'Brightgate- Site Status',
-        ssids: 'SSIDs',
-        ssid_psk: 'Pre-Shared Key SSID',
-        ssid_eap: 'Enterprise Auth SSID',
-        devices: 'Device Summary',
-        devices_reg: 'Registered Devices',
-        devices_active: 'Active Devices',
-        devices_scanned: 'Vulnerability Scanned Devices',
-        config: 'Configuration',
-        config_dns_server: 'DNS Server',
-        config_default_ring_wpa_eap: 'Default Ring (WPA-EAP)',
-        config_default_ring_wpa_psk: 'Default Ring (WPA-PSK)',
       },
-      compliance_report: { // XXX I18N
-        title: 'Brightgate - Compliance Report',
-        summary: 'Summary',
-        summary_violations: 'There are no policy violations. | There is one policy violation.  Correct it to stay compliant. | There are {num} policy violations.  Correct these to stay compliant.',
-        summary_no_violations: 'This network is currently in compliance with your policy.',
-        summary_enrolled: '{num} users are enrolled in this network.',
-        summary_phish: '{num} incidents of phishing activity detected.',
-        summary_vuln: 'There are {num} active vulnerabilities.',
-        population: 'All Devices',
-        ring_summary: 'Security Ring Summary',
-        ring_ok: 'Devices scanned, no current vulnerabilties',
-        ring_not_scanned: 'Devices not yet scanned',
-        ring_vulnerable: 'Devices scanned, Vulnerability detected',
-        ring_inactive: 'Inactive Devices',
-        vulnScan_active: 'Active Devices Vulnerability Scanned',
-        active_violations: 'Active Violations',
-        no_active_violations: 'No active vulnerabilities.',
-        resolved_violations: 'Resolved Violations',
-        no_resolved_violations: 'No resolved violations.',
-        security_rings: 'Security Rings',
+      compliance_report: { // XXXI18N
       },
       devices: {
         title: 'Brightgate - Geräte',
@@ -329,7 +322,7 @@ export default {
         os_version: 'OS Version',
         os_version_unknown: 'Unknown', // XXXI18N
         access_control: 'Zugangskontrolle',
-        security_ring: 'Ring',
+        security_ring: 'Trust Group', // XXXI18N
         vuln_scan: 'Vulnerability Scan', // XXXI18N
         vuln_scan_notyet: 'Not Scanned Yet',  // XXXI18N
         vuln_scan_initial: 'Initial Scan in Progress',  // XXXI18N
@@ -348,18 +341,16 @@ export default {
       },
       enroll_guest: {
         title: 'Brightgate – Gastbenutzer Registrieren',
-        header: 'Registrieren Sie Gastbenutzer bei Brightgate',
-        subheader: 'Helfen Sie einem Gastbenutzer sich zu registrieren mit seinem Telefonnummer',
+        header: 'Enroll Guest Users with Brightgate', // XXXI18N
+        direct_subhead: 'Manually', // XXXI18N
+        sms_subhead: 'Via SMS', // XXXI18N
+        qr_subhead: 'Via QR Code', // XXXI18N
         phone: 'Telefonnummer des Gastbenutzers',
         phone_placeholder: 'Telefonnummer',
-        email: 'Guest Email',         // XXXI18N
-        email_placeholder: 'user@example.com', // XXXI18N
         send_sms: 'SMS versenden',
         sending: 'Bitte Warten',
         psk_network: 'PSK Network', // XXXI18N
-        eap_network: 'EAP Network', // XXXI18N
         psk_success: 'Super! Der Gastbenutzer sollte in einem Moment eine SMS mit Netzwerkname und Paßwort erhalten.',
-        eap_success: 'We made a user, <i>{name}</i> and generated a secure password for your guest.  They should receive an SMS momentarily with the network name, username and password.', // XXXI18N
         sms_failure: 'Oop der Versendung von der SMS ist ein Fehler aufgetreten',
       },
       login: {

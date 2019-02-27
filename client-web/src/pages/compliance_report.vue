@@ -43,7 +43,7 @@
         <f7-list-item
           v-for="alert in alertActive(alerts)"
           :key="alert.deviceID + '-' + alert.vulnid"
-          :link="`/sites/${$f7route.params.SiteID}/devices/${alert.deviceID}/`">
+          :link="`/sites/${$f7route.params.siteID}/devices/${alert.deviceID}/`">
           <span>
             <f7-icon f7="bolt_round_fill" color="red" />
             {{ $t('message.alerts.problem_on_device',

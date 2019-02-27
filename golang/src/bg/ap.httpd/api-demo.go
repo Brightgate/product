@@ -284,6 +284,38 @@ func demoDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func demoVAPGetHandler(w http.ResponseWriter, r *http.Request) {
+	vapNames := make([]string, 0)
+	vaps := config.GetVirtualAPs()
+	for vapName := range vaps {
+		vapNames = append(vapNames, vapName)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(&vapNames); err != nil {
+		panic(err)
+	}
+}
+
+func demoVAPNameGetHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	vaps := config.GetVirtualAPs()
+	vap, ok := vaps[vars["vapname"]]
+	if !ok {
+		http.Error(w, "no such vap", 404)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(&vap); err != nil {
+		panic(err)
+	}
+}
+
+func demoVAPNamePostHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+}
+
 // GET requests moves all unenrolled clients to standard.
 func demoSupremeHandler(w http.ResponseWriter, r *http.Request) {
 	clientsRaw := config.GetClients()
@@ -471,18 +503,8 @@ func demoUserByUUIDGetHandler(w http.ResponseWriter, r *http.Request) {
 	cu := buildUserResponse(userRaw)
 	cu.DbgRequest = fmt.Sprintf("%v", r)
 
-	b, err := json.Marshal(cu)
-	if err != nil {
-		log.Printf("failed to json marshal user '%v': %v\n", cu, err)
-		http.Error(w, "bad request", 400)
-		return
-	}
-
-	_, err = w.Write(b)
-	if err != nil {
-		log.Printf("failed to write user '%v': %v\n", b, err)
-		http.Error(w, "bad request", 400)
-		return
+	if err = json.NewEncoder(w).Encode(cu); err != nil {
+		panic(err)
 	}
 }
 
@@ -551,9 +573,15 @@ func demoUserByUUIDPostHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	err = ui.Update(extraOps...)
+	hdl, err := ui.Update(extraOps...)
 	if err != nil {
-		log.Printf("failed to save user '%s': %v\n", dau.UID, err)
+		log.Printf("failed to setup update of user '%s': %v\n", dau.UID, err)
+		http.Error(w, fmt.Sprintf("failed to save: %v", err), 500)
+		return
+	}
+	_, err = hdl.Wait(r.Context())
+	if err != nil {
+		log.Printf("update wait failed '%s': %v\n", dau.UID, err)
 		http.Error(w, fmt.Sprintf("failed to save: %v", err), 500)
 		return
 	}
@@ -669,6 +697,9 @@ func makeDemoAPIRouter() *mux.Router {
 	router.HandleFunc("/sites/{s}/config", demoConfigPostHandler).Methods("POST")
 	router.HandleFunc("/sites/{s}/devices/{ring}", demoDevicesByRingHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/devices", demoDevicesHandler).Methods("GET")
+	router.HandleFunc("/sites/{s}/network/vap", demoVAPGetHandler).Methods("GET")
+	router.HandleFunc("/sites/{s}/network/vap/{vapname}", demoVAPNameGetHandler).Methods("GET")
+	router.HandleFunc("/sites/{s}/network/vap/{vapname}", demoVAPNamePostHandler).Methods("POST")
 	router.HandleFunc("/sites/{s}/rings", demoRingsHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/supreme", demoSupremeHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/users", demoUsersHandler).Methods("GET")

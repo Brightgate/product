@@ -197,6 +197,7 @@ type apiDevice struct {
 	ConnAuthType    string                 `json:"ConnAuthType,omitempty"`
 	ConnMode        string                 `json:"ConnMode,omitempty"`
 	ConnNode        *uuid.UUID             `json:"ConnNode,omitempty"`
+	ConnVAP         string                 `json:"ConnVAP,omitempty"`
 	Scans           map[string]apiScanInfo `json:"Scans,omitempty"`
 	Vulnerabilities map[string]apiVulnInfo `json:"Vulnerabilities,omitempty"`
 }
@@ -222,6 +223,7 @@ func buildDeviceResponse(c echo.Context, hdl *cfgapi.Handle,
 		ConnAuthType:    client.ConnAuthType,
 		ConnMode:        client.ConnMode,
 		ConnNode:        client.ConnNode,
+		ConnVAP:         client.ConnVAP,
 		Scans:           make(map[string]apiScanInfo),
 		Vulnerabilities: make(map[string]apiVulnInfo),
 	}
@@ -307,9 +309,9 @@ type siteEnrollGuestRequest struct {
 }
 
 type siteEnrollGuestResponse struct {
-	SMSDelivered bool   `json:"smsdelivered"`
-	SMSErrorCode int    `json:"smserrorcode"`
-	SMSError     string `json:"smserror"`
+	SMSDelivered bool   `json:"smsDelivered"`
+	SMSErrorCode int    `json:"smsErrorCode"`
+	SMSError     string `json:"smsError"`
 }
 
 // sendOneSMS is a utility helper for the Enroll handler.
@@ -352,7 +354,17 @@ func (a *siteHandler) postEnrollGuest(c echo.Context) error {
 	}
 	defer config.Close()
 
-	c.Logger().Infof("Guest Entrollment by %v for %v at site %v", accountUUID, gr, siteUUID)
+	vaps := config.GetVirtualAPs()
+	guestVAP, ok := vaps["guest"]
+	if !ok {
+		return echo.NewHTTPError(http.StatusForbidden, "no guest vap")
+	}
+	if len(guestVAP.Rings) == 0 {
+		return echo.NewHTTPError(http.StatusForbidden, "guest vap not enabled")
+	}
+
+	c.Logger().Infof("Guest Entrollment by %v for %v at site %v network %s",
+		accountUUID, gr, siteUUID, guestVAP.SSID)
 	if gr.Kind != "psk" {
 		return echo.NewHTTPError(http.StatusBadRequest, "missing kind={psk}")
 	}
@@ -369,22 +381,11 @@ func (a *siteHandler) postEnrollGuest(c echo.Context) error {
 	from := "+16507694283"
 	c.Logger().Infof("Guest Enroll Handler: from='%v' formattedTo='%v'\n", from, formattedTo)
 
-	// XXX in the future this check may need improvement, to see if the VAP exists,
-	// is enabled, etc.
-	networkSSID, err := config.GetProp("@/network/vap/guest/ssid")
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "No Guest SSID?")
-	}
-	networkPassphrase, _ := config.GetProp("@/network/vap/guest/passphrase")
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "No Guest Passphrase?")
-	}
-
 	// See above for notes on structure
 	messages := []string{
 		fmt.Sprintf("Brightgate Wi-Fi\nHelp: bit.ly/2yhPDQz\n"+
-			"Network: %s\n<password follows>", networkSSID),
-		fmt.Sprintf("%s", networkPassphrase),
+			"Network: %s\n<password follows>", guestVAP.SSID),
+		guestVAP.Passphrase,
 	}
 
 	var response *siteEnrollGuestResponse
@@ -400,6 +401,45 @@ func (a *siteHandler) postEnrollGuest(c echo.Context) error {
 		}
 	}
 	return c.JSON(http.StatusOK, response)
+}
+
+// getNetworkVAP implements GET /api/site/:uuid/network/vap, returning the list of VAPs
+func (a *siteHandler) getNetworkVAP(c echo.Context) error {
+	hdl, err := a.getClientHandle(c.Param("uuid"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	defer hdl.Close()
+
+	vapNames := make([]string, 0)
+	vaps := hdl.GetVirtualAPs()
+	for vapName := range vaps {
+		vapNames = append(vapNames, vapName)
+	}
+	return c.JSON(http.StatusOK, &vapNames)
+}
+
+// getNetworkVAPName implements GET /api/site/:uuid/network/vap/:name,
+// returning information about a VAP.
+func (a *siteHandler) getNetworkVAPName(c echo.Context) error {
+	hdl, err := a.getClientHandle(c.Param("uuid"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+
+	defer hdl.Close()
+	vaps := hdl.GetVirtualAPs()
+	vap, ok := vaps[c.Param("vapname")]
+	if !ok {
+		return echo.NewHTTPError(http.StatusNotFound)
+	}
+	return c.JSON(http.StatusOK, vap)
+}
+
+// postNetworkVAPName implements POST /api/site/:uuid/network/vap/:name, allowing updates
+// to select VAP fields.
+func (a *siteHandler) postNetworkVAPName(c echo.Context) error {
+	return nil
 }
 
 // apiUserInfo describes a user.  It is similar to cfgapi.UserInfo but with
@@ -546,9 +586,14 @@ func (a *siteHandler) postUserByUUID(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusBadRequest, "failed generate passwords")
 		}
 	}
-	err = ui.Update(extraOps...)
+	cmdHdl, err := ui.Update(extraOps...)
 	if err != nil {
-		c.Logger().Errorf("failed to save user '%s': %v\n", au.UID, err)
+		c.Logger().Errorf("failed setup update for user '%s': %v\n", au.UID, err)
+		return echo.NewHTTPError(http.StatusBadRequest, "failed to save user")
+	}
+	_, err = cmdHdl.Wait(c.Request().Context())
+	if err != nil {
+		c.Logger().Errorf("failed update for user '%s': %v\n", au.UID, err)
 		return echo.NewHTTPError(http.StatusBadRequest, "failed to save user")
 	}
 
@@ -658,6 +703,9 @@ func newSiteHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []echo.M
 	siteU.GET("/configtree", h.getConfigTree)
 	siteU.GET("/devices", h.getDevices)
 	siteU.POST("/enroll_guest", h.postEnrollGuest)
+	siteU.GET("/network/vap", h.getNetworkVAP)
+	siteU.GET("/network/vap/:vapname", h.getNetworkVAPName)
+	siteU.POST("/network/vap/:vapname", h.postNetworkVAPName)
 	siteU.GET("/users", h.getUsers)
 	siteU.GET("/users/:useruuid", h.getUserByUUID)
 	siteU.POST("/users/:useruuid", h.postUserByUUID)

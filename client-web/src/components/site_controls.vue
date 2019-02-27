@@ -25,6 +25,10 @@
       :class="disabled ? 'disabled' : undefined"
       :link="`/sites/${siteid}/site_status/`" />
     <f7-list-item
+      :title="$t('message.site_controls.network')"
+      :class="disabled ? 'disabled' : undefined"
+      :link="`/sites/${siteid}/network/`" />
+    <f7-list-item
       :title="$t('message.site_controls.compliance_report')"
       :class="disabled ? 'disabled' : undefined"
       :link="`/sites/${siteid}/compliance_report/`" />
@@ -36,13 +40,11 @@
       :title="$t('message.site_controls.users')"
       :class="disabled ? 'disabled' : undefined"
       :link="`/sites/${siteid}/users/`" />
-      <!-- Disabled until guest PSK is working
     <f7-list-item
       v-if="appMode === appDefs.APPMODE_CLOUD"
       :title="$t('message.site_controls.enroll_guest')"
       :class="disabled ? 'disabled' : undefined"
       :link="`/sites/${siteid}/enroll_guest/`" />
-    -->
   </f7-list>
 </template>
 

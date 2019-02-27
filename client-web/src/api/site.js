@@ -13,6 +13,7 @@ import axiosMod from 'axios';
 import 'axios-debug-log'; // For side-effect
 import qs from 'qs';
 
+import Promise from 'bluebird';
 import retry from 'bluebird-retry';
 import Debug from 'debug';
 import appDefs from '../app_defs';
@@ -184,6 +185,22 @@ async function siteClientsRingSet(siteID, deviceID, newRing) {
   await siteConfigWaitProp(siteID, propName, newRing);
 }
 
+// Load the list of VAPs from the server.
+async function siteVAPsGet(siteID) {
+  assert.equal(typeof siteID, 'string');
+
+  const vapNames = await commonApplianceGet(siteID, 'network/vap');
+  debug('vapNames', vapNames);
+  const vapMap = {};
+  for (const n of vapNames) {
+    vapMap[n] = commonApplianceGet(siteID, `network/vap/${n}`);
+    debug('vapMap is now', vapMap);
+  }
+  const res = await Promise.props(vapMap);
+  debug('vap result is', res);
+  return res;
+}
+
 // Load the list of users from the server.
 async function siteUsersGet(siteID) {
   assert.equal(typeof siteID, 'string');
@@ -348,6 +365,7 @@ export default {
   siteDevicesGet,
   siteRingsGet,
   siteClientsRingSet,
+  siteVAPsGet,
   siteUsersGet,
   siteUsersPost,
   siteUsersDelete,

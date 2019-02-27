@@ -52,32 +52,71 @@ const mockCloudProviders = {
 
 const mockRings = {
   'core': {
-    'auth': 'wpa-eap',
-    'subnet': '192.168.133.0/26',
+    'vap': 'eap',
+    'subnet': '192.168.131.0/26',
     'leaseDuration': 1440,
   },
   'devices': {
-    'auth': 'wpa-psk',
-    'subnet': '192.168.135.0/26',
+    'vap': 'psk',
+    'subnet': '192.168.132.0/26',
     'leaseDuration': 180,
   },
   'guest': {
-    'auth': 'wpa-eap',
-    'subnet': '192.168.136.0/26',
+    'vap': 'guest',
+    'subnet': '192.168.133.0/26',
     'leaseDuration': 30,
   },
   'standard': {
-    'auth': 'wpa-psk',
+    'vap': 'eap',
     'subnet': '192.168.134.0/26',
+    'leaseDuration': 1440,
+  },
+  'quarantine': {
+    'vap': 'psk',
+    'subnet': '192.168.135.0/26',
+    'leaseDuration': 10,
+  },
+  'unenrolled': {
+    'vap': 'psk',
+    'subnet': '192.168.136.0/26',
+    'leaseDuration': 10,
+  },
+  'internal': {
+    'vap': '',
+    'subnet': '192.168.137.0/26',
     'leaseDuration': 1440,
   },
 };
 
+const mockVAPInfo = {
+  'psk': {
+    'ssid': 'coffeeshop-devices',
+    'keyMgmt': 'wpa-psk',
+    'passphrase': 'I LIKE COCONUTS',
+    'defaultRing': 'unenrolled',
+    'rings': ['quarantine', 'devices', 'unenrolled'],
+  },
+  'guest': {
+    'ssid': 'coffeeshop-guest',
+    'keyMgmt': 'wpa-psk',
+    'passphrase': 'I LIKE COFFEE',
+    'defaultRing': 'guest',
+    'rings': ['guest'],
+  },
+  'eap': {
+    'ssid': 'coffeeshop-users',
+    'keyMgmt': 'wpa-eap',
+    'defaultRing': 'standard',
+    'rings': ['standard', 'core'],
+  },
+};
+const mockVAPNames = Object.keys(mockVAPInfo);
+
 const mockConfig = {
-  '@/network/ssid': 'mock-ssid',
-  '@/network/dnsserver': '1.2.3.4',
-  '@/network/default_ring/wpa-eap': 'standard',
-  '@/network/default_ring/wpa-psk': 'guest',
+  '@/network/dnsserver': '8.8.8.8',
+  '@/network/wan/current/address': '10.1.4.12/26',
+  '@/network/2.4GHz/channel': '11',
+  '@/network/5GHz/channel': '165',
 };
 
 const mockUserid = {
@@ -87,6 +126,12 @@ const mockUserid = {
   'name': 'Foo Bar',
   'organization': 'example corp',
   'selfProvisioned': true,
+};
+
+const mockEnrollGuest = {
+  smsDelivered: true,
+  smsErrorCode: 0,
+  smsError: '',
 };
 
 function configHandler(config) {
@@ -100,6 +145,13 @@ function configHandler(config) {
     return 500;
   }
   return [200, value];
+}
+
+function vapGetHandler(config) {
+  const parsedURL = new URL(config.url, 'http://example.com/');
+  const splits = parsedURL.pathname.split('/');
+  const lastComp = splits[splits.length - 1];
+  return [200, mockVAPInfo[lastComp]];
 }
 
 const pws = ['correct horse battery staple', 'i like coconuts', 'my voice is my password'];
@@ -154,6 +206,9 @@ function mockAxios(normalAxios, mode) {
     .onGet(/\/api\/sites\/.+\/config\?.*/).reply(configHandler)
     .onGet(/\/api\/sites\/.+\/devices/).reply(200, mockDevices)
     .onGet(/\/api\/sites\/.+\/rings/).reply(200, mockRings)
+    .onPost(/\/api\/sites\/.+\/enroll_guest$/).reply(200, mockEnrollGuest)
+    .onGet(/\/api\/sites\/.+\/network\/vap$/).reply(200, mockVAPNames)
+    .onGet(/\/api\/sites\/.+\/network\/vap\.*/).reply(vapGetHandler)
     .onGet('/auth/sites/login').reply(200)
     .onGet('/auth/logout').reply(200)
     .onGet('/auth/userid').reply(200, mockUserid)

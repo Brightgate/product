@@ -272,10 +272,13 @@ func (a *accountHandler) postAccountSelfProvision(c echo.Context) error {
 		c.Logger().Infof("Hitting send on %v", ui)
 		ops := ui.PropOpsFromPasswordHashes(userpwSessionVal, mschapSessionVal)
 
-		err = ui.Update(ops...)
+		_, err := ui.Update(ops...)
 		if err != nil {
-			c.Logger().Errorf("Failed to update: %v", err)
+			c.Logger().Errorf("Failed to start update: %v", err)
 		}
+		// XXX for now we don't wait around to see if the update succeeds.
+		// More work is needed to give the user progress and/or partial
+		// results.
 	}
 	return c.Redirect(http.StatusFound, "/client-web")
 }

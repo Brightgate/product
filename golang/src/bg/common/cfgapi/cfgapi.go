@@ -151,12 +151,12 @@ type RingConfig struct {
 
 // VirtualAP captures the configuration information of a virtual access point
 type VirtualAP struct {
-	SSID        string
-	Tag5GHz     bool
-	KeyMgmt     string
-	Passphrase  string
-	DefaultRing string
-	Rings       []string
+	SSID        string   `json:"ssid"`
+	Tag5GHz     bool     `json:"tag5GHz"`
+	KeyMgmt     string   `json:"keyMgmt"`
+	Passphrase  string   `json:"passphrase"`
+	DefaultRing string   `json:"defaultRing"`
+	Rings       []string `json:"rings"`
 }
 
 // ClientInfo contains all of the configuration information for a client device
@@ -172,6 +172,7 @@ type ClientInfo struct {
 	ConnAuthType string     // Connection Auth Type
 	ConnMode     string     // Connection Radio Mode
 	ConnNode     *uuid.UUID // Connection Node
+	ConnVAP      string     // Connection Virtual AP
 }
 
 // VulnInfo represents the detection of a single vulnerability in a single

@@ -20,4 +20,9 @@ export default {
   APPMODE_CLOUD: 'cloud',
   // Failure: app cannot determine in what mode it is supposed to run
   APPMODE_FAILURE: 'failure',
+
+  // Well-known vap names
+  VAP_EAP: 'eap',
+  VAP_PSK: 'psk',
+  VAP_GUEST: 'guest',
 };

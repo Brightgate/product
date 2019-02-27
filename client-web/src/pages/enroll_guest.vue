@@ -1,5 +1,5 @@
 <!--
-  COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+  COPYRIGHT 2019 Brightgate Inc. All rights reserved.
 
   This copyright notice is Copyright Management Information under 17 USC 1202
   and is included to protect this work and deter copyright infringement.
@@ -7,40 +7,58 @@
   express written permission of Brightgate Inc is prohibited, and any
   such unauthorized removal or alteration will be a violation of federal law.
 -->
+<style scoped>
+span.wifi {
+  display: inline-block;
+  background: #eeeeee;
+  font-family: monospace;
+  padding-left: 0.2em;
+  padding-right: 0.2em;
+}
+</style>
 <template>
   <f7-page name="enroll">
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.enroll_guest.title')" sliding />
 
     <center><h2>{{ $t('message.enroll_guest.header') }}</h2></center>
-    <center><h4>{{ $t('message.enroll_guest.subheader') }}</h4></center>
 
-    <div v-if="! loggedIn">
-      <p>{{ $t('message.general.need_login') }}</p>
-    </div>
-    <div v-else>
-      <f7-list no-hairlines>
-        <f7-list-item>
-          <f7-label>{{ $t('message.enroll_guest.phone') }}</f7-label>
-          <f7-input
-            :value="phoneInput"
-            :placeholder="$t('message.enroll_guest.phone_placeholder')"
-            type="tel"
-            required
-            autofocus @input="onTelInput" />
-        </f7-list-item>
-      </f7-list>
+    <f7-block-title>{{ $t('message.enroll_guest.direct_subhead') }}</f7-block-title>
+    <f7-block>
+      The password for
+      <span class="wifi">
+        <f7-icon material="wifi" size="16" /> {{ vaps['guest'].ssid }}
+      </span>
+      is
+      <span class="wifi">
+        {{ vaps['guest'].passphrase }}
+      </span>
+    </f7-block>
 
-      <f7-block inset>
-        <f7-button :disabled="!validForm" fill big @click="enrollGuest">
-          <span v-if="!enrolling">{{ $t('message.enroll_guest.send_sms') }}</span>
-          <span v-if="enrolling">
-            {{ $t('message.enroll_guest.sending') }}
-            <f7-preloader color="white" />
-          </span>
-        </f7-button>
+    <f7-block-title>{{ $t('message.enroll_guest.sms_subhead') }}</f7-block-title>
+    <f7-list no-hairlines>
+      <f7-list-item>
+        <f7-label>{{ $t('message.enroll_guest.phone') }}</f7-label>
+        <f7-input
+          :value="phoneInput"
+          :placeholder="$t('message.enroll_guest.phone_placeholder')"
+          type="tel"
+          required
+          autofocus @input="onTelInput" />
+      </f7-list-item>
+    </f7-list>
 
-      </f7-block>
-    </div>
+    <f7-block inset>
+      <f7-button :disabled="!validForm" fill big @click="enrollGuest">
+        <span v-if="!enrolling">{{ $t('message.enroll_guest.send_sms') }}</span>
+        <span v-if="enrolling">
+          {{ $t('message.enroll_guest.sending') }}
+          <f7-preloader color="white" />
+        </span>
+      </f7-button>
+
+    </f7-block>
+
+    <!-- QR code will go here -->
   </f7-page>
 
 </template>
@@ -70,6 +88,7 @@ export default {
     // template.
     ...Vuex.mapGetters([
       'loggedIn',
+      'vaps',
     ]),
 
     validForm: function() {

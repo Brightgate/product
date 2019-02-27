@@ -49,6 +49,7 @@ class Site {
     this.rings = {};
     this.users = {};
     this.networkConfig = {};
+    this.vaps = {};
     debug(`done constructing new Site id=${id}`);
   }
 
@@ -210,6 +211,10 @@ const mutations = {
     getSite(state, id).rings = rings;
   },
 
+  setSiteVAPs(state, {id, vaps}) {
+    getSite(state, id).vaps = vaps;
+  },
+
   setAccountSelfProvision(state, newSP) {
     state.accountSelfProvision = newSP;
   },
@@ -342,6 +347,13 @@ const getters = {
   },
   rings: (state) => {
     return state.currentSite.rings;
+  },
+
+  siteVAPs: (state) => (siteID) => {
+    return getSite(state, siteID).vaps;
+  },
+  vaps: (state) => {
+    return state.currentSite.vaps;
   },
 
   siteUsers: (state) => (siteID) => {
@@ -578,15 +590,29 @@ const actions = {
     debug(`fetchNetworkConfig`);
     const id = context.state.currentSiteID;
     const nc = await Promise.props({
-      ssid: siteApi.siteConfigGet(id, '@/network/ssid'),
       dnsServer: siteApi.siteConfigGet(id, '@/network/dnsserver', ''),
-      defaultRingWPAEAP: siteApi.siteConfigGet(id, '@/network/default_ring/wpa-eap', ''),
-      defaultRingWPAPSK: siteApi.siteConfigGet(id, '@/network/default_ring/wpa-psk', ''),
+      chan24GHz: siteApi.siteConfigGet(id, '@/network/2.4GHz/channel', ''),
+      chan5GHz: siteApi.siteConfigGet(id, '@/network/5GHz/channel', ''),
+      wanCurrent: siteApi.siteConfigGet(id, '@/network/wan/current/address', ''),
+      baseAddress: siteApi.siteConfigGet(id, '@/network/base_address', ''),
     });
     debug('fetchNetworkConfig committing', nc);
     context.commit('setSiteNetworkConfig', {id: id, networkConfig: nc});
     return nc;
   },
+
+  // Load the various aspects of the network configuration from the server.
+  async fetchVAPs(context) {
+    if (context.state.currentSite === nullSite) {
+      debug('fetchVAPs: skipped, nullSite');
+      return;
+    }
+    debug(`fetchVAPs`);
+    const id = context.state.currentSiteID;
+    const vaps = await siteApi.siteVAPsGet(id);
+    context.commit('setSiteVAPs', {id: id, vaps: vaps});
+  },
+
 
   async enrollGuest(context, {kind, phoneNumber, email}) {
     if (context.state.currentSite === nullSite) {
@@ -720,6 +746,7 @@ const actions = {
       context.dispatch('fetchDevices').catch(() => {});
       context.dispatch('fetchRings').catch(() => {});
       context.dispatch('fetchUsers').catch(() => {});
+      context.dispatch('fetchVAPs').catch(() => {});
       context.dispatch('fetchPeriodic').catch(() => {});
     });
   },

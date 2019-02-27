@@ -232,31 +232,34 @@ func (u *UserInfo) path(comp string) string {
 // If the user if newUser == true then it does the appropriate
 // creation operations.
 //
+// If error is indicated, that indicates a precondition failure
+// before the command execution.
+//
 // extraOps is intended as a way to optionally supply password
 // related properties.
-func (u *UserInfo) Update(extraOps ...PropertyOp) error {
+func (u *UserInfo) Update(extraOps ...PropertyOp) (CmdHdl, error) {
 	var err error
 	var ops []PropertyOp
 
 	if u.UID == "" {
-		return fmt.Errorf("user name (uid) must be supplied")
+		return nil, fmt.Errorf("user name (uid) must be supplied")
 	}
 	if u.UUID == uuid.Nil {
-		return fmt.Errorf("UUID must be supplied")
+		return nil, fmt.Errorf("UUID must be supplied")
 	}
 	if u.Email == "" {
-		return fmt.Errorf("email must be supplied")
+		return nil, fmt.Errorf("email must be supplied")
 	}
 	if u.TelephoneNumber == "" {
-		return fmt.Errorf("telephone number must be supplied")
+		return nil, fmt.Errorf("telephone number must be supplied")
 	}
 
 	if _, err = mail.ParseAddress(u.Email); err != nil {
-		return errors.Wrap(err, "email must be legitimate RFC5322 address: %s")
+		return nil, errors.Wrap(err, "email must be legitimate RFC5322 address: %s")
 	}
 	phoneNum, err := libphonenumber.Parse(u.TelephoneNumber, "US")
 	if err != nil {
-		return errors.Wrap(err, "invalid phoneNumber")
+		return nil, errors.Wrap(err, "invalid phoneNumber")
 	}
 	phoneStr := libphonenumber.Format(phoneNum, libphonenumber.INTERNATIONAL)
 
@@ -293,11 +296,7 @@ func (u *UserInfo) Update(extraOps ...PropertyOp) error {
 	addProp("preferredLanguage", u.PreferredLanguage)
 	addProp("role", u.Role)
 	ops = append(ops, extraOps...)
-	_, err = u.config.Execute(nil, ops).Wait(nil)
-	if err != nil {
-		return errors.Wrap(err, "failed to update user")
-	}
-	return nil
+	return u.config.Execute(nil, ops), nil
 }
 
 // Delete removes a user record from the config store

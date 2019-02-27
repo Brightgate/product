@@ -71,7 +71,7 @@ export default {
     ]),
 
     site: function() {
-      const siteid = this.$f7route.params.SiteID;
+      const siteid = this.$f7route.params.siteID;
       const x = this.$store.getters.siteByID(siteid);
       debug(`siteid ${siteid}`, x);
       return x;

@@ -16,6 +16,8 @@ import EnrollGuest from './pages/enroll_guest.vue';
 import Home from './pages/home.vue';
 import LeftPanel from './pages/left_panel.vue';
 import MalwareWarn from './pages/malware_warn.vue';
+import Network from './pages/network.vue';
+import NetworkVAP from './pages/network_vap.vue';
 import SelfProvision from './pages/self_provision.vue';
 import SiteAdmin from './pages/site_admin.vue';
 import SiteStatus from './pages/site_status.vue';
@@ -46,40 +48,48 @@ export default [
     component: SelfProvision,
   },
   {
-    path: '/sites/:SiteID/compliance_report/',
+    path: '/sites/:siteID/compliance_report/',
     component: ComplianceReport,
   },
   {
-    path: '/sites/:SiteID/devices/',
+    path: '/sites/:siteID/devices/',
     component: Devices,
   },
   {
-    path: '/sites/:SiteID/devices/:UniqID/',
+    path: '/sites/:siteID/devices/:UniqID/',
     component: DevDetails,
   },
   {
-    path: '/sites/:SiteID/enroll_guest/',
+    path: '/sites/:siteID/enroll_guest/',
     component: EnrollGuest,
   },
   {
-    path: '/sites/:SiteID/site_status/',
+    path: '/sites/:siteID/site_status/',
     component: SiteStatus,
   },
   {
-    path: '/sites/:SiteID/',
+    path: '/sites/:siteID/',
     component: SiteAdmin,
   },
   {
-    path: '/sites/:SiteID/users/',
+    path: '/sites/:siteID/users/',
     component: Users,
   },
   {
-    path: '/sites/:SiteID/users/:UUID/',
+    path: '/sites/:siteID/users/:UUID/',
     component: UserDetails,
   },
   {
-    path: '/sites/:SiteID/users/:UUID/editor/',
+    path: '/sites/:siteID/users/:UUID/editor/',
     component: UserEditor,
+  },
+  {
+    path: '/sites/:siteID/network/',
+    component: Network,
+  },
+  {
+    path: '/sites/:siteID/network/vap/:vapName',
+    component: NetworkVAP,
   },
   {
     path: '/test_tools/',

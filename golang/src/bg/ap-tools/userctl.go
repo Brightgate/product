@@ -22,6 +22,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -149,11 +150,16 @@ func addUser() error {
 	ui.Email = emailFlag.String()
 	ui.TelephoneNumber = phoneFlag.String()
 	ui.PreferredLanguage = langFlag.String()
-	err = ui.Update()
-	if err == nil {
-		log.Printf("added user '%s'\n", uidArg)
+	hdl, err := ui.Update()
+	if err != nil {
+		return err
 	}
-	return err
+	_, err = hdl.Wait(context.Background())
+	if err != nil {
+		return err
+	}
+	log.Printf("added user '%s'\n", uidArg)
+	return nil
 }
 
 func updateUser() error {
@@ -176,11 +182,16 @@ func updateUser() error {
 	if langFlag.set {
 		ui.PreferredLanguage = langFlag.String()
 	}
-	err = ui.Update()
-	if err == nil {
-		log.Printf("updated user '%s'\n", uidArg)
+	hdl, err := ui.Update()
+	if err != nil {
+		return err
 	}
-	return err
+	_, err = hdl.Wait(context.Background())
+	if err != nil {
+		return err
+	}
+	log.Printf("updated user '%s'\n", uidArg)
+	return nil
 }
 
 func deleteUser() error {
