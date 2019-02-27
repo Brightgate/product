@@ -26,6 +26,7 @@ import (
 
 	"bg/cl_common/clcfg"
 	"bg/cl_common/daemonutils"
+	"bg/cl_common/pgutils"
 	"bg/cloud_models/appliancedb"
 	"bg/common/cfgapi"
 	"bg/common/zaperr"
@@ -220,10 +221,14 @@ var (
 	getConfigClientHandle func(string) (*cfgapi.Handle, error)
 )
 
-func processEnv() {
+func processEnv(dbOnly bool) {
 	if environ.PostgresConnection == "" {
 		slog.Fatalf("B10E_CLCERT_POSTGRES_CONNECTION must be set")
 	}
+	if dbOnly {
+		return
+	}
+
 	if environ.AcmeURL == "" || environ.AcmeURL == "production" {
 		if environ.AcmeURL == "" {
 			slog.Warnf("Setting ACME URL to %s", lego.LEDirectoryProduction)
@@ -259,6 +264,10 @@ func processEnv() {
 
 // makeApplianceDB handles connection setup to the appliance database
 func makeApplianceDB(postgresURI string) appliancedb.DataStore {
+	postgresURI, err := pgutils.PasswordPrompt(postgresURI)
+	if err != nil {
+		slog.Fatalw("failed to get DB password", "error", err)
+	}
 	applianceDB, err := appliancedb.Connect(postgresURI)
 	if err != nil {
 		slog.Fatalw("failed to connect to DB", "error", err)
@@ -867,7 +876,7 @@ func run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		slog.Fatalw("failed environment configuration", "error", err)
 	}
-	processEnv()
+	processEnv(false)
 	slog.Infow(pname+" starting", "args", os.Args)
 
 	config, client, err := acmeSetup(environ.AcmeConfig, environ.AcmeURL)
@@ -992,7 +1001,7 @@ func listCerts(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		slog.Fatalw("failed environment configuration", "error", err)
 	}
-	processEnv()
+	processEnv(true)
 	slog.Infow(pname+" starting", "args", os.Args)
 
 	db := makeApplianceDB(environ.PostgresConnection)
@@ -1027,7 +1036,7 @@ func certStatus(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		slog.Fatalw("failed environment configuration", "error", err)
 	}
-	processEnv()
+	processEnv(true)
 	slog.Infow(pname+" starting", "args", os.Args)
 
 	db := makeApplianceDB(environ.PostgresConnection)
@@ -1045,9 +1054,11 @@ func certStatus(cmd *cobra.Command, args []string) error {
 		table.Separator = " "
 
 		for _, domain := range missing {
-			table.AddRow(domain.Domain, domain.SiteID,
-				domain.Jurisdiction)
+			table.AddRow(domain.Domain, domain.Jurisdiction,
+				domain.SiteID)
 		}
+		slog.Warnw("Some registered sites are missing certs",
+			"number", len(missing))
 		table.Print()
 	} else {
 		slog.Info(checkMark + "No registered sites are missing certs")
@@ -1065,10 +1076,12 @@ func certStatus(cmd *cobra.Command, args []string) error {
 		)
 		table.Separator = " "
 
-		for _, domain := range missing {
-			table.AddRow(domain.Domain, domain.SiteID,
-				domain.Jurisdiction)
+		for _, domain := range failed {
+			table.AddRow(domain.Domain, domain.Jurisdiction,
+				domain.SiteID)
 		}
+		slog.Warnw("Some certificate requests failed and are awaiting retry",
+			"number", len(failed))
 		table.Print()
 	} else {
 		slog.Info(checkMark + "No certificate requests failed")

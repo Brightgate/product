@@ -18,13 +18,11 @@ import (
 	"io/ioutil"
 	"os"
 	"strings"
-	"syscall"
 
 	"github.com/satori/uuid"
 	"github.com/spf13/cobra"
 	"github.com/tatsushid/go-prettytable"
 	"github.com/tomazk/envcfg"
-	"golang.org/x/crypto/ssh/terminal"
 
 	"bg/cl_common/pgutils"
 	"bg/cl_common/registry"
@@ -59,19 +57,6 @@ func silenceUsage(cmd *cobra.Command, args []string) {
 	// validation failure.
 	// See https://github.com/spf13/cobra/issues/340#issuecomment-378726225
 	cmd.SilenceUsage = true
-}
-
-func passwordPrompt(dbURI string) (string, error) {
-	if !pgutils.HasPassword(dbURI) {
-		fmt.Print("Enter DB password: ")
-		bytePassword, err := terminal.ReadPassword(int(syscall.Stdin))
-		fmt.Println()
-		if err != nil {
-			return "", err
-		}
-		dbURI = pgutils.AddPassword(dbURI, string(bytePassword))
-	}
-	return dbURI, nil
 }
 
 func readJSON(path string) (*registry.ApplianceRegistry, error) {
@@ -128,7 +113,7 @@ func assembleRegistry(cmd *cobra.Command) (appliancedb.DataStore, *registry.Appl
 				"variable REG_DBURI or via the JSON file specified with -i.\n",
 		}
 	}
-	pgconn, err = passwordPrompt(pgconn)
+	pgconn, err = pgutils.PasswordPrompt(pgconn)
 	if err != nil {
 		return nil, nil, err
 	}

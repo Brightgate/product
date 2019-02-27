@@ -133,7 +133,7 @@ func (db *ApplianceDB) AllServerCerts(ctx context.Context) ([]ServerCert, error)
 	err := db.SelectContext(ctx, &certs,
 		`SELECT siteid, jurisdiction, fingerprint, expiration, cert, issuercert, key
                  FROM site_certs
-		 ORDER BY jurisdiction, siteid`)
+		 ORDER BY jurisdiction, siteid, expiration`)
 	if err != nil {
 		return nil, err
 	}

@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -11,9 +11,13 @@
 package pgutils
 
 import (
+	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
+	"syscall"
+
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 // CensorPassword replaces the password in a Postgres connection string with a
@@ -77,4 +81,19 @@ func AddPassword(connInfo, password string) string {
 		return theURL.String()
 	}
 	return connInfo
+}
+
+// PasswordPrompt prompts at the terminal for a password (if the given URI
+// doesn't have one) and returns a URI with the password added.
+func PasswordPrompt(dbURI string) (string, error) {
+	if !HasPassword(dbURI) {
+		fmt.Print("Enter DB password: ")
+		bytePassword, err := terminal.ReadPassword(int(syscall.Stdin))
+		fmt.Println()
+		if err != nil {
+			return "", err
+		}
+		dbURI = AddPassword(dbURI, string(bytePassword))
+	}
+	return dbURI, nil
 }
