@@ -39,7 +39,7 @@ type certManager interface {
 	GetCertConfigInfoByDomain(context.Context, []DecomposedDomain) (map[string]CertConfigInfo, error)
 	CertsExpiringWithin(context.Context, time.Duration) ([]ServerCert, error)
 	FailDomains(context.Context, []DecomposedDomain) error
-	FailedDomains(context.Context) ([]DecomposedDomain, error)
+	FailedDomains(context.Context, bool) ([]DecomposedDomain, error)
 	ComputeDomain(context.Context, int32, string) (string, error)
 }
 
@@ -546,18 +546,25 @@ func (db *ApplianceDB) FailDomains(ctx context.Context, domains []DecomposedDoma
 	return err
 }
 
-// FailedDomains clears out the table recording ACME validation failures,
-// returning the domains in it.
-func (db *ApplianceDB) FailedDomains(ctx context.Context) ([]DecomposedDomain, error) {
+// FailedDomains returns the domains in the table recording ACME validation
+// failures, optionally simultaneously clearing it.
+func (db *ApplianceDB) FailedDomains(ctx context.Context, keep bool) ([]DecomposedDomain, error) {
 	var domains []DecomposedDomain
 
-	err := db.SelectContext(ctx, &domains,
-		`WITH deleted AS (
+	var query string
+	if keep {
+		query = `SELECT siteid, jurisdiction
+		    FROM failed_domains
+		    ORDER BY siteid, jurisdiction`
+	} else {
+		query = `WITH deleted AS (
 		    DELETE FROM failed_domains
 		    RETURNING siteid, jurisdiction
 		 )
 		 SELECT siteid, jurisdiction FROM deleted
-		 ORDER BY siteid, jurisdiction`)
+		 ORDER BY siteid, jurisdiction`
+	}
+	err := db.SelectContext(ctx, &domains, query)
 	if err != nil {
 		return nil, err
 	}

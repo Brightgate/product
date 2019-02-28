@@ -390,7 +390,7 @@ func getMissingCerts(ctx context.Context, lh LegoHandler, db appliancedb.DataSto
 
 // getFailedCerts retries validation for domains which previously failed.
 func getFailedCerts(ctx context.Context, lh LegoHandler, db appliancedb.DataStore) error {
-	domains, err := db.FailedDomains(ctx)
+	domains, err := db.FailedDomains(ctx, false)
 	if err != nil {
 		return err
 	}
@@ -1064,7 +1064,7 @@ func certStatus(cmd *cobra.Command, args []string) error {
 		slog.Info(checkMark + "No registered sites are missing certs")
 	}
 
-	failed, err := db.FailedDomains(context.Background())
+	failed, err := db.FailedDomains(context.Background(), true)
 	if err != nil {
 		return err
 	}

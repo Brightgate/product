@@ -205,18 +205,18 @@ func testServerCerts(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	fd1 := DecomposedDomain{"62984.brightgate.net", 1, ""}
 	err = ds.FailDomains(ctx, []DecomposedDomain{fd0, fd1})
 	assert.NoError(err)
-	fds, err := ds.FailedDomains(ctx)
+	fds, err := ds.FailedDomains(ctx, false)
 	assert.Len(fds, 2)
 	assert.Equal(fds, []DecomposedDomain{fd0, fd1})
 
 	// There shouldn't be any domains left in the failed table
-	fds, err = ds.FailedDomains(ctx)
+	fds, err = ds.FailedDomains(ctx, false)
 	assert.Len(fds, 0)
 
 	// Failed domains should come back ordered by siteid.
 	err = ds.FailDomains(ctx, []DecomposedDomain{fd1, fd0})
 	assert.NoError(err)
-	fds, err = ds.FailedDomains(ctx)
+	fds, err = ds.FailedDomains(ctx, false)
 	assert.Len(fds, 2)
 	assert.Equal(fds, []DecomposedDomain{fd0, fd1})
 

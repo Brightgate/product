@@ -381,7 +381,7 @@ func testFillPool(t *testing.T, ds appliancedb.DataStore, logger *zap.Logger, sl
 	}
 
 	// Make sure no domains failed.
-	doms, err := ds.FailedDomains(ctx)
+	doms, err := ds.FailedDomains(ctx, false)
 	assert.NoError(err)
 	assert.Empty(doms)
 
@@ -422,10 +422,8 @@ func testFillPoolPartialError(t *testing.T, ds appliancedb.DataStore, logger *za
 	assert.NoError(err)
 	assert.Len(certs, poolsize-2)
 
-	// Make sure the failed domains table is also the size we expect.  We
-	// can't just call ds.FailedDomains() because it'll drain the table.
-	var doms []appliancedb.DecomposedDomain
-	err = adb.SelectContext(ctx, &doms, "SELECT * FROM failed_domains")
+	// Make sure the failed domains table is also the size we expect.
+	doms, err := ds.FailedDomains(ctx, true)
 	assert.NoError(err)
 	assert.Len(doms, 2)
 
@@ -441,8 +439,7 @@ func testFillPoolPartialError(t *testing.T, ds appliancedb.DataStore, logger *za
 	assert.NoError(err)
 	assert.Len(certs, poolsize-1)
 	// ... and failed_certs has one left
-	var doms2 []appliancedb.DecomposedDomain
-	err = adb.SelectContext(ctx, &doms2, "SELECT * FROM failed_domains")
+	doms2, err := ds.FailedDomains(ctx, true)
 	assert.NoError(err)
 	assert.Len(doms2, 1)
 	assert.Contains(doms, doms2[0])
