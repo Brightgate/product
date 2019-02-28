@@ -24,7 +24,7 @@ import (
 )
 
 type certManager interface {
-	AllServerCerts(context.Context) ([]ServerCert, error)
+	AllServerCerts(context.Context) ([]ServerCert, []uuid.NullUUID, error)
 	ServerCertByFingerprint(context.Context, []byte) (*ServerCert, error)
 	ServerCertByUUID(context.Context, uuid.UUID) (*ServerCert, error)
 	InsertServerCert(context.Context, *ServerCert) error
@@ -126,26 +126,39 @@ func (db *ApplianceDB) ComputeDomain(ctx context.Context, siteid int32, jurisdic
 	return computeDomain[jurisdiction](siteid, jurisdiction), nil
 }
 
-// AllServerCerts returns a slice of all the certificates.
-func (db *ApplianceDB) AllServerCerts(ctx context.Context) ([]ServerCert, error) {
-	var certs []ServerCert
-
-	err := db.SelectContext(ctx, &certs,
-		`SELECT siteid, jurisdiction, fingerprint, expiration, cert, issuercert, key
+// AllServerCerts returns a slice of all the certificates and a slice of their
+// corresponding site UUIDs, if there is one.  The ServerCert structures are not
+// fully populated; only with enough information for human consumption.
+func (db *ApplianceDB) AllServerCerts(ctx context.Context) ([]ServerCert, []uuid.NullUUID, error) {
+	rows, err := db.QueryContext(ctx,
+		`SELECT siteid, jurisdiction, fingerprint, expiration, site_domains.site_uuid
                  FROM site_certs
+		 LEFT JOIN site_domains USING (jurisdiction, siteid)
 		 ORDER BY jurisdiction, siteid, expiration`)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	defer rows.Close()
 
-	for i, cert := range certs {
+	var certs []ServerCert
+	var uuids []uuid.NullUUID
+	for rows.Next() {
+		var cert ServerCert
+		var u uuid.NullUUID
+		err = rows.Scan(&cert.SiteID, &cert.Jurisdiction, &cert.Fingerprint, &cert.Expiration, &u)
+		if err != nil {
+			panic(err)
+		}
 		domstr, err := db.ComputeDomain(ctx, cert.SiteID, cert.Jurisdiction)
 		if err != nil {
 			panic(err)
 		}
-		certs[i].Domain = domstr
+		cert.Domain = domstr
+		certs = append(certs, cert)
+		uuids = append(uuids, u)
 	}
-	return certs, nil
+
+	return certs, uuids, nil
 }
 
 // CertsExpiringWithin returns the certs which are within `grace` of their

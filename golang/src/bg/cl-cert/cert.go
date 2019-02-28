@@ -1006,7 +1006,7 @@ func listCerts(cmd *cobra.Command, args []string) error {
 
 	db := makeApplianceDB(environ.PostgresConnection)
 
-	certs, err := db.AllServerCerts(context.Background())
+	certs, uuids, err := db.AllServerCerts(context.Background())
 	if err != nil {
 		return err
 	}
@@ -1015,13 +1015,18 @@ func listCerts(cmd *cobra.Command, args []string) error {
 		prettytable.Column{Header: "Domain"},
 		prettytable.Column{Header: "Jurisdiction"},
 		prettytable.Column{Header: "SiteID"},
+		prettytable.Column{Header: "Site UUID"},
 		prettytable.Column{Header: "Fingerprint"},
 		prettytable.Column{Header: "Expiration"},
 	)
 	table.Separator = " "
 
-	for _, cert := range certs {
-		table.AddRow(cert.Domain, cert.Jurisdiction, cert.SiteID,
+	for i, cert := range certs {
+		u, _ := uuids[i].Value()
+		if u == nil {
+			u = ""
+		}
+		table.AddRow(cert.Domain, cert.Jurisdiction, cert.SiteID, u,
 			hex.EncodeToString(cert.Fingerprint), cert.Expiration.Round(time.Second))
 	}
 	table.Print()
@@ -1087,7 +1092,7 @@ func certStatus(cmd *cobra.Command, args []string) error {
 		slog.Info(checkMark + "No certificate requests failed")
 	}
 
-	certs, err := db.AllServerCerts(context.Background())
+	certs, _, err := db.AllServerCerts(context.Background())
 	if err != nil {
 		return err
 	}

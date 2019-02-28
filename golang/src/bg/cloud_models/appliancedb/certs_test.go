@@ -137,7 +137,7 @@ func testServerCerts(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	assert.Equal(cert1, certResp)
 
 	// Make sure we get both if we ask for all
-	certArr, err := ds.AllServerCerts(ctx)
+	certArr, _, err := ds.AllServerCerts(ctx)
 	assert.NoError(err)
 	assert.Len(certArr, 2)
 
@@ -159,6 +159,19 @@ func testServerCerts(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	unclaimed, err = ds.UnclaimedDomainCount(ctx)
 	assert.NoError(err)
 	assert.Equal(int64(1), unclaimed)
+
+	// Make sure that AllServerCerts returns the right site UUIDs, too.
+	certArr, uuArr, err := ds.AllServerCerts(ctx)
+	assert.NoError(err)
+	assert.Len(certArr, 3)
+	assert.Len(uuArr, 3)
+	for i := 0; i < len(certArr); i++ {
+		if certArr[i].Domain == "12777.brightgate.net" {
+			assert.Equal(testID1.SiteUUID, uuArr[i].UUID)
+		} else {
+			assert.False(uuArr[i].Valid)
+		}
+	}
 
 	// Claim 12777.uk
 	domainStr, err = ds.RegisterDomain(ctx, testID2.SiteUUID, "uk")
