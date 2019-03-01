@@ -445,7 +445,7 @@ func InstallCert(key, cert, issuerCert []byte, fp string, config *cfgapi.Handle)
 	if err != nil {
 		return err
 	}
-	if err != pem.Encode(keyf, &pem.Block{Type: "PRIVATE KEY", Bytes: key}) {
+	if err != pem.Encode(keyf, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: key}) {
 		return err
 	}
 	keyf.Close()
