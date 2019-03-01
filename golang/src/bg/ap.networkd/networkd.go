@@ -33,9 +33,11 @@ import (
 	"bg/ap_common/platform"
 	"bg/ap_common/wificaps"
 	"bg/base_def"
+	"bg/base_msg"
 	"bg/common/cfgapi"
 	"bg/common/network"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
@@ -366,6 +368,16 @@ func resetInterfaces() {
 	createBridges()
 	rebuildLan()
 	rebuildInternalNet()
+
+	resource := &base_msg.EventNetUpdate{
+		Timestamp: aputil.NowToProtobuf(),
+		Sender:    proto.String(brokerd.Name),
+		Debug:     proto.String("-"),
+	}
+
+	if err := brokerd.Publish(resource, base_def.TOPIC_UPDATE); err != nil {
+		slog.Warnf("couldn't publish %s: %v", base_def.TOPIC_UPDATE, err)
+	}
 }
 
 //////////////////////////////////////////////////////////////////////////

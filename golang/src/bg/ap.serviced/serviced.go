@@ -45,10 +45,9 @@ var (
 
 	_ = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
 
-	ifaceToRing    map[int]string
-	ringToIface    map[string]*net.Interface
-	ipv4ToIface    map[string]*net.Interface
-	ifaceBroadcast map[string]net.IP
+	ifaceToRing map[int]string
+	ringToIface map[string]*net.Interface
+	ipv4ToIface map[string]*net.Interface
 
 	exitChan = make(chan struct{})
 )
@@ -143,12 +142,12 @@ func clientExpireEvent(path []string) {
 }
 
 func initInterfaces() {
-	rings = config.GetRings()
+	i2r := make(map[int]string)
+	r2i := make(map[string]*net.Interface)
+	i2i := make(map[string]*net.Interface)
 
-	ifaceToRing = make(map[int]string)
-	ringToIface = make(map[string]*net.Interface)
-	ipv4ToIface = make(map[string]*net.Interface)
-	ifaceBroadcast = make(map[string]net.IP)
+	slog.Debugf("Initializing interfaces")
+	slog.Debugf("%10s  %7s  %3s (%s)", "ring", "bridge", "idx", "name")
 
 	//
 	// Iterate over all of the rings to/which we will relay UDP broadcasts.
@@ -156,26 +155,27 @@ func initInterfaces() {
 	// router for that subnet.
 	//
 	for ring, conf := range rings {
-		var name string
-
-		// Find the interface that serves this ring, so we can add the
-		// interface to the multicast groups on which we listen.
-		if _, ok := ringLevel[ring]; !ok {
-			slog.Debugf("No relaying from %s", ring)
-			continue
-		}
-
 		iface, err := net.InterfaceByName(conf.Bridge)
 		if iface == nil || err != nil {
 			slog.Warnf("No interface %s: %v", conf.Bridge, err)
 			continue
 		}
 
-		ifaceBroadcast[name] = network.SubnetBroadcast(conf.Subnet)
-		ipv4ToIface[network.SubnetRouter(conf.Subnet)] = iface
-		ringToIface[ring] = iface
-		ifaceToRing[iface.Index] = ring
+		i2i[network.SubnetRouter(conf.Subnet)] = iface
+		r2i[ring] = iface
+		i2r[iface.Index] = ring
+		slog.Debugf("%10s  %7s  %3d (%s)", ring, conf.Bridge,
+			iface.Index, iface.Name)
 	}
+
+	ifaceToRing = i2r
+	ringToIface = r2i
+	ipv4ToIface = i2i
+}
+
+func eventHandler(event []byte) {
+	slog.Debugf("got network update event - reevaluting interfaces")
+	initInterfaces()
 }
 
 func configSiteChanged(path []string, val string, expires *time.Time) {
@@ -206,12 +206,14 @@ func main() {
 	prometheusInit()
 	brokerd = broker.New(pname)
 	defer brokerd.Fini()
+	brokerd.Handle(base_def.TOPIC_UPDATE, eventHandler)
 
 	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err != nil {
 		slog.Fatalf("cannot connect to configd: %v", err)
 	}
 	clients = config.GetClients()
+	rings = config.GetRings()
 
 	initInterfaces()
 	dnsInit()

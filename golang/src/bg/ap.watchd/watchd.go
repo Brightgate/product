@@ -183,14 +183,14 @@ func getGateways() {
 
 	// Build a set of the MACs belonging to our APs, so we can distinguish
 	// between client and internal network traffic
-	internalMacs = make(map[uint64]bool)
+	tmp := make(map[uint64]bool)
 	nics, _ := config.GetNics("", "")
 	for _, nic := range nics {
 		if hwaddr := network.MacToUint64(nic); hwaddr != 0 {
-			internalMacs[hwaddr] = true
+			tmp[hwaddr] = true
 		}
 	}
-
+	internalMacs = tmp
 }
 
 func getLeases() {
@@ -236,6 +236,11 @@ func logUnknown(ring, mac, ipstr string) bool {
 
 	err = brokerd.Publish(entity, base_def.TOPIC_ENTITY)
 	return err == nil
+}
+
+func eventHandler(event []byte) {
+	slog.Debugf("got network update event - reevaluting interfaces")
+	getGateways()
 }
 
 func signalHandler() {
@@ -353,8 +358,11 @@ func main() {
 	config.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
 	config.HandleDelete(`^@/clients/.*/ipv4$`, configIPv4Delexp)
 	config.HandleExpire(`^@/clients/.*/ipv4$`, configIPv4Delexp)
+	brokerd.Handle(base_def.TOPIC_UPDATE, eventHandler)
+
 	macToIPInit()
 	rings = config.GetRings()
+	getGateways()
 
 	mcpd.SetState(mcp.ONLINE)
 	slog.Infof("watchd online")

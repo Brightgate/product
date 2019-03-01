@@ -460,7 +460,6 @@ func subnetBroadcastAddr(n *net.IPNet) net.IP {
 
 func sampleInit(w *watcher) {
 	blocklistInit()
-	getGateways()
 	getLeases()
 
 	samplerRunning = true

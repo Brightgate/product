@@ -790,15 +790,15 @@ func (c *Handle) GetClient(macaddr string) *ClientInfo {
 // GetClients the full Clients subtree, and converts the returned json into a
 // map of ClientInfo structures, indexed by the client's mac address
 func (c *Handle) GetClients() ClientMap {
+	set := make(map[string]*ClientInfo)
+
 	props, err := c.GetProps("@/clients")
 	if err != nil {
 		log.Printf("Failed to get clients list: %v\n", err)
-		return nil
-	}
-
-	set := make(map[string]*ClientInfo)
-	for name, client := range props.Children {
-		set[name] = getClient(client)
+	} else {
+		for name, client := range props.Children {
+			set[name] = getClient(client)
+		}
 	}
 
 	return set

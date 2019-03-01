@@ -624,11 +624,11 @@ func selectRingHandler(p dhcp.Packet, options dhcp.Options) *ringHandler {
 		// to reverse-engineer the ring from the VLAN the request
 		// arrived on.
 		if requestRing != "" {
-			slog.Infof("New client %s on %s", mac, requestIface.Name)
+			slog.Infof("New client %s on %d (%s)", mac, requestIface.Index, requestIface.Name)
 			notifyNewEntity(p, options, requestRing)
 		} else {
 			slog.Infof("Ignoring request from unknown client %s "+
-				"on %s", mac, requestIface.Name)
+				"on %d (%s)", mac, requestIface.Index, requestIface.Name)
 		}
 	} else if handler = handlers[ring]; handler == nil {
 		slog.Errorf("Client %s on unknown ring '%s'", mac, ring)

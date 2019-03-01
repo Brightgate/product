@@ -193,6 +193,7 @@ assignments = [
     [Statement.SIMPLE_STR, "TOPIC_LISTEN", "net.listen"],
     [Statement.SIMPLE_STR, "TOPIC_EXCEPTION", "net.exception"],
     [Statement.SIMPLE_STR, "TOPIC_IDENTITY",  "net.identity"],
+    [Statement.SIMPLE_STR, "TOPIC_UPDATE",  "net.update"],
     [Statement.SIMPLE_STR, "TOPIC_OPTIONS",  "net.options"],
 
     [Statement.COMMENT, "Diagnostic client HTTP ports"],

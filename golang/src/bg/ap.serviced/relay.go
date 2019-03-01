@@ -524,7 +524,12 @@ func mrelay(s service) {
 			continue
 		}
 
-		srcLevel := ringLevel[source.ring]
+		srcLevel, ok := ringLevel[source.ring]
+		if !ok {
+			slog.Debugf("No relaying from %s", source.ring)
+			continue
+		}
+
 		for dstRing, dstLevel := range ringLevel {
 			dstIface := ringToIface[dstRing]
 			if dstIface == nil {
