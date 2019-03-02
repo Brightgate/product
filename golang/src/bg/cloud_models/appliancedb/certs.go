@@ -107,7 +107,7 @@ func (db *ApplianceDB) ComputeDomain(ctx context.Context, siteid int32, jurisdic
 	err := row.Scan(&factor, &constant, &min, &max)
 	switch err {
 	case sql.ErrNoRows:
-		return "", NotFoundError{"jurisdiction not present"}
+		return "", NotFoundError{fmt.Sprintf("jurisdiction %q not present", jurisdiction)}
 	case nil:
 	default:
 		panic(err)
@@ -316,27 +316,17 @@ func (db *ApplianceDB) DomainsMissingCerts(ctx context.Context) ([]DecomposedDom
 
 // RegisterDomain assigns a siteid to a site and returns the domain.
 func (db *ApplianceDB) RegisterDomain(ctx context.Context, u uuid.UUID, jurisdiction string) (string, error) {
-	var siteid int32
-	err := db.GetContext(ctx, &siteid,
-		`INSERT INTO site_domains
-		 (site_uuid, jurisdiction)
-		 VALUES ($1, $2)
-		 ON CONFLICT DO NOTHING
-		 RETURNING siteid`,
-		u, jurisdiction)
-
-	// If we hit the conflict clause, then just return the domain we already
-	// had.
-	if err == sql.ErrNoRows {
-		var dom DecomposedDomain
-		err = db.GetContext(ctx, &dom,
-			`SELECT siteid, jurisdiction
-			 FROM site_domains
-			 WHERE site_uuid = $1`,
-			u)
-		jurisdiction = dom.Jurisdiction
+	var rval struct {
+		SiteID       int32
+		Jurisdiction string
 	}
-	domain, err := db.ComputeDomain(ctx, siteid, jurisdiction)
+	err := db.GetContext(ctx, &rval,
+		`SELECT * FROM register_domain($1, $2)`,
+		u, jurisdiction)
+	if err != nil {
+		panic(err)
+	}
+	domain, err := db.ComputeDomain(ctx, rval.SiteID, rval.Jurisdiction)
 	if err != nil {
 		return "", err
 	}

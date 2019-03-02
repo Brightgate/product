@@ -13,6 +13,7 @@ package appliancedb
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
@@ -191,11 +192,47 @@ func testServerCerts(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	assert.NoError(err)
 	assert.Equal("62984.uk.brightgate.net", domainStr)
 
+	// Make sure that max_claimed is what we expect
+	adb := ds.(*ApplianceDB)
+	var maxClaimedUK int
+	err = adb.GetContext(ctx, &maxClaimedUK,
+		`SELECT max_claimed FROM siteid_sequences WHERE jurisdiction = 'uk'`)
+	assert.NoError(err)
+	assert.Equal(1, maxClaimedUK) // 0 and 1 claimed for uk
+
 	// Make sure that registering a site again just returns the original
 	// domain, even if the jurisdiction is different.
 	domainStr, err = ds.RegisterDomain(ctx, testID2.SiteUUID, "de")
 	assert.NoError(err)
 	assert.Equal("12777.uk.brightgate.net", domainStr)
+
+	// Make sure that the above didn't actually insert "de" into the
+	// siteid_sequences table.
+	var maxClaimedDE sql.NullInt64
+	err = adb.GetContext(ctx, &maxClaimedDE,
+		`SELECT max_claimed FROM siteid_sequences WHERE jurisdiction = 'de'`)
+	assert.EqualError(err, sql.ErrNoRows.Error())
+
+	// Also, the max_claimed for "uk" shouldn't have gotten incremented.
+	err = adb.GetContext(ctx, &maxClaimedUK,
+		`SELECT max_claimed FROM siteid_sequences WHERE jurisdiction = 'uk'`)
+	assert.NoError(err)
+	assert.Equal(1, maxClaimedUK)
+
+	// Check that it doesn't happen even when the jurisdiction is the same
+	domainStr, err = ds.RegisterDomain(ctx, testID2.SiteUUID, "uk")
+	assert.NoError(err)
+	assert.Equal("12777.uk.brightgate.net", domainStr)
+	err = adb.GetContext(ctx, &maxClaimedUK,
+		`SELECT max_claimed FROM siteid_sequences WHERE jurisdiction = 'uk'`)
+	assert.NoError(err)
+	assert.Equal(1, maxClaimedUK)
+
+	// If we re-register, make sure we get the same domain, even when it's
+	// not siteid 0.
+	domainStr, err = ds.RegisterDomain(ctx, testID3.SiteUUID, "uk")
+	assert.NoError(err)
+	assert.Equal("62984.uk.brightgate.net", domainStr)
 
 	// When getting a cert by the site UUID, make sure we get the latest
 	// one.
@@ -204,7 +241,6 @@ func testServerCerts(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	assert.Equal(cert2, certResp)
 
 	// Remove a cert belonging to a site and see that we can discover that.
-	adb := ds.(*ApplianceDB)
 	_, err = adb.ExecContext(ctx, `DELETE FROM site_certs WHERE siteid = 0 AND jurisdiction = ''`)
 	assert.NoError(err)
 	domains, err := ds.DomainsMissingCerts(ctx)

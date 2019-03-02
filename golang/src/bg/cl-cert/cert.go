@@ -1027,7 +1027,8 @@ func listCerts(cmd *cobra.Command, args []string) error {
 			u = ""
 		}
 		table.AddRow(cert.Domain, cert.Jurisdiction, cert.SiteID, u,
-			hex.EncodeToString(cert.Fingerprint), cert.Expiration.Round(time.Second))
+			hex.EncodeToString(cert.Fingerprint),
+			cert.Expiration.In(time.Local).Round(time.Second))
 	}
 	table.Print()
 	return nil

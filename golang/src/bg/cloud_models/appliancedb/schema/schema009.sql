@@ -34,7 +34,6 @@ COMMENT ON COLUMN siteid_sequences.max_unclaimed IS 'maximum unclaimed siteid fo
 
 CREATE TABLE IF NOT EXISTS site_domains (
     site_uuid        uuid REFERENCES customer_site(uuid) PRIMARY KEY,
-    -- siteid is set by the default_siteid trigger on insertion
     siteid           integer,
     jurisdiction     varchar(16) REFERENCES jurisdictions(name),
     UNIQUE (siteid, jurisdiction)
