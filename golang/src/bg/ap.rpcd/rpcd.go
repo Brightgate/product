@@ -354,6 +354,16 @@ func cmdStart() {
 	case "inventory":
 		tclient := cloud_rpc.NewEventClient(conn)
 		err = sendInventory(ctx, tclient)
+	case "storageurl":
+		tclient := cloud_rpc.NewCloudStorageClient(conn)
+		var urls []*cloud_rpc.SignedURL
+		urls, err = generateSignedURLs(tclient,
+			&uploadType{"/test", "test", "application/json"},
+			[]string{"test1", "test2"})
+		if err != nil {
+			break
+		}
+		slog.Infow("Response", "urls", urls)
 	default:
 		slog.Fatalf("Unrecognized command %s", svc)
 	}

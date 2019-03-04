@@ -419,7 +419,8 @@ GO_CLOUD_TESTABLES = \
 	bg/cloud_models/appliancedb \
 	bg/cloud_models/sessiondb \
 	bg/cl-cert \
-	bg/cl.httpd
+	bg/cl.httpd \
+	bg/cl.rpcd
 
 NETWORKD_TEMPLATE_FILES = \
 	hostapd.conf.got \
