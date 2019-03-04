@@ -1,5 +1,5 @@
 <!--
-  COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+  COPYRIGHT 2019 Brightgate Inc. All rights reserved.
 
   This copyright notice is Copyright Management Information under 17 USC 1202
   and is included to protect this work and deter copyright infringement.
@@ -15,33 +15,29 @@
       <f7-icon f7="compose_fill" />
     </f7-fab>
 
-    <f7-card v-if="user.SelfProvisioning">
-      <f7-card-header>
-        <span><f7-icon ios="f7:cloud" md="material:cloud" color="gray" /> Cloud Self-Provisioned User</span>
-      </f7-card-header>
-      <f7-card-content>This user was created using Cloud Self Provisioning via the Brightgate
-      cloud portal.  The user cannot be administered from this screen.
-        <!-- XXX there's really no-where that the user can be administered at present. -->
-      </f7-card-content>
-    </f7-card>
-    <f7-card v-else>
-      <f7-card-header>
-        <span><f7-icon material="router" color="gray" /> Site-Local User</span>
-      </f7-card-header>
-      <f7-card-content>This user was created locally to this Site, and has
-      privileges to login to the Site's local web interface; this user is
-      backed-up to to the Brightgate cloud, and can be edited there.  Because
-      the user is site-local, it is not synchronized to other sites in your
-      organization.
-        <!-- XXX in the future we could say more about roles -->
-      </f7-card-content>
-    </f7-card>
+    <f7-block>
+      <h1>
+        {{ user.DisplayName }}
+      </h1>
 
+    </f7-block>
 
     <f7-list>
-      <!-- Username -->
-      <f7-list-item :title="$t('message.user_details.username')">
+      <!-- User Name -->
+      <f7-list-item :title="$t('message.user_details.user_name')">
         {{ user.UID }}
+      </f7-list-item>
+      <f7-list-item :title="$t('message.user_details.user_type')">
+        <f7-link v-if="user.SelfProvisioning"
+                 popover-open=".popover-user-type"
+                 icon-ios="f7:cloud" icon-md="material:cloud">
+          &nbsp;Cloud User
+        </f7-link>
+        <f7-link v-else
+                 popover-open=".popover-user-type"
+                 icon-ios="material:router" icon-md="material:router">
+          &nbsp;Site-Specific Administrator
+        </f7-link>
       </f7-list-item>
 
       <!-- Email -->
@@ -89,6 +85,25 @@
       -->
 
     </f7-list>
+    <f7-popover class="popover-user-type">
+      <template v-if="user.SelfProvisioning">
+        <f7-block-title>
+          <f7-icon ios="f7:cloud" md="material:cloud" /> Cloud User
+        </f7-block-title>
+        <f7-block v-if="user.SelfProvisioning">
+          This user was created using the Brightgate portal's Wi-Fi
+          self-provisioning wizard and cannot be modified from this page.
+        </f7-block>
+      </template>
+      <template v-else>
+        <f7-block-title>
+          <f7-icon material="router" color="gray" /> Site-Specific Administrator
+        </f7-block-title>
+        <f7-block>
+          This user is a site administrator. This user has site-specific credentials and may log in only to this site's local web interface and Wi-Fi network.
+        </f7-block>
+      </template>
+    </f7-popover>
 
   </f7-page>
 </template>

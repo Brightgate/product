@@ -20,7 +20,6 @@ import Network from './pages/network.vue';
 import NetworkVAP from './pages/network_vap.vue';
 import SelfProvision from './pages/self_provision.vue';
 import SiteAdmin from './pages/site_admin.vue';
-import SiteStatus from './pages/site_status.vue';
 import TestTools from './pages/test_tools.vue';
 import UserDetails from './pages/user_details.vue';
 import UserEditor from './pages/user_editor.vue';
@@ -62,10 +61,6 @@ export default [
   {
     path: '/sites/:siteID/enroll_guest/',
     component: EnrollGuest,
-  },
-  {
-    path: '/sites/:siteID/site_status/',
-    component: SiteStatus,
   },
   {
     path: '/sites/:siteID/',

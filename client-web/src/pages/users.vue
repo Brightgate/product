@@ -1,5 +1,5 @@
 <!--
-  COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+  COPYRIGHT 2019 Brightgate Inc. All rights reserved.
 
   This copyright notice is Copyright Management Information under 17 USC 1202
   and is included to protect this work and deter copyright infringement.
@@ -16,12 +16,23 @@
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.users.title')" sliding />
 
     <!-- n.b. FAB must be direct child of a page -->
+    <!--
     <f7-fab color="pink" href="false" @click="openEditorNew">
       <f7-icon f7="add" />
     </f7-fab>
+    -->
 
     <f7-list>
-      <f7-list-item :group-title="true" :title="$t('message.users.site_local')" />
+      <f7-list-item :group-title="true" :title="$t('message.users.cloud_self_provisioned')" />
+      <f7-list-item v-for="user in spUsers"
+                    :key ="user.UUID"
+                    :link="`${$f7route.url}${user.UUID}/`">
+        <div slot="title">
+          <f7-icon ios="f7:cloud_fill" md="material:cloud" color="gray" /> {{ user.DisplayName ? user.DisplayName : user.UID }}
+        </div>
+      </f7-list-item>
+
+      <f7-list-item :group-title="true" :title="$t('message.users.site_specific')" />
       <f7-list-item v-for="user in localUsers"
                     :key ="user.UUID"
                     :link="`${$f7route.url}${user.UUID}/`">
@@ -29,13 +40,12 @@
           <f7-icon material="router" color="gray" /> {{ user.DisplayName ? user.DisplayName : user.UID }}
         </div>
       </f7-list-item>
-
-      <f7-list-item :group-title="true" :title="$t('message.users.cloud_self_provisioned')" />
-      <f7-list-item v-for="user in spUsers"
-                    :key ="user.UUID"
-                    :link="`${$f7route.url}${user.UUID}/`">
-        <div slot="title">
-          <f7-icon ios="f7:cloud_fill" md="material:cloud" color="gray" /> {{ user.DisplayName ? user.DisplayName : user.UID }}
+      <f7-list-item
+        :title="$t('message.users.add_site_specific')"
+        :link="`${this.$f7route.url}NEW/editor/`"
+        no-chevron>
+        <div slot="inner">
+          <f7-icon ios="f7:add_round_fill" md="material:add_circle" />
         </div>
       </f7-list-item>
     </f7-list>

@@ -228,7 +228,7 @@ div.sensitive {
             <f7-card-content>
               <f7-block>
                 <div class="explain">
-                  Your username and password are ready to use.
+                  Your user name and password are ready to use.
                   <b>This is the last time we will show them to you.</b>
                   Brightgate does not keep plain-text records of your password.
                 </div>
@@ -306,7 +306,7 @@ export default {
     },
 
     copyUsername: async function() {
-      debug('trying to write username to clipboard');
+      debug('trying to write user name to clipboard');
       await clipboard.writeText(this.generatedUsername);
     },
 

@@ -1,5 +1,5 @@
 <!--
-  COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+  COPYRIGHT 2019 Brightgate Inc. All rights reserved.
 
   This copyright notice is Copyright Management Information under 17 USC 1202
   and is included to protect this work and deter copyright infringement.
@@ -11,13 +11,13 @@
   <f7-page @page:afterin="onPageAfterIn">
     <f7-navbar
       :back-link="$t('message.general.back')"
-      :title="$t('message.user_details.edit_title')"
+      :title="newUser ? $t('message.user_details.add_title') : $t('message.user_details.edit_title')"
       sliding />
 
     <f7-list>
       <!-- uid -- user name -->
       <f7-list-item v-if="newUser">
-        <f7-label>{{ $t('message.user_details.username') }}</f7-label>
+        <f7-label>{{ $t('message.user_details.user_name') }}</f7-label>
         <f7-input
           :value="user.UID"
           type="email"
@@ -27,7 +27,7 @@
           @input="user.UID = $event.target.value" />
       </f7-list-item>
       <f7-list-item v-else
-                    :title="$t('message.user_details.username')">
+                    :title="$t('message.user_details.user_name')">
         {{ user.UID }}
       </f7-list-item>
 

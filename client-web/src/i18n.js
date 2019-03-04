@@ -43,7 +43,6 @@ export default {
         current: 'Current',
       },
       site_controls: {
-        site_status: 'Site Status',
         network: 'Network Configuration',
         compliance_report: 'Compliance Report',
         manage_devices: 'Manage Devices ({device_count})',
@@ -115,18 +114,6 @@ export default {
         default_tg: 'Default Trust Group',
         passphrase: 'Passphrase',
         ring_config: 'Trust Group Configuration',
-      },
-      site_status: {
-        title: 'Brightgate - Site Status',
-        networks: 'Networks',
-        net_eap: 'Trusted User Network',
-        net_psk: 'Devices Network',
-        net_guest: 'Guest Network',
-        devices: 'Device Summary',
-        devices_reg: 'Registered Devices',
-        devices_active: 'Active Devices',
-        devices_scanned: 'Vulnerability Scanned Devices',
-        config: 'Configuration',
       },
       compliance_report: {
         title: 'Brightgate - Compliance Report',
@@ -209,10 +196,10 @@ export default {
       },
       login: {
         login: 'Login',
-        username: 'Username',
+        username: 'User Name',
         password: 'Password',
         sign_in: 'Sign In',
-        fail_unauthorized: 'Login failed.  Invalid Username or Password.',
+        fail_unauthorized: 'Login failed.  Invalid user name or password.',
         fail_other: 'Login failed unexpectedly: {err}.',
         oauth2_with_google: 'Login with Google',
         oauth2_with_microsoft: 'Login with Microsoft',
@@ -221,11 +208,13 @@ export default {
       },
       users: {
         title: 'Brightgate - Users',
-        site_local: 'Site-Local Users',
-        cloud_self_provisioned: 'Cloud-Self-Provisioned Users',
+        site_specific: 'Site-Specific Administrators',
+        add_site_specific: 'Add Site-Specific Administrator',
+        cloud_self_provisioned: 'Cloud Users',
       },
       user_details: {
-        username: 'Username',
+        user_name: 'User Name',
+        user_type: 'User Type',
         uuid: 'UUID',
         role: 'Role',
         roles: {
@@ -233,7 +222,8 @@ export default {
           admin: 'Administrator',
         },
         password: 'Password',
-        edit_title: 'Edit User',
+        add_title: 'Add Site-Specific Administrator',
+        edit_title: 'Edit Site-Specific Administrator',
         create_ok: 'Created user {name}',
         create_fail: 'Failed to create new user: {err}',
         save_ok: 'Updated user {name}',
@@ -246,11 +236,7 @@ export default {
   de: {
     message: {
       test_tools: {}, // Note: We don't internationalize this group
-      home: {
-        local_site: 'Local Site', // XXXI18N
-        local_site_explanation: 'You are administering the Brightgate Wi-fi appliances on your local network (the Local Site).  Changes will also be reflected in the Brightgate cloud.', // XXXI18N
-        select_site: 'Select Site', // XXXI18N
-        tools: 'Tools',
+      home: { // XXXI18N
       },
       site_list: { // XXXI18N
       },
@@ -290,8 +276,6 @@ export default {
       network: { // XXXI18N
       },
       network_vap: { // XXXI18N
-      },
-      site_status: { // XXXI18N
       },
       compliance_report: { // XXXI18N
       },
@@ -358,7 +342,7 @@ export default {
         username: 'Name',
         password: 'Passwort',
         sign_in: 'Anmelden',
-        fail_unauthorized: 'Login failed.  Invalid Username or Password.', // XXXI18N
+        fail_unauthorized: 'Login failed.  Invalid user name or password.', // XXXI18N
         fail_other: 'Login failed unexpectedly: {err}.', // XXXI18N
         oauth2_with_google: 'Login with Google', // XXXI18N
         oauth2_with_microsoft: 'Login with Microsoft', // XXXI18N
@@ -367,11 +351,13 @@ export default {
       },
       users: {
         title: 'Brightgate - Benutzer',
-        site_local: 'Site-Local Users', // XXXI18N
+        site_specific: 'Site-Specific Users', // XXXI18N
+        add_site_specific: 'Add Site-Specific User', // XXXI18N
         cloud_self_provisioned: 'Cloud-Self-Provisioned Users', // XXXI18N
       },
       user_details: {
-        username: 'Name',
+        user_name: 'User Name', // XXXI18N
+        user_type: 'User Type', // XXXI18N
         uuid: 'UUID',
         role: 'Rolle',
         roles: {

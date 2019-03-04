@@ -14,7 +14,7 @@
       <!-- f7-nav-title doesn't seem to center properly without also
          including left and right. -->
       <f7-nav-left v-if="!leftPanelVisible">
-        <f7-link panel-open="left" icon-ios="f7:menu" icon-md="f7:menu" />
+        <f7-link panel-open="left" icon-ios="f7:menu" icon-md="material:menu" />
       </f7-nav-left>
 
       <f7-nav-title v-if="!leftPanelVisible">

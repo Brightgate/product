@@ -21,10 +21,6 @@
 <template>
   <f7-list>
     <f7-list-item
-      :title="$t('message.site_controls.site_status')"
-      :class="disabled ? 'disabled' : undefined"
-      :link="`/sites/${siteid}/site_status/`" />
-    <f7-list-item
       :title="$t('message.site_controls.network')"
       :class="disabled ? 'disabled' : undefined"
       :link="`/sites/${siteid}/network/`" />
