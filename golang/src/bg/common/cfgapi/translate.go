@@ -30,16 +30,18 @@ var (
 		ErrBadVer:     cfgmsg.ConfigResponse_BADVERSION,
 		ErrNotEqual:   cfgmsg.ConfigResponse_NOTEQUAL,
 		ErrNoConfig:   cfgmsg.ConfigResponse_NOCONFIG,
+		ErrBadTree:    cfgmsg.ConfigResponse_BADTREE,
 	}
 
 	apiToMsg = map[int]cfgmsg.ConfigOp_Operation{
-		PropGet:    cfgmsg.ConfigOp_GET,
-		PropSet:    cfgmsg.ConfigOp_SET,
-		PropCreate: cfgmsg.ConfigOp_CREATE,
-		PropDelete: cfgmsg.ConfigOp_DELETE,
-		PropAdd:    cfgmsg.ConfigOp_ADDPROP,
-		PropTest:   cfgmsg.ConfigOp_TEST,
-		PropTestEq: cfgmsg.ConfigOp_TESTEQ,
+		PropGet:     cfgmsg.ConfigOp_GET,
+		PropSet:     cfgmsg.ConfigOp_SET,
+		PropCreate:  cfgmsg.ConfigOp_CREATE,
+		PropDelete:  cfgmsg.ConfigOp_DELETE,
+		PropAdd:     cfgmsg.ConfigOp_ADDPROP,
+		PropTest:    cfgmsg.ConfigOp_TEST,
+		PropTestEq:  cfgmsg.ConfigOp_TESTEQ,
+		TreeReplace: cfgmsg.ConfigOp_REPLACE,
 	}
 
 	codeToErr map[cfgmsg.ConfigResponse_OpResponse]error

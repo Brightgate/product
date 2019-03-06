@@ -85,10 +85,25 @@ func (s *backEndServer) Hello(ctx context.Context,
 func (s *backEndServer) Download(ctx context.Context,
 	req *rpc.CfgBackEndDownload) (*rpc.CfgBackEndResponse, error) {
 
-	return &rpc.CfgBackEndResponse{
+	rval := &rpc.CfgBackEndResponse{
 		Time:     ptypes.TimestampNow(),
 		Response: rpc.CfgBackEndResponse_OK,
-	}, nil
+	}
+
+	site, err := getSiteState(ctx, req.GetSiteUUID())
+	if err != nil {
+		rval.Response = rpc.CfgBackEndResponse_ERROR
+		rval.Errmsg = fmt.Sprintf("%v", err)
+
+	} else if site.cachedTree == nil {
+		rval.Response = rpc.CfgBackEndResponse_NOCONFIG
+		rval.Errmsg = "no config cached in cloud"
+
+	} else {
+		rval.Value = site.cachedTree.Export(false)
+	}
+
+	return rval, nil
 }
 
 // Attempt to apply a single appliance-generated update to our cached copy of

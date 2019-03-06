@@ -13,6 +13,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,10 +23,13 @@ import (
 	rpc "bg/cloud_rpc"
 	"bg/common/cfgapi"
 	"bg/common/cfgmsg"
+	"bg/common/cfgtree"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 )
+
+const restoreProp = "@/cloud/restore_config"
 
 type rpcClient struct {
 	connected bool
@@ -346,6 +350,82 @@ func configEvent(raw []byte) {
 	}
 }
 
+// attempt to download a fresh copy of the config tree from the cloud, and pass
+// it to ap.configd.
+func (c *rpcClient) restore() error {
+	op := &rpc.CfgBackEndDownload{
+		Time:    ptypes.TimestampNow(),
+		Version: cfgapi.Version,
+	}
+
+	ctx, ctxcancel := c.getCtx()
+	rval, err := c.client.Download(ctx, op)
+	ctxcancel()
+
+	if err != nil {
+		return fmt.Errorf("failed to send Download() rpc: %v", err)
+	}
+
+	if rval.Response != rpc.CfgBackEndResponse_OK {
+		if rval.Response == rpc.CfgBackEndResponse_NOCONFIG {
+			slog.Infof("No config tree found in cloud")
+			config.DeleteProp(restoreProp)
+			return nil
+		}
+
+		return fmt.Errorf("Download() failed: %s", rval.Errmsg)
+	}
+	if rval.Value == nil {
+		slog.Infof("Cloud doesn't support restore")
+		config.DeleteProp(restoreProp)
+		return nil
+	}
+
+	tree, err := cfgtree.NewPTree("@", rval.Value)
+	if err != nil {
+		return fmt.Errorf("failed to parse tree from cl.rpcd: %v", err)
+	}
+
+	// Make sure our restored config tree doesn't send us into an infinite
+	// loop of restoring
+	tree.Delete(restoreProp)
+
+	slog.Infof("Sending downloaded tree to configd")
+	if err = config.Replace(tree.Export(false)); err != nil {
+		return fmt.Errorf("restore failed: %v", err)
+	}
+
+	return nil
+}
+
+// Attempt to establish a connection to cl.configd (via cl.rpcd).  If the
+// @/cloud/restore_config property is set, try to download a copy of the config
+// tree from the cloud before allowing the upload/download goroutines to
+// proceed.
+func (c *rpcClient) connect() error {
+	var restore bool
+
+	prop, err := config.GetProp(restoreProp)
+	if err == nil {
+		restore = (strings.ToLower(prop) == "true")
+	} else if err != cfgapi.ErrNoProp {
+		// If we can't communicate with the local configd, don't try to
+		// talk to the remote configd.
+		return fmt.Errorf("fetching %s: %v", restoreProp, err)
+	}
+
+	err = c.hello()
+
+	if err == nil && restore {
+		err = c.restore()
+		if err != nil {
+			slog.Warnf("Failed to restore from cloud: %v", err)
+		}
+	}
+
+	return err
+}
+
 // Establish and maintain a connection to cl.configd
 func (c *rpcClient) connectLoop(wg *sync.WaitGroup, doneChan chan bool) {
 
@@ -358,7 +438,7 @@ func (c *rpcClient) connectLoop(wg *sync.WaitGroup, doneChan chan bool) {
 	slog.Infof("connect loop starting")
 	for !done {
 		if !c.connected {
-			if err := c.hello(); err == nil {
+			if err := c.connect(); err == nil {
 				c.connected = true
 				nextLog = time.Now()
 				slog.Infof("established connection to cl.configd")

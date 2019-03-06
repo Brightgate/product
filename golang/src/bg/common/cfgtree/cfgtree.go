@@ -563,6 +563,24 @@ func (t *PTree) patch(node *PNode, name string, path string) {
 	node.hashSelf()
 }
 
+// Replace will replace the complete contents of a config tree
+func (t *PTree) Replace(data []byte) error {
+	var newRoot PNode
+
+	if err := json.Unmarshal(data, &newRoot); err != nil {
+		return fmt.Errorf("unmarshalling properties")
+	}
+	t.root = &newRoot
+	t.patch(t.root, "@", "")
+
+	// You can't roll back from a full tree replacement.  It's up to the
+	// caller to ensure that the replacement is not part of a compound
+	// operation that may need rolling back.
+	t.preserved = nil
+
+	return nil
+}
+
 // GraftTree will finalize a partially instantiated tree.  It will compute the
 // hashes, generate the 'path' fields, and set the parent pointers for each
 // node.

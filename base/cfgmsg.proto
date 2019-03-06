@@ -30,6 +30,7 @@ message ConfigOp {
 		ADDPROP = 6;
 		TEST = 7;
 		TESTEQ = 8;
+		REPLACE = 9;
 	}
 	Operation operation = 0x20;
 	string property = 0x21;
@@ -70,6 +71,7 @@ message ConfigResponse {
 		BADTIME		= 9;
 		NOTEQUAL	= 10;
 		NOCONFIG	= 11;
+		BADTREE		= 12;
 	}
 	OpResponse response	= 0x21;
 	int64 cmdID		= 0x22;

@@ -8,6 +8,9 @@
       "clients": {},
       "cloud": {
         "Children": {
+          "restore_config": {
+            "Value": "true"
+          },
           "update": {
             "Children": {
               "bucket": {
@@ -311,6 +314,7 @@
     {"Path": "@/clients/%macaddr%/vulnerabilities/%string%/cleared", "Type": "time", "Level": "internal"},
     {"Path": "@/clients/%macaddr%/vulnerabilities/%string%/repair", "Type": "bool", "Level": "internal"},
     {"Path": "@/clients/%macaddr%/vulnerabilities/%string%/repaired", "Type": "time", "Level": "internal"},
+    {"Path": "@/cloud/restore_config", "Type": "bool", "Level": "internal"},
     {"Path": "@/cloud/svc_rpc/url", "Type": "string", "Level": "internal"},
     {"Path": "@/cloud/svc_rpc/tls", "Type": "bool", "Level": "internal"},
     {"Path": "@/cloud/update/bucket", "Type": "string", "Level": "internal"},

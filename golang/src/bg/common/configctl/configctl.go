@@ -13,6 +13,7 @@ package configctl
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/signal"
 	"sort"
@@ -22,6 +23,7 @@ import (
 	"time"
 
 	"bg/common/cfgapi"
+	"bg/common/cfgtree"
 	"bg/common/deviceid"
 )
 
@@ -246,6 +248,68 @@ func hdlUpdate(path []string, val string, exp *time.Time) {
 
 }
 
+func replace(cmd string, args []string) error {
+	var data []byte
+	var err error
+	var src string
+
+	if len(args) != 1 {
+		usage(cmd)
+	}
+
+	if args[0] == "-" {
+		src = "stdin"
+		data, err = ioutil.ReadAll(os.Stdin)
+	} else {
+		src = args[0]
+		data, err = ioutil.ReadFile(src)
+	}
+
+	fmt.Printf("imported from %s\n", src)
+	if err != nil {
+		return fmt.Errorf("error reading from %s: %v", src, err)
+	}
+
+	tree, err := cfgtree.NewPTree("@", data)
+	if err != nil {
+		return fmt.Errorf("importing tree from %s: %v", src, err)
+	}
+
+	if err = configd.Replace(tree.Export(false)); err != nil {
+		return fmt.Errorf("replacing existing config tree: %v", err)
+	}
+
+	return nil
+}
+
+func export(cmd string, args []string) error {
+	if len(args) != 0 {
+		usage(cmd)
+	}
+
+	ops := []cfgapi.PropertyOp{
+		{
+			Op:   cfgapi.PropGet,
+			Name: "@",
+		},
+	}
+	data, err := configd.Execute(nil, ops).Wait(nil)
+
+	if err != nil {
+		err = fmt.Errorf("fetching tree: %v", err)
+	} else {
+		tree, err := cfgtree.NewPTree("@", []byte(data))
+		if err != nil {
+			err = fmt.Errorf("rebuilding tree: %v", err)
+		} else {
+			data := tree.Export(true)
+			fmt.Printf("%s\n", string(data))
+		}
+	}
+
+	return err
+}
+
 func monProp(cmd string, args []string) error {
 	if len(args) != 1 {
 		usage(cmd)
@@ -354,12 +418,14 @@ func makeOps(args []string) []cfgapi.PropertyOp {
 }
 
 var usages = map[string]string{
-	"ping": "",
-	"set":  "<prop> <value [duration]>",
-	"add":  "<prop> <value [duration]>",
-	"get":  "<prop> | clients [-a] | rings",
-	"del":  "<prop>",
-	"mon":  "<prop>",
+	"ping":    "",
+	"set":     "<prop> <value [duration]>",
+	"add":     "<prop> <value [duration]>",
+	"get":     "<prop> | clients [-a] | rings",
+	"del":     "<prop>",
+	"mon":     "<prop>",
+	"replace": "<file | ->",
+	"export":  "",
 }
 
 func usage(cmd string) {
@@ -399,6 +465,10 @@ func Exec(p string, hdl *cfgapi.Handle, args []string) error {
 		if err = hdl.Ping(nil); err == nil {
 			fmt.Printf("ok\n")
 		}
+	case "replace":
+		err = replace("replace", args[1:])
+	case "export":
+		err = export("export", args[1:])
 	default:
 		ops := makeOps(args)
 		_, err = configd.Execute(nil, ops).Wait(nil)

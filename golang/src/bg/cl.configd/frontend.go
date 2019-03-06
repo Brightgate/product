@@ -118,6 +118,7 @@ func (s *frontEndServer) Submit(ctx context.Context,
 				rval.Errmsg = "compound GETs not supported"
 				return
 			}
+
 		case cfgmsg.ConfigOp_DELETE:
 			// nothing to do
 
@@ -137,6 +138,18 @@ func (s *frontEndServer) Submit(ctx context.Context,
 				rval.Errmsg = errHead + "missing value"
 				return
 			}
+
+		case cfgmsg.ConfigOp_REPLACE:
+			if len(query.Ops) > 1 {
+				rval.Errmsg = "compound REPLACEs not supported"
+				return
+			}
+
+			if o.GetValue() == "" {
+				rval.Errmsg = errHead + "missing value"
+				return
+			}
+
 		default:
 			rval.Errmsg = errHead + "illegal operation type"
 			return

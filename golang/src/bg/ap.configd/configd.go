@@ -41,9 +41,11 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"os/signal"
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"bg/ap_common/aputil"
@@ -111,6 +113,8 @@ var (
 	logLevel = flag.String("log-level", "info", "zap log level")
 
 	propTree *cfgtree.PTree
+
+	eventSocket *zmq.Socket
 
 	mcpd    *mcp.MCP
 	brokerd *broker.Broker
@@ -566,6 +570,7 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 	var prop, val, rval string
 	var expires *time.Time
 	var err error
+	var persistTree bool
 
 	level := cfgapi.AccessLevel(query.Level)
 	if _, ok := cfgapi.AccessLevelNames[level]; !ok {
@@ -669,6 +674,30 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 			slog.Debugf("Adding %s: %s", prop, val)
 			err = addSetting(prop, val)
 
+		case cfgmsg.ConfigOp_REPLACE:
+			slog.Infof("Replacing config tree")
+
+			newTree := []byte(val)
+			if len(query.Ops) > 1 {
+				err = fmt.Errorf("compound REPLACE op")
+
+			} else if err = propTree.Replace(newTree); err != nil {
+				slog.Warnf("importing replacement tree: %v", err)
+				err = cfgapi.ErrBadTree
+
+			} else {
+				// Ideally we would restart automatically here,
+				// but we run the risk of taking down ap.rpcd
+				// before the completion has propagated back to
+				// the cloud - which would cause us to refetch
+				// and repeat the command.
+				slog.Warnf("Config tree replaced - "+
+					"%s should be restarted", pname)
+				expirationInit()
+				defaultRingInit()
+				persistTree = true
+			}
+
 		default:
 			err = cfgapi.ErrBadOp
 		}
@@ -689,7 +718,7 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 		expirationsEval(changedPaths)
 
 		updateNotify(updates)
-		if propTree.ChangesetCommit() {
+		if propTree.ChangesetCommit() || persistTree {
 			if rerr := propTreeStore(); rerr != nil {
 				slog.Warnf("failed to write properties: %v",
 					rerr)
@@ -706,13 +735,14 @@ func processOneEvent(query *cfgmsg.ConfigQuery) *cfgmsg.ConfigResponse {
 
 	if query.Version.Major != cfgapi.Version {
 		err = cfgapi.ErrBadVer
-	}
-	if err == nil && query.Timestamp != nil {
+
+	} else if query.Timestamp != nil {
 		_, err = ptypes.Timestamp(query.Timestamp)
 		if err != nil {
 			err = cfgapi.ErrBadTime
 		}
 	}
+
 	if err == nil {
 		rval, err = executePropOps(query)
 	}
@@ -726,15 +756,21 @@ func processOneEvent(query *cfgmsg.ConfigQuery) *cfgmsg.ConfigResponse {
 	return response
 }
 
-func eventLoop(incoming *zmq.Socket) {
+func eventLoop() {
 	errs := 0
+
 	for {
-		msg, err := incoming.RecvMessageBytes(0)
+		msg, err := eventSocket.RecvMessageBytes(0)
 		if err != nil {
+			if err == zmq.ErrorSocketClosed {
+				return
+			}
+
 			slog.Warnf("Error receiving message: %v", err)
-			errs++
-			if errs > 10 {
-				slog.Fatalf("Too many errors - giving up")
+			if errs++; errs > 10 {
+				slog.Errorf("too many errors - giving up")
+				eventSocket.Close()
+				return
 			}
 			continue
 		}
@@ -749,7 +785,7 @@ func eventLoop(incoming *zmq.Socket) {
 			slog.Warnf("Failed to marshal response to %v: %v",
 				*query, err)
 		} else {
-			incoming.SendBytes(data, 0)
+			eventSocket.SendBytes(data, 0)
 		}
 	}
 }
@@ -816,6 +852,31 @@ func configInit() {
 	defaultRingInit()
 }
 
+func zmqInit() {
+	var err error
+
+	eventSocket, err = zmq.NewSocket(zmq.REP)
+	if err != nil {
+		slog.Fatalf("creating zmq socket: %v", err)
+	}
+
+	port := base_def.INCOMING_ZMQ_URL + base_def.CONFIGD_ZMQ_REP_PORT
+	if err = eventSocket.Bind(port); err != nil {
+		fail("Failed to bind incoming port %s: %v", port, err)
+	}
+
+	slog.Debugf("Listening on %s", port)
+}
+
+func signalHandler() {
+	sig := make(chan os.Signal, 2)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+
+	s := <-sig
+	slog.Infof("Signal (%v) received, stopping", s)
+	eventSocket.Close()
+}
+
 func main() {
 	var err error
 
@@ -840,15 +901,14 @@ func main() {
 		fail("Failed to import devices database: %v", err)
 	}
 
-	incoming, _ := zmq.NewSocket(zmq.REP)
-	port := base_def.INCOMING_ZMQ_URL + base_def.CONFIGD_ZMQ_REP_PORT
-	if err = incoming.Bind(port); err != nil {
-		fail("Failed to bind incoming port %s: %v", port, err)
-	}
-	slog.Debugf("Listening on %s", port)
+	zmqInit()
 
 	mcpd.SetState(mcp.ONLINE)
 
 	go expirationHandler()
-	eventLoop(incoming)
+	go signalHandler()
+
+	eventLoop()
+
+	slog.Infof("stopping")
 }

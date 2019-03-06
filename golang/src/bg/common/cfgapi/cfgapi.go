@@ -107,6 +107,7 @@ var (
 	ErrNotSupp    = errors.New("not supported")
 	ErrNotEqual   = errors.New("not equal to expected value")
 	ErrTimeout    = errors.New("communication timeout")
+	ErrBadTree    = errors.New("unable to parse tree")
 )
 
 // ValidRings is a map containing all of the known ring names.  Checking for map
@@ -221,6 +222,7 @@ const (
 	PropAdd
 	PropTest
 	PropTestEq
+	TreeReplace
 )
 
 // PropertyOp represents an operation on a single property
@@ -327,6 +329,16 @@ func (c *Handle) CreateProp(prop, val string, expires *time.Time) error {
 func (c *Handle) DeleteProp(prop string) error {
 	ops := []PropertyOp{
 		{Op: PropDelete, Name: prop},
+	}
+	_, err := c.Execute(nil, ops).Wait(nil)
+
+	return err
+}
+
+// Replace attempts to swap out the entire config tree
+func (c *Handle) Replace(newTree []byte) error {
+	ops := []PropertyOp{
+		{Op: TreeReplace, Name: "@/", Value: string(newTree)},
 	}
 	_, err := c.Execute(nil, ops).Wait(nil)
 

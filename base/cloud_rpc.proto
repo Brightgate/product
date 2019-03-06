@@ -162,12 +162,14 @@ message CfgBackEndResponse {
 		OK		= 0;
 		ERROR		= 1;
 		BADVERSION	= 2;
+		NOCONFIG	= 3;
 	}
 
 	google.protobuf.Timestamp time		= 0x01;
 	OpResponse response			= 0x02;
 	string errmsg				= 0x03;
 	repeated cfgmsg.ConfigQuery cmds	= 0x04;
+	bytes value				= 0x05;
 }
 
 service ConfigBackEnd{
