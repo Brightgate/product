@@ -484,7 +484,7 @@ func newAppliance(cmd *cobra.Command, args []string) error {
 }
 
 func main() {
-	rootCmd := cobra.Command{
+	rootCmd := &cobra.Command{
 		Use:              os.Args[0],
 		PersistentPreRun: silenceUsage,
 	}
@@ -625,6 +625,8 @@ func main() {
 	listAppCmd.Flags().StringP("input", "i", "", "registry data JSON file")
 	listAppCmd.Flags().StringP("site-uuid", "s", "", "site UUID")
 	appCmd.AddCommand(listAppCmd)
+
+	cqMain(rootCmd)
 
 	if err := envcfg.Unmarshal(&environ); err != nil {
 		fmt.Printf("Environment Error: %s", err)

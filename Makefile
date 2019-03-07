@@ -649,6 +649,7 @@ CLOUD_COMMON_SRCS = \
 	$(COMMON_SRCS) \
 	$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
 	$(GOSRCBG)/cloud_models/appliancedb/appliancedb.go \
+	$(GOSRCBG)/cloud_models/appliancedb/cmdqueue.go \
 	$(GOSRCBG)/cloud_models/sessiondb/sessiondb.go \
 	$(GOSRCBG)/cl_common/auth/m2mauth/middleware.go \
 	$(GOSRCBG)/cl_common/clcfg/clcfg.go \
@@ -728,6 +729,7 @@ GO_MOCK_CLOUDRPC_SRCS = \
 GO_MOCK_APPLIANCEDB_SRCS = \
 	$(GOSRCBG)/cloud_models/appliancedb/appliancedb.go \
 	$(GOSRCBG)/cloud_models/appliancedb/certs.go \
+	$(GOSRCBG)/cloud_models/appliancedb/cmdqueue.go \
 	$(GOSRCBG)/base_def/base_def.go
 GO_MOCK_APPLIANCEDB = $(GOSRCBG)/cloud_models/appliancedb/mocks/DataStore.go
 GO_MOCK_CLOUDRPC = $(GOSRCBG)/cloud_rpc/mocks/EventClient.go
@@ -1066,6 +1068,7 @@ $(CLOUDBIN)/cl-dtool: \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl-reg: \
 	$(GOSRCBG)/cl-reg/main.go \
+	$(GOSRCBG)/cl-reg/cq.go \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl-service: \
 	$(GOSRCBG)/cl-service/service.go
