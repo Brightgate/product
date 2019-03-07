@@ -194,7 +194,6 @@ async function siteVAPsGet(siteID) {
   const vapMap = {};
   for (const n of vapNames) {
     vapMap[n] = commonApplianceGet(siteID, `network/vap/${n}`);
-    debug('vapMap is now', vapMap);
   }
   const res = await Promise.props(vapMap);
   debug('vap result is', res);

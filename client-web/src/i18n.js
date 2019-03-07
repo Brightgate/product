@@ -39,6 +39,10 @@ export default {
         select_site: 'Select Site',
         tools: 'Tools',
       },
+      site_admin: {
+        admin_title: 'You are administering Brightgate Wi-fi for this site.',
+        user_title: 'You are viewing Brightgate Wi-fi for this site.',
+      },
       site_list: {
         current: 'Current',
       },
@@ -237,6 +241,8 @@ export default {
     message: {
       test_tools: {}, // Note: We don't internationalize this group
       home: { // XXXI18N
+      },
+      site_admin: { // XXXI18N
       },
       site_list: { // XXXI18N
       },

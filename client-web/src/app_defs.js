@@ -10,6 +10,9 @@
 
 // Application-wide constants
 
+const ROLE_ADMIN= 'admin';
+const ROLE_USER= 'user';
+
 export default {
   // Primordial mode: used at startup, and to disable mocking
   APPMODE_NONE: null,
@@ -25,4 +28,8 @@ export default {
   VAP_EAP: 'eap',
   VAP_PSK: 'psk',
   VAP_GUEST: 'guest',
+
+  ROLE_ADMIN,
+  ROLE_USER,
+  ALL_ROLES: [ROLE_ADMIN, ROLE_USER],
 };

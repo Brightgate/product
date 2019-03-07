@@ -626,7 +626,8 @@ CLOUDSCHEMAS = \
 	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema007.sql \
 	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema008.sql \
 	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema009.sql \
-	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema010.sql
+	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema010.sql \
+	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema011.sql
 
 CLOUDBINARIES = $(CLOUDCOMMANDS:%=$(CLOUDBIN)/%) $(CLOUDDAEMONS:%=$(CLOUDBIN)/%)
 
@@ -649,6 +650,7 @@ CLOUD_COMMON_SRCS = \
 	$(COMMON_SRCS) \
 	$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
 	$(GOSRCBG)/cloud_models/appliancedb/appliancedb.go \
+	$(GOSRCBG)/cloud_models/appliancedb/account.go \
 	$(GOSRCBG)/cloud_models/appliancedb/cmdqueue.go \
 	$(GOSRCBG)/cloud_models/sessiondb/sessiondb.go \
 	$(GOSRCBG)/cl_common/auth/m2mauth/middleware.go \
@@ -727,6 +729,7 @@ GO_MOCK_CLOUDRPC_SRCS = \
 	$(GOSRCBG)/common/cfgmsg/cfgmsg.go \
 	$(GOSRCBG)/common/cfgmsg/cfgmsg.pb.go
 GO_MOCK_APPLIANCEDB_SRCS = \
+	$(GOSRCBG)/cloud_models/appliancedb/account.go \
 	$(GOSRCBG)/cloud_models/appliancedb/appliancedb.go \
 	$(GOSRCBG)/cloud_models/appliancedb/certs.go \
 	$(GOSRCBG)/cloud_models/appliancedb/cmdqueue.go \
@@ -1067,8 +1070,9 @@ $(CLOUDBIN)/cl-dtool: \
 	$(GOSRCBG)/cl-dtool/merge.go \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl-reg: \
-	$(GOSRCBG)/cl-reg/main.go \
+	$(GOSRCBG)/cl-reg/account.go \
 	$(GOSRCBG)/cl-reg/cq.go \
+	$(GOSRCBG)/cl-reg/main.go \
 	$(CLOUD_COMMON_SRCS)
 $(CLOUDBIN)/cl-service: \
 	$(GOSRCBG)/cl-service/service.go

@@ -17,7 +17,6 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"strings"
 
 	"github.com/satori/uuid"
 	"github.com/spf13/cobra"
@@ -268,89 +267,6 @@ func listSites(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func printPrefixedTable(table *prettytable.Table, prefix string) {
-	tabStr := table.String()
-	tabRows := strings.Split(tabStr, "\n")
-	for _, row := range tabRows {
-		fmt.Printf("%s%s\n", prefix, row)
-	}
-}
-
-func listAccounts(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
-	db, _, err := assembleRegistry(cmd)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	orgs, err := db.AllOrganizations(ctx)
-	if err != nil {
-		return err
-	}
-	for _, org := range orgs {
-		accts, err := db.AccountsByOrganization(ctx, org.UUID)
-		if err != nil {
-			return err
-		}
-		if org.UUID == uuid.Nil {
-			continue
-		}
-		if len(accts) == 0 {
-			fmt.Printf("Organization: %s (%s):\n  No accounts\n", org.Name, org.UUID)
-			continue
-		}
-		fmt.Printf("Organization: %q (%s)\n", org.Name, org.UUID)
-		table, _ := prettytable.NewTable(
-			prettytable.Column{Header: "UUID"},
-			prettytable.Column{Header: "Email"},
-			prettytable.Column{Header: "Phone"},
-		)
-		for _, acct := range accts {
-			table.AddRow(acct.UUID, acct.Email, acct.PhoneNumber)
-		}
-		printPrefixedTable(table, "  ")
-	}
-	return nil
-}
-
-func infoAccount(cmd *cobra.Command, args []string) error {
-	acctUUID := uuid.Must(uuid.FromString(args[0]))
-	ctx := context.Background()
-	db, _, err := assembleRegistry(cmd)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	ai, err := registry.GetAccountInformation(ctx, db, acctUUID)
-	if err != nil {
-		return err
-	}
-
-	table, _ := prettytable.NewTable(
-		prettytable.Column{Header: "KEY"},
-		prettytable.Column{Header: "VALUE"},
-	)
-	table.Separator = "  "
-	table.AddRow("UUID", ai.Account.UUID)
-	table.AddRow("Email", ai.Account.Email)
-	table.AddRow("Phone", ai.Account.PhoneNumber)
-	table.AddRow("Organization.UUID", ai.Organization.UUID)
-	table.AddRow("Organization.Name", ai.Organization.Name)
-	table.AddRow("Person.UUID", ai.Person.UUID)
-	table.AddRow("Person.Name", ai.Person.Name)
-	table.AddRow("Person.PrimaryEmail", ai.Person.PrimaryEmail)
-	for i, id := range ai.OAuth2IDs {
-		prefix := fmt.Sprintf("OAuth2ID.%d.", i)
-		table.AddRow(prefix+"ID", id.ID)
-		table.AddRow(prefix+"Provider", id.Provider)
-		table.AddRow(prefix+"Subject", id.Subject)
-	}
-	table.Print()
-	return nil
-}
-
 func listAppliances(cmd *cobra.Command, args []string) error {
 	appID, _ := cmd.Flags().GetString("name")
 	siteUUID, _ := cmd.Flags().GetString("site-uuid")
@@ -564,31 +480,6 @@ func main() {
 	listOAuth2OrgRuleCmd.Flags().StringP("input", "i", "", "registry data JSON file")
 	oauth2OrgRuleCmd.AddCommand(listOAuth2OrgRuleCmd)
 
-	accountCmd := &cobra.Command{
-		Use:   "account <subcmd> [flags] [args]",
-		Short: "Administer accounts in the registry",
-		Args:  cobra.NoArgs,
-	}
-	rootCmd.AddCommand(accountCmd)
-
-	listAccountCmd := &cobra.Command{
-		Use:   "list",
-		Args:  cobra.NoArgs,
-		Short: "List accounts in the registry",
-		RunE:  listAccounts,
-	}
-	listAccountCmd.Flags().StringP("input", "i", "", "registry data JSON file")
-	accountCmd.AddCommand(listAccountCmd)
-
-	infoAccountCmd := &cobra.Command{
-		Use:   "info",
-		Args:  cobra.ExactArgs(1),
-		Short: "Get extended information about an account in the registry",
-		RunE:  infoAccount,
-	}
-	infoAccountCmd.Flags().StringP("input", "i", "", "registry data JSON file")
-	accountCmd.AddCommand(infoAccountCmd)
-
 	appCmd := &cobra.Command{
 		Use:   "app <subcmd> [flags] [args]",
 		Short: "Administer appliances in the registry",
@@ -627,6 +518,7 @@ func main() {
 	appCmd.AddCommand(listAppCmd)
 
 	cqMain(rootCmd)
+	accountMain(rootCmd)
 
 	if err := envcfg.Unmarshal(&environ); err != nil {
 		fmt.Printf("Environment Error: %s", err)

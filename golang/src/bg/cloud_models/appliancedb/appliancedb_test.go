@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"sort"
 	"testing"
 	"time"
 
@@ -536,6 +537,126 @@ func testAccount(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Su
 	assert.WithinDuration(time.Now(), as.ApplianceUserBcryptTs, time.Second)
 }
 
+// Test AccountOrgRole APIs.  subtest of TestDatabaseModel
+func testAccountOrgRole(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
+	ctx := context.Background()
+	assert := require.New(t)
+	var err error
+
+	adminRole := &AccountOrgRole{
+		AccountUUID:      testAccount1.UUID,
+		OrganizationUUID: testAccount1.OrganizationUUID,
+		Role:             "admin",
+	}
+	// Not really realistic as we would not normally add both
+	// admin and user roles, but we are testing the assertion
+	// that a user may have more than one role.
+	userRole := &AccountOrgRole{
+		AccountUUID:      testAccount1.UUID,
+		OrganizationUUID: testAccount1.OrganizationUUID,
+		Role:             "user",
+	}
+
+	// Setup
+	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, nil)
+	err = ds.InsertPerson(ctx, &testPerson1)
+	assert.NoError(err)
+	err = ds.InsertPerson(ctx, &testPerson2)
+	assert.NoError(err)
+
+	accts, err := ds.AccountsByOrganization(ctx, testOrg1.UUID)
+	assert.NoError(err)
+	assert.Len(accts, 0)
+
+	sites, err := ds.CustomerSitesByAccount(ctx, testAccount1.UUID)
+	assert.NoError(err)
+	assert.Len(sites, 0)
+
+	err = ds.InsertAccount(ctx, &testAccount1)
+	assert.NoError(err)
+	err = ds.InsertAccount(ctx, &testAccount2)
+	assert.NoError(err)
+
+	// similar to the userids google uses
+	const testSubj1 = "123456789012345678900"
+	id1 := &OAuth2Identity{
+		Subject:     testSubj1,
+		Provider:    "google",
+		AccountUUID: testAccount1.UUID,
+	}
+	err = ds.InsertOAuth2Identity(ctx, id1)
+	assert.NoError(err, "expected success")
+
+	roles, err := ds.AccountOrgRolesByAccount(ctx, testAccount1.UUID)
+	assert.NoError(err)
+	assert.Len(roles, 0)
+
+	rolesStrs, err := ds.AccountOrgRolesByAccountOrg(ctx, testAccount1.UUID, testOrg1.UUID)
+	assert.NoError(err)
+	assert.Len(rolesStrs, 0)
+
+	li, err := ds.LoginInfoByProviderAndSubject(ctx, "google", testSubj1)
+	assert.NoError(err, "expected success")
+	assert.Equal(&LoginInfo{
+		Person:           testPerson1,
+		Account:          testAccount1,
+		OAuth2IdentityID: id1.ID,
+		PrimaryOrgRoles:  nil,
+	}, li)
+
+	err = ds.InsertAccountOrgRole(ctx, adminRole)
+	assert.NoError(err)
+	// Same again
+	err = ds.InsertAccountOrgRole(ctx, adminRole)
+	assert.NoError(err)
+
+	err = ds.InsertAccountOrgRole(ctx, userRole)
+	assert.NoError(err)
+
+	li, err = ds.LoginInfoByProviderAndSubject(ctx, "google", testSubj1)
+	assert.NoError(err, "expected success")
+	sort.Strings(li.PrimaryOrgRoles)
+	assert.Equal(&LoginInfo{
+		Person:           testPerson1,
+		Account:          testAccount1,
+		OAuth2IdentityID: id1.ID,
+		PrimaryOrgRoles:  []string{"admin", "user"},
+	}, li)
+
+	roles, err = ds.AccountOrgRolesByAccount(ctx, testAccount1.UUID)
+	assert.NoError(err)
+	assert.Len(roles, 2)
+	assert.ElementsMatch([]AccountOrgRole{*userRole, *adminRole}, roles)
+
+	rolesStrs, err = ds.AccountOrgRolesByAccountOrg(ctx, testAccount1.UUID, testOrg1.UUID)
+	assert.NoError(err)
+	assert.Len(rolesStrs, 2)
+	sort.Strings(rolesStrs)
+	assert.ElementsMatch([]string{"admin", "user"}, rolesStrs)
+
+	err = ds.DeleteAccountOrgRole(ctx, userRole)
+	assert.NoError(err)
+
+	roles, err = ds.AccountOrgRolesByAccount(ctx, testAccount1.UUID)
+	assert.NoError(err)
+	assert.Equal(*adminRole, roles[0])
+
+	rolesStrs, err = ds.AccountOrgRolesByAccountOrg(ctx, testAccount1.UUID, testOrg1.UUID)
+	assert.NoError(err)
+	assert.Equal([]string{"admin"}, rolesStrs)
+
+	err = ds.DeleteAccountOrgRole(ctx, adminRole)
+	assert.NoError(err)
+
+	roles, err = ds.AccountOrgRolesByAccount(ctx, testAccount1.UUID)
+	assert.NoError(err)
+	assert.Len(roles, 0)
+
+	rolesStrs, err = ds.AccountOrgRolesByAccountOrg(ctx, testAccount1.UUID, testOrg1.UUID)
+	assert.NoError(err)
+	assert.Len(rolesStrs, 0)
+}
+
 func testOAuth2Identity(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
 	ctx := context.Background()
 	assert := require.New(t)
@@ -589,6 +710,7 @@ func testOAuth2Identity(t *testing.T, ds DataStore, logger *zap.Logger, slogger 
 		Person:           testPerson1,
 		Account:          testAccount1,
 		OAuth2IdentityID: id1.ID,
+		PrimaryOrgRoles:  nil,
 	}, li)
 
 	li, err = ds.LoginInfoByProviderAndSubject(ctx, "invalid", "invalid")
@@ -905,6 +1027,7 @@ func TestDatabaseModel(t *testing.T) {
 		{"testOAuth2OrganizationRule", testOAuth2OrganizationRule},
 		{"testPerson", testPerson},
 		{"testAccount", testAccount},
+		{"testAccountOrgRole", testAccountOrgRole},
 		{"testOAuth2Identity", testOAuth2Identity},
 
 		{"testCloudStorage", testCloudStorage},

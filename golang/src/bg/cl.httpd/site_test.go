@@ -34,20 +34,22 @@ import (
 )
 
 var (
-	mockSites = []appliancedb.CustomerSite{
-		appliancedb.CustomerSite{
-			UUID: uuid.Must(uuid.FromString("b3798a8e-41e0-4939-a038-e7675af864d5")),
-			Name: "mock-site-0",
-		},
-		appliancedb.CustomerSite{
-			UUID: uuid.Must(uuid.FromString("099239f6-d8cd-4e57-a696-ef84a3bf39d0")),
-			Name: "mock-site-1",
-		},
-	}
 	orgUUID     = uuid.Must(uuid.FromString("10000000-0000-0000-0000-000000000000"))
 	accountUUID = uuid.Must(uuid.FromString("20000000-0000-0000-0000-000000000000"))
 	personUUID  = uuid.Must(uuid.FromString("30000000-0000-0000-0000-000000000000"))
 
+	mockSites = []appliancedb.CustomerSite{
+		appliancedb.CustomerSite{
+			UUID:             uuid.Must(uuid.FromString("b3798a8e-41e0-4939-a038-e7675af864d5")),
+			Name:             "mock-site-0",
+			OrganizationUUID: orgUUID,
+		},
+		appliancedb.CustomerSite{
+			UUID:             uuid.Must(uuid.FromString("099239f6-d8cd-4e57-a696-ef84a3bf39d0")),
+			Name:             "mock-site-1",
+			OrganizationUUID: orgUUID,
+		},
+	}
 	mockPerson = appliancedb.Person{
 		UUID:         personUUID,
 		Name:         "Foo Bar",
@@ -60,6 +62,14 @@ var (
 		OrganizationUUID: orgUUID,
 		PhoneNumber:      "650-555-1212",
 		PersonUUID:       personUUID,
+	}
+
+	mockAccountOrgRoles = []appliancedb.AccountOrgRole{
+		{
+			AccountUUID:      accountUUID,
+			OrganizationUUID: orgUUID,
+			Role:             "admin",
+		},
 	}
 )
 
@@ -147,6 +157,7 @@ func TestSites(t *testing.T) {
 	m1 := mockSites[1]
 	dMock := &mocks.DataStore{}
 	dMock.On("CustomerSitesByAccount", mock.Anything, mock.Anything).Return(mockSites, nil)
+	dMock.On("AccountOrgRolesByAccount", mock.Anything, mock.Anything).Return(mockAccountOrgRoles, nil)
 	defer dMock.AssertExpectations(t)
 
 	// Setup Echo
@@ -167,10 +178,12 @@ func TestSites(t *testing.T) {
 	exp := fmt.Sprintf(`[
 	{
 		"uuid": "%s",
-		"name": "%s"
+		"name": "%s",
+		"roles": ["admin"]
 	},{
 		"uuid": "%s",
-		"name": "%s"
+		"name": "%s",
+		"roles": ["admin"]
 	}]`, m0.UUID, m0.Name, m1.UUID, m1.Name)
 	t.Logf("return body: %s", rec.Body.String())
 	assert.JSONEq(exp, rec.Body.String())
@@ -181,7 +194,7 @@ func TestSitesUUID(t *testing.T) {
 	// Mock DB
 	m0 := mockSites[0]
 	dMock := &mocks.DataStore{}
-	dMock.On("CustomerSitesByAccount", mock.Anything, mock.Anything).Return(mockSites, nil)
+	dMock.On("AccountOrgRolesByAccountOrg", mock.Anything, mock.Anything, mock.Anything).Return([]string{"admin"}, nil)
 	dMock.On("CustomerSiteByUUID", mock.Anything, m0.UUID).Return(&m0, nil)
 	dMock.On("CustomerSiteByUUID", mock.Anything, mock.Anything).Return(nil, appliancedb.NotFoundError{})
 	defer dMock.AssertExpectations(t)
@@ -201,7 +214,12 @@ func TestSitesUUID(t *testing.T) {
 	// Test
 	e.ServeHTTP(rec, req)
 	assert.Equal(http.StatusOK, rec.Code)
-	exp, err := json.Marshal(m0)
+	expStruct := &siteResponse{
+		UUID:  m0.UUID,
+		Name:  m0.Name,
+		Roles: []string{"admin"},
+	}
+	exp, err := json.Marshal(expStruct)
 	assert.NoError(err)
 	t.Logf("return body: %s", rec.Body.String())
 	assert.JSONEq(string(exp), rec.Body.String())

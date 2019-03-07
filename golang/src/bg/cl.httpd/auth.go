@@ -392,6 +392,15 @@ func (a *authHandler) mkNewUser(c echo.Context, user goth.User) (*appliancedb.Lo
 	if err != nil {
 		return nil, err
 	}
+	orgRole := &appliancedb.AccountOrgRole{
+		AccountUUID:      account.UUID,
+		OrganizationUUID: organization.UUID,
+		Role:             "user",
+	}
+	err = a.db.InsertAccountOrgRoleTx(ctx, tx, orgRole)
+	if err != nil {
+		return nil, err
+	}
 	err = a.db.InsertOAuth2IdentityTx(ctx, tx, oauth2ID)
 	if err != nil {
 		return nil, err
@@ -446,6 +455,10 @@ func (a *authHandler) getProviderCallback(c echo.Context) error {
 	}
 	c.Logger().Infof("loginInfo is %#v", loginInfo)
 
+	if len(loginInfo.PrimaryOrgRoles) == 0 {
+		return echo.NewHTTPError(http.StatusUnauthorized, "account has no roles")
+	}
+
 	// Try to save the refresh token
 	//
 	// XXX this is somewhat dead because there is presently no way to get
@@ -484,6 +497,7 @@ func (a *authHandler) getProviderCallback(c echo.Context) error {
 	session.Values["auth_time"] = time.Now().Format(time.RFC3339)
 	session.Values["account_uuid"] = loginInfo.Account.UUID.String()
 	session.Values["organization_uuid"] = loginInfo.Account.OrganizationUUID.String()
+	session.Values["primary_org_roles"] = loginInfo.PrimaryOrgRoles
 
 	if err = session.Save(c.Request(), c.Response()); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)

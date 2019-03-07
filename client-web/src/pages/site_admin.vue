@@ -12,8 +12,13 @@
     <f7-navbar :back-link="$t('message.general.back')" :title="site.name" sliding />
 
     <f7-block>
-      <h2>Site {{ site.name }} administration</h2>
-      You are administering Brightgate Wi-fi appliances for this site.
+      <h2>{{ site.name }}</h2>
+      <span v-if="siteAdmin">
+        {{ $t('message.site_admin.admin_title') }}
+      </span>
+      <span v-else>
+        {{ $t('message.site_admin.user_title') }}
+      </span>
     </f7-block>
 
     <template v-if="alertCount(alertActive(alerts))">
@@ -25,8 +30,11 @@
           :link="`/sites/${currentSiteID}/devices/${alert.deviceID}/`">
           <span>
             <f7-icon f7="bolt_round_fill" color="red" />
-            {{ $t('message.alerts.problem_on_device',
-                  {problem: vulnHeadline(alert.vulnid), device: deviceByUniqID(alert.deviceID).networkName})
+            {{
+              $t('message.alerts.problem_on_device', {
+                problem: vulnHeadline(alert.vulnid),
+                device: deviceByUniqID(alert.deviceID).networkName
+              })
             }}
           </span>
         </f7-list-item>
@@ -34,7 +42,12 @@
     </template>
 
     <f7-block-title>{{ $t("message.home.tools") }}</f7-block-title>
-    <bg-site-controls :siteid="site.id" :device-count="deviceCount(devices)" :disabled="!loggedIn" :app-mode="appMode" />
+    <bg-site-controls
+      :siteid="site.id"
+      :device-count="deviceCount(devices)"
+      :disabled="!loggedIn"
+      :app-mode="appMode"
+      :admin="siteAdmin" />
   </f7-page>
 </template>
 <script>
@@ -68,6 +81,7 @@ export default {
       'deviceCount',
       'devices',
       'loggedIn',
+      'siteAdmin',
     ]),
 
     site: function() {

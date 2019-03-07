@@ -37,32 +37,46 @@ type siteHandler struct {
 }
 
 type siteResponse struct {
-	UUID uuid.UUID `json:"uuid"`
-	Name string    `json:"name"`
+	UUID  uuid.UUID `json:"uuid"`
+	Name  string    `json:"name"`
+	Roles []string  `json:"roles"`
 }
 
 // getSites implements /api/sites, which presents a filtered list of
 // applicable sites for the account.
 func (a *siteHandler) getSites(c echo.Context) error {
+	ctx := c.Request().Context()
 	accountUUID, ok := c.Get("account_uuid").(uuid.UUID)
 	if !ok || accountUUID == uuid.Nil {
 		return echo.NewHTTPError(http.StatusUnauthorized)
 	}
-	ctx := c.Request().Context()
 
 	sites, err := a.db.CustomerSitesByAccount(ctx, accountUUID)
 	if err != nil {
 		c.Logger().Errorf("Failed to get Sites by Account: %+v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
+
+	roles, err := a.db.AccountOrgRolesByAccount(ctx, accountUUID)
+	if err != nil {
+		c.Logger().Errorf("Failed to get Org Roles by Account: %+v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
 	apiSites := make([]siteResponse, len(sites))
 	for i, site := range sites {
 		// XXX Today, we derive Name from the registry name.  However,
 		// customers will want to have control over the site name, and
 		// this is best seen as a temporary measure.
 		apiSites[i] = siteResponse{
-			UUID: site.UUID,
-			Name: site.Name,
+			UUID:  site.UUID,
+			Name:  site.Name,
+			Roles: []string{},
+		}
+		for _, r := range roles {
+			if site.OrganizationUUID == r.OrganizationUUID {
+				apiSites[i].Roles = append(apiSites[i].Roles, r.Role)
+			}
 		}
 	}
 	return c.JSON(http.StatusOK, &apiSites)
@@ -70,19 +84,35 @@ func (a *siteHandler) getSites(c echo.Context) error {
 
 // getSitesUUID implements /api/sites/:uuid
 func (a *siteHandler) getSitesUUID(c echo.Context) error {
+	ctx := c.Request().Context()
+	accountUUID, ok := c.Get("account_uuid").(uuid.UUID)
+	if !ok || accountUUID == uuid.Nil {
+		return echo.NewHTTPError(http.StatusUnauthorized)
+	}
 	// Parsing UUID from string input
 	u, err := uuid.FromString(c.Param("uuid"))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest)
 	}
-	site, err := a.db.CustomerSiteByUUID(context.Background(), u)
+	site, err := a.db.CustomerSiteByUUID(ctx, u)
 	if err != nil {
 		if _, ok := err.(appliancedb.NotFoundError); ok {
 			return echo.NewHTTPError(http.StatusNotFound, "No such site")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError)
 	}
-	return c.JSON(http.StatusOK, &site)
+	roles, err := a.db.AccountOrgRolesByAccountOrg(ctx, accountUUID, site.OrganizationUUID)
+	if err != nil {
+		c.Logger().Errorf("Failed to get roles: %+v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	resp := siteResponse{
+		UUID:  site.UUID,
+		Name:  site.Name,
+		Roles: roles,
+	}
+	return c.JSON(http.StatusOK, resp)
 }
 
 // getConfig implements GET /api/sites/:uuid/config
@@ -403,6 +433,15 @@ func (a *siteHandler) postEnrollGuest(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
+func hasRole(roles []string, s string) bool {
+	for _, r := range roles {
+		if r == s {
+			return true
+		}
+	}
+	return false
+}
+
 // getNetworkVAP implements GET /api/site/:uuid/network/vap, returning the list of VAPs
 func (a *siteHandler) getNetworkVAP(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
@@ -427,9 +466,20 @@ func (a *siteHandler) getNetworkVAPName(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest)
 	}
 
+	roles, ok := c.Get("matched_roles").([]string)
+	if !ok {
+		c.Logger().Errorf("No matched_roles found for request")
+		return echo.NewHTTPError(http.StatusUnauthorized)
+	}
+	admin := hasRole(roles, "admin")
+
 	defer hdl.Close()
 	vaps := hdl.GetVirtualAPs()
 	vap, ok := vaps[c.Param("vapname")]
+	// Remove sensitive material for non-admins
+	if (c.Param("vapname") != "guest") && (admin == false) {
+		vap.Passphrase = ""
+	}
 	if !ok {
 		return echo.NewHTTPError(http.StatusNotFound)
 	}
@@ -659,32 +709,53 @@ func (a *siteHandler) getRings(c echo.Context) error {
 	return c.JSON(http.StatusOK, resp)
 }
 
-func (a *siteHandler) siteMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		accountUUID, ok := c.Get("account_uuid").(uuid.UUID)
-		if !ok || accountUUID == uuid.Nil {
-			return echo.NewHTTPError(http.StatusUnauthorized)
-		}
-		sites, err := a.db.CustomerSitesByAccount(context.Background(), accountUUID)
-		if err != nil {
-			c.Logger().Errorf("Failed to get Sites by Account: %+v", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, err)
-		}
-		// All the other endpoints come through here.
-		// This checks that the user has access in some form to this
-		// resource.  It does not check suitability beyond that.
-		siteUUIDParam := c.Param("uuid")
-		siteUUID, err := uuid.FromString(siteUUIDParam)
-		if err != nil {
-			return echo.NewHTTPError(http.StatusBadRequest)
-		}
-		for _, site := range sites {
-			if site.UUID == siteUUID {
+// mkSiteMiddleware manufactures a middleware which protects a route; only
+// users with one or more of the allowedRoles can pass through the checks; the
+// middleware adds "matched_roles" to the echo context, indicating which of the
+// allowed_roles the user actually has.
+func (a *siteHandler) mkSiteMiddleware(allowedRoles []string) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			ctx := c.Request().Context()
+			accountUUID, ok := c.Get("account_uuid").(uuid.UUID)
+			if !ok || accountUUID == uuid.Nil {
+				return echo.NewHTTPError(http.StatusUnauthorized)
+			}
+
+			siteUUIDParam := c.Param("uuid")
+			siteUUID, err := uuid.FromString(siteUUIDParam)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusBadRequest)
+			}
+			// XXX could merge these two db calls
+			site, err := a.db.CustomerSiteByUUID(ctx, siteUUID)
+			if err != nil {
+				if _, ok := err.(appliancedb.NotFoundError); ok {
+					return echo.NewHTTPError(http.StatusNotFound)
+				}
+				return echo.NewHTTPError(http.StatusInternalServerError)
+			}
+			roles, err := a.db.AccountOrgRolesByAccountOrg(ctx,
+				accountUUID, site.OrganizationUUID)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError)
+			}
+			var matches []string
+			for _, ur := range roles {
+				for _, rr := range allowedRoles {
+					if ur == rr {
+						matches = append(matches, ur)
+					}
+				}
+			}
+			if len(matches) > 0 {
+				c.Set("matched_roles", matches)
 				return next(c)
 			}
+			c.Logger().Debugf("Unauthorized: %s site=%v, acc=%v, ur=%v, ar=%v",
+				c.Path(), siteUUID, accountUUID, roles, allowedRoles)
+			return echo.NewHTTPError(http.StatusUnauthorized)
 		}
-		// Pretend it isn't there.
-		return echo.NewHTTPError(http.StatusNotFound)
 	}
 }
 
@@ -695,21 +766,23 @@ func newSiteHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []echo.M
 	r.GET("/api/sites", h.getSites, middlewares...)
 
 	mw := middlewares
-	mw = append(mw, h.siteMiddleware)
+	user := h.mkSiteMiddleware([]string{"user", "admin"})
+	admin := h.mkSiteMiddleware([]string{"admin"})
+
 	siteU := r.Group("/api/sites/:uuid", mw...)
-	siteU.GET("", h.getSitesUUID)
-	siteU.GET("/config", h.getConfig)
-	siteU.POST("/config", h.postConfig)
-	siteU.GET("/configtree", h.getConfigTree)
-	siteU.GET("/devices", h.getDevices)
-	siteU.POST("/enroll_guest", h.postEnrollGuest)
-	siteU.GET("/network/vap", h.getNetworkVAP)
-	siteU.GET("/network/vap/:vapname", h.getNetworkVAPName)
-	siteU.POST("/network/vap/:vapname", h.postNetworkVAPName)
-	siteU.GET("/users", h.getUsers)
-	siteU.GET("/users/:useruuid", h.getUserByUUID)
-	siteU.POST("/users/:useruuid", h.postUserByUUID)
-	siteU.DELETE("/users/:useruuid", h.deleteUserByUUID)
-	siteU.GET("/rings", h.getRings)
+	siteU.GET("", h.getSitesUUID, user)
+	siteU.GET("/config", h.getConfig, admin)
+	siteU.POST("/config", h.postConfig, admin)
+	siteU.GET("/configtree", h.getConfigTree, admin)
+	siteU.GET("/devices", h.getDevices, admin)
+	siteU.POST("/enroll_guest", h.postEnrollGuest, user)
+	siteU.GET("/network/vap", h.getNetworkVAP, user)
+	siteU.GET("/network/vap/:vapname", h.getNetworkVAPName, user)
+	siteU.POST("/network/vap/:vapname", h.postNetworkVAPName, admin)
+	siteU.GET("/users", h.getUsers, admin)
+	siteU.GET("/users/:useruuid", h.getUserByUUID, admin)
+	siteU.POST("/users/:useruuid", h.postUserByUUID, admin)
+	siteU.DELETE("/users/:useruuid", h.deleteUserByUUID, admin)
+	siteU.GET("/rings", h.getRings, admin)
 	return h
 }

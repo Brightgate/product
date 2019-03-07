@@ -1,5 +1,5 @@
 <!--
-  COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+  COPYRIGHT 2019 Brightgate Inc. All rights reserved.
 
   This copyright notice is Copyright Management Information under 17 USC 1202
   and is included to protect this work and deter copyright infringement.
@@ -24,18 +24,18 @@
       :title="$t('message.site_controls.network')"
       :class="disabled ? 'disabled' : undefined"
       :link="`/sites/${siteid}/network/`" />
-    <f7-list-item
-      :title="$t('message.site_controls.compliance_report')"
-      :class="disabled ? 'disabled' : undefined"
-      :link="`/sites/${siteid}/compliance_report/`" />
-    <f7-list-item
-      :title="$t('message.site_controls.manage_devices', {'device_count': deviceCount})"
-      :class="disabled ? 'disabled' : undefined"
-      :link="`/sites/${siteid}/devices/`" />
-    <f7-list-item
-      :title="$t('message.site_controls.users')"
-      :class="disabled ? 'disabled' : undefined"
-      :link="`/sites/${siteid}/users/`" />
+    <f7-list-item v-if="admin"
+                  :title="$t('message.site_controls.compliance_report')"
+                  :class="disabled ? 'disabled' : undefined"
+                  :link="`/sites/${siteid}/compliance_report/`" />
+    <f7-list-item v-if="admin"
+                  :title="$t('message.site_controls.manage_devices', {'device_count': deviceCount})"
+                  :class="disabled ? 'disabled' : undefined"
+                  :link="`/sites/${siteid}/devices/`" />
+    <f7-list-item v-if="admin"
+                  :title="$t('message.site_controls.users')"
+                  :class="disabled ? 'disabled' : undefined"
+                  :link="`/sites/${siteid}/users/`" />
     <f7-list-item
       v-if="appMode === appDefs.APPMODE_CLOUD"
       :title="$t('message.site_controls.enroll_guest')"
@@ -66,6 +66,10 @@ export default {
     },
     appMode: {
       type: String,
+      required: true,
+    },
+    admin: {
+      type: Boolean,
       required: true,
     },
   },

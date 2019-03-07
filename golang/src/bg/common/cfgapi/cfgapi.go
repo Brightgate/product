@@ -154,7 +154,7 @@ type VirtualAP struct {
 	SSID        string   `json:"ssid"`
 	Tag5GHz     bool     `json:"tag5GHz"`
 	KeyMgmt     string   `json:"keyMgmt"`
-	Passphrase  string   `json:"passphrase"`
+	Passphrase  string   `json:"passphrase,omitempty"`
 	DefaultRing string   `json:"defaultRing"`
 	Rings       []string `json:"rings"`
 }

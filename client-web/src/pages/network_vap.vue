@@ -42,7 +42,7 @@ span.pw-toggle {
       </f7-list-item>
 
       <!-- PSK specific password input -->
-      <f7-list-item v-if="vapName === appDefs.VAP_PSK || vapName === appDefs.VAP_GUEST"
+      <f7-list-item v-if="passphraseDisplayed"
                     title="Passphrase">
         {{ passphraseDisplayed }}
         <div slot="content-end">
@@ -101,6 +101,7 @@ export default {
     // template.
     ...vuex.mapGetters([
       'appMode',
+      'siteAdmin',
     ]),
 
     vap: function() {
@@ -118,11 +119,9 @@ export default {
       if (this.passphraseVisible) {
         val = vap.passphrase;
       } else {
-        let pwlen = 8;
         if (vap.passphrase) {
-          pwlen = vap.passphrase.length;
+          val = '•'.repeat(vap.passphrase.length);
         }
-        val = '•'.repeat(pwlen);
       }
       return val;
     },

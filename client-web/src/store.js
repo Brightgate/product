@@ -9,7 +9,7 @@
  */
 import assert from 'assert';
 
-import {filter, keyBy, pickBy} from 'lodash-es';
+import {cloneDeep, filter, keyBy, pickBy} from 'lodash-es';
 import Promise from 'bluebird';
 import retry from 'bluebird-retry';
 import Vue from 'vue';
@@ -27,6 +27,11 @@ Vue.use(Vuex);
 const DEVICE_CATEGORY_ALL = ['recent', 'phone', 'computer', 'printer', 'media', 'iot', 'unknown'];
 const RETRY_DELAY = 1000;
 const LOCAL_SITE_ID = '0';
+const LOCAL_REGINFO = {
+  uuid: LOCAL_SITE_ID,
+  name: 'Local Site',
+  roles: [appDefs.ROLE_ADMIN],
+};
 
 // const windowURLSite = window && window.location && window.location.href && new URL(window.location.href);
 // const initSiteID = windowURLSite.searchParams.get('site') || LOCAL_SITE_ID;
@@ -35,12 +40,11 @@ class Site {
     assert.equal(typeof id, 'string');
     debug(`constructing new Site id=${id}`);
     this.id = id;
-    this.regInfo = {}; // registry Information
+    // registry Information
     if (this.id === LOCAL_SITE_ID) {
-      this.regInfo = {
-        uuid: LOCAL_SITE_ID,
-        name: 'Local Site',
-      };
+      this.regInfo = cloneDeep(LOCAL_REGINFO);
+    } else {
+      this.regInfo = {};
     }
     this._devices = [];
     // Run the devices setter
@@ -59,6 +63,23 @@ class Site {
 
   get devices() {
     return this._devices;
+  }
+
+  set regInfo(val) {
+    this._regInfo = val;
+    const roles = {};
+    for (const r of appDefs.ALL_ROLES) {
+      if (this.regInfo.roles && this.regInfo.roles.includes(r)) {
+        roles[r] = true;
+      } else {
+        roles[r] = false;
+      }
+    }
+    Vue.set(this, 'roles', roles);
+  }
+
+  get regInfo() {
+    return this._regInfo;
   }
 
   // Setting devices sets off a cascade of updates.
@@ -349,6 +370,25 @@ const getters = {
     return state.currentSite.rings;
   },
 
+  siteRoles: (state) => (siteID) => {
+    return getSite(state, siteID).roles;
+  },
+  roles: (state) => {
+    return state.currentSite.roles;
+  },
+
+  siteHasRole: (state) => (siteID, role) => {
+    assert(appDefs.ALL_ROLES.includes(role));
+    return getSite(state, siteID).roles[role];
+  },
+  hasRole: (state) => (role) => {
+    assert(appDefs.ALL_ROLES.includes(role));
+    return state.currentSite.roles[role];
+  },
+  siteAdmin: (state) => {
+    return state.currentSite.roles['admin'];
+  },
+
   siteVAPs: (state) => (siteID) => {
     return getSite(state, siteID).vaps;
   },
@@ -511,6 +551,10 @@ const actions = {
       return p;
     }
     const id = context.state.currentSiteID;
+    if (!context.state.sites[id].roles[appDefs.ROLE_ADMIN]) {
+      debug('Store: skipping fetchDevices; not an admin');
+      return p;
+    }
     debug('Store: fetchDevices', id);
     let devices = [];
     fetchDevicesPromise = p.then(() => {
@@ -534,12 +578,10 @@ const actions = {
       clearTimeout(fetchPeriodicTimeout);
       fetchPeriodicTimeout = null;
     }
-    // if not logged in, just come back later
-    if (!context.getters.loggedIn) {
-      debug('fetchPeriodic: not logged in, later');
-      fetchPeriodicTimeout = setTimeout(() => {
-        context.dispatch('fetchPeriodic');
-      }, 10000);
+    // if not logged in, just stop.
+    if (!context.getters.loggedIn ||
+        !context.state.currentSite.roles[appDefs.ROLE_ADMIN]) {
+      debug('fetchPeriodic: not logged in or not admin, disabling');
       return;
     }
 
