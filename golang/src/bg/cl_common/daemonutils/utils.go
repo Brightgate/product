@@ -22,11 +22,13 @@ import (
 	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/logging"
 	"github.com/dhduvall/gcloudzap"
+	"github.com/grpc-ecosystem/go-grpc-middleware/util/metautils"
 	"github.com/spf13/pflag"
 	"github.com/tomazk/envcfg"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/crypto/ssh/terminal"
+	"google.golang.org/grpc/peer"
 )
 
 type logType struct {
@@ -276,6 +278,31 @@ func ResetupLogs() (*zap.Logger, *zap.SugaredLogger) {
 // GetLogs returns the current global pair of loggers.
 func GetLogs() (*zap.Logger, *zap.SugaredLogger) {
 	return globalLog, globalSugaredLog
+}
+
+// EndpointLogger builds a zap logger customized for use by an endpoint.  It
+// attaches useful context to the logger.
+func EndpointLogger(ctx context.Context) (*zap.Logger, *zap.SugaredLogger) {
+	// An alternative here is to attach the logger to the context and
+	// get it out that way.
+	// In fact, ctx_zap has already done this for us, however the grpc zap
+	// child logger adds an avalanche of information to the logger, and for
+	// now it seems a bit much.
+	fields := make([]zapcore.Field, 0)
+	siteUUID := metautils.ExtractIncoming(ctx).Get("site_uuid")
+	if siteUUID != "" {
+		fields = append(fields, zap.String("site_uuid", siteUUID))
+	}
+	applianceUUID := metautils.ExtractIncoming(ctx).Get("appliance_uuid")
+	if applianceUUID != "" {
+		fields = append(fields, zap.String("appliance_uuid", applianceUUID))
+	}
+	pr, ok := peer.FromContext(ctx)
+	if ok && pr != nil {
+		fields = append(fields, zap.String("peer", pr.Addr.String()))
+	}
+	childLog := globalLog.With(fields...)
+	return childLog, childLog.Sugar()
 }
 
 // ClRoot computes the "cloud root".

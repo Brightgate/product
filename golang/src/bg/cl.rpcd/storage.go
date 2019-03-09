@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"bg/cl_common/daemonutils"
 	"bg/cloud_models/appliancedb"
 	"bg/cloud_rpc"
 	"bg/common/archive"
@@ -217,7 +218,7 @@ func (cs *cloudStorageServer) GetBucketName(ctx context.Context, applianceUUID, 
 }
 
 func (cs *cloudStorageServer) GenerateURL(ctx context.Context, req *cloud_rpc.GenerateURLRequest) (*cloud_rpc.GenerateURLResponse, error) {
-	_, slog := endpointLogger(ctx)
+	_, slog := daemonutils.EndpointLogger(ctx)
 	slog.Debugw("incoming URL request", "req", req)
 
 	siteUUID, err := getSiteUUID(ctx, false)

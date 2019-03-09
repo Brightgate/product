@@ -14,6 +14,7 @@ package main
 import (
 	"context"
 
+	"bg/cl_common/daemonutils"
 	"bg/cloud_rpc"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/util/metautils"
@@ -40,7 +41,7 @@ func newEventServer(pubsubClient *pubsub.Client, topicName string) (*eventServer
 }
 
 func (ts *eventServer) Put(ctx context.Context, req *cloud_rpc.PutEventRequest) (*cloud_rpc.PutEventResponse, error) {
-	_, slog := endpointLogger(ctx)
+	_, slog := daemonutils.EndpointLogger(ctx)
 	slog.Infow("incoming event", "SubTopic", req.SubTopic)
 
 	siteUUID, err := getSiteUUID(ctx, false)

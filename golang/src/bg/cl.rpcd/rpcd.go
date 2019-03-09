@@ -45,7 +45,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zapgrpc"
 
 	"cloud.google.com/go/compute/metadata"
@@ -57,7 +56,6 @@ import (
 	_ "google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/keepalive"
-	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware"
@@ -101,31 +99,6 @@ var (
 
 	environ Cfg
 )
-
-// endpointLogger is a utility routine to build a zap logger customized for
-// use by an endpoint.  It attaches useful context to the logger.
-func endpointLogger(ctx context.Context) (*zap.Logger, *zap.SugaredLogger) {
-	// An alternative here is to attach the logger to the context and
-	// get it out that way.
-	// In fact, ctx_zap has already done this for us, however the grpc zap
-	// child logger adds an avalanche of information to the logger, and for
-	// now it seems a bit much.
-	fields := make([]zapcore.Field, 0)
-	siteUUID := metautils.ExtractIncoming(ctx).Get("site_uuid")
-	if siteUUID != "" {
-		fields = append(fields, zap.String("site_uuid", siteUUID))
-	}
-	applianceUUID := metautils.ExtractIncoming(ctx).Get("appliance_uuid")
-	if applianceUUID != "" {
-		fields = append(fields, zap.String("appliance_uuid", applianceUUID))
-	}
-	pr, ok := peer.FromContext(ctx)
-	if ok && pr != nil {
-		fields = append(fields, zap.String("peer", pr.Addr.String()))
-	}
-	childLog := log.With(fields...)
-	return childLog, childLog.Sugar()
-}
 
 func getSiteUUID(ctx context.Context, allowNullSiteUUID bool) (uuid.UUID, error) {
 	siteUUID := metautils.ExtractIncoming(ctx).Get("site_uuid")

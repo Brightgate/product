@@ -17,6 +17,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -28,6 +29,8 @@ import (
 	"bg/common/configctl"
 
 	"github.com/tomazk/envcfg"
+
+	"google.golang.org/grpc/metadata"
 )
 
 const pname = "cl-configctl"
@@ -78,7 +81,9 @@ func main() {
 	conn.Ping(nil)
 
 	cfg := cfgapi.NewHandle(conn)
-	err = configctl.Exec(pname, cfg, args)
+	ctx := context.Background()
+	ctx = metadata.AppendToOutgoingContext(ctx, "site_uuid", *uuid)
+	err = configctl.Exec(ctx, pname, cfg, args)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)

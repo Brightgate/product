@@ -75,6 +75,9 @@ func heartbeatMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 	var err error
 	heartbeat := &cloud_rpc.Heartbeat{}
 
+	slog := slog.With("appliance_uuid", m.Attributes["uuid"],
+		"site_uuid", m.Attributes["site"])
+
 	err = proto.Unmarshal(m.Data, heartbeat)
 	if err != nil {
 		slog.Errorw("failed to decode message", "error", err, "data", string(m.Data))
@@ -113,6 +116,9 @@ func exceptionMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 	var err error
 
 	exc := &cloud_rpc.NetException{}
+
+	slog := slog.With("appliance_uuid", m.Attributes["uuid"],
+		"site_uuid", m.Attributes["site"])
 
 	err = proto.Unmarshal(m.Data, exc)
 	if err != nil {

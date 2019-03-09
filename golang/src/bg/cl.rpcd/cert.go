@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"bg/cl_common/clcfg"
+	"bg/cl_common/daemonutils"
 	"bg/cloud_models/appliancedb"
 	"bg/cloud_rpc"
 	"bg/common/cfgapi"
@@ -65,7 +66,7 @@ func errToCode(err error) codes.Code {
 // claim makes sure that the site uuid is mapped to a "brightgate.net" domain,
 // thus claiming it, and returns the certificate for that domain.
 func (cs *certServer) claim(ctx context.Context, ustr string) (*cloud_rpc.CertificateResponse, error) {
-	_, slog := endpointLogger(ctx)
+	_, slog := daemonutils.EndpointLogger(ctx)
 
 	slog.Info("Processing new certificate request")
 
@@ -111,7 +112,7 @@ func (cs *certServer) claim(ctx context.Context, ustr string) (*cloud_rpc.Certif
 }
 
 func (cs *certServer) Download(ctx context.Context, req *cloud_rpc.CertificateRequest) (*cloud_rpc.CertificateResponse, error) {
-	_, slog := endpointLogger(ctx)
+	_, slog := daemonutils.EndpointLogger(ctx)
 
 	ustr := metautils.ExtractIncoming(ctx).Get("site_uuid")
 	if ustr == "" {

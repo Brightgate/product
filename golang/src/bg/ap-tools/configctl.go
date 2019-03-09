@@ -11,6 +11,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -51,7 +52,7 @@ func configctlMain() {
 	}
 
 	args := flag.Args()
-	err = configctl.Exec(pname, configd, args)
+	err = configctl.Exec(context.Background(), pname, configd, args)
 
 	if err != nil {
 		fmt.Println(err)

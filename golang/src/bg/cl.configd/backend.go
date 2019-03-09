@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"time"
 
+	"bg/cl_common/daemonutils"
 	rpc "bg/cloud_rpc"
 	"bg/common/cfgapi"
 	"bg/common/cfgmsg"
@@ -29,6 +30,8 @@ type backEndServer struct {
 // Issue a "GET @/" to the appliance, which we will use to completely refresh
 // our cached copy of the tree
 func refreshConfig(ctx context.Context, site *siteState, uuid string) {
+	_, slog := daemonutils.EndpointLogger(ctx)
+
 	slog.Infof("requesting a fresh tree from %s", uuid)
 
 	getOp := []cfgapi.PropertyOp{
@@ -55,6 +58,8 @@ func (s *backEndServer) Hello(ctx context.Context,
 		Time:     ptypes.TimestampNow(),
 		Response: rpc.CfgBackEndResponse_OK,
 	}
+
+	_, slog := daemonutils.EndpointLogger(ctx)
 
 	uuid := req.GetSiteUUID()
 	if uuid == "" {
@@ -108,8 +113,10 @@ func (s *backEndServer) Download(ctx context.Context,
 
 // Attempt to apply a single appliance-generated update to our cached copy of
 // its config tree.
-func update(site *siteState, update *rpc.CfgUpdate) error {
+func update(ctx context.Context, site *siteState, update *rpc.CfgUpdate) error {
 	var err error
+
+	_, slog := daemonutils.EndpointLogger(ctx)
 
 	prop := update.GetProperty()
 
@@ -160,6 +167,7 @@ func update(site *siteState, update *rpc.CfgUpdate) error {
 // applying each to our cached copy of the tree.
 func (s *backEndServer) Update(ctx context.Context,
 	req *rpc.CfgBackEndUpdate) (*rpc.CfgBackEndResponse, error) {
+	_, slog := daemonutils.EndpointLogger(ctx)
 	rval := &rpc.CfgBackEndResponse{}
 
 	site, err := getSiteState(ctx, req.GetSiteUUID())
@@ -173,7 +181,7 @@ func (s *backEndServer) Update(ctx context.Context,
 			// tree is out of sync with the appliance.  Ignore all
 			// of the remaining updates (since they'll fail as
 			// well), and ask for a fresh copy of the full tree.
-			if err = update(site, u); err != nil {
+			if err = update(ctx, site, u); err != nil {
 				refreshConfig(ctx, site, req.GetSiteUUID())
 				break
 			}
@@ -195,6 +203,8 @@ func (s *backEndServer) Update(ctx context.Context,
 // command queue, and return them.
 func (s *backEndServer) FetchCmds(ctx context.Context,
 	req *rpc.CfgBackEndFetchCmds) (*rpc.CfgBackEndResponse, error) {
+
+	_, slog := daemonutils.EndpointLogger(ctx)
 
 	rval := &rpc.CfgBackEndResponse{}
 
@@ -244,6 +254,8 @@ func (s *backEndServer) FetchStream(req *rpc.CfgBackEndFetchCmds,
 
 	ctx := stream.Context()
 	uuid := req.GetSiteUUID()
+
+	_, slog := daemonutils.EndpointLogger(ctx)
 
 	site, err := getSiteState(ctx, uuid)
 	if err != nil {

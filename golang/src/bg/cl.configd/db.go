@@ -19,6 +19,7 @@ import (
 
 	"github.com/satori/uuid"
 
+	"bg/cl_common/daemonutils"
 	"bg/cl_common/pgutils"
 	"bg/cloud_models/appliancedb"
 	"bg/common/cfgapi"
@@ -35,6 +36,8 @@ func (db *dbStore) String() string {
 }
 
 func (db *dbStore) get(ctx context.Context, uuidStr string) (*cfgtree.PTree, error) {
+	_, slog := daemonutils.EndpointLogger(ctx)
+
 	slog.Infof("Loading state for %s from DB", uuidStr)
 
 	err := db.handle.Ping()
@@ -80,6 +83,8 @@ func (db *dbStore) get(ctx context.Context, uuidStr string) (*cfgtree.PTree, err
 }
 
 func (db *dbStore) set(ctx context.Context, uuidStr string, tree *cfgtree.PTree) error {
+	_, slog := daemonutils.EndpointLogger(ctx)
+
 	slog.Infof("Storing state for %s to DB", uuidStr)
 
 	err := db.handle.Ping()

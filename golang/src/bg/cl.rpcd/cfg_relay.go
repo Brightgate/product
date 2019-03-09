@@ -18,12 +18,17 @@ import (
 	"io"
 	"time"
 
+	"bg/cl_common/daemonutils"
 	rpc "bg/cloud_rpc"
 
+	"github.com/grpc-ecosystem/go-grpc-middleware/util/metautils"
 	"github.com/pkg/errors"
 	"github.com/satori/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 // grpc endpoint for site-scoped config calls coming in from appliances
@@ -104,6 +109,23 @@ func (c *configdEndpoint) Disconnect() {
 	c.client = nil
 }
 
+// Create an outgoing context with the appliance and site UUIDs based on those
+// values from the incoming context.
+func relayContext(ctx context.Context) (context.Context, error) {
+	siteUUID, err := getSiteUUID(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	applianceUUID := metautils.ExtractIncoming(ctx).Get("appliance_uuid")
+	if applianceUUID == "" {
+		return nil, status.Errorf(codes.Internal, "missing appliance_uuid")
+	}
+
+	ctx = metadata.AppendToOutgoingContext(ctx,
+		"appliance_uuid", applianceUUID, "site_uuid", siteUUID.String())
+	return ctx, nil
+}
+
 // Find or establish a gRPC connection to the cl.configd supporting the
 // appliance's site.
 func (s *siteEndpoint) getConfigdConn(ctx context.Context) (*configdEndpoint, error) {
@@ -132,7 +154,15 @@ func (s *siteEndpoint) getConfigdConn(ctx context.Context) (*configdEndpoint, er
 }
 
 // Relay a backend gRPC to the correct cl.configd for the site that sent it
-func (s *siteEndpoint) relay(ctx context.Context, cmd interface{}) *rpc.CfgBackEndResponse {
+func (s *siteEndpoint) relay(ctx context.Context, cmd interface{}) (*rpc.CfgBackEndResponse, error) {
+	_, slog := daemonutils.EndpointLogger(ctx)
+
+	slog.Debugw("incoming configd relay request", "cmd", cmd, "type", fmt.Sprintf("%T", cmd))
+
+	ctx, err := relayContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	var rval *rpc.CfgBackEndResponse
 
@@ -160,6 +190,8 @@ func (s *siteEndpoint) relay(ctx context.Context, cmd interface{}) *rpc.CfgBackE
 			rval, err = conn.client.CompleteCmds(ctx, req)
 		default:
 			err = fmt.Errorf("unrecognized configd command")
+			slog.Warnw(err.Error(),
+				"cmd", cmd, "type", fmt.Sprintf("%T", cmd))
 		}
 	}
 
@@ -173,44 +205,52 @@ func (s *siteEndpoint) relay(ctx context.Context, cmd interface{}) *rpc.CfgBackE
 			Errmsg:   fmt.Sprintf("relay failed: %v", err),
 		}
 	}
-	return rval
+	return rval, nil
 }
 
 func (s *siteEndpoint) Hello(ctx context.Context,
 	req *rpc.CfgBackEndHello) (*rpc.CfgBackEndResponse, error) {
 
-	return s.relay(ctx, req), nil
+	return s.relay(ctx, req)
 }
 
 func (s *siteEndpoint) Download(ctx context.Context,
 	req *rpc.CfgBackEndDownload) (*rpc.CfgBackEndResponse, error) {
 
-	return s.relay(ctx, req), nil
+	return s.relay(ctx, req)
 }
 
 func (s *siteEndpoint) Update(ctx context.Context,
 	req *rpc.CfgBackEndUpdate) (*rpc.CfgBackEndResponse, error) {
 
-	return s.relay(ctx, req), nil
+	return s.relay(ctx, req)
 }
 
 func (s *siteEndpoint) FetchCmds(ctx context.Context,
 	req *rpc.CfgBackEndFetchCmds) (*rpc.CfgBackEndResponse, error) {
 
-	return s.relay(ctx, req), nil
+	return s.relay(ctx, req)
 }
 
 func (s *siteEndpoint) CompleteCmds(ctx context.Context,
 	req *rpc.CfgBackEndCompletions) (*rpc.CfgBackEndResponse, error) {
 
-	return s.relay(ctx, req), nil
+	return s.relay(ctx, req)
 }
 
 func (s *siteEndpoint) FetchStream(req *rpc.CfgBackEndFetchCmds,
 	stream rpc.ConfigBackEnd_FetchStreamServer) error {
 
-	slog.Infof("starting stream relay")
 	ctx := stream.Context()
+	_, slog := daemonutils.EndpointLogger(ctx)
+
+	ctx, err := relayContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	slog.Infof("starting stream relay")
+
 	conn, err := s.getConfigdConn(ctx)
 	req.SiteUUID = conn.siteUUID.String()
 

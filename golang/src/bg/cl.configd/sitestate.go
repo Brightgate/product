@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"bg/cl_common/daemonutils"
 	rpc "bg/cloud_rpc"
 	"bg/common/cfgmsg"
 	"bg/common/cfgtree"
@@ -116,13 +117,15 @@ func getSiteState(ctx context.Context, siteUUID string) (*siteState, error) {
 }
 
 // Set the whole tree; part of the refresh logic
-func (s *siteState) setCachedTree(t *cfgtree.PTree) {
+func (s *siteState) setCachedTree(ctx context.Context, t *cfgtree.PTree) {
+	_, slog := daemonutils.EndpointLogger(ctx)
 	s.cachedTree = t
 	slog.Infof("New tree for %s.  hash %x", s.siteUUID, t.Root().Hash())
 	_ = s.store(context.TODO())
 }
 
 func (s *siteState) store(ctx context.Context) error {
+	_, slog := daemonutils.EndpointLogger(ctx)
 	if s.cachedTree == nil {
 		return nil
 	}

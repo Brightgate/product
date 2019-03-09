@@ -81,6 +81,9 @@ func inventoryMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 	// For now we have nothing we can really do with malformed messages
 	defer m.Ack()
 
+	slog := slog.With("appliance_uuid", m.Attributes["uuid"],
+		"site_uuid", m.Attributes["site"])
+
 	inventory := &cloud_rpc.InventoryReport{}
 	err = proto.Unmarshal(m.Data, inventory)
 	if err != nil {

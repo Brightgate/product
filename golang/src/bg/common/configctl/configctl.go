@@ -11,6 +11,7 @@
 package configctl
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -446,7 +447,7 @@ func usage(cmd string) {
 }
 
 // Exec executes the bulk of the configctl work.
-func Exec(p string, hdl *cfgapi.Handle, args []string) error {
+func Exec(ctx context.Context, p string, hdl *cfgapi.Handle, args []string) error {
 	var err error
 
 	configd = hdl
@@ -462,7 +463,7 @@ func Exec(p string, hdl *cfgapi.Handle, args []string) error {
 	case "mon":
 		err = monProp("mon", args[1:])
 	case "ping":
-		if err = hdl.Ping(nil); err == nil {
+		if err = hdl.Ping(ctx); err == nil {
 			fmt.Printf("ok\n")
 		}
 	case "replace":
@@ -471,7 +472,7 @@ func Exec(p string, hdl *cfgapi.Handle, args []string) error {
 		err = export("export", args[1:])
 	default:
 		ops := makeOps(args)
-		_, err = configd.Execute(nil, ops).Wait(nil)
+		_, err = configd.Execute(ctx, ops).Wait(ctx)
 		if err == nil {
 			fmt.Println("ok")
 		}

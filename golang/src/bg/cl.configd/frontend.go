@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"bg/cl_common/daemonutils"
 	rpc "bg/cloud_rpc"
 	"bg/common/cfgapi"
 	"bg/common/cfgmsg"
@@ -72,6 +73,7 @@ func makeFailedResponse(err error) *cfgmsg.ConfigResponse {
 func (s *frontEndServer) Submit(ctx context.Context,
 	query *cfgmsg.ConfigQuery) (rval *cfgmsg.ConfigResponse, rerr error) {
 
+	_, slog := daemonutils.EndpointLogger(ctx)
 	slog.Debugw("Frontend submit", "query", query)
 	rval = &cfgmsg.ConfigResponse{
 		Timestamp: ptypes.TimestampNow(),
@@ -253,6 +255,8 @@ func (s *frontEndServer) Monitor(req *rpc.CfgFrontEndMonitor,
 
 	queue := site.newUpdateQueue()
 	defer queue.finalize()
+
+	_, slog := daemonutils.EndpointLogger(ctx)
 
 	for {
 		updates := queue.fetch()

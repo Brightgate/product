@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"bg/cl_common/daemonutils"
 	"bg/common/cfgmsg"
 	"bg/common/cfgtree"
 
@@ -110,6 +111,8 @@ func newMemCmdQueue(uuid string, cqMax int) *memCmdQueue {
 func (memq *memCmdQueue) block(ctx context.Context) error {
 	var err error
 
+	_, slog := daemonutils.EndpointLogger(ctx)
+
 	slog.Debugf("blocking on empty queue")
 	memq.sqBlocked = true
 	memq.Unlock()
@@ -176,6 +179,7 @@ func (memq *memCmdQueue) submit(ctx context.Context, s *siteState, q *cfgmsg.Con
 			}
 		}
 		if cnt > 0 {
+			_, slog := daemonutils.EndpointLogger(ctx)
 			slog.Debugf("drained %d channel messages")
 		}
 		memq.sqUpdated <- true
@@ -196,6 +200,8 @@ func (memq *memCmdQueue) fetch(ctx context.Context, s *siteState, start int64, m
 	if max == 0 {
 		panic("invalid max of 0")
 	}
+
+	_, slog := daemonutils.EndpointLogger(ctx)
 
 	memq.Lock()
 	for err == nil {
@@ -237,6 +243,8 @@ func (memq *memCmdQueue) status(ctx context.Context, s *siteState, cmdID int64) 
 	defer memq.Unlock()
 
 	cmd := memq.search(ctx, cmdID)
+
+	_, slog := daemonutils.EndpointLogger(ctx)
 
 	switch {
 	case cmd == nil:
@@ -315,6 +323,8 @@ func (memq *memCmdQueue) complete(ctx context.Context, s *siteState, rval *cfgms
 	memq.Lock()
 	defer memq.Unlock()
 
+	_, slog := daemonutils.EndpointLogger(ctx)
+
 	cmdID := rval.CmdID
 	cmd := memq.search(ctx, cmdID)
 	if cmd == nil {
@@ -344,7 +354,7 @@ func (memq *memCmdQueue) complete(ctx context.Context, s *siteState, rval *cfgms
 			if err != nil {
 				slog.Warnf("failed to refresh %s: %v", s.siteUUID, err)
 			} else {
-				s.setCachedTree(tree)
+				s.setCachedTree(ctx, tree)
 			}
 		}
 	} else {

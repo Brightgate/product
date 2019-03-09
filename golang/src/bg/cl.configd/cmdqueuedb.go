@@ -20,6 +20,7 @@ import (
 	"github.com/golang/protobuf/ptypes"
 	"github.com/satori/uuid"
 
+	"bg/cl_common/daemonutils"
 	"bg/cl_common/pgutils"
 	"bg/cloud_models/appliancedb"
 	"bg/common/cfgmsg"
@@ -109,6 +110,8 @@ func (dbq *dbCmdQueue) fetch(ctx context.Context, s *siteState, start int64,
 			s.siteUUID, err)
 	}
 
+	_, slog := daemonutils.EndpointLogger(ctx)
+
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
@@ -172,6 +175,8 @@ func (dbq *dbCmdQueue) status(ctx context.Context, s *siteState, cmdID int64) (*
 		CmdID:     cmdID,
 	}
 
+	_, slog := daemonutils.EndpointLogger(ctx)
+
 	dbCmd, err := dbq.handle.CommandSearch(ctx, cmdID)
 	if err != nil {
 		if _, ok := err.(appliancedb.NotFoundError); ok {
@@ -226,6 +231,8 @@ func (dbq *dbCmdQueue) cancel(ctx context.Context, s *siteState, cmdID int64) (*
 		CmdID:     cmdID,
 	}
 
+	_, slog := daemonutils.EndpointLogger(ctx)
+
 	newCmd, oldCmd, err := dbq.handle.CommandCancel(ctx, cmdID)
 	if err != nil {
 		if _, ok := err.(appliancedb.NotFoundError); ok {
@@ -237,7 +244,7 @@ func (dbq *dbCmdQueue) cancel(ctx context.Context, s *siteState, cmdID int64) (*
 		return nil, err
 	}
 	slog.Debugf("cancel(%s:%d)", newCmd.UUID, newCmd.ID)
-	dbq.cleanup(s)
+	dbq.cleanup(ctx, s)
 
 	switch {
 	case oldCmd.State == "ENQD":
@@ -260,6 +267,7 @@ func (dbq *dbCmdQueue) cancel(ctx context.Context, s *siteState, cmdID int64) (*
 }
 
 func (dbq *dbCmdQueue) complete(ctx context.Context, s *siteState, rval *cfgmsg.ConfigResponse) error {
+	_, slog := daemonutils.EndpointLogger(ctx)
 	cmdID := rval.CmdID
 	jsonResp, err := json.Marshal(rval)
 	if err != nil {
@@ -277,7 +285,7 @@ func (dbq *dbCmdQueue) complete(ctx context.Context, s *siteState, rval *cfgmsg.
 		return err
 	}
 	slog.Debugf("complete(%s:%d)", newCmd.UUID, newCmd.ID)
-	dbq.cleanup(s)
+	dbq.cleanup(ctx, s)
 
 	if !oldCmd.DoneTime.Valid {
 		// Special-case handling for refetching a full tree.
@@ -296,7 +304,7 @@ func (dbq *dbCmdQueue) complete(ctx context.Context, s *siteState, rval *cfgmsg.
 				slog.Warnf("failed to refresh %s: %v", s.siteUUID, err)
 				return err
 			}
-			s.setCachedTree(tree)
+			s.setCachedTree(ctx, tree)
 		}
 	} else {
 		slog.Infof("%s:%d multiple completions - last at %s",
@@ -305,11 +313,13 @@ func (dbq *dbCmdQueue) complete(ctx context.Context, s *siteState, rval *cfgmsg.
 	return err
 }
 
-func (dbq *dbCmdQueue) cleanup(s *siteState) {
+func (dbq *dbCmdQueue) cleanup(ctx context.Context, s *siteState) {
 	u, err := uuid.FromString(s.siteUUID)
 	if err != nil {
 		return
 	}
+
+	_, slog := daemonutils.EndpointLogger(ctx)
 
 	go func() {
 		del, err := dbq.handle.CommandDelete(context.Background(), u, int64(*cqMax))
