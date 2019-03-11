@@ -171,7 +171,7 @@ message EventNetEntity {
 	optional string ring = 0x402;
 	optional string hostname = 0x403;
 	optional string node = 0x404;
-	optional string mode = 0x405;
+	optional string band = 0x405; // e.g. 2.4GHz, 5GHz
 	optional string virtualAP = 0x406;
 	optional string wifi_signature = 0x407;
 	optional bool disconnect = 0x408;

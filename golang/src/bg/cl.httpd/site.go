@@ -224,8 +224,7 @@ type apiDevice struct {
 	IPv4Addr        *net.IP                `json:"IPv4Addr,omitempty"`
 	OSVersion       string                 `json:"OSVersion,omitempty"`
 	Active          bool                   `json:"Active"`
-	ConnAuthType    string                 `json:"ConnAuthType,omitempty"`
-	ConnMode        string                 `json:"ConnMode,omitempty"`
+	ConnBand        string                 `json:"ConnBand,omitempty"`
 	ConnNode        *uuid.UUID             `json:"ConnNode,omitempty"`
 	ConnVAP         string                 `json:"ConnVAP,omitempty"`
 	Scans           map[string]apiScanInfo `json:"Scans,omitempty"`
@@ -250,8 +249,7 @@ func buildDeviceResponse(c echo.Context, hdl *cfgapi.Handle,
 		Ring:            client.Ring,
 		IPv4Addr:        &client.IPv4,
 		Active:          client.IsActive(),
-		ConnAuthType:    client.ConnAuthType,
-		ConnMode:        client.ConnMode,
+		ConnBand:        client.ConnBand,
 		ConnNode:        client.ConnNode,
 		ConnVAP:         client.ConnVAP,
 		Scans:           make(map[string]apiScanInfo),

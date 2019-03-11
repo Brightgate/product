@@ -23,6 +23,7 @@ const mockLocalSites = [
   {
     uuid: '0',
     name: 'Local Site',
+    roles: ['admin'],
   },
 ];
 

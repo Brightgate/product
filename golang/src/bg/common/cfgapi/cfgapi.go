@@ -162,18 +162,17 @@ type VirtualAP struct {
 
 // ClientInfo contains all of the configuration information for a client device
 type ClientInfo struct {
-	Ring         string     // Assigned security ring
-	DNSName      string     // Assigned hostname
-	IPv4         net.IP     // Network address
-	Expires      *time.Time // DHCP lease expiration time
-	DHCPName     string     // Requested hostname
-	Identity     string     // Current best guess at the client type
-	Confidence   float64    // Confidence for the Identity guess
-	DNSPrivate   bool       // We don't collect DNS queries
-	ConnAuthType string     // Connection Auth Type
-	ConnMode     string     // Connection Radio Mode
-	ConnNode     *uuid.UUID // Connection Node
-	ConnVAP      string     // Connection Virtual AP
+	Ring       string     // Assigned security ring
+	DNSName    string     // Assigned hostname
+	IPv4       net.IP     // Network address
+	Expires    *time.Time // DHCP lease expiration time
+	DHCPName   string     // Requested hostname
+	Identity   string     // Current best guess at the client type
+	Confidence float64    // Confidence for the Identity guess
+	DNSPrivate bool       // We don't collect DNS queries
+	ConnBand   string     // Connection Radio Band (2.4GHz, 5GHz)
+	ConnNode   *uuid.UUID // Connection Node
+	ConnVAP    string     // Connection Virtual AP
 }
 
 // VulnInfo represents the detection of a single vulnerability in a single
@@ -702,8 +701,8 @@ func getClient(client *PropertyNode) *ClientInfo {
 	var ipv4 net.IP
 	var exp *time.Time
 	var private bool
-	var connAuthType string
-	var connMode string
+	var connVAP string
+	var connBand string
 	var connNode *uuid.UUID
 
 	private, _ = getBoolVal(client, "dns_private")
@@ -719,23 +718,23 @@ func getClient(client *PropertyNode) *ClientInfo {
 		}
 	}
 	if conn, ok := client.Children["connection"]; ok {
-		connAuthType, _ = getStringVal(conn, "authtype")
-		connMode, _ = getStringVal(conn, "mode")
+		connVAP, _ = getStringVal(conn, "vap")
+		connBand, _ = getStringVal(conn, "band")
 		connNode, _ = getUUIDVal(conn, "node")
 	}
 
 	c := ClientInfo{
-		Ring:         ring,
-		DHCPName:     dhcp,
-		DNSName:      dns,
-		IPv4:         ipv4,
-		Expires:      exp,
-		Identity:     identity,
-		Confidence:   confidence,
-		DNSPrivate:   private,
-		ConnAuthType: connAuthType,
-		ConnMode:     connMode,
-		ConnNode:     connNode,
+		Ring:       ring,
+		DHCPName:   dhcp,
+		DNSName:    dns,
+		IPv4:       ipv4,
+		Expires:    exp,
+		Identity:   identity,
+		Confidence: confidence,
+		DNSPrivate: private,
+		ConnBand:   connBand,
+		ConnNode:   connNode,
+		ConnVAP:    connVAP,
 	}
 	return &c
 }

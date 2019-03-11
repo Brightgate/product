@@ -219,10 +219,10 @@ func (c *hostapdConn) handleResult(result string) {
 	}
 }
 
-func sendNetEntity(mac string, vapName, mode, sig *string, disconnect bool) {
+func sendNetEntity(mac string, vapName, bandName, sig *string, disconnect bool) {
 	band := "?"
-	if mode != nil {
-		band = *mode
+	if bandName != nil {
+		band = *bandName
 	}
 	action := "connect"
 	if disconnect {
@@ -233,18 +233,18 @@ func sendNetEntity(mac string, vapName, mode, sig *string, disconnect bool) {
 		vap = *vapName
 	}
 
-	slog.Debugf("NetEntity(%s, vap: %s, mode: %s, %s)", mac, vap, band, action)
+	slog.Debugf("NetEntity(%s, vap: %s, band: %s, %s)", mac, vap, band, action)
 	hwaddr, _ := net.ParseMAC(mac)
 	entity := &base_msg.EventNetEntity{
 		Timestamp:     aputil.NowToProtobuf(),
 		Sender:        proto.String(brokerd.Name),
 		Debug:         proto.String("-"),
-		Mode:          mode,
 		VirtualAP:     vapName,
 		WifiSignature: sig,
 		Node:          &nodeUUID,
 		Disconnect:    &disconnect,
 		MacAddress:    proto.Uint64(network.HWAddrToUint64(hwaddr)),
+		Band:          bandName,
 	}
 
 	err := brokerd.Publish(entity, base_def.TOPIC_ENTITY)

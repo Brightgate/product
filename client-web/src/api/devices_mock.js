@@ -67,6 +67,9 @@ export default {
       'HumanName': 'BrightgateSetup',
       'DHCPExpiry': '2018-11-14T04:47',
       'IPv4Addr': '192.168.52.48',
+      'ConnVAP': 'eap',
+      'ConnBand': '5GHz',
+      'ConnNode': 'c7945dd5-2621-4788-ba26-be894b61d28b',
       'Active': true,
       'Scans': {
         'tcp_ports': {
@@ -289,6 +292,9 @@ export default {
       'DHCPExpiry': '2018-11-14T17:53',
       'IPv4Addr': '192.168.52.39',
       'Active': true,
+      'ConnVAP': 'eap',
+      'ConnBand': '5GHz',
+      'ConnNode': 'c7945dd5-2621-4788-ba26-be894b61d28b',
       'Scans': {
         'tcp_ports': {
           'start': '2018-10-30T09:23:52-07:00',
@@ -350,6 +356,9 @@ export default {
       'DNSName': 'moose',
       'DHCPExpiry': 'static',
       'IPv4Addr': '192.168.52.21',
+      'ConnVAP': 'eap',
+      'ConnBand': '5GHz',
+      'ConnNode': 'c7945dd5-2621-4788-ba26-be894b61d28b',
       'Active': true,
       'Scans': {
         'tcp_ports': {
@@ -493,6 +502,9 @@ export default {
       'DNSName': 'sat-conference',
       'DHCPExpiry': '2018-11-14T07:12',
       'IPv4Addr': '192.168.56.3',
+      'ConnVAP': 'psk',
+      'ConnBand': '2.4GHz',
+      'ConnNode': 'c7945dd5-2621-4788-ba26-be894b61d28b',
       'Active': true,
       'Scans': {
         'tcp_ports': {
@@ -585,6 +597,9 @@ export default {
       'HumanName': 'Sushants-MBP',
       'DHCPExpiry': '2018-11-14T18:12',
       'IPv4Addr': '192.168.52.10',
+      'ConnVAP': 'eap',
+      'ConnBand': '5GHz',
+      'ConnNode': 'c7945dd5-2621-4788-ba26-be894b61d28b',
       'Active': true,
       'Scans': {
         'tcp_ports': {
@@ -724,6 +739,9 @@ export default {
       'HumanName': 'android-6d72570e777e3050',
       'DHCPExpiry': '2018-11-14T03:56',
       'IPv4Addr': '192.168.51.18',
+      'ConnVAP': 'psk',
+      'ConnBand': '5GHz',
+      'ConnNode': 'c7945dd5-2621-4788-ba26-be894b61d28b',
       'Active': true,
     },
     {
@@ -813,6 +831,9 @@ export default {
       'HumanName': 'Nilss-iPhone',
       'DHCPExpiry': '2018-11-14T17:20',
       'IPv4Addr': '192.168.51.9',
+      'ConnVAP': 'eap',
+      'ConnBand': '5GHz',
+      'ConnNode': 'c7945dd5-2621-4788-ba26-be894b61d28b',
       'Active': true,
       'Scans': {
         'tcp_ports': {
@@ -895,6 +916,9 @@ export default {
       'DNSName': 'moosew',
       'DHCPExpiry': '2018-11-14T18:12',
       'IPv4Addr': '192.168.52.9',
+      'ConnVAP': 'eap',
+      'ConnBand': '5GHz',
+      'ConnNode': 'c7945dd5-2621-4788-ba26-be894b61d28b',
       'Active': true,
       'Scans': {
         'tcp_ports': {
@@ -1049,6 +1073,9 @@ export default {
       'HumanName': 'Danek',
       'DHCPExpiry': '2018-11-14T17:41',
       'IPv4Addr': '192.168.52.8',
+      'ConnVAP': 'eap',
+      'ConnBand': '5GHz',
+      'ConnNode': 'c7945dd5-2621-4788-ba26-be894b61d28b',
       'Active': true,
       'Scans': {
         'tcp_ports': {

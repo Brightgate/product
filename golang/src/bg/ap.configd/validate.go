@@ -73,8 +73,6 @@ var (
 		"sshaddr":    validateSSHAddr,
 		"ssid":       validateSSID,
 		"passphrase": validatePassphrase,
-		"auth":       validateAuth,
-		"wifimode":   validateWifiMode,
 		"wifiband":   validateWifiBand,
 		"user":       validateString,
 		"uid":        validateString,
@@ -291,16 +289,6 @@ func validatePassphrase(val string) error {
 	return err
 }
 
-func validateAuth(val string) error {
-	var err error
-
-	if val != "wpa-psk" && val != "wpa-eap" {
-		err = fmt.Errorf("only wpa-psk and wpa-eap are supported")
-	}
-
-	return err
-}
-
 func validateWifiBand(val string) error {
 	var err error
 
@@ -309,18 +297,6 @@ func validateWifiBand(val string) error {
 	}
 
 	return err
-}
-
-func validateWifiMode(val string) error {
-	modes := []string{"a", "b", "g", "n", "ac"}
-
-	for _, mode := range modes {
-		if val == mode {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("invalid wifi mode")
 }
 
 func validateDuration(val string) error {

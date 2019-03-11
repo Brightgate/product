@@ -128,11 +128,12 @@
       <f7-list-item :title="$t('message.dev_details.activity')">
         {{ activity }}
       </f7-list-item>
-      <f7-list-item v-if="dev.active && dev.connAuthType" :title="$t('message.dev_details.conn_auth')">
-        {{ dev.connAuthType }}
-      </f7-list-item>
-      <f7-list-item v-if="dev.active && dev.connMode" :title="$t('message.dev_details.conn_mode')">
-        {{ dev.connMode }}
+      <f7-list-item v-if="dev.active && dev.connVAP" :title="$t('message.dev_details.conn_vap')">
+        <span>
+          <f7-icon material="wifi" size="16" />
+          {{ vaps[dev.connVAP].ssid }}
+          <template v-if="dev.connBand">, {{ dev.connBand }}</template>
+        </span>
       </f7-list-item>
 
       <f7-list-item :title="$t('message.dev_details.vuln_scan')">
@@ -146,7 +147,7 @@
         <f7-label>{{ $t('message.dev_details.security_ring') }}</f7-label>
         <f7-preloader v-if="ringChanging" />
         <f7-input v-else :value="dev.ring" type="select" @input="changeRing($event.target.value)">
-          <option v-for="(ring, ringName) in rings" :value="ringName" :key="ringName">{{ ringName }}</option>
+          <option v-for="(ring, ringName) in vapRings" :value="ringName" :key="ringName">{{ ringName }}</option>
         </f7-input>
       </f7-list-item>
     </f7-list>
@@ -154,6 +155,7 @@
 </template>
 <script>
 import assert from 'assert';
+import vuex from 'vuex';
 import {isBefore, isEqual} from 'date-fns';
 import {pickBy} from 'lodash-es';
 import Debug from 'debug';
@@ -176,6 +178,12 @@ export default {
   },
 
   computed: {
+    // Map various $store elements as computed properties for use in the
+    // template.
+    ...vuex.mapGetters([
+      'vaps',
+    ]),
+
     devModel: function() {
       return (this.dev.certainty === 'low') ?
         this.$t('message.dev_details.unknown_model') :
@@ -227,12 +235,31 @@ export default {
       const uniqid = this.$f7route.params.UniqID;
       return this.$store.getters.deviceByUniqID(uniqid);
     },
-    rings: function() {
-      return this.$store.getters.rings;
+
+    // Return the subset of rings acceptable for the device's VAP.
+    // If the VAP is missing, or something else goes wrong, return all rings.
+    //
+    // XXX This is arguably dangerous and we might need to adjust.
+    // Another option would be to return no rings and disable the UI.
+    vapRings: function() {
+      const uniqid = this.$f7route.params.UniqID;
+      const dev = this.$store.getters.deviceByUniqID(uniqid);
+      const allRings = this.$store.getters.rings;
+      const vaps = this.$store.getters.vaps;
+      try {
+        if (!dev.connVAP || !vaps[dev.connVAP]) {
+          debug('missing information; returning allRings',
+            dev.connVAP, vaps[dev.connVAP]);
+          return allRings;
+        }
+        return pickBy(allRings, (val, key) => {
+          return vaps[dev.connVAP].rings.includes(key);
+        });
+      } catch (err) {
+        debug('error filtering rings', err);
+        return allRings;
+      }
     },
-  },
-  beforeCreate: function() {
-    return this.$store.dispatch('fetchRings');
   },
 
   methods: {

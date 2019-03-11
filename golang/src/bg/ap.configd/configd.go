@@ -228,7 +228,7 @@ func eventHandler(event []byte) {
 	updates := []*updateRecord{
 		updateChange(path+"ring", &ring, nil),
 		updateChange(path+"connection/node", entity.Node, nil),
-		updateChange(path+"connection/mode", entity.Mode, nil),
+		updateChange(path+"connection/band", entity.Band, nil),
 		updateChange(path+"connection/vap", &vap, nil),
 	}
 
