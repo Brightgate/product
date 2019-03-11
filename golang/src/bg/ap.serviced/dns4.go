@@ -57,7 +57,6 @@ const (
 type dnsRecord struct {
 	rectype uint16
 	recval  string
-	expires *time.Time
 }
 
 var (
@@ -754,7 +753,6 @@ func dnsUpdateClient(c *cfgapi.ClientInfo) {
 	hosts[hostname] = dnsRecord{
 		rectype: dns.TypeA,
 		recval:  ipv4,
-		expires: c.Expires,
 	}
 
 	arpa, err := dns.ReverseAddr(ipv4)
@@ -767,7 +765,6 @@ func dnsUpdateClient(c *cfgapi.ClientInfo) {
 		hosts[arpa] = dnsRecord{
 			rectype: dns.TypePTR,
 			recval:  hostname,
-			expires: c.Expires,
 		}
 	}
 	hostsMtx.Unlock()

@@ -184,10 +184,10 @@ func getGateways() {
 	// Build a set of the MACs belonging to our APs, so we can distinguish
 	// between client and internal network traffic
 	tmp := make(map[uint64]bool)
-	nics, _ := config.GetNics("", "")
+	nics, _ := config.GetNics()
 	for _, nic := range nics {
-		if hwaddr := network.MacToUint64(nic); hwaddr != 0 {
-			tmp[hwaddr] = true
+		if nic.MacAddr != "" {
+			tmp[network.MacToUint64(nic.MacAddr)] = true
 		}
 	}
 	internalMacs = tmp

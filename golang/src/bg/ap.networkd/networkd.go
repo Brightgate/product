@@ -506,39 +506,63 @@ func createBridges() {
 	}
 }
 
-func newNicOps(id string, nic *physDevice) []cfgapi.PropertyOp {
-	base := "@/nodes/" + nodeUUID + "/nics/" + id
+func newNicOps(id string, nic *physDevice,
+	cur *cfgapi.PropertyNode) []cfgapi.PropertyOp {
 
 	ops := make([]cfgapi.PropertyOp, 0)
-	if nic == nil {
+	newVals := make(map[string]string)
+
+	if nic != nil {
+		newVals["name"] = nic.name
+		newVals["mac"] = nic.hwaddr
+		if nic.ring != "" {
+			newVals["ring"] = nic.ring
+		}
+		if nic.wifi == nil {
+			newVals["kind"] = "wired"
+		} else {
+			newVals["kind"] = "wireless"
+		}
+		if nic.pseudo {
+			newVals["pseudo"] = "true"
+		} else {
+			newVals["pseudo"] = "false"
+		}
+
+		// Check to see whether anything has changed before we send any
+		// updates to configd
+		if cur != nil {
+			matches := 0
+			for prop, val := range newVals {
+				if old, ok := cur.Children[prop]; ok {
+					if old.Value == val {
+						matches++
+					}
+				}
+			}
+			if matches == len(newVals) {
+				// everything matches - send back an empty slice
+				return ops
+			}
+		}
+	}
+
+	base := "@/nodes/" + nodeUUID + "/nics/" + id
+	if cur != nil {
 		op := cfgapi.PropertyOp{
 			Op:   cfgapi.PropDelete,
 			Name: base,
 		}
 		ops = append(ops, op)
-	} else if nic.ring != "" {
-		var kind string
-		if nic.wifi == nil {
-			kind = "wired"
-		} else {
-			kind = "wireless"
-		}
-
+	}
+	for prop, val := range newVals {
 		op := cfgapi.PropertyOp{
 			Op:    cfgapi.PropCreate,
-			Name:  base + "/kind",
-			Value: kind,
+			Name:  base + "/" + prop,
+			Value: val,
 		}
-		slog.Debugf("Setting %s to %s", op.Name, op.Value)
 		ops = append(ops, op)
-
-		op = cfgapi.PropertyOp{
-			Op:    cfgapi.PropCreate,
-			Name:  base + "/ring",
-			Value: nic.ring,
-		}
 		slog.Debugf("Setting %s to %s", op.Name, op.Value)
-		ops = append(ops, op)
 	}
 
 	return ops
@@ -561,31 +585,15 @@ func updateNicProperties() {
 	// our current inventory.
 	ops := make([]cfgapi.PropertyOp, 0)
 	for id, nic := range nics {
-		var ring string
 		var newOps []cfgapi.PropertyOp
 
-		if x := nic.Children["ring"]; x != nil {
-			ring = x.Value
-		}
-
 		if dev := inventory[id]; dev != nil {
-			// This nic is in the config tree and our discovered
-			// inventory.  If the properties all match, then we can
-			// leave this alone
-
-			var ok bool
-			if x := nic.Children["kind"]; x != nil {
-				ok = (x.Value == "wired" && dev.wifi == nil) ||
-					(x.Value == "wireless" && dev.wifi != nil)
-			}
-			if !ok || (ring != dev.ring) {
-				newOps = newNicOps(id, dev)
-			}
+			newOps = newNicOps(id, dev, nic)
 			delete(inventory, id)
 		} else {
 			// This nic is in the config tree, but not in our
 			// current inventory.  Clean it up.
-			newOps = newNicOps(id, nil)
+			newOps = newNicOps(id, nil, nil)
 		}
 		ops = append(ops, newOps...)
 	}
@@ -593,7 +601,7 @@ func updateNicProperties() {
 	// If we have any remaining NICs that weren't already in the
 	// tree, add them now.
 	for id, d := range inventory {
-		newOps := newNicOps(id, d)
+		newOps := newNicOps(id, d, nil)
 		ops = append(ops, newOps...)
 	}
 
@@ -651,6 +659,12 @@ func getWireless(i net.Interface) *physDevice {
 	if d.hwaddr != oldMac {
 		slog.Debugf("Changed mac from %s to %s", oldMac, d.hwaddr)
 	}
+
+	// If we generate new macs for multiple SSIDs, those generated macs will
+	// have the locally administered bit set.  Because we need the upper
+	// bits of all macs to match, we have to set the bit for the base mac
+	// even if we haven't modified it.
+	d.hwaddr = macSetLocal(d.hwaddr)
 
 	return &d
 }

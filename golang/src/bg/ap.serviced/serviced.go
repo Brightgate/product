@@ -53,6 +53,7 @@ var (
 )
 
 func clientUpdateEvent(path []string, val string, expires *time.Time) {
+	var ipv4 net.IP
 
 	if len(path) < 3 || (path[2] != "ipv4" && path[2] != "dns_name" &&
 		path[2] != "dhcp_name" && path[2] != "ring") {
@@ -73,31 +74,45 @@ func clientUpdateEvent(path []string, val string, expires *time.Time) {
 		return
 	}
 
-	dnsDeleteClient(client)
+	dnsChanged := false
 	switch path[2] {
 	case "ipv4":
-		if ipv4 := net.ParseIP(val); ipv4 != nil {
-			client.IPv4 = ipv4
-			client.Expires = expires
-			dhcpIPv4Changed(mac, client)
-		} else {
+		if ipv4 = net.ParseIP(val); ipv4 == nil {
 			slog.Warnf("Invalid IP address %s for %s", val, mac)
+			return
 		}
+		dnsChanged = !ipv4.Equal(client.IPv4)
+	case "dns_name":
+		dnsChanged = (val != client.DNSName)
+	case "dhcp_name":
+		dnsChanged = (val != client.DHCPName)
+	case "ring":
+		dnsChanged = (val != client.Ring)
+	}
+
+	if dnsChanged {
+		dnsDeleteClient(client)
+	}
+	switch path[2] {
+	case "ipv4":
+		client.IPv4 = ipv4
+		client.Expires = expires
+		dhcpIPv4Changed(mac, client)
 	case "dns_name":
 		client.DNSName = val
 	case "dhcp_name":
 		client.DHCPName = val
 	case "ring":
 		if client.Ring == "" {
-			slog.Infof("config reports new client %s is %s",
-				mac, val)
+			slog.Infof("added %s to %s", mac, val)
 		} else if client.Ring != val {
-			slog.Infof("config moves client %s from %s to %s",
-				mac, client.Ring, val)
+			slog.Infof("moved %s from %s to %s", mac, client.Ring, val)
 		}
 		client.Ring = val
 	}
-	dnsUpdateClient(client)
+	if dnsChanged {
+		dnsUpdateClient(client)
+	}
 }
 
 func clientDeleteEvent(path []string) {

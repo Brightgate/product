@@ -282,28 +282,17 @@ func createPipe() error {
 func findWanNics() {
 	wanIfaces = make(map[string]bool)
 
-	nics, err := config.GetNics(base_def.RING_WAN, "")
+	nics, err := config.GetNics()
 	if err != nil {
-		slog.Warnf("failed to get list of WAN NICs: %v", err)
-		return
+		slog.Warnf("failed to get list of NICs: %v", err)
 	}
 
-	all, err := net.Interfaces()
-	if err != nil {
-		slog.Warnf("failed to get local interface list: %v", err)
-		return
-	}
-
-	for _, iface := range all {
-		name := strings.ToLower(iface.Name)
-		mac := iface.HardwareAddr.String()
-		for _, nic := range nics {
-			if nic == mac {
-				wanIfaces[name] = true
-				break
-			}
+	for _, nic := range nics {
+		if nic.Ring == base_def.RING_WAN {
+			wanIfaces[nic.Name] = true
 		}
 	}
+	slog.Debugf("wan interfaces: %v", wanIfaces)
 }
 
 func droplogFini(w *watcher) {

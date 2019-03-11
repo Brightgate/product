@@ -405,6 +405,17 @@ func (c *hostapdConn) run(wg *sync.WaitGroup) {
 	wg.Done()
 }
 
+// Set the 'locally administered' bit in the first octet of the mac address
+func macSetLocal(mac string) string {
+	octets := strings.Split(mac, ":")
+	b, _ := strconv.ParseUint(octets[0], 16, 32)
+	b |= 0x02
+	octets[0] = fmt.Sprintf("%02x", b)
+	mac = strings.Join(octets, ":")
+
+	return mac
+}
+
 // Update the final bits of a mac address
 func macUpdateLastOctet(mac string, val uint64) string {
 	maskSize := uint64(bits.Len(uint(maxSSIDs - 1)))
@@ -415,13 +426,7 @@ func macUpdateLastOctet(mac string, val uint64) string {
 		new := (b & mask) | val
 		if new != b {
 			octets[5] = fmt.Sprintf("%02x", new)
-
-			// Since we changed the mac address, we need to set the
-			// 'locally administered' bit in the first octet
-			b, _ = strconv.ParseUint(octets[0], 16, 32)
-			b |= 0x02 // Set the "locally administered" bit
-			octets[0] = fmt.Sprintf("%02x", b)
-			mac = strings.Join(octets, ":")
+			mac = macSetLocal(strings.Join(octets, ":"))
 		}
 	} else {
 		slog.Warnf("invalid mac address: %s", mac)
@@ -432,10 +437,10 @@ func macUpdateLastOctet(mac string, val uint64) string {
 
 // hostapd is going to spawn a virtual NIC for our second BSSID.  Add a node for
 // that NIC to our list of devices.
-func initPseudoNic(d *physDevice) *physDevice {
+func initPseudoNic(d *physDevice, idx int) *physDevice {
 	pseudo := &physDevice{
-		name:   d.name + "_1",
-		ring:   base_def.RING_GUEST,
+		name:   fmt.Sprintf("%s_%d", d.name, idx),
+		hwaddr: macUpdateLastOctet(d.hwaddr, uint64(idx)),
 		wifi:   d.wifi,
 		pseudo: true,
 	}
@@ -530,15 +535,12 @@ func getVAPConfig(name string, d *physDevice, idx int) *vapConfig {
 	if idx == 0 {
 		bssid = "bssid=" + d.hwaddr
 	} else {
-		bssid = fmt.Sprintf("bss=%s_%d", d.name, idx)
 		// If we create multiple SSIDs, hostapd will generate additional
 		// bssids by incrementing the final octet of the nic's mac
-		// address.  hostapd requires that the base and generated mac
-		// addresses share the upper 47 bits, so we need to ensure that
-		// the base address has the lowest bits set to 0.
-		p := initPseudoNic(d)
-		p.hwaddr = macUpdateLastOctet(d.hwaddr, uint64(idx))
+		// address.
+		p := initPseudoNic(d, idx)
 		physDevices[getNicID(p)] = p
+		bssid = "bss=" + p.name
 	}
 	confPrefix := fmt.Sprintf("%s/hostapd.%s.%s", confdir, d.name, name)
 

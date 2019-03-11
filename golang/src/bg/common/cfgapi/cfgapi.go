@@ -160,6 +160,16 @@ type VirtualAP struct {
 	Rings       []string `json:"rings"`
 }
 
+// NicInfo contains all the per-nic state stored in the config file
+type NicInfo struct {
+	Name    string
+	Node    string
+	MacAddr string
+	Kind    string
+	Ring    string
+	Pseudo  bool
+}
+
 // ClientInfo contains all of the configuration information for a client device
 type ClientInfo struct {
 	Ring       string     // Assigned security ring
@@ -816,38 +826,36 @@ func (c *Handle) GetClients() ClientMap {
 	return set
 }
 
-// GetNics returns a slice of mac addresses representing the configured NICs.
-// The caller may choose to limit the slice to NICs carrying traffic for a
-// single ring and/or NICs that are local to a specific node.
-func (c *Handle) GetNics(ring string, limit string) ([]string, error) {
+// GetNics returns a slice of mac addresses representing the configured NICs on
+// all nodes.
+func (c *Handle) GetNics() ([]NicInfo, error) {
 	prop, err := c.GetProps("@/nodes")
 	if err != nil {
 		return nil, fmt.Errorf("property get %s failed: %v", prop, err)
 	}
 
-	s := make([]string, 0)
+	nics := make([]NicInfo, 0)
 	for nodeName, node := range prop.Children {
-		if limit != "" && limit != nodeName {
+		nodeNics := node.Children["nics"]
+		if nodeNics == nil {
 			continue
 		}
 
-		nics := node.Children["nics"]
-		if nics == nil {
-			continue
-		}
-
-		for nicName, nic := range nics.Children {
-			var nicRing string
-			if x, ok := nic.Children["ring"]; ok {
-				nicRing = x.Value
+		for _, nic := range nodeNics.Children {
+			n := NicInfo{
+				Node: nodeName,
 			}
 
-			if ring == "" || ring == nicRing {
-				s = append(s, nicName)
-			}
+			n.Name, _ = getStringVal(nic, "name")
+			n.Ring, _ = getStringVal(nic, "ring")
+			n.MacAddr, _ = getStringVal(nic, "mac")
+			n.Kind, _ = getStringVal(nic, "kind")
+			n.Pseudo, _ = getBoolVal(nic, "pseudo")
+
+			nics = append(nics, n)
 		}
 	}
-	return s, nil
+	return nics, nil
 }
 
 // GetActiveBlocks builds a slice of all the IP addresses that were being

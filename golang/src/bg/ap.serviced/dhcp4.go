@@ -548,7 +548,7 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
  * return 'true'
  */
 func (h *ringHandler) releaseLease(l *lease, hwaddr string) bool {
-	if l == nil || !l.assigned || l.hwaddr != hwaddr {
+	if l == nil || !l.assigned || l.hwaddr != hwaddr || l.static {
 		return false
 	}
 	if l.expires == nil {
@@ -556,7 +556,6 @@ func (h *ringHandler) releaseLease(l *lease, hwaddr string) bool {
 	}
 
 	l.assigned = false
-	l.static = false
 	notifyRelease(l.ipaddr)
 	config.DeleteProp(propPath(l.hwaddr, "ipv4"))
 	return true
