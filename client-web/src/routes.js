@@ -13,6 +13,7 @@ import ComplianceReport from './pages/compliance_report.vue';
 import DevDetails from './pages/dev_details.vue';
 import Devices from './pages/devices.vue';
 import EnrollGuest from './pages/enroll_guest.vue';
+import Help from './pages/help.vue';
 import Home from './pages/home.vue';
 import LeftPanel from './pages/left_panel.vue';
 import MalwareWarn from './pages/malware_warn.vue';
@@ -89,5 +90,9 @@ export default [
   {
     path: '/test_tools/',
     component: TestTools,
+  },
+  {
+    path: '/help/:helpTopic',
+    component: Help,
   },
 ];

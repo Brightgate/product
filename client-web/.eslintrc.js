@@ -49,7 +49,7 @@ module.exports = {
     // consistency achieved outweighs the pain caused, so I've enabled it.
     'camelcase': ['error', {'properties': 'always'}],
     // Some modules we use violate this rule, so make exceptions.
-    'new-cap': ['error', {'capIsNewExceptions': ['Debug', 'BrowserLocale']}],
+    'new-cap': ['error', {'capIsNewExceptions': ['Debug', 'BrowserLocale', 'Dom7']}],
     'func-name-matching': 'error',
 
     // We lower this to a warning because it's super annoying to have to fix

@@ -37,6 +37,9 @@
       <f7-list-item>
         <f7-link panel-close href="/test_tools/">Test Tools</f7-link>
       </f7-list-item>
+      <f7-list-item>
+        <f7-link panel-close href="/help/end_customer_guide">Admin Guide</f7-link>
+      </f7-list-item>
     </f7-list>
   </f7-page>
 </template>

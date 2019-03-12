@@ -1192,7 +1192,7 @@ NPM_QUIET = --loglevel warn --no-progress
 		fi; )
 	touch $@
 
-client-web: .make-npm-installed FRC | $(HTTPD_CLIENTWEB_DIR) $(CLOUDLIBCLHTTPDWEBCLIENTWEB)
+client-web: doc .make-npm-installed FRC | $(HTTPD_CLIENTWEB_DIR) $(CLOUDLIBCLHTTPDWEBCLIENTWEB)
 	$(RM) -fr $(HTTPD_CLIENTWEB_DIR)/* $(CLOUDLIBCLHTTPDWEBCLIENTWEB)/*
 	(cd client-web && $(NPM) run lint)
 	(cd client-web && $(NPM) run build)
