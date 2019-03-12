@@ -173,7 +173,7 @@ func configSet(name, val string) bool {
 		rings = config.GetRings()
 		reload = true
 
-	case "radiusAuthSecret":
+	case "radius_auth_secret":
 		prop := &wconf.radiusSecret
 		if prop != nil && *prop != val {
 			slog.Infof("%s changed to '%s'", name, val)

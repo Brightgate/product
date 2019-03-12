@@ -14,25 +14,19 @@
 //
 // @/user/[username]:
 //     uid:
-//     displayName:
-//     telephoneNumber:		international phone number as string
-//     preferredLanguage:
-//     userPassword: 		hashed, salted password using bcrypt
-//     userMD4Password: 	hashed password using MD4 (for RADIUS only)
+//     display_name:
+//     telephone_number:	international phone number as string
+//     user_password: 		hashed, salted password using bcrypt
+//     user_md4_password: 	hashed password using MD4 (for RADIUS only)
 //     [where possible, use LDAP field names for adding additional fields]
 //     TOTP:
 //
 // ## RADIUS configuration properties
 //
 // @/network
-//     radiusAuthServer		IP address
-//     radiusAuthServerPort	Port
-//     radiusAuthSecret		Password
+//     radius_auth_secret	Password
 //
-// These properties are established so that we could redefine them to
-// point to an external server.  Secret handling, which uses Base 64
-// encoding when stored in the configuration, may have to be adjusted
-// for use with particular external server implementations.
+// Secret handling uses Base 64 encoding when stored in the configuration.
 
 // RFC 6238 5.1 suggests that we place `TOTP` in a secure area.
 //
@@ -146,31 +140,16 @@ var (
 
 const (
 	pname            = "ap.userauthd"
-	radiusAuthSecret = "@/network/radiusAuthSecret"
+	radiusAuthSecret = "@/network/radius_auth_secret"
 	failuresAllowed  = 4
 	period           = time.Duration(time.Minute)
 )
 
-func configNetworkRadiusChanged(path []string, val string, expires *time.Time) {
-	var resetFunc func(*rConf) string
+func configNetworkRadiusSecretChanged(path []string, val string, expires *time.Time) {
+	slog.Infof("surprising change to network/radius_auth_secret")
 
-	// Watch for changes to the network configuration.
-	switch path[1] {
-	case "radiusAuthServer":
-		resetFunc = generateRadiusHostapdConf
-	case "radiusAuthServerPort":
-		resetFunc = generateRadiusHostapdConf
-	case "radiusAuthSecret":
-		resetFunc = generateRadiusClientConf
-		slog.Infof("surprising change to network/radiusAuthSecret")
-	default:
-		slog.Debugf("ignoring change to %v", path)
-	}
-
-	if resetFunc != nil {
-		resetFunc(rc)
-		hostapdProcess.Signal(syscall.SIGHUP)
-	}
+	generateRadiusClientConf(rc)
+	hostapdProcess.Signal(syscall.SIGHUP)
 }
 
 func configUserChanged(path []string, val string, expires *time.Time) {
@@ -342,7 +321,7 @@ func runOne(rc *rConf) {
 }
 
 func establishSecret() ([]byte, error) {
-	// If @/network/radiusAuthSecret is already set, retrieve its value.
+	// If @/network/radius_auth_secret is already set, retrieve its value.
 	sp, err := configd.GetProp(radiusAuthSecret)
 	if err == nil {
 		return []byte(sp), nil
@@ -360,7 +339,7 @@ func establishSecret() ([]byte, error) {
 			base_def.RADIUS_SECRET_SIZE, n)
 	}
 
-	// base64 encode radiusAuthSecret
+	// base64 encode radius_auth_secret
 	s64 := base64.StdEncoding.EncodeToString(s)
 	// XXX Handle staleness by expiration?
 	err = configd.CreateProp(radiusAuthSecret, (s64), nil)
@@ -432,7 +411,7 @@ func main() {
 	}
 
 	configd.HandleChange(`^@/users/.*$`, configUserChanged)
-	configd.HandleChange(`^@/network/radius.*$`, configNetworkRadiusChanged)
+	configd.HandleChange(`^@/network/radius_auth_secret`, configNetworkRadiusSecretChanged)
 	configd.HandleChange(`^@/certs/.*/state`, certStateChange)
 	configd.HandleChange(`^@/siteid`, siteIDChange)
 

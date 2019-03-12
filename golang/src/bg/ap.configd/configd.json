@@ -3,7 +3,7 @@
     "Children": {
       "apversion": {},
       "cfgversion": {
-        "Value": "20"
+        "Value": "21"
       },
       "clients": {},
       "cloud": {
@@ -274,21 +274,21 @@
     {"Path": "@/network/vap/%string%/passphrase", "Type": "passphrase", "Level": "admin"},
     {"Path": "@/network/vap/%string%/default_ring", "Type": "ring", "Level": "admin"},
     {"Path": "@/network/regdomain", "Type": "string", "Level": "admin"},
-    {"Path": "@/network/radiusAuthSecret", "Type": "string", "Level": "internal"},
+    {"Path": "@/network/radius_auth_secret", "Type": "string", "Level": "internal"},
     {"Path": "@/network/%wifiband%/channel", "Type": "int", "Level": "admin"},
     {"Path": "@/rings/%ring%/lease_duration", "Type": "int", "Level": "admin"},
     {"Path": "@/rings/%ring%/vlan", "Type": "int", "Level": "developer"},
     {"Path": "@/rings/%ring%/vap", "Type": "string", "Level": "developer"},
     {"Path": "@/users/%user%/email", "Type": "email", "Level": "user"},
-    {"Path": "@/users/%user%/telephoneNumber", "Type": "phone", "Level": "user"},
+    {"Path": "@/users/%user%/telephone_number", "Type": "phone", "Level": "user"},
     {"Path": "@/users/%user%/uid", "Type": "user", "Level": "internal"},
-    {"Path": "@/users/%user%/userMD4Password", "Type": "string", "Level": "user"},
-    {"Path": "@/users/%user%/userPassword", "Type": "string", "Level": "user"},
+    {"Path": "@/users/%user%/user_md4_password", "Type": "string", "Level": "user"},
+    {"Path": "@/users/%user%/user_password", "Type": "string", "Level": "user"},
     {"Path": "@/users/%user%/uuid", "Type": "uuid", "Level": "internal"},
-    {"Path": "@/users/%user%/displayName", "Type": "string", "Level": "user"},
-    {"Path": "@/users/%user%/selfProvisioning", "Type": "bool", "Level": "internal"},
-    {"Path": "@/httpd/cookie-aes-key", "Type": "string", "Level": "internal"},
-    {"Path": "@/httpd/cookie-hmac-key", "Type": "string", "Level": "internal"},
+    {"Path": "@/users/%user%/display_name", "Type": "string", "Level": "user"},
+    {"Path": "@/users/%user%/self_provisioning", "Type": "bool", "Level": "internal"},
+    {"Path": "@/httpd/cookie_aes_key", "Type": "string", "Level": "internal"},
+    {"Path": "@/httpd/cookie_hmac_key", "Type": "string", "Level": "internal"},
     {"Path": "@/nodes/%uuid%/nics/%nic%/ring", "Type": "ring", "Level": "admin"},
     {"Path": "@/nodes/%uuid%/nics/%nic%/kind", "Type": "nickind", "Level": "internal"},
     {"Path": "@/nodes/%uuid%/nics/%nic%/band", "Type": "wifiband", "Level": "admin"},

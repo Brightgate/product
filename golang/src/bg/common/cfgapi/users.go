@@ -68,16 +68,16 @@ func newUserFromNode(name string, user *PropertyNode) (*UserInfo, error) {
 		return nil, fmt.Errorf("prop name '%s' != uid '%s'", name, uid)
 	}
 
-	password, _ := getStringVal(user, "userPassword")
-	md4password, _ := getStringVal(user, "userMD4Password")
+	password, _ := getStringVal(user, "user_password")
+	md4password, _ := getStringVal(user, "user_md4_password")
 	suuid, _ := getStringVal(user, "uuid")
 	xuuid, _ := uuid.FromString(suuid)
 	email, _ := getStringVal(user, "email")
-	telephoneNumber, _ := getStringVal(user, "telephoneNumber")
-	preferredLanguage, _ := getStringVal(user, "preferredLanguage")
-	displayName, _ := getStringVal(user, "displayName")
+	telephoneNumber, _ := getStringVal(user, "telephone_number")
+	preferredLanguage, _ := getStringVal(user, "preferred_language")
+	displayName, _ := getStringVal(user, "display_name")
 	totp, _ := getStringVal(user, "totp")
-	selfProvisioning, _ := getBoolVal(user, "selfProvisioning")
+	selfProvisioning, _ := getBoolVal(user, "self_provisioning")
 
 	u := &UserInfo{
 		UID:               uid,
@@ -281,9 +281,9 @@ func (u *UserInfo) Update(extraOps ...PropertyOp) (CmdHdl, error) {
 		// to not fail with ErrNoProp on new users, we have to first
 		// create a property (selfProvisioning, arbitrarily) to ensure
 		// that the subtree exists.
-		addProp("selfProvisioning", "true")
+		addProp("self_provisioning", "true")
 		ops = append(ops, PropertyOp{Op: PropDelete, Name: u.path("")})
-		addProp("selfProvisioning", "true")
+		addProp("self_provisioning", "true")
 	}
 
 	if u.newUser {
@@ -291,9 +291,9 @@ func (u *UserInfo) Update(extraOps ...PropertyOp) (CmdHdl, error) {
 		addProp("uuid", u.UUID.String())
 	}
 	addProp("email", u.Email)
-	addProp("displayName", u.DisplayName)
-	addProp("telephoneNumber", phoneStr)
-	addProp("preferredLanguage", u.PreferredLanguage)
+	addProp("display_name", u.DisplayName)
+	addProp("telephone_number", phoneStr)
+	addProp("preferred_language", u.PreferredLanguage)
 	addProp("role", u.Role)
 	ops = append(ops, extraOps...)
 	return u.config.Execute(nil, ops), nil
@@ -339,12 +339,12 @@ func (u *UserInfo) PropOpsFromPasswordHashes(userPassHash, mschapv2Hash string) 
 	return []PropertyOp{
 		{
 			Op:    PropCreate,
-			Name:  u.path("userPassword"),
+			Name:  u.path("user_password"),
 			Value: userPassHash,
 		},
 		{
 			Op:    PropCreate,
-			Name:  u.path("userMD4Password"),
+			Name:  u.path("user_md4_password"),
 			Value: mschapv2Hash,
 		},
 	}

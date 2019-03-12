@@ -272,10 +272,10 @@ func globalWifiInit(props *cfgapi.PropertyNode) error {
 		slog.Warnf("Failed to set domain: %v%s\n", err, out)
 	}
 
-	if node, ok := props.Children["radiusAuthSecret"]; ok {
+	if node, ok := props.Children["radius_auth_secret"]; ok {
 		wconf.radiusSecret = node.Value
 	} else {
-		slog.Warnf("no radiusAuthSecret configured")
+		slog.Warnf("no radius_auth_secret configured")
 	}
 
 	wconf.channels = make(map[string]int)

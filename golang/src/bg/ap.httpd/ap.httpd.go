@@ -83,8 +83,8 @@ var (
 const (
 	pname = "ap.httpd"
 
-	cookiehmackeyprop = "@/httpd/cookie-hmac-key"
-	cookieaeskeyprop  = "@/httpd/cookie-aes-key"
+	cookiehmackeyprop = "@/httpd/cookie_hmac_key"
+	cookieaeskeyprop  = "@/httpd/cookie_aes_key"
 
 	// 'unsafe-inline' is needed because current HTML pages are
 	// using inline <script> tags.  'unsafe-eval' is needed by
@@ -184,7 +184,7 @@ func listen(addr string, port string, ring string, cfg *tls.Config,
 func establishHttpdKeys() ([]byte, []byte) {
 	var hs, as []byte
 
-	// If @/httpd/cookie-hmac-key is already set, retrieve its value.
+	// If @/httpd/cookie_hmac_key is already set, retrieve its value.
 	hs64, err := config.GetProp(cookiehmackeyprop)
 	if err != nil {
 		hs = securecookie.GenerateRandomKey(base_def.HTTPD_HMAC_SIZE)
