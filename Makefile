@@ -116,6 +116,7 @@ GOSRCBGVENDOR = $(GOSRCBG)/vendor
 # Where we stick build tools
 GOBIN = $(GOPATH)/bin
 
+BGDEPDIR = $(GOTOOLS_DIR)/bgdepstamps
 
 #
 # Miscellaneous environment setup
@@ -320,26 +321,6 @@ COMMON_GOPKGS = \
 	bg/common/urlfetch \
 	bg/common/zaperr
 
-COMMON_SRCS = \
-	$(GOSRCBG)/base_msg/base_msg.pb.go \
-	$(GOSRCBG)/common/archive/archive.go \
-	$(GOSRCBG)/common/cfgapi/cfgapi.go \
-	$(GOSRCBG)/common/cfgapi/translate.go \
-	$(GOSRCBG)/common/cfgapi/users.go \
-	$(GOSRCBG)/common/cfgmsg/cfgmsg.go \
-	$(GOSRCBG)/common/cfgmsg/cfgmsg.pb.go \
-	$(GOSRCBG)/common/cfgtree/cfgtree.go \
-	$(GOSRCBG)/common/deviceid/device.go \
-	$(GOSRCBG)/common/grpcutils/client.go \
-	$(GOSRCBG)/common/grpcutils/cred.go \
-	$(GOSRCBG)/common/network/network.go \
-	$(GOSRCBG)/common/passwordgen/passwordgen.go \
-	$(GOSRCBG)/common/ssh/keys.go \
-	$(GOSRCBG)/common/ssh/sshd.go \
-	$(GOSRCBG)/common/ssh/tunnel.go \
-	$(GOSRCBG)/common/urlfetch/urlfetch.go \
-	$(GOSRCBG)/common/zaperr/zaperr.go
-
 APPCOMMON_GOPKGS = \
 	$(COMMON_GOPKGS) \
 	bg/ap_common/apcfg \
@@ -379,8 +360,6 @@ APPDAEMON_GOPKGS = \
 	bg/ap.userauthd \
 	bg/ap.watchd
 
-ALL_GOPKGS = $(APP_GOPKGS) $(CLOUD_GOPKGS)
-
 APP_GOPKGS = $(APPCOMMON_GOPKGS) $(APPCOMMAND_GOPKGS) $(APPDAEMON_GOPKGS)
 
 APPTOOLS = \
@@ -412,15 +391,6 @@ GO_AP_TESTABLES = \
 	bg/common/grpcutils \
 	bg/common/network \
 	bg/common/zaperr
-
-GO_CLOUD_TESTABLES = \
-	bg/cl_common/auth/m2mauth \
-	bg/cl_common/daemonutils \
-	bg/cloud_models/appliancedb \
-	bg/cloud_models/sessiondb \
-	bg/cl-cert \
-	bg/cl.httpd \
-	bg/cl.rpcd
 
 NETWORKD_TEMPLATE_FILES = \
 	hostapd.conf.got \
@@ -508,49 +478,31 @@ APPCOMPONENTS = \
 	$(APPTEMPLATES) \
 	$(FILTER_RULES)
 
-APP_COMMON_SRCS = \
-	$(COMMON_SRCS) \
-	$(GOSRCBG)/ap_common/apcfg/apcfg.go \
-	$(GOSRCBG)/ap_common/apcfg/events.go \
-	$(GOSRCBG)/ap_common/apcfg/settings.go \
-	$(GOSRCBG)/ap_common/aputil/aputil.go \
-	$(GOSRCBG)/ap_common/aputil/cred.go \
-	$(GOSRCBG)/ap_common/aputil/logging.go \
-	$(GOSRCBG)/ap_common/apvuln/apvuln.go \
-	$(GOSRCBG)/ap_common/broker/broker.go \
-	$(GOSRCBG)/ap_common/mcp/mcp_client.go \
-	$(GOSRCBG)/ap_common/model/model.go \
-	$(GOSRCBG)/ap_common/dhcp/dhcp.go \
-	$(GOSRCBG)/ap_common/platform/platform.go \
-	$(GOSRCBG)/ap_common/platform/mt.go \
-	$(GOSRCBG)/ap_common/platform/rpi.go \
-	$(GOSRCBG)/ap_common/platform/x86.go \
-	$(GOSRCBG)/base_def/base_def.go \
-	$(GOSRCBG)/base_msg/base_msg.pb.go
-
 # Miscellaneous utilities
 
 UTILROOT=$(ROOT)/util
 UTILBIN=$(UTILROOT)/bin
 
-UTILCOMMON_SRCS = \
-	$(GOSRCBG)/ap_common/model/model.go \
-	$(GOSRCBG)/ap_common/platform/platform.go \
-	$(GOSRCBG)/base_msg/base_msg.pb.go \
-	$(GOSRCBG)/common/network/network.go \
-	$(GOSRCBG)/util/deviceDB/device_db.go
-
-UTILCOMMAND_SRCS = \
-	bg/util/build_device_db.go \
-	bg/util/model-merge.go \
-	bg/util/model-sim.go \
-	bg/util/model-train.go
-
-UTILBINARIES = $(UTILCOMMAND_SRCS:bg/util/%.go=$(UTILBIN)/%)
+UTILBINARIES = \
+	$(UTILBIN)/build_device_db \
+	$(UTILBIN)/model-merge \
+	$(UTILBIN)/model-sim \
+	$(UTILBIN)/model-train
 
 UTILDIRS = $(UTILBIN)
 
 UTILCOMPONENTS = $(UTILBINARIES) $(UTILDIRS)
+
+UTILCOMMAND_GOPKGS_debian = \
+	bg/util
+
+UTILCOMMAND_GOPKGS = $(UTILCOMMAND_GOPKGS_$(DISTRO))
+UTILCOMMON_GOPKGS = $(UTILCOMMON_GOPKGS_$(DISTRO))
+
+UTILCOMMON_GOPKGS_debian = \
+	bg/util/deviceDB
+
+UTIL_GOPKGS = $(UTILCOMMON_GOPKGS) $(UTILCOMMAND_GOPKGS)
 
 # Cloud components and supporting definitions.
 
@@ -601,6 +553,15 @@ CLOUDDAEMONS = $(CLOUDDAEMON_GOPKGS:bg/%=%)
 
 CLOUDCOMMANDS = $(CLOUDCOMMAND_GOPKGS:bg/%=%)
 
+GO_CLOUD_TESTABLES = \
+	bg/cl_common/auth/m2mauth \
+	bg/cl_common/daemonutils \
+	bg/cloud_models/appliancedb \
+	bg/cloud_models/sessiondb \
+	bg/cl-cert \
+	bg/cl.httpd \
+	bg/cl.rpcd
+
 CLOUDSERVICES = \
 	cl-cert.service \
 	cl-cert.timer \
@@ -646,19 +607,13 @@ CLOUDDIRS = \
 
 CLOUDCOMPONENTS = $(CLOUDBINARIES) $(CLOUDSYSTEMDSERVICES) $(CLOUDDIRS) $(CLOUDSCHEMAS) $(CLOUDETCFILES)
 
-CLOUD_COMMON_SRCS = \
-	$(COMMON_SRCS) \
-	$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
-	$(GOSRCBG)/cloud_models/appliancedb/appliancedb.go \
-	$(GOSRCBG)/cloud_models/appliancedb/account.go \
-	$(GOSRCBG)/cloud_models/appliancedb/cmdqueue.go \
-	$(GOSRCBG)/cloud_models/sessiondb/sessiondb.go \
-	$(GOSRCBG)/cl_common/auth/m2mauth/middleware.go \
-	$(GOSRCBG)/cl_common/clcfg/clcfg.go \
-	$(GOSRCBG)/cl_common/clcfg/events.go \
-	$(GOSRCBG)/cl_common/daemonutils/utils.go \
-	$(GOSRCBG)/cl_common/pgutils/utils.go \
-	$(GOSRCBG)/cl_common/registry/registry.go
+# Exclude $(UTIL_GOPKGS) because they don't lint
+ALL_GOPKGS = $(APP_GOPKGS) $(CLOUD_GOPKGS)
+
+ALL_GOBINS = \
+	     $(APPCOMMAND_GOPKGS) $(APPDAEMON_GOPKGS) \
+	     $(CLOUDCOMMAND_GOPKGS) $(CLOUDDAEMON_GOPKGS) \
+	     $(UTILCOMMAND_GOPKGS)
 
 COVERAGE_DIR = coverage
 
@@ -791,11 +746,11 @@ coverage-go: install
 	grep -h -v "^mode:" $(COVERAGE_DIR)/bg*.out | sort -u >> $(COVERAGE_DIR)/cover.out
 	$(GO) tool cover -html=$(COVERAGE_DIR)/cover.out -o $(COVERAGE_DIR)/coverage.html
 
-vet-go:
+vet-go: $(GENERATED_GO_FILES) $(GO_MOCK_SRCS)
 	$(GO) vet $(APP_GOPKGS)
 	$(GO) vet $(CLOUD_GOPKGS)
 
-lint-go:
+lint-go: $(GENERATED_GO_FILES) $(GO_MOCK_SRCS)
 	$(GOLINT) -set_exit_status $(ALL_GOPKGS)
 
 fmt-go:
@@ -900,9 +855,26 @@ $(ROOTETCINITD)/brightgate-appliance: build/openwrt-ipk/brightgate-appliance | $
 $(APPDIRS):
 	$(MKDIR) -p $@
 
-$(APPBINARIES): $(APP_COMMON_SRCS) $(GODEPS_ENSURED) | $(APPBIN)
+$(APPBINARIES): $(GODEPS_ENSURED) | $(APPBIN)
 
 # Build rules for go binaries.
+
+COMPUTE_DEPS = $(GOTOOLS_DIR)/compute_deps
+
+$(COMPUTE_DEPS): build/compute_deps.go
+	$(GO) build -o $@ $^
+
+GENERATED_GO_FILES = \
+	$(GOSRCBG)/base_def/base_def.go \
+	$(GOSRCBG)/base_msg/base_msg.pb.go \
+	$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
+	$(GOSRCBG)/common/cfgmsg/cfgmsg.pb.go \
+	$(GOSRCBG)/common/version.go
+
+$(GOTOOLS_DIR)/godeps.mk: | $(COMPUTE_DEPS) $(GENERATED_GO_FILES)
+	$(COMPUTE_DEPS) $(ALL_GOBINS) > $@
+
+include $(GOTOOLS_DIR)/godeps.mk
 
 $(APPTOOLS:%=$(APPBIN)/%): $(APPBIN)/ap-tools
 	ln -sf $(<F) $@
@@ -916,114 +888,20 @@ $(APPBIN)/%: $(CROSS_DEP)
 $(GOSRCBG)/common/version.go: $(GITCHANGED)
 	sed "s/GITHASH/$(GITHASH)/" $(GOSRCBG)/common/version.base > $@
 
-$(APPBIN)/ap.brokerd: $(GOSRCBG)/ap.brokerd/brokerd.go
-$(APPBIN)/ap.configd: \
-	$(GOSRCBG)/common/version.go \
-	$(GOSRCBG)/ap.configd/configd.go \
-	$(GOSRCBG)/ap.configd/devices.go \
-	$(GOSRCBG)/ap.configd/expiration.go \
-	$(GOSRCBG)/ap.configd/file.go \
-	$(GOSRCBG)/ap.configd/upgrade_v13.go \
-	$(GOSRCBG)/ap.configd/upgrade_v14.go \
-	$(GOSRCBG)/ap.configd/upgrade_v15.go \
-	$(GOSRCBG)/ap.configd/upgrade_v16.go \
-	$(GOSRCBG)/ap.configd/upgrade_v17.go \
-	$(GOSRCBG)/ap.configd/upgrade_v18.go \
-	$(GOSRCBG)/ap.configd/upgrade_v19.go \
-	$(GOSRCBG)/ap.configd/upgrade_v20.go \
-	$(GOSRCBG)/ap.configd/upgrade_v21.go \
-	$(GOSRCBG)/ap.configd/validate.go
-$(APPBIN)/ap.httpd: \
-	$(GOSRCBG)/ap.httpd/ap.httpd.go \
-	$(GOSRCBG)/ap.httpd/api-demo.go \
-	$(GOSRCBG)/ap.httpd/auth.go \
-	$(GOSRCBG)/ap_common/certificate/certificate.go \
-	$(GOSRCBG)/ap_common/data/dns.go
-$(APPBIN)/ap.identifierd: $(GOSRCBG)/ap.identifierd/identifierd.go
-$(APPBIN)/ap.logd: $(GOSRCBG)/ap.logd/logd.go
-$(APPBIN)/ap.mcp:	\
-	$(GOSRCBG)/ap.mcp/api.go \
-	$(GOSRCBG)/ap.mcp/daemon.go \
-	$(GOSRCBG)/ap.mcp/mcp.go \
-	$(GOSRCBG)/ap.mcp/orphan.go \
-	$(GOSRCBG)/ap.mcp/satellite.go
-$(APPBIN)/ap.networkd: \
-	$(GOSRCBG)/ap.networkd/filterd.go \
-	$(GOSRCBG)/ap.networkd/hostapd.go \
-	$(GOSRCBG)/ap.networkd/networkd.go \
-	$(GOSRCBG)/ap.networkd/ntpd.go \
-	$(GOSRCBG)/ap.networkd/parse.go \
-	$(GOSRCBG)/ap.networkd/wan.go \
-	$(GOSRCBG)/ap.networkd/wifi.go \
-	$(GOSRCBG)/ap_common/wificaps/wificaps.go
-$(APPBIN)/ap.rpcd: \
-	$(GOSRCBG)/ap.rpcd/rpcd.go \
-	$(GOSRCBG)/ap.rpcd/cert.go \
-	$(GOSRCBG)/ap.rpcd/config.go \
-	$(GOSRCBG)/ap.rpcd/heartbeat.go \
-	$(GOSRCBG)/ap.rpcd/inventory.go \
-	$(GOSRCBG)/ap.rpcd/tunnel.go \
-	$(GOSRCBG)/ap.rpcd/update.go \
-	$(GOSRCBG)/ap_common/certificate/certificate.go \
-	$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
-	$(GOSRCBG)/common/zaperr/zaperr.go
-$(APPBIN)/ap.serviced: \
-	$(GOSRCBG)/ap_common/data/dns.go \
-	$(GOSRCBG)/ap.serviced/dhcp4.go \
-	$(GOSRCBG)/ap.serviced/dns4.go \
-	$(GOSRCBG)/ap.serviced/relay.go \
-	$(GOSRCBG)/ap.serviced/serviced.go
-$(APPBIN)/ap.userauthd: $(GOSRCBG)/ap.userauthd/userauthd.go \
-	$(GOSRCBG)/ap_common/certificate/certificate.go
-$(APPBIN)/ap.watchd: \
-	$(GOSRCBG)/ap.watchd/api.go \
-	$(GOSRCBG)/ap.watchd/block.go \
-	$(GOSRCBG)/ap.watchd/droplog.go \
-	$(GOSRCBG)/ap.watchd/metrics.go \
-	$(GOSRCBG)/ap.watchd/repair-defaultpassword.go \
-	$(GOSRCBG)/ap.watchd/sampler.go \
-	$(GOSRCBG)/ap.watchd/scanner.go \
-	$(GOSRCBG)/ap.watchd/watchd.go
-
-$(APPBIN)/ap-defaultpass: $(GOSRCBG)/ap-defaultpass/changepass.go \
-	$(GOSRCBG)/ap-defaultpass/defaultpass.go
-
-$(APPBIN)/ap-diag: \
-	$(GOSRCBG)/ap-diag/diag.go \
-	$(GOSRCBG)/ap-diag/wifi.go \
-	$(GOSRCBG)/ap_common/wificaps/wificaps.go
-
-$(APPBIN)/ap-inspect: $(GOSRCBG)/ap-inspect/inspect.go
-$(APPBIN)/ap-factory: $(GOSRCBG)/ap-factory/factory.go
-$(APPBIN)/ap-ouisearch: $(GOSRCBG)/ap-ouisearch/ouisearch.go
 $(APPBIN)/ap-rpc: $(APPBIN)/ap.rpcd
 	ln -sf $(<F) $@
-$(APPBIN)/ap-tools: \
-	$(GOSRCBG)/ap-tools/arpspoof.go \
-	$(GOSRCBG)/ap-tools/certcheck.go \
-	$(GOSRCBG)/ap-tools/complete.go \
-	$(GOSRCBG)/ap-tools/configctl.go \
-	$(GOSRCBG)/ap-tools/ctl.go \
-	$(GOSRCBG)/ap-tools/tools.go \
-	$(GOSRCBG)/ap-tools/userctl.go \
-	$(GOSRCBG)/ap-tools/watchctl.go \
-	$(GOSRCBG)/common/configctl/configctl.go
-$(APPBIN)/ap-vuln-aggregate: \
-	$(GOSRCBG)/ap-vuln-aggregate/ap-defaultpass.go \
-	$(GOSRCBG)/ap-vuln-aggregate/ap-inspect.go \
-	$(GOSRCBG)/ap-vuln-aggregate/nmap.go \
-	$(GOSRCBG)/ap-vuln-aggregate/aggregate.go
 
 LOCAL_BINARIES=$(APPBINARIES:$(APPBIN)/%=$(GOBIN)/%)
 
 # Miscellaneous utility components
 
-$(UTILBINARIES): $(UTILCOMMON_SRCS) $(COMMON_SRCS) $(GODEPS_ENSURED)
+$(UTILBINARIES): $(GODEPS_ENSURED)
 
 $(UTILDIRS):
 	$(MKDIR) -p $@
 
-$(UTILBIN)/%: $(GOSRCBG)/util/%.go | $(UTILBIN)
+# We explicitly depend on $(BGDEPDIR)/bg-util due to a deficiency in compute_deps.
+$(UTILBIN)/%: $(GOSRCBG)/util/%.go $(BGDEPDIR)/bg-util | $(UTILBIN)
 	$(GO) build -o $(@) $(GOSRCBG)/util/$*.go
 
 # Cloud components
@@ -1048,66 +926,10 @@ $(CLOUDETCSSHDCONFIG): $(GOSRCBG)/cl-service/sshd_config.got | $(CLOUDETC)
 $(CLOUDROOTLIBSYSTEMDSYSTEM)/%: build/cl-systemd/% | $(CLOUDROOTLIBSYSTEMDSYSTEM)
 	$(INSTALL) -m 0644 $< $@
 
-$(CLOUDBINARIES): $(COMMON_SRCS) $(GODEPS_ENSURED)
+$(CLOUDBINARIES): $(GODEPS_ENSURED)
 
 $(CLOUDBIN)/%: | $(CLOUDBIN)
 	$(GO) build -o $(@) bg/$*
-
-$(CLOUDBIN)/cl-aggregate: \
-	$(GOSRCBG)/cl-aggregate/aggregate.go \
-	$(CLOUD_COMMON_SRCS)
-$(CLOUDBIN)/cl-cert: \
-	$(GOSRCBG)/cl-cert/acme.go \
-	$(GOSRCBG)/cl-cert/cert.go \
-	$(GOSRCBG)/cloud_models/appliancedb/certs.go \
-	$(CLOUD_COMMON_SRCS)
-$(CLOUDBIN)/cl-configctl: \
-	$(GOSRCBG)/cl-configctl/configctl.go \
-	$(GOSRCBG)/common/configctl/configctl.go \
-	$(CLOUD_COMMON_SRCS)
-$(CLOUDBIN)/cl-dtool: \
-	$(GOSRCBG)/cl-dtool/dtool.go \
-	$(GOSRCBG)/cl-dtool/export.go \
-	$(GOSRCBG)/cl-dtool/merge.go \
-	$(CLOUD_COMMON_SRCS)
-$(CLOUDBIN)/cl-reg: \
-	$(GOSRCBG)/cl-reg/account.go \
-	$(GOSRCBG)/cl-reg/cq.go \
-	$(GOSRCBG)/cl-reg/main.go \
-	$(CLOUD_COMMON_SRCS)
-$(CLOUDBIN)/cl-service: \
-	$(GOSRCBG)/cl-service/service.go
-$(CLOUDBIN)/cl.configd: \
-	$(GOSRCBG)/cl.configd/backend.go \
-	$(GOSRCBG)/cl.configd/cmdqueue.go \
-	$(GOSRCBG)/cl.configd/cmdqueuedb.go \
-	$(GOSRCBG)/cl.configd/configd.go \
-	$(GOSRCBG)/cl.configd/db.go \
-	$(GOSRCBG)/cl.configd/device.go \
-	$(GOSRCBG)/cl.configd/file.go \
-	$(GOSRCBG)/cl.configd/frontend.go \
-	$(GOSRCBG)/cl.configd/grpc.go \
-	$(GOSRCBG)/cl.configd/sitestate.go \
-	$(CLOUD_COMMON_SRCS)
-$(CLOUDBIN)/cl.eventd: \
-	$(GOSRCBG)/cl.eventd/eventd.go \
-	$(GOSRCBG)/cl.eventd/inventory.go \
-	$(CLOUD_COMMON_SRCS)
-$(CLOUDBIN)/cl.httpd: \
-	$(GOSRCBG)/cl.httpd/access.go \
-	$(GOSRCBG)/cl.httpd/account.go \
-	$(GOSRCBG)/cl.httpd/auth.go \
-	$(GOSRCBG)/cl.httpd/cl.httpd.go \
-	$(GOSRCBG)/cl.httpd/site.go \
-	$(CLOUD_COMMON_SRCS)
-$(CLOUDBIN)/cl.rpcd: \
-	$(GOSRCBG)/cl.rpcd/cert.go \
-	$(GOSRCBG)/cl.rpcd/cfg_relay.go \
-	$(GOSRCBG)/cl.rpcd/event.go \
-	$(GOSRCBG)/cl.rpcd/rpcd.go \
-	$(GOSRCBG)/cl.rpcd/storage.go \
-	$(GOSRCBG)/cloud_models/appliancedb/certs.go \
-	$(CLOUD_COMMON_SRCS)
 
 $(CLOUDROOTLIBSYSTEMDSYSTEM): | $(CLOUDROOTLIB)
 	$(MKDIR) -p $@
@@ -1124,6 +946,12 @@ $(GOSRCBG)/base_def/base_def.go: base/generate-base-def.py | $(GOSRCBG)/base_def
 
 base/base_def.py: base/generate-base-def.py | $(VENV_NAME)
 	$(PYTHON3) $< --python3 > $@
+
+$(BGDEPDIR):
+	@$(MKDIR) -p $@
+
+$(BGDEPDIR)/%: | $(BGDEPDIR)
+	@touch $@
 
 #
 # Protocol buffers
@@ -1217,10 +1045,7 @@ clean:
 		base/base_def.py \
 		base/base_msg_pb2.py \
 		base/cloud_rpc_pb2.py \
-		$(GOSRCBG)/base_def/base_def.go \
-		$(GOSRCBG)/base_msg/base_msg.pb.go \
-		$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
-		$(GOSRCBG)/common/version.go \
+		$(GENERATED_GO_FILES) \
 		$(APPBINARIES) \
 		$(CLOUDBINARIES) \
 		$(UTILBINARIES) \
