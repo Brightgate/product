@@ -210,12 +210,12 @@ export default {
     lastVulnScan: function() {
       let start = null;
       let finish = null;
-      if (this.dev && this.dev.scans && this.dev.scans.vulnerability) {
-        const sp = parseISO(this.dev.scans.vulnerability.start);
+      if (this.dev && this.dev.scans && this.dev.scans.vuln) {
+        const sp = parseISO(this.dev.scans.vuln.start);
         if (!Number.isNaN(sp.valueOf())) {
           start = sp;
         }
-        const fp = parseISO(this.dev.scans.vulnerability.finish);
+        const fp = parseISO(this.dev.scans.vuln.finish);
         if (!Number.isNaN(fp.valueOf())) {
           finish = fp;
         }

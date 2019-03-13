@@ -428,7 +428,7 @@ const getters = {
     return filter(devices, {active: true});
   },
   deviceVulnScanned: (state) => (devices) => {
-    return filter(devices, 'scans.vulnerability.finish');
+    return filter(devices, 'scans.vuln.finish');
   },
   deviceVulnerable: (state) => (devices) => {
     return filter(devices, 'activeVulnCount');
