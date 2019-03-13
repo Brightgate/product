@@ -55,6 +55,15 @@ var (
 	nodeName string
 )
 
+func reboot(from string) {
+	const LinuxRebootCmdRestart = 0x1234567
+
+	log.Printf("received reboot command from %s.  Rebooting now.", from)
+
+	syscall.Sync()
+	syscall.Reboot(LinuxRebootCmdRestart)
+}
+
 // The following logging routines are designed to allow this daemon's log output
 // to match the formatting of the child daemons' Zap output.  We don't use Zap
 // here because we are trying to interleave our own output with the child

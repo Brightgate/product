@@ -74,24 +74,23 @@ func generateNTPDConf() error {
 	return t.Execute(cf, conf)
 }
 
+func restartNTP() {
+	if err := generateNTPDConf(); err != nil {
+		slog.Errorf("Failed to generate %s: %v\n", plat.NtpdConfPath, err)
+	} else {
+		plat.RestartService("chrony")
+	}
+}
+
 // Chrony doesn't have any sort of configuration reload mechanism, and injecting
 // new configuration we need for this through chronyc isn't really possible, so
 // we have to just restart the daemon.
 func configNTPServersChanged(path []string, val string, expires *time.Time) {
-	if err := generateNTPDConf(); err != nil {
-		slog.Errorf("Failed to generate %s: %v\n", plat.NtpdConfPath, err)
-		return
-	}
-
-	plat.RunNTPDaemon()
+	restartNTP()
 }
 
 func configNTPServersDeleted(path []string) {
-	if err := generateNTPDConf(); err != nil {
-		slog.Errorf("Failed to generate %s: %v\n", plat.NtpdConfPath, err)
-		return
-	}
-	plat.RunNTPDaemon()
+	restartNTP()
 }
 
 func ntpdSetup() {
@@ -99,12 +98,7 @@ func ntpdSetup() {
 	config.HandleDelete(`^@/network/ntpservers/`, configNTPServersDeleted)
 	config.HandleExpire(`^@/network/ntpservers/`, configNTPServersDeleted)
 
-	if err := generateNTPDConf(); err != nil {
-		slog.Errorf("Failed to generate %s: %v\n", plat.NtpdConfPath, err)
-		return
-	}
-
 	// We kick the daemon to start with, because, even if it's already
 	// running, it might be running with pre-Brightgate configuration.
-	plat.RunNTPDaemon()
+	restartNTP()
 }

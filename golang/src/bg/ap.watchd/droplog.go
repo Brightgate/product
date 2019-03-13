@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -18,7 +18,6 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -34,7 +33,7 @@ import (
 )
 
 var (
-	pipeName = apcfg.String("syslog_pipe", "/var/tmp/bgpipe", false, nil)
+	pipeName = apcfg.String("pipe", "/var/tmp/droplog_pipe", false, nil)
 
 	wanIfaces map[string]bool
 	logpipe   *os.File
@@ -262,17 +261,14 @@ func openPipe() {
 // When properly configured rsyslog will copy DROP messages to a named pipe, but
 // it is our responsibility to create the pipe.
 func createPipe() error {
-	if !aputil.FileExists(*pipeName) {
-		slog.Infof("Creating named pipe %s for log input", *pipeName)
-		if err := syscall.Mkfifo(*pipeName, 0600); err != nil {
-			return fmt.Errorf("failed to create %s: %v", *pipeName, err)
-		}
+	slog.Infof("Creating named pipe %s for log input", *pipeName)
+	if err := syscall.Mkfifo(*pipeName, 0600); err != nil {
+		return fmt.Errorf("failed to create %s: %v", *pipeName, err)
+	}
 
-		slog.Infof("Restarting rsyslogd")
-		c := exec.Command("/bin/systemctl", "restart", "rsyslog")
-		if err := c.Run(); err != nil {
-			return fmt.Errorf("failed to restart rsyslogd: %v", err)
-		}
+	slog.Infof("Restarting rsyslogd")
+	if err := plat.RestartService("rsyslog"); err != nil {
+		return fmt.Errorf("failed to restart rsyslogd: %v", err)
 	}
 
 	return nil
@@ -316,14 +312,17 @@ func droplogInit(w *watcher) {
 		}
 	}
 
-	if err := createPipe(); err != nil {
-		slog.Errorf("creating syslog pipe %s: %v", *pipeName, err)
-	} else {
-		dropThreads.Add(1)
-		go logMonitor(*pipeName)
-		droplogRunning = true
-		w.running = true
+	if !aputil.FileExists(*pipeName) {
+		if err := createPipe(); err != nil {
+			slog.Errorf("creating %s: %v", *pipeName, err)
+			return
+		}
 	}
+
+	dropThreads.Add(1)
+	go logMonitor(*pipeName)
+	droplogRunning = true
+	w.running = true
 }
 
 func init() {

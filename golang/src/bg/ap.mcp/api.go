@@ -253,6 +253,14 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 			rval, code = handlePeerUpdate(req.Node, req.State,
 				*req.Lifetime)
 		}
+
+	case mcp.REBOOT:
+		from := "unknown"
+		if req.Sender != nil {
+			from = *req.Sender
+		}
+		reboot(from)
+
 	default:
 		code = mcp.INVALID
 	}

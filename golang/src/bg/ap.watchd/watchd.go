@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -26,6 +26,7 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
+	"bg/ap_common/platform"
 	"bg/base_def"
 	"bg/base_msg"
 	"bg/common/cfgapi"
@@ -49,6 +50,7 @@ var (
 	brokerd *broker.Broker
 	config  *cfgapi.Handle
 	slog    *zap.SugaredLogger
+	plat    *platform.Platform
 
 	watchers = make([]*watcher, 0)
 
@@ -346,6 +348,7 @@ func main() {
 	}
 
 	prometheusInit()
+	plat = platform.NewPlatform()
 
 	brokerd = broker.New(pname)
 	defer brokerd.Fini()

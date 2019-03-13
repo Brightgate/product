@@ -55,6 +55,7 @@ const (
 	SET    = base_msg.MCPRequest_SET
 	DO     = base_msg.MCPRequest_DO
 	UPDATE = base_msg.MCPRequest_UPDATE
+	REBOOT = base_msg.MCPRequest_REBOOT
 )
 
 // Daemons must be in one of the following states
@@ -333,5 +334,22 @@ func (m *MCP) SetState(state int) error {
 func (m *MCP) Do(daemon, command string) error {
 	_, err := m.daemonMsg(DO, daemon, command, -1)
 
+	return err
+}
+
+// Reboot is used to instruct ap.mcp to reboot the platform
+func (m *MCP) Reboot() error {
+	cmd := base_msg.MCPRequest_REBOOT
+	version := base_msg.Version{Major: proto.Int32(Version)}
+
+	op := &base_msg.MCPRequest{
+		Timestamp: aputil.NowToProtobuf(),
+		Sender:    proto.String(m.sender),
+		Version:   &version,
+		Debug:     proto.String("-"),
+		Operation: &cmd,
+	}
+
+	_, err := m.msg(op)
 	return err
 }

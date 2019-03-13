@@ -71,11 +71,10 @@ func x86DHCPPidfile(nic string) string {
 	return ""
 }
 
-func x86RunNTPDaemon() error {
-	// "restart" will start the service if it's not already running.
-	cmd := exec.Command("/bin/systemctl", "restart", ntpdSystemdService)
+func x86RestartService(service string) error {
+	cmd := exec.Command("/bin/systemctl", "restart", service+".service")
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to restart %s: %v", ntpdSystemdService, err)
+		return fmt.Errorf("failed to restart %s: %v", service, err)
 	}
 
 	return nil
@@ -110,7 +109,7 @@ func init() {
 		GetDHCPInfo: x86GetDHCPInfo,
 		DHCPPidfile: x86DHCPPidfile,
 
-		RunNTPDaemon: x86RunNTPDaemon,
-		NtpdConfPath: "/etc/chrony/chrony.conf",
+		RestartService: x86RestartService,
+		NtpdConfPath:   "/etc/chrony/chrony.conf",
 	})
 }

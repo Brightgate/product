@@ -25,10 +25,6 @@ import (
 	"github.com/satori/uuid"
 )
 
-const (
-	mtChronyInitd = "/etc/init.d/chronyd"
-)
-
 func mtProbe() bool {
 	const devFile = "/proc/device-tree/model"
 
@@ -198,12 +194,11 @@ func mtDHCPPidfile(nic string) string {
 	return "/var/run/udhcpc-" + nic + ".pid"
 }
 
-func mtRunNTPDaemon() error {
-	// "restart" will start the service if it's not already running.
-	cmd := exec.Command(mtChronyInitd, "restart")
+func mtRestartService(service string) error {
+	path := "/etc/init.d/" + service
+	cmd := exec.Command(path, "restart")
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to restart %s: %v", mtChronyInitd,
-			err)
+		return fmt.Errorf("failed to restart %s: %v", service, err)
 	}
 
 	return nil
@@ -238,7 +233,7 @@ func init() {
 		GetDHCPInfo: mtGetDHCPInfo,
 		DHCPPidfile: mtDHCPPidfile,
 
-		RunNTPDaemon: mtRunNTPDaemon,
-		NtpdConfPath: "/var/etc/chrony.conf",
+		NtpdConfPath:   "/var/etc/chrony.conf",
+		RestartService: mtRestartService,
 	})
 }

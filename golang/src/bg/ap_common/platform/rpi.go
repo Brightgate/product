@@ -142,11 +142,10 @@ func rpiDHCPPidfile(nic string) string {
 	return "/var/run/dhcpcd.pid"
 }
 
-func rpiRunNTPDaemon() error {
-	// "restart" will start the service if it's not already running.
-	cmd := exec.Command("/bin/systemctl", "restart", ntpdSystemdService)
+func rpiRestartService(service string) error {
+	cmd := exec.Command("/bin/systemctl", "restart", service+".service")
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to restart %s: %v", ntpdSystemdService, err)
+		return fmt.Errorf("failed to restart %s: %v", service, err)
 	}
 
 	return nil
@@ -181,7 +180,7 @@ func init() {
 		GetDHCPInfo: rpiGetDHCPInfo,
 		DHCPPidfile: rpiDHCPPidfile,
 
-		RunNTPDaemon: rpiRunNTPDaemon,
-		NtpdConfPath: "/etc/chrony/chrony.conf",
+		NtpdConfPath:   "/etc/chrony/chrony.conf",
+		RestartService: rpiRestartService,
 	})
 }

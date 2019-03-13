@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -37,11 +37,14 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/zap"
 )
 
 var (
 	logDir  = flag.String("logdir", "", "Log file directory")
 	logFile *os.File
+	slog    *zap.SugaredLogger
+	mcpd    *mcp.MCP
 
 	metrics struct {
 		pingEvents      prometheus.Counter
@@ -241,19 +244,30 @@ func prometheusInit() {
 	go http.ListenAndServe(base_def.LOGD_DIAG_PORT, nil)
 }
 
+// send a single message to both the MCP log and the logd-specific log
+func dualLog(format string, v ...interface{}) {
+	msg := fmt.Sprintf(format, v...)
+	log.Printf("%s\n", msg)
+	slog.Infof("%s", msg)
+}
+
 func main() {
+	var err error
+
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
 	flag.Parse()
 
-	mcpd, err := mcp.New(pname)
-	if err != nil {
-		log.Println("Failed to connect to mcp")
+	slog = aputil.NewLogger(pname)
+	defer slog.Sync()
+
+	if mcpd, err = mcp.New(pname); err != nil {
+		slog.Warnf("Failed to connect to mcp")
 	}
 
 	*logDir = aputil.ExpandDirPath(*logDir)
 	if err = reopenLogfile(); err != nil {
-		log.Printf("Failed to setup logging: %s\n", err)
+		slog.Errorf("Failed to setup logging: %s\n", err)
 		os.Exit(1)
 	}
 
@@ -272,18 +286,25 @@ func main() {
 
 	mcpd.SetState(mcp.ONLINE)
 
+	kernelMonitorStart()
+
 	sig := make(chan os.Signal, 3)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-	for {
+	for done := false; !done; {
 		switch s := <-sig; s {
 		case syscall.SIGHUP:
-			log.Printf("Signal (%v) received, reopening logs.\n", s)
+			dualLog("Signal (%v) received, reopening logs.", s)
 			err = reopenLogfile()
 			if err != nil {
-				log.Fatalf("Exiting.  Fatal error reopening log: %s\n", err)
+				dualLog("Exiting.  Fatal error reopening log: %s", err)
+				done = true
 			}
 		default:
-			log.Fatalf("Signal (%v) received, stopping\n", s)
+			dualLog("Signal (%v) received, stopping", s)
+			done = true
 		}
 	}
+
+	kernelMonitorStop()
+	slog.Infof("stopping")
 }
