@@ -204,8 +204,10 @@ export default {
       enroll_guest: {
         title: 'Brightgate - Enroll Guest',
         header: 'Enroll Guest Users with Brightgate',
-        direct_subhead: 'Manually',
-        sms_subhead: 'Via SMS',
+        direct_subhead: 'Tell the guest the password',
+        network_name: 'Network',
+        network_passphrase: 'Password',
+        sms_subhead: 'Send the guest the password',
         qr_subhead: 'Via QR Code',
         phone: 'Guest Phone Number',
         phone_placeholder: 'Phone #',
