@@ -19,6 +19,7 @@ import LeftPanel from './pages/left_panel.vue';
 import MalwareWarn from './pages/malware_warn.vue';
 import Network from './pages/network.vue';
 import NetworkVAP from './pages/network_vap.vue';
+import NetworkVAPEditor from './pages/network_vap_editor.vue';
 import SelfProvision from './pages/self_provision.vue';
 import SiteAdmin from './pages/site_admin.vue';
 import TestTools from './pages/test_tools.vue';
@@ -86,6 +87,10 @@ export default [
   {
     path: '/sites/:siteID/network/vap/:vapName',
     component: NetworkVAP,
+  },
+  {
+    path: '/sites/:siteID/network/vap/:vapName/editor',
+    component: NetworkVAPEditor,
   },
   {
     path: '/test_tools/',

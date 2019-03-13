@@ -93,21 +93,21 @@ const mockRings = {
 
 const mockVAPInfo = {
   'psk': {
-    'ssid': 'coffeeshop-devices',
+    'ssid': 'dunder-device',
     'keyMgmt': 'wpa-psk',
     'passphrase': 'I LIKE COCONUTS',
     'defaultRing': 'unenrolled',
     'rings': ['quarantine', 'devices', 'unenrolled'],
   },
   'guest': {
-    'ssid': 'coffeeshop-guest',
+    'ssid': 'dunder-guest',
     'keyMgmt': 'wpa-psk',
     'passphrase': 'I LIKE COFFEE',
     'defaultRing': 'guest',
     'rings': ['guest'],
   },
   'eap': {
-    'ssid': 'coffeeshop-users',
+    'ssid': 'dunder-user',
     'keyMgmt': 'wpa-eap',
     'defaultRing': 'standard',
     'rings': ['standard', 'core'],

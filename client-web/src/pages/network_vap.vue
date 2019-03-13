@@ -22,6 +22,10 @@ span.pw-toggle {
   <f7-page @page:beforein="onPageBeforeIn">
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.network_vap.title')" sliding />
 
+    <f7-fab v-if="siteAdmin" color="pink" @click="openEditor">
+      <f7-icon size="32" ios="f7:settings" md="material:settings" />
+    </f7-fab>
+
     <f7-block>
       <h1>{{ $t('message.network.names.' + vapName) }}</h1>
       <div class="subtitle">
@@ -37,11 +41,8 @@ span.pw-toggle {
       <f7-list-item :title="$t('message.network_vap.key_mgmt')">
         {{ vap.keyMgmt }}
       </f7-list-item>
-      <f7-list-item :title="$t('message.network_vap.default_tg')">
-        {{ vap.defaultRing }}
-      </f7-list-item>
 
-      <!-- PSK specific password input -->
+      <!-- password input for vaps that support it -->
       <f7-list-item v-if="passphraseDisplayed"
                     title="Passphrase">
         {{ passphraseDisplayed }}
@@ -61,7 +62,13 @@ span.pw-toggle {
 
     <f7-block-title>{{ $t('message.network_vap.ring_config') }}</f7-block-title>
     <f7-list>
-      <f7-list-item v-for="(ring, ringName) in rings" :key="ringName" :title="ringName" accordion-item>
+      <f7-list-item v-for="(ring, ringName) in rings" :key="ringName" accordion-item>
+        <div slot="title">
+          <span>
+            {{ ringName }}
+            <template v-if="ringName === vap.defaultRing">&nbsp;{{ $t('message.network_vap.default_tg') }}</template>
+          </span>
+        </div>
         <f7-accordion-content>
           <f7-list inset>
             <f7-list-item title="Subnet">{{ ring.subnet }}</f7-list-item>
@@ -147,6 +154,13 @@ export default {
       debug('onPageBeforeIn', this.$store.getters.vaps[vapName]);
       this.passphraseValue = this.$store.getters.vaps[vapName].passphrase;
       this.passphraseVisible = false;
+    },
+
+    openEditor: function() {
+      debug('openEditor; current route', this.$f7route);
+      const editor = `${this.$f7route.url}/editor/`;
+      debug('openEditor; navigate to', editor);
+      this.$f7router.navigate(editor);
     },
 
     leaseDurationMinutes: function(minutes) {

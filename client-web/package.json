@@ -20,6 +20,7 @@
     "core-js": "=2.6.4",
     "date-fns": "^2.0.0-alpha.27",
     "debug": "^4.1.1",
+    "fast-text-encoding": "^1.0.0",
     "framework7": "^3.6.6",
     "framework7-icons": "^2.2.0",
     "framework7-vue": "^3.6.6",

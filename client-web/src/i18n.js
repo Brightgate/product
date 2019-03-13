@@ -79,6 +79,7 @@ export default {
         login: 'Login',
         logout: 'Logout',
         need_login: 'You must be logged in',
+        save: 'Save',
       },
       account_prefs: {
         title: 'Account Preferences',
@@ -111,13 +112,30 @@ export default {
         descriptions: {
           eap: 'Each network user has their own login ID and password, created using the Brightgate App or Cloud Portal. Use it for laptops, tablets, and phones.',
           psk: 'All devices on this network share the same password.  Use it for IoT devices, such as printers, security cameras, or "smart" appliances.',
-          guest: 'Guests use this network. The password rotates periodically.',
+          guest: 'Guests use this network. Administrators periodically rotate this password. To reveal the current password, click the password eye.',
         },
         properties: 'Network Properties',
         key_mgmt: 'Authentication Method',
-        default_tg: 'Default Trust Group',
+        default_tg: '(default)',
         passphrase: 'Passphrase',
         ring_config: 'Trust Group Configuration',
+      },
+      network_vap_editor: {
+        title: 'Edit Network Details',
+        ssid: 'SSID (Network Name)',
+        passphrase: 'Passphrase',
+        warning: 'If you are connected to the appliance via WiFi, changing these properties may cause you to become disconnected.',
+        warning_title: 'WiFi Properties Warning',
+        valid_ssid: {
+          not_set: 'SSID must be set',
+          too_long: 'SSID is too long {len}/32',
+          invalid: 'Invalid character',
+        },
+        valid_pp: {
+          len: 'Passphrase must be 8 - 63 characters',
+          invalid: 'Invalid character',
+          hex: '64-character passphrases must be hex strings',
+        },
       },
       compliance_report: {
         title: 'Brightgate - Compliance Report',
@@ -273,6 +291,7 @@ export default {
         login: 'Anmelden',
         logout: 'Abmelden',
         need_login: 'Sie müssen angemeldet sein',
+        save: 'Save', // XXXI18N
       },
       account_prefs: { // XXXI18N
       },
@@ -281,6 +300,8 @@ export default {
       network: { // XXXI18N
       },
       network_vap: { // XXXI18N
+      },
+      network_vap_editor: { // XXXI18N
       },
       compliance_report: { // XXXI18N
       },

@@ -11,7 +11,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -182,7 +181,7 @@ func (a *siteHandler) postConfig(c echo.Context) error {
 		})
 	}
 
-	_, err = hdl.Execute(context.TODO(), ops).Wait(context.TODO())
+	_, err = hdl.Execute(c.Request().Context(), ops).Wait(c.Request().Context())
 	if err != nil {
 		c.Logger().Errorf("failed to set properties: %v", err)
 		return echo.NewHTTPError(
@@ -463,6 +462,7 @@ func (a *siteHandler) getNetworkVAPName(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest)
 	}
+	defer hdl.Close()
 
 	roles, ok := c.Get("matched_roles").([]string)
 	if !ok {
@@ -471,7 +471,6 @@ func (a *siteHandler) getNetworkVAPName(c echo.Context) error {
 	}
 	admin := hasRole(roles, "admin")
 
-	defer hdl.Close()
 	vaps := hdl.GetVirtualAPs()
 	vap, ok := vaps[c.Param("vapname")]
 	// Remove sensitive material for non-admins
@@ -484,9 +483,55 @@ func (a *siteHandler) getNetworkVAPName(c echo.Context) error {
 	return c.JSON(http.StatusOK, vap)
 }
 
-// postNetworkVAPName implements POST /api/site/:uuid/network/vap/:name, allowing updates
-// to select VAP fields.
+type apiVAPUpdate struct {
+	SSID       string `json:"ssid"`
+	Passphrase string `json:"passphrase"`
+}
+
+// postNetworkVAPName implements POST /api/site/:uuid/network/vap/:name,
+// allowing updates to select VAP fields.
 func (a *siteHandler) postNetworkVAPName(c echo.Context) error {
+	hdl, err := a.getClientHandle(c.Param("uuid"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	defer hdl.Close()
+
+	var av apiVAPUpdate
+	if err := c.Bind(&av); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "bad vap")
+	}
+	vaps := hdl.GetVirtualAPs()
+	vap, ok := vaps[c.Param("vapname")]
+	if !ok {
+		return echo.NewHTTPError(http.StatusNotFound)
+	}
+	var ops []cfgapi.PropertyOp
+	if av.SSID != "" && vap.SSID != av.SSID {
+		ops = append(ops, cfgapi.PropertyOp{
+			Op:    cfgapi.PropCreate,
+			Name:  fmt.Sprintf("@/network/vap/%s/ssid", c.Param("vapname")),
+			Value: av.SSID,
+		})
+	}
+	if av.Passphrase != "" && vap.Passphrase != av.Passphrase {
+		ops = append(ops, cfgapi.PropertyOp{
+			Op:    cfgapi.PropCreate,
+			Name:  fmt.Sprintf("@/network/vap/%s/passphrase", c.Param("vapname")),
+			Value: av.Passphrase,
+		})
+	}
+	if len(ops) == 0 {
+		return nil
+	}
+	_, err = hdl.Execute(c.Request().Context(), ops).Wait(c.Request().Context())
+	if err != nil {
+		c.Logger().Errorf("failed to set properties: %v", err)
+		return echo.NewHTTPError(
+			http.StatusBadRequest,
+			"failed to set properties")
+	}
+
 	return nil
 }
 

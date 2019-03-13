@@ -302,7 +302,7 @@ func demoVAPNameGetHandler(w http.ResponseWriter, r *http.Request) {
 	vaps := config.GetVirtualAPs()
 	vap, ok := vaps[vars["vapname"]]
 	if !ok {
-		http.Error(w, "no such vap", 404)
+		http.Error(w, "no such vap", http.StatusNotFound)
 		return
 	}
 
@@ -312,8 +312,53 @@ func demoVAPNameGetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type demoVAPUpdate struct {
+	SSID       string `json:"ssid"`
+	Passphrase string `json:"passphrase"`
+}
+
 func demoVAPNamePostHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
+	var err error
+	vars := mux.Vars(r)
+
+	var dvu demoVAPUpdate
+	if err = json.NewDecoder(r.Body).Decode(&dvu); err != nil {
+		log.Printf("demoVAPUpdate decode failed: %v", err)
+		http.Error(w, "bad vap", http.StatusBadRequest)
+		return
+	}
+
+	vaps := config.GetVirtualAPs()
+	vap, ok := vaps[vars["vapname"]]
+	if !ok {
+		http.Error(w, "no such vap", http.StatusNotFound)
+		return
+	}
+
+	var ops []cfgapi.PropertyOp
+	if dvu.SSID != "" && vap.SSID != dvu.SSID {
+		ops = append(ops, cfgapi.PropertyOp{
+			Op:    cfgapi.PropCreate,
+			Name:  fmt.Sprintf("@/network/vap/%s/ssid", vars["vapname"]),
+			Value: dvu.SSID,
+		})
+	}
+	if dvu.Passphrase != "" && vap.Passphrase != dvu.Passphrase {
+		ops = append(ops, cfgapi.PropertyOp{
+			Op:    cfgapi.PropCreate,
+			Name:  fmt.Sprintf("@/network/vap/%s/passphrase", vars["vapname"]),
+			Value: dvu.Passphrase,
+		})
+	}
+	if len(ops) == 0 {
+		return
+	}
+	_, err = config.Execute(r.Context(), ops).Wait(r.Context())
+	if err != nil {
+		http.Error(w, "failed to set properties", http.StatusBadRequest)
+		return
+	}
+	return
 }
 
 // GET requests moves all unenrolled clients to standard.

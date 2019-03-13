@@ -200,6 +200,18 @@ async function siteVAPsGet(siteID) {
   return res;
 }
 
+// Post configuration changes for a vap
+async function siteVAPPost(siteID, vapName, vapConfig) {
+  assert.equal(typeof siteID, 'string', 'siteid');
+  assert.equal(typeof vapName, 'string', 'vapname');
+  assert.equal(typeof vapConfig, 'object', 'config');
+
+  const u = buildUrl(`/api/sites/${siteID}/network/vap/${vapName}`);
+  debug(`siteVAPPost ${u}`, vapConfig);
+  await axios.post(u, vapConfig);
+  return;
+}
+
 // Load the list of users from the server.
 async function siteUsersGet(siteID) {
   assert.equal(typeof siteID, 'string');
@@ -365,6 +377,7 @@ export default {
   siteRingsGet,
   siteClientsRingSet,
   siteVAPsGet,
+  siteVAPPost,
   siteUsersGet,
   siteUsersPost,
   siteUsersDelete,
