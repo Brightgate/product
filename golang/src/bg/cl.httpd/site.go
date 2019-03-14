@@ -535,6 +535,22 @@ func (a *siteHandler) postNetworkVAPName(c echo.Context) error {
 	return nil
 }
 
+// getNetworkWan implements GET /api/site/:uuid/network/wan
+// returning information about the Wan link
+func (a *siteHandler) getNetworkWan(c echo.Context) error {
+	hdl, err := a.getClientHandle(c.Param("uuid"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	defer hdl.Close()
+
+	wan := hdl.GetWanInfo()
+	if wan == nil {
+		wan = &cfgapi.WanInfo{}
+	}
+	return c.JSON(http.StatusOK, wan)
+}
+
 // apiUserInfo describes a user.  It is similar to cfgapi.UserInfo but with
 // fields customized for partial updates and password setting.
 type apiUserInfo struct {
@@ -822,6 +838,7 @@ func newSiteHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []echo.M
 	siteU.GET("/network/vap", h.getNetworkVAP, user)
 	siteU.GET("/network/vap/:vapname", h.getNetworkVAPName, user)
 	siteU.POST("/network/vap/:vapname", h.postNetworkVAPName, admin)
+	siteU.GET("/network/wan", h.getNetworkWan, admin)
 	siteU.GET("/users", h.getUsers, admin)
 	siteU.GET("/users/:useruuid", h.getUserByUUID, admin)
 	siteU.POST("/users/:useruuid", h.postUserByUUID, admin)

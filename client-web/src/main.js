@@ -13,6 +13,8 @@ import VueI18n from 'vue-i18n';
 
 import Framework7 from 'framework7/framework7.esm.bundle';
 import Framework7Vue, {
+  f7Accordion,
+  f7AccordionContent,
   f7Block,
   f7BlockTitle,
   f7Button,
@@ -72,6 +74,8 @@ Framework7.use(Framework7Vue);
 Framework7.use(F7Debug);
 
 const comps = [
+  f7Accordion,
+  f7AccordionContent,
   f7Block,
   f7BlockTitle,
   f7Button,

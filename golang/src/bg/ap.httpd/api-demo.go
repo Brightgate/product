@@ -361,6 +361,19 @@ func demoVAPNamePostHandler(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
+// Implements GET /api/site/:uuid/network/wan, returning information about the
+// WAN link
+func demoWanGetHandler(w http.ResponseWriter, r *http.Request) {
+	wan := config.GetWanInfo()
+	if wan == nil {
+		wan = &cfgapi.WanInfo{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(&wan); err != nil {
+		panic(err)
+	}
+}
+
 // GET requests moves all unenrolled clients to standard.
 func demoSupremeHandler(w http.ResponseWriter, r *http.Request) {
 	clientsRaw := config.GetClients()
@@ -747,6 +760,7 @@ func makeDemoAPIRouter() *mux.Router {
 	router.HandleFunc("/sites/{s}/network/vap", demoVAPGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/network/vap/{vapname}", demoVAPNameGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/network/vap/{vapname}", demoVAPNamePostHandler).Methods("POST")
+	router.HandleFunc("/sites/{s}/network/wan", demoWanGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/rings", demoRingsHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/supreme", demoSupremeHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/users", demoUsersHandler).Methods("GET")

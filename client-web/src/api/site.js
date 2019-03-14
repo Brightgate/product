@@ -212,6 +212,15 @@ async function siteVAPPost(siteID, vapName, vapConfig) {
   return;
 }
 
+// Load the WAN information from the server.
+async function siteWanGet(siteID) {
+  assert.equal(typeof siteID, 'string');
+
+  const wan = await commonApplianceGet(siteID, 'network/wan');
+  debug('wan', wan);
+  return wan;
+}
+
 // Load the list of users from the server.
 async function siteUsersGet(siteID) {
   assert.equal(typeof siteID, 'string');
@@ -378,6 +387,7 @@ export default {
   siteClientsRingSet,
   siteVAPsGet,
   siteVAPPost,
+  siteWanGet,
   siteUsersGet,
   siteUsersPost,
   siteUsersDelete,

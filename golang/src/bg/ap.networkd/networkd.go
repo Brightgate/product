@@ -814,7 +814,7 @@ func daemonInit() error {
 	}
 
 	getDevices()
-	wanInit(props)
+	wanInit(config.GetWanInfo())
 
 	// All wired devices that haven't yet been assigned to a ring will be
 	// put into "standard" by default

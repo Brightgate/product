@@ -108,16 +108,15 @@ func wanStaticDeleted(prop string) {
 	}
 }
 
-func wanStaticInit(props *cfgapi.PropertyNode) {
-	if wan := props.Children["wan"]; wan != nil {
-		if static := wan.Children["static"]; static != nil {
-			if addr := static.Children["address"]; addr != nil {
-				wanSetStaticAddr(addr.Value)
-			}
-			if addr := static.Children["route"]; addr != nil {
-				wanSetStaticRoute(addr.Value)
-			}
-		}
+func wanStaticInit(cfgWan *cfgapi.WanInfo) {
+	if cfgWan == nil {
+		return
+	}
+	if cfgWan.StaticAddress != "" {
+		wanSetStaticAddr(cfgWan.StaticAddress)
+	}
+	if cfgWan.StaticRoute != nil {
+		wanSetStaticRoute(cfgWan.StaticRoute.String())
 	}
 }
 
@@ -384,7 +383,7 @@ func (w *wanInfo) stop() {
 	wan.wg.Wait()
 }
 
-func wanInit(props *cfgapi.PropertyNode) {
+func wanInit(cfgWan *cfgapi.WanInfo) {
 	var err error
 	var available, current *physDevice
 	var outgoingRing string
@@ -393,7 +392,7 @@ func wanInit(props *cfgapi.PropertyNode) {
 		done: make(chan bool),
 	}
 
-	wanStaticInit(props)
+	wanStaticInit(cfgWan)
 
 	if aputil.IsSatelliteMode() {
 		outgoingRing = base_def.RING_INTERNAL

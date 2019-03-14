@@ -533,6 +533,20 @@ func getUUIDVal(root *PropertyNode, name string) (*uuid.UUID, error) {
 	return &uu, nil
 }
 
+func getIPv4Val(root *PropertyNode, name string) (*net.IP, error) {
+	var val string
+	var err error
+
+	if val, err = getProp(root, name); err != nil {
+		return nil, err
+	}
+
+	if ip := net.ParseIP(val); ip != nil {
+		return &ip, nil
+	}
+	return nil, fmt.Errorf("Invalid ipv4 address")
+}
+
 // fetch the various properties we need to calculate the subnet addresses for
 // each ring at this site.
 func (c *Handle) getSubnetInfo() (string, int, error) {
@@ -725,6 +739,43 @@ func (c *Handle) GetVirtualAPs() map[string]*VirtualAP {
 	}
 
 	return vaps
+}
+
+// WanInfo captures the configuration information of the WAN link
+type WanInfo struct {
+	CurrentAddress string     `json:"currentAddress,omitempty"`
+	StaticAddress  string     `json:"staticAddress,omitempty"`
+	StaticRoute    *net.IP    `json:"staticRoute,omitempty"`
+	DHCPAddress    string     `json:"dhcpAddress,omitempty"`
+	DHCPStart      *time.Time `json:"dhcpStart,omitempty"`
+	DHCPDuration   int        `json:"dhcpDuration,omitempty"`
+	DHCPRoute      *net.IP    `json:"dhcpRoute,omitempty"`
+}
+
+// GetWanInfo returns the WAN configuration.
+func (c *Handle) GetWanInfo() *WanInfo {
+	wan, _ := c.GetProps("@/network/wan")
+	if wan == nil {
+		return nil
+	}
+	var w WanInfo
+	if current := wan.Children["current"]; current != nil {
+		w.CurrentAddress, _ = getStringVal(current, "address")
+	}
+	if static := wan.Children["static"]; static != nil {
+		w.StaticAddress, _ = getStringVal(static, "address")
+		w.StaticRoute, _ = getIPv4Val(static, "route")
+	}
+	if dhcp := wan.Children["dhcp"]; dhcp != nil {
+		w.DHCPAddress, _ = getStringVal(dhcp, "address")
+		w.DHCPRoute, _ = getIPv4Val(dhcp, "route")
+		w.DHCPStart, _ = getTimeVal(dhcp, "start")
+		if w.DHCPStart.IsZero() {
+			w.DHCPStart = nil
+		}
+		w.DHCPDuration, _ = getIntVal(dhcp, "duration")
+	}
+	return &w
 }
 
 func getClient(client *PropertyNode) *ClientInfo {

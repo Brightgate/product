@@ -34,8 +34,42 @@
       <f7-list-item :title="$t('message.network.config_dns_server')">
         {{ networkConfig.dnsServer }}
       </f7-list-item>
-      <f7-list-item :title="$t('message.network.config_wan_current')">
-        {{ networkConfig.wanCurrent }}
+      <f7-list-item :after="wan.currentAddress" accordion-item inset title="WAN Link">
+        <f7-accordion-content>
+          <f7-list inset>
+            <f7-list-item title="Current Address">
+              {{ wan.currentAddress }}
+            </f7-list-item>
+            <f7-list-item title="Mode">
+              <span v-if="staticWan">
+                Statically configured address
+              </span>
+              <span v-else>
+                Assigned by upstream (DHCP)
+              </span>
+            </f7-list-item>
+            <f7-list-item
+              v-if="wan.staticAddress"
+              title="Static Address">
+              {{ wan.staticAddress }}
+            </f7-list-item>
+
+            <f7-list-item
+              title="Upstream Router Address">
+              {{ staticWan ? wan.staticRoute : wan.dhcpRoute }}
+            </f7-list-item>
+            <f7-list-item
+              v-if="!staticWan && wan.dhcpStart"
+              title="DHCP Lease Start">
+              {{ wan.dhcpStart }}
+            </f7-list-item>
+            <f7-list-item
+              v-if="!staticWan && wan.dhcpDuration"
+              title="DHCP Lease Duration">
+              {{ wan.dhcpDuration }}
+            </f7-list-item>
+          </f7-list>
+        </f7-accordion-content>
       </f7-list-item>
     </f7-list>
   </f7-page>
@@ -43,8 +77,10 @@
 
 <script>
 import vuex from 'vuex';
+import Debug from 'debug';
 import Promise from 'bluebird';
 import appDefs from '../app_defs';
+const debug = Debug('page:network');
 
 export default {
   data: function() {
@@ -60,7 +96,13 @@ export default {
     ...vuex.mapGetters([
       'networkConfig',
       'vaps',
+      'wan',
     ]),
+
+    staticWan: function() {
+      debug('staticWan: wan is', this.$store.getters.wan.staticAddress);
+      return !!this.$store.getters.wan.staticAddress;
+    },
   },
 
   methods: {

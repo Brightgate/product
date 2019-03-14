@@ -54,6 +54,7 @@ class Site {
     this.users = {};
     this.networkConfig = {};
     this.vaps = {};
+    this.wan = {};
     debug(`done constructing new Site id=${id}`);
   }
 
@@ -236,6 +237,10 @@ const mutations = {
     getSite(state, id).vaps = vaps;
   },
 
+  setSiteWan(state, {id, wan}) {
+    getSite(state, id).wan = wan;
+  },
+
   setAccountSelfProvision(state, newSP) {
     state.accountSelfProvision = newSP;
   },
@@ -394,6 +399,13 @@ const getters = {
   },
   vaps: (state) => {
     return state.currentSite.vaps;
+  },
+
+  siteWan: (state) => (siteID) => {
+    return getSite(state, siteID).wan;
+  },
+  wan: (state) => {
+    return state.currentSite.wan;
   },
 
   siteUsers: (state) => (siteID) => {
@@ -631,11 +643,15 @@ const actions = {
     }
     debug(`fetchNetworkConfig`);
     const id = context.state.currentSiteID;
+
+    const wan = await siteApi.siteWanGet(id);
+    debug('fetchNetworkConfig committing wan', wan);
+    context.commit('setSiteWan', {id, wan});
+
     const nc = await Promise.props({
       dnsServer: siteApi.siteConfigGet(id, '@/network/dnsserver', ''),
       chan24GHz: siteApi.siteConfigGet(id, '@/network/2.4GHz/channel', ''),
       chan5GHz: siteApi.siteConfigGet(id, '@/network/5GHz/channel', ''),
-      wanCurrent: siteApi.siteConfigGet(id, '@/network/wan/current/address', ''),
       baseAddress: siteApi.siteConfigGet(id, '@/network/base_address', ''),
     });
     debug('fetchNetworkConfig committing', nc);

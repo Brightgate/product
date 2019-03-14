@@ -115,6 +115,14 @@ const mockVAPInfo = {
 };
 const mockVAPNames = Object.keys(mockVAPInfo);
 
+const mockWan = {
+  'currentAddress': '10.1.4.38/26',
+  'dhcpAddress': '10.1.4.38/26',
+  'dhcpStart': '2019-03-14T21:05:35Z',
+  'dhcpDuration': 86400,
+  'dhcpRoute': '10.1.4.1',
+};
+
 const mockConfig = {
   '@/network/dnsserver': '8.8.8.8',
   '@/network/wan/current/address': '10.1.4.12/26',
@@ -218,6 +226,7 @@ function mockAxios(normalAxios, mode) {
     .onPost(/\/api\/sites\/.+\/enroll_guest$/).reply(200, mockEnrollGuest)
     .onGet(/\/api\/sites\/.+\/network\/vap$/).reply(200, mockVAPNames)
     .onGet(/\/api\/sites\/.+\/network\/vap\.*/).reply(vapGetHandler)
+    .onGet(/\/api\/sites\/.+\/network\/wan$/).reply(200, mockWan)
     .onGet('/auth/sites/login').reply(200)
     .onGet('/auth/logout').reply(200)
     .onGet('/auth/userid').reply(200, mockUserid)

@@ -87,7 +87,6 @@ span.pw-toggle {
 <script>
 import vuex from 'vuex';
 import Debug from 'debug';
-import {f7AccordionContent} from 'framework7-vue';
 import {pickBy} from 'lodash-es';
 import {formatDistanceStrict} from '../date-fns-wrapper';
 import appDefs from '../app_defs';
@@ -95,7 +94,6 @@ import appDefs from '../app_defs';
 const debug = Debug('page:network_vap');
 
 export default {
-  components: {f7AccordionContent},
   data: function() {
     return {
       appDefs: appDefs,
