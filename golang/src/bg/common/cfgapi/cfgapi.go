@@ -144,6 +144,7 @@ var ringToSubnetIdx = map[string]int{
 // RingConfig defines the parameters of a ring's subnet
 type RingConfig struct {
 	Subnet        string
+	IPNet         *net.IPNet
 	Bridge        string
 	VirtualAP     string
 	Vlan          int
@@ -587,6 +588,7 @@ func (c *Handle) GetRings() RingMap {
 	for ringName, ring := range props.Children {
 		var subnet, bridge, vap string
 		var vlan, duration int
+		var ipnet *net.IPNet
 		var err error
 
 		if !ValidRings[ringName] {
@@ -610,10 +612,16 @@ func (c *Handle) GetRings() RingMap {
 		if err == nil {
 			duration, err = getIntVal(ring, "lease_duration")
 		}
+
+		if err == nil {
+			_, ipnet, err = net.ParseCIDR(subnet)
+		}
+
 		if err == nil {
 			c := RingConfig{
 				Vlan:          vlan,
 				Subnet:        subnet,
+				IPNet:         ipnet,
 				Bridge:        bridge,
 				VirtualAP:     vap,
 				LeaseDuration: duration,

@@ -886,10 +886,7 @@ func initNetwork() {
 			rectype: dns.TypeA,
 			recval:  srouter,
 		}
-
-		if _, subnet, _ := net.ParseCIDR(ring.Subnet); subnet != nil {
-			subnets = append(subnets, subnet)
-		}
+		subnets = append(subnets, ring.IPNet)
 	}
 }
 

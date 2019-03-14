@@ -721,14 +721,35 @@ func scanCheck(scantype, ip string) bool {
 	return busy
 }
 
+func verifyLocalIP(ip string) error {
+	ipv4 := net.ParseIP(ip)
+	if ipv4 == nil {
+		return fmt.Errorf("invalid IP address")
+	}
+
+	for _, ring := range rings {
+		if ring.IPNet.Contains(ipv4) {
+			return nil
+		}
+	}
+	return fmt.Errorf("not on one of our subnets")
+}
+
 // portScan scans the ports of the given IP address using nmap, putting
 // results on the message bus. Scans of IP are stopped if host is down.
 func portScan(req *ScanRequest) {
+	if err := verifyLocalIP(req.IP); err != nil {
+		slog.Warnf("not scanning %s: %v", req.IP, err)
+		req.Period = nil
+		return
+	}
+
 	start := time.Now()
 	res, err := nmapScan("portscan", req.IP, req.Args)
 	done := time.Now()
 
 	if err != nil {
+		slog.Warnf("portscan failed: %v", err)
 		return
 	}
 
@@ -932,6 +953,12 @@ func vulnScanProcess(ip string, discovered map[string]apvuln.TestResult) {
 
 func vulnScan(req *ScanRequest) {
 	if !vulnScannable {
+		return
+	}
+
+	if err := verifyLocalIP(req.IP); err != nil {
+		slog.Warnf("not scanning %s: %v", req.IP, err)
+		req.Period = nil
 		return
 	}
 

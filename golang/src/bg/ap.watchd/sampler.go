@@ -22,7 +22,6 @@ import (
 
 	"bg/ap_common/apcfg"
 	"bg/base_def"
-	"bg/common/cfgapi"
 	"bg/common/network"
 
 	// Requires libpcap
@@ -415,26 +414,6 @@ func sampleInterface(state *samplerState) {
 	slog.Infof("Sampler for %s (%s) offline", state.iface, state.ring)
 }
 
-func getRingSubnet(config *cfgapi.RingConfig) (net.HardwareAddr, *net.IPNet, error) {
-	var hwaddr net.HardwareAddr
-	var subnet *net.IPNet
-	var err error
-
-	if _, subnet, _ = net.ParseCIDR(config.Subnet); subnet == nil {
-		err = fmt.Errorf("invalid subnet '%s'", config.Subnet)
-	} else {
-		iface, x := net.InterfaceByName(config.Bridge)
-		if x != nil {
-			err = fmt.Errorf("InterfaceByName(%s) failed on: %v",
-				config.Bridge, x)
-		} else {
-			hwaddr = iface.HardwareAddr
-		}
-	}
-
-	return hwaddr, subnet, err
-}
-
 func sampleFini(w *watcher) {
 	slog.Infof("Shutting down sampler")
 	samplerRunning = false
@@ -468,23 +447,25 @@ func sampleInit(w *watcher) {
 			continue
 		}
 
-		hwaddr, subnet, err := getRingSubnet(config)
+		iface, err := net.InterfaceByName(config.Bridge)
 		if err != nil {
-			slog.Warnf("Failed to sample on ring '%s': %v",
-				ring, err)
-		} else {
-			subnetBcast = append(subnetBcast,
-				subnetBroadcastAddr(subnet))
-			subnets = append(subnets, subnet)
-			s := samplerState{
-				ring:   ring,
-				iface:  config.Bridge,
-				hwaddr: hwaddr,
-			}
-			samplers = append(samplers, &s)
-			samplerWaitGroup.Add(1)
-			go sampleInterface(&s)
+			slog.Errorf("InterfaceByName(%s) failed on: %v",
+				config.Bridge, err)
+			continue
 		}
+
+		bcastAddr := subnetBroadcastAddr(config.IPNet)
+		subnetBcast = append(subnetBcast, bcastAddr)
+		subnets = append(subnets, config.IPNet)
+
+		s := samplerState{
+			ring:   ring,
+			iface:  config.Bridge,
+			hwaddr: iface.HardwareAddr,
+		}
+		samplers = append(samplers, &s)
+		samplerWaitGroup.Add(1)
+		go sampleInterface(&s)
 	}
 
 	samplerWaitGroup.Add(1)

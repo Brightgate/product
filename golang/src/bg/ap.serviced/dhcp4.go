@@ -366,7 +366,6 @@ type lease struct {
 
 type ringHandler struct {
 	ring       string        // Client ring eligible for this server
-	subnet     net.IPNet     // Subnet being managed
 	serverIP   net.IP        // DHCP server's IP
 	options    dhcp.Options  // Options to send to DHCP Clients
 	rangeStart net.IP        // Start of IP range to distribute
@@ -740,18 +739,12 @@ func (h *ringHandler) getLease(ip net.IP) *lease {
 	return &h.leases[slot]
 }
 
-func ipRange(ring, subnet string) (start net.IP, ipnet *net.IPNet, span int) {
-	var err error
-
-	start, ipnet, err = net.ParseCIDR(subnet)
-	if err != nil {
-		slog.Fatalf("Invalid subnet %v for ring %s: %v",
-			subnet, ring, err)
-	}
-
+func ipRange(ring *cfgapi.RingConfig) (net.IP, int) {
+	start, ipnet, _ := net.ParseCIDR(ring.Subnet)
 	ones, bits := ipnet.Mask.Size()
-	span = (1<<uint32(bits-ones) - 2)
-	return
+	span := (1<<uint32(bits-ones) - 2)
+
+	return start, span
 }
 
 //
@@ -759,9 +752,13 @@ func ipRange(ring, subnet string) (start net.IP, ipnet *net.IPNet, span int) {
 //
 func newHandler(name string, rings cfgapi.RingMap) *ringHandler {
 	ring := rings[name]
-	duration := time.Duration(ring.LeaseDuration) * time.Minute
-	start, subnet, span := ipRange(name, ring.Subnet)
+	start, span := ipRange(ring)
+	if start == nil {
+		slog.Errorf("%s has an illegal subnet: %s", name, ring.Subnet)
+		return nil
+	}
 
+	duration := time.Duration(ring.LeaseDuration) * time.Minute
 	myip := dhcp.IPAdd(start, 1)
 	if name == base_def.RING_INTERNAL {
 		// Shrink the range to exclude the router
@@ -778,14 +775,13 @@ func newHandler(name string, rings cfgapi.RingMap) *ringHandler {
 
 	h := ringHandler{
 		ring:       name,
-		subnet:     *subnet,
 		serverIP:   myip,
 		rangeStart: start,
 		rangeEnd:   dhcp.IPAdd(start, span),
 		rangeSpan:  span,
 		duration:   duration,
 		options: dhcp.Options{
-			dhcp.OptionSubnetMask:                 subnet.Mask,
+			dhcp.OptionSubnetMask:                 ring.IPNet.Mask,
 			dhcp.OptionRouter:                     myip,
 			dhcp.OptionDomainNameServer:           myip,
 			dhcp.OptionNetworkTimeProtocolServers: myip,

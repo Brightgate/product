@@ -169,9 +169,10 @@ func configSet(name, val string) bool {
 	var reload bool
 
 	switch name {
-	case "base_address", "ring_width":
-		rings = config.GetRings()
-		reload = true
+	case "base_address":
+		slog.Info("base_address changed - exiting to rebuild everything")
+		networkdStop()
+		return false
 
 	case "radius_auth_secret":
 		prop := &wconf.radiusSecret
@@ -195,8 +196,8 @@ func configNetworkDeleted(path []string) {
 }
 
 func configSiteIndexChanged(path []string, val string, expires *time.Time) {
-	rings = config.GetRings()
-	hostapd.reload()
+	slog.Info("site_index changed - exiting to rebuild everything")
+	networkdStop()
 }
 
 func configNetworkChanged(path []string, val string, expires *time.Time) {
@@ -363,7 +364,23 @@ func rebuildUnenrolled(devs []*physDevice, interrupt chan bool) {
 	}
 }
 
+func sanityCheckSubnets() error {
+	for name, ring := range rings {
+		if ring.IPNet.Contains(wan.addr) {
+			return fmt.Errorf("collision between our IP (%v) and "+
+				"%s subnet: %v", wan.addr, name, ring.Subnet)
+		}
+	}
+	return nil
+}
+
 func resetInterfaces() {
+	if err := sanityCheckSubnets(); err != nil {
+		slog.Errorf("%v", err)
+		mcpd.SetState(mcp.BROKEN)
+		networkdStop()
+		return
+	}
 	deleteBridges()
 	createBridges()
 	rebuildLan()
@@ -433,8 +450,7 @@ func deleteBridges() {
 // router for each ring will be the corresponding .x address in that ring's
 // subnet.
 func localRouter(ring *cfgapi.RingConfig) string {
-	_, network, _ := net.ParseCIDR(ring.Subnet)
-	raw := network.IP.To4()
+	raw := ring.IPNet.IP.To4()
 	raw[3] = networkNodeIdx
 	return (net.IP(raw)).String()
 }
@@ -853,13 +869,17 @@ func signalHandler() {
 	s := <-sig
 
 	slog.Infof("Received signal %v", s)
-	running = false
-	hostapd.reset()
+	networkdStop()
 }
 
 func prometheusInit() {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(base_def.NETWORKD_DIAG_PORT, nil)
+}
+
+func networkdStop() {
+	running = false
+	hostapd.reset()
 }
 
 func main() {
@@ -881,6 +901,7 @@ func main() {
 
 	applyFilters()
 
+	mcpd.SetState(mcp.ONLINE)
 	running = true
 	go signalHandler()
 
@@ -891,10 +912,10 @@ func main() {
 		defer wan.stop()
 	}
 
-	mcpd.SetState(mcp.ONLINE)
 	hostapdLoop()
 
 	slog.Infof("Cleaning up")
 
 	networkCleanup()
+	os.Exit(0)
 }
