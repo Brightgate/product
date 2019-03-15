@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+// COPYRIGHT 2019 Brightgate Inc. All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -31,6 +31,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"syscall"
 
@@ -121,11 +122,12 @@ unit: sectors
 )
 
 var (
-	dryRun         bool
-	imageDir       string
-	installSide    string
-	targetPlatform *platformStorage
-	retrieveURL    string
+	dryRun           bool
+	forceRepartition bool
+	imageDir         string
+	installSide      string
+	targetPlatform   *platformStorage
+	retrieveURL      string
 )
 
 func getMainDevice() string {
@@ -174,6 +176,14 @@ func repartitionSfdisk() {
 	}
 
 	log.Printf("sfdisk %s\n", result)
+
+	partprobe := exec.Command("partprobe", getMainDevice())
+	result, err = partprobe.Output()
+	if err != nil {
+		log.Fatalf("partprobe failure: %s\n", err)
+	}
+
+	log.Printf("partprobe %s\n", result)
 }
 
 func writeSlice(sl slice, imd string) {
@@ -506,6 +516,23 @@ func chooseSide(pickSame bool) int {
 	return noSide
 }
 
+func checkMac() {
+	macMediatekPrefix := regexp.MustCompile("^00:0[Cc]:[Ee]7")
+	macBGAlphaPrefix := regexp.MustCompile("^60:90:84")
+
+	// Check MAC address.
+	mac, _ := uBootEnvRead("ethaddr")
+
+	// XXX Add clause for proper MAC, once acquired.
+	if macMediatekPrefix.MatchString(mac) {
+		log.Printf("!! MAC unprogrammed (mediatek prefix)")
+	} else if macBGAlphaPrefix.MatchString(mac) {
+		log.Printf("MAC acceptable for alpha only")
+	} else {
+		log.Printf("!! MAC unknown: %s", mac)
+	}
+}
+
 func install(cmd *cobra.Command, args []string) error {
 	side := noSide
 	iS := strings.ToLower(installSide)
@@ -539,7 +566,7 @@ func install(cmd *cobra.Command, args []string) error {
 	}
 
 	// Are we partitioned correctly?
-	if !partitionsAcceptable() {
+	if !partitionsAcceptable() || forceRepartition {
 		if dryRun {
 			// skip
 			log.Println("dry-run: skipping repartitioning")
@@ -558,6 +585,7 @@ func install(cmd *cobra.Command, args []string) error {
 	}
 
 	// Set U-Boot environment
+	checkMac()
 	if dryRun {
 		log.Println("dry-run: skipping environment update")
 	} else {
@@ -567,10 +595,14 @@ func install(cmd *cobra.Command, args []string) error {
 	// Copy images to appropriate on-device locations.
 	writeSlices(imageDir, side)
 
+	syscall.Sync()
+
 	return nil
 }
 
 func status(cmd *cobra.Command, args []string) error {
+	checkMac()
+
 	// Read readoff.
 	roSide := noSide
 	baSide := sideB
@@ -655,6 +687,7 @@ func main() {
 		Args:  cobra.NoArgs,
 		RunE:  install,
 	}
+	installCmd.Flags().BoolVarP(&forceRepartition, "force-repartition", "F", false, "always repartition storage device")
 	installCmd.Flags().StringVarP(&installSide, "side", "s", "other", "target install 'side' ['a', 'b', 'same', 'other']")
 	rootCmd.AddCommand(installCmd)
 

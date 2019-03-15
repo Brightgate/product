@@ -113,6 +113,7 @@ GOSRC = $(GOWS)/src
 GOSRCBG = $(GOSRC)/bg
 # Vendoring directory, where external deps are placed
 GOSRCBGVENDOR = $(GOSRCBG)/vendor
+GOSRCBGVENDORNEW = $(GOSRCBG)/.vendor-new
 # Where we stick build tools
 GOBIN = $(GOPATH)/bin
 
