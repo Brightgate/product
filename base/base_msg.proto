@@ -248,15 +248,17 @@ message EventNetException {
 	optional Protocol protocol = 0x0800;
 
 	enum Reason {
-		PHISHING_ADDRESS = 1;
-		BLOCKED_IP = 2;
-		VULNERABILITY_DETECTED = 3;
+		PHISHING_ADDRESS	= 1;
+		BLOCKED_IP		= 2;
+		VULNERABILITY_DETECTED	= 3;
+		BAD_PASSWORD		= 4;
 	}
-	optional Reason reason = 0x801;
-	optional string message = 0x802;
-	optional fixed64 mac_address = 0x803;
-	optional fixed32 ipv4_address = 0x804;
-	repeated string details = 0x805;
+	optional Reason reason		= 0x801;
+	optional string message		= 0x802;
+	optional fixed64 mac_address	= 0x803;
+	optional fixed32 ipv4_address	= 0x804;
+	optional string virtualAP	= 0x805;
+	repeated string details		= 0x806;
 }
 
 // The network identity is sent whenever the identifier daemon is able to

@@ -47,10 +47,12 @@ var (
 		true, nil)
 	rulesDir = apcfg.String("rules_dir", "/etc/filter.rules.d",
 		true, nil)
-	hostapdLatency = apcfg.Int("hostapd_latency", 5, true, nil)
-	deadmanTimeout = apcfg.Duration("deadman", 5*time.Second, true, nil)
-	_              = apcfg.String("log_level", "info", true,
-		aputil.LogSetLevel)
+	hostapdLatency    = apcfg.Int("hostapd_latency", 5, true, nil)
+	deadmanTimeout    = apcfg.Duration("deadman", 5*time.Second, true, nil)
+	retransmitLimit   = apcfg.Int("retransmit_limit", 4, true, nil)
+	retransmitTimeout = apcfg.Duration("retransmit_timeout",
+		25*time.Second, true, nil)
+	_ = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
 
 	physDevices = make(map[string]*physDevice)
 

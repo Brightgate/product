@@ -17,6 +17,7 @@ import (
 	"net"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -104,6 +105,10 @@ type hostapdConn struct {
 	conn        *net.UnixConn // unix-domain control socket to hostapd
 	liveCmd     *hostapdCmd   // the in-flight hostapd command
 	pendingCmds []*hostapdCmd // all queued commands
+
+	retryCount int
+	retryLast  time.Time
+	retryFirst time.Time
 
 	stations map[string]*stationInfo
 
@@ -253,6 +258,31 @@ func sendNetEntity(mac string, vapName, bandName, sig *string, disconnect bool) 
 	}
 }
 
+func sendNetException(mac string, vapName *string,
+	reason *base_msg.EventNetException_Reason) {
+
+	vap := "?"
+	if vapName != nil {
+		vap = *vapName
+	}
+
+	slog.Debugf("NetException(%s, vap: %s, reason: %d)", mac, vap, *reason)
+	hwaddr, _ := net.ParseMAC(mac)
+	entity := &base_msg.EventNetException{
+		Timestamp:  aputil.NowToProtobuf(),
+		Sender:     proto.String(brokerd.Name),
+		Debug:      proto.String("-"),
+		VirtualAP:  vapName,
+		Reason:     reason,
+		MacAddress: proto.Uint64(network.HWAddrToUint64(hwaddr)),
+	}
+
+	err := brokerd.Publish(entity, base_def.TOPIC_EXCEPTION)
+	if err != nil {
+		slog.Warnf("couldn't publish %s: %v", base_def.TOPIC_EXCEPTION, err)
+	}
+}
+
 func (c *hostapdConn) getSignature(sta string) {
 	sig, err := c.command("SIGNATURE " + sta)
 	if err != nil {
@@ -290,7 +320,42 @@ func (c *hostapdConn) stationPresent(sta string, newConnection bool) {
 func (c *hostapdConn) stationGone(sta string) {
 	slog.Infof("%v stationGone(%s)", c, sta)
 	delete(c.stations, sta)
-	sendNetEntity(sta, nil, &c.wifiBand, nil, true)
+	sendNetEntity(sta, &c.vapName, &c.wifiBand, nil, true)
+}
+
+func (c *hostapdConn) stationBadPassword(sta string) {
+	reason := base_msg.EventNetException_BAD_PASSWORD
+
+	slog.Infof("%v stationBadPassword(%s)", c, sta)
+	sendNetException(sta, &c.vapName, &reason)
+}
+
+// There is currently a bug on the OpenWRT boards where a client will fail to
+// authenticate with EAP despite having valid credentials.  We can see this
+// happening in the log as hostapd repeatedly issues RETRANSMIT messages.  The
+// retries appear to happen with backoffs of 3, 6, 12, 20, 20, and 20 seconds
+// before the operation finally times out.
+//
+// Until the problem gets fixed, we can try to work around it by restarting
+// hostapd when we see it happening.  this_is_fine.gif.
+func (c *hostapdConn) eapRetransmit() {
+	now := time.Now()
+
+	// The largest backoff I've seen has been 20 seconds, so reset the retry
+	// count if it's been 25+ seconds since the last one.
+	if c.retryCount > 0 && now.After(c.retryLast.Add(*retransmitTimeout)) {
+		c.retryCount = 0
+	}
+
+	c.retryLast = now
+	c.retryCount++
+	if c.retryCount == 1 {
+		c.retryFirst = now
+	} else if c.retryCount >= *retransmitLimit {
+		slog.Warnf("hostapd had %d retransmits since %s - restarting",
+			c.retryCount, c.retryFirst.Format(time.RFC3339))
+		c.hostapd.reset()
+	}
 }
 
 // Handle an async status message from hostapd
@@ -300,7 +365,11 @@ func (c *hostapdConn) handleStatus(status string) {
 		//    AP-STA-CONNECTED b8:27:eb:9f:d8:e0     (client arrived)
 		//    AP-STA-DISCONNECTED b8:27:eb:9f:d8:e0  (client left)
 		//    AP-STA-POLL-OK b8:27:eb:9f:d8:e0       (client still here)
-		msgs     = "(AP-STA-CONNECTED|AP-STA-DISCONNECTED|AP-STA-POLL-OK)"
+		//    AP-STA-POSSIBLE-PSK-MISMATCH b8:27:eb:9f:d8:e0  (bad password)
+		//    CTRL-EVENT-EAP-RETRANSMIT b8:27:eb:9f:d8:e0 (possibly T268)
+		msgs = "(AP-STA-CONNECTED|AP-STA-DISCONNECTED|" +
+			"AP-STA-POLL-OK|AP-STA-POSSIBLE-PSK-MISMATCH|" +
+			"CTRL-EVENT-EAP-RETRANSMIT)"
 		macOctet = "[[:xdigit:]][[:xdigit:]]"
 		macAddr  = "(" + macOctet + ":" + macOctet + ":" +
 			macOctet + ":" + macOctet + ":" + macOctet + ":" +
@@ -319,6 +388,10 @@ func (c *hostapdConn) handleStatus(status string) {
 			c.stationPresent(mac, false)
 		case "AP-STA-DISCONNECTED":
 			c.stationGone(mac)
+		case "AP-STA-POSSIBLE-PSK-MISMATCH":
+			c.stationBadPassword(mac)
+		case "CTRL-EVENT-EAP-RETRANSMIT":
+			c.eapRetransmit()
 		}
 	}
 }
@@ -610,7 +683,15 @@ func (h *hostapdHdl) generateHostAPDConf() {
 
 	files := make([]string, 0)
 	devices := make([]*physDevice, 0)
-	vaps := make([]*vapConfig, 0)
+	allVaps := make([]*vapConfig, 0)
+
+	// build an alphabetical list of vap names, so the order of VAPs in the
+	// config file is deterministic
+	vaps := make([]string, 0)
+	for name := range virtualAPs {
+		vaps = append(vaps, name)
+	}
+	sort.Strings(vaps)
 
 	devTemplate, err := template.ParseFiles(devfile)
 	if err != nil {
@@ -634,18 +715,17 @@ func (h *hostapdHdl) generateHostAPDConf() {
 		}
 
 		max := d.wifi.cap.Interfaces
-		idx := 0
-		for vapName := range virtualAPs {
+		for idx, name := range vaps {
 			if idx == max {
 				slog.Warnf("%s can only support %d of %d SSIDs",
 					d.hwaddr, max, len(virtualAPs))
 				break
 			}
-			if vap := getVAPConfig(vapName, d, idx); vap != nil {
+			if vap := getVAPConfig(name, d, idx); vap != nil {
 				generateVlanConf(vap)
 				err = vapTemplate.Execute(cf, vap)
 				if err == nil {
-					vaps = append(vaps, vap)
+					allVaps = append(allVaps, vap)
 					idx++
 				} else {
 					slog.Warnf("%v", err)
@@ -659,7 +739,7 @@ func (h *hostapdHdl) generateHostAPDConf() {
 
 	updateNicProperties()
 
-	h.vaps = vaps
+	h.vaps = allVaps
 	h.devices = devices
 	h.confFiles = files
 }
