@@ -222,7 +222,7 @@ func getProp(cmd string, args []string) error {
 		if root, err = configd.GetProps(prop); err == nil {
 			nodes := strings.Split(strings.Trim(prop, "/"), "/")
 			label := nodes[len(nodes)-1]
-			root.DumpTree(label)
+			root.DumpTree(os.Stdout, label)
 		} else {
 			err = fmt.Errorf("get failed: %v", err)
 		}

@@ -15,9 +15,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math/bits"
 	"net"
+	"sort"
 	"strconv"
 	"time"
 
@@ -375,11 +377,7 @@ func (c *ClientInfo) IsActive() bool {
 	return !expired
 }
 
-func dumpSubtree(name string, node *PropertyNode, level int) {
-	indent := ""
-	for i := 0; i < level; i++ {
-		indent += "  "
-	}
+func dumpSubtree(w io.Writer, name string, node *PropertyNode, indent string) {
 	e := ""
 	if node.Expires != nil {
 		if time.Now().After(*node.Expires) {
@@ -387,15 +385,31 @@ func dumpSubtree(name string, node *PropertyNode, level int) {
 		}
 		e = node.Expires.Format("2006-01-02T15:04:05")
 	}
-	fmt.Printf("%s%s: %s  %s\n", indent, name, node.Value, e)
-	for childName, child := range node.Children {
-		dumpSubtree(childName, child, level+1)
+	fmt.Fprintf(w, "%s%s: %s  %s\n", indent, name, node.Value, e)
+
+	leafChildren := make([]string, 0)
+	interiorChildren := make([]string, 0)
+	for childName, childNode := range node.Children {
+		if len(childNode.Children) == 0 {
+			leafChildren = append(leafChildren, childName)
+		} else {
+			interiorChildren = append(interiorChildren, childName)
+		}
+	}
+	sort.Strings(leafChildren)
+	sort.Strings(interiorChildren)
+	nextIndent := indent + "  "
+	for _, child := range leafChildren {
+		dumpSubtree(w, child, node.Children[child], nextIndent)
+	}
+	for _, child := range interiorChildren {
+		dumpSubtree(w, child, node.Children[child], nextIndent)
 	}
 }
 
 // DumpTree displays the contents of a property tree in a human-legible format
-func (n *PropertyNode) DumpTree(root string) {
-	dumpSubtree(root, n, 0)
+func (n *PropertyNode) DumpTree(w io.Writer, root string) {
+	dumpSubtree(w, root, n, "")
 }
 
 // GetChildByValue searches through a node's list of childrenn, looking for one
