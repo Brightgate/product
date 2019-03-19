@@ -59,7 +59,8 @@ var (
 
 // launch an ssh daemon to handle this side of the service tunnel
 func sshDaemonInit() (*ssh.Daemon, error) {
-	template := aputil.ExpandDirPath(*templateDir) + "/sshd_config.got"
+	template := plat.ExpandDirPath("__APPACKAGE__", *templateDir,
+		"sshd_config.got")
 	clogger, err := aputil.NewChildLogger()
 	if err != nil {
 		clogger = slog

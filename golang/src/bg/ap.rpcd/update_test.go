@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -18,7 +18,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"regexp"
 	"testing"
 	"time"
@@ -34,15 +33,16 @@ import (
 var fileTime = time.Date(2018, time.January, 1, 2, 3, 4, 5, time.UTC)
 
 func mkTimeStampFile(tr *aptest.TestRoot, uType uploadType) string {
-	// example: <root>/var/spool/watchd/droplog/2018-07-09T21:52:31+00:00.json
+	// example: <data>/watchd/droplog/2018-07-09T21:52:31+00:00.json
 	fname := fileTime.Format(time.RFC3339) + ".json"
-	fpath := filepath.Join(tr.Root, uType.dir, fname)
+	fpath := plat.ExpandDirPath(uType.dir, fname)
 	fdata := []byte("{\"test\": \"data\"}")
 	err := ioutil.WriteFile(fpath, fdata, 0755)
 	if err != nil {
 		panic(err)
 	}
 	fileTime = fileTime.Add(time.Minute)
+	tr.T.Logf("made %s %s", fpath, fileTime)
 	return fpath
 }
 
@@ -114,6 +114,7 @@ func TestUpload(t *testing.T) {
 			var files = make([]string, tc.nFiles)
 			assert := require.New(t)
 			tr := aptest.NewTestRoot(t)
+			tr.Clean()
 			defer tr.Fini()
 
 			for i := 0; i < tc.nFiles; i++ {

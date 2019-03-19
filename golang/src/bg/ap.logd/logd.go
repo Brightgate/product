@@ -30,6 +30,7 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
+	"bg/ap_common/platform"
 	"bg/base_def"
 	"bg/base_msg"
 	"bg/common/network"
@@ -41,7 +42,7 @@ import (
 )
 
 var (
-	logDir  = flag.String("logdir", "", "Log file directory")
+	logDir  string
 	logFile *os.File
 	slog    *zap.SugaredLogger
 	mcpd    *mcp.MCP
@@ -186,7 +187,7 @@ func openLog(path string) (*os.File, error) {
 }
 
 func reopenLogfile() error {
-	newLog, err := openLog(*logDir)
+	newLog, err := openLog(logDir)
 	if err != nil {
 		return err
 	}
@@ -256,6 +257,9 @@ func main() {
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
+	plat := platform.NewPlatform()
+	logDir = plat.ExpandDirPath("__APDATA__", "logd")
+
 	flag.Parse()
 
 	slog = aputil.NewLogger(pname)
@@ -265,7 +269,6 @@ func main() {
 		slog.Warnf("Failed to connect to mcp")
 	}
 
-	*logDir = aputil.ExpandDirPath(*logDir)
 	if err = reopenLogfile(); err != nil {
 		slog.Errorf("Failed to setup logging: %s\n", err)
 		os.Exit(1)

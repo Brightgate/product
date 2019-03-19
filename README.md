@@ -122,9 +122,27 @@ for your cloud connectivity to work.  See
 Our appliances use LetsEncrypt TLS certificates.  Ensure that you have
 correct certificates installed for your appliance in `/etc/letsencrypt`.
 
+# Appliance paths
+
+On Debian-based appliances, we assume we can use apt and LSB directory
+hierarchies to organize our files in an LSB-compatible fashion.  On
+OpenWrt-based appliances, we use a shared partition (`/data`) so that we can
+use an "update the inactive partition" approach.
+
+             | Debian             | OpenWrt             | Proto area
+  --------------------------------------------------------------------------
+  | APROOT   | /                  | /                   | $GITROOT/proto.$ARCH/appliance
+  | APDATA   | $APROOT/var        | $APROOT/data        | $APROOT/var
+  | APSECRET | $APROOT/var/secret | $APROOT/data/secret | $APROOT/var/secret
+
+APPACKAGE is equal to $APROOT/opt/com.brightgate on all platforms.
+
+Note that APSECRET is a placeholder for eventual use of TPM or other secure
+storage.
+
 # Running from the Proto Area
 
-`sudo(8)` is used to acquire privilege from the developer during testing.
+`sudo`(8) is used to acquire privilege from the developer during testing.
 
 The `ap.relayd` daemon forwards UDP broadcast requests between security rings.
 To allow mDNS forwarding to work correctly, the Linux mDNS responder
@@ -177,7 +195,7 @@ $ ./proto.armv7l/appliance/opt/com.brightgate/bin/ap-ctl status all
 It may take a little while for all of the services to come online; some will
 pause in the `blocked` state waiting for a dependency.
 
-# Running from Installed Packages
+# Running from Installed Packages, Debian/Raspbian
 
 We deliver two services on the appliance: `ap.mcp` and `brightgate-appliance`.
 The former simply starts the master control process, while the latter launches

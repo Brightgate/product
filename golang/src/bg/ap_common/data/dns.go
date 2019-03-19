@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -18,7 +18,7 @@ import (
 	"regexp"
 	"strings"
 
-	"bg/ap_common/aputil"
+	"bg/ap_common/platform"
 	"bg/common/network"
 )
 
@@ -30,7 +30,9 @@ const (
 var (
 	// DefaultDataDir is the directory where antiphishing databases are
 	// found by default.
-	DefaultDataDir = "/var/spool/antiphishing"
+	DefaultDataDir = "__APDATA__/antiphishing"
+
+	plat *platform.Platform
 
 	dnsAllowlist *dnsMatchList
 	dnsBlocklist *dnsMatchList
@@ -103,8 +105,8 @@ func ingestDNSFile(filename string) (*dnsMatchList, error) {
 
 // LoadDNSBlocklist loads the DNS antiphishing databases.
 func LoadDNSBlocklist(dataDir string) {
-	wfile := aputil.ExpandDirPath(dataDir) + "/" + allowlistName
-	bfile := aputil.ExpandDirPath(dataDir) + "/" + blocklistName
+	wfile := plat.ExpandDirPath(dataDir, allowlistName)
+	bfile := plat.ExpandDirPath(dataDir, blocklistName)
 
 	// The allowlist file has a single allowed DNS name on each line, or a
 	// CSV with no Cs.  The blocklist file is a CSV-like file, where the
@@ -124,4 +126,8 @@ func LoadDNSBlocklist(dataDir string) {
 	} else {
 		dnsBlocklist = list
 	}
+}
+
+func init() {
+	plat = platform.NewPlatform()
 }

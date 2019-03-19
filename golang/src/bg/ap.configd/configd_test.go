@@ -888,7 +888,6 @@ func TestMain(m *testing.M) {
 	var err error
 	slog = aputil.NewLogger(pname)
 
-	*propdir = "."
 	_, descriptions, err := loadDefaults()
 	if err != nil {
 		fail("Unable to load defaults %v", err)

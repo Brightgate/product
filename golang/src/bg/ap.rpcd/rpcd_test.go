@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -16,12 +16,13 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path/filepath"
+	"path"
 	"testing"
 	"time"
 
 	"bg/ap_common/aptest"
 	"bg/ap_common/aputil"
+	"bg/ap_common/platform"
 	"bg/base_msg"
 	"bg/cloud_rpc"
 	"bg/cloud_rpc/mocks"
@@ -122,7 +123,17 @@ func mkInventoryFile(tr *aptest.TestRoot) {
 	if err != nil {
 		panic(err)
 	}
-	fname := filepath.Join(tr.Root, fmt.Sprintf("var/spool/identifierd/observations.pb.%d", time.Now().Unix()))
+
+	os.Setenv("APROOT", tr.Root)
+	plat := platform.NewPlatform()
+
+	fname := plat.ExpandDirPath("__APDATA__/identifierd/inventory", fmt.Sprintf("observations.pb.%d", time.Now().Unix()))
+
+	err = os.MkdirAll(path.Dir(fname), 0755)
+	if err != nil {
+		panic(err)
+	}
+
 	err = ioutil.WriteFile(fname, pbuf, 0755)
 	if err != nil {
 		panic(err)
@@ -142,13 +153,14 @@ func TestSendInventory(t *testing.T) {
 	).Return(&cloud_rpc.PutEventResponse{Result: 0}, nil)
 
 	apr := aptest.NewTestRoot(t)
+	apr.Clean()
 	defer apr.Fini()
 
 	mkInventoryFile(apr)
 
 	err := sendInventory(ctx, tMock)
 	if err != nil {
-		t.Errorf("expected sendInventory to work")
+		t.Errorf("expected sendInventory to work: %s", err)
 	}
 	tMock.AssertExpectations(t)
 

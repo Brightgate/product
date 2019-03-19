@@ -168,6 +168,7 @@ endif
 #
 
 DISTRO = debian
+PKG = deb
 
 # Break if undefined and cross compiling.
 ifneq ($(GOHOSTARCH),$(GOARCH))
@@ -198,6 +199,8 @@ SYSROOT = build/cross-compile/sysroot.$(DISTRO).$(SYSROOT_SUM)
 SYSROOT_SUM_arm_openwrt=d562c2318e976d048fc62a31dc867bab309b979f
 SYSROOT_SUM=$(SYSROOT_SUM_arm_openwrt)
 SYSROOT_LOCAL_FLAGS =
+
+PKG = ipk
 else
 $(error DISTRO must be set to 'openwrt' or 'debian' [deprecated] for cross)
 endif
@@ -286,14 +289,24 @@ APPSNMAP=$(APPBASE)/share/nmap/scripts
 APPETC=$(APPBASE)/etc
 APPROOTLIB=$(APPROOT)/lib
 APPVAR=$(APPBASE)/var
-APPSECRET=$(APPETC)/secret
-APPSECRETCLOUD=$(APPSECRET)/cloud
+APPSECRET=$(APPDATA)/secret
+APPSECRETRPCD=$(APPSECRET)/rpcd
 APPSECRETSSL=$(APPSECRET)/ssl
-APPSPOOL=$(APPVAR)/spool
-APPSPOOLANTIPHISH=$(APPVAR)/spool/antiphishing
-APPSPOOLWATCHD=$(APPVAR)/spool/watchd
+APPDATAANTIPHISH=$(APPDATA)/antiphishing
+APPDATACONFIGD=$(APPDATA)/configd
+APPDATAIDENTIFIERD=$(APPDATA)/identifierd
+APPDATALOGD=$(APPDATA)/logd
+APPDATAMCP=$(APPDATA)/mcp
+APPDATARPCD=$(APPDATA)/rpcd
+APPDATAWATCHD=$(APPDATA)/watchd
+APPETCIDENTIFIERD=$(APPETC)/identifierd
+APPMODEL=$(APPETCIDENTIFIERD)/device_model
 APPRULES=$(APPETC)/filter.rules.d
-APPMODEL=$(APPETC)/device_model
+
+APPDATA_debian=$(APPVAR)/spool
+APPDATA_openwrt=$(APPROOT)/data
+
+APPDATA=$(APPDATA_$(DISTRO))
 
 ROOTETC=$(APPROOT)/etc
 ROOTETCCRONTABS=$(ROOTETC)/crontabs
@@ -389,6 +402,7 @@ GO_AP_TESTABLES = \
 	bg/ap-defaultpass\
 	bg/ap.rpcd \
 	bg/ap.userauthd \
+	bg/ap_common/platform \
 	bg/common/grpcutils \
 	bg/common/network \
 	bg/common/zaperr
@@ -427,20 +441,20 @@ APPCONFIGS_openwrt = \
 
 APPCONFIGS = \
 	$(APPCONFIGS_$(DISTRO)) \
-	$(APPETC)/ap_identities.csv \
-	$(APPETC)/vendordefaults.csv \
-	$(APPETC)/ap_mfgid.json \
+	$(APPETCIDENTIFIERD)/ap_identities.csv \
+	$(APPETCIDENTIFIERD)/ap_mfgid.json \
+	$(APPETCIDENTIFIERD)/oui.txt \
+	$(APPDATAWATCHD)/vuln-db.json \
 	$(APPETC)/configd.json \
 	$(APPETC)/devices.json \
 	$(APPETC)/mcp.json \
-	$(APPETC)/oui.txt \
 	$(APPETC)/prometheus.yml \
+	$(APPETC)/vendordefaults.csv \
 	$(APPSNMAP)/smb-vuln-ms17-010.nse \
-	$(APPSPOOLWATCHD)/vuln-db.json \
 	$(ROOTETCIPTABLES)/rules.v4 \
-	$(ROOTETCRSYSLOGD)/com-brightgate-rsyslog.conf \
 	$(ROOTETCLOGROTATED)/com-brightgate-logrotate-logd \
-	$(ROOTETCLOGROTATED)/com-brightgate-logrotate-mcp
+	$(ROOTETCLOGROTATED)/com-brightgate-logrotate-mcp \
+	$(ROOTETCRSYSLOGD)/com-brightgate-rsyslog.conf
 
 ifeq ("$(DISTRO)","openwrt")
 DISTROAPPDIRS = \
@@ -451,17 +465,23 @@ endif
 APPDIRS = \
 	$(DISTROAPPDIRS) \
 	$(APPBIN) \
+	$(APPDATA) \
 	$(APPETC) \
 	$(APPROOTLIB) \
 	$(APPRULES) \
 	$(APPSECRET) \
-	$(APPSECRETCLOUD) \
+	$(APPSECRETRPCD) \
 	$(APPSECRETSSL) \
 	$(APPSNMAP) \
-	$(APPSPOOL) \
 	$(APPVAR) \
-	$(APPSPOOLANTIPHISH) \
-	$(APPSPOOLWATCHD) \
+	$(APPDATAANTIPHISH) \
+	$(APPDATACONFIGD) \
+	$(APPETCIDENTIFIERD) \
+	$(APPDATAIDENTIFIERD) \
+	$(APPDATALOGD) \
+	$(APPDATAMCP) \
+	$(APPDATARPCD) \
+	$(APPDATAWATCHD) \
 	$(HTTPD_CLIENTWEB_DIR) \
 	$(NETWORKD_TEMPLATE_DIR) \
 	$(ROOTETC) \
@@ -722,7 +742,7 @@ ifeq ("$(GO_TESTABLES)","")
 endif
 
 test-go: install
-	$(GO) test $(GO_TESTFLAGS) $(GO_TESTABLES)
+	APROOT=$(GITROOT)/$(APPROOT) $(GO) test $(GO_TESTFLAGS) $(GO_TESTABLES)
 
 coverage: coverage-go
 
@@ -735,7 +755,8 @@ coverage-go: install
 		pkgs=$(subst $(space),$(comma),$(APPCOMMON_GOPKGS)); \
 		pkgs=$$pkgs,$(subst $(space),$(comma),$(CLOUDCOMMON_GOPKGS)); \
 		pkgs=$$pkgs,$$p; \
-		$(GO) test $(GO_TESTFLAGS) -cover \
+		APROOT=$(GITROOT)/$(APPROOT) \
+			$(GO) test $(GO_TESTFLAGS) -cover \
 			-coverprofile $(COVERAGE_DIR)/$$(echo $$p | tr / -).out \
 			-coverpkg $$pkgs \
 			$$p > $$of 2>&1 || err="$$err $$p"; \
@@ -745,7 +766,8 @@ coverage-go: install
 	if [ -n "$${err}" ]; then echo "Failures in the following packages:$$err"; exit 1; fi
 	echo "mode: set" > $(COVERAGE_DIR)/cover.out
 	grep -h -v "^mode:" $(COVERAGE_DIR)/bg*.out | sort -u >> $(COVERAGE_DIR)/cover.out
-	$(GO) tool cover -html=$(COVERAGE_DIR)/cover.out -o $(COVERAGE_DIR)/coverage.html
+	$(GO) tool cover \
+		-html=$(COVERAGE_DIR)/cover.out -o $(COVERAGE_DIR)/coverage.html
 
 vet-go: $(GENERATED_GO_FILES) $(GO_MOCK_SRCS)
 	$(GO) vet $(APP_GOPKGS)
@@ -765,10 +787,10 @@ check-go: vet-go lint-go fmt-go
 $(APPETC)/vendordefaults.csv: $(GOSRCBG)/ap-defaultpass/vendordefaults.csv | $(APPETC)
 	$(INSTALL) -m 0644 $< $@
 
-$(APPETC)/ap_identities.csv: ap_identities.csv | $(APPETC)
+$(APPETCIDENTIFIERD)/ap_identities.csv: ap_identities.csv | $(APPETCIDENTIFIERD)
 	$(INSTALL) -m 0644 $< $@
 
-$(APPETC)/ap_mfgid.json: ap_mfgid.json | $(APPETC)
+$(APPETCIDENTIFIERD)/ap_mfgid.json: ap_mfgid.json | $(APPETCIDENTIFIERD)
 	$(INSTALL) -m 0644 $< $@
 
 
@@ -781,7 +803,7 @@ $(APPETC)/devices.json: $(GOSRCBG)/ap.configd/devices.json | $(APPETC)
 $(APPETC)/mcp.json: $(GOSRCBG)/ap.mcp/mcp.json | $(APPETC)
 	$(INSTALL) -m 0644 $< $@
 
-$(APPETC)/oui.txt: | $(APPETC)
+$(APPETCIDENTIFIERD)/oui.txt: | $(APPETCIDENTIFIERD)
 	-curl --connect-timeout 5 -s -S -R -o $@ http://standards-oui.ieee.org/oui.txt
 	@if [ -s $@ ]; then \
 		mkdir -p $(DOWNLOAD_CACHEDIR); \
@@ -798,10 +820,10 @@ $(APPETC)/prometheus.yml: prometheus.yml | $(APPETC)
 $(ROOTETCIPTABLES)/rules.v4: $(GOSRCBG)/ap.networkd/rules.v4 | $(ROOTETCIPTABLES)
 	$(INSTALL) -m 0644 $< $@
 
-$(ROOTETCLOGROTATED)/com-brightgate-logrotate-logd: $(GOSRCBG)/ap.logd/com-brightgate-logrotate-logd | $(ROOTETCLOGROTATED)
+$(ROOTETCLOGROTATED)/com-brightgate-logrotate-logd: build/$(DISTRO)-$(PKG)/com-brightgate-logrotate-logd | $(ROOTETCLOGROTATED)
 	$(INSTALL) -m 0644 $< $@
 
-$(ROOTETCLOGROTATED)/com-brightgate-logrotate-mcp: $(GOSRCBG)/ap.mcp/com-brightgate-logrotate-mcp | $(ROOTETCLOGROTATED)
+$(ROOTETCLOGROTATED)/com-brightgate-logrotate-mcp: build/$(DISTRO)-$(PKG)/com-brightgate-logrotate-mcp | $(ROOTETCLOGROTATED)
 	$(INSTALL) -m 0644 $< $@
 
 $(ROOTETCRSYSLOGD)/com-brightgate-rsyslog.conf: $(GOSRCBG)/ap.watchd/com-brightgate-rsyslog.conf | $(ROOTETCRSYSLOGD)
@@ -810,7 +832,7 @@ $(ROOTETCRSYSLOGD)/com-brightgate-rsyslog.conf: $(GOSRCBG)/ap.watchd/com-brightg
 $(APPSNMAP)/smb-vuln-ms17-010.nse: $(GOSRCBG)/ap-vuln-aggregate/smb-vuln-ms17-010.nse | $(APPSNMAP)
 	$(INSTALL) -m 0644 $< $@
 
-$(APPSPOOLWATCHD)/vuln-db.json: $(GOSRCBG)/ap-vuln-aggregate/sample-db.json | $(APPSPOOLWATCHD)
+$(APPDATAWATCHD)/vuln-db.json: $(GOSRCBG)/ap-vuln-aggregate/sample-db.json | $(APPDATAWATCHD)
 	$(INSTALL) -m 0644 $< $@
 
 $(NETWORKD_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.networkd/% | $(APPETC)
@@ -825,7 +847,7 @@ $(USERAUTHD_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.userauthd/% | $(APPETC)
 $(APPRULES)/%: $(GOSRCBG)/ap.networkd/% | $(APPRULES)
 	$(INSTALL) -m 0644 $< $@
 
-$(APPMODEL): $(GOSRCBG)/ap.identifierd/linear_model_deviceID/* | $(DIRS)
+$(APPMODEL): $(GOSRCBG)/ap.identifierd/linear_model_deviceID/* | $(APPETCIDENTIFIERD)
 	$(MKDIR) -p $@
 	cp -r $^ $@
 	touch $@

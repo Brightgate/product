@@ -30,7 +30,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"bg/ap_common/aputil"
+	"bg/ap_common/platform"
 	"bg/common/cfgapi"
 
 	"github.com/pkg/errors"
@@ -39,10 +39,14 @@ import (
 const (
 	applianceTempCryptoDir = "/tmp"
 	pathLELiveDir          = "/etc/letsencrypt/live"
-	pathSSLDir             = "/etc/secret/ssl/cur"
+	pathSSLDir             = "__APSECRET__/ssl/cur"
 	durationSSCert         = 7 * 24 * 60 * 60 * 1e9
 	organization           = "Brightgate Inc."
 	rsaKeySize             = 2048
+)
+
+var (
+	plat *platform.Platform
 )
 
 // Routines in this file are used to manage the certificate state on the
@@ -94,13 +98,14 @@ func timeOutsideValidity(cert *x509.Certificate, at time.Time) time.Duration {
 // certificate, and combined certificates, provided to us by the cloud
 // infrastructure.  If arguments are passed, use them as the base directory
 // instead.  These live inside $APROOT, so we make sure to expand the paths.
-func getCloudKeyCertPaths(path ...string) *CertPaths {
+func getCloudKeyCertPaths(plat *platform.Platform, path ...string) *CertPaths {
 	if len(path) == 0 {
 		path = append(path, pathSSLDir)
 	}
 	pathfn := func(fn string) string {
 		p := append(path, fn)
-		return aputil.ExpandDirPath(filepath.Join(p...))
+		p = append([]string{"__APROOT__"}, p...)
+		return plat.ExpandDirPath(p...)
 	}
 	return &CertPaths{
 		Key:       pathfn("privkey.pem"),
@@ -430,7 +435,7 @@ func InstallCert(key, cert, issuerCert []byte, fp string, config *cfgapi.Handle)
 	}
 
 	// Put the files in a directory named by the fingerprint
-	paths := getCloudKeyCertPaths(filepath.Dir(pathSSLDir), certFP)
+	paths := getCloudKeyCertPaths(plat, filepath.Dir(pathSSLDir), certFP)
 	tmpDir := filepath.Dir(paths.Key)
 
 	// Just blow away the existing directory, on the offchance it exists.
@@ -494,7 +499,7 @@ func InstallCert(key, cert, issuerCert []byte, fp string, config *cfgapi.Handle)
 	// Read the link to find the target; if the readlink fails, assume it's
 	// not a link and just remove the path itself so we can put a link in
 	// its place.
-	cur := aputil.ExpandDirPath(pathSSLDir)
+	cur := plat.ExpandDirPath(pathSSLDir)
 	oldTarget, err := os.Readlink(cur)
 	if err != nil {
 		os.RemoveAll(cur)
@@ -530,7 +535,7 @@ func InstallCert(key, cert, issuerCert []byte, fp string, config *cfgapi.Handle)
 func GetKeyCertPaths(config *cfgapi.Handle, domainname string, at time.Time,
 	forceRefresh bool) (*CertPaths, error) {
 	if !forceRefresh {
-		paths := getCloudKeyCertPaths()
+		paths := getCloudKeyCertPaths(plat)
 		_, err := validateCertificate(paths, at)
 		if err == nil {
 			log.Printf("Cloud cert path found: %s", paths.Cert)
@@ -556,4 +561,8 @@ func GetKeyCertPaths(config *cfgapi.Handle, domainname string, at time.Time,
 
 	return createSSKeyCert(config, applianceTempCryptoDir, domainname, at,
 		forceRefresh)
+}
+
+func init() {
+	plat = platform.NewPlatform()
 }

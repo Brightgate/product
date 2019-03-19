@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -455,28 +455,6 @@ func MacStrToProtobuf(macstr string) *uint64 {
 func NowToProtobuf() *base_msg.Timestamp {
 	gtime := time.Now()
 	return TimeToProtobuf(&gtime)
-}
-
-// ExpandDirPath takes a path name and will translate it into an
-// APROOT-relative path if that incoming path starts with a single '/'.  If the
-// path starts with anything else, it is returned unchanged.
-func ExpandDirPath(path string) string {
-	if !strings.HasPrefix(path, "/") {
-		// If the incoming path doesn't start with '/', then it's meant
-		// to be relative from the current directory - not the root
-		return path
-	}
-	if strings.HasPrefix(path, "//") {
-		// If the incoming path starts with '//', then it's meant
-		// to be an absolute path - not relative to APROOT
-		return strings.TrimPrefix(path, "/")
-	}
-
-	root := os.Getenv("APROOT")
-	if root == "" {
-		root = "./"
-	}
-	return root + path
 }
 
 // LinuxBootTime retrieves the instance boot time using sysinfo(2)

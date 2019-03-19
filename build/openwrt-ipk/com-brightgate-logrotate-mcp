@@ -1,8 +1,8 @@
-/var/log/mcp.log {
+/data/mcp/mcp.log {
 	monthly
 	create
 	rotate 10
-	size 10M
+	maxsize 10M
 	missingok
 	notifempty
 	postrotate

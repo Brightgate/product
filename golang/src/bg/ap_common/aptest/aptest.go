@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -12,43 +12,70 @@
 package aptest
 
 import (
-	"io/ioutil"
-	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"bg/ap_common/platform"
 )
 
-// TestRoot represents an instance of a file hierarchy used for testing
-// purposes.
+// TestRoot represents an instance of a platform-aware file hierarchy
+// used for testing purposes.
 type TestRoot struct {
+	T        *testing.T
 	Root     string
 	saveRoot string
+	tracked  []string
 }
 
-// NewTestRoot prepares a new TestRoot instance, and populates a temporary
-// directory with various appliance directories.  It updates $APROOT to
-// point to the test root directory.
-func NewTestRoot(t *testing.T) *TestRoot {
-	dir, err := ioutil.TempDir("", url.PathEscape(filepath.ToSlash(t.Name())))
-	if err != nil {
-		panic(err)
+var dirs []string
+var plat *platform.Platform
+
+// Clean erases the contents of a TestRoot instance.
+func (tr *TestRoot) Clean() {
+
+	for d := range dirs {
+		xd := plat.ExpandDirPath("__APDATA__", dirs[d])
+		tr.T.Logf("clean TestRoot directory: %s", xd)
+		files, _ := filepath.Glob(xd + "/*")
+		tr.T.Logf("clean TestRoot files: %s", files)
+
+		for _, f := range files {
+			if err := os.RemoveAll(f); err != nil {
+				panic(err)
+			}
+		}
 	}
-	os.MkdirAll(filepath.Join(dir, "var/spool/identifierd"), 0755)
-	os.MkdirAll(filepath.Join(dir, "var/spool/rpc"), 0755)
-	os.MkdirAll(filepath.Join(dir, "var/spool/watchd/droplog"), 0755)
-	os.MkdirAll(filepath.Join(dir, "var/spool/watchd/stats"), 0755)
+}
+
+// NewTestRoot prepares a new TestRoot instance, and populates the data
+// directory with various appliance directories.  APROOT should be set
+// in the environment.
+func NewTestRoot(t *testing.T) *TestRoot {
+	dirs = []string{"antiphishing", "identifierd", "rpcd", "watchd/droplog", "watchd/stats"}
+
+	for d := range dirs {
+		xd := plat.ExpandDirPath("__APDATA__", dirs[d])
+		t.Logf("mkdirall %s", xd)
+		os.MkdirAll(xd, 0755)
+	}
 
 	tr := &TestRoot{
-		Root:     dir,
+		T:        t,
+		Root:     os.Getenv("APROOT"),
 		saveRoot: os.Getenv("APROOT"),
 	}
-	os.Setenv("APROOT", dir)
+
+	tr.Clean()
+
 	return tr
 }
 
-// Fini removes the test root and restores $APROOT to its previous value
+// Fini removes the test root.
 func (tr *TestRoot) Fini() {
-	os.Setenv("APROOT", tr.saveRoot)
-	os.RemoveAll(tr.Root)
+	tr.Clean()
+}
+
+func init() {
+	plat = platform.NewPlatform()
 }

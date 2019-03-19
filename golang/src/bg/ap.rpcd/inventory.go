@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -99,8 +99,8 @@ func sendChanged(ctx context.Context, client cloud_rpc.EventClient, changed *bas
 
 func sendInventory(ctx context.Context, client cloud_rpc.EventClient) error {
 	var err error
-	invDir := aputil.ExpandDirPath("/var/spool/identifierd/")
-	manDir := aputil.ExpandDirPath("/var/spool/rpc/")
+	invDir := plat.ExpandDirPath("__APDATA__", "identifierd/inventory")
+	manDir := plat.ExpandDirPath("__APDATA__", "rpcd")
 	manPath := filepath.Join(manDir, "identifierd.json.v1")
 
 	if err = os.MkdirAll(manDir, 0755); err != nil {

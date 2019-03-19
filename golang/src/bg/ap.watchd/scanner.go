@@ -962,7 +962,8 @@ func vulnScan(req *ScanRequest) {
 		return
 	}
 
-	prober := aputil.ExpandDirPath("/bin/ap-vuln-aggregate")
+	prober := plat.ExpandDirPath("__APPACKAGE__", "bin/ap-vuln-aggregate")
+
 	resFile, err := ioutil.TempFile("", "vuln.")
 	if err != nil {
 		slog.Warnf("failed to create result file: %v", err)
@@ -1053,11 +1054,11 @@ func vulnInit() {
 	}
 	vulnScannable = true
 
-	os.Setenv("NMAPDIR", aputil.ExpandDirPath("/share/nmap"))
+	os.Setenv("NMAPDIR", plat.ExpandDirPath("__APPACKAGE__", "share/nmap"))
 
 	// Make it possible for ap-vuln-aggregate to run ap-inspect without
 	// hardcoding the path in the binary.
-	os.Setenv("PATH", os.Getenv("PATH")+":"+aputil.ExpandDirPath("/bin"))
+	os.Setenv("PATH", os.Getenv("PATH")+":"+plat.ExpandDirPath("__APPACKAGE__", "/bin"))
 }
 
 func initScanPool(cnt int) *scanPool {

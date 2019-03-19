@@ -32,6 +32,7 @@ import (
 	"bg/ap_common/certificate"
 	"bg/ap_common/data"
 	"bg/ap_common/mcp"
+	"bg/ap_common/platform"
 	"bg/base_def"
 	"bg/common/cfgapi"
 	"bg/common/network"
@@ -311,6 +312,8 @@ func main() {
 		}
 	}
 
+	plat := platform.NewPlatform()
+
 	domainname, err = config.GetDomain()
 	if err != nil {
 		mcpd.SetState(mcp.BROKEN)
@@ -353,7 +356,7 @@ func main() {
 		}).Subrouter()
 	phishRouter.HandleFunc("/", phishHandler)
 
-	*clientWebDir = aputil.ExpandDirPath(*clientWebDir)
+	*clientWebDir = plat.ExpandDirPath("__APPACKAGE__", *clientWebDir)
 	mainRouter.HandleFunc("/", defaultHandler)
 	mainRouter.PathPrefix("/api/").Handler(
 		http.StripPrefix("/api", demoAPIRouter))

@@ -1,6 +1,6 @@
 #!/bin/sh /etc/rc.common
 #
-# COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+# COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
 #
 # This copyright notice is Copyright Management Information under 17 USC 1202
 # and is included to protect this work and deter copyright infringement.
@@ -17,12 +17,10 @@ PROG=/opt/com.brightgate/bin/ap-ctl
 
 start_service()
 {
-	export LD_LIBRARY_PATH=/opt/lib
 	${PROG} start all
 }
 
 stop_service()
 {
-	export LD_LIBRARY_PATH=/opt/lib
 	${PROG} stop all
 }

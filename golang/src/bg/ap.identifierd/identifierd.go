@@ -40,6 +40,7 @@ import (
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
 	"bg/ap_common/model"
+	"bg/ap_common/platform"
 	"bg/base_def"
 	"bg/base_msg"
 	"bg/common/cfgapi"
@@ -435,9 +436,11 @@ func main() {
 		slog.Fatalf("cannot connect to configd: %v", err)
 	}
 
-	*dataDir = aputil.ExpandDirPath(*dataDir)
-	*modelDir = aputil.ExpandDirPath(*modelDir)
-	*logDir = aputil.ExpandDirPath(*logDir)
+	plat := platform.NewPlatform()
+
+	*dataDir = plat.ExpandDirPath("__APPACKAGE__", "etc/identifierd")
+	*modelDir = plat.ExpandDirPath("__APPACKAGE", "etc/identifierd/device_model")
+	*logDir = plat.ExpandDirPath("__APDATA__", "identifierd")
 
 	mcpd, err := mcp.New(pname)
 	if err != nil {

@@ -80,6 +80,10 @@ func x86RestartService(service string) error {
 	return nil
 }
 
+func x86DataDir() string {
+	return LSBDataDir
+}
+
 func init() {
 	addPlatform(&Platform{
 		name:          "x86-debian",
@@ -105,6 +109,7 @@ func init() {
 		NicIsWan:      x86NicIsWan,
 		NicID:         x86NicGetID,
 		NicLocation:   x86NicLocation,
+		DataDir:       x86DataDir,
 
 		GetDHCPInfo: x86GetDHCPInfo,
 		DHCPPidfile: x86DHCPPidfile,

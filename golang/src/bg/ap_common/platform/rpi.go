@@ -151,6 +151,10 @@ func rpiRestartService(service string) error {
 	return nil
 }
 
+func rpiDataDir() string {
+	return LSBDataDir
+}
+
 func init() {
 	addPlatform(&Platform{
 		name:          "rpi3",
@@ -176,6 +180,7 @@ func init() {
 		NicIsWan:      rpiNicIsWan,
 		NicID:         rpiNicGetID,
 		NicLocation:   rpiNicLocation,
+		DataDir:       rpiDataDir,
 
 		GetDHCPInfo: rpiGetDHCPInfo,
 		DHCPPidfile: rpiDHCPPidfile,

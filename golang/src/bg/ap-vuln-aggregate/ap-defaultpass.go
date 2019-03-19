@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -16,22 +16,27 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 
-	"bg/ap_common/aputil"
 	"bg/ap_common/apvuln"
+	"bg/ap_common/platform"
 )
 
 // TODO: Add timeout (to prevent entire vuln scan from getting hung up).
 
 const dpcmd = "ap-defaultpass"
 
+var plat *platform.Platform
+
 func dpvuln(v aggVulnDescription, tgt net.IP) (bool, string, error) {
 	var bannedarg string
-	vendorfile := aputil.ExpandDirPath("/etc/vendordefaults.csv") // source: https://www.liquidmatrix.org/blog/default-passwords/
-	banfiledir := aputil.ExpandDirPath("/var/spool/defaultpass/")
-	bannedfile, err := os.Open(banfiledir + "banfile-" + tgt.String())
+	vendorfile := plat.ExpandDirPath("__APPACKAGE__/etc/vendordefaults.csv") // source: https://www.liquidmatrix.org/blog/default-passwords/
+	banfiledir := plat.ExpandDirPath("__APDATA__", "defaultpass")
+	bannedfile, err := os.Open(filepath.Join(banfiledir,
+		"banfile-"+tgt.String()))
+
 	if err == nil {
 		defer bannedfile.Close()
 		scanner := bufio.NewScanner(bannedfile)
@@ -50,7 +55,7 @@ func dpvuln(v aggVulnDescription, tgt net.IP) (bool, string, error) {
 			cmd = append(cmd, "-t", bannedarg)
 		} else {
 			log.Println("Banfile has incorrect format! Deleting.")
-			if err := os.RemoveAll(banfiledir + "banfile-" + tgt.String()); err != nil {
+			if err := os.RemoveAll(filepath.Join(banfiledir, "banfile-"+tgt.String())); err != nil {
 				log.Printf("Banfile removal error:%s\n", err)
 			}
 		}
@@ -87,5 +92,6 @@ func dpvuln(v aggVulnDescription, tgt net.IP) (bool, string, error) {
 }
 
 func init() {
+	plat = platform.NewPlatform()
 	addTool(dpcmd, dpvuln)
 }

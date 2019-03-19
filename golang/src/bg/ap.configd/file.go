@@ -8,18 +8,20 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 
+// Default properties are stored in __APPACKAGE__/etc.
+// Active and backup properties are stored in __APDATA__/configd.
+
 package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"strconv"
-	"strings"
 
 	"bg/ap_common/aputil"
+	"bg/ap_common/platform"
 	"bg/base_def"
 	"bg/common"
 	"bg/common/cfgapi"
@@ -29,6 +31,9 @@ import (
 )
 
 const (
+	staticDir   = "__APPACKAGE__/etc"
+	propertyDir = "__APDATA__/configd"
+
 	propertyFilename = "ap_props.json"
 	backupFilename   = "ap_props.json.bak"
 	baseFilename     = "configd.json"
@@ -36,10 +41,10 @@ const (
 )
 
 var (
-	propdir = flag.String("propdir", "/etc",
-		"directory in which the property files should be stored")
 	propTreeFile   string
 	propTreeLoaded bool
+
+	plat *platform.Platform
 
 	upgradeHooks []func() error
 )
@@ -59,7 +64,7 @@ func propTreeStore() error {
 		 * allowing for arbitrary rollback.  Could also take explicit
 		 * 'checkpoint' snapshots.
 		 */
-		backupfile := *propdir + backupFilename
+		backupfile := plat.ExpandDirPath(propertyDir, backupFilename)
 		os.Rename(propTreeFile, backupfile)
 	}
 
@@ -162,12 +167,12 @@ func dumpTree(indent string, node *cfgtree.PNode) {
 func propTreeInit(defaults *cfgtree.PNode) error {
 	var err error
 
-	propTreeFile = *propdir + propertyFilename
+	propTreeFile = plat.ExpandDirPath(propertyDir, propertyFilename)
 	tree, err := propTreeLoad(propTreeFile)
 
 	if err != nil {
 		slog.Warnf("Unable to load properties: %v", err)
-		backupfile := *propdir + backupFilename
+		backupfile := plat.ExpandDirPath(propertyDir, backupFilename)
 		tree, err = propTreeLoad(backupfile)
 		if err != nil {
 			slog.Warnf("Unable to load backup properties: %v", err)
@@ -210,16 +215,14 @@ func loadDefaults() (defaults *cfgtree.PNode, descs []propDescription, err error
 		Descriptions []propDescription
 	}
 
-	if !strings.HasSuffix(*propdir, "/") {
-		*propdir = *propdir + "/"
-	}
-	*propdir = aputil.ExpandDirPath(*propdir)
-	if !aputil.FileExists(*propdir) {
-		err = fmt.Errorf("missing properties directory: %s", *propdir)
+	if !aputil.FileExists(plat.ExpandDirPath(staticDir)) {
+		cwd, _ := os.Getwd()
+
+		err = fmt.Errorf("missing properties directory: %s (%s)", plat.ExpandDirPath(staticDir), cwd)
 		return
 	}
 
-	baseFile := *propdir + baseFilename
+	baseFile := plat.ExpandDirPath(staticDir, baseFilename)
 	if !aputil.FileExists(baseFile) {
 		err = fmt.Errorf("missing defaults file: %s", baseFile)
 		return
@@ -239,4 +242,8 @@ func loadDefaults() (defaults *cfgtree.PNode, descs []propDescription, err error
 	defaults = &base.Defaults
 	descs = base.Descriptions
 	return
+}
+
+func init() {
+	plat = platform.NewPlatform()
 }

@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -28,6 +28,7 @@ import (
 
 	"bg/ap_common/aputil"
 	"bg/ap_common/apvuln"
+	"bg/ap_common/platform"
 	"bg/common/passwordgen"
 
 	"github.com/jlaffaye/ftp"
@@ -51,6 +52,8 @@ var (
 	reset       = flag.String("r", "", "reset mode, service:port:user:password, e.g. ssh:22:admin:password (optional)")
 	newUsername = flag.String("u", "", "new username (reset mode only)")
 	humanPass   = flag.Bool("human-password", false, "generate human-friendly password (reset mode only)")
+
+	plat *platform.Platform
 )
 
 var testMap = map[string]probefunc{
@@ -254,7 +257,7 @@ func dpProbe(ip net.IP, tests map[string][]int) apvuln.Vulnerabilities {
 	if err != nil {
 		aputil.Fatalf("dpProbe: error fetching defaults: %s\n", err)
 	}
-	banfiledir := aputil.ExpandDirPath("/var/spool/defaultpass/")
+	banfiledir := plat.ExpandDirPath("__APDATA__", "defaultpass")
 	if err := os.MkdirAll(banfiledir, 0755); err != nil {
 		aputil.Fatalf("dpProbe: error creating banfile directory: %s\n", err)
 	}
@@ -383,6 +386,8 @@ func main() {
 	if *dpPath == "" {
 		usagef("Filename required\n")
 	}
+
+	plat = platform.NewPlatform()
 
 	testlist := strings.Split(*testsToRun, ".")
 	for _, t := range testlist {

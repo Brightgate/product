@@ -66,6 +66,6 @@ func delDevHandler(prop string) ([]string, error) {
 func deviceDBInit() error {
 	var err error
 
-	devices, err = deviceid.DevicesLoad(*propdir + deviceDB)
+	devices, err = deviceid.DevicesLoad(plat.ExpandDirPath(staticDir, deviceDB))
 	return err
 }

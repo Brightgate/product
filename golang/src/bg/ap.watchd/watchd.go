@@ -41,7 +41,7 @@ import (
 const pname = "ap.watchd"
 
 var (
-	watchDir = apcfg.String("data_dir", "/var/spool/watchd", false, nil)
+	watchDir = apcfg.String("data_dir", "watchd", false, nil)
 	addr     = apcfg.String("diag_port", base_def.WATCHD_DIAG_PORT,
 		false, nil)
 	nmapVerbose = apcfg.Bool("nmap_verbose", false, true, nil)
@@ -335,7 +335,9 @@ func main() {
 	slog = aputil.NewLogger(pname)
 	defer slog.Sync()
 
-	*watchDir = aputil.ExpandDirPath(*watchDir)
+	plat = platform.NewPlatform()
+
+	*watchDir = plat.ExpandDirPath("__APDATA__", *watchDir)
 	if !aputil.FileExists(*watchDir) {
 		if err := os.MkdirAll(*watchDir, 0755); err != nil {
 			slog.Fatalf("Error adding directory %s: %v",
@@ -348,7 +350,6 @@ func main() {
 	}
 
 	prometheusInit()
-	plat = platform.NewPlatform()
 
 	brokerd = broker.New(pname)
 	defer brokerd.Fini()

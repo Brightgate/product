@@ -28,6 +28,7 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
+	"bg/ap_common/platform"
 	"bg/base_def"
 	"bg/base_msg"
 	"bg/cloud_rpc"
@@ -68,6 +69,8 @@ var (
 	applianceCred *grpcutils.Credential
 	config        *cfgapi.Handle
 	brokerd       *broker.Broker
+
+	plat *platform.Platform
 
 	metrics struct {
 		events prometheus.Counter
@@ -391,4 +394,8 @@ func main() {
 	} else {
 		slog.Fatalf("Couldn't determine program mode")
 	}
+}
+
+func init() {
+	plat = platform.NewPlatform()
 }

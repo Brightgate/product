@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -11,21 +11,19 @@
 package aputil
 
 import (
-	"flag"
 	"fmt"
 	"io/ioutil"
 
 	"bg/common/grpcutils"
-)
 
-var (
-	credPathFlag string
+	"bg/ap_common/platform"
 )
 
 // SystemCredential creates a new credential based on the system default
-// storage location, or -cred-path, if given.
+// storage location.
 func SystemCredential() (*grpcutils.Credential, error) {
-	credPath := ExpandDirPath(credPathFlag)
+	pl := platform.NewPlatform()
+	credPath := pl.ExpandDirPath("__APSECRET__", "rpcd", "cloud.secret.json")
 
 	credFile, err := ioutil.ReadFile(credPath)
 	if err != nil {
@@ -37,10 +35,4 @@ func SystemCredential() (*grpcutils.Credential, error) {
 		return nil, fmt.Errorf("failed to build credential: %v", err)
 	}
 	return cred, nil
-}
-
-func init() {
-	flag.StringVar(&credPathFlag, "cloud-cred-path",
-		"/etc/secret/cloud/cloud.secret.json",
-		"cloud service JSON credential")
 }

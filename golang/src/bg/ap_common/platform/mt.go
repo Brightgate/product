@@ -204,10 +204,14 @@ func mtRestartService(service string) error {
 	return nil
 }
 
+func mtDataDir() string {
+	return "__APROOT__/data"
+}
+
 func init() {
 	addPlatform(&Platform{
 		name:          "mediatek",
-		machineIDFile: "/opt/etc/machine-id",
+		machineIDFile: "/data/mcp/machine-id",
 
 		ResetSignal:  syscall.SIGINT,
 		ReloadSignal: syscall.SIGHUP,
@@ -229,6 +233,7 @@ func init() {
 		NicIsWan:      mtNicIsWan,
 		NicID:         mtNicGetID,
 		NicLocation:   mtNicLocation,
+		DataDir:       mtDataDir,
 
 		GetDHCPInfo: mtGetDHCPInfo,
 		DHCPPidfile: mtDHCPPidfile,

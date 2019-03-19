@@ -42,7 +42,7 @@ var (
 	aproot   = flag.String("root", "", "Root of AP installation")
 	apmode   = flag.String("mode", "", "Mode in which this AP should operate")
 	cfgfile  = flag.String("c", "", "Alternate daemon config file")
-	logname  = flag.String("l", "", "where to send log messages")
+	logname  = flag.String("l", "mcp.log", "where to send log messages")
 	nodeFlag = flag.String("nodeid", "", "new value for device nodeID")
 	platFlag = flag.String("platform", "", "hardware platform name")
 	verbose  = flag.Bool("v", false, "more verbose logging")
@@ -119,11 +119,11 @@ func signalHandler() {
 }
 
 func reopenLogfile() {
-	if *logname == "" {
+	if *logname == "" || *logname == "-" {
 		return
 	}
 
-	path := aputil.ExpandDirPath(*logname)
+	path := plat.ExpandDirPath("__APDATA__", "mcp", *logname)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		logWarn("Unable to redirect logging to %s: %v", path, err)
@@ -159,8 +159,11 @@ func reopenLogfile() {
 func setEnvironment() {
 	if *platFlag != "" {
 		os.Setenv("APPLATFORM", *platFlag)
+		platform.ClearPlatform()
 	}
+
 	plat = platform.NewPlatform()
+
 	if err := verifyNodeID(); err != nil {
 		logWarn("%v", err)
 		os.Exit(1)
@@ -168,8 +171,9 @@ func setEnvironment() {
 
 	if *aproot == "" {
 		binary, _ := os.Executable()
-		if strings.HasSuffix(binary, "/bin/ap.mcp") {
-			*aproot = strings.TrimSuffix(binary, "/bin/ap.mcp")
+		logInfo("ap.mcp binary '%s'", binary)
+		if strings.HasSuffix(binary, "opt/com.brightgate/bin/ap.mcp") {
+			*aproot = strings.TrimSuffix(binary, "opt/com.brightgate/bin/ap.mcp")
 		} else {
 			wd, _ := os.Getwd()
 			*aproot = wd
@@ -296,4 +300,8 @@ func main() {
 	logInfo("MCP online")
 	signalHandler()
 	shutdown(0)
+}
+
+func init() {
+	plat = platform.NewPlatform()
 }

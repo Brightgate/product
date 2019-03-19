@@ -786,8 +786,8 @@ func daemonInit() error {
 		return err
 	}
 
-	*templateDir = aputil.ExpandDirPath(*templateDir)
-	*rulesDir = aputil.ExpandDirPath(*rulesDir)
+	*templateDir = plat.ExpandDirPath("__APPACKAGE__", *templateDir)
+	*rulesDir = plat.ExpandDirPath("__APPACKAGE__", *rulesDir)
 
 	config.HandleChange(`^@/site_index`, configSiteIndexChanged)
 	config.HandleChange(`^@/clients/.*/ring$`, configClientChanged)

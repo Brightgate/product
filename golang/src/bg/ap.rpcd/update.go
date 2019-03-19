@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -82,22 +82,22 @@ type updateInfo struct {
 
 var updates = map[string]updateInfo{
 	"ip_blocklist": {
-		localDir:   "/var/spool/watchd/",
+		localDir:   "__APDATA__/watchd/",
 		localName:  "ip_blocklist.csv",
 		latestName: "ip_blocklist.latest",
 	},
 	"dns_blocklist": {
-		localDir:   "/var/spool/antiphishing/",
+		localDir:   "__APDATA__/antiphishing/",
 		localName:  "dns_blocklist.csv",
 		latestName: "dns_blocklist.latest",
 	},
 	"dns_allowlist": {
-		localDir:   "/var/spool/antiphishing/",
+		localDir:   "__APDATA__/antiphishing/",
 		localName:  "dns_allowlist.csv",
 		latestName: "dns_allowlist.latest",
 	},
 	// "vulnerabilities": {
-	// localDir:   "/var/spool/watchd/",
+	// localDir:   "__APDATA__/watchd/",
 	// localName:  "vuln-db.json",
 	// latestName: "vuln-db.latest",
 	// },
@@ -111,12 +111,12 @@ type uploadType struct {
 
 var uploadTypes = []uploadType{
 	{
-		"/var/spool/watchd/droplog",
+		"__APDATA__/watchd/droplog",
 		"drops",
 		archive.DropContentType,
 	},
 	{
-		"/var/spool/watchd/stats",
+		"__APDATA__/watchd/stats",
 		"stats",
 		archive.StatContentType,
 	},
@@ -133,8 +133,8 @@ func configBucketChanged(val string) {
 }
 
 func refresh(u *updateInfo) (bool, error) {
-	targetDir := aputil.ExpandDirPath(u.localDir)
-	target := targetDir + u.localName
+	targetDir := plat.ExpandDirPath(u.localDir)
+	target := plat.ExpandDirPath(targetDir, u.localName)
 	latestFile := "/var/tmp/" + u.latestName
 	metaFile := latestFile + ".meta"
 
@@ -219,7 +219,7 @@ func updateLoop(wg *sync.WaitGroup, doneChan chan bool) {
 
 // PUT one file to the provided URL
 func upload(client *http.Client, u oneUpload) error {
-	data, err := os.Open(u.source)
+	data, err := os.Open(plat.ExpandDirPath(u.source))
 	if err != nil {
 		return fmt.Errorf("failed to open %s: %v", u.source, err)
 	}
@@ -314,7 +314,7 @@ func doUpload(rpcClient cloud_rpc.CloudStorageClient) {
 	uploads := make([]oneUpload, 0)
 
 	for _, t := range uploadTypes {
-		dir := aputil.ExpandDirPath(t.dir)
+		dir := plat.ExpandDirPath(t.dir)
 		urls, err := generateSignedURLs(rpcClient, &t,
 			getFilenames(dir, *uploadBatchSize))
 		if err != nil {

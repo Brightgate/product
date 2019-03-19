@@ -15,6 +15,8 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -48,6 +50,7 @@ type Platform struct {
 	NicIsWan      func(string, string) bool
 	NicID         func(string, string) string
 	NicLocation   func(string) string
+	DataDir       func() string
 
 	GetDHCPInfo func(string) (map[string]string, error)
 	DHCPPidfile func(string) string
@@ -55,6 +58,20 @@ type Platform struct {
 	NtpdConfPath   string
 	RestartService func(string) error
 }
+
+const (
+	// APData will expand to the location for mutable files.
+	APData = "__APDATA__"
+	// APPackage will expand to the base of the package installation.
+	APPackage = "__APPACKAGE__"
+	// APRoot will expand to the base of the OS installation.
+	APRoot = "__APROOT__"
+	// APSecret will expand to the location for protected mutable files.
+	APSecret = "__APSECRET__"
+
+	// LSBDataDir is our standard location for data files on platforms.
+	LSBDataDir = "__APPACKAGE__/var/spool"
+)
 
 var (
 	platformLock sync.Mutex
@@ -101,6 +118,14 @@ func NewPlatform() *Platform {
 	return nil
 }
 
+// ClearPlatform discards a previously captured platform handle.
+func ClearPlatform() {
+	platformLock.Lock()
+	defer platformLock.Unlock()
+
+	platform = nil
+}
+
 // GetPlatform returns the name of this node's platform
 func (p *Platform) GetPlatform() string {
 	return p.name
@@ -139,4 +164,24 @@ func (p *Platform) GetNodeID() (string, error) {
 
 	nodeID = uuidStr
 	return nodeID, nil
+}
+
+// ExpandDirPath takes a splat of path components and will translate it into an
+// absolute APROOT-and-platform-aware path.
+func (p *Platform) ExpandDirPath(paths ...string) string {
+	np := filepath.Join(paths...)
+	np = strings.Replace(np, "__APSECRET__", "__APDATA__/secret", -1)
+	np = strings.Replace(np, "__APDATA__", p.DataDir(), -1)
+	np = strings.Replace(np, "__APPACKAGE__", "__APROOT__/opt/com.brightgate", -1)
+
+	root := os.Getenv("APROOT")
+
+	np = strings.Replace(np, "__APROOT__", root, -1)
+
+	re := regexp.MustCompile(`__[^/]+__`)
+	if re.MatchString(np) {
+		panic("unexpanded dbl-underscore token in path")
+	}
+
+	return filepath.Clean(np)
 }

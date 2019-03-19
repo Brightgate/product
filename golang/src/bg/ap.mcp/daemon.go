@@ -346,10 +346,12 @@ func daemonDefine(def *daemon) {
 		d.args = append(d.args, options...)
 	}
 	if d.Binary[0] == byte('/') {
-		d.execpath = d.Binary
+		d.execpath = plat.ExpandDirPath("__APROOT__", d.Binary)
 	} else {
-		d.execpath = *aproot + "/bin/" + d.Binary
+		d.execpath = plat.ExpandDirPath("__APPACKAGE__", "bin", d.Binary)
 	}
+	logDebug("%s execpath is %s", d.Binary, d.execpath)
+
 	if d == def {
 		go d.daemonLoop()
 	}
@@ -361,7 +363,7 @@ func loadDefinitions() error {
 
 	fn := *cfgfile
 	if len(fn) == 0 {
-		fn = *aproot + "/etc/mcp.json"
+		fn = plat.ExpandDirPath("__APPACKAGE__", "/etc/mcp.json")
 	}
 
 	file, err := ioutil.ReadFile(fn)

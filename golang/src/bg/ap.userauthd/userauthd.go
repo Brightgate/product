@@ -115,7 +115,7 @@ type rConf struct {
 }
 
 var (
-	templateDir = apcfg.String("template_dir", "/etc/templates/ap.userauthd",
+	templateDir = apcfg.String("template_dir", "__APPACKAGE__/etc/templates/ap.userauthd",
 		false, nil)
 	verbose = apcfg.Bool("verbose", false, true, nil)
 	_       = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
@@ -170,7 +170,7 @@ func generateRadiusHostapdUsers(rc *rConf) string {
 	// Get current users.
 	rc.Users = configd.GetUsers()
 
-	// Incomplete users should not be included in the config file
+	// Incomplete users should not be included in the config file.
 	for u, i := range rc.Users {
 		if i.MD4Password == "" {
 			slog.Warnf("Skipping user '%s': no password set", u)
@@ -180,8 +180,7 @@ func generateRadiusHostapdUsers(rc *rConf) string {
 
 	slog.Debugf("user configuration: %v", rc)
 
-	// var err error
-	ufile := *templateDir + "/hostapd.users.got"
+	ufile := plat.ExpandDirPath(*templateDir, "hostapd.users.got")
 
 	u, err := template.ParseFiles(ufile)
 	if err != nil {
@@ -203,12 +202,12 @@ func generateRadiusHostapdUsers(rc *rConf) string {
 // Generate the configuration file needed for hostapd in RADIUS mode.
 func generateRadiusHostapdConf(rc *rConf) string {
 	var err error
-	tfile := *templateDir + "/hostapd.radius.got"
+	tfile := plat.ExpandDirPath(*templateDir, "hostapd.radius.got")
 
 	slog.Debugf("radius configuration: %v", rc)
 
 	// Create hostapd.conf, using the APConfig contents to fill out the .got
-	// template
+	// template.
 	t, err := template.ParseFiles(tfile)
 	if err != nil {
 		slog.Fatalf("radius template parse failed: %v", err)
@@ -231,7 +230,7 @@ func generateRadiusHostapdConf(rc *rConf) string {
 // WPA-EAP hostapd (client).
 func generateRadiusClientConf(rc *rConf) string {
 	var err error
-	cfile := *templateDir + "/hostapd.radius_clients.got"
+	cfile := plat.ExpandDirPath(*templateDir, "hostapd.radius_clients.got")
 
 	slog.Debugf("radius configuration: %v", rc)
 
@@ -391,8 +390,6 @@ func main() {
 	if err != nil {
 		slog.Fatalf("cannot connect to configd: %v", err)
 	}
-
-	*templateDir = aputil.ExpandDirPath(*templateDir)
 
 	domainName, err := configd.GetDomain()
 	if err != nil {

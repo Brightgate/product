@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -17,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"bg/ap_common/aputil"
 	"bg/ap_common/apvuln"
 )
 
@@ -42,7 +41,7 @@ func execPasswordChange(ipaddr string, dpVuln apvuln.DPvulnerability) (apvuln.DP
 	if dpVuln.Service != "ssh" {
 		return newCreds, fmt.Errorf("Unsupported password repair service %s", dpVuln.Service)
 	}
-	defaultpass := aputil.ExpandDirPath("/bin/ap-defaultpass")
+	defaultpass := plat.ExpandDirPath("__APPACKAGE__", "bin/ap-defaultpass")
 	resetData := fmt.Sprintf("%s:%s:%s:%s", dpVuln.Service, dpVuln.Port,
 		dpVuln.Credentials.Username, dpVuln.Credentials.Password)
 	cmd := exec.Command(defaultpass, "-i", ipaddr, "-r", resetData, "-human-password")

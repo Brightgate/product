@@ -17,20 +17,40 @@ set -x
 line_add () {
 	# $1 - file
 	# $2 - line
-	if [ ! -f "$1" ]; then
-		echo "$2" > "$1"
+	if [ ! -f "$PKG_ROOT/$1" ]; then
+		echo "$2" > "$PKG_ROOT/$1"
 		return
 	fi
-	if grep -vq "$2" "$1"; then
-		echo "$2" >> "$1"
+	if ! grep -q "$2" "$PKG_ROOT/$1"; then
+		echo "$2" >> "$PKG_ROOT/$1"
 	fi
 }
 
 # Add our PATH to /root/.profile.
-line_add "$PKG_ROOT/root/.profile" ". /opt/com.brightgate/etc/com-brightgate-profile"
+line_add "/root/.profile" ". /opt/com.brightgate/etc/com-brightgate-profile"
 
 # Add /etc/rsyslog.d to /etc/rsyslog.conf and restart rsyslog.
-line_add "$PKG_ROOT/etc/rsyslog.conf" "\$IncludeConfig /etc/rsyslog.d/"
+line_add "/etc/rsyslog.conf" "\$IncludeConfig /etc/rsyslog.d/"
+
+optime=$(date -Iseconds)
+
+copy_preserve () {
+	if [ -f "$PKG_ROOT/$1" ]; then
+		mkdir -p "$PKG_ROOT/$2"
+		cp "$PKG_ROOT/$1" "$PKG_ROOT/$2"
+		mv "$PKG_ROOT/$1" "$PKG_ROOT/$1.$optime"
+	fi
+}
+
+copy_preserve /opt/com.brightgate/etc/secret/cloud/cloud.secret.json \
+	/data/secret/rpcd
+
+copy_preserve /opt/com.brightgate/etc/ap_props.json /data/configd
+copy_preserve /opt/com.brightgate/etc/ap_props.json.bak /data/configd
+
+copy_preserve /opt/etc/machine-id /data/mcp
+
+copy_preserve /opt/com.brightgate/etc/secret/cloud/cloud.secret.json /data/rpcd
 
 if [ "$PKG_ROOT" = "/" ]; then
 	/etc/rc.common /etc/init.d/rsyslog restart
