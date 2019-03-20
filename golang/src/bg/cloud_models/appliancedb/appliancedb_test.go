@@ -517,6 +517,7 @@ func testAccount(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Su
 	assert.Error(err)
 	assert.IsType(err, NotFoundError{})
 
+	ds.AccountSecretsSetPassphrase([]byte("I LIKE COCONUTS"))
 	_, err = ds.AccountSecretsByUUID(ctx, testAccount1.UUID)
 	assert.Error(err)
 	assert.IsType(err, NotFoundError{})
@@ -535,6 +536,11 @@ func testAccount(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Su
 	assert.Equal(testAs.ApplianceUserMSCHAPv2, as.ApplianceUserMSCHAPv2)
 	assert.WithinDuration(time.Now(), as.ApplianceUserMSCHAPv2Ts, time.Second)
 	assert.WithinDuration(time.Now(), as.ApplianceUserBcryptTs, time.Second)
+
+	// Bad passphrase should be detected
+	ds.AccountSecretsSetPassphrase([]byte("I DO NOT LIKE COCONUTS"))
+	as, err = ds.AccountSecretsByUUID(ctx, testAccount1.UUID)
+	assert.Error(err)
 }
 
 // Test AccountOrgRole APIs.  subtest of TestDatabaseModel

@@ -11,12 +11,18 @@
 package appliancedb
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
+	"io/ioutil"
+	"strings"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/satori/uuid"
+	"golang.org/x/crypto/openpgp"
+	"golang.org/x/crypto/openpgp/armor"
 )
 
 type accountManager interface {
@@ -29,6 +35,7 @@ type accountManager interface {
 	InsertAccount(context.Context, *Account) error
 	InsertAccountTx(context.Context, DBX, *Account) error
 
+	AccountSecretsSetPassphrase(passphrase []byte)
 	AccountSecretsByUUID(context.Context, uuid.UUID) (*AccountSecrets, error)
 	UpsertAccountSecrets(context.Context, *AccountSecrets) error
 	UpsertAccountSecretsTx(context.Context, DBX, *AccountSecrets) error
@@ -158,6 +165,56 @@ func (db *ApplianceDB) InsertAccountTx(ctx context.Context, dbx DBX,
 	return err
 }
 
+func pgpSymEncrypt(plaintext string, passphrase []byte) (string, error) {
+	if passphrase == nil {
+		return "", errors.New("invalid empty passphrase")
+	}
+	b := &strings.Builder{}
+	armorW, err := armor.Encode(b, "PGP MESSAGE", nil)
+	if err != nil {
+		return "", errors.Wrap(err, "Could not prepare message armor")
+	}
+	defer armorW.Close()
+
+	plaintextW, err := openpgp.SymmetricallyEncrypt(armorW, passphrase, nil, nil)
+	if err != nil {
+		return "", errors.Wrap(err, "Could not prepare message encryptor")
+	}
+
+	defer plaintextW.Close()
+	_, err = plaintextW.Write([]byte(plaintext))
+	if err != nil {
+		return "", errors.Wrap(err, "Could not write plaintext")
+	}
+	plaintextW.Close()
+	armorW.Close()
+	return b.String(), nil
+}
+
+func pgpSymDecrypt(cipherText []byte, passphrase []byte) (string, error) {
+	buf := bytes.NewBuffer(cipherText)
+	unarmored, err := armor.Decode(buf)
+	if err != nil {
+		return "", err
+	}
+
+	prompted := false
+	msgDetails, err := openpgp.ReadMessage(unarmored.Body, nil,
+		func(keys []openpgp.Key, _ bool) ([]byte, error) {
+			if prompted {
+				return nil, fmt.Errorf("incorrect decryption passphrase")
+			}
+			prompted = true
+			return passphrase, nil
+		}, nil)
+	if err != nil {
+		return "", err
+	}
+
+	plainBytes, err := ioutil.ReadAll(msgDetails.UnverifiedBody)
+	return string(plainBytes), nil
+}
+
 // AccountSecrets represents an entry in the account_secrets table.
 // This data is encrypted (on the client-side).
 type AccountSecrets struct {
@@ -168,6 +225,12 @@ type AccountSecrets struct {
 	ApplianceUserMSCHAPv2       string    `db:"appliance_user_mschapv2"`
 	ApplianceUserMSCHAPv2Regime string    `db:"appliance_user_mschapv2_regime"`
 	ApplianceUserMSCHAPv2Ts     time.Time `db:"appliance_user_mschapv2_ts"`
+}
+
+// AccountSecretsSetPassphrase sets the symmetric encryption passphrase used
+// to encrypt certain account_secrets database columns.
+func (db *ApplianceDB) AccountSecretsSetPassphrase(passphrase []byte) {
+	db.accountSecretsPassphrase = passphrase
 }
 
 // AccountSecretsByUUID selects a row from account_secrets by user account
@@ -183,10 +246,21 @@ func (db *ApplianceDB) AccountSecretsByUUID(ctx context.Context, acctUUID uuid.U
 		return nil, NotFoundError{fmt.Sprintf(
 			"AccountSecretsByUUID: Couldn't find record for %s", acctUUID)}
 	case nil:
-		return &as, nil
+		break
 	default:
 		panic(err)
 	}
+	bc, err := pgpSymDecrypt([]byte(as.ApplianceUserBcrypt), db.accountSecretsPassphrase)
+	if err != nil {
+		return nil, errors.Wrap(err, "AccountSecretsByUUID: Couldn't decrypt UserBcrypt")
+	}
+	ms, err := pgpSymDecrypt([]byte(as.ApplianceUserMSCHAPv2), db.accountSecretsPassphrase)
+	if err != nil {
+		return nil, errors.Wrap(err, "AccountSecretsByUUID: Couldn't decrypt UserMSCHAPv2")
+	}
+	as.ApplianceUserBcrypt = bc
+	as.ApplianceUserMSCHAPv2 = ms
+	return &as, nil
 }
 
 // UpsertAccountSecrets upserts a row in account_secrets
@@ -198,10 +272,23 @@ func (db *ApplianceDB) UpsertAccountSecrets(ctx context.Context, as *AccountSecr
 func (db *ApplianceDB) UpsertAccountSecretsTx(ctx context.Context, dbx DBX,
 	as *AccountSecrets) error {
 
+	cryptedBcrypt, err := pgpSymEncrypt(as.ApplianceUserBcrypt, db.accountSecretsPassphrase)
+	if err != nil {
+		return err
+	}
+	cryptedMSCHAPv2, err := pgpSymEncrypt(as.ApplianceUserMSCHAPv2, db.accountSecretsPassphrase)
+	if err != nil {
+		return err
+	}
+	// Take a copy so we can modify it
+	crypted := *as
+	crypted.ApplianceUserBcrypt = cryptedBcrypt
+	crypted.ApplianceUserMSCHAPv2 = cryptedMSCHAPv2
+
 	if dbx == nil {
 		dbx = db
 	}
-	_, err := dbx.NamedExecContext(ctx,
+	_, err = dbx.NamedExecContext(ctx,
 		`INSERT INTO account_secrets
 		  (account_uuid,
 		   appliance_user_bcrypt, appliance_user_bcrypt_regime, appliance_user_bcrypt_ts,
@@ -217,7 +304,7 @@ func (db *ApplianceDB) UpsertAccountSecretsTx(ctx context.Context, dbx DBX,
 		 ) = (
 		   EXCLUDED.appliance_user_bcrypt, EXCLUDED.appliance_user_bcrypt_regime, EXCLUDED.appliance_user_bcrypt_ts,
 		   EXCLUDED.appliance_user_mschapv2, EXCLUDED.appliance_user_mschapv2_regime, EXCLUDED.appliance_user_mschapv2_ts
-		 )`, as)
+		 )`, &crypted)
 	return err
 }
 

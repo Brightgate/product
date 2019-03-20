@@ -241,6 +241,7 @@ func mkRouterHTTPS(sessionStore sessions.Store) *echo.Echo {
 	if err != nil || len(accountSecret) != 32 {
 		log.Fatalf("Failed to decode B10E_CLHTTPD_ACCOUNT_SECRET; should be hex encoded and 32 bytes long %d", len(accountSecret))
 	}
+	applianceDB.AccountSecretsSetPassphrase(accountSecret)
 
 	enableConfigdTLS = !environ.ConfigdDisableTLS && !environ.Developer
 	if !enableConfigdTLS {
@@ -259,7 +260,7 @@ func mkRouterHTTPS(sessionStore sessions.Store) *echo.Echo {
 		newSessionMiddleware(sessionStore).Process,
 	}
 	_ = newSiteHandler(r, applianceDB, wares, getConfigClientHandle, twil)
-	_ = newAccountHandler(r, applianceDB, wares, sessionStore, getConfigClientHandle, accountSecret)
+	_ = newAccountHandler(r, applianceDB, wares, sessionStore, getConfigClientHandle)
 	hdl, err := getConfigClientHandle("00000000-0000-0000-0000-000000000000")
 	if err != nil {
 		log.Fatalf("failed to make Config Client: %s", err)

@@ -11,9 +11,12 @@
 package main
 
 import (
+	"bg/cl_common/clcfg"
 	"bg/cl_common/registry"
 	"bg/cloud_models/appliancedb"
+	"bg/common/cfgapi"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -172,6 +175,65 @@ func modAccountRole(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func getConfig(siteUUID string) (*cfgapi.Handle, error) {
+	url := environ.ConfigdConnection
+	tls := !environ.DisableTLS
+	conn, err := clcfg.NewConfigd(pname, siteUUID, url, tls)
+	if err != nil {
+		return nil, err
+	}
+	conn.Ping(nil)
+	cfg := cfgapi.NewHandle(conn)
+	return cfg, nil
+}
+
+func syncAllAccounts(cmd *cobra.Command, args []string) error {
+	if environ.ConfigdConnection == "" {
+		return fmt.Errorf("Must set B10E_CLREG_CLCONFIGD_CONNECTION")
+	}
+
+	ctx := context.Background()
+	db, _, err := assembleRegistry(cmd)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	as, err := hex.DecodeString(environ.AccountSecret)
+	if err != nil {
+		return err
+	}
+	db.AccountSecretsSetPassphrase(as)
+
+	orgs, err := db.AllOrganizations(ctx)
+	if err != nil {
+		return err
+	}
+	for _, org := range orgs {
+		accts, err := db.AccountsByOrganization(ctx, org.UUID)
+		if err != nil {
+			return err
+		}
+		if org.UUID == uuid.Nil {
+			continue
+		}
+		if len(accts) == 0 {
+			fmt.Printf("Organization: %s (%s):\n  No accounts\n", org.Name, org.UUID)
+			continue
+		}
+		fmt.Printf("Syncing Organization %s (%s)\n", org.Name, org.UUID)
+		for _, acct := range accts {
+			err = registry.SyncAccountSelfProv(ctx, db, getConfig, acct.UUID, nil)
+			if err != nil {
+				fmt.Printf("  Sync Error <%s>: %v\n", acct.Email, err)
+			} else {
+				fmt.Printf("  Sync    OK <%s>\n", acct.Email)
+			}
+		}
+	}
+	return nil
+}
+
 func accountMain(rootCmd *cobra.Command) {
 	accountCmd := &cobra.Command{
 		Use:   "account <subcmd> [flags] [args]",
@@ -197,6 +259,14 @@ func accountMain(rootCmd *cobra.Command) {
 	}
 	infoAccountCmd.Flags().StringP("input", "i", "", "registry data JSON file")
 	accountCmd.AddCommand(infoAccountCmd)
+
+	syncAllAccountCmd := &cobra.Command{
+		Use:   "sync-all",
+		Short: "Sync all self-provisioned accounts from cloud -> appliance",
+		Args:  cobra.NoArgs,
+		RunE:  syncAllAccounts,
+	}
+	accountCmd.AddCommand(syncAllAccountCmd)
 
 	roleAccountCmd := &cobra.Command{
 		Use:   "role <subcmd> [flags] [args]",

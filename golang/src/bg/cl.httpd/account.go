@@ -11,32 +11,26 @@
 package main
 
 import (
-	"context"
 	"crypto/rand"
 	"math"
 	"math/big"
 	"net/http"
-	"strings"
 	"time"
 
-	"golang.org/x/crypto/openpgp"
-	"golang.org/x/crypto/openpgp/armor"
-
+	"bg/cl_common/registry"
 	"bg/cloud_models/appliancedb"
 	"bg/common/cfgapi"
 	"bg/common/passwordgen"
 
 	"github.com/gorilla/sessions"
 	"github.com/labstack/echo"
-	"github.com/pkg/errors"
 	"github.com/satori/uuid"
 )
 
 type accountHandler struct {
-	db               appliancedb.DataStore
-	sessionStore     sessions.Store
-	getClientHandle  getClientHandleFunc
-	accountSecretKey []byte
+	db              appliancedb.DataStore
+	sessionStore    sessions.Store
+	getConfigHandle registry.GetConfigHandleFunc
 }
 
 type accountSelfProvisionRequest struct {
@@ -118,55 +112,6 @@ func (a *accountHandler) getAccountPasswordGen(c echo.Context) error {
 	})
 }
 
-func pgpSymEncrypt(plaintext string, passphrase []byte) (string, error) {
-	b := &strings.Builder{}
-	armorW, err := armor.Encode(b, "PGP MESSAGE", nil)
-	if err != nil {
-		return "", errors.Wrap(err, "Could not prepare message armor")
-	}
-	defer armorW.Close()
-
-	plaintextW, err := openpgp.SymmetricallyEncrypt(armorW, passphrase, nil, nil)
-	if err != nil {
-		return "", errors.Wrap(err, "Could not prepare message encryptor")
-	}
-
-	defer plaintextW.Close()
-	_, err = plaintextW.Write([]byte(plaintext))
-	if err != nil {
-		return "", errors.Wrap(err, "Could not write plaintext")
-	}
-	plaintextW.Close()
-	armorW.Close()
-	return b.String(), nil
-}
-
-func (a *accountHandler) savePasswords(ctx context.Context, accountUUID uuid.UUID, userpw, userpwRegime, mschapv2pw, mschapv2pwRegime string) error {
-	userpwCipherText, err := pgpSymEncrypt(userpw, a.accountSecretKey)
-	if err != nil {
-		return err
-	}
-	mschapv2pwCipherText, err := pgpSymEncrypt(mschapv2pw, a.accountSecretKey)
-	if err != nil {
-		return err
-	}
-	now := time.Now()
-	accountSecrets := &appliancedb.AccountSecrets{
-		AccountUUID:                 accountUUID,
-		ApplianceUserBcrypt:         userpwCipherText,
-		ApplianceUserBcryptRegime:   userpwRegime,
-		ApplianceUserBcryptTs:       now,
-		ApplianceUserMSCHAPv2:       mschapv2pwCipherText,
-		ApplianceUserMSCHAPv2Regime: mschapv2pwRegime,
-		ApplianceUserMSCHAPv2Ts:     now,
-	}
-	err = a.db.UpsertAccountSecrets(ctx, accountSecrets)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 // postAccountSelfProvision takes the verifier code discussed
 // above as input, as well as information from the session.
 //
@@ -210,76 +155,29 @@ func (a *accountHandler) postAccountSelfProvision(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "stale request, verifier did not match")
 	}
 
-	sites, err := a.db.CustomerSitesByAccount(ctx, accountUUID)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
-	}
-
-	account, err := a.db.AccountByUUID(ctx, accountUUID)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
-	}
-
-	person, err := a.db.PersonByUUID(ctx, account.PersonUUID)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
-	}
-
 	// We've now got confirmation that the user wants to provision this
 	// password; so stash it in the database.
-	err = a.savePasswords(ctx, accountUUID, userpwSessionVal, pwRegime, mschapSessionVal, pwRegime)
+	now := time.Now()
+	accountSecrets := &appliancedb.AccountSecrets{
+		AccountUUID:                 accountUUID,
+		ApplianceUserBcrypt:         userpwSessionVal,
+		ApplianceUserBcryptRegime:   pwRegime,
+		ApplianceUserBcryptTs:       now,
+		ApplianceUserMSCHAPv2:       mschapSessionVal,
+		ApplianceUserMSCHAPv2Regime: pwRegime,
+		ApplianceUserMSCHAPv2Ts:     now,
+	}
+	err = a.db.UpsertAccountSecrets(ctx, accountSecrets)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	// Try to build up all of the config we want first, then run the
-	// updates.  We want to do our best to see that this operation succeeds
-	// or fails as a whole.
-	uis := make([]*cfgapi.UserInfo, 0)
-	for _, site := range sites {
-		var hdl *cfgapi.Handle
-		hdl, err := a.getClientHandle(site.UUID.String())
-		if err != nil {
-			c.Logger().Errorf("getClientHandle failed: %v", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, err)
-		}
-		// Try to get a single property; helps us detect if there is no
-		// config at all for this site.
-		_, err = hdl.GetProp("@/apversion")
-		if err != nil && errors.Cause(err) == cfgapi.ErrNoConfig {
-			// No config for this site, keep going.
-			continue
-		} else if err != nil {
-			c.Logger().Errorf("GetProp @/apversion failed: %v", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, err)
-		}
-		var ui *cfgapi.UserInfo
-		ui, err = hdl.NewSelfProvisionUserInfo(account.Email, accountUUID)
-		if err != nil {
-			c.Logger().Errorf("NewSelfProvisionUserInfo failed: %#v %#v", err, errors.Cause(err))
-			return echo.NewHTTPError(http.StatusInternalServerError, err)
-		}
-		ui.DisplayName = person.Name
-		ui.Email = account.Email
-		ui.TelephoneNumber = account.PhoneNumber
-		if ui.TelephoneNumber == "" {
-			ui.TelephoneNumber = "650-555-1212"
-		}
-		c.Logger().Infof("Adding new user %v to site %v", ui.UID, site.UUID)
-		uis = append(uis, ui)
+	err = registry.SyncAccountSelfProv(ctx, a.db, a.getConfigHandle, accountUUID, nil)
+	if err != nil {
+		c.Logger().Errorf("registry.SyncAccountSelfProv failed: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
-	for _, ui := range uis {
-		c.Logger().Infof("Hitting send on %v", ui)
-		ops := ui.PropOpsFromPasswordHashes(userpwSessionVal, mschapSessionVal)
 
-		_, err := ui.Update(ops...)
-		if err != nil {
-			c.Logger().Errorf("Failed to start update: %v", err)
-		}
-		// XXX for now we don't wait around to see if the update succeeds.
-		// More work is needed to give the user progress and/or partial
-		// results.
-	}
 	return c.Redirect(http.StatusFound, "/client-web")
 }
 
@@ -320,12 +218,8 @@ func (a *accountHandler) getAccountSelfProvision(c echo.Context) error {
 
 // newAccountAPIHandler creates an accountHandler for the given DataStore and session
 // Store, and routes the handler into the echo instance.
-func newAccountHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []echo.MiddlewareFunc, sessionStore sessions.Store, getClientHandle getClientHandleFunc, accountSecretKey []byte) *accountHandler {
-	if len(accountSecretKey) != 32 {
-		panic("bad accountSecretKey")
-	}
-
-	h := &accountHandler{db, sessionStore, getClientHandle, accountSecretKey}
+func newAccountHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []echo.MiddlewareFunc, sessionStore sessions.Store, getConfigHandle registry.GetConfigHandleFunc) *accountHandler {
+	h := &accountHandler{db, sessionStore, getConfigHandle}
 	acct := r.Group("/api/account")
 	acct.Use(middlewares...)
 	acct.GET("/:uuid/passwordgen", h.getAccountPasswordGen)

@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gorilla/securecookie"
 	"github.com/gorilla/sessions"
@@ -24,6 +25,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"bg/cloud_models/appliancedb"
 	"bg/cloud_models/appliancedb/mocks"
 )
 
@@ -31,9 +33,21 @@ func TestAccountsGenAndProvision(t *testing.T) {
 	var err error
 	assert := require.New(t)
 	// Mock DB
+
+	mockAccountSecrets := appliancedb.AccountSecrets{
+		AccountUUID:                 accountUUID,
+		ApplianceUserBcrypt:         "foobar",
+		ApplianceUserBcryptRegime:   "1",
+		ApplianceUserBcryptTs:       time.Now(),
+		ApplianceUserMSCHAPv2:       "foobaz",
+		ApplianceUserMSCHAPv2Regime: "1",
+		ApplianceUserMSCHAPv2Ts:     time.Now(),
+	}
+
 	dMock := &mocks.DataStore{}
 	dMock.On("AccountByUUID", mock.Anything, mock.Anything).Return(&mockAccount, nil)
-	dMock.On("CustomerSitesByAccount", mock.Anything, mock.Anything).Return(mockSites, nil)
+	dMock.On("AccountSecretsByUUID", mock.Anything, mock.Anything).Return(&mockAccountSecrets, nil)
+	dMock.On("CustomerSitesByOrganization", mock.Anything, mock.Anything).Return(mockSites, nil)
 	dMock.On("PersonByUUID", mock.Anything, mock.Anything).Return(&mockPerson, nil)
 	dMock.On("UpsertAccountSecrets", mock.Anything, mock.Anything).Return(nil)
 	defer dMock.AssertExpectations(t)
@@ -44,7 +58,7 @@ func TestAccountsGenAndProvision(t *testing.T) {
 		newSessionMiddleware(ss).Process,
 	}
 	e := echo.New()
-	_ = newAccountHandler(e, dMock, mw, ss, getMockClientHandle, securecookie.GenerateRandomKey(32))
+	_ = newAccountHandler(e, dMock, mw, ss, getMockClientHandle)
 
 	// Setup request for password generation
 	req, rec := setupReqRec(echo.GET,

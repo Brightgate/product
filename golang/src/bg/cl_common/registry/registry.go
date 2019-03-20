@@ -1,3 +1,13 @@
+/*
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ *
+ * This copyright notice is Copyright Management Information under 17 USC 1202
+ * and is included to protect this work and deter copyright infringement.
+ * Removal or alteration of this Copyright Management Information without the
+ * express written permission of Brightgate Inc is prohibited, and any
+ * such unauthorized removal or alteration will be a violation of federal law.
+ */
+
 package registry
 
 import (
@@ -11,9 +21,11 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/satori/uuid"
 
 	"bg/cloud_models/appliancedb"
+	"bg/common/cfgapi"
 )
 
 // PubSub is a part of ApplianceRegistry, describing the publisher/subscriber
@@ -151,6 +163,117 @@ func GetAccountInformation(ctx context.Context, db appliancedb.DataStore, acctUU
 		Organization: org,
 		OAuth2IDs:    ids,
 	}, nil
+}
+
+// GetConfigHandleFunc is a type representing a function which can create
+// cfgapi Handles given a siteUUID
+type GetConfigHandleFunc func(siteUUID string) (*cfgapi.Handle, error)
+
+// ErrNotSelfProvisioned indicates an account which has not self-provisioned
+var ErrNotSelfProvisioned = errors.New("Account is not self provisioned")
+
+// ErrNoAccount indicates an non-existent account
+var ErrNoAccount = errors.New("Account does not exist")
+
+// SyncAccountSelfProv performs synchronization of an account to one or
+// more CustomerSites.
+// - getConfig is a function which serves a source of cfgapi.Handle's for
+//   talking to configd.
+// - If sites is nil, all sites for the account's organization are synced.
+func SyncAccountSelfProv(ctx context.Context,
+	db appliancedb.DataStore, getConfig GetConfigHandleFunc,
+	accountUUID uuid.UUID, sites []appliancedb.CustomerSite) error {
+
+	account, err := db.AccountByUUID(ctx, accountUUID)
+	if err != nil {
+		if _, ok := err.(appliancedb.NotFoundError); ok {
+			return ErrNoAccount
+		}
+		return err
+	}
+
+	secret, err := db.AccountSecretsByUUID(ctx, accountUUID)
+	if err != nil {
+		if _, ok := err.(appliancedb.NotFoundError); ok {
+			return ErrNotSelfProvisioned
+		}
+		return err
+	}
+	if secret.ApplianceUserMSCHAPv2 == "" {
+		return ErrNotSelfProvisioned
+	}
+
+	person, err := db.PersonByUUID(ctx, account.PersonUUID)
+	if err != nil {
+		return err
+	}
+
+	if sites != nil {
+		// Check that input sites are valid
+		for _, site := range sites {
+			if site.OrganizationUUID != account.OrganizationUUID {
+				return errors.Errorf("Site and account organization mismatch: %v / %v",
+					site, account)
+			}
+		}
+	} else {
+		sites, err = db.CustomerSitesByOrganization(ctx, account.OrganizationUUID)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Try to build up all of the config we want first, then run the
+	// updates.  We want to do our best to see that this operation succeeds
+	// or fails as a whole.
+	uis := make([]*cfgapi.UserInfo, 0)
+	for _, site := range sites {
+		var hdl *cfgapi.Handle
+		hdl, err := getConfig(site.UUID.String())
+		if err != nil {
+			return err
+		}
+		// Try to get a single property; helps us detect if there is no
+		// config at all for this site.
+		_, err = hdl.GetProp("@/apversion")
+		if err != nil && errors.Cause(err) == cfgapi.ErrNoConfig {
+			// No config for this site, keep going.
+			continue
+		} else if err != nil {
+			return err
+		}
+		var ui *cfgapi.UserInfo
+		ui, err = hdl.NewSelfProvisionUserInfo(account.Email, accountUUID)
+		if err != nil {
+			return err
+		}
+		ui.DisplayName = person.Name
+		ui.Email = account.Email
+		ui.TelephoneNumber = account.PhoneNumber
+		if ui.TelephoneNumber == "" {
+			ui.TelephoneNumber = "650-555-1212"
+		}
+		uis = append(uis, ui)
+	}
+	var errs []error
+	success := 0
+	for _, ui := range uis {
+		ops := ui.PropOpsFromPasswordHashes(secret.ApplianceUserBcrypt, secret.ApplianceUserMSCHAPv2)
+
+		_, err := ui.Update(ops...)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		success++
+		// XXX for now we don't wait around to see if the update succeeds.
+		// More work is needed to give the user progress and/or partial
+		// results.
+	}
+	if errs != nil {
+		return errors.Wrapf(errs[0], "partial or total failure. #success=%d, #fail=%d.  First failure is indicated",
+			success, len(errs))
+	}
+	return nil
 }
 
 // NewAppliance registers a new appliance.

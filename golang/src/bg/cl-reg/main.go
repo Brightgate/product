@@ -12,6 +12,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,11 +29,16 @@ import (
 	"bg/cloud_models/appliancedb"
 )
 
+const pname = "cl-reg"
+
 var environ struct {
 	PostgresConnection string `envcfg:"REG_DBURI"`
 	Project            string `envcfg:"REG_PROJECT_ID"`
 	Region             string `envcfg:"REG_REGION_ID"`
 	Registry           string `envcfg:"REG_REGISTRY_ID"`
+	ConfigdConnection  string `envcfg:"B10E_CLREG_CLCONFIGD_CONNECTION"`
+	DisableTLS         bool   `envcfg:"B10E_CLREG_DISABLE_TLS"`
+	AccountSecret      string `envcfg:"B10E_CLREG_ACCOUNT_SECRET"`
 }
 
 type requiredUsage struct {
@@ -224,6 +230,7 @@ func listOAuth2OrgRules(cmd *cobra.Command, args []string) error {
 }
 
 func newSite(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
 	siteName := args[0]
 	orgUUID := uuid.Must(uuid.FromString(args[1]))
 
@@ -233,11 +240,43 @@ func newSite(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
-	siteUU, err := registry.NewSite(context.Background(), db, siteName, orgUUID)
+	as, err := hex.DecodeString(environ.AccountSecret)
+	if err != nil {
+		return err
+	}
+	db.AccountSecretsSetPassphrase(as)
+
+	siteUU, err := registry.NewSite(ctx, db, siteName, orgUUID)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("Created Site: uuid=%s, name='%s' organization='%s'\n", siteUU, siteName, orgUUID)
+
+	if orgUUID == appliancedb.NullOrganizationUUID {
+		fmt.Printf("Warning: null organization; usually for testing only\n")
+		return nil
+	}
+
+	site, err := db.CustomerSiteByUUID(ctx, siteUU)
+	if err != nil {
+		return err
+	}
+
+	accounts, err := db.AccountsByOrganization(ctx, orgUUID)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Syncing accounts:\n")
+	for _, acct := range accounts {
+		err = registry.SyncAccountSelfProv(ctx, db, getConfig, acct.UUID,
+			[]appliancedb.CustomerSite{*site})
+		if err != nil {
+			fmt.Printf("  Sync Error <%s>: %v\n", acct.Email, err)
+		} else {
+			fmt.Printf("  Sync    OK <%s>\n", acct.Email)
+		}
+	}
 	return nil
 }
 

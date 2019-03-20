@@ -93,6 +93,7 @@ type DataStore interface {
 // sql.DB implements Ping() and Close()
 type ApplianceDB struct {
 	*sqlx.DB
+	accountSecretsPassphrase []byte
 }
 
 // CustomerSite represents a customer installation of a group of
@@ -197,7 +198,9 @@ func Connect(dataSource string) (DataStore, error) {
 	// open many many connections to the database.  (presumably the cloud
 	// sql proxy can't handle massive numbers of connections)
 	sqldb.SetMaxOpenConns(16)
-	var ds DataStore = &ApplianceDB{sqldb}
+	var ds DataStore = &ApplianceDB{
+		DB: sqldb,
+	}
 	return ds, nil
 }
 
