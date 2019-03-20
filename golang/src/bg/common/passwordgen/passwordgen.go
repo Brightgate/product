@@ -209,8 +209,8 @@ var HumanPasswordSpec = PasswordSpec{
 		'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z'},
 	AllowedSymbols: []rune{'-'},
 	NumSymbols:     2,
-	AllowedDigits:  []rune{'0', '1', '2', '3', '4', '6', '7', '8', '9'},
-	NumDigits:      1,
+	AllowedDigits:  []rune{},
+	NumDigits:      0,
 	MaxLength:      40,
 	TargetEntropy:  50,
 }
@@ -239,16 +239,16 @@ func EntropyPassword(spec PasswordSpec) (string, error) {
 	digsNeeded := spec.NumDigits
 	seenUpper := false
 	seenLower := false
-	endsLetter := 0 // {0,1} (not bool) because we need to add with it
+	endsLetter := 0 // {0,2} (not bool), we need to reserve 2 characters for each end
 	if spec.LetterBookends || spec.UpperLower {
-		endsLetter = 1
+		endsLetter = 2
 	}
 
 	var err error
 	passBuf := make([]byte, 0, spec.MaxLength)
 	pass := bytes.NewBuffer(passBuf)
 	for entropy < float64(spec.TargetEntropy) &&
-		(pass.Len()+symsNeeded+digsNeeded+endsLetter) < spec.MaxLength {
+		(pass.Len()+endsLetter) < spec.MaxLength {
 		idx := cryptoInt(len(allowedRunes))
 		// Relies on ordering of AllowedLetters, AllowedSymbols, AllowedDigits
 		if idx >= len(spec.AllowedLetters) {
@@ -270,21 +270,28 @@ func EntropyPassword(spec PasswordSpec) (string, error) {
 
 	// At this point we are guaranteed to have symsNeeded + digsNeeded bytes
 	// _OR_ we hit our target entropy and we don't need more bytes
+	// symsNeeded, digsNeeded could be negative if selected > minimum num/sym times
 	for i := 0; i < symsNeeded; i++ {
-		_, err = pass.WriteRune(randomRune(spec.AllowedSymbols))
-		if err != nil {
-			return "", err
+		if (pass.Len() + endsLetter) < spec.MaxLength {
+			_, err = pass.WriteRune(randomRune(spec.AllowedSymbols))
+			if err != nil {
+				return "", err
+			}
+			entropy += math.Log2(float64(len(spec.AllowedSymbols)))
 		}
-		entropy += math.Log2(float64(len(spec.AllowedSymbols)))
 	}
 	for i := 0; i < digsNeeded; i++ {
-		_, err = pass.WriteRune(randomRune(spec.AllowedDigits))
-		if err != nil {
-			return "", err
+		if (pass.Len() + endsLetter) < spec.MaxLength {
+			_, err = pass.WriteRune(randomRune(spec.AllowedDigits))
+			if err != nil {
+				return "", err
+			}
+			entropy += math.Log2(float64(len(spec.AllowedDigits)))
 		}
-		entropy += math.Log2(float64(len(spec.AllowedDigits)))
 	}
+
 	if endsLetter > 0 {
+		// add letter at end, handle UpperLower
 		r := randomRune(spec.AllowedLetters)
 		ent := math.Log2(float64(len(spec.AllowedLetters)))
 		if spec.UpperLower && !(seenUpper && seenLower) {
@@ -296,6 +303,16 @@ func EntropyPassword(spec PasswordSpec) (string, error) {
 			}
 		}
 		_, err = pass.WriteRune(r)
+		entropy += ent
+		// add letter at beginning
+		s := randomRune(spec.AllowedLetters)
+		currString := pass.String()
+		pass.Reset()
+		_, err = pass.WriteRune(s)
+		if err != nil {
+			return "", err
+		}
+		_, err = pass.WriteString(currString)
 		if err != nil {
 			return "", err
 		}
@@ -371,7 +388,7 @@ func (spec *PasswordSpec) String() string {
 // Pad with digits
 //
 // A password of length 40 will have at least:
-// 4 words, 3 symbols, and 1 digit.
+// 4 words, 3 symbols.
 //
 // TODO: Non-English (see https://www.rempe.us/diceware/#eff, but Spanish is terribad)
 //
@@ -409,6 +426,7 @@ func HumanPassword(spec PasswordSpec) (newPass string, err error) {
 			entropy += math.Log2(float64(len(spec.AllowedSymbols)))
 			symsNeeded--
 		} else if len(spec.AllowedDigits) > 0 {
+			// We never hit this case with HumanPasswordSpec
 			pass.WriteRune(randomRune(spec.AllowedDigits))
 			entropy += math.Log2(float64(len(spec.AllowedDigits)))
 			digsNeeded--
@@ -429,5 +447,10 @@ func HumanPassword(spec PasswordSpec) (newPass string, err error) {
 			// this is a lower bound on the entropy
 		}
 	}
-	return pass.String(), nil
+	// remove extraneous '-' at the end, if present
+	result := pass.String()
+	if result[len(result)-1] == '-' {
+		result = result[:len(result)-1]
+	}
+	return result, nil
 }
