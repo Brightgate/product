@@ -34,7 +34,7 @@
           {{ $t('message.general.login') }}
         </f7-link>
       </f7-list-item>
-      <f7-list-item>
+      <f7-list-item v-if="showTestTools">
         <f7-link panel-close href="/test_tools/">Test Tools</f7-link>
       </f7-list-item>
       <f7-list-item>
@@ -61,6 +61,10 @@ export default {
       'appMode',
       'loggedIn',
     ]),
+    showTestTools: function() {
+      const tt = localStorage.getItem('testTools');
+      return !!tt;
+    },
   },
 };
 </script>

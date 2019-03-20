@@ -16,9 +16,11 @@
                      v-if="deviceCount(devicesByCategory(catkey)) > 0"
                      :key="catkey">
 
-        <f7-list-item :title="$t(`message.devices.cats.${catkey}`) +
-                      (catkey == 'recent' ? ` (${deviceCount(devicesByCategory(catkey))})` : '')"
-                      group-title />
+        <f7-list-item
+          v-if="showTitle"
+          :title="$t(`message.devices.cats.${catkey}`) +
+          (catkey == 'recent' ? ` (${deviceCount(devicesByCategory(catkey))})` : '')"
+          group-title />
         <f7-list-item v-if="catkey == 'recent'">
           <f7-link v-if="!showRecent" @click="showRecent = true">{{ $t('message.devices.show_recent') }}</f7-link>
           <f7-link v-if="showRecent" @click="showRecent = false">{{ $t('message.devices.hide_recent') }}</f7-link>
@@ -80,6 +82,16 @@ export default {
     ...Vuex.mapGetters([
       'deviceCount',
     ]),
+    // Alpha special: suppress list group titles if all devices are of
+    // the 'unknown' type.
+    showTitle: function() {
+      const allDevs = this.$store.getters.devices;
+      const unknownDevs = this.$store.getters.devicesByCategory('unknown');
+      if (unknownDevs.length === allDevs.length) {
+        return false;
+      }
+      return true;
+    },
     devicesByCategory: function() {
       return (category) => {
         const devs = this.$store.getters.devicesByCategory(category);

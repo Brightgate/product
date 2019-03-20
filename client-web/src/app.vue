@@ -64,29 +64,25 @@ div .panel-visible-by-breakpoint {
 
           <template v-if="appMode === appDefs.APPMODE_LOCAL">
             <f7-list form>
-              <f7-list-item>
-                <f7-label>{{ $t('message.login.username') }}</f7-label>
-                <f7-input
-                  :placeholder="$t('message.login.username')"
-                  :value="uid"
-                  name="username"
-                  type="email"
-                  autofocus
-                  autocomplete="username"
-                  @input="uid = $event.target.value"
-                  @keyup.native.enter="attemptLogin" />
-              </f7-list-item>
-              <f7-list-item>
-                <f7-label>{{ $t('message.login.password') }}</f7-label>
-                <f7-input
-                  :placeholder="$t('message.login.password')"
-                  :value="userPassword"
-                  name="password"
-                  type="password"
-                  autocomplete="current-password"
-                  @input="userPassword = $event.target.value"
-                  @keyup.native.enter="attemptLogin" />
-              </f7-list-item>
+              <f7-list-input
+                :label="$t('message.login.username')"
+                :placeholder="$t('message.login.username')"
+                :value="uid"
+                name="username"
+                type="email"
+                autofocus
+                autocomplete="username"
+                @input="uid = $event.target.value"
+                @keyup.native.enter="attemptLogin" />
+              <f7-list-input
+                :label="$t('message.login.password')"
+                :placeholder="$t('message.login.password')"
+                :value="userPassword"
+                name="password"
+                type="password"
+                autocomplete="current-password"
+                @input="userPassword = $event.target.value"
+                @keyup.native.enter="attemptLogin" />
             </f7-list>
             <f7-block>
               <f7-button fill @click="attemptLogin">

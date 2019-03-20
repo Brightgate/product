@@ -64,7 +64,7 @@ span.pw-toggle {
           <f7-button back outline>{{ $t('message.general.cancel') }}</f7-button>
         </f7-col>
         <f7-col>
-          <f7-button fill @click="saveVAP">{{ $t('message.general.save') }}</f7-button>
+          <f7-button fill raised @click="saveVAP">{{ $t('message.general.save') }}</f7-button>
         </f7-col>
       </f7-row>
     </f7-block>

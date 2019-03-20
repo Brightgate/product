@@ -70,6 +70,16 @@ localStorage.debug='*'
 
 (Note that this isn't an instant-enable; you have to reload the app).
 
+## Test Tools
+
+To enable our test tools, including the mock-data facility, open the browser console and type:
+
+```
+localStorage.testTools='yes'
+```
+
+(Note that this isn't an instant-enable; you have to reload the app).
+
 ## Pre-integration testing
 
 For now, we manually test using latest Chrome, Firefox, Safari, and Edge.  No automated testing yet.

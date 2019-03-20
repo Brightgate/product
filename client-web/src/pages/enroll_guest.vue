@@ -69,7 +69,7 @@ span.wifi {
               <f7-list-item>
                 <f7-button
                   :disabled="!validForm"
-                  fill
+                  fill raised
                   style="margin-left: auto"
                   @click="enrollGuest">
                   <span v-if="!enrolling">{{ $t('message.enroll_guest.send_sms') }}</span>

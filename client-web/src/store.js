@@ -496,7 +496,7 @@ function computeDeviceProps(apiDevice) {
     'ios': 'mobile-phone-1',
     'computer': 'laptop-1',
     'iot': 'webcam-1',
-    'unknown': 'interface-question-mark',
+    'unknown': 'misc-device',
     'media': 'television',
     'printer': 'tablet', // XXX for now
   };
@@ -676,7 +676,7 @@ const actions = {
     }
     const id = context.state.currentSiteID;
     await siteApi.siteClientsRingSet(id, deviceUniqID, newRing);
-    context.dispatch('fetchDevices');
+    await context.dispatch('fetchDevices');
   },
 
   // Ask the server to repair a vulnerability by setting the appropriate

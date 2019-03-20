@@ -36,14 +36,19 @@
       <f7-row>
         <!-- use margin-auto to center the icon -->
         <f7-col style="margin: auto" width="20">
-          <img :src="mediaIcon" width="32" height="32">
+          <img :src="mediaIcon" width="48" height="48">
         </f7-col>
         <f7-col width="80">
-          <div style="font-size: 16pt; font-weight: bold">{{ devModel }}</div>
-          <div style="font-size: 12pt; font-weight: normal; color: rgba(0,0,0,.5);">{{ devManufacturer }}</div>
-          <div v-if="dev.certainty === 'medium'" style="font-size: 10pt; font-weight: normal; color: rgba(0,0,0,0.5);">
-            {{ $t('message.dev_details.uncertain_device') }}
-          </div>
+          <template v-if="dev.certainty !== 'low'">
+            <div style="font-size: 16pt; font-weight: bold">{{ devModel }}</div>
+            <div style="font-size: 12pt; font-weight: normal; color: rgba(0,0,0,.5);">{{ devManufacturer }}</div>
+            <div v-if="dev.certainty === 'medium'" style="font-size: 10pt; font-weight: normal; color: rgba(0,0,0,0.5);">
+              {{ $t('message.dev_details.uncertain_device') }}
+            </div>
+          </template>
+          <template v-else>
+            <div style="font-size: 16pt; font-weight: bold">{{ dev.networkName }}</div>
+          </template>
         </f7-col>
       </f7-row>
 
@@ -143,13 +148,28 @@
 
     <f7-block-title>{{ $t("message.dev_details.access_control") }}</f7-block-title>
     <f7-list form>
-      <f7-list-item item-input inline-label>
-        <f7-label>{{ $t('message.dev_details.security_ring') }}</f7-label>
-        <f7-preloader v-if="ringChanging" />
-        <f7-input v-else :value="dev.ring" type="select" @input="changeRing($event.target.value)">
-          <option v-for="(ring, ringName) in vapRings" :value="ringName" :key="ringName">{{ ringName }}</option>
-        </f7-input>
+      <f7-list-item
+        v-if="ringChanging"
+        :title="$t('message.dev_details.security_ring')">
+        <f7-preloader />
       </f7-list-item>
+      <f7-list-input
+        v-else
+        ref="ringInput"
+        :title="$t('message.dev_details.security_ring')"
+        :label="$t('message.dev_details.security_ring')"
+        :value="dev.ring"
+        :key="0"
+        inline-label
+        type="select"
+        @change="changeRing($event.target.value)">
+        <option
+          v-for="(ring, ringName) in vapRings"
+          :value="ringName"
+          :key="ringName">
+          {{ ringName }}
+        </option>
+      </f7-list-input>
     </f7-list>
   </f7-page>
 </template>
@@ -304,8 +324,13 @@ export default {
     },
     changeRing: function(newRing) {
       assert(typeof newRing === 'string');
-      debug(`Change Ring to ${newRing}`);
+      const uniqid = this.$f7route.params.UniqID;
+      const dev = this.$store.getters.deviceByUniqID(uniqid);
+      debug(`Change Ring ${dev.ring} -> ${newRing}`);
       if (this.ringChanging) {
+        return;
+      }
+      if (newRing === dev.ring) {
         return;
       }
       this.ringChanging = true;
@@ -316,14 +341,13 @@ export default {
         this.ringChanging = false;
       }).catch((err) => {
         debug('Change Ring failed', err);
-        const txt = `Failed to change security ring for ${this.dev.networkName} to ${newRing}: ${err}`;
+        const txt = `Failed to change trust group for ${this.dev.networkName} to ${newRing}: ${err}`;
         this.ringChanging = false;
         this.$f7.toast.show({
           text: txt,
           closeButton: true,
           destroyOnClose: true,
         });
-        this.$f7router.back();
       });
     },
   },

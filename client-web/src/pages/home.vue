@@ -8,7 +8,7 @@
   such unauthorized removal or alteration will be a violation of federal law.
 -->
 <template>
-  <f7-page @page:beforein="onPageBeforeIn" @page:beforeout="onPageBeforeOut">
+  <f7-page @page:init="onPageInit" @page:reinit="onPageInit" @page:beforeout="onPageBeforeOut">
 
     <f7-navbar>
       <!-- f7-nav-title doesn't seem to center properly without also
@@ -158,13 +158,13 @@ export default {
       this.$store.dispatch('setCurrentSiteID', {id: siteID});
     },
 
-    onPageBeforeIn: async function() {
+    onPageInit: async function() {
       // We do these optimistically, letting them fail if not logged in.
       await this.$store.dispatch('checkLogin');
       if (this.$store.getters.loggedIn) {
         this.$store.dispatch('fetchPostLogin');
       } else {
-        this.$f7.loginScreen.open('#bgLoginScreen');
+        this.$f7.loginScreen.open('#bgLoginScreen', false);
       }
     },
 

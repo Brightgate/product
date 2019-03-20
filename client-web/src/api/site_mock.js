@@ -137,7 +137,7 @@ const mockEnrollGuest = {
   smsError: '',
 };
 
-function configHandler(config) {
+function configGetHandler(config) {
   const parsedURL = new URL(config.url, 'http://example.com/');
   const search = parsedURL.search.slice(1, Infinity);
   const value = mockConfig[search];
@@ -148,6 +148,11 @@ function configHandler(config) {
     return 500;
   }
   return [200, value];
+}
+
+async function configPostHandler(config) {
+  await timeout(3000);
+  return [200];
 }
 
 function vapGetHandler(config) {
@@ -206,7 +211,8 @@ function mockAxios(normalAxios, mode) {
   mock
     .onGet('/api/sites').reply(200, mockSites)
     .onGet(/\/api\/sites\/.+\/users/).reply(200, mockUsers)
-    .onGet(/\/api\/sites\/.+\/config\?.*/).reply(configHandler)
+    .onGet(/\/api\/sites\/.+\/config\?.*/).reply(configGetHandler)
+    .onPost(/\/api\/sites\/.+\/config/).reply(configPostHandler)
     .onGet(/\/api\/sites\/.+\/devices/).reply(200, mockDevices)
     .onGet(/\/api\/sites\/.+\/rings/).reply(200, mockRings)
     .onPost(/\/api\/sites\/.+\/enroll_guest$/).reply(200, mockEnrollGuest)

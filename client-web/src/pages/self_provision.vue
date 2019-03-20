@@ -181,7 +181,7 @@ div.sensitive {
                   this is done, we'll help you configure your devices.
                 </div>
                 <f7-block>
-                  <f7-button :disabled="activate === ACTIVATE.INPROGRESS" fill @click="doActivate">
+                  <f7-button :disabled="activate === ACTIVATE.INPROGRESS" fill raised @click="doActivate">
                     Activate
                   </f7-button>
                   <div class="activation-status">

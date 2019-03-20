@@ -16,75 +16,65 @@
 
     <f7-list>
       <!-- uid -- user name -->
-      <f7-list-item v-if="newUser">
-        <f7-label>{{ $t('message.user_details.user_name') }}</f7-label>
-        <f7-input
-          :value="user.UID"
-          type="email"
-          placeholder="User's short ID"
-          required
-          clear-button
-          @input="user.UID = $event.target.value" />
-      </f7-list-item>
-      <f7-list-item v-else
-                    :title="$t('message.user_details.user_name')">
+      <f7-list-input
+        v-if="newUser"
+        :label="$t('message.user_details.user_name')"
+        :value="user.UID"
+        type="email"
+        placeholder="User's short ID"
+        required
+        clear-button
+        @input="user.UID = $event.target.value" />
+      <f7-list-item
+        v-else
+        :title="$t('message.user_details.user_name')">
         {{ user.UID }}
       </f7-list-item>
 
       <!-- display name -->
-      <f7-list-item>
-        <f7-label>Name</f7-label>
-        <f7-input
-          :value="user.DisplayName"
-          type="text"
-          placeholder="User's full name"
-          clear-button
-          @input="user.DisplayName = $event.target.value" />
-      </f7-list-item>
+      <f7-list-input
+        :label="$t('message.user_details.name')"
+        :value="user.DisplayName"
+        :placeholder="$t('message.user_details.name_placeholder')"
+        type="text"
+        clear-button
+        @input="user.DisplayName = $event.target.value" />
 
       <!-- email -->
-      <f7-list-item>
-        <f7-label>Email</f7-label>
-        <f7-input
-          :value="user.Email"
-          type="email"
-          placeholder="User Email"
-          clear-button
-          @input="user.Email = $event.target.value" />
-      </f7-list-item>
+      <f7-list-input
+        :label="$t('message.user_details.email')"
+        :value="user.Email"
+        :placeholder="$t('message.user_details.email_placeholder')"
+        type="email"
+        clear-button
+        @input="user.Email = $event.target.value" />
 
       <!-- phone & sms -->
-      <f7-list-item>
-        <f7-label>Phone</f7-label>
-        <f7-input
-          :value="user.TelephoneNumber"
-          type="tel"
-          placeholder="User Mobile Phone"
-          clear-button
-          @input="user.TelephoneNumber = $event.target.value" />
-      </f7-list-item>
+      <f7-list-input
+        :label="$t('message.user_details.phone')"
+        :value="user.TelephoneNumber"
+        :placeholder="$t('message.user_details.phone_placeholder')"
+        type="tel"
+        clear-button
+        @input="user.TelephoneNumber = $event.target.value" />
 
       <!-- Role -->
-      <f7-list-item>
-        <f7-label>{{ $t('message.user_details.role') }}</f7-label>
-        <f7-input type="select" value="admin">
-          <!-- XXX <option value="user">User</option> -->
-          <option value="admin">Administrator</option>
-        </f7-input>
-      </f7-list-item>
+      <f7-list-input
+        :label="$t('message.user_details.role')"
+        type="select">
+        <option value="admin">Administrator</option>
+      </f7-list-input>
 
       <!-- Password -->
-      <f7-list-item>
-        <f7-label>{{ $t('message.user_details.password') }}</f7-label>
-        <f7-input
-          :value="user.SetPassword"
-          type="password"
-          placeholder="User Password"
-          clear-button
-          @input="user.SetPassword = $event.target.value" />
-      </f7-list-item>
+      <f7-list-input
+        :label="$t('message.user_details.password')"
+        :value="user.SetPassword"
+        type="password"
+        placeholder="User Password"
+        clear-button
+        @input="user.SetPassword = $event.target.value" />
 
-      <!-- 2-factor, disabled for now
+        <!-- 2-factor, disabled for now
       <f7-list-item :title="$t('message.user_details.twofactor')">
         <f7-link v-if="user.HasTOTP" :href="$f7route.url + 'twofactor/'">Enabled</f7-link>
         <f7-link v-else :href="$f7route.url + 'twofactor/'">Disabled</f7-link>
@@ -95,15 +85,15 @@
     <!-- Controls: Create/Save, Cancel, Delete -->
     <f7-block>
       <f7-row>
-        <f7-col>
-          <f7-button v-if="newUser" fill @click="saveUser">Create</f7-button>
-          <f7-button v-else fill @click="saveUser">Save</f7-button>
+        <f7-col v-if="!newUser">
+          <f7-button color="red" outline @click="deleteUser">Delete</f7-button>
         </f7-col>
         <f7-col>
           <f7-button outline back>Cancel</f7-button>
         </f7-col>
-        <f7-col v-if="!newUser">
-          <f7-button color="red" outline @click="deleteUser">Delete</f7-button>
+        <f7-col>
+          <f7-button v-if="newUser" fill raised @click="saveUser">Create</f7-button>
+          <f7-button v-else fill raised @click="saveUser">Save</f7-button>
         </f7-col>
       </f7-row>
     </f7-block>

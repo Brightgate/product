@@ -238,7 +238,12 @@ export default {
       user_details: {
         user_name: 'User Name',
         user_type: 'User Type',
-        uuid: 'UUID',
+        email: 'Email',
+        email_placeholder: 'User\'s email address',
+        name: 'Name',
+        name_placeholder: 'User\'s real name',
+        phone: 'Phone',
+        phone_placeholder: '+1 650-555-1212',
         role: 'Role',
         roles: {
           user: 'User',
