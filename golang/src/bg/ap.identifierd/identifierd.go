@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -438,9 +438,9 @@ func main() {
 
 	plat := platform.NewPlatform()
 
-	*dataDir = plat.ExpandDirPath("__APPACKAGE__", "etc/identifierd")
-	*modelDir = plat.ExpandDirPath("__APPACKAGE", "etc/identifierd/device_model")
-	*logDir = plat.ExpandDirPath("__APDATA__", "identifierd")
+	*dataDir = plat.ExpandDirPath(platform.APPackage, "etc/identifierd")
+	*modelDir = plat.ExpandDirPath(platform.APPackage, "etc/identifierd/device_model")
+	*logDir = plat.ExpandDirPath(platform.APData, "identifierd")
 
 	mcpd, err := mcp.New(pname)
 	if err != nil {

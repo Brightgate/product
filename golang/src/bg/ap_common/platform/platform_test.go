@@ -14,36 +14,47 @@ import (
 	"fmt"
 	"testing"
 
-	// "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// func (p *Platform) ExpandDirPath(paths ...string) string {
 var plat *Platform
 
 func TestExpandApRoot(t *testing.T) {
+	var np string
 	require.NotPanics(t, func() {
-		fmt.Print(plat.ExpandDirPath("__APROOT__", "top/tuber"))
+		np = plat.ExpandDirPath(APRoot, "top/tuber")
+		fmt.Print(np)
 	})
+	assert.NotContains(t, np, "__")
 
 }
 
 func TestExpandApSecret(t *testing.T) {
+	var np string
 	require.NotPanics(t, func() {
-		fmt.Print(plat.ExpandDirPath("__APSECRET", "mystery/tuber"))
+		np = plat.ExpandDirPath(APSecret, "mystery/tuber")
+		fmt.Print(np)
 	})
+	assert.NotContains(t, np, "__")
 }
 
 func TestExpandApPackage(t *testing.T) {
+	var np string
 	require.NotPanics(t, func() {
-		fmt.Print(plat.ExpandDirPath("__APPACKAGE", "immutable/tuber"))
+		np = plat.ExpandDirPath(APPackage, "immutable/tuber")
+		fmt.Print(np)
 	})
+	assert.NotContains(t, np, "__")
 }
 
 func TestExpandApData(t *testing.T) {
+	var np string
 	require.NotPanics(t, func() {
-		fmt.Print(plat.ExpandDirPath("__APDATA", "mutable/tubers"))
+		np = plat.ExpandDirPath(APData, "mutable/tubers")
+		fmt.Print(np)
 	})
+	assert.NotContains(t, np, "__")
 }
 
 func TestExpandApLeftover(t *testing.T) {
