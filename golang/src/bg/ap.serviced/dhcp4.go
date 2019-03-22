@@ -48,6 +48,7 @@ var (
 
 	// Track the interface on which each client's DHCP request arrives
 	clientRequestOn = make(map[string]*net.Interface)
+	badRingRequests = make(map[string]string)
 
 	verbose = apcfg.Bool("verbose", false, true, nil)
 
@@ -209,6 +210,26 @@ func dhcpRingChanged(hwaddr string, client *cfgapi.ClientInfo, old string) {
 
 func propPath(hwaddr, prop string) string {
 	return fmt.Sprintf("@/clients/%s/%s", hwaddr, prop)
+}
+
+func notifyNetException(mac string, details string,
+	reason base_msg.EventNetException_Reason) {
+
+	slog.Debugf("NetException(%s, details: %s, reason: %d)", mac, details, reason)
+	hwaddr, _ := net.ParseMAC(mac)
+	entity := &base_msg.EventNetException{
+		Timestamp:  aputil.NowToProtobuf(),
+		Sender:     proto.String(brokerd.Name),
+		Debug:      proto.String("-"),
+		Reason:     &reason,
+		Details:    []string{details},
+		MacAddress: proto.Uint64(network.HWAddrToUint64(hwaddr)),
+	}
+
+	err := brokerd.Publish(entity, base_def.TOPIC_EXCEPTION)
+	if err != nil {
+		slog.Warnf("couldn't publish %s: %v", base_def.TOPIC_EXCEPTION, err)
+	}
 }
 
 /*
@@ -393,10 +414,9 @@ func (h *ringHandler) discover(p dhcp.Packet, options dhcp.Options) dhcp.Packet 
 
 	notifyOptions(p.CHAddr(), options, dhcp.Discover)
 
-	l := h.leaseAssign(hwaddr)
-	if l == nil {
-		slog.Warnf("Out of %s leases", h.ring)
-		dhcpMetrics.exhausted.Inc()
+	l, err := h.leaseAssign(hwaddr)
+	if err != nil {
+		slog.Warnf("no lease assigned to %s: %v", hwaddr, err)
 		return h.nak(p)
 	}
 	slog.Infof("  OFFER %s to %s", l.ipaddr, l.hwaddr)
@@ -471,10 +491,6 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 				action = "renewing"
 				dhcpMetrics.renewed.Inc()
 			} else {
-				/*
-				 * XXX: this is potentially worth of a
-				 * NetException message
-				 */
 				action = "overriding client"
 			}
 		} else if current.static {
@@ -599,6 +615,7 @@ func (h *ringHandler) decline(p dhcp.Packet) {
 //
 func selectRingHandler(p dhcp.Packet, options dhcp.Options) *ringHandler {
 	var handler *ringHandler
+	var err error
 
 	mac := p.CHAddr().String()
 	requestIface := clientRequestOn[mac]
@@ -622,19 +639,43 @@ func selectRingHandler(p dhcp.Packet, options dhcp.Options) *ringHandler {
 		// to reverse-engineer the ring from the VLAN the request
 		// arrived on.
 		if requestRing != "" {
-			slog.Infof("New client %s on %d (%s)", mac, requestIface.Index, requestIface.Name)
+			slog.Infof("New client %s on %d (%s)", mac,
+				requestIface.Index, requestIface.Name)
 			notifyNewEntity(p, options, requestRing)
 		} else {
 			slog.Infof("Ignoring request from unknown client %s "+
 				"on %d (%s)", mac, requestIface.Index, requestIface.Name)
 		}
+
+	} else if ring != requestRing {
+		src := requestIface.Name
+		if requestRing != "" {
+			src += "('" + requestRing + "' ring)"
+		}
+		txt := "client from " + ring + " ring requested address on " + src
+		err = fmt.Errorf(txt)
+
+		// Once a client starts requesting on the wrong ring, they may
+		// keep doing so every few seconds forever.  We don't want to
+		// log all of those requests
+		if badRingRequests[mac] != src {
+			slog.Warnf("%s", txt)
+			badRingRequests[mac] = src
+			notifyNetException(mac, txt,
+				base_msg.EventNetException_BAD_RING)
+		}
+
 	} else if handler = handlers[ring]; handler == nil {
 		slog.Errorf("Client %s on unknown ring '%s'", mac, ring)
 	}
+
 	// Once we've handled the DHCP request for this client, we can forget
 	// the source interface.  This prevents the map from growing without
 	// bound.
 	delete(clientRequestOn, mac)
+	if err == nil {
+		delete(badRingRequests, mac)
+	}
 
 	return handler
 }
@@ -678,15 +719,22 @@ func (h *ringHandler) recordLease(l *lease, hwaddr, name string, ipv4 net.IP,
 
 /*
  * If this nic already has a live lease, return that.  Otherwise, assign an
- * available lease at random.  A 'nil' response indicates that all leases are
- * currently assigned.
+ * available lease at random.
  */
-func (h *ringHandler) leaseAssign(hwaddr string) *lease {
+func (h *ringHandler) leaseAssign(hwaddr string) (*lease, error) {
 	var rval *lease
+	var err error
 
 	now := time.Now()
 	target := rand.Intn(h.rangeSpan)
 	assigned := -1
+
+	if ring := getRing(hwaddr); ring != "" && ring != h.ring {
+		// This shouldn't be possible, since the hwaddr was used to
+		// select this ring hander, but it's still worth checking.
+		return nil, fmt.Errorf("%s from '%s' requested address in '%s'",
+			hwaddr, ring, h.ring)
+	}
 
 	for i, l := range h.leases {
 		if l.assigned && l.expires != nil && l.expires.Before(now) {
@@ -712,8 +760,11 @@ func (h *ringHandler) leaseAssign(hwaddr string) *lease {
 		rval = &h.leases[assigned]
 		expires := time.Now().Add(h.duration)
 		h.recordLease(rval, hwaddr, "", ipv4, &expires)
+	} else {
+		err = fmt.Errorf("out of leases on '%s' ring", h.ring)
+		dhcpMetrics.exhausted.Inc()
 	}
-	return rval
+	return rval, err
 }
 
 /*

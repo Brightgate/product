@@ -224,6 +224,9 @@ func eventHandler(event []byte) {
 	}
 
 	ring = selectRing(hwaddr.String(), node, vap, ring)
+	if ring == "" {
+		return
+	}
 
 	updates := []*updateRecord{
 		updateChange(path+"ring", &ring, nil),
@@ -286,34 +289,54 @@ func defaultRingInit() {
 	}
 }
 
+// These are the ring transitions we will impose automatically when we find a
+// client on a new VAP.
+var validRingUpgrades = map[string]bool{
+	base_def.RING_UNENROLLED + ":" + base_def.RING_STANDARD: true,
+	base_def.RING_GUEST + ":" + base_def.RING_STANDARD:      true,
+}
+
 func selectRing(mac string, client *cfgtree.PNode, vap, ring string) string {
-	if client != nil && client.Children != nil {
-		// If the client already has a ring set, don't override it
-		if n := client.Children["ring"]; n != nil && n.Value != "" {
-			return n.Value
+	var oldRing, newRing string
+
+	if ring != "" && !cfgapi.ValidRings[ring] {
+		slog.Warnf("invalid ring for %s: %s", mac, ring)
+	} else {
+		newRing = ring
+	}
+
+	if vap != "" {
+		if vapRing, ok := virtualAPToDefaultRing[vap]; ok {
+			newRing = vapRing
+		} else {
+			slog.Warnf("invalid virtualAP for %s: %s", mac, vap)
 		}
-		if vap == "" {
-			if conn, ok := client.Children["connection"]; ok {
-				if node, ok := conn.Children["vap"]; ok {
-					vap = node.Value
-				}
+	}
+
+	if client != nil && client.Children != nil {
+		if n := client.Children["ring"]; n != nil {
+			oldRing = n.Value
+			if oldRing == newRing {
+				return oldRing
 			}
 		}
 	}
 
-	if cfgapi.ValidRings[ring] {
-		slog.Infof("Accepting proposed ring %s for %s", ring, mac)
-	} else if vap == "" {
-		slog.Warnf("Can't select ring for %s: no virtualAP", mac)
-	} else if r, ok := virtualAPToDefaultRing[vap]; ok {
-		slog.Infof("Setting initial ring for %s on virtualAP %s to %s",
-			mac, vap, r)
-		ring = r
+	if oldRing == "" {
+		if newRing == "" {
+			slog.Warnf("%s: no ring assignment available", mac)
+		} else {
+			slog.Infof("%s: assigned to %s ring", mac, newRing)
+		}
+	} else if validRingUpgrades[oldRing+":"+newRing] {
+		slog.Infof("%s: upgrading from '%s' to '%s' ring", mac,
+			oldRing, newRing)
 	} else {
-		slog.Warnf("Can't select ring for %s: bad virtualAP: %s",
-			mac, vap)
+		slog.Infof("%s: declining to move from '%s' to '%s' ring",
+			mac, oldRing, newRing)
+		newRing = oldRing
 	}
-	return ring
+	return newRing
 }
 
 func uuidCheck(prop, uuid string) error {

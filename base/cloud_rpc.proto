@@ -61,6 +61,7 @@ message NetException {
 	fixed64 mac_address = 0x5;
 	fixed32 ipv4_address = 0x6;
 	repeated string details = 0x7;
+	string virtualAP = 0x08;
 }
 
 message PutEventRequest {

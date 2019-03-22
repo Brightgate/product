@@ -252,6 +252,7 @@ message EventNetException {
 		BLOCKED_IP		= 2;
 		VULNERABILITY_DETECTED	= 3;
 		BAD_PASSWORD		= 4;
+		BAD_RING		= 5;
 	}
 	optional Reason reason		= 0x801;
 	optional string message		= 0x802;

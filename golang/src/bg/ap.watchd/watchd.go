@@ -159,7 +159,7 @@ func configIPv4Changed(path []string, value string, expires *time.Time) {
 
 	if ipv4 := net.ParseIP(value); ipv4 != nil {
 		registerIPAddr(hwaddr, ipv4.To4())
-		scannerRequest(mac, ipv4.String())
+		scannerRequest(mac, ipv4.String(), 30*time.Second)
 		setMacIP(mac, value)
 	} else {
 		slog.Warnf("invalid IPv4 address %s", value)
@@ -231,7 +231,6 @@ func logUnknown(ring, mac, ipstr string) bool {
 		Timestamp:   aputil.NowToProtobuf(),
 		Sender:      proto.String(brokerd.Name),
 		Debug:       proto.String("-"),
-		Ring:        proto.String(ring),
 		Ipv4Address: proto.Uint32(network.IPAddrToUint32(addr)),
 		MacAddress:  proto.Uint64(network.HWAddrToUint64(hwaddr)),
 	}

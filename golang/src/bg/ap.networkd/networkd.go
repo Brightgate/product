@@ -127,7 +127,18 @@ func configRingChanged(path []string, val string, expires *time.Time) {
 	if p := physDevices[nicID]; p != nil {
 		if p.ring != newRing {
 			p.ring = newRing
-			hostapd.reload()
+			// Ideally this would just be a 'reload'.
+			// Unfortunately, this doesn't seem to trigger a
+			// sufficient level of reset at the driver/firmware
+			// level, so we still see clients being assigned to the
+			// wrong VLAN - even though the hostapd log messages
+			// reflect the correct VLAN.
+			//
+			// XXX - post-alpha explore using the 'disassociate'
+			// cli command to explicitly kick off the updated
+			// client.  That seems to work when done manually, but
+			// it needs more testing.
+			hostapd.reset()
 		}
 	}
 }

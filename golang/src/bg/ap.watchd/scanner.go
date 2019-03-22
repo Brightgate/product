@@ -445,7 +445,7 @@ func newVulnScan(mac, ip string) *ScanRequest {
 	}
 }
 
-func scannerRequest(mac, ip string) {
+func scannerRequest(mac, ip string, delay time.Duration) {
 	if err := activeHosts.add(ip); err != nil {
 		slog.Debugf("scannerRequest(\"%s\", \"%s\") ignored: %s",
 			mac, ip, "IP already in activeHosts")
@@ -456,9 +456,9 @@ func scannerRequest(mac, ip string) {
 	vulnScan := newVulnScan(mac, ip)
 
 	metrics.knownHosts.Set(activeHosts.len())
-	scheduleScan(tcpScan, 0, false)
-	scheduleScan(udpScan, 0, false)
-	scheduleScan(vulnScan, 0, false)
+	scheduleScan(tcpScan, delay, false)
+	scheduleScan(udpScan, delay, false)
+	scheduleScan(vulnScan, delay, false)
 }
 
 func getMacIP(host *nmap.Host) (mac, ip string) {
@@ -522,7 +522,7 @@ func subnetScan(req *ScanRequest) {
 			slog.Infof("host %s now active on ring %s: %s",
 				mac, req.Ring, ip)
 		}
-		scannerRequest(mac, ip)
+		scannerRequest(mac, ip, 0)
 	}
 
 	done := time.Now()
@@ -1108,7 +1108,7 @@ func scannerInit(w *watcher) {
 
 	mapMtx.Lock()
 	for mac, ip := range macToIP {
-		scannerRequest(mac, ip)
+		scannerRequest(mac, ip, 30*time.Second)
 	}
 	mapMtx.Unlock()
 

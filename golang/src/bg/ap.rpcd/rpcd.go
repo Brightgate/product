@@ -180,6 +180,10 @@ func handleNetException(ctx context.Context, tclient cloud_rpc.EventClient, even
 		cloudNetExc.Details = exception.Details
 	}
 
+	if exception.VirtualAP != nil {
+		cloudNetExc.VirtualAP = *exception.VirtualAP
+	}
+
 	return publishEvent(ctx, tclient, "exception", cloudNetExc)
 }
 
