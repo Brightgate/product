@@ -755,14 +755,16 @@ func (h *ringHandler) leaseAssign(hwaddr string) (*lease, error) {
 		}
 	}
 
-	if rval == nil && assigned >= 0 {
-		ipv4 := dhcp.IPAdd(h.rangeStart, assigned)
-		rval = &h.leases[assigned]
-		expires := time.Now().Add(h.duration)
-		h.recordLease(rval, hwaddr, "", ipv4, &expires)
-	} else {
-		err = fmt.Errorf("out of leases on '%s' ring", h.ring)
-		dhcpMetrics.exhausted.Inc()
+	if rval == nil {
+		if assigned >= 0 {
+			ipv4 := dhcp.IPAdd(h.rangeStart, assigned)
+			rval = &h.leases[assigned]
+			expires := time.Now().Add(h.duration)
+			h.recordLease(rval, hwaddr, "", ipv4, &expires)
+		} else {
+			err = fmt.Errorf("out of leases on '%s' ring", h.ring)
+			dhcpMetrics.exhausted.Inc()
+		}
 	}
 	return rval, err
 }
