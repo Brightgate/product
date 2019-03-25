@@ -121,6 +121,7 @@ var (
 	slog    *zap.SugaredLogger
 
 	virtualAPToDefaultRing map[string]string
+	ringToVirtualAP        map[string]string
 )
 
 /*************************************************************************
@@ -223,16 +224,15 @@ func eventHandler(event []byte) {
 		vap = *entity.VirtualAP
 	}
 
-	ring = selectRing(hwaddr.String(), node, vap, ring)
-	if ring == "" {
-		return
-	}
-
 	updates := []*updateRecord{
-		updateChange(path+"ring", &ring, nil),
 		updateChange(path+"connection/node", entity.Node, nil),
 		updateChange(path+"connection/band", entity.Band, nil),
 		updateChange(path+"connection/vap", &vap, nil),
+	}
+
+	if ring = selectRing(hwaddr.String(), node, vap, ring); ring != "" {
+		updates = append(updates,
+			updateChange(path+"ring", &ring, nil))
 	}
 
 	// Ipv4Address is an 'optional' field in the protobuf, but we will
@@ -278,6 +278,7 @@ func eventHandler(event []byte) {
  */
 func defaultRingInit() {
 	virtualAPToDefaultRing = make(map[string]string)
+	ringToVirtualAP = make(map[string]string)
 
 	// For each virtual AP, find @/network/vap/<id>/default_ring
 	if node, _ := propTree.GetNode("@/network/vap"); node != nil {
@@ -287,17 +288,37 @@ func defaultRingInit() {
 			}
 		}
 	}
+
+	// For each virtual ring, find @/rings/<ring>/vap
+	if node, _ := propTree.GetNode("@/rings"); node != nil {
+		for ring, config := range node.Children {
+			if vap, ok := config.Children["vap"]; ok {
+				ringToVirtualAP[ring] = vap.Value
+			}
+		}
+	}
 }
 
 // These are the ring transitions we will impose automatically when we find a
-// client on a new VAP.
+// client on a new VAP.  Essentially, we will let a device transition from a PSK
+// ring to an EAP ring, but not from EAP to PSK.
 var validRingUpgrades = map[string]bool{
 	base_def.RING_UNENROLLED + ":" + base_def.RING_STANDARD: true,
 	base_def.RING_GUEST + ":" + base_def.RING_STANDARD:      true,
+	base_def.RING_DEVICES + ":" + base_def.RING_STANDARD:    true,
 }
 
 func selectRing(mac string, client *cfgtree.PNode, vap, ring string) string {
-	var oldRing, newRing string
+	var oldVAP, oldRing, newRing string
+
+	if client != nil && client.Children != nil {
+		if n := client.Children["ring"]; n != nil {
+			if vap, ok := ringToVirtualAP[n.Value]; ok {
+				oldRing = n.Value
+				oldVAP = vap
+			}
+		}
+	}
 
 	if ring != "" && !cfgapi.ValidRings[ring] {
 		slog.Warnf("invalid ring for %s: %s", mac, ring)
@@ -306,19 +327,14 @@ func selectRing(mac string, client *cfgtree.PNode, vap, ring string) string {
 	}
 
 	if vap != "" {
+		// if we're already assigned to a ring on this vap, keep it
+		if vap == oldVAP {
+			return oldRing
+		}
 		if vapRing, ok := virtualAPToDefaultRing[vap]; ok {
 			newRing = vapRing
 		} else {
 			slog.Warnf("invalid virtualAP for %s: %s", mac, vap)
-		}
-	}
-
-	if client != nil && client.Children != nil {
-		if n := client.Children["ring"]; n != nil {
-			oldRing = n.Value
-			if oldRing == newRing {
-				return oldRing
-			}
 		}
 	}
 
