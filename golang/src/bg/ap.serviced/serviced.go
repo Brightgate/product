@@ -191,6 +191,7 @@ func initInterfaces() {
 func eventHandler(event []byte) {
 	slog.Debugf("got network update event - reevaluting interfaces")
 	initInterfaces()
+	relayRestart()
 }
 
 func configSiteChanged(path []string, val string, expires *time.Time) {

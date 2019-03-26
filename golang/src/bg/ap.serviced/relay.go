@@ -56,6 +56,13 @@ var multicastServices = []service{
 	{"SSDP", net.IPv4(239, 255, 255, 250), 1900, ssdpInit, ssdpHandler},
 }
 
+type relayer struct {
+	service service
+	conn    *ipv4.PacketConn
+	done    bool
+	exited  chan struct{}
+}
+
 var ringLevel = map[string]int{
 	base_def.RING_CORE:     0,
 	base_def.RING_STANDARD: 1,
@@ -71,6 +78,9 @@ var (
 
 	ssdpSearches   *ssdpSearchState
 	ssdpSearchLock sync.Mutex
+
+	relayers   []*relayer
+	relayerMtx sync.Mutex
 
 	relayMetric struct {
 		mdnsRequests  prometheus.Counter
@@ -91,44 +101,38 @@ type ssdpSearchState struct {
 	next      *ssdpSearchState
 }
 
-func initListener(s service) (p *ipv4.PacketConn, err error) {
-	var c net.PacketConn
-
+func (r *relayer) initListener() error {
+	s := r.service
 	if s.init != nil {
 		s.init()
 	}
 
 	portStr := ":" + strconv.Itoa(s.port)
-	if c, err = net.ListenPacket("udp4", portStr); err != nil {
-		err = fmt.Errorf("failed to listen on port %d: %v", s.port, err)
-		return
+	c, err := net.ListenPacket("udp4", portStr)
+	if err != nil {
+		return fmt.Errorf("failed to listen on port %d: %v",
+			s.port, err)
 	}
 
-	if p = ipv4.NewPacketConn(c); p == nil {
-		err = fmt.Errorf("couldn't create PacketConn")
-		return
+	p := ipv4.NewPacketConn(c)
+	if p == nil {
+		return fmt.Errorf("couldn't create PacketConn")
 	}
 
 	if err = p.SetControlMessage(ipv4.FlagSrc, true); err != nil {
-		err = fmt.Errorf("couldn't set ControlMessage: %v", err)
-		return
+		return fmt.Errorf("couldn't set ControlMessage: %v", err)
 	}
 
-	if s.address != nil {
-		udpaddr := &net.UDPAddr{IP: s.address}
-		for _, iface := range ringToIface {
-			if err = p.JoinGroup(iface, udpaddr); err != nil {
-				break
-			}
-		}
-
-		if err != nil {
-			err = fmt.Errorf("failed to join multicast group: %v",
+	udpaddr := &net.UDPAddr{IP: s.address}
+	for _, iface := range ringToIface {
+		if err = p.JoinGroup(iface, udpaddr); err != nil {
+			return fmt.Errorf("failed to join multicast group: %v",
 				err)
 		}
 	}
+	r.conn = p
 
-	return
+	return nil
 }
 
 func mDNSEvent(addr net.IP, requests, responses []string) {
@@ -298,7 +302,7 @@ func ssdpResponseRelay(sss *ssdpSearchState) {
 			return
 		}
 
-		slog.Debugf("Forwarding SSDP response from/to %v", src, addr)
+		slog.Debugf("Forwarding SSDP response from/to %v/%v", src, addr)
 		relayMetric.ssdpResponses.Inc()
 		l, err := sss.requestor.WriteTo(buf[:n], nil, addr)
 		if err != nil {
@@ -437,15 +441,17 @@ func ssdpInit() {
 //
 // Read the next message for this protocol.  Return the length and the interface
 // on which it arrived.
-func getPacket(conn *ipv4.PacketConn, buf []byte) (int, *endpoint) {
-	for {
+func (r *relayer) getPacket(buf []byte) (int, *endpoint) {
+	for done := false; !done; {
 		var ip net.IP
 		var portno int
 
-		n, cm, src, err := conn.ReadFrom(buf)
+		n, cm, src, err := r.conn.ReadFrom(buf)
 		if n == 0 || err != nil {
 			if err != nil {
-				slog.Warnf("Read failed: %v", err)
+				if done = r.done; !done {
+					slog.Warnf("Read failed: %v", err)
+				}
 			}
 			continue
 		}
@@ -480,7 +486,7 @@ func getPacket(conn *ipv4.PacketConn, buf []byte) (int, *endpoint) {
 		}
 
 		source := endpoint{
-			conn:  conn,
+			conn:  r.conn,
 			iface: iface,
 			ip:    ip,
 			port:  portno,
@@ -488,28 +494,36 @@ func getPacket(conn *ipv4.PacketConn, buf []byte) (int, *endpoint) {
 		}
 		return n, &source
 	}
+
+	return 0, nil
 }
 
 //
 // Process all the multicast messages for a single service.  Each message is
 // read, parsed, possibly evented to identifierd, and then forwarded to each
 // ring allowed to receive it.
-func mrelay(s service) {
-	conn, err := initListener(s)
-	if err != nil {
+func (r *relayer) run() {
+	defer close(r.exited)
+
+	s := r.service
+
+	if err := r.initListener(); err != nil {
 		slog.Warnf("Unable to init relay for %s: %v", s.name, err)
 		return
 	}
+	slog.Infof("initted %s", s.name)
 
 	fw := &net.UDPAddr{IP: s.address, Port: s.port}
 	buf := make([]byte, 4096)
 	for {
-		var err error
-
-		n, source := getPacket(conn, buf)
+		n, source := r.getPacket(buf)
+		if source == nil {
+			break
+		}
 		if source.iface == nil {
 			slog.Warnf("multicast packet arrived on bad source: %v",
 				source)
+			continue
 		}
 
 		//
@@ -519,7 +533,7 @@ func mrelay(s service) {
 		relayUp := true
 		relayDown := true
 
-		if err = s.handler(source, buf); err != nil {
+		if err := s.handler(source, buf); err != nil {
 			slog.Warnf("Bad %s packet: %v", s.name, err)
 			continue
 		}
@@ -565,6 +579,7 @@ func mrelay(s service) {
 			}
 		}
 	}
+	r.conn.Close()
 }
 
 func relayPrometheusInit() {
@@ -600,9 +615,45 @@ func relayPrometheusInit() {
 	prometheus.MustRegister(relayMetric.ssdpResponses)
 }
 
+func launchRelayers() {
+	slog.Infof("Launching relay goroutines")
+
+	relayerMtx.Lock()
+	relayers = make([]*relayer, 0)
+	for _, s := range multicastServices {
+		r := &relayer{
+			service: s,
+			exited:  make(chan struct{}),
+		}
+		relayers = append(relayers, r)
+		go r.run()
+	}
+	relayerMtx.Unlock()
+}
+
+func relayRestart() {
+	slog.Infof("Stopping relay goroutines")
+	relayerMtx.Lock()
+
+	// close the relayers' sockets, causing any blocking reads to fail so
+	// the routine can examine its 'r.done' flag.
+	for _, r := range relayers {
+		r.done = true
+		if r.conn != nil {
+			r.conn.Close()
+		}
+	}
+
+	// wait for them to exit
+	for _, r := range relayers {
+		<-r.exited
+	}
+	relayers = nil
+	relayerMtx.Unlock()
+	launchRelayers()
+}
+
 func relayInit() {
 	relayPrometheusInit()
-	for _, s := range multicastServices {
-		go mrelay(s)
-	}
+	launchRelayers()
 }

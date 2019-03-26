@@ -369,7 +369,7 @@ func (c *hostapdConn) handleStatus(status string) {
 		//    CTRL-EVENT-EAP-RETRANSMIT b8:27:eb:9f:d8:e0 (possibly T268)
 		msgs = "(AP-STA-CONNECTED|AP-STA-DISCONNECTED|" +
 			"AP-STA-POLL-OK|AP-STA-POSSIBLE-PSK-MISMATCH|" +
-			"CTRL-EVENT-EAP-RETRANSMIT)"
+			"CTRL-EVENT-EAP-RETRANSMIT|CTRL-EVENT-EAP-RETRANSMIT2)"
 		macOctet = "[[:xdigit:]][[:xdigit:]]"
 		macAddr  = "(" + macOctet + ":" + macOctet + ":" +
 			macOctet + ":" + macOctet + ":" + macOctet + ":" +
@@ -390,7 +390,7 @@ func (c *hostapdConn) handleStatus(status string) {
 			c.stationGone(mac)
 		case "AP-STA-POSSIBLE-PSK-MISMATCH":
 			c.stationBadPassword(mac)
-		case "CTRL-EVENT-EAP-RETRANSMIT":
+		case "CTRL-EVENT-EAP-RETRANSMIT", "CTRL-EVENT-EAP-RETRANSMIT2":
 			c.eapRetransmit()
 		}
 	}

@@ -156,7 +156,7 @@
                 "Value": "psk"
               },
               "lease_duration": {
-                "Value": "180"
+                "Value": "1440"
               },
               "vlan": {
                 "Value": "5"
@@ -169,7 +169,7 @@
                 "Value": "guest"
               },
               "lease_duration": {
-                "Value": "30"
+                "Value": "60"
               },
               "vlan": {
                 "Value": "6"

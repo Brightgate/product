@@ -106,8 +106,6 @@ func FetchURL(url, target, meta string) (bool, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 304 && old != nil {
-		log.Printf("%s: content unchanged since %s\n", target,
-			old.Time.Format(time.RFC3339))
 		return false, nil
 	} else if resp.StatusCode != 200 {
 		return false, fmt.Errorf("unable to fetch %s: %s", url,
