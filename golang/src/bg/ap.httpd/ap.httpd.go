@@ -52,6 +52,7 @@ import (
 )
 
 var (
+	plat         *platform.Platform
 	clientWebDir = apcfg.String("client-web_dir", "/var/www/client-web",
 		false, nil)
 	portList      = apcfg.String("ports", "80,443", false, nil)
@@ -312,7 +313,7 @@ func main() {
 		}
 	}
 
-	plat := platform.NewPlatform()
+	plat = platform.NewPlatform()
 
 	domainname, err = config.GetDomain()
 	if err != nil {
@@ -351,6 +352,8 @@ func main() {
 	demoAPIRouter := makeDemoAPIRouter()
 	applianceAuthRouter := makeApplianceAuthRouter()
 
+	checkRouter := makeCheckRouter()
+
 	phishRouter := mainRouter.MatcherFunc(
 		func(r *http.Request, match *mux.RouteMatch) bool {
 			return data.BlockedHostname(r.Host)
@@ -367,6 +370,8 @@ func main() {
 		http.StripPrefix("/client-web/",
 			gziphandler.GzipHandler(
 				http.FileServer(http.Dir(*clientWebDir)))))
+	mainRouter.PathPrefix("/check/").Handler(
+		http.StripPrefix("/check", checkRouter))
 
 	hashKey, blockKey := establishHttpdKeys()
 
@@ -416,12 +421,14 @@ func main() {
 		nDev.Use(negroni.HandlerFunc(developerMW.HandlerFuncWithNext))
 		nDev.UseHandler(apachelog.CombinedLog.Wrap(mainRouter, os.Stderr))
 
-		slog.Debugf("Developer Port configured at %s", *developerHTTP)
+		slog.Infof("Developer Port configured at %s", *developerHTTP)
 		go func() {
 			err := http.ListenAndServe(*developerHTTP, nDev)
 			slog.Infof("Developer listener on %s exited: %v\n",
 				*developerHTTP, err)
 		}()
+	} else {
+		slog.Infof("Developer disabled")
 	}
 
 	mcpd.SetState(mcp.ONLINE)
