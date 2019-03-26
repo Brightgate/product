@@ -28,6 +28,7 @@ type DataStore interface {
 	LoadSchema(context.Context, string) error
 	GetPG() *sql.DB
 	Ping() error
+	PingContext(context.Context) error
 	Close() error
 }
 

@@ -13,7 +13,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -71,91 +70,105 @@ func providerToGoContext(c echo.Context) {
 	c.SetRequest(nr)
 }
 
-func callback(provider string) string {
-	var callback string
-	if environ.Developer {
-		hoststr, portstr, err := net.SplitHostPort(environ.HTTPSListen)
-		if err != nil {
-			log.Fatalf("bad HTTPSListen address")
-		}
-		if hoststr == "" {
-			hoststr, err = os.Hostname()
-			if err != nil {
-				log.Fatalf("could not get hostname")
-			}
-		}
-		port, err := net.LookupPort("tcp", portstr)
-		if err != nil {
-			log.Fatalf("could not parse port %s", portstr)
-		}
-		scheme := "https"
-		if environ.DisableTLS {
-			scheme = "http"
-		}
-		callback = fmt.Sprintf("%s://%s.b10e.net:%d/auth/%s/callback",
-			scheme, hoststr, port, provider)
-	} else {
-		callback = fmt.Sprintf("https://%s/auth/%s/callback",
-			environ.CertHostname, provider)
+func callbackURI(provider string) (string, error) {
+	if !environ.Developer {
+		return fmt.Sprintf("https://%s/auth/%s/callback",
+			environ.CertHostname, provider), nil
 	}
-	return callback
+	// Developer Mode
+	hoststr, portstr, err := net.SplitHostPort(environ.HTTPSListen)
+	if err != nil {
+		return "", errors.Wrap(err, "bad HTTPSListen address")
+	}
+	if hoststr == "" {
+		hoststr, err = os.Hostname()
+		if err != nil {
+			return "", errors.New("could not get hostname")
+		}
+	}
+	port, err := net.LookupPort("tcp", portstr)
+	if err != nil {
+		return "", errors.Errorf("could not parse port %s", portstr)
+	}
+	scheme := "https"
+	if environ.DisableTLS {
+		scheme = "http"
+	}
+	return fmt.Sprintf("%s://%s.b10e.net:%d/auth/%s/callback",
+		scheme, hoststr, port, provider), nil
 }
 
-type providerFunc func() goth.Provider
+type providerFunc func(*echo.Echo) goth.Provider
 
-func googleProvider() goth.Provider {
+func googleProvider(r *echo.Echo) goth.Provider {
 	if environ.GoogleKey == "" && environ.GoogleSecret == "" {
-		log.Printf("not enabling google authentication: missing B10E_CLHTTPD_GOOGLE_KEY or B10E_CLHTTPD_GOOGLE_SECRET")
+		r.Logger.Warnf("not enabling google authentication: missing B10E_CLHTTPD_GOOGLE_KEY or B10E_CLHTTPD_GOOGLE_SECRET")
 		return nil
 	}
 
-	log.Printf("enabling google authentication")
+	callback, err := callbackURI("google")
+	if err != nil {
+		r.Logger.Fatalf("Failed to enable google auth: %v", err)
+	}
+	r.Logger.Infof("enabling google authentication")
 	return google.New(environ.GoogleKey, environ.GoogleSecret,
-		callback("google"), "profile", "email",
+		callback, "profile", "email",
 		people.UserPhonenumbersReadScope)
 }
 
-func openidConnectProvider() goth.Provider {
+func openidConnectProvider(r *echo.Echo) goth.Provider {
 	if environ.OpenIDConnectKey == "" || environ.OpenIDConnectSecret == "" || environ.OpenIDConnectDiscoveryURL == "" {
-		log.Printf("not enabling openid authentication: missing B10E_CLHTTPD_OPENID_CONNECT_KEY, B10E_CLHTTPD_OPENID_CONNECT_SECRET or B10E_CLHTTPD_OPENID_CONNECT_DISCOVERY_URL")
+		r.Logger.Warnf("not enabling openid authentication: missing B10E_CLHTTPD_OPENID_CONNECT_KEY, B10E_CLHTTPD_OPENID_CONNECT_SECRET or B10E_CLHTTPD_OPENID_CONNECT_DISCOVERY_URL")
 		return nil
 	}
-	log.Printf("enabling openid connect authentication via %s", environ.OpenIDConnectDiscoveryURL)
+	callback, err := callbackURI("openid-connect")
+	if err != nil {
+		r.Logger.Fatalf("Failed to enable openid-connect auth: %v", err)
+	}
+	r.Logger.Infof("enabling openid connect authentication via %s", environ.OpenIDConnectDiscoveryURL)
 	openidConnect, err := openidConnect.New(
 		environ.OpenIDConnectKey,
 		environ.OpenIDConnectSecret,
-		callback("openid-connect"),
+		callback,
 		environ.OpenIDConnectDiscoveryURL,
 		"openid", "profile", "email", "phone")
 	if err != nil || openidConnect == nil {
-		log.Fatalf("failed to initialized openid-connect")
+		r.Logger.Fatalf("failed to initialized openid-connect")
 	}
 	return openidConnect
 }
 
-func auth0Provider() goth.Provider {
+func auth0Provider(r *echo.Echo) goth.Provider {
 	if environ.Auth0Key == "" || environ.Auth0Secret == "" || environ.Auth0Domain == "" {
-		log.Printf("not enabling Auth0 authentication: missing B10E_CLHTTPD_AUTH0_KEY, B10E_CLHTTPD_AUTH0_SECRET or B10E_CLHTTPD_AUTH0_DOMAIN")
+		r.Logger.Warnf("not enabling Auth0 authentication: missing B10E_CLHTTPD_AUTH0_KEY, B10E_CLHTTPD_AUTH0_SECRET or B10E_CLHTTPD_AUTH0_DOMAIN")
 		return nil
 	}
 
-	log.Printf("enabling Auth0 authentication")
-	return auth0.New(environ.Auth0Key, environ.Auth0Secret, callback("auth0"),
+	callback, err := callbackURI("auth0")
+	if err != nil {
+		r.Logger.Fatalf("Failed to enable auth0 auth: %v", err)
+	}
+	r.Logger.Infof("enabling Auth0 authentication")
+	return auth0.New(environ.Auth0Key, environ.Auth0Secret, callback,
 		environ.Auth0Domain, "openid", "profile", "email", "zug.zug")
 }
 
-func azureadv2Provider() goth.Provider {
+func azureadv2Provider(r *echo.Echo) goth.Provider {
 	if environ.AzureADV2Key == "" || environ.AzureADV2Secret == "" {
-		log.Printf("not enabling AzureADV2 authentication: missing B10E_CLHTTPD_AZUREADV2_KEY, B10E_CLHTTPD_AZUREADV2_SECRET")
+		r.Logger.Warnf("not enabling AzureADV2 authentication: missing B10E_CLHTTPD_AZUREADV2_KEY, B10E_CLHTTPD_AZUREADV2_SECRET")
 		return nil
 	}
 
-	log.Printf("enabling AzureADV2 authentication")
+	callback, err := callbackURI("azureadv2")
+	if err != nil {
+		r.Logger.Fatalf("Failed to enable azureadv2 auth: %v", err)
+	}
+	r.Logger.Infof("enabling AzureADV2 authentication")
 	opts := azureadv2.ProviderOptions{}
 	// This provider is experimental; some of the information we need is
 	// inside of the AccessToken (such as the 'iss' field, which names the
 	// tenant), and will require more work to get out.
-	return azureadv2.New(environ.AzureADV2Key, environ.AzureADV2Secret, callback("azureadv2"), opts)
+	return azureadv2.New(environ.AzureADV2Key, environ.AzureADV2Secret, callback, opts)
 }
 
 // getProviders implements /auth/providers, which indicates which oauth
@@ -587,13 +600,13 @@ func newAuthHandler(r *echo.Echo, sessionStore sessions.Store, applianceDB appli
 	gothic.Store = sessionStore
 	providers := []providerFunc{googleProvider, azureadv2Provider, openidConnectProvider, auth0Provider}
 	for _, provFunc := range providers {
-		p := provFunc()
+		p := provFunc(r)
 		if p != nil {
 			h.providers = append(h.providers, p)
 		}
 	}
 	if len(h.providers) == 0 {
-		log.Printf("No auth providers configured!  No one can log in.")
+		r.Logger.Warnf("No auth providers configured!  No one can log in.")
 	}
 	goth.UseProviders(h.providers...)
 

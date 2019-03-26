@@ -32,7 +32,6 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -46,7 +45,6 @@ import (
 	"bg/cloud_models/sessiondb"
 	"bg/common/cfgapi"
 
-	"github.com/gorilla/sessions"
 	"github.com/sfreiberg/gotwilio"
 	"github.com/tomazk/envcfg"
 
@@ -55,11 +53,14 @@ import (
 	"github.com/labstack/echo"
 	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/middleware"
+	gommonlog "github.com/labstack/gommon/log"
 	"github.com/satori/uuid"
 	"github.com/unrolled/secure"
 )
 
 const pname = "cl.httpd"
+
+type getClientHandleFunc func(uuid string) (*cfgapi.Handle, error)
 
 // Cfg contains the environment variable-based configuration settings
 type Cfg struct {
@@ -109,15 +110,15 @@ var (
 	enableConfigdTLS bool
 )
 
-func gracefulShutdown(h *http.Server) {
+func gracefulShutdown(e *echo.Echo) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := h.Shutdown(ctx); err != nil {
-		log.Fatalf("Shutdown failed: %v", err)
+	if err := e.Shutdown(ctx); err != nil {
+		e.Logger.Fatalf("Shutdown failed: %v", err)
 	}
 }
 
-func mkTLSConfig() *tls.Config {
+func mkTLSConfig() (*tls.Config, error) {
 	// https (typically port 443) listener.
 	certf := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem",
 		environ.CertHostname)
@@ -125,7 +126,7 @@ func mkTLSConfig() *tls.Config {
 		environ.CertHostname)
 	keyPair, err := tls.LoadX509KeyPair(certf, keyf)
 	if err != nil {
-		log.Fatalf("failed to load X509 Key Pair from %s, %s: %v", certf, keyf, err)
+		return nil, fmt.Errorf("failed to load X509 Key Pair from %s, %s: %v", certf, keyf, err)
 	}
 
 	return &tls.Config{
@@ -148,42 +149,12 @@ func mkTLSConfig() *tls.Config {
 			tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,
 		},
 		Certificates: []tls.Certificate{keyPair},
-	}
-}
-
-func mkSessionStore() *pgstore.PGStore {
-	if environ.SessionSecret == "" {
-		log.Fatalf("You must set B10E_CLHTTPD_SESSION_SECRET")
-	}
-	if environ.SessionBlockSecret == "" {
-		log.Fatalf("You must set B10E_CLHTTPD_SESSION_BLOCK_SECRET")
-	}
-	blockSecret, err := hex.DecodeString(environ.SessionBlockSecret)
-	if err != nil || len(blockSecret) != 32 {
-		log.Fatalf("Failed to decode B10E_CLHTTPD_SESSION_BLOCK_SECRET; should be hex encoded and 32 bytes long")
-	}
-	sessionDB, err := sessiondb.Connect(environ.SessionDB, false)
-	if err != nil {
-		log.Fatalf("failed to connect to session DB: %v", err)
-	}
-	log.Printf(checkMark + "Connected to Session DB")
-	err = sessionDB.Ping()
-	if err != nil {
-		log.Fatalf("failed to ping DB: %s", err)
-	}
-	log.Printf(checkMark + "Pinged Session DB")
-	pgStore, err := pgstore.NewPGStoreFromPool(sessionDB.GetPG(), []byte(environ.SessionSecret), blockSecret)
-	if err != nil {
-		log.Fatalf("failed to start PG Store: %s", err)
-	}
-	// Defaults to 4K but some providers (Azure) issue enormous tokens
-	pgStore.MaxLength(32768)
-	return pgStore
+	}, nil
 }
 
 func mkSecureMW() echo.MiddlewareFunc {
 	secureMW := secure.New(secure.Options{
-		AllowedHosts:          []string{"svc0.b10e.net", "svc1.b10e.net"},
+		AllowedHosts:          []string{"svc0.b10e.net", "svc1.b10e.net", "build0.b10e.net:9443"},
 		HostsProxyHeaders:     []string{"X-Forwarded-Host"},
 		STSSeconds:            315360000,
 		STSIncludeSubdomains:  true,
@@ -197,7 +168,83 @@ func mkSecureMW() echo.MiddlewareFunc {
 	return echo.WrapMiddleware(secureMW.Handler)
 }
 
-func mkRouterHTTPS(sessionStore sessions.Store) *echo.Echo {
+type routerState struct {
+	applianceDB     appliancedb.DataStore
+	sessionDB       sessiondb.DataStore
+	sessionStore    *pgstore.PGStore
+	sessCleanupDone chan<- struct{}
+	sessCleanupQuit <-chan struct{}
+	echo            *echo.Echo
+}
+
+func (rs *routerState) Fini(ctx context.Context) {
+	rs.applianceDB.Close()
+	rs.sessionStore.StopCleanup(rs.sessCleanupDone, rs.sessCleanupQuit)
+	rs.sessionStore.Close()
+}
+
+func (rs *routerState) mkSessionStore() {
+	log := rs.echo.Logger
+	log.Infof("Creating Session Store\n")
+	if environ.SessionSecret == "" {
+		log.Fatalf("You must set B10E_CLHTTPD_SESSION_SECRET")
+	}
+	if environ.SessionBlockSecret == "" {
+		log.Fatalf("You must set B10E_CLHTTPD_SESSION_BLOCK_SECRET")
+	}
+	blockSecret, err := hex.DecodeString(environ.SessionBlockSecret)
+	if err != nil || len(blockSecret) != 32 {
+		log.Fatalf("Failed to decode B10E_CLHTTPD_SESSION_BLOCK_SECRET; should be hex encoded and 32 bytes long")
+	}
+	rs.sessionDB, err = sessiondb.Connect(environ.SessionDB, false)
+	if err != nil {
+		log.Fatalf("failed to connect to session DB: %v", err)
+	}
+	log.Infof(checkMark + "Connected to Session DB")
+	err = rs.sessionDB.Ping()
+	if err != nil {
+		log.Fatalf("failed to ping DB: %s", err)
+	}
+	log.Infof(checkMark + "Pinged Session DB")
+	rs.sessionStore, err = pgstore.NewPGStoreFromPool(rs.sessionDB.GetPG(), []byte(environ.SessionSecret), blockSecret)
+	if err != nil {
+		log.Fatalf("failed to start PG Store: %s", err)
+	}
+	// Defaults to 4K but some providers (Azure) issue enormous tokens
+	rs.sessionStore.MaxLength(32768)
+	rs.sessCleanupDone, rs.sessCleanupQuit = rs.sessionStore.Cleanup(time.Minute * 5)
+}
+
+func (rs *routerState) mkApplianceDB() {
+	var err error
+	log := rs.echo.Logger
+	// Appliancedb setup
+	rs.applianceDB, err = appliancedb.Connect(environ.ApplianceDB)
+	if err != nil {
+		log.Fatalf("failed to connect to appliance DB: %v", err)
+	}
+	log.Infof(checkMark + "Created Appliance DB client")
+	err = rs.applianceDB.Ping()
+	if err != nil {
+		log.Fatalf("failed to ping DB: %s", err)
+	}
+	log.Infof(checkMark + "Pinged Appliance DB")
+
+	// Setup Account Secrets
+	if environ.AccountSecret == "" {
+		log.Fatalf("Must specify B10E_CLHTTPD_ACCOUNT_SECRET")
+	}
+	accountSecret, err := hex.DecodeString(environ.AccountSecret)
+	if err != nil || len(accountSecret) != 32 {
+		log.Fatalf("Failed to decode B10E_CLHTTPD_ACCOUNT_SECRET; should be hex encoded and 32 bytes long %d", len(accountSecret))
+	}
+	rs.applianceDB.AccountSecretsSetPassphrase(accountSecret)
+	log.Infof(checkMark + "Appliance Secrets")
+}
+
+func mkRouterHTTPS() *routerState {
+	var state routerState
+
 	wellKnownPath := "/var/www/html/.well-known"
 	if environ.WellKnownPath != "" {
 		wellKnownPath = environ.WellKnownPath
@@ -207,79 +254,78 @@ func mkRouterHTTPS(sessionStore sessions.Store) *echo.Echo {
 		appPath = environ.AppPath
 	}
 
-	applianceDB, err := appliancedb.Connect(environ.ApplianceDB)
-	if err != nil {
-		log.Fatalf("failed to connect to appliance DB: %v", err)
-	}
-	log.Printf(checkMark + "Connected to Appliance DB")
-	err = applianceDB.Ping()
-	if err != nil {
-		log.Fatalf("failed to ping DB: %s", err)
-	}
-	log.Printf(checkMark + "Pinged Appliance DB")
-
-	r := echo.New()
+	// Setup Echo, Pt 1
+	state.echo = echo.New()
+	r := state.echo
 	r.Debug = environ.Developer
+	if !r.Debug {
+		r.Logger.SetLevel(gommonlog.INFO)
+	}
 	r.HideBanner = true
-	r.Use(middleware.Logger())
-	r.Use(mkSecureMW())
-	r.Use(middleware.Recover())
-	r.Use(session.Middleware(sessionStore))
-	r.Static("/.well-known", wellKnownPath)
-	cwp := filepath.Join(appPath, "client-web")
-	r.Static("/client-web", cwp)
-	log.Printf("Serving %s as /client-web/", cwp)
-	r.GET("/", func(c echo.Context) error {
-		return c.Redirect(http.StatusTemporaryRedirect, "/client-web/")
-	})
-	_ = newAuthHandler(r, sessionStore, applianceDB)
 
-	if environ.AccountSecret == "" {
-		log.Fatalf("Must specify B10E_CLHTTPD_ACCOUNT_SECRET")
-	}
-	accountSecret, err := hex.DecodeString(environ.AccountSecret)
-	if err != nil || len(accountSecret) != 32 {
-		log.Fatalf("Failed to decode B10E_CLHTTPD_ACCOUNT_SECRET; should be hex encoded and 32 bytes long %d", len(accountSecret))
-	}
-	applianceDB.AccountSecretsSetPassphrase(accountSecret)
+	state.mkSessionStore()
+	state.mkApplianceDB()
 
+	// Configd setup
 	enableConfigdTLS = !environ.ConfigdDisableTLS && !environ.Developer
 	if !enableConfigdTLS {
-		log.Printf("Disabling TLS for connection to Configd")
+		r.Logger.Warnf("Disabling TLS for connection to Configd")
 	}
-
-	var twil *gotwilio.Twilio
-	if environ.TwilioSID != "" && environ.TwilioAuthToken != "" {
-		twil = gotwilio.NewTwilioClient(environ.TwilioSID,
-			environ.TwilioAuthToken)
-	} else {
-		log.Printf("Disabling Twilio Client")
-	}
-
-	wares := []echo.MiddlewareFunc{
-		newSessionMiddleware(sessionStore).Process,
-	}
-	_ = newSiteHandler(r, applianceDB, wares, getConfigClientHandle, twil)
-	_ = newAccountHandler(r, applianceDB, wares, sessionStore, getConfigClientHandle)
-	hdl, err := getConfigClientHandle("00000000-0000-0000-0000-000000000000")
+	hdl, err := getConfigClientHandle(appliancedb.NullSiteUUID.String())
 	if err != nil {
-		log.Fatalf("failed to make Config Client: %s", err)
+		r.Logger.Fatalf("failed to make Config Client: %s", err)
 	}
 	defer hdl.Close()
 	err = hdl.Ping(context.Background())
 	if err != nil {
-		log.Fatalf("failed to Ping Config Client: %s", err)
+		r.Logger.Fatalf("failed to Ping Config Client: %s", err)
 	}
-	log.Printf(checkMark + "Can connect to cl.configd")
+	r.Logger.Infof(checkMark + "Pinged cl.configd")
 
-	_ = newAccessHandler(r, applianceDB, sessionStore)
-	//ginPrometheus.Use(r)
-	return r
+	// Twilio setup
+	var twil *gotwilio.Twilio
+	if environ.TwilioSID != "" && environ.TwilioAuthToken != "" {
+		twil = gotwilio.NewTwilioClient(environ.TwilioSID,
+			environ.TwilioAuthToken)
+		r.Logger.Infof(checkMark + "Setup Twilio Client")
+	} else {
+		r.Logger.Warnf("Disabling Twilio Client")
+	}
+
+	r.Use(middleware.Logger())
+	r.Use(mkSecureMW())
+	r.Use(middleware.Recover())
+	r.Use(session.Middleware(state.sessionStore))
+	r.Static("/.well-known", wellKnownPath)
+	cwp := filepath.Join(appPath, "client-web")
+	r.Static("/client-web", cwp)
+	r.Logger.Infof("Serving %s as /client-web/", cwp)
+	r.GET("/", func(c echo.Context) error {
+		return c.Redirect(http.StatusTemporaryRedirect, "/client-web/")
+	})
+
+	// Setup /auth endpoints
+	_ = newAuthHandler(r, state.sessionStore, state.applianceDB)
+
+	wares := []echo.MiddlewareFunc{
+		newSessionMiddleware(state.sessionStore).Process,
+	}
+	_ = newSiteHandler(r, state.applianceDB, wares, getConfigClientHandle, twil)
+	_ = newAccountHandler(r, state.applianceDB, wares, state.sessionStore, getConfigClientHandle)
+	_ = newAccessHandler(r, state.applianceDB, state.sessionStore)
+
+	// Setup /check endpoints
+	_ = newCheckHandler(r, getConfigClientHandle)
+
+	return &state
 }
 
 func mkRouterHTTP() *echo.Echo {
 	r := echo.New()
 	r.Debug = environ.Developer
+	if !r.Debug {
+		r.Logger.SetLevel(gommonlog.INFO)
+	}
 	r.HideBanner = true
 	r.Use(middleware.Logger())
 	r.Use(mkSecureMW())
@@ -304,15 +350,16 @@ func getConfigClientHandle(cuuid string) (*cfgapi.Handle, error) {
 
 func main() {
 	var err error
-
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-
+	startupLog := gommonlog.New("startup")
+	startupLog.Infof("start")
 	err = envcfg.Unmarshal(&environ)
 	if err != nil {
-		log.Fatalf("Environment Error: %s", err)
+		startupLog.Fatalf("Environment Error: %s", err)
 	}
 
-	log.Printf("environ %v", environ)
+	if environ.Developer {
+		startupLog.Infof("environ %v", environ)
+	}
 
 	if environ.HTTPListen == "" {
 		if environ.Developer {
@@ -329,15 +376,15 @@ func main() {
 		}
 	}
 
-	pgSessionStore := mkSessionStore()
-	defer pgSessionStore.Close()
-	defer pgSessionStore.StopCleanup(pgSessionStore.Cleanup(time.Minute * 5))
-
-	eHTTPS := mkRouterHTTPS(pgSessionStore)
+	rsHTTPS := mkRouterHTTPS()
+	defer rsHTTPS.Fini(context.Background())
 
 	var cfg *tls.Config
 	if !environ.DisableTLS {
-		cfg = mkTLSConfig()
+		cfg, err = mkTLSConfig()
+		if err != nil {
+			rsHTTPS.echo.Logger.Fatalf("Failed to setup TLS: %v", err)
+		}
 	}
 
 	httpsSrv := &http.Server{
@@ -347,8 +394,8 @@ func main() {
 	}
 
 	go func() {
-		if err := eHTTPS.StartServer(httpsSrv); err != nil {
-			eHTTPS.Logger.Info("shutting down HTTPS service")
+		if err := rsHTTPS.echo.StartServer(httpsSrv); err != nil {
+			rsHTTPS.echo.Logger.Info("shutting down HTTPS service")
 		}
 	}()
 
@@ -368,9 +415,9 @@ func main() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
 	s := <-sig
-	log.Printf("Signal (%v) received, shutting down", s)
+	eHTTP.Logger.Infof("Signal (%v) received, shutting down", s)
 
-	gracefulShutdown(httpSrv)
-	gracefulShutdown(httpsSrv)
-	log.Printf("All servers shut down, goodbye.")
+	gracefulShutdown(rsHTTPS.echo)
+	gracefulShutdown(eHTTP)
+	eHTTP.Logger.Infof("All servers shut down, goodbye.")
 }

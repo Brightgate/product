@@ -27,8 +27,6 @@ import (
 	"github.com/ttacon/libphonenumber"
 )
 
-type getClientHandleFunc func(uuid string) (*cfgapi.Handle, error)
-
 type siteHandler struct {
 	db              appliancedb.DataStore
 	getClientHandle getClientHandleFunc

@@ -1124,6 +1124,7 @@
     "github.com/labstack/echo",
     "github.com/labstack/echo-contrib/session",
     "github.com/labstack/echo/middleware",
+    "github.com/labstack/gommon/log",
     "github.com/lair-framework/go-nmap",
     "github.com/lestrrat/go-apache-logformat",
     "github.com/lib/pq",

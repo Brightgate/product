@@ -84,6 +84,7 @@ type DataStore interface {
 	commandQueue
 
 	Ping() error
+	PingContext(context.Context) error
 	Close() error
 
 	BeginTxx(context.Context, *sql.TxOptions) (*sqlx.Tx, error)
