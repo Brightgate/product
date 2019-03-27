@@ -12,53 +12,68 @@ span.wifi {
   display: inline-block;
   background: #eeeeee;
   font-family: monospace;
-  padding-left: 0.2em;
-  padding-right: 0.2em;
+  padding: 0.2em;
 }
 
+.flex-grid {
+  display: flex
+}
+
+.flex-grid .col {
+  flex: 1;
+  margin-top: 8px;
+  margin-left: 4px;
+  padding-top: 6px;
+}
+
+.flex-grid .icon-col {
+  margin: 8px;
+}
+
+div.block-nomargin {
+  padding: 0px;
+  margin: 0;
+}
+
+div.list-nomargin {
+  padding: 0;
+  margin: 0;
+}
 </style>
 <template>
   <f7-page name="enroll">
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.enroll_guest.title')" sliding />
-
     <f7-block bg-color="white">
-      <h2>{{ $t('message.enroll_guest.header') }}</h2>
-
-      <table>
-        <tr>
-          <td valign="top">
-            <f7-block>
-              <f7-icon size="36" ios="f7:persons" md="material:people" />
-            </f7-block>
-          </td>
-          <td width="400">
-            <f7-block-title>{{ $t('message.enroll_guest.direct_subhead') }}</f7-block-title>
-            <f7-block>
-              <p>
-                {{ $t('message.enroll_guest.network_name') }}:
-                <span class="wifi">
-                  <f7-icon material="wifi" size="16" /> {{ vaps['guest'].ssid }}
-                </span>
-              </p>
-              <p>
-                {{ $t('message.enroll_guest.network_passphrase') }}:
-                <span class="wifi">
-                  {{ vaps['guest'].passphrase }}
-                </span>
-              </p>
-            </f7-block>
-          </td>
-        </tr>
-
-        <tr>
-          <td valign="top">
-            <f7-block>
-              <f7-icon size="36" ios="f7:message_fill" md="material:sms" />
-            </f7-block>
-          </td>
-          <td>
-            <f7-block-title>{{ $t('message.enroll_guest.sms_subhead') }}</f7-block-title>
-            <f7-list no-hairlines>
+      <p>{{ $t('message.enroll_guest.header') }}</p>
+      <div class="flex-grid">
+        <div class="icon-col">
+          <f7-icon size="36" ios="f7:persons" md="material:people" />
+        </div>
+        <div class="col">
+          <f7-block-title class="block-nomargin">{{ $t('message.enroll_guest.direct_subhead') }}</f7-block-title>
+          <p>
+            {{ $t('message.enroll_guest.network_name') }}:
+            <span class="wifi">
+              <f7-icon material="wifi" size="16" /> {{ vaps['guest'].ssid }}
+            </span>
+          </p>
+          <p>
+            {{ $t('message.enroll_guest.network_passphrase') }}:
+            <span class="wifi">
+              {{ vaps['guest'].passphrase }}
+            </span>
+            <br>&nbsp;
+          </p>
+        </div>
+      </div>
+      <div v-if="appMode === appDefs.APPMODE_CLOUD" class="flex-grid">
+        <div class="icon-col">
+          <f7-icon size="36" ios="f7:message_fill" md="material:sms" />
+        </div>
+        <div class="col">
+          <f7-block-title class="block-nomargin">{{ $t('message.enroll_guest.sms_subhead') }}</f7-block-title>
+          <p>
+            <f7-list class="list-nomargin" no-hairlines>
               <f7-list-input
                 :value="phoneInput"
                 :placeholder="$t('message.enroll_guest.phone_placeholder')"
@@ -80,13 +95,25 @@ span.wifi {
                 </f7-button>
               </f7-list-item>
             </f7-list>
-          </td>
-        </tr>
+          </p>
+        </div>
+      </div>
 
+      <div v-if="qrContents !== null" class="flex-grid">
+        <div class="icon-col">
+          <f7-icon size="36" ios="f7:camera_fill" md="material:camera_alt" />
+        </div>
+        <div class="col">
+          <f7-block-title class="block-nomargin">{{ $t('message.enroll_guest.qr_subhead') }}</f7-block-title>
+          <p>
+            {{ $t('message.enroll_guest.qr_explain') }}
+          </p>
+          <div>
+            <qrcode :value="qrContents" :options="{ width: 200, color: {dark: '#002d5cff' } }" />
+          </div>
+        </div>
+      </div>
 
-        <!-- QR code will go here -->
-
-      </table>
     </f7-block>
   </f7-page>
 
@@ -99,16 +126,23 @@ span.wifi {
 
 import Vuex from 'vuex';
 import {isValidNumber, AsYouType} from 'libphonenumber-js';
+import VueQrcode from '@chenfengyuan/vue-qrcode';
 import Debug from 'debug';
+import appDefs from '../app_defs';
 const debug = Debug('page:enroll-guest');
 let phoneAYT = null;
 
 export default {
+  components: {
+    'qrcode': VueQrcode,
+  },
+
   data: function() {
     return {
       phoneInput: '',
       emailInput: '',
       enrolling: false,
+      appDefs: appDefs,
     };
   },
 
@@ -118,6 +152,7 @@ export default {
     ...Vuex.mapGetters([
       'loggedIn',
       'vaps',
+      'appMode',
     ]),
 
     validForm: function() {
@@ -125,6 +160,18 @@ export default {
         return false;
       }
       return isValidNumber(this.phoneInput, 'US');
+    },
+
+    qrContents: function() {
+      const ssid = this.vaps && this.vaps['guest'] && this.vaps['guest'].ssid;
+      const pp = this.vaps && this.vaps['guest'] && this.vaps['guest'].passphrase;
+      if (!ssid || !pp) {
+        return null;
+      }
+      const qrPP = pp.replace(/[\\;,:"]/g, '\\$&');
+      const result = `WIFI:T:WPA;S:${ssid};P:${qrPP};;`;
+      debug(`qr: pp {${pp}} => qrPP {${qrPP}}. Result is {${result}}`);
+      return result;
     },
   },
 

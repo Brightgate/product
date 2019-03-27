@@ -24,20 +24,22 @@
       :title="$t('message.site_controls.network')"
       :class="disabled ? 'disabled' : undefined"
       :link="`/sites/${siteid}/network/`" />
-    <f7-list-item v-if="admin"
-                  :title="$t('message.site_controls.compliance_report')"
-                  :class="disabled ? 'disabled' : undefined"
-                  :link="`/sites/${siteid}/compliance_report/`" />
-    <f7-list-item v-if="admin"
-                  :title="$t('message.site_controls.manage_devices', {'device_count': deviceCount})"
-                  :class="disabled ? 'disabled' : undefined"
-                  :link="`/sites/${siteid}/devices/`" />
-    <f7-list-item v-if="admin"
-                  :title="$t('message.site_controls.users')"
-                  :class="disabled ? 'disabled' : undefined"
-                  :link="`/sites/${siteid}/users/`" />
     <f7-list-item
-      v-if="appMode === appDefs.APPMODE_CLOUD"
+      v-if="admin"
+      :title="$t('message.site_controls.compliance_report')"
+      :class="disabled ? 'disabled' : undefined"
+      :link="`/sites/${siteid}/compliance_report/`" />
+    <f7-list-item
+      v-if="admin"
+      :title="$t('message.site_controls.manage_devices', {'device_count': deviceCount})"
+      :class="disabled ? 'disabled' : undefined"
+      :link="`/sites/${siteid}/devices/`" />
+    <f7-list-item
+      v-if="admin"
+      :title="$t('message.site_controls.users')"
+      :class="disabled ? 'disabled' : undefined"
+      :link="`/sites/${siteid}/users/`" />
+    <f7-list-item
       :title="$t('message.site_controls.enroll_guest')"
       :class="disabled ? 'disabled' : undefined"
       :link="`/sites/${siteid}/enroll_guest/`" />
@@ -45,7 +47,6 @@
 </template>
 
 <script>
-import appDefs from '../app_defs';
 
 export default {
   name: 'BgSiteControls',
@@ -72,12 +73,6 @@ export default {
       type: Boolean,
       required: true,
     },
-  },
-
-  data: function() {
-    return {
-      appDefs: appDefs,
-    };
   },
 };
 </script>
