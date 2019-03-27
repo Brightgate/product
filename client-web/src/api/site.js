@@ -283,6 +283,7 @@ async function authProviders() {
     // UI can indicate that is not working
     return {
       mode: appDefs.APPMODE_FAILURE,
+      error: err,
       providers: '',
     };
   }

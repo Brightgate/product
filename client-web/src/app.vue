@@ -121,6 +121,11 @@ div .panel-visible-by-breakpoint {
           <template v-else>
             <f7-block>
               {{ $t('message.login.down') }}
+              <div v-if="authProvidersError">
+                <p>
+                  The error encountered was <i>{{ authProvidersError }}</i>
+                </p>
+              </div>
             </f7-block>
           </template>
 
@@ -169,6 +174,7 @@ export default {
     ...vuex.mapGetters([
       'appMode',
       'authProviders',
+      'authProvidersError',
     ]),
     startRoute() {
       return window.navigateTo ? window.navigateTo : '/';

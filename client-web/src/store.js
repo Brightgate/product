@@ -163,6 +163,7 @@ const nullSite = new Site('null');
 const state = {
   appMode: appDefs.APPMODE_FAILURE,
   authProviders: [],
+  authProvidersError: null,
   testAppMode: appDefs.APPMODE_NONE,
   loggedIn: false,
   fakeLogin: false,
@@ -214,6 +215,9 @@ const mutations = {
 
   setAuthProviders(state, newProviders) {
     state.authProviders = newProviders;
+  },
+  setAuthProvidersError(state, err) {
+    state.authProvidersError = err;
   },
 
   setCurrentSiteID(state, newID) {
@@ -315,6 +319,7 @@ const getters = {
   currentSiteID: (state) => state.currentSiteID,
   leftPanelVisible: (state) => state.leftPanelVisible,
   authProviders: (state) => state.authProviders,
+  authProvidersError: (state) => state.authProvidersError,
   userInfo: (state) => state.userInfo,
   accountSelfProvision: (state) => state.accountSelfProvision,
 
@@ -825,6 +830,7 @@ const actions = {
     assert(providers.providers !== undefined);
     context.commit('setAppMode', providers.mode);
     context.commit('setAuthProviders', providers.providers);
+    context.commit('setAuthProvidersError', providers.error || null);
   },
 };
 
