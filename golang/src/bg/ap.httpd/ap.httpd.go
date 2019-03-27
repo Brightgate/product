@@ -334,6 +334,7 @@ func main() {
 
 	secureMW := secure.New(secure.Options{
 		SSLRedirect:           true,
+		SSLHost:               "gateway." + domainname,
 		HostsProxyHeaders:     []string{"X-Forwarded-Host"},
 		STSSeconds:            315360000,
 		STSIncludeSubdomains:  true,
