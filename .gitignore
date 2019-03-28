@@ -1,7 +1,9 @@
 .tags
 .make-*
 .mypy_cache
+.DS_Store
 *.org
+*.bak
 *.sw[a-z]
 proto.armv7l
 proto.x86_64
