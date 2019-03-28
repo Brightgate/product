@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"bg/ap_common/aputil"
+	"bg/ap_common/platform"
 	"bg/base_msg"
 	"bg/cloud_rpc"
 	"bg/common/network"
@@ -99,8 +100,8 @@ func sendChanged(ctx context.Context, client cloud_rpc.EventClient, changed *bas
 
 func sendInventory(ctx context.Context, client cloud_rpc.EventClient) error {
 	var err error
-	invDir := plat.ExpandDirPath("__APDATA__", "identifierd/inventory")
-	manDir := plat.ExpandDirPath("__APDATA__", "rpcd")
+	invDir := plat.ExpandDirPath(platform.APData, "identifierd")
+	manDir := plat.ExpandDirPath(platform.APData, "rpcd")
 	manPath := filepath.Join(manDir, "identifierd.json.v1")
 
 	if err = os.MkdirAll(manDir, 0755); err != nil {

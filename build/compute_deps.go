@@ -111,8 +111,6 @@ func main() {
 		} else if strings.HasPrefix(pkg.name, "bg/cl.") || strings.HasPrefix(pkg.name, "bg/cl-") {
 			cllib["$(CLOUDBIN)/"+pkg.name[3:]] = pkg
 		} else {
-			// This doesn't properly capture the "util" commands,
-			// but we work around that in the Makefile.
 			deplib["$(BGDEPDIR)/"+strings.Replace(pkg.name, "/", "--", -1)] = pkg
 		}
 	}

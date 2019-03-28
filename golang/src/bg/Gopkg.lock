@@ -33,14 +33,6 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:7dd4200e1f3b01c82272ffa7b13d42f8d1a1bf0efe692918ee9fd90ce9ae588a"
-  name = "github.com/ajstarks/svgo"
-  packages = ["."]
-  pruneopts = ""
-  revision = "644b8db467afccf19a0692a3e31a1868e4287ab8"
-
-[[projects]]
-  branch = "master"
   digest = "1:3c292d5c4fe036d536e3a5945caa056f295e82142f1cbb493cf3d9ec7198e0e3"
   name = "github.com/anmitsu/go-shlex"
   packages = ["."]
@@ -138,18 +130,6 @@
   packages = ["."]
   pruneopts = ""
   revision = "6ce292dea1e650698017f287e143d5aad42dc2fc"
-
-[[projects]]
-  branch = "master"
-  digest = "1:05f7dd1dc7530cd6b959f8b49660cd898f8dc9601b4e764ef9bdf211e6318774"
-  name = "github.com/golang/freetype"
-  packages = [
-    ".",
-    "raster",
-    "truetype",
-  ]
-  pruneopts = ""
-  revision = "e2365dfdc4a05e4b8299a783240d4a7d5a65d4e4"
 
 [[projects]]
   digest = "1:3dd078fda7500c341bc26cfbc6c6a34614f295a2457149fc1045cab767cbcf18"
@@ -298,14 +278,6 @@
   version = "v1.2.0"
 
 [[projects]]
-  digest = "1:be398c961548daea844f4301089e60f1cc476842522392ce009d67576c00b3c8"
-  name = "github.com/jung-kurt/gofpdf"
-  packages = ["."]
-  pruneopts = ""
-  revision = "14c1db30737a138f8d9797cffea58783892b2fae"
-  version = "v1.0.0"
-
-[[projects]]
   digest = "1:83423fd6dfe89caea12a3c7bdebfe520892f9cb92e70af948f2033eeba43ac21"
   name = "github.com/klauspost/oui"
   packages = ["."]
@@ -394,18 +366,6 @@
   pruneopts = ""
   revision = "4ded0e9383f75c197b3a2aaa6d590ac52df6fd79"
   version = "v1.0.0"
-
-[[projects]]
-  branch = "master"
-  digest = "1:4c81add71bb7ce168ffd0047b95285f358042a8989d3f713c2cd81811e807c5d"
-  name = "github.com/llgcode/draw2d"
-  packages = [
-    ".",
-    "draw2dbase",
-    "draw2dimg",
-  ]
-  pruneopts = ""
-  revision = "274031cf2abe8acd15c4a911e1f7f1295fc4830c"
 
 [[projects]]
   digest = "1:b5f0db644057287e018690cca0f76b037dff0115be4c06cf78dcc5897161dffb"
@@ -644,17 +604,6 @@
   revision = "ed2d14c2993972f5ff95f34f17e6ce81b962779a"
 
 [[projects]]
-  digest = "1:8b22887c5d7a1c5791882c07bcd949c6e5b1de57190d619a1ab309ad05c76cf3"
-  name = "github.com/tensorflow/tensorflow"
-  packages = [
-    "tensorflow/go",
-    "tensorflow/go/op",
-  ]
-  pruneopts = ""
-  revision = "438604fc885208ee05f9eef2d0f2c630e1360a83"
-  version = "v1.4.1"
-
-[[projects]]
   branch = "master"
   digest = "1:bf9e7db8b421fa1c18e86cd51c98ed6574a7665d0ed40d5355b6514f7b40e9a9"
   name = "github.com/tomazk/envcfg"
@@ -827,21 +776,6 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:f73141ead8ee13f385c2efa0fed39aba4621ce6a1ecdab41b340b20ba4653b95"
-  name = "golang.org/x/image"
-  packages = [
-    "draw",
-    "font",
-    "math/f64",
-    "math/fixed",
-    "tiff",
-    "tiff/lzw",
-  ]
-  pruneopts = ""
-  revision = "af66defab954cb421ca110193eed9477c8541e2a"
-
-[[projects]]
-  branch = "master"
   digest = "1:4656104e65eed39be4ad82d1c2d31ccb391ba51817ccfbb6140562b141392b71"
   name = "golang.org/x/net"
   packages = [
@@ -926,48 +860,6 @@
   pruneopts = ""
   revision = "f21a4dfb5e38f5895301dc265a8def02365cc3d0"
   version = "v0.3.0"
-
-[[projects]]
-  branch = "master"
-  digest = "1:c0a4faa9239675364289f5acb20f805a2150aab70b75d7357064e52ca7683314"
-  name = "gonum.org/v1/gonum"
-  packages = [
-    "blas",
-    "blas/blas64",
-    "blas/gonum",
-    "floats",
-    "internal/asm/c128",
-    "internal/asm/f32",
-    "internal/asm/f64",
-    "internal/math32",
-    "lapack",
-    "lapack/gonum",
-    "lapack/lapack64",
-    "mat",
-  ]
-  pruneopts = ""
-  revision = "e9e56344e335b77c52738092530a60fd12db0351"
-
-[[projects]]
-  branch = "master"
-  digest = "1:5210ffbc2c7ff80a603f63f0ed9ead8306cbaece41de995534acf1ad089ae4e4"
-  name = "gonum.org/v1/plot"
-  packages = [
-    ".",
-    "palette",
-    "plotter",
-    "plotutil",
-    "tools/bezier",
-    "vg",
-    "vg/draw",
-    "vg/fonts",
-    "vg/vgeps",
-    "vg/vgimg",
-    "vg/vgpdf",
-    "vg/vgsvg",
-  ]
-  pruneopts = ""
-  revision = "3f55ce2422a7d4de69aadc25f125abdbeaa71f1e"
 
 [[projects]]
   branch = "master"
@@ -1152,8 +1044,6 @@
     "github.com/stretchr/testify/mock",
     "github.com/stretchr/testify/require",
     "github.com/tatsushid/go-prettytable",
-    "github.com/tensorflow/tensorflow/tensorflow/go",
-    "github.com/tensorflow/tensorflow/tensorflow/go/op",
     "github.com/tomazk/envcfg",
     "github.com/ttacon/libphonenumber",
     "github.com/unrolled/secure",
@@ -1185,10 +1075,6 @@
     "golang.org/x/oauth2/google",
     "golang.org/x/text/encoding/unicode",
     "golang.org/x/text/transform",
-    "gonum.org/v1/plot",
-    "gonum.org/v1/plot/plotter",
-    "gonum.org/v1/plot/plotutil",
-    "gonum.org/v1/plot/vg",
     "google.golang.org/api/googleapi",
     "google.golang.org/api/iterator",
     "google.golang.org/api/people/v1",

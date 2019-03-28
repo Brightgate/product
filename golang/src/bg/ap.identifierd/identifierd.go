@@ -29,6 +29,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,7 +40,6 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
-	"bg/ap_common/model"
 	"bg/ap_common/platform"
 	"bg/base_def"
 	"bg/base_msg"
@@ -86,6 +86,20 @@ const (
 	collectionDuration = 30 * time.Minute
 	predictInterval    = 5 * time.Minute
 )
+
+// dnsQ matches DNS questions.
+// See github.com/miekg/dns/types.go: func (q *Question) String() {}
+var dnsQ = regexp.MustCompile(`;(.*?)\t`)
+
+// formatPortString formats a port attribute
+func formatPortString(protocol string, port int32) string {
+	return fmt.Sprintf("%s %d", protocol, port)
+}
+
+// formatMfgString formats a manufacturer attribute
+func formatMfgString(mfg int) string {
+	return fmt.Sprintf("Mfg%d", mfg)
+}
 
 func delHWaddr(hwaddr uint64) {
 	ipMtx.Lock()
@@ -135,7 +149,7 @@ func handleEntity(event []byte) {
 		id = mfgidDB[entry.Manufacturer]
 	}
 
-	testData.setByName(hwaddr, model.FormatMfgString(id))
+	testData.setByName(hwaddr, formatMfgString(id))
 	newData.addMsgEntity(hwaddr, msg)
 }
 
@@ -161,7 +175,7 @@ func handleRequest(event []byte) {
 	}
 
 	for _, q := range request.Request {
-		qName := model.DNSQ.FindStringSubmatch(q)[1]
+		qName := dnsQ.FindStringSubmatch(q)[1]
 		testData.setByName(hwaddr, qName)
 	}
 
@@ -245,7 +259,7 @@ func handleScan(event []byte) {
 			if *p.State != "open" {
 				continue
 			}
-			portString := model.FormatPortString(*p.Protocol, *p.PortId)
+			portString := formatPortString(*p.Protocol, *p.PortId)
 			testData.setByName(hwaddr, portString)
 		}
 	}
@@ -354,39 +368,6 @@ func updateClient(hwaddr uint64, devID string, confidence float32) {
 	}
 }
 
-func identify() {
-	newIdentities := testData.predict()
-	for {
-		id := <-newIdentities
-		devid, err := strconv.Atoi(id.devID)
-		if err != nil || devid == 0 {
-			slog.Warnf("returned a bogus identity for %v: %s",
-				id.hwaddr, id.devID)
-			continue
-		}
-
-		// XXX Set the bar low until the model gets more training data
-		if id.probability > 0 {
-			updateClient(id.hwaddr, id.devID, id.probability)
-		}
-
-		identity := &base_msg.EventNetIdentity{
-			Timestamp:  aputil.NowToProtobuf(),
-			Sender:     proto.String(brokerd.Name),
-			Debug:      proto.String("-"),
-			MacAddress: proto.Uint64(id.hwaddr),
-			Devid:      proto.Int32(int32(devid)),
-			Certainty:  proto.Float32(id.probability),
-		}
-
-		err = brokerd.Publish(identity, base_def.TOPIC_IDENTITY)
-		if err != nil {
-			slog.Errorf("couldn't publish %s: %v",
-				base_def.TOPIC_IDENTITY, err)
-		}
-	}
-}
-
 func recoverClients() {
 	clients := configd.GetClients()
 
@@ -466,10 +447,6 @@ func main() {
 		slog.Fatalf("failed to import manufacturer IDs from %s: %v", mfgidPath, err)
 	}
 
-	if err = testData.loadModel(filepath.Join(*dataDir, trainFile), *modelDir); err != nil {
-		slog.Fatalf("failed to load model", err)
-	}
-
 	recoverClients()
 
 	if err = testData.loadTestData(filepath.Join(*dataDir, testFile)); err != nil {
@@ -501,7 +478,6 @@ func main() {
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go logger(stop, wg)
-	go identify()
 
 	signalHandler()
 

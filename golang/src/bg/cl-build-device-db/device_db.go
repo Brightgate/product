@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -87,7 +87,7 @@
  * the database has no means to interpret them.
  */
 
-package deviceDB
+package main
 
 import (
 	"database/sql"
@@ -105,10 +105,10 @@ import (
 )
 
 const (
-	DevTable   = "devices"
-	MfgTable   = "manufacturers"
-	CharTable  = "characteristics"
-	MatchTable = "matches"
+	devTable   = "devices"
+	mfgTable   = "manufacturers"
+	charTable  = "characteristics"
+	matchTable = "matches"
 )
 
 const devSchema = `
@@ -143,10 +143,10 @@ const matchSchema = `
 	`
 
 var tables = map[string]string{
-	DevTable:   devSchema,
-	CharTable:  charSchema,
-	MfgTable:   mfgSchema,
-	MatchTable: matchSchema,
+	devTable:   devSchema,
+	charTable:  charSchema,
+	mfgTable:   mfgSchema,
+	matchTable: matchSchema,
 }
 
 // Match encodes a row in the 'matches' table
@@ -312,7 +312,7 @@ func InsertOneDevice(db *sql.DB, devid uint32, dev *deviceid.Device) error {
 	addStrArrayColumn(&columns, &values, "DNS", dev.DNS)
 	addStringColumn(&columns, &values, "Notes", dev.Notes)
 
-	err := insertRow(db, DevTable, columns, values)
+	err := insertRow(db, devTable, columns, values)
 	if err != nil {
 		err = fmt.Errorf("failed to insert dev %v: %v", *dev, err)
 	}
@@ -324,7 +324,7 @@ func InsertOneDevice(db *sql.DB, devid uint32, dev *deviceid.Device) error {
 func InsertOneMfg(db *sql.DB, id int, name string) error {
 	columns := "MfgId, Name"
 	values := fmt.Sprintf("'%d', '%s'", id, name)
-	err := insertRow(db, MfgTable, columns, values)
+	err := insertRow(db, mfgTable, columns, values)
 	if err != nil {
 		err = fmt.Errorf("failed to insert mfg %s: %v", name, err)
 	}
@@ -336,7 +336,7 @@ func InsertOneMfg(db *sql.DB, id int, name string) error {
 func InsertOneCharacteristic(db *sql.DB, index int, char string) error {
 	columns := "Index, Characteristic"
 	values := fmt.Sprintf("'%d', '%s'", index, char)
-	err := insertRow(db, CharTable, columns, values)
+	err := insertRow(db, charTable, columns, values)
 	if err != nil {
 		err = fmt.Errorf("failed to insert char %s: %v", char, err)
 	}
@@ -348,7 +348,7 @@ func InsertOneCharacteristic(db *sql.DB, index int, char string) error {
 func InsertOneMatch(db *sql.DB, m Match) error {
 	columns := "MatchID, Characteristics, Device"
 	values := fmt.Sprintf("'%d', '%s', '%d'", m.Matchid, m.Charstr, m.Devid)
-	err := insertRow(db, MatchTable, columns, values)
+	err := insertRow(db, matchTable, columns, values)
 	if err != nil {
 		err = fmt.Errorf("failed to insert match %d: %v", m.Matchid, err)
 	}
@@ -531,7 +531,7 @@ func ImportData(db *sql.DB, devFile, idFile, mfgFile string) error {
 //
 func fetchManufacturers(db *sql.DB) error {
 	fmt.Printf("Fetching manufacturers\n")
-	rows, err := db.Query("SELECT * FROM " + MfgTable)
+	rows, err := db.Query("SELECT * FROM " + mfgTable)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve manufacturer data: %v", err)
 	}
@@ -555,7 +555,7 @@ func fetchManufacturers(db *sql.DB) error {
 //
 func fetchCharacteristics(db *sql.DB) error {
 	fmt.Printf("Fetching characteristics\n")
-	rows, err := db.Query("SELECT * FROM " + CharTable)
+	rows, err := db.Query("SELECT * FROM " + charTable)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve characteristic data: %v", err)
 	}
@@ -585,7 +585,7 @@ func fetchCharacteristics(db *sql.DB) error {
 //
 func fetchMatches(db *sql.DB) error {
 	fmt.Printf("Fetching matches\n")
-	rows, err := db.Query("SELECT * FROM " + MatchTable)
+	rows, err := db.Query("SELECT * FROM " + matchTable)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve match data: %v", err)
 	}
@@ -654,7 +654,7 @@ func extractOneDevice(rows *sql.Rows) error {
 func fetchDevices(db *sql.DB) error {
 	fmt.Printf("Fetching devices\n")
 
-	rows, err := db.Query("SELECT * FROM " + DevTable)
+	rows, err := db.Query("SELECT * FROM " + devTable)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve data: %v", err)
 	}

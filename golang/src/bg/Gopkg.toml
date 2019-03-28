@@ -73,12 +73,6 @@
   name = "github.com/sethvargo/go-diceware"
   version = "~0.1.1"
 
-# This constraint is much stricter than others which appear here
-# because we deliver a matched libtensorflow.so
-[[constraint]]
-  name = "github.com/tensorflow/tensorflow"
-  version = "=1.4.1"
-
 [[constraint]]
   branch = "master"
   name = "github.com/tomazk/envcfg"
@@ -98,10 +92,6 @@
 [[constraint]]
   name = "github.com/lib/pq"
   version = "1.0.0"
-
-[[constraint]]
-  branch = "master"
-  name = "gonum.org/v1/plot"
 
 [[constraint]]
   branch = "master"

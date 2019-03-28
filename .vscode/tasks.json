@@ -52,16 +52,6 @@
 			}
 		},
 		{
-			"label": "Product: make util",
-			"type": "shell",
-			"command": "make util",
-			"presentation": {
-				"reveal": "always",
-				"focus": true,
-				"panel": "new"
-			}
-		},
-		{
 			"label": "Product: make packages",
 			"type": "shell",
 			"osx": {

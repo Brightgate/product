@@ -345,7 +345,6 @@ APPCOMMON_GOPKGS = \
 	bg/ap_common/certificate \
 	bg/ap_common/dhcp \
 	bg/ap_common/mcp \
-	bg/ap_common/model \
 	bg/ap_common/platform \
 	bg/ap_common/wificaps
 
@@ -358,14 +357,11 @@ APPCOMMAND_GOPKGS = \
 	bg/ap-tools \
 	bg/ap-vuln-aggregate
 
-APPDAEMON_GOPKGS_debian = \
-	bg/ap.identifierd
-
 APPDAEMON_GOPKGS = \
-	$(APPDAEMON_GOPKGS_$(DISTRO)) \
 	bg/ap.brokerd \
 	bg/ap.configd \
 	bg/ap.httpd \
+	bg/ap.identifierd \
 	bg/ap.logd \
 	bg/ap.mcp \
 	bg/ap.networkd \
@@ -499,32 +495,6 @@ APPCOMPONENTS = \
 	$(APPTEMPLATES) \
 	$(FILTER_RULES)
 
-# Miscellaneous utilities
-
-UTILROOT=$(ROOT)/util
-UTILBIN=$(UTILROOT)/bin
-
-UTILBINARIES = \
-	$(UTILBIN)/build_device_db \
-	$(UTILBIN)/model-merge \
-	$(UTILBIN)/model-sim \
-	$(UTILBIN)/model-train
-
-UTILDIRS = $(UTILBIN)
-
-UTILCOMPONENTS = $(UTILBINARIES) $(UTILDIRS)
-
-UTILCOMMAND_GOPKGS_debian = \
-	bg/util
-
-UTILCOMMAND_GOPKGS = $(UTILCOMMAND_GOPKGS_$(DISTRO))
-UTILCOMMON_GOPKGS = $(UTILCOMMON_GOPKGS_$(DISTRO))
-
-UTILCOMMON_GOPKGS_debian = \
-	bg/util/deviceDB
-
-UTIL_GOPKGS = $(UTILCOMMON_GOPKGS) $(UTILCOMMAND_GOPKGS)
-
 # Cloud components and supporting definitions.
 
 CLOUDROOT=$(ROOT)/cloud
@@ -562,6 +532,7 @@ CLOUDCOMMON_GOPKGS = \
 
 CLOUDCOMMAND_GOPKGS = \
 	bg/cl-aggregate \
+	bg/cl-build-device-db \
 	bg/cl-cert \
 	bg/cl-configctl \
 	bg/cl-dtool \
@@ -628,13 +599,11 @@ CLOUDDIRS = \
 
 CLOUDCOMPONENTS = $(CLOUDBINARIES) $(CLOUDSYSTEMDSERVICES) $(CLOUDDIRS) $(CLOUDSCHEMAS) $(CLOUDETCFILES)
 
-# Exclude $(UTIL_GOPKGS) because they don't lint
 ALL_GOPKGS = $(APP_GOPKGS) $(CLOUD_GOPKGS)
 
 ALL_GOBINS = \
 	     $(APPCOMMAND_GOPKGS) $(APPDAEMON_GOPKGS) \
-	     $(CLOUDCOMMAND_GOPKGS) $(CLOUDDAEMON_GOPKGS) \
-	     $(UTILCOMMAND_GOPKGS)
+	     $(CLOUDCOMMAND_GOPKGS) $(CLOUDDAEMON_GOPKGS)
 
 COVERAGE_DIR = coverage
 
@@ -660,8 +629,6 @@ install: tools mocks $(TARGETS)
 appliance: $(APPCOMPONENTS)
 
 cloud: $(CLOUDCOMPONENTS)
-
-util: $(UTILCOMPONENTS)
 
 # This will create the sysroot.
 build-sysroot:
@@ -847,10 +814,8 @@ $(USERAUTHD_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.userauthd/% | $(APPETC)
 $(APPRULES)/%: $(GOSRCBG)/ap.networkd/% | $(APPRULES)
 	$(INSTALL) -m 0644 $< $@
 
-$(APPMODEL): $(GOSRCBG)/ap.identifierd/linear_model_deviceID/* | $(APPETCIDENTIFIERD)
+$(APPMODEL): | $(APPETCIDENTIFIERD)
 	$(MKDIR) -p $@
-	cp -r $^ $@
-	touch $@
 
 # Raspbian/Debian-specific appliance files
 $(APPROOTLIB)/systemd/system: | $(APPROOTLIB)
@@ -915,17 +880,6 @@ $(APPBIN)/ap-rpc: $(APPBIN)/ap.rpcd
 	ln -sf $(<F) $@
 
 LOCAL_BINARIES=$(APPBINARIES:$(APPBIN)/%=$(GOBIN)/%)
-
-# Miscellaneous utility components
-
-$(UTILBINARIES): $(GODEPS_ENSURED)
-
-$(UTILDIRS):
-	$(MKDIR) -p $@
-
-# We explicitly depend on $(BGDEPDIR)/bg-util due to a deficiency in compute_deps.
-$(UTILBIN)/%: $(GOSRCBG)/util/%.go $(BGDEPDIR)/bg-util | $(UTILBIN)
-	$(GO) build -o $(@) $(GOSRCBG)/util/$*.go
 
 # Cloud components
 
@@ -1071,7 +1025,6 @@ clean:
 		$(GENERATED_GO_FILES) \
 		$(APPBINARIES) \
 		$(CLOUDBINARIES) \
-		$(UTILBINARIES) \
 		$(DOC_OUTPUTS) \
 		$(GO_MOCK_SRCS)
 	$(RM) -fr $(COVERAGE_DIR)

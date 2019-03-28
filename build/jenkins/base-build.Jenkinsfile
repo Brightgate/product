@@ -29,10 +29,6 @@ pipeline {
                 // Incremental 'make' after above should do nothing
                 sh 'make -q'
 
-                sh 'make util'
-                // Incremental 'make util' after above should do nothing
-                sh 'make -q util'
-
                 sh 'make install'
                 // Incremental 'make install' after above should do nothing
                 sh 'make -q install'

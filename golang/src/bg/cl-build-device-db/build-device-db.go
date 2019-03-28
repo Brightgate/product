@@ -26,8 +26,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-
-	"bg/util/deviceDB"
 )
 
 var (
@@ -53,19 +51,19 @@ func main() {
 		usage(os.Args[0])
 	}
 
-	db, err := deviceDB.ConnectDB(os.Getenv("BGUSER"), os.Getenv("BGPASSWORD"))
+	db, err := ConnectDB(os.Getenv("BGUSER"), os.Getenv("BGPASSWORD"))
 	if err != nil {
 		fmt.Printf("Failed to connect to DB: %v\n", err)
 		os.Exit(1)
 	}
 
 	if imp {
-		if err = deviceDB.ImportData(db, *devFile, *idFile, *mfgFile); err == nil {
-			err = deviceDB.PopulateDatabase(db)
+		if err = ImportData(db, *devFile, *idFile, *mfgFile); err == nil {
+			err = PopulateDatabase(db)
 		}
 	} else {
-		if err = deviceDB.FetchData(db); err == nil {
-			err = deviceDB.ExportData(db, *devFile, *idFile, *mfgFile)
+		if err = FetchData(db); err == nil {
+			err = ExportData(db, *devFile, *idFile, *mfgFile)
 		}
 	}
 

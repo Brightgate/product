@@ -127,7 +127,7 @@ func mkInventoryFile(tr *aptest.TestRoot) {
 	os.Setenv("APROOT", tr.Root)
 	plat := platform.NewPlatform()
 
-	fname := plat.ExpandDirPath("__APDATA__/identifierd/inventory", fmt.Sprintf("observations.pb.%d", time.Now().Unix()))
+	fname := plat.ExpandDirPath("__APDATA__/identifierd", fmt.Sprintf("observations.pb.%d", time.Now().Unix()))
 
 	err = os.MkdirAll(path.Dir(fname), 0755)
 	if err != nil {
