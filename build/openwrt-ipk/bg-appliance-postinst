@@ -17,12 +17,17 @@ set -x
 line_add () {
 	# $1 - file
 	# $2 - line
+	# $3 - location - line will be added following this regexp
 	if [ ! -f "$PKG_ROOT/$1" ]; then
 		echo "$2" > "$PKG_ROOT/$1"
 		return
 	fi
 	if ! grep -q "$2" "$PKG_ROOT/$1"; then
-		echo "$2" >> "$PKG_ROOT/$1"
+		if [ "$3" != "" ]; then
+			sed "/$3/ a$2" -i "$PKG_ROOT/$1"
+		else
+			echo "$2" >> "$PKG_ROOT/$1"
+		fi
 	fi
 }
 
@@ -30,7 +35,7 @@ line_add () {
 line_add "/root/.profile" ". /opt/com.brightgate/etc/com-brightgate-profile"
 
 # Add /etc/rsyslog.d to /etc/rsyslog.conf and restart rsyslog.
-line_add "/etc/rsyslog.conf" "\$IncludeConfig /etc/rsyslog.d/"
+line_add "/etc/rsyslog.conf" "\$IncludeConfig /etc/rsyslog.d/" "ActionFileDefaultTemplate"
 
 optime=$(date -Iseconds)
 

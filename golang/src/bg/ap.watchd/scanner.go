@@ -19,6 +19,7 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -735,18 +736,54 @@ func verifyLocalIP(ip string) error {
 	return fmt.Errorf("not on one of our subnets")
 }
 
+func iptablesRule(opt, rule string) {
+	var action string
+
+	if rule == "" {
+		return
+	}
+
+	if opt == "-I" {
+		action = "apply"
+	} else if opt == "-D" {
+		action = "delete"
+	} else {
+		slog.Warnf("invalid option '%s'", opt)
+		return
+	}
+
+	opts := []string{opt}
+	opts = append(opts, strings.Split(rule, " ")...)
+	cmd := exec.Command(plat.IPTablesCmd, opts...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		slog.Warnf("failed to %s iptables rule '%s': %s",
+			action, rule, out)
+	}
+}
+
 // portScan scans the ports of the given IP address using nmap, putting
 // results on the message bus. Scans of IP are stopped if host is down.
 func portScan(req *ScanRequest) {
+	var rule string
+
 	if err := verifyLocalIP(req.IP); err != nil {
 		slog.Warnf("not scanning %s: %v", req.IP, err)
 		req.Period = nil
 		return
 	}
 
+	if req.ScanType == "tcp" {
+		rule = "INPUT -s " + req.IP + " -p tcp -j ACCEPT"
+	} else if req.ScanType == "udp" {
+		rule = "INPUT -s " + req.IP + " -p udp -j ACCEPT"
+	}
+
+	iptablesRule("-I", rule)
 	start := time.Now()
 	res, err := nmapScan("portscan", req.IP, req.Args)
 	done := time.Now()
+	iptablesRule("-D", rule)
 
 	if err != nil {
 		slog.Warnf("portscan failed: %v", err)
