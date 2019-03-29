@@ -76,6 +76,7 @@ var (
 
 	rings cfgapi.RingMap
 
+	ssdpInited     bool
 	ssdpSearches   *ssdpSearchState
 	ssdpSearchLock sync.Mutex
 
@@ -401,6 +402,10 @@ func ssdpHandler(source *endpoint, buf []byte) error {
 }
 
 func ssdpInit() {
+	if ssdpInited {
+		return
+	}
+
 	low := *ssdpBase
 	high := *ssdpBase + *ssdpMax
 
@@ -436,6 +441,7 @@ func ssdpInit() {
 	}
 
 	config.Execute(nil, ops)
+	ssdpInited = true
 }
 
 //
