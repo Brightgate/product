@@ -62,6 +62,7 @@ type dnsRecord struct {
 var (
 	cacheSize = apcfg.Int("cache_size", 1024*1024, false, nil)
 	dataDir   = apcfg.String("dir", data.DefaultDataDir, false, nil)
+	localTTL  = apcfg.Duration("local_ttl", 5*time.Minute, true, nil)
 
 	ringRecords  map[string]dnsRecord // per-ring records for the router
 	perRingHosts map[string]bool      // hosts with per-ring results
@@ -396,7 +397,7 @@ func answerA(q dns.Question, rec dnsRecord) *dns.A {
 			Name:   q.Name,
 			Rrtype: dns.TypeA,
 			Class:  dns.ClassINET,
-			Ttl:    0},
+			Ttl:    uint32(localTTL.Seconds())},
 		A: a.To4(),
 	}
 
@@ -409,7 +410,7 @@ func answerPTR(q dns.Question, rec dnsRecord) *dns.PTR {
 			Name:   q.Name,
 			Rrtype: dns.TypePTR,
 			Class:  dns.ClassINET,
-			Ttl:    0},
+			Ttl:    uint32(localTTL.Seconds())},
 		Ptr: rec.recval,
 	}
 	return &rr
@@ -421,7 +422,7 @@ func answerCNAME(q dns.Question, rec dnsRecord) *dns.CNAME {
 			Name:   q.Name,
 			Rrtype: dns.TypeCNAME,
 			Class:  dns.ClassINET,
-			Ttl:    0},
+			Ttl:    uint32(localTTL.Seconds())},
 		Target: rec.recval,
 	}
 	return &rr
