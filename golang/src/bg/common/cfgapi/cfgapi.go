@@ -502,7 +502,9 @@ func getBoolVal(root *PropertyNode, name string) (bool, error) {
 	return rval, err
 }
 
-func getTimeVal(root *PropertyNode, name string) (*time.Time, error) {
+// Note that unlike other functions in this family, this routine returns
+// nil if the time is not present.  Hence the Nil in the name.
+func getTimeValNil(root *PropertyNode, name string) (*time.Time, error) {
 	var val string
 	var rval time.Time
 	var err error
@@ -513,7 +515,9 @@ func getTimeVal(root *PropertyNode, name string) (*time.Time, error) {
 				name, val)
 		}
 	}
-
+	if rval.IsZero() {
+		return nil, err
+	}
 	return &rval, err
 }
 
@@ -769,10 +773,7 @@ func (c *Handle) GetWanInfo() *WanInfo {
 	if dhcp := wan.Children["dhcp"]; dhcp != nil {
 		w.DHCPAddress, _ = getStringVal(dhcp, "address")
 		w.DHCPRoute, _ = getIPv4Val(dhcp, "route")
-		w.DHCPStart, _ = getTimeVal(dhcp, "start")
-		if w.DHCPStart.IsZero() {
-			w.DHCPStart = nil
-		}
+		w.DHCPStart, _ = getTimeValNil(dhcp, "start")
 		w.DHCPDuration, _ = getIntVal(dhcp, "duration")
 	}
 	return &w
@@ -831,12 +832,11 @@ func (c *Handle) GetVulnerabilities(macaddr string) VulnMap {
 	if vulns != nil {
 		for name, props := range vulns.Children {
 			var v VulnInfo
-			v.FirstDetected, _ = getTimeVal(props, "first")
-			v.LatestDetected, _ = getTimeVal(props, "latest")
-			v.RepairedAt, _ = getTimeVal(props, "repaired")
-			v.WarnedAt, _ = getTimeVal(props, "warned")
-			v.ClearedAt, _ = getTimeVal(props, "cleared")
-			v.RepairedAt, _ = getTimeVal(props, "repaired")
+			v.FirstDetected, _ = getTimeValNil(props, "first")
+			v.LatestDetected, _ = getTimeValNil(props, "latest")
+			v.WarnedAt, _ = getTimeValNil(props, "warned")
+			v.ClearedAt, _ = getTimeValNil(props, "cleared")
+			v.RepairedAt, _ = getTimeValNil(props, "repaired")
 			v.Ignore, _ = getBoolVal(props, "ignore")
 			v.Active, _ = getBoolVal(props, "active")
 			v.Details, _ = getStringVal(props, "details")
@@ -861,8 +861,8 @@ func (c *Handle) GetClientScans(macaddr string) ScanMap {
 	if scans != nil {
 		for name, props := range scans.Children {
 			var s ScanInfo
-			s.Start, _ = getTimeVal(props, "start")
-			s.Finish, _ = getTimeVal(props, "finish")
+			s.Start, _ = getTimeValNil(props, "start")
+			s.Finish, _ = getTimeValNil(props, "finish")
 			scanMap[name] = &s
 		}
 	}
