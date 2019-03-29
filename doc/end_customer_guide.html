@@ -16,7 +16,7 @@
     <h1 id="brightgate-alpha-guide">Brightgate Alpha Guide</h1>
     <a name="brightgate-alpha-guide"></a>
     <p><i>NDA REQUIRED</i></p>
-    <img src="./images/Blue_NoBoarderArtboard%201@1.5x.png" alt="Brightgate Logo">
+    <img src="./images/Blue_NoBoarderArtboard-1@1.5x.png" alt="Brightgate Logo">
     <p>Q1 2019</p>
     <p>Version 1.0</p>
     <h2 id="about-this-guide">About this guide<a name="about-this-guide"></a></h2>
@@ -483,7 +483,7 @@
         article from Wikipedia.</a></p>
     <p>This graphic illustrates the basic process of deciding how to set up your
       network:</p>
-    <p><img src="./images/setup_flow.svg" alt="Setup process for administrators"></p>
+    <p><img src="./images/setup_flow.png" alt="Setup process for administrators"></p>
     <p>As discussed in <a href="#network-authentication-and-trust-groups">network
         authentication and trust groups work together</a>, Brightgate creates
       three networks based on the method a device uses to authenticate to the
@@ -750,19 +750,22 @@
         your site &gt; Manage Devices &gt; click the device name</i> to view the
       Device Details. The trust group and their intended purpose are as follows:</p>
     <dl>
-      <li><code>core</code>: The trust group reserved for the most trusted
-        devices.</li>
-      <li><code>devices</code>: The trust group for Internet of Things (IoT)
-        devices, such as thermostats or security cameras</li>
-      <li><code>guest</code>: The trust group for devices that require temporary
-        network access</li>
-      <li><code>quarantine</code>: The trust group for devices that are behaving
-        oddly</li>
-      <li><code>standard</code>: The trust group most appropriate for devices
-        owned by regular members of your team</li>
-      <li><code>unenrolled</code>: The trust group for all manually configured
-        IoT devices or other unknown devices.</li>
-      <li><code>internal</code>: Reserved for Brightgate use.</li>
+      <dt><code>core</code>:</dt>
+        <dd>The trust group reserved for the most trusted devices.</dd>
+      <dt><code>devices</code>:</dt>
+        <dd>The trust group for Internet of Things (IoT)
+        devices, such as thermostats or security cameras</dd>
+      <dt><code>guest</code>:</dt>
+        <dd>The trust group for devices that require temporary network access</dd>
+      <dt><code>quarantine</code>:</dt>
+        <dd>The trust group for devices that are behaving oddly</dd>
+      <dt><code>standard</code>:</dt>
+        <dd>The trust group most appropriate for devices owned by regular members
+        of your team</dd>
+      <dt><code>unenrolled</code>:</dt>
+        <dd>The trust group for all manually configured IoT devices or other unknown devices.</dd>
+      <dt><code>internal</code>:</dt>
+        <dd>Reserved for Brightgate use.</dd>
     </dl>
     <p></p>
     <p>From <i>Access Control</i>, display the available <i>Trust Group</i>

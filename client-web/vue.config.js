@@ -48,6 +48,20 @@ const config = {
         fileWhitelist: [/\.woff2$/],
       },
     ]);
+
+    config.module.rule('documentation-html')
+      .test(/doc\/.*\.html$/)
+      .use('file-loader').loader('file-loader').end()
+      .use('extract-loader').loader('extract-loader').end()
+      .use('html-loader')
+      .loader('html-loader')
+      .options({
+        url(url) {
+          // console.error('url is ', url, !url.startsWith('#'));
+          return !url.startsWith('#');
+        },
+      })
+      .end();
   },
   lintOnSave: false,
 };

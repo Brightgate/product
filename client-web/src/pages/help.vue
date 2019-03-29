@@ -7,6 +7,13 @@
   express written permission of Brightgate Inc is prohibited, and any
   such unauthorized removal or alteration will be a violation of federal law.
 -->
+<style>
+.help-content img {
+  margin: 0.5em 0;
+  max-width: 100%;  /* prevent horizontal overflow */
+  max-height: 80vh; /* 80% of viewport height */
+}
+</style>
 <template>
   <f7-page id="help-page" @page:beforein="onPageBeforeIn" @page:init="onPageBeforeIn">
     <f7-navbar :back-link="$t('message.general.back')" :title="helpTopicName" sliding />
@@ -45,7 +52,7 @@ const debug = Debug('page:help');
 // router (ex: /help/end_customer_guide/)
 
 // eslint-disable-next-line import/no-commonjs
-const endCustomerGuideURL = require('file-loader!../../../doc/end_customer_guide-body.html');
+const endCustomerGuideURL = require('../../../doc/end_customer_guide-body.html');
 const helpTopics = {
   'end_customer_guide': {
     url: endCustomerGuideURL,
