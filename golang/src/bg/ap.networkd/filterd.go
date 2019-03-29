@@ -665,12 +665,12 @@ func iptablesRebuild() {
 	if _, err := config.GetProp("@/network/nologwan"); err != nil {
 		// Limit logged WAN drops to 1/second
 		iptablesAddRule("filter", "dropped", wanFilter+
-			"-j LOG -m limit --limit 60/min  --log-prefix \"DROPPED \"")
+			"-j LOG -m limit --limit 60/min --log-level 6 --log-prefix \"DROPPED \"")
 	}
 
 	// Limit logged LAN drops to 10/second
 	iptablesAddRule("filter", "dropped", lanFilter+
-		"-j LOG -m limit --limit 600/min  --log-prefix \"DROPPED \"")
+		"-j LOG -m limit --limit 600/min  --log-level 6 --log-prefix \"DROPPED \"")
 	iptablesAddRule("filter", "dropped", "-j DROP")
 
 	firewallRules()

@@ -90,6 +90,12 @@ type hostapdCmd struct {
 	sent   time.Time
 }
 
+type retransmitState struct {
+	count int
+	first time.Time
+	last  time.Time
+}
+
 // hostapd has a separate control socket for each of the network interfaces it
 // manages.  For each socket, we can have a single in-flight command and any
 // number of queued commands.
@@ -106,11 +112,8 @@ type hostapdConn struct {
 	liveCmd     *hostapdCmd   // the in-flight hostapd command
 	pendingCmds []*hostapdCmd // all queued commands
 
-	retryCount int
-	retryLast  time.Time
-	retryFirst time.Time
-
-	stations map[string]*stationInfo
+	retransmits map[string]*retransmitState
+	stations    map[string]*stationInfo
 
 	sync.Mutex
 }
@@ -338,22 +341,32 @@ func (c *hostapdConn) stationBadPassword(sta string) {
 //
 // Until the problem gets fixed, we can try to work around it by restarting
 // hostapd when we see it happening.  this_is_fine.gif.
-func (c *hostapdConn) eapRetransmit() {
+func (c *hostapdConn) eapRetransmit(mac string) {
 	now := time.Now()
+	expired := now.Add(-1 * *retransmitTimeout)
 
-	// The largest backoff I've seen has been 20 seconds, so reset the retry
-	// count if it's been 25+ seconds since the last one.
-	if c.retryCount > 0 && now.After(c.retryLast.Add(*retransmitTimeout)) {
-		c.retryCount = 0
+	for mac, state := range c.retransmits {
+		if state.last.Before(expired) {
+			slog.Debugf("%s is clear.  %d since %s\n",
+				mac, state.count, state.first.Format(time.RFC3339))
+			delete(c.retransmits, mac)
+		}
 	}
 
-	c.retryLast = now
-	c.retryCount++
-	if c.retryCount == 1 {
-		c.retryFirst = now
-	} else if c.retryCount >= *retransmitLimit {
-		slog.Warnf("hostapd had %d retransmits since %s - restarting",
-			c.retryCount, c.retryFirst.Format(time.RFC3339))
+	state := c.retransmits[mac]
+	if state == nil {
+		state = &retransmitState{
+			count: 0,
+			first: now,
+		}
+		c.retransmits[mac] = state
+	}
+	state.last = now
+
+	if state.count++; state.count >= *retransmitLimit {
+		slog.Warnf("hostapd had %d retransmits for %s since %s - restarting",
+			state.count, mac, state.first.Format(time.RFC3339))
+		c.retransmits = make(map[string]*retransmitState)
 		c.hostapd.reset()
 	}
 }
@@ -391,7 +404,7 @@ func (c *hostapdConn) handleStatus(status string) {
 		case "AP-STA-POSSIBLE-PSK-MISMATCH":
 			c.stationBadPassword(mac)
 		case "CTRL-EVENT-EAP-RETRANSMIT", "CTRL-EVENT-EAP-RETRANSMIT2":
-			c.eapRetransmit()
+			c.eapRetransmit(mac)
 		}
 	}
 }
@@ -772,6 +785,7 @@ func (h *hostapdHdl) newConn(vap *vapConfig) *hostapdConn {
 		active:      true,
 		device:      vap.device,
 		pendingCmds: make([]*hostapdCmd, 0),
+		retransmits: make(map[string]*retransmitState),
 		stations:    make(map[string]*stationInfo),
 	}
 	slog.Debugf("%v: %s -> %s", &newConn, remoteName, localName)
