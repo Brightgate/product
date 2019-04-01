@@ -510,7 +510,7 @@ func upstreamRequest(server string, r, m *dns.Msg) {
 	var upstream *dns.Msg
 	var err error
 
-	question := r.Question[0].String()
+	question := strings.ToLower(r.Question[0].String())
 	key := crc64.Checksum([]byte(question), cachedResponses.table)
 	if *cacheSize > 0 {
 		upstream = cachedResponses.lookup(key, question)
@@ -580,21 +580,24 @@ func localHandler(w dns.ResponseWriter, r *dns.Msg) {
 	}
 
 	q := r.Question[0]
+	name := strings.ToLower(q.Name)
 	start := time.Now()
 
-	if perRingHosts[q.Name] {
+	if perRingHosts[name] {
 		rec, ok = ringRecords[c.Ring]
 	} else {
 		hostsMtx.Lock()
-		rec, ok = hosts[q.Name]
+		rec, ok = hosts[name]
 		hostsMtx.Unlock()
 	}
 
 	if ok {
 		if rec.rectype == dns.TypeA {
 			m.Answer = append(m.Answer, answerA(q, rec))
+			m.RecursionAvailable = true
 		} else if rec.rectype == dns.TypeCNAME {
 			m.Answer = append(m.Answer, answerCNAME(q, rec))
+			m.RecursionAvailable = true
 		}
 	} else if brightgateDNS != "" {
 		// Proxy needed if we have decided that we are allowing
@@ -669,8 +672,9 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 
 	start := time.Now()
 	q := r.Question[0]
+	name := strings.ToLower(q.Name)
 
-	hostname := q.Name[:len(q.Name)-1]
+	hostname := name[:len(name)-1]
 	if phishingRings[c.Ring] && data.BlockedHostname(hostname) {
 		// XXX: maybe we should return a CNAME record for our
 		// local 'phishing.<siteid>.brightgate.net'?
@@ -688,7 +692,7 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 		}
 	} else if q.Qtype == dns.TypePTR && localAddress(q.Name) {
 		hostsMtx.Lock()
-		rec, ok := hosts[q.Name]
+		rec, ok := hosts[name]
 		hostsMtx.Unlock()
 		if ok && rec.rectype == dns.TypePTR {
 			m.Answer = append(m.Answer, answerPTR(q, rec))
@@ -737,10 +741,12 @@ func dnsDeleteClient(c *cfgapi.ClientInfo) {
 
 // Convert a client's configd info into DNS records
 func dnsUpdateClient(c *cfgapi.ClientInfo) {
-	name := c.DNSName
-	if name == "" {
-		name = c.DHCPName
+	configName := c.DNSName
+	if configName == "" {
+		configName = c.DHCPName
 	}
+	name := strings.ToLower(configName)
+
 	if !network.ValidDNSName(name) || c.IPv4 == nil {
 		return
 	}
@@ -761,7 +767,7 @@ func dnsUpdateClient(c *cfgapi.ClientInfo) {
 		slog.Warnf("Invalid address %v for %s: %v",
 			c.IPv4, name, err)
 	} else {
-		hostname := name + "."
+		hostname := configName + "."
 		slog.Infof("Adding PTR record %s->%s", arpa, hostname)
 		hosts[arpa] = dnsRecord{
 			rectype: dns.TypePTR,
@@ -772,7 +778,7 @@ func dnsUpdateClient(c *cfgapi.ClientInfo) {
 }
 
 func updateOneCname(hostname, canonical string) {
-	hostname = hostname + "." + domainname + "."
+	hostname = strings.ToLower(hostname) + "." + domainname + "."
 	canonical = canonical + "." + domainname + "."
 	slog.Infof("Adding cname %s -> %s", hostname, canonical)
 
@@ -785,7 +791,7 @@ func updateOneCname(hostname, canonical string) {
 }
 
 func deleteOneCname(hostname string) {
-	hostname = hostname + "." + domainname + "."
+	hostname = strings.ToLower(hostname) + "." + domainname + "."
 	slog.Infof("Deleting cname %s", hostname)
 
 	hostsMtx.Lock()
@@ -864,6 +870,7 @@ func initNetwork() {
 	if err != nil {
 		slog.Fatalf("failed to fetch gateway domain: %v", err)
 	}
+	domainname = strings.ToLower(domainname)
 	config.HandleChange(`^@/siteid`, siteIDChange)
 
 	if tmp, _ := config.GetProp("@/network/dnsserver"); tmp != "" {
