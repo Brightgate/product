@@ -426,12 +426,14 @@ func newAppliance(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Secrets file: %s\n", secretsFile)
 		fmt.Printf("-------------------------------------------------------------\n")
 		fmt.Printf("Next, provision %s to the appliance at:\n", secretsFile)
-		fmt.Printf("    /opt/com.brightgate/etc/secret/cloud/cloud.secret.json\n")
+		fmt.Printf("    /data/secret/rpcd/cloud.secret.json\n")
+		fmt.Printf("    /var/spool/secret/rpcd/cloud.secret.json (on Debian)\n")
 	} else {
 		fmt.Printf("-------------------------------------------------------------\n")
 		fmt.Printf("Secrets file couldn't be written: %s\n", ioerr)
 		fmt.Printf("Copy the following to the appliance at:\n")
-		fmt.Printf("    /opt/com.brightgate/etc/secret/cloud/cloud.secret.json\n")
+		fmt.Printf("    /data/secret/rpcd/cloud.secret.json\n")
+		fmt.Printf("    /var/spool/secret/rpcd/cloud.secret.json (on Debian)\n")
 		fmt.Printf("%s\n", jout)
 	}
 

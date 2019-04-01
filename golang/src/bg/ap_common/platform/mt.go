@@ -239,6 +239,7 @@ func init() {
 		DHCPPidfile: mtDHCPPidfile,
 
 		NtpdConfPath:   "/var/etc/chrony.conf",
+		NtpdService:    "chronyd",
 		RestartService: mtRestartService,
 	})
 }

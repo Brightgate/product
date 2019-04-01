@@ -186,6 +186,7 @@ func init() {
 		DHCPPidfile: rpiDHCPPidfile,
 
 		NtpdConfPath:   "/etc/chrony/chrony.conf",
+		NtpdService:    "chrony",
 		RestartService: rpiRestartService,
 	})
 }

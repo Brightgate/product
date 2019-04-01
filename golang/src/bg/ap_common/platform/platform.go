@@ -56,6 +56,7 @@ type Platform struct {
 	DHCPPidfile func(string) string
 
 	NtpdConfPath   string
+	NtpdService    string
 	RestartService func(string) error
 }
 

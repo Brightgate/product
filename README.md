@@ -43,16 +43,15 @@ When dealing with cloud components, `$ROOT` is equivalent to
 
 # Installing Tools
 
-The Wiki has instructions on installing Go, Node.js, and TensorFlow, all of
-which are needed to build.  All the tools should be available for you if you're
-building on one of the cloud VMs, but that will not be the case on your
-Raspberry Pi or other machine you maintain.  Current versions are:
+The Wiki has instructions on installing Go and Node.js, which are needed to
+build.  All the tools should be available for you if you're building on one of
+the cloud VMs, but that will not be the case on your Raspberry Pi or other
+machine you maintain.  Current versions are:
 
   | Software    | Version
   | ----------- | -------
   | Go (golang) | 1.10.8 (any 1.10.x is likely to work)
   | Node.js     | 8.11.2 (any 8.x is likely to work)
-  | TensorFlow  | 1.4.1
 
 # Building Product Software
 
@@ -112,15 +111,9 @@ sync by making one the git upstream of the other).
 
 Our appliances talk to the cloud using a mixture of methods, primarily GRPC.
 At a minimum, request that a cloud secret be provisioned for your
-appliance.  Install that to
-`$ROOT/opt/com.brightgate/etc/secret/cloud/cloud.secret.json` in order
-for your cloud connectivity to work.  See
-`build/gcp-appliance-reg/README.registry.md` for more details.
-
-## TLS Certificates
-
-Our appliances use LetsEncrypt TLS certificates.  Ensure that you have
-correct certificates installed for your appliance in `/etc/letsencrypt`.
+appliance.  Install that to `$APSECRET/rpcd/cloud.secret.json` in order
+for your cloud connectivity to work.  See below for the definition of
+`$APSECRET`, and `build/gcp-appliance-reg/README.registry.md` for more details.
 
 # Appliance paths
 
@@ -129,11 +122,11 @@ hierarchies to organize our files in an LSB-compatible fashion.  On
 OpenWrt-based appliances, we use a shared partition (`/data`) so that we can
 use an "update the inactive partition" approach.
 
-             | Debian             | OpenWrt             | Proto area
+             | Debian                   | OpenWrt             | Proto area
   --------------------------------------------------------------------------
-  | APROOT   | /                  | /                   | $GITROOT/proto.$ARCH/appliance
-  | APDATA   | $APROOT/var        | $APROOT/data        | $APROOT/var
-  | APSECRET | $APROOT/var/secret | $APROOT/data/secret | $APROOT/var/secret
+  | APROOT   | /                        | /                   | $GITROOT/proto.$ARCH/appliance
+  | APDATA   | $APROOT/var/spool        | $APROOT/data        | $APROOT/var/spool
+  | APSECRET | $APROOT/var/spool/secret | $APROOT/data/secret | $APROOT/var/spool/secret
 
 APPACKAGE is equal to $APROOT/opt/com.brightgate on all platforms.
 
@@ -210,7 +203,7 @@ and any other systemd subcommand.  Note that the package postinstall scripts
 automatically start the services, as well as stop `avahi-daemon`, so you don't
 need to do any of that manually as you do when running from the proto area.
 
-The services set up `ap.mcp` to log to `/var/log/mcp.log`.  It will be created
+The services set up `ap.mcp` to log to `$APDATA/mcp.log`.  It will be created
 read-only by root, so you'll either have to use `sudo` to read it, or use
 `chmod` to change its permissions once it's been created.
 

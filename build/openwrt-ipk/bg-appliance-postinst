@@ -55,8 +55,6 @@ copy_preserve /opt/com.brightgate/etc/ap_props.json.bak /data/configd
 
 copy_preserve /opt/etc/machine-id /data/mcp
 
-copy_preserve /opt/com.brightgate/etc/secret/cloud/cloud.secret.json /data/rpcd
-
 if [ "$PKG_ROOT" = "/" ]; then
 	/etc/rc.common /etc/init.d/rsyslog restart
 

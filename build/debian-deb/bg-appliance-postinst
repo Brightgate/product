@@ -54,7 +54,7 @@ if [ "x$1" = "xconfigure" ]; then
 EOF
 
 	copy_preserve $appackage/etc/secret/cloud/cloud.secret.json \
-		$appackage/var/secret/rpcd
+		$appackage/var/spool/secret/rpcd
 
 	copy_preserve $appackage/etc/ap_props.json \
 		$appackage/var/spool/configd

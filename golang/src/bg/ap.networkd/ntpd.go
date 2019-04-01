@@ -78,7 +78,7 @@ func restartNTP() {
 	if err := generateNTPDConf(); err != nil {
 		slog.Errorf("Failed to generate %s: %v\n", plat.NtpdConfPath, err)
 	} else {
-		plat.RestartService("chrony")
+		plat.RestartService(plat.NtpdService)
 	}
 }
 

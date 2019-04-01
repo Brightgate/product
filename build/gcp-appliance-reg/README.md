@@ -91,7 +91,8 @@ Appliance UUID: 0fb7871a-ddcd-418e-88ae-f270a4f9b8a6
   Secrets file: output_secrets/test-appliance.cloud.secret.json
 -------------------------------------------------------------
 Next, provision output_secrets/test-appliance.cloud.secret.json to the appliance at:
-    /opt/com.brightgate/etc/secret/cloud/cloud.secret.json
+    /data/secret/rpcd/cloud.secret.json
+    /var/spool/secret/rpcd/cloud.secret.json (on Debian)
 ```
 
 You can also specify the project, region, and registry name via the environment
@@ -115,7 +116,8 @@ Appliance UUID: 007913c9-b3ce-4e11-9e05-5e9effda9a13
   Secrets file: output_secrets/test-appliance.cloud.secret.json
 -------------------------------------------------------------
 Next, provision output_secrets/test-appliance.cloud.secret.json to the appliance at:
-    /opt/com.brightgate/etc/secret/cloud/cloud.secret.json
+    /data/secret/rpcd/cloud.secret.json
+    /var/spool/secret/rpcd/cloud.secret.json (on Debian)
 stopped sql proxy
 Updated property [core/account].
 Revoked credentials:
@@ -127,9 +129,9 @@ ACTIVE  ACCOUNT
 ```
 
 As directed, copy the `.cloud.secret.json` file to the appliance, and
-name it `/opt/com.brightgate/etc/secret/cloud/cloud.secret.json`.
-`chmod 600 /opt/com.brightgate/etc/secret/cloud/cloud.secret.json`
-is a good practice.
+name it `/data/secret/rpcd/cloud.secret.json` (or in `/var/spool` if running on
+a Raspberry Pi or out of the proto area on x86.  Restricting the permissions
+by running `chmod 600 /data/secret/rpcd/cloud.secret.json` is a good practice.
 
 To confirm that it's working, try:
 
