@@ -430,6 +430,7 @@ APPCONFIGS_debian = \
 	$(APPROOTLIB)/systemd/system/brightgate-appliance.service
 
 APPCONFIGS_openwrt = \
+	$(APPETC)/chronyd-init.sh \
 	$(APPETC)/com-brightgate-profile \
 	$(ROOTETCCRONTABS)/root \
 	$(ROOTETCINITD)/ap.mcp \
@@ -828,6 +829,9 @@ $(APPROOTLIB)/systemd/system/brightgate-appliance.service: build/debian-deb/brig
 	$(INSTALL) -m 0644 $< $@
 
 # OpenWrt-specific appliance files
+$(APPETC)/chronyd-init.sh: build/openwrt-ipk/chronyd-init.sh | $(APPETC)
+	$(INSTALL) -m 0755 $< $@
+
 $(APPETC)/com-brightgate-profile: build/openwrt-ipk/com-brightgate-profile | $(APPETC)
 	$(INSTALL) -m 0644 $< $@
 

@@ -31,8 +31,10 @@ line_add () {
 	fi
 }
 
+BG_ETC=/opt/com.brightgate/etc
+
 # Add our PATH to /root/.profile.
-line_add "/root/.profile" ". /opt/com.brightgate/etc/com-brightgate-profile"
+line_add "/root/.profile" ". $BG_ETC/com-brightgate-profile"
 
 # Add /etc/rsyslog.d to /etc/rsyslog.conf and restart rsyslog.
 line_add "/etc/rsyslog.conf" "\$IncludeConfig /etc/rsyslog.d/" "ActionFileDefaultTemplate"
@@ -47,13 +49,17 @@ copy_preserve () {
 	fi
 }
 
-copy_preserve /opt/com.brightgate/etc/secret/cloud/cloud.secret.json \
+copy_preserve $BG_ETC/secret/cloud/cloud.secret.json \
 	/data/secret/rpcd
 
-copy_preserve /opt/com.brightgate/etc/ap_props.json /data/configd
-copy_preserve /opt/com.brightgate/etc/ap_props.json.bak /data/configd
+copy_preserve $BG_ETC/ap_props.json /data/configd
+copy_preserve $BG_ETC/ap_props.json.bak /data/configd
 
 copy_preserve /opt/etc/machine-id /data/mcp
+
+rm -f "$PKG_ROOT/etc/hotplug.d/iface/20-chrony"
+cp "$BG_ETC/chronyd-init.sh" "$PKG_ROOT/etc/init.d/chronyd"
+chmod 755 "$PKG_ROOT/etc/init.d/chronyd"
 
 if [ "$PKG_ROOT" = "/" ]; then
 	/etc/rc.common /etc/init.d/rsyslog restart
