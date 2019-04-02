@@ -368,7 +368,11 @@ func rebuildUnenrolled(devs []*physDevice, interrupt chan bool) {
 
 		bad := make([]*physDevice, 0)
 		for _, dev := range devs {
-			err := addDevToRingBridge(dev, base_def.RING_UNENROLLED)
+			_, err := net.InterfaceByName(dev.name)
+			if err == nil {
+				err = addDevToRingBridge(dev,
+					base_def.RING_UNENROLLED)
+			}
 			if err != nil {
 				bad = append(bad, dev)
 			}

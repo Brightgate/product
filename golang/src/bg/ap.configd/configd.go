@@ -663,7 +663,7 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 			}
 
 			for _, path := range paths {
-				update := updateDelete(prop)
+				update := updateDelete(path)
 				if path == prop {
 					// If we delete a subtree, we send
 					// notifications for each node in that

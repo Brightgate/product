@@ -53,10 +53,11 @@ var virtualAPs map[string]*cfgapi.VirtualAP
 
 // Used to invoke hostapd, instantiating a virtual AP on a specific device
 type vapConfig struct {
-	idx    int               // per-device VAP index
-	Name   string            // @/network/vap/<name>/*
-	vap    *cfgapi.VirtualAP // device-independent config for this AP
-	device *physDevice       // physical device hosting this virtual AP
+	idx      int               // per-device VAP index
+	Name     string            // @/network/vap/<name>/*
+	vap      *cfgapi.VirtualAP // device-independent config for this AP
+	physical *physDevice       // physical device hosting this virtual AP
+	logical  *physDevice       // logical device hosting this virtual AP
 
 	BSSID      string
 	SSID       string
@@ -125,12 +126,13 @@ type stationInfo struct {
 
 // We have a single hostapd process, which may be managing multiple interfaces
 type hostapdHdl struct {
-	process   *aputil.Child  // the running hostapd child process
-	devices   []*physDevice  // the physical NICs being used
-	vaps      []*vapConfig   // the virtual APs being hosted
-	confFiles []string       // config files passed to the child
-	conns     []*hostapdConn // control sockets
-	done      chan error
+	process    *aputil.Child  // the running hostapd child process
+	devices    []*physDevice  // the physical NICs being used
+	unenrolled []*physDevice  // the logical NICs used for unenrolled clients
+	vaps       []*vapConfig   // the virtual APs being hosted
+	confFiles  []string       // config files passed to the child
+	conns      []*hostapdConn // control sockets
+	done       chan error
 }
 
 func (c *hostapdConn) String() string {
@@ -580,6 +582,7 @@ func getDevConfig(d *physDevice) *devConfig {
 //
 func getVAPConfig(name string, d *physDevice, idx int) *vapConfig {
 	var bssid, eapComment, pskComment, passphrase, radiusServer string
+	var logical *physDevice
 
 	vap := virtualAPs[name]
 	if len(vap.Rings) == 0 {
@@ -620,6 +623,7 @@ func getVAPConfig(name string, d *physDevice, idx int) *vapConfig {
 
 	if idx == 0 {
 		bssid = "bssid=" + d.hwaddr
+		logical = d
 	} else {
 		// If we create multiple SSIDs, hostapd will generate additional
 		// bssids by incrementing the final octet of the nic's mac
@@ -627,13 +631,15 @@ func getVAPConfig(name string, d *physDevice, idx int) *vapConfig {
 		p := initPseudoNic(d, idx)
 		physDevices[getNicID(p)] = p
 		bssid = "bss=" + p.name
+		logical = p
 	}
 	confPrefix := fmt.Sprintf("%s/hostapd.%s.%s", confdir, d.name, name)
 
 	data := vapConfig{
 		Name:       name,
 		idx:        idx,
-		device:     d,
+		physical:   d,
+		logical:    logical,
 		vap:        vap,
 		BSSID:      bssid,
 		SSID:       ssid,
@@ -668,7 +674,7 @@ func generateVlanConf(vap *vapConfig) {
 		if ring.VirtualAP == vap.Name && ring != noVlan {
 			vapRings[name] = ring
 			fmt.Fprintf(vf, "%d %s.%d\n", ring.Vlan,
-				vap.device.name, ring.Vlan)
+				vap.physical.name, ring.Vlan)
 		}
 	}
 	vf.Close()
@@ -695,6 +701,7 @@ func (h *hostapdHdl) generateHostAPDConf() {
 	apfile := *templateDir + "/virtualap.conf.got"
 
 	files := make([]string, 0)
+	unenrolled := make([]*physDevice, 0)
 	devices := make([]*physDevice, 0)
 	allVaps := make([]*vapConfig, 0)
 
@@ -716,6 +723,7 @@ func (h *hostapdHdl) generateHostAPDConf() {
 		slog.Errorf("Unable to parse %s: %v", apfile, err)
 		return
 	}
+	unenrolledVap := rings[base_def.RING_UNENROLLED].VirtualAP
 	for _, d := range h.devices {
 		confName := confdir + "/" + "hostapd.conf." + d.name
 		cf, _ := os.Create(confName)
@@ -743,6 +751,10 @@ func (h *hostapdHdl) generateHostAPDConf() {
 				} else {
 					slog.Warnf("%v", err)
 				}
+				if name == unenrolledVap {
+					unenrolled = append(unenrolled,
+						vap.logical)
+				}
 			}
 		}
 
@@ -754,6 +766,7 @@ func (h *hostapdHdl) generateHostAPDConf() {
 
 	h.vaps = allVaps
 	h.devices = devices
+	h.unenrolled = unenrolled
 	h.confFiles = files
 }
 
@@ -767,7 +780,7 @@ func (h *hostapdHdl) newConn(vap *vapConfig) *hostapdConn {
 	// There are two endpoints for each control socket.  The remoteName is
 	// owned by hostapd, and we need to use the name that it expects.  The
 	// localName is owned by us, and the format is chosen by us.
-	fullName := vap.device.name
+	fullName := vap.physical.name
 	if vap.idx != 0 {
 		fullName += "_" + strconv.Itoa(vap.idx)
 	}
@@ -781,9 +794,9 @@ func (h *hostapdHdl) newConn(vap *vapConfig) *hostapdConn {
 		remoteName:  remoteName,
 		localName:   localName,
 		vapName:     vap.Name,
-		wifiBand:    vap.device.wifi.activeBand,
+		wifiBand:    vap.physical.wifi.activeBand,
 		active:      true,
-		device:      vap.device,
+		device:      vap.physical,
 		pendingCmds: make([]*hostapdCmd, 0),
 		retransmits: make(map[string]*retransmitState),
 		stations:    make(map[string]*stationInfo),
@@ -808,7 +821,7 @@ func (h *hostapdHdl) start() {
 	}
 
 	stopNetworkRebuild := make(chan bool, 1)
-	go rebuildUnenrolled(h.devices, stopNetworkRebuild)
+	go rebuildUnenrolled(h.unenrolled, stopNetworkRebuild)
 
 	h.process = aputil.NewChild(plat.HostapdCmd, h.confFiles...)
 	h.process.UseZapLog("hostapd: ", slog, zapcore.InfoLevel)

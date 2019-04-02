@@ -127,7 +127,7 @@ func clientDeleteEvent(path []string) {
 			dnsDeleteClient(client)
 			delete(clients, mac)
 		}
-	} else if len(path) == 3 {
+	} else if len(path) == 3 && client != nil {
 		if path[2] == "dns_name" {
 			dnsDeleteClient(client)
 			client.DNSName = ""
