@@ -64,6 +64,8 @@ $ make test
 $ make coverage
 $ make check-go   # runs vet-go, lint-go, fmt-go
 $ make packages
+$ make doc
+$ make doc-check
 
 $ make clean
 $ make clobber

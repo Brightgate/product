@@ -71,8 +71,11 @@ pipeline {
         }
         stage('doc') {
             steps {
+                sh 'make doc-check'
                 sh 'make doc'
-                archiveArtifacts 'doc/*.pdf'
+                // Incremental 'make doc' after above should do nothing
+                sh 'make -q doc'
+                archiveArtifacts 'doc/output/*.pdf'
             }
         }
     }

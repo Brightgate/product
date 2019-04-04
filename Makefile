@@ -240,6 +240,8 @@ BUILDTOOLS = \
 	libzmq3-dev \
 	libpcap-dev \
 	lintian \
+	pngquant \
+	tidy \
 	python3 \
 	python3-pip \
 	mercurial
@@ -1021,7 +1023,7 @@ clobber: clean packages-clobber godeps-clobber gotools-clobber doc-clobber
 packages-clobber:
 	$(RM) -fr bg-appliance_*.*.*-*_* bg-cloud_*.*.*-*_*
 
-clean:
+clean: doc-clean
 	$(RM) -f \
 		base/base_def.py \
 		base/base_msg_pb2.py \
@@ -1029,7 +1031,6 @@ clean:
 		$(GENERATED_GO_FILES) \
 		$(APPBINARIES) \
 		$(CLOUDBINARIES) \
-		$(DOC_OUTPUTS) \
 		$(GO_MOCK_SRCS)
 	$(RM) -fr $(COVERAGE_DIR)
 	find $(GOSRCBG)/ap_common -name \*.pem | xargs --no-run-if-empty $(RM) -f

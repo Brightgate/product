@@ -13,26 +13,90 @@
 
 AWK = awk
 SED = sed
+JAVA = java
+TIDY = tidy
 WEASYPRINT = $(VENV_NAME)/bin/weasyprint
+W3C_VALIDATOR_JAR = /opt/net.b10e/w3c-validator/18.11.5/vnu.jar
+
+DOC_SRC_DIR = doc/src
+DOC_SRC_IMGS_DIR = $(DOC_SRC_DIR)/images
+
+# Intermediate directory where build products are produced
+DOC_BLD_DIR = doc/build
+DOC_BLD_IMGS_DIR = $(DOC_BLD_DIR)/images
+
+# Output, final results of build
+DOC_OUTPUT_DIR = doc/output
 
 DOC_SRCS = \
-	doc/end_customer_guide.html
+	$(DOC_SRC_DIR)/end_customer_guide.html
+
+# If we move to an images hierarchy, this will need updating, either
+# to list more directories, or to use find
+DOC_IMG_PNG_SRCS = $(wildcard $(DOC_SRC_IMGS_DIR)/*.png)
+DOC_IMG_MISC_SRCS = $(filter-out *.png,$(wildcard $(DOC_SRC_IMGS_DIR)/*))
+
+DOC_BLD_IMGS = \
+	$(DOC_IMG_PNG_SRCS:$(DOC_SRC_IMGS_DIR)/%=$(DOC_BLD_IMGS_DIR)/%) \
+	$(DOC_IMG_MISC_SRCS:$(DOC_SRC_IMGS_DIR)/%=$(DOC_BLD_IMGS_DIR)/%)
+
+DOC_BLD_KEEP = \
+	$(DOC_SRCS:$(DOC_SRC_DIR)/%.html=$(DOC_BLD_DIR)/%-body.html) \
+	$(DOC_BLD_IMGS)
 
 DOC_OUTPUTS = \
-	$(DOC_SRCS:doc/%.html=doc/%-body.html) \
-	$(DOC_SRCS:doc/%.html=doc/%-print.html) \
-	$(DOC_SRCS:doc/%.html=doc/%-print.pdf)
+	$(DOC_SRCS:$(DOC_SRC_DIR)/%.html=$(DOC_OUTPUT_DIR)/%.pdf) \
+	$(DOC_BLD_KEEP)
 
 doc: $(DOC_OUTPUTS)
 
+doc-check:
+	$(JAVA) -jar $(W3C_VALIDATOR_JAR) --Werror $(DOC_SRCS)
+	$(TIDY) -q $(DOC_SRCS) > /dev/null
+
+doc-clean:
+	$(RM) -fr $(DOC_BLD_DIR)
+
 doc-clobber:
-	$(RM) -f doc/*-body.html doc/*-print.html doc/*-print.pdf
+	$(RM) -fr $(DOC_OUTPUT_DIR) $(DOC_BLD_DIR)
 
-doc/%.pdf: doc/%.html | $(VENV_NAME)
-	$(PYTHON3) $(WEASYPRINT) $< $@
+$(DOC_BLD_DIR):
+	mkdir -p $@
 
-doc/%-body.html: doc/%.html
+$(DOC_BLD_IMGS_DIR):
+	mkdir -p $@
+
+$(DOC_OUTPUT_DIR):
+	mkdir -p $@
+
+# Move PDF files from build to output
+$(DOC_OUTPUT_DIR)/%.pdf: $(DOC_BLD_DIR)/%.pdf | $(DOC_OUTPUT_DIR)
+	install -m 0644 $< $@
+
+# Run weasyprint on htmls corresponding to output pdfs
+$(DOC_BLD_DIR)/%.pdf: $(DOC_BLD_DIR)/%.html $(DOC_BLD_DIR)/%.css $(DOC_BLD_IMGS) | $(DOC_BLD_DIR) $(VENV_NAME)
+	$(PYTHON3) $(WEASYPRINT) -s $(@:.pdf=.css) $< $@
+
+# Move any depended upon html files into the build dir
+$(DOC_BLD_DIR)/%.html: $(DOC_SRC_DIR)/%.html
+	$(INSTALL) -m 0644 $< $@
+
+# Move any depended upon css files into the build dir
+$(DOC_BLD_DIR)/%.css: $(DOC_SRC_DIR)/%.css
+	$(INSTALL) -m 0644 $< $@
+
+# Create -body.html files, which are inner portions of source HTML files
+$(DOC_BLD_DIR)/%-body.html: $(DOC_SRC_DIR)/%.html | $(DOC_BLD_DIR)
 	$(AWK) -e '/BRIGHTGATE CONTENT END/ {p=0}; p; /BRIGHTGATE CONTENT START/ {p=1}' $< > $@
 
-doc/%-print.html: doc/%.html
-	$(SED) -e 's/!-- BRIGHTGATE HEAD INSERTION POINT --/link rel="stylesheet" href="end_customer_guide.css"/' $< > $@
+# Move images from source to build; this is the generic rule; the png rule below
+# is more specific, and overrides this one where applicable
+$(DOC_BLD_IMGS_DIR)/%: $(DOC_SRC_IMGS_DIR)/% | $(DOC_BLD_IMGS_DIR)
+	$(INSTALL) -m 0644 $< $@
+
+# Move pngs from source to build, using pngquant to smoosh them as we go;
+# ignore innocuous exit code 99
+$(DOC_BLD_IMGS_DIR)/%.png: $(DOC_SRC_IMGS_DIR)/%.png | $(DOC_BLD_IMGS_DIR)
+	$(RM) -f $@
+	pngquant --quality 99-100 --speed 1 - < $< > $@; \
+		x=$$?; if [ $$x -eq 99 ]; then x=0; fi; exit $$x

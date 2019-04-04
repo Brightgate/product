@@ -52,7 +52,7 @@ const debug = Debug('page:help');
 // router (ex: /help/end_customer_guide/)
 
 // eslint-disable-next-line import/no-commonjs
-const endCustomerGuideURL = require('../../../doc/end_customer_guide-body.html');
+const endCustomerGuideURL = require('../../../doc/build/end_customer_guide-body.html');
 const helpTopics = {
   'end_customer_guide': {
     url: endCustomerGuideURL,
