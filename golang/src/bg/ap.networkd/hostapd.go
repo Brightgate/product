@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -913,25 +913,32 @@ func startHostapd(devs []*physDevice) *hostapdHdl {
 	return h
 }
 
+func getWifiDevices(active []*physDevice) []*physDevice {
+	warned := false
+	for {
+		active = selectWifiDevices(active)
+		if len(active) > 0 || !running {
+			return active
+		}
+
+		if !warned {
+			slog.Warnf("no wireless devices available")
+			warned = true
+		}
+		time.Sleep(time.Second)
+	}
+}
+
 func hostapdLoop() {
 	var active []*physDevice
 
 	startTimes := make([]time.Time, failuresAllowed)
-	warned := false
 	virtualAPs = config.GetVirtualAPs()
 	for running {
 		active = selectWifiDevices(active)
-		if len(active) == 0 {
-			if !warned {
-				slog.Warnf("no wireless devices available")
-				warned = true
-			}
-			if running {
-				time.Sleep(time.Second)
-			}
-			continue
+		if !running {
+			break
 		}
-		warned = false
 
 		startTimes = append(startTimes[1:failuresAllowed],
 			time.Now())
@@ -943,6 +950,9 @@ func hostapdLoop() {
 			wifiEvaluate = true
 		}
 		hostapd = nil
+		if !running {
+			break
+		}
 
 		if time.Since(startTimes[0]) < period {
 			slog.Warnf("hostapd is dying too quickly")

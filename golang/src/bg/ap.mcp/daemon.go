@@ -37,15 +37,16 @@ const (
 )
 
 type daemon struct {
-	Name       string
-	Binary     string
-	Modes      []string `json:"Modes,omitempty"`
-	Options    []string `json:"Options,omitempty"`
-	DependsOn  *string  `json:"DependsOn,omitempty"`
-	ThirdParty bool     `json:"ThirdParty,omitempty"`
-	MemWarn    uint64   `json:"MemWarn,omitempty"`
-	MemKill    uint64   `json:"MemKill,omitempty"`
-	Privileged bool
+	Name        string
+	Binary      string
+	Modes       []string `json:"Modes,omitempty"`
+	Options     []string `json:"Options,omitempty"`
+	DependsOn   *string  `json:"DependsOn,omitempty"`
+	ThirdParty  bool     `json:"ThirdParty,omitempty"`
+	MemWarn     uint64   `json:"MemWarn,omitempty"`
+	MemKill     uint64   `json:"MemKill,omitempty"`
+	SoftTimeout uint64   `json:"SoftTimeout,omitempty"`
+	Privileged  bool
 
 	execpath     string
 	args         []string
@@ -80,6 +81,8 @@ var (
 		// contents of the daemons within the maps.
 		sync.Mutex
 	}
+
+	self *daemon
 )
 
 func (d *daemon) offline() bool {
@@ -150,11 +153,16 @@ func (d *daemon) start() {
 		out = logfile
 	}
 
+	os.Setenv("APMODE", nodeMode)
 	child := aputil.NewChild(d.execpath, d.args...)
 	child.UseStdLog("", 0, out)
 
 	if !d.Privileged {
 		child.SetUID(nobodyUID, nobodyUID)
+	}
+	if d.SoftTimeout != 0 {
+		ms := time.Duration(d.SoftTimeout) * time.Millisecond
+		child.SetSoftTimeout(ms)
 	}
 
 	// Put each daemon into its own process group
@@ -379,7 +387,6 @@ func loadDefinitions() error {
 			fn, err)
 	}
 
-	nodeMode := aputil.GetNodeMode()
 	for _, def := range set {
 		for _, mode := range def.Modes {
 			if mode == nodeMode {
@@ -443,18 +450,22 @@ func resourceLoop() {
 	}
 }
 
-func daemonInit() *daemon {
+func daemonReinit() {
 	daemons.local = make(daemonSet)
 	daemons.remote = make(map[string]remoteState)
 
 	if err := loadDefinitions(); err != nil {
 		log.Fatalf("Failed to load daemon config: %v", err)
 	}
+}
+
+func daemonInit() {
+	daemonReinit()
 
 	process, _ := os.FindProcess(os.Getpid())
 	binary, _ := os.Executable()
 
-	self := &daemon{
+	self = &daemon{
 		Name:    pname,
 		Binary:  binary,
 		state:   mcp.ONLINE,
@@ -462,11 +473,10 @@ func daemonInit() *daemon {
 		child: &aputil.Child{
 			Process: process,
 		},
-		MemWarn: 20,
-		MemKill: 25,
+		MemWarn:     20,
+		MemKill:     25,
+		SoftTimeout: 100,
 	}
 
 	go resourceLoop()
-
-	return self
 }

@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"bg/ap_common/aputil"
 )
@@ -105,7 +106,7 @@ func killSet(binaries []string) {
 
 		kill := func(sig syscall.Signal) error { return p.Signal(sig) }
 		alive := func() bool { return isAlive(pid) }
-		aputil.RetryKill(kill, alive)
+		aputil.RetryKill(kill, alive, time.Second)
 	}
 }
 

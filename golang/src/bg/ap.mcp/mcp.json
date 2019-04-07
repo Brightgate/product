@@ -59,7 +59,8 @@
         "Privileged": true,
         "Modes": [ "core", "gateway", "satellite" ],
         "MemWarn": 25,
-        "MemKill": 30
+        "MemKill": 30,
+        "SoftTimeout": 5000
     },
     "prometheus": {
         "Name": "prometheus",
@@ -100,6 +101,7 @@
         "Privileged": true,
         "Modes": [ "gateway" ],
         "MemWarn": 75,
-        "MemKill": 90
+        "MemKill": 90,
+        "SoftTimeout": 3000
     }
 }

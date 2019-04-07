@@ -62,7 +62,8 @@ func mtSetNodeID(file, uuidStr string) error {
 }
 
 func mtNicIsVirtual(nic string) bool {
-	return strings.HasPrefix(nic, "lan") && strings.Contains(nic, ".")
+	return (strings.HasPrefix(nic, "lan") || strings.HasPrefix(nic, "wan")) &&
+		strings.Contains(nic, ".")
 }
 
 func mtNicIsWireless(nic string) bool {

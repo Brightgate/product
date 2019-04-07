@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -445,10 +445,12 @@ func addVif(nic string, vlan int, bridge string) {
 }
 
 func deleteVif(vif string) {
+	slog.Debugf("deleting nic %s", vif)
 	exec.Command(plat.IPCmd, "link", "del", vif).Run()
 }
 
 func deleteBridge(bridge string) {
+	slog.Debugf("deleting bridge %s", bridge)
 	exec.Command(plat.IPCmd, "link", "set", "down", bridge).Run()
 	exec.Command(plat.BrctlCmd, "delbr", bridge).Run()
 }
@@ -715,6 +717,7 @@ func getDevices() {
 		slog.Fatalf("Unable to inventory network devices: %v", err)
 	}
 
+	macs := make(map[string]*physDevice)
 	for _, i := range all {
 		var d *physDevice
 
@@ -726,8 +729,15 @@ func getDevices() {
 		} else if plat.NicIsWireless(i.Name) {
 			d = getWireless(i)
 		}
+
 		if d != nil {
-			physDevices[getNicID(d)] = d
+			if old := macs[d.hwaddr]; old != nil {
+				slog.Warn("skipping %s - "+
+					"mac address %s collides with %s",
+					d.name, d.hwaddr, old.name)
+			} else {
+				physDevices[getNicID(d)] = d
+			}
 		}
 	}
 
@@ -865,16 +875,25 @@ func daemonInit() error {
 
 func networkCleanup() {
 	devs, _ := ioutil.ReadDir("/sys/devices/virtual/net")
+	slog.Debugf("deleting virtual NICs")
+	for _, dev := range devs {
+		name := dev.Name()
+
+		if plat.NicIsVirtual(name) {
+			deleteVif(name)
+		}
+	}
+
+	slog.Debugf("deleting bridges")
 	for _, dev := range devs {
 		name := dev.Name()
 
 		if strings.HasPrefix(name, "b") {
 			deleteBridge(name)
 		}
-		if plat.NicIsVirtual(name) {
-			deleteVif(name)
-		}
 	}
+
+	wan.dhcpRenew()
 }
 
 // When we get a signal, set the 'running' flag to false and signal any hostapd

@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -14,6 +14,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -85,11 +86,15 @@ func GetLease(iface string) (*Info, error) {
 	plat := platform.NewPlatform()
 
 	data, err := plat.GetDHCPInfo(iface)
-	if err != nil {
+	if data == nil {
 		return nil, err
 	}
 
 	addr := data["ip_address"]
+	if net.ParseIP(addr) == nil {
+		return nil, nil
+	}
+
 	if bits, ok := data["subnet_cidr"]; ok {
 		addr += "/" + bits
 	}

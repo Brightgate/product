@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -1126,7 +1126,7 @@ func scannerFini(w *watcher) {
 	}
 	alive := func() bool { return len(childProcesses) > 0 }
 
-	aputil.RetryKill(kill, alive)
+	aputil.RetryKill(kill, alive, 100*time.Millisecond)
 
 	slog.Infof("Shutting down scanner")
 	w.running = false

@@ -49,10 +49,10 @@ var (
 
 	logfile *os.File
 
-	self *daemon
 	plat *platform.Platform
 
 	nodeName string
+	nodeMode string
 )
 
 func reboot(from string) {
@@ -90,6 +90,10 @@ func logInfo(format string, v ...interface{}) {
 
 func logWarn(format string, v ...interface{}) {
 	logMsg("WARN", fmt.Sprintf(format, v...))
+}
+
+func logPanic(format string, v ...interface{}) {
+	panic(fmt.Sprintf(format, v...))
 }
 
 func logDebug(format string, v ...interface{}) {
@@ -181,12 +185,7 @@ func setEnvironment() {
 		logInfo("aproot not set - using '%s'", *aproot)
 	}
 	os.Setenv("APROOT", *aproot)
-
-	if *apmode == "" {
-		*apmode = aputil.GetNodeMode()
-	}
-	os.Setenv("APMODE", *apmode)
-	if aputil.IsSatelliteMode() {
+	if nodeMode == base_def.MODE_SATELLITE {
 		nodeName, _ = plat.GetNodeID()
 	} else {
 		nodeName = "gateway"
@@ -250,9 +249,11 @@ func pidLock() error {
 	return err
 }
 
-func profile() {
-	err := http.ListenAndServe(base_def.MCP_DIAG_PORT, nil)
-	logWarn("Profiler exited: %v", err)
+func profileInit() {
+	go func() {
+		err := http.ListenAndServe(base_def.MCP_DIAG_PORT, nil)
+		logWarn("Profiler exited: %v", err)
+	}()
 }
 
 // Shutdown all of the running daemons, and then exit
@@ -268,6 +269,8 @@ func shutdown(rval int) {
 }
 
 func main() {
+	var initMode string
+
 	flag.Parse()
 	log.SetFlags(log.Ldate | log.Ltime)
 
@@ -282,20 +285,37 @@ func main() {
 	}
 	defer os.Remove(pidfile)
 
-	setEnvironment()
-	self = daemonInit()
-
 	logInfo("ap.mcp (%d) coming online...", os.Getpid())
 
-	orphanCleanup()
-
-	go profile()
-
-	if aputil.IsSatelliteMode() {
-		go satelliteLoop()
+	if *apmode != "" {
+		initMode = *apmode
+	} else {
+		initMode = aputil.GetNodeMode()
+	}
+	switch initMode {
+	case "":
+		nodeMode = base_def.MODE_GATEWAY
+		logInfo("Can't determine mode.  Defaulting to %s.", nodeMode)
+	case base_def.MODE_GATEWAY:
+		nodeMode = initMode
+	case base_def.MODE_SATELLITE:
+		nodeMode = initMode
+	default:
+		logPanic("Unrecognized node mode: %s", initMode)
 	}
 
+	setEnvironment()
 	apiInit()
+	profileInit()
+	daemonInit()
+	orphanCleanup()
+
+	switch initMode {
+	case base_def.MODE_SATELLITE:
+		go satelliteLoop()
+	case "":
+		go modeMonitor()
+	}
 
 	logInfo("MCP online")
 	signalHandler()

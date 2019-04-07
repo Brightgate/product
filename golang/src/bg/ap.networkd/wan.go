@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -292,6 +292,12 @@ func dhcpOp(prop, val string) cfgapi.PropertyOp {
 		Op:    cfgapi.PropCreate,
 		Name:  "@/network/wan/dhcp/" + prop,
 		Value: val,
+	}
+}
+
+func (w *wanInfo) dhcpRenew() {
+	if w != nil && w.staticAddr == "" {
+		dhcp.RenewLease(wan.nic)
 	}
 }
 
