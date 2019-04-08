@@ -285,6 +285,14 @@ func testApplianceID(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	// Test null site sentinel
 	err = ds.InsertApplianceID(ctx, &testIDN)
 	assert.NoError(err)
+
+	chg := testIDN
+	chg.SiteUUID = testSite1.UUID
+	err = ds.UpdateApplianceID(ctx, &chg)
+
+	idn, err := ds.ApplianceIDByUUID(ctx, testIDN.ApplianceUUID)
+	assert.NoError(err)
+	assert.Equal(chg, *idn)
 }
 
 // Test operations related to appliance public keys.  subtest of TestDatabaseModel
@@ -339,6 +347,14 @@ func testOrganization(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 	org, err = ds.OrganizationByUUID(ctx, testOrg1.UUID)
 	assert.NoError(err, "expected success")
 	assert.Equal(testOrg1, *org)
+
+	chg := testOrg1
+	chg.Name = "foobarbaz"
+	err = ds.UpdateOrganization(ctx, &chg)
+
+	org, err = ds.OrganizationByUUID(ctx, testOrg1.UUID)
+	assert.NoError(err, "expected success")
+	assert.Equal(chg, *org)
 }
 
 // Test insert of customer site data.  subtest of TestDatabaseModel
@@ -380,6 +396,14 @@ func testCustomerSite(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 	sites, err = ds.CustomerSitesByOrganization(ctx, uuid.NewV4())
 	assert.Len(sites, 0)
 	assert.NoError(err)
+
+	chg := testSite1
+	chg.Name = "foobarbaz"
+	err = ds.UpdateCustomerSite(ctx, &chg)
+
+	schg, err := ds.CustomerSiteByUUID(ctx, chg.UUID)
+	assert.NoError(err, "expected success")
+	assert.Equal(chg, *schg)
 }
 
 // Test OAuth2OrganizationRule APIs.  subtest of TestDatabaseModel

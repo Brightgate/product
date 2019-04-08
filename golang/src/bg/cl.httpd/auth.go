@@ -244,6 +244,15 @@ func splitEmail(email string) (string, string, error) {
 	return split[0], split[1], nil
 }
 
+func getUserGoogleHD(user *goth.User) string {
+	// hd (hosted domain) is basically google's tenant ID
+	hdParam, ok := user.RawData["hd"].(string)
+	if ok && hdParam != "" {
+		return hdParam
+	}
+	return ""
+}
+
 // findOrganization does three tests against the incoming user, looking
 // at the OAuth2Organization Rules.
 //
@@ -261,10 +270,7 @@ func (a *authHandler) findOrganization(ctx context.Context, c echo.Context,
 	// First see if we can look the user up by tenant ID
 	if user.Provider == "google" {
 		// hd (hosted domain) is basically google's tenant ID
-		hdParam, ok := user.RawData["hd"].(string)
-		if ok && hdParam != "" {
-			tenant = hdParam
-		}
+		tenant = getUserGoogleHD(&user)
 	}
 
 	if tenant != "" {
@@ -350,6 +356,7 @@ func (a *authHandler) mkNewUser(c echo.Context, user goth.User) (*appliancedb.Lo
 
 	orgUUID, err := a.findOrganization(ctx, c, user)
 	if err != nil {
+		c.Logger().Warnf("identity -> organization mapping failed: Provider=%s Email=%s HD=%s", user.Provider, user.Email, getUserGoogleHD(&user))
 		return nil, fmt.Errorf("identity '%s' (via %s) is not affiliated with a recognized customer; or %s is not registered as a login provider for your organization",
 			user.Email, user.Provider, user.Provider)
 	}

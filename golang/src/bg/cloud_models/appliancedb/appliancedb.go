@@ -40,18 +40,22 @@ type DBX interface {
 type DataStore interface {
 	LoadSchema(context.Context, string) error
 
-	InsertCustomerSite(context.Context, *CustomerSite) error
-	InsertCustomerSiteTx(context.Context, DBX, *CustomerSite) error
 	AllCustomerSites(context.Context) ([]CustomerSite, error)
 	CustomerSiteByUUID(context.Context, uuid.UUID) (*CustomerSite, error)
-	CustomerSitesByOrganization(context.Context, uuid.UUID) ([]CustomerSite, error)
 	CustomerSitesByAccount(context.Context, uuid.UUID) ([]CustomerSite, error)
+	CustomerSitesByOrganization(context.Context, uuid.UUID) ([]CustomerSite, error)
+	InsertCustomerSite(context.Context, *CustomerSite) error
+	InsertCustomerSiteTx(context.Context, DBX, *CustomerSite) error
+	UpdateCustomerSite(context.Context, *CustomerSite) error
+	UpdateCustomerSiteTx(context.Context, DBX, *CustomerSite) error
 
 	AllApplianceIDs(context.Context) ([]ApplianceID, error)
 	ApplianceIDByClientID(context.Context, string) (*ApplianceID, error)
 	ApplianceIDByUUID(context.Context, uuid.UUID) (*ApplianceID, error)
 	InsertApplianceID(context.Context, *ApplianceID) error
 	InsertApplianceIDTx(context.Context, DBX, *ApplianceID) error
+	UpdateApplianceID(context.Context, *ApplianceID) error
+	UpdateApplianceIDTx(context.Context, DBX, *ApplianceID) error
 
 	InsertApplianceKeyTx(context.Context, DBX, uuid.UUID, *AppliancePubKey) error
 	KeysByUUID(context.Context, uuid.UUID) ([]AppliancePubKey, error)
@@ -68,6 +72,8 @@ type DataStore interface {
 	OrganizationByUUID(context.Context, uuid.UUID) (*Organization, error)
 	InsertOrganization(context.Context, *Organization) error
 	InsertOrganizationTx(context.Context, DBX, *Organization) error
+	UpdateOrganization(context.Context, *Organization) error
+	UpdateOrganizationTx(context.Context, DBX, *Organization) error
 
 	AllOAuth2OrganizationRules(context.Context) ([]OAuth2OrganizationRule, error)
 	OAuth2OrganizationRuleTest(context.Context, string, OAuth2OrgRuleType, string) (*OAuth2OrganizationRule, error)
@@ -263,6 +269,29 @@ func (db *ApplianceDB) InsertCustomerSiteTx(ctx context.Context, dbx DBX,
 	return err
 }
 
+// UpdateCustomerSite updates a record into the customer_site table.
+func (db *ApplianceDB) UpdateCustomerSite(ctx context.Context,
+	cs *CustomerSite) error {
+	return db.UpdateCustomerSiteTx(ctx, nil, cs)
+}
+
+// UpdateCustomerSiteTx updates a record into the customer_site table,
+// possibly inside a transaction.
+func (db *ApplianceDB) UpdateCustomerSiteTx(ctx context.Context, dbx DBX,
+	cs *CustomerSite) error {
+
+	if dbx == nil {
+		dbx = db
+	}
+	_, err := dbx.NamedExecContext(ctx,
+		`UPDATE customer_site
+		 SET
+		   name=:name,
+		   organization_uuid=:organization_uuid
+		 WHERE uuid=:uuid`, cs)
+	return err
+}
+
 // AllCustomerSites returns a complete list of the Customer Sites in the
 // database
 func (db *ApplianceDB) AllCustomerSites(ctx context.Context) ([]CustomerSite, error) {
@@ -416,6 +445,29 @@ func (db *ApplianceDB) InsertApplianceIDTx(ctx context.Context, dbx DBX,
 		id.GCPRegion,
 		id.ApplianceReg,
 		id.ApplianceRegID)
+	return err
+}
+
+// UpdateApplianceID inserts an ApplianceID.
+func (db *ApplianceDB) UpdateApplianceID(ctx context.Context,
+	id *ApplianceID) error {
+	return db.UpdateApplianceIDTx(ctx, nil, id)
+}
+
+// UpdateApplianceIDTx updates an ApplianceID, possibly inside a transaction.
+// Note that only the Site ID is expected to be updated after creation,
+// so that is all that is supported here.
+func (db *ApplianceDB) UpdateApplianceIDTx(ctx context.Context, dbx DBX,
+	id *ApplianceID) error {
+
+	if dbx == nil {
+		dbx = db
+	}
+	_, err := dbx.NamedExecContext(ctx,
+		`UPDATE appliance_id_map
+		 SET
+		   site_uuid=:site_uuid
+		 WHERE appliance_uuid=:appliance_uuid`, id)
 	return err
 }
 
@@ -615,6 +667,24 @@ func (db *ApplianceDB) InsertOrganizationTx(ctx context.Context, dbx DBX,
 	}
 	_, err := dbx.NamedExecContext(ctx,
 		`INSERT INTO organization (uuid, name) VALUES (:uuid,:name)`, org)
+	return err
+}
+
+// UpdateOrganization updates an Organization.
+func (db *ApplianceDB) UpdateOrganization(ctx context.Context,
+	org *Organization) error {
+	return db.UpdateOrganizationTx(ctx, nil, org)
+}
+
+// UpdateOrganizationTx updates an Organization, possibly inside a transaction.
+func (db *ApplianceDB) UpdateOrganizationTx(ctx context.Context, dbx DBX,
+	org *Organization) error {
+
+	if dbx == nil {
+		dbx = db
+	}
+	_, err := dbx.NamedExecContext(ctx,
+		`UPDATE organization SET name=:name WHERE uuid=:uuid`, org)
 	return err
 }
 

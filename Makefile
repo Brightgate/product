@@ -331,6 +331,7 @@ COMMON_GOPKGS = \
 	bg/common/configctl \
 	bg/common/deviceid \
 	bg/common/grpcutils \
+	bg/common/mfg \
 	bg/common/network \
 	bg/common/passwordgen \
 	bg/common/ssh \
@@ -553,6 +554,7 @@ GO_CLOUD_TESTABLES = \
 	bg/cl_common/daemonutils \
 	bg/cloud_models/appliancedb \
 	bg/cloud_models/sessiondb \
+	bg/common/mfg \
 	bg/cl-cert \
 	bg/cl.httpd \
 	bg/cl.rpcd

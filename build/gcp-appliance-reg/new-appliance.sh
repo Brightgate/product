@@ -16,7 +16,7 @@ OUTPUT_DIR="$pdir/output_secrets"
 
 function usage() {
 	cat <<-EOF
-		usage: $0 [-u <appliance-uuid>] [-s <site-uuid>] -c <credentials-file> <appliance-id>
+		usage: $0 [-u <appliance-uuid>] [-s <site-uuid>] [-m <mac-addr>] -c <credentials-file> -h <hw-serial> <appliance-id>
 		Must also set environment variables (or source from reg file):
 		    REG_PROJECT_ID=<name of gcp project>
 		    REG_REGION_ID=<name of gcp region>
@@ -27,7 +27,7 @@ function usage() {
 	exit 2
 }
 
-while getopts c:s:u: FLAG; do
+while getopts c:h:m:s:u: FLAG; do
 	case $FLAG in
 		c)
 			CRED_FILE=$OPTARG
@@ -38,6 +38,12 @@ while getopts c:s:u: FLAG; do
 		u)
 			APPLIANCE_UUID=$OPTARG
 			;;
+		h)
+			HW_SERIAL=$OPTARG
+			;;
+		m)
+			MAC_ADDR=$OPTARG
+			;;
 		*)
 			usage
 			;;
@@ -47,7 +53,7 @@ shift $((OPTIND-1))
 
 APPLIANCE_ID=$1
 
-if [[ -z $CRED_FILE || ! -f $CRED_FILE || -z $APPLIANCE_ID || -z $REG_PROJECT_ID || -z $REG_REGION_ID || -z $REG_REGISTRY_ID || -z $REG_CLOUDSQL_INSTANCE || -z $REG_DBURI ]]; then
+if [[ -z $CRED_FILE || ! -f $CRED_FILE || -z $APPLIANCE_ID || -z $REG_PROJECT_ID || -z $REG_REGION_ID || -z $REG_REGISTRY_ID || -z $HW_SERIAL || -z $REG_CLOUDSQL_INSTANCE || -z $REG_DBURI ]]; then
 	usage
 fi
 
@@ -70,4 +76,10 @@ SVC_ACCT=$(gcloud auth list --filter=status:ACTIVE --format="value(account)")
 start_cloudsql_proxy "$CRED_FILE" "${REG_PROJECT_ID}:${REG_REGION_ID}:${REG_CLOUDSQL_INSTANCE}"
 
 CL_REG=$(git rev-parse --show-toplevel)/proto.$(uname -m)/cloud/opt/net.b10e/bin/cl-reg
-$CL_REG app new ${APPLIANCE_UUID:+-u $APPLIANCE_UUID} ${SITE_UUID:+-s $SITE_UUID} -d "$OUTPUT_DIR" "$APPLIANCE_ID"
+$CL_REG app new \
+	${APPLIANCE_UUID:+--uuid $APPLIANCE_UUID} \
+	${SITE_UUID:+--site-uuid $SITE_UUID} \
+	${HW_SERIAL:+--hw-serial $HW_SERIAL} \
+	${MAC_ADDR:+--mac-address $MAC_ADDR} \
+	-d "$OUTPUT_DIR" \
+	"$APPLIANCE_ID"

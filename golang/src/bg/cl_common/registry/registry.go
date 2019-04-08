@@ -19,13 +19,16 @@ import (
 	"encoding/pem"
 	"math"
 	"math/big"
+	"net"
 	"time"
 
+	"github.com/guregu/null"
 	"github.com/pkg/errors"
 	"github.com/satori/uuid"
 
 	"bg/cloud_models/appliancedb"
 	"bg/common/cfgapi"
+	"bg/common/mfg"
 )
 
 // PubSub is a part of ApplianceRegistry, describing the publisher/subscriber
@@ -281,7 +284,8 @@ func SyncAccountSelfProv(ctx context.Context,
 // If site is nil, a Site UUID will be picked automatically.
 func NewAppliance(ctx context.Context, db appliancedb.DataStore,
 	appliance uuid.UUID, site *uuid.UUID,
-	project, region, regID, appID string) (uuid.UUID, uuid.UUID, []byte, []byte, error) {
+	project, region, regID, appID string,
+	systemReprHWSerial, systemReprMAC string) (uuid.UUID, uuid.UUID, []byte, []byte, error) {
 
 	createSite := false
 	keyPEM, certPEM, err := genPEMKey()
@@ -298,13 +302,33 @@ func NewAppliance(ctx context.Context, db appliancedb.DataStore,
 		createSite = true
 	}
 
+	reprSerial := null.NewString("", false)
+	if systemReprHWSerial != "" {
+		_, err := mfg.NewExtSerialFromString(systemReprHWSerial)
+		if err != nil {
+			return uuid.Nil, uuid.Nil, nil, nil, err
+		}
+		reprSerial = null.StringFrom(systemReprHWSerial)
+	}
+
+	reprMac := null.NewString("", false)
+	if systemReprMAC != "" {
+		mac, err := net.ParseMAC(systemReprMAC)
+		if err != nil {
+			return uuid.Nil, uuid.Nil, nil, nil, errors.Wrap(err, "Invalid systemReprMAC")
+		}
+		reprMac = null.StringFrom(mac.String())
+	}
+
 	id := &appliancedb.ApplianceID{
-		ApplianceUUID:  appliance,
-		SiteUUID:       *site,
-		GCPProject:     project,
-		GCPRegion:      region,
-		ApplianceReg:   regID,
-		ApplianceRegID: appID,
+		ApplianceUUID:      appliance,
+		SiteUUID:           *site,
+		GCPProject:         project,
+		GCPRegion:          region,
+		ApplianceReg:       regID,
+		ApplianceRegID:     appID,
+		SystemReprHWSerial: reprSerial,
+		SystemReprMAC:      reprMac,
 	}
 	key := &appliancedb.AppliancePubKey{
 		Format: "RS256_X509",
