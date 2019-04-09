@@ -549,7 +549,7 @@ func testAccountOrgRole(t *testing.T, ds DataStore, logger *zap.Logger, slogger 
 	assert := require.New(t)
 	var err error
 
-	adminRole := &AccountOrgRole{
+	adminRole := AccountOrgRole{
 		AccountUUID:      testAccount1.UUID,
 		OrganizationUUID: testAccount1.OrganizationUUID,
 		Role:             "admin",
@@ -557,7 +557,7 @@ func testAccountOrgRole(t *testing.T, ds DataStore, logger *zap.Logger, slogger 
 	// Not really realistic as we would not normally add both
 	// admin and user roles, but we are testing the assertion
 	// that a user may have more than one role.
-	userRole := &AccountOrgRole{
+	userRole := AccountOrgRole{
 		AccountUUID:      testAccount1.UUID,
 		OrganizationUUID: testAccount1.OrganizationUUID,
 		Role:             "user",
@@ -601,6 +601,14 @@ func testAccountOrgRole(t *testing.T, ds DataStore, logger *zap.Logger, slogger 
 	assert.NoError(err)
 	assert.Len(rolesStrs, 0)
 
+	roles, err = ds.AccountOrgRolesByOrg(ctx, testAccount1.OrganizationUUID, "admin")
+	assert.NoError(err)
+	assert.Len(roles, 0)
+
+	roles, err = ds.AccountOrgRolesByOrg(ctx, testAccount1.OrganizationUUID, "")
+	assert.NoError(err)
+	assert.Len(roles, 0)
+
 	li, err := ds.LoginInfoByProviderAndSubject(ctx, "google", testSubj1)
 	assert.NoError(err, "expected success")
 	assert.Equal(&LoginInfo{
@@ -610,13 +618,13 @@ func testAccountOrgRole(t *testing.T, ds DataStore, logger *zap.Logger, slogger 
 		PrimaryOrgRoles:  nil,
 	}, li)
 
-	err = ds.InsertAccountOrgRole(ctx, adminRole)
+	err = ds.InsertAccountOrgRole(ctx, &adminRole)
 	assert.NoError(err)
 	// Same again
-	err = ds.InsertAccountOrgRole(ctx, adminRole)
+	err = ds.InsertAccountOrgRole(ctx, &adminRole)
 	assert.NoError(err)
 
-	err = ds.InsertAccountOrgRole(ctx, userRole)
+	err = ds.InsertAccountOrgRole(ctx, &userRole)
 	assert.NoError(err)
 
 	li, err = ds.LoginInfoByProviderAndSubject(ctx, "google", testSubj1)
@@ -632,7 +640,7 @@ func testAccountOrgRole(t *testing.T, ds DataStore, logger *zap.Logger, slogger 
 	roles, err = ds.AccountOrgRolesByAccount(ctx, testAccount1.UUID)
 	assert.NoError(err)
 	assert.Len(roles, 2)
-	assert.ElementsMatch([]AccountOrgRole{*userRole, *adminRole}, roles)
+	assert.ElementsMatch([]AccountOrgRole{userRole, adminRole}, roles)
 
 	rolesStrs, err = ds.AccountOrgRolesByAccountOrg(ctx, testAccount1.UUID, testOrg1.UUID)
 	assert.NoError(err)
@@ -640,18 +648,33 @@ func testAccountOrgRole(t *testing.T, ds DataStore, logger *zap.Logger, slogger 
 	sort.Strings(rolesStrs)
 	assert.ElementsMatch([]string{"admin", "user"}, rolesStrs)
 
-	err = ds.DeleteAccountOrgRole(ctx, userRole)
+	roles, err = ds.AccountOrgRolesByOrg(ctx, testAccount1.OrganizationUUID, "")
+	assert.NoError(err)
+	assert.Len(roles, 2)
+	assert.ElementsMatch([]AccountOrgRole{adminRole, userRole}, roles)
+
+	roles, err = ds.AccountOrgRolesByOrg(ctx, testAccount1.OrganizationUUID, "admin")
+	assert.NoError(err)
+	assert.Len(roles, 1)
+	assert.ElementsMatch([]AccountOrgRole{adminRole}, roles)
+
+	roles, err = ds.AccountOrgRolesByOrg(ctx, testAccount1.OrganizationUUID, "user")
+	assert.NoError(err)
+	assert.Len(roles, 1)
+	assert.ElementsMatch([]AccountOrgRole{userRole}, roles)
+
+	err = ds.DeleteAccountOrgRole(ctx, &userRole)
 	assert.NoError(err)
 
 	roles, err = ds.AccountOrgRolesByAccount(ctx, testAccount1.UUID)
 	assert.NoError(err)
-	assert.Equal(*adminRole, roles[0])
+	assert.Equal(adminRole, roles[0])
 
 	rolesStrs, err = ds.AccountOrgRolesByAccountOrg(ctx, testAccount1.UUID, testOrg1.UUID)
 	assert.NoError(err)
 	assert.Equal([]string{"admin"}, rolesStrs)
 
-	err = ds.DeleteAccountOrgRole(ctx, adminRole)
+	err = ds.DeleteAccountOrgRole(ctx, &adminRole)
 	assert.NoError(err)
 
 	roles, err = ds.AccountOrgRolesByAccount(ctx, testAccount1.UUID)
@@ -661,6 +684,10 @@ func testAccountOrgRole(t *testing.T, ds DataStore, logger *zap.Logger, slogger 
 	rolesStrs, err = ds.AccountOrgRolesByAccountOrg(ctx, testAccount1.UUID, testOrg1.UUID)
 	assert.NoError(err)
 	assert.Len(rolesStrs, 0)
+
+	roles, err = ds.AccountOrgRolesByOrg(ctx, testAccount1.OrganizationUUID, "")
+	assert.NoError(err)
+	assert.Len(roles, 0)
 }
 
 func testOAuth2Identity(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {

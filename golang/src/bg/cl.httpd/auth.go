@@ -414,6 +414,19 @@ func (a *authHandler) mkNewUser(c echo.Context, user goth.User) (*appliancedb.Lo
 	if err != nil {
 		return nil, err
 	}
+	adminRoles, err := a.db.AccountOrgRolesByOrgTx(ctx, tx,
+		organization.UUID, "admin")
+	if err != nil {
+		return nil, err
+	}
+	if len(adminRoles) == 0 {
+		c.Logger().Infof("No admins for this organization; also giving admin role: %v", account)
+		orgRole.Role = "admin"
+		err = a.db.InsertAccountOrgRoleTx(ctx, tx, orgRole)
+		if err != nil {
+			return nil, err
+		}
+	}
 	err = a.db.InsertOAuth2IdentityTx(ctx, tx, oauth2ID)
 	if err != nil {
 		return nil, err

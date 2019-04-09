@@ -42,6 +42,8 @@ type accountManager interface {
 
 	AccountOrgRolesByAccount(context.Context, uuid.UUID) ([]AccountOrgRole, error)
 	AccountOrgRolesByAccountOrg(context.Context, uuid.UUID, uuid.UUID) ([]string, error)
+	AccountOrgRolesByOrg(context.Context, uuid.UUID, string) ([]AccountOrgRole, error)
+	AccountOrgRolesByOrgTx(context.Context, DBX, uuid.UUID, string) ([]AccountOrgRole, error)
 	InsertAccountOrgRole(context.Context, *AccountOrgRole) error
 	InsertAccountOrgRoleTx(context.Context, DBX, *AccountOrgRole) error
 	DeleteAccountOrgRole(context.Context, *AccountOrgRole) error
@@ -342,6 +344,40 @@ func (db *ApplianceDB) AccountOrgRolesByAccountOrg(ctx context.Context,
 		`SELECT role FROM account_org_role
 		WHERE account_uuid=$1 AND organization_uuid=$2`,
 		account, org)
+	if err != nil {
+		return nil, err
+	}
+	return roles, nil
+}
+
+// AccountOrgRolesByOrg returns the set of accounts possessing the given role
+// for a target organization. If role is "", select all roles.
+func (db *ApplianceDB) AccountOrgRolesByOrg(ctx context.Context,
+	org uuid.UUID, role string) ([]AccountOrgRole, error) {
+	return db.AccountOrgRolesByOrgTx(ctx, nil, org, role)
+}
+
+// AccountOrgRolesByOrgTx returns the set of accounts possessing the given role
+// for a target organization, possibly inside a transaction.  If role is "",
+// select all roles.
+func (db *ApplianceDB) AccountOrgRolesByOrgTx(ctx context.Context, dbx DBX,
+	org uuid.UUID, role string) ([]AccountOrgRole, error) {
+	var roles []AccountOrgRole
+	var err error
+	if dbx == nil {
+		dbx = db
+	}
+
+	if role == "" {
+		err = db.SelectContext(ctx, &roles,
+			`SELECT * FROM account_org_role
+			WHERE organization_uuid=$1`, org)
+	} else {
+		err = db.SelectContext(ctx, &roles,
+			`SELECT * FROM account_org_role
+			WHERE organization_uuid=$1
+			AND role=$2`, org, role)
+	}
 	if err != nil {
 		return nil, err
 	}
