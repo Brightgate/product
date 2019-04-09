@@ -61,6 +61,15 @@ rm -f "$PKG_ROOT/etc/hotplug.d/iface/20-chrony"
 cp "$BG_ETC/chronyd-init.sh" "$PKG_ROOT/etc/init.d/chronyd"
 chmod 755 "$PKG_ROOT/etc/init.d/chronyd"
 
+# Turn off wan6 (DHCPv6 on WAN interface.)
+/sbin/uci -c $PKG_ROOT/etc/config delete network.wan6 || \
+	echo "network.wan6 not present, deletion unnecessary"
+
+# Add requested DHCP option to config.
+/sbin/uci -c $PKG_ROOT/etc/config set network.wan.reqopts="60 43"
+
+/sbin/uci -c $PKG_ROOT/etc/config commit
+
 if [ "$PKG_ROOT" = "/" ]; then
 	/etc/rc.common /etc/init.d/rsyslog restart
 

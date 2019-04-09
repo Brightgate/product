@@ -26,6 +26,17 @@ line_remove "$PKG_ROOT/root/.profile" "/. \/opt\/com.brightgate\/etc\/com-bright
 # Drop /etc/rsyslog.d from /etc/rsyslog.conf.
 line_remove "$PKG_ROOT/etc/rsyslog.conf" "/\\\$IncludeConfig \/etc\/rsyslog.d\// d"
 
+# Turn on wan6 (DHCPv6 on WAN interface.)
+/sbin/uci -c $PKG_ROOT/etc/config set network.wan6=interface
+/sbin/uci -c $PKG_ROOT/etc/config set network.wan6.ifname='wan'
+/sbin/uci -c $PKG_ROOT/etc/config set network.wan6.proto='dhcpv6'
+
+# Remove requested DHCP option from config.
+/sbin/uci -c $PKG_ROOT/etc/config delete network.wan.reqopts || \
+	echo "network.wan.reqopts not present, deletion unnecessary"
+
+/sbin/uci -c $PKG_ROOT/etc/config commit
+
 if [ "$PKG_ROOT" = "/" ]; then
 	# Restart rsyslog.
 	/etc/rc.common /etc/init.d/rsyslog restart
