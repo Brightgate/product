@@ -10,9 +10,10 @@ such unauthorized removal or alteration will be a violation of federal law.
 
 # README
 
-The content used to generate product documentation is placed here, and then
-manipulated by the build process to produce the various output formats
-required.
+The content used to generate product documentation is placed in `doc/src`, and
+then manipulated by the build process, using `doc/build` for intermediate
+processing.  The build places artifacts in `doc/output`.  The client-web
+subsystem scoops up intermediate build products from `doc/build`.
 
 ## Requirements
 
@@ -26,15 +27,25 @@ prerequisite packages needed for WeasyPrint.
 
 Invoking
 
+```
 $ make doc
+```
 
 at the root of the source tree will create all of the documentation products.
 These include a PDF print version, named `[filestem]-print.pdf`, and an HTML
-fragment containing only the body content, named `[filestem]-body.html`.  At
-present these outputs are placed in `doc/`, beside their respective source
-files.
+fragment containing only the body content, named `[filestem]-body.html`.
+These outputs are placed in `doc/output`.
 
+```
+$ make doc-check
+```
+
+at the root of the source tree will run sanity checks over the documentation
+HTML, looking for syntactic problems.  Documentation must pass these checks.
+
+```
 $ make doc-clobber
+```
 
 will remove all documentation products and intermediate files.
 
@@ -45,7 +56,7 @@ Four markers are placed in the file, using HTML comments:
 - The "head insertion" marker is expected to be substituted with `meta` and
   `link` elements that are appropriate for the output format.
 
-    <!-- BRIGHTGATE HEAD INSERTION POINT -->
+    `<!-- BRIGHTGATE HEAD INSERTION POINT -->`
 
   For example, the insertion point might be replaced with CSS and JavaScript
   suitable for the brightgate.com website or CSS suitable for a PDF output
@@ -55,7 +66,7 @@ Four markers are placed in the file, using HTML comments:
   content elements that are appropriate for the output format.  The marker is
   placed just prior to the final `body` element.
 
-    <!-- BRIGHTGATE FOOT INSERTION POINT -->
+    `<!-- BRIGHTGATE FOOT INSERTION POINT -->`
 
   For example, the insertion point might be replaced with analytics support
   (like Google Analytics) and a site-wide footer on the brightgate.com website.
@@ -63,8 +74,8 @@ Four markers are placed in the file, using HTML comments:
 - The content start and end markers are expected to be used to prune the HTML
   document to only the content, and none of the document level elements.
 
-    <!-- BRIGHTGATE CONTENT START -->
-    <!-- BRIGHTGATE CONTENT END -->
+    `<!-- BRIGHTGATE CONTENT START -->`
+    `<!-- BRIGHTGATE CONTENT END -->`
 
   For example, the body content is extracted and then deposited into Framework
   7-compatible `div` elements.

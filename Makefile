@@ -139,7 +139,7 @@ NODEVERSION = $(shell $(NODE) --version)
 # Python3 installation.  Use only the first 8 chars of the SHA256 sum because
 # we can wind up with extremely long pathnames otherwise, potentially breaking
 # shell scripts with large #! lines; see Linux's BINPRM_BUF_SIZE.
-VENV_NAME := _venv.$(shell sha256sum build/requirements.txt | awk '{print substr($$1,1,8)}')
+VENV_NAME := _venv.$(shell $(SHA256SUM) build/requirements.txt | awk '{print substr($$1,1,8)}')
 HOSTPYTHON3 = python3
 PYTHON3VERSION = $(shell $(HOSTPYTHON3) -V)
 PYTHON3 = $(VENV_NAME)/bin/python3
