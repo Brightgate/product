@@ -24,6 +24,7 @@ import (
 	"bg/ap_common/platform"
 	"bg/base_def"
 	"bg/common"
+	"bg/common/bgioutil"
 	"bg/common/cfgapi"
 	"bg/common/cfgtree"
 
@@ -41,6 +42,7 @@ const (
 )
 
 var (
+	propTreeDir    *os.File
 	propTreeFile   string
 	propTreeLoaded bool
 
@@ -50,6 +52,7 @@ var (
 )
 
 func propTreeStore() error {
+	var err error
 	if !propTreeLoaded {
 		return nil
 	}
@@ -65,14 +68,26 @@ func propTreeStore() error {
 		 * 'checkpoint' snapshots.
 		 */
 		backupfile := plat.ExpandDirPath(propertyDir, backupFilename)
-		os.Rename(propTreeFile, backupfile)
+		err = os.Rename(propTreeFile, backupfile)
+		if err != nil {
+			slog.Warnf("Failed to rename current property file to backup: %v", err)
+		}
+		// Force directory metadata out to disk.
+		err = propTreeDir.Sync()
+		if err != nil {
+			slog.Warnf("Failed to sync properties dir during backup: %v", err)
+		}
 	}
 
-	err := ioutil.WriteFile(propTreeFile, s, 0644)
+	err = bgioutil.WriteFileSync(propTreeFile, s, 0644)
 	if err != nil {
 		slog.Warnf("Failed to write properties file: %v", err)
 	}
-
+	// Force directory metadata out to disk.
+	err = propTreeDir.Sync()
+	if err != nil {
+		slog.Warnf("Failed to sync properties dir: %v", err)
+	}
 	return err
 }
 
@@ -166,6 +181,13 @@ func dumpTree(indent string, node *cfgtree.PNode) {
 
 func propTreeInit(defaults *cfgtree.PNode) error {
 	var err error
+
+	// Open the properties file's enclosing directory; we'll fsync its
+	// metadata after each write.
+	propTreeDir, err = os.Open(plat.ExpandDirPath(propertyDir))
+	if err != nil {
+		slog.Warnf("Unable to open properties dir: %v", err)
+	}
 
 	propTreeFile = plat.ExpandDirPath(propertyDir, propertyFilename)
 	tree, err := propTreeLoad(propTreeFile)

@@ -21,6 +21,8 @@ import (
 	"strings"
 	"time"
 
+	"bg/common/bgioutil"
+
 	"github.com/pkg/errors"
 )
 
@@ -56,7 +58,7 @@ func putDownloadMeta(name string, meta *downloadMeta) error {
 		return fmt.Errorf("Failed to marshal record %v: %v", meta, err)
 	}
 
-	err = ioutil.WriteFile(name, s, 0644)
+	err = bgioutil.WriteFileSync(name, s, 0644)
 	if err != nil {
 		err = fmt.Errorf("Failed to write meta file %s: %v", name, err)
 	}
@@ -116,11 +118,13 @@ func FetchURL(url, target, meta string) (bool, error) {
 	if outFile, err = os.Create(tmpFile); err != nil {
 		return false, errors.Wrap(err, "failed to create "+tmpFile)
 	}
+	defer outFile.Close()
 
 	if bytes, err = io.Copy(outFile, resp.Body); err != nil {
 		os.Remove(tmpFile)
 		return false, errors.Wrap(err, "failed to download "+url)
 	}
+	outFile.Sync()
 	os.Rename(tmpFile, target)
 
 	now := time.Now()

@@ -22,6 +22,8 @@ import (
 	"strings"
 	"syscall"
 
+	"bg/common/bgioutil"
+
 	"github.com/satori/uuid"
 )
 
@@ -53,7 +55,7 @@ func mtSetNodeID(file, uuidStr string) error {
 	}
 
 	id := []byte(uuidStr)
-	if err := ioutil.WriteFile(file, id, 0644); err != nil {
+	if err := bgioutil.WriteFileSync(file, id, 0644); err != nil {
 		return fmt.Errorf("failed to write %s: %v", file, err)
 	}
 
