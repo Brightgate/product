@@ -469,7 +469,8 @@ func LinuxBootTime() time.Time {
 	return time.Now().Add(-uptime)
 }
 
-var legalModes = map[string]bool{
+// LegalModes is a map containing all of the legal per-node operating modes.
+var LegalModes = map[string]bool{
 	base_def.MODE_GATEWAY:   true,
 	base_def.MODE_CORE:      true,
 	base_def.MODE_SATELLITE: true,
@@ -498,7 +499,7 @@ func GetNodeMode() string {
 		}
 	}
 
-	if mode != "" && !legalModes[mode] {
+	if mode != "" && !LegalModes[mode] {
 		log.Fatalf("Illegal AP mode: %s\n", mode)
 	}
 

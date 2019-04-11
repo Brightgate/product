@@ -292,15 +292,13 @@ func main() {
 	} else {
 		initMode = aputil.GetNodeMode()
 	}
-	switch initMode {
-	case "":
+
+	if aputil.LegalModes[initMode] {
+		nodeMode = initMode
+	} else if initMode == "" {
 		nodeMode = base_def.MODE_GATEWAY
 		logInfo("Can't determine mode.  Defaulting to %s.", nodeMode)
-	case base_def.MODE_GATEWAY:
-		nodeMode = initMode
-	case base_def.MODE_SATELLITE:
-		nodeMode = initMode
-	default:
+	} else {
 		logPanic("Unrecognized node mode: %s", initMode)
 	}
 

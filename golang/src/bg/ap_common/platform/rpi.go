@@ -76,7 +76,7 @@ func rpiNicIsWired(nic string) bool {
 func rpiNicIsWan(name, mac string) bool {
 	// On Raspberry Pi 3, use the OUI to identify the
 	// on-board port.
-	return strings.HasPrefix(mac, "b8:27:eb:")
+	return rpiNicIsWired(name) && strings.HasPrefix(mac, "b8:27:eb:")
 }
 
 func rpiNicGetID(name, mac string) string {
