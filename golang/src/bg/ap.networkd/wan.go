@@ -307,6 +307,10 @@ func (w *wanInfo) dhcpRefresh() {
 		slog.Errorf("failed to get lease info: %v", err)
 		return
 	}
+	if d == nil {
+		slog.Infof("no DHCP lease found for %s", w.nic)
+		return
+	}
 
 	ops := make([]cfgapi.PropertyOp, 0)
 	if d.Addr != "" {
