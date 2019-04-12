@@ -30,11 +30,9 @@ logging.basicConfig(level=logging.DEBUG,
 
 ARCH_MAPS = {
     "armhf": {
-        "proto": "armv7l",
         "ipk": "arm_cortex-a7_neon-vfpv4",
     },
     "amd64": {
-        "proto": "x86_64",
         "ipk": "amd64",
     },
 }
@@ -231,10 +229,11 @@ class CloudPackage(Package):
         "libc6"
     ]
 
-    def __init__(self, distro, arch, version):
-        logging.debug("cloud package distro = %s, arch = %s, version = %s", distro, arch, version)
+    def __init__(self, distro, arch, version, proto):
+        logging.debug("cloud package distro = %s, arch = %s, version = %s, proto = %s",
+            distro, arch, version, proto)
         super().__init__(distro, arch, version)
-        self.proto_dir = "proto.%s/cloud" % ARCH_MAPS[arch]["proto"]
+        self.proto_dir = os.path.join(proto, "cloud")
 
     def check_proto(self):
         pass
@@ -282,16 +281,21 @@ class AppliancePackage(Package):
         "bg-hostapd",
     ]
 
-    def __init__(self, distro, arch, version):
-        logging.debug("appliance package distro = %s, arch = %s, version = %s", distro, arch, version)
+    def __init__(self, distro, arch, version, proto):
+        logging.debug("appliance package distro = %s, arch = %s, version = %s, proto = %s",
+            distro, arch, version, proto)
         super().__init__(distro, arch, version)
-        self.proto_dir = "proto.%s/appliance" % ARCH_MAPS[arch]["proto"]
+        self.proto_dir = os.path.join(proto, "appliance")
 
     def check_proto(self):
         # prevent packaging a proto area with an initialized config store
-        ap_props = "opt/com.brightgate/etc/ap_props.json"
-        if os.path.exists(os.path.join(self.proto_dir, ap_props)):
-            raise Exception("proto area looks dirty (found %s)" % ap_props)
+        ap_props = [
+            "opt/com.brightgate/etc/ap_props.json"
+            "data/configd/ap_props.json"
+        ]
+        for p in ap_props:
+            if os.path.exists(os.path.join(self.proto_dir, p)):
+                raise Exception("proto area looks dirty (found %s)" % p)
 
 
 def main_func():
@@ -301,6 +305,7 @@ def main_func():
     parser = argparse.ArgumentParser()
     parser.add_argument('--arch', '-A', required=True)
     parser.add_argument('--distro', '-D', required=True)
+    parser.add_argument('--proto', '-p', required=True)
     parser.add_argument('--lint', action='store_true')
     parser.add_argument('--compresslevel', '-z', type=int, default=5)
     parser.add_argument('--compresstype', '-Z', default="gzip",
@@ -321,7 +326,7 @@ def main_func():
     pkgs = []
     for pclass in packages:
         try:
-            p = pclass(opts.distro, opts.arch, version)
+            p = pclass(opts.distro, opts.arch, version, opts.proto)
         except WrongArchException as e:
             logging.info("skipping %s: %s", pclass.name, e)
             continue

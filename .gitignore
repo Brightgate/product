@@ -6,6 +6,8 @@
 *.bak
 *.sw[a-z]
 proto.armv7l
+proto.armv7l.debian
+proto.armv7l.openwrt
 proto.x86_64
 *.deb
 *.ipk

@@ -173,6 +173,8 @@ PKG = deb
 # Break if undefined and cross compiling.
 ifneq ($(GOHOSTARCH),$(GOARCH))
 ifeq ($(GOARCH),arm)
+# Put the ARM proto area in a distro-specific place when cross-compiling.
+ROOT = proto.armv7l.$(DISTRO)
 ifeq ("$(DISTRO)","debian")
 SYSROOT_CFG = build/cross-compile/raspbian-stretch.multistrap
 SYSROOT_CFG_LOCAL = $(subst build/cross-compile/,,$(SYSROOT_CFG))
@@ -188,6 +190,8 @@ CROSS_CGO_CFLAGS = --sysroot $(CROSS_SYSROOT) -Iusr/local/include -Iusr/include
 # whether the sysroot has changed and needs to be re-uploaded.
 SYSROOT_SUM=a66af97cd6bbab3fc23eba227b663789b266be7c6efa1da68160d3b46c2d1f44
 SYSROOT_LOCAL_FLAGS = -f $(SYSROOT_CFG_LOCAL)
+
+DISTRO_OTHER = openwrt
 else
 ifeq ("$(DISTRO)","openwrt")
 CROSS_CC = $(CROSS_SYSROOT)/../toolchain.$(DISTRO)/bin/arm-openwrt-linux-gcc
@@ -200,6 +204,7 @@ SYSROOT_SUM_arm_openwrt=d562c2318e976d048fc62a31dc867bab309b979f
 SYSROOT_SUM=$(SYSROOT_SUM_arm_openwrt)
 SYSROOT_LOCAL_FLAGS =
 
+DISTRO_OTHER = debian
 PKG = ipk
 else
 $(error DISTRO must be set to 'openwrt' or 'debian' [deprecated] for cross)
@@ -467,7 +472,6 @@ APPDIRS = \
 	$(APPBIN) \
 	$(APPDATA) \
 	$(APPETC) \
-	$(APPROOTLIB) \
 	$(APPRULES) \
 	$(APPSECRET) \
 	$(APPSECRETRPCD) \
@@ -662,13 +666,13 @@ $(SYSROOT)/.$(SYSROOT_SUM): build/cross-compile/$(SYSROOT_BLOB_NAME)
 	touch --no-create $@
 
 archives: install client-web | $(VENV_NAME)
-	$(PYTHON3) build/package.py --distro archive --arch $(PKG_DEB_ARCH)
+	$(PYTHON3) build/package.py --distro archive --arch $(PKG_DEB_ARCH) --proto $(ROOT)
 
 packages: install client-web | $(VENV_NAME)
-	$(PYTHON3) build/package.py --distro $(DISTRO) --arch $(PKG_DEB_ARCH)
+	$(PYTHON3) build/package.py --distro $(DISTRO) --arch $(PKG_DEB_ARCH) --proto $(ROOT)
 
 packages-lint: install client-web | $(VENV_NAME)
-	$(PYTHON3) build/package.py --lint --distro $(DISTRO) --arch $(PKG_DEB_ARCH)
+	$(PYTHON3) build/package.py --lint --distro $(DISTRO) --arch $(PKG_DEB_ARCH) --proto $(ROOT)
 
 GO_MOCK_CLOUDRPC_SRCS = \
 	$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \
@@ -823,7 +827,7 @@ $(APPMODEL): | $(APPETCIDENTIFIERD)
 	$(MKDIR) -p $@
 
 # Raspbian/Debian-specific appliance files
-$(APPROOTLIB)/systemd/system: | $(APPROOTLIB)
+$(APPROOTLIB)/systemd/system:
 	$(MKDIR) -p $(APPROOTLIB)/systemd/system
 
 $(APPROOTLIB)/systemd/system/ap.mcp.service: build/debian-deb/ap.mcp.service | $(APPROOTLIB)/systemd/system
@@ -858,7 +862,7 @@ $(APPBINARIES): $(GODEPS_ENSURED) | $(APPBIN)
 COMPUTE_DEPS = $(GOTOOLS_DIR)/compute_deps
 
 $(COMPUTE_DEPS): build/compute_deps.go
-	$(GO) build -o $@ $^
+	unset GOARCH && $(GO) build -o $@ $^
 
 GENERATED_GO_FILES = \
 	$(GOSRCBG)/base_def/base_def.go \
