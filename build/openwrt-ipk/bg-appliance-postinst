@@ -14,6 +14,8 @@ set -x
 
 # PKG_UPGRADE=0 indicates an install or remove.
 
+optime=$(date -Iseconds)
+
 line_add () {
 	# $1 - file
 	# $2 - line
@@ -31,6 +33,14 @@ line_add () {
 	fi
 }
 
+copy_preserve () {
+	if [ -f "$PKG_ROOT/$1" ]; then
+		mkdir -p "$PKG_ROOT/$2"
+		cp "$PKG_ROOT/$1" "$PKG_ROOT/$2"
+		mv "$PKG_ROOT/$1" "$PKG_ROOT/$1.$optime"
+	fi
+}
+
 BG_ETC=/opt/com.brightgate/etc
 
 # Add our PATH to /root/.profile.
@@ -39,15 +49,13 @@ line_add "/root/.profile" ". $BG_ETC/com-brightgate-profile"
 # Add /etc/rsyslog.d to /etc/rsyslog.conf and restart rsyslog.
 line_add "/etc/rsyslog.conf" "\$IncludeConfig /etc/rsyslog.d/" "ActionFileDefaultTemplate"
 
-optime=$(date -Iseconds)
+mkdir -p $PKG_ROOT/data/rsyslog
 
-copy_preserve () {
-	if [ -f "$PKG_ROOT/$1" ]; then
-		mkdir -p "$PKG_ROOT/$2"
-		cp "$PKG_ROOT/$1" "$PKG_ROOT/$2"
-		mv "$PKG_ROOT/$1" "$PKG_ROOT/$1.$optime"
-	fi
-}
+# Divert OS logging to persistent storage.
+sed -i \
+	-e "s/\/.*\/messages/\/data\/rsyslog\/messages/" \
+	-e "s/\/.*\/secure/\/data\/rsyslog\/secure/" \
+	$PKG_ROOT/etc/rsyslog.conf
 
 copy_preserve $BG_ETC/secret/cloud/cloud.secret.json \
 	/data/secret/rpcd
@@ -69,6 +77,8 @@ chmod 755 "$PKG_ROOT/etc/init.d/chronyd"
 /sbin/uci -c $PKG_ROOT/etc/config set network.wan.reqopts="60 43"
 
 /sbin/uci -c $PKG_ROOT/etc/config commit
+
+/bin/sync
 
 if [ "$PKG_ROOT" = "/" ]; then
 	/etc/rc.common /etc/init.d/rsyslog restart

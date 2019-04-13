@@ -26,6 +26,12 @@ line_remove "$PKG_ROOT/root/.profile" "/. \/opt\/com.brightgate\/etc\/com-bright
 # Drop /etc/rsyslog.d from /etc/rsyslog.conf.
 line_remove "$PKG_ROOT/etc/rsyslog.conf" "/\\\$IncludeConfig \/etc\/rsyslog.d\// d"
 
+# Revert OS logging locations to default.
+sed -i \
+	-e "s/\/.*\/messages/\/var\/log\/messages/" \
+	-e "s/\/.*\/secure/\/var\/log\/secure/" \
+	$PKGROOT/etc/rsyslog.conf
+
 # Turn on wan6 (DHCPv6 on WAN interface.)
 /sbin/uci -c $PKG_ROOT/etc/config set network.wan6=interface
 /sbin/uci -c $PKG_ROOT/etc/config set network.wan6.ifname='wan'

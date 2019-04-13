@@ -442,7 +442,8 @@ APPCONFIGS_openwrt = \
 	$(APPETC)/com-brightgate-profile \
 	$(ROOTETCCRONTABS)/root \
 	$(ROOTETCINITD)/ap.mcp \
-	$(ROOTETCINITD)/brightgate-appliance
+	$(ROOTETCINITD)/brightgate-appliance \
+	$(ROOTETCLOGROTATED)/com-brightgate-logrotate-rsyslog
 
 APPCONFIGS = \
 	$(APPCONFIGS_$(DISTRO)) \
@@ -800,6 +801,9 @@ $(ROOTETCLOGROTATED)/com-brightgate-logrotate-logd: build/$(DISTRO)-$(PKG)/com-b
 	$(INSTALL) -m 0644 $< $@
 
 $(ROOTETCLOGROTATED)/com-brightgate-logrotate-mcp: build/$(DISTRO)-$(PKG)/com-brightgate-logrotate-mcp | $(ROOTETCLOGROTATED)
+	$(INSTALL) -m 0644 $< $@
+
+$(ROOTETCLOGROTATED)/com-brightgate-logrotate-rsyslog: build/$(DISTRO)-$(PKG)/com-brightgate-logrotate-rsyslog | $(ROOTETCLOGROTATED)
 	$(INSTALL) -m 0644 $< $@
 
 $(ROOTETCRSYSLOGD)/com-brightgate-rsyslog.conf: $(GOSRCBG)/ap.watchd/com-brightgate-rsyslog.conf | $(ROOTETCRSYSLOGD)

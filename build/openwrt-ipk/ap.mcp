@@ -28,6 +28,7 @@ start_service()
 	/bin/df -T /data | /usr/bin/tail -1 | /bin/grep -q f2fs
 	if [ $? != 0 ]; then
 		/usr/bin/mount /data
+		/usr/bin/pkill -HUP rsyslogd
 	fi
 
 	# Machine ID handling.

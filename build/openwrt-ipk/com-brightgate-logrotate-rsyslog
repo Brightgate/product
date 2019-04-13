@@ -1,0 +1,12 @@
+/data/rsyslog/messages /data/rsyslog/secure {
+	monthly
+	create
+	rotate 10
+	maxsize 10M
+	missingok
+	notifempty
+	sharedscripts
+	postrotate
+		/bin/kill -HUP $(/bin/cat /var/run/rsyslogd.pid)
+	endscript
+}
