@@ -137,7 +137,7 @@ func selectWifiChannel(d *physDevice) error {
 func score(d *physDevice, band string) int {
 	var score int
 
-	if d == nil || d.pseudo || d.wifi == nil {
+	if d == nil || d.pseudo || d.wifi == nil || d.disabled {
 		return 0
 	}
 
@@ -177,6 +177,10 @@ func selectWifiDevices(oldList []*physDevice) []*physDevice {
 
 	best := 0
 	for _, d := range oldList {
+		if d.disabled {
+			best = -1
+			break
+		}
 		best = best + score(d, d.wifi.activeBand)
 	}
 

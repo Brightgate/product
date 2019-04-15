@@ -177,7 +177,7 @@ func UpdateSetting(setting, val string) error {
 	if err == nil {
 		log.Printf("Changing setting %s to %v", s.name, val)
 	} else {
-		log.Printf("Can't change %s to %s: %v", s.name, val, err)
+		log.Printf("Can't change %s to %s: %v", setting, val, err)
 	}
 	return err
 }

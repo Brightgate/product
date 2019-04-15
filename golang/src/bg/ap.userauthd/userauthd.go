@@ -117,8 +117,9 @@ type rConf struct {
 var (
 	templateDir = apcfg.String("template_dir", "__APPACKAGE__/etc/templates/ap.userauthd",
 		false, nil)
-	verbose = apcfg.Bool("verbose", false, true, nil)
-	_       = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
+	hostapdDebug   = apcfg.Bool("hostapd_debug", false, true, nil)
+	hostapdVerbose = apcfg.Bool("hostapd_verbose", false, true, nil)
+	_              = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
 
 	hostapdProcess *aputil.Child // track the hostapd proc
 
@@ -279,7 +280,9 @@ func runOne(rc *rConf) {
 	slog.Debugf("runOne configuration %v", fn)
 
 	args := make([]string, 0)
-	if *verbose {
+	if *hostapdVerbose {
+		args = append(args, "-dd")
+	} else if *hostapdDebug {
 		args = append(args, "-d")
 	}
 	args = append(args, fn)

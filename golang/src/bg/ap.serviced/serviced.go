@@ -222,7 +222,6 @@ func main() {
 	prometheusInit()
 	brokerd = broker.New(pname)
 	defer brokerd.Fini()
-	brokerd.Handle(base_def.TOPIC_UPDATE, eventHandler)
 
 	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err != nil {
@@ -231,6 +230,7 @@ func main() {
 	clients = config.GetClients()
 	rings = config.GetRings()
 
+	brokerd.Handle(base_def.TOPIC_UPDATE, eventHandler)
 	initInterfaces()
 	dnsInit()
 	dhcpInit()

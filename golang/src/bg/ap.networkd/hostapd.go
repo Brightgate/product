@@ -823,7 +823,14 @@ func (h *hostapdHdl) start() {
 	stopNetworkRebuild := make(chan bool, 1)
 	go rebuildUnenrolled(h.unenrolled, stopNetworkRebuild)
 
-	h.process = aputil.NewChild(plat.HostapdCmd, h.confFiles...)
+	args := make([]string, 0)
+	if *hostapdVerbose {
+		args = append(args, "-dd")
+	} else if *hostapdDebug {
+		args = append(args, "-d")
+	}
+	args = append(args, h.confFiles...)
+	h.process = aputil.NewChild(plat.HostapdCmd, args...)
 	h.process.UseZapLog("hostapd: ", slog, zapcore.InfoLevel)
 
 	slog.Infof("Starting hostapd")

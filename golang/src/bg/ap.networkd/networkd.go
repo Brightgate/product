@@ -48,6 +48,8 @@ var (
 	rulesDir = apcfg.String("rules_dir", "/etc/filter.rules.d",
 		true, nil)
 	hostapdLatency    = apcfg.Int("hostapd_latency", 5, true, nil)
+	hostapdDebug      = apcfg.Bool("hostapd_debug", false, true, nil)
+	hostapdVerbose    = apcfg.Bool("hostapd_verbose", false, true, nil)
 	deadmanTimeout    = apcfg.Duration("deadman", 5*time.Second, true, nil)
 	retransmitLimit   = apcfg.Int("retransmit_limit", 4, true, nil)
 	retransmitTimeout = apcfg.Duration("retransmit_timeout",
@@ -81,10 +83,11 @@ const (
 )
 
 type physDevice struct {
-	name   string // Linux device name
-	hwaddr string // mac address
-	ring   string // configured ring
-	pseudo bool
+	name     string // Linux device name
+	hwaddr   string // mac address
+	ring     string // configured ring
+	pseudo   bool
+	disabled bool
 
 	wifi *wifiInfo
 }
@@ -94,37 +97,33 @@ type physDevice struct {
 // Interaction with the rest of the ap daemons
 //
 
-func configChannelChanged(path []string, val string, expires *time.Time) {
+func configNicChanged(path []string, val string, expires *time.Time) {
 	nicID := path[3]
-	newChannel, _ := strconv.Atoi(val)
+	p := physDevices[nicID]
+	if p == nil || len(path) != 5 {
+		return
+	}
+	if path[4] == "channel" {
+		newChannel, _ := strconv.Atoi(val)
 
-	if p := physDevices[nicID]; p != nil && p.wifi != nil {
-		if p.wifi.cfgChannel != newChannel {
+		if p.wifi != nil && p.wifi.cfgChannel != newChannel {
 			p.wifi.cfgChannel = newChannel
 			wifiEvaluate = true
 			hostapd.reset()
 		}
-	}
-}
 
-func configBandChanged(path []string, val string, expires *time.Time) {
-	nicID := path[3]
-	newBand := val
+	} else if path[4] == "band" {
+		newBand := val
 
-	if p := physDevices[nicID]; p != nil && p.wifi != nil {
-		if p.wifi.cfgBand != newBand {
+		if p.wifi != nil && p.wifi.cfgBand != newBand {
 			p.wifi.cfgBand = newBand
 			wifiEvaluate = true
 			hostapd.reset()
 		}
-	}
-}
 
-func configRingChanged(path []string, val string, expires *time.Time) {
-	nicID := path[3]
-	newRing := val
+	} else if path[4] == "ring" {
+		newRing := val
 
-	if p := physDevices[nicID]; p != nil {
 		if p.ring != newRing {
 			p.ring = newRing
 			// Ideally this would just be a 'reload'.
@@ -138,6 +137,22 @@ func configRingChanged(path []string, val string, expires *time.Time) {
 			// cli command to explicitly kick off the updated
 			// client.  That seems to work when done manually, but
 			// it needs more testing.
+			hostapd.reset()
+		}
+
+	} else if path[4] == "disabled" {
+		newVal := p.disabled
+		if strings.ToLower(val) == "false" {
+			newVal = false
+		} else if strings.ToLower(val) == "true" {
+			newVal = true
+		} else {
+			slog.Warnf("%s must be true or false",
+				strings.Join(path, "/"))
+		}
+		if newVal != p.disabled {
+			p.disabled = newVal
+			wifiEvaluate = true
 			hostapd.reset()
 		}
 	}
@@ -322,6 +337,10 @@ func rebuildInternalNet() {
 	// For each internal network device, create a virtual device for each
 	// LAN ring and attach it to the bridge for that ring
 	for _, dev := range physDevices {
+		if dev.disabled {
+			continue
+		}
+
 		if dev.ring != base_def.RING_INTERNAL {
 			continue
 		}
@@ -343,7 +362,8 @@ func rebuildInternalNet() {
 func rebuildLan() {
 	// Connect all the wired LAN NICs to ring-appropriate bridges.
 	for _, dev := range physDevices {
-		if dev.wifi == nil && !plat.NicIsVirtual(dev.name) &&
+		if !dev.disabled && dev.wifi == nil &&
+			!plat.NicIsVirtual(dev.name) &&
 			dev.ring != base_def.RING_INTERNAL &&
 			dev.ring != base_def.RING_WAN {
 			addDevToRingBridge(dev, dev.ring)
@@ -368,6 +388,10 @@ func rebuildUnenrolled(devs []*physDevice, interrupt chan bool) {
 
 		bad := make([]*physDevice, 0)
 		for _, dev := range devs {
+			if dev.disabled {
+				continue
+			}
+
 			_, err := net.InterfaceByName(dev.name)
 			if err == nil {
 				err = addDevToRingBridge(dev,
@@ -754,6 +778,11 @@ func getDevices() {
 				if x, ok := nic.Children["channel"]; ok {
 					d.wifi.cfgChannel, _ = strconv.Atoi(x.Value)
 				}
+				if x, ok := nic.Children["disabled"]; ok {
+					if strings.ToLower(x.Value) == "true" {
+						d.disabled = true
+					}
+				}
 			}
 		}
 	}
@@ -816,9 +845,7 @@ func daemonInit() error {
 
 	config.HandleChange(`^@/site_index`, configSiteIndexChanged)
 	config.HandleChange(`^@/clients/.*/ring$`, configClientChanged)
-	config.HandleChange(`^@/nodes/"+nodeUUID+"/nics/.*/band$`, configBandChanged)
-	config.HandleChange(`^@/nodes/"+nodeUUID+"/nics/.*/channel$`, configChannelChanged)
-	config.HandleChange(`^@/nodes/"+nodeUUID+"/nics/.*/ring$`, configRingChanged)
+	config.HandleChange(`^@/nodes/`+nodeUUID+`/nics/.*$`, configNicChanged)
 	config.HandleChange(`^@/rings/.*/vap$`, configRingVAPChanged)
 	config.HandleChange(`^@/network/.*`, configNetworkChanged)
 	config.HandleDelete(`^@/network/.*`, configNetworkDeleted)
