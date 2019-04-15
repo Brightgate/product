@@ -43,6 +43,15 @@ sed -i \
 
 /sbin/uci -c $PKG_ROOT/etc/config commit
 
+# Restore for reset button actions.
+/bin/chmod 0755 /sbin/jffs2reset
+
+sed -i \
+	-e "s/true/jffs2reset -y/" \
+	/etc/rc.button/reset
+
+/bin/sync
+
 if [ "$PKG_ROOT" = "/" ]; then
 	# Restart rsyslog.
 	/etc/rc.common /etc/init.d/rsyslog restart

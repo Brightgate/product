@@ -78,6 +78,13 @@ chmod 755 "$PKG_ROOT/etc/init.d/chronyd"
 
 /sbin/uci -c $PKG_ROOT/etc/config commit
 
+# Prophylaxes for reset button actions.
+/bin/chmod 0444 /sbin/jffs2reset
+
+sed -i \
+	-e "s/jffs2reset -y/true/" \
+	/etc/rc.button/reset
+
 /bin/sync
 
 if [ "$PKG_ROOT" = "/" ]; then

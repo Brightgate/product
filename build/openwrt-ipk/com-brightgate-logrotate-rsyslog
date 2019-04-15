@@ -3,6 +3,7 @@
 	create
 	rotate 10
 	maxsize 10M
+	compress
 	missingok
 	notifempty
 	sharedscripts
