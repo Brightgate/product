@@ -185,9 +185,11 @@ import vulnerability from '../vulnerability';
 const debug = Debug('page:dev-details');
 
 function repairable(vulnid, vuln) {
-  return (vulnid === 'defaultpassword' &&
+  const res = (vulnid === 'defaultpassword' &&
     vuln.details.includes('Service: ssh') &&
-    (vuln.repaired === undefined || vuln.repaired < vuln.latest_detected));
+    (!vuln.repaired || vuln.repaired < vuln.latest_detected));
+  debug(`repairable ${vulnid} returning ${res}`, vuln);
+  return res;
 }
 
 export default {
