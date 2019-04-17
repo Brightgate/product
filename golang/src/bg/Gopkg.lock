@@ -368,7 +368,7 @@
   version = "v1.0.0"
 
 [[projects]]
-  digest = "1:b5f0db644057287e018690cca0f76b037dff0115be4c06cf78dcc5897161dffb"
+  digest = "1:3c01f6bec64cfeb7895910f010877b3bb909c4d9ab809c8e999498498db1532a"
   name = "github.com/markbates/goth"
   packages = [
     ".",
@@ -379,8 +379,7 @@
     "providers/openidConnect",
   ]
   pruneopts = ""
-  revision = "157987f620ff2fc5e1f6a1427a3685219fbf6ff4"
-  version = "v1.49.0"
+  revision = "8aacfb121f0452efb8c70d81a780f8c80c074efb"
 
 [[projects]]
   digest = "1:9ea83adf8e96d6304f394d40436f2eb44c1dc3250d223b74088cc253a6cd0a1c"

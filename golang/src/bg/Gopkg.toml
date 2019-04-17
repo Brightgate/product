@@ -137,7 +137,8 @@
 
 [[constraint]]
   name = "github.com/markbates/goth"
-  version = "1.49.0"
+  # Upgrade to 1.51 or later when ready
+  revision = "8aacfb121f0452efb8c70d81a780f8c80c074efb"
 
 [[constraint]]
   name = "github.com/guregu/null"

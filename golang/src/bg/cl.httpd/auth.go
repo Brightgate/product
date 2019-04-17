@@ -21,6 +21,7 @@ import (
 
 	"bg/cloud_models/appliancedb"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/sessions"
 	"github.com/labstack/echo"
 	"github.com/pkg/errors"
@@ -165,9 +166,6 @@ func azureadv2Provider(r *echo.Echo) goth.Provider {
 	}
 	r.Logger.Infof("enabling AzureADV2 authentication")
 	opts := azureadv2.ProviderOptions{}
-	// This provider is experimental; some of the information we need is
-	// inside of the AccessToken (such as the 'iss' field, which names the
-	// tenant), and will require more work to get out.
 	return azureadv2.New(environ.AzureADV2Key, environ.AzureADV2Secret, callback, opts)
 }
 
@@ -253,6 +251,23 @@ func getUserGoogleHD(user *goth.User) string {
 	return ""
 }
 
+func getUserAzureTenant(user *goth.User) (string, error) {
+	// ParseUnverified is not to be used lightly-- however by the time we
+	// have reached this code, we have completed the oauth2 exchange, and we
+	// trust the JWT.
+	tok, _, err := new(jwt.Parser).ParseUnverified(user.AccessToken, jwt.MapClaims{})
+	if err != nil {
+		return "", fmt.Errorf("getUserAzureTenant: failed to parse user.AccessToken: %v", err)
+	}
+	// We don't check this cast because the type is set above
+	claims := tok.Claims.(jwt.MapClaims)
+	tid, ok := claims["tid"].(string)
+	if !ok {
+		return "", fmt.Errorf("getUserAzureTenant: failed to find 'tid' in claims: %v", claims)
+	}
+	return tid, nil
+}
+
 // findOrganization does three tests against the incoming user, looking
 // at the OAuth2Organization Rules.
 //
@@ -271,6 +286,14 @@ func (a *authHandler) findOrganization(ctx context.Context, c echo.Context,
 	if user.Provider == "google" {
 		// hd (hosted domain) is basically google's tenant ID
 		tenant = getUserGoogleHD(&user)
+	}
+
+	if user.Provider == "azureadv2" {
+		var err error
+		tenant, err = getUserAzureTenant(&user)
+		if err != nil {
+			c.Logger().Warnf("Failed to get tenant for azure user: %v", err)
+		}
 	}
 
 	if tenant != "" {
@@ -303,6 +326,24 @@ func (a *authHandler) findOrganization(ctx context.Context, c echo.Context,
 	c.Logger().Warnf("findOrganization: No rules matched tenant=%q domain=%q email=%q",
 		tenant, domainPart, user.Email)
 	return uuid.Nil, fmt.Errorf("no rule matched user's tenant, domain or email")
+}
+
+func getAzureUserPhone(logger echo.Logger, user goth.User) (string, error) {
+	var phoneNumber string
+	logger.Debugf("Trying to get phone number for %s, RawData %#v", user.UserID, user.RawData)
+	phoneNumber, _ = user.RawData["mobilePhone"].(string)
+	if phoneNumber != "" {
+		return phoneNumber, nil
+	}
+
+	bizPhones, ok := user.RawData["businessPhones"].([]interface{})
+	if ok && len(bizPhones) > 0 {
+		phoneNumber, _ = bizPhones[0].(string)
+	}
+	if phoneNumber != "" {
+		return phoneNumber, nil
+	}
+	return "", errors.Errorf("Failed to find any phone Numbers for %#v", user)
 }
 
 func getGoogleUserPhone(logger echo.Logger, user goth.User) (string, error) {
@@ -371,6 +412,12 @@ func (a *authHandler) mkNewUser(c echo.Context, user goth.User) (*appliancedb.Lo
 		phoneNumber, err = getGoogleUserPhone(c.Logger(), user)
 		if err != nil {
 			c.Logger().Warnf("Couldn't get google user phone: %s", err)
+		}
+	} else if user.Provider == "azureadv2" {
+		var err error
+		phoneNumber, err = getAzureUserPhone(c.Logger(), user)
+		if err != nil {
+			c.Logger().Warnf("Couldn't get azure user phone: %s", err)
 		}
 	}
 
