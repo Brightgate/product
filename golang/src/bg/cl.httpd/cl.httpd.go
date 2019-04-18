@@ -80,6 +80,8 @@ type Cfg struct {
 	AccountSecret             string `envcfg:"B10E_CLHTTPD_ACCOUNT_SECRET"`
 	GoogleKey                 string `envcfg:"B10E_CLHTTPD_GOOGLE_KEY"`
 	GoogleSecret              string `envcfg:"B10E_CLHTTPD_GOOGLE_SECRET"`
+	GoogleDesktopKey          string `envcfg:"B10E_CLHTTPD_GOOGLE_DESKTOP_KEY"`
+	GoogleDesktopSecret       string `envcfg:"B10E_CLHTTPD_GOOGLE_DESKTOP_SECRET"`
 	Auth0Key                  string `envcfg:"B10E_CLHTTPD_AUTH0_KEY"`
 	Auth0Secret               string `envcfg:"B10E_CLHTTPD_AUTH0_SECRET"`
 	Auth0Domain               string `envcfg:"B10E_CLHTTPD_AUTH0_DOMAIN"`
