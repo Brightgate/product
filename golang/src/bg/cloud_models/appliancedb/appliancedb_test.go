@@ -55,8 +55,7 @@ const (
 )
 
 var (
-	databaseURI string
-	bpg         *briefpg.BriefPG
+	bpg *briefpg.BriefPG
 
 	badUUID = uuid.Must(uuid.FromString(badStr))
 
@@ -289,6 +288,7 @@ func testApplianceID(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	chg := testIDN
 	chg.SiteUUID = testSite1.UUID
 	err = ds.UpdateApplianceID(ctx, &chg)
+	assert.NoError(err)
 
 	idn, err := ds.ApplianceIDByUUID(ctx, testIDN.ApplianceUUID)
 	assert.NoError(err)
@@ -329,7 +329,7 @@ func testOrganization(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 	assert.NoError(err, "expected success")
 	assert.Len(orgs, 1)
 
-	org, err := ds.OrganizationByUUID(ctx, testOrg1.UUID)
+	_, err = ds.OrganizationByUUID(ctx, testOrg1.UUID)
 	assert.Error(err)
 	assert.IsType(err, NotFoundError{})
 
@@ -344,13 +344,14 @@ func testOrganization(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 	err = ds.InsertOrganization(ctx, &testOrg1)
 	assert.Error(err, "expected Insert to fail")
 
-	org, err = ds.OrganizationByUUID(ctx, testOrg1.UUID)
+	org, err := ds.OrganizationByUUID(ctx, testOrg1.UUID)
 	assert.NoError(err, "expected success")
 	assert.Equal(testOrg1, *org)
 
 	chg := testOrg1
 	chg.Name = "foobarbaz"
 	err = ds.UpdateOrganization(ctx, &chg)
+	assert.NoError(err, "expected success")
 
 	org, err = ds.OrganizationByUUID(ctx, testOrg1.UUID)
 	assert.NoError(err, "expected success")
@@ -400,6 +401,7 @@ func testCustomerSite(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 	chg := testSite1
 	chg.Name = "foobarbaz"
 	err = ds.UpdateCustomerSite(ctx, &chg)
+	assert.NoError(err, "expected success")
 
 	schg, err := ds.CustomerSiteByUUID(ctx, chg.UUID)
 	assert.NoError(err, "expected success")
@@ -456,7 +458,7 @@ func testOAuth2OrganizationRule(t *testing.T, ds DataStore, logger *zap.Logger, 
 		assert.Equal(*rTest, *rule)
 
 		// Test unsuccessful rule
-		rule, err = ds.OAuth2OrganizationRuleTest(ctx, testProvider, ruleType, "foo")
+		_, err = ds.OAuth2OrganizationRuleTest(ctx, testProvider, ruleType, "foo")
 		assert.Error(err, "expected error")
 		assert.IsType(err, NotFoundError{})
 	}
@@ -474,7 +476,7 @@ func testPerson(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Sug
 
 	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, nil)
 
-	person, err := ds.PersonByUUID(ctx, testPerson1.UUID)
+	_, err = ds.PersonByUUID(ctx, testPerson1.UUID)
 	assert.Error(err)
 	assert.IsType(err, NotFoundError{})
 
@@ -488,7 +490,7 @@ func testPerson(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Sug
 	err = ds.InsertPerson(ctx, &testPerson2)
 	assert.NoError(err, "expected success")
 
-	person, err = ds.PersonByUUID(ctx, testPerson1.UUID)
+	person, err := ds.PersonByUUID(ctx, testPerson1.UUID)
 	assert.NoError(err)
 	assert.Equal(testPerson1, *person)
 }
@@ -537,7 +539,7 @@ func testAccount(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Su
 	assert.NoError(err)
 	assert.Equal(testAccount1, *acct)
 
-	acct, err = ds.AccountByUUID(ctx, badUUID)
+	_, err = ds.AccountByUUID(ctx, badUUID)
 	assert.Error(err)
 	assert.IsType(err, NotFoundError{})
 
@@ -563,8 +565,44 @@ func testAccount(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Su
 
 	// Bad passphrase should be detected
 	ds.AccountSecretsSetPassphrase([]byte("I DO NOT LIKE COCONUTS"))
-	as, err = ds.AccountSecretsByUUID(ctx, testAccount1.UUID)
+	_, err = ds.AccountSecretsByUUID(ctx, testAccount1.UUID)
 	assert.Error(err)
+
+	// Reset to good passphrase
+	ds.AccountSecretsSetPassphrase([]byte("I LIKE COCONUTS"))
+
+	// Delete testAccount1
+	err = ds.DeleteAccount(ctx, testAccount1.UUID)
+	assert.NoError(err)
+
+	err = ds.DeleteAccount(ctx, testAccount1.UUID)
+	assert.Error(err)
+	assert.IsType(err, NotFoundError{})
+
+	// Delete testAccount2
+	err = ds.DeleteAccount(ctx, testAccount2.UUID)
+	assert.NoError(err)
+
+	// See if there is anything left
+	_, err = ds.AccountByUUID(ctx, testAccount1.UUID)
+	assert.Error(err)
+	assert.IsType(err, NotFoundError{})
+
+	accts, err = ds.AccountsByOrganization(ctx, testOrg1.UUID)
+	assert.NoError(err)
+	assert.Len(accts, 0)
+
+	_, err = ds.AccountSecretsByUUID(ctx, testAccount1.UUID)
+	assert.Error(err)
+	assert.IsType(err, NotFoundError{})
+
+	ids, err := ds.OAuth2IdentitiesByAccount(ctx, testAccount1.UUID)
+	assert.NoError(err)
+	assert.Len(ids, 0)
+
+	_, err = ds.PersonByUUID(ctx, testPerson1.UUID)
+	assert.Error(err)
+	assert.IsType(err, NotFoundError{})
 }
 
 // Test AccountOrgRole APIs.  subtest of TestDatabaseModel
@@ -770,7 +808,7 @@ func testOAuth2Identity(t *testing.T, ds DataStore, logger *zap.Logger, slogger 
 		PrimaryOrgRoles:  nil,
 	}, li)
 
-	li, err = ds.LoginInfoByProviderAndSubject(ctx, "invalid", "invalid")
+	_, err = ds.LoginInfoByProviderAndSubject(ctx, "invalid", "invalid")
 	assert.Error(err)
 	assert.IsType(err, NotFoundError{})
 
@@ -966,6 +1004,7 @@ func testCommandQueue(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 	newCmd, oldCmd, err = ds.CommandCancel(ctx, 1)
 	assert.NoError(err)
 	assert.Equal("CNCL", oldCmd.State)
+	assert.Equal("CNCL", newCmd.State)
 
 	// Make sure that canceling a non-existent command gives us a
 	// NotFoundError
@@ -974,7 +1013,7 @@ func testCommandQueue(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 	assert.IsType(NotFoundError{}, err)
 
 	// Queue up a new command
-	cmd, enqTime = makeCmd("What Me Worry")
+	cmd, _ = makeCmd("What Me Worry")
 	err = ds.CommandSubmit(ctx, testSite1.UUID, cmd)
 	assert.NoError(err)
 	assert.Equal(int64(2), cmd.ID)
@@ -1031,6 +1070,7 @@ func testCommandQueue(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 	// Cancel half
 	for i := 0; i < 10; i++ {
 		_, _, err = ds.CommandCancel(ctx, cmdIDs[i])
+		assert.NoError(err)
 	}
 	// Keep 5; this shouldn't delete still-queued commands.
 	deleted, err = ds.CommandDelete(ctx, testSite1.UUID, 5)

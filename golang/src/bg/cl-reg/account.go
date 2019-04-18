@@ -108,6 +108,21 @@ func infoAccount(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func delAccount(cmd *cobra.Command, args []string) error {
+	if environ.ConfigdConnection == "" {
+		return fmt.Errorf("Must set B10E_CLREG_CLCONFIGD_CONNECTION")
+	}
+	acctUUID := uuid.Must(uuid.FromString(args[0]))
+	ctx := context.Background()
+	db, _, err := assembleRegistry(cmd)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	return registry.DeleteAccountInformation(ctx, db, getConfig, acctUUID)
+}
+
 func listAccountRoles(cmd *cobra.Command, args []string) error {
 	acctUUID := uuid.Must(uuid.FromString(args[0]))
 	ctx := context.Background()
@@ -259,6 +274,15 @@ func accountMain(rootCmd *cobra.Command) {
 	}
 	infoAccountCmd.Flags().StringP("input", "i", "", "registry data JSON file")
 	accountCmd.AddCommand(infoAccountCmd)
+
+	delAccountCmd := &cobra.Command{
+		Use:   "del",
+		Args:  cobra.ExactArgs(1),
+		Short: "Delete an account and related items from the registry",
+		RunE:  delAccount,
+	}
+	delAccountCmd.Flags().StringP("input", "i", "", "registry data JSON file")
+	accountCmd.AddCommand(delAccountCmd)
 
 	syncAllAccountCmd := &cobra.Command{
 		Use:   "sync-all",

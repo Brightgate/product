@@ -17,6 +17,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"math"
 	"math/big"
 	"net"
@@ -262,12 +263,12 @@ func SyncAccountSelfProv(ctx context.Context,
 	success := 0
 	for _, ui := range uis {
 		ops := ui.PropOpsFromPasswordHashes(secret.ApplianceUserBcrypt, secret.ApplianceUserMSCHAPv2)
-
 		_, err := ui.Update(ops...)
 		if err != nil {
 			errs = append(errs, err)
+		} else {
+			success++
 		}
-		success++
 		// XXX for now we don't wait around to see if the update succeeds.
 		// More work is needed to give the user progress and/or partial
 		// results.
@@ -277,6 +278,78 @@ func SyncAccountSelfProv(ctx context.Context,
 			success, len(errs))
 	}
 	return nil
+}
+
+// SyncAccountDeprovision performs deletion of an account to all CustomerSites
+// for the account's organization.
+// - getConfig is a function which serves a source of cfgapi.Handles for
+//   talking to configd.
+func SyncAccountDeprovision(ctx context.Context,
+	db appliancedb.DataStore, getConfig GetConfigHandleFunc,
+	accountUUID uuid.UUID) error {
+
+	account, err := db.AccountByUUID(ctx, accountUUID)
+	if err != nil {
+		if _, ok := err.(appliancedb.NotFoundError); ok {
+			return ErrNoAccount
+		}
+		return err
+	}
+	sites, err := db.CustomerSitesByOrganization(ctx, account.OrganizationUUID)
+	if err != nil {
+		return err
+	}
+
+	// Try to build up all of the handles we need first, then run the
+	// deletions.  We want to do our best to see that this operation
+	// succeeds or fails as a whole.
+	acctProp := fmt.Sprintf("@/users/%s", account.Email)
+	hdls := make([]*cfgapi.Handle, 0)
+	for _, site := range sites {
+		var hdl *cfgapi.Handle
+		hdl, err = getConfig(site.UUID.String())
+		if err != nil {
+			return err
+		}
+		_, err = hdl.GetProp("@/apversion")
+		if err != nil && errors.Cause(err) == cfgapi.ErrNoConfig {
+			// No config for this site, keep going.
+			continue
+		} else if err != nil {
+			return err
+		}
+		// We could test for the existence of the user here, but we
+		// want the greatest assurance that the user is gone, so
+		// we unconditionally blow it away below.
+		hdls = append(hdls, hdl)
+	}
+
+	var errs []error
+	success := 0
+	for _, hdl := range hdls {
+		err = hdl.DeleteProp(acctProp)
+		if err != nil {
+			errs = append(errs, err)
+		} else {
+			success++
+		}
+	}
+	if errs != nil {
+		return errors.Wrapf(errs[0], "partial or total failure. #success=%d, #fail=%d.  First failure is indicated",
+			success, len(errs))
+	}
+	return nil
+}
+
+// DeleteAccountInformation deprovisions and deletes the account specified.
+func DeleteAccountInformation(ctx context.Context, db appliancedb.DataStore,
+	getConfig GetConfigHandleFunc, accountUUID uuid.UUID) error {
+
+	err := SyncAccountDeprovision(ctx, db, getConfig, accountUUID)
+	if err != nil && err != ErrNotSelfProvisioned {
+		return err
+	}
+	return db.DeleteAccount(ctx, accountUUID)
 }
 
 // NewAppliance registers a new appliance.
@@ -304,7 +377,7 @@ func NewAppliance(ctx context.Context, db appliancedb.DataStore,
 
 	reprSerial := null.NewString("", false)
 	if systemReprHWSerial != "" {
-		_, err := mfg.NewExtSerialFromString(systemReprHWSerial)
+		_, err = mfg.NewExtSerialFromString(systemReprHWSerial)
 		if err != nil {
 			return uuid.Nil, uuid.Nil, nil, nil, err
 		}

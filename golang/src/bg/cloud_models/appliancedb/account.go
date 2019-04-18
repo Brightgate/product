@@ -34,6 +34,8 @@ type accountManager interface {
 	AccountByUUID(context.Context, uuid.UUID) (*Account, error)
 	InsertAccount(context.Context, *Account) error
 	InsertAccountTx(context.Context, DBX, *Account) error
+	DeleteAccount(context.Context, uuid.UUID) error
+	DeleteAccountTx(context.Context, DBX, uuid.UUID) error
 
 	AccountSecretsSetPassphrase(passphrase []byte)
 	AccountSecretsByUUID(context.Context, uuid.UUID) (*AccountSecrets, error)
@@ -167,6 +169,69 @@ func (db *ApplianceDB) InsertAccountTx(ctx context.Context, dbx DBX,
 	return err
 }
 
+// DeleteAccount deletes an Account and all related information
+func (db *ApplianceDB) DeleteAccount(ctx context.Context,
+	accountUUID uuid.UUID) error {
+	tx, err := db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := db.DeleteAccountTx(ctx, tx, accountUUID); err != nil {
+		return err
+	}
+	tx.Commit()
+	return nil
+}
+
+// DeleteAccountTx deletes an Account and all related information, as a transaction.
+func (db *ApplianceDB) DeleteAccountTx(ctx context.Context, dbx DBX,
+	acctuu uuid.UUID) error {
+
+	if dbx == nil {
+		panic("dbx cannot be nil")
+	}
+
+	var acct Account
+	err := dbx.GetContext(ctx, &acct,
+		`SELECT * FROM account WHERE uuid=$1`, acctuu)
+	switch err {
+	case sql.ErrNoRows:
+		return NotFoundError{fmt.Sprintf(
+			"DeleteAccountTx: Couldn't find record for %s", acctuu)}
+	case nil:
+		break
+	default:
+		panic(err)
+	}
+	_, err = dbx.ExecContext(ctx,
+		`DELETE FROM account_secrets WHERE account_uuid = $1`, acctuu)
+	if err != nil {
+		panic(err)
+	}
+	_, err = dbx.ExecContext(ctx,
+		`DELETE FROM oauth2_identity WHERE account_uuid = $1`, acctuu)
+	if err != nil {
+		panic(err)
+	}
+	_, err = dbx.ExecContext(ctx,
+		`DELETE FROM account_org_role WHERE account_uuid=$1`, acctuu)
+	if err != nil {
+		panic(err)
+	}
+	_, err = dbx.ExecContext(ctx,
+		`DELETE FROM account WHERE uuid=$1`, acctuu)
+	if err != nil {
+		panic(err)
+	}
+	_, err = dbx.ExecContext(ctx,
+		`DELETE FROM person WHERE uuid=$1`, acct.PersonUUID)
+	if err != nil {
+		panic(err)
+	}
+	return nil
+}
+
 func pgpSymEncrypt(plaintext string, passphrase []byte) (string, error) {
 	if passphrase == nil {
 		return "", errors.New("invalid empty passphrase")
@@ -214,6 +279,9 @@ func pgpSymDecrypt(cipherText []byte, passphrase []byte) (string, error) {
 	}
 
 	plainBytes, err := ioutil.ReadAll(msgDetails.UnverifiedBody)
+	if err != nil {
+		return "", err
+	}
 	return string(plainBytes), nil
 }
 
@@ -369,11 +437,11 @@ func (db *ApplianceDB) AccountOrgRolesByOrgTx(ctx context.Context, dbx DBX,
 	}
 
 	if role == "" {
-		err = db.SelectContext(ctx, &roles,
+		err = dbx.SelectContext(ctx, &roles,
 			`SELECT * FROM account_org_role
 			WHERE organization_uuid=$1`, org)
 	} else {
-		err = db.SelectContext(ctx, &roles,
+		err = dbx.SelectContext(ctx, &roles,
 			`SELECT * FROM account_org_role
 			WHERE organization_uuid=$1
 			AND role=$2`, org, role)

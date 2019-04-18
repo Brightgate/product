@@ -31,8 +31,10 @@ import (
 type DBX interface {
 	sqlx.QueryerContext
 	sqlx.ExecerContext
+	GetContext(context.Context, interface{}, string, ...interface{}) error
 	NamedExecContext(context.Context, string, interface{}) (sql.Result, error)
 	QueryRowContext(context.Context, string, ...interface{}) *sql.Row
+	SelectContext(context.Context, interface{}, string, ...interface{}) error
 }
 
 // DataStore facilitates mocking the database
