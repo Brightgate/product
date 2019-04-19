@@ -55,9 +55,9 @@ func (ts *eventServer) Put(ctx context.Context, req *cloud_rpc.PutEventRequest) 
 
 	m := &pubsub.Message{
 		Attributes: map[string]string{
-			"typeURL": req.Payload.TypeUrl,
-			"uuid":    applianceUUID,
-			"site":    siteUUID.String(),
+			"typeURL":        req.Payload.TypeUrl,
+			"appliance_uuid": applianceUUID,
+			"site_uuid":      siteUUID.String(),
 		},
 		Data: req.Payload.Value,
 	}

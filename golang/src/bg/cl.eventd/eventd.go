@@ -75,8 +75,8 @@ func heartbeatMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 	var err error
 	heartbeat := &cloud_rpc.Heartbeat{}
 
-	slog := slog.With("appliance_uuid", m.Attributes["uuid"],
-		"site_uuid", m.Attributes["site"])
+	slog := slog.With("appliance_uuid", m.Attributes["appliance_uuid"],
+		"site_uuid", m.Attributes["site_uuid"])
 
 	err = proto.Unmarshal(m.Data, heartbeat)
 	if err != nil {
@@ -117,8 +117,8 @@ func exceptionMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 
 	exc := &cloud_rpc.NetException{}
 
-	slog := slog.With("appliance_uuid", m.Attributes["uuid"],
-		"site_uuid", m.Attributes["site"])
+	slog := slog.With("appliance_uuid", m.Attributes["appliance_uuid"],
+		"site_uuid", m.Attributes["site_uuid"])
 
 	err = proto.Unmarshal(m.Data, exc)
 	if err != nil {

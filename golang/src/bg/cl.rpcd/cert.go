@@ -14,16 +14,12 @@ package main
 import (
 	"context"
 	"encoding/hex"
-	"fmt"
 	"time"
 
-	"bg/cl_common/clcfg"
 	"bg/cl_common/daemonutils"
 	"bg/cloud_models/appliancedb"
 	"bg/cloud_rpc"
-	"bg/common/cfgapi"
 
-	"github.com/grpc-ecosystem/go-grpc-middleware/util/metautils"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -38,16 +34,6 @@ func newCertServer(applianceDB appliancedb.DataStore) *certServer {
 	return &certServer{
 		applianceDB: applianceDB,
 	}
-}
-
-func getConfigClientHandle(cuuid string) (*cfgapi.Handle, error) {
-	configd, err := clcfg.NewConfigd(pname, cuuid,
-		environ.ConfigdConnection, !environ.ConfigdDisableTLS)
-	if err != nil {
-		return nil, err
-	}
-	configHandle := cfgapi.NewHandle(configd)
-	return configHandle, nil
 }
 
 func errToCode(err error) codes.Code {
@@ -65,21 +51,13 @@ func errToCode(err error) codes.Code {
 
 // claim makes sure that the site uuid is mapped to a "brightgate.net" domain,
 // thus claiming it, and returns the certificate for that domain.
-func (cs *certServer) claim(ctx context.Context, ustr string) (*cloud_rpc.CertificateResponse, error) {
+func (cs *certServer) claim(ctx context.Context, siteUU uuid.UUID) (*cloud_rpc.CertificateResponse, error) {
 	_, slog := daemonutils.EndpointLogger(ctx)
 
 	slog.Info("Processing new certificate request")
 
-	u, err := uuid.FromString(ustr)
-	if err != nil {
-		slog.Errorw("Failed to convert string to UUID",
-			"uuid-string", ustr, "error", err)
-		return nil, status.Errorf(codes.InvalidArgument,
-			"Failed to convert %q to UUID: %v", ustr, err)
-	}
-
 	jurisdiction := "" // XXX Need lookup
-	domain, err := cs.applianceDB.RegisterDomain(ctx, u, jurisdiction)
+	domain, err := cs.applianceDB.RegisterDomain(ctx, siteUU, jurisdiction)
 	if err != nil {
 		slog.Errorw("Failed to register or determine domain",
 			"error", err)
@@ -88,7 +66,7 @@ func (cs *certServer) claim(ctx context.Context, ustr string) (*cloud_rpc.Certif
 	}
 	slog.Infow("Claimed domain for site", "domain", domain)
 
-	certInfo, err := cs.applianceDB.ServerCertByUUID(ctx, u)
+	certInfo, err := cs.applianceDB.ServerCertByUUID(ctx, siteUU)
 	if err != nil {
 		slog.Errorw("Failed to find server certificate",
 			"domain", domain, "error", err)
@@ -114,18 +92,18 @@ func (cs *certServer) claim(ctx context.Context, ustr string) (*cloud_rpc.Certif
 func (cs *certServer) Download(ctx context.Context, req *cloud_rpc.CertificateRequest) (*cloud_rpc.CertificateResponse, error) {
 	_, slog := daemonutils.EndpointLogger(ctx)
 
-	ustr := metautils.ExtractIncoming(ctx).Get("site_uuid")
-	if ustr == "" {
+	siteUU, err := getSiteUUID(ctx, false)
+	if err != nil {
 		slog.Errorw("Failed to process certificate retrieval",
-			"error", fmt.Errorf("missing site_uuid"))
-		return nil, status.Errorf(codes.Internal, "missing site_uuid")
+			"error", err)
+		return nil, err
 	}
 
 	fp := req.CertFingerprint
 	fpstr := hex.EncodeToString(fp)
 
 	if len(fp) == 0 {
-		return cs.claim(ctx, ustr)
+		return cs.claim(ctx, siteUU)
 	}
 
 	slog = slog.With("fingerprint", fpstr)
