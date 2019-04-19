@@ -244,8 +244,8 @@ func main() {
 	slog.Infof(checkMark + "Starting ApplianceRegistry event receiver")
 	err = applianceRegEvents.Receive(ctx, func(ctx context.Context, m *pubsub.Message) {
 		slog.Debugw("Message", "size", len(m.Data), "attrs", m.Attributes)
-		applianceUUIDstr := m.Attributes["uuid"]
-		siteUUIDstr := m.Attributes["site"]
+		applianceUUIDstr := m.Attributes["appliance_uuid"]
+		siteUUIDstr := m.Attributes["site_uuid"]
 		if applianceUUIDstr == "" || siteUUIDstr == "" {
 			slog.Errorw("missing uuid or site attribute", "message", m)
 			// We don't want to see this again
