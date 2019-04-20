@@ -57,7 +57,9 @@ func propTreeStore() error {
 		return nil
 	}
 
+	propTree.ChangesetInit()
 	propTree.Add("@/apversion", common.GitVersion, nil)
+	propTree.ChangesetCommit()
 	s := propTree.Export(true)
 	metrics.treeSize.Set(float64(len(s)))
 
@@ -181,6 +183,7 @@ func dumpTree(indent string, node *cfgtree.PNode) {
 
 func propTreeInit(defaults *cfgtree.PNode) error {
 	var err error
+	var newTree bool
 
 	// Open the properties file's enclosing directory; we'll fsync its
 	// metadata after each write.
@@ -207,19 +210,29 @@ func propTreeInit(defaults *cfgtree.PNode) error {
 		slog.Infof("No usable properties files.  Using defaults.")
 
 		tree = cfgtree.GraftTree("@", defaults)
-		applianceUUID := uuid.NewV4().String()
-		if err := tree.Add("@/uuid", applianceUUID, nil); err != nil {
-			slog.Fatalf("Unable to set UUID: %v", err)
-		}
-
-		applianceSiteID := "setup." + base_def.GATEWAY_CLIENT_DOMAIN
-		if err := tree.Add("@/siteid", applianceSiteID, nil); err != nil {
-			slog.Fatalf("Unable to set SiteID: %v", err)
-		}
+		newTree = true
 	}
 
 	propTree = tree
 	propTreeLoaded = true
+
+	if newTree {
+		propTree.ChangesetInit()
+		applianceUUID := uuid.NewV4().String()
+		if err := propTree.Add("@/uuid", applianceUUID, nil); err != nil {
+			slog.Fatalf("Unable to set UUID: %v", err)
+		}
+
+		applianceSiteID := "setup." + base_def.GATEWAY_CLIENT_DOMAIN
+		if err := propTree.Add("@/siteid", applianceSiteID, nil); err != nil {
+			slog.Fatalf("Unable to set SiteID: %v", err)
+		}
+		propTree.ChangesetCommit()
+		if err := propTreeStore(); err != nil {
+			slog.Fatalf("Failed to write properties: %v", err)
+		}
+	}
+
 	if err = versionTree(); err != nil {
 		err = fmt.Errorf("failed version check: %v", err)
 	}

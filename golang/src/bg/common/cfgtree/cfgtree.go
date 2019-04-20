@@ -232,8 +232,13 @@ func (node *PNode) subtree() []string {
 }
 
 func (node *PNode) preserveChildren() {
+	tree := node.tree
+
+	if tree.preserved == nil {
+		log.Fatalf("making changes outside of a changeset")
+	}
+
 	if node.origChildren == nil {
-		tree := node.tree
 
 		node.origChildren = make(map[string]*PNode)
 		tree.preserved = append(tree.preserved, node)
@@ -316,6 +321,10 @@ func (node *PNode) commit(now time.Time) bool {
 // abandoned.
 func (t *PTree) ChangesetInit() {
 	t.Lock()
+	if t.preserved != nil {
+		log.Fatalf("attempting to nest changesets")
+	}
+
 	t.preserved = make([]*PNode, 0)
 }
 
