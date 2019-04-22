@@ -104,7 +104,6 @@ func getCloudKeyCertPaths(plat *platform.Platform, path ...string) *CertPaths {
 	}
 	pathfn := func(fn string) string {
 		p := append(path, fn)
-		p = append([]string{"__APROOT__"}, p...)
 		return plat.ExpandDirPath(p...)
 	}
 	return &CertPaths{
@@ -423,13 +422,9 @@ func createSSKeyCert(config *cfgapi.Handle, cryptodir string, domainname string,
 // as DER, and writes PEM files to the appropriate paths.  It will notify any
 // listeners that the certificate is installed.  It does not attempt to protect
 // against multiple writers.
-func InstallCert(key, cert, issuerCert []byte, fp string, config *cfgapi.Handle) error {
+func InstallCert(key, cert, issuerCert []byte, config *cfgapi.Handle) error {
 	rawFP := sha1.Sum(cert)
 	certFP := hex.EncodeToString(rawFP[:])
-	if fp != certFP && fp != "" {
-		return fmt.Errorf("Fingerprint of provided certificate (%s) "+
-			"doesn't match expected fingerprint (%s)", certFP, fp)
-	}
 	if certFP == "" {
 		return fmt.Errorf("fingerprint of provided certificate is empty")
 	}
@@ -450,7 +445,7 @@ func InstallCert(key, cert, issuerCert []byte, fp string, config *cfgapi.Handle)
 	if err != nil {
 		return err
 	}
-	if err != pem.Encode(keyf, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: key}) {
+	if err = pem.Encode(keyf, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: key}); err != nil {
 		return err
 	}
 	keyf.Close()

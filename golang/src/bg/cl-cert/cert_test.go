@@ -739,8 +739,9 @@ func testRefillPool(t *testing.T, ds appliancedb.DataStore, logger *zap.Logger, 
 
 	// Claim a cert for the site and make sure the unclaimed count goes
 	// down.
-	_, err = ds.RegisterDomain(ctx, testSite1.UUID, "")
+	_, isNew, err := ds.RegisterDomain(ctx, testSite1.UUID, "")
 	assert.NoError(err)
+	assert.True(isNew)
 	count, err = ds.UnclaimedDomainCount(ctx)
 	assert.NoError(err)
 	assert.EqualValues(poolsize-1, count)

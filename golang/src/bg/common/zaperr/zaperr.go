@@ -14,6 +14,9 @@
 package zaperr
 
 import (
+	"fmt"
+	"strings"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -25,7 +28,42 @@ type ZapError struct {
 }
 
 func (ze ZapError) Error() string {
-	return ze.msg
+	buf := strings.Builder{}
+	buf.WriteString(ze.msg)
+	var invalid invalidPairs
+
+	for i := 0; i < len(ze.kv); {
+		// Make sure this element isn't a dangling key
+		if i == len(ze.kv)-1 {
+			fmt.Fprintf(&buf, " ignored=%s", ze.kv[i])
+			break
+		}
+
+		// Consume this value and the next, treating them as a key-value
+		// pair.  If the key isn't a string, add this pair to the slice
+		// of invalid pairs.
+		key, val := ze.kv[i], ze.kv[i+1]
+		if keyStr, ok := key.(string); !ok {
+			// Subsequent errors are likely, so allocate once up
+			// front.
+			if cap(invalid) == 0 {
+				invalid = make(invalidPairs, 0, len(ze.kv)/2)
+			}
+			invalid = append(invalid, invalidPair{i, key, val})
+		} else {
+			fmt.Fprintf(&buf, " %s=%+v", keyStr, val)
+		}
+
+		i += 2
+	}
+
+	// If we encountered any invalid key-value pairs, log them
+	if len(invalid) > 0 {
+		for i := range invalid {
+			fmt.Fprintf(&buf, " invalid=%+v", invalid[i])
+		}
+	}
+	return buf.String()
 }
 
 // MarshalLogObject is largely a copy of zap.SugaredLogger.sweetenFields(), as

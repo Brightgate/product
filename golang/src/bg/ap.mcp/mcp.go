@@ -20,6 +20,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -127,7 +128,12 @@ func reopenLogfile() {
 		return
 	}
 
-	path := plat.ExpandDirPath("__APDATA__", "mcp", *logname)
+	var path string
+	if filepath.IsAbs(*logname) {
+		path = *logname
+	} else {
+		path = plat.ExpandDirPath("__APDATA__", "mcp", *logname)
+	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		logWarn("Unable to redirect logging to %s: %v", path, err)

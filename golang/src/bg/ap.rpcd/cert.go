@@ -14,8 +14,8 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"bg/ap_common/certificate"
@@ -28,7 +28,7 @@ import (
 
 func downloadCert(ctx context.Context, client cloud_rpc.CertificateManagerClient, fpstr string) error {
 	if fpstr != "" {
-		slog.Infof("Downloading key and certificate: fingerprint=%s", fpstr)
+		slog.Info("Downloading key and certificate")
 	} else {
 		slog.Info("Requesting new key and certificate")
 	}
@@ -43,19 +43,13 @@ func downloadCert(ctx context.Context, client cloud_rpc.CertificateManagerClient
 	ctx, ctxcancel := context.WithDeadline(ctx, clientDeadline)
 	defer ctxcancel()
 
-	fpbytes, err := hex.DecodeString(fpstr)
-	if err != nil {
-		return err
-	}
-	req := &cloud_rpc.CertificateRequest{
-		CertFingerprint: fpbytes,
-	}
+	req := &cloud_rpc.CertificateRequest{}
 
 	resp, err := client.Download(ctx, req)
-	var fpMsg, errMsg string
+	var fpResp, fpMsg, errMsg string
 	if err == nil {
-		fpMsg = fmt.Sprintf(" fingerprint=%s",
-			hex.EncodeToString(resp.Fingerprint))
+		fpResp = hex.EncodeToString(resp.Fingerprint)
+		fpMsg = fmt.Sprintf(" requested=%s received=%s", fpstr, fpResp)
 	} else {
 		errMsg = fmt.Sprintf(" error=%s", err)
 	}
@@ -64,8 +58,16 @@ func downloadCert(ctx context.Context, client cloud_rpc.CertificateManagerClient
 		return err
 	}
 
+	// If the server gave us the cert we already had, there's no need to
+	// install it and restart daemons.
+	if fpResp == fpstr {
+		slog.Info("Key and certificate haven't changed")
+		return nil
+	}
+
+	slog.Infof("Installing new cloud certificate: fingerprint=%s", fpResp)
 	if err = certificate.InstallCert(resp.Key, resp.Certificate,
-		resp.IssuerCert, fpstr, config); err != nil {
+		resp.IssuerCert, config); err != nil {
 		// Technically, this can also be a failure to notify listeners,
 		// but if we have to download again, it's not the end of the
 		// world.
@@ -74,77 +76,68 @@ func downloadCert(ctx context.Context, client cloud_rpc.CertificateManagerClient
 	return nil
 }
 
-func certificateInitCheck(ctx context.Context, client cloud_rpc.CertificateManagerClient) error {
+// findInstalledCert looks through the config tree at @/certs and finds an
+// installed, unexpired cloud certificate.  It may return an error if there's a
+// problem with configd.
+func findInstalledCert(ctx context.Context, client cloud_rpc.CertificateManagerClient) (string, error) {
 	node, err := config.GetProps("@/certs")
 	if err == cfgapi.ErrNoProp {
 		// If there is no such property, then we don't have a cert; go
 		// ask for one.
 		slog.Info("No certs known; requesting new cert")
-		return downloadCert(ctx, client, "")
+		return "", nil
 	} else if err != nil {
-		return err
+		return "", err
 	}
 
-	// Applicable states are "installed" and "available".  We request a new
-	// cert if there aren't any at all, or all certs have expired.  If there
-	// aren't any installed certs but there are ones available that are not
-	// expired, download the latest.
-	//
-	// If we find an installed cert where the origin is not "cloud", we
-	// don't stop looking; consumers will use the existing certificate until
-	// a new one is available.
-	type tuple struct {
-		fp  string
-		exp *time.Time
-	}
-	var available []tuple
+	var found string
 	for fp, node := range node.Children {
 		stateNode := node.Children["state"]
-		if stateNode != nil && !stateNode.Expires.Before(time.Now()) {
-			tup := tuple{fp, stateNode.Expires}
-			if stateNode.Value == "installed" {
-				originNode := node.Children["origin"]
-				if originNode == nil || originNode.Value != "cloud" {
-					slog.Warnf("Found an installed non-cloud "+
-						"certificate: %s", fp)
-					continue
-				}
-				// If we already have an installed key, there's
-				// no need to continue.
-				slog.Infof("Found at least one installed certificate: %s",
-					fp)
-				return nil
-			} else if stateNode.Value == "available" {
-				available = append(available, tup)
-			}
+		if stateNode == nil ||
+			stateNode.Expires.Before(time.Now()) ||
+			stateNode.Value != "installed" {
+			continue
 		}
+
+		originNode := node.Children["origin"]
+		// If we find an installed cert where the origin is not "cloud",
+		// we don't stop looking; consumers will use the existing cert
+		// until a new one is available.
+		if originNode == nil || originNode.Value != "cloud" {
+			slog.Warnf("Found an installed non-cloud "+
+				"certificate: %s", fp)
+			continue
+		}
+
+		// If we already have an installed key, there's no need to
+		// continue.
+		slog.Infof("Found at least one installed certificate: %s", fp)
+		found = fp
+		break
 	}
 
-	// If there are any available certs, find the one with the latest
-	// expiration; otherwise, we'll just get a new one.
-	var fp string
-	if len(available) > 0 {
-		// Sort by decreasing expiration time
-		sort.Slice(available, func(i, j int) bool {
-			return (available[i].exp).After(*available[j].exp)
-		})
-		fp = available[0].fp
-	}
-
-	return downloadCert(ctx, client, fp)
+	return found, nil
 }
 
-func certificateInit(ctx context.Context, conn *grpc.ClientConn) {
+func sleepOrDone(t time.Duration, doneChan chan bool) bool {
+	done := false
+	timer := time.NewTimer(t)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+	case <-doneChan:
+		done = true
+	}
+	return done
+}
+
+func certLoop(ctx context.Context, conn *grpc.ClientConn, wg *sync.WaitGroup, doneChan chan bool) {
+	slog.Infof("certificate loop starting")
 	client := cloud_rpc.NewCertificateManagerClient(conn)
 
-	// Set up a handler to download new certs when the cloud tells us
-	// they're available and one to clean up the parent nodes when the
-	// "state" property expires.
-	certStateChange := func(path []string, val string, expires *time.Time) {
-		if val == "available" {
-			downloadCert(ctx, client, path[1])
-		}
-	}
+	// Set up a handler to clean up the parent nodes when the "state"
+	// property expires.
 	certStateExpire := func(path []string) {
 		subtree := "@/" + strings.Join(path[:len(path)-1], "/")
 		if err := config.DeleteProp(subtree); err != nil {
@@ -152,26 +145,55 @@ func certificateInit(ctx context.Context, conn *grpc.ClientConn) {
 				"path=%s, error=%v", subtree, err)
 		}
 	}
-	config.HandleChange(`^@/certs/.*/state`, certStateChange)
 	config.HandleExpire(`^@/certs/.*/state`, certStateExpire)
 
-	// Download and install a certificate if we need one and one is
-	// available.  If one isn't available (or the cloud isn't upgraded with
-	// this functionality yet), we'll have to wait until one is created.
-	go func() {
-		sleep := time.Second
-		for {
-			if err := certificateInitCheck(ctx, client); err != nil {
-				slog.Errorf("Failed initial cert retrieval "+
-					"(will retry in %s): %v", sleep, err)
+	// A curated sleep schedule
+	sleepSched := []int{
+		1, 2, 2, // up to 5 seconds
+		5, 5, // 5 second sleeps up to 15 seconds
+		15, 15, 15, // 15 second sleeps up to 1 minute
+		60, 60, 60, 60, // 1 minute sleeps up to 5 minutes
+		300, 300, // 5 minute sleeps up to 15 minutes
+		900, 900, 900, // 15 minute sleeps up to 1 hour
+		3600, // 1 hour thereafter
+	}
+
+	done := false
+	for !done {
+		for i := 0; !done; i++ {
+			if i == len(sleepSched) {
+				i--
+			}
+
+			var err error
+			var fp, msg string
+
+			// Download and install a certificate if we need one and
+			// one is available.  If one isn't available, wait until
+			// one is created.
+			if fp, err = findInstalledCert(ctx, client); err != nil {
+				msg = "find installed"
 			} else {
-				return
+				if err = downloadCert(ctx, client, fp); err == nil {
+					break
+				}
+				msg = "download"
 			}
-			time.Sleep(sleep)
-			sleep = 2 * sleep
-			if sleep > 10*time.Minute {
-				sleep = 10 * time.Minute
-			}
+
+			sleep := time.Duration(sleepSched[i]) * time.Second
+			slog.Errorf("Failed to %s cert (will retry in %s): %v",
+				msg, sleep, err)
+			done = sleepOrDone(sleep, doneChan)
 		}
-	}()
+		if done {
+			break
+		}
+
+		// Check back a day after a successful cloud connection to see
+		// if there's a new cert for us.
+		done = sleepOrDone(24*time.Hour, doneChan)
+	}
+
+	slog.Infof("certificate loop done")
+	wg.Done()
 }

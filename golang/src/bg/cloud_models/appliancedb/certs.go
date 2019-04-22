@@ -31,7 +31,7 @@ type certManager interface {
 	DeleteExpiredServerCerts(context.Context) (int64, error)
 	UnclaimedDomainCount(context.Context) (int64, error)
 	DomainsMissingCerts(context.Context) ([]DecomposedDomain, error)
-	RegisterDomain(context.Context, uuid.UUID, string) (string, error)
+	RegisterDomain(context.Context, uuid.UUID, string) (string, bool, error)
 	NextDomain(context.Context, string) (DecomposedDomain, error)
 	ResetMaxUnclaimed(context.Context, map[string]DecomposedDomain) error
 	GetMaxUnclaimed(context.Context) (map[string]DecomposedDomain, error)
@@ -315,10 +315,11 @@ func (db *ApplianceDB) DomainsMissingCerts(ctx context.Context) ([]DecomposedDom
 }
 
 // RegisterDomain assigns a siteid to a site and returns the domain.
-func (db *ApplianceDB) RegisterDomain(ctx context.Context, u uuid.UUID, jurisdiction string) (string, error) {
+func (db *ApplianceDB) RegisterDomain(ctx context.Context, u uuid.UUID, jurisdiction string) (string, bool, error) {
 	var rval struct {
 		SiteID       int32
 		Jurisdiction string
+		IsNew        bool
 	}
 	err := db.GetContext(ctx, &rval,
 		`SELECT * FROM register_domain($1, $2)`,
@@ -328,9 +329,9 @@ func (db *ApplianceDB) RegisterDomain(ctx context.Context, u uuid.UUID, jurisdic
 	}
 	domain, err := db.ComputeDomain(ctx, rval.SiteID, rval.Jurisdiction)
 	if err != nil {
-		return "", err
+		return "", rval.IsNew, err
 	}
-	return domain, err
+	return domain, rval.IsNew, err
 }
 
 // NextDomain returns the next unregistered domain for the given jurisdiction.

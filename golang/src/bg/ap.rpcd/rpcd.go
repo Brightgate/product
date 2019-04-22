@@ -295,7 +295,6 @@ func daemonStart() {
 	tclient := cloud_rpc.NewEventClient(conn)
 	cclient := cloud_rpc.NewConfigBackEndClient(conn)
 	sclient := cloud_rpc.NewCloudStorageClient(conn)
-	certificateInit(ctx, conn)
 	slog.Debugf("RPC client connected")
 
 	brokerd.Handle(base_def.TOPIC_EXCEPTION, func(event []byte) {
@@ -312,6 +311,7 @@ func daemonStart() {
 	go uploadLoop(sclient, &cleanup.wg, addDoneChan())
 	go configLoop(ctx, cclient, &cleanup.wg, addDoneChan())
 	go tunnelLoop(&cleanup.wg, addDoneChan())
+	go certLoop(ctx, conn, &cleanup.wg, addDoneChan())
 
 	slog.Infof("Setting state ONLINE")
 	err = mcpd.SetState(mcp.ONLINE)

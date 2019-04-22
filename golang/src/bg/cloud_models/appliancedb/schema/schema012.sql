@@ -10,11 +10,10 @@
 
 BEGIN;
 
-DROP TRIGGER default_siteid ON site_domains;
-DROP FUNCTION default_siteid();
+DROP FUNCTION register_domain(uuid, varchar(16));
 
 CREATE FUNCTION register_domain(u uuid, juris_arg varchar(16))
-    RETURNS TABLE(siteid integer, jurisdiction varchar(16)) as $$
+    RETURNS TABLE(siteid integer, jurisdiction varchar(16), isnew boolean) as $$
 DECLARE
     id integer;
 BEGIN
@@ -24,10 +23,11 @@ BEGIN
         VALUES (u, id, juris_arg);
     siteid := id;
     jurisdiction := juris_arg;
+    isnew := TRUE;
     RETURN NEXT;
     EXCEPTION
     WHEN UNIQUE_VIOLATION THEN
-        RETURN QUERY SELECT d.siteid, d.jurisdiction
+        RETURN QUERY SELECT d.siteid, d.jurisdiction, FALSE
         FROM site_domains d
         WHERE site_uuid = u;
 END;

@@ -152,8 +152,9 @@ func testServerCerts(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	assert.Equal(int64(2), unclaimed)
 
 	// Register site 12777 (claim the domain)
-	domainStr, err := ds.RegisterDomain(ctx, testID1.SiteUUID, "")
+	domainStr, isNew, err := ds.RegisterDomain(ctx, testID1.SiteUUID, "")
 	assert.NoError(err)
+	assert.True(isNew)
 	assert.Equal("12777.brightgate.net", domainStr)
 
 	// The domain for 12777 should be claimed
@@ -175,8 +176,9 @@ func testServerCerts(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	}
 
 	// Claim 12777.uk
-	domainStr, err = ds.RegisterDomain(ctx, testID2.SiteUUID, "uk")
+	domainStr, isNew, err = ds.RegisterDomain(ctx, testID2.SiteUUID, "uk")
 	assert.NoError(err)
+	assert.True(isNew)
 	assert.Equal("12777.uk.brightgate.net", domainStr)
 
 	// No domain left unclaimed
@@ -188,8 +190,9 @@ func testServerCerts(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	// jurisdiction
 	err = ds.InsertServerCert(ctx, cert5)
 	assert.NoError(err)
-	domainStr, err = ds.RegisterDomain(ctx, testID3.SiteUUID, "uk")
+	domainStr, isNew, err = ds.RegisterDomain(ctx, testID3.SiteUUID, "uk")
 	assert.NoError(err)
+	assert.True(isNew)
 	assert.Equal("62984.uk.brightgate.net", domainStr)
 
 	// Make sure that max_claimed is what we expect
@@ -202,8 +205,9 @@ func testServerCerts(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 
 	// Make sure that registering a site again just returns the original
 	// domain, even if the jurisdiction is different.
-	domainStr, err = ds.RegisterDomain(ctx, testID2.SiteUUID, "de")
+	domainStr, isNew, err = ds.RegisterDomain(ctx, testID2.SiteUUID, "de")
 	assert.NoError(err)
+	assert.False(isNew)
 	assert.Equal("12777.uk.brightgate.net", domainStr)
 
 	// Make sure that the above didn't actually insert "de" into the
@@ -220,8 +224,9 @@ func testServerCerts(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	assert.Equal(1, maxClaimedUK)
 
 	// Check that it doesn't happen even when the jurisdiction is the same
-	domainStr, err = ds.RegisterDomain(ctx, testID2.SiteUUID, "uk")
+	domainStr, isNew, err = ds.RegisterDomain(ctx, testID2.SiteUUID, "uk")
 	assert.NoError(err)
+	assert.False(isNew)
 	assert.Equal("12777.uk.brightgate.net", domainStr)
 	err = adb.GetContext(ctx, &maxClaimedUK,
 		`SELECT max_claimed FROM siteid_sequences WHERE jurisdiction = 'uk'`)
@@ -230,8 +235,9 @@ func testServerCerts(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 
 	// If we re-register, make sure we get the same domain, even when it's
 	// not siteid 0.
-	domainStr, err = ds.RegisterDomain(ctx, testID3.SiteUUID, "uk")
+	domainStr, isNew, err = ds.RegisterDomain(ctx, testID3.SiteUUID, "uk")
 	assert.NoError(err)
+	assert.False(isNew)
 	assert.Equal("62984.uk.brightgate.net", domainStr)
 
 	// When getting a cert by the site UUID, make sure we get the latest
