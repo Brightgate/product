@@ -143,7 +143,7 @@ func processExpirations(expired []string) {
 	cnt := 0
 
 	updates := make([]*updateRecord, 0)
-	propTree.Lock()
+	propTree.ChangesetInit()
 	for _, path := range expired {
 		node, _ := propTree.GetNode(path)
 		if node == nil {
@@ -168,12 +168,11 @@ func processExpirations(expired []string) {
 		cnt++
 	}
 
+	updateNotify(updates)
+	propTree.ChangesetCommit()
 	if cnt > 0 {
-		updateNotify(updates)
 		propTreeStore()
 	}
-
-	propTree.Unlock()
 }
 
 func expirationHandler() {

@@ -57,9 +57,6 @@ func propTreeStore() error {
 		return nil
 	}
 
-	propTree.ChangesetInit()
-	propTree.Add("@/apversion", common.GitVersion, nil)
-	propTree.ChangesetCommit()
 	s := propTree.Export(true)
 	metrics.treeSize.Set(float64(len(s)))
 
@@ -237,6 +234,11 @@ func propTreeInit(defaults *cfgtree.PNode) error {
 		err = fmt.Errorf("failed version check: %v", err)
 	}
 
+	if err == nil {
+		propTree.ChangesetInit()
+		propTree.Add("@/apversion", common.GitVersion, nil)
+		propTree.ChangesetCommit()
+	}
 	if *verbose {
 		root, _ := tree.GetNode("@/")
 		dumpTree("", root)
