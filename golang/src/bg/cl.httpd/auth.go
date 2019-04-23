@@ -11,10 +11,7 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -31,7 +28,6 @@ import (
 	"github.com/satori/uuid"
 	"golang.org/x/oauth2"
 
-	"github.com/futurenda/google-auth-id-token-verifier"
 	"github.com/markbates/goth"
 	"github.com/markbates/goth/gothic"
 	"github.com/markbates/goth/providers/auth0"
@@ -39,7 +35,6 @@ import (
 	"github.com/markbates/goth/providers/google"
 	"github.com/markbates/goth/providers/openidConnect"
 
-	"golang.org/x/oauth2/jws"
 	"google.golang.org/api/people/v1"
 )
 
@@ -660,107 +655,6 @@ func (a *authHandler) getUserID(c echo.Context) error {
 	return c.JSON(http.StatusOK, &resp)
 }
 
-type idToken struct {
-	id string
-}
-
-// The googleAuthIDTokenVerifier decode function is oudated and doesn't
-// return the proper items that we need, therefore, we construct our own
-type claims struct {
-	jws.ClaimSet
-	Email         string `json:"email"`
-	EmailVerified bool   `json:"email_verified"`
-	Name          string `json:"name"`
-	Picture       string `json:"picture"`
-	GivenName     string `json:"given_name"`
-	FamilyName    string `json:"family_name"`
-	Locale        string `json:"locale"`
-	HostedDomain  string `json:"hd"`
-}
-
-type requestToken struct {
-	Token string `json:"token"`
-}
-
-type loginInfo struct {
-	Username string
-	Password string
-}
-
-func decode(token string) (*claims, error) {
-	s := strings.Split(token, ".")
-	if len(s) != 3 {
-		ErrInvalidToken := fmt.Errorf("format of token is incorrect, size: %+v", len(s))
-		return nil, ErrInvalidToken
-	}
-	decoded, err := base64.RawURLEncoding.DecodeString(s[1])
-	if err != nil {
-		return nil, err
-	}
-	c := &claims{}
-	err = json.NewDecoder(bytes.NewBuffer(decoded)).Decode(c)
-	return c, err
-}
-
-// verify the correctness of the ID token, then use the decoded token
-// to find if the user already has an existing account, if so, return it
-func (a *authHandler) postTokenVerify(c echo.Context) error {
-	m := new(requestToken)
-	if err := c.Bind(m); err != nil {
-		return err
-	}
-	c.Logger().Infof("bind map contents %+v", m)
-	v := googleAuthIDTokenVerifier.Verifier{}
-	err := v.VerifyIDToken(m.Token, []string{
-		environ.GoogleDesktopKey,
-	})
-	if err != nil {
-		// return echo.NewHTTPError(http.StatusUnauthorized)
-		return err
-	}
-	claimSet, _ := decode(m.Token)
-	c.Logger().Infof("claimset contents: %+v", claimSet)
-	// Now with decoded idToken, use to see if there's an existing Brightgate account
-	c.Logger().Infof("sub number is %+v", claimSet.ClaimSet.Sub)
-	// use the Claimset struct to populate a new Goth user struct
-	user := goth.User{
-		Provider:  "google",
-		Email:     claimSet.Email,
-		Name:      claimSet.Name,
-		FirstName: claimSet.GivenName,
-		LastName:  claimSet.FamilyName,
-		UserID:    claimSet.ClaimSet.Sub,
-		ExpiresAt: time.Unix(claimSet.ClaimSet.Exp, 0),
-	}
-
-	userLogin, err := a.getUser(c, user)
-	if err != nil {
-		c.Logger().Infof("error is %+v", err)
-	}
-
-	login := loginInfo{
-		Username: userLogin.Account.Email,
-		Password: "",
-	}
-	return c.JSON(http.StatusOK, login)
-}
-
-// use the sub to find a UUID and possible account associated with user
-func (a *authHandler) postAccountSearch(c echo.Context) error {
-	ctx := c.Request().Context()
-	token := new(claims)
-	c.Logger().Infof("token info is %+v", token)
-	if err := c.Bind(token); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, err)
-	}
-	userLogin, err := a.db.LoginInfoByProviderAndSubject(ctx, "google", token.ClaimSet.Sub)
-	if err != nil {
-		c.Logger().Infof("error is %+v", err)
-		return echo.NewHTTPError(http.StatusBadRequest, err)
-	}
-	return c.JSON(http.StatusOK, userLogin)
-}
-
 // newAuthHandler creates an authHandler to handle authentication endpoints
 // and routes the handler into the echo instance.  Note that it manipulates
 // global gothic state.
@@ -789,8 +683,6 @@ func newAuthHandler(r *echo.Echo, sessionStore sessions.Store, applianceDB appli
 	r.GET("/auth/:provider/callback", h.getProviderCallback)
 	r.GET("/auth/logout", h.getLogout)
 	r.GET("/auth/userid", h.getUserID)
-	r.POST("/auth/token", h.postTokenVerify)
-	r.POST("/auth/account", h.postAccountSearch)
 	return h
 }
 
