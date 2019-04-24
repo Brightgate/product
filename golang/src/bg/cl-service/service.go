@@ -214,18 +214,7 @@ func updateConfigTree(props map[string]string) {
 // appliance to establish an ssh tunnel to us.
 func prepProps() map[string]string {
 	var host string
-	var err error
 
-	if *sshPort == 0 {
-		if *sshPort, err = network.ChoosePort(); err != nil {
-			slog.Fatalf("getting ssh port: %v", err)
-		}
-	}
-	if *tunnelPort == 0 {
-		if *tunnelPort, err = network.ChoosePort(); err != nil {
-			slog.Fatalf("getting tunnel port: %v", err)
-		}
-	}
 	prefix := "provided"
 	if host = *sshAddr; host == "" {
 		prefix = "detected"
@@ -322,6 +311,23 @@ func newLogger(child bool) *zap.SugaredLogger {
 	return logger.Sugar()
 }
 
+func choosePorts() error {
+	var err error
+
+	if *sshPort == 0 {
+		if *sshPort, err = network.ChoosePort(); err != nil {
+			return fmt.Errorf("getting ssh port: %v", err)
+		}
+	}
+	if *tunnelPort == 0 {
+		if *tunnelPort, err = network.ChoosePort(); err != nil {
+			return fmt.Errorf("getting tunnel port: %v", err)
+		}
+	}
+
+	return nil
+}
+
 func daemonInit() (*ssh.Daemon, error) {
 	cfg := &ssh.DaemonConfig{
 		Port:        *sshPort,
@@ -378,21 +384,31 @@ func main() {
 	flag.Parse()
 	slog = newLogger(false)
 
+	if err = choosePorts(); err != nil {
+		slog.Fatalf("choosing ports: %v", err)
+	}
+
 	if err = userInit(); err != nil {
 		slog.Fatalf("generating user credentials: %v", err)
+	}
+
+	// Push the sshd settings into the config tree, so the appliance knows
+	// how to connect to us
+	if err = connectToConfigd(); err != nil {
+		slog.Fatalf("connecting to cl.configd: %v", err)
+	}
+
+	existing, _ := config.GetProp("@/cloud/service/cloud_host")
+	if existing != "" {
+		slog.Warnf("service tunnel already configured on: %s", existing)
+		os.Exit(1)
 	}
 
 	if daemon, err = daemonInit(); err != nil {
 		userCleanup()
 		slog.Fatalf("spawning sshd daemon: %v", err)
 	}
-
-	// Push the sshd settings into the config tree, so the appliance knows
-	// how to connect to us
 	props := prepProps()
-	if err = connectToConfigd(); err != nil {
-		slog.Fatalf("connecting to cl.configd: %v", err)
-	}
 	updateConfigTree(props)
 
 	// Let the user know how to reach the appliance once the tunnel is fully
