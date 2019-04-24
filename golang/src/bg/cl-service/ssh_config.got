@@ -1,0 +1,5 @@
+# Settings that are set dynamically when the config file is generated
+IdentityFile {{.IdentityFile}}
+Port {{.Port}}
+
+StrictHostKeyChecking no

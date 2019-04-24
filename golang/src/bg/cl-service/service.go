@@ -105,8 +105,11 @@ import (
 	"os"
 	"os/signal"
 	"os/user"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
+	"text/template"
 	"time"
 
 	"bg/cl_common/clcfg"
@@ -128,8 +131,10 @@ var environ struct {
 }
 
 var (
-	sshdTemplate = flag.String("template", "/opt/net.b10e/etc/sshd_config.got",
+	sshdTemplate = flag.String("sshd_template", "/opt/net.b10e/etc/sshd_config.got",
 		"template to use when building the sshd_config file")
+	sshTemplate = flag.String("ssh_template", "/opt/net.b10e/etc/ssh_config.got",
+		"template to use when building the ssh_config file")
 	lifespan = flag.Duration("lifespan", 3*time.Hour,
 		"length of time the tunnel should remain open")
 	sshAddr = flag.String("ssh_addr", "",
@@ -151,6 +156,7 @@ var (
 		tmpDir    string
 		name      string
 		publicKey string
+		sshConfig string
 	}
 	slog *zap.SugaredLogger
 )
@@ -182,8 +188,27 @@ func getIPAddr() string {
 // Remove all the settings we added
 func resetConfigTree(props map[string]string) {
 	slog.Debugf("resetting config tree")
+	var hdl cfgapi.CmdHdl
+	var names []string
 	for prop := range props {
-		config.DeleteProp("@/cloud/service/" + prop)
+		pname := "@/cloud/service/" + prop
+		ops := []cfgapi.PropertyOp{
+			{
+				Op:   cfgapi.PropDelete,
+				Name: pname,
+			},
+		}
+		names = append(names, pname)
+		hdl = config.Execute(nil, ops)
+	}
+
+	// Just wait for the final handle
+	_, err := hdl.Wait(nil)
+	if err != nil {
+		slog.Warnf("prop cleanup may have failed: %v", err)
+		slog.Warnf("may need to manually cleanup: %v", strings.Join(names, ", "))
+	} else {
+		slog.Infof("Successfully reset config tree")
 	}
 }
 
@@ -259,7 +284,10 @@ func connectToConfigd() error {
 	conn.SetLevel(cfgapi.AccessInternal)
 
 	config = cfgapi.NewHandle(conn)
-	config.Ping(nil)
+	_, err = config.GetProp("@/apversion")
+	if err != nil {
+		return err
+	}
 	slog.Debugf("connected to cl.configd")
 
 	keyProp := "@/cloud/service/tunnel_user_key"
@@ -353,7 +381,8 @@ func userInit() error {
 		return fmt.Errorf("unable to create temp dir: %v", err)
 	}
 
-	if _, key, err = ssh.GenerateSSHKeypair(tmpdir + "/id_rsa"); err != nil {
+	idFile := filepath.Join(tmpdir, "id_rsa")
+	if _, key, err = ssh.GenerateSSHKeypair(idFile); err != nil {
 		os.RemoveAll(tmpdir)
 		return fmt.Errorf("generating ssh keypair: %v", err)
 	}
@@ -365,6 +394,27 @@ func userInit() error {
 	}
 	userCreds.tmpDir = tmpdir
 	userCreds.publicKey = key
+
+	userCreds.sshConfig = filepath.Join(tmpdir, "ssh_config")
+	tmpl, err := template.ParseFiles(*sshTemplate)
+	if err != nil {
+		os.RemoveAll(tmpdir)
+		return fmt.Errorf("loading template for ssh_config: %v", err)
+	}
+	config, err := os.OpenFile(userCreds.sshConfig, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		os.RemoveAll(tmpdir)
+		return fmt.Errorf("opening ssh_config: %v", err)
+	}
+	defer config.Close()
+	err = tmpl.Execute(config, struct {
+		IdentityFile string
+		Port         int
+	}{idFile, *tunnelPort})
+	if err != nil {
+		os.RemoveAll(tmpdir)
+		return fmt.Errorf("generating ssh_config: %v", err)
+	}
 	return nil
 }
 
@@ -413,9 +463,11 @@ func main() {
 
 	// Let the user know how to reach the appliance once the tunnel is fully
 	// established.
-	slog.Infof("To connect to the appliance:\n"+
-		"     /usr/bin/ssh -i %s/id_rsa -p %d root@localhost",
-		userCreds.tmpDir, *tunnelPort)
+	slog.Infof("\nTo connect to the appliance:\n"+
+		"     ssh -F %s root@localhost\n\n"+
+		"To copy to the appliance:\n"+
+		"     scp -F %s [file] root@localhost:",
+		userCreds.sshConfig, userCreds.sshConfig)
 
 	wait(*lifespan)
 
