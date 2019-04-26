@@ -124,6 +124,7 @@ unit: sectors
 var (
 	dryRun           bool
 	forceRepartition bool
+	kernelOnly       bool
 	imageDir         string
 	installSide      string
 	targetPlatform   *platformStorage
@@ -234,12 +235,12 @@ func writeSlices(imd string, side int) {
 	for sn := range targetPlatform.slices {
 		s := targetPlatform.slices[sn]
 
-		if s.src == "" {
-			continue
-		}
-
-		if s.side == noSide || s.side == side {
-			writeSlice(s, imd)
+		if s.src != "" && (s.side == noSide || s.side == side) {
+			if kernelOnly && s.src != "KERNEL" {
+				log.Printf("kernel-only: skipping %s\n", s.src)
+			} else {
+				writeSlice(s, imd)
+			}
 		}
 	}
 }
@@ -688,6 +689,7 @@ func main() {
 		RunE:  install,
 	}
 	installCmd.Flags().BoolVarP(&forceRepartition, "force-repartition", "F", false, "always repartition storage device")
+	installCmd.Flags().BoolVarP(&kernelOnly, "kernel-only", "K", false, "kernel install only")
 	installCmd.Flags().StringVarP(&installSide, "side", "s", "other", "target install 'side' ['a', 'b', 'same', 'other']")
 	rootCmd.AddCommand(installCmd)
 
