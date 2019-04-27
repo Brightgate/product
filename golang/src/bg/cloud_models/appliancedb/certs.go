@@ -20,6 +20,7 @@ import (
 
 	"bg/base_def"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/satori/uuid"
 )
 
@@ -28,7 +29,8 @@ type certManager interface {
 	ServerCertByFingerprint(context.Context, []byte) (*ServerCert, error)
 	ServerCertByUUID(context.Context, uuid.UUID) (*ServerCert, error)
 	InsertServerCert(context.Context, *ServerCert) error
-	DeleteExpiredServerCerts(context.Context) (int64, error)
+	DeleteServerCertByFingerprint(context.Context, [][]byte) (int64, error)
+	DeleteExpiredServerCerts(context.Context, ...uuid.UUID) (int64, error)
 	UnclaimedDomainCount(context.Context) (int64, error)
 	DomainsMissingCerts(context.Context) ([]DecomposedDomain, error)
 	RegisterDomain(context.Context, uuid.UUID, string) (string, bool, error)
@@ -255,18 +257,62 @@ func (db *ApplianceDB) InsertServerCert(ctx context.Context, ci *ServerCert) err
 	return err
 }
 
-// DeleteExpiredServerCerts removes any expired certificates from the database.
-func (db *ApplianceDB) DeleteExpiredServerCerts(ctx context.Context) (int64, error) {
-	result, err := db.ExecContext(ctx,
-		`DELETE
-		 FROM site_certs
-		 WHERE expiration < CURRENT_TIMESTAMP`)
+// DeleteServerCertByFingerprint removes one or more specific certificates from
+// the database.
+func (db *ApplianceDB) DeleteServerCertByFingerprint(ctx context.Context, fingerprints [][]byte) (int64, error) {
+	query := `
+		DELETE
+		FROM site_certs
+		WHERE fingerprint IN (?)`
+	query, args, err := sqlx.In(query, fingerprints)
 	if err != nil {
-		return -1, err
+		return 0, err
+	}
+	query = db.Rebind(query)
+	result, err := db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
 	}
 	rows, err := result.RowsAffected()
 	if err != nil {
-		return -1, nil
+		return 0, err
+	}
+	return rows, nil
+}
+
+// DeleteExpiredServerCerts removes any expired certificates from the database.
+// If given one or more UUIDs, only delete certificates associated with those
+// sites.
+func (db *ApplianceDB) DeleteExpiredServerCerts(ctx context.Context, u ...uuid.UUID) (int64, error) {
+	query := `
+		DELETE
+		FROM site_certs c
+		WHERE c.expiration < CURRENT_TIMESTAMP`
+	var args []interface{}
+	var err error
+	if len(u) > 0 {
+		query += ` AND
+			(c.jurisdiction, c.siteid) IN (
+				SELECT c.jurisdiction, c.siteid
+				FROM site_domains d, site_certs c
+				WHERE
+					d.site_uuid IN (?) AND
+					d.jurisdiction = c.jurisdiction AND
+					d.siteid = c.siteid
+			)`
+		query, args, err = sqlx.In(query, u)
+		if err != nil {
+			return 0, err
+		}
+		query = db.Rebind(query)
+	}
+	result, err := db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
 	}
 	return rows, nil
 }

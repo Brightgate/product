@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -38,12 +38,7 @@ import (
 	"github.com/xenolf/lego/acme"
 	"github.com/xenolf/lego/acme/api"
 	"github.com/xenolf/lego/certificate"
-	"github.com/xenolf/lego/challenge"
-	"github.com/xenolf/lego/challenge/dns01"
 	"github.com/xenolf/lego/lego"
-	legolog "github.com/xenolf/lego/log"
-	dnsexec "github.com/xenolf/lego/providers/dns/exec"
-	dnsgoog "github.com/xenolf/lego/providers/dns/gcloud"
 
 	"go.uber.org/zap"
 )
@@ -94,6 +89,16 @@ func (e requiredUsage) Error() string {
 	return "More information needed"
 }
 
+func silenceUsage(cmd *cobra.Command, args []string) {
+	// If we set this when creating cmd, then if cobra fails argument
+	// validation, it doesn't emit the usage, but if we leave it alone, we
+	// get a usage message on all errors.  Here, we set it after all the
+	// argument validation, and we get a usage message only on argument
+	// validation failure.
+	// See https://github.com/spf13/cobra/issues/340#issuecomment-378726225
+	cmd.SilenceUsage = true
+}
+
 // type-wrap time.Duration so that we can pass values through envcfg
 type duration time.Duration
 
@@ -101,100 +106,6 @@ func (d *duration) UnmarshalText(text []byte) error {
 	dd, err := time.ParseDuration(string(text))
 	*d = duration(dd)
 	return err
-}
-
-// LegoHandler is an interface that abstracts what we need out of lego.
-type LegoHandler interface {
-	obtain(certificate.ObtainRequest) (*certificate.Resource, error)
-	getPoolSize() int
-	getPoolFillAmount() int
-	getExpirationOverride() time.Duration
-	getGracePeriod() time.Duration
-	getLimiter() *time.Ticker
-	createMap([]string)
-	getToken(string) string
-	getDomains(string) []string
-}
-
-type legoHandle struct {
-	client             *lego.Client
-	poolSize           int
-	poolFill           int
-	expirationOverride time.Duration
-	gracePeriod        time.Duration
-
-	// Maps domains to a string that uniquely identifies the order that
-	// encompasses those domains.
-	solveToken map[string]string
-	// The reverse mapping: a map of the order identifier to the domains
-	// that belong to that order.
-	revSolveToken map[string][]string
-	// A lock covering both the above maps.
-	sync.Mutex
-}
-
-func (h *legoHandle) obtain(request certificate.ObtainRequest) (*certificate.Resource, error) {
-	return h.client.Certificate.Obtain(request)
-}
-
-func (h *legoHandle) getPoolSize() int {
-	return h.poolSize
-}
-
-func (h *legoHandle) getPoolFillAmount() int {
-	return h.poolFill
-}
-
-func (h *legoHandle) getExpirationOverride() time.Duration {
-	return h.expirationOverride
-}
-
-func (h *legoHandle) getGracePeriod() time.Duration {
-	return h.gracePeriod
-}
-
-func (h *legoHandle) getLimiter() *time.Ticker {
-	// The Let's Encrypt endpoints can only be hit 20 times a second.
-	return time.NewTicker(time.Second / 20)
-}
-
-func (h *legoHandle) createMap(domains []string) {
-	tok := domains[0] // Can be whatever, as long as it's unique
-
-	h.Lock()
-	defer h.Unlock()
-
-	// Forward mapping
-	for _, domain := range domains {
-		h.solveToken[domain] = tok
-	}
-
-	// Reverse mapping
-	h.revSolveToken[tok] = domains
-}
-
-func (h *legoHandle) getToken(domain string) string {
-	h.Lock()
-	defer h.Unlock()
-	return h.solveToken[domain]
-}
-
-func (h *legoHandle) getDomains(token string) []string {
-	h.Lock()
-	defer h.Unlock()
-	return h.revSolveToken[token]
-}
-
-func newLegoHandle(client *lego.Client) *legoHandle {
-	return &legoHandle{
-		client:             client,
-		poolSize:           environ.PoolSize,
-		poolFill:           environ.PoolFillAmount,
-		gracePeriod:        time.Duration(environ.GracePeriod),
-		expirationOverride: time.Duration(environ.ExpirationOverride),
-		solveToken:         make(map[string]string),
-		revSolveToken:      make(map[string][]string),
-	}
 }
 
 const (
@@ -752,62 +663,6 @@ func deactivateAuthorizations(config *lego.Config) error {
 	return nil
 }
 
-// LegoLog wraps a zap.SugaredLogger to provide the interface that Lego's logger
-// wants, so that we can replace it, and have all the logs come through a single
-// stream.
-type LegoLog struct {
-	slog *zap.SugaredLogger
-}
-
-// Fatal implements lego/log.StdLogger
-func (ll LegoLog) Fatal(args ...interface{}) {
-	ll.slog.Fatal(args...)
-}
-
-// Fatalf implements lego/log.StdLogger
-func (ll LegoLog) Fatalf(format string, args ...interface{}) {
-	ll.slog.Fatalf(format, args...)
-}
-
-// Fatalln implements lego/log.StdLogger
-func (ll LegoLog) Fatalln(args ...interface{}) {
-	args = append(args, "\n")
-	ll.slog.Fatal(args...)
-}
-
-// Print implements lego/log.StdLogger
-func (ll LegoLog) Print(args ...interface{}) {
-	ll.slog.Info(args...)
-}
-
-// Printf implements lego/log.StdLogger.  Since lego's default logger prepends
-// the log level to the message itself, we extract that and use it to determine
-// the right zap logging level.
-func (ll LegoLog) Printf(format string, args ...interface{}) {
-	if strings.HasPrefix(format, "[INFO] ") {
-		ll.slog.Infof(format[7:], args...)
-
-		// We have no other way of getting at this information.
-		// See https://github.com/xenolf/lego/issues/771
-		if strings.Contains(format, " AuthURL: ") {
-			url, ok := args[1].(string)
-			if ok {
-				authURLs = append(authURLs, url)
-			}
-		}
-	} else if strings.HasPrefix(format, "[WARN] ") {
-		ll.slog.Warnf(format[7:], args...)
-	} else {
-		ll.slog.Infof(format, args...)
-	}
-}
-
-// Println implements lego/log.StdLogger
-func (ll LegoLog) Println(args ...interface{}) {
-	args = append(args, "\n")
-	ll.slog.Info(args...)
-}
-
 func realGetConfigClientHandle(cuuid string) (*cfgapi.Handle, error) {
 	configd, err := clcfg.NewConfigd(pname, cuuid,
 		environ.ConfigdConnection, !environ.ConfigdDisableTLS)
@@ -859,77 +714,19 @@ func unlock(lockPath string) {
 	}
 }
 
-func run(cmd *cobra.Command, args []string) error {
-	log, slog = daemonutils.SetupLogs()
-	defer log.Sync()
+// setupWriteOps does all the boilerplate setup for when we want to interact
+// with the ACME server and write to the database.
+func setupWriteOps() (func(), *legoHandle, *lego.Config, appliancedb.DataStore) {
+	// Reprocess the environment, looking for more than just the DB vars
+	processEnv(false)
 
 	lockPath := "/tmp/cl-cert.lock"
 	if err := lock(lockPath); err != nil {
 		slog.Fatalw("Failed to lock for cl-cert processing",
 			"error", err)
 	}
-	defer unlock(lockPath)
 
-	legolog.Logger = LegoLog{slog}
-
-	err := envcfg.Unmarshal(&environ)
-	if err != nil {
-		slog.Fatalw("failed environment configuration", "error", err)
-	}
-	processEnv(false)
-	slog.Infow(pname+" starting", "args", os.Args)
-
-	config, client, err := acmeSetup(environ.AcmeConfig, environ.AcmeURL)
-	if err != nil {
-		slog.Fatalw("Failed to set up ACME connection info", "error", err)
-	}
-	lh := newLegoHandle(client)
-
-	var provider challenge.Provider
-	if environ.DNSExec != "" {
-		provider, err = dnsexec.NewDNSProviderConfig(
-			&dnsexec.Config{Program: environ.DNSExec})
-	} else {
-		provider, err = dnsgoog.NewDNSProviderServiceAccount(
-			environ.DNSCredFile)
-	}
-	if err != nil {
-		slog.Fatalw("Failed to set DNS challenge provider", "error", err)
-	}
-
-	challengeOptions := make([]dns01.ChallengeOption, 0)
-	if environ.DNSSkipPreCheck {
-		challengeOptions = append(challengeOptions,
-			dns01.AddPreCheck(func(fqdn, value string) (bool, error) {
-				return true, nil
-			}))
-	} else {
-		solvedMap := make(map[string]bool)
-		var solvedMapLock sync.Mutex
-		wrapFunc := func(domain, fqdn, value string, orig dns01.PreCheckFunc) (bool, error) {
-			token := lh.getToken(domain)
-			solvedMapLock.Lock()
-			solved := solvedMap[token]
-			solvedMapLock.Unlock()
-			if !solved {
-				domains := lh.getDomains(token)
-				delay := time.Duration(environ.DNSDelayPreCheck) * time.Second
-				slog.Infof("[%s] Waiting %s before checking DNS propagation",
-					strings.Join(domains, ", "), delay.Round(time.Second))
-				time.Sleep(delay)
-				solvedMapLock.Lock()
-				solvedMap[token] = true
-				solvedMapLock.Unlock()
-			}
-			return orig(fqdn, value)
-		}
-		challengeOptions = append(challengeOptions, dns01.WrapPreCheck(wrapFunc))
-	}
-	err = client.Challenge.SetDNS01Provider(provider, challengeOptions...)
-	if err != nil {
-		slog.Fatalw("Failed to set DNS challenge provider", "error", err)
-	}
-	slog.Info(checkMark + "Set up ACME connection info for " + environ.AcmeURL)
+	lh, config := legoSetup()
 
 	getConfigClientHandle = realGetConfigClientHandle
 	if environ.ConfigdDisableTLS {
@@ -947,10 +744,100 @@ func run(cmd *cobra.Command, args []string) error {
 	slog.Info(checkMark + "Can connect to cl.configd")
 
 	applianceDB := makeApplianceDB(environ.PostgresConnection)
-	slog.Info(checkMark + "Connected to database")
+
+	return func() { unlock(lockPath) }, lh, config, applianceDB
+}
+
+func certDelete(cmd *cobra.Command, args []string) error {
+	expired, _ := cmd.Flags().GetBool("expired")
+
+	db := makeApplianceDB(environ.PostgresConnection)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	if !expired {
+		if len(args) == 0 {
+			return requiredUsage{
+				cmd: cmd,
+				msg: "Must provide at least one cert fingerprint",
+			}
+		}
+		bargs := make([][]byte, len(args))
+		for i := range args {
+			fpBytes, err := hex.DecodeString(args[i])
+			if err != nil {
+				return err
+			}
+			bargs[i] = fpBytes
+		}
+
+		count, err := db.DeleteServerCertByFingerprint(ctx, bargs)
+		slog.Infof("Deleted %d certificate(s)", count)
+		return err
+	}
+
+	// Arguments here are site UUIDs.  With no arguments, delete all expired
+	// certs.
+	// XXX We have no way of specifying a cert that belongs to no site.
+	uuargs := make([]uuid.UUID, len(args))
+	for i := range args {
+		uuarg, err := uuid.FromString(args[i])
+		if err != nil {
+			return err
+		}
+		uuargs[i] = uuarg
+	}
+	count, err := db.DeleteExpiredServerCerts(ctx, uuargs...)
+	if err != nil {
+		return err
+	}
+	slog.Infof("Deleted %d certificate(s)", count)
+	return nil
+}
+
+func certRenew(cmd *cobra.Command, args []string) error {
+	unlock, lh, config, applianceDB := setupWriteOps()
+	defer unlock()
+	defer applianceDB.Close()
+
+	u, err := uuid.FromString(args[0])
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	cert, err := applianceDB.ServerCertByUUID(ctx, u)
+	if err != nil {
+		return err
+	}
+
+	errc := make(chan error)
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go renewOneCert(ctx, lh, applianceDB, *cert, errc, &wg)
+	err = <-errc
+	wg.Wait()
+	if err != nil {
+		return err
+	}
+
+	err = deactivateAuthorizations(config)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func run(cmd *cobra.Command, args []string) error {
+	// XXX It'd be nice if we could do without the configd connection
+	unlock, lh, config, applianceDB := setupWriteOps()
+	defer unlock()
+	defer applianceDB.Close()
 
 	// Get certs for any domains that seem to be missing them.
-	err = getMissingCerts(context.Background(), lh, applianceDB)
+	err := getMissingCerts(context.Background(), lh, applianceDB)
 	if err != nil {
 		slog.Errorw("failed to acquire missing certificates",
 			"error", err)
@@ -994,21 +881,17 @@ func run(cmd *cobra.Command, args []string) error {
 }
 
 func listCerts(cmd *cobra.Command, args []string) error {
-	log, slog = daemonutils.SetupLogs()
-	defer log.Sync()
-
-	err := envcfg.Unmarshal(&environ)
-	if err != nil {
-		slog.Fatalw("failed environment configuration", "error", err)
-	}
-	processEnv(true)
-	slog.Infow(pname+" starting", "args", os.Args)
-
 	db := makeApplianceDB(environ.PostgresConnection)
+	defer db.Close()
 
 	certs, uuids, err := db.AllServerCerts(context.Background())
 	if err != nil {
 		return err
+	}
+
+	if len(certs) == 0 {
+		slog.Warn("No certificates found")
+		return nil
 	}
 
 	table, _ := prettytable.NewTable(
@@ -1035,17 +918,8 @@ func listCerts(cmd *cobra.Command, args []string) error {
 }
 
 func certStatus(cmd *cobra.Command, args []string) error {
-	log, slog = daemonutils.SetupLogs()
-	defer log.Sync()
-
-	err := envcfg.Unmarshal(&environ)
-	if err != nil {
-		slog.Fatalw("failed environment configuration", "error", err)
-	}
-	processEnv(true)
-	slog.Infow(pname+" starting", "args", os.Args)
-
 	db := makeApplianceDB(environ.PostgresConnection)
+	defer db.Close()
 
 	missing, err := db.DomainsMissingCerts(context.Background())
 	if err != nil {
@@ -1129,9 +1003,137 @@ func certStatus(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func certExtract(cmd *cobra.Command, args []string) error {
+	dir, _ := cmd.Flags().GetString("dir")
+	output, _ := cmd.Flags().GetString("output")
+	cert, _ := cmd.Flags().GetBool("cert")
+	key, _ := cmd.Flags().GetBool("key")
+	chain, _ := cmd.Flags().GetBool("intermediate")
+
+	if (cert && key) || (cert && chain) || (key && chain) {
+		return requiredUsage{
+			cmd: cmd,
+			msg: "Can't specify more than one of --cert, --key, and --intermediate",
+		}
+	}
+	if !cert && !key && !chain {
+		cert = true
+		key = true
+		chain = true
+		if output != "" {
+			return requiredUsage{
+				cmd: cmd,
+				msg: "Can't specify --output without --cert, --key, or --intermediate",
+			}
+		}
+	}
+	if output != "" && dir != "" {
+		return requiredUsage{
+			cmd: cmd,
+			msg: "Can't specify both --dir and --output",
+		}
+	}
+	if output == "" && dir == "" {
+		dir = args[0]
+	}
+
+	fpBytes, err := hex.DecodeString(args[0])
+	if err != nil {
+		return err
+	}
+
+	db := makeApplianceDB(environ.PostgresConnection)
+	defer db.Close()
+	sc, err := db.ServerCertByFingerprint(context.Background(), fpBytes)
+	if err != nil {
+		return err
+	}
+
+	var certFile, keyFile, chainFile *os.File
+	openFlags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+	if output != "" {
+		var outFile *os.File
+		if output == "-" {
+			outFile = os.Stdout
+		} else {
+			outFile, err = os.OpenFile(output, openFlags, 0644)
+			if err != nil {
+				return err
+			}
+			defer outFile.Close()
+		}
+		if cert {
+			certFile = outFile
+		} else if key {
+			keyFile = outFile
+		} else if chain {
+			chainFile = outFile
+		}
+	} else if dir != "" {
+		if err = os.MkdirAll(dir, 0700); err != nil {
+			return err
+		}
+		if cert {
+			certPath := filepath.Join(dir, "cert.pem")
+			certFile, err = os.OpenFile(certPath, openFlags, 0644)
+			if err != nil {
+				return err
+			}
+			defer certFile.Close()
+		}
+		if key {
+			keyPath := filepath.Join(dir, "key.pem")
+			keyFile, err = os.OpenFile(keyPath, openFlags, 0600)
+			if err != nil {
+				return err
+			}
+			defer keyFile.Close()
+		}
+		if chain {
+			chainPath := filepath.Join(dir, "chain.pem")
+			chainFile, err = os.OpenFile(chainPath, openFlags, 0644)
+			if err != nil {
+				return err
+			}
+			defer chainFile.Close()
+		}
+	}
+
+	if cert {
+		block := &pem.Block{Type: "CERTIFICATE", Bytes: sc.Cert}
+		if err = pem.Encode(certFile, block); err != nil {
+			return err
+		}
+		if output != "-" {
+			fmt.Printf("Wrote certificate to %s\n", certFile.Name())
+		}
+	}
+	if key {
+		block := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: sc.Key}
+		if err = pem.Encode(keyFile, block); err != nil {
+			return err
+		}
+		if output != "-" {
+			fmt.Printf("Wrote key to %s\n", certFile.Name())
+		}
+	}
+	if chain {
+		block := &pem.Block{Type: "CERTIFICATE", Bytes: sc.IssuerCert}
+		if err = pem.Encode(chainFile, block); err != nil {
+			return err
+		}
+		if output != "-" {
+			fmt.Printf("Wrote intermediate certificate to %s\n", certFile.Name())
+		}
+	}
+
+	return nil
+}
+
 func main() {
 	rootCmd := cobra.Command{
-		Use: os.Args[0],
+		Use:              os.Args[0],
+		PersistentPreRun: silenceUsage,
 	}
 
 	registerCmd := &cobra.Command{
@@ -1159,30 +1161,83 @@ func main() {
 	rootCmd.AddCommand(runCmd)
 
 	listCmd := &cobra.Command{
-		Use:   "list",
-		Short: "List certificates",
-		Args:  cobra.NoArgs,
-		RunE:  listCerts,
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List certificates",
+		Args:    cobra.NoArgs,
+		RunE:    listCerts,
 	}
 	rootCmd.AddCommand(listCmd)
 
 	statusCmd := &cobra.Command{
-		Use:   "status",
-		Short: "Get certificate pool status",
-		Args:  cobra.NoArgs,
-		RunE:  certStatus,
+		Use:     "status",
+		Aliases: []string{"stat"},
+		Short:   "Get certificate pool status",
+		Args:    cobra.NoArgs,
+		RunE:    certStatus,
 	}
 	rootCmd.AddCommand(statusCmd)
 
-	// Will likely also want subcommands to request and store certificates
-	// for one or more specific domains, retrieve cert material, run fill,
-	// renew, and retry separately.
+	extractCmd := &cobra.Command{
+		Use:     "extract [flags] fingerprint",
+		Aliases: []string{"cat"},
+		Short:   "Extract key/cert/chain",
+		Long: `Extracts key and certificate material in PEM format, based on cert fingerprint.
 
-	err := rootCmd.Execute()
+Without any flags, emit all three files to a directory named by the cert hash.
+You can name the directory with -d.  You can specify exactly one of -c, -k, or
+-i to emit only the cert, only the key, or only the intermediate (chain) cert.
+With -o, emit to the specific filename; this is incompatible with -d, but
+requires one of -c, -k, or -i.  If the filename is "-", then emit to stdout.`,
+		Args: cobra.ExactArgs(1),
+		RunE: certExtract,
+	}
+	extractCmd.Flags().StringP("dir", "d", "", "output directory")
+	extractCmd.Flags().StringP("output", "o", "", "output file ('-' for stdout)")
+	extractCmd.Flags().BoolP("cert", "c", false, "extract only the certificate")
+	extractCmd.Flags().BoolP("key", "k", false, "extract only the key")
+	extractCmd.Flags().BoolP("intermediate", "i", false, "extract only the intermediate (chain) certificate")
+	rootCmd.AddCommand(extractCmd)
+
+	renewCmd := &cobra.Command{
+		Use:   "renew site-uuid",
+		Short: "Renew the certificate for a specific site",
+		Args:  cobra.ExactArgs(1),
+		RunE:  certRenew,
+	}
+	rootCmd.AddCommand(renewCmd)
+
+	deleteCmd := &cobra.Command{
+		Use:     "delete [flags] <site-uuid|fingerprint> ...",
+		Aliases: []string{"del"},
+		Short:   "Delete certificates",
+		RunE:    certDelete,
+	}
+	deleteCmd.Flags().BoolP("expired", "e", false, "delete expired certificates")
+	rootCmd.AddCommand(deleteCmd)
+
+	// Will likely also want subcommands to request and store certificates
+	// for one or more specific domains, run fill, renew, and retry
+	// separately.
+
+	log, slog = daemonutils.SetupLogs()
+	defer log.Sync()
+
+	err := envcfg.Unmarshal(&environ)
+	if err != nil {
+		slog.Fatalw("failed environment configuration", "error", err)
+	}
+	processEnv(true)
+	slog.Infow(pname+" starting", "args", os.Args)
+
+	err = rootCmd.Execute()
 	if err, ok := err.(requiredUsage); ok {
 		err.cmd.Usage()
-		extraUsage := "\n" + err.explanation
-		io.WriteString(err.cmd.OutOrStderr(), extraUsage)
+		if err.explanation != "" {
+			extraUsage := "\n" + err.explanation
+			io.WriteString(err.cmd.OutOrStderr(), extraUsage)
+		}
+		os.Exit(2)
 	}
 	if err != nil {
 		slog.Fatal(err)

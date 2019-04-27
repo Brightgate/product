@@ -1182,6 +1182,7 @@ func TestDatabaseModel(t *testing.T) {
 
 		{"testCommandQueue", testCommandQueue},
 		{"testServerCerts", testServerCerts},
+		{"testServerCertsDelete", testServerCertsDelete},
 	}
 
 	for _, tc := range testCases {

@@ -14,6 +14,7 @@ package appliancedb
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"testing"
 	"time"
 
@@ -247,8 +248,10 @@ func testServerCerts(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	assert.Equal(cert2, certResp)
 
 	// Remove a cert belonging to a site and see that we can discover that.
-	_, err = adb.ExecContext(ctx, `DELETE FROM site_certs WHERE siteid = 0 AND jurisdiction = ''`)
+	// We can use DeleteExpiredServerCerts() because all certs are expired.
+	count, err := ds.DeleteExpiredServerCerts(ctx, testID1.SiteUUID)
 	assert.NoError(err)
+	assert.EqualValues(2, count) // cert1 & cert2
 	domains, err := ds.DomainsMissingCerts(ctx)
 	assert.NoError(err)
 	assert.Len(domains, 1)
@@ -345,4 +348,160 @@ func testServerCerts(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	assert.NoError(err)
 	assert.Equal(maxUK, maxUnclaimed["uk"].SiteID)
 	assert.Equal(maxNone, maxUnclaimed[""].SiteID)
+}
+
+func testServerCertsDelete(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
+	ctx := context.Background()
+	assert := require.New(t)
+
+	numSites := 10
+	certsPerSite := 4
+
+	// Just one org.
+	mkOrgSiteApp(t, ds, &testOrg1, nil, nil)
+
+	// Make a handful of sites, each one with one appliance
+	sites := make([]CustomerSite, numSites)
+	apps := make([]ApplianceID, numSites)
+	for i := 0; i < numSites; i++ {
+		siteUU := uuid.Must(uuid.FromString(fmt.Sprintf("1%07d-%04d-%04d-%04d-%012d", i, i, i, i, i)))
+		sites[i] = CustomerSite{
+			UUID:             siteUU,
+			OrganizationUUID: testOrg1.UUID,
+			Name:             fmt.Sprintf("site%d", i),
+		}
+		appUU := uuid.Must(uuid.FromString(fmt.Sprintf("0%07d-%04d-%04d-%04d-%012d", i, i, i, i, i)))
+		apps[i] = ApplianceID{
+			ApplianceUUID:  appUU,
+			SiteUUID:       siteUU,
+			GCPProject:     testProject,
+			GCPRegion:      testRegion,
+			ApplianceReg:   testReg,
+			ApplianceRegID: fmt.Sprintf("%s-%d", testRegID, i),
+		}
+		mkOrgSiteApp(t, ds, nil, &sites[i], &apps[i])
+	}
+
+	// One domain per site
+	var domains []DecomposedDomain
+	for i := 0; i < numSites; i++ {
+		domain, err := ds.NextDomain(ctx, "")
+		assert.NoError(err)
+		domains = append(domains, domain)
+	}
+
+	expirePast := time.Now().Add(-time.Hour).Round(time.Millisecond).UTC()
+	expireFuture := time.Now().Add(time.Hour).Round(time.Millisecond).UTC()
+
+	var certs []*ServerCert
+	for i := 0; i < numSites*certsPerSite; i++ {
+		// Certs are allocated in contiguous blocks of certsPerSite.
+		domain := domains[i/certsPerSite]
+
+		expire := expirePast
+		// Keep one cert per site expiring in the future.
+		if i%certsPerSite == certsPerSite-1 {
+			expire = expireFuture
+		}
+
+		certs = append(certs, &ServerCert{
+			Domain:       domain.Domain,
+			SiteID:       domain.SiteID,
+			Jurisdiction: domain.Jurisdiction,
+			Fingerprint:  []byte{byte(i), byte(i), byte(i), byte(i)},
+			Expiration:   expire,
+			Cert:         []byte{byte(i)},
+			IssuerCert:   []byte{byte(i)},
+			Key:          []byte{byte(i)},
+		})
+		// t.Logf("cert %d: domain %d, cert %v", i, i/certsPerSite, certs[i])
+		err := ds.InsertServerCert(ctx, certs[i])
+		assert.NoError(err)
+	}
+
+	for i := 0; i < numSites; i++ {
+		_, _, err := ds.RegisterDomain(ctx, sites[i].UUID, "")
+		assert.NoError(err)
+	}
+
+	getCertMap := func() map[int32][]ServerCert {
+		allCerts, _, _ := ds.AllServerCerts(ctx)
+		allCertMap := make(map[int32][]ServerCert, numSites)
+		for i := range allCerts {
+			siteID := allCerts[i].SiteID
+			allCertMap[siteID] = append(allCertMap[siteID], allCerts[i])
+		}
+		return allCertMap
+	}
+
+	// Delete the expired certs from one site
+	count, err := ds.DeleteExpiredServerCerts(ctx, sites[0].UUID)
+	assert.NoError(err)
+	assert.EqualValues(certsPerSite-1, count)
+
+	// Make sure exactly one cert is left from site 0, and that it's the one
+	// that expires in the future.
+	allCertMap := getCertMap()
+	assert.Len(allCertMap[0], 1)
+	assert.Equal(expireFuture, allCertMap[0][0].Expiration)
+
+	// Delete the expired certs from two more sites
+	count, err = ds.DeleteExpiredServerCerts(ctx, sites[1].UUID, sites[2].UUID)
+	assert.NoError(err)
+	assert.EqualValues(2*(certsPerSite-1), count)
+	allCertMap = getCertMap()
+	assert.Len(allCertMap[0], 1)
+	assert.Len(allCertMap[1], 1)
+	assert.Len(allCertMap[2], 1)
+	assert.Equal(expireFuture, allCertMap[0][0].Expiration)
+	assert.Equal(expireFuture, allCertMap[1][0].Expiration)
+	assert.Equal(expireFuture, allCertMap[2][0].Expiration)
+
+	// Delete the expired certs from one more site, making sure that
+	// specifying sites with no longer any expired certs doesn't confuse
+	// anything.
+	count, err = ds.DeleteExpiredServerCerts(ctx, sites[1].UUID, sites[2].UUID, sites[3].UUID)
+	assert.NoError(err)
+	assert.EqualValues(certsPerSite-1, count)
+	allCertMap = getCertMap()
+	assert.Len(allCertMap[0], 1)
+	assert.Len(allCertMap[1], 1)
+	assert.Len(allCertMap[2], 1)
+	assert.Len(allCertMap[3], 1)
+	assert.Equal(expireFuture, allCertMap[0][0].Expiration)
+	assert.Equal(expireFuture, allCertMap[1][0].Expiration)
+	assert.Equal(expireFuture, allCertMap[2][0].Expiration)
+	assert.Equal(expireFuture, allCertMap[3][0].Expiration)
+
+	// Delete all the remainder of the expired certs.
+	count, err = ds.DeleteExpiredServerCerts(ctx)
+	assert.NoError(err)
+	assert.EqualValues((numSites-4)*(certsPerSite-1), count)
+
+	// Delete a non-expired cert
+	count, err = ds.DeleteServerCertByFingerprint(ctx,
+		[][]byte{certs[certsPerSite-1].Fingerprint})
+	assert.NoError(err)
+	assert.EqualValues(1, count)
+
+	// Try again; just get a count of 0
+	count, err = ds.DeleteServerCertByFingerprint(ctx,
+		[][]byte{certs[certsPerSite-1].Fingerprint})
+	assert.NoError(err)
+	assert.EqualValues(0, count)
+
+	// Try one that had already been expired
+	count, err = ds.DeleteServerCertByFingerprint(ctx,
+		[][]byte{certs[0].Fingerprint})
+	assert.NoError(err)
+	assert.EqualValues(0, count)
+
+	// Delete a couple of certs
+	count, err = ds.DeleteServerCertByFingerprint(ctx, [][]byte{
+		certs[certsPerSite-1].Fingerprint,
+		certs[2*certsPerSite-1].Fingerprint,
+		certs[3*certsPerSite-1].Fingerprint,
+	})
+	assert.NoError(err)
+	assert.EqualValues(2, count)
 }
