@@ -399,10 +399,15 @@ func main() {
 		slog.Fatalf("failed to fetch gateway domain: %v", err)
 	}
 	gatewayName := "gateway." + domainName
-	certPaths, err := certificate.GetKeyCertPaths(configd, domainName,
-		time.Now(), false)
-	if err != nil {
-		slog.Fatalf("Cannot get any SSL key/certificate/chain: %v", err)
+
+	// Find the TLS key and certificate we should be using.  If there isn't
+	// one, sleep until ap.rpcd notifies us one is available, and then
+	// restart.
+	configd.HandleChange(`^@/certs/.*/state`, certStateChange)
+	certPaths := certificate.GetKeyCertPaths(domainName)
+	if certPaths == nil {
+		slog.Warn("Sleeping until a cert is presented")
+		select {}
 	}
 
 	secret, err = establishSecret()
@@ -412,7 +417,6 @@ func main() {
 
 	configd.HandleChange(`^@/users/.*$`, configUserChanged)
 	configd.HandleChange(`^@/network/radius_auth_secret`, configNetworkRadiusSecretChanged)
-	configd.HandleChange(`^@/certs/.*/state`, certStateChange)
 	configd.HandleChange(`^@/siteid`, siteIDChange)
 
 	mcpd.SetState(mcp.ONLINE)

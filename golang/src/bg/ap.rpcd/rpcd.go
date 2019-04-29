@@ -311,7 +311,14 @@ func daemonStart() {
 	go uploadLoop(sclient, &cleanup.wg, addDoneChan())
 	go configLoop(ctx, cclient, &cleanup.wg, addDoneChan())
 	go tunnelLoop(&cleanup.wg, addDoneChan())
-	go certLoop(ctx, conn, &cleanup.wg, addDoneChan())
+
+	// cloudCertLoop() will try to download a cert from the cloud.
+	// Concurrently, ssCertGen() will start generating a self-signed
+	// key/cert pair.  If the cloud cert is available before the self-signed
+	// cert is, then ssCertGen() will be told to stop.
+	killGen := make(chan bool)
+	go cloudCertLoop(ctx, conn, &cleanup.wg, addDoneChan(), killGen)
+	go ssCertGen(killGen)
 
 	slog.Infof("Setting state ONLINE")
 	err = mcpd.SetState(mcp.ONLINE)

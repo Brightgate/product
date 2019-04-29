@@ -132,7 +132,24 @@ func sleepOrDone(t time.Duration, doneChan chan bool) bool {
 	return done
 }
 
-func certLoop(ctx context.Context, conn *grpc.ClientConn, wg *sync.WaitGroup, doneChan chan bool) {
+func ssCertGen(killGen chan bool) {
+	domain, err := config.GetDomain()
+	if err != nil {
+		slog.Fatalf("failed to fetch gateway domain for use in self-signed cert: %v", err)
+	}
+	slog.Infof("provisionally generating self-signed certificate for domain %q", domain)
+
+	_, err = certificate.CreateSSKeyCert(config, domain, killGen)
+	if err != nil {
+		if err, ok := err.(certificate.AbortedGeneration); ok {
+			slog.Info(err)
+		} else {
+			slog.Errorf("Self-signed certificate generated failed: %v", err)
+		}
+	}
+}
+
+func cloudCertLoop(ctx context.Context, conn *grpc.ClientConn, wg *sync.WaitGroup, doneChan, killGen chan bool) {
 	slog.Infof("certificate loop starting")
 	client := cloud_rpc.NewCertificateManagerClient(conn)
 
@@ -175,6 +192,15 @@ func certLoop(ctx context.Context, conn *grpc.ClientConn, wg *sync.WaitGroup, do
 				msg = "find installed"
 			} else {
 				if err = downloadCert(ctx, client, fp); err == nil {
+					// Once we've downloaded the cert, we
+					// message the goroutine generating the
+					// self-signed cert to stop, and never
+					// worry about this again.
+					if killGen != nil {
+						killGen <- true
+						close(killGen)
+						killGen = nil
+					}
 					break
 				}
 				msg = "download"

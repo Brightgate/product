@@ -14,7 +14,6 @@ import (
 	"io/ioutil"
 	"os"
 	"testing"
-	"time"
 )
 
 // Test that we can create self-signed certificates with some
@@ -26,7 +25,9 @@ func TestSelfSigned(t *testing.T) {
 		t.Errorf("couldn't create temporary directory '%s': %v\n", dn, err)
 	}
 
-	paths, err := createSSKeyCert(nil, dn, "testhost.local", time.Now(), true)
+	killGen := make(chan bool)
+	paths, err := createSSKeyCert(nil, dn, "testhost.local", killGen)
+	close(killGen)
 
 	if err != nil {
 		t.Errorf("err = %v\n", err)

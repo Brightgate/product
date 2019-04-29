@@ -60,6 +60,17 @@ var (
 // Functions that return a set of pathnames will always respond with
 // private key, certificate, CA certificate chain, combined, and error.
 
+// AbortedGeneration is an error representing CreateSSKeyCert() having been told
+// to stop.
+type AbortedGeneration struct {
+	when string
+}
+
+func (e AbortedGeneration) Error() string {
+	return fmt.Sprintf("Self-signed certificate generation aborted (%s)",
+		e.when)
+}
+
 // CertPaths represents the four possible pathnames to the key material.
 type CertPaths struct {
 	// Key is the path to the private key material.
@@ -275,7 +286,33 @@ func sendCertRenewEvent(config *cfgapi.Handle, fp string, cert *x509.Certificate
 	return nil
 }
 
-func createSSKeyCert(config *cfgapi.Handle, cryptodir string, domainname string, at time.Time, forceRefresh bool) (*CertPaths, error) {
+func getSSKeyCertPaths(dir string) *CertPaths {
+	pathfn := func(fn string) string {
+		return filepath.Join(dir, fn)
+	}
+	return &CertPaths{
+		Key:       pathfn("privkey.pem"),
+		Cert:      pathfn("cert.pem"),
+		Chain:     pathfn("cert.pem"),
+		FullChain: pathfn("cert.pem"),
+	}
+}
+
+// CreateSSKeyCert is a public wrapper around createSSKeyCert.
+func CreateSSKeyCert(config *cfgapi.Handle, domainname string, killGen chan bool) (*CertPaths, error) {
+	return createSSKeyCert(config, applianceTempCryptoDir, domainname, killGen)
+}
+
+func checkDone(killGen chan bool) bool {
+	select {
+	case <-killGen:
+		return true
+	default:
+		return false
+	}
+}
+
+func createSSKeyCert(config *cfgapi.Handle, dir string, domainname string, killGen chan bool) (*CertPaths, error) {
 	var (
 		priv      *rsa.PrivateKey
 		serialMax big.Int
@@ -285,14 +322,11 @@ func createSSKeyCert(config *cfgapi.Handle, cryptodir string, domainname string,
 	needKey := false
 	needCert := false
 
-	pathfn := func(fn string) string {
-		return filepath.Join(cryptodir, fn)
-	}
-	paths := &CertPaths{
-		Key:       pathfn("privkey.pem"),
-		Cert:      pathfn("cert.pem"),
-		Chain:     pathfn("cert.pem"),
-		FullChain: pathfn("cert.pem"),
+	paths := getSSKeyCertPaths(dir)
+
+	// Abort before doing any I/O.
+	if checkDone(killGen) {
+		return nil, AbortedGeneration{"before I/O"}
 	}
 
 	// Do we have a key?  If so, reuse.
@@ -301,6 +335,9 @@ func createSSKeyCert(config *cfgapi.Handle, cryptodir string, domainname string,
 		keyd, _ := pem.Decode(keyb)
 		if keyd.Type == "RSA PRIVATE KEY" {
 			priv, err = x509.ParsePKCS1PrivateKey(keyd.Bytes)
+			if err != nil {
+				needKey = true
+			}
 		} else {
 			needKey = true
 		}
@@ -309,9 +346,9 @@ func createSSKeyCert(config *cfgapi.Handle, cryptodir string, domainname string,
 		needKey = true
 	}
 
-	if forceRefresh {
-		log.Printf("forced key/certificate refresh")
-		needKey = true
+	// Abort before either reading the cert or generating the key.
+	if checkDone(killGen) {
+		return nil, AbortedGeneration{"before generating key"}
 	}
 
 	if !needKey {
@@ -340,12 +377,19 @@ func createSSKeyCert(config *cfgapi.Handle, cryptodir string, domainname string,
 		}
 
 		// check if valid
-		if expiredBy := timeOutsideValidity(cert, at); expiredBy != time.Duration(0) {
+		if expiredBy := timeOutsideValidity(cert, time.Now()); expiredBy != time.Duration(0) {
 			if expiredBy > time.Duration(0) {
 				err = fmt.Errorf("certificate will expire in %s", expiredBy)
 			} else {
 				err = fmt.Errorf("certificate expired %s ago", -expiredBy)
 			}
+			needCert = true
+		}
+
+		// check if matches key
+		if cert.PublicKeyAlgorithm != x509.RSA ||
+			cert.PublicKey.(rsa.PublicKey).N != priv.N {
+			err = fmt.Errorf("certificate doesn't match private key")
 			needCert = true
 		}
 	} else {
@@ -380,6 +424,11 @@ func createSSKeyCert(config *cfgapi.Handle, cryptodir string, domainname string,
 
 	template.DNSNames = append(template.DNSNames, domainname, "*."+domainname)
 
+	// Abort before generating the cert.
+	if checkDone(killGen) {
+		return nil, AbortedGeneration{"before generating cert"}
+	}
+
 	log.Printf("generating self-signed certificate")
 	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
 	if err != nil {
@@ -387,7 +436,12 @@ func createSSKeyCert(config *cfgapi.Handle, cryptodir string, domainname string,
 		return nil, err
 	}
 
-	keyf, err := os.OpenFile(paths.Key, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	// Abort before writing the key and cert.
+	if checkDone(killGen) {
+		return nil, AbortedGeneration{"before writing key/cert"}
+	}
+
+	keyf, err := os.OpenFile(paths.Key, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|os.O_SYNC, 0600)
 	if err != nil {
 		err = fmt.Errorf("failed to open %s for writing: %s", paths.Key, err)
 		return nil, err
@@ -401,13 +455,21 @@ func createSSKeyCert(config *cfgapi.Handle, cryptodir string, domainname string,
 
 	keyf.Close()
 
-	certf, err := os.Create(paths.Cert)
+	certf, err := os.OpenFile(paths.Cert, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|os.O_SYNC, 0644)
 	if err != nil {
 		err = fmt.Errorf("failed to open %s for writing: %s", paths.Cert, err)
 		return nil, err
 	}
 	pem.Encode(certf, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
 	certf.Close()
+
+	// Abort before notification.  Remove the files if we can, for hygiene,
+	// but don't worry if it doesn't work.
+	if checkDone(killGen) {
+		os.Remove(paths.Key)
+		os.Remove(paths.Cert)
+		return nil, AbortedGeneration{"before notification"}
+	}
 
 	if config != nil {
 		fp := sha1.Sum(derBytes)
@@ -441,7 +503,7 @@ func InstallCert(key, cert, issuerCert []byte, config *cfgapi.Handle) error {
 		return err
 	}
 
-	keyf, err := os.OpenFile(paths.Key, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	keyf, err := os.OpenFile(paths.Key, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|os.O_SYNC, 0600)
 	if err != nil {
 		return err
 	}
@@ -450,7 +512,7 @@ func InstallCert(key, cert, issuerCert []byte, config *cfgapi.Handle) error {
 	}
 	keyf.Close()
 
-	certf, err := os.Create(paths.Cert)
+	certf, err := os.OpenFile(paths.Cert, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|os.O_SYNC, 0644)
 	if err != nil {
 		return err
 	}
@@ -459,7 +521,7 @@ func InstallCert(key, cert, issuerCert []byte, config *cfgapi.Handle) error {
 	}
 	certf.Close()
 
-	chainf, err := os.Create(paths.Chain)
+	chainf, err := os.OpenFile(paths.Chain, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|os.O_SYNC, 0644)
 	if err != nil {
 		return err
 	}
@@ -472,7 +534,7 @@ func InstallCert(key, cert, issuerCert []byte, config *cfgapi.Handle) error {
 	// (chain) cert.  There's nothing to indicate to the casual reader
 	// of the file which is which, but this is the order in which certbot
 	// writes them.
-	fullchainf, err := os.Create(paths.FullChain)
+	fullchainf, err := os.OpenFile(paths.FullChain, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|os.O_SYNC, 0644)
 	if err != nil {
 		return err
 	}
@@ -522,40 +584,49 @@ func InstallCert(key, cert, issuerCert []byte, config *cfgapi.Handle) error {
 }
 
 // GetKeyCertPaths will attempt to validate the preferred SSL certificate and
-// private key on the appliance.  If valid, the full pathnames for each of these
-// files will be returned.  If absent or invalid, GetKeyCertPaths will generate
-// a self-signed certificate and new private key and return those pathnames.  If
-// forceRefresh is true, then the cloud-retrieved and Let's Encrypt certificates
-// are ignored and a new self-signed certificate is unconditionally generated.
-func GetKeyCertPaths(config *cfgapi.Handle, domainname string, at time.Time,
-	forceRefresh bool) (*CertPaths, error) {
-	if !forceRefresh {
-		paths := getCloudKeyCertPaths(plat)
-		_, err := validateCertificate(paths, at)
-		if err == nil {
-			log.Printf("Cloud cert path found: %s", paths.Cert)
-			return paths, nil
-		}
-		log.Printf("Cloud certs not available: %v", err)
+// private key on the appliance (in order: cloud-based, manually installed Let's
+// Encrypt, and self-signed).  If valid, the full pathnames for each of these
+// files will be returned.  If all are absent or invalid, GetKeyCertPaths will
+// return nil; the caller will need to arrange to be restarted when a cert has
+// been made available.
+func GetKeyCertPaths(domainname string) *CertPaths {
+	at := time.Now()
 
-		paths = getLEKeyCertPaths(domainname)
-		_, err = validateCertificate(paths, at)
-		if err == nil {
-			return paths, nil
-		}
-		log.Printf("Manually installed Let's Encrypt certs not available: %v", err)
-		// Try again with the explicit hostname "gateway", which is what
-		// older installations used.
-		paths = getLEKeyCertPaths("gateway." + domainname)
-		_, err = validateCertificate(paths, at)
-		if err == nil {
-			return paths, nil
-		}
-		log.Printf("Manually installed Let's Encrypt certs (old path) not available: %v", err)
+	// Look for the cloud-based certificate.
+	paths := getCloudKeyCertPaths(plat)
+	_, err := validateCertificate(paths, at)
+	if err == nil {
+		log.Printf("Cloud cert path found: %s", paths.Cert)
+		return paths
 	}
+	log.Printf("Cloud certs not available: %v", err)
 
-	return createSSKeyCert(config, applianceTempCryptoDir, domainname, at,
-		forceRefresh)
+	// If that fails, look for a self-installed Let's Encrypt cert.
+	paths = getLEKeyCertPaths(domainname)
+	_, err = validateCertificate(paths, at)
+	if err == nil {
+		return paths
+	}
+	log.Printf("Manually installed Let's Encrypt certs not available: %v", err)
+
+	// Try again with the explicit hostname "gateway", which is what
+	// older installations used.
+	paths = getLEKeyCertPaths("gateway." + domainname)
+	_, err = validateCertificate(paths, at)
+	if err == nil {
+		return paths
+	}
+	log.Printf("Manually installed Let's Encrypt certs (old path) not available: %v", err)
+
+	// Find the last-resort self-signed certs.
+	paths = getSSKeyCertPaths(applianceTempCryptoDir)
+	_, err = validateCertificate(paths, at)
+	if err == nil {
+		return paths
+	}
+	log.Printf("Self-signed cert not available: %v", err)
+
+	return nil
 }
 
 func init() {

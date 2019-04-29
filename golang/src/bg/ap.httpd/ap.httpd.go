@@ -320,15 +320,17 @@ func main() {
 		mcpd.SetState(mcp.BROKEN)
 		slog.Fatalf("failed to fetch gateway domain: %v\n", err)
 	}
-	certPaths, err := certificate.GetKeyCertPaths(config, domainname,
-		time.Now(), false)
-	if err != nil {
-		// We can still run plain HTTP ports, such as the developer port.
-		slog.Warnf("Couldn't get SSL key/fullchain: %v", err)
-	}
+
 	// We expect that a change to the domain will precede a new certificate,
-	// so the restart for the latter will handle the former.
+	// so the restart for the latter will handle the former.  Find the TLS
+	// key and certificate we should be using.  If there isn't one, sleep
+	// until ap.rpcd notifies us one is available, and then restart.
 	config.HandleChange(`^@/certs/.*/state`, certStateChange)
+	certPaths := certificate.GetKeyCertPaths(domainname)
+	if certPaths == nil {
+		slog.Warn("Sleeping until a cert is presented")
+		select {}
+	}
 
 	data.LoadDNSBlocklist(data.DefaultDataDir)
 	config.HandleChange(`^@/updates/dns_.*list$`, blocklistUpdateEvent)

@@ -382,7 +382,6 @@ APP_GOPKGS = $(APPCOMMON_GOPKGS) $(APPCOMMAND_GOPKGS) $(APPDAEMON_GOPKGS)
 
 APPTOOLS = \
 	ap-arpspoof \
-	ap-certcheck \
 	ap-complete \
 	ap-configctl \
 	ap-ctl \

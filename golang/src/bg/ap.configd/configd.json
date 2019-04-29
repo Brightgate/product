@@ -231,7 +231,7 @@
         }
       },
       "siteid": {
-        "Value": "0"
+        "Value": "setup.brightgate.net"
       },
       "site_index": {
         "Value": "0"
