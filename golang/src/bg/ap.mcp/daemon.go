@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"bg/ap_common/aputil"
@@ -153,6 +154,19 @@ func (d *daemon) start() {
 		out = logfile
 	}
 
+	// If any dependent daemons were marked as BROKEN, move them to OFFLINE
+	// and try starting them now.  Perhaps whatever broke them has been fixed
+	// by restarting this daemon.
+	for _, x := range daemons.local {
+		if x.DependsOn != nil && *x.DependsOn == d.Name {
+			x.Lock()
+			if x.state == mcp.BROKEN {
+				x.setState(mcp.OFFLINE)
+				x.goal <- mcp.ONLINE
+			}
+			x.Unlock()
+		}
+	}
 	os.Setenv("APMODE", nodeMode)
 	child := aputil.NewChild(d.execpath, d.args...)
 	child.UseStdLog("", 0, out)
@@ -423,6 +437,14 @@ func updateDaemonResources(d *daemon) {
 		if d == self {
 			shutdown(1)
 		} else {
+			// Before going through the normal child shutdown, send
+			// it a SIGABRT.  Hopefully this will leave some
+			// breadcrumbs to help figure out why it's using
+			// excessive memory.
+			if pid := d.child.GetPID(); pid > 0 {
+				syscall.Kill(pid, syscall.SIGABRT)
+				time.Sleep(10 * time.Millisecond)
+			}
 			d.stop()
 		}
 	} else if d.MemWarn > 0 && mem > d.MemWarn {
