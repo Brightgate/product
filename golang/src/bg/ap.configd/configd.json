@@ -34,13 +34,23 @@
                   }
                 }
               },
-              "ssh-internal": {
+	      "ssh-standard": {
                 "Children": {
                   "active": {
                     "Value": "true"
                   },
                   "rule": {
-                    "Value": "ACCEPT TCP FROM IFACE NOT wan TO AP DPORTS 22"
+                    "Value": "ACCEPT TCP FROM RING standard TO AP DPORTS 22"
+                  }
+                }
+              },
+              "ssh-core": {
+                "Children": {
+                  "active": {
+                    "Value": "true"
+                  },
+                  "rule": {
+                    "Value": "ACCEPT TCP FROM RING core TO AP DPORTS 22"
                   }
                 }
               }
