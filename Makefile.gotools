@@ -27,7 +27,7 @@ GOTOOLS_pgengo_hash=427e165155
 GOTOOLS_BIN_PROTOCGENGO=$(GOTOOLS_BIN)/protoc-gen-go
 
 GOTOOLS_mockery_repo=github.com/vektra/mockery/mockery
-GOTOOLS_mockery_hash=ea265755d5
+GOTOOLS_mockery_hash=e78b021dcbb558a8e7ac1fc5bc757ad7c277bb81
 
 GOTOOLS_cmdmockery_repo=github.com/vektra/mockery/cmd/mockery
 # Pin to same as mockery
@@ -54,7 +54,7 @@ $(target)_repo_e=$$(subst /,-,$$($(target)_repo))
 # glob pattern so we can delete all buildstamps for this repo name
 $(target)_built_glob=$(GOTOOLS_DIR)/buildstamp/$$($(target)_repo_e)-GITHASH-*
 # buildstamp for repo and hash
-$(target)_built=$(GOTOOLS_DIR)/buildstamp/$$($(target)_repo_e)-GITHASH-$$($(target)_hash)
+$(target)_built=$(GOTOOLS_DIR)/buildstamp/$$($(target)_repo_e)-GITHASH-$$($(target)_hash)-$$(GOVERSION_STAMP)
 GOTOOLS_ALL_BUILT+=$$($(target)_built)
 
 $$($(target)_built): $$($(target)_deps) | $(GOTOOLS_DIR)

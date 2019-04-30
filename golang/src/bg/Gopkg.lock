@@ -150,7 +150,7 @@
   version = "v1.2.0"
 
 [[projects]]
-  digest = "1:66ed5d51a32d4404775ff48bca9617780ad93f3211d3cb0ff85cb8f3cd49c78f"
+  digest = "1:4545d800b399dc0fe7102c3399057e0616255f5a79850545747eebc2acff44c9"
   name = "github.com/google/gopacket"
   packages = [
     ".",
@@ -158,8 +158,8 @@
     "pcap",
   ]
   pruneopts = ""
-  revision = "11c65f1ca9081dfea43b4f9643f5c155583b73ba"
-  version = "v1.1.14"
+  revision = "7f3fc6cbbb499248dca53da7fe3ed6c25a78d22f"
+  version = "v1.1.16"
 
 [[projects]]
   digest = "1:e097a364f4e8d8d91b9b9eeafb992d3796a41fde3eb548c1a87eb9d9f60725cf"
@@ -583,7 +583,7 @@
   version = "v0.1.1"
 
 [[projects]]
-  digest = "1:c587772fb8ad29ad4db67575dad25ba17a51f072ff18a22b4f0257a4d9c24f75"
+  digest = "1:381bcbeb112a51493d9d998bbba207a529c73dbb49b3fd789e48c63fac1f192c"
   name = "github.com/stretchr/testify"
   packages = [
     "assert",
@@ -591,8 +591,8 @@
     "require",
   ]
   pruneopts = ""
-  revision = "f35b8ab0b5a2cef36673838d662e249dd9c94686"
-  version = "v1.2.2"
+  revision = "ffdc059bfe9ce6a4e144ba849dbedead332c6053"
+  version = "v1.3.0"
 
 [[projects]]
   branch = "master"

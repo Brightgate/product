@@ -76,8 +76,8 @@ GOROOT_SEARCH += /usr/local/go
 $(info operating-system macOS)
 else
 # On Linux
-export GOROOT=$(wildcard /opt/net.b10e/go-1.10.8)
-GOROOT_SEARCH += /opt/net.b10e/go-1.10.8
+export GOROOT=$(wildcard /opt/net.b10e/go-1.12.4)
+GOROOT_SEARCH += /opt/net.b10e/go-1.12.4
 ifeq ("$(GOROOT)","")
 export GOROOT=$(HOME)/go
 GOROOT_SEARCH += $(HOME)/go
@@ -107,6 +107,7 @@ GOOS := $(shell GOROOT=$(GOROOT) $(GO) env GOOS)
 GOARCH := $(shell GOROOT=$(GOROOT) $(GO) env GOARCH)
 GOHOSTARCH := $(shell GOROOT=$(GOROOT) $(GO) env GOHOSTARCH)
 GOVERSION := $(shell GOROOT=$(GOROOT) $(GO) version)
+GOVERSION_STAMP := $(shell GOROOT=$(GOROOT) $(GO) version | awk '{print $$3}')
 
 GOWS = golang
 GOSRC = $(GOWS)/src

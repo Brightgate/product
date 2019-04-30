@@ -57,7 +57,7 @@ import (
 	"bg/common/archive"
 	"bg/common/urlfetch"
 
-	"golang.org/x/net/context"
+	"context"
 )
 
 var (

@@ -904,7 +904,7 @@ func (c *Handle) GetClients() ClientMap {
 func (c *Handle) GetNics() ([]NicInfo, error) {
 	prop, err := c.GetProps("@/nodes")
 	if err != nil {
-		return nil, fmt.Errorf("property get %s failed: %v", prop, err)
+		return nil, fmt.Errorf("property get @/nodes failed: %v", err)
 	}
 
 	nics := make([]NicInfo, 0)
