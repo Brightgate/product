@@ -246,10 +246,14 @@ func getCq(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	cqCmd, err := db.CommandSearch(context.Background(), int64(cmdID))
+	cqCmds, err := db.CommandAudit(context.Background(), uuid.NullUUID{}, int64(cmdID-1), 1)
 	if err != nil {
 		return err
 	}
+	if len(cqCmds) == 0 {
+		return fmt.Errorf("Command not found")
+	}
+	cqCmd := cqCmds[0]
 
 	if showQuery {
 		fmt.Println(string(cqCmd.Query))

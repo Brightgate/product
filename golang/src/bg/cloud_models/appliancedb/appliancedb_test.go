@@ -950,6 +950,7 @@ func testCommandQueue(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 	assert := require.New(t)
 
 	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, &testID1)
+	mkOrgSiteApp(t, ds, &testOrg2, &testSite2, &testID2)
 
 	makeCmd := func(query string) (*SiteCommand, time.Time) {
 		enqTime := time.Now()
@@ -959,11 +960,11 @@ func testCommandQueue(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 		}
 		return cmd, enqTime
 	}
-	makeManyCmds := func(query string, count int) []int64 {
+	makeManyCmds := func(query string, u uuid.UUID, count int) []int64 {
 		cmdIDs := make([]int64, count)
 		for i := 0; i < count; i++ {
 			cmd, _ := makeCmd(fmt.Sprintf("%s %d", query, i))
-			err := ds.CommandSubmit(ctx, testSite1.UUID, cmd)
+			err := ds.CommandSubmit(ctx, u, cmd)
 			assert.NoError(err)
 			cmdIDs[i] = cmd.ID
 		}
@@ -978,13 +979,13 @@ func testCommandQueue(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 
 	// Make sure we get a NotFoundError when looking up a command that was
 	// never submitted
-	cmd, err = ds.CommandSearch(ctx, 99)
+	cmd, err = ds.CommandSearch(ctx, testSite1.UUID, 99)
 	assert.Error(err)
 	assert.IsType(NotFoundError{}, err)
 	assert.Nil(cmd)
 
 	// Make sure that we get back what we put in.
-	cmd, err = ds.CommandSearch(ctx, 1)
+	cmd, err = ds.CommandSearch(ctx, testSite1.UUID, 1)
 	assert.NoError(err)
 	assert.Equal(int64(1), cmd.ID)
 	// Some part of the round-trip is rounding the times to the nearest
@@ -995,20 +996,20 @@ func testCommandQueue(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 
 	// Make sure that canceling a command returns the old state and changes
 	// the state to "CNCL".
-	newCmd, oldCmd, err := ds.CommandCancel(ctx, 1)
+	newCmd, oldCmd, err := ds.CommandCancel(ctx, testSite1.UUID, 1)
 	assert.NoError(err)
 	assert.Equal("ENQD", oldCmd.State)
 	assert.Equal("CNCL", newCmd.State)
 
 	// Make sure that canceling a canceled command is a no-op.
-	newCmd, oldCmd, err = ds.CommandCancel(ctx, 1)
+	newCmd, oldCmd, err = ds.CommandCancel(ctx, testSite1.UUID, 1)
 	assert.NoError(err)
 	assert.Equal("CNCL", oldCmd.State)
 	assert.Equal("CNCL", newCmd.State)
 
 	// Make sure that canceling a non-existent command gives us a
 	// NotFoundError
-	_, _, err = ds.CommandCancel(ctx, 12345)
+	_, _, err = ds.CommandCancel(ctx, testSite1.UUID, 12345)
 	assert.Error(err)
 	assert.IsType(NotFoundError{}, err)
 
@@ -1045,7 +1046,7 @@ func testCommandQueue(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 	assert.Equal(null.IntFrom(1), cmd.NResent)
 
 	// Complete the command.
-	newCmd, oldCmd, err = ds.CommandComplete(ctx, 2, []byte{})
+	newCmd, oldCmd, err = ds.CommandComplete(ctx, testSite1.UUID, 2, []byte{})
 	assert.NoError(err)
 	assert.Equal("WORK", oldCmd.State)
 	assert.Nil(oldCmd.DoneTime.Ptr())
@@ -1066,16 +1067,64 @@ func testCommandQueue(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 	assert.NoError(err)
 	assert.Equal(int64(2), deleted)
 	// Make some more to play with.
-	cmdIDs := makeManyCmds("Whatcha Talkin' About", 20)
+	cmdIDs := makeManyCmds("Whatcha Talkin' About", testSite1.UUID, 20)
 	// Cancel half
 	for i := 0; i < 10; i++ {
-		_, _, err = ds.CommandCancel(ctx, cmdIDs[i])
+		_, _, err = ds.CommandCancel(ctx, testSite1.UUID, cmdIDs[i])
 		assert.NoError(err)
 	}
 	// Keep 5; this shouldn't delete still-queued commands.
 	deleted, err = ds.CommandDelete(ctx, testSite1.UUID, 5)
 	assert.NoError(err)
 	assert.Equal(int64(5), deleted)
+
+	// Queue up a new command, then try to have a different site mess with it
+	cmd, _ = makeCmd("Spoof Testing")
+	err = ds.CommandSubmit(ctx, testSite1.UUID, cmd)
+	assert.NoError(err)
+
+	_, _, err = ds.CommandCancel(ctx, testSite2.UUID, cmd.ID)
+	assert.Error(err)
+	assert.IsType(NotFoundError{}, err)
+
+	_, _, err = ds.CommandComplete(ctx, testSite2.UUID, cmd.ID, []byte("Spoofed you"))
+	assert.Error(err)
+	assert.IsType(NotFoundError{}, err)
+
+	_, _, err = ds.CommandComplete(ctx, testSite1.UUID, cmd.ID, []byte("allowed to complete"))
+	assert.NoError(err)
+
+	// Test audit
+	su1 := uuid.NullUUID{
+		UUID:  testSite1.UUID,
+		Valid: true,
+	}
+	su2 := uuid.NullUUID{
+		UUID:  testSite2.UUID,
+		Valid: true,
+	}
+	sNull := uuid.NullUUID{}
+
+	cmds, err = ds.CommandAudit(ctx, su1, 0, 0)
+	assert.NoError(err)
+	assert.Len(cmds, 0)
+
+	cmds, err = ds.CommandAudit(ctx, su1, 0, 1)
+	assert.NoError(err)
+	assert.Len(cmds, 1)
+
+	cmds, err = ds.CommandAudit(ctx, su1, 0, 10)
+	assert.NoError(err)
+	assert.Len(cmds, 10)
+
+	cmds, err = ds.CommandAudit(ctx, sNull, 0, 10)
+	assert.NoError(err)
+	assert.Len(cmds, 10)
+
+	// Audit from different site
+	cmds, err = ds.CommandAudit(ctx, su2, 0, 10)
+	assert.NoError(err)
+	assert.Len(cmds, 0)
 }
 
 // make a template database, loaded with the schema.  Subsequently

@@ -33,6 +33,7 @@ type cmdState struct {
 	submitted *time.Time             // when added to the submission queue
 	fetched   *time.Time             // last time it was pulled from the queue
 	completed *time.Time             // when the completion arrived
+	canceled  *time.Time             // when the command was canceled
 }
 
 // A queue of cmdState structures.  We maintain both a proper queue, to enforce
@@ -89,6 +90,7 @@ type memCmdQueue struct {
 	lastCmdID int64        // last ID assigned to a cmd
 	sq        *simpleQueue // submitted, but not completed ops
 	cq        *simpleQueue // completed ops
+	xq        *simpleQueue // canceled operations
 
 	sqBlocked bool      // go routine blocked on empty submission queue
 	sqUpdated chan bool // new commands enqueued
@@ -101,6 +103,7 @@ func newMemCmdQueue(uuid string, cqMax int) *memCmdQueue {
 		lastCmdID: time.Now().Unix(),
 		sq:        newSimpleQueue(uuid, 0),
 		cq:        newSimpleQueue(uuid, cqMax),
+		xq:        newSimpleQueue(uuid, cqMax),
 		sqUpdated: make(chan bool, 10),
 	}
 	return memq
@@ -130,7 +133,7 @@ func (memq *memCmdQueue) block(ctx context.Context) error {
 	return err
 }
 
-// Look for a command in both the submission and completion queues.
+// Look for a command in the submission, completion and cancellation queues.
 func (memq *memCmdQueue) search(ctx context.Context, cmdID int64) *cmdState {
 	// There's no need to take the lock because the only time we're ever
 	// called is by other memCmdQueue methods which have already taken it.
@@ -138,6 +141,9 @@ func (memq *memCmdQueue) search(ctx context.Context, cmdID int64) *cmdState {
 		return cmd
 	}
 	if cmd, ok := memq.cq.pool[cmdID]; ok {
+		return cmd
+	}
+	if cmd, ok := memq.xq.pool[cmdID]; ok {
 		return cmd
 	}
 
@@ -198,7 +204,7 @@ func (memq *memCmdQueue) fetch(ctx context.Context, s *siteState, start int64, m
 
 	o := make([]*cfgmsg.ConfigQuery, 0)
 	if max == 0 {
-		panic("invalid max of 0")
+		return o, nil
 	}
 
 	_, slog := daemonutils.EndpointLogger(ctx)
@@ -248,19 +254,23 @@ func (memq *memCmdQueue) status(ctx context.Context, s *siteState, cmdID int64) 
 
 	switch {
 	case cmd == nil:
-		slog.Debugf("%s:%d: no such cmd\n", s.siteUUID, cmdID)
+		slog.Debugf("%s:%d: no such cmd", s.siteUUID, cmdID)
 		rval.Response = cfgmsg.ConfigResponse_NOCMD
 
+	case cmd.canceled != nil:
+		slog.Debugf("%v: canceled", cmd)
+		rval.Response = cfgmsg.ConfigResponse_CANCELED
+
 	case cmd.fetched == nil:
-		slog.Debugf("%v: queued\n", cmd)
+		slog.Debugf("%v: queued", cmd)
 		rval.Response = cfgmsg.ConfigResponse_QUEUED
 
 	case cmd.completed == nil:
-		slog.Debugf("%v: in-progress\n", cmd)
+		slog.Debugf("%v: in-progress", cmd)
 		rval.Response = cfgmsg.ConfigResponse_INPROGRESS
 
 	default:
-		slog.Debugf("%v: done\n", cmd)
+		slog.Debugf("%v: done", cmd)
 		rval = cmd.response
 	}
 	return rval, nil
@@ -282,10 +292,17 @@ func (memq *memCmdQueue) cancel(ctx context.Context, s *siteState, cmdID int64) 
 	case cmd == nil:
 		rval.Response = cfgmsg.ConfigResponse_NOCMD
 
+	case cmd.canceled != nil:
+		// command already canceled
+		rval.Response = cfgmsg.ConfigResponse_OK
+
 	case cmd.fetched == nil:
 		// command is still queued, so we can cancel it
 		rval.Response = cfgmsg.ConfigResponse_OK
 		memq.sq.dequeue(cmdID)
+		t := time.Now()
+		cmd.canceled = &t
+		memq.xq.enqueue(cmd)
 
 	case cmd.completed == nil:
 		// command has been fetched, so we can't cancel

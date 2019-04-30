@@ -305,6 +305,13 @@ func EndpointLogger(ctx context.Context) (*zap.Logger, *zap.SugaredLogger) {
 	return childLog, childLog.Sugar()
 }
 
+// SetGlobalLogTest allows override of globalLog so that test cases can set the
+// logger to the test's logger.
+func SetGlobalLogTest(logger *zap.Logger, slogger *zap.SugaredLogger) {
+	globalLog = logger
+	globalSugaredLog = slogger
+}
+
 // ClRoot computes the "cloud root".
 // If the "-root" option is set, it returns that
 // Else if CLROOT is set in the environment, it returns CLROOT

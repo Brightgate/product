@@ -21,12 +21,12 @@ import (
 )
 
 type commandQueue interface {
-	CommandSearch(context.Context, int64) (*SiteCommand, error)
+	CommandSearch(context.Context, uuid.UUID, int64) (*SiteCommand, error)
 	CommandSubmit(context.Context, uuid.UUID, *SiteCommand) error
 	CommandFetch(context.Context, uuid.UUID, int64, uint32) ([]*SiteCommand, error)
 	CommandAudit(context.Context, uuid.NullUUID, int64, uint32) ([]*SiteCommand, error)
-	CommandCancel(context.Context, int64) (*SiteCommand, *SiteCommand, error)
-	CommandComplete(context.Context, int64, []byte) (*SiteCommand, *SiteCommand, error)
+	CommandCancel(context.Context, uuid.UUID, int64) (*SiteCommand, *SiteCommand, error)
+	CommandComplete(context.Context, uuid.UUID, int64, []byte) (*SiteCommand, *SiteCommand, error)
 	CommandDelete(context.Context, uuid.UUID, int64) (int64, error)
 }
 
@@ -44,10 +44,10 @@ type SiteCommand struct {
 }
 
 // CommandSearch returns the SiteCommand, if any, in the command queue for the
-// given command ID.
-func (db *ApplianceDB) CommandSearch(ctx context.Context, cmdID int64) (*SiteCommand, error) {
+// given command ID and site UUID.
+func (db *ApplianceDB) CommandSearch(ctx context.Context, u uuid.UUID, cmdID int64) (*SiteCommand, error) {
 	row := db.QueryRowContext(ctx,
-		`SELECT * FROM site_commands WHERE id=$1`, cmdID)
+		`SELECT * FROM site_commands WHERE site_uuid=$1 AND id=$2`, u, cmdID)
 	var cmd SiteCommand
 	var query, response []byte
 	err := row.Scan(&cmd.ID, &cmd.UUID, &cmd.EnqueuedTime, &cmd.SentTime,
@@ -165,6 +165,9 @@ func (db *ApplianceDB) CommandFetch(ctx context.Context, u uuid.UUID, start int6
 // auditing the appliance command queue.  The argument `u` is a NullUUID so that
 // you can pass in a NullUUID with the `.Valid` member set to false and get back
 // commands not specific to any site.
+//
+// Care must be used to be sure that public consumers of this interface are not
+// allowed to pass a nulled UUID, which would allow access to all commands.
 func (db *ApplianceDB) CommandAudit(ctx context.Context, u uuid.NullUUID, start int64, max uint32) ([]*SiteCommand, error) {
 	cmds := make([]*SiteCommand, 0)
 
@@ -180,7 +183,7 @@ func (db *ApplianceDB) CommandAudit(ctx context.Context, u uuid.NullUUID, start 
 
 // commandFinish moves the command cmdID to a "done" state -- either done or
 // canceled -- and returns both the old and new commands.
-func (db *ApplianceDB) commandFinish(ctx context.Context, cmdID int64, resp []byte) (*SiteCommand, *SiteCommand, error) {
+func (db *ApplianceDB) commandFinish(ctx context.Context, siteUUID uuid.UUID, cmdID int64, resp []byte) (*SiteCommand, *SiteCommand, error) {
 	// We need to move the state to DONE.  In addition, we need to retrieve
 	// the old state and return that so the caller can understand what
 	// transition (if any) actually happened.  This operation is slightly
@@ -194,10 +197,10 @@ func (db *ApplianceDB) commandFinish(ctx context.Context, cmdID int64, resp []by
 	}
 	row := db.QueryRowContext(ctx,
 		`UPDATE site_commands new
-		 SET state = $2, done_ts = now(), config_response = $3
-		 FROM (SELECT * FROM site_commands WHERE id=$1 FOR UPDATE) old
+		 SET state = $3, done_ts = now(), config_response = $4
+		 FROM (SELECT * FROM site_commands WHERE site_uuid=$1 AND id=$2 FOR UPDATE) old
 		 WHERE new.id = old.id
-		 RETURNING old.*, new.*`, cmdID, state, resp)
+		 RETURNING old.*, new.*`, siteUUID, cmdID, state, resp)
 	var newCmd, oldCmd SiteCommand
 	var oquery, nquery, oresponse, nresponse []byte
 	if err := row.Scan(&oldCmd.ID, &oldCmd.UUID, &oldCmd.EnqueuedTime,
@@ -217,14 +220,14 @@ func (db *ApplianceDB) commandFinish(ctx context.Context, cmdID int64, resp []by
 
 // CommandCancel cancels the command cmdID, returning both the old and new
 // commands.
-func (db *ApplianceDB) CommandCancel(ctx context.Context, cmdID int64) (*SiteCommand, *SiteCommand, error) {
-	return db.commandFinish(ctx, cmdID, nil)
+func (db *ApplianceDB) CommandCancel(ctx context.Context, siteUUID uuid.UUID, cmdID int64) (*SiteCommand, *SiteCommand, error) {
+	return db.commandFinish(ctx, siteUUID, cmdID, nil)
 }
 
 // CommandComplete marks the command cmdID done, setting the response column and
 // returning both the old and new commands.
-func (db *ApplianceDB) CommandComplete(ctx context.Context, cmdID int64, resp []byte) (*SiteCommand, *SiteCommand, error) {
-	return db.commandFinish(ctx, cmdID, resp)
+func (db *ApplianceDB) CommandComplete(ctx context.Context, siteUUID uuid.UUID, cmdID int64, resp []byte) (*SiteCommand, *SiteCommand, error) {
+	return db.commandFinish(ctx, siteUUID, cmdID, resp)
 }
 
 // CommandDelete removes completed and canceled commands from an appliance's

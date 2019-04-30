@@ -42,40 +42,6 @@ func (dbq *dbCmdQueue) String() string {
 	return pgutils.CensorPassword(dbq.connInfo)
 }
 
-func (dbq *dbCmdQueue) search(ctx context.Context, s *siteState, cmdID int64) (*cmdState, error) {
-	dbCmd, err := dbq.handle.CommandSearch(ctx, cmdID)
-	if err != nil {
-		return nil, err
-	}
-
-	var cfgQuery *cfgmsg.ConfigQuery
-	err = json.Unmarshal(dbCmd.Query, cfgQuery)
-	if err != nil {
-		return nil, err
-	}
-
-	var cfgResponse *cfgmsg.ConfigResponse
-	if len(dbCmd.Response) != 0 {
-		err = json.Unmarshal(dbCmd.Response, cfgResponse)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// XXX NResent isn't represented, and neither is state
-	uuidStr := dbCmd.UUID.String()
-	cmd := &cmdState{
-		siteUUID:  &uuidStr,
-		cmdID:     dbCmd.ID,
-		submitted: &dbCmd.EnqueuedTime,
-		fetched:   dbCmd.SentTime.Ptr(),
-		completed: dbCmd.DoneTime.Ptr(),
-		cmd:       cfgQuery,
-		response:  cfgResponse,
-	}
-	return cmd, nil
-}
-
 func (dbq *dbCmdQueue) submit(ctx context.Context, s *siteState, q *cfgmsg.ConfigQuery) (int64, error) {
 	jsonQuery, err := json.Marshal(q)
 	if err != nil {
@@ -101,7 +67,7 @@ func (dbq *dbCmdQueue) fetch(ctx context.Context, s *siteState, start int64,
 
 	var cmds []*appliancedb.SiteCommand
 	if max == 0 {
-		panic("invalid max of 0")
+		return make([]*cfgmsg.ConfigQuery, 0), nil
 	}
 
 	u, err := uuid.FromString(s.siteUUID)
@@ -177,7 +143,12 @@ func (dbq *dbCmdQueue) status(ctx context.Context, s *siteState, cmdID int64) (*
 
 	_, slog := daemonutils.EndpointLogger(ctx)
 
-	dbCmd, err := dbq.handle.CommandSearch(ctx, cmdID)
+	u, err := uuid.FromString(s.siteUUID)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to convert %q to UUID: %v",
+			s.siteUUID, err)
+	}
+	dbCmd, err := dbq.handle.CommandSearch(ctx, u, cmdID)
 	if err != nil {
 		if _, ok := err.(appliancedb.NotFoundError); ok {
 			slog.Debugf("%s:%d: no such command", s.siteUUID, cmdID)
@@ -218,6 +189,10 @@ func (dbq *dbCmdQueue) status(ctx context.Context, s *siteState, cmdID int64) (*
 		}
 		slog.Debugf("%s:%d: %s", s.siteUUID, cmdID, state)
 
+	case dbCmd.State == "CNCL":
+		slog.Debugf("%s:%d: canceled", s.siteUUID, cmdID)
+		rval.Response = cfgmsg.ConfigResponse_CANCELED
+
 	default:
 		slog.Debugf("%s:%d: unknown state %q", s.siteUUID, cmdID, dbCmd.State)
 	}
@@ -233,7 +208,12 @@ func (dbq *dbCmdQueue) cancel(ctx context.Context, s *siteState, cmdID int64) (*
 
 	_, slog := daemonutils.EndpointLogger(ctx)
 
-	newCmd, oldCmd, err := dbq.handle.CommandCancel(ctx, cmdID)
+	u, err := uuid.FromString(s.siteUUID)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to convert %q to UUID: %v",
+			s.siteUUID, err)
+	}
+	newCmd, oldCmd, err := dbq.handle.CommandCancel(ctx, u, cmdID)
 	if err != nil {
 		if _, ok := err.(appliancedb.NotFoundError); ok {
 			slog.Warnf("%s:%d cancellation for unknown command",
@@ -247,8 +227,9 @@ func (dbq *dbCmdQueue) cancel(ctx context.Context, s *siteState, cmdID int64) (*
 	dbq.cleanup(ctx, s)
 
 	switch {
-	case oldCmd.State == "ENQD":
-		// command is still queued, so we can cancel it
+	case oldCmd.State == "ENQD" || oldCmd.State == "CNCL":
+		// command is still queued or already canceled, so we can
+		// cancel it
 		rval.Response = cfgmsg.ConfigResponse_OK
 
 	case oldCmd.State == "WORK":
@@ -275,7 +256,12 @@ func (dbq *dbCmdQueue) complete(ctx context.Context, s *siteState, rval *cfgmsg.
 			cmdID, err)
 		return err
 	}
-	newCmd, oldCmd, err := dbq.handle.CommandComplete(ctx, cmdID, jsonResp)
+	u, err := uuid.FromString(s.siteUUID)
+	if err != nil {
+		return fmt.Errorf("Failed to convert %q to UUID: %v",
+			s.siteUUID, err)
+	}
+	newCmd, oldCmd, err := dbq.handle.CommandComplete(ctx, u, cmdID, jsonResp)
 	if err != nil {
 		if _, ok := err.(appliancedb.NotFoundError); ok {
 			slog.Warnf("%s:%d completion for unknown command",
@@ -292,9 +278,12 @@ func (dbq *dbCmdQueue) complete(ctx context.Context, s *siteState, rval *cfgmsg.
 		var cfgQuery cfgmsg.ConfigQuery
 		err = json.Unmarshal(newCmd.Query, &cfgQuery)
 		if err != nil {
+			// This is basically a "can't happen" since the db should never
+			// be populated with an invalid cmd.  Don't return this
+			// as an error; there's nothing the client can do to correct.
 			slog.Errorf("Unable to unmarshal query for command %s:%d: %v",
 				newCmd.UUID, newCmd.ID, err)
-			return err
+			return nil
 		}
 		if rval.Response == cfgmsg.ConfigResponse_OK && isRefresh(&cfgQuery) &&
 			len(rval.Value) > 0 {
@@ -302,15 +291,15 @@ func (dbq *dbCmdQueue) complete(ctx context.Context, s *siteState, rval *cfgmsg.
 			tree, err = cfgtree.NewPTree("@", []byte(rval.Value))
 			if err != nil {
 				slog.Warnf("failed to refresh %s: %v", s.siteUUID, err)
-				return err
+			} else {
+				s.setCachedTree(ctx, tree)
 			}
-			s.setCachedTree(ctx, tree)
 		}
 	} else {
 		slog.Infof("%s:%d multiple completions - last at %s",
 			s.siteUUID, cmdID, oldCmd.DoneTime.Time.Format(time.RFC3339))
 	}
-	return err
+	return nil
 }
 
 func (dbq *dbCmdQueue) cleanup(ctx context.Context, s *siteState) {
