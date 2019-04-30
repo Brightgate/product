@@ -55,7 +55,7 @@
 			"label": "Product: make packages",
 			"type": "shell",
 			"osx": {
-				"command": "echo Can\'t make packages on macOS."
+				"command": "echo Can't make packages on macOS."
 			},
 			"command": "make packages",
 			"presentation": {
