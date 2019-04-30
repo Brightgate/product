@@ -64,7 +64,8 @@ type WifiCapabilities struct {
 // Does this device support VLANs?
 func getVlanSupport(w *WifiCapabilities, info string) {
 	// Look for "AP/VLAN" as a supported "software interface mode"
-	vlanRE := regexp.MustCompile(`AP/VLAN`)
+	// Ignore "AP/VLAN:", which appears under "TX frame types"
+	vlanRE := regexp.MustCompile(`AP/VLAN[^:]`)
 
 	vlanModes := vlanRE.FindAllStringSubmatch(info, -1)
 	w.SupportVLANs = (len(vlanModes) > 0)

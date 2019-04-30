@@ -208,7 +208,8 @@ func wifi(args []string) bool {
 				fmt.Sprintf("supports only %d SSIDs (need 4 minimum)",
 					cap.Interfaces))
 		}
-		if !cap.WifiBands[wificaps.LoBand] && cap.WifiBands[wificaps.HiBand] {
+
+		if !cap.WifiBands[wificaps.LoBand] && !cap.WifiBands[wificaps.HiBand] {
 			reasons = append(reasons, "no supported channels")
 		}
 		valid := "INVALID"
