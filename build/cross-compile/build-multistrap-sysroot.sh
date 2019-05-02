@@ -1,7 +1,7 @@
 #!/bin/bash -p
 
 #
-# COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+# COPYRIGHT 2019 Brightgate Inc. All rights reserved.
 #
 # This copyright notice is Copyright Management Information under 17 USC 1202
 # and is included to protect this work and deter copyright infringement.
@@ -14,7 +14,7 @@
 # -----------
 #
 # DISTRO
-#   'openwrt' or 'raspbian'.  raspbian will allow sysroot construction via a
+#   'openwrt' or 'debian'.  debian will allow sysroot construction via a
 #   multistrap(1) invocation.  openwrt requires that the sysroot and toolchain
 #   archives from the rWRT build be present for upload.
 #
@@ -22,7 +22,7 @@
 #   Path to a GCP JSON key file for the relevant service account.
 #
 # SYSROOT_SUM
-#   For Raspbian, the sum is calculated from the SHA-256 hash of the installed
+#   For Debian, the sum is calculated from the SHA-256 hash of the installed
 #   packages.  For OpenWrt, the sum is the Git hash of the rWRT repository that
 #   produced the sysroot.
 
@@ -154,8 +154,8 @@ function cmd_upload() {
 }
 
 function cmd_build() {
-	if [[ "$DISTRO" != "raspbian" ]]; then
-		fatal "build only supported for 'raspbian' distro"
+	if [[ "$DISTRO" != "debian" ]]; then
+		fatal "build only supported for 'debian' distro"
 	fi
 
 	# Build is just the rest of the script.

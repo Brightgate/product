@@ -6,6 +6,8 @@ pipeline {
     stages {
         stage('sysroot') {
             environment {
+                GOARCH = 'arm'
+                GOARM = '7'
                 KEY_SYSROOT_UPLOADER = credentials('sysroot-uploader')
             }
             steps {
