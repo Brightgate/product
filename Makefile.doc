@@ -74,7 +74,7 @@ $(DOC_OUTPUT_DIR)/%.pdf: $(DOC_BLD_DIR)/%.pdf | $(DOC_OUTPUT_DIR)
 	install -m 0644 $< $@
 
 # Run weasyprint on htmls corresponding to output pdfs
-$(DOC_BLD_DIR)/%.pdf: $(DOC_BLD_DIR)/%.html $(DOC_BLD_DIR)/%.css $(DOC_BLD_IMGS) | $(DOC_BLD_DIR) $(VENV_NAME)
+$(DOC_BLD_DIR)/%.pdf: $(DOC_BLD_DIR)/%.html $(DOC_BLD_DIR)/%.css $(DOC_BLD_IMGS) $(VENV_INSTALLED) | $(DOC_BLD_DIR)
 	$(PYTHON3) $(WEASYPRINT) -s $(@:.pdf=.css) $< $@
 
 # Move any depended upon html files into the build dir

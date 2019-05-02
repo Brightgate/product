@@ -141,6 +141,7 @@ NODEVERSION = $(shell $(NODE) --version)
 # we can wind up with extremely long pathnames otherwise, potentially breaking
 # shell scripts with large #! lines; see Linux's BINPRM_BUF_SIZE.
 VENV_NAME := _venv.$(shell $(SHA256SUM) build/requirements.txt | awk '{print substr($$1,1,8)}')
+VENV_INSTALLED := $(VENV_NAME)/.installed
 HOSTPYTHON3 = python3
 PYTHON3VERSION = $(shell $(HOSTPYTHON3) -V)
 PYTHON3 = $(VENV_NAME)/bin/python3
@@ -670,13 +671,13 @@ $(SYSROOT)/.$(SYSROOT_SUM): build/cross-compile/$(SYSROOT_BLOB_NAME)
 	$(BUILD_SYSROOT_CMD) unpack -d $(subst build/cross-compile/,,$(@D))
 	touch --no-create $@
 
-archives: install client-web | $(VENV_NAME)
+archives: install client-web $(VENV_INSTALLED)
 	$(PYTHON3) build/package.py --distro archive --arch $(PKG_DEB_ARCH) --proto $(ROOT)
 
-packages: install client-web | $(VENV_NAME)
+packages: install client-web $(VENV_INSTALLED)
 	$(PYTHON3) build/package.py --distro $(DISTRO) --arch $(PKG_DEB_ARCH) --proto $(ROOT)
 
-packages-lint: install client-web | $(VENV_NAME)
+packages-lint: install client-web $(VENV_INSTALLED)
 	$(PYTHON3) build/package.py --lint --distro $(DISTRO) --arch $(PKG_DEB_ARCH) --proto $(ROOT)
 
 GO_MOCK_CLOUDRPC_SRCS = \
@@ -941,10 +942,10 @@ $(CLOUDDIRS):
 # Common definitions
 #
 
-$(GOSRCBG)/base_def/base_def.go: base/generate-base-def.py | $(GOSRCBG)/base_def $(VENV_NAME)
+$(GOSRCBG)/base_def/base_def.go: base/generate-base-def.py $(VENV_INSTALLED) | $(GOSRCBG)/base_def
 	$(PYTHON3) $< --go | $(GOFMT) > $@
 
-base/base_def.py: base/generate-base-def.py | $(VENV_NAME)
+base/base_def.py: base/generate-base-def.py $(VENV_INSTALLED)
 	$(PYTHON3) $< --python3 > $@
 
 $(BGDEPDIR):
@@ -1003,9 +1004,11 @@ $(BUILDTOOLS_FILE):
 
 # Use python3 to invoke pip; else, the long pathnames involved can cause
 # pip to fail thanks to Linux's BINPRM_BUF_SIZE limit on #! lines.
-$(VENV_NAME):
+$(VENV_INSTALLED):
+	$(RM) -fr $(VENV_NAME)
 	$(HOSTPYTHON3) -m venv $(VENV_NAME)
 	$(PYTHON3) -m pip --no-cache-dir --log $(VENV_NAME)/pip.log install -r build/requirements.txt > /dev/null
+	touch $@
 
 NPM = npm
 NPM_QUIET = --loglevel warn --no-progress
