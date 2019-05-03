@@ -47,12 +47,15 @@ var (
 		true, nil)
 	rulesDir = apcfg.String("rules_dir", "/etc/filter.rules.d",
 		true, nil)
-	hostapdLatency    = apcfg.Int("hostapd_latency", 5, true, nil)
-	hostapdDebug      = apcfg.Bool("hostapd_debug", false, true, nil)
-	hostapdVerbose    = apcfg.Bool("hostapd_verbose", false, true, nil)
-	deadmanTimeout    = apcfg.Duration("deadman", 5*time.Second, true, nil)
-	retransmitLimit   = apcfg.Int("retransmit_limit", 4, true, nil)
-	retransmitTimeout = apcfg.Duration("retransmit_timeout",
+	hostapdLatency = apcfg.Int("hostapd_latency", 5, true, nil)
+	hostapdDebug   = apcfg.Bool("hostapd_debug", false, true,
+		hostapdReset)
+	hostapdVerbose = apcfg.Bool("hostapd_verbose", false, true,
+		hostapdReset)
+	deadmanTimeout      = apcfg.Duration("deadman", 5*time.Second, true, nil)
+	retransmitSoftLimit = apcfg.Int("retransmit_soft", 3, true, nil)
+	retransmitHardLimit = apcfg.Int("retransmit_hard", 6, true, nil)
+	retransmitTimeout   = apcfg.Duration("retransmit_timeout",
 		25*time.Second, true, nil)
 	_ = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
 
@@ -97,6 +100,13 @@ type physDevice struct {
 // Interaction with the rest of the ap daemons
 //
 
+func hostapdReset(name, val string) error {
+	if hostapd != nil {
+		hostapd.reset()
+	}
+	return nil
+}
+
 func configNicChanged(path []string, val string, expires *time.Time) {
 	nicID := path[3]
 	p := physDevices[nicID]
@@ -126,17 +136,6 @@ func configNicChanged(path []string, val string, expires *time.Time) {
 
 		if p.ring != newRing {
 			p.ring = newRing
-			// Ideally this would just be a 'reload'.
-			// Unfortunately, this doesn't seem to trigger a
-			// sufficient level of reset at the driver/firmware
-			// level, so we still see clients being assigned to the
-			// wrong VLAN - even though the hostapd log messages
-			// reflect the correct VLAN.
-			//
-			// XXX - post-alpha explore using the 'disassociate'
-			// cli command to explicitly kick off the updated
-			// client.  That seems to work when done manually, but
-			// it needs more testing.
 			hostapd.reset()
 		}
 
@@ -162,13 +161,17 @@ func configClientChanged(path []string, val string, expires *time.Time) {
 	hwaddr := path[1]
 	newRing := val
 	c, ok := clients[hwaddr]
+
 	if !ok {
 		c := cfgapi.ClientInfo{Ring: newRing}
 		slog.Infof("New client %s in %s", hwaddr, newRing)
 		clients[hwaddr] = &c
+		hostapd.disassociate(hwaddr)
 	} else if c.Ring != newRing {
 		slog.Infof("Moving %s from %s to %s", hwaddr, c.Ring, newRing)
 		c.Ring = newRing
+		hostapd.reload()
+		hostapd.disassociate(hwaddr)
 	} else {
 		// False alarm.
 		return

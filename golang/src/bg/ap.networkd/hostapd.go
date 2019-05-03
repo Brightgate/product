@@ -289,6 +289,7 @@ func sendNetException(mac string, vapName *string,
 }
 
 func (c *hostapdConn) getSignature(sta string) {
+	sta = strings.ToLower(sta)
 	sig, err := c.command("SIGNATURE " + sta)
 	if err != nil {
 		slog.Warnf("Failed to get signature for %s: %v", sta, err)
@@ -301,6 +302,7 @@ func (c *hostapdConn) getSignature(sta string) {
 }
 
 func (c *hostapdConn) stationPresent(sta string, newConnection bool) {
+	sta = strings.ToLower(sta)
 	slog.Infof("%v stationPresent(%s) new: %v", c, sta, newConnection)
 	info := c.stations[sta]
 	if info == nil {
@@ -335,14 +337,21 @@ func (c *hostapdConn) stationBadPassword(sta string) {
 	sendNetException(sta, &c.vapName, &reason)
 }
 
+func (c *hostapdConn) disassociate(sta string) {
+	sta = strings.ToLower(sta)
+	slog.Infof("%v disassociating(%s)", c, sta)
+	c.command("DISASSOCIATE " + sta)
+}
+
 // There is currently a bug on the OpenWRT boards where a client will fail to
 // authenticate with EAP despite having valid credentials.  We can see this
 // happening in the log as hostapd repeatedly issues RETRANSMIT messages.  The
 // retries appear to happen with backoffs of 3, 6, 12, 20, 20, and 20 seconds
 // before the operation finally times out.
 //
-// Until the problem gets fixed, we can try to work around it by restarting
-// hostapd when we see it happening.  this_is_fine.gif.
+// When a client is forcibly disassociated, this seems to clear the problem in a
+// way that simply timing out and retrying the connection doesn't.  If that
+// isn't sufficient, restarting hostapd always seems to be.
 func (c *hostapdConn) eapRetransmit(mac string) {
 	now := time.Now()
 	expired := now.Add(-1 * *retransmitTimeout)
@@ -365,11 +374,16 @@ func (c *hostapdConn) eapRetransmit(mac string) {
 	}
 	state.last = now
 
-	if state.count++; state.count >= *retransmitLimit {
-		slog.Warnf("hostapd had %d retransmits for %s since %s - restarting",
+	if state.count++; state.count >= *retransmitHardLimit {
+		slog.Warnf("%d retransmits for %s since %s - restarting",
 			state.count, mac, state.first.Format(time.RFC3339))
 		c.retransmits = make(map[string]*retransmitState)
 		c.hostapd.reset()
+
+	} else if state.count >= *retransmitSoftLimit {
+		slog.Warnf("%d retransmits for %s since %s - kicking",
+			state.count, mac, state.first.Format(time.RFC3339))
+		go c.disassociate(mac)
 	}
 }
 
@@ -694,6 +708,20 @@ func generateVlanConf(vap *vapConfig) {
 		}
 	}
 	mf.Close()
+}
+
+func (h *hostapdHdl) disassociate(sta string) {
+	sta = strings.ToLower(sta)
+	for _, c := range h.conns {
+		c.Lock()
+		_, ok := c.stations[sta]
+		c.Unlock()
+
+		if ok {
+			slog.Infof("kicking %s from %s", sta, c.name)
+			c.disassociate(sta)
+		}
+	}
 }
 
 func (h *hostapdHdl) generateHostAPDConf() {

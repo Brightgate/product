@@ -117,8 +117,8 @@ type rConf struct {
 var (
 	templateDir = apcfg.String("template_dir", "__APPACKAGE__/etc/templates/ap.userauthd",
 		false, nil)
-	hostapdDebug   = apcfg.Bool("hostapd_debug", false, true, nil)
-	hostapdVerbose = apcfg.Bool("hostapd_verbose", false, true, nil)
+	hostapdDebug   = apcfg.Bool("hostapd_debug", false, true, hostapdReset)
+	hostapdVerbose = apcfg.Bool("hostapd_verbose", false, true, hostapdReset)
 	_              = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
 
 	hostapdProcess *aputil.Child // track the hostapd proc
@@ -269,6 +269,13 @@ func signalHandler() {
 	hostapdProcess.Stop()
 }
 
+func hostapdReset(name, val string) error {
+	if hostapdProcess != nil {
+		hostapdProcess.Stop()
+	}
+	return nil
+}
+
 //
 // Launch, monitor, and maintain the hostapd process for a single interface
 //
@@ -279,16 +286,16 @@ func runOne(rc *rConf) {
 	fn := generateRadiusHostapdConf(rc)
 	slog.Debugf("runOne configuration %v", fn)
 
-	args := make([]string, 0)
-	if *hostapdVerbose {
-		args = append(args, "-dd")
-	} else if *hostapdDebug {
-		args = append(args, "-d")
-	}
-	args = append(args, fn)
-
 	startTimes := make([]time.Time, failuresAllowed)
 	for running {
+		args := make([]string, 0)
+		if *hostapdVerbose {
+			args = append(args, "-dd")
+		} else if *hostapdDebug {
+			args = append(args, "-d")
+		}
+		args = append(args, fn)
+
 		hostapdProcess = aputil.NewChild(plat.HostapdCmd, args...)
 		hostapdProcess.UseZapLog("radius: ", slog, zapcore.InfoLevel)
 
