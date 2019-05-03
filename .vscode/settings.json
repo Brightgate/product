@@ -1,0 +1,4 @@
+{
+    "go.gopath": "${workspaceFolder}/golang",
+    "go.useLanguageServer": true
+}
