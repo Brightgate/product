@@ -1,5 +1,6 @@
 # Settings that are set dynamically when the config file is generated
-IdentityFile {{.IdentityFile}}
+IdentityFile {{.SSHDir}}/id_rsa
+UserKnownHostsFile {{.SSHDir}}/known_hosts
 Port {{.Port}}
 
 StrictHostKeyChecking no

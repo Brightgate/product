@@ -408,9 +408,9 @@ func userInit() error {
 	}
 	defer config.Close()
 	err = tmpl.Execute(config, struct {
-		IdentityFile string
-		Port         int
-	}{idFile, *tunnelPort})
+		SSHDir string
+		Port   int
+	}{tmpdir, *tunnelPort})
 	if err != nil {
 		os.RemoveAll(tmpdir)
 		return fmt.Errorf("generating ssh_config: %v", err)
