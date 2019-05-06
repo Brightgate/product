@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -12,6 +12,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -19,18 +20,12 @@ import (
 	"bg/cloud_rpc"
 
 	"github.com/golang/protobuf/ptypes"
-	"github.com/golang/protobuf/ptypes/timestamp"
 )
 
-var bootTime *timestamp.Timestamp
-
 func publishHeartbeat(ctx context.Context, tclient cloud_rpc.EventClient) error {
-	var err error
-	if bootTime == nil {
-		bootTime, err = ptypes.TimestampProto(aputil.LinuxBootTime())
-		if err != nil {
-			slog.Fatalf("couldn't get linux boot time")
-		}
+	bootTime, err := ptypes.TimestampProto(aputil.LinuxBootTime())
+	if err != nil {
+		return fmt.Errorf("couldn't encode linux boot time: %v", err)
 	}
 
 	heartbeat := &cloud_rpc.Heartbeat{
