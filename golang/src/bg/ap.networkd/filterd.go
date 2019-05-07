@@ -222,19 +222,22 @@ func ifaceForwardRules(ring string) {
 	}
 	config := rings[ring]
 
+	// Do not forward any traffic from a client that appears to be spoofing
+	// its source address.  Our criteria for spoofing are fairly lax - we
+	// just drop any packet with an address that doesn't match the subnet it
+	// originated on.  We could be stricter, requiring that the ip address
+	// matches the mac address, but that would require updating the rules on
+	// every DHCP assignment/expiration.
+	spoofRule := " -i " + config.Bridge
+	spoofRule += " ! -s " + config.Subnet
+	spoofRule += " -j dropped"
+	iptablesAddRule("filter", "FORWARD", spoofRule)
+
 	// Traffic from the managed network has its IP addresses masqueraded
 	masqRule := " -o " + wan.getNic()
 	masqRule += " -s " + config.Subnet
 	masqRule += " -j MASQUERADE"
 	iptablesAddRule("nat", "POSTROUTING", masqRule)
-
-	// Route traffic from the managed network to the WAN
-	connRule := " -i " + config.Bridge
-	connRule += " -o " + wan.getNic()
-	connRule += " -s " + config.Subnet
-	connRule += " -m conntrack --ctstate NEW"
-	connRule += " -j ACCEPT"
-	iptablesAddRule("filter", "FORWARD", connRule)
 }
 
 func genEndpointAddr(e *endpoint, src bool) (string, error) {
@@ -612,9 +615,9 @@ func firewallRules() {
 }
 
 func iptablesRebuild() {
-	slog.Infof("Rebuilding iptables rules")
+	var wanNic, wanFilter, lanFilter string
 
-	wanNic := wan.getNic()
+	slog.Infof("Rebuilding iptables rules")
 
 	applied = make(map[string]map[string][]string)
 	for _, t := range tables {
@@ -631,13 +634,16 @@ func iptablesRebuild() {
 
 	iptablesAddRule("filter", "INPUT", " -s 127.0.0.1 -j ACCEPT")
 
-	// Add the basic routing rules for each interface
-	if wanNic == "" {
-		slog.Warnf("No WAN interface defined - cannot set up NAT")
-	} else {
+	if wanNic = wan.getNic(); wanNic != "" {
+		wanFilter = "-i " + wanNic + " "
+		lanFilter = "! -i " + wanNic + " "
+
+		// Add the basic routing rules for each interface
 		for ring := range rings {
 			ifaceForwardRules(ring)
 		}
+	} else {
+		slog.Warnf("No WAN interface defined - cannot set up NAT")
 	}
 
 	// Repopulate the list of blocked  IPs
@@ -657,20 +663,17 @@ func iptablesRebuild() {
 	// WAN drops so they can be rate-limited independently.  We can
 	// optionally skip logging of dropped packets on the WAN port
 	// altogether.
-	wanFilter := ""
-	if wanNic != "" {
-		wanFilter = "-i " + wanNic + " "
-	}
-	lanFilter := "! " + wanFilter
 	if _, err := config.GetProp("@/network/nologwan"); err != nil {
 		// Limit logged WAN drops to 1/second
 		iptablesAddRule("filter", "dropped", wanFilter+
 			"-j LOG -m limit --limit 60/min --log-level 6 --log-prefix \"DROPPED \"")
 	}
 
-	// Limit logged LAN drops to 10/second
-	iptablesAddRule("filter", "dropped", lanFilter+
-		"-j LOG -m limit --limit 600/min  --log-level 6 --log-prefix \"DROPPED \"")
+	if lanFilter != "" {
+		// Limit logged LAN drops to 10/second
+		iptablesAddRule("filter", "dropped", lanFilter+
+			"-j LOG -m limit --limit 600/min  --log-level 6 --log-prefix \"DROPPED \"")
+	}
 	iptablesAddRule("filter", "dropped", "-j DROP")
 
 	firewallRules()
