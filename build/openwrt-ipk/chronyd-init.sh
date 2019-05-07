@@ -17,6 +17,9 @@ start_service() {
 	mkdir -p $(dirname $CONFIGFILE)
 	touch $CONFIGFILE
 
-	# This is where we put the drift file
-	mkdir -p /var/lib/chrony
+	# chronyd doesn't create and set perms on the directory for its
+	# driftfile like it does for some of its other configurable paths, and
+	# the directory isn't delivered by any package, so we make it here.
+	mkdir -p /data/chrony
+	chown chrony:chrony /data/chrony
 }

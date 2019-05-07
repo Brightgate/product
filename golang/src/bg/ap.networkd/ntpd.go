@@ -21,8 +21,9 @@ import (
 )
 
 type ntpdConf struct {
-	Rings   cfgapi.RingMap
-	Servers []string
+	Rings    cfgapi.RingMap
+	Servers  []string
+	DriftDir string
 }
 
 const (
@@ -64,6 +65,7 @@ func generateNTPDConf() error {
 			return err
 		}
 	}
+	conf.DriftDir = plat.ExpandDirPath(plat.NtpdDriftDir)
 
 	cf, err := os.Create(plat.NtpdConfPath)
 	if err != nil {

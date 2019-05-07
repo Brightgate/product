@@ -115,6 +115,7 @@ func init() {
 		DHCPPidfile: x86DHCPPidfile,
 
 		NtpdConfPath:   "/etc/chrony/chrony.conf",
+		NtpdDriftDir:   "/var/lib/chrony",
 		NtpdService:    "chrony",
 		RestartService: x86RestartService,
 	})
