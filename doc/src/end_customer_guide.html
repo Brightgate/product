@@ -1,8 +1,13 @@
 <!DOCTYPE html>
 <!--
-  COPYRIGHT 2019 Brightgate Inc. All rights reserved. This copyright notice is Copyright  Management Information under 17 USC  1202 and is included to protect this work and deter copyright
-  infringement.  Removal or alteration of this Copyright Management  Information without the express  written permission of Brightgate Inc  is prohibited, and any such unauthorized removal or alteration
-  will be  a violation of federal law.-->
+  COPYRIGHT 2019 Brightgate Inc. All rights reserved.
+
+  This copyright notice is Copyright Management Information under 17 USC 1202
+  and is included to protect this work and deter copyright infringement.
+  Removal or alteration of this Copyright Management Information without the
+  express written permission of Brightgate Inc is prohibited, and any such
+  unauthorized removal or alteration will be a violation of federal law.
+-->
 <html lang="en">
   <head>
     <meta http-equiv="content-type" content="text/html; charset=UTF-8">
@@ -307,10 +312,10 @@
       a different trust group, as discussed in the section <a href="#change-device-trust-group">Change
         a device's trust group assignment</a>.</p>
     <p>View the default trust groups for your network as discussed in the
-      section <a href="#network-configuration">View your Network Details</a>a&gt;,
+      section <a href="#network-configuration">View your Network Details</a>,
       which lists the <i>Trust Group Configuration for each network</i>:</p>
     <ul>
-      <li>For the <code>*-user</code> network:
+      <li>For the <code>*-users</code> network:
         <ul>
           <li><code>core</code>: The trust group reserved for the most trusted
             devices</li>
@@ -428,7 +433,7 @@
     </ol>
     <p><img src="./images/initial-login.png" alt="Initial login"></p>
     <h2 id="get-your-networks-up">Get your Brightgate networks up and running</h2>
-    <p> Administering networks managed by Brightgate doesn't require constant
+    <p>Administering networks managed by Brightgate doesn't require constant
       oversight because we're doing so much behind the scenes. We're constantly
       monitoring your network and device behavior for vulnerabilities as well as
       managing the trust group assignment for your devices. As a result, with
@@ -490,21 +495,21 @@
         a password that periodically rotates.</li>
     </ul>
     <h3 id="help-your-team-get-online">Help your team get online</h3>
-    <p>The Brightgate management app supports Google Sign-In and Sign-In with Microsoft.</p>
-    <p><b>Note:</b> During the Alpha program, only Google Sign-In and Sign-In with Microsoft are supported
-      for user logins. Other identity providers will be available in future
-      releases.</p>
-    When you're logging in to the Brightgate management app (or if you're having
-    your team log in), we authenticate you with your Google or Microsoft account, then walk
-    you through creating and storing a Wi-Fi user name and password. Everyone
-    needs to store their Wi-Fi user name and password to add other devices (like
-    phones and tablets) to the Wi-Fi network reserved for authenticated users
-    (typically the one with the suffix <code>-user</code>).
+    <p>The Brightgate management app supports Google Sign-In and Sign-In with
+    Microsoft. <b>Note:</b> During the Alpha program, only Google Sign-In and
+    Sign-In with Microsoft are supported for user logins. Other identity
+    providers will be available in future releases.</p>
+    <p>When you're logging in to the Brightgate management app (or if you're
+    having your team log in), we authenticate you with your Google or Microsoft
+    account, then walk you through creating and storing a Wi-Fi user name and
+    password. Everyone needs to store their Wi-Fi user name and password to add
+    other devices (like phones and tablets) to the Wi-Fi network reserved for
+    authenticated users(typically the one with the suffix <code>-user</code>).</p>
     <ol>
       <li>Navigate to your <a href="https://svc1.b10e.net">Brightgate
           management app</a></li>
-      <li>Press the <b>Login with Google</b> or <b>Login with Microsoft</b> button to log in to the Brightgate
-        cloud.
+      <li>Press the <b>Login with Google</b> or <b>Login with Microsoft</b>
+        button to log in to the Brightgate cloud.
         <img src="./images/login_shot.png" alt="Logging in to Brightgate"> </li>
       <li>Provide credentials for either your Google or Microsoft account.
         <img src="./images/select_account.png" alt="Select Google account">
@@ -525,6 +530,21 @@
           network</a></li>
       <li><a href="#add-windows-network">Add a Windows computer to your network</a></li>
     </ul>
+    <h4 id="quick-word-certificates">A quick word about certificates</h4>
+    <p>The first time a device connects to the authenticated users network, in
+    most cases the device will present a certificate for you to accept. This
+    certificate confirms that the network is what it says it is, and accepting
+    the certificate allows you to trust this network in the future when you
+    connect the device without manual intervention.</p>
+    <p>While your IT team is best qualified to help you understand how
+    certificates are used in your environment, Brightgate suggests you inspect
+    any certificate before adding it to your device. While the method of
+    inspection varies according to the device type, ensure the certificate
+    is issued by Let's Encrypt, the certificate authority used by Brightgate,
+    and that the Subject Name looks like <code><i>number</i>.brightgate.net</code>,
+    where <code><i>number</i></code> is a five digit number. The Trust level
+    should be set to <i>Always Trust</i> for <b>EAP</b> and <b>Basic Policy</b>,
+    if that level of specificity is available on your device.
     <h4 id="add-mac-network">Add a Mac to your Wi-Fi network</h4>
     <p>Once you have a Wi-Fi user name and password created for your Wi-Fi
       network, add your Mac to the network with these steps:</p>
@@ -533,12 +553,16 @@
         password for the Wi-Fi network.</i></p>
     <ol>
       <li>Select the Wi-Fi logo at the top right of your display (it's the one
-        that looks like an opened fan)</li>
+        that looks like an opened fan).</li>
       <li>Select your organization's Wi-Fi network name from the dropdown list
-        (the name will end in <code>-user</code>)</li>
-      <li>Enter the <b>username</b> and <b>Password</b> created by Brightgate</li>
-      <li>Leave the <b>Remember this networ</b>k check box selected</li>
-      <li>Select the <b>Join</b> button</li>
+        (the name will end in <code>-users</code>).</li>
+      <li>Enter the <b>username</b> and <b>Password</b> created by Brightgate.
+      <b>Note:</b> The first time you add your Mac to the network, you will be
+      asked to accept a certificate. Select <b>Continue</b> to add the
+      certificate. You're welcome to read more in <a href=#quick-word-certificates>a
+      quick word about certificates</a>.</li>
+      <li>Leave the <b>Remember this network</b> check box selected.</li>
+      <li>Select the <b>Join</b> button.</li>
     </ol>
     <img src="./images/add_mac_to_network.png" alt="Adding a Mac to the network">
     <p>When your Mac joins the network, you'll see the bars of the Wi-Fi logo
@@ -547,15 +571,19 @@
     <p>Once you have a user name and password created for your Wi-Fi network,
       add your iPhone to the network with these steps:</p>
     <p><b><i>Note:</i></b><i> See <a href="#help-your-team-get-online">help
-          your team get online</a> if you haven't yet created a user name and
-        password for the Wi-Fi network.</i></p>
+      your team get online</a> if you haven't yet created a user name and
+      password for the Wi-Fi network.</i></p>
     <ol>
-      <li>From the home screen, tap the <b>Settings</b> app</li>
-      <li>Select <b>Wi-Fi</b></li>
+      <li>From the home screen, tap the <b>Settings</b> app.</li>
+      <li>Select <b>Wi-Fi</b>.</li>
       <li>If needed, slide the button to turn <b>Wi-Fi</b> on, then select your
-        organization's Wi-Fi network name from the list (the name will end in <code>-user</code>)</li>
-      <li>Enter the <b>username</b> and <b>password</b> created by Brightgate</li>
-      <li>Tap <b>Join</b></li>
+        organization's Wi-Fi network name from the list (the name will end in <code>-user</code>).</li>
+      <li>Enter the <b>username</b> and <b>password</b> created by Brightgate.
+      <b>Note:</b> The first time you add your iPhone to the network, you will
+      be asked to accept a certificate. Select <b>Continue</b> to add the
+      certificate. You're welcome to read more in <a href=#quick-word-certificates>a
+      quick word about certificates</a>.</li>
+      <li>Tap <b>Join</b>.</li>
     </ol>
     <h4 id="add-android-phone-network">Add an Android phone to your Wi-Fi
       network</h4>
@@ -570,8 +598,11 @@
       <li>From <i>Wireless and Networks</i>, Select <b>Wi-Fi</b></li>
       <li>If needed, slide <b>Wi-Fi</b> on, then select your organization's
         Wi-Fi network name from the list (the name will end in <code>-user</code>)</li>
-      <li>Enter the <b>username</b> and <b>password</b> created by Brightgate</li>
-      <li>Tap <b>Connect</b></li>
+      <li>Enter the <b>username</b> and <b>password</b> created by Brightgate.
+      <b>Note:</b> The first time you add your Android phone to the network,
+      you will be asked to accept a certificate. Select <b>Continue</b> to add
+      the certificate. You're welcome to read more in <a href=#quick-word-certificates>a quick word about certificates</a>.</li>
+<li>Tap <b>Connect</b></li>
     </ol>
     <h4 id="add-windows-network">Add a Windows computer to your Wi-Fi network</h4>
     <p>Once you have a user name and password created for your Wi-Fi network,
@@ -583,7 +614,7 @@
     <p>IoT devices are those that share a common password. To view the password:</p>
     <ol>
       <li>Log in to the Brightgate management app</li>
-      <li>(Optional) Select your site from the list </li>
+      <li>(Optional) Select your site from the list</li>
       <li>Select <b>Network Configuration</b></li>
       <li>From the list of networks, select the <code>*-device</code> network
         to view the <b>Network Details</b></li>
