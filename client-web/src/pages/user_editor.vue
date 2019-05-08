@@ -74,12 +74,6 @@
         clear-button
         @input="user.SetPassword = $event.target.value" />
 
-        <!-- 2-factor, disabled for now
-      <f7-list-item :title="$t('message.user_details.twofactor')">
-        <f7-link v-if="user.HasTOTP" :href="$f7route.url + 'twofactor/'">Enabled</f7-link>
-        <f7-link v-else :href="$f7route.url + 'twofactor/'">Disabled</f7-link>
-      </f7-list-item>
-      -->
     </f7-list>
 
     <!-- Controls: Create/Save, Cancel, Delete -->
@@ -118,7 +112,6 @@ export default {
         Email: '',
         TelephoneNumber: '',
         SetPassword: null,
-        HasTOTP: false,
       };
     } else {
       debug('cloning', routeUUID);

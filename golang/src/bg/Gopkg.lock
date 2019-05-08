@@ -64,18 +64,6 @@
   revision = "472614239ac7e5bc6461e237c798a6ebd5aff8c1"
 
 [[projects]]
-  digest = "1:b529f4bf748979caa18b599d40d13e8b6e591a74b340f315ce4f95e119c288c2"
-  name = "github.com/boombuler/barcode"
-  packages = [
-    ".",
-    "qr",
-    "utils",
-  ]
-  pruneopts = ""
-  revision = "3cfea5ab600ae37946be2b763b8ec2c1cf2d272d"
-  version = "v1.0.0"
-
-[[projects]]
   digest = "1:59df7ab87ddca233bb586ff32c6feba12bf787260f6694dc45ceecea9d3e1a7e"
   name = "github.com/cenkalti/backoff"
   packages = ["."]
@@ -466,18 +454,6 @@
   ]
   pruneopts = ""
   revision = "d49c2bc1aa135aad0c6f4fc2056623ec78f5d5ac"
-
-[[projects]]
-  branch = "master"
-  digest = "1:5014aec640596be5afb98cec34ee1250c587964026c51d46e485261cf959a13f"
-  name = "github.com/pquerna/otp"
-  packages = [
-    ".",
-    "hotp",
-    "totp",
-  ]
-  pruneopts = ""
-  revision = "7b7d3c712f975469621fc8fb0a1fa08f0bcafe52"
 
 [[projects]]
   digest = "1:4142d94383572e74b42352273652c62afec5b23f325222ed09198f46009022d1"
@@ -1029,8 +1005,6 @@
     "github.com/pebbe/zmq4",
     "github.com/pin/tftp",
     "github.com/pkg/errors",
-    "github.com/pquerna/otp",
-    "github.com/pquerna/otp/totp",
     "github.com/prometheus/client_golang/prometheus",
     "github.com/prometheus/client_golang/prometheus/promhttp",
     "github.com/satori/uuid",

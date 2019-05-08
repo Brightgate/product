@@ -23,13 +23,8 @@ import (
 	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
 
-	"github.com/pquerna/otp/totp"
 	"github.com/satori/uuid"
 	"github.com/ttacon/libphonenumber"
-)
-
-const (
-	totpIssuer = "brightgate.com"
 )
 
 // UserInfo contains all of the configuration information for an appliance user
@@ -44,7 +39,6 @@ type UserInfo struct {
 	Email             string // User email
 	PreferredLanguage string
 	TelephoneNumber   string // User telephone number
-	TOTP              string // Time-based One Time Password URL
 	Password          string // bcrypt Password
 	MD4Password       string // MD4 Password for WPA-EAP/MSCHAPv2
 	// User was created by cloud self-provisioning; if true, UUID matches
@@ -76,7 +70,6 @@ func newUserFromNode(name string, user *PropertyNode) (*UserInfo, error) {
 	telephoneNumber, _ := getStringVal(user, "telephone_number")
 	preferredLanguage, _ := getStringVal(user, "preferred_language")
 	displayName, _ := getStringVal(user, "display_name")
-	totp, _ := getStringVal(user, "totp")
 	selfProvisioning, _ := getBoolVal(user, "self_provisioning")
 
 	u := &UserInfo{
@@ -86,7 +79,6 @@ func newUserFromNode(name string, user *PropertyNode) (*UserInfo, error) {
 		TelephoneNumber:   telephoneNumber,
 		PreferredLanguage: preferredLanguage,
 		DisplayName:       displayName,
-		TOTP:              totp,
 		Password:          password,
 		MD4Password:       md4password,
 		SelfProvisioning:  selfProvisioning,
@@ -377,32 +369,6 @@ func (u *UserInfo) SetPassword(passwd string) error {
 	if err != nil {
 		return errors.Wrapf(err,
 			"could not update password for %s", u.UID)
-	}
-	return nil
-}
-
-// CreateTOTP generates a time-based one time password (TOTP) for the user
-func (u *UserInfo) CreateTOTP() error {
-	if u.Email == "" {
-		return fmt.Errorf("User must have email address to create TOTP")
-	}
-
-	totpgen, err := totp.Generate(totp.GenerateOpts{
-		Issuer:      totpIssuer,
-		AccountName: u.Email,
-	})
-	if err != nil {
-		log.Fatalf("TOTP generation failed: %v\n", err)
-	}
-
-	return u.config.CreateProp(u.path("totp"), totpgen.String(), nil)
-}
-
-// ClearTOTP removes a time-based one time password (TOTP) for the user
-func (u *UserInfo) ClearTOTP() error {
-	err := u.config.DeleteProp(u.path("totp"))
-	if err != nil {
-		return errors.Wrap(err, "TOTP property deletion failed")
 	}
 	return nil
 }

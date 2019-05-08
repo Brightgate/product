@@ -95,10 +95,6 @@
 
 [[constraint]]
   branch = "master"
-  name = "github.com/pquerna/otp"
-
-[[constraint]]
-  branch = "master"
   name = "github.com/ttacon/libphonenumber"
 
 [[constraint]]

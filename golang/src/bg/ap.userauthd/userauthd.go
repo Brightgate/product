@@ -19,7 +19,6 @@
 //     user_password: 		hashed, salted password using bcrypt
 //     user_md4_password: 	hashed password using MD4 (for RADIUS only)
 //     [where possible, use LDAP field names for adding additional fields]
-//     TOTP:
 //
 // ## RADIUS configuration properties
 //
@@ -28,8 +27,6 @@
 //
 // Secret handling uses Base 64 encoding when stored in the configuration.
 
-// RFC 6238 5.1 suggests that we place `TOTP` in a secure area.
-//
 // # References
 //
 // Modern LDAP field names come from RFC 2798, and its successors, RFC
@@ -45,17 +42,6 @@
 //
 // K. Zeilenga, Ed., " COSINE LDAP/X.500 Schema", RFC 4524, 2006.
 // https://tools.ietf.org/html/rfc4524
-//
-// One-time passwords were defined in RFCxxxx.  The time-based variant
-// is TOTP, described in RFC 6238.
-//
-// D. M'Raihi, S. Machani, M. Pei, and J.Rydell, "TOTP: Time-Based
-// One-Time Password Algorithm", RFC 6238. 2011.
-// https://tools.ietf.org/html/rfc6238
-//
-// https://en.wikipedia.org/wiki/Time-based_One-time_Password_Algorithm
-//
-// https://github.com/google/google-authenticator/wiki/Key-Uri-Format
 //
 // EAP references are given in userauthd_eap.go.
 

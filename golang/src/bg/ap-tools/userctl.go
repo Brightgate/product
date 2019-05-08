@@ -14,8 +14,6 @@
 // ap-userctl -update [-email jqp@example.com] \
 //     [-displayName "John Q.  Public"] uid
 // ap-userctl -passwd uid
-// ap-userctl -set-totp uid
-// ap-userctl -clear-totp uid
 // ap-userctl -delete uid
 // ap-userctl [-v]
 
@@ -65,8 +63,6 @@ var (
 	updateOp        bool
 	deleteOp        bool
 	passwdOp        bool
-	setTotpOp       bool
-	clearTotpOp     bool
 	vFlag           bool
 )
 
@@ -75,8 +71,6 @@ func flagInit() {
 	flag.BoolVar(&updateOp, "update", false, "update a user")
 	flag.BoolVar(&deleteOp, "delete", false, "delete a user")
 	flag.BoolVar(&passwdOp, "passwd", false, "set a password for user")
-	flag.BoolVar(&setTotpOp, "set-totp", false, "set a TOTP for user")
-	flag.BoolVar(&clearTotpOp, "clear-totp", false, "clear TOTP for user")
 	flag.BoolVar(&vFlag, "v", false, "enable verbose user display")
 	flag.Var(&displayNameFlag, "display-name", "displayName value for added user")
 	flag.Var(&emailFlag, "email", "email value for added user")
@@ -135,7 +129,6 @@ func getUsersVerbose() error {
 		fmt.Printf("\tSelfProvisioning: %v\n", user.SelfProvisioning)
 		printSecret("Password", user.Password)
 		printSecret("MD4Password", user.MD4Password)
-		printSecret("TOTP", user.TOTP)
 		fmt.Printf("\n")
 	}
 	return nil
@@ -242,40 +235,13 @@ func setUserPassword() error {
 	return nil
 }
 
-func setTOTP() error {
-	// Get user email.
-	ui, err := config.GetUser(uidArg)
-	if err != nil {
-		return err
-	}
-	err = ui.CreateTOTP()
-	if err != nil {
-		return errors.Wrap(err, "Failed to create TOTP secret")
-	}
-	log.Printf("Created TOTP for <%s> (%s)\n", ui.Email, uidArg)
-	return nil
-}
-
-func clearTOTP() error {
-	ui, err := config.GetUser(uidArg)
-	if err != nil {
-		return err
-	}
-	err = ui.ClearTOTP()
-	if err != nil {
-		return errors.Wrap(err, "Failed to clear TOTP secret")
-	}
-	log.Printf("Cleared TOTP for <%s> (%s)\n", ui.Email, uidArg)
-	return nil
-}
-
 func userctl() {
 	var err error
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
 	flagInit()
 
-	if addOp || updateOp || deleteOp || passwdOp || setTotpOp || clearTotpOp {
+	if addOp || updateOp || deleteOp || passwdOp {
 		if flag.NArg() > 1 {
 			log.Fatalf("only one user can be specified")
 		}
@@ -302,10 +268,6 @@ func userctl() {
 		err = deleteUser()
 	} else if passwdOp {
 		err = setUserPassword()
-	} else if setTotpOp {
-		err = setTOTP()
-	} else if clearTotpOp {
-		err = clearTOTP()
 	} else if vFlag {
 		err = getUsersVerbose()
 	} else {

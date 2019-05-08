@@ -13,10 +13,8 @@ package main
 // Demo API implementation
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"image/png"
 	"log"
 	"net"
 	"net/http"
@@ -27,7 +25,6 @@ import (
 	"bg/common/deviceid"
 
 	"github.com/gorilla/mux"
-	"github.com/pquerna/otp"
 	"github.com/satori/uuid"
 )
 
@@ -467,7 +464,6 @@ type daUser struct {
 	TelephoneNumber   *string
 	PreferredLanguage *string
 	SelfProvisioning  bool
-	HasTOTP           bool
 	HasPassword       bool
 	SetPassword       *string
 }
@@ -491,48 +487,14 @@ func buildUserResponse(user *cfgapi.UserInfo) daUser {
 
 	// XXX These could have stricter tests for correctness/lack of
 	// corruption.
-	cu.HasTOTP = user.TOTP != ""
 	cu.HasPassword = user.Password != ""
 
-	// XXX We are not reporting our password or TOTP back in this
+	// XXX We are not reporting our password back in this
 	// call.
 
 	cu.SelfProvisioning = user.SelfProvisioning
 
 	return cu
-}
-
-//	demoAPIRouter.HandleFunc("/users/{uid}/otp"
-func demoUserByUIDOTPQRHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	// uid
-	uid := vars["uid"]
-	// GetUser(uid)
-	user, err := config.GetUser(uid)
-	if err != nil {
-		log.Printf("no such user '%v': %v\n", uid, err)
-		http.Error(w, "not found", 404)
-		return
-	}
-
-	// Encode TOTP field using module
-	key, err := otp.NewKeyFromURL(user.TOTP)
-	if err != nil {
-		log.Printf("cannot convert TOTP to key: %v\n", err)
-		http.Error(w, "internal server error", 500)
-		return
-	}
-
-	// Convert TOTP key into a PNG
-	var buf bytes.Buffer
-	img, err := key.Image(200, 200)
-	if err != nil {
-		panic(err)
-	}
-	png.Encode(&buf, img)
-
-	// Header: application/png
-	w.Write(buf.Bytes())
 }
 
 // demoUserByUUIDGetHandler returns a JSON-formatted user object for the

@@ -48,7 +48,7 @@ func providersHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST login () -> (...)
-// POST uid, userPassword[, totppass]
+// POST uid, userPassword
 func siteLoginHandler(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseForm()
 	if err != nil {
@@ -105,9 +105,6 @@ func siteLoginHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "login denied", 401)
 		return
 	}
-
-	// XXX How would 2FA work?  If TOTP defined for this user, send
-	// back 2FA required?
 
 	filling := map[string]string{
 		"uid": uid,

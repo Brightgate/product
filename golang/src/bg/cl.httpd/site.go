@@ -559,7 +559,6 @@ type apiUserInfo struct {
 	Email             *string
 	TelephoneNumber   *string
 	PreferredLanguage *string
-	HasTOTP           bool
 	HasPassword       bool
 	SetPassword       *string
 	SelfProvisioning  bool
@@ -580,11 +579,9 @@ func newAPIUserInfo(user *cfgapi.UserInfo) *apiUserInfo {
 
 	// XXX These could have stricter tests for correctness/lack of
 	// corruption.
-	cu.HasTOTP = user.TOTP != ""
 	cu.HasPassword = user.Password != ""
 
-	// XXX We are not reporting our password or TOTP back in this
-	// call.
+	// XXX We are not reporting our password back in this call.
 
 	cu.SelfProvisioning = user.SelfProvisioning
 

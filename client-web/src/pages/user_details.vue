@@ -77,13 +77,6 @@
       </f7-list-item>
       -->
 
-      <!-- 2-factor -- Disabled for now
-      <f7-list-item :title="$t('message.user_details.twofactor')">
-        <f7-link v-if="user.HasTOTP" :href="`${$f7route.url}twofactor/`">Enabled</f7-link>
-        <f7-link v-else :href="`${$f7route.url}twofactor/`">Disabled</f7-link>
-      </f7-list-item>
-      -->
-
     </f7-list>
     <f7-popover class="popover-user-type">
       <template v-if="user.SelfProvisioning">
