@@ -48,7 +48,7 @@
         "Binary": "ap.rpcd",
         "DependsOn": "configd",
         "Privileged": true,
-        "Modes": [ "gateway" ],
+        "Modes": [ "gateway", "satellite" ],
         "MemWarn": 25,
         "MemKill": 30
     },

@@ -308,6 +308,7 @@
     {"Path": "@/nodes/%uuid%/nics/%nic%/pseudo", "Type": "bool", "Level": "internal"},
     {"Path": "@/nodes/%uuid%/nics/%nic%/disabled", "Type": "bool", "Level": "developer"},
     {"Path": "@/nodes/%uuid%/platform", "Type": "string", "Level": "internal"},
+    {"Path": "@/nodes/%uuid%/name", "Type": "string", "Level": "admin"},
     {"Path": "@/clients/%macaddr%/dhcp_name", "Type": "hostname", "Level": "internal"},
     {"Path": "@/clients/%macaddr%/ipv4", "Type": "ipaddr", "Level": "internal"},
     {"Path": "@/clients/%macaddr%/ipv4_observed", "Type": "ipaddr", "Level": "internal"},

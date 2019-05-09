@@ -388,7 +388,7 @@ func createSSKeyCert(config *cfgapi.Handle, dir string, domainname string, killG
 
 		// check if matches key
 		if cert.PublicKeyAlgorithm != x509.RSA ||
-			cert.PublicKey.(rsa.PublicKey).N != priv.N {
+			cert.PublicKey.(*rsa.PublicKey).N != priv.N {
 			err = fmt.Errorf("certificate doesn't match private key")
 			needCert = true
 		}

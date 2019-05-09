@@ -23,14 +23,19 @@ import (
 	"syscall"
 	"time"
 
+	"bg/base_def"
 	"bg/common/cfgapi"
 	"bg/common/cfgtree"
 	"bg/common/deviceid"
+
+	"github.com/satori/uuid"
 )
 
 var (
-	configd *cfgapi.Handle
-	pname   string
+	configd    *cfgapi.Handle
+	pname      string
+	nameToNode map[string]string
+	nodeToName map[string]string
 )
 
 func timeString(t time.Time) string {
@@ -39,6 +44,44 @@ func timeString(t time.Time) string {
 
 func now() string {
 	return timeString(time.Now())
+}
+
+func getAliases() {
+	nameToNode = make(map[string]string)
+	nodeToName = make(map[string]string)
+
+	nodes, _ := configd.GetProps("@/nodes")
+	for uuid, node := range nodes.Children {
+		if a, ok := node.Children["name"]; ok {
+			nameToNode[a.Value] = uuid
+			nodeToName[uuid] = a.Value
+		}
+	}
+}
+
+// Convert @/nodes/<name>/property to @/nodes/<uuid>/property
+func nodeAlias(in string) string {
+	p := strings.Split(in, "/")
+	if len(p) < 3 || p[1] != "nodes" {
+		return in
+	}
+
+	name := p[2]
+	if _, err := uuid.FromString(name); err == nil {
+		return in
+	}
+
+	if nameToNode == nil {
+		getAliases()
+	}
+
+	out := in
+	if uuid, ok := nameToNode[name]; ok {
+		p[2] = uuid
+		out = strings.Join(p, "/")
+	}
+
+	return out
 }
 
 func getRings(cmd string, args []string) error {
@@ -96,6 +139,14 @@ func printClient(mac string, client *cfgapi.ClientInfo) {
 
 	ring := "-"
 	if client.Ring != "" {
+		// If a satellite node has an assigned name, display that rather
+		// than the uuid
+		if client.Ring == base_def.RING_INTERNAL {
+			if alias, ok := nodeToName[name]; ok {
+				name = alias
+			}
+		}
+
 		ring = client.Ring
 	}
 
@@ -142,6 +193,8 @@ func getClients(cmd string, args []string) error {
 	if err := flags.Parse(args); err != nil {
 		usage(cmd)
 	}
+
+	getAliases()
 
 	// Build a list of client mac addresses, and sort them
 	clients := configd.GetClients()
@@ -219,6 +272,7 @@ func getProp(cmd string, args []string) error {
 			printDev(d)
 		}
 	} else {
+		prop = nodeAlias(prop)
 		if root, err = configd.GetProps(prop); err == nil {
 			nodes := strings.Split(strings.Trim(prop, "/"), "/")
 			label := nodes[len(nodes)-1]
@@ -321,6 +375,7 @@ func monProp(cmd string, args []string) error {
 		return fmt.Errorf("invalid property path: %s", prop)
 	}
 
+	prop = nodeAlias(prop)
 	fmt.Printf("monitoring %s\n", prop)
 	if err := configd.HandleChange(prop, hdlUpdate); err != nil {
 		return err
@@ -346,9 +401,10 @@ func makeDelProp(cmd string, args []string) *cfgapi.PropertyOp {
 		usage(cmd)
 	}
 
+	prop := nodeAlias(args[0])
 	op := cfgapi.PropertyOp{
 		Op:   cfgapi.PropDelete,
-		Name: args[0],
+		Name: prop,
 	}
 	return &op
 }
@@ -358,8 +414,9 @@ func makeSetProp(cmd string, args []string) *cfgapi.PropertyOp {
 		usage(cmd)
 	}
 
+	prop := nodeAlias(args[0])
 	op := cfgapi.PropertyOp{
-		Name:  args[0],
+		Name:  prop,
 		Value: args[1],
 	}
 

@@ -6,6 +6,9 @@ ACCEPT UDP FROM IFACE wan TO AP DPORTS 68
 ACCEPT TCP FROM RING internal TO AP DPORTS 22 3131 3132 3133 3135
 ACCEPT UDP FROM RING internal TO AP DPORTS 1812
 
+# satellite nodes need access to cl.rpcd.
+ACCEPT TCP FROM RING internal TO IFACE wan DPORTS 443 4430
+
 # Allow clients to ping the AP
 ACCEPT ICMP FROM IFACE NOT wan TO AP
 

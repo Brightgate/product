@@ -69,6 +69,7 @@ var (
 	applianceCred *grpcutils.Credential
 	config        *cfgapi.Handle
 	brokerd       *broker.Broker
+	mcpd          *mcp.MCP
 
 	plat *platform.Platform
 
@@ -273,11 +274,15 @@ func daemonStop() {
 }
 
 func daemonStart() {
+	var err error
+	var cclient cloud_rpc.ConfigBackEndClient
+	var sclient cloud_rpc.CloudStorageClient
+
 	slog.Infof("ap.rpcd starting")
 	ctx := context.Background()
+	isGateway := !aputil.IsSatelliteMode()
 
-	mcpd, err := mcp.New(pname)
-	if err != nil {
+	if mcpd, err = mcp.New(pname); err != nil {
 		slog.Fatalf("Failed to connect to mcp: %s", err)
 	}
 
@@ -293,8 +298,10 @@ func daemonStart() {
 	defer conn.Close()
 
 	tclient := cloud_rpc.NewEventClient(conn)
-	cclient := cloud_rpc.NewConfigBackEndClient(conn)
-	sclient := cloud_rpc.NewCloudStorageClient(conn)
+	if isGateway {
+		cclient = cloud_rpc.NewConfigBackEndClient(conn)
+		sclient = cloud_rpc.NewCloudStorageClient(conn)
+	}
 	slog.Debugf("RPC client connected")
 
 	brokerd.Handle(base_def.TOPIC_EXCEPTION, func(event []byte) {
@@ -306,19 +313,23 @@ func daemonStart() {
 	})
 
 	go heartbeatLoop(ctx, tclient, &cleanup.wg, addDoneChan())
-	go inventoryLoop(ctx, tclient, &cleanup.wg, addDoneChan())
-	go updateLoop(&cleanup.wg, addDoneChan())
-	go uploadLoop(sclient, &cleanup.wg, addDoneChan())
-	go configLoop(ctx, cclient, &cleanup.wg, addDoneChan())
-	go tunnelLoop(&cleanup.wg, addDoneChan())
+	if isGateway {
+		go inventoryLoop(ctx, tclient, &cleanup.wg, addDoneChan())
+		go updateLoop(&cleanup.wg, addDoneChan())
+		go uploadLoop(sclient, &cleanup.wg, addDoneChan())
+		go configLoop(ctx, cclient, &cleanup.wg, addDoneChan())
 
-	// cloudCertLoop() will try to download a cert from the cloud.
-	// Concurrently, ssCertGen() will start generating a self-signed
-	// key/cert pair.  If the cloud cert is available before the self-signed
-	// cert is, then ssCertGen() will be told to stop.
-	killGen := make(chan bool)
-	go cloudCertLoop(ctx, conn, &cleanup.wg, addDoneChan(), killGen)
-	go ssCertGen(killGen)
+		// XXX - should allow tunneling into satellites.
+		go tunnelLoop(&cleanup.wg, addDoneChan())
+
+		// cloudCertLoop() will try to download a cert from the cloud.
+		// Concurrently, ssCertGen() will start generating a self-signed
+		// key/cert pair.  If the cloud cert is available before the self-signed
+		// cert is, then ssCertGen() will be told to stop.
+		killGen := make(chan bool)
+		go cloudCertLoop(ctx, conn, &cleanup.wg, addDoneChan(), killGen)
+		go ssCertGen(killGen)
+	}
 
 	slog.Infof("Setting state ONLINE")
 	err = mcpd.SetState(mcp.ONLINE)
