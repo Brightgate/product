@@ -16,7 +16,7 @@ OUTPUT_DIR="$pdir/output_secrets"
 
 function usage() {
 	cat <<-EOF
-		usage: $0 [-u <appliance-uuid>] [-s <site-uuid>] [-m <mac-addr>] -c <credentials-file> -h <hw-serial> <appliance-id>
+		usage: $0 [-u <appliance-uuid>] [-s <site-uuid>] [-m <mac-addr>] [-h <hw-serial>] -c <credentials-file> <appliance-id>
 		Must also set environment variables (or source from reg file):
 		    REG_PROJECT_ID=<name of gcp project>
 		    REG_REGION_ID=<name of gcp region>
@@ -53,7 +53,7 @@ shift $((OPTIND-1))
 
 APPLIANCE_ID=$1
 
-if [[ -z $CRED_FILE || ! -f $CRED_FILE || -z $APPLIANCE_ID || -z $REG_PROJECT_ID || -z $REG_REGION_ID || -z $REG_REGISTRY_ID || -z $HW_SERIAL || -z $REG_CLOUDSQL_INSTANCE || -z $REG_DBURI ]]; then
+if [[ -z $CRED_FILE || ! -f $CRED_FILE || -z $APPLIANCE_ID || -z $REG_PROJECT_ID || -z $REG_REGION_ID || -z $REG_REGISTRY_ID || -z $REG_CLOUDSQL_INSTANCE || -z $REG_DBURI ]]; then
 	usage
 fi
 
