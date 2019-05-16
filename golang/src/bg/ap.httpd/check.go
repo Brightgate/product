@@ -19,11 +19,20 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+
+	"bg/ap_common/platform"
 )
 
 func makeCheckRouter() *mux.Router {
+	plat := platform.NewPlatform()
 	router := mux.NewRouter()
 	router.HandleFunc("/diag", diagHandler).Methods("GET")
+	logRouter := router.PathPrefix("/log").Subrouter()
+	logRouter.Use(cookieAuthMiddleware)
+	logRouter.HandleFunc("/mcp.log", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		http.ServeFile(w, r, plat.ExpandDirPath("__APDATA__", "mcp", "mcp.log"))
+	}).Methods("GET")
 	return router
 }
 
