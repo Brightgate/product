@@ -29,7 +29,10 @@ import (
 	"github.com/golang/protobuf/ptypes"
 )
 
-const restoreProp = "@/cloud/restore_config"
+const (
+	restoreProp    = "@/cloud/restore_config"
+	bucketProperty = "@/cloud/update/bucket"
+)
 
 type rpcClient struct {
 	connected bool
@@ -290,12 +293,11 @@ func execQuery(cmd *cfgmsg.ConfigQuery) {
 
 // Look for the property changes that affect this daemon's behaviour
 func handleChanges(prop, val string) {
-	switch prop {
-	case urlProperty:
-		slog.Infof("Moving to new RPC server: %s", val)
+	if strings.HasPrefix(prop, "@/cloud/svc_rpc/") {
+		slog.Infof("change to RPC server config - restarting")
 		go daemonStop()
 
-	case bucketProperty:
+	} else if prop == bucketProperty {
 		configBucketChanged(val)
 	}
 }

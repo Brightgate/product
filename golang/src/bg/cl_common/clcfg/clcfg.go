@@ -51,11 +51,18 @@ type Configd struct {
 // NewConfigd establishes a gRPC connection to cl.configd, and returns a
 // handle representing the connection
 func NewConfigd(pname, uuid, url string, tlsEnabled bool) (*Configd, error) {
+	var conn *grpc.ClientConn
+	var err error
+
 	if uuid == "" {
 		return nil, fmt.Errorf("no site uuid provided")
 	}
 
-	conn, err := grpcutils.NewClientConn(url, tlsEnabled, pname)
+	if tlsEnabled {
+		conn, err = grpcutils.NewClientTLSConn(url, "", pname)
+	} else {
+		conn, err = grpcutils.NewClientConn(url, pname)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("grpc connection () to '%s' failed: %v",
 			url, err)

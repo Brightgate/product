@@ -225,7 +225,7 @@ assignments = [
     [Statement.SIMPLE_PORT, "CLEVENTD_DIAG_PORT", 3601],
     [Statement.SIMPLE_PORT, "CLCONFIGD_DIAG_PORT", 3602],
 
-    [Statement.SIMPLE_PORT, "CLRPCD_GRPC_PORT", 4430],
+    [Statement.SIMPLE_PORT, "CLRPCD_GRPC_PORT", 443],
     [Statement.SIMPLE_PORT, "CLCONFIGD_GRPC_PORT", 4431],
 
     [Statement.COMMENT, "API related definitions"],

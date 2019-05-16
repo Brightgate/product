@@ -3,11 +3,31 @@
     "Children": {
       "apversion": {},
       "cfgversion": {
-        "Value": "21"
+        "Value": "22"
       },
       "clients": {},
       "cloud": {
         "Children": {
+          "svc_rpc": {
+            "Children": {
+              "0": {
+                "Children": {
+                  "tls": {
+                    "Value": "true"
+                  },
+                  "host": {
+                    "Value": "rpc0.b10e.net"
+                  },
+                  "hostip": {
+                    "Value": "34.83.242.232"
+                  },
+                  "port": {
+                    "Value": "443"
+                  }
+                }
+              }
+            }
+          },
           "restore_config": {
             "Value": "true"
           },
@@ -34,7 +54,7 @@
                   }
                 }
               },
-	      "ssh-standard": {
+              "ssh-standard": {
                 "Children": {
                   "active": {
                     "Value": "true"
@@ -330,8 +350,10 @@
     {"Path": "@/clients/%macaddr%/vulnerabilities/%string%/repair", "Type": "bool", "Level": "internal"},
     {"Path": "@/clients/%macaddr%/vulnerabilities/%string%/repaired", "Type": "time", "Level": "internal"},
     {"Path": "@/cloud/restore_config", "Type": "bool", "Level": "internal"},
-    {"Path": "@/cloud/svc_rpc/url", "Type": "string", "Level": "internal"},
-    {"Path": "@/cloud/svc_rpc/tls", "Type": "bool", "Level": "internal"},
+    {"Path": "@/cloud/svc_rpc/%int%/host", "Type": "dnsaddr", "Level": "internal"},
+    {"Path": "@/cloud/svc_rpc/%int%/hostip", "Type": "ipaddr", "Level": "internal"},
+    {"Path": "@/cloud/svc_rpc/%int%/port", "Type": "port", "Level": "internal"},
+    {"Path": "@/cloud/svc_rpc/%int%/tls", "Type": "bool", "Level": "internal"},
     {"Path": "@/cloud/update/bucket", "Type": "string", "Level": "internal"},
     {"Path": "@/cloud/service/cloud_host", "Type": "sshaddr", "Level": "internal"},
     {"Path": "@/cloud/service/cloud_user", "Type": "string", "Level": "internal"},

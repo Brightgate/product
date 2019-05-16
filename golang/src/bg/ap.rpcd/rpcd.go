@@ -19,7 +19,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -46,13 +45,12 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/timestamp"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/grpclog"
 )
 
 var (
-	connectFlag = flag.String("connect", "",
-		"Override connection endpoint in credential")
+	connectHost   = flag.String("host", "", "Override cl.rpcd address")
+	connectPort   = flag.Int("port", 0, "Override cl.rpcd port")
 	enableTLSFlag = flag.Bool("enable-tls", true, "Enable Secure gRPC")
 
 	templateDir    = apcfg.String("template_dir", "/etc/templates/ap.rpcd", true, nil)
@@ -81,13 +79,6 @@ var (
 		chans []chan bool
 		wg    sync.WaitGroup
 	}
-)
-
-const (
-	urlProperty    = "@/cloud/svc_rpc/url"
-	tlsProperty    = "@/cloud/svc_rpc/tls"
-	bucketProperty = "@/cloud/update/bucket"
-	defaultURL     = "svc1.b10e.net:4430"
 )
 
 func publishEvent(ctx context.Context, tclient cloud_rpc.EventClient, subtopic string, evt proto.Message) error {
@@ -123,15 +114,12 @@ func publishEvent(ctx context.Context, tclient cloud_rpc.EventClient, subtopic s
 	slog.Debugf("Sent: %s  size %d  response: %v", subtopic,
 		len(serialized), response)
 	if response.Result == cloud_rpc.PutEventResponse_BAD_ENDPOINT {
-		// Allow our cl.rpcd partner to redirect us to a new endpoint
-		slog.Infof("Moving to new RPC server: " + response.Url)
-		err := config.CreateProp(urlProperty, response.Url, nil)
-		if err == nil {
-			go daemonStop()
-		} else {
-			slog.Warnf("failed to update %s: %v", urlProperty,
-				err)
-		}
+		// XXX - once we support multiple cl.rpcd stanzas under
+		// @/cloud/svc_rpc, this should be used to select a new default
+		// index in that list.  Our response should be to store the new
+		// index in the config tree and restart ap.rpcd to effect the
+		// changeover.
+		slog.Infof("Got unsupported BAD_ENDPOINT from cl.rpcd")
 	}
 
 	return nil
@@ -198,56 +186,22 @@ func prometheusInit() {
 	go http.ListenAndServe(base_def.RPCD_DIAG_PORT, nil)
 }
 
-func grpcInit() (*grpc.ClientConn, error) {
+func commonInit() error {
 	var err error
-
-	connectURL := *connectFlag
-	enableTLS := *enableTLSFlag
 
 	applianceCred, err = aputil.SystemCredential()
 	if err != nil {
-		return nil, fmt.Errorf("loading appliance credentials: %v", err)
+		return fmt.Errorf("loading appliance credentials: %v", err)
 	}
 
 	if brokerd != nil {
 		config, err = apcfg.NewConfigd(brokerd, pname,
 			cfgapi.AccessInternal)
 		if err != nil {
-			return nil, fmt.Errorf("connecting to configd: %v", err)
+			return fmt.Errorf("connecting to configd: %v", err)
 		}
 	}
-
-	if config != nil {
-		if url, cerr := config.GetProp(urlProperty); cerr == nil {
-			connectURL = url
-		}
-		if tls, cerr := config.GetProp(tlsProperty); cerr == nil {
-			enableTLS = (strings.ToLower(tls) == "true")
-		}
-	}
-
-	if !enableTLS {
-		slog.Warnf("Connecting insecurely due to '-enable-tls=false' " +
-			"flag (developers only!)")
-	}
-
-	if connectURL == "" {
-		// XXX: rather than having a single hardcoded default, we could
-		// have a list, or iterate over svc[0-X].b10e.net until we find
-		// one willing to respond.
-		connectURL = defaultURL
-		slog.Warnf(urlProperty + " not set - defaulting to " +
-			defaultURL)
-	}
-
-	slog.Infof("Connecting to '%s'", connectURL)
-
-	conn, err := grpcutils.NewClientConn(connectURL, enableTLS, pname)
-	if err != nil {
-		return nil, fmt.Errorf("making RPC client: %+v", err)
-	}
-
-	return conn, err
+	return nil
 }
 
 func addDoneChan() chan bool {
@@ -290,11 +244,18 @@ func daemonStart() {
 	brokerd = broker.New(pname)
 	defer brokerd.Fini()
 
-	conn, err := grpcInit()
-	if err != nil {
+	if err := commonInit(); err != nil {
 		mcpd.SetState(mcp.BROKEN)
-		slog.Fatalf("grpc init failed: %v", err)
+		slog.Fatalf("commonInit failed: %v", err)
 	}
+
+	slog.Infof("Setting state ONLINE")
+	err = mcpd.SetState(mcp.ONLINE)
+	if err != nil {
+		slog.Fatalf("Failed to set ONLINE: %+v", err)
+	}
+
+	conn := grpcConnect(ctx)
 	defer conn.Close()
 
 	tclient := cloud_rpc.NewEventClient(conn)
@@ -331,12 +292,6 @@ func daemonStart() {
 		go ssCertGen(killGen)
 	}
 
-	slog.Infof("Setting state ONLINE")
-	err = mcpd.SetState(mcp.ONLINE)
-	if err != nil {
-		slog.Fatalf("Failed to set ONLINE: %+v", err)
-	}
-
 	exitSig := make(chan os.Signal, 2)
 	signal.Notify(exitSig, syscall.SIGINT, syscall.SIGTERM)
 	s := <-exitSig
@@ -349,11 +304,14 @@ func cmdStart() {
 	var wg sync.WaitGroup
 	ctx := context.Background()
 
-	conn, err := grpcInit()
+	err := commonInit()
 	if err != nil {
 		slog.Fatalf("grpc init failed: %v", err)
 	}
+
+	conn := grpcConnect(ctx)
 	defer conn.Close()
+
 	slog.Debugf("RPC client connected")
 
 	if len(flag.Args()) == 0 {

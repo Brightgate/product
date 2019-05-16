@@ -22,35 +22,45 @@ import (
 	"google.golang.org/grpc/keepalive"
 )
 
-// NewClientConn will create a new Cloud Appliance gRPC client.
-func NewClientConn(serverAddr string, enableTLS bool, agent string) (*grpc.ClientConn, error) {
+func newConn(server, agent string, opts []grpc.DialOption) (*grpc.ClientConn, error) {
 	var err error
-
-	var opts []grpc.DialOption
-
-	if enableTLS {
-		cp, nocperr := x509.SystemCertPool()
-		if nocperr != nil {
-			return nil, fmt.Errorf("no system certificate pool: %v", nocperr)
-		}
-
-		tc := tls.Config{
-			RootCAs: cp,
-		}
-
-		ctls := credentials.NewTLS(&tc)
-		opts = append(opts, grpc.WithTransportCredentials(ctls))
-	} else {
-		opts = append(opts, grpc.WithInsecure())
-	}
 
 	kopts := keepalive.ClientParameters{Time: time.Minute}
 	opts = append(opts, grpc.WithKeepaliveParams(kopts))
 	opts = append(opts, grpc.WithUserAgent(agent))
 
-	conn, err := grpc.Dial(serverAddr, opts...)
+	conn, err := grpc.Dial(server, opts...)
 	if err != nil {
-		return nil, errors.Wrapf(err, "grpc Dial() to '%s' failed", serverAddr)
+		return nil, errors.Wrapf(err, "grpc Dial() to '%s' failed", server)
 	}
 	return conn, nil
+}
+
+// NewClientTLSConn will create a new Cloud Appliance gRPC client using TLS.
+func NewClientTLSConn(serverAddr, certHost, agent string) (*grpc.ClientConn, error) {
+	var opts []grpc.DialOption
+
+	cp, err := x509.SystemCertPool()
+	if err != nil {
+		return nil, fmt.Errorf("no system certificate pool: %v", err)
+	}
+
+	tc := tls.Config{
+		RootCAs: cp,
+	}
+
+	ctls := credentials.NewTLS(&tc)
+	if certHost != "" {
+		ctls.OverrideServerName(certHost)
+	}
+	opts = append(opts, grpc.WithTransportCredentials(ctls))
+
+	return newConn(serverAddr, agent, opts)
+}
+
+// NewClientConn will create a new insecure connection to a Cloud Appliance gRPC client.
+func NewClientConn(serverAddr, agent string) (*grpc.ClientConn, error) {
+
+	opts := []grpc.DialOption{grpc.WithInsecure()}
+	return newConn(serverAddr, agent, opts)
 }
