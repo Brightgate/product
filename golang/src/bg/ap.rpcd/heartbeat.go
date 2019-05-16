@@ -51,6 +51,6 @@ func heartbeatLoop(ctx context.Context, tclient cloud_rpc.EventClient,
 		case <-ticker.C:
 		}
 	}
-	slog.Infof("heartbeat loop exiting")
+	slog.Infof("heartbeat loop done")
 	wg.Done()
 }

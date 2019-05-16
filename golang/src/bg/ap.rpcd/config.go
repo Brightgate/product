@@ -213,7 +213,7 @@ func trimRefreshDups(cmds []*cfgmsg.ConfigQuery) {
 }
 
 // Open a gRPC stream to cl.configd to receive commands from the cloud
-func (c *rpcClient) fetchStream() error {
+func (c *rpcClient) fetchStream(ctx context.Context) error {
 	fetchOp := &rpc.CfgBackEndFetchCmds{
 		Time:      ptypes.TimestampNow(),
 		Version:   cfgapi.Version,
@@ -221,15 +221,17 @@ func (c *rpcClient) fetchStream() error {
 		MaxCmds:   uint32(*maxCmds),
 	}
 
-	ctx, err := applianceCred.MakeGRPCContext(c.ctx)
-	stream, err := c.client.FetchStream(ctx, fetchOp)
+	ctx, err := applianceCred.MakeGRPCContext(ctx)
 	if err != nil {
 		slog.Fatalf("Failed to make GRPC context: %+v", err)
 	}
+	stream, err := c.client.FetchStream(ctx, fetchOp)
+	if err != nil {
+		slog.Fatalf("Failed to FetchStream: %+v", err)
+	}
 
 	for {
-		// XXX - can we attach a context to this, so we can do a clean
-		// disconnect when this daemon goes down?
+		// When ctx is canceled, this should abort
 		slog.Debugf("blocking on config stream")
 		resp, rerr := stream.Recv()
 		if rerr != nil {
@@ -502,26 +504,42 @@ func (c *rpcClient) pushLoop(wg *sync.WaitGroup, doneChan chan bool) {
 }
 
 func (c *rpcClient) pullLoop(wg *sync.WaitGroup, doneChan chan bool) {
-
 	done := false
 	defer wg.Done()
 
 	slog.Infof("pull loop starting")
-
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+
+	ctx, cancel := context.WithCancel(c.ctx)
+	doneFetch := make(chan bool)
 	for !done {
-		if c.connected {
-			if err := c.fetchStream(); err != nil {
-				slog.Warnf("fetchStream failed: %v", err)
-				continue
+		// If not connected, check periodically for
+		// connection establishment or for the signal
+		// to shutdown.
+		if !c.connected {
+			select {
+			case <-ticker.C:
+			case done = <-doneChan:
 			}
+			continue
 		}
+
+		// If connected, create the stream, and monitor
+		// for errors, or for the signal to shutdown.
+		go func() {
+			err := c.fetchStream(ctx)
+			if err != nil && !done {
+				slog.Warnf("fetchStream failed: %v", err)
+			}
+			doneFetch <- true
+		}()
 		select {
+		case <-doneFetch:
 		case done = <-doneChan:
-		case <-ticker.C:
 		}
 	}
+	cancel()
 	slog.Infof("pull loop done")
 }
 
