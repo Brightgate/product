@@ -616,6 +616,38 @@ func TestTestEqCompound(t *testing.T) {
 	testValidateTree(t, a)
 }
 
+// TestBadIpOptPort verifies that the somewhat clunky ipoptport type is
+// validated correctly.  As a side effect, it exercises the tests for 'ip' and
+// 'port' as well.
+func TestBadIPOptPort(t *testing.T) {
+	dnsProp := "@/network/dnsserver"
+	goodVals := []string{"192.168.1.1", "192.168.1.1:53"}
+	badVals := []string{
+		"192.168.1",
+		"192.168.1:53",
+		"hostname",
+		"hostname:53",
+		"hostname.domain.com",
+		"8.8.8.8:53:53",
+		"53:8.8.8.8",
+		"8.8.8.8:123456",
+		"",
+	}
+
+	a := testTreeInit(t)
+
+	for _, val := range goodVals {
+		updateOneProp(t, dnsProp, val, true)
+		a[dnsProp] = val
+		testValidateTree(t, a)
+	}
+
+	for _, val := range badVals {
+		updateOneProp(t, dnsProp, val, false)
+		testValidateTree(t, a)
+	}
+}
+
 // TestBadSSID verifies that we are invoking the context-sensitive handlers
 // XXX: todo - add more tests to verify that the remaining handlers are catching
 // the errors they are expected to.

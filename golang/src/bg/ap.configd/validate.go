@@ -66,6 +66,7 @@ var (
 		"macaddr":    validateMac,
 		"nic":        validateNic,
 		"ipaddr":     validateIP,
+		"ipoptport":  validateIPOptPort,
 		"cidr":       validateCIDR,
 		"port":       validatePort,
 		"hostname":   validateHostname,
@@ -212,6 +213,26 @@ func validatePort(val string) error {
 	port, err := strconv.Atoi(val)
 	if err != nil || port <= 0 || port >= 65536 {
 		err = fmt.Errorf("'%s' is not a valid port number", val)
+	}
+	return err
+}
+
+// Validate 'ip[:port]'
+func validateIPOptPort(val string) error {
+	var err error
+
+	f := strings.Split(val, ":")
+
+	if len(f) == 1 {
+		err = validateIP(val)
+
+	} else if len(f) == 2 {
+		if err = validateIP(f[0]); err == nil {
+			err = validatePort(f[1])
+		}
+
+	} else {
+		err = fmt.Errorf("'%s' is not a valid <ip>[:<port>]", val)
 	}
 	return err
 }
