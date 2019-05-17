@@ -115,6 +115,22 @@ var (
 			},
 			testFunc: validateHostname,
 		},
+		{
+			name:     "ipoptport",
+			goodVals: []string{"192.168.1.1", "192.168.1.1:53"},
+			badVals: []string{
+				"192.168.1",
+				"192.168.1:53",
+				"hostname",
+				"hostname:53",
+				"hostname.domain.com",
+				"8.8.8.8:53:53",
+				"53:8.8.8.8",
+				"8.8.8.8:123456",
+				"",
+			},
+			testFunc: validateIPOptPort,
+		},
 	}
 )
 
