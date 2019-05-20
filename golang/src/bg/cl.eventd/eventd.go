@@ -71,7 +71,7 @@ var (
 )
 
 func heartbeatMessage(ctx context.Context, applianceDB appliancedb.DataStore,
-	siteUUID uuid.UUID, m *pubsub.Message) {
+	applianceUUID, siteUUID uuid.UUID, m *pubsub.Message) {
 	var err error
 	heartbeat := &cloud_rpc.Heartbeat{}
 
@@ -100,9 +100,10 @@ func heartbeatMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 		return
 	}
 	heartbeatIngest := &appliancedb.HeartbeatIngest{
-		SiteUUID: siteUUID,
-		BootTS:   bootTS.UTC(),
-		RecordTS: recordTS.UTC(),
+		ApplianceUUID: applianceUUID,
+		SiteUUID:      siteUUID,
+		BootTS:        bootTS.UTC(),
+		RecordTS:      recordTS.UTC(),
 	}
 	slog.Infow("Insert heartbeat ingest", "heartbeat", heartbeatIngest)
 	err = applianceDB.InsertHeartbeatIngest(ctx, heartbeatIngest)
@@ -252,7 +253,7 @@ func main() {
 			m.Ack()
 			return
 		}
-		_, errA := uuid.FromString(applianceUUIDstr)
+		applianceUUID, errA := uuid.FromString(applianceUUIDstr)
 		siteUUID, errS := uuid.FromString(siteUUIDstr)
 		if errA != nil || errS != nil {
 			slog.Errorw("bad appliance or site uuid", "message", m)
@@ -265,7 +266,7 @@ func main() {
 		// As we accumulate more of these, transition to a lookup table
 		switch typeName {
 		case "cloud_rpc.Heartbeat":
-			heartbeatMessage(ctx, applianceDB, siteUUID, m)
+			heartbeatMessage(ctx, applianceDB, applianceUUID, siteUUID, m)
 		case "cloud_rpc.InventoryReport":
 			inventoryMessage(ctx, applianceDB, siteUUID, m)
 		case "cloud_rpc.NetException":

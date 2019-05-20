@@ -227,9 +227,10 @@ func testHeartbeatIngest(t *testing.T, ds DataStore, logger *zap.Logger, slogger
 	assert := require.New(t)
 
 	hb := HeartbeatIngest{
-		SiteUUID: testSite1.UUID,
-		BootTS:   time.Now(),
-		RecordTS: time.Now(),
+		ApplianceUUID: testID1.ApplianceUUID,
+		SiteUUID:      testID1.SiteUUID,
+		BootTS:        time.Now(),
+		RecordTS:      time.Now(),
 	}
 	err := ds.InsertHeartbeatIngest(ctx, &hb)
 	// expect to fail because UUID doesn't exist
