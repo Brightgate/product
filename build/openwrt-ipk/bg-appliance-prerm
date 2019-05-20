@@ -17,14 +17,14 @@ set -x
 line_remove () {
 	# $1 - file
 	# $2 - sed command
-	sed -i -e "$2" "$1"
+	[ -f "$PKG_ROOT/$1" ] && sed -i -e "$2" "$PKG_ROOT/$1"
 }
 
 # Remove sourcing of com-brightgate-profile.
-line_remove "$PKG_ROOT/root/.profile" "/. \/opt\/com.brightgate\/etc\/com-brightgate-profile/ d"
+line_remove "/root/.profile" "/. \/opt\/com.brightgate\/etc\/com-brightgate-profile/ d"
 
 # Drop /etc/rsyslog.d from /etc/rsyslog.conf.
-line_remove "$PKG_ROOT/etc/rsyslog.conf" "/\\\$IncludeConfig \/etc\/rsyslog.d\// d"
+line_remove "/etc/rsyslog.conf" "/\\\$IncludeConfig \/etc\/rsyslog.d\// d"
 
 # Revert OS logging locations to default.
 sed -i \
@@ -44,17 +44,31 @@ sed -i \
 /sbin/uci -c $PKG_ROOT/etc/config commit
 
 # Restore for reset button actions.
-/bin/chmod 0755 /sbin/jffs2reset
+/bin/chmod 0755 $PKG_ROOT/sbin/jffs2reset
 
 sed -i \
 	-e "s/true/jffs2reset -y/" \
-	/etc/rc.button/reset
+	$PKG_ROOT/etc/rc.button/reset
+
+# ALPHA: Adjust restrictions on SSH root login.  Only restore on package
+# removal.
+if [ "$PKG_UPGRADE" = "0" ]; then
+	sed -i \
+		-e 's/^#*PermitRootLogin .*/#PermitRootLogin prohibit-password/' \
+		-e 's/^#*PasswordAuthentication .*/PasswordAuthentication no/' \
+		$PKG_ROOT/etc/ssh/sshd_config
+fi
 
 /bin/sync
 
 if [ "$PKG_ROOT" = "/" ]; then
 	# Restart rsyslog.
 	/etc/rc.common /etc/init.d/rsyslog restart
+
+	if [ "$PKG_UPGRADE" = "0" ]; then
+		# Restart sshd.
+		/etc/rc.common /etc/init.d/sshd restart
+	fi
 
 	# Deactivate Brightgate services.
 	/etc/rc.common /etc/init.d/brightgate-appliance stop

@@ -66,7 +66,7 @@ copy_preserve $BG_ETC/ap_props.json.bak /data/configd
 copy_preserve /opt/etc/machine-id /data/mcp
 
 rm -f "$PKG_ROOT/etc/hotplug.d/iface/20-chrony"
-cp "$BG_ETC/chronyd-init.sh" "$PKG_ROOT/etc/init.d/chronyd"
+cp "$PKG_ROOT/$BG_ETC/chronyd-init.sh" "$PKG_ROOT/etc/init.d/chronyd"
 chmod 755 "$PKG_ROOT/etc/init.d/chronyd"
 
 # Turn off wan6 (DHCPv6 on WAN interface.)
@@ -79,16 +79,23 @@ chmod 755 "$PKG_ROOT/etc/init.d/chronyd"
 /sbin/uci -c $PKG_ROOT/etc/config commit
 
 # Prophylaxes for reset button actions.
-/bin/chmod 0444 /sbin/jffs2reset
+/bin/chmod 0444 $PKG_ROOT/sbin/jffs2reset
 
 sed -i \
 	-e "s/jffs2reset -y/true/" \
-	/etc/rc.button/reset
+	$PKG_ROOT/etc/rc.button/reset
+
+# ALPHA: Adjust restrictions on SSH root login.
+sed -i \
+	-e 's/^#*PermitRootLogin .*/PermitRootLogin yes/' \
+	-e 's/^#*PasswordAuthentication .*/PasswordAuthentication yes/' \
+	$PKG_ROOT/etc/ssh/sshd_config
 
 /bin/sync
 
 if [ "$PKG_ROOT" = "/" ]; then
 	/etc/rc.common /etc/init.d/rsyslog restart
+	/etc/rc.common /etc/init.d/sshd restart
 
 	# Activate Brightgate services.
 	/etc/rc.common /etc/init.d/ap.mcp enable
