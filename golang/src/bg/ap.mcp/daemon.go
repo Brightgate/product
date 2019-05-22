@@ -198,15 +198,37 @@ func (d *daemon) start() {
 	go d.wait()
 }
 
+func (d *daemon) crash() {
+	if !d.offline() {
+		d.setState(mcp.STOPPING)
+
+		if c := d.child; c != nil {
+			pid := -1
+			if c.Process != nil {
+				pid = c.Process.Pid
+			}
+
+			logInfo("Crashing %s (%d)", d.Name, pid)
+			c.Signal(syscall.SIGABRT)
+			time.Sleep(time.Millisecond)
+		}
+		d.goal <- mcp.OFFLINE
+	}
+}
+
 func (d *daemon) stop() {
 	if d.state == mcp.BLOCKED {
 		d.setState(mcp.OFFLINE)
 	} else if !d.offline() && d.state != mcp.STOPPING {
 		d.setState(mcp.STOPPING)
-		if d.child != nil {
-			logInfo("Stopping %s (%d)", d.Name,
-				d.child.Process.Pid)
-			d.child.Stop()
+		if c := d.child; c != nil {
+			pid := -1
+			if c.Process != nil {
+				pid = c.Process.Pid
+			}
+
+			logInfo("Stopping %s (%d)", d.Name, pid)
+			c.Stop()
 		}
 	}
 }

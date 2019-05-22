@@ -152,6 +152,42 @@ func handleRestart(set daemonSet) {
 	}
 }
 
+func handleCrash(set daemonSet) {
+	// If B depends on A, we don't want to crash A until after B.
+	// Otherwise, the normal dependency handling code could start a clean
+	// shutdown of B in response to A crashing.
+	ordered := make([]*daemon, 0)
+	for len(set) > 0 {
+		for n, d := range set {
+			liveDependents := false
+			for _, dep := range d.dependents {
+				if _, ok := set[dep.Name]; ok {
+					liveDependents = true
+				}
+			}
+			if !liveDependents {
+				ordered = append(ordered, d)
+				delete(set, n)
+			}
+		}
+	}
+
+	// Crash the daemons
+	crashed := make([]*daemon, 0)
+	for _, d := range ordered {
+		if !d.offline() {
+			d.crash()
+			crashed = append(crashed, d)
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	// Now try to get them back online
+	for _, d := range crashed {
+		d.goal <- mcp.ONLINE
+	}
+}
+
 func handleDoCmd(set daemonSet, cmd string) base_msg.MCPResponse_OpResponse {
 	code := mcp.OK
 
@@ -164,6 +200,9 @@ func handleDoCmd(set daemonSet, cmd string) base_msg.MCPResponse_OpResponse {
 
 	case "stop":
 		handleStop(set)
+
+	case "crash":
+		handleCrash(set)
 
 	default:
 		code = mcp.INVALID

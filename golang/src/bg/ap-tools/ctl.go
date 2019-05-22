@@ -33,11 +33,12 @@ var validCmds = map[string]bool{
 	"stop":    true,
 	"start":   true,
 	"restart": true,
+	"crash":   true,
 }
 
 func ctlUsage() {
-	fmt.Printf("usage:\t%s <status | stop | start | restart> daemon...\n"+
-		"\t%s <status | stop | start | restart> all\n",
+	fmt.Printf("usage:\t%s <status | stop | start | restart | crash > daemon...\n"+
+		"\t%s <status | stop | start | restart | crash > all\n",
 		pname, pname)
 	os.Exit(2)
 }
