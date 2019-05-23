@@ -17,6 +17,7 @@ import (
 	"os"
 
 	"bg/ap_common/apcfg"
+	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/common/cfgapi"
 	"bg/common/configctl"
@@ -42,7 +43,8 @@ func configctlMain() {
 		os.Exit(1)
 	}
 
-	brokerd := broker.New(pname)
+	slog := aputil.NewLogger(pname)
+	brokerd := broker.NewBroker(slog, pname)
 	defer brokerd.Fini()
 	configd, err := apcfg.NewConfigd(brokerd, pname, l)
 

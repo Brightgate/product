@@ -260,13 +260,18 @@ func tunnelUpdate() {
 		return
 	}
 
+	t := tstate.tunnel
+	if t != nil && t.IsOpen() {
+		return
+	}
+
 	now := time.Now()
 	if now.Before(tstate.nextTunnelAttempt) {
 		return
 	}
 
-	// Create a new Tunnel
-	if t := tstate.tunnel; t == nil {
+	if t == nil {
+		// Create a new Tunnel
 		if t, err = newTunnel(); err == nil {
 			// We generated a fresh userkey as a side effect of
 			// preparing the tunnel.  Push it into the config tree.
@@ -281,13 +286,13 @@ func tunnelUpdate() {
 	}
 
 	// Open the tunnel
-	if t := tstate.tunnel; !t.IsOpen() {
-		if err = t.Open(); err != nil {
-			slog.Errorf("opening tunnel: %v", err)
-			tstate.nextTunnelAttempt = now.Add(5 * time.Second)
-		} else {
-			slog.Infof("remote tunnel opened")
-		}
+	tlog := aputil.GetThrottledLogger(slog, time.Second, 30*time.Minute)
+	if err = t.Open(); err != nil {
+		tlog.Errorf("opening tunnel: %v", err)
+		tstate.nextTunnelAttempt = now.Add(5 * time.Second)
+	} else {
+		tlog.Clear()
+		slog.Infof("remote tunnel opened")
 	}
 }
 

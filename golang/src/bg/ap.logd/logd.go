@@ -276,7 +276,7 @@ func main() {
 
 	prometheusInit()
 
-	b := broker.New(pname)
+	b := broker.NewBroker(slog, pname)
 	b.Handle(base_def.TOPIC_PING, handlePing)
 	b.Handle(base_def.TOPIC_CONFIG, handleConfig)
 	b.Handle(base_def.TOPIC_ENTITY, handleEntity)

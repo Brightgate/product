@@ -307,10 +307,16 @@ func (w *wanInfo) dhcpRefresh() {
 		slog.Errorf("failed to get lease info: %v", err)
 		return
 	}
+
+	tlog := aputil.GetThrottledLogger(slog, time.Second, 10*time.Minute)
 	if d == nil {
-		slog.Infof("no DHCP lease found for %s", w.nic)
+		if w.staticAddr == "" {
+			tlog.Warnf("no static IP or DHCP lease found for %s",
+				w.nic)
+		}
 		return
 	}
+	tlog.Clear()
 
 	ops := make([]cfgapi.PropertyOp, 0)
 	if d.Addr != "" {

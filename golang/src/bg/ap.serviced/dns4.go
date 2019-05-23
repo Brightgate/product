@@ -529,8 +529,9 @@ func upstreamRequest(server string, r, m *dns.Msg) {
 		cacheResult = (err == nil) && shouldCache(r, upstream)
 	}
 
+	tlog := aputil.GetThrottledLogger(slog, time.Second, 10*time.Minute)
 	if err != nil || upstream == nil {
-		slog.Warnf("failed to exchange: %v", err)
+		tlog.Warnf("failed to exchange: %v", err)
 		dnsMetrics.upstreamFailures.Inc()
 		if os.IsTimeout(err) {
 			dnsMetrics.upstreamTimeouts.Inc()
@@ -538,6 +539,7 @@ func upstreamRequest(server string, r, m *dns.Msg) {
 		m.Rcode = dns.RcodeServerFailure
 		return
 	}
+	tlog.Clear()
 
 	// Copy the flags from the message header
 	m.Compress = upstream.Compress

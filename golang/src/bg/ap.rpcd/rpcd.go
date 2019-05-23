@@ -241,7 +241,7 @@ func daemonStart() {
 	}
 
 	prometheusInit()
-	brokerd = broker.New(pname)
+	brokerd = broker.NewBroker(slog, pname)
 	defer brokerd.Fini()
 
 	if err := commonInit(); err != nil {

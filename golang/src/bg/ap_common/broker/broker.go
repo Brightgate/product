@@ -15,6 +15,7 @@ import (
 	"log"
 	"os"
 	"sync"
+	"time"
 
 	"bg/ap_common/aputil"
 	"bg/base_def"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	zmq "github.com/pebbe/zmq4"
+	"go.uber.org/zap"
 )
 
 // Clients can request to be notified of any topic they wish.  This list
@@ -46,6 +48,7 @@ type handlerF func(event []byte)
 // Broker is an opaque handle used by daemons to communicate with ap.brokerd
 type Broker struct {
 	Name         string
+	slog         *zap.SugaredLogger
 	publisherMtx sync.Mutex
 	publisher    *zmq.Socket
 	subscriber   *zmq.Socket
@@ -54,7 +57,7 @@ type Broker struct {
 }
 
 // Ping will send a single ping message to ap.brokerd
-func (b *Broker) Ping() {
+func (b *Broker) Ping() error {
 	ping := &base_msg.EventPing{
 		Timestamp:   aputil.NowToProtobuf(),
 		Sender:      proto.String(b.Name),
@@ -64,9 +67,10 @@ func (b *Broker) Ping() {
 
 	err := b.Publish(ping, base_def.TOPIC_PING)
 	if err != nil {
-		log.Printf("couldn't publish %s for %s: %v\n",
-			base_def.TOPIC_PING, b.Name, err)
+		err = fmt.Errorf("couldn't ping: %v", err)
 	}
+
+	return err
 }
 
 // Publish first marshals the protobuf into its wire format and then sends the
@@ -92,10 +96,12 @@ func (b *Broker) Publish(pb proto.Message, topic string) error {
 }
 
 func eventListener(b *Broker) {
+	tlog := aputil.GetThrottledLogger(b.slog, time.Second, 15*time.Second)
+
 	for {
 		msg, err := b.subscriber.RecvMessageBytes(0)
 		if err != nil {
-			log.Printf("listener for %s failed to receive: %s\n", b.Name, err)
+			tlog.Errorf("listener failed to receive: %v", err)
 			continue
 		}
 
@@ -107,14 +113,10 @@ func eventListener(b *Broker) {
 			for _, hdlr := range hdlrs {
 				hdlr(msg[1])
 			}
-		} else if debug {
-			if ok {
-				log.Printf("[%s] ignoring topic: %s\n",
-					b.Name, topic)
-			} else {
-				log.Printf("[%s] unknown topic: %s\n",
-					b.Name, topic)
-			}
+		} else if ok {
+			b.slog.Debugf("ignoring topic: %s", topic)
+		} else {
+			b.slog.Debugf("unknown topic: %s", topic)
 		}
 	}
 }
@@ -145,14 +147,14 @@ func (b *Broker) connect() {
 	b.subscriber = s
 	err := b.subscriber.Connect(host + base_def.BROKER_ZMQ_SUB_PORT)
 	if err != nil {
-		log.Fatalf("Unable to connect to broker subscribe: %v\n", err)
+		b.slog.Fatalf("Unable to connect to broker subscribe: %v", err)
 	}
 	b.subscriber.SetSubscribe("")
 
 	b.publisher, _ = zmq.NewSocket(zmq.PUB)
 	err = b.publisher.Connect(host + base_def.BROKER_ZMQ_PUB_PORT)
 	if err != nil {
-		log.Fatalf("Unable to connect to broker publish: %v\n", err)
+		b.slog.Fatalf("Unable to connect to broker publish: %v", err)
 	}
 
 	go eventListener(b)
@@ -167,16 +169,20 @@ func (b *Broker) Fini() {
 	b.subscriber.Close()
 }
 
-// New allocates a brokers structure and establishes a network connection to
-// the broker daemon.
-func New(name string) *Broker {
+// NewBroker allocates a brokers structure and establishes a network connection
+// to the broker daemon.
+func NewBroker(slog *zap.SugaredLogger, name string) *Broker {
 	if len(name) == 0 {
-		log.Printf("Broker consumer must give its name\n")
-		return nil
+		log.Fatalf("Broker consumer must give its name")
+	}
+
+	if slog == nil {
+		log.Fatalf("Broker consumer must provide a logger")
 	}
 
 	b := Broker{
 		Name:     fmt.Sprintf("%s(%d)", name, os.Getpid()),
+		slog:     slog,
 		handlers: make(map[string][]handlerF),
 	}
 
@@ -186,6 +192,8 @@ func New(name string) *Broker {
 	}
 
 	b.connect()
-	b.Ping()
+	if err := b.Ping(); err != nil {
+		b.slog.Fatalf("initial ping failed: %v", err)
+	}
 	return &b
 }

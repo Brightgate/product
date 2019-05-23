@@ -15,16 +15,95 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
+// ThrottledLogger is a wrapper around a zap sugared logger, which can be used
+// to limit the rate at which redundant messages are issued.
+type ThrottledLogger struct {
+	slog      *zap.SugaredLogger
+	next      time.Time
+	baseDelay time.Duration
+	maxDelay  time.Duration
+	curDelay  time.Duration
+}
+
 var (
 	atomicLevel = zap.NewAtomicLevel()
 	daemonName  string
+	tloggers    = make(map[string]*ThrottledLogger)
 )
+
+// Clear resets the logger's timeouts to their base levels.
+func (t *ThrottledLogger) Clear() {
+	t.next = time.Now()
+	t.curDelay = t.baseDelay
+}
+
+func (t *ThrottledLogger) ready() bool {
+	var rval bool
+
+	if now := time.Now(); now.After(t.next) {
+		t.next = now.Add(t.curDelay)
+		t.curDelay *= 2
+		if t.curDelay > t.maxDelay {
+			t.curDelay = t.maxDelay
+		}
+
+		rval = true
+	}
+
+	return rval
+}
+
+// Errorf issues an ERROR message
+func (t *ThrottledLogger) Errorf(fmt string, a ...interface{}) {
+	if t.ready() {
+		t.slog.Errorf(fmt, a...)
+	}
+}
+
+// Warnf issues a WARN message
+func (t *ThrottledLogger) Warnf(fmt string, a ...interface{}) {
+	if t.ready() {
+		t.slog.Warnf(fmt, a...)
+	}
+}
+
+// GetThrottledLogger returns a throttled logger, which is persistent and unique
+// to the location from which the call was issued.  On the first invocation from
+// that line, a new logger will be allocated.  On subsequent invocations, that
+// same logger will be returned.
+func GetThrottledLogger(slog *zap.SugaredLogger,
+	start, max time.Duration) *ThrottledLogger {
+
+	var key string
+	if _, file, line, ok := runtime.Caller(1); ok {
+		key = file + ":" + strconv.Itoa(line)
+	} else {
+		key = "unknown"
+	}
+
+	t, ok := tloggers[key]
+	if !ok {
+		log := slog.Desugar().WithOptions(zap.AddCallerSkip(1)).Sugar()
+		t = &ThrottledLogger{
+			slog:      log,
+			next:      time.Now(),
+			baseDelay: start,
+			curDelay:  start,
+			maxDelay:  max,
+		}
+		tloggers[key] = t
+	}
+
+	return t
+}
 
 func zapTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
 	enc.AppendString(t.Format("2006/01/02 15:04:05.000"))

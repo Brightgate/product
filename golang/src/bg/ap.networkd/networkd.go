@@ -832,7 +832,7 @@ func daemonInit() error {
 		mcpd.SetState(mcp.INITING)
 	}
 
-	brokerd = broker.New(pname)
+	brokerd = broker.NewBroker(slog, pname)
 
 	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err != nil {

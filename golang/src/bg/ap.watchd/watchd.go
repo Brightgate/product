@@ -350,7 +350,7 @@ func main() {
 
 	prometheusInit()
 
-	brokerd = broker.New(pname)
+	brokerd = broker.NewBroker(slog, pname)
 	defer brokerd.Fini()
 
 	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
