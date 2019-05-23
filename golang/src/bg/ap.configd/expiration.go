@@ -20,16 +20,15 @@ import (
 )
 
 var (
-	expirationHeap  pnodeQueue
-	expirationTimer *time.Timer
-	expirationLock  sync.Mutex
+	expirationHeap pnodeQueue
+	expirationLock sync.Mutex
+	expirationEval = make(chan bool, 2)
 )
 
 //
 // When a client's ring assignment expires, it returns to the default ring
 //
 func ringExpired(node *cfgtree.PNode) {
-
 	client := node.Parent()
 	old := node.Value
 	node.Value = ""
@@ -124,10 +123,7 @@ func findExpirations() []string {
 			break
 		}
 
-		if *verbose {
-			slog.Debugf("Expiring: %s at %v\n",
-				next.Name(), time.Now())
-		}
+		slog.Debugf("Expiring: %s", next.Path())
 		expired = append(expired, next.Path())
 		heap.Pop(&expirationHeap)
 		metrics.expCounts.Inc()
@@ -175,20 +171,35 @@ func processExpirations(expired []string) {
 	}
 }
 
+func delay() time.Duration {
+	d := time.Minute
+
+	if len(expirationHeap) > 0 {
+		d = time.Until(*(expirationHeap[0].Expires))
+		// Never sleep for more than a minute, to avoid any corners or
+		// race conditions if we experience a drastic change in
+		// wallclock time.
+		if d > time.Minute {
+			d = time.Minute
+		}
+	}
+	return d
+}
+
 func expirationHandler() {
+	expirationLock.Lock()
+	t := time.NewTimer(delay())
+	expirationLock.Unlock()
 
-	expirationTimer = time.NewTimer(time.Duration(time.Minute))
-
-	for true {
-		<-expirationTimer.C
-		expirationLock.Lock()
-
-		expired := findExpirations()
-
-		if len(expired) > 0 {
-			expirationReset()
+	for {
+		select {
+		case <-t.C:
+		case <-expirationEval:
 		}
 
+		expirationLock.Lock()
+		expired := findExpirations()
+		t.Reset(delay())
 		expirationLock.Unlock()
 
 		processExpirations(expired)
@@ -196,19 +207,15 @@ func expirationHandler() {
 }
 
 func expirationRemove(node *cfgtree.PNode) {
-	reset := false
-
 	expirationLock.Lock()
 	if index := getIndex(node); index != -1 {
-		reset = (index == 0)
 		heap.Remove(&expirationHeap, index)
+		if index == 0 {
+			expirationEval <- true
+		}
 		clearIndex(node)
 	}
 	expirationLock.Unlock()
-
-	if reset {
-		expirationReset()
-	}
 }
 
 func expirationsEval(paths []string) {
@@ -242,24 +249,27 @@ func expirationsEval(paths []string) {
 		}
 	}
 	if reset {
-		expirationReset()
+		expirationEval <- true
 	}
 	expirationLock.Unlock()
 }
 
-func expirationReset() {
-	reset := time.Minute
-
-	if len(expirationHeap) > 0 {
-		next := expirationHeap[0]
-		reset = time.Until(*next.Expires)
+func expirationPopulate(node *cfgtree.PNode) {
+	if exp := node.Expires; exp != nil && exp.After(time.Now()) {
+		heap.Push(&expirationHeap, node)
 	}
-	if t := expirationTimer; t != nil {
-		t.Reset(reset)
+
+	for _, child := range node.Children {
+		expirationPopulate(child)
 	}
 }
 
-func expirationInit() {
+func expirationInit(tree *cfgtree.PTree) {
+	expirationLock.Lock()
+	defer expirationLock.Unlock()
+
 	expirationHeap = make(pnodeQueue, 0)
 	heap.Init(&expirationHeap)
+	expirationPopulate(tree.Root())
+	expirationEval <- true
 }

@@ -732,7 +732,7 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 				// and repeat the command.
 				slog.Warnf("Config tree replaced - "+
 					"%s should be restarted", pname)
-				expirationInit()
+				expirationInit(propTree)
 				defaultRingInit()
 				persistTree = true
 			}
@@ -882,12 +882,11 @@ func configInit() {
 		fail("validationInit() failed: %v", err)
 	}
 
-	expirationInit()
-
 	if err = propTreeInit(defaults); err != nil {
 		fail("propTreeInit() failed: %v", err)
 	}
 
+	expirationInit(propTree)
 	defaultRingInit()
 }
 
