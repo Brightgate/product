@@ -100,4 +100,8 @@ export default [
     path: '/help/:helpTopic',
     component: Help,
   },
+  {
+    path: '/help/:helpTopic/:anchor',
+    component: Help,
+  },
 ];

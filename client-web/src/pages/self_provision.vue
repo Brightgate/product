@@ -9,19 +9,56 @@
 -->
 <style scoped>
 
-table.sensitive {
-  display: block;
-  margin: 10pt auto;
-  border: 2px dashed gray;
-  padding: 5pt 0pt 5pt 5pt;
+div.sensitive-grid {
+  margin: 4px auto;
+  border: 1px dashed gray;
+  padding: 8px;
   font-size: 12pt;
   background: #FFFFAA;
+  display: grid;
+  width: fit-content;
+  grid-template-columns: auto auto;
+  grid-column-gap: 4px;
 }
 
-table.sensitive td.generated {
+div.sensitive-grid div.sg-label--2 {
+  grid-column: 1 / span 2;
+}
+
+div.sensitive-grid div.sg-button {
+  justify-self: end;
+}
+
+div.sensitive-grid div.sg-content {
+  padding-left: 1em;
+}
+
+
+/*
+ * This set of clauses helps to suppress problematic behavior when users
+ * triple-click on HTML elements to select them.  Inside table, the
+ * browser tends to append a tab character (tsv, anyone?).  In the case
+ * of a div, the browser tends to append a newline.  By setting user-select:none
+ * on the parent, and user-select:all on the child, the correct effect is
+ * achieved.
+ */
+.select-none {
+  user-select: none;
+}
+
+/*
+ * Reading the spec makes one think that the right value here would be
+ * 'text' (really 'contain' but that is IE specific); but in our testing only
+ * 'all'-- which forces the content to be selected atomically-- did the right
+ * thing.
+ */
+.select-all {
+  user-select: all;
+}
+
+.generated {
   font-size: 10pt;
   font-family: "Roboto Mono", monospace;
-  padding-left: 1em;
 }
 
 div.explain {
@@ -30,6 +67,7 @@ div.explain {
   margin-bottom: 10px;
   font-size: 12pt;
 }
+
 .ios span.explainbutton {
   font-weight: bold;
 }
@@ -39,21 +77,27 @@ div.explain {
   font-weight: bold;
 }
 
-div.activation-status {
-  margin: 1em 0;
-  height: 2em;
-  text-align: center;
+div.activation-error {
+  display: flex;
+  justify-content: center;
+  margin: 2em 0 1em 0;
+  font-size: 12pt;
+  align-items: center;
 }
 
-a.narrow-button {
-  min-width: 0;
-  padding: 0 0;
-  border: none; /* for ios; in f7 4.x we can get rid of this */
+div.activation-error div.ae-inner {
+  padding: 4px;
 }
 
-div.sensitive {
-  background: #FFFFAA;
-  border: 2px dashed gray;
+a.copybutton {
+  border: none !important; /* for ios; in f7 4.x we can get rid of this */
+}
+
+span.warning {
+  color: red;
+}
+span.good {
+  color: green;
 }
 
 </style>
@@ -66,16 +110,16 @@ div.sensitive {
         <f7-card-header>Wi-Fi Provisioned</f7-card-header>
         <f7-card-content>
           Your wifi credentials are already provisioned.
-          <table class="sensitive">
-            <tr>
-              <td>User&nbsp;name:</td>
-              <td>{{ provisionedUsername }}</td>
-            </tr>
-            <tr>
-              <td>Last&nbsp;provisioned:</td>
-              <td>{{ provisionedAt }}</td>
-            </tr>
-          </table>
+          <div class="sensitive-grid">
+            <!-- row 1 -->
+            <div class="sg-label--2">User&nbsp;name:</div>
+            <!-- row 2 -->
+            <div class="sg-content"><span class="generated">{{ provisionedUsername }}</span></div>
+            <!-- row 3 -->
+            <div class="sg-label--2">Last&nbsp;provisioned:</div>
+            <!-- row 4 -->
+            <div class="sg-content">{{ provisionedAt }}</div>
+          </div>
 
           Your password cannot be redisplayed for security reasons.  If you have lost your password, you can click <span class="explainbutton">Reprovision</span>.
         </f7-card-content>
@@ -87,36 +131,33 @@ div.sensitive {
 
     </template>
     <template v-else> <!-- !provisioned -->
-      <f7-card v-if="!provisioned">
+      <f7-card>
         <f7-card-header>Your New Wi-Fi Login</f7-card-header>
         <f7-card-content>
-          <f7-block>
-            <!-- XXX table is a weak way to solve this problem.  This
-                 should be reworked with flexbox or something else -->
-            <table class="sensitive">
-              <tr>
-                <td colspan="2">User&nbsp;name:</td>
-              </tr>
-              <tr>
-                <td class="generated">{{ generatedUsername }}</td>
-                <!-- n.b. we use the vue :class syntax here to get 'narrow-button' to be the most
-               specific class for this element, overriding styling from 'button' -->
-                <td width="1%">
-                  <f7-button :class="'narrow-button'" small icon-material="content_copy" @click="copyUsername" />
-                </td>
-              </tr>
-              <tr>
-                <td colspan="2">Password:</td>
-              </tr>
-              <tr>
-                <td class="generated">{{ generatedPassword }}</td>
-                <!-- see note above. -->
-                <td width="1%">
-                  <f7-button :class="'narrow-button'" small icon-material="content_copy" @click="copyPassword" />
-                </td>
-              </tr>
-            </table>
-          </f7-block>
+          <div class="sensitive-grid">
+            <!-- row 1 -->
+            <div class="sg-label--2">User&nbsp;name:</div>
+            <!-- row 2 -->
+            <div class="sg-content select-none">
+              <span class="select-all generated">{{ generatedUsername }}</span>
+            </div>
+            <!-- n.b. we use the vue :class syntax here to get 'copybutton' to be the most
+                   specific class for this element, overriding styling from 'button' -->
+            <div class="sg-button">
+              <f7-button class="copybutton" small text="Copy" @click="copyUsername" />
+            </div>
+            <!-- row 3 -->
+            <div class="sg-label--2">Password:</div>
+            <!-- row 4 -->
+            <div class="sg-content select-none">
+              <span class="select-all generated">{{ generatedPassword }}</span>
+            </div>
+            <div class="sg-button">
+              <f7-button class="copybutton" small text="Copy" @click="copyPassword" />
+            </div>
+            <div v-if="activate !== ACTIVATE.SUCCESS" class="sg-label--2"><span class="warning">Note: Your password isn't active yet!</span></div>
+            <div v-else class="sg-label--2"><span class="good">This password is now activated</span></div>
+          </div>
         </f7-card-content>
       </f7-card>
 
@@ -163,68 +204,25 @@ div.sensitive {
                   </p>
                 </div>
               </f7-block>
-            </f7-card-content>
-            <f7-card-footer>
-              <f7-link @click="stepToPrev">Back</f7-link>
-              <f7-link @click="stepToNext">Yes, I have stored them safely</f7-link>
-            </f7-card-footer>
-          </f7-card>
-        </f7-swiper-slide>
-
-        <f7-swiper-slide>
-          <f7-card id="provision-password">
-            <f7-card-header>Step 3: Activate Your Password</f7-card-header>
-            <f7-card-content>
-              <f7-block>
-                <div class="explain">
-                  We are ready to activate your Wi-Fi user name and password.  After
-                  this is done, we'll help you configure your devices.
+              <div v-if="activate === ACTIVATE.FAILED" class="activation-error">
+                <div class="ae-inner">
+                  <f7-icon md="material:error" ios="f7:alert_fill" color="red" />
                 </div>
-                <f7-block>
-                  <f7-button :disabled="activate === ACTIVATE.INPROGRESS" fill raised @click="doActivate">
-                    Activate
-                  </f7-button>
-                  <div class="activation-status">
-                    <f7-preloader v-if="activate === ACTIVATE.INPROGRESS" />
-                    <div v-if="activate === ACTIVATE.SUCCESS">
-                      Activation Succeeded
-                    </div>
-                    <div v-if="activate === ACTIVATE.FAILED">
-                      Activation Failed
-                    </div>
-                  </div>
-                </f7-block>
-                <p />
-              </f7-block>
+                <div class="ae-inner">
+                  Activation failed.  Contact your service representative for help.
+                </div>
+              </div>
             </f7-card-content>
             <f7-card-footer>
               <f7-link @click="stepToPrev">Back</f7-link>
-              <f7-link v-if="activate === ACTIVATE.SUCCESS" @click="stepToNext">Continue</f7-link>
+              <f7-link @click="doActivate">I stored it safely, Activate!</f7-link>
             </f7-card-footer>
           </f7-card>
         </f7-swiper-slide>
 
         <f7-swiper-slide>
           <f7-card id="connect-devices">
-            <f7-card-header>Connect to Wi-Fi</f7-card-header>
-            <f7-card-content>
-              <f7-block>
-                <div class="explain">
-                  Consult <i>Brightgate Help</i> to learn how to connect
-                  your device to the Wi-Fi.
-                </div>
-              </f7-block>
-            </f7-card-content>
-            <f7-card-footer>
-              <div /> <!-- placeholder -->
-              <f7-link @click="stepToNext">Got It</f7-link>
-            </f7-card-footer>
-          </f7-card>
-        </f7-swiper-slide>
-
-        <f7-swiper-slide>
-          <f7-card id="the-end">
-            <f7-card-header>All done!</f7-card-header>
+            <f7-card-header>Step 3: Connect to Wi-Fi</f7-card-header>
             <f7-card-content>
               <f7-block>
                 <div class="explain">
@@ -232,10 +230,28 @@ div.sensitive {
                   <b>This is the last time we will show them to you.</b>
                   Brightgate does not keep plain-text records of your password.
                 </div>
+                <div class="explain">
+                  Consult the <f7-link href="/help/end_customer_guide">Admin
+                  Guide</f7-link> to learn how to connect your device to the Wi-Fi.
+                  <ul>
+                    <li>
+                      <f7-link href="/help/end_customer_guide/add-iphone-network">Connect an iPhone</f7-link>
+                    </li>
+                    <li>
+                      <f7-link href="/help/end_customer_guide/add-android-phone-network">Connect an Android Phone</f7-link>
+                    </li>
+                    <li>
+                      <f7-link href="/help/end_customer_guide/add-windows-network">Connect a Windows Computer</f7-link>
+                    </li>
+                    <li>
+                      <f7-link href="/help/end_customer_guide/add-mac-network">Connect a Mac</f7-link>
+                    </li>
+                  </ul>
+                </div>
               </f7-block>
             </f7-card-content>
             <f7-card-footer>
-              <f7-link @click="stepToPrev">Back</f7-link>
+              <div /> <!-- placeholder -->
               <f7-link back>Finish</f7-link>
             </f7-card-footer>
           </f7-card>
@@ -296,13 +312,18 @@ export default {
 
     doActivate: async function() {
       this.activate = ACTIVATE.INPROGRESS;
+      this.$f7.preloader.show();
       try {
         await siteApi.accountSelfProvisionPost(this.generatedUsername, this.generatedPassword, this.verifier);
         this.activate = ACTIVATE.SUCCESS;
       } catch (err) {
         this.activate = ACTIVATE.FAILED;
       }
+      this.$f7.preloader.hide();
       await this.$store.dispatch('fetchAccountSelfProvision');
+      if (this.activate === ACTIVATE.SUCCESS) {
+        await this.stepToNext();
+      }
     },
 
     copyUsername: async function() {

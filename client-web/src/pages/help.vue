@@ -44,6 +44,7 @@
   </f7-page>
 </template>
 <script>
+import Vue from 'vue';
 import Debug from 'debug';
 import axios from 'axios';
 const debug = Debug('page:help');
@@ -79,6 +80,18 @@ export default {
 
       const resp = await axios.get(helpTopics[helpTopic].url);
       this.helpfile = resp.data;
+
+      debug('target help anchor is', this.$f7route.params.anchor);
+      if (this.$f7route.params.anchor) {
+        const anchor = `#${ this.$f7route.params.anchor}`;
+        // Wait for DOM update
+        Vue.nextTick(() => {
+          debug(`trying to scroll to ${anchor}`);
+          const scrollTo = this.Dom7(anchor);
+          scrollTo[0].scrollIntoView(true);
+        });
+      }
+
       // attach a click handler for <a>'s inside of the help-content div
       this.Dom7('.help-content').on('click', 'a', (e) => {
         debug('link clicked', e.srcElement.href);
