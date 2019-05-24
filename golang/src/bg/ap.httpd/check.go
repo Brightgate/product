@@ -27,6 +27,9 @@ func makeCheckRouter() *mux.Router {
 	plat := platform.NewPlatform()
 	router := mux.NewRouter()
 	router.HandleFunc("/diag", diagHandler).Methods("GET")
+	// XXX needs auth middleware in the future-- anyone can call this
+	router.HandleFunc("/crashall", crashallHandler).Methods("GET")
+
 	logRouter := router.PathPrefix("/log").Subrouter()
 	logRouter.Use(cookieAuthMiddleware)
 	logRouter.HandleFunc("/mcp.log", func(w http.ResponseWriter, r *http.Request) {
@@ -34,6 +37,14 @@ func makeCheckRouter() *mux.Router {
 		http.ServeFile(w, r, plat.ExpandDirPath("__APDATA__", "mcp", "mcp.log"))
 	}).Methods("GET")
 	return router
+}
+
+func crashallHandler(w http.ResponseWriter, r *http.Request) {
+	err := mcpd.Do("all", "crash")
+	if err != nil {
+		m := fmt.Sprintf("Failed to crash all: %v", err)
+		http.Error(w, m, http.StatusInternalServerError)
+	}
 }
 
 func diagHandler(w http.ResponseWriter, r *http.Request) {

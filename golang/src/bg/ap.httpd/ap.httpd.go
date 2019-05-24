@@ -59,6 +59,8 @@ var (
 	developerHTTP = apcfg.String("developer-http", "", false, nil)
 	_             = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
 
+	mcpd *mcp.MCP
+
 	cert      string
 	key       string
 	certValid bool
@@ -288,7 +290,7 @@ func main() {
 	defer slog.Sync()
 	slog.Infof("starting")
 
-	mcpd, err := mcp.New(pname)
+	mcpd, err = mcp.New(pname)
 	if err != nil {
 		slog.Warnf("Failed to connect to mcp\n")
 	}
