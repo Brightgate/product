@@ -55,9 +55,8 @@ type Platform struct {
 	GetDHCPInfo func(string) (map[string]string, error)
 	DHCPPidfile func(string) string
 
-	NtpdConfPath   string
-	NtpdDriftDir   string
 	NtpdService    string
+	MaintainTime   func()
 	RestartService func(string) error
 }
 

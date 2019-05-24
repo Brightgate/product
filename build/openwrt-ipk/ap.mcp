@@ -51,4 +51,11 @@ start_service()
 	procd_set_param command "${PROG}" ${OPTS}
 	procd_set_param respawn
 	procd_close_instance
+
+	# Wait for chrony to synchronize the clock before everything gets to
+	# start.  We try thirty times at one second intervals, waiting for the
+	# clock to be synchronized to within a tenth of a second, ignoring any
+	# skew.
+	[ -e /var/run/chrony/chronyd.sock ] || sleep 1
+	chronyc waitsync 30 .1 0 1
 }

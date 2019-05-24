@@ -58,7 +58,7 @@ func getManifest(manPath string) (diskManifest, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to import manifest")
 	}
-	slog.Debugf("getManifest", "contents", manifest)
+	slog.Debugw("getManifest", "contents", manifest)
 	return manifest, nil
 }
 

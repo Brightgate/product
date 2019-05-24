@@ -185,9 +185,8 @@ func init() {
 		GetDHCPInfo: rpiGetDHCPInfo,
 		DHCPPidfile: rpiDHCPPidfile,
 
-		NtpdConfPath:   "/etc/chrony/chrony.conf",
-		NtpdDriftDir:   "/var/lib/chrony",
 		NtpdService:    "chrony",
+		MaintainTime:   func() {},
 		RestartService: rpiRestartService,
 	})
 }

@@ -1,0 +1,4 @@
+# Allow connections from each of the rings.
+{{- range $n, $c := .Rings}}
+allow {{$c.Subnet}}
+{{- end}}

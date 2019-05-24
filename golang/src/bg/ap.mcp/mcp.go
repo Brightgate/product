@@ -313,6 +313,7 @@ func main() {
 	profileInit()
 	daemonInit()
 	orphanCleanup()
+	go plat.MaintainTime()
 
 	switch initMode {
 	case base_def.MODE_SATELLITE:

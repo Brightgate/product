@@ -114,9 +114,8 @@ func init() {
 		GetDHCPInfo: x86GetDHCPInfo,
 		DHCPPidfile: x86DHCPPidfile,
 
-		NtpdConfPath:   "/etc/chrony/chrony.conf",
-		NtpdDriftDir:   "/var/lib/chrony",
 		NtpdService:    "chrony",
+		MaintainTime:   func() {},
 		RestartService: x86RestartService,
 	})
 }

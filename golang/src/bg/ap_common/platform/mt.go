@@ -15,12 +15,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"bg/common/bgioutil"
 
@@ -197,6 +199,22 @@ func mtDHCPPidfile(nic string) string {
 	return "/var/run/udhcpc-" + nic + ".pid"
 }
 
+// On the MT7623, we don't have a battery-backed clock, so the time gets reset
+// on every reboot.  There's a sysfixtime service that runs early in boot and
+// grabs the timestamp of the newest file in /etc and sets the system time to
+// that, so we take advantage of that by touching a file there periodically to
+// make sure it's as up-to-date as possible.  It's no substitute for getting
+// network time, but if that doesn't work, or takes too long to sync, this is a
+// reasonable backup strategy.
+func mtMaintainTime() {
+	for {
+		time.Sleep(time.Minute)
+		if file, _ := os.Create("/etc/.bg-timestamp"); file != nil {
+			file.Close()
+		}
+	}
+}
+
 func mtRestartService(service string) error {
 	path := "/etc/init.d/" + service
 	cmd := exec.Command(path, "restart")
@@ -241,9 +259,8 @@ func init() {
 		GetDHCPInfo: mtGetDHCPInfo,
 		DHCPPidfile: mtDHCPPidfile,
 
-		NtpdConfPath:   "/var/etc/chrony.conf",
-		NtpdDriftDir:   "__APDATA__/chrony",
 		NtpdService:    "chronyd",
+		MaintainTime:   mtMaintainTime,
 		RestartService: mtRestartService,
 	})
 }

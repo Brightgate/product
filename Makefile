@@ -240,6 +240,10 @@ CROSS_ENV = \
 CROSS_DEP = $(SYSROOT)/.$(SYSROOT_SUM)
 endif
 
+DISTRODIR_debian = build/debian-deb
+DISTRODIR_openwrt = build/openwrt-ipk
+DISTRODIR = $(DISTRODIR_$(DISTRO))
+
 BUILDTOOLS = \
 	$(BUILDTOOLS_CROSS) \
 	protobuf-compiler \
@@ -318,6 +322,7 @@ APPDATA_openwrt=$(APPROOT)/data
 APPDATA=$(APPDATA_$(DISTRO))
 
 ROOTETC=$(APPROOT)/etc
+ROOTETCCHRONY=$(ROOTETC)/chrony
 ROOTETCCRONTABS=$(ROOTETC)/crontabs
 ROOTETCINITD=$(ROOTETC)/init.d
 ROOTETCIPTABLES=$(ROOTETC)/iptables
@@ -414,9 +419,10 @@ GO_AP_TESTABLES = \
 	bg/common/zaperr
 
 NETWORKD_TEMPLATE_FILES = \
+	bg-chrony.client.got \
+	bg-chrony.server.got \
 	hostapd.conf.got \
-	virtualap.conf.got \
-	chrony.conf.got
+	virtualap.conf.got
 
 RPCD_TEMPLATE_FILES = sshd_config.got
 
@@ -437,11 +443,13 @@ FILTER_RULES = \
 
 APPCONFIGS_debian = \
 	$(APPROOTLIB)/systemd/system/ap.mcp.service \
-	$(APPROOTLIB)/systemd/system/brightgate-appliance.service
+	$(APPROOTLIB)/systemd/system/brightgate-appliance.service \
+	$(ROOTETCCHRONY)/chrony.conf
 
 APPCONFIGS_openwrt = \
 	$(APPETC)/chronyd-init.sh \
 	$(APPETC)/com-brightgate-profile \
+	$(ROOTETCCHRONY)/bg-chrony.base.conf \
 	$(ROOTETCCRONTABS)/root \
 	$(ROOTETCINITD)/ap.mcp \
 	$(ROOTETCINITD)/brightgate-appliance \
@@ -460,6 +468,8 @@ APPCONFIGS = \
 	$(APPETC)/prometheus.yml \
 	$(APPETC)/vendordefaults.csv \
 	$(APPSNMAP)/smb-vuln-ms17-010.nse \
+	$(ROOTETCCHRONY)/bg-chrony.client \
+	$(ROOTETCCHRONY)/bg-chrony.platform \
 	$(ROOTETCIPTABLES)/rules.v4 \
 	$(ROOTETCLOGROTATED)/com-brightgate-logrotate-logd \
 	$(ROOTETCLOGROTATED)/com-brightgate-logrotate-mcp \
@@ -494,6 +504,7 @@ APPDIRS = \
 	$(HTTPD_CLIENTWEB_DIR) \
 	$(NETWORKD_TEMPLATE_DIR) \
 	$(ROOTETC) \
+	$(ROOTETCCHRONY) \
 	$(ROOTETCIPTABLES) \
 	$(ROOTETCLOGROTATED) \
 	$(ROOTETCRSYSLOGD) \
@@ -802,6 +813,12 @@ $(APPETCIDENTIFIERD)/oui.txt: | $(APPETCIDENTIFIERD)
 $(APPETC)/prometheus.yml: prometheus.yml | $(APPETC)
 	$(INSTALL) -m 0644 $< $@
 
+$(ROOTETCCHRONY)/bg-chrony.client: $(DISTRODIR)/bg-chrony.client | $(ROOTETCCHRONY)
+	$(INSTALL) -m 0644 $< $@
+
+$(ROOTETCCHRONY)/bg-chrony.platform: $(DISTRODIR)/bg-chrony.platform | $(ROOTETCCHRONY)
+	$(INSTALL) -m 0644 $< $@
+
 $(ROOTETCIPTABLES)/rules.v4: $(GOSRCBG)/ap.networkd/rules.v4 | $(ROOTETCIPTABLES)
 	$(INSTALL) -m 0644 $< $@
 
@@ -851,11 +868,17 @@ $(APPROOTLIB)/systemd/system/ap.mcp.service: build/debian-deb/ap.mcp.service | $
 $(APPROOTLIB)/systemd/system/brightgate-appliance.service: build/debian-deb/brightgate-appliance.service | $(APPROOTLIB)/systemd/system
 	$(INSTALL) -m 0644 $< $@
 
+$(ROOTETCCHRONY)/chrony.conf: $(GOSRCBG)/ap.networkd/bg-chrony.base.conf | $(ROOTETCCHRONY)
+	$(INSTALL) -m 0644 $< $@
+
 # OpenWrt-specific appliance files
 $(APPETC)/chronyd-init.sh: build/openwrt-ipk/chronyd-init.sh | $(APPETC)
 	$(INSTALL) -m 0755 $< $@
 
 $(APPETC)/com-brightgate-profile: build/openwrt-ipk/com-brightgate-profile | $(APPETC)
+	$(INSTALL) -m 0644 $< $@
+
+$(ROOTETCCHRONY)/bg-chrony.base.conf: $(GOSRCBG)/ap.networkd/bg-chrony.base.conf | $(ROOTETCCHRONY)
 	$(INSTALL) -m 0644 $< $@
 
 $(ROOTETCCRONTABS)/root: build/openwrt-ipk/etc-crontabs-root | $(ROOTETCCRONTABS)

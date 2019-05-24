@@ -1,0 +1,6 @@
+# By default, point at Google's time servers.  This file will be overwritten by
+# a pointer to one driven by the appliance configuration.
+pool time1.google.com iburst
+pool time2.google.com iburst
+pool time3.google.com iburst
+pool time4.google.com iburst
