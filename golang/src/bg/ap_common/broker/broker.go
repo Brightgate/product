@@ -113,10 +113,12 @@ func eventListener(b *Broker) {
 			for _, hdlr := range hdlrs {
 				hdlr(msg[1])
 			}
-		} else if ok {
-			b.slog.Debugf("ignoring topic: %s", topic)
-		} else {
-			b.slog.Debugf("unknown topic: %s", topic)
+		} else if debug {
+			if ok {
+				b.slog.Debugf("ignoring topic: %s", topic)
+			} else {
+				b.slog.Debugf("unknown topic: %s", topic)
+			}
 		}
 	}
 }
