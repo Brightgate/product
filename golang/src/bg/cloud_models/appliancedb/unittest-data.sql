@@ -38,3 +38,7 @@ INSERT INTO site_config_store (site_uuid, root_hash, ts, config) VALUES
 
 INSERT INTO site_commands (site_uuid, enq_ts, config_query) VALUES
     ('10000001-0001-0001-0001-000000000001'::uuid, '2017-11-21T01:03:59+00:00', '\xDEADBEEF');
+
+INSERT INTO site_net_exception (site_uuid, ts, reason, macaddr, exc) VALUES
+    ('10000001-0001-0001-0001-000000000001'::uuid, '2019-05-22 21:17:52.469775+00', 'TEST_EXCEPTION', 18838586676582,
+        '{"reason": "TEST_EXCEPTION", "details": ["detail 1", "detail 2"], "message": "This is a test of the emergency broadcast system.", "protocol": "IP", "timestamp": "2019-05-22T21:17:52.469774773Z", "virtualAP": "psk", "macAddress": "18838586676582", "ipv4Address": 2864434397}')

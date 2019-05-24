@@ -21,6 +21,7 @@ import (
 
 	"github.com/guregu/null"
 	"github.com/jmoiron/sqlx"
+
 	// As per pq documentation
 	_ "github.com/lib/pq"
 	"github.com/pkg/errors"
@@ -68,8 +69,6 @@ type DataStore interface {
 	UpsertConfigStore(context.Context, uuid.UUID, *SiteConfigStore) error
 	ConfigStoreByUUID(context.Context, uuid.UUID) (*SiteConfigStore, error)
 
-	InsertHeartbeatIngest(context.Context, *HeartbeatIngest) error
-
 	AllOrganizations(context.Context) ([]Organization, error)
 	OrganizationByUUID(context.Context, uuid.UUID) (*Organization, error)
 	InsertOrganization(context.Context, *Organization) error
@@ -90,6 +89,9 @@ type DataStore interface {
 
 	// Methods related to the command queue
 	commandQueue
+
+	// Methods related to heartbeats, exceptions, and other events
+	eventManager
 
 	Ping() error
 	PingContext(context.Context) error
@@ -590,28 +592,6 @@ func (db *ApplianceDB) UpsertCloudStorage(ctx context.Context,
 		u.String(),
 		stor.Bucket,
 		stor.Provider)
-	return err
-}
-
-// HeartbeatIngest represents a row in the heartbeat_ingest table.  In this
-// case "ingest" means that we record heartbeats into this table for later
-// coalescing by another process.
-type HeartbeatIngest struct {
-	IngestID      uint64
-	ApplianceUUID uuid.UUID
-	SiteUUID      uuid.UUID
-	BootTS        time.Time
-	RecordTS      time.Time
-}
-
-// InsertHeartbeatIngest adds a row to the heartbeat_ingest table.
-func (db *ApplianceDB) InsertHeartbeatIngest(ctx context.Context, heartbeat *HeartbeatIngest) error {
-	_, err := db.ExecContext(ctx,
-		"INSERT INTO heartbeat_ingest VALUES (DEFAULT, $1, $2, $3, $4)",
-		heartbeat.ApplianceUUID,
-		heartbeat.SiteUUID,
-		heartbeat.BootTS,
-		heartbeat.RecordTS)
 	return err
 }
 

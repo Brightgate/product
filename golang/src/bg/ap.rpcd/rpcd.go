@@ -43,6 +43,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/timestamp"
 	"google.golang.org/grpc/grpclog"
@@ -174,6 +175,21 @@ func handleNetException(ctx context.Context, tclient cloud_rpc.EventClient, even
 	}
 
 	return publishEvent(ctx, tclient, "exception", cloudNetExc)
+}
+
+func testNetException(ctx context.Context, tclient cloud_rpc.EventClient) error {
+	exc := &cloud_rpc.NetException{
+		Timestamp:   ptypes.TimestampNow(),
+		Reason:      "TEST_EXCEPTION",
+		Message:     "This is a test of the emergency broadcast system.",
+		MacAddress:  0x112233445566,
+		Details:     []string{"detail 1", "detail 2"},
+		Ipv4Address: 0xaabbccdd,
+		Protocol:    "IP",
+		VirtualAP:   "psk",
+	}
+
+	return publishEvent(ctx, tclient, "exception", exc)
 }
 
 func prometheusInit() {
@@ -337,6 +353,9 @@ func cmdStart() {
 	case "inventory":
 		tclient := cloud_rpc.NewEventClient(conn)
 		err = sendInventory(ctx, tclient)
+	case "net-exception":
+		tclient := cloud_rpc.NewEventClient(conn)
+		err = testNetException(ctx, tclient)
 	case "storageurl":
 		tclient := cloud_rpc.NewCloudStorageClient(conn)
 		var urls []*cloud_rpc.SignedURL

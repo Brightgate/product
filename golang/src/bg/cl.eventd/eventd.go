@@ -19,7 +19,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"net/http"
 	_ "net/http/pprof"
@@ -45,6 +44,7 @@ import (
 	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/pubsub"
 
+	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 )
@@ -127,13 +127,28 @@ func exceptionMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 		return
 	}
 
-	// This is temporary.  For now we don't store exceptions -- just print them as JSON blobs.
-	jsonExc, err := json.Marshal(exc)
+	marshaler := jsonpb.Marshaler{}
+	jsonExc, err := marshaler.MarshalToString(exc)
 	if err != nil {
 		slog.Errorw("failed to json.Marshal", "message", m, "error", err, "data", string(m.Data))
 		return
 	}
-	slog.Infow("Client Exception", "site", siteUUID, "exception", string(jsonExc))
+	slog.Infow("Client Exception", "site", siteUUID, "exception", jsonExc)
+	ts := exc.GetTimestamp()
+	t, err := ptypes.Timestamp(ts)
+	if err != nil {
+		slog.Errorw("failed to get time from exception", "error", err)
+		return
+	}
+	var macptr *uint64
+	mac := exc.GetMacAddress()
+	if mac != 0 {
+		macptr = &mac
+	}
+	err = applianceDB.InsertSiteNetException(ctx, siteUUID, t, exc.GetReason(), macptr, jsonExc)
+	if err != nil {
+		slog.Errorw("Failed net exception insert", "error", err)
+	}
 }
 
 func processEnv(environ *Cfg) {

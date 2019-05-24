@@ -18,6 +18,7 @@ import (
 	"io/ioutil"
 	"os"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -135,11 +136,14 @@ func setupLogging(t *testing.T) (*zap.Logger, *zap.SugaredLogger) {
 	return logger, slogger
 }
 
-func dumpfail(ctx context.Context, t *testing.T, bpg *briefpg.BriefPG, dbName string) {
-	if !t.Failed() {
+// dumpfail is normally unused, but can be enabled manually to aid in debugging
+// specific tests.
+func dumpfail(ctx context.Context, t *testing.T, bpg *briefpg.BriefPG, dbName string, force bool) {
+	if !force && !t.Failed() {
 		return
 	}
-	fname := t.Name() + ".sql.dump"
+	fname := strings.Replace(t.Name()+".sql.dump", "/", "_", -1)
+	t.Logf("dumpfail: Dumping database to %s", fname)
 	dumpfile, err := os.Create(fname)
 	if err != nil {
 		return
@@ -240,6 +244,22 @@ func testHeartbeatIngest(t *testing.T, ds DataStore, logger *zap.Logger, slogger
 
 	err = ds.InsertHeartbeatIngest(ctx, &hb)
 	// expect to succeed now
+	assert.NoError(err)
+}
+
+// Test insertion into site_net_exception table.  subtest of TestDatabaseModel
+func testSiteNetException(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
+	ctx := context.Background()
+	assert := require.New(t)
+
+	exc := `{"timestamp":{"seconds":1557443396,"nanos":318927852},"reason":"BAD_RING","mac_address":44668396003773,"details":["client from standard ring requested address on brvlan5('devices' ring)"]}`
+	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, &testID1)
+
+	err := ds.InsertSiteNetException(ctx, testID1.SiteUUID, time.Now(), "foo", nil, exc)
+	assert.NoError(err)
+
+	mac := uint64(0x1122334455)
+	err = ds.InsertSiteNetException(ctx, testID1.SiteUUID, time.Now(), "foo", &mac, exc)
 	assert.NoError(err)
 }
 
@@ -1166,6 +1186,7 @@ func TestDatabaseModel(t *testing.T) {
 	}{
 		{"testPing", testPing},
 		{"testHeartbeatIngest", testHeartbeatIngest},
+		{"testSiteNetException", testSiteNetException},
 		{"testApplianceID", testApplianceID},
 		{"testAppliancePubKey", testAppliancePubKey},
 

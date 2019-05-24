@@ -966,6 +966,7 @@
     "github.com/gliderlabs/ssh",
     "github.com/goftp/file-driver",
     "github.com/goftp/server",
+    "github.com/golang/protobuf/jsonpb",
     "github.com/golang/protobuf/proto",
     "github.com/golang/protobuf/ptypes",
     "github.com/golang/protobuf/ptypes/any",
