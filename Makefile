@@ -323,6 +323,7 @@ ROOTETCINITD=$(ROOTETC)/init.d
 ROOTETCIPTABLES=$(ROOTETC)/iptables
 ROOTETCLOGROTATED=$(ROOTETC)/logrotate.d
 ROOTETCRSYSLOGD=$(ROOTETC)/rsyslog.d
+ROOTETCSYSCTLD=$(ROOTETC)/sysctl.d
 
 HTTPD_CLIENTWEB_DIR=$(APPVAR)/www/client-web
 NETWORKD_TEMPLATE_DIR=$(APPETC)/templates/ap.networkd
@@ -444,7 +445,8 @@ APPCONFIGS_openwrt = \
 	$(ROOTETCCRONTABS)/root \
 	$(ROOTETCINITD)/ap.mcp \
 	$(ROOTETCINITD)/brightgate-appliance \
-	$(ROOTETCLOGROTATED)/com-brightgate-logrotate-rsyslog
+	$(ROOTETCLOGROTATED)/com-brightgate-logrotate-rsyslog \
+	$(ROOTETCSYSCTLD)/50-com-brightgate.conf
 
 APPCONFIGS = \
 	$(APPCONFIGS_$(DISTRO)) \
@@ -466,7 +468,8 @@ APPCONFIGS = \
 ifeq ("$(DISTRO)","openwrt")
 DISTROAPPDIRS = \
 	$(ROOTETCCRONTABS) \
-	$(ROOTETCINITD)
+	$(ROOTETCINITD) \
+	$(ROOTETCSYSCTLD)
 endif
 
 APPDIRS = \
@@ -812,6 +815,9 @@ $(ROOTETCLOGROTATED)/com-brightgate-logrotate-rsyslog: build/$(DISTRO)-$(PKG)/co
 	$(INSTALL) -m 0644 $< $@
 
 $(ROOTETCRSYSLOGD)/com-brightgate-rsyslog.conf: $(GOSRCBG)/ap.watchd/com-brightgate-rsyslog.conf | $(ROOTETCRSYSLOGD)
+	$(INSTALL) -m 0644 $< $@
+
+$(ROOTETCSYSCTLD)/50-com-brightgate.conf: build/$(DISTRO)-$(PKG)/sysctl.conf | $(ROOTETCSYSCTLD)
 	$(INSTALL) -m 0644 $< $@
 
 $(APPSNMAP)/smb-vuln-ms17-010.nse: $(GOSRCBG)/ap-vuln-aggregate/smb-vuln-ms17-010.nse | $(APPSNMAP)
