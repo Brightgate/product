@@ -605,6 +605,11 @@ func getParams(op *cfgmsg.ConfigOp) (string, string, *time.Time, error) {
 	return prop, val, expires, err
 }
 
+func restart() {
+	slog.Infof("exiting %s for a clean restart", pname)
+	os.Exit(0)
+}
+
 func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 	var prop, val, rval string
 	var expires *time.Time
@@ -725,13 +730,16 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 				err = cfgapi.ErrBadTree
 
 			} else {
-				// Ideally we would restart automatically here,
-				// but we run the risk of taking down ap.rpcd
-				// before the completion has propagated back to
-				// the cloud - which would cause us to refetch
-				// and repeat the command.
+				// By restarting automatically, there is some
+				// risk that we will take down ap.rpcd before
+				// propagating the command completion.  Because
+				// we just received a command, we can be
+				// reasonably confident that we have a live
+				// connection, so the 30 second delay should be
+				// more than enough time to minimize that risk.
 				slog.Warnf("Config tree replaced - "+
-					"%s should be restarted", pname)
+					"%s will be restarted", pname)
+				time.AfterFunc(30*time.Second, restart)
 				expirationInit(propTree)
 				defaultRingInit()
 				persistTree = true

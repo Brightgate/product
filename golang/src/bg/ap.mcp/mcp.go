@@ -24,7 +24,9 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
+	"time"
 
 	"bg/ap_common/aputil"
 	"bg/ap_common/platform"
@@ -39,6 +41,16 @@ const (
 	pidfile   = "/var/tmp/ap.mcp.pid"
 )
 
+type throttleState struct {
+	msg         string
+	cnt         int
+	total       int
+	last        time.Time
+	nextUpdate  time.Time
+	updateDelta time.Duration
+	sync.Mutex
+}
+
 var (
 	aproot   = flag.String("root", "", "Root of AP installation")
 	apmode   = flag.String("mode", "", "Mode in which this AP should operate")
@@ -48,7 +60,8 @@ var (
 	platFlag = flag.String("platform", "", "hardware platform name")
 	verbose  = flag.Bool("v", false, "more verbose logging")
 
-	logfile *os.File
+	logfile     *os.File
+	logThrottle throttleState
 
 	plat *platform.Platform
 
@@ -63,6 +76,64 @@ func reboot(from string) {
 
 	syscall.Sync()
 	syscall.Reboot(LinuxRebootCmdRestart)
+}
+
+func timeLimit(cur, max time.Duration, factor int) time.Duration {
+	next := time.Duration(factor) * cur
+	if next > max {
+		next = max
+	}
+	return next
+}
+
+// If we see the same message multiple times, it only gets displayed once.
+func throttleLog(l *throttleState, msg string) {
+	l.Lock()
+	defer l.Unlock()
+
+	now := time.Now()
+	// If this is a new message, display it and reset all the throttling
+	// state.
+	if msg != l.msg {
+		if l.cnt > 1 {
+			log.Printf("[repeated %d times]: %s\n", l.cnt, l.msg)
+		}
+		log.Printf("%s", msg)
+		l.cnt = 1
+		l.total = 1
+		l.msg = msg
+		l.last = now
+		l.updateDelta = time.Second
+		l.nextUpdate = now.Add(l.updateDelta)
+		return
+	}
+
+	// If we're getting the same message issued repeatedly and immediately,
+	// that suggests an upstream bug.  We're going to throttle everything,
+	// not just logging.
+	// XXX: if it persists for too long, it might be worth exiting in an
+	// attempt to clear the bad state that got us into this mess.
+	if now.Before(l.last.Add(time.Millisecond)) {
+		if ((l.total - 1) % 1000) == 0 {
+			log.Printf("excessive logging detected - throttling daemon\n")
+		}
+		throttleTime := timeLimit(time.Millisecond, time.Second, l.total)
+		time.Sleep(throttleTime)
+		now = time.Now()
+	}
+
+	l.last = now
+	l.cnt++
+	l.total++
+
+	// Periodically issue updates, so it's clear that the repeated logging
+	// is still happening.
+	if now.After(l.nextUpdate) {
+		log.Printf("[repeated %d times]: %s\n", l.cnt, l.msg)
+		l.cnt = 0
+		l.updateDelta = timeLimit(l.updateDelta, time.Minute, 2)
+		l.nextUpdate = now.Add(l.updateDelta)
+	}
 }
 
 // The following logging routines are designed to allow this daemon's log output
@@ -82,7 +153,9 @@ func logMsg(level, msg string) {
 		line = l
 	}
 
-	log.Printf("\t%s\t%s:%d\t%s\n", level, file, line, msg)
+	throttleLog(&logThrottle,
+		fmt.Sprintf("\t%s\t%s:%d\t%s", level, file, line, msg))
+
 }
 
 func logInfo(format string, v ...interface{}) {
