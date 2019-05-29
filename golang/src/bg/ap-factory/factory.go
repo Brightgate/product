@@ -23,17 +23,24 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/pin/tftp"
 	"github.com/spf13/cobra"
@@ -87,6 +94,11 @@ const (
 	mt7623KernelXOffsetBlk = "0x10A00"
 
 	mt7623DataDevice = mt7623MainStorage + "p3"
+
+	// Alternate overlay root paths.
+	xRomDir     = "/tmp/x/rom"
+	xOverlayDir = "/tmp/x/overlay"
+	xRootDir    = "/tmp/x/root"
 )
 
 var (
@@ -119,6 +131,8 @@ unit: sectors
 		"mediatek": {mt7623MainStorage, mt7623emmcPartitions,
 			mt7623emmcSfdisk, mt7623slices},
 	}
+
+	sides = []string{"no-side", "side-a", "side-b"}
 )
 
 var (
@@ -127,8 +141,10 @@ var (
 	kernelOnly       bool
 	imageDir         string
 	installSide      string
+	packages         []string
 	targetPlatform   *platformStorage
 	retrieveURL      string
+	clearOverlay     bool
 )
 
 func getMainDevice() string {
@@ -137,6 +153,18 @@ func getMainDevice() string {
 
 func getDataDevice() string {
 	return targetPlatform.slices["DATA"].device
+}
+
+func getRootDevice(side int) string {
+	for name, slice := range targetPlatform.slices {
+		if slice.side == side && strings.Index(name, "ROOTFS") == 0 {
+			return slice.device
+		}
+	}
+
+	log.Fatalf("no such root device for %s", sides[side])
+
+	return "/dev/null"
 }
 
 func partitionsAcceptable() bool {
@@ -166,17 +194,24 @@ func repartitionSfdisk() {
 		log.Fatal(err)
 	}
 
+	finishSfdisk := make(chan string)
+
 	go func() {
 		defer stdin.Close()
 		io.WriteString(stdin, mt7623emmcSfdisk)
+		finishSfdisk <- "written"
 	}()
 
+	<-finishSfdisk
 	result, err := sfdisk.Output()
 	if err != nil {
 		log.Fatalf("sfdisk failure: %s\n", err)
 	}
 
 	log.Printf("sfdisk %s\n", result)
+
+	time.Sleep(2 * time.Second)
+	syscall.Sync()
 
 	partprobe := exec.Command("partprobe", getMainDevice())
 	result, err = partprobe.Output()
@@ -370,7 +405,7 @@ func dataFilesystemAcceptable() bool {
 }
 
 func createDataFilesystem() {
-	mkfs := exec.Command("/usr/sbin/mkfs.f2fs", getDataDevice())
+	mkfs := exec.Command("/usr/sbin/mkfs.f2fs", "-f", getDataDevice())
 	_, err := mkfs.Output()
 	if err != nil {
 		log.Printf("mkfs.f2fs failure: %s\n", err)
@@ -379,6 +414,34 @@ func createDataFilesystem() {
 	if dataFilesystemAcceptable() {
 		log.Printf("mounted newly created F2FS filesystem at /data\n")
 	}
+}
+
+func retrieveFileHTTP(filename string) int64 {
+	srcURL := fmt.Sprintf("%s/%s", retrieveURL, filename)
+	hr, err := http.Get(srcURL)
+	if err != nil {
+		log.Fatalf("couldn't make http connection: %v\n", err)
+	}
+	defer hr.Body.Close()
+
+	if hr.StatusCode != http.StatusOK {
+		log.Fatalf("GET %s operation unsuccessful: %d %v\n",
+			srcURL, hr.StatusCode, http.StatusText(hr.StatusCode))
+	}
+
+	outfn := fmt.Sprintf("%s/%s", imageDir, filename)
+	outf, err := os.Create(outfn)
+	if err != nil {
+		log.Fatalf("open '%s' failed: %v\n", outfn, err)
+	}
+	defer outf.Close()
+
+	bw, err := io.Copy(outf, hr.Body)
+	if err != nil {
+		log.Fatalf("copy failed: %v\n", err)
+	}
+
+	return bw
 }
 
 func retrieveImagesHTTP() {
@@ -390,33 +453,36 @@ func retrieveImagesHTTP() {
 		}
 
 		if s.side == noSide || s.side == sideA {
-			srcURL := fmt.Sprintf("%s/%s", retrieveURL, s.src)
-			hr, err := http.Get(srcURL)
-			if err != nil {
-				log.Fatalf("couldn't make http connection: %v\n",
-					err)
-			}
-			defer hr.Body.Close()
-
-			if hr.StatusCode != http.StatusOK {
-				log.Fatalf("HTTP operation unsuccessful: %d %v\n",
-					hr.StatusCode,
-					http.StatusText(hr.StatusCode))
-			}
-
-			outfn := fmt.Sprintf("%s/%s", imageDir, s.src)
-			outf, err := os.Create(outfn)
-			if err != nil {
-				log.Fatalf("open '%s' failed: %v\n", outfn, err)
-			}
-
-			bw, err := io.Copy(outf, hr.Body)
-			if err != nil {
-				log.Fatalf("copy failed: %v\n", err)
-			}
+			bw := retrieveFileHTTP(s.src)
 			log.Printf("%s wrote %d bytes\n", s.src, bw)
 		}
 	}
+
+	for n, pn := range packages {
+		bw := retrieveFileHTTP(pn)
+		log.Printf("%d: %s wrote %d bytes\n", n, pn, bw)
+	}
+}
+
+func retrieveFileTFTP(client *tftp.Client, filename string) int64 {
+	wt, err := client.Receive(filename, "octet")
+	if err != nil {
+		log.Fatalf("tftp receive of '%s' failed: %s\n", filename, err)
+	}
+
+	outfn := fmt.Sprintf("%s/%s", imageDir, filename)
+	outf, err := os.Create(outfn)
+	if err != nil {
+		log.Fatalf("open '%s' failed: %v\n", outfn, err)
+	}
+	defer outf.Close()
+
+	bw, err := wt.WriteTo(outf)
+	if err != nil {
+		log.Fatalf("writeto failed: %v\n", err)
+	}
+
+	return bw
 }
 
 func retrieveImagesTFTP() {
@@ -446,24 +512,14 @@ func retrieveImagesTFTP() {
 		}
 
 		if s.side == noSide || s.side == sideA {
-
-			wt, err := tc.Receive(s.src, "octet")
-			if err != nil {
-				log.Fatalf("tftp receive of '%s' failed: %s\n", s.src, err)
-			}
-
-			outfn := fmt.Sprintf("%s/%s", imageDir, s.src)
-			outf, err := os.Create(outfn)
-			if err != nil {
-				log.Fatalf("open '%s' failed: %v\n", outfn, err)
-			}
-
-			bw, err := wt.WriteTo(outf)
-			if err != nil {
-				log.Fatalf("writeto failed: %v\n", err)
-			}
+			bw := retrieveFileTFTP(tc, s.src)
 			log.Printf("%s wrote %d bytes\n", s.src, bw)
 		}
+	}
+
+	for n, pn := range packages {
+		bw := retrieveFileTFTP(tc, pn)
+		log.Printf("%d: %s wrote %d bytes\n", n, pn, bw)
 	}
 }
 
@@ -482,13 +538,46 @@ func retrieve(cmd *cobra.Command, args []string) error {
 	case "tftp":
 		retrieveImagesTFTP()
 	default:
-		log.Fatalf("unrecognized URL scheme '%s': use 'tftp'\n", srcURL.Scheme)
+		log.Fatalf("unrecognized URL scheme '%s': use 'tftp', 'http', or 'https'\n",
+			srcURL.Scheme)
 	}
 
 	return nil
 }
 
 func chooseSide(pickSame bool) int {
+	var blkdevID string
+	var rootSide int
+	var rootRamdisk bool
+	var blkdev string
+
+	mi, err := ioutil.ReadFile("/proc/self/mountinfo")
+	if err != nil {
+		log.Fatalf("cannot read /proc/self/mountinfo: %v\n", err)
+	}
+
+	scanner := bufio.NewScanner(bytes.NewReader(mi))
+
+	for scanner.Scan() {
+		l := scanner.Text()
+		m := strings.Split(l, " ")
+
+		if m[3] == "/" && m[4] == "/rom" && m[8] == "/dev/root" {
+			blkdevID = m[2]
+			rootRamdisk = false
+		}
+
+		// 0 0 0:1 / / rw - rootfs rootfs rw
+		if m[3] == "/" && m[4] == "/" && m[8] == "rootfs" {
+			blkdevID = m[2]
+			rootRamdisk = true
+		}
+	}
+
+	if blkdevID == "" {
+		log.Fatalf("cannot find /dev/root in mountinfo\n")
+	}
+
 	readoff, err := uBootEnvRead("readoff")
 	if err != nil {
 		// When programming environment for the first time, the
@@ -497,21 +586,52 @@ func chooseSide(pickSame bool) int {
 		readoff = mt7623KernelOffsetBlk
 	}
 
-	switch readoff {
-	case mt7623KernelOffsetBlk:
+	if rootRamdisk {
+		switch readoff {
+		case mt7623KernelOffsetBlk:
+			if pickSame {
+				return sideA
+			}
+
+			return sideB
+		case mt7623KernelXOffsetBlk:
+			if pickSame {
+				return sideB
+			}
+
+			return sideA
+		default:
+			log.Fatalf("unrecognized 'readoff' value: %s\n", readoff)
+		}
+	}
+
+	devlink := fmt.Sprintf("/sys/dev/block/%s", blkdevID)
+	blkdev, err = os.Readlink(devlink)
+	if err != nil {
+		log.Fatalf("root device symlink read failure: %v\n", err)
+	}
+
+	blkdev = path.Base(blkdev)
+
+	switch blkdev {
+	case path.Base(mt7623RootfsDevice):
+		rootSide = sideA
+		log.Printf("rootfs device '%s' implies running %s", blkdev, sides[rootSide])
 		if pickSame {
 			return sideA
 		}
 
 		return sideB
-	case mt7623KernelXOffsetBlk:
+	case path.Base(mt7623RootfsXDevice):
+		rootSide = sideB
+		log.Printf("rootfs device '%s' implies running %s", blkdev, sides[rootSide])
 		if pickSame {
 			return sideB
 		}
 
 		return sideA
 	default:
-		log.Fatalf("unrecognized 'readoff' value: %s\n", readoff)
+		log.Fatalf("unknown rootfs device '%s'", blkdev)
 	}
 
 	return noSide
@@ -534,6 +654,297 @@ func checkMac() {
 	}
 }
 
+func overlayOpkgInstall(pkgname string) {
+	opkg := exec.Command("/bin/opkg",
+		"install", "-V2", "--offline-root", xRootDir,
+		"--force-postinstall", pkgname)
+	log.Printf("executing %v", opkg.Args)
+	output, err := opkg.CombinedOutput()
+
+	if err != nil {
+		log.Printf("opkg install '%s' failed: %v", pkgname, err)
+	}
+
+	log.Printf("opkg install output:\n%s", output)
+}
+
+// This function reproduces the logic executed at the end of an OpenWrt
+// build, where the rc.d links are calculated based on the START and
+// STOP variable values in each init.d script.
+func overlayParseInitDLinks(fpath string) {
+	startRE := regexp.MustCompile(`^START=(\d+)`)
+	stopRE := regexp.MustCompile(`^STOP=(\d+)`)
+
+	idf, err := os.Open(fpath)
+	if err != nil {
+		log.Printf("unable to open %s, no symlinks made: %v", fpath, err)
+		return
+	}
+
+	defer idf.Close()
+
+	startSeen := false
+	stopSeen := false
+
+	scanner := bufio.NewScanner(idf)
+	for scanner.Scan() {
+		shln := scanner.Text()
+
+		if !startSeen && startRE.MatchString(shln) {
+			startSeen = true
+
+			v := startRE.FindStringSubmatch(shln)
+			if v == nil {
+				log.Fatalf("inconsistency between MatchString() and FindStringSubmatch()")
+			}
+
+			oldf := fmt.Sprintf("../init.d/%s", path.Base(fpath))
+			newf := fmt.Sprintf("%s/etc/rc.d/S%s%s", xRootDir, v[1], path.Base(fpath))
+
+			link, err := os.Readlink(newf)
+			if err != nil || link != oldf {
+				os.Remove(newf)
+				os.Symlink(oldf, newf)
+				log.Printf("%s -> %s", oldf, newf)
+			}
+		} else if !stopSeen && stopRE.MatchString(shln) {
+			stopSeen = true
+
+			v := stopRE.FindStringSubmatch(shln)
+			if v == nil {
+				log.Fatalf("inconsistency between MatchString() and FindStringSubmatch()")
+			}
+
+			oldf := fmt.Sprintf("../init.d/%s", path.Base(fpath))
+			newf := fmt.Sprintf("%s/etc/rc.d/K%s%s", xRootDir, v[1], path.Base(fpath))
+			link, err := os.Readlink(newf)
+			if err != nil || link != oldf {
+				os.Remove(newf)
+				os.Symlink(oldf, newf)
+				log.Printf("%s -> %s", oldf, newf)
+			}
+		}
+
+		// Once we have processed both variables, we are done.
+		if startSeen && stopSeen {
+			return
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Printf("parsing '%s': %v", fpath, err)
+	}
+}
+
+func overlayFixRcDLinks() {
+	_ = filepath.Walk(fmt.Sprintf("%s/etc/init.d", xRootDir),
+		func(fpath string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+
+			if info.Mode().IsDir() {
+				return nil
+			}
+
+			overlayParseInitDLinks(fpath)
+
+			return nil
+		})
+}
+
+func archiveCopy(pathGlob string) {
+	var args []string
+
+	dest := fmt.Sprintf("%s/%s", xRootDir, path.Dir(pathGlob))
+
+	src, err := filepath.Glob(pathGlob)
+	if len(src) < 1 {
+		log.Printf("skipping empty glob %s", pathGlob)
+		return
+	}
+
+	args = make([]string, 0)
+	args = append(args, "-a")
+	args = append(args, src...)
+	args = append(args, dest)
+
+	cp := exec.Command("/bin/cp", args...)
+	_, err = cp.Output()
+
+	if err != nil {
+		log.Printf("cp '%s' -> '%s' failed: %v", pathGlob, dest, err)
+		return
+	}
+
+	log.Printf("cp %+v -> %s completed", src, dest)
+}
+
+func mustMkdirAll(path string, mode os.FileMode) {
+	err := os.MkdirAll(path, mode)
+	if err != nil {
+		log.Fatalf("couldn't MkdirAll '%s': %v", path, err)
+	}
+}
+
+// struct squashfs_super_block {
+// 	/*  0 */	uint32_t s_magic;
+// 	/*  4 */	uint32_t inodes;
+// 	/*  8 */	uint32_t mkfs_time;
+// 	/* 12 */	uint32_t block_size;
+// 	/* 16 */	uint32_t fragments;
+// 	/* 20 */	uint16_t compression;
+// 	/* 22 */	uint16_t block_log;
+// 	/* 24 */	uint16_t flags;
+// 	/* 26 */	uint16_t no_ids;
+// 	/* 28 */	uint16_t s_major;
+// 	/* 30 */	uint16_t s_minor;
+// 	/* 32 */	uint64_t root_inode;
+// 	/* 40 */	uint64_t bytes_used;
+// 	/* 48 */	uint64_t id_table_start;
+// 	/* 56 */	uint64_t xattr_id_table_start;
+// 	/* 64 */	uint64_t inode_table_start;
+// 	/* 72 */	uint64_t directory_table_start;
+// 	/* 80 */	uint64_t fragment_table_start;
+// 	/* 88 */	uint64_t lookup_table_start;
+// } __attribute__((packed));
+
+// Depressingly, this function reimplements the overlay-on-F2FS code
+// path in OpenWrt's fstools.
+func f2fsOverlay(side int, clearOverlay bool) {
+	rootdev := getRootDevice(side)
+
+	f, err := os.Open(rootdev)
+	if err != nil {
+		log.Fatalf("couldn't open: %+v", err)
+	}
+
+	var b []byte
+	b = make([]byte, 96)
+
+	n, err := f.Read(b)
+	if err != nil {
+		log.Fatalf("couldn't read: %+v", err)
+	}
+
+	if n < 96 {
+		log.Fatal("must not be a squashfs superblock")
+	}
+
+	// 0..3 is s_magic
+	// 36..44 is bytes_used
+	magic := string(b[0:4])
+	bytesUsed := binary.LittleEndian.Uint64(b[40:48])
+
+	// How to figure out size of rootfs?
+	// It's rounded to the nearest 64K.
+	const rootdevOverlayAlign = 64 * 1024
+	offset := (bytesUsed + (rootdevOverlayAlign - 1)) &^ (rootdevOverlayAlign - 1)
+
+	log.Printf("magic: %s, bytesUsed: %d, offset: %d", magic, bytesUsed, offset)
+
+	// Create loop device
+	losetup := exec.Command("/usr/sbin/losetup",
+		"-o", strconv.FormatUint(offset, 10),
+		"-f", "--show", rootdev)
+	result, err := losetup.Output()
+	if err != nil {
+		log.Fatalf("could not run /usr/sbin/losetup: %v\noutput %v\n", err, result)
+	}
+
+	loopback := strings.TrimSuffix(string(result), "\n")
+	log.Printf("loopback %v", loopback)
+
+	mustMkdirAll(xRomDir, 0755)
+	mustMkdirAll(xOverlayDir, 0755)
+	mustMkdirAll(xRootDir, 0755)
+
+	syscall.Sync()
+
+	// Mount rom.
+	err = syscall.Mount(rootdev, xRomDir, "squashfs", 0, "")
+	if err != nil {
+		log.Fatalf("squashfs mount failed %v", err)
+	}
+
+	if !clearOverlay {
+		err = syscall.Mount(loopback, xOverlayDir, "f2fs", 0, "")
+		if err == nil {
+			log.Printf("mounted f2fs at %s", xOverlayDir)
+		} else {
+			clearOverlay = true
+		}
+	}
+
+	if clearOverlay {
+		err = syscall.Unmount(xOverlayDir, 0)
+		if err != nil {
+			log.Printf("f2fs unmount failed %v", err)
+		}
+
+		log.Printf("clearing overlay")
+
+		// Make F2FS filesystem and mount writeable.
+		//
+		// The mkfs.f2fs invocation may cause a kernel message like
+		//
+		//     print_req_error: I/O error, dev loop1, sector 0
+		//
+		// to be displayed (for the appropriate loop device).
+		// This kernel message is triggered by an unsuccessful
+		// SG_IO ioctl attempting to retrieve the geometry of
+		// the eMMC device.
+		//
+		// Without the "rootfs_data" label, the volume_find()
+		// functions in fstools:mount_root will fail.
+
+		mkfs := exec.Command("/usr/sbin/mkfs.f2fs", "-f", "-l", "rootfs_data", "-O", "extra_attr", loopback)
+		result, err = mkfs.Output()
+
+		if err != nil {
+			log.Fatalf("mkfs failed: %+v %s", err, result)
+		} else {
+			log.Printf("mkfs output: %s", result)
+		}
+
+		err = syscall.Mount(loopback, xOverlayDir, "f2fs", 0, "")
+		if err != nil {
+			log.Fatalf("unable to mount f2fs after mkfs: %v", err)
+		}
+	}
+
+	upper := fmt.Sprintf("%s/upper", xOverlayDir)
+	work := fmt.Sprintf("%s/work", xOverlayDir)
+
+	mustMkdirAll(upper, 0755)
+	mustMkdirAll(work, 0755)
+
+	// Mount root (as overlay of rom and writeable).
+	err = syscall.Mount("overlay", xRootDir, "overlay", syscall.MS_NOATIME,
+		fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", xRomDir, upper, work))
+	if err != nil {
+		log.Fatalf("overlay mount failed %v", err)
+	}
+
+	// Prepare for opkg operations.
+	varLock := fmt.Sprintf("%s/var/lock", xRootDir)
+	mustMkdirAll(varLock, 0755)
+
+	// Mark overlay filesystem as ready for mounting by OpenWrt
+	// fstools.  Failure to create this symbolic link will cause the
+	// "overlay filesystem has not been fully initialized yet"
+	// message to be displayed, and the overlay content to be
+	// deleted.
+	fsStateFile := fmt.Sprintf("%s/.fs_state", xOverlayDir)
+	os.Remove(fsStateFile)
+	err = os.Symlink("2", fsStateFile)
+	if err != nil {
+		log.Fatalf("symlink from '2' to %s/.fs_state failed: %v", xOverlayDir, err)
+	}
+
+	syscall.Sync()
+}
+
 func install(cmd *cobra.Command, args []string) error {
 	side := noSide
 	iS := strings.ToLower(installSide)
@@ -547,18 +958,11 @@ func install(cmd *cobra.Command, args []string) error {
 	case "other":
 		side = chooseSide(false)
 	default:
-		log.Fatalf("unrecognized install side '%s': use 'a', 'b', 'same', 'other'\n", installSide)
+		log.Fatalf("unrecognized install side '%s': use 'a', 'b', 'same', 'other'\n",
+			installSide)
 	}
 
-	var tS string
-	switch side {
-	case sideA:
-		tS = "a"
-	case sideB:
-		tS = "b"
-	}
-
-	log.Printf("installing to side '%s'\n", tS)
+	log.Printf("installing to side '%s'", sides[side])
 
 	if dryRun {
 		log.Println("dry-run: skipping busybox copy to /tmp")
@@ -595,6 +999,122 @@ func install(cmd *cobra.Command, args []string) error {
 
 	// Copy images to appropriate on-device locations.
 	writeSlices(imageDir, side)
+
+	syscall.Sync()
+
+	if dryRun {
+		log.Println("dry-run: skipping overlay creation and installation")
+	} else {
+		// Prepare next root.
+		f2fsOverlay(side, clearOverlay)
+
+		// Propagate mutable files to next rootfs_data.  We may
+		// manipulate these files in package postinstall scripts, so
+		// propagation must take place prior to package operations.
+		archiveCopy("/etc/passwd")
+		archiveCopy("/etc/shadow")
+		archiveCopy("/etc/group")
+		archiveCopy("/etc/sudoers")
+		archiveCopy("/etc/sudoers.d/*")
+		archiveCopy("/etc/config/*")
+		archiveCopy("/etc/ssh/*")
+
+		syscall.Sync()
+
+		// Install packages.
+		for _, pn := range packages {
+			overlayOpkgInstall(pn)
+			syscall.Sync()
+		}
+
+		// Post-packaging operations: fix rc.d symbolic links.
+		overlayFixRcDLinks()
+	}
+
+	syscall.Sync()
+
+	return nil
+}
+
+func mountOther(cmd *cobra.Command, args []string) error {
+	side := chooseSide(false)
+
+	if dryRun {
+		log.Println("dry-run: skipping overlay creation and mount")
+	} else {
+		f2fsOverlay(side, false)
+	}
+
+	syscall.Sync()
+
+	return nil
+}
+
+func umountOther(cmd *cobra.Command, args []string) error {
+	var loopback string
+
+	// Unmount root (as overlay of rom and writeable)
+	err := syscall.Unmount(xRootDir, 0)
+	if err != nil {
+		log.Printf("overlay unmount failed %v", err)
+	}
+
+	mounts, err := os.Open("/proc/self/mounts")
+	if err != nil {
+		log.Printf("unable to open /proc/self/mounts, loopback device will not be released: %v", err)
+	} else {
+		defer mounts.Close()
+
+		// Deduce loopback from mountpoint backing device.
+		scanner := bufio.NewScanner(mounts)
+		for scanner.Scan() {
+			mntln := scanner.Text()
+			mntfld := strings.Split(mntln, " ")
+
+			if mntfld[1] == xOverlayDir {
+				loopback = mntfld[0]
+			}
+		}
+
+		if err := scanner.Err(); err != nil {
+			log.Printf("reading /proc/self/mounts: %v", err)
+		}
+	}
+
+	// Unmount writeable portion.
+	err = syscall.Unmount(xOverlayDir, 0)
+	if err != nil {
+		log.Printf("f2fs unmount failed %v", err)
+	}
+
+	// Remove loopback.
+	if loopback != "" {
+		losetup := exec.Command("/usr/sbin/losetup", "-d", loopback)
+		_, err := losetup.Output()
+		if err != nil {
+			log.Printf("losetup -d %s failed: %v", loopback, err)
+		}
+	}
+
+	// Unmount ROM.
+	err = syscall.Unmount(xRomDir, 0)
+	if err != nil {
+		log.Printf("squashfs unmount failed %v", err)
+	}
+
+	syscall.Sync()
+
+	return nil
+}
+
+func flip(cmd *cobra.Command, args []string) error {
+	side := chooseSide(false)
+
+	if dryRun {
+		log.Println("dry-run: skipping environment update")
+	} else {
+		writeUBootEnvironment(side)
+	}
 
 	syscall.Sync()
 
@@ -662,6 +1182,8 @@ func detectPlatform() *platformStorage {
 func main() {
 	var err error
 
+	packages = make([]string, 0)
+
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	flag.Parse()
 
@@ -670,8 +1192,10 @@ func main() {
 	rootCmd := &cobra.Command{
 		Use: "ap-factory",
 	}
-	rootCmd.PersistentFlags().BoolVarP(&dryRun, "dry-run", "n", false, "dry-run, no modifications")
-	rootCmd.PersistentFlags().StringVarP(&imageDir, "dir", "d", ".", "image download directory")
+	rootCmd.PersistentFlags().BoolVarP(&dryRun, "dry-run", "n", false,
+		"dry-run, no modifications")
+	rootCmd.PersistentFlags().StringVarP(&imageDir, "dir", "d", ".",
+		"image download directory")
 
 	retrieveCmd := &cobra.Command{
 		Use:   "retrieve",
@@ -679,7 +1203,10 @@ func main() {
 		Args:  cobra.NoArgs,
 		RunE:  retrieve,
 	}
+	retrieveCmd.Flags().StringSliceVarP(&packages, "package", "P", nil,
+		"additional packages to retrieve")
 	retrieveCmd.Flags().StringVarP(&retrieveURL, "url", "u", "", "image source URL")
+
 	rootCmd.AddCommand(retrieveCmd)
 
 	installCmd := &cobra.Command{
@@ -688,10 +1215,43 @@ func main() {
 		Args:  cobra.NoArgs,
 		RunE:  install,
 	}
-	installCmd.Flags().BoolVarP(&forceRepartition, "force-repartition", "F", false, "always repartition storage device")
-	installCmd.Flags().BoolVarP(&kernelOnly, "kernel-only", "K", false, "kernel install only")
-	installCmd.Flags().StringVarP(&installSide, "side", "s", "other", "target install 'side' ['a', 'b', 'same', 'other']")
+	installCmd.Flags().BoolVarP(&forceRepartition, "force-repartition", "F", false,
+		"always repartition storage device")
+	installCmd.Flags().BoolVarP(&clearOverlay, "clear-overlay", "C", false,
+		"force mkfs on overlay backing store")
+	installCmd.Flags().BoolVarP(&kernelOnly, "kernel-only", "K", false,
+		"kernel install only")
+	installCmd.Flags().StringSliceVarP(&packages, "package", "P", nil,
+		"additional, topologically-ordered packages to install")
+	installCmd.Flags().StringVarP(&installSide, "side", "s", "other",
+		"target install 'side' ['a', 'b', 'same', 'other']")
 	rootCmd.AddCommand(installCmd)
+
+	flipCmd := &cobra.Command{
+		Use:   "flip",
+		Short: "Flip boot parameters to other side",
+		Args:  cobra.NoArgs,
+		RunE:  flip,
+	}
+	rootCmd.AddCommand(flipCmd)
+
+	mountOtherCmd := &cobra.Command{
+		Use:     "mount-other",
+		Aliases: []string{"mount-root"},
+		Short:   "mount the other root partition and its overlay",
+		Args:    cobra.NoArgs,
+		RunE:    mountOther,
+	}
+	rootCmd.AddCommand(mountOtherCmd)
+
+	umountOtherCmd := &cobra.Command{
+		Use:     "umount-other",
+		Aliases: []string{"umount-root"},
+		Short:   "unmount the other root partition and its overlay",
+		Args:    cobra.NoArgs,
+		RunE:    umountOther,
+	}
+	rootCmd.AddCommand(umountOtherCmd)
 
 	statusCmd := &cobra.Command{
 		Use:   "status",
