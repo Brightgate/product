@@ -555,7 +555,7 @@
       <li>Select the Wi-Fi logo at the top right of your display (it's the one
         that looks like an opened fan).</li>
       <li>Select your organization's Wi-Fi network name from the dropdown list
-        (the name will end in <code>-users</code>).</li>
+        (the name will end in <code>-user</code>).</li>
       <li>Enter the <b>username</b> and <b>Password</b> created by Brightgate.
       <b>Note:</b> The first time you add your Mac to the network, you will be
       asked to accept a certificate. Select <b>Continue</b> to add the
@@ -577,7 +577,8 @@
       <li>From the home screen, tap the <b>Settings</b> app.</li>
       <li>Select <b>Wi-Fi</b>.</li>
       <li>If needed, slide the button to turn <b>Wi-Fi</b> on, then select your
-        organization's Wi-Fi network name from the list (the name will end in <code>-user</code>).</li>
+        organization's Wi-Fi network name from the list (the name will end in
+        <code>-user</code>).</li>
       <li>Enter the <b>username</b> and <b>password</b> created by Brightgate.
       <b>Note:</b> The first time you add your iPhone to the network, you will
       be asked to accept a certificate. Select <b>Continue</b> to add the
@@ -601,7 +602,8 @@
       <li>Enter the <b>username</b> and <b>password</b> created by Brightgate.
       <b>Note:</b> The first time you add your Android phone to the network,
       you will be asked to accept a certificate. Select <b>Continue</b> to add
-      the certificate. You're welcome to read more in <a href=#quick-word-certificates>a quick word about certificates</a>.</li>
+      the certificate. You're welcome to read more in
+      <a href=#quick-word-certificates>a quick word about certificates</a>.</li>
 <li>Tap <b>Connect</b></li>
     </ol>
     <h4 id="add-windows-network">Add a Windows computer to your Wi-Fi network</h4>
@@ -610,6 +612,84 @@
     <p><b><i>Note:</i></b><i> See <a href="#help-your-team-get-online">help
           your team get online</a> if you haven't yet created a user name and
         password for the Wi-Fi network.</i></p>
+    <p>Your Windows 10 computer will automatically find all wireless networks
+       in range.</p>
+    <ol>
+      <li>Click the Wi-Fi icon in the taskbar on the bottom right corner of your screen to view the available networks.
+      </li>
+      <li>Select the enterprise Wi-Fi network name provided by your
+         administrator from the dropdown list; the name will typically end in
+         <code>-user</code>.
+      </li>
+      <li>Click <b>Connect</b>
+        <div>
+        <img src="./images/windows-auto-connect.png" alt="Automatically connect to Wi-Fi">
+        </div>
+      </li>
+      <li>Wait for Windows to check network requirements
+        <div>
+        <img src="./images/windows-check-requirements.png" alt="Checking requirements">
+        </div>
+      </li>
+      <li>Enter the username and password you created in the Brightgate
+      application, then click <b>OK</b>.
+      <div>
+      <img src="./images/windows-enter-password.png" alt="Provide your username and password">
+    </div><br>
+      After a moment, if your credentials
+      are correct, your machine will connect to the Wi-Fi network connect,
+      displaying <code>Connected, secured</code> as its status.
+      </li>
+      <li>The first time you add your Windows machine to the network, you may
+      be asked to accept a new certificate. This may also happen if the
+      certificate has been renewed recently.
+      <b>Important:</b> Do not connect unless you are in a location you expect
+      to see this network. Then select <b>Continue</b> to add the certificate.
+      You're welcome to read more in <a href=#quick-word-certificates>a quick word about certificates</a>.
+      </li>
+    </ol>
+    <p>If the process to connect automatically fails, or your computer does not see your enterprise network, use this procedure to connect manually:</p>
+    <ol>
+        <li>Click on Cortana ("Ask me anything" box in taskbar)
+          <div>
+          <img src="./images/windows-cortana.png" alt="Click on Cortana">
+          </div>
+        </li>
+        <li>Type “Control Panel” to open the Control Panel
+          <div>
+          <img src="./images/windows-control-panel.png" alt="Control panel">
+          </div>
+        </li>
+        <li>Open <b>Network and Internet</b>
+          <div>
+          <img src="./images/windows-network-and-internet.png" alt="Network and internet">
+          </div>
+        </li>
+        <li>Open the <b>Network and Sharing Center</b>
+          <div>
+          <img src="./images/windows-network-and-sharing.png" alt="Network and Sharing Center">
+          </div>
+        </li>
+        <li>Select <b>Set up a new connection or network</b>
+          <div>
+          <img src="./images/windows-set-up-new-connection.png" alt="New connection">
+          </div>
+        </li>
+        <li>Enter the enterprise network name that your administrator provided
+          (which should typically end in <code>-user</code>). Select
+          <b>WPA2-Enterprise</b> as the <i>Security type</i>. Do not enter a
+          security key. Windows will now open the Wi-Fi configuration interface
+          from the taskbar as described previously. Complete the connection
+          by providing the username and password created in the Brightgate
+          management application.
+          <div>
+          <img src="./images/windows-enter-network.png" alt="Provide network name">
+          </div>
+        </li>
+      </ol>
+    <p>If a dialog box displays stating that the network "already exists", click
+       "Use the existing network." If you still fail to connect, use Windows's
+       Wi-Fi configuration to Forget the network as described in this <a href="https://social.technet.microsoft.com/wiki/contents/articles/31961.windows-10-forget-a-saved-wi-fi-network.aspx">helpful community article from Microsoft</a>.</p>
     <h3 id="add-iot-network">Add IoT devices to your Wi-Fi network</h3>
     <p>IoT devices are those that share a common password. To view the password:</p>
     <ol>
