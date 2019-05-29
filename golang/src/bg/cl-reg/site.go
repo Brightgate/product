@@ -109,7 +109,6 @@ func setSite(cmd *cobra.Command, args []string) error {
 
 	name, _ := cmd.Flags().GetString("name")
 	orgUU, _ := cmd.Flags().GetString("org-uuid")
-	orgUUID := uuid.Must(uuid.FromString(orgUU))
 
 	uu := args[0]
 	siteUUID := uuid.Must(uuid.FromString(uu))
@@ -122,7 +121,7 @@ func setSite(cmd *cobra.Command, args []string) error {
 		site.Name = name
 	}
 	if orgUU != "" {
-		site.OrganizationUUID = orgUUID
+		site.OrganizationUUID = uuid.Must(uuid.FromString(orgUU))
 	}
 
 	err = db.UpdateCustomerSite(ctx, site)
