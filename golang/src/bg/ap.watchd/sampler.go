@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"bg/ap_common/apcfg"
+	"bg/ap_common/aputil"
 	"bg/base_def"
 	"bg/common/network"
 
@@ -321,20 +322,32 @@ func auditor() {
 	}
 }
 
-func openInterface(ring, iface string) (*pcap.Handle, error) {
-	if ring != base_def.RING_INTERNAL {
-		// The internal ring is special.  See
-		// networkd.go:prepareRingBridge()
-		err := network.WaitForDevice(iface, time.Minute)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %v", iface, err)
+func findInterface(ring, bridge string) (net.HardwareAddr, error) {
+	var hwaddr net.HardwareAddr
+
+	iface, err := net.InterfaceByName(bridge)
+	if err != nil {
+		err = fmt.Errorf("InterfaceByName(%s) failed: %v",
+			bridge, err)
+	} else {
+		hwaddr = iface.HardwareAddr
+
+		if ring != base_def.RING_INTERNAL {
+			if err = network.WaitForDevice(bridge, time.Minute); err != nil {
+				err = fmt.Errorf("WaitForDevice(%s) failed: %v",
+					bridge, err)
+			}
 		}
 	}
+	return hwaddr, err
+}
 
-	handle, err := pcap.OpenLive(iface, 65536, true, pcap.BlockForever)
+func openInterface(bridge string) (*pcap.Handle, error) {
+	handle, err := pcap.OpenLive(bridge, 65536, true, pcap.BlockForever)
 	if err != nil {
-		err = fmt.Errorf("pcap.OpenLive(%s) failed: %v", iface, err)
+		err = fmt.Errorf("pcap.OpenLive(%s) failed: %v", bridge, err)
 	}
+
 	return handle, err
 }
 
@@ -386,32 +399,43 @@ func sampleLoop(state *samplerState) {
 }
 
 func sampleInterface(state *samplerState) {
-	var err error
+	var lastErrMsg string
 
 	defer samplerWaitGroup.Done()
+	tlog := aputil.GetThrottledLogger(slog, time.Second, 10*time.Minute)
+
+	bridge := state.iface
+	ring := state.ring
 
 	parserInit(state)
-	warned := false
 	for samplerRunning {
-		state.handle, err = openInterface(state.ring, state.iface)
-		if err != nil {
-			if !warned {
-				slog.Warnf("openInterface failed: %v", err)
-				warned = true
-			}
-			time.Sleep(time.Second)
-			continue
-		} else if warned {
-			slog.Infof("Sampler for %s (%s) online",
-				state.iface, state.ring)
+		var hdl *pcap.Handle
+
+		hwaddr, err := findInterface(ring, bridge)
+		if err == nil {
+			hdl, err = openInterface(bridge)
 		}
 
-		warned = false
+		if err != nil {
+			errMsg := fmt.Sprintf("%v", err)
+			if errMsg != lastErrMsg {
+				tlog.Clear()
+				lastErrMsg = errMsg
+			}
 
+			tlog.Warnf("%v", err)
+			time.Sleep(time.Second)
+			continue
+		}
+		tlog.Clear()
+
+		slog.Infof("Sampler for %s (%s) online", bridge, ring)
+		state.hwaddr = hwaddr
+		state.handle = hdl
 		sampleLoop(state)
-		state.handle.Close()
+		hdl.Close()
+		slog.Infof("Sampler for %s (%s) offline", bridge, ring)
 	}
-	slog.Infof("Sampler for %s (%s) offline", state.iface, state.ring)
 }
 
 func sampleFini(w *watcher) {
@@ -447,21 +471,13 @@ func sampleInit(w *watcher) {
 			continue
 		}
 
-		iface, err := net.InterfaceByName(config.Bridge)
-		if err != nil {
-			slog.Errorf("InterfaceByName(%s) failed on: %v",
-				config.Bridge, err)
-			continue
-		}
-
 		bcastAddr := subnetBroadcastAddr(config.IPNet)
 		subnetBcast = append(subnetBcast, bcastAddr)
 		subnets = append(subnets, config.IPNet)
 
 		s := samplerState{
-			ring:   ring,
-			iface:  config.Bridge,
-			hwaddr: iface.HardwareAddr,
+			ring:  ring,
+			iface: config.Bridge,
 		}
 		samplers = append(samplers, &s)
 		samplerWaitGroup.Add(1)

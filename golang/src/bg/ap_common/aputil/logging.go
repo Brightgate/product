@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -36,7 +37,9 @@ type ThrottledLogger struct {
 var (
 	atomicLevel = zap.NewAtomicLevel()
 	daemonName  string
-	tloggers    = make(map[string]*ThrottledLogger)
+
+	tloggers = make(map[string]*ThrottledLogger)
+	tlock    sync.Mutex
 )
 
 // Clear resets the logger's timeouts to their base levels.
@@ -89,6 +92,7 @@ func GetThrottledLogger(slog *zap.SugaredLogger,
 		key = "unknown"
 	}
 
+	tlock.Lock()
 	t, ok := tloggers[key]
 	if !ok {
 		log := slog.Desugar().WithOptions(zap.AddCallerSkip(1)).Sugar()
@@ -101,6 +105,7 @@ func GetThrottledLogger(slog *zap.SugaredLogger,
 		}
 		tloggers[key] = t
 	}
+	tlock.Unlock()
 
 	return t
 }
