@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -213,24 +213,41 @@ func eventHandler(event []byte) {
 			entity)
 		return
 	}
-	hwaddr := network.Uint64ToHWAddr(*entity.MacAddress)
-	path := "@/clients/" + hwaddr.String() + "/"
-	node, _ := propTree.GetNode(path)
+	hwaddr := network.Uint64ToHWAddr(*entity.MacAddress).String()
+	path := "@/clients/" + hwaddr + "/"
+	client, _ := propTree.GetNode(path)
+	updates := make([]*updateRecord, 0)
+	active := "unknown"
+
+	// We start by assuming that a client is wired, but any subsequent
+	// wireless event will overrule that assumption.
+	wireless := "false"
+	if w, _ := propTree.GetNode(path + "connection/wireless"); w != nil {
+		wireless = w.Value
+	}
 
 	if entity.Ring != nil {
 		ring = *entity.Ring
 	}
 	if entity.VirtualAP != nil {
+		wireless = "true"
 		vap = *entity.VirtualAP
-	}
 
-	updates := []*updateRecord{
-		updateChange(path+"connection/node", entity.Node, nil),
-		updateChange(path+"connection/band", entity.Band, nil),
-		updateChange(path+"connection/vap", &vap, nil),
+		if *entity.Disconnect {
+			active = "false"
+		} else {
+			active = "true"
+		}
+		updates = append(updates,
+			updateChange(path+"connection/node", entity.Node, nil),
+			updateChange(path+"connection/band", entity.Band, nil),
+			updateChange(path+"connection/vap", &vap, nil))
 	}
+	updates = append(updates,
+		updateChange(path+"connection/active", &active, nil),
+		updateChange(path+"connection/wireless", &wireless, nil))
 
-	if ring = selectRing(hwaddr.String(), node, vap, ring); ring != "" {
+	if ring = selectRing(hwaddr, client, vap, ring); ring != "" {
 		updates = append(updates,
 			updateChange(path+"ring", &ring, nil))
 	}

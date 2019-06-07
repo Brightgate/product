@@ -336,6 +336,8 @@
     {"Path": "@/clients/%macaddr%/ring", "Type": "ring", "Level": "admin"},
     {"Path": "@/clients/%macaddr%/identity", "Type": "int", "Level": "internal"},
     {"Path": "@/clients/%macaddr%/confidence", "Type": "float", "Level": "internal"},
+    {"Path": "@/clients/%macaddr%/connection/active", "Type": "tribool", "Level": "internal"},
+    {"Path": "@/clients/%macaddr%/connection/wireless", "Type": "bool", "Level": "internal"},
     {"Path": "@/clients/%macaddr%/connection/vap", "Type": "string", "Level": "internal"},
     {"Path": "@/clients/%macaddr%/connection/band", "Type": "wifiband", "Level": "internal"},
     {"Path": "@/clients/%macaddr%/connection/node", "Type": "uuid", "Level": "internal"},

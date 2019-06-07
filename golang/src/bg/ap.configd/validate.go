@@ -33,6 +33,7 @@ type propDescription struct {
 
 // Each field in a property path is represented by a Validation Node.
 type vnode struct {
+	path     string
 	keyType  string             // datatype of the path field
 	keyText  string             // text of the path field
 	level    cfgapi.AccessLevel // access level required to modify
@@ -45,6 +46,7 @@ type typeValidate func(string) error
 
 var (
 	vRoot = &vnode{
+		path:     "@",
 		keyType:  "const",
 		keyText:  "@",
 		level:    cfgapi.AccessInternal,
@@ -55,6 +57,7 @@ var (
 	validationFuncs = map[string]typeValidate{
 		"const":      validateString,
 		"bool":       validateBool,
+		"tribool":    validateTribool,
 		"int":        validateInt,
 		"float":      validateFloat,
 		"string":     validateString,
@@ -89,6 +92,17 @@ func validateBool(val string) error {
 	v := strings.ToLower(val)
 	if v != "true" && v != "false" {
 		err = fmt.Errorf("'%s' is neither true nor false", val)
+	}
+
+	return err
+}
+
+func validateTribool(val string) error {
+	var err error
+
+	v := strings.ToLower(val)
+	if v != "true" && v != "false" && v != "unknown" {
+		err = fmt.Errorf("'%s' is not true, false, or unknown", val)
 	}
 
 	return err
@@ -451,12 +465,15 @@ func newVnode(prop string) (*vnode, error) {
 	}
 
 	node := vRoot
+	path := "@"
 	for _, f := range fields[1:] {
 		var keyType string
 
 		if len(f) == 0 {
 			continue
 		}
+
+		path = path + "/" + f
 
 		parent := node
 		if node = parent.children[f]; node != nil {
@@ -480,6 +497,7 @@ func newVnode(prop string) (*vnode, error) {
 			keyType = "const"
 		}
 		node = &vnode{
+			path:     path,
 			keyText:  f,
 			keyType:  keyType,
 			level:    cfgapi.AccessInternal,
@@ -540,11 +558,15 @@ func addOneProperty(prop, val, level string) error {
 }
 
 func validationInit(descriptions []propDescription) error {
+	var rval error
+
 	for _, d := range descriptions {
 		if err := addOneProperty(d.Path, d.Type, d.Level); err != nil {
-			return err
+			slog.Errorf("failed to add property %s: %v",
+				d.Path, err)
+			rval = err
 		}
 	}
 
-	return nil
+	return rval
 }

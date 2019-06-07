@@ -186,6 +186,8 @@ type ClientInfo struct {
 	ConnBand   string     // Connection Radio Band (2.4GHz, 5GHz)
 	ConnNode   *uuid.UUID // Connection Node
 	ConnVAP    string     // Connection Virtual AP
+	Wireless   bool       // Is this a wireless client?
+	active     string
 }
 
 // VulnInfo represents the detection of a single vulnerability in a single
@@ -362,19 +364,27 @@ func (c *Handle) Close() {
 	c.exec.Close()
 }
 
-// IsActive returns 'true' if we believe the client is currently connected to
-// this AP
+// IsActive returns 'true' if a wireless client is connected to an AP, or if a
+// wired client has a valid IP address.
 func (c *ClientInfo) IsActive() bool {
-	if c == nil || c.IPv4 == nil {
+	if c == nil {
+		return false
+	}
+	if c.active == "true" {
+		return true
+	}
+	if c.active == "false" {
 		return false
 	}
 
-	expired := false
-	if c.Expires != nil {
-		expired = c.Expires.Before(time.Now())
+	validIP := false
+	if c.IPv4 != nil {
+		if c.Expires == nil || !c.Expires.Before(time.Now()) {
+			validIP = true
+		}
 	}
 
-	return !expired
+	return validIP
 }
 
 func dumpSubtree(w io.Writer, name string, node *PropertyNode, indent string) {
@@ -784,9 +794,8 @@ func getClient(client *PropertyNode) *ClientInfo {
 	var confidence float64
 	var ipv4 net.IP
 	var exp *time.Time
-	var private bool
-	var connVAP string
-	var connBand string
+	var wireless, private bool
+	var connVAP, connBand, active string
 	var connNode *uuid.UUID
 
 	private, _ = getBoolVal(client, "dns_private")
@@ -805,6 +814,8 @@ func getClient(client *PropertyNode) *ClientInfo {
 		connVAP, _ = getStringVal(conn, "vap")
 		connBand, _ = getStringVal(conn, "band")
 		connNode, _ = getUUIDVal(conn, "node")
+		active, _ = getStringVal(conn, "active")
+		wireless, _ = getBoolVal(conn, "wireless")
 	}
 
 	c := ClientInfo{
@@ -819,6 +830,8 @@ func getClient(client *PropertyNode) *ClientInfo {
 		ConnBand:   connBand,
 		ConnNode:   connNode,
 		ConnVAP:    connVAP,
+		Wireless:   wireless,
+		active:     active,
 	}
 	return &c
 }

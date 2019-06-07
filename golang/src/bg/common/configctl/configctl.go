@@ -38,6 +38,10 @@ var (
 	nodeToName map[string]string
 )
 
+func timeStringShort(t time.Time) string {
+	return t.Format("2006-01-02T15:04")
+}
+
 func timeString(t time.Time) string {
 	return t.Format("2006-01-02T15:04:05")
 }
@@ -129,7 +133,7 @@ func getRings(cmd string, args []string) error {
 	return nil
 }
 
-func printClient(mac string, client *cfgapi.ClientInfo) {
+func printClient(mac string, client *cfgapi.ClientInfo, verbose bool) {
 	name := "-"
 	if client.DNSName != "" {
 		name = client.DNSName
@@ -155,7 +159,7 @@ func printClient(mac string, client *cfgapi.ClientInfo) {
 	if client.IPv4 != nil {
 		ipv4 = client.IPv4.String()
 		if client.Expires != nil {
-			exp = timeString(*client.Expires)
+			exp = timeStringShort(*client.Expires)
 		} else {
 			exp = "static"
 		}
@@ -182,13 +186,20 @@ func printClient(mac string, client *cfgapi.ClientInfo) {
 		confidenceMarker = "? "
 	}
 
-	fmt.Printf("%-17s %-16s %-10s %-15s %-16s %s%-9s\n",
-		mac, name, ring, ipv4, exp, confidenceMarker, identString)
+	if verbose {
+		fmt.Printf("%-17s %-16s %-10s %-8v %-15s %-16s %s%-9s\n",
+			mac, name, ring, client.Wireless, ipv4, exp,
+			confidenceMarker, identString)
+	} else {
+		fmt.Printf("%-17s %-16s %-10s %-8v %-15s %-16s\n",
+			mac, name, ring, client.Wireless, ipv4, exp)
+	}
 }
 
 func getClients(cmd string, args []string) error {
 	flags := flag.NewFlagSet("clients", flag.ContinueOnError)
 	allClients := flags.Bool("a", false, "show all clients")
+	verbose := flags.Bool("v", false, "verbose output")
 
 	if err := flags.Parse(args); err != nil {
 		usage(cmd)
@@ -204,13 +215,20 @@ func getClients(cmd string, args []string) error {
 	}
 	sort.Strings(macs)
 
-	fmt.Printf("%-17s %-16s %-10s %-15s %-16s %9s\n",
-		"macaddr", "name", "ring", "ip addr", "expiration", "device id")
+	if *verbose {
+		fmt.Printf("%-17s %-16s %-10s %8s %-15s %-16s %9s\n",
+			"macaddr", "name", "ring", "wireless", "ip addr",
+			"expiration", "device id")
+	} else {
+		fmt.Printf("%-17s %-16s %-10s %8s %-15s %-16s\n",
+			"macaddr", "name", "ring", "wireless", "ip addr",
+			"expiration")
+	}
 
 	for _, mac := range macs {
 		client := clients[mac]
 		if client.IsActive() || *allClients {
-			printClient(mac, client)
+			printClient(mac, client, *verbose)
 		}
 	}
 
@@ -479,7 +497,7 @@ var usages = map[string]string{
 	"ping":    "",
 	"set":     "<prop> <value [duration]>",
 	"add":     "<prop> <value [duration]>",
-	"get":     "<prop> | clients [-a] | rings",
+	"get":     "<prop> | clients [-a] [-v] | rings",
 	"del":     "<prop>",
 	"mon":     "<prop>",
 	"replace": "<file | ->",
