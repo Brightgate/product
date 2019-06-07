@@ -25,6 +25,13 @@
         },
         "Actions": [ "Warn" ]
     },
+    "CVE-2019-10149": {
+        "Tool": "ap-inspect",
+        "Options": {
+                "probe": "CVE-2019-10149"
+        },
+        "Actions": [ "Warn" ]
+    },
     "defaultpassword": {
         "Nickname": "unchanged default password",
         "Tool": "ap-defaultpass",

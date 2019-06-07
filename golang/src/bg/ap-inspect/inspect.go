@@ -47,7 +47,8 @@ var (
 type probeFunc func(net.IP, []int)
 
 var probes = map[string]probeFunc{
-	"CVE-2018-6789": eximProbe,
+	"CVE-2018-6789":  eximProbe2018,
+	"CVE-2019-10149": eximProbe2019,
 }
 
 func outputResults(v *apvuln.InspectVulnProbe) error {
@@ -92,17 +93,42 @@ func getBanner(ip net.IP, port int) (string, error) {
 	return banner, err
 }
 
-// Check for CVE-2018-6789, which is a buffer overflow in Exim 4.90 and earlier
-//
+func inRange(test, min, max *version.Version) bool {
+	if test.LessThan(min) || test.GreaterThan(max) {
+		return false
+	}
+	return true
+}
+
+// Try to extract the exim release version, stripping off any distro-specific
+// annotations.
+func getVersion(v string) (*version.Version, error) {
+	// A prefix ending with a ':' indicates a debian epoch
+	if idx := strings.Index(v, ":"); idx > 0 {
+		v = v[idx+1:]
+	}
+	// A suffix beginning with '_' or '-' indicates a debian or ubuntu
+	// revision
+	if idx := strings.Index(v, "_"); idx > 0 {
+		v = v[:idx]
+	}
+	if idx := strings.Index(v, "-"); idx > 0 {
+		v = v[:idx]
+	}
+
+	return version.NewVersion(v)
+}
+
 // (note: we are just checking Exim's self-reported version number here; we
 //  aren't probing for the vulnerability directly.)
 //
-func eximProbe(ip net.IP, ports []int) {
-	const cve = "CVE-2018-6789"
-
-	var result apvuln.InspectVulnProbe
-	result.Vulnerable = false
-	result.Vulns = make(apvuln.Vulnerabilities, 0)
+func eximProbe(ip net.IP, ports []int, cve, minBad, maxBad string) {
+	minBadVer, _ := version.NewVersion(minBad)
+	maxBadVer, _ := version.NewVersion(maxBad)
+	result := apvuln.InspectVulnProbe{
+		Vulnerable: false,
+		Vulns:      make(apvuln.Vulnerabilities, 0),
+	}
 
 	if len(ports) == 0 {
 		if smtp, _ := net.LookupPort("tcp", "smtp"); smtp != 0 {
@@ -110,7 +136,6 @@ func eximProbe(ip net.IP, ports []int) {
 		}
 	}
 
-	goodVersion, _ := version.NewVersion("4.90.1")
 	for _, p := range ports {
 		msg := ""
 		banner, err := getBanner(ip, p)
@@ -132,11 +157,12 @@ func eximProbe(ip net.IP, ports []int) {
 		} else {
 			v := fields[4]
 
-			testVersion, err := version.NewVersion(v)
+			testVersion, err := getVersion(v)
 			if err != nil {
 				msg = fmt.Sprintf("bad version # '%s': %v",
 					v, err)
-			} else if testVersion.LessThan(goodVersion) {
+
+			} else if inRange(testVersion, minBadVer, maxBadVer) {
 				msg = fmt.Sprintf("exim %s is vulnerable to %s",
 					v, cve)
 				dv := apvuln.InspectVulnerability{
@@ -154,6 +180,16 @@ func eximProbe(ip net.IP, ports []int) {
 	}
 
 	outputResults(&result)
+}
+
+// Check for CVE-2018-6789, which is a buffer overflow in Exim 4.90 and earlier
+func eximProbe2018(ip net.IP, ports []int) {
+	eximProbe(ip, ports, "CVE-2018-6789", "0", "4.90")
+}
+
+// Check for CVE-2019-10149, which is an RCE in Exim 4.87 through 4.91
+func eximProbe2019(ip net.IP, ports []int) {
+	eximProbe(ip, ports, "CVE-2019-10149", "4.87", "4.91")
 }
 
 func usage(exitStatus int) {
