@@ -121,7 +121,10 @@ func getIPFromMac(mac string) string {
 	return ip
 }
 
-func setMacIP(mac, ip string) {
+func setMacIP(mac string, ipv4 net.IP) {
+	ip := ipv4.String()
+	registerIPAddr(mac, ipv4)
+
 	mapMtx.Lock()
 	macToIP[mac] = ip
 	ipToMac[ip] = mac
@@ -129,49 +132,43 @@ func setMacIP(mac, ip string) {
 }
 
 func clearMac(mac string) {
+	unregisterIPAddr(mac)
+
 	mapMtx.Lock()
-	ip := macToIP[mac]
-	if ip != "" {
+	if ip, ok := macToIP[mac]; ok {
 		delete(ipToMac, ip)
 	}
 	delete(macToIP, mac)
 	mapMtx.Unlock()
 }
 
-func macToIPInit() {
-	clients := config.GetClients()
-
-	for m, c := range clients {
-		if c.IPv4 != nil {
-			setMacIP(m, c.IPv4.String())
-		}
-	}
-}
-
 func configIPv4Changed(path []string, value string, expires *time.Time) {
 	mac := path[1]
 
-	hwaddr, err := net.ParseMAC(mac)
-	if err != nil {
+	if _, err := net.ParseMAC(mac); err != nil {
 		slog.Warnf("invalid MAC address %s", mac)
 		return
 	}
 
 	if ipv4 := net.ParseIP(value); ipv4 != nil {
-		registerIPAddr(hwaddr, ipv4.To4())
-		scannerRequest(mac, ipv4.String(), 30*time.Second)
-		setMacIP(mac, value)
+		scannerRequest(mac, value, 30*time.Second)
+		setMacIP(mac, ipv4)
 	} else {
 		slog.Warnf("invalid IPv4 address %s", value)
 	}
 }
 
-func configIPv4Delexp(path []string) {
-	if hwaddr, err := net.ParseMAC(path[1]); err == nil {
-		unregisterIPAddr(hwaddr)
-		clearMac(path[1])
-	} else {
-		slog.Warnf("invalid MAC address %s", path[1])
+// Handle the deletion of a full client record, or just its ipv4 address
+func configClientDelete(path []string) {
+	if len(path) == 2 || (len(path) == 3 && path[2] == "ipv4") {
+		mac := path[1]
+		if _, err := net.ParseMAC(mac); err == nil {
+			ip := getIPFromMac(mac)
+			cancelAllScans(mac, ip)
+			clearMac(mac)
+		} else {
+			slog.Warnf("invalid MAC address %s", mac)
+		}
 	}
 }
 
@@ -202,11 +199,10 @@ func getLeases() {
 	}
 
 	for macaddr, client := range clients {
-		hwaddr, err := net.ParseMAC(macaddr)
-		if err != nil {
+		if _, err := net.ParseMAC(macaddr); err != nil {
 			slog.Warnf("Invalid mac address: %s", macaddr)
 		} else if client.IPv4 != nil {
-			registerIPAddr(hwaddr, client.IPv4)
+			setMacIP(macaddr, client.IPv4)
 		}
 	}
 }
@@ -358,14 +354,14 @@ func main() {
 		slog.Fatalf("cannot connect to configd: %v", err)
 	}
 
+	config.HandleDelete(`^@/clients/.*`, configClientDelete)
+	config.HandleExpire(`^@/clients/.*/ipv4$`, configClientDelete)
 	config.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
-	config.HandleDelete(`^@/clients/.*/ipv4$`, configIPv4Delexp)
-	config.HandleExpire(`^@/clients/.*/ipv4$`, configIPv4Delexp)
 	brokerd.Handle(base_def.TOPIC_UPDATE, eventHandler)
 
-	macToIPInit()
 	rings = config.GetRings()
 	getGateways()
+	getLeases()
 
 	mcpd.SetState(mcp.ONLINE)
 	slog.Infof("watchd online")

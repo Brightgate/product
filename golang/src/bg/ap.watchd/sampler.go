@@ -140,8 +140,8 @@ func observedIPAddr(state *samplerState, hwaddr net.HardwareAddr, ipaddr net.IP)
 	observedMtx.Unlock()
 }
 
-func registerIPAddr(hwaddr net.HardwareAddr, ipaddr net.IP) {
-	mac := network.HWAddrToUint64(hwaddr)
+func registerIPAddr(macStr string, ipaddr net.IP) {
+	mac := network.MacToUint64(macStr)
 	ip := network.IPAddrToUint32(ipaddr)
 
 	currentMtx.Lock()
@@ -162,8 +162,8 @@ func registerIPAddr(hwaddr net.HardwareAddr, ipaddr net.IP) {
 	}
 }
 
-func unregisterIPAddr(hwaddr net.HardwareAddr) {
-	registerIPAddr(hwaddr, network.Uint32ToIPAddr(0))
+func unregisterIPAddr(macStr string) {
+	registerIPAddr(macStr, nil)
 }
 
 func processOnePacket(state *samplerState, data []byte) {
@@ -463,7 +463,6 @@ func subnetBroadcastAddr(n *net.IPNet) net.IP {
 
 func sampleInit(w *watcher) {
 	blocklistInit()
-	getLeases()
 
 	samplerRunning = true
 	for ring, config := range rings {

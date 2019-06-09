@@ -23,7 +23,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"bg/ap_common/apcfg"
@@ -46,6 +45,9 @@ type scanPool struct {
 	scansRun  uint32
 	scansLate uint32
 
+	scanning bool
+	wg       sync.WaitGroup
+
 	sync.Mutex
 }
 
@@ -59,9 +61,6 @@ var (
 		"vuln":   3,
 		"subnet": 1,
 	}
-
-	childProcesses map[*os.Process]bool
-	childLock      sync.Mutex
 
 	activeHosts *hostmap // hosts we believe to be currently present
 
@@ -78,8 +77,14 @@ var (
 	tcpNmapArgs = []string{"-v", "-sV", "-O", "-T4"}
 	udpNmapArgs = append(tcpNmapArgs, "-sU")
 
-	tcpFreq      = apcfg.Duration("tcp_freq", 2*time.Minute, true, nil)
-	udpFreq      = apcfg.Duration("udp_freq", 30*time.Minute, true, nil)
+	//   - TCP SYN and ACK probe to the listed ports.
+	//   - UDP ping to the default port (40125).
+	//   - SCTP INIT ping to the default port (80).
+	subnetNmapArgs = []string{"-sn", "-PS22,53,3389,80,443",
+		"-PA22,53,3389,80,443", "-PU", "-PY"}
+
+	tcpFreq      = apcfg.Duration("tcp_freq", 15*time.Minute, true, nil)
+	udpFreq      = apcfg.Duration("udp_freq", 60*time.Minute, true, nil)
 	vulnFreq     = apcfg.Duration("vuln_freq", 30*time.Minute, true, nil)
 	vulnWarnFreq = apcfg.Duration("vuln_freq_warn", time.Hour, true, nil)
 
@@ -108,6 +113,7 @@ func (h *hostmap) add(ip string) error {
 		return fmt.Errorf("hostmap already contains %s", ip)
 	}
 	h.active[ip] = true
+	metrics.knownHosts.Set(activeHosts.len())
 	return nil
 }
 
@@ -118,6 +124,7 @@ func (h *hostmap) del(ip string) error {
 		return fmt.Errorf("hostmap doesn't contain %s", ip)
 	}
 	delete(h.active, ip)
+	metrics.knownHosts.Set(activeHosts.len())
 	return nil
 }
 
@@ -143,11 +150,20 @@ type ScanRequest struct {
 	Args     []string
 	ScanType string
 	Scanner  func(*ScanRequest)
+	Child    *aputil.Child
 
-	Period *time.Duration
-	When   time.Time
+	Cancelled bool
+	Period    *time.Duration
+	When      time.Time
 
 	index int // Used for heap maintenance
+}
+
+func (r *ScanRequest) String() string {
+	if r.Mac != "" {
+		return fmt.Sprintf("%s/%s/%s", r.ScanType, r.Mac, r.IP)
+	}
+	return fmt.Sprintf("%s/%s", r.ScanType, r.IP)
 }
 
 /*******************************************************************
@@ -156,28 +172,6 @@ type ScanRequest struct {
  * ScanRequest queue
  */
 type scanQueue []*ScanRequest
-
-func (q scanQueue) Remove(idx int) *ScanRequest {
-	return heap.Remove(&q, 0).(*ScanRequest)
-}
-
-func (q scanQueue) SearchID(scanID uint32) int {
-	for i, req := range q {
-		if req != nil && req.ID == scanID {
-			return i
-		}
-	}
-	return -1
-}
-
-func (q scanQueue) SearchIP(ip string) int {
-	for i, req := range q {
-		if req != nil && req.IP == ip {
-			return i
-		}
-	}
-	return -1
-}
 
 func (q scanQueue) Len() int { return len(q) }
 
@@ -211,59 +205,101 @@ func nowString() string {
 	return time.Now().Format(time.RFC3339)
 }
 
-func rescheduleScan(scanID uint32, when *time.Time) error {
-	err := fmt.Errorf("no such scanID")
-	for _, pool := range scanPools {
-		var idx int
+func match(r *ScanRequest, id uint32, mac, ip string) bool {
+	var rval bool
 
-		pool.Lock()
-		if idx = pool.active.SearchID(scanID); idx >= 0 {
-			err = fmt.Errorf("scan is already running")
+	if r != nil {
+		if id > 0 && r.ID == id {
+			rval = true
 
-		} else if idx = pool.pending.SearchID(scanID); idx >= 0 {
-			err = nil
-			req := pool.pending.Remove(idx)
-			if when != nil {
-				req.When = *when
-				heap.Push(&pool.pending, req)
-			}
-		}
-		pool.Unlock()
-		if idx >= 0 {
-			break
+		} else if ip != "" && r.IP == ip {
+			rval = true
+
+		} else if mac != "" && r.Mac == mac {
+			rval = true
 		}
 	}
 
-	return err
+	return rval
 }
 
-func cancelScan(scanID uint32) error {
-	return rescheduleScan(scanID, nil)
-}
+// Look through the pending and active queues for all pools, looking for scans
+// that match the given scanID, mac, or ip address.  If 'when' is nil, pending
+// scans are cancelled and active scans are stopped.  If 'when' is non-nil,
+// pending scans are rescheduled but active scans are allowed to complete.
+//
+// The function returns the number of scans cancelled/rescheduled and the number
+// that were already in progress.
+func rescheduleScans(id uint32, mac, ip string, when *time.Time) (int, int) {
+	var processed, busy int
 
-// Look through the pending queue and remove any requests for the given IP
-// address
-func cancelAllScans(ip string) {
 	for _, pool := range scanPools {
 		pool.Lock()
+		pending := &pool.pending
+		active := &pool.active
+
+		resched := make([]*ScanRequest, 0)
 		// Because each heap removal may reorder the queue, we need to
 		// restart the search at the beginning each time we remove an
 		// entry
-		removed := true
-		for removed {
+		for removed := true; removed; {
 			removed = false
-			if idx := pool.pending.SearchIP(ip); idx >= 0 {
-				heap.Remove(&pool.pending, idx)
-				removed = true
+			for idx, req := range *pending {
+				if match(req, id, mac, ip) {
+					heap.Remove(pending, idx)
+					removed = true
+					resched = append(resched, req)
+					break
+				}
 			}
 		}
 
-		// We let an in-process scan complete, but we prevent it from
-		// being rescheduled
-		if idx := pool.active.SearchIP(ip); idx >= 0 {
-			pool.active[idx].Period = nil
+		for _, req := range resched {
+			processed++
+			if when == nil {
+				slog.Debugf("cancelling pending %v", req)
+				req.Cancelled = true
+			} else {
+				slog.Debugf("rescheduled pending %v", req)
+				req.When = *when
+				heap.Push(pending, req)
+			}
+		}
+
+		for _, req := range *active {
+			if match(req, id, mac, ip) {
+				if when == nil {
+					slog.Debugf("cancelling active %v", req)
+					processed++
+					req.Period = nil
+					req.Child.Stop()
+				} else {
+					busy++
+				}
+			}
 		}
 		pool.Unlock()
+	}
+
+	return processed, busy
+}
+
+func rescheduleScan(scanID uint32, when *time.Time) error {
+	var err error
+
+	p, b := rescheduleScans(scanID, "", "", when)
+	if b != 0 {
+		err = fmt.Errorf("scan already in progress")
+	} else if p == 0 {
+		err = fmt.Errorf("no matching scan found")
+	}
+	return err
+}
+
+func cancelAllScans(mac, ip string) {
+	rescheduleScans(0, mac, ip, nil)
+	if ip != "" {
+		activeHosts.del(ip)
 	}
 }
 
@@ -292,9 +328,8 @@ func scheduleScan(request *ScanRequest, delay time.Duration, force bool) {
 		if request.ID == 0 {
 			request.ID = atomic.AddUint32(&scanID, 1)
 		}
-		request.When = time.Now().Add(delay)
-		slog.Debugf("scheduling %s %s %s at %s, args: %v\n",
-			request.IP, request.Mac, st,
+		request.Cancelled = false
+		slog.Debugf("scheduling %v at %s, args: %v", request,
 			request.When.Format(time.RFC3339), request.Args)
 
 		pool.Lock()
@@ -304,9 +339,6 @@ func scheduleScan(request *ScanRequest, delay time.Duration, force bool) {
 }
 
 func poolGetNext(pool *scanPool) *ScanRequest {
-	pool.Lock()
-	defer pool.Unlock()
-
 	if len(pool.pending) == 0 {
 		return nil
 	}
@@ -325,9 +357,8 @@ func poolGetNext(pool *scanPool) *ScanRequest {
 		pool.scansLate++
 		pct := 100.0 * float32(pool.scansLate) / float32(pool.scansRun)
 
-		slog.Infof("starting %s:%s %1.1f seconds late.  "+
-			" %1.0f%% of %s scans are late.",
-			req.ScanType, req.IP, late, pct, req.ScanType)
+		slog.Infof("starting %v %1.1f seconds late.  %1.0f%% of %s "+
+			"scans are late.", req, late, pct, req.ScanType)
 	}
 
 	return req
@@ -335,54 +366,50 @@ func poolGetNext(pool *scanPool) *ScanRequest {
 
 // mkScanProp creates properties for @/clients/<mac>/scans/<scantype>/[start|finish]
 // if @/clients/<mac> exists.
-func mkScanProp(mac, scanType, startfinish, value string) {
-	propTest := fmt.Sprintf("@/clients/%s", mac)
-	propCreate := fmt.Sprintf("@/clients/%s/scans/%s/%s", mac, scanType, startfinish)
+func mkScanProp(req *ScanRequest, phase string) {
+	if req.Mac == "" || req.Cancelled {
+		return
+	}
+
+	base := "@/clients/" + req.Mac
+	scanProp := base + "/scans/" + req.ScanType + "/" + phase
 	props := []cfgapi.PropertyOp{
 		// avoid recreating clients which have been deleted.
-		{Op: cfgapi.PropTest, Name: propTest},
-		{Op: cfgapi.PropCreate, Name: propCreate, Value: nowString()},
+		{Op: cfgapi.PropTest, Name: base},
+		{Op: cfgapi.PropCreate, Name: scanProp, Value: nowString()},
 	}
-	slog.Debugf("props: %v", props)
 	_ = config.Execute(context.TODO(), props)
 }
 
 // scanner performs ScanRequests as they come in through the pending queue
 func scanner(pool *scanPool, threadID int) {
-	for {
-		req := poolGetNext(pool)
+	for pool.scanning {
+		pool.Lock()
+		if req := poolGetNext(pool); req != nil {
+			pool.active[threadID] = req
+			pool.Unlock()
 
-		if req == nil {
+			slog.Debugf("starting %v", req)
+			mkScanProp(req, "start")
+
+			req.Scanner(req)
+
+			mkScanProp(req, "finish")
+			slog.Debugf("finished %v", req)
+
+			pool.Lock()
+			pool.active[threadID] = nil
+			pool.Unlock()
+
+			if req.Period != nil {
+				scheduleScan(req, *req.Period, false)
+			}
+		} else {
+			pool.Unlock()
 			time.Sleep(time.Second)
-			continue
-		}
-
-		slog.Debugf("starting %s %s", req.IP, req.ScanType)
-
-		pool.Lock()
-		pool.active[threadID] = req
-		pool.Unlock()
-
-		if req.Mac != "" {
-			mkScanProp(req.Mac, req.ScanType, "start", nowString())
-		}
-
-		req.Scanner(req)
-
-		if req.Mac != "" {
-			mkScanProp(req.Mac, req.ScanType, "finish", nowString())
-		}
-
-		pool.Lock()
-		pool.active[threadID] = nil
-		pool.Unlock()
-
-		slog.Debugf("finished %s %s", req.IP, req.ScanType)
-
-		if req.Period != nil {
-			scheduleScan(req, *req.Period, false)
 		}
 	}
+	pool.wg.Done()
 }
 
 func scanGetLists() ([]ScanRequest, []ScanRequest) {
@@ -408,6 +435,7 @@ func newSubnetScan(ring, subnet string) *ScanRequest {
 	return &ScanRequest{
 		Ring:     ring,
 		IP:       subnet,
+		Args:     subnetNmapArgs,
 		ScanType: "subnet",
 		Scanner:  subnetScan,
 		Period:   hostScanFreq,
@@ -448,15 +476,13 @@ func newVulnScan(mac, ip string) *ScanRequest {
 
 func scannerRequest(mac, ip string, delay time.Duration) {
 	if err := activeHosts.add(ip); err != nil {
-		slog.Debugf("scannerRequest(\"%s\", \"%s\") ignored: %s",
-			mac, ip, "IP already in activeHosts")
+		slog.Debugf("scannerRequest(%s, %s) ignored: %v", mac, ip, err)
 		return
 	}
 	tcpScan := newTCPScan(mac, ip)
 	udpScan := newUDPScan(mac, ip)
 	vulnScan := newVulnScan(mac, ip)
 
-	metrics.knownHosts.Set(activeHosts.len())
 	scheduleScan(tcpScan, delay, false)
 	scheduleScan(udpScan, delay, false)
 	scheduleScan(vulnScan, delay, false)
@@ -478,14 +504,7 @@ func getMacIP(host *nmap.Host) (mac, ip string) {
 func subnetScan(req *ScanRequest) {
 	start := time.Now()
 
-	// Attempt to discover hosts:
-	//   - TCP SYN and ACK probe to the listed ports.
-	//   - UDP ping to the default port (40125).
-	//   - SCTP INIT ping to the default port (80).
-	args := []string{"-sn", "-PS22,53,3389,80,443",
-		"-PA22,53,3389,80,443", "-PU", "-PY"}
-
-	scanResults, err := nmapScan("subnetscan", req.IP, args)
+	scanResults, err := nmapScan(req)
 	if err != nil {
 		slog.Warnf("Scan of %s ring failed: %v", req.Ring, err)
 		return
@@ -531,52 +550,41 @@ func subnetScan(req *ScanRequest) {
 	metrics.subnetScanTime.Observe(done.Sub(start).Seconds())
 }
 
-func runCmd(cmd string, args []string) error {
-	var childProcess *os.Process
-
+func runCmd(req *ScanRequest, cmd string, args []string) error {
 	child := aputil.NewChild(cmd, args...)
+	req.Child = child
 
 	if *nmapVerbose {
 		child.UseZapLog("", slog, zapcore.DebugLevel)
 	}
 
 	err := child.Start()
-	if err == nil {
-		childLock.Lock()
-		childProcess = child.Process
-		childProcesses[childProcess] = true
-		childLock.Unlock()
-	}
 
 	if err != nil {
 		err = fmt.Errorf("error starting %s: %v", cmd, err)
-	} else {
-		if err = child.Wait(); err != nil {
-			err = fmt.Errorf("error running %s: %v", cmd, err)
-		}
-
-		childLock.Lock()
-		delete(childProcesses, childProcess)
-		childLock.Unlock()
+	} else if err = child.Wait(); err != nil {
+		err = fmt.Errorf("error running %s: %v", cmd, err)
 	}
+	req.Child = nil
+
 	return err
 }
 
 // scan uses nmap to scan ip with the given arguments, parsing its results into
 // an NmapRun struct.
-func nmapScan(prefix, ip string, nmapArgs []string) (*nmap.NmapRun, error) {
+func nmapScan(req *ScanRequest) (*nmap.NmapRun, error) {
 
-	file, err := ioutil.TempFile("", pname+"."+prefix+".")
+	file, err := ioutil.TempFile("", pname+"."+req.ScanType+".")
 	if err != nil {
 		return nil, fmt.Errorf("unable to create temp file: %v", err)
 	}
 	name := file.Name()
 	defer os.Remove(name)
 
-	args := []string{ip, "-oX", name}
-	args = append(args, nmapArgs...)
+	args := []string{req.IP, "-oX", name}
+	args = append(args, req.Args...)
 
-	if err = runCmd("/usr/bin/nmap", args); err != nil {
+	if err = runCmd(req, "/usr/bin/nmap", args); err != nil {
 		return nil, err
 	}
 
@@ -708,13 +716,16 @@ func marshalNmapResults(host *nmap.Host) *base_msg.Host {
 	return &h
 }
 
+// Check to see whether a specific IP address is being scanned
 func scanCheck(scantype, ip string) bool {
 	busy := false
-
 	if pool, ok := scanPools[scantype]; ok {
 		pool.Lock()
-		if idx := pool.active.SearchIP(ip); idx >= 0 {
-			busy = true
+		for _, req := range pool.active {
+			if match(req, 0, "", ip) {
+				busy = true
+				break
+			}
 		}
 		pool.Unlock()
 	}
@@ -781,7 +792,7 @@ func portScan(req *ScanRequest) {
 
 	iptablesRule("-I", rule)
 	start := time.Now()
-	res, err := nmapScan("portscan", req.IP, req.Args)
+	res, err := nmapScan(req)
 	done := time.Now()
 	iptablesRule("-D", rule)
 
@@ -806,9 +817,7 @@ func portScan(req *ScanRequest) {
 	host := &res.Hosts[0]
 	if host.Status.State != "up" {
 		slog.Infof("Host %s is down, stopping scans", req.IP)
-		activeHosts.del(req.IP)
-		metrics.knownHosts.Set(activeHosts.len())
-		cancelAllScans(req.IP)
+		cancelAllScans("", req.IP)
 		return
 	}
 
@@ -1028,7 +1037,7 @@ func vulnScan(req *ScanRequest) {
 
 	start := time.Now()
 	slog.Debugf("vulnerability scan starting: %s %v", prober, args)
-	if err = runCmd(prober, args); err != nil {
+	if err = runCmd(req, prober, args); err != nil {
 		slog.Warnf("vulnerability scan of %s failed: %v %v: %v",
 			req.IP, prober, strings.Join(args, " "), err)
 
@@ -1105,7 +1114,9 @@ func initScanPool(cnt int) *scanPool {
 	}
 	heap.Init(&pool.pending)
 
+	pool.scanning = true
 	for i := 0; i < cnt; i++ {
+		pool.wg.Add(1)
 		go scanner(pool, i)
 	}
 
@@ -1115,18 +1126,20 @@ func initScanPool(cnt int) *scanPool {
 func scannerFini(w *watcher) {
 	slog.Infof("Stopping active scans")
 
-	kill := func(sig syscall.Signal) error {
-		childLock.Lock()
-		for r := range childProcesses {
-			r.Signal(sig)
+	for _, pool := range scanPools {
+		pool.Lock()
+		pool.scanning = false
+		for _, req := range pool.active {
+			if req != nil {
+				req.Period = nil
+				req.Child.Stop()
+			}
 		}
-		childLock.Unlock()
-		// Don't bother trying to figure out partial errors.
-		return nil
+		pool.Unlock()
 	}
-	alive := func() bool { return len(childProcesses) > 0 }
-
-	aputil.RetryKill(kill, alive, 100*time.Millisecond)
+	for _, pool := range scanPools {
+		pool.wg.Wait()
+	}
 
 	slog.Infof("Shutting down scanner")
 	w.running = false
@@ -1135,8 +1148,6 @@ func scannerFini(w *watcher) {
 func scannerInit(w *watcher) {
 	activeHosts = hostmapCreate()
 	vulnInit()
-
-	childProcesses = make(map[*os.Process]bool)
 
 	scanPools = make(map[string]*scanPool)
 	for name, cnt := range scanThreads {

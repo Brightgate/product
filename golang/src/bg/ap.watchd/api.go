@@ -45,7 +45,8 @@ func delScan(req *base_msg.WatchdScanInfo) *base_msg.WatchdResponse {
 
 	if req.Id == nil {
 		resp.Errmsg = proto.String("missing scanID")
-	} else if err := cancelScan(*req.Id); err != nil {
+
+	} else if err := rescheduleScan(*req.Id, nil); err != nil {
 		resp.Errmsg = proto.String(fmt.Sprintf("%v", err))
 	}
 
