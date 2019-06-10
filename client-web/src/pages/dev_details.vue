@@ -27,6 +27,14 @@
         padding-right: 4px;
 }
 
+span.dev-active {
+  color: green;
+  text-align: right;
+}
+span.dev-inactive {
+  color: #888;
+  text-align: right;
+}
 </style>
 <template>
   <f7-page>
@@ -124,6 +132,22 @@
       <f7-list-item :title="$t('message.dev_details.network_name')">
         {{ dev.displayName }}
       </f7-list-item>
+      <f7-list-item :title="$t('message.dev_details.connection')">
+        <span :class="dev.active ? 'dev-active' : 'dev-inactive'">
+          <template v-if="dev.wireless">
+            <f7-icon :color="dev.active ? 'green' : 'grey'" material="wifi" size="16" />
+            {{ vaps[dev.connVAP].ssid }}<template v-if="dev.connBand">, {{ dev.connBand }}</template>
+            <br>
+            {{ activity }}
+          </template>
+          <template v-if="dev.wireless === false">
+            <f7-icon :color="dev.active ? 'green' : 'grey'" material="settings_ethernet" size="16" />
+            {{ $t('message.dev_details.wired_port') }}
+            <br>
+            {{ activity }}
+          </template>
+        </span>
+      </f7-list-item>
       <f7-list-item :title="$t('message.dev_details.ipv4_addr')">
         {{ dev.ipv4Addr ? dev.ipv4Addr : $t("message.dev_details.ipv4_addr_none") }}
       </f7-list-item>
@@ -131,16 +155,6 @@
         {{ dev.hwAddr }}
       </f7-list-item>
 
-      <f7-list-item :title="$t('message.dev_details.activity')">
-        {{ activity }}
-      </f7-list-item>
-      <f7-list-item v-if="dev.active && dev.connVAP" :title="$t('message.dev_details.conn_vap')">
-        <span>
-          <f7-icon material="wifi" size="16" />
-          {{ vaps[dev.connVAP].ssid }}
-          <template v-if="dev.connBand">, {{ dev.connBand }}</template>
-        </span>
-      </f7-list-item>
 
       <f7-list-item :title="$t('message.dev_details.vuln_scan')">
         {{ lastVulnScan }}

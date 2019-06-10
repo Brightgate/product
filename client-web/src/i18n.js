@@ -199,6 +199,7 @@ export default {
       },
       devices: {
         title: 'Devices',
+        num_alerts: '{count} Alert | {count} Alerts',
         show_recent: 'Show Recent Attempts...',
         hide_recent: 'Hide Recent Attempts...',
         cats: {
@@ -209,6 +210,15 @@ export default {
           media: 'Media',
           iot: 'Things',
           unknown: 'Unknown or Unidentifiable',
+        },
+        rings: {
+          unenrolled: 'Unenrolled',
+          quarantine: 'Quarantine',
+          core: 'Core',
+          standard: 'Standard',
+          devices: 'Devices',
+          guest: 'Guest',
+          internal: 'Internal',
         },
       },
       dev_details: {
@@ -232,13 +242,14 @@ export default {
         activity: 'Activity',
         active_true: 'Active',
         active_false: 'Inactive',
-        conn_vap: 'WiFi Network',
+        connection: 'Network',
         vuln_more_info: 'More Information ({source})',
         vuln_remediation: 'Remediation: {text}',
         vuln_first_detected: 'Reported: {time}',
         vuln_latest_detected: 'Recently Seen: {time}',
         vuln_repaired: 'Repaired: {time}',
         vuln_details: 'Details:',
+        wired_port: 'Wired Network',
       },
       enroll_guest: {
         title: 'Enroll Guest',
