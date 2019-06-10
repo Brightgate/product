@@ -20,15 +20,16 @@ span.pw-toggle {
 <template>
   <f7-page @page:beforein="onPageBeforeIn">
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.network_vap_editor.title')" sliding />
+    <bg-site-breadcrumb :siteid="$f7route.params.siteID" />
+
+    <f7-block-title>{{ $t('message.network_vap_editor.titles.' + vapName) }}</f7-block-title>
 
     <f7-block>
-      <h1>{{ $t('message.network.names.' + vapName) }}</h1>
       <div class="explainer">
         {{ $t('message.network_vap.descriptions.' + vapName) }}
       </div>
     </f7-block>
 
-    <f7-block-title>{{ $t('message.network_vap.properties') }} </f7-block-title>
     <f7-list no-hairlines>
       <!-- ssid input -->
       <f7-list-input
@@ -77,11 +78,16 @@ import vuex from 'vuex';
 import Debug from 'debug';
 import appDefs from '../app_defs';
 import siteApi from '../api/site';
+import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
 import 'fast-text-encoding'; // polyfill for TextEncoder
 
 const debug = Debug('page:network_vap_editor');
 
 export default {
+  components: {
+    'bg-site-breadcrumb': BGSiteBreadcrumb,
+  },
+
   data: function() {
     return {
       appDefs: appDefs,

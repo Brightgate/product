@@ -10,6 +10,7 @@
 <template>
   <f7-page ptr @ptr:refresh="pullRefresh">
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.devices.title')" sliding />
+    <bg-site-breadcrumb :siteid="$f7route.params.siteID" />
 
     <f7-list>
       <f7-list-group v-for="catkey in DEVICE_CATEGORY_ORDER"
@@ -63,11 +64,15 @@
 import {f7Popover} from 'framework7-vue';
 import Vuex from 'vuex';
 import {sortBy} from 'lodash-es';
+import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
 
 const DEVICE_CATEGORY_ORDER = ['recent', 'phone', 'computer', 'printer', 'media', 'iot', 'unknown'];
 
 export default {
-  components: {f7Popover},
+  components: {
+    'bg-site-breadcrumb': BGSiteBreadcrumb,
+    f7Popover,
+  },
 
   data: function() {
     return {

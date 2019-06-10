@@ -10,6 +10,8 @@
 <template>
   <f7-page ptr @page:beforein="onPageBeforeIn" @ptr:refresh="onPtrRefresh">
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.compliance_report.title')" sliding />
+    <bg-site-breadcrumb :siteid="$f7route.params.siteID" />
+
     <f7-card :title="$t('message.compliance_report.summary')">
       <f7-list no-hairlines no-hairlines-between>
         <f7-list-item media>
@@ -118,11 +120,13 @@ import Promise from 'bluebird';
 import {sortBy} from 'lodash-es';
 import vulnerability from '../vulnerability';
 import BGRingSummary from '../components/ring_summary.vue';
+import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
 
 export default {
 
   components: {
     'bg-ring-summary': BGRingSummary,
+    'bg-site-breadcrumb': BGSiteBreadcrumb,
   },
   data: function() {
     return {

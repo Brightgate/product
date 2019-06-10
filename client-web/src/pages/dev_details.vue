@@ -30,7 +30,8 @@
 </style>
 <template>
   <f7-page>
-    <f7-navbar :back-link="$t('message.general.back')" :title="dev.networkName + $t('message.dev_details._details')" sliding />
+    <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.dev_details.title')" sliding />
+    <bg-site-breadcrumb :siteid="$f7route.params.siteID" />
 
     <f7-block>
       <f7-row>
@@ -182,6 +183,8 @@ import Debug from 'debug';
 import {format, formatRelative, parseISO} from '../date-fns-wrapper';
 
 import vulnerability from '../vulnerability';
+import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
+
 const debug = Debug('page:dev-details');
 
 function repairable(vulnid, vuln) {
@@ -193,6 +196,10 @@ function repairable(vulnid, vuln) {
 }
 
 export default {
+  components: {
+    'bg-site-breadcrumb': BGSiteBreadcrumb,
+  },
+
   data: function() {
     return {
       ringChanging: false,

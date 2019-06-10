@@ -47,9 +47,9 @@ export default {
         current: 'Current',
       },
       site_controls: {
-        network: 'Network Configuration',
+        network: 'Networks',
         compliance_report: 'Compliance Report',
-        manage_devices: 'Manage Devices ({device_count})',
+        manage_devices: 'Devices ({device_count})',
         enroll_guest: 'Enroll a Guest User',
         users: 'Users',
       },
@@ -121,11 +121,16 @@ export default {
         ring_config: 'Trust Group Configuration',
       },
       network_vap_editor: {
-        title: 'Edit Network Details',
+        title: 'Edit Network Properties',
         ssid: 'SSID (Network Name)',
         passphrase: 'Passphrase',
         warning: 'If you are connected to the appliance via WiFi, changing these properties may cause you to become disconnected.',
         warning_title: 'WiFi Properties Warning',
+        titles: {
+          eap: 'Authorized User Network Properties',
+          psk: 'Devices Network Properties',
+          guest: 'Guest Network Properties',
+        },
         valid_ssid: {
           not_set: 'SSID must be set',
           too_long: 'SSID is too long {len}/32',
@@ -138,7 +143,7 @@ export default {
         },
       },
       compliance_report: {
-        title: 'Brightgate - Compliance Report',
+        title: 'Compliance Report',
         summary: 'Summary',
         summary_violations: 'There are no policy violations. | There is one policy violation.  Correct it to stay compliant. | There are {num} policy violations.  Correct these to stay compliant.',
         summary_no_violations: 'This network is currently in compliance with your policy.',
@@ -159,7 +164,7 @@ export default {
         security_rings: 'Trust Groups',
       },
       devices: {
-        title: 'Brightgate - Devices',
+        title: 'Devices',
         show_recent: 'Show Recent Attempts...',
         hide_recent: 'Hide Recent Attempts...',
         cats: {
@@ -173,7 +178,7 @@ export default {
         },
       },
       dev_details: {
-        _details: ' - Details',
+        title: 'Device Details',
         device: 'Device',
         uncertain_device: '(Tentative Device Identification)',
         unknown_model: 'Unknown',
@@ -202,7 +207,7 @@ export default {
         vuln_details: 'Details:',
       },
       enroll_guest: {
-        title: 'Brightgate - Enroll Guest',
+        title: 'Enroll Guest',
         header: 'Here are three simple ways to enroll a guest\'s device onto your guest network.',
         direct_subhead: 'Tell the guest the password',
         network_name: 'Network',
@@ -231,12 +236,13 @@ export default {
         down: 'The login system is not working right now.  It will be back shortly.',
       },
       users: {
-        title: 'Brightgate - Users',
+        title: 'Users',
         site_specific: 'Site-Specific Administrators',
         add_site_specific: 'Add Site-Specific Administrator',
         cloud_self_provisioned: 'Cloud Users',
       },
       user_details: {
+        title: 'User Details',
         user_name: 'User Name',
         user_type: 'User Type',
         email: 'Email',
@@ -314,7 +320,7 @@ export default {
       compliance_report: { // XXXI18N
       },
       devices: {
-        title: 'Brightgate - Geräte',
+        title: 'Geräte',
         show_recent: 'Neueste Versuche zeigen ...',
         hide_recent: 'Neueste Versuche verbergen ...',
         cats: {
@@ -328,7 +334,7 @@ export default {
         },
       },
       dev_details: {
-        _details: ' - Details',
+        title: 'Device Details', // XXXI18N
         device: 'Gerät',
         uncertain_device: '(Tentative Device Identification)', // XXXI18N
         unknown_model: 'Unknown',        // XXXI18N
@@ -357,7 +363,7 @@ export default {
         vuln_details: 'Details:', // XXXI18N
       },
       enroll_guest: {
-        title: 'Brightgate – Gastbenutzer Registrieren',
+        title: 'Gastbenutzer Registrieren',
         header: 'Enroll Guest Users with Brightgate', // XXXI18N
         direct_subhead: 'Manually', // XXXI18N
         sms_subhead: 'Via SMS', // XXXI18N
@@ -383,12 +389,13 @@ export default {
         down: 'The login system is not working right now.  It will be back shortly.', // XXXI18N
       },
       users: {
-        title: 'Brightgate - Benutzer',
+        title: 'Benutzer',
         site_specific: 'Site-Specific Users', // XXXI18N
         add_site_specific: 'Add Site-Specific User', // XXXI18N
         cloud_self_provisioned: 'Cloud-Self-Provisioned Users', // XXXI18N
       },
       user_details: {
+        title: 'User Details',  // XXXI18N
         user_name: 'User Name', // XXXI18N
         user_type: 'User Type', // XXXI18N
         uuid: 'UUID',

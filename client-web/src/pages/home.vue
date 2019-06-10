@@ -33,6 +33,13 @@
       </f7-nav-title>
     </f7-navbar>
 
+    <template v-if="appMode === appDefs.APPMODE_LOCAL">
+      <f7-block>
+        <h2>{{ $t("message.home.local_site") }}</h2>
+        {{ $t("message.home.local_site_explanation") }}
+      </f7-block>
+    </template>
+
     <f7-block-title>{{ $t("message.notifications.notifications") }}</f7-block-title>
     <f7-list media-list chevron-center>
       <f7-list-item
@@ -72,10 +79,6 @@
         </f7-list>
       </template>
 
-      <f7-block>
-        <h2>{{ $t("message.home.local_site") }}</h2>
-        {{ $t("message.home.local_site_explanation") }}
-      </f7-block>
       <f7-block-title>{{ $t("message.home.tools") }}</f7-block-title>
       <bg-site-controls
         :siteid="'0'"

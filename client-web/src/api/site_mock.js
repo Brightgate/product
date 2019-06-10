@@ -21,8 +21,10 @@ const debug = Debug('site-mock');
 // mock response to /api/sites when in APPMODE_LOCAL
 const mockLocalSites = [
   {
-    uuid: '0',
+    UUID: '0',
     name: 'Local Site',
+    organization: '',
+    organizationUUID: '0',
     roles: ['admin'],
   },
 ];
@@ -30,13 +32,17 @@ const mockLocalSites = [
 // mock response to /api/sites when in APPMODE_CLOUD
 const mockCloudSites = [
   {
-    uuid: '5182ab0b-39db-4256-86e0-8154171b35ac',
+    UUID: '5182ab0b-39db-4256-86e0-8154171b35ac',
     name: 'Scranton Office (Admin)',
+    organization: 'Dunder Mifflin',
+    organizationUUID: 'd91864cd-434a-4b52-8236-d3b95afde170',
     roles: ['admin'],
   },
   {
-    uuid: 'ef9b1046-95fa-41c5-a226-ad88198da9e2',
+    UUID: 'ef9b1046-95fa-41c5-a226-ad88198da9e2',
     name: 'Buffalo Office (User)',
+    organization: 'Dunder Mifflin',
+    organizationUUID: 'd91864cd-434a-4b52-8236-d3b95afde170',
     roles: ['user'],
   },
 ];

@@ -7,12 +7,18 @@
   express written permission of Brightgate Inc is prohibited, and any
   such unauthorized removal or alteration will be a violation of federal law.
 -->
+<style scoped>
+span.orgname {
+  font-size: 14pt;
+}
+</style>
 <template>
   <f7-page>
-    <f7-navbar :back-link="$t('message.general.back')" :title="site.name" sliding />
-
+    <f7-navbar :back-link="$t('message.general.back')" title="Site Administration" sliding />
     <f7-block>
-      <h2>{{ site.name }}</h2>
+      <h2>{{ site.regInfo.name }}<br>
+        <span class="orgname">{{ site.regInfo.organization }}</span>
+      </h2>
       <span v-if="siteAdmin">
         {{ $t('message.site_admin.admin_title') }}
       </span>

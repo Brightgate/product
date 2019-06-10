@@ -34,9 +34,11 @@ type siteHandler struct {
 }
 
 type siteResponse struct {
-	UUID  uuid.UUID `json:"uuid"`
-	Name  string    `json:"name"`
-	Roles []string  `json:"roles"`
+	UUID             uuid.UUID `json:"UUID"`
+	Name             string    `json:"name"`
+	Organization     string    `json:"organization"`
+	OrganizationUUID uuid.UUID `json:"organizationUUID"`
+	Roles            []string  `json:"roles"`
 }
 
 // getSites implements /api/sites, which presents a filtered list of
@@ -62,13 +64,21 @@ func (a *siteHandler) getSites(c echo.Context) error {
 
 	apiSites := make([]siteResponse, len(sites))
 	for i, site := range sites {
+		org, err := a.db.OrganizationByUUID(ctx, site.OrganizationUUID)
+		if err != nil {
+			c.Logger().Errorf("Failed to get org for site %v: %+v", site, err)
+			return echo.NewHTTPError(http.StatusInternalServerError, err)
+		}
+
 		// XXX Today, we derive Name from the registry name.  However,
 		// customers will want to have control over the site name, and
 		// this is best seen as a temporary measure.
 		apiSites[i] = siteResponse{
-			UUID:  site.UUID,
-			Name:  site.Name,
-			Roles: []string{},
+			UUID:             site.UUID,
+			Name:             site.Name,
+			Organization:     org.Name,
+			OrganizationUUID: site.OrganizationUUID,
+			Roles:            []string{},
 		}
 		for _, r := range roles {
 			if site.OrganizationUUID == r.OrganizationUUID {
@@ -98,6 +108,11 @@ func (a *siteHandler) getSitesUUID(c echo.Context) error {
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError)
 	}
+	org, err := a.db.OrganizationByUUID(ctx, site.OrganizationUUID)
+	if err != nil {
+		c.Logger().Errorf("Failed to get org for site %v: %+v", site, err)
+		return echo.NewHTTPError(http.StatusInternalServerError)
+	}
 	roles, err := a.db.AccountOrgRolesByAccountOrg(ctx, accountUUID, site.OrganizationUUID)
 	if err != nil {
 		c.Logger().Errorf("Failed to get roles: %+v", err)
@@ -105,9 +120,11 @@ func (a *siteHandler) getSitesUUID(c echo.Context) error {
 	}
 
 	resp := siteResponse{
-		UUID:  site.UUID,
-		Name:  site.Name,
-		Roles: roles,
+		UUID:             site.UUID,
+		Name:             site.Name,
+		Organization:     org.Name,
+		OrganizationUUID: org.UUID,
+		Roles:            roles,
 	}
 	return c.JSON(http.StatusOK, resp)
 }

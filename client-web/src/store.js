@@ -27,9 +27,12 @@ Vue.use(Vuex);
 const DEVICE_CATEGORY_ALL = ['recent', 'phone', 'computer', 'printer', 'media', 'iot', 'unknown'];
 const RETRY_DELAY = 1000;
 const LOCAL_SITE_ID = '0';
+const LOCAL_ORG_ID = '0';
 const LOCAL_REGINFO = {
-  uuid: LOCAL_SITE_ID,
+  UUID: LOCAL_SITE_ID,
   name: 'Local Site',
+  organization: 'Local Organization',
+  organizationUUID: LOCAL_ORG_ID,
   roles: [appDefs.ROLE_ADMIN],
 };
 
@@ -186,9 +189,11 @@ const mutations = {
       // Will create as needed
       assert(typeof val === 'object');
       assert(val.name !== undefined);
-      assert(val.uuid !== undefined);
+      assert(val.UUID !== undefined);
+      assert(val.organization !== undefined);
+      assert(val.organizationUUID !== undefined);
       // If the site exists, already, grab that one.
-      const siteID = val.uuid;
+      const siteID = val.UUID;
       const site = state.sites[siteID] === undefined ? new Site(siteID) : state.sites[siteID];
       site.regInfo = val;
       Vue.set(newSitesDict, siteID, site);
@@ -198,7 +203,7 @@ const mutations = {
     Vue.set(state, 'sites', newSitesDict);
     // If there's only one site, default to it.
     if (nSites === 1) {
-      state.currentSiteID = newSites[0].uuid;
+      state.currentSiteID = newSites[0].UUID;
       state.currentSite = state.sites[state.currentSiteID];
     }
     // If the current site ID is gone (this should be rare; it can definitely

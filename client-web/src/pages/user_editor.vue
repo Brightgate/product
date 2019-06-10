@@ -13,6 +13,7 @@
       :back-link="$t('message.general.back')"
       :title="newUser ? $t('message.user_details.add_title') : $t('message.user_details.edit_title')"
       sliding />
+    <bg-site-breadcrumb :siteid="$f7route.params.siteID" />
 
     <f7-list>
       <!-- uid -- user name -->
@@ -97,9 +98,15 @@
 <script>
 import {cloneDeep} from 'lodash-es';
 import Debug from 'debug';
+import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
+
 const debug = Debug('page:user-editor');
 
 export default {
+  components: {
+    'bg-site-breadcrumb': BGSiteBreadcrumb,
+  },
+
   data: function() {
     const routeUUID = this.$f7route.params.UUID;
     const d = {

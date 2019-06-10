@@ -10,6 +10,7 @@
 <template>
   <f7-page ptr @ptr:refresh="onPtrRefresh" @page:beforein="onPageBeforeIn">
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.network.title')" sliding />
+    <bg-site-breadcrumb :siteid="$f7route.params.siteID" />
 
     <f7-block-title>{{ $t('message.network.networks') }} </f7-block-title>
     <f7-list media-list chevron-center>
@@ -80,9 +81,15 @@ import vuex from 'vuex';
 import Debug from 'debug';
 import Promise from 'bluebird';
 import appDefs from '../app_defs';
+
+import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
+
 const debug = Debug('page:network');
 
 export default {
+  components: {
+    'bg-site-breadcrumb': BGSiteBreadcrumb,
+  },
   data: function() {
     return {
       appDefs: appDefs,

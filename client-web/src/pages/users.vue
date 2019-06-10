@@ -14,13 +14,7 @@
     @page:beforein="onPageBeforeIn">
 
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.users.title')" sliding />
-
-    <!-- n.b. FAB must be direct child of a page -->
-    <!--
-    <f7-fab color="pink" href="false" @click="openEditorNew">
-      <f7-icon f7="add" />
-    </f7-fab>
-    -->
+    <bg-site-breadcrumb :siteid="$f7route.params.siteID" />
 
     <f7-list>
       <f7-list-item :group-title="true" :title="$t('message.users.cloud_self_provisioned')" />
@@ -55,9 +49,15 @@
 <script>
 import {pickBy, orderBy} from 'lodash-es';
 import Debug from 'debug';
+import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
+
 const debug = Debug('page:users');
 
 export default {
+  components: {
+    'bg-site-breadcrumb': BGSiteBreadcrumb,
+  },
+
   computed: {
     spUsers: function() {
       const spu = pickBy(this.$store.getters.users, {SelfProvisioning: true});
@@ -69,12 +69,6 @@ export default {
     },
   },
   methods: {
-    openEditorNew: function() {
-      const editor = `${this.$f7route.url}NEW/editor/`;
-      debug('opening editor ', editor);
-      this.$f7router.navigate(editor);
-    },
-
     usersPullRefresh: async function(event, done) {
       try {
         await this.$store.dispatch('fetchUsers');

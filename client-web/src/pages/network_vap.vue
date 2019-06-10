@@ -26,8 +26,10 @@ span.pw-toggle {
       <f7-icon size="32" ios="f7:settings" md="material:settings" />
     </f7-fab>
 
+    <bg-site-breadcrumb :siteid="$f7route.params.siteID" />
+
+    <f7-block-title>{{ $t('message.network.names.' + vapName) }}</f7-block-title>
     <f7-block>
-      <h1>{{ $t('message.network.names.' + vapName) }}</h1>
       <div class="subtitle">
         <f7-icon material="wifi" size="24" /> {{ vap.ssid }}
       </div>
@@ -90,10 +92,14 @@ import Debug from 'debug';
 import {pickBy} from 'lodash-es';
 import {formatDistanceStrict} from '../date-fns-wrapper';
 import appDefs from '../app_defs';
+import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
 
 const debug = Debug('page:network_vap');
 
 export default {
+  components: {
+    'bg-site-breadcrumb': BGSiteBreadcrumb,
+  },
   data: function() {
     return {
       appDefs: appDefs,

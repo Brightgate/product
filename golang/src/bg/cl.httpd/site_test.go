@@ -38,6 +38,11 @@ var (
 	accountUUID = uuid.Must(uuid.FromString("20000000-0000-0000-0000-000000000000"))
 	personUUID  = uuid.Must(uuid.FromString("30000000-0000-0000-0000-000000000000"))
 
+	mockOrg = appliancedb.Organization{
+		UUID: orgUUID,
+		Name: "TestOrg",
+	}
+
 	mockSites = []appliancedb.CustomerSite{
 		appliancedb.CustomerSite{
 			UUID:             uuid.Must(uuid.FromString("b3798a8e-41e0-4939-a038-e7675af864d5")),
@@ -158,6 +163,7 @@ func TestSites(t *testing.T) {
 	dMock := &mocks.DataStore{}
 	dMock.On("CustomerSitesByAccount", mock.Anything, mock.Anything).Return(mockSites, nil)
 	dMock.On("AccountOrgRolesByAccount", mock.Anything, mock.Anything).Return(mockAccountOrgRoles, nil)
+	dMock.On("OrganizationByUUID", mock.Anything, mock.Anything).Return(&mockOrg, nil)
 	defer dMock.AssertExpectations(t)
 
 	// Setup Echo
@@ -177,14 +183,19 @@ func TestSites(t *testing.T) {
 	assert.Equal(http.StatusOK, rec.Code)
 	exp := fmt.Sprintf(`[
 	{
-		"uuid": "%s",
+		"UUID": "%s",
 		"name": "%s",
+		"organizationUUID": "%s",
+		"organization": "%s",
 		"roles": ["admin"]
 	},{
-		"uuid": "%s",
+		"UUID": "%s",
 		"name": "%s",
+		"organizationUUID": "%s",
+		"organization": "%s",
 		"roles": ["admin"]
-	}]`, m0.UUID, m0.Name, m1.UUID, m1.Name)
+	}]`, m0.UUID, m0.Name, mockOrg.UUID.String(), mockOrg.Name,
+		m1.UUID, m1.Name, mockOrg.UUID.String(), mockOrg.Name)
 	t.Logf("return body: %s", rec.Body.String())
 	assert.JSONEq(exp, rec.Body.String())
 }
@@ -197,6 +208,7 @@ func TestSitesUUID(t *testing.T) {
 	dMock.On("AccountOrgRolesByAccountOrg", mock.Anything, mock.Anything, mock.Anything).Return([]string{"admin"}, nil)
 	dMock.On("CustomerSiteByUUID", mock.Anything, m0.UUID).Return(&m0, nil)
 	dMock.On("CustomerSiteByUUID", mock.Anything, mock.Anything).Return(nil, appliancedb.NotFoundError{})
+	dMock.On("OrganizationByUUID", mock.Anything, mock.Anything).Return(&mockOrg, nil)
 	defer dMock.AssertExpectations(t)
 
 	// Setup Echo
@@ -215,9 +227,11 @@ func TestSitesUUID(t *testing.T) {
 	e.ServeHTTP(rec, req)
 	assert.Equal(http.StatusOK, rec.Code)
 	expStruct := &siteResponse{
-		UUID:  m0.UUID,
-		Name:  m0.Name,
-		Roles: []string{"admin"},
+		UUID:             m0.UUID,
+		Name:             m0.Name,
+		Organization:     mockOrg.Name,
+		OrganizationUUID: mockOrg.UUID,
+		Roles:            []string{"admin"},
 	}
 	exp, err := json.Marshal(expStruct)
 	assert.NoError(err)

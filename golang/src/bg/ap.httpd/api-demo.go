@@ -683,15 +683,19 @@ func demoUsersHandler(w http.ResponseWriter, r *http.Request) {
 type daSite struct {
 	// The site breaks the UUID contract by using '0' as its
 	// reserved UUID; hence we have to use a string here.
-	UUID  string   `json:"uuid"`
-	Name  string   `json:"name"`
-	Roles []string `json:"roles"`
+	UUID             string   `json:"UUID"`
+	Name             string   `json:"name"`
+	Organization     string   `json:"organization"`
+	OrganizationUUID string   `json:"organizationUUID"`
+	Roles            []string `json:"roles"`
 }
 
 var site0 = daSite{
-	UUID:  "0",
-	Name:  "Local Site",
-	Roles: []string{"admin"},
+	UUID:             "0",
+	Name:             "Local Site",
+	Organization:     "",
+	OrganizationUUID: "0",
+	Roles:            []string{"admin"},
 }
 
 func demoSitesHandler(w http.ResponseWriter, r *http.Request) {

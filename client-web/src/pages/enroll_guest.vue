@@ -43,6 +43,7 @@ div.list-nomargin {
 <template>
   <f7-page name="enroll">
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.enroll_guest.title')" sliding />
+    <bg-site-breadcrumb :siteid="$f7route.params.siteID" />
     <f7-block bg-color="white">
       <p>{{ $t('message.enroll_guest.header') }}</p>
       <div class="flex-grid">
@@ -129,11 +130,14 @@ import {isValidNumber, AsYouType} from 'libphonenumber-js';
 import VueQrcode from '@chenfengyuan/vue-qrcode';
 import Debug from 'debug';
 import appDefs from '../app_defs';
+import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
+
 const debug = Debug('page:enroll-guest');
 let phoneAYT = null;
 
 export default {
   components: {
+    'bg-site-breadcrumb': BGSiteBreadcrumb,
     'qrcode': VueQrcode,
   },
 

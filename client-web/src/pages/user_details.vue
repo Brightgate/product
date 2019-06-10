@@ -9,7 +9,8 @@
 -->
 <template>
   <f7-page>
-    <f7-navbar :back-link="$t('message.general.back')" :title="user.DisplayName" sliding />
+    <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.user_details.title')" sliding />
+    <bg-site-breadcrumb :siteid="$f7route.params.siteID" />
 
     <f7-fab v-if="user.SelfProvisioning === false" color="pink" @click="openEditor">
       <f7-icon f7="compose_fill" />
@@ -102,9 +103,16 @@
 </template>
 <script>
 import Debug from 'debug';
+
+import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
+
 const debug = Debug('page:user-details');
 
 export default {
+  components: {
+    'bg-site-breadcrumb': BGSiteBreadcrumb,
+  },
+
   computed: {
     user: function() {
       return this.$store.getters.userByUUID(this.$f7route.params.UUID);
