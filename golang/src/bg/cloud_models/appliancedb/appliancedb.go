@@ -16,14 +16,14 @@ import (
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/guregu/null"
 	"github.com/jmoiron/sqlx"
 
-	// As per pq documentation
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 	"github.com/pkg/errors"
 	"github.com/satori/uuid"
 )
@@ -177,6 +177,44 @@ func (e NotFoundError) Error() string {
 	return e.s
 }
 
+// SyntaxError may be returned when there is a syntax error in the SQL query.
+type SyntaxError struct {
+	err   *pq.Error
+	query string
+}
+
+func (e SyntaxError) Error() string {
+	qLines := strings.Split(e.query, "\n")
+	errPos, err := strconv.Atoi(e.err.Position)
+	if err != nil {
+		if e.err.Position == "" {
+			return e.err.Error()
+		}
+		return fmt.Sprintf("%s (at byte %s)", e.err, e.err.Position)
+	}
+
+	var pos, i, col int
+	var line string
+	for i, line = range qLines {
+		if errPos >= pos && errPos <= pos+len(line) {
+			col = errPos - pos
+			break
+		}
+		pos += len(line) + 1 // +1 for newline
+	}
+
+	return fmt.Sprintf("%s (at byte %d: line %d, col %d):\n%s",
+		e.err, errPos, i+1, col, line)
+}
+
+func mkSyntaxError(e error, query string) error {
+	pqErr, ok := e.(*pq.Error)
+	if !ok || pqErr.Code.Name() != "syntax_error" {
+		return e
+	}
+	return SyntaxError{pqErr, query}
+}
+
 func (i *ApplianceID) String() string {
 	var hwser = "-"
 	var mac = "-"
@@ -236,6 +274,7 @@ func (db *ApplianceDB) LoadSchema(ctx context.Context, schemaDir string) error {
 			return errors.Wrapf(err, "failed to read sql in file %s", path)
 		}
 		_, err = db.ExecContext(ctx, string(bytes))
+		err = mkSyntaxError(err, string(bytes))
 		if err != nil {
 			return errors.Wrapf(err, "failed to exec sql in file %s", path)
 		}
