@@ -138,6 +138,7 @@ unit: sectors
 var (
 	dryRun           bool
 	forceRepartition bool
+	forceInstall     bool
 	kernelOnly       bool
 	imageDir         string
 	installSide      string
@@ -380,28 +381,46 @@ func isFilesystemMounted(mtpt string) bool {
 	return false
 }
 
+func isDirPresent(dpath string) bool {
+	fi, err := os.Stat(dpath)
+	if err != nil {
+		return false
+	}
+
+	if fi.Mode().IsDir() {
+		return true
+	}
+
+	return false
+}
+
+func createAbsentDir(dpath string) {
+	if !isDirPresent("dpath") {
+		log.Printf("creating '%s'", dpath)
+		mustMkdirAll("dpath", 0755)
+	}
+}
+
 // If you want to corrupt an instantiated F2FS filesystem, then
 //
 //     # dd if=/dev/random of=/dev/mmcblk0p3 bs=128K count=96
 //
 // should suffice.
 func dataFilesystemAcceptable() bool {
-	if isFilesystemMounted("/data") {
-		return true
+	if !isFilesystemMounted("/data") {
+
+		// Attempt a mount.
+		err := syscall.Mount(getDataDevice(), "/data", "f2fs", syscall.MS_NOSUID, "")
+		if err != nil {
+			log.Printf("couldn't mount /data: %v\n", err)
+			return false
+		}
 	}
 
-	// Attempt a mount.
-	err := syscall.Mount(getDataDevice(), "/data", "f2fs", syscall.MS_NOSUID, "")
-	if err != nil {
-		log.Printf("couldn't mount /data: %v\n", err)
-		return false
-	}
+	createAbsentDir("/data/configd")
+	createAbsentDir("/data/secret/rpcd")
 
-	if isFilesystemMounted("/data") {
-		return true
-	}
-
-	return false
+	return true
 }
 
 func createDataFilesystem() {
@@ -964,6 +983,10 @@ func install(cmd *cobra.Command, args []string) error {
 
 	log.Printf("installing to side '%s'", sides[side])
 
+	if len(packages) == 0 && !forceInstall {
+		log.Fatalf("no packages provided in invocation; install aborted")
+	}
+
 	if dryRun {
 		log.Println("dry-run: skipping busybox copy to /tmp")
 	} else {
@@ -1215,7 +1238,9 @@ func main() {
 		Args:  cobra.NoArgs,
 		RunE:  install,
 	}
-	installCmd.Flags().BoolVarP(&forceRepartition, "force-repartition", "F", false,
+	installCmd.Flags().BoolVar(&forceInstall, "force-install", false,
+		"proceed with install unconditionally")
+	installCmd.Flags().BoolVar(&forceRepartition, "force-repartition", false,
 		"always repartition storage device")
 	installCmd.Flags().BoolVarP(&clearOverlay, "clear-overlay", "C", false,
 		"force mkfs on overlay backing store")
