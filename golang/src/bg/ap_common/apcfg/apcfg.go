@@ -21,8 +21,10 @@ import (
 
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
+	"bg/ap_common/mcp"
 	"bg/ap_common/platform"
 	"bg/base_def"
+	"bg/base_msg"
 	"bg/common/cfgapi"
 	"bg/common/cfgmsg"
 
@@ -35,6 +37,8 @@ import (
 const (
 	sendTimeout = base_def.LOCAL_ZMQ_SEND_TIMEOUT * time.Second
 	recvTimeout = base_def.LOCAL_ZMQ_RECV_TIMEOUT * time.Second
+	errLimit    = 5
+	daemon      = "configd"
 )
 
 // APConfig is an opaque type representing a connection to ap.configd
@@ -50,8 +54,73 @@ type APConfig struct {
 	expireHandlers []delexpMatch
 	handling       bool
 	level          cfgapi.AccessLevel
+	errChan        *chan error
 
 	sync.Mutex
+}
+
+func (c *APConfig) sendSysError() {
+	sysErr := &base_msg.EventSysError{
+		Timestamp: aputil.NowToProtobuf(),
+		Sender:    proto.String(c.sender),
+		Debug:     proto.String("-"),
+		Message:   proto.String(daemon + " not responding."),
+	}
+
+	err := c.broker.Publish(sysErr, base_def.TOPIC_ERROR)
+	if err != nil {
+		log.Printf("couldn't publish %s: %v", base_def.TOPIC_ERROR, err)
+	}
+}
+
+// HealthMonitor runs as a goroutine to track all failures to communicate with
+// configd.  When we exceed a certain threshhold, we assume it means that
+// configd is in an unrecoverable state, and we ask mcp to kill it.
+func HealthMonitor(api *cfgapi.Handle, mcp *mcp.MCP) {
+	var nextCrash time.Time
+
+	c := api.GetComm().(*APConfig)
+
+	c.Lock()
+	if c.errChan != nil {
+		log.Fatalf("multiple config healthMonitors created")
+	}
+
+	errChan := make(chan error)
+	c.errChan = &errChan
+	c.Unlock()
+
+	errCnt := 0
+	for {
+		err := <-errChan
+		if err == nil {
+			if errCnt != 0 {
+				log.Printf("clearing after %d errors\n", errCnt)
+			}
+			errCnt = 0
+		} else {
+			errCnt++
+			if errCnt > errLimit && time.Now().After(nextCrash) {
+				log.Printf("configd not responding: " +
+					"notifying ap.mcp\n")
+				c.Lock()
+				c.sendSysError()
+				c.Unlock()
+				if err = mcp.Do(daemon, "crash"); err != nil {
+					log.Printf("failed to crash %s: %v",
+						daemon, err)
+				}
+
+				// mcp's dependency chain should result in this
+				// daemon being taken down right after configd,
+				// but this is an asynchronous process.  Give
+				// it a little time to complete before trying
+				// again.
+				nextCrash = time.Now().Add(10 * time.Second)
+				errCnt = 0
+			}
+		}
+	}
 }
 
 type cmdStatus struct {
@@ -144,6 +213,7 @@ func (c *APConfig) disconnect() {
 func (c *APConfig) sendOp(query *cfgmsg.ConfigQuery) (string, error) {
 	const retryLimit = 3
 	var reply [][]byte
+	var rval string
 
 	query.Sender = c.sender
 	query.Level = int32(c.level)
@@ -193,7 +263,10 @@ func (c *APConfig) sendOp(query *cfgmsg.ConfigQuery) (string, error) {
 	}
 	c.Unlock()
 
-	var rval string
+	if c.errChan != nil {
+		(*c.errChan) <- err
+	}
+
 	if err == nil && len(reply) > 0 {
 		r := &cfgmsg.ConfigResponse{}
 		proto.Unmarshal(reply[0], r)

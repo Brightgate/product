@@ -110,7 +110,7 @@ var (
 	hostapdProcess *aputil.Child // track the hostapd proc
 
 	plat    *platform.Platform
-	configd *cfgapi.Handle
+	config  *cfgapi.Handle
 	mcpd    *mcp.MCP
 	slog    *zap.SugaredLogger
 	running bool
@@ -155,7 +155,7 @@ func certStateChange(path []string, val string, expires *time.Time) {
 // Generate the user database needed for hostapd in RADIUS mode.
 func generateRadiusHostapdUsers(rc *rConf) string {
 	// Get current users.
-	rc.Users = configd.GetUsers()
+	rc.Users = config.GetUsers()
 
 	// Incomplete users should not be included in the config file.
 	for u, i := range rc.Users {
@@ -317,7 +317,7 @@ func runOne(rc *rConf) {
 
 func establishSecret() ([]byte, error) {
 	// If @/network/radius_auth_secret is already set, retrieve its value.
-	sp, err := configd.GetProp(radiusAuthSecret)
+	sp, err := config.GetProp(radiusAuthSecret)
 	if err == nil {
 		return []byte(sp), nil
 	}
@@ -337,7 +337,7 @@ func establishSecret() ([]byte, error) {
 	// base64 encode radius_auth_secret
 	s64 := base64.StdEncoding.EncodeToString(s)
 	// XXX Handle staleness by expiration?
-	err = configd.CreateProp(radiusAuthSecret, (s64), nil)
+	err = config.CreateProp(radiusAuthSecret, (s64), nil)
 	if err != nil {
 		return nil, fmt.Errorf("could not create '%s': %v", radiusAuthSecret, err)
 	}
@@ -382,12 +382,13 @@ func main() {
 	brokerd := broker.NewBroker(slog, pname)
 	defer brokerd.Fini()
 
-	configd, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
+	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err != nil {
 		slog.Fatalf("cannot connect to configd: %v", err)
 	}
+	go apcfg.HealthMonitor(config, mcpd)
 
-	domainName, err := configd.GetDomain()
+	domainName, err := config.GetDomain()
 	if err != nil {
 		slog.Fatalf("failed to fetch gateway domain: %v", err)
 	}
@@ -396,7 +397,7 @@ func main() {
 	// Find the TLS key and certificate we should be using.  If there isn't
 	// one, sleep until ap.rpcd notifies us one is available, and then
 	// restart.
-	configd.HandleChange(`^@/certs/.*/state`, certStateChange)
+	config.HandleChange(`^@/certs/.*/state`, certStateChange)
 	certPaths := certificate.GetKeyCertPaths(domainName)
 	if certPaths == nil {
 		slog.Warn("Sleeping until a cert is presented")
@@ -408,9 +409,9 @@ func main() {
 		slog.Fatalf("Cannot establish secret: %v", err)
 	}
 
-	configd.HandleChange(`^@/users/.*$`, configUserChanged)
-	configd.HandleChange(`^@/network/radius_auth_secret`, configNetworkRadiusSecretChanged)
-	configd.HandleChange(`^@/siteid`, siteIDChange)
+	config.HandleChange(`^@/users/.*$`, configUserChanged)
+	config.HandleChange(`^@/network/radius_auth_secret`, configNetworkRadiusSecretChanged)
+	config.HandleChange(`^@/siteid`, siteIDChange)
 
 	mcpd.SetState(mcp.ONLINE)
 

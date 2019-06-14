@@ -254,6 +254,12 @@ type PropertyNode struct {
 	Children ChildMap   `json:"Children,omitempty"`
 }
 
+// GetComm takes a handle to a cfgapi endpoint and returns the handle for
+// its communications layer.
+func (c *Handle) GetComm() interface{} {
+	return c.exec
+}
+
 // NewHandle takes a handle to a communications layer, and returns a handle
 // that represents a cfgapi client endpoint.
 func NewHandle(exec ConfigExec) *Handle {

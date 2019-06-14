@@ -353,6 +353,7 @@ func main() {
 	if err != nil {
 		slog.Fatalf("cannot connect to configd: %v", err)
 	}
+	go apcfg.HealthMonitor(config, mcpd)
 
 	config.HandleDelete(`^@/clients/.*`, configClientDelete)
 	config.HandleExpire(`^@/clients/.*/ipv4$`, configClientDelete)

@@ -216,6 +216,7 @@ func commonInit() error {
 		if err != nil {
 			return fmt.Errorf("connecting to configd: %v", err)
 		}
+		go apcfg.HealthMonitor(config, mcpd)
 	}
 	return nil
 }

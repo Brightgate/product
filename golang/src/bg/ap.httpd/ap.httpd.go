@@ -302,17 +302,15 @@ func main() {
 	defer brokerd.Fini()
 
 	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
-	if err == nil {
-		rings = config.GetRings()
+	if err != nil {
+		slog.Fatalf("cannot connect to configd: %v", err)
 	}
+	go apcfg.HealthMonitor(config, mcpd)
 
+	rings = config.GetRings()
 	if rings == nil {
 		mcpd.SetState(mcp.BROKEN)
-		if err != nil {
-			slog.Fatalf("cannot connect to configd: %v\n", err)
-		} else {
-			slog.Fatal("can't get ring configuration\n")
-		}
+		slog.Fatalf("can't get ring configuration")
 	}
 
 	plat = platform.NewPlatform()

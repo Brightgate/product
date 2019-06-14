@@ -150,6 +150,7 @@ message EventSysError {
 
 	enum Cause {
 		RENEWED_SSL_CERTIFICATE = 1;
+		DAEMON_CRASH_REQUESTED = 2;
 	}
 	optional Cause reason = 0x341;
 	optional string message = 0x342;

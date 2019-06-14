@@ -58,7 +58,7 @@ var (
 	_        = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
 
 	brokerd *broker.Broker
-	configd *cfgapi.Handle
+	config  *cfgapi.Handle
 	slog    *zap.SugaredLogger
 
 	ouiDB   oui.DynamicDB
@@ -361,7 +361,7 @@ func updateClient(hwaddr uint64, devID string, confidence float32) {
 		{Op: cfgapi.PropCreate, Name: identProp, Value: devID},
 		{Op: cfgapi.PropCreate, Name: confProp, Value: fmt.Sprintf("%.2f", confidence)},
 	}
-	if _, err := configd.Execute(nil, props).Wait(nil); err != nil {
+	if _, err := config.Execute(nil, props).Wait(nil); err != nil {
 		if err != cfgapi.ErrNoProp {
 			slog.Errorf("Failed to update client properties: %s", err)
 		}
@@ -369,7 +369,7 @@ func updateClient(hwaddr uint64, devID string, confidence float32) {
 }
 
 func recoverClients() {
-	clients := configd.GetClients()
+	clients := config.GetClients()
 
 	for macaddr, client := range clients {
 		hwaddr, err := net.ParseMAC(macaddr)
@@ -406,27 +406,28 @@ func main() {
 
 	slog.Infof("starting")
 
+	mcpd, err := mcp.New(pname)
+	if err != nil {
+		slog.Fatalf("failed to connect to mcp")
+	}
+
 	// Use the broker to listen for appropriate messages to create and update
 	// our observations. To respect a client's privacy we won't register any
 	// handlers until we have recovered each client's privacy configuration.
 	brokerd = broker.NewBroker(slog, pname)
 	defer brokerd.Fini()
 
-	configd, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
+	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
 	if err != nil {
 		slog.Fatalf("cannot connect to configd: %v", err)
 	}
+	go apcfg.HealthMonitor(config, mcpd)
 
 	plat := platform.NewPlatform()
 
 	*dataDir = plat.ExpandDirPath(platform.APPackage, "etc/identifierd")
 	*modelDir = plat.ExpandDirPath(platform.APPackage, "etc/identifierd/device_model")
 	*logDir = plat.ExpandDirPath(platform.APData, "identifierd")
-
-	mcpd, err := mcp.New(pname)
-	if err != nil {
-		slog.Warnf("failed to connect to mcp")
-	}
 
 	// OUI database
 	ouiPath := filepath.Join(*dataDir, ouiFile)
@@ -459,12 +460,12 @@ func main() {
 	brokerd.Handle(base_def.TOPIC_LISTEN, handleListen)
 	brokerd.Handle(base_def.TOPIC_OPTIONS, handleOptions)
 
-	configd.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
-	configd.HandleChange(`^@/clients/.*/dhcp_name$`, configDHCPChanged)
-	configd.HandleDelete(`^@/clients/.*/ipv4$`, configIPv4Delexp)
-	configd.HandleExpire(`^@/clients/.*/ipv4$`, configIPv4Delexp)
-	configd.HandleChange(`^@/clients/.*/dns_private$`, configPrivacyChanged)
-	configd.HandleDelete(`^@/clients/.*/dns_private$`, configPrivacyDelete)
+	config.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
+	config.HandleChange(`^@/clients/.*/dhcp_name$`, configDHCPChanged)
+	config.HandleDelete(`^@/clients/.*/ipv4$`, configIPv4Delexp)
+	config.HandleExpire(`^@/clients/.*/ipv4$`, configIPv4Delexp)
+	config.HandleChange(`^@/clients/.*/dns_private$`, configPrivacyChanged)
+	config.HandleDelete(`^@/clients/.*/dns_private$`, configPrivacyDelete)
 
 	if err = os.MkdirAll(*logDir, 0755); err != nil {
 		slog.Fatalf("failed to mkdir:", err)

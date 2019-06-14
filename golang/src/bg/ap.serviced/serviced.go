@@ -227,6 +227,8 @@ func main() {
 	if err != nil {
 		slog.Fatalf("cannot connect to configd: %v", err)
 	}
+	go apcfg.HealthMonitor(config, mcpd)
+
 	clients = config.GetClients()
 	rings = config.GetRings()
 
