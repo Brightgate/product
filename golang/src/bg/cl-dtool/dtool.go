@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -50,6 +50,7 @@ import (
 	"time"
 
 	"bg/cl_common/daemonutils"
+	"bg/common/archive"
 
 	"cloud.google.com/go/storage"
 	"go.uber.org/zap"
@@ -69,7 +70,9 @@ var (
 	endFlag   = flag.String("end", "", "end time")
 	srcFlag   = flag.String("src", "", "data source")
 	dstFlag   = flag.String("dst", "", "data destination")
+	binFlag   = flag.Bool("b", false, "output binary data")
 	verbose   = flag.Bool("v", false, "verbose output")
+	uuidFlag  = flag.String("u", "", "uuid for export")
 	ctypeFlag = flag.String("ctype", "", "impose a content-type")
 
 	gcpCtx    context.Context
@@ -83,6 +86,25 @@ var (
 
 	objNameRE = regexp.MustCompile(`(.*)/(.*)\.(.*)`)
 )
+
+type object struct {
+	name  string
+	ctype string
+}
+
+var typeFamily = map[string]string{
+	archive.DropContentType: "drop",
+	archive.DropBinaryType:  "drop",
+	archive.StatContentType: "stat",
+	archive.StatBinaryType:  "stat",
+}
+
+func compatible(a, b string) bool {
+	typeA := typeFamily[a]
+	typeB := typeFamily[b]
+
+	return typeA == typeB
+}
 
 // Given a string that should contain a timestamp, we will try to parse it using
 // a number of different formats.  This routine is used for parsing both
@@ -173,18 +195,19 @@ func objectWithinBounds(name string) bool {
 
 // Fetch the names of all objects in the provided bucket that have the desired
 // prefix and are within the desired time range.
-func getObjectsBucket(bucket, name string) ([]string, string, error) {
+func getObjectsBucket(bucket, name string) ([]object, error) {
 	var err error
 
-	slog.Debugf("Fetching objects between %s and %s from %s\n",
+	slog.Debugf("Fetching objects between %s and %s from %s",
 		startTime.Format(time.Stamp), endTime.Format(time.Stamp),
 		bucket)
 
-	ctype := *ctypeFlag
-	rval := make([]string, 0)
+	objs := make([]object, 0)
 	filter := storage.Query{Prefix: name}
 	it := gcpClient.Bucket(bucket).Objects(gcpCtx, &filter)
 	for {
+		var obj object
+
 		attrs, ierr := it.Next()
 		if ierr == iterator.Done {
 			break
@@ -197,36 +220,31 @@ func getObjectsBucket(bucket, name string) ([]string, string, error) {
 			continue
 		}
 
-		if *ctypeFlag == "" {
-			if attrs.ContentType == "" {
-				err = fmt.Errorf("missing content type for %s",
-					attrs.Name)
-				break
-			}
-			if ctype == "" {
-				ctype = attrs.ContentType
-			} else if ctype != attrs.ContentType {
-				err = fmt.Errorf("found multiple content "+
-					"types: %s and %s\n",
-					ctype, attrs.ContentType)
-				break
-			}
+		obj.name = attrs.Name
+		if attrs.ContentType != "" {
+			obj.ctype = attrs.ContentType
+		} else if *ctypeFlag != "" {
+			obj.ctype = *ctypeFlag
+		} else {
+			err = fmt.Errorf("missing content type for %s",
+				attrs.Name)
+			break
 		}
-		rval = append(rval, attrs.Name)
+		objs = append(objs, obj)
 	}
 
-	return rval, ctype, err
+	return objs, err
 }
 
 // Fetch the names of all files in the provided directory that have the desired
 // prefix and are within the desired time range.
-func getObjectsLocal(dir string) ([]string, string, error) {
+func getObjectsLocal(dir string) ([]object, error) {
 	ctype, err := inferDatatype(dir)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
-	names := make([]string, 0)
+	objs := make([]object, 0)
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
 		err = fmt.Errorf("unable to get contents of %s: %v",
@@ -234,24 +252,49 @@ func getObjectsLocal(dir string) ([]string, string, error) {
 	} else {
 		for _, f := range files {
 			if objectWithinBounds(f.Name()) {
-				names = append(names, f.Name())
+				obj := object{
+					name:  f.Name(),
+					ctype: ctype,
+				}
+
+				objs = append(objs, obj)
 			}
 		}
 	}
-	return names, ctype, err
+	return objs, err
 }
 
-func getObjects() ([]string, string, error) {
+func getObjects() (string, []object, error) {
+	var fullname string
+	var objs []object
+	var err error
+
 	bucket, name, _ := parseName(*srcFlag)
-	fmt.Printf("Getting from %s %s\n", bucket, name)
 	if bucket != "" {
-		return getObjectsBucket(bucket, name)
+		objs, err = getObjectsBucket(bucket, name)
+		fullname = bucket + "/" + name
 	} else if name != "" {
-		return getObjectsLocal(name)
+		objs, err = getObjectsLocal(name)
+		fullname = name
 	} else {
-		return nil, "", fmt.Errorf("must provide a data source")
+		err = fmt.Errorf("must provide a data source")
 	}
 
+	if len(objs) == 0 || err != nil {
+		return fullname, nil, err
+	}
+
+	// Verify that all of the objects found are of compatible types
+	ctype := objs[0].ctype
+	for _, obj := range objs {
+		if !compatible(ctype, obj.ctype) {
+			err = fmt.Errorf("found multiple content "+
+				"types: %s and %s",
+				ctype, obj.ctype)
+			break
+		}
+	}
+	return fullname, objs, err
 }
 
 func readData(obj string) ([]byte, error) {
@@ -260,12 +303,12 @@ func readData(obj string) ([]byte, error) {
 
 	bucket, name, _ := parseName(*srcFlag)
 	if bucket != "" {
-		slog.Debugf("Reading from google storage %s\n", *srcFlag)
+		slog.Debugf("Reading from google storage %s", *srcFlag)
 
 		hdl := gcpClient.Bucket(bucket).Object(obj)
 		src, err = hdl.NewReader(gcpCtx)
 	} else if name != "" {
-		slog.Debugf("Reading from file %s\n", obj)
+		slog.Debugf("Reading from file %s", obj)
 		src, err = os.Open(name)
 	} else {
 		err = fmt.Errorf("must provide a data source")
@@ -285,7 +328,7 @@ func readData(obj string) ([]byte, error) {
 }
 
 func writeToBucket(bucket, name, ctype string, src io.Reader) error {
-	slog.Debugf("Writing to google storage %s\n", *dstFlag)
+	slog.Debugf("Writing to google storage %s", *dstFlag)
 
 	if name == "" {
 		return fmt.Errorf("must specify a target object name")
@@ -303,7 +346,7 @@ func writeToBucket(bucket, name, ctype string, src io.Reader) error {
 			ContentType: ctype,
 		}
 		if _, uerr := object.Update(gcpCtx, u); uerr != nil {
-			fmt.Printf("unable to update content type: %v\n", uerr)
+			slog.Warnf("unable to update content type: %v", uerr)
 		}
 	} else {
 		err = fmt.Errorf("uploading merged data to gcp: %v", err)
@@ -312,7 +355,7 @@ func writeToBucket(bucket, name, ctype string, src io.Reader) error {
 }
 
 func writeToFile(name string, src io.Reader) error {
-	slog.Debugf("Writing to file %s\n", name)
+	slog.Debugf("Writing to file %s", name)
 	out, err := os.Create(name)
 	if err != nil {
 		err = fmt.Errorf("creating file %s: %v", name, err)
@@ -342,13 +385,13 @@ func writeData(ctype string, src io.Reader) error {
 
 // list the objects in the source bucket
 func list() error {
-	objs, _, err := getObjects()
+	_, objs, err := getObjects()
 	if err != nil {
 		return fmt.Errorf("failed to get object list: %v", err)
 	}
 
 	for _, n := range objs {
-		fmt.Printf("%s\n", n)
+		fmt.Printf("%s\n", n.name)
 	}
 
 	return nil
@@ -400,7 +443,7 @@ func gcpInit() {
 }
 
 func fail(err error) {
-	fmt.Printf("failed: %v\n", err)
+	slog.Errorf("failed: %v", err)
 	os.Exit(1)
 }
 
@@ -452,7 +495,7 @@ func main() {
 	case "merge":
 		err = merge()
 	case "export":
-		export(cmdArgs)
+		err = export(cmdArgs)
 	default:
 		usage(true)
 	}

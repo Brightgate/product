@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -22,6 +22,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/gob"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -41,8 +43,8 @@ const timeFmt = "2006-01-02 15:04:05"
 
 var (
 	// CSV file headers
-	dropHdr = "TIME,NET,INDEV,SRC,SPORT,DST,DPORT,SMAC,PROTO\n"
-	statHdr = "START,END,MAC,LADDR,LPORT,RADDR,RPORT," +
+	dropHdr = "TIME,UUID,NET,INDEV,SRC,SPORT,DST,DPORT,SMAC,PROTO\n"
+	statHdr = "START,END,UUID,MAC,LADDR,LPORT,RADDR,RPORT," +
 		"PKTSSENT,PKTSRCVD,BYTESSENT,BYTESRCVD\n"
 	portHdr string // constructed from tcpTrack and udpTrack lists
 
@@ -50,15 +52,16 @@ var (
 	// devices easy to search for.
 	tcpTrack = []int{
 		21, 22, 23, 25, 80, 111, 137, 138, 139, 143, 389, 443, 445,
-		554, 631, 2049, 3306, 4000, 4444, 5353, 5432, 6000, 8000, 8080}
-	udpTrack = []int{53, 111, 137, 138, 139, 389, 445, 3306}
+		554, 631, 2049, 3306, 3389, 4000, 4444, 5353, 5432, 6000,
+		8000, 8080}
+	udpTrack = []int{53, 111, 137, 138, 139, 389, 445, 3306, 3389}
 )
 
 // Exporter provides a source for a CSV generator.  Its internal state tracks
 // progress through an imported dataset as it is incrementally converted into a
 // CSV stream.
 type Exporter interface {
-	init([]string) error // Import all data.  Init export state.
+	init([]object) error // Import all data.  Init export state.
 	ctype() string       // content type of the exported data
 
 	// The following 3 routines provide a simple model allowing a common
@@ -186,8 +189,8 @@ func (ex *dropExporter) line() string {
 		dport = f[1]
 	}
 
-	return fmt.Sprintf("%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
-		rec.Time.Format(timeFmt), network, rec.Indev,
+	return fmt.Sprintf("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
+		rec.Time.Format(timeFmt), *uuidFlag, network, rec.Indev,
 		src, sport, dst, dport, rec.Smac, rec.Proto)
 }
 
@@ -203,15 +206,24 @@ func (ex *dropExporter) ctype() string {
 	return "application/drops-csv"
 }
 
-func importOneDropArchive(obj string) ([]archive.DropArchive, error) {
+func importOneDropArchive(obj object) ([]archive.DropArchive, error) {
 	var list []archive.DropArchive
 
 	slog.Debugf("  fetching %s\n", obj)
-	data, err := readData(obj)
+	data, err := readData(obj.name)
 	if err != nil {
 		err = fmt.Errorf("failed to fetch %s: %v", obj, err)
-	} else if err = json.Unmarshal(data, &list); err != nil {
-		err = fmt.Errorf("failed to parse %s: %v", obj, err)
+	} else {
+		if obj.ctype == archive.DropContentType {
+			err = json.Unmarshal(data, &list)
+		} else {
+			in := bytes.NewBuffer(data)
+			dec := gob.NewDecoder(in)
+			err = dec.Decode(&list)
+		}
+		if err != nil {
+			err = fmt.Errorf("failed to parse %s: %v", obj, err)
+		}
 	}
 
 	return list, err
@@ -219,7 +231,7 @@ func importOneDropArchive(obj string) ([]archive.DropArchive, error) {
 
 // Import all of the identified drop archives and prepare to start emitting CSV
 // lines.
-func (ex *dropExporter) init(objs []string) error {
+func (ex *dropExporter) init(objs []object) error {
 	all := make([]archive.DropArchive, 0)
 	for _, o := range objs {
 		slog.Infof("importing %v\n", o)
@@ -306,7 +318,7 @@ func (ex *portExporter) line() string {
 	}
 
 	rec := ex.data[ex.idx]
-	l := rec.time.Format(timeFmt) + "," + rec.mac + ","
+	l := rec.time.Format(timeFmt) + "," + *uuidFlag + "," + rec.mac + ","
 	if rec.ip == nil {
 		l += "unknown"
 	} else {
@@ -324,18 +336,25 @@ func (ex *portExporter) Read(p []byte) (n int, err error) {
 
 // read one archive.Snapshot archive, and extract the open-port information from
 // each entry.
-func importPortData(obj string) ([]*portRecord, error) {
+func importPortData(obj object) ([]*portRecord, error) {
 	var list []archive.Snapshot
 
 	if *verbose {
 		slog.Debugf("  fetching %s\n", obj)
 	}
-	data, err := readData(obj)
+	data, err := readData(obj.name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch %s: %v", obj, err)
 	}
 
-	if err = json.Unmarshal(data, &list); err != nil {
+	if obj.ctype == archive.StatContentType {
+		err = json.Unmarshal(data, &list)
+	} else {
+		in := bytes.NewBuffer(data)
+		dec := gob.NewDecoder(in)
+		err = dec.Decode(&list)
+	}
+	if err != nil {
 		return nil, fmt.Errorf("failed to parse %s: %v", obj, err)
 	}
 
@@ -381,14 +400,14 @@ func buildPortHdr() {
 	portHdr += fmt.Sprintf(",UDP other\n")
 }
 
-func (ex *portExporter) init(objs []string) error {
+func (ex *portExporter) init(objs []object) error {
 	buildPortHdr()
 
 	// Iterate over all the snapshot objects, building an interim
 	// representation of the open ports information
 	all := make([]*portRecord, 0)
 	for _, o := range objs {
-		slog.Infof("importing %v\n", o)
+		slog.Infof("importing %v", o)
 		tmp, err := importPortData(o)
 		if err != nil {
 			return err
@@ -457,6 +476,7 @@ func (ex *statExporter) line() string {
 	rec := ex.data[ex.idx]
 	l := rec.start.Format(timeFmt)
 	l += "," + rec.end.Format(timeFmt)
+	l += "," + *uuidFlag
 	l += "," + rec.mac
 	l += "," + endpoint(rec.localAddr, rec.localPort)
 	l += "," + endpoint(rec.remoteAddr, rec.remotePort)
@@ -494,16 +514,23 @@ func newStatRecord(s archive.Snapshot, mac string, local net.IP,
 	return &rec
 }
 
-func importStatData(obj string) ([]*statRecord, error) {
+func importStatData(obj object) ([]*statRecord, error) {
 	var list []archive.Snapshot
 
-	slog.Infof("  fetching %s\n", obj)
-	data, err := readData(obj)
+	slog.Infof("  fetching %s", obj)
+	data, err := readData(obj.name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch %s: %v", obj, err)
 	}
 
-	if err = json.Unmarshal(data, &list); err != nil {
+	if obj.ctype == archive.StatContentType {
+		err = json.Unmarshal(data, &list)
+	} else {
+		in := bytes.NewBuffer(data)
+		dec := gob.NewDecoder(in)
+		err = dec.Decode(&list)
+	}
+	if err != nil {
 		return nil, fmt.Errorf("failed to parse %s: %v", obj, err)
 	}
 
@@ -533,12 +560,12 @@ func (ex *statExporter) ctype() string {
 	return "application/xferstats-csv"
 }
 
-func (ex *statExporter) init(objs []string) error {
+func (ex *statExporter) init(objs []object) error {
 	// Iterate over all the snapshot objects, building an interim
 	// representation of the stats information
 	all := make([]*statRecord, 0)
 	for _, o := range objs {
-		slog.Infof("importing %v\n", o)
+		slog.Infof("importing %v", o)
 		tmp, err := importStatData(o)
 		if err != nil {
 			return err
@@ -564,20 +591,27 @@ func export(args []string) error {
 	if len(args) != 1 {
 		exportUsage()
 	}
+	if *uuidFlag == "" {
+		return fmt.Errorf("need to specify uuid for export")
+	}
 	dataset := args[0]
 
-	objs, ctype, err := getObjects()
+	_, objs, err := getObjects()
 	if err != nil {
 		return fmt.Errorf("failed to get object list: %v", err)
 	}
+	if len(objs) == 0 {
+		return nil
+	}
 
+	ctype := objs[0].ctype
 	switch ctype {
-	case archive.DropContentType:
+	case archive.DropContentType, archive.DropBinaryType:
 		switch dataset {
 		case "drops":
 			exporter = &dropExporter{}
 		}
-	case archive.StatContentType:
+	case archive.StatContentType, archive.StatBinaryType:
 		switch dataset {
 		case "stats":
 			exporter = &statExporter{}

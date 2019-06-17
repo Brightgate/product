@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -52,7 +52,6 @@ func newDeviceRecord(mac string) *archive.DeviceRecord {
 	}
 	d := archive.DeviceRecord{
 		Addr:       addr,
-		Services:   make(map[int]string),
 		OpenTCP:    make([]int, 0),
 		OpenUDP:    make([]int, 0),
 		BlockedOut: make(map[uint64]int),
@@ -225,7 +224,6 @@ func snapshotStats(dir string) {
 		// value.
 		d := archive.DeviceRecord{
 			Addr:       copyIP(cur.Addr),
-			Services:   cur.Services,
 			BlockedOut: cur.BlockedOut,
 			BlockedIn:  cur.BlockedIn,
 			Aggregate:  cur.Aggregate,

@@ -62,7 +62,8 @@ var (
 		"subnet": 1,
 	}
 
-	activeHosts *hostmap // hosts we believe to be currently present
+	activeHosts    *hostmap // hosts we believe to be currently present
+	activeServices map[string][]string
 
 	vulnListFile  string
 	vulnList      map[string]vulnDescription
@@ -607,10 +608,14 @@ func recordNmapResults(scanType string, host *nmap.Host) {
 	dev := getDeviceRecord(mac)
 
 	ports := make([]int, 0)
+	services := make([]string, 0)
 	for _, port := range host.Ports {
 		ports = append(ports, port.PortId)
-		dev.Services[port.PortId] = port.Service.Name
+		services = append(services,
+			fmt.Sprintf("%d:%s", port.PortId, port.Service.Name))
 	}
+	activeServices[mac] = services
+
 	if scanType == "tcp" {
 		dev.OpenTCP = ports
 	} else if scanType == "udp" {
@@ -818,6 +823,7 @@ func portScan(req *ScanRequest) {
 	if host.Status.State != "up" {
 		slog.Infof("Host %s is down, stopping scans", req.IP)
 		cancelAllScans("", req.IP)
+		delete(activeServices, req.Mac)
 		return
 	}
 
@@ -1020,19 +1026,10 @@ func vulnScan(req *ScanRequest) {
 
 	args := []string{"-d", vulnListFile, "-i", req.IP, "-o", name}
 
-	if dev := getDeviceRecord(req.Mac); dev != nil {
-		// build <service:port> list to scan for vulnerabilities
-		services := make([]string, 0)
-		for port, service := range dev.Services {
-			services = append(services,
-				fmt.Sprintf("%s:%d", service, port))
-		}
-		releaseDeviceRecord(dev)
-
-		if len(services) > 0 {
-			arg := strings.Join(services, ".")
-			args = append(args, "-services", arg)
-		}
+	services := activeServices[req.Mac]
+	if len(services) > 0 {
+		arg := strings.Join(services, ".")
+		args = append(args, "-services", arg)
 	}
 
 	start := time.Now()
@@ -1084,6 +1081,7 @@ func (s ByDateModified) Less(i, j int) bool {
 func vulnInit() {
 	vulnListFile = *watchDir + "/vuln-db.json"
 	vulnList = make(map[string]vulnDescription, 0)
+	activeServices = make(map[string][]string)
 
 	file, err := ioutil.ReadFile(vulnListFile)
 	if err != nil {

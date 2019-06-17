@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -20,6 +20,8 @@ import (
 const (
 	DropContentType = "application/vnd.b10e.drop-archive+json"
 	StatContentType = "application/vnd.b10e.stat-archive+json"
+	DropBinaryType  = "application/vnd.b10e.drop-archive+gob"
+	StatBinaryType  = "application/vnd.b10e.stat-archive+gob"
 )
 
 // DropRecord contains information about a single packet blocked by the firewall
@@ -67,9 +69,6 @@ type XferStats struct {
 type DeviceRecord struct {
 	Addr net.IP
 
-	// Ports -> Services map
-	Services map[int]string `json:"Services,omitempty"`
-
 	// Open ports found during an nmap scan
 	OpenTCP []int `json:"OpenTCP,omitempty"`
 	OpenUDP []int `json:"OpenUDP,omitempty"`
@@ -83,7 +82,17 @@ type DeviceRecord struct {
 	LANStats  map[uint64]XferStats `json:"Local,omitempty"`
 	WANStats  map[uint64]XferStats `json:"Remote,omitempty"`
 
-	sync.Mutex
+	mtx sync.Mutex
+}
+
+// Lock locks the device record
+func (d *DeviceRecord) Lock() {
+	d.mtx.Lock()
+}
+
+// Unlock unlocks the device record
+func (d *DeviceRecord) Unlock() {
+	d.mtx.Unlock()
 }
 
 // Snapshot captures the data for one or more devices over a period of time
