@@ -101,7 +101,7 @@ func propTreeLoad(name string) (*cfgtree.PTree, error) {
 		return nil, err
 	}
 
-	tree, err := cfgtree.NewPTree("@", file)
+	tree, err := cfgtree.NewPTree("@/", file)
 	if err == nil {
 		metrics.treeSize.Set(float64(len(file)))
 	} else {
@@ -167,17 +167,6 @@ func versionTree() error {
 	return nil
 }
 
-func dumpTree(indent string, node *cfgtree.PNode) {
-	e := ""
-	if node.Expires != nil {
-		e = node.Expires.Format("2006-01-02T15:04:05")
-	}
-	fmt.Printf("%s%s: %s  %s\n", indent, node.Name(), node.Value, e)
-	for _, child := range node.Children {
-		dumpTree(indent+"  ", child)
-	}
-}
-
 func propTreeInit(defaults *cfgtree.PNode) error {
 	var err error
 	var newTree bool
@@ -240,8 +229,7 @@ func propTreeInit(defaults *cfgtree.PNode) error {
 		propTree.ChangesetCommit()
 	}
 	if *verbose {
-		root, _ := tree.GetNode("@/")
-		dumpTree("", root)
+		tree.Dump()
 	}
 	return err
 }
@@ -271,7 +259,7 @@ func loadDefaults() (defaults *cfgtree.PNode, descs []propDescription, err error
 		return
 	}
 
-	if rerr := json.Unmarshal(data, &base); err != nil {
+	if rerr := json.Unmarshal(data, &base); rerr != nil {
 		err = fmt.Errorf("failed to parse %s: %v", baseFile, rerr)
 		return
 	}

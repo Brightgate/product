@@ -66,7 +66,7 @@ func (db *dbStore) get(ctx context.Context, uuidStr string) (*cfgtree.PTree, err
 		return nil, err
 	}
 
-	tree, err := cfgtree.NewPTree("@", store.Config)
+	tree, err := cfgtree.NewPTree("@/", store.Config)
 	if err != nil {
 		slog.Errorf("failed to create configuration tree: %v", err)
 		return nil, err

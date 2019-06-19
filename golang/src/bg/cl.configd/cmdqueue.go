@@ -367,7 +367,7 @@ func (memq *memCmdQueue) complete(ctx context.Context, s *siteState, rval *cfgms
 		if rval.Response == cfgmsg.ConfigResponse_OK && isRefresh(cmd.cmd) &&
 			len(rval.Value) > 0 {
 
-			tree, err := cfgtree.NewPTree("@", []byte(rval.Value))
+			tree, err := cfgtree.NewPTree("@/", []byte(rval.Value))
 			if err != nil {
 				slog.Warnf("failed to refresh %s: %v", s.siteUUID, err)
 			} else {

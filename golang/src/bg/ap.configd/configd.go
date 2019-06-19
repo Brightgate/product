@@ -77,23 +77,16 @@ var metrics struct {
 	treeSize   prometheus.Gauge
 }
 
-// Allow for significant variation in the processing of subtrees
-type subtreeOps struct {
-	get    func(string) (string, error)
-	set    func(string, string, *time.Time, bool) error
-	delete func(string) ([]string, error)
-}
-
+type subtreeOpHandler func(*cfgmsg.ConfigQuery) (string, error)
 type subtreeMatch struct {
-	path *regexp.Regexp
-	ops  *subtreeOps
+	path    *regexp.Regexp
+	handler subtreeOpHandler
 }
-
-var defaultSubtreeOps = subtreeOps{getPropHandler, setPropHandler, delPropHandler}
-var devSubtreeOps = subtreeOps{getDevHandler, setDevHandler, delDevHandler}
 
 var subtreeMatchTable = []subtreeMatch{
-	{regexp.MustCompile(`^@/devices`), &devSubtreeOps},
+	{regexp.MustCompile(`^@/devices`), devPropHandler},
+	{regexp.MustCompile(`^@/metrics`), metricsPropHandler},
+	{regexp.MustCompile(`^@/`), configPropHandler},
 }
 
 var updateCheckTable = []struct {
@@ -106,6 +99,11 @@ var updateCheckTable = []struct {
 	{regexp.MustCompile(`^@/network/base_address$`), subnetCheck},
 	{regexp.MustCompile(`^@/site_index$`), subnetCheck},
 	{regexp.MustCompile(`^@/dns/cnames/`), cnameCheck},
+}
+
+var singletonOps = map[cfgmsg.ConfigOp_Operation]bool{
+	cfgmsg.ConfigOp_REPLACE: true,
+	cfgmsg.ConfigOp_GET:     true,
 }
 
 var (
@@ -565,14 +563,14 @@ func xlateError(err error) error {
 	return err
 }
 
-func getPropHandler(prop string) (string, error) {
+func cfgPropGet(prop string) (string, error) {
 	rval, err := propTree.Get(prop)
 	err = xlateError(err)
 
 	return rval, err
 }
 
-func setPropHandler(prop string, val string, exp *time.Time, add bool) error {
+func cfgPropSet(prop string, val string, exp *time.Time, add bool) error {
 	var err error
 
 	if val == "" {
@@ -596,7 +594,7 @@ func setPropHandler(prop string, val string, exp *time.Time, add bool) error {
 	return xlateError(err)
 }
 
-func delPropHandler(prop string) ([]string, error) {
+func cfgPropDel(prop string) ([]string, error) {
 	rval, err := propTree.Delete(prop)
 	return rval, xlateError(err)
 }
@@ -627,49 +625,35 @@ func restart() {
 	os.Exit(0)
 }
 
-func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
-	var prop, val, rval string
-	var expires *time.Time
+func configPropHandler(query *cfgmsg.ConfigQuery) (string, error) {
+	var rval string
 	var err error
 	var persistTree bool
 
 	level := cfgapi.AccessLevel(query.Level)
-	if _, ok := cfgapi.AccessLevelNames[level]; !ok {
-		return "", fmt.Errorf("invalid access level: %d", level)
-	}
-
 	updates := make([]*updateRecord, 0)
-
 	propTree.ChangesetInit()
 	for _, op := range query.Ops {
-		if prop, val, expires, err = getParams(op); err != nil {
+		prop, val, expires, gerr := getParams(op)
+		if gerr != nil {
+			err = gerr
 			break
-		}
-
-		opsVector := &defaultSubtreeOps
-		for _, r := range subtreeMatchTable {
-			if r.path.MatchString(prop) {
-				opsVector = r.ops
-				break
-			}
 		}
 
 		switch op.Operation {
 		case cfgmsg.ConfigOp_GET:
 			metrics.getCounts.Inc()
-			if len(query.Ops) > 1 {
-				err = fmt.Errorf("only single-GET " +
-					"operations are supported")
-			} else if err = validateProp(prop); err == nil {
-				rval, err = opsVector.get(prop)
+			if err = validateProp(prop); err == nil {
+				rval, err = cfgPropGet(prop)
 			}
 
 		case cfgmsg.ConfigOp_CREATE, cfgmsg.ConfigOp_SET:
 			metrics.setCounts.Inc()
 			if err = validatePropVal(prop, val, level); err == nil {
-				err = opsVector.set(prop, val, expires,
+				err = cfgPropSet(prop, val, expires,
 					(op.Operation == cfgmsg.ConfigOp_CREATE))
 			}
+
 			if err == nil {
 				update := updateChange(prop, &val, expires)
 				update.hash = propTree.Root().Hash()
@@ -681,7 +665,7 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 
 			metrics.delCounts.Inc()
 			if err = validatePropDel(prop, level); err == nil {
-				paths, err = opsVector.delete(prop)
+				paths, err = cfgPropDel(prop)
 			}
 
 			for _, path := range paths {
@@ -689,10 +673,9 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 				if path == prop {
 					// If we delete a subtree, we send
 					// notifications for each node in that
-					// tree.  We only want the hash
-					// after the root node is removed, since
-					// that subsumes all of the child
-					// deletions.
+					// tree.  We only want the hash after
+					// the root node is removed, since that
+					// subsumes all of the child deletions.
 					update.hash = propTree.Root().Hash()
 				}
 
@@ -702,25 +685,23 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 		case cfgmsg.ConfigOp_TEST:
 			metrics.testCounts.Inc()
 			if err = validateProp(prop); err == nil {
-				_, err = opsVector.get(prop)
+				_, err = cfgPropGet(prop)
 			}
 
 		case cfgmsg.ConfigOp_TESTEQ:
 			var testVal string
+			var testNode cfgapi.PropertyNode
+
 			metrics.testCounts.Inc()
 			if err = validateProp(prop); err != nil {
 				break
 			}
-			if testVal, err = opsVector.get(prop); err != nil {
+			if testVal, err = cfgPropGet(prop); err != nil {
 				break
 			}
-			var testNode cfgapi.PropertyNode
+
 			err = json.Unmarshal([]byte(testVal), &testNode)
-			if err != nil {
-				// will become ConfigResponse_FAILED
-				break
-			}
-			if val != testNode.Value {
+			if err == nil && val != testNode.Value {
 				err = cfgapi.ErrNotEqual
 			}
 
@@ -731,18 +712,16 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 			if level != cfgapi.AccessInternal {
 				err = fmt.Errorf("must be internal to add " +
 					"new settings")
+			} else {
+				slog.Debugf("Adding %s: %s", prop, val)
+				err = addSetting(prop, val)
 			}
-			slog.Debugf("Adding %s: %s", prop, val)
-			err = addSetting(prop, val)
 
 		case cfgmsg.ConfigOp_REPLACE:
 			slog.Infof("Replacing config tree")
 
 			newTree := []byte(val)
-			if len(query.Ops) > 1 {
-				err = fmt.Errorf("compound REPLACE op")
-
-			} else if err = propTree.Replace(newTree); err != nil {
+			if err = propTree.Replace(newTree); err != nil {
 				slog.Warnf("importing replacement tree: %v", err)
 				err = cfgapi.ErrBadTree
 
@@ -770,6 +749,7 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 			break
 		}
 	}
+
 	if err != nil {
 		propTree.ChangesetRevert()
 	} else {
@@ -788,6 +768,60 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 					rerr)
 			}
 		}
+	}
+
+	return rval, err
+}
+
+func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
+	var handler subtreeOpHandler
+	var rval string
+	var err error
+
+	level := cfgapi.AccessLevel(query.Level)
+	if _, ok := cfgapi.AccessLevelNames[level]; !ok {
+		return "", fmt.Errorf("invalid access level: %d", level)
+	}
+
+	// Iterate over all of the operations in the vector to sanity-check the
+	// arguments and identify the correct handler for the vector.
+	match := -1
+	for _, op := range query.Ops {
+		var newMatch int
+		var opName, prop string
+
+		if opName, err = cfgmsg.OpName(op.Operation); err != nil {
+			err = cfgapi.ErrBadOp
+			break
+		}
+
+		if prop, _, _, err = getParams(op); err != nil {
+			break
+		}
+
+		for idx, r := range subtreeMatchTable {
+			if r.path.MatchString(prop) {
+				newMatch = idx
+				handler = r.handler
+				break
+			}
+		}
+		if match == -1 {
+			match = newMatch
+		} else if match != newMatch {
+			err = fmt.Errorf("operation spans multiple trees")
+			break
+		}
+
+		if len(query.Ops) > 1 && singletonOps[op.Operation] {
+			err = fmt.Errorf("compund %s operations not supported",
+				opName)
+			break
+		}
+	}
+
+	if err == nil && handler != nil {
+		rval, err = handler(query)
 	}
 
 	return rval, err

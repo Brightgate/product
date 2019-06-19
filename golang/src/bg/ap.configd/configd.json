@@ -364,6 +364,12 @@
     {"Path": "@/cloud/service/cloud_user_key", "Type": "string", "Level": "internal"},
     {"Path": "@/cloud/service/tunnel_port", "Type": "port", "Level": "internal"},
     {"Path": "@/cloud/service/tunnel_user_key", "Type": "string", "Level": "internal"},
-    {"Path": "@/updates/%string%", "Type": "time", "Level": "internal"}
+    {"Path": "@/updates/%string%", "Type": "time", "Level": "internal"},
+    {"Path": "@/metrics/clients/%macaddr%/%time_unit%/bytes_sent", "Type": "int", "Level": "internal"},
+    {"Path": "@/metrics/clients/%macaddr%/%time_unit%/bytes_rcvd", "Type": "int", "Level": "internal"},
+    {"Path": "@/metrics/clients/%macaddr%/%time_unit%/pkts_sent", "Type": "int", "Level": "internal"},
+    {"Path": "@/metrics/clients/%macaddr%/%time_unit%/pkts_rcvd", "Type": "int", "Level": "internal"},
+    {"Path": "@/metrics/clients/%macaddr%/last_activity", "Type": "time", "Level": "internal"},
+    {"Path": "@/metrics/clients/%macaddr%/signal_str", "Type": "int", "Level": "internal"}
   ]
 }

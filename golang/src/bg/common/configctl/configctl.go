@@ -133,6 +133,187 @@ func getRings(cmd string, args []string) error {
 	return nil
 }
 
+type statsPair struct {
+	bytesRcvd uint64
+	bytesSent uint64
+}
+
+type perClient struct {
+	name string
+	data map[string]*statsPair
+}
+
+func (sp *statsPair) String() string {
+	if sp == nil {
+		return fmt.Sprintf("%10s %10s", "bytesSent", "bytesRcvd")
+	}
+	return fmt.Sprintf("%10d %10d", sp.bytesSent, sp.bytesRcvd)
+}
+
+// Return a string of 'width' length, with 'text' in the center
+func strCenter(text string, width int) string {
+	left := (width - len(text)) / 2
+	right := left
+	if left+right+len(text) < width {
+		left++
+	}
+	leftFmt := fmt.Sprintf("%%%-ds", left)
+	rightFmt := fmt.Sprintf("%%%ds", right)
+	return fmt.Sprintf(leftFmt+"%s"+rightFmt, "", text, "")
+}
+
+func printStats(s *perClient) {
+	if s == nil {
+		fmt.Printf("%-17s %21s   %21s   %21s   %21s\n",
+			"name", strCenter("day", 21), strCenter("hour", 21),
+			strCenter("minute", 21), strCenter("second", 21))
+		s = &perClient{}
+	}
+	fmt.Printf("%17v %21v   %21v   %21v   %21v\n", s.name,
+		s.data["day"], s.data["hour"],
+		s.data["minute"], s.data["second"])
+}
+
+func getVal(data *cfgapi.PropertyNode, field string) (uint64, error) {
+	var val uint64
+	var err error
+
+	if node, ok := data.Children[field]; ok {
+		v := node.Value
+		if val, err = strconv.ParseUint(v, 10, 64); err != nil {
+			err = fmt.Errorf("bad %s (%s): %v", field, v, err)
+		}
+	} else {
+		err = fmt.Errorf("missing %s", field)
+	}
+
+	return val, err
+}
+
+func buildStatsPair(data *cfgapi.PropertyNode) (*statsPair, error) {
+	var p statsPair
+	var err error
+
+	if data == nil {
+		return nil, fmt.Errorf("missing data")
+	}
+	if p.bytesRcvd, err = getVal(data, "bytes_rcvd"); err != nil {
+		return nil, err
+	}
+	if p.bytesSent, err = getVal(data, "bytes_sent"); err != nil {
+		return nil, err
+	}
+
+	return &p, nil
+}
+
+func buildStats(name string, data *cfgapi.PropertyNode) (*perClient, error) {
+	c := perClient{
+		name: name,
+		data: make(map[string]*statsPair),
+	}
+
+	for _, u := range []string{"day", "hour", "minute", "second"} {
+		p, err := buildStatsPair(data.Children[u])
+		if err != nil {
+			return nil, fmt.Errorf("building %s: %v", u, err)
+		}
+		c.data[u] = p
+	}
+
+	return &c, nil
+}
+
+func fetchStats(mac string) ([]*perClient, error) {
+	var c map[string]*cfgapi.PropertyNode
+	var node *cfgapi.PropertyNode
+	var err error
+
+	rval := make([]*perClient, 0)
+	if mac == "" {
+		node, err = configd.GetProps("@/metrics/clients")
+		if err == nil {
+			c = node.Children
+		}
+	} else {
+		node, err = configd.GetProps("@/metrics/clients/" + mac)
+		if err == nil {
+			c = make(map[string]*cfgapi.PropertyNode)
+			c[mac] = node
+		}
+	}
+
+	// Build a sorted list of the mac addresses, so the
+	// output is in a predictable order
+	macs := make([]string, 0)
+	for mac := range c {
+		macs = append(macs, mac)
+	}
+	sort.Strings(macs)
+
+	for _, mac := range macs {
+		s, err := buildStats(mac, c[mac])
+		if err != nil {
+			return nil, err
+		}
+		rval = append(rval, s)
+	}
+
+	return rval, err
+}
+
+func stats(cmd string, args []string) error {
+	var mac string
+
+	flags := flag.NewFlagSet("stats", flag.ContinueOnError)
+	allClients := flags.Bool("a", false, "show all clients")
+	period := flags.Int("p", 0, "repeat period (seconds)")
+
+	if err := flags.Parse(args); err != nil {
+		usage(cmd)
+	}
+	args = flags.Args()
+
+	// Either -a or a single mac address must be provided.
+	if !*allClients {
+		if len(args) != 1 {
+			usage(cmd)
+		}
+		mac = args[0]
+
+	} else if len(args) != 0 {
+		usage(cmd)
+	}
+
+	showHdr := true
+	for {
+		stats, err := fetchStats(mac)
+		if err != nil {
+			if *period != 0 {
+				fmt.Printf("%v", err)
+				showHdr = true
+			}
+		} else {
+			if showHdr {
+				printStats(nil)
+				showHdr = false
+			}
+			for _, client := range stats {
+				printStats(client)
+			}
+		}
+
+		if *period == 0 {
+			return err
+		}
+		if len(stats) > 1 {
+			fmt.Printf("\n")
+		}
+
+		time.Sleep(time.Second * time.Duration(*period))
+	}
+}
+
 func printClient(mac string, client *cfgapi.ClientInfo, verbose bool) {
 	name := "-"
 	if client.DNSName != "" {
@@ -343,7 +524,7 @@ func replace(cmd string, args []string) error {
 		return fmt.Errorf("error reading from %s: %v", src, err)
 	}
 
-	tree, err := cfgtree.NewPTree("@", data)
+	tree, err := cfgtree.NewPTree("@/", data)
 	if err != nil {
 		return fmt.Errorf("importing tree from %s: %v", src, err)
 	}
@@ -371,7 +552,7 @@ func export(cmd string, args []string) error {
 	if err != nil {
 		err = fmt.Errorf("fetching tree: %v", err)
 	} else {
-		tree, err := cfgtree.NewPTree("@", []byte(data))
+		tree, err := cfgtree.NewPTree("@/", []byte(data))
 		if err != nil {
 			err = fmt.Errorf("rebuilding tree: %v", err)
 		} else {
@@ -501,7 +682,9 @@ var usages = map[string]string{
 	"del":     "<prop>",
 	"mon":     "<prop>",
 	"replace": "<file | ->",
-	"export":  "",
+	"stats": "[-a] [-p <period (seconds)] [<mac>]  - " +
+		"either -a or a mac address must be provided",
+	"export": "",
 }
 
 func usage(cmd string) {
@@ -545,6 +728,8 @@ func Exec(ctx context.Context, p string, hdl *cfgapi.Handle, args []string) erro
 		err = replace("replace", args[1:])
 	case "export":
 		err = export("export", args[1:])
+	case "stats":
+		err = stats("stats", args[1:])
 	default:
 		ops := makeOps(args)
 		_, err = configd.Execute(ctx, ops).Wait(ctx)

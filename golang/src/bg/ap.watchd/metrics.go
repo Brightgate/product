@@ -12,17 +12,20 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/common/archive"
+	"bg/common/cfgapi"
 )
 
 type endpoint struct {
@@ -31,14 +34,24 @@ type endpoint struct {
 	port   int
 }
 
+type timeStats struct {
+	previous archive.XferStats
+	second   archive.XferStats
+	minute   archive.XferStats
+	hour     archive.XferStats
+	day      archive.XferStats
+}
+
 var (
 	sfreq   = apcfg.Duration("snapshot_freq", 5*time.Minute, false, nil)
+	rfreq   = apcfg.Duration("rolling_freq", 5*time.Second, false, nil)
 	mretain = apcfg.Duration("mem_retain", 3*time.Hour, true, nil)
 	dretain = apcfg.Duration("disk_retain", 24*time.Hour, true, nil)
 
 	metricsDone      = make(chan bool, 1)
 	metricsWaitGroup sync.WaitGroup
 
+	rollingStats    = make(map[string]*timeStats)
 	currentStats    *archive.Snapshot
 	historicalStats []*archive.Snapshot
 	statsMtx        sync.RWMutex
@@ -125,6 +138,150 @@ func getKey(remoteIP net.IP, rport, lport int) uint64 {
 	}
 
 	return (archive.SessionToKey(s))
+}
+
+func metricOp(base, field string, val uint64) cfgapi.PropertyOp {
+	return cfgapi.PropertyOp{
+		Op:    cfgapi.PropCreate,
+		Name:  base + "/" + field,
+		Value: strconv.FormatUint(val, 10),
+	}
+}
+
+func metricOps(base string, data *archive.XferStats) []cfgapi.PropertyOp {
+	return []cfgapi.PropertyOp{
+		metricOp(base, "bytes_sent", data.BytesSent),
+		metricOp(base, "pkts_sent", data.PktsSent),
+		metricOp(base, "bytes_rcvd", data.BytesRcvd),
+		metricOp(base, "pkts_rcvd", data.PktsRcvd),
+	}
+}
+
+// Given an average value over periodA and a new value over periodB, calculate a
+// rolling average of the two values.
+func rollOne(avg, data, avgSec, dataSec uint64) uint64 {
+	var rval uint64
+
+	if avgSec <= dataSec {
+		// If the reporting period is less than the collecting period,
+		// then a rolling average doesn't make sense.  We really want
+		// the latest average, scaled down to fit the reporting period.
+		// So to report a 1 second average from 5 seconds of data, we
+		// return: new_data * (1 / 5).  To avoid losing precision with
+		// integer arithmetic, we do the multiplication first:
+		rval = (data * avgSec) / dataSec
+	} else {
+		// To update a per-minute average with 10 seconds of new data,
+		// we want: (avg - avg * (10/60)) + new_data.  As above, we
+		// multiply first:
+		rval = (avg - (avg*dataSec)/avgSec) + data
+	}
+
+	return rval
+}
+
+// Maintain a running average by periodically rolling in new data.  Returns True
+// if any field was updated, False if not.  This allows us to reduce config
+// traffic for clients that are largely idle.
+func roll(avg, data *archive.XferStats, avgPeriod, dataPeriod time.Duration) bool {
+	aSecs := uint64(avgPeriod.Seconds())
+	dSecs := uint64(dataPeriod.Seconds())
+
+	br := avg.BytesRcvd
+	pr := avg.PktsRcvd
+	bs := avg.BytesSent
+	ps := avg.PktsSent
+
+	avg.BytesRcvd = rollOne(avg.BytesRcvd, data.BytesRcvd, aSecs, dSecs)
+	avg.PktsRcvd = rollOne(avg.PktsRcvd, data.PktsRcvd, aSecs, dSecs)
+	avg.BytesSent = rollOne(avg.BytesSent, data.BytesSent, aSecs, dSecs)
+	avg.PktsSent = rollOne(avg.PktsSent, data.PktsSent, aSecs, dSecs)
+
+	return (br != avg.BytesRcvd || pr != avg.PktsRcvd ||
+		bs != avg.BytesSent || ps != avg.PktsSent)
+}
+
+func updateRolling(period time.Duration) {
+	// Prepopulate a map with zeroed entries for all clients we currently
+	// know about.  We then replace the zero entries for all clients that
+	// have some activity in the last period.  Pre-filling the map ensures
+	// that idle clients have their rolling averages recalculated with the
+	// idle activity in the final stage.
+	delta := make(map[string]*archive.XferStats)
+	for mac := range rollingStats {
+		delta[mac] = &archive.XferStats{}
+	}
+
+	// Calculate the change in all the stats since the last time this
+	// function was called.
+	statsMtx.RLock()
+	for mac, stats := range currentStats.Data {
+		current := &stats.Aggregate
+		running := rollingStats[mac]
+
+		if running == nil {
+			running = &timeStats{}
+			rollingStats[mac] = running
+
+		} else if current.BytesRcvd < running.previous.BytesRcvd ||
+			current.PktsRcvd < running.previous.PktsRcvd ||
+			current.BytesSent < running.previous.BytesSent ||
+			current.PktsSent < running.previous.PktsSent {
+
+			// If the current value(s) are lower than on the previous call,
+			// then the numbers were reset to 0 on a snapshot event
+			// immediately following our previous rollup.
+			running.previous = archive.XferStats{}
+		}
+
+		delta[mac] = &archive.XferStats{
+			BytesRcvd: current.BytesRcvd - running.previous.BytesRcvd,
+			PktsRcvd:  current.PktsRcvd - running.previous.PktsRcvd,
+			BytesSent: current.BytesSent - running.previous.BytesSent,
+			PktsSent:  current.PktsSent - running.previous.PktsSent,
+		}
+
+		running.previous = *current
+	}
+	statsMtx.RUnlock()
+
+	props := make([]cfgapi.PropertyOp, 0)
+	now := time.Now().Format(time.RFC3339)
+	for mac, stats := range delta {
+		base := "@/metrics/clients/" + mac
+
+		// If this client sent any data in the current period, update
+		// its 'last_activity' property.
+		if stats.BytesSent != 0 {
+			op := cfgapi.PropertyOp{
+				Op:    cfgapi.PropCreate,
+				Name:  base + "/last_activity",
+				Value: now,
+			}
+			props = append(props, op)
+		}
+
+		r := rollingStats[mac]
+		if roll(&r.second, stats, time.Second, period) {
+			props = append(props, metricOps(base+"/second", &r.second)...)
+		}
+		if roll(&r.minute, stats, time.Minute, period) {
+			props = append(props, metricOps(base+"/minute", &r.minute)...)
+		}
+		if roll(&r.hour, stats, time.Hour, period) {
+			props = append(props, metricOps(base+"/hour", &r.hour)...)
+		}
+		if roll(&r.day, stats, 24*time.Hour, period) {
+			props = append(props, metricOps(base+"/day", &r.day)...)
+		}
+
+	}
+	if len(props) > 0 {
+		ctx := context.Background()
+		if _, err := config.Execute(ctx, props).Wait(ctx); err != nil {
+			slog.Warnf("update failed: %v", err)
+		}
+	}
 }
 
 func updateStats(src, dst endpoint, proto string, len int) {
@@ -277,35 +434,47 @@ func snapshotClean(dir string) {
 	}
 }
 
+// Every rfreq period, update the high-level rolling usage statistics.  Every
+// sfreq period, persist detailed statistics to disk for upload to the cloud.
 func snapshotter() {
-	done := false
-	ticker := time.NewTicker(*sfreq)
-	defer ticker.Stop()
-	statsDir := *watchDir + "/stats"
+	defer metricsWaitGroup.Done()
 
+	ticker := time.NewTicker(*rfreq)
+	defer ticker.Stop()
+
+	statsDir := *watchDir + "/stats"
 	if !aputil.FileExists(statsDir) {
 		if err := os.MkdirAll(statsDir, 0755); err != nil {
 			slog.Errorf("Unable to make stats directory %s: %v",
 				statsDir, err)
-			done = true
+			return
 		}
 	}
 
-	for !done {
-		snapshotClean(statsDir)
+	nextSnapshot := time.Now().Add(*sfreq)
+	nextClean := time.Now()
+	for done := false; !done; {
+		if time.Now().After(nextClean) {
+			snapshotClean(statsDir)
+			nextClean = time.Now().Add(24 * time.Hour)
+		}
 
 		select {
 		case <-ticker.C:
 		case done = <-metricsDone:
+			nextSnapshot = time.Now()
 		}
 
-		snapshotStats(statsDir)
-		sn := historicalStats[len(historicalStats)-1]
-		if err := writeStats(statsDir, sn); err != nil {
-			slog.Warnf("Unable to persist snapshot: %v", err)
+		updateRolling(*rfreq)
+		if time.Now().After(nextSnapshot) {
+			snapshotStats(statsDir)
+			sn := historicalStats[len(historicalStats)-1]
+			if err := writeStats(statsDir, sn); err != nil {
+				slog.Warnf("Persisting snapshot: %v", err)
+			}
+			nextSnapshot = time.Now().Add(*sfreq)
 		}
 	}
-	metricsWaitGroup.Done()
 }
 
 func metricsFini(w *watcher) {

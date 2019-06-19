@@ -385,7 +385,7 @@ func (c *rpcClient) restore() error {
 		return nil
 	}
 
-	tree, err := cfgtree.NewPTree("@", rval.Value)
+	tree, err := cfgtree.NewPTree("@/", rval.Value)
 	if err != nil {
 		return fmt.Errorf("failed to parse tree from cl.rpcd: %v", err)
 	}

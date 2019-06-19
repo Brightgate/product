@@ -113,6 +113,7 @@ type hostapdConn struct {
 	liveCmd     *hostapdCmd   // the in-flight hostapd command
 	pendingCmds []*hostapdCmd // all queued commands
 
+	inStatus    bool // currently collecting per-station status
 	retransmits map[string]*retransmitState
 	stations    map[string]*stationInfo
 
@@ -288,6 +289,62 @@ func sendNetException(mac string, vapName *string,
 	}
 }
 
+var signalRE = regexp.MustCompile(`signal=(\S+)\s`)
+
+// Fetch a single station's status from hostapd.  Return the signal strength.
+func (c *hostapdConn) statusOne(sta string) (string, error) {
+	var rval string
+
+	status, err := c.command("STA " + sta)
+	if err == nil {
+		f := signalRE.FindStringSubmatch(status)
+		if len(f) != 0 {
+			str := f[1]
+			if _, err = strconv.Atoi(str); err == nil {
+				rval = str
+			}
+		}
+	}
+	return rval, err
+}
+
+// Iterate over all of the known stations, polling for status.  Use that to
+// update the per-client signal strength entries in the @/metrics tree.
+func (c *hostapdConn) statusAll() {
+	c.Lock()
+	defer c.Unlock()
+
+	if c.inStatus {
+		slog.Warnf("found status collection already in progress")
+		return
+	}
+
+	c.inStatus = true
+	stations := make([]string, 0)
+	for sta := range c.stations {
+		stations = append(stations, sta)
+	}
+	c.Unlock()
+
+	props := make([]cfgapi.PropertyOp, 0)
+	for _, sta := range stations {
+		if str, err := c.statusOne(sta); err == nil {
+			props = append(props, cfgapi.PropertyOp{
+				Op:    cfgapi.PropCreate,
+				Name:  "@/metrics/clients/" + sta + "/signal_str",
+				Value: str,
+			})
+		}
+	}
+
+	if len(props) > 0 {
+		_ = config.Execute(nil, props)
+	}
+
+	c.Lock()
+	c.inStatus = false
+}
+
 func (c *hostapdConn) getSignature(sta string) {
 	sta = strings.ToLower(sta)
 	sig, err := c.command("SIGNATURE " + sta)
@@ -437,15 +494,20 @@ func (c *hostapdConn) stop() {
 
 // Send periodic PINGs to hostapd to make sure it is still alive and responding
 func (c *hostapdConn) checkIn(exit chan bool) {
-	t := time.NewTicker(time.Second * 5)
-	defer t.Stop()
+	pingTick := time.NewTicker(time.Second * 5)
+	defer pingTick.Stop()
+
+	statusTick := time.NewTicker(time.Second * 10)
+	defer statusTick.Stop()
 
 	for {
 		select {
 		case <-exit:
 			return
-		case <-t.C:
+		case <-pingTick.C:
 			c.command("PING")
+		case <-statusTick.C:
+			c.statusAll()
 		}
 	}
 }

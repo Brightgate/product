@@ -83,6 +83,7 @@ var (
 		"email":      validateString,
 		"phone":      validateString,
 		"duration":   validateDuration,
+		"time_unit":  validateTimeUnit,
 	}
 )
 
@@ -344,6 +345,17 @@ func validateDuration(val string) error {
 	return err
 }
 
+func validateTimeUnit(val string) error {
+	var err error
+
+	l := strings.ToLower(val)
+	if l != "second" && l != "minute" && l != "hour" && l != "day" {
+		err = fmt.Errorf("invalid time unit")
+	}
+
+	return err
+}
+
 // Walking a concrete path, find the vnode that matches this field in the path.
 func getNextVnode(parent *vnode, field string) *vnode {
 	for _, node := range parent.children {
@@ -503,6 +515,7 @@ func newVnode(prop string) (*vnode, error) {
 			level:    cfgapi.AccessInternal,
 			children: make(map[string]*vnode),
 		}
+		slog.Debugf("new node: %s", path)
 		parent.children[f] = node
 	}
 

@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -33,6 +33,7 @@ var (
 // performed
 type PTree struct {
 	root *PNode
+	path string
 
 	preserved []*PNode // nodes preserved to allow for a rollback
 
@@ -62,21 +63,15 @@ type PNode struct {
 	origHash     []byte
 }
 
-func parse(prop string) []string {
-	prop = strings.TrimSuffix(prop, "/")
-	if prop == "@" {
-		return make([]string, 0)
-	}
-
-	/*
-	 * Only accept properties that start with exactly one '@', meaning they
-	 * are local to this device
-	 */
-	if len(prop) < 2 || prop[0] != '@' || prop[1] != '/' {
+func (t *PTree) parse(prop string) []string {
+	if !strings.HasPrefix(prop, t.path) {
 		return nil
 	}
 
-	x := strings.Split(prop[2:], "/")
+	body := strings.TrimPrefix(prop, t.path)
+	body = strings.TrimSuffix(body, "/")
+
+	x := strings.Split(body, "/")
 	y := make([]string, 0)
 	for _, z := range x {
 		if len(z) > 0 {
@@ -377,13 +372,13 @@ func (t *PTree) ChangesetRevert() {
 func (t *PTree) insert(prop string) (*PNode, error) {
 	var err error
 
-	components := parse(prop)
+	components := t.parse(prop)
 	if components == nil || len(components) < 1 {
 		return nil, fmt.Errorf("invalid property path: %s", prop)
 	}
 
 	node := t.root
-	path := "@"
+	path := t.path
 	for _, name := range components {
 		if node.Children == nil {
 			node.Children = make(map[string]*PNode)
@@ -413,7 +408,7 @@ func (t *PTree) insert(prop string) (*PNode, error) {
 }
 
 func (t *PTree) search(prop string) *PNode {
-	components := parse(prop)
+	components := t.parse(prop)
 	if components == nil {
 		return nil
 	}
@@ -580,7 +575,7 @@ func (t *PTree) Replace(data []byte) error {
 		return fmt.Errorf("unmarshalling properties")
 	}
 	t.root = &newRoot
-	t.patch(t.root, "@", "")
+	t.patch(t.root, t.path, "")
 
 	// You can't roll back from a full tree replacement.  It's up to the
 	// caller to ensure that the replacement is not part of a compound
@@ -590,12 +585,30 @@ func (t *PTree) Replace(data []byte) error {
 	return nil
 }
 
+func (node *PNode) dump(indent string) {
+	e := ""
+	if node.Expires != nil {
+		e = node.Expires.Format("2006-01-02T15:04:05")
+	}
+	fmt.Printf("%s%s: %s  %s\n", indent, node.Name(), node.Value, e)
+	for _, child := range node.Children {
+		child.dump(indent + "  ")
+	}
+}
+
+// Dump will dump the whole tree to stdout
+func (t *PTree) Dump() {
+	t.root.dump("")
+}
+
 // GraftTree will finalize a partially instantiated tree.  It will compute the
 // hashes, generate the 'path' fields, and set the parent pointers for each
 // node.
 func GraftTree(path string, root *PNode) *PTree {
+	path = strings.TrimSuffix(path, "/")
 	t := PTree{
 		root: root,
+		path: path,
 	}
 	t.patch(root, path, "")
 
@@ -607,8 +620,15 @@ func GraftTree(path string, root *PNode) *PTree {
 func NewPTree(path string, data []byte) (*PTree, error) {
 	var newRoot PNode
 
-	if err := json.Unmarshal(data, &newRoot); err != nil {
-		return nil, fmt.Errorf("unmarshalling properties")
+	if !strings.HasPrefix(path, "@/") || !strings.HasSuffix(path, "/") {
+		return nil, fmt.Errorf("invalid path: %s", path)
+	}
+
+	if data != nil {
+		err := json.Unmarshal(data, &newRoot)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshalling properties")
+		}
 	}
 
 	return GraftTree(path, &newRoot), nil

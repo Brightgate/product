@@ -164,7 +164,7 @@ func deleteOneProp(t *testing.T, prop string, succeed bool) {
 // construct a fresh config tree from the pre-loaded JSON file.  Return a map of
 // all the property leaves in the fresh tree.
 func testTreeInit(t *testing.T) leafMap {
-	tree, err := cfgtree.NewPTree("@", testData)
+	tree, err := cfgtree.NewPTree("@/", testData)
 	if err != nil {
 		t.Fatalf("failed to import config tree: %v", err)
 	}
@@ -881,6 +881,45 @@ func TestInvalidAccessLevel(t *testing.T) {
 			}
 			testValidateTree(t, a)
 		}
+	}
+}
+
+func TestMetrics(t *testing.T) {
+	const prop = "@/metrics/clients/11:22:33:44:55:66/signal_str"
+	const str1 = "-22"
+	const str2 = "3"
+
+	tree, err := cfgtree.NewPTree("@/metrics/", nil)
+	if err != nil {
+		fail("unable to construct @/metrics/: %v", err)
+	}
+
+	tree.ChangesetInit()
+	if err = tree.Add(prop, str1, nil); err != nil {
+		fail("unable to add %s: %v", prop, err)
+	}
+	tree.ChangesetCommit()
+
+	p, err := tree.GetNode(prop)
+	if err != nil {
+		fail("unable to get %s: %v", prop, err)
+	}
+	if val := p.Value; val != str1 {
+		fail("%s was %s - expected %s", prop, val, str1)
+	}
+
+	tree.ChangesetInit()
+	if err = tree.Set(prop, str2, nil); err != nil {
+		fail("unable to set %s: %v", prop, err)
+	}
+	tree.ChangesetCommit()
+
+	p, err = tree.GetNode(prop)
+	if err != nil {
+		fail("unable to get %s: %v", prop, err)
+	}
+	if val := p.Value; val != str2 {
+		fail("%s was %s - expected %s", prop, val, str2)
 	}
 }
 

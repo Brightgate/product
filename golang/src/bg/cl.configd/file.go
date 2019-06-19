@@ -42,7 +42,7 @@ func (store *fileStore) get(ctx context.Context, uuid string) (*cfgtree.PTree, e
 		return nil, err
 	}
 
-	tree, err := cfgtree.NewPTree("@", file)
+	tree, err := cfgtree.NewPTree("@/", file)
 	if err != nil {
 		err = fmt.Errorf("importing %s: %v", path, err)
 	}

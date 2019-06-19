@@ -15,9 +15,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"bg/common/cfgapi"
+	"bg/common/cfgmsg"
 	"bg/common/deviceid"
 )
 
@@ -30,7 +30,7 @@ var (
 )
 
 // Handle a request for a single device.
-func getDevHandler(prop string) (string, error) {
+func getDevice(prop string) (string, error) {
 
 	// The path must look like @/devices/<devid>
 	c := strings.Split(prop, "/")
@@ -55,12 +55,35 @@ func getDevHandler(prop string) (string, error) {
 	return "", err
 }
 
-func setDevHandler(prop string, val string, exp *time.Time, add bool) error {
-	return fmt.Errorf("the device tree is read-only")
-}
+func devPropHandler(query *cfgmsg.ConfigQuery) (string, error) {
+	var rval string
+	var err error
 
-func delDevHandler(prop string) ([]string, error) {
-	return nil, fmt.Errorf("the device tree is read-only")
+	for _, op := range query.Ops {
+		var prop string
+
+		if prop, _, _, err = getParams(op); err != nil {
+			break
+		}
+
+		switch op.Operation {
+		case cfgmsg.ConfigOp_GET:
+			rval, err = getDevice(prop)
+
+		case cfgmsg.ConfigOp_PING:
+			// no-op
+
+		default:
+			name, _ := cfgmsg.OpName(op.Operation)
+			err = fmt.Errorf("%s not supported for @/devices", name)
+		}
+
+		if err != nil {
+			break
+		}
+	}
+
+	return rval, err
 }
 
 func deviceDBInit() error {
