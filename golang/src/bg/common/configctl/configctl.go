@@ -195,33 +195,43 @@ func buildStatsPair(data *cfgapi.PropertyNode) (*statsPair, error) {
 	var err error
 
 	if data == nil {
-		return nil, fmt.Errorf("missing data")
-	}
-	if p.bytesRcvd, err = getVal(data, "bytes_rcvd"); err != nil {
-		return nil, err
-	}
-	if p.bytesSent, err = getVal(data, "bytes_sent"); err != nil {
-		return nil, err
+		err = fmt.Errorf("missing data")
+	} else {
+		v, verr := getVal(data, "bytes_rcvd")
+		if verr == nil {
+			p.bytesRcvd = v
+		} else {
+			err = verr
+		}
+		v, verr = getVal(data, "bytes_sent")
+		if verr == nil {
+			p.bytesSent = v
+		} else {
+			err = verr
+		}
 	}
 
-	return &p, nil
+	return &p, err
 }
 
 func buildStats(name string, data *cfgapi.PropertyNode) (*perClient, error) {
+	var err error
+
 	c := perClient{
 		name: name,
 		data: make(map[string]*statsPair),
 	}
 
 	for _, u := range []string{"day", "hour", "minute", "second"} {
-		p, err := buildStatsPair(data.Children[u])
-		if err != nil {
-			return nil, fmt.Errorf("building %s: %v", u, err)
+		p, perr := buildStatsPair(data.Children[u])
+		if perr != nil {
+			err = perr
+		} else {
+			c.data[u] = p
 		}
-		c.data[u] = p
 	}
 
-	return &c, nil
+	return &c, err
 }
 
 func fetchStats(mac string) ([]*perClient, error) {
@@ -252,11 +262,12 @@ func fetchStats(mac string) ([]*perClient, error) {
 	sort.Strings(macs)
 
 	for _, mac := range macs {
-		s, err := buildStats(mac, c[mac])
-		if err != nil {
-			return nil, err
+		s, serr := buildStats(mac, c[mac])
+		if serr == nil {
+			rval = append(rval, s)
+		} else {
+			err = serr
 		}
-		rval = append(rval, s)
 	}
 
 	return rval, err
@@ -288,7 +299,7 @@ func stats(cmd string, args []string) error {
 	showHdr := true
 	for {
 		stats, err := fetchStats(mac)
-		if err != nil {
+		if err != nil && len(stats) == 0 {
 			if *period != 0 {
 				fmt.Printf("%v", err)
 				showHdr = true
