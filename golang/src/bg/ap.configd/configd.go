@@ -107,8 +107,10 @@ var singletonOps = map[cfgmsg.ConfigOp_Operation]bool{
 }
 
 var (
-	verbose  = flag.Bool("v", false, "verbose log output")
-	logLevel = flag.String("log-level", "info", "zap log level")
+	verbose        = flag.Bool("v", false, "verbose log output")
+	logLevel       = flag.String("log-level", "info", "zap log level")
+	allowDowngrade = flag.Bool("downgrade",
+		true, "allow migrations to lower level rings")
 
 	propTree *cfgtree.PTree
 
@@ -344,6 +346,7 @@ func selectRing(mac string, client *cfgtree.PNode, vap, ring string) string {
 	if vap != "" {
 		// if we're already assigned to a ring on this vap, keep it
 		if vap == oldVAP {
+			slog.Debugf("  vap hasn't changed - keep %s", oldRing)
 			return oldRing
 		}
 		if vapRing, ok := virtualAPToDefaultRing[vap]; ok {
@@ -359,13 +362,16 @@ func selectRing(mac string, client *cfgtree.PNode, vap, ring string) string {
 		} else {
 			slog.Infof("%s: assigned to %s ring", mac, newRing)
 		}
-	} else if validRingUpgrades[oldRing+":"+newRing] {
-		slog.Infof("%s: upgrading from '%s' to '%s' ring", mac,
-			oldRing, newRing)
-	} else {
-		slog.Infof("%s: declining to move from '%s' to '%s' ring",
-			mac, oldRing, newRing)
-		newRing = oldRing
+
+	} else if oldRing != newRing {
+		if !*allowDowngrade && !validRingUpgrades[oldRing+":"+newRing] {
+			slog.Infof("%s: declining to move from '%s' to '%s' ring",
+				mac, oldRing, newRing)
+			newRing = oldRing
+		} else {
+			slog.Infof("%s: migrating from '%s' to '%s' ring", mac,
+				oldRing, newRing)
+		}
 	}
 	return newRing
 }
