@@ -99,6 +99,7 @@ const (
 	xRomDir     = "/tmp/x/rom"
 	xOverlayDir = "/tmp/x/overlay"
 	xRootDir    = "/tmp/x/root"
+	xDataDir    = "/tmp/x/root/data"
 )
 
 var (
@@ -949,6 +950,11 @@ func f2fsOverlay(side int, clearOverlay bool) {
 	varLock := fmt.Sprintf("%s/var/lock", xRootDir)
 	mustMkdirAll(varLock, 0755)
 
+	err = syscall.Mount("/data", xDataDir, "none", syscall.MS_BIND, "")
+	if err != nil {
+		log.Fatalf("bind overlay data mount failed %v", err)
+	}
+
 	// Mark overlay filesystem as ready for mounting by OpenWrt
 	// fstools.  Failure to create this symbolic link will cause the
 	// "overlay filesystem has not been fully initialized yet"
@@ -1076,8 +1082,14 @@ func mountOther(cmd *cobra.Command, args []string) error {
 func umountOther(cmd *cobra.Command, args []string) error {
 	var loopback string
 
+	// Unmount /data bind mount.
+	err := syscall.Unmount(xDataDir, 0)
+	if err != nil {
+		log.Fatalf("overlay data unmount failed %v", err)
+	}
+
 	// Unmount root (as overlay of rom and writeable)
-	err := syscall.Unmount(xRootDir, 0)
+	err = syscall.Unmount(xRootDir, 0)
 	if err != nil {
 		log.Printf("overlay unmount failed %v", err)
 	}
