@@ -499,7 +499,7 @@ func InstallCert(key, cert, issuerCert []byte, config *cfgapi.Handle) error {
 	if err := os.RemoveAll(tmpDir); err != nil {
 		return err
 	}
-	if err := os.Mkdir(tmpDir, 0755); err != nil {
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
 		return err
 	}
 
