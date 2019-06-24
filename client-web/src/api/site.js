@@ -163,6 +163,13 @@ async function siteDevicesGet(siteID) {
   return res.Devices;
 }
 
+async function siteHealthGet(siteID) {
+  assert.equal(typeof siteID, 'string');
+  const health = await commonApplianceGet(siteID, 'health');
+  debug('site health return', health);
+  return health;
+}
+
 // Load the list of rings from the server.
 async function siteRingsGet(siteID) {
   assert.equal(typeof siteID, 'string');
@@ -384,6 +391,7 @@ export default {
   siteConfigWaitProp,
   sitesGet,
   siteDevicesGet,
+  siteHealthGet,
   siteRingsGet,
   siteClientsRingSet,
   siteVAPsGet,

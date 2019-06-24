@@ -454,6 +454,47 @@ func hasRole(roles []string, s string) bool {
 	return false
 }
 
+type siteHealth struct {
+	HeartbeatProblem bool `json:"heartbeatProblem"`
+	ConfigProblem    bool `json:"configProblem"`
+}
+
+// getHealth implements /api/sites/:uuid/health
+func (a *siteHandler) getHealth(c echo.Context) error {
+	hdl, err := a.getClientHandle(c.Param("uuid"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	defer hdl.Close()
+
+	siteUUID, err := uuid.FromString(c.Param("uuid"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "bad site uuid")
+	}
+
+	ctx := c.Request().Context()
+	var response siteHealth
+	hb, err := a.db.LatestHeartbeatBySiteUUID(ctx, siteUUID)
+	if err != nil {
+		c.Logger().Warnf("Failed to get latest heartbeat for %v: %v", siteUUID, err)
+		response.HeartbeatProblem = true
+	} else {
+		// Heartbeats are every 7 minutes, so 15 minutes means we've missed two.
+		if time.Since(hb.RecordTS) > 15*time.Minute {
+			response.HeartbeatProblem = true
+		}
+	}
+
+	siteNullUUID := uuid.NullUUID{UUID: siteUUID, Valid: true}
+	cmds, err := a.db.CommandAuditHealth(ctx, siteNullUUID, time.Now().Add(-1*(time.Minute*3)))
+	if err == nil && len(cmds) > 0 {
+		response.ConfigProblem = true
+	}
+	c.Logger().Infof("got cmds response: %v", cmds)
+
+	return c.JSON(http.StatusOK, response)
+}
+
 // getNetworkVAP implements GET /api/site/:uuid/network/vap, returning the list of VAPs
 func (a *siteHandler) getNetworkVAP(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
@@ -847,6 +888,7 @@ func newSiteHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []echo.M
 	siteU.GET("/configtree", h.getConfigTree, admin)
 	siteU.GET("/devices", h.getDevices, admin)
 	siteU.POST("/enroll_guest", h.postEnrollGuest, user)
+	siteU.GET("/health", h.getHealth, user)
 	siteU.GET("/network/vap", h.getNetworkVAP, user)
 	siteU.GET("/network/vap/:vapname", h.getNetworkVAPName, user)
 	siteU.POST("/network/vap/:vapname", h.postNetworkVAPName, admin)

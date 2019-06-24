@@ -27,15 +27,26 @@ span.orgname {
       </span>
     </f7-block>
 
-    <template v-if="alertCount(alertActive(alerts))">
+    <template v-if="alertCount(alertActive(alerts)) || health.heartbeatProblem || health.configProblem">
       <f7-block-title>{{ $t("message.alerts.serious_alerts") }}</f7-block-title>
-      <f7-list>
+      <f7-list media-list>
+        <!-- site level alerts -->
+        <f7-list-item v-for="siteAlert in siteAlerts"
+                      :key="siteAlert"
+                      :title="$t(`message.site_alert.${siteAlert}.short`)"
+                      :link="`/sites/${currentSiteID}/alerts/${siteAlert}/`">
+          <f7-icon slot="media" f7="bolt_round_fill" color="red" />
+          <div class="item-text">{{ $t(`message.site_alert.${siteAlert}.title`) }}</div>
+        </f7-list-item>
+
+        <!-- alerts for specific client devices -->
         <f7-list-item
           v-for="alert in alertActive(alerts)"
           :key="alert.deviceID + '-' + alert.vulnid"
+          :title="$t('message.alerts.vulnerability')"
           :link="`/sites/${currentSiteID}/devices/${alert.deviceID}/`">
-          <span>
-            <f7-icon f7="bolt_round_fill" color="red" />
+          <f7-icon slot="media" f7="bolt_round_fill" color="red" />
+          <span slot="text">
             {{
               $t('message.alerts.problem_on_device', {
                 problem: vulnHeadline(alert.vulnid),
@@ -86,6 +97,7 @@ export default {
       'deviceByUniqID',
       'deviceCount',
       'devices',
+      'health',
       'loggedIn',
       'siteAdmin',
     ]),
@@ -95,6 +107,17 @@ export default {
       const x = this.$store.getters.siteByID(siteid);
       debug(`siteid ${siteid}`, x);
       return x;
+    },
+
+    siteAlerts: function() {
+      const siteAlerts = [];
+      if (this.health.heartbeatProblem) {
+        siteAlerts.push('heartbeat');
+      }
+      if (this.health.configProblem) {
+        siteAlerts.push('configQueue');
+      }
+      return siteAlerts;
     },
   },
 

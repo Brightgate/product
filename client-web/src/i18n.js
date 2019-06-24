@@ -55,7 +55,38 @@ export default {
       },
       alerts: {
         serious_alerts: 'Serious Alerts',
+        vulnerability: 'Vulnerability',
         problem_on_device: '{problem} on {device}',
+      },
+      site_alert: {
+        title: 'Site Alert',
+        contact_support: 'Contact Support',
+        heartbeat: {
+          'short': 'Gateway/Cloud Connectivity',
+          'title': 'Gateway Can’t Connect to Brightgate Cloud',
+          'text': 'Your gateway sends regular messages to the Brightgate cloud. We have not seen these messages in the past 15 minutes (or longer).',
+          'check_intro': 'Please check:',
+          'checks': {
+            '1': 'The gateway is powered on and its lights indicate normal activity',
+            '2': 'The gateway’s internet ethernet cable is connected',
+            '3': 'Your cable modem or internet box is powered on and working',
+            '4': 'Your internet provider does not have an outage',
+          },
+          'check_final': 'If these things are in order, your gateway may be experiencing a failure and may require service.',
+        },
+        configQueue: {
+          'short': 'Gateway/Cloud Connectivity',
+          'title': 'Brightgate cloud management stalled',
+          'text': 'Brightgate’s cloud sent configuration commands to your gateway. These have been pending for three or more minutes. This means your gateway can’t connect or requires service.',
+          'check_intro': 'Please check:',
+          'checks': {
+            '1': 'The gateway is powered on and its lights indicate normal activity',
+            '2': 'The gateway’s internet ethernet cable is connected',
+            '3': 'Your cable modem or internet box is powered on and working',
+            '4': 'Your internet provider does not have an outage',
+          },
+          'check_final': 'If these things are in order, your gateway may be experiencing a failure and may require service.',
+        },
       },
       notifications: {
         notifications: 'Notifications',
@@ -281,7 +312,10 @@ export default {
       },
       alerts: {
         serious_alerts: 'Schwerwiegende Warnungen',
+        vulnerability: 'Vulnerability', // XXXI18N
         problem_on_device: '{problem} auf {device}', // XXXI18N
+      },
+      site_alert: { // XXXI18N
       },
       notifications: {
         notifications: 'Benachrichtigungen',

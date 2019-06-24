@@ -25,6 +25,7 @@ type commandQueue interface {
 	CommandSubmit(context.Context, uuid.UUID, *SiteCommand) error
 	CommandFetch(context.Context, uuid.UUID, int64, uint32) ([]*SiteCommand, error)
 	CommandAudit(context.Context, uuid.NullUUID, int64, uint32) ([]*SiteCommand, error)
+	CommandAuditHealth(context.Context, uuid.NullUUID, time.Time) ([]*SiteCommand, error)
 	CommandCancel(context.Context, uuid.UUID, int64) (*SiteCommand, *SiteCommand, error)
 	CommandComplete(context.Context, uuid.UUID, int64, []byte) (*SiteCommand, *SiteCommand, error)
 	CommandDelete(context.Context, uuid.UUID, int64) (int64, error)
@@ -178,6 +179,32 @@ func (db *ApplianceDB) CommandAudit(ctx context.Context, u uuid.NullUUID, start 
 		     ORDER BY id
 		     LIMIT $3`,
 		u, start, max)
+	return cmds, err
+}
+
+//
+// CommandAuditHealth returns all commands for a UUID which are not completed
+// and are older than the given timestamp.  This is for monitoring completion
+// (for example for health checking).
+//
+// The argument `u` is a NullUUID so that you can pass in a NullUUID with the
+// `.Valid` member set to false and get back commands not specific to any site.
+//
+// Care must be used to be sure that public consumers of this interface are not
+// allowed to pass a nulled UUID, which would allow access to all commands.
+//
+func (db *ApplianceDB) CommandAuditHealth(ctx context.Context, u uuid.NullUUID, before time.Time) ([]*SiteCommand, error) {
+	// Maybe this should return some stats instead?  Then we'd know something about the
+	// last time we completed a command too.  Or extend audit with a Nullable state.-- maybe better.
+	cmds := make([]*SiteCommand, 0)
+
+	err := db.SelectContext(ctx, &cmds,
+		`SELECT *
+		     FROM site_commands
+		     WHERE ($1::uuid IS NULL OR site_uuid = $1)
+		       AND (state = 'ENQD' or state = 'WORK')
+		       AND (enq_ts < $2)
+		     ORDER BY id`, u, before)
 	return cmds, err
 }
 

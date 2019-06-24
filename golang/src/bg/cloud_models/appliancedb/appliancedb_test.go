@@ -240,11 +240,19 @@ func testHeartbeatIngest(t *testing.T, ds DataStore, logger *zap.Logger, slogger
 	// expect to fail because UUID doesn't exist
 	assert.Error(err)
 
+	hbLatest, err := ds.LatestHeartbeatBySiteUUID(ctx, testID1.SiteUUID)
+	assert.Error(err)
+
 	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, &testID1)
 
 	err = ds.InsertHeartbeatIngest(ctx, &hb)
 	// expect to succeed now
 	assert.NoError(err)
+
+	hbLatest, err = ds.LatestHeartbeatBySiteUUID(ctx, testID1.SiteUUID)
+	assert.NoError(err)
+	assert.Equal(hb.ApplianceUUID, hbLatest.ApplianceUUID)
+	assert.Equal(hb.SiteUUID, hbLatest.SiteUUID)
 }
 
 // Test insertion into site_net_exception table.  subtest of TestDatabaseModel
@@ -1144,6 +1152,14 @@ func testCommandQueue(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 
 	// Audit from different site
 	cmds, err = ds.CommandAudit(ctx, su2, 0, 10)
+	assert.NoError(err)
+	assert.Len(cmds, 0)
+
+	cmds, err = ds.CommandAuditHealth(ctx, su1, time.Now())
+	assert.NoError(err)
+	assert.Len(cmds, 10)
+
+	cmds, err = ds.CommandAuditHealth(ctx, su1, time.Now().Add(-1*time.Minute))
 	assert.NoError(err)
 	assert.Len(cmds, 0)
 }

@@ -129,6 +129,11 @@ const mockWan = {
   'dhcpRoute': '10.1.4.1',
 };
 
+const mockHealth = {
+  'heartbeatProblem': true,
+  'configProblem': true,
+};
+
 const mockConfig = {
   '@/network/dnsserver': '8.8.8.8',
   '@/network/wan/current/address': '10.1.4.12/26',
@@ -225,6 +230,7 @@ function mockAxios(normalAxios, mode) {
   mock
     .onGet('/api/sites').reply(200, mockSites)
     .onGet(/\/api\/sites\/.+\/users/).reply(200, mockUsers)
+    .onGet(/\/api\/sites\/.+\/health/).reply(200, mockHealth)
     .onGet(/\/api\/sites\/.+\/config\?.*/).reply(configGetHandler)
     .onPost(/\/api\/sites\/.+\/config/).reply(configPostHandler)
     .onGet(/\/api\/sites\/.+\/devices/).reply(200, mockDevices)

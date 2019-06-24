@@ -58,6 +58,7 @@ class Site {
     this.networkConfig = {};
     this.vaps = {};
     this.wan = {};
+    this.health = {};
     debug(`done constructing new Site id=${id}`);
   }
 
@@ -238,6 +239,10 @@ const mutations = {
     getSite(state, id).devices = devices;
   },
 
+  setSiteHealth(state, {id, health}) {
+    getSite(state, id).health = health;
+  },
+
   setSiteRings(state, {id, rings}) {
     getSite(state, id).rings = rings;
   },
@@ -347,6 +352,13 @@ const getters = {
   },
   deviceByUniqID: (state) => (uniqid) => {
     return state.currentSite.devicesByUniqID[uniqid];
+  },
+
+  siteHealth: (state) => (siteID) => {
+    return getSite(state, siteID).health;
+  },
+  health: (state) => {
+    return state.currentSite.health;
   },
 
   appMode: (state) => {
@@ -548,6 +560,20 @@ const actions = {
     context.commit('setSites', sites);
   },
 
+  async fetchSiteHealth(context) {
+    if (context.state.appMode !== appDefs.APPMODE_CLOUD) {
+      debug('fetchSiteHealth: skipped, not cloud');
+      return;
+    }
+    if (context.state.currentSite === nullSite) {
+      debug('fetchSiteHealth: skipped, nullSite');
+      return;
+    }
+    const id = context.state.currentSiteID;
+    const health = await siteApi.siteHealthGet(id);
+    context.commit('setSiteHealth', {id: id, health: health});
+  },
+
   async setCurrentSiteID(context, {id}) {
     context.commit('setCurrentSiteID', id);
     await context.dispatch('fetchPeriodicStop');
@@ -606,6 +632,9 @@ const actions = {
       debug('fetchPeriodic: not logged in or not admin, disabling');
       return;
     }
+
+    debug('fetchPeriodic: dispatching fetchSiteHealth (async)');
+    context.dispatch('fetchSiteHealth');
 
     debug('fetchPeriodic: dispatching fetchDevices');
     context.dispatch('fetchDevices'
@@ -811,6 +840,7 @@ const actions = {
     debug('fetchPostLogin');
     context.dispatch('fetchAccountSelfProvision').catch(() => {});
     context.dispatch('fetchSites').then(() => {
+      context.dispatch('fetchSiteHealth').catch(() => {});
       context.dispatch('fetchDevices').catch(() => {});
       context.dispatch('fetchRings').catch(() => {});
       context.dispatch('fetchUsers').catch(() => {});

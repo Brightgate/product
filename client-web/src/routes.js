@@ -22,6 +22,7 @@ import NetworkVAP from './pages/network_vap.vue';
 import NetworkVAPEditor from './pages/network_vap_editor.vue';
 import SelfProvision from './pages/self_provision.vue';
 import SiteAdmin from './pages/site_admin.vue';
+import SiteAlert from './pages/site_alert.vue';
 import TestTools from './pages/test_tools.vue';
 import UserDetails from './pages/user_details.vue';
 import UserEditor from './pages/user_editor.vue';
@@ -47,6 +48,10 @@ export default [
   {
     path: '/account_prefs/self_provision',
     component: SelfProvision,
+  },
+  {
+    path: '/sites/:siteID/alerts/:alertID/',
+    component: SiteAlert,
   },
   {
     path: '/sites/:siteID/compliance_report/',
