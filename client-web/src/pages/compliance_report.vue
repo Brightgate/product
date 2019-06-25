@@ -49,7 +49,7 @@
           <span>
             <f7-icon f7="bolt_round_fill" color="red" />
             {{ $t('message.alerts.problem_on_device',
-                  {problem: vulnHeadline(alert.vulnid), device: deviceByUniqID(alert.deviceID).networkName})
+                  {problem: vulnHeadline(alert.vulnid), device: deviceByUniqID(alert.deviceID).displayName})
             }}
           </span>
         </f7-list-item>
@@ -67,7 +67,7 @@
           <span>
             <f7-icon f7="bolt_round_fill" color="gray" />
             {{ $t('message.alerts.problem_on_device',
-                  {problem: vulnHeadline(alert.vulnid), device: deviceByUniqID(alert.deviceID).networkName})
+                  {problem: vulnHeadline(alert.vulnid), device: deviceByUniqID(alert.deviceID).displayName})
             }}
           </span>
         </f7-list-item>

@@ -136,9 +136,7 @@ const mockHealth = {
 
 const mockConfig = {
   '@/network/dnsserver': '8.8.8.8',
-  '@/network/wan/current/address': '10.1.4.12/26',
-  '@/network/2.4GHz/channel': '11',
-  '@/network/5GHz/channel': '165',
+  '@/network/base_address': '10.1.4.12/26',
 };
 
 const mockUserid = {

@@ -33,6 +33,9 @@ export default {
         generate_pass_button: 'Generate Password',
         accept_pass_button: 'Accept and Provision',
       },
+      api: { // Messages from the store
+        unknown_device: 'Unnamed ({hwAddr})',
+      },
       home: {
         local_site: 'Local Site',
         local_site_explanation: 'You are administering the Brightgate Wi-fi appliances on your local network (the Local Site).  Changes will also be reflected in the Brightgate cloud.',
@@ -302,6 +305,8 @@ export default {
   de: {
     message: {
       test_tools: {}, // Note: We don't internationalize this group
+      api: { // Messages from the store, XXX1I8N
+      },
       home: { // XXXI18N
       },
       site_admin: { // XXXI18N

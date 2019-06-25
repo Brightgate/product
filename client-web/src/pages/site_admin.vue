@@ -50,7 +50,7 @@ span.orgname {
             {{
               $t('message.alerts.problem_on_device', {
                 problem: vulnHeadline(alert.vulnid),
-                device: deviceByUniqID(alert.deviceID).networkName
+                device: deviceByUniqID(alert.deviceID).displayName
               })
             }}
           </span>

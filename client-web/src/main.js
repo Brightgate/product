@@ -60,7 +60,7 @@ import AppStyles from './css/app.css';
 
 import App from './app.vue';
 // Our store (VueX) implementation
-import store from './store';
+import {store, setStoreI18n} from './store';
 
 import './registerServiceWorker';
 
@@ -121,6 +121,7 @@ const i18n = new VueI18n({
   locale,
   messages,
 });
+setStoreI18n(i18n);
 
 // Init App
 new Vue({

@@ -28,37 +28,6 @@ import (
 	"github.com/satori/uuid"
 )
 
-// DAAlerts is a placeholder.
-// XXX What would an Alert be?  A reference ID to a full Alert?
-type daAlerts struct {
-	DbgRequest string
-	Alerts     []string
-}
-
-// GET alerts  () -> (...)
-// Policy: GET(*_ADMIN)
-// XXX Should a GUEST or USER be able to see the alerts that correspond
-// to their behavior?
-func demoAlertsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	rs := fmt.Sprintf("%v", r)
-	as := daAlerts{
-		//		Alerts:     {""},
-		DbgRequest: rs,
-	}
-	b, err := json.Marshal(as)
-	if err != nil {
-		log.Printf("failed to json marshal alert '%v': %v\n", as, err)
-		return
-	}
-
-	_, err = w.Write(b)
-	if err != nil {
-		log.Printf("failed to write json alert '%v': %v\n", b, err)
-		return
-	}
-}
-
 // Subset of cfgapi.VulnInfo
 type daVulnInfo struct {
 	FirstDetected  *time.Time `json:"first_detected"`
@@ -75,28 +44,25 @@ type daScanInfo struct {
 }
 
 type daDevice struct {
-	HwAddr          string                `json:"HwAddr"`
-	Manufacturer    string                `json:"Manufacturer"`
-	Model           string                `json:"Model"`
-	Kind            string                `json:"Kind"`
-	Confidence      float64               `json:"Confidence"`
-	Ring            string                `json:"Ring"`
-	HumanName       string                `json:"HumanName,omitempty"`
-	DNSName         string                `json:"DNSName,omitempty"`
-	DHCPExpiry      string                `json:"DHCPExpiry,omitempty"`
-	IPv4Addr        *net.IP               `json:"IPv4Addr,omitempty"`
-	OSVersion       string                `json:"OSVersion,omitempty"`
-	Active          bool                  `json:"Active"`
-	ConnVAP         string                `json:"ConnVAP,omitempty"`
-	ConnBand        string                `json:"ConnBand,omitempty"`
-	ConnNode        *uuid.UUID            `json:"ConnNode,omitempty"`
-	Scans           map[string]daScanInfo `json:"Scans,omitempty"`
-	Vulnerabilities map[string]daVulnInfo `json:"Vulnerabilities,omitempty"`
-}
-
-type daDevices struct {
-	DbgRequest string
-	Devices    []daDevice
+	HwAddr          string                `json:"hwAddr"`
+	Manufacturer    string                `json:"manufacturer"`
+	Model           string                `json:"model"`
+	Kind            string                `json:"kind"`
+	Confidence      float64               `json:"confidence"`
+	Ring            string                `json:"ring"`
+	DisplayName     string                `json:"displayName"`
+	DNSName         string                `json:"dnsName,omitempty"`
+	DHCPName        string                `json:"dhcpName"`
+	DHCPExpiry      string                `json:"dhcpExpiry,omitempty"`
+	IPv4Addr        *net.IP               `json:"ipv4Addr,omitempty"`
+	OSVersion       string                `json:"osVersion,omitempty"`
+	Active          bool                  `json:"active"`
+	Wireless        bool                  `json:"wireless"`
+	ConnBand        string                `json:"connBand,omitempty"`
+	ConnNode        *uuid.UUID            `json:"connNode,omitempty"`
+	ConnVAP         string                `json:"connVAP,omitempty"`
+	Scans           map[string]daScanInfo `json:"scans,omitempty"`
+	Vulnerabilities map[string]daVulnInfo `json:"vulnerabilities,omitempty"`
 }
 
 // mirrors RingConfig but omits Bridge and Vlan
@@ -109,40 +75,32 @@ type daRing struct {
 type daRings map[string]daRing
 
 func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
-	scanMap cfgapi.ScanMap, vulnMap cfgapi.VulnMap) daDevice {
+	scanMap cfgapi.ScanMap, vulnMap cfgapi.VulnMap) *daDevice {
 
 	cd := daDevice{
 		HwAddr:          hwaddr,
-		Manufacturer:    "unknown",
-		Model:           fmt.Sprintf("unknown (id=%s)", client.Identity),
-		Kind:            "unknown",
+		Manufacturer:    "",
+		Model:           "",
+		Kind:            "",
 		Confidence:      client.Confidence,
 		Ring:            client.Ring,
+		DisplayName:     client.DisplayName(),
+		DNSName:         client.DNSName,
+		DHCPName:        client.DHCPName,
+		DHCPExpiry:      "static",
 		IPv4Addr:        &client.IPv4,
+		OSVersion:       "",
 		Active:          client.IsActive(),
-		ConnVAP:         client.ConnVAP,
+		Wireless:        client.Wireless,
 		ConnBand:        client.ConnBand,
 		ConnNode:        client.ConnNode,
+		ConnVAP:         client.ConnVAP,
 		Scans:           make(map[string]daScanInfo),
 		Vulnerabilities: make(map[string]daVulnInfo),
 	}
 
-	cd.HwAddr = hwaddr
-	if client.DNSName != "" {
-		cd.HumanName = client.DNSName
-		cd.DNSName = client.DNSName
-	} else if client.DHCPName != "" {
-		cd.HumanName = client.DHCPName
-		cd.DNSName = ""
-	} else {
-		cd.HumanName = ""
-		cd.DNSName = ""
-	}
-
 	if client.Expires != nil {
-		cd.DHCPExpiry = client.Expires.Format("2006-01-02T15:04")
-	} else {
-		cd.DHCPExpiry = "static"
+		cd.DHCPExpiry = client.Expires.Format(time.RFC3339)
 	}
 
 	for k, v := range scanMap {
@@ -167,7 +125,7 @@ func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
 		identity, err := strconv.Atoi(client.Identity)
 		if err != nil {
 			log.Printf("buildDeviceResponse unusual client identity '%v': %v\n", client.Identity, err)
-			return cd
+			return &cd
 		}
 
 		lpn, err := deviceid.GetDeviceByID(config, identity)
@@ -180,46 +138,7 @@ func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
 		}
 	}
 
-	return cd
-}
-
-// GET devices on ring (ring) -> (...)
-// Policy: GET (*_USER, *_ADMIN)
-func demoDevicesByRingHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	vars := mux.Vars(r)
-
-	clientsRaw := config.GetClients()
-	var devices daDevices
-
-	for mac, client := range clientsRaw {
-		var cd daDevice
-
-		if client.Ring != vars["ring"] {
-			continue
-		}
-
-		scans := config.GetClientScans(mac)
-		vulns := config.GetVulnerabilities(mac)
-		cd = buildDeviceResponse(mac, client, scans, vulns)
-
-		devices.Devices = append(devices.Devices, cd)
-	}
-
-	devices.DbgRequest = fmt.Sprintf("%v", r)
-
-	b, err := json.Marshal(devices)
-	if err != nil {
-		log.Printf("failed to json marshal ring devices '%v': %v\n", devices, err)
-		return
-	}
-
-	_, err = w.Write(b)
-	if err != nil {
-		log.Printf("failed to write ring devices '%v': %v\n", b, err)
-		return
-	}
+	return &cd
 }
 
 // GET rings () -> (...)
@@ -235,49 +154,28 @@ func demoRingsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	b, err := json.Marshal(resp)
-	if err != nil {
-		log.Printf("failed to json marshal response '%v': %v\n", resp, err)
-		return
-	}
-
-	_, err = w.Write(b)
-	if err != nil {
-		log.Printf("failed to write rings '%v': %v\n", b, err)
-		return
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(&resp); err != nil {
+		panic(err)
 	}
 }
 
 // GET devices () -> (...)
 // Policy: GET (*_USER, *_ADMIN)
 func demoDevicesHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
 	clientsRaw := config.GetClients()
-	var devices daDevices
+	var devices []*daDevice
 
 	for mac, client := range clientsRaw {
-		var cd daDevice
-
 		scans := config.GetClientScans(mac)
 		vulns := config.GetVulnerabilities(mac)
-		cd = buildDeviceResponse(mac, client, scans, vulns)
-
-		devices.Devices = append(devices.Devices, cd)
+		cd := buildDeviceResponse(mac, client, scans, vulns)
+		devices = append(devices, cd)
 	}
 
-	devices.DbgRequest = fmt.Sprintf("%v", r)
-
-	b, err := json.Marshal(devices)
-	if err != nil {
-		log.Printf("failed to json marshal devices '%v': %v\n", devices, err)
-		return
-	}
-
-	_, err = w.Write(b)
-	if err != nil {
-		log.Printf("failed to write devices '%v': %v\n", b, err)
-		return
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(&devices); err != nil {
+		panic(err)
 	}
 }
 
@@ -371,28 +269,6 @@ func demoWanGetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GET requests moves all unenrolled clients to standard.
-func demoSupremeHandler(w http.ResponseWriter, r *http.Request) {
-	clientsRaw := config.GetClients()
-	count := 0
-
-	for mac, client := range clientsRaw {
-		if client.Ring == "unenrolled" {
-			rp := fmt.Sprintf("@/clients/%s/ring", mac)
-			err := config.SetProp(rp, "standard", nil)
-			if err != nil {
-				log.Printf("supreme set %v to standard failed: %v\n", rp, err)
-				continue
-			}
-			log.Printf("supreme %v moved to standard\n", mac)
-			count++
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, "{\"demoApiHandler\": \"GET supreme\", \"request\": \"%v\", \"changed\": \"%v\"}\n", r, count)
-}
-
 func demoConfigGetHandler(w http.ResponseWriter, r *http.Request) {
 	t := time.Now()
 
@@ -455,7 +331,6 @@ func demoConfigPostHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type daUser struct {
-	DbgRequest        string
 	UID               string
 	UUID              *uuid.UUID
 	Role              *string
@@ -466,11 +341,6 @@ type daUser struct {
 	SelfProvisioning  bool
 	HasPassword       bool
 	SetPassword       *string
-}
-
-type daUsers struct {
-	DbgRequest string
-	Users      map[string]daUser
 }
 
 func buildUserResponse(user *cfgapi.UserInfo) daUser {
@@ -502,7 +372,6 @@ func buildUserResponse(user *cfgapi.UserInfo) daUser {
 // "[demo_api_root]/users/{uuid}".
 //
 func demoUserByUUIDGetHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	vars := mux.Vars(r)
 
 	// XXX what uuid if not present?
@@ -521,8 +390,8 @@ func demoUserByUUIDGetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cu := buildUserResponse(userRaw)
-	cu.DbgRequest = fmt.Sprintf("%v", r)
 
+	w.Header().Set("Content-Type", "application/json")
 	if err = json.NewEncoder(w).Encode(cu); err != nil {
 		panic(err)
 	}
@@ -534,7 +403,6 @@ func demoUserByUUIDGetHandler(w http.ResponseWriter, r *http.Request) {
 //
 func demoUserByUUIDPostHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
-	w.Header().Set("Content-Type", "application/json")
 	vars := mux.Vars(r)
 
 	var dau daUser
@@ -615,8 +483,8 @@ func demoUserByUUIDPostHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cu := buildUserResponse(ui)
-	cu.DbgRequest = fmt.Sprintf("%v", r)
 
+	w.Header().Set("Content-Type", "application/json")
 	if err = json.NewEncoder(w).Encode(cu); err != nil {
 		panic(err)
 	}
@@ -653,30 +521,16 @@ func demoUserByUUIDDeleteHandler(w http.ResponseWriter, r *http.Request) {
 // demoUsersHandler returns a JSON-formatted map of configured users, keyed by
 // UUID, typically in response to a GET request to "[demo_api_root]/users".
 func demoUsersHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	var users daUsers
-	users.Users = make(map[string]daUser)
+	users := make(map[string]daUser)
 
 	for _, user := range config.GetUsers() {
-		cu := buildUserResponse(user)
-		users.Users[user.UUID.String()] = cu
+		ur := buildUserResponse(user)
+		users[ur.UUID.String()] = ur
 	}
 
-	users.DbgRequest = fmt.Sprintf("%v", r)
-
-	b, err := json.Marshal(users)
-	if err != nil {
-		log.Printf("failed to json marshal users '%v': %v\n", users, err)
-		http.Error(w, "bad request", 400)
-		return
-	}
-
-	_, err = w.Write(b)
-	if err != nil {
-		log.Printf("failed to write users '%v': %v\n", b, err)
-		http.Error(w, "bad request", 400)
-		return
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(users); err != nil {
+		panic(err)
 	}
 }
 
@@ -718,17 +572,14 @@ func makeDemoAPIRouter() *mux.Router {
 	// Per-site operations
 	router.HandleFunc("/sites", demoSitesHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}", demoSitesUUIDHandler).Methods("GET")
-	router.HandleFunc("/sites/{s}/alerts", demoAlertsHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/config", demoConfigGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/config", demoConfigPostHandler).Methods("POST")
-	router.HandleFunc("/sites/{s}/devices/{ring}", demoDevicesByRingHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/devices", demoDevicesHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/network/vap", demoVAPGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/network/vap/{vapname}", demoVAPNameGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/network/vap/{vapname}", demoVAPNamePostHandler).Methods("POST")
 	router.HandleFunc("/sites/{s}/network/wan", demoWanGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/rings", demoRingsHandler).Methods("GET")
-	router.HandleFunc("/sites/{s}/supreme", demoSupremeHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/users", demoUsersHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/users/{uuid}", demoUserByUUIDGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/users/{uuid}", demoUserByUUIDPostHandler).Methods("POST")

@@ -70,17 +70,6 @@
             @change="setTestAppMode(appDefs.APPMODE_LOCAL)"
           />
         </f7-list-group>
-        <f7-list-group>
-          <f7-list-item :title="$t('message.test_tools.other_group')" group-title />
-          <f7-list-item
-            :title="$t('message.test_tools.accept_devices')"
-            :class="loggedIn ? '' : 'disabled'">
-            <span slot="after">
-              <f7-button fill @click="acceptSupreme">{{ $t("message.general.accept") }}
-              </f7-button>
-            </span>
-          </f7-list-item>
-        </f7-list-group>
       </f7-list>
       <!-- this is a rough demo; it can do both AJAX and form submits,
            as experiments to see what makes sense for getting lastpass
@@ -215,23 +204,6 @@ export default {
       this.$store.dispatch('fetchProviders').catch(() => {});
       this.$store.dispatch('fetchSites').catch(() => {});
       this.$store.dispatch('fetchDevices').catch(() => {});
-    },
-
-    acceptSupreme: async function() {
-      let message = null;
-      try {
-        const result = await this.$store.dispatch('supreme');
-        const c = result.changed ? result.changed : -1;
-        message = this.$t('message.test_tools.accept_success', {'devicesChanged': c});
-      } catch (err) {
-        debug('supreme fail', err);
-        message = this.$t('message.test_tools.accept_fail', {'reason': err.message});
-      }
-      this.acceptToast = this.$f7.toast.create({
-        text: message,
-        closeButton: true,
-      });
-      this.acceptToast.open();
     },
   },
 };

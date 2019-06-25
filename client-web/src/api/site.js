@@ -153,27 +153,17 @@ async function commonApplianceGet(siteID, suffix) {
 
 // Load the list of devices from the server.
 async function siteDevicesGet(siteID) {
-  assert.equal(typeof siteID, 'string');
-
   const res = await commonApplianceGet(siteID, 'devices');
-  if (res.Devices === null) {
-    return [];
-  }
-  assert.equal(typeof res.Devices, 'object');
-  return res.Devices;
+  assert(Array.isArray(res));
+  return res;
 }
 
 async function siteHealthGet(siteID) {
-  assert.equal(typeof siteID, 'string');
-  const health = await commonApplianceGet(siteID, 'health');
-  debug('site health return', health);
-  return health;
+  return await commonApplianceGet(siteID, 'health');
 }
 
 // Load the list of rings from the server.
 async function siteRingsGet(siteID) {
-  assert.equal(typeof siteID, 'string');
-
   return await commonApplianceGet(siteID, 'rings');
 }
 
@@ -194,8 +184,6 @@ async function siteClientsRingSet(siteID, deviceID, newRing) {
 
 // Load the list of VAPs from the server.
 async function siteVAPsGet(siteID) {
-  assert.equal(typeof siteID, 'string');
-
   const vapNames = await commonApplianceGet(siteID, 'network/vap');
   debug('vapNames', vapNames);
   const vapMap = {};
@@ -221,20 +209,14 @@ async function siteVAPPost(siteID, vapName, vapConfig) {
 
 // Load the WAN information from the server.
 async function siteWanGet(siteID) {
-  assert.equal(typeof siteID, 'string');
-
-  const wan = await commonApplianceGet(siteID, 'network/wan');
-  debug('wan', wan);
-  return wan;
+  return await commonApplianceGet(siteID, 'network/wan');
 }
 
 // Load the list of users from the server.
 async function siteUsersGet(siteID) {
-  assert.equal(typeof siteID, 'string');
-
   const res = await commonApplianceGet(siteID, 'users');
-  assert(res.Users && typeof res.Users === 'object');
-  return res.Users;
+  assert(typeof res === 'object');
+  return res;
 }
 
 // Update or create user on server
@@ -316,14 +298,6 @@ async function authApplianceLogin(uid, userPassword) {
   }
 }
 
-async function siteSupreme(siteID) {
-  assert.equal(typeof siteID, 'string');
-
-  const u = buildUrl(`/api/sites/${siteID}/supreme`);
-  const res = await axios.get(u);
-  return res.data;
-}
-
 async function authApplianceLogout() {
   const u = buildUrl('/auth/logout');
   try {
@@ -401,7 +375,6 @@ export default {
   siteUsersPost,
   siteUsersDelete,
   siteEnrollGuest,
-  siteSupreme,
   authProviders,
   authApplianceLogin,
   authApplianceLogout,

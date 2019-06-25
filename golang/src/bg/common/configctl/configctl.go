@@ -54,7 +54,10 @@ func getAliases() {
 	nameToNode = make(map[string]string)
 	nodeToName = make(map[string]string)
 
-	nodes, _ := configd.GetProps("@/nodes")
+	nodes, err := configd.GetProps("@/nodes")
+	if err != nil {
+		return
+	}
 	for uuid, node := range nodes.Children {
 		if a, ok := node.Children["name"]; ok {
 			nameToNode[a.Value] = uuid
@@ -327,10 +330,8 @@ func stats(cmd string, args []string) error {
 
 func printClient(mac string, client *cfgapi.ClientInfo, verbose bool) {
 	name := "-"
-	if client.DNSName != "" {
-		name = client.DNSName
-	} else if client.DHCPName != "" {
-		name = client.DHCPName
+	if client.DisplayName() != "" {
+		name = client.DisplayName()
 	}
 
 	ring := "-"

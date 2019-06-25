@@ -31,7 +31,7 @@
           <f7-list-item
             v-for="device in devicesByCategory(catkey)"
             :key="device.uniqid"
-            :title="device.networkName"
+            :title="device.displayName"
             :link="`${$f7route.url}${device.uniqid}/`">
             <div slot="media">
               <img :alt="device.category" :src="mediaIcon(device)" width="32" height="32">
@@ -102,7 +102,7 @@ export default {
         const devs = this.$store.getters.devicesByCategory(category);
         // Sort by lowercase network name, then by uniqid in case of clashes
         return sortBy(devs, [(device) => {
-          return device.networkName.toLowerCase();
+          return device.displayName.toLowerCase();
         }, 'uniqid']);
       };
     },

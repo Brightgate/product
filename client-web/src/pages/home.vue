@@ -57,7 +57,7 @@
         v-for="device in devices"
         v-if="device.notification"
         :key="device.uniqid"
-        :title="$t('message.notifications.update_device', {'device': device.networkName})"
+        :title="$t('message.notifications.update_device', {'device': device.displayName})"
         :link="`/sites/${currentSiteID}/devices/${device.uniqid}/`" />
     </f7-list>
 
@@ -72,7 +72,7 @@
             <span>
               <f7-icon f7="bolt_round_fill" color="red" />
               {{ $t('message.alerts.problem_on_device',
-                    {problem: vulnHeadline(alert.vulnid), device: deviceByUniqID(alert.deviceID).networkName})
+                    {problem: vulnHeadline(alert.vulnid), device: deviceByUniqID(alert.deviceID).displayName})
               }}
             </span>
           </f7-list-item>

@@ -370,6 +370,15 @@ func (c *Handle) Close() {
 	c.exec.Close()
 }
 
+// DisplayName returns the name of the client suitable for primary
+// display to the user.
+func (c *ClientInfo) DisplayName() string {
+	if c.DNSName != "" {
+		return c.DNSName
+	}
+	return c.DHCPName
+}
+
 // IsActive returns 'true' if a wireless client is connected to an AP, or if a
 // wired client has a valid IP address.
 func (c *ClientInfo) IsActive() bool {

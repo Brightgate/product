@@ -36,6 +36,11 @@ const LOCAL_REGINFO = {
   roles: [appDefs.ROLE_ADMIN],
 };
 
+let i18n = null;
+export function setStoreI18n(i) {
+  i18n = i;
+}
+
 // const windowURLSite = window && window.location && window.location.href && new URL(window.location.href);
 // const initSiteID = windowURLSite.searchParams.get('site') || LOCAL_SITE_ID;
 class Site {
@@ -494,27 +499,16 @@ const getters = {
 };
 
 // Take an API device and transform it for local use.
-// Much of this is legacy and could be fixed.
-function computeDeviceProps(apiDevice) {
-  const device = {
-    manufacturer: apiDevice.Manufacturer,
-    model: apiDevice.Model,
-    kind: apiDevice.Kind,
-    confidence: apiDevice.Confidence,
-    networkName: apiDevice.HumanName ? apiDevice.HumanName : `Unknown (${apiDevice.HwAddr})`, // XXX this has issues, including i18n)
-    ipv4Addr: apiDevice.IPv4Addr,
-    osVersion: apiDevice.OSVersion,
-    activated: '',
-    uniqid: apiDevice.HwAddr,
-    hwaddr: apiDevice.HwAddr,
-    ring: apiDevice.Ring,
-    active: apiDevice.Active,
-    connVAP: apiDevice.ConnVAP,
-    connBand: apiDevice.ConnBand,
-    connNode: apiDevice.ConnNode,
-    scans: apiDevice.Scans,
-    vulnerabilities: apiDevice.Vulnerabilities,
-  };
+//
+// Today this is concerned with deriving local state for device categorization
+// and identity.  We expect a lot of this could will change drastically when
+// we revise our device identity system.
+function computeDeviceProps(device) {
+  if (!device.displayName) {
+    device.displayName = i18n.t('message.api.unknown_device', {hwAddr: device.hwAddr});
+  }
+  // uniqid is used in sorting and categorization
+  device.uniqid = device.hwAddr;
 
   const k2c = {
     'android': 'phone',
@@ -689,8 +683,6 @@ const actions = {
 
     const nc = await Promise.props({
       dnsServer: siteApi.siteConfigGet(id, '@/network/dnsserver', ''),
-      chan24GHz: siteApi.siteConfigGet(id, '@/network/2.4GHz/channel', ''),
-      chan5GHz: siteApi.siteConfigGet(id, '@/network/5GHz/channel', ''),
       baseAddress: siteApi.siteConfigGet(id, '@/network/base_address', ''),
     });
     debug('fetchNetworkConfig committing', nc);
@@ -820,11 +812,6 @@ const actions = {
     return loggedin;
   },
 
-  async supreme(context) {
-    const id = context.state.currentSiteID;
-    return await siteApi.siteSupreme(id);
-  },
-
   async login(context, {uid, userPassword}) {
     assert.equal(typeof uid, 'string');
     assert.equal(typeof userPassword, 'string');
@@ -869,7 +856,7 @@ const actions = {
   },
 };
 
-const store = new Vuex.Store({
+export const store = new Vuex.Store({
   strict: true, // XXX: for debugging only, expensive, see manual
   actions,
   state,
@@ -885,5 +872,3 @@ Promise.resolve().then(async () => {
   // XXX We will need to try harder in the future.
   debug('Startup: Failed to fetch auth providers and app Mode.');
 });
-
-export default store;

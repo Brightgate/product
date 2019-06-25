@@ -48,7 +48,7 @@
             </div>
           </template>
           <template v-else>
-            <div style="font-size: 16pt; font-weight: bold">{{ dev.networkName }}</div>
+            <div style="font-size: 16pt; font-weight: bold">{{ dev.displayName }}</div>
           </template>
         </f7-col>
       </f7-row>
@@ -122,13 +122,13 @@
     <f7-list>
 
       <f7-list-item :title="$t('message.dev_details.network_name')">
-        {{ dev.networkName }}
+        {{ dev.displayName }}
       </f7-list-item>
       <f7-list-item :title="$t('message.dev_details.ipv4_addr')">
         {{ dev.ipv4Addr ? dev.ipv4Addr : $t("message.dev_details.ipv4_addr_none") }}
       </f7-list-item>
       <f7-list-item :title="$t('message.dev_details.hw_addr')">
-        {{ dev.hwaddr }}
+        {{ dev.hwAddr }}
       </f7-list-item>
 
       <f7-list-item :title="$t('message.dev_details.activity')">
@@ -350,7 +350,7 @@ export default {
         this.ringChanging = false;
       }).catch((err) => {
         debug('Change Ring failed', err);
-        const txt = `Failed to change trust group for ${this.dev.networkName} to ${newRing}: ${err}`;
+        const txt = `Failed to change trust group for ${this.dev.displayName} to ${newRing}: ${err}`;
         this.ringChanging = false;
         this.$f7.toast.show({
           text: txt,

@@ -226,28 +226,25 @@ type apiScanInfo struct {
 // apiDevice describes a device, merging information from
 // the @/clients/<clientid> and the devicedb.
 type apiDevice struct {
-	HwAddr          string                 `json:"HwAddr"`
-	Manufacturer    string                 `json:"Manufacturer"`
-	Model           string                 `json:"Model"`
-	Kind            string                 `json:"Kind"`
-	Confidence      float64                `json:"Confidence"`
-	Ring            string                 `json:"Ring"`
-	HumanName       string                 `json:"HumanName,omitempty"`
-	DNSName         string                 `json:"DNSName,omitempty"`
-	DHCPExpiry      string                 `json:"DHCPExpiry,omitempty"`
-	IPv4Addr        *net.IP                `json:"IPv4Addr,omitempty"`
-	OSVersion       string                 `json:"OSVersion,omitempty"`
-	Active          bool                   `json:"Active"`
-	ConnBand        string                 `json:"ConnBand,omitempty"`
-	ConnNode        *uuid.UUID             `json:"ConnNode,omitempty"`
-	ConnVAP         string                 `json:"ConnVAP,omitempty"`
-	Scans           map[string]apiScanInfo `json:"Scans,omitempty"`
-	Vulnerabilities map[string]apiVulnInfo `json:"Vulnerabilities,omitempty"`
-}
-
-// ApiDevices is the envelope for multi-device responses.
-type apiDevices struct {
-	Devices []*apiDevice
+	HwAddr          string                 `json:"hwAddr"`
+	Manufacturer    string                 `json:"manufacturer"`
+	Model           string                 `json:"model"`
+	Kind            string                 `json:"kind"`
+	Confidence      float64                `json:"confidence"`
+	Ring            string                 `json:"ring"`
+	DisplayName     string                 `json:"displayName"`
+	DHCPName        string                 `json:"dhcpName,omitempty"`
+	DNSName         string                 `json:"dnsName,omitempty"`
+	DHCPExpiry      string                 `json:"dhcpExpiry,omitempty"`
+	IPv4Addr        *net.IP                `json:"ipv4Addr,omitempty"`
+	OSVersion       string                 `json:"osVersion,omitempty"`
+	Active          bool                   `json:"active"`
+	Wireless        bool                   `json:"wireless"`
+	ConnBand        string                 `json:"connBand,omitempty"`
+	ConnNode        *uuid.UUID             `json:"connNode,omitempty"`
+	ConnVAP         string                 `json:"connVAP,omitempty"`
+	Scans           map[string]apiScanInfo `json:"scans,omitempty"`
+	Vulnerabilities map[string]apiVulnInfo `json:"vulnerabilities,omitempty"`
 }
 
 func buildDeviceResponse(c echo.Context, hdl *cfgapi.Handle,
@@ -261,8 +258,14 @@ func buildDeviceResponse(c echo.Context, hdl *cfgapi.Handle,
 		Kind:            "unknown",
 		Confidence:      client.Confidence,
 		Ring:            client.Ring,
+		DisplayName:     client.DisplayName(),
+		DHCPName:        client.DHCPName,
+		DNSName:         client.DNSName,
+		DHCPExpiry:      "static",
 		IPv4Addr:        &client.IPv4,
+		OSVersion:       "",
 		Active:          client.IsActive(),
+		Wireless:        client.Wireless,
 		ConnBand:        client.ConnBand,
 		ConnNode:        client.ConnNode,
 		ConnVAP:         client.ConnVAP,
@@ -270,37 +273,8 @@ func buildDeviceResponse(c echo.Context, hdl *cfgapi.Handle,
 		Vulnerabilities: make(map[string]apiVulnInfo),
 	}
 
-	if client.Identity != "" {
-		id, err := strconv.Atoi(client.Identity)
-		if err != nil {
-			c.Logger().Warnf("buildDeviceResponse: bad Identity %s", client.Identity)
-		} else {
-			lpn, err := deviceid.GetDeviceByID(hdl, id)
-			if err != nil {
-				c.Logger().Warnf("buildDeviceResponse couldn't lookup @/devices/%d: %v\n", id, err)
-			} else {
-				d.Manufacturer = lpn.Vendor
-				d.Model = lpn.ProductName
-				d.Kind = lpn.Devtype
-			}
-		}
-	}
-
-	if client.DNSName != "" {
-		d.HumanName = client.DNSName
-		d.DNSName = client.DNSName
-	} else if client.DHCPName != "" {
-		d.HumanName = client.DHCPName
-		d.DNSName = ""
-	} else {
-		d.HumanName = fmt.Sprintf("Unnamed (%s)", hwaddr)
-		d.DNSName = ""
-	}
-
 	if client.Expires != nil {
-		d.DHCPExpiry = client.Expires.Format("2006-01-02T15:04")
-	} else {
-		d.DHCPExpiry = "static"
+		d.DHCPExpiry = client.Expires.Format(time.RFC3339)
 	}
 
 	for k, v := range scanMap {
@@ -321,6 +295,22 @@ func buildDeviceResponse(c echo.Context, hdl *cfgapi.Handle,
 		}
 	}
 
+	if client.Identity != "" {
+		id, err := strconv.Atoi(client.Identity)
+		if err != nil {
+			c.Logger().Warnf("buildDeviceResponse: bad Identity %s", client.Identity)
+		} else {
+			lpn, err := deviceid.GetDeviceByID(hdl, id)
+			if err != nil {
+				c.Logger().Warnf("buildDeviceResponse couldn't lookup @/devices/%d: %v\n", id, err)
+			} else {
+				d.Manufacturer = lpn.Vendor
+				d.Model = lpn.ProductName
+				d.Kind = lpn.Devtype
+			}
+		}
+	}
+
 	return &d
 }
 
@@ -332,12 +322,12 @@ func (a *siteHandler) getDevices(c echo.Context) error {
 	}
 	defer hdl.Close()
 
-	var response apiDevices
+	var response []*apiDevice
 	for mac, client := range hdl.GetClients() {
 		scans := hdl.GetClientScans(mac)
 		vulns := hdl.GetVulnerabilities(mac)
 		d := buildDeviceResponse(c, hdl, mac, client, scans, vulns)
-		response.Devices = append(response.Devices, d)
+		response = append(response, d)
 	}
 
 	// XXX for now, return an empty list
@@ -646,15 +636,9 @@ func newAPIUserInfo(user *cfgapi.UserInfo) *apiUserInfo {
 	return &cu
 }
 
-// apiUsers is the envelope for multi-user responses
-type apiUsers struct {
-	Users map[string]*apiUserInfo
-}
-
 // getUsers implements /api/sites/:uuid/users
 func (a *siteHandler) getUsers(c echo.Context) error {
-	var users apiUsers
-	users.Users = make(map[string]*apiUserInfo)
+	users := make(map[string]*apiUserInfo)
 
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
@@ -664,7 +648,7 @@ func (a *siteHandler) getUsers(c echo.Context) error {
 
 	for _, userInfo := range hdl.GetUsers() {
 		apiU := newAPIUserInfo(userInfo)
-		users.Users[apiU.UUID.String()] = apiU
+		users[apiU.UUID.String()] = apiU
 	}
 	return c.JSON(http.StatusOK, users)
 }
