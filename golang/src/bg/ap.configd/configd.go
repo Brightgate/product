@@ -51,6 +51,7 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
+	"bg/ap_common/platform"
 	"bg/base_def"
 	"bg/base_msg"
 	"bg/common/cfgapi"
@@ -97,6 +98,7 @@ var updateCheckTable = []struct {
 	{regexp.MustCompile(`^@/clients/.*/(dns|dhcp)_name$`), dnsCheck},
 	{regexp.MustCompile(`^@/clients/.*/ipv4$`), ipv4Check},
 	{regexp.MustCompile(`^@/network/base_address$`), subnetCheck},
+	{regexp.MustCompile(`^@/network/wan/static.*`), wanCheck},
 	{regexp.MustCompile(`^@/site_index$`), subnetCheck},
 	{regexp.MustCompile(`^@/dns/cnames/`), cnameCheck},
 }
@@ -119,6 +121,7 @@ var (
 	mcpd    *mcp.MCP
 	brokerd *broker.Broker
 	slog    *zap.SugaredLogger
+	plat    *platform.Platform
 
 	virtualAPToDefaultRing map[string]string
 	ringToVirtualAP        map[string]string
@@ -427,6 +430,19 @@ func dnsNameInuse(ignore *cfgtree.PNode, hostname string) bool {
 	}
 
 	return false
+}
+
+// We only allow setting a static WAN address on platforms with the underlying
+// infrastructure to support it
+func wanCheck(prop, val string) error {
+	var err error
+
+	if !plat.NetworkManaged {
+		err = fmt.Errorf("static wan addresses not supported " +
+			"on this platform")
+	}
+
+	return err
 }
 
 // Validate the hostname that will be used to generate DNS A records
@@ -1014,4 +1030,10 @@ func main() {
 	eventLoop()
 
 	slog.Infof("stopping")
+}
+
+// This is done as an init() function so it is executed during 'go test' as well
+// as when running
+func init() {
+	plat = platform.NewPlatform()
 }

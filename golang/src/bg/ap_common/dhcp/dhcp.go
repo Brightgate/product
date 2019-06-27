@@ -91,12 +91,8 @@ func GetLease(iface string) (*Info, error) {
 	}
 
 	addr := data["ip_address"]
-	if net.ParseIP(addr) == nil {
-		return nil, nil
-	}
-
-	if bits, ok := data["subnet_cidr"]; ok {
-		addr += "/" + bits
+	if _, _, err := net.ParseCIDR(addr); err != nil {
+		return nil, err
 	}
 
 	d := &Info{

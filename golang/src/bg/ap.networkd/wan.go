@@ -32,6 +32,8 @@ type wanInfo struct {
 	ring string
 	nic  string
 
+	staticCapable bool
+
 	iface  *net.Interface
 	addr   net.IP
 	subnet *net.IPNet
@@ -42,9 +44,9 @@ type wanInfo struct {
 	dhcpDuration time.Duration
 	dhcpRoute    string
 
-	staticAddr     string
-	staticRoute    net.IP
-	staticAttempts int
+	staticAddr      string
+	staticRoute     net.IP
+	staticDNSServer string
 
 	done chan bool
 	wg   sync.WaitGroup
@@ -52,6 +54,7 @@ type wanInfo struct {
 
 var wan *wanInfo
 
+// Validate and update/delete the static address in the wanInfo structure.
 func wanSetStaticAddr(addr string) {
 	ip, ipnet, err := net.ParseCIDR(addr)
 	if err != nil || !ip.Equal(ip.To4()) {
@@ -59,12 +62,12 @@ func wanSetStaticAddr(addr string) {
 			addr, err)
 	} else {
 		wan.staticAddr = addr
-		wan.staticAttempts = 0
 		slog.Debugf("Setting static wan address to %s, subnet to %v",
 			ip, ipnet)
 	}
 }
 
+// Validate and update/delete the static route in the wanInfo structure.
 func wanSetStaticRoute(addr string) {
 	ip := net.ParseIP(addr)
 	if ip == nil || !ip.Equal(ip.To4()) {
@@ -72,51 +75,93 @@ func wanSetStaticRoute(addr string) {
 	} else {
 		slog.Debugf("Setting default route to %s", addr)
 		wan.staticRoute = ip
-		wan.staticAttempts = 0
 	}
 }
 
+// One of the properties related to the static address config changed.  Update
+// both our internal structure and the platform's system configuration.
 func wanStaticChanged(prop, val string) {
-	if prop == "address" {
-		wanSetStaticAddr(val)
-	} else if prop == "route" {
-		wanSetStaticRoute(val)
-	}
-}
-
-func wanStaticDeleted(prop string) {
-	if prop == "route" || prop == "address" {
-		reset := (wan.staticRoute != nil)
-		wan.staticRoute = nil
-		wan.staticAttempts = 0
-		if reset {
-			wan.routeClear()
-		}
-
-		if prop == "address" {
-			reset := (wan.staticAddr != "")
-			wan.staticAddr = ""
-			wan.staticAttempts = 0
-			if reset {
-				wan.ipClear()
-			}
-			err := dhcp.RenewLease(wan.nic)
-			if err != nil {
-				slog.Warnf("failed to renew lease: %v", err)
-			}
-		}
-	}
-}
-
-func wanStaticInit(cfgWan *cfgapi.WanInfo) {
-	if cfgWan == nil {
+	if !wan.staticCapable {
 		return
 	}
-	if cfgWan.StaticAddress != "" {
-		wanSetStaticAddr(cfgWan.StaticAddress)
+
+	changed := true
+
+	switch prop {
+	case "address":
+		wanSetStaticAddr(val)
+	case "route":
+		wanSetStaticRoute(val)
+	case "dnsserver":
+		wan.staticDNSServer = val
+	default:
+		changed = false
 	}
-	if cfgWan.StaticRoute != nil {
-		wanSetStaticRoute(cfgWan.StaticRoute.String())
+
+	if changed {
+		wan.updateConfig()
+	}
+}
+
+// One of the properties related to the static address config was deleted.
+// Update both our internal structure and the platform's system configuration.
+func wanStaticDeleted(prop string) {
+	if !wan.staticCapable {
+		return
+	}
+
+	oldDNS := wan.staticDNSServer
+	oldAddr := wan.staticAddr
+	oldRoute := wan.staticRoute
+
+	switch prop {
+	case "all":
+		wan.staticAddr = ""
+		wan.staticRoute = nil
+
+	case "address":
+		wan.staticAddr = ""
+
+	case "route":
+		wan.staticRoute = nil
+
+	case "dnsserver":
+		wan.staticDNSServer = ""
+	}
+
+	if (oldDNS != wan.staticDNSServer) || (oldAddr != wan.staticAddr) ||
+		!oldRoute.Equal(wan.staticRoute) {
+
+		wan.updateConfig()
+	}
+}
+
+func (w *wanInfo) updateConfig() {
+	var err error
+
+	if w == nil || w.nic == "" || !wan.staticCapable {
+		return
+	}
+
+	if w.staticAddr == "" {
+		err = plat.NetConfig(w.nic, "dhcp", "", "", "")
+	} else {
+		// Strip any :port off of the server
+		tmp := strings.Split(w.staticDNSServer, ":")
+		dnsServer := tmp[0]
+
+		gw := w.staticRoute
+		if gw == nil {
+			guess := network.SubnetRouter(w.staticAddr)
+			gw = net.ParseIP(guess)
+		}
+
+		err = plat.NetConfig(w.nic, "static", w.staticAddr, gw.String(),
+			dnsServer)
+	}
+
+	if err != nil {
+		slog.Warnf("platform config failed: %v", err)
 	}
 }
 
@@ -208,45 +253,7 @@ func (w *wanInfo) getAddrRoute() (string, net.IP, net.IP) {
 	return cidr, ip, route
 }
 
-func (w *wanInfo) ipClear() {
-	cmd := exec.Command(plat.IPCmd, "addr", "flush", "dev", wan.nic)
-	if err := cmd.Run(); err != nil {
-		slog.Warnf("Failed to remove old IP address: %v", err)
-	}
-}
-
-func (w *wanInfo) ipSet() {
-	w.ipClear()
-
-	bcast := network.SubnetBroadcast(w.staticAddr).String()
-	cmd := exec.Command(plat.IPCmd, "addr", "add", w.staticAddr,
-		"broadcast", bcast, "dev", wan.nic)
-	if err := cmd.Run(); err != nil {
-		slog.Errorf("Failed to set new IP address: %v", err)
-	}
-}
-
-func (w *wanInfo) routeClear() {
-	cmd := exec.Command(plat.IPCmd, "route", "del", "default")
-	if err := cmd.Run(); err != nil {
-		slog.Warnf("unable to flush default route: %v", err)
-	}
-}
-
-func (w *wanInfo) routeSet() {
-	w.routeClear()
-
-	cmd := exec.Command(plat.IPCmd, "route", "add", "default", "via",
-		w.staticRoute.String())
-	if err := cmd.Run(); err != nil {
-		slog.Errorf("Failed to set new default route: %v", err)
-	}
-}
-
-// Check to see if the address has changed since we last looked at it.  If we
-// have a static address configured which doesn't match the current value, try
-// to set it.  This lets us handle changes in the static IP configuration as
-// well as updates made by the DHCP daemon.
+// Check to see if the address has changed since we last looked at it.
 //
 // Return 'true' if the address has changed since we last checked.
 func (w *wanInfo) ipCheck() bool {
@@ -261,29 +268,6 @@ func (w *wanInfo) ipCheck() bool {
 		config.CreateProp("@/network/wan/current/address", cidr, nil)
 	}
 
-	staticIP, _, _ := net.ParseCIDR(w.staticAddr)
-	if staticIP == nil {
-		return changed
-	}
-
-	if !staticIP.Equal(w.addr) {
-		wan.staticAttempts++
-		if wan.staticAttempts == 1 {
-			slog.Infof("setting wan address to %v", w.addr)
-		}
-
-		w.ipSet()
-	}
-
-	staticRoute := w.staticRoute
-	if staticRoute == nil {
-		r := network.SubnetRouter(w.staticAddr)
-		w.staticRoute = net.ParseIP(r)
-	}
-
-	if !staticRoute.Equal(w.route) {
-		w.routeSet()
-	}
 	return changed
 }
 
@@ -297,22 +281,23 @@ func dhcpOp(prop, val string) cfgapi.PropertyOp {
 
 func (w *wanInfo) dhcpRenew() {
 	if w != nil && w.staticAddr == "" {
-		dhcp.RenewLease(wan.nic)
+		if err := dhcp.RenewLease(wan.nic); err != nil {
+			slog.Warnf("failed to renew lease: %v", err)
+		}
 	}
 }
 
 func (w *wanInfo) dhcpRefresh() {
-	d, err := dhcp.GetLease(w.nic)
-	if err != nil {
-		slog.Errorf("failed to get lease info: %v", err)
-		return
-	}
-
 	tlog := aputil.GetThrottledLogger(slog, time.Second, 10*time.Minute)
+
+	d, err := dhcp.GetLease(w.nic)
 	if d == nil {
 		if w.staticAddr == "" {
-			tlog.Warnf("no static IP or DHCP lease found for %s",
-				w.nic)
+			if err != nil {
+				tlog.Warnf("failed to get lease info: %v", err)
+			} else {
+				tlog.Warnf("no DHCP lease found for %s", w.nic)
+			}
 		}
 		return
 	}
@@ -386,8 +371,6 @@ func (w *wanInfo) monitorLoop() {
 
 // Monitor the state of our wan connection.
 // Every second, check to see if the IP address has changed.
-//   If our current IP doesn't match our statically-configured IP, attempt to
-//   set our IP.
 // Every minute (or when our IP changes) see if our DHCP state has changed.
 func (w *wanInfo) monitor() {
 	wan.wg.Add(1)
@@ -399,60 +382,78 @@ func (w *wanInfo) stop() {
 	wan.wg.Wait()
 }
 
-func wanInit(cfgWan *cfgapi.WanInfo) {
-	var err error
-	var available, current *physDevice
-	var outgoingRing string
+// Determine the external-facing NIC for this node
+func findWanDevice() *physDevice {
+	var available, selected *physDevice
 
-	wan = &wanInfo{
-		done: make(chan bool),
-	}
-
-	wanStaticInit(cfgWan)
-
+	ring := base_def.RING_WAN
 	if aputil.IsSatelliteMode() {
-		outgoingRing = base_def.RING_INTERNAL
-	} else {
-		outgoingRing = base_def.RING_WAN
+		ring = base_def.RING_INTERNAL
 	}
 
-	// Enable packet forwarding
-	cmd := exec.Command(plat.SysctlCmd, "-w", "net.ipv4.ip_forward=1")
-	if err = cmd.Run(); err != nil {
-		slog.Fatalf("Failed to enable packet forwarding: %v", err)
-	}
-
-	// Find the WAN device
 	for _, dev := range physDevices {
-		if dev.wifi != nil {
-			// XXX - at some point we should investigate using a
-			// wireless link as a mesh backhaul
+		if dev.wifi != nil || !plat.NicIsWan(dev.name, dev.hwaddr) {
 			continue
 		}
 
-		if plat.NicIsWan(dev.name, dev.hwaddr) {
-			available = dev
-			if dev.ring == outgoingRing {
-				if current == nil {
-					current = dev
-				} else {
-					slog.Infof("Multiple wan nics found.  "+
-						"Using: %s", current.hwaddr)
-				}
+		available = dev
+		if dev.ring == ring {
+			// If this nic has been explicitly configured as the WAN
+			// device, it takes precedence.
+			if selected == nil {
+				selected = dev
+			} else {
+				slog.Infof("Multiple wan nics found.  "+
+					"Using: %s", selected.hwaddr)
 			}
 		}
 	}
 
 	if available == nil {
-		slog.Warnf("couldn't find a outgoing device to use")
-		return
-	}
-	if current == nil {
-		current = available
-		slog.Infof("No outgoing device configured.  Using %s",
-			current.hwaddr)
-		current.ring = outgoingRing
+		slog.Warnf("No WAN network device available")
+	} else if selected == nil {
+		selected = available
+		selected.ring = ring
+		slog.Infof("No WAN network device configured.  Using %s",
+			selected.hwaddr)
 	}
 
-	wan.setNic(current.name)
+	return selected
+}
+
+func enablePacketForwarding() {
+	cmd := exec.Command(plat.SysctlCmd, "-w", "net.ipv4.ip_forward=1")
+	if err := cmd.Run(); err != nil {
+		slog.Fatalf("Failed to enable packet forwarding: %v", err)
+	}
+}
+
+func wanInit(cfgWan *cfgapi.WanInfo) {
+	enablePacketForwarding()
+
+	wan = &wanInfo{
+		done:          make(chan bool),
+		staticCapable: plat.NetworkManaged && !aputil.IsSatelliteMode(),
+	}
+
+	if cfgWan != nil && wan.staticCapable {
+		if static := cfgWan.StaticAddress; static != "" {
+			var route string
+
+			if cfgWan.StaticRoute != nil {
+				route = cfgWan.StaticRoute.String()
+			} else {
+				route = network.SubnetRouter(static)
+			}
+			wanSetStaticAddr(static)
+			wanSetStaticRoute(route)
+
+		}
+		wan.staticDNSServer = cfgWan.DNSServer
+	}
+
+	if dev := findWanDevice(); dev != nil {
+		wan.setNic(dev.name)
+		wan.updateConfig()
+	}
 }

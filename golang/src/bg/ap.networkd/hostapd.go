@@ -826,7 +826,8 @@ func (h *hostapdHdl) generateHostAPDConf() {
 		}
 
 		max := d.wifi.cap.Interfaces
-		for idx, name := range vaps {
+		idx := 0
+		for _, name := range vaps {
 			if idx == max {
 				slog.Warnf("%s can only support %d of %d SSIDs",
 					d.hwaddr, max, len(virtualAPs))

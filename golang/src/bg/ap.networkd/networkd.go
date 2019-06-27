@@ -212,6 +212,9 @@ func configSet(name, val string) bool {
 			*prop = val
 			reload = true
 		}
+
+	case "dnsserver":
+		wanStaticChanged(name, val)
 	}
 
 	return reload
@@ -221,8 +224,12 @@ func configNetworkDeleted(path []string) {
 	if configSet(path[1], "") {
 		wifiEvaluate = true
 		hostapd.reload()
-	} else if len(path) == 4 && path[1] == "wan" && path[2] == "static" {
-		wanStaticDeleted(path[3])
+	} else if len(path) >= 3 && path[1] == "wan" && path[2] == "static" {
+		field := "all"
+		if len(path) > 3 {
+			field = path[3]
+		}
+		wanStaticDeleted(field)
 	}
 }
 

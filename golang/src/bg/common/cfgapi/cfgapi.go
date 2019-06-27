@@ -775,6 +775,7 @@ type WanInfo struct {
 	CurrentAddress string     `json:"currentAddress,omitempty"`
 	StaticAddress  string     `json:"staticAddress,omitempty"`
 	StaticRoute    *net.IP    `json:"staticRoute,omitempty"`
+	DNSServer      string     `json:"dnsServer,omitempty"`
 	DHCPAddress    string     `json:"dhcpAddress,omitempty"`
 	DHCPStart      *time.Time `json:"dhcpStart,omitempty"`
 	DHCPDuration   int        `json:"dhcpDuration,omitempty"`
@@ -783,11 +784,18 @@ type WanInfo struct {
 
 // GetWanInfo returns the WAN configuration.
 func (c *Handle) GetWanInfo() *WanInfo {
-	wan, _ := c.GetProps("@/network/wan")
+	var w WanInfo
+
+	props, _ := c.GetProps("@/network")
+	if props == nil {
+		return nil
+	}
+
+	wan := props.Children["wan"]
 	if wan == nil {
 		return nil
 	}
-	var w WanInfo
+
 	if current := wan.Children["current"]; current != nil {
 		w.CurrentAddress, _ = getStringVal(current, "address")
 	}
@@ -801,6 +809,7 @@ func (c *Handle) GetWanInfo() *WanInfo {
 		w.DHCPStart, _ = getTimeValNil(dhcp, "start")
 		w.DHCPDuration, _ = getIntVal(dhcp, "duration")
 	}
+	w.DNSServer, _ = getStringVal(props, "dnsserver")
 	return &w
 }
 

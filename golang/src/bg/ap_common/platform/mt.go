@@ -29,6 +29,11 @@ import (
 	"github.com/satori/uuid"
 )
 
+const (
+	uciCmd  = "/sbin/uci"
+	ubusCmd = "/bin/ubus"
+)
+
 func mtProbe() bool {
 	const devFile = "/proc/device-tree/model"
 
@@ -110,12 +115,12 @@ func mtNicLocation(name string) string {
 
 // The following structs are all used as targets when unmarshaling the JSON data
 // returned by ubus.
-type dhcpAddr struct {
+type netAddr struct {
 	Address  string `json:"address,omitempty"`
 	MaskBits int    `json:"mask,omitempty"`
 }
 
-type dhcpRoute struct {
+type netRoute struct {
 	Target  string `json:"target,omitempty"`
 	Mask    int    `json:"mask,omitempty"`
 	NextHop string `json:"nexthop,omitempty"`
@@ -127,27 +132,29 @@ type dhcpData struct {
 	Opt60     string `json:"opt60,omitempty"`
 }
 
-type dhcpInterface struct {
-	Iface   string      `json:"interface,omitempty"`
-	Up      bool        `json:"up,omitempty"`
-	Proto   string      `json:"proto,omitempty"`
-	Ipv4    []dhcpAddr  `json:"ipv4-address,omitempty"`
-	Routes  []dhcpRoute `json:"route,omitempty"`
-	Domains []string    `json:"dns-search,omitempty"`
-	Data    dhcpData    `json:"data,omitempty"`
+type netConfig struct {
+	Iface      string     `json:"interface,omitempty"`
+	Up         bool       `json:"up,omitempty"`
+	Proto      string     `json:"proto,omitempty"`
+	Ipv4       []netAddr  `json:"ipv4-address,omitempty"`
+	Routes     []netRoute `json:"route,omitempty"`
+	DNSServers []string   `json:"dns-server,omitempty"`
+	Domains    []string   `json:"dns-search,omitempty"`
+	Data       dhcpData   `json:"data,omitempty"`
 }
 
-type dhcpDump struct {
-	Interfaces []dhcpInterface `json:"interface,omitempty"`
+type netDump struct {
+	Interfaces []netConfig `json:"interface,omitempty"`
 }
 
-func getDHCP(nic string) (*dhcpInterface, error) {
-	var d dhcpDump
+func getNetConfig(nic string) (*netConfig, error) {
+	var found *netConfig
+	var d netDump
 
 	// Use the /bin/ubus utility to retrieve a json-formatted list of all
 	// the network interface configurations
 	args := []string{"call", "network.interface.wan", "dump"}
-	out, err := exec.Command("/bin/ubus", args...).Output()
+	out, err := exec.Command(ubusCmd, args...).Output()
 	if err != nil {
 		return nil, fmt.Errorf("ubus failed: %v", err)
 	}
@@ -158,24 +165,33 @@ func getDHCP(nic string) (*dhcpInterface, error) {
 
 	// Look for a stanza describing the wan/dhcp settings
 	for _, iface := range d.Interfaces {
-		if iface.Iface == nic && iface.Proto == "dhcp" {
-			return &iface, nil
+		if iface.Iface == nic {
+			found = &iface
+			if iface.Proto == "dhcp" {
+				break
+			}
 		}
 	}
 
-	return nil, nil
+	if found == nil {
+		return nil, fmt.Errorf("no config found for %s", nic)
+	}
+	return found, nil
 }
 
 func mtGetDHCPInfo(iface string) (map[string]string, error) {
-	w, err := getDHCP(iface)
+	w, err := getNetConfig(iface)
 	if w == nil {
 		return nil, err
+	}
+	if w.Proto != "dhcp" {
+		return nil, fmt.Errorf("%s not configured for DHCP", iface)
 	}
 
 	data := make(map[string]string)
 	if len(w.Ipv4) > 0 {
-		data["ip_address"] = w.Ipv4[0].Address
-		data["subnet_cidr"] = strconv.Itoa(w.Ipv4[0].MaskBits)
+		data["ip_address"] = fmt.Sprintf("%s/%d",
+			w.Ipv4[0].Address, w.Ipv4[0].MaskBits)
 	}
 	if len(w.Routes) > 0 {
 		data["routers"] = w.Routes[0].NextHop
@@ -199,6 +215,103 @@ func mtDHCPPidfile(nic string) string {
 	return "/var/run/udhcpc-" + nic + ".pid"
 }
 
+// Fetch the current network config from OpenWRT
+func mtGetProps(nic string) (map[string]string, error) {
+	props := make(map[string]string)
+
+	nc, err := getNetConfig(nic)
+	if err != nil {
+		return props, err
+	}
+
+	props["proto"] = nc.Proto
+	if nc.Proto == "dhcp" {
+		// the 'reqopts' field isn't included in the dump for some
+		// reason.  We assume that it was set along with the dhcp proto.
+		props["reqopts"] = "60 43"
+	} else if len(nc.Ipv4) > 0 {
+		bits := strconv.Itoa(nc.Ipv4[0].MaskBits)
+		props["ipaddr"] = nc.Ipv4[0].Address + "/" + bits
+		if len(nc.Routes) > 0 {
+			props["gateway"] = nc.Routes[0].NextHop
+		}
+	}
+
+	if len(nc.DNSServers) > 0 {
+		props["dns"] = nc.DNSServers[0]
+	}
+
+	return props, nil
+}
+
+// Update the current OpenWRT network config
+func mtNetConfig(nic, proto, ipaddr, gw, dnsserver string) error {
+	all := []string{"proto", "ipaddr", "dns", "gateway", "reqopts"}
+
+	current, err := mtGetProps(nic)
+
+	// If we couldn't get the current config, assume we need to reset all
+	// the properties
+	force := (err != nil)
+
+	// Construct a list of all the OpenWRT settings needed to persist this
+	// configuration
+	newProps := make(map[string]string)
+	switch proto {
+	case "dhcp":
+		newProps["proto"] = "dhcp"
+		newProps["reqopts"] = "60 43"
+
+	case "static":
+		newProps["proto"] = "static"
+		newProps["gateway"] = gw
+		newProps["ipaddr"] = ipaddr
+		newProps["dns"] = dnsserver
+
+	default:
+		return fmt.Errorf("unsupported protocol: %s", proto)
+	}
+
+	// Compare the new settings with the current settings to determine
+	// whether we need to change anything
+	updated := false
+	for _, prop := range all {
+		full := "network.wan." + prop
+		val := newProps[prop]
+		if !force && (val == current[prop]) {
+			continue
+		}
+
+		updated = true
+		if val != "" {
+			cmd := full + "=" + val
+			_, err := exec.Command(uciCmd, "set", cmd).Output()
+			if err != nil {
+				return fmt.Errorf("set %s failed: %v", cmd, err)
+			}
+		} else {
+			// Delete any properties that aren't set.  Ignore
+			// errors, since they are likely just letting us know
+			// that the property is already unset.
+			_, _ = exec.Command(uciCmd, "delete", full).Output()
+		}
+	}
+
+	if updated {
+		if out, err := exec.Command(uciCmd, "commit").Output(); err != nil {
+			return fmt.Errorf("uci commit failed: %v", out)
+		}
+		if err := mtServiceOp("network", "reload"); err != nil {
+			return err
+		}
+		if err := mtServiceOp("network", "restart"); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // On the MT7623, we don't have a battery-backed clock, so the time gets reset
 // on every reboot.  There's a sysfixtime service that runs early in boot and
 // grabs the timestamp of the newest file in /etc and sets the system time to
@@ -215,14 +328,18 @@ func mtMaintainTime() {
 	}
 }
 
-func mtRestartService(service string) error {
+func mtServiceOp(service, op string) error {
 	path := "/etc/init.d/" + service
-	cmd := exec.Command(path, "restart")
+	cmd := exec.Command(path, op)
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to restart %s: %v", service, err)
+		return fmt.Errorf("failed to %s %s: %v", op, service, err)
 	}
 
 	return nil
+}
+
+func mtRestartService(service string) error {
+	return mtServiceOp(service, "restart")
 }
 
 func mtDataDir() string {
@@ -258,6 +375,9 @@ func init() {
 
 		GetDHCPInfo: mtGetDHCPInfo,
 		DHCPPidfile: mtDHCPPidfile,
+
+		NetworkManaged: true,
+		NetConfig:      mtNetConfig,
 
 		NtpdService:    "chronyd",
 		MaintainTime:   mtMaintainTime,

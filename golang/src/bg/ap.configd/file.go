@@ -21,7 +21,6 @@ import (
 	"strconv"
 
 	"bg/ap_common/aputil"
-	"bg/ap_common/platform"
 	"bg/base_def"
 	"bg/common"
 	"bg/common/bgioutil"
@@ -45,8 +44,6 @@ var (
 	propTreeDir    *os.File
 	propTreeFile   string
 	propTreeLoaded bool
-
-	plat *platform.Platform
 
 	upgradeHooks []func() error
 )
@@ -267,8 +264,4 @@ func loadDefaults() (defaults *cfgtree.PNode, descs []propDescription, err error
 	defaults = &base.Defaults
 	descs = base.Descriptions
 	return
-}
-
-func init() {
-	plat = platform.NewPlatform()
 }

@@ -71,6 +71,10 @@ func x86DHCPPidfile(nic string) string {
 	return ""
 }
 
+func x86NetConfig(nic, proto, ipaddr, gw, dnsserver string) error {
+	return nil
+}
+
 func x86RestartService(service string) error {
 	cmd := exec.Command("/bin/systemctl", "restart", service+".service")
 	if err := cmd.Run(); err != nil {
@@ -113,6 +117,9 @@ func init() {
 
 		GetDHCPInfo: x86GetDHCPInfo,
 		DHCPPidfile: x86DHCPPidfile,
+
+		NetworkManaged: false,
+		NetConfig:      x86NetConfig,
 
 		NtpdService:    "chrony",
 		MaintainTime:   func() {},

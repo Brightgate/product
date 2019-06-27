@@ -130,6 +130,15 @@ func rpiGetDHCPInfo(iface string) (map[string]string, error) {
 		data[name] = strings.Trim(val, "'")
 	}
 
+	// Convert the simple assigned address into a CIDR
+	if addr, ok := data["ip_address"]; ok {
+		bits, ok := data["subnet_cidr"]
+		if !ok {
+			bits = "24"
+		}
+		data["ip_address"] = addr + "/" + bits
+	}
+
 	fileName := leaseDir + "dhcpcd-" + iface + ".lease"
 	if f, err := os.Stat(fileName); err == nil {
 		data["dhcp_lease_start"] = f.ModTime().Format(time.RFC3339)
@@ -140,6 +149,14 @@ func rpiGetDHCPInfo(iface string) (map[string]string, error) {
 
 func rpiDHCPPidfile(nic string) string {
 	return "/var/run/dhcpcd.pid"
+}
+
+func rpiNetConfig(nic, proto, ipaddr, gw, dnsserver string) error {
+	if proto != "dhcp" {
+		return fmt.Errorf("unsupported protocol: %s", proto)
+	}
+
+	return nil
 }
 
 func rpiRestartService(service string) error {
@@ -184,6 +201,9 @@ func init() {
 
 		GetDHCPInfo: rpiGetDHCPInfo,
 		DHCPPidfile: rpiDHCPPidfile,
+
+		NetworkManaged: false,
+		NetConfig:      rpiNetConfig,
 
 		NtpdService:    "chrony",
 		MaintainTime:   func() {},
