@@ -15,6 +15,7 @@ wpa_key_mgmt={{.KeyMgmt}}
 
 {{.EapComment}}ieee8021x=1
 {{.EapComment}}eapol_version=2
+{{.EapComment}}eap_reauth_period=0
 {{.EapComment}}own_ip_addr=127.0.0.1
 {{.EapComment}}auth_server_addr={{.RadiusAuthServer}}
 {{.EapComment}}auth_server_port={{.RadiusAuthServerPort}}

@@ -92,10 +92,16 @@ type hostapdCmd struct {
 }
 
 type retransmitState struct {
-	count int
-	first time.Time
-	last  time.Time
+	count     int
+	restarted bool
+	first     time.Time
+	last      time.Time
 }
+
+var (
+	clientRetransmits    = make(map[string]*retransmitState)
+	clientRetransmitsMtx sync.Mutex
+)
 
 // hostapd has a separate control socket for each of the network interfaces it
 // manages.  For each socket, we can have a single in-flight command and any
@@ -113,9 +119,8 @@ type hostapdConn struct {
 	liveCmd     *hostapdCmd   // the in-flight hostapd command
 	pendingCmds []*hostapdCmd // all queued commands
 
-	inStatus    bool // currently collecting per-station status
-	retransmits map[string]*retransmitState
-	stations    map[string]*stationInfo
+	inStatus bool // currently collecting per-station status
+	stations map[string]*stationInfo
 
 	sync.Mutex
 }
@@ -387,11 +392,24 @@ func (c *hostapdConn) stationGone(sta string) {
 	sendNetEntity(sta, &c.vapName, &c.wifiBand, nil, true)
 }
 
+func (c *hostapdConn) stationRetransmit(sta string) {
+	reason := base_msg.EventNetException_CLIENT_RETRANSMIT
+
+	slog.Infof("%v stationRetransmit(%s)", c, sta)
+	sendNetException(sta, &c.vapName, &reason)
+}
+
 func (c *hostapdConn) stationBadPassword(sta string) {
 	reason := base_msg.EventNetException_BAD_PASSWORD
 
 	slog.Infof("%v stationBadPassword(%s)", c, sta)
 	sendNetException(sta, &c.vapName, &reason)
+}
+
+func (c *hostapdConn) deauthenticate(sta string) {
+	sta = strings.ToLower(sta)
+	slog.Infof("%v deauthenticating(%s)", c, sta)
+	c.command("DEAUTHENTICATE " + sta)
 }
 
 func (c *hostapdConn) disassociate(sta string) {
@@ -400,47 +418,81 @@ func (c *hostapdConn) disassociate(sta string) {
 	c.command("DISASSOCIATE " + sta)
 }
 
+// Fetch the retransmit state for a specific client.  If that client has no
+// state yet, allocate a state struct and insert it into the map
+func getClientRetransmit(mac string) *retransmitState {
+	now := time.Now()
+	expired := now.Add(-1 * *retransmitTimeout)
+
+	clientRetransmitsMtx.Lock()
+	defer clientRetransmitsMtx.Unlock()
+
+	// While we're scanning the map, clean up any counts that have aged out
+	for x, state := range clientRetransmits {
+		if state.last.Before(expired) {
+			slog.Debugf("%s is clear.  %d since %s",
+				x, state.count, state.first.Format(time.RFC3339))
+			delete(clientRetransmits, x)
+		}
+	}
+
+	state := clientRetransmits[mac]
+	if state == nil {
+		state = &retransmitState{first: now}
+		clientRetransmits[mac] = state
+	}
+	state.last = now
+
+	return state
+}
+
+// Set the 'restarted' bit for all clients in the retransmit map
+func markClientRetransmit() {
+	clientRetransmitsMtx.Lock()
+	defer clientRetransmitsMtx.Unlock()
+
+	for _, state := range clientRetransmits {
+		state.restarted = true
+	}
+}
+
 // There is currently a bug on the OpenWRT boards where a client will fail to
 // authenticate with EAP despite having valid credentials.  We can see this
 // happening in the log as hostapd repeatedly issues RETRANSMIT messages.  The
 // retries appear to happen with backoffs of 3, 6, 12, 20, 20, and 20 seconds
 // before the operation finally times out.
 //
-// When a client is forcibly disassociated, this seems to clear the problem in a
-// way that simply timing out and retrying the connection doesn't.  If that
+// When a client is forcibly deauthenticated, this seems to clear the problem in
+// a way that simply timing out and retrying the connection doesn't.  If that
 // isn't sufficient, restarting hostapd always seems to be.
 func (c *hostapdConn) eapRetransmit(mac string) {
-	now := time.Now()
-	expired := now.Add(-1 * *retransmitTimeout)
+	state := getClientRetransmit(mac)
+	state.count++
 
-	for mac, state := range c.retransmits {
-		if state.last.Before(expired) {
-			slog.Debugf("%s is clear.  %d since %s\n",
-				mac, state.count, state.first.Format(time.RFC3339))
-			delete(c.retransmits, mac)
+	if state.count >= *retransmitHardLimit {
+		if state.count == *retransmitHardLimit {
+			c.stationRetransmit(mac)
 		}
-	}
 
-	state := c.retransmits[mac]
-	if state == nil {
-		state = &retransmitState{
-			count: 0,
-			first: now,
+		if !state.restarted {
+			slog.Warnf("%d retransmits for %s since %s - "+
+				"restarting hostapd", state.count, mac,
+				state.first.Format(time.RFC3339))
+
+			// Remember which clients have been through a restart.
+			// If this doesn't fix them, then we don't want to try
+			// restarting hostapd again on their behalf.  In
+			// particular, we don't want to restart hostapd every 2
+			// minutes trying to fix one permanently broken client.
+			markClientRetransmit()
+			c.hostapd.reset()
+
 		}
-		c.retransmits[mac] = state
-	}
-	state.last = now
-
-	if state.count++; state.count >= *retransmitHardLimit {
-		slog.Warnf("%d retransmits for %s since %s - restarting",
-			state.count, mac, state.first.Format(time.RFC3339))
-		c.retransmits = make(map[string]*retransmitState)
-		c.hostapd.reset()
 
 	} else if state.count >= *retransmitSoftLimit {
 		slog.Warnf("%d retransmits for %s since %s - kicking",
 			state.count, mac, state.first.Format(time.RFC3339))
-		go c.disassociate(mac)
+		go c.deauthenticate(mac)
 	}
 }
 
@@ -452,6 +504,7 @@ func (c *hostapdConn) handleStatus(status string) {
 		//    AP-STA-DISCONNECTED b8:27:eb:9f:d8:e0  (client left)
 		//    AP-STA-POLL-OK b8:27:eb:9f:d8:e0       (client still here)
 		//    AP-STA-POSSIBLE-PSK-MISMATCH b8:27:eb:9f:d8:e0  (bad password)
+		//    CTRL-EVENT-EAP-FAILURE2 b8:27:eb:9f:d8:e0  (bad password)
 		//    CTRL-EVENT-EAP-RETRANSMIT b8:27:eb:9f:d8:e0 (possibly T268)
 		msgs = "(AP-STA-CONNECTED|AP-STA-DISCONNECTED|" +
 			"AP-STA-POLL-OK|AP-STA-POSSIBLE-PSK-MISMATCH|" +
@@ -474,7 +527,7 @@ func (c *hostapdConn) handleStatus(status string) {
 			c.stationPresent(mac, false)
 		case "AP-STA-DISCONNECTED":
 			c.stationGone(mac)
-		case "AP-STA-POSSIBLE-PSK-MISMATCH":
+		case "AP-STA-POSSIBLE-PSK-MISMATCH", "CTRL-EVENT-EAP-FAILURE2":
 			c.stationBadPassword(mac)
 		case "CTRL-EVENT-EAP-RETRANSMIT", "CTRL-EVENT-EAP-RETRANSMIT2":
 			c.eapRetransmit(mac)
@@ -889,7 +942,6 @@ func (h *hostapdHdl) newConn(vap *vapConfig) *hostapdConn {
 		active:      true,
 		device:      vap.physical,
 		pendingCmds: make([]*hostapdCmd, 0),
-		retransmits: make(map[string]*retransmitState),
 		stations:    make(map[string]*stationInfo),
 	}
 	slog.Debugf("%v: %s -> %s", &newConn, remoteName, localName)

@@ -254,7 +254,8 @@ message EventNetException {
 		VULNERABILITY_DETECTED	= 3;
 		BAD_PASSWORD		= 4;
 		BAD_RING		= 5;
-		TEST_EXCEPTION          = 6; // For integration testing
+		CLIENT_RETRANSMIT	= 6;
+		TEST_EXCEPTION          = 7; // For integration testing
 	}
 	optional Reason reason		= 0x801;
 	optional string message		= 0x802;

@@ -56,7 +56,7 @@ var (
 	retransmitSoftLimit = apcfg.Int("retransmit_soft", 3, true, nil)
 	retransmitHardLimit = apcfg.Int("retransmit_hard", 6, true, nil)
 	retransmitTimeout   = apcfg.Duration("retransmit_timeout",
-		25*time.Second, true, nil)
+		5*time.Minute, true, nil)
 	_ = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
 
 	physDevices = make(map[string]*physDevice)

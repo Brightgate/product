@@ -1,6 +1,7 @@
 interface={{.Interface}}
 driver=nl80211
 hw_mode={{.Mode}}
+disable_pmksa_caching=1
 {{.ModeNComment}}ieee80211n=1
 {{.ModeNComment}}ht_capab={{.ModeNHTCapab}}
 
