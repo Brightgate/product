@@ -138,6 +138,8 @@ Breezecom,,Super
 Brocade,admin,password
 Brocade,root,fivranne
 Brother,,access
+Brother,admin,access
+Brother,user,access
 Buffalo,root,
 Cabletron,netman,
 Cayman,,
@@ -330,6 +332,7 @@ Hewlett-Packard,PCUSER,SYS
 Hewlett-Packard,RSBCMON,SYS
 Hewlett-Packard,SPOOLMAN,HPOFFICE
 Hewlett-Packard,WP,HPOFFICE
+Hikvision,admin,12345
 HP,admin,
 HP,admin,1234
 HP,admin,admin
