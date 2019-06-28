@@ -136,7 +136,7 @@ func configNicChanged(path []string, val string, expires *time.Time) {
 
 		if p.ring != newRing {
 			p.ring = newRing
-			hostapd.reset()
+			networkdStop("exiting to rebuild network")
 		}
 
 	} else if path[4] == "disabled" {
@@ -180,7 +180,23 @@ func configClientChanged(path []string, val string, expires *time.Time) {
 	hostapd.reload()
 }
 
-func configRingVAPChanged(path []string, val string, expires *time.Time) {
+func configRingSubnetDeleted(path []string) {
+	ring := path[1]
+
+	if _, ok := rings[ring]; !ok {
+		slog.Warnf("Unknown ring: %s", ring)
+	} else {
+		slog.Infof("Deleted subnet for ring %s", ring)
+		networkdStop("exiting to rebuild network")
+	}
+}
+
+func configRingChanged(path []string, val string, expires *time.Time) {
+
+	if len(path) != 3 {
+		return
+	}
+
 	ring := path[1]
 	r, ok := rings[ring]
 	if !ok {
@@ -188,11 +204,20 @@ func configRingVAPChanged(path []string, val string, expires *time.Time) {
 		return
 	}
 
-	if r.VirtualAP != val {
-		slog.Infof("Changing virtualAP for ring %s from %s to %s",
-			ring, r.VirtualAP, val)
-		r.VirtualAP = val
-		hostapd.reset()
+	switch path[2] {
+	case "vap":
+		if r.VirtualAP != val {
+			slog.Infof("Changing VAP for ring %s from %s to %s",
+				ring, r.VirtualAP, val)
+			r.VirtualAP = val
+			hostapd.reset()
+		}
+	case "subnet":
+		if r.Subnet != val {
+			slog.Infof("Changing subnet for ring %s from %s to %s",
+				ring, r.Subnet, val)
+			networkdStop("exiting to rebuild network")
+		}
 	}
 }
 
@@ -201,8 +226,7 @@ func configSet(name, val string) bool {
 
 	switch name {
 	case "base_address":
-		slog.Info("base_address changed - exiting to rebuild everything")
-		networkdStop()
+		networkdStop("base_address changed - exiting to rebuild network")
 		return false
 
 	case "radius_auth_secret":
@@ -234,8 +258,7 @@ func configNetworkDeleted(path []string) {
 }
 
 func configSiteIndexChanged(path []string, val string, expires *time.Time) {
-	slog.Info("site_index changed - exiting to rebuild everything")
-	networkdStop()
+	networkdStop("site_index changed - exiting to rebuild network")
 }
 
 func configNetworkChanged(path []string, val string, expires *time.Time) {
@@ -429,7 +452,7 @@ func resetInterfaces() {
 	if err := sanityCheckSubnets(); err != nil {
 		slog.Errorf("%v", err)
 		mcpd.SetState(mcp.BROKEN)
-		networkdStop()
+		networkdStop("subnet sanity check failed")
 		return
 	}
 	deleteBridges()
@@ -857,7 +880,8 @@ func daemonInit() error {
 	config.HandleChange(`^@/site_index`, configSiteIndexChanged)
 	config.HandleChange(`^@/clients/.*/ring$`, configClientChanged)
 	config.HandleChange(`^@/nodes/`+nodeUUID+`/nics/.*$`, configNicChanged)
-	config.HandleChange(`^@/rings/.*/vap$`, configRingVAPChanged)
+	config.HandleChange(`^@/rings/.*`, configRingChanged)
+	config.HandleDelete(`^@/rings/.*/subnet$`, configRingSubnetDeleted)
 	config.HandleChange(`^@/network/.*`, configNetworkChanged)
 	config.HandleDelete(`^@/network/.*`, configNetworkDeleted)
 	config.HandleChange(`^@/firewall/rules/`, configRuleChanged)
@@ -942,8 +966,7 @@ func signalHandler() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	s := <-sig
 
-	slog.Infof("Received signal %v", s)
-	networkdStop()
+	networkdStop(fmt.Sprintf("Received signal %v", s))
 }
 
 func prometheusInit() {
@@ -951,7 +974,10 @@ func prometheusInit() {
 	go http.ListenAndServe(base_def.NETWORKD_DIAG_PORT, nil)
 }
 
-func networkdStop() {
+func networkdStop(msg string) {
+	if msg != "" {
+		slog.Infof("%s", msg)
+	}
 	running = false
 	hostapd.reset()
 }

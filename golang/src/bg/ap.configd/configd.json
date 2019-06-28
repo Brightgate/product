@@ -309,6 +309,7 @@
     {"Path": "@/rings/%ring%/lease_duration", "Type": "int", "Level": "admin"},
     {"Path": "@/rings/%ring%/vlan", "Type": "int", "Level": "developer"},
     {"Path": "@/rings/%ring%/vap", "Type": "string", "Level": "developer"},
+    {"Path": "@/rings/%ring%/subnet", "Type": "cidr", "Level": "admin"},
     {"Path": "@/users/%user%/email", "Type": "email", "Level": "user"},
     {"Path": "@/users/%user%/telephone_number", "Type": "phone", "Level": "user"},
     {"Path": "@/users/%user%/uid", "Type": "user", "Level": "internal"},

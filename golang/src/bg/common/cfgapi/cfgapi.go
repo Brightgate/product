@@ -662,8 +662,11 @@ func (c *Handle) GetRings() RingMap {
 		}
 
 		if err == nil {
-			subnetIdx := ringToSubnetIdx[ringName]
-			subnet, err = GenSubnet(base, siteIdx, subnetIdx)
+			subnet, err = getStringVal(ring, "subnet")
+			if err != nil {
+				subnetIdx := ringToSubnetIdx[ringName]
+				subnet, err = GenSubnet(base, siteIdx, subnetIdx)
+			}
 		}
 
 		if err == nil {
