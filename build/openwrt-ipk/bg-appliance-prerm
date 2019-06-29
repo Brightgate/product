@@ -41,6 +41,16 @@ sed -i \
 /sbin/uci -c $PKG_ROOT/etc/config delete network.wan.reqopts || \
 	echo "network.wan.reqopts not present, deletion unnecessary"
 
+# Replace the br-lan bridge
+/sbin/uci -c $PKG_ROOT/etc/config add network interface
+/sbin/uci -c $PKG_ROOT/etc/config rename network.@interface[-1]=lan
+/sbin/uci -c $PKG_ROOT/etc/config set network.@interface[-1].type='bridge'
+/sbin/uci -c $PKG_ROOT/etc/config set network.@interface[-1].ifname='lan0 lan1 lan2 lan3'
+/sbin/uci -c $PKG_ROOT/etc/config set network.@interface[-1].proto='static'
+/sbin/uci -c $PKG_ROOT/etc/config set network.@interface[-1].ipaddr='192.168.1.1'
+/sbin/uci -c $PKG_ROOT/etc/config set network.@interface[-1].netmask='255.255.255.0'
+/sbin/uci -c $PKG_ROOT/etc/config set network.@interface[-1].ip6assign='60'
+
 /sbin/uci -c $PKG_ROOT/etc/config commit
 
 # Restore for reset button actions.

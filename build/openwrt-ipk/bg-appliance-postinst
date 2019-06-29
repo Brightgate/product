@@ -76,6 +76,10 @@ chmod 755 "$PKG_ROOT/etc/init.d/chronyd"
 # Add requested DHCP option to config.
 /sbin/uci -c $PKG_ROOT/etc/config set network.wan.reqopts="60 43"
 
+# Delete the br-lan bridge
+/sbin/uci -c $PKG_ROOT/etc/config del network.lan || \
+	echo "network.lan not present, deletion unnecessary"
+
 /sbin/uci -c $PKG_ROOT/etc/config commit
 
 # Prophylaxes for reset button actions.
