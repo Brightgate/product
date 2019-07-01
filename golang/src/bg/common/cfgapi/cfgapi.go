@@ -824,6 +824,7 @@ func getClient(client *PropertyNode) *ClientInfo {
 	var wireless, private bool
 	var connVAP, connBand, active string
 	var connNode *uuid.UUID
+	var err error
 
 	private, _ = getBoolVal(client, "dns_private")
 	ring, _ = getStringVal(client, "ring")
@@ -842,7 +843,12 @@ func getClient(client *PropertyNode) *ClientInfo {
 		connBand, _ = getStringVal(conn, "band")
 		connNode, _ = getUUIDVal(conn, "node")
 		active, _ = getStringVal(conn, "active")
-		wireless, _ = getBoolVal(conn, "wireless")
+		wireless, err = getBoolVal(conn, "wireless")
+		// Improve our guess for legacy devices which don't have the
+		// 'wireless' boolean.
+		if err != nil && connVAP != "" {
+			wireless = true
+		}
 	}
 
 	c := ClientInfo{
