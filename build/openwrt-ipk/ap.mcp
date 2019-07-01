@@ -22,6 +22,11 @@ set_hostname () {
 	echo "$1" > /proc/sys/kernel/hostname
 }
 
+# Workaround for CVE-2019-11477 and CV-2019-11478.
+cve_2019_tcp_sack () {
+	echo 0 > /proc/sys/net/ipv4/tcp_sack
+}
+
 start_service()
 {
 	# Mount /data, if not already mounted.
@@ -43,6 +48,8 @@ start_service()
 	else
 		set_hostname "`cat < $IDFILE`"
 	fi
+
+	cve_2019_tcp_sack
 
 	# Start service via procd.
 	procd_open_instance
