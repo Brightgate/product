@@ -68,7 +68,7 @@ func (c *Configd) monitor() {
 	for {
 		resp, rerr := stream.Recv()
 		if rerr != nil {
-			log.Printf("lost connection to cl.configd: %v\n", err)
+			log.Printf("lost connection to cl.configd: %v\n", rerr)
 			break
 		}
 
