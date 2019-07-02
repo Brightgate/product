@@ -505,9 +505,21 @@ func newVnode(prop string) (*vnode, error) {
 			}
 			keyType = t
 		} else {
-			// Fields without <> are constant strings
+			// Fields without %% are constant strings
 			keyType = "const"
 		}
+
+		// Make sure we don't put conflicting entries into the tree.
+		for _, sib := range parent.children {
+			if (keyType == "const" && sib.keyType != "const" &&
+				validationFuncs[sib.keyType](f) == nil) ||
+				(sib.keyType == "const" && keyType != "const" &&
+					validationFuncs[keyType](sib.keyText) == nil) {
+				return nil, fmt.Errorf("%s incompatible with %s",
+					path, sib.path)
+			}
+		}
+
 		node = &vnode{
 			path:     path,
 			keyText:  f,

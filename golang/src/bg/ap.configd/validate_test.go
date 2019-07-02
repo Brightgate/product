@@ -11,6 +11,7 @@
 package main
 
 import (
+	"bg/common/cfgapi"
 	"testing"
 )
 
@@ -153,5 +154,64 @@ func testOneType(t *testing.T, x validationTest) {
 func TestValidation(t *testing.T) {
 	for _, test := range allTests {
 		testOneType(t, test)
+	}
+}
+
+func TestValidationTree(t *testing.T) {
+	tests := []struct {
+		oldProp string
+		newProp string
+		fail    bool
+	}{
+		{
+			oldProp: "@/some/%string%",
+			newProp: "@/some/realstring",
+			fail:    true,
+		},
+		{
+			oldProp: "@/nodes/%uuid%/nics/%nic%/disabled",
+			newProp: "@/nodes/%uuid%/platform",
+			fail:    false,
+		},
+		{
+			oldProp: "@/some/%bool%",
+			newProp: "@/some/false",
+			fail:    true,
+		},
+		{
+			oldProp: "@/some/%bool%",
+			newProp: "@/some/otherstring",
+			fail:    false,
+		},
+	}
+
+	newVRoot := func() *vnode {
+		return &vnode{
+			path:     "@",
+			keyType:  "const",
+			keyText:  "@",
+			level:    cfgapi.AccessInternal,
+			valType:  "none",
+			children: make(map[string]*vnode),
+		}
+	}
+
+	runTest := func(t *testing.T, prop1, prop2 string, fail bool) {
+		vRoot = newVRoot()
+		_, _ = newVnode(prop1)
+		_, err := newVnode(prop2)
+		if fail && err == nil {
+			t.Errorf("%s and %s conflict, but newVnode() didn't find it",
+				prop1, prop2)
+		}
+		if !fail && err != nil {
+			t.Errorf("%s and %s don't conflict, but newVnode() thought they did",
+				prop1, prop2)
+		}
+	}
+
+	for _, test := range tests {
+		runTest(t, test.oldProp, test.newProp, test.fail)
+		runTest(t, test.newProp, test.oldProp, test.fail)
 	}
 }
