@@ -514,7 +514,7 @@ func (c *rpcClient) pullLoop(wg *sync.WaitGroup, doneChan chan bool) {
 	defer ticker.Stop()
 
 	ctx, cancel := context.WithCancel(c.ctx)
-	doneFetch := make(chan bool)
+	doneFetchErr := make(chan error)
 	for !done {
 		// If not connected, check periodically for
 		// connection establishment or for the signal
@@ -530,14 +530,25 @@ func (c *rpcClient) pullLoop(wg *sync.WaitGroup, doneChan chan bool) {
 		// If connected, create the stream, and monitor
 		// for errors, or for the signal to shutdown.
 		go func() {
-			err := c.fetchStream(ctx)
-			if err != nil && !done {
-				slog.Warnf("fetchStream failed: %v", err)
-			}
-			doneFetch <- true
+			doneFetchErr <- c.fetchStream(ctx)
 		}()
 		select {
-		case <-doneFetch:
+		case err := <-doneFetchErr:
+			if err == nil || done {
+				break
+			}
+			slog.Warnf("fetchStream failed: %v", err)
+
+			// If we just got back an error from the backend, don't
+			// force a reconnect, but don't spin and fill the logs.
+			if c.connected {
+				<-ticker.C
+			}
+
+			// On failure, cancel the previous context and create a
+			// new one so as not to leak.
+			cancel()
+			ctx, cancel = context.WithCancel(c.ctx)
 		case done = <-doneChan:
 		}
 	}
