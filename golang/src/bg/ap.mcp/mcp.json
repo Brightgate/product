@@ -50,7 +50,7 @@
         "Privileged": true,
         "Modes": [ "gateway", "satellite" ],
         "MemWarn": 25,
-        "MemKill": 30
+        "MemKill": 40
     },
     "networkd": {
         "Name": "networkd",

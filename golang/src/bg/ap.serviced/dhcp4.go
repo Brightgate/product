@@ -549,7 +549,7 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 		l.ipaddr, hwaddr, l.name, l.expires)
 
 	config.CreateProp(propPath(hwaddr, "ipv4"), l.ipaddr.String(), l.expires)
-	config.CreateProp(propPath(hwaddr, "dhcp_name"), l.name, l.expires)
+	config.CreateProp(propPath(hwaddr, "dhcp_name"), l.name, nil)
 	notifyClaimed(p, l.ipaddr, l.name, leaseDuration)
 	dhcpMetrics.claimed.Inc()
 

@@ -17,6 +17,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -33,7 +34,7 @@ import (
 )
 
 // gRPC has a default maximum message size of 4MiB
-const msgsize = 2097152
+const msgsize = 524288
 
 var (
 	forceInventory = flag.Bool("force-inventory", false, "always send all inventory")
@@ -138,6 +139,8 @@ func sendInventory(ctx context.Context, client cloud_rpc.EventClient) error {
 		}
 		inventory := &base_msg.DeviceInventory{}
 		err = proto.Unmarshal(in, inventory)
+		in = nil
+		runtime.GC()
 		if err != nil {
 			slog.Warnf("failed to unmarshal device inventory %s: %s", path, err)
 			continue
