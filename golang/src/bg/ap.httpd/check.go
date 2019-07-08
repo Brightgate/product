@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"net/http"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -32,9 +33,20 @@ func makeCheckRouter() *mux.Router {
 
 	logRouter := router.PathPrefix("/log").Subrouter()
 	logRouter.Use(cookieAuthMiddleware)
-	logRouter.HandleFunc("/mcp.log", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		http.ServeFile(w, r, plat.ExpandDirPath("__APDATA__", "mcp", "mcp.log"))
+	mcpLogRe := regexp.MustCompile(`^mcp\.log(\.[0-9]+)?(\.gz)?$`)
+
+	logRouter.HandleFunc("/{logname}", func(w http.ResponseWriter, r *http.Request) {
+		logName := mux.Vars(r)["logname"]
+		// Check input for sanity
+		if mcpLogRe.MatchString(logName) {
+			w.Header().Set("Content-Type", "text/plain")
+			if strings.HasSuffix(logName, ".gz") {
+				w.Header().Set("Content-Encoding", "gzip")
+			}
+			http.ServeFile(w, r, plat.ExpandDirPath("__APDATA__", "mcp", logName))
+		} else {
+			http.Error(w, "No such log", http.StatusNotFound)
+		}
 	}).Methods("GET")
 	return router
 }
