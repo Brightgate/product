@@ -25,9 +25,7 @@ func TestSelfSigned(t *testing.T) {
 		t.Errorf("couldn't create temporary directory '%s': %v\n", dn, err)
 	}
 
-	killGen := make(chan bool)
-	paths, err := createSSKeyCert(nil, dn, "testhost.local", killGen)
-	close(killGen)
+	paths, err := createSSKeyCert(nil, dn, "testhost.local", "0")
 
 	if err != nil {
 		t.Errorf("err = %v\n", err)

@@ -294,6 +294,15 @@ func daemonStart() {
 		slog.Fatalf("Failed to set ONLINE: %+v", err)
 	}
 
+	setCertExpirationHandler()
+	slog.Info("Provisionally generating self-signed certificate")
+	genNo := "0"
+	err = config.CreateProp("@/cert_generation", genNo, nil)
+	if err != nil {
+		slog.Fatalf("Couldn't set initial certificate generation number: %v", err)
+	}
+	go ssCertGen(genNo)
+
 	conn := grpcConnect(ctx)
 	defer conn.Close()
 
@@ -322,13 +331,7 @@ func daemonStart() {
 		// XXX - should allow tunneling into satellites.
 		go tunnelLoop(&cleanup.wg, addDoneChan())
 
-		// cloudCertLoop() will try to download a cert from the cloud.
-		// Concurrently, ssCertGen() will start generating a self-signed
-		// key/cert pair.  If the cloud cert is available before the self-signed
-		// cert is, then ssCertGen() will be told to stop.
-		killGen := make(chan bool)
-		go cloudCertLoop(ctx, conn, &cleanup.wg, addDoneChan(), killGen)
-		go ssCertGen(killGen)
+		go cloudCertLoop(ctx, conn, &cleanup.wg, addDoneChan())
 	}
 
 	exitSig := make(chan os.Signal, 2)

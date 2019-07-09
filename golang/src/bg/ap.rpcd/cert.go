@@ -23,6 +23,8 @@ import (
 	"bg/common/cfgapi"
 	"bg/common/zaperr"
 
+	"github.com/pkg/errors"
+
 	"google.golang.org/grpc"
 )
 
@@ -79,12 +81,14 @@ func downloadCert(ctx context.Context, client cloud_rpc.CertificateManagerClient
 // findInstalledCert looks through the config tree at @/certs and finds an
 // installed, unexpired cloud certificate.  It may return an error if there's a
 // problem with configd.
-func findInstalledCert(ctx context.Context, client cloud_rpc.CertificateManagerClient) (string, error) {
+func findInstalledCert(quiet, cloudOnly bool) (string, error) {
 	node, err := config.GetProps("@/certs")
 	if err == cfgapi.ErrNoProp {
 		// If there is no such property, then we don't have a cert; go
 		// ask for one.
-		slog.Info("No certs known; requesting new cert")
+		if !quiet {
+			slog.Info("No certs known; requesting new cert")
+		}
 		return "", nil
 	} else if err != nil {
 		return "", err
@@ -103,15 +107,19 @@ func findInstalledCert(ctx context.Context, client cloud_rpc.CertificateManagerC
 		// If we find an installed cert where the origin is not "cloud",
 		// we don't stop looking; consumers will use the existing cert
 		// until a new one is available.
-		if originNode == nil || originNode.Value != "cloud" {
-			slog.Warnf("Found an installed non-cloud "+
-				"certificate: %s", fp)
+		if cloudOnly && (originNode == nil || originNode.Value != "cloud") {
+			if !quiet {
+				slog.Warnf("Found an installed non-cloud "+
+					"certificate: %s", fp)
+			}
 			continue
 		}
 
 		// If we already have an installed key, there's no need to
 		// continue.
-		slog.Infof("Found at least one installed certificate: %s", fp)
+		if !quiet {
+			slog.Infof("Found at least one installed certificate: %s", fp)
+		}
 		found = fp
 		break
 	}
@@ -132,37 +140,62 @@ func sleepOrDone(t time.Duration, doneChan chan bool) bool {
 	return done
 }
 
-func ssCertGen(killGen chan bool) {
+func ssCertGen(genNo string) {
 	domain, err := config.GetDomain()
 	if err != nil {
 		slog.Fatalf("failed to fetch gateway domain for use in self-signed cert: %v", err)
 	}
-	slog.Infof("provisionally generating self-signed certificate for domain %q", domain)
 
-	_, err = certificate.CreateSSKeyCert(config, domain, killGen)
-	if err != nil {
-		if err, ok := err.(certificate.AbortedGeneration); ok {
-			slog.Info(err)
+	retryPeriod := 30 * time.Second
+	for {
+		_, err = certificate.CreateSSKeyCert(config, domain, genNo)
+		if err != nil {
+			// If the error is that the cloud cert beat us to the
+			// punch, it's not really an error.
+			if errors.Cause(err) == cfgapi.ErrNotEqual {
+				slog.Infof("Self-signed certificate generation " +
+					"canceled by new cloud certificate")
+				break
+			}
+			slog.Errorf("Self-signed certificate generation failed "+
+				"(retry in %s): %v", retryPeriod, err)
 		} else {
-			slog.Errorf("Self-signed certificate generated failed: %v", err)
+			break
 		}
+		time.Sleep(retryPeriod)
 	}
 }
 
-func cloudCertLoop(ctx context.Context, conn *grpc.ClientConn, wg *sync.WaitGroup, doneChan, killGen chan bool) {
-	slog.Infof("certificate loop starting")
-	client := cloud_rpc.NewCertificateManagerClient(conn)
-
+func setCertExpirationHandler() {
 	// Set up a handler to clean up the parent nodes when the "state"
-	// property expires.
+	// property expires.  Also, if we don't still have an installed cert, go
+	// make a new self-signed cert.
 	certStateExpire := func(path []string) {
 		subtree := "@/" + strings.Join(path[:len(path)-1], "/")
 		if err := config.DeleteProp(subtree); err != nil {
 			slog.Errorf("Failed to delete old certificate subtree: "+
 				"path=%s, error=%v", subtree, err)
 		}
+
+		fp, err := findInstalledCert(true, false)
+		if err != nil {
+			slog.Errorf("Error finding installed cert: %v", err)
+			return
+		}
+		if fp == "" {
+			slog.Info("Generating replacement self-signed cert")
+			genNo, err := config.GetProp("@/cert_generation")
+			if err == nil {
+				go ssCertGen(genNo)
+			}
+		}
 	}
 	config.HandleExpire(`^@/certs/.*/state`, certStateExpire)
+}
+
+func cloudCertLoop(ctx context.Context, conn *grpc.ClientConn, wg *sync.WaitGroup, doneChan chan bool) {
+	slog.Infof("certificate loop starting")
+	client := cloud_rpc.NewCertificateManagerClient(conn)
 
 	// A curated sleep schedule
 	sleepSched := []int{
@@ -188,19 +221,11 @@ func cloudCertLoop(ctx context.Context, conn *grpc.ClientConn, wg *sync.WaitGrou
 			// Download and install a certificate if we need one and
 			// one is available.  If one isn't available, wait until
 			// one is created.
-			if fp, err = findInstalledCert(ctx, client); err != nil {
+			if fp, err = findInstalledCert(false, true); err != nil {
 				msg = "find installed"
 			} else {
 				if err = downloadCert(ctx, client, fp); err == nil {
-					// Once we've downloaded the cert, we
-					// message the goroutine generating the
-					// self-signed cert to stop, and never
-					// worry about this again.
-					if killGen != nil {
-						killGen <- true
-						close(killGen)
-						killGen = nil
-					}
+					slog.Info("Downloaded cert")
 					break
 				}
 				msg = "download"

@@ -278,6 +278,7 @@
     {"Path": "@/site_index", "Type": "int", "Level": "internal"},
     {"Path": "@/apversion", "Type": "string", "Level": "internal"},
     {"Path": "@/cfgversion", "Type": "int", "Level": "internal"},
+    {"Path": "@/cert_generation", "Type": "int", "Level": "internal"},
     {"Path": "@/certs/%string%/state", "Type": "string", "Level": "internal"},
     {"Path": "@/certs/%string%/origin", "Type": "string", "Level": "internal"},
     {"Path": "@/dns/cnames/%hostname%", "Type": "hostname", "Level": "user"},
