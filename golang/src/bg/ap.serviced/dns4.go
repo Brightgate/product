@@ -316,7 +316,7 @@ func logRequest(handler string, start time.Time, ip net.IP, r, m *dns.Msg) {
 		Sender:       proto.String(brokerd.Name),
 		Debug:        proto.String(handler),
 		Requestor:    proto.String(ip.String()),
-		IdentityUuid: proto.String(base_def.ZERO_UUID),
+		IdentityUuid: nil,
 		Protocol:     &protocol,
 		Request:      requests,
 		Response:     responses,

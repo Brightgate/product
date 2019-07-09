@@ -148,6 +148,9 @@ func handleEntity(event []byte) {
 	} else {
 		id = mfgidDB[entry.Manufacturer]
 	}
+	// Strip stuff we don't care about passing along
+	msg.Sender = nil
+	msg.Debug = nil
 
 	testData.setByName(hwaddr, formatMfgString(id))
 	newData.addMsgEntity(hwaddr, msg)
@@ -178,6 +181,10 @@ func handleRequest(event []byte) {
 		qName := dnsQ.FindStringSubmatch(q)[1]
 		testData.setByName(hwaddr, qName)
 	}
+
+	// Strip stuff we don't care about passing along
+	request.Sender = nil
+	request.Debug = nil
 
 	newData.addMsgRequest(hwaddr, request)
 }
@@ -283,12 +290,21 @@ func handleListen(event []byte) {
 		testData.setByName(hwaddr, "mDNS")
 	}
 
+	// Strip stuff we don't care about passing along
+	listen.Sender = nil
+	listen.Debug = nil
+
 	newData.addMsgListen(hwaddr, listen)
 }
 
 func handleOptions(event []byte) {
 	options := &base_msg.DHCPOptions{}
 	proto.Unmarshal(event, options)
+
+	// Strip stuff we don't care about passing along
+	options.Sender = nil
+	options.Debug = nil
+
 	newData.addMsgOptions(*options.MacAddress, options)
 }
 
