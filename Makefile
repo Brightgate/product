@@ -60,6 +60,7 @@ UNAME_M := $(shell uname -m)
 # note: These are constants; := avoids repeated shell invocations
 GITROOT := $(shell git rev-parse --show-toplevel)
 GITHASH := $(shell git describe --always --long --dirty)
+GITHASH_FULL := $(shell git describe --always --abbrev=0)
 # Needs deferred expansion, can't use :=
 GITCHANGED = $(shell grep -s -q '"$(GITHASH)"' $(GOSRCBG)/common/version.go || echo FRC)
 
@@ -217,6 +218,7 @@ endif
 BUILD_SYSROOT_CMD = \
 	cd build/cross-compile && \
 	DISTRO=$(DISTRO) SYSROOT=$(SYSROOT) SYSROOT_SUM=$(SYSROOT_SUM) \
+	    GCS_KEY_FILE=$(GCS_KEY_SYSROOT) \
 	    ./build-multistrap-sysroot.sh $(SYSROOT_LOCAL_FLAGS)
 CROSS_SYSROOT = $(shell realpath -m $(SYSROOT))
 SYSROOT_BLOB_NAME = $(shell $(BUILD_SYSROOT_CMD) name)
@@ -696,6 +698,16 @@ packages: install client-web $(VENV_INSTALLED)
 
 packages-lint: install client-web $(VENV_INSTALLED)
 	$(PYTHON3) build/package.py --lint --distro $(DISTRO) --arch $(PKG_DEB_ARCH) --proto $(ROOT)
+
+GCS_WRAPPER = $(GITROOT)/build/gcs-wrapper.sh
+APPLIANCE_BUCKET = bg-appliance-artifacts
+
+packages-upload: export GCS_KEY_FILE=$(GCS_KEY_ARTIFACT)
+
+packages-upload:
+	$(GCS_WRAPPER) vcp bg-appliance_*_amd64.deb gs://$(APPLIANCE_BUCKET)/amd64/PS/$(GITHASH_FULL)/
+	$(GCS_WRAPPER) vcp bg-appliance_*_armhf.deb gs://$(APPLIANCE_BUCKET)/rpi/PS/$(GITHASH_FULL)/
+	$(GCS_WRAPPER) vcp bg-appliance_*_arm_*.ipk gs://$(APPLIANCE_BUCKET)/mt7623/PS/$(GITHASH_FULL)/
 
 GO_MOCK_CLOUDRPC_SRCS = \
 	$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go \

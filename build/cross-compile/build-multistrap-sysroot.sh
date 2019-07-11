@@ -18,7 +18,7 @@
 #   multistrap(1) invocation.  openwrt requires that the sysroot and toolchain
 #   archives from the rWRT build be present for upload.
 #
-# KEY_SYSROOT_UPLOADER
+# GCS_KEY_FILE
 #   Path to a GCP JSON key file for the relevant service account.
 #
 # SYSROOT_SUM
@@ -72,7 +72,7 @@ BLOB_NAME_PREFIX=$(dirname $cfgfile)/sysroot.${BLOB_NAME_PREFIX%.multistrap}
 BLOB_NAME_PREFIX=${BLOB_NAME_PREFIX#./}
 BLOB_NAME=$BLOB_NAME_PREFIX.${SYSROOT_SUM:-UnknownSysrootSum}.tar.gz
 SYSROOT_BUCKET_NAME=peppy-breaker-161717-sysroot
-GCS_ACCOUNT=sysroot-uploader@peppy-breaker-161717.iam.gserviceaccount.com
+GCS_WRAPPER=$(git rev-parse --show-toplevel)/build/gcs-wrapper.sh
 
 function cmd_help() {
 	cat <<EOF
@@ -96,13 +96,13 @@ function cmd_name() {
 }
 
 function cmd_download() {
-	gsutil cp gs://$SYSROOT_BUCKET_NAME/$BLOB_NAME . || \
+	$GCS_WRAPPER cp gs://$SYSROOT_BUCKET_NAME/$BLOB_NAME . || \
 		fatal "could not download gs://$SYSROOT_BUCKET_NAME/$BLOB_NAME"
 
 	if [[ "$DISTRO" == "openwrt" ]]; then
 		TOOLCHAIN_BLOB_NAME=${BLOB_NAME/sysroot/toolchain}
-		gsutil cp gs://$SYSROOT_BUCKET_NAME/$TOOLCHAIN_BLOB_NAME . || \
-		fatal "could not download gs://$SYSROOT_BUCKET_NAME/$TOOLCHAIN_BLOB_NAME"
+		$GCS_WRAPPER cp gs://$SYSROOT_BUCKET_NAME/$TOOLCHAIN_BLOB_NAME . || \
+			fatal "could not download gs://$SYSROOT_BUCKET_NAME/$TOOLCHAIN_BLOB_NAME"
 	fi
 
 	exit
@@ -131,20 +131,13 @@ function cmd_unpack() {
 # This is the just the logic of the upload, factored out so it can be used in
 # two different contexts.
 function upload() {
-	# Make sure we don't use the user's auth tokens
-	export BOTO_CONFIG=/dev/null
 	info "Uploading sysroot as $BLOB_NAME"
-	gcloud auth activate-service-account $GCS_ACCOUNT \
-	    --key-file=$KEY_SYSROOT_UPLOADER
-	if [[ $? == 0 ]]; then
-		gsutil cp -n $BLOB_NAME gs://$SYSROOT_BUCKET_NAME || \
-			fatal "could not upload gs://$SYSROOT_BUCKET_NAME/$BLOB_NAME"
-		if [[ "$DISTRO" == "openwrt" ]]; then
-			TOOLCHAIN_BLOB_NAME=${BLOB_NAME/sysroot/toolchain}
-			gsutil cp -n $TOOLCHAIN_BLOB_NAME gs://$SYSROOT_BUCKET_NAME/ || \
-				fatal "could not upload gs://$SYSROOT_BUCKET_NAME/$TOOLCHAIN_BLOB_NAME"
-		fi
-		gcloud auth revoke $GCS_ACCOUNT
+	$GCS_WRAPPER cp -n $BLOB_NAME gs://$SYSROOT_BUCKET_NAME || \
+		fatal "could not upload gs://$SYSROOT_BUCKET_NAME/$BLOB_NAME"
+	if [[ "$DISTRO" == "openwrt" ]]; then
+		TOOLCHAIN_BLOB_NAME=${BLOB_NAME/sysroot/toolchain}
+		$GCS_WRAPPER cp -n $TOOLCHAIN_BLOB_NAME gs://$SYSROOT_BUCKET_NAME/ || \
+			fatal "could not upload gs://$SYSROOT_BUCKET_NAME/$TOOLCHAIN_BLOB_NAME"
 	fi
 }
 

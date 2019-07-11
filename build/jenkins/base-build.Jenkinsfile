@@ -5,7 +5,7 @@
 // exhaustively test every part of the Makefile infrastructure-- that can be
 // done by other jobs which repeatedly build and clobber with different
 // options.
-// 
+//
 // More information about the Jenkins pipeline DSL can be found at:
 //  - https://jenkins.io/doc/book/pipeline/
 //  - https://jenkins.io/doc/book/pipeline/development/
@@ -21,6 +21,8 @@ pipeline {
     environment {
         GOROOT = '/opt/net.b10e/go-1.12.4'
         DOWNLOAD_CACHEDIR = '/ex1/product-dl-cache'
+        GCS_KEY_ARTIFACT = credentials('bg-artifact-uploader')
+        GCS_KEY_SYSROOT = credentials('sysroot-uploader')
     }
     stages {
         stage('build-amd64') {
@@ -80,7 +82,15 @@ pipeline {
         }
     }
     post {
-        always {
+        success {
+            script {
+                if (env.JOB_BASE_NAME == 'postcommit-PS') {
+                    sh 'make packages-upload'
+                }
+            }
+        }
+        // "cleanup" clauses are guaranteed to run last
+        cleanup {
             phabNotify()
         }
     }

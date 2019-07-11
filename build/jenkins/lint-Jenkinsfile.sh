@@ -9,7 +9,7 @@ if [[ -z $1 ]]; then
 	exit 2
 fi
 
-JENKINS_URL=http://build0.b10e.net:8080/
+JENKINS_URL=https://build0.b10e.net/
 # get magic token
 JENKINS_CRUMB=$(curl -s "$JENKINS_URL/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,\":\",//crumb)")
 

@@ -17,3 +17,4 @@ doc/*-body.html
 coverage/
 _tools.*/
 _venv.*
+.gcloud

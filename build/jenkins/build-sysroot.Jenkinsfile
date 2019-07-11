@@ -8,7 +8,7 @@ pipeline {
             environment {
                 GOARCH = 'arm'
                 GOARM = '7'
-                KEY_SYSROOT_UPLOADER = credentials('sysroot-uploader')
+                GCS_KEY_FILE = credentials('sysroot-uploader')
             }
             steps {
                 sh 'make upload-sysroot'
