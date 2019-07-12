@@ -240,7 +240,7 @@ func (c *rpcClient) fetchStream(ctx context.Context) error {
 		if rerr != nil {
 			c.connected = false
 			slog.Infof("lost connection to cl.configd")
-			return fmt.Errorf("failed to read from FetchStream: %v", err)
+			return fmt.Errorf("failed to read from FetchStream: %v", rerr)
 		}
 
 		if resp.Response == rpc.CfgBackEndResponse_ERROR {

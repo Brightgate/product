@@ -279,9 +279,9 @@ func (m *MCP) PeerUpdate(lifetime time.Duration,
 		s, rerr := m.msg(op)
 		b = []byte(s)
 		if rerr != nil {
-			err = fmt.Errorf("mcp request failed: %v", err)
+			err = fmt.Errorf("mcp request failed: %v", rerr)
 		} else if rerr := json.Unmarshal(b, &rval); rerr != nil {
-			err = fmt.Errorf("failed to unmarshal reply: %v", err)
+			err = fmt.Errorf("failed to unmarshal reply: %v", rerr)
 		}
 	}
 

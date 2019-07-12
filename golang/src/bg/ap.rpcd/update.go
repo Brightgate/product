@@ -155,7 +155,7 @@ func refresh(u *updateInfo) (bool, error) {
 	if metaRefreshed || !aputil.FileExists(target) {
 		b, rerr := ioutil.ReadFile(latestFile)
 		if rerr != nil {
-			err = fmt.Errorf("unable to read %s: %v", latestFile, err)
+			err = fmt.Errorf("unable to read %s: %v", latestFile, rerr)
 		} else {
 			sourceName := string(b)
 			url = updateBucket + "/" + sourceName
