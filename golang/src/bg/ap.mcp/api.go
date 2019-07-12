@@ -20,12 +20,12 @@ import (
 	"time"
 
 	"bg/ap_common/aputil"
+	"bg/ap_common/comms"
 	"bg/ap_common/mcp"
 	"bg/base_def"
 	"bg/base_msg"
 
 	"github.com/golang/protobuf/proto"
-	zmq "github.com/pebbe/zmq4"
 )
 
 var stateReverseMap map[string]int
@@ -307,40 +307,30 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 	return rval, code
 }
 
-// Spin waiting for commands from ap-ctl and status updates from spawned daemons
-func apiLoop(incoming *zmq.Socket) {
+func apiHandle(msg []byte) []byte {
 	me := "mcp." + strconv.Itoa(os.Getpid()) + ")"
 
-	for {
-		msg, err := incoming.RecvMessageBytes(0)
-		if err != nil {
-			logWarn("err: %v", err)
-			continue
-		}
+	req := &base_msg.MCPRequest{}
+	proto.Unmarshal(msg, req)
+	rval, rc := handleRequest(req)
 
-		req := &base_msg.MCPRequest{}
-		proto.Unmarshal(msg[0], req)
-		rval, rc := handleRequest(req)
-
-		version := base_msg.Version{Major: proto.Int32(mcp.Version)}
-		response := &base_msg.MCPResponse{
-			Timestamp: aputil.NowToProtobuf(),
-			Sender:    proto.String(me),
-			Version:   &version,
-			Debug:     proto.String("-"),
-			Response:  &rc,
-		}
-		if rval != nil {
-			response.State = proto.String(*rval)
-		}
-
-		data, err := proto.Marshal(response)
-		if err != nil {
-			logWarn("Failed to marshal response: %v", err)
-		} else {
-			incoming.SendBytes(data, 0)
-		}
+	version := base_msg.Version{Major: proto.Int32(mcp.Version)}
+	response := &base_msg.MCPResponse{
+		Timestamp: aputil.NowToProtobuf(),
+		Sender:    proto.String(me),
+		Version:   &version,
+		Debug:     proto.String("-"),
+		Response:  &rc,
 	}
+	if rval != nil {
+		response.State = proto.String(*rval)
+	}
+
+	data, err := proto.Marshal(response)
+	if err != nil {
+		logWarn("Failed to marshal response: %v", err)
+	}
+	return data
 }
 
 func apiInit() {
@@ -354,14 +344,11 @@ func apiInit() {
 		logWarn("Failed to enable loopback: %v", err)
 	}
 
-	incoming, err := zmq.NewSocket(zmq.REP)
+	url := base_def.INCOMING_ZMQ_URL + base_def.MCP_ZMQ_REP_PORT
+	server, err := comms.NewAPServer(url)
 	if err != nil {
-		log.Fatalf("failed to get ZMQ socket: %v", err)
-	}
-	port := base_def.INCOMING_ZMQ_URL + base_def.MCP_ZMQ_REP_PORT
-	if err := incoming.Bind(port); err != nil {
-		log.Fatalf("failed to bind incoming port %s: %v", port, err)
+		log.Fatalf("failed to get open server port")
 	}
 
-	go apiLoop(incoming)
+	go server.Serve(apiHandle)
 }

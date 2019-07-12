@@ -50,6 +50,7 @@ import (
 
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
+	"bg/ap_common/comms"
 	"bg/ap_common/mcp"
 	"bg/ap_common/platform"
 	"bg/base_def"
@@ -61,13 +62,15 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	zmq "github.com/pebbe/zmq4"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
 
-const pname = "ap.configd"
+const (
+	pname     = "ap.configd"
+	serverURL = base_def.INCOMING_ZMQ_URL + base_def.CONFIGD_ZMQ_REP_PORT
+)
 
 var metrics struct {
 	getCounts  prometheus.Counter
@@ -116,12 +119,11 @@ var (
 
 	propTree *cfgtree.PTree
 
-	eventSocket *zmq.Socket
-
-	mcpd    *mcp.MCP
-	brokerd *broker.Broker
-	slog    *zap.SugaredLogger
-	plat    *platform.Platform
+	mcpd       *mcp.MCP
+	brokerd    *broker.Broker
+	slog       *zap.SugaredLogger
+	plat       *platform.Platform
+	serverPort *comms.APComm
 
 	virtualAPToDefaultRing map[string]string
 	ringToVirtualAP        map[string]string
@@ -876,38 +878,17 @@ func processOneEvent(query *cfgmsg.ConfigQuery) *cfgmsg.ConfigResponse {
 	return response
 }
 
-func eventLoop() {
-	errs := 0
+func msgHandler(msg []byte) []byte {
+	query := &cfgmsg.ConfigQuery{}
+	proto.Unmarshal(msg, query)
 
-	for {
-		msg, err := eventSocket.RecvMessageBytes(0)
-		if err != nil {
-			if err == zmq.ErrorSocketClosed {
-				return
-			}
-
-			slog.Warnf("Error receiving message: %v", err)
-			if errs++; errs > 10 {
-				slog.Errorf("too many errors - giving up")
-				eventSocket.Close()
-				return
-			}
-			continue
-		}
-
-		errs = 0
-		query := &cfgmsg.ConfigQuery{}
-		proto.Unmarshal(msg[0], query)
-
-		response := processOneEvent(query)
-		data, err := proto.Marshal(response)
-		if err != nil {
-			slog.Warnf("Failed to marshal response to %v: %v",
-				*query, err)
-		} else {
-			eventSocket.SendBytes(data, 0)
-		}
+	response := processOneEvent(query)
+	data, err := proto.Marshal(response)
+	if err != nil {
+		slog.Warnf("Failed to marshal response to %v: %v",
+			*query, err)
 	}
+	return data
 }
 
 func prometheusInit() {
@@ -971,29 +952,13 @@ func configInit() {
 	defaultRingInit()
 }
 
-func zmqInit() {
-	var err error
-
-	eventSocket, err = zmq.NewSocket(zmq.REP)
-	if err != nil {
-		slog.Fatalf("creating zmq socket: %v", err)
-	}
-
-	port := base_def.INCOMING_ZMQ_URL + base_def.CONFIGD_ZMQ_REP_PORT
-	if err = eventSocket.Bind(port); err != nil {
-		fail("Failed to bind incoming port %s: %v", port, err)
-	}
-
-	slog.Debugf("Listening on %s", port)
-}
-
 func signalHandler() {
 	sig := make(chan os.Signal, 2)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
 	s := <-sig
 	slog.Infof("Signal (%v) received, stopping", s)
-	eventSocket.Close()
+	serverPort.Close()
 }
 
 func main() {
@@ -1020,14 +985,15 @@ func main() {
 		fail("Failed to import devices database: %v", err)
 	}
 
-	zmqInit()
+	if serverPort, err = comms.NewAPServer(serverURL); err != nil {
+		fail("opening server port: %v", err)
+	}
+	go serverPort.Serve(msgHandler)
 
 	mcpd.SetState(mcp.ONLINE)
 
 	go expirationHandler()
-	go signalHandler()
-
-	eventLoop()
+	signalHandler()
 
 	slog.Infof("stopping")
 }

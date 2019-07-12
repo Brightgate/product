@@ -15,11 +15,11 @@ import (
 	"net"
 
 	"bg/ap_common/aputil"
+	"bg/ap_common/comms"
 	"bg/base_def"
 	"bg/base_msg"
 
 	"github.com/golang/protobuf/proto"
-	zmq "github.com/pebbe/zmq4"
 )
 
 func reschedScan(req *base_msg.WatchdScanInfo) *base_msg.WatchdResponse {
@@ -132,61 +132,45 @@ func listScans() *base_msg.WatchdResponse {
 	return &base_msg.WatchdResponse{Scans: scans}
 }
 
-func apiLoop(incoming *zmq.Socket) {
-	errs := 0
-	for {
-		var resp *base_msg.WatchdResponse
+func apiHandle(msg []byte) []byte {
+	var resp *base_msg.WatchdResponse
 
-		msg, err := incoming.RecvMessageBytes(0)
-		if err != nil {
-			slog.Warnf("Error receiving message: %v", err)
-			errs++
-			if errs > 10 {
-				slog.Fatalf("Too many errors - giving up")
-			}
-			continue
-		}
+	req := &base_msg.WatchdRequest{}
+	proto.Unmarshal(msg, req)
 
-		errs = 0
-		req := &base_msg.WatchdRequest{}
-		proto.Unmarshal(msg[0], req)
-
-		switch *req.Cmd {
-		case base_msg.WatchdRequest_SCAN_LIST:
-			resp = listScans()
-		case base_msg.WatchdRequest_SCAN_ADD:
-			resp = addScan(req.Scan)
-		case base_msg.WatchdRequest_SCAN_DEL:
-			resp = delScan(req.Scan)
-		case base_msg.WatchdRequest_SCAN_RESCHED:
-			resp = reschedScan(req.Scan)
-		default:
-			resp = &base_msg.WatchdResponse{
-				Errmsg: proto.String("unknown command"),
-			}
-		}
-
-		resp.Timestamp = aputil.NowToProtobuf()
-		data, err := proto.Marshal(resp)
-		if err != nil {
-			slog.Warnf("Failed to marshal response to %v: %v",
-				*req, err)
-		} else {
-			incoming.SendBytes(data, 0)
+	switch *req.Cmd {
+	case base_msg.WatchdRequest_SCAN_LIST:
+		resp = listScans()
+	case base_msg.WatchdRequest_SCAN_ADD:
+		resp = addScan(req.Scan)
+	case base_msg.WatchdRequest_SCAN_DEL:
+		resp = delScan(req.Scan)
+	case base_msg.WatchdRequest_SCAN_RESCHED:
+		resp = reschedScan(req.Scan)
+	default:
+		resp = &base_msg.WatchdResponse{
+			Errmsg: proto.String("unknown command"),
 		}
 	}
+
+	resp.Timestamp = aputil.NowToProtobuf()
+	data, err := proto.Marshal(resp)
+	if err != nil {
+		slog.Warnf("Failed to marshal response to %v: %v",
+			*req, err)
+	}
+
+	return data
 }
 
 func apiInit() error {
-	var err error
+	url := base_def.INCOMING_ZMQ_URL + base_def.WATCHD_ZMQ_REP_PORT
 
-	incoming, _ := zmq.NewSocket(zmq.REP)
-	port := base_def.INCOMING_ZMQ_URL + base_def.WATCHD_ZMQ_REP_PORT
-	if err = incoming.Bind(port); err != nil {
-		slog.Warnf("Failed to bind incoming port %s: %v", port, err)
+	server, err := comms.NewAPServer(url)
+	if err != nil {
+		slog.Warnf("creating API endpoint: %v", err)
 	} else {
-		slog.Infof("Listening on %s", port)
-		go apiLoop(incoming)
+		go server.Serve(apiHandle)
 	}
 
 	return err

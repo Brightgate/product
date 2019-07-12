@@ -28,18 +28,23 @@ import (
 	"time"
 
 	"bg/ap_common/aputil"
+	"bg/ap_common/comms"
 	"bg/base_def"
 	"bg/base_msg"
 
 	"github.com/golang/protobuf/proto"
-
-	// Ubuntu: requires libzmq3-dev, which is 0MQ 4.2.1.
-	zmq "github.com/pebbe/zmq4"
 )
+
+type watchCmd struct {
+	fn    func(*comms.APComm, []string) error
+	usage string
+}
 
 var (
 	sortKeys  []string
 	validKeys = []string{"id", "ip", "mac", "type", "state", "when"}
+
+	watchCmds map[string]watchCmd
 )
 
 // Simple wrapper type, allowing us to sort a list of WatchdScanInfo structs
@@ -162,7 +167,7 @@ func parseListArgs(args []string) {
 
 // Ask watchd for a list of all scheduled and running scans, sort the returned
 // list by whichever key(s) the user requests, and print it to stdout.
-func listScans(s *zmq.Socket, args []string) error {
+func listScans(c *comms.APComm, args []string) error {
 	parseListArgs(args)
 
 	cmd := base_msg.WatchdRequest_SCAN_LIST
@@ -172,7 +177,7 @@ func listScans(s *zmq.Socket, args []string) error {
 		Cmd:       &cmd,
 	}
 
-	rval, err := sendMsg(s, &msg)
+	rval, err := sendMsg(c, &msg)
 	if err != nil {
 		return err
 	}
@@ -208,7 +213,7 @@ func listScans(s *zmq.Socket, args []string) error {
 
 // Ask watchd to schedule a new client scan.  We don't currently allow the user
 // to specify a time, so "schedule" really means "run as soon as possible."
-func addScan(s *zmq.Socket, args []string) error {
+func addScan(c *comms.APComm, args []string) error {
 	if len(args) < 1 || len(args) > 2 {
 		watchUsage()
 	}
@@ -243,12 +248,12 @@ func addScan(s *zmq.Socket, args []string) error {
 		Cmd:       &cmd,
 		Scan:      &scan,
 	}
-	_, err := sendMsg(s, &msg)
+	_, err := sendMsg(c, &msg)
 	return err
 }
 
 // Attempt to delete a scheduled scan.  The scan is identified by its ID.
-func delScan(s *zmq.Socket, args []string) error {
+func delScan(c *comms.APComm, args []string) error {
 	if len(args) != 1 {
 		watchUsage()
 	}
@@ -269,12 +274,12 @@ func delScan(s *zmq.Socket, args []string) error {
 		Cmd:       &cmd,
 		Scan:      &scan,
 	}
-	_, err = sendMsg(s, &msg)
+	_, err = sendMsg(c, &msg)
 	return err
 }
 
 // Instruct watchd to reschedule a scan so that it will run ASAP.
-func nowScan(s *zmq.Socket, args []string) error {
+func nowScan(c *comms.APComm, args []string) error {
 	if len(args) != 1 {
 		watchUsage()
 	}
@@ -299,31 +304,26 @@ func nowScan(s *zmq.Socket, args []string) error {
 		Scan:      &scan,
 	}
 
-	_, err = sendMsg(s, &msg)
+	_, err = sendMsg(c, &msg)
 	return err
 }
 
 // Send a single 0mq message to watchd.  Return the response from watchd, or an
 // error
-func sendMsg(s *zmq.Socket, op *base_msg.WatchdRequest) (*base_msg.WatchdResponse, error) {
+func sendMsg(c *comms.APComm, op *base_msg.WatchdRequest) (*base_msg.WatchdResponse, error) {
 	data, err := proto.Marshal(op)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal command: %v", err)
 	}
 
-	if _, err = s.SendBytes(data, 0); err != nil {
-		return nil, fmt.Errorf("failed to send command: %v", err)
-	}
-
-	var reply [][]byte
-	reply, err = s.RecvMessageBytes(0)
+	reply, err := c.Send(data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to receive response: %v", err)
+		return nil, fmt.Errorf("failed to send command: %v", err)
 	}
 
 	rval := &base_msg.WatchdResponse{}
 	if len(reply) > 0 {
-		if err = proto.Unmarshal(reply[0], rval); err != nil {
+		if err = proto.Unmarshal(reply, rval); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal response: %v", err)
 		}
 		if rval.Errmsg != nil && len(*rval.Errmsg) > 0 {
@@ -333,26 +333,12 @@ func sendMsg(s *zmq.Socket, op *base_msg.WatchdRequest) (*base_msg.WatchdRespons
 	return rval, err
 }
 
-// Establish a 0mq connection to watchd
-func connect() (*zmq.Socket, error) {
-	port := base_def.LOCAL_ZMQ_URL + base_def.WATCHD_ZMQ_REP_PORT
-	socket, err := zmq.NewSocket(zmq.REQ)
-	if err != nil {
-		err = fmt.Errorf("failed to create new watchd socket: %v", err)
-	} else if err = socket.Connect(port); err != nil {
-		err = fmt.Errorf("failed to connect socket %s: %v", port, err)
-		socket = nil
-	}
-
-	return socket, err
-}
-
 func watchUsage() {
 	fmt.Printf("usage:\t%s\n", pname)
-	fmt.Printf("\tscan list [-k <%s>]\n", strings.Join(validKeys, "|"))
-	fmt.Printf("\tscan add <ip> [<tcp|udp|vuln>]\n")
-	fmt.Printf("\tscan now <id>\n")
-	fmt.Printf("\tscan del <id>\n")
+	for name, cmd := range watchCmds {
+		fmt.Printf("\tscan %s %s\n", name, cmd.usage)
+	}
+
 	os.Exit(2)
 }
 
@@ -368,24 +354,18 @@ func watchctl() {
 		watchUsage()
 	}
 
-	socket, err := connect()
+	url := base_def.LOCAL_ZMQ_URL + base_def.WATCHD_ZMQ_REP_PORT
+	comm, err := comms.NewAPClient(url)
 	if err != nil {
 		fmt.Printf("%s: unable to connect to watchd: %v\n", pname, err)
 		os.Exit(1)
 	}
-	defer socket.Close()
+	defer comm.Close()
 
 	subcmd := os.Args[2]
-	switch subcmd {
-	case "list":
-		err = listScans(socket, os.Args[3:])
-	case "add":
-		err = addScan(socket, os.Args[3:])
-	case "del":
-		err = delScan(socket, os.Args[3:])
-	case "now":
-		err = nowScan(socket, os.Args[3:])
-	default:
+	if wcmd, ok := watchCmds[subcmd]; ok {
+		err = wcmd.fn(comm, os.Args[3:])
+	} else {
 		watchUsage()
 	}
 
@@ -397,4 +377,11 @@ func watchctl() {
 
 func init() {
 	addTool("ap-watchctl", watchctl)
+
+	watchCmds = map[string]watchCmd{
+		"list": {listScans, "[-k <" + strings.Join(validKeys, "|") + ">]"},
+		"add":  {addScan, "<ip> [<tcp|udp|vuln>]"},
+		"del":  {delScan, "<id>"},
+		"now":  {nowScan, "<id>"},
+	}
 }

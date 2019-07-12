@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -16,11 +16,11 @@ import (
 	"log"
 	"os"
 	"sync"
-	"syscall"
 	"time"
 
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
+	"bg/ap_common/comms"
 	"bg/ap_common/mcp"
 	"bg/ap_common/platform"
 	"bg/base_def"
@@ -29,21 +29,16 @@ import (
 	"bg/common/cfgmsg"
 
 	"github.com/golang/protobuf/proto"
-
-	// Ubuntu: requires libzmq3-dev, which is 0MQ 4.2.1.
-	zmq "github.com/pebbe/zmq4"
 )
 
 const (
-	sendTimeout = base_def.LOCAL_ZMQ_SEND_TIMEOUT * time.Second
-	recvTimeout = base_def.LOCAL_ZMQ_RECV_TIMEOUT * time.Second
-	errLimit    = 5
-	daemon      = "configd"
+	errLimit = 5
+	daemon   = "configd"
 )
 
 // APConfig is an opaque type representing a connection to ap.configd
 type APConfig struct {
-	socket *zmq.Socket
+	comm   *comms.APComm
 	name   string
 	sender string
 
@@ -141,6 +136,9 @@ func (c *cmdStatus) Wait(ctx context.Context) (string, error) {
 func NewConfigd(b *broker.Broker, name string,
 	level cfgapi.AccessLevel) (*cfgapi.Handle, error) {
 
+	var url string
+	var err error
+
 	plat := platform.NewPlatform()
 	if _, ok := cfgapi.AccessLevelNames[level]; !ok {
 		return nil, fmt.Errorf("invalid access level: %d", level)
@@ -157,8 +155,15 @@ func NewConfigd(b *broker.Broker, name string,
 		expireHandlers: make([]delexpMatch, 0),
 	}
 
-	if err := c.reconnect(); err != nil {
-		return nil, err
+	if aputil.IsSatelliteMode() {
+		url = base_def.GATEWAY_ZMQ_URL + base_def.CONFIGD_ZMQ_REP_PORT
+	} else {
+		url = base_def.LOCAL_ZMQ_URL + base_def.CONFIGD_ZMQ_REP_PORT
+	}
+
+	c.comm, err = comms.NewAPClient(url)
+	if err != nil {
+		return nil, fmt.Errorf("creating new client: %v", err)
 	}
 
 	if err := c.Ping(nil); err != nil {
@@ -171,97 +176,17 @@ func NewConfigd(b *broker.Broker, name string,
 	return hdl, nil
 }
 
-func (c *APConfig) reconnect() error {
-	var url string
-
-	c.disconnect()
-
-	socket, err := zmq.NewSocket(zmq.REQ)
-	if err != nil {
-		return fmt.Errorf("failed to create new cfg socket: %v", err)
-	}
-
-	if err = socket.SetSndtimeo(sendTimeout); err != nil {
-		log.Printf("failed to set cfg send timeout: %v\n", err)
-	}
-
-	if err = socket.SetRcvtimeo(recvTimeout); err != nil {
-		log.Printf("failed to set cfg receive timeout: %v\n", err)
-	}
-
-	if aputil.IsSatelliteMode() {
-		url = base_def.GATEWAY_ZMQ_URL + base_def.CONFIGD_ZMQ_REP_PORT
-	} else {
-		url = base_def.LOCAL_ZMQ_URL + base_def.CONFIGD_ZMQ_REP_PORT
-	}
-
-	if err = socket.Connect(url); err != nil {
-		return fmt.Errorf("failed to connect to configd: %v", err)
-	}
-	c.socket = socket
-
-	return nil
-}
-
-func (c *APConfig) disconnect() {
-	if c.socket != nil {
-		c.socket.Close()
-		c.socket = nil
-	}
-}
-
 func (c *APConfig) sendOp(query *cfgmsg.ConfigQuery) (string, error) {
-	const retryLimit = 3
-	var reply [][]byte
 	var rval string
 
 	query.Sender = c.sender
 	query.Level = int32(c.level)
-	op, err := proto.Marshal(query)
+	msg, err := proto.Marshal(query)
 	if err != nil {
 		return "", fmt.Errorf("unable to build op: %v", err)
 	}
 
-	// Because of ZeroMQ's rigid state machine, a failed message can leave a
-	// socket permanently broken.  To avoid this, we will close and reopen
-	// the socket on an error.  If it fails repeatedly, we give up and
-	// return the error to the caller.  (this most likely means that configd
-	// is crashed, and mcp will be restarting everything anyway.)
-	c.Lock()
-	for retries := 0; retries < retryLimit; retries++ {
-		if c.socket == nil {
-			if err = c.reconnect(); err != nil {
-				log.Printf("%v\n", err)
-				continue
-			}
-		}
-
-		phase := "sending"
-		_, err = c.socket.SendBytes(op, 0)
-		if err == nil {
-			phase = "receiving"
-			// If the read fails with EINTR, it most likely means
-			// that we got a SIGCHLD when a worker process exited.
-			// Some versions of ZeroMQ will silently retry this
-			// read internally.  Since our version returns the
-			// error, we do the retry ourselves.  If we fail
-			// with EINTR multiple times, we'll give up and attempt
-			// to build a new connection.
-			for ; retries < retryLimit; retries++ {
-				reply, err = c.socket.RecvMessageBytes(0)
-				if err != zmq.Errno(syscall.EINTR) {
-					break
-				}
-			}
-		}
-		if err == nil {
-			break
-		}
-
-		log.Printf("while %s: %v\n", phase, err)
-		c.disconnect()
-	}
-	c.Unlock()
+	reply, err := c.comm.Send(msg)
 
 	if c.errChan != nil {
 		(*c.errChan) <- err
@@ -269,7 +194,7 @@ func (c *APConfig) sendOp(query *cfgmsg.ConfigQuery) (string, error) {
 
 	if err == nil && len(reply) > 0 {
 		r := &cfgmsg.ConfigResponse{}
-		proto.Unmarshal(reply[0], r)
+		proto.Unmarshal(reply, r)
 		rval, err = cfgapi.ParseConfigResponse(r)
 	}
 

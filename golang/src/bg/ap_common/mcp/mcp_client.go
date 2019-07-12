@@ -21,19 +21,17 @@ import (
 	"time"
 
 	"bg/ap_common/aputil"
+	"bg/ap_common/comms"
 	"bg/ap_common/platform"
 	"bg/base_def"
 	"bg/base_msg"
 
 	"github.com/golang/protobuf/proto"
-
-	// Ubuntu: requires libzmq3-dev, which is 0MQ 4.2.1.
-	zmq "github.com/pebbe/zmq4"
 )
 
 // MCP is an opaque handle used by client daemons to communicate with ap.mcp
 type MCP struct {
-	socket   *zmq.Socket
+	comm     *comms.APComm
 	sender   string
 	daemon   string
 	platform *platform.Platform
@@ -116,48 +114,30 @@ func (l DaemonList) Sort() {
 	sort.Sort(l)
 }
 
-func newConnection(name, url string) (*MCP, error) {
+func newConnection(name, base string) (*MCP, error) {
 	var handle *MCP
 
 	plat := platform.NewPlatform()
-	port := url + base_def.MCP_ZMQ_REP_PORT
-	sendTO := base_def.LOCAL_ZMQ_SEND_TIMEOUT * time.Second
-	recvTO := base_def.LOCAL_ZMQ_RECV_TIMEOUT * time.Second
+	url := base + base_def.MCP_ZMQ_REP_PORT
 
-	socket, err := zmq.NewSocket(zmq.REQ)
+	comm, err := comms.NewAPClient(url)
 	if err != nil {
-		err = fmt.Errorf("failed to create new MCP socket: %v", err)
-		return handle, err
-	}
-
-	if err = socket.SetSndtimeo(time.Duration(sendTO)); err != nil {
-		fmt.Printf("failed to set MCP send timeout: %v\n", err)
-		return handle, err
-	}
-
-	if err = socket.SetRcvtimeo(time.Duration(recvTO)); err != nil {
-		fmt.Printf("failed to set MCP receive timeout: %v\n", err)
-		return handle, err
-	}
-
-	err = socket.Connect(port)
-	if err != nil {
-		err = fmt.Errorf("failed to connect new socket %s: %v", port, err)
+		err = fmt.Errorf("creating APClient: %v", err)
 	} else {
 		sender := fmt.Sprintf("%s(%d)", name, os.Getpid())
 		handle = &MCP{
 			sender:   sender,
-			socket:   socket,
+			comm:     comm,
 			platform: plat,
 		}
 		if name[0:3] == "ap." {
 			handle.daemon = name[3:]
 			handle.SetState(INITING)
 		}
-	}
 
-	if err = handle.Ping(); err != nil {
-		handle = nil
+		if err = handle.Ping(); err != nil {
+			handle = nil
+		}
 	}
 
 	return handle, err
@@ -182,53 +162,47 @@ func NewPeer(name string) (*MCP, error) {
 // Close closes the connection to the mcp daemon
 func (m *MCP) Close() {
 	if m != nil {
-		m.socket.Close()
+		m.comm.Close()
 	}
 }
 
 func (m *MCP) msg(op *base_msg.MCPRequest) (string, error) {
+	var rval string
+
 	data, err := proto.Marshal(op)
 	if err != nil {
-		fmt.Println("Failed to marshal mcp arguments: ", err)
-		return "", err
+		return "", fmt.Errorf("marshaling mcp arguments: %v", err)
 	}
 
-	rval := ""
-	m.Lock()
-	_, err = m.socket.SendBytes(data, 0)
-	if err == nil {
-		var reply [][]byte
+	reply, err := m.comm.Send(data)
+	if err != nil {
+		err = fmt.Errorf("communicating with mcp: %v", err)
 
-		reply, err = m.socket.RecvMessageBytes(0)
-		if err != nil {
-			err = fmt.Errorf("Failed to receive mcp response: %v",
-				err)
-		} else if len(reply) > 0 {
-			r := base_msg.MCPResponse{}
-			proto.Unmarshal(reply[0], &r)
-			switch *r.Response {
-			case INVALID:
-				err = fmt.Errorf("invalid command")
-			case NODAEMON:
-				err = fmt.Errorf("no such daemon")
-			case BADVER:
-				var version string
-				if r.MinVersion != nil {
-					version = fmt.Sprintf("%d or greater",
-						*r.MinVersion.Major)
-				} else {
-					version = fmt.Sprintf("%d",
-						*r.Version.Major)
-				}
-				err = fmt.Errorf("requires version %s", version)
-			default:
-				if r.State != nil {
-					rval = *r.State
-				}
+	} else if len(reply) > 0 {
+		r := base_msg.MCPResponse{}
+		proto.Unmarshal(reply, &r)
+
+		switch *r.Response {
+		case INVALID:
+			err = fmt.Errorf("invalid command")
+		case NODAEMON:
+			err = fmt.Errorf("no such daemon")
+		case BADVER:
+			var version string
+			if r.MinVersion != nil {
+				version = fmt.Sprintf("%d or greater",
+					*r.MinVersion.Major)
+			} else {
+				version = fmt.Sprintf("%d",
+					*r.Version.Major)
+			}
+			err = fmt.Errorf("requires version %s", version)
+		default:
+			if r.State != nil {
+				rval = *r.State
 			}
 		}
 	}
-	m.Unlock()
 
 	return rval, err
 }
@@ -332,6 +306,10 @@ func (m *MCP) SetState(state int) error {
 
 // Do is used to instruct ap.mcp to initiate an operation on a daemon
 func (m *MCP) Do(daemon, command string) error {
+	// Allow time for the daemons to grind to a halt
+	if command == "stop" {
+		mcp.comm.SetRecvTimeout(15 * time.Second)
+	}
 	_, err := m.daemonMsg(DO, daemon, command, -1)
 
 	return err
