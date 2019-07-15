@@ -308,7 +308,7 @@ func (m *MCP) SetState(state int) error {
 func (m *MCP) Do(daemon, command string) error {
 	// Allow time for the daemons to grind to a halt
 	if command == "stop" {
-		mcp.comm.SetRecvTimeout(15 * time.Second)
+		m.comm.SetRecvTimeout(15 * time.Second)
 	}
 	_, err := m.daemonMsg(DO, daemon, command, -1)
 
