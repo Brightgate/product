@@ -33,6 +33,7 @@ const LOCAL_REGINFO = {
   name: 'Local Site',
   organization: 'Local Organization',
   organizationUUID: LOCAL_ORG_ID,
+  relationship: 'self',
   roles: [appDefs.ROLE_ADMIN],
 };
 

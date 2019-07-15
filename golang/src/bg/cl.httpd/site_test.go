@@ -71,9 +71,11 @@ var (
 
 	mockAccountOrgRoles = []appliancedb.AccountOrgRole{
 		{
-			AccountUUID:      accountUUID,
-			OrganizationUUID: orgUUID,
-			Role:             "admin",
+			AccountUUID:            accountUUID,
+			OrganizationUUID:       mockOrg.UUID,
+			TargetOrganizationUUID: mockOrg.UUID,
+			Relationship:           "self",
+			Role:                   "admin",
 		},
 	}
 )
@@ -187,12 +189,14 @@ func TestSites(t *testing.T) {
 		"name": "%s",
 		"organizationUUID": "%s",
 		"organization": "%s",
+		"relationship": "self",
 		"roles": ["admin"]
 	},{
 		"UUID": "%s",
 		"name": "%s",
 		"organizationUUID": "%s",
 		"organization": "%s",
+		"relationship": "self",
 		"roles": ["admin"]
 	}]`, m0.UUID, m0.Name, mockOrg.UUID.String(), mockOrg.Name,
 		m1.UUID, m1.Name, mockOrg.UUID.String(), mockOrg.Name)
@@ -205,7 +209,16 @@ func TestSitesUUID(t *testing.T) {
 	// Mock DB
 	m0 := mockSites[0]
 	dMock := &mocks.DataStore{}
-	dMock.On("AccountOrgRolesByAccountOrg", mock.Anything, mock.Anything, mock.Anything).Return([]string{"admin"}, nil)
+	dMock.On("AccountOrgRolesByAccountTarget", mock.Anything, accountUUID, orgUUID).Return(
+		[]appliancedb.AccountOrgRole{
+			{
+				AccountUUID:            accountUUID,
+				OrganizationUUID:       orgUUID,
+				TargetOrganizationUUID: orgUUID,
+				Role:                   "admin",
+				Relationship:           "self",
+			},
+		}, nil)
 	dMock.On("CustomerSiteByUUID", mock.Anything, m0.UUID).Return(&m0, nil)
 	dMock.On("CustomerSiteByUUID", mock.Anything, mock.Anything).Return(nil, appliancedb.NotFoundError{})
 	dMock.On("OrganizationByUUID", mock.Anything, mock.Anything).Return(&mockOrg, nil)

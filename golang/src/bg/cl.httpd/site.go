@@ -38,6 +38,7 @@ type siteResponse struct {
 	Name             string    `json:"name"`
 	Organization     string    `json:"organization"`
 	OrganizationUUID uuid.UUID `json:"organizationUUID"`
+	Relationship     string    `json:"relationship"`
 	Roles            []string  `json:"roles"`
 }
 
@@ -81,8 +82,11 @@ func (a *siteHandler) getSites(c echo.Context) error {
 			Roles:            []string{},
 		}
 		for _, r := range roles {
-			if site.OrganizationUUID == r.OrganizationUUID {
+			if site.OrganizationUUID == r.TargetOrganizationUUID {
 				apiSites[i].Roles = append(apiSites[i].Roles, r.Role)
+				if apiSites[i].Relationship == "" {
+					apiSites[i].Relationship = r.Relationship
+				}
 			}
 		}
 	}
@@ -113,18 +117,29 @@ func (a *siteHandler) getSitesUUID(c echo.Context) error {
 		c.Logger().Errorf("Failed to get org for site %v: %+v", site, err)
 		return echo.NewHTTPError(http.StatusInternalServerError)
 	}
-	roles, err := a.db.AccountOrgRolesByAccountOrg(ctx, accountUUID, site.OrganizationUUID)
+	roles, err := a.db.AccountOrgRolesByAccountTarget(ctx, accountUUID,
+		site.OrganizationUUID)
 	if err != nil {
 		c.Logger().Errorf("Failed to get roles: %+v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
+	// Zero roles returned means the user has tried to access a site
+	// for which they are not authorized; this could be 404, but for
+	// now we match the response the middleware gives.
+	if len(roles) == 0 {
+		return echo.NewHTTPError(http.StatusUnauthorized)
+	}
 
+	rnames := make([]string, len(roles))
+	for i, r := range roles {
+		rnames[i] = r.Role
+	}
 	resp := siteResponse{
 		UUID:             site.UUID,
 		Name:             site.Name,
 		Organization:     org.Name,
 		OrganizationUUID: org.UUID,
-		Roles:            roles,
+		Roles:            rnames,
 	}
 	return c.JSON(http.StatusOK, resp)
 }
@@ -831,7 +846,7 @@ func (a *siteHandler) mkSiteMiddleware(allowedRoles []string) echo.MiddlewareFun
 				}
 				return echo.NewHTTPError(http.StatusInternalServerError)
 			}
-			roles, err := a.db.AccountOrgRolesByAccountOrg(ctx,
+			roles, err := a.db.AccountOrgRolesByAccountTarget(ctx,
 				accountUUID, site.OrganizationUUID)
 			if err != nil {
 				return echo.NewHTTPError(http.StatusInternalServerError)
@@ -839,8 +854,8 @@ func (a *siteHandler) mkSiteMiddleware(allowedRoles []string) echo.MiddlewareFun
 			var matches []string
 			for _, ur := range roles {
 				for _, rr := range allowedRoles {
-					if ur == rr {
-						matches = append(matches, ur)
+					if ur.Role == rr {
+						matches = append(matches, ur.Role)
 					}
 				}
 			}

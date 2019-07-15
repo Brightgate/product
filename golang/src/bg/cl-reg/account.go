@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/lib/pq"
 	"github.com/satori/uuid"
 	"github.com/spf13/cobra"
 	"github.com/tatsushid/go-prettytable"
@@ -135,12 +136,13 @@ func listAccountRoles(cmd *cobra.Command, args []string) error {
 	roles, err := db.AccountOrgRolesByAccount(ctx, acctUUID)
 
 	table, _ := prettytable.NewTable(
-		prettytable.Column{Header: "Organization"},
+		prettytable.Column{Header: "TargetOrganization"},
+		prettytable.Column{Header: "Relationship"},
 		prettytable.Column{Header: "Role"},
 	)
 	table.Separator = "  "
 	for _, role := range roles {
-		table.AddRow(role.OrganizationUUID, role.Role)
+		table.AddRow(role.TargetOrganizationUUID, role.Relationship, role.Role)
 	}
 	table.Print()
 
@@ -152,7 +154,7 @@ func modAccountRole(cmd *cobra.Command, args []string) error {
 	acctUUID := uuid.Must(uuid.FromString(args[0]))
 	ctx := context.Background()
 	role := args[1]
-	orgUUIDstr, _ := cmd.Flags().GetString("organization")
+	tgtUUIDstr, _ := cmd.Flags().GetString("target-organization")
 
 	db, _, err := assembleRegistry(cmd)
 	if err != nil {
@@ -164,29 +166,43 @@ func modAccountRole(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	var orgUUID uuid.UUID
-	if orgUUIDstr != "" {
-		orgUUID = uuid.Must(uuid.FromString(orgUUIDstr))
+	var tgtUUID uuid.UUID
+	if tgtUUIDstr != "" {
+		tgtUUID = uuid.Must(uuid.FromString(tgtUUIDstr))
 	} else {
-		orgUUID = ai.Organization.UUID
+		tgtUUID = ai.Organization.UUID
+	}
+	relationship := "self"
+	// Until we have more than one kind of relationship, we can infer this
+	if ai.Organization.UUID != tgtUUID {
+		relationship = "msp"
 	}
 	r := appliancedb.AccountOrgRole{
-		AccountUUID:      acctUUID,
-		OrganizationUUID: orgUUID,
-		Role:             role,
+		AccountUUID:            acctUUID,
+		OrganizationUUID:       ai.Organization.UUID,
+		TargetOrganizationUUID: tgtUUID,
+		Relationship:           relationship,
+		Role:                   role,
 	}
-	p := ""
+	var verb string
 	if cmd.Name() == "add" {
 		err = db.InsertAccountOrgRole(ctx, &r)
-		p = "Added"
+		verb = "Added"
 	} else if cmd.Name() == "delete" {
 		err = db.DeleteAccountOrgRole(ctx, &r)
-		p = "Deleted"
+		verb = "Deleted"
 	}
 	if err != nil {
+		pqe, ok := err.(*pq.Error)
+		// Add details from PQE, as they can help the user understand
+		// what's going on here.
+		if ok == true && pqe.Code.Name() == "foreign_key_violation" {
+			err = fmt.Errorf("Couldn't %s role; the role or org/org relationship may not exist.\nPQ Message: %s\nPQ Detail: %s",
+				cmd.Name(), pqe.Message, pqe.Detail)
+		}
 		return err
 	}
-	fmt.Printf("%s <%s %s %s>\n", p, acctUUID.String(), orgUUID.String(), role)
+	fmt.Printf("%s <%v>\n", verb, r)
 	return nil
 }
 
@@ -308,12 +324,12 @@ func accountMain(rootCmd *cobra.Command) {
 	roleAccountCmd.AddCommand(listRoleAccountCmd)
 
 	addRoleAccountCmd := &cobra.Command{
-		Use:   "add [-o organization-uuid] account-uuid role",
+		Use:   "add [-t organization-uuid] account-uuid role",
 		Args:  cobra.ExactArgs(2),
 		Short: "Add {account,org} role",
 		RunE:  modAccountRole,
 	}
-	addRoleAccountCmd.Flags().StringP("organization", "o", "", "organization UUID for this role")
+	addRoleAccountCmd.Flags().StringP("target-organization", "t", "", "organization UUID for this role")
 	roleAccountCmd.AddCommand(addRoleAccountCmd)
 
 	deleteRoleAccountCmd := &cobra.Command{

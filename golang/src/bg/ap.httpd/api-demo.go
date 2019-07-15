@@ -541,6 +541,7 @@ type daSite struct {
 	Name             string   `json:"name"`
 	Organization     string   `json:"organization"`
 	OrganizationUUID string   `json:"organizationUUID"`
+	Relationship     string   `json:"relationship"`
 	Roles            []string `json:"roles"`
 }
 
@@ -549,6 +550,7 @@ var site0 = daSite{
 	Name:             "Local Site",
 	Organization:     "",
 	OrganizationUUID: "0",
+	Relationship:     "self",
 	Roles:            []string{"admin"},
 }
 

@@ -72,7 +72,6 @@ type DataStore interface {
 	AllOrganizations(context.Context) ([]Organization, error)
 	OrganizationByUUID(context.Context, uuid.UUID) (*Organization, error)
 	InsertOrganization(context.Context, *Organization) error
-	InsertOrganizationTx(context.Context, DBX, *Organization) error
 	UpdateOrganization(context.Context, *Organization) error
 	UpdateOrganizationTx(context.Context, DBX, *Organization) error
 
@@ -381,22 +380,22 @@ func (db *ApplianceDB) CustomerSitesByOrganization(ctx context.Context,
 }
 
 // CustomerSitesByAccount returns a list of the customer_site
-// records for the given Account's organization.
+// records for the given Account's set of roles.
 func (db *ApplianceDB) CustomerSitesByAccount(ctx context.Context,
 	accountUUID uuid.UUID) ([]CustomerSite, error) {
 
 	var sites []CustomerSite
 	err := db.SelectContext(ctx, &sites,
 		`SELECT
-		  customer_site.uuid AS uuid,
+		  DISTINCT customer_site.uuid,
 		  customer_site.organization_uuid AS organization_uuid,
 		  customer_site.name AS name
 		FROM
-		  customer_site
-		JOIN
-		  account
-		  ON account.organization_uuid = customer_site.organization_uuid
-		WHERE account.uuid=$1`, accountUUID)
+		  customer_site, account_org_role
+		WHERE
+		  account_org_role.account_uuid=$1 AND
+		  account_org_role.target_organization_uuid = customer_site.organization_uuid
+		`, accountUUID)
 	if err != nil {
 		return nil, err
 	}
@@ -678,18 +677,30 @@ func (db *ApplianceDB) OrganizationByUUID(ctx context.Context, orgUUID uuid.UUID
 // InsertOrganization inserts an Organization.
 func (db *ApplianceDB) InsertOrganization(ctx context.Context,
 	org *Organization) error {
-	return db.InsertOrganizationTx(ctx, nil, org)
-}
-
-// InsertOrganizationTx inserts an Organization, possibly inside a transaction.
-func (db *ApplianceDB) InsertOrganizationTx(ctx context.Context, dbx DBX,
-	org *Organization) error {
-
-	if dbx == nil {
-		dbx = db
+	dbx, err := db.Beginx()
+	if err != nil {
+		return err
 	}
-	_, err := dbx.NamedExecContext(ctx,
+	defer dbx.Rollback()
+	_, err = dbx.NamedExecContext(ctx,
 		`INSERT INTO organization (uuid, name) VALUES (:uuid,:name)`, org)
+	if err != nil {
+		return err
+	}
+	// To keep things deterministic for testing purposes, we always set the
+	// UUID for the 'self' org/org relationship to the organization's UUID.
+	// We don't really expect the self relationship UUID to ever be used
+	// outside of the bounds of the core system.
+	err = db.InsertOrgOrgRelationshipTx(ctx, dbx, &OrgOrgRelationship{
+		UUID:                   org.UUID,
+		OrganizationUUID:       org.UUID,
+		TargetOrganizationUUID: org.UUID,
+		Relationship:           "self",
+	})
+	if err != nil {
+		return err
+	}
+	dbx.Commit()
 	return err
 }
 

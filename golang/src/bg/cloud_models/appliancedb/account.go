@@ -43,13 +43,23 @@ type accountManager interface {
 	UpsertAccountSecretsTx(context.Context, DBX, *AccountSecrets) error
 
 	AccountOrgRolesByAccount(context.Context, uuid.UUID) ([]AccountOrgRole, error)
-	AccountOrgRolesByAccountOrg(context.Context, uuid.UUID, uuid.UUID) ([]string, error)
+	AccountOrgRolesByAccountTarget(context.Context, uuid.UUID, uuid.UUID) ([]AccountOrgRole, error)
+	AccountPrimaryOrgRoles(context.Context, uuid.UUID) ([]string, error)
 	AccountOrgRolesByOrg(context.Context, uuid.UUID, string) ([]AccountOrgRole, error)
 	AccountOrgRolesByOrgTx(context.Context, DBX, uuid.UUID, string) ([]AccountOrgRole, error)
 	InsertAccountOrgRole(context.Context, *AccountOrgRole) error
 	InsertAccountOrgRoleTx(context.Context, DBX, *AccountOrgRole) error
 	DeleteAccountOrgRole(context.Context, *AccountOrgRole) error
 	DeleteAccountOrgRoleTx(context.Context, DBX, *AccountOrgRole) error
+
+	OrgOrgRelationshipsByOrg(context.Context, uuid.UUID) ([]OrgOrgRelationship, error)
+	OrgOrgRelationshipsByOrgTx(context.Context, DBX, uuid.UUID) ([]OrgOrgRelationship, error)
+	OrgOrgRelationshipsByOrgTarget(context.Context, uuid.UUID, uuid.UUID) ([]OrgOrgRelationship, error)
+	OrgOrgRelationshipsByOrgTargetTx(context.Context, DBX, uuid.UUID, uuid.UUID) ([]OrgOrgRelationship, error)
+	InsertOrgOrgRelationship(context.Context, *OrgOrgRelationship) error
+	InsertOrgOrgRelationshipTx(context.Context, DBX, *OrgOrgRelationship) error
+	DeleteOrgOrgRelationship(context.Context, uuid.UUID) error
+	DeleteOrgOrgRelationshipTx(context.Context, DBX, uuid.UUID) error
 
 	OAuth2IdentitiesByAccount(context.Context, uuid.UUID) ([]OAuth2Identity, error)
 	InsertOAuth2Identity(context.Context, *OAuth2Identity) error
@@ -378,40 +388,69 @@ func (db *ApplianceDB) UpsertAccountSecretsTx(ctx context.Context, dbx DBX,
 	return err
 }
 
-// AccountOrgRole represents the tuple {account, organization, role}
+// AccountOrgRole represents the tuple {account, organization, role, relationship}
 // which is used to express which roles are assigned to users.
+// This information is synthesized from the roles and relationships
+// tables.
 type AccountOrgRole struct {
-	AccountUUID      uuid.UUID `db:"account_uuid"`
-	OrganizationUUID uuid.UUID `db:"organization_uuid"`
-	Role             string    `db:"role"`
+	AccountUUID            uuid.UUID `db:"account_uuid"`
+	OrganizationUUID       uuid.UUID `db:"organization_uuid"`
+	TargetOrganizationUUID uuid.UUID `db:"target_organization_uuid"`
+	Role                   string    `db:"role"`
+	Relationship           string    `db:"relationship"`
 }
 
-// AccountOrgRolesByAccount selects rows from account_org_role by user account
-// UUID.
+// AccountOrgRolesByAccount compute the effective roles for an account; this
+// query also makes sure to constrain the effective roles against the limit
+// set of roles for the relationship type, for safety.
 func (db *ApplianceDB) AccountOrgRolesByAccount(ctx context.Context,
 	account uuid.UUID) ([]AccountOrgRole, error) {
 	var roles []AccountOrgRole
 	err := db.SelectContext(ctx, &roles,
-		`SELECT
-		  account_uuid, organization_uuid, role
-		FROM
-		  account_org_role
-		WHERE account_uuid=$1`, account)
+		`SELECT * FROM account_org_role, relationship_roles
+		WHERE
+		  account_org_role.account_uuid=$1 AND
+		  account_org_role.relationship = relationship_roles.relationship AND
+		  account_org_role.role = relationship_roles.role`, account)
 	if err != nil {
 		return nil, err
 	}
 	return roles, nil
 }
 
-// AccountOrgRolesByAccountOrg selects rows from account_org_role by user
-// account UUID and Organization UUID.
-func (db *ApplianceDB) AccountOrgRolesByAccountOrg(ctx context.Context,
-	account uuid.UUID, org uuid.UUID) ([]string, error) {
-	var roles []string
+// AccountOrgRolesByAccountTarget computes the effective roles for an account with
+// respect to a specific organization; this query also makes sure to constrain
+// the effective roles against the limit set of roles for the relationship
+// type, for safety.
+func (db *ApplianceDB) AccountOrgRolesByAccountTarget(ctx context.Context,
+	account uuid.UUID, org uuid.UUID) ([]AccountOrgRole, error) {
+	var roles []AccountOrgRole
 	err := db.SelectContext(ctx, &roles,
-		`SELECT role FROM account_org_role
-		WHERE account_uuid=$1 AND organization_uuid=$2`,
-		account, org)
+		`SELECT *
+		FROM account_org_role
+		  JOIN relationship_roles USING (relationship, role)
+		WHERE
+		  account_org_role.account_uuid=$1 AND
+		  account_org_role.target_organization_uuid=$2`, account, org)
+	if err != nil {
+		return nil, err
+	}
+	return roles, nil
+}
+
+// AccountPrimaryOrgRoles computes the roles in effect for an account's
+// primary ("home") organization.
+func (db *ApplianceDB) AccountPrimaryOrgRoles(ctx context.Context,
+	account uuid.UUID) ([]string, error) {
+	var roles []string
+	err := db.SelectContext(ctx, &roles, `
+		SELECT account_org_role.role AS role
+		FROM account_org_role
+		  JOIN relationship_roles USING (relationship, role)
+		WHERE
+		  account_org_role.account_uuid=$1 AND
+		  account_org_role.organization_uuid = account_org_role.target_organization_uuid`,
+		account)
 	if err != nil {
 		return nil, err
 	}
@@ -436,16 +475,12 @@ func (db *ApplianceDB) AccountOrgRolesByOrgTx(ctx context.Context, dbx DBX,
 		dbx = db
 	}
 
-	if role == "" {
-		err = dbx.SelectContext(ctx, &roles,
-			`SELECT * FROM account_org_role
-			WHERE organization_uuid=$1`, org)
-	} else {
-		err = dbx.SelectContext(ctx, &roles,
-			`SELECT * FROM account_org_role
-			WHERE organization_uuid=$1
-			AND role=$2`, org, role)
-	}
+	err = dbx.SelectContext(ctx, &roles, `
+		SELECT * FROM account_org_role
+		WHERE
+		  account_org_role.target_organization_uuid=$1 AND
+		  ($2='' OR account_org_role.role=$2)`,
+		org, role)
 	if err != nil {
 		return nil, err
 	}
@@ -464,8 +499,8 @@ func (db *ApplianceDB) InsertAccountOrgRoleTx(ctx context.Context, dbx DBX, role
 	}
 	_, err := dbx.NamedExecContext(ctx,
 		`INSERT INTO account_org_role
-		 (account_uuid, organization_uuid, role)
-		 VALUES (:account_uuid, :organization_uuid, :role)
+		 (account_uuid, organization_uuid, target_organization_uuid, relationship, role)
+		 VALUES (:account_uuid, :organization_uuid, :target_organization_uuid, :relationship, :role)
 		 ON CONFLICT DO NOTHING`,
 		role)
 	return err
@@ -485,6 +520,115 @@ func (db *ApplianceDB) DeleteAccountOrgRoleTx(ctx context.Context, dbx DBX, role
 		`DELETE FROM account_org_role
 		WHERE account_uuid=:account_uuid AND organization_uuid=:organization_uuid AND role=:role`,
 		role)
+	return err
+}
+
+// OrgOrgRelationship represents the tuple {managing-organization, target-organization,
+// relationship-type}
+type OrgOrgRelationship struct {
+	UUID                   uuid.UUID `db:"uuid"`
+	OrganizationUUID       uuid.UUID `db:"organization_uuid"`
+	TargetOrganizationUUID uuid.UUID `db:"target_organization_uuid"`
+	Relationship           string    `db:"relationship"`
+}
+
+// OrgOrgRelationshipsByOrg returns the org/org relationships for which the given
+// organization is the owner/originator of the relationship.
+func (db *ApplianceDB) OrgOrgRelationshipsByOrg(ctx context.Context, org uuid.UUID) ([]OrgOrgRelationship, error) {
+	return db.OrgOrgRelationshipsByOrgTx(ctx, nil, org)
+}
+
+// OrgOrgRelationshipsByOrgTx returns the org/org relationships for which the
+// given organization is the owner/originator of the relationship, possibly
+// inside a transaction.
+func (db *ApplianceDB) OrgOrgRelationshipsByOrgTx(ctx context.Context, dbx DBX, org uuid.UUID) ([]OrgOrgRelationship, error) {
+	var rels []OrgOrgRelationship
+	if dbx == nil {
+		dbx = db
+	}
+	err := dbx.SelectContext(ctx, &rels, `
+		SELECT * FROM org_org_relationship
+		WHERE org_org_relationship.organization_uuid = $1`, org)
+	if err != nil {
+		return nil, err
+	}
+	return rels, nil
+}
+
+// OrgOrgRelationshipsByOrgTarget returns the org/org relationships for which the
+// given organization is the owner/originator of the relationship, and the given
+// target is the target of the relationship.
+func (db *ApplianceDB) OrgOrgRelationshipsByOrgTarget(ctx context.Context, org uuid.UUID, tgt uuid.UUID) ([]OrgOrgRelationship, error) {
+	return db.OrgOrgRelationshipsByOrgTargetTx(ctx, nil, org, tgt)
+}
+
+// OrgOrgRelationshipsByOrgTargetTx returns the org/org relationships for which the
+// given organization is the owner/originator of the relationship, and the given
+// target is the target of the relationship, possibly inside a transaction.
+func (db *ApplianceDB) OrgOrgRelationshipsByOrgTargetTx(ctx context.Context, dbx DBX, org uuid.UUID, tgt uuid.UUID) ([]OrgOrgRelationship, error) {
+	var rels []OrgOrgRelationship
+	if dbx == nil {
+		dbx = db
+	}
+	err := dbx.SelectContext(ctx, &rels, `
+		SELECT *
+		FROM org_org_relationship
+		WHERE
+		  organization_uuid = $1 AND
+		  target_organization_uuid = $2`, org, tgt)
+	if err != nil {
+		return nil, err
+	}
+	return rels, nil
+}
+
+// InsertOrgOrgRelationship inserts a row in org_org_relationship, establishing
+// a new Org/Org relationship.
+func (db *ApplianceDB) InsertOrgOrgRelationship(ctx context.Context, rel *OrgOrgRelationship) error {
+	return db.InsertOrgOrgRelationshipTx(ctx, nil, rel)
+}
+
+// InsertOrgOrgRelationshipTx inserts a row in org_org_relationship, establishing
+// a new Org/Org relationship, possibly inside a transaction.
+func (db *ApplianceDB) InsertOrgOrgRelationshipTx(ctx context.Context, dbx DBX, rel *OrgOrgRelationship) error {
+	if dbx == nil {
+		dbx = db
+	}
+	_, err := dbx.NamedExecContext(ctx,
+		`INSERT INTO org_org_relationship
+		 (uuid, organization_uuid, target_organization_uuid, relationship)
+		 VALUES (:uuid, :organization_uuid, :target_organization_uuid, :relationship)
+		 ON CONFLICT DO NOTHING`,
+		rel)
+	return err
+}
+
+// DeleteOrgOrgRelationship removes a row in org_org_relationship and any associated
+// account_org_roles.
+func (db *ApplianceDB) DeleteOrgOrgRelationship(ctx context.Context, uu uuid.UUID) error {
+	return db.DeleteOrgOrgRelationshipTx(ctx, nil, uu)
+}
+
+// DeleteOrgOrgRelationshipTx removes a row in org_org_relationship and any associated
+// account_org_roles, possibly inside a transaction.
+func (db *ApplianceDB) DeleteOrgOrgRelationshipTx(ctx context.Context, dbx DBX, uu uuid.UUID) error {
+	if dbx == nil {
+		dbx = db
+	}
+	// The use of a CTE here causes the delete from multiple tables to be
+	// transactional; 'x' is just a placeholder name
+	_, err := dbx.ExecContext(ctx, `
+		WITH x AS (
+		  DELETE FROM account_org_role
+		  WHERE
+		    ROW(organization_uuid, target_organization_uuid, relationship) = (
+		      SELECT o.organization_uuid, o.target_organization_uuid, o.relationship
+		      FROM org_org_relationship o
+		      WHERE uuid=$1
+	            )
+		)
+		DELETE FROM org_org_relationship WHERE uuid=$1`,
+		uu)
 	return err
 }
 
@@ -589,8 +733,7 @@ func (db *ApplianceDB) LoginInfoByProviderAndSubject(ctx context.Context,
 		panic(err)
 	}
 
-	li.PrimaryOrgRoles, err = db.AccountOrgRolesByAccountOrg(ctx,
-		li.Account.UUID, li.Account.OrganizationUUID)
+	li.PrimaryOrgRoles, err = db.AccountPrimaryOrgRoles(ctx, li.Account.UUID)
 	if err != nil {
 		return nil, err
 	}

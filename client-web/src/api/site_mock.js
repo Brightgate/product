@@ -36,6 +36,7 @@ const mockCloudSites = [
     name: 'Scranton Office (Admin)',
     organization: 'Dunder Mifflin',
     organizationUUID: 'd91864cd-434a-4b52-8236-d3b95afde170',
+    relationship: 'self',
     roles: ['admin'],
   },
   {
@@ -43,6 +44,7 @@ const mockCloudSites = [
     name: 'Buffalo Office (User)',
     organization: 'Dunder Mifflin',
     organizationUUID: 'd91864cd-434a-4b52-8236-d3b95afde170',
+    relationship: 'self',
     roles: ['user'],
   },
 ];
