@@ -103,7 +103,7 @@
                     "Value": "sosecretive"
                   },
                   "ssid": {
-                    "Value": "setme"
+                    "Value": "setme-devices"
                   }
                 }
               },
@@ -119,7 +119,7 @@
                     "Value": "wpa-eap"
                   },
                   "ssid": {
-                    "Value": "setme-eap"
+                    "Value": "setme-users"
                   }
                 }
               },
