@@ -198,10 +198,18 @@ func getLeases() {
 		return
 	}
 
+	now := time.Now()
 	for macaddr, client := range clients {
+		if client.IPv4 == nil {
+			continue
+		}
+		if client.Expires != nil && client.Expires.Before(now) {
+			continue
+		}
+
 		if _, err := net.ParseMAC(macaddr); err != nil {
 			slog.Warnf("Invalid mac address: %s", macaddr)
-		} else if client.IPv4 != nil {
+		} else {
 			setMacIP(macaddr, client.IPv4)
 		}
 	}

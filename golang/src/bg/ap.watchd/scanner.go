@@ -612,13 +612,14 @@ func recordNmapResults(scanType string, host *nmap.Host) {
 	for _, port := range host.Ports {
 		ports = append(ports, port.PortId)
 		services = append(services,
-			fmt.Sprintf("%d:%s", port.PortId, port.Service.Name))
+			fmt.Sprintf("%s:%d", port.Service.Name, port.PortId))
 	}
-	activeServices[mac] = services
 
 	if scanType == "tcp" {
+		activeServices[mac+":tcp"] = services
 		dev.OpenTCP = ports
 	} else if scanType == "udp" {
+		activeServices[mac+":udp"] = services
 		dev.OpenUDP = ports
 	}
 
@@ -779,7 +780,7 @@ func iptablesRule(opt, rule string) {
 }
 
 // portScan scans the ports of the given IP address using nmap, putting
-// results on the message bus. Scans of IP are stopped if host is down.
+// results on the message bus.
 func portScan(req *ScanRequest) {
 	var rule string
 
@@ -821,9 +822,7 @@ func portScan(req *ScanRequest) {
 
 	host := &res.Hosts[0]
 	if host.Status.State != "up" {
-		slog.Infof("Host %s is down, stopping scans", req.IP)
-		cancelAllScans("", req.IP)
-		delete(activeServices, req.Mac)
+		delete(activeServices, req.Mac+":"+req.ScanType)
 		return
 	}
 
@@ -1026,7 +1025,9 @@ func vulnScan(req *ScanRequest) {
 
 	args := []string{"-d", vulnListFile, "-i", req.IP, "-o", name}
 
-	services := activeServices[req.Mac]
+	services := make([]string, 0)
+	services = append(services, activeServices[req.Mac+":tcp"]...)
+	services = append(services, activeServices[req.Mac+":udp"]...)
 	if len(services) > 0 {
 		arg := strings.Join(services, ".")
 		args = append(args, "-services", arg)

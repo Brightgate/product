@@ -18,6 +18,7 @@ import (
 	"log"
 	"os"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"syscall"
@@ -475,6 +476,10 @@ func updateDaemonResources(d *daemon) {
 		if nextWarn.Before(now) {
 			logWarn("%s using %dMB of memory", d.Name, mem)
 			d.memWarnTime = now
+
+			if d == self {
+				debug.FreeOSMemory()
+			}
 		}
 	}
 }
@@ -518,7 +523,7 @@ func daemonInit() {
 			Process: process,
 		},
 		MemWarn:     20,
-		MemKill:     25,
+		MemKill:     40,
 		SoftTimeout: 100,
 	}
 
