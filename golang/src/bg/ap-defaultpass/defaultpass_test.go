@@ -158,7 +158,7 @@ func TestFalsePositive(t *testing.T) {
 	}
 }
 
-// TestVendorDefaultsFile tests that we can successfuly parse the production
+// TestVendorDefaultsFile tests that we can successfully parse the production
 // vendordefaults CSV file.
 func TestVendorDefaultsFile(t *testing.T) {
 	_, err := fetchDefaults("vendordefaults.csv") // load credentials from file

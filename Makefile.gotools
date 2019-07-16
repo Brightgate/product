@@ -36,12 +36,19 @@ GOTOOLS_cmdmockery_hash=$(GOTOOLS_mockery_hash)
 GOTOOLS_cmdmockery_deps=$(GOTOOLS_mockery_built)
 GOTOOLS_BIN_MOCKERY=$(GOTOOLS_BIN)/mockery
 
+GOTOOLS_golangci_lint_repo=github.com/golangci/golangci-lint/cmd/golangci-lint
+# v1.17.1
+GOTOOLS_golangci_lint_hash=4ba2155996359eabd8800d1fbf3e3a9777c80490
+GOTOOLS_BIN_GOLANGCI_LINT=$(GOTOOLS_BIN)/golangci-lint
+
+
 GOTOOLS_ALL=\
 	    GOTOOLS_dep \
 	    GOTOOLS_cmddep \
 	    GOTOOLS_pgengo \
 	    GOTOOLS_mockery \
-	    GOTOOLS_cmdmockery
+	    GOTOOLS_cmdmockery \
+	    GOTOOLS_golangci_lint
 
 GOTOOLS_ALL_BUILT=
 

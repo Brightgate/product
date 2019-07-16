@@ -141,6 +141,7 @@ func testStatus(t *testing.T, q cmdQueue, slogger *zap.SugaredLogger) {
 
 	// Empty queue
 	response, err := q.status(ctx, testSS1, 1)
+	assert.NoError(err)
 	assert.Equal(cfgmsg.ConfigResponse_NOCMD, response.Response)
 
 	submitQueries(ctx, t, q, slogger, testQs)
@@ -183,8 +184,10 @@ func testStatus(t *testing.T, q cmdQueue, slogger *zap.SugaredLogger) {
 	assert.Equal(int64(4), idC)
 
 	response, err = q.cancel(ctx, testSS1, idC)
+	assert.NoError(err)
 	assert.Equal(response.Response, cfgmsg.ConfigResponse_OK)
 	response, err = q.status(ctx, testSS1, idC)
+	assert.NoError(err)
 	assert.Equal(response.Response, cfgmsg.ConfigResponse_CANCELED)
 }
 
@@ -353,6 +356,7 @@ func testSiteSpoof(t *testing.T, q cmdQueue, slogger *zap.SugaredLogger) {
 
 	// Try to get status as SS1
 	response, err := q.status(ctx, testSS1, 1)
+	assert.NoError(err)
 	assert.Equal(response.Response, cfgmsg.ConfigResponse_QUEUED)
 
 	// Try to get status as SS2
@@ -369,6 +373,7 @@ func testSiteSpoof(t *testing.T, q cmdQueue, slogger *zap.SugaredLogger) {
 	assert.NoError(err)
 	// Check the state of the cmd
 	response, err = q.status(ctx, testSS1, 1)
+	assert.NoError(err)
 	assert.Equal(response.Response, cfgmsg.ConfigResponse_QUEUED)
 
 	// Use site 2 to try to cancel one of site 1's commands
@@ -380,6 +385,7 @@ func testSiteSpoof(t *testing.T, q cmdQueue, slogger *zap.SugaredLogger) {
 	assert.NoError(err)
 	// Check the state of the cmd
 	response, err = q.status(ctx, testSS1, 1)
+	assert.NoError(err)
 	assert.Equal(response.Response, cfgmsg.ConfigResponse_QUEUED)
 }
 
@@ -391,29 +397,35 @@ func mkTemplate(ctx context.Context) error {
 		return fmt.Errorf("failed to make templatedb: %+v", err)
 	}
 
-	templateDB, _ := appliancedb.Connect(templateURI)
+	templateDB, err := appliancedb.Connect(templateURI)
 	if err != nil {
 		return fmt.Errorf("failed to connect to templatedb: %+v", err)
 	}
 
 	defer templateDB.Close()
-	_ = templateDB.LoadSchema(ctx, "../cloud_models/appliancedb/schema")
+	err = templateDB.LoadSchema(ctx, "../cloud_models/appliancedb/schema")
 	if err != nil {
 		return fmt.Errorf("failed to load schema: %+v", err)
 	}
 
 	// Prep one site for testing
-	templateDB.InsertCustomerSite(ctx, &appliancedb.CustomerSite{
+	err = templateDB.InsertCustomerSite(ctx, &appliancedb.CustomerSite{
 		UUID:             testUUID1,
 		OrganizationUUID: uuid.Nil,
 		Name:             "1",
 	})
+	if err != nil {
+		return fmt.Errorf("failed to load customer site: %+v", err)
+	}
 	// Prep one site for testing
-	templateDB.InsertCustomerSite(ctx, &appliancedb.CustomerSite{
+	err = templateDB.InsertCustomerSite(ctx, &appliancedb.CustomerSite{
 		UUID:             testUUID2,
 		OrganizationUUID: uuid.Nil,
 		Name:             "2",
 	})
+	if err != nil {
+		return fmt.Errorf("failed to load customer site: %+v", err)
+	}
 
 	return nil
 }

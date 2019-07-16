@@ -26,8 +26,7 @@ import (
 )
 
 var (
-	databaseURI string
-	bpg         *briefpg.BriefPG
+	bpg *briefpg.BriefPG
 )
 
 func TestTableMissing(t *testing.T) {

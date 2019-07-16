@@ -448,9 +448,6 @@ func (a *authHandler) mkNewUser(c echo.Context, user goth.User) (*appliancedb.Lo
 		return nil, err
 	}
 	defer tx.Rollback()
-	if err != nil {
-		return nil, err
-	}
 	err = a.db.InsertPersonTx(ctx, tx, person)
 	if err != nil {
 		return nil, err

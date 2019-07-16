@@ -266,7 +266,7 @@ func testHeartbeatIngest(t *testing.T, ds DataStore, logger *zap.Logger, slogger
 	// expect to fail because UUID doesn't exist
 	assert.Error(err)
 
-	hbLatest, err := ds.LatestHeartbeatBySiteUUID(ctx, testID1.SiteUUID)
+	_, err = ds.LatestHeartbeatBySiteUUID(ctx, testID1.SiteUUID)
 	assert.Error(err)
 
 	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, &testID1)
@@ -275,7 +275,7 @@ func testHeartbeatIngest(t *testing.T, ds DataStore, logger *zap.Logger, slogger
 	// expect to succeed now
 	assert.NoError(err)
 
-	hbLatest, err = ds.LatestHeartbeatBySiteUUID(ctx, testID1.SiteUUID)
+	hbLatest, err := ds.LatestHeartbeatBySiteUUID(ctx, testID1.SiteUUID)
 	assert.NoError(err)
 	assert.Equal(hb.ApplianceUUID, hbLatest.ApplianceUUID)
 	assert.Equal(hb.SiteUUID, hbLatest.SiteUUID)

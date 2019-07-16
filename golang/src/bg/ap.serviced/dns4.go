@@ -433,7 +433,7 @@ func shouldCache(q, r *dns.Msg) bool {
 		return false
 	}
 
-	// Only cache sucessful, complete results
+	// Only cache successful, complete results
 	if r == nil || r.Rcode != dns.RcodeSuccess || r.Truncated {
 		return false
 	}

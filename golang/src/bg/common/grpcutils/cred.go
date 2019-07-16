@@ -195,9 +195,5 @@ func NewTestCredential() *Credential {
 		panic("test credential: Failed to make private key")
 	}
 
-	cred := NewCredential("testproj", "testregion", "testreg", "testappliance", pk)
-	if err != nil {
-		panic("test credential: Failed to make cred from JSON")
-	}
-	return cred
+	return NewCredential("testproj", "testregion", "testreg", "testappliance", pk)
 }

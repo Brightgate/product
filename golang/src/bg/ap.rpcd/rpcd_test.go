@@ -32,8 +32,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap/zaptest"
 
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func setupLogging(t *testing.T) {
@@ -101,7 +101,7 @@ func TestSendHeartbeatFail(t *testing.T) {
 	tMock.On("Put",
 		mock.Anything,
 		mock.AnythingOfType("*cloud_rpc.PutEventRequest"),
-	).Return(nil, grpc.Errorf(codes.Unavailable, "failed"))
+	).Return(nil, status.Errorf(codes.Unavailable, "failed"))
 
 	err := publishHeartbeat(ctx, tMock)
 	if err == nil {

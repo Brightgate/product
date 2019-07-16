@@ -197,7 +197,7 @@ func ValidDNSName(name string) bool {
 	return true
 }
 
-// ChoosePort returns a local port number, which is currenty not being used.
+// ChoosePort returns a local port number, which is currently not being used.
 func ChoosePort() (int, error) {
 	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
 	if err != nil {

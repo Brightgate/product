@@ -107,7 +107,7 @@ func statusCq(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	m := make(map[uuid.UUID][]*appliancedb.SiteCommand, 0)
+	m := make(map[uuid.UUID][]*appliancedb.SiteCommand)
 	totals := make(map[string]int)
 	for _, cmd := range cmds {
 		m[cmd.UUID] = append(m[cmd.UUID], cmd)
@@ -149,7 +149,7 @@ func statusCq(cmd *cobra.Command, args []string) error {
 
 	for _, uu := range uuids {
 		cmds = m[uu]
-		byState := make(map[string][]*appliancedb.SiteCommand, 0)
+		byState := make(map[string][]*appliancedb.SiteCommand)
 		for _, cmd := range cmds {
 			byState[cmd.State] = append(byState[cmd.State], cmd)
 		}

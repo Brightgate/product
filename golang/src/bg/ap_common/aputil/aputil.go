@@ -436,7 +436,7 @@ func IPStrToProtobuf(ipstr string) *uint32 {
 	return &rval
 }
 
-// MacStrToProtobuf translates a mac adress string into a uint64 suitable
+// MacStrToProtobuf translates a mac address string into a uint64 suitable
 // for inserting into a protobuf.
 func MacStrToProtobuf(macstr string) *uint64 {
 	var rval uint64

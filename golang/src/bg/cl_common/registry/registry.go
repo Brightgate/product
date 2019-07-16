@@ -212,18 +212,18 @@ func SyncAccountSelfProv(ctx context.Context,
 		return err
 	}
 
-	if sites != nil {
+	if sites == nil {
+		sites, err = db.CustomerSitesByOrganization(ctx, account.OrganizationUUID)
+		if err != nil {
+			return err
+		}
+	} else {
 		// Check that input sites are valid
 		for _, site := range sites {
 			if site.OrganizationUUID != account.OrganizationUUID {
 				return errors.Errorf("Site and account organization mismatch: %v / %v",
 					site, account)
 			}
-		}
-	} else {
-		sites, err = db.CustomerSitesByOrganization(ctx, account.OrganizationUUID)
-		if err != nil {
-			return err
 		}
 	}
 

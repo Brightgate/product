@@ -48,14 +48,8 @@ const (
 	testReg     = "test-registry"
 	testRegID   = "test-appliance"
 	app1Str     = "00000001-0001-0001-0001-000000000001"
-	app2Str     = "00000002-0002-0002-0002-000000000002"
-	app3Str     = "00000003-0003-0003-0003-000000000003"
 	site1Str    = "10000001-0001-0001-0001-000000000001"
-	site2Str    = "10000002-0002-0002-0002-000000000002"
-	site3Str    = "10000003-0003-0003-0003-000000000003"
 	org1Str     = "20000001-0001-0001-0001-000000000001"
-	org2Str     = "20000002-0002-0002-0002-000000000002"
-	org3Str     = "20000003-0003-0003-0003-000000000003"
 )
 
 var (
@@ -67,29 +61,11 @@ var (
 		UUID: uuid.Must(uuid.FromString(org1Str)),
 		Name: "org1",
 	}
-	testOrg2 = appliancedb.Organization{
-		UUID: uuid.Must(uuid.FromString(org2Str)),
-		Name: "org2",
-	}
-	testOrg3 = appliancedb.Organization{
-		UUID: uuid.Must(uuid.FromString(org3Str)),
-		Name: "org3",
-	}
 
 	testSite1 = appliancedb.CustomerSite{
 		UUID:             uuid.Must(uuid.FromString(site1Str)),
 		OrganizationUUID: testOrg1.UUID,
 		Name:             "site1",
-	}
-	testSite2 = appliancedb.CustomerSite{
-		UUID:             uuid.Must(uuid.FromString(site2Str)),
-		OrganizationUUID: testOrg2.UUID,
-		Name:             "site2",
-	}
-	testSite3 = appliancedb.CustomerSite{
-		UUID:             uuid.Must(uuid.FromString(site3Str)),
-		OrganizationUUID: testOrg3.UUID,
-		Name:             "site3",
 	}
 
 	testID1 = appliancedb.ApplianceID{
@@ -99,22 +75,6 @@ var (
 		GCPRegion:      testRegion,
 		ApplianceReg:   testReg,
 		ApplianceRegID: testRegID + "-1",
-	}
-	testID2 = appliancedb.ApplianceID{
-		ApplianceUUID:  uuid.Must(uuid.FromString(app2Str)),
-		SiteUUID:       uuid.Must(uuid.FromString(site2Str)),
-		GCPProject:     testProject,
-		GCPRegion:      testRegion,
-		ApplianceReg:   testReg,
-		ApplianceRegID: testRegID + "-2",
-	}
-	testID3 = appliancedb.ApplianceID{
-		ApplianceUUID:  uuid.Must(uuid.FromString(app3Str)),
-		SiteUUID:       uuid.Must(uuid.FromString(site3Str)),
-		GCPProject:     testProject,
-		GCPRegion:      testRegion,
-		ApplianceReg:   testReg,
-		ApplianceRegID: testRegID + "-3",
 	}
 )
 

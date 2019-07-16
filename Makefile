@@ -784,11 +784,18 @@ vet-go: $(GENERATED_GO_FILES) $(GO_MOCK_SRCS)
 	$(GO) vet $(APP_GOPKGS)
 	$(GO) vet $(CLOUD_GOPKGS)
 
+LINT_GOPKGS = $(ALL_GOPKGS)
+
 lint-go: $(GENERATED_GO_FILES) $(GO_MOCK_SRCS)
-	$(GOLINT) -set_exit_status $(ALL_GOPKGS)
+	$(GOLINT) -set_exit_status $(LINT_GOPKGS)
 
 fmt-go:
 	build/check-gofmt.sh
+
+CILINT_GOPKGS = $(LINT_GOPKGS:%=$(GOSRC)/%)
+
+cilint-go:
+	$(GOTOOLS_BIN_GOLANGCI_LINT) run $(CILINT_ARGS) $(CILINT_GOPKGS)
 
 # ordered in most-to-least useful to most developers
 check-go: vet-go lint-go fmt-go

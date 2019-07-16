@@ -443,7 +443,7 @@ func (a *siteHandler) postEnrollGuest(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusInternalServerError, "Twilio Error")
 		}
 		// if not sent then give up sending more
-		if response.SMSDelivered == false {
+		if !response.SMSDelivered {
 			break
 		}
 	}
@@ -535,7 +535,7 @@ func (a *siteHandler) getNetworkVAPName(c echo.Context) error {
 	vaps := hdl.GetVirtualAPs()
 	vap, ok := vaps[c.Param("vapname")]
 	// Remove sensitive material for non-admins
-	if (c.Param("vapname") != "guest") && (admin == false) {
+	if (c.Param("vapname") != "guest") && !admin {
 		vap.Passphrase = ""
 	}
 	if !ok {

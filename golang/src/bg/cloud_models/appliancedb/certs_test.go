@@ -290,7 +290,7 @@ func testServerCerts(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 
 	// Make sure GetSiteUUIDByDomain returns NotFoundError for an unknown
 	// domain.
-	u, err = ds.GetSiteUUIDByDomain(ctx, DecomposedDomain{SiteID: 9999})
+	_, err = ds.GetSiteUUIDByDomain(ctx, DecomposedDomain{SiteID: 9999})
 	assert.Error(err)
 	assert.IsType(NotFoundError{}, err)
 

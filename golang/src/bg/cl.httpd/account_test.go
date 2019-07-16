@@ -87,6 +87,7 @@ func TestAccountsGenAndProvision(t *testing.T) {
 	cookies := rec.Result().Cookies()
 	err = json.Unmarshal(rec.Body.Bytes(), &ret2)
 
+	assert.NoError(err)
 	assert.Equal(ret.Username, ret2.Username)
 	assert.NotEqual(ret.Password, ret2.Password)
 

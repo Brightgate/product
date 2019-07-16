@@ -213,7 +213,7 @@ func (s *siteState) emulateAppliance(ctx context.Context) {
 			delay()
 			for _, o := range ops {
 				r := execute(s.cachedTree, o)
-				s.cmdQueue.complete(ctx, s, r)
+				_ = s.cmdQueue.complete(ctx, s, r)
 				if o.CmdID > lastCmd {
 					lastCmd = o.CmdID
 				}

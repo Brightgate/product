@@ -134,6 +134,9 @@ func listAccountRoles(cmd *cobra.Command, args []string) error {
 	}
 
 	roles, err := db.AccountOrgRolesByAccount(ctx, acctUUID)
+	if err != nil {
+		return err
+	}
 
 	table, _ := prettytable.NewTable(
 		prettytable.Column{Header: "TargetOrganization"},
@@ -196,7 +199,7 @@ func modAccountRole(cmd *cobra.Command, args []string) error {
 		pqe, ok := err.(*pq.Error)
 		// Add details from PQE, as they can help the user understand
 		// what's going on here.
-		if ok == true && pqe.Code.Name() == "foreign_key_violation" {
+		if ok && pqe.Code.Name() == "foreign_key_violation" {
 			err = fmt.Errorf("Couldn't %s role; the role or org/org relationship may not exist.\nPQ Message: %s\nPQ Detail: %s",
 				cmd.Name(), pqe.Message, pqe.Detail)
 		}

@@ -61,15 +61,14 @@ func testBadHumanSpec(t *testing.T, logger *zap.Logger, slogger *zap.SugaredLogg
 }
 
 func testManyPassword(t *testing.T, logger *zap.Logger, slogger *zap.SugaredLogger) {
-	var spec PasswordSpec
-	spec = HumanPasswordSpec
 	assert := require.New(t)
 	// Run the function many times and check the lengths and passwords generated
 	for range [50]int{} {
-		pass, err := EntropyPassword(spec)
+		pass, err := EntropyPassword(HumanPasswordSpec)
 		assert.NoError(err)
 		slog.Infof("generated %s", pass)
-		assert.True(len(pass) <= spec.MaxLength, "length of password exceeded spec max length")
+		assert.True(len(pass) <= HumanPasswordSpec.MaxLength,
+			"length of password exceeded spec max length")
 	}
 }
 

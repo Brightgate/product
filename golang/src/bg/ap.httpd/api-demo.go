@@ -253,7 +253,6 @@ func demoVAPNamePostHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to set properties", http.StatusBadRequest)
 		return
 	}
-	return
 }
 
 // Implements GET /api/site/:uuid/network/wan, returning information about the

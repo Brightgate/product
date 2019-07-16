@@ -61,10 +61,6 @@ var (
 
 	mcpd *mcp.MCP
 
-	cert      string
-	key       string
-	certValid bool
-
 	cutter *securecookie.SecureCookie
 
 	config     *cfgapi.Handle
@@ -74,14 +70,6 @@ var (
 	metrics struct {
 		latencies prometheus.Summary
 	}
-)
-
-var (
-	pings     = 0
-	configs   = 0
-	entities  = 0
-	resources = 0
-	requests  = 0
 )
 
 const (
@@ -97,31 +85,10 @@ const (
 	contentSecurityPolicy = "default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: 'unsafe-inline' 'unsafe-eval'; frame-ancestors 'none'"
 )
 
-// listFlag is a flag type that turns a comma-separated input into a slice of
-// strings.
-type listFlag []string
-
-func (l listFlag) String() string {
-	return strings.Join(l, ",")
-}
-
-func (l listFlag) Set(value string) error {
-	l = strings.Split(value, ",")
-	return nil
-}
-
 func certStateChange(path []string, val string, expires *time.Time) {
 	if val == "installed" {
 		slog.Infof("restarting due to renewed certificate")
 		os.Exit(0)
-	}
-}
-
-// hostInMap returns a Gorilla Mux matching function that checks to see if
-// the host is in the given map.
-func hostInMap(hostMap map[string]bool) mux.MatcherFunc {
-	return func(r *http.Request, match *mux.RouteMatch) bool {
-		return hostMap[r.Host]
 	}
 }
 
@@ -172,7 +139,7 @@ func listen(addr string, port string, ring string, cfg *tls.Config,
 				Addr:         addr + port,
 				Handler:      handler,
 				TLSConfig:    cfg,
-				TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
+				TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
 			}
 			err := srv.ListenAndServeTLS(certfn, keyfn)
 			slog.Infof("TLS Listener on %s (%s) exited: %v", addr+port, ring, err)
@@ -325,7 +292,10 @@ func main() {
 	// so the restart for the latter will handle the former.  Find the TLS
 	// key and certificate we should be using.  If there isn't one, sleep
 	// until ap.rpcd notifies us one is available, and then restart.
-	config.HandleChange(`^@/certs/.*/state`, certStateChange)
+	err = config.HandleChange(`^@/certs/.*/state`, certStateChange)
+	if err != nil {
+		slog.Fatalf("failed to setup certStateChange: %v", err)
+	}
 	certPaths := certificate.GetKeyCertPaths(domainname)
 	if certPaths == nil {
 		slog.Warn("Sleeping until a cert is presented")
@@ -333,7 +303,10 @@ func main() {
 	}
 
 	data.LoadDNSBlocklist(data.DefaultDataDir)
-	config.HandleChange(`^@/updates/dns_.*list$`, blocklistUpdateEvent)
+	err = config.HandleChange(`^@/updates/dns_.*list$`, blocklistUpdateEvent)
+	if err != nil {
+		slog.Fatalf("failed to setup blocklistUpdateEvent: %v", err)
+	}
 
 	secureMW := secure.New(secure.Options{
 		SSLRedirect:           true,

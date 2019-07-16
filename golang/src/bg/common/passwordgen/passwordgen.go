@@ -303,6 +303,9 @@ func EntropyPassword(spec PasswordSpec) (string, error) {
 			}
 		}
 		_, err = pass.WriteRune(r)
+		if err != nil {
+			return "", err
+		}
 		entropy += ent
 		// add letter at beginning
 		s := randomRune(spec.AllowedLetters)
