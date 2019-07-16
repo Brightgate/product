@@ -55,6 +55,7 @@ import (
 	"bg/ap_common/platform"
 	"bg/base_def"
 	"bg/base_msg"
+	"bg/common"
 	"bg/common/cfgapi"
 	"bg/common/cfgmsg"
 	"bg/common/cfgtree"
@@ -990,6 +991,7 @@ func main() {
 	}
 	go serverPort.Serve(msgHandler)
 
+	slog.Infof("%s online running %s", pname, common.GitVersion)
 	mcpd.SetState(mcp.ONLINE)
 
 	go expirationHandler()

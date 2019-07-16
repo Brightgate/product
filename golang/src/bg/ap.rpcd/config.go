@@ -81,6 +81,7 @@ func (c *rpcClient) hello() error {
 	} else if rval.Response == rpc.CfgBackEndResponse_ERROR {
 		err = fmt.Errorf("Hello() failed: %s", rval.Errmsg)
 	}
+	rpcHealthUpdate(err == nil)
 
 	return err
 }
@@ -113,6 +114,7 @@ func (c *rpcClient) pushCompletions() error {
 	ctx, ctxcancel := c.getCtx()
 	resp, err := c.client.CompleteCmds(ctx, completeOp)
 	ctxcancel()
+	rpcHealthUpdate(err == nil)
 
 	if err != nil {
 		c.connected = false
@@ -157,6 +159,7 @@ func (c *rpcClient) pushUpdates() error {
 	ctx, ctxcancel := c.getCtx()
 	resp, err := c.client.Update(ctx, updateOp)
 	ctxcancel()
+	rpcHealthUpdate(err == nil)
 
 	if err != nil {
 		c.connected = false
@@ -229,6 +232,7 @@ func (c *rpcClient) fetchStream(ctx context.Context) error {
 		slog.Fatalf("Failed to make GRPC context: %+v", err)
 	}
 	stream, err := c.client.FetchStream(ctx, fetchOp)
+	rpcHealthUpdate(err == nil)
 	if err != nil {
 		slog.Fatalf("Failed to FetchStream: %+v", err)
 	}
@@ -237,6 +241,7 @@ func (c *rpcClient) fetchStream(ctx context.Context) error {
 		// When ctx is canceled, this should abort
 		slog.Debugf("blocking on config stream")
 		resp, rerr := stream.Recv()
+		rpcHealthUpdate(rerr == nil)
 		if rerr != nil {
 			c.connected = false
 			slog.Infof("lost connection to cl.configd")
@@ -365,6 +370,7 @@ func (c *rpcClient) restore() error {
 	ctx, ctxcancel := c.getCtx()
 	rval, err := c.client.Download(ctx, op)
 	ctxcancel()
+	rpcHealthUpdate(err == nil)
 
 	if err != nil {
 		return fmt.Errorf("failed to send Download() rpc: %v", err)
@@ -442,7 +448,9 @@ func (c *rpcClient) connectLoop(wg *sync.WaitGroup, doneChan chan bool) {
 	slog.Infof("connect loop starting")
 	for !done {
 		if !c.connected {
-			if err := c.connect(); err == nil {
+			err := c.connect()
+			rpcHealthUpdate(err == nil)
+			if err == nil {
 				c.connected = true
 				nextLog = time.Now()
 				slog.Infof("established connection to cl.configd")

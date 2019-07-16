@@ -331,3 +331,8 @@ func (m *MCP) Reboot() error {
 	_, err := m.msg(op)
 	return err
 }
+
+// GetComm returns the APComm handle used to communicate with the mcp daemon
+func (m *MCP) GetComm() *comms.APComm {
+	return m.comm
+}

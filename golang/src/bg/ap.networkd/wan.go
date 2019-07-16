@@ -263,12 +263,12 @@ func (w *wanInfo) ipCheck() bool {
 	oldRoute := w.route
 
 	cidr, w.addr, w.route = w.getAddrRoute()
-	changed := (!oldAddr.Equal(w.addr) || !oldRoute.Equal(w.route))
-	if changed {
+	if !oldAddr.Equal(w.addr) || !oldRoute.Equal(w.route) {
 		config.CreateProp("@/network/wan/current/address", cidr, nil)
+		return true
 	}
 
-	return changed
+	return false
 }
 
 func dhcpOp(prop, val string) cfgapi.PropertyOp {
@@ -350,12 +350,6 @@ func (w *wanInfo) monitorLoop() {
 
 	done := false
 	for !done {
-		select {
-		case done = <-wan.done:
-			return
-		case <-t.C:
-		}
-
 		if w.ipCheck() {
 			refresh = time.Now()
 		}
@@ -363,6 +357,12 @@ func (w *wanInfo) monitorLoop() {
 		if time.Now().After(refresh) {
 			w.dhcpRefresh()
 			refresh = time.Now().Add(time.Minute)
+		}
+
+		select {
+		case done = <-wan.done:
+			return
+		case <-t.C:
 		}
 	}
 

@@ -70,7 +70,9 @@ var (
 	brokerd       *broker.Broker
 	mcpd          *mcp.MCP
 
-	plat *platform.Platform
+	plat       *platform.Platform
+	nodeUUID   string
+	rpcSuccess *bool
 
 	metrics struct {
 		events prometheus.Counter
@@ -81,6 +83,25 @@ var (
 		wg    sync.WaitGroup
 	}
 )
+
+func rpcHealthUpdate(ok bool) {
+	var connection string
+
+	if config == nil || (rpcSuccess != nil && *rpcSuccess == ok) {
+		return
+	}
+	rpcSuccess = &ok
+
+	if ok {
+		connection = "success"
+	} else {
+		connection = "fail"
+	}
+
+	prop := "@/metrics/health/" + nodeUUID + "/cloud_rpc/" + connection
+	now := time.Now().Format(time.RFC3339)
+	config.CreateProp(prop, now, nil)
+}
 
 func publishEvent(ctx context.Context, tclient cloud_rpc.EventClient, subtopic string, evt proto.Message) error {
 	name := proto.MessageName(evt)
@@ -109,6 +130,7 @@ func publishEvent(ctx context.Context, tclient cloud_rpc.EventClient, subtopic s
 	}
 
 	response, err := tclient.Put(ctx, eventRequest)
+	rpcHealthUpdate(err == nil)
 	if err != nil {
 		return errors.Wrapf(err, "Failed to Put() Event")
 	}
@@ -398,4 +420,5 @@ func main() {
 
 func init() {
 	plat = platform.NewPlatform()
+	nodeUUID, _ = plat.GetNodeID()
 }

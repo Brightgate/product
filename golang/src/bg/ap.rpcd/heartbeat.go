@@ -33,7 +33,9 @@ func publishHeartbeat(ctx context.Context, tclient cloud_rpc.EventClient) error 
 		RecordTime: ptypes.TimestampNow(),
 	}
 
-	return publishEvent(ctx, tclient, "heartbeat", heartbeat)
+	err = publishEvent(ctx, tclient, "heartbeat", heartbeat)
+	rpcHealthUpdate(err == nil)
+	return err
 }
 
 func heartbeatLoop(ctx context.Context, tclient cloud_rpc.EventClient,

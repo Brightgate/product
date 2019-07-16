@@ -371,6 +371,17 @@
     {"Path": "@/metrics/clients/%macaddr%/%time_unit%/pkts_sent", "Type": "int", "Level": "internal"},
     {"Path": "@/metrics/clients/%macaddr%/%time_unit%/pkts_rcvd", "Type": "int", "Level": "internal"},
     {"Path": "@/metrics/clients/%macaddr%/last_activity", "Type": "time", "Level": "internal"},
-    {"Path": "@/metrics/clients/%macaddr%/signal_str", "Type": "int", "Level": "internal"}
+    {"Path": "@/metrics/clients/%macaddr%/signal_str", "Type": "int", "Level": "internal"},
+    {"Path": "@/metrics/health/%uuid%/wan_carrier/on", "Type": "time", "Level": "internal"},
+    {"Path": "@/metrics/health/%uuid%/wan_carrier/off", "Type": "time", "Level": "internal"},
+    {"Path": "@/metrics/health/%uuid%/wan_address/none", "Type": "time", "Level": "internal"},
+    {"Path": "@/metrics/health/%uuid%/wan_address/self-assigned", "Type": "time", "Level": "internal"},
+    {"Path": "@/metrics/health/%uuid%/wan_address/valid", "Type": "time", "Level": "internal"},
+    {"Path": "@/metrics/health/%uuid%/net_connect/success", "Type": "time", "Level": "internal"},
+    {"Path": "@/metrics/health/%uuid%/net_connect/fail", "Type": "time", "Level": "internal"},
+    {"Path": "@/metrics/health/%uuid%/dns_lookup/success", "Type": "time", "Level": "internal"},
+    {"Path": "@/metrics/health/%uuid%/dns_lookup/fail", "Type": "time", "Level": "internal"},
+    {"Path": "@/metrics/health/%uuid%/cloud_rpc/success", "Type": "time", "Level": "internal"},
+    {"Path": "@/metrics/health/%uuid%/cloud_rpc/fail", "Type": "time", "Level": "internal"}
   ]
 }

@@ -273,6 +273,7 @@ func generateSignedURLs(rpcClient cloud_rpc.CloudStorageClient,
 	defer ctxcancel()
 
 	response, err := rpcClient.GenerateURL(ctx, &req)
+	rpcHealthUpdate(err == nil)
 	if err != nil {
 		return []*cloud_rpc.SignedURL{}, errors.Wrapf(err,
 			"Failed to generate signed URLs %v: %v", objects, err)

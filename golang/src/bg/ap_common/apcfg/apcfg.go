@@ -55,6 +55,10 @@ type APConfig struct {
 }
 
 func (c *APConfig) sendSysError() {
+	if c.broker == nil {
+		return
+	}
+
 	sysErr := &base_msg.EventSysError{
 		Timestamp: aputil.NowToProtobuf(),
 		Sender:    proto.String(c.sender),
@@ -131,9 +135,9 @@ func (c *cmdStatus) Wait(ctx context.Context) (string, error) {
 	return c.Status(ctx)
 }
 
-// NewConfigd will connect to ap.configd, and will return a handle used for
-// subsequent interactions with the daemon
-func NewConfigd(b *broker.Broker, name string,
+// NewConfigdHdl builds and returns a handle that can be used to
+// interact with the config daemon.
+func NewConfigdHdl(b *broker.Broker, name string,
 	level cfgapi.AccessLevel) (*cfgapi.Handle, error) {
 
 	var url string
@@ -166,14 +170,26 @@ func NewConfigd(b *broker.Broker, name string,
 		return nil, fmt.Errorf("creating new client: %v", err)
 	}
 
-	if err := c.Ping(nil); err != nil {
-		return nil, err
-	}
-
 	hdl := cfgapi.NewHandle(c)
 	settingsInit(hdl, c)
 
 	return hdl, nil
+}
+
+// NewConfigd will connect to ap.configd, and will return a handle used for
+// subsequent interactions with the daemon
+func NewConfigd(b *broker.Broker, name string,
+	level cfgapi.AccessLevel) (*cfgapi.Handle, error) {
+
+	c, err := NewConfigdHdl(b, name, level)
+	if err == nil {
+		if err = c.Ping(nil); err != nil {
+			c.Close()
+			c = nil
+		}
+	}
+
+	return c, err
 }
 
 func (c *APConfig) sendOp(query *cfgmsg.ConfigQuery) (string, error) {
@@ -231,6 +247,18 @@ func (c *APConfig) Execute(ctx context.Context, ops []cfgapi.PropertyOp) cfgapi.
 	return rval
 }
 
-// Close closes the link to *.configd.  On the appliance, this is a no-op.
+// GetComm returns the APComm handle used to communicate with configd
+func GetComm(cfgHdl *cfgapi.Handle) *comms.APComm {
+	self := cfgHdl.GetComm().(*APConfig)
+	return self.comm
+}
+
+// Close closes the link to ap.configd.
 func (c *APConfig) Close() {
+	if c != nil {
+		if c.comm != nil {
+			c.comm.Close()
+			c.comm = nil
+		}
+	}
 }

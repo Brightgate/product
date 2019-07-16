@@ -83,7 +83,9 @@ if [ "$PKG_ROOT" = "/" ]; then
 	# Deactivate Brightgate services.
 	/etc/rc.common /etc/init.d/brightgate-appliance stop
 	/etc/rc.common /etc/init.d/ap.mcp stop
+	/etc/rc.common /etc/init.d/ap.tron stop
 
 	/etc/rc.common /etc/init.d/brightgate-appliance disable
 	/etc/rc.common /etc/init.d/ap.mcp disable
+	/etc/rc.common /etc/init.d/ap.tron disable
 fi

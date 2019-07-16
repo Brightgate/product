@@ -385,6 +385,7 @@ APPDAEMON_GOPKGS = \
 	bg/ap.networkd \
 	bg/ap.rpcd \
 	bg/ap.serviced \
+	bg/ap.tron \
 	bg/ap.userauthd \
 	bg/ap.watchd
 
@@ -454,6 +455,7 @@ APPCONFIGS_openwrt = \
 	$(ROOTETCCHRONY)/bg-chrony.base.conf \
 	$(ROOTETCCRONTABS)/root \
 	$(ROOTETCINITD)/ap.mcp \
+	$(ROOTETCINITD)/ap.tron \
 	$(ROOTETCINITD)/brightgate-appliance \
 	$(ROOTETCLOGROTATED)/com-brightgate-logrotate-rsyslog \
 	$(ROOTETCSYSCTLD)/50-com-brightgate.conf
@@ -907,6 +909,9 @@ $(ROOTETCCRONTABS)/root: build/openwrt-ipk/etc-crontabs-root | $(ROOTETCCRONTABS
 	$(INSTALL) -m 0644 $< $@
 
 $(ROOTETCINITD)/ap.mcp: build/openwrt-ipk/ap.mcp | $(ROOTETCINITD)
+	$(INSTALL) -m 0755 $< $@
+
+$(ROOTETCINITD)/ap.tron: build/openwrt-ipk/ap.tron | $(ROOTETCINITD)
 	$(INSTALL) -m 0755 $< $@
 
 $(ROOTETCINITD)/brightgate-appliance: build/openwrt-ipk/brightgate-appliance | $(ROOTETCINITD)

@@ -524,6 +524,14 @@
   revision = "8fb7259ba8bf8c1b0e16e8568da10785ac29c79f"
 
 [[projects]]
+  branch = "master"
+  digest = "1:7d28e071964f9f3b2cba2890806a164f6707e15078d674cdd99dd0f191696760"
+  name = "github.com/sparrc/go-ping"
+  packages = ["."]
+  pruneopts = ""
+  revision = "4e5b6552494c8005c60de6c60b50ebaefc69e592"
+
+[[projects]]
   digest = "1:7ba2551c9a8de293bc575dbe2c0d862c52252d26f267f784547f059f512471c8"
   name = "github.com/spf13/afero"
   packages = [
@@ -760,6 +768,7 @@
     "http/httpguts",
     "http2",
     "http2/hpack",
+    "icmp",
     "idna",
     "internal/iana",
     "internal/socket",
@@ -1011,6 +1020,7 @@
     "github.com/satori/uuid",
     "github.com/sethvargo/go-diceware/diceware",
     "github.com/sfreiberg/gotwilio",
+    "github.com/sparrc/go-ping",
     "github.com/spf13/afero",
     "github.com/spf13/cobra",
     "github.com/spf13/pflag",
