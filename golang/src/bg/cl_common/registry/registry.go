@@ -102,18 +102,37 @@ func NewOrganization(ctx context.Context, db appliancedb.DataStore, name string)
 }
 
 // NewSite registers a new site in the registry.  It returns the site UUID.
-func NewSite(ctx context.Context, db appliancedb.DataStore, name string, orgUUID uuid.UUID) (uuid.UUID, error) {
+func NewSite(ctx context.Context, db appliancedb.DataStore, hostProject string, name string, orgUUID uuid.UUID) (uuid.UUID, *appliancedb.SiteCloudStorage, error) {
 	u := uuid.NewV4()
 
-	err := db.InsertCustomerSite(ctx, &appliancedb.CustomerSite{
+	site := &appliancedb.CustomerSite{
 		UUID:             u,
 		OrganizationUUID: orgUUID,
 		Name:             name,
-	})
-	if err != nil {
-		return uuid.Nil, err
 	}
-	return u, nil
+
+	tx, err := db.BeginTxx(ctx, nil)
+	if err != nil {
+		return uuid.Nil, nil, err
+	}
+	defer tx.Rollback()
+
+	cs, err := newBucket(ctx, db, hostProject, site)
+	if err != nil {
+		return uuid.Nil, nil, errors.Wrap(err, "failed to make site bucket")
+	}
+
+	err = db.InsertCustomerSiteTx(ctx, tx, site)
+	if err != nil {
+		return uuid.Nil, nil, err
+	}
+	err = db.UpsertCloudStorageTx(ctx, tx, site.UUID, cs)
+	if err != nil {
+		return uuid.Nil, nil, errors.Wrap(err, "Failed to upsert CloudStorage record")
+	}
+	tx.Commit()
+
+	return u, cs, nil
 }
 
 // NewOAuth2OrganizationRule registers a new oauth2_organization_rule in the registry.
@@ -352,34 +371,29 @@ func DeleteAccountInformation(ctx context.Context, db appliancedb.DataStore,
 	return db.DeleteAccount(ctx, accountUUID)
 }
 
-// NewAppliance registers a new appliance.
+// NewAppliance registers a new appliance and associated it with
+// a site (possibly the sentinal null site).
+//
 // If appliance is uuid.Nil, a uuid is selected.
-// If site is nil, a Site UUID will be picked automatically.
 func NewAppliance(ctx context.Context, db appliancedb.DataStore,
-	appliance uuid.UUID, site *uuid.UUID,
+	appliance uuid.UUID, site uuid.UUID,
 	project, region, regID, appID string,
-	systemReprHWSerial, systemReprMAC string) (uuid.UUID, uuid.UUID, []byte, []byte, error) {
+	systemReprHWSerial, systemReprMAC string) (uuid.UUID, []byte, []byte, error) {
 
-	createSite := false
 	keyPEM, certPEM, err := genPEMKey()
 	if err != nil {
-		return uuid.Nil, uuid.Nil, nil, nil, err
+		return uuid.Nil, nil, nil, err
 	}
 
 	if appliance == uuid.Nil {
 		appliance = uuid.NewV4()
-	}
-	if site == nil {
-		u := uuid.NewV4()
-		site = &u
-		createSite = true
 	}
 
 	reprSerial := null.NewString("", false)
 	if systemReprHWSerial != "" {
 		_, err = mfg.NewExtSerialFromString(systemReprHWSerial)
 		if err != nil {
-			return uuid.Nil, uuid.Nil, nil, nil, err
+			return uuid.Nil, nil, nil, err
 		}
 		reprSerial = null.StringFrom(systemReprHWSerial)
 	}
@@ -388,14 +402,14 @@ func NewAppliance(ctx context.Context, db appliancedb.DataStore,
 	if systemReprMAC != "" {
 		mac, err := net.ParseMAC(systemReprMAC)
 		if err != nil {
-			return uuid.Nil, uuid.Nil, nil, nil, errors.Wrap(err, "Invalid systemReprMAC")
+			return uuid.Nil, nil, nil, errors.Wrap(err, "Invalid systemReprMAC")
 		}
 		reprMac = null.StringFrom(mac.String())
 	}
 
 	id := &appliancedb.ApplianceID{
 		ApplianceUUID:      appliance,
-		SiteUUID:           *site,
+		SiteUUID:           site,
 		GCPProject:         project,
 		GCPRegion:          region,
 		ApplianceReg:       regID,
@@ -410,29 +424,19 @@ func NewAppliance(ctx context.Context, db appliancedb.DataStore,
 
 	tx, err := db.BeginTxx(ctx, nil)
 	if err != nil {
-		return uuid.Nil, uuid.Nil, nil, nil, err
+		return uuid.Nil, nil, nil, err
 	}
 	defer tx.Rollback()
 
-	if createSite {
-		s := appliancedb.CustomerSite{
-			UUID: *site,
-			Name: "",
-		}
-		if err = db.InsertCustomerSiteTx(ctx, tx, &s); err != nil {
-			return uuid.Nil, uuid.Nil, nil, nil, err
-		}
-	}
-
 	if err = db.InsertApplianceIDTx(ctx, tx, id); err != nil {
-		return uuid.Nil, uuid.Nil, nil, nil, err
+		return uuid.Nil, nil, nil, err
 	}
 	if err = db.InsertApplianceKeyTx(ctx, tx, appliance, key); err != nil {
-		return uuid.Nil, uuid.Nil, nil, nil, err
+		return uuid.Nil, nil, nil, err
 	}
 	err = tx.Commit()
 	if err != nil {
-		return uuid.Nil, uuid.Nil, nil, nil, err
+		return uuid.Nil, nil, nil, err
 	}
-	return appliance, *site, keyPEM, certPEM, nil
+	return appliance, keyPEM, certPEM, nil
 }

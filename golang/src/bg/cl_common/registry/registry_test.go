@@ -9,7 +9,7 @@
  *
  */
 
-package main
+package registry
 
 import (
 	"strings"

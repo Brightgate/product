@@ -77,10 +77,11 @@ func listAppliances(cmd *cobra.Command, args []string) error {
 }
 
 func newAppliance(cmd *cobra.Command, args []string) error {
+	var err error
 	appID := args[0]
+	siteUUID := args[1]
 	outdir, _ := cmd.Flags().GetString("directory")
 	appUUID, _ := cmd.Flags().GetString("uuid")
-	siteUUID, _ := cmd.Flags().GetString("site-uuid")
 	hwSerial, _ := cmd.Flags().GetString("hw-serial")
 	mac, _ := cmd.Flags().GetString("mac-address")
 
@@ -94,15 +95,14 @@ func newAppliance(cmd *cobra.Command, args []string) error {
 		appUU = uuid.NewV4()
 	}
 
-	// nil siteUU means "pick me a siteid"
-	var siteUU *uuid.UUID
-	if siteUUID != "" {
-		var u uuid.UUID
-		var err error
-		if u, err = uuid.FromString(siteUUID); err != nil {
+	var siteUU uuid.UUID
+	if siteUUID == "null" {
+		siteUU = appliancedb.NullSiteUUID
+	} else {
+		siteUU, err = uuid.FromString(siteUUID)
+		if err != nil {
 			return err
 		}
-		siteUU = &u
 	}
 
 	db, reg, err := assembleRegistry(cmd)
@@ -112,8 +112,7 @@ func newAppliance(cmd *cobra.Command, args []string) error {
 	defer db.Close()
 
 	var keyPEM []byte
-	var resultSiteUU uuid.UUID
-	appUU, resultSiteUU, keyPEM, _, err = registry.NewAppliance(context.Background(),
+	appUU, keyPEM, _, err = registry.NewAppliance(context.Background(),
 		db, appUU, siteUU, reg.Project, reg.Region, reg.Registry, appID,
 		hwSerial, mac)
 	if err != nil {
@@ -142,7 +141,7 @@ func newAppliance(cmd *cobra.Command, args []string) error {
 	fmt.Printf("-------------------------------------------------------------\n")
 	fmt.Printf("Created device: projects/%s/locations/%s/registries/%s/appliances/%s\n",
 		reg.Project, reg.Region, reg.Registry, appID)
-	fmt.Printf("     Site UUID: %s\n", resultSiteUU)
+	fmt.Printf("     Site UUID: %s\n", siteUU)
 	fmt.Printf("Appliance UUID: %s\n", appUU)
 	if ioerr == nil {
 		fmt.Printf("  Secrets file: %s\n", secretsFile)
@@ -209,9 +208,9 @@ func appMain(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(appCmd)
 
 	newAppCmd := &cobra.Command{
-		Use:   "new [flags] <appliance name>",
-		Args:  cobra.ExactArgs(1),
-		Short: "Create an appliance and add it to the registry",
+		Use:   "new [flags] <appliance name> <siteUUID>|null",
+		Args:  cobra.ExactArgs(2),
+		Short: "Create an appliance and add it to the registry; use 'null' for the site UUID to specify no associated site",
 		RunE:  newAppliance,
 	}
 	newAppCmd.Flags().StringP("directory", "d", ".", "output directory")

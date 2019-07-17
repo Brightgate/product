@@ -577,13 +577,13 @@ CLOUDCOMMANDS = $(CLOUDCOMMAND_GOPKGS:bg/%=%)
 GO_CLOUD_TESTABLES = \
 	bg/cl_common/auth/m2mauth \
 	bg/cl_common/daemonutils \
+	bg/cl_common/registry \
 	bg/cloud_models/appliancedb \
 	bg/cloud_models/sessiondb \
 	bg/common/mfg \
 	bg/cl-cert \
 	bg/cl.configd \
-	bg/cl.httpd \
-	bg/cl.rpcd
+	bg/cl.httpd
 
 CLOUDSERVICES = \
 	cl-cert.service \

@@ -17,15 +17,22 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"cloud.google.com/go/storage"
 	"github.com/satori/uuid"
 	"github.com/spf13/cobra"
 	"github.com/tatsushid/go-prettytable"
+	"golang.org/x/oauth2/google"
 )
 
 func newSite(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	siteName := args[0]
 	orgUUID := uuid.Must(uuid.FromString(args[1]))
+
+	creds, _ := google.FindDefaultCredentials(ctx, storage.ScopeFullControl)
+	if creds == nil {
+		return fmt.Errorf("no cloud credentials defined")
+	}
 
 	db, _, err := assembleRegistry(cmd)
 	if err != nil {
@@ -39,11 +46,12 @@ func newSite(cmd *cobra.Command, args []string) error {
 	}
 	db.AccountSecretsSetPassphrase(as)
 
-	siteUU, err := registry.NewSite(ctx, db, siteName, orgUUID)
+	siteUU, siteCS, err := registry.NewSite(ctx, db, creds.ProjectID, siteName, orgUUID)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("Created Site: uuid=%s, name='%s' organization='%s'\n", siteUU, siteName, orgUUID)
+	fmt.Printf("Created Bucket: provider=%s, name='%s'\n", siteCS.Provider, siteCS.Bucket)
 
 	if orgUUID == appliancedb.NullOrganizationUUID {
 		fmt.Printf("Warning: null organization; usually for testing only\n")

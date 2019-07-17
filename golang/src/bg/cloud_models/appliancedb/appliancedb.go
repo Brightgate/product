@@ -64,6 +64,7 @@ type DataStore interface {
 	KeysByUUID(context.Context, uuid.UUID) ([]AppliancePubKey, error)
 
 	UpsertCloudStorage(context.Context, uuid.UUID, *SiteCloudStorage) error
+	UpsertCloudStorageTx(context.Context, DBX, uuid.UUID, *SiteCloudStorage) error
 	CloudStorageByUUID(context.Context, uuid.UUID) (*SiteCloudStorage, error)
 
 	UpsertConfigStore(context.Context, uuid.UUID, *SiteConfigStore) error
@@ -618,7 +619,17 @@ func (db *ApplianceDB) CloudStorageByUUID(ctx context.Context,
 // UpsertCloudStorage inserts or updates a CloudStorage Record
 func (db *ApplianceDB) UpsertCloudStorage(ctx context.Context,
 	u uuid.UUID, stor *SiteCloudStorage) error {
+	return db.UpsertCloudStorageTx(ctx, nil, u, stor)
+}
 
+// UpsertCloudStorageTx inserts or updates a CloudStorage Record, possibly
+// inside a transaction.
+func (db *ApplianceDB) UpsertCloudStorageTx(ctx context.Context,
+	dbx DBX, u uuid.UUID, stor *SiteCloudStorage) error {
+
+	if dbx == nil {
+		dbx = db
+	}
 	_, err := db.ExecContext(ctx,
 		`INSERT INTO site_cloudstorage
 		 VALUES ($1, $2, $3)
