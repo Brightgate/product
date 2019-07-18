@@ -13,6 +13,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -39,9 +40,18 @@ type updateQueue struct {
 	sync.Mutex
 }
 
+type siteMetrics struct {
+	tree *cfgtree.PTree // in-core cache of the metrics tree
+
+	refreshedAt      time.Time
+	refreshesWanted  int
+	refreshScheduled bool
+}
+
 type siteState struct {
 	siteUUID   string         // site UUID
 	cachedTree *cfgtree.PTree // in-core cache of the config tree
+	metrics    *siteMetrics
 
 	cmdQueue     cmdQueue
 	updateQueues map[int64]*updateQueue
@@ -49,12 +59,15 @@ type siteState struct {
 }
 
 var (
+	metricsRefreshPeriod time.Duration
+
 	state     = make(map[string]*siteState)
 	stateLock sync.Mutex
 )
 
 func newSiteState(siteUUID string, tree *cfgtree.PTree) *siteState {
 	var queue cmdQueue
+	var m siteMetrics
 
 	if environ.MemCmdQueue || environ.PostgresConnection == "" {
 		queue = newMemCmdQueue(siteUUID, *cqMax)
@@ -65,6 +78,7 @@ func newSiteState(siteUUID string, tree *cfgtree.PTree) *siteState {
 	return &siteState{
 		siteUUID:     siteUUID,
 		cachedTree:   tree,
+		metrics:      &m,
 		cmdQueue:     queue,
 		updateQueues: make(map[int64]*updateQueue),
 	}
@@ -116,12 +130,95 @@ func getSiteState(ctx context.Context, siteUUID string) (*siteState, error) {
 	return s, err
 }
 
-// Set the whole tree; part of the refresh logic
-func (s *siteState) setCachedTree(ctx context.Context, t *cfgtree.PTree) {
+// Issue one GET to refresh the @/metrics subtree, unless we already have a GET
+// in-flight.  Schedule the next refresh if we have any more pending.
+func (s *siteState) metricsRefresh() {
+	m := s.metrics
+
+	slog.Debugf("%s metrics refresh requested", s.siteUUID)
+	m.refreshedAt = time.Now()
+	refreshConfig(context.TODO(), s, s.siteUUID, metricsPath)
+
+	if m.refreshesWanted--; m.refreshesWanted > 0 {
+		slog.Debugf("%s metrics refresh scheduled", s.siteUUID)
+		time.AfterFunc(metricsRefreshPeriod, s.metricsRefresh)
+		m.refreshScheduled = true
+	} else {
+		m.refreshScheduled = false
+	}
+}
+
+func (s *siteState) metricsScheduleRefresh() {
+	m := s.metrics
+
+	if m.refreshScheduled {
+		return
+	}
+
+	nextRefresh := m.refreshedAt.Add(metricsRefreshPeriod)
+	now := time.Now()
+	if nextRefresh.Before(now) {
+		// Current data is stale, so refresh it immediately
+		s.metricsRefresh()
+	} else {
+		// Schedule a refresh request for when the current data becomes
+		// stale.
+		m.refreshScheduled = true
+		until := nextRefresh.Sub(now)
+		time.AfterFunc(until, s.metricsRefresh)
+	}
+}
+
+func (s *siteState) metricsGet(prop string) (string, error) {
+	var node *cfgtree.PNode
+	var err error
+	var payload []byte
+
+	s.Lock()
+	m := s.metrics
+
+	if m.tree == nil {
+		err = cfgtree.ErrNoProp
+	} else {
+		node, err = m.tree.GetNode(prop)
+	}
+	m.refreshesWanted = 2
+	s.metricsScheduleRefresh()
+	s.Unlock()
+
+	if node != nil {
+		payload, err = json.Marshal(node)
+	}
+	return string(payload), err
+}
+
+func (s *siteState) updateCaches(ctx context.Context, prop, rval string) {
+
 	_, slog := daemonutils.EndpointLogger(ctx)
-	s.cachedTree = t
-	slog.Infof("New tree for %s.  hash %x", s.siteUUID, t.Root().Hash())
-	_ = s.store(context.TODO())
+
+	if prop != rootPath && prop != metricsPath {
+		slog.Warnf("asked to cache unsupported tree: %s", prop)
+		return
+	}
+
+	tree, err := cfgtree.NewPTree(prop, []byte(rval))
+	if err != nil {
+		slog.Warnf("failed to refresh %s for %s: %v", prop, s.siteUUID, err)
+
+	} else if prop == rootPath {
+		slog.Infof("New tree for %s.  hash %x", s.siteUUID,
+			tree.Root().Hash())
+		s.Lock()
+		s.cachedTree = tree
+		s.Unlock()
+		_ = s.store(ctx)
+
+	} else if prop == metricsPath {
+		slog.Debugf("metrics refresh completed")
+		s.Lock()
+		s.metrics.tree = tree
+		s.Unlock()
+	}
 }
 
 func (s *siteState) store(ctx context.Context) error {

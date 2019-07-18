@@ -158,35 +158,35 @@ func (s *frontEndServer) Submit(ctx context.Context,
 		}
 	}
 
-	// Special case handling for /devices, which is served from the
-	// devicedb instead of from the config tree.
-	if getProp != "" && strings.HasPrefix(getProp, "@/devices/") {
-		json, err := getDevice(getProp)
-		if err != nil {
-			rval.Response = cfgmsg.ConfigResponse_NOPROP
-		} else {
-			rval.Response = cfgmsg.ConfigResponse_OK
-			rval.Value = json
-		}
-		return
-	}
-
-	// GET operations can be satisfied from our cached copy of the config
-	// tree.  Everything else needs to be queued for the appliance to
-	// execute later.
+	// GET operations are satisfied from our cached copy of the config,
+	// metrics, or device trees. Everything else needs to be queued for the
+	// appliance to execute later.
 	if getProp != "" {
-		state.Lock()
-		payload, err := state.cachedTree.Get(getProp)
-		state.Unlock()
+		var err error
+		var payload string
+
+		if strings.HasPrefix(getProp, devicesPath) {
+			payload, err = getDevice(getProp)
+
+		} else if strings.HasPrefix(getProp+"/", metricsPath) {
+			payload, err = state.metricsGet(getProp)
+
+		} else {
+			state.Lock()
+			payload, err = state.cachedTree.Get(getProp)
+			state.Unlock()
+		}
+
 		if err == nil {
 			rval.Response = cfgmsg.ConfigResponse_OK
 			rval.Value = payload
+		} else if err == cfgtree.ErrNoProp {
+			rval.Response = cfgmsg.ConfigResponse_NOPROP
 		} else {
-			if err == cfgtree.ErrNoProp {
-				rval.Response = cfgmsg.ConfigResponse_NOPROP
-			}
 			rval.Errmsg = fmt.Sprintf("%v", err)
+			rval.Response = cfgmsg.ConfigResponse_FAILED
 		}
+
 	} else {
 		// strip out the cloud UUID before sending it to the client
 		query.SiteUUID = ""

@@ -179,23 +179,23 @@ func (c *rpcClient) pushUpdates() error {
 	return err
 }
 
-// If the cloud has asked for multiple copies of the full config tree, turn all
+// If the cloud has asked for multiple copies of the same subtree, turn all
 // but the first request into no-ops.
 func trimRefreshDups(cmds []*cfgmsg.ConfigQuery) {
-	refreshed := false
+	refreshed := make(map[string]bool)
 
-	// Find all "Get @/" operations
 	nulled := 0
 	for _, cmd := range cmds {
-		if len(cmd.Ops) == 1 &&
-			cmd.Ops[0].Operation == cfgmsg.ConfigOp_GET &&
-			cmd.Ops[0].Property == "@/" {
+		if len(cmd.Ops) == 1 {
+			op := cmd.Ops[0]
 
-			if refreshed {
-				cmd.Ops = nil
-				nulled++
-			} else {
-				refreshed = true
+			if op.Operation == cfgmsg.ConfigOp_GET {
+				if refreshed[op.Property] {
+					cmd.Ops = nil
+					nulled++
+				} else {
+					refreshed[op.Property] = true
+				}
 			}
 		}
 	}
@@ -203,7 +203,7 @@ func trimRefreshDups(cmds []*cfgmsg.ConfigQuery) {
 	if nulled != 0 {
 		slog.Debugf("nulled %d redundant gets", nulled)
 	}
-	if refreshed {
+	if refreshed["@/"] {
 		// If we are sending back a full tree, then we should drop all
 		// pending updates, as the contents of the updates will be
 		// included in the full tree.  In addition, a tree request means

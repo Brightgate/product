@@ -250,6 +250,7 @@ type PropertyOp struct {
 // PropertyNode is a single node in the property tree
 type PropertyNode struct {
 	Value    string     `json:"Value,omitempty"`
+	Modified *time.Time `json:"Modified,omitempty"`
 	Expires  *time.Time `json:"Expires,omitempty"`
 	Children ChildMap   `json:"Children,omitempty"`
 }

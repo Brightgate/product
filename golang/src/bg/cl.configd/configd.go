@@ -21,6 +21,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"bg/base_def"
 	"bg/cl_common/daemonutils"
@@ -36,7 +37,13 @@ import (
 	"google.golang.org/grpc/grpclog"
 )
 
-const pname = "cl.configd"
+const (
+	pname = "cl.configd"
+
+	rootPath    = "@/"
+	metricsPath = "@/metrics/"
+	devicesPath = "@/devices/"
+)
 
 type configStore interface {
 	get(context.Context, string) (*cfgtree.PTree, error)
@@ -63,6 +70,7 @@ var environ struct {
 	Store              string `envcfg:"B10E_CLCONFIGD_STORE"`
 	Emulate            bool   `envcfg:"B10E_CLCONFIGD_EMULATE"`
 	MemCmdQueue        bool   `envcfg:"B10E_CLCONFIGD_MEMCMDQUEUE"`
+	MetricsRefresh     int    `envcfg:"B10E_CLCONFIGD_METRICS_REFRESH"`
 
 	// XXX it would be nicer if we could have this be ENABLE_TLS with
 	// default=true but envcfg does not support that.
@@ -145,6 +153,14 @@ func main() {
 	go prometheusInit(environ.DiagPort)
 
 	store = mkStore()
+
+	// Default to refreshing appliance metrics every 30 seconds
+	if environ.MetricsRefresh == 0 {
+		metricsRefreshPeriod = 30 * time.Second
+	} else {
+		metricsRefreshPeriod = time.Duration(environ.MetricsRefresh) *
+			time.Second
+	}
 
 	if environ.Emulate {
 		slog.Infof("Site emulator enabled")

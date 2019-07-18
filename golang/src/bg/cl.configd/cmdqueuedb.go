@@ -24,7 +24,6 @@ import (
 	"bg/cl_common/pgutils"
 	"bg/cloud_models/appliancedb"
 	"bg/common/cfgmsg"
-	"bg/common/cfgtree"
 )
 
 var (
@@ -274,7 +273,6 @@ func (dbq *dbCmdQueue) complete(ctx context.Context, s *siteState, rval *cfgmsg.
 	dbq.cleanup(ctx, s)
 
 	if !oldCmd.DoneTime.Valid {
-		// Special-case handling for refetching a full tree.
 		var cfgQuery cfgmsg.ConfigQuery
 		err = json.Unmarshal(newCmd.Query, &cfgQuery)
 		if err != nil {
@@ -285,15 +283,11 @@ func (dbq *dbCmdQueue) complete(ctx context.Context, s *siteState, rval *cfgmsg.
 				newCmd.UUID, newCmd.ID, err)
 			return nil
 		}
-		if rval.Response == cfgmsg.ConfigResponse_OK && isRefresh(&cfgQuery) &&
-			len(rval.Value) > 0 {
-			var tree *cfgtree.PTree
-			tree, err = cfgtree.NewPTree("@/", []byte(rval.Value))
-			if err != nil {
-				slog.Warnf("failed to refresh %s: %v", s.siteUUID, err)
-			} else {
-				s.setCachedTree(ctx, tree)
-			}
+
+		// Responses to GET operations are used to maintain cloud caches
+		// of appliance state.
+		if rval.Response == cfgmsg.ConfigResponse_OK && isGetCommand(&cfgQuery) {
+			s.updateCaches(ctx, cfgQuery.Ops[0].Property, rval.Value)
 		}
 	} else {
 		slog.Infof("%s:%d multiple completions - last at %s",

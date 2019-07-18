@@ -27,26 +27,33 @@ import (
 type backEndServer struct {
 }
 
-// Issue a "GET @/" to the appliance, which we will use to completely refresh
-// our cached copy of the tree
-func refreshConfig(ctx context.Context, site *siteState, uuid string) {
+// Issue a "GET" to the appliance, which we will use to refresh our cached
+// copy of a tree
+func refreshConfig(ctx context.Context, site *siteState, uuid, root string) {
 	_, slog := daemonutils.EndpointLogger(ctx)
 
-	slog.Infof("requesting a fresh tree from %s", uuid)
+	switch root {
+	case rootPath:
+		slog.Infof("requesting a fresh tree from %s", uuid)
+	case metricsPath:
+		slog.Debugf("refreshing %s from %s", root, uuid)
+	default:
+		slog.Warnf("requesting refresh of unsupported tree: %s", root)
+		return
+	}
 
 	getOp := []cfgapi.PropertyOp{
-		{Op: cfgapi.PropGet, Name: "@/"},
+		{Op: cfgapi.PropGet, Name: root},
 	}
 
 	q, err := cfgapi.PropOpsToQuery(getOp)
 	if err != nil {
-		slog.Warnf("failed to generate GET(@/) for ", uuid, ": ", err)
-		return
-	}
+		slog.Warnf("failed to generate GET(%s) for %s: %v",
+			root, uuid, err)
 
-	_, err = site.cmdQueue.submit(ctx, site, q)
-	if err != nil {
-		slog.Warnf("failed to submit GET(@/) for %s: %v", uuid, err)
+	} else if _, err = site.cmdQueue.submit(ctx, site, q); err != nil {
+		slog.Warnf("failed to submit GET(%s) for %s: %v",
+			root, uuid, err)
 	}
 }
 
@@ -76,7 +83,7 @@ func (s *backEndServer) Hello(ctx context.Context,
 			// cloud.  Eventually this should be an error that
 			// results in an event being sent.
 			siteState = initSiteState(uuid)
-			refreshConfig(ctx, siteState, uuid)
+			refreshConfig(ctx, siteState, uuid, rootPath)
 		}
 		if err != nil {
 			rval.Response = rpc.CfgBackEndResponse_ERROR
@@ -182,7 +189,8 @@ func (s *backEndServer) Update(ctx context.Context,
 			// of the remaining updates (since they'll fail as
 			// well), and ask for a fresh copy of the full tree.
 			if err = update(ctx, site, u); err != nil {
-				refreshConfig(ctx, site, req.GetSiteUUID())
+				refreshConfig(ctx, site, req.GetSiteUUID(),
+					rootPath)
 				break
 			}
 		}

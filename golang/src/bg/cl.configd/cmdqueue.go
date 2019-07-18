@@ -19,7 +19,6 @@ import (
 
 	"bg/cl_common/daemonutils"
 	"bg/common/cfgmsg"
-	"bg/common/cfgtree"
 
 	"github.com/golang/protobuf/ptypes"
 )
@@ -239,7 +238,9 @@ func (memq *memCmdQueue) fetch(ctx context.Context, s *siteState, start int64, m
 }
 
 // Get the status of a submitted command
-func (memq *memCmdQueue) status(ctx context.Context, s *siteState, cmdID int64) (*cfgmsg.ConfigResponse, error) {
+func (memq *memCmdQueue) status(ctx context.Context, s *siteState,
+	cmdID int64) (*cfgmsg.ConfigResponse, error) {
+
 	rval := &cfgmsg.ConfigResponse{
 		Timestamp: ptypes.TimestampNow(),
 		CmdID:     cmdID,
@@ -277,7 +278,9 @@ func (memq *memCmdQueue) status(ctx context.Context, s *siteState, cmdID int64) 
 }
 
 // Attempt to cancel a command
-func (memq *memCmdQueue) cancel(ctx context.Context, s *siteState, cmdID int64) (*cfgmsg.ConfigResponse, error) {
+func (memq *memCmdQueue) cancel(ctx context.Context, s *siteState,
+	cmdID int64) (*cfgmsg.ConfigResponse, error) {
+
 	rval := &cfgmsg.ConfigResponse{
 		Timestamp: ptypes.TimestampNow(),
 		CmdID:     cmdID,
@@ -319,24 +322,15 @@ func (memq *memCmdQueue) cancel(ctx context.Context, s *siteState, cmdID int64) 
 	return rval, nil
 }
 
-// Is this command meant to be a refresh of the entire tree?
-func isRefresh(cmd *cfgmsg.ConfigQuery) bool {
-	if len(cmd.Ops) != 1 {
-		return false
-	}
-	if cmd.Ops[0].Operation != cfgmsg.ConfigOp_GET {
-		return false
-	}
-
-	if cmd.Ops[0].Property != "@/" {
-		return false
-	}
-
-	return true
+func isGetCommand(cmd *cfgmsg.ConfigQuery) bool {
+	return len(cmd.Ops) == 1 &&
+		(cmd.Ops[0].Operation == cfgmsg.ConfigOp_GET)
 }
 
 // Handle a completion for an outstanding command
-func (memq *memCmdQueue) complete(ctx context.Context, s *siteState, rval *cfgmsg.ConfigResponse) error {
+func (memq *memCmdQueue) complete(ctx context.Context, s *siteState,
+	rval *cfgmsg.ConfigResponse) error {
+
 	memq.Lock()
 	defer memq.Unlock()
 
@@ -363,16 +357,10 @@ func (memq *memCmdQueue) complete(ctx context.Context, s *siteState, rval *cfgms
 		}
 		memq.cq.enqueue(cmd)
 
-		// Special-case handling for refetching a full tree.
-		if rval.Response == cfgmsg.ConfigResponse_OK && isRefresh(cmd.cmd) &&
-			len(rval.Value) > 0 {
-
-			tree, err := cfgtree.NewPTree("@/", []byte(rval.Value))
-			if err != nil {
-				slog.Warnf("failed to refresh %s: %v", s.siteUUID, err)
-			} else {
-				s.setCachedTree(ctx, tree)
-			}
+		// Responses to GET operations are used to maintain cloud caches
+		// of appliance state.
+		if rval.Response == cfgmsg.ConfigResponse_OK && isGetCommand(cmd.cmd) {
+			s.updateCaches(ctx, cmd.cmd.Ops[0].Property, rval.Value)
 		}
 	} else {
 		slog.Infof("%v multiple completions - last at %s", cmd,
