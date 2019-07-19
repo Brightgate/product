@@ -1,979 +1,1044 @@
 <!DOCTYPE html>
 <!--
   COPYRIGHT 2019 Brightgate Inc. All rights reserved.
-  This copyright notice is Copyright Management Information under 17 USC 1202  and is included to protect this work and deter copyright infringement.
-  Removal or alteration of this Copyright Management Information without the  express written permission of Brightgate Inc is prohibited, and any such
+  This copyright notice is Copyright Management Information under 17 USC 1202
+  and is included to protect this work and deter copyright infringement.
+  Removal or alteration of this Copyright Management Information without the
+  express written permission of Brightgate Inc is prohibited, and any such
   unauthorized removal or alteration will be a violation of federal law.-->
 <html lang="en">
-  <head>
-    <meta http-equiv="content-type" content="text/html; charset=UTF-8">
-    <title>Brightgate Alpha Guide</title>
-    <!-- BRIGHTGATE HEAD INSERTION POINT -->
-  </head>
-  <body>
-    <!-- BRIGHTGATE CONTENT START -->
-    <h1 id="brightgate-alpha-guide">Brightgate Alpha Guide</h1>
-    <p><i>NDA REQUIRED</i></p>
-    <img src="./images/Blue_NoBoarderArtboard-1@1.5x.png" alt="Brightgate Logo">
-    <p>Q1 2019</p>
-    <p>Version 1.0</p>
-    <h2 id="about-this-guide">About this guide</h2>
-    <p>We wrote this guide to help you understand both how Brightgate secures
-      your network and how to administer your Brightgate networks. We've also
-      included some help content that you can share directly with end users or
-      use as input to your own in-house help content.</p>
-    <p>Please jump to topics of interest or read the guide in its entirety.</p>
-    <ul>
-      <li>Technology concepts:
-        <ul>
-          <li><a href="#why-brightgate">Why Brightgate</a></li>
-          <li><a href="#how-we-secure">How we secure your business and customers</a></li>
-        </ul>
-      </li>
-      <li>Network administration:
-        <ul>
-          <li><a href="#install-brightgate">Install Brightgate</a></li>
-          <li><a href="#access-brightgate-management-app">Access the Brightgate
-              management app</a></li>
-          <li><a href="#get-your-networks-up">Get your Brightgate networks up
-              and running</a></li>
-          <li><a href="#secure-your-networks">Secure your networks</a></li>
-          <li><a href="#help-guests-online">Help guests get online</a></li>
-          <li><a href="#review-network-configuration-and-users">Review network
-              configuration and users</a></li>
-        </ul>
-      </li>
-      <li>Online help for network users:
-        <ul>
-          <li><a href="#add-mac-network">Add a Mac to your Wi-Fi network</a></li>
-          <li><a href="#add-iphone-network">Add an iPhone to your Wi-Fi network</a></li>
-          <li><a href="#add-android-phone-network">Add an Android phone to your
-              Wi-Fi network</a></li>
-          <li><a href="#add-windows-network">Add a Windows computer to your
-              Wi-Fi network</a></li>
-          <li><a href="#help-guests-online">Help guests get online</a></li>
-        </ul>
-      </li>
-    </ul>
-    <h3>Audience</h3>
-    <p>This guide is written primarily for those administering the Brightgate
-      appliance during our Alpha program; end user content is included either to
-      be provided directly to your end users or to use as an aid in creating
-      online help.</p>
-    <h2 id="why-brightgate">Why Brightgate</h2>
-    <p>Business networks are under attack. And attacks are becoming both more
-      frequent and more automated. As a result, your data—the lifeblood of your
-      business, from accounts receivable to contracts to your customer's data <i>and</i>
-      the devices that process it—present an ever-increasing risk. While big
-      enterprises can spend millions on a team of IT experts, and the systems
-      those experts require, small businesses don't have that kind of budget or
-      technical knowledge, increasingly leading hackers to target small
-      business. Small businesses need an automated response to fend off bots,
-      phishing, viruses, ransomware, exfiltration, and malware. That’s why small
-      businesses need precisely the type of platform that we’ve developed at
-      Brightgate: one that enables automated protection to prevent bad actors
-      from misusing both your networks and the resources they connect. </p>
-    <h3 id="the-power-of-machine-learning">Harness the power of machine learning</h3>
-    <p>Brightgate observes your devices and their behavior all the time when
-      they are on the network. Our machine learning creates a model of usual
-      behavior on your network, so odd behavior is immediately identified. But
-      we don’t stop with simply identifying odd behavior. We move a potentially
-      infected device into quarantine to prevent it from infecting other devices
-      on the network, then limit its network access until the issue is resolved.
-      In addition, we notify the device's owner and network administrator of the
-      issue, using language that’s easily understood, and suggest appropriate
-      actions to take so the device can be safely updated or sanitized and again
-      permitted access to the network. We'll even help you with remote IT to
-      resolve the problem. Brightgate also blocks online destinations that we
-      know are bad news—phishing, malware, and spyware. The Brightgate security
-      team also stays on top of the latest threats. We automatically update
-      every platform to defend against each new threat, covering your entire
-      network—all your devices—all the time.</p>
-    <h3 id="protect-your-data">Protect your data</h3>
-    <p>Brightgate gets it. Small businesses like yours are very good at the
-      skills your business was founded on—whether it’s designing systems,
-      serving a meal, or offering consulting services. The core competence of
-      your business is not in network security, but <b>ours is</b>. We
-      understand that you need to adopt technologies that matter to your
-      business without fear that you're putting your business at risk. As the
-      technology you adopt becomes more sophisticated and interconnected, your
-      risk of exposure to bad actors increases. Cybersecurity should, then, be a
-      critical part of your technology focus. Until now, though, this has not
-      been the case. Network security has been, at best, an afterthought as
-      cybersecurity offerings have been both too complex and too expensive, and
-      many small business owners like you have been unable to find a solution
-      that scales appropriately, focusing too much either on home user needs or
-      on enterprise requirements.</p>
-    <h3 id="easy-onboarding">Easy onboarding</h3>
-    <p>Brightgate solves the problem of overly complex solutions with an
-      intelligent, easy-to-use solution that secures your network. We use a
-      simple approach to configuration and onboarding, automating most decisions
-      and implementation. This removes the need for highly technical, expensive
-      staff. Our simple subscription model make your network security spend more
-      efficient. And, our technology scales to your business, hitting the sweet
-      spot between a home office and a large enterprise.</p>
-    <h3 id="constant-monitoring">Constant monitoring, immediate notification</h3>
-    <p>With Brightgate, you know which devices are on your network; what those
-      devices are doing on the Internet, whether data is being passed out of
-      your network, and to where; whether devices on your network are using a
-      default password; and who has been provided guest network access.
-      Importantly, Brightgate technology quarantines devices that are acting out
-      of character, protecting your network from infection. We also notice if
-      data has been or is being sent to known bad actors, and we can identify
-      the amount of data sent.</p>
-    <h3 id="ease-ofuse">Ease of use</h3>
-    <p>Brightgate is designed to ensure your business can easily reap the
-      benefits of automated cybersecurity. The simplicity of managing our
-      cybersecurity solution, with alerts that make the issue easy to understand
-      and specify the level of urgency, makes Brightgate’s technology easy to
-      administer. </p>
-    <p>Your Brightgate appliance helps you easily and quickly:</p>
-    <ul>
-      <li>Add people and their devices to your network</li>
-      <li>Terminate network access</li>
-      <li>Grant temporary (“guest”) network access</li>
-      <li>Identify devices that are acting suspiciously to reduce cybersecurity
-        risks</li>
-      <li>Protect your network from suspicious behavior</li>
-      <li>Audit your network for compliance</li>
-    </ul>
-    <h3 id="prevent-ransomware-attacks">Prevent ransomware attacks</h3>
-    <p>Besides the potential privacy issues, if your data is being held for
-      ransom, reconstructing your data can be almost impossible and the ransom
-      itself may be excruciatingly expensive. Brightgate is a valued partner to
-      small businesses like yours searching for a zero administration answer to
-      today’s cybersecurity risks.</p>
-    <h2 id="how-we-secure">How we secure your business and customers</h2>
-    <p> We built our product from the ground up, after extensive research, to
-      ensure that a cybersecurity platform used by small businesses would be
-      both easy to use and easy to administer. A couple of key ideas informed
-      our design:</p>
-    <ul>
-      <li><b>Access:</b> What devices should have access to this device access?
-        And, looking at it from the opposite angle, what devices should this
-        have device have access to?</li>
-      <li><b>Trust:</b> How much do you trust this device when it's on your
-        network?</li>
-    </ul>
-    <p>We recognized that building a secure network means that devices
-      fulfilling different functions in your business should be provided
-      different types of access to one another. It's fundamental to our design:
-      access is given where it's needed. Sometimes that's one-way. Important
-      computers should be able to configure a thermostat, for example, but that
-      thermostat shouldn't be allowed to attack those computers.</p>
-    <p>Next, we designed a more secure method of authorizing devices to use your
-      networks. We make it easy for every employee to have their own username
-      and password to connect devices like laptops, tablets, or phones. Devices
-      that share a common Wi-Fi password, like thermostats or light switches,
-      are on a separate network.</p>
-    <p>The end result? We created <b><i>trust groups</i></b></p>
-    <h3 id="trust-groups">Trust groups</h3>
-    <p>The Brightgate platform assigns each device connected to your network
-      into a <b>trust group</b>—a logical grouping of connected devices. We
-      make it easy to manage your network by providing default trust groups and
-      automating trust group assignment of every device.</p>
-    <p>Trust groups are how we protect the devices on your network and reduce
-      the risk that malware or viruses will spread. The trust group to which a
-      device is assigned affects both the level of trust for this device and the
-      device's access to to other devices when it is on your network. Devices
-      within a trust group communicate with and have access both to other
-      devices assigned to that trust group and to devices assigned to trust
-      groups that are less trusted and known.</p>
-    <p>The less we know and trust a device, the less access we should give that
-      device. That keeps untrusted devices from accessing or attacking other
-      devices on your network.</p>
-    <h4 id="network-authentication-and-trust-groups">Network authentication and
-      trust groups work together</h4>
-    <p>The way you add a device to your network affects the trust group we
-      assign that device into. Think of it this way: phones and laptops owned by
-      employees present a different type of risk than a Wi-Fi enabled
-      thermostat. While the various types of authentication are beyond the scope
-      of this guide, it's helpful to understand that Brightgate supports
-      different types of network authentication, which all use WPA2. </p>
-    <ol>
-      <li>An Authorized User network that uses Extensible Authentication
-        Protocol (EAP). With this type of network, each network user has their
-        own login ID and password. You can read more about EAP in this <a href="http://en.wikipedia.org/wiki/Extensible_Authentication_Protocol">helpful
-          article from Wikipedia</a></li>
-      <li>A Devices network that uses Pre-Shared Key (PSK) authentication. With
-        this type of network, all network users share the same password. A
-        pre-shared key (PSK) allows anyone who has the key to use the wireless
-        network.</li>
-      <li>A Guest network. With this type of network, a network user does not
-        need a login ID, but is provided a password that periodically expires.</li>
-    </ol>
-    <p><strong>Note:</strong><span>&nbsp;</span>We recommend including the
-      suffix in the network name so it is clear to people choosing from among
-      them when adding a device or logging on for the first time. For example,
-      Acme Corp would name the networks<span>&nbsp;</span><code>Acme-user</code>,<span>&nbsp;</span><code>Acme-device</code>,
-      and<span>&nbsp;</span><code>Acme-guest</code><span>&nbsp;</span>when first
-      setting up their network. During the Alpha program, Brightgate will set up
-      your networks following this recommendation.</p>
-    <h3 id="automated-trust-group-assignment">Automated trust group assignment</h3>
-    <p>Brightgate automatically assigns each device to a network and trust
-      group, following security policies that make sense based on the device’s
-      function; thermostats, security cameras, and other Internet-enabled tools
-      serve your organization in one way—phones and laptops serve your
-      organization in an entirely different way. Each of these devices presents
-      a different type of risk and requires a different ability to communicate
-      with other devices. The result? We’ll assign them to different trust
-      groups.</p>
-    <p>Our assignment of devices into a trust group is the result of thoughtful
-      planning, from both usability and security perspectives. A network
-      administrator's laptop, for example, must be able to communicate with a
-      Wi-Fi enabled thermostat to set it up properly, so the thermostat must be
-      accessible to the laptop that wishes to use it. When a device is added to
-      your network, Brightgate uses the type of authentication provided by the
-      device as part of the process to assign it to a trust group. If that
-      assignment doesn't suit your company policies, you can move the device as
-      discussed in the section <a href="#change-device-trust-group">Change a
-        device's trust group assignment</a>.</p>
-    <p>A Wi-Fi enabled thermostat is a good example of why assignment into a
-      trust group makes your network safer. You want a thermostat to be
-      available to a known and trusted employee device, but you likely don't
-      want a laptop assigned the <code>guest</code> trust group to communicate
-      to that same thermostat. This makes sense—you typically don’t want guests
-      adjusting your thermostat, nor do you want guest laptops communicating
-      with and potentially infecting devices that you already trust. Moreover,
-      the thermostat's <code>devices</code> trust group means that a rogue
-      thermostat won't be attacking either guest or employee devices.</p>
-    <p>The <code>core</code> trust group is most typically populated with
-      devices owned by network administrators or devices that are critical to
-      your business. Devices assigned to the <code>standard</code> trust group
-      are typically employee laptops and phones. In this setup, should an
-      employee laptop become infected with malware, that laptop will never be
-      able to infect the network administrator devices in the <code>core</code>
-      trust group. And the moment that laptop starts acting oddly, Brightgate
-      moves it to <code>quarantine</code>, so it can't infect the devices in
-      the <code>standard</code> trust group either.</p>
-    <p>Devices that aren’t assigned to a trust group are <code>unenrolled</code>,
-      which means they have not been explicitly granted access to the network.
-      They will not have credentials or be able to use your network. The most
-      common unenrolled devices will be IoT devices that have the correct shared
-      Wi-Fi password (PSK) but have not been authorized by an administrator. To
-      keep your network secure, we only permit network access to devices that
-      have been assigned into a Brightgate trust group. This way, we can
-      determine how trusted or known the device is, assign it to an appropriate
-      trust group, and watch the device's behavior to keep your network secure.</p>
-    <p>Devices added to the Authorized User network are automatically added to
-      the <code>standard</code> trust group, though administrators may move
-      them to a different trust group, as discussed in the section <a href="#change-device-trust-group">Change
-        a device's trust group assignment</a>. Devices added to the Devices
-      network are automatically assigned to the <code>devices</code> trust
-      group. And guests are assigned to the <code>guest</code> trust group.</p>
-    <p>This table provides examples of device types, network type, and default
-      trust group assignment:</p>
-    <table>
-      <thead>
-        <tr>
-          <th style="text-align: left;">Device Type</th>
-          <th style="text-align: left;">Network Type</th>
-          <th style="text-align: left;">Default Trust Group</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td style="text-align: left;">Laptop</td>
-          <td style="text-align: left;">Authorized User (EAP)</td>
-          <td style="text-align: left;"><code>standard</code></td>
-        </tr>
-        <tr>
-          <td style="text-align: left;">Tablet</td>
-          <td style="text-align: left;">Authorized User (EAP)</td>
-          <td style="text-align: left;"><code>standard</code></td>
-        </tr>
-        <tr>
-          <td style="text-align: left;">smartphone</td>
-          <td style="text-align: left;">Authorized User (EAP)</td>
-          <td style="text-align: left;"><code>standard</code></td>
-        </tr>
-        <tr>
-          <td style="text-align: left;">smart thermostat</td>
-          <td style="text-align: left;">Devices (PSK)</td>
-          <td style="text-align: left;"><code>devices</code></td>
-        </tr>
-        <tr>
-          <td style="text-align: left;">Guest contractor laptop</td>
-          <td style="text-align: left;">Guest</td>
-          <td style="text-align: left;"><code>guest</code></td>
-        </tr>
-      </tbody>
-    </table>
-    <h4 id="default-trust-groups">Default trust groups</h4>
-    <p>The Brightgate appliance provides a default set of trust groups, so
-      network administration isn’t a chore. During the alpha program, the
-      default trust group is the trust group into which a device is initially
-      enrolled. Devices authenticated using EAP are automatically added to the <code>standard</code>
-      trust group. Devices authenticated using PSK are automatically assigned to
-      the <code>devices</code> trust group. Administrators can move devices to
-      a different trust group, as discussed in the section <a href="#change-device-trust-group">Change
-        a device's trust group assignment</a>.</p>
-    <p>View the default trust groups for your network as discussed in the
-      section <a href="#network-configuration">View your Network Details</a>,
-      which lists the <i>Trust Group Configuration for each network</i>:</p>
-    <ul>
-      <li>For the <code>*-users</code> network:
-        <ul>
-          <li><code>core</code>: The trust group reserved for the most trusted
-            devices</li>
-          <li><code>standard</code>: The trust group most appropriate for
-            devices owned by regular members of your team</li>
-        </ul>
-      </li>
-      <li>For the <code>*-device </code>network:
-        <ul>
-          <li><code>devices</code>: The trust group for Internet of Things (IoT)
-            devices, such as thermostats or security cameras</li>
-          <li><code>quarantine</code>: The trust group for devices that are
-            behaving oddly</li>
-          <li><code>unenrolled</code>: The trust group for all manually
-            configured IoT devices or other unknown devices.</li>
-        </ul>
-      </li>
-      <li>For the <code>*-guest</code> network:
-        <ul>
-          <li><code>guest</code>: The trust group for devices that require
-            temporary network access</li>
-        </ul>
-      </li>
-    </ul>
-    <h3 id="quarantined-devices">Quarantined devices</h3>
-    <p>Quarantined devices are separated from other devices on your network to
-      prevent potential infection and maintain security. Quarantine serves as a
-      virtual “jail”. It’s where we put devices that look like they might be
-      infected with a virus or bot. In short, we’re preventing devices that
-      exhibit odd or suspicious behavior from communicating with the Internet as
-      well as with other devices on your network. Quarantine stops devices from
-      infecting other devices, allowing you to investigate them (with our
-      helpful suggestions) and fix the issue at hand.</p>
-    <p>For example, if a thermostat assigned to the <code>devices</code> trust
-      group begins slowly dripping data to a URL with an unusual address or if
-      an automated security check of a laptop fails, the suspicious device is
-      automatically removed from its assigned trust group and moved to <code>quarantine</code>.</p>
-    <p>You’ll get an alert when a vulnerability is identified and we'll move the
-      affected device into quarantine. We’ll also include information about why
-      we moved the device into quarantine. Once the identified issue is
-      resolved, the device is returned to the network and its previously
-      assigned trust group.</p>
-    <h2 id="install-brightgate">Install Brightgate</h2>
-    <p>During the Alpha program, Brightgate will install your appliance, set up
-      your networks, and create an administrator account to get you started.</p>
-    <h2 id="appliance-overview">Appliance overview</h2>
-    <p>This appliance provides the following:</p>
-    <ul>
-      <li>4 LAN connections</li>
-      <li>1 WAN connection</li>
-      <li>Support for two additional PoE+ LAN ports</li>
-      <li>Wall screws and anchors for mounting to a drywall surface</li>
-      <li>2x2 2.4GHz WiFi (a/b/g/n) and 2x2 5GHz WiFi (n/ac) with 4 dipole
-        antennas</li>
-    </ul>
-    <h3 id="front-panel">Front panel</h3>
-    <p>The front panel contains the following:</p>
-    <ol type="A">
-      <li>USB 3.0 (for future accessories)</li>
-      <li>LAN Ethernet 1G </li>
-      <li>WAN Ethernet 1G</li>
-      <li>Status indicators</li>
-      <li>Reset button</li>
-      <li>DC input</li>
-    </ol>
-    <p><img src="./images/front-panel.png" alt="Front panel"></p>
-    <h3 id="indicators">Indicators</h3>
-    <p>All status indicators are green. The indicators are lit when the port is
-      in normal operation with the exception of the fault indicator. In future
-      releases, the fault indicator will be lit only when a fault is detected
-      with the hardware. If the fault indicator lights, please contact
-      Brightgate support.</p>
-    <ol type="A">
-      <li>LTE (Reserved for future use)</li>
-      <li>Power (DC power present)</li>
-      <li>FAULT (Service action required)</li>
-      <li>2.4 GHz Wi-Fi</li>
-      <li>LAN Ethernet Port</li>
-      <li>WAN Ethernet Port</li>
-      <li>5GHz Wi-Fi</li>
-    </ol>
-    <p><img src="./images/indicators.png" alt="Indicators"></p>
-    <h2 id="access-brightgate-management-app">Access the Brightgate management
-      app</h2>
-    <p>The Brightgate management app provides all the information you need to
-      administer and secure your network. Access the management app from your
-      web browser by pointing your browser to <a href="https://svc1.b10e.net">https://svc1.b10e.net</a>.</p>
-    <p>Once logged in, you can view your account details, open the Brightgate
-      Admin Guide, log out, or select your site (only if you have multiple sites
-      to manage). If you are administering only one site, you'll see the two
-      main sections immediately upon logging in:</p>
-    <ol>
-      <li><i>Serious Alerts:</i> Alerts of detected vulnerabilities are visible
-        immediately when you log in. This section displays only if Brightgate
-        has identified known vulnerabilities.</li>
-      <li><i>Tools</i>
-        <ul>
-          <li><b>Network Configuration</b>, which provides information about the
-            networks defined for your organization. From here, navigate to view
-            <b>Network Details</b>.</li>
-          <li><b>Compliance Report</b>, which lists potential vulnerabilities.
-            From here, navigate to view <b>Device Details</b> for information
-            about devices with identified vulnerabilities.</li>
-          <li><b>Manage Devices</b>, which lists all devices across all
-            Brightgate-secured networks. From here, navigate to view <b>Device
-              Details</b> for information about active and known devices.</li>
-          <li><b>Users</b>, which lists both administrators and regular users
-            defined for the Brightgate cloud as well as any administrators
-            defined specifically for a local appliance. From here, navigate to
-            view <b>User Details</b> to contact a user by email or text.</li>
-          <li><b>Enroll Guest User</b>, which enables easy sharing of the
-            current password to add devices to the guest network.</li>
-        </ul>
-      </li>
-    </ol>
-    <p><img src="./images/initial-login.png" alt="Initial login"></p>
-    <h2 id="get-your-networks-up">Get your Brightgate networks up and running</h2>
-    <p>Administering networks managed by Brightgate doesn't require constant
-      oversight because we're doing so much behind the scenes. We're constantly
-      monitoring your network and device behavior for vulnerabilities as well as
-      managing the trust group assignment for your devices. As a result, with
-      Brightgate, administration of your network involves the following tasks:</p>
-    <ul>
-      <li>Get Started:
-        <ol>
-          <li><a href="#set-up-your-networks">Set up your networks</a></li>
-          <li><a href="#access-brightgate-management-app">Access the Brightgate
-              management app</a></li>
-          <li><a href="#help-your-team-get-online">Help your team get online<br>
-            </a></li>
-          <li><a href="#help-your-team-add-devices">Help your team add their
-              devices</a></li>
-          <li><a href="#add-iot-network">Add IoT devices to your Wi-Fi network</a></li>
-        </ol>
-      </li>
-      <li><a href="#secure-your-networks">Secure your networks</a></li>
-      <li><a href="#help-guests-online">Help guests get online</a></li>
-      <li><a href="#review-network-configuration-and-users">Review network
-          configuration and users</a></li>
-    </ul>
-    <h3 id="set-up-your-networks">Set up your networks</h3>
-    <p>You'll need to set up your Wi-Fi networks to start using the security
-      features of the Brightgate appliance. We'll set up your Wi-Fi networks for
-      you during the Alpha program, but it's helpful to know the overall
-      process.</p>
-    <p><b>Note:</b> Wired ports are also available. During the Alpha program, a
-      device or switch plugged into a wired port will be assigned the <code>standard</code>
-      trust group. In a future release, you will be able to change the trust
-      group assignment for a port's connected devices ando require that a device
-      connected to a port present an 802.1X credential to be added to a network.
-      (Similar to WPA2-EAP.) </p>
-    <p>Start by deciding whether you're:</p>
-    <ul>
-      <li>Creating a new Wi-Fi network. If you've never had a network at this
-        location, then you'll start with creating a new network. The
-        instructions to create a new network are explained in the section <a href="#create-new-network">Create
-          a new network</a></li>
-      <li>Replacing an existing Wi-Fi network. If you're replacing an existing
-        network, the decision about whether to re-use the network name and
-        password is based on the level to which you trust the current network.
-        If you trust what you've administered previously, then, by all means,
-        re-use the network name and password. If you're uncertain, then create a
-        new network name and password. During the Alpha program, overlaying an
-        existing Wi-Fi network requires Brightgate support.</li>
-    </ul>
-    <p> The network name is also called a Service Set ID (SSID). If you don't
-      know what that is, you're welcome to read more about it in this <a href="https://en.wikipedia.org/wiki/Service_set_%28802.11_network%29#Service_Set_ID_%28SSID%29">helpful
-        article from Wikipedia.</a></p>
-    <p>This graphic illustrates the basic process of deciding how to set up your
-      network:</p>
-    <p><img src="./images/setup_flow.png" alt="Setup process for administrators"></p>
-    <p>As discussed in <a href="#network-authentication-and-trust-groups">network
-        authentication and trust groups work together</a>, Brightgate creates
-      three networks based on the method a device uses to authenticate to the
-      network: </p>
-    <ul>
-      <li><b>User:</b> each network user has their own login ID and password.</li>
-      <li><b>Device:</b> all network users share the same password.</li>
-      <li><b>Guest:</b> a network user does not need a login ID, but is provided
-        a password that periodically rotates.</li>
-    </ul>
-    <h3 id="create-new-network">Create a new network</h3>
-    <p>When you first set up your Brightgate appliance, you'll need to name your
-      networks to reflect the SSID, or network name, that you would like to use
-      at your site. </p>
-    <ol>
-      <li>Log in to the Brightgate management app</li>
-      <li>(Optional) Select your site from the list</li>
-      <li>Select <b>Networks</b> to view the complete list of
-        Brightgate-secured networks. <b>Note:</b> The default network names are
-        <code>setme-users</code>, <code>setme-devices</code>, and <code>setme-guest</code>.</li>
-      <li>Click the network or the right-facing arrow (&gt;) to display <b>Network
-          Details</b>. </li>
-      <li>Select the red <b>Settings</b> icon <img src="./images/settings-icon.png"
-          alt="Settings icon">.</li>
-      <li>Edit the <b>SSID (Network Name)</b> to the name you'd prefer, then
-        press <b>SAVE</b>. <b>Note:</b> Maintain the suffix of <code>-users</code>,
-        <code>-devices</code>, or <code>-guest</code> to more easily
-        differentiate among your Brightgate-secured networks.</li>
-    </ol>
-    <h3 id="help-your-team-get-online">Help your team get online</h3>
-    <p>The Brightgate management app supports Google Sign-In and Sign-In with
-      Microsoft. <b>Note:</b> During the Alpha program, only Google Sign-In and
-      Sign-In with Microsoft are supported for user logins. Other identity
-      providers will be available in future releases.</p>
-    <p>When you're logging in to the Brightgate management app (or if you're
-      having your team log in), we authenticate you with your Google or
-      Microsoft account, then walk you through creating and storing a Wi-Fi user
-      name and password. Everyone needs to store their Wi-Fi user name and
-      password to add other devices (like phones and tablets) to the Wi-Fi
-      network reserved for authenticated users(typically the one with the suffix
-      <code>-user</code>).</p>
-    <ol>
-      <li>Navigate to your <a href="https://svc1.b10e.net">Brightgate
-          management app</a></li>
-      <li>Press the <b>Login with Google</b> or <b>Login with Microsoft</b>
-        button to log in to the Brightgate cloud.
-        <div> <img src="./images/login_shot.png" alt="Logging in to Brightgate">
-        </div>
-      </li>
-      <li>Provide credentials for either your Google or Microsoft account.
-        <div> <img src="./images/select_account.png" alt="Select Google account">
-          <img src="./images/select_account_ms.png" alt="Select Microsoft account">
-        </div>
-      </li>
-      <li>Create a Wi-Fi user name and password using the wizard provided by the
-        Brightgate management app. </li>
-      <li>Use your Wi-Fi user name and password to add devices </li>
-    </ol>
-    <h3 id="help-your-team-add-devices">Help your team add their devices</h3>
-    <p>Add devices that use both your user ID and Wi-Fi password to the <code>*-user</code>
-      network. These are typically devices you own that use the Wi-Fi user name
-      and password created in the Brightgate management app, such as a laptop,
-      phone, or tablet. For example:</p>
-    <ul>
-      <li><a href="#add-mac-network">Add a Mac to your network</a></li>
-      <li><a href="#add-iphone-network">Add an iPhone to your network</a></li>
-      <li><a href="#add-android-phone-network">Add an Android phone to your
-          network</a></li>
-      <li><a href="#add-windows-network">Add a Windows computer to your network</a></li>
-    </ul>
-    <h4 id="quick-word-certificates">A quick word about certificates</h4>
-    <p>The first time a device connects to the authenticated users network, in
-      most cases the device will present a certificate for you to accept. This
-      certificate confirms that the network is what it says it is, and accepting
-      the certificate allows you to trust this network in the future when you
-      connect the device without manual intervention.</p>
-    <p>While your IT team is best qualified to help you understand how
-      certificates are used in your environment, Brightgate suggests you inspect
-      any certificate before adding it to your device. While the method of
-      inspection varies according to the device type, ensure the certificate is
-      issued by Let's Encrypt, the certificate authority used by Brightgate, and
-      that the Subject Name looks like <code><i>number</i>.brightgate.net</code>,
-      where <code><i>number</i></code> is a five digit number. The Trust level
-      should be set to <i>Always Trust</i> for <b>EAP</b> and <b>Basic Policy</b>,
-      if that level of specificity is available on your device. </p>
-    <h4 id="add-mac-network">Add a Mac to your Wi-Fi network</h4>
-    <p>Once you have a Wi-Fi user name and password created for your Wi-Fi
-      network, add your Mac to the network with these steps:</p>
-    <p><b><i>Note:</i></b><i> See <a href="#help-your-team-get-online">help
-          your team get online</a> if you haven't yet created a user name and
-        password for the Wi-Fi network.</i></p>
-    <ol>
-      <li>Select the Wi-Fi logo at the top right of your display (it's the one
-        that looks like an opened fan).</li>
-      <li>Select your organization's Wi-Fi network name from the dropdown list
-        (the name will end in <code>-user</code>).</li>
-      <li>Enter the <b>username</b> and <b>Password</b> created by Brightgate.
-        <b>Note:</b> The first time you add your Mac to the network, you will be
-        asked to accept a certificate. Select <b>Continue</b> to add the
-        certificate. You're welcome to read more in <a href="#quick-word-certificates">a
-          quick word about certificates</a>.</li>
-      <li>Leave the <b>Remember this network</b> check box selected.</li>
-      <li>Select the <b>Join</b> button.</li>
-    </ol>
-    <img src="./images/add_mac_to_network.png" alt="Adding a Mac to the network">
-    <p>When your Mac joins the network, you'll see the bars of the Wi-Fi logo
-      fill in to confirm that your Mac is connected.</p>
-    <h4 id="add-iphone-network">Add an iPhone to your Wi-Fi network</h4>
-    <p>Once you have a user name and password created for your Wi-Fi network,
-      add your iPhone to the network with these steps:</p>
-    <p><b><i>Note:</i></b><i> See <a href="#help-your-team-get-online">help
-          your team get online</a> if you haven't yet created a user name and
-        password for the Wi-Fi network.</i></p>
-    <ol>
-      <li>From the home screen, tap the <b>Settings</b> app.</li>
-      <li>Select <b>Wi-Fi</b>.</li>
-      <li>If needed, slide the button to turn <b>Wi-Fi</b> on, then select your
-        organization's Wi-Fi network name from the list (the name will end in <code>-user</code>).</li>
-      <li>Enter the <b>username</b> and <b>password</b> created by Brightgate.
-        <b>Note:</b> The first time you add your iPhone to the network, you will
-        be asked to accept a certificate. Select <b>Continue</b> to add the
-        certificate. You're welcome to read more in <a href="#quick-word-certificates">a
-          quick word about certificates</a>.</li>
-      <li>Tap <b>Join</b>.</li>
-    </ol>
-    <h4 id="add-android-phone-network">Add an Android phone to your Wi-Fi
-      network</h4>
-    <p>Once you have a user name and password created for your Wi-Fi network,
-      add your Android phone to the network with these steps:</p>
-    <p><b><i>Note:</i></b><i> See <a href="#help-your-team-get-online">help
-          your team get online</a> if you haven't yet created a user name and
-        password for the Wi-Fi network.</i></p>
-    <ol>
-      <li>Press the Home button, then the Apps button</li>
-      <li>Tap the <b>Settings</b> app</li>
-      <li>From <i>Wireless and Networks</i>, Select <b>Wi-Fi</b></li>
-      <li>If needed, slide <b>Wi-Fi</b> on, then select your organization's
-        Wi-Fi network name from the list (the name will end in <code>-user</code>)</li>
-      <li>Enter the <b>username</b> and <b>password</b> created by Brightgate.
-        <b>Note:</b> The first time you add your Android phone to the network,
-        you will be asked to accept a certificate. Select <b>Continue</b> to
-        add the certificate. You're welcome to read more in <a href="#quick-word-certificates">a
-          quick word about certificates</a>.</li>
-      <li>Tap <b>Connect</b></li>
-    </ol>
-    <h4 id="add-windows-network">Add a Windows computer to your Wi-Fi network</h4>
-    <p>Once you have a user name and password created for your Wi-Fi network,
-      add your Windows computer to the network with these steps:</p>
-    <p><b><i>Note:</i></b><i> See <a href="#help-your-team-get-online">help
-          your team get online</a> if you haven't yet created a user name and
-        password for the Wi-Fi network.</i></p>
-    <p>Your Windows 10 computer will automatically find all wireless networks in
-      range.</p>
-    <ol>
-      <li>Click the Wi-Fi icon in the taskbar on the bottom right corner of your
-        screen to view the available networks. </li>
-      <li>Select the enterprise Wi-Fi network name provided by your
-        administrator from the dropdown list; the name will typically end in <code>-user</code>.
-      </li>
-      <li>Click <b>Connect</b>
-        <div> <img src="./images/windows-auto-connect.png" alt="Automatically connect to Wi-Fi">
-        </div>
-      </li>
-      <li>Wait for Windows to check network requirements
-        <div> <img src="./images/windows-check-requirements.png" alt="Checking requirements">
-        </div>
-      </li>
-      <li>Enter the username and password you created in the Brightgate
-        application, then click <b>OK</b>.
-        <div> <img src="./images/windows-enter-password.png" alt="Provide your username and password">
-        </div>
-        <br>
-        After a moment, if your credentials are correct, your machine will
-        connect to the Wi-Fi network connect, displaying <code>Connected,
-          secured</code> as its status. </li>
-      <li>The first time you add your Windows machine to the network, you may be
-        asked to accept a new certificate. This may also happen if the
-        certificate has been renewed recently. <b>Important:</b> Do not connect
-        unless you are in a location you expect to see this network. Then select
-        <b>Continue</b> to add the certificate. You're welcome to read more in <a
-          href="#quick-word-certificates">a quick word about certificates</a>. </li>
-    </ol>
-    <p>If the process to connect automatically fails, or your computer does not
-      see your enterprise network, use this procedure to connect manually:</p>
-    <ol>
-      <li>Click on Cortana ("Ask me anything" box in taskbar)
-        <div> <img src="./images/windows-cortana.png" alt="Click on Cortana"> </div>
-      </li>
-      <li>Type “Control Panel” to open the Control Panel
-        <div> <img src="./images/windows-control-panel.png" alt="Control panel">
-        </div>
-      </li>
-      <li>Open <b>Network and Internet</b>
-        <div> <img src="./images/windows-network-and-internet.png" alt="Network and internet">
-        </div>
-      </li>
-      <li>Open the <b>Network and Sharing Center</b>
-        <div> <img src="./images/windows-network-and-sharing.png" alt="Network and Sharing Center">
-        </div>
-      </li>
-      <li>Select <b>Set up a new connection or network</b>
-        <div> <img src="./images/windows-set-up-new-connection.png" alt="New connection">
-        </div>
-      </li>
-      <li>Enter the enterprise network name that your administrator provided
-        (which should typically end in <code>-user</code>). Select <b>WPA2-Enterprise</b>
-        as the <i>Security type</i>. Do not enter a security key. Windows will
-        now open the Wi-Fi configuration interface from the taskbar as described
-        previously. Complete the connection by providing the username and
-        password created in the Brightgate management application.
-        <div> <img src="./images/windows-enter-network.png" alt="Provide network name">
-        </div>
-      </li>
-    </ol>
-    <p>If a dialog box displays stating that the network "already exists", click
-      "Use the existing network." If you still fail to connect, use Windows's
-      Wi-Fi configuration to Forget the network as described in this <a href="https://social.technet.microsoft.com/wiki/contents/articles/31961.windows-10-forget-a-saved-wi-fi-network.aspx">helpful
-        community article from Microsoft</a>.</p>
-    <h3 id="add-iot-network">Add IoT devices to your Wi-Fi network</h3>
-    <p>IoT devices are those that share a common password. To view the password:</p>
-    <ol>
-      <li>Log in to the Brightgate management app</li>
-      <li>(Optional) Select your site from the list</li>
-      <li>Select <b>Network Configuration</b></li>
-      <li>From the list of networks, select the <code>*-device</code> network
-        to view the <b>Network Details</b></li>
-      <li>Click the eye icon to reveal the <i>Passphrase</i> for the network</li>
-      <li>In the app or display for the IoT device, add the device to the <code>*-device</code>
-        network, using the passphrase displayed in Step 4</li>
-    </ol>
-    <h3 id="help-guests-online">Help guests get online</h3>
-    <p>Add one-time users' devices, those that need only temporary access to
-      Wi-Fi, to the <code>*-guest</code> network, which uses a password that
-      administrators rotate.</p>
-    <ol>
-      <li>Log in to the Brightgate management app</li>
-      <li>(Optional) Select your site from the list</li>
-      <li>Select <b>Enroll a Guest User</b></li>
-      <li>Share the password with your guest with using any of these choices:
-        <ul>
-          <li>Tell the guest the current password that displays</li>
-          <li>Send the guest the current password by entering their phone
-            number, then clicking <b>Text Guest</b>. Your guest will receive
-            two SMS text messages. The first message provides the name of the
-            network for guests to use. The second message provides the password
-            to easily copy and paste from their phone, tablet, or laptop.</li>
-          <li>Show the guest the QR code to scan using their device's camera app
-          </li>
-        </ul>
-      </li>
-    </ol>
-    <p> <img src="./images/guest-enrollment.png" alt="Enroll guests"> </p>
-    <h2 id="secure-your-networks">Secure your networks</h2>
-    <p>Brightgate secures your networks automatically, working in the background
-      scanning every device added to your Brightgate networks, all the time. As
-      a result, administrators don't need to actively secure a Brightgate
-      network—compliance with security policies is enforced through the process
-      of authenticating users, then adding their devices to the network as well
-      as during our constant vigilance of network activity—unless alerted to do
-      so by the Brightgate appliance. This type of alert occurs if we find a
-      device is in violation of security policies, or acting oddly, as discussed
-      in <a href="#remediate-threats">remediate threats</a>.</p>
-    <h3 id="remediate-threats">Remediate threats</h3>
-    <p>When Brightgate identifies a vulnerability, you'll see an alert section
-      similar to this when you first log in:</p>
-    <p><img src="./images/security_alert.png" alt="Security alert"></p>
-    <p>When alerted to a vulnerability, administrators have two options:</p>
-    <ol>
-      <li>For a <i>specific</i> device, including the security policy violation
-        and suggestions about how to remediate the issue, click the alert
-        information and view <a href="#device-details">device details</a> to
-        understand the security policy violation and suggestions regarding how
-        to remediate the issue.</li>
-      <li>For <i>all</i> devices across all Brightgate-secured networks,
-        navigate from the main menu to view the <a href="#compliance-report">Compliance
-          Report</a>. From the Compliance Report, administrators may then
-        navigate to view the specific <a href="#device-details">device details</a>
-        to understand the security policy violation and suggestions regarding
-        how to remediate the issue.</li>
-    </ol>
-    <p><strong>Important:</strong> During the Alpha program, once the the threat
-      is resolved, administrators will need to view the trust group assigned to
-      the device and potentially move it from <code>quarantine</code> to the
-      appropriate trust group, which is discussed fully in <a href="#change-device-trust-group">change
-        a device's trust group assignment</a>.</p>
-    <h3 id="device-details">View device details</h3>
-    <p>Brightgate supplies details specific to each device on the network, which
-      you can access directly if alerted to do so when you first log in or, from
-      the main menu, <i>select your site &gt; Manage Devices &gt; click the
-        device name.</i></p>
-    <p>Details for each device on the network display, specifying if Brightgate
-      has identified any vulnerabilities. In this example, the device is using a
-      password that exposes both the device and network to potential attack.
-      Brightgate suggests a remedy, with helpful links to further information if
-      you'd like to know more about the issue. We also specify the time the
-      vulnerability was identified and when a repair, if any, was executed.</p>
-    <p>You can also view the network details for this device, including the
-      device's name on the network, IPv4 address, hardware address, whether the
-      device is active, and the time of the most recent scan for
-      vulnerabilities.</p>
-    <p>The <i>Access Control</i> displays the assigned trust group for the
-      device, which is discussed fully in <a href="#change-device-trust-group">change
-        a device's trust group assignment</a>.</p>
-    <p><img src="./images/device-details.png" alt="Device details"></p>
-    <h3 id="compliance-report">View the Compliance Report</h3>
-    <p>To view compliance information across all your Brightgate-secured
-      networks, from the main menu, <i>select your site &gt; Compliance Report.</i></p>
-    <p>If a device is currently violating policy, the red lightning icon will
-      display in the <i>Summary</i>. The <i>Summary</i> also displays the
-      total number of users currently enrolled in the network.<i> <br>
-      </i></p>
-    <p><i>Active Violations,</i> if any are currently identified, are listed in
-      priority order. Click the device name to <a href="#device-details">view
-        device details</a>, which fully describes the security policy violation
-      and suggests what should be done to remediatet the issue. <i>Resolved
-        Violations</i> provides a historical listing of vulnerabilities observed
-      and resolved within the network.</p>
-    <p><i>Trust Group Summary</i> displays a succinct list of compliance status
-      for all trust groups that the site maintains, across all networks (<code>*-user</code>,
-      <code>*-device</code>, or <code>*-guest</code>).</p>
-    <p>In this example, the network has 21 active devices, one of which is yet
-      to be scanned, and one that is using a password that exposes the device
-      and network to potential attack. </p>
-    <p><img src="./images/compliance-report.png" alt="Compliance report"></p>
-    <h3 id="view-devices-network">View devices on the network</h3>
-    <p>To view all devices on the network, from the main menu, <i>select your
-        site &gt; Manage Devices.</i> The parentheses next to Manage Devices is
-      the total number of all devices enrolled across all Brightgate-secured
-      networks for your organization.</p>
-    <p><img src="./images/manage-devices.png" alt="Manage devices"></p>
-    <h3 id="remove-devices">Remove devices</h3>
-    <p>Brightgate tracks device behavior based on those that are authenticated
-      to the network. As a result, devices are not explicitly removed from a
-      Brightgate network. Instead, the credentials used to add the device to the
-      network must be revoked. </p>
-    <p>In a future release, the user name and password associated with the user
-      who added the device to network will be revoked when their Google
-      credentials expire, which will prevent the device from being added to the
-      network with credentials that are no longer in use by the organization. <b><br>
-      </b></p>
-    <p><b>Note: </b>If the removal of a device is required, move the device to
-      the <code>unenrolled</code> trust group as described in the section <a href="#change-device-trust-group">Change
-        a device's trust group assignment</a> or contact Brightgate support for
-      assistance.</p>
-    <h3 id="change-device-trust-group">Change a device's trust group assignment</h3>
-    <p>Trust groups are how Brightgate protects the devices on your network and
-      reduces the risk that malware or viruses will spread. The trust group to
-      which a device is assigned affects both the level of trust for this device
-      and the device's access to to other devices when it is on your network.
-      Devices within a trust group communicate with and have access to both
-      other devices assigned to that trust group and devices assigned to trust
-      groups that are less trusted and known.</p>
-    <p>Devices that aren’t assigned to a trust group are<span>&nbsp;</span><code>unenrolled</code>,
-      which means they have not been explicitly granted access to the network.
-      They will not have credentials or be able to use your network. The most
-      common <code>unenrolled</code> devices will be IoT devices that have the
-      correct shared Wi-Fi password (PSK) but have not been authorized by an
-      administrator. To keep your network secure, we only permit network access
-      to devices that have been assigned into a Brightgate trust group. This
-      way, we can determine how trusted or known the device is, assign it to an
-      appropriate trust group, and watch the device's behavior to keep your
-      network secure. </p>
-    <p><b>Important:</b> During the Alpha program, all devices added to the <code>*-device</code>
-      network will be assigned to the <code>unenrolled</code> trust group.
-      Administrators will need to explicitly move devices to the appropriate
-      trust group to approve the addition of a device to this network.</p>
-    <p>To change a device's trust group assignment, from the main menu, <i>select
-        your site &gt; Manage Devices &gt; click the device name</i> to view the
-      Device Details. The trust group and their intended purpose are as follows:</p>
-    <dl>
-      <dt><code>core</code>:</dt>
-      <dd>The trust group reserved for the most trusted devices.</dd>
-      <dt><code>devices</code>:</dt>
-      <dd>The trust group for Internet of Things (IoT) devices, such as
-        thermostats or security cameras</dd>
-      <dt><code>guest</code>:</dt>
-      <dd>The trust group for devices that require temporary network access</dd>
-      <dt><code>quarantine</code>:</dt>
-      <dd>The trust group for devices that are behaving oddly</dd>
-      <dt><code>standard</code>:</dt>
-      <dd>The trust group most appropriate for devices owned by regular members
-        of your team</dd>
-      <dt><code>unenrolled</code>:</dt>
-      <dd>The trust group for all manually configured IoT devices or other
-        unknown devices.</dd>
-      <dt><code>internal</code>:</dt>
-      <dd>Reserved for Brightgate use.</dd>
-    </dl>
-    <p>From <i>Access Control</i>, display the available <i>Trust Group</i>
-      choices, then select the appropriate trust group to which to move the
-      device. In the example, the device is being moved into the <code>standard</code>
-      trust group:</p>
-    <p><img src="./images/move-trust-group.png" alt="Move trust group"></p>
-    <h3 id="rotate-passwords">Rotate passwords</h3>
-    <p>During the Alpha program, passwords are not automatically rotated.
-      However, administrators may manually change the password for the <code>*-guest</code>
-      and <code>*-device</code> network. From the main menu, <i>select your
-        site &gt; Network Configuration</i> to display the networks secured by
-      Brightgate. To change the password:</p>
-    <ol>
-      <li>Select the network name, either <code>*-guest </code>or <code>*-device.</code></li>
-      <li>Click the Settings button to edit the details for this network</li>
-      <li>Change the passphrase. Note: if you wish to view the current
-        passphrase, click the eyeball icon.</li>
-      <li>Click <b>Save</b></li>
-    </ol>
-    <p><img src="./images/edit-network-details.png" alt="Edit network details"></p>
-    <h2 id="review-network-configuration-and-users">Review network configuration
-      and users</h2>
-    <p>The Brightgate management app displays information regarding the
-      configuration of all Brightgate-secured networks for your organization as
-      well as network users across all networks. </p>
-    <h3 id="network-configuration">View your network configuration</h3>
-    <p>To view your networks, from the main menu, <i>select your site &gt;
-        Network Configuration.</i></p>
-    <p>The networks defined for your site display as well as network
-      configuration, including the networks' DNS server and WAN address.</p>
-    <p><img src="./images/network-configuration.png" alt="Network configuration"></p>
-    <p>To view the details for a particular network, select it from the display.
-      Brightgate displays for each network:</p>
-    <ul>
-      <li><b>Authentication Method:</b> the method used to authenticate to the
-        network. For the <code>*-user</code> network, the method is WPA-EAP.
-        For the <code>*-devices</code> and <code>*-guest</code> network, the
-        method is WPA-PSK.</li>
-      <li><b>Trust Group Configuration:</b> the trust groups available for this
-        network.
-        <ul>
-          <li><code>*-user network</code>
-            <ul>
-              <li><code>core</code>: The trust group reserved for the most
-                trusted devices.</li>
-              <li><code>standard</code>: The trust group most appropriate for
-                devices owned by regular members of your team</li>
-            </ul>
-          </li>
-          <li><code>*-device network</code>
-            <ul>
-              <li><code>devices</code>: The trust group for Internet of Things
-                (IoT) devices, such as thermostats or security cameras</li>
-              <li><code>quarantine</code>: The trust group for devices that are
-                behaving oddly</li>
-              <li><code>unenrolled</code>: The trust group for all manually
-                configured IoT devices or other unknown devices</li>
-            </ul>
-          </li>
-          <li><code>*-guest network</code>
-            <ul>
-              <li><code>guest</code>: The trust group for devices that require
-                temporary network access</li>
-            </ul>
-          </li>
-        </ul>
-      </li>
-      <li>The <b>Passphrase</b> is provided for both networks that share a
-        common password (<code>*-device</code> and <code>*-guest</code>), which
-        can be viewed by clicking the eyeball icon.</li>
-    </ul>
-    <h3 id="user-basics">About your users</h3>
-    <p>The process to <a href="#help-your-team-get-online">help your team get
-        online</a> creates a user in the Brightgate cloud. Users in the
-      Brightgate cloud by default may access only part of the Brightgate
-      management app:</p>
-    <ol>
-      <li>Use their Wi-Fi credentials to bring their devices online</li>
-      <li>View the name of the <code>*-user</code> network</li>
-      <li>View the name and passphrase for both the <code>*-devices</code> and
-        <code>*-guest </code>networks</li>
-      <li>Access <b>Enroll a Guest User</b> to tell or text the guest network
-        password to guests</li>
-    </ol>
-    <p>Users with administrative privileges can use <i>all</i> parts of the
-      Brightgate management app, all of which are covered in this guide.
-      Administration of a Brightgate-secured network requires a change in
-      privilege for a defined user. During the Alpha program, this privilege
-      change can be enabled only by calling Brightgate. </p>
-    <p>To view users created for the Brightgate cloud, from the main menu, <i>select
-        your site &gt; Users.</i></p>
-    <p><b>Note:</b> In certain circumstances, an administrator may need access
-      to only the local appliance, such as when Internet connectivity is lost.
-      In this case, a <i>Site-Local Administrator</i> displays. Additional
-      site-local administrators may be added by using the + icon; however,
-      during the Alpha program, we recommend calling Brightgate for assistance
-      if this type of user is required.</p>
-    <p><img src="./images/display-users.png" alt="Display users"></p>
-    <p>Click the user for whom you'd like to view details. To email the user,
-      click their email ID to open your email and send a message. To send this
-      user a message, click the Message icon.</p>
-    <p><img src="./images/user-details.png" alt="User details"></p>
-    <!-- BRIGHTGATE CONTENT END -->
-    <!-- BRIGHTGATE FOOT INSERTION POINT -->
-  </body>
+
+<head>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  <title>Brightgate Alpha Guide</title>
+  <!-- BRIGHTGATE HEAD INSERTION POINT -->
+</head>
+
+<body>
+  <!-- BRIGHTGATE CONTENT START -->
+  <h1 id="brightgate-alpha-guide">Brightgate Alpha Guide</h1>
+  <p><i>NDA REQUIRED</i></p>
+  <img src="./images/Blue_NoBoarderArtboard-1@1.5x.png" alt="Brightgate Logo">
+  <p>Q1 2019</p>
+  <p>Version 1.0</p>
+  <h2 id="about-this-guide">About this guide</h2>
+  <p>We wrote this guide to help you understand both how Brightgate secures
+    your network and how to administer your Brightgate networks. We've also
+    included some help content that you can share directly with end users or
+    use as input to your own in-house help content.</p>
+  <p>Please jump to topics of interest or read the guide in its entirety.</p>
+  <ul>
+    <li>Technology concepts:
+      <ul>
+        <li><a href="#why-brightgate">Why Brightgate</a></li>
+        <li><a href="#how-we-secure">How we secure your business and
+            customers</a></li>
+      </ul>
+    </li>
+    <li>Network administration:
+      <ul>
+        <li><a href="#install-brightgate">Install Brightgate</a></li>
+        <li><a href="#access-brightgate-management-app">Access the Brightgate
+            management app</a></li>
+        <li><a href="#get-your-networks-up">Get your Brightgate networks up
+            and running</a></li>
+        <li><a href="#secure-your-networks">Secure your networks</a></li>
+        <li><a href="#help-guests-online">Help guests get online</a></li>
+        <li><a href="#review-network-configuration-and-users">Review network
+            configuration and users</a></li>
+      </ul>
+    </li>
+    <li>Online help for network users:
+      <ul>
+        <li><a href="#add-mac-network">Add a Mac to your Wi-Fi network</a></li>
+        <li><a href="#add-iphone-network">Add an iPhone to your Wi-Fi
+            network</a></li>
+        <li><a href="#add-android-phone-network">Add an Android phone to your
+            Wi-Fi network</a></li>
+        <li><a href="#add-windows-network">Add a Windows computer to your
+            Wi-Fi network</a></li>
+        <li><a href="#help-guests-online">Help guests get online</a></li>
+      </ul>
+    </li>
+  </ul>
+  <h3>Audience</h3>
+  <p>This guide is written primarily for those administering the Brightgate
+    appliance during our Alpha program; end user content is included either to
+    be provided directly to your end users or to use as an aid in creating
+    online help.</p>
+  <h2 id="why-brightgate">Why Brightgate</h2>
+  <p>Business networks are under attack. And attacks are becoming both more
+    frequent and more automated. As a result, your data—the lifeblood of your
+    business, from accounts receivable to contracts to your customer's data
+    <i>and</i>
+    the devices that process it—present an ever-increasing risk. While big
+    enterprises can spend millions on a team of IT experts, and the systems
+    those experts require, small businesses don't have that kind of budget or
+    technical knowledge, increasingly leading hackers to target small
+    business. Small businesses need an automated response to fend off bots,
+    phishing, viruses, ransomware, exfiltration, and malware. That’s why small
+    businesses need precisely the type of platform that we’ve developed at
+    Brightgate: one that enables automated protection to prevent bad actors
+    from misusing both your networks and the resources they connect. </p>
+  <h3 id="the-power-of-machine-learning">Harness the power of machine learning
+  </h3>
+  <p>Brightgate observes your devices and their behavior all the time when
+    they are on the network. Our machine learning creates a model of usual
+    behavior on your network, so odd behavior is immediately identified. But
+    we don’t stop with simply identifying odd behavior. We move a potentially
+    infected device into quarantine to prevent it from infecting other devices
+    on the network, then limit its network access until the issue is resolved.
+    In addition, we notify the device's owner and network administrator of the
+    issue, using language that’s easily understood, and suggest appropriate
+    actions to take so the device can be safely updated or sanitized and again
+    permitted access to the network. We'll even help you with remote IT to
+    resolve the problem. Brightgate also blocks online destinations that we
+    know are bad news—phishing, malware, and spyware. The Brightgate security
+    team also stays on top of the latest threats. We automatically update
+    every platform to defend against each new threat, covering your entire
+    network—all your devices—all the time.</p>
+  <h3 id="protect-your-data">Protect your data</h3>
+  <p>Brightgate gets it. Small businesses like yours are very good at the
+    skills your business was founded on—whether it’s designing systems,
+    serving a meal, or offering consulting services. The core competence of
+    your business is not in network security, but <b>ours is</b>. We
+    understand that you need to adopt technologies that matter to your
+    business without fear that you're putting your business at risk. As the
+    technology you adopt becomes more sophisticated and interconnected, your
+    risk of exposure to bad actors increases. Cybersecurity should, then, be a
+    critical part of your technology focus. Until now, though, this has not
+    been the case. Network security has been, at best, an afterthought as
+    cybersecurity offerings have been both too complex and too expensive, and
+    many small business owners like you have been unable to find a solution
+    that scales appropriately, focusing too much either on home user needs or
+    on enterprise requirements.</p>
+  <h3 id="easy-onboarding">Easy onboarding</h3>
+  <p>Brightgate solves the problem of overly complex solutions with an
+    intelligent, easy-to-use solution that secures your network. We use a
+    simple approach to configuration and onboarding, automating most decisions
+    and implementation. This removes the need for highly technical, expensive
+    staff. Our simple subscription model make your network security spend more
+    efficient. And, our technology scales to your business, hitting the sweet
+    spot between a home office and a large enterprise.</p>
+  <h3 id="constant-monitoring">Constant monitoring, immediate notification</h3>
+  <p>With Brightgate, you know which devices are on your network; what those
+    devices are doing on the Internet, whether data is being passed out of
+    your network, and to where; whether devices on your network are using a
+    default password; and who has been provided guest network access.
+    Importantly, Brightgate technology quarantines devices that are acting out
+    of character, protecting your network from infection. We also notice if
+    data has been or is being sent to known bad actors, and we can identify
+    the amount of data sent.</p>
+  <h3 id="ease-ofuse">Ease of use</h3>
+  <p>Brightgate is designed to ensure your business can easily reap the
+    benefits of automated cybersecurity. The simplicity of managing our
+    cybersecurity solution, with alerts that make the issue easy to understand
+    and specify the level of urgency, makes Brightgate’s technology easy to
+    administer. </p>
+  <p>Your Brightgate appliance helps you easily and quickly:</p>
+  <ul>
+    <li>Add people and their devices to your network</li>
+    <li>Terminate network access</li>
+    <li>Grant temporary (“guest”) network access</li>
+    <li>Identify devices that are acting suspiciously to reduce cybersecurity
+      risks</li>
+    <li>Protect your network from suspicious behavior</li>
+    <li>Audit your network for compliance</li>
+  </ul>
+  <h3 id="prevent-ransomware-attacks">Prevent ransomware attacks</h3>
+  <p>Besides the potential privacy issues, if your data is being held for
+    ransom, reconstructing your data can be almost impossible and the ransom
+    itself may be excruciatingly expensive. Brightgate is a valued partner to
+    small businesses like yours searching for a zero administration answer to
+    today’s cybersecurity risks.</p>
+  <h2 id="how-we-secure">How we secure your business and customers</h2>
+  <p> We built our product from the ground up, after extensive research, to
+    ensure that a cybersecurity platform used by small businesses would be
+    both easy to use and easy to administer. A couple of key ideas informed
+    our design:</p>
+  <ul>
+    <li><b>Access:</b> What devices should have access to this device access?
+      And, looking at it from the opposite angle, what devices should this
+      have device have access to?</li>
+    <li><b>Trust:</b> How much do you trust this device when it's on your
+      network?</li>
+  </ul>
+  <p>We recognized that building a secure network means that devices
+    fulfilling different functions in your business should be provided
+    different types of access to one another. It's fundamental to our design:
+    access is given where it's needed. Sometimes that's one-way. Important
+    computers should be able to configure a thermostat, for example, but that
+    thermostat shouldn't be allowed to attack those computers.</p>
+  <p>Next, we designed a more secure method of authorizing devices to use your
+    networks. We make it easy for every employee to have their own username
+    and password to connect devices like laptops, tablets, or phones. Devices
+    that share a common Wi-Fi password, like thermostats or light switches,
+    are on a separate network.</p>
+  <p>The end result? We created <b><i>trust groups</i></b></p>
+  <h3 id="trust-groups">Trust groups</h3>
+  <p>The Brightgate platform assigns each device connected to your network
+    into a <b>trust group</b>—a logical grouping of connected devices. We
+    make it easy to manage your network by providing default trust groups and
+    automating trust group assignment of every device.</p>
+  <p>Trust groups are how we protect the devices on your network and reduce
+    the risk that malware or viruses will spread. The trust group to which a
+    device is assigned affects both the level of trust for this device and the
+    device's access to to other devices when it is on your network. Devices
+    within a trust group communicate with and have access both to other
+    devices assigned to that trust group and to devices assigned to trust
+    groups that are less trusted and known.</p>
+  <p>The less we know and trust a device, the less access we should give that
+    device. That keeps untrusted devices from accessing or attacking other
+    devices on your network.</p>
+  <h4 id="network-authentication-and-trust-groups">Network authentication and
+    trust groups work together</h4>
+  <p>The way you add a device to your network affects the trust group we
+    assign that device into. Think of it this way: phones and laptops owned by
+    employees present a different type of risk than a Wi-Fi enabled
+    thermostat. While the various types of authentication are beyond the scope
+    of this guide, it's helpful to understand that Brightgate supports
+    different types of network authentication, which all use WPA2. </p>
+  <ol>
+    <li>An Authorized User network that uses Extensible Authentication
+      Protocol (EAP). With this type of network, each network user has their
+      own login ID and password. You can read more about EAP in this <a
+        href="http://en.wikipedia.org/wiki/Extensible_Authentication_Protocol">helpful
+        article from Wikipedia</a></li>
+    <li>A Devices network that uses Pre-Shared Key (PSK) authentication. With
+      this type of network, all network users share the same password. A
+      pre-shared key (PSK) allows anyone who has the key to use the wireless
+      network.</li>
+    <li>A Guest network. With this type of network, a network user does not
+      need a login ID, but is provided a password that periodically expires.
+    </li>
+  </ol>
+  <p><strong>Note:</strong><span>&nbsp;</span>We recommend including the
+    suffix in the network name so it is clear to people choosing from among
+    them when adding a device or logging on for the first time. For example,
+    Acme Corp would name the
+    networks<span>&nbsp;</span><code>Acme-user</code>,<span>&nbsp;</span><code>Acme-device</code>,
+    and<span>&nbsp;</span><code>Acme-guest</code><span>&nbsp;</span>when first
+    setting up their network. During the Alpha program, Brightgate will set up
+    your networks following this recommendation.</p>
+  <h3 id="automated-trust-group-assignment">Automated trust group assignment
+  </h3>
+  <p>Brightgate automatically assigns each device to a network and trust
+    group, following security policies that make sense based on the device’s
+    function; thermostats, security cameras, and other Internet-enabled tools
+    serve your organization in one way—phones and laptops serve your
+    organization in an entirely different way. Each of these devices presents
+    a different type of risk and requires a different ability to communicate
+    with other devices. The result? We’ll assign them to different trust
+    groups.</p>
+  <p>Our assignment of devices into a trust group is the result of thoughtful
+    planning, from both usability and security perspectives. A network
+    administrator's laptop, for example, must be able to communicate with a
+    Wi-Fi enabled thermostat to set it up properly, so the thermostat must be
+    accessible to the laptop that wishes to use it. When a device is added to
+    your network, Brightgate uses the type of authentication provided by the
+    device as part of the process to assign it to a trust group. If that
+    assignment doesn't suit your company policies, you can move the device as
+    discussed in the section <a href="#change-device-trust-group">Change a
+      device's trust group assignment</a>.</p>
+  <p>A Wi-Fi enabled thermostat is a good example of why assignment into a
+    trust group makes your network safer. You want a thermostat to be
+    available to a known and trusted employee device, but you likely don't
+    want a laptop assigned the <code>guest</code> trust group to communicate
+    to that same thermostat. This makes sense—you typically don’t want guests
+    adjusting your thermostat, nor do you want guest laptops communicating
+    with and potentially infecting devices that you already trust. Moreover,
+    the thermostat's <code>devices</code> trust group means that a rogue
+    thermostat won't be attacking either guest or employee devices.</p>
+  <p>The <code>core</code> trust group is most typically populated with
+    devices owned by network administrators or devices that are critical to
+    your business. Devices assigned to the <code>standard</code> trust group
+    are typically employee laptops and phones. In this setup, should an
+    employee laptop become infected with malware, that laptop will never be
+    able to infect the network administrator devices in the <code>core</code>
+    trust group. And the moment that laptop starts acting oddly, Brightgate
+    moves it to <code>quarantine</code>, so it can't infect the devices in
+    the <code>standard</code> trust group either.</p>
+  <p>Devices that aren’t assigned to a trust group are <code>unenrolled</code>,
+    which means they have not been explicitly granted access to the network.
+    They will not have credentials or be able to use your network. The most
+    common unenrolled devices will be IoT devices that have the correct shared
+    Wi-Fi password (PSK) but have not been authorized by an administrator. To
+    keep your network secure, we only permit network access to devices that
+    have been assigned into a Brightgate trust group. This way, we can
+    determine how trusted or known the device is, assign it to an appropriate
+    trust group, and watch the device's behavior to keep your network secure.
+  </p>
+  <p>Devices added to the Authorized User network are automatically added to
+    the <code>standard</code> trust group, though administrators may move
+    them to a different trust group, as discussed in the section <a
+      href="#change-device-trust-group">Change
+      a device's trust group assignment</a>. Devices added to the Devices
+    network are automatically assigned to the <code>devices</code> trust
+    group. And guests are assigned to the <code>guest</code> trust group.</p>
+  <p>This table provides examples of device types, network type, and default
+    trust group assignment:</p>
+  <table>
+    <thead>
+      <tr>
+        <th style="text-align: left;">Device Type</th>
+        <th style="text-align: left;">Network Type</th>
+        <th style="text-align: left;">Default Trust Group</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="text-align: left;">Laptop</td>
+        <td style="text-align: left;">Authorized User (EAP)</td>
+        <td style="text-align: left;"><code>standard</code></td>
+      </tr>
+      <tr>
+        <td style="text-align: left;">Tablet</td>
+        <td style="text-align: left;">Authorized User (EAP)</td>
+        <td style="text-align: left;"><code>standard</code></td>
+      </tr>
+      <tr>
+        <td style="text-align: left;">smartphone</td>
+        <td style="text-align: left;">Authorized User (EAP)</td>
+        <td style="text-align: left;"><code>standard</code></td>
+      </tr>
+      <tr>
+        <td style="text-align: left;">smart thermostat</td>
+        <td style="text-align: left;">Devices (PSK)</td>
+        <td style="text-align: left;"><code>devices</code></td>
+      </tr>
+      <tr>
+        <td style="text-align: left;">Guest contractor laptop</td>
+        <td style="text-align: left;">Guest</td>
+        <td style="text-align: left;"><code>guest</code></td>
+      </tr>
+    </tbody>
+  </table>
+  <h4 id="default-trust-groups">Default trust groups</h4>
+  <p>The Brightgate appliance provides a default set of trust groups, so
+    network administration isn’t a chore. During the alpha program, the
+    default trust group is the trust group into which a device is initially
+    enrolled. Devices authenticated using EAP are automatically added to the
+    <code>standard</code>
+    trust group. Devices authenticated using PSK are automatically assigned to
+    the <code>devices</code> trust group. Administrators can move devices to
+    a different trust group, as discussed in the section <a
+      href="#change-device-trust-group">Change
+      a device's trust group assignment</a>.</p>
+  <p>View the default trust groups for your network as discussed in the
+    section <a href="#network-configuration">View your Network Details</a>,
+    which lists the <i>Trust Group Configuration for each network</i>:</p>
+  <ul>
+    <li>For the <code>*-users</code> network:
+      <ul>
+        <li><code>core</code>: The trust group reserved for the most trusted
+          devices</li>
+        <li><code>standard</code>: The trust group most appropriate for
+          devices owned by regular members of your team</li>
+      </ul>
+    </li>
+    <li>For the <code>*-device </code>network:
+      <ul>
+        <li><code>devices</code>: The trust group for Internet of Things (IoT)
+          devices, such as thermostats or security cameras</li>
+        <li><code>quarantine</code>: The trust group for devices that are
+          behaving oddly</li>
+        <li><code>unenrolled</code>: The trust group for all manually
+          configured IoT devices or other unknown devices.</li>
+      </ul>
+    </li>
+    <li>For the <code>*-guest</code> network:
+      <ul>
+        <li><code>guest</code>: The trust group for devices that require
+          temporary network access</li>
+      </ul>
+    </li>
+  </ul>
+  <h3 id="quarantined-devices">Quarantined devices</h3>
+  <p>Quarantined devices are separated from other devices on your network to
+    prevent potential infection and maintain security. Quarantine serves as a
+    virtual “jail”. It’s where we put devices that look like they might be
+    infected with a virus or bot. In short, we’re preventing devices that
+    exhibit odd or suspicious behavior from communicating with the Internet as
+    well as with other devices on your network. Quarantine stops devices from
+    infecting other devices, allowing you to investigate them (with our
+    helpful suggestions) and fix the issue at hand.</p>
+  <p>For example, if a thermostat assigned to the <code>devices</code> trust
+    group begins slowly dripping data to a URL with an unusual address or if
+    an automated security check of a laptop fails, the suspicious device is
+    automatically removed from its assigned trust group and moved to
+    <code>quarantine</code>.</p>
+  <p>You’ll get an alert when a vulnerability is identified and we'll move the
+    affected device into quarantine. We’ll also include information about why
+    we moved the device into quarantine. Once the identified issue is
+    resolved, the device is returned to the network and its previously
+    assigned trust group.</p>
+  <h2 id="install-brightgate">Install Brightgate</h2>
+  <p>During the Alpha program, Brightgate will install your appliance, set up
+    your networks, and create an administrator account to get you started.</p>
+  <h2 id="appliance-overview">Appliance overview</h2>
+  <p>This appliance provides the following:</p>
+  <ul>
+    <li>4 LAN connections</li>
+    <li>1 WAN connection</li>
+    <li>Support for two additional PoE+ LAN ports</li>
+    <li>Wall screws and anchors for mounting to a drywall surface</li>
+    <li>2x2 2.4GHz WiFi (a/b/g/n) and 2x2 5GHz WiFi (n/ac) with 4 dipole
+      antennas</li>
+  </ul>
+  <h3 id="front-panel">Front panel</h3>
+  <p>The front panel contains the following:</p>
+  <ol type="A">
+    <li>USB 3.0 (for future accessories)</li>
+    <li>LAN Ethernet 1G </li>
+    <li>WAN Ethernet 1G</li>
+    <li>Status indicators</li>
+    <li>Reset button</li>
+    <li>DC input</li>
+  </ol>
+  <p><img src="./images/front-panel.png" alt="Front panel"></p>
+  <h3 id="indicators">Indicators</h3>
+  <p>All status indicators are green. The indicators are lit when the port is
+    in normal operation with the exception of the fault indicator. In future
+    releases, the fault indicator will be lit only when a fault is detected
+    with the hardware. If the fault indicator lights, please contact
+    Brightgate support.</p>
+  <ol type="A">
+    <li>LTE (Reserved for future use)</li>
+    <li>Power (DC power present)</li>
+    <li>FAULT (Service action required)</li>
+    <li>2.4 GHz Wi-Fi</li>
+    <li>LAN Ethernet Port</li>
+    <li>WAN Ethernet Port</li>
+    <li>5GHz Wi-Fi</li>
+  </ol>
+  <p><img src="./images/indicators.png" alt="Indicators"></p>
+  <h2 id="access-brightgate-management-app">Access the Brightgate management
+    app</h2>
+  <p>The Brightgate management app provides all the information you need to
+    administer and secure your network. Access the management app from your
+    web browser by pointing your browser to <a
+      href="https://svc1.b10e.net">https://svc1.b10e.net</a>.</p>
+  <p>Once logged in, you can view your account details, open the Brightgate
+    Admin Guide, log out, or select your site (only if you have multiple sites
+    to manage). If you are administering only one site, you'll see the two
+    main sections immediately upon logging in:</p>
+  <ol>
+    <li><i>Serious Alerts:</i> Alerts of detected vulnerabilities are visible
+      immediately when you log in. This section displays only if Brightgate
+      has identified known vulnerabilities.</li>
+    <li><i>Tools</i>
+      <ul>
+        <li><b>Network Configuration</b>, which provides information about the
+          networks defined for your organization. From here, navigate to view
+          <b>Network Details</b>.</li>
+        <li><b>Compliance Report</b>, which lists potential vulnerabilities.
+          From here, navigate to view <b>Device Details</b> for information
+          about devices with identified vulnerabilities.</li>
+        <li><b>Manage Devices</b>, which lists all devices across all
+          Brightgate-secured networks. From here, navigate to view <b>Device
+            Details</b> for information about active and known devices.</li>
+        <li><b>Users</b>, which lists both administrators and regular users
+          defined for the Brightgate cloud as well as any administrators
+          defined specifically for a local appliance. From here, navigate to
+          view <b>User Details</b> to contact a user by email or text.</li>
+        <li><b>Enroll Guest User</b>, which enables easy sharing of the
+          current password to add devices to the guest network.</li>
+      </ul>
+    </li>
+  </ol>
+  <p><img src="./images/initial-login.png" alt="Initial login"></p>
+  <h2 id="get-your-networks-up">Get your Brightgate networks up and running</h2>
+  <p>Administering networks managed by Brightgate doesn't require constant
+    oversight because we're doing so much behind the scenes. We're constantly
+    monitoring your network and device behavior for vulnerabilities as well as
+    managing the trust group assignment for your devices. As a result, with
+    Brightgate, administration of your network involves the following tasks:</p>
+  <ul>
+    <li>Get Started:
+      <ol>
+        <li><a href="#set-up-your-networks">Set up your networks</a></li>
+        <li><a href="#access-brightgate-management-app">Access the Brightgate
+            management app</a></li>
+        <li><a href="#help-your-team-get-online">Help your team get online<br>
+          </a></li>
+        <li><a href="#help-your-team-add-devices">Help your team add their
+            devices</a></li>
+        <li><a href="#add-iot-network">Add IoT devices to your Wi-Fi network</a>
+        </li>
+      </ol>
+    </li>
+    <li><a href="#secure-your-networks">Secure your networks</a></li>
+    <li><a href="#help-guests-online">Help guests get online</a></li>
+    <li><a href="#review-network-configuration-and-users">Review network
+        configuration and users</a></li>
+  </ul>
+  <h3 id="set-up-your-networks">Set up your networks</h3>
+  <p>You'll need to set up your Wi-Fi networks to start using the security
+    features of the Brightgate appliance. We'll set up your Wi-Fi networks for
+    you during the Alpha program, but it's helpful to know the overall
+    process.</p>
+  <p><b>Note:</b> Wired ports are also available. During the Alpha program, a
+    device or switch plugged into a wired port will be assigned the
+    <code>standard</code>
+    trust group. In a future release, you will be able to change the trust
+    group assignment for a port's connected devices ando require that a device
+    connected to a port present an 802.1X credential to be added to a network.
+    (Similar to WPA2-EAP.) </p>
+  <p>Start by deciding whether you're:</p>
+  <ul>
+    <li>Creating a new Wi-Fi network. If you've never had a network at this
+      location, then you'll start with creating a new network. The
+      instructions to create a new network are explained in the section <a
+        href="#create-new-network">Create
+        a new network</a></li>
+    <li>Replacing an existing Wi-Fi network. If you're replacing an existing
+      network, the decision about whether to re-use the network name and
+      password is based on the level to which you trust the current network.
+      If you trust what you've administered previously, then, by all means,
+      re-use the network name and password. If you're uncertain, then create a
+      new network name and password. During the Alpha program, overlaying an
+      existing Wi-Fi network requires Brightgate support.</li>
+  </ul>
+  <p> The network name is also called a Service Set ID (SSID). If you don't
+    know what that is, you're welcome to read more about it in this <a
+      href="https://en.wikipedia.org/wiki/Service_set_%28802.11_network%29#Service_Set_ID_%28SSID%29">helpful
+      article from Wikipedia.</a></p>
+  <p>This graphic illustrates the basic process of deciding how to set up your
+    network:</p>
+  <p><img src="./images/setup_flow.png" alt="Setup process for administrators">
+  </p>
+  <p>As discussed in <a href="#network-authentication-and-trust-groups">network
+      authentication and trust groups work together</a>, Brightgate creates
+    three networks based on the method a device uses to authenticate to the
+    network: </p>
+  <ul>
+    <li><b>User:</b> each network user has their own login ID and password.</li>
+    <li><b>Device:</b> all network users share the same password.</li>
+    <li><b>Guest:</b> a network user does not need a login ID, but is provided
+      a password that periodically rotates.</li>
+  </ul>
+  <h3 id="create-new-network">Create a new network</h3>
+  <p>When you first set up your Brightgate appliance, you'll need to name your
+    networks to reflect the SSID, or network name, that you would like to use
+    at your site. </p>
+  <ol>
+    <li>Log in to the Brightgate management app</li>
+    <li>(Optional) Select your site from the list</li>
+    <li>Select <b>Networks</b> to view the complete list of
+      Brightgate-secured networks. <b>Note:</b> The default network names are
+      <code>setme-users</code>, <code>setme-devices</code>, and
+      <code>setme-guest</code>.</li>
+    <li>Click the network or the right-facing arrow (&gt;) to display <b>Network
+        Details</b>. </li>
+    <li>Select the red <b>Settings</b> icon <img
+        src="./images/settings-icon.png" alt="Settings icon">.</li>
+    <li>Edit the <b>SSID (Network Name)</b> to the name you'd prefer, then
+      press <b>SAVE</b>. <b>Note:</b> Maintain the suffix of
+      <code>-users</code>,
+      <code>-devices</code>, or <code>-guest</code> to more easily
+      differentiate among your Brightgate-secured networks.</li>
+  </ol>
+  <h3 id="help-your-team-get-online">Help your team get online</h3>
+  <p>The Brightgate management app supports Google Sign-In and Sign-In with
+    Microsoft. <b>Note:</b> During the Alpha program, only Google Sign-In and
+    Sign-In with Microsoft are supported for user logins. Other identity
+    providers will be available in future releases.</p>
+  <p>When you're logging in to the Brightgate management app (or if you're
+    having your team log in), we authenticate you with your Google or
+    Microsoft account, then walk you through creating and storing a Wi-Fi user
+    name and password. Everyone needs to store their Wi-Fi user name and
+    password to add other devices (like phones and tablets) to the Wi-Fi
+    network reserved for authenticated users(typically the one with the suffix
+    <code>-user</code>).</p>
+  <ol>
+    <li>Navigate to your <a href="https://svc1.b10e.net">Brightgate
+        management app</a></li>
+    <li>Press the <b>Login with Google</b> or <b>Login with Microsoft</b>
+      button to log in to the Brightgate cloud.
+      <div> <img src="./images/login_shot.png" alt="Logging in to Brightgate">
+      </div>
+    </li>
+    <li>Provide credentials for either your Google or Microsoft account.
+      <div> <img src="./images/select_account.png" alt="Select Google account">
+        <img src="./images/select_account_ms.png"
+          alt="Select Microsoft account">
+      </div>
+    </li>
+    <li>Create a Wi-Fi user name and password using the wizard provided by the
+      Brightgate management app. </li>
+    <li>Use your Wi-Fi user name and password to add devices </li>
+  </ol>
+  <h3 id="help-your-team-add-devices">Help your team add their devices</h3>
+  <p>Add devices that use both your user ID and Wi-Fi password to the
+    <code>*-user</code>
+    network. These are typically devices you own that use the Wi-Fi user name
+    and password created in the Brightgate management app, such as a laptop,
+    phone, or tablet. For example:</p>
+  <ul>
+    <li><a href="#add-mac-network">Add a Mac to your network</a></li>
+    <li><a href="#add-iphone-network">Add an iPhone to your network</a></li>
+    <li><a href="#add-android-phone-network">Add an Android phone to your
+        network</a></li>
+    <li><a href="#add-windows-network">Add a Windows computer to your
+        network</a></li>
+  </ul>
+  <h4 id="quick-word-certificates">A quick word about certificates</h4>
+  <p>The first time a device connects to the authenticated users network, in
+    most cases the device will present a certificate for you to accept. This
+    certificate confirms that the network is what it says it is, and accepting
+    the certificate allows you to trust this network in the future when you
+    connect the device without manual intervention.</p>
+  <p>While your IT team is best qualified to help you understand how
+    certificates are used in your environment, Brightgate suggests you inspect
+    any certificate before adding it to your device. While the method of
+    inspection varies according to the device type, ensure the certificate is
+    issued by Let's Encrypt, the certificate authority used by Brightgate, and
+    that the Subject Name looks like <code><i>number</i>.brightgate.net</code>,
+    where <code><i>number</i></code> is a five digit number. The Trust level
+    should be set to <i>Always Trust</i> for <b>EAP</b> and <b>Basic Policy</b>,
+    if that level of specificity is available on your device. </p>
+  <h4 id="add-mac-network">Add a Mac to your Wi-Fi network</h4>
+  <p>Once you have a Wi-Fi user name and password created for your Wi-Fi
+    network, add your Mac to the network with these steps:</p>
+  <p><b><i>Note:</i></b><i> See <a href="#help-your-team-get-online">help
+        your team get online</a> if you haven't yet created a user name and
+      password for the Wi-Fi network.</i></p>
+  <ol>
+    <li>Select the Wi-Fi logo at the top right of your display (it's the one
+      that looks like an opened fan).</li>
+    <li>Select your organization's Wi-Fi network name from the dropdown list
+      (the name will end in <code>-user</code>).</li>
+    <li>Enter the <b>username</b> and <b>Password</b> created by Brightgate.
+      <b>Note:</b> The first time you add your Mac to the network, you will be
+      asked to accept a certificate. Select <b>Continue</b> to add the
+      certificate. You're welcome to read more in <a
+        href="#quick-word-certificates">a
+        quick word about certificates</a>.</li>
+    <li>Leave the <b>Remember this network</b> check box selected.</li>
+    <li>Select the <b>Join</b> button.</li>
+  </ol>
+  <img src="./images/add_mac_to_network.png" alt="Adding a Mac to the network">
+  <p>When your Mac joins the network, you'll see the bars of the Wi-Fi logo
+    fill in to confirm that your Mac is connected.</p>
+  <h4 id="add-iphone-network">Add an iPhone to your Wi-Fi network</h4>
+  <p>Once you have a user name and password created for your Wi-Fi network,
+    add your iPhone to the network with these steps:</p>
+  <p><b><i>Note:</i></b><i> See <a href="#help-your-team-get-online">help
+        your team get online</a> if you haven't yet created a user name and
+      password for the Wi-Fi network.</i></p>
+  <ol>
+    <li>From the home screen, tap the <b>Settings</b> app.</li>
+    <li>Select <b>Wi-Fi</b>.</li>
+    <li>If needed, slide the button to turn <b>Wi-Fi</b> on, then select your
+      organization's Wi-Fi network name from the list (the name will end in
+      <code>-user</code>).</li>
+    <li>Enter the <b>username</b> and <b>password</b> created by Brightgate.
+      <b>Note:</b> The first time you add your iPhone to the network, you will
+      be asked to accept a certificate. Select <b>Continue</b> to add the
+      certificate. You're welcome to read more in <a
+        href="#quick-word-certificates">a
+        quick word about certificates</a>.</li>
+    <li>Tap <b>Join</b>.</li>
+  </ol>
+  <h4 id="add-android-phone-network">Add an Android phone to your Wi-Fi
+    network</h4>
+  <p>Once you have a user name and password created for your Wi-Fi network,
+    add your Android phone to the network with these steps:</p>
+  <p><b><i>Note:</i></b><i> See <a href="#help-your-team-get-online">help
+        your team get online</a> if you haven't yet created a user name and
+      password for the Wi-Fi network.</i></p>
+  <ol>
+    <li>Press the Home button, then the Apps button</li>
+    <li>Tap the <b>Settings</b> app</li>
+    <li>From <i>Wireless and Networks</i>, Select <b>Wi-Fi</b></li>
+    <li>If needed, slide <b>Wi-Fi</b> on, then select your organization's
+      Wi-Fi network name from the list (the name will end in <code>-user</code>)
+    </li>
+    <li>Enter the <b>username</b> and <b>password</b> created by Brightgate.
+      <b>Note:</b> The first time you add your Android phone to the network,
+      you will be asked to accept a certificate. Select <b>Continue</b> to
+      add the certificate. You're welcome to read more in <a
+        href="#quick-word-certificates">a
+        quick word about certificates</a>.</li>
+    <li>Tap <b>Connect</b></li>
+  </ol>
+  <h4 id="add-windows-network">Add a Windows computer to your Wi-Fi network</h4>
+  <p>Once you have a user name and password created for your Wi-Fi network,
+    add your Windows computer to the network with these steps:</p>
+  <p><b><i>Note:</i></b><i> See <a href="#help-your-team-get-online">help
+        your team get online</a> if you haven't yet created a user name and
+      password for the Wi-Fi network.</i></p>
+  <p>Your Windows 10 computer will automatically find all wireless networks in
+    range.</p>
+  <ol>
+    <li>Click the Wi-Fi icon in the taskbar on the bottom right corner of your
+      screen to view the available networks. </li>
+    <li>Select the enterprise Wi-Fi network name provided by your
+      administrator from the dropdown list; the name will typically end in
+      <code>-user</code>.
+    </li>
+    <li>Click <b>Connect</b>
+      <div> <img src="./images/windows-auto-connect.png"
+          alt="Automatically connect to Wi-Fi">
+      </div>
+    </li>
+    <li>Wait for Windows to check network requirements
+      <div> <img src="./images/windows-check-requirements.png"
+          alt="Checking requirements">
+      </div>
+    </li>
+    <li>Enter the username and password you created in the Brightgate
+      application, then click <b>OK</b>.
+      <div> <img src="./images/windows-enter-password.png"
+          alt="Provide your username and password">
+      </div>
+      <br>
+      After a moment, if your credentials are correct, your machine will
+      connect to the Wi-Fi network connect, displaying <code>Connected,
+        secured</code> as its status. </li>
+    <li>The first time you add your Windows machine to the network, you may be
+      asked to accept a new certificate. This may also happen if the
+      certificate has been renewed recently. <b>Important:</b> Do not connect
+      unless you are in a location you expect to see this network. Then select
+      <b>Continue</b> to add the certificate. You're welcome to read more in <a
+        href="#quick-word-certificates">a quick word about certificates</a>.
+    </li>
+  </ol>
+  <p>If the process to connect automatically fails, or your computer does not
+    see your enterprise network, use this procedure to connect manually:</p>
+  <ol>
+    <li>Click on Cortana ("Ask me anything" box in taskbar)
+      <div> <img src="./images/windows-cortana.png" alt="Click on Cortana">
+      </div>
+    </li>
+    <li>Type “Control Panel” to open the Control Panel
+      <div> <img src="./images/windows-control-panel.png" alt="Control panel">
+      </div>
+    </li>
+    <li>Open <b>Network and Internet</b>
+      <div> <img src="./images/windows-network-and-internet.png"
+          alt="Network and internet">
+      </div>
+    </li>
+    <li>Open the <b>Network and Sharing Center</b>
+      <div> <img src="./images/windows-network-and-sharing.png"
+          alt="Network and Sharing Center">
+      </div>
+    </li>
+    <li>Select <b>Set up a new connection or network</b>
+      <div> <img src="./images/windows-set-up-new-connection.png"
+          alt="New connection">
+      </div>
+    </li>
+    <li>Enter the enterprise network name that your administrator provided
+      (which should typically end in <code>-user</code>). Select
+      <b>WPA2-Enterprise</b>
+      as the <i>Security type</i>. Do not enter a security key. Windows will
+      now open the Wi-Fi configuration interface from the taskbar as described
+      previously. Complete the connection by providing the username and
+      password created in the Brightgate management application.
+      <div> <img src="./images/windows-enter-network.png"
+          alt="Provide network name">
+      </div>
+    </li>
+  </ol>
+  <p>If a dialog box displays stating that the network "already exists", click
+    "Use the existing network." If you still fail to connect, use Windows's
+    Wi-Fi configuration to Forget the network as described in this <a
+      href="https://social.technet.microsoft.com/wiki/contents/articles/31961.windows-10-forget-a-saved-wi-fi-network.aspx">helpful
+      community article from Microsoft</a>.</p>
+  <h3 id="add-iot-network">Add IoT devices to your Wi-Fi network</h3>
+  <p>IoT devices are those that share a common password. To view the password:
+  </p>
+  <ol>
+    <li>Log in to the Brightgate management app</li>
+    <li>(Optional) Select your site from the list</li>
+    <li>Select <b>Network Configuration</b></li>
+    <li>From the list of networks, select the <code>*-device</code> network
+      to view the <b>Network Details</b></li>
+    <li>Click the eye icon to reveal the <i>Passphrase</i> for the network</li>
+    <li>In the app or display for the IoT device, add the device to the
+      <code>*-device</code>
+      network, using the passphrase displayed in Step 4</li>
+  </ol>
+  <h3 id="help-guests-online">Help guests get online</h3>
+  <p>Add one-time users' devices, those that need only temporary access to
+    Wi-Fi, to the <code>*-guest</code> network, which uses a password that
+    administrators rotate.</p>
+  <ol>
+    <li>Log in to the Brightgate management app</li>
+    <li>(Optional) Select your site from the list</li>
+    <li>Select <b>Enroll a Guest User</b></li>
+    <li>Share the password with your guest with using any of these choices:
+      <ul>
+        <li>Tell the guest the current password that displays</li>
+        <li>Send the guest the current password by entering their phone
+          number, then clicking <b>Text Guest</b>. Your guest will receive
+          two SMS text messages. The first message provides the name of the
+          network for guests to use. The second message provides the password
+          to easily copy and paste from their phone, tablet, or laptop.</li>
+        <li>Show the guest the QR code to scan using their device's camera app
+        </li>
+      </ul>
+    </li>
+  </ol>
+  <p> <img src="./images/guest-enrollment.png" alt="Enroll guests"> </p>
+  <h2 id="secure-your-networks">Secure your networks</h2>
+  <p>Brightgate secures your networks automatically, working in the background
+    scanning every device added to your Brightgate networks, all the time. As
+    a result, administrators don't need to actively secure a Brightgate
+    network—compliance with security policies is enforced through the process
+    of authenticating users, then adding their devices to the network as well
+    as during our constant vigilance of network activity—unless alerted to do
+    so by the Brightgate appliance. This type of alert occurs if we find a
+    device is in violation of security policies, or acting oddly, as discussed
+    in <a href="#remediate-threats">remediate threats</a>.</p>
+  <h3 id="remediate-threats">Remediate threats</h3>
+  <p>When Brightgate identifies a vulnerability, you'll see an alert section
+    similar to this when you first log in:</p>
+  <p><img src="./images/security_alert.png" alt="Security alert"></p>
+  <p>When alerted to a vulnerability, administrators have two options:</p>
+  <ol>
+    <li>For a <i>specific</i> device, including the security policy violation
+      and suggestions about how to remediate the issue, click the alert
+      information and view <a href="#device-details">device details</a> to
+      understand the security policy violation and suggestions regarding how
+      to remediate the issue.</li>
+    <li>For <i>all</i> devices across all Brightgate-secured networks,
+      navigate from the main menu to view the <a
+        href="#compliance-report">Compliance
+        Report</a>. From the Compliance Report, administrators may then
+      navigate to view the specific <a href="#device-details">device details</a>
+      to understand the security policy violation and suggestions regarding
+      how to remediate the issue.</li>
+  </ol>
+  <p><strong>Important:</strong> During the Alpha program, once the the threat
+    is resolved, administrators will need to view the trust group assigned to
+    the device and potentially move it from <code>quarantine</code> to the
+    appropriate trust group, which is discussed fully in <a
+      href="#change-device-trust-group">change
+      a device's trust group assignment</a>.</p>
+  <h3 id="device-details">View device details</h3>
+  <p>Brightgate supplies details specific to each device on the network, which
+    you can access directly if alerted to do so when you first log in or, from
+    the main menu, <i>select your site &gt; Manage Devices &gt; click the
+      device name.</i></p>
+  <p>Details for each device on the network display, specifying if Brightgate
+    has identified any vulnerabilities. In this example, the device is using a
+    password that exposes both the device and network to potential attack.
+    Brightgate suggests a remedy, with helpful links to further information if
+    you'd like to know more about the issue. We also specify the time the
+    vulnerability was identified and when a repair, if any, was executed.</p>
+  <p>You can also view the network details for this device, including the
+    device's name on the network, IPv4 address, hardware address, whether the
+    device is active, and the time of the most recent scan for
+    vulnerabilities.</p>
+  <p>The <i>Access Control</i> displays the assigned trust group for the
+    device, which is discussed fully in <a
+      href="#change-device-trust-group">change
+      a device's trust group assignment</a>.</p>
+  <p><img src="./images/device-details.png" alt="Device details"></p>
+  <h3 id="compliance-report">View the Compliance Report</h3>
+  <p>To view compliance information across all your Brightgate-secured
+    networks, from the main menu, <i>select your site &gt; Compliance
+      Report.</i></p>
+  <p>If a device is currently violating policy, the red lightning icon will
+    display in the <i>Summary</i>. The <i>Summary</i> also displays the
+    total number of users currently enrolled in the network.<i> <br>
+    </i></p>
+  <p><i>Active Violations,</i> if any are currently identified, are listed in
+    priority order. Click the device name to <a href="#device-details">view
+      device details</a>, which fully describes the security policy violation
+    and suggests what should be done to remediatet the issue. <i>Resolved
+      Violations</i> provides a historical listing of vulnerabilities observed
+    and resolved within the network.</p>
+  <p><i>Trust Group Summary</i> displays a succinct list of compliance status
+    for all trust groups that the site maintains, across all networks
+    (<code>*-user</code>,
+    <code>*-device</code>, or <code>*-guest</code>).</p>
+  <p>In this example, the network has 21 active devices, one of which is yet
+    to be scanned, and one that is using a password that exposes the device
+    and network to potential attack. </p>
+  <p><img src="./images/compliance-report.png" alt="Compliance report"></p>
+  <h3 id="view-devices-network">View devices on the network</h3>
+  <p>To view all devices on the network, from the main menu, <i>select your
+      site &gt; Manage Devices.</i> The parentheses next to Manage Devices is
+    the total number of all devices enrolled across all Brightgate-secured
+    networks for your organization.</p>
+  <p><img src="./images/manage-devices.png" alt="Manage devices"></p>
+  <h3 id="remove-devices">Remove devices</h3>
+  <p>Brightgate tracks device behavior based on those that are authenticated
+    to the network. As a result, devices are not explicitly removed from a
+    Brightgate network. Instead, the credentials used to add the device to the
+    network must be revoked. </p>
+  <p>In a future release, the user name and password associated with the user
+    who added the device to network will be revoked when their Google
+    credentials expire, which will prevent the device from being added to the
+    network with credentials that are no longer in use by the organization.
+    <b><br>
+    </b></p>
+  <p><b>Note: </b>If the removal of a device is required, move the device to
+    the <code>unenrolled</code> trust group as described in the section <a
+      href="#change-device-trust-group">Change
+      a device's trust group assignment</a> or contact Brightgate support for
+    assistance.</p>
+  <h3 id="change-device-trust-group">Change a device's trust group assignment
+  </h3>
+  <p>Trust groups are how Brightgate protects the devices on your network and
+    reduces the risk that malware or viruses will spread. The trust group to
+    which a device is assigned affects both the level of trust for this device
+    and the device's access to to other devices when it is on your network.
+    Devices within a trust group communicate with and have access to both
+    other devices assigned to that trust group and devices assigned to trust
+    groups that are less trusted and known.</p>
+  <p>Devices that aren’t assigned to a trust group
+    are<span>&nbsp;</span><code>unenrolled</code>,
+    which means they have not been explicitly granted access to the network.
+    They will not have credentials or be able to use your network. The most
+    common <code>unenrolled</code> devices will be IoT devices that have the
+    correct shared Wi-Fi password (PSK) but have not been authorized by an
+    administrator. To keep your network secure, we only permit network access
+    to devices that have been assigned into a Brightgate trust group. This
+    way, we can determine how trusted or known the device is, assign it to an
+    appropriate trust group, and watch the device's behavior to keep your
+    network secure. </p>
+  <p><b>Important:</b> During the Alpha program, all devices added to the
+    <code>*-device</code>
+    network will be assigned to the <code>unenrolled</code> trust group.
+    Administrators will need to explicitly move devices to the appropriate
+    trust group to approve the addition of a device to this network.</p>
+  <p>To change a device's trust group assignment, from the main menu, <i>select
+      your site &gt; Manage Devices &gt; click the device name</i> to view the
+    Device Details. The trust group and their intended purpose are as follows:
+  </p>
+  <dl>
+    <dt><code>core</code>:</dt>
+    <dd>The trust group reserved for the most trusted devices.</dd>
+    <dt><code>devices</code>:</dt>
+    <dd>The trust group for Internet of Things (IoT) devices, such as
+      thermostats or security cameras</dd>
+    <dt><code>guest</code>:</dt>
+    <dd>The trust group for devices that require temporary network access</dd>
+    <dt><code>quarantine</code>:</dt>
+    <dd>The trust group for devices that are behaving oddly</dd>
+    <dt><code>standard</code>:</dt>
+    <dd>The trust group most appropriate for devices owned by regular members
+      of your team</dd>
+    <dt><code>unenrolled</code>:</dt>
+    <dd>The trust group for all manually configured IoT devices or other
+      unknown devices.</dd>
+    <dt><code>internal</code>:</dt>
+    <dd>Reserved for Brightgate use.</dd>
+  </dl>
+  <p>From <i>Access Control</i>, display the available <i>Trust Group</i>
+    choices, then select the appropriate trust group to which to move the
+    device. In the example, the device is being moved into the
+    <code>standard</code>
+    trust group:</p>
+  <p><img src="./images/move-trust-group.png" alt="Move trust group"></p>
+  <h3 id="rotate-passwords">Rotate passwords</h3>
+  <p>During the Alpha program, passwords are not automatically rotated.
+    However, administrators may manually change the password for the
+    <code>*-guest</code>
+    and <code>*-device</code> network. From the main menu, <i>select your
+      site &gt; Network Configuration</i> to display the networks secured by
+    Brightgate. To change the password:</p>
+  <ol>
+    <li>Select the network name, either <code>*-guest </code>or
+      <code>*-device.</code></li>
+    <li>Click the Settings button to edit the details for this network</li>
+    <li>Change the passphrase. Note: if you wish to view the current
+      passphrase, click the eyeball icon.</li>
+    <li>Click <b>Save</b></li>
+  </ol>
+  <p><img src="./images/edit-network-details.png" alt="Edit network details">
+  </p>
+  <h2 id="review-network-configuration-and-users">Review network configuration
+    and users</h2>
+  <p>The Brightgate management app displays information regarding the
+    configuration of all Brightgate-secured networks for your organization as
+    well as network users across all networks. </p>
+  <h3 id="network-configuration">View your network configuration</h3>
+  <p>To view your networks, from the main menu, <i>select your site &gt;
+      Network Configuration.</i></p>
+  <p>The networks defined for your site display as well as network
+    configuration, including the networks' DNS server and WAN address.</p>
+  <p><img src="./images/network-configuration.png" alt="Network configuration">
+  </p>
+  <p>To view the details for a particular network, select it from the display.
+    Brightgate displays for each network:</p>
+  <ul>
+    <li><b>Authentication Method:</b> the method used to authenticate to the
+      network. For the <code>*-user</code> network, the method is WPA-EAP.
+      For the <code>*-devices</code> and <code>*-guest</code> network, the
+      method is WPA-PSK.</li>
+    <li><b>Trust Group Configuration:</b> the trust groups available for this
+      network.
+      <ul>
+        <li><code>*-user network</code>
+          <ul>
+            <li><code>core</code>: The trust group reserved for the most
+              trusted devices.</li>
+            <li><code>standard</code>: The trust group most appropriate for
+              devices owned by regular members of your team</li>
+          </ul>
+        </li>
+        <li><code>*-device network</code>
+          <ul>
+            <li><code>devices</code>: The trust group for Internet of Things
+              (IoT) devices, such as thermostats or security cameras</li>
+            <li><code>quarantine</code>: The trust group for devices that are
+              behaving oddly</li>
+            <li><code>unenrolled</code>: The trust group for all manually
+              configured IoT devices or other unknown devices</li>
+          </ul>
+        </li>
+        <li><code>*-guest network</code>
+          <ul>
+            <li><code>guest</code>: The trust group for devices that require
+              temporary network access</li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+    <li>The <b>Passphrase</b> is provided for both networks that share a
+      common password (<code>*-device</code> and <code>*-guest</code>), which
+      can be viewed by clicking the eyeball icon.</li>
+  </ul>
+  <h3 id="user-basics">About your users</h3>
+  <p>The process to <a href="#help-your-team-get-online">help your team get
+      online</a> creates a user in the Brightgate cloud. Users in the
+    Brightgate cloud by default may access only part of the Brightgate
+    management app:</p>
+  <ol>
+    <li>Use their Wi-Fi credentials to bring their devices online</li>
+    <li>View the name of the <code>*-user</code> network</li>
+    <li>View the name and passphrase for both the <code>*-devices</code> and
+      <code>*-guest </code>networks</li>
+    <li>Access <b>Enroll a Guest User</b> to tell or text the guest network
+      password to guests</li>
+  </ol>
+  <p>Users with administrative privileges can use <i>all</i> parts of the
+    Brightgate management app, all of which are covered in this guide.
+    Administration of a Brightgate-secured network requires a change in
+    privilege for a defined user. During the Alpha program, this privilege
+    change can be enabled only by calling Brightgate. </p>
+  <p>To view users created for the Brightgate cloud, from the main menu,
+    <i>select
+      your site &gt; Users.</i></p>
+  <p><b>Note:</b> In certain circumstances, an administrator may need access
+    to only the local appliance, such as when Internet connectivity is lost.
+    In this case, a <i>Site-Local Administrator</i> displays. Additional
+    site-local administrators may be added by using the + icon; however,
+    during the Alpha program, we recommend calling Brightgate for assistance
+    if this type of user is required.</p>
+  <p><img src="./images/display-users.png" alt="Display users"></p>
+  <p>Click the user for whom you'd like to view details. To email the user,
+    click their email ID to open your email and send a message. To send this
+    user a message, click the Message icon.</p>
+  <p><img src="./images/user-details.png" alt="User details"></p>
+  <!-- BRIGHTGATE CONTENT END -->
+  <!-- BRIGHTGATE FOOT INSERTION POINT -->
+</body>
+
 </html>
