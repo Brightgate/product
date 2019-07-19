@@ -35,6 +35,13 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
+// Version 2 of the uPNP spec limits the MX field of an SSDP search request to 5
+// seconds, but older clients may use up to 120.  This value represents the
+// length of time we need to hold open an SSDP reply port, which is a limited
+// resource.  To avoid runnning out of ports, we modify request packets with a
+// larger value.
+const mxMax = 5
+
 type endpoint struct {
 	conn  *ipv4.PacketConn
 	iface *net.Interface
@@ -48,7 +55,7 @@ type service struct {
 	address net.IP
 	port    int
 	init    func()
-	handler func(*endpoint, []byte) error
+	handler func(*endpoint, []byte, int) ([]byte, int, error)
 }
 
 var multicastServices = []service{
@@ -157,10 +164,11 @@ func mDNSEvent(addr net.IP, requests, responses []string) {
 	}
 }
 
-func mDNSHandler(source *endpoint, b []byte) error {
+func mDNSHandler(source *endpoint, b []byte, n int) ([]byte, int, error) {
 	msg := new(dns.Msg)
 	if err := msg.Unpack(b); err != nil {
-		return fmt.Errorf("malformed mDNS packet: %v", err)
+		return nil, 0, fmt.Errorf("malformed mDNS packet from %v: %v",
+			source.ip, err)
 	}
 
 	requests := make([]string, 0)
@@ -186,7 +194,7 @@ func mDNSHandler(source *endpoint, b []byte) error {
 
 	mDNSEvent(source.ip, requests, responses)
 
-	return nil
+	return b, n, nil
 }
 
 func ssdpEvent(addr net.IP, mtype base_msg.EventSSDP_MessageType,
@@ -337,8 +345,11 @@ func ssdpSearchHandler(source *endpoint, mx int) error {
 	return nil
 }
 
-func ssdpHandler(source *endpoint, buf []byte) error {
+func ssdpHandler(source *endpoint, buf []byte, n int) ([]byte, int, error) {
 	var req *http.Request
+
+	outBuf := buf
+	outSz := n
 
 	rdr := bytes.NewReader(buf)
 	req, err := http.ReadRequest(bufio.NewReader(rdr))
@@ -346,10 +357,11 @@ func ssdpHandler(source *endpoint, buf []byte) error {
 		// If we failed to parse the packet as a request, attempt it as
 		// a response.
 		rdr.Seek(0, io.SeekStart)
-		return ssdpResponseCheck(rdr)
+		return nil, 0, ssdpResponseCheck(rdr)
 
 	}
 
+	id := fmt.Sprintf("SSDP %s from %v", req.Method, source.ip)
 	var mtype base_msg.EventSSDP_MessageType
 	if req.Method == "M-SEARCH" {
 		uri := req.Header.Get("Man")
@@ -358,17 +370,31 @@ func ssdpHandler(source *endpoint, buf []byte) error {
 			mxHdr := req.Header.Get("MX")
 			mx, _ := strconv.Atoi(mxHdr)
 			if mxHdr == "" {
-				err = fmt.Errorf("M-SEARCH missing MX header")
-			} else if mx < 1 || mx > 5 {
-				err = fmt.Errorf("M-SEARCH bad MX header: %s",
-					mxHdr)
+				err = fmt.Errorf("%s: missing MX header", id)
+
+			} else if mx < 1 || mx > 120 {
+				err = fmt.Errorf("%s: bad MX header: %s",
+					id, mxHdr)
+
 			} else {
+				if mx > mxMax {
+					slog.Debugf("%s: reducing MX from %d to %d",
+						id, mx, mxMax)
+
+					mx = mxMax
+					req.Header.Set("MX", strconv.Itoa(mxMax))
+
+					n := new(bytes.Buffer)
+					req.Write(n)
+					outBuf = n.Bytes()
+					outSz = n.Len()
+				}
 				err = ssdpSearchHandler(source, mx)
 			}
 		} else if uri == "" {
-			err = fmt.Errorf("missing M-SEARCH uri")
+			err = fmt.Errorf("%s: missing uri", id)
 		} else {
-			err = fmt.Errorf("unrecognized M-SEARCH uri: %s", uri)
+			err = fmt.Errorf("%s: unrecognized uri: %s", id, uri)
 		}
 		if err == nil {
 			relayMetric.ssdpSearches.Inc()
@@ -377,28 +403,29 @@ func ssdpHandler(source *endpoint, buf []byte) error {
 		nts := req.Header.Get("NTS")
 		if nts == "ssdp:alive" {
 			mtype = base_msg.EventSSDP_ALIVE
-			slog.Debugf("Forwarding SSDP ALIVE from %v", source.ip)
+			slog.Debugf("%s: forwarding ALIVE", id)
 		} else if nts == "ssdp:byebye" {
 			mtype = base_msg.EventSSDP_BYEBYE
-			slog.Debugf("Forwarding SSDP BYEBYE from %v", source.ip)
+			slog.Debugf("%s: forwarding BYEBYE", id)
 		} else if nts == "" {
-			err = fmt.Errorf("missing NOTIFY nts")
+			err = fmt.Errorf("%s: missing NOTIFY nts", id)
 		} else {
-			err = fmt.Errorf("unrecognized NOTIFY nts: %s", nts)
+			err = fmt.Errorf("%s: unrecognized NOTIFY nts: %s",
+				id, nts)
 
 		}
 		if err == nil {
 			relayMetric.ssdpNotifies.Inc()
 		}
 	} else {
-		err = fmt.Errorf("invalid HTTP Method: %s (%v)", req.Method, req)
+		err = fmt.Errorf("%s: invalid method", id)
 	}
 
 	if err == nil {
 		ssdpEvent(source.ip, mtype, req)
 	}
 
-	return err
+	return outBuf, outSz, err
 }
 
 func ssdpInit() {
@@ -520,9 +547,9 @@ func (r *relayer) run() {
 	slog.Infof("initted %s", s.name)
 
 	fw := &net.UDPAddr{IP: s.address, Port: s.port}
-	buf := make([]byte, 4096)
+	inBuf := make([]byte, 4096)
 	for {
-		n, source := r.getPacket(buf)
+		n, source := r.getPacket(inBuf)
 		if source == nil {
 			break
 		}
@@ -539,7 +566,8 @@ func (r *relayer) run() {
 		relayUp := true
 		relayDown := true
 
-		if err := s.handler(source, buf); err != nil {
+		outBuf, sz, err := s.handler(source, inBuf, n)
+		if err != nil {
 			slog.Warnf("Bad %s packet: %v", s.name, err)
 			continue
 		}
@@ -572,11 +600,11 @@ func (r *relayer) run() {
 
 			source.conn.SetMulticastInterface(dstIface)
 			source.conn.SetMulticastTTL(255)
-			l, err := source.conn.WriteTo(buf[:n], nil, fw)
+			l, err := source.conn.WriteTo(outBuf[:sz], nil, fw)
 			if err != nil {
 				slog.Warnf("    Forward to %s failed: %v",
 					dstIface.Name, err)
-			} else if l != n {
+			} else if l != sz {
 				slog.Warnf("    Forwarded %d of %d to %s",
 					l, n, dstIface.Name)
 			} else {
