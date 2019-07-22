@@ -22,6 +22,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -55,7 +56,8 @@ var (
 	newUsername = flag.String("u", "", "new username (reset mode only)")
 	humanPass   = flag.Bool("human-password", false, "generate human-friendly password (reset mode only)")
 
-	plat *platform.Platform
+	plat    *platform.Platform
+	banFile string
 )
 
 var testMap = map[string]probefunc{
@@ -250,7 +252,7 @@ func sshProbe(clist []apvuln.DPcredentials, startfrom int, vulnports *apvuln.Vul
 	return 0
 }
 
-func logban(ip net.IP, tests map[string][]int, banfiledir string) bool { // true if banned
+func logban(ip net.IP, tests map[string][]int) bool { // true if banned
 	banned := false
 	var b strings.Builder
 	for test, ports := range tests {
@@ -264,24 +266,21 @@ func logban(ip net.IP, tests map[string][]int, banfiledir string) bool { // true
 	}
 	if banned {
 		content := []byte(b.String()[1:]) // remove leading "."
-		err := ioutil.WriteFile(banfiledir+"banfile-"+ip.String(), content, 0644)
+		err := ioutil.WriteFile(banFile, content, 0644)
 		if err != nil {
-			aputil.Fatalf("Failed to write banfile %s\n", err)
+			aputil.Fatalf("Failed to write banfile %s: %v\n", banFile, err)
 		}
 	}
 	return banned
 }
 
 func dpProbe(ip net.IP, tests map[string][]int) apvuln.Vulnerabilities {
+	var vulnports apvuln.Vulnerabilities
+
 	clist, err := fetchDefaults(*dpPath)
 	if err != nil {
 		aputil.Fatalf("dpProbe: error fetching defaults: %s\n", err)
 	}
-	banfiledir := plat.ExpandDirPath("__APDATA__", "defaultpass")
-	if err := os.MkdirAll(banfiledir, 0755); err != nil {
-		aputil.Fatalf("dpProbe: error creating banfile directory: %s\n", err)
-	}
-	var vulnports apvuln.Vulnerabilities
 
 	if *verbose {
 		fmt.Printf("Probing %s:\n", ip)
@@ -309,9 +308,11 @@ func dpProbe(ip net.IP, tests map[string][]int) apvuln.Vulnerabilities {
 			tests[test] = tests[test][1:]
 		}
 	}
-	if !logban(ip, tests, banfiledir) { // write to banfile if banned at any point
-		if err := os.RemoveAll(banfiledir + "banfile-" + ip.String()); err != nil { // all tests ran, remove banfile if present
-			aputil.Fatalf("dpProbe: file removal error: %s\n", err)
+
+	// write to banfile if banned at any point
+	if !logban(ip, tests) {
+		if err := os.RemoveAll(banFile); err != nil {
+			aputil.Fatalf("dpProbe: file removal error: %v\n", err)
 		}
 	}
 	return vulnports
@@ -359,8 +360,7 @@ func resetSSH() {
 	fmt.Printf("success %s:%s\n", username, newPass)
 }
 
-// resetMode handles, well, the default password reset mode
-// Broke this out of main() for readability
+// resetMode handles the default password reset mode
 // Uses same global flags *ipAddr and *reset as main
 func resetMode() {
 	resetData := strings.SplitN(*reset, ":", 2)
@@ -381,6 +381,18 @@ func resetMode() {
 func usagef(format string, v ...interface{}) {
 	flag.Usage()
 	aputil.Fatalf(format, v...)
+}
+
+func initBanFile(ip net.IP) {
+	dir := plat.ExpandDirPath("__APDATA__", "defaultpass")
+	name := "banfile-" + ip.String()
+
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		fmt.Printf("dpProbe: error creating banfile directory: %s\n", err)
+		dir = "/tmp"
+	}
+
+	banFile = filepath.Join(dir, name)
 }
 
 func main() {
@@ -408,6 +420,7 @@ func main() {
 	}
 
 	plat = platform.NewPlatform()
+	initBanFile(ip)
 
 	testlist := strings.Split(*testsToRun, ".")
 	for _, t := range testlist {

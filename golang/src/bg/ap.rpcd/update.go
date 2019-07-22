@@ -45,6 +45,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -95,6 +96,11 @@ var updates = map[string]updateInfo{
 		localDir:   "__APDATA__/antiphishing/",
 		localName:  "dns_allowlist.csv",
 		latestName: "dns_allowlist.latest",
+	},
+	"pass_list": {
+		localDir:   "__APDATA__/defaultpass/",
+		localName:  "vendor_defaults.csv",
+		latestName: "vendor_defaults.latest",
 	},
 	// "vulnerabilities": {
 	// localDir:   "__APDATA__/watchd/",
@@ -157,7 +163,7 @@ func refresh(u *updateInfo) (bool, error) {
 		if rerr != nil {
 			err = fmt.Errorf("unable to read %s: %v", latestFile, rerr)
 		} else {
-			sourceName := string(b)
+			sourceName := strings.TrimSpace(string(b))
 			url = updateBucket + "/" + sourceName
 			_, err = urlfetch.FetchURL(url, target, "")
 		}

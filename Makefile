@@ -312,6 +312,7 @@ APPDATACONFIGD=$(APPDATA)/configd
 APPDATAIDENTIFIERD=$(APPDATA)/identifierd
 APPDATALOGD=$(APPDATA)/logd
 APPDATAMCP=$(APPDATA)/mcp
+APPDATAPASSWORDS=$(APPDATA)/defaultpass
 APPDATARPCD=$(APPDATA)/rpcd
 APPDATAWATCHD=$(APPDATA)/watchd
 APPETCIDENTIFIERD=$(APPETC)/identifierd
@@ -470,7 +471,6 @@ APPCONFIGS = \
 	$(APPETC)/devices.json \
 	$(APPETC)/mcp.json \
 	$(APPETC)/prometheus.yml \
-	$(APPETC)/vendordefaults.csv \
 	$(APPSNMAP)/smb-vuln-ms17-010.nse \
 	$(ROOTETCCHRONY)/bg-chrony.client \
 	$(ROOTETCCHRONY)/bg-chrony.platform \
@@ -503,6 +503,7 @@ APPDIRS = \
 	$(APPDATAIDENTIFIERD) \
 	$(APPDATALOGD) \
 	$(APPDATAMCP) \
+	$(APPDATAPASSWORDS) \
 	$(APPDATARPCD) \
 	$(APPDATAWATCHD) \
 	$(HTTPD_CLIENTWEB_DIR) \
@@ -804,9 +805,6 @@ cilint-go:
 check-go: vet-go lint-go fmt-go
 
 # Installation of appliance configuration files
-
-$(APPETC)/vendordefaults.csv: $(GOSRCBG)/ap-defaultpass/vendordefaults.csv | $(APPETC)
-	$(INSTALL) -m 0644 $< $@
 
 $(APPETCIDENTIFIERD)/ap_identities.csv: ap_identities.csv | $(APPETCIDENTIFIERD)
 	$(INSTALL) -m 0644 $< $@
