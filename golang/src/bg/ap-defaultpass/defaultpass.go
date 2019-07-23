@@ -35,6 +35,8 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+const megaByte = 1 << 20
+
 /*	TODO:
 	1. Eventually, the goal is to use a device identity or MAC address to directly lookup the relevant credentials.
 	   For now, we will brute force all known default credentials (around 1000 entries).
@@ -99,42 +101,60 @@ func httpProbe(clist []apvuln.DPcredentials, startfrom int, vulnports *apvuln.Vu
 	if err != nil {
 		return 0
 	}
-	if len(resp.Header["Www-Authenticate"]) > 0 { // authenticate header detecter, check for basic auth
-		for _, authstr := range resp.Header["Www-Authenticate"] {
-			if strings.Contains(strings.ToLower(authstr), "basic") { // case insensitive matching
-				if *verbose {
-					fmt.Printf("HTTP Basic Auth detected, probing...\n")
-				}
-				for i, creds := range clist[startfrom:] {
-					if *verbose {
-						fmt.Printf("HTTP Basic Auth test: [ %d / %d ]\n", i+startfrom+1, len(clist))
-					}
-					req.SetBasicAuth(creds.Username, creds.Password)
-					resp, err := httpclient.Do(req)
-					if err != nil {
-						if strings.Contains(err.Error(), "connection refused") {
-							// note: error may be something other than connection refused. Possibly handle this in the future.
-							fmt.Printf("Banned. Will resume probing this service during the next scan.\n")
-							return i + startfrom
-						}
-						continue
-					}
-					if resp.StatusCode == 200 { // vulnerable
-						if *verbose {
-							fmt.Printf("%s is vulnerable on port %d to HTTP Basic Auth default username/password\n", ip.String(), p)
-						}
-						*vulnports = append(*vulnports,
-							apvuln.DPvulnerability{
-								IP:          ip.String(),
-								Protocol:    "tcp",
-								Service:     "http",
-								Port:        strconv.Itoa(p),
-								Credentials: creds})
-						break
-					}
-				}
-			}
+	// Must read the body and close it; limit read as a defensive measure.
+	_, _ = io.Copy(ioutil.Discard, io.LimitReader(resp.Body, megaByte))
+	resp.Body.Close()
+	if len(resp.Header["Www-Authenticate"]) == 0 {
+		return 0
+	}
+
+	// Check for basic auth
+	var basicAuth bool
+	for _, authstr := range resp.Header["Www-Authenticate"] {
+		if strings.Contains(strings.ToLower(authstr), "basic") { // case insensitive matching
+			basicAuth = true
+			break
 		}
+	}
+	if !basicAuth {
+		return 0
+	}
+	if *verbose {
+		fmt.Printf("HTTP Basic Auth detected, probing...\n")
+	}
+	for i, creds := range clist[startfrom:] {
+		if *verbose {
+			fmt.Printf("HTTP Basic Auth test: [ %d / %d ]\n", i+startfrom+1, len(clist))
+		}
+		req.SetBasicAuth(creds.Username, creds.Password)
+		probeResp, err := httpclient.Do(req)
+		if err != nil {
+			if strings.Contains(err.Error(), "connection refused") {
+				// note: error may be something other than connection refused. Possibly handle this in the future.
+				fmt.Printf("Banned. Will resume probing this service during the next scan.\n")
+				return i + startfrom
+			}
+			continue
+		}
+		// Must read the body and close it; limit read as a defensive measure.
+		_, _ = io.Copy(ioutil.Discard, io.LimitReader(probeResp.Body, megaByte))
+		probeResp.Body.Close()
+		if probeResp.StatusCode != 200 {
+			continue
+		}
+		// vulnerable
+		if *verbose {
+			fmt.Printf("%s is vulnerable on port %d to HTTP Basic Auth default username/password\n", ip.String(), p)
+		}
+		*vulnports = append(*vulnports,
+			apvuln.DPvulnerability{
+				IP:          ip.String(),
+				Protocol:    "tcp",
+				Service:     "http",
+				Port:        strconv.Itoa(p),
+				Credentials: creds,
+			})
+		break
 	}
 	return 0
 }

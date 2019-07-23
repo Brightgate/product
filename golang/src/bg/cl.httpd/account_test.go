@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -84,8 +85,11 @@ func TestAccountsGenAndProvision(t *testing.T) {
 	assert.Equal(http.StatusOK, rec.Code)
 	t.Logf("return body:Svc %s", rec.Body.String())
 	var ret2 accountSelfProvisionRequest
-	cookies := rec.Result().Cookies()
-	err = json.Unmarshal(rec.Body.Bytes(), &ret2)
+	resp := rec.Result()
+	bodyBytes, _ := ioutil.ReadAll(resp.Body)
+	cookies := resp.Cookies()
+	resp.Body.Close()
+	err = json.Unmarshal(bodyBytes, &ret2)
 
 	assert.NoError(err)
 	assert.Equal(ret.Username, ret2.Username)
@@ -96,7 +100,7 @@ func TestAccountsGenAndProvision(t *testing.T) {
 		Password: "anything",
 		Verifier: ret2.Verifier,
 	}
-	bodyBytes, err := json.Marshal(body)
+	bodyBytes, err = json.Marshal(body)
 	assert.NoError(err)
 
 	// Now accept the generated password

@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"strconv"
@@ -280,11 +281,17 @@ func ssdpSearchFree(sss *ssdpSearchState) {
 // structured HTTP response.  We don't examine its contents, but an OK may
 // contain information that would be useful to identifierd.
 func ssdpResponseCheck(rdr io.Reader) error {
-	_, err := http.ReadResponse(bufio.NewReader(rdr), nil)
+	resp, err := http.ReadResponse(bufio.NewReader(rdr), nil)
 	if err != nil {
-		err = fmt.Errorf("malformed HTTP: %v", err)
+		return fmt.Errorf("malformed HTTP: %v", err)
 	}
-	return err
+
+	// As per http.Client.Do: body must be read and closed. This is about
+	// lint-cleanliness, since the underlying packet is UDP, and already
+	// completely read in.
+	_, _ = io.Copy(ioutil.Discard, resp.Body)
+	resp.Body.Close()
+	return nil
 }
 
 func ssdpResponseRelay(sss *ssdpSearchState) {

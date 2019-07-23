@@ -796,8 +796,9 @@ fmt-go:
 
 CILINT_GOPKGS = $(LINT_GOPKGS:%=$(GOSRC)/%)
 
+# See also .golangci.yaml, where we specify some defaults
 cilint-go:
-	$(GOTOOLS_BIN_GOLANGCI_LINT) run $(CILINT_ARGS) $(CILINT_GOPKGS)
+	$(GOTOOLS_BIN_GOLANGCI_LINT) run $(CILINT_FLAGS) $(CILINT_GOPKGS)
 
 # ordered in most-to-least useful to most developers
 check-go: vet-go lint-go fmt-go
