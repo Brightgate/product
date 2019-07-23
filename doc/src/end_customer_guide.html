@@ -396,22 +396,41 @@
     <li>DC input</li>
   </ol>
   <p><img src="./images/front-panel.png" alt="Front panel"></p>
-  <h3 id="indicators">Indicators</h3>
-  <p>All status indicators are green. The indicators are lit when the port is
-    in normal operation with the exception of the fault indicator. In future
-    releases, the fault indicator will be lit only when a fault is detected
-    with the hardware. If the fault indicator lights, please contact
-    Brightgate support.</p>
+  <h3 id="indicators">Status indicators</h3>
+  <p>The LEDs provide an at-a-glance status regarding network activity and
+    the Brightgate appliance. They are lit during normal operation and will
+    flicker with network activity. LEDs corresponding to unused ethernet ports
+    will not be off.</p>
   <ol type="A">
     <li>LTE (Reserved for future use)</li>
     <li>Power (DC power present)</li>
-    <li>FAULT (Service action required)</li>
+    <li>Network</li>
+    <li>Brightgate</li>
     <li>2.4 GHz Wi-Fi</li>
     <li>LAN Ethernet Port</li>
     <li>WAN Ethernet Port</li>
     <li>5GHz Wi-Fi</li>
   </ol>
   <p><img src="./images/indicators.png" alt="Indicators"></p>
+  <p>Use the LEDs as a visual indication of appliance status:</p>
+  <ul>
+    <li>If the Network LED is not lit (Indicator C), then the appliance is not
+      attached to the cable modem and does not have an IP address. If the
+      network LED is blinking (not solid), then the appliance may not be able to
+      connect to the outside world. Check the cable modem to see if it indicates
+      a live connection to the internet. If the cable modem does not have a live
+      connection to the internet, please contact your ISP. If a live connection
+      is present, please contact Brightgate support.</li>
+    <li>If the Brightgate LED is not lit (Indicator D), then the appliance has
+      not been powered on, or is still in the process of initializing the
+      hardware. If the Brightgate LED is blinking, then the appliance is
+      powering on and finalizing configuration. A blinking LED is expected
+      during initial boot.</li>
+    <li> If the WAN LED is not lit (Indicator G), then the appliance does not
+      have a connection to the cable modem or upstream router. If the WAN LED
+      is blinking, traffic is flowing to and from the WAN. A solid LED indicates
+      that traffic is neither being sent nor received.</li>
+  </ul>
   <h2 id="access-brightgate-management-app">Access the Brightgate management
     app</h2>
   <p>The Brightgate management app provides all the information you need to
