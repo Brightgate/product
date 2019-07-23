@@ -877,6 +877,9 @@ func daemonInit() error {
 	*templateDir = plat.ExpandDirPath("__APPACKAGE__", *templateDir)
 	*rulesDir = plat.ExpandDirPath("__APPACKAGE__", *rulesDir)
 
+	clients = make(cfgapi.ClientMap)
+	rings = make(cfgapi.RingMap)
+
 	config.HandleChange(`^@/site_index`, configSiteIndexChanged)
 	config.HandleChange(`^@/clients/.*/ring$`, configClientChanged)
 	config.HandleChange(`^@/nodes/`+nodeUUID+`/nics/.*$`, configNicChanged)
@@ -891,6 +894,7 @@ func daemonInit() error {
 
 	rings = config.GetRings()
 	clients = config.GetClients()
+
 	props, err := config.GetProps("@/network")
 	if err != nil {
 		return fmt.Errorf("unable to fetch configuration: %v", err)

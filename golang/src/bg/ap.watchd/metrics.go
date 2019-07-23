@@ -26,6 +26,7 @@ import (
 	"bg/ap_common/aputil"
 	"bg/common/archive"
 	"bg/common/cfgapi"
+	"bg/common/network"
 )
 
 type endpoint struct {
@@ -162,13 +163,17 @@ func metricOps(base string, data *archive.XferStats) []cfgapi.PropertyOp {
 func rollOne(avg, data, avgSec, dataSec uint64) uint64 {
 	var rval uint64
 
+	// Scale the units up to avoid losing precision during the integer
+	// division.
+	avg *= 100
+	data *= 100
 	if avgSec <= dataSec {
 		// If the reporting period is less than the collecting period,
 		// then a rolling average doesn't make sense.  We really want
 		// the latest average, scaled down to fit the reporting period.
 		// So to report a 1 second average from 5 seconds of data, we
-		// return: new_data * (1 / 5).  To avoid losing precision with
-		// integer arithmetic, we do the multiplication first:
+		// return: new_data * (1 / 5).  To avoid rounding to zero while
+		// doing the integer division, we do the multiplication first:
 		rval = (data * avgSec) / dataSec
 	} else {
 		// To update a per-minute average with 10 seconds of new data,
@@ -177,7 +182,8 @@ func rollOne(avg, data, avgSec, dataSec uint64) uint64 {
 		rval = (avg - (avg*dataSec)/avgSec) + data
 	}
 
-	return rval
+	// De-scale the result
+	return rval / 100
 }
 
 // Maintain a running average by periodically rolling in new data.  Returns True
@@ -248,6 +254,11 @@ func updateRolling(period time.Duration) {
 	props := make([]cfgapi.PropertyOp, 0)
 	now := time.Now().Format(time.RFC3339)
 	for mac, stats := range delta {
+		macKey := network.MacToUint64(mac)
+		if internalMacs[macKey] {
+			continue
+		}
+
 		base := "@/metrics/clients/" + mac
 
 		// If this client sent any data in the current period, update

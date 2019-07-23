@@ -35,10 +35,6 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
-// The lowest portion of each subnet's IP range is reserved for the router
-// addresses used by each satellite.
-const maxSatelliteNodes = 8
-
 var (
 	handlers   = make(map[string]*ringHandler)
 	domainName string
@@ -829,13 +825,13 @@ func newHandler(name string, rings cfgapi.RingMap) *ringHandler {
 	myip := dhcp.IPAdd(start, 1)
 	if name == base_def.RING_INTERNAL {
 		// Shrink the range to exclude the router
-		span = maxSatelliteNodes - 1
+		span = base_def.MAX_SATELLITES - 1
 		start = dhcp.IPAdd(start, 1)
 	} else {
 		// Exclude the lower addresses that are reserved for the routers
 		// on each of the mesh APs
-		span -= maxSatelliteNodes
-		start = dhcp.IPAdd(start, maxSatelliteNodes)
+		span -= base_def.MAX_SATELLITES
+		start = dhcp.IPAdd(start, base_def.MAX_SATELLITES)
 	}
 	// Exclude the broadcast address
 	span--

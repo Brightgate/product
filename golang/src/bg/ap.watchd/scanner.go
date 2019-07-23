@@ -519,7 +519,8 @@ func subnetScan(req *ScanRequest) {
 		}
 		mac, ip := getMacIP(&host)
 
-		if internalMacs[network.MacToUint64(mac)] {
+		macKey := network.MacToUint64(mac)
+		if internalMacs[macKey] {
 			// Don't probe any other APs
 			continue
 		}

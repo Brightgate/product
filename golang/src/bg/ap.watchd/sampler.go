@@ -114,8 +114,8 @@ func observedIPAddr(state *samplerState, hwaddr net.HardwareAddr, ipaddr net.IP)
 	// addresses.
 	if mac == network.MacZeroInt || mac == network.MacBcastInt ||
 		bytes.Equal(hwaddr, state.hwaddr) ||
-		network.IsMacMulticast(hwaddr) ||
-		ip == 0 || gateways[ip] || internalMacs[mac] ||
+		network.IsMacMulticast(hwaddr) || internalMacs[mac] ||
+		ip == 0 || gateways[ip] ||
 		ipaddr.IsLinkLocalMulticast() || ipaddr.IsLinkLocalUnicast() ||
 		ipaddr.IsMulticast() || ipaddr.Equal(net.IPv4bcast) {
 		return

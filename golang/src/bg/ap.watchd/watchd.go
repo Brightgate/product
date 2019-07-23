@@ -12,12 +12,14 @@
 package main
 
 import (
+	"encoding/binary"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -173,11 +175,21 @@ func configClientDelete(path []string) {
 }
 
 func getGateways() {
+	// Build a map with all possible gateway IPs.  This is used as a fast
+	// way to determine whether a packet source/destination is one of our
+	// nodes rather than a client device.
+	// XXX: we could reduce the size of the map by populating it with only
+	// those addresses that belong to active nodes rather than all nodes.
 	gateways = make(map[uint32]bool)
-
 	for _, r := range rings {
-		router := net.ParseIP(network.SubnetRouter(r.Subnet))
-		gateways[network.IPAddrToUint32(router)] = true
+		_, ipnet, _ := net.ParseCIDR(r.Subnet)
+		base := ipnet.IP.To4()
+		for i := 1; i < base_def.MAX_SATELLITES; i++ {
+			addr := make(net.IP, 4)
+			binary.BigEndian.PutUint32(addr,
+				binary.BigEndian.Uint32(base)+uint32(i))
+			gateways[network.IPAddrToUint32(addr)] = true
+		}
 	}
 
 	// Build a set of the MACs belonging to our APs, so we can distinguish
@@ -185,8 +197,9 @@ func getGateways() {
 	tmp := make(map[uint64]bool)
 	nics, _ := config.GetNics()
 	for _, nic := range nics {
-		if nic.MacAddr != "" {
-			tmp[network.MacToUint64(nic.MacAddr)] = true
+		if mac := strings.ToLower(nic.MacAddr); mac != "" {
+			macKey := network.MacToUint64(mac)
+			tmp[macKey] = true
 		}
 	}
 	internalMacs = tmp

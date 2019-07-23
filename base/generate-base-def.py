@@ -164,6 +164,7 @@ assignments = [
     [Statement.SIMPLE_NUM, "HTTPD_AES_SIZE", 32],
     [Statement.SIMPLE_STR, "GATEWAY_CLIENT_DOMAIN", "brightgate.net"],
     [Statement.SIMPLE_NUM, "BEARER_JWT_EXPIRY_SECS", 60 * 60],
+    [Statement.SIMPLE_NUM, "MAX_SATELLITES", 8],
 
     [Statement.COMMENT, "Appliance operating modes"],
     [Statement.SIMPLE_STR, "MODE_GATEWAY", "gateway"],
