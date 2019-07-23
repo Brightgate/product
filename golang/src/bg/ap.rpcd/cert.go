@@ -97,9 +97,13 @@ func findInstalledCert(quiet, cloudOnly bool) (string, error) {
 	var found string
 	for fp, node := range node.Children {
 		stateNode := node.Children["state"]
-		if stateNode == nil ||
+		if stateNode == nil || stateNode.Expires == nil ||
 			stateNode.Expires.Before(time.Now()) ||
 			stateNode.Value != "installed" {
+			if stateNode != nil && stateNode.Expires == nil {
+				slog.Warnf("@/certs/%s/state unexpectedly has "+
+					"nil expiration", fp)
+			}
 			continue
 		}
 

@@ -257,10 +257,14 @@ func sendCertRenewEvent(config *cfgapi.Handle, fp string, cert *x509.Certificate
 		return err
 	} else {
 		if propNode.Value != "available" {
-			log.Printf("%s transitioning to 'installed' from unknown state '%s'",
+			log.Printf("%s transitioning to 'installed' from unexpected state '%s'",
 				prop, propNode.Value)
 		}
 		expires = propNode.Expires
+		if expires == nil {
+			log.Printf("%s has nil expiration; using certificate expiration", prop)
+			expires = &cert.NotAfter
+		}
 		ops = append(ops, cfgapi.PropertyOp{
 			Op:      cfgapi.PropSet,
 			Name:    prop,
