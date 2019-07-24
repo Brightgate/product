@@ -457,9 +457,11 @@ func (a *authHandler) mkNewUser(c echo.Context, user goth.User) (*appliancedb.Lo
 		return nil, err
 	}
 	orgRole := &appliancedb.AccountOrgRole{
-		AccountUUID:      account.UUID,
-		OrganizationUUID: organization.UUID,
-		Role:             "user",
+		AccountUUID:            account.UUID,
+		OrganizationUUID:       account.OrganizationUUID,
+		TargetOrganizationUUID: account.OrganizationUUID,
+		Relationship:           "self",
+		Role:                   "user",
 	}
 	err = a.db.InsertAccountOrgRoleTx(ctx, tx, orgRole)
 	if err != nil {
