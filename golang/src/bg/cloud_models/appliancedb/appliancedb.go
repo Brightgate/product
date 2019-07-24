@@ -630,7 +630,7 @@ func (db *ApplianceDB) UpsertCloudStorageTx(ctx context.Context,
 	if dbx == nil {
 		dbx = db
 	}
-	_, err := db.ExecContext(ctx,
+	_, err := dbx.ExecContext(ctx,
 		`INSERT INTO site_cloudstorage
 		 VALUES ($1, $2, $3)
 		 ON CONFLICT (site_uuid) DO UPDATE
