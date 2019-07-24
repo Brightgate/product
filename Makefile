@@ -707,7 +707,7 @@ APPLIANCE_BUCKET = bg-appliance-artifacts
 packages-upload: export GCS_KEY_FILE=$(GCS_KEY_ARTIFACT)
 
 packages-upload:
-	$(GCS_WRAPPER) vcp bg-appliance_*_amd64.deb gs://$(APPLIANCE_BUCKET)/amd64/PS/$(GITHASH_FULL)/
+	$(GCS_WRAPPER) vcp bg-appliance_*_amd64.deb gs://$(APPLIANCE_BUCKET)/x86/PS/$(GITHASH_FULL)/
 	$(GCS_WRAPPER) vcp bg-appliance_*_armhf.deb gs://$(APPLIANCE_BUCKET)/rpi/PS/$(GITHASH_FULL)/
 	$(GCS_WRAPPER) vcp bg-appliance_*_arm_*.ipk gs://$(APPLIANCE_BUCKET)/mt7623/PS/$(GITHASH_FULL)/
 
