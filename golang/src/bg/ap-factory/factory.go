@@ -396,9 +396,9 @@ func isDirPresent(dpath string) bool {
 }
 
 func createAbsentDir(dpath string) {
-	if !isDirPresent("dpath") {
+	if !isDirPresent(dpath) {
 		log.Printf("creating '%s'", dpath)
-		mustMkdirAll("dpath", 0755)
+		mustMkdirAll(dpath, 0755)
 	}
 }
 
