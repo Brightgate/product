@@ -15,6 +15,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"time"
 
@@ -22,54 +23,92 @@ import (
 	"bg/cloud_models/appliancedb"
 	"bg/cloud_rpc"
 	"bg/common/network"
-	"cloud.google.com/go/pubsub"
 
+	"cloud.google.com/go/pubsub"
+	"cloud.google.com/go/storage"
+
+	"github.com/pkg/errors"
 	"github.com/satori/uuid"
 
 	"github.com/golang/protobuf/proto"
-	"google.golang.org/grpc/codes"
 	_ "google.golang.org/grpc/encoding/gzip"
-	"google.golang.org/grpc/status"
 )
 
-func writeInventoryInfo(devInfo *base_msg.DeviceInfo, uuid uuid.UUID) (string, error) {
+const gcsBaseURL = "https://storage.cloud.google.com/"
+
+func writeInventoryCS(ctx context.Context, applianceDB appliancedb.DataStore,
+	uuid uuid.UUID, devInfo *base_msg.DeviceInfo, now time.Time) (string, error) {
+
+	scs, err := applianceDB.CloudStorageByUUID(ctx, uuid)
+	if err != nil {
+		return "", errors.Wrapf(err, "could not get Cloud Storage record for %s", uuid.String())
+	}
+	if scs.Provider != "gcs" {
+		return "", fmt.Errorf("writeInventoryCS not implemented for provider %s",
+			scs.Provider)
+	}
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to create storage client")
+	}
+	bkt := client.Bucket(scs.Bucket)
+	hwaddr := network.Uint64ToHWAddr(devInfo.GetMacAddress())
+	filename := fmt.Sprintf("device_info.%d.pb", int(now.Unix()))
+	filePath := path.Join("obs", hwaddr.String(), filename)
+
+	out, err := proto.Marshal(devInfo)
+	if err != nil {
+		return "", errors.Wrap(err, "marshal failed")
+	}
+
+	obj := bkt.Object(filePath)
+	w := obj.NewWriter(ctx)
+	p := gcsBaseURL + path.Join(obj.BucketName(), obj.ObjectName())
+	if _, err := w.Write(out); err != nil {
+		return "", errors.Wrapf(err, "failed writing to %s", p)
+	}
+	if err := w.Close(); err != nil {
+		return "", errors.Wrapf(err, "failed closing %s", p)
+	}
+
+	return p, nil
+}
+
+func writeInventoryFile(uuid uuid.UUID, devInfo *base_msg.DeviceInfo, now time.Time) (string, error) {
 	hwaddr := network.Uint64ToHWAddr(devInfo.GetMacAddress())
 	// We receive only what has recently changed
 	hwaddrPath := filepath.Join(inventoryBasePath, uuid.String(), hwaddr.String())
 	if err := os.MkdirAll(hwaddrPath, 0755); err != nil {
-		return "", status.Errorf(codes.FailedPrecondition, "mkdir failed")
+		return "", errors.Wrap(err, "inventory mkdir failed")
 	}
 
-	filename := fmt.Sprintf("device_info.%d.pb", int(time.Now().Unix()))
+	filename := fmt.Sprintf("device_info.%d.pb", int(now.Unix()))
 	tmpFilename := "tmp." + filename
 	path := filepath.Join(hwaddrPath, filename)
 	tmpPath := filepath.Join(hwaddrPath, tmpFilename)
-	f, err := os.OpenFile(
-		tmpPath,
-		os.O_WRONLY|os.O_CREATE|os.O_TRUNC,
-		0644)
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		return "", status.Errorf(codes.FailedPrecondition, "open failed")
+		return "", err
 	}
 	defer f.Close()
 
 	out, err := proto.Marshal(devInfo)
 	if err != nil {
-		os.Remove(tmpPath)
-		return "", status.Errorf(codes.FailedPrecondition, "marshal failed")
+		_ = os.Remove(tmpPath)
+		return "", errors.Wrap(err, "marshal failed")
 	}
 
 	if _, err := f.Write(out); err != nil {
-		os.Remove(tmpPath)
-		return "", status.Errorf(codes.FailedPrecondition, "write failed")
+		_ = os.Remove(tmpPath)
+		return "", errors.Wrap(err, "write failed")
 	}
-	f.Sync()
+	_ = f.Sync()
 
 	// Creating a tmp file and renaming it guarantees that we'll never have
 	// a partial record in the file.
 	if err := os.Rename(tmpPath, path); err != nil {
 		os.Remove(tmpPath)
-		return "", status.Errorf(codes.FailedPrecondition, "rename failed")
+		return "", errors.Wrap(err, "rename failed")
 	}
 	return path, nil
 }
@@ -81,8 +120,8 @@ func inventoryMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 	// For now we have nothing we can really do with malformed messages
 	defer m.Ack()
 
-	slog := slog.With("appliance_uuid", m.Attributes["uuid"],
-		"site_uuid", m.Attributes["site"])
+	slog := slog.With("appliance_uuid", m.Attributes["appliance_uuid"],
+		"site_uuid", m.Attributes["site_uuid"])
 
 	inventory := &cloud_rpc.InventoryReport{}
 	err = proto.Unmarshal(m.Data, inventory)
@@ -91,12 +130,21 @@ func inventoryMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 		return
 	}
 
+	now := time.Now()
+	// XXX in the future, pass the whole inventory to each writer, allowing
+	// reuse of e.g.  http.Clients.
 	for _, devInfo := range inventory.Inventory.Devices {
-		path, err := writeInventoryInfo(devInfo, siteUUID)
+		path, err := writeInventoryFile(siteUUID, devInfo, now)
 		if err != nil {
-			slog.Errorw("failed to write report", "path", path, "error", err)
-			return
+			slog.Errorw("failed to write DeviceInfo to file", "path", path, "error", err)
+		} else {
+			slog.Infow("wrote DeviceInfo to file", "path", path)
 		}
-		slog.Infow("wrote report", "path", path)
+		path, err = writeInventoryCS(ctx, applianceDB, siteUUID, devInfo, now)
+		if err != nil {
+			slog.Errorw("failed to write DeviceInfo to cloud storage", "path", path, "error", err)
+		} else {
+			slog.Infow("wrote DeviceInfo to cloud storage", "path", path)
+		}
 	}
 }
