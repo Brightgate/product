@@ -344,7 +344,7 @@ func apiInit() {
 		logWarn("Failed to enable loopback: %v", err)
 	}
 
-	url := base_def.INCOMING_ZMQ_URL + base_def.MCP_ZMQ_REP_PORT
+	url := base_def.INCOMING_COMM_URL + base_def.MCP_COMM_REP_PORT
 	server, err := comms.NewAPServer(url)
 	if err != nil {
 		log.Fatalf("failed to get open server port")

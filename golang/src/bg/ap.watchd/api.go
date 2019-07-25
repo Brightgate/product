@@ -164,7 +164,7 @@ func apiHandle(msg []byte) []byte {
 }
 
 func apiInit() error {
-	url := base_def.INCOMING_ZMQ_URL + base_def.WATCHD_ZMQ_REP_PORT
+	url := base_def.INCOMING_COMM_URL + base_def.WATCHD_COMM_REP_PORT
 
 	server, err := comms.NewAPServer(url)
 	if err != nil {

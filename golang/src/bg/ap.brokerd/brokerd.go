@@ -22,7 +22,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"bg/ap_common/aputil"
 	"bg/ap_common/mcp"
@@ -31,8 +30,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 
-	// Ubuntu: requires libzmq3-dev, which is 0MQ 4.2.1.
-	zmq "github.com/pebbe/zmq4"
+	"nanomsg.org/go/mangos/v2"
+	"nanomsg.org/go/mangos/v2/protocol/bus"
+	// Importing the TCP transport
+	_ "nanomsg.org/go/mangos/v2/transport/tcp"
 )
 
 const pname = "ap.brokerd"
@@ -45,9 +46,23 @@ var (
 	slog *zap.SugaredLogger
 )
 
-func main() {
-	var err error
+func forward(sock mangos.Socket) {
+	for {
+		phase := "receive"
+		msg, err := sock.Recv()
 
+		if err == nil {
+			phase = "send"
+			err = sock.Send(msg)
+		}
+
+		if err != nil {
+			slog.Warnf("%s failed: %v", phase, err)
+		}
+	}
+}
+
+func main() {
 	flag.Parse()
 	slog = aputil.NewLogger(pname)
 	defer slog.Sync()
@@ -59,40 +74,23 @@ func main() {
 	}
 
 	http.Handle("/metrics", promhttp.Handler())
-
 	go http.ListenAndServe(*addr, nil)
 
-	frontend, _ := zmq.NewSocket(zmq.XSUB)
-	defer frontend.Close()
-	port := base_def.INCOMING_ZMQ_URL + base_def.BROKER_ZMQ_PUB_PORT
-	if err = frontend.Bind(port); err != nil {
-		slog.Fatalf("Unable to bind publish port %s: %v", port, err)
+	sock, err := bus.NewSocket()
+	if err != nil {
+		slog.Fatalf("allocating BUS socket: %v", err)
 	}
-	slog.Debugf("Publishing on %s", port)
+	defer sock.Close()
 
-	backend, _ := zmq.NewSocket(zmq.XPUB)
-	defer backend.Close()
-	port = base_def.INCOMING_ZMQ_URL + base_def.BROKER_ZMQ_SUB_PORT
-	if err = backend.Bind(port); err != nil {
-		slog.Fatalf("Unable to bind subscribe port %s: %v", port, err)
+	port := base_def.INCOMING_COMM_URL + base_def.BROKER_COMM_BUS_PORT
+	if err = sock.Listen(port); err != nil {
+		slog.Fatalf("Listen() on SUB port %s: %v", port, err)
 	}
-	slog.Debugf("Subscribed on %s", port)
+	slog.Debugf("Listening on %s", port)
 
 	mcpd.SetState(mcp.ONLINE)
 
-	go func() {
-		for {
-			start := time.Now()
-
-			err = zmq.Proxy(frontend, backend, nil)
-			slog.Warnf("zmq proxy interrupted: %v", err)
-			if time.Since(start).Seconds() < 10 {
-				break
-			}
-		}
-		mcpd.SetState(mcp.BROKEN)
-		slog.Fatalf("Errors coming too quickly.  Giving up.")
-	}()
+	go forward(sock)
 
 	sig := make(chan os.Signal, 2)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)

@@ -28,7 +28,7 @@ cleanup=true
 noauth=true
 
 [Raspbian]
-packages= libc-dev-bin libc6-dev libdbus-1-dev libexpat1-dev libgcc-6-dev libltdl-dev libncurses5-dev libnl-3-dev libnl-genl-3-dev libnl-route-3-dev libpcap-dev libreadline-dev libssl1.0-dev libstdc++-6-dev libtinfo-dev libzmq3-dev linux-libc-dev zlib1g-dev
+packages= libc-dev-bin libc6-dev libdbus-1-dev libexpat1-dev libgcc-6-dev libltdl-dev libncurses5-dev libnl-3-dev libnl-genl-3-dev libnl-route-3-dev libpcap-dev libreadline-dev libssl1.0-dev libstdc++-6-dev libtinfo-dev linux-libc-dev zlib1g-dev
 source=http://archive.raspbian.org/raspbian
 keyring=raspbian-archive-keyring
 components=main contrib non-free

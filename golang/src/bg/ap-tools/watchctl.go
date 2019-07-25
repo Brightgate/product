@@ -354,7 +354,7 @@ func watchctl() {
 		watchUsage()
 	}
 
-	url := base_def.LOCAL_ZMQ_URL + base_def.WATCHD_ZMQ_REP_PORT
+	url := base_def.LOCAL_COMM_URL + base_def.WATCHD_COMM_REP_PORT
 	comm, err := comms.NewAPClient(url)
 	if err != nil {
 		fmt.Printf("%s: unable to connect to watchd: %v\n", pname, err)

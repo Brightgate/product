@@ -10,7 +10,7 @@
 
 # 1. (a) On MacOS
 #
-#	 $ sudo brew install protobuf zmq
+#	 $ sudo brew install protobuf
 #	 [Retrieve and install Go pkg from golang.org]
 #
 #	 You will not be able to build the packages target on MacOS.
@@ -250,7 +250,6 @@ BUILDTOOLS = \
 	$(BUILDTOOLS_CROSS) \
 	protobuf-compiler \
 	libprotobuf-dev \
-	libzmq3-dev \
 	libpcap-dev \
 	lintian \
 	pngquant \

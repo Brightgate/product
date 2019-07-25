@@ -410,14 +410,6 @@
   version = "v1.1.3"
 
 [[projects]]
-  branch = "master"
-  digest = "1:d2df7451f4829b4dd6422e1ebf336fe9400220efe735f80f27d84a07e3180a1f"
-  name = "github.com/pebbe/zmq4"
-  packages = ["."]
-  pruneopts = ""
-  revision = "5b443b6471cea4b4f9f85025530c04c93233f76a"
-
-[[projects]]
   digest = "1:68663e6e04c8a14911064888fb2426978b89aa23b04f0753cf82ec94ced5f483"
   name = "github.com/pin/tftp"
   packages = [
@@ -959,6 +951,25 @@
   revision = "f61ac651e23224d43848a8dc387dee016d7eacf9"
   version = "v2.2.0"
 
+[[projects]]
+  digest = "1:3b8a67dd2b157daf3906a2c99856afb2a236924af83deaf1af7a526a7be8934e"
+  name = "nanomsg.org/go/mangos/v2"
+  packages = [
+    ".",
+    "errors",
+    "internal/core",
+    "protocol",
+    "protocol/bus",
+    "protocol/rep",
+    "protocol/req",
+    "protocol/xbus",
+    "transport",
+    "transport/tcp",
+  ]
+  pruneopts = ""
+  revision = "63f66a65137b9a648ac9f7bf0160b4a4d17d7999"
+  version = "v2.0.2"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
@@ -1012,7 +1023,6 @@
     "github.com/markbates/goth/providers/google",
     "github.com/markbates/goth/providers/openidConnect",
     "github.com/miekg/dns",
-    "github.com/pebbe/zmq4",
     "github.com/pin/tftp",
     "github.com/pkg/errors",
     "github.com/prometheus/client_golang/prometheus",
@@ -1071,6 +1081,11 @@
     "google.golang.org/grpc/metadata",
     "google.golang.org/grpc/peer",
     "google.golang.org/grpc/status",
+    "nanomsg.org/go/mangos/v2",
+    "nanomsg.org/go/mangos/v2/protocol/bus",
+    "nanomsg.org/go/mangos/v2/protocol/rep",
+    "nanomsg.org/go/mangos/v2/protocol/req",
+    "nanomsg.org/go/mangos/v2/transport/tcp",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1

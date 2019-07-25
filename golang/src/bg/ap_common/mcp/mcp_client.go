@@ -118,7 +118,7 @@ func newConnection(name, base string) (*MCP, error) {
 	var handle *MCP
 
 	plat := platform.NewPlatform()
-	url := base + base_def.MCP_ZMQ_REP_PORT
+	url := base + base_def.MCP_COMM_REP_PORT
 
 	comm, err := comms.NewAPClient(url)
 	if err != nil {
@@ -146,7 +146,7 @@ func newConnection(name, base string) (*MCP, error) {
 // New connects to ap.mcp, and returns an opaque handle that can be used for
 // subsequent communication with the daemon.
 func New(name string) (*MCP, error) {
-	return newConnection(name, base_def.LOCAL_ZMQ_URL)
+	return newConnection(name, base_def.LOCAL_COMM_URL)
 }
 
 // NewPeer connects to ap.mcp running on a gateway node, and returns an opaque
@@ -156,7 +156,7 @@ func NewPeer(name string) (*MCP, error) {
 		log.Printf("Warning: NewPeer() is only intended to be called " +
 			"by ap.mcp on satellite nodes.")
 	}
-	return newConnection(name, base_def.GATEWAY_ZMQ_URL)
+	return newConnection(name, base_def.GATEWAY_COMM_URL)
 }
 
 // Close closes the connection to the mcp daemon

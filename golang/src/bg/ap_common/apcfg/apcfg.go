@@ -160,9 +160,9 @@ func NewConfigdHdl(b *broker.Broker, name string,
 	}
 
 	if aputil.IsSatelliteMode() {
-		url = base_def.GATEWAY_ZMQ_URL + base_def.CONFIGD_ZMQ_REP_PORT
+		url = base_def.GATEWAY_COMM_URL + base_def.CONFIGD_COMM_REP_PORT
 	} else {
-		url = base_def.LOCAL_ZMQ_URL + base_def.CONFIGD_ZMQ_REP_PORT
+		url = base_def.LOCAL_COMM_URL + base_def.CONFIGD_COMM_REP_PORT
 	}
 
 	c.comm, err = comms.NewAPClient(url)

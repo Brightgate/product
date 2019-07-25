@@ -70,7 +70,7 @@ import (
 
 const (
 	pname     = "ap.configd"
-	serverURL = base_def.INCOMING_ZMQ_URL + base_def.CONFIGD_ZMQ_REP_PORT
+	serverURL = base_def.INCOMING_COMM_URL + base_def.CONFIGD_COMM_REP_PORT
 )
 
 var metrics struct {

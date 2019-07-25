@@ -11,6 +11,7 @@
 package broker
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"os"
@@ -22,8 +23,12 @@ import (
 	"bg/base_msg"
 
 	"github.com/golang/protobuf/proto"
-	zmq "github.com/pebbe/zmq4"
 	"go.uber.org/zap"
+
+	"nanomsg.org/go/mangos/v2"
+	"nanomsg.org/go/mangos/v2/protocol/bus"
+	// Importing the TCP transport
+	_ "nanomsg.org/go/mangos/v2/transport/tcp"
 )
 
 // Clients can request to be notified of any topic they wish.  This list
@@ -47,12 +52,10 @@ type handlerF func(event []byte)
 
 // Broker is an opaque handle used by daemons to communicate with ap.brokerd
 type Broker struct {
-	Name         string
-	slog         *zap.SugaredLogger
-	publisherMtx sync.Mutex
-	publisher    *zmq.Socket
-	subscriber   *zmq.Socket
-	handlers     map[string][]handlerF
+	Name     string
+	slog     *zap.SugaredLogger
+	socket   mangos.Socket
+	handlers map[string][]handlerF
 	sync.Mutex
 }
 
@@ -74,7 +77,7 @@ func (b *Broker) Ping() error {
 }
 
 // Publish first marshals the protobuf into its wire format and then sends the
-// resulting data on the broker's ZMQ socket
+// resulting data on the broker's COMM socket
 func (b *Broker) Publish(pb proto.Message, topic string) error {
 	if b == nil {
 		return nil
@@ -85,9 +88,16 @@ func (b *Broker) Publish(pb proto.Message, topic string) error {
 		return fmt.Errorf("error marshaling %s: %v", topic, err)
 	}
 
-	b.publisherMtx.Lock()
-	_, err = b.publisher.SendMessage(topic, data)
-	b.publisherMtx.Unlock()
+	// Pack the topic and data into a single buffer
+	dataOff := len(topic) + 1
+	msg := make([]byte, dataOff+len(data))
+	copy(msg, []byte(topic))
+	copy(msg[dataOff:], data)
+
+	b.Lock()
+	err = b.socket.Send(msg)
+	b.Unlock()
+
 	if err != nil {
 		return fmt.Errorf("error sending %s: %v", topic, err)
 	}
@@ -99,19 +109,28 @@ func eventListener(b *Broker) {
 	tlog := aputil.GetThrottledLogger(b.slog, time.Second, 15*time.Second)
 
 	for {
-		msg, err := b.subscriber.RecvMessageBytes(0)
+		data, err := b.socket.Recv()
 		if err != nil {
 			tlog.Errorf("listener failed to receive: %v", err)
 			continue
 		}
 
-		topic := string(msg[0])
+		// The message should contain a NULL-terminated topic string
+		// and a binary data blob
+		dataOff := bytes.IndexByte(data, 0) + 1
+		if dataOff <= 0 || dataOff >= len(data) {
+			tlog.Errorf("invalid message")
+			continue
+		}
+		topic := string(data[:dataOff-1])
+
 		b.Lock()
 		hdlrs, ok := b.handlers[topic]
 		b.Unlock()
+
 		if ok && len(hdlrs) > 0 {
 			for _, hdlr := range hdlrs {
-				hdlr(msg[1])
+				hdlr(data[dataOff:])
 			}
 		} else if debug {
 			if ok {
@@ -138,25 +157,23 @@ func (b *Broker) Handle(topic string, handler handlerF) {
 }
 
 func (b *Broker) connect() {
-	var host string
+	var port string
+	var err error
+
+	b.socket, err = bus.NewSocket()
+	if err != nil {
+		b.slog.Fatalf("creating subscriber socket %v", err)
+	}
 
 	if aputil.IsSatelliteMode() {
-		host = base_def.GATEWAY_ZMQ_URL
+		port = base_def.GATEWAY_COMM_URL + base_def.BROKER_COMM_BUS_PORT
 	} else {
-		host = base_def.LOCAL_ZMQ_URL
+		port = base_def.LOCAL_COMM_URL + base_def.BROKER_COMM_BUS_PORT
 	}
-	s, _ := zmq.NewSocket(zmq.SUB)
-	b.subscriber = s
-	err := b.subscriber.Connect(host + base_def.BROKER_ZMQ_SUB_PORT)
-	if err != nil {
-		b.slog.Fatalf("Unable to connect to broker subscribe: %v", err)
-	}
-	b.subscriber.SetSubscribe("")
 
-	b.publisher, _ = zmq.NewSocket(zmq.PUB)
-	err = b.publisher.Connect(host + base_def.BROKER_ZMQ_PUB_PORT)
+	err = b.socket.Dial(port)
 	if err != nil {
-		b.slog.Fatalf("Unable to connect to broker publish: %v", err)
+		b.slog.Fatalf("connecting subscriber to %s: %v", port, err)
 	}
 
 	go eventListener(b)
@@ -168,7 +185,7 @@ func (b *Broker) Fini() {
 		return
 	}
 
-	b.subscriber.Close()
+	b.socket.Close()
 }
 
 // NewBroker allocates a brokers structure and establishes a network connection

@@ -14,23 +14,24 @@ import (
 	"fmt"
 	"log"
 	"sync"
-	"syscall"
 	"time"
 
-	zmq "github.com/pebbe/zmq4"
+	"nanomsg.org/go/mangos/v2"
+	"nanomsg.org/go/mangos/v2/protocol/rep"
+	"nanomsg.org/go/mangos/v2/protocol/req"
+	// Importing the TCP transport
+	_ "nanomsg.org/go/mangos/v2/transport/tcp"
 )
-
-const ()
 
 // APComm is an opaque handle representing either a client or server
 // communications endpoint
 type APComm struct {
 	url    string
 	client bool
+	isOpen bool
 
-	active     bool
-	socket     *zmq.Socket
-	socketType zmq.Type
+	active bool
+	socket mangos.Socket
 
 	sendTimeout time.Duration
 	recvTimeout time.Duration
@@ -40,21 +41,29 @@ type APComm struct {
 }
 
 func newAPComm(url string, client bool) (*APComm, error) {
+	var err error
+	var sock mangos.Socket
+
 	c := &APComm{
 		url:         url,
 		client:      client,
 		active:      true,
 		sendTimeout: 2 * time.Second,
+		recvTimeout: 5 * time.Second,
+		openTimeout: time.Second,
 	}
 
 	if client {
-		c.openTimeout = 5 * time.Second
-		c.recvTimeout = 5 * time.Second
-		c.socketType = zmq.REQ
+		sock, err = req.NewSocket()
 	} else {
-		c.socketType = zmq.REP
+		sock, err = rep.NewSocket()
+	}
+	if err != nil {
+		return nil, fmt.Errorf("creating socket: %v", err)
 	}
 
+	sock.SetOption(mangos.OptionWriteQLen, 0)
+	c.socket = sock
 	if err := c.open(); err != nil {
 		return nil, err
 	}
@@ -92,44 +101,31 @@ func (c *APComm) SetOpenTimeout(d time.Duration) {
 	c.openTimeout = d
 }
 
+// Close closes the socket
 func (c *APComm) close() {
-	if c.socket != nil {
+	if c.isOpen {
 		c.socket.Close()
-		c.socket = nil
+		c.isOpen = false
 	}
 }
 
-// Make a single attempt at creating the ZMQ socket and either opening the
+// Make a single attempt at creating the socket and either opening the
 // server port or connecting to the server.
 func (c *APComm) tryOpen() error {
-	c.close()
-
-	socket, err := zmq.NewSocket(c.socketType)
-	if err != nil {
-		return fmt.Errorf("creating socket: %v", err)
-	}
-
-	if c.sendTimeout > 0 {
-		socket.SetSndtimeo(c.sendTimeout)
-	}
-
-	if c.recvTimeout > 0 {
-		socket.SetRcvtimeo(c.recvTimeout)
+	if c.isOpen {
+		return nil
 	}
 
 	if c.client {
-		if err = socket.Connect(c.url); err != nil {
-			err = fmt.Errorf("connecting: %v", err)
+		if err := c.socket.Dial(c.url); err != nil {
+			return fmt.Errorf("dialing socket %s: %v", c.url, err)
 		}
 	} else {
-		if err = socket.Bind(c.url); err != nil {
-			err = fmt.Errorf("binding: %v", err)
+		if err := c.socket.Listen(c.url); err != nil {
+			return fmt.Errorf("listening on socket %s: %v", c.url, err)
 		}
 	}
-
-	if err == nil {
-		c.socket = socket
-	}
+	c.isOpen = true
 
 	return nil
 }
@@ -172,7 +168,7 @@ func (c *APComm) open() error {
 // message, the call will block until the server sends a reply, which is
 // returned as the result of this call.
 func (c *APComm) Send(msg []byte) ([]byte, error) {
-	var reply [][]byte
+	var reply []byte
 	var err error
 
 	c.Lock()
@@ -195,70 +191,51 @@ func (c *APComm) Send(msg []byte) ([]byte, error) {
 			break
 		}
 
-		if c.socket == nil {
-			err = c.open()
+		if err = c.tryOpen(); err != nil {
 			continue
 		}
 
 		phase := "sending"
-		_, err = c.socket.SendBytes(msg, 0)
-		if err == nil {
+		if err = c.socket.Send(msg); err == nil {
 			phase = "receiving reply"
-			// If the read fails with EINTR, it most likely means
-			// that we got a SIGCHLD when a worker process exited.
-			// Some versions of ZeroMQ will silently retry this
-			// read internally.  Since our version returns the
-			// error, we do the retry ourselves.  If we fail
-			// with EINTR multiple times, we'll give up and attempt
-			// to build a new connection.
-			for retries := 0; retries < 3; retries++ {
-				reply, err = c.socket.RecvMessageBytes(0)
-				if err != zmq.Errno(syscall.EINTR) {
-					break
-				}
-			}
+			reply, err = c.socket.Recv()
 		}
 		if err == nil {
 			break
 		}
-		err = fmt.Errorf("%s: %v", phase, err)
 
-		// Because of ZeroMQ's rigid state machine, a failed message can
-		// leave a socket permanently broken.  To avoid this, we will
-		// close and reopen the socket on an error.  If it fails
-		// repeatedly, we give up and return the error to the caller.
+		err = fmt.Errorf("%s: %v", phase, err)
 		c.close()
 	}
 
-	if err == nil && len(reply) > 0 {
-		return reply[0], nil
-	}
-
-	return nil, err
+	return reply, err
 }
 
 // Serve is used by a server to handle incoming messages from clients.  The
 // caller provides a callback which will be invoked for each message received.
 func (c *APComm) Serve(cb func([]byte) []byte) error {
+	c.Lock()
+	defer c.Unlock()
 
 	if c.client {
 		return fmt.Errorf("called Serve() on a client endpoint")
 	}
 
 	for c.active {
-		if c.socket == nil {
+		if !c.isOpen {
 			c.open()
 			continue
 		}
 
-		msg, err := c.socket.RecvMessageBytes(0)
+		c.Unlock()
+		msg, err := c.socket.Recv()
+		c.Lock()
 		if err != nil {
 			c.close()
-
 		} else if len(msg) > 0 {
-			resp := cb(msg[0])
-			if s := c.socket; s != nil {
-				s.SendBytes(resp, 0)
+			resp := cb(msg)
+			if c.isOpen {
+				c.socket.Send(resp)
 			}
 		}
 	}
@@ -267,6 +244,9 @@ func (c *APComm) Serve(cb func([]byte) []byte) error {
 
 // Close closes the endpoint
 func (c *APComm) Close() {
+	c.Lock()
+	defer c.Unlock()
+
 	c.active = false
 	c.close()
 }

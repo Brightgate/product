@@ -191,8 +191,8 @@ func (d *daemon) start() {
 	}
 	d.child = child
 	if d.ThirdParty {
-		// A third party daemon doesn't participate in the ZMQ updates,
-		// so we won't get an online notification.  Just set it here.
+		// A third party daemon doesn't know how to talk to us, so
+		// we won't get an online notification.  Just set it here.
 		d.setState(mcp.ONLINE)
 	}
 

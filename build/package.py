@@ -257,7 +257,6 @@ class AppliancePackage(Package):
         "iw",
         "libc6",
         "libpcap-dev",
-        "libzmq3-dev",
         "netfilter-persistent",
         "nmap",
         "procps",
@@ -269,7 +268,6 @@ class AppliancePackage(Package):
         "libgcc",
         "libpcap",
         "libsodium",
-        "libzmq-curve",
         "uclibcxx",
 
         "chrony",
