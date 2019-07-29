@@ -365,6 +365,13 @@ func main() {
 		slog.Warnf("failed to connect to mcp")
 	}
 
+	if strings.EqualFold(os.Getenv("BG_FAILSAFE"), "true") {
+		slog.Infof("Starting in failsafe mode - going idle")
+		err = mcpd.SetState(mcp.FAILSAFE)
+		signalHandler()
+		os.Exit(0)
+	}
+
 	prometheusInit()
 
 	brokerd = broker.NewBroker(slog, pname)

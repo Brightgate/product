@@ -210,6 +210,8 @@ func prometheusInit() {
 }
 
 func main() {
+	var mcpState int
+
 	slog = aputil.NewLogger(pname)
 	defer slog.Sync()
 	slog.Infof("starting")
@@ -236,7 +238,13 @@ func main() {
 	initInterfaces()
 	dnsInit()
 	dhcpInit()
-	relayInit()
+	if strings.EqualFold(os.Getenv("BG_FAILSAFE"), "true") {
+		slog.Infof("Starting in failsafe mode - disabling relay")
+		mcpState = mcp.FAILSAFE
+	} else {
+		relayInit()
+		mcpState = mcp.ONLINE
+	}
 
 	config.HandleChange(`^@/clients/.*`, clientUpdateEvent)
 	config.HandleDelete(`^@/clients/.*`, clientDeleteEvent)
@@ -245,7 +253,7 @@ func main() {
 	config.HandleChange(`^@/site_index$`, configSiteChanged)
 	config.HandleChange(`^@/network/base_address$`, configSiteChanged)
 
-	mcpd.SetState(mcp.ONLINE)
+	mcpd.SetState(mcpState)
 
 	sig := make(chan os.Signal, 2)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)

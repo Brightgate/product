@@ -44,6 +44,7 @@ var (
 type Child struct {
 	Cmd     *exec.Cmd
 	Process *os.Process
+	env     []string
 
 	pipes       int
 	done        chan bool
@@ -105,6 +106,9 @@ func handlePipe(c *Child, r io.ReadCloser) {
 
 // Start launches a prepared child process
 func (c *Child) Start() error {
+	if c.env != nil {
+		c.Cmd.Env = c.env
+	}
 	err := c.Cmd.Start()
 	if err == nil {
 		c.Lock()
@@ -354,6 +358,18 @@ func (c *Child) UseStdLog(prefix string, flags int, w io.Writer) {
 	} else {
 		c.stdLogger.SetOutput(w)
 	}
+}
+
+// SetEnv prepares to set an environment variable in the child's environment.
+// If the child is already running, the new setting will have no effect on the
+// current instance - it will be applied after the next Stop()/Start().
+func (c *Child) SetEnv(name, value string) {
+	c.Lock()
+	defer c.Unlock()
+	if c.env == nil {
+		c.env = os.Environ()
+	}
+	c.env = append(c.env, name+"="+value)
 }
 
 // SetPgid with a true value will cause the child, when started, to be put into

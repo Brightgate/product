@@ -31,14 +31,15 @@ import (
 const (
 	// Allow up to 4 failures in a 1 minute period before giving up
 	failuresAllowed = 4
-	restartPeriod   = time.Duration(time.Minute)
+	successTime     = time.Duration(time.Minute)
 	warnPeriod      = time.Duration(5 * time.Minute)
 
-	onlineTimeout  = time.Duration(15 * time.Second)
+	onlineTimeout  = time.Duration(10 * time.Second)
 	offlineTimeout = time.Duration(15 * time.Second)
 )
 
 type daemon struct {
+	// State exported through the GetState API
 	Name        string
 	Binary      string
 	Modes       []string `json:"Modes,omitempty"`
@@ -50,19 +51,30 @@ type daemon struct {
 	SoftTimeout uint64   `json:"SoftTimeout,omitempty"`
 	Privileged  bool
 
+	// Daemon definition from mcp.json
 	execpath     string
 	args         []string
-	dependencies []*daemon
-	dependents   []*daemon
+	dependencies []*daemon // which daemons does this depend on
+	dependents   []*daemon // which daemons depend on this one
 
-	evaluate chan bool
-	goal     chan int
-	state    int
+	// Channels used to control a daemon's behavior
+	evaluate chan bool // change in state for daemon or dependency
+	goal     chan int  // change in the goal state for this daemon
 
+	// State machine
+	goalState int       // desired state
+	state     int       // current state
+	setTime   time.Time // when the current state was entered
+
+	// The process corresponding to the current instance of the daemon
+	child        *aputil.Child
+	childState   *aputil.ChildState
+	startTime    time.Time
+	exitDetected bool
+
+	// Tracking daemon health
+	failures    int // number of consecutive failures
 	memWarnTime time.Time
-	setTime     time.Time
-	child       *aputil.Child
-	childState  *aputil.ChildState
 
 	sync.Mutex
 }
@@ -85,15 +97,32 @@ var (
 	}
 
 	self *daemon
+
+	stateEvalFns = map[int]func(*daemon){
+		mcp.BROKEN:   stateBroken,
+		mcp.OFFLINE:  stateOffline,
+		mcp.BLOCKED:  stateBlocked,
+		mcp.STARTING: stateStarting,
+		mcp.INITING:  stateStarting,
+		mcp.FAILSAFE: stateOnline,
+		mcp.ONLINE:   stateOnline,
+		mcp.STOPPING: stateStopping,
+	}
 )
+
+func (d *daemon) online() bool {
+	return d.state == mcp.FAILSAFE || d.state == mcp.ONLINE
+}
 
 func (d *daemon) offline() bool {
 	return d.state == mcp.OFFLINE || d.state == mcp.BROKEN
 }
 
+// A daemon is blocked from running if any of its dependencies are
+// not running.
 func (d *daemon) blocked() bool {
 	for _, dep := range d.dependencies {
-		if dep.state != mcp.ONLINE {
+		if !dep.online() {
 			return true
 		}
 	}
@@ -172,6 +201,11 @@ func (d *daemon) start() {
 	child := aputil.NewChild(d.execpath, d.args...)
 	child.UseStdLog("", 0, out)
 
+	if d.failures >= (failuresAllowed / 2) {
+		logInfo("starting %s in failsafe", d.Name)
+		child.SetEnv("BG_FAILSAFE", "true")
+	}
+
 	if !d.Privileged {
 		child.SetUID(nobodyUID, nobodyUID)
 	}
@@ -199,6 +233,8 @@ func (d *daemon) start() {
 	go d.wait()
 }
 
+// If the daemon is running, kill the process with SIGABRT to try to collect
+// stacktraces in the log.
 func (d *daemon) crash() {
 	if !d.offline() {
 		d.setState(mcp.STOPPING)
@@ -217,10 +253,9 @@ func (d *daemon) crash() {
 	}
 }
 
+// If the daemon is running, kill its process.
 func (d *daemon) stop() {
-	if d.state == mcp.BLOCKED {
-		d.setState(mcp.OFFLINE)
-	} else if !d.offline() && d.state != mcp.STOPPING {
+	if !d.offline() && d.state != mcp.STOPPING {
 		d.setState(mcp.STOPPING)
 		if c := d.child; c != nil {
 			pid := -1
@@ -234,73 +269,113 @@ func (d *daemon) stop() {
 	}
 }
 
+func stateBlocked(d *daemon) {
+	if d.goalState == mcp.OFFLINE || !d.blocked() {
+		// The daemon's goal has changed to OFFLINE or its dependencies
+		// are now running.  Drop to OFFLINE so we can try starting
+		// again.
+		d.setState(mcp.OFFLINE)
+		d.failures = 0
+	}
+}
+
+func stateStarting(d *daemon) {
+	if d.goalState == mcp.OFFLINE || d.blocked() {
+		// The daemon's goal has changed to OFFLINE or one if its
+		// dependencies stopped, so this daemon should be stopped.
+		d.stop()
+		d.failures = 0
+
+	} else if time.Since(d.startTime) > onlineTimeout {
+		// The daemon has been stuck in STARTING/INITING for too long.
+		// Kill it and try again.
+		logWarn("%s took more than %v to come online. "+
+			"Giving up.", d.Name, onlineTimeout)
+		d.stop()
+		d.failures++
+	}
+}
+
+func stateOnline(d *daemon) {
+	if d.goalState == mcp.OFFLINE || d.blocked() {
+		// The daemon's goal has changed to OFFLINE or one if its
+		// dependencies stopped, so this daemon should be stopped.
+		d.stop()
+		d.failures = 0
+
+	} else if time.Since(d.startTime) > successTime {
+		// The daemon has been running for long enough for us to assume
+		// it's a success.
+		d.failures = 0
+	}
+}
+
+func stateOffline(d *daemon) {
+	if !d.exitDetected {
+		d.exitDetected = true
+		if time.Since(d.startTime) < successTime {
+			// The daemon died quickly enough that we assume it
+			// failed or crashed.
+			d.failures++
+		}
+	}
+
+	if d.goalState == mcp.ONLINE {
+		if d.blocked() {
+			d.setState(mcp.BLOCKED)
+			d.failures = 0
+
+		} else if d.failures <= failuresAllowed {
+			d.startTime = time.Now()
+			d.exitDetected = false
+			d.start()
+
+		} else {
+			logWarn("%s is dying too quickly", d.Name)
+			d.setState(mcp.BROKEN)
+		}
+	}
+}
+
+func stateStopping(d *daemon) {
+}
+
+func stateBroken(d *daemon) {
+}
+
 func (d *daemon) daemonLoop() {
-	timeout := time.NewTimer(0)
-	startTimes := make([]time.Time, failuresAllowed)
-	goal := mcp.OFFLINE
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 
 	d.Lock()
 	for {
-		if d.state == mcp.BROKEN {
-			goal = mcp.OFFLINE
+		// Evaluate whether we should move to a different position in
+		// the daemon state machine.
+		oldState := d.state
+		stateEvalFns[oldState](d)
+		newState := d.state
+
+		if newState != oldState {
+			continue
 		}
 
-		// Check to see whether our dependencies have changed state
-		if d.state > mcp.BLOCKED && d.blocked() {
-			// A dependency stopped, so we need to as well
-			d.stop()
-		} else if d.state == mcp.BLOCKED && !d.blocked() {
-			// We're no longer blocked.  Drop to OFFLINE so we can
-			// try starting again.
-			d.setState(mcp.OFFLINE)
-		}
-
-		// Check to see whether we are currently in our intended state
-		if goal == mcp.ONLINE && d.state == mcp.OFFLINE {
-			if d.blocked() {
-				d.setState(mcp.BLOCKED)
-			} else {
-				startTimes = append(startTimes[1:failuresAllowed],
-					time.Now())
-				timeout.Reset(onlineTimeout)
-				d.start()
-			}
-		} else if goal == mcp.OFFLINE && !d.offline() {
-			timeout.Stop()
-			d.stop()
-		}
-
-		// We've taken any actions we can.  Now wait for our state to
-		// change, our goal to change, or for an action to timeout
 		d.Unlock()
-		timedout := false
 		for spin := true; spin; {
 			select {
-			case <-timeout.C:
-				timedout = true
-			case goal = <-d.goal:
-				startTimes = make([]time.Time, failuresAllowed)
-				logDebug("%s goal: %s", d.Name,
-					mcp.States[goal])
+			case <-ticker.C:
 			case <-d.evaluate:
+			case goal := <-d.goal:
+				if goal != d.goalState {
+					logDebug("%s has new goal: %s", d.Name,
+						mcp.States[goal])
+					d.goalState = goal
+				}
 			}
+
 			// If we have more signals pending, consume them now
 			spin = (len(d.evaluate) + len(d.goal)) > 0
 		}
 		d.Lock()
-
-		if timedout && (d.state == mcp.INITING || d.state == mcp.STARTING) {
-			logWarn("%s took more than %v to come online.  Giving up.",
-				d.Name, onlineTimeout)
-			d.stop()
-			d.setState(mcp.BROKEN)
-		}
-		if (d.state != mcp.BROKEN) &&
-			(time.Since(startTimes[0]) < restartPeriod) {
-			logWarn("%s is dying too quickly", d.Name)
-			d.stop()
-			d.setState(mcp.BROKEN)
-		}
 	}
 }
 
@@ -369,6 +444,7 @@ func daemonDefine(def *daemon) {
 	if d == nil {
 		d = def
 		d.state = mcp.OFFLINE
+		d.goalState = mcp.OFFLINE
 		d.setTime = time.Unix(0, 0)
 		d.evaluate = make(chan bool, 20)
 		d.goal = make(chan int, 20)
@@ -515,10 +591,11 @@ func daemonInit() {
 	binary, _ := os.Executable()
 
 	self = &daemon{
-		Name:    pname,
-		Binary:  binary,
-		state:   mcp.ONLINE,
-		setTime: time.Now(),
+		Name:      pname,
+		Binary:    binary,
+		goalState: mcp.ONLINE,
+		state:     mcp.ONLINE,
+		setTime:   time.Now(),
 		child: &aputil.Child{
 			Process: process,
 		},

@@ -109,6 +109,7 @@ func handleStart(set daemonSet) {
 	for _, d := range set {
 		d.Lock()
 		if d.state == mcp.BROKEN {
+			d.failures = 0
 			d.setState(mcp.OFFLINE)
 		}
 		d.Unlock()

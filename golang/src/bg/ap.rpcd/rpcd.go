@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -268,12 +269,14 @@ func daemonStop() {
 
 func daemonStart() {
 	var err error
+	var mcpState int
 	var cclient cloud_rpc.ConfigBackEndClient
 	var sclient cloud_rpc.CloudStorageClient
 
 	slog.Infof("ap.rpcd starting")
 	ctx := context.Background()
 	isGateway := !aputil.IsSatelliteMode()
+	isFailsafe := strings.EqualFold(os.Getenv("BG_FAILSAFE"), "true")
 
 	if mcpd, err = mcp.New(pname); err != nil {
 		slog.Fatalf("Failed to connect to mcp: %s", err)
@@ -288,8 +291,6 @@ func daemonStart() {
 		slog.Fatalf("commonInit failed: %v", err)
 	}
 
-	slog.Infof("Setting state ONLINE")
-	err = mcpd.SetState(mcp.ONLINE)
 	if err != nil {
 		slog.Fatalf("Failed to set ONLINE: %+v", err)
 	}
@@ -323,16 +324,30 @@ func daemonStart() {
 
 	go heartbeatLoop(ctx, tclient, &cleanup.wg, addDoneChan())
 	if isGateway {
-		go inventoryLoop(ctx, tclient, &cleanup.wg, addDoneChan())
-		go updateLoop(&cleanup.wg, addDoneChan())
-		go uploadLoop(sclient, &cleanup.wg, addDoneChan())
+		if isFailsafe {
+			slog.Infof("Starting in failsafe mode - disabling " +
+				"inventory, update, upload, and cert loops")
+		} else {
+			go inventoryLoop(ctx, tclient, &cleanup.wg, addDoneChan())
+			go updateLoop(&cleanup.wg, addDoneChan())
+			go uploadLoop(sclient, &cleanup.wg, addDoneChan())
+			go cloudCertLoop(ctx, conn, &cleanup.wg, addDoneChan())
+		}
+
 		go configLoop(ctx, cclient, &cleanup.wg, addDoneChan())
 
 		// XXX - should allow tunneling into satellites.
 		go tunnelLoop(&cleanup.wg, addDoneChan())
-
-		go cloudCertLoop(ctx, conn, &cleanup.wg, addDoneChan())
 	}
+
+	if isFailsafe {
+		mcpState = mcp.FAILSAFE
+	} else {
+		mcpState = mcp.ONLINE
+	}
+
+	slog.Infof("Setting state %s", mcp.States[mcpState])
+	err = mcpd.SetState(mcpState)
 
 	exitSig := make(chan os.Signal, 2)
 	signal.Notify(exitSig, syscall.SIGINT, syscall.SIGTERM)

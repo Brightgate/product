@@ -63,6 +63,7 @@ const (
 	BLOCKED
 	STARTING
 	INITING
+	FAILSAFE
 	ONLINE
 	STOPPING
 )
@@ -75,6 +76,7 @@ var States = map[int]string{
 	BLOCKED:  "blocked",
 	STARTING: "starting",
 	INITING:  "initializing",
+	FAILSAFE: "failsafe",
 	ONLINE:   "online",
 	STOPPING: "stopping",
 }

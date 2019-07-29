@@ -24,8 +24,9 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 )
 
-const (
-	colFormat = "%12s%6s%8s%7s%7s%13s%20s %s"
+var (
+	dateFormat = time.Stamp
+	colFormat  string
 )
 
 var validCmds = map[string]bool{
@@ -74,9 +75,11 @@ func printNode(states mcp.DaemonList, node string) {
 		if s.Since == time.Unix(0, 0) {
 			since = "forever"
 		} else {
-			since = s.Since.Format("Mon Jan 2 15:04:05")
+			since = s.Since.Format(dateFormat)
 		}
-		if s.State == mcp.ONLINE {
+		if s.RssSize == 0 {
+			rss, swap, tm = "-", "-", "-"
+		} else {
 			rss = fmt.Sprintf("%d MB", s.RssSize/(1024*1024))
 			swap = fmt.Sprintf("%d MB", s.VMSwap/(1024*1024))
 
@@ -88,9 +91,6 @@ func printNode(states mcp.DaemonList, node string) {
 			secs := ticks / 100
 
 			tm = (time.Second * time.Duration(secs)).String()
-
-		} else {
-			rss, swap, tm = "-", "-", "-"
 		}
 
 		printLine(fmt.Sprintf(colFormat, s.Name, pid, rss, swap, tm,
@@ -187,5 +187,17 @@ func ctl() {
 }
 
 func init() {
+	var stateLen int
+
+	for _, state := range mcp.States {
+		if len(state) > stateLen {
+			stateLen = len(state)
+		}
+	}
+
+	dateField := strconv.Itoa(len(dateFormat) + 1)
+	stateField := strconv.Itoa(stateLen + 1)
+	colFormat = "%12s%6s%8s%7s%8s%" + stateField + "s%" + dateField + "s %s"
+
 	addTool("ap-ctl", ctl)
 }

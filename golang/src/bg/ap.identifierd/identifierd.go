@@ -427,6 +427,13 @@ func main() {
 		slog.Fatalf("failed to connect to mcp")
 	}
 
+	if strings.EqualFold(os.Getenv("BG_FAILSAFE"), "true") {
+		slog.Infof("Starting in failsafe mode - going idle")
+		err = mcpd.SetState(mcp.FAILSAFE)
+		signalHandler()
+		os.Exit(0)
+	}
+
 	// Use the broker to listen for appropriate messages to create and update
 	// our observations. To respect a client's privacy we won't register any
 	// handlers until we have recovered each client's privacy configuration.
