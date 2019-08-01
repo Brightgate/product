@@ -22,6 +22,7 @@ import (
 	"github.com/satori/uuid"
 
 	"bg/common/cfgapi"
+	"bg/common/mfg"
 	"bg/common/network"
 )
 
@@ -55,35 +56,36 @@ var (
 	}
 
 	validationFuncs = map[string]typeValidate{
-		"const":      validateString,
 		"bool":       validateBool,
-		"tribool":    validateTribool,
-		"int":        validateInt,
+		"cidr":       validateCIDR,
+		"const":      validateString,
+		"dnsaddr":    validateDNS,
+		"duration":   validateDuration,
+		"email":      validateString,
 		"float":      validateFloat,
-		"string":     validateString,
-		"time":       validateTime,
-		"uuid":       validateUUID,
-		"ring":       validateRing,
-		"nickind":    validateNicKind,
+		"hostname":   validateHostname,
+		"int":        validateInt,
+		"ipaddr":     validateIP,
+		"ipoptport":  validateIPOptPort,
 		"keymgmt":    validateKeyMgmt,
 		"macaddr":    validateMac,
 		"nic":        validateNic,
-		"ipaddr":     validateIP,
-		"ipoptport":  validateIPOptPort,
-		"cidr":       validateCIDR,
+		"nickind":    validateNicKind,
+		"passphrase": validatePassphrase,
+		"phone":      validateString,
 		"port":       validatePort,
-		"hostname":   validateHostname,
-		"dnsaddr":    validateDNS,
+		"nodeid":     validateNodeID,
+		"ring":       validateRing,
 		"sshaddr":    validateSSHAddr,
 		"ssid":       validateSSID,
-		"passphrase": validatePassphrase,
-		"wifiband":   validateWifiBand,
-		"user":       validateString,
-		"uid":        validateString,
-		"email":      validateString,
-		"phone":      validateString,
-		"duration":   validateDuration,
+		"string":     validateString,
+		"time":       validateTime,
 		"time_unit":  validateTimeUnit,
+		"tribool":    validateTribool,
+		"uid":        validateString,
+		"user":       validateString,
+		"uuid":       validateUUID,
+		"wifiband":   validateWifiBand,
 	}
 )
 
@@ -163,6 +165,17 @@ func validateNicKind(val string) error {
 	l := strings.ToLower(val)
 	if l != "wired" && l != "wireless" {
 		err = fmt.Errorf("'%s' is not a valid nic kind", val)
+	}
+	return err
+}
+
+func validateNodeID(val string) error {
+	var err error
+
+	if !mfg.ValidExtSerial(val) {
+		if _, err = uuid.FromString(val); err != nil {
+			err = fmt.Errorf("'%s' not a valid nodeid: %v", val, err)
+		}
 	}
 	return err
 }

@@ -32,6 +32,7 @@ var (
 
 const (
 	ntpdSystemdService = "chrony.service"
+	rpiMachineIDFile   = "/etc/machine-id"
 )
 
 func rpiProbe() bool {
@@ -57,8 +58,22 @@ func rpiParseNodeID(data []byte) (string, error) {
 	return uuidStr, nil
 }
 
-func rpiSetNodeID(file, uuidStr string) error {
+func rpiSetNodeID(uuidStr string) error {
 	return fmt.Errorf("setting the nodeID is unsupported")
+}
+
+func rpiGetNodeID() (string, error) {
+	data, err := ioutil.ReadFile(rpiMachineIDFile)
+	if err != nil {
+		return "", fmt.Errorf("reading %s: %v", rpiMachineIDFile, err)
+	}
+
+	id, err := rpiParseNodeID(data)
+
+	if err == nil {
+		nodeID = id
+	}
+	return nodeID, nil
 }
 
 func rpiNicIsVirtual(nic string) bool {
@@ -174,8 +189,7 @@ func rpiDataDir() string {
 
 func init() {
 	addPlatform(&Platform{
-		name:          "rpi3",
-		machineIDFile: "/etc/machine-id",
+		name: "rpi3",
 
 		ResetSignal:  syscall.SIGINT,
 		ReloadSignal: syscall.SIGINT,
@@ -189,8 +203,8 @@ func init() {
 		VconfigCmd:   "/sbin/vconfig",
 
 		probe:         rpiProbe,
-		parseNodeID:   rpiParseNodeID,
 		setNodeID:     rpiSetNodeID,
+		getNodeID:     rpiGetNodeID,
 		NicIsVirtual:  rpiNicIsVirtual,
 		NicIsWireless: rpiNicIsWireless,
 		NicIsWired:    rpiNicIsWired,

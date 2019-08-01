@@ -68,6 +68,12 @@ func NewExtSerial(model, year, week int, siteCode [2]byte, serial int) (*ExtSeri
 	return &ExtSerial{model, year, week, siteCode, serial}, nil
 }
 
+// ValidExtSerial determines whether the provided string represents a valid
+// serial number or not.
+func ValidExtSerial(serial string) bool {
+	return extSerialRE.MatchString(serial)
+}
+
 // NewExtSerialFromString parses a serial number from a string and returns
 // a new ExtSerial
 func NewExtSerialFromString(sn string) (*ExtSerial, error) {

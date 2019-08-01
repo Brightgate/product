@@ -12,7 +12,6 @@ package platform
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -20,15 +19,12 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-
-	"github.com/satori/uuid"
 )
 
 // Platform is used to encapsulate the differences between the different
 // hardware platforms we support as appliances.
 type Platform struct {
-	name          string
-	machineIDFile string
+	name string
 
 	ResetSignal  syscall.Signal
 	ReloadSignal syscall.Signal
@@ -42,8 +38,8 @@ type Platform struct {
 	VconfigCmd   string
 
 	probe         func() bool
-	parseNodeID   func([]byte) (string, error)
-	setNodeID     func(string, string) error
+	setNodeID     func(string) error
+	getNodeID     func() (string, error)
 	NicIsVirtual  func(string) bool
 	NicIsWireless func(string) bool
 	NicIsWired    func(string) bool
@@ -138,7 +134,11 @@ func (p *Platform) GetPlatform() string {
 // SetNodeID will persist the provided nodeID in the correct file for this
 // platform
 func (p *Platform) SetNodeID(uuidStr string) error {
-	return p.setNodeID(p.machineIDFile, uuidStr)
+	if nodeID != "" {
+		return fmt.Errorf("existing nodeID can't be reset")
+	}
+
+	return p.setNodeID(uuidStr)
 }
 
 // GetNodeID returns a string containing this device's UUID
@@ -151,23 +151,7 @@ func (p *Platform) GetNodeID() (string, error) {
 		return nodeID, nil
 	}
 
-	data, err := ioutil.ReadFile(p.machineIDFile)
-	if err != nil {
-		return "", err
-	}
-
-	uuidStr, err := p.parseNodeID(data)
-	if err != nil {
-		return "", fmt.Errorf("%s: %v", p.machineIDFile, err)
-	}
-
-	uuidStr = strings.ToLower(uuidStr)
-	if _, err = uuid.FromString(uuidStr); err != nil {
-		return "", fmt.Errorf("unable to parse %s: %v", uuidStr, err)
-	}
-
-	nodeID = uuidStr
-	return nodeID, nil
+	return p.getNodeID()
 }
 
 // ExpandDirPath takes a splat of path components and will translate it into an

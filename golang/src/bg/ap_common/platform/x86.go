@@ -35,8 +35,12 @@ func x86ParseNodeID(data []byte) (string, error) {
 	return rpiParseNodeID(data)
 }
 
-func x86SetNodeID(file, uuidStr string) error {
+func x86SetNodeID(uuidStr string) error {
 	return fmt.Errorf("setting the nodeID is unsupported")
+}
+
+func x86GetNodeID() (string, error) {
+	return rpiGetNodeID()
 }
 
 func x86NicIsVirtual(nic string) bool {
@@ -90,8 +94,7 @@ func x86DataDir() string {
 
 func init() {
 	addPlatform(&Platform{
-		name:          "x86-debian",
-		machineIDFile: "/etc/machine-id",
+		name: "x86-debian",
 
 		ResetSignal:  syscall.SIGINT,
 		ReloadSignal: syscall.SIGINT,
@@ -105,8 +108,8 @@ func init() {
 		VconfigCmd:   "/opt/bin/vconfig",
 
 		probe:         x86Probe,
-		parseNodeID:   x86ParseNodeID,
 		setNodeID:     x86SetNodeID,
+		getNodeID:     rpiGetNodeID,
 		NicIsVirtual:  x86NicIsVirtual,
 		NicIsWireless: x86NicIsWireless,
 		NicIsWired:    x86NicIsWired,

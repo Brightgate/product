@@ -662,15 +662,25 @@ func newNicOps(id string, nic *physDevice,
 
 // Update the config tree with the current NIC inventory
 func updateNicProperties() {
+	needName := !aputil.IsSatelliteMode()
+
 	inventory := make(map[string]*physDevice)
 	for id, d := range physDevices {
 		inventory[id] = d
 	}
 
 	// Get the information currently recorded in the config tree
+	root := "@/nodes/" + nodeUUID
 	nics := make(cfgapi.ChildMap)
-	if r, _ := config.GetProps("@/nodes/" + nodeUUID + "/nics"); r != nil {
-		nics = r.Children
+	if r, _ := config.GetProps(root); r != nil {
+		if r.Children != nil {
+			if r.Children["name"] != nil {
+				needName = false
+			}
+			if n := r.Children["nics"]; n != nil {
+				nics = n.Children
+			}
+		}
 	}
 
 	// Examine each entry in the config tree to determine whether it matches
@@ -695,6 +705,17 @@ func updateNicProperties() {
 	for id, d := range inventory {
 		newOps := newNicOps(id, d, nil)
 		ops = append(ops, newOps...)
+	}
+
+	// If this is the gateway node and it doesn't already have a name,
+	// give it the default value of "gateway"
+	if needName {
+		op := cfgapi.PropertyOp{
+			Op:    cfgapi.PropCreate,
+			Name:  root + "/name",
+			Value: "gateway",
+		}
+		ops = append(ops, op)
 	}
 
 	if len(ops) != 0 {

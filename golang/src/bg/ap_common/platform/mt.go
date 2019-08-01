@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"bg/common/bgioutil"
+	"bg/common/mfg"
 
 	"github.com/satori/uuid"
 )
@@ -32,6 +33,11 @@ import (
 const (
 	uciCmd  = "/sbin/uci"
 	ubusCmd = "/bin/ubus"
+	fwCmd   = "/usr/sbin/fw_printenv"
+)
+
+var (
+	mtMachineIDFile string
 )
 
 func mtProbe() bool {
@@ -48,26 +54,72 @@ func mtProbe() bool {
 }
 
 func mtParseNodeID(data []byte) (string, error) {
-	return string(data), nil
+	idstr := strings.ToLower(string(data))
+
+	if _, err := uuid.FromString(idstr); err == nil {
+		return idstr, nil
+	}
+
+	idstr = string(data)
+	if mfg.ValidExtSerial(idstr) {
+		return idstr, nil
+	}
+
+	return "", fmt.Errorf("%s not a valid nodeID", idstr)
 }
 
-func mtSetNodeID(file, uuidStr string) error {
-	if nodeID != "" {
-		return fmt.Errorf("existing nodeID can't be reset")
+func mtSetNodeID(newNodeID string) error {
+	if _, err := mtParseNodeID([]byte(newNodeID)); err != nil {
+		return err
 	}
 
-	if _, err := uuid.FromString(uuidStr); err != nil {
-		return fmt.Errorf("Failed to parse %s as a UUID: %v",
-			uuidStr, err)
+	id := []byte(newNodeID)
+	if err := bgioutil.WriteFileSync(mtMachineIDFile, id, 0644); err != nil {
+		return fmt.Errorf("writing %s: %v", mtMachineIDFile, err)
 	}
 
-	id := []byte(uuidStr)
-	if err := bgioutil.WriteFileSync(file, id, 0644); err != nil {
-		return fmt.Errorf("failed to write %s: %v", file, err)
-	}
-
-	nodeID = uuidStr
+	nodeID = newNodeID
 	return nil
+}
+
+func mtGetSerialNumber() ([]byte, error) {
+	var serial []byte
+
+	opts := []string{"-n", "bg_ext_serial"}
+	out, err := exec.Command(fwCmd, opts...).CombinedOutput()
+	if err == nil {
+		test := strings.TrimSpace(string(out))
+		if mfg.ValidExtSerial(test) {
+			serial = []byte(test)
+		} else {
+			err = fmt.Errorf("no serial number found")
+		}
+	}
+	return serial, err
+}
+
+func mtGetNodeID() (string, error) {
+	// First check the machineID file to see if we've already discovered
+	// and/or assigned an ID to this system.
+	data, err := ioutil.ReadFile(mtMachineIDFile)
+	if err == nil {
+		nodeID, err = mtParseNodeID(data)
+		return nodeID, err
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("reading %s: %v", mtMachineIDFile, err)
+	}
+
+	if data, err = mtGetSerialNumber(); err != nil {
+		return "", err
+	}
+
+	if nodeID, err = mtParseNodeID(data); err == nil {
+		// We cache the serial number in a file so non-root users can
+		// access it.
+		mtSetNodeID(nodeID)
+	}
+
+	return nodeID, err
 }
 
 func mtNicIsVirtual(nic string) bool {
@@ -347,9 +399,8 @@ func mtDataDir() string {
 }
 
 func init() {
-	addPlatform(&Platform{
-		name:          "mediatek",
-		machineIDFile: "/data/mcp/machine-id",
+	p := &Platform{
+		name: "mediatek",
 
 		ResetSignal:  syscall.SIGINT,
 		ReloadSignal: syscall.SIGHUP,
@@ -363,8 +414,8 @@ func init() {
 		VconfigCmd:   "/sbin/vconfig",
 
 		probe:         mtProbe,
-		parseNodeID:   mtParseNodeID,
 		setNodeID:     mtSetNodeID,
+		getNodeID:     mtGetNodeID,
 		NicIsVirtual:  mtNicIsVirtual,
 		NicIsWireless: mtNicIsWireless,
 		NicIsWired:    mtNicIsWired,
@@ -382,5 +433,8 @@ func init() {
 		NtpdService:    "chronyd",
 		MaintainTime:   mtMaintainTime,
 		RestartService: mtRestartService,
-	})
+	}
+	addPlatform(p)
+
+	mtMachineIDFile = p.ExpandDirPath(mtDataDir(), "mcp/serial")
 }

@@ -275,15 +275,11 @@ func verifyNodeID() error {
 	nodeID, err := plat.GetNodeID()
 
 	if err == nil {
-		var current, proposed string
+		logInfo("nodeID: %s", nodeID)
 
-		if *nodeFlag != "" {
-			current = strings.ToLower(nodeID)
-			proposed = strings.ToLower(*nodeFlag)
-		}
-		if current != proposed {
+		if *nodeFlag != "" && nodeID != *nodeFlag {
 			logInfo("Not overriding existing nodeid: %s",
-				current)
+				nodeID)
 		}
 		return nil
 	}
@@ -291,7 +287,6 @@ func verifyNodeID() error {
 
 	if *nodeFlag == "" {
 		err = fmt.Errorf("must provide a device nodeID")
-
 	} else if err = plat.SetNodeID(*nodeFlag); err != nil {
 		err = fmt.Errorf("unable to set device nodeID: %v", err)
 	} else {
