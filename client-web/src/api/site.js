@@ -319,8 +319,26 @@ async function authUserid() {
   }
 }
 
+async function accountDeprovisionPost(accountUUID) {
+  assert.equal(typeof accountUUID, 'string');
+  const u = buildUrl(`/api/account/${accountUUID}/deprovision`);
+  try {
+    const res = await axios({
+      timeout: 20000,
+      method: 'POST',
+      headers: {'content-type': 'application/x-www-form-urlencoded'},
+      url: u,
+    });
+    debug('accountDeprovisionPost: Succeeded.');
+    return res.data;
+  } catch (err) {
+    debug('accountDeprovisionPost: Failed', err);
+    throw err;
+  }
+}
+
 async function accountGeneratePassword() {
-  const u = buildUrl('/api/account/0/passwordgen');
+  const u = buildUrl('/api/account/passwordgen');
   try {
     const res = await axios.get(u);
     return res.data;
@@ -330,8 +348,9 @@ async function accountGeneratePassword() {
   }
 }
 
-async function accountSelfProvisionGet() {
-  const u = buildUrl('/api/account/0/selfprovision');
+async function accountSelfProvisionGet(accountUUID) {
+  assert.equal(typeof accountUUID, 'string');
+  const u = buildUrl(`/api/account/${accountUUID}/selfprovision`);
   try {
     const res = await axios.get(u);
     return res.data;
@@ -341,8 +360,8 @@ async function accountSelfProvisionGet() {
   }
 }
 
-async function accountSelfProvisionPost(username, password, verifier) {
-  const u = buildUrl('/api/account/0/selfprovision');
+async function accountSelfProvisionPost(accountUUID, username, password, verifier) {
+  const u = buildUrl(`/api/account/${accountUUID}/selfprovision`);
   try {
     const res = await axios({
       timeout: 20000,
@@ -351,10 +370,37 @@ async function accountSelfProvisionPost(username, password, verifier) {
       data: qs.stringify({username, password, verifier}),
       url: u,
     });
-    debug(`accountSelfProvisionPost: Succeeded.`);
+    debug('accountSelfProvisionPost: Succeeded.');
     return res.data;
   } catch (err) {
-    debug(`accountSelfProvisionPost: Failed`, err);
+    debug('accountSelfProvisionPost: Failed', err);
+    throw err;
+  }
+}
+
+async function accountDelete(accountUUID) {
+  assert.equal(typeof accountUUID, 'string');
+  const u = buildUrl(`/api/account/${accountUUID}`);
+  try {
+    await axios({
+      timeout: 20000,
+      method: 'DELETE',
+      url: u,
+    });
+    debug('accountDelete: Succeeded.');
+  } catch (err) {
+    debug('accountDelete: Failed', err);
+    throw err;
+  }
+}
+
+async function orgAccountsGet(orgUUID) {
+  const u = buildUrl(`/api/org/${orgUUID}/accounts`);
+  try {
+    const res = await axios.get(u);
+    return res.data;
+  } catch (err) {
+    debug('account get failed', err);
     throw err;
   }
 }
@@ -379,8 +425,11 @@ export default {
   authApplianceLogin,
   authApplianceLogout,
   authUserid,
+  accountDelete,
+  accountDeprovisionPost,
   accountGeneratePassword,
   accountSelfProvisionGet,
   accountSelfProvisionPost,
+  orgAccountsGet,
   setMockMode,
 };

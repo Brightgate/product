@@ -46,11 +46,16 @@ func TestAccountsGenAndProvision(t *testing.T) {
 	}
 
 	dMock := &mocks.DataStore{}
-	dMock.On("AccountByUUID", mock.Anything, mock.Anything).Return(&mockAccount, nil)
+	dMock.On("AccountByUUID", mock.Anything, mockAccount.UUID).Return(&mockAccount, nil)
+	dMock.On("AccountByUUID", mock.Anything, mockUserAccount.UUID).Return(&mockUserAccount, nil)
 	dMock.On("AccountSecretsByUUID", mock.Anything, mock.Anything).Return(&mockAccountSecrets, nil)
+	dMock.On("AccountOrgRolesByAccountTarget", mock.Anything, mockAccount.UUID, mock.Anything).Return(mockAccountOrgRoles, nil)
+	dMock.On("AccountOrgRolesByAccountTarget", mock.Anything, mockUserAccount.UUID, mock.Anything).Return(mockUserAccountOrgRoles, nil)
 	dMock.On("CustomerSitesByOrganization", mock.Anything, mock.Anything).Return(mockSites, nil)
 	dMock.On("PersonByUUID", mock.Anything, mock.Anything).Return(&mockPerson, nil)
 	dMock.On("UpsertAccountSecrets", mock.Anything, mock.Anything).Return(nil)
+	dMock.On("DeleteAccountSecrets", mock.Anything, mock.Anything).Return(nil)
+	dMock.On("DeleteAccount", mock.Anything, mock.Anything).Return(nil)
 	defer dMock.AssertExpectations(t)
 
 	// Setup Echo
@@ -62,8 +67,7 @@ func TestAccountsGenAndProvision(t *testing.T) {
 	_ = newAccountHandler(e, dMock, mw, ss, getMockClientHandle)
 
 	// Setup request for password generation
-	req, rec := setupReqRec(echo.GET,
-		fmt.Sprintf("/api/account/0/passwordgen"), nil, ss)
+	req, rec := setupReqRec(&mockAccount, echo.GET, "/api/account/passwordgen", nil, ss)
 
 	// Test
 	e.ServeHTTP(rec, req)
@@ -77,8 +81,7 @@ func TestAccountsGenAndProvision(t *testing.T) {
 	assert.Equal(mockAccount.Email, ret.Username)
 
 	// Go around again, see that it's different
-	req, rec = setupReqRec(echo.GET,
-		fmt.Sprintf("/api/account/0/passwordgen"), nil, ss)
+	req, rec = setupReqRec(&mockAccount, echo.GET, "/api/account/passwordgen", nil, ss)
 
 	// Test
 	e.ServeHTTP(rec, req)
@@ -103,13 +106,57 @@ func TestAccountsGenAndProvision(t *testing.T) {
 	bodyBytes, err = json.Marshal(body)
 	assert.NoError(err)
 
-	// Now accept the generated password
+	// Can't accept a generated password to a different account
+	url := fmt.Sprintf("/api/account/%s/selfprovision", mockUserAccount.UUID.String())
 	rec = httptest.NewRecorder()
-	req = httptest.NewRequest(echo.POST, "/api/account/0/selfprovision", bytes.NewReader(bodyBytes))
+	req = httptest.NewRequest(echo.POST, url, bytes.NewReader(bodyBytes))
+	req.AddCookie(cookies[0])
+	req.Header.Add("Content-Type", "application/json")
+	// Test
+	e.ServeHTTP(rec, req)
+	t.Logf("return body:Svc %s", rec.Body.String())
+	assert.Equal(http.StatusUnauthorized, rec.Code)
+
+	// Now accept the generated password
+	url = fmt.Sprintf("/api/account/%s/selfprovision", mockAccount.UUID.String())
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(echo.POST, url, bytes.NewReader(bodyBytes))
 	req.AddCookie(cookies[0])
 	req.Header.Add("Content-Type", "application/json")
 	// Test
 	e.ServeHTTP(rec, req)
 	t.Logf("return body:Svc %s", rec.Body.String())
 	assert.Equal(http.StatusFound, rec.Code)
+
+	// Non-admins cannot deprovision
+	url = fmt.Sprintf("/api/account/%s/deprovision", mockUserAccount.UUID.String())
+	req, rec = setupReqRec(&mockUserAccount, echo.POST, url, bytes.NewReader([]byte{}), ss)
+	// Test
+	e.ServeHTTP(rec, req)
+	t.Logf("return body:Svc %s", rec.Body.String())
+	assert.Equal(http.StatusUnauthorized, rec.Code)
+
+	// Admins can Deprovision
+	url = fmt.Sprintf("/api/account/%s/deprovision", mockAccount.UUID.String())
+	req, rec = setupReqRec(&mockAccount, echo.POST, url, bytes.NewReader([]byte{}), ss)
+	// Test
+	e.ServeHTTP(rec, req)
+	t.Logf("return body:Svc %s", rec.Body.String())
+	assert.Equal(http.StatusOK, rec.Code)
+
+	// Non-admins cannot delete accounts
+	url = fmt.Sprintf("/api/account/%s", mockUserAccount.UUID.String())
+	req, rec = setupReqRec(&mockUserAccount, echo.DELETE, url, nil, ss)
+	// Test
+	e.ServeHTTP(rec, req)
+	t.Logf("return body:Svc %s", rec.Body.String())
+	assert.Equal(http.StatusUnauthorized, rec.Code)
+
+	// Admins can delete accounts
+	url = fmt.Sprintf("/api/account/%s", mockAccount.UUID.String())
+	req, rec = setupReqRec(&mockAccount, echo.DELETE, url, nil, ss)
+	// Test
+	e.ServeHTTP(rec, req)
+	t.Logf("return body:Svc %s", rec.Body.String())
+	assert.Equal(http.StatusOK, rec.Code)
 }

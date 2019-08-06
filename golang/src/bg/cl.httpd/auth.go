@@ -599,12 +599,13 @@ func (a *authHandler) getLogout(c echo.Context) error {
 }
 
 type userIDResponse struct {
-	Username        string `json:"username"`
-	Email           string `json:"email"`
-	PhoneNumber     string `json:"phoneNumber"`
-	Name            string `json:"name"`
-	Organization    string `json:"organization"`
-	SelfProvisioned bool   `json:"selfProvisioned"`
+	Username        string    `json:"username"`
+	Email           string    `json:"email"`
+	PhoneNumber     string    `json:"phoneNumber"`
+	Name            string    `json:"name"`
+	Organization    string    `json:"organization"`
+	SelfProvisioned bool      `json:"selfProvisioned"`
+	AccountUUID     uuid.UUID `json:"accountUUID"`
 }
 
 // getUserID implements /auth/userid, which returns information about the
@@ -637,6 +638,7 @@ func (a *authHandler) getUserID(c echo.Context) error {
 		Email:       account.Email,
 		PhoneNumber: account.PhoneNumber,
 		Name:        person.Name,
+		AccountUUID: accountUUID,
 	}
 	if account.OrganizationUUID != appliancedb.NullOrganizationUUID {
 		organization, err := a.db.OrganizationByUUID(ctx, account.OrganizationUUID)

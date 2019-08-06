@@ -312,6 +312,7 @@ func mkRouterHTTPS() *routerState {
 	}
 	_ = newSiteHandler(r, state.applianceDB, wares, getConfigClientHandle, twil)
 	_ = newAccountHandler(r, state.applianceDB, wares, state.sessionStore, getConfigClientHandle)
+	_ = newOrgHandler(r, state.applianceDB, wares, state.sessionStore)
 	_ = newAccessHandler(r, state.applianceDB, state.sessionStore)
 
 	// Setup /check endpoints

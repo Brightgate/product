@@ -58,12 +58,12 @@ var pwRegime = passwordgen.HumanPasswordSpec.String()
 // This endpoint mates up with postAccountSelfProvision().
 func (a *accountHandler) getAccountPasswordGen(c echo.Context) error {
 	ctx := c.Request().Context()
-	accountUUID, ok := c.Get("account_uuid").(uuid.UUID)
-	if !ok || accountUUID == uuid.Nil {
+	sessionAccountUUID, ok := c.Get("account_uuid").(uuid.UUID)
+	if !ok || sessionAccountUUID == uuid.Nil {
 		return echo.NewHTTPError(http.StatusUnauthorized)
 	}
 
-	account, err := a.db.AccountByUUID(ctx, accountUUID)
+	account, err := a.db.AccountByUUID(ctx, sessionAccountUUID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
@@ -120,11 +120,20 @@ func (a *accountHandler) getAccountPasswordGen(c echo.Context) error {
 //
 // XXX ui.Update() waits, which is probably not what we want.
 func (a *accountHandler) postAccountSelfProvision(c echo.Context) error {
-	accountUUID, ok := c.Get("account_uuid").(uuid.UUID)
-	if !ok || accountUUID == uuid.Nil {
+	ctx := c.Request().Context()
+	sessionAccountUUID, ok := c.Get("account_uuid").(uuid.UUID)
+	if !ok || sessionAccountUUID == uuid.Nil {
 		return echo.NewHTTPError(http.StatusUnauthorized)
 	}
-	ctx := c.Request().Context()
+	targetUUIDParam := c.Param("acct_uuid")
+	targetUUID, err := uuid.FromString(targetUUIDParam)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	// Only ever allowed for yourself
+	if sessionAccountUUID != targetUUID {
+		return echo.NewHTTPError(http.StatusUnauthorized)
+	}
 
 	session, err := a.sessionStore.Get(c.Request(), "bg_login")
 	if err != nil {
@@ -159,7 +168,7 @@ func (a *accountHandler) postAccountSelfProvision(c echo.Context) error {
 	// password; so stash it in the database.
 	now := time.Now()
 	accountSecrets := &appliancedb.AccountSecrets{
-		AccountUUID:                 accountUUID,
+		AccountUUID:                 sessionAccountUUID,
 		ApplianceUserBcrypt:         userpwSessionVal,
 		ApplianceUserBcryptRegime:   pwRegime,
 		ApplianceUserBcryptTs:       now,
@@ -172,7 +181,7 @@ func (a *accountHandler) postAccountSelfProvision(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	err = registry.SyncAccountSelfProv(ctx, a.db, a.getConfigHandle, accountUUID, nil)
+	err = registry.SyncAccountSelfProv(ctx, a.db, a.getConfigHandle, sessionAccountUUID, nil)
 	if err != nil {
 		c.Logger().Errorf("registry.SyncAccountSelfProv failed: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
@@ -181,23 +190,49 @@ func (a *accountHandler) postAccountSelfProvision(c echo.Context) error {
 	return c.Redirect(http.StatusFound, "/client-web")
 }
 
-// getAccountSelfProvision returns self provisioning information for
-// the user's account.
-func (a *accountHandler) getAccountSelfProvision(c echo.Context) error {
-	accountUUID, ok := c.Get("account_uuid").(uuid.UUID)
-	if !ok || accountUUID == uuid.Nil {
-		return echo.NewHTTPError(http.StatusUnauthorized)
-	}
+// postAccountDeprovision removes self-provisioning for an account.
+func (a *accountHandler) postAccountDeprovision(c echo.Context) error {
+	var err error
 	ctx := c.Request().Context()
 
-	_, err := a.sessionStore.Get(c.Request(), "bg_login")
+	accountUUID, err := uuid.FromString(c.Param("acct_uuid"))
 	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+
+	err = registry.AccountDeprovision(ctx, a.db, a.getConfigHandle, accountUUID)
+	if err != nil {
+		c.Logger().Errorf("registry.AccountDeprovision failed: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+	return nil
+}
+
+type matchedRoles map[string]bool
+
+// getAccountSelfProvision returns self provisioning information for an
+// account.
+func (a *accountHandler) getAccountSelfProvision(c echo.Context) error {
+	var err error
+	ctx := c.Request().Context()
+	sessionAccountUUID, ok := c.Get("account_uuid").(uuid.UUID)
+	if !ok || sessionAccountUUID == uuid.Nil {
 		return echo.NewHTTPError(http.StatusUnauthorized)
 	}
 
+	accountUUID, err := uuid.FromString(c.Param("acct_uuid"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
 	account, err := a.db.AccountByUUID(ctx, accountUUID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, err)
+	}
+
+	roles := c.Get("matched_roles").(matchedRoles)
+	// Only admins may look at other account's information
+	if !roles["admin"] && accountUUID != sessionAccountUUID {
+		return echo.NewHTTPError(http.StatusUnauthorized)
 	}
 
 	resp := &accountSelfProvisionResponse{
@@ -216,14 +251,90 @@ func (a *accountHandler) getAccountSelfProvision(c echo.Context) error {
 	return c.JSON(http.StatusOK, resp)
 }
 
+// deleteAccount deletes the specified account
+func (a *accountHandler) deleteAccount(c echo.Context) error {
+	var err error
+	ctx := c.Request().Context()
+	accountUUID, err := uuid.FromString(c.Param("acct_uuid"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	err = registry.DeleteAccountInformation(ctx, a.db, a.getConfigHandle, accountUUID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError)
+	}
+	return c.NoContent(http.StatusOK)
+}
+
+// mkAccountMiddleware manufactures a middleware which protects a route; only
+// accounts with one or more of the allowedRoles can pass through the checks; the
+// middleware adds "matched_roles" to the echo context, indicating which of the
+// allowed_roles the account actually has.
+func (a *accountHandler) mkAccountMiddleware(allowedRoles []string) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			ctx := c.Request().Context()
+			sessionAccountUUID, ok := c.Get("account_uuid").(uuid.UUID)
+			if !ok || sessionAccountUUID == uuid.Nil {
+				return echo.NewHTTPError(http.StatusUnauthorized)
+			}
+
+			targetUUIDParam := c.Param("acct_uuid")
+			targetUUID, err := uuid.FromString(targetUUIDParam)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusBadRequest)
+			}
+
+			tgtAcct, err := a.db.AccountByUUID(ctx, targetUUID)
+			if err != nil {
+				if _, ok := err.(appliancedb.NotFoundError); ok {
+					return echo.NewHTTPError(http.StatusNotFound)
+				}
+				return echo.NewHTTPError(http.StatusInternalServerError)
+			}
+			// See what the session's account is allowed to do to the target's
+			// org.
+			roles, err := a.db.AccountOrgRolesByAccountTarget(ctx,
+				sessionAccountUUID, tgtAcct.OrganizationUUID)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError)
+			}
+			matches := make(matchedRoles)
+			var matched bool
+			for _, ur := range roles {
+				matches[ur.Role] = false
+				for _, rr := range allowedRoles {
+					if ur.Role == rr {
+						matches[ur.Role] = true
+						matched = true
+					}
+				}
+			}
+			if matched {
+				c.Set("matched_roles", matches)
+				return next(c)
+			}
+			c.Logger().Debugf("Unauthorized: %s acct=%v, acc=%v, ur=%v, ar=%v",
+				c.Path(), sessionAccountUUID, targetUUID, roles, allowedRoles)
+			return echo.NewHTTPError(http.StatusUnauthorized)
+		}
+	}
+}
+
 // newAccountAPIHandler creates an accountHandler for the given DataStore and session
 // Store, and routes the handler into the echo instance.
 func newAccountHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []echo.MiddlewareFunc, sessionStore sessions.Store, getConfigHandle registry.GetConfigHandleFunc) *accountHandler {
 	h := &accountHandler{db, sessionStore, getConfigHandle}
 	acct := r.Group("/api/account")
 	acct.Use(middlewares...)
-	acct.GET("/:uuid/passwordgen", h.getAccountPasswordGen)
-	acct.GET("/:uuid/selfprovision", h.getAccountSelfProvision)
-	acct.POST("/:uuid/selfprovision", h.postAccountSelfProvision)
+
+	admin := h.mkAccountMiddleware([]string{"admin"})
+	user := h.mkAccountMiddleware([]string{"admin", "user"})
+
+	acct.GET("/passwordgen", h.getAccountPasswordGen)
+	acct.GET("/:acct_uuid/selfprovision", h.getAccountSelfProvision, user)
+	acct.POST("/:acct_uuid/selfprovision", h.postAccountSelfProvision, user)
+	acct.POST("/:acct_uuid/deprovision", h.postAccountDeprovision, admin)
+	acct.DELETE("/:acct_uuid", h.deleteAccount, admin)
 	return h
 }

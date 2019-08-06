@@ -43,30 +43,30 @@
 
       <!-- Email -->
       <f7-list-item v-if="user.Email">
-        <div slot="media"><f7-icon f7="email_fill" color="blue" /></div>
+        <div slot="media"><f7-icon material="email" color="blue" /></div>
         <span>
           <f7-link :href="`mailto: ${user.Email}`" external>{{ user.Email }}</f7-link>
         </span>
       </f7-list-item>
       <f7-list-item v-else>
-        <div slot="media"><f7-icon f7="email_fill" color="grey" /></div>
+        <div slot="media"><f7-icon material="email" color="grey" /></div>
         None
       </f7-list-item>
 
       <!-- Phone & SMS -->
       <f7-list-item v-if="user.TelephoneNumber">
-        <div slot="media"><f7-icon f7="phone_fill" color="blue" /></div>
+        <div slot="media"><f7-icon material="phone" color="blue" /></div>
         <div slot="title">
           <f7-link :href="`tel: ${user.TelephoneNumber}`" external>{{ user.TelephoneNumber }}</f7-link>
         </div>
         <div slot="after">
           <f7-link :href="`sms: ${user.TelephoneNumber}`" external>
-            <f7-icon f7="chat_fill" color="blue" />
+            <f7-icon material="textsms" color="blue" />
           </f7-link>
         </div>
       </f7-list-item>
       <f7-list-item v-else>
-        <div slot="media"><f7-icon f7="phone_fill" color="grey" /></div>
+        <div slot="media"><f7-icon material="phone" color="grey" /></div>
         <div slot="title">
           None
         </div>

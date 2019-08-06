@@ -105,7 +105,7 @@ span.good {
   <!-- XXX I18N is missing for most of this page -->
   <f7-page @page:beforein="onPageBeforeIn">
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.self_provision.title')" sliding />
-    <template v-if="provisioned">
+    <template v-if="sp && sp.status === 'provisioned' && activate !== ACTIVATE.SUCCESS">
       <f7-card>
         <f7-card-header>Wi-Fi Provisioned</f7-card-header>
         <f7-card-content>
@@ -114,11 +114,11 @@ span.good {
             <!-- row 1 -->
             <div class="sg-label--2">User&nbsp;name:</div>
             <!-- row 2 -->
-            <div class="sg-content"><span class="generated">{{ provisionedUsername }}</span></div>
+            <div class="sg-content"><span class="generated">{{ sp.username }}</span></div>
             <!-- row 3 -->
             <div class="sg-label--2">Last&nbsp;provisioned:</div>
             <!-- row 4 -->
-            <div class="sg-content">{{ provisionedAt }}</div>
+            <div class="sg-content">{{ formatTime(sp.completed) }}</div>
           </div>
 
           Your password cannot be redisplayed for security reasons.  If you have lost your password, you can click <span class="explainbutton">Reprovision</span>.
@@ -277,12 +277,16 @@ const ACTIVATE = {
   SUCCESS: 3,
 };
 
+const DEFAULT_SP = {
+  status: 'unprovisioned',
+  completed: null,
+  username: null,
+};
+
 export default {
   data: function() {
     return {
-      provisioned: false,
-      provisionedAt: null,
-      provisionedUsername: '',
+      sp: DEFAULT_SP,
       generatedUsername: '',
       generatedPassword: '',
       verifier: '',
@@ -296,6 +300,8 @@ export default {
     // Map various $store elements as computed properties for use in the
     // template.
     ...vuex.mapGetters([
+      'myAccountUUID',
+      'myAccount',
     ]),
   },
 
@@ -314,16 +320,19 @@ export default {
       this.activate = ACTIVATE.INPROGRESS;
       this.$f7.preloader.show();
       try {
-        await siteApi.accountSelfProvisionPost(this.generatedUsername, this.generatedPassword, this.verifier);
+        await siteApi.accountSelfProvisionPost(this.myAccountUUID,
+          this.generatedUsername, this.generatedPassword, this.verifier);
         this.activate = ACTIVATE.SUCCESS;
       } catch (err) {
         this.activate = ACTIVATE.FAILED;
       }
       this.$f7.preloader.hide();
-      await this.$store.dispatch('fetchAccountSelfProvision');
+      await this.$store.dispatch('fetchAccountSelfProvision', this.myAccountUUID);
+      // Update local SP to version from store
       if (this.activate === ACTIVATE.SUCCESS) {
         await this.stepToNext();
       }
+      this.sp = this.myAccount.selfProvision;
     },
 
     copyUsername: async function() {
@@ -345,23 +354,21 @@ export default {
     },
 
     startReprovision: async function() {
-      this.provisioned = false;
-      this.provisionedAt = null;
-      this.provisionedUsername = '';
+      this.sp = DEFAULT_SP;
       await this.generatePassword();
     },
 
     onPageBeforeIn: async function() {
-      await this.$store.dispatch('fetchAccountSelfProvision');
-      const sp = this.$store.getters.accountSelfProvision;
-      debug('accountSelfProvisionGet', sp);
-      if (sp.status === 'provisioned') {
-        this.provisioned = true;
-        this.provisionedAt = format(parseISO(sp.completed), 'PPpp');
-        this.provisionedUsername = sp.username;
-      } else {
+      await this.$store.dispatch('fetchAccountSelfProvision', this.myAccountUUID);
+      this.sp = this.myAccount.selfProvision;
+      debug('this.sp', this.sp);
+      if (this.sp.status !== 'provisioned') {
         await this.generatePassword();
       }
+    },
+
+    formatTime: function(t) {
+      return format(parseISO(t), 'PPp');
     },
   },
 };

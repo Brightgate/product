@@ -40,26 +40,51 @@
       </f7-block>
     </template>
 
-    <f7-block-title>{{ $t("message.notifications.notifications") }}</f7-block-title>
-    <f7-list media-list chevron-center>
-      <f7-list-item
-        v-if="accountSelfProvision && accountSelfProvision.status && accountSelfProvision.status === 'unprovisioned'"
-        key="selfProvision"
-        :title="$t('message.notifications.self_provision_title')"
-        :text="$t('message.notifications.self_provision_text')"
-        link="/account_prefs/self_provision">
-        <div slot="media">
-          <f7-icon ios="f7:alert_fill" md="material:warning" color="yellow" />
-        </div>
-      </f7-list-item>
-      <!-- XXX the below notifications can never trigger in the current app -->
-      <f7-list-item
-        v-for="device in devices"
-        v-if="device.notification"
-        :key="device.uniqid"
-        :title="$t('message.notifications.update_device', {'device': device.displayName})"
-        :link="`/sites/${currentSiteID}/devices/${device.uniqid}/`" />
-    </f7-list>
+    <template v-if="appMode === appDefs.APPMODE_CLOUD">
+      <f7-block>
+        <h2>{{ org.name }}</h2>
+      </f7-block>
+    </template>
+
+    <template v-if="accountNeedsProvisioning">
+      <f7-block-title>{{ $t("message.notifications.notifications") }}</f7-block-title>
+      <f7-list media-list chevron-center>
+        <f7-list-item
+          v-if="accountNeedsProvisioning"
+          key="selfProvision"
+          :title="$t('message.notifications.self_provision_title')"
+          :text="$t('message.notifications.self_provision_text')"
+          link="/account_prefs/self_provision">
+          <div slot="media">
+            <f7-icon ios="f7:alert_fill" md="material:warning" color="yellow" />
+          </div>
+        </f7-list-item>
+        <!-- XXX the below notifications can never trigger in the current app
+          <f7-list-item
+          v-for="device in devices"
+          v-if="device.notification"
+          :key="device.uniqid"
+          :title="$t('message.notifications.update_device', {'device': device.displayName})"
+          :link="`/sites/${currentSiteID}/devices/${device.uniqid}/`" />
+        -->
+      </f7-list>
+    </template>
+
+    <template v-if="appMode === appDefs.APPMODE_CLOUD">
+      <f7-list>
+        <f7-list-item
+          v-if="org.roles['admin']"
+          link="/accounts/">
+          Accounts
+        </f7-list-item>
+        <bg-site-list
+          :sites="sites"
+          :class="loggedIn ? '' : 'disabled'"
+          :current-site="currentSiteID"
+          @site-change="onSiteChange"
+        />
+      </f7-list>
+    </template>
 
     <template v-if="appMode === appDefs.APPMODE_LOCAL">
       <template v-if="alertCount(alertActive(alerts))">
@@ -86,18 +111,6 @@
         :disabled="!loggedIn"
         :app-mode="appMode"
         :admin="siteAdmin" />
-    </template>
-
-    <template v-if="appMode === appDefs.APPMODE_CLOUD">
-      <f7-block>
-        <h2>{{ $t("message.home.select_site") }}</h2>
-      </f7-block>
-      <bg-site-list
-        :sites="sites"
-        :class="loggedIn ? '' : 'disabled'"
-        :current-site="currentSiteID"
-        @site-change="onSiteChange"
-      />
     </template>
 
   </f7-page>
@@ -129,7 +142,7 @@ export default {
     // Map various $store elements as computed properties for use in the
     // template.
     ...vuex.mapGetters([
-      'accountSelfProvision',
+      'myAccount',
       'alertActive',
       'alertCount',
       'alerts',
@@ -142,9 +155,19 @@ export default {
       'leftPanelVisible',
       'loggedIn',
       'mock',
+      'org',
       'siteAdmin',
       'sites',
     ]),
+
+    accountNeedsProvisioning: function() {
+      if (!this.myAccount) {
+        return false;
+      }
+      const sp = this.myAccount.selfProvision;
+      debug('accountNeedsProvisioning:', sp);
+      return sp && sp.status && sp.status === 'unprovisioned';
+    },
   },
 
   methods: {

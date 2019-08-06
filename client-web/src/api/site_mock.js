@@ -14,7 +14,7 @@ import Debug from 'debug';
 
 import appDefs from '../app_defs';
 import mockDevices from './devices_mock';
-import mockUsers from './users_mock';
+import {mockUsers, mockAccounts, mockUserID} from './users_mock';
 
 const debug = Debug('site-mock');
 
@@ -141,15 +141,6 @@ const mockConfig = {
   '@/network/base_address': '10.1.4.12/26',
 };
 
-const mockUserid = {
-  'username': 'test@example.com',
-  'email': 'test@example.com',
-  'phoneNumber': '+1 650-555-1212',
-  'name': 'Foo Bar',
-  'organization': 'example corp',
-  'selfProvisioned': true,
-};
-
 const mockEnrollGuest = {
   smsDelivered: true,
   smsErrorCode: 0,
@@ -186,7 +177,7 @@ let pwid = 0;
 
 function passwordgenHandler() {
   const resp = {
-    username: 'test@example.com',
+    username: 'pam@dundermifflin.com',
     password: pws[pwid % pws.length],
     verifier: 'anything',
   };
@@ -205,8 +196,8 @@ async function selfProvGetHandler() {
   if (localStorage.getItem('debug_provisioned') === 'true') {
     resp = {
       status: 'provisioned',
-      username: 'test@example.com',
-      completed: '2019-02-01T01:01:01Z',
+      username: 'pam@dundermifflin.com',
+      completed: (new Date()).toISOString(),
     };
   }
   return [200, resp];
@@ -214,6 +205,20 @@ async function selfProvGetHandler() {
 
 async function selfProvPostHandler() {
   await timeout(3000);
+  return [200];
+}
+
+async function accountDelHandler(config) {
+  debug('accountDel', config);
+  const parsedURL = new URL(config.url, 'http://example.com/');
+  debug('parsedURL', parsedURL);
+  const p = parsedURL.pathname.split('/');
+  const last = p[p.length - 1];
+  const idx = mockAccounts.findIndex((elem) => elem.accountUUID === last);
+  if (idx >= 0) {
+    mockAccounts.splice(idx, 1);
+  }
+  debug('mockAccounts is now', mockAccounts);
   return [200];
 }
 
@@ -241,11 +246,14 @@ function mockAxios(normalAxios, mode) {
     .onGet(/\/api\/sites\/.+\/network\/wan$/).reply(200, mockWan)
     .onGet('/auth/sites/login').reply(200)
     .onGet('/auth/logout').reply(200)
-    .onGet('/auth/userid').reply(200, mockUserid)
+    .onGet('/auth/userid').reply(200, mockUserID)
     .onGet('/auth/providers').reply(200, mockProviders)
-    .onGet(/\/api\/account\/.+\/passwordgen/).reply(passwordgenHandler)
+    .onDelete(/\/api\/account\/.+/).reply(accountDelHandler)
+    .onGet(/\/api\/account\/passwordgen/).reply(passwordgenHandler)
     .onGet(/\/api\/account\/.+\/selfprovision/).reply(selfProvGetHandler)
     .onPost(/\/api\/account\/.+\/selfprovision/).reply(selfProvPostHandler)
+    .onPost(/\/api\/account\/.+\/deprovision/).reply(200)
+    .onGet(/\/api\/org\/.+\/accounts/).reply(200, mockAccounts)
     .onAny().reply(500);
 
   return mockAx;

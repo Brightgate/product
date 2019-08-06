@@ -345,17 +345,29 @@ func SyncAccountDeprovision(ctx context.Context,
 
 	var errs []error
 	success := 0
+	queued := 0
+	ops := []cfgapi.PropertyOp{
+		{Op: cfgapi.PropDelete, Name: acctProp},
+	}
 	for _, hdl := range hdls {
-		err = hdl.DeleteProp(acctProp)
+		cmdHdl := hdl.Execute(ctx, ops)
+		_, err = cmdHdl.Status(ctx)
 		if err != nil {
-			errs = append(errs, err)
+			if err == cfgapi.ErrQueued || err == cfgapi.ErrInProgress {
+				queued++
+			} else {
+				errs = append(errs, err)
+			}
 		} else {
 			success++
 		}
+		// XXX for now we don't wait around to see if the update succeeds.
+		// More work is needed to give the user progress and/or partial
+		// results.
 	}
 	if errs != nil {
-		return errors.Wrapf(errs[0], "partial or total failure. #success=%d, #fail=%d.  First failure is indicated",
-			success, len(errs))
+		return errors.Wrapf(errs[0], "partial or total failure. #success=%d, #queued=%d, #fail=%d.  First failure is indicated",
+			success, queued, len(errs))
 	}
 	return nil
 }
@@ -369,6 +381,18 @@ func DeleteAccountInformation(ctx context.Context, db appliancedb.DataStore,
 		return err
 	}
 	return db.DeleteAccount(ctx, accountUUID)
+}
+
+// AccountDeprovision deprovisions the account specified and drops its
+// self provisioning secret.
+func AccountDeprovision(ctx context.Context, db appliancedb.DataStore,
+	getConfig GetConfigHandleFunc, accountUUID uuid.UUID) error {
+
+	err := SyncAccountDeprovision(ctx, db, getConfig, accountUUID)
+	if err != nil && err != ErrNotSelfProvisioned {
+		return err
+	}
+	return db.DeleteAccountSecrets(ctx, accountUUID)
 }
 
 // NewAppliance registers a new appliance and associated it with

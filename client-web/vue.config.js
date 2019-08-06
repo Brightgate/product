@@ -49,6 +49,16 @@ const config = {
       },
     ]);
 
+    // Allow use of the <i18n> tag
+    // https://kazupon.github.io/vue-i18n/guide/sfc.html#webpack
+    config.module
+      .rule('i18n')
+      .resourceQuery(/blockType=i18n/)
+      .type('javascript/auto')
+      .use('i18n')
+      .loader('@kazupon/vue-i18n-loader')
+      .end();
+
     config.module.rule('documentation-html')
       .test(/doc\/.*\.html$/)
       .use('file-loader').loader('file-loader').end()

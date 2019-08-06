@@ -8,7 +8,27 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 // vim :set ts=2 sw=2 sts=2 et :
-export default {
+export const mockAccounts = [
+  {
+    'accountUUID': '4f58eafe-c946-4b8b-b4a1-f4482e9a9f6e',
+    'email': 'pam@dundermifflin.com',
+    'phoneNumber': '570-555-1212',
+    'name': 'Pam Beesly',
+    'primaryEmail': 'pam@dundermifflin.com',
+  },
+  {
+    'accountUUID': '22d83012-c62b-4568-baf8-29269c617562',
+    'email': 'jim@dundermifflin.com',
+    'phoneNumber': '570-555-1212',
+    'name': 'Jim Halpert',
+    'primaryEmail': 'jim@dundermifflin.com',
+  },
+];
+
+const pam = mockAccounts[0];
+const jim = mockAccounts[1];
+
+export const mockUsers = {
   '5880b539-e65f-4a0a-944c-38b9672aa638': {
     'UID': 'admin',
     'UUID': '5880b539-e65f-4a0a-944c-38b9672aa638',
@@ -33,40 +53,38 @@ export default {
     'SetPassword': null,
     'SelfProvisioning': false,
   },
-  '93878441-0cbd-4476-8f4e-46fea38fa821': {
-    'UID': 'dwight@dundermifflin.com',
-    'UUID': '93878441-0cbd-4476-8f4e-46fea38fa821',
+  [pam.accountUUID]: {
+    'UID': pam.email,
+    'UUID': pam.accountUUID,
     'Role': '',
-    'DisplayName': 'Dwight Schrute',
-    'Email': 'dwight@dundermifflin.com',
-    'TelephoneNumber': '+1 650-555-1212',
+    'DisplayName': pam.name,
+    'Email': pam.email,
+    'TelephoneNumber': pam.phoneNumber,
     'PreferredLanguage': '',
     'HasPassword': true,
     'SetPassword': null,
     'SelfProvisioning': true,
   },
-  '9b00b172-3692-4988-917a-e6316310829e': {
-    'UID': 'kelly@dundermifflin.com',
-    'UUID': '9b00b172-3692-4988-917a-e6316310829e',
+  [jim.accountUUID]: {
+    'UID': jim.email,
+    'UUID': jim.accountUUID,
     'Role': '',
-    'DisplayName': 'Kelly Kapoor',
-    'Email': 'kelly@dundermifflin.com',
-    'TelephoneNumber': '+1 650-555-1212',
+    'DisplayName': jim.name,
+    'Email': jim.email,
+    'TelephoneNumber': jim.phoneNumber,
     'PreferredLanguage': '',
     'HasPassword': true,
     'SetPassword': null,
     'SelfProvisioning': true,
   },
-  '86faaaa3-75b5-4473-8b5c-b754f464d52c': {
-    'UID': 'stanley@dundermifflin.com',
-    'UUID': '86faaaa3-75b5-4473-8b5c-b754f464d52c',
-    'Role': '',
-    'DisplayName': 'Stanley Hudson',
-    'Email': 'stanley@dundermifflin.com',
-    'TelephoneNumber': '+1 650-555-1212',
-    'PreferredLanguage': '',
-    'HasPassword': true,
-    'SetPassword': null,
-    'SelfProvisioning': true,
-  },
+};
+
+export const mockUserID = {
+  'username': pam.email,
+  'email': pam.emal,
+  'phoneNumber': pam.phoneNumber,
+  'name': pam.name,
+  'organization': 'Dunder Mifflin, Inc.',
+  'accountUUID': pam.accountUUID,
+  'selfProvisioned': true,
 };

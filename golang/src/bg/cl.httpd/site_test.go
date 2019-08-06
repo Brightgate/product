@@ -34,9 +34,10 @@ import (
 )
 
 var (
-	orgUUID     = uuid.Must(uuid.FromString("10000000-0000-0000-0000-000000000000"))
-	accountUUID = uuid.Must(uuid.FromString("20000000-0000-0000-0000-000000000000"))
-	personUUID  = uuid.Must(uuid.FromString("30000000-0000-0000-0000-000000000000"))
+	orgUUID         = uuid.Must(uuid.FromString("10000000-0000-0000-0000-000000000000"))
+	accountUUID     = uuid.Must(uuid.FromString("20000000-0000-0000-0000-000000000000"))
+	userAccountUUID = uuid.Must(uuid.FromString("20000000-0000-0000-0000-000000000001"))
+	personUUID      = uuid.Must(uuid.FromString("30000000-0000-0000-0000-000000000000"))
 
 	mockOrg = appliancedb.Organization{
 		UUID: orgUUID,
@@ -69,13 +70,31 @@ var (
 		PersonUUID:       personUUID,
 	}
 
+	mockUserAccount = appliancedb.Account{
+		UUID:             userAccountUUID,
+		Email:            "bar@example.com",
+		OrganizationUUID: orgUUID,
+		PhoneNumber:      "650-555-1212",
+		PersonUUID:       personUUID,
+	}
+
 	mockAccountOrgRoles = []appliancedb.AccountOrgRole{
 		{
-			AccountUUID:            accountUUID,
-			OrganizationUUID:       mockOrg.UUID,
-			TargetOrganizationUUID: mockOrg.UUID,
+			AccountUUID:            mockAccount.UUID,
+			OrganizationUUID:       mockAccount.OrganizationUUID,
+			TargetOrganizationUUID: mockAccount.OrganizationUUID,
 			Relationship:           "self",
 			Role:                   "admin",
+		},
+	}
+
+	mockUserAccountOrgRoles = []appliancedb.AccountOrgRole{
+		{
+			AccountUUID:            mockUserAccount.UUID,
+			OrganizationUUID:       mockUserAccount.OrganizationUUID,
+			TargetOrganizationUUID: mockUserAccount.OrganizationUUID,
+			Relationship:           "self",
+			Role:                   "user",
 		},
 	}
 )
@@ -131,16 +150,16 @@ func getMockClientHandle(uuid string) (*cfgapi.Handle, error) {
 // then extract the session cookie from that, and stick it into the req, tossing
 // out the recorder.  This is cribbed and refined from
 // https://gist.github.com/jonnyreeves/17f91155a0d4a5d296d6
-func addValidSession(req *http.Request, ss sessions.Store) {
+func addValidSession(req *http.Request, ss sessions.Store, acct *appliancedb.Account) {
 	rec := httptest.NewRecorder()
 	sess, err := ss.New(req, "bg_login")
 	if err != nil {
 		panic("Failed session create")
 	}
 	sess.Values["userid"] = "test"
-	sess.Values["email"] = "test@brightgate.com"
+	sess.Values["email"] = acct.Email
 	sess.Values["auth_time"] = time.Now().Format(time.RFC3339)
-	sess.Values["account_uuid"] = accountUUID.String()
+	sess.Values["account_uuid"] = acct.UUID.String()
 	err = sess.Save(req, rec)
 	if err != nil {
 		panic("Failed session save")
@@ -150,10 +169,10 @@ func addValidSession(req *http.Request, ss sessions.Store) {
 
 // setupReqRec is basically a wrapper around httptest.NewRequest which adds a
 // valid session to the request; it also allocates an httptest recorder.
-func setupReqRec(method string, target string, body io.Reader, ss sessions.Store) (*http.Request, *httptest.ResponseRecorder) {
+func setupReqRec(acct *appliancedb.Account, method string, target string, body io.Reader, ss sessions.Store) (*http.Request, *httptest.ResponseRecorder) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(method, target, body)
-	addValidSession(req, ss)
+	addValidSession(req, ss, acct)
 	return req, rec
 }
 
@@ -178,7 +197,7 @@ func TestSites(t *testing.T) {
 	_ = newSiteHandler(e, dMock, mw, getMockClientHandle, nil)
 
 	// Setup request
-	req, rec := setupReqRec(echo.GET, "/api/sites", nil, ss)
+	req, rec := setupReqRec(&mockAccount, echo.GET, "/api/sites", nil, ss)
 
 	// Test
 	e.ServeHTTP(rec, req)
@@ -233,7 +252,7 @@ func TestSitesUUID(t *testing.T) {
 	_ = newSiteHandler(e, dMock, mw, getMockClientHandle, nil)
 
 	// Setup request
-	req, rec := setupReqRec(echo.GET,
+	req, rec := setupReqRec(&mockAccount, echo.GET,
 		fmt.Sprintf("/api/sites/%s", m0.UUID), nil, ss)
 
 	// Test
@@ -259,7 +278,7 @@ func TestSitesUUID(t *testing.T) {
 
 	for url, ret := range req4xx {
 		t.Logf("testing %s for %d", url, ret)
-		req, rec := setupReqRec(echo.GET, url, nil, ss)
+		req, rec := setupReqRec(&mockAccount, echo.GET, url, nil, ss)
 		e.ServeHTTP(rec, req)
 		assert.Equal(ret, rec.Code)
 	}

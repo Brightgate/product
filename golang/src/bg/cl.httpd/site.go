@@ -450,15 +450,6 @@ func (a *siteHandler) postEnrollGuest(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
-func hasRole(roles []string, s string) bool {
-	for _, r := range roles {
-		if r == s {
-			return true
-		}
-	}
-	return false
-}
-
 type siteHealth struct {
 	HeartbeatProblem bool `json:"heartbeatProblem"`
 	ConfigProblem    bool `json:"configProblem"`
@@ -525,17 +516,12 @@ func (a *siteHandler) getNetworkVAPName(c echo.Context) error {
 	}
 	defer hdl.Close()
 
-	roles, ok := c.Get("matched_roles").([]string)
-	if !ok {
-		c.Logger().Errorf("No matched_roles found for request")
-		return echo.NewHTTPError(http.StatusUnauthorized)
-	}
-	admin := hasRole(roles, "admin")
+	roles := c.Get("matched_roles").(matchedRoles)
 
 	vaps := hdl.GetVirtualAPs()
 	vap, ok := vaps[c.Param("vapname")]
 	// Remove sensitive material for non-admins
-	if (c.Param("vapname") != "guest") && !admin {
+	if c.Param("vapname") != "guest" && !roles["admin"] {
 		vap.Passphrase = ""
 	}
 	if !ok {
@@ -851,15 +837,18 @@ func (a *siteHandler) mkSiteMiddleware(allowedRoles []string) echo.MiddlewareFun
 			if err != nil {
 				return echo.NewHTTPError(http.StatusInternalServerError)
 			}
-			var matches []string
+			matches := make(matchedRoles)
+			var matched bool
 			for _, ur := range roles {
+				matches[ur.Role] = false
 				for _, rr := range allowedRoles {
 					if ur.Role == rr {
-						matches = append(matches, ur.Role)
+						matches[ur.Role] = true
+						matched = true
 					}
 				}
 			}
-			if len(matches) > 0 {
+			if matched {
 				c.Set("matched_roles", matches)
 				return next(c)
 			}

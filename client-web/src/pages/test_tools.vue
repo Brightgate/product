@@ -71,63 +71,6 @@
           />
         </f7-list-group>
       </f7-list>
-      <!-- this is a rough demo; it can do both AJAX and form submits,
-           as experiments to see what makes sense for getting lastpass
-           to notice the password -->
-      <f7-list v-if="appMode === appDefs.APPMODE_CLOUD" form>
-        <f7-list-group>
-          <f7-list-item :title="$t('message.test_tools.provision_group')" group-title />
-          <f7-list-item
-            :class="loggedIn ? '' : 'disabled'">
-            <span slot="after">
-              <f7-button fill @click="generatePassword">{{ $t("message.test_tools.generate_pass_button") }}
-              </f7-button>
-            </span>
-          </f7-list-item>
-          <f7-list-item
-            :class="loggedIn ? '' : 'disabled'"
-            title="Your Username">
-            {{ generatedUsername }}
-          </f7-list-item>
-          <input :value="generatedUsername"
-                 style="display: none"
-                 type="text"
-                 name="username"
-                 autocomplete="username">
-          <input :value="generatedPassword"
-                 style="display: none"
-                 type="password"
-                 name="password"
-                 autocomplete="new-password">
-          <input
-            :value="verifier"
-            type="hidden"
-            name="verifier">
-          <f7-list-item
-            :title="$t('message.test_tools.generated_pass')"
-            :class="loggedIn ? '' : 'disabled'">
-            {{ generatedPassword }}
-          </f7-list-item>
-          <f7-list-item
-            :class="loggedIn ? '' : 'disabled'">
-            <span slot="after">
-              <f7-button fill @click="acceptPassword">{{ $t("message.test_tools.accept_pass_button") }}
-              </f7-button>
-            </span>
-          </f7-list-item>
-          <f7-list-item>
-            <span slot="after">
-              <input
-                :class="loggedIn ? '' : 'disabled'"
-                class="button button-fill"
-                type="submit"
-                value="Accept and Provision (form POST)"
-                formmethod="post"
-                formaction="/api/account/0/selfprovision">
-            </span>
-          </f7-list-item>
-        </f7-list-group>
-      </f7-list>
     </div>
 
   </f7-page>
@@ -137,7 +80,6 @@
 import vuex from 'vuex';
 import Debug from 'debug';
 import appDefs from '../app_defs';
-import siteApi from '../api/site';
 
 const debug = Debug('page:test_tools');
 
@@ -170,18 +112,6 @@ export default {
     ...vuex.mapActions([
       'logout',
     ]),
-
-    generatePassword: async function(evt) {
-      const res = await siteApi.accountGeneratePassword();
-      debug('res is', res);
-      this.generatedUsername = res.username;
-      this.generatedPassword = res.password;
-      this.verifier = res.verifier;
-    },
-
-    acceptPassword: async function(evt) {
-      await siteApi.accountSelfProvisionPost(this.generatedUsername, this.generatedPassword, this.verifier);
-    },
 
     toggleMock: function(evt) {
       debug('toggleMock', evt);

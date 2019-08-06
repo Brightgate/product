@@ -37,10 +37,15 @@ type accountManager interface {
 	DeleteAccount(context.Context, uuid.UUID) error
 	DeleteAccountTx(context.Context, DBX, uuid.UUID) error
 
+	AccountInfosByOrganization(context.Context, uuid.UUID) ([]AccountInfo, error)
+	AccountInfoByUUID(context.Context, uuid.UUID) (*AccountInfo, error)
+
 	AccountSecretsSetPassphrase(passphrase []byte)
 	AccountSecretsByUUID(context.Context, uuid.UUID) (*AccountSecrets, error)
 	UpsertAccountSecrets(context.Context, *AccountSecrets) error
 	UpsertAccountSecretsTx(context.Context, DBX, *AccountSecrets) error
+	DeleteAccountSecrets(context.Context, uuid.UUID) error
+	DeleteAccountSecretsTx(context.Context, DBX, uuid.UUID) error
 
 	AccountOrgRolesByAccount(context.Context, uuid.UUID) ([]AccountOrgRole, error)
 	AccountOrgRolesByAccountTarget(context.Context, uuid.UUID, uuid.UUID) ([]AccountOrgRole, error)
@@ -242,6 +247,60 @@ func (db *ApplianceDB) DeleteAccountTx(ctx context.Context, dbx DBX,
 	return nil
 }
 
+// AccountInfo represents the join of Account and Person
+type AccountInfo struct {
+	UUID         uuid.UUID `db:"uuid" json:"accountUUID"`
+	Email        string    `db:"email" json:"email"`
+	PhoneNumber  string    `db:"phone_number" json:"phoneNumber"`
+	Name         string    `db:"name" json:"name"`
+	PrimaryEmail string    `db:"primary_email" json:"primaryEmail"`
+}
+
+// AccountInfosByOrganization returns a list of all AccountInfos for a given organization
+func (db *ApplianceDB) AccountInfosByOrganization(ctx context.Context, org uuid.UUID) ([]AccountInfo, error) {
+	var accts []AccountInfo
+	err := db.SelectContext(ctx, &accts, `
+		SELECT
+		  a.uuid,
+		  a.email,
+		  a.phone_number,
+		  p.name,
+		  p.primary_email
+		FROM account a, person p
+		WHERE
+		  a.organization_uuid = $1 AND
+		  a.person_uuid = p.uuid`, org)
+	if err != nil {
+		return nil, err
+	}
+	return accts, nil
+}
+
+// AccountInfoByUUID returns an AccountInfo for a given account UUID
+func (db *ApplianceDB) AccountInfoByUUID(ctx context.Context, acct uuid.UUID) (*AccountInfo, error) {
+	var ai AccountInfo
+	err := db.GetContext(ctx, &ai, `
+		SELECT
+		  a.uuid,
+		  a.email,
+		  a.phone_number,
+		  p.name,
+		  p.primary_email
+		FROM account a, person p
+		WHERE
+		  a.uuid = $1 AND
+		  a.person_uuid = p.uuid`, acct)
+	switch err {
+	case sql.ErrNoRows:
+		return nil, NotFoundError{fmt.Sprintf(
+			"AccountInfoByUUID: Couldn't find record for %s", acct)}
+	case nil:
+		return &ai, nil
+	default:
+		panic(err)
+	}
+}
+
 func pgpSymEncrypt(plaintext string, passphrase []byte) (string, error) {
 	if passphrase == nil {
 		return "", errors.New("invalid empty passphrase")
@@ -385,6 +444,25 @@ func (db *ApplianceDB) UpsertAccountSecretsTx(ctx context.Context, dbx DBX,
 		   EXCLUDED.appliance_user_bcrypt, EXCLUDED.appliance_user_bcrypt_regime, EXCLUDED.appliance_user_bcrypt_ts,
 		   EXCLUDED.appliance_user_mschapv2, EXCLUDED.appliance_user_mschapv2_regime, EXCLUDED.appliance_user_mschapv2_ts
 		 )`, &crypted)
+	return err
+}
+
+// DeleteAccountSecrets removes account_secrets record for an account
+func (db *ApplianceDB) DeleteAccountSecrets(ctx context.Context, acct uuid.UUID) error {
+	return db.DeleteAccountSecretsTx(ctx, nil, acct)
+}
+
+// DeleteAccountSecretsTx removes account_secrets record for an account, possibly
+// inside a transaction
+func (db *ApplianceDB) DeleteAccountSecretsTx(ctx context.Context, dbx DBX, acct uuid.UUID) error {
+	if dbx == nil {
+		dbx = db
+	}
+	_, err := dbx.ExecContext(ctx,
+		`DELETE FROM account_secrets WHERE account_uuid = $1`, acct)
+	if err != nil {
+		panic(err)
+	}
 	return err
 }
 

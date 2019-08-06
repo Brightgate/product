@@ -612,7 +612,23 @@ func testAccount(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Su
 	assert.NoError(err)
 	assert.Equal(testAccount1, *acct)
 
+	expAccountInfo := AccountInfo{
+		UUID:         testAccount1.UUID,
+		Email:        testAccount1.Email,
+		PhoneNumber:  testAccount1.PhoneNumber,
+		Name:         testPerson1.Name,
+		PrimaryEmail: testPerson1.PrimaryEmail,
+	}
+
+	acctInfo, err := ds.AccountInfoByUUID(ctx, testAccount1.UUID)
+	assert.NoError(err)
+	assert.Equal(*acctInfo, expAccountInfo)
+
 	_, err = ds.AccountByUUID(ctx, badUUID)
+	assert.Error(err)
+	assert.IsType(err, NotFoundError{})
+
+	_, err = ds.AccountInfoByUUID(ctx, badUUID)
 	assert.Error(err)
 	assert.IsType(err, NotFoundError{})
 
@@ -626,6 +642,12 @@ func testAccount(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Su
 	assert.NoError(err, "expected success")
 
 	// Try again
+	err = ds.UpsertAccountSecrets(ctx, testAs)
+	assert.NoError(err, "expected success")
+
+	// Delete, then add again
+	err = ds.DeleteAccountSecrets(ctx, testAs.AccountUUID)
+	assert.NoError(err, "expected success")
 	err = ds.UpsertAccountSecrets(ctx, testAs)
 	assert.NoError(err, "expected success")
 

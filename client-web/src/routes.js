@@ -8,6 +8,8 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 
+import Accounts from './pages/accounts.vue';
+import AccountDetails from './pages/account_details.vue';
 import AccountPrefs from './pages/account_prefs.vue';
 import ComplianceReport from './pages/compliance_report.vue';
 import DevDetails from './pages/dev_details.vue';
@@ -48,6 +50,14 @@ export default [
   {
     path: '/account_prefs/self_provision',
     component: SelfProvision,
+  },
+  {
+    path: '/accounts/',
+    component: Accounts,
+  },
+  {
+    path: '/accounts/:accountID/',
+    component: AccountDetails,
   },
   {
     path: '/sites/:siteID/alerts/:alertID/',

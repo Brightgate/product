@@ -124,6 +124,20 @@ func delAccount(cmd *cobra.Command, args []string) error {
 	return registry.DeleteAccountInformation(ctx, db, getConfig, acctUUID)
 }
 
+func deprovisionAccount(cmd *cobra.Command, args []string) error {
+	if environ.ConfigdConnection == "" {
+		return fmt.Errorf("Must set B10E_CLREG_CLCONFIGD_CONNECTION")
+	}
+	acctUUID := uuid.Must(uuid.FromString(args[0]))
+	ctx := context.Background()
+	db, _, err := assembleRegistry(cmd)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	return registry.AccountDeprovision(ctx, db, getConfig, acctUUID)
+}
+
 func listAccountRoles(cmd *cobra.Command, args []string) error {
 	acctUUID := uuid.Must(uuid.FromString(args[0]))
 	ctx := context.Background()
@@ -293,6 +307,15 @@ func accountMain(rootCmd *cobra.Command) {
 	}
 	infoAccountCmd.Flags().StringP("input", "i", "", "registry data JSON file")
 	accountCmd.AddCommand(infoAccountCmd)
+
+	deprovisionAccountCmd := &cobra.Command{
+		Use:   "deprovision",
+		Args:  cobra.ExactArgs(1),
+		Short: "Remove account Wi-Fi credentials, and remove users pushed to sites",
+		RunE:  deprovisionAccount,
+	}
+	deprovisionAccountCmd.Flags().StringP("input", "i", "", "registry data JSON file")
+	accountCmd.AddCommand(deprovisionAccountCmd)
 
 	delAccountCmd := &cobra.Command{
 		Use:   "del",

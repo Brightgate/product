@@ -26,8 +26,11 @@
       <f7-list-item v-if="appMode === appDefs.APPMODE_CLOUD">
         <f7-link panel-close href="/account_prefs/">My Account</f7-link>
       </f7-list-item>
+      <f7-list-item v-if="appMode === appDefs.APPMODE_CLOUD && org.roles['admin']">
+        <f7-link class="bg-panel-link" panel-close href="/accounts/">Accounts</f7-link>
+      </f7-list-item>
       <f7-list-item>
-        <f7-link v-if="loggedIn" @click="$store.dispatch('logout', {}); $f7.panel.close('left');">
+        <f7-link v-if="loggedIn" @click="onLogout">
           {{ $t('message.general.logout') }}
         </f7-link>
         <f7-link v-else @click="$f7.panel.close('left'); $f7.loginScreen.open('#bgLoginScreen')">
@@ -58,12 +61,21 @@ export default {
     // Map various $store elements as computed properties for use in the
     // template.
     ...vuex.mapGetters([
+      'org',
       'appMode',
       'loggedIn',
     ]),
     showTestTools: function() {
       const tt = localStorage.getItem('testTools');
       return !!tt;
+    },
+  },
+
+  methods: {
+    onLogout: async function() {
+      await this.$store.dispatch('logout');
+      await this.$f7.panel.close('left');
+      window.location.reload();
     },
   },
 };
