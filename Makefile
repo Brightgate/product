@@ -471,7 +471,6 @@ APPCONFIGS = \
 	$(APPETC)/devices.json \
 	$(APPETC)/mcp.json \
 	$(APPETC)/prometheus.yml \
-	$(APPSNMAP)/smb-vuln-ms17-010.nse \
 	$(ROOTETCCHRONY)/bg-chrony.client \
 	$(ROOTETCCHRONY)/bg-chrony.platform \
 	$(ROOTETCIPTABLES)/rules.v4 \
@@ -858,9 +857,6 @@ $(ROOTETCRSYSLOGD)/com-brightgate-rsyslog.conf: $(GOSRCBG)/ap.watchd/com-brightg
 	$(INSTALL) -m 0644 $< $@
 
 $(ROOTETCSYSCTLD)/50-com-brightgate.conf: build/$(DISTRO)-$(PKG)/sysctl.conf | $(ROOTETCSYSCTLD)
-	$(INSTALL) -m 0644 $< $@
-
-$(APPSNMAP)/smb-vuln-ms17-010.nse: $(GOSRCBG)/ap-vuln-aggregate/smb-vuln-ms17-010.nse | $(APPSNMAP)
 	$(INSTALL) -m 0644 $< $@
 
 $(APPDATAWATCHD)/vuln-db.json: $(GOSRCBG)/ap-vuln-aggregate/sample-db.json | $(APPDATAWATCHD)

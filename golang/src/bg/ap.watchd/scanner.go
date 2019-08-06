@@ -58,16 +58,16 @@ var (
 	scanThreads = map[string]int{
 		"tcp":    2,
 		"udp":    2,
-		"vuln":   3,
+		"vuln":   2,
+		"passwd": 2,
 		"subnet": 1,
 	}
 
 	activeHosts    *hostmap // hosts we believe to be currently present
 	activeServices map[string][]string
 
-	vulnListFile  string
-	vulnList      map[string]vulnDescription
-	vulnScannable bool
+	vulnListFile string
+	vulnList     map[string]vulnDescription
 )
 
 var (
@@ -86,6 +86,7 @@ var (
 
 	tcpFreq      = apcfg.Duration("tcp_freq", 15*time.Minute, true, nil)
 	udpFreq      = apcfg.Duration("udp_freq", 60*time.Minute, true, nil)
+	passwdFreq   = apcfg.Duration("passwd_freq", 24*time.Hour, true, nil)
 	vulnFreq     = apcfg.Duration("vuln_freq", 30*time.Minute, true, nil)
 	vulnWarnFreq = apcfg.Duration("vuln_freq_warn", time.Hour, true, nil)
 
@@ -469,9 +470,21 @@ func newVulnScan(mac, ip string) *ScanRequest {
 	return &ScanRequest{
 		IP:       ip,
 		Mac:      mac,
+		Args:     []string{"-t", "!defaultpassword"},
 		ScanType: "vuln",
 		Scanner:  vulnScan,
 		Period:   vulnFreq,
+	}
+}
+
+func newPasswdScan(mac, ip string) *ScanRequest {
+	return &ScanRequest{
+		IP:       ip,
+		Mac:      mac,
+		Args:     []string{"-t", "defaultpassword"},
+		ScanType: "passwd",
+		Scanner:  vulnScan,
+		Period:   passwdFreq,
 	}
 }
 
@@ -483,10 +496,12 @@ func scannerRequest(mac, ip string, delay time.Duration) {
 	tcpScan := newTCPScan(mac, ip)
 	udpScan := newUDPScan(mac, ip)
 	vulnScan := newVulnScan(mac, ip)
+	passScan := newPasswdScan(mac, ip)
 
 	scheduleScan(tcpScan, delay, false)
 	scheduleScan(udpScan, delay, false)
 	scheduleScan(vulnScan, delay, false)
+	scheduleScan(passScan, delay, false)
 }
 
 func getMacIP(host *nmap.Host) (mac, ip string) {
@@ -1004,10 +1019,6 @@ func vulnScanProcess(ip string, discovered map[string]apvuln.TestResult) {
 }
 
 func vulnScan(req *ScanRequest) {
-	if !vulnScannable {
-		return
-	}
-
 	if err := verifyLocalIP(req.IP); err != nil {
 		slog.Warnf("not scanning %s: %v", req.IP, err)
 		req.Period = nil
@@ -1032,6 +1043,9 @@ func vulnScan(req *ScanRequest) {
 	if len(services) > 0 {
 		arg := strings.Join(services, ".")
 		args = append(args, "-services", arg)
+	}
+	if len(req.Args) > 0 {
+		args = append(args, req.Args...)
 	}
 
 	start := time.Now()
@@ -1098,8 +1112,6 @@ func vulnInit() {
 			vulnListFile, err)
 		return
 	}
-	vulnScannable = true
-
 	os.Setenv("NMAPDIR", plat.ExpandDirPath("__APPACKAGE__", "share/nmap"))
 
 	// Make it possible for ap-vuln-aggregate to run ap-inspect without

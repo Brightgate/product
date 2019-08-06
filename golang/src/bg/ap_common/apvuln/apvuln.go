@@ -67,8 +67,7 @@ func (tr *TestResult) DetailsSummary() string {
 }
 
 func nmapDetails(detail map[string]interface{}) string {
-	return fmt.Sprintf("nmapScript: %#v | Protocol: %s | Port: %s\n",
-		defaultStr(detail["script"], "unknown"),
+	return fmt.Sprintf("Protocol: %s | Port: %s\n",
 		defaultStr(detail["protocol"], "unknown"),
 		defaultStr(detail["port"], "unknown"))
 }

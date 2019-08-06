@@ -9,6 +9,24 @@
         "Ports": [ "445" ],
         "Actions": [ "Warn", "Quarantine" ]
     },
+    "CVE-2008-4250": {
+        "Nickname": "ms08-067",
+        "Tool": "nmap",
+        "Options": {
+                "script": "smb-vuln-ms08-067"
+        },
+        "Ports": [ "445" ],
+        "Actions": [ "Warn" ]
+    },
+    "conficker": {
+        "Nickname": "conficker",
+        "Tool": "nmap",
+        "Options": {
+                "script": "smb-vuln-conficker"
+        },
+        "Ports": [ "445" ],
+        "Actions": [ "Warn", "Quarantine" ]
+    },
     "CVE-2014-0160": {
         "Nickname": "heartbleed",
         "Tool": "nmap",

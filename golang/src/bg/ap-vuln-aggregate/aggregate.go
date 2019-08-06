@@ -18,6 +18,7 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
+	"strings"
 
 	"bg/ap_common/aputil"
 	"bg/ap_common/apvuln"
@@ -30,8 +31,11 @@ var (
 	ipaddr   = flag.String("i", "", "IP to probe")
 	vulnlist = flag.String("d", "", "vulnerability list")
 	outfile  = flag.String("o", "", "output file")
+	tests    = flag.String("t", "", "tests to (not) run")
 	services = flag.String("services", "", "services from nmap scan")
 	tools    = make(map[string]execFunc)
+
+	allTests map[string]aggVulnDescription
 )
 
 type aggVulnDescription struct {
@@ -133,12 +137,64 @@ func output(found map[string]apvuln.TestResult) {
 	}
 }
 
+func buildTestSet() []string {
+
+	include := make(map[string]bool)
+	skip := make(map[string]bool)
+	testSet := make([]string, 0)
+	badNames := make([]string, 0)
+
+	for _, i := range strings.Split(*tests, ",") {
+		var name string
+
+		if len(i) == 0 {
+			continue
+		}
+
+		if string(i[0]) == "!" {
+			name = i[1:]
+			skip[name] = true
+		} else {
+			name = i
+			include[name] = true
+		}
+
+		if _, ok := allTests[name]; !ok {
+			badNames = append(badNames, name)
+		}
+	}
+
+	if len(skip) > 0 && len(include) > 0 {
+		aputil.Fatalf("tests can be included or skipped - not both\n")
+	}
+
+	if len(badNames) > 0 {
+		aputil.Fatalf("unknown tests: %s\n", strings.Join(badNames, ","))
+	}
+
+	if len(include) > 0 {
+		for name := range include {
+			testSet = append(testSet, name)
+		}
+	} else {
+		for name := range allTests {
+			if !skip[name] {
+				testSet = append(testSet, name)
+			}
+		}
+	}
+
+	return testSet
+}
+
 func usage() {
-	aputil.Errorf("usage: %s [-h] [-o <output file>] -d <vuln list> -i <ip>\n",
-		pname)
+	aputil.Errorf("usage: %s [-h] [-o <output file>] [ -t <testlist> "+
+		" -d <vuln db> -i <ip>\n", pname)
 }
 
 func main() {
+	var err error
+
 	flag.Parse()
 
 	if *help || *ipaddr == "" || *vulnlist == "" {
@@ -151,15 +207,16 @@ func main() {
 		aputil.Fatalf("'%s' is not a valid IP address\n", *ipaddr)
 	}
 
-	vulnList, err := vulnDBLoad(*vulnlist)
+	allTests, err = vulnDBLoad(*vulnlist)
 	if err != nil {
 		aputil.Fatalf("Unable to import vulnerability list '%s': %v\n",
 			*vulnlist, err)
 	}
+	testSet := buildTestSet()
 
 	found := make(map[string]apvuln.TestResult)
-	for n, desc := range vulnList {
-		if result := testOne(n, desc, ip); result.Vuln {
+	for _, n := range testSet {
+		if result := testOne(n, allTests[n], ip); result.Vuln {
 			found[n] = result
 		}
 	}

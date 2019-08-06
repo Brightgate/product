@@ -124,6 +124,8 @@ func typeToString(scanType *base_msg.WatchdScanInfo_ScanType) string {
 			s = "udp"
 		case base_msg.WatchdScanInfo_VULN:
 			s = "vuln"
+		case base_msg.WatchdScanInfo_PASSWD:
+			s = "passwd"
 		case base_msg.WatchdScanInfo_SUBNET:
 			s = "subnet"
 		}
@@ -235,6 +237,8 @@ func addScan(c *comms.APComm, args []string) error {
 			scanType = base_msg.WatchdScanInfo_UDP_PORTS
 		case "vuln":
 			scanType = base_msg.WatchdScanInfo_VULN
+		case "passwd":
+			scanType = base_msg.WatchdScanInfo_PASSWD
 		default:
 			return fmt.Errorf("Invalid scan type: %s", args[1])
 		}

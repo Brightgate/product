@@ -440,7 +440,8 @@ message WatchdScanInfo {
 		TCP_PORTS	= 1;
 		UDP_PORTS	= 2;
 		VULN		= 3;
-		SUBNET		= 4;
+		PASSWD		= 4;
+		SUBNET		= 5;
 	}
 
 	optional uint32 id		= 0x01;

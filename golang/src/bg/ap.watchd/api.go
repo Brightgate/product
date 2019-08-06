@@ -71,6 +71,8 @@ func addScan(req *base_msg.WatchdScanInfo) *base_msg.WatchdResponse {
 			scan = newUDPScan("", *req.Ip)
 		case base_msg.WatchdScanInfo_VULN:
 			scan = newVulnScan("", *req.Ip)
+		case base_msg.WatchdScanInfo_PASSWD:
+			scan = newPasswdScan("", *req.Ip)
 		case base_msg.WatchdScanInfo_SUBNET:
 			scan = newSubnetScan("", *req.Ip)
 		default:
@@ -104,6 +106,8 @@ func convertScan(in *ScanRequest, active bool) *base_msg.WatchdScanInfo {
 		scanType = base_msg.WatchdScanInfo_UDP_PORTS
 	case "vuln":
 		scanType = base_msg.WatchdScanInfo_VULN
+	case "passwd":
+		scanType = base_msg.WatchdScanInfo_PASSWD
 	case "subnet":
 		scanType = base_msg.WatchdScanInfo_SUBNET
 	}
