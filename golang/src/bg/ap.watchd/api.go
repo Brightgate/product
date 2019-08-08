@@ -136,20 +136,31 @@ func apiHandle(msg []byte) []byte {
 	var resp *base_msg.WatchdResponse
 
 	req := &base_msg.WatchdRequest{}
-	proto.Unmarshal(msg, req)
+	err := proto.Unmarshal(msg, req)
 
-	switch *req.Cmd {
-	case base_msg.WatchdRequest_SCAN_LIST:
-		resp = listScans()
-	case base_msg.WatchdRequest_SCAN_ADD:
-		resp = addScan(req.Scan)
-	case base_msg.WatchdRequest_SCAN_DEL:
-		resp = delScan(req.Scan)
-	case base_msg.WatchdRequest_SCAN_RESCHED:
-		resp = reschedScan(req.Scan)
-	default:
+	if req.Cmd == nil {
+		msg := "failed to unmarshal command"
+		if err != nil {
+			msg += fmt.Sprintf(": %v", err)
+		}
+
 		resp = &base_msg.WatchdResponse{
-			Errmsg: proto.String("unknown command"),
+			Errmsg: proto.String(msg),
+		}
+	} else {
+		switch *req.Cmd {
+		case base_msg.WatchdRequest_SCAN_LIST:
+			resp = listScans()
+		case base_msg.WatchdRequest_SCAN_ADD:
+			resp = addScan(req.Scan)
+		case base_msg.WatchdRequest_SCAN_DEL:
+			resp = delScan(req.Scan)
+		case base_msg.WatchdRequest_SCAN_RESCHED:
+			resp = reschedScan(req.Scan)
+		default:
+			resp = &base_msg.WatchdResponse{
+				Errmsg: proto.String("unknown command"),
+			}
 		}
 	}
 

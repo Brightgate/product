@@ -3,7 +3,9 @@ ACCEPT UDP FROM IFACE wan TO AP DPORTS 68
 
 # mcp and networkd on the satellite nodes need to talk to daemons here
 # ssh is needed for upgrade
-ACCEPT TCP FROM RING internal TO AP DPORTS 22 3131 3132 3133 3135
+ACCEPT TCP FROM RING internal TO AP DPORTS 22 3131 3132 3133 3134
+
+# allow hostapd on the satellite to talk to the radius server on the gateway
 ACCEPT UDP FROM RING internal TO AP DPORTS 1812
 
 # satellite nodes need access to cl.rpcd.
