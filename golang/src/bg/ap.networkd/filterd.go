@@ -78,7 +78,7 @@ var (
 // Each table has a set of predefined rule chains.
 //
 var (
-	tables = []string{"nat", "filter"}
+	tables = []string{"mangle", "raw", "nat", "filter"}
 	chains = map[string][]string{
 		"nat":    {"PREROUTING", "INPUT", "OUTPUT", "POSTROUTING"},
 		"filter": {"INPUT", "FORWARD", "OUTPUT", "dropped"},
@@ -330,39 +330,19 @@ func genEndpoint(r *rule, from bool) (ep string, err error) {
 	return
 }
 
-func genPorts(r *rule) (portList string, err error) {
+func genPortList(arg string, ports []uint64) string {
 	const (
 		lowMask  = (uint64(1) << 32) - 1
 		highMask = lowMask << 32
 	)
-	var d string
-	var ports *[]uint64
+	var portList string
 
-	if len(r.sports) > 0 {
-		d = " --sport"
-		ports = &r.sports
+	if len(ports) > 1 {
+		portList = "-m multiport "
+		arg += "s"
 	}
-	if len(r.dports) > 0 {
-		if ports != nil {
-			err = fmt.Errorf("can't specify both SPORT and DPORT")
-			return
-		}
-
-		d = " --dport"
-		ports = &r.dports
-	}
-	if ports == nil {
-		return
-	}
-	if len(*ports) > 1 {
-		portList = fmt.Sprintf(" -m multiport %ss ", d)
-	} else if r.proto == protoUDP {
-		portList = fmt.Sprintf(" -m udp %s ", d)
-	} else {
-		portList = fmt.Sprintf(" -m tcp %s ", d)
-	}
-
-	for i, p := range *ports {
+	portList += arg + " "
+	for i, p := range ports {
 		if i > 0 {
 			portList += ","
 		}
@@ -376,7 +356,21 @@ func genPorts(r *rule) (portList string, err error) {
 		}
 	}
 
-	return
+	return portList
+}
+
+func genPorts(r *rule) (portList string, err error) {
+	var sep, list string
+
+	if len(r.sports) > 0 {
+		list += genPortList("--sport", r.sports)
+		sep = " "
+	}
+	if len(r.dports) > 0 {
+		list += sep + genPortList("--dport", r.dports)
+	}
+
+	return list, nil
 }
 
 //
@@ -435,14 +429,8 @@ func addCaptureRules(r *rule) error {
 	return nil
 }
 
-func addRule(r *rule) error {
+func buildRule(r *rule) (string, string, error) {
 	var iptablesRule string
-
-	if r.action == actionCapture {
-		// 'capture' isn't a single rule - it's a coordinated collection
-		// of rules.
-		return addCaptureRules(r)
-	}
 
 	from := r.from
 	to := r.to
@@ -463,7 +451,7 @@ func addRule(r *rule) error {
 		e, err := genEndpoint(r, true)
 		if err != nil {
 			slog.Warnf("Bad 'from' endpoint: %v", err)
-			return err
+			return "", "", err
 		}
 		iptablesRule += e
 	}
@@ -472,7 +460,7 @@ func addRule(r *rule) error {
 		e, err := genEndpoint(r, false)
 		if err != nil {
 			slog.Warnf("Bad 'to' endpoint: %v", err)
-			return err
+			return "", "", err
 		}
 
 		iptablesRule += e
@@ -485,21 +473,38 @@ func addRule(r *rule) error {
 	e, err := genPorts(r)
 	if err != nil {
 		slog.Warnf("Bad port list: %v", err)
-		return err
+		return "", "", err
 	}
 	iptablesRule += e
 
 	switch r.action {
 	case actionAccept:
 		iptablesRule += " -j ACCEPT"
-		iptablesAddRule("filter", chain, iptablesRule)
 	case actionBlock:
 		iptablesRule += " -j dropped"
-		iptablesAddRule("filter", chain, iptablesRule)
 	}
 
-	return nil
-	// XXX - handle start/end times
+	return chain, iptablesRule, nil
+}
+
+func addRule(r *rule) error {
+	if r.action == actionCapture {
+		// 'capture' isn't a single rule - it's a coordinated collection
+		// of rules.
+		return addCaptureRules(r)
+	}
+
+	chain, rule, err := buildRule(r)
+	if err == nil {
+		switch r.action {
+		case actionAccept:
+			iptablesAddRule("filter", chain, rule)
+		case actionBlock:
+			iptablesAddRule("filter", chain, rule)
+		}
+	}
+
+	return err
 }
 
 func iptablesRuleApply(rule string) {

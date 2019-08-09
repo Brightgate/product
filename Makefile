@@ -414,6 +414,7 @@ GO_AP_TESTABLES = \
 	bg/ap_common/certificate \
 	bg/ap.configd \
 	bg/ap-defaultpass\
+	bg/ap.networkd \
 	bg/ap.rpcd \
 	bg/ap.userauthd \
 	bg/ap_common/platform \

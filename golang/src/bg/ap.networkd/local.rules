@@ -12,7 +12,13 @@ ACCEPT TCP FROM RING devices DPORTS 3400 3401
 # clients.
 ACCEPT TCP FROM RING standard TO RING core DPORTS 631 9100 80 5357
 
-# Airplay
+# Airplay (audio)
 ACCEPT UDP FROM RING devices SPORTS 6001 6002 6003
 # Protocol suggests that these might be needed as well:
 # ACCEPT UDP FROM RING devices SPORTS 7010 7011
+
+# Airplay (video)
+# XXX: when we have device identification and related policies, this should only
+# be applied when an AppleTV is present, and the rule will be restricted to that
+# one device.
+ACCEPT UDP FROM RING devices SPORTS 49152:65535 DPORTS 49152:65535

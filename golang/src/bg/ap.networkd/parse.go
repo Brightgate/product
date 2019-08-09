@@ -267,7 +267,7 @@ func parseTime(tokens []string, num int) (*time.Time, error) {
 
 func parsePort(t string) (uint64, error) {
 	v, err := strconv.Atoi(t)
-	if err == nil && (v < 0 || v > 32768) {
+	if err == nil && (v < 0 || v > 65535) {
 		err = fmt.Errorf("value out of range")
 	}
 
@@ -289,6 +289,11 @@ func getPorts(tokens []string) (sports, dports []uint64, cnt int, err error) {
 	cnt = 1
 	for _, t := range tokens[1:] {
 		var port uint64
+
+		if t == "SPORTS" || t == "DPORTS" || t == "TIME" {
+			// Found the next token
+			break
+		}
 
 		f := strings.Split(t, ":")
 		if len(f) > 2 {
@@ -342,25 +347,30 @@ func getTime(tokens []string) (start, end *time.Time, cnt int, err error) {
 	return
 }
 
-func parseRule(text string) (rp *rule, err error) {
+func parseRule(text string) (r *rule, err error) {
 	var c int
 
-	r := rule{text: text}
-	rp = &r
+	r = &rule{
+		text:   text,
+		sports: make([]uint64, 0),
+		dports: make([]uint64, 0),
+	}
 
 	tokens := strings.Split(text, " ")
 	t := 0
 	e := len(tokens)
 
 	if e < 1 {
-		return nil, fmt.Errorf("no action defined")
+		err = fmt.Errorf("no action defined")
+		return
 	}
 
 	if r.action, err = getAction(tokens[t]); err != nil {
 		return
 	}
 	if t++; t >= e {
-		return nil, fmt.Errorf("invalid rule")
+		err = fmt.Errorf("invalid rule")
+		return
 	}
 
 	if r.proto, err = getProtocol(tokens[t]); err != nil {
@@ -386,11 +396,24 @@ func parseRule(text string) (rp *rule, err error) {
 		return
 	}
 
-	if r.sports, r.dports, c, err = getPorts(tokens[t:]); err != nil {
-		return
-	}
-	if t += c; t >= e {
-		return
+	for {
+		var sports, dports []uint64
+
+		if sports, dports, c, err = getPorts(tokens[t:]); err != nil {
+			return
+		}
+		if c == 0 {
+			break
+		}
+
+		if len(sports) > 0 {
+			r.sports = append(r.sports, sports...)
+		} else if len(dports) > 0 {
+			r.dports = append(r.dports, dports...)
+		}
+		if t += c; t >= e {
+			return
+		}
 	}
 
 	if r.start, r.end, c, err = getTime(tokens[t:]); err != nil {
@@ -403,7 +426,7 @@ func parseRule(text string) (rp *rule, err error) {
 		err = fmt.Errorf("Rule has no endpoints")
 	}
 
-	return
+	return r, err
 }
 
 //

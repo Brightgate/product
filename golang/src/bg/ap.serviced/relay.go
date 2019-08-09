@@ -458,7 +458,7 @@ func ssdpInit() {
 		}
 	}
 
-	propBase := "@/firewall/rules/sonos/"
+	propBase := "@/firewall/rules/ssdp/"
 	rule := fmt.Sprintf("ACCEPT UDP FROM IFACE NOT wan TO AP DPORTS %d:%d",
 		low, high-1)
 	ops := []cfgapi.PropertyOp{
