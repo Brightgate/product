@@ -31,6 +31,8 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/platform"
 	"bg/base_def"
+
+	"github.com/satori/uuid"
 )
 
 const (
@@ -286,11 +288,15 @@ func verifyNodeID() error {
 	logWarn("Unable to get a device nodeID: %v", err)
 
 	if *nodeFlag == "" {
-		err = fmt.Errorf("must provide a device nodeID")
-	} else if err = plat.SetNodeID(*nodeFlag); err != nil {
-		err = fmt.Errorf("unable to set device nodeID: %v", err)
+		nodeID = uuid.NewV4().String()
+		logWarn("generated a new nodeID: %s", nodeID)
 	} else {
-		logInfo("Set new device nodeID: %s", *nodeFlag)
+		nodeID = *nodeFlag
+		logInfo("using nodeID from command line: %s", nodeID)
+	}
+
+	if err = plat.SetNodeID(*nodeFlag); err != nil {
+		err = fmt.Errorf("unable to set device nodeID: %v", err)
 	}
 
 	return err
