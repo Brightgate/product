@@ -50,6 +50,14 @@ export default {
       org_switch_popup: {
         no_roles: 'No roles granted',
       },
+      left_panel: {
+        select_site: 'Select Site',
+        home: 'Home',
+        my_account: 'My Account',
+        accounts: 'Accounts',
+        admin_guide: 'Admin Guide',
+        support: 'Brightgate Support',
+      },
       site_admin: {
         admin_title: 'You are administering Brightgate Wi-fi for this site.',
         user_title: 'You are viewing Brightgate Wi-fi for this site.',

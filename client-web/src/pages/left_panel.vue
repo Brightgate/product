@@ -1,4 +1,12 @@
+<!--
+  COPYRIGHT 2019 Brightgate Inc. All rights reserved.
 
+  This copyright notice is Copyright Management Information under 17 USC 1202
+  and is included to protect this work and deter copyright infringement.
+  Removal or alteration of this Copyright Management Information without the
+  express written permission of Brightgate Inc is prohibited, and any
+  such unauthorized removal or alteration will be a violation of federal law.
+-->
 <style>
 .ios div.panel-left div.page-content {
   background: #f7f7f8;
@@ -27,16 +35,24 @@
 
     <f7-list no-hairlines no-hairlines-between>
       <f7-list-item v-if="appMode === appDefs.APPMODE_CLOUD">
-        <f7-link panel-close href="/">Select Site</f7-link>
+        <f7-link panel-close href="/">
+          {{ $t('message.left_panel.select_site') }}
+        </f7-link>
       </f7-list-item>
       <f7-list-item v-if="appMode === appDefs.APPMODE_LOCAL">
-        <f7-link panel-close href="/">Home</f7-link>
+        <f7-link panel-close href="/">
+          {{ $t('message.left_panel.home') }}
+        </f7-link>
       </f7-list-item>
       <f7-list-item v-if="appMode === appDefs.APPMODE_CLOUD">
-        <f7-link panel-close href="/account_prefs/">My Account</f7-link>
+        <f7-link panel-close href="/account_prefs/">
+          {{ $t('message.left_panel.my_account') }}
+        </f7-link>
       </f7-list-item>
       <f7-list-item v-if="appMode === appDefs.APPMODE_CLOUD && currentOrgAdmin">
-        <f7-link class="bg-panel-link" panel-close href="/accounts/">Accounts</f7-link>
+        <f7-link panel-close href="/accounts/">
+          {{ $t('message.left_panel.accounts') }}
+        </f7-link>
       </f7-list-item>
       <f7-list-item>
         <f7-link v-if="loggedIn" @click="onLogout">
@@ -50,10 +66,14 @@
         <f7-link panel-close href="/test_tools/">Test Tools</f7-link>
       </f7-list-item>
       <f7-list-item>
-        <f7-link panel-close href="/help/end_customer_guide">Admin Guide</f7-link>
+        <f7-link panel-close href="/help/end_customer_guide">
+          {{ $t('message.left_panel.admin_guide') }}
+        </f7-link>
       </f7-list-item>
       <f7-list-item>
-        <f7-link panel-close href="/support/">Brightgate Support</f7-link>
+        <f7-link panel-close href="/support/">
+          {{ $t('message.left_panel.support') }}
+        </f7-link>
       </f7-list-item>
     </f7-list>
 
