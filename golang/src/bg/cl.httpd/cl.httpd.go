@@ -102,7 +102,7 @@ const (
 	checkMark = `✔︎ `
 
 	// CSP matched to that of ap.httpd, anticipating web hoist.
-	contentSecurityPolicy = "default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: 'unsafe-inline' 'unsafe-eval'; frame-ancestors 'none'"
+	contentSecurityPolicy = "default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: 'unsafe-inline' 'unsafe-eval'; frame-src https://brightgate.freshdesk.com/; frame-ancestors 'none'"
 )
 
 var (

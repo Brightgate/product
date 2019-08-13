@@ -83,7 +83,7 @@ const (
 	// using inline <script> tags.  'unsafe-eval' is needed by
 	// vue.js's template compiler.  'img-src' relaxed to allow
 	// inline SVG elements.
-	contentSecurityPolicy = "default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: 'unsafe-inline' 'unsafe-eval'; frame-ancestors 'none'"
+	contentSecurityPolicy = "default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: 'unsafe-inline' 'unsafe-eval'; frame-src https://brightgate.freshdesk.com/; frame-ancestors 'none'"
 )
 
 func certStateChange(path []string, val string, expires *time.Time) {

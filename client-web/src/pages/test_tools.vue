@@ -32,6 +32,9 @@
                   img/bglogo_navbar_md@2x.png 2x">
       </f7-nav-title>
 
+      <f7-nav-right v-if="!leftPanelVisible">
+        &nbsp;
+      </f7-nav-right>
     </f7-navbar>
 
     <div>
@@ -80,10 +83,14 @@
 import vuex from 'vuex';
 import Debug from 'debug';
 import appDefs from '../app_defs';
+import BGFreshdesk from '../components/freshdesk.vue';
 
 const debug = Debug('page:test_tools');
 
 export default {
+  components: {
+    'bg-freshdesk': BGFreshdesk,
+  },
   data: function() {
     return {
       appDefs: appDefs,
