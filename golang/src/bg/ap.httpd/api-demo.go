@@ -330,16 +330,15 @@ func demoConfigPostHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type daUser struct {
-	UID               string
-	UUID              *uuid.UUID
-	Role              *string
-	DisplayName       *string
-	Email             *string
-	TelephoneNumber   *string
-	PreferredLanguage *string
-	SelfProvisioning  bool
-	HasPassword       bool
-	SetPassword       *string
+	UID              string
+	UUID             *uuid.UUID
+	Role             *string
+	DisplayName      *string
+	Email            *string
+	TelephoneNumber  *string
+	SelfProvisioning bool
+	HasPassword      bool
+	SetPassword      *string
 }
 
 func buildUserResponse(user *cfgapi.UserInfo) daUser {
@@ -352,7 +351,6 @@ func buildUserResponse(user *cfgapi.UserInfo) daUser {
 	cu.DisplayName = &user.DisplayName
 	cu.Email = &user.Email
 	cu.TelephoneNumber = &user.TelephoneNumber
-	cu.PreferredLanguage = &user.PreferredLanguage
 
 	// XXX These could have stricter tests for correctness/lack of
 	// corruption.
@@ -441,9 +439,6 @@ func demoUserByUUIDPostHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if dau.Email != nil {
 		ui.Email = *dau.Email
-	}
-	if dau.PreferredLanguage != nil {
-		ui.PreferredLanguage = *dau.PreferredLanguage
 	}
 	if dau.TelephoneNumber != nil {
 		ui.TelephoneNumber = *dau.TelephoneNumber

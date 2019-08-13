@@ -601,16 +601,15 @@ func (a *siteHandler) getNetworkWan(c echo.Context) error {
 // apiUserInfo describes a user.  It is similar to cfgapi.UserInfo but with
 // fields customized for partial updates and password setting.
 type apiUserInfo struct {
-	UID               string
-	UUID              *uuid.UUID
-	Role              *string
-	DisplayName       *string
-	Email             *string
-	TelephoneNumber   *string
-	PreferredLanguage *string
-	HasPassword       bool
-	SetPassword       *string
-	SelfProvisioning  bool
+	UID              string
+	UUID             *uuid.UUID
+	Role             *string
+	DisplayName      *string
+	Email            *string
+	TelephoneNumber  *string
+	HasPassword      bool
+	SetPassword      *string
+	SelfProvisioning bool
 }
 
 // newAPIUserInfo constructs an apiUserInfo from a cfgapi.UserInfo
@@ -624,7 +623,6 @@ func newAPIUserInfo(user *cfgapi.UserInfo) *apiUserInfo {
 	cu.DisplayName = &user.DisplayName
 	cu.Email = &user.Email
 	cu.TelephoneNumber = &user.TelephoneNumber
-	cu.PreferredLanguage = &user.PreferredLanguage
 
 	// XXX These could have stricter tests for correctness/lack of
 	// corruption.
@@ -716,9 +714,6 @@ func (a *siteHandler) postUserByUUID(c echo.Context) error {
 	}
 	if au.Email != nil {
 		ui.Email = *au.Email
-	}
-	if au.PreferredLanguage != nil {
-		ui.PreferredLanguage = *au.PreferredLanguage
 	}
 	if au.TelephoneNumber != nil {
 		ui.TelephoneNumber = *au.TelephoneNumber

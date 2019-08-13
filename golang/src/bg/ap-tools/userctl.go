@@ -58,7 +58,6 @@ var (
 	displayNameFlag stringFlag
 	emailFlag       stringFlag
 	phoneFlag       stringFlag
-	langFlag        stringFlag
 	addOp           bool
 	updateOp        bool
 	deleteOp        bool
@@ -75,7 +74,6 @@ func flagInit() {
 	flag.Var(&displayNameFlag, "display-name", "displayName value for added user")
 	flag.Var(&emailFlag, "email", "email value for added user")
 	flag.Var(&phoneFlag, "telephone-number", "telephoneNumber value for added user")
-	flag.Var(&langFlag, "language", "preferredLanguage value for added user")
 
 	flag.Parse()
 }
@@ -124,7 +122,6 @@ func getUsersVerbose() error {
 		fmt.Printf("\tRole: %s\n", user.Role)
 		fmt.Printf("\tDisplayName: %s\n", user.DisplayName)
 		fmt.Printf("\tEmail: %s\n", user.Email)
-		fmt.Printf("\tPreferredLanguage: %s\n", user.PreferredLanguage)
 		fmt.Printf("\tTelephoneNumber: %s\n", user.TelephoneNumber)
 		fmt.Printf("\tSelfProvisioning: %v\n", user.SelfProvisioning)
 		printSecret("Password", user.Password)
@@ -142,7 +139,6 @@ func addUser() error {
 	ui.DisplayName = displayNameFlag.String()
 	ui.Email = emailFlag.String()
 	ui.TelephoneNumber = phoneFlag.String()
-	ui.PreferredLanguage = langFlag.String()
 	hdl, err := ui.Update()
 	if err != nil {
 		return err
@@ -171,9 +167,6 @@ func updateUser() error {
 	}
 	if phoneFlag.set {
 		ui.TelephoneNumber = phoneFlag.String()
-	}
-	if langFlag.set {
-		ui.PreferredLanguage = langFlag.String()
 	}
 	hdl, err := ui.Update()
 	if err != nil {

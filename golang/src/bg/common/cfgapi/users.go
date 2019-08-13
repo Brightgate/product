@@ -33,14 +33,13 @@ import (
 type UserInfo struct {
 	UID string // Username
 	// If SelfProvisioning is true, UUID should match cloud account UUID
-	UUID              uuid.UUID
-	Role              string // User role
-	DisplayName       string // User's friendly name
-	Email             string // User email
-	PreferredLanguage string
-	TelephoneNumber   string // User telephone number
-	Password          string // bcrypt Password
-	MD4Password       string // MD4 Password for WPA-EAP/MSCHAPv2
+	UUID            uuid.UUID
+	Role            string // User role
+	DisplayName     string // User's friendly name
+	Email           string // User email
+	TelephoneNumber string // User telephone number
+	Password        string // bcrypt Password
+	MD4Password     string // MD4 Password for WPA-EAP/MSCHAPv2
 	// User was created by cloud self-provisioning; if true, UUID matches
 	// cloud user UUID
 	SelfProvisioning bool
@@ -68,20 +67,18 @@ func newUserFromNode(name string, user *PropertyNode) (*UserInfo, error) {
 	xuuid, _ := uuid.FromString(suuid)
 	email, _ := getStringVal(user, "email")
 	telephoneNumber, _ := getStringVal(user, "telephone_number")
-	preferredLanguage, _ := getStringVal(user, "preferred_language")
 	displayName, _ := getStringVal(user, "display_name")
 	selfProvisioning, _ := getBoolVal(user, "self_provisioning")
 
 	u := &UserInfo{
-		UID:               uid,
-		UUID:              xuuid,
-		Email:             email,
-		TelephoneNumber:   telephoneNumber,
-		PreferredLanguage: preferredLanguage,
-		DisplayName:       displayName,
-		Password:          password,
-		MD4Password:       md4password,
-		SelfProvisioning:  selfProvisioning,
+		UID:              uid,
+		UUID:             xuuid,
+		Email:            email,
+		TelephoneNumber:  telephoneNumber,
+		DisplayName:      displayName,
+		Password:         password,
+		MD4Password:      md4password,
+		SelfProvisioning: selfProvisioning,
 	}
 
 	return u, nil
@@ -285,7 +282,6 @@ func (u *UserInfo) Update(extraOps ...PropertyOp) (CmdHdl, error) {
 	addProp("email", u.Email)
 	addProp("display_name", u.DisplayName)
 	addProp("telephone_number", phoneStr)
-	addProp("preferred_language", u.PreferredLanguage)
 	addProp("role", u.Role)
 	ops = append(ops, extraOps...)
 	return u.config.Execute(nil, ops), nil
