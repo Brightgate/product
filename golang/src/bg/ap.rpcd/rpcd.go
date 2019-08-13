@@ -230,7 +230,7 @@ func commonInit() error {
 
 	applianceCred, err = aputil.SystemCredential()
 	if err != nil {
-		return fmt.Errorf("loading appliance credentials: %v", err)
+		slog.Errorf("loading appliance credentials: %v", err)
 	}
 
 	if brokerd != nil {
@@ -267,42 +267,12 @@ func daemonStop() {
 	os.Exit(0)
 }
 
-func daemonStart() {
-	var err error
-	var mcpState int
+func cloud(isFailsafe bool, wg *sync.WaitGroup, doneChan chan bool) {
 	var cclient cloud_rpc.ConfigBackEndClient
 	var sclient cloud_rpc.CloudStorageClient
 
-	slog.Infof("ap.rpcd starting")
-	ctx := context.Background()
 	isGateway := !aputil.IsSatelliteMode()
-	isFailsafe := strings.EqualFold(os.Getenv("BG_FAILSAFE"), "true")
-
-	if mcpd, err = mcp.New(pname); err != nil {
-		slog.Fatalf("Failed to connect to mcp: %s", err)
-	}
-
-	prometheusInit()
-	brokerd = broker.NewBroker(slog, pname)
-	defer brokerd.Fini()
-
-	if err := commonInit(); err != nil {
-		mcpd.SetState(mcp.BROKEN)
-		slog.Fatalf("commonInit failed: %v", err)
-	}
-
-	if err != nil {
-		slog.Fatalf("Failed to set ONLINE: %+v", err)
-	}
-
-	setCertExpirationHandler()
-	slog.Info("Provisionally generating self-signed certificate")
-	genNo := "0"
-	err = config.CreateProp("@/cert_generation", genNo, nil)
-	if err != nil {
-		slog.Fatalf("Couldn't set initial certificate generation number: %v", err)
-	}
-	go ssCertGen(genNo)
+	ctx := context.Background()
 
 	conn := grpcConnect(ctx)
 	defer conn.Close()
@@ -317,7 +287,7 @@ func daemonStart() {
 	brokerd.Handle(base_def.TOPIC_EXCEPTION, func(event []byte) {
 		cleanup.wg.Add(1)
 		defer cleanup.wg.Done()
-		if err = handleNetException(ctx, tclient, event); err != nil {
+		if err := handleNetException(ctx, tclient, event); err != nil {
 			slog.Errorf("Failed handleNetException: %s", err)
 		}
 	})
@@ -340,14 +310,59 @@ func daemonStart() {
 		go tunnelLoop(&cleanup.wg, addDoneChan())
 	}
 
+	<-doneChan
+	wg.Done()
+}
+
+func daemonStart() {
+	var err error
+	var mcpState int
+
+	slog.Infof("ap.rpcd starting")
+	isFailsafe := strings.EqualFold(os.Getenv("BG_FAILSAFE"), "true")
+
+	if mcpd, err = mcp.New(pname); err != nil {
+		slog.Fatalf("Failed to connect to mcp: %s", err)
+	}
+
+	prometheusInit()
+	brokerd = broker.NewBroker(slog, pname)
+	defer brokerd.Fini()
+
+	if err := commonInit(); err != nil {
+		mcpd.SetState(mcp.BROKEN)
+		slog.Fatalf("commonInit failed: %v", err)
+	}
+
+	if applianceCred == nil {
+		// We can't perform most of our rpc duties, but we at least want
+		// the local cert stuff to work.
+		isFailsafe = true
+	} else {
+		go cloud(isFailsafe, &cleanup.wg, addDoneChan())
+	}
+
 	if isFailsafe {
 		mcpState = mcp.FAILSAFE
 	} else {
 		mcpState = mcp.ONLINE
 	}
 
-	slog.Infof("Setting state %s", mcp.States[mcpState])
+	stateName := mcp.States[mcpState]
+	slog.Infof("Setting state %s", stateName)
 	err = mcpd.SetState(mcpState)
+	if err != nil {
+		slog.Fatalf("Failed to set %s: %v", stateName, err)
+	}
+
+	setCertExpirationHandler()
+	slog.Info("Provisionally generating self-signed certificate")
+	genNo := "0"
+	err = config.CreateProp("@/cert_generation", genNo, nil)
+	if err != nil {
+		slog.Fatalf("Couldn't set initial certificate generation number: %v", err)
+	}
+	go ssCertGen(genNo)
 
 	exitSig := make(chan os.Signal, 2)
 	signal.Notify(exitSig, syscall.SIGINT, syscall.SIGTERM)
@@ -362,7 +377,7 @@ func cmdStart() {
 	ctx := context.Background()
 
 	err := commonInit()
-	if err != nil {
+	if err != nil || applianceCred == nil {
 		slog.Fatalf("grpc init failed: %v", err)
 	}
 

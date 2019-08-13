@@ -59,13 +59,14 @@ var (
 	developerHTTP = apcfg.String("developer-http", "", false, nil)
 	_             = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
 
-	mcpd *mcp.MCP
-
 	cutter *securecookie.SecureCookie
 
+	mcpd       *mcp.MCP
 	config     *cfgapi.Handle
 	domainname string
 	slog       *zap.SugaredLogger
+
+	certInstalled = make(chan bool, 1)
 
 	metrics struct {
 		latencies prometheus.Summary
@@ -87,8 +88,7 @@ const (
 
 func certStateChange(path []string, val string, expires *time.Time) {
 	if val == "installed" {
-		slog.Infof("restarting due to renewed certificate")
-		os.Exit(0)
+		certInstalled <- true
 	}
 }
 
@@ -252,6 +252,7 @@ func prometheusInit() {
 func main() {
 	var err error
 	var rings cfgapi.RingMap
+	var certPaths *certificate.CertPaths
 
 	slog = aputil.NewLogger(pname)
 	defer slog.Sync()
@@ -296,10 +297,15 @@ func main() {
 	if err != nil {
 		slog.Fatalf("failed to setup certStateChange: %v", err)
 	}
-	certPaths := certificate.GetKeyCertPaths(domainname)
-	if certPaths == nil {
-		slog.Warn("Sleeping until a cert is presented")
-		select {}
+
+	for certPaths == nil {
+		certPaths = certificate.GetKeyCertPaths(domainname)
+		if certPaths == nil {
+			mcpd.SetState(mcp.FAILSAFE)
+			slog.Warn("Sleeping until a cert is presented")
+			<-certInstalled
+			slog.Infof("New cert available")
+		}
 	}
 
 	data.LoadDNSBlocklist(data.DefaultDataDir)
@@ -411,6 +417,12 @@ func main() {
 	sig := make(chan os.Signal, 2)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
-	s := <-sig
-	slog.Fatalf("Signal (%v) received", s)
+	select {
+	case s := <-sig:
+		slog.Fatalf("Signal (%v) received", s)
+	case <-certInstalled:
+		slog.Infof("restarting due to renewed certificate")
+	}
+
+	os.Exit(0)
 }

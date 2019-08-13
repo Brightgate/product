@@ -109,13 +109,14 @@ var (
 
 	hostapdProcess *aputil.Child // track the hostapd proc
 
-	plat    *platform.Platform
-	config  *cfgapi.Handle
-	mcpd    *mcp.MCP
-	slog    *zap.SugaredLogger
-	running bool
-	secret  []byte
-	rc      *rConf
+	plat          *platform.Platform
+	config        *cfgapi.Handle
+	mcpd          *mcp.MCP
+	slog          *zap.SugaredLogger
+	running       bool
+	secret        []byte
+	rc            *rConf
+	certInstalled = make(chan bool, 1)
 
 	// XXX: these metrics are currently just aspirational, since hostapd
 	// does all of the authentication work internally.
@@ -146,9 +147,7 @@ func configUserChanged(path []string, val string, expires *time.Time) {
 
 func certStateChange(path []string, val string, expires *time.Time) {
 	if val == "installed" {
-		slog.Infof("exiting due to renewed certificate")
-		hostapdProcess.Stop()
-		os.Exit(0)
+		certInstalled <- true
 	}
 }
 
@@ -248,9 +247,14 @@ func generateRadiusClientConf(rc *rConf) string {
 func signalHandler() {
 	sig := make(chan os.Signal, 2)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	s := <-sig
 
-	slog.Infof("Received signal %v", s)
+	select {
+	case s := <-sig:
+		slog.Infof("Received signal %v", s)
+	case <-certInstalled:
+		slog.Infof("exiting due to renewed certificate")
+	}
+
 	running = false
 	hostapdProcess.Stop()
 }
@@ -367,6 +371,7 @@ func siteIDChange(path []string, val string, expires *time.Time) {
 }
 
 func main() {
+	var certPaths *certificate.CertPaths
 	var err error
 
 	slog = aputil.NewLogger(pname)
@@ -398,10 +403,15 @@ func main() {
 	// one, sleep until ap.rpcd notifies us one is available, and then
 	// restart.
 	config.HandleChange(`^@/certs/.*/state`, certStateChange)
-	certPaths := certificate.GetKeyCertPaths(domainName)
-	if certPaths == nil {
-		slog.Warn("Sleeping until a cert is presented")
-		select {}
+
+	for certPaths == nil {
+		certPaths = certificate.GetKeyCertPaths(domainName)
+		if certPaths == nil {
+			mcpd.SetState(mcp.FAILSAFE)
+			slog.Warn("Sleeping until a cert is presented")
+			<-certInstalled
+			slog.Infof("New cert available")
+		}
 	}
 
 	secret, err = establishSecret()

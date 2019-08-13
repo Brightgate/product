@@ -153,19 +153,19 @@ func ssCertGen(genNo string) {
 	retryPeriod := 30 * time.Second
 	for {
 		_, err = certificate.CreateSSKeyCert(config, domain, genNo)
-		if err != nil {
-			// If the error is that the cloud cert beat us to the
-			// punch, it's not really an error.
-			if errors.Cause(err) == cfgapi.ErrNotEqual {
-				slog.Infof("Self-signed certificate generation " +
-					"canceled by new cloud certificate")
-				break
-			}
-			slog.Errorf("Self-signed certificate generation failed "+
-				"(retry in %s): %v", retryPeriod, err)
-		} else {
+		if err == nil {
 			break
 		}
+
+		// If the error is that the cloud cert beat us to the
+		// punch, it's not really an error.
+		if errors.Cause(err) == cfgapi.ErrNotEqual {
+			slog.Infof("Self-signed certificate generation " +
+				"canceled by new cloud certificate")
+			break
+		}
+		slog.Errorf("Self-signed certificate generation failed "+
+			"(retry in %s): %v", retryPeriod, err)
 		time.Sleep(retryPeriod)
 	}
 }
