@@ -18,7 +18,9 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"regexp"
 	"strconv"
+	"time"
 
 	"bg/ap_common/aputil"
 	"bg/base_def"
@@ -37,17 +39,111 @@ const (
 	propertyFilename = "ap_props.json"
 	backupFilename   = "ap_props.json.bak"
 	baseFilename     = "configd.json"
+	// snapshot format is <year><month><day><hour><minute>
+	snapFormat       = "200601021504"
 	minConfigVersion = 12
 )
 
 var (
 	propTreeDir    *os.File
-	propTreeFile   string
 	propTreeLoaded bool
+
+	archiveTimes []time.Time
 
 	upgradeHooks []func() error
 )
 
+func propFileRename(old, new string) bool {
+	var renamed bool
+
+	oldPath := plat.ExpandDirPath(propertyDir, old)
+	if aputil.FileExists(oldPath) {
+		newPath := plat.ExpandDirPath(propertyDir, new)
+		if err := os.Rename(oldPath, newPath); err != nil {
+			slog.Warnf("rename(%s, %s) failed: %v",
+				oldPath, newPath, err)
+		} else {
+			renamed = true
+		}
+	}
+
+	return renamed
+}
+
+func updateSnapshots() bool {
+	var syncNeeded bool
+	var last time.Time
+	var lastDay, lastHour string
+
+	if l := len(archiveTimes); l > 0 {
+		last = archiveTimes[l-1]
+	}
+
+	// If the last snapshot is more than 5 minutes old, take a new one
+	now := time.Now()
+	if last.Add(5 * time.Minute).Before(now) {
+		newFile := propertyFilename + "." + now.Format(snapFormat)
+		slog.Debugf("Creating new snapshot: %s", newFile)
+		if propFileRename(backupFilename, newFile) {
+			archiveTimes = append(archiveTimes, now)
+			syncNeeded = true
+		}
+	}
+
+	// Clean up old snapshots
+	del := make([]time.Time, 0)
+	keep := make([]time.Time, 0)
+	keptDays := 0
+	for _, t := range archiveTimes {
+		var delete bool
+
+		// If the timestamp is more than 24 hours old, we only save one
+		// per day - up to a total of 30 days.
+		if t.Add(24 * time.Hour).Before(now) {
+			dayStr := t.Format("20060102")
+			if dayStr == lastDay || keptDays >= 30 {
+				delete = true
+			} else {
+				keptDays++
+			}
+			lastDay = dayStr
+		}
+
+		// If the timestamp is more than an hour old, we only save one
+		// per hour
+		if t.Add(time.Hour).Before(now) {
+			hourStr := t.Format("2006010215")
+			if hourStr == lastHour {
+				delete = true
+			}
+			lastHour = hourStr
+		}
+
+		if delete {
+			del = append(del, t)
+		} else {
+			keep = append(keep, t)
+		}
+	}
+	archiveTimes = keep
+
+	for _, t := range del {
+		name := propertyFilename + "." + t.Format(snapFormat)
+		path := plat.ExpandDirPath(propertyDir, name)
+		slog.Debugf("Removing old snapshot: %s", path)
+		if err := os.Remove(path); err != nil {
+			slog.Warnf("Error removing %s: %v", path, err)
+		} else {
+			syncNeeded = true
+		}
+	}
+
+	return syncNeeded
+}
+
+// Move the current config file aside as a backup, and persist the config tree
+// to disk in its place.  If the latest snapshot is old enough, take a fresh
+// snapshot and reap any stale snapshots.
 func propTreeStore() error {
 	var err error
 	if !propTreeLoaded {
@@ -57,24 +153,19 @@ func propTreeStore() error {
 	s := propTree.Export(true)
 	metrics.treeSize.Set(float64(len(s)))
 
-	if aputil.FileExists(propTreeFile) {
-		/*
-		 * XXX: could store multiple generations of backup files,
-		 * allowing for arbitrary rollback.  Could also take explicit
-		 * 'checkpoint' snapshots.
-		 */
-		backupfile := plat.ExpandDirPath(propertyDir, backupFilename)
-		err = os.Rename(propTreeFile, backupfile)
-		if err != nil {
-			slog.Warnf("Failed to rename current property file to backup: %v", err)
-		}
+	syncNeeded := updateSnapshots()
+	if propFileRename(propertyFilename, backupFilename) {
+		syncNeeded = true
+	}
+
+	if syncNeeded {
 		// Force directory metadata out to disk.
-		err = propTreeDir.Sync()
-		if err != nil {
-			slog.Warnf("Failed to sync properties dir during backup: %v", err)
+		if err = propTreeDir.Sync(); err != nil {
+			slog.Warnf("Failed to sync properties dir: %v", err)
 		}
 	}
 
+	propTreeFile := plat.ExpandDirPath(propertyDir, propertyFilename)
 	err = bgioutil.WriteFileSync(propTreeFile, s, 0644)
 	if err != nil {
 		slog.Warnf("Failed to write properties file: %v", err)
@@ -87,14 +178,17 @@ func propTreeStore() error {
 	return err
 }
 
-func propTreeLoad(name string) (*cfgtree.PTree, error) {
-	if !aputil.FileExists(propTreeFile) {
+// Try to load a config tree from the given file.
+func propTreeLoad(fullPath string) (*cfgtree.PTree, error) {
+	slog.Debugf("Loading %s", fullPath)
+
+	if !aputil.FileExists(fullPath) {
 		return nil, fmt.Errorf("file missing")
 	}
 
-	file, err := ioutil.ReadFile(name)
+	file, err := ioutil.ReadFile(fullPath)
 	if err != nil {
-		slog.Warnf("Failed to load %s: %v", name, err)
+		slog.Warnf("Failed to load %s: %v", fullPath, err)
 		return nil, err
 	}
 
@@ -102,7 +196,7 @@ func propTreeLoad(name string) (*cfgtree.PTree, error) {
 	if err == nil {
 		metrics.treeSize.Set(float64(len(file)))
 	} else {
-		err = fmt.Errorf("importing %s: %v", name, err)
+		err = fmt.Errorf("importing %s: %v", fullPath, err)
 	}
 
 	return tree, err
@@ -164,9 +258,42 @@ func versionTree() error {
 	return nil
 }
 
+// Find all of the property files on the system: current, backup, and snapshots.
+// Return them in reverse chronological order.
+func getPropFiles() []string {
+	goodRE := regexp.MustCompile(propertyFilename + `\.(\d{12})`)
+
+	rval := []string{propertyFilename, backupFilename}
+
+	dir := plat.ExpandDirPath(propertyDir)
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		slog.Warnf("reading directory %s: %v", dir, err)
+	}
+
+	// ReadDir() returns files in alphabetical order, so we need to process
+	// them backwards.
+	for i := len(files); i > 0; i-- {
+		n := files[i-1].Name()
+		if m := goodRE.FindStringSubmatch(n); len(m) > 1 {
+
+			// Turn the time tag on the file back into a timestamp
+			if t, err := time.Parse(snapFormat, m[1]); err == nil {
+				// Remember both the file name and the
+				// timestamp
+				rval = append(rval, n)
+				archiveTimes = append(archiveTimes, t)
+			}
+		}
+	}
+
+	return rval
+}
+
 func propTreeInit(defaults *cfgtree.PNode) error {
 	var err error
 	var newTree bool
+	var tree *cfgtree.PTree
 
 	// Open the properties file's enclosing directory; we'll fsync its
 	// metadata after each write.
@@ -175,23 +302,22 @@ func propTreeInit(defaults *cfgtree.PNode) error {
 		slog.Warnf("Unable to open properties dir: %v", err)
 	}
 
-	propTreeFile = plat.ExpandDirPath(propertyDir, propertyFilename)
-	tree, err := propTreeLoad(propTreeFile)
-
-	if err != nil {
-		slog.Warnf("Unable to load properties: %v", err)
-		backupfile := plat.ExpandDirPath(propertyDir, backupFilename)
-		tree, err = propTreeLoad(backupfile)
-		if err != nil {
-			slog.Warnf("Unable to load backup properties: %v", err)
-		} else {
-			slog.Infof("Loaded properties from backup file")
+	propFiles := getPropFiles()
+	for _, name := range propFiles {
+		fullPath := plat.ExpandDirPath(propertyDir, name)
+		tree, err = propTreeLoad(fullPath)
+		if err == nil {
+			if name != propertyFilename {
+				slog.Infof("Loaded properties from backup: %s",
+					fullPath)
+			}
+			break
 		}
+		slog.Warnf("Unable to load %s: %v", fullPath, err)
 	}
 
-	if err != nil {
+	if tree == nil {
 		slog.Infof("No usable properties files.  Using defaults.")
-
 		tree = cfgtree.GraftTree("@", defaults)
 		newTree = true
 	}
