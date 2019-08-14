@@ -23,15 +23,24 @@ func TestNewExtSerialFromString(t *testing.T) {
 	var sn *ExtSerial
 
 	goodStrings := []string{
-		"001-201913BB-000001",
-		"999-201801AA-999899",
-		"999-201853ZZ-111111",
+		"001-201913BB-000001", // Lowest model #
+		"989-201913BB-000001", // Highest model #
+		"001-201801BB-000001", // Lowest year
+		"001-998901BB-000001", // Highest year
+		"001-201801BB-000001", // Lowest week
+		"001-998953BB-000001", // Highest week
+		"001-201801AA-000001", // Lowest Site
+		"001-201801ZZ-000001", // Highest Site
+		"001-201913BB-000001", // Lowest SN
+		"001-201913BB-999899", // Highest SN
 	}
 	for _, s := range goodStrings {
 		fmt.Printf("good: %v\n", s)
 		sn, err = NewExtSerialFromString(s)
-		assert.NoError(err)
+		assert.NoError(err, s)
 		assert.Equal(s, sn.String())
+		isValid := ValidExtSerial(s)
+		assert.True(isValid)
 	}
 	badStrings := []string{
 		"0",
@@ -42,8 +51,10 @@ func TestNewExtSerialFromString(t *testing.T) {
 		"XXX-201801BB-999900",  // Bad model
 		"000-201801BB-999900",  // Bad model
 		"0000-201801BB-999900", // Bad model
+		"990-201801BB-999900",  // Bad model
 		"001-200001BB-999900",  // Bad year
 		"001-XXXX01BB-999900",  // Bad year
+		"001-999001BB-4444444", // Bad year
 		"001-201900BB-999900",  // Bad week
 		"001-201954BB-999900",  // Bad week
 		"001-2019XXBB-999900",  // Bad week
@@ -58,6 +69,8 @@ func TestNewExtSerialFromString(t *testing.T) {
 		sn, err = NewExtSerialFromString(s)
 		assert.Error(err)
 		assert.Nil(sn)
+		isValid := ValidExtSerial(s)
+		assert.False(isValid)
 	}
 }
 
@@ -68,8 +81,9 @@ func TestNewExtSerial(t *testing.T) {
 
 	good := []ExtSerial{
 		{1, 2019, 13, [2]byte{'B', 'B'}, 1},
-		{999, 2018, 1, [2]byte{'A', 'A'}, 999899},
-		{999, 2018, 53, [2]byte{'Z', 'Z'}, 111111},
+		{989, 2018, 1, [2]byte{'A', 'A'}, 999899},
+		{1, 2018, 53, [2]byte{'Z', 'Z'}, 111111},
+		{1, 9989, 53, [2]byte{'Z', 'Z'}, 111111},
 	}
 	for _, s := range good {
 		fmt.Printf("good: %v\n", s)
@@ -82,7 +96,9 @@ func TestNewExtSerial(t *testing.T) {
 		{0, 0, 0, [2]byte{0, 0}, 0},
 		{1000, 2018, 53, [2]byte{'B', 'B'}, 1},     // Bad model
 		{0, 2018, 53, [2]byte{'B', 'B'}, 1},        // Bad model
+		{990, 2018, 53, [2]byte{'B', 'B'}, 1},      // Bad model
 		{1, 2000, 53, [2]byte{'B', 'B'}, 1},        // Bad year
+		{1, 9990, 53, [2]byte{'B', 'B'}, 1},        // Bad year
 		{1, 44444, 53, [2]byte{'B', 'B'}, 1},       // Bad year
 		{1, 2019, 0, [2]byte{'B', 'B'}, 1},         // Bad week
 		{1, 2019, 54, [2]byte{'B', 'B'}, 1},        // Bad week
