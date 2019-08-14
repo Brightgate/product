@@ -76,11 +76,21 @@ func diagHandler(w http.ResponseWriter, r *http.Request) {
 		{"ip addrs", plat.IPCmd, []string{"addr"}},
 		{"ip routes", plat.IPCmd, []string{"route"}},
 		{"iw list", plat.IwCmd, []string{"list"}},
+		// This is a stopgap; either these should be sourced from the
+		// config tree, or, hopefully, we can get the same info from
+		// metrics in the future.
+		{"wan", plat.EthtoolCmd, []string{"wan"}},
+		{"lan0", plat.EthtoolCmd, []string{"lan0"}},
+		{"lan1", plat.EthtoolCmd, []string{"lan1"}},
+		{"lan2", plat.EthtoolCmd, []string{"lan2"}},
+		{"lan3", plat.EthtoolCmd, []string{"lan3"}},
 		{"service status", plat.ExpandDirPath("__APPACKAGE__", "bin", "ap-ctl"), []string{"status", "all"}},
+		{"health", plat.ExpandDirPath("__APPACKAGE__", "bin", "ap-configctl"), []string{"get", "@/metrics/health"}},
 		{"client list", plat.ExpandDirPath("__APPACKAGE__", "bin", "ap-configctl"), []string{"get", "clients", "-a"}},
 		{"ping 1.1.1.1", "ping", []string{"-W", "3", "-w", "3", "-A", "-c", "3", "1.1.1.1"}},
-		{"nslookup svc1.b10e.net", "nslookup", []string{"svc1.b10e.net"}},
-		{"https://svc1.b10e.net", "curl", []string{"-o", "/dev/null", "--fail", "https://svc1.b10e.net/"}},
+		{"dig svc1.b10e.net", plat.DigCmd, []string{"+time=3", "+tries=3", "svc1.b10e.net"}},
+		{"dig @1.1.1.1 svc1.b10e.net", plat.DigCmd, []string{"+time=3", "+tries=3", "@1.1.1.1", "svc1.b10e.net"}},
+		{"https://svc1.b10e.net", plat.CurlCmd, []string{"-o", "/dev/null", "--connect-timeout", "3", "--fail", "https://svc1.b10e.net/"}},
 		{"heartbeat", plat.ExpandDirPath("__APPACKAGE__", "bin", "ap-rpc"), []string{"heartbeat"}},
 	}
 	for _, cmd := range cmds {

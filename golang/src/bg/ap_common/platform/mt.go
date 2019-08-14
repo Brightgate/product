@@ -410,6 +410,9 @@ func init() {
 		IPCmd:        "/sbin/ip",
 		IwCmd:        "/usr/sbin/iw",
 		IPTablesCmd:  "/usr/sbin/iptables",
+		EthtoolCmd:   "/usr/sbin/ethtool",
+		DigCmd:       "/usr/bin/dig",
+		CurlCmd:      "/usr/bin/curl",
 		RestoreCmd:   "/usr/sbin/iptables-restore",
 		VconfigCmd:   "/sbin/vconfig",
 

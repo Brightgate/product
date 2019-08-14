@@ -34,6 +34,9 @@ type Platform struct {
 	IPCmd        string
 	IwCmd        string
 	IPTablesCmd  string
+	EthtoolCmd   string // ap.httpd diags
+	DigCmd       string // ap.httpd diags
+	CurlCmd      string // ap.httpd diags
 	RestoreCmd   string
 	VconfigCmd   string
 

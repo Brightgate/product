@@ -250,7 +250,10 @@ class AppliancePackage(Package):
     deb_depends = [
         "bridge-utils",
         "chrony",
+        "curl",
         "dhcpcd5",
+        "dnsutils",
+        "ethtool",
         "iproute2",
         "iptables",
         "iptables-persistent",
@@ -270,7 +273,10 @@ class AppliancePackage(Package):
         "libsodium",
         "uclibcxx",
 
+        "bind-dig",
         "chrony",
+        "curl",
+        "ethtool",
         "iw-full",
         "logrotate",
         "nmap-ssl",
