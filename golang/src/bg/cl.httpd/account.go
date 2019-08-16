@@ -24,6 +24,7 @@ import (
 
 	"github.com/gorilla/sessions"
 	"github.com/labstack/echo"
+	"github.com/lib/pq"
 	"github.com/satori/uuid"
 )
 
@@ -45,7 +46,34 @@ type accountSelfProvisionResponse struct {
 	Username  string    `json:"username"`
 }
 
+type accountRoles struct {
+	Roles        []string `json:"roles"`
+	Relationship string   `json:"relationship"`
+}
+
+type accountRolesResponse map[uuid.UUID]*accountRoles
+
 var pwRegime = passwordgen.HumanPasswordSpec.String()
+
+// adminOrSelf is an access check which looks to see if the user is
+// either an admin (in which case all accounts are permitted), or is asking a
+// question about their own account.
+func (a *accountHandler) adminOrSelf(c echo.Context) error {
+	sessionAccountUUID, ok := c.Get("account_uuid").(uuid.UUID)
+	if !ok || sessionAccountUUID == uuid.Nil {
+		return echo.NewHTTPError(http.StatusUnauthorized)
+	}
+	accountUUID, err := uuid.FromString(c.Param("acct_uuid"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	roles := c.Get("matched_roles").(matchedRoles)
+	// Only admins may look at other account's information
+	if !roles["admin"] && accountUUID != sessionAccountUUID {
+		return echo.NewHTTPError(http.StatusUnauthorized)
+	}
+	return nil
+}
 
 // getAccountPasswordGen generates a password for the user, and sends it back
 // to the user for inspection and, if desired, acceptance.  We desire to have
@@ -215,6 +243,10 @@ type matchedRoles map[string]bool
 func (a *accountHandler) getAccountSelfProvision(c echo.Context) error {
 	var err error
 	ctx := c.Request().Context()
+	err = a.adminOrSelf(c)
+	if err != nil {
+		return err
+	}
 	sessionAccountUUID, ok := c.Get("account_uuid").(uuid.UUID)
 	if !ok || sessionAccountUUID == uuid.Nil {
 		return echo.NewHTTPError(http.StatusUnauthorized)
@@ -264,6 +296,102 @@ func (a *accountHandler) deleteAccount(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError)
 	}
 	return c.NoContent(http.StatusOK)
+}
+
+// getAccountRoles fetches roles for the specified account
+func (a *accountHandler) getAccountRoles(c echo.Context) error {
+	var err error
+	ctx := c.Request().Context()
+	err = a.adminOrSelf(c)
+	if err != nil {
+		return err
+	}
+	accountUUID, err := uuid.FromString(c.Param("acct_uuid"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	aoRoles, err := a.db.AccountOrgRolesByAccount(ctx, accountUUID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError)
+	}
+	resp := make(accountRolesResponse)
+	for _, aor := range aoRoles {
+		acctRole, ok := resp[aor.TargetOrganizationUUID]
+		if !ok {
+			acctRole = &accountRoles{}
+			resp[aor.TargetOrganizationUUID] = acctRole
+		}
+		acctRole.Relationship = aor.Relationship
+		acctRole.Roles = append(acctRole.Roles, aor.Role)
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+// postAccountRoles modifies roles for an account
+func (a *accountHandler) postAccountRoles(c echo.Context) error {
+	var err error
+	ctx := c.Request().Context()
+
+	tgtAcctUUID, err := uuid.FromString(c.Param("acct_uuid"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	tgtAcct, err := a.db.AccountByUUID(ctx, tgtAcctUUID)
+	if err != nil {
+		if _, ok := err.(appliancedb.NotFoundError); ok {
+			return echo.NewHTTPError(http.StatusNotFound)
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError)
+	}
+	tgtRole := c.Param("tgt_role")
+	if !appliancedb.ValidRole(tgtRole) {
+		return echo.NewHTTPError(http.StatusNotFound)
+	}
+	tgtOrgUUID, err := uuid.FromString(c.Param("tgt_org_uuid"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound)
+	}
+
+	type roleValue struct {
+		Value bool `json:"value"`
+	}
+	var rv roleValue
+	if err := c.Bind(&rv); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err)
+	}
+	relationship := "self"
+	// Until we have more than one kind of relationship, we can infer this
+	if tgtAcct.OrganizationUUID != tgtOrgUUID {
+		relationship = "msp"
+	}
+	aor := appliancedb.AccountOrgRole{
+		AccountUUID:            tgtAcct.UUID,
+		OrganizationUUID:       tgtAcct.OrganizationUUID,
+		TargetOrganizationUUID: tgtOrgUUID,
+		Role:                   tgtRole,
+		Relationship:           relationship,
+	}
+	var cmd string
+	if rv.Value {
+		err = a.db.InsertAccountOrgRole(ctx, &aor)
+		cmd = "insert"
+	} else {
+		err = a.db.DeleteAccountOrgRole(ctx, &aor)
+		cmd = "delete"
+	}
+	if err != nil {
+		pqe, ok := err.(*pq.Error)
+		// Add details from PQE, as they can help us understand
+		// what's going on here.
+		if ok && pqe.Code.Name() == "foreign_key_violation" {
+			c.Logger().Errorf("Couldn't %s role %v; the role or org/org relationship may not exist.\nPQ Message: %s\nPQ Detail: %s",
+				cmd, aor, pqe.Message, pqe.Detail)
+			return echo.NewHTTPError(http.StatusBadRequest, err)
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	return nil
 }
 
 // mkAccountMiddleware manufactures a middleware which protects a route; only
@@ -335,6 +463,8 @@ func newAccountHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []ech
 	acct.GET("/:acct_uuid/selfprovision", h.getAccountSelfProvision, user)
 	acct.POST("/:acct_uuid/selfprovision", h.postAccountSelfProvision, user)
 	acct.POST("/:acct_uuid/deprovision", h.postAccountDeprovision, admin)
+	acct.GET("/:acct_uuid/roles", h.getAccountRoles, user)
+	acct.POST("/:acct_uuid/roles/:tgt_org_uuid/:tgt_role", h.postAccountRoles, admin)
 	acct.DELETE("/:acct_uuid", h.deleteAccount, admin)
 	return h
 }

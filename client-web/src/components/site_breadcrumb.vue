@@ -41,7 +41,7 @@ div.breadcrumb {
         | Dunder... |
         | > Scra... |
     -->
-    {{ site.regInfo.organization | nbsp }} &gt;&nbsp;{{ site.regInfo.name | nbsp }}
+    {{ orgNameBySiteID(site.id) | nbsp }} &gt;&nbsp;{{ site.regInfo.name | nbsp }}
   </div>
 </template>
 
@@ -77,6 +77,7 @@ export default {
     // template.
     ...Vuex.mapGetters([
       'appMode',
+      'orgNameBySiteID',
     ]),
 
     site: function() {

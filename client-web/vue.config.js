@@ -29,6 +29,7 @@ const config = {
   pluginOptions: {
     webpackBundleAnalyzer: {
       openAnalyzer: false,
+      analyzerMode: 'static',
     },
   },
   devServer: {

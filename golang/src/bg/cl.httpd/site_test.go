@@ -183,8 +183,6 @@ func TestSites(t *testing.T) {
 	m1 := mockSites[1]
 	dMock := &mocks.DataStore{}
 	dMock.On("CustomerSitesByAccount", mock.Anything, mock.Anything).Return(mockSites, nil)
-	dMock.On("AccountOrgRolesByAccount", mock.Anything, mock.Anything).Return(mockAccountOrgRoles, nil)
-	dMock.On("OrganizationByUUID", mock.Anything, mock.Anything).Return(&mockOrg, nil)
 	defer dMock.AssertExpectations(t)
 
 	// Setup Echo
@@ -206,19 +204,13 @@ func TestSites(t *testing.T) {
 	{
 		"UUID": "%s",
 		"name": "%s",
-		"organizationUUID": "%s",
-		"organization": "%s",
-		"relationship": "self",
-		"roles": ["admin"]
+		"organizationUUID": "%s"
 	},{
 		"UUID": "%s",
 		"name": "%s",
-		"organizationUUID": "%s",
-		"organization": "%s",
-		"relationship": "self",
-		"roles": ["admin"]
-	}]`, m0.UUID, m0.Name, mockOrg.UUID.String(), mockOrg.Name,
-		m1.UUID, m1.Name, mockOrg.UUID.String(), mockOrg.Name)
+		"organizationUUID": "%s"
+	}]`, m0.UUID, m0.Name, mockOrg.UUID.String(),
+		m1.UUID, m1.Name, mockOrg.UUID.String())
 	t.Logf("return body: %s", rec.Body.String())
 	assert.JSONEq(exp, rec.Body.String())
 }
@@ -240,7 +232,6 @@ func TestSitesUUID(t *testing.T) {
 		}, nil)
 	dMock.On("CustomerSiteByUUID", mock.Anything, m0.UUID).Return(&m0, nil)
 	dMock.On("CustomerSiteByUUID", mock.Anything, mock.Anything).Return(nil, appliancedb.NotFoundError{})
-	dMock.On("OrganizationByUUID", mock.Anything, mock.Anything).Return(&mockOrg, nil)
 	defer dMock.AssertExpectations(t)
 
 	// Setup Echo
@@ -261,9 +252,7 @@ func TestSitesUUID(t *testing.T) {
 	expStruct := &siteResponse{
 		UUID:             m0.UUID,
 		Name:             m0.Name,
-		Organization:     mockOrg.Name,
 		OrganizationUUID: mockOrg.UUID,
-		Roles:            []string{"admin"},
 	}
 	exp, err := json.Marshal(expStruct)
 	assert.NoError(err)

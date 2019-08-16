@@ -35,6 +35,11 @@ export default {
       },
       api: { // Messages from the store
         unknown_device: 'Unnamed ({hwAddr})',
+        unknown_org: 'Unknown',
+        roles: {
+          user: 'User',
+          admin: 'Administrator',
+        },
       },
       home: {
         local_site: 'Local Site',
@@ -299,6 +304,7 @@ export default {
         delete_title: 'Delete Account?',
         administration: 'Account Administration',
         network_access: 'Network Access',
+        manage_roles: 'Manage Roles',
         deprovision_button: 'Deprovision',
         delete_account: 'Delete Account',
         delete_button: 'Delete',
@@ -306,6 +312,10 @@ export default {
         not_provisioned: 'Not Provisioned',
         email_none: 'None',
         phone_none: 'None',
+      },
+      account_roles: {
+        title: 'Manage Account Roles',
+        roles_group: 'Roles',
       },
       user_details: {
         title: 'User Details',

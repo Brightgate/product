@@ -74,7 +74,7 @@
 
       <!-- Role -- Disabled for now
       <f7-list-item :title="$t('message.user_details.role')">
-        {{ $t('message.user_details.roles.admin') }}
+        {{ $t('message.api.roles.admin') }}
       </f7-list-item>
       -->
 

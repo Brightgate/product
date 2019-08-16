@@ -1075,10 +1075,16 @@ NPM_QUIET = --loglevel warn --no-progress
 		fi; )
 	touch $@
 
+CLIENT_WEB_BUILD_TARGET = build
+CLIENT_WEB_LINT_TARGET = lint
+client-web-dev:: CLIENT_WEB_BUILD_TARGET = build-dev
+client-web-dev:: CLIENT_WEB_LINT_TARGET = lint-fix
+client-web-dev: client-web FRC
+
 client-web: doc .make-npm-installed FRC | $(HTTPD_CLIENTWEB_DIR) $(CLOUDLIBCLHTTPDWEBCLIENTWEB)
 	$(RM) -fr $(HTTPD_CLIENTWEB_DIR)/* $(CLOUDLIBCLHTTPDWEBCLIENTWEB)/*
-	(cd client-web && $(NPM) run lint)
-	(cd client-web && $(NPM) run build)
+	(cd client-web && $(NPM) run $(CLIENT_WEB_LINT_TARGET))
+	(cd client-web && $(NPM) run $(CLIENT_WEB_BUILD_TARGET))
 	tar -C client-web/dist -c -f - . | tar -C $(HTTPD_CLIENTWEB_DIR) -xvf -
 	tar -C client-web/dist -c -f - . | tar -C $(CLOUDLIBCLHTTPDWEBCLIENTWEB) -xvf -
 

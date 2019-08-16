@@ -36,12 +36,13 @@
       :class="currentSite === site.id ? 'selected' : undefined"
       :badge="currentSite === site.id ? $t('message.site_list.current') : undefined"
       @click="$emit('site-change', site.id)">
-      <span slot="text">{{ site._regInfo.organization }}</span>
+      <span slot="text">{{ orgNameBySiteID(site.id) }}</span>
     </f7-list-item>
   </f7-list>
 </template>
 
 <script>
+import Vuex from 'vuex';
 import Debug from 'debug';
 const debug = Debug('component:site_list');
 
@@ -60,6 +61,12 @@ export default {
   },
 
   computed: {
+    // Map various $store elements as computed properties for use in the
+    // template.
+    ...Vuex.mapGetters([
+      'orgNameBySiteID',
+    ]),
+
     orderedSites: function() {
       debug('sites', this.sites);
       const sites = [];
@@ -68,13 +75,16 @@ export default {
         sites.push(this.sites[key]);
       });
       const sorted = sites.sort((a, b) => {
-        if (a._regInfo.relationship === 'self' && b._regInfo.relationship !== 'self') {
+        if (a.regInfo.relationship === 'self' && b.regInfo.relationship !== 'self') {
           return -1;
         }
-        if (a._regInfo.relationship !== 'self' && b._regInfo.relationship === 'self') {
+        if (a.regInfo.relationship !== 'self' && b.regInfo.relationship === 'self') {
           return 1;
         }
-        const x = a._regInfo.organization.localeCompare(b._regInfo.organization);
+        const aOrg = this.orgNameBySiteID(a.id);
+        const bOrg = this.orgNameBySiteID(b.id);
+        debug(`sorting: a:${aOrg} b:${bOrg}`);
+        const x = aOrg.localeCompare(bOrg);
         if (x !== 0) {
           return x;
         }

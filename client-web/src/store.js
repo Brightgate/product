@@ -31,10 +31,7 @@ const LOCAL_ORG_ID = '0';
 const LOCAL_REGINFO = {
   UUID: LOCAL_SITE_ID,
   name: 'Local Site',
-  organization: 'Local Organization',
   organizationUUID: LOCAL_ORG_ID,
-  relationship: 'self',
-  roles: [appDefs.ROLE_ADMIN],
 };
 
 let i18n = null;
@@ -44,22 +41,23 @@ export function setStoreI18n(i) {
 
 class Org {
   constructor(id) {
+    debug(`new Org id=${id}`);
     assert.equal(typeof id, 'string');
-    debug(`constructing new Org id=${id}`);
     this.id = id;
-    this.name = id;
-    this.relationship = 'none';
+    this.name = '';
+    if (this.id === LOCAL_ORG_ID) {
+      this.relationship = 'self';
+    } else {
+      this.relationship = 'none';
+    }
     // List of account UUIDs for this Org
     this.accounts = [];
-    this.roles = {};
-    for (const r of appDefs.ALL_ROLES) {
-      this.roles[r] = false;
-    }
-    debug(`done constructing new Org id=${id}`);
+    debug(`done new Org id=${id}`);
   }
 }
 
 function getOrg(state, orgID) {
+  assert(orgID !== undefined, 'orgID is undefined');
   if (state.orgs[orgID] === undefined) {
     // Make up a garbage org which can be used to swallow up the
     // results of whatever operation is ongoing-- this helps to
@@ -71,19 +69,16 @@ function getOrg(state, orgID) {
   return state.orgs[orgID];
 }
 
-
-// const windowURLSite = window && window.location && window.location.href && new URL(window.location.href);
-// const initSiteID = windowURLSite.searchParams.get('site') || LOCAL_SITE_ID;
 class Site {
   constructor(id) {
     assert.equal(typeof id, 'string');
-    debug(`constructing new Site id=${id}`);
+    debug(`new Site id=${id}`);
     this.id = id;
     // registry Information
     if (this.id === LOCAL_SITE_ID) {
-      this.regInfo = cloneDeep(LOCAL_REGINFO);
+      this._regInfo = cloneDeep(LOCAL_REGINFO);
     } else {
-      this.regInfo = {};
+      this._regInfo = {};
     }
     this._devices = [];
     // Run the devices setter
@@ -95,7 +90,7 @@ class Site {
     this.vaps = {};
     this.wan = {};
     this.health = {};
-    debug(`done constructing new Site id=${id}`);
+    debug(`done new Site id=${id}`);
   }
 
   get name() {
@@ -107,16 +102,11 @@ class Site {
   }
 
   set regInfo(val) {
+    assert(typeof val === 'object');
+    assert(val.name !== undefined);
+    assert(val.UUID !== undefined);
+    assert(val.organizationUUID !== undefined);
     this._regInfo = val;
-    const roles = {};
-    for (const r of appDefs.ALL_ROLES) {
-      if (this.regInfo.roles && this.regInfo.roles.includes(r)) {
-        roles[r] = true;
-      } else {
-        roles[r] = false;
-      }
-    }
-    Vue.set(this, 'roles', roles);
   }
 
   get regInfo() {
@@ -125,7 +115,7 @@ class Site {
 
   // Setting devices sets off a cascade of updates.
   set devices(val) {
-    debug('set devices', val);
+    debug(`set devices: site ${this.id}`);
     assert(Array.isArray(val));
     this._devices = val;
 
@@ -179,7 +169,7 @@ class Site {
       }
     });
     Vue.set(this, 'alerts', alerts);
-    debug(`Site ${this.id}: set devices completed`);
+    debug(`set devices: site ${this.id} completed`);
   }
 }
 
@@ -195,8 +185,7 @@ function getSite(state, siteID) {
   return state.sites[siteID];
 }
 
-const nullSite = new Site('null');
-const nullOrg = new Org('null');
+const nullSite = new Site('nullSite');
 
 const state = {
   appMode: appDefs.APPMODE_FAILURE,
@@ -211,9 +200,9 @@ const state = {
   currentSiteID: nullSite.id,
   currentSite: nullSite,
   orgs: {},
-  currentOrg: nullOrg,
-  currentOrgID: nullOrg.id,
-  userInfo: {},
+  currentOrg: null,
+  currentOrgID: null,
+  userID: {},
   accounts: {},
   myAccountUUID: null,
 };
@@ -229,65 +218,111 @@ function computeAppMode(state) {
   return state.testAppMode === appDefs.APPMODE_NONE ? state.appMode : state.testAppMode;
 }
 
+function accountHasOrgRole(state, accountUUID, orgUUID, role) {
+  assert.equal(typeof accountUUID, 'string', 'bad accountUUID');
+  assert.equal(typeof orgUUID, 'string', 'bad orgUUID');
+  assert(appDefs.ALL_ROLES.includes(role), 'unrecognized role');
+  const account = state.accounts[accountUUID];
+  if (!account || !account.roles) {
+    return false;
+  }
+  const orgRoles = account.roles[orgUUID];
+  if (!orgRoles) {
+    return false;
+  }
+  return orgRoles.roles.includes(role);
+}
+
+function accountOrgRoles(state, accountUUID, orgUUID) {
+  assert.equal(typeof accountUUID, 'string', 'bad accountUUID');
+  assert.equal(typeof orgUUID, 'string', 'badOrgUUID');
+  const account = state.accounts[accountUUID];
+  if (!account || !account.roles) {
+    return [];
+  }
+  const orgRoles = account.roles[orgUUID];
+  return orgRoles ? orgRoles.roles : [];
+}
+
+function siteHasRole(state, siteUUID, role) {
+  assert.equal(typeof siteUUID, 'string');
+  assert(appDefs.ALL_ROLES.includes(role), 'unrecognized role');
+  if (siteUUID === LOCAL_SITE_ID) {
+    return true;
+  }
+  const site = state.sites[siteUUID];
+  if (!site) {
+    return false;
+  }
+  const org = site.regInfo.organizationUUID;
+  if (!org) {
+    return false;
+  }
+  return accountHasOrgRole(state, state.myAccountUUID, org, role);
+}
+
 const mutations = {
   setSites(state, newSites) {
-    debug('setSites, newSites', newSites);
+    debug('setSites: newSites', newSites);
     assert(Array.isArray(newSites));
     const newSitesDict = {};
-    const newOrgsDict = {};
-    let nSites = 0;
-    newSites.forEach((val) => {
-      // Will create as needed
-      assert(typeof val === 'object');
-      assert(val.name !== undefined);
-      assert(val.UUID !== undefined);
-      assert(val.organization !== undefined);
-      assert(val.organizationUUID !== undefined);
+    newSites.forEach((regInfo) => {
       // If the site exists already, grab that one.
-      const siteID = val.UUID;
-      const site = state.sites[siteID] === undefined ? new Site(siteID) : state.sites[siteID];
-      site.regInfo = val;
+      assert.equal(typeof regInfo.UUID, 'string');
+      const siteID = regInfo.UUID;
+      const site = state.sites[siteID] ? state.sites[siteID] : new Site(siteID);
+      site.regInfo = regInfo;
       Vue.set(newSitesDict, siteID, site);
-      nSites++;
-
-      // If the org exists already, grab that one.
-      const orgID = site.regInfo.organizationUUID;
-      const org = state.orgs[orgID] === undefined ? new Org(orgID) : state.orgs[orgID];
-      org.name = site.regInfo.organization;
-      org.relationship = site.regInfo.relationship;
-
-      // XXX We assume that all sites for an org will have the same level of
-      // privilege, but we don't do that in our mock data for convenience.  So
-      // we compute the org roles here as we see them come in for the sites.
-      if (site.roles['admin']) {
-        org.roles['admin'] = true;
-      }
-      if (site.roles['user']) {
-        org.roles['user'] = true;
-      }
-      // For now, we always set the current Org to our home org.
-      // This will change when we implement org switching.
-      if (org.relationship === 'self') {
-        state.currentOrgID = orgID;
-        state.currentOrg = org;
-      }
-      Vue.set(newOrgsDict, orgID, org);
     });
-    debug('setSites, newSitesDict', newSitesDict);
-    debug('setSites, newOrgsDict', newOrgsDict);
+    debug('setSites: newSitesDict', newSitesDict);
     Vue.set(state, 'sites', newSitesDict);
-    Vue.set(state, 'orgs', newOrgsDict);
     // If there's only one site, default to it.
-    if (nSites === 1) {
+    if (newSites.length === 1) {
+      debug('setSites: newSites.length is 1, updating currentSiteID');
       state.currentSiteID = newSites[0].UUID;
       state.currentSite = state.sites[state.currentSiteID];
     }
-    // If the current site ID is gone (this should be rare; it can definitely
-    // happen when switching from 'local' to 'cloud' mock modes.
+    // If the current site ID is gone (this should be rare, but it can
+    // definitely happen when switching from 'local' to 'cloud' mock modes).
     if (state.sites[state.currentSiteID] === undefined) {
+      debug('setSites: using nullSite');
       state.currentSiteID = nullSite.id;
       state.currentSite = nullSite;
     }
+    debug('setSites: completed');
+  },
+
+  setOrgs(state, newOrgs) {
+    debug(`setOrgs: newOrgs, currentOrg=${state.currentOrgID}`, newOrgs);
+    const newOrgsDict = {};
+    let homeOrg = null;
+    newOrgs.forEach((apiOrg) => {
+      const org = getOrg(state, apiOrg.organizationUUID);
+      org.name = apiOrg.name;
+      org.relationship = apiOrg.relationship;
+      org.limitRoles = apiOrg.limitRoles;
+      if (org.relationship === 'self') {
+        homeOrg = org;
+      }
+      newOrgsDict[org.id] = org;
+    });
+    // Although it should be super rare, shoot down sites which are now
+    // orphaned by loss of an org
+    debug('setOrgs: newOrgsDict', newOrgsDict);
+    for (const [id, site] of Object.entries(state.sites)) {
+      if (!newOrgsDict[site.regInfo.organizationUUID]) {
+        debug('setOrgs: shooting down orphan site!', site, site.regInfo.organizationUUID);
+        Vue.delete(state.sites, id);
+      }
+    }
+    // Cope with loss of org which is the current one
+    if (newOrgsDict[state.currentOrgID] === undefined) {
+      debug('setOrgs: seems like we lost currentOrgID', state.currentOrgID);
+      state.currentOrg = homeOrg;
+      state.currentOrgID = homeOrg ? homeOrg.id : null;
+    }
+    Vue.set(state, 'orgs', newOrgsDict);
+    debug('setOrgs: completed');
   },
 
   setAppMode(state, newMode) {
@@ -302,12 +337,15 @@ const mutations = {
   },
 
   setCurrentSiteID(state, newID) {
+    debug('setCurrentSiteID', newID);
     if (state.sites[newID] === undefined) {
       debug(`Failed to set current site to unknown site ${newID}`);
       return;
     }
     state.currentSiteID = newID;
     state.currentSite = state.sites[state.currentSiteID];
+    debug('setCurrentSiteID: currentSiteID now', state.currentSiteID);
+    debug('setCurrentSiteID: currentSite now', state.currentSite);
   },
 
   setSiteDevices(state, {id, devices}) {
@@ -336,6 +374,12 @@ const mutations = {
     Vue.set(getAccount(state, accountID), 'selfProvision', sp);
   },
 
+  setAccountRoles(state, {accountID, roles}) {
+    assert.equal(typeof accountID, 'string');
+    assert.equal(typeof roles, 'object');
+    Vue.set(getAccount(state, accountID), 'roles', roles);
+  },
+
   setSiteNetworkConfig(state, {id, networkConfig}) {
     getSite(state, id).networkConfig = networkConfig;
   },
@@ -357,9 +401,9 @@ const mutations = {
     Vue.set(getOrg(state, orgID), 'accounts', acctList);
   },
 
-  setUserInfo(state, userInfo) {
-    state.userInfo = userInfo;
-    state.myAccountUUID = userInfo.accountUUID;
+  setUserID(state, userID) {
+    state.userID = userID;
+    state.myAccountUUID = userID.accountUUID;
   },
 
   setAccountInfo(state, account) {
@@ -440,7 +484,7 @@ const getters = {
   leftPanelVisible: (state) => state.leftPanelVisible,
   authProviders: (state) => state.authProviders,
   authProvidersError: (state) => state.authProvidersError,
-  userInfo: (state) => state.userInfo,
+  userID: (state) => state.userID,
   myAccountUUID: (state) => state.myAccountUUID,
 
   myAccount: (state) => {
@@ -515,23 +559,22 @@ const getters = {
     return state.currentSite.rings;
   },
 
-  siteRoles: (state) => (siteID) => {
-    return getSite(state, siteID).roles;
-  },
-  roles: (state) => {
-    return state.currentSite.roles;
+  siteAdmin: (state) => {
+    return siteHasRole(state, state.currentSiteID, appDefs.ROLE_ADMIN);
   },
 
-  siteHasRole: (state) => (siteID, role) => {
-    assert(appDefs.ALL_ROLES.includes(role));
-    return getSite(state, siteID).roles[role];
+  currentOrgAdmin: (state) => {
+    if (!state.currentOrgID) {
+      return false;
+    }
+    return accountHasOrgRole(state, state.myAccountUUID, state.currentOrgID, appDefs.ROLE_ADMIN);
   },
-  hasRole: (state) => (role) => {
-    assert(appDefs.ALL_ROLES.includes(role));
-    return state.currentSite.roles[role];
+
+  accountHasOrgRole: (state) => (account, org, role) => {
+    return accountHasOrgRole(state, account, org, role);
   },
-  siteAdmin: (state) => {
-    return state.currentSite.roles['admin'];
+  accountOrgRoles: (state) => (account, org) => {
+    return accountOrgRoles(state, account, org);
   },
 
   siteVAPs: (state) => (siteID) => {
@@ -573,12 +616,20 @@ const getters = {
     return state.orgs;
   },
   orgByID: (state) => (id) => {
-    return state.orgs[id];
+    return getOrg(state, id);
+  },
+  orgNameBySiteID: (state) => (id) => {
+    const site = state.sites[id];
+    if (site && site.regInfo && site.regInfo.organizationUUID) {
+      const org = getOrg(state, site.regInfo.organizationUUID);
+      return org.name;
+    }
+    return i18n.t('message.api.unknown_org');
   },
 
   // List of account UUIDs for current org
   accountList: (state) => {
-    return state.currentOrg.accounts;
+    return state.currentOrg ? state.currentOrg.accounts : [];
   },
 
   // Account data by account UUID
@@ -678,10 +729,17 @@ let fetchPeriodicTimeout = null;
 const actions = {
   // Load the list of sites from the server.
   async fetchSites(context) {
-    debug('Store: fetchSites');
+    debug('fetchSites');
+    // We'll compare later to see if we should trigger more work
+    const siteID = context.state.currentSiteID;
     const sites = await siteApi.sitesGet();
-    debug('Store: fetchSites got', sites);
+    debug('fetchSites: got', sites);
     context.commit('setSites', sites);
+    const newSiteID = context.state.currentSiteID;
+    if (siteID !== newSiteID) {
+      debug('fetchSites: siteid changed, triggering fetch');
+      context.dispatch('fetchSiteChanged');
+    }
   },
 
   async fetchSiteHealth(context) {
@@ -702,32 +760,32 @@ const actions = {
     context.commit('setCurrentSiteID', id);
     await context.dispatch('fetchPeriodicStop');
     // Re-get the world
-    context.dispatch('fetchPostLogin');
+    context.dispatch('fetchSiteChanged');
   },
 
   // Load the list of devices from the server.
   fetchDevices(context) {
-    debug('Store: fetchDevices');
+    const id = context.state.currentSiteID;
+    debug(`fetchDevices: site ${id}`);
     // Join to existing fetch, so that only one fetch is ongoing
     // Important: we await the fetch, and then drive on, because
     // the ID might have changed, and so we want to process this
     // fetch too.
     let p = null;
     if (fetchDevicesPromise.isPending()) {
-      debug('Store: chaining onto pending fetchDevices');
+      debug('fetchDevices: chaining onto pending fetchDevices');
       p = fetchDevicesPromise;
     } else {
       p = Promise.resolve();
     }
     if (context.state.currentSite === nullSite) {
+      debug('fetchDevices: skipped, nullSite');
       return p;
     }
-    const id = context.state.currentSiteID;
-    if (!context.state.sites[id].roles[appDefs.ROLE_ADMIN]) {
-      debug('Store: skipping fetchDevices; not an admin');
+    if (!siteHasRole(state, id, appDefs.ROLE_ADMIN)) {
+      debug('fetchDevices: skipped, not an admin');
       return p;
     }
-    debug('Store: fetchDevices', id);
     let devices = [];
     fetchDevicesPromise = p.then(() => {
       return retry(siteApi.siteDevicesGet, {
@@ -738,7 +796,7 @@ const actions = {
         devices = apiDevices.map(computeDeviceProps);
         context.commit('setSiteDevices', {id: id, devices: devices});
       }).tapCatch((err) => {
-        debug('Store: fetchDevices failed', err);
+        debug('fetchDevices: failed', err);
       });
     });
     return fetchDevicesPromise;
@@ -751,8 +809,9 @@ const actions = {
       fetchPeriodicTimeout = null;
     }
     // if not logged in, just stop.
+    const siteID = context.state.currentSiteID;
     if (!context.getters.loggedIn ||
-        !context.state.currentSite.roles[appDefs.ROLE_ADMIN]) {
+       !siteHasRole(state, siteID, appDefs.ROLE_ADMIN)) {
       debug('fetchPeriodic: not logged in or not admin, disabling');
       return;
     }
@@ -797,7 +856,7 @@ const actions = {
     }
     assert.equal(typeof accountID, 'string');
     const sp = await siteApi.accountSelfProvisionGet(accountID);
-    debug('selfProvision: accountID, sp', accountID, sp);
+    debug('fetchAccountSelfProvision: accountID, sp', accountID, sp);
     context.commit('setAccountSelfProvision', {accountID: accountID, sp: sp});
   },
 
@@ -805,22 +864,44 @@ const actions = {
     if (context.state.appMode !== appDefs.APPMODE_CLOUD) {
       return;
     }
-    debug('deprovision: accountID', accountID);
+    debug('accountDeprovision: accountID', accountID);
     assert.equal(typeof accountID, 'string');
     try {
       await siteApi.accountDeprovisionPost(accountID);
     } finally {
       const sp = await siteApi.accountSelfProvisionGet(accountID);
-      debug('deprovision: refreshed sp info: accountID, sp', accountID, sp);
+      debug('accountDeprovision: refreshed sp info', sp);
       context.commit('setAccountSelfProvision', {accountID: accountID, sp: sp});
     }
+  },
+
+  async fetchAccountRoles(context, accountID) {
+    if (context.state.appMode !== appDefs.APPMODE_CLOUD) {
+      return;
+    }
+    assert.equal(typeof accountID, 'string');
+    const roles = await siteApi.accountRolesGet(accountID);
+    debug('fetchAccountRoles: accountID, roles', accountID, roles);
+    context.commit('setAccountRoles', {accountID: accountID, roles: roles});
+  },
+
+  async updateAccountRoles(context, {accountID, tgtOrgUUID, role, value}) {
+    if (context.state.appMode !== appDefs.APPMODE_CLOUD) {
+      return;
+    }
+    assert.equal(typeof accountID, 'string');
+    assert.equal(typeof tgtOrgUUID, 'string');
+    assert.equal(typeof role, 'string');
+    assert.equal(typeof value, 'boolean');
+    await siteApi.accountRolesPost(accountID, tgtOrgUUID, role, value);
+    await context.dispatch('fetchAccountRoles', accountID);
   },
 
   async accountDelete(context, accountID) {
     if (context.state.appMode !== appDefs.APPMODE_CLOUD) {
       return;
     }
-    debug('delete: accountID', accountID);
+    debug('accountDelete: accountID', accountID);
     assert.equal(typeof accountID, 'string');
     await siteApi.accountDelete(accountID);
     context.commit('accountDelete', accountID);
@@ -838,14 +919,14 @@ const actions = {
     const id = context.state.currentSiteID;
 
     const wan = await siteApi.siteWanGet(id);
-    debug('fetchNetworkConfig committing wan', wan);
+    debug('fetchNetworkConfig: committing wan', wan);
     context.commit('setSiteWan', {id, wan});
 
     const nc = await Promise.props({
       dnsServer: siteApi.siteConfigGet(id, '@/network/dnsserver', ''),
       baseAddress: siteApi.siteConfigGet(id, '@/network/base_address', ''),
     });
-    debug('fetchNetworkConfig committing', nc);
+    debug('fetchNetworkConfig: committing', nc);
     context.commit('setSiteNetworkConfig', {id: id, networkConfig: nc});
     return nc;
   },
@@ -856,7 +937,6 @@ const actions = {
       debug('fetchVAPs: skipped, nullSite');
       return;
     }
-    debug(`fetchVAPs`);
     const id = context.state.currentSiteID;
     const vaps = await siteApi.siteVAPsGet(id);
     context.commit('setSiteVAPs', {id: id, vaps: vaps});
@@ -903,7 +983,7 @@ const actions = {
     try {
       await siteApi.siteConfigSet(id, `@/clients/${deviceID}/vulnerabilities/${vulnID}/repair`, 'true');
     } catch (err) {
-      debug('failed to set repair bit', err);
+      debug('repairVuln: failed to set repair bit', err);
     } finally {
       context.dispatch('fetchDevices');
     }
@@ -919,21 +999,33 @@ const actions = {
     context.commit('setSiteUsers', {id: id, users: users});
   },
 
+  async fetchOrgs(context) {
+    const orgs = await siteApi.orgsGet();
+    debug('fetchOrgs: got', orgs);
+    context.commit('setOrgs', orgs);
+  },
+
   async fetchOrgAccounts(context) {
     if (computeAppMode(state) !== appDefs.APPMODE_CLOUD) {
       return;
     }
-    if (context.state.currentOrg === nullOrg) {
-      debug('fetchOrgAccounts: skipped, nullOrg');
+    if (context.state.currentOrg === null) {
+      debug('fetchOrgAccounts: skipped, null Org');
       return;
     }
     const orgID = context.state.currentOrgID;
-    const accounts = await siteApi.orgAccountsGet(orgID);
+    let accounts = null;
+    try {
+      accounts = await siteApi.orgAccountsGet(orgID);
+    } catch (err) {
+      debug('fetchOrgAccounts: failed orgAccountsGet', err);
+      return;
+    }
 
     const acctList = accounts.map((acct) => acct.accountUUID);
     context.commit('setOrgAccounts', {orgID: orgID, acctList: acctList});
     accounts.forEach((acct) => {
-      acct.organization = orgID;
+      acct.organizationUUID = orgID;
       context.commit('setAccountInfo', acct);
     });
   },
@@ -957,7 +1049,7 @@ const actions = {
       const postUser = await siteApi.siteUsersPost(id, user, newUser);
       context.commit('setSiteUser', {id: id, user: postUser});
     } catch (err) {
-      debug('saveUser failed', err);
+      debug('saveUser: failed', err);
       if (err.res && err.res.text) {
         throw new Error(`Failed to save user: ${err.res.text}`);
       } else {
@@ -980,8 +1072,9 @@ const actions = {
   async checkLogin(context) {
     let loggedin = false;
     try {
-      const userInfo = await siteApi.authUserid();
-      context.commit('setUserInfo', userInfo);
+      const userID = await siteApi.authUserID();
+      debug('checkLogin: got userID', userID);
+      context.commit('setUserID', userID);
       loggedin = true;
     } catch (err) {
       loggedin = false;
@@ -996,38 +1089,44 @@ const actions = {
     assert.equal(typeof userPassword, 'string');
     await siteApi.authApplianceLogin(uid, userPassword);
     context.commit('setLoggedIn', true);
-    const userInfo = await siteApi.authUserid();
-    context.commit('setUserInfo', userInfo);
+    const userID = await siteApi.authUserID();
+    debug('login: got userID', userID);
+    context.commit('setUserID', userID);
     // Let these run async
     context.dispatch('fetchPostLogin');
   },
 
   async fetchPostLogin(context) {
     debug('fetchPostLogin');
+    await context.dispatch('fetchAccountRoles', context.state.myAccountUUID);
+    context.dispatch('fetchOrgs');
+    context.dispatch('fetchSites');
     context.dispatch('fetchOrgAccounts').catch(() => {});
-    context.dispatch('fetchAccountSelfProvision', context.state.myAccountUUID).catch(() => {});
-    context.dispatch('fetchSites').then(() => {
-      context.dispatch('fetchSiteHealth').catch(() => {});
-      context.dispatch('fetchDevices').catch(() => {});
-      context.dispatch('fetchRings').catch(() => {});
-      context.dispatch('fetchUsers').catch(() => {});
-      context.dispatch('fetchVAPs').catch(() => {});
-      context.dispatch('fetchPeriodic').catch(() => {});
-    });
   },
 
-  logout(context) {
+  async fetchSiteChanged(context) {
+    debug('fetchSiteChanged');
+    context.dispatch('fetchAccountRoles', context.state.myAccountUUID).catch(() => {});
+    context.dispatch('fetchAccountSelfProvision', context.state.myAccountUUID).catch(() => {});
+    context.dispatch('fetchSiteHealth').catch(() => {});
+    context.dispatch('fetchDevices').catch(() => {});
+    context.dispatch('fetchRings').catch(() => {});
+    context.dispatch('fetchUsers').catch(() => {});
+    context.dispatch('fetchVAPs').catch(() => {});
+    context.dispatch('fetchPeriodic').catch(() => {});
+  },
+
+  async logout(context) {
     debug('logout');
+    await context.dispatch('fetchPeriodicStop');
     siteApi.authApplianceLogout();
-    debug('logout: Completed');
     context.commit('setLoggedIn', false);
-    context.dispatch('fetchPeriodicStop');
+    debug('logout: Completed');
   },
 
   async fetchProviders(context) {
-    debug('Trying to get auth providers and app mode.');
     const providers = await siteApi.authProviders();
-    debug('Got auth provider response', providers);
+    debug('fetchProviders: got', providers);
     assert(providers.mode !== undefined);
     assert(providers.providers !== undefined);
     context.commit('setAppMode', providers.mode);
@@ -1037,7 +1136,7 @@ const actions = {
 };
 
 export const store = new Vuex.Store({
-  strict: true, // XXX: for debugging only, expensive, see manual
+  strict: process.env.NODE_ENV !== 'production',
   actions,
   state,
   getters,
@@ -1047,7 +1146,7 @@ export const store = new Vuex.Store({
 // At store startup, try to get the list of auth providers and appMode.
 Promise.resolve().then(async () => {
   debug('Startup: Try to get auth providers and app Mode.');
-  store.dispatch('fetchProviders');
+  return store.dispatch('fetchProviders');
 }).catch(() => {
   // XXX We will need to try harder in the future.
   debug('Startup: Failed to fetch auth providers and app Mode.');

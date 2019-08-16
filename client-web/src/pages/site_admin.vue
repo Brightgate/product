@@ -17,7 +17,7 @@ span.orgname {
     <f7-navbar :back-link="$t('message.general.back')" title="Site Administration" sliding />
     <f7-block>
       <h2>{{ site.regInfo.name }}<br>
-        <span class="orgname">{{ site.regInfo.organization }}</span>
+        <span class="orgname">{{ orgNameBySiteID(site.id) }}</span>
       </h2>
       <span v-if="siteAdmin">
         {{ $t('message.site_admin.admin_title') }}
@@ -100,13 +100,15 @@ export default {
       'health',
       'loggedIn',
       'siteAdmin',
+      'siteByID',
+      'orgNameBySiteID',
     ]),
 
     site: function() {
       const siteid = this.$f7route.params.siteID;
-      const x = this.$store.getters.siteByID(siteid);
-      debug(`siteid ${siteid}`, x);
-      return x;
+      const site = this.siteByID(siteid);
+      debug(`siteid ${siteid}`, site);
+      return site;
     },
 
     siteAlerts: function() {

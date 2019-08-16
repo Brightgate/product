@@ -268,7 +268,7 @@ async function authProviders() {
     const resp = await axios.get(u);
     return resp.data;
   } catch (err) {
-    debug('authProviders failed', err);
+    debug('authProviders: failed', err);
     // UI can indicate that is not working
     return {
       mode: appDefs.APPMODE_FAILURE,
@@ -303,18 +303,18 @@ async function authApplianceLogout() {
   try {
     await axios.get(u);
   } catch (err) {
-    debug('authApplianceLogout failed', err);
+    debug('authApplianceLogout: failed', err);
     throw err;
   }
 }
 
-async function authUserid() {
+async function authUserID() {
   const u = buildUrl('/auth/userid');
   try {
     const res = await axios.get(u);
     return res.data;
   } catch (err) {
-    debug('authUserid failed', err);
+    debug('authUserID: failed', err);
     throw err;
   }
 }
@@ -329,10 +329,10 @@ async function accountDeprovisionPost(accountUUID) {
       headers: {'content-type': 'application/x-www-form-urlencoded'},
       url: u,
     });
-    debug('accountDeprovisionPost: Succeeded.');
+    debug('accountDeprovisionPost: succeeded');
     return res.data;
   } catch (err) {
-    debug('accountDeprovisionPost: Failed', err);
+    debug('accountDeprovisionPost: failed', err);
     throw err;
   }
 }
@@ -343,7 +343,7 @@ async function accountGeneratePassword() {
     const res = await axios.get(u);
     return res.data;
   } catch (err) {
-    debug('passwordGen failed', err);
+    debug('accountGeneratePassword: failed', err);
     throw err;
   }
 }
@@ -355,7 +355,7 @@ async function accountSelfProvisionGet(accountUUID) {
     const res = await axios.get(u);
     return res.data;
   } catch (err) {
-    debug('GET selfprovision failed', err);
+    debug('accountSelfProvisionGet: failed', err);
     throw err;
   }
 }
@@ -370,10 +370,39 @@ async function accountSelfProvisionPost(accountUUID, username, password, verifie
       data: qs.stringify({username, password, verifier}),
       url: u,
     });
-    debug('accountSelfProvisionPost: Succeeded.');
+    debug('accountSelfProvisionPost: succeeded');
     return res.data;
   } catch (err) {
-    debug('accountSelfProvisionPost: Failed', err);
+    debug('accountSelfProvisionPost: failed', err);
+    throw err;
+  }
+}
+
+async function accountRolesGet(accountUUID) {
+  assert.equal(typeof accountUUID, 'string');
+  const u = buildUrl(`/api/account/${accountUUID}/roles`);
+  try {
+    const res = await axios.get(u);
+    return res.data;
+  } catch (err) {
+    debug('accountRolesGet: failed', err);
+    throw err;
+  }
+}
+
+async function accountRolesPost(accountUUID, tgtOrgUUID, role, value) {
+  assert.equal(typeof accountUUID, 'string');
+  const u = buildUrl(`/api/account/${accountUUID}/roles/${tgtOrgUUID}/${role}`);
+  try {
+    const res = await axios({
+      method: 'POST',
+      headers: {'content-type': 'application/x-www-form-urlencoded'},
+      data: qs.stringify({value: value}),
+      url: u,
+    });
+    return res.data;
+  } catch (err) {
+    debug('accountRolesPost: failed', err);
     throw err;
   }
 }
@@ -387,9 +416,20 @@ async function accountDelete(accountUUID) {
       method: 'DELETE',
       url: u,
     });
-    debug('accountDelete: Succeeded.');
+    debug('accountDelete: succeeded');
   } catch (err) {
-    debug('accountDelete: Failed', err);
+    debug('accountDelete: failed', err);
+    throw err;
+  }
+}
+
+async function orgsGet() {
+  const u = buildUrl(`/api/org`);
+  try {
+    const res = await axios.get(u);
+    return res.data;
+  } catch (err) {
+    debug('orgsGet: failed', err);
     throw err;
   }
 }
@@ -400,7 +440,7 @@ async function orgAccountsGet(orgUUID) {
     const res = await axios.get(u);
     return res.data;
   } catch (err) {
-    debug('account get failed', err);
+    debug('orgAccountsGet: failed', err);
     throw err;
   }
 }
@@ -424,12 +464,15 @@ export default {
   authProviders,
   authApplianceLogin,
   authApplianceLogout,
-  authUserid,
+  authUserID,
   accountDelete,
   accountDeprovisionPost,
   accountGeneratePassword,
   accountSelfProvisionGet,
   accountSelfProvisionPost,
+  accountRolesGet,
+  accountRolesPost,
+  orgsGet,
   orgAccountsGet,
   setMockMode,
 };

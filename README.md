@@ -60,6 +60,7 @@ machine you maintain.  Current versions are:
 ```
 $ make install
 $ make client-web
+$ make client-web-dev
 $ make test
 $ make coverage
 $ make check-go   # runs vet-go, lint-go, fmt-go

@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/pkg/errors"
 	"github.com/satori/uuid"
 	"golang.org/x/crypto/openpgp"
@@ -466,6 +467,11 @@ func (db *ApplianceDB) DeleteAccountSecretsTx(ctx context.Context, dbx DBX, acct
 	return err
 }
 
+// ValidRole tests if the given role is acceptible.  Used for input checking.
+func ValidRole(role string) bool {
+	return (role == "user" || role == "admin")
+}
+
 // AccountOrgRole represents the tuple {account, organization, role, relationship}
 // which is used to express which roles are assigned to users.
 // This information is synthesized from the roles and relationships
@@ -596,7 +602,12 @@ func (db *ApplianceDB) DeleteAccountOrgRoleTx(ctx context.Context, dbx DBX, role
 	}
 	_, err := dbx.NamedExecContext(ctx,
 		`DELETE FROM account_org_role
-		WHERE account_uuid=:account_uuid AND organization_uuid=:organization_uuid AND role=:role`,
+		WHERE
+		  account_uuid=:account_uuid AND
+		  organization_uuid=:organization_uuid AND
+		  target_organization_uuid=:target_organization_uuid AND
+		  relationship=:relationship AND
+		  role=:role`,
 		role)
 	return err
 }
@@ -604,10 +615,11 @@ func (db *ApplianceDB) DeleteAccountOrgRoleTx(ctx context.Context, dbx DBX, role
 // OrgOrgRelationship represents the tuple {managing-organization, target-organization,
 // relationship-type}
 type OrgOrgRelationship struct {
-	UUID                   uuid.UUID `db:"uuid"`
-	OrganizationUUID       uuid.UUID `db:"organization_uuid"`
-	TargetOrganizationUUID uuid.UUID `db:"target_organization_uuid"`
-	Relationship           string    `db:"relationship"`
+	UUID                   uuid.UUID      `db:"uuid"`
+	OrganizationUUID       uuid.UUID      `db:"organization_uuid"`
+	TargetOrganizationUUID uuid.UUID      `db:"target_organization_uuid"`
+	Relationship           string         `db:"relationship"`
+	LimitRoles             pq.StringArray `db:"limit_roles"`
 }
 
 // OrgOrgRelationshipsByOrg returns the org/org relationships for which the given
@@ -625,8 +637,18 @@ func (db *ApplianceDB) OrgOrgRelationshipsByOrgTx(ctx context.Context, dbx DBX, 
 		dbx = db
 	}
 	err := dbx.SelectContext(ctx, &rels, `
-		SELECT * FROM org_org_relationship
-		WHERE org_org_relationship.organization_uuid = $1`, org)
+		SELECT
+		  oo.uuid,
+		  oo.organization_uuid,
+		  oo.target_organization_uuid,
+		  oo.relationship,
+		  array_agg(r.role) as limit_roles
+		FROM
+		  org_org_relationship AS oo, relationship_roles AS r
+		WHERE
+		  oo.relationship = r.relationship AND
+		  oo.organization_uuid = $1
+		GROUP BY oo.uuid`, org)
 	if err != nil {
 		return nil, err
 	}
@@ -649,11 +671,19 @@ func (db *ApplianceDB) OrgOrgRelationshipsByOrgTargetTx(ctx context.Context, dbx
 		dbx = db
 	}
 	err := dbx.SelectContext(ctx, &rels, `
-		SELECT *
-		FROM org_org_relationship
+		SELECT
+		  oo.uuid,
+		  oo.organization_uuid,
+		  oo.target_organization_uuid,
+		  oo.relationship,
+		  array_agg(r.role) as limit_roles
+		FROM
+		  org_org_relationship AS oo, relationship_roles AS r
 		WHERE
-		  organization_uuid = $1 AND
-		  target_organization_uuid = $2`, org, tgt)
+		  oo.relationship = r.relationship AND
+		  oo.organization_uuid = $1 AND
+		  oo.target_organization_uuid = $2
+		GROUP BY oo.uuid`, org, tgt)
 	if err != nil {
 		return nil, err
 	}

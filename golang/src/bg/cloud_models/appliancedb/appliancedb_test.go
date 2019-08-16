@@ -323,11 +323,11 @@ func testApplianceID(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	// Test lookup ops
 	id1, err := ds.ApplianceIDByUUID(ctx, testID1.ApplianceUUID)
 	assert.NoError(err)
-	assert.Equal(id1.ApplianceUUID, testID1.ApplianceUUID)
+	assert.Equal(testID1.ApplianceUUID, id1.ApplianceUUID)
 
 	id1, err = ds.ApplianceIDByClientID(ctx, testClientID1)
 	assert.NoError(err)
-	assert.Equal(id1.ApplianceUUID, testID1.ApplianceUUID)
+	assert.Equal(testID1.ApplianceUUID, id1.ApplianceUUID)
 
 	mkOrgSiteApp(t, ds, &testOrg2, &testSite2, &testID2)
 
@@ -436,7 +436,7 @@ func testCustomerSite(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 
 	s1, err := ds.CustomerSiteByUUID(ctx, testID1.SiteUUID)
 	assert.NoError(err)
-	assert.Equal(s1.UUID, testID1.SiteUUID)
+	assert.Equal(testID1.SiteUUID, s1.UUID)
 
 	mkOrgSiteApp(t, ds, &testOrg2, &testSite2, &testID2)
 	ids, err = ds.AllCustomerSites(ctx)
@@ -622,7 +622,7 @@ func testAccount(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Su
 
 	acctInfo, err := ds.AccountInfoByUUID(ctx, testAccount1.UUID)
 	assert.NoError(err)
-	assert.Equal(*acctInfo, expAccountInfo)
+	assert.Equal(expAccountInfo, *acctInfo)
 
 	_, err = ds.AccountByUUID(ctx, badUUID)
 	assert.Error(err)
@@ -1002,12 +1002,20 @@ func testOrgOrg(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Sug
 		TargetOrganizationUUID: testOrg1.UUID,
 		Relationship:           "self",
 	}
-	assert.Equal(rels[0], expRel)
+	assert.Equal(expRel.UUID, rels[0].UUID)
+	assert.Equal(expRel.OrganizationUUID, rels[0].OrganizationUUID)
+	assert.Equal(expRel.TargetOrganizationUUID, rels[0].TargetOrganizationUUID)
+	assert.Equal(expRel.Relationship, rels[0].Relationship)
+	assert.ElementsMatch([]string{"admin", "user"}, []string(rels[0].LimitRoles))
 
 	rels, err = ds.OrgOrgRelationshipsByOrgTarget(ctx, testOrg1.UUID, testOrg1.UUID)
 	assert.NoError(err)
 	assert.Len(rels, 1)
-	assert.Equal(rels[0], expRel)
+	assert.Equal(expRel.UUID, rels[0].UUID)
+	assert.Equal(expRel.OrganizationUUID, rels[0].OrganizationUUID)
+	assert.Equal(expRel.TargetOrganizationUUID, rels[0].TargetOrganizationUUID)
+	assert.Equal(expRel.Relationship, rels[0].Relationship)
+	assert.ElementsMatch([]string{"admin", "user"}, []string(rels[0].LimitRoles))
 
 	// Test insertion of invalid relationship
 	badRel := testOrgOrgRel1
@@ -1036,7 +1044,8 @@ func testOrgOrg(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Sug
 	rels, err = ds.OrgOrgRelationshipsByOrgTarget(ctx, testMSPOrg1.UUID, testOrg1.UUID)
 	assert.NoError(err)
 	assert.Len(rels, 1)
-	assert.Equal(rels[0], testOrgOrgRel1)
+	assert.Equal(testOrgOrgRel1.OrganizationUUID, rels[0].OrganizationUUID)
+	assert.ElementsMatch([]string{"admin", "user"}, []string(rels[0].LimitRoles))
 
 	// Successfully grant Admin role to testMSPAccount1
 	assert.NoError(ds.InsertAccountOrgRole(ctx, &adminRoleMSP))
@@ -1116,7 +1125,7 @@ func testUnittestData(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 	// Test "appliance with cloud storage" case
 	cs, err := ds.CloudStorageByUUID(ctx, testSite1.UUID)
 	assert.NoError(err)
-	assert.Equal(cs.Provider, "gcs")
+	assert.Equal("gcs", cs.Provider)
 
 	// Test "appliance with no cloud storage" case
 	cs, err = ds.CloudStorageByUUID(ctx, testSite2.UUID)

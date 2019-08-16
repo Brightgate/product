@@ -26,7 +26,7 @@
       <f7-list-item v-if="appMode === appDefs.APPMODE_CLOUD">
         <f7-link panel-close href="/account_prefs/">My Account</f7-link>
       </f7-list-item>
-      <f7-list-item v-if="appMode === appDefs.APPMODE_CLOUD && org.roles['admin']">
+      <f7-list-item v-if="appMode === appDefs.APPMODE_CLOUD && currentOrgAdmin">
         <f7-link class="bg-panel-link" panel-close href="/accounts/">Accounts</f7-link>
       </f7-list-item>
       <f7-list-item>
@@ -61,6 +61,7 @@ export default {
     // Map various $store elements as computed properties for use in the
     // template.
     ...vuex.mapGetters([
+      'currentOrgAdmin',
       'org',
       'appMode',
       'loggedIn',

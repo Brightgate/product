@@ -17,6 +17,9 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	neturl "net/url"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -159,4 +162,86 @@ func TestAccountsGenAndProvision(t *testing.T) {
 	e.ServeHTTP(rec, req)
 	t.Logf("return body:Svc %s", rec.Body.String())
 	assert.Equal(http.StatusOK, rec.Code)
+}
+
+func TestAccountsRoles(t *testing.T) {
+	assert := require.New(t)
+	// Mock DB
+
+	dMock := &mocks.DataStore{}
+	dMock.On("AccountByUUID", mock.Anything, mockAccount.UUID).Return(&mockAccount, nil)
+	dMock.On("AccountByUUID", mock.Anything, mockUserAccount.UUID).Return(&mockUserAccount, nil)
+	dMock.On("AccountOrgRolesByAccount", mock.Anything, mockAccount.UUID).Return(mockAccountOrgRoles, nil)
+	dMock.On("AccountOrgRolesByAccount", mock.Anything, mockUserAccount.UUID).Return(mockUserAccountOrgRoles, nil)
+	dMock.On("AccountOrgRolesByAccountTarget", mock.Anything, mockAccount.UUID, mock.Anything).Return(mockAccountOrgRoles, nil)
+	dMock.On("AccountOrgRolesByAccountTarget", mock.Anything, mockUserAccount.UUID, mock.Anything).Return(mockUserAccountOrgRoles, nil)
+	dMock.On("InsertAccountOrgRole", mock.Anything, mock.Anything).Return(nil)
+	dMock.On("DeleteAccountOrgRole", mock.Anything, mock.Anything).Return(nil)
+	defer dMock.AssertExpectations(t)
+
+	// Setup Echo
+	ss := sessions.NewCookieStore(securecookie.GenerateRandomKey(32))
+	mw := []echo.MiddlewareFunc{
+		newSessionMiddleware(ss).Process,
+	}
+	e := echo.New()
+	_ = newAccountHandler(e, dMock, mw, ss, getMockClientHandle)
+
+	accts := []appliancedb.Account{mockAccount, mockUserAccount}
+
+	// Non-admins can get their own account roles
+	// Non-admins cannot get other account roles
+	// Admins can get anyone's account roles
+	for _, srcAcct := range accts {
+		for _, tgtAcct := range accts {
+			t.Logf("test %s getting roles for %s",
+				srcAcct.UUID.String(), tgtAcct.UUID.String())
+			url := fmt.Sprintf("/api/account/%s/roles", tgtAcct.UUID.String())
+			req, rec := setupReqRec(&srcAcct, echo.GET, url, bytes.NewReader([]byte{}), ss)
+			// Test
+			e.ServeHTTP(rec, req)
+			t.Logf("return body:Svc %s", rec.Body.String())
+			if srcAcct.UUID == mockUserAccount.UUID &&
+				tgtAcct.UUID == mockAccount.UUID {
+				assert.Equal(http.StatusUnauthorized, rec.Code)
+			} else {
+				assert.Equal(http.StatusOK, rec.Code)
+			}
+		}
+	}
+
+	// Admins can change their own and others account roles; regular users cannot
+	for _, srcAcct := range accts {
+		for _, tgtAcct := range accts {
+			for _, role := range []string{"admin", "user", "badrole"} {
+				for _, value := range []string{"false", "true"} {
+					t.Logf("test %s setting %s=%s on %s",
+						srcAcct.UUID.String(),
+						role, value,
+						tgtAcct.UUID.String())
+					data := neturl.Values{}
+					data.Set("value", value)
+					url := fmt.Sprintf("/api/account/%s/roles/%s/%s",
+						tgtAcct.UUID.String(),
+						tgtAcct.OrganizationUUID.String(), role)
+					req, rec := setupReqRec(&srcAcct, echo.POST, url,
+						strings.NewReader(data.Encode()), ss)
+					req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+					req.Header.Add("Content-Length", strconv.Itoa(len(data.Encode())))
+					// Test
+					e.ServeHTTP(rec, req)
+					t.Logf("return body:Svc %s", rec.Body.String())
+					if srcAcct == mockAccount {
+						if role == "badrole" {
+							assert.Equal(http.StatusNotFound, rec.Code)
+						} else {
+							assert.Equal(http.StatusOK, rec.Code)
+						}
+					} else {
+						assert.Equal(http.StatusUnauthorized, rec.Code)
+					}
+				}
+			}
+		}
+	}
 }

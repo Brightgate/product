@@ -79,6 +79,7 @@ export default {
     // Map various $store elements as computed properties for use in the
     // template.
     ...vuex.mapGetters([
+      'orgNameBySiteID',
     ]),
 
     site: function() {
@@ -100,7 +101,7 @@ export default {
     },
 
     mailtoLink: function() {
-      const siteName = `${this.site.regInfo.organization} > ${this.site.regInfo.name}`;
+      const siteName = `${this.orgNameBySiteID(this.site.id)} > ${this.site.regInfo.name}`;
       const mailto = 'mailto:support@brightgate.com';
       const title = this.$t(this.msgPath('title'));
       const subject = `Support Request; ${title}: ${siteName}`;

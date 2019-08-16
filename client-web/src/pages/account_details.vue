@@ -15,8 +15,7 @@
       <h1>
         {{ acct.name }}
       </h1>
-      {{ orgByID(acct.organization).name }}
-
+      {{ orgByID(acct.organizationUUID).name }}
     </f7-block>
 
     <f7-list>
@@ -53,6 +52,9 @@
       </f7-list-item>
 
       <f7-list-item :title="$t('message.account_details.administration')" group-title />
+      <f7-list-item :link="`${$f7route.url}roles/`">
+        {{ $t('message.account_details.manage_roles') }}
+      </f7-list-item>
       <f7-list-item>
         <span>{{ $t('message.account_details.network_access') }}<br>
           <small>
@@ -124,7 +126,7 @@ export default {
       const accountID = this.$f7route.params.accountID;
       const title = this.$t('message.account_details.delete_title');
       const text = this.$t('message.account_details.delete_text',
-        {name: this.acct.name, org: this.orgByID(this.acct.organization).name});
+        {name: this.acct.name, org: this.orgByID(this.acct.organizationUUID).name});
       this.$f7.dialog.confirm(text, title, () => {
         debug('proceeding to delete account');
         this.$store.dispatch('accountDelete', accountID);
@@ -136,6 +138,7 @@ export default {
       debug('onPageBeforeIn');
       const accountID = this.$f7route.params.accountID;
       this.$store.dispatch('fetchAccountSelfProvision', accountID);
+      this.$store.dispatch('fetchAccountRoles', accountID);
     },
 
     deprovision: async function() {

@@ -40,7 +40,7 @@
       </f7-block>
     </template>
 
-    <template v-if="appMode === appDefs.APPMODE_CLOUD">
+    <template v-if="(appMode === appDefs.APPMODE_CLOUD) && org">
       <f7-block>
         <h2>{{ org.name }}</h2>
       </f7-block>
@@ -73,7 +73,7 @@
     <template v-if="appMode === appDefs.APPMODE_CLOUD">
       <f7-list>
         <f7-list-item
-          v-if="org.roles['admin']"
+          v-if="currentOrgAdmin"
           link="/accounts/">
           Accounts
         </f7-list-item>
@@ -147,6 +147,7 @@ export default {
       'alertCount',
       'alerts',
       'appMode',
+      'currentOrgAdmin',
       'currentSiteID',
       'deviceByUniqID',
       'deviceCount',

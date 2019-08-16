@@ -36,10 +36,7 @@ type siteHandler struct {
 type siteResponse struct {
 	UUID             uuid.UUID `json:"UUID"`
 	Name             string    `json:"name"`
-	Organization     string    `json:"organization"`
 	OrganizationUUID uuid.UUID `json:"organizationUUID"`
-	Relationship     string    `json:"relationship"`
-	Roles            []string  `json:"roles"`
 }
 
 // getSites implements /api/sites, which presents a filtered list of
@@ -57,37 +54,15 @@ func (a *siteHandler) getSites(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	roles, err := a.db.AccountOrgRolesByAccount(ctx, accountUUID)
-	if err != nil {
-		c.Logger().Errorf("Failed to get Org Roles by Account: %+v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
-	}
-
 	apiSites := make([]siteResponse, len(sites))
 	for i, site := range sites {
-		org, err := a.db.OrganizationByUUID(ctx, site.OrganizationUUID)
-		if err != nil {
-			c.Logger().Errorf("Failed to get org for site %v: %+v", site, err)
-			return echo.NewHTTPError(http.StatusInternalServerError, err)
-		}
-
 		// XXX Today, we derive Name from the registry name.  However,
 		// customers will want to have control over the site name, and
 		// this is best seen as a temporary measure.
 		apiSites[i] = siteResponse{
 			UUID:             site.UUID,
 			Name:             site.Name,
-			Organization:     org.Name,
 			OrganizationUUID: site.OrganizationUUID,
-			Roles:            []string{},
-		}
-		for _, r := range roles {
-			if site.OrganizationUUID == r.TargetOrganizationUUID {
-				apiSites[i].Roles = append(apiSites[i].Roles, r.Role)
-				if apiSites[i].Relationship == "" {
-					apiSites[i].Relationship = r.Relationship
-				}
-			}
 		}
 	}
 	return c.JSON(http.StatusOK, &apiSites)
@@ -112,11 +87,6 @@ func (a *siteHandler) getSitesUUID(c echo.Context) error {
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError)
 	}
-	org, err := a.db.OrganizationByUUID(ctx, site.OrganizationUUID)
-	if err != nil {
-		c.Logger().Errorf("Failed to get org for site %v: %+v", site, err)
-		return echo.NewHTTPError(http.StatusInternalServerError)
-	}
 	roles, err := a.db.AccountOrgRolesByAccountTarget(ctx, accountUUID,
 		site.OrganizationUUID)
 	if err != nil {
@@ -129,17 +99,10 @@ func (a *siteHandler) getSitesUUID(c echo.Context) error {
 	if len(roles) == 0 {
 		return echo.NewHTTPError(http.StatusUnauthorized)
 	}
-
-	rnames := make([]string, len(roles))
-	for i, r := range roles {
-		rnames[i] = r.Role
-	}
 	resp := siteResponse{
 		UUID:             site.UUID,
 		Name:             site.Name,
-		Organization:     org.Name,
-		OrganizationUUID: org.UUID,
-		Roles:            rnames,
+		OrganizationUUID: site.OrganizationUUID,
 	}
 	return c.JSON(http.StatusOK, resp)
 }
@@ -337,15 +300,13 @@ func (a *siteHandler) getDevices(c echo.Context) error {
 	}
 	defer hdl.Close()
 
-	var response []*apiDevice
+	response := make([]*apiDevice, 0)
 	for mac, client := range hdl.GetClients() {
 		scans := hdl.GetClientScans(mac)
 		vulns := hdl.GetVulnerabilities(mac)
 		d := buildDeviceResponse(c, hdl, mac, client, scans, vulns)
 		response = append(response, d)
 	}
-
-	// XXX for now, return an empty list
 	return c.JSON(http.StatusOK, response)
 }
 

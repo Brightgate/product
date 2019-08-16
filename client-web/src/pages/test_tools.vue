@@ -104,7 +104,6 @@ export default {
       'loggedIn',
       'mock',
       'testAppMode',
-      'userInfo',
     ]),
   },
 
@@ -117,13 +116,14 @@ export default {
       debug('toggleMock', evt);
       this.$store.commit('setMock', evt.target.checked);
       this.$store.dispatch('fetchProviders').catch(() => {});
-      this.$store.dispatch('fetchSites').catch(() => {});
-      this.$store.dispatch('fetchDevices').catch(() => {});
+      this.$store.dispatch('checkLogin').catch(() => {});
+      this.$store.dispatch('fetchPostLogin').catch(() => {});
     },
 
     toggleFakeLogin: function(evt) {
       debug('toggleFakeLogin', evt);
       this.$store.commit('setFakeLogin', evt.target.checked);
+      this.$store.dispatch('checkLogin').catch(() => {});
     },
 
     setTestAppMode: function(mode) {
@@ -132,8 +132,8 @@ export default {
       // Force the mock to update too
       this.$store.commit('setMock', this.$store.getters.mock);
       this.$store.dispatch('fetchProviders').catch(() => {});
-      this.$store.dispatch('fetchSites').catch(() => {});
-      this.$store.dispatch('fetchDevices').catch(() => {});
+      this.$store.dispatch('checkLogin').catch(() => {});
+      this.$store.dispatch('fetchPostLogin').catch(() => {});
     },
   },
 };

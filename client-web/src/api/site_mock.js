@@ -23,9 +23,7 @@ const mockLocalSites = [
   {
     UUID: '0',
     name: 'Local Site',
-    organization: '',
     organizationUUID: '0',
-    roles: ['admin'],
   },
 ];
 
@@ -33,19 +31,18 @@ const mockLocalSites = [
 const mockCloudSites = [
   {
     UUID: '5182ab0b-39db-4256-86e0-8154171b35ac',
-    name: 'Scranton Office (Admin)',
-    organization: 'Dunder Mifflin',
+    name: 'Scranton Office',
     organizationUUID: 'd91864cd-434a-4b52-8236-d3b95afde170',
-    relationship: 'self',
-    roles: ['admin'],
   },
   {
     UUID: 'ef9b1046-95fa-41c5-a226-ad88198da9e2',
-    name: 'Buffalo Office (User)',
-    organization: 'Dunder Mifflin',
+    name: 'Buffalo Office',
     organizationUUID: 'd91864cd-434a-4b52-8236-d3b95afde170',
-    relationship: 'self',
-    roles: ['user'],
+  },
+  {
+    UUID: '2ffcf157-d083-469c-a607-9af4bd9ec4d5',
+    name: 'WUPHF HQ',
+    organizationUUID: '9f56108e-2916-409d-9b43-c964115fde61',
   },
 ];
 
@@ -141,6 +138,41 @@ const mockConfig = {
   '@/network/base_address': '10.1.4.12/26',
 };
 
+const mockLocalOrgs = [
+  {
+    name: 'Local Org',
+    organizationUUID: '0',
+    relationship: 'self',
+    limitRoles: ['admin', 'user'],
+  },
+];
+
+const mockCloudOrgs = [
+  {
+    name: 'Dunder Mifflin',
+    organizationUUID: 'd91864cd-434a-4b52-8236-d3b95afde170',
+    relationship: 'self',
+    limitRoles: ['admin', 'user'],
+  },
+  {
+    name: 'WUPHF.com',
+    organizationUUID: '9f56108e-2916-409d-9b43-c964115fde61',
+    relationship: 'msp',
+    limitRoles: ['admin', 'user'],
+  },
+];
+
+export const mockAccountRoles = {
+  'd91864cd-434a-4b52-8236-d3b95afde170': {
+    'relationship': 'self',
+    'roles': ['admin', 'user'],
+  },
+  '9f56108e-2916-409d-9b43-c964115fde61': {
+    'relationship': 'msp',
+    'roles': ['admin'],
+  },
+};
+
 const mockEnrollGuest = {
   smsDelivered: true,
   smsErrorCode: 0,
@@ -227,6 +259,8 @@ function mockAxios(normalAxios, mode) {
   const mock = new MockAdapter(mockAx);
   debug('mock mode', mode);
 
+  const mockOrgs = (mode === appDefs.APPMODE_CLOUD) ? mockCloudOrgs : mockLocalOrgs;
+  debug('mockOrgs', mockOrgs);
   const mockSites = (mode === appDefs.APPMODE_CLOUD) ? mockCloudSites : mockLocalSites;
   debug('mockSites', mockSites);
   const mockProviders = (mode === appDefs.APPMODE_CLOUD) ? mockCloudProviders : mockLocalProviders;
@@ -253,6 +287,9 @@ function mockAxios(normalAxios, mode) {
     .onGet(/\/api\/account\/.+\/selfprovision/).reply(selfProvGetHandler)
     .onPost(/\/api\/account\/.+\/selfprovision/).reply(selfProvPostHandler)
     .onPost(/\/api\/account\/.+\/deprovision/).reply(200)
+    .onGet(/\/api\/account\/.+\/roles/).reply(200, mockAccountRoles)
+    .onPost(/\/api\/account\/.+\/roles\/.+\/.+/).reply(200)
+    .onGet('/api/org').reply(200, mockOrgs)
     .onGet(/\/api\/org\/.+\/accounts/).reply(200, mockAccounts)
     .onAny().reply(500);
 

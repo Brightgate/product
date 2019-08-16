@@ -25,8 +25,50 @@ type orgHandler struct {
 	sessionStore sessions.Store
 }
 
+type orgsResponse struct {
+	OrganizationUUID uuid.UUID `json:"organizationUUID"`
+	Name             string    `json:"name"`
+	Relationship     string    `json:"relationship"`
+	LimitRoles       []string  `json:"limitRoles"`
+}
+
+func (o *orgHandler) getOrgs(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	accountUUID, ok := c.Get("account_uuid").(uuid.UUID)
+	if !ok || accountUUID == uuid.Nil {
+		return echo.NewHTTPError(http.StatusUnauthorized)
+	}
+	acct, err := o.db.AccountByUUID(ctx, accountUUID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError)
+	}
+	rels, err := o.db.OrgOrgRelationshipsByOrg(ctx, acct.OrganizationUUID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError)
+	}
+	response := make([]orgsResponse, len(rels))
+	for idx, rel := range rels {
+		tgtOrg, err := o.db.OrganizationByUUID(ctx, rel.TargetOrganizationUUID)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError)
+		}
+		response[idx] = orgsResponse{
+			OrganizationUUID: tgtOrg.UUID,
+			Name:             tgtOrg.Name,
+			Relationship:     rel.Relationship,
+			LimitRoles:       rel.LimitRoles,
+		}
+	}
+	return c.JSON(http.StatusOK, response)
+}
+
 func (o *orgHandler) getOrgAccounts(c echo.Context) error {
 	ctx := c.Request().Context()
+	accountUUID, ok := c.Get("account_uuid").(uuid.UUID)
+	if !ok || accountUUID == uuid.Nil {
+		return echo.NewHTTPError(http.StatusUnauthorized)
+	}
 
 	orgUUID, err := uuid.FromString(c.Param("org_uuid"))
 	if err != nil {
@@ -88,10 +130,12 @@ func (o *orgHandler) mkOrgMiddleware(allowedRoles []string) echo.MiddlewareFunc 
 // Store, and routes the handler into the echo instance.
 func newOrgHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []echo.MiddlewareFunc, sessionStore sessions.Store) *orgHandler {
 	h := &orgHandler{db, sessionStore}
-	org := r.Group("/api/org")
+	r.GET("/api/org", h.getOrgs, middlewares...)
 
 	admin := h.mkOrgMiddleware([]string{"admin"})
+
+	org := r.Group("/api/org/:org_uuid")
 	org.Use(middlewares...)
-	org.GET("/:org_uuid/accounts", h.getOrgAccounts, admin)
+	org.GET("/accounts", h.getOrgAccounts, admin)
 	return h
 }

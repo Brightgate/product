@@ -164,7 +164,7 @@ func demoRingsHandler(w http.ResponseWriter, r *http.Request) {
 // Policy: GET (*_USER, *_ADMIN)
 func demoDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	clientsRaw := config.GetClients()
-	var devices []*daDevice
+	devices := make([]*daDevice, 0)
 
 	for mac, client := range clientsRaw {
 		scans := config.GetClientScans(mac)
@@ -531,23 +531,19 @@ func demoUsersHandler(w http.ResponseWriter, r *http.Request) {
 type daSite struct {
 	// The site breaks the UUID contract by using '0' as its
 	// reserved UUID; hence we have to use a string here.
-	UUID             string   `json:"UUID"`
-	Name             string   `json:"name"`
-	Organization     string   `json:"organization"`
-	OrganizationUUID string   `json:"organizationUUID"`
-	Relationship     string   `json:"relationship"`
-	Roles            []string `json:"roles"`
+	UUID             string `json:"UUID"`
+	Name             string `json:"name"`
+	OrganizationUUID string `json:"organizationUUID"`
 }
 
 var site0 = daSite{
 	UUID:             "0",
 	Name:             "Local Site",
-	Organization:     "",
 	OrganizationUUID: "0",
-	Relationship:     "self",
-	Roles:            []string{"admin"},
 }
 
+// demoSitesHandler responds to the /api/sites endpoint with a stub in order to
+// make coding the frontend app simpler.
 func demoSitesHandler(w http.ResponseWriter, r *http.Request) {
 	var sites = []daSite{site0}
 	w.Header().Set("Content-Type", "application/json")
@@ -559,6 +555,32 @@ func demoSitesHandler(w http.ResponseWriter, r *http.Request) {
 func demoSitesUUIDHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(site0); err != nil {
+		panic(err)
+	}
+}
+
+type daOrg struct {
+	// The org breaks the UUID contract by using '0' as its
+	// reserved UUID; hence we have to use a string here.
+	OrganizationUUID string   `json:"organizationUUID"`
+	Name             string   `json:"name"`
+	Relationship     string   `json:"relationship"`
+	LimitRoles       []string `json:"limitRoles"`
+}
+
+var org0 = daOrg{
+	OrganizationUUID: "0",
+	Name:             "Local",
+	Relationship:     "self",
+	LimitRoles:       []string{"admin", "user"},
+}
+
+// demoOrgsHandler responds to the /api/org endpoint with a constant response
+// in order to make coding the frontend app simpler.
+func demoOrgsHandler(w http.ResponseWriter, r *http.Request) {
+	var orgs = []daOrg{org0}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(orgs); err != nil {
 		panic(err)
 	}
 }
@@ -580,6 +602,7 @@ func makeDemoAPIRouter() *mux.Router {
 	router.HandleFunc("/sites/{s}/users/{uuid}", demoUserByUUIDGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/users/{uuid}", demoUserByUUIDPostHandler).Methods("POST")
 	router.HandleFunc("/sites/{s}/users/{uuid}", demoUserByUUIDDeleteHandler).Methods("DELETE")
+	router.HandleFunc("/org", demoOrgsHandler).Methods("GET")
 	router.Use(cookieAuthMiddleware)
 	return router
 }

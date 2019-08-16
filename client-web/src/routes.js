@@ -11,6 +11,7 @@
 import Accounts from './pages/accounts.vue';
 import AccountDetails from './pages/account_details.vue';
 import AccountPrefs from './pages/account_prefs.vue';
+import AccountRoles from './pages/account_roles.vue';
 import ComplianceReport from './pages/compliance_report.vue';
 import DevDetails from './pages/dev_details.vue';
 import Devices from './pages/devices.vue';
@@ -58,6 +59,10 @@ export default [
   {
     path: '/accounts/:accountID/',
     component: AccountDetails,
+  },
+  {
+    path: '/accounts/:accountID/roles/',
+    component: AccountRoles,
   },
   {
     path: '/sites/:siteID/alerts/:alertID/',
