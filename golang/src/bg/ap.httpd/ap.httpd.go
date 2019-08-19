@@ -419,7 +419,7 @@ func main() {
 
 	select {
 	case s := <-sig:
-		slog.Fatalf("Signal (%v) received", s)
+		slog.Infof("Signal (%v) received", s)
 	case <-certInstalled:
 		slog.Infof("restarting due to renewed certificate")
 	}

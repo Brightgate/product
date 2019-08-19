@@ -53,6 +53,7 @@ type Child struct {
 	zapLevel    zapcore.Level
 	prefix      string
 	softTimeout time.Duration
+	logbuf      *circularBuf
 
 	statName   string
 	statusName string
@@ -98,6 +99,9 @@ func handlePipe(c *Child, r io.ReadCloser) {
 			case zapcore.ErrorLevel:
 				c.zapLogger.Errorf("%s", line)
 			}
+		}
+		if c.logbuf != nil {
+			c.logbuf.Write([]byte(line))
 		}
 	}
 
@@ -209,7 +213,7 @@ func (c *Child) Wait() error {
 			return syscall.Kill(-pid, sig)
 		}
 		pgalive := func() bool {
-			err = syscall.Kill(-pid, 0)
+			err := syscall.Kill(-pid, 0)
 			return err != syscall.ESRCH
 		}
 		RetryKill(pgkill, pgalive, c.softTimeout)
@@ -370,6 +374,21 @@ func (c *Child) SetEnv(name, value string) {
 		c.env = os.Environ()
 	}
 	c.env = append(c.env, name+"="+value)
+}
+
+// LogPreserve tells us to keep a copy of the child's last sz bytes of log data
+func (c *Child) LogPreserve(sz int) {
+	c.logbuf = newCBuf(sz)
+}
+
+// LogContents returns the contents of the child's log buffer
+func (c *Child) LogContents() string {
+	var rval string
+
+	if c.logbuf != nil {
+		rval = string(c.logbuf.contents())
+	}
+	return rval
 }
 
 // SetPgid with a true value will cause the child, when started, to be put into

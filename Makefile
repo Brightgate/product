@@ -419,6 +419,7 @@ GO_AP_TESTABLES = \
 	bg/ap.rpcd \
 	bg/ap.userauthd \
 	bg/ap_common/platform \
+	bg/ap_common/aputil \
 	bg/common/grpcutils \
 	bg/common/network \
 	bg/common/release \

@@ -287,7 +287,7 @@ func eventHandler(event []byte) {
 		updateNotify(updates)
 		if propTree.ChangesetCommit() {
 			if rerr := propTreeStore(); rerr != nil {
-				slog.Warnf("failed to write properties: %v",
+				aputil.ReportError("failed to write properties: %v",
 					rerr)
 			}
 		}
@@ -747,7 +747,7 @@ func configPropHandler(query *cfgmsg.ConfigQuery) (string, error) {
 
 			newTree := []byte(val)
 			if err = propTree.Replace(newTree); err != nil {
-				slog.Warnf("importing replacement tree: %v", err)
+				aputil.ReportError("importing replacement tree: %v", err)
 				err = cfgapi.ErrBadTree
 
 			} else {
@@ -789,7 +789,7 @@ func configPropHandler(query *cfgmsg.ConfigQuery) (string, error) {
 		updateNotify(updates)
 		if propTree.ChangesetCommit() || persistTree {
 			if rerr := propTreeStore(); rerr != nil {
-				slog.Warnf("failed to write properties: %v",
+				aputil.ReportError("failed to write properties: %v",
 					rerr)
 			}
 		}
@@ -970,6 +970,8 @@ func main() {
 	defer slog.Sync()
 	slog.Infof("starting")
 	aputil.LogSetLevel("", *logLevel)
+
+	aputil.ReportInit(slog, pname)
 
 	if mcpd, err = mcp.New(pname); err != nil {
 		slog.Warnf("Failed to connect to mcp: %v", err)

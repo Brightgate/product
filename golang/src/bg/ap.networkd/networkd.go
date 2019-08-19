@@ -1004,7 +1004,7 @@ func networkdStop(msg string) {
 		slog.Infof("%s", msg)
 	}
 	running = false
-	hostapd.reset()
+	hostapd.halt()
 }
 
 func main() {

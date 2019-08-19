@@ -383,6 +383,7 @@ func main() {
 	}
 
 	setEnvironment()
+	aputil.ReportInit(nil, pname)
 	apiInit()
 	profileInit()
 	daemonInit()

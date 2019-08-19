@@ -230,7 +230,8 @@ func logMonitor(name string) {
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
+	err := scanner.Err()
+	if err != nil && droplogRunning {
 		slog.Fatalf("error processing log pipe: %v", err)
 	}
 

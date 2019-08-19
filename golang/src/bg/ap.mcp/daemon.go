@@ -159,6 +159,17 @@ func (d *daemon) wait() {
 	logInfo("%s exited %s after %s", d.Name, msg,
 		time.Since(startTime))
 
+	if err != nil && d.goalState != mcp.OFFLINE {
+		// XXX: there are certainly times we would like to know that a
+		// daemon crashed while trying to shut down.  However, because
+		// we don't yet support the cancellation of cfgapi operations,
+		// this would result in far too many false positives as daemons
+		// get wedged waiting for a dead ap.configd to respond to them.
+		err = aputil.ReportCrash(d.Name, msg, d.child.LogContents())
+		if err != nil {
+			logWarn("unable to record crash: %v", err)
+		}
+	}
 	d.Lock()
 	if d.state != mcp.BROKEN {
 		d.setState(mcp.OFFLINE)
@@ -216,6 +227,9 @@ func (d *daemon) start() {
 
 	// Put each daemon into its own process group
 	child.SetPgid(true)
+
+	// Keep the last 32k of log data in memory, so we can dump it on failure
+	child.LogPreserve(32 * 1024)
 
 	d.setState(mcp.STARTING)
 	if err = child.Start(); err != nil {
@@ -551,6 +565,7 @@ func updateDaemonResources(d *daemon) {
 		nextWarn := d.memWarnTime.Add(warnPeriod)
 		if nextWarn.Before(now) {
 			logWarn("%s using %dMB of memory", d.Name, mem)
+			aputil.ReportMem(d.Name, mem)
 			d.memWarnTime = now
 
 			if d == self {

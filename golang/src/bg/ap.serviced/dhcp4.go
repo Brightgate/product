@@ -677,7 +677,7 @@ func selectRingHandler(p dhcp.Packet, options dhcp.Options) *ringHandler {
 		}
 
 	} else if handler = handlers[ring]; handler == nil {
-		slog.Errorf("Client %s on unknown ring '%s'", mac, ring)
+		aputil.ReportError("Client %s on unknown ring '%s'", mac, ring)
 	}
 
 	// Once we've handled the DHCP request for this client, we can forget
@@ -817,7 +817,8 @@ func newHandler(name string, rings cfgapi.RingMap) *ringHandler {
 	ring := rings[name]
 	start, span := ipRange(ring)
 	if start == nil {
-		slog.Errorf("%s has an illegal subnet: %s", name, ring.Subnet)
+		aputil.ReportError("%s has an illegal subnet: %s", name,
+			ring.Subnet)
 		return nil
 	}
 

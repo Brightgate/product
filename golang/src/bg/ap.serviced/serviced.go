@@ -216,6 +216,8 @@ func main() {
 	defer slog.Sync()
 	slog.Infof("starting")
 
+	aputil.ReportInit(slog, pname)
+
 	mcpd, err := mcp.New(pname)
 	if err != nil {
 		slog.Warnf("cannot connect to mcp: %v", err)
@@ -260,8 +262,10 @@ func main() {
 
 	select {
 	case s := <-sig:
-		slog.Fatalf("Signal (%v) received, stopping", s)
+		slog.Infof("Signal (%v) received, stopping", s)
 	case <-exitChan:
 		slog.Infof("stopping")
 	}
+
+	os.Exit(0)
 }

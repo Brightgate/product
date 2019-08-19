@@ -1050,9 +1050,24 @@ func (h *hostapdHdl) reload() {
 
 func (h *hostapdHdl) reset() {
 	if h != nil {
-		slog.Infof("Killing hostapd")
+		slog.Infof("Resetting hostapd")
 		virtualAPs = config.GetVirtualAPs()
 		h.process.Signal(plat.ResetSignal)
+	}
+}
+
+func (h *hostapdHdl) halt() {
+	if h != nil {
+		slog.Infof("Resetting hostapd")
+		p := h.process
+
+		p.Signal(plat.ResetSignal)
+		time.AfterFunc(200*time.Millisecond, func() {
+			if h.process == p {
+				slog.Infof("Killing hostapd")
+				p.Signal(syscall.SIGKILL)
+			}
+		})
 	}
 }
 

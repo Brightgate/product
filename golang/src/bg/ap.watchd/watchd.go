@@ -418,4 +418,6 @@ func main() {
 			time.Sleep(time.Millisecond)
 		}
 	}
+
+	os.Exit(0)
 }

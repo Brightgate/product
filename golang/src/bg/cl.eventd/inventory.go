@@ -53,7 +53,7 @@ func writeInventoryCS(ctx context.Context, applianceDB appliancedb.DataStore,
 func writeInventoryFile(uuid uuid.UUID, devInfo *base_msg.DeviceInfo, now time.Time) (string, error) {
 	hwaddr := network.Uint64ToHWAddr(devInfo.GetMacAddress())
 	// We receive only what has recently changed
-	hwaddrPath := filepath.Join(inventoryBasePath, uuid.String(), hwaddr.String())
+	hwaddrPath := filepath.Join(reportBasePath, uuid.String(), hwaddr.String())
 	if err := os.MkdirAll(hwaddrPath, 0755); err != nil {
 		return "", errors.Wrap(err, "inventory mkdir failed")
 	}

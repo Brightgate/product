@@ -104,16 +104,12 @@ func rpcHealthUpdate(ok bool) {
 	config.CreateProp(prop, now, nil)
 }
 
-func publishEvent(ctx context.Context, tclient cloud_rpc.EventClient, subtopic string, evt proto.Message) error {
-	name := proto.MessageName(evt)
-	//slog.Debugw("Sending "+subtopic, "type", name, "payload", evt)
-	slog.Debugw("Sending "+subtopic, "type", name)
-	serialized, err := proto.Marshal(evt)
-	if err != nil {
-		return err
-	}
+func publishEventSerialized(ctx context.Context, tclient cloud_rpc.EventClient,
+	name, subtopic string, serialized []byte) error {
 
-	ctx, err = applianceCred.MakeGRPCContext(ctx)
+	slog.Debugw("Sending "+subtopic, "type", name)
+
+	ctx, err := applianceCred.MakeGRPCContext(ctx)
 	if err != nil {
 		slog.Fatalf("Failed to make GRPC credential: %+v", err)
 	}
@@ -147,6 +143,15 @@ func publishEvent(ctx context.Context, tclient cloud_rpc.EventClient, subtopic s
 	}
 
 	return nil
+}
+
+func publishEvent(ctx context.Context, tclient cloud_rpc.EventClient, subtopic string, evt proto.Message) error {
+	name := proto.MessageName(evt)
+	serialized, err := proto.Marshal(evt)
+	if err == nil {
+		err = publishEventSerialized(ctx, tclient, name, subtopic, serialized)
+	}
+	return err
 }
 
 func handleNetException(ctx context.Context, tclient cloud_rpc.EventClient, event []byte) error {
@@ -301,6 +306,7 @@ func cloud(isFailsafe bool, wg *sync.WaitGroup, doneChan chan bool) {
 				"inventory, update, upload, and cert loops")
 		} else {
 			go inventoryLoop(ctx, tclient, &cleanup.wg, addDoneChan())
+			go faultLoop(ctx, tclient, &cleanup.wg, addDoneChan())
 			go updateLoop(&cleanup.wg, addDoneChan())
 			go uploadLoop(sclient, &cleanup.wg, addDoneChan())
 			go cloudCertLoop(ctx, conn, &cleanup.wg, addDoneChan())
@@ -338,8 +344,9 @@ func daemonStart() {
 
 	if applianceCred == nil {
 		// We can't perform most of our rpc duties, but we at least want
-		// the local cert stuff to work.
+		// the local cert and fault reaping stuff to work.
 		isFailsafe = true
+		go faultLoop(nil, nil, &cleanup.wg, addDoneChan())
 	} else {
 		go cloud(isFailsafe, &cleanup.wg, addDoneChan())
 	}
@@ -411,6 +418,9 @@ func cmdStart() {
 	case "inventory":
 		tclient := cloud_rpc.NewEventClient(conn)
 		err = sendInventory(ctx, tclient)
+	case "faults":
+		tclient := cloud_rpc.NewEventClient(conn)
+		err = sendFaults(ctx, tclient)
 	case "net-exception":
 		tclient := cloud_rpc.NewEventClient(conn)
 		err = testNetException(ctx, tclient)

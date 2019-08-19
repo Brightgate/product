@@ -68,7 +68,7 @@ const (
 )
 
 var (
-	inventoryBasePath string
+	reportBasePath string
 
 	log  *zap.Logger
 	slog *zap.SugaredLogger
@@ -333,8 +333,8 @@ func main() {
 	processEnv(&environ)
 	slog.Infow(pname+" starting", "args", strings.Join(os.Args, " "))
 
-	inventoryBasePath = filepath.Join(daemonutils.ClRoot(), "var", "spool")
-	slog.Infof("inventory storage: %s", inventoryBasePath)
+	reportBasePath = filepath.Join(daemonutils.ClRoot(), "var", "spool")
+	slog.Infof("report storage: %s", reportBasePath)
 
 	prometheusInit(environ.DiagPort)
 
@@ -387,6 +387,8 @@ func main() {
 			heartbeatMessage(ctx, applianceDB, applianceUUID, siteUUID, m)
 		case "cloud_rpc.InventoryReport":
 			inventoryMessage(ctx, applianceDB, siteUUID, m)
+		case "cloud_rpc.FaultReport":
+			faultMessage(ctx, applianceDB, siteUUID, m)
 		case "cloud_rpc.NetException":
 			exceptionMessage(ctx, applianceDB, siteUUID, m)
 		case "cloud_rpc.UpgradeReport":
