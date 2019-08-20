@@ -89,6 +89,7 @@ var (
 	passwdFreq   = apcfg.Duration("passwd_freq", 24*time.Hour, true, nil)
 	vulnFreq     = apcfg.Duration("vuln_freq", 30*time.Minute, true, nil)
 	vulnWarnFreq = apcfg.Duration("vuln_freq_warn", time.Hour, true, nil)
+	scanGuest    = apcfg.Bool("scan_guest", false, true, nil)
 
 	hostLifetime = apcfg.Duration("host_lifetime", time.Hour, true, nil)
 	hostScanFreq = apcfg.Duration("hostscan_freq", 5*time.Minute, true, nil)
@@ -489,6 +490,17 @@ func newPasswdScan(mac, ip string) *ScanRequest {
 }
 
 func scannerRequest(mac, ip string, delay time.Duration) {
+	// XXX: this should be driven by a policy rather than a daemon-level
+	// setting
+	if !*scanGuest {
+		if ring := rings[base_def.RING_GUEST]; ring != nil {
+			ipv4 := net.ParseIP(ip)
+			if ring.IPNet.Contains(ipv4) {
+				return
+			}
+		}
+	}
+
 	if err := activeHosts.add(ip); err != nil {
 		slog.Debugf("scannerRequest(%s, %s) ignored: %v", mac, ip, err)
 		return
