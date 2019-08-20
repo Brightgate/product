@@ -420,6 +420,7 @@ GO_AP_TESTABLES = \
 	bg/ap_common/platform \
 	bg/common/grpcutils \
 	bg/common/network \
+	bg/common/release \
 	bg/common/zaperr
 
 NETWORKD_TEMPLATE_FILES = \
@@ -566,6 +567,7 @@ CLOUDCOMMAND_GOPKGS = \
 	bg/cl-configctl \
 	bg/cl-dtool \
 	bg/cl-reg \
+	bg/cl-release \
 	bg/cl-service
 
 CLOUD_GOPKGS = $(CLOUDCOMMON_GOPKGS) $(CLOUDDAEMON_GOPKGS) $(CLOUDCOMMAND_GOPKGS)
@@ -616,7 +618,8 @@ CLOUDSCHEMAS = \
 	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema012.sql \
 	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema013.sql \
 	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema014.sql \
-	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema015.sql
+	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema015.sql \
+	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema016.sql
 
 CLOUDBINARIES = $(CLOUDCOMMANDS:%=$(CLOUDBIN)/%) $(CLOUDDAEMONS:%=$(CLOUDBIN)/%)
 
@@ -708,7 +711,7 @@ packages-upload: export GCS_KEY_FILE=$(GCS_KEY_ARTIFACT)
 
 packages-upload:
 	$(GCS_WRAPPER) vcp bg-appliance_*_amd64.deb gs://$(APPLIANCE_BUCKET)/x86/PS/$(GITHASH_FULL)/
-	$(GCS_WRAPPER) vcp bg-appliance_*_armhf.deb gs://$(APPLIANCE_BUCKET)/rpi/PS/$(GITHASH_FULL)/
+	$(GCS_WRAPPER) vcp bg-appliance_*_armhf.deb gs://$(APPLIANCE_BUCKET)/rpi3/PS/$(GITHASH_FULL)/
 	$(GCS_WRAPPER) vcp bg-appliance_*_arm_*.ipk gs://$(APPLIANCE_BUCKET)/mt7623/PS/$(GITHASH_FULL)/
 
 GO_MOCK_CLOUDRPC_SRCS = \
@@ -722,6 +725,7 @@ GO_MOCK_APPLIANCEDB_SRCS = \
 	$(GOSRCBG)/cloud_models/appliancedb/appliancedb.go \
 	$(GOSRCBG)/cloud_models/appliancedb/certs.go \
 	$(GOSRCBG)/cloud_models/appliancedb/cmdqueue.go \
+	$(GOSRCBG)/cloud_models/appliancedb/releases.go \
 	$(GOSRCBG)/base_def/base_def.go
 GO_MOCK_APPLIANCEDB = $(GOSRCBG)/cloud_models/appliancedb/mocks/DataStore.go
 GO_MOCK_CLOUDRPC = $(GOSRCBG)/cloud_rpc/mocks/EventClient.go

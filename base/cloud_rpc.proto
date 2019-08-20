@@ -49,6 +49,19 @@ message InventoryReport {
 	base_msg.DeviceInventory inventory = 0x1;
 }
 
+message UpgradeReport {
+	enum Result {
+		SUCCESS = 0; // Upgrade succeeded
+		FAILURE = 1; // Upgrade failed
+		REPORT  = 2; // Running this release
+	}
+
+	Result result           = 0x01;
+	string release_uuid     = 0x02;
+	bytes output            = 0x03;
+	google.protobuf.Timestamp record_time = 0x04;
+}
+
 // Cloud simplified version of EventNetException
 // XXX would like feedback on how closely to have this mirror EventNetException
 // or if we should commonize them.
@@ -230,4 +243,21 @@ message CertificateResponse {
 
 service CertificateManager {
 	rpc Download(CertificateRequest) returns (CertificateResponse) {};
+}
+
+message ReleaseRequest {
+	int32 min_version       = 0x01;
+	int32 max_version       = 0x02;
+}
+
+message ReleaseResponse {
+	int32 version           = 0x01;
+	// This is a JSON representation of the Release type defined in
+	// bg/common/release; the server and client need to agree on what its
+	// internal structure is.
+	string release		= 0x02;
+}
+
+service ReleaseManager {
+	rpc FetchDescriptor(ReleaseRequest) returns (ReleaseResponse) {};
 }

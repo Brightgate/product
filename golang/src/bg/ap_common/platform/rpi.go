@@ -20,6 +20,10 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"bg/common/release"
+
+	"github.com/pkg/errors"
 )
 
 var (
@@ -28,6 +32,8 @@ var (
 	//   vendor_class_identifier='Brightgate, Inc.'
 	//   vendor_encapsulated_options='0109736174656c6c697465ff'
 	rpiOptionRE = regexp.MustCompile(`(\w+)='(.*)'`)
+
+	rpiPlatform *Platform
 )
 
 const (
@@ -183,12 +189,57 @@ func rpiRestartService(service string) error {
 	return nil
 }
 
+func rpiUpgrade(rel release.Release) ([]byte, error) {
+	downloadDir := rpiPlatform.ExpandDirPath(APData, "release", rel.Release.UUID.String())
+
+	pkgs := rel.FilenameByPattern("*.deb")
+	args := []string{"-i"}
+	for _, pkg := range pkgs {
+		args = append(args, filepath.Join(downloadDir, pkg))
+	}
+
+	cmd := exec.Command("/usr/bin/dpkg", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return output, errors.Wrapf(err, "failed to upgrade (%s):\n%s",
+			cmd.Args, output)
+	}
+
+	// Stash a symlink to release.json
+	linkDir := rpiPlatform.ExpandDirPath(APPackage, "etc")
+	relPath, err := filepath.Rel(linkDir,
+		filepath.Join(downloadDir, "release.json"))
+	if err != nil {
+		return output, errors.Wrap(err, "failed to establish relative path")
+	}
+
+	curLinkPath := filepath.Join(linkDir, "release.json")
+	// Remove the link so the creation won't fail.
+	err = os.Remove(curLinkPath)
+	if perr, ok := err.(*os.PathError); ok {
+		if serr, ok := perr.Err.(syscall.Errno); ok {
+			if serr == syscall.ENOENT {
+				err = nil
+			}
+		}
+	}
+	if err != nil {
+		return output, errors.Wrap(err, "failed to remove old release symlink")
+	}
+
+	if err = os.Symlink(relPath, curLinkPath); err != nil {
+		return output, errors.Wrap(err, "failed to create release symlink")
+	}
+
+	return output, nil
+}
+
 func rpiDataDir() string {
 	return LSBDataDir
 }
 
 func init() {
-	addPlatform(&Platform{
+	rpiPlatform = &Platform{
 		name: "rpi3",
 
 		ResetSignal:  syscall.SIGINT,
@@ -225,5 +276,8 @@ func init() {
 		NtpdService:    "chrony",
 		MaintainTime:   func() {},
 		RestartService: rpiRestartService,
-	})
+
+		Upgrade: rpiUpgrade,
+	}
+	addPlatform(rpiPlatform)
 }

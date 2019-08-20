@@ -140,7 +140,7 @@ func main() {
 	siteMain(rootCmd)
 
 	if err := envcfg.Unmarshal(&environ); err != nil {
-		fmt.Printf("Environment Error: %s", err)
+		fmt.Printf("Environment Error: %s\n", err)
 		return
 	}
 

@@ -25,7 +25,6 @@ import (
 	"bg/common/network"
 
 	"cloud.google.com/go/pubsub"
-	"cloud.google.com/go/storage"
 
 	"github.com/pkg/errors"
 	"github.com/satori/uuid"
@@ -39,19 +38,6 @@ const gcsBaseURL = "https://storage.cloud.google.com/"
 func writeInventoryCS(ctx context.Context, applianceDB appliancedb.DataStore,
 	uuid uuid.UUID, devInfo *base_msg.DeviceInfo, now time.Time) (string, error) {
 
-	scs, err := applianceDB.CloudStorageByUUID(ctx, uuid)
-	if err != nil {
-		return "", errors.Wrapf(err, "could not get Cloud Storage record for %s", uuid.String())
-	}
-	if scs.Provider != "gcs" {
-		return "", fmt.Errorf("writeInventoryCS not implemented for provider %s",
-			scs.Provider)
-	}
-	client, err := storage.NewClient(ctx)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to create storage client")
-	}
-	bkt := client.Bucket(scs.Bucket)
 	hwaddr := network.Uint64ToHWAddr(devInfo.GetMacAddress())
 	filename := fmt.Sprintf("device_info.%d.pb", int(now.Unix()))
 	filePath := path.Join("obs", hwaddr.String(), filename)
@@ -61,17 +47,7 @@ func writeInventoryCS(ctx context.Context, applianceDB appliancedb.DataStore,
 		return "", errors.Wrap(err, "marshal failed")
 	}
 
-	obj := bkt.Object(filePath)
-	w := obj.NewWriter(ctx)
-	p := gcsBaseURL + path.Join(obj.BucketName(), obj.ObjectName())
-	if _, err := w.Write(out); err != nil {
-		return "", errors.Wrapf(err, "failed writing to %s", p)
-	}
-	if err := w.Close(); err != nil {
-		return "", errors.Wrapf(err, "failed closing %s", p)
-	}
-
-	return p, nil
+	return writeCSObject(ctx, applianceDB, uuid, filePath, out)
 }
 
 func writeInventoryFile(uuid uuid.UUID, devInfo *base_msg.DeviceInfo, now time.Time) (string, error) {

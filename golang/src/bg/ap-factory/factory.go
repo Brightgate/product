@@ -129,7 +129,7 @@ unit: sectors
 	}
 
 	platforms = map[string]platformStorage{
-		"mediatek": {mt7623MainStorage, mt7623emmcPartitions,
+		"mt7623": {mt7623MainStorage, mt7623emmcPartitions,
 			mt7623emmcSfdisk, mt7623slices},
 	}
 
@@ -674,7 +674,10 @@ func checkMac() {
 	}
 }
 
-func overlayOpkgInstall(pkgname string) {
+func overlayOpkgInstall(pkgname string) error {
+	if !filepath.IsAbs(pkgname) {
+		pkgname = filepath.Join(imageDir, pkgname)
+	}
 	opkg := exec.Command("/bin/opkg",
 		"install", "-V2", "--offline-root", xRootDir,
 		"--force-postinstall", pkgname)
@@ -686,6 +689,7 @@ func overlayOpkgInstall(pkgname string) {
 	}
 
 	log.Printf("opkg install output:\n%s", output)
+	return err
 }
 
 // This function reproduces the logic executed at the end of an OpenWrt
@@ -1052,12 +1056,41 @@ func install(cmd *cobra.Command, args []string) error {
 
 		// Install packages.
 		for _, pn := range packages {
-			overlayOpkgInstall(pn)
+			if err := overlayOpkgInstall(pn); err != nil {
+				return err
+			}
 			syscall.Sync()
 		}
 
 		// Post-packaging operations: fix rc.d symbolic links.
 		overlayFixRcDLinks()
+
+		// Put a symlink in the overlay that points to the release.json
+		// ap.rpcd stashed on disk with the downloaded artifacts.
+		linkDir := platform.NewPlatform().ExpandDirPath(
+			platform.APPackage, "etc")
+		relPath, err := filepath.Rel(linkDir,
+			filepath.Join(imageDir, "release.json"))
+		if err != nil {
+			return err
+		}
+		curLinkPath := filepath.Join(xRootDir, linkDir, "release.json")
+		// Since we install to a cleared overlay, this shouldn't exist,
+		// but try anyway.
+		err = os.Remove(curLinkPath)
+		if perr, ok := err.(*os.PathError); ok {
+			if serr, ok := perr.Err.(syscall.Errno); ok {
+				if serr == syscall.ENOENT {
+					err = nil
+				}
+			}
+		}
+		if err != nil {
+			return err
+		}
+		if err = os.Symlink(relPath, curLinkPath); err != nil {
+			return err
+		}
 	}
 
 	syscall.Sync()
@@ -1143,7 +1176,22 @@ func umountOther(cmd *cobra.Command, args []string) error {
 }
 
 func flip(cmd *cobra.Command, args []string) error {
-	side := chooseSide(false)
+	side := noSide
+	iS := strings.ToLower(installSide)
+	switch iS {
+	case "a":
+		side = sideA
+	case "b":
+		side = sideB
+	case "same":
+		side = chooseSide(true)
+	case "other":
+		side = chooseSide(false)
+	default:
+		log.Fatalf("unrecognized side '%s': use 'a', 'b', 'same', 'other'\n",
+			installSide)
+	}
+	log.Printf("pointing next boot to side %d", side)
 
 	if dryRun {
 		log.Println("dry-run: skipping environment update")
@@ -1159,6 +1207,19 @@ func flip(cmd *cobra.Command, args []string) error {
 func status(cmd *cobra.Command, args []string) error {
 	checkMac()
 
+	kernelCmdline, err := ioutil.ReadFile("/proc/cmdline")
+	if err != nil {
+		log.Printf("Can't read /proc/cmdline: %v", err)
+	} else {
+		if strings.Contains(string(kernelCmdline), mt7623RootfsDevice) {
+			log.Printf("kernel cmdline suggests currently running side A\n")
+		} else if strings.Contains(string(kernelCmdline), mt7623RootfsXDevice) {
+			log.Printf("kernel cmdline suggests currently running side B\n")
+		} else {
+			log.Fatalf("unknown root device in kernel cmdline\n")
+		}
+	}
+
 	// Read readoff.
 	roSide := noSide
 	baSide := sideB
@@ -1170,10 +1231,10 @@ func status(cmd *cobra.Command, args []string) error {
 
 	switch readoff {
 	case mt7623KernelOffsetBlk:
-		log.Printf("read offset suggests side A\n")
+		log.Printf("read offset suggests side A on next boot\n")
 		roSide = sideA
 	case mt7623KernelXOffsetBlk:
-		log.Printf("read offset suggests side B\n")
+		log.Printf("read offset suggests side B on next boot\n")
 		roSide = sideB
 	default:
 		log.Fatalf("unrecognized 'readoff' value: %s\n", readoff)
@@ -1183,10 +1244,10 @@ func status(cmd *cobra.Command, args []string) error {
 	bootargs, _ := uBootEnvRead("bootargs")
 
 	if strings.Contains(bootargs, mt7623RootfsDevice) {
-		log.Printf("root variable suggests side A\n")
+		log.Printf("root variable suggests side A on next boot\n")
 		baSide = sideA
 	} else if strings.Contains(bootargs, mt7623RootfsXDevice) {
-		log.Printf("root variable suggests side B\n")
+		log.Printf("root variable suggests side B on next boot\n")
 		baSide = sideB
 	}
 
@@ -1266,10 +1327,12 @@ func main() {
 
 	flipCmd := &cobra.Command{
 		Use:   "flip",
-		Short: "Flip boot parameters to other side",
+		Short: "Flip boot parameters to other (or named) side",
 		Args:  cobra.NoArgs,
 		RunE:  flip,
 	}
+	flipCmd.Flags().StringVarP(&installSide, "side", "s", "other",
+		"target flip 'side' ['a', 'b', 'same', 'other']")
 	rootCmd.AddCommand(flipCmd)
 
 	mountOtherCmd := &cobra.Command{

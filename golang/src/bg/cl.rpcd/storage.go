@@ -22,9 +22,6 @@ import (
 	"bg/cloud_rpc"
 	"bg/common/archive"
 
-	"github.com/grpc-ecosystem/go-grpc-middleware/util/metautils"
-	"github.com/satori/uuid"
-
 	"cloud.google.com/go/storage"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/grpc/codes"
@@ -77,8 +74,7 @@ func (cs *cloudStorageServer) GenerateURL(ctx context.Context, req *cloud_rpc.Ge
 	if err != nil {
 		return nil, err
 	}
-	applianceUUIDStr := metautils.ExtractIncoming(ctx).Get("appliance_uuid")
-	applianceUUID, err := uuid.FromString(applianceUUIDStr)
+	applianceUUID, err := getApplianceUUID(ctx, false)
 	if err != nil {
 		return nil, err
 	}

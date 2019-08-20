@@ -25,9 +25,9 @@ import (
 )
 
 const (
-	app3Str  = "00000003-0003-0003-0003-000000000003"
-	site3Str = "10000003-0003-0003-0003-000000000003"
-	org3Str  = "20000003-0003-0003-0003-000000000003"
+	app3Str  = "10000000-1000-1000-1000-000000000003"
+	site3Str = "20000000-2000-2000-2000-000000000003"
+	org3Str  = "30000000-3000-3000-3000-000000000003"
 )
 
 var (
@@ -68,7 +68,7 @@ func testServerCerts(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 		Domain:       domain.Domain,
 		SiteID:       domain.SiteID,
 		Jurisdiction: domain.Jurisdiction,
-		Fingerprint:  []byte{0xca, 0xfe, 0xbe, 0xef},
+		Fingerprint:  hexDecode("cafebeef"),
 		Expiration:   exp1,
 		Cert:         []byte{0x01},
 		IssuerCert:   []byte{0x01},
@@ -78,7 +78,7 @@ func testServerCerts(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 		Domain:       domain.Domain,
 		SiteID:       domain.SiteID,
 		Jurisdiction: domain.Jurisdiction,
-		Fingerprint:  []byte{0xfe, 0xed, 0xfa, 0xce},
+		Fingerprint:  hexDecode("feedface"),
 		Expiration:   exp2,
 		Cert:         []byte{0x01},
 		IssuerCert:   []byte{0x01},
@@ -88,7 +88,7 @@ func testServerCerts(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 		Domain:       domain.Domain,
 		SiteID:       domain.SiteID,
 		Jurisdiction: domain.Jurisdiction,
-		Fingerprint:  []byte{0xfe, 0xed, 0xfa, 0xce},
+		Fingerprint:  hexDecode("feedface"),
 		Expiration:   exp2,
 		Cert:         []byte{0x02},
 		IssuerCert:   []byte{0x02},
@@ -100,7 +100,7 @@ func testServerCerts(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 		Domain:       domain.Domain,
 		SiteID:       domain.SiteID,
 		Jurisdiction: domain.Jurisdiction,
-		Fingerprint:  []byte{0xec, 0xaf, 0xde, 0xef},
+		Fingerprint:  hexDecode("ecafdeef"),
 		Expiration:   exp2,
 		Cert:         []byte{0x04},
 		IssuerCert:   []byte{0x04},
@@ -112,7 +112,7 @@ func testServerCerts(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 		Domain:       domain.Domain,
 		SiteID:       domain.SiteID,
 		Jurisdiction: domain.Jurisdiction,
-		Fingerprint:  []byte{0xec, 0xaf, 0xde, 0xef},
+		Fingerprint:  hexDecode("ecafdeef"),
 		Expiration:   exp2,
 		Cert:         []byte{0x05},
 		IssuerCert:   []byte{0x05},
@@ -129,7 +129,7 @@ func testServerCerts(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	assert.Error(err)
 
 	// Make sure we retrieve cert2, which is the latest.
-	certResp, err := ds.ServerCertByFingerprint(ctx, []byte{0xfe, 0xed, 0xfa, 0xce})
+	certResp, err := ds.ServerCertByFingerprint(ctx, hexDecode("feedface"))
 	assert.NoError(err)
 	assert.Equal(cert2, certResp)
 

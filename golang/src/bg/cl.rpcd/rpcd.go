@@ -116,6 +116,22 @@ func getSiteUUID(ctx context.Context, allowNullSiteUUID bool) (uuid.UUID, error)
 	return u, nil
 }
 
+func getApplianceUUID(ctx context.Context, allowNullApplianceUUID bool) (uuid.UUID, error) {
+	appUUID := metautils.ExtractIncoming(ctx).Get("appliance_uuid")
+	if appUUID == "" {
+		return uuid.Nil, status.Errorf(codes.Internal, "missing appliance_uuid")
+	}
+	u, err := uuid.FromString(appUUID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("bad appliance_uuid")
+	}
+	if allowNullApplianceUUID == false && u == uuid.Nil {
+		return uuid.Nil, status.Errorf(codes.PermissionDenied,
+			"not permitted for null appliance_uuid")
+	}
+	return u, nil
+}
+
 // processEnv checks (and in some cases modifies) the environment-derived
 // configuration.
 func processEnv() {
@@ -320,6 +336,7 @@ func main() {
 
 	cloudStorageServer := defaultCloudStorageServer(applianceDB)
 	certificateServer := newCertServer(applianceDB)
+	relServer := newReleaseServer(applianceDB)
 
 	cloud_rpc.RegisterEventServer(grpcServer, eventServer)
 	slog.Infof(checkMark+"Ready to put event to Cloud PubSub %s", environ.PubsubTopic)
@@ -327,6 +344,8 @@ func main() {
 	slog.Infof(checkMark + "Ready to serve Cloud Storage related requests")
 	cloud_rpc.RegisterCertificateManagerServer(grpcServer, certificateServer)
 	slog.Infof(checkMark + "Ready to serve certificate requests")
+	cloud_rpc.RegisterReleaseManagerServer(grpcServer, relServer)
+	slog.Infof(checkMark + "Ready to serve release requests")
 
 	if environ.ConfigdDisableTLS {
 		slog.Warnf("Disabling TLS for connection to Configd")

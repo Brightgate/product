@@ -16,6 +16,12 @@ import (
 	"os/exec"
 	"regexp"
 	"syscall"
+
+	"bg/common/release"
+)
+
+var (
+	x86Platform *Platform
 )
 
 func x86Probe() bool {
@@ -88,13 +94,17 @@ func x86RestartService(service string) error {
 	return nil
 }
 
+func x86Upgrade(rel release.Release) ([]byte, error) {
+	return nil, fmt.Errorf("%s has no upgrade procedure", x86Platform.name)
+}
+
 func x86DataDir() string {
 	return LSBDataDir
 }
 
 func init() {
-	addPlatform(&Platform{
-		name: "x86-debian",
+	x86Platform = &Platform{
+		name: "x86",
 
 		ResetSignal:  syscall.SIGINT,
 		ReloadSignal: syscall.SIGINT,
@@ -130,5 +140,8 @@ func init() {
 		NtpdService:    "chrony",
 		MaintainTime:   func() {},
 		RestartService: x86RestartService,
-	})
+
+		Upgrade: x86Upgrade,
+	}
+	addPlatform(x86Platform)
 }

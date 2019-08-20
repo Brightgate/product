@@ -20,13 +20,16 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"bg/base_def"
 	"bg/cl_common/daemonutils"
@@ -43,6 +46,7 @@ import (
 
 	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/pubsub"
+	"cloud.google.com/go/storage"
 
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
@@ -69,6 +73,39 @@ var (
 	log  *zap.Logger
 	slog *zap.SugaredLogger
 )
+
+// XXX Should this move to cl_common?  Or should we do like we do for stats and
+// drops, and just have the client request a signed URL to write the output to
+// directly?
+func writeCSObject(ctx context.Context, applianceDB appliancedb.DataStore,
+	siteUU uuid.UUID, filePath string, data []byte) (string, error) {
+	scs, err := applianceDB.CloudStorageByUUID(ctx, siteUU)
+	if err != nil {
+		return "", errors.Wrapf(err, "could not get Cloud Storage record for %s",
+			siteUU.String())
+	}
+	if scs.Provider != "gcs" {
+		return "", fmt.Errorf("writeCSObject not implemented for provider %s",
+			scs.Provider)
+	}
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to create storage client")
+	}
+	bkt := client.Bucket(scs.Bucket)
+
+	obj := bkt.Object(filePath)
+	w := obj.NewWriter(ctx)
+	p := gcsBaseURL + path.Join(obj.BucketName(), obj.ObjectName())
+	if _, err := w.Write(data); err != nil {
+		return "", errors.Wrapf(err, "failed writing to %s", p)
+	}
+	if err := w.Close(); err != nil {
+		return "", errors.Wrapf(err, "failed closing %s", p)
+	}
+
+	return p, nil
+}
 
 func heartbeatMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 	applianceUUID, siteUUID uuid.UUID, m *pubsub.Message) {
@@ -148,6 +185,72 @@ func exceptionMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 	err = applianceDB.InsertSiteNetException(ctx, siteUUID, t, exc.GetReason(), macptr, jsonExc)
 	if err != nil {
 		slog.Errorw("Failed net exception insert", "error", err)
+	}
+}
+
+func upgradeMessage(ctx context.Context, applianceDB appliancedb.DataStore,
+	applianceUUID, siteUUID uuid.UUID, m *pubsub.Message) {
+
+	slog := slog.With("appliance_uuid", m.Attributes["appliance_uuid"],
+		"site_uuid", m.Attributes["site_uuid"])
+
+	report := &cloud_rpc.UpgradeReport{}
+	err := proto.Unmarshal(m.Data, report)
+	if err != nil {
+		slog.Errorw("failed to process upgrade report: couldn't unmarshal message",
+			"message", m, "error", err)
+		return
+	}
+
+	relUU, err := uuid.FromString(report.ReleaseUuid)
+	if err != nil {
+		slog.Errorw("failed to process upgrade report: bad release UUID",
+			"error", err)
+		return
+	}
+
+	// If record_time in the message is missing or invalid, log a warning,
+	// but continue with the current server time.
+	reportTS, err := ptypes.Timestamp(report.RecordTime)
+	if err != nil {
+		slog.Warnw("invalid record_time in UpgradeReport", "error", err)
+		reportTS = time.Now().UTC()
+	}
+
+	switch report.Result {
+	case cloud_rpc.UpgradeReport_REPORT:
+		slog.Infow("Set current release", "release_uuid", relUU)
+		err = applianceDB.SetCurrentRelease(ctx, applianceUUID, relUU, reportTS)
+		if err != nil {
+			slog.Errorw("failed to process upgrade report: DB failure",
+				"error", err)
+		}
+
+		// XXX Do we want to log these to the database, too?
+	case cloud_rpc.UpgradeReport_SUCCESS:
+		filePath := path.Join("upgrade_log", applianceUUID.String(),
+			reportTS.Format(time.RFC3339)+"-success")
+		url, err := writeCSObject(ctx, applianceDB, siteUUID, filePath, report.Output)
+		if err != nil {
+			slog.Errorw("failed to archive successful upgrade log",
+				"url", url, "error", err)
+		} else {
+			slog.Infow("archived successful upgrade log", "url", url)
+		}
+	case cloud_rpc.UpgradeReport_FAILURE:
+		filePath := path.Join("upgrade_log", applianceUUID.String(),
+			reportTS.Format(time.RFC3339)+"-failure")
+		url, err := writeCSObject(ctx, applianceDB, siteUUID, filePath, report.Output)
+		if err != nil {
+			slog.Errorw("failed to archive failed upgrade log",
+				"url", url, "error", err)
+		} else {
+			slog.Infow("archived failed upgrade log", "url", url)
+		}
+
+	default:
+		slog.Warnw("unknown upgrade report result",
+			"report_result", report.Result)
 	}
 }
 
@@ -286,6 +389,8 @@ func main() {
 			inventoryMessage(ctx, applianceDB, siteUUID, m)
 		case "cloud_rpc.NetException":
 			exceptionMessage(ctx, applianceDB, siteUUID, m)
+		case "cloud_rpc.UpgradeReport":
+			upgradeMessage(ctx, applianceDB, applianceUUID, siteUUID, m)
 		default:
 			slog.Errorw("unknown message type", "message", m)
 		}

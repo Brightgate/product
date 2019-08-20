@@ -21,14 +21,11 @@ import (
 	"bg/cl_common/daemonutils"
 	rpc "bg/cloud_rpc"
 
-	"github.com/grpc-ecosystem/go-grpc-middleware/util/metautils"
 	"github.com/pkg/errors"
 	"github.com/satori/uuid"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
 )
 
 // grpc endpoint for site-scoped config calls coming in from appliances
@@ -116,13 +113,14 @@ func relayContext(ctx context.Context) (context.Context, error) {
 	if err != nil {
 		return nil, err
 	}
-	applianceUUID := metautils.ExtractIncoming(ctx).Get("appliance_uuid")
-	if applianceUUID == "" {
-		return nil, status.Errorf(codes.Internal, "missing appliance_uuid")
+	applianceUUID, err := getApplianceUUID(ctx, false)
+	if err != nil {
+		return nil, err
 	}
 
 	ctx = metadata.AppendToOutgoingContext(ctx,
-		"appliance_uuid", applianceUUID, "site_uuid", siteUUID.String())
+		"appliance_uuid", applianceUUID.String(),
+		"site_uuid", siteUUID.String())
 	return ctx, nil
 }
 

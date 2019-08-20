@@ -13,6 +13,7 @@ package appliancedb
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -27,6 +28,7 @@ import (
 	"github.com/guregu/null"
 	"github.com/satori/uuid"
 	"github.com/stretchr/testify/require"
+	"github.com/tatsushid/go-prettytable"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
@@ -181,6 +183,63 @@ func dumpfail(ctx context.Context, t *testing.T, bpg *briefpg.BriefPG, dbName st
 	}
 }
 
+func dumpTable(ctx context.Context, t *testing.T, db *ApplianceDB, tableName string, limit int) {
+	words := strings.Fields(tableName)
+	var q string
+	if len(words) == 1 {
+		q = "TABLE " + tableName
+	} else {
+		q = tableName
+	}
+	if limit > 0 {
+		q = fmt.Sprintf("%s LIMIT %d", q, limit)
+	}
+
+	rows, err := db.QueryContext(ctx, q)
+	if err != nil {
+		t.Errorf("Couldn't query DB: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	colTypes, err := rows.ColumnTypes()
+	if err != nil {
+		t.Errorf("Couldn't retrieve column types: %v", err)
+		return
+	}
+
+	tableColumns := make([]prettytable.Column, len(colTypes))
+	for i, c := range colTypes {
+		tableColumns[i] = prettytable.Column{Header: c.Name()}
+	}
+	table, _ := prettytable.NewTable(tableColumns...)
+
+	values := make([]interface{}, len(colTypes))
+	valuePtrs := make([]interface{}, len(colTypes))
+	for rows.Next() {
+		for i := range values {
+			valuePtrs[i] = &values[i]
+		}
+		err = rows.Scan(valuePtrs...)
+		if err != nil {
+			t.Errorf("Couldn't scan row: %v", err)
+			return
+		}
+		table.AddRow(values...)
+	}
+	table.Print()
+}
+
+// hexDecode is used to decode a hex-encdoded string into a []byte, rather than
+// typing out byte literals; use only for literals, since it panics on error.
+func hexDecode(s string) []byte {
+	bytes, err := hex.DecodeString(s)
+	if err != nil {
+		panic(err)
+	}
+	return bytes
+}
+
 // Test serialization to JSON
 func TestJSON(t *testing.T) {
 	_, _ = setupLogging(t)
@@ -308,11 +367,11 @@ func testApplianceID(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 
 	_, err = ds.ApplianceIDByUUID(ctx, testID1.ApplianceUUID)
 	assert.Error(err)
-	assert.IsType(err, NotFoundError{})
+	assert.IsType(NotFoundError{}, err)
 
 	_, err = ds.ApplianceIDByClientID(ctx, "not-a-real-clientid")
 	assert.Error(err)
-	assert.IsType(err, NotFoundError{})
+	assert.IsType(NotFoundError{}, err)
 
 	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, &testID1)
 
@@ -386,7 +445,7 @@ func testOrganization(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 
 	_, err = ds.OrganizationByUUID(ctx, testOrg1.UUID)
 	assert.Error(err)
-	assert.IsType(err, NotFoundError{})
+	assert.IsType(NotFoundError{}, err)
 
 	err = ds.InsertOrganization(ctx, &testOrg1)
 	assert.NoError(err, "expected Insert to succeed")
@@ -426,7 +485,7 @@ func testCustomerSite(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 
 	_, err = ds.CustomerSiteByUUID(ctx, testID1.SiteUUID)
 	assert.Error(err)
-	assert.IsType(err, NotFoundError{})
+	assert.IsType(NotFoundError{}, err)
 
 	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, &testID1)
 
@@ -515,7 +574,7 @@ func testOAuth2OrganizationRule(t *testing.T, ds DataStore, logger *zap.Logger, 
 		// Test unsuccessful rule
 		_, err = ds.OAuth2OrganizationRuleTest(ctx, testProvider, ruleType, "foo")
 		assert.Error(err, "expected error")
-		assert.IsType(err, NotFoundError{})
+		assert.IsType(NotFoundError{}, err)
 	}
 
 	rules, err = ds.AllOAuth2OrganizationRules(ctx)
@@ -533,7 +592,7 @@ func testPerson(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Sug
 
 	_, err = ds.PersonByUUID(ctx, testPerson1.UUID)
 	assert.Error(err)
-	assert.IsType(err, NotFoundError{})
+	assert.IsType(NotFoundError{}, err)
 
 	err = ds.InsertPerson(ctx, &testPerson1)
 	assert.NoError(err, "expected success")
@@ -626,16 +685,16 @@ func testAccount(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Su
 
 	_, err = ds.AccountByUUID(ctx, badUUID)
 	assert.Error(err)
-	assert.IsType(err, NotFoundError{})
+	assert.IsType(NotFoundError{}, err)
 
 	_, err = ds.AccountInfoByUUID(ctx, badUUID)
 	assert.Error(err)
-	assert.IsType(err, NotFoundError{})
+	assert.IsType(NotFoundError{}, err)
 
 	ds.AccountSecretsSetPassphrase([]byte("I LIKE COCONUTS"))
 	_, err = ds.AccountSecretsByUUID(ctx, testAccount1.UUID)
 	assert.Error(err)
-	assert.IsType(err, NotFoundError{})
+	assert.IsType(NotFoundError{}, err)
 
 	testAs := &AccountSecrets{testAccount1.UUID, "k1", "regime", time.Now(), "k2", "regime", time.Now()}
 	err = ds.UpsertAccountSecrets(ctx, testAs)
@@ -672,7 +731,7 @@ func testAccount(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Su
 
 	err = ds.DeleteAccount(ctx, testAccount1.UUID)
 	assert.Error(err)
-	assert.IsType(err, NotFoundError{})
+	assert.IsType(NotFoundError{}, err)
 
 	// Delete testAccount2
 	err = ds.DeleteAccount(ctx, testAccount2.UUID)
@@ -681,7 +740,7 @@ func testAccount(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Su
 	// See if there is anything left
 	_, err = ds.AccountByUUID(ctx, testAccount1.UUID)
 	assert.Error(err)
-	assert.IsType(err, NotFoundError{})
+	assert.IsType(NotFoundError{}, err)
 
 	accts, err = ds.AccountsByOrganization(ctx, testOrg1.UUID)
 	assert.NoError(err)
@@ -689,7 +748,7 @@ func testAccount(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Su
 
 	_, err = ds.AccountSecretsByUUID(ctx, testAccount1.UUID)
 	assert.Error(err)
-	assert.IsType(err, NotFoundError{})
+	assert.IsType(NotFoundError{}, err)
 
 	ids, err := ds.OAuth2IdentitiesByAccount(ctx, testAccount1.UUID)
 	assert.NoError(err)
@@ -697,7 +756,7 @@ func testAccount(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Su
 
 	_, err = ds.PersonByUUID(ctx, testPerson1.UUID)
 	assert.Error(err)
-	assert.IsType(err, NotFoundError{})
+	assert.IsType(NotFoundError{}, err)
 }
 
 // Test AccountOrgRole APIs.  subtest of TestDatabaseModel
@@ -958,7 +1017,7 @@ func testOAuth2Identity(t *testing.T, ds DataStore, logger *zap.Logger, slogger 
 
 	_, err = ds.LoginInfoByProviderAndSubject(ctx, "invalid", "invalid")
 	assert.Error(err)
-	assert.IsType(err, NotFoundError{})
+	assert.IsType(NotFoundError{}, err)
 
 	at := &OAuth2AccessToken{
 		OAuth2IdentityID: id2.ID,
@@ -1130,18 +1189,18 @@ func testUnittestData(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 	// Test "appliance with no cloud storage" case
 	cs, err = ds.CloudStorageByUUID(ctx, testSite2.UUID)
 	assert.Error(err)
-	assert.IsType(err, NotFoundError{})
+	assert.IsType(NotFoundError{}, err)
 	assert.Nil(cs)
 
 	// Test "appliance with config store" case
 	cfg, err := ds.ConfigStoreByUUID(ctx, testSite1.UUID)
 	assert.NoError(err)
-	assert.Equal([]byte{0xde, 0xad, 0xbe, 0xef}, cfg.RootHash)
+	assert.Equal(hexDecode("deadbeef"), cfg.RootHash)
 
 	// Test "appliance with no config store" case
 	cfg, err = ds.ConfigStoreByUUID(ctx, testSite2.UUID)
 	assert.Error(err)
-	assert.IsType(err, NotFoundError{})
+	assert.IsType(NotFoundError{}, err)
 	assert.Nil(cfg)
 
 	// This testing is light for now, but we can expand it over time as
@@ -1158,9 +1217,9 @@ func testConfigStore(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 
 	// Add appliance 1 to the appliance_config_store table
 	acs := SiteConfigStore{
-		RootHash:  []byte{0xca, 0xfe, 0xbe, 0xef},
+		RootHash:  hexDecode("cafebeef"),
 		TimeStamp: time.Now(),
-		Config:    []byte{0xde, 0xad, 0xbe, 0xef},
+		Config:    hexDecode("deadbeef"),
 	}
 	err = ds.UpsertConfigStore(ctx, testSite1.UUID, &acs)
 	assert.NoError(err)
@@ -1168,17 +1227,17 @@ func testConfigStore(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	// Make sure we can pull it back out again.
 	cfg, err := ds.ConfigStoreByUUID(ctx, testSite1.UUID)
 	assert.NoError(err)
-	assert.Equal([]byte{0xca, 0xfe, 0xbe, 0xef}, cfg.RootHash)
+	assert.Equal(hexDecode("cafebeef"), cfg.RootHash)
 
 	// Test that changing the config succeeds: change the config and upsert,
 	// then test pulling it out again.
-	acs.Config = []byte{0xfe, 0xed, 0xfa, 0xce}
+	acs.Config = hexDecode("feedface")
 	err = ds.UpsertConfigStore(ctx, testSite1.UUID, &acs)
 	assert.NoError(err)
 
 	cfg, err = ds.ConfigStoreByUUID(ctx, testSite1.UUID)
 	assert.NoError(err)
-	assert.Equal([]byte{0xfe, 0xed, 0xfa, 0xce}, cfg.Config)
+	assert.Equal(hexDecode("feedface"), cfg.Config)
 }
 
 func testCommandQueue(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
@@ -1431,6 +1490,10 @@ func TestDatabaseModel(t *testing.T) {
 		{"testCommandQueue", testCommandQueue},
 		{"testServerCerts", testServerCerts},
 		{"testServerCertsDelete", testServerCertsDelete},
+
+		{"testReleaseArtifacts", testReleaseArtifacts},
+		{"testReleaseStatus", testReleaseStatus},
+		{"testReleases", testReleases},
 	}
 
 	for _, tc := range testCases {

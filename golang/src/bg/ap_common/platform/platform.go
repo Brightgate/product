@@ -19,6 +19,8 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+
+	"bg/common/release"
 )
 
 // Platform is used to encapsulate the differences between the different
@@ -60,6 +62,8 @@ type Platform struct {
 	NtpdService    string
 	MaintainTime   func()
 	RestartService func(string) error
+
+	Upgrade func(release.Release) ([]byte, error)
 }
 
 const (

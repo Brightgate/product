@@ -249,7 +249,9 @@ func (bp *BriefPG) CreateDB(ctx context.Context, dbName, createArgs string) (str
 	cmd := exec.Command(pgCmds["psql"], "-c", scmd, bp.DBUri("postgres"))
 	bp.Logger.Println("briefpg: " + strings.Join(cmd.Args, " "))
 	cmdOut, err := cmd.CombinedOutput()
-	bp.Logger.Println("briefpg: " + string(cmdOut))
+	for _, line := range strings.Split(strings.TrimSpace(string(cmdOut)), "\n") {
+		bp.Logger.Println("briefpg: " + line)
+	}
 	if err != nil {
 		return "", wrapExecErr("CreateDB failed", cmd, err)
 	}

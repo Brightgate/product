@@ -93,6 +93,9 @@ type DataStore interface {
 	// Methods related to heartbeats, exceptions, and other events
 	eventManager
 
+	// Methods related to software releases
+	releaseManager
+
 	Ping() error
 	PingContext(context.Context) error
 	Close() error
@@ -213,6 +216,40 @@ func mkSyntaxError(e error, query string) error {
 		return e
 	}
 	return SyntaxError{pqErr, query}
+}
+
+// UniqueViolationError may be returned when a row cannot be inserted or updated
+// as requested due to a violation of a uniqueness constraint.
+type UniqueViolationError struct {
+	Message    string
+	Detail     string
+	Schema     string
+	Table      string
+	Constraint string
+}
+
+func (e UniqueViolationError) Error() string {
+	return fmt.Sprintf("Uniqueness violation of %s in table %s: %s",
+		e.Constraint, e.Table, e.Detail)
+}
+
+// ForeignKeyError may be returned when a foreign key constraint has been
+// violated.
+type ForeignKeyError struct {
+	simpleMessage string
+	Message       string
+	Detail        string
+	Schema        string
+	Table         string
+	Constraint    string
+}
+
+func (e ForeignKeyError) Error() string {
+	if e.simpleMessage != "" {
+		return e.simpleMessage
+	}
+	return fmt.Sprintf("Foreign key constraint violation of %s in table %s: %s",
+		e.Constraint, e.Table, e.Detail)
 }
 
 func (i *ApplianceID) String() string {

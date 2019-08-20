@@ -26,8 +26,14 @@ import (
 
 	"bg/common/bgioutil"
 	"bg/common/mfg"
+	"bg/common/release"
 
+	"github.com/pkg/errors"
 	"github.com/satori/uuid"
+)
+
+var (
+	mtPlatform *Platform
 )
 
 const (
@@ -394,13 +400,39 @@ func mtRestartService(service string) error {
 	return mtServiceOp(service, "restart")
 }
 
+func mtUpgrade(rel release.Release) ([]byte, error) {
+	downloadDir := mtPlatform.ExpandDirPath(APData, "release",
+		rel.Release.UUID.String())
+
+	apFactory := mtPlatform.ExpandDirPath(APPackage, "bin", "ap-factory")
+
+	pkgs := rel.FilenameByPattern("*.ipk")
+	args := []string{"install", "-C", "-d", downloadDir}
+	for _, pkg := range pkgs {
+		args = append(args, "-P", filepath.Join(downloadDir, pkg))
+	}
+
+	// Make sure other side is unmounted, or the install will fail.  If this
+	// fails, try anyway.
+	umount := exec.Command(apFactory, "umount-other")
+	_ = umount.Run()
+
+	cmd := exec.Command(apFactory, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return output, errors.Wrapf(err, "failed to upgrade (%s):\n%s",
+			cmd.Args, output)
+	}
+	return output, nil
+}
+
 func mtDataDir() string {
 	return "__APROOT__/data"
 }
 
 func init() {
-	p := &Platform{
-		name: "mediatek",
+	mtPlatform = &Platform{
+		name: "mt7623",
 
 		ResetSignal:  syscall.SIGINT,
 		ReloadSignal: syscall.SIGHUP,
@@ -436,8 +468,10 @@ func init() {
 		NtpdService:    "chronyd",
 		MaintainTime:   mtMaintainTime,
 		RestartService: mtRestartService,
-	}
-	addPlatform(p)
 
-	mtMachineIDFile = p.ExpandDirPath(mtDataDir(), "mcp/serial")
+		Upgrade: mtUpgrade,
+	}
+	addPlatform(mtPlatform)
+
+	mtMachineIDFile = mtPlatform.ExpandDirPath(mtDataDir(), "mcp/serial")
 }

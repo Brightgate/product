@@ -331,6 +331,7 @@
     {"Path": "@/nodes/%nodeid%/nics/%nic%/disabled", "Type": "bool", "Level": "developer"},
     {"Path": "@/nodes/%nodeid%/platform", "Type": "string", "Level": "internal"},
     {"Path": "@/nodes/%nodeid%/name", "Type": "string", "Level": "admin"},
+    {"Path": "@/nodes/%nodeid%/target_release", "Type": "string", "Level": "internal"},
     {"Path": "@/clients/%macaddr%/dhcp_name", "Type": "hostname", "Level": "internal"},
     {"Path": "@/clients/%macaddr%/ipv4", "Type": "ipaddr", "Level": "internal"},
     {"Path": "@/clients/%macaddr%/ipv4_observed", "Type": "ipaddr", "Level": "internal"},

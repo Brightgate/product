@@ -17,7 +17,6 @@ import (
 	"bg/cl_common/daemonutils"
 	"bg/cloud_rpc"
 
-	"github.com/grpc-ecosystem/go-grpc-middleware/util/metautils"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -48,15 +47,15 @@ func (ts *eventServer) Put(ctx context.Context, req *cloud_rpc.PutEventRequest) 
 	if err != nil {
 		return nil, err
 	}
-	applianceUUID := metautils.ExtractIncoming(ctx).Get("appliance_uuid")
-	if applianceUUID == "" {
-		return nil, status.Errorf(codes.Internal, "missing appliance_uuid")
+	applianceUUID, err := getApplianceUUID(ctx, false)
+	if err != nil {
+		return nil, err
 	}
 
 	m := &pubsub.Message{
 		Attributes: map[string]string{
 			"typeURL":        req.Payload.TypeUrl,
-			"appliance_uuid": applianceUUID,
+			"appliance_uuid": applianceUUID.String(),
 			"site_uuid":      siteUUID.String(),
 		},
 		Data: req.Payload.Value,

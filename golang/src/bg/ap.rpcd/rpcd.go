@@ -278,6 +278,7 @@ func cloud(isFailsafe bool, wg *sync.WaitGroup, doneChan chan bool) {
 	defer conn.Close()
 
 	tclient := cloud_rpc.NewEventClient(conn)
+	uclient := cloud_rpc.NewReleaseManagerClient(conn)
 	if isGateway {
 		cclient = cloud_rpc.NewConfigBackEndClient(conn)
 		sclient = cloud_rpc.NewCloudStorageClient(conn)
@@ -292,6 +293,7 @@ func cloud(isFailsafe bool, wg *sync.WaitGroup, doneChan chan bool) {
 		}
 	})
 
+	go upgradeLoop(ctx, uclient, tclient, &cleanup.wg, addDoneChan())
 	go heartbeatLoop(ctx, tclient, &cleanup.wg, addDoneChan())
 	if isGateway {
 		if isFailsafe {
@@ -412,6 +414,23 @@ func cmdStart() {
 	case "net-exception":
 		tclient := cloud_rpc.NewEventClient(conn)
 		err = testNetException(ctx, tclient)
+	case "release":
+		tclient := cloud_rpc.NewReleaseManagerClient(conn)
+		var resp *cloud_rpc.ReleaseResponse
+		resp, err = fetchReleaseDescriptor(ctx, tclient)
+		if err != nil {
+			break
+		}
+		switch flag.Args()[1] {
+		case "show":
+			fmt.Println(indentReleaseJSON(resp.Release))
+		case "fetch":
+			rel, err := unmarshalRelease(resp.Release)
+			if err != nil {
+				break
+			}
+			err = fetchArtifacts(ctx, rel, rel.Release.UUID.String())
+		}
 	case "storageurl":
 		tclient := cloud_rpc.NewCloudStorageClient(conn)
 		var urls []*cloud_rpc.SignedURL
