@@ -452,6 +452,18 @@ func (a *siteHandler) getHealth(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
+// getNetworkDNS implements GET /api/site/:uuid/network/dns, returning DNS
+// configuration information for the site.
+func (a *siteHandler) getNetworkDNS(c echo.Context) error {
+	hdl, err := a.getClientHandle(c.Param("uuid"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	defer hdl.Close()
+	dns := hdl.GetDNSInfo()
+	return c.JSON(http.StatusOK, &dns)
+}
+
 // getNetworkVAP implements GET /api/site/:uuid/network/vap, returning the list of VAPs
 func (a *siteHandler) getNetworkVAP(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
@@ -833,6 +845,7 @@ func newSiteHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []echo.M
 	siteU.POST("/enroll_guest", h.postEnrollGuest, user)
 	siteU.GET("/health", h.getHealth, user)
 	siteU.GET("/network/vap", h.getNetworkVAP, user)
+	siteU.GET("/network/dns", h.getNetworkDNS, user)
 	siteU.GET("/network/vap/:vapname", h.getNetworkVAPName, user)
 	siteU.POST("/network/vap/:vapname", h.postNetworkVAPName, admin)
 	siteU.GET("/network/wan", h.getNetworkWan, admin)

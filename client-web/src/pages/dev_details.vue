@@ -288,7 +288,7 @@ export default {
       const uniqid = this.$f7route.params.UniqID;
       const dev = this.$store.getters.deviceByUniqID(uniqid);
       const allRings = this.$store.getters.rings;
-      const vaps = this.$store.getters.vaps;
+      const vaps = this.vaps;
       try {
         if (!dev.connVAP || !vaps[dev.connVAP]) {
           debug('missing information; returning allRings',

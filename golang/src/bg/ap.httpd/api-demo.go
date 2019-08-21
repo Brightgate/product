@@ -179,6 +179,14 @@ func demoDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func demoDNSInfoGetHandler(w http.ResponseWriter, r *http.Request) {
+	dns := config.GetDNSInfo()
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(&dns); err != nil {
+		panic(err)
+	}
+}
+
 func demoVAPGetHandler(w http.ResponseWriter, r *http.Request) {
 	vapNames := make([]string, 0)
 	vaps := config.GetVirtualAPs()
@@ -591,6 +599,7 @@ func makeDemoAPIRouter() *mux.Router {
 	router.HandleFunc("/sites/{s}/config", demoConfigGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/config", demoConfigPostHandler).Methods("POST")
 	router.HandleFunc("/sites/{s}/devices", demoDevicesHandler).Methods("GET")
+	router.HandleFunc("/sites/{s}/network/dns", demoDNSInfoGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/network/vap", demoVAPGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/network/vap/{vapname}", demoVAPNameGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/network/vap/{vapname}", demoVAPNamePostHandler).Methods("POST")

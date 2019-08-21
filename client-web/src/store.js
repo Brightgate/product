@@ -86,9 +86,12 @@ class Site {
     this.alerts = [];
     this.rings = {};
     this.users = {};
-    this.networkConfig = {};
-    this.vaps = {};
-    this.wan = {};
+    this.networkConfig = {
+      vaps: {},
+      dns: {},
+      wan: {},
+      baseAddress: '',
+    },
     this.health = {};
     debug(`done new Site id=${id}`);
   }
@@ -361,14 +364,6 @@ const mutations = {
     getSite(state, id).rings = rings;
   },
 
-  setSiteVAPs(state, {id, vaps}) {
-    getSite(state, id).vaps = vaps;
-  },
-
-  setSiteWan(state, {id, wan}) {
-    getSite(state, id).wan = wan;
-  },
-
   setAccountSelfProvision(state, {accountID, sp}) {
     assert.equal(typeof accountID, 'string');
     assert.equal(typeof sp, 'object');
@@ -572,17 +567,10 @@ const getters = {
   },
 
   siteVAPs: (state) => (siteID) => {
-    return getSite(state, siteID).vaps;
+    return getSite(state, siteID).networkConfig.vaps;
   },
   vaps: (state) => {
-    return state.currentSite.vaps;
-  },
-
-  siteWan: (state) => (siteID) => {
-    return getSite(state, siteID).wan;
-  },
-  wan: (state) => {
-    return state.currentSite.wan;
+    return state.currentSite.networkConfig.vaps;
   },
 
   siteUsers: (state) => (siteID) => {
@@ -921,30 +909,17 @@ const actions = {
     debug(`fetchNetworkConfig`);
     const id = context.state.currentSiteID;
 
-    const wan = await siteApi.siteWanGet(id);
-    debug('fetchNetworkConfig: committing wan', wan);
-    context.commit('setSiteWan', {id, wan});
-
-    const nc = await Promise.props({
-      dnsServer: siteApi.siteConfigGet(id, '@/network/dnsserver', ''),
+    const networkConfig = await Promise.props({
+      dns: siteApi.siteDNSConfigGet(id),
+      wan: siteApi.siteWanGet(id),
+      vaps: siteApi.siteVAPsGet(id),
       baseAddress: siteApi.siteConfigGet(id, '@/network/base_address', ''),
     });
-    debug('fetchNetworkConfig: committing', nc);
-    context.commit('setSiteNetworkConfig', {id: id, networkConfig: nc});
-    return nc;
-  },
 
-  // Load the various aspects of the network configuration from the server.
-  async fetchVAPs(context) {
-    if (context.state.currentSite === nullSite) {
-      debug('fetchVAPs: skipped, nullSite');
-      return;
-    }
-    const id = context.state.currentSiteID;
-    const vaps = await siteApi.siteVAPsGet(id);
-    context.commit('setSiteVAPs', {id: id, vaps: vaps});
+    debug('fetchNetworkConfig: committing networkConfig', networkConfig);
+    context.commit('setSiteNetworkConfig', {id, networkConfig});
+    return networkConfig;
   },
-
 
   async enrollGuest(context, {kind, phoneNumber, email}) {
     if (context.state.currentSite === nullSite) {
@@ -1116,7 +1091,7 @@ const actions = {
     context.dispatch('fetchDevices').catch(() => {});
     context.dispatch('fetchRings').catch(() => {});
     context.dispatch('fetchUsers').catch(() => {});
-    context.dispatch('fetchVAPs').catch(() => {});
+    context.dispatch('fetchNetworkConfig').catch(() => {});
     context.dispatch('fetchPeriodic').catch(() => {});
   },
 

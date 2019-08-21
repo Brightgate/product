@@ -136,6 +136,7 @@ export default {
         },
         config: 'Configuration',
         config_dns_server: 'DNS Server',
+        config_dns_domain: 'Site DNS Domain',
         config_wan_current: 'Current WAN Address',
         config_24GHz: '2.4GHz Channel',
         config_5GHz: '5GHz Channel',

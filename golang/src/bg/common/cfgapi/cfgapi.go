@@ -774,6 +774,26 @@ func (c *Handle) GetVirtualAPs() map[string]*VirtualAP {
 	return vaps
 }
 
+// DNSInfo captures DNS configuration information
+type DNSInfo struct {
+	Domain  string   `json:"domain"`
+	Servers []string `json:"servers"`
+}
+
+// GetDNSInfo returns the DNS configuration.
+func (c *Handle) GetDNSInfo() *DNSInfo {
+	domain, _ := c.GetProp("@/siteid")
+	server, _ := c.GetProp("@/network/dnsserver")
+	d := &DNSInfo{
+		Domain:  domain,
+		Servers: make([]string, 0),
+	}
+	if server != "" {
+		d.Servers = append(d.Servers, server)
+	}
+	return d
+}
+
 // WanInfo captures the configuration information of the WAN link
 type WanInfo struct {
 	CurrentAddress string     `json:"currentAddress,omitempty"`

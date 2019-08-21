@@ -182,6 +182,11 @@ async function siteClientsRingSet(siteID, deviceID, newRing) {
   await siteConfigWaitProp(siteID, propName, newRing);
 }
 
+// Load the DNS config from the server.
+async function siteDNSConfigGet(siteID) {
+  return await commonApplianceGet(siteID, 'network/dns');
+}
+
 // Load the list of VAPs from the server.
 async function siteVAPsGet(siteID) {
   const vapNames = await commonApplianceGet(siteID, 'network/vap');
@@ -454,6 +459,7 @@ export default {
   siteHealthGet,
   siteRingsGet,
   siteClientsRingSet,
+  siteDNSConfigGet,
   siteVAPsGet,
   siteVAPPost,
   siteWanGet,

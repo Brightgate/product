@@ -112,12 +112,14 @@ export default {
     // template.
     ...vuex.mapGetters([
       'appMode',
+      'rings',
       'siteAdmin',
+      'vaps',
     ]),
 
     vap: function() {
       const vapName = this.$f7route.params.vapName;
-      return this.$store.getters.vaps[vapName];
+      return this.vaps[vapName];
     },
 
     vapName: function() {
@@ -125,7 +127,7 @@ export default {
     },
 
     passphraseDisplayed: function() {
-      const vap = this.$store.getters.vaps[this.$f7route.params.vapName];
+      const vap = this.vaps[this.$f7route.params.vapName];
       let val = '';
       if (this.passphraseVisible) {
         val = vap.passphrase;
@@ -139,10 +141,9 @@ export default {
 
     rings: function() {
       const vapName = this.$f7route.params.vapName;
-      const vap = this.$store.getters.vaps[vapName];
-      const rings = this.$store.getters.rings;
-      debug('rings: vap, rings', vap, rings);
-      return pickBy(rings, (val, key) => {
+      const vap = this.vaps[vapName];
+      debug('rings: vap, rings', vap, this.rings);
+      return pickBy(this.rings, (val, key) => {
         return vap.rings.includes(key);
       });
     },
@@ -155,8 +156,8 @@ export default {
 
     onPageBeforeIn: function() {
       const vapName = this.$f7route.params.vapName;
-      debug('onPageBeforeIn', this.$store.getters.vaps[vapName]);
-      this.passphraseValue = this.$store.getters.vaps[vapName].passphrase;
+      debug('onPageBeforeIn', this.vaps[vapName]);
+      this.passphraseValue = this.vaps[vapName].passphrase;
       this.passphraseVisible = false;
     },
 

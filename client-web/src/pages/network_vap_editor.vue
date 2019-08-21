@@ -105,12 +105,13 @@ export default {
     // template.
     ...vuex.mapGetters([
       'appMode',
+      'vaps',
       'siteAdmin',
     ]),
 
     vap: function() {
       const vapName = this.$f7route.params.vapName;
-      return this.$store.getters.vaps[vapName];
+      return this.vaps[vapName];
     },
 
     vapName: function() {
@@ -133,7 +134,7 @@ export default {
 
       // Step 2: Confirmation dialog on local appliance
       let p = Promise.resolve();
-      if (this.$store.getters.appMode === appDefs.APPMODE_LOCAL) {
+      if (this.appMode === appDefs.APPMODE_LOCAL) {
         p = new Promise((resolve, reject) => {
           this.$f7.dialog.confirm(
             this.$t('message.network_vap_editor.warning'),
@@ -159,7 +160,7 @@ export default {
 
       try {
         await siteApi.siteVAPPost(siteID, vapName, vapConfig);
-        await this.$store.dispatch('fetchVAPs');
+        await this.$store.dispatch('fetchNetworkConfig');
         this.$f7router.back();
       } catch (err) {
         debug('err saving', err);
@@ -226,7 +227,7 @@ export default {
 
     onPageBeforeIn: function() {
       const vapName = this.$f7route.params.vapName;
-      const vap = this.$store.getters.vaps[vapName];
+      const vap = this.vaps[vapName];
       debug('onPageBeforeIn', vap);
 
       this.vapSSID = vap.ssid;

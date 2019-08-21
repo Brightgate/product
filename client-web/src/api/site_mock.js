@@ -134,8 +134,12 @@ const mockHealth = {
 };
 
 const mockConfig = {
-  '@/network/dnsserver': '8.8.8.8',
   '@/network/base_address': '10.1.4.12/26',
+};
+
+const mockDNSConfig = {
+  'domain': '99999.brightgate.net',
+  'servers': ['8.8.8.8'],
 };
 
 const mockLocalOrgs = [
@@ -282,6 +286,7 @@ function mockAxios(normalAxios, mode) {
     .onGet(/\/api\/sites\/.+\/devices/).reply(200, mockDevices)
     .onGet(/\/api\/sites\/.+\/rings/).reply(200, mockRings)
     .onPost(/\/api\/sites\/.+\/enroll_guest$/).reply(200, mockEnrollGuest)
+    .onGet(/\/api\/sites\/.+\/network\/dns$/).reply(200, mockDNSConfig)
     .onGet(/\/api\/sites\/.+\/network\/vap$/).reply(200, mockVAPNames)
     .onGet(/\/api\/sites\/.+\/network\/vap\.*/).reply(vapGetHandler)
     .onGet(/\/api\/sites\/.+\/network\/wan$/).reply(200, mockWan)

@@ -33,13 +33,18 @@
     <f7-block-title>{{ $t('message.network.config') }} </f7-block-title>
     <f7-list>
       <f7-list-item :title="$t('message.network.config_dns_server')">
-        {{ networkConfig.dnsServer }}
+        <!-- Stopgap; this works if we serve up multiple servers but
+             we will want to do better -->
+        {{ networkConfig.dns.servers ? networkConfig.dns.servers.join(',') : '' }}
       </f7-list-item>
-      <f7-list-item :after="wan.currentAddress" accordion-item inset title="WAN Link">
+      <f7-list-item :title="$t('message.network.config_dns_domain')">
+        {{ networkConfig.dns.domain }}
+      </f7-list-item>
+      <f7-list-item :after="networkConfig.wan.currentAddress" accordion-item inset title="WAN Link">
         <f7-accordion-content>
           <f7-list inset>
             <f7-list-item title="Current Address">
-              {{ wan.currentAddress }}
+              {{ networkConfig.wan.currentAddress }}
             </f7-list-item>
             <f7-list-item title="Mode">
               <span v-if="staticWan">
@@ -50,24 +55,24 @@
               </span>
             </f7-list-item>
             <f7-list-item
-              v-if="wan.staticAddress"
+              v-if="networkConfig.wan.staticAddress"
               title="Static Address">
-              {{ wan.staticAddress }}
+              {{ networkConfig.wan.staticAddress }}
             </f7-list-item>
 
             <f7-list-item
               title="Upstream Router Address">
-              {{ staticWan ? wan.staticRoute : wan.dhcpRoute }}
+              {{ staticWan ? networkConfig.wan.staticRoute : networkConfig.wan.dhcpRoute }}
             </f7-list-item>
             <f7-list-item
-              v-if="!staticWan && wan.dhcpStart"
+              v-if="!staticWan && networkConfig.wan.dhcpStart"
               title="DHCP Lease Start">
-              {{ wan.dhcpStart }}
+              {{ networkConfig.wan.dhcpStart }}
             </f7-list-item>
             <f7-list-item
-              v-if="!staticWan && wan.dhcpDuration"
+              v-if="!staticWan && networkConfig.wan.dhcpDuration"
               title="DHCP Lease Duration">
-              {{ wan.dhcpDuration }}
+              {{ networkConfig.wan.dhcpDuration }}
             </f7-list-item>
           </f7-list>
         </f7-accordion-content>
@@ -79,7 +84,6 @@
 <script>
 import vuex from 'vuex';
 import Debug from 'debug';
-import Promise from 'bluebird';
 import appDefs from '../app_defs';
 
 import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
@@ -103,25 +107,20 @@ export default {
     ...vuex.mapGetters([
       'networkConfig',
       'vaps',
-      'wan',
     ]),
 
     staticWan: function() {
-      debug('staticWan: wan is', this.$store.getters.wan.staticAddress);
-      return !!this.$store.getters.wan.staticAddress;
+      debug('staticWan: wan is', this.networkConfig.wan.staticAddress);
+      return !!this.networkConfig.wan.staticAddress;
     },
   },
 
   methods: {
     onPtrRefresh: function(el, done) {
-      return Promise.all([
-        this.$store.dispatch('fetchVAPs').catch(() => {}),
-        this.$store.dispatch('fetchNetworkConfig').catch(() => {}),
-      ]).asCallback(done);
+      return this.$store.dispatch('fetchNetworkConfig').catch(() => {}).asCallback(done);
     },
 
     onPageBeforeIn: function() {
-      this.$store.dispatch('fetchVAPs').catch(() => {});
       this.$store.dispatch('fetchNetworkConfig').catch(() => {});
     },
   },
