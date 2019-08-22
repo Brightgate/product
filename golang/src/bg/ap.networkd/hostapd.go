@@ -679,16 +679,45 @@ func getDevConfig(d *physDevice) *devConfig {
 	}
 
 	if w.cap.WifiModes["n"] {
-		// XXX: config option for short GI?
-		if w.cap.FreqWidths[40] {
-			// With a 40MHz channel, we can support a secondary
-			// 20MHz channel either above or below the primary,
-			// depending on what the primary channel is.
-			if nModePrimaryAbove[w.activeChannel] {
-				modeNHTCapab += "[HT40+]"
+		if w.cap.HTCapabilities["amdsu"] {
+			modeNHTCapab += "[MAX-AMSDU-7935]"
+		}
+		if w.cap.HTCapabilities["delayedba"] {
+			modeNHTCapab += "[DELAYED-BA]"
+		}
+		if w.cap.HTCapabilities["txstbc"] {
+			modeNHTCapab += "[TX-STBC]"
+		}
+		if w.cap.HTCapabilities["rxstbc3"] {
+			modeNHTCapab += "[RX-STBC123]"
+		} else if w.cap.HTCapabilities["rxstbc2"] {
+			modeNHTCapab += "[RX-STBC12]"
+		} else if w.cap.HTCapabilities["rxstbc1"] {
+			modeNHTCapab += "[RX-STBC1]"
+		}
+		if w.activeBand == wificaps.HiBand {
+			// 5GHz capabilities
+			if w.cap.FreqWidths[40] {
+				// With a 40MHz channel, we can support a secondary
+				// 20MHz channel either above or below the primary,
+				// depending on what the primary channel is.
+				if nModePrimaryAbove[w.activeChannel] {
+					modeNHTCapab += "[HT40+]"
+				}
+				if nModePrimaryBelow[w.activeChannel] {
+					modeNHTCapab += "[HT40-]"
+				}
+				if w.cap.HTCapabilities["gi40"] {
+					modeNHTCapab += "[SHORT-GI-40]"
+				}
+				if w.cap.HTCapabilities["dsss"] {
+					modeNHTCapab += "[DSSS_CCK-40]"
+				}
 			}
-			if nModePrimaryBelow[w.activeChannel] {
-				modeNHTCapab += "[HT40-]"
+		} else {
+			// 2.4GHz capabilities
+			if w.cap.HTCapabilities["gi20"] {
+				modeNHTCapab += "[SHORT-GI-20]"
 			}
 		}
 	} else {

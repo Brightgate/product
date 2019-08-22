@@ -53,12 +53,13 @@ var ChannelLists = map[string][]int{
 // WifiCapabilities represents the attributes of a wireless device which are
 // useful to the Brightgate stack.
 type WifiCapabilities struct {
-	SupportVLANs bool            // does the nic support VLANs?
-	Interfaces   int             // number of APs it can support
-	Channels     map[int]bool    // channels the device claims to support
-	FreqWidths   map[int]bool    // frequency widths it claims to support
-	WifiBands    map[string]bool // frequency bands it supports
-	WifiModes    map[string]bool // 802.11[a,b,g,n,ac] modes supported
+	SupportVLANs   bool            // does the nic support VLANs?
+	Interfaces     int             // number of APs it can support
+	Channels       map[int]bool    // channels the device claims to support
+	FreqWidths     map[int]bool    // frequency widths it claims to support
+	WifiBands      map[string]bool // frequency bands it supports
+	WifiModes      map[string]bool // 802.11[a,b,g,n,ac] modes supported
+	HTCapabilities map[string]bool // 802.11n capabilities supported
 }
 
 // Does this device support VLANs?
@@ -186,6 +187,33 @@ func buildChannelString(all []int, found map[int]bool) string {
 	return strings.Join(list, ",")
 }
 
+func buildHTCapabilitiesString(caps map[string]bool) string {
+	all := []struct {
+		key string
+		val string
+	}{
+		{"txstbc", "[TX STBC]"},
+		{"rxstbc1", "[RX STBC1]"},
+		{"rxstbc2", "[RX STBC12]"},
+		{"rxstbc3", "[RX STBC123]"},
+		{"ldpc", "[LDPC]"},
+		{"gi20", "[SHORT-GI-20]"},
+		{"gi40", "[SHORT-GI-40]"},
+		{"amdsu", "[Max AMSDU 7935 bytes]"},
+		{"delayedba", "[HT Delayed Block Ack]"},
+		{"dsss", "[DSSS/CCK HT40]"},
+	}
+
+	rval := ""
+	for _, cap := range all {
+		if caps[cap.key] {
+			rval += cap.val
+		}
+	}
+
+	return rval
+}
+
 // String implements the Stringer interface for WifiCapabilities objects.
 func (w *WifiCapabilities) String() string {
 	allModes := []string{"a", "g", "n", "ac"}
@@ -210,8 +238,34 @@ func (w *WifiCapabilities) String() string {
 		buildChannelString(ChannelLists["hiBand20MHz"], w.Channels)))
 	b.WriteString(fmt.Sprintf("      40MHz: %s\n",
 		buildChannelString(ChannelLists["hiBand40MHz"], w.Channels)))
+	b.WriteString(fmt.Sprintf("   HT Capabilities: %s\n",
+		buildHTCapabilitiesString(w.HTCapabilities)))
 
 	return b.String()
+}
+
+func getHTCapabilities(w *WifiCapabilities, info string) {
+	all := map[string]*regexp.Regexp{
+		"txstbc":    regexp.MustCompile(`TX STBC`),
+		"rxstbc1":   regexp.MustCompile(`RX STBC 1`),
+		"rxstbc2":   regexp.MustCompile(`RX STBC 2`),
+		"rxstbc3":   regexp.MustCompile(`RX STBC 3`),
+		"ldpc":      regexp.MustCompile(`RX LDPC`),
+		"gi20":      regexp.MustCompile(`RX HT20 SGI`),
+		"gi40":      regexp.MustCompile(`RX HT40 SGI`),
+		"amdsu":     regexp.MustCompile(`Max AMSDU length: 7935 bytes`),
+		"delayedba": regexp.MustCompile(`HT Delayed Block Ack`),
+
+		// We want "DSSS/CCK HT40" but not "No DSSS/CCK HT40"
+		"dsss": regexp.MustCompile(`\s{2}DSSS/CCK HT40`),
+	}
+
+	w.HTCapabilities = make(map[string]bool)
+	for cap, re := range all {
+		if re.MatchString(info) {
+			w.HTCapabilities[cap] = true
+		}
+	}
 }
 
 // GetCapabilities takes the name of a wireless device (typically "wlanX") and
@@ -237,6 +291,7 @@ func GetCapabilities(name string) (*WifiCapabilities, error) {
 	getChannels(&w, info)
 	getFrequencyWidths(&w, info)
 	getWifiModes(&w, info)
+	getHTCapabilities(&w, info)
 
 	return &w, nil
 }
