@@ -23,23 +23,23 @@ func TestHostmap(t *testing.T) {
 	assert := require.New(t)
 
 	hm := hostmapCreate()
-	assert.Equal(hm.contains("success"), false)
+	assert.False(hm.contains("success"))
 
 	err = hm.add("success")
 	assert.NoError(err)
-	assert.Equal(hm.contains("success"), true)
+	assert.False(hm.contains("success"))
 
 	err = hm.add("success")
 	assert.Error(err)
-	assert.Equal(hm.contains("success"), true)
+	assert.True(hm.contains("success"))
 
 	err = hm.del("success")
 	assert.NoError(err)
-	assert.Equal(hm.contains("success"), false)
+	assert.False(hm.contains("success"))
 
 	err = hm.del("success")
 	assert.Error(err)
-	assert.Equal(hm.contains("success"), false)
+	assert.False(hm.contains("success"))
 }
 
 func TestMain(m *testing.M) {

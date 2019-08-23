@@ -163,7 +163,7 @@ func testStatus(t *testing.T, q cmdQueue, slogger *zap.SugaredLogger) {
 	for qid := range testQs {
 		response, err = q.status(ctx, testSS1, qid)
 		assert.NoError(err)
-		assert.Equal(response.Response, cfgmsg.ConfigResponse_INPROGRESS)
+		assert.Equal(cfgmsg.ConfigResponse_INPROGRESS, response.Response)
 	}
 
 	// complete each query in order, check status
@@ -174,7 +174,7 @@ func testStatus(t *testing.T, q cmdQueue, slogger *zap.SugaredLogger) {
 		assert.NoError(err)
 		response, err = q.status(ctx, testSS1, qid)
 		assert.NoError(err)
-		assert.Equal(response.Response, cfgmsg.ConfigResponse_OK)
+		assert.Equal(cfgmsg.ConfigResponse_OK, response.Response)
 	}
 
 	// add one more command, cancel it, then check the status
@@ -185,10 +185,10 @@ func testStatus(t *testing.T, q cmdQueue, slogger *zap.SugaredLogger) {
 
 	response, err = q.cancel(ctx, testSS1, idC)
 	assert.NoError(err)
-	assert.Equal(response.Response, cfgmsg.ConfigResponse_OK)
+	assert.Equal(cfgmsg.ConfigResponse_OK, response.Response)
 	response, err = q.status(ctx, testSS1, idC)
 	assert.NoError(err)
-	assert.Equal(response.Response, cfgmsg.ConfigResponse_CANCELED)
+	assert.Equal(cfgmsg.ConfigResponse_CANCELED, response.Response)
 }
 
 // testFetch tests command fetch
@@ -357,12 +357,12 @@ func testSiteSpoof(t *testing.T, q cmdQueue, slogger *zap.SugaredLogger) {
 	// Try to get status as SS1
 	response, err := q.status(ctx, testSS1, 1)
 	assert.NoError(err)
-	assert.Equal(response.Response, cfgmsg.ConfigResponse_QUEUED)
+	assert.Equal(cfgmsg.ConfigResponse_QUEUED, response.Response)
 
 	// Try to get status as SS2
 	response, err = q.status(ctx, testSS2, 1)
 	assert.NoError(err)
-	assert.Equal(response.Response, cfgmsg.ConfigResponse_NOCMD)
+	assert.Equal(cfgmsg.ConfigResponse_NOCMD, response.Response)
 
 	// Use site 2 to try to complete one of site 1's commands
 	// This will not return an error, but also should not affect the
@@ -374,7 +374,7 @@ func testSiteSpoof(t *testing.T, q cmdQueue, slogger *zap.SugaredLogger) {
 	// Check the state of the cmd
 	response, err = q.status(ctx, testSS1, 1)
 	assert.NoError(err)
-	assert.Equal(response.Response, cfgmsg.ConfigResponse_QUEUED)
+	assert.Equal(cfgmsg.ConfigResponse_QUEUED, response.Response)
 
 	// Use site 2 to try to cancel one of site 1's commands
 	// This will not return an error (the daemon will warn instead), but
@@ -386,7 +386,7 @@ func testSiteSpoof(t *testing.T, q cmdQueue, slogger *zap.SugaredLogger) {
 	// Check the state of the cmd
 	response, err = q.status(ctx, testSS1, 1)
 	assert.NoError(err)
-	assert.Equal(response.Response, cfgmsg.ConfigResponse_QUEUED)
+	assert.Equal(cfgmsg.ConfigResponse_QUEUED, response.Response)
 }
 
 // make a template database, loaded with the schema.  Subsequently

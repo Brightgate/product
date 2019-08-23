@@ -147,9 +147,9 @@ func TestBasic(t *testing.T) {
 		Add("clientid", m.ClientID).
 		ToIncoming(context.Background())
 	uu := metautils.ExtractIncoming(ctx).Get("appliance_uuid")
-	assert.Equal(uu, "", "saw unexpected appliance_uuid in ctx")
+	assert.Equal("", uu, "saw unexpected appliance_uuid in ctx")
 	uu = metautils.ExtractIncoming(ctx).Get("site_uuid")
-	assert.Equal(uu, "", "saw unexpected site_uuid in ctx")
+	assert.Equal("", uu, "saw unexpected site_uuid in ctx")
 
 	resultctx, err := mw.authFunc(ctx)
 	assert.NoError(err)
