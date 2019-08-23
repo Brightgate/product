@@ -200,6 +200,7 @@ const state = {
   currentSiteID: nullSite.id,
   currentSite: nullSite,
   orgs: {},
+  orgsCount: 0,
   currentOrg: null,
   currentOrgID: null,
   userID: {},
@@ -288,6 +289,7 @@ const mutations = {
   setOrgs(state, newOrgs) {
     debug(`setOrgs: newOrgs, currentOrg=${state.currentOrgID}`, newOrgs);
     const newOrgsDict = {};
+    let newOrgsCount = 0;
     let homeOrg = null;
     newOrgs.forEach((apiOrg) => {
       const org = getOrg(state, apiOrg.organizationUUID);
@@ -297,6 +299,7 @@ const mutations = {
         homeOrg = org;
       }
       newOrgsDict[org.id] = org;
+      newOrgsCount++;
     });
     // Although it should be super rare, shoot down sites which are now
     // orphaned by loss of an org
@@ -314,11 +317,17 @@ const mutations = {
       state.currentOrgID = homeOrg ? homeOrg.id : null;
     }
     Vue.set(state, 'orgs', newOrgsDict);
+    Vue.set(state, 'orgsCount', newOrgsCount);
     debug('setOrgs: completed');
   },
 
   setAppMode(state, newMode) {
     state.appMode = newMode;
+  },
+
+  setCurrentOrgID(state, newOrgID) {
+    state.currentOrgID = newOrgID;
+    state.currentOrg = state.orgs[newOrgID];
   },
 
   setAuthProviders(state, newProviders) {
@@ -490,10 +499,6 @@ const getters = {
     return state.currentSite.alerts;
   },
 
-  org: (state) => {
-    return state.currentOrg;
-  },
-
   siteDevices: (state) => (siteID) => {
     return getSite(state, siteID).devices;
   },
@@ -594,16 +599,18 @@ const getters = {
     return state.currentSite.users[uuid];
   },
 
-  sites: (state) => {
-    return state.sites;
-  },
+  sites: (state) => state.sites,
+
   siteByID: (state) => (id) => {
     return state.sites[id];
   },
 
-  orgs: (state) => {
-    return state.orgs;
-  },
+  currentOrg: (state) => state.currentOrg,
+
+  orgs: (state) => state.orgs,
+
+  orgsCount: (state) => state.orgsCount,
+
   orgByID: (state) => (id) => {
     return getOrg(state, id);
   },
@@ -1095,9 +1102,10 @@ const actions = {
   async fetchPostLogin(context) {
     debug('fetchPostLogin');
     await context.dispatch('fetchAccountRoles', context.state.myAccountUUID);
-    context.dispatch('fetchOrgs');
+    context.dispatch('fetchOrgs').then(() => {
+      context.dispatch('fetchOrgAccounts').catch(() => {});
+    }).catch(() => {});
     context.dispatch('fetchSites');
-    context.dispatch('fetchOrgAccounts').catch(() => {});
   },
 
   async fetchSiteChanged(context) {

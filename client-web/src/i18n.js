@@ -297,6 +297,7 @@ export default {
       },
       accounts: {
         title: 'Accounts',
+        none_yet: 'There are no accounts yet',
       },
       account_details: {
         title: 'Account Details',

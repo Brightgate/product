@@ -241,15 +241,21 @@ async function selfProvPostHandler() {
   return [200];
 }
 
+function getAccountsByOrgID(orgID) {
+  return mockAccounts[orgID];
+}
+
 async function accountDelHandler(config) {
   debug('accountDel', config);
   const parsedURL = new URL(config.url, 'http://example.com/');
   debug('parsedURL', parsedURL);
   const p = parsedURL.pathname.split('/');
   const last = p[p.length - 1];
-  const idx = mockAccounts.findIndex((elem) => elem.accountUUID === last);
+  const orgID = p[p.length - 3];
+  const accts = getAccountsByOrgID(orgID);
+  const idx = accts.findIndex((elem) => elem.accountUUID === last);
   if (idx >= 0) {
-    mockAccounts.splice(idx, 1);
+    accts.splice(idx, 1);
   }
   debug('mockAccounts is now', mockAccounts);
   return [200];
@@ -291,7 +297,8 @@ function mockAxios(normalAxios, mode) {
     .onGet(/\/api\/account\/.+\/roles/).reply(200, mockAccountRoles)
     .onPost(/\/api\/account\/.+\/roles\/.+\/.+/).reply(200)
     .onGet('/api/org').reply(200, mockOrgs)
-    .onGet(/\/api\/org\/.+\/accounts/).reply(200, mockAccounts)
+    .onGet(/\/api\/org\/9f56108e-2916-409d-9b43-c964115fde61\/accounts/).reply(200, getAccountsByOrgID('9f56108e-2916-409d-9b43-c964115fde61'))
+    .onGet(/\/api\/org\/d91864cd-434a-4b52-8236-d3b95afde170\/accounts/).reply(200, getAccountsByOrgID('d91864cd-434a-4b52-8236-d3b95afde170'))
     .onAny().reply(500);
 
   return mockAx;

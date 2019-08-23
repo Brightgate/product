@@ -76,6 +76,9 @@ func (o *orgHandler) getOrgAccounts(c echo.Context) error {
 	accounts, err := o.db.AccountInfosByOrganization(ctx, orgUUID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	} else if accounts == nil {
+		// Return empty array, not null, to REST consumer
+		accounts = make([]appliancedb.AccountInfo, 0)
 	}
 	return c.JSON(http.StatusOK, accounts)
 }

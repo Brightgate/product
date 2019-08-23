@@ -535,7 +535,8 @@ func (a *authHandler) getProviderCallback(c echo.Context) error {
 	c.Logger().Infof("loginInfo is %#v", loginInfo)
 
 	if len(loginInfo.PrimaryOrgRoles) == 0 {
-		return echo.NewHTTPError(http.StatusUnauthorized, "account has no roles")
+		return echo.NewHTTPError(http.StatusUnauthorized,
+			"login is disabled for this account; the account has no roles")
 	}
 
 	// Try to save the refresh token

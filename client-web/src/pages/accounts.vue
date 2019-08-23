@@ -16,9 +16,17 @@
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.accounts.title')" sliding />
 
     <f7-block>
-      <h2>{{ org.name }}</h2>
+      <h2>{{ currentOrg.name }}</h2>
     </f7-block>
     <f7-list>
+      <f7-list-item v-if="accounts.length === 0" disabled>
+        <div slot="title">
+          <span>
+            <f7-icon material="block" />
+            <i>{{ $t('message.accounts.none_yet') }}</i>
+          </span>
+        </div>
+      </f7-list-item>
       <f7-list-item v-for="acct in accounts"
                     :key="acct.accountUUID"
                     :title="acct.name"
@@ -39,7 +47,7 @@ export default {
     ...vuex.mapGetters([
       'accountList',
       'accountByID',
-      'org',
+      'currentOrg',
     ]),
 
     accounts: function() {

@@ -65,14 +65,23 @@ export default {
     // template.
     ...Vuex.mapGetters([
       'orgNameBySiteID',
+      'currentOrg',
     ]),
 
     orderedSites: function() {
       debug('sites', this.sites);
       const sites = [];
+      // Bail if currentOrg isn't set yet
+      if (!this.currentOrg) {
+        return sites;
+      }
       // Copy out to a standard array for sorting
       Object.keys(this.sites).forEach((key) => {
-        sites.push(this.sites[key]);
+        debug('this.sites[key] = ', key, this.sites[key]);
+        debug('orderedSites, currentOrg is', this.currentOrg);
+        if (this.sites[key].regInfo.organizationUUID === this.currentOrg.id) {
+          sites.push(this.sites[key]);
+        }
       });
       const sorted = sites.sort((a, b) => {
         if (a.regInfo.relationship === 'self' && b.regInfo.relationship !== 'self') {

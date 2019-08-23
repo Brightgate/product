@@ -1,3 +1,9 @@
+
+<style>
+.ios div.panel-left div.page-content {
+  background: #f7f7f8;
+}
+</style>
 <template>
   <f7-page>
     <f7-navbar>
@@ -16,6 +22,9 @@
                   img/bglogo_navbar_md@2x.png 2x">
       </f7-nav-title>
     </f7-navbar>
+
+    <bg-org-switch-button v-if="currentOrg && orgsCount > 1" :title="currentOrg.name" />
+
     <f7-list no-hairlines no-hairlines-between>
       <f7-list-item v-if="appMode === appDefs.APPMODE_CLOUD">
         <f7-link panel-close href="/">Select Site</f7-link>
@@ -47,13 +56,23 @@
         <f7-link panel-close href="/support/">Brightgate Support</f7-link>
       </f7-list-item>
     </f7-list>
+
+    <!-- popup to select org -->
+    <bg-org-switch-popup />
+
   </f7-page>
 </template>
 <script>
 import vuex from 'vuex';
+import bgOrgSwitchPopup from '../components/org_switch_popup.vue';
+import bgOrgSwitchButton from '../components/org_switch_button.vue';
 import appDefs from '../app_defs';
 
 export default {
+  components: {
+    'bg-org-switch-button': bgOrgSwitchButton,
+    'bg-org-switch-popup': bgOrgSwitchPopup,
+  },
   data: function() {
     return {
       appDefs: appDefs,
@@ -64,10 +83,11 @@ export default {
     // Map various $store elements as computed properties for use in the
     // template.
     ...vuex.mapGetters([
-      'currentOrgAdmin',
-      'org',
       'appMode',
+      'currentOrgAdmin',
+      'currentOrg',
       'loggedIn',
+      'orgsCount',
     ]),
     showTestTools: function() {
       const tt = localStorage.getItem('testTools');

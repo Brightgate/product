@@ -40,9 +40,9 @@
       </f7-block>
     </template>
 
-    <template v-if="(appMode === appDefs.APPMODE_CLOUD) && org">
+    <template v-if="(appMode === appDefs.APPMODE_CLOUD) && currentOrg">
       <f7-block>
-        <h2>{{ org.name }}</h2>
+        <h2>{{ currentOrg.name }}</h2>
       </f7-block>
     </template>
 
@@ -123,11 +123,13 @@ import Debug from 'debug';
 import vulnerability from '../vulnerability';
 import BGSiteControls from '../components/site_controls.vue';
 import BGSiteList from '../components/site_list.vue';
+import BGOrgSwitchButton from '../components/org_switch_button.vue';
 import appDefs from '../app_defs';
 const debug = Debug('page:home');
 
 export default {
   components: {
+    'bg-org-switch-button': BGOrgSwitchButton,
     'bg-site-controls': BGSiteControls,
     'bg-site-list': BGSiteList,
   },
@@ -156,7 +158,7 @@ export default {
       'leftPanelVisible',
       'loggedIn',
       'mock',
-      'org',
+      'currentOrg',
       'siteAdmin',
       'sites',
     ]),
