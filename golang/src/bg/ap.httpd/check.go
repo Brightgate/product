@@ -13,6 +13,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os/exec"
 	"regexp"
@@ -25,9 +26,9 @@ import (
 )
 
 func makeCheckRouter() *mux.Router {
-	plat := platform.NewPlatform()
 	router := mux.NewRouter()
 	router.HandleFunc("/diag", diagHandler).Methods("GET")
+	router.HandleFunc("/speedtest", speedtestHandler).Methods("GET")
 	// XXX needs auth middleware in the future-- anyone can call this
 	router.HandleFunc("/crashall", crashallHandler).Methods("GET")
 
@@ -59,6 +60,23 @@ func crashallHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func apbin(name string) string {
+	return plat.ExpandDirPath(platform.APPackage, "bin", name)
+}
+
+type flushWriter struct {
+	f http.Flusher
+	w io.Writer
+}
+
+func (fw *flushWriter) Write(p []byte) (n int, err error) {
+	n, err = fw.w.Write(p)
+	if fw.f != nil {
+		fw.f.Flush()
+	}
+	return
+}
+
 func diagHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 
@@ -66,6 +84,11 @@ func diagHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(time.Second)*30)
 	defer cancel()
+
+	fw := flushWriter{w: w}
+	if f, ok := w.(http.Flusher); ok {
+		fw.f = f
+	}
 
 	cmds := []struct {
 		title   string
@@ -84,21 +107,21 @@ func diagHandler(w http.ResponseWriter, r *http.Request) {
 		{"lan1", plat.EthtoolCmd, []string{"lan1"}},
 		{"lan2", plat.EthtoolCmd, []string{"lan2"}},
 		{"lan3", plat.EthtoolCmd, []string{"lan3"}},
-		{"service status", plat.ExpandDirPath("__APPACKAGE__", "bin", "ap-ctl"), []string{"status", "all"}},
-		{"health", plat.ExpandDirPath("__APPACKAGE__", "bin", "ap-configctl"), []string{"get", "@/metrics/health"}},
-		{"client list", plat.ExpandDirPath("__APPACKAGE__", "bin", "ap-configctl"), []string{"get", "clients", "-a"}},
+		{"service status", apbin("ap-ctl"), []string{"status", "all"}},
+		{"health", apbin("ap-configctl"), []string{"get", "@/metrics/health"}},
+		{"client list", apbin("ap-configctl"), []string{"get", "clients", "-a"}},
 		{"ping 1.1.1.1", "ping", []string{"-W", "3", "-w", "3", "-A", "-c", "3", "1.1.1.1"}},
 		{"dig svc1.b10e.net", plat.DigCmd, []string{"+time=3", "+tries=3", "svc1.b10e.net"}},
 		{"dig @1.1.1.1 svc1.b10e.net", plat.DigCmd, []string{"+time=3", "+tries=3", "@1.1.1.1", "svc1.b10e.net"}},
 		{"https://svc1.b10e.net", plat.CurlCmd, []string{"-o", "/dev/null", "--connect-timeout", "3", "--fail", "https://svc1.b10e.net/"}},
-		{"heartbeat", plat.ExpandDirPath("__APPACKAGE__", "bin", "ap-rpc"), []string{"heartbeat"}},
+		{"heartbeat", apbin("ap-rpc"), []string{"heartbeat"}},
 	}
 	for _, cmd := range cmds {
 		fmt.Fprintf(w, "---------- begin %s\n", cmd.title)
 		fmt.Fprintf(w, "$ %s %s\n", cmd.cmdPath, strings.Join(cmd.args, " "))
 		c := exec.CommandContext(ctx, cmd.cmdPath, cmd.args...)
-		c.Stdout = w
-		c.Stderr = w
+		c.Stdout = &fw
+		c.Stderr = &fw
 		err := c.Run()
 		if err != nil {
 			fmt.Fprintf(w, "%s failed: %v\n", cmd.title, err)
@@ -106,5 +129,26 @@ func diagHandler(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "---------- end %s\n\n", cmd.title)
 	}
 	fmt.Fprintf(w, "EOF\n")
+}
 
+func speedtestHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+
+	// Time-bound the execution; the test should take just over 21s
+	ctx := r.Context()
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(time.Second)*30)
+	defer cancel()
+
+	fw := flushWriter{w: w}
+	if f, ok := w.(http.Flusher); ok {
+		fw.f = f
+	}
+	stPath := apbin("ap-speedtest")
+	c := exec.CommandContext(ctx, stPath, "-all")
+	c.Stdout = &fw
+	c.Stderr = &fw
+	err := c.Run()
+	if err != nil {
+		fmt.Fprintf(w, "ap-speedtest failed: %v\n", err)
+	}
 }

@@ -198,6 +198,14 @@
   version = "v1.1.1"
 
 [[projects]]
+  digest = "1:09aa5dd1332b93c96bde671bafb053249dc813febf7d5ca84e8f382ba255d67d"
+  name = "github.com/gorilla/websocket"
+  packages = ["."]
+  pruneopts = ""
+  revision = "66b9c49e59c6c48f0ffce28c2d8b8a5678502c6d"
+  version = "v1.4.0"
+
+[[projects]]
   digest = "1:9a0b2dd1f882668a3d7fbcd424eed269c383a16f1faa3a03d14e0dd5fba571b1"
   name = "github.com/grpc-ecosystem/go-grpc-middleware"
   packages = [
@@ -354,6 +362,22 @@
   pruneopts = ""
   revision = "4ded0e9383f75c197b3a2aaa6d590ac52df6fd79"
   version = "v1.0.0"
+
+[[projects]]
+  branch = "master"
+  digest = "1:9b4b4bff1591e74cfd1c21142247d9bdb7f450d6c1d21a38ffafe8e4531ad642"
+  name = "github.com/m-lab/ndt7-client-go"
+  packages = [
+    ".",
+    "internal/download",
+    "internal/params",
+    "internal/upload",
+    "internal/websocketx",
+    "mlabns",
+    "spec",
+  ]
+  pruneopts = ""
+  revision = "ad7eefc52fe1e4ee747f4356517ab0ffb8c646f2"
 
 [[projects]]
   digest = "1:3c01f6bec64cfeb7895910f010877b3bb909c4d9ab809c8e999498498db1532a"
@@ -1016,6 +1040,8 @@
     "github.com/lair-framework/go-nmap",
     "github.com/lestrrat/go-apache-logformat",
     "github.com/lib/pq",
+    "github.com/m-lab/ndt7-client-go",
+    "github.com/m-lab/ndt7-client-go/spec",
     "github.com/markbates/goth",
     "github.com/markbates/goth/gothic",
     "github.com/markbates/goth/providers/auth0",

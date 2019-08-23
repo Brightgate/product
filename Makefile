@@ -396,6 +396,7 @@ APPTOOLS = \
 	ap-complete \
 	ap-configctl \
 	ap-ctl \
+	ap-speedtest \
 	ap-userctl \
 	ap-watchctl
 
