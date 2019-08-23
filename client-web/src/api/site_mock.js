@@ -143,7 +143,6 @@ const mockLocalOrgs = [
     name: 'Local Org',
     organizationUUID: '0',
     relationship: 'self',
-    limitRoles: ['admin', 'user'],
   },
 ];
 
@@ -152,26 +151,28 @@ const mockCloudOrgs = [
     name: 'Dunder Mifflin',
     organizationUUID: 'd91864cd-434a-4b52-8236-d3b95afde170',
     relationship: 'self',
-    limitRoles: ['admin', 'user'],
   },
   {
     name: 'WUPHF.com',
     organizationUUID: '9f56108e-2916-409d-9b43-c964115fde61',
     relationship: 'msp',
-    limitRoles: ['admin', 'user'],
   },
 ];
 
-export const mockAccountRoles = {
-  'd91864cd-434a-4b52-8236-d3b95afde170': {
+export const mockAccountRoles = [
+  {
+    'targetOrganization': 'd91864cd-434a-4b52-8236-d3b95afde170',
     'relationship': 'self',
+    'limitRoles': ['admin', 'user'],
     'roles': ['admin', 'user'],
   },
-  '9f56108e-2916-409d-9b43-c964115fde61': {
+  {
+    'targetOrganization': '9f56108e-2916-409d-9b43-c964115fde61',
     'relationship': 'msp',
+    'limitRoles': ['admin', 'user'],
     'roles': ['admin'],
   },
-};
+];
 
 const mockEnrollGuest = {
   smsDelivered: true,

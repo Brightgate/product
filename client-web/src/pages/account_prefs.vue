@@ -16,7 +16,7 @@ h1 { margin-block-end: 0.1em; }
 
     <f7-block>
       <h1>{{ myAccount.name }}</h1>
-      <div>{{ orgByID(myAccount.organizationUUID).name }}</div>
+      <div>{{ orgNameByID(myAccount.organizationUUID) }}</div>
       <div>{{ myAccount.email }}</div>
       <div>{{ myAccount.phoneNumber }}</div>
     </f7-block>
@@ -31,8 +31,8 @@ h1 { margin-block-end: 0.1em; }
     <f7-list>
       <f7-list-item
         v-for="role in orderedRoles"
-        :key="role.organizationUUID"
-        :title="orgByID(role.organizationUUID).name">
+        :key="role.targetOrganization + role.relationship"
+        :title="orgNameByID(role.targetOrganization)">
         {{ formatRoles(role.roles) }}
       </f7-list-item>
     </f7-list>
@@ -58,8 +58,7 @@ export default {
       'loggedIn',
       'myAccountUUID',
       'accountByID',
-      'orgByID',
-      'accountOrgRoles',
+      'orgNameByID',
     ]),
 
     myAccount: function() {
@@ -68,18 +67,21 @@ export default {
     },
 
     orderedRoles: function() {
-      debug('orderedRoles!!!');
       const acct = this.accountByID(this.myAccountUUID);
       debug('orderedRoles, acct is', acct);
-      const rets = [];
       if (!acct.roles) {
-        return rets;
+        return [];
       }
-      for (const [orgUUID, org] of Object.entries(acct.roles)) {
-        rets.push(Object.assign({}, org, {organizationUUID: orgUUID}));
-      }
-      debug('orderedRoles', rets);
-      return rets;
+      const ordered = [...acct.roles];
+      ordered.sort((a, b) => {
+        if (a.relationship === 'self' && b.relationship !== 'self') {
+          return -1;
+        }
+        const aOrgName = this.orgNameByID(a.targetOrganization);
+        const bOrgName = this.orgNameByID(b.targetOrganization);
+        return aOrgName.localeCompare(bOrgName);
+      });
+      return ordered;
     },
   },
 

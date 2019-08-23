@@ -78,23 +78,25 @@ var (
 		PersonUUID:       personUUID,
 	}
 
-	mockAccountOrgRoles = []appliancedb.AccountOrgRole{
+	mockAccountOrgRoles = []appliancedb.AccountOrgRoles{
 		{
 			AccountUUID:            mockAccount.UUID,
 			OrganizationUUID:       mockAccount.OrganizationUUID,
 			TargetOrganizationUUID: mockAccount.OrganizationUUID,
 			Relationship:           "self",
-			Role:                   "admin",
+			LimitRoles:             []string{"admin", "user"},
+			Roles:                  []string{"admin"},
 		},
 	}
 
-	mockUserAccountOrgRoles = []appliancedb.AccountOrgRole{
+	mockUserAccountOrgRoles = []appliancedb.AccountOrgRoles{
 		{
 			AccountUUID:            mockUserAccount.UUID,
 			OrganizationUUID:       mockUserAccount.OrganizationUUID,
 			TargetOrganizationUUID: mockUserAccount.OrganizationUUID,
 			Relationship:           "self",
-			Role:                   "user",
+			LimitRoles:             []string{"admin", "user"},
+			Roles:                  []string{"user"},
 		},
 	}
 )
@@ -221,13 +223,14 @@ func TestSitesUUID(t *testing.T) {
 	m0 := mockSites[0]
 	dMock := &mocks.DataStore{}
 	dMock.On("AccountOrgRolesByAccountTarget", mock.Anything, accountUUID, orgUUID).Return(
-		[]appliancedb.AccountOrgRole{
+		[]appliancedb.AccountOrgRoles{
 			{
 				AccountUUID:            accountUUID,
 				OrganizationUUID:       orgUUID,
 				TargetOrganizationUUID: orgUUID,
-				Role:                   "admin",
 				Relationship:           "self",
+				LimitRoles:             []string{"admin", "user"},
+				Roles:                  []string{"admin"},
 			},
 		}, nil)
 	dMock.On("CustomerSiteByUUID", mock.Anything, m0.UUID).Return(&m0, nil)

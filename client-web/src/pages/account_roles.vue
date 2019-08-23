@@ -19,27 +19,28 @@ div.checkbox-list {
 
     <f7-block>
       <h1>
-        {{ acct.name }}
+        {{ acct && acct.name ? acct.name : '' }}
       </h1>
-      {{ orgByID(acct.organizationUUID).name }}
+      {{ orgNameByID(acct.organizationUUID) }}
     </f7-block>
 
     <f7-list>
       <f7-list-item group-title>
         {{ $t('message.account_roles.roles_group') }}
       </f7-list-item>
-      <f7-list-item v-for="org in orgs" :key="org.id">
-        <div slot="title">{{ org.name }}
+      <f7-list-item v-for="aorole in acct.roles" :key="aorole.targetOrganization + aorole.relationship">
+        <div slot="title">{{ orgNameByID(aorole.targetOrganization) }}
           <div class="checkbox-list">
-            <span v-for="role in org.limitRoles" :key="org.id + role">
+            <span v-for="role in aorole.limitRoles" :key="role">
               <!-- XXX We can't seem to get f7-checkbox to be reactive to the
                 underlying role value when the value changes.  So we attach
                 a generation number to the key, which will force vue to
                 build out a new component -->
-              <f7-checkbox :key="`${org.id}-${role}-${generation}`"
-                           :checked="hasRole(org.id, role)"
-                           :class="canEditRole(org.id, role) ? '' : 'disabled'"
-                           @change="setRole(org.id, role, $event.target.checked)"
+              <f7-checkbox
+                :key="`${aorole.targetOrganization}-${role}-${generation}`"
+                :checked="accountHasOrgRole(acct.accountUUID, aorole.targetOrganization, role)"
+                :class="canEditRole(aorole.targetOrganization, role) ? '' : 'disabled'"
+                @change="setRole(aorole.targetOrganization, role, $event.target.checked)"
               />&nbsp;{{ $t(`message.api.roles.${role}`) }}&nbsp;&nbsp;
             </span>
           </div>
@@ -68,9 +69,10 @@ export default {
     // template.
     ...vuex.mapGetters([
       'accountByID',
-      'orgByID',
+      'orgNameByID',
       'orgs',
       'myAccountUUID',
+      'accountHasOrgRole',
     ]),
 
     acct: function() {
@@ -81,17 +83,6 @@ export default {
     roles: function() {
       const accountID = this.$f7route.params.accountID;
       return this.$store.getters.accountByID(accountID).roles;
-    },
-
-    hasRole: function() {
-      return (orgID, role) => {
-        if (this.roles && this.roles[orgID]) {
-          const r = this.roles[orgID].roles.includes(role);
-          debug('hasRole', orgID, role, r);
-          return r;
-        }
-        return false;
-      };
     },
   },
 

@@ -155,11 +155,17 @@ func listAccountRoles(cmd *cobra.Command, args []string) error {
 	table, _ := prettytable.NewTable(
 		prettytable.Column{Header: "TargetOrganization"},
 		prettytable.Column{Header: "Relationship"},
-		prettytable.Column{Header: "Role"},
+		prettytable.Column{Header: "LimitRoles"},
+		prettytable.Column{Header: "Roles"},
 	)
 	table.Separator = "  "
 	for _, role := range roles {
-		table.AddRow(role.TargetOrganizationUUID, role.Relationship, role.Role)
+		table.AddRow(
+			role.TargetOrganizationUUID,
+			role.Relationship,
+			strings.Join(role.LimitRoles, ","),
+			strings.Join(role.Roles, ","),
+		)
 	}
 	table.Print()
 

@@ -15,7 +15,7 @@
       <h1>
         {{ acct.name }}
       </h1>
-      {{ orgByID(acct.organizationUUID).name }}
+      {{ orgNameByID(acct.organizationUUID) }}
     </f7-block>
 
     <f7-list>
@@ -109,7 +109,7 @@ export default {
     // template.
     ...vuex.mapGetters([
       'accountByID',
-      'orgByID',
+      'orgNameByID',
     ]),
 
     sp: function() {
@@ -126,7 +126,7 @@ export default {
       const accountID = this.$f7route.params.accountID;
       const title = this.$t('message.account_details.delete_title');
       const text = this.$t('message.account_details.delete_text',
-        {name: this.acct.name, org: this.orgByID(this.acct.organizationUUID).name});
+        {name: this.acct.name, org: this.orgNameByID(this.acct.organizationUUID)});
       this.$f7.dialog.confirm(text, title, () => {
         debug('proceeding to delete account');
         this.$store.dispatch('accountDelete', accountID);

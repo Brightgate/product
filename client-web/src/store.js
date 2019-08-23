@@ -226,22 +226,15 @@ function accountHasOrgRole(state, accountUUID, orgUUID, role) {
   if (!account || !account.roles) {
     return false;
   }
-  const orgRoles = account.roles[orgUUID];
-  if (!orgRoles) {
-    return false;
-  }
-  return orgRoles.roles.includes(role);
-}
-
-function accountOrgRoles(state, accountUUID, orgUUID) {
-  assert.equal(typeof accountUUID, 'string', 'bad accountUUID');
-  assert.equal(typeof orgUUID, 'string', 'badOrgUUID');
-  const account = state.accounts[accountUUID];
-  if (!account || !account.roles) {
-    return [];
-  }
-  const orgRoles = account.roles[orgUUID];
-  return orgRoles ? orgRoles.roles : [];
+  debug('accountHasOrgRoles', accountUUID, orgUUID, role, account.roles);
+  const found = account.roles.findIndex((aor) => {
+    if (aor.targetOrganization !== orgUUID) {
+      return false;
+    }
+    return aor.roles.includes(role);
+  });
+  debug('accountHasOrgRoles found is', found);
+  return found !== -1;
 }
 
 function siteHasRole(state, siteUUID, role) {
@@ -300,7 +293,6 @@ const mutations = {
       const org = getOrg(state, apiOrg.organizationUUID);
       org.name = apiOrg.name;
       org.relationship = apiOrg.relationship;
-      org.limitRoles = apiOrg.limitRoles;
       if (org.relationship === 'self') {
         homeOrg = org;
       }
@@ -376,7 +368,7 @@ const mutations = {
 
   setAccountRoles(state, {accountID, roles}) {
     assert.equal(typeof accountID, 'string');
-    assert.equal(typeof roles, 'object');
+    assert(Array.isArray(roles), 'expected roles to be array');
     Vue.set(getAccount(state, accountID), 'roles', roles);
   },
 
@@ -573,9 +565,6 @@ const getters = {
   accountHasOrgRole: (state) => (account, org, role) => {
     return accountHasOrgRole(state, account, org, role);
   },
-  accountOrgRoles: (state) => (account, org) => {
-    return accountOrgRoles(state, account, org);
-  },
 
   siteVAPs: (state) => (siteID) => {
     return getSite(state, siteID).vaps;
@@ -622,6 +611,13 @@ const getters = {
     const site = state.sites[id];
     if (site && site.regInfo && site.regInfo.organizationUUID) {
       const org = getOrg(state, site.regInfo.organizationUUID);
+      return org.name;
+    }
+    return i18n.t('message.api.unknown_org');
+  },
+  orgNameByID: (state) => (id) => {
+    const org = getOrg(state, id);
+    if (org && org.name) {
       return org.name;
     }
     return i18n.t('message.api.unknown_org');

@@ -48,8 +48,8 @@ type accountManager interface {
 	DeleteAccountSecrets(context.Context, uuid.UUID) error
 	DeleteAccountSecretsTx(context.Context, DBX, uuid.UUID) error
 
-	AccountOrgRolesByAccount(context.Context, uuid.UUID) ([]AccountOrgRole, error)
-	AccountOrgRolesByAccountTarget(context.Context, uuid.UUID, uuid.UUID) ([]AccountOrgRole, error)
+	AccountOrgRolesByAccount(context.Context, uuid.UUID) ([]AccountOrgRoles, error)
+	AccountOrgRolesByAccountTarget(context.Context, uuid.UUID, uuid.UUID) ([]AccountOrgRoles, error)
 	AccountPrimaryOrgRoles(context.Context, uuid.UUID) ([]string, error)
 	AccountOrgRolesByOrg(context.Context, uuid.UUID, string) ([]AccountOrgRole, error)
 	AccountOrgRolesByOrgTx(context.Context, DBX, uuid.UUID, string) ([]AccountOrgRole, error)
@@ -484,22 +484,23 @@ type AccountOrgRole struct {
 	Relationship           string    `db:"relationship"`
 }
 
-// AccountOrgRolesByAccount compute the effective roles for an account; this
-// query also makes sure to constrain the effective roles against the limit
-// set of roles for the relationship type, for safety.
+// AccountOrgRoles is a summarized snapshot of roles and limits
+// for the stated account/org/target/relationship tuple.
+type AccountOrgRoles struct {
+	AccountUUID            uuid.UUID      `db:"account_uuid"`
+	OrganizationUUID       uuid.UUID      `db:"organization_uuid"`
+	TargetOrganizationUUID uuid.UUID      `db:"target_organization_uuid"`
+	Relationship           string         `db:"relationship"`
+	LimitRoles             pq.StringArray `db:"limit_roles"`
+	Roles                  pq.StringArray `db:"roles"`
+}
+
+// AccountOrgRolesByAccount computes the limit and effective roles for an
+// account across all target organizations.
 func (db *ApplianceDB) AccountOrgRolesByAccount(ctx context.Context,
-	account uuid.UUID) ([]AccountOrgRole, error) {
-	var roles []AccountOrgRole
-	err := db.SelectContext(ctx, &roles,
-		`SELECT * FROM account_org_role, relationship_roles
-		WHERE
-		  account_org_role.account_uuid=$1 AND
-		  account_org_role.relationship = relationship_roles.relationship AND
-		  account_org_role.role = relationship_roles.role`, account)
-	if err != nil {
-		return nil, err
-	}
-	return roles, nil
+	account uuid.UUID) ([]AccountOrgRoles, error) {
+	o := uuid.NullUUID{Valid: false}
+	return db.accountOrgRolesByAccountTargetCommon(ctx, account, o)
 }
 
 // AccountOrgRolesByAccountTarget computes the effective roles for an account with
@@ -507,15 +508,40 @@ func (db *ApplianceDB) AccountOrgRolesByAccount(ctx context.Context,
 // the effective roles against the limit set of roles for the relationship
 // type, for safety.
 func (db *ApplianceDB) AccountOrgRolesByAccountTarget(ctx context.Context,
-	account uuid.UUID, org uuid.UUID) ([]AccountOrgRole, error) {
-	var roles []AccountOrgRole
-	err := db.SelectContext(ctx, &roles,
-		`SELECT *
-		FROM account_org_role
-		  JOIN relationship_roles USING (relationship, role)
-		WHERE
-		  account_org_role.account_uuid=$1 AND
-		  account_org_role.target_organization_uuid=$2`, account, org)
+	account uuid.UUID, org uuid.UUID) ([]AccountOrgRoles, error) {
+	o := uuid.NullUUID{UUID: org, Valid: true}
+	return db.accountOrgRolesByAccountTargetCommon(ctx, account, o)
+}
+
+func (db *ApplianceDB) accountOrgRolesByAccountTargetCommon(ctx context.Context,
+	account uuid.UUID, org uuid.NullUUID) ([]AccountOrgRoles, error) {
+	var roles []AccountOrgRoles
+	err := db.SelectContext(ctx, &roles, `
+                WITH limit_roles AS (
+                  SELECT
+                    account.uuid as account_uuid,
+                    account.organization_uuid,
+                    org_org_relationship.target_organization_uuid,
+                    org_org_relationship.relationship,
+                    array_agg(DISTINCT(relationship_roles.role)) as limit_roles
+                    FROM account
+                    JOIN org_org_relationship USING (organization_uuid)
+                    JOIN relationship_roles USING (relationship)
+                    WHERE
+		      account.uuid = $1
+		      AND ($2::uuid IS NULL OR org_org_relationship.target_organization_uuid=$2::uuid)
+                    GROUP BY (account.uuid, account.organization_uuid, org_org_relationship.target_organization_uuid, org_org_relationship.relationship)
+                ) SELECT
+                  $1 as account_uuid,
+                  limit_roles.organization_uuid,
+                  limit_roles.target_organization_uuid,
+                  limit_roles.relationship,
+                  array_remove(array_agg(DISTINCT(ar.role)), NULL) AS roles,
+		  limit_roles.limit_roles
+                  FROM limit_roles
+                  LEFT JOIN account_org_role AS ar USING (account_uuid, organization_uuid, target_organization_uuid, relationship)
+                  GROUP BY (ar.account_uuid, limit_roles.organization_uuid, limit_roles.target_organization_uuid, limit_roles.relationship, limit_roles.limit_roles)`,
+		account, org)
 	if err != nil {
 		return nil, err
 	}

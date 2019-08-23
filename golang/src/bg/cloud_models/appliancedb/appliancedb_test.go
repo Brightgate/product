@@ -54,10 +54,13 @@ const (
 	person1Str      = "40000000-4000-4000-4000-000000000001"
 	person2Str      = "40000000-4000-4000-4000-000000000002"
 	personMSP1Str   = "40000000-4000-4000-4000-000000000003"
+	personMSP2Str   = "40000000-4000-4000-4000-000000000004"
 	account1Str     = "50000000-5000-5000-5000-000000000001"
 	account2Str     = "50000000-5000-5000-5000-000000000002"
 	accountMSP1Str  = "50000000-5000-5000-5000-000000000003"
+	accountMSP2Str  = "50000000-5000-5000-5000-000000000004"
 	orgOrgRel1Str   = "60000000-6000-6000-6000-000000000001"
+	orgOrgRel2Str   = "60000000-6000-6000-6000-000000000002"
 	badStr          = "ffffffff-ffff-ffff-ffff-ffffffffffff"
 )
 
@@ -129,6 +132,11 @@ var (
 		Name:         "msp manager",
 		PrimaryEmail: "manager@msp.net",
 	}
+	testMSPPerson2 = Person{
+		UUID:         uuid.Must(uuid.FromString(personMSP2Str)),
+		Name:         "msp employee",
+		PrimaryEmail: "employee@msp.net",
+	}
 	testAccount1 = Account{
 		UUID:             uuid.Must(uuid.FromString(account1Str)),
 		Email:            "foo@foo.net",
@@ -145,9 +153,16 @@ var (
 	}
 	testMSPAccount1 = Account{
 		UUID:             uuid.Must(uuid.FromString(accountMSP1Str)),
-		Email:            "foo@foo.net",
+		Email:            "manager@msp.net",
 		PhoneNumber:      "555-1212",
 		PersonUUID:       testMSPPerson1.UUID,
+		OrganizationUUID: testMSPOrg1.UUID,
+	}
+	testMSPAccount2 = Account{
+		UUID:             uuid.Must(uuid.FromString(accountMSP2Str)),
+		Email:            "employee@msp.net",
+		PhoneNumber:      "555-1212",
+		PersonUUID:       testMSPPerson2.UUID,
 		OrganizationUUID: testMSPOrg1.UUID,
 	}
 	testOrgOrgRel1 = OrgOrgRelationship{
@@ -156,6 +171,14 @@ var (
 		TargetOrganizationUUID: testOrg1.UUID,
 		Relationship:           "msp",
 	}
+	testOrgOrgRel2 = OrgOrgRelationship{
+		UUID:                   uuid.Must(uuid.FromString(orgOrgRel2Str)),
+		OrganizationUUID:       testMSPOrg1.UUID,
+		TargetOrganizationUUID: testOrg2.UUID,
+		Relationship:           "msp",
+	}
+
+	allLimitRoles = []string{"admin", "user"}
 )
 
 func setupLogging(t *testing.T) (*zap.Logger, *zap.SugaredLogger) {
@@ -302,6 +325,43 @@ func mkOrgSiteApp(t *testing.T, ds DataStore, org *Organization, site *CustomerS
 		err := ds.InsertApplianceID(ctx, app)
 		assert.NoError(err, "expected Insert App to succeed")
 	}
+}
+
+// similar to the userids google uses, although a bit shorter
+var subj int64 = 1234567890
+
+// Makes a test account; returns oauth2 subject id
+func mkAccount(t *testing.T, ds DataStore, person *Person, account *Account, roles []string) *OAuth2Identity {
+	var err error
+	ctx := context.Background()
+
+	assert := require.New(t)
+	err = ds.InsertPerson(ctx, person)
+	assert.NoError(err)
+	err = ds.InsertAccount(ctx, account)
+	assert.NoError(err)
+	for _, r := range roles {
+		role := &AccountOrgRole{
+			AccountUUID:            account.UUID,
+			OrganizationUUID:       account.OrganizationUUID,
+			TargetOrganizationUUID: account.OrganizationUUID,
+			Relationship:           "self",
+			Role:                   r,
+		}
+		err = ds.InsertAccountOrgRole(ctx, role)
+		assert.NoError(err)
+	}
+
+	subj++
+	subject := fmt.Sprintf("%d", subj)
+	id := &OAuth2Identity{
+		Subject:     subject,
+		Provider:    "google",
+		AccountUUID: account.UUID,
+	}
+	err = ds.InsertOAuth2Identity(ctx, id)
+	assert.NoError(err)
+	return id
 }
 
 func testPing(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
@@ -617,10 +677,6 @@ func testAccount(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Su
 
 	// Setup
 	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, nil)
-	err = ds.InsertPerson(ctx, &testPerson1)
-	assert.NoError(err, "expected success")
-	err = ds.InsertPerson(ctx, &testPerson2)
-	assert.NoError(err, "expected success")
 
 	accts, err := ds.AccountsByOrganization(ctx, testOrg1.UUID)
 	assert.NoError(err)
@@ -630,33 +686,12 @@ func testAccount(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Su
 	assert.NoError(err)
 	assert.Len(sites, 0)
 
-	err = ds.InsertAccount(ctx, &testAccount1)
-	assert.NoError(err, "expected success")
+	_ = mkAccount(t, ds, &testPerson1, &testAccount1, []string{"admin", "user"})
+	_ = mkAccount(t, ds, &testPerson2, &testAccount2, []string{"user"})
 
 	// Try again
 	err = ds.InsertAccount(ctx, &testAccount1)
 	assert.Error(err)
-
-	err = ds.InsertAccount(ctx, &testAccount2)
-	assert.NoError(err, "expected success")
-
-	err = ds.InsertAccountOrgRole(ctx, &AccountOrgRole{
-		AccountUUID:            testAccount1.UUID,
-		OrganizationUUID:       testAccount1.OrganizationUUID,
-		TargetOrganizationUUID: testAccount1.OrganizationUUID,
-		Role:                   "admin",
-		Relationship:           "self",
-	})
-	assert.NoError(err, "expected success")
-
-	err = ds.InsertAccountOrgRole(ctx, &AccountOrgRole{
-		AccountUUID:            testAccount2.UUID,
-		OrganizationUUID:       testAccount2.OrganizationUUID,
-		TargetOrganizationUUID: testAccount2.OrganizationUUID,
-		Role:                   "user",
-		Relationship:           "self",
-	})
-	assert.NoError(err, "expected success")
 
 	accts, err = ds.AccountsByOrganization(ctx, testOrg1.UUID)
 	assert.NoError(err)
@@ -759,6 +794,32 @@ func testAccount(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Su
 	assert.IsType(NotFoundError{}, err)
 }
 
+func assertRolesMatch(t *testing.T, aoroles []AccountOrgRoles, account *Account,
+	targetOrg uuid.UUID, relationship string, limitRoles []string, roles []string) {
+	assert := require.New(t)
+
+	var found *AccountOrgRoles
+	for _, aorole := range aoroles {
+		if aorole.AccountUUID == account.UUID &&
+			aorole.OrganizationUUID == account.OrganizationUUID &&
+			aorole.TargetOrganizationUUID == targetOrg &&
+			aorole.Relationship == relationship {
+			found = &aorole
+			break
+		}
+	}
+	if found == nil {
+		t.Errorf("assertRolesMatch: Couldn't find an entry matching <%v, %v %v, %v> in\n\t%v",
+			account.UUID, account.OrganizationUUID, targetOrg, relationship, aoroles)
+	}
+	assert.ElementsMatch(limitRoles, found.LimitRoles,
+		"assertRolesMatch: Limit Role mismatch for %v: exp %v != act %v",
+		found, limitRoles, found.LimitRoles)
+	assert.ElementsMatch(roles, found.Roles,
+		"assertRolesMatch: Role mismatch for %v: exp %v != act %v",
+		found, roles, found.Roles)
+}
+
 // Test AccountOrgRole APIs.  subtest of TestDatabaseModel
 func testAccountOrgRole(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
 	ctx := context.Background()
@@ -783,45 +844,22 @@ func testAccountOrgRole(t *testing.T, ds DataStore, logger *zap.Logger, slogger 
 		Role:                   "user",
 	}
 
-	// Setup
-	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, nil)
-	err = ds.InsertPerson(ctx, &testPerson1)
-	assert.NoError(err)
-	err = ds.InsertPerson(ctx, &testPerson2)
-	assert.NoError(err)
+	// Setup Customer
+	mkOrgSiteApp(t, ds, &testOrg1, nil, nil)
+	oauth2ID1 := mkAccount(t, ds, &testPerson1, &testAccount1, nil)
+	_ = mkAccount(t, ds, &testPerson2, &testAccount2, nil)
 
-	accts, err := ds.AccountsByOrganization(ctx, testOrg1.UUID)
+	// Client has role for self, so there should be only one aoroles entry
+	aoroles, err := ds.AccountOrgRolesByAccount(ctx, testAccount1.UUID)
 	assert.NoError(err)
-	assert.Len(accts, 0)
-
-	sites, err := ds.CustomerSitesByAccount(ctx, testAccount1.UUID)
-	assert.NoError(err)
-	assert.Len(sites, 0)
-
-	err = ds.InsertAccount(ctx, &testAccount1)
-	assert.NoError(err)
-	err = ds.InsertAccount(ctx, &testAccount2)
-	assert.NoError(err)
-
-	// similar to the userids google uses
-	const testSubj1 = "123456789012345678900"
-	id1 := &OAuth2Identity{
-		Subject:     testSubj1,
-		Provider:    "google",
-		AccountUUID: testAccount1.UUID,
-	}
-	err = ds.InsertOAuth2Identity(ctx, id1)
-	assert.NoError(err, "expected success")
-
-	roles, err := ds.AccountOrgRolesByAccount(ctx, testAccount1.UUID)
-	assert.NoError(err)
-	assert.Len(roles, 0)
+	assert.Len(aoroles, 1)
+	assertRolesMatch(t, aoroles, &testAccount1, testAccount1.OrganizationUUID, "self", allLimitRoles, []string{})
 
 	rolesStrs, err := ds.AccountPrimaryOrgRoles(ctx, testAccount1.UUID)
 	assert.NoError(err)
 	assert.Len(rolesStrs, 0)
 
-	roles, err = ds.AccountOrgRolesByOrg(ctx, testAccount1.OrganizationUUID, "admin")
+	roles, err := ds.AccountOrgRolesByOrg(ctx, testAccount1.OrganizationUUID, "admin")
 	assert.NoError(err)
 	assert.Len(roles, 0)
 
@@ -829,12 +867,12 @@ func testAccountOrgRole(t *testing.T, ds DataStore, logger *zap.Logger, slogger 
 	assert.NoError(err)
 	assert.Len(roles, 0)
 
-	li, err := ds.LoginInfoByProviderAndSubject(ctx, "google", testSubj1)
-	assert.NoError(err, "expected success")
+	li, err := ds.LoginInfoByProviderAndSubject(ctx, oauth2ID1.Provider, oauth2ID1.Subject)
+	assert.NoError(err)
 	assert.Equal(&LoginInfo{
 		Person:           testPerson1,
 		Account:          testAccount1,
-		OAuth2IdentityID: id1.ID,
+		OAuth2IdentityID: oauth2ID1.ID,
 		PrimaryOrgRoles:  nil,
 	}, li)
 
@@ -844,23 +882,28 @@ func testAccountOrgRole(t *testing.T, ds DataStore, logger *zap.Logger, slogger 
 	err = ds.InsertAccountOrgRole(ctx, &adminRole)
 	assert.NoError(err)
 
+	aoroles, err = ds.AccountOrgRolesByAccount(ctx, testAccount1.UUID)
+	assert.NoError(err)
+	assert.Len(aoroles, 1)
+	assertRolesMatch(t, aoroles, &testAccount1, testAccount1.OrganizationUUID, "self", allLimitRoles, []string{"admin"})
+
 	err = ds.InsertAccountOrgRole(ctx, &userRole)
 	assert.NoError(err)
 
-	li, err = ds.LoginInfoByProviderAndSubject(ctx, "google", testSubj1)
-	assert.NoError(err, "expected success")
+	aoroles, err = ds.AccountOrgRolesByAccount(ctx, testAccount1.UUID)
+	assert.NoError(err)
+	assert.Len(aoroles, 1)
+	assertRolesMatch(t, aoroles, &testAccount1, testAccount1.OrganizationUUID, "self", allLimitRoles, []string{"admin", "user"})
+
+	li, err = ds.LoginInfoByProviderAndSubject(ctx, oauth2ID1.Provider, oauth2ID1.Subject)
+	assert.NoError(err)
 	sort.Strings(li.PrimaryOrgRoles)
 	assert.Equal(&LoginInfo{
 		Person:           testPerson1,
 		Account:          testAccount1,
-		OAuth2IdentityID: id1.ID,
+		OAuth2IdentityID: oauth2ID1.ID,
 		PrimaryOrgRoles:  []string{"admin", "user"},
 	}, li)
-
-	roles, err = ds.AccountOrgRolesByAccount(ctx, testAccount1.UUID)
-	assert.NoError(err)
-	assert.Len(roles, 2)
-	assert.ElementsMatch([]AccountOrgRole{userRole, adminRole}, roles)
 
 	rolesStrs, err = ds.AccountPrimaryOrgRoles(ctx, testAccount1.UUID)
 	assert.NoError(err)
@@ -886,9 +929,10 @@ func testAccountOrgRole(t *testing.T, ds DataStore, logger *zap.Logger, slogger 
 	err = ds.DeleteAccountOrgRole(ctx, &userRole)
 	assert.NoError(err)
 
-	roles, err = ds.AccountOrgRolesByAccount(ctx, testAccount1.UUID)
+	aoroles, err = ds.AccountOrgRolesByAccount(ctx, testAccount1.UUID)
 	assert.NoError(err)
-	assert.Equal(adminRole, roles[0])
+	assert.Len(aoroles, 1)
+	assertRolesMatch(t, aoroles, &testAccount1, testAccount1.OrganizationUUID, "self", allLimitRoles, []string{"admin"})
 
 	rolesStrs, err = ds.AccountPrimaryOrgRoles(ctx, testAccount1.UUID)
 	assert.NoError(err)
@@ -897,9 +941,10 @@ func testAccountOrgRole(t *testing.T, ds DataStore, logger *zap.Logger, slogger 
 	err = ds.DeleteAccountOrgRole(ctx, &adminRole)
 	assert.NoError(err)
 
-	roles, err = ds.AccountOrgRolesByAccount(ctx, testAccount1.UUID)
+	aoroles, err = ds.AccountOrgRolesByAccount(ctx, testAccount1.UUID)
 	assert.NoError(err)
-	assert.Len(roles, 0)
+	assert.Len(aoroles, 1)
+	assertRolesMatch(t, aoroles, &testAccount1, testAccount1.OrganizationUUID, "self", allLimitRoles, []string{})
 
 	rolesStrs, err = ds.AccountPrimaryOrgRoles(ctx, testAccount1.UUID)
 	assert.NoError(err)
@@ -920,25 +965,10 @@ func testAccountOrgRoleMSP(t *testing.T, ds DataStore, logger *zap.Logger, slogg
 	mkOrgSiteApp(t, ds, &testMSPOrg1, nil, nil)
 	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, nil)
 
-	err = ds.InsertPerson(ctx, &testPerson1)
-	assert.NoError(err)
-	err = ds.InsertPerson(ctx, &testMSPPerson1)
-	assert.NoError(err)
-
-	err = ds.InsertAccount(ctx, &testAccount1)
-	assert.NoError(err)
-	err = ds.InsertAccount(ctx, &testMSPAccount1)
-	assert.NoError(err)
-
-	// similar to the userids google uses
-	const testSubj1 = "123456789012345678900"
-	id1 := &OAuth2Identity{
-		Subject:     testSubj1,
-		Provider:    "google",
-		AccountUUID: testAccount1.UUID,
-	}
-	err = ds.InsertOAuth2Identity(ctx, id1)
-	assert.NoError(err, "expected success")
+	mkAccount(t, ds, &testMSPPerson1, &testMSPAccount1, []string{"admin", "user"})
+	mkAccount(t, ds, &testMSPPerson2, &testMSPAccount2, nil)
+	mkAccount(t, ds, &testPerson1, &testAccount1, []string{"admin", "user"})
+	mkAccount(t, ds, &testPerson2, &testAccount2, []string{"user"})
 
 	// Setup org/org relationship and add a role
 	err = ds.InsertOrgOrgRelationship(ctx, &testOrgOrgRel1)
@@ -954,9 +984,27 @@ func testAccountOrgRoleMSP(t *testing.T, ds DataStore, logger *zap.Logger, slogg
 	err = ds.InsertAccountOrgRole(ctx, &adminRoleMSP)
 	assert.NoError(err)
 
-	roles, err := ds.AccountOrgRolesByAccount(ctx, testMSPAccount1.UUID)
+	aoroles, err := ds.AccountOrgRolesByAccount(ctx, testMSPAccount1.UUID)
 	assert.NoError(err)
-	assert.ElementsMatch(roles, []AccountOrgRole{adminRoleMSP})
+	assert.Len(aoroles, 2)
+	assertRolesMatch(t, aoroles, &testMSPAccount1, testMSPAccount1.OrganizationUUID, "self", allLimitRoles, []string{"admin", "user"})
+	assertRolesMatch(t, aoroles, &testMSPAccount1, testOrg1.UUID, "msp", allLimitRoles, []string{"admin"})
+
+	aoroles, err = ds.AccountOrgRolesByAccount(ctx, testMSPAccount2.UUID)
+	assert.NoError(err)
+	assert.Len(aoroles, 2)
+	assertRolesMatch(t, aoroles, &testMSPAccount2, testMSPAccount2.OrganizationUUID, "self", allLimitRoles, []string{})
+	assertRolesMatch(t, aoroles, &testMSPAccount2, testOrg1.UUID, "msp", allLimitRoles, []string{})
+
+	aoroles, err = ds.AccountOrgRolesByAccount(ctx, testAccount1.UUID)
+	assert.NoError(err)
+	assert.Len(aoroles, 1)
+	assertRolesMatch(t, aoroles, &testAccount1, testAccount1.OrganizationUUID, "self", allLimitRoles, []string{"admin", "user"})
+
+	aoroles, err = ds.AccountOrgRolesByAccount(ctx, testAccount2.UUID)
+	assert.NoError(err)
+	assert.Len(aoroles, 1)
+	assertRolesMatch(t, aoroles, &testAccount2, testAccount2.OrganizationUUID, "self", allLimitRoles, []string{"user"})
 }
 
 func testOAuth2Identity(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
@@ -966,52 +1014,24 @@ func testOAuth2Identity(t *testing.T, ds DataStore, logger *zap.Logger, slogger 
 
 	// Setup
 	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, nil)
-	err = ds.InsertPerson(ctx, &testPerson1)
-	assert.NoError(err, "expected success")
-	err = ds.InsertPerson(ctx, &testPerson2)
-	assert.NoError(err, "expected success")
-	err = ds.InsertAccount(ctx, &testAccount1)
-	assert.NoError(err, "expected success")
-	err = ds.InsertAccount(ctx, &testAccount2)
-	assert.NoError(err, "expected success")
-
-	// similar to the userids google uses
-	const testSubj1 = "123456789012345678900"
-	id1 := &OAuth2Identity{
-		Subject:     testSubj1,
-		Provider:    "google",
-		AccountUUID: testAccount1.UUID,
-	}
-	const testSubj2 = "987654321098765432100"
-	id2 := &OAuth2Identity{
-		Subject:     testSubj2,
-		Provider:    "google",
-		AccountUUID: testAccount2.UUID,
-	}
-
-	err = ds.InsertOAuth2Identity(ctx, id1)
-	assert.NoError(err, "expected success")
-
-	err = ds.InsertOAuth2Identity(ctx, id2)
-	assert.NoError(err, "expected success")
-
-	assert.NotEqual(id1.ID, id2.ID)
+	oauth2ID1 := mkAccount(t, ds, &testPerson1, &testAccount1, nil)
+	oauth2ID2 := mkAccount(t, ds, &testPerson2, &testAccount2, nil)
+	assert.NotEqual(oauth2ID1.ID, oauth2ID2.ID)
 
 	// Try #1 again, expect error
-	err = ds.InsertOAuth2Identity(ctx, id1)
-	assert.Error(err, "expected error")
+	err = ds.InsertOAuth2Identity(ctx, oauth2ID1)
+	assert.Error(err, "should fail; already inserted")
 
 	ids, err := ds.OAuth2IdentitiesByAccount(ctx, testAccount1.UUID)
 	assert.NoError(err)
-	assert.Len(ids, 1)
-	assert.Equal(*id1, ids[0])
+	assert.Equal([]OAuth2Identity{*oauth2ID1}, ids)
 
-	li, err := ds.LoginInfoByProviderAndSubject(ctx, "google", testSubj1)
-	assert.NoError(err, "expected success")
+	li, err := ds.LoginInfoByProviderAndSubject(ctx, oauth2ID1.Provider, oauth2ID1.Subject)
+	assert.NoError(err)
 	assert.Equal(&LoginInfo{
 		Person:           testPerson1,
 		Account:          testAccount1,
-		OAuth2IdentityID: id1.ID,
+		OAuth2IdentityID: oauth2ID1.ID,
 		PrimaryOrgRoles:  nil,
 	}, li)
 
@@ -1020,7 +1040,7 @@ func testOAuth2Identity(t *testing.T, ds DataStore, logger *zap.Logger, slogger 
 	assert.IsType(NotFoundError{}, err)
 
 	at := &OAuth2AccessToken{
-		OAuth2IdentityID: id2.ID,
+		OAuth2IdentityID: oauth2ID2.ID,
 		Token:            "I like coconuts",
 		Expires:          time.Now(),
 	}
@@ -1028,7 +1048,7 @@ func testOAuth2Identity(t *testing.T, ds DataStore, logger *zap.Logger, slogger 
 	assert.NoError(err, "expected success")
 
 	rt := &OAuth2RefreshToken{
-		OAuth2IdentityID: id1.ID,
+		OAuth2IdentityID: oauth2ID1.ID,
 		Token:            "I like coconuts! A lot!",
 	}
 	err = ds.UpsertOAuth2RefreshToken(ctx, rt)
@@ -1046,10 +1066,8 @@ func testOrgOrg(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Sug
 	// Setup
 	mkOrgSiteApp(t, ds, &testMSPOrg1, nil, nil)
 	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, nil)
-	assert.NoError(ds.InsertPerson(ctx, &testPerson1))
-	assert.NoError(ds.InsertPerson(ctx, &testMSPPerson1))
-	assert.NoError(ds.InsertAccount(ctx, &testAccount1))
-	assert.NoError(ds.InsertAccount(ctx, &testMSPAccount1))
+	mkAccount(t, ds, &testPerson1, &testAccount1, []string{"user"})
+	mkAccount(t, ds, &testMSPPerson1, &testMSPAccount1, nil)
 
 	// Test that a byproduct of adding an org is the 'self' relationship
 	rels, err := ds.OrgOrgRelationshipsByOrg(ctx, testOrg1.UUID)
@@ -1109,9 +1127,12 @@ func testOrgOrg(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Sug
 	// Successfully grant Admin role to testMSPAccount1
 	assert.NoError(ds.InsertAccountOrgRole(ctx, &adminRoleMSP))
 
-	roles, err := ds.AccountOrgRolesByAccount(ctx, testMSPAccount1.UUID)
+	aoroles, err := ds.AccountOrgRolesByAccount(ctx, testMSPAccount1.UUID)
 	assert.NoError(err)
-	assert.ElementsMatch(roles, []AccountOrgRole{adminRoleMSP})
+	// One for self relationship, one for MSP relationship.
+	assert.Len(aoroles, 2)
+	assertRolesMatch(t, aoroles, &testMSPAccount1, testMSPAccount1.OrganizationUUID, "self", allLimitRoles, []string{})
+	assertRolesMatch(t, aoroles, &testMSPAccount1, testOrgOrgRel1.TargetOrganizationUUID, "msp", allLimitRoles, []string{"admin"})
 
 	// Test deletion of MSP relationship; should cleanup roles
 	err = ds.DeleteOrgOrgRelationship(ctx, testOrgOrgRel1.UUID)
@@ -1121,9 +1142,10 @@ func testOrgOrg(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.Sug
 	assert.NoError(err)
 	assert.Len(rels, 0)
 
-	roles, err = ds.AccountOrgRolesByAccount(ctx, testMSPAccount1.UUID)
+	aoroles, err = ds.AccountOrgRolesByAccount(ctx, testMSPAccount1.UUID)
 	assert.NoError(err)
-	assert.Len(roles, 0)
+	assert.Len(aoroles, 1)
+	assertRolesMatch(t, aoroles, &testMSPAccount1, testMSPAccount1.OrganizationUUID, "self", allLimitRoles, []string{})
 }
 
 // Test insertion into cloudstorage table.  subtest of TestDatabaseModel

@@ -47,11 +47,13 @@ type accountSelfProvisionResponse struct {
 }
 
 type accountRoles struct {
-	Roles        []string `json:"roles"`
-	Relationship string   `json:"relationship"`
+	TargetOrganization uuid.UUID `json:"targetOrganization"`
+	Relationship       string    `json:"relationship"`
+	Roles              []string  `json:"roles"`
+	LimitRoles         []string  `json:"limitRoles"`
 }
 
-type accountRolesResponse map[uuid.UUID]*accountRoles
+type accountRolesResponse []accountRoles
 
 var pwRegime = passwordgen.HumanPasswordSpec.String()
 
@@ -312,17 +314,17 @@ func (a *accountHandler) getAccountRoles(c echo.Context) error {
 	}
 	aoRoles, err := a.db.AccountOrgRolesByAccount(ctx, accountUUID)
 	if err != nil {
+		c.Logger().Errorf("failed getting AccountOrgRolesByAccount: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError)
 	}
-	resp := make(accountRolesResponse)
-	for _, aor := range aoRoles {
-		acctRole, ok := resp[aor.TargetOrganizationUUID]
-		if !ok {
-			acctRole = &accountRoles{}
-			resp[aor.TargetOrganizationUUID] = acctRole
+	resp := make(accountRolesResponse, len(aoRoles))
+	for i, aor := range aoRoles {
+		resp[i] = accountRoles{
+			TargetOrganization: aor.TargetOrganizationUUID,
+			Relationship:       aor.Relationship,
+			LimitRoles:         aor.LimitRoles,
+			Roles:              aor.Roles,
 		}
-		acctRole.Relationship = aor.Relationship
-		acctRole.Roles = append(acctRole.Roles, aor.Role)
 	}
 	return c.JSON(http.StatusOK, resp)
 }
@@ -418,32 +420,33 @@ func (a *accountHandler) mkAccountMiddleware(allowedRoles []string) echo.Middlew
 				if _, ok := err.(appliancedb.NotFoundError); ok {
 					return echo.NewHTTPError(http.StatusNotFound)
 				}
+				c.Logger().Errorf("failed to get account: %v", err)
 				return echo.NewHTTPError(http.StatusInternalServerError)
 			}
 			// See what the session's account is allowed to do to the target's
 			// org.
-			roles, err := a.db.AccountOrgRolesByAccountTarget(ctx,
+			aoRoles, err := a.db.AccountOrgRolesByAccountTarget(ctx,
 				sessionAccountUUID, tgtAcct.OrganizationUUID)
 			if err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError)
+				c.Logger().Errorf("failed to get account roles: %v", err)
+				return echo.NewHTTPError(http.StatusInternalServerError, err)
 			}
 			matches := make(matchedRoles)
-			var matched bool
-			for _, ur := range roles {
-				matches[ur.Role] = false
-				for _, rr := range allowedRoles {
-					if ur.Role == rr {
-						matches[ur.Role] = true
-						matched = true
+			for _, aor := range aoRoles {
+				for _, r := range aor.Roles {
+					for _, rr := range allowedRoles {
+						if r == rr {
+							matches[r] = true
+						}
 					}
 				}
 			}
-			if matched {
+			if len(matches) > 0 {
 				c.Set("matched_roles", matches)
 				return next(c)
 			}
 			c.Logger().Debugf("Unauthorized: %s acct=%v, acc=%v, ur=%v, ar=%v",
-				c.Path(), sessionAccountUUID, targetUUID, roles, allowedRoles)
+				c.Path(), sessionAccountUUID, targetUUID, aoRoles, allowedRoles)
 			return echo.NewHTTPError(http.StatusUnauthorized)
 		}
 	}

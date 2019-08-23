@@ -87,7 +87,7 @@ func (a *siteHandler) getSitesUUID(c echo.Context) error {
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError)
 	}
-	roles, err := a.db.AccountOrgRolesByAccountTarget(ctx, accountUUID,
+	aoRoles, err := a.db.AccountOrgRolesByAccountTarget(ctx, accountUUID,
 		site.OrganizationUUID)
 	if err != nil {
 		c.Logger().Errorf("Failed to get roles: %+v", err)
@@ -96,7 +96,7 @@ func (a *siteHandler) getSitesUUID(c echo.Context) error {
 	// Zero roles returned means the user has tried to access a site
 	// for which they are not authorized; this could be 404, but for
 	// now we match the response the middleware gives.
-	if len(roles) == 0 {
+	if len(aoRoles) == 0 {
 		return echo.NewHTTPError(http.StatusUnauthorized)
 	}
 	resp := siteResponse{
@@ -788,28 +788,27 @@ func (a *siteHandler) mkSiteMiddleware(allowedRoles []string) echo.MiddlewareFun
 				}
 				return echo.NewHTTPError(http.StatusInternalServerError)
 			}
-			roles, err := a.db.AccountOrgRolesByAccountTarget(ctx,
+			aoRoles, err := a.db.AccountOrgRolesByAccountTarget(ctx,
 				accountUUID, site.OrganizationUUID)
 			if err != nil {
 				return echo.NewHTTPError(http.StatusInternalServerError)
 			}
 			matches := make(matchedRoles)
-			var matched bool
-			for _, ur := range roles {
-				matches[ur.Role] = false
-				for _, rr := range allowedRoles {
-					if ur.Role == rr {
-						matches[ur.Role] = true
-						matched = true
+			for _, aor := range aoRoles {
+				for _, r := range aor.Roles {
+					for _, rr := range allowedRoles {
+						if r == rr {
+							matches[r] = true
+						}
 					}
 				}
 			}
-			if matched {
+			if len(matches) > 0 {
 				c.Set("matched_roles", matches)
 				return next(c)
 			}
 			c.Logger().Debugf("Unauthorized: %s site=%v, acc=%v, ur=%v, ar=%v",
-				c.Path(), siteUUID, accountUUID, roles, allowedRoles)
+				c.Path(), siteUUID, accountUUID, aoRoles, allowedRoles)
 			return echo.NewHTTPError(http.StatusUnauthorized)
 		}
 	}

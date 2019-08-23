@@ -562,17 +562,15 @@ func demoSitesUUIDHandler(w http.ResponseWriter, r *http.Request) {
 type daOrg struct {
 	// The org breaks the UUID contract by using '0' as its
 	// reserved UUID; hence we have to use a string here.
-	OrganizationUUID string   `json:"organizationUUID"`
-	Name             string   `json:"name"`
-	Relationship     string   `json:"relationship"`
-	LimitRoles       []string `json:"limitRoles"`
+	OrganizationUUID string `json:"organizationUUID"`
+	Name             string `json:"name"`
+	Relationship     string `json:"relationship"`
 }
 
 var org0 = daOrg{
 	OrganizationUUID: "0",
 	Name:             "Local",
 	Relationship:     "self",
-	LimitRoles:       []string{"admin", "user"},
 }
 
 // demoOrgsHandler responds to the /api/org endpoint with a constant response

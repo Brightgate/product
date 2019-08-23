@@ -29,7 +29,6 @@ type orgsResponse struct {
 	OrganizationUUID uuid.UUID `json:"organizationUUID"`
 	Name             string    `json:"name"`
 	Relationship     string    `json:"relationship"`
-	LimitRoles       []string  `json:"limitRoles"`
 }
 
 func (o *orgHandler) getOrgs(c echo.Context) error {
@@ -57,7 +56,6 @@ func (o *orgHandler) getOrgs(c echo.Context) error {
 			OrganizationUUID: tgtOrg.UUID,
 			Name:             tgtOrg.Name,
 			Relationship:     rel.Relationship,
-			LimitRoles:       rel.LimitRoles,
 		}
 	}
 	return c.JSON(http.StatusOK, response)
@@ -99,28 +97,27 @@ func (o *orgHandler) mkOrgMiddleware(allowedRoles []string) echo.MiddlewareFunc 
 			if err != nil {
 				return echo.NewHTTPError(http.StatusBadRequest)
 			}
-			roles, err := o.db.AccountOrgRolesByAccountTarget(ctx,
+			aoRoles, err := o.db.AccountOrgRolesByAccountTarget(ctx,
 				accountUUID, orgUUID)
 			if err != nil {
 				return echo.NewHTTPError(http.StatusInternalServerError)
 			}
 			matches := make(matchedRoles)
-			var matched bool
-			for _, ur := range roles {
-				matches[ur.Role] = false
-				for _, rr := range allowedRoles {
-					if ur.Role == rr {
-						matches[ur.Role] = true
-						matched = true
+			for _, aor := range aoRoles {
+				for _, r := range aor.Roles {
+					for _, rr := range allowedRoles {
+						if r == rr {
+							matches[r] = true
+						}
 					}
 				}
 			}
-			if matched {
+			if len(matches) > 0 {
 				c.Set("matched_roles", matches)
 				return next(c)
 			}
 			c.Logger().Debugf("Unauthorized: %s org=%v, acc=%v, ur=%v, ar=%v",
-				c.Path(), orgUUID, accountUUID, roles, allowedRoles)
+				c.Path(), orgUUID, accountUUID, aoRoles, allowedRoles)
 			return echo.NewHTTPError(http.StatusUnauthorized)
 		}
 	}
