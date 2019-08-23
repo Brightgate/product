@@ -669,14 +669,23 @@
   <ol>
     <li>Press the Home button, then the Apps button</li>
     <li>Tap the <b>Settings</b> app</li>
-    <li>From <i>Wireless and Networks</i>, Select <b>Wi-Fi</b></li>
+    <li>From <i>Wireless and Networks</i>, select <b>Wi-Fi</b></li>
     <li>If needed, slide <b>Wi-Fi</b> on, then select your organization's
-      Wi-Fi network name from the list (the name will end in <code>-user</code>)
-    </li>
-    <li>Enter the <b>username</b> and <b>password</b> created by Brightgate.
-      <b>Note:</b> The first time you add your Android phone to the network,
+      Wi-Fi network name from the list (the name typically ends in
+      <code>-user</code>; ask your network administrator if you're not sure of
+      the network name). You may need to wait while your Android device scans
+      for networks in range.</li>
+    <li>Confirm that <b>PEAP</b> is selected for the EAP method</li>
+    <li>If <b>Phase 2 authentication</b> appears, select <b>MSCHAPV2</b></li>
+    <li>Enter your <b>username</b> and <b>password</b> created in the Brightgate
+      Management app.
+      <b>Note:</b> The first time you add your Android device to the network,
       you will be asked to accept a certificate. Select <b>Continue</b> to
-      add the certificate. You're welcome to read more in <a
+      add the certificate. If you can, set <b>CA Certificate</b> to
+      <i>Use system certificates</i>. Then set the <b>Domain</b> to
+      <i>brightgate.net</i>. You'll also need to leave the anonymous identity
+      blank if it displays, and enter your Brightgate user name in the
+      <b>Identity</b> field. You're welcome to read more in <a
         href="#quick-word-certificates">a
         quick word about certificates</a>.</li>
     <li>Tap <b>Connect</b></li>
