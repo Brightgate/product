@@ -145,6 +145,19 @@ func configUserChanged(path []string, val string, expires *time.Time) {
 	hostapdProcess.Signal(syscall.SIGHUP)
 }
 
+func configUserDeleted(path []string) {
+	if len(path) == 2 ||
+		path[2] == "user_password" || path[2] == "user_md4_password" {
+
+		if _, ok := rc.Users[path[1]]; ok {
+			slog.Infof("resetting hostapd for user deletion: %s",
+				path[1])
+			generateRadiusHostapdUsers(rc)
+			hostapdProcess.Signal(syscall.SIGHUP)
+		}
+	}
+}
+
 func certStateChange(path []string, val string, expires *time.Time) {
 	if val == "installed" {
 		certInstalled <- true
@@ -420,6 +433,8 @@ func main() {
 	}
 
 	config.HandleChange(`^@/users/.*$`, configUserChanged)
+	config.HandleDelete(`^@/users/.*$`, configUserDeleted)
+	config.HandleExpire(`^@/users/.*$`, configUserDeleted)
 	config.HandleChange(`^@/network/radius_auth_secret`, configNetworkRadiusSecretChanged)
 	config.HandleChange(`^@/siteid`, siteIDChange)
 

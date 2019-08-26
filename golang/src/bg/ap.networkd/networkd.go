@@ -180,6 +180,12 @@ func configClientChanged(path []string, val string, expires *time.Time) {
 	hostapd.reload()
 }
 
+func configUserDeleted(path []string) {
+	if len(path) == 2 {
+		hostapd.deauthUser(path[1])
+	}
+}
+
 func configRingSubnetDeleted(path []string) {
 	ring := path[1]
 
@@ -912,6 +918,8 @@ func daemonInit() error {
 	config.HandleDelete(`^@/firewall/rules/`, configRuleDeleted)
 	config.HandleChange(`^@/firewall/blocked/`, configBlocklistChanged)
 	config.HandleExpire(`^@/firewall/blocked/`, configBlocklistExpired)
+	config.HandleDelete(`^@/users/.*`, configUserDeleted)
+	config.HandleExpire(`^@/users/.*`, configUserDeleted)
 
 	rings = config.GetRings()
 	clients = config.GetClients()

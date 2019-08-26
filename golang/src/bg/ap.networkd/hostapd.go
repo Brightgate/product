@@ -108,6 +108,7 @@ var (
 // number of queued commands.
 type hostapdConn struct {
 	active      bool
+	eap         bool
 	hostapd     *hostapdHdl
 	device      *physDevice
 	name        string        // device name used by this bssid
@@ -406,7 +407,7 @@ func (c *hostapdConn) stationBadPassword(sta string) {
 	sendNetException(sta, &c.vapName, &reason)
 }
 
-func (c *hostapdConn) deauthenticate(sta string) {
+func (c *hostapdConn) deauthSta(sta string) {
 	sta = strings.ToLower(sta)
 	slog.Infof("%v deauthenticating(%s)", c, sta)
 	c.command("DEAUTHENTICATE " + sta)
@@ -492,7 +493,7 @@ func (c *hostapdConn) eapRetransmit(mac string) {
 	} else if state.count >= *retransmitSoftLimit {
 		slog.Warnf("%d retransmits for %s since %s - kicking",
 			state.count, mac, state.first.Format(time.RFC3339))
-		go c.deauthenticate(mac)
+		go c.deauthSta(mac)
 	}
 }
 
@@ -854,6 +855,26 @@ func generateVlanConf(vap *vapConfig) {
 	mf.Close()
 }
 
+func (h *hostapdHdl) deauthUser(user string) {
+	// We don't currently have a user->device mapping, so we deauth all
+	// devices
+	for _, c := range h.conns {
+		list := make([]string, 0)
+		if c.eap {
+			c.Lock()
+			for sta := range c.stations {
+				list = append(list, sta)
+			}
+			c.Unlock()
+		}
+
+		for _, sta := range list {
+			slog.Debugf("deauthing %s from %s", sta, c.name)
+			c.disassociate(sta)
+		}
+	}
+}
+
 func (h *hostapdHdl) disassociate(sta string) {
 	sta = strings.ToLower(sta)
 	for _, c := range h.conns {
@@ -963,6 +984,7 @@ func (h *hostapdHdl) newConn(vap *vapConfig) *hostapdConn {
 
 	newConn := hostapdConn{
 		hostapd:     h,
+		eap:         strings.EqualFold(vap.KeyMgmt, "wpa-eap"),
 		name:        fullName,
 		remoteName:  remoteName,
 		localName:   localName,
