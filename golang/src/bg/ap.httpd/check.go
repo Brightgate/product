@@ -115,6 +115,8 @@ func diagHandler(w http.ResponseWriter, r *http.Request) {
 		{"dig @1.1.1.1 svc1.b10e.net", plat.DigCmd, []string{"+time=3", "+tries=3", "@1.1.1.1", "svc1.b10e.net"}},
 		{"https://svc1.b10e.net", plat.CurlCmd, []string{"-o", "/dev/null", "--connect-timeout", "3", "--fail", "https://svc1.b10e.net/"}},
 		{"heartbeat", apbin("ap-rpc"), []string{"heartbeat"}},
+		{"wlan0 neighborhood", plat.IwCmd, []string{"dev", "wlan0", "scan"}},
+		{"wlan1 neighborhood", plat.IwCmd, []string{"dev", "wlan1", "scan"}},
 	}
 	for _, cmd := range cmds {
 		fmt.Fprintf(w, "---------- begin %s\n", cmd.title)
