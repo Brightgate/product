@@ -101,7 +101,7 @@ func handlePipe(c *Child, r io.ReadCloser) {
 			}
 		}
 		if c.logbuf != nil {
-			c.logbuf.Write([]byte(line))
+			c.logbuf.Write([]byte(line + "\n"))
 		}
 	}
 

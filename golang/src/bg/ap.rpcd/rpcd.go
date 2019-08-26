@@ -303,7 +303,7 @@ func cloud(isFailsafe bool, wg *sync.WaitGroup, doneChan chan bool) {
 	if isGateway {
 		if isFailsafe {
 			slog.Infof("Starting in failsafe mode - disabling " +
-				"inventory, update, upload, and cert loops")
+				"inventory, fault, update, upload, and cert loops")
 		} else {
 			go inventoryLoop(ctx, tclient, &cleanup.wg, addDoneChan())
 			go faultLoop(ctx, tclient, &cleanup.wg, addDoneChan())
@@ -316,6 +316,13 @@ func cloud(isFailsafe bool, wg *sync.WaitGroup, doneChan chan bool) {
 
 		// XXX - should allow tunneling into satellites.
 		go tunnelLoop(&cleanup.wg, addDoneChan())
+	} else {
+		if isFailsafe {
+			slog.Infof("Starting in failsafe mode - disabling " +
+				"fault loop")
+		} else {
+			go faultLoop(ctx, tclient, &cleanup.wg, addDoneChan())
+		}
 	}
 
 	<-doneChan

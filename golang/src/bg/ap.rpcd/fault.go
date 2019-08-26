@@ -122,6 +122,7 @@ func sendFaults(ctx context.Context, client cloud_rpc.EventClient) error {
 func faultLoop(ctx context.Context, client cloud_rpc.EventClient, wg *sync.WaitGroup, doneChan chan bool) {
 	var done bool
 
+	slog.Infof("faults loop starting")
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for !done {
