@@ -87,6 +87,9 @@ export default {
 
   methods: {
     formatRoles: function(roleList) {
+      if (roleList.length === 0) {
+        return this.$t('message.account_prefs.roles_none');
+      }
       return roleList.map((role) => {
         return this.$t(`message.api.roles.${role}`);
       }).join(', ');

@@ -241,6 +241,21 @@ function accountHasOrgRole(state, accountUUID, orgUUID, role) {
   return found !== -1;
 }
 
+function accountOrgRoles(state, accountUUID, orgUUID) {
+  assert.equal(typeof accountUUID, 'string', 'bad accountUUID');
+  assert.equal(typeof orgUUID, 'string', 'bad orgUUID');
+  const account = state.accounts[accountUUID];
+  if (!account || !account.roles) {
+    return [];
+  }
+  debug('accountOrgRoles', accountUUID, orgUUID, account.roles);
+  const found = account.roles.filter((aor) => {
+    return aor.targetOrganization === orgUUID;
+  });
+  debug('accountOrgRoles found is', found);
+  return found;
+}
+
 function siteHasRole(state, siteUUID, role) {
   assert.equal(typeof siteUUID, 'string');
   assert(appDefs.ALL_ROLES.includes(role), 'unrecognized role');
@@ -562,6 +577,9 @@ const getters = {
     return accountHasOrgRole(state, state.myAccountUUID, state.currentOrgID, appDefs.ROLE_ADMIN);
   },
 
+  accountOrgRoles: (state) => (account, org) => {
+    return accountOrgRoles(state, account, org);
+  },
   accountHasOrgRole: (state) => (account, org, role) => {
     return accountHasOrgRole(state, account, org, role);
   },

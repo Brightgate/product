@@ -152,29 +152,29 @@ const mockLocalOrgs = [
 
 const mockCloudOrgs = [
   {
+    name: 'WUPHF.com, A Ryan Howard Project',
+    organizationUUID: '9f56108e-2916-409d-9b43-c964115fde61',
+    relationship: 'msp',
+  },
+  {
     name: 'Dunder Mifflin',
     organizationUUID: 'd91864cd-434a-4b52-8236-d3b95afde170',
     relationship: 'self',
-  },
-  {
-    name: 'WUPHF.com',
-    organizationUUID: '9f56108e-2916-409d-9b43-c964115fde61',
-    relationship: 'msp',
   },
 ];
 
 export const mockAccountRoles = [
   {
-    'targetOrganization': 'd91864cd-434a-4b52-8236-d3b95afde170',
-    'relationship': 'self',
-    'limitRoles': ['admin', 'user'],
-    'roles': ['admin', 'user'],
-  },
-  {
     'targetOrganization': '9f56108e-2916-409d-9b43-c964115fde61',
     'relationship': 'msp',
     'limitRoles': ['admin', 'user'],
     'roles': ['admin'],
+  },
+  {
+    'targetOrganization': 'd91864cd-434a-4b52-8236-d3b95afde170',
+    'relationship': 'self',
+    'limitRoles': ['admin', 'user'],
+    'roles': ['admin', 'user'],
   },
 ];
 

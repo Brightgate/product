@@ -30,13 +30,32 @@
   color: #2196f3 !important;
 }
 
+div.org-switch-flex {
+  display: flex;
+  overflow-x: visible;
+}
+
+div.org-switch-flex-name {
+  flex-grow: 1;
+  overflow-x: hidden;
+  text-overflow: ellipsis;
+}
+
+div.org-switch-flex-arrow {
+}
+
 </style>
 
 <template>
   <f7-button fill raised color="white" popup-open=".org-switch-popup" class="org-switch-button">
-    <span>
-      <f7-icon material="business" />&nbsp;{{ title }}<f7-icon class=".org-switch-arrow" material="arrow_drop_down" />
-    </span>
+    <div class="org-switch-flex">
+      <div class="org-switch-flex-name">
+        <f7-icon material="business" />&nbsp;{{ title }}
+      </div>
+      <div class="org-switch-flex-arrow">
+        <f7-icon material="arrow_drop_down" />
+      </div>
+    </div>
   </f7-button>
 </template>
 

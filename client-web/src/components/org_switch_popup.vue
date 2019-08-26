@@ -29,6 +29,18 @@ span.check-slot {
 a.org-switch-close {
   border: none;
 }
+
+/*
+ * Normally the footer is a lighter gray color; but the footer is only for
+ * disabled items, and so it winds up doubly-lightened. The contrast is
+ * then too low; so reset the footer font color to the theme black.
+ */
+.md span.role-footer {
+  color: #212121;
+}
+.ios span.role-footer {
+  color: #000;
+}
 </style>
 
 <template>
@@ -41,14 +53,21 @@ a.org-switch-close {
         <f7-nav-title>Select Organization</f7-nav-title>
       </f7-navbar>
       <f7-list media-list>
-        <f7-list-item v-for="(org, orgID) in orgs" :key="orgID" link="#" class="hover-item" @click="selectOrg(orgID)">
+        <f7-list-item
+          v-for="org in orderedOrgs"
+          :key="org.id"
+          :class="orgEnabled(org.id) ? '': 'disabled'"
+          link="#"
+          class="hover-item"
+          @click="selectOrg(org.id)">
           <div slot="media">
             <span class="check-slot">
-              <f7-icon v-if="orgID === currentOrg.id" material="check" />
+              <f7-icon v-if="org.id === currentOrg.id" material="check" />
             </span>
             <f7-icon material="business" />
           </div>
-          <span><f7-icon v-if="orgID === homeOrgID" material="home" /> {{ org.name }}</span>
+          <span><f7-icon v-if="org.id === homeOrgID" material="home" /> {{ org.name }}</span>
+          <span v-if="!orgEnabled(org.id)" slot="footer" class="role-footer">{{ $t('message.org_switch_popup.no_roles') }}</span>
         </f7-list-item>
       </f7-list>
     </f7-page>
@@ -75,6 +94,7 @@ export default {
       'currentOrg',
       'myAccountUUID',
       'accountByID',
+      'accountOrgRoles',
     ]),
 
     homeOrgID: function() {
@@ -84,6 +104,20 @@ export default {
       }
       return acct.organizationUUID;
     },
+
+    orderedOrgs: function() {
+      const ordered = Object.values(this.orgs);
+      ordered.sort((a, b) => {
+        if (a.id === this.homeOrgID) {
+          return -1;
+        }
+        if (b.id === this.homeOrgID) {
+          return 1;
+        }
+        return a.name.localeCompare(b.name);
+      });
+      return ordered;
+    },
   },
 
   methods: {
@@ -92,6 +126,16 @@ export default {
     onPopupOpened: function() {
       debug('popup opened');
       this.$f7.panel.close();
+    },
+
+    orgEnabled: function(orgID) {
+      const aors = this.accountOrgRoles(this.myAccountUUID, orgID);
+      debug('orgDisabled', orgID, aors);
+      const result = aors.find((aor) => {
+        return (aor.roles.length > 0);
+      });
+      debug('orgDisabled', result);
+      return !!result;
     },
 
     // Commit the transaction, force the main view to go back to the top,

@@ -28,7 +28,7 @@ div.checkbox-list {
       <f7-list-item group-title>
         {{ $t('message.account_roles.roles_group') }}
       </f7-list-item>
-      <f7-list-item v-for="aorole in acct.roles" :key="aorole.targetOrganization + aorole.relationship">
+      <f7-list-item v-for="aorole in orderedRoles" :key="aorole.targetOrganization + aorole.relationship">
         <div slot="title">{{ orgNameByID(aorole.targetOrganization) }}
           <div class="checkbox-list">
             <span v-for="role in aorole.limitRoles" :key="role">
@@ -80,9 +80,22 @@ export default {
       return this.$store.getters.accountByID(accountID);
     },
 
-    roles: function() {
-      const accountID = this.$f7route.params.accountID;
-      return this.$store.getters.accountByID(accountID).roles;
+    orderedRoles: function() {
+      const acct = this.accountByID(this.myAccountUUID);
+      debug('orderedRoles, acct is', acct);
+      if (!acct.roles) {
+        return [];
+      }
+      const ordered = [...acct.roles];
+      ordered.sort((a, b) => {
+        if (a.relationship === 'self' && b.relationship !== 'self') {
+          return -1;
+        }
+        const aOrgName = this.orgNameByID(a.targetOrganization);
+        const bOrgName = this.orgNameByID(b.targetOrganization);
+        return aOrgName.localeCompare(bOrgName);
+      });
+      return ordered;
     },
   },
 

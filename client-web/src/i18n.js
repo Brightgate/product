@@ -47,6 +47,9 @@ export default {
         select_site: 'Select Site',
         tools: 'Tools',
       },
+      org_switch_popup: {
+        no_roles: 'No roles granted',
+      },
       site_admin: {
         admin_title: 'You are administering Brightgate Wi-fi for this site.',
         user_title: 'You are viewing Brightgate Wi-fi for this site.',
@@ -123,6 +126,7 @@ export default {
       account_prefs: {
         title: 'Account Preferences',
         self_provision: 'Wi-Fi Self Provisioning',
+        roles_none: 'None',
       },
       self_provision: {
         title: 'Wi-Fi Self Provisioning',
