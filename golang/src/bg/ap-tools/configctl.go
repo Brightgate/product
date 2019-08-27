@@ -44,7 +44,10 @@ func configctlMain() {
 	}
 
 	slog := aputil.NewLogger(pname)
-	brokerd := broker.NewBroker(slog, pname)
+	brokerd, err := broker.NewBroker(slog, pname)
+	if err != nil {
+		slog.Fatal(err)
+	}
 	defer brokerd.Fini()
 	configd, err := apcfg.NewConfigd(brokerd, pname, l)
 

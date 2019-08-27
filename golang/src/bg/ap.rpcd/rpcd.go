@@ -341,7 +341,10 @@ func daemonStart() {
 	}
 
 	prometheusInit()
-	brokerd = broker.NewBroker(slog, pname)
+	brokerd, err = broker.NewBroker(slog, pname)
+	if err != nil {
+		slog.Fatal(err)
+	}
 	defer brokerd.Fini()
 
 	if err := commonInit(); err != nil {
@@ -391,6 +394,13 @@ func daemonStart() {
 func cmdStart() {
 	var wg sync.WaitGroup
 	ctx := context.Background()
+
+	// No brokerd means no connection to configd; it's not fatal, but cloud
+	// RPC config will have to be done on the commandline.
+	brokerd, _ = broker.NewBroker(slog, pname)
+	if brokerd != nil {
+		defer brokerd.Fini()
+	}
 
 	err := commonInit()
 	if err != nil || applianceCred == nil {

@@ -980,7 +980,10 @@ func main() {
 	prometheusInit()
 	configInit()
 
-	brokerd = broker.NewBroker(slog, pname)
+	brokerd, err = broker.NewBroker(slog, pname)
+	if err != nil {
+		slog.Fatal(err)
+	}
 	brokerd.Handle(base_def.TOPIC_ENTITY, eventHandler)
 	defer brokerd.Fini()
 

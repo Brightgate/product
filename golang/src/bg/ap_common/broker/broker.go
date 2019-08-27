@@ -13,7 +13,6 @@ package broker
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -23,6 +22,7 @@ import (
 	"bg/base_msg"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
 	"nanomsg.org/go/mangos/v2"
@@ -156,13 +156,13 @@ func (b *Broker) Handle(topic string, handler handlerF) {
 	b.Unlock()
 }
 
-func (b *Broker) connect() {
+func (b *Broker) connect() error {
 	var port string
 	var err error
 
 	b.socket, err = bus.NewSocket()
 	if err != nil {
-		b.slog.Fatalf("creating subscriber socket %v", err)
+		return errors.Wrap(err, "failed to create subscriber socket")
 	}
 
 	if aputil.IsSatelliteMode() {
@@ -173,10 +173,12 @@ func (b *Broker) connect() {
 
 	err = b.socket.Dial(port)
 	if err != nil {
-		b.slog.Fatalf("connecting subscriber to %s: %v", port, err)
+		return errors.Wrapf(err, "failed to connect subscriber to %s", port)
 	}
 
 	go eventListener(b)
+
+	return nil
 }
 
 // Fini closes the subscriber's connection to the broker
@@ -190,13 +192,13 @@ func (b *Broker) Fini() {
 
 // NewBroker allocates a brokers structure and establishes a network connection
 // to the broker daemon.
-func NewBroker(slog *zap.SugaredLogger, name string) *Broker {
+func NewBroker(slog *zap.SugaredLogger, name string) (*Broker, error) {
 	if len(name) == 0 {
-		log.Fatalf("Broker consumer must give its name")
+		return nil, fmt.Errorf("Broker consumer must give its name")
 	}
 
 	if slog == nil {
-		log.Fatalf("Broker consumer must provide a logger")
+		return nil, fmt.Errorf("Broker consumer must provide a logger")
 	}
 
 	b := Broker{
@@ -210,9 +212,12 @@ func NewBroker(slog *zap.SugaredLogger, name string) *Broker {
 		b.handlers[v] = nil
 	}
 
-	b.connect()
-	if err := b.Ping(); err != nil {
-		b.slog.Fatalf("initial ping failed: %v", err)
+	if err := b.connect(); err != nil {
+		return nil, err
 	}
-	return &b
+
+	if err := b.Ping(); err != nil {
+		return nil, errors.Wrap(err, "initial broker ping failed")
+	}
+	return &b, nil
 }

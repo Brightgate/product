@@ -276,7 +276,10 @@ func main() {
 
 	prometheusInit()
 
-	b := broker.NewBroker(slog, pname)
+	b, err := broker.NewBroker(slog, pname)
+	if err != nil {
+		slog.Fatal(err)
+	}
 	b.Handle(base_def.TOPIC_PING, handlePing)
 	b.Handle(base_def.TOPIC_CONFIG, handleConfig)
 	b.Handle(base_def.TOPIC_ENTITY, handleEntity)

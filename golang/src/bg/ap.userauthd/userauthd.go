@@ -397,7 +397,10 @@ func main() {
 
 	plat = platform.NewPlatform()
 	prometheusInit()
-	brokerd := broker.NewBroker(slog, pname)
+	brokerd, err := broker.NewBroker(slog, pname)
+	if err != nil {
+		slog.Fatal(err)
+	}
 	defer brokerd.Fini()
 
 	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)

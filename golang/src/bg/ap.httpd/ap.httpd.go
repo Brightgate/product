@@ -266,7 +266,10 @@ func main() {
 	prometheusInit()
 
 	// Set up connection with the broker daemon
-	brokerd := broker.NewBroker(slog, pname)
+	brokerd, err := broker.NewBroker(slog, pname)
+	if err != nil {
+		slog.Fatal(err)
+	}
 	defer brokerd.Fini()
 
 	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)

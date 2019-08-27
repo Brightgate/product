@@ -437,7 +437,10 @@ func main() {
 	// Use the broker to listen for appropriate messages to create and update
 	// our observations. To respect a client's privacy we won't register any
 	// handlers until we have recovered each client's privacy configuration.
-	brokerd = broker.NewBroker(slog, pname)
+	brokerd, err = broker.NewBroker(slog, pname)
+	if err != nil {
+		slog.Fatal(err)
+	}
 	defer brokerd.Fini()
 
 	config, err = apcfg.NewConfigd(brokerd, pname, cfgapi.AccessInternal)
