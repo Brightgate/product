@@ -134,9 +134,9 @@ export default {
         user: this.user,
         newUser: this.newUser,
       }).then(() => {
-        const txt = this.newUser
-          ? this.$t('message.user_details.create_ok', {name: this.user.UID})
-          : this.$t('message.user_details.save_ok', {name: this.user.UID});
+        const txt = this.newUser ?
+          this.$t('message.user_details.create_ok', {name: this.user.UID}) :
+          this.$t('message.user_details.save_ok', {name: this.user.UID});
         this.$f7.toast.show({
           text: txt,
           closeTimeout: 2000,
@@ -145,9 +145,9 @@ export default {
         this.$f7router.back();
       }).catch((err) => {
         debug('saveUser: Error', err);
-        const txt = this.newUser
-          ? this.$t('message.user_details.create_fail', {err: err})
-          : this.$t('message.user_details.save_fail', {err: err});
+        const txt = this.newUser ?
+          this.$t('message.user_details.create_fail', {err: err}) :
+          this.$t('message.user_details.save_fail', {err: err});
         this.$f7.toast.show({
           text: txt,
           closeButton: true,
