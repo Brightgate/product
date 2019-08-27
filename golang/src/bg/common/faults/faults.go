@@ -89,6 +89,22 @@ func buildPath(dir, kind string, when time.Time) string {
 	return filepath.Join(dir, name)
 }
 
+// ReportPath returns the path to a FaultReport, constructing its filename from
+// its serialized form.
+func ReportPath(dir string, data []byte) (string, error) {
+	var header struct {
+		Date time.Time
+		Kind string
+	}
+
+	err := json.Unmarshal(data, &header)
+	if err != nil {
+		return "", fmt.Errorf("unmarshaling fault report: %v", err)
+	}
+
+	return buildPath(dir, header.Kind, header.Date), nil
+}
+
 // WriteReport attempts to store a FaultReport as a file in the provided
 // directory.  It uses the data in the report to construct the file name.
 func WriteReport(dir string, report *FaultReport) (string, error) {
@@ -107,16 +123,10 @@ func WriteReport(dir string, report *FaultReport) (string, error) {
 // us to deploy new fault types on the client without making synchronized
 // changes in the cloud.
 func WriteReportSerialized(dir string, data []byte) (string, error) {
-	var header struct {
-		Date time.Time
-		Kind string
-	}
-
-	err := json.Unmarshal(data, &header)
+	path, err := ReportPath(dir, data)
 	if err != nil {
-		return "", fmt.Errorf("unmarshaling fault report: %v", err)
+		return "", err
 	}
 
-	path := buildPath(dir, header.Kind, header.Date)
 	return path, ioutil.WriteFile(path, data, 0644)
 }

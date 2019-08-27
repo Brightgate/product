@@ -52,8 +52,23 @@ func faultMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 
 	path, err := writeFaultFile(siteUUID, m.Data)
 	if err != nil {
-		slog.Errorw("failed to write FaultReport to file", "path", path, "error", err)
+		slog.Errorw("failed to write FaultReport to file",
+			"path", path, "error", err)
 	} else {
 		slog.Infow("wrote FaultReport to file", "path", path)
+	}
+
+	path, err = faults.ReportPath("faults", m.Data)
+	if err != nil {
+		slog.Errorw("failed to write FaultReport to cloud",
+			"error", err)
+		return
+	}
+	url, err := writeCSObject(ctx, applianceDB, siteUUID, path, m.Data)
+	if err != nil {
+		slog.Errorw("failed to write FaultReport to cloud",
+			"url", url, "error", err)
+	} else {
+		slog.Infow("wrote FaultReport to cloud", "url", url)
 	}
 }
