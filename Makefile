@@ -74,7 +74,9 @@ ifeq ("$(UNAME_S)","Darwin")
 # On macOS, install the .pkg provided by golang.org.
 export GOROOT=/usr/local/go
 GOROOT_SEARCH += /usr/local/go
+ifeq ($(MAKE_RESTARTS),)
 $(info operating-system macOS)
+endif
 else
 # On Linux
 export GOROOT=$(wildcard /opt/net.b10e/go-1.12.4)
@@ -83,7 +85,9 @@ ifeq ("$(GOROOT)","")
 export GOROOT=$(HOME)/go
 GOROOT_SEARCH += $(HOME)/go
 endif
+ifeq ($(MAKE_RESTARTS),)
 $(info operating-system Linux)
+endif
 endif
 endif
 
@@ -276,7 +280,9 @@ define report
 # PYTHON3VERSION: $(PYTHON3VERSION)
 #    NODEVERSION: $(NODEVERSION)
 endef
+ifeq ($(MAKE_RESTARTS),)
 $(info $(report))
+endif
 undefine report
 ifneq ($(GOHOSTARCH),$(GOARCH))
 define report
@@ -285,7 +291,9 @@ define report
 #  CROSS_SYSROOT: $(CROSS_SYSROOT)
 #    SYSROOT_SUM: $(SYSROOT_SUM)
 endef
+ifeq ($(MAKE_RESTARTS),)
 $(info $(report))
+endif
 undefine report
 endif
 
