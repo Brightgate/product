@@ -202,11 +202,15 @@ func upgradeMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 		return
 	}
 
-	relUU, err := uuid.FromString(report.ReleaseUuid)
-	if err != nil {
-		slog.Errorw("failed to process upgrade report: bad release UUID",
-			"error", err)
-		return
+	// Distinguish between a missing UUID and an invalid one.
+	var relUU uuid.UUID
+	if report.ReleaseUuid != "" {
+		relUU, err = uuid.FromString(report.ReleaseUuid)
+		if err != nil {
+			slog.Errorw("failed to process upgrade report: bad release UUID",
+				"error", err)
+			return
+		}
 	}
 
 	// If record_time in the message is missing or invalid, log a warning,
@@ -219,7 +223,22 @@ func upgradeMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 
 	switch report.Result {
 	case cloud_rpc.UpgradeReport_REPORT:
-		slog.Infow("Set current release", "release_uuid", relUU)
+		slog.Infow("Set current release", "release_uuid", relUU,
+			"commits", report.Commits)
+
+		// XXX We should record the commits somewhere; but where?
+		//
+		// We should probably try to derive the release UUID from the
+		// commits.  We'll need to know the platform name.  If there are
+		// multiple generations, we won't know.
+		//
+		// This is probably slow, but if we don't know the full hash:
+		//     SELECT * FROM artifacts WHERE encode(commit_hash, 'hex') LIKE 'ac64649%';
+
+		if relUU == uuid.Nil {
+			slog.Warn("Unknown release UUID; not recording")
+			break
+		}
 		err = applianceDB.SetCurrentRelease(ctx, applianceUUID, relUU, reportTS)
 		if err != nil {
 			slog.Errorw("failed to process upgrade report: DB failure",

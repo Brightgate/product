@@ -60,6 +60,7 @@ message UpgradeReport {
 	string release_uuid     = 0x02;
 	bytes output            = 0x03;
 	google.protobuf.Timestamp record_time = 0x04;
+	map<string, string> commits = 0x05;
 }
 
 // Cloud simplified version of EventNetException

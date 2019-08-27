@@ -35,6 +35,8 @@ copy_preserve () {
 set -x
 
 if [ "x$1" = "xconfigure" ]; then
+	rm -f $appackage/etc/release.json
+
 	# Disable services that collide with our use, or that we want to manage
 	# directly.
 	stopsvc dnsmasq.service

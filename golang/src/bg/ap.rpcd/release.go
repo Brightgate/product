@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
 
@@ -43,15 +44,16 @@ func upgradeLoop(ctx context.Context, client cloud_rpc.ReleaseManagerClient,
 
 	curRelUU, err := getCurrentRelease()
 	if err != nil {
-		slog.Errorf("Couldn't determine current release: %v", err)
+		slog.Warnf("Couldn't determine current release UUID: %v", err)
+	}
+
+	commitMap := getCurrentCommits()
+
+	if err = reportRelease(ctx, tclient, curRelUU, commitMap); err != nil {
+		slog.Errorf("Unable to report release information: %v", err)
 	} else {
-		err := reportRelease(ctx, tclient, curRelUU)
-		if err != nil {
-			slog.Errorf("Unable to report release information: %v", err)
-		} else {
-			slog.Infof("Reported %s as the currently running release",
-				curRelUU)
-		}
+		slog.Infof("Reported %s (%v) as the currently running release",
+			curRelUU, commitMap)
 	}
 
 	releaseChan := make(chan struct{})
@@ -119,12 +121,48 @@ func getCurrentRelease() (*uuid.UUID, error) {
 	return &cr.Release.UUID, nil
 }
 
-// Reports a UUID to the cloud as the currently running release.
-func reportRelease(ctx context.Context, tclient cloud_rpc.EventClient, relUU *uuid.UUID) error {
+// Figures out as best it can what commits of what repos are running on the
+// system.  Not all repos deliver this information in any form, and not all
+// repos deliver the full commit hash.
+func getCurrentCommits() map[string]string {
+	commitMap := make(map[string]string)
+
+	apversion, err := config.GetProp("@/apversion")
+	if err == nil {
+		commitMap["PS"] = apversion
+	}
+
+	// Read the WRT commit hash out of /etc/openwrt_version.  By default,
+	// it's got more information than that; this allows for it to be just
+	// the commit hash, in case we override it in our build.
+	if src, err := ioutil.ReadFile("/etc/openwrt_version"); err == nil {
+		src = bytes.TrimSpace(src)
+		b := make([]byte, hex.DecodedLen(len(src)))
+		if _, err := hex.Decode(b, src); err == nil {
+			commitMap["WRT"] = string(src)
+		} else {
+			pat := regexp.MustCompile(`^r.*-([[:xdigit:]]*)$`)
+			if matches := pat.FindSubmatch(src); len(matches) == 2 {
+				commitMap["WRT"] = string(matches[1])
+			}
+		}
+	}
+
+	// Pull version information for XS and VUB, once they're available.
+
+	return commitMap
+}
+
+// Reports to the cloud what we know about the currently-running release.
+func reportRelease(ctx context.Context, tclient cloud_rpc.EventClient,
+	relUU *uuid.UUID, commitMap map[string]string) error {
 	report := &cloud_rpc.UpgradeReport{
-		Result:      cloud_rpc.UpgradeReport_REPORT,
-		ReleaseUuid: relUU.String(),
-		RecordTime:  ptypes.TimestampNow(),
+		Result:     cloud_rpc.UpgradeReport_REPORT,
+		RecordTime: ptypes.TimestampNow(),
+		Commits:    commitMap,
+	}
+	if relUU != nil {
+		report.ReleaseUuid = relUU.String()
 	}
 	return publishEvent(ctx, tclient, "upgrade", report)
 }
