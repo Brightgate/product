@@ -11,6 +11,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -145,7 +146,9 @@ func statusCq(cmd *cobra.Command, args []string) error {
 		uuids[i] = uu
 		i++
 	}
-	sort.Slice(uuids, func(i, j int) bool { return uuids[i].String() < uuids[j].String() })
+	sort.Slice(uuids, func(i, j int) bool {
+		return bytes.Compare(uuids[i].Bytes(), uuids[j].Bytes()) == -1
+	})
 
 	for _, uu := range uuids {
 		cmds = m[uu]

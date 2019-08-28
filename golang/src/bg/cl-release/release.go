@@ -11,12 +11,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -293,7 +295,16 @@ func applianceStatus(cmd *cobra.Command, args []string) error {
 		)
 		table.Separator = "  "
 
-		for appUU, stat := range status {
+		appUUs = make([]uuid.UUID, 0)
+		for appUU := range status {
+			appUUs = append(appUUs, appUU)
+		}
+		sort.Slice(appUUs, func(i, j int) bool {
+			return bytes.Compare(appUUs[i].Bytes(), appUUs[j].Bytes()) == -1
+		})
+
+		for _, appUU := range appUUs {
+			stat := status[appUU]
 			var targUU, targName, curUU, curName, since string
 			if stat.TargetReleaseUUID.Valid {
 				targUU = stat.TargetReleaseUUID.UUID.String()
