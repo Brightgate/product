@@ -602,20 +602,22 @@
         network</a></li>
   </ul>
   <h4 id="quick-word-certificates">A quick word about certificates</h4>
-  <p>The first time a device connects to the authenticated users network, in
-    most cases the device will present a certificate for you to accept. This
-    certificate confirms that the network is what it says it is, and accepting
-    the certificate allows you to trust this network in the future when you
-    connect the device without manual intervention.</p>
-  <p>While your IT team is best qualified to help you understand how
-    certificates are used in your environment, Brightgate suggests you inspect
-    any certificate before adding it to your device. While the method of
-    inspection varies according to the device type, ensure the certificate is
-    issued by Let's Encrypt, the certificate authority used by Brightgate, and
-    that the Subject Name looks like <code><i>number</i>.brightgate.net</code>,
-    where <code><i>number</i></code> is a five digit number. The Trust level
-    should be set to <i>Always Trust</i> for <b>EAP</b> and <b>Basic Policy</b>,
-    if that level of specificity is available on your device. </p>
+  <p>When connecting your device to the authenticated users network for the
+    first time and periodically when the certificate requires renewal, the
+    device may present a certificate for you to accept. This certificate
+    confirms the network is what it says it is, and accepting the certificate
+    allows you to trust this network without manual intervention whenever you
+    connect the device in the future.</p>
+  <p>While your network administration team is best qualified to help you
+    understand how certificates are used in your environment, Brightgate
+    suggests you inspect any certificate before adding it to your device. While
+    the method of inspection varies according to the device type, ensure the
+    certificate is issued by Let's Encrypt, the certificate authority used by
+    Brightgate, and that the Subject Name looks like
+    <code><i>number</i>.brightgate.net</code>, where <code><i>number</i></code>
+    is a five digit number. The Trust level should be set to <i>Always Trust</i>
+    for <b>EAP</b> and <b>Basic Policy</b>, if that level of specificity is
+    available on your device. </p>
   <h4 id="add-mac-network">Add a Mac to your Wi-Fi network</h4>
   <p>Once you have a Wi-Fi user name and password created for your Wi-Fi
     network, add your Mac to the network with these steps:</p>
