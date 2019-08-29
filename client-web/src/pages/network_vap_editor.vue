@@ -132,18 +132,16 @@ export default {
         return;
       }
 
-      // Step 2: Confirmation dialog on local appliance
-      let p = Promise.resolve();
-      if (this.appMode === appDefs.APPMODE_LOCAL) {
-        p = new Promise((resolve, reject) => {
+      const currentSSID = this.vap.ssid;
+      // Step 2: Confirmation dialog
+      try {
+        await new Promise((resolve, reject) => {
           this.$f7.dialog.confirm(
-            this.$t('message.network_vap_editor.warning'),
+            this.$t('message.network_vap_editor.warning',
+              {ssid: currentSSID}),
             this.$t('message.network_vap_editor.warning_title'),
             resolve, reject);
         });
-      }
-      try {
-        await p;
       } catch (err) {
         return;
       }

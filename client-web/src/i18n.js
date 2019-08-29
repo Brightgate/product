@@ -168,8 +168,8 @@ export default {
         title: 'Edit Network Properties',
         ssid: 'SSID (Network Name)',
         passphrase: 'Passphrase',
-        warning: 'If you are connected to the appliance via WiFi, changing these properties may cause you to become disconnected.',
-        warning_title: 'WiFi Properties Warning',
+        warning: 'If your device is presently using the "{ssid}" Wi-Fi network, changing these properties may cause you to become disconnected.',
+        warning_title: 'Wi-Fi Properties Change',
         titles: {
           eap: 'Authorized User Network Properties',
           psk: 'Devices Network Properties',

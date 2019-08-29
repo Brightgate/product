@@ -64,7 +64,7 @@ span.pw-toggle {
 
     <f7-block-title>{{ $t('message.network_vap.ring_config') }}</f7-block-title>
     <f7-list>
-      <f7-list-item v-for="(ring, ringName) in rings" :key="ringName" accordion-item>
+      <f7-list-item v-for="(ring, ringName) in vapRings" :key="ringName" accordion-item>
         <div slot="title">
           <span>
             {{ ringName }}
@@ -126,26 +126,23 @@ export default {
       return this.$f7route.params.vapName;
     },
 
+    vapRings: function() {
+      debug('vapRings: vap, rings', this.vap, this.rings);
+      return pickBy(this.rings, (val, key) => {
+        return this.vap.rings.includes(key);
+      });
+    },
+
     passphraseDisplayed: function() {
-      const vap = this.vaps[this.$f7route.params.vapName];
       let val = '';
       if (this.passphraseVisible) {
-        val = vap.passphrase;
+        val = this.vap.passphrase;
       } else {
-        if (vap.passphrase) {
-          val = '•'.repeat(vap.passphrase.length);
+        if (this.vap.passphrase) {
+          val = '•'.repeat(this.vap.passphrase.length);
         }
       }
       return val;
-    },
-
-    rings: function() {
-      const vapName = this.$f7route.params.vapName;
-      const vap = this.vaps[vapName];
-      debug('rings: vap, rings', vap, this.rings);
-      return pickBy(this.rings, (val, key) => {
-        return vap.rings.includes(key);
-      });
     },
   },
 
@@ -155,9 +152,8 @@ export default {
     },
 
     onPageBeforeIn: function() {
-      const vapName = this.$f7route.params.vapName;
-      debug('onPageBeforeIn', this.vaps[vapName]);
-      this.passphraseValue = this.vaps[vapName].passphrase;
+      debug('onPageBeforeIn', this.vap);
+      this.passphraseValue = this.vap.passphrase;
       this.passphraseVisible = false;
     },
 
