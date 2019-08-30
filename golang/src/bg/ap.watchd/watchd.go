@@ -180,7 +180,7 @@ func getGateways() {
 	// nodes rather than a client device.
 	// XXX: we could reduce the size of the map by populating it with only
 	// those addresses that belong to active nodes rather than all nodes.
-	gateways = make(map[uint32]bool)
+	newGateways := make(map[uint32]bool)
 	for _, r := range rings {
 		_, ipnet, _ := net.ParseCIDR(r.Subnet)
 		base := ipnet.IP.To4()
@@ -188,9 +188,10 @@ func getGateways() {
 			addr := make(net.IP, 4)
 			binary.BigEndian.PutUint32(addr,
 				binary.BigEndian.Uint32(base)+uint32(i))
-			gateways[network.IPAddrToUint32(addr)] = true
+			newGateways[network.IPAddrToUint32(addr)] = true
 		}
 	}
+	gateways = newGateways
 
 	// Build a set of the MACs belonging to our APs, so we can distinguish
 	// between client and internal network traffic
