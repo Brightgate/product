@@ -351,6 +351,7 @@ func daemonStart() {
 		mcpd.SetState(mcp.BROKEN)
 		slog.Fatalf("commonInit failed: %v", err)
 	}
+	aputil.ReportInit(slog, pname)
 
 	if applianceCred == nil {
 		// We can't perform most of our rpc duties, but we at least want

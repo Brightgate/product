@@ -53,9 +53,10 @@ type CrashReport struct {
 	Log    string
 }
 
-// MemReport contains the data specific to daemon memory consumption issues
+// MemReport contains the data specific to daemon memory consumption issues.
 type MemReport struct {
-	MBytes uint64
+	MBytes  uint64
+	Profile *string `json:"Profile,omitempty"`
 }
 
 // ErrorReport contains the data about internal errors

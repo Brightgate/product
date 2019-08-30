@@ -31,8 +31,8 @@
         "DependsOn": "configd",
         "Privileged": true,
         "Modes": [ "gateway" ],
-        "MemWarn": 60,
-        "MemKill": 65
+        "MemWarn": 30,
+        "MemKill": 35
     },
     "logd": {
         "Name": "logd",
@@ -61,20 +61,6 @@
         "MemWarn": 25,
         "MemKill": 30,
         "SoftTimeout": 5000
-    },
-    "prometheus": {
-        "Name": "prometheus",
-        "Binary": "/usr/local/bin/prometheus",
-        "Privileged": true,
-        "ThirdParty": true,
-        "Options": [
-            "-config.file=$APROOT/opt/com.brightgate/etc/prometheus.yml",
-            "-storage.local.path=$APROOT/opt/com.brightgate/var/prometheus-data",
-            "-log.level=warn"
-        ],
-        "Modes": [ "gateway" ],
-        "MemWarn": 35,
-        "MemKill": 45
     },
     "serviced": {
         "Name": "serviced",

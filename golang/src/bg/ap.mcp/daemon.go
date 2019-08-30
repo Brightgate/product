@@ -19,6 +19,7 @@ import (
 	"os"
 	"regexp"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -216,6 +217,9 @@ func (d *daemon) start() {
 		logInfo("starting %s in failsafe", d.Name)
 		child.SetEnv("BG_FAILSAFE", "true")
 	}
+
+	child.SetEnv(aputil.MemFaultWarnMB, strconv.Itoa(int(d.MemWarn)))
+	child.SetEnv(aputil.MemFaultKillMB, strconv.Itoa(int(d.MemKill)))
 
 	if !d.Privileged {
 		child.SetUID(nobodyUID, nobodyUID)
@@ -565,7 +569,7 @@ func updateDaemonResources(d *daemon) {
 		nextWarn := d.memWarnTime.Add(warnPeriod)
 		if nextWarn.Before(now) {
 			logWarn("%s using %dMB of memory", d.Name, mem)
-			aputil.ReportMem(d.Name, mem)
+			aputil.ReportMem(d.Name, mem, nil)
 			d.memWarnTime = now
 
 			if d == self {

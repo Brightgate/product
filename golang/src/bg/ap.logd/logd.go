@@ -293,6 +293,7 @@ func main() {
 	mcpd.SetState(mcp.ONLINE)
 
 	kernelMonitorStart()
+	aputil.ReportInit(slog, pname)
 
 	sig := make(chan os.Signal, 3)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)

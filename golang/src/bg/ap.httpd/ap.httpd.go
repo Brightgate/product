@@ -277,6 +277,7 @@ func main() {
 		slog.Fatalf("cannot connect to configd: %v", err)
 	}
 	go apcfg.HealthMonitor(config, mcpd)
+	aputil.ReportInit(slog, pname)
 
 	rings = config.GetRings()
 	if rings == nil {

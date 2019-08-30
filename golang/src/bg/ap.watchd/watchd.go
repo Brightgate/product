@@ -385,6 +385,7 @@ func main() {
 		slog.Fatalf("cannot connect to configd: %v", err)
 	}
 	go apcfg.HealthMonitor(config, mcpd)
+	aputil.ReportInit(slog, pname)
 
 	config.HandleDelete(`^@/clients/.*`, configClientDelete)
 	config.HandleExpire(`^@/clients/.*/ipv4$`, configClientDelete)

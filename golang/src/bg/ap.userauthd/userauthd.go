@@ -408,6 +408,7 @@ func main() {
 		slog.Fatalf("cannot connect to configd: %v", err)
 	}
 	go apcfg.HealthMonitor(config, mcpd)
+	aputil.ReportInit(slog, pname)
 
 	domainName, err := config.GetDomain()
 	if err != nil {

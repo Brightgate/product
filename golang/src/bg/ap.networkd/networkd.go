@@ -899,6 +899,7 @@ func daemonInit() error {
 		return fmt.Errorf("cannot connect to configd: %v", err)
 	}
 	go apcfg.HealthMonitor(config, mcpd)
+	aputil.ReportInit(slog, pname)
 
 	if nodeUUID, err = getNodeID(); err != nil {
 		return err

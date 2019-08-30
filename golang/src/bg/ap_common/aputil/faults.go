@@ -11,10 +11,16 @@
 package aputil
 
 import (
+	"bytes"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 	"runtime/debug"
+	"runtime/pprof"
+	"strconv"
+	"syscall"
 	"time"
 
 	"bg/ap_common/platform"
@@ -24,6 +30,14 @@ import (
 	"go.uber.org/zap"
 )
 
+// MemFaultWarnMB and MemFaultKillMB are the environment variables used by
+// ap.mcp to notify a child daemon about the memory limits it is expected to
+// stay within.
+const (
+	MemFaultWarnMB = "BG_MEMFAULTWARN"
+	MemFaultKillMB = "BG_MEMFAULTKILL"
+)
+
 var (
 	self      string
 	nodeID    string
@@ -31,6 +45,64 @@ var (
 	slog      *zap.SugaredLogger
 )
 
+// memWatch periodically checks the memory consumption of this process, and
+// files a fault report with supporting information when the given limit is
+// exceeded.
+func memWatch() {
+	const checkPeriod = 5 * time.Second // Check memory every few seconds
+	const faultPeriod = 24 * time.Hour  // Report no more than once per day
+	const activeProfileRate = 512
+
+	var r syscall.Rusage
+	var nextFault time.Time
+
+	warn, _ := strconv.ParseUint(os.Getenv(MemFaultWarnMB), 10, 64)
+	kill, _ := strconv.ParseUint(os.Getenv(MemFaultKillMB), 10, 64)
+
+	// Report a fault when we're half way between the Warn and Kill stages
+	// of memory overconsumption.
+	fault := (warn + kill) / 2
+	if fault == 0 {
+		return
+	}
+
+	ticker := time.NewTicker(checkPeriod)
+	defer ticker.Stop()
+
+	baseProfileRate := runtime.MemProfileRate
+	for {
+		_ = syscall.Getrusage(syscall.RUSAGE_SELF, &r)
+		used := uint64(r.Maxrss / 1024)
+
+		if used > fault && time.Now().After(nextFault) {
+			var profile *string
+
+			w := new(bytes.Buffer)
+			runtime.GC()
+			if err := pprof.WriteHeapProfile(w); err == nil {
+				p := hex.EncodeToString(w.Bytes())
+				profile = &p
+			}
+
+			err := ReportMem(self, used, profile)
+			if err != nil {
+				log.Printf("failed to report fault: %v\n", err)
+			}
+			nextFault = time.Now().Add(faultPeriod)
+		}
+
+		// If we're above the Warn limit, increase the memory profile
+		// rate to get better info in any reported fault.  If we drop
+		// back below the Warn limit, return to the normal profile rate.
+		if used > warn && runtime.MemProfileRate == baseProfileRate {
+			runtime.MemProfileRate = activeProfileRate
+
+		} else if used < warn && runtime.MemProfileRate != baseProfileRate {
+			runtime.MemProfileRate = baseProfileRate
+		}
+		<-ticker.C
+	}
+}
 func newReport(daemon, kind string) *faults.FaultReport {
 	r := &faults.FaultReport{
 		Version:   faults.Version,
@@ -63,10 +135,11 @@ func writeReport(report *faults.FaultReport) error {
 
 // ReportMem is used to report that a daemon is consuming an unexpectedly large
 // amount of memory.
-func ReportMem(daemon string, mb uint64) error {
+func ReportMem(daemon string, mb uint64, profile *string) error {
 	report := newReport(daemon, "mem")
 	report.Mem = &faults.MemReport{
-		MBytes: mb,
+		MBytes:  mb,
+		Profile: profile,
 	}
 
 	return writeReport(report)
@@ -123,4 +196,6 @@ func ReportInit(zaplog *zap.SugaredLogger, name string) {
 	// Need 0777 because some daemons run as non-root
 	reportDir = plat.ExpandDirPath("__APDATA__", "faults")
 	os.MkdirAll(reportDir, 0777)
+
+	go memWatch()
 }
