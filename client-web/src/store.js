@@ -629,6 +629,9 @@ const getters = {
     return i18n.t('message.api.unknown_org');
   },
   orgNameByID: (state) => (id) => {
+    if (id === undefined) {
+      return i18n.t('message.api.unknown_org');
+    }
     const org = getOrg(state, id);
     if (org && org.name) {
       return org.name;

@@ -73,11 +73,23 @@ func (o *orgHandler) getOrgAccounts(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest)
 	}
 
-	accounts, err := o.db.AccountInfosByOrganization(ctx, orgUUID)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
-	} else if accounts == nil {
-		// Return empty array, not null, to REST consumer
+	mr := c.Get("matched_roles").(matchedRoles)
+	var accounts []appliancedb.AccountInfo
+	if !mr["admin"] && mr["user"] {
+		// Get session's own AccountInfo
+		acct, err := o.db.AccountInfoByUUID(ctx, accountUUID)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err)
+		}
+		accounts = append(accounts, *acct)
+	} else if mr["admin"] {
+		var err error
+		accounts, err = o.db.AccountInfosByOrganization(ctx, orgUUID)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err)
+		}
+	}
+	if accounts == nil {
 		accounts = make([]appliancedb.AccountInfo, 0)
 	}
 	return c.JSON(http.StatusOK, accounts)
@@ -132,10 +144,10 @@ func newOrgHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []echo.Mi
 	h := &orgHandler{db, sessionStore}
 	r.GET("/api/org", h.getOrgs, middlewares...)
 
-	admin := h.mkOrgMiddleware([]string{"admin"})
+	user := h.mkOrgMiddleware([]string{"admin", "user"})
 
 	org := r.Group("/api/org/:org_uuid")
 	org.Use(middlewares...)
-	org.GET("/accounts", h.getOrgAccounts, admin)
+	org.GET("/accounts", h.getOrgAccounts, user)
 	return h
 }
