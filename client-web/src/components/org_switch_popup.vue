@@ -44,7 +44,7 @@ a.org-switch-close {
 </style>
 
 <template>
-  <f7-popup class="org-switch-popup" @popup:opened="onPopupOpened">
+  <f7-popup class="org-switch-popup">
     <f7-page>
       <f7-navbar no-shadow no-hairline class="org-switch-navbar">
         <f7-nav-left>
@@ -121,13 +121,6 @@ export default {
   },
 
   methods: {
-    // Close the left panel, to avoid the user needing to do so; doing this
-    // early (rather than at selectOrg) reduces visual clutter on popup-close.
-    onPopupOpened: function() {
-      debug('popup opened');
-      this.$f7.panel.close();
-    },
-
     orgEnabled: function(orgID) {
       const aors = this.accountOrgRoles(this.myAccountUUID, orgID);
       debug('orgDisabled', orgID, aors);
@@ -142,6 +135,7 @@ export default {
     // then close ourself.
     selectOrg: function(orgID) {
       debug('selectOrg', orgID);
+      this.$f7.panel.close('left', false); // Close, no animation
       this.$store.commit('setCurrentOrgID', orgID);
       const mainView = this.$f7.views.get('#main-view');
       debug('mainView', mainView);

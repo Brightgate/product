@@ -659,6 +659,9 @@ const getters = {
   deviceActive: (state) => (devices) => {
     return filter(devices, {active: true});
   },
+  deviceInactive: (state) => (devices) => {
+    return filter(devices, {active: false});
+  },
   deviceVulnScanned: (state) => (devices) => {
     return filter(devices, 'scans.vuln.finish');
   },

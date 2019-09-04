@@ -51,7 +51,9 @@ export default {
         no_roles: 'No roles granted',
       },
       left_panel: {
-        select_site: 'Select Site',
+        group_organization: 'Organization',
+        group_tools: 'Tools',
+        group_help: 'Help',
         home: 'Home',
         my_account: 'My Account',
         accounts: 'Accounts',
@@ -68,7 +70,7 @@ export default {
       site_controls: {
         network: 'Networks',
         compliance_report: 'Compliance Report',
-        manage_devices: 'Devices ({device_count})',
+        manage_devices: 'Devices ({active_device_count} active, {inactive_device_count} inactive)',
         enroll_guest: 'Enroll a Guest User',
         users: 'Users',
       },

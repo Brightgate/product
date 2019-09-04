@@ -9,54 +9,64 @@
 -->
 
 <style scoped>
-.md .org-switch-button {
-  margin: 32px 16px;
-  border-radius: 4px;
-  text-transform: none !important;
-  min-width: 64px;
-  text-align: left;
-  color: #2196f3 !important;
-}
-
-.ios .org-switch-button {
-  margin: 16px 0px;
-  padding-top: 8px;
-  padding-left: 16px;
-  height: 44px;
-  text-transform: none !important;
-  min-width: 64px;
-  min-height: 32px;
-  text-align: left;
-  color: #2196f3 !important;
-}
-
-div.org-switch-flex {
+div.org {
   display: flex;
-  overflow-x: visible;
+  flex: auto;
+  box-sizing: border-box;
+  justify-content: space-between;
+  min-width: 0;
 }
 
-div.org-switch-flex-name {
-  flex-grow: 1;
-  overflow-x: hidden;
+/*
+ * Setting min-width is crucially important here; see
+ * https://css-tricks.com/flexbox-truncated-text/
+ */
+div.org-left {
+  min-width: 0;
+  flex-grow: 10;
+}
+div.org-right {
+  min-width: 0;
+  width: 48px;
+  flex-shrink: 0;
+}
+
+div.org-left >>> a {
+  border: none; /* remove for f7-4.0 */
+  color: #2196f3 !important;
+  padding: 0;
+  font-size: 16px;
+  font-weight: normal;
+  text-align: left;
   text-overflow: ellipsis;
+  text-transform: none !important;
+  white-space: nowrap;
+  line-height: 28px;
 }
 
-div.org-switch-flex-arrow {
+div.org-right >>> a {
+  border: none; /* remove for f7-4.0 */
+  color: #2196f3 !important;
+  padding: 0;
+  text-overflow: unset;
+  text-transform: none !important;
+  width: 48px;
+  min-width: 0;
+  line-height: 28px;
 }
-
 </style>
 
 <template>
-  <f7-button fill raised color="white" popup-open=".org-switch-popup" class="org-switch-button">
-    <div class="org-switch-flex">
-      <div class="org-switch-flex-name">
-        <f7-icon material="business" />&nbsp;{{ title }}
-      </div>
-      <div class="org-switch-flex-arrow">
-        <f7-icon material="arrow_drop_down" />
-      </div>
+  <div class="org">
+    <div class="org-left">
+      <f7-button icon-color="gray" icon-material="business" panel-close href="/">
+        {{ title }}
+      </f7-button>
     </div>
-  </f7-button>
+    <div class="org-right">
+      <f7-button icon-material="list" popup-open=".org-switch-popup" />
+    </div>
+  </div>
 </template>
 
 <script>

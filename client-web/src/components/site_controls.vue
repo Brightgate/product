@@ -31,7 +31,7 @@
       :link="`/sites/${siteid}/compliance_report/`" />
     <f7-list-item
       v-if="admin"
-      :title="$t('message.site_controls.manage_devices', {'device_count': deviceCount})"
+      :title="$t('message.site_controls.manage_devices', {'active_device_count': activeDeviceCount, 'inactive_device_count': inactiveDeviceCount})"
       :class="disabled ? 'disabled' : undefined"
       :link="`/sites/${siteid}/devices/`" />
     <f7-list-item
@@ -52,7 +52,11 @@ export default {
   name: 'BgSiteControls',
 
   props: {
-    deviceCount: {
+    activeDeviceCount: {
+      type: Number,
+      required: true,
+    },
+    inactiveDeviceCount: {
       type: Number,
       required: true,
     },

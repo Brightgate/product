@@ -10,11 +10,11 @@
 <style scoped>
 
 div.sensitive-grid {
-  margin: 4px auto;
-  border: 1px dashed gray;
-  padding: 8px;
+  margin: 0 auto;
+  border: 2px dashed #e8b94d;
+  padding: 12px 20px;
   font-size: 12pt;
-  background: #FFFFAA;
+  background: #fcf6e8;
   display: grid;
   width: fit-content;
   grid-template-columns: auto auto;
@@ -23,6 +23,10 @@ div.sensitive-grid {
 
 div.sensitive-grid div.sg-label--2 {
   grid-column: 1 / span 2;
+}
+
+div.sensitive-grid div.sg-note {
+  margin-top: 8px;
 }
 
 div.sensitive-grid div.sg-button {
@@ -94,7 +98,7 @@ a.copybutton {
 }
 
 span.warning {
-  color: red;
+  color: #d90e00;
 }
 span.good {
   color: green;
@@ -155,8 +159,14 @@ span.good {
             <div class="sg-button">
               <f7-button class="copybutton" small text="Copy" @click="copyPassword" />
             </div>
-            <div v-if="activate !== ACTIVATE.SUCCESS" class="sg-label--2"><span class="warning">Note: Your password isn't active yet!</span></div>
-            <div v-else class="sg-label--2"><span class="good">This password is now activated</span></div>
+            <template v-if="orgsCount > 1">
+              <!-- row 5 -->
+              <div class="sg-label--2">Valid For:</div>
+              <!-- row 6 -->
+              <div class="sg-content select-none">All {{ currentOrg.name }} sites</div>
+            </template>
+            <div v-if="activate !== ACTIVATE.SUCCESS" class="sg-note sg-label--2"><span class="warning">Note: Your password isn't active yet!</span></div>
+            <div v-else class="sg-note sg-label--2"><span class="good">This password is now activated</span></div>
           </div>
         </f7-card-content>
       </f7-card>
@@ -300,8 +310,10 @@ export default {
     // Map various $store elements as computed properties for use in the
     // template.
     ...vuex.mapGetters([
+      'currentOrg',
       'myAccountUUID',
       'myAccount',
+      'orgsCount',
     ]),
   },
 

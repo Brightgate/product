@@ -61,7 +61,8 @@ span.orgname {
     <f7-block-title>{{ $t("message.home.tools") }}</f7-block-title>
     <bg-site-controls
       :siteid="site.id"
-      :device-count="deviceCount(devices)"
+      :active-device-count="activeDeviceCount"
+      :inactive-device-count="inactiveDeviceCount"
       :disabled="!loggedIn"
       :app-mode="appMode"
       :admin="siteAdmin" />
@@ -94,8 +95,10 @@ export default {
       'alerts',
       'appMode',
       'currentSiteID',
+      'deviceActive',
       'deviceByUniqID',
       'deviceCount',
+      'deviceInactive',
       'devices',
       'health',
       'loggedIn',
@@ -104,6 +107,12 @@ export default {
       'orgNameBySiteID',
     ]),
 
+    activeDeviceCount: function() {
+      return this.deviceCount(this.deviceActive(this.devices));
+    },
+    inactiveDeviceCount: function() {
+      return this.deviceCount(this.deviceInactive(this.devices));
+    },
     site: function() {
       const siteid = this.$f7route.params.siteID;
       const site = this.siteByID(siteid);

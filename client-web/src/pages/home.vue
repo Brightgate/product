@@ -107,7 +107,8 @@
       <f7-block-title>{{ $t("message.home.tools") }}</f7-block-title>
       <bg-site-controls
         :siteid="'0'"
-        :device-count="deviceCount(devices)"
+        :active-device-count="activeDeviceCount"
+        :inactive-device-count="inactiveDeviceCount"
         :disabled="!loggedIn"
         :app-mode="appMode"
         :admin="siteAdmin" />
@@ -151,8 +152,10 @@ export default {
       'appMode',
       'currentOrgAdmin',
       'currentSiteID',
+      'deviceActive',
       'deviceByUniqID',
       'deviceCount',
+      'deviceInactive',
       'devices',
       'fakeLogin',
       'leftPanelVisible',
@@ -163,8 +166,18 @@ export default {
       'sites',
     ]),
 
+    activeDeviceCount: function() {
+      return this.deviceCount(this.deviceActive(this.devices));
+    },
+    inactiveDeviceCount: function() {
+      return this.deviceCount(this.deviceInactive(this.devices));
+    },
     accountNeedsProvisioning: function() {
       if (!this.myAccount) {
+        return false;
+      }
+      /* For now, only show for the user's home Org */
+      if (this.currentOrg.id !== this.myAccount.organizationUUID) {
         return false;
       }
       const sp = this.myAccount.selfProvision;
