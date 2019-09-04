@@ -81,7 +81,7 @@ export default {
     },
 
     orderedRoles: function() {
-      const acct = this.accountByID(this.myAccountUUID);
+      const acct = this.acct;
       debug('orderedRoles, acct is', acct);
       if (!acct.roles) {
         return [];
