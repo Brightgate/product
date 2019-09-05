@@ -55,7 +55,7 @@ func listAccounts(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		if len(accts) == 0 {
-			fmt.Printf("Organization: %s (%s):\n  No accounts\n", org.Name, org.UUID)
+			fmt.Printf("Organization: %s (%s):\n  No accounts\n\n", org.Name, org.UUID)
 			continue
 		}
 		fmt.Printf("Organization: %q (%s)\n", org.Name, org.UUID)
@@ -241,9 +241,19 @@ func getConfig(siteUUID string) (*cfgapi.Handle, error) {
 	return cfg, nil
 }
 
-func syncAllAccounts(cmd *cobra.Command, args []string) error {
+func syncAccounts(cmd *cobra.Command, args []string) error {
 	if environ.ConfigdConnection == "" {
 		return fmt.Errorf("Must set B10E_CLREG_CLCONFIGD_CONNECTION")
+	}
+
+	orgStr, _ := cmd.Flags().GetString("org")
+	siteStr, _ := cmd.Flags().GetString("site")
+	allOrgs, _ := cmd.Flags().GetBool("all")
+	if allOrgs && (orgStr != "" || siteStr != "") {
+		return fmt.Errorf("Can't specify --all and either --site or --org")
+	}
+	if !allOrgs && orgStr == "" && siteStr == "" {
+		return fmt.Errorf("Must specify at least one of --all, --site, or --org")
 	}
 
 	ctx := context.Background()
@@ -257,12 +267,54 @@ func syncAllAccounts(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if len(as) == 0 {
+		return fmt.Errorf("Warning: B10E_CLREG_ACCOUNT_SECRET not set in the environment; accounts won't sync")
+	}
 	db.AccountSecretsSetPassphrase(as)
 
-	orgs, err := db.AllOrganizations(ctx)
-	if err != nil {
-		return err
+	var orgs []appliancedb.Organization
+	if orgStr != "" {
+		orgUU, err := uuid.FromString(orgStr)
+		if err != nil {
+			return err
+		}
+		org, err := db.OrganizationByUUID(ctx, orgUU)
+		if err != nil {
+			return err
+		}
+		orgs = append(orgs, *org)
+		// SyncAccountSelfProv() will sync all sites for an account's
+		// organization if provided a nil site slice.
+	} else if allOrgs {
+		orgs, err = db.AllOrganizations(ctx)
+		if err != nil {
+			return err
+		}
 	}
+
+	var sites []appliancedb.CustomerSite
+	if siteStr != "" {
+		siteUU, err := uuid.FromString(siteStr)
+		if err != nil {
+			return err
+		}
+		site, err := db.CustomerSiteByUUID(ctx, siteUU)
+		if err != nil {
+			return err
+		}
+		sites = append(sites, *site)
+		if orgs == nil {
+			org, err := db.OrganizationByUUID(ctx, site.OrganizationUUID)
+			if err != nil {
+				return err
+			}
+			orgs = append(orgs, *org)
+		} else if site.OrganizationUUID != orgs[0].UUID {
+			return fmt.Errorf("Site %s (%s) doesn't belong to organization %s (%s)",
+				site.Name, site.UUID, orgs[0].Name, orgs[0].UUID)
+		}
+	}
+
 	for _, org := range orgs {
 		accts, err := db.AccountsByOrganization(ctx, org.UUID)
 		if err != nil {
@@ -275,9 +327,13 @@ func syncAllAccounts(cmd *cobra.Command, args []string) error {
 			fmt.Printf("Organization: %s (%s):\n  No accounts\n", org.Name, org.UUID)
 			continue
 		}
-		fmt.Printf("Syncing Organization %s (%s)\n", org.Name, org.UUID)
+		s := "to all sites"
+		if len(sites) > 0 {
+			s = fmt.Sprintf("to site %s (%s)", sites[0].Name, sites[0].UUID)
+		}
+		fmt.Printf("Syncing Organization %s (%s) %s\n", org.Name, org.UUID, s)
 		for _, acct := range accts {
-			err = registry.SyncAccountSelfProv(ctx, db, getConfig, acct.UUID, nil)
+			err = registry.SyncAccountSelfProv(ctx, db, getConfig, acct.UUID, sites)
 			if err != nil {
 				fmt.Printf("  Sync Error <%s>: %v\n", acct.Email, err)
 			} else {
@@ -332,13 +388,16 @@ func accountMain(rootCmd *cobra.Command) {
 	delAccountCmd.Flags().StringP("input", "i", "", "registry data JSON file")
 	accountCmd.AddCommand(delAccountCmd)
 
-	syncAllAccountCmd := &cobra.Command{
-		Use:   "sync-all",
-		Short: "Sync all self-provisioned accounts from cloud -> appliance",
+	syncAccountCmd := &cobra.Command{
+		Use:   "sync",
+		Short: "Sync self-provisioned accounts from cloud -> appliance",
 		Args:  cobra.NoArgs,
-		RunE:  syncAllAccounts,
+		RunE:  syncAccounts,
 	}
-	accountCmd.AddCommand(syncAllAccountCmd)
+	syncAccountCmd.Flags().StringP("org", "o", "", "sync accounts in this organization")
+	syncAccountCmd.Flags().StringP("site", "s", "", "sync accounts to this site")
+	syncAccountCmd.Flags().BoolP("all", "a", false, "sync accounts for all orgs to all sites")
+	accountCmd.AddCommand(syncAccountCmd)
 
 	roleAccountCmd := &cobra.Command{
 		Use:   "role <subcmd> [flags] [args]",

@@ -44,6 +44,9 @@ func newSite(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if len(as) == 0 {
+		fmt.Printf("Warning: B10E_CLREG_ACCOUNT_SECRET not set in the environment; accounts won't sync")
+	}
 	db.AccountSecretsSetPassphrase(as)
 
 	siteUU, siteCS, err := registry.NewSite(ctx, db, creds.ProjectID, siteName, orgUUID)
