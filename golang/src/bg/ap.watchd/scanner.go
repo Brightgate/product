@@ -971,29 +971,41 @@ func vulnScanProcess(ip string, discovered map[string]apvuln.TestResult) {
 	// Iterate over all of the vulnerabilities we discovered in this pass,
 	// queue up the appropriate action for each, and note which properties
 	// will need to be updated.
-	for name := range discovered {
-		current := discovered[name]
-		if !current.Vuln { // Don't report info if not vulnerable
-			continue
-		}
-		first, warn, q, text := vulnActions(name, vmap)
-		ops = append(ops, vulnPropOp(mac, name, "active", "true"))
-		ops = append(ops, vulnPropOp(mac, name, "latest", now))
-		if ds := current.DetailsSummary(); len(ds) > 0 {
-			// Config tree doesn't like extra space
-			ds = strings.TrimSpace(ds)
-			ops = append(ops, vulnPropOp(mac, name, "details", ds))
-		}
-		if first {
-			ops = append(ops, vulnPropOp(mac, name, "first", now))
-		}
-		if warn {
-			ops = append(ops, vulnPropOp(mac, name, "warned", now))
-			event = append(event, name)
-		}
-		quarantine = quarantine || q
+	for name, state := range discovered {
+		props := make(map[string]string)
 
-		found = append(found, text)
+		if state.State == apvuln.Vulnerable {
+			slog.Debugf("%s vulnerable to %s", mac, name)
+			first, warn, q, text := vulnActions(name, vmap)
+			props["active"] = "true"
+			props["latest"] = now
+
+			details := strings.TrimSpace(state.DetailsSummary())
+			if len(details) > 0 {
+				props["details"] = details
+			}
+			if first {
+				props["first"] = now
+			}
+			if warn {
+				props["warned"] = now
+				event = append(event, name)
+			}
+			quarantine = quarantine || q
+			found = append(found, text)
+
+		} else if state.State == apvuln.Cleared {
+			if _, ok := vmap[name]; ok {
+				slog.Debugf("%s no longer vulnerable to %s",
+					mac, name)
+				props["cleared"] = now
+				props["active"] = "false"
+			}
+		}
+
+		for prop, val := range props {
+			ops = append(ops, vulnPropOp(mac, name, prop, val))
+		}
 	}
 
 	if quarantine {
@@ -1004,18 +1016,6 @@ func vulnScanProcess(ip string, discovered map[string]apvuln.TestResult) {
 		}
 		ops = append(ops, op)
 		slog.Infof("%s being quarantined", mac)
-	}
-
-	// Iterate over all of the vulnerabilities discovered in the past.  If
-	// they do not appear in the current list, mark them as 'active = false'
-	// in the config tree.
-	for name, vi := range vmap {
-		current, ok := discovered[name]
-		if vi.Active && (!ok || !current.Vuln) {
-			ops = append(ops, vulnPropOp(mac, name, "active",
-				"false"))
-			ops = append(ops, vulnPropOp(mac, name, "cleared", now))
-		}
 	}
 
 	if len(found) > 0 {

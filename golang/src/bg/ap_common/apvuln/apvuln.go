@@ -18,9 +18,16 @@ import (
 	"strconv"
 )
 
+// Three possible results of a single vulnerability test
+const (
+	Vulnerable = iota
+	Cleared
+	Error
+)
+
 // TestResult carries the output of a test through the aggregator into the scanner
 type TestResult struct {
-	Vuln     bool                   `json:"vuln"`
+	State    int                    `json:"state"`
 	Tool     string                 `json:"tool"`
 	Name     string                 `json:"name"`
 	Nickname string                 `json:"nickname"`

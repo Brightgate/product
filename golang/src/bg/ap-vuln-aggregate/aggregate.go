@@ -68,12 +68,13 @@ func vulnDBLoad(name string) (map[string]aggVulnDescription, error) {
 }
 
 func testOne(name string, desc aggVulnDescription, ip net.IP) apvuln.TestResult {
-	var (
-		err     error
-		vuln    bool
-		show    string
-		details string
-	)
+	var show string
+
+	rval := apvuln.TestResult{
+		Tool:     desc.Tool,
+		Name:     name,
+		Nickname: desc.Nickname,
+	}
 
 	if desc.Nickname == "" {
 		show = name
@@ -87,26 +88,35 @@ func testOne(name string, desc aggVulnDescription, ip net.IP) apvuln.TestResult 
 	}
 
 	if tool, ok := tools[desc.Tool]; ok {
-		vuln, details, err = tool(desc, ip)
+		vuln, details, err := tool(desc, ip)
 		if err != nil {
+			rval.State = apvuln.Error
 			fmt.Printf("%s test failed: %v\n", show, err)
-		} else if vuln {
-			fmt.Printf("  vulnerable\n%s\n", details)
 		} else {
-			fmt.Printf("  not vulnerable\n%s\n", details)
+			var detailsMap map[string]interface{}
+
+			if vuln {
+				rval.State = apvuln.Vulnerable
+				fmt.Printf("  vulnerable\n%s\n", details)
+			} else {
+				rval.State = apvuln.Cleared
+				fmt.Printf("  not vulnerable\n%s\n", details)
+			}
+
+			err = json.Unmarshal([]byte(details), &detailsMap)
+			if err != nil {
+				aputil.Errorf("unmarshaling for %s:\n%s\n",
+					show, details)
+			} else {
+				rval.Details = detailsMap
+			}
 		}
 	} else {
+		rval.State = apvuln.Error
 		aputil.Errorf("%s: no support for '%s' tool\n", name, desc.Tool)
 	}
 
-	var detailsMap map[string]interface{}
-	err = json.Unmarshal([]byte(details), &detailsMap)
-	if err != nil {
-		aputil.Errorf("Couldn't unmarshal for %s:\n%s\n", show, details)
-	}
-
-	return apvuln.TestResult{Vuln: vuln, Tool: desc.Tool, Name: name,
-		Nickname: desc.Nickname, Details: detailsMap}
+	return rval
 }
 
 func output(found map[string]apvuln.TestResult) {
@@ -128,7 +138,7 @@ func output(found map[string]apvuln.TestResult) {
 		}
 		spacer := ""
 		for name, result := range found {
-			if result.Vuln {
+			if result.State == apvuln.Vulnerable {
 				fmt.Printf(spacer + name)
 				spacer = " "
 			}
@@ -216,7 +226,8 @@ func main() {
 
 	found := make(map[string]apvuln.TestResult)
 	for _, n := range testSet {
-		if result := testOne(n, allTests[n], ip); result.Vuln {
+		result := testOne(n, allTests[n], ip)
+		if result.State != apvuln.Error {
 			found[n] = result
 		}
 	}
