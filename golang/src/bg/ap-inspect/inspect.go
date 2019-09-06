@@ -48,7 +48,8 @@ type probeFunc func(net.IP, []int)
 
 var probes = map[string]probeFunc{
 	"CVE-2018-6789":  eximProbe2018,
-	"CVE-2019-10149": eximProbe2019,
+	"CVE-2019-10149": eximProbe2019_10149,
+	"CVE-2019-15846": eximProbe2019_15846,
 }
 
 func outputResults(v *apvuln.InspectVulnProbe) error {
@@ -188,8 +189,13 @@ func eximProbe2018(ip net.IP, ports []int) {
 }
 
 // Check for CVE-2019-10149, which is an RCE in Exim 4.87 through 4.91
-func eximProbe2019(ip net.IP, ports []int) {
+func eximProbe2019_10149(ip net.IP, ports []int) {
 	eximProbe(ip, ports, "CVE-2019-10149", "4.87", "4.91")
+}
+
+// Check for CVE-2019-15846, which is an RCE in Exim 4.80 through 4.92.1
+func eximProbe2019_15846(ip net.IP, ports []int) {
+	eximProbe(ip, ports, "CVE-2019-15846", "4.80", "4.92.1")
 }
 
 func usage(exitStatus int) {

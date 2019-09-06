@@ -50,6 +50,13 @@
         },
         "Actions": [ "Warn" ]
     },
+    "CVE-2019-15846": {
+        "Tool": "ap-inspect",
+        "Options": {
+                "probe": "CVE-2019-15846"
+        },
+        "Actions": [ "Warn" ]
+    },
     "defaultpassword": {
         "Nickname": "unchanged default password",
         "Tool": "ap-defaultpass",
