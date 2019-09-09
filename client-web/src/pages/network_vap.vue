@@ -62,7 +62,9 @@ span.pw-toggle {
 
     </f7-list>
 
-    <f7-block-title>{{ $t('message.network_vap.ring_config') }}</f7-block-title>
+    <f7-block-title v-if="Object.keys(vapRings).length > 0">
+      {{ $t('message.network_vap.ring_config') }}
+    </f7-block-title>
     <f7-list>
       <f7-list-item v-for="(ring, ringName) in vapRings" :key="ringName" accordion-item>
         <div slot="title">

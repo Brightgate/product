@@ -40,7 +40,7 @@
       <f7-list-item :title="$t('message.network.config_dns_domain')">
         {{ networkConfig.dns.domain }}
       </f7-list-item>
-      <f7-list-item :after="networkConfig.wan.currentAddress" accordion-item inset title="WAN Link">
+      <f7-list-item v-if="networkConfig.wan" :after="networkConfig.wan.currentAddress" accordion-item inset title="WAN Link">
         <f7-accordion-content>
           <f7-list inset>
             <f7-list-item title="Current Address">
@@ -110,6 +110,9 @@ export default {
     ]),
 
     staticWan: function() {
+      if (!this.networkConfig.wan) {
+        return false;
+      }
       debug('staticWan: wan is', this.networkConfig.wan.staticAddress);
       return !!this.networkConfig.wan.staticAddress;
     },

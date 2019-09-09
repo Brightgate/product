@@ -932,7 +932,10 @@ const actions = {
 
     const networkConfig = await Promise.props({
       dns: siteApi.siteDNSConfigGet(id),
-      wan: siteApi.siteWanGet(id),
+      wan: siteApi.siteWanGet(id).catch((err) => {
+        debug('wan get failed', err);
+        return null;
+      }),
       vaps: siteApi.siteVAPsGet(id),
       baseAddress: siteApi.siteConfigGet(id, '@/network/base_address', ''),
     });
