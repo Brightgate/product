@@ -19,8 +19,8 @@
   <h1 id="brightgate-alpha-guide">Brightgate Alpha Guide</h1>
   <p><i>NDA REQUIRED</i></p>
   <img src="./images/Blue_NoBoarderArtboard-1@1.5x.png" alt="Brightgate Logo">
-  <p>Q1 2019</p>
-  <p>Version 1.0</p>
+  <p>Q3 2019</p>
+  <p>Version 2.0</p>
   <h2 id="about-this-guide">About this guide</h2>
   <p>We wrote this guide to help you understand both how Brightgate secures
     your network and how to administer your Brightgate networks. We've also
@@ -41,7 +41,7 @@
         <li><a href="#secure-your-networks">Secure your networks</a></li>
         <li><a href="#help-guests-online">Help guests get online</a></li>
         <li><a href="#review-network-configuration-and-users">Review network
-            configuration and users</a></li>
+            configuration and accounts</a></li>
       </ul>
     </li>
     <li>Online help for network users:
@@ -209,7 +209,7 @@
     suffix in the network name so it is clear to people choosing from among
     them when adding a device or logging on for the first time. For example,
     Acme Corp would name the
-    networks<span>&nbsp;</span><code>Acme-user</code>,<span>&nbsp;</span><code>Acme-device</code>,
+    networks<span>&nbsp;</span><code>Acme-users</code>,<span>&nbsp;</span><code>Acme-device</code>,
     and<span>&nbsp;</span><code>Acme-guest</code><span>&nbsp;</span>when first
     setting up their network. During the Alpha program, Brightgate will set up
     your networks following this recommendation.</p>
@@ -378,13 +378,28 @@
     <li><a href="#add-devices">Add devices</a></li>
   </ol>
   <h3 id="install-brightgate">Install Brightgate</h3>
-  <p><b>Important:</b> During the Alpha program, Brightgate will install your
-    appliance, set up your networks, and create an administrator account to get
-    you started.</p>
+  <p>The Brightgate appliance installs quickly with these three steps:</p>
+  <ol>
+    <li>Attach the antennae
+      <div><img src="./images/attach-antennae.png" alt="Attach antennae"></div>
+    </li>
+    <li>Provide power
+      <div><img src="./images/provide-power.png" alt="Provide power"></div>
+    </li>
+    <li>Connect the Ethernet cable
+      <div><img src="./images/attach-ethernet.png" alt="Attach ethernet cable">
+      </div>
+    </li>
+  </ol>
+  <p>The status indicators provide visual confirmation of connectivity. For
+    more information about the indicators, please see the section <a
+      href="#indicators">status indicators</a>.</p>
+  <p>After physical installation, proceed to <a href="#set-up-your-account">set
+      up your account</a>.</p>
   <h3 id="set-up-your-account">Set up your account</h3>
   <p>To manage networks and add devices, you'll first need to create an account
-    in the Brightgate Management App, if you don't have one already. For more
-    information about how the Brightgate management ppp is organized, you can
+    in the Brightgate management app, if you don't have one already. For more
+    information about how the Brightgate management app is organized, you can
     read more in the section devoted to <a
       href="#the-brightgate-management-app">the Brightgate management app</a>.
   </p>
@@ -394,10 +409,11 @@
     providers will be available in future releases.</p>
   <p>When you're logging in to the Brightgate management app, we authenticate
     you using your Google or Microsoft account, then walk you through creating
-    and storing a Wi-Fi user name and password. Everyone needs to store their
-    Wi-Fi user name and password to add other devices (like phones and tablets)
-    to the Wi-Fi network reserved for authenticated users (typically the one
-    with the suffix <code>-user</code>).</p>
+    and storing a Wi-Fi user name and password. You need to store your
+    Wi-Fi user name and password to add your devices to the Wi-Fi network for
+    authenticated users. <b>Note:</b> The authenticated users network
+    typically ends with <code>-users</code>; ask your network administrator
+    if you're not sure of the network name.</p>
   <ol>
     <li>Navigate to the <a href="https://svc1.b10e.net">Brightgate
         management app</a></li>
@@ -435,10 +451,10 @@
       location, follow the instructions to <a href="#create-new-network">create
         a new network</a>.</li>
     <li>Replacing an existing Wi-Fi network. If you're replacing an existing
-      network, decide whether to re-use the network name and
+      network, decide whether to reuse the network name and
       password based on the level to which you trust the current network.
       If you trust what you've administered previously, then
-      re-use the network name and password. If you're uncertain, it's more
+      reuse the network name and password. If you're uncertain, it's more
       secure to create a new network name and password. During the Alpha
       program, overlaying an existing Wi-Fi network requires Brightgate support.
     </li>
@@ -478,16 +494,16 @@
         src="./images/settings-icon.png" alt="Settings icon">.</li>
     <li>Edit the <b>SSID (Network Name)</b> to the name you'd prefer, then
       press <b>SAVE</b>. <b>Note:</b> Maintain the suffix of
-      <code>-user</code>,
-      <code>-devices</code>, or <code>-guest</code> to more easily
-      differentiate among your Brightgate-secured networks.</li>
+      <code>-users</code>, <code>-devices</code>, and <code>-guest</code> to
+      more
+      easily differentiate among your Brightgate-secured networks.</li>
   </ol>
   <h3 id="add-devices">Add devices</h3>
-  <p>Add devices that use both your user ID and Wi-Fi password to the
-    <code>*-user</code> network. These are typically devices you own that use
-    the Wi-Fi user name
-    and password created in the Brightgate management app, such as a laptop,
-    phone, or tablet. For example:</p>
+  <p>Add devices that use the Wi-Fi user name and password created in the
+    Brightgate management app, such as a laptop, phone, or tablet, to the
+    authenticated users network. <b>Note:</b> The authenticated users network
+    typically ends with <code>-users</code>; ask your network administrator
+    if you're not sure of the network name. For example:</p>
   <ul>
     <li><a href="#add-mac-network">Add an Apple computer</a></li>
     <li><a href="#add-iphone-network">Add an iPhone or iPad</a></li>
@@ -504,8 +520,9 @@
     <li>Select the Wi-Fi logo at the top right of your display (it's the one
       that looks like an opened fan).</li>
     <li>Select your organization's Wi-Fi network name from the dropdown list
-      (the name will end in <code>-user</code>).</li>
-    <li>Enter the <b>username</b> and <b>Password</b> created by Brightgate.
+      (typically the one with the suffix <code>-users</code>; ask your network
+      administrator if you're not sure of the network name).</li>
+    <li>Enter the <b>username</b> and <b>password</b> created by Brightgate.
       <b>Note:</b> The first time you add your Mac to the network, you will be
       asked to accept a certificate. Select <b>Continue</b> to add the
       certificate. You're welcome to read more in <a
@@ -527,8 +544,9 @@
     <li>From the home screen, tap the <b>Settings</b> app.</li>
     <li>Select <b>Wi-Fi</b>.</li>
     <li>If needed, slide the button to turn <b>Wi-Fi</b> on, then select your
-      organization's Wi-Fi network name from the list (the name will end in
-      <code>-user</code>).</li>
+      organization's Wi-Fi network name from the list (typically the one
+      with the suffix <code>-users</code>; ask your network administrator
+      if you're not sure of the network name).</li>
     <li>Enter the <b>username</b> and <b>password</b> created by Brightgate.
       <b>Note:</b> The first time you add your iPhone or iPad to the network,
       you will
@@ -556,7 +574,7 @@
     <li>Confirm that <b>PEAP</b> is selected for the EAP method</li>
     <li>If <b>Phase 2 authentication</b> appears, select <b>MSCHAPV2</b></li>
     <li>Enter your <b>username</b> and <b>password</b> created in the Brightgate
-      Management app.
+      management app.
       <b>Note:</b> The first time you add your Android device to the network,
       you will be asked to accept a certificate. Select <b>Continue</b> to
       add the certificate. If you can, set <b>CA Certificate</b> to
@@ -580,8 +598,9 @@
     <li>Click the Wi-Fi icon in the taskbar on the bottom right corner of your
       screen to view the available networks. </li>
     <li>Select the enterprise Wi-Fi network name provided by your
-      administrator from the dropdown list; the name will typically end in
-      <code>-user</code>.
+      administrator from the dropdown list; typically the one
+      with the suffix <code>-users</code>; ask your network administrator
+      if you're not sure of the network name.
     </li>
     <li>Click <b>Connect</b>
       <div> <img src="./images/windows-auto-connect.png"
@@ -593,7 +612,7 @@
           alt="Checking requirements">
       </div>
     </li>
-    <li>Enter the username and password you created in the Brightgate
+    <li>Enter the user name and password you created in the Brightgate
       application, then click <b>OK</b>.
       <div> <img src="./images/windows-enter-password.png"
           alt="Provide your username and password">
@@ -641,7 +660,7 @@
       <b>WPA2-Enterprise</b>
       as the <i>Security type</i>. Do not enter a security key. Windows will
       now open the Wi-Fi configuration interface from the taskbar as described
-      previously. Complete the connection by providing the username and
+      previously. Complete the connection by providing the Wi-Fi user name and
       password created in the Brightgate management application.
       <div> <img src="./images/windows-enter-network.png"
           alt="Provide network name">
@@ -725,43 +744,67 @@
   <h2>Brightgate Basics</h2>
   <h3 id="the-brightgate-management-app">The Brightgate management app</h3>
   <p>The Brightgate management app provides all the information you need to
-    administer and secure your network. Access the management app from your
-    web browser by pointing your browser to <a
-      href="https://svc1.b10e.net">https://svc1.b10e.net</a>.</p>
+    administer and secure your network. Access the management app by pointing
+    your web browser to <a
+      href="https://svc1.b10e.net">https://svc1.b10e.net</a>. The Brightgate
+    management app is optimized for viewing on any device. On smaller screens,
+    the left pane options are provided using the hamburger menu in the top left
+    of the screen. </p>
   <p>Once logged in, you can view your account details, open the Brightgate
     Admin Guide, select your site (only if you have multiple sites
-    to manage), or log out. If you are administering only one site, you'll see
-    the two
-    main sections immediately upon logging in:</p>
-  <ol>
+    to manage), request support, or log out. If you are administering only one
+    site, you'll see these options immediately upon logging in:</p>
+  <ul>
     <li><i>Serious Alerts:</i> Alerts of detected vulnerabilities are visible
-      immediately when you log in. This section displays only if Brightgate
-      has identified known vulnerabilities.</li>
-    <li><i>Tools</i>
-      <ul>
-        <li><b>Network Configuration</b>, which provides information about the
-          networks defined for your organization. From here, navigate to view
-          <b>Network Details</b>.</li>
-        <li><b>Compliance Report</b>, which lists potential vulnerabilities.
-          From here, navigate to view <b>Device Details</b> for information
-          about devices with identified vulnerabilities.</li>
-        <li><b>Manage Devices</b>, which lists all devices across all
-          Brightgate-secured networks. From here, navigate to view <b>Device
-            Details</b> for information about active and known devices.</li>
-        <li><b>Users</b>, which lists both administrators and regular users
-          defined for the Brightgate cloud as well as any administrators
-          defined specifically for a local appliance. From here, navigate to
-          view <b>User Details</b> to contact a user by email or text.</li>
-        <li><b>Enroll Guest User</b>, which enables easy sharing of the
-          current password to add devices to the guest network.</li>
-      </ul>
+      immediately when you log in. This section displays only if
+      a high priority alert (such as a detected security vulnerability) is open.
     </li>
-  </ol>
-  <p><img src="./images/initial-login.png" alt="Initial login"></p>
+    <li>Organization, a button that activates a list of organizations you
+      manage.<b>Note:</b> If you do not manage multiple organizations, this
+      button does not display.</li>
+    <li><b>My Account</b>, which provides information about your Brightgate
+      cloud account.</li>
+    <li><b>Logout</b>, which logs you out of the Brightgate management app.</li>
+    <li><b>Admin Guide</b>, which displays the full set of documentation for
+      network administrators using the Brightgate management app.</li>
+    <li><b>Brightgate Support</b>, which links to the Brightgate knowledge base
+      and allows you to request support.</li>
+  </ul>
   <h3 id="support">Support</h3>
-  <p>NEW CONTENT HERE</p>
-  <h3>Organizations and Sites</h3>
-  <p>NEW CONTENT HERE</p>
+  <p>Brightgate provides customer support from 9:00 AM to 5:00 PM Pacific Time
+    Monday through Friday. Click the <b>Brightgate Support</b> link to enter
+    a support ticket or to search the Brightgate knowledge base.</p>
+  <p>In addition, our online documentation is available by clicking the link to
+    the <b>Admin Guide</b>. The Guide is fully searchable using your browser's
+    search function.</p>
+  <h3 id="organizations-and-sites">Organizations and Sites</h3>
+  <i>The following sections apply only if you are managing multiple
+    organizations.</i>
+  <p>A Managed Service Provider (MSP) securing networks deploying Brightgate
+    needs to manage networks for multiple clients using the Brighgate management
+    app. These clients may have installed the Brightgate appliance at one or
+    more sites. The following diagrams illustrate an MSP that manages
+    Brightgate-secured networks for multiple clients, one of which has
+    multiple sites.</p>
+  <p>Brightgate support first establishes the MSP as an organization.
+    <b>Note:</b> During the Alpha program, Brightgate support will establish
+    the MSP and its relationship to client organizations and sites. </p>
+  <p><img src="./images/MSP-as-org.png" alt="Management organization"></p>
+  <p>Then Brightgate support associates the MSP organization with the clients
+    that the MSP manages.</p>
+  <p><img src="./images/MSP-with-clients.png" alt="Add MSP clients"></p>
+  <p>As sites are created for the client organization, the MSP automatically
+    gains access to manage them.</p>
+  <p><img src="./images/MSP-with-clients-and-sites.png" alt="MSP with clients and
+      multiple client sites"></p>
+  <p>Note that in many cases, an MSP may also may have their own collection of
+    Brightgate sites; they can manage their clients' networks and their own
+    using a single interface.</p>
+  <p>In the Brightgate management app, if you manage multiple organizations,
+    switch among them by clicking the <b>Organization button</b> at the top
+    left, then selecting the correct organization from the displayed list.</p>
+  <p><img src="./images/select-organization.png" alt="Select the organization">
+  </p>
   <h3 id="appliance-overview">Appliance overview</h3>
   <p>This appliance provides the following:</p>
   <ul>
@@ -875,7 +918,7 @@
       Report.</i></p>
   <p>If a device is currently violating policy, the red lightning icon will
     display in the <i>Summary</i>. The <i>Summary</i> also displays the
-    total number of users currently enrolled in the network.<i> <br>
+    total number of accounts currently enrolled in the network.<i> <br>
     </i></p>
   <p><i>Active Violations,</i> if any are currently identified, are listed in
     priority order. Click the device name to <a href="#device-details">view
@@ -885,7 +928,7 @@
     and resolved within the network.</p>
   <p><i>Trust Group Summary</i> displays a succinct list of compliance status
     for all trust groups that the site maintains, across all networks
-    (<code>*-user</code>,
+    (<code>*-users</code>,
     <code>*-device</code>, or <code>*-guest</code>).</p>
   <p>In this example, the network has 21 active devices, one of which is yet
     to be scanned, and one that is using a password that exposes the device
@@ -902,8 +945,8 @@
     to the network. As a result, devices are not explicitly removed from a
     Brightgate network. Instead, the credentials used to add the device to the
     network must be revoked. </p>
-  <p>In a future release, the user name and password associated with the user
-    who added the device to network will be revoked when their Google
+  <p>In a future release, the Wi-Fi user name and password associated with the
+    user who added the device to network will be revoked when their Google
     credentials expire, which will prevent the device from being added to the
     network with credentials that are no longer in use by the organization.
     <b><br>
@@ -988,10 +1031,10 @@
   <p><img src="./images/edit-network-details.png" alt="Edit network details">
   </p>
   <h2 id="review-network-configuration-and-users">Review network configuration
-    and users</h2>
+    and Accounts</h2>
   <p>The Brightgate management app displays information regarding the
     configuration of all Brightgate-secured networks for your organization as
-    well as network users across all networks. </p>
+    well as network accounts across all networks. </p>
   <h3 id="network-configuration">View your network configuration</h3>
   <p>To view your networks, from the main menu, <i>select your site &gt;
       Network Configuration.</i></p>
@@ -1003,13 +1046,13 @@
     Brightgate displays for each network:</p>
   <ul>
     <li><b>Authentication Method:</b> the method used to authenticate to the
-      network. For the <code>*-user</code> network, the method is WPA-EAP.
+      network. For the <code>*-users</code> network, the method is WPA-EAP.
       For the <code>*-devices</code> and <code>*-guest</code> network, the
       method is WPA-PSK.</li>
     <li><b>Trust Group Configuration:</b> the trust groups available for this
       network.
       <ul>
-        <li><code>*-user network</code>
+        <li><code>*-users network</code>
           <ul>
             <li><code>core</code>: The trust group reserved for the most
               trusted devices.</li>
@@ -1039,38 +1082,105 @@
       common password (<code>*-device</code> and <code>*-guest</code>), which
       can be viewed by clicking the eyeball icon.</li>
   </ul>
-  <h3 id="user-basics">About your users</h3>
-  <p>The process to <a href="#set-up-your-account">set up your account</a>
-    creates a user in the Brightgate cloud. Users in the
-    Brightgate cloud by default may access only part of the Brightgate
-    management app:</p>
+  <h3 id="about-network-accounts">About network accounts</h3>
+  <p>The Brightgate management app supports two types of
+    account privilege:</p>
   <ol>
-    <li>Use their Wi-Fi credentials to bring their devices online</li>
-    <li>View the name of the <code>*-user</code> network</li>
-    <li>View the name and passphrase for both the <code>*-devices</code> and
-      <code>*-guest </code>networks</li>
-    <li>Access <b>Enroll a Guest User</b> to tell or text the guest network
-      password to guests</li>
+    <li><i>Users</i> may access only part of the Brightgate management app:
+      <ul>
+        <li>Use their Brightgate Wi-Fi credential to bring their devices online
+        </li>
+        <li>View the name of the <code>*-users</code> network</li>
+        <li>View the name and passphrase for the <code>*-guest </code>network
+        </li>
+        <li>Access <b>Enroll a Guest User</b> to tell, text, or share the QR
+          code for the guest network password</li>
+      </ul>
+    </li>
+    <li>Accounts with the <i>Administrator</i> privilege can use <i>all</i>
+      parts of the Brightgate management app, all of which are covered in this
+      guide. Administration of a Brightgate-secured network requires a change in
+      privilege for a defined account. This privilege change can be enabled
+      only by an account with administrator role privileges.</li>
   </ol>
-  <p>Users with administrative privileges can use <i>all</i> parts of the
-    Brightgate management app, all of which are covered in this guide.
-    Administration of a Brightgate-secured network requires a change in
-    privilege for a defined user. During the Alpha program, this privilege
-    change can be enabled only by calling Brightgate. </p>
-  <p>To view users created for the Brightgate cloud, from the main menu,
-    <i>select
-      your site &gt; Users.</i></p>
-  <p><b>Note:</b> In certain circumstances, an administrator may need access
-    to only the local appliance, such as when Internet connectivity is lost.
-    In this case, a <i>Site-Local Administrator</i> displays. Additional
-    site-local administrators may be added by using the + icon; however,
-    during the Alpha program, we recommend calling Brightgate for assistance
-    if this type of user is required.</p>
-  <p><img src="./images/display-users.png" alt="Display users"></p>
-  <p>Click the user for whom you'd like to view details. To email the user,
-    click their email ID to open your email and send a message. To send this
-    user a message, click the Message icon.</p>
-  <p><img src="./images/user-details.png" alt="User details"></p>
+  <h4 id="grant-admin-privileges">Grant administrative account privileges</h4>
+  <p>An account with administrative privileges may grant administrative
+    privileges to an account that has already been created in the Brightgate
+    cloud. To grant administrative privileges:</p>
+  <ol>
+    <li>From the main menu, select <i>Accounts</i></li>
+    <li>Click the account to which you are granting administrative privileges
+    </li>
+    <li>Click <b>Manage Roles</b></li>
+    <li>Check the <b>Administrator</b> box</li>
+  </ol>
+  <h4 id="view-accounts">View accounts</h4>
+  <p>To view accounts created for the Brightgate cloud, from the main menu,
+    select <i>Accounts.</i></p>
+  <p><img src="./images/display-accounts.png" alt="Display accounts"></p>
+  <h4 id="view-account-details">View account details</h4>
+  <p>Click the account for which you'd like to view details to do any of the
+    following:</p>
+  <ul>
+    <li>To send an email, click the email ID to open your email and send a
+      message.</li>
+    <li>To send a text message message, click the Message icon.</li>
+    <li>To grant this account administrative privileges, click <b>Manage
+        Roles</b>, and follow the steps outlined in <a
+        href="#grant-admin-privileges">grant
+        administrative privileges.</a></li>
+    <li>To deprovision an account, which may not need network access for an
+      extended period, follow the steps outlined in <a
+        href="#deprovision-account"> deprovision an account.</a></li>
+    <li>To delete an account, which should be removed from the network, follow
+      the steps outlined in <a href="#delete-account">delete an account.</a>
+    </li>
+  </ul>
+  <p><img src="./images/account-details.png" alt="Account details"></p>
+  <h4 id="deprovision-account">Deprovision an account</h4>
+  <p>For users who are taking an extended leave and whose accounts will not
+    require access
+    to the network, but will need access in the future, Brightgate provides
+    the ability for administrators to deprovision accounts. Deprovisioning
+    an account removes the Wi-Fi credentials associated with the account,
+    eliminating the ability to log in
+    to the network. A deprovisioned account may, in the future, log back in
+    using
+    their Google or Microsoft credentials and reprovision themselves using the
+    steps outlined in <a href="#set-up-your-account">set up your account</a>.
+  </p>
+  <p>To deprovision an account:</p>
+  <ol>
+    <li>From the main menu, select <i>Accounts</i>.</li>
+    <li>Click the account to deprovision</li>
+    <li>Click <b>DEPROVISION</b></li>
+  </ol>
+  <h4 id="delete-account">Delete an account</h4>
+  <p>For accounts that must be removed from the network, and will not need
+    access in the future, Brightgate provides the ability for
+    administrators to delete accounts. Deleting an account removes the Wi-Fi
+    credentials, eliminating
+    the ability to log in to the network. The affected Brightgate cloud
+    account will be removed and Brightgate will no longer bill for this
+    account.</p>
+  <p>To delete an account:</p>
+  <ol>
+    <li>From the main menu, select <i>Accounts</i>.</li>
+    <li>Click the account to delete</li>
+    <li>Click <b>DELETE</b></li>
+  </ol>
+  <h3 id="site-specific-admin">Site-Specific Administrators</h3>
+  <p>In certain circumstances, an administrator may need direct
+    access to the local appliance, such as when Internet connectivity is
+    lost and logging in as a Brightgate cloud user would fail. </p>
+  <p>To manage site-specific administrators, from the main menu,
+    <i>select your site > Users.</i></p>
+  <p> Additional site-specific administrators may be added by using the
+    + icon at the bottom of the list; however, during the Alpha program, we
+    recommend calling Brightgate for assistance if this type of user is
+    required.</p>
+  <p><img src="./images/site-specific-admin.png"
+      alt="Site-specific administrators"></p>
   <!-- BRIGHTGATE CONTENT END -->
   <!-- BRIGHTGATE FOOT INSERTION POINT -->
 </body>
