@@ -1066,13 +1066,22 @@ func install(cmd *cobra.Command, args []string) error {
 		overlayFixRcDLinks()
 
 		// Put a symlink in the overlay that points to the release.json
-		// ap.rpcd stashed on disk with the downloaded artifacts.
+		// ap.rpcd stashed on disk with the downloaded artifacts.  If
+		// anything goes wrong, log the error and return, but don't make
+		// ap-factory error out.
+		defer syscall.Sync()
+		absImageDir, err := filepath.Abs(imageDir)
+		if err != nil {
+			log.Printf("Can't get absolute path for %q: %v", imageDir, err)
+			return nil
+		}
 		linkDir := platform.NewPlatform().ExpandDirPath(
 			platform.APPackage, "etc")
 		relPath, err := filepath.Rel(linkDir,
-			filepath.Join(imageDir, "release.json"))
+			filepath.Join(absImageDir, "release.json"))
 		if err != nil {
-			return err
+			log.Printf("Release symlink failure: %v", err)
+			return nil
 		}
 		curLinkPath := filepath.Join(xRootDir, linkDir, "release.json")
 		// Since we install to a cleared overlay, this shouldn't exist,
@@ -1086,10 +1095,11 @@ func install(cmd *cobra.Command, args []string) error {
 			}
 		}
 		if err != nil {
-			return err
+			log.Printf("Failed to remove release symlink path: %v", err)
 		}
 		if err = os.Symlink(relPath, curLinkPath); err != nil {
-			return err
+			log.Printf("Failed to create release symlink: %v", err)
+			return nil
 		}
 	}
 

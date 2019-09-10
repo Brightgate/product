@@ -43,7 +43,7 @@ copy_preserve () {
 
 BG_ETC=/opt/com.brightgate/etc
 
-rm -f $BG_ETC/release.json
+rm -f $PKG_ROOT/$BG_ETC/release.json
 
 # Add our PATH to /root/.profile.
 line_add "/root/.profile" ". $BG_ETC/com-brightgate-profile"
