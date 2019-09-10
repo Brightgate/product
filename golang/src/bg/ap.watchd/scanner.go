@@ -513,7 +513,10 @@ func scannerRequest(mac, ip string, delay time.Duration) {
 	scheduleScan(tcpScan, delay, false)
 	scheduleScan(udpScan, delay, false)
 	scheduleScan(vulnScan, delay, false)
-	scheduleScan(passScan, delay, false)
+
+	// give the two port scans time to identify potential services before
+	// testing those services for default passwords.
+	scheduleScan(passScan, delay+time.Hour, false)
 }
 
 func getMacIP(host *nmap.Host) (mac, ip string) {

@@ -152,6 +152,10 @@ func configIPv4Changed(path []string, value string, expires *time.Time) {
 		return
 	}
 
+	if expires != nil && expires.Before(time.Now()) {
+		return
+	}
+
 	if ipv4 := net.ParseIP(value); ipv4 != nil {
 		scannerRequest(mac, value, 30*time.Second)
 		setMacIP(mac, ipv4)
@@ -214,16 +218,33 @@ func getLeases() {
 
 	now := time.Now()
 	for macaddr, client := range clients {
+		var expired bool
+		var action, when string
+
 		if client.IPv4 == nil {
-			continue
-		}
-		if client.Expires != nil && client.Expires.Before(now) {
 			continue
 		}
 
 		if _, err := net.ParseMAC(macaddr); err != nil {
 			slog.Warnf("Invalid mac address: %s", macaddr)
+			continue
+		}
+
+		if client.Expires == nil {
+			action = "importing"
+			when = "static"
+		} else if client.Expires.Before(now) {
+			action = "ignoring"
+			when = "expired"
+			expired = true
 		} else {
+			action = "importing"
+			when = "expires " + client.Expires.Format(time.Stamp)
+		}
+		slog.Debugf("%s %v -> %v (%s)", action, macaddr, client.IPv4,
+			when)
+
+		if !expired {
 			setMacIP(macaddr, client.IPv4)
 		}
 	}
@@ -257,9 +278,35 @@ func logUnknown(ring, mac, ipstr string) bool {
 	return err == nil
 }
 
-func eventHandler(event []byte) {
+func netEventHandler(event []byte) {
 	slog.Debugf("got network update event - reevaluting interfaces")
 	getGateways()
+}
+
+func entityEventHandler(event []byte) {
+	entity := &base_msg.EventNetEntity{}
+	if err := proto.Unmarshal(event, entity); err != nil {
+		slog.Warnf("Unmarshaling NET.ENTITY event: %v", err)
+		return
+	}
+
+	if entity.MacAddress == nil || entity.Disconnect == nil {
+		slog.Warnf("Received incomplete NET.ENTITY event: %v",
+			entity)
+		return
+	}
+
+	if *entity.Disconnect {
+		mac := network.Uint64ToMac(*entity.MacAddress)
+		mapMtx.Lock()
+		ip, ok := macToIP[mac]
+		mapMtx.Unlock()
+
+		if ok {
+			slog.Infof("Cancelling scans for disconnected client %s", mac)
+			cancelAllScans(mac, ip)
+		}
+	}
 }
 
 func signalHandler() {
@@ -391,7 +438,8 @@ func main() {
 	config.HandleDelete(`^@/clients/.*`, configClientDelete)
 	config.HandleExpire(`^@/clients/.*/ipv4$`, configClientDelete)
 	config.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
-	brokerd.Handle(base_def.TOPIC_UPDATE, eventHandler)
+	brokerd.Handle(base_def.TOPIC_UPDATE, netEventHandler)
+	brokerd.Handle(base_def.TOPIC_ENTITY, entityEventHandler)
 
 	rings = config.GetRings()
 	getGateways()
