@@ -60,7 +60,7 @@ UNAME_M := $(shell uname -m)
 # note: These are constants; := avoids repeated shell invocations
 GITROOT := $(shell git rev-parse --show-toplevel)
 GITHASH := $(shell git describe --always --long --dirty)
-GITHASH_FULL := $(shell git describe --always --abbrev=0)
+GITHASH_FULL := $(shell git rev-parse HEAD)
 # Needs deferred expansion, can't use :=
 GITCHANGED = $(shell grep -s -q '"$(GITHASH)"' $(GOSRCBG)/common/version.go || echo FRC)
 
