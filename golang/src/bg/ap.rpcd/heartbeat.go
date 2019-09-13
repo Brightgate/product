@@ -16,14 +16,13 @@ import (
 	"sync"
 	"time"
 
-	"bg/ap_common/aputil"
 	"bg/cloud_rpc"
 
 	"github.com/golang/protobuf/ptypes"
 )
 
 func publishHeartbeat(ctx context.Context, tclient cloud_rpc.EventClient) error {
-	bootTime, err := ptypes.TimestampProto(aputil.LinuxBootTime())
+	bootTime, err := ptypes.TimestampProto(nodeBootTime)
 	if err != nil {
 		return fmt.Errorf("couldn't encode linux boot time: %v", err)
 	}

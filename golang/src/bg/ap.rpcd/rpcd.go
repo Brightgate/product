@@ -71,9 +71,10 @@ var (
 	brokerd       *broker.Broker
 	mcpd          *mcp.MCP
 
-	plat       *platform.Platform
-	nodeUUID   string
-	rpcSuccess *bool
+	plat         *platform.Platform
+	nodeUUID     string
+	nodeBootTime time.Time
+	rpcSuccess   *bool
 
 	metrics struct {
 		events prometheus.Counter
@@ -220,6 +221,39 @@ func testNetException(ctx context.Context, tclient cloud_rpc.EventClient) error 
 	return publishEvent(ctx, tclient, "exception", exc)
 }
 
+func healthConfig(prop, val string) {
+	path := "@/metrics/health/" + nodeUUID + "/" + prop
+	err := config.CreateProp(path, val, nil)
+	if err != nil {
+		slog.Warnf("setting %s to %s: %v", path, val, err)
+	}
+}
+
+func healthLoop(ctx context.Context, tclient cloud_rpc.EventClient,
+	wg *sync.WaitGroup, doneChan chan bool) {
+
+	var done bool
+
+	healthConfig("boot_time", nodeBootTime.Format(time.RFC3339))
+	if aputil.IsSatelliteMode() {
+		healthConfig("role", "satellite")
+	} else {
+		healthConfig("role", "gateway")
+	}
+
+	ticker := time.NewTicker(time.Second * 5)
+	defer ticker.Stop()
+	for !done {
+		healthConfig("alive", time.Now().Format(time.RFC3339))
+		select {
+		case done = <-doneChan:
+		case <-ticker.C:
+		}
+	}
+	slog.Infof("health loop done")
+	wg.Done()
+}
+
 func prometheusInit() {
 	metrics.events = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "rpcd_events_handled",
@@ -352,6 +386,7 @@ func daemonStart() {
 		slog.Fatalf("commonInit failed: %v", err)
 	}
 	aputil.ReportInit(slog, pname)
+	go healthLoop(nil, nil, &cleanup.wg, addDoneChan())
 
 	if applianceCred == nil {
 		// We can't perform most of our rpc duties, but we at least want
@@ -501,4 +536,5 @@ func main() {
 func init() {
 	plat = platform.NewPlatform()
 	nodeUUID, _ = plat.GetNodeID()
+	nodeBootTime = aputil.LinuxBootTime()
 }

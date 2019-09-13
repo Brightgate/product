@@ -387,6 +387,9 @@
     {"Path": "@/metrics/health/%nodeid%/dns_lookup/success", "Type": "time", "Level": "internal"},
     {"Path": "@/metrics/health/%nodeid%/dns_lookup/fail", "Type": "time", "Level": "internal"},
     {"Path": "@/metrics/health/%nodeid%/cloud_rpc/success", "Type": "time", "Level": "internal"},
-    {"Path": "@/metrics/health/%nodeid%/cloud_rpc/fail", "Type": "time", "Level": "internal"}
+    {"Path": "@/metrics/health/%nodeid%/cloud_rpc/fail", "Type": "time", "Level": "internal"},
+    {"Path": "@/metrics/health/%nodeid%/role", "Type": "string", "Level": "internal"},
+    {"Path": "@/metrics/health/%nodeid%/boot_time", "Type": "time", "Level": "internal"},
+    {"Path": "@/metrics/health/%nodeid%/alive", "Type": "time", "Level": "internal"}
   ]
 }

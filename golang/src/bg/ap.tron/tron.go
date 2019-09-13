@@ -222,6 +222,9 @@ func monitorOne(t *hTest, wg *sync.WaitGroup) {
 			states.Lock()
 			states.current[t.name] = t.state
 			states.Unlock()
+		}
+
+		if t.pass != oldPass || t.state != oldState {
 			states.updated <- true
 		}
 
