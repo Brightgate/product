@@ -17,7 +17,7 @@
 //   # Edit /etc/postgresql/9.5/main/pg_hba.conf to
 //         host    all             all             127.0.0.1/32            trust
 //   $ sudo systemctl restart postgresql
-//   $ ./proto.x86_64/util/bin/build_device_db -import \
+//   $ ./proto.x86_64/cloud/opt/net.b10e/bin/cl-build-device-db -import \
 //     -dev golang/src/bg/ap.configd/devices.json -id ap_identities.csv \
 //     -mfg ap_mfgid.json
 package main

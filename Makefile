@@ -576,6 +576,7 @@ CLOUDCOMMAND_GOPKGS = \
 	bg/cl-cert \
 	bg/cl-configctl \
 	bg/cl-dtool \
+	bg/cl-obs \
 	bg/cl-reg \
 	bg/cl-release \
 	bg/cl-service

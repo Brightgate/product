@@ -97,7 +97,7 @@ func main() {
 
 	err := getall(os.Args[1:], library)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 

@@ -1,0 +1,33 @@
+--
+-- COPYRIGHT 2019 Brightgate Inc. All rights reserved.
+--
+-- This copyright notice is Copyright Management Information under 17 USC 1202
+-- and is included to protect this work and deter copyright infringement.
+-- Removal or alteration of this Copyright Management Information without the
+-- express written permission of Brightgate Inc is prohibited, and any
+-- such unauthorized removal or alteration will be a violation of federal law.
+--
+
+.timeout 500
+
+-- Sites
+
+update site set site_name = "example" where site_uuid = "0e068325-3bf3-494e-8ac4-c7fc3adf3d7d";
+
+-- 1: A Moto Z Force2 [*]
+insert or replace into device (dgroup_id, device_mac, assigned_os_genus,
+	assigned_os_species, assigned_mfg, assigned_device_genus,
+	assigned_device_species) values (1, "d4:63:c6:72:cd:bb",
+	"Android", "Android", "Motorola Mobility", "Android Phone",
+	"Motorola Mobility Moto Z2 Force");
+insert or replace into training (dgroup_id, site_uuid, device_mac, unix_timestamp) values (1, "0e068325-3bf3-494e-8ac4-c7fc3adf3d7d", "d4:63:c6:72:cd:bb", "1560737648");
+
+-- 2: Another Moto Phone
+insert or replace into device (dgroup_id, device_mac, assigned_os_genus,
+	assigned_os_species, assigned_mfg, assigned_device_genus,
+	assigned_device_species) values (2, "88:79:7e:5c:b0:e8",
+	"Android", "Android", "Motorola Mobility", "Android Phone",
+	"Motorola Mobility Moto");
+insert or replace into training (dgroup_id, site_uuid, device_mac, unix_timestamp) values (2, "0e068325-3bf3-494e-8ac4-c7fc3adf3d7d", "88:79:7e:5c:b0:e8", "1571430969");
+
+-- The rest of the data in this file has been elided for privacy reasons

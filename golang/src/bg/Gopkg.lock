@@ -56,6 +56,34 @@
   revision = "3a771d992973f24aa725d07868b467d1ddfceafb"
 
 [[projects]]
+  digest = "1:e9599e061b6e1b85b9c9e44c42452ddd0daf7e90d5ce469742a02eec70308381"
+  name = "github.com/blevesearch/bleve"
+  packages = [
+    "analysis",
+    "analysis/tokenizer/regexp",
+    "document",
+    "geo",
+    "index",
+    "index/store",
+    "numeric",
+    "registry",
+    "search",
+    "search/highlight",
+    "size",
+  ]
+  pruneopts = ""
+  revision = "0bb7fb280a4cc7fa691add6809fdf0d9273f726a"
+  version = "v0.8.0"
+
+[[projects]]
+  digest = "1:20c380257968a4a7a5d6cb00fc131920f48821db32ac0c4c2e86048d4ac7a88b"
+  name = "github.com/blevesearch/go-porterstemmer"
+  packages = ["."]
+  pruneopts = ""
+  revision = "23a2c8e5cf1f380f27722c6d2ae8896431dc7d0e"
+  version = "v1.0.2"
+
+[[projects]]
   branch = "master"
   digest = "1:d45ab3c19a5310309cfb502632eb03091a2cf12c3b224732c9b6f1ef10df2340"
   name = "github.com/bluele/gcache"
@@ -94,6 +122,14 @@
   packages = ["."]
   pruneopts = ""
   revision = "da9a454c7d192668c0c5eb9733b21692b0f71474"
+
+[[projects]]
+  digest = "1:e988ed0ca0d81f4d28772760c02ee95084961311291bdfefc1b04617c178b722"
+  name = "github.com/fatih/color"
+  packages = ["."]
+  pruneopts = ""
+  revision = "5b77d2a35fb0ede96d138fc9a99f5c9b6aef11b4"
+  version = "v1.7.0"
 
 [[projects]]
   digest = "1:8fca1a11f4f8011e273c92799abb21be58df214079a6226a7f13b0f697c5921a"
@@ -204,6 +240,25 @@
   pruneopts = ""
   revision = "66b9c49e59c6c48f0ffce28c2d8b8a5678502c6d"
   version = "v1.4.0"
+
+[[projects]]
+  digest = "1:91f14800b32f2211b254931c8c58991244bb446da947f656640d8bdf12689530"
+  name = "github.com/gosuri/uilive"
+  packages = ["."]
+  pruneopts = ""
+  revision = "4512d98b127f3f3a1b7c3cf1104969fdd17b31d9"
+  version = "v0.0.3"
+
+[[projects]]
+  digest = "1:54f35be9e0acc2aa92e58311c87f0355bac769ce200ae43945ae43d7fde22bc7"
+  name = "github.com/gosuri/uiprogress"
+  packages = [
+    ".",
+    "util/strutil",
+  ]
+  pruneopts = ""
+  revision = "d0567a9d84a1c40dd7568115ea66f4887bf57b33"
+  version = "0.0.1"
 
 [[projects]]
   digest = "1:9a0b2dd1f882668a3d7fbcd424eed269c383a16f1faa3a03d14e0dd5fba571b1"
@@ -365,6 +420,14 @@
 
 [[projects]]
   branch = "master"
+  digest = "1:7df7845c2d8f73ef5488175f856cb311721cab0ae30a3455b3dd766e35589231"
+  name = "github.com/lytics/multibayes"
+  packages = ["."]
+  pruneopts = ""
+  revision = "3457a5582021524757e154341b1095e3a0cdd8bd"
+
+[[projects]]
+  branch = "master"
   digest = "1:9b4b4bff1591e74cfd1c21142247d9bdb7f450d6c1d21a38ffafe8e4531ad642"
   name = "github.com/m-lab/ndt7-client-go"
   packages = [
@@ -416,6 +479,14 @@
   pruneopts = ""
   revision = "ce7b0b5c7b45a81508558cd1dba6bb1e4ddb51bb"
   version = "v0.0.3"
+
+[[projects]]
+  digest = "1:cd4379452cc81f79acc16c477a1d1d7c2bf5807697f6cf3aafe221c4fbfed4ce"
+  name = "github.com/mattn/go-sqlite3"
+  packages = ["."]
+  pruneopts = ""
+  revision = "b612a2feea6aa87c6d052d9086572551df06497e"
+  version = "v1.11.0"
 
 [[projects]]
   digest = "1:63722a4b1e1717be7b98fc686e0b30d5e7f734b9e93d7dee86293b6deab7ea28"
@@ -686,6 +757,14 @@
   revision = "1c6f67f47a267af445b3636fdc0d45f853c967a9"
 
 [[projects]]
+  digest = "1:b126ccc9554b49fcf865344928807f5a2bee24673e0a87afab40b8b5417dbe41"
+  name = "github.com/yourbasic/bloom"
+  packages = ["."]
+  pruneopts = ""
+  revision = "04a87e707a81ec8fbbcf00594c548c3b44ed08ed"
+  version = "1.2.4"
+
+[[projects]]
   digest = "1:7ae9ab20a379344cd296d7cd041180d547ba5489b8fd6e8919e0de24a94991b2"
   name = "go.opencensus.io"
   packages = [
@@ -767,6 +846,7 @@
     "openpgp/s2k",
     "pbkdf2",
     "poly1305",
+    "sha3",
     "ssh",
     "ssh/terminal",
   ]
@@ -1007,6 +1087,7 @@
     "github.com/bluele/gcache",
     "github.com/dgrijalva/jwt-go",
     "github.com/dhduvall/gcloudzap",
+    "github.com/fatih/color",
     "github.com/gliderlabs/ssh",
     "github.com/goftp/file-driver",
     "github.com/goftp/server",
@@ -1021,6 +1102,7 @@
     "github.com/gorilla/mux",
     "github.com/gorilla/securecookie",
     "github.com/gorilla/sessions",
+    "github.com/gosuri/uiprogress",
     "github.com/grpc-ecosystem/go-grpc-middleware",
     "github.com/grpc-ecosystem/go-grpc-middleware/auth",
     "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap",
@@ -1040,6 +1122,7 @@
     "github.com/lair-framework/go-nmap",
     "github.com/lestrrat/go-apache-logformat",
     "github.com/lib/pq",
+    "github.com/lytics/multibayes",
     "github.com/m-lab/ndt7-client-go",
     "github.com/m-lab/ndt7-client-go/spec",
     "github.com/markbates/goth",
@@ -1048,6 +1131,7 @@
     "github.com/markbates/goth/providers/azureadv2",
     "github.com/markbates/goth/providers/google",
     "github.com/markbates/goth/providers/openidConnect",
+    "github.com/mattn/go-sqlite3",
     "github.com/miekg/dns",
     "github.com/pin/tftp",
     "github.com/pkg/errors",
@@ -1079,6 +1163,7 @@
     "github.com/xenolf/lego/providers/dns/exec",
     "github.com/xenolf/lego/providers/dns/gcloud",
     "github.com/xenolf/lego/registration",
+    "github.com/yourbasic/bloom",
     "go.uber.org/zap",
     "go.uber.org/zap/zapcore",
     "go.uber.org/zap/zapgrpc",
@@ -1087,6 +1172,7 @@
     "golang.org/x/crypto/md4",
     "golang.org/x/crypto/openpgp",
     "golang.org/x/crypto/openpgp/armor",
+    "golang.org/x/crypto/sha3",
     "golang.org/x/crypto/ssh",
     "golang.org/x/crypto/ssh/terminal",
     "golang.org/x/net/context",
