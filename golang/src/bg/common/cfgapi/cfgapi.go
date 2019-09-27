@@ -173,6 +173,18 @@ type NicInfo struct {
 	Pseudo  bool
 }
 
+// NodeInfo contains information about a single gateway or satellite node
+type NodeInfo struct {
+	ID       string
+	Platform string
+	Name     string
+	Role     string
+	BootTime *time.Time
+	Alive    *time.Time
+	Addr     net.IP
+	Nics     []NicInfo
+}
+
 // ClientInfo contains all of the configuration information for a client device
 type ClientInfo struct {
 	Ring       string     // Assigned security ring
@@ -966,24 +978,19 @@ func (c *Handle) GetClients() ClientMap {
 	return set
 }
 
-// GetNics returns a slice of mac addresses representing the configured NICs on
-// all nodes.
-func (c *Handle) GetNics() ([]NicInfo, error) {
-	prop, err := c.GetProps("@/nodes")
-	if err != nil {
-		return nil, fmt.Errorf("property get @/nodes failed: %v", err)
-	}
-
+// Return a slice of either all NICs attached to the specified node,
+// or all NICs in the cluster if the node parameter is empty.
+func getNics(prop *PropertyNode, node string) ([]NicInfo, error) {
 	nics := make([]NicInfo, 0)
-	for nodeName, node := range prop.Children {
-		nodeNics := node.Children["nics"]
-		if nodeNics == nil {
+	for name, info := range prop.Children {
+		nodeNics := info.Children["nics"]
+		if (node != "" && node != name) || nodeNics == nil {
 			continue
 		}
 
 		for _, nic := range nodeNics.Children {
 			n := NicInfo{
-				Node: nodeName,
+				Node: name,
 			}
 
 			n.Name, _ = getStringVal(nic, "name")
@@ -995,7 +1002,103 @@ func (c *Handle) GetNics() ([]NicInfo, error) {
 			nics = append(nics, n)
 		}
 	}
+
+	sort.Slice(nics,
+		func(i, j int) bool { return nics[i].Name < nics[j].Name },
+	)
+
 	return nics, nil
+}
+
+// GetNics returns a slice of mac addresses representing the configured NICs on
+// all nodes.
+func (c *Handle) GetNics() ([]NicInfo, error) {
+	prop, err := c.GetProps("@/nodes")
+	if err != nil {
+		return nil, fmt.Errorf("property get @/nodes failed: %v", err)
+	}
+
+	return getNics(prop, "")
+}
+
+// Build a mac->ip map of all the NICs on the internal ring
+func (c *Handle) getInternalAddrs() map[string]string {
+	addrs := make(map[string]string)
+
+	clients, _ := c.GetProps("@/clients")
+	if clients != nil {
+		for mac, client := range clients.Children {
+			var ring, addr string
+
+			if p, ok := client.Children["ring"]; ok {
+				ring = p.Value
+			}
+			if p, ok := client.Children["ipv4"]; ok {
+				addr = p.Value
+			}
+
+			if ring == base_def.RING_INTERNAL {
+				addrs[mac] = addr
+			}
+		}
+	}
+
+	return addrs
+}
+
+// GetNodes returns a slice of all nodes
+func (c *Handle) GetNodes() ([]NodeInfo, error) {
+	var metrics ChildMap
+
+	prop, err := c.GetProps("@/nodes")
+	if err != nil {
+		return nil, fmt.Errorf("property get @/nodes failed: %v", err)
+	}
+	if x, _ := c.GetProps("@/metrics/health/"); x != nil {
+		metrics = x.Children
+	}
+
+	internal := c.getInternalAddrs()
+
+	nodes := make([]NodeInfo, 0)
+	for nodeName, node := range prop.Children {
+		ni := NodeInfo{
+			ID: nodeName,
+		}
+		ni.Platform, _ = getStringVal(node, "platform")
+		ni.Nics, _ = getNics(prop, nodeName)
+
+		if m, ok := metrics[nodeName]; ok {
+			ni.Alive, _ = getTimeValNil(m, "alive")
+			ni.BootTime, _ = getTimeValNil(m, "boot_time")
+			ni.Role, _ = getStringVal(m, "role")
+			if ni.Role == "gateway" {
+				a, _ := c.GetProp("@/network/wan/current/address")
+				ni.Addr, _, _ = net.ParseCIDR(a)
+			} else {
+				for _, nic := range ni.Nics {
+					if a, ok := internal[nic.MacAddr]; ok {
+						ni.Addr = net.ParseIP(a)
+						break
+					}
+				}
+			}
+		}
+
+		nodes = append(nodes, ni)
+	}
+
+	sort.Slice(nodes,
+		func(i, j int) bool {
+			if nodes[i].Role == nodes[j].Role {
+				return nodes[i].ID < nodes[j].ID
+			}
+			// gateway first, then satellites
+			return nodes[i].Role == "gateway"
+		},
+	)
+
+	return nodes, nil
 }
 
 // GetActiveBlocks builds a slice of all the IP addresses that were being

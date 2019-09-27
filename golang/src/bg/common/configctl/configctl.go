@@ -392,7 +392,7 @@ func printClient(mac string, client *cfgapi.ClientInfo, verbose bool) {
 func getClients(cmd string, args []string) error {
 	flags := flag.NewFlagSet("clients", flag.ContinueOnError)
 	allClients := flags.Bool("a", false, "show all clients")
-	verbose := flags.Bool("v", false, "verbose output")
+	clientVerbose := flags.Bool("v", false, "verbose output")
 
 	if err := flags.Parse(args); err != nil {
 		usage(cmd)
@@ -408,7 +408,7 @@ func getClients(cmd string, args []string) error {
 	}
 	sort.Strings(macs)
 
-	if *verbose {
+	if *clientVerbose {
 		fmt.Printf("%-17s %-16s %-10s %8s %-15s %-16s %9s\n",
 			"macaddr", "name", "ring", "wireless", "ip addr",
 			"expiration", "device id")
@@ -421,7 +421,56 @@ func getClients(cmd string, args []string) error {
 	for _, mac := range macs {
 		client := clients[mac]
 		if client.IsActive() || *allClients {
-			printClient(mac, client, *verbose)
+			printClient(mac, client, *clientVerbose)
+		}
+	}
+
+	return nil
+}
+
+func getNodes(cmd string, args []string) error {
+	flags := flag.NewFlagSet("nodes", flag.ContinueOnError)
+	nodeVerbose := flags.Bool("v", false, "verbose output")
+	nodeAll := flags.Bool("a", false, "show offline nodes as well")
+	if err := flags.Parse(args); err != nil {
+		usage(cmd)
+	}
+
+	nodes, err := configd.GetNodes()
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("%19s %9s %15s %25s\n",
+		"Node ID", "Role", "IP Address", "Last alive")
+	for _, node := range nodes {
+		var alive, ipaddr string
+
+		if node.Alive != nil {
+			alive = node.Alive.Format(time.RFC3339)
+		} else if *nodeAll {
+			alive = "unknown"
+		} else {
+			continue
+		}
+
+		if node.Addr == nil {
+			ipaddr = "unknown"
+		} else {
+			ipaddr = node.Addr.String()
+		}
+
+		fmt.Printf("%19s %9s %15v %25s\n",
+			node.ID, node.Role, ipaddr, alive)
+		if !*nodeVerbose {
+			continue
+		}
+
+		for _, nic := range node.Nics {
+			if !nic.Pseudo {
+				fmt.Printf("\t%5s %17s %8s %s\n",
+					nic.Name, nic.MacAddr, nic.Kind, nic.Ring)
+			}
 		}
 	}
 
@@ -432,6 +481,8 @@ func getFormatted(cmd string, args []string) error {
 	switch args[0] {
 	case "clients":
 		return getClients(cmd, args[1:])
+	case "nodes":
+		return getNodes(cmd, args[1:])
 	case "rings":
 		return getRings(cmd, args[1:])
 	default:
