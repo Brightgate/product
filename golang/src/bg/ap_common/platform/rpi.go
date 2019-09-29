@@ -24,6 +24,7 @@ import (
 	"bg/common/release"
 
 	"github.com/pkg/errors"
+	"github.com/satori/uuid"
 )
 
 var (
@@ -62,6 +63,10 @@ func rpiParseNodeID(data []byte) (string, error) {
 	uuidStr := fmt.Sprintf("%8s-%4s-%4s-%4s-%12s",
 		s[0:8], s[8:12], s[12:16], s[16:20], s[20:32])
 	return uuidStr, nil
+}
+
+func rpiGenNodeID(model int) string {
+	return uuid.NewV4().String()
 }
 
 func rpiSetNodeID(uuidStr string) error {
@@ -259,6 +264,7 @@ func init() {
 		probe:         rpiProbe,
 		setNodeID:     rpiSetNodeID,
 		getNodeID:     rpiGetNodeID,
+		GenNodeID:     rpiGenNodeID,
 		NicIsVirtual:  rpiNicIsVirtual,
 		NicIsWireless: rpiNicIsWireless,
 		NicIsWired:    rpiNicIsWired,

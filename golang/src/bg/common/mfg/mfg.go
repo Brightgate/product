@@ -17,10 +17,13 @@ package mfg
 import (
 	"errors"
 	"fmt"
+	"math/rand"
 	"regexp"
 	"strconv"
+	"time"
 )
 
+var randomSite = [2]byte{'Z', 'Z'}
 var extSerialRE = regexp.MustCompile(`^(\d{3})-(\d{4})(\d{2})([A-Z]{2})-(\d{6})$`)
 
 // ErrInvalidSerial represents an invalid serial number
@@ -110,4 +113,22 @@ func NewExtSerialFromString(sn string) (*ExtSerial, error) {
 		return nil, ErrInvalidSerial
 	}
 	return NewExtSerial(m, y, w, [2]byte{match[4][0], match[4][1]}, s)
+}
+
+// IsExtSerialRandom returns true if the provided serial number appears to have
+// been generated randomly.
+func IsExtSerialRandom(sn *ExtSerial) bool {
+	return sn.SiteCode == randomSite
+}
+
+// NewExtSerialRandom generates a random serial number for the provided model
+// number.  The new serial number uses the reserved SiteCode 'ZZ' to indicate
+// that it was generated locally on the appliance, rather than through the
+// official build process.
+func NewExtSerialRandom(model int) *ExtSerial {
+	year, week := time.Now().ISOWeek()
+	rand.Seed(int64(time.Now().Nanosecond()))
+	serial := (rand.Int() % maxSerial) + 1
+
+	return &ExtSerial{model, year, week, randomSite, serial}
 }

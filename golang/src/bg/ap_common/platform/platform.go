@@ -45,6 +45,7 @@ type Platform struct {
 	probe         func() bool
 	setNodeID     func(string) error
 	getNodeID     func() (string, error)
+	GenNodeID     func(int) string
 	NicIsVirtual  func(string) bool
 	NicIsWireless func(string) bool
 	NicIsWired    func(string) bool

@@ -63,6 +63,11 @@ message UpgradeReport {
 	map<string, string> commits = 0x05;
 }
 
+message SerialException {
+	google.protobuf.Timestamp timestamp = 0x01;
+	string serial_number = 0x02;
+}
+
 // Cloud simplified version of EventNetException
 // XXX would like feedback on how closely to have this mirror EventNetException
 // or if we should commonize them.

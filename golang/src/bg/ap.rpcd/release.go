@@ -30,6 +30,7 @@ import (
 
 	"bg/ap_common/platform"
 	"bg/cloud_rpc"
+	"bg/common/mfg"
 	"bg/common/release"
 
 	"github.com/pkg/errors"
@@ -37,6 +38,28 @@ import (
 
 	"github.com/golang/protobuf/ptypes"
 )
+
+// If it looks like we're running with a self-assigned serial number, notify
+// the cloud.
+func validateNodeID(ctx context.Context, tclient cloud_rpc.EventClient,
+	nodeID string) {
+
+	serial, err := mfg.NewExtSerialFromString(nodeID)
+	if err == nil {
+		if mfg.IsExtSerialRandom(serial) {
+			exc := &cloud_rpc.SerialException{
+				Timestamp:    ptypes.TimestampNow(),
+				SerialNumber: nodeID,
+			}
+			err := publishEvent(ctx, tclient, "exception", exc)
+			if err != nil {
+				slog.Warnf("failed to publish %v", exc)
+			}
+		}
+	} else {
+		slog.Warnf("while parsing nodeID %s: %v", nodeID, err)
+	}
+}
 
 func upgradeLoop(ctx context.Context, client cloud_rpc.ReleaseManagerClient,
 	tclient cloud_rpc.EventClient, wg *sync.WaitGroup, doneChan chan bool) {
@@ -65,6 +88,8 @@ func upgradeLoop(ctx context.Context, client cloud_rpc.ReleaseManagerClient,
 		wg.Done()
 		return
 	}
+	validateNodeID(ctx, tclient, nodeID)
+
 	targetPath := fmt.Sprintf("^@/nodes/%s/target_release", nodeID)
 	config.HandleChange(targetPath, func(path []string, val string, expires *time.Time) {
 		releaseChan <- struct{}{}

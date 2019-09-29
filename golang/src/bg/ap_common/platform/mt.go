@@ -105,27 +105,38 @@ func mtGetSerialNumber() ([]byte, error) {
 }
 
 func mtGetNodeID() (string, error) {
+	var fwNodeID, cachedNodeID string
+
 	// First check the machineID file to see if we've already discovered
 	// and/or assigned an ID to this system.
-	data, err := ioutil.ReadFile(mtMachineIDFile)
+	data, cacheErr := ioutil.ReadFile(mtMachineIDFile)
+	if cacheErr == nil {
+		cachedNodeID, cacheErr = mtParseNodeID(data)
+	}
+
+	data, err := mtGetSerialNumber()
 	if err == nil {
-		nodeID, err = mtParseNodeID(data)
-		return nodeID, err
-	} else if !os.IsNotExist(err) {
-		return "", fmt.Errorf("reading %s: %v", mtMachineIDFile, err)
+		fwNodeID, err = mtParseNodeID(data)
+		if (err == nil) && (fwNodeID != cachedNodeID) {
+			// We cache the serial number in a file to protect
+			// against fw corruption and so that non-root
+			// users can access it.
+			if serr := mtSetNodeID(fwNodeID); serr != nil {
+				fmt.Printf("caching nodeID: %v\n", serr)
+			}
+		}
 	}
 
-	if data, err = mtGetSerialNumber(); err != nil {
-		return "", err
+	if err != nil && cacheErr == nil {
+		return cachedNodeID, nil
 	}
 
-	if nodeID, err = mtParseNodeID(data); err == nil {
-		// We cache the serial number in a file so non-root users can
-		// access it.
-		mtSetNodeID(nodeID)
-	}
+	return fwNodeID, err
+}
 
-	return nodeID, err
+func mtGenNodeID(model int) string {
+	serial := mfg.NewExtSerialRandom(model)
+	return serial.String()
 }
 
 func mtNicIsVirtual(nic string) bool {
@@ -451,6 +462,7 @@ func init() {
 		probe:         mtProbe,
 		setNodeID:     mtSetNodeID,
 		getNodeID:     mtGetNodeID,
+		GenNodeID:     mtGenNodeID,
 		NicIsVirtual:  mtNicIsVirtual,
 		NicIsWireless: mtNicIsWireless,
 		NicIsWired:    mtNicIsWired,

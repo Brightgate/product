@@ -31,8 +31,6 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/platform"
 	"bg/base_def"
-
-	"github.com/satori/uuid"
 )
 
 const (
@@ -274,6 +272,8 @@ func setEnvironment() {
 }
 
 func verifyNodeID() error {
+	const modelNumber = 1
+
 	nodeID, err := plat.GetNodeID()
 
 	if err == nil {
@@ -288,14 +288,14 @@ func verifyNodeID() error {
 	logWarn("Unable to get a device nodeID: %v", err)
 
 	if *nodeFlag == "" {
-		nodeID = uuid.NewV4().String()
+		nodeID = plat.GenNodeID(modelNumber)
 		logWarn("generated a new nodeID: %s", nodeID)
 	} else {
 		nodeID = *nodeFlag
 		logInfo("using nodeID from command line: %s", nodeID)
 	}
 
-	if err = plat.SetNodeID(*nodeFlag); err != nil {
+	if err = plat.SetNodeID(nodeID); err != nil {
 		err = fmt.Errorf("unable to set device nodeID: %v", err)
 	}
 

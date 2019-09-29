@@ -42,9 +42,7 @@ start_service()
 	fi
 
 	if [ ! -f ${IDFILE} ]; then
-		MACHINE_ID=$(/usr/bin/uuidgen)
-		OPTS="-nodeid $MACHINE_ID"
-		set_hostname "$MACHINE_ID"
+		set_hostname "unknown"
 	else
 		set_hostname "`cat < $IDFILE`"
 	fi

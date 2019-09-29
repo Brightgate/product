@@ -131,6 +131,7 @@ func init() {
 		probe:         x86Probe,
 		setNodeID:     x86SetNodeID,
 		getNodeID:     rpiGetNodeID,
+		GenNodeID:     rpiGenNodeID,
 		NicIsVirtual:  x86NicIsVirtual,
 		NicIsWireless: x86NicIsWireless,
 		NicIsWired:    x86NicIsWired,
