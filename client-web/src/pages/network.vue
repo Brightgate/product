@@ -7,6 +7,23 @@
   express written permission of Brightgate Inc is prohibited, and any
   such unauthorized removal or alteration will be a violation of federal law.
 -->
+<style scoped>
+/*
+ * When the accordion-item-opened class gets set on the enclosing li
+ * we hide the summarized information in the closed accordion item.
+ * Rather than the usual display:none, here we set the opacity to 0
+ * (transparent) using a CSS transition to make it smooth.
+ */
+li.accordion-item >>> span.hide-when-accordion-open {
+  opacity: 1;
+  transition: 0.4s opacity ease-in;
+}
+
+li.accordion-item.accordion-item-opened >>> span.hide-when-accordion-open {
+  opacity: 0;
+  transition: 0.4s opacity ease-out;
+}
+</style>
 <template>
   <f7-page ptr @ptr:refresh="onPtrRefresh" @page:beforein="onPageBeforeIn">
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.network.title')" sliding />
@@ -40,7 +57,8 @@
       <f7-list-item :title="$t('message.network.config_dns_domain')">
         {{ networkConfig.dns.domain }}
       </f7-list-item>
-      <f7-list-item v-if="networkConfig.wan" :after="networkConfig.wan.currentAddress" accordion-item inset title="WAN Link">
+      <f7-list-item v-if="networkConfig.wan" accordion-item inset title="WAN Link">
+        <span slot="after" class="hide-when-accordion-open">{{ networkConfig.wan.currentAddress }}</span>
         <f7-accordion-content>
           <f7-list inset>
             <f7-list-item title="Current Address">

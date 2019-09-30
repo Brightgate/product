@@ -55,7 +55,7 @@ div.shorter-block {
                       :key="device.uniqid"
                       :title="device.displayName"
                       :link="`${$f7route.url}${device.uniqid}/`"
-                      media-item>
+                      chevron-center media-item>
           <div slot="media">
             <img :alt="device.category" :src="mediaIcon(device)" width="32" height="32">
           </div>

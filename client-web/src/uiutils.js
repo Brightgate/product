@@ -46,6 +46,31 @@ async function submitConfigChange(component, description, storeDispatchOp, store
   return res;
 }
 
+function formatNodeName(component, nodes, nodeName) {
+  if (!nodes[nodeName] || !nodes[nodeName].name) {
+    return component.$t('message.api.unknown_device', {id: nodeName});
+  }
+  return nodes[nodeName].name;
+}
+
+function dBmToStrength(dBm) {
+  if (typeof dBm !== 'number') {
+    return 0;
+  }
+  if (dBm > -50) {
+    return 5;
+  } else if (dBm > -60) {
+    return 4;
+  } else if (dBm > -70) {
+    return 3;
+  } else if (dBm > -80) {
+    return 2;
+  }
+  return 1;
+}
+
 export default {
   submitConfigChange,
+  formatNodeName,
+  dBmToStrength,
 };

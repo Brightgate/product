@@ -265,15 +265,18 @@ type apiDevice struct {
 	Active          bool                   `json:"active"`
 	Wireless        bool                   `json:"wireless"`
 	ConnBand        string                 `json:"connBand,omitempty"`
-	ConnNode        *uuid.UUID             `json:"connNode,omitempty"`
+	ConnNode        string                 `json:"connNode,omitempty"`
 	ConnVAP         string                 `json:"connVAP,omitempty"`
 	Scans           map[string]apiScanInfo `json:"scans,omitempty"`
 	Vulnerabilities map[string]apiVulnInfo `json:"vulnerabilities,omitempty"`
+	LastActivity    *time.Time             `json:"lastActivity,omitempty"`
+	SignalStrength  *int                   `json:"signalStrength,omitempty"`
 }
 
 func buildDeviceResponse(c echo.Context, hdl *cfgapi.Handle,
 	hwaddr string, client *cfgapi.ClientInfo,
-	scanMap cfgapi.ScanMap, vulnMap cfgapi.VulnMap) *apiDevice {
+	scanMap cfgapi.ScanMap, vulnMap cfgapi.VulnMap,
+	metrics *cfgapi.ClientMetrics) *apiDevice {
 
 	d := apiDevice{
 		HwAddr:          hwaddr,
@@ -295,6 +298,11 @@ func buildDeviceResponse(c echo.Context, hdl *cfgapi.Handle,
 		ConnVAP:         client.ConnVAP,
 		Scans:           make(map[string]apiScanInfo),
 		Vulnerabilities: make(map[string]apiVulnInfo),
+	}
+
+	if metrics != nil {
+		d.LastActivity = metrics.LastActivity
+		d.SignalStrength = &metrics.SignalStrength
 	}
 
 	if client.Expires != nil {
@@ -350,7 +358,8 @@ func (a *siteHandler) getDevices(c echo.Context) error {
 	for mac, client := range hdl.GetClients() {
 		scans := hdl.GetClientScans(mac)
 		vulns := hdl.GetVulnerabilities(mac)
-		d := buildDeviceResponse(c, hdl, mac, client, scans, vulns)
+		metrics := hdl.GetClientMetrics(mac)
+		d := buildDeviceResponse(c, hdl, mac, client, scans, vulns, metrics)
 		response = append(response, d)
 	}
 	return c.JSON(http.StatusOK, response)

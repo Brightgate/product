@@ -60,10 +60,12 @@ type daDevice struct {
 	Active          bool                  `json:"active"`
 	Wireless        bool                  `json:"wireless"`
 	ConnBand        string                `json:"connBand,omitempty"`
-	ConnNode        *uuid.UUID            `json:"connNode,omitempty"`
+	ConnNode        string                `json:"connNode,omitempty"`
 	ConnVAP         string                `json:"connVAP,omitempty"`
 	Scans           map[string]daScanInfo `json:"scans,omitempty"`
 	Vulnerabilities map[string]daVulnInfo `json:"vulnerabilities,omitempty"`
+	LastActivity    *time.Time            `json:"lastActivity,omitempty"`
+	SignalStrength  *int                  `json:"signalStrength,omitempty"`
 }
 
 // mirrors RingConfig but omits Bridge and Vlan
@@ -76,7 +78,8 @@ type daRing struct {
 type daRings map[string]daRing
 
 func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
-	scanMap cfgapi.ScanMap, vulnMap cfgapi.VulnMap) *daDevice {
+	scanMap cfgapi.ScanMap, vulnMap cfgapi.VulnMap,
+	metrics *cfgapi.ClientMetrics) *daDevice {
 
 	cd := daDevice{
 		HwAddr:          hwaddr,
@@ -98,6 +101,11 @@ func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
 		ConnVAP:         client.ConnVAP,
 		Scans:           make(map[string]daScanInfo),
 		Vulnerabilities: make(map[string]daVulnInfo),
+	}
+
+	if metrics != nil {
+		cd.LastActivity = metrics.LastActivity
+		cd.SignalStrength = &metrics.SignalStrength
 	}
 
 	if client.Expires != nil {
@@ -170,7 +178,8 @@ func demoDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	for mac, client := range clientsRaw {
 		scans := config.GetClientScans(mac)
 		vulns := config.GetVulnerabilities(mac)
-		cd := buildDeviceResponse(mac, client, scans, vulns)
+		metrics := config.GetClientMetrics(mac)
+		cd := buildDeviceResponse(mac, client, scans, vulns, metrics)
 		devices = append(devices, cd)
 	}
 

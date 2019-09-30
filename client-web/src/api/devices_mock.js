@@ -22,7 +22,7 @@ export default [
     "active": false,
     "confidence": 0,
     "connBand": "2.4GHz",
-    "connNode": "001-201901BB-000001",
+    "connNode": "001-201901BB-000002",
     "connVAP": "eap",
     "dhcpExpiry": "2019-06-25T17:01:02Z",
     "dhcpName": "",
@@ -47,7 +47,9 @@ export default [
         "start": "2019-06-24T18:02:34Z"
       }
     },
-    "wireless": true
+    "wireless": true,
+    "signalStrength": -45,
+    "lastActivity": "2019-06-26T19:10:25Z",
   },
   {
     "active": true,
@@ -298,7 +300,9 @@ export default [
         "start": "2019-06-21T17:59:51Z"
       }
     },
-    "wireless": true
+    "wireless": true,
+    "signalStrength": -40,
+    "lastActivity": "2019-06-26T19:10:25Z",
   },
   {
     "active": false,
@@ -394,7 +398,9 @@ export default [
         "start": "2019-06-23T20:23:09Z"
       }
     },
-    "wireless": true
+    "wireless": true,
+    "signalStrength": -30,
+    "lastActivity": "2019-06-26T19:10:25Z",
   },
   {
     "active": true,
@@ -481,7 +487,9 @@ export default [
         "start": "2019-06-25T19:07:56Z"
       }
     },
-    "wireless": true
+    "wireless": true,
+    "signalStrength": -67,
+    "lastActivity": "2019-06-26T19:10:25Z",
   },
   {
     "active": false,
@@ -602,7 +610,9 @@ export default [
         "start": "2019-06-24T23:22:41Z"
       }
     },
-    "wireless": true
+    "wireless": true,
+    "signalStrength": -77,
+    "lastActivity": "2019-06-26T19:10:25Z",
   },
   {
     "active": false,
@@ -777,7 +787,9 @@ export default [
         "start": "2019-06-25T17:32:24Z"
       }
     },
-    "wireless": true
+    "wireless": true,
+    "signalStrength": -97,
+    "lastActivity": "2019-06-26T19:10:25Z",
   },
   {
     "active": false,
@@ -867,7 +879,7 @@ export default [
         "start": "2019-06-23T13:30:22Z"
       }
     },
-    "wireless": true
+    "wireless": true,
   },
   {
     "active": true,
@@ -1066,7 +1078,9 @@ export default [
         "start": "2019-06-25T19:16:03Z"
       }
     },
-    "wireless": true
+    "wireless": true,
+    "signalStrength": -65,
+    "lastActivity": "2019-06-26T19:10:25Z",
   },
   {
     "active": false,
@@ -1237,7 +1251,9 @@ export default [
         "start": "2019-06-23T20:23:07Z"
       }
     },
-    "wireless": true
+    "wireless": true,
+    "signalStrength": -75,
+    "lastActivity": "2019-06-26T19:10:25Z",
   },
   {
     "active": false,
@@ -1305,7 +1321,7 @@ export default [
     "active": true,
     "confidence": 0,
     "connBand": "5GHz",
-    "connNode": "001-201901BB-000001",
+    "connNode": "001-201901BB-000002",
     "connVAP": "eap",
     "dhcpExpiry": "2019-06-26T19:10:25Z",
     "dhcpName": "catbook",
@@ -1330,7 +1346,9 @@ export default [
         "start": "2019-06-25T19:10:56Z"
       }
     },
-    "wireless": true
+    "wireless": true,
+    "signalStrength": -35,
+    "lastActivity": "2019-06-26T19:10:25Z",
   },
   {
     "active": true,
@@ -1428,7 +1446,9 @@ export default [
         "start": "2019-06-25T18:29:14Z"
       }
     },
-    "wireless": true
+    "wireless": true,
+    "signalStrength": -85,
+    "lastActivity": "2019-06-26T19:10:25Z",
   },
   {
     "active": false,
@@ -1600,7 +1620,9 @@ export default [
         "start": "2019-06-20T17:39:22Z"
       }
     },
-    "wireless": true
+    "wireless": true,
+    "signalStrength": -75,
+    "lastActivity": "2019-06-26T19:10:25Z",
   },
   {
     "active": true,
@@ -1627,7 +1649,9 @@ export default [
         "start": "2019-06-25T19:08:04Z"
       }
     },
-    "wireless": true
+    "wireless": true,
+    "signalStrength": -55,
+    "lastActivity": "2019-06-26T19:10:25Z",
   },
   {
     "active": false,
@@ -1809,7 +1833,7 @@ export default [
     "active": true,
     "confidence": 0,
     "connBand": "5GHz",
-    "connNode": "001-201901BB-000001",
+    "connNode": "001-201901BB-000002",
     "connVAP": "psk",
     "dhcpExpiry": "2019-06-26T07:07:23Z",
     "dhcpName": "amazon-160612181",
@@ -1835,7 +1859,9 @@ export default [
         "start": "2019-06-25T19:06:55Z"
       }
     },
-    "wireless": true
+    "wireless": true,
+    "signalStrength": -75,
+    "lastActivity": "2019-06-26T19:10:25Z",
   },
   {
     "active": false,
@@ -1934,7 +1960,9 @@ export default [
         "start": "2019-06-25T19:07:23Z"
       }
     },
-    "wireless": true
+    "wireless": true,
+    "signalStrength": -55,
+    "lastActivity": "2019-06-26T19:10:25Z",
   },
   {
     "active": false,

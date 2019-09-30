@@ -11,11 +11,6 @@
 div.shorter-block {
   margin: 16px 0;
 }
-svg.model100 {
-  width: 64px;
-  height: auto;
-  fill: #232e68;
-}
 </style>
 <template>
   <f7-page ptr @ptr:refresh="pullRefresh">
@@ -29,7 +24,7 @@ svg.model100 {
                     :link="`${$f7route.url}${nodeID}/`"
                     media-item>
         <div slot="media">
-          <model100 class="model100" />
+          <bg-hw-icon :model="node.hwModel" width="48px" height="48px" />
         </div>
         <div slot="subtitle">
           {{ node.role === "gateway" ?
@@ -44,12 +39,12 @@ svg.model100 {
 <script>
 import Vuex from 'vuex';
 import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
-import Model100 from '../assets/model100.svg';
+import BGHWIcon from '../components/hw_icon.vue';
 
 export default {
   components: {
     'bg-site-breadcrumb': BGSiteBreadcrumb,
-    'model100': Model100,
+    'bg-hw-icon': BGHWIcon,
   },
 
   computed: {

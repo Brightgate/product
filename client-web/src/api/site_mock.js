@@ -195,7 +195,7 @@ const mockNodes = [
     'name': 'conference room',
     'role': 'satellite',
     'serialNumber': '001-201901BB-000002',
-    'hwModel': 'model100',
+    'hwModel': 'rpi3',
     'bootTime': '2019-05-02T04:19:57Z',
     'alive': '2019-09-30T20:56:02Z',
     'addr': '10.1.3.49',

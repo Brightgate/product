@@ -40,6 +40,14 @@ export default {
           user: 'User',
           admin: 'Administrator',
         },
+        strength: {
+          str_5: 'Excellent',
+          str_4: 'Very Good',
+          str_3: 'Good',
+          str_2: 'Poor',
+          str_1: 'Very Poor',
+          str_0: 'Unknown',
+        },
         unfinished_operation: 'This site isn\'t responding to cloud commands at the moment.  This command has been queued for processing; when the site reconnects to the cloud, the change will occur.',
       },
       home: {
@@ -283,6 +291,8 @@ export default {
         vuln_details: 'Details:',
         wired_port: 'Wired Network',
         change_ring_err: 'Failed to change trust group for {dev} to {ring}: {err}',
+        signal_strength: 'Signal Strength',
+        SSID: 'SSID',
       },
       enroll_guest: {
         title: 'Enroll Guest',

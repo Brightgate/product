@@ -27,8 +27,6 @@ import (
 	"bg/base_def"
 	"bg/common/network"
 	"bg/common/wifi"
-
-	"github.com/satori/uuid"
 )
 
 // Version gets increased each time there is a non-compatible change to the
@@ -218,7 +216,7 @@ type ClientInfo struct {
 	DNSPrivate bool       // We don't collect DNS queries
 	Username   string     // Name used for EAP authentication
 	ConnBand   string     // Connection Radio Band (2.4GHz, 5GHz)
-	ConnNode   *uuid.UUID // Connection Node
+	ConnNode   string     // Connection Node
 	ConnVAP    string     // Connection Virtual AP
 	Wireless   bool       // Is this a wireless client?
 	active     string
@@ -555,6 +553,19 @@ func getIntVal(root *PropertyNode, name string) (int, error) {
 	return rval, err
 }
 
+func getUintVal(root *PropertyNode, name string) (uint64, error) {
+	var val string
+	var rval uint64
+	var err error
+
+	if val, err = getProp(root, name); err == nil {
+		if rval, err = strconv.ParseUint(val, 10, 64); err != nil {
+			err = fmt.Errorf("malformed %s property: %s", name, val)
+		}
+	}
+	return rval, err
+}
+
 func getFloat64Val(root *PropertyNode, name string) (float64, error) {
 	var val string
 	var rval float64
@@ -601,22 +612,6 @@ func getTimeValNil(root *PropertyNode, name string) (*time.Time, error) {
 		return nil, err
 	}
 	return &rval, err
-}
-
-func getUUIDVal(root *PropertyNode, name string) (*uuid.UUID, error) {
-	var val string
-	var err error
-	var uu uuid.UUID
-
-	if val, err = getProp(root, name); err != nil {
-		return nil, err
-	}
-
-	if uu, err = uuid.FromString(val); err != nil {
-		return nil, fmt.Errorf("malformed %s property: %s", name, val)
-	}
-
-	return &uu, nil
 }
 
 func getIPv4Val(root *PropertyNode, name string) (*net.IP, error) {
@@ -899,8 +894,7 @@ func getClient(client *PropertyNode) *ClientInfo {
 	var ipv4 net.IP
 	var exp *time.Time
 	var wireless, private bool
-	var username, connVAP, connBand, active string
-	var connNode *uuid.UUID
+	var username, connVAP, connBand, connNode, active string
 	var err error
 
 	private, _ = getBoolVal(client, "dns_private")
@@ -919,7 +913,7 @@ func getClient(client *PropertyNode) *ClientInfo {
 		username, _ = getStringVal(conn, "username")
 		connVAP, _ = getStringVal(conn, "vap")
 		connBand, _ = getStringVal(conn, "band")
-		connNode, _ = getUUIDVal(conn, "node")
+		connNode, _ = getStringVal(conn, "node")
 		active, _ = getStringVal(conn, "active")
 		wireless, err = getBoolVal(conn, "wireless")
 		// Improve our guess for legacy devices which don't have the
@@ -1022,6 +1016,50 @@ func (c *Handle) GetClients() ClientMap {
 	}
 
 	return set
+}
+
+// ClientMetrics captures metrics about a specifc client device.
+// The array format is chosen to provide a reasonably compact JSON
+// encoding.
+// [0, 1, 2, 3]: [second, minute, hour, day]
+type ClientMetrics struct {
+	LastActivity   *time.Time `json:"lastActivity"`
+	SignalStrength int        `json:"signalStrength"`
+	BytesRcvd      [4]uint64  `json:"bytesRcvd"`
+	BytesSent      [4]uint64  `json:"bytesSent"`
+	PktsRcvd       [4]uint64  `json:"pktsRcvd"`
+	PktsSent       [4]uint64  `json:"pktsSent"`
+}
+
+// GetClientMetricsFromNode extracts client metrics from the given
+// client metrics node.
+func (c *Handle) GetClientMetricsFromNode(clientMetrics *PropertyNode) *ClientMetrics {
+	var cm ClientMetrics
+	// The order matches the slot order for the ClientMetrics struct
+	cm.LastActivity, _ = getTimeValNil(clientMetrics, "last_activity")
+	cm.SignalStrength, _ = getIntVal(clientMetrics, "signal_str")
+	subs := []string{"second", "minute", "hour", "day"}
+	for i, sub := range subs {
+		m := clientMetrics.Children[sub]
+		if m != nil {
+			cm.BytesRcvd[i], _ = getUintVal(m, "bytes_rcvd")
+			cm.BytesSent[i], _ = getUintVal(m, "bytes_sent")
+			cm.PktsRcvd[i], _ = getUintVal(m, "pkts_rcvd")
+			cm.PktsSent[i], _ = getUintVal(m, "pkts_sent")
+		}
+	}
+	return &cm
+}
+
+// GetClientMetrics extracts client metrics from the client
+// named by the mac parameter.
+func (c *Handle) GetClientMetrics(mac string) *ClientMetrics {
+	path := fmt.Sprintf("@/metrics/clients/%s", mac)
+	props, err := c.GetProps(path)
+	if err != nil {
+		return nil
+	}
+	return c.GetClientMetricsFromNode(props)
 }
 
 func getNic(nic *PropertyNode) NicInfo {

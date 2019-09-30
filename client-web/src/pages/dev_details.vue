@@ -35,6 +35,27 @@ span.dev-inactive {
   color: #888;
   text-align: right;
 }
+
+/*
+ * When the accordion-item-opened class gets set on the enclosing li
+ * we hide the summarized information in the closed accordion item.
+ * Rather than the usual display:none, here we set the opacity to 0
+ * (transparent) using a CSS transition to make it smooth.
+ */
+li.accordion-item >>> span.hide-when-accordion-open {
+  opacity: 1;
+  transition: 0.4s opacity ease-in;
+}
+
+li.accordion-item.accordion-item-opened >>> span.hide-when-accordion-open {
+  opacity: 0;
+  transition: 0.4s opacity ease-out;
+}
+
+div.my-inner-block {
+  display: block;
+  text-align: right;
+}
 </style>
 <template>
   <f7-page>
@@ -132,29 +153,64 @@ span.dev-inactive {
       <f7-list-item :title="$t('message.dev_details.network_name')">
         {{ dev.displayName }}
       </f7-list-item>
-      <f7-list-item :title="$t('message.dev_details.connection')">
+      <!-- Network: for wired clients -->
+      <f7-list-item v-if="!dev.wireless" :title="$t('message.dev_details.connection')">
         <span :class="dev.active ? 'dev-active' : 'dev-inactive'">
-          <template v-if="dev.wireless">
-            <f7-icon :color="dev.active ? 'green' : 'grey'" material="wifi" size="16" />
-            {{ vaps[dev.connVAP].ssid }}<template v-if="dev.connBand">, {{ dev.connBand }}</template>
-            <br>
-            {{ activity }}
-          </template>
-          <template v-if="dev.wireless === false">
-            <f7-icon :color="dev.active ? 'green' : 'grey'" material="settings_ethernet" size="16" />
-            {{ $t('message.dev_details.wired_port') }}
-            <br>
-            {{ activity }}
-          </template>
+          <f7-icon :color="dev.active ? 'green' : 'grey'" material="settings_ethernet" size="16" />
+          {{ $t('message.dev_details.wired_port') }}
         </span>
       </f7-list-item>
+      <!-- Network: for inactive wireless clients -->
+      <f7-list-item v-else-if="!dev.active" :title="$t('message.dev_details.connection')">
+        <span class="dev-inactive">
+          <f7-icon color="grey" material="signal_wifi_off" size="16" />
+          {{ vaps[dev.connVAP].ssid }}
+        </span>
+      </f7-list-item>
+      <!-- Network: for active wireless clients -->
+      <f7-list-item v-else :title="$t('message.dev_details.connection')" accordion-item>
+        <span slot="after" class="hide-when-accordion-open dev-active">
+          <f7-icon color="green" material="wifi" size="16" />
+          {{ vaps[dev.connVAP].ssid }}<template v-if="dev.connBand">, {{ dev.connBand }}</template>
+          <div v-if="dev.signalStrength">
+            <bg-wifi-strength :dbm="dev.signalStrength" />
+          </div>
+        </span>
+        <f7-accordion-content>
+          <f7-list inset>
+            <f7-list-item :title="$t('message.dev_details.SSID')">
+              <span class="dev-active">
+                <f7-icon color="green" material="wifi" size="16" />
+                {{ vaps[dev.connVAP].ssid }}, {{ dev.connBand }}
+              </span>
+            </f7-list-item>
+            <f7-list-item v-if="dev.signalStrength" :title="$t('message.dev_details.signal_strength')">
+              <div class="my-inner-block">
+                <div>
+                  {{ dev.signalStrength }} dBm, {{ $t('message.api.strength.str_' + strength) }}
+                </div>
+                <div>
+                  <bg-wifi-strength :dbm="dev.signalStrength" />
+                </div>
+              </div>
+            </f7-list-item>
+            <f7-list-item :link="`/sites/${$f7route.params.siteID}/nodes/${dev.connNode}/`">
+              <span slot="title"><bg-hw-icon :model="nodeModel" height="30px" /></span>
+              <span>{{ nodeName(dev.connNode) }}</span>
+            </f7-list-item>
+          </f7-list>
+        </f7-accordion-content>
+      </f7-list-item>
+
+      <!-- ipv4 addr -->
       <f7-list-item :title="$t('message.dev_details.ipv4_addr')">
         {{ dev.ipv4Addr ? dev.ipv4Addr : $t("message.dev_details.ipv4_addr_none") }}
       </f7-list-item>
+
+      <!-- mac addr -->
       <f7-list-item :title="$t('message.dev_details.hw_addr')">
         {{ dev.hwAddr }}
       </f7-list-item>
-
 
       <f7-list-item :title="$t('message.dev_details.vuln_scan')">
         {{ lastVulnScan }}
@@ -192,7 +248,9 @@ import {format, formatRelative, parseISO} from '../date-fns-wrapper';
 
 import uiUtils from '../uiutils';
 import vulnerability from '../vulnerability';
+import BGHWIcon from '../components/hw_icon.vue';
 import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
+import BGWifiStrength from '../components/wifi_strength.vue';
 
 const debug = Debug('page:dev-details');
 
@@ -206,7 +264,9 @@ function repairable(vulnid, vuln) {
 
 export default {
   components: {
+    'bg-hw-icon': BGHWIcon,
     'bg-site-breadcrumb': BGSiteBreadcrumb,
+    'bg-wifi-strength': BGWifiStrength,
   },
 
   computed: {
@@ -214,6 +274,7 @@ export default {
     // template.
     ...vuex.mapGetters([
       'vaps',
+      'nodes',
     ]),
 
     devModel: function() {
@@ -267,6 +328,17 @@ export default {
       const uniqid = this.$f7route.params.UniqID;
       return this.$store.getters.deviceByUniqID(uniqid);
     },
+    nodeModel: function() {
+      if (this.dev.connNode) {
+        return this.nodes[this.dev.connNode].hwModel;
+      }
+      return undefined;
+    },
+
+    strength: function() {
+      const dbm = this.dev.signalStrength;
+      return String(uiUtils.dBmToStrength(dbm));
+    },
 
     // Return the subset of rings acceptable for the device's VAP.
     // If the VAP is missing, or something else goes wrong, return all rings.
@@ -301,6 +373,10 @@ export default {
     timeRel: function(t) {
       return formatRelative(parseISO(t), Date.now());
     },
+    nodeName: function(n) {
+      return uiUtils.formatNodeName(this, this.nodes, n);
+    },
+
     vulnHeadline: function(vulnid) {
       return vulnerability.headline(vulnid);
     },
