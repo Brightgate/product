@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"bg/ap_common/platform"
+	"bg/common"
 	"bg/common/faults"
 
 	"github.com/satori/uuid"
@@ -105,12 +106,13 @@ func memWatch() {
 }
 func newReport(daemon, kind string) *faults.FaultReport {
 	r := &faults.FaultReport{
-		Version:   faults.Version,
-		UUID:      uuid.NewV4().String(),
-		Date:      time.Now(),
-		Appliance: nodeID,
-		Daemon:    daemon,
-		Kind:      kind,
+		FaultVersion: faults.Version,
+		APVersion:    common.GitVersion,
+		UUID:         uuid.NewV4().String(),
+		Date:         time.Now(),
+		Appliance:    nodeID,
+		Daemon:       daemon,
+		Kind:         kind,
 	}
 
 	return r

@@ -36,15 +36,16 @@ var (
 
 // FaultReport contains all the information about a fault event
 type FaultReport struct {
-	Version   int
-	UUID      string
-	Date      time.Time
-	Appliance string
-	Daemon    string
-	Kind      string
-	Crash     *CrashReport `json:"Crash,omitempty"`
-	Mem       *MemReport   `json:"Mem,omitempty"`
-	Error     *ErrorReport `json:"Error,omitempty"`
+	FaultVersion int
+	APVersion    string
+	UUID         string
+	Date         time.Time
+	Appliance    string
+	Daemon       string
+	Kind         string
+	Crash        *CrashReport `json:"Crash,omitempty"`
+	Mem          *MemReport   `json:"Mem,omitempty"`
+	Error        *ErrorReport `json:"Error,omitempty"`
 }
 
 // CrashReport contains the data specific to daemon crashes
