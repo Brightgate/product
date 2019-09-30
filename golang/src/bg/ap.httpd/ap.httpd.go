@@ -55,9 +55,10 @@ var (
 	plat         *platform.Platform
 	clientWebDir = apcfg.String("client-web_dir", "/var/www/client-web",
 		false, nil)
-	portList      = apcfg.String("ports", "80,443", false, nil)
-	developerHTTP = apcfg.String("developer-http", "", false, nil)
-	_             = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
+	portList       = apcfg.String("ports", "80,443", false, nil)
+	developerHTTP  = apcfg.String("developer-http", "", false, nil)
+	developerHTTPS = apcfg.String("developer-https", "", false, nil)
+	_              = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
 
 	cutter *securecookie.SecureCookie
 
@@ -136,10 +137,9 @@ func listen(addr string, port string, ring string, cfg *tls.Config,
 	if port == ":443" {
 		go func() {
 			srv := &http.Server{
-				Addr:         addr + port,
-				Handler:      handler,
-				TLSConfig:    cfg,
-				TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
+				Addr:      addr + port,
+				Handler:   handler,
+				TLSConfig: cfg,
 			}
 			err := srv.ListenAndServeTLS(certfn, keyfn)
 			slog.Infof("TLS Listener on %s (%s) exited: %v", addr+port, ring, err)
@@ -371,11 +371,17 @@ func main() {
 		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 		PreferServerCipherSuites: true,
 		CipherSuites: []uint16{
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
+			// Supports older Windows 7/8 and older MacOS
+			tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,
 		},
+		NextProtos: []string{"h2"},
 	}
 
 	ports := getPortList()
@@ -389,31 +395,45 @@ func main() {
 		}
 	}
 
+	developerMW := secure.New(secure.Options{
+		HostsProxyHeaders:     []string{"X-Forwarded-Host"},
+		STSSeconds:            315360000,
+		STSIncludeSubdomains:  true,
+		STSPreload:            true,
+		FrameDeny:             true,
+		ContentTypeNosniff:    true,
+		BrowserXssFilter:      true,
+		ContentSecurityPolicy: contentSecurityPolicy,
+		IsDevelopment:         true,
+	})
+	nDev := negroni.New(negroni.NewRecovery())
+	nDev.Use(negroni.HandlerFunc(developerMW.HandlerFuncWithNext))
+	nDev.UseHandler(apachelog.CombinedLog.Wrap(mainRouter, os.Stderr))
+
 	if *developerHTTP != "" {
-		developerMW := secure.New(secure.Options{
-			HostsProxyHeaders:     []string{"X-Forwarded-Host"},
-			STSSeconds:            315360000,
-			STSIncludeSubdomains:  true,
-			STSPreload:            true,
-			FrameDeny:             true,
-			ContentTypeNosniff:    true,
-			BrowserXssFilter:      true,
-			ContentSecurityPolicy: contentSecurityPolicy,
-			IsDevelopment:         true,
-		})
-
-		nDev := negroni.New(negroni.NewRecovery())
-		nDev.Use(negroni.HandlerFunc(developerMW.HandlerFuncWithNext))
-		nDev.UseHandler(apachelog.CombinedLog.Wrap(mainRouter, os.Stderr))
-
-		slog.Infof("Developer Port configured at %s", *developerHTTP)
+		slog.Infof("Developer HTTP Port configured at %s", *developerHTTP)
 		go func() {
 			err := http.ListenAndServe(*developerHTTP, nDev)
 			slog.Infof("Developer listener on %s exited: %v\n",
 				*developerHTTP, err)
 		}()
 	} else {
-		slog.Infof("Developer disabled")
+		slog.Infof("Developer HTTP disabled")
+	}
+
+	if *developerHTTPS != "" {
+		slog.Infof("Developer HTTPS Port configured at %s", *developerHTTPS)
+		go func() {
+			srv := &http.Server{
+				Addr:      *developerHTTPS,
+				Handler:   nDev,
+				TLSConfig: tlsCfg,
+			}
+			err := srv.ListenAndServeTLS(certPaths.FullChain, certPaths.Key)
+			slog.Infof("TLS Listener on %s exited: %v", *developerHTTPS, err)
+		}()
+	} else {
+		slog.Infof("Developer HTTPS disabled")
 	}
 
 	mcpd.SetState(mcp.ONLINE)

@@ -138,17 +138,18 @@ func mkTLSConfig() (*tls.Config, error) {
 		// qualys tool at https://www.ssllabs.com/ssltest/.
 		// As of Sep. 2018 we earn an A+ rating.
 		CipherSuites: []uint16{
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
 			tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
 			tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
 			tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
-			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 			// Supports older Windows 7/8 and older MacOS
 			tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,
 		},
 		Certificates: []tls.Certificate{keyPair},
+		NextProtos:   []string{"h2"},
 	}, nil
 }
 
@@ -389,14 +390,13 @@ func main() {
 	}
 
 	httpsSrv := &http.Server{
-		Addr:         environ.HTTPSListen,
-		TLSConfig:    cfg,
-		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
+		Addr:      environ.HTTPSListen,
+		TLSConfig: cfg,
 	}
 
 	go func() {
 		if err := rsHTTPS.echo.StartServer(httpsSrv); err != nil {
-			rsHTTPS.echo.Logger.Info("shutting down HTTPS service")
+			rsHTTPS.echo.Logger.Infof("shutting down HTTPS service: %v", err)
 		}
 	}()
 
