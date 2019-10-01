@@ -1066,6 +1066,7 @@ func (c *Handle) GetNodes() ([]NodeInfo, error) {
 			ID: nodeName,
 		}
 		ni.Platform, _ = getStringVal(node, "platform")
+		ni.Name, _ = getStringVal(node, "name")
 		ni.Nics, _ = getNics(prop, nodeName)
 
 		if m, ok := metrics[nodeName]; ok {

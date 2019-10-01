@@ -19,6 +19,13 @@ import Debug from 'debug';
 import appDefs from '../app_defs';
 import makeAxiosMock from './site_mock';
 
+class UnfinishedOperationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'UnfinishedOperationError';
+  }
+}
+
 const normalAxios = axiosMod.create({
   timeout: 5000,
 });
@@ -151,6 +158,34 @@ async function commonApplianceGet(siteID, suffix) {
   }
 }
 
+async function commonAppliancePost(siteID, suffix, postData) {
+  assert.equal(typeof siteID, 'string');
+  assert.equal(typeof suffix, 'string');
+  assert.equal(typeof postData, 'object');
+
+  // XXX See also T470 and site.go; this value is intentionally long because
+  // the server doesn't handle it properly.
+  const timeout = 20000;
+  const u = buildUrl(`/api/sites/${siteID}/${suffix}`);
+  debug(`POST ${u}`, postData);
+  const res = await axios({
+    method: 'POST',
+    url: u,
+    timeout: timeout,
+    headers: {'X-Timeout': `${timeout}`},
+    data: postData,
+  });
+  debug(`POST ${u} result`, res);
+  // HTTP 202 accepted means "The request has been accepted for processing, but
+  // the processing has not been completed.  The request might or might not
+  // eventually be acted upon, as it might be disallowed when processing
+  // actually takes place."
+  if (res.status === 202) {
+    throw new UnfinishedOperationError(u);
+  }
+  return res;
+}
+
 // Load the list of devices from the server.
 async function siteDevicesGet(siteID) {
   const res = await commonApplianceGet(siteID, 'devices');
@@ -171,14 +206,17 @@ async function siteRingsGet(siteID) {
 // attempt to wait for that change to propagate.  In practice this
 // seems to take several seconds, during which time the server may
 // become unreachable; thus we use retrys to make things work properly.
+// XXX NEED TO WORK ON THIS MORE-- also, still true?
 async function siteClientsRingSet(siteID, deviceID, newRing) {
   assert.equal(typeof siteID, 'string');
   assert.equal(typeof deviceID, 'string');
   assert.equal(typeof newRing, 'string');
 
+  await commonAppliancePost(siteID, `devices/${deviceID}`, {ring: newRing});
+
+  // XXX needs some more looking at.
   const propName = `@/clients/${deviceID}/ring`;
   debug(`siteClientsRingSet: ${propName} -> ${newRing}`);
-  await siteConfigSet(siteID, propName, newRing);
   await siteConfigWaitProp(siteID, propName, newRing);
 }
 
@@ -206,10 +244,7 @@ async function siteVAPPost(siteID, vapName, vapConfig) {
   assert.equal(typeof vapName, 'string', 'vapname');
   assert.equal(typeof vapConfig, 'object', 'config');
 
-  const u = buildUrl(`/api/sites/${siteID}/network/vap/${vapName}`);
-  debug(`siteVAPPost ${u}`, vapConfig);
-  await axios.post(u, vapConfig);
-  return;
+  await commonAppliancePost(siteID, `network/vap/${vapName}`, vapConfig);
 }
 
 // Load the WAN information from the server.
@@ -224,6 +259,30 @@ async function siteUsersGet(siteID) {
   return res;
 }
 
+// Load the map of nodes from the server.
+async function siteNodesGet(siteID) {
+  return await commonApplianceGet(siteID, 'nodes');
+}
+
+// Post changes to a node
+async function siteNodePost(siteID, nodeID, nodeConfig) {
+  assert.equal(typeof siteID, 'string', 'siteID');
+  assert.equal(typeof nodeID, 'string', 'nodeID');
+  assert.equal(typeof nodeConfig, 'object', 'nodeConfig');
+
+  await commonAppliancePost(siteID, `nodes/${nodeID}`, nodeConfig);
+}
+
+// Post changes to a node's port
+async function siteNodePortPost(siteID, nodeID, portID, portConfig) {
+  assert.equal(typeof siteID, 'string', 'siteID');
+  assert.equal(typeof nodeID, 'string', 'nodeID');
+  assert.equal(typeof portID, 'string', 'portID');
+  assert.equal(typeof portConfig, 'object', 'portConfig');
+
+  await commonAppliancePost(siteID, `nodes/${nodeID}/ports/${portID}`, portConfig);
+}
+
 // Update or create user on server
 async function siteUsersPost(siteID, userInfo, newUser) {
   assert.equal(typeof siteID, 'string');
@@ -231,9 +290,7 @@ async function siteUsersPost(siteID, userInfo, newUser) {
   assert.equal(typeof newUser, 'boolean');
 
   const uid = newUser ? 'NEW' : userInfo.UUID;
-  const u = buildUrl(`/api/sites/${siteID}/users/${uid}`);
-  debug(`siteUsersPost ${u}`, userInfo);
-  const res = await axios.post(u, userInfo);
+  const res = await commonAppliancePost(siteID, `users/${uid}`, userInfo);
   assert(typeof res.data === 'object');
   return res.data;
 }
@@ -463,6 +520,9 @@ export default {
   siteVAPsGet,
   siteVAPPost,
   siteWanGet,
+  siteNodesGet,
+  siteNodePost,
+  siteNodePortPost,
   siteUsersGet,
   siteUsersPost,
   siteUsersDelete,
@@ -481,4 +541,5 @@ export default {
   orgsGet,
   orgAccountsGet,
   setMockMode,
+  UnfinishedOperationError,
 };

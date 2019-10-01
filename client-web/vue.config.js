@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -49,6 +49,13 @@ const config = {
         fileWhitelist: [/\.woff2$/],
       },
     ]);
+
+    // https://vue-svg-loader.js.org/#vue-cli
+    const svgRule = config.module.rule('svg');
+    svgRule.uses.clear();
+    svgRule
+      .use('vue-svg-loader')
+      .loader('vue-svg-loader');
 
     // Allow use of the <i18n> tag
     // https://kazupon.github.io/vue-i18n/guide/sfc.html#webpack

@@ -1,5 +1,5 @@
 <!--
-  COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+  COPYRIGHT 2019 Brightgate Inc. All rights reserved.
 
   This copyright notice is Copyright Management Information under 17 USC 1202
   and is included to protect this work and deter copyright infringement.
@@ -163,13 +163,7 @@ span.dev-inactive {
 
     <f7-block-title>{{ $t("message.dev_details.access_control") }}</f7-block-title>
     <f7-list form>
-      <f7-list-item
-        v-if="ringChanging"
-        :title="$t('message.dev_details.security_ring')">
-        <f7-preloader />
-      </f7-list-item>
       <f7-list-input
-        v-else
         ref="ringInput"
         :title="$t('message.dev_details.security_ring')"
         :label="$t('message.dev_details.security_ring')"
@@ -196,6 +190,7 @@ import {pickBy} from 'lodash-es';
 import Debug from 'debug';
 import {format, formatRelative, parseISO} from '../date-fns-wrapper';
 
+import uiUtils from '../uiutils';
 import vulnerability from '../vulnerability';
 import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
 
@@ -212,12 +207,6 @@ function repairable(vulnid, vuln) {
 export default {
   components: {
     'bg-site-breadcrumb': BGSiteBreadcrumb,
-  },
-
-  data: function() {
-    return {
-      ringChanging: false,
-    };
   },
 
   computed: {
@@ -345,33 +334,25 @@ export default {
     vulnSplitDetails: function(details) {
       return details.split('|');
     },
-    changeRing: function(newRing) {
+    changeRing: async function(newRing) {
       assert(typeof newRing === 'string');
       const uniqid = this.$f7route.params.UniqID;
       const dev = this.$store.getters.deviceByUniqID(uniqid);
-      debug(`Change Ring ${dev.ring} -> ${newRing}`);
-      if (this.ringChanging) {
-        return;
-      }
+
       if (newRing === dev.ring) {
         return;
       }
-      this.ringChanging = true;
-      this.$store.dispatch('changeRing', {
+
+      const storeArg = {
         deviceUniqID: this.dev.uniqid,
         newRing: newRing,
-      }).then(() => {
-        this.ringChanging = false;
-      }).catch((err) => {
-        debug('Change Ring failed', err);
-        const txt = `Failed to change trust group for ${this.dev.displayName} to ${newRing}: ${err}`;
-        this.ringChanging = false;
-        this.$f7.toast.show({
-          text: txt,
-          closeButton: true,
-          destroyOnClose: true,
-        });
-      });
+      };
+      await uiUtils.submitConfigChange(this, 'changeRing (device)', 'changeRing',
+        storeArg, (err) => {
+          return this.$t('message.dev_details.change_ring_err',
+            {dev: this.dev.displayName, ring: newRing, err: err});
+        }
+      );
     },
   },
 };

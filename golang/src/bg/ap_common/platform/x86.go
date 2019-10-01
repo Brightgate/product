@@ -13,6 +13,7 @@ package platform
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
 	"os/exec"
 	"regexp"
 	"syscall"
@@ -46,6 +47,13 @@ func x86SetNodeID(uuidStr string) error {
 }
 
 func x86GetNodeID() (string, error) {
+	// This is primarily a developer override
+	e := os.Getenv("B10E_NODEID")
+	if e != "" {
+		nodeID = e
+		return nodeID, nil
+	}
+
 	return rpiGetNodeID()
 }
 

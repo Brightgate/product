@@ -23,6 +23,7 @@ import (
 
 	"bg/common/cfgapi"
 	"bg/common/deviceid"
+	"bg/common/mfg"
 
 	"github.com/gorilla/mux"
 	"github.com/satori/uuid"
@@ -179,6 +180,46 @@ func demoDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type demoPostDevice struct {
+	Ring *string `json:"ring"`
+}
+
+// Presently this only allows for ring changes
+func demoDevicePostHandler(w http.ResponseWriter, r *http.Request) {
+	var err error
+	vars := mux.Vars(r)
+	deviceID := vars["deviceid"]
+
+	var input demoPostDevice
+	if err = json.NewDecoder(r.Body).Decode(&input); err != nil {
+		log.Printf("demoPostDevice decode failed: %v", err)
+		http.Error(w, "bad device", http.StatusBadRequest)
+		return
+	}
+
+	if input.Ring == nil {
+		http.Error(w, "bad ring value", http.StatusBadRequest)
+		return
+	}
+
+	ops := []cfgapi.PropertyOp{
+		{
+			Op:   cfgapi.PropTest,
+			Name: fmt.Sprintf("@/clients/%s", deviceID),
+		},
+		{
+			Op:    cfgapi.PropCreate,
+			Name:  fmt.Sprintf("@/clients/%s/ring", deviceID),
+			Value: *input.Ring,
+		},
+	}
+	_, err = config.Execute(r.Context(), ops).Wait(r.Context())
+	if err != nil {
+		log.Printf("demoDevicePost failed to execute: %v", err)
+		http.Error(w, "failed to set properties", http.StatusBadRequest)
+	}
+}
+
 func demoDNSInfoGetHandler(w http.ResponseWriter, r *http.Request) {
 	dns := config.GetDNSInfo()
 	w.Header().Set("Content-Type", "application/json")
@@ -258,6 +299,7 @@ func demoVAPNamePostHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err = config.Execute(r.Context(), ops).Wait(r.Context())
 	if err != nil {
+		log.Printf("demoVAPNamePost failed to execute: %v", err)
 		http.Error(w, "failed to set properties", http.StatusBadRequest)
 		return
 	}
@@ -274,6 +316,234 @@ func demoWanGetHandler(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(&wan); err != nil {
 		panic(err)
 	}
+}
+
+// XXX I couldn't work out where to best put this code; ap_common/platform is
+// AP specific.  Should it go in cfgapi?  Maybe the platform should publish
+// the silkscreen into the config tree?
+func nicInfoToSilkscreen(nicInfo *cfgapi.NicInfo, nodeInfo *cfgapi.NodeInfo) string {
+	if nodeInfo.Platform == "mt7623" {
+		switch nicInfo.Name {
+		case "wlan0":
+			return "1"
+		case "wlan1":
+			return "2"
+		case "lan0":
+			return "1"
+		case "lan1":
+			return "2"
+		case "lan2":
+			return "3"
+		case "lan3":
+			return "4"
+		case "wan":
+			return "wan"
+		default:
+			// XXX temporary
+			return "???" + nicInfo.Name
+		}
+	}
+
+	if nodeInfo.Platform == "rpi3" {
+		// This could be more elaborate if needed.
+		switch nicInfo.Name {
+		case "wlan0":
+			return "0"
+		case "wlan1":
+			return "1"
+		case "wlan2":
+			return "2"
+		case "eth0":
+			return "0"
+		case "eth1":
+			return "1"
+		default:
+			return nicInfo.Name
+		}
+	}
+
+	return nicInfo.Name
+}
+
+type demoNodeNic struct {
+	Name       string `json:"name"`
+	MacAddr    string `json:"macaddr"`
+	Kind       string `json:"kind"`
+	Ring       string `json:"ring"`
+	Silkscreen string `json:"silkscreen"`
+}
+
+type demoNodeInfo struct {
+	ID           string        `json:"id"`
+	Name         string        `json:"name"`
+	Role         string        `json:"role"` // gateway|satellite
+	BootTime     *time.Time    `json:"bootTime"`
+	Alive        *time.Time    `json:"alive"`
+	Addr         net.IP        `json:"addr"`
+	Nics         []demoNodeNic `json:"nics"`
+	SerialNumber string        `json:"serialNumber"` // registry SN
+	HWModel      string        `json:"hwModel"`
+}
+
+func demoNodesGetHandler(w http.ResponseWriter, r *http.Request) {
+	result := make([]demoNodeInfo, 0)
+	nodes, err := config.GetNodes()
+	if err != nil {
+		http.Error(w, "error getting nodes", http.StatusInternalServerError)
+		return
+	}
+
+	for _, node := range nodes {
+
+		ni := demoNodeInfo{
+			ID:       node.ID,
+			Name:     node.Name,
+			Role:     node.Role,
+			BootTime: node.BootTime,
+			Alive:    node.Alive,
+			Addr:     node.Addr,
+		}
+
+		// On-Appliance, this is the best we can do for now
+		if mfg.ValidExtSerial(node.ID) {
+			ni.SerialNumber = node.ID
+		}
+
+		if node.Platform == "mt7623" {
+			// XXX?
+			ni.HWModel = "model100"
+		} else if node.Platform == "rpi3" {
+			// XXX?
+			ni.HWModel = "rpi3"
+		} else {
+			ni.HWModel = node.Platform
+		}
+
+		ni.Nics = make([]demoNodeNic, 0)
+		for _, nicInfo := range node.Nics {
+			if nicInfo.Pseudo {
+				continue
+			}
+
+			kind := nicInfo.Kind
+			if kind == "wired" {
+				if nicInfo.Ring == "wan" || nicInfo.Name == "wan" {
+					kind = kind + ":uplink"
+				} else if node.Platform == "rpi3" && nicInfo.Ring == "internal" {
+					// Pi with interface operating as a satellite
+					kind = kind + ":uplink"
+				} else {
+					kind = kind + ":lan"
+				}
+			}
+			ni.Nics = append(ni.Nics, demoNodeNic{
+				Name:       nicInfo.Name,
+				MacAddr:    nicInfo.MacAddr,
+				Kind:       kind,
+				Ring:       nicInfo.Ring,
+				Silkscreen: nicInfoToSilkscreen(&nicInfo, &node),
+			})
+		}
+		result = append(result, ni)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err = json.NewEncoder(w).Encode(result); err != nil {
+		panic(err)
+	}
+}
+
+type demoPostNode struct {
+	Name string `json:"name"`
+}
+
+// demoNodePostHandler implements POST /api/sites/{s}/nodes/{nodeid}
+// to adjust per-node settings; presently only setting the name is
+// supported.
+func demoNodePostHandler(w http.ResponseWriter, r *http.Request) {
+	var err error
+	vars := mux.Vars(r)
+	nodeID := vars["nodeid"]
+
+	var input demoPostNode
+	if err = json.NewDecoder(r.Body).Decode(&input); err != nil {
+		log.Printf("demoPostNode decode failed: %v", err)
+		http.Error(w, "bad node", http.StatusBadRequest)
+		return
+	}
+
+	ops := []cfgapi.PropertyOp{
+		{
+			Op:   cfgapi.PropTest,
+			Name: fmt.Sprintf("@/nodes/%s", nodeID),
+		},
+		{
+			Op:    cfgapi.PropCreate,
+			Name:  fmt.Sprintf("@/nodes/%s/name", nodeID),
+			Value: input.Name,
+		},
+	}
+	_, err = config.Execute(r.Context(), ops).Wait(r.Context())
+	if err != nil {
+		log.Printf("demoPostNode failed to execute: %v", err)
+		http.Error(w, "failed to set properties", http.StatusBadRequest)
+	}
+}
+
+type demoPostNodePort struct {
+	Ring string `json:"ring"`
+}
+
+// demoPostNodePortHandler implements POST
+// /api/sites/:uuid/nodes/:nodeID/ports/:portID to adjust per-port settings;
+// presently only setting the ring of LAN ports is supported.
+func demoNodePortPostHandler(w http.ResponseWriter, r *http.Request) {
+	var err error
+	vars := mux.Vars(r)
+	nodeID := vars["nodeid"]
+	portID := vars["portid"]
+
+	var input demoPostNodePort
+	if err = json.NewDecoder(r.Body).Decode(&input); err != nil {
+		log.Printf("demoPostNodePort decode failed: %v", err)
+		http.Error(w, "bad nodeport", http.StatusBadRequest)
+		return
+	}
+
+	path := fmt.Sprintf("@/nodes/%s/nics/%s/ring", nodeID, portID)
+	curRing, err := config.GetProp(path)
+	if err != nil {
+		http.Error(w, "bad nic", http.StatusBadRequest)
+		return
+	}
+	// Check that the user isn't trying to re-ring the WAN port
+	// XXX need a better check here; the uplink port could also be
+	// 'internal'; T466.
+	if portID == "wan" || curRing == "wan" {
+		http.Error(w, "uplink", http.StatusForbidden)
+		return
+	}
+	if !cfgapi.ValidRings[input.Ring] {
+		http.Error(w, "bad ring", http.StatusBadRequest)
+		return
+	}
+	ops := []cfgapi.PropertyOp{
+		{
+			Op:   cfgapi.PropTest,
+			Name: path,
+		},
+		{
+			Op:    cfgapi.PropCreate,
+			Name:  path,
+			Value: input.Ring,
+		},
+	}
+	_, err = config.Execute(r.Context(), ops).Wait(r.Context())
+	if err != nil {
+		log.Printf("demoPostNodePort failed to execute: %v", err)
+		http.Error(w, "failed to set properties", http.StatusBadRequest)
+	}
+	return
 }
 
 func demoConfigGetHandler(w http.ResponseWriter, r *http.Request) {
@@ -328,7 +598,7 @@ func demoConfigPostHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err = config.Execute(nil, ops).Wait(nil)
 	if err != nil {
-		log.Printf("failed to set properties: %v", err)
+		log.Printf("demoConfigPost failed to set properties: %v", err)
 		http.Error(w, "failed to set properties", 400)
 	}
 
@@ -599,11 +869,15 @@ func makeDemoAPIRouter() *mux.Router {
 	router.HandleFunc("/sites/{s}/config", demoConfigGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/config", demoConfigPostHandler).Methods("POST")
 	router.HandleFunc("/sites/{s}/devices", demoDevicesHandler).Methods("GET")
+	router.HandleFunc("/sites/{s}/devices/{deviceid}", demoDevicePostHandler).Methods("POST")
 	router.HandleFunc("/sites/{s}/network/dns", demoDNSInfoGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/network/vap", demoVAPGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/network/vap/{vapname}", demoVAPNameGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/network/vap/{vapname}", demoVAPNamePostHandler).Methods("POST")
 	router.HandleFunc("/sites/{s}/network/wan", demoWanGetHandler).Methods("GET")
+	router.HandleFunc("/sites/{s}/nodes", demoNodesGetHandler).Methods("GET")
+	router.HandleFunc("/sites/{s}/nodes/{nodeid}", demoNodePostHandler).Methods("POST")
+	router.HandleFunc("/sites/{s}/nodes/{nodeid}/ports/{portid}", demoNodePortPostHandler).Methods("POST")
 	router.HandleFunc("/sites/{s}/rings", demoRingsHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/users", demoUsersHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/users/{uuid}", demoUserByUUIDGetHandler).Methods("GET")

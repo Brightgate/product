@@ -43,6 +43,8 @@ const (
 	testReg         = "test-registry"
 	testRegID       = "test-appliance"
 	testClientID1   = "projects/test-project/locations/test-region/registries/test-registry/appliances/test-appliance-1"
+	testHWSerial1   = "001-201901BB-000011"
+	testHWSerial2   = "001-201901BB-000012"
 	app1Str         = "10000000-1000-1000-1000-000000000001"
 	app2Str         = "10000000-1000-1000-1000-000000000002"
 	appNStr         = "10000000-1000-1000-1000-000000000009"
@@ -94,20 +96,22 @@ var (
 	}
 
 	testID1 = ApplianceID{
-		ApplianceUUID:  uuid.Must(uuid.FromString(app1Str)),
-		SiteUUID:       uuid.Must(uuid.FromString(site1Str)),
-		GCPProject:     testProject,
-		GCPRegion:      testRegion,
-		ApplianceReg:   testReg,
-		ApplianceRegID: testRegID + "-1",
+		ApplianceUUID:      uuid.Must(uuid.FromString(app1Str)),
+		SiteUUID:           uuid.Must(uuid.FromString(site1Str)),
+		SystemReprHWSerial: null.StringFrom(testHWSerial1),
+		GCPProject:         testProject,
+		GCPRegion:          testRegion,
+		ApplianceReg:       testReg,
+		ApplianceRegID:     testRegID + "-1",
 	}
 	testID2 = ApplianceID{
-		ApplianceUUID:  uuid.Must(uuid.FromString(app2Str)),
-		SiteUUID:       uuid.Must(uuid.FromString(site2Str)),
-		GCPProject:     testProject,
-		GCPRegion:      testRegion,
-		ApplianceReg:   testReg,
-		ApplianceRegID: testRegID + "-2",
+		ApplianceUUID:      uuid.Must(uuid.FromString(app2Str)),
+		SiteUUID:           uuid.Must(uuid.FromString(site2Str)),
+		SystemReprHWSerial: null.StringFrom(testHWSerial2),
+		GCPProject:         testProject,
+		GCPRegion:          testRegion,
+		ApplianceReg:       testReg,
+		ApplianceRegID:     testRegID + "-2",
 	}
 	testIDN = ApplianceID{
 		ApplianceUUID:  uuid.Must(uuid.FromString(appNStr)),
@@ -276,7 +280,7 @@ func TestJSON(t *testing.T) {
 		"gcp_region":"test-region",
 		"appliance_reg":"test-registry",
 		"appliance_reg_id":"test-appliance-1",
-		"system_repr_hwserial":null,
+		"system_repr_hwserial":"001-201901BB-000011",
 		"system_repr_mac":null}`, string(j))
 
 	ap := &AppliancePubKey{
@@ -433,6 +437,10 @@ func testApplianceID(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	assert.Error(err)
 	assert.IsType(NotFoundError{}, err)
 
+	_, err = ds.ApplianceIDByHWSerial(ctx, "not-a-real-serial")
+	assert.Error(err)
+	assert.IsType(NotFoundError{}, err)
+
 	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, &testID1)
 
 	// Test that a second insert of the same UUID fails
@@ -445,6 +453,10 @@ func testApplianceID(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	assert.Equal(testID1.ApplianceUUID, id1.ApplianceUUID)
 
 	id1, err = ds.ApplianceIDByClientID(ctx, testClientID1)
+	assert.NoError(err)
+	assert.Equal(testID1.ApplianceUUID, id1.ApplianceUUID)
+
+	_, err = ds.ApplianceIDByHWSerial(ctx, testHWSerial1)
 	assert.NoError(err)
 	assert.Equal(testID1.ApplianceUUID, id1.ApplianceUUID)
 

@@ -77,7 +77,7 @@ span.pw-toggle {
 import vuex from 'vuex';
 import Debug from 'debug';
 import appDefs from '../app_defs';
-import siteApi from '../api/site';
+import uiUtils from '../uiutils';
 import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
 import 'fast-text-encoding'; // polyfill for TextEncoder
 
@@ -147,7 +147,6 @@ export default {
       }
 
       // Step 3: Submit the change
-      const siteID = this.$f7route.params.siteID;
       const vapName = this.$f7route.params.vapName;
       const vapConfig = {
         ssid: this.vapSSID,
@@ -155,19 +154,14 @@ export default {
       if (this.hasPassphrase) {
         vapConfig.passphrase = this.vapPassphrase;
       }
-
-      try {
-        await siteApi.siteVAPPost(siteID, vapName, vapConfig);
-        await this.$store.dispatch('fetchNetworkConfig');
-        this.$f7router.back();
-      } catch (err) {
-        debug('err saving', err);
-        this.$f7.toast.show({
-          text: err.toString(),
-          closeButton: true,
-          destroyOnClose: true,
-        });
-      }
+      const storeArg = {vapName, vapConfig};
+      await uiUtils.submitConfigChange(this, 'saveVAP', 'updateVAPConfig',
+        storeArg, (err) => {
+          return this.$t('message.network_vap_editor.error_update',
+            {err: err.message});
+        }
+      );
+      this.$f7router.back();
     },
 
     onSSIDInput: function(evt) {

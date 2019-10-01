@@ -86,6 +86,7 @@ class Site {
     this.alerts = [];
     this.rings = {};
     this.users = {};
+    this.nodes = {};
     this.networkConfig = {
       vaps: {},
       dns: {},
@@ -379,6 +380,12 @@ const mutations = {
     getSite(state, id).rings = rings;
   },
 
+  setSiteNodes(state, {id, nodes}) {
+    const nodeMap = {};
+    nodes.forEach((n) => {nodeMap[n.id] = n;});
+    getSite(state, id).nodes = nodeMap;
+  },
+
   setAccountSelfProvision(state, {accountID, sp}) {
     assert.equal(typeof accountID, 'string');
     assert.equal(typeof sp, 'object');
@@ -564,6 +571,13 @@ const getters = {
   },
   rings: (state) => {
     return state.currentSite.rings;
+  },
+
+  siteNodes: (state) => (siteID) => {
+    return getSite(state, siteID).nodes;
+  },
+  nodes: (state) => {
+    return state.currentSite.nodes;
   },
 
   siteAdmin: (state) => {
@@ -865,6 +879,46 @@ const actions = {
     context.commit('setSiteRings', {id: id, rings: rings});
   },
 
+  // Load the map of nodes from the server.
+  async fetchNodes(context) {
+    if (context.state.currentSite === nullSite) {
+      debug('fetchNodes: skipped, nullSite');
+      return;
+    }
+    const id = context.state.currentSiteID;
+    const nodes = await siteApi.siteNodesGet(id);
+    context.commit('setSiteNodes', {id: id, nodes: nodes});
+  },
+
+  async setNodeName(context, {nodeID, name}) {
+    debug('setNodeName:', nodeID, name);
+    assert.equal(typeof nodeID, 'string');
+    assert.equal(typeof name, 'string');
+    const id = context.state.currentSiteID;
+    try {
+      await siteApi.siteNodePost(id, nodeID, {name: name});
+    } finally {
+      const nodes = await siteApi.siteNodesGet(id);
+      debug('setNodeName: refreshed nodes info', nodes);
+      context.commit('setSiteNodes', {id: id, nodes: nodes});
+    }
+  },
+
+  async setNodePortRing(context, {nodeID, portID, ring}) {
+    debug('setNodePortRing:', nodeID, portID, ring);
+    assert.equal(typeof nodeID, 'string');
+    assert.equal(typeof portID, 'string');
+    assert.equal(typeof ring, 'string');
+    const id = context.state.currentSiteID;
+    try {
+      await siteApi.siteNodePortPost(id, nodeID, portID, {ring: ring});
+    } finally {
+      const nodes = await siteApi.siteNodesGet(id);
+      debug('setNodePortRing: refreshed nodes info', nodes);
+      context.commit('setSiteNodes', {id: id, nodes: nodes});
+    }
+  },
+
   async fetchAccountSelfProvision(context, accountID) {
     if (context.state.appMode !== appDefs.APPMODE_CLOUD) {
       return;
@@ -946,6 +1000,15 @@ const actions = {
     debug('fetchNetworkConfig: committing networkConfig', networkConfig);
     context.commit('setSiteNetworkConfig', {id, networkConfig});
     return networkConfig;
+  },
+
+  async updateVAPConfig(context, {vapName, vapConfig}) {
+    if (context.state.appMode !== appDefs.APPMODE_CLOUD) {
+      return;
+    }
+    const id = context.state.currentSiteID;
+    await siteApi.siteVAPPost(id, vapName, vapConfig);
+    await this.$store.dispatch('fetchNetworkConfig');
   },
 
   async enrollGuest(context, {kind, phoneNumber, email}) {
@@ -1119,6 +1182,7 @@ const actions = {
     context.dispatch('fetchRings').catch(() => {});
     context.dispatch('fetchUsers').catch(() => {});
     context.dispatch('fetchNetworkConfig').catch(() => {});
+    context.dispatch('fetchNodes').catch(() => {});
     context.dispatch('fetchPeriodic').catch(() => {});
   },
 

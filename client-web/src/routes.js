@@ -16,6 +16,9 @@ import ComplianceReport from './pages/compliance_report.vue';
 import DevDetails from './pages/dev_details.vue';
 import Devices from './pages/devices.vue';
 import EnrollGuest from './pages/enroll_guest.vue';
+import Nodes from './pages/nodes.vue';
+import NodeDetails from './pages/node_details.vue';
+import NodeLanPort from './pages/node_lan_port.vue';
 import Help from './pages/help.vue';
 import Home from './pages/home.vue';
 import LeftPanel from './pages/left_panel.vue';
@@ -84,6 +87,18 @@ export default [
   {
     path: '/sites/:siteID/enroll_guest/',
     component: EnrollGuest,
+  },
+  {
+    path: '/sites/:siteID/nodes/',
+    component: Nodes,
+  },
+  {
+    path: '/sites/:siteID/nodes/:nodeID/',
+    component: NodeDetails,
+  },
+  {
+    path: '/sites/:siteID/nodes/:nodeID/lanports/:portID/',
+    component: NodeLanPort,
   },
   {
     path: '/sites/:siteID/',

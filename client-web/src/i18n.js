@@ -40,6 +40,7 @@ export default {
           user: 'User',
           admin: 'Administrator',
         },
+        unfinished_operation: 'This site isn\'t responding to cloud commands at the moment.  This command has been queued for processing; when the site reconnects to the cloud, the change will occur.',
       },
       home: {
         local_site: 'Local Site',
@@ -69,6 +70,7 @@ export default {
       },
       site_controls: {
         network: 'Networks',
+        hardware: 'Hardware',
         compliance_report: 'Compliance Report',
         manage_devices: 'Devices ({active_device_count} active, {inactive_device_count} inactive)',
         enroll_guest: 'Enroll a Guest User',
@@ -132,6 +134,15 @@ export default {
         logout: 'Logout',
         need_login: 'You must be logged in',
         save: 'Save',
+        rings: {
+          unenrolled: 'Unenrolled',
+          quarantine: 'Quarantine',
+          core: 'Core',
+          standard: 'Standard',
+          devices: 'Devices',
+          guest: 'Guest',
+          internal: 'Internal',
+        },
       },
       account_prefs: {
         title: 'Account Preferences',
@@ -180,6 +191,7 @@ export default {
         passphrase: 'Passphrase',
         warning: 'If your device is presently using the "{ssid}" Wi-Fi network, changing these properties may cause you to become disconnected.',
         warning_title: 'Wi-Fi Properties Change',
+        error_update: 'Error while changing network settings: {err}',
         titles: {
           eap: 'Authorized User Network Properties',
           psk: 'Devices Network Properties',
@@ -270,6 +282,7 @@ export default {
         vuln_repaired: 'Repaired: {time}',
         vuln_details: 'Details:',
         wired_port: 'Wired Network',
+        change_ring_err: 'Failed to change trust group for {dev} to {ring}: {err}',
       },
       enroll_guest: {
         title: 'Enroll Guest',
@@ -357,6 +370,29 @@ export default {
         save_fail: 'Failed to update: {err}',
         delete_ok: 'Deleted user {name}',
         delete_fail: 'Failed to delete: {err}',
+      },
+      nodes: {
+        title: 'Hardware',
+        gateway_role: 'Mode: Gateway',
+        satellite_role: 'Mode: Satellite',
+        unnamed_hw: 'Unnamed ({id})',
+      },
+      node_lan_port: {
+        title: 'LAN Port Details',
+        port_label: 'Port Label',
+        port_ring: 'Port Trust Group',
+        change_ring_err: 'Failed to change trust group for port {nic} to {ring}: {err}',
+      },
+      node_details: {
+        title: 'Hardware Details',
+        unnamed_hw: 'Unnamed ({id})',
+        sn_none: 'None',
+        change_name_err: 'Failed to change name to {name}: {err}',
+        radios: 'Wi-Fi Radios',
+        wifi_radio: 'Wi-Fi Radio {silkscreen}',
+        ports: 'Ethernet Ports',
+        wan_port: 'WAN Port',
+        lan_port: 'LAN Port {silkscreen}',
       },
     },
   },

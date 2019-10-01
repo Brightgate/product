@@ -8,7 +8,7 @@
   such unauthorized removal or alteration will be a violation of federal law.
 -->
 <template>
-  <f7-page @page:init="onPageInit" @page:reinit="onPageInit" @page:beforeout="onPageBeforeOut">
+  <f7-page @page:init="onPageInit" @page:reinit="onPageInit">
 
     <f7-navbar>
       <!-- f7-nav-title doesn't seem to center properly without also
@@ -136,7 +136,6 @@ export default {
   },
   data: function() {
     return {
-      acceptToast: null,
       appDefs: appDefs,
     };
   },
@@ -207,12 +206,6 @@ export default {
         this.$store.dispatch('fetchPostLogin');
       } else {
         this.$f7.loginScreen.open('#bgLoginScreen', false);
-      }
-    },
-
-    onPageBeforeOut: function() {
-      if (this.acceptToast) {
-        this.acceptToast.close();
       }
     },
   },

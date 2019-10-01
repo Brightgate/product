@@ -96,6 +96,131 @@ const mockRings = {
   },
 };
 
+const mockNodes = [
+  {
+    'id': '001-201901BB-000001',
+    'name': 'gateway',
+    'role': 'gateway',
+    'serialNumber': '001-201901BB-000001',
+    'hwModel': 'model100',
+    'bootTime': '2019-05-02T04:19:57Z',
+    'alive': '2019-09-30T20:56:02Z',
+    'addr': '10.1.3.49',
+    'nics': [
+      {
+        'name': 'wan',
+        'macaddr': '60:90:84:a0:00:02',
+        'kind': 'wired:uplink',
+        'ring': 'wan',
+        'silkscreen': 'wan',
+      },
+      {
+        'name': 'lan3',
+        'macaddr': '60:90:84:a0:00:03',
+        'kind': 'wired:lan',
+        'ring': 'internal',
+        'silkscreen': '4',
+      },
+      {
+        'name': 'lan1',
+        'macaddr': '60:90:84:a0:00:03',
+        'kind': 'wired:lan',
+        'ring': 'standard',
+        'silkscreen': '2',
+      },
+      {
+        'name': 'lan2',
+        'macaddr': '60:90:84:a0:00:03',
+        'kind': 'wired:lan',
+        'ring': 'standard',
+        'silkscreen': '3',
+      },
+      {
+        'name': 'wlan0',
+        'macaddr': '06:f0:21:4b:77:3c',
+        'kind': 'wireless',
+        'ring': '',
+        'silkscreen': '1',
+      },
+      {
+        'name': 'wlan1',
+        'macaddr': '06:f0:21:4b:77:4c',
+        'kind': 'wireless',
+        'ring': '',
+        'silkscreen': '2',
+      },
+      {
+        'name': 'lan0',
+        'macaddr': '60:90:84:a0:00:03',
+        'kind': 'wired:lan',
+        'ring': 'devices',
+        'silkscreen': '1',
+      },
+    ],
+  },
+  {
+    'id': '001-201901BB-000002',
+    'name': 'conference room',
+    'role': 'satellite',
+    'serialNumber': '001-201901BB-000002',
+    'hwModel': 'model100',
+    'bootTime': '2019-05-02T04:19:57Z',
+    'alive': '2019-09-30T20:56:02Z',
+    'addr': '10.1.3.49',
+    'nics': [
+      {
+        'name': 'wan',
+        'macaddr': '60:90:84:a0:00:02',
+        'kind': 'wired:wan',
+        'ring': 'wan',
+        'silkscreen': 'wan',
+      },
+      {
+        'name': 'lan3',
+        'macaddr': '60:90:84:a0:00:03',
+        'kind': 'wired:lan',
+        'ring': 'internal',
+        'silkscreen': '4',
+      },
+      {
+        'name': 'lan1',
+        'macaddr': '60:90:84:a0:00:03',
+        'kind': 'wired:lan',
+        'ring': 'standard',
+        'silkscreen': '2',
+      },
+      {
+        'name': 'lan2',
+        'macaddr': '60:90:84:a0:00:03',
+        'kind': 'wired:lan',
+        'ring': 'standard',
+        'silkscreen': '3',
+      },
+      {
+        'name': 'wlan0',
+        'macaddr': '06:f0:21:4b:77:3c',
+        'kind': 'wireless',
+        'ring': '',
+        'silkscreen': '1',
+      },
+      {
+        'name': 'wlan1',
+        'macaddr': '06:f0:21:4b:77:4c',
+        'kind': 'wireless',
+        'ring': '',
+        'silkscreen': '2',
+      },
+      {
+        'name': 'lan0',
+        'macaddr': '60:90:84:a0:00:03',
+        'kind': 'wired:lan',
+        'ring': 'devices',
+        'silkscreen': '1',
+      },
+    ],
+  },
+];
+
 const mockVAPInfo = {
   'psk': {
     'ssid': 'dunder-device',
@@ -285,6 +410,7 @@ function mockAxios(normalAxios, mode) {
     .onPost(/\/api\/sites\/.+\/config/).reply(configPostHandler)
     .onGet(/\/api\/sites\/.+\/devices/).reply(200, mockDevices)
     .onGet(/\/api\/sites\/.+\/rings/).reply(200, mockRings)
+    .onGet(/\/api\/sites\/.+\/nodes/).reply(200, mockNodes)
     .onPost(/\/api\/sites\/.+\/enroll_guest$/).reply(200, mockEnrollGuest)
     .onGet(/\/api\/sites\/.+\/network\/dns$/).reply(200, mockDNSConfig)
     .onGet(/\/api\/sites\/.+\/network\/vap$/).reply(200, mockVAPNames)

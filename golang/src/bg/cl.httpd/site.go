@@ -11,6 +11,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -20,12 +21,57 @@ import (
 	"bg/cloud_models/appliancedb"
 	"bg/common/cfgapi"
 	"bg/common/deviceid"
+	"bg/common/mfg"
 
 	"github.com/labstack/echo"
 	"github.com/satori/uuid"
 	"github.com/sfreiberg/gotwilio"
 	"github.com/ttacon/libphonenumber"
 )
+
+// Utility function for executing property changes
+func executePropChange(c echo.Context, hdl *cfgapi.Handle, ops []cfgapi.PropertyOp) error {
+	var err error
+	// XXX Until we fix T470, the gyrations in this code around context
+	// timeouts mostly don't work.  So as a compromise we make the timeout
+	// long enough to allow the operation to timeout "naturally" using the
+	// cfgapi.Handle's builtin timeout.
+	var timeout = 20000
+
+	timeoutHdr, ok := c.Request().Header["X-Timeout"]
+	if ok {
+		timeoutStr := timeoutHdr[0]
+		timeout, err = strconv.Atoi(timeoutStr)
+		if err != nil || timeout < 5000 {
+			return echo.NewHTTPError(http.StatusBadRequest, "bad X-Timeout")
+		}
+	}
+
+	ctx := c.Request().Context()
+	// Give ourselves until 2 seconds before the ultimate timeout to do cfg stuff
+	cfgctx, cfgctxcancel := context.WithTimeout(ctx, time.Millisecond*time.Duration(timeout-2000))
+	defer cfgctxcancel()
+
+	// use the outer context for this
+	cmdHdl := hdl.Execute(ctx, ops)
+	// use the inner context just for waiting
+	errStr, err := cmdHdl.Wait(cfgctx)
+	if err != nil {
+		// XXX it seems wrong that it returns errcomm for a deadline cancellation
+		c.Logger().Infof("wait failed, err is %s: %v", errStr, err)
+		// use the outer context for this
+		errStr, err = cmdHdl.Status(ctx)
+		c.Logger().Infof("After Status(): status is %v, %v", errStr, err)
+
+		if err == cfgapi.ErrQueued || err == cfgapi.ErrInProgress {
+			c.Logger().Warnf("request %v did not finish before timeout: %v", ops, err)
+			return c.NoContent(http.StatusAccepted)
+		}
+		c.Logger().Errorf("request %v failed: %v", ops, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "Execution failed on appliance")
+	}
+	return nil
+}
 
 type siteHandler struct {
 	db              appliancedb.DataStore
@@ -310,6 +356,44 @@ func (a *siteHandler) getDevices(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
+type apiPostDevice struct {
+	Ring *string `json:"ring"`
+}
+
+// postDevice implements POST /api/sites/:uuid/devices/:deviceID
+// Presently this only allows for ring changes
+func (a *siteHandler) postDevice(c echo.Context) error {
+	hdl, err := a.getClientHandle(c.Param("uuid"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	defer hdl.Close()
+
+	deviceID := c.Param("deviceid")
+
+	var input apiPostDevice
+	if err := c.Bind(&input); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "bad device")
+	}
+	// For now, Ring is the only modifiable property.
+	if input.Ring == nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "bad ring value")
+	}
+
+	ops := []cfgapi.PropertyOp{
+		{
+			Op:   cfgapi.PropTest,
+			Name: fmt.Sprintf("@/clients/%s", deviceID),
+		},
+		{
+			Op:    cfgapi.PropCreate,
+			Name:  fmt.Sprintf("@/clients/%s/ring", deviceID),
+			Value: *input.Ring,
+		},
+	}
+	return executePropChange(c, hdl, ops)
+}
+
 type siteEnrollGuestRequest struct {
 	Kind        string `json:"kind"`
 	Email       string `json:"email"`
@@ -452,7 +536,7 @@ func (a *siteHandler) getHealth(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
-// getNetworkDNS implements GET /api/site/:uuid/network/dns, returning DNS
+// getNetworkDNS implements GET /api/sites/:uuid/network/dns, returning DNS
 // configuration information for the site.
 func (a *siteHandler) getNetworkDNS(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
@@ -464,7 +548,7 @@ func (a *siteHandler) getNetworkDNS(c echo.Context) error {
 	return c.JSON(http.StatusOK, &dns)
 }
 
-// getNetworkVAP implements GET /api/site/:uuid/network/vap, returning the list of VAPs
+// getNetworkVAP implements GET /api/sites/:uuid/network/vap, returning the list of VAPs
 func (a *siteHandler) getNetworkVAP(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
@@ -480,7 +564,7 @@ func (a *siteHandler) getNetworkVAP(c echo.Context) error {
 	return c.JSON(http.StatusOK, &vapNames)
 }
 
-// getNetworkVAPName implements GET /api/site/:uuid/network/vap/:name,
+// getNetworkVAPName implements GET /api/sites/:uuid/network/vap/:name,
 // returning information about a VAP.
 func (a *siteHandler) getNetworkVAPName(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
@@ -508,7 +592,7 @@ type apiVAPUpdate struct {
 	Passphrase string `json:"passphrase"`
 }
 
-// postNetworkVAPName implements POST /api/site/:uuid/network/vap/:name,
+// postNetworkVAPName implements POST /api/sites/:uuid/network/vap/:name,
 // allowing updates to select VAP fields.
 func (a *siteHandler) postNetworkVAPName(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
@@ -544,18 +628,10 @@ func (a *siteHandler) postNetworkVAPName(c echo.Context) error {
 	if len(ops) == 0 {
 		return nil
 	}
-	_, err = hdl.Execute(c.Request().Context(), ops).Wait(c.Request().Context())
-	if err != nil {
-		c.Logger().Errorf("failed to set properties: %v", err)
-		return echo.NewHTTPError(
-			http.StatusBadRequest,
-			"failed to set properties")
-	}
-
-	return nil
+	return executePropChange(c, hdl, ops)
 }
 
-// getNetworkWan implements GET /api/site/:uuid/network/wan
+// getNetworkWan implements GET /api/sites/:uuid/network/wan
 // returning information about the Wan link
 func (a *siteHandler) getNetworkWan(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
@@ -569,6 +645,245 @@ func (a *siteHandler) getNetworkWan(c echo.Context) error {
 		wan = &cfgapi.WanInfo{}
 	}
 	return c.JSON(http.StatusOK, wan)
+}
+
+type apiNodeNic struct {
+	Name       string `json:"name"`
+	MacAddr    string `json:"macaddr"`
+	Kind       string `json:"kind"`
+	Ring       string `json:"ring"`
+	Silkscreen string `json:"silkscreen"`
+}
+
+type apiNodeInfo struct {
+	ID           string       `json:"id"`
+	Name         string       `json:"name"`
+	Role         string       `json:"role"` // gateway|satellite
+	BootTime     *time.Time   `json:"bootTime"`
+	Alive        *time.Time   `json:"alive"`
+	Addr         net.IP       `json:"addr"`
+	Nics         []apiNodeNic `json:"nics"`
+	SerialNumber string       `json:"serialNumber"` // registry SN
+	HWModel      string       `json:"hwModel"`
+}
+
+func (a *siteHandler) lookupApplianceByNodeID(ctx context.Context, nodeID string) *appliancedb.ApplianceID {
+	// Some (developer) nodes are not necessarily in the registry
+	if !mfg.ValidExtSerial(nodeID) {
+		return nil
+	}
+
+	app, _ := a.db.ApplianceIDByHWSerial(ctx, nodeID)
+	return app
+}
+
+// XXX I couldn't work out where to best put this code; ap_common/platform is
+// AP specific.  Should it go in cfgapi?  Maybe the platform should publish
+// the silkscreen into the config tree?
+func nicInfoToSilkscreen(nicInfo *cfgapi.NicInfo, nodeInfo *cfgapi.NodeInfo) string {
+	if nodeInfo.Platform == "mt7623" {
+		switch nicInfo.Name {
+		case "wlan0":
+			return "1"
+		case "wlan1":
+			return "2"
+		case "lan0":
+			return "1"
+		case "lan1":
+			return "2"
+		case "lan2":
+			return "3"
+		case "lan3":
+			return "4"
+		case "wan":
+			return "wan"
+		default:
+			// XXX temporary
+			return "???" + nicInfo.Name
+		}
+	}
+
+	if nodeInfo.Platform == "rpi3" {
+		// This could be more elaborate if needed.
+		switch nicInfo.Name {
+		case "wlan0":
+			return "0"
+		case "wlan1":
+			return "1"
+		case "wlan2":
+			return "2"
+		case "eth0":
+			return "0"
+		case "eth1":
+			return "1"
+		default:
+			return nicInfo.Name
+		}
+	}
+
+	return nicInfo.Name
+}
+
+// getNodes implements GET /api/sites/:uuid/nodes
+// returning information about network nodes (appliances) at the site
+func (a *siteHandler) getNodes(c echo.Context) error {
+	ctx := c.Request().Context()
+	hdl, err := a.getClientHandle(c.Param("uuid"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	defer hdl.Close()
+
+	result := make([]apiNodeInfo, 0)
+	nodes, err := hdl.GetNodes()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+	for _, node := range nodes {
+		ni := apiNodeInfo{
+			ID:       node.ID,
+			Name:     node.Name,
+			Role:     node.Role,
+			BootTime: node.BootTime,
+			Alive:    node.Alive,
+			Addr:     node.Addr,
+		}
+
+		applianceID := a.lookupApplianceByNodeID(ctx, node.ID)
+		if applianceID != nil {
+			if applianceID.SystemReprHWSerial.Valid {
+				ni.SerialNumber = applianceID.SystemReprHWSerial.String
+			}
+		}
+
+		if node.Platform == "mt7623" {
+			// XXX?
+			ni.HWModel = "model100"
+		} else if node.Platform == "rpi3" {
+			// XXX?
+			ni.HWModel = "rpi3"
+		} else {
+			ni.HWModel = node.Platform
+		}
+
+		ni.Nics = make([]apiNodeNic, 0)
+		for _, nicInfo := range node.Nics {
+			if nicInfo.Pseudo {
+				continue
+			}
+
+			kind := nicInfo.Kind
+			if kind == "wired" {
+				if nicInfo.Ring == "wan" || nicInfo.Name == "wan" {
+					kind = kind + ":uplink"
+				} else if node.Platform == "rpi3" && nicInfo.Ring == "internal" {
+					// Pi with interface operating as a satellite
+					kind = kind + ":uplink"
+				} else {
+					kind = kind + ":lan"
+				}
+			}
+			ni.Nics = append(ni.Nics, apiNodeNic{
+				Name:       nicInfo.Name,
+				MacAddr:    nicInfo.MacAddr,
+				Kind:       kind,
+				Ring:       nicInfo.Ring,
+				Silkscreen: nicInfoToSilkscreen(&nicInfo, &node),
+			})
+		}
+		result = append(result, ni)
+	}
+	return c.JSON(http.StatusOK, result)
+}
+
+type apiPostNode struct {
+	Name string `json:"name"`
+}
+
+// postNode implements POST /api/sites/:uuid/nodes/:nodeID
+// to adjust per-node settings; presently only setting the name is
+// supported.
+func (a *siteHandler) postNode(c echo.Context) error {
+	hdl, err := a.getClientHandle(c.Param("uuid"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	defer hdl.Close()
+
+	nodeID := c.Param("nodeid")
+
+	var input apiPostNode
+	if err := c.Bind(&input); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+
+	ops := []cfgapi.PropertyOp{
+		{
+			Op:   cfgapi.PropTest,
+			Name: fmt.Sprintf("@/nodes/%s", nodeID),
+		},
+		{
+			Op:    cfgapi.PropCreate,
+			Name:  fmt.Sprintf("@/nodes/%s/name", nodeID),
+			Value: input.Name,
+		},
+	}
+	return executePropChange(c, hdl, ops)
+}
+
+type apiPostNodePort struct {
+	Ring string `json:"ring"`
+}
+
+// postNodePort implements POST /api/sites/:uuid/nodes/:nodeID/ports/:portID
+// to adjust per-port settings; presently only setting the ring of LAN
+// ports is supported.
+func (a *siteHandler) postNodePort(c echo.Context) error {
+	hdl, err := a.getClientHandle(c.Param("uuid"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	defer hdl.Close()
+
+	nodeID := c.Param("nodeid")
+	if len(nodeID) == 0 {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	portID := c.Param("portid")
+	if len(portID) == 0 {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	var input apiPostNodePort
+	if err := c.Bind(&input); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	path := fmt.Sprintf("@/nodes/%s/nics/%s/ring", nodeID, portID)
+	curRing, err := hdl.GetProp(path)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	// Check that the user isn't trying to re-ring the WAN port
+	// XXX need a better check here; the uplink port could also be
+	// 'internal'; T466.
+	if portID == "wan" || curRing == "wan" {
+		return echo.NewHTTPError(http.StatusForbidden)
+	}
+	if !cfgapi.ValidRings[input.Ring] {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+
+	ops := []cfgapi.PropertyOp{
+		{
+			Op:   cfgapi.PropTest,
+			Name: path,
+		},
+		{
+			Op:    cfgapi.PropCreate,
+			Name:  path,
+			Value: input.Ring,
+		},
+	}
+	return executePropChange(c, hdl, ops)
 }
 
 // apiUserInfo describes a user.  It is similar to cfgapi.UserInfo but with
@@ -842,6 +1157,7 @@ func newSiteHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []echo.M
 	siteU.POST("/config", h.postConfig, admin)
 	siteU.GET("/configtree", h.getConfigTree, admin)
 	siteU.GET("/devices", h.getDevices, admin)
+	siteU.POST("/devices/:deviceid", h.postDevice, admin)
 	siteU.POST("/enroll_guest", h.postEnrollGuest, user)
 	siteU.GET("/health", h.getHealth, user)
 	siteU.GET("/network/vap", h.getNetworkVAP, user)
@@ -849,6 +1165,9 @@ func newSiteHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []echo.M
 	siteU.GET("/network/vap/:vapname", h.getNetworkVAPName, user)
 	siteU.POST("/network/vap/:vapname", h.postNetworkVAPName, admin)
 	siteU.GET("/network/wan", h.getNetworkWan, admin)
+	siteU.GET("/nodes", h.getNodes, admin)
+	siteU.POST("/nodes/:nodeid", h.postNode, admin)
+	siteU.POST("/nodes/:nodeid/ports/:portid", h.postNodePort, admin)
 	siteU.GET("/users", h.getUsers, admin)
 	siteU.GET("/users/:useruuid", h.getUserByUUID, admin)
 	siteU.POST("/users/:useruuid", h.postUserByUUID, admin)

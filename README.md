@@ -223,5 +223,8 @@ for example, enabling WAN-facing SSH and configuring SSIDs and EAP users.
 - Images
   - [Exclamation Mark](https://pixabay.com/en/attention-warning-exclamation-mark-98513/)
 	Creative Commons: Free for commercial use, no attribution required
+  - [Raspberry Pi Glamour](https://commons.wikimedia.org/wiki/File:Raspberry_Pi_3_illustration.svg)
+    client-web/public/img/rpi3-glamour.png
+        Creative Commons Attribution-Share Alike 4.0 International license.
 - Assets in client-web:
   - `(cd client-web && npm run licenses)`

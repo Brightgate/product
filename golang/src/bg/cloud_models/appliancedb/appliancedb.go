@@ -55,6 +55,7 @@ type DataStore interface {
 	AllApplianceIDs(context.Context) ([]ApplianceID, error)
 	ApplianceIDByClientID(context.Context, string) (*ApplianceID, error)
 	ApplianceIDByUUID(context.Context, uuid.UUID) (*ApplianceID, error)
+	ApplianceIDByHWSerial(context.Context, string) (*ApplianceID, error)
 	InsertApplianceID(context.Context, *ApplianceID) error
 	InsertApplianceIDTx(context.Context, DBX, *ApplianceID) error
 	UpdateApplianceID(context.Context, *ApplianceID) error
@@ -463,6 +464,24 @@ func (db *ApplianceDB) ApplianceIDByUUID(ctx context.Context,
 	case sql.ErrNoRows:
 		return nil, NotFoundError{fmt.Sprintf(
 			"ApplianceIDByUUID: Couldn't find %s", u)}
+	case nil:
+		return &id, nil
+	default:
+		panic(err)
+	}
+}
+
+// ApplianceIDByHWSerial selects an ApplianceID using its serial number
+func (db *ApplianceDB) ApplianceIDByHWSerial(ctx context.Context,
+	sn string) (*ApplianceID, error) {
+
+	var id ApplianceID
+	err := db.GetContext(ctx, &id,
+		"SELECT * FROM appliance_id_map WHERE system_repr_hwserial=$1", sn)
+	switch err {
+	case sql.ErrNoRows:
+		return nil, NotFoundError{fmt.Sprintf(
+			"ApplianceIDByHWSerial: Couldn't find %s", sn)}
 	case nil:
 		return &id, nil
 	default:
