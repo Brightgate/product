@@ -1008,7 +1008,7 @@ const actions = {
     }
     const id = context.state.currentSiteID;
     await siteApi.siteVAPPost(id, vapName, vapConfig);
-    await this.$store.dispatch('fetchNetworkConfig');
+    await context.dispatch('fetchNetworkConfig');
   },
 
   async enrollGuest(context, {kind, phoneNumber, email}) {

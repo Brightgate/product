@@ -25,6 +25,7 @@
       :class="disabled ? 'disabled' : undefined"
       :link="`/sites/${siteid}/network/`" />
     <f7-list-item
+      v-if="admin"
       :title="$t('message.site_controls.hardware')"
       :class="disabled ? 'disabled' : undefined"
       :link="`/sites/${siteid}/nodes/`" />

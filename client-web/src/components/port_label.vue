@@ -50,6 +50,12 @@ div.silkscreen {
 
 div.silkscreen >>> svg.wan {
   margin: 6px;
+  /*
+   * Setting 'width' should be unnecessary but seems to be needed for MS Edge
+   * to size the SVG properly. 6px-margin + 20px-contents + 6px-margin = 32px,
+   * which is the width of the enclosing div.silkscreen.
+   */
+  width: 20px;
 }
 </style>
 

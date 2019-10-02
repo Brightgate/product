@@ -49,7 +49,7 @@ const mockCloudSites = [
 // mock response to /auth/providers when in APPMODE_LOCAL
 const mockLocalProviders = {
   mode: appDefs.APPMODE_LOCAL,
-  providers: 'password',
+  providers: ['password'],
 };
 
 // mock response to /auth/providers when in APPMODE_CLOUD
