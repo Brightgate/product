@@ -139,7 +139,7 @@ var (
 		"length of time the tunnel should remain open")
 	sshAddr = flag.String("ssh_addr", "",
 		"Externally routable address for this system")
-	sshPort = flag.Int("ssh_port", 19000,
+	sshPort = flag.Int("ssh_port", 0,
 		"port to use for incoming ssh tunnel traffic")
 	sshUser = flag.String("ssh_user", "",
 		"user name appliance should use when connecting")
@@ -342,11 +342,16 @@ func newLogger(child bool) *zap.SugaredLogger {
 func choosePorts() error {
 	var err error
 
+	var sshPortRange []int
 	if *sshPort == 0 {
-		if *sshPort, err = network.ChoosePort(); err != nil {
-			return fmt.Errorf("getting ssh port: %v", err)
-		}
+		sshPortRange = append(sshPortRange, 19000, 19100)
+	} else {
+		sshPortRange = append(sshPortRange, *sshPort)
 	}
+	if *sshPort, err = network.ChoosePort(sshPortRange...); err != nil {
+		return fmt.Errorf("getting ssh port: %v", err)
+	}
+
 	if *tunnelPort == 0 {
 		if *tunnelPort, err = network.ChoosePort(); err != nil {
 			return fmt.Errorf("getting tunnel port: %v", err)

@@ -18,8 +18,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	"os"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -197,19 +199,64 @@ func ValidDNSName(name string) bool {
 	return true
 }
 
-// ChoosePort returns a local port number, which is currently not being used.
-func ChoosePort() (int, error) {
-	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
-	if err != nil {
-		return 0, fmt.Errorf("unable to resolve localhost: %v", err)
+// ChoosePort returns a local port number which is currently not being used.  If
+// passed no arguments, it will choose an ephemeral port number.  If passed one
+// integer, it will check that port and return it if available.  If passed two
+// integers, it will check ports in that range, inclusive of both ends, until it
+// finds an available port, returning that.
+//
+// Port availability is checked only on localhost.
+//
+// Callers must be cognizant of the possibility of a race on the returned port.
+// The port may be put into use by another party between the time it's checked
+// in this function and the code the caller wants to be using it.
+func ChoosePort(a ...int) (int, error) {
+	var minPort, maxPort int
+	errStr := "couldn't find available ephemeral port"
+
+	if len(a) == 1 {
+		minPort = a[0]
+		maxPort = a[0]
+		errStr = fmt.Sprintf("port %d not available", minPort)
+	} else if len(a) == 2 {
+		minPort = a[0]
+		maxPort = a[1]
+		if maxPort < minPort {
+			panic("port range must be in ascending order")
+		}
+		errStr = fmt.Sprintf("no available ports between %d and %d",
+			minPort, maxPort)
+	} else if len(a) > 2 {
+		panic("ChoosePort() can have a maximum of two arguments")
 	}
 
-	l, err := net.ListenTCP("tcp", addr)
-	if err != nil {
-		return 0, fmt.Errorf("unable to open a new port: %v", err)
-	}
-	port := l.Addr().(*net.TCPAddr).Port
-	l.Close()
+	for port := minPort; port <= maxPort; port++ {
+		addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("localhost:%d", port))
+		if err != nil {
+			return 0, fmt.Errorf("unable to resolve localhost: %v", err)
+		}
 
-	return port, nil
+		l, err := net.ListenTCP("tcp", addr)
+		if err != nil {
+			inUse := false
+			if oe, ok := err.(*net.OpError); ok {
+				if sce, ok := oe.Err.(*os.SyscallError); ok {
+					if errno, ok := sce.Err.(syscall.Errno); ok {
+						if errno == syscall.EADDRINUSE {
+							inUse = true
+						}
+					}
+				}
+			}
+			if inUse {
+				continue
+			}
+			return 0, fmt.Errorf("unable to open a new port: %v", err)
+		}
+		port = l.Addr().(*net.TCPAddr).Port
+		l.Close()
+		return port, nil
+	}
+
+	return 0, fmt.Errorf(errStr)
 }
