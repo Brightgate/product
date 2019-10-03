@@ -102,6 +102,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"os/user"
@@ -170,9 +171,42 @@ func getUsername() string {
 	return u.Username
 }
 
+// Try to get the outbound IP address by checking the GCE metadata server.
+func getIPAddrGCE() string {
+	// This picks the first external IP that might exist.  If it doesn't,
+	// then you'll have to pick one yourself.
+	url := "http://169.254.169.254/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip"
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		panic(err) // URL issues
+	}
+
+	req.Header.Add("metadata-flavor", "Google")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		slog.Errorf("Failed to retrieve external IP from GCE metadata: %v", err)
+		return ""
+	}
+
+	conLenStr := resp.Header.Get("content-length")
+	conLen, err := strconv.Atoi(conLenStr)
+	if err != nil {
+		slog.Errorf("Failed to convert content-length header (%q) to integer: %v",
+			conLenStr, err)
+		return ""
+	}
+	if conLen == 0 {
+		return ""
+	}
+	buf := make([]byte, conLen)
+	resp.Body.Read(buf)
+	return string(buf)
+}
+
 // Try to get the outbound IP address.  If this system is behind a NAT, then the
 // detected address will not be externally routable.
-func getIPAddr() string {
+func getIPAddrUnix() string {
 	// To determine which address this system uses by default, figure out
 	// which it would use when connecting to google DNS.
 	conn, err := net.Dial("udp", "8.8.8.8:53")
@@ -183,6 +217,17 @@ func getIPAddr() string {
 	conn.Close()
 
 	return myIP.String()
+}
+
+// Try to get the outbound IP address.  Check the GCE metadata server first, and
+// if there are any issues with that (or it doesn't find an external IP), return
+// the local address of a connection to the outside world.
+func getIPAddr() string {
+	addr := getIPAddrGCE()
+	if addr != "" {
+		return addr
+	}
+	return getIPAddrUnix()
 }
 
 // Remove all the settings we added
