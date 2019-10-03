@@ -14,12 +14,13 @@ import (
 	"bytes"
 	"crypto/md5"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/pkg/errors"
 )
 
 // Possible reasons for a Get operation to fail
@@ -572,7 +573,7 @@ func (t *PTree) Replace(data []byte) error {
 	var newRoot PNode
 
 	if err := json.Unmarshal(data, &newRoot); err != nil {
-		return fmt.Errorf("unmarshalling properties")
+		return errors.Wrap(err, "unmarshaling properties")
 	}
 	t.root = &newRoot
 	t.patch(t.root, t.path, "")
@@ -627,7 +628,7 @@ func NewPTree(path string, data []byte) (*PTree, error) {
 	if data != nil {
 		err := json.Unmarshal(data, &newRoot)
 		if err != nil {
-			return nil, fmt.Errorf("unmarshalling properties")
+			return nil, errors.Wrap(err, "unmarshaling properties")
 		}
 	}
 

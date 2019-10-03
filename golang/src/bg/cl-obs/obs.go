@@ -465,7 +465,7 @@ func printDevice(w io.Writer, B *backdrop, dmac string, dinfo string, detailed b
 	di := &base_msg.DeviceInfo{}
 	err = proto.Unmarshal(buf, di)
 	if err != nil {
-		fmt.Fprintf(w, "** unmarshalling failure: %v", err)
+		fmt.Fprintf(w, "** unmarshaling failure: %v", err)
 		return
 	}
 
