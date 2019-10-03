@@ -31,9 +31,9 @@ import (
 	"bg/common/briefpg"
 	"bg/common/cfgapi"
 
+	"github.com/go-acme/lego/certificate"
 	"github.com/satori/uuid"
 	"github.com/stretchr/testify/require"
-	"github.com/xenolf/lego/certificate"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"

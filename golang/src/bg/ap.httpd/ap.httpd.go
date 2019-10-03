@@ -41,7 +41,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/securecookie"
-	"github.com/lestrrat/go-apache-logformat"
+	"github.com/lestrrat-go/apache-logformat"
 
 	"github.com/NYTimes/gziphandler"
 	"github.com/unrolled/secure"

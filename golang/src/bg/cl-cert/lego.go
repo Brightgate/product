@@ -15,13 +15,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xenolf/lego/certificate"
-	"github.com/xenolf/lego/challenge"
-	"github.com/xenolf/lego/challenge/dns01"
-	"github.com/xenolf/lego/lego"
-	legolog "github.com/xenolf/lego/log"
-	dnsexec "github.com/xenolf/lego/providers/dns/exec"
-	dnsgoog "github.com/xenolf/lego/providers/dns/gcloud"
+	"github.com/go-acme/lego/certificate"
+	"github.com/go-acme/lego/challenge"
+	"github.com/go-acme/lego/challenge/dns01"
+	"github.com/go-acme/lego/lego"
+	legolog "github.com/go-acme/lego/log"
+	dnsexec "github.com/go-acme/lego/providers/dns/exec"
+	dnsgoog "github.com/go-acme/lego/providers/dns/gcloud"
 
 	"go.uber.org/zap"
 )

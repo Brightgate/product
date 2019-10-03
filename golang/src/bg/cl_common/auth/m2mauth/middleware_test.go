@@ -162,7 +162,7 @@ func TestBasic(t *testing.T) {
 	uu = metautils.ExtractIncoming(resultctx).Get("site_uuid")
 	assert.Equal(m.ApplianceID.SiteUUID.String(), uu,
 		"site_uuid was not set as expected in context")
-	assert.Equal(1, mw.authCache.Len(), "authCache has unexpected size")
+	assert.Equal(1, mw.authCache.Len(false), "authCache has unexpected size")
 
 	// try again; we expect this to be served from cache
 	resultctx, err = mw.authFunc(ctx)
@@ -176,7 +176,7 @@ func TestBasic(t *testing.T) {
 	uu = metautils.ExtractIncoming(resultctx).Get("site_uuid")
 	assert.Equal(m.ApplianceID.SiteUUID.String(), uu,
 		"site_uuid was not set as expected in context")
-	assert.Equal(1, mw.authCache.Len(), "authCache has unexpected size")
+	assert.Equal(1, mw.authCache.Len(false), "authCache has unexpected size")
 }
 
 // TestExpLeeway tests the case where the client is initiating a connection, but
@@ -238,7 +238,7 @@ func TestBadBearer(t *testing.T) {
 				ToIncoming(context.Background())
 			_, err := mw.authFunc(ctx)
 			assertErrAndCode(t, err, codes.Unauthenticated)
-			assert.Equal(0, mw.authCache.Len(), "authCache has unexpected size")
+			assert.Equal(0, mw.authCache.Len(false), "authCache has unexpected size")
 		})
 	}
 }
@@ -254,7 +254,7 @@ func TestExpiredBearerCached(t *testing.T) {
 	mw := New(dMock)
 
 	// Manufacture an expired token, make a bearer for it, then parse the
-	// token with claims validation disabled, and stuff the cache it.
+	// token with claims validation disabled, and stuff the cache with it.
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"exp": int32(time.Now().Unix()) - base_def.BEARER_JWT_EXPIRY_SECS,
 	})
@@ -283,7 +283,7 @@ func TestExpiredBearerCached(t *testing.T) {
 		ApplianceUUID: m.ApplianceUUID,
 		SiteUUID:      m.SiteUUID,
 	})
-	assert.Equalf(1, mw.authCache.Len(), "authCache has unexpected size")
+	assert.Equalf(1, mw.authCache.Len(false), "authCache has unexpected size")
 
 	ctx := metautils.ExtractIncoming(context.Background()).
 		Add("authorization", bearer).
@@ -291,7 +291,7 @@ func TestExpiredBearerCached(t *testing.T) {
 		ToIncoming(context.Background())
 	_, err = mw.authFunc(ctx)
 	assertErrAndCode(t, err, codes.Unauthenticated)
-	assert.Equalf(0, mw.authCache.Len(), "authCache has unexpected size")
+	assert.Equalf(0, mw.authCache.Len(false), "authCache has unexpected size")
 }
 
 func TestBadClientID(t *testing.T) {

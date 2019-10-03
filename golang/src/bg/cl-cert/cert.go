@@ -31,14 +31,14 @@ import (
 	"bg/common/cfgapi"
 	"bg/common/zaperr"
 
+	"github.com/go-acme/lego/acme"
+	"github.com/go-acme/lego/acme/api"
+	"github.com/go-acme/lego/certificate"
+	"github.com/go-acme/lego/lego"
 	"github.com/satori/uuid"
 	"github.com/spf13/cobra"
 	"github.com/tatsushid/go-prettytable"
 	"github.com/tomazk/envcfg"
-	"github.com/xenolf/lego/acme"
-	"github.com/xenolf/lego/acme/api"
-	"github.com/xenolf/lego/certificate"
-	"github.com/xenolf/lego/lego"
 
 	"go.uber.org/zap"
 )

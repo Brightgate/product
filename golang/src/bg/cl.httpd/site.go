@@ -418,7 +418,7 @@ func (a *siteHandler) sendOneSMS(from, to, message string) (*siteEnrollGuestResp
 		if exception.Code >= 21210 && exception.Code <= 21217 {
 			rstr = "Invalid Phone Number"
 		}
-		response = &siteEnrollGuestResponse{false, exception.Code, rstr}
+		response = &siteEnrollGuestResponse{false, int(exception.Code), rstr}
 	} else {
 		response = &siteEnrollGuestResponse{true, 0, "Current Status: " + smsResponse.Status}
 	}

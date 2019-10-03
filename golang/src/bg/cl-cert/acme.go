@@ -24,10 +24,10 @@ import (
 	"io/ioutil"
 	"strings"
 
+	"github.com/go-acme/lego/certcrypto"
+	"github.com/go-acme/lego/lego"
+	"github.com/go-acme/lego/registration"
 	"github.com/spf13/cobra"
-	"github.com/xenolf/lego/certcrypto"
-	"github.com/xenolf/lego/lego"
-	"github.com/xenolf/lego/registration"
 )
 
 type acmeUser struct {

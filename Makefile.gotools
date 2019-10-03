@@ -12,8 +12,8 @@ GOTOOLS_DIR=$(GITROOT)/_tools.$(GOHOSTARCH)
 GOTOOLS_BIN=$(GOTOOLS_DIR)/bin
 
 GOTOOLS_dep_repo=github.com/golang/dep
-# dep v0.5.0
-GOTOOLS_dep_hash=224a564abe
+# dep v0.5.4
+GOTOOLS_dep_hash=1f7c19e5
 
 GOTOOLS_cmddep_repo=github.com/golang/dep/cmd/dep
 # Pin to same as dep
@@ -23,7 +23,8 @@ GOTOOLS_cmddep_deps=$(GOTOOLS_dep_built)
 GOTOOLS_BIN_DEP=$(GOTOOLS_BIN)/dep
 
 GOTOOLS_pgengo_repo=github.com/golang/protobuf/protoc-gen-go
-GOTOOLS_pgengo_hash=427e165155
+# v1.3.2
+GOTOOLS_pgengo_hash=6c65a556
 GOTOOLS_BIN_PROTOCGENGO=$(GOTOOLS_BIN)/protoc-gen-go
 
 GOTOOLS_mockery_repo=github.com/vektra/mockery/mockery
