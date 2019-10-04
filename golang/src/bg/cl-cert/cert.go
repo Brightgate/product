@@ -52,6 +52,8 @@ type Cfg struct {
 	DNSCredFile string `envcfg:"B10E_CLCERT_GOOGLE_DNS_CREDENTIALS"`
 	DNSExec     string `envcfg:"B10E_CLCERT_DNS_CHALLENGE_EXE"`
 
+	RecursiveNameserver string `envcfg:"B10E_CLCERT_RECURSIVE_NAMESERVER"`
+
 	// Don't bother checking that DNS changes are in place before telling
 	// the ACME server the challenge is ready; used for testing, probably in
 	// combination with B10E_CLCERT_DNS_CHALLENGE_EXE=/bin/true.

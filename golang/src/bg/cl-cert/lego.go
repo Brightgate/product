@@ -225,6 +225,13 @@ func legoSetup() (*legoHandle, *lego.Config) {
 		}
 		challengeOptions = append(challengeOptions, dns01.WrapPreCheck(wrapFunc))
 	}
+
+	if environ.RecursiveNameserver != "" {
+		challengeOptions = append(challengeOptions,
+			dns01.AddRecursiveNameservers(
+				[]string{environ.RecursiveNameserver}))
+	}
+
 	err = client.Challenge.SetDNS01Provider(provider, challengeOptions...)
 	if err != nil {
 		slog.Fatalw("Failed to set DNS challenge provider", "error", err)
