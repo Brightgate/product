@@ -76,11 +76,22 @@ type vapConfig struct {
 }
 
 type devConfig struct {
-	Interface    string // Linux device name
-	Mode         string
-	Channel      int
+	Interface   string // Linux device name
+	Mode        string
+	Channel     int
+	CountryCode string
+
 	ModeNComment string // Enable 802.11n
-	ModeNHTCapab string // Set the ht_capab field for 802.11n
+	HTCapab      string // Set the ht_capab field for 802.11n
+
+	ModeACComment string // Enable 802.11ac
+	DFSComment    string // Enable 802.11d
+	VHTComment    string // Enable 802.11ac VHT capabilities
+	VHTCapab      string // Set the vht_capab field for 802.11ac
+
+	VHTWidthComment   string // Enable 802.11ac 80MHz channel
+	VHTChanWidth      int
+	VHTCenterFreqSeg0 int
 }
 
 type hostapdCmd struct {
@@ -666,10 +677,104 @@ func initPseudoNic(d *physDevice, idx int) *physDevice {
 	return pseudo
 }
 
+func getHTCaps(w *wifiInfo) string {
+	var rval string
+
+	htcaps := w.cap.HTCapabilities
+	if htcaps[wificaps.HTCAP_MAX_AMSDU_7935] {
+		rval += "[MAX-AMSDU-7935]"
+	}
+	if htcaps[wificaps.HTCAP_DELAYED_BA] {
+		rval += "[DELAYED-BA]"
+	}
+	if htcaps[wificaps.HTCAP_TX_STBC] {
+		rval += "[TX-STBC]"
+	}
+	if htcaps[wificaps.HTCAP_RX_STBC123] {
+		rval += "[RX-STBC123]"
+	} else if htcaps[wificaps.HTCAP_RX_STBC12] {
+		rval += "[RX-STBC12]"
+	} else if htcaps[wificaps.HTCAP_RX_STBC1] {
+		rval += "[RX-STBC1]"
+	}
+	if w.activeBand == wificaps.HiBand && w.activeWidth >= 40 {
+		// With a 40MHz channel, we can support a secondary
+		// 20MHz channel either above or below the primary,
+		// depending on what the primary channel is.
+		if nModePrimaryAbove[w.activeChannel] {
+			rval += "[HT40+]"
+		}
+		if nModePrimaryBelow[w.activeChannel] {
+			rval += "[HT40-]"
+		}
+		if htcaps[wificaps.HTCAP_HT40_SGI] {
+			rval += "[SHORT-GI-40]"
+		}
+		if htcaps[wificaps.HTCAP_DSSS_CCK] {
+			rval += "[DSSS_CCK-40]"
+		}
+	} else if htcaps[wificaps.HTCAP_HT20_SGI] {
+		rval += "[SHORT-GI-20]"
+	}
+
+	return rval
+}
+
+func getVHTCaps(w *wifiInfo) string {
+	capToFlag := map[int]string{
+		wificaps.VHTCAP_MAX_MPDU_7991:        "[MAX-MPDU-7991]",
+		wificaps.VHTCAP_MAX_MPDU_11454:       "[MAX-MPDU-11454]",
+		wificaps.VHTCAP_RX_LDPC:              "[RXLDPC]",
+		wificaps.VHTCAP_VHT80_SGI:            "[SHORT-GI-80]",
+		wificaps.VHTCAP_VHT160_SGI:           "[SHORT-GI-160]",
+		wificaps.VHTCAP_TX_STBC:              "[TX-STBC-2BY1]",
+		wificaps.VHTCAP_SU_BEAMFORMER:        "[SU-BEAMFORMER]",
+		wificaps.VHTCAP_SU_BEAMFORMEE:        "[SU-BEAMFORMEE]",
+		wificaps.VHTCAP_MU_BEAMFORMER:        "[MU-BEAMFORMER]",
+		wificaps.VHTCAP_MU_BEAMFORMEE:        "[MU-BEAMFORMEE]",
+		wificaps.VHTCAP_RX_STBC1:             "[RX-STBC-1]",
+		wificaps.VHTCAP_RX_STBC2:             "[RX-STBC-12]",
+		wificaps.VHTCAP_RX_STBC3:             "[RX-STBC-123",
+		wificaps.VHTCAP_RX_STBC4:             "[RX-STBC-1234]",
+		wificaps.VHTCAP_BF_ANTENNA_2:         "[BF-ANTENNA-2]",
+		wificaps.VHTCAP_BF_ANTENNA_3:         "[BF-ANTENNA-3]",
+		wificaps.VHTCAP_BF_ANTENNA_4:         "[BF-ANTENNA-4]",
+		wificaps.VHTCAP_SOUNDING_DIMENSION_1: "[SOUNDING-DIMENSION-1]",
+		wificaps.VHTCAP_SOUNDING_DIMENSION_2: "[SOUNDING-DIMENSION-2]",
+		wificaps.VHTCAP_SOUNDING_DIMENSION_3: "[SOUNDING-DIMENSION-3]",
+		wificaps.VHTCAP_SOUNDING_DIMENSION_4: "[SOUNDING-DIMENSION-4]",
+		wificaps.VHTCAP_MAX_A_MPDU_LEN_EXP1:  "[MAX-A-MPDU-LEN-EXP1]",
+		wificaps.VHTCAP_MAX_A_MPDU_LEN_EXP2:  "[MAX-A-MPDU-LEN-EXP2]",
+		wificaps.VHTCAP_MAX_A_MPDU_LEN_EXP3:  "[MAX-A-MPDU-LEN-EXP3]",
+		wificaps.VHTCAP_MAX_A_MPDU_LEN_EXP4:  "[MAX-A-MPDU-LEN-EXP4]",
+		wificaps.VHTCAP_MAX_A_MPDU_LEN_EXP5:  "[MAX-A-MPDU-LEN-EXP5]",
+		wificaps.VHTCAP_MAX_A_MPDU_LEN_EXP6:  "[MAX-A-MPDU-LEN-EXP6]",
+	}
+
+	// Sort the device's capabilities so the ordering of the options in the
+	// file is consistent from run to run
+	caps := make([]int, 0)
+	for cap := range w.cap.VHTCapabilities {
+		caps = append(caps, cap)
+	}
+	sort.Ints(caps)
+
+	rval := ""
+	for _, cap := range caps {
+		if option, ok := capToFlag[cap]; ok {
+			rval += option
+		}
+	}
+
+	return rval
+}
+
 func getDevConfig(d *physDevice) *devConfig {
-	var hwMode, modeNComment, modeNHTCapab string
+	var hwMode, htCapab, vhtCapab string
+	var chanWidth, centerFreq int
 
 	w := d.wifi
+
 	if w.activeBand == wificaps.LoBand {
 		hwMode = "g"
 	} else if w.activeBand == wificaps.HiBand {
@@ -679,58 +784,54 @@ func getDevConfig(d *physDevice) *devConfig {
 		return nil
 	}
 
+	modeACComment := "#"
+	modeNComment := "#"
+	dfsComment := "#"
+	vhtComment := "#"
+	vhtWidthComment := "#"
+	if hwMode == "a" && w.cap.WifiModes["ac"] {
+		modeACComment = ""
+		vhtCapab = getVHTCaps(w)
+		if len(vhtCapab) > 0 {
+			vhtComment = ""
+		}
+
+		if w.activeWidth == 80 {
+			vhtWidthComment = ""
+			chanWidth = 1
+			centerFreq = w.activeChannel + 6
+		}
+		if d.wifi.activeChannel > 36 && d.wifi.activeChannel < 149 {
+			// XXX: it looks like DFS is only needed for frequencies
+			// associated with channels between 50 and 144.  Because
+			// of the way the AC channels are laid out, that
+			// effectively includes all channels above 36 and below
+			// 149.  All of this should really be vetted by somebody
+			// more qualified.
+			dfsComment = ""
+		}
+	}
 	if w.cap.WifiModes["n"] {
-		if w.cap.HTCapabilities["amdsu"] {
-			modeNHTCapab += "[MAX-AMSDU-7935]"
-		}
-		if w.cap.HTCapabilities["delayedba"] {
-			modeNHTCapab += "[DELAYED-BA]"
-		}
-		if w.cap.HTCapabilities["txstbc"] {
-			modeNHTCapab += "[TX-STBC]"
-		}
-		if w.cap.HTCapabilities["rxstbc3"] {
-			modeNHTCapab += "[RX-STBC123]"
-		} else if w.cap.HTCapabilities["rxstbc2"] {
-			modeNHTCapab += "[RX-STBC12]"
-		} else if w.cap.HTCapabilities["rxstbc1"] {
-			modeNHTCapab += "[RX-STBC1]"
-		}
-		if w.activeBand == wificaps.HiBand {
-			// 5GHz capabilities
-			if w.cap.FreqWidths[40] {
-				// With a 40MHz channel, we can support a secondary
-				// 20MHz channel either above or below the primary,
-				// depending on what the primary channel is.
-				if nModePrimaryAbove[w.activeChannel] {
-					modeNHTCapab += "[HT40+]"
-				}
-				if nModePrimaryBelow[w.activeChannel] {
-					modeNHTCapab += "[HT40-]"
-				}
-				if w.cap.HTCapabilities["gi40"] {
-					modeNHTCapab += "[SHORT-GI-40]"
-				}
-				if w.cap.HTCapabilities["dsss"] {
-					modeNHTCapab += "[DSSS_CCK-40]"
-				}
-			}
-		} else {
-			// 2.4GHz capabilities
-			if w.cap.HTCapabilities["gi20"] {
-				modeNHTCapab += "[SHORT-GI-20]"
-			}
-		}
-	} else {
-		modeNComment = "#"
+		modeNComment = ""
+		htCapab = getHTCaps(w)
 	}
 
 	data := devConfig{
-		Interface:    d.name,
-		Mode:         hwMode,
-		Channel:      d.wifi.activeChannel,
+		Interface:   d.name,
+		Mode:        hwMode,
+		CountryCode: wconf.domain,
+		Channel:     d.wifi.activeChannel,
+
 		ModeNComment: modeNComment,
-		ModeNHTCapab: modeNHTCapab,
+		HTCapab:      htCapab,
+
+		ModeACComment:     modeACComment,
+		DFSComment:        dfsComment,
+		VHTComment:        vhtComment,
+		VHTCapab:          vhtCapab,
+		VHTWidthComment:   vhtWidthComment,
+		VHTChanWidth:      chanWidth,
+		VHTCenterFreqSeg0: centerFreq,
 	}
 
 	return &data
@@ -1129,22 +1230,6 @@ func startHostapd(devs []*physDevice) *hostapdHdl {
 	return h
 }
 
-func getWifiDevices(active []*physDevice) []*physDevice {
-	warned := false
-	for {
-		active = selectWifiDevices(active)
-		if len(active) > 0 || !running {
-			return active
-		}
-
-		if !warned {
-			slog.Warnf("no wireless devices available")
-			warned = true
-		}
-		time.Sleep(time.Second)
-	}
-}
-
 func hostapdLoop() {
 	var active []*physDevice
 
@@ -1166,14 +1251,13 @@ func hostapdLoop() {
 			wifiEvaluate = true
 		}
 		hostapd = nil
-		if !running {
-			break
-		}
 
-		if time.Since(startTimes[0]) < period {
-			slog.Warnf("hostapd is dying too quickly")
-			wifiEvaluate = false
+		if running {
+			if time.Since(startTimes[0]) < period {
+				slog.Warnf("hostapd is dying too quickly")
+				wifiEvaluate = false
+			}
+			resetInterfaces()
 		}
-		resetInterfaces()
 	}
 }

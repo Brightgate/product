@@ -2,8 +2,19 @@ interface={{.Interface}}
 driver=nl80211
 hw_mode={{.Mode}}
 disable_pmksa_caching=1
+country_code={{.CountryCode}}
+
+# 802.11n parameters
 {{.ModeNComment}}ieee80211n=1
-{{.ModeNComment}}ht_capab={{.ModeNHTCapab}}
+{{.ModeNComment}}ht_capab={{.HTCapab}}
+
+# 802.11ac parameters
+{{.ModeACComment}}ieee80211ac=1
+{{.DFSComment}}ieee80211d=1
+{{.DFSComment}}ieee80211h=1
+{{.VHTWidthComment}}vht_oper_chwidth={{.VHTChanWidth}}
+{{.VHTWidthComment}}vht_oper_centr_freq_seg0_idx={{.VHTCenterFreqSeg0}}
+{{.VHTComment}}vht_capab={{.VHTCapab}}
 
 wmm_enabled=1
 channel={{.Channel}}

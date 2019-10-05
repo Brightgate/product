@@ -108,51 +108,63 @@ func hostapdReset(name, val string) error {
 }
 
 func configNicChanged(path []string, val string, expires *time.Time) {
-	nicID := path[3]
-	p := physDevices[nicID]
-	if p == nil || len(path) != 5 {
+	var eval bool
+
+	if len(path) != 5 {
 		return
 	}
-	if path[4] == "channel" {
-		newChannel, _ := strconv.Atoi(val)
+	p := physDevices[path[3]]
+	if p == nil {
+		return
+	}
 
-		if p.wifi != nil && p.wifi.cfgChannel != newChannel {
-			p.wifi.cfgChannel = newChannel
-			wifiEvaluate = true
-			hostapd.reset()
+	switch path[4] {
+	case "channel":
+		x, _ := strconv.Atoi(val)
+		if eval = (p.wifi != nil && p.wifi.cfgChannel != x); eval {
+			p.wifi.cfgChannel = x
 		}
-
-	} else if path[4] == "band" {
-		newBand := val
-
-		if p.wifi != nil && p.wifi.cfgBand != newBand {
-			p.wifi.cfgBand = newBand
-			wifiEvaluate = true
-			hostapd.reset()
+	case "width":
+		x, _ := strconv.Atoi(val)
+		if eval = (p.wifi != nil && p.wifi.cfgWidth != x); eval {
+			p.wifi.cfgWidth = x
 		}
-
-	} else if path[4] == "ring" {
-		newRing := val
-
-		if p.ring != newRing {
-			p.ring = newRing
+	case "band":
+		if eval = (p.wifi != nil && p.wifi.cfgBand != val); eval {
+			p.wifi.cfgBand = val
+		}
+	case "ring":
+		if p.ring != val {
+			p.ring = val
 			networkdStop("exiting to rebuild network")
 		}
-
-	} else if path[4] == "disabled" {
-		newVal := p.disabled
-		if strings.ToLower(val) == "false" {
-			newVal = false
-		} else if strings.ToLower(val) == "true" {
-			newVal = true
-		} else {
+	case "disabled":
+		oldVal := p.disabled
+		switch strings.ToLower(val) {
+		case "false":
+			p.disabled = false
+		case "true":
+			p.disabled = true
+		default:
 			slog.Warnf("%s must be true or false",
 				strings.Join(path, "/"))
 		}
-		if newVal != p.disabled {
-			p.disabled = newVal
-			wifiEvaluate = true
-			hostapd.reset()
+		eval = (oldVal != p.disabled)
+	}
+
+	if eval {
+		wifiEvaluate = true
+		hostapd.reset()
+	}
+}
+
+func configNicDeleted(path []string) {
+	if len(path) == 5 {
+		switch path[4] {
+		case "channel", "width", "band", "ring":
+			configNicChanged(path, "", nil)
+		case "disabled":
+			configNicChanged(path, "false", nil)
 		}
 	}
 }
@@ -273,21 +285,6 @@ func configNetworkChanged(path []string, val string, expires *time.Time) {
 	switch len(path) {
 	case 2:
 		reload = configSet(path[1], val)
-	case 3:
-		if path[2] == "channel" {
-			channel, _ := strconv.Atoi(val)
-			band := path[1]
-
-			if band == wificaps.LoBand || band == wificaps.HiBand {
-				if legalChannels[band][channel] {
-					wconf.channels[band] = channel
-					reload = true
-				} else {
-					slog.Warnf("ignoring illegal channel "+
-						"'%d' for %s", channel, band)
-				}
-			}
-		}
 	case 4:
 		if path[1] == "vap" {
 			hostapd.reload()
@@ -805,6 +802,11 @@ func getDevices() {
 	for _, i := range all {
 		var d *physDevice
 
+		if i.HardwareAddr.String() == "00:00:00:00:00:00" {
+			slog.Warnf("bogus mac address for %s: %s", i.Name,
+				i.HardwareAddr.String())
+			continue
+		}
 		if plat.NicIsVirtual(i.Name) {
 			continue
 		}
@@ -815,12 +817,13 @@ func getDevices() {
 		}
 
 		if d != nil {
-			if old := macs[d.hwaddr]; old != nil {
-				slog.Warn("skipping %s - "+
+			if old := macs[d.hwaddr]; old != nil && d.wifi != nil {
+				slog.Warnf("skipping %s - "+
 					"mac address %s collides with %s",
 					d.name, d.hwaddr, old.name)
 			} else {
 				physDevices[getNicID(d)] = d
+				macs[d.hwaddr] = d
 			}
 		}
 	}
@@ -837,6 +840,9 @@ func getDevices() {
 				}
 				if x, ok := nic.Children["channel"]; ok {
 					d.wifi.cfgChannel, _ = strconv.Atoi(x.Value)
+				}
+				if x, ok := nic.Children["width"]; ok {
+					d.wifi.cfgWidth, _ = strconv.Atoi(x.Value)
 				}
 				if x, ok := nic.Children["disabled"]; ok {
 					if strings.ToLower(x.Value) == "true" {
@@ -914,6 +920,7 @@ func daemonInit() error {
 	config.HandleChange(`^@/site_index`, configSiteIndexChanged)
 	config.HandleChange(`^@/clients/.*/ring$`, configClientChanged)
 	config.HandleChange(`^@/nodes/`+nodeUUID+`/nics/.*$`, configNicChanged)
+	config.HandleDelete(`^@/nodes/`+nodeUUID+`/nics/.*$`, configNicDeleted)
 	config.HandleChange(`^@/rings/.*`, configRingChanged)
 	config.HandleDelete(`^@/rings/.*/subnet$`, configRingSubnetDeleted)
 	config.HandleChange(`^@/network/.*`, configNetworkChanged)

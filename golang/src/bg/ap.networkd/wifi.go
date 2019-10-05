@@ -16,7 +16,6 @@ import (
 	"math/rand"
 	"os/exec"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"bg/ap_common/wificaps"
@@ -24,8 +23,8 @@ import (
 )
 
 type wifiConfig struct {
-	channels     map[string]int
 	radiusSecret string
+	domain       string
 }
 
 var (
@@ -38,9 +37,11 @@ var (
 type wifiInfo struct {
 	cfgBand    string // user-configured band
 	cfgChannel int    // user-configured channel
+	cfgWidth   int    // user-configured channel width
 
 	activeBand    string // band actually being used
 	activeChannel int    // channel actually being used
+	activeWidth   int    // witdh of channel actually being used
 
 	cap *wificaps.WifiCapabilities // What features the device supports
 }
@@ -49,24 +50,54 @@ type wifiInfo struct {
 // in this region.
 var legalChannels map[string]map[int]bool
 
-func setChannel(w *wifiInfo, channel int) error {
+// For each channel, this represents a set of the legal channel widths
+var legalWidths map[int]map[int]bool
+
+func setChannel(w *wifiInfo, channel, width int) error {
 	band := w.activeBand
-	if w.cap.Channels[channel] && legalChannels[band][channel] {
-		w.activeChannel = channel
-		return nil
+
+	if width == 0 {
+		// XXX - update for 160MHz wide channels
+		if w.cap.WifiModes["ac"] && legalWidths[80][channel] {
+			width = 80
+		} else if legalWidths[40][channel] {
+			width = 40
+		} else {
+			width = 20
+		}
 	}
-	return fmt.Errorf("channel %d not valid on %s", channel, band)
+
+	if !w.cap.Channels[channel] {
+		return fmt.Errorf("channel %d not supported on this nic",
+			channel)
+	}
+	if !legalChannels[band][channel] {
+		return fmt.Errorf("channel %d not valid on %s", channel, band)
+	}
+	if !legalWidths[width][channel] {
+		return fmt.Errorf("width %d not valid for channel %d",
+			width, channel)
+	}
+
+	w.activeWidth = width
+	w.activeChannel = channel
+	return nil
 }
 
 // From a list of possible channels, select one at random that is supported by
 // this wifi device
-func randomChannel(w *wifiInfo, list []int) error {
+func randomChannel(w *wifiInfo, listName string, width int) error {
+	if w.cfgWidth != 0 && w.cfgWidth != width {
+		return fmt.Errorf("device configured for %d", w.cfgWidth)
+	}
+
+	list := wificaps.ChannelLists[listName]
 	band := w.activeBand
 
 	start := rand.Int() % len(list)
 	idx := start
 	for {
-		if setChannel(w, list[idx]) == nil {
+		if setChannel(w, list[idx], width) == nil {
 			return nil
 		}
 
@@ -97,36 +128,28 @@ func selectWifiChannel(d *physDevice) error {
 
 	// If the user has configured a channel for this nic, try that first.
 	if w.cfgChannel != 0 {
-		if err = setChannel(w, w.cfgChannel); err == nil {
+		if err = setChannel(w, w.cfgChannel, w.cfgWidth); err == nil {
 			return nil
 		}
-		slog.Debugf("nic-specific %v", err)
-	}
-
-	// If the user has configured a channel for this band, try that next.
-	if wconf.channels[band] != 0 {
-		if err = setChannel(w, wconf.channels[band]); err == nil {
-			return nil
-		}
-		slog.Debugf("band-specific %v", err)
+		slog.Debugf("setChannel failed: %v", err)
 	}
 
 	if band == wificaps.LoBand {
 		// We first try to choose one of the non-overlapping channels.
 		// If that fails, we'll take any channel in this range.
-		err = randomChannel(w, wificaps.ChannelLists["loBandNoOverlap"])
-		if err != nil {
-			err = randomChannel(w, wificaps.ChannelLists["loBand20MHz"])
+		if err = randomChannel(w, "loBandNoOverlap", 20); err != nil {
+			err = randomChannel(w, "loBand20MHz", 20)
 		}
 	} else {
-		// Start by trying to get a wide channel.  If that fails, take
-		// any narrow channel.
-		// XXX: this gets more complicated with 802.11ac support.
-		if w.cap.FreqWidths[40] {
-			randomChannel(w, wificaps.ChannelLists["hiBand40MHz"])
+		if w.cap.WifiModes["ac"] {
+			// XXX: update for 160MHz and 80+80
+			randomChannel(w, "hiBand80MHz", 80)
+		}
+		if w.activeChannel == 0 && w.cap.HTCapabilities[wificaps.HTCAP_HT20_40] {
+			randomChannel(w, "hiBand40MHz", 40)
 		}
 		if w.activeChannel == 0 {
-			err = randomChannel(w, wificaps.ChannelLists["hiBand20MHz"])
+			err = randomChannel(w, "hiBand20MHz", 20)
 		}
 	}
 
@@ -160,7 +183,7 @@ func score(d *physDevice, band string) int {
 		score = score + 1
 	}
 
-	if w.cap.WifiModes["ac"] {
+	if band == wificaps.HiBand && w.cap.WifiModes["ac"] {
 		score = score + 2
 	}
 
@@ -244,13 +267,29 @@ func makeValidChannelMaps() {
 			157, 161, 165},
 	}
 
-	// Convert the arrays of channels into channel-indexed maps, for easier
-	// lookup.
+	widths := map[int][]int{
+		20: append(
+			wificaps.ChannelLists["loBand20MHz"],
+			wificaps.ChannelLists["hiBand20MHz"]...),
+		40: wificaps.ChannelLists["hiBand40MHz"],
+		80: wificaps.ChannelLists["hiBand80MHz"],
+	}
+
+	// Convert the arrays of channels into channel- and width-indexed maps,
+	// for easier lookup.
 	legalChannels = make(map[string]map[int]bool)
 	for _, band := range bands {
 		legalChannels[band] = make(map[int]bool)
 		for _, channel := range channels[band] {
 			legalChannels[band][channel] = true
+		}
+	}
+
+	legalWidths = make(map[int]map[int]bool)
+	for width, list := range widths {
+		legalWidths[width] = make(map[int]bool)
+		for _, channel := range list {
+			legalWidths[width][channel] = true
 		}
 	}
 }
@@ -260,18 +299,19 @@ func globalWifiInit(props *cfgapi.PropertyNode) error {
 
 	makeValidChannelMaps()
 
-	domain := "US"
+	wconf.domain = "US"
 	if x, ok := props.Children["regdomain"]; ok {
 		t := []byte(strings.ToUpper(x.Value))
 		if !locationRE.Match(t) {
 			slog.Warnf("Illegal @/network/regdomain: %s", x.Value)
 		} else {
-			domain = x.Value
+			wconf.domain = x.Value
 		}
 	}
 
-	slog.Infof("Setting regulatory domain to %s", domain)
-	out, err := exec.Command(plat.IwCmd, "reg", "set", domain).CombinedOutput()
+	slog.Infof("Setting regulatory domain to %s", wconf.domain)
+	cmd := exec.Command(plat.IwCmd, "reg", "set", wconf.domain)
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		slog.Warnf("Failed to set domain: %v%s\n", err, out)
 	}
@@ -282,14 +322,6 @@ func globalWifiInit(props *cfgapi.PropertyNode) error {
 		slog.Warnf("no radius_auth_secret configured")
 	}
 
-	wconf.channels = make(map[string]int)
-	for _, band := range bands {
-		if bprop, ok := props.Children[band]; ok {
-			if c, ok := bprop.Children["channel"]; ok {
-				wconf.channels[band], _ = strconv.Atoi(c.Value)
-			}
-		}
-	}
 	wifiEvaluate = true
 
 	return nil
