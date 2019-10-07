@@ -66,12 +66,9 @@ EOF
 	copy_preserve /opt/etc/machine-id \
 		$appackage/var/spool/mcp
 
-	# Enable appliance services.
+	# Enable appliance service.
 	systemctl enable ap.mcp.service
-	systemctl enable brightgate-appliance.service
-
 	systemctl start ap.mcp.service
-	systemctl start brightgate-appliance.service
 fi
 
 # Some other abort action was received.

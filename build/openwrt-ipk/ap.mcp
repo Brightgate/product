@@ -65,3 +65,7 @@ start_service()
 	[ -e /var/run/chrony/chronyd.sock ] || sleep 1
 	chronyc waitsync 30 .1 0 1
 }
+
+stop_service() {
+	/bin/rm -f /tmp/mcp.online
+}

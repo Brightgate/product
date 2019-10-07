@@ -14,11 +14,8 @@
 set -x
 
 if [ "x$1" = "xremove" ]; then
-    # Disable appliance services.
-    systemctl stop brightgate-appliance.service
+    # Disable appliance service.
     systemctl stop ap.mcp.service
-
-    systemctl disable brightgate-appliance.service
     systemctl disable ap.mcp.service
 
     # Remove the modifications we made to the dhcpcd config

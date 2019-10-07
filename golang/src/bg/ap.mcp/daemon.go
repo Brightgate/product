@@ -37,6 +37,8 @@ const (
 
 	onlineTimeout  = time.Duration(10 * time.Second)
 	offlineTimeout = time.Duration(15 * time.Second)
+
+	onlineFile = "/tmp/mcp.online"
 )
 
 type daemon struct {
@@ -94,6 +96,12 @@ var (
 
 		// The lock protects the contents of the maps, but not the
 		// contents of the daemons within the maps.
+		sync.Mutex
+	}
+
+	onlineState struct {
+		daemons map[string]bool
+		track   bool
 		sync.Mutex
 	}
 
@@ -387,6 +395,7 @@ func (d *daemon) daemonLoop() {
 					logDebug("%s has new goal: %s", d.Name,
 						mcp.States[goal])
 					d.goalState = goal
+					daemonSaveOnline()
 				}
 			}
 
@@ -594,6 +603,81 @@ func resourceLoop() {
 	}
 }
 
+func daemonChooseAutostart() []*daemon {
+	var data []byte
+	var err error
+
+	online := make(map[string]bool)
+	if aputil.FileExists(onlineFile) {
+		if data, err = ioutil.ReadFile(onlineFile); err != nil {
+			logWarn("loading daemon list: %v", err)
+
+		} else if err = json.Unmarshal(data, &online); err != nil {
+			logWarn("importing daemon list: %v", err)
+		}
+	}
+
+	if len(online) == 0 {
+		for name := range daemons.local {
+			online[name] = true
+		}
+	}
+	onlineState.track = true
+	onlineState.daemons = online
+
+	o := make([]*daemon, 0)
+	for name, d := range daemons.local {
+		if online[name] {
+			o = append(o, d)
+		}
+	}
+
+	return o
+}
+
+func daemonSaveOnline() error {
+	if !onlineState.track {
+		return nil
+	}
+
+	onlineState.Lock()
+	defer onlineState.Unlock()
+
+	rewriteNeeded := false
+	for name, x := range daemons.local {
+		new := (x.goalState == mcp.ONLINE)
+		old := onlineState.daemons[name]
+		if old != new {
+			onlineState.daemons[name] = new
+			rewriteNeeded = true
+		}
+	}
+	if !rewriteNeeded {
+		return nil
+	}
+
+	data, err := json.Marshal(&onlineState.daemons)
+	if err != nil {
+		return fmt.Errorf("exporting daemon list: %v", err)
+	}
+
+	tmpfile, err := ioutil.TempFile("/tmp", "")
+	if err != nil {
+		return fmt.Errorf("creating temp file: %v", err)
+	}
+
+	name := tmpfile.Name()
+	if _, err = tmpfile.Write(data); err != nil {
+		err = fmt.Errorf("writing to temp file: %v", err)
+		os.Remove(name)
+	} else {
+		tmpfile.Close()
+		err = os.Rename(name, onlineFile)
+	}
+
+	return err
+}
+
 func daemonReinit() {
 	daemons.local = make(daemonSet)
 	daemons.remote = make(map[string]remoteState)
@@ -605,7 +689,6 @@ func daemonReinit() {
 
 func daemonInit() {
 	daemonReinit()
-
 	process, _ := os.FindProcess(os.Getpid())
 	binary, _ := os.Executable()
 
@@ -621,6 +704,13 @@ func daemonInit() {
 		MemWarn:     20,
 		MemKill:     40,
 		SoftTimeout: 100,
+	}
+
+	if !*nostart {
+		autostart := daemonChooseAutostart()
+		for _, d := range autostart {
+			d.goal <- mcp.ONLINE
+		}
 	}
 
 	go resourceLoop()

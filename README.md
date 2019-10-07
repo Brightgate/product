@@ -193,13 +193,13 @@ pause in the `blocked` state waiting for a dependency.
 
 # Running from Installed Packages, Debian/Raspbian
 
-We deliver two services on the appliance: `ap.mcp` and `brightgate-appliance`.
-The former simply starts the master control process, while the latter launches
-all the daemons.  They are controlled by systemd; thus:
+We deliver one new service on the appliance: `ap.mcp`, which starts the master
+control process, which then launches all the daemons.  It is controlled by
+systemd; thus:
+
 
 ```
 $ sudo systemctl start ap.mcp
-$ sudo systemctl start brightgate-appliance
 ```
 
 and any other systemd subcommand.  Note that the package postinstall scripts

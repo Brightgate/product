@@ -55,6 +55,7 @@ var (
 	aproot   = flag.String("root", "", "Root of AP installation")
 	apmode   = flag.String("mode", "", "Mode in which this AP should operate")
 	cfgfile  = flag.String("c", "", "Alternate daemon config file")
+	nostart  = flag.Bool("n", false, "don't autostart any daemons")
 	logname  = flag.String("l", "mcp.log", "where to send log messages")
 	nodeFlag = flag.String("nodeid", "", "new value for device nodeID")
 	platFlag = flag.String("platform", "", "hardware platform name")
@@ -338,6 +339,11 @@ func profileInit() {
 
 // Shutdown all of the running daemons, and then exit
 func shutdown(rval int) {
+	// We're about to set all of the daemons' goals to OFFLINE, in an
+	// attempt to shut them down cleanly.  To avoid losing the admin's
+	// intended states for those daemons, we stop updating the online file.
+	onlineState.track = false
+
 	all := "all"
 	handleStop(selectTargets(&all))
 	logInfo("MCP exiting")

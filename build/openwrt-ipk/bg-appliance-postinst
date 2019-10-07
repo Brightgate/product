@@ -106,9 +106,7 @@ if [ "$PKG_ROOT" = "/" ]; then
 	# Activate Brightgate services.
 	/etc/rc.common /etc/init.d/ap.tron enable
 	/etc/rc.common /etc/init.d/ap.mcp enable
-	/etc/rc.common /etc/init.d/brightgate-appliance enable
 
 	/etc/rc.common /etc/init.d/ap.tron start
 	/etc/rc.common /etc/init.d/ap.mcp start
-	/etc/rc.common /etc/init.d/brightgate-appliance start
 fi

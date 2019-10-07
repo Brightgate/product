@@ -458,7 +458,6 @@ FILTER_RULES = \
 
 APPCONFIGS_debian = \
 	$(APPROOTLIB)/systemd/system/ap.mcp.service \
-	$(APPROOTLIB)/systemd/system/brightgate-appliance.service \
 	$(ROOTETCCHRONY)/chrony.conf
 
 APPCONFIGS_openwrt = \
@@ -468,7 +467,6 @@ APPCONFIGS_openwrt = \
 	$(ROOTETCCRONTABS)/root \
 	$(ROOTETCINITD)/ap.mcp \
 	$(ROOTETCINITD)/ap.tron \
-	$(ROOTETCINITD)/brightgate-appliance \
 	$(ROOTETCLOGROTATED)/com-brightgate-logrotate-rsyslog \
 	$(ROOTETCSYSCTLD)/50-com-brightgate.conf
 
@@ -899,9 +897,6 @@ $(APPROOTLIB)/systemd/system:
 $(APPROOTLIB)/systemd/system/ap.mcp.service: build/debian-deb/ap.mcp.service | $(APPROOTLIB)/systemd/system
 	$(INSTALL) -m 0644 $< $@
 
-$(APPROOTLIB)/systemd/system/brightgate-appliance.service: build/debian-deb/brightgate-appliance.service | $(APPROOTLIB)/systemd/system
-	$(INSTALL) -m 0644 $< $@
-
 $(ROOTETCCHRONY)/chrony.conf: $(GOSRCBG)/ap.networkd/bg-chrony.base.conf | $(ROOTETCCHRONY)
 	$(INSTALL) -m 0644 $< $@
 
@@ -922,9 +917,6 @@ $(ROOTETCINITD)/ap.mcp: build/openwrt-ipk/ap.mcp | $(ROOTETCINITD)
 	$(INSTALL) -m 0755 $< $@
 
 $(ROOTETCINITD)/ap.tron: build/openwrt-ipk/ap.tron | $(ROOTETCINITD)
-	$(INSTALL) -m 0755 $< $@
-
-$(ROOTETCINITD)/brightgate-appliance: build/openwrt-ipk/brightgate-appliance | $(ROOTETCINITD)
 	$(INSTALL) -m 0755 $< $@
 
 $(APPDIRS):
