@@ -13,6 +13,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"time"
 
@@ -20,15 +21,41 @@ import (
 	"github.com/m-lab/ndt7-client-go/spec"
 )
 
-func emitDownload(ev spec.Measurement) {
-	log.Printf("Download Speed: %7.1f Mbit/s - RTT: %4.0f/%4.0f/%4.0f (min/smoothed/var ms)",
-		float64(ev.BBRInfo.MaxBandwidth)/(1000.0*1000.0),
-		ev.BBRInfo.MinRTT, ev.TCPInfo.SmoothedRTT, ev.TCPInfo.RTTVar)
+func validMeasurement(ev spec.Measurement) bool {
+	if ev.Origin != spec.OriginClient {
+		return false
+	}
+	if ev.AppInfo == nil || ev.AppInfo.ElapsedTime <= 0 {
+		return false
+	}
+	return true
 }
 
-func emitUpload(ev spec.Measurement) {
-	log.Printf("  Upload speed: %7.1f Mbit/s",
-		(8.0*float64(ev.AppInfo.NumBytes))/ev.Elapsed/(1000.0*1000.0))
+func emitEvent(ev spec.Measurement) {
+	elapsed := float64(ev.AppInfo.ElapsedTime) / 1e06
+	v := (8.0 * float64(ev.AppInfo.NumBytes)) / elapsed / (1000.0 * 1000.0)
+
+	var title string
+	if ev.Test == "download" {
+		title = "Download Speed:"
+	} else if ev.Test == "upload" {
+		title = "Upload Speed:"
+	}
+
+	var rttStr string
+	// This may be available in later kernels; the NDT7 0.8 spec
+	// specifically notes that >= 4.19 uses this, but it's been around for
+	// much longer.  The NDT7 client interfaces expose this information, but
+	// it's not set anywhere.
+	if ev.TCPInfo != nil {
+		minRTT := float64(ev.TCPInfo.MinRTT) / 1000.0
+		smoothRTT := float64(ev.TCPInfo.RTT) / 1000.0
+		varRTT := float64(ev.TCPInfo.RTTVar) / 1000.0
+		rttStr = fmt.Sprintf(" - RTT: %4.0f/%4.0f/%4.0f (min/smoothed/var ms)",
+			minRTT, smoothRTT, varRTT)
+	}
+
+	log.Printf("%-15s%7.1f Mbit/s%s", title, v, rttStr)
 }
 
 func speedtest() {
@@ -38,21 +65,24 @@ func speedtest() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	client := ndt7.NewClient("ap-speedtest", "0.1")
+	client := ndt7.NewClient("ap-speedtest", "0.2")
 	ch, err := client.StartDownload(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 	log.Printf("Speed test against: %s", client.FQDN)
 
-	var ev spec.Measurement
+	var lastEv, ev spec.Measurement
 	for ev = range ch {
-		if all {
-			emitDownload(ev)
+		if validMeasurement(ev) {
+			if all {
+				emitEvent(ev)
+			}
+			lastEv = ev
 		}
 	}
 	if !all {
-		emitDownload(ev)
+		emitEvent(lastEv)
 	}
 
 	ch, err = client.StartUpload(ctx)
@@ -60,12 +90,15 @@ func speedtest() {
 		log.Fatal(err)
 	}
 	for ev = range ch {
-		if all {
-			emitUpload(ev)
+		if validMeasurement(ev) {
+			if all {
+				emitEvent(ev)
+			}
+			lastEv = ev
 		}
 	}
 	if !all {
-		emitUpload(ev)
+		emitEvent(lastEv)
 	}
 }
 

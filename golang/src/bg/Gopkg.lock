@@ -427,8 +427,19 @@
   revision = "3457a5582021524757e154341b1095e3a0cdd8bd"
 
 [[projects]]
+  digest = "1:23540516cb089c446b9bf44a28b6b9727d203434db1e4f13ed2e3f0d4ca46300"
+  name = "github.com/m-lab/ndt-server"
+  packages = [
+    "metadata",
+    "ndt7/model",
+  ]
+  pruneopts = ""
+  revision = "a56f857bc06050729ccceeb01e4bee167bfc0dfb"
+  version = "v0.13.2"
+
+[[projects]]
   branch = "master"
-  digest = "1:9b4b4bff1591e74cfd1c21142247d9bdb7f450d6c1d21a38ffafe8e4531ad642"
+  digest = "1:df096c16aa22a639be66ba83323a8a2655773fdb2ac9f4df32d4aa75726fee62"
   name = "github.com/m-lab/ndt7-client-go"
   packages = [
     ".",
@@ -440,7 +451,15 @@
     "spec",
   ]
   pruneopts = ""
-  revision = "ad7eefc52fe1e4ee747f4356517ab0ffb8c646f2"
+  revision = "4db21130739004a6f5390af03099a23129b7c559"
+
+[[projects]]
+  digest = "1:7d0c935fc03e8e13a4a462d7eb6c5dd5be28d871bd217a4348fcb87642130e3c"
+  name = "github.com/m-lab/tcp-info"
+  packages = ["tcp"]
+  pruneopts = ""
+  revision = "8af213a398175deb39bc0d0800a5980793d0272c"
+  version = "v1.1.0"
 
 [[projects]]
   digest = "1:3c01f6bec64cfeb7895910f010877b3bb909c4d9ab809c8e999498498db1532a"
