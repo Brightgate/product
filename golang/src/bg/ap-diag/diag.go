@@ -34,7 +34,7 @@ func main() {
 
 	switch os.Args[1] {
 	case "wifi":
-		allvalid := wifi(os.Args[2:])
+		allvalid := execWifi(os.Args[2:])
 		if allvalid {
 			os.Exit(0)
 		}

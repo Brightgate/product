@@ -24,6 +24,7 @@ import (
 	"bg/common/cfgapi"
 	"bg/common/mfg"
 	"bg/common/network"
+	"bg/common/wifi"
 )
 
 type propDescription struct {
@@ -71,6 +72,7 @@ var (
 		"macaddr":    validateMac,
 		"nic":        validateNic,
 		"nickind":    validateNicKind,
+		"nicstate":   validateNicState,
 		"passphrase": validatePassphrase,
 		"phone":      validateString,
 		"port":       validatePort,
@@ -86,6 +88,7 @@ var (
 		"user":       validateString,
 		"uuid":       validateUUID,
 		"wifiband":   validateWifiBand,
+		"wifiwidth":  validateWifiWidth,
 	}
 )
 
@@ -165,6 +168,15 @@ func validateNicKind(val string) error {
 	l := strings.ToLower(val)
 	if l != "wired" && l != "wireless" {
 		err = fmt.Errorf("'%s' is not a valid nic kind", val)
+	}
+	return err
+}
+
+func validateNicState(val string) error {
+	var err error
+
+	if _, ok := wifi.DeviceStates[val]; !ok {
+		err = fmt.Errorf("'%s' is not a valid nic state", val)
 	}
 	return err
 }
@@ -343,6 +355,16 @@ func validateWifiBand(val string) error {
 
 	if val != "2.4GHz" && val != "5GHz" {
 		err = fmt.Errorf("invalid wifi band")
+	}
+
+	return err
+}
+
+func validateWifiWidth(val string) error {
+	var err error
+
+	if val != "20" && val != "40" && val != "80" {
+		err = fmt.Errorf("invalid wifi width")
 	}
 
 	return err

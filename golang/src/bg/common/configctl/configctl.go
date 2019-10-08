@@ -27,6 +27,7 @@ import (
 	"bg/common/cfgapi"
 	"bg/common/cfgtree"
 	"bg/common/deviceid"
+	"bg/common/wifi"
 
 	"github.com/satori/uuid"
 )
@@ -428,6 +429,33 @@ func getClients(cmd string, args []string) error {
 	return nil
 }
 
+func getNicString(nic *cfgapi.NicInfo) string {
+	var state string
+
+	w := nic.WifiInfo
+
+	switch nic.State {
+
+	case wifi.DevDisabled, wifi.DevBroken, wifi.DevNoChan:
+		state = nic.State
+
+	case wifi.DevUnsupportedBand, wifi.DevIllegalBand:
+		state = nic.State + " : " + w.ConfigBand
+
+	case wifi.DevUnsupportedChan, wifi.DevIllegalChan, wifi.DevBadChan:
+		state = nic.State + " : " + strconv.Itoa(w.ConfigChannel)
+
+	case wifi.DevOK:
+		if w != nil {
+			state = fmt.Sprintf("band: %6s  ch: %3d  width: %2sMhz",
+				w.ActiveBand, w.ActiveChannel, w.ActiveWidth)
+		}
+	}
+
+	return fmt.Sprintf("%5s %17s %8s %11s %s",
+		nic.Name, nic.MacAddr, nic.Kind, nic.Ring, state)
+}
+
 func getNodes(cmd string, args []string) error {
 	flags := flag.NewFlagSet("nodes", flag.ContinueOnError)
 	nodeVerbose := flags.Bool("v", false, "verbose output")
@@ -468,8 +496,7 @@ func getNodes(cmd string, args []string) error {
 
 		for _, nic := range node.Nics {
 			if !nic.Pseudo {
-				fmt.Printf("\t%5s %17s %8s %s\n",
-					nic.Name, nic.MacAddr, nic.Kind, nic.Ring)
+				fmt.Printf("\t%s\n", getNicString(&nic))
 			}
 		}
 	}

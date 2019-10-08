@@ -23,12 +23,7 @@ import (
 	"strings"
 
 	"bg/ap_common/platform"
-)
-
-// Names of the frequency bands.
-const (
-	LoBand = "2.4GHz"
-	HiBand = "5GHz"
+	"bg/common/wifi"
 )
 
 type capability struct {
@@ -126,9 +121,9 @@ func getChannels(w *WifiCapabilities, info string) {
 
 		frequency, _ := strconv.Atoi(line[1])
 		if frequency <= 2484 {
-			w.WifiBands[LoBand] = true
+			w.WifiBands[wifi.LoBand] = true
 		} else if frequency >= 5035 {
-			w.WifiBands[HiBand] = true
+			w.WifiBands[wifi.HiBand] = true
 		}
 	}
 }
@@ -167,12 +162,12 @@ func getWifiModes(w *WifiCapabilities, info string) {
 	w.WifiModes = make(map[string]bool)
 
 	// 2.4GHz frequencies imply mode 802.11g support
-	if w.WifiBands[LoBand] {
+	if w.WifiBands[wifi.LoBand] {
 		w.WifiModes["g"] = true
 	}
 
 	// 5GHz frequencies imply mode 802.11a support
-	if w.WifiBands[HiBand] {
+	if w.WifiBands[wifi.HiBand] {
 		w.WifiModes["a"] = true
 	}
 

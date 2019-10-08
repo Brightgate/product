@@ -31,7 +31,7 @@ import (
 
 // Version gets increased each time there is a non-compatible change to the
 // config tree format, or configd API.
-const Version = int32(23)
+const Version = int32(24)
 
 // CmdHdl is returned when one or more operations are submitted to Execute().
 // This handle can be used to check on the status of a pending operation, or to
@@ -163,14 +163,27 @@ type VirtualAP struct {
 	Rings       []string `json:"rings"`
 }
 
+// WifiInfo contains both the configured and actual band, channel, and channel
+// width parameters for a wireless device.
+type WifiInfo struct {
+	ConfigBand    string // "" -> not configured
+	ConfigChannel int    // 0 -> not configured
+	ConfigWidth   string // "" -> not configured
+
+	ActiveBand    string
+	ActiveChannel int
+	ActiveWidth   string
+}
+
 // NicInfo contains all the per-nic state stored in the config file
 type NicInfo struct {
-	Name    string
-	Node    string
-	MacAddr string
-	Kind    string
-	Ring    string
-	Pseudo  bool
+	Name     string
+	MacAddr  string
+	Kind     string
+	Ring     string
+	WifiInfo *WifiInfo
+	State    string // Only valid for real nics - not pseudo
+	Pseudo   bool
 }
 
 // NodeInfo contains information about a single gateway or satellite node
@@ -978,28 +991,41 @@ func (c *Handle) GetClients() ClientMap {
 	return set
 }
 
+func getNic(nic *PropertyNode) NicInfo {
+	n := NicInfo{}
+
+	n.Name, _ = getStringVal(nic, "name")
+	n.Ring, _ = getStringVal(nic, "ring")
+	n.MacAddr, _ = getStringVal(nic, "mac")
+	n.Kind, _ = getStringVal(nic, "kind")
+	n.Pseudo, _ = getBoolVal(nic, "pseudo")
+	n.State, _ = getStringVal(nic, "state")
+
+	if n.Kind == "wireless" && !n.Pseudo {
+		w := WifiInfo{}
+		w.ConfigBand, _ = getStringVal(nic, "cfg_band")
+		w.ConfigChannel, _ = getIntVal(nic, "cfg_channel")
+		w.ConfigWidth, _ = getStringVal(nic, "cfg_width")
+		w.ActiveBand, _ = getStringVal(nic, "active_band")
+		w.ActiveChannel, _ = getIntVal(nic, "active_channel")
+		w.ActiveWidth, _ = getStringVal(nic, "active_width")
+		n.WifiInfo = &w
+	}
+
+	return n
+}
+
 // Return a slice of either all NICs attached to the specified node,
 // or all NICs in the cluster if the node parameter is empty.
 func getNics(prop *PropertyNode, node string) ([]NicInfo, error) {
 	nics := make([]NicInfo, 0)
 	for name, info := range prop.Children {
 		nodeNics := info.Children["nics"]
-		if (node != "" && node != name) || nodeNics == nil {
-			continue
-		}
 
-		for _, nic := range nodeNics.Children {
-			n := NicInfo{
-				Node: name,
+		if (node == "" || node == name) && nodeNics != nil {
+			for _, nic := range nodeNics.Children {
+				nics = append(nics, getNic(nic))
 			}
-
-			n.Name, _ = getStringVal(nic, "name")
-			n.Ring, _ = getStringVal(nic, "ring")
-			n.MacAddr, _ = getStringVal(nic, "mac")
-			n.Kind, _ = getStringVal(nic, "kind")
-			n.Pseudo, _ = getBoolVal(nic, "pseudo")
-
-			nics = append(nics, n)
 		}
 	}
 

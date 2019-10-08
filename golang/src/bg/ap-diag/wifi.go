@@ -104,6 +104,7 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/platform"
 	"bg/ap_common/wificaps"
+	"bg/common/wifi"
 )
 
 var wifiCmd *flag.FlagSet
@@ -152,7 +153,7 @@ func getPermAddr(devName string) net.HardwareAddr {
 	return net.HardwareAddr(C.GoBytes(addr, addrLen))
 }
 
-func wifi(args []string) bool {
+func execWifi(args []string) bool {
 	wifiCmd = flag.NewFlagSet("wifi", flag.ExitOnError)
 	wifiCmd.Usage = wifiUsage
 	vFlag := wifiCmd.Bool("v", false, "verbose output")
@@ -209,7 +210,7 @@ func wifi(args []string) bool {
 					cap.Interfaces))
 		}
 
-		if !cap.WifiBands[wificaps.LoBand] && !cap.WifiBands[wificaps.HiBand] {
+		if !cap.WifiBands[wifi.LoBand] && !cap.WifiBands[wifi.HiBand] {
 			reasons = append(reasons, "no supported channels")
 		}
 		valid := "INVALID"

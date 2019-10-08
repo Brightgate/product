@@ -4,10 +4,41 @@
       "Value": ""
     },
     "cfgversion": {
-      "Value": "15"
+      "Value": "20"
     },
     "uuid": {
       "Value": "407edeb5-84f5-4167-8a81-1Fbdf66eef0b"
+    },
+    "nodes": {
+      "Children": {
+        "001-201913ZZ-000039": {
+          "Children": {
+            "nics": {
+              "Children": {
+                "lan0": {
+                  "Children": {
+                    "kind": {
+                      "Value": "wired"
+                    },
+                    "mac": {
+                      "Value": "60:90:84:a0:00:22"
+                    },
+                    "name": {
+                      "Value": "lan0"
+                    },
+                    "pseudo": {
+                      "Value": "false"
+                    },
+                    "ring": {
+                      "Value": "standard"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "users": {},
     "clients": {
@@ -30,180 +61,219 @@
         }
       }
     },
-    "firewall": {
-      "Children": {
-        "rules": {
-          "Children": {
-            "ssh-external": {
-              "Children": {
-                "active": {
-                  "Value": "false"
-                },
-                "rule": {
-                  "Value": "ACCEPT TCP FROM IFACE wan TO AP DPORTS 22"
-                }
-              }
-            },
-            "ssh-internal": {
-              "Children": {
-                "active": {
-                  "Value": "true"
-                },
-                "rule": {
-                  "Value": "ACCEPT TCP FROM IFACE NOT wan TO AP DPORTS 22"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "network": {
-      "Children": {
-        "dnsserver": {
-          "Value": "8.8.8.8:53"
-        },
-        "passphrase": {
-          "Value": "sosecretive"
-        },
-        "regdomain": {
-          "Value": "US"
-        },
-        "ssid": {
-          "Value": "setme"
-        }
-      }
-    },
-    "rings": {
-      "Children": {
-        "core": {
-          "Children": {
-            "auth": {
-              "Value": "wpa-eap"
-            },
-            "lease_duration": {
-              "Value": "1440"
-            },
-            "subnet": {
-              "Value": "192.168.133.0/26"
-            },
-            "vlan": {
-              "Value": "3"
-            }
-          }
-        },
-        "devices": {
-          "Children": {
-            "auth": {
-              "Value": "wpa-psk"
-            },
-            "lease_duration": {
-              "Value": "180"
-            },
-            "subnet": {
-              "Value": "192.168.135.0/26"
-            },
-            "vlan": {
-              "Value": "5"
-            }
-          }
-        },
-        "guest": {
-          "Children": {
-            "auth": {
-              "Value": "wpa-psk"
-            },
-            "lease_duration": {
-              "Value": "30"
-            },
-            "subnet": {
-              "Value": "192.168.136.0/26"
-            },
-            "vlan": {
-              "Value": "6"
-            }
-          }
-        },
-        "internal": {
-          "Children": {
-            "auth": {
-              "Value": "open"
-            },
-            "lease_duration": {
-              "Value": "1440"
-            },
-            "subnet": {
-              "Value": "192.168.131.0/29"
-            },
-            "vlan": {
-              "Value": "1"
-            }
-          }
-        },
-        "quarantine": {
-          "Children": {
-            "auth": {
-              "Value": "wpa-psk"
-            },
-            "lease_duration": {
-              "Value": "10"
-            },
-            "subnet": {
-              "Value": "192.168.137.0/26"
-            },
-            "vlan": {
-              "Value": "7"
-            }
-          }
-        },
-        "standard": {
-          "Children": {
-            "auth": {
-              "Value": "wpa-psk"
-            },
-            "lease_duration": {
-              "Value": "1440"
-            },
-            "subnet": {
-              "Value": "192.168.134.0/26"
-            },
-            "vlan": {
-              "Value": "4"
-            }
-          }
-        },
-        "unenrolled": {
-          "Children": {
-            "auth": {
-              "Value": "wpa-psk"
-            },
-            "lease_duration": {
-              "Value": "10"
-            },
-            "subnet": {
-              "Value": "192.168.130.0/26"
-            },
-            "vlan": {
-              "Value": "0"
-            }
-          }
-        }
-      }
-    },
-    "nodes": {
-      "Children": {
-        "4b59d521-15e5-44c4-9376-7873745a0764": {
-          "Children": {
-            "b8:27:eb:c5:c6:74": {
-              "Children": {
-                "ring": {
-                  "Value": "wan"
-                }
-              }
-            }
-          }
-        }
-      }
+     "firewall": {
+       "Children": {
+         "rules": {
+           "Children": {
+             "ssh-external": {
+               "Children": {
+                 "active": {
+                   "Value": "false"
+                 },
+                 "rule": {
+                   "Value": "ACCEPT TCP FROM IFACE wan TO AP DPORTS 22"
+                 }
+               }
+             },
+             "ssh-standard": {
+               "Children": {
+                 "active": {
+                   "Value": "true"
+                 },
+                 "rule": {
+                   "Value": "ACCEPT TCP FROM RING standard TO AP DPORTS 22"
+                 }
+               }
+             },
+             "ssh-core": {
+               "Children": {
+                 "active": {
+                   "Value": "true"
+                 },
+                 "rule": {
+                   "Value": "ACCEPT TCP FROM RING core TO AP DPORTS 22"
+                 }
+               }
+             }
+           }
+         }
+       }
+     },
+     "network": {
+       "Children": {
+         "base_address": {
+           "Value": "192.168.2.0/24"
+         },
+         "dnsserver": {
+           "Value": "8.8.8.8:53"
+         },
+         "vap": {
+           "Children": {
+             "psk": {
+               "Children": {
+                 "default_ring": {
+                   "Value": "unenrolled"
+                 },
+                 "5ghz": {
+                   "Value": "false"
+                 },
+                 "keymgmt": {
+                   "Value": "wpa-psk"
+                 },
+                 "passphrase": {
+                   "Value": "sosecretive"
+                 },
+                 "ssid": {
+                   "Value": "setme"
+                 }
+               }
+             },
+             "eap": {
+               "Children": {
+                 "default_ring": {
+                   "Value": "standard"
+                 },
+                 "5ghz": {
+                   "Value": "false"
+                 },
+                 "keymgmt": {
+                   "Value": "wpa-eap"
+                 },
+                 "ssid": {
+                   "Value": "setme-users"
+                 }
+               }
+             },
+             "guest": {
+               "Children": {
+                 "default_ring": {
+                   "Value": "guest"
+                 },
+                 "5ghz": {
+                   "Value": "false"
+                 },
+                 "keymgmt": {
+                   "Value": "wpa-psk"
+                 },
+                 "passphrase": {
+                   "Value": "sosecretive"
+                 },
+                 "ssid": {
+                   "Value": "setme-guest"
+                 }
+               }
+             }
+           }
+         },
+         "regdomain": {
+           "Value": "US"
+         }
+       }
+     },
+     "rings": {
+       "Children": {
+         "core": {
+           "Children": {
+             "vap": {
+               "Value": "eap"
+             },
+             "lease_duration": {
+               "Value": "1440"
+             },
+             "vlan": {
+               "Value": "3"
+             }
+           }
+         },
+         "devices": {
+           "Children": {
+             "vap": {
+               "Value": "psk"
+             },
+             "lease_duration": {
+               "Value": "1440"
+             },
+             "vlan": {
+               "Value": "5"
+             }
+           }
+         },
+         "guest": {
+           "Children": {
+             "vap": {
+               "Value": "guest"
+             },
+             "lease_duration": {
+               "Value": "60"
+             },
+             "vlan": {
+               "Value": "6"
+             }
+           }
+         },
+         "internal": {
+           "Children": {
+             "vap": {
+               "Value": ""
+             },
+             "lease_duration": {
+               "Value": "1440"
+             },
+             "vlan": {
+               "Value": "1"
+             }
+           }
+         },
+         "quarantine": {
+           "Children": {
+             "vap": {
+               "Value": "psk"
+             },
+             "lease_duration": {
+               "Value": "10"
+             },
+             "vlan": {
+               "Value": "7"
+             }
+           }
+         },
+         "standard": {
+           "Children": {
+             "vap": {
+               "Value": "eap"
+             },
+             "lease_duration": {
+               "Value": "1440"
+             },
+             "vlan": {
+               "Value": "4"
+             }
+           }
+         },
+         "unenrolled": {
+           "Children": {
+             "vap": {
+               "Value": "psk"
+             },
+             "lease_duration": {
+               "Value": "10"
+             },
+             "vlan": {
+               "Value": "0"
+             }
+           }
+         }
+       }
+     },
+     "siteid": {
+       "Value": "setup.brightgate.net"
+     },
+     "site_index": {
+       "Value": "0"
+     },
+     "users": {},
+     "uuid": {
+      "Value": "00000000-0000-0000-0000-000000000000"
     }
   }
 }

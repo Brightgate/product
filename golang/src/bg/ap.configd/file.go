@@ -41,7 +41,7 @@ const (
 	baseFilename     = "configd.json"
 	// snapshot format is <year><month><day><hour><minute>
 	snapFormat       = "200601021504"
-	minConfigVersion = 12
+	minConfigVersion = 20
 )
 
 var (

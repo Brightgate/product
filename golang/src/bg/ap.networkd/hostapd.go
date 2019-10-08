@@ -31,6 +31,7 @@ import (
 	"bg/base_msg"
 	"bg/common/cfgapi"
 	"bg/common/network"
+	"bg/common/wifi"
 
 	"github.com/golang/protobuf/proto"
 	"go.uber.org/zap/zapcore"
@@ -697,7 +698,7 @@ func getHTCaps(w *wifiInfo) string {
 	} else if htcaps[wificaps.HTCAP_RX_STBC1] {
 		rval += "[RX-STBC1]"
 	}
-	if w.activeBand == wificaps.HiBand && w.activeWidth >= 40 {
+	if w.activeBand == wifi.HiBand && w.activeWidth >= 40 {
 		// With a 40MHz channel, we can support a secondary
 		// 20MHz channel either above or below the primary,
 		// depending on what the primary channel is.
@@ -775,9 +776,9 @@ func getDevConfig(d *physDevice) *devConfig {
 
 	w := d.wifi
 
-	if w.activeBand == wificaps.LoBand {
+	if w.activeBand == wifi.LoBand {
 		hwMode = "g"
-	} else if w.activeBand == wificaps.HiBand {
+	} else if w.activeBand == wifi.HiBand {
 		hwMode = "a"
 	} else {
 		slog.Warnf("unsupported wifi band: %s", d.wifi.activeBand)
@@ -851,7 +852,7 @@ func getVAPConfig(name string, d *physDevice, idx int) *vapConfig {
 	}
 
 	ssid := vap.SSID
-	if vap.Tag5GHz && d.wifi.activeBand == wificaps.HiBand {
+	if vap.Tag5GHz && d.wifi.activeBand == wifi.HiBand {
 		ssid += "-5ghz"
 	}
 
@@ -1103,10 +1104,6 @@ func (h *hostapdHdl) newConn(vap *vapConfig) *hostapdConn {
 
 func (h *hostapdHdl) start() {
 	h.generateHostAPDConf()
-	if len(h.devices) == 0 {
-		h.done <- fmt.Errorf("no suitable wireless devices available")
-		return
-	}
 	defer h.cleanup()
 
 	slog.Debugf("starting hostapd")
@@ -1224,8 +1221,6 @@ func startHostapd(devs []*physDevice) *hostapdHdl {
 		done:    make(chan error, 1),
 	}
 
-	initChannelLists()
-
 	go h.start()
 	return h
 }
@@ -1233,12 +1228,19 @@ func startHostapd(devs []*physDevice) *hostapdHdl {
 func hostapdLoop() {
 	var active []*physDevice
 
+	initChannelLists()
 	startTimes := make([]time.Time, failuresAllowed)
 	virtualAPs = config.GetVirtualAPs()
+
 	for running {
 		active = selectWifiDevices(active)
-		if !running {
-			break
+		if len(active) == 0 {
+			// XXX: This should be event-driven rather than
+			// timeout-driven.  Getting that right complicated an
+			// already large code delta, so I'll do it as a
+			// follow-on.
+			time.Sleep(time.Second)
+			continue
 		}
 
 		startTimes = append(startTimes[1:failuresAllowed],

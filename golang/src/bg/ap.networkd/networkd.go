@@ -36,6 +36,7 @@ import (
 	"bg/base_msg"
 	"bg/common/cfgapi"
 	"bg/common/network"
+	"bg/common/wifi"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -119,36 +120,28 @@ func configNicChanged(path []string, val string, expires *time.Time) {
 	}
 
 	switch path[4] {
-	case "channel":
+	case "cfg_channel":
 		x, _ := strconv.Atoi(val)
-		if eval = (p.wifi != nil && p.wifi.cfgChannel != x); eval {
-			p.wifi.cfgChannel = x
+		if eval = (p.wifi != nil && p.wifi.configChannel != x); eval {
+			p.wifi.configChannel = x
 		}
-	case "width":
+	case "cfg_width":
 		x, _ := strconv.Atoi(val)
-		if eval = (p.wifi != nil && p.wifi.cfgWidth != x); eval {
-			p.wifi.cfgWidth = x
+		if eval = (p.wifi != nil && p.wifi.configWidth != x); eval {
+			p.wifi.configWidth = x
 		}
-	case "band":
-		if eval = (p.wifi != nil && p.wifi.cfgBand != val); eval {
-			p.wifi.cfgBand = val
+	case "cfg_band":
+		if eval = (p.wifi != nil && p.wifi.configBand != val); eval {
+			p.wifi.configBand = val
 		}
 	case "ring":
 		if p.ring != val {
 			p.ring = val
 			networkdStop("exiting to rebuild network")
 		}
-	case "disabled":
+	case "state":
 		oldVal := p.disabled
-		switch strings.ToLower(val) {
-		case "false":
-			p.disabled = false
-		case "true":
-			p.disabled = true
-		default:
-			slog.Warnf("%s must be true or false",
-				strings.Join(path, "/"))
-		}
+		p.disabled = (strings.ToLower(val) == "disabled")
 		eval = (oldVal != p.disabled)
 	}
 
@@ -161,10 +154,8 @@ func configNicChanged(path []string, val string, expires *time.Time) {
 func configNicDeleted(path []string) {
 	if len(path) == 5 {
 		switch path[4] {
-		case "channel", "width", "band", "ring":
+		case "cfg_channel", "cfg_width", "cfg_band", "ring", "state":
 			configNicChanged(path, "", nil)
-		case "disabled":
-			configNicChanged(path, "false", nil)
 		}
 	}
 }
@@ -613,10 +604,38 @@ func newNicOps(id string, nic *physDevice,
 		if nic.ring != "" {
 			newVals["ring"] = nic.ring
 		}
-		if nic.wifi == nil {
-			newVals["kind"] = "wired"
-		} else {
+		if w := nic.wifi; w != nil {
 			newVals["kind"] = "wireless"
+			if x := w.configBand; x != "" {
+				newVals["cfg_band"] = x
+			}
+			if x := w.activeBand; x != "" {
+				newVals["active_band"] = x
+			}
+			if x := w.configChannel; x != 0 {
+				newVals["cfg_channel"] = strconv.Itoa(x)
+			}
+			if x := w.activeChannel; x != 0 {
+				newVals["active_channel"] = strconv.Itoa(x)
+			}
+			if x := w.configWidth; x != 0 {
+				newVals["cfg_width"] = strconv.Itoa(x)
+			}
+			if x := w.activeWidth; x != 0 {
+				newVals["active_width"] = strconv.Itoa(x)
+			}
+			if w.state == "" {
+				newVals["state"] = wifi.DevOK
+			} else {
+				newVals["state"] = w.state
+			}
+		} else {
+			newVals["kind"] = "wired"
+			if nic.disabled {
+				newVals["state"] = wifi.DevDisabled
+			} else {
+				newVals["state"] = wifi.DevOK
+			}
 		}
 		if nic.pseudo {
 			newVals["pseudo"] = "true"
@@ -835,17 +854,17 @@ func getDevices() {
 				if x, ok := nic.Children["ring"]; ok {
 					d.ring = x.Value
 				}
-				if x, ok := nic.Children["band"]; ok {
-					d.wifi.cfgBand = x.Value
+				if x, ok := nic.Children["cfg_band"]; ok {
+					d.wifi.configBand = x.Value
 				}
-				if x, ok := nic.Children["channel"]; ok {
-					d.wifi.cfgChannel, _ = strconv.Atoi(x.Value)
+				if x, ok := nic.Children["cfg_channel"]; ok {
+					d.wifi.configChannel, _ = strconv.Atoi(x.Value)
 				}
-				if x, ok := nic.Children["width"]; ok {
-					d.wifi.cfgWidth, _ = strconv.Atoi(x.Value)
+				if x, ok := nic.Children["cfg_width"]; ok {
+					d.wifi.configWidth, _ = strconv.Atoi(x.Value)
 				}
-				if x, ok := nic.Children["disabled"]; ok {
-					if strings.ToLower(x.Value) == "true" {
+				if x, ok := nic.Children["state"]; ok {
+					if strings.ToLower(x.Value) == "disabled" {
 						d.disabled = true
 					}
 				}
