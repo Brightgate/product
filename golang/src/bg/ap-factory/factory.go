@@ -46,6 +46,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"bg/ap_common/platform"
+	"bg/common/passwordgen"
 )
 
 type diskPart struct {
@@ -100,6 +101,8 @@ const (
 	xOverlayDir = "/tmp/x/overlay"
 	xRootDir    = "/tmp/x/root"
 	xDataDir    = "/tmp/x/root/data"
+
+	numPasswordCandidates = 5
 )
 
 var (
@@ -322,9 +325,33 @@ func writeUBootEnvironment(side int) {
 		rootpart = mt7623RootfsXDevice
 	}
 
-	// Update serial programming menu items to use YModem.
-	uBootEnvWrite("boot4", "loady;run boot_wr_img;run boot_rd_img;bootm", true)
+	// Ensure valid menu items. Update serial programming menu items
+	// to use YModem.
+	uBootEnvWrite("boot0", "tftpboot; bootm", true)
+	uBootEnvWrite("bootmenu_0",
+		"1. System Load Linux to SDRAM via TFTP.=run boot0", true)
+	uBootEnvWrite("boot1",
+		"tftpboot;run boot_wr_img;run boot_rd_img;bootm", true)
+	uBootEnvWrite("bootmenu_1",
+		"2. System Load Linux Kernel then write to Flash via TFTP.=run boot1", true)
+	uBootEnvWrite("boot2", "run boot_rd_img;bootm", true)
+	uBootEnvWrite("bootmenu_2",
+		"3. Boot system code via Flash.=run boot2", true)
+	uBootEnvWrite("boot3",
+		"tftpboot ${loadaddr} u-boot-mtk.bin;run wr_uboot", true)
+	uBootEnvWrite("bootmenu_3",
+		"4. System Load Boot Loader then write to Flash via TFTP.=run boot3", true)
+	uBootEnvWrite("boot4",
+		"loady;run boot_wr_img;run boot_rd_img;bootm", true)
+	uBootEnvWrite("bootmenu_4",
+		"5. System Load Linux Kernel then write to Flash via Serial.=run boot4", true)
 	uBootEnvWrite("boot5", "loady;run wr_uboot", true)
+	uBootEnvWrite("bootmenu_5",
+		"6. System Load Boot Loader then write to Flash via Serial.=run boot5", true)
+
+	// Ensure wr_uboot valid for unusual repair scenarios.
+	uBootEnvWrite("wr_uboot",
+		"uboot_check;if test ${uboot_result} = good; then mmc device 0;mmc write ${loadaddr} 0x200 0x200;reset; fi", true)
 
 	// Update eMMC boot functions to use readoff for kernel data
 	// location.
@@ -922,7 +949,7 @@ func f2fsOverlay(side int, clearOverlay bool) {
 		// Without the "rootfs_data" label, the volume_find()
 		// functions in fstools:mount_root will fail.
 
-		mkfs := exec.Command("/usr/sbin/mkfs.f2fs", "-f", "-l", "rootfs_data", "-O", "extra_attr", loopback)
+		mkfs := exec.Command("/usr/sbin/mkfs.f2fs", "-f", "-l", "rootfs_data", loopback)
 		result, err = mkfs.Output()
 
 		if err != nil {
@@ -933,7 +960,7 @@ func f2fsOverlay(side int, clearOverlay bool) {
 
 		err = syscall.Mount(loopback, xOverlayDir, "f2fs", 0, "")
 		if err != nil {
-			log.Fatalf("unable to mount f2fs after mkfs: %v", err)
+			log.Fatalf("unable to mount %s f2fs at %s after mkfs: %v", loopback, xOverlayDir, err)
 		}
 	}
 
@@ -972,6 +999,19 @@ func f2fsOverlay(side int, clearOverlay bool) {
 	}
 
 	syscall.Sync()
+}
+
+func proposePasswords() {
+	log.Printf("proposing %d candidate passwords", numPasswordCandidates)
+
+	for n := 0; n < numPasswordCandidates; n++ {
+		pw, err := passwordgen.HumanPassword(passwordgen.HumanPasswordSpec)
+		if err != nil {
+			log.Printf("proposePasswords couldn't generate password: %v", err)
+			continue
+		}
+		log.Printf("possible password: %s", pw)
+	}
 }
 
 func install(cmd *cobra.Command, args []string) error {
@@ -1104,6 +1144,14 @@ func install(cmd *cobra.Command, args []string) error {
 	}
 
 	syscall.Sync()
+
+	proposePasswords()
+
+	return nil
+}
+
+func passwd(cmd *cobra.Command, args []string) error {
+	proposePasswords()
 
 	return nil
 }
@@ -1344,6 +1392,14 @@ func main() {
 	flipCmd.Flags().StringVarP(&installSide, "side", "s", "other",
 		"target flip 'side' ['a', 'b', 'same', 'other']")
 	rootCmd.AddCommand(flipCmd)
+
+	passwdCmd := &cobra.Command{
+		Use:   "passwd",
+		Short: "Propose human readable password(s)",
+		Args:  cobra.NoArgs,
+		RunE:  passwd,
+	}
+	rootCmd.AddCommand(passwdCmd)
 
 	mountOtherCmd := &cobra.Command{
 		Use:     "mount-other",
