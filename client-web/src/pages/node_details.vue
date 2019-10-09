@@ -63,10 +63,20 @@ img.glamour {
       <f7-list-item v-for="nic in sortedNicsByKind('wireless')"
                     :key="nic.name"
                     :title="$t('message.node_details.wifi_radio', {silkscreen: nic.silkscreen})"
-                    media-item>
+                    :link="nic.wifiInfo ? `${$f7route.url}radios/${nic.name}/` : undefined"
+                    chevron-center media-item>
         <bg-port-label slot="media" :silkscreen="nic.silkscreen" type="wifi" />
 
         <div slot="subtitle">
+          <div v-if="nic.wifiInfo">
+            {{
+              $t('message.node_details.wifi_details', {
+                band: nic.wifiInfo.activeBand,
+                channel: nic.wifiInfo.activeChannel,
+                width: nic.wifiInfo.activeWidth,
+              })
+            }}
+          </div>
           {{ nic.macaddr }}
         </div>
       </f7-list-item>
@@ -93,7 +103,7 @@ img.glamour {
                     :key="nic.name"
                     :title="$t('message.node_details.lan_port', {silkscreen: nic.silkscreen})"
                     :link="`${$f7route.url}lanports/${nic.name}/`"
-                    media-item>
+                    chevron-center media-item>
         <bg-port-label slot="media" :silkscreen="nic.silkscreen" type="ethernet" />
 
         <div slot="subtitle">

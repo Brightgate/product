@@ -25,6 +25,7 @@ import (
 
 	"bg/base_def"
 	"bg/common/network"
+	"bg/common/wifi"
 
 	"github.com/satori/uuid"
 )
@@ -166,13 +167,16 @@ type VirtualAP struct {
 // WifiInfo contains both the configured and actual band, channel, and channel
 // width parameters for a wireless device.
 type WifiInfo struct {
-	ConfigBand    string // "" -> not configured
-	ConfigChannel int    // 0 -> not configured
-	ConfigWidth   string // "" -> not configured
+	ConfigBand    string `json:"configBand"`    // "" -> not configured
+	ConfigChannel int    `json:"configChannel"` // 0 -> not configured
+	ConfigWidth   string `json:"configWidth"`   // "" -> not configured
 
-	ActiveBand    string
-	ActiveChannel int
-	ActiveWidth   string
+	ActiveBand    string `json:"activeBand"`
+	ActiveChannel int    `json:"activeChannel"`
+	ActiveWidth   string `json:"activeWidth"`
+
+	ValidLoChannels []int `json:"validLoChannels"`
+	ValidHiChannels []int `json:"validHiChannels"`
 }
 
 // NicInfo contains all the per-nic state stored in the config file
@@ -1009,6 +1013,11 @@ func getNic(nic *PropertyNode) NicInfo {
 		w.ActiveBand, _ = getStringVal(nic, "active_band")
 		w.ActiveChannel, _ = getIntVal(nic, "active_channel")
 		w.ActiveWidth, _ = getStringVal(nic, "active_width")
+		// We anticipate that in the future, the appliance will
+		// publish this information in the config tree; for now,
+		// it is static.
+		w.ValidLoChannels = wifi.Channels[wifi.LoBand]
+		w.ValidHiChannels = wifi.Channels[wifi.HiBand]
 		n.WifiInfo = &w
 	}
 
@@ -1036,6 +1045,26 @@ func getNics(prop *PropertyNode, node string) ([]NicInfo, error) {
 	return nics, nil
 }
 
+// ValidChannel tests if the given channel could be valid for the
+// Wifi Radio, regardless of Band or Channel.
+func (w *WifiInfo) ValidChannel(channel int) bool {
+	// 0: Automatic mode
+	if channel == 0 {
+		return true
+	}
+	for _, v := range w.ValidLoChannels {
+		if channel == v {
+			return true
+		}
+	}
+	for _, v := range w.ValidHiChannels {
+		if channel == v {
+			return true
+		}
+	}
+	return false
+}
+
 // GetNics returns a slice of mac addresses representing the configured NICs on
 // all nodes.
 func (c *Handle) GetNics() ([]NicInfo, error) {
@@ -1045,6 +1074,17 @@ func (c *Handle) GetNics() ([]NicInfo, error) {
 	}
 
 	return getNics(prop, "")
+}
+
+// GetNic returns a NicInfo representing the named nic for the named node.
+func (c *Handle) GetNic(node, nic string) (*NicInfo, error) {
+	path := fmt.Sprintf("@/nodes/%s/nics/%s", node, nic)
+	prop, err := c.GetProps(path)
+	if err != nil {
+		return nil, fmt.Errorf("GetNic: property get %s failed: %v", path, err)
+	}
+	n := getNic(prop)
+	return &n, nil
 }
 
 // Build a mac->ip map of all the NICs on the internal ring

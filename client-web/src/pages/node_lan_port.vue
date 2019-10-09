@@ -26,7 +26,7 @@ div.shorter-block {
 
     <f7-block />
 
-    <f7-block class="headline-block">
+    <f7-block>
       <f7-row>
         <f7-col width="20">
           <bg-port-label :silkscreen="nic.silkscreen" type="ethernet" />
@@ -107,11 +107,11 @@ export default {
       const storeArg = {
         nodeID: this.nodeID,
         portID: this.$f7route.params.portID,
-        ring: newRing,
+        config: {ring: newRing},
       };
 
       debug('changeRing', newRing);
-      await uiUtils.submitConfigChange(this, 'changeRing (lanport)', 'setNodePortRing',
+      await uiUtils.submitConfigChange(this, 'changeRing (lanport)', 'setNodePortConfig',
         storeArg, (err) => {
           return this.$t('message.node_lan_port.change_ring_err',
             {nic: this.nic.silkscreen, ring: newRing, err: err.message});

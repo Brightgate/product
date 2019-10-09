@@ -366,11 +366,12 @@ func nicInfoToSilkscreen(nicInfo *cfgapi.NicInfo, nodeInfo *cfgapi.NodeInfo) str
 }
 
 type demoNodeNic struct {
-	Name       string `json:"name"`
-	MacAddr    string `json:"macaddr"`
-	Kind       string `json:"kind"`
-	Ring       string `json:"ring"`
-	Silkscreen string `json:"silkscreen"`
+	Name       string           `json:"name"`
+	MacAddr    string           `json:"macaddr"`
+	Kind       string           `json:"kind"`
+	Ring       string           `json:"ring"`
+	Silkscreen string           `json:"silkscreen"`
+	WifiInfo   *cfgapi.WifiInfo `json:"wifiInfo,omitempty"`
 }
 
 type demoNodeInfo struct {
@@ -442,6 +443,7 @@ func demoNodesGetHandler(w http.ResponseWriter, r *http.Request) {
 				Kind:       kind,
 				Ring:       nicInfo.Ring,
 				Silkscreen: nicInfoToSilkscreen(&nicInfo, &node),
+				WifiInfo:   nicInfo.WifiInfo,
 			})
 		}
 		result = append(result, ni)
@@ -491,12 +493,15 @@ func demoNodePostHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type demoPostNodePort struct {
-	Ring string `json:"ring"`
+	Ring    *string `json:"ring"`
+	Channel *int    `json:"channel"`
 }
 
 // demoPostNodePortHandler implements POST
 // /api/sites/:uuid/nodes/:nodeID/ports/:portID to adjust per-port settings;
-// presently only setting the ring of LAN ports is supported.
+// presently supports:
+//   setting the ring of LAN ports
+//   setting the channel of wireless ports
 func demoNodePortPostHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
 	vars := mux.Vars(r)
@@ -506,38 +511,71 @@ func demoNodePortPostHandler(w http.ResponseWriter, r *http.Request) {
 	var input demoPostNodePort
 	if err = json.NewDecoder(r.Body).Decode(&input); err != nil {
 		log.Printf("demoPostNodePort decode failed: %v", err)
-		http.Error(w, "bad nodeport", http.StatusBadRequest)
+		http.Error(w, "bad input", http.StatusBadRequest)
 		return
 	}
 
-	path := fmt.Sprintf("@/nodes/%s/nics/%s/ring", nodeID, portID)
-	curRing, err := config.GetProp(path)
+	nic, err := config.GetNic(nodeID, portID)
 	if err != nil {
-		http.Error(w, "bad nic", http.StatusBadRequest)
+		http.Error(w, "nic", http.StatusBadRequest)
 		return
 	}
-	// Check that the user isn't trying to re-ring the WAN port
-	// XXX need a better check here; the uplink port could also be
-	// 'internal'; T466.
-	if portID == "wan" || curRing == "wan" {
-		http.Error(w, "uplink", http.StatusForbidden)
+	if input.Ring != nil && nic.Kind != "wired" {
+		http.Error(w, "ring, wired", http.StatusBadRequest)
 		return
 	}
-	if !cfgapi.ValidRings[input.Ring] {
-		http.Error(w, "bad ring", http.StatusBadRequest)
+	if input.Channel != nil && (nic.Kind != "wireless" || nic.WifiInfo == nil) {
+		http.Error(w, "chan, wireless", http.StatusBadRequest)
 		return
 	}
-	ops := []cfgapi.PropertyOp{
-		{
-			Op:   cfgapi.PropTest,
-			Name: path,
-		},
-		{
-			Op:    cfgapi.PropCreate,
-			Name:  path,
-			Value: input.Ring,
-		},
+
+	var ops []cfgapi.PropertyOp
+	if input.Ring != nil {
+		// Check that the user isn't trying to re-ring the WAN port
+		// XXX need a better check here; the uplink port could also be
+		// 'internal'; T466.
+		if portID == "wan" || nic.Ring == "wan" {
+			http.Error(w, "uplink", http.StatusForbidden)
+			return
+		}
+		if !cfgapi.ValidRings[*input.Ring] {
+			http.Error(w, "bad ring", http.StatusBadRequest)
+			return
+		}
+		path := fmt.Sprintf("@/nodes/%s/nics/%s/ring", nodeID, portID)
+		ops = append(ops, []cfgapi.PropertyOp{
+			{
+				Op:   cfgapi.PropTest,
+				Name: path,
+			},
+			{
+				Op:    cfgapi.PropCreate,
+				Name:  path,
+				Value: *input.Ring,
+			},
+		}...)
 	}
+
+	if input.Channel != nil {
+		if !nic.WifiInfo.ValidChannel(*input.Channel) {
+			http.Error(w, "invalid channel", http.StatusBadRequest)
+			return
+		}
+		testPath := fmt.Sprintf("@/nodes/%s/nics/%s", nodeID, portID)
+		path := fmt.Sprintf("@/nodes/%s/nics/%s/cfg_channel", nodeID, portID)
+		ops = append(ops, []cfgapi.PropertyOp{
+			{
+				Op:   cfgapi.PropTest,
+				Name: testPath,
+			},
+			{
+				Op:    cfgapi.PropCreate,
+				Name:  path,
+				Value: fmt.Sprintf("%d", *input.Channel),
+			},
+		}...)
+	}
+
 	_, err = config.Execute(r.Context(), ops).Wait(r.Context())
 	if err != nil {
 		log.Printf("demoPostNodePort failed to execute: %v", err)

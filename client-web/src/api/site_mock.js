@@ -96,6 +96,11 @@ const mockRings = {
   },
 };
 
+const wifiLo = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+const wifiHi = [36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108,
+  112, 116, 120, 124, 128, 132, 136, 140, 144, 149, 153,
+  157, 161, 165];
+
 const mockNodes = [
   {
     'id': '001-201901BB-000001',
@@ -141,6 +146,16 @@ const mockNodes = [
         'kind': 'wireless',
         'ring': '',
         'silkscreen': '1',
+        'wifiInfo': {
+          'configBand': '',
+          'configChannel': 0,
+          'configWidth': '',
+          'activeBand': '2.4GHz',
+          'activeChannel': 4,
+          'activeWidth': '20',
+          'validLoChannels': wifiLo,
+          'validHiChannels': wifiHi,
+        },
       },
       {
         'name': 'wlan1',
@@ -148,6 +163,23 @@ const mockNodes = [
         'kind': 'wireless',
         'ring': '',
         'silkscreen': '2',
+        'wifiInfo': {
+          'configBand': '',
+          'configChannel': 36,
+          'configWidth': '',
+          'activeBand': '5GHz',
+          'activeChannel': 36,
+          'activeWidth': '40',
+          'validLoChannels': wifiLo,
+          'validHiChannels': wifiHi,
+        },
+      },
+      {
+        'name': 'wlan2',
+        'macaddr': '06:f0:21:4b:77:3c',
+        'kind': 'wireless',
+        'ring': '',
+        'silkscreen': '3',
       },
       {
         'name': 'lan0',

@@ -19,6 +19,7 @@ import EnrollGuest from './pages/enroll_guest.vue';
 import Nodes from './pages/nodes.vue';
 import NodeDetails from './pages/node_details.vue';
 import NodeLanPort from './pages/node_lan_port.vue';
+import NodeRadio from './pages/node_radio.vue';
 import Help from './pages/help.vue';
 import Home from './pages/home.vue';
 import LeftPanel from './pages/left_panel.vue';
@@ -99,6 +100,10 @@ export default [
   {
     path: '/sites/:siteID/nodes/:nodeID/lanports/:portID/',
     component: NodeLanPort,
+  },
+  {
+    path: '/sites/:siteID/nodes/:nodeID/radios/:portID/',
+    component: NodeRadio,
   },
   {
     path: '/sites/:siteID/',

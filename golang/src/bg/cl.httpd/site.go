@@ -648,11 +648,12 @@ func (a *siteHandler) getNetworkWan(c echo.Context) error {
 }
 
 type apiNodeNic struct {
-	Name       string `json:"name"`
-	MacAddr    string `json:"macaddr"`
-	Kind       string `json:"kind"`
-	Ring       string `json:"ring"`
-	Silkscreen string `json:"silkscreen"`
+	Name       string           `json:"name"`
+	MacAddr    string           `json:"macaddr"`
+	Kind       string           `json:"kind"`
+	Ring       string           `json:"ring"`
+	Silkscreen string           `json:"silkscreen"`
+	WifiInfo   *cfgapi.WifiInfo `json:"wifiInfo,omitempty"`
 }
 
 type apiNodeInfo struct {
@@ -789,6 +790,7 @@ func (a *siteHandler) getNodes(c echo.Context) error {
 				Kind:       kind,
 				Ring:       nicInfo.Ring,
 				Silkscreen: nicInfoToSilkscreen(&nicInfo, &node),
+				WifiInfo:   nicInfo.WifiInfo,
 			})
 		}
 		result = append(result, ni)
@@ -832,12 +834,14 @@ func (a *siteHandler) postNode(c echo.Context) error {
 }
 
 type apiPostNodePort struct {
-	Ring string `json:"ring"`
+	Ring    *string `json:"ring"`
+	Channel *int    `json:"channel"`
 }
 
 // postNodePort implements POST /api/sites/:uuid/nodes/:nodeID/ports/:portID
-// to adjust per-port settings; presently only setting the ring of LAN
-// ports is supported.
+// to adjust per-port settings; presently supports:
+//   setting the ring of LAN ports
+//   setting the channel of wireless ports
 func (a *siteHandler) postNodePort(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
@@ -847,42 +851,71 @@ func (a *siteHandler) postNodePort(c echo.Context) error {
 
 	nodeID := c.Param("nodeid")
 	if len(nodeID) == 0 {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return echo.NewHTTPError(http.StatusBadRequest, "nodeid")
 	}
 	portID := c.Param("portid")
 	if len(portID) == 0 {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return echo.NewHTTPError(http.StatusBadRequest, "portid")
 	}
 	var input apiPostNodePort
 	if err := c.Bind(&input); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return echo.NewHTTPError(http.StatusBadRequest, "input binding")
 	}
-	path := fmt.Sprintf("@/nodes/%s/nics/%s/ring", nodeID, portID)
-	curRing, err := hdl.GetProp(path)
+	nic, err := hdl.GetNic(nodeID, portID)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return echo.NewHTTPError(http.StatusBadRequest, "nic")
 	}
-	// Check that the user isn't trying to re-ring the WAN port
-	// XXX need a better check here; the uplink port could also be
-	// 'internal'; T466.
-	if portID == "wan" || curRing == "wan" {
-		return echo.NewHTTPError(http.StatusForbidden)
+	if input.Ring != nil && nic.Kind != "wired" {
+		return echo.NewHTTPError(http.StatusBadRequest, "ring, wired")
 	}
-	if !cfgapi.ValidRings[input.Ring] {
-		return echo.NewHTTPError(http.StatusBadRequest)
+	if input.Channel != nil && (nic.Kind != "wireless" || nic.WifiInfo == nil) {
+		return echo.NewHTTPError(http.StatusBadRequest, "chan, wireless")
 	}
 
-	ops := []cfgapi.PropertyOp{
-		{
-			Op:   cfgapi.PropTest,
-			Name: path,
-		},
-		{
-			Op:    cfgapi.PropCreate,
-			Name:  path,
-			Value: input.Ring,
-		},
+	var ops []cfgapi.PropertyOp
+	if input.Ring != nil {
+		// Check that the user isn't trying to re-ring the WAN port
+		// XXX need a better check here; the uplink port could also be
+		// 'internal'; T466.
+		if portID == "wan" || nic.Ring == "wan" {
+			return echo.NewHTTPError(http.StatusForbidden)
+		}
+		if !cfgapi.ValidRings[*input.Ring] {
+			return echo.NewHTTPError(http.StatusBadRequest, "bad ring")
+		}
+		path := fmt.Sprintf("@/nodes/%s/nics/%s/ring", nodeID, portID)
+		ops = append(ops, []cfgapi.PropertyOp{
+			{
+				Op:   cfgapi.PropTest,
+				Name: path,
+			},
+			{
+				Op:    cfgapi.PropCreate,
+				Name:  path,
+				Value: *input.Ring,
+			},
+		}...)
 	}
+
+	if input.Channel != nil {
+		if !nic.WifiInfo.ValidChannel(*input.Channel) {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid channel")
+		}
+		testPath := fmt.Sprintf("@/nodes/%s/nics/%s", nodeID, portID)
+		path := fmt.Sprintf("@/nodes/%s/nics/%s/cfg_channel", nodeID, portID)
+		ops = append(ops, []cfgapi.PropertyOp{
+			{
+				Op:   cfgapi.PropTest,
+				Name: testPath,
+			},
+			{
+				Op:    cfgapi.PropCreate,
+				Name:  path,
+				Value: fmt.Sprintf("%d", *input.Channel),
+			},
+		}...)
+	}
+
 	return executePropChange(c, hdl, ops)
 }
 

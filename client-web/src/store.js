@@ -904,17 +904,17 @@ const actions = {
     }
   },
 
-  async setNodePortRing(context, {nodeID, portID, ring}) {
-    debug('setNodePortRing:', nodeID, portID, ring);
+  async setNodePortConfig(context, {nodeID, portID, config}) {
+    debug('setNodePortConfig:', nodeID, portID, config);
     assert.equal(typeof nodeID, 'string');
     assert.equal(typeof portID, 'string');
-    assert.equal(typeof ring, 'string');
+    assert.equal(typeof config, 'object');
     const id = context.state.currentSiteID;
     try {
-      await siteApi.siteNodePortPost(id, nodeID, portID, {ring: ring});
+      await siteApi.siteNodePortPost(id, nodeID, portID, config);
     } finally {
       const nodes = await siteApi.siteNodesGet(id);
-      debug('setNodePortRing: refreshed nodes info', nodes);
+      debug('setNodePortConfig: refreshed nodes info', nodes);
       context.commit('setSiteNodes', {id: id, nodes: nodes});
     }
   },
