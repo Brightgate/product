@@ -463,6 +463,36 @@ func TestAddNestedProp(t *testing.T) {
 	testValidateTree(t, a)
 }
 
+// TestMoveLeaf
+func TestMoveLeaf(t *testing.T) {
+	const (
+		oldProp = "@/clients/64:9a:be:da:b1:9a/dhcp_name"
+		newProp = "@/clients/64:9a:be:da:b1:9a/dns_name"
+	)
+
+	a := testTreeInit(t)
+
+	n, err := propTree.GetNode(oldProp)
+	if err != nil {
+		t.Errorf("GetNode() failed: %v", err)
+	}
+	val := n.Value
+
+	delete(a, oldProp)
+	a[newProp] = val
+
+	propTree.ChangesetInit()
+	err = n.Move(newProp)
+	if err != nil {
+		t.Errorf("Move() failed: %v", err)
+	} else {
+		propTree.ChangesetCommit()
+		checkOneProp(t, oldProp, val, false)
+		checkOneProp(t, newProp, val, true)
+		testValidateTree(t, a)
+	}
+}
+
 // TestDeleteSubtree verifies that we can successfully remove a subtree
 func TestDeleteSubtree(t *testing.T) {
 	const (

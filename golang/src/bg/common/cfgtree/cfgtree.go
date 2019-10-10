@@ -132,6 +132,9 @@ func (node *PNode) Hash() []byte {
 func (node *PNode) Rehash() []byte {
 	if len(node.Children) == 0 {
 		hash := md5.Sum([]byte(node.path + ":" + node.Value))
+		if !bytes.Equal(hash[:], node.hash) {
+			fmt.Printf("bad hash on leaf %s / %s", node.path, node.Value)
+		}
 		return hash[:]
 	}
 
@@ -141,6 +144,9 @@ func (node *PNode) Rehash() []byte {
 		for i := 0; i < md5.Size; i++ {
 			hash[i] ^= chash[i]
 		}
+	}
+	if !bytes.Equal(hash[:], node.hash) {
+		fmt.Printf("bad hash on internal %s", node.path)
 	}
 
 	return hash

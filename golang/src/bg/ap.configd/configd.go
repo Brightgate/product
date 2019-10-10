@@ -669,6 +669,10 @@ func configPropHandler(query *cfgmsg.ConfigQuery) (string, error) {
 		case cfgmsg.ConfigOp_GET:
 			metrics.getCounts.Inc()
 			if err = validateProp(prop); err == nil {
+				if prop == "@/" {
+					refreshEvent()
+				}
+
 				rval, err = cfgPropGet(prop)
 			}
 

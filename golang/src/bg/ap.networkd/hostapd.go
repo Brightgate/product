@@ -1229,7 +1229,7 @@ func hostapdLoop() {
 	var active []*physDevice
 
 	initChannelLists()
-	startTimes := make([]time.Time, failuresAllowed)
+	p := aputil.NewPaceTracker(failuresAllowed, period)
 	virtualAPs = config.GetVirtualAPs()
 
 	for running {
@@ -1243,9 +1243,6 @@ func hostapdLoop() {
 			continue
 		}
 
-		startTimes = append(startTimes[1:failuresAllowed],
-			time.Now())
-
 		hostapd = startHostapd(active)
 		if err := hostapd.wait(); err != nil {
 			slog.Warnf("%v", err)
@@ -1255,8 +1252,8 @@ func hostapdLoop() {
 		hostapd = nil
 
 		if running {
-			if time.Since(startTimes[0]) < period {
-				slog.Warnf("hostapd is dying too quickly")
+			if err := p.Tick(); err != nil {
+				slog.Warnf("hostapd is dying too quickly: %v", err)
 				wifiEvaluate = false
 			}
 			resetInterfaces()

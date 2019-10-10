@@ -289,7 +289,7 @@ func runOne(rc *rConf) {
 	fn := generateRadiusHostapdConf(rc)
 	slog.Debugf("runOne configuration %v", fn)
 
-	startTimes := make([]time.Time, failuresAllowed)
+	tracker := aputil.NewPaceTracker(failuresAllowed, period)
 	for running {
 		args := make([]string, 0)
 		if *hostapdVerbose {
@@ -302,11 +302,9 @@ func runOne(rc *rConf) {
 		hostapdProcess = aputil.NewChild(plat.HostapdCmd, args...)
 		hostapdProcess.UseZapLog("radius: ", slog, zapcore.InfoLevel)
 
-		startTime := time.Now()
-		startTimes = append(startTimes[1:failuresAllowed], startTime)
-
 		slog.Infof("Starting RADIUS hostapd")
 
+		startTime := time.Now()
 		if err := hostapdProcess.Start(); err != nil {
 			rc.Status = fmt.Sprintf("RADIUS hostapd failed to launch: %v", err)
 			break
@@ -314,14 +312,14 @@ func runOne(rc *rConf) {
 
 		hostapdProcess.Wait()
 
-		slog.Infof("RADIUS hostapd exited after %s",
-			time.Since(startTime))
+		slog.Infof("RADIUS hostapd exited after %s", time.Since(startTime))
 
 		if !running {
 			break
 		}
-		if time.Since(startTimes[0]) < period {
-			rc.Status = fmt.Sprintf("Dying too quickly")
+
+		if err := tracker.Tick(); err != nil {
+			rc.Status = fmt.Sprintf("Dying too quickly: %v", err)
 			break
 		}
 
