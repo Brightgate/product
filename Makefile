@@ -702,7 +702,7 @@ build/cross-compile/$(SYSROOT_BLOB_NAME):
 
 $(SYSROOT)/.$(SYSROOT_SUM): build/cross-compile/$(SYSROOT_BLOB_NAME)
 	$(BUILD_SYSROOT_CMD) unpack -d $(subst build/cross-compile/,,$(@D))
-	touch --no-create $@
+	touch $@
 
 archives: install client-web $(VENV_INSTALLED)
 	$(PYTHON3) build/package.py --distro archive --arch $(PKG_DEB_ARCH) --proto $(ROOT)
