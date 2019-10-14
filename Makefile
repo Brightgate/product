@@ -207,7 +207,7 @@ CROSS_CGO_LDFLAGS = --sysroot $(CROSS_SYSROOT)
 CROSS_CGO_CFLAGS = --sysroot $(CROSS_SYSROOT) -I$(CROSS_SYSROOT)/usr/include
 
 SYSROOT = build/cross-compile/sysroot.$(DISTRO).$(SYSROOT_SUM)
-SYSROOT_SUM_arm_openwrt=d562c2318e976d048fc62a31dc867bab309b979f
+SYSROOT_SUM_arm_openwrt=2e168b253ccbeff4e10b75cbfa15dfe2dd5cadd8
 SYSROOT_SUM=$(SYSROOT_SUM_arm_openwrt)
 SYSROOT_LOCAL_FLAGS =
 

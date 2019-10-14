@@ -949,7 +949,8 @@ func f2fsOverlay(side int, clearOverlay bool) {
 		// Without the "rootfs_data" label, the volume_find()
 		// functions in fstools:mount_root will fail.
 
-		mkfs := exec.Command("/usr/sbin/mkfs.f2fs", "-f", "-l", "rootfs_data", loopback)
+		mkfs := exec.Command("/usr/sbin/mkfs.f2fs", "-f",
+			"-l", "rootfs_data", loopback)
 		result, err = mkfs.Output()
 
 		if err != nil {
