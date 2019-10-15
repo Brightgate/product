@@ -212,6 +212,7 @@ type ClientInfo struct {
 	Identity   string     // Current best guess at the client type
 	Confidence float64    // Confidence for the Identity guess
 	DNSPrivate bool       // We don't collect DNS queries
+	Username   string     // Name used for EAP authentication
 	ConnBand   string     // Connection Radio Band (2.4GHz, 5GHz)
 	ConnNode   *uuid.UUID // Connection Node
 	ConnVAP    string     // Connection Virtual AP
@@ -872,7 +873,7 @@ func getClient(client *PropertyNode) *ClientInfo {
 	var ipv4 net.IP
 	var exp *time.Time
 	var wireless, private bool
-	var connVAP, connBand, active string
+	var username, connVAP, connBand, active string
 	var connNode *uuid.UUID
 	var err error
 
@@ -889,6 +890,7 @@ func getClient(client *PropertyNode) *ClientInfo {
 		}
 	}
 	if conn, ok := client.Children["connection"]; ok {
+		username, _ = getStringVal(conn, "username")
 		connVAP, _ = getStringVal(conn, "vap")
 		connBand, _ = getStringVal(conn, "band")
 		connNode, _ = getUUIDVal(conn, "node")
@@ -910,6 +912,7 @@ func getClient(client *PropertyNode) *ClientInfo {
 		Identity:   identity,
 		Confidence: confidence,
 		DNSPrivate: private,
+		Username:   username,
 		ConnBand:   connBand,
 		ConnNode:   connNode,
 		ConnVAP:    connVAP,

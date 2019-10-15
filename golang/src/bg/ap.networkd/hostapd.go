@@ -248,7 +248,7 @@ func (c *hostapdConn) handleResult(result string) {
 	}
 }
 
-func sendNetEntity(mac string, vapName, bandName, sig *string, disconnect bool) {
+func sendNetEntity(mac string, username, vapName, bandName, sig *string, disconnect bool) {
 	band := "?"
 	if bandName != nil {
 		band = *bandName
@@ -257,17 +257,23 @@ func sendNetEntity(mac string, vapName, bandName, sig *string, disconnect bool) 
 	if disconnect {
 		action = "disconnect"
 	}
+	user := "?"
+	if username != nil {
+		user = *username
+	}
 	vap := "?"
 	if vapName != nil {
 		vap = *vapName
 	}
 
-	slog.Debugf("NetEntity(%s, vap: %s, band: %s, %s)", mac, vap, band, action)
+	slog.Debugf("NetEntity(%s, user: %s vap: %s, band: %s, %s)", mac, user,
+		vap, band, action)
 	hwaddr, _ := net.ParseMAC(mac)
 	entity := &base_msg.EventNetEntity{
 		Timestamp:     aputil.NowToProtobuf(),
 		Sender:        proto.String(brokerd.Name),
 		Debug:         proto.String("-"),
+		Username:      username,
 		VirtualAP:     vapName,
 		WifiSignature: sig,
 		Node:          &nodeUUID,
@@ -282,7 +288,7 @@ func sendNetEntity(mac string, vapName, bandName, sig *string, disconnect bool) 
 	}
 }
 
-func sendNetException(mac string, vapName *string,
+func sendNetException(mac, username string, vapName *string,
 	reason *base_msg.EventNetException_Reason) {
 
 	vap := "?"
@@ -290,7 +296,8 @@ func sendNetException(mac string, vapName *string,
 		vap = *vapName
 	}
 
-	slog.Debugf("NetException(%s, vap: %s, reason: %d)", mac, vap, *reason)
+	slog.Debugf("NetException(%s, vap: %s,  user: %s, reason: %d)",
+		mac, vap, *reason)
 	hwaddr, _ := net.ParseMAC(mac)
 	entity := &base_msg.EventNetException{
 		Timestamp:  aputil.NowToProtobuf(),
@@ -299,6 +306,9 @@ func sendNetException(mac string, vapName *string,
 		VirtualAP:  vapName,
 		Reason:     reason,
 		MacAddress: proto.Uint64(network.HWAddrToUint64(hwaddr)),
+	}
+	if username != "" {
+		entity.Username = proto.String(username)
 	}
 
 	err := brokerd.Publish(entity, base_def.TOPIC_EXCEPTION)
@@ -371,7 +381,7 @@ func (c *hostapdConn) getSignature(sta string) {
 	} else if info, ok := c.stations[sta]; ok {
 		if info.signature != sig {
 			info.signature = sig
-			sendNetEntity(sta, &c.vapName, nil, &sig, false)
+			sendNetEntity(sta, nil, &c.vapName, nil, &sig, false)
 		}
 	}
 }
@@ -381,7 +391,7 @@ func (c *hostapdConn) stationPresent(sta string, newConnection bool) {
 	slog.Infof("%v stationPresent(%s) new: %v", c, sta, newConnection)
 	info := c.stations[sta]
 	if info == nil {
-		sendNetEntity(sta, &c.vapName, &c.wifiBand, nil, false)
+		sendNetEntity(sta, nil, &c.vapName, &c.wifiBand, nil, false)
 		info = &stationInfo{}
 		c.stations[sta] = info
 	}
@@ -402,21 +412,32 @@ func (c *hostapdConn) stationPresent(sta string, newConnection bool) {
 func (c *hostapdConn) stationGone(sta string) {
 	slog.Infof("%v stationGone(%s)", c, sta)
 	delete(c.stations, sta)
-	sendNetEntity(sta, &c.vapName, &c.wifiBand, nil, true)
+	sendNetEntity(sta, nil, &c.vapName, &c.wifiBand, nil, true)
 }
 
 func (c *hostapdConn) stationRetransmit(sta string) {
 	reason := base_msg.EventNetException_CLIENT_RETRANSMIT
 
 	slog.Infof("%v stationRetransmit(%s)", c, sta)
-	sendNetException(sta, &c.vapName, &reason)
+	sendNetException(sta, "", &c.vapName, &reason)
 }
 
-func (c *hostapdConn) stationBadPassword(sta string) {
+func (c *hostapdConn) eapSuccess(sta, username string) {
+	var user *string
+
+	if len(username) > 0 {
+		user = &username
+	}
+
+	slog.Infof("%v eapSuccess(%s) user=%s", c, sta, username)
+	sendNetEntity(sta, user, &c.vapName, &c.wifiBand, nil, true)
+}
+
+func (c *hostapdConn) stationBadPassword(sta, username string) {
 	reason := base_msg.EventNetException_BAD_PASSWORD
 
-	slog.Infof("%v stationBadPassword(%s)", c, sta)
-	sendNetException(sta, &c.vapName, &reason)
+	slog.Infof("%v stationBadPassword(%s) user=%s", c, sta, username)
+	sendNetException(sta, username, &c.vapName, &reason)
 }
 
 func (c *hostapdConn) deauthSta(sta string) {
@@ -517,22 +538,31 @@ func (c *hostapdConn) handleStatus(status string) {
 		//    AP-STA-DISCONNECTED b8:27:eb:9f:d8:e0  (client left)
 		//    AP-STA-POLL-OK b8:27:eb:9f:d8:e0       (client still here)
 		//    AP-STA-POSSIBLE-PSK-MISMATCH b8:27:eb:9f:d8:e0  (bad password)
-		//    CTRL-EVENT-EAP-FAILURE2 b8:27:eb:9f:d8:e0  (bad password)
+		//    CTRL-EVENT-EAP-SUCCESS2 b8:27:eb:9f:d8:e0 [username] (success)
+		//    CTRL-EVENT-EAP-FAILURE2 b8:27:eb:9f:d8:e0 [username] (bad password)
 		//    CTRL-EVENT-EAP-RETRANSMIT b8:27:eb:9f:d8:e0 (possibly T268)
 		msgs = "(AP-STA-CONNECTED|AP-STA-DISCONNECTED|" +
 			"AP-STA-POLL-OK|AP-STA-POSSIBLE-PSK-MISMATCH|" +
+			"CTRL-EVENT-EAP-SUCCESS2|CTRL-EVENT-EAP-FAILURE2|" +
 			"CTRL-EVENT-EAP-RETRANSMIT|CTRL-EVENT-EAP-RETRANSMIT2)"
 		macOctet = "[[:xdigit:]][[:xdigit:]]"
 		macAddr  = "(" + macOctet + ":" + macOctet + ":" +
 			macOctet + ":" + macOctet + ":" + macOctet + ":" +
 			macOctet + ")"
+		username = " ?(.*)$"
 	)
 
-	re := regexp.MustCompile(msgs + " " + macAddr)
+	re := regexp.MustCompile(msgs + " " + macAddr + username)
 	m := re.FindStringSubmatch(status)
-	if len(m) == 3 {
+	if len(m) >= 3 {
+		var username string
+
 		msg := m[1]
 		mac := m[2]
+		if len(m) == 4 {
+			username = m[3]
+		}
+
 		switch msg {
 		case "AP-STA-CONNECTED":
 			c.stationPresent(mac, true)
@@ -540,8 +570,10 @@ func (c *hostapdConn) handleStatus(status string) {
 			c.stationPresent(mac, false)
 		case "AP-STA-DISCONNECTED":
 			c.stationGone(mac)
+		case "CTRL-EVENT-EAP-SUCCESS2":
+			c.eapSuccess(mac, username)
 		case "AP-STA-POSSIBLE-PSK-MISMATCH", "CTRL-EVENT-EAP-FAILURE2":
-			c.stationBadPassword(mac)
+			c.stationBadPassword(mac, username)
 		case "CTRL-EVENT-EAP-RETRANSMIT", "CTRL-EVENT-EAP-RETRANSMIT2":
 			c.eapRetransmit(mac)
 		}

@@ -253,6 +253,11 @@ func eventHandler(event []byte) {
 		updateChange(path+"connection/active", &active, nil),
 		updateChange(path+"connection/wireless", &wireless, nil))
 
+	if entity.Username != nil {
+		updates = append(updates,
+			updateChange(path+"connection/username", entity.Username,
+				nil))
+	}
 	if ring = selectRing(hwaddr, client, vap, ring); ring != "" {
 		updates = append(updates,
 			updateChange(path+"ring", &ring, nil))

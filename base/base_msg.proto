@@ -177,6 +177,7 @@ message EventNetEntity {
 	optional string virtualAP = 0x406;
 	optional string wifi_signature = 0x407;
 	optional bool disconnect = 0x408;
+	optional string username = 0x409;
 }
 
 // The network resource is sent whenever an application or service
@@ -263,6 +264,7 @@ message EventNetException {
 	optional fixed32 ipv4_address	= 0x804;
 	optional string virtualAP	= 0x805;
 	repeated string details		= 0x806;
+	optional string username	= 0x807;
 }
 
 // The network identity is sent whenever the identifier daemon is able to
