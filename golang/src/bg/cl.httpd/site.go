@@ -371,6 +371,25 @@ func (a *siteHandler) getDevices(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
+// getDeviceMetrics implements /api/sites/:uuid/devices/:deviceid/metrics
+func (a *siteHandler) getDeviceMetrics(c echo.Context) error {
+	hdl, err := a.getClientHandle(c.Param("uuid"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	defer hdl.Close()
+
+	mac := c.Param("deviceid")
+	metrics := hdl.GetClientMetrics(mac)
+	if metrics == nil {
+		// Not really an error; it means that we don't have metrics
+		// for this client, which is a normal part of operations.
+		// So we just use NoContent.
+		return c.NoContent(http.StatusNotFound)
+	}
+	return c.JSON(http.StatusOK, metrics)
+}
+
 type apiPostDevice struct {
 	FriendlyName *string `json:"friendlyName"`
 	Ring         *string `json:"ring"`
@@ -1307,6 +1326,7 @@ func newSiteHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []echo.M
 	siteU.GET("/configtree", h.getConfigTree, admin)
 	siteU.GET("/devices", h.getDevices, admin)
 	siteU.POST("/devices/:deviceid", h.postDevice, admin)
+	siteU.GET("/devices/:deviceid/metrics", h.getDeviceMetrics, admin)
 	siteU.POST("/enroll_guest", h.postEnrollGuest, user)
 	siteU.GET("/features", h.getFeatures, user)
 	siteU.GET("/health", h.getHealth, user)

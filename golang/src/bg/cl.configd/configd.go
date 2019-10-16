@@ -149,9 +149,9 @@ func main() {
 
 	store = mkStore()
 
-	// Default to refreshing appliance metrics every 30 seconds
+	// Default to refreshing appliance metrics every 10 seconds
 	if environ.MetricsRefresh == 0 {
-		metricsRefreshPeriod = 30 * time.Second
+		metricsRefreshPeriod = 10 * time.Second
 	} else {
 		metricsRefreshPeriod = time.Duration(environ.MetricsRefresh) *
 			time.Second

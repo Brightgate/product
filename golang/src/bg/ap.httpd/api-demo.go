@@ -285,6 +285,23 @@ func demoDevicePostHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func demoDeviceMetricsHandler(w http.ResponseWriter, r *http.Request) {
+
+	vars := mux.Vars(r)
+	deviceID := vars["deviceid"]
+
+	metrics := config.GetClientMetrics(deviceID)
+	if metrics == nil {
+		http.Error(w, "no metrics for client", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(&metrics); err != nil {
+		panic(err)
+	}
+}
+
 func demoDNSInfoGetHandler(w http.ResponseWriter, r *http.Request) {
 	dns := config.GetDNSInfo()
 	w.Header().Set("Content-Type", "application/json")
@@ -1049,6 +1066,7 @@ func makeDemoAPIRouter() *mux.Router {
 	router.HandleFunc("/sites/{s}/config", demoConfigPostHandler).Methods("POST")
 	router.HandleFunc("/sites/{s}/devices", demoDevicesHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/devices/{deviceid}", demoDevicePostHandler).Methods("POST")
+	router.HandleFunc("/sites/{s}/devices/{deviceid}/metrics", demoDeviceMetricsHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/features", demoFeaturesGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/network/dns", demoDNSInfoGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/network/vap", demoVAPGetHandler).Methods("GET")

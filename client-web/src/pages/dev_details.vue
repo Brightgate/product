@@ -57,7 +57,7 @@ div.list-item-secondary-info {
  */
 li.accordion-item >>> span.hide-when-accordion-open {
   opacity: 1;
-  transition: 0.4s opacity ease-in;
+  transition: 0.25s opacity ease-in 0.25s;
 }
 
 li.accordion-item.accordion-item-opened >>> span.hide-when-accordion-open {
@@ -95,7 +95,7 @@ div.title-model {
 
 </style>
 <template>
-  <f7-page>
+  <f7-page @page:beforein="onPageBeforeIn" @page:beforeout="onPageBeforeOut">
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.dev_details.title')" sliding />
     <bg-site-breadcrumb :siteid="$f7route.params.siteID" />
 
@@ -247,6 +247,30 @@ div.title-model {
         </div>
       </f7-list-item>
 
+      <!-- network activity accordion -->
+      <f7-list-item v-if="metrics" :title="$t('message.dev_details.activity')" accordion-item>
+        <span slot="inner" class="hide-when-accordion-open">
+          <bg-traffic-item :metrics="metrics" :interval="METRIC_INTERVALS.MINUTE" />
+        </span>
+        <f7-accordion-content>
+          <f7-list inset>
+            <f7-list-item :title="$t('message.dev_details.last_activity')">
+              {{ lastSeen }}
+            </f7-list-item>
+            <f7-list-item :title="$t('message.dev_details.activity_minute')">
+              <bg-traffic-item :metrics="metrics" :interval="METRIC_INTERVALS.MINUTE" />
+            </f7-list-item>
+            <f7-list-item :title="$t('message.dev_details.activity_hour')">
+              <bg-traffic-item :metrics="metrics" :interval="METRIC_INTERVALS.HOUR" />
+            </f7-list-item>
+            <f7-list-item :title="$t('message.dev_details.activity_day')">
+              <bg-traffic-item :metrics="metrics" :interval="METRIC_INTERVALS.DAY" />
+            </f7-list-item>
+          </f7-list>
+        </f7-accordion-content>
+      </f7-list-item>
+
+      <!-- vulnerability scans -->
       <f7-list-item :title="$t('message.dev_details.vuln_scan')">
         {{ lastVulnScan }}
       </f7-list-item>
@@ -349,21 +373,26 @@ div.title-model {
 
   </f7-page>
 </template>
+
 <script>
 import assert from 'assert';
 import vuex from 'vuex';
-import {isBefore, isEqual} from 'date-fns';
+import prettyBytes from 'pretty-bytes';
+import {isAfter, isBefore, isEqual, sub} from 'date-fns';
 import {pickBy} from 'lodash-es';
 import Debug from 'debug';
 import VueAvatar from 'vue-avatar';
 import {format, formatRelative, parseISO} from '../date-fns-wrapper';
 
+import appDefs from '../app_defs';
 import uiUtils from '../uiutils';
 import vulnerability from '../vulnerability';
 import BGHWIcon from '../components/hw_icon.vue';
 import BGListItemTitle from '../components/list_item_title.vue';
 import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
+import BGTrafficItem from '../components/traffic_item.vue';
 import BGWifiStrength from '../components/wifi_strength.vue';
+import siteApi from '../api/site';
 
 const debug = Debug('page:dev_details');
 
@@ -380,8 +409,23 @@ export default {
     'bg-hw-icon': BGHWIcon,
     'bg-list-item-title': BGListItemTitle,
     'bg-site-breadcrumb': BGSiteBreadcrumb,
+    'bg-traffic-item': BGTrafficItem,
     'bg-wifi-strength': BGWifiStrength,
     'vue-avatar': VueAvatar,
+  },
+
+  filters: {
+    prettyBytes: function(value) {
+      return prettyBytes(value, true);
+    },
+  },
+
+  data: function() {
+    return {
+      METRIC_INTERVALS: appDefs.METRIC_INTERVALS,
+      metrics: {},
+      metricsTimer: null,
+    };
   },
 
   computed: {
@@ -425,6 +469,18 @@ export default {
         this.$t('message.dev_details.active_true') :
         this.$t('message.dev_details.active_false');
     },
+    lastSeen: function() {
+      if (!this.metrics.lastActivity) {
+        return null;
+      }
+      const la = parseISO(this.metrics.lastActivity);
+      if (this.dev.active && isAfter(la, sub(new Date(), {minutes: 1}))) {
+        return 'Now';
+      }
+
+      return formatRelative(parseISO(this.metrics.lastActivity), Date.now());
+    },
+
     activeVulns: function() {
       return pickBy(this.dev.vulnerabilities, 'active');
     },
@@ -574,6 +630,7 @@ export default {
         }
       );
     },
+
     clientFriendlyDialog: async function() {
       debug('clientFriendlyDialog');
       let newFriendly;
@@ -606,6 +663,23 @@ export default {
             {dev: this.dev.hwAddr, newFriendly: newFriendly, err: err});
         }
       );
+    },
+
+    fetchMetrics: async function() {
+      const siteid = this.$f7route.params.siteID;
+      const uniqid = this.$f7route.params.UniqID;
+      const result = await siteApi.siteDeviceMetricsGet(siteid, uniqid);
+      debug('updated metrics', result);
+      this.metrics = result;
+      this.metricsTimeout = setTimeout(() => {this.fetchMetrics();}, 10000);
+    },
+
+    onPageBeforeIn: function() {
+      this.fetchMetrics();
+    },
+    onPageBeforeOut: function() {
+      debug('clearing metricsTimeout');
+      clearTimeout(this.metricsTimeout);
     },
   },
 };

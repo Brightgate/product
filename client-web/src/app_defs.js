@@ -41,5 +41,13 @@ export default {
     NO_SESSION: 4,
   },
 
+  // These also map to the indices in the metrics array
+  METRIC_INTERVALS: {
+    SECOND: 0,
+    MINUTE: 1,
+    HOUR: 2,
+    DAY: 3,
+  },
+
   WIREGUARD_PORT: 51820,
 };

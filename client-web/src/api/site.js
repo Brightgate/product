@@ -193,6 +193,25 @@ async function siteDevicesGet(siteID) {
   return res;
 }
 
+// Load device metrics from the server.
+async function siteDeviceMetricsGet(siteID, devID) {
+  assert.equal(typeof devID, 'string');
+  assert(devID !== '', 'bad devID');
+  let res = null;
+  try {
+    res = await commonApplianceGet(siteID, `devices/${devID}/metrics`);
+  } catch (err) {
+    // 404 means "I don't have metrics for this client"
+    if (err.response && err.response.status && err.response.status === 404) {
+      return null;
+    } else {
+      throw err;
+    }
+  }
+  assert.equal(typeof res, 'object');
+  return res;
+}
+
 async function siteHealthGet(siteID) {
   return await commonApplianceGet(siteID, 'health');
 }
@@ -633,6 +652,7 @@ export default {
   siteConfigWaitProp,
   sitesGet,
   siteDevicesGet,
+  siteDeviceMetricsGet,
   siteHealthGet,
   siteFeaturesGet,
   siteRingsGet,

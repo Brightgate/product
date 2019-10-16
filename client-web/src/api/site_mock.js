@@ -388,6 +388,29 @@ const mockWGNew = {
   'downloadConfContentType': 'application/octet-stream',
 };
 
+function mockMetricsHandler(config) {
+  const timeScale = [1, 60, 60 * 60, 24 * 60 * 60];
+  const pktsSent = timeScale.map((t) => Math.floor(t * Math.random() * 2000));
+  const bytesSent = pktsSent.map((p) => (p * (Math.floor(Math.random() * 1000) + 500)));
+  // use very small value here to test rendering of <1 byte/sec
+  bytesSent[1] = 20;
+
+  const pktsRcvd = timeScale.map((t) => Math.floor(t * Math.random() * 7000));
+  const bytesRcvd = pktsRcvd.map((p) => (p * (Math.floor(Math.random() * 1000) + 500)));
+
+  const metrics = {
+    signalStrength: Math.floor(Math.random() * 50) - 90,
+    lastActivity: new Date().toISOString(),
+    pktsSent,
+    bytesSent,
+    pktsRcvd,
+    bytesRcvd,
+  };
+  debug('mock metrics', metrics);
+
+  return [200, metrics];
+}
+
 const mockEnrollGuest = {
   smsDelivered: true,
   smsErrorCode: 0,
@@ -494,7 +517,8 @@ function mockAxios(normalAxios, mode) {
     .onGet(/\/api\/sites\/.+\/health/).reply(200, mockHealth)
     .onGet(/\/api\/sites\/.+\/config\?.*/).reply(configGetHandler)
     .onPost(/\/api\/sites\/.+\/config/).reply(configPostHandler)
-    .onGet(/\/api\/sites\/.+\/devices/).reply(200, mockDevices)
+    .onGet(/\/api\/sites\/.+\/devices$/).reply(200, mockDevices)
+    .onGet(/\/api\/sites\/.+\/devices\/.*\/metrics/).reply(mockMetricsHandler)
     .onGet(/\/api\/sites\/.+\/rings/).reply(200, mockRings)
     .onGet(/\/api\/sites\/.+\/nodes/).reply(200, mockNodes)
     .onPost(/\/api\/sites\/.+\/enroll_guest$/).reply(200, mockEnrollGuest)
