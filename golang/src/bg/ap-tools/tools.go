@@ -14,7 +14,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+
+	"bg/ap_common/aputil"
 )
 
 var (
@@ -27,16 +28,11 @@ func addTool(tool string, main func()) {
 }
 
 func listTools() {
-	list := make([]string, 0)
-	for n := range tools {
-		if n != pname {
-			list = append(list, n)
-		}
-	}
-	sort.Strings(list)
 	fmt.Printf("Tools:\n")
-	for _, n := range list {
-		fmt.Printf("    %s\n", n)
+	for _, n := range aputil.SortStringKeys(tools) {
+		if n != pname {
+			fmt.Printf("    %s\n", n)
+		}
 	}
 }
 

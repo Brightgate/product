@@ -18,10 +18,10 @@ import (
 	"io/ioutil"
 	"os/exec"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 
+	"bg/ap_common/aputil"
 	"bg/ap_common/platform"
 	"bg/common/wifi"
 )
@@ -156,14 +156,16 @@ func getCapabilities(w *WifiCapabilities, info string) {
 	}
 }
 
-// Using some very crude heuristics, try to determine which wifi modes this
-// device supports
+// The hardware/driver is inconsistent about reporting which subset of a, b, g,
+// and n it supports.  It may tell us that it only supports g/n, but a client
+// will report that it is offering b/g/n.  Using some very crude heuristics, try
+// to determine which wifi modes this device will tell clients it supports.
 func getWifiModes(w *WifiCapabilities, info string) {
 	w.WifiModes = make(map[string]bool)
 
 	// 2.4GHz frequencies imply mode 802.11g support
 	if w.WifiBands[wifi.LoBand] {
-		w.WifiModes["g"] = true
+		w.WifiModes["b/g"] = true
 	}
 
 	// 5GHz frequencies imply mode 802.11a support
@@ -185,15 +187,8 @@ func getWifiModes(w *WifiCapabilities, info string) {
 }
 
 func buildCapabilitiesString(all map[int]capability, found map[int]bool) string {
-	list := make([]int, 0)
-
-	for candidate := range found {
-		list = append(list, candidate)
-	}
-	sort.Ints(list)
-
 	rval := ""
-	for _, c := range list {
+	for _, c := range aputil.SortIntKeys(found) {
 		next := "?"
 		if cap, ok := all[c]; ok {
 			next = cap.name

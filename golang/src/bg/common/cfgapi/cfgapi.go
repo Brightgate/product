@@ -21,6 +21,7 @@ import (
 	"net"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"bg/base_def"
@@ -171,12 +172,15 @@ type WifiInfo struct {
 	ConfigChannel int    `json:"configChannel"` // 0 -> not configured
 	ConfigWidth   string `json:"configWidth"`   // "" -> not configured
 
+	ActiveMode    string `json:"activeMode"`
 	ActiveBand    string `json:"activeBand"`
 	ActiveChannel int    `json:"activeChannel"`
 	ActiveWidth   string `json:"activeWidth"`
 
-	ValidLoChannels []int `json:"validLoChannels"`
-	ValidHiChannels []int `json:"validHiChannels"`
+	ValidBands      []string `json:"validBands"`
+	ValidModes      []string `json:"validModes"`
+	ValidLoChannels []int    `json:"validLoChannels"`
+	ValidHiChannels []int    `json:"validHiChannels"`
 }
 
 // NicInfo contains all the per-nic state stored in the config file
@@ -510,8 +514,30 @@ func getProp(root *PropertyNode, name string) (string, error) {
 	return child.Value, nil
 }
 
+func getStringSlice(root *PropertyNode, name string) ([]string, error) {
+	str, err := getProp(root, name)
+	rval := strings.Split(str, ",")
+	return rval, err
+}
+
 func getStringVal(root *PropertyNode, name string) (string, error) {
 	return getProp(root, name)
+}
+
+func getIntSet(root *PropertyNode, name string) (map[int]bool, error) {
+	set := make(map[int]bool)
+
+	str, err := getProp(root, name)
+	for _, val := range strings.Split(str, ",") {
+		intVal, serr := strconv.Atoi(val)
+		if serr == nil {
+			set[intVal] = true
+		} else if err == nil {
+			err = serr
+		}
+	}
+
+	return set, err
 }
 
 func getIntVal(root *PropertyNode, name string) (int, error) {
@@ -1013,14 +1039,27 @@ func getNic(nic *PropertyNode) NicInfo {
 		w.ConfigBand, _ = getStringVal(nic, "cfg_band")
 		w.ConfigChannel, _ = getIntVal(nic, "cfg_channel")
 		w.ConfigWidth, _ = getStringVal(nic, "cfg_width")
+		w.ActiveMode, _ = getStringVal(nic, "active_mode")
 		w.ActiveBand, _ = getStringVal(nic, "active_band")
 		w.ActiveChannel, _ = getIntVal(nic, "active_channel")
 		w.ActiveWidth, _ = getStringVal(nic, "active_width")
-		// We anticipate that in the future, the appliance will
-		// publish this information in the config tree; for now,
-		// it is static.
-		w.ValidLoChannels = wifi.Channels[wifi.LoBand]
-		w.ValidHiChannels = wifi.Channels[wifi.HiBand]
+		w.ValidBands, _ = getStringSlice(nic, "bands")
+		w.ValidModes, _ = getStringSlice(nic, "modes")
+
+		supported, _ := getIntSet(nic, "channels")
+		w.ValidLoChannels = make([]int, 0)
+		for _, c := range wifi.Channels[wifi.LoBand] {
+			if supported[c] {
+				w.ValidLoChannels = append(w.ValidLoChannels, c)
+			}
+		}
+		w.ValidHiChannels = make([]int, 0)
+		for _, c := range wifi.Channels[wifi.HiBand] {
+			if supported[c] {
+				w.ValidHiChannels = append(w.ValidHiChannels, c)
+			}
+		}
+
 		n.WifiInfo = &w
 	}
 

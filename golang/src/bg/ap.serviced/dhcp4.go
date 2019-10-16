@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -349,11 +348,7 @@ func notifyOptions(hwaddr net.HardwareAddr, options dhcp.Options, msgType dhcp.M
 		return
 	}
 
-	optionkeys := make([]int, 0)
-	for opt := range options {
-		optionkeys = append(optionkeys, int(opt))
-	}
-	sort.Ints(optionkeys)
+	optionkeys := aputil.SortIntKeys(options)
 	slog.Debugf("    Options: %v", optionkeys)
 	slog.Debugf("    ParameterRequestList: %v", options[dhcp.OptionParameterRequestList])
 	if vendorClassIdentifier, ok := options[dhcp.OptionVendorClassIdentifier]; ok {

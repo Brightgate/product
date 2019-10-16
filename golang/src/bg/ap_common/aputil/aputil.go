@@ -20,6 +20,8 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -549,4 +551,30 @@ func IsSatelliteMode() bool {
 	}
 
 	return GetNodeMode() == base_def.MODE_SATELLITE
+}
+
+// SortIntKeys takes an integer-indexed map and returns a sorted slice of the
+// keys
+func SortIntKeys(set interface{}) []int {
+	slice := make([]int, 0)
+
+	iter := reflect.ValueOf(set).MapRange()
+	for iter.Next() {
+		slice = append(slice, int(iter.Key().Int()))
+	}
+	sort.Ints(slice)
+	return slice
+}
+
+// SortStringKeys takes a string-indexed map and returns a sorted slice of the
+// keys
+func SortStringKeys(set interface{}) []string {
+	slice := make([]string, 0)
+
+	iter := reflect.ValueOf(set).MapRange()
+	for iter.Next() {
+		slice = append(slice, iter.Key().String())
+	}
+	sort.Strings(slice)
+	return slice
 }

@@ -17,7 +17,6 @@ import (
 	"net"
 	"os"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -786,12 +785,7 @@ func getVHTCaps(w *wifiInfo) string {
 
 	// Sort the device's capabilities so the ordering of the options in the
 	// file is consistent from run to run
-	caps := make([]int, 0)
-	for cap := range w.cap.VHTCapabilities {
-		caps = append(caps, cap)
-	}
-	sort.Ints(caps)
-
+	caps := aputil.SortIntKeys(w.cap.VHTCapabilities)
 	rval := ""
 	for _, cap := range caps {
 		if option, ok := capToFlag[cap]; ok {
@@ -1034,11 +1028,7 @@ func (h *hostapdHdl) generateHostAPDConf() {
 
 	// build an alphabetical list of vap names, so the order of VAPs in the
 	// config file is deterministic
-	vaps := make([]string, 0)
-	for name := range virtualAPs {
-		vaps = append(vaps, name)
-	}
-	sort.Strings(vaps)
+	vaps := aputil.SortStringKeys(virtualAPs)
 
 	devTemplate, err := template.ParseFiles(devfile)
 	if err != nil {

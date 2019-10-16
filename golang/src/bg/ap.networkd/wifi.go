@@ -42,6 +42,7 @@ type wifiInfo struct {
 	configChannel int    // user-configured channel
 	configWidth   int    // user-configured channel width
 
+	activeMode    string // mode being used
 	activeBand    string // band actually being used
 	activeChannel int    // channel actually being used
 	activeWidth   int    // witdh of channel actually being used
@@ -81,6 +82,19 @@ func setChannel(w *wifiInfo, band string, channel, width int) error {
 	if !channelWidths[width][channel] {
 		return fmt.Errorf("width %d not valid for channel %d",
 			width, channel)
+	}
+
+	if band == wifi.HiBand && w.cap.WifiModes["ac"] {
+		w.activeMode = "ac"
+	} else {
+		if band == wifi.LoBand {
+			w.activeMode = "b/g"
+		} else {
+			w.activeMode = "a"
+		}
+		if w.cap.WifiModes["n"] {
+			w.activeMode += "/n"
+		}
 	}
 
 	w.activeBand = band

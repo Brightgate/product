@@ -606,6 +606,27 @@ func newNicOps(id string, nic *physDevice,
 		}
 		if w := nic.wifi; w != nil {
 			newVals["kind"] = "wireless"
+			if cap := w.cap; cap != nil {
+				b := aputil.SortStringKeys(cap.WifiBands)
+				m := aputil.SortStringKeys(cap.WifiModes)
+				x := aputil.SortIntKeys(cap.Channels)
+				c := make([]string, 0)
+				for _, channel := range x {
+					c = append(c, strconv.Itoa(channel))
+				}
+				if len(b) > 0 {
+					newVals["bands"] = strings.Join(b, ",")
+				}
+				if len(m) > 0 {
+					newVals["modes"] = strings.Join(m, ",")
+				}
+				if len(c) > 0 {
+					newVals["channels"] = strings.Join(c, ",")
+				}
+			}
+			if x := w.activeMode; x != "" {
+				newVals["active_mode"] = x
+			}
 			if x := w.configBand; x != "" {
 				newVals["cfg_band"] = x
 			}
