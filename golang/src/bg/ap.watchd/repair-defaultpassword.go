@@ -89,9 +89,18 @@ func configRepairDefaultPassword(path []string, value string, expires *time.Time
 	vMap := config.GetVulnerabilities(mac)
 	vInfo := vMap["defaultpassword"]
 
-	if (*vInfo.RepairedAt).After(*vInfo.LatestDetected) {
-		slog.Warnf("configRepairDefaultPassword: RepairedAt later " +
-			"than LatestDetected. Skipping.")
+	var repairedAt, latestDetected time.Time
+	if vInfo.RepairedAt != nil {
+		repairedAt = *vInfo.RepairedAt
+	}
+	if vInfo.LatestDetected != nil {
+		latestDetected = *vInfo.LatestDetected
+	}
+
+	if (repairedAt).After(latestDetected) {
+		slog.Warnf("configRepairDefaultPassword: RepairedAt %v later "+
+			"than LatestDetected %v. Skipping.", repairedAt,
+			latestDetected)
 		return
 	}
 
