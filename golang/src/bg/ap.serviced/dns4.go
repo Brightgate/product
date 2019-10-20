@@ -749,7 +749,7 @@ func dnsUpdateClient(c *cfgapi.ClientInfo) {
 	}
 	name := strings.ToLower(configName)
 
-	if !network.ValidDNSName(name) || c.IPv4 == nil {
+	if !network.ValidDNSName(name) || name == "localhost" || c.IPv4 == nil {
 		return
 	}
 
@@ -780,7 +780,12 @@ func dnsUpdateClient(c *cfgapi.ClientInfo) {
 }
 
 func updateOneCname(hostname, canonical string) {
-	hostname = strings.ToLower(hostname) + "." + domainname + "."
+	hostname = strings.ToLower(hostname)
+	if hostname == "localhost" {
+		return
+	}
+
+	hostname += "." + domainname + "."
 	canonical = canonical + "." + domainname + "."
 	slog.Infof("Adding cname %s -> %s", hostname, canonical)
 

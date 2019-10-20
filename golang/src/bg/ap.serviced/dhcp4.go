@@ -535,7 +535,10 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	}
 
 	l.confirmed = true
-	l.name = extractHostname(options)
+	if x := extractHostname(options); strings.ToLower(x) != "localhost" {
+		l.name = x
+	}
+
 	slog.Infof("   REQUEST assigned %s to %s (%q) until %s",
 		l.ipaddr, hwaddr, l.name, l.expires)
 

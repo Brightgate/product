@@ -280,7 +280,7 @@ func validateIPOptPort(val string) error {
 func validateHostname(val string) error {
 	var err error
 
-	if !network.ValidDNSLabel(val) {
+	if !network.ValidDNSLabel(val) || strings.ToLower(val) == "localhost" {
 		err = fmt.Errorf("'%s' is not a valid hostname", val)
 	}
 	return err
@@ -289,7 +289,7 @@ func validateHostname(val string) error {
 func validateDNS(val string) error {
 	var err error
 
-	if !network.ValidDNSName(val) {
+	if !network.ValidDNSName(val) || strings.ToLower(val) == "localhost" {
 		err = fmt.Errorf("'%s' is not a valid DNS name", val)
 	}
 	return err
