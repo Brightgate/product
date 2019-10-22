@@ -98,13 +98,30 @@ var updateCheckTable = []struct {
 	path  *regexp.Regexp
 	check func(string, string) error
 }{
-	{regexp.MustCompile(`^@/uuid$`), uuidCheck},
-	{regexp.MustCompile(`^@/clients/.*/(dns|dhcp)_name$`), dnsCheck},
-	{regexp.MustCompile(`^@/clients/.*/ipv4$`), ipv4Check},
-	{regexp.MustCompile(`^@/network/base_address$`), subnetCheck},
-	{regexp.MustCompile(`^@/network/wan/static.*`), wanCheck},
-	{regexp.MustCompile(`^@/site_index$`), subnetCheck},
-	{regexp.MustCompile(`^@/dns/cnames/`), cnameCheck},
+	{regexp.MustCompile(`^@/uuid$`), checkUUID},
+	{regexp.MustCompile(`^@/clients/.*/(dns|dhcp)_name$`), checkDNS},
+	{regexp.MustCompile(`^@/clients/.*/ipv4$`), checkIPv4},
+	{regexp.MustCompile(`^@/network/base_address$`), checkSubnet},
+	{regexp.MustCompile(`^@/network/wan/static.*`), checkWan},
+	{regexp.MustCompile(`^@/site_index$`), checkSubnet},
+	{regexp.MustCompile(`^@/dns/cnames/`), checkCname},
+}
+
+var updateHandlers = []struct {
+	match   *regexp.Regexp
+	handler func(int, string, string)
+}{
+	{regexp.MustCompile(`^@/network/vap/.*/default_ring$`), updateDefaultRing},
+	{regexp.MustCompile(`^@/settings/ap.configd/.*`), updateSetting},
+}
+
+var configdSettings = map[string]struct {
+	valType    string
+	valDefault string
+}{
+	"verbose":   {"bool", "false"},
+	"log_level": {"string", "info"},
+	"downgrade": {"bool", "false"},
 }
 
 var singletonOps = map[cfgmsg.ConfigOp_Operation]bool{
@@ -135,13 +152,13 @@ var (
  * Broker notifications
  */
 const (
-	urChange = base_msg.EventConfig_CHANGE
-	urDelete = base_msg.EventConfig_DELETE
-	urExpire = base_msg.EventConfig_EXPIRE
+	propChange = iota
+	propDelete
+	propExpire
 )
 
 type updateRecord struct {
-	kind    base_msg.EventConfig_Type
+	kind    int
 	path    string
 	value   string
 	hash    []byte
@@ -150,7 +167,7 @@ type updateRecord struct {
 
 func updateChange(path string, val *string, exp *time.Time) *updateRecord {
 	rec := &updateRecord{
-		kind:    urChange,
+		kind:    propChange,
 		path:    path,
 		expires: exp,
 	}
@@ -163,14 +180,14 @@ func updateChange(path string, val *string, exp *time.Time) *updateRecord {
 
 func updateDelete(path string) *updateRecord {
 	return &updateRecord{
-		kind: urDelete,
+		kind: propDelete,
 		path: path,
 	}
 }
 
 func updateExpire(path string) *updateRecord {
 	return &updateRecord{
-		kind: urExpire,
+		kind: propExpire,
 		path: path,
 	}
 }
@@ -191,10 +208,20 @@ func protoPath(path string) *string {
 // protobufs, and send them to ap.brokerd.
 func updateNotify(records []*updateRecord) {
 	for _, rec := range records {
+		var kind base_msg.EventConfig_Type
+		switch rec.kind {
+		case propChange:
+			kind = base_msg.EventConfig_CHANGE
+		case propDelete:
+			kind = base_msg.EventConfig_DELETE
+		case propExpire:
+			kind = base_msg.EventConfig_EXPIRE
+		}
+
 		entity := &base_msg.EventConfig{
 			Timestamp: aputil.NowToProtobuf(),
 			Sender:    proto.String(pname),
-			Type:      &rec.kind,
+			Type:      &kind,
 			Property:  protoPath(rec.path),
 			NewValue:  proto.String(rec.value),
 			Expires:   aputil.TimeToProtobuf(rec.expires),
@@ -204,6 +231,12 @@ func updateNotify(records []*updateRecord) {
 		err := brokerd.Publish(entity, base_def.TOPIC_CONFIG)
 		if err != nil {
 			slog.Warnf("Failed to propagate config update: %v", err)
+		}
+
+		for _, m := range updateHandlers {
+			if m.match.MatchString(rec.path) {
+				m.handler(rec.kind, rec.path, rec.value)
+			}
 		}
 	}
 }
@@ -305,14 +338,14 @@ func eventHandler(event []byte) {
  * device.
  */
 func defaultRingInit() {
-	virtualAPToDefaultRing = make(map[string]string)
-	ringToVirtualAP = make(map[string]string)
+	vapToRing := make(map[string]string)
+	ringToVap := make(map[string]string)
 
 	// For each virtual AP, find @/network/vap/<id>/default_ring
 	if node, _ := propTree.GetNode("@/network/vap"); node != nil {
 		for id, vap := range node.Children {
 			if ring, ok := vap.Children["default_ring"]; ok {
-				virtualAPToDefaultRing[id] = ring.Value
+				vapToRing[id] = ring.Value
 			}
 		}
 	}
@@ -321,10 +354,12 @@ func defaultRingInit() {
 	if node, _ := propTree.GetNode("@/rings"); node != nil {
 		for ring, config := range node.Children {
 			if vap, ok := config.Children["vap"]; ok {
-				ringToVirtualAP[ring] = vap.Value
+				ringToVap[ring] = vap.Value
 			}
 		}
 	}
+	virtualAPToDefaultRing = vapToRing
+	ringToVirtualAP = ringToVap
 }
 
 // These are the ring transitions we will impose automatically when we find a
@@ -387,7 +422,63 @@ func selectRing(mac string, client *cfgtree.PNode, vap, ring string) string {
 	return newRing
 }
 
-func uuidCheck(prop, uuid string) error {
+func updateDefaultRing(op int, prop, val string) {
+	slog.Infof("updating default ring: %s to %s", prop, val)
+	defaultRingInit()
+}
+
+func updateSetting(op int, prop, val string) {
+	slog.Debugf("updating setting: %s to %s", prop, val)
+
+	path := strings.Split(prop, "/")
+	if len(path) != 4 || path[2] != pname {
+		return
+	}
+
+	if op == propDelete || op == propExpire {
+		// revert to default on setting deletion
+		if setting, ok := configdSettings[path[3]]; ok {
+			val = setting.valDefault
+		}
+	}
+
+	val = strings.ToLower(val)
+	switch path[3] {
+	case "verbose":
+		if val == "true" {
+			*verbose = true
+		} else {
+			*verbose = false
+		}
+	case "log_level":
+		*logLevel = val
+		aputil.LogSetLevel("", *logLevel)
+	case "downgrade":
+		if val == "true" {
+			*allowDowngrade = true
+		} else {
+			*allowDowngrade = false
+		}
+	}
+}
+
+// Add @/settings equivalents of each of our option flags
+func initSettings() {
+	base := "@/settings/" + pname + "/"
+
+	for p, s := range configdSettings {
+		addSetting(base+p, s.valType)
+	}
+
+	// Apply any settings already present in the config tree
+	if settings, _ := propTree.GetNode(base); settings != nil {
+		for name, node := range settings.Children {
+			updateSetting(propChange, base+name, node.Value)
+		}
+	}
+}
+
+func checkUUID(prop, uuid string) error {
 	const nullUUID = "00000000-0000-0000-0000-000000000000"
 
 	node, _ := propTree.GetNode(prop)
@@ -442,7 +533,7 @@ func dnsNameInuse(ignore *cfgtree.PNode, hostname string) bool {
 
 // We only allow setting a static WAN address on platforms with the underlying
 // infrastructure to support it
-func wanCheck(prop, val string) error {
+func checkWan(prop, val string) error {
 	var err error
 
 	if !plat.NetworkManaged {
@@ -455,7 +546,7 @@ func wanCheck(prop, val string) error {
 
 // Validate the hostname that will be used to generate DNS A records
 // for this device
-func dnsCheck(prop, hostname string) error {
+func checkDNS(prop, hostname string) error {
 	var parent *cfgtree.PNode
 	var err error
 
@@ -474,7 +565,7 @@ func dnsCheck(prop, hostname string) error {
 
 // Validate both the hostname and the canonical name that will be
 // used to generate DNS CNAME records
-func cnameCheck(prop, hostname string) error {
+func checkCname(prop, hostname string) error {
 	var err error
 	var cname string
 
@@ -500,7 +591,7 @@ func cnameCheck(prop, hostname string) error {
 
 // Validate that a given site_index and base_address will allow us to generate
 // legal subnet addresses
-func subnetCheck(prop, val string) error {
+func checkSubnet(prop, val string) error {
 	const basePath = "@/network/base_address"
 	const sitePath = "@/site_index"
 	var baseProp, siteProp string
@@ -542,7 +633,7 @@ func subnetCheck(prop, val string) error {
 }
 
 // Validate an ipv4 assignment for this device
-func ipv4Check(prop, addr string) error {
+func checkIPv4(prop, addr string) error {
 	var updating string
 
 	ipv4 := net.ParseIP(addr)
@@ -789,7 +880,7 @@ func configPropHandler(query *cfgmsg.ConfigQuery) (string, error) {
 	} else {
 		changedPaths := make([]string, 0)
 		for _, u := range updates {
-			if u.kind == urChange {
+			if u.kind == propChange {
 				changedPaths = append(changedPaths, u.path)
 			}
 		}
@@ -958,6 +1049,7 @@ func configInit() {
 		fail("propTreeInit() failed: %v", err)
 	}
 
+	initSettings()
 	expirationInit(propTree)
 	defaultRingInit()
 }
