@@ -52,8 +52,8 @@ div.shorter-block {
         }}
       </f7-list-item>
 
-      <f7-list-item :title="$t('message.node_radio.protocol_label')">
-        {{ nic.wifiInfo.activeBand === '2.4GHz' ? '802.11b/g/n' : '802.11a' }}
+      <f7-list-item v-if="nicMode" :title="$t('message.node_radio.protocol_label')">
+        {{ nicMode }}
       </f7-list-item>
 
       <f7-list-item :title="$t('message.node_radio.width_label')">
@@ -157,6 +157,23 @@ export default {
 
     nic: function() {
       return this.node.nics.find((elem) => elem.name === this.$f7route.params.portID);
+    },
+
+    nicMode: function() {
+      if (this.nic.wifiInfo) {
+        if (this.nic.wifiInfo.activeMode) {
+          return `802.11${this.nic.wifiInfo.activeMode}`;
+        }
+        // Fallback heuristic for systems running older s/w which doesn't
+        // report activeMode
+        if (this.nic.wifiInfo.activeBand === '2.4GHz') {
+          return '802.11b/g/n';
+        }
+        if (this.nic.wifiInfo.activeBand === '5GHz') {
+          return '802.11a';
+        }
+      }
+      return undefined;
     },
   },
 
