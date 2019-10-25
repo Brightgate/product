@@ -29,6 +29,7 @@ type APComm struct {
 	url    string
 	client bool
 	isOpen bool
+	debug  bool
 
 	active bool
 	socket mangos.Socket
@@ -101,6 +102,11 @@ func (c *APComm) SetOpenTimeout(d time.Duration) {
 	c.openTimeout = d
 }
 
+// SetDebug enables/disables debug messages
+func (c *APComm) SetDebug(val bool) {
+	c.debug = val
+}
+
 // Close closes the socket
 func (c *APComm) close() {
 	if c.isOpen {
@@ -112,20 +118,34 @@ func (c *APComm) close() {
 // Make a single attempt at creating the socket and either opening the
 // server port or connecting to the server.
 func (c *APComm) tryOpen() error {
+	var err error
+
 	if c.isOpen {
 		return nil
 	}
 
+	if c.debug {
+		log.Printf("open attempt")
+	}
+
 	if c.client {
-		if err := c.socket.Dial(c.url); err != nil {
-			return fmt.Errorf("dialing socket %s: %v", c.url, err)
+		if err = c.socket.Dial(c.url); err != nil {
+			err = fmt.Errorf("dialing socket %s: %v", c.url, err)
 		}
 	} else {
-		if err := c.socket.Listen(c.url); err != nil {
-			return fmt.Errorf("listening on socket %s: %v", c.url, err)
+		if err = c.socket.Listen(c.url); err != nil {
+			err = fmt.Errorf("listening on socket %s: %v", c.url, err)
 		}
 	}
-	c.isOpen = true
+	c.isOpen = (err == nil)
+
+	if c.debug {
+		if c.isOpen {
+			log.Printf("open successful")
+		} else {
+			log.Printf("open failed: %v", err)
+		}
+	}
 
 	return nil
 }
@@ -139,6 +159,9 @@ func (c *APComm) open() error {
 	backoff := time.Duration(time.Millisecond)
 	nextWarn := time.Now()
 
+	if c.debug {
+		log.Printf("Starting open() deadline: %v", deadline)
+	}
 	for c.active {
 		if err = c.tryOpen(); err == nil {
 			break
@@ -146,7 +169,6 @@ func (c *APComm) open() error {
 
 		now := time.Now()
 		if now.After(nextWarn) {
-			log.Printf("open failed: %v", err)
 			nextWarn = time.Now().Add(time.Minute)
 		}
 
@@ -161,6 +183,13 @@ func (c *APComm) open() error {
 		}
 	}
 
+	if c.debug {
+		if err != nil {
+			log.Printf("open failed: %v", err)
+		} else {
+			log.Printf("open successful")
+		}
+	}
 	return err
 }
 
@@ -170,6 +199,7 @@ func (c *APComm) open() error {
 func (c *APComm) Send(msg []byte) ([]byte, error) {
 	var reply []byte
 	var err error
+	var deadlineType string
 
 	c.Lock()
 	defer c.Unlock()
@@ -181,8 +211,18 @@ func (c *APComm) Send(msg []byte) ([]byte, error) {
 	var deadline time.Time
 	if c.socket == nil {
 		deadline = time.Now().Add(c.openTimeout)
-	} else {
+		deadlineType = "open"
+	} else if c.recvTimeout < c.sendTimeout {
 		deadline = time.Now().Add(c.recvTimeout)
+		deadlineType = "recv"
+	} else {
+		deadline = time.Now().Add(c.sendTimeout)
+		deadlineType = "send"
+	}
+
+	if c.debug {
+		log.Printf("Sending %d bytes.  %s deadline: %v",
+			len(msg), deadlineType, deadline)
 	}
 
 	for c.active {
@@ -196,8 +236,21 @@ func (c *APComm) Send(msg []byte) ([]byte, error) {
 		}
 
 		phase := "sending"
+		if c.debug {
+			log.Printf("sending")
+		}
+		timeout := deadline.Sub(time.Now())
+		err = c.socket.SetOption(mangos.OptionSendDeadline, timeout)
+		if err != nil {
+			log.Printf("setting send deadline: %v", err)
+		}
 		if err = c.socket.Send(msg); err == nil {
 			phase = "receiving reply"
+			if c.debug {
+				log.Printf("receiving")
+			}
+			timeout = deadline.Sub(time.Now())
+			err = c.socket.SetOption(mangos.OptionRecvDeadline, timeout)
 			reply, err = c.socket.Recv()
 		}
 		if err == nil {
@@ -205,7 +258,19 @@ func (c *APComm) Send(msg []byte) ([]byte, error) {
 		}
 
 		err = fmt.Errorf("%s: %v", phase, err)
+		if c.debug {
+			log.Printf("failed: %v", err)
+		}
 		c.close()
+	}
+
+	if c.debug {
+		if err != nil {
+			log.Printf("send failed: %v", err)
+		} else {
+			log.Printf("sent %d bytes, got %d bytes",
+				len(msg), len(reply))
+		}
 	}
 
 	return reply, err

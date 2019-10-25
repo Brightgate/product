@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -358,7 +358,8 @@ func watchctl() {
 		watchUsage()
 	}
 
-	url := base_def.LOCAL_COMM_URL + base_def.WATCHD_COMM_REP_PORT
+	findGateway()
+	url := aputil.GatewayURL(base_def.WATCHD_COMM_REP_PORT)
 	comm, err := comms.NewAPClient(url)
 	if err != nil {
 		fmt.Printf("%s: unable to connect to watchd: %v\n", pname, err)

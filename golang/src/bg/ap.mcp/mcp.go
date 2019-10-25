@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -66,8 +67,9 @@ var (
 
 	plat *platform.Platform
 
-	nodeName string
-	nodeMode string
+	nodeName    string
+	nodeMode    string
+	gatewayAddr = net.IPv4(127, 0, 0, 1)
 )
 
 func reboot(from string) {

@@ -83,6 +83,7 @@ message MCPRequest {
 		DO = 4;
 		UPDATE = 5;
 		REBOOT = 6;
+		GATEWAY = 7;
 	}
 	required Operation operation = 0x140;
 

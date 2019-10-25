@@ -211,8 +211,6 @@ assignments = [
 
     [Statement.COMMENT, "Communications definitions"],
     [Statement.SIMPLE_STR, "INCOMING_COMM_URL", "tcp://*"],
-    [Statement.SIMPLE_STR, "LOCAL_COMM_URL", "tcp://127.0.0.1"],
-    [Statement.SIMPLE_STR, "GATEWAY_COMM_URL", "tcp://gateway"],
     [Statement.SIMPLE_PORT, "BROKER_COMM_BUS_PORT", 3131],
     [Statement.SIMPLE_PORT, "CONFIGD_COMM_REP_PORT", 3132],
     [Statement.SIMPLE_PORT, "WATCHD_COMM_REP_PORT", 3133],

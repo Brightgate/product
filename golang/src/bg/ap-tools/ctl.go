@@ -29,18 +29,19 @@ var (
 	colFormat  string
 )
 
-var validCmds = map[string]bool{
-	"status":  true,
-	"stop":    true,
-	"start":   true,
-	"restart": true,
-	"crash":   true,
+var validCmds = map[string]int{
+	"ip":      0,
+	"status":  1,
+	"stop":    1,
+	"start":   1,
+	"restart": 1,
+	"crash":   1,
 }
 
 func ctlUsage() {
-	fmt.Printf("usage:\t%s <status | stop | start | restart | crash > daemon...\n"+
-		"\t%s <status | stop | start | restart | crash > all\n",
-		pname, pname)
+	fmt.Printf("usage:\t%s ip\n", pname)
+	fmt.Printf("      \t%s <status | stop | start | restart | crash >"+
+		" <daemon> | all\n", pname)
 	os.Exit(2)
 }
 
@@ -147,12 +148,14 @@ func ctl() {
 	var cmd, daemon string
 	var err error
 
-	if len(os.Args) < 3 {
-		ctlUsage()
+	args := os.Args[1:]
+	if len(args) > 0 {
+		cmd = args[0]
+		args = args[1:]
 	}
 
-	cmd = os.Args[1]
-	if _, ok := validCmds[cmd]; !ok {
+	minArgs, ok := validCmds[cmd]
+	if !ok || len(args) < minArgs {
 		ctlUsage()
 	}
 
@@ -162,7 +165,20 @@ func ctl() {
 		os.Exit(1)
 	}
 
-	for _, daemon = range os.Args[2:] {
+	if cmd == "ip" {
+		var status int
+
+		ip, err := mcp.Gateway()
+		if err == nil {
+			fmt.Printf("%v\n", ip)
+		} else {
+			fmt.Printf("failed to get gateway: %v", err)
+			status = 1
+		}
+		os.Exit(status)
+	}
+
+	for _, daemon = range args {
 		if cmd == "status" {
 			var rval string
 			rval, err = mcp.GetState(daemon)

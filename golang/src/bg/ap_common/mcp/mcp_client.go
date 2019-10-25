@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"sort"
 	"strings"
@@ -41,6 +42,10 @@ type MCP struct {
 // Version gets incremented whenver the MCP protocol changes incompatibly
 const Version = int32(1)
 
+var (
+	msgVersion = base_msg.Version{Major: proto.Int32(Version)}
+)
+
 // Shorthand forms of base_msg commands and error codes
 const (
 	OK       = base_msg.MCPResponse_OP_OK
@@ -48,12 +53,13 @@ const (
 	NODAEMON = base_msg.MCPResponse_NO_DAEMON
 	BADVER   = base_msg.MCPResponse_BADVERSION
 
-	PING   = base_msg.MCPRequest_PING
-	GET    = base_msg.MCPRequest_GET
-	SET    = base_msg.MCPRequest_SET
-	DO     = base_msg.MCPRequest_DO
-	UPDATE = base_msg.MCPRequest_UPDATE
-	REBOOT = base_msg.MCPRequest_REBOOT
+	PING    = base_msg.MCPRequest_PING
+	GET     = base_msg.MCPRequest_GET
+	SET     = base_msg.MCPRequest_SET
+	DO      = base_msg.MCPRequest_DO
+	UPDATE  = base_msg.MCPRequest_UPDATE
+	REBOOT  = base_msg.MCPRequest_REBOOT
+	GATEWAY = base_msg.MCPRequest_GATEWAY
 )
 
 // Daemons must be in one of the following states
@@ -116,12 +122,10 @@ func (l DaemonList) Sort() {
 	sort.Sort(l)
 }
 
-func newConnection(name, base string) (*MCP, error) {
+func newConnection(name string, ip net.IP) (*MCP, error) {
 	var handle *MCP
 
-	plat := platform.NewPlatform()
-	url := base + base_def.MCP_COMM_REP_PORT
-
+	url := "tcp://" + ip.String() + base_def.MCP_COMM_REP_PORT
 	comm, err := comms.NewAPClient(url)
 	if err != nil {
 		err = fmt.Errorf("creating APClient: %v", err)
@@ -130,13 +134,12 @@ func newConnection(name, base string) (*MCP, error) {
 		handle = &MCP{
 			sender:   sender,
 			comm:     comm,
-			platform: plat,
+			platform: platform.NewPlatform(),
 		}
 		if name[0:3] == "ap." {
 			handle.daemon = name[3:]
 			handle.SetState(INITING)
 		}
-
 		if err = handle.Ping(); err != nil {
 			handle = nil
 		}
@@ -145,20 +148,28 @@ func newConnection(name, base string) (*MCP, error) {
 	return handle, err
 }
 
-// New connects to ap.mcp, and returns an opaque handle that can be used for
-// subsequent communication with the daemon.
+// New connects to ap.mcp on this node, and returns an opaque handle that can be
+// used for subsequent communication with the daemon.
 func New(name string) (*MCP, error) {
-	return newConnection(name, base_def.LOCAL_COMM_URL)
+	ip := net.IPv4(127, 0, 0, 1)
+	return newConnection(name, ip)
 }
 
 // NewPeer connects to ap.mcp running on a gateway node, and returns an opaque
 // handle that can be used for subsequent communication with the daemon.
-func NewPeer(name string) (*MCP, error) {
+func NewPeer(name string, ip net.IP) (*MCP, error) {
 	if name != "ap.mcp" {
 		log.Printf("Warning: NewPeer() is only intended to be called " +
 			"by ap.mcp on satellite nodes.")
 	}
-	return newConnection(name, base_def.GATEWAY_COMM_URL)
+	c, err := newConnection(name, ip)
+	if err == nil {
+		c.comm.SetRecvTimeout(time.Second)
+		c.comm.SetSendTimeout(time.Second)
+		c.comm.SetOpenTimeout(time.Second)
+	}
+
+	return c, err
 }
 
 // Close closes the connection to the mcp daemon
@@ -213,11 +224,10 @@ func (m *MCP) msg(op *base_msg.MCPRequest) (string, error) {
 // protocol version check.
 func (m *MCP) Ping() error {
 	oc := PING
-	version := base_msg.Version{Major: proto.Int32(Version)}
 	op := &base_msg.MCPRequest{
 		Timestamp: aputil.NowToProtobuf(),
 		Sender:    proto.String(m.sender),
-		Version:   &version,
+		Version:   &msgVersion,
 		Debug:     proto.String("-"),
 		Operation: &oc,
 	}
@@ -241,11 +251,10 @@ func (m *MCP) PeerUpdate(lifetime time.Duration,
 		err = fmt.Errorf("failed to marshal daemon state: %v", err)
 	} else {
 		oc := UPDATE
-		version := base_msg.Version{Major: proto.Int32(Version)}
 		op := &base_msg.MCPRequest{
 			Timestamp: aputil.NowToProtobuf(),
 			Sender:    proto.String(m.sender),
-			Version:   &version,
+			Version:   &msgVersion,
 			Debug:     proto.String("-"),
 			State:     proto.String(string(b)),
 			Node:      proto.String(nodeID),
@@ -267,11 +276,10 @@ func (m *MCP) PeerUpdate(lifetime time.Duration,
 func (m *MCP) daemonMsg(oc base_msg.MCPRequest_Operation,
 	daemon, command string, state int) (string, error) {
 
-	version := base_msg.Version{Major: proto.Int32(Version)}
 	op := &base_msg.MCPRequest{
 		Timestamp: aputil.NowToProtobuf(),
 		Sender:    proto.String(m.sender),
-		Version:   &version,
+		Version:   &msgVersion,
 		Debug:     proto.String("-"),
 		Operation: &oc,
 		Daemon:    proto.String(daemon),
@@ -309,8 +317,9 @@ func (m *MCP) SetState(state int) error {
 // Do is used to instruct ap.mcp to initiate an operation on a daemon
 func (m *MCP) Do(daemon, command string) error {
 	// Allow time for the daemons to grind to a halt
-	if command == "stop" {
+	if command == "stop" || command == "restart" {
 		m.comm.SetRecvTimeout(15 * time.Second)
+		m.comm.SetSendTimeout(15 * time.Second)
 	}
 	_, err := m.daemonMsg(DO, daemon, command, -1)
 
@@ -320,18 +329,40 @@ func (m *MCP) Do(daemon, command string) error {
 // Reboot is used to instruct ap.mcp to reboot the platform
 func (m *MCP) Reboot() error {
 	cmd := base_msg.MCPRequest_REBOOT
-	version := base_msg.Version{Major: proto.Int32(Version)}
 
 	op := &base_msg.MCPRequest{
 		Timestamp: aputil.NowToProtobuf(),
 		Sender:    proto.String(m.sender),
-		Version:   &version,
+		Version:   &msgVersion,
 		Debug:     proto.String("-"),
 		Operation: &cmd,
 	}
 
 	_, err := m.msg(op)
 	return err
+}
+
+// Gateway returns the IP address of the gateway node
+func (m *MCP) Gateway() (net.IP, error) {
+	var ip net.IP
+
+	cmd := base_msg.MCPRequest_GATEWAY
+	op := &base_msg.MCPRequest{
+		Timestamp: aputil.NowToProtobuf(),
+		Sender:    proto.String(m.sender),
+		Version:   &msgVersion,
+		Debug:     proto.String("-"),
+		Operation: &cmd,
+	}
+
+	rval, err := m.msg(op)
+	if err == nil {
+		ip = net.ParseIP(rval)
+		if ip == nil {
+			err = fmt.Errorf("bad IP address: %s", rval)
+		}
+	}
+	return ip, err
 }
 
 // GetComm returns the APComm handle used to communicate with the mcp daemon

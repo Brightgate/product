@@ -301,6 +301,11 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 		}
 		reboot(from)
 
+	case mcp.GATEWAY:
+		ip := gatewayAddr.String()
+		rval = &ip
+		code = mcp.OK
+
 	default:
 		code = mcp.INVALID
 	}

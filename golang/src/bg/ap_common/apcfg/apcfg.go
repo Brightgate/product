@@ -140,16 +140,20 @@ func (c *cmdStatus) Wait(ctx context.Context) (string, error) {
 func NewConfigdHdl(b *broker.Broker, name string,
 	level cfgapi.AccessLevel) (*cfgapi.Handle, error) {
 
-	var url string
-	var err error
-
 	plat := platform.NewPlatform()
 	if _, ok := cfgapi.AccessLevelNames[level]; !ok {
 		return nil, fmt.Errorf("invalid access level: %d", level)
 	}
 
+	url := aputil.GatewayURL(base_def.CONFIGD_COMM_REP_PORT)
+	comm, err := comms.NewAPClient(url)
+	if err != nil {
+		return nil, fmt.Errorf("creating new client: %v", err)
+	}
+
 	c := &APConfig{
 		name:           name,
+		comm:           comm,
 		sender:         fmt.Sprintf("%s(%d)", name, os.Getpid()),
 		broker:         b,
 		platform:       plat,
@@ -157,17 +161,6 @@ func NewConfigdHdl(b *broker.Broker, name string,
 		changeHandlers: make([]changeMatch, 0),
 		deleteHandlers: make([]delexpMatch, 0),
 		expireHandlers: make([]delexpMatch, 0),
-	}
-
-	if aputil.IsSatelliteMode() {
-		url = base_def.GATEWAY_COMM_URL + base_def.CONFIGD_COMM_REP_PORT
-	} else {
-		url = base_def.LOCAL_COMM_URL + base_def.CONFIGD_COMM_REP_PORT
-	}
-
-	c.comm, err = comms.NewAPClient(url)
-	if err != nil {
-		return nil, fmt.Errorf("creating new client: %v", err)
 	}
 
 	hdl := cfgapi.NewHandle(c)

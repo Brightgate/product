@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 
 	"bg/ap_common/aputil"
+	"bg/ap_common/mcp"
 )
 
 var (
@@ -25,6 +26,26 @@ var (
 
 func addTool(tool string, main func()) {
 	tools[tool] = main
+}
+
+func findGateway() {
+	if os.Getenv("APGATEWAY") != "" {
+		return
+	}
+
+	mcp, err := mcp.New(pname)
+	if err != nil {
+		fmt.Printf("%s: connecting to mcp: %v\n", pname, err)
+		os.Exit(1)
+	}
+	ip, err := mcp.Gateway()
+	if err != nil {
+		fmt.Printf("%s: finding gateway: %v\n", pname, err)
+		os.Exit(1)
+	}
+
+	mcp.Close()
+	os.Setenv("APGATEWAY", ip.String())
 }
 
 func listTools() {

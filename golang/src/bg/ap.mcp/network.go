@@ -54,8 +54,9 @@ func findWan() (string, *dhcp.Info) {
 	return wanNic, wanLease
 }
 
-// If we can't determine the mode when we first start up, we need to keep
-// checking until we get a DHCP lease, which will give us the answer.
+// If we can't determine the mode when we first start up, we assume that we're
+// running as a gateway.  We will keep checking until we get a DHCP lease, which
+// will give us the definitive answer.
 func modeMonitor() {
 	var nic, oldMode, newMode string
 

@@ -248,6 +248,7 @@ func userctl() {
 		}
 	}
 
+	findGateway()
 	config, err = apcfg.NewConfigd(nil, pname, cfgapi.AccessInternal)
 	if err != nil {
 		log.Fatalf("cannot connect to configd: %v\n", err)

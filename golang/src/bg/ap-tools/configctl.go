@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -43,6 +43,7 @@ func configctlMain() {
 		os.Exit(1)
 	}
 
+	findGateway()
 	slog := aputil.NewLogger(pname)
 	brokerd, err := broker.NewBroker(slog, pname)
 	if err != nil {

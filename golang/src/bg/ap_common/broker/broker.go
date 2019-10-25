@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -157,28 +157,21 @@ func (b *Broker) Handle(topic string, handler handlerF) {
 }
 
 func (b *Broker) connect() error {
-	var port string
 	var err error
 
-	b.socket, err = bus.NewSocket()
-	if err != nil {
-		return errors.Wrap(err, "failed to create subscriber socket")
-	}
+	if b.socket, err = bus.NewSocket(); err != nil {
+		err = errors.Wrap(err, "creating subscriber socket")
 
-	if aputil.IsSatelliteMode() {
-		port = base_def.GATEWAY_COMM_URL + base_def.BROKER_COMM_BUS_PORT
 	} else {
-		port = base_def.LOCAL_COMM_URL + base_def.BROKER_COMM_BUS_PORT
+		url := aputil.GatewayURL(base_def.BROKER_COMM_BUS_PORT)
+		if err = b.socket.Dial(url); err != nil {
+			err = errors.Wrapf(err, "connecting to %s", url)
+		} else {
+			go eventListener(b)
+		}
 	}
 
-	err = b.socket.Dial(port)
-	if err != nil {
-		return errors.Wrapf(err, "failed to connect subscriber to %s", port)
-	}
-
-	go eventListener(b)
-
-	return nil
+	return err
 }
 
 // Fini closes the subscriber's connection to the broker

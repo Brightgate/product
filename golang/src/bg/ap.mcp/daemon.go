@@ -30,8 +30,9 @@ import (
 )
 
 const (
-	// Allow up to 4 failures in a 1 minute period before giving up
-	failuresAllowed = 4
+	// If a daemon fails 10 times in a row, we will stop trying to restart
+	// it.
+	failuresAllowed = 10
 	successTime     = time.Duration(time.Minute)
 	warnPeriod      = time.Duration(5 * time.Minute)
 
@@ -118,6 +119,16 @@ var (
 		mcp.STOPPING: stateStopping,
 	}
 )
+
+func activeDaemons() daemonSet {
+	list := make(daemonSet)
+	for n, d := range daemons.local {
+		if !d.offline() {
+			list[n] = d
+		}
+	}
+	return list
+}
 
 func (d *daemon) online() bool {
 	return d.state == mcp.FAILSAFE || d.state == mcp.ONLINE
@@ -218,6 +229,7 @@ func (d *daemon) start() {
 		}
 	}
 	os.Setenv("APMODE", nodeMode)
+	os.Setenv("APGATEWAY", gatewayAddr.String())
 	child := aputil.NewChild(d.execpath, d.args...)
 	child.UseStdLog("", 0, out)
 
@@ -346,19 +358,21 @@ func stateOffline(d *daemon) {
 		}
 	}
 
+	restartDelay := time.Second * time.Duration(d.failures)
+	ready := time.Since(d.startTime) > restartDelay
 	if d.goalState == mcp.ONLINE {
 		if d.blocked() {
 			d.setState(mcp.BLOCKED)
 			d.failures = 0
 
-		} else if d.failures <= failuresAllowed {
+		} else if d.failures > failuresAllowed {
+			logWarn("%s is dying too quickly", d.Name)
+			d.setState(mcp.BROKEN)
+
+		} else if ready {
 			d.startTime = time.Now()
 			d.exitDetected = false
 			d.start()
-
-		} else {
-			logWarn("%s is dying too quickly", d.Name)
-			d.setState(mcp.BROKEN)
 		}
 	}
 }
@@ -370,7 +384,7 @@ func stateBroken(d *daemon) {
 }
 
 func (d *daemon) daemonLoop() {
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
 	d.Lock()

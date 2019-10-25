@@ -544,6 +544,22 @@ func GetNodeMode() string {
 	return nodeMode
 }
 
+// GatewayIP attempts to extract the IP address of the gateway node from the
+// APGATEWAY environment variable.  If that fails, it defaults to localhost.
+func GatewayIP() net.IP {
+	ip := net.ParseIP(os.Getenv("APGATEWAY"))
+	if ip == nil {
+		ip = net.IPv4(127, 0, 0, 1)
+	}
+
+	return ip
+}
+
+// GatewayURL constructs a dial-able URL for a service on the gateway node
+func GatewayURL(port string) string {
+	return "tcp://" + GatewayIP().String() + port
+}
+
 // IsSatelliteMode checks to see whether this node is running as a mesh node
 func IsSatelliteMode() bool {
 	if os.Getenv("APMODE") == base_def.MODE_SATELLITE {
