@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/mail"
 	"os"
 	"strings"
 	"time"
@@ -499,6 +500,18 @@ func (a *authHandler) getUser(c echo.Context, user goth.User) (*appliancedb.Logi
 
 	c.Logger().Debugf("getUser for %v|%v", user.Provider, user.UserID)
 
+	// Try to handle things if user.Email is empty
+	if user.Provider == "azureadv2" && user.Email == "" {
+		upn, ok := user.RawData["userPrincipalName"].(string)
+		if ok && upn != "" {
+			if addr, err := mail.ParseAddress(upn); err == nil {
+				c.Logger().Debugf("using userPrincipalName %s for %v|%v",
+					addr.Address, user.Provider, user.UserID)
+				user.Email = addr.Address
+			}
+		}
+	}
+
 	loginInfo, err := a.db.LoginInfoByProviderAndSubject(
 		ctx, user.Provider, user.UserID)
 	if _, ok := err.(appliancedb.NotFoundError); ok {
@@ -572,7 +585,7 @@ func (a *authHandler) getProviderCallback(c echo.Context) error {
 	if err != nil && session == nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
-	session.Values["email"] = user.Email
+	session.Values["email"] = loginInfo.Account.Email
 	session.Values["userid"] = sessionUserID
 	session.Values["auth_time"] = time.Now().Format(time.RFC3339)
 	session.Values["account_uuid"] = loginInfo.Account.UUID.String()
