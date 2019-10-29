@@ -605,19 +605,7 @@ func testOAuth2OrganizationRule(t *testing.T, ds DataStore, logger *zap.Logger, 
 	const testEmail = "foo@brightgate-test.net"
 	const testProvider = "google"
 
-	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, nil)
-	// Add second customer site under same org, for later testing
-	s2 := &CustomerSite{
-		UUID:             uuid.NewV4(),
-		OrganizationUUID: testOrg1.UUID,
-		Name:             "7411",
-	}
-	err = ds.InsertCustomerSite(ctx, s2)
-	assert.NoError(err, "expected Insert to succeed")
-
-	doms, err := ds.AllOAuth2OrganizationRules(ctx)
-	assert.NoError(err, "expected success")
-	assert.Len(doms, 0)
+	mkOrgSiteApp(t, ds, &testOrg1, nil, nil)
 
 	testCases := map[OAuth2OrgRuleType]string{
 		RuleTypeTenant: testTenant,
@@ -625,33 +613,66 @@ func testOAuth2OrganizationRule(t *testing.T, ds DataStore, logger *zap.Logger, 
 		RuleTypeEmail:  testEmail,
 	}
 
-	rules, err := ds.AllOAuth2OrganizationRules(ctx)
-	assert.NoError(err, "expected success")
-	assert.Len(rules, 0)
-
 	for ruleType, ruleVal := range testCases {
 		rTest := &OAuth2OrganizationRule{testProvider, ruleType, ruleVal, testOrg1.UUID}
 
+		rules, err := ds.AllOAuth2OrganizationRules(ctx)
+		assert.NoError(err)
+		assert.Len(rules, 0)
+
 		err = ds.InsertOAuth2OrganizationRule(ctx, rTest)
-		assert.NoError(err, "expected Insert to succeed")
-		// Test that a second insert of the same UUID fails
+		assert.NoError(err, "expected first insert to succeed")
 		err = ds.InsertOAuth2OrganizationRule(ctx, rTest)
-		assert.Error(err, "expected Insert to fail")
+		assert.Error(err, "expected duplicate insert to fail")
 
 		// Test successful rule
 		rule, err := ds.OAuth2OrganizationRuleTest(ctx, testProvider, ruleType, ruleVal)
-		assert.NoError(err, "expected success")
+		assert.NoError(err)
 		assert.Equal(*rTest, *rule)
 
 		// Test unsuccessful rule
 		_, err = ds.OAuth2OrganizationRuleTest(ctx, testProvider, ruleType, "foo")
-		assert.Error(err, "expected error")
+		assert.Error(err)
 		assert.IsType(NotFoundError{}, err)
+
+		rules, err = ds.AllOAuth2OrganizationRules(ctx)
+		assert.NoError(err)
+		assert.Len(rules, 1)
+
+		err = ds.DeleteOAuth2OrganizationRule(ctx, rule)
+		assert.NoError(err)
 	}
 
-	rules, err = ds.AllOAuth2OrganizationRules(ctx)
-	assert.NoError(err, "expected success")
-	assert.Len(rules, 3)
+	// Test case insensitivity for email rules
+	eTest := "upANDdown@domain.com"
+	err = ds.InsertOAuth2OrganizationRule(ctx, &OAuth2OrganizationRule{testProvider, "email", eTest, testOrg1.UUID})
+	assert.NoError(err)
+	_, err = ds.OAuth2OrganizationRuleTest(ctx, testProvider, "email", eTest)
+	assert.NoError(err)
+	_, err = ds.OAuth2OrganizationRuleTest(ctx, testProvider, "email", strings.ToLower(eTest))
+	assert.NoError(err)
+	rEmail, err := ds.OAuth2OrganizationRuleTest(ctx, testProvider, "email", strings.ToUpper(eTest))
+	assert.NoError(err)
+
+	// Test case insensitivity for domain rules
+	eTest = "upANDdown.com"
+	err = ds.InsertOAuth2OrganizationRule(ctx, &OAuth2OrganizationRule{testProvider, "domain", eTest, testOrg1.UUID})
+	assert.NoError(err)
+	_, err = ds.OAuth2OrganizationRuleTest(ctx, testProvider, "domain", eTest)
+	assert.NoError(err)
+	_, err = ds.OAuth2OrganizationRuleTest(ctx, testProvider, "domain", strings.ToLower(eTest))
+	assert.NoError(err)
+	rDomain, err := ds.OAuth2OrganizationRuleTest(ctx, testProvider, "domain", strings.ToUpper(eTest))
+	assert.NoError(err)
+
+	rules, err := ds.AllOAuth2OrganizationRules(ctx)
+	assert.NoError(err)
+	assert.Len(rules, 2)
+
+	err = ds.DeleteOAuth2OrganizationRule(ctx, rEmail)
+	assert.NoError(err)
+	err = ds.DeleteOAuth2OrganizationRule(ctx, rDomain)
+	assert.NoError(err)
 }
 
 // Test Person APIs.  subtest of TestDatabaseModel

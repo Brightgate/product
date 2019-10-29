@@ -152,6 +152,22 @@ func NewOAuth2OrganizationRule(ctx context.Context, db appliancedb.DataStore,
 	return nil
 }
 
+// DeleteOAuth2OrganizationRule registers a new oauth2_organization_rule in the registry.
+func DeleteOAuth2OrganizationRule(ctx context.Context, db appliancedb.DataStore,
+	provider string, ruleType appliancedb.OAuth2OrgRuleType,
+	ruleValue string) (*appliancedb.OAuth2OrganizationRule, error) {
+
+	rule, err := db.OAuth2OrganizationRuleTest(ctx, provider, ruleType, ruleValue)
+	if err != nil {
+		return nil, err
+	}
+	err = db.DeleteOAuth2OrganizationRule(ctx, rule)
+	if err != nil {
+		return nil, err
+	}
+	return rule, nil
+}
+
 // AccountInformation is a convenience type to return detailed information
 // about a single user account; it includes associated structures Person,
 // Organization, and any OAuth2Identity records.

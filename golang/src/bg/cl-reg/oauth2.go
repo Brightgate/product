@@ -51,6 +51,33 @@ func newOAuth2OrgRule(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func delOAuth2OrgRule(cmd *cobra.Command, args []string) error {
+	provider := args[0]
+	ruleType := appliancedb.OAuth2OrgRuleType(args[1])
+	ruleValue := args[2]
+
+	if ruleType != appliancedb.RuleTypeTenant &&
+		ruleType != appliancedb.RuleTypeDomain &&
+		ruleType != appliancedb.RuleTypeEmail {
+		return fmt.Errorf("Invalid rule type %q; use 'tenant', 'domain', or 'email'", ruleType)
+	}
+
+	db, _, err := assembleRegistry(cmd)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	rule, err := registry.DeleteOAuth2OrganizationRule(context.Background(), db, provider,
+		ruleType, ruleValue)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Deleted OAuth2OrgRule: provider=%q, ruleType=%q ruleValue=%q org=%q\n",
+		rule.Provider, rule.RuleType, rule.RuleValue, rule.OrganizationUUID)
+	return nil
+}
+
 func listOAuth2OrgRules(cmd *cobra.Command, args []string) error {
 	db, _, err := assembleRegistry(cmd)
 	if err != nil {
@@ -104,4 +131,13 @@ func oauth2Main(rootCmd *cobra.Command) {
 	}
 	listOAuth2OrgRuleCmd.Flags().StringP("input", "i", "", "registry data JSON file")
 	oauth2OrgRuleCmd.AddCommand(listOAuth2OrgRuleCmd)
+
+	delOAuth2OrgRuleCmd := &cobra.Command{
+		Use:   "del [flags] <provider> [tenant|domain|email] <value>",
+		Args:  cobra.ExactArgs(3),
+		Short: "Delete OAuth2OrgRule in the registry",
+		RunE:  delOAuth2OrgRule,
+	}
+	delOAuth2OrgRuleCmd.Flags().StringP("input", "i", "", "registry data JSON file")
+	oauth2OrgRuleCmd.AddCommand(delOAuth2OrgRuleCmd)
 }

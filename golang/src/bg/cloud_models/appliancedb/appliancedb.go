@@ -81,6 +81,8 @@ type DataStore interface {
 	OAuth2OrganizationRuleTest(context.Context, string, OAuth2OrgRuleType, string) (*OAuth2OrganizationRule, error)
 	InsertOAuth2OrganizationRule(context.Context, *OAuth2OrganizationRule) error
 	InsertOAuth2OrganizationRuleTx(context.Context, DBX, *OAuth2OrganizationRule) error
+	DeleteOAuth2OrganizationRule(context.Context, *OAuth2OrganizationRule) error
+	DeleteOAuth2OrganizationRuleTx(context.Context, DBX, *OAuth2OrganizationRule) error
 
 	// Methods related to accounts, persons, identity
 	accountManager
@@ -826,6 +828,11 @@ func (db *ApplianceDB) OAuth2OrganizationRuleTest(ctx context.Context,
 	provider string, ruleType OAuth2OrgRuleType, ruleValue string) (*OAuth2OrganizationRule, error) {
 
 	var rule OAuth2OrganizationRule
+
+	if ruleType == RuleTypeDomain || ruleType == RuleTypeEmail {
+		ruleValue = strings.ToLower(ruleValue)
+	}
+	// Also perform case-insensitive compares for email and domain
 	err := db.GetContext(ctx, &rule,
 		`SELECT *
 		    FROM oauth2_organization_rule
@@ -851,15 +858,48 @@ func (db *ApplianceDB) InsertOAuth2OrganizationRule(ctx context.Context,
 
 // InsertOAuth2OrganizationRuleTx inserts an OAuth2OrganizationRule, possibly inside a transaction.
 func (db *ApplianceDB) InsertOAuth2OrganizationRuleTx(ctx context.Context, dbx DBX,
-	rule *OAuth2OrganizationRule) error {
+	insRule *OAuth2OrganizationRule) error {
 
 	if dbx == nil {
 		dbx = db
+	}
+	// Take a copy so as not to modify caller's data
+	rule := *insRule
+	if rule.RuleType == RuleTypeDomain || rule.RuleType == RuleTypeEmail {
+		rule.RuleValue = strings.ToLower(rule.RuleValue)
 	}
 	_, err := dbx.NamedExecContext(ctx,
 		`INSERT INTO oauth2_organization_rule
 		 (provider, rule_type, rule_value, organization_uuid)
 		 VALUES
 		 (:provider, :rule_type, :rule_value, :organization_uuid)`, rule)
+	return err
+}
+
+// DeleteOAuth2OrganizationRule deletes an OAuth2OrganizationRule.
+func (db *ApplianceDB) DeleteOAuth2OrganizationRule(ctx context.Context,
+	rule *OAuth2OrganizationRule) error {
+	return db.DeleteOAuth2OrganizationRuleTx(ctx, nil, rule)
+}
+
+// DeleteOAuth2OrganizationRuleTx deletes an OAuth2OrganizationRule, possibly inside a transaction.
+func (db *ApplianceDB) DeleteOAuth2OrganizationRuleTx(ctx context.Context, dbx DBX,
+	delRule *OAuth2OrganizationRule) error {
+
+	if dbx == nil {
+		dbx = db
+	}
+	// Take a copy so as not to modify caller's data
+	rule := *delRule
+	if rule.RuleType == RuleTypeDomain || rule.RuleType == RuleTypeEmail {
+		rule.RuleValue = strings.ToLower(rule.RuleValue)
+	}
+	_, err := dbx.NamedExecContext(ctx, `
+		DELETE FROM oauth2_organization_rule
+		WHERE
+		    provider=:provider AND
+		    rule_type=:rule_type AND
+		    rule_value=:rule_value AND
+		    organization_uuid=:organization_uuid`, rule)
 	return err
 }
