@@ -24,8 +24,10 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
+	"time"
 
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
@@ -61,110 +63,291 @@ var (
 
 const pname = "ap.logd"
 
+func extendMsg(msg *string, field string, value *string, def string) {
+	var v, space string
+
+	if len(*msg) > 0 {
+		space = " "
+	}
+
+	if value != nil && *value != "" {
+		v = *value
+	} else if def != "" {
+		v = def
+	} else {
+		return
+	}
+
+	*msg += space + field + ": " + v
+}
+
+func tstring(pb *base_msg.Timestamp) string {
+	var rval string
+
+	if t := aputil.ProtobufToTime(pb); t != nil {
+		rval = t.Format(time.RFC3339)
+	} else {
+		rval = "missing timestamp"
+	}
+	return rval
+}
+
 func handlePing(event []byte) {
+	var msg string
+
 	ping := &base_msg.EventPing{}
 	proto.Unmarshal(event, ping)
-	log.Printf("[sys.ping] %v", ping)
+
+	extendMsg(&msg, "from", ping.Sender, "?")
+	log.Printf("%s [sys.ping]\t%s", tstring(ping.Timestamp), msg)
 	metrics.pingEvents.Inc()
 }
 
 func handleConfig(event []byte) {
+	var msg string
+
 	config := &base_msg.EventConfig{}
 	proto.Unmarshal(event, config)
-	log.Printf("[sys.config] %v", config)
+
+	extendMsg(&msg, "from", config.Sender, "?")
+	t := "missing"
+	if config.Type != nil {
+		switch *config.Type {
+		case base_msg.EventConfig_CHANGE:
+			t = "CHANGE"
+		case base_msg.EventConfig_DELETE:
+			t = "DELETE"
+		case base_msg.EventConfig_EXPIRE:
+			t = "EXPIRE"
+		default:
+			t = "invalid"
+		}
+	}
+	extendMsg(&msg, "type", &t, "")
+	extendMsg(&msg, "prop", config.Property, "")
+	extendMsg(&msg, "val", config.NewValue, "")
+
+	log.Printf("%s [sys.config]\t%s", tstring(config.Timestamp), msg)
 	metrics.configEvents.Inc()
 }
 
 func handleEntity(event []byte) {
+	var msg string
+
 	entity := &base_msg.EventNetEntity{}
 	proto.Unmarshal(event, entity)
-	log.Printf("[net.entity] %v", entity)
+
+	extendMsg(&msg, "from", entity.Sender, "?")
+
+	if entity.MacAddress != nil {
+		m := network.Uint64ToHWAddr(*entity.MacAddress)
+		msg += " mac: " + m.String()
+	}
+	if entity.Ipv4Address != nil {
+		i := network.Uint32ToIPAddr(*entity.Ipv4Address)
+		msg += " ipv4: " + i.String()
+	}
+	extendMsg(&msg, "ring", entity.Ring, "")
+	extendMsg(&msg, "hostname", entity.Hostname, "")
+	extendMsg(&msg, "node", entity.Node, "")
+	extendMsg(&msg, "band", entity.Band, "")
+	extendMsg(&msg, "vap", entity.VirtualAP, "")
+	extendMsg(&msg, "wifi_sig", entity.WifiSignature, "")
+	if entity.Disconnect != nil {
+		msg += fmt.Sprintf(" disconnect: %v", *entity.Disconnect)
+	}
+	extendMsg(&msg, "username", entity.Username, "")
+
+	log.Printf("%s [net.entity]\t%s", tstring(entity.Timestamp), msg)
 	metrics.entityEvents.Inc()
 }
 
 func handleError(event []byte) {
+	var msg string
+
 	syserror := &base_msg.EventSysError{}
 	proto.Unmarshal(event, syserror)
-	log.Printf("[sys.error] %v", syserror)
+	extendMsg(&msg, "from", syserror.Sender, "?")
+	reason := "missing"
+	if syserror.Reason != nil {
+		switch *syserror.Reason {
+		case base_msg.EventSysError_RENEWED_SSL_CERTIFICATE:
+			reason = "RENEWED_SSL_CERTIFICATE"
+		case base_msg.EventSysError_DAEMON_CRASH_REQUESTED:
+			reason = "DAEMON_CRASH_REQUESTED"
+		default:
+			reason = "unknown"
+		}
+	}
+	extendMsg(&msg, "reason", &reason, "")
+	extendMsg(&msg, "message", syserror.Message, "")
+
+	log.Printf("%s [sys.error]\t%s", tstring(syserror.Timestamp), msg)
+
 	metrics.errorEvents.Inc()
 }
 
-func extendMsg(msg *string, field, value string) {
-	new := field + ": " + value
-	if len(*msg) > 0 {
-		*msg += ", "
-	}
-	*msg += new
-}
-
 func handleException(event []byte) {
+	var msg string
+
 	exception := &base_msg.EventNetException{}
 	proto.Unmarshal(event, exception)
-	log.Printf("[net.exception] %v", exception)
 	metrics.exceptionEvents.Inc()
 
-	// Construct a user-friendly message to push to the system log
-	time := aputil.ProtobufToTime(exception.Timestamp)
-	timestamp := time.Format("2006/01/02 15:04:05")
-
-	msg := ""
-	if exception.Sender != nil {
-		extendMsg(&msg, "Sender", *exception.Sender)
-	}
-
+	extendMsg(&msg, "Sender", exception.Sender, "?")
 	if exception.Protocol != nil {
 		protocols := base_msg.Protocol_name
 		num := int32(*exception.Protocol)
-		extendMsg(&msg, "Protocol", protocols[num])
+		msg += " protocol: " + protocols[num]
 	}
 
 	if exception.Reason != nil {
 		reasons := base_msg.EventNetException_Reason_name
 		num := int32(*exception.Reason)
-		extendMsg(&msg, "Reason", reasons[num])
+		msg += " reason: " + reasons[num]
 	}
 
 	if exception.MacAddress != nil {
 		mac := network.Uint64ToHWAddr(*exception.MacAddress)
-		extendMsg(&msg, "hwaddr", mac.String())
+		msg += " hwaddr: " + mac.String()
 	}
 
 	if exception.Ipv4Address != nil {
 		ip := network.Uint32ToIPAddr(*exception.Ipv4Address)
-		extendMsg(&msg, "IP", ip.String())
+		msg += " ipv4: " + ip.String()
 	}
 
 	if len(exception.Details) > 0 {
-		details := "[" + strings.Join(exception.Details, ",") + "]"
-		extendMsg(&msg, "Details", details)
+		msg += " details: [" +
+			strings.Join(exception.Details, ",") + "]"
 	}
 
-	if exception.Message != nil {
-		extendMsg(&msg, "Message", *exception.Message)
-	}
+	extendMsg(&msg, "message", exception.Message, "")
 
-	fmt.Printf("%s Handled exception event: %s\n", timestamp, msg)
+	log.Printf("%s [net.exception]\t%s", tstring(exception.Timestamp), msg)
 }
 
 func handleResource(event []byte) {
+	var msg string
+
 	resource := &base_msg.EventNetResource{}
 	proto.Unmarshal(event, resource)
-	log.Printf("[net.resource] %v", resource)
+
+	extendMsg(&msg, "from", resource.Sender, "?")
+	a := "missing"
+	if resource.Action != nil {
+		switch *resource.Action {
+		case base_msg.EventNetResource_RELEASED:
+			a = "RELEASED"
+		case base_msg.EventNetResource_PROVISIONED:
+			a = "PROVISIONED"
+		case base_msg.EventNetResource_CLAIMED:
+			a = "CLAIMED"
+		case base_msg.EventNetResource_COLLISION:
+			a = "COLLISION"
+		default:
+			a = "invalid"
+		}
+	}
+	extendMsg(&msg, "action", &a, "")
+	if resource.Ipv4Address != nil {
+		i := network.Uint32ToIPAddr(*resource.Ipv4Address)
+		msg += " ipv4: " + i.String()
+	}
+	extendMsg(&msg, "hostname", resource.Hostname, "")
+
+	log.Printf("%s [net.resource]\t%s", tstring(resource.Timestamp), msg)
 	metrics.resourceEvents.Inc()
 }
 
-func handleRequest(event []byte) {
-	request := &base_msg.EventNetRequest{}
-	proto.Unmarshal(event, request)
-	log.Printf("[net.request] %v", request)
-	metrics.requestEvents.Inc()
+var (
+	// match: <name>\t<class>\t<type>:
+	//     www.google.com.	IN	AAAA
+	questionRE = regexp.MustCompile(`;(\S+)\s+(\S+)\s+(\S+)`)
+
+	// match: <name>\t<TTL>\t<class>\t<type>\t<value>
+	//     rpc0.b10e.net.	179	IN	A	34.83.242.232
+	//     ssl.foo.com.	21384	IN	CNAME	ssl-foo.l.google.com.
+	answerRE = regexp.MustCompile(`(\S+)\s+(\d+)\s+(\S+)\s+(\S+)`)
+)
+
+func parseDNSRequest(requests []string) string {
+	var msg string
+
+	for _, r := range requests {
+		if f := questionRE.FindStringSubmatch(r); f != nil {
+			msg += "(" + strings.Join(f[1:4], ",") + ")"
+		} else {
+			msg += "(unparseable: " + r + ")"
+		}
+	}
+	return msg
 }
 
-func handleIdentity(event []byte) {
-	identity := &base_msg.EventNetIdentity{}
-	proto.Unmarshal(event, identity)
-	log.Printf("[net.identity] %v", identity)
-	metrics.identityEvents.Inc()
+func parseDNSResponse(responses []string) string {
+	var msg string
+
+	for _, r := range responses {
+		var body string
+
+		if f := answerRE.FindStringSubmatch(r); f != nil {
+			// <name> <TTL> <A|AAAA|CNAME|etc> <address>
+			body = strings.Join(f[1:5], ",")
+		} else {
+			body = r
+		}
+		msg += "(" + body + ")"
+	}
+
+	return msg
+}
+
+func handleRequest(event []byte) {
+	var msg, pmsg, protocol string
+
+	request := &base_msg.EventNetRequest{}
+	proto.Unmarshal(event, request)
+	extendMsg(&msg, "from", request.Sender, "?")
+	extendMsg(&msg, "for", request.Requestor, "?")
+
+	if request.Protocol != nil {
+		switch *request.Protocol {
+		// DNS is currently the only protocol being evented
+		case base_msg.Protocol_DNS:
+			q := parseDNSRequest(request.Request)
+			a := parseDNSResponse(request.Response)
+			extendMsg(&pmsg, "q", &q, "")
+			extendMsg(&pmsg, "a", &a, "")
+
+		case base_msg.Protocol_DHCP:
+			protocol = "DHCP"
+
+		case base_msg.Protocol_IP:
+			protocol = "IP"
+
+		default:
+			protocol = "invalid"
+		}
+	}
+
+	extendMsg(&msg, "protocol", &protocol, "")
+	if pmsg != "" {
+		msg += " " + pmsg
+	} else {
+		if request.Request != nil {
+			for _, r := range request.Request {
+				extendMsg(&msg, "request", &r, "")
+			}
+		}
+		if request.Response != nil {
+			for _, r := range request.Response {
+				extendMsg(&msg, "response", &r, "")
+			}
+		}
+	}
+
+	log.Printf("%s [net.request]\t%s", tstring(request.Timestamp), msg)
+	metrics.requestEvents.Inc()
 }
 
 func openLog(path string) (*os.File, error) {
@@ -287,7 +470,6 @@ func main() {
 	b.Handle(base_def.TOPIC_EXCEPTION, handleException)
 	b.Handle(base_def.TOPIC_RESOURCE, handleResource)
 	b.Handle(base_def.TOPIC_REQUEST, handleRequest)
-	b.Handle(base_def.TOPIC_IDENTITY, handleIdentity)
 	defer b.Fini()
 
 	mcpd.SetState(mcp.ONLINE)

@@ -268,22 +268,6 @@ message EventNetException {
 	optional string username	= 0x807;
 }
 
-// The network identity is sent whenever the identifier daemon is able to
-// identify a client device.
-// @topic "net.identity", TOPIC_IDENTITY
-// @range 0x900
-
-message EventNetIdentity {
-	required Timestamp timestamp = 0x01;
-	optional string sender = 0x02;
-	optional string debug = 0x03;
-
-	optional fixed64 mac_address = 0x900;
-	optional int32 devid = 0x901;
-	optional float certainty = 0x902;
-
-}
-
 // The network updated event message is sent whenever the set of active network
 // interfaces changes.
 //
