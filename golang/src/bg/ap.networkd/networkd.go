@@ -23,6 +23,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -58,7 +59,11 @@ var (
 	retransmitHardLimit = apcfg.Int("retransmit_hard", 6, true, nil)
 	retransmitTimeout   = apcfg.Duration("retransmit_timeout",
 		5*time.Minute, true, nil)
-	_ = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
+	apScanFreq   = apcfg.Duration("ap_scan_freq", time.Minute, true, nil)
+	apStale      = apcfg.Duration("ap_stale", 5*time.Minute, true, nil)
+	chanEvalFreq = apcfg.Duration("chan_eval_freq", 6*time.Hour, true, nil)
+	_            = apcfg.String("log_level", "info", true,
+		aputil.LogSetLevel)
 
 	physDevices = make(map[string]*physDevice)
 
@@ -72,9 +77,13 @@ var (
 
 	plat           *platform.Platform
 	hostapd        *hostapdHdl
-	running        bool
 	satellite      bool
 	networkNodeIdx byte
+
+	cleanup struct {
+		chans []chan bool
+		wg    sync.WaitGroup
+	}
 )
 
 const (
@@ -1042,13 +1051,23 @@ func networkCleanup() {
 	wan.dhcpRenew()
 }
 
-// When we get a signal, set the 'running' flag to false and signal any hostapd
-// process we're monitoring.  We want to be sure the wireless interface has been
-// released before we give mcp a chance to restart the whole stack.
+// When we get a signal, signal any hostapd process we're monitoring.  We want
+// to be sure the wireless interface has been released before we give mcp a
+// chance to restart the whole stack.
 func signalHandler() {
-	sig := make(chan os.Signal, 2)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	s := <-sig
+	var s os.Signal
+
+	sig := make(chan os.Signal, 3)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+
+	done := false
+	for !done {
+		if s = <-sig; s == syscall.SIGHUP {
+			nextChanEval = time.Now()
+		} else {
+			done = true
+		}
+	}
 
 	networkdStop(fmt.Sprintf("Received signal %v", s))
 }
@@ -1058,12 +1077,26 @@ func prometheusInit() {
 	go http.ListenAndServe(base_def.NETWORKD_DIAG_PORT, nil)
 }
 
+func addDoneChan() chan bool {
+	dc := make(chan bool, 1)
+
+	if cleanup.chans == nil {
+		cleanup.chans = make([]chan bool, 0)
+	}
+	cleanup.chans = append(cleanup.chans, dc)
+	cleanup.wg.Add(1)
+
+	return dc
+}
+
 func networkdStop(msg string) {
 	if msg != "" {
 		slog.Infof("%s", msg)
 	}
-	running = false
-	hostapd.halt()
+
+	for _, c := range cleanup.chans {
+		c <- true
+	}
 }
 
 func main() {
@@ -1086,7 +1119,6 @@ func main() {
 	applyFilters()
 
 	mcpd.SetState(mcp.ONLINE)
-	running = true
 	go signalHandler()
 
 	resetInterfaces()
@@ -1096,8 +1128,10 @@ func main() {
 		defer wan.stop()
 	}
 
-	hostapdLoop()
+	go apMonitorLoop(&cleanup.wg, addDoneChan())
+	go hostapdLoop(&cleanup.wg, addDoneChan())
 
+	cleanup.wg.Wait()
 	slog.Infof("Cleaning up")
 
 	networkCleanup()

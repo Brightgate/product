@@ -17,6 +17,7 @@ import (
 	"net"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,14 +40,6 @@ import (
 const (
 	confdir        = "/tmp"
 	hostapdOptions = "-dKt"
-)
-
-var (
-	// In 802.11n, a 40MHz channel is constructed from 2 20MHz channels.
-	// Whether the primary channel is above or below the secondary will
-	// determine one of the ht_capab settings.
-	nModePrimaryAbove map[int]bool
-	nModePrimaryBelow map[int]bool
 )
 
 var virtualAPs map[string]*cfgapi.VirtualAP
@@ -1199,41 +1192,16 @@ func (h *hostapdHdl) reset() {
 }
 
 func (h *hostapdHdl) halt() {
-	if h != nil {
-		slog.Infof("Resetting hostapd")
-		p := h.process
+	slog.Infof("Resetting hostapd")
+	p := h.process
 
-		p.Signal(plat.ResetSignal)
-		time.AfterFunc(200*time.Millisecond, func() {
-			if h.process == p {
-				slog.Infof("Killing hostapd")
-				p.Signal(syscall.SIGKILL)
-			}
-		})
-	}
-}
-
-func (h *hostapdHdl) wait() error {
-	err := <-h.done
-	return err
-}
-
-func initChannelLists() {
-	// The 2.4GHz band is crowded, so the use of 40MHz bonded channels is
-	// discouraged.  Thus, the following lists only include channels in the
-	// 5GHz band.
-	above := []int{36, 44, 52, 60, 100, 108, 116, 124, 132, 140, 149, 157}
-	below := []int{40, 48, 56, 64, 104, 112, 120, 128, 136, 144, 153, 161}
-
-	nModePrimaryAbove = make(map[int]bool)
-	for _, c := range above {
-		nModePrimaryAbove[c] = true
-	}
-
-	nModePrimaryBelow = make(map[int]bool)
-	for _, c := range below {
-		nModePrimaryBelow[c] = true
-	}
+	p.Signal(plat.ResetSignal)
+	time.AfterFunc(200*time.Millisecond, func() {
+		if h.process == p {
+			slog.Infof("Killing hostapd")
+			p.Signal(syscall.SIGKILL)
+		}
+	})
 }
 
 func startHostapd(devs []*physDevice) *hostapdHdl {
@@ -1247,15 +1215,48 @@ func startHostapd(devs []*physDevice) *hostapdHdl {
 	return h
 }
 
-func hostapdLoop() {
-	var active []*physDevice
+// If the channel/width/etc settings have changed, log it.  This returns a slice
+// of per-device descriptions, which we'll use on the next invocation to detect
+// changes.
+func logActiveChange(dev []*physDevice, oldDescs []string) []string {
+	newDescs := make([]string, 0)
 
-	initChannelLists()
+	for _, d := range dev {
+		desc := fmt.Sprintf("(dev: %s mode: %s chan: %d width: %d)",
+			d.name, d.wifi.activeMode, d.wifi.activeChannel,
+			d.wifi.activeWidth)
+		newDescs = append(newDescs, desc)
+	}
+	sort.Strings(newDescs)
+
+	changed := len(newDescs) != len(oldDescs)
+	if !changed {
+		for i := range oldDescs {
+			changed = changed || (oldDescs[i] != newDescs[i])
+		}
+	}
+	if changed {
+		old := "[" + strings.Join(oldDescs, ",") + "]"
+		now := "[" + strings.Join(newDescs, ",") + "]"
+		slog.Infof("Wireless settings changed from %s to %s",
+			old, now)
+	}
+	return newDescs
+}
+
+func hostapdLoop(wg *sync.WaitGroup, doneChan chan bool) {
+	var active []*physDevice
+	var activeDescs []string
+	var err error
+
+	slog.Infof("hostapd loop starting")
 	p := aputil.NewPaceTracker(failuresAllowed, period)
 	virtualAPs = config.GetVirtualAPs()
 
-	for running {
+runLoop:
+	for {
 		active = selectWifiDevices(active)
+		active = selectWifiChannels(active)
 		if len(active) == 0 {
 			// XXX: This should be event-driven rather than
 			// timeout-driven.  Getting that right complicated an
@@ -1264,21 +1265,36 @@ func hostapdLoop() {
 			time.Sleep(time.Second)
 			continue
 		}
+		activeDescs = logActiveChange(active, activeDescs)
 
 		hostapd = startHostapd(active)
-		if err := hostapd.wait(); err != nil {
+		select {
+		case <-doneChan:
+			break runLoop
+		case err = <-hostapd.done:
+			hostapd = nil
+		}
+
+		if err != nil {
 			slog.Warnf("%v", err)
 			active = nil
 			wifiEvaluate = true
 		}
-		hostapd = nil
 
-		if running {
-			if err := p.Tick(); err != nil {
-				slog.Warnf("hostapd is dying too quickly: %v", err)
-				wifiEvaluate = false
-			}
-			resetInterfaces()
+		if err = p.Tick(); err != nil {
+			slog.Warnf("hostapd is dying too quickly: %v", err)
+			wifiEvaluate = false
 		}
+		resetInterfaces()
 	}
+
+	if hostapd != nil {
+		slog.Infof("killing active hostapd")
+		hostapd.halt()
+		<-hostapd.done
+	}
+
+	slog.Infof("hostapd loop exiting")
+
+	wg.Done()
 }

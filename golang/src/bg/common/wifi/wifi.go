@@ -54,3 +54,33 @@ var DeviceStates = map[string]bool{
 	DevBadChan:         true,
 	DevNoChan:          true,
 }
+
+// ExpandChannels returns a slice of the 20MHz channels covered by the channel
+// description provided.
+func ExpandChannels(primary, secondary, width int) []int {
+	c := make([]int, 0)
+	c = append(c, primary)
+
+	// XXX: this assumes the presence of a secondary channel means this is a
+	// 40MHz 802.11n channel.  It will eventually need to handle 80+80MHz
+	// 802.11ac channels as well.
+	if secondary != 0 {
+		c = append(c, secondary)
+	} else {
+		if width >= 40 {
+			c = append(c, primary+4)
+		}
+		if width >= 80 {
+			c = append(c, primary+8)
+			c = append(c, primary+12)
+		}
+		if width == 160 {
+			c = append(c, primary+16)
+			c = append(c, primary+20)
+			c = append(c, primary+24)
+			c = append(c, primary+28)
+		}
+	}
+
+	return c
+}

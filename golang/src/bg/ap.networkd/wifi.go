@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -13,11 +13,14 @@ package main
 
 import (
 	"fmt"
-	"math/rand"
 	"os/exec"
 	"regexp"
+	"sort"
 	"strings"
+	"sync"
+	"time"
 
+	"bg/ap_common/apscan"
 	"bg/ap_common/wificaps"
 	"bg/common/cfgapi"
 	"bg/common/wifi"
@@ -32,6 +35,7 @@ var (
 	bands = []string{wifi.LoBand, wifi.HiBand}
 
 	wifiEvaluate bool
+	nextChanEval time.Time
 	wconf        wifiConfig
 )
 
@@ -50,15 +54,192 @@ type wifiInfo struct {
 	cap *wificaps.WifiCapabilities // What features the device supports
 }
 
-// All legal wifi channels
-var legalChannels map[int]bool
+var (
+	// All legal wifi channels
+	legalChannels map[int]bool
 
-// For each band (i.e., these are the channels we are legally allowed to use
-// in this region.
-var bandChannels map[string]map[int]bool
+	// For each band (i.e., these are the channels we are legally allowed to use
+	// in this region.
+	bandChannels map[string]map[int]bool
 
-// For each channel, this represents a set of the legal channel widths
-var channelWidths map[int]map[int]bool
+	// For each channel, this represents a set of the legal channel widths
+	channelWidths map[int]map[int]bool
+
+	// In 802.11n, a 40MHz channel is constructed from 2 20MHz channels.
+	// Whether the primary channel is above or below the secondary will
+	// determine one of the ht_capab settings.
+	nModePrimaryAbove map[int]bool
+	nModePrimaryBelow map[int]bool
+)
+
+// used to track the potential interference from other APs
+type apTrack struct {
+	ssid     string
+	channels []int
+	strength int
+	lastSeen time.Time
+}
+
+var (
+	// For each width, there is a per-channel map tracking the estimated
+	// congestion.
+	congestionMap map[int]map[int]int
+
+	// all of the nearby APs we've seen recently
+	apMap  map[string]*apTrack
+	apLock sync.Mutex
+)
+
+// trigger a scan for nearby APs on the given device, and use the results to
+// update the tracking map.
+func updateAPScan(dev string) {
+	aps := apscan.ScanIface(dev)
+	now := time.Now()
+
+	ourRadios := make(map[string]bool)
+	for _, d := range physDevices {
+		ourRadios[strings.ToLower(d.hwaddr)] = true
+	}
+	apLock.Lock()
+	for _, ap := range aps {
+		// Ignore old sightings
+		if ap.LastSeen > 10*time.Second {
+			continue
+		}
+		// Ignore nonsense results.  If they persist, the AP will simply
+		// age out.
+		if ap.Strength == 0 {
+			continue
+		}
+
+		// Ignore our own radios
+		if ourRadios[strings.ToLower(ap.Mac)] {
+			continue
+		}
+		t := apMap[ap.Mac]
+		if t == nil {
+			t = &apTrack{}
+			apMap[ap.Mac] = t
+		}
+		t.ssid = ap.SSID
+		t.channels = wifi.ExpandChannels(ap.Channel, ap.Secondary,
+			ap.Width)
+		t.lastSeen = now.Add(-1 * ap.LastSeen)
+
+		// The strength reading is somewhat noisy, so we keep a rolling
+		// average to reduce the noise.
+		t.strength = (t.strength*7 + ap.Strength) / 8
+	}
+
+	// Get rid of any APs we haven't seen in a while
+	for mac, ap := range apMap {
+		if time.Since(ap.lastSeen) > *apStale {
+			delete(apMap, mac)
+		}
+	}
+	apLock.Unlock()
+
+	buildCongestionMap()
+}
+
+// Use the accumulated AP observations to build a table tracking the relative
+// desirability of each channel.  Ideally we would measure the actual traffic in
+// each channel to identify the least congested, but we don't have that
+// information.  Instead, we use the number and strength of APs as a proxy for
+// that measurement.
+func buildCongestionMap() {
+	cmap := make(map[int]map[int]int)
+	cmap[20] = make(map[int]int)
+	cmap[40] = make(map[int]int)
+	cmap[80] = make(map[int]int)
+
+	cnt := make(map[int]int)
+	apLock.Lock()
+
+	// First build the congestion map for the basic 20MHz ranges.  The raw
+	// strength numbers are reported in dBm between -30 and -100, where -30
+	// is stronger than -100.  Because our congestion estimates of narrow
+	// channels are made by adding together per-AP values and our wide
+	// estimates are made by adding the narrow results together, it's easier
+	// to work with positive numbers.  So, we move each AP's strength into
+	// the positive range by simply adding 100 to it.
+	for _, ap := range apMap {
+		for _, c := range ap.channels {
+			// This simple math means we consider 2 APs at 30
+			// to contribute as much congestion as 1 at 60.
+			// (XXX: Because dBm is a logarithmic scale, this
+			// simplification is mathematically bogus, but it may be
+			// good enough for our purposes.)
+			cmap[20][c] += (100 + ap.strength)
+			cnt[c]++
+		}
+	}
+
+	// Use the 20MHz data to construct the maps for the wider channels
+	for _, c := range wificaps.ChannelLists["hiBand40MHz"] {
+		if nModePrimaryAbove[c] {
+			cmap[40][c] = cmap[20][c] + cmap[20][c-4]
+		} else {
+			cmap[40][c] = cmap[20][c] + cmap[20][c+4]
+		}
+	}
+
+	for _, c := range wificaps.ChannelLists["hiBand80MHz"] {
+		cmap[80][c] = cmap[20][c] + cmap[20][c+4] +
+			cmap[20][c+8] + cmap[20][c+12]
+	}
+	congestionMap = cmap
+	apLock.Unlock()
+}
+
+// Given a slice of channel numbers for a given width, sort the slice according
+// to the calculated congestion on each channel.
+func congestionSortList(list []int, width int) {
+	sort.Slice(list, func(i, j int) bool {
+		chanI := list[i]
+		chanJ := list[j]
+		return congestionMap[width][chanI] < congestionMap[width][chanJ]
+	})
+}
+
+func copyChannelList(name string) []int {
+	return append([]int(nil), wificaps.ChannelLists[name]...)
+}
+
+func apMonitorLoop(wg *sync.WaitGroup, doneChan chan bool) {
+	done := false
+
+	freq := *apScanFreq
+	t := time.NewTicker(freq)
+	slog.Infof("AP monitor loop starting")
+	for !done {
+		for _, d := range physDevices {
+			if d.wifi != nil && !d.pseudo {
+				updateAPScan(d.name)
+			}
+		}
+
+		if time.Now().After(nextChanEval) {
+			wifiEvaluate = true
+			hostapd.reset()
+		}
+
+		select {
+		case done = <-doneChan:
+		case <-t.C:
+		}
+
+		// If the frequency setting has been changed, reset our timer to
+		// the new value.
+		if freq != *apScanFreq {
+			freq = *apScanFreq
+			t.Stop()
+			t = time.NewTicker(freq)
+		}
+	}
+	slog.Infof("AP monitor loop exiting")
+	wg.Done()
+}
 
 func setChannel(w *wifiInfo, band string, channel, width int) error {
 	if width == 0 {
@@ -103,25 +284,21 @@ func setChannel(w *wifiInfo, band string, channel, width int) error {
 	return nil
 }
 
-// From a list of possible channels, select one at random that is supported by
-// this wifi device
-func randomChannel(w *wifiInfo, band, listName string, width int) {
+// From a list of possible channels, try to select the least congested one
+func findChannel(w *wifiInfo, band, listName string, width int) {
 	if w.configWidth != 0 && w.configWidth != width {
 		return
 	}
 
-	list := wificaps.ChannelLists[listName]
-	start := rand.Int() % len(list)
-	idx := start
-	for {
-		if setChannel(w, band, list[idx], width) == nil {
-			break
-		}
+	list := copyChannelList(listName)
+	congestionSortList(list, width)
+	slog.Debugf("congestion map for %dMHz %s: %v", width, band,
+		congestionMap[width])
 
-		if idx++; idx == len(list) {
-			idx = 0
-		}
-		if idx == start {
+	for _, channel := range list {
+		if err := setChannel(w, band, channel, width); err == nil {
+			slog.Debugf("chose %d (width=%d) from %v", channel,
+				width, list)
 			break
 		}
 	}
@@ -140,6 +317,7 @@ func selectWifiChannel(d *physDevice, band string) error {
 		return fmt.Errorf("doesn't support %s", band)
 	}
 
+	w.activeChannel = 0
 	if w.configChannel != 0 {
 		err = setChannel(w, band, w.configChannel, w.configWidth)
 		if err != nil {
@@ -152,20 +330,20 @@ func selectWifiChannel(d *physDevice, band string) error {
 	if band == wifi.LoBand {
 		// We first try to choose one of the non-overlapping channels.
 		// If that fails, we'll take any channel in this range.
-		randomChannel(w, band, "loBandNoOverlap", 20)
+		findChannel(w, band, "loBandNoOverlap", 20)
 		if w.activeChannel == 0 {
-			randomChannel(w, band, "loBand20MHz", 20)
+			findChannel(w, band, "loBand20MHz", 20)
 		}
 	} else {
 		if w.cap.WifiModes["ac"] {
 			// XXX: update for 160MHz and 80+80
-			randomChannel(w, band, "hiBand80MHz", 80)
+			findChannel(w, band, "hiBand80MHz", 80)
 		}
 		if w.activeChannel == 0 && w.cap.HTCapabilities[wificaps.HTCAP_HT20_40] {
-			randomChannel(w, band, "hiBand40MHz", 40)
+			findChannel(w, band, "hiBand40MHz", 40)
 		}
 		if w.activeChannel == 0 {
-			randomChannel(w, band, "hiBand20MHz", 20)
+			findChannel(w, band, "hiBand20MHz", 20)
 		}
 	}
 
@@ -253,6 +431,21 @@ func setState(d *physDevice) {
 	}
 }
 
+func selectWifiChannels(devices []*physDevice) []*physDevice {
+	nextChanEval = time.Now().Add(*chanEvalFreq)
+	good := make([]*physDevice, 0)
+	for _, d := range devices {
+		err := selectWifiChannel(d, d.wifi.activeBand)
+		if err != nil {
+			d.wifi.activeBand = ""
+			slog.Warnf("%v", err)
+		} else {
+			good = append(good, d)
+		}
+	}
+	return good
+}
+
 func selectWifiDevices(oldList []*physDevice) []*physDevice {
 	var selected map[string]*physDevice
 
@@ -316,11 +509,8 @@ func selectWifiDevices(oldList []*physDevice) []*physDevice {
 	newList := make([]*physDevice, 0)
 	for _, band := range bands {
 		if d := selected[band]; d != nil {
-			if err := selectWifiChannel(d, band); err != nil {
-				slog.Warnf("%v", err)
-			} else {
-				newList = append(newList, d)
-			}
+			d.wifi.activeBand = band
+			newList = append(newList, d)
 		}
 	}
 
@@ -355,6 +545,22 @@ func makeValidChannelMaps() {
 			channelWidths[width][channel] = true
 		}
 	}
+
+	// The 2.4GHz band is crowded, so the use of 40MHz bonded channels is
+	// discouraged.  Thus, the following lists only include channels in the
+	// 5GHz band.
+	above := []int{36, 44, 52, 60, 100, 108, 116, 124, 132, 140, 149, 157}
+	below := []int{40, 48, 56, 64, 104, 112, 120, 128, 136, 144, 153, 161}
+
+	nModePrimaryAbove = make(map[int]bool)
+	for _, c := range above {
+		nModePrimaryAbove[c] = true
+	}
+
+	nModePrimaryBelow = make(map[int]bool)
+	for _, c := range below {
+		nModePrimaryBelow[c] = true
+	}
 }
 
 func globalWifiInit(props *cfgapi.PropertyNode) error {
@@ -386,6 +592,9 @@ func globalWifiInit(props *cfgapi.PropertyNode) error {
 	}
 
 	wifiEvaluate = true
+
+	congestionMap = make(map[int]map[int]int)
+	apMap = make(map[string]*apTrack)
 
 	return nil
 }
