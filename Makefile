@@ -364,6 +364,7 @@ COMMON_GOPKGS = \
 APPCOMMON_GOPKGS = \
 	$(COMMON_GOPKGS) \
 	bg/ap_common/apcfg \
+	bg/ap_common/apscan \
 	bg/ap_common/aptest \
 	bg/ap_common/aputil \
 	bg/ap_common/apvuln \
@@ -404,6 +405,7 @@ APPTOOLS = \
 	ap-complete \
 	ap-configctl \
 	ap-ctl \
+	ap-scan \
 	ap-speedtest \
 	ap-userctl \
 	ap-watchctl
