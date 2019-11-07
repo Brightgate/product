@@ -16,6 +16,7 @@ USE_PROCD=1
 PROG=/opt/com.brightgate/bin/ap.mcp
 
 IDDIR=/data/mcp
+SERIALFILE=${IDDIR}/serial
 IDFILE=${IDDIR}/machine-id
 
 set_hostname () {
@@ -41,10 +42,20 @@ start_service()
 		/bin/mkdir -p ${IDDIR}
 	fi
 
-	if [ ! -f ${IDFILE} ]; then
-		set_hostname "unknown"
-	else
+	if [ ! -f ${SERIALFILE} ]; then
+		serial=`/usr/sbin/fw_printenv -n bg_ext_serial`
+		if [ $? == 0 ]; then
+			echo "Creating serial file with:" ${serial}
+			echo ${serial} > ${SERIALFILE}
+		fi
+	fi
+
+	if [ -f ${SERIALFILE} ]; then
+		set_hostname "`cat < $SERIALFILE`"
+	elif [ -f ${IDFILE} ]; then
 		set_hostname "`cat < $IDFILE`"
+	else
+		set_hostname "unknown"
 	fi
 
 	cve_2019_tcp_sack
