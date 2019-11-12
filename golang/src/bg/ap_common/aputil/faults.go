@@ -135,6 +135,18 @@ func writeReport(report *faults.FaultReport) error {
 	return err
 }
 
+// ReportHardware is used to report a hardware issue
+func ReportHardware(device, issue string) error {
+	report := newReport(self, "hardware")
+	report.Hardware = &faults.HardwareReport{
+		Node:   nodeID,
+		Device: device,
+		Issue:  issue,
+	}
+
+	return writeReport(report)
+}
+
 // ReportMem is used to report that a daemon is consuming an unexpectedly large
 // amount of memory.
 func ReportMem(daemon string, mb uint64, profile *string) error {

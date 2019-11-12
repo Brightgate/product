@@ -268,7 +268,7 @@ func sendNetEntity(mac string, username, vapName, bandName, sig *string, disconn
 		Username:      username,
 		VirtualAP:     vapName,
 		WifiSignature: sig,
-		Node:          &nodeUUID,
+		Node:          &nodeID,
 		Disconnect:    &disconnect,
 		MacAddress:    proto.Uint64(network.HWAddrToUint64(hwaddr)),
 		Band:          bandName,

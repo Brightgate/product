@@ -43,9 +43,18 @@ type FaultReport struct {
 	Appliance    string
 	Daemon       string
 	Kind         string
-	Crash        *CrashReport `json:"Crash,omitempty"`
-	Mem          *MemReport   `json:"Mem,omitempty"`
-	Error        *ErrorReport `json:"Error,omitempty"`
+
+	Hardware *HardwareReport `json:"Hardware,omitempty"`
+	Crash    *CrashReport    `json:"Crash,omitempty"`
+	Mem      *MemReport      `json:"Mem,omitempty"`
+	Error    *ErrorReport    `json:"Error,omitempty"`
+}
+
+// HardwareReport contains data about hardware-related errors
+type HardwareReport struct {
+	Node   string
+	Device string
+	Issue  string
 }
 
 // CrashReport contains the data specific to daemon crashes

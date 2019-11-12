@@ -67,13 +67,13 @@ var (
 
 	physDevices = make(map[string]*physDevice)
 
-	mcpd     *mcp.MCP
-	brokerd  *broker.Broker
-	config   *cfgapi.Handle
-	clients  cfgapi.ClientMap // macaddr -> ClientInfo
-	rings    cfgapi.RingMap   // ring -> config
-	nodeUUID string
-	slog     *zap.SugaredLogger
+	mcpd    *mcp.MCP
+	brokerd *broker.Broker
+	config  *cfgapi.Handle
+	clients cfgapi.ClientMap // macaddr -> ClientInfo
+	rings   cfgapi.RingMap   // ring -> config
+	nodeID  string
+	slog    *zap.SugaredLogger
 
 	plat           *platform.Platform
 	hostapd        *hostapdHdl
@@ -691,7 +691,7 @@ func newNicOps(id string, nic *physDevice,
 		}
 	}
 
-	base := "@/nodes/" + nodeUUID + "/nics/" + id
+	base := "@/nodes/" + nodeID + "/nics/" + id
 	if cur != nil {
 		op := cfgapi.PropertyOp{
 			Op:   cfgapi.PropDelete,
@@ -722,7 +722,7 @@ func updateNicProperties() {
 	}
 
 	// Get the information currently recorded in the config tree
-	root := "@/nodes/" + nodeUUID
+	root := "@/nodes/" + nodeID
 	nics := make(cfgapi.ChildMap)
 	if r, _ := config.GetProps(root); r != nil {
 		if r.Children != nil {
@@ -747,7 +747,7 @@ func updateNicProperties() {
 		} else {
 			// This nic is in the config tree, but not in our
 			// current inventory.  Clean it up.
-			newOps = newNicOps(id, nil, nil)
+			newOps = newNicOps(id, nil, nic)
 		}
 		ops = append(ops, newOps...)
 	}
@@ -838,6 +838,32 @@ func getNicID(d *physDevice) string {
 	return plat.NicID(d.name, d.hwaddr)
 }
 
+// Find the other nodes on which a device with this mac is present.  Returns
+// strings listing the remote nodes and the offline nodes, with each instance
+// named "<node>/<device name>".
+func getRemoteWifi(mac string, nodes []cfgapi.NodeInfo) (string, string) {
+	remote := make([]string, 0)
+	offline := make([]string, 0)
+
+	for _, node := range nodes {
+		if node.ID == nodeID {
+			continue
+		}
+		for _, nic := range node.Nics {
+			if nic.MacAddr == mac && nic.WifiInfo != nil {
+				n := node.ID + "/" + nic.Name
+				if node.Alive == nil {
+					offline = append(offline, n)
+				} else {
+					remote = append(remote, n)
+				}
+			}
+		}
+	}
+
+	return strings.Join(remote, ","), strings.Join(offline, ",")
+}
+
 //
 // Inventory the physical network devices in the system
 //
@@ -845,6 +871,11 @@ func getDevices() {
 	all, err := net.Interfaces()
 	if err != nil {
 		slog.Fatalf("Unable to inventory network devices: %v", err)
+	}
+
+	nodes, err := config.GetNodes()
+	if err != nil {
+		slog.Warnf("getting @/nodes: %v", err)
 	}
 
 	macs := make(map[string]*physDevice)
@@ -865,19 +896,49 @@ func getDevices() {
 			d = getWireless(i)
 		}
 
-		if d != nil {
-			if old := macs[d.hwaddr]; old != nil && d.wifi != nil {
-				slog.Warnf("skipping %s - "+
-					"mac address %s collides with %s",
-					d.name, d.hwaddr, old.name)
-			} else {
-				physDevices[getNicID(d)] = d
-				macs[d.hwaddr] = d
+		// If this is a wireless device and we already have another
+		// wireless nic with the same mac address, we want to leave this
+		// one offline.
+		if d != nil && d.wifi != nil {
+			var conflicts, faults string
+
+			name := d.name
+			mac := d.hwaddr
+			if local := macs[mac]; local != nil {
+				faults = " local: " + local.name
+				d = nil
 			}
+
+			remote, offline := getRemoteWifi(mac, nodes)
+			if len(remote) > 0 {
+				faults += " remote nodes: " + remote
+				d = nil
+			}
+			if len(offline) > 0 {
+				// If the other node is offline, it's safe to
+				// use this device despite the conflict.  It's
+				// still worth noting in the log.
+				conflicts = " offline nodes: " + offline
+			}
+
+			if len(faults+conflicts) > 0 {
+				msg := fmt.Sprintf("multiple instances of %s:%s",
+					mac, faults+conflicts)
+				slog.Warn(msg)
+
+				if len(faults) > 0 {
+					aputil.ReportHardware(name, msg)
+				}
+			}
+		}
+
+		if d != nil {
+			physDevices[getNicID(d)] = d
+			macs[d.hwaddr] = d
 		}
 	}
 
-	nics, _ := config.GetProps("@/nodes/" + nodeUUID + "/nics")
+	nics, _ := config.GetProps("@/nodes/" + nodeID + "/nics")
 	if nics != nil {
 		for nicID, nic := range nics.Children {
 			if d := physDevices[nicID]; d != nil {
@@ -910,12 +971,12 @@ func getGatewayIP() string {
 }
 
 func getNodeID() (string, error) {
-	nodeUUID, err := plat.GetNodeID()
+	nodeID, err := plat.GetNodeID()
 	if err != nil {
 		return "", err
 	}
 
-	prop := "@/nodes/" + nodeUUID + "/platform"
+	prop := "@/nodes/" + nodeID + "/platform"
 	oldName, _ := config.GetProp(prop)
 	newName := plat.GetPlatform()
 
@@ -930,7 +991,7 @@ func getNodeID() (string, error) {
 			slog.Warnf("failed to update %s: %v", prop, err)
 		}
 	}
-	return nodeUUID, nil
+	return nodeID, nil
 }
 
 // Connect to all of the other brightgate daemons and construct our initial model
@@ -956,7 +1017,7 @@ func daemonInit() error {
 	go apcfg.HealthMonitor(config, mcpd)
 	aputil.ReportInit(slog, pname)
 
-	if nodeUUID, err = getNodeID(); err != nil {
+	if nodeID, err = getNodeID(); err != nil {
 		return err
 	}
 
@@ -968,8 +1029,8 @@ func daemonInit() error {
 
 	config.HandleChange(`^@/site_index`, configSiteIndexChanged)
 	config.HandleChange(`^@/clients/.*/ring$`, configClientChanged)
-	config.HandleChange(`^@/nodes/`+nodeUUID+`/nics/.*$`, configNicChanged)
-	config.HandleDelete(`^@/nodes/`+nodeUUID+`/nics/.*$`, configNicDeleted)
+	config.HandleChange(`^@/nodes/`+nodeID+`/nics/.*$`, configNicChanged)
+	config.HandleDelete(`^@/nodes/`+nodeID+`/nics/.*$`, configNicDeleted)
 	config.HandleChange(`^@/rings/.*`, configRingChanged)
 	config.HandleDelete(`^@/rings/.*/subnet$`, configRingSubnetDeleted)
 	config.HandleChange(`^@/network/.*`, configNetworkChanged)
