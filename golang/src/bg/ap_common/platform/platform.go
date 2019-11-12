@@ -54,8 +54,9 @@ type Platform struct {
 	NicLocation   func(string) string
 	DataDir       func() string
 
-	GetDHCPInfo func(string) (map[string]string, error)
-	DHCPPidfile func(string) string
+	GetDHCPInterfaces func() ([]string, error)
+	GetDHCPInfo       func(string) (map[string]string, error)
+	DHCPPidfile       func(string) string
 
 	NetworkManaged bool
 	NetConfig      func(string, string, string, string, string) error

@@ -81,6 +81,10 @@ func x86NicLocation(name string) string {
 	return ""
 }
 
+func x86GetDHCPInterfaces() ([]string, error) {
+	return rpiGetDHCPInterfaces()
+}
+
 func x86GetDHCPInfo(iface string) (map[string]string, error) {
 	return rpiGetDHCPInfo(iface)
 }
@@ -140,8 +144,9 @@ func init() {
 		NicLocation:   x86NicLocation,
 		DataDir:       x86DataDir,
 
-		GetDHCPInfo: x86GetDHCPInfo,
-		DHCPPidfile: x86DHCPPidfile,
+		GetDHCPInterfaces: x86GetDHCPInterfaces,
+		GetDHCPInfo:       x86GetDHCPInfo,
+		DHCPPidfile:       x86DHCPPidfile,
 
 		NetworkManaged: false,
 		NetConfig:      x86NetConfig,

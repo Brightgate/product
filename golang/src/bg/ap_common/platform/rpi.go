@@ -11,8 +11,10 @@
 package platform
 
 import (
+	"bufio"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,6 +42,7 @@ var (
 const (
 	ntpdSystemdService = "chrony.service"
 	rpiMachineIDFile   = "/etc/machine-id"
+	dhcpcdConfFile     = "/etc/dhcpcd.conf"
 )
 
 func rpiProbe() bool {
@@ -132,6 +135,78 @@ func rpiNicLocation(name string) string {
 		return fmt.Sprintf("%s (%s)", desc, fn)
 	}
 	return ""
+}
+
+func addRegexps(l []string, addTo map[string]*regexp.Regexp) {
+	for _, f := range l {
+		var exp string
+
+		// Convert the dhcpcd.conf regexps into Go-style
+		for _, c := range f {
+			if c == '*' {
+				exp += `.*`
+			} else if c == '.' {
+				exp += `\.`
+			} else {
+				exp += string(c)
+			}
+		}
+
+		re, err := regexp.Compile(exp)
+		if err != nil {
+			fmt.Printf("failed: %v\n", err)
+		} else {
+			addTo[exp] = re
+		}
+	}
+}
+
+func rpiGetDHCPInterfaces() ([]string, error) {
+	list := make([]string, 0)
+	allow := make(map[string]*regexp.Regexp)
+	deny := make(map[string]*regexp.Regexp)
+
+	file, err := os.Open(dhcpcdConfFile)
+	if err != nil {
+		return nil, fmt.Errorf("opening %s: %v", dhcpcdConfFile, err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		f := strings.Fields(scanner.Text())
+		if len(f) < 2 {
+			continue
+		}
+		if strings.EqualFold(f[0], "allowinterfaces") {
+			addRegexps(f[1:], allow)
+		} else if strings.EqualFold(f[0], "denyinterfaces") {
+			addRegexps(f[1:], deny)
+		}
+	}
+
+	all, err := net.Interfaces()
+	for _, iface := range all {
+		var allowed bool
+
+		for _, re := range allow {
+			if allowed = re.MatchString(iface.Name); allowed {
+				break
+			}
+		}
+		for _, re := range deny {
+			if re.MatchString(iface.Name) {
+				allowed = false
+				break
+			}
+		}
+
+		if allowed {
+			list = append(list, iface.Name)
+		}
+	}
+
+	return list, err
 }
 
 func rpiGetDHCPInfo(iface string) (map[string]string, error) {
@@ -273,8 +348,9 @@ func init() {
 		NicLocation:   rpiNicLocation,
 		DataDir:       rpiDataDir,
 
-		GetDHCPInfo: rpiGetDHCPInfo,
-		DHCPPidfile: rpiDHCPPidfile,
+		GetDHCPInterfaces: rpiGetDHCPInterfaces,
+		GetDHCPInfo:       rpiGetDHCPInfo,
+		DHCPPidfile:       rpiDHCPPidfile,
 
 		NetworkManaged: false,
 		NetConfig:      rpiNetConfig,

@@ -158,7 +158,6 @@ func logMsg(level, msg string) {
 
 	throttleLog(&logThrottle,
 		fmt.Sprintf("\t%s\t%s:%d\t%s", level, file, line, msg))
-
 }
 
 func logInfo(format string, v ...interface{}) {

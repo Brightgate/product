@@ -25,9 +25,15 @@ func findWan() (string, *dhcp.Info) {
 	var wanNic string
 	var wanLease *dhcp.Info
 
-	interfaces, _ := net.Interfaces()
-	for _, iface := range interfaces {
-		name := iface.Name
+	interfaces, _ := plat.GetDHCPInterfaces()
+	logDebug("dhcp interfaces: %v", interfaces)
+	for _, name := range interfaces {
+		iface, err := net.InterfaceByName(name)
+		if err != nil {
+			logWarn("unresolvable DHCP interface %s: %v", name, err)
+			continue
+		}
+
 		hwaddr := iface.HardwareAddr.String()
 
 		if plat.NicIsVirtual(name) {
@@ -64,6 +70,7 @@ func modeMonitor() {
 		logPanic("should not enter nodeMonitor() in %s mode", oldMode)
 	}
 
+	delay := time.Second
 	for {
 		var lease *dhcp.Info
 
@@ -76,7 +83,10 @@ func modeMonitor() {
 			newMode = lease.Mode
 			break
 		}
-		time.Sleep(time.Second)
+		time.Sleep(delay)
+		if delay *= 2; delay > time.Minute {
+			delay = time.Minute
+		}
 	}
 
 	if newMode != base_def.MODE_SATELLITE {

@@ -44,6 +44,9 @@ const (
 
 var (
 	mtMachineIDFile string
+
+	ifaceDumpCache    *netDump
+	ifaceDumpCachedAt time.Time
 )
 
 func mtProbe() bool {
@@ -216,36 +219,65 @@ type netDump struct {
 	Interfaces []netConfig `json:"interface,omitempty"`
 }
 
-func getNetConfig(nic string) (*netConfig, error) {
-	var found *netConfig
+func getIfaceDump(freshness time.Duration) (*netDump, error) {
 	var d netDump
 
-	// Use the /bin/ubus utility to retrieve a json-formatted list of all
-	// the network interface configurations
-	args := []string{"call", "network.interface.wan", "dump"}
-	out, err := exec.Command(ubusCmd, args...).Output()
-	if err != nil {
-		return nil, fmt.Errorf("ubus failed: %v", err)
+	if ifaceDumpCachedAt.Add(freshness).Before(time.Now()) {
+		// Use the /bin/ubus utility to retrieve a json-formatted list
+		// of all the network interface configurations
+		args := []string{"call", "network.interface", "dump"}
+		out, err := exec.Command(ubusCmd, args...).Output()
+		if err != nil {
+			return nil, fmt.Errorf("ubus failed: %v", err)
+		}
+
+		if err = json.Unmarshal(out, &d); err != nil {
+			return nil, fmt.Errorf("unmarshaling: %v", err)
+		}
+
+		ifaceDumpCache = &d
+		ifaceDumpCachedAt = time.Now()
 	}
 
-	if err = json.Unmarshal(out, &d); err != nil {
-		return nil, fmt.Errorf("unmarshaling: %v", err)
-	}
+	return ifaceDumpCache, nil
+}
 
-	// Look for a stanza describing the wan/dhcp settings
-	for _, iface := range d.Interfaces {
-		if iface.Iface == nic {
-			found = &iface
+func getNetConfig(nic string) (*netConfig, error) {
+	var found *netConfig
+
+	d, err := getIfaceDump(time.Second)
+	if err == nil {
+		// Look for a stanza describing the wan/dhcp settings
+		for _, iface := range d.Interfaces {
+			if iface.Iface == nic {
+				found = &iface
+				if iface.Proto == "dhcp" {
+					break
+				}
+			}
+		}
+
+		if found == nil {
+			err = fmt.Errorf("no config found for %s", nic)
+		}
+	}
+	return found, err
+}
+
+func mtGetDHCPInterfaces() ([]string, error) {
+	list := make([]string, 0)
+
+	d, err := getIfaceDump(time.Minute)
+	if err == nil {
+		// Look for a stanza describing the wan/dhcp settings
+		for _, iface := range d.Interfaces {
 			if iface.Proto == "dhcp" {
-				break
+				list = append(list, iface.Iface)
 			}
 		}
 	}
 
-	if found == nil {
-		return nil, fmt.Errorf("no config found for %s", nic)
-	}
-	return found, nil
+	return list, err
 }
 
 func mtGetDHCPInfo(iface string) (map[string]string, error) {
@@ -471,8 +503,9 @@ func init() {
 		NicLocation:   mtNicLocation,
 		DataDir:       mtDataDir,
 
-		GetDHCPInfo: mtGetDHCPInfo,
-		DHCPPidfile: mtDHCPPidfile,
+		GetDHCPInterfaces: mtGetDHCPInterfaces,
+		GetDHCPInfo:       mtGetDHCPInfo,
+		DHCPPidfile:       mtDHCPPidfile,
 
 		NetworkManaged: true,
 		NetConfig:      mtNetConfig,
