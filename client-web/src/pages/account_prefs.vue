@@ -9,6 +9,15 @@
 -->
 <style scoped>
 h1 { margin-block-end: 0.1em; }
+
+div.acct-info-flex {
+  display: flex;
+  font-size: 16px;
+}
+div.avatar {
+  margin-right: 10px;
+  margin-top: 8px;
+}
 </style>
 <template>
   <f7-page @page:beforein="onPageBeforeIn">
@@ -16,9 +25,18 @@ h1 { margin-block-end: 0.1em; }
 
     <f7-block>
       <h1>{{ myAccount.name }}</h1>
-      <div>{{ orgNameByID(myAccount.organizationUUID) }}</div>
-      <div>{{ myAccount.email }}</div>
-      <div>{{ myAccount.phoneNumber }}</div>
+      <div class="acct-info-flex">
+        <vue-avatar
+          :src="myAccount.hasAvatar ? `/api/account/${myAccountUUID}/avatar` : undefined"
+          :username="myAccount.name"
+          :size="64"
+          class="avatar" />
+        <div>
+          <div>{{ orgNameByID(myAccount.organizationUUID) }}</div>
+          <div>{{ myAccount.email }}</div>
+          <div>{{ myAccount.phoneNumber }}</div>
+        </div>
+      </div>
     </f7-block>
 
     <f7-list>
@@ -42,10 +60,15 @@ h1 { margin-block-end: 0.1em; }
 <script>
 import vuex from 'vuex';
 import Debug from 'debug';
+import VueAvatar from 'vue-avatar';
 
 const debug = Debug('page:accountprefs');
 
 export default {
+  components: {
+    'vue-avatar': VueAvatar,
+  },
+
   data: function() {
     return {
     };

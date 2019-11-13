@@ -1323,6 +1323,7 @@ export default [
     "connBand": "5GHz",
     "connNode": "001-201901BB-000002",
     "connVAP": "eap",
+    "username": "pam@dundermifflin.com",
     "dhcpExpiry": "2019-06-26T19:10:25Z",
     "dhcpName": "catbook",
     "displayName": "catbook",

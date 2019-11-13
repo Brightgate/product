@@ -267,6 +267,7 @@ type apiDevice struct {
 	ConnBand        string                 `json:"connBand,omitempty"`
 	ConnNode        string                 `json:"connNode,omitempty"`
 	ConnVAP         string                 `json:"connVAP,omitempty"`
+	Username        string                 `json:"username,omitempty"`
 	Scans           map[string]apiScanInfo `json:"scans,omitempty"`
 	Vulnerabilities map[string]apiVulnInfo `json:"vulnerabilities,omitempty"`
 	LastActivity    *time.Time             `json:"lastActivity,omitempty"`
@@ -296,6 +297,7 @@ func buildDeviceResponse(c echo.Context, hdl *cfgapi.Handle,
 		ConnBand:        client.ConnBand,
 		ConnNode:        client.ConnNode,
 		ConnVAP:         client.ConnVAP,
+		Username:        client.Username,
 		Scans:           make(map[string]apiScanInfo),
 		Vulnerabilities: make(map[string]apiVulnInfo),
 	}

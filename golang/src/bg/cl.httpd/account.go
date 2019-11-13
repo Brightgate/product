@@ -12,6 +12,8 @@ package main
 
 import (
 	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"math"
 	"math/big"
 	"net/http"
@@ -22,6 +24,7 @@ import (
 	"bg/common/cfgapi"
 	"bg/common/passwordgen"
 
+	"cloud.google.com/go/storage"
 	"github.com/gorilla/sessions"
 	"github.com/labstack/echo"
 	"github.com/lib/pq"
@@ -31,6 +34,7 @@ import (
 type accountHandler struct {
 	db              appliancedb.DataStore
 	sessionStore    sessions.Store
+	avatarBucket    *storage.BucketHandle
 	getConfigHandle registry.GetConfigHandleFunc
 }
 
@@ -75,6 +79,58 @@ func (a *accountHandler) adminOrSelf(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized)
 	}
 	return nil
+}
+
+// getAccountAvatar returns the user's profile picture, or avatar.
+// This is unlike some of our other endpoints in that it manages
+// Cache-Control so that browsers will recheck if the avatar has
+// changed roughly once per hour.
+func (a *accountHandler) getAccountAvatar(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	targetUUIDParam := c.Param("acct_uuid")
+	targetUUID, err := uuid.FromString(targetUUIDParam)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+
+	account, err := a.db.AccountByUUID(ctx, targetUUID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, err)
+	}
+	c.Logger().Debugf("account is %v", account)
+	aHash := hex.EncodeToString(account.AvatarHash)
+	if len(account.AvatarHash) == 0 {
+		return echo.NewHTTPError(http.StatusNotFound)
+	}
+	c.Response().Header().Set("Cache-Control", "max-age=3600")
+	c.Response().Header().Set("ETag", aHash)
+
+	for _, ifNoneMatchVal := range c.Request().Header["If-None-Match"] {
+		if ifNoneMatchVal == aHash {
+			return echo.NewHTTPError(http.StatusNotModified)
+		}
+	}
+
+	object := fmt.Sprintf("%s/%s", account.OrganizationUUID, account.UUID)
+	obj := a.avatarBucket.Object(object)
+	oa, err := obj.Attrs(ctx)
+	if err != nil {
+		if err == storage.ErrObjectNotExist {
+			return echo.NewHTTPError(http.StatusNotFound)
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+	reader, err := obj.NewReader(ctx)
+	if err != nil {
+		if err == storage.ErrObjectNotExist {
+			return echo.NewHTTPError(http.StatusNotFound)
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+	defer reader.Close()
+
+	return c.Stream(http.StatusOK, oa.ContentType, reader)
 }
 
 // getAccountPasswordGen generates a password for the user, and sends it back
@@ -454,8 +510,13 @@ func (a *accountHandler) mkAccountMiddleware(allowedRoles []string) echo.Middlew
 
 // newAccountAPIHandler creates an accountHandler for the given DataStore and session
 // Store, and routes the handler into the echo instance.
-func newAccountHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []echo.MiddlewareFunc, sessionStore sessions.Store, getConfigHandle registry.GetConfigHandleFunc) *accountHandler {
-	h := &accountHandler{db, sessionStore, getConfigHandle}
+func newAccountHandler(r *echo.Echo, db appliancedb.DataStore,
+	middlewares []echo.MiddlewareFunc,
+	sessionStore sessions.Store,
+	avatarBucket *storage.BucketHandle,
+	getConfigHandle registry.GetConfigHandleFunc) *accountHandler {
+
+	h := &accountHandler{db, sessionStore, avatarBucket, getConfigHandle}
 	acct := r.Group("/api/account")
 	acct.Use(middlewares...)
 
@@ -463,6 +524,7 @@ func newAccountHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []ech
 	user := h.mkAccountMiddleware([]string{"admin", "user"})
 
 	acct.GET("/passwordgen", h.getAccountPasswordGen)
+	acct.GET("/:acct_uuid/avatar", h.getAccountAvatar, user)
 	acct.GET("/:acct_uuid/selfprovision", h.getAccountSelfProvision, user)
 	acct.POST("/:acct_uuid/selfprovision", h.postAccountSelfProvision, user)
 	acct.POST("/:acct_uuid/deprovision", h.postAccountDeprovision, admin)

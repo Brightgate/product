@@ -619,6 +619,13 @@ const getters = {
     return state.currentSite.users[uuid];
   },
 
+  siteUserByUID: (state) => (siteID, uid) => {
+    return Object.values(getSite(state, siteID).users).find((value) => value.UID === uid);
+  },
+  userByUID: (state) => (uid) => {
+    return Object.values(state.currentSite.users).find((value) => value.UID === uid);
+  },
+
   sites: (state) => state.sites,
 
   siteByID: (state) => (id) => {
@@ -661,6 +668,11 @@ const getters = {
   // Account data by account UUID
   accountByID: (state) => (id) => {
     return state.accounts[id];
+  },
+
+  // Account data by UID (email)
+  accountByEmail: (state) => (email) => {
+    return Object.values(state.accounts).find((value) => value.email === email);
   },
 
   // device utility functions

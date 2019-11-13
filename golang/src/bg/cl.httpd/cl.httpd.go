@@ -45,6 +45,7 @@ import (
 	"bg/cloud_models/sessiondb"
 	"bg/common/cfgapi"
 
+	"cloud.google.com/go/storage"
 	"github.com/sfreiberg/gotwilio"
 	"github.com/tomazk/envcfg"
 
@@ -93,6 +94,7 @@ type Cfg struct {
 	ConfigdConnection         string `envcfg:"B10E_CLHTTPD_CLCONFIGD_CONNECTION"`
 	TwilioSID                 string `envcfg:"B10E_CLHTTPD_TWILIO_SID"`
 	TwilioAuthToken           string `envcfg:"B10E_CLHTTPD_TWILIO_AUTHTOKEN"`
+	AvatarBucket              string `envcfg:"B10E_CLHTTPD_AVATAR_BUCKET"`
 	// Whether to Disable TLS for outbound connections to cl.configd
 	ConfigdDisableTLS bool   `envcfg:"B10E_CLHTTPD_CLCONFIGD_DISABLE_TLS"`
 	AppPath           string `enccfg:"B10E_CLHTTPD_APP"`
@@ -259,7 +261,9 @@ func mkRouterHTTPS() *routerState {
 	state.echo = echo.New()
 	r := state.echo
 	r.Debug = environ.Developer
-	if !r.Debug {
+	if r.Debug {
+		r.Logger.SetLevel(gommonlog.DEBUG)
+	} else {
 		r.Logger.SetLevel(gommonlog.INFO)
 	}
 	r.HideBanner = true
@@ -305,14 +309,37 @@ func mkRouterHTTPS() *routerState {
 		return c.Redirect(http.StatusTemporaryRedirect, "/client-web/")
 	})
 
+	// Avatar GCS Setup
+	var avBucketName string
+	if environ.AvatarBucket != "" {
+		avBucketName = environ.AvatarBucket
+	} else {
+		if environ.Developer {
+			avBucketName = "bg-appliance-dev-avatars"
+		} else {
+			r.Logger.Fatalf("Must specify Avatar Storage Bucket B10E_CLHTTPD_AVATAR_BUCKET")
+		}
+	}
+
 	// Setup /auth endpoints
-	_ = newAuthHandler(r, state.sessionStore, state.applianceDB)
+	gcs, err := storage.NewClient(context.Background())
+	if err != nil {
+		r.Logger.Fatalf("failed to make gcs client: %s", err)
+	}
+	avBucket := gcs.Bucket(avBucketName)
+	avBucketAttrs, err := avBucket.Attrs(context.Background())
+	if err != nil {
+		r.Logger.Fatalf("failed to get bucket attrs: %s", err)
+	}
+	r.Logger.Infof(checkMark+"Setup Avatar Bucket '%s'", avBucketAttrs.Name)
+
+	_ = newAuthHandler(r, state.sessionStore, state.applianceDB, avBucket)
 
 	wares := []echo.MiddlewareFunc{
 		newSessionMiddleware(state.sessionStore).Process,
 	}
 	_ = newSiteHandler(r, state.applianceDB, wares, getConfigClientHandle, twil)
-	_ = newAccountHandler(r, state.applianceDB, wares, state.sessionStore, getConfigClientHandle)
+	_ = newAccountHandler(r, state.applianceDB, wares, state.sessionStore, avBucket, getConfigClientHandle)
 	_ = newOrgHandler(r, state.applianceDB, wares, state.sessionStore)
 	_ = newAccessHandler(r, state.applianceDB, state.sessionStore)
 
@@ -325,7 +352,9 @@ func mkRouterHTTPS() *routerState {
 func mkRouterHTTP() *echo.Echo {
 	r := echo.New()
 	r.Debug = environ.Developer
-	if !r.Debug {
+	if r.Debug {
+		r.Logger.SetLevel(gommonlog.DEBUG)
+	} else {
 		r.Logger.SetLevel(gommonlog.INFO)
 	}
 	r.HideBanner = true

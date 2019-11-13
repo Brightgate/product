@@ -56,6 +56,12 @@ div.my-inner-block {
   display: block;
   text-align: right;
 }
+
+div.avatar-container {
+  display: inline-flex;
+  align-items: center;
+}
+
 </style>
 <template>
   <f7-page>
@@ -153,6 +159,29 @@ div.my-inner-block {
       <f7-list-item :title="$t('message.dev_details.network_name')">
         {{ dev.displayName }}
       </f7-list-item>
+
+      <!-- user name -->
+      <!-- it's worth noting that we're papering over some technical debt
+        here; username, email, UID are conflated and entangled. -->
+      <f7-list-item
+        v-if="acct"
+        :link="`/accounts/${acct.accountUUID}/`"
+        :title="$t('message.dev_details.user_name')">
+        <div class="avatar-container">
+          <div>{{ acct.name }}&nbsp;</div>
+          <vue-avatar
+            :username="acct.name"
+            :src="acct.hasAvatar ? `/api/account/${acct.accountUUID}/avatar` : undefined"
+            :size="24" />
+        </div>
+      </f7-list-item>
+      <f7-list-item
+        v-else-if="userByUID(dev.username)"
+        :link="`/sites/${currentSiteID}/users/${userByUID(dev.username).UUID}/`"
+        :title="$t('message.dev_details.user_name')">
+        {{ userByUID(dev.username).DisplayName }}
+      </f7-list-item>
+
       <!-- Network: for wired clients -->
       <f7-list-item v-if="!dev.wireless" :title="$t('message.dev_details.connection')">
         <span :class="dev.active ? 'dev-active' : 'dev-inactive'">
@@ -244,6 +273,7 @@ import vuex from 'vuex';
 import {isBefore, isEqual} from 'date-fns';
 import {pickBy} from 'lodash-es';
 import Debug from 'debug';
+import VueAvatar from 'vue-avatar';
 import {format, formatRelative, parseISO} from '../date-fns-wrapper';
 
 import uiUtils from '../uiutils';
@@ -267,14 +297,18 @@ export default {
     'bg-hw-icon': BGHWIcon,
     'bg-site-breadcrumb': BGSiteBreadcrumb,
     'bg-wifi-strength': BGWifiStrength,
+    'vue-avatar': VueAvatar,
   },
 
   computed: {
     // Map various $store elements as computed properties for use in the
     // template.
     ...vuex.mapGetters([
-      'vaps',
+      'accountByEmail',
+      'userByUID',
+      'currentSiteID',
       'nodes',
+      'vaps',
     ]),
 
     devModel: function() {
@@ -333,6 +367,12 @@ export default {
         return this.nodes[this.dev.connNode].hwModel;
       }
       return undefined;
+    },
+    acct: function() {
+      if (!this.dev || !this.dev.username) {
+        return undefined;
+      }
+      return this.accountByEmail(this.dev.username);
     },
 
     strength: function() {

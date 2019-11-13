@@ -12,6 +12,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -68,7 +69,11 @@ var (
 		OrganizationUUID: orgUUID,
 		PhoneNumber:      "650-555-1212",
 		PersonUUID:       personUUID,
+		AvatarHash:       []byte{},
 	}
+
+	// "I LIKE COCONUTS"
+	avHash, _ = hex.DecodeString("dc2bb1308bcee0f5ac68bb2b117b358d6520921df2fbb87d24fa516021cce377")
 
 	mockUserAccount = appliancedb.Account{
 		UUID:             userAccountUUID,
@@ -76,6 +81,7 @@ var (
 		OrganizationUUID: orgUUID,
 		PhoneNumber:      "650-555-1212",
 		PersonUUID:       personUUID,
+		AvatarHash:       avHash,
 	}
 
 	mockAccountOrgRoles = []appliancedb.AccountOrgRoles{

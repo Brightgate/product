@@ -141,6 +141,17 @@
   version = "v1.7.0"
 
 [[projects]]
+  digest = "1:7a8ebafb45af57575719ad9c455d91fd8a969934bab8e11410607f396d7c4890"
+  name = "github.com/fsouza/fake-gcs-server"
+  packages = [
+    "fakestorage",
+    "internal/backend",
+  ]
+  pruneopts = ""
+  revision = "8a9fc606da50d36f2cbdac4604142f81e2c6098f"
+  version = "v1.13.1"
+
+[[projects]]
   digest = "1:f85a7225ca7dbf52638161d3b3990cb1bc1f2fcb3b1eba449589a8e0820e306a"
   name = "github.com/gliderlabs/ssh"
   packages = ["."]
@@ -222,6 +233,20 @@
   pruneopts = ""
   revision = "6c65a5562fc06764971b7c5d05c76c75e84bdbf7"
   version = "v1.3.2"
+
+[[projects]]
+  digest = "1:9fcb267c272bc5054564b392e3ff7e65e35400fd9914afb1d169f92b95e7dbc9"
+  name = "github.com/google/go-cmp"
+  packages = [
+    "cmp",
+    "cmp/internal/diff",
+    "cmp/internal/flags",
+    "cmp/internal/function",
+    "cmp/internal/value",
+  ]
+  pruneopts = ""
+  revision = "2d0692c2e9617365a95b295612ac0d4415ba4627"
+  version = "v0.3.1"
 
 [[projects]]
   digest = "1:e85e59c4152d8576341daf54f40d96c404c264e04941a4a36b97a0f427eb9e5e"
@@ -1260,6 +1285,7 @@
     "github.com/dgrijalva/jwt-go",
     "github.com/dhduvall/gcloudzap",
     "github.com/fatih/color",
+    "github.com/fsouza/fake-gcs-server/fakestorage",
     "github.com/gliderlabs/ssh",
     "github.com/go-acme/lego/acme",
     "github.com/go-acme/lego/acme/api",
@@ -1279,6 +1305,7 @@
     "github.com/golang/protobuf/ptypes",
     "github.com/golang/protobuf/ptypes/any",
     "github.com/golang/protobuf/ptypes/timestamp",
+    "github.com/google/go-cmp/cmp",
     "github.com/google/gopacket",
     "github.com/google/gopacket/layers",
     "github.com/google/gopacket/pcap",

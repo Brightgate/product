@@ -7,6 +7,21 @@
   express written permission of Brightgate Inc is prohibited, and any
   such unauthorized removal or alteration will be a violation of federal law.
 -->
+<style scoped>
+div.item-title >>> div.vue-avatar--wrapper {
+  vertical-align: middle;
+}
+
+li.short-media-item {
+  padding-top: 0px;
+  padding-bottom: 0px;
+}
+
+li.short-media-item >>> div.item-media {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+</style>
 <template>
   <f7-page
     ptr
@@ -27,10 +42,13 @@
           </span>
         </div>
       </f7-list-item>
-      <f7-list-item v-for="acct in accounts"
-                    :key="acct.accountUUID"
+      <f7-list-item v-for="acct in accounts" :key="acct.accountUUID"
+                    :link="`${$f7route.url}${acct.accountUUID}/`"
                     :title="acct.name"
-                    :link="`${$f7route.url}${acct.accountUUID}/`" />
+                    class="short-media-item"
+                    media-item>
+        <vue-avatar slot="media" :src="acct.hasAvatar ? `/api/account/${acct.accountUUID}/avatar` : undefined" :username="acct.name" :size="32" />
+      </f7-list-item>
     </f7-list>
 
   </f7-page>
@@ -38,9 +56,13 @@
 <script>
 import Debug from 'debug';
 import vuex from 'vuex';
+import VueAvatar from 'vue-avatar';
 const debug = Debug('page:users');
 
 export default {
+  components: {
+    'vue-avatar': VueAvatar,
+  },
   computed: {
     // Map various $store elements as computed properties for use in the
     // template.

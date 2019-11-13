@@ -122,7 +122,7 @@
     </f7-list>
 
     <!-- popup to select org -->
-    <bg-org-switch-popup />
+    <bg-org-switch-popup v-if="appMode === appDefs.APPMODE_CLOUD" />
 
   </f7-page>
 </template>

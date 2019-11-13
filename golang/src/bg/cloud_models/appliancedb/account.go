@@ -35,6 +35,8 @@ type accountManager interface {
 	AccountByUUID(context.Context, uuid.UUID) (*Account, error)
 	InsertAccount(context.Context, *Account) error
 	InsertAccountTx(context.Context, DBX, *Account) error
+	UpdateAccount(context.Context, *Account) error
+	UpdateAccountTx(context.Context, DBX, *Account) error
 	DeleteAccount(context.Context, uuid.UUID) error
 	DeleteAccountTx(context.Context, DBX, uuid.UUID) error
 
@@ -129,6 +131,7 @@ type Account struct {
 	UUID             uuid.UUID `db:"uuid"`
 	Email            string    `db:"email"`
 	PhoneNumber      string    `db:"phone_number"`
+	AvatarHash       []byte    `db:"avatar_hash"`
 	PersonUUID       uuid.UUID `db:"person_uuid"`
 	OrganizationUUID uuid.UUID `db:"organization_uuid"`
 }
@@ -179,8 +182,33 @@ func (db *ApplianceDB) InsertAccountTx(ctx context.Context, dbx DBX,
 	}
 	_, err := dbx.NamedExecContext(ctx,
 		`INSERT INTO account
-		 (uuid, email, phone_number, person_uuid, organization_uuid)
-		 VALUES (:uuid, :email, :phone_number, :person_uuid, :organization_uuid)`,
+		 (uuid, email, phone_number, avatar_hash, person_uuid, organization_uuid)
+		 VALUES (:uuid, :email, :phone_number, :avatar_hash, :person_uuid, :organization_uuid)`,
+		account)
+	return err
+}
+
+// UpdateAccount updates an Account's details
+func (db *ApplianceDB) UpdateAccount(ctx context.Context,
+	account *Account) error {
+	return db.UpdateAccountTx(ctx, nil, account)
+}
+
+// UpdateAccountTx updates an Account's modifiable details, possibly inside a transaction.
+func (db *ApplianceDB) UpdateAccountTx(ctx context.Context, dbx DBX,
+	account *Account) error {
+
+	if dbx == nil {
+		dbx = db
+	}
+	_, err := dbx.NamedExecContext(ctx,
+		`UPDATE account
+		SET
+		  email=:email,
+		  phone_number=:phone_number,
+		  avatar_hash=:avatar_hash
+		WHERE
+		  uuid=:uuid`,
 		account)
 	return err
 }
@@ -253,6 +281,7 @@ type AccountInfo struct {
 	UUID         uuid.UUID `db:"uuid" json:"accountUUID"`
 	Email        string    `db:"email" json:"email"`
 	PhoneNumber  string    `db:"phone_number" json:"phoneNumber"`
+	HasAvatar    bool      `db:"has_avatar" json:"hasAvatar"`
 	Name         string    `db:"name" json:"name"`
 	PrimaryEmail string    `db:"primary_email" json:"primaryEmail"`
 }
@@ -265,6 +294,7 @@ func (db *ApplianceDB) AccountInfosByOrganization(ctx context.Context, org uuid.
 		  a.uuid,
 		  a.email,
 		  a.phone_number,
+		  (length(a.avatar_hash) > 0) as has_avatar,
 		  p.name,
 		  p.primary_email
 		FROM account a, person p
@@ -285,6 +315,7 @@ func (db *ApplianceDB) AccountInfoByUUID(ctx context.Context, acct uuid.UUID) (*
 		  a.uuid,
 		  a.email,
 		  a.phone_number,
+		  (length(a.avatar_hash) > 0) as has_avatar,
 		  p.name,
 		  p.primary_email
 		FROM account a, person p
@@ -835,6 +866,7 @@ func (db *ApplianceDB) LoginInfoByProviderAndSubject(ctx context.Context,
 		  a.phone_number,
 		  a.person_uuid,
 		  a.organization_uuid,
+		  a.avatar_hash,
 		  p.uuid,
 		  p.name,
 		  p.primary_email,
@@ -851,6 +883,7 @@ func (db *ApplianceDB) LoginInfoByProviderAndSubject(ctx context.Context,
 		&li.Account.PhoneNumber,
 		&li.Account.PersonUUID,
 		&li.Account.OrganizationUUID,
+		&li.Account.AvatarHash,
 		&li.Person.UUID,
 		&li.Person.Name,
 		&li.Person.PrimaryEmail,

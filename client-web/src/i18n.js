@@ -293,6 +293,7 @@ export default {
         change_ring_err: 'Failed to change trust group for {dev} to {ring}: {err}',
         signal_strength: 'Signal Strength',
         SSID: 'SSID',
+        user_name: 'User Name',
       },
       enroll_guest: {
         title: 'Enroll Guest',

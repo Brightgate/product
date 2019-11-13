@@ -11,8 +11,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/mail"
@@ -36,6 +40,7 @@ import (
 	"github.com/markbates/goth/providers/google"
 	"github.com/markbates/goth/providers/openidConnect"
 
+	"cloud.google.com/go/storage"
 	"google.golang.org/api/people/v1"
 )
 
@@ -49,6 +54,7 @@ func init() {
 type authHandler struct {
 	sessionStore sessions.Store
 	db           appliancedb.DataStore
+	avatarBucket *storage.BucketHandle
 	providers    []goth.Provider
 }
 
@@ -329,7 +335,7 @@ func (a *authHandler) findOrganization(ctx context.Context, c echo.Context,
 	return uuid.Nil, fmt.Errorf("no rule matched user's tenant, domain or email")
 }
 
-func getAzureUserPhone(logger echo.Logger, user goth.User) (string, error) {
+func getAzurePhone(logger echo.Logger, user goth.User) (string, error) {
 	var phoneNumber string
 	logger.Debugf("Trying to get phone number for %s, RawData %#v", user.UserID, user.RawData)
 	phoneNumber, _ = user.RawData["mobilePhone"].(string)
@@ -347,12 +353,13 @@ func getAzureUserPhone(logger echo.Logger, user goth.User) (string, error) {
 	return "", errors.Errorf("Failed to find any phone Numbers for %#v", user)
 }
 
-func getGoogleUserPhone(logger echo.Logger, user goth.User) (string, error) {
+func getGooglePersonPhone(logger echo.Logger, user goth.User) (string, error) {
 	logger.Debugf("Trying to get a googlePerson and PhoneNumber for %s", user.UserID)
 	tokenSource := oauth2.StaticTokenSource(&oauth2.Token{
 		AccessToken: user.AccessToken,
 	})
 	client := &http.Client{
+		Timeout: time.Second * 10,
 		Transport: &oauth2.Transport{
 			Source: tokenSource,
 		},
@@ -390,10 +397,206 @@ func getGoogleUserPhone(logger echo.Logger, user goth.User) (string, error) {
 	return "", fmt.Errorf("Couldn't understand phonenumber record %#v", googlePerson.PhoneNumbers[bestIndex])
 }
 
-func (a *authHandler) mkNewUser(c echo.Context, user goth.User) (*appliancedb.LoginInfo, error) {
+func getGooglePersonAvatarURL(logger echo.Logger, user goth.User) (string, error) {
+	logger.Debugf("Trying to get a googlePerson and Avatar for %s", user.UserID)
+	tokenSource := oauth2.StaticTokenSource(&oauth2.Token{
+		AccessToken: user.AccessToken,
+	})
+	client := &http.Client{
+		Timeout: time.Second * 10,
+		Transport: &oauth2.Transport{
+			Source: tokenSource,
+		},
+	}
+	svc, err := people.New(client)
+	if err != nil {
+		return "", errors.Wrap(err, "Failed to make people client")
+	}
+	peopleService := people.NewPeopleService(svc)
+	googlePerson, err := peopleService.Get("people/me").PersonFields("photos").Do()
+	if err != nil {
+		return "", errors.Wrap(err, "Failed to get googlePerson")
+	}
+	logger.Infof("Fetched googlePerson: %#v", googlePerson)
+	logger.Debugf("Photos: %#v", googlePerson.Photos)
+	if len(googlePerson.Photos) == 0 {
+		logger.Warnf("No photo in response %#v", googlePerson)
+		return "", nil
+	}
+	// If none are marked "primary", this will cause us to take the first
+	bestIndex := 0
+	for i, photo := range googlePerson.Photos {
+		if photo.Metadata.Primary {
+			bestIndex = i
+			break
+		}
+	}
+	bestPhoto := googlePerson.Photos[bestIndex]
+
+	// See if it's the google default image
+	if bestPhoto.Default {
+		return "", nil
+	} else if bestPhoto.Url != "" {
+		return bestPhoto.Url, nil
+	}
+	return "", fmt.Errorf("Couldn't understand photo record %#v", bestPhoto)
+}
+
+func (a *authHandler) getPhone(c echo.Context, user goth.User) (string, error) {
+	var phoneNumber string
+	var err error
+	if user.Provider == "google" {
+		phoneNumber, err = getGooglePersonPhone(c.Logger(), user)
+		if err != nil {
+			c.Logger().Warnf("Couldn't get google user phone: %s", err)
+		}
+	} else if user.Provider == "azureadv2" {
+		phoneNumber, err = getAzurePhone(c.Logger(), user)
+		if err != nil {
+			c.Logger().Warnf("Couldn't get azure user phone: %s", err)
+		}
+	}
+	return phoneNumber, err
+}
+
+func (a *authHandler) storeAvatar(c echo.Context, avatar *avatar, account *appliancedb.Account) error {
+	var err error
+	c.Logger().Infof("storing Avatar for %s", account.UUID)
+	ctx := c.Request().Context()
+	object := fmt.Sprintf("%s/%s", account.OrganizationUUID, account.UUID)
+	obj := a.avatarBucket.Object(object)
+	wc := obj.NewWriter(ctx)
+	// Set initial attributes
+	wc.ObjectAttrs.ContentType = avatar.ContentType
+	if wc.ObjectAttrs.Metadata == nil {
+		wc.ObjectAttrs.Metadata = make(map[string]string)
+	}
+	wc.ObjectAttrs.Metadata["sha256"] = hex.EncodeToString(avatar.Hash[:])
+	if _, err := wc.Write(avatar.Data); err != nil {
+		return err
+	}
+	if err = wc.Close(); err != nil {
+		return err
+	}
+	c.Logger().Infof("stored Avatar for %s", account.UUID)
+	account.AvatarHash = avatar.Hash[:]
+	err = a.db.UpdateAccount(ctx, account)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// avatar encloses the data we need to track for a profile photo.
+type avatar struct {
+	Data        []byte
+	ContentType string
+	Hash        [sha256.Size]byte
+}
+
+func (a *authHandler) getCloudProviderAvatar(c echo.Context, user goth.User) (*avatar, error) {
+	var err error
+	var resp *http.Response
+
+	if user.AvatarURL == "" {
+		c.Logger().Debugf("No avatar for %s|%s", user.Provider, user.UserID)
+		return nil, nil
+	}
+	c.Logger().Debugf("Trying to get avatar for %s|%s", user.Provider, user.UserID)
+
+	client := http.Client{
+		Timeout: time.Second * 10,
+	}
+	if user.Provider == "google" {
+		url, err := getGooglePersonAvatarURL(c.Logger(), user)
+		if err != nil {
+			return nil, errors.Wrap(err, "Failed to get photo url")
+		}
+		if url == "" {
+			return nil, nil
+		}
+		resp, err = client.Get(user.AvatarURL)
+		if err != nil {
+			return nil, err
+		}
+	} else if user.Provider == "azureadv2" {
+		req, err := http.NewRequest("GET", "https://graph.microsoft.com/v1.0/me/photo/$value", nil)
+		if err != nil {
+			return nil, err
+		}
+		bearer := fmt.Sprintf("Bearer %s", user.AccessToken)
+		c.Logger().Debugf("Avatar GET; Authorization %s", bearer)
+		req.Header.Set("Authorization", bearer)
+		resp, err = client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+	}
+	defer resp.Body.Close()
+
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Avatar GET %s failed with %s: %s", user.AvatarURL, resp.Status, data)
+	}
+	av := &avatar{
+		Data:        data,
+		Hash:        sha256.Sum256(data),
+		ContentType: resp.Header.Get("Content-Type"),
+	}
+	if av.ContentType == "" {
+		return nil, errors.New("Can't get Content-Type of avatar")
+	}
+	return av, nil
+}
+
+// Note: May modify appliancedb.LoginInfo
+func (a *authHandler) updateAccountPhone(c echo.Context, user goth.User, li *appliancedb.LoginInfo) error {
+	ctx := c.Request().Context()
+
+	phoneNumber, err := a.getPhone(c, user)
+	if err != nil {
+		return errors.Wrapf(err, "Failed to getPhone for %s|%s", user.Provider, user.UserID)
+	}
+	if phoneNumber == li.Account.PhoneNumber {
+		return nil
+	}
+	li.Account.PhoneNumber = phoneNumber
+	err = a.db.UpdateAccount(ctx, &li.Account)
+	if err != nil {
+		return errors.Wrapf(err, "Failed to update account for %s|%s", user.Provider, user.UserID)
+	}
+	return nil
+}
+
+// Note: May modify appliancedb.LoginInfo
+func (a *authHandler) updateAccountAvatar(c echo.Context, user goth.User, li *appliancedb.LoginInfo) error {
+	newAvatar, err := a.getCloudProviderAvatar(c, user)
+	if err != nil {
+		return errors.Wrapf(err, "Failed to getAvatarfor %s|%s", user.Provider, user.UserID)
+	}
+	if newAvatar == nil {
+		c.Logger().Debugf("no avatar for %s|%s", user.Provider, user.UserID)
+		return nil
+	}
+
+	c.Logger().Debugf("avatar hash compare: %x == %x", li.Account.AvatarHash, newAvatar.Hash)
+	if bytes.Compare(newAvatar.Hash[:], li.Account.AvatarHash) == 0 {
+		return nil
+	}
+
+	err = a.storeAvatar(c, newAvatar, &li.Account)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (a *authHandler) mkNewAccount(c echo.Context, user goth.User) (*appliancedb.LoginInfo, error) {
 	// See if we can find an organization for this user.
 	var err error
-	var phoneNumber string
 	ctx := c.Request().Context()
 
 	orgUUID, err := a.findOrganization(ctx, c, user)
@@ -408,20 +611,6 @@ func (a *authHandler) mkNewUser(c echo.Context, user goth.User) (*appliancedb.Lo
 		user.Name, organization.Name, user.Email, user.Provider,
 		user.UserID)
 
-	if user.Provider == "google" {
-		var err error
-		phoneNumber, err = getGoogleUserPhone(c.Logger(), user)
-		if err != nil {
-			c.Logger().Warnf("Couldn't get google user phone: %s", err)
-		}
-	} else if user.Provider == "azureadv2" {
-		var err error
-		phoneNumber, err = getAzureUserPhone(c.Logger(), user)
-		if err != nil {
-			c.Logger().Warnf("Couldn't get azure user phone: %s", err)
-		}
-	}
-
 	person := &appliancedb.Person{
 		UUID:         uuid.NewV4(),
 		Name:         user.Name,
@@ -431,7 +620,8 @@ func (a *authHandler) mkNewUser(c echo.Context, user goth.User) (*appliancedb.Lo
 	account := &appliancedb.Account{
 		UUID:             uuid.NewV4(),
 		Email:            user.Email,
-		PhoneNumber:      phoneNumber,
+		PhoneNumber:      "",       // loaded in post-login phase
+		AvatarHash:       []byte{}, // loaded in post-login phase
 		PersonUUID:       person.UUID,
 		OrganizationUUID: organization.UUID,
 	}
@@ -493,7 +683,7 @@ func (a *authHandler) mkNewUser(c echo.Context, user goth.User) (*appliancedb.Lo
 		context.TODO(), user.Provider, user.UserID)
 }
 
-func (a *authHandler) getUser(c echo.Context, user goth.User) (*appliancedb.LoginInfo, error) {
+func (a *authHandler) getLoginInfo(c echo.Context, user goth.User) (*appliancedb.LoginInfo, error) {
 	// See if we can find an organization for this user.
 	var err error
 	ctx := c.Request().Context()
@@ -515,14 +705,24 @@ func (a *authHandler) getUser(c echo.Context, user goth.User) (*appliancedb.Logi
 	loginInfo, err := a.db.LoginInfoByProviderAndSubject(
 		ctx, user.Provider, user.UserID)
 	if _, ok := err.(appliancedb.NotFoundError); ok {
-		return a.mkNewUser(c, user)
+		loginInfo, err = a.mkNewAccount(c, user)
+	}
+	if err != nil {
+		return loginInfo, err
 	}
 
-	// XXX in the future, this is a place to do post-login checks on the
-	// account, and possibly go back to the oauth provider for up-to-date
-	// info about the user.
+	// Perform post-login checks on the account; as needed, go back to the
+	// oauth provider for up-to-date info about the user.
+	// XXX We may want to consider moving these to a goroutine to allow
+	// the login processing to complete.
+	if werr := a.updateAccountPhone(c, user, loginInfo); werr != nil {
+		c.Logger().Warnf("error updating phone %v|%v: %s", user.Provider, user.UserID, werr)
+	}
+	if werr := a.updateAccountAvatar(c, user, loginInfo); werr != nil {
+		c.Logger().Warnf("error updating avatar %v|%v: %s", user.Provider, user.UserID, werr)
+	}
 
-	return loginInfo, err
+	return loginInfo, nil
 }
 
 // getProviderCallback implements /auth/:provider/callback, which completes
@@ -540,7 +740,7 @@ func (a *authHandler) getProviderCallback(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	loginInfo, err := a.getUser(c, user)
+	loginInfo, err := a.getLoginInfo(c, user)
 	if err != nil {
 		c.Logger().Errorf("Error: %s", err)
 		return echo.NewHTTPError(http.StatusUnauthorized, err.Error())
@@ -673,11 +873,13 @@ func (a *authHandler) getUserID(c echo.Context) error {
 // newAuthHandler creates an authHandler to handle authentication endpoints
 // and routes the handler into the echo instance.  Note that it manipulates
 // global gothic state.
-func newAuthHandler(r *echo.Echo, sessionStore sessions.Store, applianceDB appliancedb.DataStore) *authHandler {
+func newAuthHandler(r *echo.Echo, sessionStore sessions.Store, applianceDB appliancedb.DataStore, avatarBucket *storage.BucketHandle) *authHandler {
+
 	h := &authHandler{
 		sessionStore: sessionStore,
 		providers:    make([]goth.Provider, 0),
 		db:           applianceDB,
+		avatarBucket: avatarBucket,
 	}
 	gothic.Store = sessionStore
 	providers := []providerFunc{googleProvider, azureadv2Provider, openidConnectProvider, auth0Provider}

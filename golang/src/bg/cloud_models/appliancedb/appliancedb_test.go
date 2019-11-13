@@ -147,6 +147,7 @@ var (
 		PhoneNumber:      "555-1212",
 		PersonUUID:       testPerson1.UUID,
 		OrganizationUUID: testOrg1.UUID,
+		AvatarHash:       []byte{},
 	}
 	testAccount2 = Account{
 		UUID:             uuid.Must(uuid.FromString(account2Str)),
@@ -154,6 +155,7 @@ var (
 		PhoneNumber:      "555-2222",
 		PersonUUID:       testPerson2.UUID,
 		OrganizationUUID: testOrg1.UUID,
+		AvatarHash:       []byte{},
 	}
 	testMSPAccount1 = Account{
 		UUID:             uuid.Must(uuid.FromString(accountMSP1Str)),
@@ -161,6 +163,7 @@ var (
 		PhoneNumber:      "555-1212",
 		PersonUUID:       testMSPPerson1.UUID,
 		OrganizationUUID: testMSPOrg1.UUID,
+		AvatarHash:       []byte{},
 	}
 	testMSPAccount2 = Account{
 		UUID:             uuid.Must(uuid.FromString(accountMSP2Str)),
@@ -168,6 +171,7 @@ var (
 		PhoneNumber:      "555-1212",
 		PersonUUID:       testMSPPerson2.UUID,
 		OrganizationUUID: testMSPOrg1.UUID,
+		AvatarHash:       []byte{},
 	}
 	testOrgOrgRel1 = OrgOrgRelationship{
 		UUID:                   uuid.Must(uuid.FromString(orgOrgRel1Str)),

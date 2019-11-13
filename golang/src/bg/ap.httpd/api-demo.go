@@ -62,6 +62,7 @@ type daDevice struct {
 	ConnBand        string                `json:"connBand,omitempty"`
 	ConnNode        string                `json:"connNode,omitempty"`
 	ConnVAP         string                `json:"connVAP,omitempty"`
+	Username        string                `json:"username,omitempty"`
 	Scans           map[string]daScanInfo `json:"scans,omitempty"`
 	Vulnerabilities map[string]daVulnInfo `json:"vulnerabilities,omitempty"`
 	LastActivity    *time.Time            `json:"lastActivity,omitempty"`
@@ -99,6 +100,7 @@ func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
 		ConnBand:        client.ConnBand,
 		ConnNode:        client.ConnNode,
 		ConnVAP:         client.ConnVAP,
+		Username:        client.Username,
 		Scans:           make(map[string]daScanInfo),
 		Vulnerabilities: make(map[string]daVulnInfo),
 	}

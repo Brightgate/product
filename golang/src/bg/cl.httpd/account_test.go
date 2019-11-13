@@ -31,7 +31,19 @@ import (
 
 	"bg/cloud_models/appliancedb"
 	"bg/cloud_models/appliancedb/mocks"
+
+	"cloud.google.com/go/storage"
+	"github.com/fsouza/fake-gcs-server/fakestorage"
+	"github.com/google/go-cmp/cmp"
 )
+
+const mockBucketName = "mock-avatar-bucket"
+
+func setupFakeCS(t *testing.T) (*storage.Client, *fakestorage.Server) {
+	fakeCS := fakestorage.NewServer([]fakestorage.Object{})
+	fakeCS.CreateBucket(mockBucketName)
+	return fakeCS.Client(), fakeCS
+}
 
 func TestAccountsGenAndProvision(t *testing.T) {
 	var err error
@@ -67,7 +79,11 @@ func TestAccountsGenAndProvision(t *testing.T) {
 		newSessionMiddleware(ss).Process,
 	}
 	e := echo.New()
-	_ = newAccountHandler(e, dMock, mw, ss, getMockClientHandle)
+
+	csclient, csserver := setupFakeCS(t)
+	defer csserver.Stop()
+	mockBucket := csclient.Bucket(mockBucketName)
+	_ = newAccountHandler(e, dMock, mw, ss, mockBucket, getMockClientHandle)
 
 	// Setup request for password generation
 	req, rec := setupReqRec(&mockAccount, echo.GET, "/api/account/passwordgen", nil, ss)
@@ -185,7 +201,12 @@ func TestAccountsRoles(t *testing.T) {
 		newSessionMiddleware(ss).Process,
 	}
 	e := echo.New()
-	_ = newAccountHandler(e, dMock, mw, ss, getMockClientHandle)
+
+	csclient, csserver := setupFakeCS(t)
+	defer csserver.Stop()
+	mockBucket := csclient.Bucket(mockBucketName)
+
+	_ = newAccountHandler(e, dMock, mw, ss, mockBucket, getMockClientHandle)
 
 	accts := []appliancedb.Account{mockAccount, mockUserAccount}
 
@@ -231,7 +252,7 @@ func TestAccountsRoles(t *testing.T) {
 					// Test
 					e.ServeHTTP(rec, req)
 					t.Logf("return body:Svc %s", rec.Body.String())
-					if srcAcct == mockAccount {
+					if cmp.Equal(srcAcct, mockAccount) {
 						if role == "badrole" {
 							assert.Equal(http.StatusNotFound, rec.Code)
 						} else {
@@ -244,4 +265,57 @@ func TestAccountsRoles(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestAccountsAvatar(t *testing.T) {
+	assert := require.New(t)
+	// Mock DB
+
+	dMock := &mocks.DataStore{}
+	dMock.On("AccountByUUID", mock.Anything, mockAccount.UUID).Return(&mockAccount, nil)
+	dMock.On("AccountByUUID", mock.Anything, mockUserAccount.UUID).Return(&mockUserAccount, nil)
+	dMock.On("AccountOrgRolesByAccountTarget", mock.Anything, mockAccount.UUID, mock.Anything).Return(mockAccountOrgRoles, nil)
+	dMock.On("AccountOrgRolesByAccountTarget", mock.Anything, mockUserAccount.UUID, mock.Anything).Return(mockUserAccountOrgRoles, nil)
+	defer dMock.AssertExpectations(t)
+
+	// Setup Echo
+	ss := sessions.NewCookieStore(securecookie.GenerateRandomKey(32))
+	mw := []echo.MiddlewareFunc{
+		newSessionMiddleware(ss).Process,
+	}
+	e := echo.New()
+
+	csclient, csserver := setupFakeCS(t)
+	defer csserver.Stop()
+	mockBucket := csclient.Bucket(mockBucketName)
+
+	_ = newAccountHandler(e, dMock, mw, ss, mockBucket, getMockClientHandle)
+
+	// Request avatar, there should be none
+	url := fmt.Sprintf("/api/account/%s/avatar", mockAccount.UUID.String())
+	req, rec := setupReqRec(&mockAccount, echo.GET, url, nil, ss)
+	e.ServeHTTP(rec, req)
+	t.Logf("return body %s", rec.Body.String())
+	assert.Equal(http.StatusNotFound, rec.Code)
+
+	// Request avatar, should get 404 because the backend has no avatar, despite
+	// the hash value in the db.
+	url = fmt.Sprintf("/api/account/%s/avatar", mockUserAccount.UUID.String())
+	req, rec = setupReqRec(&mockUserAccount, echo.GET, url, nil, ss)
+	e.ServeHTTP(rec, req)
+	assert.Equal(http.StatusNotFound, rec.Code)
+
+	csserver.CreateObject(fakestorage.Object{
+		BucketName:  mockBucketName,
+		Name:        fmt.Sprintf("%s/%s", mockUserAccount.OrganizationUUID, mockUserAccount.UUID),
+		ContentType: "application/octet-stream",
+		Content:     []byte("I LIKE COCONUTS"),
+	})
+
+	// Now that the CS server has something, request avatar, should get something
+	url = fmt.Sprintf("/api/account/%s/avatar", mockUserAccount.UUID.String())
+	req, rec = setupReqRec(&mockUserAccount, echo.GET, url, nil, ss)
+	e.ServeHTTP(rec, req)
+	t.Logf("return body %s", rec.Body.String())
+	assert.Equal(http.StatusOK, rec.Code)
 }

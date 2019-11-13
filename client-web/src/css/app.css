@@ -1,1 +1,9 @@
 /* Your app styles here */
+
+.md .vue-avatar--wrapper {
+	font-family: Roboto,system-ui,Noto,Helvetica,Arial,sans-serif !important;
+}
+
+.ios .vue-avatar--wrapper {
+	font-family: -apple-system,SF Pro Text,SF UI Text,system-ui,Helvetica Neue,Helvetica,Arial,sans-serif !important;
+}

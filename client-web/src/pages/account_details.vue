@@ -7,6 +7,16 @@
   express written permission of Brightgate Inc is prohibited, and any
   such unauthorized removal or alteration will be a violation of federal law.
 -->
+<style scoped>
+div.acct-info-flex {
+  display: flex;
+  font-size: 16px;
+}
+div.avatar {
+  margin-right: 10px;
+  margin-top: 8px;
+}
+</style>
 <template>
   <f7-page @page:beforein="onPageBeforeIn">
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.account_details.title')" sliding />
@@ -15,7 +25,12 @@
       <h1>
         {{ acct.name }}
       </h1>
-      {{ orgNameByID(acct.organizationUUID) }}
+      <div class="acct-info-flex">
+        <vue-avatar :src="acct.hasAvatar ? `/api/account/${acct.accountUUID}/avatar` : undefined" :username="acct.name" :size="64" class="avatar" inline />
+        <div>
+          {{ orgNameByID(acct.organizationUUID) }}
+        </div>
+      </div>
     </f7-block>
 
     <f7-list>
@@ -92,10 +107,15 @@
 <script>
 import Debug from 'debug';
 import vuex from 'vuex';
+import VueAvatar from 'vue-avatar';
 import {format, parseISO} from '../date-fns-wrapper';
 const debug = Debug('page:account-details');
 
 export default {
+  components: {
+    'vue-avatar': VueAvatar,
+  },
+
   data: function() {
     const accountID = this.$f7route.params.accountID;
     const acct = this.$store.getters.accountByID(accountID);
