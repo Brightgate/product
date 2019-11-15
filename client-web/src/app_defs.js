@@ -32,4 +32,12 @@ export default {
   ROLE_ADMIN,
   ROLE_USER,
   ALL_ROLES: [ROLE_ADMIN, ROLE_USER],
+
+  LOGIN_REASON: {
+    UNKNOWN_ERROR: -1,
+    SERVER_ERROR: 1,
+    NO_OAUTH_RULE_MATCH: 2,
+    NO_ROLES: 3,
+    NO_SESSION: 4,
+  },
 };

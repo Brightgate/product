@@ -324,6 +324,28 @@ async function siteEnrollGuest(siteID, {kind, phoneNumber, email}) {
   return res.data;
 }
 
+// AuthUserIDError is designed to absorb the special error returned by the
+// /auth/userid;
+class AuthUserIDError {
+  constructor(lerr) {
+    this.reason = appDefs.LOGIN_REASON.UNKNOWN_ERROR;
+    if (!lerr.response || !lerr.response.data) {
+      debug('Saw unexpected error constructing AuthUserIDError', lerr);
+      return;
+    }
+    if (typeof lerr.response.data === 'object') {
+      if (lerr.response.data.reason) {
+        // Should override reason, and set other related fields
+        Object.assign(this, lerr.response.data);
+        return;
+      } else {
+        debug('Saw unexpected response object constructing AuthUserIDError', lerr.response.data);
+        return;
+      }
+    }
+  }
+}
+
 async function authProviders() {
   const u = buildUrl('/auth/providers');
   try {
@@ -377,7 +399,8 @@ async function authUserID() {
     return res.data;
   } catch (err) {
     debug('authUserID: failed', err);
-    throw err;
+    debug('authUserID: failed', typeof(err.response.data), err.response.data);
+    throw new AuthUserIDError(err);
   }
 }
 
@@ -527,6 +550,7 @@ export default {
   siteUsersPost,
   siteUsersDelete,
   siteEnrollGuest,
+  AuthUserIDError,
   authProviders,
   authApplianceLogin,
   authApplianceLogout,

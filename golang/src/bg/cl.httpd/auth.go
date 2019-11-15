@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/gob"
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
@@ -41,6 +42,7 @@ import (
 	"github.com/markbates/goth/providers/openidConnect"
 
 	"cloud.google.com/go/storage"
+	"google.golang.org/api/option"
 	"google.golang.org/api/people/v1"
 )
 
@@ -275,6 +277,37 @@ func getUserAzureTenant(user *goth.User) (string, error) {
 	return tid, nil
 }
 
+const reasonServerError = 1
+const reasonNoOauthRuleMatch = 2
+const reasonNoRoles = 3
+const reasonNoSession = 4
+
+type useridError struct {
+	Reason       int    `json:"reason"`
+	Email        string `json:"email"`
+	Provider     string `json:"provider"`
+	Tenant       string `json:"tenant"`
+	WrappedError error  `json:"-"`
+}
+
+func (e useridError) Error() string {
+	switch e.Reason {
+	case reasonServerError:
+		return fmt.Sprintf("internal error: %s", e.WrappedError)
+	case reasonNoOauthRuleMatch:
+		return fmt.Sprintf("identity '%s' (%s) not affiliated with a "+
+			"recognized customer; or %s is a login provider for this org.",
+			e.Email, e.Provider, e.Provider)
+	case reasonNoRoles:
+		return fmt.Sprintf("no roles for %s (%s)", e.Email, e.Provider)
+	}
+	panic(fmt.Sprintf("invalid useridError reason %d", e.Reason))
+}
+
+func (e useridError) Unwrap() error {
+	return e.WrappedError
+}
+
 // findOrganization does three tests against the incoming user, looking
 // at the OAuth2Organization Rules.
 //
@@ -330,14 +363,14 @@ func (a *authHandler) findOrganization(ctx context.Context, c echo.Context,
 		}
 	}
 
-	c.Logger().Warnf("findOrganization: No rules matched tenant=%q domain=%q email=%q",
-		tenant, domainPart, user.Email)
-	return uuid.Nil, fmt.Errorf("no rule matched user's tenant, domain or email")
+	c.Logger().Warnf("findOrganization: No rules matched provider=%q tenant=%q domain=%q email=%q",
+		user.Provider, tenant, domainPart, user.Email)
+	return uuid.Nil, useridError{reasonNoOauthRuleMatch, user.Email, user.Provider, tenant, nil}
 }
 
-func getAzurePhone(logger echo.Logger, user goth.User) (string, error) {
+func getAzurePhone(c echo.Context, user goth.User) (string, error) {
 	var phoneNumber string
-	logger.Debugf("Trying to get phone number for %s, RawData %#v", user.UserID, user.RawData)
+	c.Logger().Debugf("Trying to get phone number for %s, RawData %#v", user.UserID, user.RawData)
 	phoneNumber, _ = user.RawData["mobilePhone"].(string)
 	if phoneNumber != "" {
 		return phoneNumber, nil
@@ -353,18 +386,12 @@ func getAzurePhone(logger echo.Logger, user goth.User) (string, error) {
 	return "", errors.Errorf("Failed to find any phone Numbers for %#v", user)
 }
 
-func getGooglePersonPhone(logger echo.Logger, user goth.User) (string, error) {
-	logger.Debugf("Trying to get a googlePerson and PhoneNumber for %s", user.UserID)
+func getGooglePersonPhone(c echo.Context, user goth.User) (string, error) {
+	c.Logger().Debugf("Trying to get a googlePerson and PhoneNumber for %s", user.UserID)
 	tokenSource := oauth2.StaticTokenSource(&oauth2.Token{
 		AccessToken: user.AccessToken,
 	})
-	client := &http.Client{
-		Timeout: time.Second * 10,
-		Transport: &oauth2.Transport{
-			Source: tokenSource,
-		},
-	}
-	svc, err := people.New(client)
+	svc, err := people.NewService(c.Request().Context(), option.WithTokenSource(tokenSource))
 	if err != nil {
 		return "", errors.Wrap(err, "Failed to make people client")
 	}
@@ -373,16 +400,16 @@ func getGooglePersonPhone(logger echo.Logger, user goth.User) (string, error) {
 	if err != nil {
 		return "", errors.Wrap(err, "Failed to get googlePerson")
 	}
-	logger.Infof("Fetched googlePerson: %#v", googlePerson)
-	logger.Debugf("PhoneNumbers: %#v", googlePerson.PhoneNumbers)
+	c.Logger().Infof("Fetched googlePerson: %#v", googlePerson)
+	c.Logger().Debugf("PhoneNumbers: %#v", googlePerson.PhoneNumbers)
 	if len(googlePerson.PhoneNumbers) == 0 {
-		logger.Warnf("No phone number in response %#v; account may not have a phone number", googlePerson)
+		c.Logger().Warnf("No phone number in response %#v; account may not have a phone number", googlePerson)
 		return "", nil
 	}
 	// If none are marked "primary", this will cause us to take the first
 	bestIndex := 0
 	for i, num := range googlePerson.PhoneNumbers {
-		logger.Infof("phone #%d, %#v", i, num)
+		c.Logger().Infof("phone #%d, %#v", i, num)
 		if num.Metadata.Primary {
 			bestIndex = i
 			break
@@ -397,18 +424,12 @@ func getGooglePersonPhone(logger echo.Logger, user goth.User) (string, error) {
 	return "", fmt.Errorf("Couldn't understand phonenumber record %#v", googlePerson.PhoneNumbers[bestIndex])
 }
 
-func getGooglePersonAvatarURL(logger echo.Logger, user goth.User) (string, error) {
-	logger.Debugf("Trying to get a googlePerson and Avatar for %s", user.UserID)
+func getGooglePersonAvatarURL(c echo.Context, user goth.User) (string, error) {
+	c.Logger().Debugf("Trying to get a googlePerson and Avatar for %s", user.UserID)
 	tokenSource := oauth2.StaticTokenSource(&oauth2.Token{
 		AccessToken: user.AccessToken,
 	})
-	client := &http.Client{
-		Timeout: time.Second * 10,
-		Transport: &oauth2.Transport{
-			Source: tokenSource,
-		},
-	}
-	svc, err := people.New(client)
+	svc, err := people.NewService(c.Request().Context(), option.WithTokenSource(tokenSource))
 	if err != nil {
 		return "", errors.Wrap(err, "Failed to make people client")
 	}
@@ -417,10 +438,10 @@ func getGooglePersonAvatarURL(logger echo.Logger, user goth.User) (string, error
 	if err != nil {
 		return "", errors.Wrap(err, "Failed to get googlePerson")
 	}
-	logger.Infof("Fetched googlePerson: %#v", googlePerson)
-	logger.Debugf("Photos: %#v", googlePerson.Photos)
+	c.Logger().Infof("Fetched googlePerson: %#v", googlePerson)
+	c.Logger().Debugf("Photos: %#v", googlePerson.Photos)
 	if len(googlePerson.Photos) == 0 {
-		logger.Warnf("No photo in response %#v", googlePerson)
+		c.Logger().Warnf("No photo in response %#v", googlePerson)
 		return "", nil
 	}
 	// If none are marked "primary", this will cause us to take the first
@@ -446,12 +467,12 @@ func (a *authHandler) getPhone(c echo.Context, user goth.User) (string, error) {
 	var phoneNumber string
 	var err error
 	if user.Provider == "google" {
-		phoneNumber, err = getGooglePersonPhone(c.Logger(), user)
+		phoneNumber, err = getGooglePersonPhone(c, user)
 		if err != nil {
 			c.Logger().Warnf("Couldn't get google user phone: %s", err)
 		}
 	} else if user.Provider == "azureadv2" {
-		phoneNumber, err = getAzurePhone(c.Logger(), user)
+		phoneNumber, err = getAzurePhone(c, user)
 		if err != nil {
 			c.Logger().Warnf("Couldn't get azure user phone: %s", err)
 		}
@@ -497,6 +518,7 @@ type avatar struct {
 func (a *authHandler) getCloudProviderAvatar(c echo.Context, user goth.User) (*avatar, error) {
 	var err error
 	var resp *http.Response
+	var req *http.Request
 
 	if user.AvatarURL == "" {
 		c.Logger().Debugf("No avatar for %s|%s", user.Provider, user.UserID)
@@ -504,33 +526,32 @@ func (a *authHandler) getCloudProviderAvatar(c echo.Context, user goth.User) (*a
 	}
 	c.Logger().Debugf("Trying to get avatar for %s|%s", user.Provider, user.UserID)
 
-	client := http.Client{
-		Timeout: time.Second * 10,
-	}
 	if user.Provider == "google" {
-		url, err := getGooglePersonAvatarURL(c.Logger(), user)
+		url, err := getGooglePersonAvatarURL(c, user)
 		if err != nil {
 			return nil, errors.Wrap(err, "Failed to get photo url")
 		}
 		if url == "" {
 			return nil, nil
 		}
-		resp, err = client.Get(user.AvatarURL)
+		req, err = http.NewRequest("GET", user.AvatarURL, nil)
 		if err != nil {
 			return nil, err
 		}
 	} else if user.Provider == "azureadv2" {
-		req, err := http.NewRequest("GET", "https://graph.microsoft.com/v1.0/me/photo/$value", nil)
-		if err != nil {
-			return nil, err
-		}
 		bearer := fmt.Sprintf("Bearer %s", user.AccessToken)
-		c.Logger().Debugf("Avatar GET; Authorization %s", bearer)
-		req.Header.Set("Authorization", bearer)
-		resp, err = client.Do(req)
+		req, err = http.NewRequest("GET", "https://graph.microsoft.com/v1.0/me/photo/$value", nil)
 		if err != nil {
 			return nil, err
 		}
+		req.Header.Set("Authorization", bearer)
+	}
+	client := http.Client{
+		Timeout: time.Second * 10,
+	}
+	resp, err = client.Do(req)
+	if err != nil {
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -583,7 +604,7 @@ func (a *authHandler) updateAccountAvatar(c echo.Context, user goth.User, li *ap
 	}
 
 	c.Logger().Debugf("avatar hash compare: %x == %x", li.Account.AvatarHash, newAvatar.Hash)
-	if bytes.Compare(newAvatar.Hash[:], li.Account.AvatarHash) == 0 {
+	if bytes.Equal(newAvatar.Hash[:], li.Account.AvatarHash) {
 		return nil
 	}
 
@@ -601,11 +622,13 @@ func (a *authHandler) mkNewAccount(c echo.Context, user goth.User) (*appliancedb
 
 	orgUUID, err := a.findOrganization(ctx, c, user)
 	if err != nil {
-		c.Logger().Warnf("identity -> organization mapping failed: Provider=%s Email=%s HD=%s", user.Provider, user.Email, getUserGoogleHD(&user))
-		return nil, fmt.Errorf("identity '%s' (via %s) is not affiliated with a recognized customer; or %s is not registered as a login provider for your organization",
-			user.Email, user.Provider, user.Provider)
+		c.Logger().Warnf("findOrganization failed: %s", err)
+		return nil, err
 	}
 	organization, err := a.db.OrganizationByUUID(ctx, orgUUID)
+	if err != nil {
+		return nil, err
+	}
 
 	c.Logger().Infof("Creating new account for '%s' from '%s' <%s> (%s|%s)",
 		user.Name, organization.Name, user.Email, user.Provider,
@@ -725,6 +748,28 @@ func (a *authHandler) getLoginInfo(c echo.Context, user goth.User) (*appliancedb
 	return loginInfo, nil
 }
 
+func (a *authHandler) setUserIDError(c echo.Context, err error) {
+	lerr, ok := err.(useridError)
+	if !ok {
+		lerr = useridError{
+			Reason:       reasonServerError,
+			WrappedError: err,
+		}
+	}
+	session, err := a.sessionStore.Get(c.Request(), "bg_login")
+	if err != nil && session == nil {
+		c.Logger().Warnf("Couldn't get bg_login: %s", err)
+		return
+	}
+
+	c.Logger().Debugf("adding flash %v", lerr)
+	session.AddFlash(lerr, "useridError")
+	if err = session.Save(c.Request(), c.Response()); err != nil {
+		c.Logger().Warnf("Couldn't save bg_login: %s", err)
+		return
+	}
+}
+
 // getProviderCallback implements /auth/:provider/callback, which completes
 // the oauth flow.
 func (a *authHandler) getProviderCallback(c echo.Context) error {
@@ -734,22 +779,29 @@ func (a *authHandler) getProviderCallback(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	user, err := gothic.CompleteUserAuth(c.Response(), c.Request())
-	c.Logger().Infof("user is %#v", user)
-
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
+		c.Logger().Errorf("CompleteUserAuth failed: %#v", err)
+		a.setUserIDError(c, err)
+		return c.Redirect(http.StatusTemporaryRedirect, "/client-web/")
 	}
+	c.Logger().Infof("user is %#v", user)
 
 	loginInfo, err := a.getLoginInfo(c, user)
 	if err != nil {
 		c.Logger().Errorf("Error: %s", err)
-		return echo.NewHTTPError(http.StatusUnauthorized, err.Error())
+		a.setUserIDError(c, err)
+		return c.Redirect(http.StatusTemporaryRedirect, "/client-web/")
 	}
 	c.Logger().Infof("loginInfo is %#v", loginInfo)
 
 	if len(loginInfo.PrimaryOrgRoles) == 0 {
-		return echo.NewHTTPError(http.StatusUnauthorized,
-			"login is disabled for this account; the account has no roles")
+		c.Logger().Warn("login is disabled for this account; the account has no roles")
+		a.setUserIDError(c, useridError{
+			Email:    user.Email,
+			Provider: user.Provider,
+			Reason:   reasonNoRoles,
+		})
+		return c.Redirect(http.StatusTemporaryRedirect, "/client-web/")
 	}
 
 	// Try to save the refresh token
@@ -830,13 +882,31 @@ func (a *authHandler) getUserID(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusUnauthorized)
 	}
+
+	flashes := session.Flashes("useridError")
+	if len(flashes) != 0 {
+		// Need to save to delete flashes
+		_ = session.Save(c.Request(), c.Response())
+		lerr, ok := flashes[0].(useridError)
+		// if !ok, this will likely fall through to
+		// one of the error handlers below
+		if ok {
+			c.Logger().Debugf("returning login error %v", lerr)
+			return c.JSON(http.StatusUnauthorized, lerr)
+		}
+	}
+
 	au, ok := session.Values["account_uuid"].(string)
 	if !ok {
-		return echo.NewHTTPError(http.StatusUnauthorized)
+		return c.JSON(http.StatusUnauthorized, useridError{
+			Reason: reasonNoSession,
+		})
 	}
 	accountUUID, err := uuid.FromString(au)
 	if err != nil || accountUUID == uuid.Nil {
-		return echo.NewHTTPError(http.StatusUnauthorized)
+		return c.JSON(http.StatusUnauthorized, useridError{
+			Reason: reasonServerError,
+		})
 	}
 
 	account, err := a.db.AccountByUUID(ctx, accountUUID)
@@ -932,4 +1002,8 @@ func (sm *sessionMiddleware) Process(next echo.HandlerFunc) echo.HandlerFunc {
 		c.Set("account_uuid", accountUUID)
 		return next(c)
 	}
+}
+
+func init() {
+	gob.Register(useridError{})
 }

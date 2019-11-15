@@ -208,6 +208,7 @@ const state = {
   currentOrg: null,
   currentOrgID: null,
   userID: {},
+  useridError: null,
   accounts: {},
   myAccountUUID: null,
 };
@@ -424,6 +425,13 @@ const mutations = {
     state.myAccountUUID = userID.accountUUID;
   },
 
+  setUserIDError(state, userIDError) {
+    assert(userIDError === null ||
+        userIDError instanceof siteApi.AuthUserIDError,
+    'unexpected userID error');
+    Vue.set(state, 'userIDError', userIDError);
+  },
+
   setAccountInfo(state, account) {
     debug('setAccountInfo', account);
     const id = account.accountUUID;
@@ -503,6 +511,7 @@ const getters = {
   authProviders: (state) => state.authProviders,
   authProvidersError: (state) => state.authProvidersError,
   userID: (state) => state.userID,
+  userIDError: (state) => state.userIDError,
   myAccountUUID: (state) => state.myAccountUUID,
 
   myAccount: (state) => {
@@ -1155,9 +1164,12 @@ const actions = {
       const userID = await siteApi.authUserID();
       debug('checkLogin: got userID', userID);
       context.commit('setUserID', userID);
+      context.commit('setUserIDError', null);
       loggedin = true;
     } catch (err) {
       loggedin = false;
+      context.commit('setUserIDError', err);
+      debug('checkLogin: setUserIDError to', err);
     }
     context.commit('setLoggedIn', loggedin);
     debug(`checkLogin: ${loggedin}`);
@@ -1167,13 +1179,23 @@ const actions = {
   async login(context, {uid, userPassword}) {
     assert.equal(typeof uid, 'string');
     assert.equal(typeof userPassword, 'string');
-    await siteApi.authApplianceLogin(uid, userPassword);
-    context.commit('setLoggedIn', true);
-    const userID = await siteApi.authUserID();
-    debug('login: got userID', userID);
-    context.commit('setUserID', userID);
-    // Let these run async
-    context.dispatch('fetchPostLogin');
+    try {
+      await siteApi.authApplianceLogin(uid, userPassword);
+      context.commit('setLoggedIn', true);
+    } catch (err) {
+      debug('login failed', err);
+      throw err;
+    }
+    try {
+      const userID = await siteApi.authUserID();
+      debug('login: got userID', userID);
+      context.commit('setUserID', userID);
+      context.commit('setUserIDError', null);
+      // Let these run async
+      context.dispatch('fetchPostLogin');
+    } catch (err) {
+      context.commit('setUserIDError', err);
+    }
   },
 
   async fetchPostLogin(context) {
@@ -1201,7 +1223,7 @@ const actions = {
   async logout(context) {
     debug('logout');
     await context.dispatch('fetchPeriodicStop');
-    siteApi.authApplianceLogout();
+    await siteApi.authApplianceLogout();
     context.commit('setLoggedIn', false);
     debug('logout: Completed');
   },

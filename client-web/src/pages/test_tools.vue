@@ -75,6 +75,10 @@
         </f7-list-group>
       </f7-list>
     </div>
+    <f7-block-title>Actions</f7-block-title>
+    <f7-block>
+      <f7-button fill @click="$f7.loginScreen.open('#bgLoginScreen')">Open Login Screen</f7-button>
+    </f7-block>
 
   </f7-page>
 </template>
