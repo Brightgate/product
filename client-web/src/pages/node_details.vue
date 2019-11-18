@@ -42,16 +42,25 @@ img.glamour {
     </f7-block>
 
     <f7-list class="shorter-block">
-      <f7-list-item :class="!node.serialNumber ? 'disabled' : ''" header="Serial Number">
+      <f7-list-item
+        :class="!node.serialNumber ? 'disabled' : ''"
+        :header="$t('message.node_details.serial_number')">
         <span slot="title">
           <tt>{{ node.serialNumber || $t('message.node_details.sn_none') }}</tt>
         </span>
       </f7-list-item>
-      <f7-list-item header="Name">
+      <f7-list-item :header="$t('message.node_details.name')">
         <span slot="title">
           {{ node.name || $t('message.node_details.unnamed_hw', {id: nodeID}) }}
         </span>
         <f7-link slot="after" icon-material="edit" @click="nodeNameDialog" />
+      </f7-list-item>
+      <f7-list-item :header="$t('message.node_details.role')">
+        <div slot="title">
+          {{ node.role === "gateway" ?
+            $t('message.node_details.gateway') :
+          $t('message.node_details.satellite') }}
+        </div>
       </f7-list-item>
     </f7-list>
 

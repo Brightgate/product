@@ -388,8 +388,8 @@ export default {
       },
       nodes: {
         title: 'Hardware',
-        gateway_role: 'Mode: Gateway',
-        satellite_role: 'Mode: Satellite',
+        gateway_role: 'Role: Gateway',
+        satellite_role: 'Role: Satellite',
         unnamed_hw: 'Unnamed ({id})',
       },
       node_lan_port: {
@@ -416,6 +416,11 @@ export default {
       node_details: {
         title: 'Hardware Details',
         unnamed_hw: 'Unnamed ({id})',
+        name: 'Name',
+        role: 'Role',
+        gateway: 'Gateway',
+        satellite: 'Satellite',
+        serial_number: 'Serial Number',
         sn_none: 'None',
         change_name_err: 'Failed to change name to {name}: {err}',
         radios: 'Wi-Fi Radios',
