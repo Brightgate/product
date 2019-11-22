@@ -10,23 +10,31 @@
 <style scoped>
 
 div.sensitive-grid {
-  margin: 0 auto;
-  border: 2px dashed #e8b94d;
+  min-width: 300px;
+  margin: 8px auto;
   padding: 12px 20px;
   font-size: 12pt;
-  background: #fcf6e8;
   display: grid;
   width: fit-content;
   grid-template-columns: auto auto;
   grid-column-gap: 4px;
+  border-radius: 4px;
+  /* border: 2px dashed var(--bg-color-yellow-100); */
+  background: #f0f0f0;
+}
+
+div.sensitive-grid.good {
+  /* border: 2px solid var(--bg-color-green-60); */
+  background: rgba(var(--bg-color-green-60-rgb), 0.1);
 }
 
 div.sensitive-grid div.sg-label--2 {
   grid-column: 1 / span 2;
+  font-size: 12px;
 }
 
 div.sensitive-grid div.sg-note {
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 div.sensitive-grid div.sg-button {
@@ -35,6 +43,11 @@ div.sensitive-grid div.sg-button {
 
 div.sensitive-grid div.sg-content {
   padding-left: 1em;
+  /*
+   * Force height so that when no button is present, things look good.
+   * Assumes button has no border.
+   */
+  height: var(--f7-button-height);
 }
 
 
@@ -62,7 +75,8 @@ div.sensitive-grid div.sg-content {
 
 .generated {
   font-size: 10pt;
-  font-family: "Roboto Mono", monospace;
+  /* https://systemfontstack.com/ */
+  font-family: Menlo, Consolas, Monaco, "Liberation Mono", "Lucida Console", monospace;
 }
 
 div.explain {
@@ -93,15 +107,11 @@ div.activation-error div.ae-inner {
   padding: 4px;
 }
 
-a.copybutton {
-  border: none !important; /* for ios; in f7 4.x we can get rid of this */
-}
-
 span.warning {
-  color: #d90e00;
+  color: var(--bg-color-red-50);
 }
-span.good {
-  color: green;
+.status-good {
+  color: var(--bg-color-green-70);
 }
 
 </style>
@@ -113,19 +123,25 @@ span.good {
       <f7-card>
         <f7-card-header>Wi-Fi Provisioned</f7-card-header>
         <f7-card-content>
-          Your wifi credentials are already provisioned.
           <div class="sensitive-grid">
-            <!-- row 1 -->
+            <!-- username section -->
             <div class="sg-label--2">User&nbsp;name:</div>
-            <!-- row 2 -->
             <div class="sg-content"><span class="generated">{{ sp.username }}</span></div>
-            <!-- row 3 -->
-            <div class="sg-label--2">Last&nbsp;provisioned:</div>
-            <!-- row 4 -->
-            <div class="sg-content">{{ formatTime(sp.completed) }}</div>
+            <!-- password section -->
+            <div class="sg-label--2">Password:</div>
+            <div class="sg-content select-none">
+              <span class="select-all generated">******************</span>
+            </div>
+            <!-- org section, if applicable -->
+            <template v-if="orgsCount > 1">
+              <div class="sg-label--2">Valid For:</div>
+              <div class="sg-content select-none">All {{ currentOrg.name }} sites</div>
+            </template>
+            <!-- Status section -->
+            <div class="sg-label--2">Status:</div>
+            <div class="sg-content status-good">Active since {{ formatTime(sp.completed) }}</div>
           </div>
-
-          Your password cannot be redisplayed for security reasons.  If you have lost your password, you can click <span class="explainbutton">Reprovision</span>.
+          Your wifi credentials are already provisioned.  Your password cannot be redisplayed for security reasons.  If you have lost your password, you can click <span class="explainbutton">Reprovision</span>.
         </f7-card-content>
         <f7-card-footer>
           <f7-link back>Back</f7-link>
@@ -138,17 +154,15 @@ span.good {
       <f7-card>
         <f7-card-header>Your New Wi-Fi Login</f7-card-header>
         <f7-card-content>
-          <div class="sensitive-grid">
+          <div :class="{ good: activate === ACTIVATE.SUCCESS }" class="sensitive-grid">
             <!-- row 1 -->
             <div class="sg-label--2">User&nbsp;name:</div>
             <!-- row 2 -->
             <div class="sg-content select-none">
               <span class="select-all generated">{{ generatedUsername }}</span>
             </div>
-            <!-- n.b. we use the vue :class syntax here to get 'copybutton' to be the most
-                   specific class for this element, overriding styling from 'button' -->
             <div class="sg-button">
-              <f7-button class="copybutton" small text="Copy" @click="copyUsername" />
+              <f7-button small text="Copy" @click="copyUsername" />
             </div>
             <!-- row 3 -->
             <div class="sg-label--2">Password:</div>
@@ -157,7 +171,7 @@ span.good {
               <span class="select-all generated">{{ generatedPassword }}</span>
             </div>
             <div class="sg-button">
-              <f7-button class="copybutton" small text="Copy" @click="copyPassword" />
+              <f7-button small text="Copy" @click="copyPassword" />
             </div>
             <template v-if="orgsCount > 1">
               <!-- row 5 -->
@@ -165,8 +179,16 @@ span.good {
               <!-- row 6 -->
               <div class="sg-content select-none">All {{ currentOrg.name }} sites</div>
             </template>
-            <div v-if="activate !== ACTIVATE.SUCCESS" class="sg-note sg-label--2"><span class="warning">Note: Your password isn't active yet!</span></div>
-            <div v-else class="sg-note sg-label--2"><span class="good">This password is now activated</span></div>
+            <!-- Status section -->
+            <div class="sg-label--2">Status:</div>
+            <div
+              v-if="activate !== ACTIVATE.SUCCESS"
+              class="sg-content text-color-red">
+              Not Active Yet
+            </div>
+            <div v-else class="sg-content status-good">
+              This password is now activated
+            </div>
           </div>
         </f7-card-content>
       </f7-card>

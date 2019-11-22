@@ -28,7 +28,7 @@
 
     <f7-card class="alert-card">
       <f7-card-header>
-        <f7-icon f7="bolt_round_fill" color="red" />
+        <f7-icon f7="bolt_circle_fill" color="red" />
         {{ $t(msgPath('short')) }}
       </f7-card-header>
       <f7-card-content>

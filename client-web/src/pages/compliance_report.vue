@@ -16,8 +16,8 @@
       <f7-list no-hairlines no-hairlines-between>
         <f7-list-item media>
           <div slot="media">
-            <f7-icon v-if="policyViolations !== 0" f7="bolt_round_fill" color="red" />
-            <f7-icon v-else f7="check_round_fill" color="green" />
+            <f7-icon v-if="policyViolations !== 0" f7="bolt_circle_fill" color="red" />
+            <f7-icon v-else f7="checkmark_circle_fill" color="green" />
           </div>
           <span v-if="policyViolations !== 0" style="font-weight: bold">
             {{ $tc("message.compliance_report.summary_violations", policyViolations, {num: policyViolations}) }}
@@ -47,7 +47,7 @@
           :key="alert.deviceID + '-' + alert.vulnid"
           :link="`/sites/${$f7route.params.siteID}/devices/${alert.deviceID}/`">
           <span>
-            <f7-icon f7="bolt_round_fill" color="red" />
+            <f7-icon f7="bolt_circle_fill" color="red" />
             {{ $t('message.alerts.problem_on_device',
                   {problem: vulnHeadline(alert.vulnid), device: deviceByUniqID(alert.deviceID).displayName})
             }}
@@ -65,7 +65,7 @@
           v-for="alert in alertInactive(alerts)"
           :key="alert.deviceID + '-' + alert.vulnid">
           <span>
-            <f7-icon f7="bolt_round_fill" color="gray" />
+            <f7-icon f7="bolt_circle_fill" color="gray" />
             {{ $t('message.alerts.problem_on_device',
                   {problem: vulnHeadline(alert.vulnid), device: deviceByUniqID(alert.deviceID).displayName})
             }}
@@ -77,11 +77,11 @@
     <f7-card :title="$t('message.compliance_report.ring_summary')">
       <f7-block style="margin-top: 5px; font-size: 12pt;">
         <span style="color: rgba(0,0,0,0.5);">
-          <f7-icon f7="check_round_fill" size="1em" color="green" />
+          <f7-icon f7="checkmark_circle_fill" size="1em" color="green" />
           {{ $t('message.compliance_report.ring_ok') }}<br>
-          <f7-icon f7="help_round_fill" size="1em" color="orange" />
+          <f7-icon f7="question_circle_fill" size="1em" color="orange" />
           {{ $t('message.compliance_report.ring_not_scanned') }}<br>
-          <f7-icon f7="bolt_round_fill" size="1em" color="red" />
+          <f7-icon f7="bolt_circle_fill" size="1em" color="red" />
           {{ $t('message.compliance_report.ring_vulnerable') }}<br>
           <f7-icon f7="circle" size="1em" color="gray" />
           {{ $t('message.compliance_report.ring_inactive') }}<br>

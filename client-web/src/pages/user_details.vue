@@ -13,7 +13,7 @@
     <bg-site-breadcrumb :siteid="$f7route.params.siteID" />
 
     <f7-fab v-if="user.SelfProvisioning === false" color="pink" @click="openEditor">
-      <f7-icon f7="compose_fill" />
+      <f7-icon f7="pencil_fill" />
     </f7-fab>
 
     <f7-block>

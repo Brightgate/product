@@ -9,11 +9,6 @@
 -->
 
 <style scoped>
-.org-switch-navbar {
-  background: #f8f8f8 !important;
-  color: #222 !important;
-}
-
 li.hover-item :hover {
   background: #eee !important;
 }
@@ -23,11 +18,6 @@ span.check-slot {
   margin-left: 4px;
   margin-right: 4px;
   display: inline-block;
-}
-
-/* when we go to f7 v4 this can go away */
-a.org-switch-close {
-  border: none;
 }
 
 /*
@@ -48,7 +38,7 @@ a.org-switch-close {
     <f7-page>
       <f7-navbar no-shadow no-hairline class="org-switch-navbar">
         <f7-nav-left>
-          <f7-button class="org-switch-close" icon-color="black" icon-material="close" popup-close />
+          <f7-link icon-material="close" popup-close />
         </f7-nav-left>
         <f7-nav-title>Select Organization</f7-nav-title>
       </f7-navbar>
@@ -59,6 +49,7 @@ a.org-switch-close {
           :class="orgEnabled(org.id) ? '': 'disabled'"
           link="#"
           class="hover-item"
+          no-chevron
           @click="selectOrg(org.id)">
           <div slot="media">
             <span class="check-slot">

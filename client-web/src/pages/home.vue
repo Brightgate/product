@@ -94,8 +94,10 @@
             v-for="alert in alertActive(alerts)"
             :key="alert.deviceID + '-' + alert.vulnid"
             :link="`/sites/${currentSiteID}/devices/${alert.deviceID}/`">
+            <div slot="media">
+              <f7-icon f7="bolt_circle_fill" color="red" class="alert-icon" />
+            </div>
             <span>
-              <f7-icon f7="bolt_round_fill" color="red" />
               {{ $t('message.alerts.problem_on_device',
                     {problem: vulnHeadline(alert.vulnid), device: deviceByUniqID(alert.deviceID).displayName})
               }}

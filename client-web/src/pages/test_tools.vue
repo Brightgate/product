@@ -79,6 +79,58 @@
     <f7-block>
       <f7-button fill @click="$f7.loginScreen.open('#bgLoginScreen')">Open Login Screen</f7-button>
     </f7-block>
+    <f7-block>
+      <f7-button fill popup-open=".color-popup">Colors</f7-button>
+    </f7-block>
+
+    <f7-popup class="color-popup">
+      <f7-page>
+        <f7-block>
+          <f7-button fill popup-close=".color-popup">Close</f7-button>
+        </f7-block>
+        <f7-block-title>Theme Colors</f7-block-title>
+        <f7-block>
+          <f7-row v-for="theme in ['red', 'blue', 'green', 'yellow', 'orange']" :key="theme" :class="'color-' + theme">
+            <f7-col>
+              <span style="color: var(--f7-theme-color)">{{ theme }}</span>
+            </f7-col>
+            <f7-col style="background: var(--f7-theme-color)">
+              <span style="color: white">{{ theme }}</span>
+            </f7-col>
+            <f7-col style="background: var(--f7-theme-color)">
+              <span style="color: black">{{ theme }}</span>
+            </f7-col>
+          </f7-row>
+        </f7-block>
+        <hr>
+        <f7-block-title>CSS Rules</f7-block-title>
+        <f7-block>
+          <div v-for="tuple in colorRules" :key="tuple[0]">
+            {{ tuple[0] }} {{ tuple[1] }}
+            <div>
+              <tt>
+                {{ tuple[2] }}
+              </tt>
+            </div>
+          </div>
+        </f7-block>
+        <hr>
+        <f7-block-title>CSS Colors</f7-block-title>
+        <f7-block>
+          <f7-row v-for="color in colors" :key="color[0]">
+            <f7-col>
+              <span :style="{'color': color[1]}">{{ color[0] }}</span>
+            </f7-col>
+            <f7-col :style="{'background': color[1]}">
+              <span style="color: white">{{ color[0] }}</span>
+            </f7-col>
+            <f7-col :style="{'background': color[1]}">
+              <span style="color: black">{{ color[0] }}</span>
+            </f7-col>
+          </f7-row>
+        </f7-block>
+      </f7-page>
+    </f7-popup>
 
   </f7-page>
 </template>
@@ -89,6 +141,33 @@ import Debug from 'debug';
 import appDefs from '../app_defs';
 
 const debug = Debug('page:test_tools');
+
+// From https://stackoverflow.com/questions/324486/how-do-you-read-css-rule-values-with-javascript
+function iterateCSS(f) {
+  for (const styleSheet of window.document.styleSheets) {
+    const classes = styleSheet.rules || styleSheet.cssRules;
+    if (!classes) {
+      continue;
+    }
+
+    for (const cssRule of classes) {
+      if (cssRule.type !== 1 || !cssRule.style) {
+        continue;
+      }
+      const selector = cssRule.selectorText;
+      const style = cssRule.style;
+      if (!selector || !style.cssText) {
+        continue;
+      }
+      for (let i=0; i<style.length; i++) {
+        const propertyName=style.item(i);
+        if (f(selector, propertyName, style.getPropertyValue(propertyName), style.getPropertyPriority(propertyName), cssRule)===false) {
+          return;
+        }
+      }
+    }
+  }
+}
 
 export default {
   components: {
@@ -114,6 +193,46 @@ export default {
       'mock',
       'testAppMode',
     ]),
+
+    colors: function() {
+      const colors = [];
+      const seen = {};
+      iterateCSS( (selector, propertyName, propertyValue, propertyPriority, cssRule) => {
+        if (propertyName.startsWith('--bg-color') && !propertyName.endsWith('rgb')) {
+          if (!seen[propertyName]) {
+            colors.push([propertyName, propertyValue]);
+            seen[propertyName] = true;
+          }
+        } else if (propertyName.startsWith('--f7-color') &&
+            !propertyName.endsWith('rgb') &&
+            !propertyName.startsWith('--f7-color-picker')) {
+          if (!seen[propertyName]) {
+            colors.push([propertyName, propertyValue]);
+            seen[propertyName] = true;
+          }
+        }
+      });
+      return colors;
+    },
+
+    colorRules: function() {
+      // F7 includes a utility to compute the extended colors needed
+      // for tint and shade.  Keep these here to aid maintenance and
+      // changes to color theme.
+      const tuples = [
+        ['blue70', '#448cd8', ''],
+        ['lightblue', '#9cb6d3', ''],
+        ['green60', '#40a641', ''],
+        ['red50', '#d90e00', ''],
+        ['yellow100', '#ffb819', ''],
+        ['orange100', '#fb9100', ''],
+      ];
+      for (const t of tuples) {
+        t[2] = this.$utils.colorThemeCSSProperties(t[1]);
+      }
+      return tuples;
+    },
+
   },
 
   methods: {

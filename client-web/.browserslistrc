@@ -9,10 +9,9 @@
 #
 
 # https://github.com/ai/browserslist
-> 1%
-last 2 versions
-not ie <= 8
-last 5 chrome versions
-last 5 firefox versions
+> 0.5% and not ie > 0 and not dead
+last 3 chrome versions
+last 3 firefox versions
 firefox esr
 last 3 safari versions
+last 2 edge versions

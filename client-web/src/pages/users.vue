@@ -87,7 +87,7 @@ span.wifi {
         :link="`${this.$f7route.url}NEW/editor/`"
         no-chevron>
         <div slot="inner">
-          <f7-icon ios="f7:add_round_fill" md="material:add_circle" />
+          <f7-icon ios="f7:plus_circle_fill" md="material:add_circle" />
         </div>
       </f7-list-item>
     </f7-list>

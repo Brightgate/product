@@ -7,25 +7,17 @@
   express written permission of Brightgate Inc is prohibited, and any
   such unauthorized removal or alteration will be a violation of federal law.
 -->
-<style>
-/*
- * When the left panel is visible due to the breakpoint, we'd like it to have
- * a reasonably well defined border.  Due to the layout framework7 produces,
- * we're pretty limited in the appearance of the border.
- */
-div .panel-visible-by-breakpoint {
-  border-right: 1px solid rgb(33, 150, 243);
-}
-</style>
-
 <template>
   <!-- App -->
   <f7-app :params="f7params">
 
     <!-- Left panel -->
     <f7-panel
-      left
-      cover
+      v-if="startRoute === '/'"
+      id="bgLeftPanel"
+      :visible-breakpoint="960"
+      side="left"
+      effect="cover"
       @panel:breakpoint="onPanelBreakpoint"
     >
       <f7-view url="/left_panel/" links-view=".view-main" />
@@ -43,13 +35,14 @@ div .panel-visible-by-breakpoint {
     -->
     <f7-view id="main-view" :url="startRoute" :stack-pages="true" :push-state="true" :push-state-on-load="false" :push-state-separator="'#'" :main="true" />
 
-    <bg-login-screen id="bgLoginScreen" />
+    <bg-login-screen
+      v-if="startRoute === '/'"
+      id="bgLoginScreen" />
 
   </f7-app>
 </template>
 
 <script>
-import assert from 'assert';
 import {f7App} from 'framework7-vue';
 import Debug from 'debug';
 import routes from './routes';
@@ -71,16 +64,13 @@ export default {
         theme: 'auto',
         routes: routes,
         debugger: true,
-        panel: {
-          leftBreakpoint: 960,
-        },
       },
     };
   },
 
   computed: {
     startRoute() {
-      return window.navigateTo ? window.navigateTo : '/';
+      return window.navigateTo || '/';
     },
   },
 
@@ -92,10 +82,11 @@ export default {
     // Fired when the visibility due to the "breakpoint" changes-- either because
     // the panel became invisible (size reduces) or the panel becomes visible
     // (size increases).
-    onPanelBreakpoint: function(evt) {
-      debug('panel breakpoint', evt);
-      assert(evt.target.classList instanceof DOMTokenList);
-      const visible = evt.target.classList.contains('panel-visible-by-breakpoint');
+    onPanelBreakpoint: function() {
+      debug('onPanelBreakpoint');
+      const pdom = this.Dom7('#bgLeftPanel')[0];
+      const visible = pdom.classList.contains('panel-in-breakpoint');
+      debug('visible is', visible);
       this.$store.commit('setLeftPanelVisible', visible);
     },
   },

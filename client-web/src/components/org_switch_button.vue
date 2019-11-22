@@ -8,64 +8,60 @@
   such unauthorized removal or alteration will be a violation of federal law.
 -->
 
+<!--
+  This component renders markup for the organization switcher.  It is
+  a flex-layout container with left, center, and right children:
+
+   -------------------------------------------------------
+   | Icon | Title-Text                            | Icon |
+   | 24px | Flexible size                         | 36px |
+   -------------------------------------------------------
+
+  Clicking the left icon or the title text returns to the "home" for the
+  organization in the UI.  Clicking the rightmost icon pops up the
+  organization switcher.
+
+  Be aware that if the layout evolves to be more complex, then the
+  techniques in https://css-tricks.com/flexbox-truncated-text/ may be
+  needed.
+
+  Properties:
+  - title: the text to display in the button area.
+-->
+
 <style scoped>
 div.org {
   display: flex;
-  flex: auto;
+  width: 100%;
   box-sizing: border-box;
-  justify-content: space-between;
-  min-width: 0;
+  align-items: center;
 }
 
-/*
- * Setting min-width is crucially important here; see
- * https://css-tricks.com/flexbox-truncated-text/
- */
-div.org-left {
-  min-width: 0;
-  flex-grow: 10;
-}
-div.org-right {
-  min-width: 0;
-  width: 48px;
-  flex-shrink: 0;
+.left {
+  flex: 0 0 24px;
 }
 
-div.org-left >>> a {
-  border: none; /* remove for f7-4.0 */
-  color: #2196f3 !important;
-  padding: 0;
-  font-size: 16px;
-  font-weight: normal;
+.center {
+  display: block;      /* needed for text-overflow to work */
+  flex: 1;             /* consume available space */
   text-align: left;
+  overflow: hidden;
+  text-transform: none;
   text-overflow: ellipsis;
-  text-transform: none !important;
   white-space: nowrap;
-  line-height: 28px;
 }
 
-div.org-right >>> a {
-  border: none; /* remove for f7-4.0 */
-  color: #2196f3 !important;
-  padding: 0;
-  text-overflow: unset;
-  text-transform: none !important;
-  width: 48px;
-  min-width: 0;
-  line-height: 28px;
+.right {
+  flex: 0 0 36px;
 }
+
 </style>
 
 <template>
   <div class="org">
-    <div class="org-left">
-      <f7-button icon-color="gray" icon-material="business" panel-close href="/">
-        {{ title }}
-      </f7-button>
-    </div>
-    <div class="org-right">
-      <f7-button icon-material="list" popup-open=".org-switch-popup" />
-    </div>
+    <f7-link href="/" class="left" color="gray" icon-material="business" />
+    <f7-link href="/" class="center" panel-close>{{ title }}</f7-link>
+    <f7-link class="right" icon-material="list" popup-open=".org-switch-popup" />
   </div>
 </template>
 

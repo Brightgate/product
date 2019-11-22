@@ -11,6 +11,7 @@
 span.orgname {
   font-size: 14pt;
 }
+
 </style>
 <template>
   <f7-page>
@@ -35,7 +36,7 @@ span.orgname {
                       :key="siteAlert"
                       :title="$t(`message.site_alert.${siteAlert}.short`)"
                       :link="`/sites/${currentSiteID}/alerts/${siteAlert}/`">
-          <f7-icon slot="media" f7="bolt_round_fill" color="red" />
+          <f7-icon slot="media" f7="bolt_circle_fill" size="48" class="alert-icon" color="red" />
           <div class="item-text">{{ $t(`message.site_alert.${siteAlert}.title`) }}</div>
         </f7-list-item>
 
@@ -45,7 +46,7 @@ span.orgname {
           :key="alert.deviceID + '-' + alert.vulnid"
           :title="$t('message.alerts.vulnerability')"
           :link="`/sites/${currentSiteID}/devices/${alert.deviceID}/`">
-          <f7-icon slot="media" f7="bolt_round_fill" color="red" />
+          <f7-icon slot="media" f7="bolt_circle_fill" size="48" class="alert-icon" color="red" />
           <span slot="text">
             {{
               $t('message.alerts.problem_on_device', {

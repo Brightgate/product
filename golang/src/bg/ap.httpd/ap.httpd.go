@@ -80,11 +80,10 @@ const (
 	cookiehmackeyprop = "@/httpd/cookie_hmac_key"
 	cookieaeskeyprop  = "@/httpd/cookie_aes_key"
 
-	// 'unsafe-inline' is needed because current HTML pages are
-	// using inline <script> tags.  'unsafe-eval' is needed by
-	// vue.js's template compiler.  'img-src' relaxed to allow
-	// inline SVG elements.
-	contentSecurityPolicy = "default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: 'unsafe-inline' 'unsafe-eval'; frame-src https://brightgate.freshdesk.com/; frame-ancestors 'none'"
+	// img-src relaxed to allow inline SVG elements.
+	// style-src unsafe-inline is needed due to dom7 implementation details
+	// font-src data: is needed due to framework7's css-defined core icons
+	contentSecurityPolicy = "default-src 'self'; script-src 'self'; img-src 'self' data:; font-src 'self' data:; frame-src https://brightgate.freshdesk.com/; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'"
 )
 
 func certStateChange(path []string, val string, expires *time.Time) {

@@ -11,7 +11,9 @@
 import Vue from 'vue';
 import VueI18n from 'vue-i18n';
 
-import Framework7 from 'framework7/framework7.esm.bundle';
+import Framework7 from 'framework7/framework7-lite.esm.bundle.js';
+import 'framework7/css/framework7.bundle.min.css';
+
 import Framework7Vue, {
   f7Accordion,
   f7AccordionContent,
@@ -28,7 +30,6 @@ import Framework7Vue, {
   f7Fab,
   f7Icon,
   f7Input,
-  f7Label,
   f7Link,
   f7List,
   f7ListGroup,
@@ -52,14 +53,10 @@ import Framework7Vue, {
 
 import BrowserLocale from 'browser-locale';
 
-/* eslint-disable no-unused-vars */
-// Import Icons and App Custom Styles
-// This forces webpack to include these assets
-import F7Styles from 'framework7/css/framework7.css';
-import F7Icons from 'framework7-icons';
-import MDIcons from 'material-design-icons/iconfont/material-icons.css';
-import AppStyles from './css/app.css';
-/* eslint-enable no-unused-vars */
+// Icons and App Custom Styles
+import 'framework7-icons';
+import 'material-design-icons/iconfont/material-icons.css';
+import './css/app.css';
 
 import App from './app.vue';
 // Our store (VueX) implementation
@@ -92,7 +89,6 @@ const comps = [
   f7Fab,
   f7Icon,
   f7Input,
-  f7Label,
   f7Link,
   f7List,
   f7ListGroup,

@@ -30,12 +30,13 @@ li.accordion-item.accordion-item-opened >>> span.hide-when-accordion-open {
     <bg-site-breadcrumb :siteid="$f7route.params.siteID" />
 
     <f7-block-title>{{ $t('message.network.networks') }} </f7-block-title>
-    <f7-list media-list chevron-center>
+    <f7-list media-list>
       <template v-for="vapName in orderedVAPs">
         <f7-list-item v-if="vaps[vapName] !== undefined"
                       :key="vapName"
                       :title="$t('message.network.names.' + vapName)"
-                      :link="`${$f7route.url}vap/${vapName}`">
+                      :link="`${$f7route.url}vap/${vapName}`"
+                      chevron-center>
           <div slot="subtitle">
             <f7-icon material="wifi" size="16" />
             {{ vaps[vapName].ssid }}

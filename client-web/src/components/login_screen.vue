@@ -17,6 +17,7 @@ div.bg-login-screen >>> div.login-screen-content {
   background-image:
       url("../assets/login_backdrop.jpg"),
       radial-gradient(ellipse at bottom right, #f5f5f5, #384b6a 60%);
+  height: 100%;
 }
 
 a.close-button {
@@ -64,8 +65,8 @@ div.login-error-sizer {
 
 div.container.login-error {
   width: 100%;
-  background: #fde9e5;
-  border-left: 4px solid #e2231a;
+  background: var(--bg-color-red-5);
+  border-left: 4px solid var(--bg-color-red-50);
   /* flex rules for children */
   display: flex;
   align-items: center;
@@ -91,11 +92,10 @@ div.container.cloud-login-container {
  */
 a.sign-in-button-flex {
   background: white;
-  border: none; /* remove for f7-4.0 */
   /* Suppress SHOUTING BUTTONS as per guidelines */
   text-transform: none;
   color: #5e5e5e;
-  padding: 4px 12px;
+  padding: 6px 12px;
   margin: 20px;
   /* flex rules for children */
   display: flex;
@@ -118,7 +118,7 @@ div.container.appliance-login-container {
 <template>
   <f7-login-screen :id="id">
     <f7-page class="bg-login-screen" login-screen>
-      <f7-link class="close-button" color="gray" icon-f7="close_round_fill" @click="closeLogin()" />
+      <f7-link class="close-button" color="gray" icon-f7="xmark_circle_fill" @click="closeLogin()" />
       <img :alt="$t('message.login.login')"
            class="login-bg-logo"
            width="300"

@@ -21,7 +21,7 @@ div.ind {
   margin: 1px;
 }
 div.lit {
-  background: green;
+  background: var(--bg-color-green-60);
 }
 div.dim {
   background: lightgrey;

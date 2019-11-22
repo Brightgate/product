@@ -30,19 +30,19 @@
   <span v-else>
     <span style="width: 3em; display: inline-block;">
       <span v-if="okCount > 0 || showZero">
-        <f7-icon f7="check_round_fill" size="1em" color="green" />
+        <f7-icon f7="checkmark_circle_fill" size="1em" color="green" />
         {{ okCount }}
       </span>
     </span>
     <span style="width: 3em; display: inline-block;">
       <span v-if="unscannedCount > 0 || showZero">
-        <f7-icon f7="help_round_fill" size="1em" color="orange" />
+        <f7-icon f7="question_circle_fill" size="1em" color="orange" />
         {{ unscannedCount }}
       </span>
     </span>
     <span style="width: 3em; display: inline-block;">
       <span v-if="vulnCount > 0 || showZero">
-        <f7-icon f7="bolt_round_fill" size="1em" color="red" />
+        <f7-icon f7="bolt_circle_fill" size="1em" color="red" />
         {{ vulnCount }}
       </span>
     </span>

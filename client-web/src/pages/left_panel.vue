@@ -7,13 +7,15 @@
   express written permission of Brightgate Inc is prohibited, and any
   such unauthorized removal or alteration will be a violation of federal law.
 -->
-<style>
-.ios .panel-left .page-content {
-  background: #ffffff;
-}
-</style>
-
 <style scoped>
+div.panel-border {
+  background: white;
+  --f7-list-bg-color: none;
+  border-right: 1px solid var(--bg-color-blue-20);
+  height: 100%;
+  overflow: hidden;
+}
+
 .link-panel >>> .list-group-title {
   background: none;
   margin-top: 12px;
@@ -37,7 +39,6 @@
 .org-switch-container >>> .item-inner {
   padding-right: 0;
 }
-
 </style>
 <template>
   <f7-page>
@@ -57,71 +58,74 @@
                   img/bglogo_navbar_md@2x.png 2x">
       </f7-nav-title>
     </f7-navbar>
+    <div class="panel-border">
 
-    <f7-list class="link-panel" no-hairlines no-hairlines-between>
-      <!-- org switcher -->
-      <template v-if="appMode === appDefs.APPMODE_CLOUD && currentOrg && orgsCount > 1">
+      <f7-list class="link-panel" no-hairlines no-hairlines-between>
+        <!-- org switcher -->
+        <template v-if="appMode === appDefs.APPMODE_CLOUD && currentOrg && orgsCount > 1">
+          <f7-list-item group-title>
+            {{ $t('message.left_panel.group_organization') }}
+          </f7-list-item>
+          <f7-list-item class="org-switch-container">
+            <bg-org-switch-button :title="currentOrg.name" />
+          </f7-list-item>
+        </template>
         <f7-list-item group-title>
-          {{ $t('message.left_panel.group_organization') }}
+          {{ $t('message.left_panel.group_tools') }}
         </f7-list-item>
-        <f7-list-item class="org-switch-container">
-          <bg-org-switch-button :title="currentOrg.name" />
-        </f7-list-item>
-      </template>
-      <f7-list-item group-title>
-        {{ $t('message.left_panel.group_tools') }}
-      </f7-list-item>
 
-      <f7-list-item
-        v-if="appMode === appDefs.APPMODE_LOCAL">
-        <f7-link icon-color="gray" icon-material="home" panel-close href="/">
-          {{ $t('message.left_panel.home') }}
-        </f7-link>
-      </f7-list-item>
-
-      <!-- my account -->
-      <f7-list-item
-        v-if="loggedIn && appMode === appDefs.APPMODE_CLOUD">
-        <f7-link icon-color="gray" icon-material="person" panel-close href="/account_prefs/">
-          {{ $t('message.left_panel.my_account') }}
-        </f7-link>
-      </f7-list-item>
-
-      <!-- login/logout -->
-      <f7-list-item v-if="loggedIn">
-        <f7-link icon-color="gray" icon-material="exit_to_app" @click="onLogout">
-          {{ $t('message.general.logout') }}
-        </f7-link>
-      </f7-list-item>
-      <f7-list-item v-else>
-        <f7-link icon-color="gray" icon-material="lock_open" panel-close @click="$f7.loginScreen.open('#bgLoginScreen')">
-          {{ $t('message.general.login') }}
-        </f7-link>
-      </f7-list-item>
-
-      <!-- test tools -->
-      <f7-list-item v-if="showTestTools">
-        <f7-link icon-color="gray" icon-material="bug_report" panel-close href="/test_tools/">
-          Test Tools
-        </f7-link>
-      </f7-list-item>
-
-      <template v-if="loggedIn">
-        <f7-list-item group-title>
-          {{ $t('message.left_panel.group_help') }}
-        </f7-list-item>
-        <f7-list-item>
-          <f7-link icon-color="gray" icon-material="book" panel-close href="/help/end_customer_guide">
-            {{ $t('message.left_panel.admin_guide') }}
+        <f7-list-item
+          v-if="appMode === appDefs.APPMODE_LOCAL">
+          <f7-link icon-color="gray" icon-material="home" panel-close href="/">
+            {{ $t('message.left_panel.home') }}
           </f7-link>
         </f7-list-item>
-        <f7-list-item>
-          <f7-link icon-color="gray" icon-material="live_help" panel-close href="/support/">
-            {{ $t('message.left_panel.support') }}
+
+        <!-- my account -->
+        <f7-list-item
+          v-if="loggedIn && appMode === appDefs.APPMODE_CLOUD">
+          <f7-link icon-color="gray" icon-material="person" panel-close href="/account_prefs/">
+            {{ $t('message.left_panel.my_account') }}
           </f7-link>
         </f7-list-item>
-      </template>
-    </f7-list>
+
+        <!-- login/logout -->
+        <f7-list-item v-if="loggedIn">
+          <f7-link icon-color="gray" icon-material="exit_to_app" @click="onLogout">
+            {{ $t('message.general.logout') }}
+          </f7-link>
+        </f7-list-item>
+        <f7-list-item v-else>
+          <f7-link icon-color="gray" icon-material="lock_open" panel-close @click="$f7.loginScreen.open('#bgLoginScreen')">
+            {{ $t('message.general.login') }}
+          </f7-link>
+        </f7-list-item>
+
+        <!-- test tools -->
+        <f7-list-item v-if="showTestTools">
+          <f7-link icon-color="gray" icon-material="bug_report" panel-close href="/test_tools/">
+            Test Tools
+          </f7-link>
+        </f7-list-item>
+
+        <template v-if="loggedIn">
+          <f7-list-item group-title>
+            {{ $t('message.left_panel.group_help') }}
+          </f7-list-item>
+          <f7-list-item>
+            <f7-link icon-color="gray" icon-material="book" panel-close href="/help/end_customer_guide">
+              {{ $t('message.left_panel.admin_guide') }}
+            </f7-link>
+          </f7-list-item>
+          <f7-list-item>
+            <f7-link icon-color="gray" icon-material="live_help" panel-close href="/support/">
+              {{ $t('message.left_panel.support') }}
+            </f7-link>
+          </f7-list-item>
+        </template>
+      </f7-list>
+
+    </div>
 
     <!-- popup to select org -->
     <bg-org-switch-popup v-if="appMode === appDefs.APPMODE_CLOUD" />

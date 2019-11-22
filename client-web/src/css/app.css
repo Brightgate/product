@@ -1,9 +1,201 @@
 /* Your app styles here */
 
-.md .vue-avatar--wrapper {
-	font-family: Roboto,system-ui,Noto,Helvetica,Arial,sans-serif !important;
+/* Override vue-avatar's boneheaded forced font selection */
+.vue-avatar--wrapper {
+	font-family: var(--f7-font-family) !important;
 }
 
-.ios .vue-avatar--wrapper {
-	font-family: -apple-system,SF Pro Text,SF UI Text,system-ui,Helvetica Neue,Helvetica,Arial,sans-serif !important;
+:root {
+	/* https://www.colorbox.io/#steps=11#hue_start=212#hue_end=212#hue_curve=linear#sat_start=0#sat_end=26#sat_curve=easeInCubic#sat_rate=46#lum_start=100#lum_end=36#lum_curve=easeOutQuart#lock_hex=002d5c#minor_steps_map=0 */
+	--bg-color-blue-5: #eaf4ff;
+	--bg-color-blue-10: #d6e9ff;
+	--bg-color-blue-20: #c0ddfe;
+	--bg-color-blue-30: #a9d0fb;
+	--bg-color-blue-40: #92c2f7;
+	--bg-color-blue-50: #79b3f1;
+	--bg-color-blue-60: #5fa1e7;
+	--bg-color-blue-70: #448cd8; /* used as theme color */
+	--bg-color-blue-70-rgb: 68, 140, 216;
+	--bg-color-blue-80: #2973c1;
+	--bg-color-blue-90: #11549b;
+	--bg-color-blue-100: #002d5c; /* bg primary blue 648c, with Chris Frank's RGB color correction */
+	--bg-color-blue-100-rgb: 0, 45, 92;
+
+	/* https://www.colorbox.io/#steps=11#hue_start=212#hue_end=212#hue_curve=easeInQuad#sat_start=0#sat_end=26#sat_curve=easeInCubic#sat_rate=46#lum_start=100#lum_end=83#lum_curve=easeOutQuad#lock_hex=9CB6D3#minor_steps_map=0 */
+	--bg-color-lightblue-5: #fbfdff;
+	--bg-color-lightblue-10: #f7fbfe;
+	--bg-color-lightblue-20: #f2f7fd;
+	--bg-color-lightblue-30: #edf3fb;
+	--bg-color-lightblue-40: #e6eef8;
+	--bg-color-lightblue-50: #dee8f5;
+	--bg-color-lightblue-60: #d4e1f0;
+	--bg-color-lightblue-70: #c8d8ea;
+	--bg-color-lightblue-80: #bacee3;
+	--bg-color-lightblue-90: #abc2db;
+	--bg-color-lightblue-100: #9cb6d3; /* bg tertiary light blue 644c, with Chris Frank's RGB color correction */
+
+	--bg-color-white: white;
+
+	/* https://www.colorbox.io/#steps=11#hue_start=4#hue_end=4#hue_curve=easeInQuad#sat_start=0#sat_end=100#sat_curve=easeOutQuad#sat_rate=105#lum_start=100#lum_end=85#lum_curve=easeOutQuad#minor_steps_map=0 */
+	--bg-color-red-5: #ffe7e6;
+	--bg-color-red-10: #fed0cc;
+	--bg-color-red-20: #fda29b;
+	--bg-color-red-30: #fc796f;
+	--bg-color-red-40: #f9574b;
+	--bg-color-red-50: #f63c2f;
+	--bg-color-red-60: #f22819;
+	--bg-color-red-70: #ed190a;
+	--bg-color-red-80: #e70f00;
+	--bg-color-red-90: #e00f00;
+	--bg-color-red-100: #d90e00;
+
+	/* https://www.colorbox.io/#steps=11#hue_start=41#hue_end=42#hue_curve=easeInQuad#sat_start=0#sat_end=55#sat_curve=easeOutQuad#sat_rate=130#lum_start=100#lum_end=100#lum_curve=easeOutQuad#lock_hex=ffb819#minor_steps_map=0 */
+	--bg-color-yellow-0: #ffffff;
+	--bg-color-yellow-5: #fff8ea;
+	--bg-color-yellow-10: #fff1d4;
+	--bg-color-yellow-20: #ffe5af;
+	--bg-color-yellow-30: #ffdb8d;
+	--bg-color-yellow-40: #ffd270;
+	--bg-color-yellow-50: #ffca58;
+	--bg-color-yellow-60: #ffc445;
+	--bg-color-yellow-70: #ffc036;
+	--bg-color-yellow-80: #ffbc2a;
+	--bg-color-yellow-90: #ffba20;
+	--bg-color-yellow-100: #ffb819;
+	--bg-color-yellow-100-rgb: 255, 184, 25;
+
+/* yellow/green palette: https://www.colorbox.io/#steps=11#hue_start=41#hue_end=42#hue_curve=easeInQuad#sat_start=0#sat_end=55#sat_curve=easeOutQuad#sat_rate=130#lum_start=100#lum_end=100#lum_curve=easeOutQuad#lock_hex=6cc04a#minor_steps_map=0 */ 
+
+/* blue/green palette: https://www.colorbox.io/#steps=11#hue_start=211#hue_end=102#hue_curve=easeInQuad#sat_start=100#sat_end=100#sat_curve=easeOutQuad#sat_rate=130#lum_start=36#lum_end=75#lum_curve=easeOutQuad#lock_hex=6cc04a#minor_steps_map=0 */
+
+	/* Since green is an accent and we may need darker and brighter versions than the
+	 * brand color, we center the branding green at 50.  We mix in the branding blue
+	 * toward the dark end of the palette. */
+	/* https://www.colorbox.io/#steps=11#hue_start=103#hue_end=210#hue_curve=easeInCubic#sat_start=62#sat_end=62#sat_curve=easeOutQuad#sat_rate=100#lum_start=100#lum_end=0#lum_curve=easeOutQuad#lock_hex=6cc04a#minor_steps_map=0 */
+	--bg-color-green-0: #8eff61;
+	--bg-color-green-5: #95fc60;
+	--bg-color-green-10: #9df95f;
+	--bg-color-green-20: #9bf15c;
+	--bg-color-green-30: #92e658;
+	--bg-color-green-40: #83d552;
+	--bg-color-green-50: #6cc04a; /* bg tertiary green 360c, with Chris Frank's RGB color correction */
+	--bg-color-green-50-rgb: 108, 192, 74;
+	--bg-color-green-60: #40a641;
+	--bg-color-green-60-rgb: 64, 166, 65;
+	--bg-color-green-70: #338551;
+	--bg-color-green-80: #235c4e;
+	--bg-color-green-90: #122b2f;
+	--bg-color-green-100: #000000;
+
+	/* orange was derived by picking a value partway between branding red and branding yellow using colorbox */
+	/* https://www.colorbox.io/#steps=11#hue_start=41#hue_end=3#hue_curve=easeInQuad#sat_start=90#sat_end=89#sat_curve=easeOutQuad#sat_rate=130#lum_start=100#lum_end=89#lum_curve=easeOutQuad#minor_steps_map=0 */
+	--bg-color-orange-100: #fb9100;
+
+        --f7-theme-color: var(--bg-color-blue-70);
+}
+
+.md {
+  --f7-navbar-bg-color: var(--bg-color-blue-100);
+  --f7-navbar-text-color: var(--bg-color-white);
+  --f7-navbar-link-color: var(--bg-color-white);
+}
+
+.color-blue {
+  --f7-theme-color: var(--bg-color-blue-70);
+  --f7-theme-color-rgb: var(--bg-color-blue-70-rgb);
+  --f7-theme-color-shade: #2a77c9;
+  --f7-theme-color-tint: #66a1df;
+}
+.text-color-blue {
+  --f7-theme-color-text-color: var(--bg-color-blue-70);
+}
+.bg-color-blue {
+  --f7-theme-color-bg-color: var(--bg-color-blue-70);
+}
+.border-color-blue {
+  --f7-theme-color-border-color: var(--bg-color-blue-70);
+}
+.ripple-color-blue,
+.ripple-blue {
+  --f7-theme-color-ripple-color: rgba(--bg-color-blue-70-rgb, 0.3);
+}
+
+.color-red {
+  --f7-theme-color: var(--bg-color-red-50);
+  --f7-theme-color-rgb: 246, 60, 47;
+  --f7-theme-color-shade: #b00b00;
+  --f7-theme-color-tint: #ff1303;
+}
+.text-color-red {
+  --f7-theme-color-text-color: var(--bg-color-red-50);
+}
+.bg-color-red {
+  --f7-theme-color-bg-color: var(--bg-color-red-50);
+}
+.border-color-red {
+  --f7-theme-color-border-color: var(--bg-color-red-50);
+}
+.ripple-color-red,
+.ripple-red {
+  --f7-theme-color-ripple-color: rgba(246, 60, 47, 0.3);
+}
+
+.color-green {
+  --f7-theme-color: var(--bg-color-green-60);
+  --f7-theme-color-rgb: var(--bg-color-green-60-rgb);
+  --f7-theme-color-shade: #358935;
+  --f7-theme-color-tint: #52bc53;
+}
+.text-color-green {
+  --f7-theme-color-text-color: var(--bg-color-green-60);
+}
+.bg-color-green {
+  --f7-theme-color-bg-color: var(--bg-color-green-60);
+}
+.border-color-green {
+  --f7-theme-color-border-color: var(--bg-color-green-60);
+}
+.ripple-color-green,
+.ripple-green {
+  --f7-theme-color-ripple-color: rgba(var(--bg-color-green-60-rgb), 0.3);
+}
+
+.color-orange {
+  --f7-theme-color: var(--bg-color-orange-100);
+  --f7-theme-color-rgb: 251, 145, 0;
+  --f7-theme-color-shade: #d27900;
+  --f7-theme-color-tint: #ffa325;
+}
+.text-color-orange {
+  --f7-theme-color-text-color: var(--bg-color-orange-100);
+}
+.bg-color-orange {
+  --f7-theme-color-bg-color: var(--bg-color-orange-100);
+}
+.border-color-orange {
+  --f7-theme-color-border-color: var(--bg-color-orange-100);
+}
+.ripple-color-orange,
+.ripple-orange {
+  --f7-theme-color-ripple-color: rgba(251, 145, 0, 0.3);
+}
+
+.color-yellow {
+  --f7-theme-color: var(--bg-color-yellow-100);
+  --f7-theme-color-rgb: var(--bg-color-yellow-100-rgb);
+  --f7-theme-color-shade: #efa500;
+  --f7-theme-color-tint: #ffc542;
+}
+.text-color-yellow {
+  --f7-theme-color-text-color: var(--bg-color-yellow-100);
+}
+.bg-color-yellow {
+  --f7-theme-color-bg-color: var(--bg-color-yellow-100);
+}
+.border-color-yellow {
+  --f7-theme-color-border-color: var(--bg-color-yellow-100);
+}
+.ripple-color-yellow,
+.ripple-yellow {
+  --f7-theme-color-ripple-color: rgba(var(--bg-color-yellow-100-rgb), 0.3);
 }

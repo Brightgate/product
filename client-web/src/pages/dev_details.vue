@@ -28,7 +28,7 @@
 }
 
 span.dev-active {
-  color: green;
+  color: var(--bg-color-green-60);
   text-align: right;
 }
 span.dev-inactive {
@@ -90,7 +90,7 @@ div.avatar-container {
 
       <f7-card v-for="(vuln, vulnid) in activeVulns" :key="vulnid" class="vuln-card">
         <f7-card-header>
-          <f7-icon class="vuln-icon" f7="bolt_round_fill" size="32px" color="red" />
+          <f7-icon class="vuln-icon" f7="bolt_circle_fill" size="32px" color="red" />
           {{ vulnHeadline(vulnid) }}
         </f7-card-header>
         <f7-card-content>
@@ -141,7 +141,7 @@ div.avatar-container {
 
       <f7-row v-if="dev.notification">
         <f7-col style="margin: auto" width="20">
-          <f7-icon f7="bolt_round_fill" size="32px" color="yellow" />
+          <f7-icon f7="bolt_circle_fill" size="32px" color="yellow" />
         </f7-col>
         <f7-col width="80">
           <!-- tweak the ul rendering not to inset so much (default is 40px) -->

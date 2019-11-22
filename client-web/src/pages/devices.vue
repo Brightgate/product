@@ -57,7 +57,11 @@ div.shorter-block {
                       :link="`${$f7route.url}${device.uniqid}/`"
                       chevron-center media-item>
           <div slot="media">
-            <img :alt="device.category" :src="mediaIcon(device)" width="32" height="32">
+            <img
+              :alt="device.category"
+              :src="mediaIcon(device)"
+              width="48"
+              height="48">
           </div>
           <div slot="subtitle">
             <f7-icon v-if="device.wireless" class="subtitle-conn-icon" material="wifi" />
