@@ -374,6 +374,7 @@
   <ol>
     <li><a href="#install-brightgate">Install Brightgate</a></li>
     <li><a href="#set-up-your-account">Set up your account</a></li>
+    <li><a href="#name-your-gateway">Name your gateway (and satellites)</a></li>
     <li><a href="#set-up-your-networks">Set up your networks</a></li>
     <li><a href="#add-devices">Add devices</a></li>
   </ol>
@@ -433,18 +434,31 @@
       Brightgate management app. <b>Important:</b> Store your password so
       that you can both manage the network and add devices.</li>
   </ol>
+  <h3 id="name-your-gateway">Name your gateway (and satellites)</h3>
+  <p>
+    With your Brightgate appliance installed and your account set up, it's time
+    to name your gateway and, if you're installing multiple appliances, the
+    associated satellites:
+  </p>
+  <ol>
+    <li>Log in to the Brightgate management app</li>
+    <li>(Optional) Select your site from the list</li>
+    <li>Select <b>Hardware</b> to view the list of
+      Brightgate appliances at this site</li>
+    <li>Click the appliance you want to rename; details about this appliance
+      will display</li>
+    <li>Click the pencil icon next to the gateway or satellite to rename it
+    </li>
+    <li>Enter the new name, then select OK</li>
+    <li>(Optional) Repeat for associated satellites</li>
+  </ol>
+  <img src="./images/change-node-name.png"
+    alt="Change the Brightgate appliance name">
   <h3 id="set-up-your-networks">Set up your networks</h3>
   <p>To start using the security features of the Brightgate appliance, set up
     your Wi-Fi networks. If you want to continue using existing network names,
     we'll overlay the existing Wi-Fi networks for you during the Alpha program,
     but it's helpful to know the overall process.</p>
-  <p><b>Note:</b> Wired ports are also available. During the Alpha program, a
-    device or switch plugged into a wired port will be assigned the
-    <code>standard</code>
-    trust group. In a future release, you will be able to change the trust
-    group assignment for a port's connected devices and require that a device
-    connected to a port present an 802.1X credential to be added to a network.
-  </p>
   <p>Start by deciding whether you're:</p>
   <ul>
     <li>Creating a new Wi-Fi network. If you've never had a network at this
@@ -971,27 +985,25 @@
     Devices within a trust group communicate with and have access to both
     other devices assigned to that trust group and devices assigned to trust
     groups that are less trusted and known.</p>
-  <p>Devices that aren’t assigned to a trust group
-    are <code>unenrolled</code>, which means they have not been explicitly
-    granted access to the network. They will not have credentials or be able
-    to
-    use your network. The most common <code>unenrolled</code> devices will be
-    IoT devices that have the correct shared Wi-Fi password (PSK) but have not
-    been authorized by an administrator. To keep your network secure,
-    Brightgate
-    only permits network access to devices that have been assigned into a
-    Brightgate trust group. This way, we can determine how trusted or known
-    the
-    device is, assign it to an appropriate trust group, and watch the device's
-    behavior to keep your network secure. </p>
+  <p>Devices that aren’t assigned to a trust group are <code>unenrolled</code>,
+    which means they have not been explicitly granted access to the network.
+    They will not have credentials or be able to use your network. The most
+    common <code>unenrolled</code> devices will be IoT devices that have the
+    correct
+    shared Wi-Fi password (PSK) but have not been authorized by an
+    administrator. To keep your network secure, Brightgate only permits network
+    access to devices that have been assigned into a Brightgate trust group.
+    This way, we can determine how trusted or known the device is, assign it to
+    an appropriate trust group, and watch the device's behavior to keep your
+    network secure.
+  </p>
   <p><b>Important:</b> During the Alpha program, all devices added to the
-    <code>*-device</code>
-    network will be assigned to the <code>unenrolled</code> trust group.
-    Administrators will need to explicitly move devices to the appropriate
-    trust group to approve the addition of a device to this network.</p>
-  <p>To change a device's trust group assignment, from the main menu,
-    <i>select your site &gt; Manage Devices &gt; click the device name</i> to
-    view Device Details. The trust group and their intended purpose are as
+    <code>*-device</code> network will be assigned to the
+    <code>unenrolled</code> trust group. Administrators will need to explicitly
+    move devices to the
+    appropriate trust group to approve the addition of a device to this network.
+  </p>
+  <p>The trust group and their intended purpose are as
     follows:
   </p>
   <dl>
@@ -1013,12 +1025,35 @@
     <dt><code>internal</code>:</dt>
     <dd>Reserved for Brightgate use.</dd>
   </dl>
-  <p>From <i>Access Control</i>, display the available <i>Trust Group</i>
-    choices, then select the appropriate trust group to which to move the
-    device. In the example, the device is being moved into the
-    <code>standard</code>
-    trust group:</p>
+  <p>Trust groups may be changed for devices connected to both the wired port
+    and devices connected to the Wi-Fi network.</p>
+  <p>To change the trust group assignment for a device connected to the Wi-Fi
+    network:
+  </p>
+  <ol>
+    <li>From the main menu, <i>select your site &gt; Devices &gt; click
+        the device name</i> to view Device Details.</li>
+    <li>From <i>Access Control</i>, click to display the available <i>Trust
+        Group</i>
+      choices, then select the appropriate trust group to which to assign the
+      device. In the example, the device is being assigned into the
+      <code>standard</code> trust group:</li>
+  </ol>
   <p><img src="./images/move-trust-group.png" alt="Move trust group"></p>
+  <p>To change the trust group assignment for devices connected to a wired port:
+  </p>
+  <ol>
+    <li>From the main menu, <i>select your site &gt; Hardware &gt;
+        Gateway/Satellite Name</i>. Scroll to <i>Ethernet Ports</i> and select
+      the appropriate LAN Port to view Lan Port Details.</li>
+    <li>From <i>Port Trust Group</i>, click to display the available choices,
+      then select the appropriate trust group to which to assign the wired port.
+      In the
+      example, the port is being assigned into the <code>devices</code> trust
+      group:</li>
+  </ol>
+  <p><img src="./images/move-lan-trust-group.png" alt="Move LAN trust group">
+  </p>
   <h3 id="rotate-passwords">Rotate passwords</h3>
   <p>During the Alpha program, passwords are not automatically rotated.
     However, administrators may manually change the password for the
@@ -1094,7 +1129,8 @@
   <ol>
     <li><i>Users</i> may access only part of the Brightgate management app:
       <ul>
-        <li>Use their Brightgate Wi-Fi credential to bring their devices online
+        <li>Use their Brightgate Wi-Fi credential to bring their devices
+          online
         </li>
         <li>View the name of the <code>*-users</code> network</li>
         <li>View the name and passphrase for the <code>*-guest </code>network
@@ -1105,7 +1141,8 @@
     </li>
     <li>Accounts with the <i>Administrator</i> privilege can use <i>all</i>
       parts of the Brightgate management app, all of which are covered in this
-      guide. Administration of a Brightgate-secured network requires a change in
+      guide. Administration of a Brightgate-secured network requires a change
+      in
       privilege for a defined account. This privilege change can be enabled
       only by an account with administrator role privileges.</li>
   </ol>
