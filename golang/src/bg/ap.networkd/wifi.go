@@ -403,13 +403,13 @@ func setState(d *physDevice) {
 	if w == nil {
 		return
 	}
-	w.state = wifi.DevOK
 
 	if d.disabled {
 		w.state = wifi.DevDisabled
 		return
 	}
 
+	w.state = wifi.DevOK
 	b := w.configBand
 	if b != "" {
 		if b != wifi.LoBand && b != wifi.HiBand {
@@ -455,7 +455,9 @@ func selectWifiDevices(oldList []*physDevice) []*physDevice {
 	wifiEvaluate = false
 
 	for _, d := range physDevices {
-		setState(d)
+		if !d.pseudo {
+			setState(d)
+		}
 	}
 
 	best := 0
@@ -509,6 +511,10 @@ func selectWifiDevices(oldList []*physDevice) []*physDevice {
 	newList := make([]*physDevice, 0)
 	for _, band := range bands {
 		if d := selected[band]; d != nil {
+			if d.pseudo {
+				slog.Panicf("selected pseudo nic: %v / %d",
+					d, d.wifi)
+			}
 			d.wifi.activeBand = band
 			newList = append(newList, d)
 		}

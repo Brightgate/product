@@ -124,7 +124,7 @@ func configNicChanged(path []string, val string, expires *time.Time) {
 		return
 	}
 	p := physDevices[path[3]]
-	if p == nil {
+	if p == nil || p.pseudo {
 		return
 	}
 
@@ -149,9 +149,13 @@ func configNicChanged(path []string, val string, expires *time.Time) {
 			networkdStop("exiting to rebuild network")
 		}
 	case "state":
-		oldVal := p.disabled
-		p.disabled = (strings.ToLower(val) == "disabled")
-		eval = (oldVal != p.disabled)
+		newState := strings.ToLower(val)
+		if newState == wifi.DevDisabled || newState == wifi.DevOK {
+			oldVal := p.disabled
+			p.disabled = (newState == wifi.DevDisabled)
+			eval = (oldVal != p.disabled)
+			setState(p)
+		}
 	}
 
 	if eval {
