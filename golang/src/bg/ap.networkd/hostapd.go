@@ -417,6 +417,13 @@ func (c *hostapdConn) stationRetransmit(sta string) {
 func (c *hostapdConn) eapSuccess(sta, username string) {
 	var user *string
 
+	state := getClientRetransmit(sta)
+	if state.count != 0 {
+		slog.Infof("%s connected after %d retransmits", sta,
+			state.count)
+		state.count = 0
+	}
+
 	if len(username) > 0 {
 		user = &username
 	}
