@@ -778,6 +778,16 @@ func (a *siteHandler) getNodes(c echo.Context) error {
 			ni.HWModel = node.Platform
 		}
 
+		// Deal with older systems which have no role in cfgtree
+		if ni.Role == "" {
+			ni.Role = "satellite"
+			for _, nicInfo := range node.Nics {
+				if nicInfo.Ring == "wan" {
+					ni.Role = "gateway"
+				}
+			}
+		}
+
 		ni.Nics = make([]apiNodeNic, 0)
 		for _, nicInfo := range node.Nics {
 			if nicInfo.Pseudo {

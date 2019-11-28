@@ -81,7 +81,7 @@
 
       <!-- my account -->
       <f7-list-item
-        v-if="appMode === appDefs.APPMODE_CLOUD">
+        v-if="loggedIn && appMode === appDefs.APPMODE_CLOUD">
         <f7-link icon-color="gray" icon-material="person" panel-close href="/account_prefs/">
           {{ $t('message.left_panel.my_account') }}
         </f7-link>
@@ -106,19 +106,21 @@
         </f7-link>
       </f7-list-item>
 
-      <f7-list-item group-title>
-        {{ $t('message.left_panel.group_help') }}
-      </f7-list-item>
-      <f7-list-item>
-        <f7-link icon-color="gray" icon-material="book" panel-close href="/help/end_customer_guide">
-          {{ $t('message.left_panel.admin_guide') }}
-        </f7-link>
-      </f7-list-item>
-      <f7-list-item>
-        <f7-link icon-color="gray" icon-material="live_help" panel-close href="/support/">
-          {{ $t('message.left_panel.support') }}
-        </f7-link>
-      </f7-list-item>
+      <template v-if="loggedIn">
+        <f7-list-item group-title>
+          {{ $t('message.left_panel.group_help') }}
+        </f7-list-item>
+        <f7-list-item>
+          <f7-link icon-color="gray" icon-material="book" panel-close href="/help/end_customer_guide">
+            {{ $t('message.left_panel.admin_guide') }}
+          </f7-link>
+        </f7-list-item>
+        <f7-list-item>
+          <f7-link icon-color="gray" icon-material="live_help" panel-close href="/support/">
+            {{ $t('message.left_panel.support') }}
+          </f7-link>
+        </f7-list-item>
+      </template>
     </f7-list>
 
     <!-- popup to select org -->

@@ -27,6 +27,9 @@ import (
 	"bg/base_def"
 	"bg/common/network"
 	"bg/common/wifi"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 // Version gets increased each time there is a non-compatible change to the
@@ -514,6 +517,9 @@ func getProp(root *PropertyNode, name string) (string, error) {
 
 func getStringSlice(root *PropertyNode, name string) ([]string, error) {
 	str, err := getProp(root, name)
+	if str == "" {
+		return make([]string, 0), err
+	}
 	rval := strings.Split(str, ",")
 	return rval, err
 }
@@ -1097,8 +1103,14 @@ func getNic(nic *PropertyNode) NicInfo {
 				w.ValidHiChannels = append(w.ValidHiChannels, c)
 			}
 		}
-
-		n.WifiInfo = &w
+		// Older cfgtrees, as may exist for lagging appliances seen
+		// by the cloud, don't have this information.
+		// If there's really no wifi info here, set it to nil
+		if cmp.Equal(w, WifiInfo{}, cmpopts.EquateEmpty()) {
+			n.WifiInfo = nil
+		} else {
+			n.WifiInfo = &w
+		}
 	}
 
 	return n
