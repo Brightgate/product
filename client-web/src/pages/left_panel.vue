@@ -70,16 +70,18 @@ div.panel-border {
             <bg-org-switch-button :title="currentOrg.name" />
           </f7-list-item>
         </template>
+        <template v-else>
+          <f7-list-item>
+            <f7-link icon-color="gray" icon-material="home" panel-close href="/">
+              {{ $t('message.left_panel.home') }}
+            </f7-link>
+          </f7-list-item>
+        </template>
+
         <f7-list-item group-title>
           {{ $t('message.left_panel.group_tools') }}
         </f7-list-item>
 
-        <f7-list-item
-          v-if="appMode === appDefs.APPMODE_LOCAL">
-          <f7-link icon-color="gray" icon-material="home" panel-close href="/">
-            {{ $t('message.left_panel.home') }}
-          </f7-link>
-        </f7-list-item>
 
         <!-- my account -->
         <f7-list-item
