@@ -1211,7 +1211,42 @@ func (h *hostapdHdl) halt() {
 	})
 }
 
+// While hostapd was offline, all wireless clients necessarily disconnected.
+// Iterate over the client list and set the 'active' state to false for all
+// wireless clients associated with this node, or any node that no longer
+// exists.
+func clearActive() {
+	// Build a map of the valid node names
+	nodeSlice, _ := config.GetNodes()
+	nodes := make(map[string]bool)
+	for _, node := range nodeSlice {
+		nodes[node.ID] = true
+	}
+
+	clients := config.GetClients()
+	ops := make([]cfgapi.PropertyOp, 0)
+	for mac, client := range clients {
+		if client.IsActive() && client.Wireless &&
+			(client.ConnNode == nodeID || !nodes[client.ConnNode]) {
+			op := cfgapi.PropertyOp{
+				Op:    cfgapi.PropCreate,
+				Name:  "@/clients/" + mac + "/connection/active",
+				Value: "false",
+			}
+			slog.Debugf("Setting %s to false", op.Name)
+			ops = append(ops, op)
+		}
+	}
+	if len(ops) > 0 {
+		if _, err := config.Execute(nil, ops).Wait(nil); err != nil {
+			slog.Warnf("Error clearing Active states: %v", err)
+		}
+	}
+}
+
 func startHostapd(devs []*physDevice) *hostapdHdl {
+	clearActive()
+
 	h := &hostapdHdl{
 		devices: devs,
 		conns:   make([]*hostapdConn, 0),
