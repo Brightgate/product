@@ -41,6 +41,7 @@ func getall(pkgs []string, library map[string]*gopkg) error {
 		args := []string{"list", "-json"}
 		args = append(args, pkgs...)
 		cmd := exec.Command("go", args...)
+		cmd.Stderr = os.Stderr
 		output, err := cmd.StdoutPipe()
 		if err != nil {
 			return fmt.Errorf("Couldn't execute %s: %v", strings.Join(cmd.Args, " "), err)

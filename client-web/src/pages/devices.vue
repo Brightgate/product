@@ -181,8 +181,8 @@ export default {
 
     mediaIcon: function(dev) {
       return dev.active ?
-        `img/nova-solid-${dev.media}-active.png` :
-        `img/nova-solid-${dev.media}.png`;
+        `img/devid/${dev.media}-active.png` :
+        `img/devid/${dev.media}.png`;
     },
     alert: function(dev) {
       return dev.activeVulnCount;

@@ -20,7 +20,6 @@ import (
 
 	"bg/cloud_models/appliancedb"
 	"bg/common/cfgapi"
-	"bg/common/deviceid"
 	"bg/common/mfg"
 
 	"github.com/labstack/echo"
@@ -251,10 +250,6 @@ type apiScanInfo struct {
 // the @/clients/<clientid> and the devicedb.
 type apiDevice struct {
 	HwAddr          string                 `json:"hwAddr"`
-	Manufacturer    string                 `json:"manufacturer"`
-	Model           string                 `json:"model"`
-	Kind            string                 `json:"kind"`
-	Confidence      float64                `json:"confidence"`
 	Ring            string                 `json:"ring"`
 	DisplayName     string                 `json:"displayName"`
 	DHCPName        string                 `json:"dhcpName,omitempty"`
@@ -268,6 +263,7 @@ type apiDevice struct {
 	ConnNode        string                 `json:"connNode,omitempty"`
 	ConnVAP         string                 `json:"connVAP,omitempty"`
 	Username        string                 `json:"username,omitempty"`
+	DevID           *cfgapi.DevIDInfo      `json:"devID,omitempty"`
 	Scans           map[string]apiScanInfo `json:"scans,omitempty"`
 	Vulnerabilities map[string]apiVulnInfo `json:"vulnerabilities,omitempty"`
 	LastActivity    *time.Time             `json:"lastActivity,omitempty"`
@@ -281,10 +277,6 @@ func buildDeviceResponse(c echo.Context, hdl *cfgapi.Handle,
 
 	d := apiDevice{
 		HwAddr:          hwaddr,
-		Manufacturer:    "unknown",
-		Model:           fmt.Sprintf("unknown (id=%s)", client.Identity),
-		Kind:            "unknown",
-		Confidence:      client.Confidence,
 		Ring:            client.Ring,
 		DisplayName:     client.DisplayName(),
 		DHCPName:        client.DHCPName,
@@ -298,6 +290,7 @@ func buildDeviceResponse(c echo.Context, hdl *cfgapi.Handle,
 		ConnNode:        client.ConnNode,
 		ConnVAP:         client.ConnVAP,
 		Username:        client.Username,
+		DevID:           client.DevID,
 		Scans:           make(map[string]apiScanInfo),
 		Vulnerabilities: make(map[string]apiVulnInfo),
 	}
@@ -326,22 +319,6 @@ func buildDeviceResponse(c echo.Context, hdl *cfgapi.Handle,
 			Active:         v.Active,
 			Details:        v.Details,
 			Repair:         v.Repair,
-		}
-	}
-
-	if client.Identity != "" {
-		id, err := strconv.Atoi(client.Identity)
-		if err != nil {
-			c.Logger().Warnf("buildDeviceResponse: bad Identity %s", client.Identity)
-		} else {
-			lpn, err := deviceid.GetDeviceByID(hdl, id)
-			if err != nil {
-				c.Logger().Warnf("buildDeviceResponse couldn't lookup @/devices/%d: %v\n", id, err)
-			} else {
-				d.Manufacturer = lpn.Vendor
-				d.Model = lpn.ProductName
-				d.Kind = lpn.Devtype
-			}
 		}
 	}
 

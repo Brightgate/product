@@ -18,11 +18,9 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"strconv"
 	"time"
 
 	"bg/common/cfgapi"
-	"bg/common/deviceid"
 	"bg/common/mfg"
 
 	"github.com/gorilla/mux"
@@ -46,10 +44,6 @@ type daScanInfo struct {
 
 type daDevice struct {
 	HwAddr          string                `json:"hwAddr"`
-	Manufacturer    string                `json:"manufacturer"`
-	Model           string                `json:"model"`
-	Kind            string                `json:"kind"`
-	Confidence      float64               `json:"confidence"`
 	Ring            string                `json:"ring"`
 	DisplayName     string                `json:"displayName"`
 	DNSName         string                `json:"dnsName,omitempty"`
@@ -63,6 +57,7 @@ type daDevice struct {
 	ConnNode        string                `json:"connNode,omitempty"`
 	ConnVAP         string                `json:"connVAP,omitempty"`
 	Username        string                `json:"username,omitempty"`
+	DevID           *cfgapi.DevIDInfo     `json:"devID,omitempty"`
 	Scans           map[string]daScanInfo `json:"scans,omitempty"`
 	Vulnerabilities map[string]daVulnInfo `json:"vulnerabilities,omitempty"`
 	LastActivity    *time.Time            `json:"lastActivity,omitempty"`
@@ -84,10 +79,6 @@ func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
 
 	cd := daDevice{
 		HwAddr:          hwaddr,
-		Manufacturer:    "",
-		Model:           "",
-		Kind:            "",
-		Confidence:      client.Confidence,
 		Ring:            client.Ring,
 		DisplayName:     client.DisplayName(),
 		DNSName:         client.DNSName,
@@ -101,6 +92,7 @@ func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
 		ConnNode:        client.ConnNode,
 		ConnVAP:         client.ConnVAP,
 		Username:        client.Username,
+		DevID:           client.DevID,
 		Scans:           make(map[string]daScanInfo),
 		Vulnerabilities: make(map[string]daVulnInfo),
 	}
@@ -129,23 +121,6 @@ func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
 			Active:         v.Active,
 			Details:        v.Details,
 			Repair:         v.Repair,
-		}
-	}
-
-	if client.Identity != "" {
-		identity, err := strconv.Atoi(client.Identity)
-		if err != nil {
-			log.Printf("buildDeviceResponse unusual client identity '%v': %v\n", client.Identity, err)
-			return &cd
-		}
-
-		lpn, err := deviceid.GetDeviceByID(config, identity)
-		if err != nil {
-			log.Printf("buildDeviceResponse couldn't lookup @/devices/%d: %v\n", identity, err)
-		} else {
-			cd.Manufacturer = lpn.Vendor
-			cd.Model = lpn.ProductName
-			cd.Kind = lpn.Devtype
 		}
 	}
 

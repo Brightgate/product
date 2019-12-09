@@ -26,7 +26,6 @@ import (
 	"bg/base_def"
 	"bg/common/cfgapi"
 	"bg/common/cfgtree"
-	"bg/common/deviceid"
 	"bg/common/wifi"
 
 	"github.com/satori/uuid"
@@ -359,31 +358,24 @@ func printClient(mac string, client *cfgapi.ClientInfo, verbose bool) {
 		}
 	}
 
-	// Don't confuse the user with a device ID unless the confidence
-	// is better than even.
-	identString := ""
-	if client.Confidence >= 0.5 {
-		device, err := deviceid.GetDeviceByPath(configd,
-			"@/devices/"+client.Identity)
-		if err == nil {
-			identString = fmt.Sprintf("%s %s", device.Vendor, device.ProductName)
-		} else {
-			identString = client.Identity
-		}
-	}
-
-	// If the confidence is less than almost certain (as defined by
-	// Words of Estimative Probability), prepend the device ID with
-	// a question mark.
-	confidenceMarker := ""
-	if client.Confidence < 0.87 {
-		confidenceMarker = "? "
-	}
-
 	if verbose {
-		fmt.Printf("%-17s %-16s %-10s %-8v %-15s %-16s %s%-9s\n",
-			mac, name, ring, client.Wireless, ipv4, exp,
-			confidenceMarker, identString)
+		var ident string
+		if client.DevID != nil {
+			idents := make([]string, 0)
+			if client.DevID.OUIMfg != "" {
+				idents = append(idents, fmt.Sprintf("oui=%s", client.DevID.OUIMfg))
+			}
+			if client.DevID.DeviceGenus != "" {
+				idents = append(idents, fmt.Sprintf("dev=%s", client.DevID.DeviceGenus))
+			}
+			if client.DevID.OSGenus != "" {
+				idents = append(idents, fmt.Sprintf("os=%s", client.DevID.OSGenus))
+			}
+			ident = strings.Join(idents, "; ")
+		}
+
+		fmt.Printf("%-17s %-16s %-10s %-8v %-15s %-16s %-9s\n",
+			mac, name, ring, client.Wireless, ipv4, exp, ident)
 	} else {
 		fmt.Printf("%-17s %-16s %-10s %-8v %-15s %-16s\n",
 			mac, name, ring, client.Wireless, ipv4, exp)
@@ -517,27 +509,6 @@ func getFormatted(cmd string, args []string) error {
 	}
 }
 
-func printDev(d *deviceid.Device) {
-	fmt.Printf("  Type: %s\n", d.Devtype)
-	fmt.Printf("  Vendor: %s\n", d.Vendor)
-	fmt.Printf("  Product: %s\n", d.ProductName)
-	if d.ProductVersion != "" {
-		fmt.Printf("  Version: %s\n", d.ProductVersion)
-	}
-	if len(d.UDPPorts) > 0 {
-		fmt.Printf("  UDP Ports: %v\n", d.UDPPorts)
-	}
-	if len(d.InboundPorts) > 0 {
-		fmt.Printf("  TCP Inbound: %v\n", d.InboundPorts)
-	}
-	if len(d.OutboundPorts) > 0 {
-		fmt.Printf("  TCP Outbound: %v\n", d.OutboundPorts)
-	}
-	if len(d.DNS) > 0 {
-		fmt.Printf("  DNS Allowed: %v\n", d.OutboundPorts)
-	}
-}
-
 func getProp(cmd string, args []string) error {
 	var err error
 	var root *cfgapi.PropertyNode
@@ -555,23 +526,14 @@ func getProp(cmd string, args []string) error {
 		usage(cmd)
 	}
 
-	if strings.HasPrefix(prop, "@/devices") {
-		var d *deviceid.Device
-		if d, err = deviceid.GetDeviceByPath(configd, prop); err == nil {
-			printDev(d)
-		}
-	} else {
-		prop = nodeAlias(prop)
-		if root, err = configd.GetProps(prop); err == nil {
-			nodes := strings.Split(strings.Trim(prop, "/"), "/")
-			label := nodes[len(nodes)-1]
-			root.DumpTree(os.Stdout, label)
-		} else {
-			err = fmt.Errorf("get failed: %v", err)
-		}
+	prop = nodeAlias(prop)
+	if root, err = configd.GetProps(prop); err != nil {
+		return fmt.Errorf("get failed: %v", err)
 	}
-
-	return err
+	nodes := strings.Split(strings.Trim(prop, "/"), "/")
+	label := nodes[len(nodes)-1]
+	root.DumpTree(os.Stdout, label)
+	return nil
 }
 
 func hdlExpire(path []string) {

@@ -36,6 +36,12 @@ span.dev-inactive {
   text-align: right;
 }
 
+div.oui-name {
+  text-align: right;
+  font-size: 12px;
+  color: grey;
+}
+
 /*
  * When the accordion-item-opened class gets set on the enclosing li
  * we hide the summarized information in the closed accordion item.
@@ -75,16 +81,8 @@ div.avatar-container {
           <img :src="mediaIcon" width="48" height="48">
         </f7-col>
         <f7-col width="80">
-          <template v-if="dev.certainty !== 'low'">
-            <div style="font-size: 16pt; font-weight: bold">{{ devModel }}</div>
-            <div style="font-size: 12pt; font-weight: normal; color: rgba(0,0,0,.5);">{{ devManufacturer }}</div>
-            <div v-if="dev.certainty === 'medium'" style="font-size: 10pt; font-weight: normal; color: rgba(0,0,0,0.5);">
-              {{ $t('message.dev_details.uncertain_device') }}
-            </div>
-          </template>
-          <template v-else>
-            <div style="font-size: 16pt; font-weight: bold">{{ dev.displayName }}</div>
-          </template>
+          <div style="font-size: 16px; font-weight: bold">{{ dev.displayName }}</div>
+          <div style="font-size: 14px">{{ devModel }} <span v-if="devOS">({{ devOS }})</span></div>
         </f7-col>
       </f7-row>
 
@@ -238,7 +236,10 @@ div.avatar-container {
 
       <!-- mac addr -->
       <f7-list-item :title="$t('message.dev_details.hw_addr')">
-        {{ dev.hwAddr }}
+        <div>
+          <div>{{ dev.hwAddr }}</div>
+          <div class="oui-name">{{ devOUI }}</div>
+        </div>
       </f7-list-item>
 
       <f7-list-item :title="$t('message.dev_details.vuln_scan')">
@@ -312,19 +313,27 @@ export default {
     ]),
 
     devModel: function() {
-      return (this.dev.certainty === 'low') ?
-        this.$t('message.dev_details.unknown_model') :
-        this.dev.model;
+      if (!this.dev.devID || !this.dev.devID.deviceGenus || this.dev.devID.deviceGenus === 'unknown') {
+        return '';
+      }
+      return this.dev.devID.deviceGenus;
     },
-    devManufacturer: function() {
-      return (this.dev.certainty === 'low') ?
-        this.$t('message.dev_details.unknown_manufacturer') :
-        this.dev.manufacturer;
+    devOUI: function() {
+      if (!this.dev.devID || !this.dev.devID.ouiMfg) {
+        return '';
+      }
+      return this.dev.devID.ouiMfg;
+    },
+    devOS: function() {
+      if (!this.dev.devID || !this.dev.devID.osGenus) {
+        return '';
+      }
+      return this.dev.devID.osGenus;
     },
     mediaIcon: function() {
       return this.dev.active ?
-        `img/nova-solid-${this.dev.media}-active.png` :
-        `img/nova-solid-${this.dev.media}.png`;
+        `img/devid/${this.dev.media}-active.png` :
+        `img/devid/${this.dev.media}.png`;
     },
     activity: function() {
       return this.dev.active ?

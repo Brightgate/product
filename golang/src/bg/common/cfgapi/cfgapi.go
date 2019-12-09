@@ -207,6 +207,13 @@ type NodeInfo struct {
 	Nics     []NicInfo
 }
 
+// DevIDInfo contains classification information for a client device
+type DevIDInfo struct {
+	OUIMfg      string `json:"ouiMfg"`      // Based on lookup of MAC in OUI database, e.g. "Apple"
+	DeviceGenus string `json:"deviceGenus"` // e.g. "Apple Watch"
+	OSGenus     string `json:"osGenus"`     // e.g. "watchOS"
+}
+
 // ClientInfo contains all of the configuration information for a client device
 type ClientInfo struct {
 	Ring       string     // Assigned security ring
@@ -214,13 +221,12 @@ type ClientInfo struct {
 	IPv4       net.IP     // Network address
 	Expires    *time.Time // DHCP lease expiration time
 	DHCPName   string     // Requested hostname
-	Identity   string     // Current best guess at the client type
-	Confidence float64    // Confidence for the Identity guess
 	DNSPrivate bool       // We don't collect DNS queries
 	Username   string     // Name used for EAP authentication
 	ConnBand   string     // Connection Radio Band (2.4GHz, 5GHz)
 	ConnNode   string     // Connection Node
 	ConnVAP    string     // Connection Virtual AP
+	DevID      *DevIDInfo // Device identification information
 	Wireless   bool       // Is this a wireless client?
 	active     string
 }
@@ -445,8 +451,10 @@ func dumpSubtree(w io.Writer, name string, node *PropertyNode, indent string) {
 			return
 		}
 		e = node.Expires.Format("2006-01-02T15:04:05")
+		fmt.Fprintf(w, "%s%s: %s  %s\n", indent, name, node.Value, e)
+	} else {
+		fmt.Fprintf(w, "%s%s: %s\n", indent, name, node.Value)
 	}
-	fmt.Fprintf(w, "%s%s: %s  %s\n", indent, name, node.Value, e)
 
 	leafChildren := make([]string, 0)
 	interiorChildren := make([]string, 0)
@@ -895,18 +903,16 @@ func (c *Handle) GetWanInfo() *WanInfo {
 }
 
 func getClient(client *PropertyNode) *ClientInfo {
-	var ring, dns, dhcp, identity string
-	var confidence float64
+	var ring, dns, dhcp string
 	var ipv4 net.IP
 	var exp *time.Time
 	var wireless, private bool
 	var username, connVAP, connBand, connNode, active string
 	var err error
+	var devID *DevIDInfo
 
 	private, _ = getBoolVal(client, "dns_private")
 	ring, _ = getStringVal(client, "ring")
-	identity, _ = getStringVal(client, "identity")
-	confidence, _ = getFloat64Val(client, "confidence")
 	dhcp, _ = getStringVal(client, "dhcp_name")
 	dns, _ = getStringVal(client, "dns_name")
 	if addr, ok := client.Children["ipv4"]; ok {
@@ -928,6 +934,16 @@ func getClient(client *PropertyNode) *ClientInfo {
 			wireless = true
 		}
 	}
+	if dev, ok := client.Children["classification"]; ok {
+		ouiMfg, _ := getStringVal(dev, "oui_mfg")
+		devGenus, _ := getStringVal(dev, "device_genus")
+		osGenus, _ := getStringVal(dev, "os_genus")
+		devID = &DevIDInfo{
+			OUIMfg:      ouiMfg,
+			DeviceGenus: devGenus,
+			OSGenus:     osGenus,
+		}
+	}
 
 	c := ClientInfo{
 		Ring:       ring,
@@ -935,14 +951,13 @@ func getClient(client *PropertyNode) *ClientInfo {
 		DNSName:    dns,
 		IPv4:       ipv4,
 		Expires:    exp,
-		Identity:   identity,
-		Confidence: confidence,
 		DNSPrivate: private,
 		Username:   username,
 		ConnBand:   connBand,
 		ConnNode:   connNode,
 		ConnVAP:    connVAP,
 		Wireless:   wireless,
+		DevID:      devID,
 		active:     active,
 	}
 	return &c

@@ -352,7 +352,6 @@ COMMON_GOPKGS = \
 	bg/common/cfgmsg \
 	bg/common/cfgtree \
 	bg/common/configctl \
-	bg/common/deviceid \
 	bg/common/grpcutils \
 	bg/common/mfg \
 	bg/common/network \
@@ -572,7 +571,6 @@ CLOUDCOMMON_GOPKGS = \
 
 CLOUDCOMMAND_GOPKGS = \
 	bg/cl-aggregate \
-	bg/cl-build-device-db \
 	bg/cl-cert \
 	bg/cl-configctl \
 	bg/cl-dtool \
@@ -943,7 +941,7 @@ GENERATED_GO_FILES = \
 	$(GOSRCBG)/common/version.go
 
 $(GOTOOLS_DIR)/godeps.mk: | $(COMPUTE_DEPS) $(GENERATED_GO_FILES)
-	$(COMPUTE_DEPS) $(ALL_GOBINS) > $@
+	$(COMPUTE_DEPS) $(ALL_GOBINS) > $@ || $(RM) -f $@
 
 include $(GOTOOLS_DIR)/godeps.mk
 

@@ -18,3 +18,17 @@ convert -resize x36 bglogo_white_trim.png bglogo_navbar_md.png
 convert -resize x72 bglogo_white_trim.png bglogo_navbar_md@2x.png
 convert -resize x72 bglogo_blue_trim.png bglogo_navbar_ios@2x.png
 ```
+
+The icons in `devid/` were generated using IconJar as follows:
+
+- Select all icons, then Export Selection
+```
+  SIZE    PREFIX   SUFFIX   TYPE   FILL
+  64x64   None     -active  PNG    #6CC04A
+  64x64   None     None     PNG    #626262
+```
+
+- Once all icons are rendered to PNG, use ImageOptim on MacOS to reduce the PNG
+  size (reduces PNG size by about 75%).
+
+- The source .iconjar file is in client-web/src/ui-icons.iconjar.zip

@@ -42,7 +42,6 @@ const (
 
 	rootPath    = "@/"
 	metricsPath = "@/metrics/"
-	devicesPath = "@/devices/"
 )
 
 type configStore interface {
@@ -144,10 +143,6 @@ func main() {
 
 	if err = envcfg.Unmarshal(&environ); err != nil {
 		slog.Fatalf("Environment Error: %s", err)
-	}
-
-	if err = deviceDBInit(); err != nil {
-		slog.Fatalf("Error loading devices.json: %v", err)
 	}
 
 	go prometheusInit(environ.DiagPort)

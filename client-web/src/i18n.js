@@ -35,6 +35,7 @@ export default {
       },
       api: { // Messages from the store
         unknown_device: 'Unnamed ({hwAddr})',
+        unknown_device_with_genus: '{genus} ({hwAddr})',
         unknown_org: 'Unknown',
         roles: {
           user: 'User',

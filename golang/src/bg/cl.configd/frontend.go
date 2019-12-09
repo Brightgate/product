@@ -165,12 +165,8 @@ func (s *frontEndServer) Submit(ctx context.Context,
 		var err error
 		var payload string
 
-		if strings.HasPrefix(getProp, devicesPath) {
-			payload, err = getDevice(getProp)
-
-		} else if strings.HasPrefix(getProp+"/", metricsPath) {
+		if strings.HasPrefix(getProp+"/", metricsPath) {
 			payload, err = state.metricsGet(getProp)
-
 		} else {
 			state.Lock()
 			payload, err = state.cachedTree.Get(getProp)

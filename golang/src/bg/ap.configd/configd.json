@@ -282,7 +282,6 @@
     {"Path": "@/certs/%string%/state", "Type": "string", "Level": "internal"},
     {"Path": "@/certs/%string%/origin", "Type": "string", "Level": "internal"},
     {"Path": "@/dns/cnames/%hostname%", "Type": "hostname", "Level": "user"},
-    {"Path": "@/devices/%int%", "Type": "int", "Level": "internal"},
     {"Path": "@/firewall/rules/%string%/active", "Type": "bool", "Level": "admin"},
     {"Path": "@/firewall/rules/%string%/rule", "Type": "string", "Level": "internal"},
     {"Path": "@/firewall/blocked/%ipaddr%", "Type": "bool", "Level": "internal"},

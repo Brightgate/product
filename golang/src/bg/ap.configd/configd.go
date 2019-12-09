@@ -89,7 +89,6 @@ type subtreeMatch struct {
 }
 
 var subtreeMatchTable = []subtreeMatch{
-	{regexp.MustCompile(`^@/devices`), devPropHandler},
 	{regexp.MustCompile(`^@/metrics`), metricsPropHandler},
 	{regexp.MustCompile(`^@/`), configPropHandler},
 }
@@ -1087,10 +1086,6 @@ func main() {
 	}
 	brokerd.Handle(base_def.TOPIC_ENTITY, eventHandler)
 	defer brokerd.Fini()
-
-	if err = deviceDBInit(); err != nil {
-		fail("Failed to import devices database: %v", err)
-	}
 
 	if serverPort, err = comms.NewAPServer(serverURL); err != nil {
 		fail("opening server port: %v", err)

@@ -20,7 +20,6 @@
 export default [
   {
     "active": false,
-    "confidence": 0,
     "connBand": "2.4GHz",
     "connNode": "001-201901BB-000002",
     "connVAP": "eap",
@@ -29,9 +28,6 @@ export default [
     "displayName": "",
     "hwAddr": "00:01:02:08:2c:5e",
     "ipv4Addr": "192.168.229.11",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -53,17 +49,16 @@ export default [
   },
   {
     "active": true,
-    "confidence": 0,
     "dhcpExpiry": "static",
     "dhcpName": "a564029e-71bc-4dd5-91e8-a6fe44c02ac5",
     "displayName": "creed-wrt",
     "dnsName": "creed-wrt",
     "hwAddr": "00:01:02:a0:00:08",
     "ipv4Addr": "192.168.229.48",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
+    "devID": {
+      "osGenus": "Linux",
+    },
     "scans": {
       "tcp": {
         "finish": "2019-06-25T19:06:20Z",
@@ -82,16 +77,16 @@ export default [
   },
   {
     "active": true,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-26T08:30:58Z",
     "dhcpName": "a1fa1e2d-67c1-4a6b-b70b-5469635aa215",
     "displayName": "a1fa1e2d-67c1-4a6b-b70b-5469635aa215",
     "hwAddr": "00:01:02:a0:00:27",
     "ipv4Addr": "192.168.229.80",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
+    "devID": {
+      "osGenus": "Linux",
+      "deviceGenus": "Brightgate Appliance",
+    },
     "scans": {
       "tcp": {
         "finish": "2019-06-25T19:06:55Z",
@@ -110,15 +105,11 @@ export default [
   },
   {
     "active": true,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-26T08:23:15Z",
     "dhcpName": "dkx2-101-03",
     "displayName": "dkx2-101-03",
     "hwAddr": "00:01:02:05:f1:ff",
     "ipv4Addr": "192.168.229.35",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -138,17 +129,17 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-04T18:23:59Z",
     "dhcpName": "",
     "displayName": "ac-wrt",
     "dnsName": "ac-wrt",
     "hwAddr": "00:01:02:80:00:02",
     "ipv4Addr": "192.168.229.98",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
+    "devID": {
+      "ouiMfg": "Pegatron",
+      "osGenus": "Linux",
+    },
     "scans": {
       "tcp": {
         "finish": "2019-06-23T20:24:48Z",
@@ -167,7 +158,6 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "connBand": "5GHz",
     "connNode": "001-201901BB-000002",
     "connVAP": "psk",
@@ -176,9 +166,6 @@ export default [
     "displayName": "",
     "hwAddr": "00:01:02:fe:11:9c",
     "ipv4Addr": "192.168.227.12",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "unenrolled",
     "scans": {
       "tcp": {
@@ -198,15 +185,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-13T20:15:12Z",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:a0:00:9f",
     "ipv4Addr": "192.168.229.187",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -218,7 +201,6 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "connBand": "2.4GHz",
     "connNode": "001-201901BB-000002",
     "connVAP": "psk",
@@ -227,9 +209,6 @@ export default [
     "displayName": "",
     "hwAddr": "00:01:02:fe:cc:f5",
     "ipv4Addr": "",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "devices",
     "scans": {
       "tcp": {
@@ -249,15 +228,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-15T21:18:05Z",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:a0:00:a5",
     "ipv4Addr": "192.168.229.55",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -277,7 +252,6 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "connBand": "5GHz",
     "connNode": "001-201901BB-000001",
     "connVAP": "eap",
@@ -286,9 +260,6 @@ export default [
     "displayName": "",
     "hwAddr": "00:01:02:e0:5c:4b",
     "ipv4Addr": "192.168.229.91",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -306,15 +277,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "static",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:fe:17:a6",
     "ipv4Addr": "",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "quarantine",
     "scans": {
       "tcp": {
@@ -334,15 +301,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-07T21:23:09Z",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:10:fb:35",
     "ipv4Addr": "192.168.229.160",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "quarantine",
     "scans": {
       "tcp": {
@@ -371,7 +334,6 @@ export default [
   },
   {
     "active": true,
-    "confidence": 0,
     "connBand": "5GHz",
     "connNode": "0dfc2484-9860-41e8-b5af-7677e18b9c2b",
     "connVAP": "eap",
@@ -380,9 +342,6 @@ export default [
     "displayName": "",
     "hwAddr": "00:01:02:51:67:41",
     "ipv4Addr": "192.168.229.115",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -404,15 +363,11 @@ export default [
   },
   {
     "active": true,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-26T17:13:47Z",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:ce:c3:3f",
     "ipv4Addr": "192.168.229.127",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -432,16 +387,17 @@ export default [
   },
   {
     "active": true,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-26T15:35:58Z",
     "dhcpName": "skull",
     "displayName": "skull",
     "hwAddr": "00:01:02:08:27:70",
     "ipv4Addr": "192.168.229.246",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
+    "devID": {
+      "ouiMfg": "Pegatron",
+      "deviceGenus": "Linux Server",
+      "osGenus": "Linux",
+    },
     "scans": {
       "tcp": {
         "finish": "2019-06-25T19:12:01Z",
@@ -460,7 +416,6 @@ export default [
   },
   {
     "active": true,
-    "confidence": 0,
     "connBand": "2.4GHz",
     "connNode": "001-201901BB-000001",
     "connVAP": "eap",
@@ -469,9 +424,6 @@ export default [
     "displayName": "",
     "hwAddr": "00:01:02:22:64:83",
     "ipv4Addr": "192.168.229.12",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -493,15 +445,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "static",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:fe:df:5a",
     "ipv4Addr": "",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "devices",
     "scans": {
       "tcp": {
@@ -521,7 +469,6 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "connBand": "5GHz",
     "connNode": "001-201901BB-000001",
     "connVAP": "eap",
@@ -530,9 +477,6 @@ export default [
     "displayName": "",
     "hwAddr": "00:01:02:c0:f1:3c",
     "ipv4Addr": "192.168.229.28",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -552,7 +496,6 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "connBand": "2.4GHz",
     "connNode": "001-201901BB-000001",
     "connVAP": "guest",
@@ -561,9 +504,6 @@ export default [
     "displayName": "",
     "hwAddr": "00:01:02:5b:f1:1a",
     "ipv4Addr": "192.168.231.26",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "guest",
     "scans": {
       "tcp": {
@@ -583,7 +523,6 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "connBand": "5GHz",
     "connNode": "001-201901BB-000001",
     "connVAP": "eap",
@@ -592,9 +531,6 @@ export default [
     "displayName": "Pams-MBP",
     "hwAddr": "00:01:02:b4:fc:90",
     "ipv4Addr": "192.168.229.114",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -616,16 +552,12 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-04-26T18:28:50Z",
     "dhcpName": "",
     "displayName": "creed2",
     "dnsName": "creed2",
     "hwAddr": "00:01:02:a7:a6:35",
     "ipv4Addr": "192.168.229.53",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -645,16 +577,16 @@ export default [
   },
   {
     "active": true,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-26T10:18:30Z",
     "dhcpName": "3b7c5700-ed16-4553-9ab8-5ab13a1e36ff",
     "displayName": "3b7c5700-ed16-4553-9ab8-5ab13a1e36ff",
     "hwAddr": "00:01:02:a0:00:79",
     "ipv4Addr": "192.168.229.10",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
+    "devID": {
+      "osGenus": "Linux",
+      "deviceGenus": "Brightgate Appliance",
+    },
     "scans": {
       "tcp": {
         "finish": "2019-06-25T19:13:15Z",
@@ -673,15 +605,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-15T20:18:54Z",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:a0:00:a4",
     "ipv4Addr": "192.168.229.221",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -701,7 +629,6 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "connBand": "5GHz",
     "connNode": "001-201901BB-000001",
     "connVAP": "eap",
@@ -710,9 +637,6 @@ export default [
     "displayName": "",
     "hwAddr": "00:01:02:ab:75:da",
     "ipv4Addr": "192.168.229.74",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -732,15 +656,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "static",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:4b:77:32",
     "ipv4Addr": "",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "",
     "scans": {
       "tcp": {
@@ -760,7 +680,6 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "connBand": "2.4GHz",
     "connNode": "001-201901BB-000001",
     "connVAP": "psk",
@@ -769,9 +688,6 @@ export default [
     "displayName": "",
     "hwAddr": "00:01:02:da:2e:09",
     "ipv4Addr": "192.168.230.192",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "devices",
     "scans": {
       "tcp": {
@@ -793,15 +709,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-04T18:40:07Z",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:a0:00:14",
     "ipv4Addr": "192.168.229.239",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -821,7 +733,6 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "connBand": "5GHz",
     "connNode": "001-201901BB-000001",
     "connVAP": "eap",
@@ -830,9 +741,6 @@ export default [
     "displayName": "",
     "hwAddr": "00:01:02:93:60:7a",
     "ipv4Addr": "192.168.229.103",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -852,47 +760,15 @@ export default [
   },
   {
     "active": true,
-    "confidence": 0,
-    "connBand": "2.4GHz",
-    "connNode": "001-201901BB-000002",
-    "connVAP": "eap",
-    "dhcpExpiry": "2019-06-24T12:36:54Z",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:27:d2:d1",
-    "ipv4Addr": "192.168.229.131",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
-    "ring": "standard",
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-23T20:29:41Z",
-        "start": "2019-06-23T20:29:36Z"
-      },
-      "udp": {
-        "finish": "2019-05-28T16:20:11Z",
-        "start": "2019-05-28T16:20:05Z"
-      },
-      "vuln": {
-        "finish": "2019-06-23T13:30:27Z",
-        "start": "2019-06-23T13:30:22Z"
-      }
-    },
-    "wireless": true,
-  },
-  {
-    "active": true,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-26T08:23:03Z",
     "dhcpName": "creedap",
     "displayName": "creedap",
     "hwAddr": "00:01:02:d9:a7:a7",
     "ipv4Addr": "192.168.229.231",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
+    "devID": {
+      "osGenus": "Linux",
+    },
     "scans": {
       "tcp": {
         "finish": "2019-06-25T19:11:34Z",
@@ -911,15 +787,11 @@ export default [
   },
   {
     "active": true,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-26T11:06:51Z",
     "dhcpName": "0dfc2484-9860-41e8-b5af-7677e18b9c2b",
     "displayName": "0dfc2484-9860-41e8-b5af-7677e18b9c2b",
     "hwAddr": "00:01:02:a0:00:53",
     "ipv4Addr": "192.168.226.5",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "internal",
     "scans": {
       "tcp": {
@@ -939,15 +811,11 @@ export default [
   },
   {
     "active": true,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-26T09:13:45Z",
     "dhcpName": "moose",
     "displayName": "moose",
     "hwAddr": "00:01:02:88:8d:cb",
     "ipv4Addr": "192.168.229.240",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -967,15 +835,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-05-26T03:09:43Z",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:ce:c3:3d",
     "ipv4Addr": "192.168.229.199",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -995,15 +859,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-04T18:48:28Z",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:a0:00:85",
     "ipv4Addr": "192.168.229.147",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -1023,15 +883,11 @@ export default [
   },
   {
     "active": true,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-26T08:23:53Z",
     "dhcpName": "sat-conservatory",
     "displayName": "sat-conservatory",
     "hwAddr": "00:01:02:64:ee:4f",
     "ipv4Addr": "192.168.226.3",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "internal",
     "scans": {
       "tcp": {
@@ -1051,7 +907,6 @@ export default [
   },
   {
     "active": true,
-    "confidence": 0,
     "connBand": "2.4GHz",
     "connNode": "001-201901BB-000001",
     "connVAP": "eap",
@@ -1060,10 +915,12 @@ export default [
     "displayName": "Samsung-Galaxy-S7",
     "hwAddr": "00:01:02:66:6b:90",
     "ipv4Addr": "192.168.229.20",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
+    "devID": {
+      "ouiMfg": "Samsung",
+      "deviceGenus": "Android Phone",
+      "osGenus": "Android",
+    },
     "scans": {
       "tcp": {
         "finish": "2019-06-25T19:16:08Z",
@@ -1084,15 +941,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-04T21:04:09Z",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:a0:00:0e",
     "ipv4Addr": "192.168.229.15",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -1112,15 +965,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "static",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:fe:df:59",
     "ipv4Addr": "",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "guest",
     "scans": {
       "tcp": {
@@ -1140,15 +989,11 @@ export default [
   },
   {
     "active": true,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-26T08:23:12Z",
     "dhcpName": "dev-test2",
     "displayName": "dev-test2",
     "hwAddr": "00:01:02:ca:8d:b5",
     "ipv4Addr": "192.168.229.159",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -1168,16 +1013,17 @@ export default [
   },
   {
     "active": true,
-    "confidence": 0,
     "dhcpExpiry": "static",
     "dhcpName": "dp-raspberrypi",
     "displayName": "dp-raspberrypi",
     "hwAddr": "00:01:02:ae:b1:7f",
     "ipv4Addr": "192.168.229.52",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
+    "devID": {
+      "ouiMfg": "Raspberry Pi Foundation",
+      "deviceGenus": "Raspberry Pi",
+      "osGenus": "Linux",
+    },
     "scans": {
       "tcp": {
         "finish": "2019-06-25T19:03:53Z",
@@ -1196,15 +1042,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-13T19:49:53Z",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:a0:00:6b",
     "ipv4Addr": "192.168.229.56",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -1223,49 +1065,12 @@ export default [
     "wireless": false
   },
   {
-    "active": true,
-    "confidence": 0,
-    "connBand": "5GHz",
-    "connNode": "001-201901BB-000001",
-    "connVAP": "guest",
-    "dhcpExpiry": "2019-06-24T13:17:03Z",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:bf:63:26",
-    "ipv4Addr": "192.168.229.25",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
-    "ring": "standard",
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-23T20:23:17Z",
-        "start": "2019-06-23T20:23:10Z"
-      },
-      "udp": {
-        "finish": "2019-06-23T20:23:17Z",
-        "start": "2019-06-23T20:23:09Z"
-      },
-      "vuln": {
-        "finish": "2019-06-23T20:23:17Z",
-        "start": "2019-06-23T20:23:07Z"
-      }
-    },
-    "wireless": true,
-    "signalStrength": -75,
-    "lastActivity": "2019-06-26T19:10:25Z",
-  },
-  {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-15T22:43:33Z",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:56:f9:37",
     "ipv4Addr": "192.168.229.184",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -1285,29 +1090,21 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "static",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:53:71:73",
     "ipv4Addr": "",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "wireless": false
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "static",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:31:a5:9a",
     "ipv4Addr": "",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "",
     "scans": {
       "tcp": {
@@ -1319,7 +1116,6 @@ export default [
   },
   {
     "active": true,
-    "confidence": 0,
     "connBand": "5GHz",
     "connNode": "001-201901BB-000002",
     "connVAP": "eap",
@@ -1329,9 +1125,11 @@ export default [
     "displayName": "catbook",
     "hwAddr": "00:01:02:b9:8d:b0",
     "ipv4Addr": "192.168.229.128",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
+    "devID": {
+      "ouiMfg": "Apple",
+      "deviceGenus": "Apple Macintosh",
+      "osGenus": "macOS",
+    },
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -1352,43 +1150,12 @@ export default [
     "lastActivity": "2019-06-26T19:10:25Z",
   },
   {
-    "active": true,
-    "confidence": 0,
-    "connBand": "2.4GHz",
-    "connNode": "001-201901BB-000002",
-    "connVAP": "eap",
-    "dhcpExpiry": "2019-06-24T07:30:27Z",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:5c:b0:e8",
-    "ipv4Addr": "192.168.229.175",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
-    "ring": "standard",
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-23T20:24:43Z",
-        "start": "2019-06-23T20:24:38Z"
-      },
-      "vuln": {
-        "finish": "2019-06-23T10:46:55Z",
-        "start": "2019-06-23T10:46:50Z"
-      }
-    },
-    "wireless": true
-  },
-  {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-05-30T18:54:55Z",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:a0:00:8b",
     "ipv4Addr": "192.168.229.95",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -1400,15 +1167,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-05-30T19:04:25Z",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:a0:00:92",
     "ipv4Addr": "192.168.229.251",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -1419,49 +1182,12 @@ export default [
     "wireless": false
   },
   {
-    "active": true,
-    "confidence": 0,
-    "connBand": "2.4GHz",
-    "connNode": "001-201901BB-000001",
-    "connVAP": "eap",
-    "dhcpExpiry": "2019-06-26T18:28:42Z",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:d1:79:0b",
-    "ipv4Addr": "192.168.229.19",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
-    "ring": "standard",
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-25T19:07:39Z",
-        "start": "2019-06-25T19:06:23Z"
-      },
-      "udp": {
-        "finish": "2019-06-25T00:27:13Z",
-        "start": "2019-06-25T00:23:11Z"
-      },
-      "vuln": {
-        "finish": "2019-06-25T18:54:51Z",
-        "start": "2019-06-25T18:29:14Z"
-      }
-    },
-    "wireless": true,
-    "signalStrength": -85,
-    "lastActivity": "2019-06-26T19:10:25Z",
-  },
-  {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "static",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:4b:77:31",
     "ipv4Addr": "",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "",
     "scans": {
       "tcp": {
@@ -1481,16 +1207,17 @@ export default [
   },
   {
     "active": true,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-26T03:03:15Z",
     "dhcpName": "XRX9C934E2CF72C",
     "displayName": "XRX9C934E2CF72C",
     "hwAddr": "00:01:02:2c:f7:2c",
     "ipv4Addr": "192.168.230.49",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "devices",
+    "devID": {
+      "ouiMfg": "Xerox",
+      "deviceGenus": "Xerox Printer",
+      "osGenus": "Embedded/RTOS",
+    },
     "scans": {
       "tcp": {
         "finish": "2019-06-25T19:11:31Z",
@@ -1518,15 +1245,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "static",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:31:a5:99",
     "ipv4Addr": "",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "",
     "scans": {
       "tcp": {
@@ -1538,15 +1261,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-21T20:24:25Z",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:a0:00:26",
     "ipv4Addr": "192.168.229.22",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -1566,15 +1285,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-13T19:16:48Z",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:a0:00:9e",
     "ipv4Addr": "192.168.229.150",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -1594,7 +1309,6 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "connBand": "5GHz",
     "connNode": "001-201901BB-000001",
     "connVAP": "eap",
@@ -1603,9 +1317,6 @@ export default [
     "displayName": "",
     "hwAddr": "00:01:02:da:b1:9a",
     "ipv4Addr": "192.168.229.26",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -1627,7 +1338,6 @@ export default [
   },
   {
     "active": true,
-    "confidence": 0,
     "connBand": "2.4GHz",
     "connNode": "001-201901BB-000001",
     "connVAP": "eap",
@@ -1636,10 +1346,12 @@ export default [
     "displayName": "DESKTOP-GEK7J5G",
     "hwAddr": "00:01:02:1e:54:9f",
     "ipv4Addr": "192.168.229.32",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
+    "devID": {
+      "ouiMfg": "Microsoft",
+      "deviceGenus": "Microsoft Surface",
+      "osGenus": "Windows",
+    },
     "scans": {
       "tcp": {
         "finish": "2019-06-25T19:11:15Z",
@@ -1656,15 +1368,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-12T21:19:27Z",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:9c:d0:2e",
     "ipv4Addr": "192.168.231.26",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "guest",
     "scans": {
       "tcp": {
@@ -1703,16 +1411,16 @@ export default [
   },
   {
     "active": true,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-26T16:13:22Z",
     "dhcpName": "Danek",
     "displayName": "Danek",
     "hwAddr": "00:01:02:c9:02:d1",
     "ipv4Addr": "192.168.229.166",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
+    "devID": {
+      "ouiMfg": "Apple",
+      "osGenus": "macOS",
+    },
     "scans": {
       "tcp": {
         "finish": "2019-06-25T19:15:23Z",
@@ -1731,15 +1439,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-01T18:19:57Z",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:2d:a1:d1",
     "ipv4Addr": "192.168.229.97",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -1759,16 +1463,17 @@ export default [
   },
   {
     "active": true,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-26T08:23:20Z",
     "dhcpName": "duvall-pi0",
     "displayName": "duvall-pi0",
     "hwAddr": "00:01:02:6d:4c:74",
     "ipv4Addr": "192.168.229.126",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
+    "devID": {
+      "ouiMfg": "Raspberry Pi Foundation",
+      "deviceGenus": "Raspberry Pi",
+      "osGenus": "Linux",
+    },
     "scans": {
       "tcp": {
         "finish": "2019-06-25T19:09:49Z",
@@ -1787,16 +1492,17 @@ export default [
   },
   {
     "active": true,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-26T12:12:30Z",
     "dhcpName": "beast",
     "displayName": "beast",
     "hwAddr": "00:01:02:59:46:b0",
     "ipv4Addr": "192.168.229.40",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
+    "devID": {
+      "ouiMfg": "Giga-Byte",
+      "deviceGenus": "Linux/Unix Server",
+      "osGenus": "Linux",
+    },
     "scans": {
       "tcp": {
         "finish": "2019-06-25T19:19:16Z",
@@ -1815,7 +1521,6 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "connBand": "5GHz",
     "connNode": "0dfc2484-9860-41e8-b5af-7677e18b9c2b",
     "connVAP": "guest",
@@ -1824,15 +1529,11 @@ export default [
     "displayName": "",
     "hwAddr": "00:01:02:b9:8d:b1",
     "ipv4Addr": "",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "wireless": false
   },
   {
     "active": true,
-    "confidence": 0,
     "connBand": "5GHz",
     "connNode": "001-201901BB-000002",
     "connVAP": "psk",
@@ -1842,10 +1543,12 @@ export default [
     "dnsName": "echo-dot",
     "hwAddr": "00:01:02:03:70:78",
     "ipv4Addr": "192.168.230.166",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "devices",
+    "devID": {
+      "ouiMfg": "Amazon",
+      "deviceGenus": "Amazon Echo",
+      "osGenus": "Linux",
+    },
     "scans": {
       "tcp": {
         "finish": "2019-06-25T19:10:53Z",
@@ -1866,15 +1569,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-05-30T21:01:47Z",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:a0:00:93",
     "ipv4Addr": "192.168.229.207",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -1890,15 +1589,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-05-22T22:51:45Z",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:f4:1d:eb",
     "ipv4Addr": "192.168.229.166",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -1914,15 +1609,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-06-13T18:18:55Z",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:a0:00:99",
     "ipv4Addr": "192.168.229.243",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -1933,49 +1624,12 @@ export default [
     "wireless": false
   },
   {
-    "active": true,
-    "confidence": 0,
-    "connBand": "5GHz",
-    "connNode": "001-201901BB-000001",
-    "connVAP": "eap",
-    "dhcpExpiry": "2019-06-26T18:06:42Z",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:d2:46:82",
-    "ipv4Addr": "192.168.229.85",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
-    "ring": "standard",
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-25T19:11:57Z",
-        "start": "2019-06-25T19:11:31Z"
-      },
-      "udp": {
-        "finish": "2019-06-13T23:24:57Z",
-        "start": "2019-06-13T23:19:55Z"
-      },
-      "vuln": {
-        "finish": "2019-06-25T19:07:31Z",
-        "start": "2019-06-25T19:07:23Z"
-      }
-    },
-    "wireless": true,
-    "signalStrength": -55,
-    "lastActivity": "2019-06-26T19:10:25Z",
-  },
-  {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "static",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:b3:e4:19",
     "ipv4Addr": "",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {
@@ -1994,8 +1648,7 @@ export default [
     "wireless": false
   },
   {
-    "active": true,
-    "confidence": 0,
+    "active": false,
     "connBand": "2.4GHz",
     /* this node is deliberately invalid to ensure this works */
     "connNode": "814fb2f4-1ce4-4158-b7fa-1d4534745b94",
@@ -2005,9 +1658,6 @@ export default [
     "displayName": "device-with-invalid-nodeid",
     "hwAddr": "00:01:02:58:be:46",
     "ipv4Addr": "192.168.229.81",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "guest",
     "scans": {
       "tcp": {
@@ -2027,15 +1677,11 @@ export default [
   },
   {
     "active": false,
-    "confidence": 0,
     "dhcpExpiry": "2019-05-14T22:41:44Z",
     "dhcpName": "",
     "displayName": "",
     "hwAddr": "00:01:02:a0:00:84",
     "ipv4Addr": "192.168.229.153",
-    "kind": "",
-    "manufacturer": "",
-    "model": "",
     "ring": "standard",
     "scans": {
       "tcp": {

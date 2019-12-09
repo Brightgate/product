@@ -24,7 +24,7 @@ const debug = Debug('store');
 Vue.use(Vuex);
 
 // XXX this needs further rationalization with devices.json
-const DEVICE_CATEGORY_ALL = ['recent', 'phone', 'computer', 'printer', 'media', 'iot', 'unknown'];
+const DEVICE_CATEGORY_ALL = ['recent', 'personal', 'computer', 'networking', 'printer', 'media', 'iot', 'unknown'];
 const RETRY_DELAY = 1000;
 const LOCAL_SITE_ID = '0';
 const LOCAL_ORG_ID = '0';
@@ -735,41 +735,81 @@ const getters = {
 // and identity.  We expect a lot of this could will change drastically when
 // we revise our device identity system.
 function computeDeviceProps(device) {
-  if (!device.displayName) {
-    device.displayName = i18n.t('message.api.unknown_device', {hwAddr: device.hwAddr});
-  }
   // uniqid is used in sorting and categorization
   device.uniqid = device.hwAddr;
 
-  const k2c = {
-    'android': 'phone',
-    'ios': 'phone',
-    'computer': 'computer',
-    'iot': 'iot',
-    'unknown': 'unknown',
-    'media': 'media',
-    'printer': 'printer',
+  // See golang/src/bg/cl-obs/definitions.go
+  // maps device genus to [category, media]
+  const genusMap = {
+    'Amazon Kindle': ['personal', 'personal-tablet'],
+    'Android Phone': ['personal', 'personal-phone-android'],
+    'Apple iPhone/iPad': ['personal', 'personal-phone-ios'],
+    'Apple Macintosh': ['computer', 'computer-macintosh'],
+    'Belkin Wemo': ['iot', 'iot'],
+    'Google Home': ['media', 'media-speaker'],
+    'Google Pixel': ['personal', 'personal-phone-android'],
+    'Nest Sensor': ['iot', 'iot'],
+    'Raspberry Pi': ['computer', 'computer'],
+    'Roku Streaming Media Player': ['media', 'media'],
+    'Sonos Wireless Sound Device': ['media', 'media-speaker'],
+    'Ubiquiti AP': ['networking', 'networking'],
+    'Ubiquiti mFi': ['networking', 'networking'],
+    'Windows PC': ['computer', 'computer-windows'],
+    'Xerox Printer': ['printer', 'printer'],
+    'Apple iPad': ['personal', 'personal-tablet'],
+    'Apple Watch': ['personal', 'personal-watch'],
+    'Microsoft Surface': ['computer', 'computer-windows'], // XXX
+    'Amazon Echo': ['media', 'media-speaker'],
+    'TiVo DVR': ['media', 'media-dvr'],
+    'Linux/Unix Server': ['computer', 'computer-server'],
+    'Sony PlayStation': ['media', 'media-gaming'],
+    'Brightgate Appliance': ['networking', 'networking'],
+    'Apple TV': ['media', 'media-dvr'],
+    'Google Chromecast': ['media', 'media-dvr'],
+    'Linux/Unix VM': ['computer', 'computer-server'],
+    'Windows VM': ['computer', 'computer-server'],
+    'macOS VM': ['computer', 'computer-server'],
+    'HP Printer': ['printer', 'printer'],
+    'Hackintosh': ['computer', 'computer'],
+    'Apple AirPort': ['networking', 'networking'],
+    'OBi100/200': ['networking', 'networking-telephony'],
   };
-  const k2m = {
-    'android': 'mobile-phone-1',
-    'ios': 'mobile-phone-1',
-    'computer': 'laptop-1',
-    'iot': 'webcam-1',
-    'unknown': 'misc-device',
-    'media': 'television',
-    'printer': 'tablet', // XXX for now
+
+  // See golang/src/bg/cl-obs/definitions.go
+  const osGenusMap = {
+    'Windows': ['computer', 'os-windows'],
+    'macOS': ['computer', 'computer'],
+    'iOS': ['personal', 'personal-phone-ios'],
+    'watchOS': ['personal', 'personal-watch'],
+    'tvOS': ['media', 'media-dvr'],
+    'iPadOS': ['personal', 'personal-tablet'],
+    'Android': ['unknown', 'os-android'],
+    'Linux': ['unknown', 'os-linux'],
+    'BSD': ['unknown', 'unknown'],
+    'UNIX': ['computer', 'os-unix'],
+    'Embedded/RTOS': ['unknown', 'unknown'],
   };
-  assert(typeof(device.confidence) === 'number');
-  // derived from logic in configctl
-  if (device.confidence < 0.5) {
-    device.category = 'unknown';
-    device.media = k2m['unknown'];
-    device.certainty = 'low';
-  } else {
-    device.certainty = device.confidence < 0.87 ? 'medium' : 'high';
-    device.category = device.kind in k2c ? k2c[device.kind] : k2c['unknown'];
-    device.media = device.kind in k2m ? k2m[device.kind] : k2m['unknown'];
+
+
+  let cat = 'unknown';
+  let media = 'unknown';
+
+  if (device.devID && device.devID.deviceGenus && genusMap[device.devID.deviceGenus]) {
+    [cat, media] = genusMap[device.devID.deviceGenus];
+  } else if (device.devID && device.devID.osGenus && osGenusMap[device.devID.osGenus]) {
+    [cat, media] = osGenusMap[device.devID.osGenus];
   }
+  device.category = cat;
+  device.media = media;
+
+  if (!device.displayName) {
+    if (device.devID && device.devID.deviceGenus) {
+      device.displayName = i18n.t('message.api.unknown_device_with_genus', {genus: device.devID.deviceGenus, hwAddr: device.hwAddr});
+    } else {
+      device.displayName = i18n.t('message.api.unknown_device', {hwAddr: device.hwAddr});
+    }
+  }
+
   return device;
 }
 
