@@ -223,9 +223,9 @@ div.avatar-container {
                 </div>
               </div>
             </f7-list-item>
-            <f7-list-item :link="`/sites/${$f7route.params.siteID}/nodes/${dev.connNode}/`">
-              <span slot="title"><bg-hw-icon :model="nodeModel" height="30px" /></span>
-              <span>{{ nodeName(dev.connNode) }}</span>
+            <f7-list-item v-if="node" :link="`/sites/${$f7route.params.siteID}/nodes/${dev.connNode}/`">
+              <span slot="title"><bg-hw-icon :model="node.hwModel" height="30px" /></span>
+              <span>{{ nodeName }}</span>
             </f7-list-item>
           </f7-list>
         </f7-accordion-content>
@@ -362,11 +362,14 @@ export default {
       const uniqid = this.$f7route.params.UniqID;
       return this.$store.getters.deviceByUniqID(uniqid);
     },
-    nodeModel: function() {
-      if (this.dev.connNode) {
-        return this.nodes[this.dev.connNode].hwModel;
+    node: function() {
+      if (this.dev.connNode && this.nodes[this.dev.connNode]) {
+        return this.nodes[this.dev.connNode];
       }
       return undefined;
+    },
+    nodeName: function() {
+      return uiUtils.formatNodeName(this, this.nodes, this.dev.connNode);
     },
     acct: function() {
       if (!this.dev || !this.dev.username) {
@@ -412,9 +415,6 @@ export default {
     },
     timeRel: function(t) {
       return formatRelative(parseISO(t), Date.now());
-    },
-    nodeName: function(n) {
-      return uiUtils.formatNodeName(this, this.nodes, n);
     },
 
     vulnHeadline: function(vulnid) {

@@ -1994,20 +1994,21 @@ export default [
     "wireless": false
   },
   {
-    "active": false,
+    "active": true,
     "confidence": 0,
     "connBand": "2.4GHz",
-    "connNode": "001-201901BB-000001",
+    /* this node is deliberately invalid to ensure this works */
+    "connNode": "814fb2f4-1ce4-4158-b7fa-1d4534745b94",
     "connVAP": "guest",
     "dhcpExpiry": "2019-06-07T03:53:37Z",
-    "dhcpName": "",
-    "displayName": "",
+    "dhcpName": "device-with-invalid-nodeid",
+    "displayName": "device-with-invalid-nodeid",
     "hwAddr": "00:01:02:58:be:46",
     "ipv4Addr": "192.168.229.81",
     "kind": "",
     "manufacturer": "",
     "model": "",
-    "ring": "standard",
+    "ring": "guest",
     "scans": {
       "tcp": {
         "finish": "2019-06-23T20:23:56Z",
@@ -2022,7 +2023,7 @@ export default [
         "start": "2019-06-23T20:23:50Z"
       }
     },
-    "wireless": false
+    "wireless": true
   },
   {
     "active": false,
