@@ -18,14 +18,12 @@ const config = {
       template: 'public/index.html',
       filename: 'index.html',
       title: 'Brightgate Administration',
-      inject: false,
     },
     malwareWarn: {
       entry: 'src/main.js',
       template: 'public/malwareWarn.html',
       filename: 'malwareWarn.html',
       title: 'Malware Warning',
-      inject: false,
     },
   },
   pluginOptions: {
