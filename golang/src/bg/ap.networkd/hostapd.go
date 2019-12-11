@@ -429,7 +429,7 @@ func (c *hostapdConn) eapSuccess(sta, username string) {
 	}
 
 	slog.Infof("%v eapSuccess(%s) user=%s", c, sta, username)
-	sendNetEntity(sta, user, &c.vapName, &c.wifiBand, nil, true)
+	sendNetEntity(sta, user, &c.vapName, &c.wifiBand, nil, false)
 }
 
 func (c *hostapdConn) stationBadPassword(sta, username string) {
