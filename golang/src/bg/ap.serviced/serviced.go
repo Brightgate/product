@@ -56,7 +56,7 @@ func clientUpdateEvent(path []string, val string, expires *time.Time) {
 	var ipv4 net.IP
 
 	if len(path) < 3 || (path[2] != "ipv4" && path[2] != "dns_name" &&
-		path[2] != "dhcp_name" && path[2] != "ring") {
+		path[2] != "ring") {
 		return
 	}
 
@@ -84,8 +84,6 @@ func clientUpdateEvent(path []string, val string, expires *time.Time) {
 		dnsChanged = !ipv4.Equal(client.IPv4)
 	case "dns_name":
 		dnsChanged = (val != client.DNSName)
-	case "dhcp_name":
-		dnsChanged = (val != client.DHCPName)
 	case "ring":
 		dnsChanged = (val != client.Ring)
 	}
@@ -100,8 +98,6 @@ func clientUpdateEvent(path []string, val string, expires *time.Time) {
 		dhcpIPv4Changed(mac, client)
 	case "dns_name":
 		client.DNSName = val
-	case "dhcp_name":
-		client.DHCPName = val
 	case "ring":
 		if client.Ring == "" {
 			slog.Infof("added %s to %s", mac, val)

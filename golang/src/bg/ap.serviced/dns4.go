@@ -744,9 +744,6 @@ func dnsDeleteClient(c *cfgapi.ClientInfo) {
 // Convert a client's configd info into DNS records
 func dnsUpdateClient(c *cfgapi.ClientInfo) {
 	configName := c.DNSName
-	if configName == "" {
-		configName = c.DHCPName
-	}
 	name := strings.ToLower(configName)
 
 	if !network.ValidDNSName(name) || name == "localhost" || c.IPv4 == nil {

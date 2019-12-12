@@ -509,11 +509,6 @@ func dnsNameInuse(ignore *cfgtree.PNode, hostname string) bool {
 				return true
 			}
 		}
-		if prop, ok := device.Children["dhcp_name"]; ok {
-			if strings.ToLower(prop.Value) == lower {
-				return true
-			}
-		}
 	}
 
 	if cnames, _ := propTree.GetNode("@/dns/cnames"); cnames != nil {
@@ -553,9 +548,11 @@ func checkDNS(prop, hostname string) error {
 		parent = node.Parent()
 	}
 
+	dnsProp := strings.HasSuffix(prop, "dns_name")
+
 	if !network.ValidDNSLabel(hostname) {
 		err = fmt.Errorf("invalid hostname: %s", hostname)
-	} else if dnsNameInuse(parent, hostname) {
+	} else if dnsProp && dnsNameInuse(parent, hostname) {
 		err = fmt.Errorf("duplicate hostname")
 	}
 
