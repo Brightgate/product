@@ -55,8 +55,9 @@ const (
 )
 
 type dnsRecord struct {
-	rectype uint16
-	recval  string
+	hostRing string
+	rectype  uint16
+	recval   string
 }
 
 var (
@@ -73,6 +74,33 @@ var (
 		base_def.RING_DEVICES:    true,
 		base_def.RING_UNENROLLED: true,
 		base_def.RING_QUARANTINE: true,
+	}
+
+	// Limit the ability of clients in one ring to perform DNS lookups (or
+	// reverse lookups) of clients in a more secure ring.  The following map
+	// describes which rings each ring may look into.
+	dnsVisibility = map[string]map[string]bool{
+		base_def.RING_CORE: {
+			base_def.RING_INTERNAL:   true,
+			base_def.RING_UNENROLLED: true,
+			base_def.RING_CORE:       true,
+			base_def.RING_STANDARD:   true,
+			base_def.RING_DEVICES:    true,
+			base_def.RING_GUEST:      true,
+			base_def.RING_QUARANTINE: true,
+		},
+		base_def.RING_STANDARD: {
+			base_def.RING_STANDARD: true,
+			base_def.RING_DEVICES:  true,
+			base_def.RING_GUEST:    true,
+		},
+		base_def.RING_DEVICES: {
+			base_def.RING_DEVICES: true,
+			base_def.RING_GUEST:   true,
+		},
+		base_def.RING_GUEST: {
+			base_def.RING_GUEST: true,
+		},
 	}
 
 	domainname    string
@@ -594,12 +622,14 @@ func localHandler(w dns.ResponseWriter, r *dns.Msg) {
 	}
 
 	if ok {
-		if rec.rectype == dns.TypeA {
-			m.Answer = append(m.Answer, answerA(q, rec))
-			m.RecursionAvailable = true
-		} else if rec.rectype == dns.TypeCNAME {
-			m.Answer = append(m.Answer, answerCNAME(q, rec))
-			m.RecursionAvailable = true
+		if dnsVisibility[c.Ring][rec.hostRing] {
+			if rec.rectype == dns.TypeA {
+				m.Answer = append(m.Answer, answerA(q, rec))
+				m.RecursionAvailable = true
+			} else if rec.rectype == dns.TypeCNAME {
+				m.Answer = append(m.Answer, answerCNAME(q, rec))
+				m.RecursionAvailable = true
+			}
 		}
 	} else if brightgateDNS != "" {
 		// Proxy needed if we have decided that we are allowing
@@ -696,7 +726,10 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 		hostsMtx.Lock()
 		rec, ok := hosts[name]
 		hostsMtx.Unlock()
-		if ok && rec.rectype == dns.TypePTR {
+
+		if ok && rec.rectype == dns.TypePTR &&
+			dnsVisibility[c.Ring][rec.hostRing] {
+
 			m.Answer = append(m.Answer, answerPTR(q, rec))
 		}
 	} else {
@@ -757,8 +790,9 @@ func dnsUpdateClient(c *cfgapi.ClientInfo) {
 
 	slog.Infof("Adding A record %s->%s", hostname, ipv4)
 	hosts[hostname] = dnsRecord{
-		rectype: dns.TypeA,
-		recval:  ipv4,
+		hostRing: c.Ring,
+		rectype:  dns.TypeA,
+		recval:   ipv4,
 	}
 
 	arpa, err := dns.ReverseAddr(ipv4)
@@ -769,8 +803,9 @@ func dnsUpdateClient(c *cfgapi.ClientInfo) {
 		hostname := configName + "."
 		slog.Infof("Adding PTR record %s->%s", arpa, hostname)
 		hosts[arpa] = dnsRecord{
-			rectype: dns.TypePTR,
-			recval:  hostname,
+			hostRing: c.Ring,
+			rectype:  dns.TypePTR,
+			recval:   hostname,
 		}
 	}
 	hostsMtx.Unlock()
@@ -895,8 +930,9 @@ func initNetwork() {
 	for name, ring := range rings {
 		srouter := network.SubnetRouter(ring.Subnet)
 		ringRecords[name] = dnsRecord{
-			rectype: dns.TypeA,
-			recval:  srouter,
+			hostRing: name,
+			rectype:  dns.TypeA,
+			recval:   srouter,
 		}
 		subnets = append(subnets, ring.IPNet)
 	}
