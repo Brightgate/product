@@ -69,66 +69,75 @@ import messages from './i18n';
 
 import F7Debug from './f7-debug';
 
-Vue.use(VueI18n);
-Framework7.use(Framework7Vue);
-Framework7.use(F7Debug);
+function appInit() {
+  Vue.use(VueI18n);
+  Framework7.use(Framework7Vue);
+  Framework7.use(F7Debug);
 
-const comps = [
-  f7Accordion,
-  f7AccordionContent,
-  f7Block,
-  f7BlockTitle,
-  f7Button,
-  f7Card,
-  f7CardContent,
-  f7CardFooter,
-  f7CardHeader,
-  f7Checkbox,
-  f7Chip,
-  f7Col,
-  f7Fab,
-  f7Icon,
-  f7Input,
-  f7Link,
-  f7List,
-  f7ListGroup,
-  f7ListInput,
-  f7ListItem,
-  f7Navbar,
-  f7NavLeft,
-  f7NavRight,
-  f7NavTitle,
-  f7Page,
-  f7Panel,
-  f7Popover,
-  f7Popup,
-  f7Preloader,
-  f7Row,
-  f7Swiper,
-  f7SwiperSlide,
-  f7Toggle,
-  f7View,
-];
+  const comps = [
+    f7Accordion,
+    f7AccordionContent,
+    f7Block,
+    f7BlockTitle,
+    f7Button,
+    f7Card,
+    f7CardContent,
+    f7CardFooter,
+    f7CardHeader,
+    f7Checkbox,
+    f7Chip,
+    f7Col,
+    f7Fab,
+    f7Icon,
+    f7Input,
+    f7Link,
+    f7List,
+    f7ListGroup,
+    f7ListInput,
+    f7ListItem,
+    f7Navbar,
+    f7NavLeft,
+    f7NavRight,
+    f7NavTitle,
+    f7Page,
+    f7Panel,
+    f7Popover,
+    f7Popup,
+    f7Preloader,
+    f7Row,
+    f7Swiper,
+    f7SwiperSlide,
+    f7Toggle,
+    f7View,
+  ];
 
-comps.forEach((m) => {
-  Vue.component(m.name, m);
-});
+  comps.forEach((m) => {
+    Vue.component(m.name, m);
+  });
 
-Vue.config.productionTip = false;
+  Vue.config.productionTip = false;
 
-const locale = BrowserLocale().substring(0, 2);
-window.__b10e_locale__ = BrowserLocale().toLowerCase(); // eslint-disable-line camelcase
-const i18n = new VueI18n({
-  fallbackLocale: 'en',
-  locale,
-  messages,
-});
-setStoreI18n(i18n);
+  const locale = BrowserLocale().substring(0, 2);
+  window.__b10e_locale__ = BrowserLocale().toLowerCase(); // eslint-disable-line camelcase
+  const i18n = new VueI18n({
+    fallbackLocale: 'en',
+    locale,
+    messages,
+  });
+  setStoreI18n(i18n);
 
-// Init App
-new Vue({
-  i18n,
-  el: '#app',
-  render: (h) => h(App),
-  store,
-});
+  // Init App
+  return new Vue({
+    i18n,
+    el: '#app',
+    render: (h) => h(App),
+    store,
+  });
+}
+
+// This logic (storing window.__b10e_app__) works around a problem encountered
+// with the app being double initialized when using with the webpack dev server
+// and Hot-Module-Reloading.
+if (!window.__b10e_app__) {
+  window.__b10e_app__ = appInit(); // eslint-disable-line camelcase
+}
