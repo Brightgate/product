@@ -33,6 +33,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -808,10 +809,14 @@ func dnsUpdateRecord(name, mac, ring, val string, rectype uint16) {
 
 // Convert a client's configd info into DNS records
 func dnsUpdateClient(mac string, c *cfgapi.ClientInfo) {
-	var hostname, ipv4, arpa string
+	var configName, hostname, ipv4, arpa string
 	var err error
 
-	configName := c.DNSName
+	if c.DNSName != "" {
+		configName = c.DNSName
+	} else {
+		configName = c.FriendlyDNS
+	}
 	name := strings.ToLower(configName)
 
 	if network.ValidDNSName(name) && name != "localhost" && c.IPv4 != nil {
@@ -858,6 +863,105 @@ func deleteOneCname(hostname string) {
 	hostsMtx.Lock()
 	delete(hosts, hostname)
 	hostsMtx.Unlock()
+}
+
+// Iterate over all of the clients.  If a client has a friendly name without a
+// matching "DNS-friendly" name, generate a unique DNS name and add it to the
+// config tree.  Clear the derived DNS names for any clients that no longer have
+// friendly names.
+func updateFriendlyNames() {
+	updates := make(map[string]string)
+	existing := make(map[string]string)
+	assigned := make(map[string]string)
+
+	clientMtx.Lock()
+
+	// Build a list of the existing friendly DNS names, verifying that they
+	// are all unique and current.
+	for mac, c := range clients {
+		if c.DNSName != "" {
+			assigned[c.DNSName] = mac
+		}
+
+		// Make sure any DNS name matches the current friendly name
+		if fdns := c.FriendlyDNS; fdns != "" {
+			if c.FriendlyName == "" {
+				// No friendly name, so the DNS name must be stale
+				fdns = ""
+			} else {
+				// Trim any uniquifying suffix before comparing
+				end := len(fdns)
+				if dash := strings.Index(fdns, "_"); dash > 0 {
+					end = dash
+				}
+
+				// If the names don't match, the derived DNS
+				// name is stale
+				gen := network.GenerateDNSName(c.FriendlyName)
+				if gen != fdns[:end] {
+					fdns = ""
+				}
+			}
+
+			if other, ok := existing[fdns]; ok {
+				// Two devices derived the same DNS name.  This
+				// should never happen.
+				slog.Warnf("%s and %s both resolve to %s "+
+					"- clearing %s", mac, other, fdns, mac)
+				fdns = ""
+			}
+
+			if fdns != "" {
+				existing[fdns] = mac
+			} else {
+				updates[mac] = ""
+				c.FriendlyDNS = ""
+			}
+		}
+	}
+
+	// Avoid deriving 'localhost', which is our one disallowed DNS name
+	assigned["localhost"] = "true"
+
+	// Generate DNS friendly names for clients that need them
+	for mac, c := range clients {
+		if c.FriendlyName != "" && c.FriendlyDNS == "" {
+			base := network.GenerateDNSName(c.FriendlyName)
+			fdns := base
+
+			// If the derived name collides with either a derived or
+			// manually assigned name, we add a numeric suffix.  We
+			// continue incrementing that suffix until we find one
+			// that doesn't collide.
+			for i := 1; ; i++ {
+				if existing[fdns] == "" && assigned[fdns] == "" {
+					break
+				}
+				fdns = base + "_" + strconv.Itoa(i)
+			}
+			updates[mac] = fdns
+			existing[mac] = fdns
+		}
+	}
+	clientMtx.Unlock()
+
+	// Push any changes into the config tree
+	for mac, fdns := range updates {
+		var err error
+
+		prop := "@/clients/" + mac + "/friendly_dns"
+		if fdns == "" {
+			slog.Infof("Cleared DNS friendly name for %s", mac)
+			err = config.DeleteProp(prop)
+		} else {
+			slog.Infof("Derived DNS friendly name for %s: %s", mac,
+				fdns)
+			err = config.CreateProp(prop, fdns, nil)
+		}
+		if err != nil {
+			slog.Warnf("failed to update: %v", err)
+		}
+	}
 }
 
 func initHostMap() {
@@ -1044,11 +1148,12 @@ func dnsInit() {
 	cachedResponses.init()
 	initNetwork()
 	initHostMap()
-	data.LoadDNSBlocklist(*dataDir)
 
 	dns.HandleFunc(domainname+".", localHandler)
 	dns.HandleFunc(".", proxyHandler)
 
+	go updateFriendlyNames()
+	go data.LoadDNSBlocklist(*dataDir)
 	go dnsListener("udp")
 	go dnsListener("tcp")
 

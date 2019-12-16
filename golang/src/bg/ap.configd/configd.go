@@ -509,6 +509,11 @@ func dnsNameInuse(ignore *cfgtree.PNode, hostname string) bool {
 				return true
 			}
 		}
+		if prop, ok := device.Children["friendly_dns"]; ok {
+			if strings.ToLower(prop.Value) == lower {
+				return true
+			}
+		}
 	}
 
 	if cnames, _ := propTree.GetNode("@/dns/cnames"); cnames != nil {

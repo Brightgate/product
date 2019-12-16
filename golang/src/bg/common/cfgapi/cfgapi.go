@@ -34,7 +34,7 @@ import (
 
 // Version gets increased each time there is a non-compatible change to the
 // config tree format, or configd API.
-const Version = int32(24)
+const Version = int32(25)
 
 // CmdHdl is returned when one or more operations are submitted to Execute().
 // This handle can be used to check on the status of a pending operation, or to
@@ -216,19 +216,21 @@ type DevIDInfo struct {
 
 // ClientInfo contains all of the configuration information for a client device
 type ClientInfo struct {
-	Ring       string     // Assigned security ring
-	DNSName    string     // Assigned hostname
-	IPv4       net.IP     // Network address
-	Expires    *time.Time // DHCP lease expiration time
-	DHCPName   string     // Requested hostname
-	DNSPrivate bool       // We don't collect DNS queries
-	Username   string     // Name used for EAP authentication
-	ConnBand   string     // Connection Radio Band (2.4GHz, 5GHz)
-	ConnNode   string     // Connection Node
-	ConnVAP    string     // Connection Virtual AP
-	DevID      *DevIDInfo // Device identification information
-	Wireless   bool       // Is this a wireless client?
-	active     string
+	Ring         string     // Assigned security ring
+	FriendlyName string     // Assigned friendly
+	FriendlyDNS  string     // Hostname derived from FriendlyName
+	DNSName      string     // Assigned hostname
+	IPv4         net.IP     // Network address
+	Expires      *time.Time // DHCP lease expiration time
+	DHCPName     string     // Requested hostname
+	DNSPrivate   bool       // We don't collect DNS queries
+	Username     string     // Name used for EAP authentication
+	ConnBand     string     // Connection Radio Band (2.4GHz, 5GHz)
+	ConnNode     string     // Connection Node
+	ConnVAP      string     // Connection Virtual AP
+	DevID        *DevIDInfo // Device identification information
+	Wireless     bool       // Is this a wireless client?
+	active       string
 }
 
 // VulnInfo represents the detection of a single vulnerability in a single
@@ -415,10 +417,15 @@ func (c *Handle) Close() {
 // DisplayName returns the name of the client suitable for primary
 // display to the user.
 func (c *ClientInfo) DisplayName() string {
-	if c.DNSName != "" {
+
+	if c.FriendlyName != "" {
+		return c.FriendlyName
+	} else if c.DNSName != "" {
 		return c.DNSName
+	} else if c.DHCPName != "" {
+		return c.DHCPName
 	}
-	return c.DHCPName
+	return ""
 }
 
 // IsActive returns 'true' if a wireless client is connected to an AP, or if a
@@ -903,7 +910,7 @@ func (c *Handle) GetWanInfo() *WanInfo {
 }
 
 func getClient(client *PropertyNode) *ClientInfo {
-	var ring, dns, dhcp string
+	var ring, dns, dhcp, friendly, friendlyDNS string
 	var ipv4 net.IP
 	var exp *time.Time
 	var wireless, private bool
@@ -915,6 +922,8 @@ func getClient(client *PropertyNode) *ClientInfo {
 	ring, _ = getStringVal(client, "ring")
 	dhcp, _ = getStringVal(client, "dhcp_name")
 	dns, _ = getStringVal(client, "dns_name")
+	friendly, _ = getStringVal(client, "friendly_name")
+	friendlyDNS, _ = getStringVal(client, "friendly_dns")
 	if addr, ok := client.Children["ipv4"]; ok {
 		if ip := net.ParseIP(addr.Value); ip != nil {
 			ipv4 = ip.To4()
@@ -946,19 +955,21 @@ func getClient(client *PropertyNode) *ClientInfo {
 	}
 
 	c := ClientInfo{
-		Ring:       ring,
-		DHCPName:   dhcp,
-		DNSName:    dns,
-		IPv4:       ipv4,
-		Expires:    exp,
-		DNSPrivate: private,
-		Username:   username,
-		ConnBand:   connBand,
-		ConnNode:   connNode,
-		ConnVAP:    connVAP,
-		Wireless:   wireless,
-		DevID:      devID,
-		active:     active,
+		Ring:         ring,
+		DHCPName:     dhcp,
+		FriendlyName: friendly,
+		FriendlyDNS:  friendlyDNS,
+		DNSName:      dns,
+		IPv4:         ipv4,
+		Expires:      exp,
+		DNSPrivate:   private,
+		Username:     username,
+		ConnBand:     connBand,
+		ConnNode:     connNode,
+		ConnVAP:      connVAP,
+		Wireless:     wireless,
+		DevID:        devID,
+		active:       active,
 	}
 	return &c
 }

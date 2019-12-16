@@ -53,10 +53,10 @@ var (
 )
 
 func clientUpdateEvent(path []string, val string, expires *time.Time) {
-	mac := path[1]
 	clientMtx.Lock()
 	defer clientMtx.Unlock()
 
+	mac := path[1]
 	client := clients[mac]
 	if client == nil {
 		if client = config.GetClient(mac); client == nil {
@@ -67,37 +67,40 @@ func clientUpdateEvent(path []string, val string, expires *time.Time) {
 	}
 
 	update := false
-	switch path[2] {
-	case "ipv4":
+	if path[2] == "ipv4" {
 		ipv4 := net.ParseIP(val)
-		if !ipv4.Equal(client.IPv4) || expires != client.Expires {
-			if ipv4 == nil {
-				slog.Warnf("Invalid addr %s for %s", val, mac)
-				client.IPv4 = nil
-				client.Expires = nil
-			} else {
-				client.IPv4 = ipv4
-				client.Expires = expires
-			}
-			dhcpIPv4Changed(mac, client)
-			update = true
+		if ipv4 == nil {
+			slog.Warnf("Invalid addr %s for %s", val, mac)
+			client.IPv4 = nil
+			client.Expires = nil
+		} else if !ipv4.Equal(client.IPv4) || expires != client.Expires {
+			client.IPv4 = ipv4
+			client.Expires = expires
 		}
+		dhcpIPv4Changed(mac, client)
+		update = true
 
-	case "dns_name":
-		if client.DNSName != val {
-			client.DNSName = val
-			update = true
+	} else if path[2] == "dns_name" && client.DNSName != val {
+		client.DNSName = val
+		update = true
+
+	} else if path[2] == "friendly_name" && client.FriendlyName != val {
+		client.FriendlyName = val
+		go updateFriendlyNames()
+
+	} else if path[2] == "friendly_dns" && client.FriendlyDNS != val {
+		client.FriendlyDNS = val
+		go updateFriendlyNames()
+		update = true
+
+	} else if path[2] == "ring" && client.Ring != val {
+		if client.Ring == "" {
+			slog.Infof("added %s to %s", mac, val)
+		} else {
+			slog.Infof("moved %s from %s to %s", mac, client.Ring, val)
 		}
-	case "ring":
-		if val != client.Ring {
-			if client.Ring == "" {
-				slog.Infof("added %s to %s", mac, val)
-			} else {
-				slog.Infof("moved %s from %s to %s", mac, client.Ring, val)
-			}
-			client.Ring = val
-			update = true
-		}
+		client.Ring = val
+		update = true
 	}
 	if update {
 		dnsUpdateClient(mac, client)
@@ -105,25 +108,47 @@ func clientUpdateEvent(path []string, val string, expires *time.Time) {
 }
 
 func clientDeleteEvent(path []string) {
-	mac := path[1]
+	var update bool
+
+	if len(path) < 2 || len(path) > 3 {
+		slog.Warnf("bad path: %s", strings.Join(path, "/"))
+		return
+	}
+
 	clientMtx.Lock()
 	defer clientMtx.Unlock()
 
+	mac := path[1]
 	client := clients[mac]
+	if client == nil {
+		return
+	}
+
 	if len(path) == 2 {
 		dhcpDeleteEvent(mac)
-		if client != nil {
-			client.IPv4 = nil
-			dnsUpdateClient(mac, client)
-			delete(clients, mac)
-		}
-	} else if len(path) == 3 && client != nil {
-		if path[2] == "dns_name" {
-			client.DNSName = ""
-		} else if path[2] == "ipv4" {
-			dhcpDeleteEvent(mac)
-			client.IPv4 = nil
-		}
+		update = true
+		client.IPv4 = nil
+		delete(clients, mac)
+
+	} else if path[2] == "dns_name" && client.DNSName != "" {
+		client.DNSName = ""
+		update = true
+
+	} else if path[2] == "friendly_name" && client.FriendlyName != "" {
+		client.FriendlyName = ""
+		go updateFriendlyNames()
+
+	} else if path[2] == "friendly_dns" && client.FriendlyDNS != "" {
+		client.FriendlyDNS = ""
+		go updateFriendlyNames()
+		update = true
+
+	} else if path[2] == "ipv4" && client.IPv4 != nil {
+		dhcpDeleteEvent(mac)
+		client.IPv4 = nil
+	}
+
+	if update {
 		dnsUpdateClient(mac, client)
 	}
 }
