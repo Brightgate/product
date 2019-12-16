@@ -265,15 +265,10 @@ export default {
       dev_details: {
         title: 'Device Details',
         device: 'Device',
-        uncertain_device: '(Tentative Device Identification)',
-        unknown_model: 'Unknown',
-        unknown_manufacturer: 'Unknown',
-        network_name: 'Network Name',
+        name: 'Name',
         ipv4_addr: 'IPv4 Address',
         ipv4_addr_none: 'None',
         hw_addr: 'Hardware Address',
-        os_version: 'OS Version',
-        os_version_unknown: 'Unknown',
         access_control: 'Access Control',
         security_ring: 'Trust Group',
         vuln_scan: 'Vulnerability Scan',
@@ -295,6 +290,18 @@ export default {
         signal_strength: 'Signal Strength',
         SSID: 'SSID',
         user_name: 'User Name',
+        attributes: 'Client Attributes',
+        dhcp_id: 'DHCP ID',
+        dhcp_id_none: 'None',
+        dhcp_id_tip: 'Name presented by the device when it joined the network.',
+        dns_name: 'DNS Name',
+        dns_name_none: 'Not set',
+        dns_name_tip: 'The gateway\'s built-in DNS (Domain Name System) server publishes a record for this client using the name indicated.  Clients on the local network can reference this system using this name.',
+        devid_tip: 'Based on observation of this device\'s network activity.',
+        os_name: 'Operating System',
+        os_name_none: 'Unknown',
+        model_name: 'Hardware Model',
+        model_name_none: 'Unknown',
       },
       enroll_guest: {
         title: 'Enroll Guest',
@@ -506,10 +513,7 @@ export default {
       dev_details: {
         title: 'Device Details', // XXXI18N
         device: 'Gerät',
-        uncertain_device: '(Tentative Device Identification)', // XXXI18N
-        unknown_model: 'Unknown',        // XXXI18N
-        unknown_manufacturer: 'Unknown Manufacturer', // XXXI18N
-        network_name: 'Netzwerk Name',
+        name: 'Name',
         ipv4_addr: 'IPv4 Address',       // XXXI18N
         ipv4_addr_none: 'None',          // XXXI18N
         hw_addr: 'Hardware Address',     // XXXI18N
@@ -531,6 +535,23 @@ export default {
         vuln_latest_detected: 'Recently Seen: {time}', // XXXI18N
         vuln_repaired: 'Repaired: {time}', // XXXI18N
         vuln_details: 'Details:', // XXXI18N
+        wired_port: 'Wired Network', // XXXI18N
+        change_ring_err: 'Failed to change trust group for {dev} to {ring}: {err}', // XXXI18N
+        signal_strength: 'Signal Strength', // XXXI18N
+        SSID: 'SSID', // XXXI18N
+        user_name: 'User Name', // XXXI18N
+        attributes: 'Client Attributes', // XXXI18N
+        dhcp_id: 'DHCP ID', // XXXI18N
+        dhcp_id_none: 'None', // XXXI18N
+        dhcp_id_tip: 'Name presented by the device when it joined the network.', // XXXI18N
+        dns_name: 'DNS Name', // XXXI18N
+        dns_name_none: 'Not set', // XXXI18N
+        dns_name_tip: 'The gateway\'s built-in DNS (Domain Name System) server publishes a record for this client using the name indicated.  Clients on the local network can reference this system using this name.', // XXXI18N
+        devid_tip: 'Based on observation of this device\'s network activity.', // XXXI18N
+        os_name: 'Operating System', // XXXI18N
+        os_name_none: 'Unknown', // XXXI18N
+        model_name: 'Hardware Model', // XXXI18N
+        model_name_none: 'Unknown', // XXXI18N
       },
       enroll_guest: {
         title: 'Gastbenutzer Registrieren',

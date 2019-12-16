@@ -68,6 +68,24 @@ div.avatar-container {
   align-items: center;
 }
 
+div.title-flex-container {
+  display: flex;
+  align-items: center;
+}
+
+img.title-media-icon {
+  padding: 0px 12px 0px 0px;
+}
+
+div.title-displayname {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+div.title-model {
+  font-size: 14px;
+}
+
 </style>
 <template>
   <f7-page>
@@ -75,16 +93,13 @@ div.avatar-container {
     <bg-site-breadcrumb :siteid="$f7route.params.siteID" />
 
     <f7-block>
-      <f7-row>
-        <!-- use margin-auto to center the icon -->
-        <f7-col style="margin: auto" width="20">
-          <img :src="mediaIcon" width="48" height="48">
-        </f7-col>
-        <f7-col width="80">
-          <div style="font-size: 16px; font-weight: bold">{{ dev.displayName }}</div>
-          <div style="font-size: 14px">{{ devModel }} <span v-if="devOS">({{ devOS }})</span></div>
-        </f7-col>
-      </f7-row>
+      <div class="title-flex-container">
+        <img :src="mediaIcon" class="title-media-icon" width="64" height="64">
+        <div>
+          <div class="title-displayname">{{ dev.displayName }}</div>
+          <div v-if="devModel || devOS" class="title-model">{{ devModel || devOS }}</div>
+        </div>
+      </div>
 
       <f7-card v-for="(vuln, vulnid) in activeVulns" :key="vulnid" class="vuln-card">
         <f7-card-header>
@@ -137,26 +152,9 @@ div.avatar-container {
         </f7-card-content>
       </f7-card>
 
-      <f7-row v-if="dev.notification">
-        <f7-col style="margin: auto" width="20">
-          <f7-icon f7="bolt_circle_fill" size="32px" color="yellow" />
-        </f7-col>
-        <f7-col width="80">
-          <!-- tweak the ul rendering not to inset so much (default is 40px) -->
-          <ul style="-webkit-padding-start: 20px; padding-left: 20px;">
-            <li>{{ $t("message.notifications.msg.0") }}</li>
-            <li>{{ $t("message.notifications.msg.1") }}</li>
-            <li>{{ $t("message.notifications.msg.2") }}</li>
-          </ul>
-        </f7-col>
-      </f7-row>
     </f7-block>
 
     <f7-list>
-
-      <f7-list-item :title="$t('message.dev_details.network_name')">
-        {{ dev.displayName }}
-      </f7-list-item>
 
       <!-- user name -->
       <!-- it's worth noting that we're papering over some technical debt
@@ -266,6 +264,73 @@ div.avatar-container {
         </option>
       </f7-list-input>
     </f7-list>
+
+    <f7-block-title>{{ $t("message.dev_details.attributes") }}</f7-block-title>
+    <f7-list>
+      <!-- name -->
+      <f7-list-item :title="$t('message.dev_details.name')">
+        {{ dev.displayName }}
+      </f7-list-item>
+
+      <!-- dhcp id -->
+      <f7-list-item>
+        <bg-list-item-title
+          slot="title"
+          :title="$t('message.dev_details.dhcp_id')"
+          :tip="$t('message.dev_details.dhcp_id_tip')" />
+        <span v-if="dev.dhcpName">
+          {{ dev.dhcpName }}
+        </span>
+        <span v-else class="disabled">
+          {{ $t('message.dev_details.dhcp_id_none') }}
+        </span>
+      </f7-list-item>
+
+      <!-- DNS Name -->
+      <f7-list-item>
+        <bg-list-item-title
+          slot="title"
+          :title="$t('message.dev_details.dns_name')"
+          :tip="$t('message.dev_details.dns_name_tip')" />
+        <span v-if="dnsName">
+          {{ dnsName }}<span class="disabled">.{{ networkConfig.dns.domain }}</span>
+        </span>
+        <span v-else class="disabled">
+          {{ $t('message.dev_details.dns_name_none') }}
+        </span>
+      </f7-list-item>
+
+      <template v-if="dev.devID">
+        <!-- Model Name -->
+        <f7-list-item>
+          <bg-list-item-title
+            slot="title"
+            :title="$t('message.dev_details.model_name')"
+            :tip="$t('message.dev_details.devid_tip')" />
+          <span v-if="devModel">
+            {{ devModel }}
+          </span>
+          <span v-else class="disabled">
+            {{ $t('message.dev_details.model_name_none') }}
+          </span>
+        </f7-list-item>
+
+        <!-- OS Name -->
+        <f7-list-item>
+          <bg-list-item-title
+            slot="title"
+            :title="$t('message.dev_details.os_name')"
+            :tip="$t('message.dev_details.devid_tip')" />
+          <span v-if="devOS">
+            {{ devOS }}
+          </span>
+          <span v-else class="disabled">
+            {{ $t('message.dev_details.os_name_none') }}
+          </span>
+        </f7-list-item>
+      </template>
+    </f7-list>
+
   </f7-page>
 </template>
 <script>
@@ -280,6 +345,7 @@ import {format, formatRelative, parseISO} from '../date-fns-wrapper';
 import uiUtils from '../uiutils';
 import vulnerability from '../vulnerability';
 import BGHWIcon from '../components/hw_icon.vue';
+import BGListItemTitle from '../components/list_item_title.vue';
 import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
 import BGWifiStrength from '../components/wifi_strength.vue';
 
@@ -296,6 +362,7 @@ function repairable(vulnid, vuln) {
 export default {
   components: {
     'bg-hw-icon': BGHWIcon,
+    'bg-list-item-title': BGListItemTitle,
     'bg-site-breadcrumb': BGSiteBreadcrumb,
     'bg-wifi-strength': BGWifiStrength,
     'vue-avatar': VueAvatar,
@@ -308,6 +375,7 @@ export default {
       'accountByEmail',
       'userByUID',
       'currentSiteID',
+      'networkConfig',
       'nodes',
       'vaps',
     ]),
@@ -392,6 +460,9 @@ export default {
       return String(uiUtils.dBmToStrength(dbm));
     },
 
+    dnsName: function() {
+      return this.dev.dnsName;
+    },
     // Return the subset of rings acceptable for the device's VAP.
     // If the VAP is missing, or something else goes wrong, return all rings.
     //
