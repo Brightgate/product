@@ -53,61 +53,54 @@ var (
 )
 
 func clientUpdateEvent(path []string, val string, expires *time.Time) {
-	var ipv4 net.IP
-
-	if len(path) < 3 || (path[2] != "ipv4" && path[2] != "dns_name" &&
-		path[2] != "ring") {
-		return
-	}
-
 	mac := path[1]
 	clientMtx.Lock()
 	defer clientMtx.Unlock()
 
 	client := clients[mac]
 	if client == nil {
-		client = config.GetClient(mac)
-		clients[mac] = client
-	}
-	if client == nil {
-		slog.Warnf("Got update for nonexistent client: %s", mac)
-		return
-	}
-
-	dnsChanged := false
-	switch path[2] {
-	case "ipv4":
-		if ipv4 = net.ParseIP(val); ipv4 == nil {
-			slog.Warnf("Invalid IP address %s for %s", val, mac)
+		if client = config.GetClient(mac); client == nil {
+			slog.Warnf("Got update for nonexistent client: %s", mac)
 			return
 		}
-		dnsChanged = !ipv4.Equal(client.IPv4)
-	case "dns_name":
-		dnsChanged = (val != client.DNSName)
-	case "ring":
-		dnsChanged = (val != client.Ring)
+		clients[mac] = client
 	}
 
-	if dnsChanged {
-		dnsDeleteClient(client)
-	}
+	update := false
 	switch path[2] {
 	case "ipv4":
-		client.IPv4 = ipv4
-		client.Expires = expires
-		dhcpIPv4Changed(mac, client)
-	case "dns_name":
-		client.DNSName = val
-	case "ring":
-		if client.Ring == "" {
-			slog.Infof("added %s to %s", mac, val)
-		} else if client.Ring != val {
-			slog.Infof("moved %s from %s to %s", mac, client.Ring, val)
+		ipv4 := net.ParseIP(val)
+		if !ipv4.Equal(client.IPv4) || expires != client.Expires {
+			if ipv4 == nil {
+				slog.Warnf("Invalid addr %s for %s", val, mac)
+				client.IPv4 = nil
+				client.Expires = nil
+			} else {
+				client.IPv4 = ipv4
+				client.Expires = expires
+			}
+			dhcpIPv4Changed(mac, client)
+			update = true
 		}
-		client.Ring = val
+
+	case "dns_name":
+		if client.DNSName != val {
+			client.DNSName = val
+			update = true
+		}
+	case "ring":
+		if val != client.Ring {
+			if client.Ring == "" {
+				slog.Infof("added %s to %s", mac, val)
+			} else {
+				slog.Infof("moved %s from %s to %s", mac, client.Ring, val)
+			}
+			client.Ring = val
+			update = true
+		}
 	}
-	if dnsChanged {
-		dnsUpdateClient(client)
+	if update {
+		dnsUpdateClient(mac, client)
 	}
 }
 
@@ -120,18 +113,18 @@ func clientDeleteEvent(path []string) {
 	if len(path) == 2 {
 		dhcpDeleteEvent(mac)
 		if client != nil {
-			dnsDeleteClient(client)
+			client.IPv4 = nil
+			dnsUpdateClient(mac, client)
 			delete(clients, mac)
 		}
 	} else if len(path) == 3 && client != nil {
 		if path[2] == "dns_name" {
-			dnsDeleteClient(client)
 			client.DNSName = ""
 		} else if path[2] == "ipv4" {
 			dhcpDeleteEvent(mac)
-			dnsDeleteClient(client)
 			client.IPv4 = nil
 		}
+		dnsUpdateClient(mac, client)
 	}
 }
 
@@ -147,8 +140,10 @@ func clientExpireEvent(path []string) {
 		mac := path[1]
 		client := clients[mac]
 		dhcpIPv4Expired(mac)
-		dnsDeleteClient(client)
-		client.IPv4 = nil
+		if client != nil {
+			client.IPv4 = nil
+			dnsUpdateClient(mac, client)
+		}
 	}
 }
 

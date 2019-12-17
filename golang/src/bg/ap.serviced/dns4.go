@@ -55,6 +55,8 @@ const (
 )
 
 type dnsRecord struct {
+	name     string
+	mac      string
 	hostRing string
 	rectype  uint16
 	recval   string
@@ -65,8 +67,8 @@ var (
 	dataDir   = apcfg.String("dir", data.DefaultDataDir, false, nil)
 	localTTL  = apcfg.Duration("local_ttl", 5*time.Minute, true, nil)
 
-	ringRecords  map[string]dnsRecord // per-ring records for the router
-	perRingHosts map[string]bool      // hosts with per-ring results
+	ringRecords  map[string]*dnsRecord // per-ring records for the router
+	perRingHosts map[string]bool       // hosts with per-ring results
 	subnets      []*net.IPNet
 
 	// rings subject to anti-phishing rules
@@ -115,7 +117,7 @@ var (
 // additional PTR records will be added in response to NetEntity events.
 var (
 	hostsMtx sync.Mutex
-	hosts    = make(map[string]dnsRecord)
+	hosts    = make(map[string]*dnsRecord)
 
 	unknownWarned   = make(map[string]time.Time)
 	blockWarned     = make(map[string]time.Time)
@@ -161,6 +163,25 @@ type dnsCache struct {
 	hits      int                        // successful lookups
 
 	sync.Mutex
+}
+
+func (r *dnsRecord) String() string {
+	var rval string
+
+	if r.rectype == dns.TypeA {
+		rval = "A record"
+	} else if r.rectype == dns.TypePTR {
+		rval = "PTR record"
+	}
+	rval += " name=" + r.name + " mac=" + r.mac +
+		" value=" + r.recval
+	return rval
+}
+
+func (r *dnsRecord) Equal(s *dnsRecord) bool {
+	return r.mac == s.mac && r.name == s.name &&
+		r.hostRing == s.hostRing &&
+		r.rectype == s.rectype && r.recval == s.recval
 }
 
 /***********************************************************
@@ -418,7 +439,7 @@ func getMac(record *cfgapi.ClientInfo) net.HardwareAddr {
 	return network.MacZero
 }
 
-func answerA(q dns.Question, rec dnsRecord) *dns.A {
+func answerA(q dns.Question, rec *dnsRecord) *dns.A {
 	a := net.ParseIP(rec.recval)
 	rr := dns.A{
 		Hdr: dns.RR_Header{
@@ -432,7 +453,7 @@ func answerA(q dns.Question, rec dnsRecord) *dns.A {
 	return &rr
 }
 
-func answerPTR(q dns.Question, rec dnsRecord) *dns.PTR {
+func answerPTR(q dns.Question, rec *dnsRecord) *dns.PTR {
 	rr := dns.PTR{
 		Hdr: dns.RR_Header{
 			Name:   q.Name,
@@ -444,7 +465,7 @@ func answerPTR(q dns.Question, rec dnsRecord) *dns.PTR {
 	return &rr
 }
 
-func answerCNAME(q dns.Question, rec dnsRecord) *dns.CNAME {
+func answerCNAME(q dns.Question, rec *dnsRecord) *dns.CNAME {
 	rr := dns.CNAME{
 		Hdr: dns.RR_Header{
 			Name:   q.Name,
@@ -586,7 +607,7 @@ func upstreamRequest(server string, r, m *dns.Msg) {
 }
 
 func localHandler(w dns.ResponseWriter, r *dns.Msg) {
-	var rec dnsRecord
+	var rec *dnsRecord
 	var ok bool
 
 	dnsMetrics.requests.Inc()
@@ -748,66 +769,67 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 	logRequest("proxyHandler", start, c.IPv4, r, m)
 }
 
-func dnsDeleteClient(c *cfgapi.ClientInfo) {
-	if c.IPv4 == nil {
-		return
-	}
-	ipv4 := c.IPv4.String()
+func dnsUpdateRecord(name, mac, ring, val string, rectype uint16) {
+	var newRec *dnsRecord
 
-	clearWarned(ipv4, unknownWarned)
-
-	hostsMtx.Lock()
-	if arpa, err := dns.ReverseAddr(ipv4); err == nil {
-		if rec, ok := hosts[arpa]; ok {
-			slog.Infof("Deleting PTR record %s->%s", arpa,
-				rec.recval)
-			delete(hosts, arpa)
+	if name != "" && val != "" {
+		newRec = &dnsRecord{
+			name:     name,
+			mac:      mac,
+			hostRing: ring,
+			rectype:  rectype,
+			recval:   val,
 		}
 	}
 
-	for addr, rec := range hosts {
-		if rec.rectype == dns.TypeA && rec.recval == ipv4 {
-			slog.Infof("Deleting A record %s->%s", addr, ipv4)
-			delete(hosts, addr)
+	// Start by cleaning up any old records for this mac address that don't
+	// match the new hostname.
+	for x, rec := range hosts {
+		if rec.rectype != rectype {
+			continue
+		}
+
+		if (x == name && newRec == nil) || (x != name && rec.mac == mac) {
+			slog.Infof("Deleting %v", hosts[x])
+			delete(hosts, x)
 		}
 	}
-	hostsMtx.Unlock()
+
+	if newRec != nil {
+		oldRec := hosts[name]
+		if oldRec == nil {
+			slog.Infof("Adding %v", newRec)
+		} else if !oldRec.Equal(newRec) {
+			slog.Infof("Updating %v to %v", oldRec, newRec)
+		}
+		hosts[name] = newRec
+	}
 }
 
 // Convert a client's configd info into DNS records
-func dnsUpdateClient(c *cfgapi.ClientInfo) {
+func dnsUpdateClient(mac string, c *cfgapi.ClientInfo) {
+	var hostname, ipv4, arpa string
+	var err error
+
 	configName := c.DNSName
 	name := strings.ToLower(configName)
 
-	if !network.ValidDNSName(name) || name == "localhost" || c.IPv4 == nil {
-		return
-	}
+	if network.ValidDNSName(name) && name != "localhost" && c.IPv4 != nil {
+		hostname = name + "." + domainname + "."
+		ipv4 = c.IPv4.String()
+		clearWarned(ipv4, unknownWarned)
 
-	ipv4 := c.IPv4.String()
-	clearWarned(ipv4, unknownWarned)
-	hostsMtx.Lock()
-	hostname := name + "." + domainname + "."
-
-	slog.Infof("Adding A record %s->%s", hostname, ipv4)
-	hosts[hostname] = dnsRecord{
-		hostRing: c.Ring,
-		rectype:  dns.TypeA,
-		recval:   ipv4,
-	}
-
-	arpa, err := dns.ReverseAddr(ipv4)
-	if err != nil {
-		slog.Warnf("Invalid address %v for %s: %v",
-			c.IPv4, name, err)
-	} else {
-		hostname := configName + "."
-		slog.Infof("Adding PTR record %s->%s", arpa, hostname)
-		hosts[arpa] = dnsRecord{
-			hostRing: c.Ring,
-			rectype:  dns.TypePTR,
-			recval:   hostname,
+		if arpa, err = dns.ReverseAddr(ipv4); err != nil {
+			slog.Warnf("Invalid address %v for %s: %v",
+				c.IPv4, name, err)
 		}
 	}
+
+	hostsMtx.Lock()
+
+	dnsUpdateRecord(hostname, mac, c.Ring, ipv4, dns.TypeA)
+	dnsUpdateRecord(arpa, mac, c.Ring, configName+".", dns.TypePTR)
+
 	hostsMtx.Unlock()
 }
 
@@ -822,7 +844,7 @@ func updateOneCname(hostname, canonical string) {
 	slog.Infof("Adding cname %s -> %s", hostname, canonical)
 
 	hostsMtx.Lock()
-	hosts[hostname] = dnsRecord{
+	hosts[hostname] = &dnsRecord{
 		rectype: dns.TypeCNAME,
 		recval:  canonical,
 	}
@@ -840,9 +862,9 @@ func deleteOneCname(hostname string) {
 
 func initHostMap() {
 	clientMtx.Lock()
-	for _, c := range clients {
+	for mac, c := range clients {
 		if c.Expires == nil || c.Expires.After(time.Now()) {
-			dnsUpdateClient(c)
+			dnsUpdateClient(mac, c)
 		}
 	}
 	clientMtx.Unlock()
@@ -926,10 +948,10 @@ func initNetwork() {
 	// Each ring will have an A record for that ring's router.  That
 	// record will double as a result for phishing URLs and all captive
 	// portal requests.
-	ringRecords = make(map[string]dnsRecord)
+	ringRecords = make(map[string]*dnsRecord)
 	for name, ring := range rings {
 		srouter := network.SubnetRouter(ring.Subnet)
-		ringRecords[name] = dnsRecord{
+		ringRecords[name] = &dnsRecord{
 			hostRing: name,
 			rectype:  dns.TypeA,
 			recval:   srouter,

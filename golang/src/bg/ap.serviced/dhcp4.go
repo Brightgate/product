@@ -147,7 +147,7 @@ func dhcpIPv4Changed(hwaddr string, client *cfgapi.ClientInfo) {
 			// already changed the assignment since this
 			// notification was sent.  Either way, we're ignoring
 			// it.
-			slog.Infof("Rejecting ipv4 assignment %s->%s",
+			slog.Infof("Rejecting non-static ipv4 assignment %s->%s",
 				ipaddr, hwaddr)
 			return
 		}
