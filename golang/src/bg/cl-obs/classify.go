@@ -108,21 +108,14 @@ func affectedSitesFromInventory(rs []RecordedInventory) []string {
 	return siteUUIDs
 }
 
-func combineSentenceFromInventory(rs []RecordedInventory) string {
-	var paragraph strings.Builder
+func combineSentenceFromInventory(rs []RecordedInventory) sentence {
+	paragraph := newSentence()
 
 	for _, r := range rs {
-		if paragraph.Len() > 0 {
-			paragraph.WriteString(" ")
-		}
-
-		// XXX Relies on sentence being up-to-date.
-		paragraph.WriteString(r.BayesSentence)
+		paragraph.addSentence(newSentenceFromString(r.BayesSentence))
 	}
 
-	// XXX Eliminate duplicate terms.
-
-	return paragraph.String()
+	return paragraph
 }
 
 func findResult(name string, results []classifyResult) (*classifyResult, error) {
@@ -182,7 +175,6 @@ func updateClassificationTable(B *backdrop, siteUUID string, deviceMac string, m
 			// If our result is the same, update the time
 			// and the classification.  If our result is a
 			// change, update the row.
-			log.Printf("update existing certain classification for %v", result)
 			if rp.Classification == result.Classification {
 				_, err = t.Exec(`UPDATE classification
 				SET classification = $1, probability = $2, classification_updated = $3
@@ -267,7 +259,7 @@ func updateClassificationTable(B *backdrop, siteUUID string, deviceMac string, m
 	}
 }
 
-func classifySentence(B *backdrop, models []RecordedClassifier, mac string, sentence string) []classifyResult {
+func classifySentence(B *backdrop, models []RecordedClassifier, mac string, sent sentence) []classifyResult {
 	results := make([]classifyResult, 0)
 
 	for _, model := range models {
@@ -282,7 +274,7 @@ func classifySentence(B *backdrop, models []RecordedClassifier, mac string, sent
 			cl.MinClassSize = model.MultibayesMin
 
 			// Run sentence through each classifier.
-			post := cl.Posterior(sentence)
+			post := cl.Posterior(sent.toString())
 			spost := convertPosteriorToResult(model.ModelName,
 				model.CertainAbove, model.UncertainBelow, post)
 
@@ -299,6 +291,7 @@ func classifySentence(B *backdrop, models []RecordedClassifier, mac string, sent
 				Probability:    lprob,
 				NextProb:       0.,
 				Unknown:        false,
+				Region:         classifyCertain,
 			}
 
 			results = append(results, lr)
@@ -313,13 +306,13 @@ func classifySentence(B *backdrop, models []RecordedClassifier, mac string, sent
 
 func classifyMac(B *backdrop, models []RecordedClassifier, siteUUID string, mac string, persistent bool) string {
 	records := []RecordedInventory{}
-	err := B.db.Select(&records, "SELECT * FROM inventory WHERE device_mac = $1 ORDER BY inventory_date DESC LIMIT 4", mac)
+	err := B.db.Select(&records, "SELECT * FROM inventory WHERE device_mac = $1 ORDER BY inventory_date DESC LIMIT 12", mac)
 	if err != nil {
 		log.Printf("select failed for %s: %+v", mac, err)
 		return "-classify-fails-"
 	}
 
-	paragraph := combineSentenceFromInventory(records)
+	sent := combineSentenceFromInventory(records)
 
 	var siteUUIDs []string
 	if siteUUID == "" {
@@ -328,7 +321,7 @@ func classifyMac(B *backdrop, models []RecordedClassifier, siteUUID string, mac 
 		siteUUIDs = append(siteUUIDs, siteUUID)
 	}
 
-	results := classifySentence(B, models, mac, paragraph)
+	results := classifySentence(B, models, mac, sent)
 
 	if persistent {
 		for _, s := range siteUUIDs {
@@ -336,7 +329,7 @@ func classifyMac(B *backdrop, models []RecordedClassifier, siteUUID string, mac 
 		}
 	}
 
-	return displayPredictResults(results)
+	return displayPredictResults(results) + "\n\t" + sent.toString()
 }
 
 type siteMachine struct {
@@ -370,6 +363,8 @@ func classifySite(B *backdrop, models []RecordedClassifier, uuid string) error {
 
 		machines = append(machines, rsm)
 	}
+
+	log.Printf("machines: %d", len(machines))
 
 	for _, m := range machines {
 		fmt.Printf("    %s %s\n", m.DeviceMAC,

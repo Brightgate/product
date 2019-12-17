@@ -8,11 +8,31 @@
 -- such unauthorized removal or alteration will be a violation of federal law.
 --
 
+-- vim:set ft=sql:
+
+-- facts provides entries to three tables: site names for the site
+-- table, identified devices for the device table, and training file
+-- entries for the training table.  Of these tables, only the training
+-- table is dropped and created with each load of the facts (so that we
+-- don't have to manage the fact IDs).
+
 .timeout 500
 
 -- Sites
 
 update site set site_name = "example" where site_uuid = "0e068325-3bf3-494e-8ac4-c7fc3adf3d7d";
+
+-- Training table
+
+DROP TABLE training;
+
+CREATE TABLE IF NOT EXISTS training (
+	fact_id integer PRIMARY KEY,
+	dgroup_id int REFERENCES device(dgroup_id),
+	site_uuid text,
+	device_mac text,
+	unix_timestamp text
+	);
 
 -- 1: A Moto Z Force2 [*]
 insert or replace into device (dgroup_id, device_mac, assigned_os_genus,

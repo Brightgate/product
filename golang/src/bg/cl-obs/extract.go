@@ -22,6 +22,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"regexp"
@@ -63,15 +64,22 @@ func extractDNSRecords(B *backdrop, dpath string) error {
 			continue
 		}
 
-		buf, rerr := ioutil.ReadFile(infofileFromTraining(dt, dpath))
+		rdr, rerr := readerFromTraining(B, dt)
 		if rerr != nil {
-			log.Printf("couldn't read %s: %v", infofileFromTraining(dt, dpath), err)
+			log.Printf("couldn't get reader: %v", err)
 			continue
 		}
+
+		buf, err := ioutil.ReadAll(rdr)
+		if err != nil {
+			log.Printf("couldn't ReadAll %v: %s", rdr, err)
+			continue
+		}
+
 		di := &base_msg.DeviceInfo{}
 		err = proto.Unmarshal(buf, di)
 		if err != nil {
-			log.Printf("unmarshal of '%s' failed: %v\n", infofileFromTraining(dt, dpath), err)
+			log.Printf("unmarshal failed: %v\n", err)
 			continue
 		}
 
@@ -184,24 +192,24 @@ func appendOnlyNew(sentence []string, terms ...string) []string {
 
 const ediEntityVersion = "0"
 
-func extractDeviceInfoEntity(di *base_msg.DeviceInfo) []string {
-	sentence := make([]string, 0)
+func extractDeviceInfoEntity(di *base_msg.DeviceInfo) sentence {
+	s := newSentence()
 
 	// for e := range di.Entity {
 	// 	continue
 	// }
 
-	return sentence
+	return s
 }
 
 const ediDHCPVersion = "1"
 
 var emptyDHCPOptions string
 
-func extractDeviceInfoDHCP(di *base_msg.DeviceInfo) ([]string, string) {
+func extractDeviceInfoDHCP(di *base_msg.DeviceInfo) (sentence, string) {
 	var vendor string
 
-	sentence := make([]string, 0)
+	s := newSentence()
 
 	for o := range di.Options {
 		vc := string(di.Options[o].VendorClassId)
@@ -215,38 +223,34 @@ func extractDeviceInfoDHCP(di *base_msg.DeviceInfo) ([]string, string) {
 				log.Printf("unknown DHCP vendor: %v", vc)
 			}
 
-			sentence = appendOnlyNew(sentence,
-				fmt.Sprintf(termDHCPVendorFmt, vendorMatch))
+			s.addTermf(termDHCPVendorFmt, vendorMatch)
 		} else {
-			sentence = appendOnlyNew(sentence,
-				fmt.Sprintf(termDHCPVendorFmt, "empty"))
+			s.addTermf(termDHCPVendorFmt, "empty")
 		}
 
 		options := di.Options[o].ParamReqList
 
 		dhcpOptions := fmt.Sprintf(termDHCPOptionsFmt, wordifyDHCPOptions(options))
 		if dhcpOptions != emptyDHCPOptions {
-			sentence = appendOnlyNew(sentence, dhcpOptions)
+			s.addTerm(dhcpOptions)
 		}
 
 		if bytes.Equal(options, []byte{1, 121, 3, 6, 15, 119, 252, 95, 44, 46}) {
 			// Apple, long.
-			sentence = appendOnlyNew(sentence,
-				fmt.Sprintf(termDHCPAAPLSpecialFmt, "long"))
+			s.addTermf(termDHCPAAPLSpecialFmt, "long")
 		} else if bytes.Equal(options, []byte{1, 121, 3, 6, 15, 119, 252}) {
 			// Apple, short.
-			sentence = appendOnlyNew(sentence,
-				fmt.Sprintf(termDHCPAAPLSpecialFmt, "short"))
+			s.addTermf(termDHCPAAPLSpecialFmt, "short")
 		}
 	}
 
-	return sentence, vendor
+	return s, vendor
 }
 
-const ediDNSVersion = "0"
+const ediDNSVersion = "1"
 
-func extractDeviceInfoDNS(di *base_msg.DeviceInfo) []string {
-	sentence := make([]string, 0)
+func extractDeviceInfoDNS(di *base_msg.DeviceInfo) sentence {
+	s := newSentence()
 
 	for r := range di.Request {
 		for q := range di.Request[r].Request {
@@ -259,21 +263,20 @@ func extractDeviceInfoDNS(di *base_msg.DeviceInfo) []string {
 
 			for i := range dnsAttributes {
 				if strings.Contains(host, dnsAttributes[i]) {
-					sentence = appendOnlyNew(sentence,
-						fmt.Sprintf(termDNSHitFmt,
-							dnsAttributes[i]))
+					s.addTermf(termDNSHitFmt,
+						dnsAttributes[i])
 				}
 			}
 		}
 	}
 
-	return sentence
+	return s
 }
 
 const ediListenVersion = "0"
 
-func extractDeviceInfoListen(di *base_msg.DeviceInfo) []string {
-	sentence := make([]string, 0)
+func extractDeviceInfoListen(di *base_msg.DeviceInfo) sentence {
+	s := newSentence()
 
 	for l := range di.Listen {
 
@@ -281,36 +284,37 @@ func extractDeviceInfoListen(di *base_msg.DeviceInfo) []string {
 			// XXX We only want to add this if a device is
 			// publishing, not using SEARCH or DISCOVER.
 			if *di.Listen[l].Ssdp.Type == base_msg.EventSSDP_ALIVE {
-				sentence = appendOnlyNew(sentence, "listen-ssdp")
+				s.addTerm("listen-ssdp")
 			}
 		} else if *di.Listen[l].Type == base_msg.EventListen_mDNS {
 			// XXX We only want to add this if a device is
 			// publishing, not querying.
-			sentence = appendOnlyNew(sentence, "listen-mdns")
+			s.addTerm("listen-mdns")
 		}
 	}
 
-	return sentence
+	return s
 }
 
-const ediScanVersion = "0"
+const ediScanVersion = "1"
 
-func extractDeviceInfoScan(di *base_msg.DeviceInfo) []string {
-	sentence := make([]string, 0)
+func extractDeviceInfoScan(di *base_msg.DeviceInfo) sentence {
+	s := newSentence()
 
-	for s := range di.Scan {
-
-		for h := range di.Scan[s].Hosts {
-			for p := range di.Scan[s].Hosts[h].Ports {
-				sentence = appendOnlyNew(sentence,
-					fmt.Sprintf("scan-port-%s-%d",
-						*di.Scan[s].Hosts[h].Ports[p].Protocol,
-						*di.Scan[s].Hosts[h].Ports[p].PortId))
+	for sc := range di.Scan {
+		for h := range di.Scan[sc].Hosts {
+			for p, port := range di.Scan[sc].Hosts[h].Ports {
+				if *port.PortId > 10000 {
+					continue
+				}
+				s.addTermf("scan-port-%s-%d",
+					*di.Scan[sc].Hosts[h].Ports[p].Protocol,
+					*di.Scan[sc].Hosts[h].Ports[p].PortId)
 			}
 		}
 	}
 
-	return sentence
+	return s
 }
 
 func getCombinedVersion() string {
@@ -320,47 +324,47 @@ func getCombinedVersion() string {
 // The Bayesian sentence we compute from a DeviceInfo is composed of the
 // concatenation of the "version term", followed by the subsentences
 // from each of the extractors.
-func genBayesSentenceFromDeviceInfo(ouiDB oui.OuiDB, di *base_msg.DeviceInfo) (string, string) {
-	sentence := make([]string, 0)
+func genBayesSentenceFromDeviceInfo(ouiDB oui.OuiDB, di *base_msg.DeviceInfo) (string, sentence) {
+	s := newSentence()
 
 	if di.MacAddress == nil {
-		return getCombinedVersion(), ""
+		return getCombinedVersion(), s
 	}
 
 	mac := network.Uint64ToMac(*di.MacAddress)
 
 	mfg := macToMfgAlias(ouiDB, mac)
 
-	sentence = appendOnlyNew(sentence, fmt.Sprintf(termMacMfgFmt, smashMfg(mfg)))
+	s.addTermf(termMacMfgFmt, smashMfg(mfg))
 
 	entitySentence := extractDeviceInfoEntity(di)
-	sentence = appendOnlyNew(sentence, entitySentence...)
+	s.addSentence(entitySentence)
 
 	dhcpSentence, _ := extractDeviceInfoDHCP(di)
-	sentence = appendOnlyNew(sentence, dhcpSentence...)
+	s.addSentence(dhcpSentence)
 
 	dnsSentence := extractDeviceInfoDNS(di)
-	sentence = appendOnlyNew(sentence, dnsSentence...)
+	s.addSentence(dnsSentence)
 
 	listenSentence := extractDeviceInfoListen(di)
-	sentence = appendOnlyNew(sentence, listenSentence...)
+	s.addSentence(listenSentence)
 
 	scanSentence := extractDeviceInfoScan(di)
-	sentence = appendOnlyNew(sentence, scanSentence...)
+	s.addSentence(scanSentence)
 
-	return getCombinedVersion(), strings.Join(sentence, " ")
+	return getCombinedVersion(), s
 }
 
-func genBayesSentenceFromDeviceInfoFile(ouiDB oui.OuiDB, diPath string) (string, string) {
-	buf, err := ioutil.ReadFile(diPath)
+func genBayesSentenceFromReader(ouiDB oui.OuiDB, rdr io.Reader) (string, sentence) {
+	buf, err := ioutil.ReadAll(rdr)
 	if err != nil {
-		log.Fatalf("couldn't read %s: %v; new ingest needed?\n", diPath, err)
+		log.Fatalf("couldn't read: %v; new ingest needed?\n", err)
 	}
 
 	di := &base_msg.DeviceInfo{}
 	err = proto.Unmarshal(buf, di)
 	if err != nil {
-		log.Fatalf("couldn't unmarshal %s: %v\n", diPath, err)
+		log.Fatalf("couldn't unmarshal: %v\n", err)
 	}
 
 	return genBayesSentenceFromDeviceInfo(ouiDB, di)
@@ -395,9 +399,14 @@ func extractDHCPRecords(B *backdrop, dpath string) error {
 			continue
 		}
 
-		buf, rerr := ioutil.ReadFile(infofileFromTraining(dt, dpath))
+		rdr, rerr := readerFromTraining(B, dt)
 		if rerr != nil {
-			log.Printf("couldn't read %s: %v", infofileFromTraining(dt, dpath), rerr)
+			log.Printf("couldn't get reader for %v: %v", dt, rerr)
+			continue
+		}
+		buf, rerr := ioutil.ReadAll(rdr)
+		if rerr != nil {
+			log.Printf("couldn't read: %v", rerr)
 			continue
 		}
 		di := &base_msg.DeviceInfo{}
@@ -453,16 +462,11 @@ func extractMfgs(B *backdrop, dpath string) error {
 			continue
 		}
 
-		pcs := strings.Split(infofileFromTraining(dt, dpath), "/")
-		if len(pcs) == 0 {
-			continue
-		}
-
-		dmac := pcs[len(pcs)-2]
+		dmac := dt.DeviceMAC
 
 		entry, err := B.ouidb.Query(dmac)
 		if err != nil {
-			log.Printf("%v unknown manufacturer: %+v\n", dmac, infofileFromTraining(dt, dpath))
+			log.Printf("%v unknown manufacturer: %+v\n", dmac, dt)
 			continue
 		}
 

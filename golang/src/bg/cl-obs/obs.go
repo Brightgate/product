@@ -45,6 +45,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"flag"
 	"fmt"
@@ -53,7 +54,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"path"
 	"regexp"
 	"runtime/pprof"
 	"strings"
@@ -62,22 +62,25 @@ import (
 	"bg/base_msg"
 
 	"golang.org/x/crypto/sha3"
-
-	"github.com/pkg/errors"
-	"github.com/spf13/cobra"
-
-	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
-
-	"github.com/klauspost/oui"
+	"google.golang.org/api/option"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/jmoiron/sqlx"
+	"github.com/klauspost/oui"
+	_ "github.com/mattn/go-sqlite3"
+	"github.com/pkg/errors"
+	"github.com/satori/uuid"
+	"github.com/spf13/cobra"
+
+	"cloud.google.com/go/storage"
 )
 
 const (
 	pname = "cl-obs"
 
 	unknownSite = "-unknown-site-"
+
+	googleCredentialsEnvVar = "GOOGLE_APPLICATION_CREDENTIALS"
 
 	experimentalClassifier = 0
 	productionClassifier   = 10
@@ -93,6 +96,7 @@ type RecordedSite struct {
 // RecordedInventory represents a row of the inventory table.  There is an
 // entry in the inventory table for each received DeviceInfo file.
 type RecordedInventory struct {
+	Storage              string    `db:"storage"`
 	InventoryDate        time.Time `db:"inventory_date"`
 	UnixTimestamp        string    `db:"unix_timestamp"`
 	SiteUUID             string    `db:"site_uuid"`
@@ -174,7 +178,19 @@ type dhcpBucket struct {
 	VendorMatch string
 }
 
+// Ingester represents a storage backend that contains DeviceInfo object
+// stored according to some understood convention.  For example, a
+// cloudIngester encodes the convention that, for a given cloud project,
+// a bucket pattern combined with a certain prefix for objects can be
+// used to calculate the set of currently stored DeviceInfo objects.
+type Ingester interface {
+	DeviceInfoOpen(*backdrop, string, string, string) (io.Reader, error)
+	SiteExists(*backdrop, string) (bool, error)
+	Ingest(*backdrop) error
+}
+
 type backdrop struct {
+	ingester               Ingester
 	db                     *sqlx.DB
 	modeldb                *sqlx.DB
 	modelsLoaded           bool
@@ -194,6 +210,7 @@ var (
 	extractOutput         string
 	ingestCap             int
 	ingestDir             string
+	ingestProject         string
 	lsDetails             bool
 	modelDir              string
 	modelFile             string
@@ -291,6 +308,7 @@ func mustCreateVersionTable(vdb *sqlx.DB) {
 func checkDB(idb *sqlx.DB) {
 	const inventorySchema = `
     CREATE TABLE IF NOT EXISTS inventory (
+	storage text,
 	inventory_date timestamp,
 	unix_timestamp text,
 	site_uuid text,
@@ -449,21 +467,15 @@ func printInventory(w io.Writer, B *backdrop, ri RecordedInventory) {
 	fmt.Fprintf(w, "%v\n", ri)
 }
 
-func printDevice(w io.Writer, B *backdrop, dmac string, dinfo string, detailed bool) {
-	hw, err := net.ParseMAC(dmac)
-	if err != nil {
-		fmt.Fprintf(w, "** couldn't parse MAC '%s': %v\n", dmac, err)
-		return
-	}
-
-	buf, rerr := ioutil.ReadFile(dinfo)
+func printDeviceFromReader(w io.Writer, B *backdrop, dmac string, r io.Reader, detailed bool) {
+	buf, rerr := ioutil.ReadAll(r)
 	if rerr != nil {
-		fmt.Fprintf(w, "** couldn't read %s: %v", dinfo, err)
+		fmt.Fprintf(w, "** couldn't read from reader: %v", rerr)
 		return
 	}
 
 	di := &base_msg.DeviceInfo{}
-	err = proto.Unmarshal(buf, di)
+	err := proto.Unmarshal(buf, di)
 	if err != nil {
 		fmt.Fprintf(w, "** unmarshaling failure: %v", err)
 		return
@@ -477,6 +489,12 @@ func printDevice(w io.Writer, B *backdrop, dmac string, dinfo string, detailed b
 	dhcpn := "-"
 	if di.DhcpName != nil {
 		dhcpn = *di.DhcpName
+	}
+
+	hw, err := net.ParseMAC(dmac)
+	if err != nil {
+		fmt.Fprintf(w, "** couldn't parse MAC '%s': %v\n", dmac, err)
+		return
 	}
 
 	fmt.Fprintf(w, "%18s %26s %26s %4d\n", hw.String(), dns, dhcpn, 0)
@@ -494,10 +512,6 @@ func printDevice(w io.Writer, B *backdrop, dmac string, dinfo string, detailed b
 		printNetListens(w, di.Listen)
 		fmt.Fprintln(w, "}}")
 	}
-
-	fmt.Fprintf(w, "== %s ==\n", dinfo)
-	fmt.Fprintf(w, "insert or replace into training (fact_id, dgroup_id, info_file) values (00, 0, \"%s\");\n", dinfo)
-	fmt.Fprintf(w, "%v", di)
 }
 
 func listDevices(B *backdrop, modelDir string, detailed bool) error {
@@ -594,7 +608,64 @@ func deviceSub(cmd *cobra.Command, args []string) error {
 }
 
 func reviewSub(cmd *cobra.Command, args []string) error {
-	// Training data
+	missed := make([]RecordedTraining, 0)
+
+	rows, err := _B.db.Queryx("SELECT * FROM training ORDER BY device_mac;")
+	if err != nil {
+		return errors.Wrap(err, "select training failed")
+	}
+
+	rowCount := 0
+	validCount := 0
+	redundCount := 0
+
+	var devicemac string
+	devicesent := newSentence()
+
+	for rows.Next() {
+		var dt RecordedTraining
+
+		err = rows.StructScan(&dt)
+		if err != nil {
+			log.Printf("training scan failed: %v\n", err)
+			continue
+		}
+
+		rowCount++
+
+		dtr, rerr := readerFromTraining(&_B, dt)
+		if rerr != nil {
+			missed = append(missed, dt)
+			continue
+		}
+
+		validCount++
+
+		_, sent := genBayesSentenceFromReader(_B.ouidb, dtr)
+		if dt.DeviceMAC == devicemac {
+			n := devicesent.addSentence(sent)
+			if !n {
+				log.Printf("no new information in (%s, %s, %s)", dt.SiteUUID, dt.DeviceMAC, dt.UnixTimestamp)
+				redundCount++
+			}
+		} else {
+			devicesent = sent
+			devicemac = dt.DeviceMAC
+		}
+	}
+
+	// Review missed.
+	for _, dt := range missed {
+		se, _ := _B.ingester.SiteExists(&_B, dt.SiteUUID)
+		if !se {
+			log.Printf("training entry refers to non-existent site %s", dt.SiteUUID)
+		}
+
+		log.Printf("missing information for (%s, %s, %s)", dt.SiteUUID, dt.DeviceMAC, dt.UnixTimestamp)
+	}
+
+	log.Printf("training table has %d/%d valid rows (%f)", validCount, rowCount, float32(validCount)/float32(rowCount))
+	log.Printf("training table has %d/%d redundant rows (%f)", redundCount, rowCount, float32(redundCount)/float32(rowCount))
 
 	if !_B.modelsLoaded {
 		return fmt.Errorf("model database does not exist")
@@ -602,7 +673,7 @@ func reviewSub(cmd *cobra.Command, args []string) error {
 
 	// Model review
 	models := []RecordedClassifier{}
-	err := _B.modeldb.Select(&models, "SELECT * FROM model ORDER BY name ASC")
+	err = _B.modeldb.Select(&models, "SELECT * FROM model ORDER BY name ASC")
 	if err != nil {
 		return fmt.Errorf("model select failed: %+v", err)
 	}
@@ -630,6 +701,19 @@ func getModels(B *backdrop) ([]RecordedClassifier, error) {
 		return nil, errors.Wrap(err, "model select failed")
 	}
 
+	lm := initInterfaceMfgLookupClassifier()
+
+	lmrc := RecordedClassifier{
+		GenerationTS:    time.Now(),
+		ModelName:       lm.name,
+		ClassifierType:  "lookup",
+		ClassifierLevel: lm.level,
+		CertainAbove:    lm.certainAbove,
+		UncertainBelow:  lm.uncertainBelow,
+	}
+
+	models = append(models, lmrc)
+
 	return models, nil
 }
 
@@ -656,52 +740,125 @@ func classifySub(cmd *cobra.Command, args []string) error {
 }
 
 func ingestSub(cmd *cobra.Command, args []string) error {
-	return ingestTree(&_B, ingestDir)
+	return _B.ingester.Ingest(&_B)
 }
 
-func catSub(cmd *cobra.Command, args []string) error {
-	for _, v := range args {
-		printDevice(os.Stdout, &_B, path.Base(path.Dir(v)), v, true)
+func lsByUUID(u string, details bool) error {
+	var seen map[string]int
+
+	rows, err := _B.db.Queryx("SELECT * FROM inventory WHERE site_uuid = ? ORDER BY inventory_date DESC;", u)
+
+	if err != nil {
+		return errors.Wrap(err, "inventory Queryx error")
 	}
+
+	seen = make(map[string]int)
+
+	for rows.Next() {
+		var ri RecordedInventory
+
+		err = rows.StructScan(&ri)
+		if err != nil {
+			log.Printf("struct scan failed : %v", err)
+			continue
+		}
+
+		rdr, err := readerFromRecord(&_B, ri)
+		if err != nil {
+			log.Printf("couldn't read %v: %v", ri, err)
+			continue
+		}
+
+		content := getContentStatusFromReader(rdr)
+		if content == "----" && !lsDetails {
+			continue
+		}
+
+		seen[ri.DeviceMAC] = seen[ri.DeviceMAC] + 1
+		if seen[ri.DeviceMAC] > 1 {
+			continue
+		}
+
+		fmt.Printf("-- %v %v\n",
+			ri.DeviceMAC, getMfgFromMAC(&_B, ri.DeviceMAC))
+
+		fmt.Printf("insert or replace into training (dgroup_id, site_uuid, device_mac, unix_timestamp) values (0, \"%s\", \"%s\", \"%s\");\n", ri.SiteUUID, ri.DeviceMAC, ri.UnixTimestamp)
+
+		// Display deviceInfo if verbose.
+		if details {
+			rdr, err = readerFromRecord(&_B, ri)
+			if err != nil {
+				log.Printf("couldn't read %v: %v", ri, err)
+			} else {
+				printDeviceFromReader(os.Stdout, &_B, ri.DeviceMAC, rdr, true)
+			}
+		}
+
+	}
+
+	rows.Close()
+
+	return nil
+}
+
+func lsByMac(m string, details bool) error {
+	rows, err := _B.db.Queryx("SELECT * FROM inventory WHERE device_mac = ? ORDER BY inventory_date DESC;", m)
+
+	if err != nil {
+		return errors.Wrap(err, "inventory Queryx error")
+	}
+
+	for rows.Next() {
+		var ri RecordedInventory
+
+		err = rows.StructScan(&ri)
+		if err != nil {
+			log.Printf("struct scan failed : %v", err)
+			continue
+		}
+
+		rdr, err := readerFromRecord(&_B, ri)
+		if err != nil {
+			log.Printf("couldn't read %v: %v", ri, err)
+			continue
+		}
+
+		content := getContentStatusFromReader(rdr)
+
+		fmt.Printf("-- %v %v %v %v\n",
+			ri.DeviceMAC,
+			getMfgFromMAC(&_B, ri.DeviceMAC),
+			ri.InventoryDate.String(),
+			content)
+
+		fmt.Printf("insert or replace into training (dgroup_id, site_uuid, device_mac, unix_timestamp) values (0, \"%s\", \"%s\", \"%s\");\n", ri.SiteUUID, ri.DeviceMAC, ri.UnixTimestamp)
+		// Display deviceInfo if verbose.
+		if details {
+			rdr, err = readerFromRecord(&_B, ri)
+			if err != nil {
+				log.Printf("couldn't read %v: %v", ri, err)
+			} else {
+				printDeviceFromReader(os.Stdout, &_B, ri.DeviceMAC, rdr, true)
+			}
+		}
+	}
+
+	rows.Close()
 
 	return nil
 }
 
 func lsSub(cmd *cobra.Command, args []string) error {
-	// Each argument to the ls subcommand is a MAC address.
+	// Each argument to the ls subcommand is a MAC address or a UUID.
 	for _, v := range args {
-		rows, err := _B.db.Queryx("SELECT * FROM inventory WHERE device_mac = ? ORDER BY inventory_date;", v)
-
+		_, err := uuid.FromString(v)
 		if err != nil {
-			log.Printf("inventory Queryx error: %v", err)
-			continue
+			log.Printf("by MAC %v", v)
+			lsByMac(v, lsDetails)
+		} else {
+			log.Printf("by UUID %v", v)
+			lsByUUID(v, lsDetails)
 		}
-
-		for rows.Next() {
-			var ri RecordedInventory
-
-			err = rows.StructScan(&ri)
-			if err != nil {
-				log.Printf("struct scan failed : %v", err)
-				continue
-			}
-
-			infoFile := infofileFromRecord(ri, ingestDir)
-			content := getContentStatusFromDeviceInfo(infoFile)
-			if content == "----" && !lsDetails {
-				continue
-			}
-
-			fmt.Printf("%v %v %v %v\n",
-				infoFile,
-				getMfgFromMAC(&_B, ri.DeviceMAC),
-				ri.InventoryDate.String(),
-				content)
-
-			fmt.Printf("insert or replace into training (fact_id, dgroup_id, site_uuid, device_mac, unix_timestamp) values (00, 0, \"%s\", \"%s\", \"%s\");\n", ri.SiteUUID, ri.DeviceMAC, ri.UnixTimestamp)
-		}
-
-		rows.Close()
 	}
 
 	return nil
@@ -756,6 +913,33 @@ func readyBackdrop(B *backdrop) error {
 
 	checkDB(B.db)
 
+	log.Printf("running combined version: %s\n", getCombinedVersion())
+
+	if ingestProject != "" {
+		log.Printf("backdrop deviceInfoOpen cloud")
+		ingester := newCloudIngester(ingestProject)
+
+		cenv := os.Getenv(googleCredentialsEnvVar)
+		if cenv == "" {
+			return fmt.Errorf("Provide cloud credentials through %s envvar",
+				googleCredentialsEnvVar)
+		}
+
+		ingester.storageClient, err = storage.NewClient(context.Background(),
+			option.WithCredentialsFile(cenv))
+		if err != nil {
+			return errors.Wrap(err, "storage client")
+		}
+
+		B.ingester = ingester
+	} else if ingestDir != "" {
+		log.Printf("backdrop deviceInfoOpen file")
+		B.ingester = newFileIngester(ingestDir)
+	} else {
+		// None has been defined.
+		log.Fatalf("must provide --dir or --project")
+	}
+
 	// If modelFile doesn't exist, don't create it.
 	if _, err := os.Stat(modelFile); os.IsNotExist(err) {
 		B.modelsLoaded = false
@@ -774,6 +958,7 @@ func readyBackdrop(B *backdrop) error {
 	if persistent {
 		B.persistClassifications = true
 	}
+
 	return nil
 }
 
@@ -826,7 +1011,10 @@ func main() {
 				return
 			}
 
-			readyBackdrop(&_B)
+			err = readyBackdrop(&_B)
+			if err != nil {
+				log.Fatalf("initialization failed: %v", err)
+			}
 		},
 		PersistentPostRun: func(ccmd *cobra.Command, args []string) {
 			if cpuProfile != "" {
@@ -842,7 +1030,8 @@ func main() {
 		},
 	}
 	rootCmd.PersistentFlags().StringVar(&cpuProfile, "cpuprofile", "", "CPU profiling filename")
-	rootCmd.PersistentFlags().StringVar(&ingestDir, "dir", ".", "directory for DeviceInfo files")
+	rootCmd.PersistentFlags().StringVar(&ingestDir, "dir", "", "directory for DeviceInfo files")
+	rootCmd.PersistentFlags().StringVar(&ingestProject, "project", "", "GCP project for DeviceInfo files")
 	rootCmd.PersistentFlags().StringVar(&observationsFile, "observations-file", "obs.db", "observations index path")
 	rootCmd.PersistentFlags().StringVar(&ouiFile, "oui-file", "oui.txt", "OUI text database path")
 
@@ -868,20 +1057,12 @@ func main() {
 
 	lsCmd := &cobra.Command{
 		Use:   "ls",
-		Short: "List deviceInfos for matching MACs",
+		Short: "List deviceInfos for matching MACs or MACs for matching UUIDs",
 		Args:  cobra.MinimumNArgs(1),
 		RunE:  lsSub,
 	}
 	lsCmd.Flags().BoolVar(&lsDetails, "verbose", false, "detailed output")
 	rootCmd.AddCommand(lsCmd)
-
-	catCmd := &cobra.Command{
-		Use:   "cat",
-		Short: "Print deviceInfos",
-		Args:  cobra.MinimumNArgs(1),
-		RunE:  catSub,
-	}
-	rootCmd.AddCommand(catCmd)
 
 	ingestCmd := &cobra.Command{
 		Use:   "ingest",

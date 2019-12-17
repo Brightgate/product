@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	deviceCertainAbove   = 0.7
-	deviceUncertainBelow = 0.5
+	deviceCertainAbove   = 0.4
+	deviceUncertainBelow = 0.25
 
 	deviceGenusMinClassSize = 3
 

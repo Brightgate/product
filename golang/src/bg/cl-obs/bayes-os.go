@@ -20,10 +20,10 @@ import (
 )
 
 const (
-	osCertainAbove       = 0.7
-	osUncertainBelow     = 0.5
-	distroCertainAbove   = 0.7
-	distroUncertainBelow = 0.5
+	osCertainAbove       = 0.6
+	osUncertainBelow     = 0.4
+	distroCertainAbove   = 0.6
+	distroUncertainBelow = 0.4
 
 	osGenusMinClassSize   = 4
 	osSpeciesMinClassSize = 3

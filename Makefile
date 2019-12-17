@@ -593,6 +593,7 @@ GO_CLOUD_TESTABLES = \
 	bg/cloud_models/sessiondb \
 	bg/common/mfg \
 	bg/cl-cert \
+	bg/cl-obs \
 	bg/cl.configd \
 	bg/cl.httpd
 

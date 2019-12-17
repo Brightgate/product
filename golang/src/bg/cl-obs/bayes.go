@@ -50,7 +50,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"log"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -77,17 +80,154 @@ type bayesClassifier struct {
 	TargetValue        func(rdi RecordedDeviceInfo) string
 }
 
-func uniqueWords(words []string) []string {
-	dict := make(map[string]bool)
+// A sentence is implemented using a map so that we can easily compute
+// whether or not two sentences have similar (same terms, but possibly
+// different frequencies) or identical information content (terms and
+// frequencies identical).
+type sentence struct {
+	words map[string]int
+}
 
-	list := []string{}
-	for _, entry := range words {
-		if _, value := dict[entry]; !value {
-			dict[entry] = true
-			list = append(list, entry)
+func newSentence() sentence {
+	s := sentence{}
+
+	s.words = make(map[string]int)
+
+	return s
+}
+
+// addTerm, like all "add" methods for the sentence structure, returns true
+// when all added terms are redundant (in that they were already present in the
+// sentence).  If any added term is new, then false is returned.
+func (s sentence) addTerm(term string) bool {
+	s.words[term] = s.words[term] + 1
+
+	return s.words[term] > 1
+}
+
+func (s sentence) addTermf(format string, a ...interface{}) bool {
+	lt := strings.Fields(fmt.Sprintf(format, a...))
+	ret := true
+
+	for _, v := range lt {
+		addl := s.addTerm(v)
+		ret = ret && addl
+	}
+
+	return ret
+}
+
+func newSentenceFromString(sent string) sentence {
+	s := newSentence()
+
+	lt := strings.Fields(sent)
+
+	for _, v := range lt {
+		s.addTerm(v)
+	}
+
+	return s
+}
+
+func (s sentence) terms() []string {
+	t := make([]string, 0)
+
+	for k := range s.words {
+		t = append(t, k)
+	}
+
+	return t
+}
+
+func (s sentence) toString() string {
+	ts := s.terms()
+
+	sort.Strings(ts)
+
+	return strings.Join(ts, " ")
+}
+
+func (s sentence) toNaryString() string {
+	t := make([]string, 0)
+
+	for k, v := range s.words {
+		for u := 0; u < v; u++ {
+			t = append(t, k)
 		}
 	}
-	return list
+
+	return strings.Join(t, " ")
+}
+
+func (s sentence) addString(sent string) bool {
+	ret := true
+
+	lt := strings.Fields(sent)
+
+	for _, v := range lt {
+		n := s.addTerm(v)
+		ret = ret && n
+	}
+
+	return ret
+}
+
+func (s sentence) addSentence(s2 sentence) bool {
+	ret := true
+
+	for k, v := range s2.words {
+		s.words[k] += v
+		if s.words[k] == v {
+			// Meaning that this word was exclusive to the added
+			// sentence.
+			ret = false
+		}
+	}
+
+	return ret
+}
+
+func (s sentence) termCount() int {
+	return len(s.words)
+}
+
+func (s sentence) termHash() uint64 {
+	h := fnv.New64()
+
+	ws := s.terms()
+
+	sort.Strings(ws)
+
+	for _, k := range ws {
+		h.Write([]byte(k))
+	}
+
+	return h.Sum64()
+}
+
+func (s sentence) wordCount() int {
+	n := 0
+
+	for _, v := range s.words {
+		n += v
+	}
+
+	return n
+}
+
+func (s sentence) wordHash() uint64 {
+	h := fnv.New64()
+
+	ws := s.terms()
+
+	sort.Strings(ws)
+
+	for _, k := range ws {
+		h.Write([]byte(k))
+		h.Write([]byte(strconv.Itoa(s.words[k])))
+	}
+
+	return h.Sum64()
 }
 
 func (m *bayesClassifier) GenSetFromDB(B *backdrop, ifLookup string) error {
@@ -118,7 +258,7 @@ func (m *bayesClassifier) GenSetFromDB(B *backdrop, ifLookup string) error {
 		}
 		defer trows.Close()
 
-		var paragraph strings.Builder
+		p := newSentence()
 
 		for trows.Next() {
 			rt := RecordedTraining{}
@@ -129,16 +269,27 @@ func (m *bayesClassifier) GenSetFromDB(B *backdrop, ifLookup string) error {
 				continue
 			}
 
-			_, sentence := genBayesSentenceFromDeviceInfoFile(B.ouidb,
-				infofileFromTraining(rt, ifLookup))
-			paragraph.WriteString(sentence)
-			paragraph.WriteString(" ")
+			var sent sentence
+
+			// Retrieve inventory.
+			ri, err := inventoryFromTraining(B, rt)
+
+			if err == nil && ri.BayesSentenceVersion == getCombinedVersion() {
+				sent = newSentenceFromString(ri.BayesSentence)
+			} else {
+				rdr, err := readerFromTraining(B, rt)
+				if err != nil {
+					log.Printf("couldn't get reader for %v: %v\n", rt, err)
+					continue
+				}
+
+				_, sent = genBayesSentenceFromReader(B.ouidb, rdr)
+			}
+
+			p.addSentence(sent)
 		}
 
-		words := uniqueWords(strings.Fields(paragraph.String()))
-
-		m.set = append(m.set, machine{rdi.DeviceMAC, strings.Join(words, " "),
-			[]string{target}})
+		m.set = append(m.set, machine{rdi.DeviceMAC, p.toString(), []string{target}})
 		n++
 
 		trows.Close()
@@ -175,6 +326,8 @@ func (m *bayesClassifier) instancesTrainSpecifiedSplit() ([]machine, []machine) 
 }
 
 func (m *bayesClassifier) train(B *backdrop, trainData []machine) {
+	log.Printf("train %s start", m.name)
+
 	for _, machine := range trainData {
 		for _, cl := range m.classifiers {
 			cl.Add(machine.Text, machine.Classes)
@@ -195,6 +348,8 @@ func (m *bayesClassifier) train(B *backdrop, trainData []machine) {
 			log.Printf("could not update '%s' model: %s", k, ierr)
 		}
 	}
+
+	log.Printf("train %s finish", m.name)
 }
 
 func reviewBayes(m RecordedClassifier) string {

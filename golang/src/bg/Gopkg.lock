@@ -318,25 +318,6 @@
   version = "v1.4.1"
 
 [[projects]]
-  digest = "1:91f14800b32f2211b254931c8c58991244bb446da947f656640d8bdf12689530"
-  name = "github.com/gosuri/uilive"
-  packages = ["."]
-  pruneopts = ""
-  revision = "4512d98b127f3f3a1b7c3cf1104969fdd17b31d9"
-  version = "v0.0.3"
-
-[[projects]]
-  digest = "1:54f35be9e0acc2aa92e58311c87f0355bac769ce200ae43945ae43d7fde22bc7"
-  name = "github.com/gosuri/uiprogress"
-  packages = [
-    ".",
-    "util/strutil",
-  ]
-  pruneopts = ""
-  revision = "d0567a9d84a1c40dd7568115ea66f4887bf57b33"
-  version = "0.0.1"
-
-[[projects]]
   digest = "1:cbea643bd7f1c76bb6e48ab08f3dd01456602ab7b252f3c85133d7a1a6413a18"
   name = "github.com/grpc-ecosystem/go-grpc-middleware"
   packages = [
@@ -1314,7 +1295,6 @@
     "github.com/gorilla/mux",
     "github.com/gorilla/securecookie",
     "github.com/gorilla/sessions",
-    "github.com/gosuri/uiprogress",
     "github.com/grpc-ecosystem/go-grpc-middleware",
     "github.com/grpc-ecosystem/go-grpc-middleware/auth",
     "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap",
