@@ -256,6 +256,11 @@ func execute(t *cfgtree.PTree, ops *cfgmsg.ConfigQuery) *cfgmsg.ConfigResponse {
 
 		switch op.Operation {
 
+		case cfgmsg.ConfigOp_GET:
+			if prop == "@/metrics/" {
+				rval.Value = "{}"
+			}
+
 		case cfgmsg.ConfigOp_SET:
 			err = t.Set(prop, val, expires)
 
@@ -287,10 +292,9 @@ func execute(t *cfgtree.PTree, ops *cfgmsg.ConfigQuery) *cfgmsg.ConfigResponse {
 }
 
 func delay() {
-	const maxDelay = 3
-
-	seconds := rand.Int() % maxDelay
-	time.Sleep(time.Duration(seconds) * time.Second)
+	const maxDelay = 100
+	ms := rand.Int() % maxDelay
+	time.Sleep(time.Duration(ms) * time.Millisecond)
 }
 
 // Repeatedly pull commands from the queue, execute them, and post the results.
@@ -367,4 +371,8 @@ func (s *siteState) postUpdate(update *rpc.CfgUpdate) {
 		q.Unlock()
 	}
 	s.Unlock()
+}
+
+func init() {
+	rand.Seed(int64(time.Now().Nanosecond()))
 }

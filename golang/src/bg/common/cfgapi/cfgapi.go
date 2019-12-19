@@ -290,6 +290,38 @@ type PropertyOp struct {
 	Expires *time.Time
 }
 
+var opName = map[int]string{
+	PropGet:     "PropGet",
+	PropSet:     "PropSet",
+	PropCreate:  "PropCreate",
+	PropDelete:  "PropDelete",
+	PropAdd:     "PropAdd",
+	PropTest:    "PropTest",
+	PropTestEq:  "PropTestEq",
+	TreeReplace: "TreeReplace",
+}
+
+func (p PropertyOp) String() string {
+	s := fmt.Sprintf("<%s", opName[p.Op])
+	if p.Name != "" {
+		s += " " + p.Name
+	}
+	if p.Value != "" {
+		if p.Op == PropSet || p.Op == PropCreate {
+			s += fmt.Sprintf("=%q", p.Value)
+		} else if p.Op == PropTestEq {
+			s += fmt.Sprintf("==%q", p.Value)
+		} else {
+			s += fmt.Sprintf(" %q", p.Value)
+		}
+	}
+	if p.Expires != nil {
+		s += fmt.Sprintf(" (%s)" + p.Expires.String())
+	}
+	s += ">"
+	return s
+}
+
 // PropertyNode is a single node in the property tree
 type PropertyNode struct {
 	Value    string     `json:"Value,omitempty"`

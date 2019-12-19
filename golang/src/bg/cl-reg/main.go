@@ -138,6 +138,7 @@ func main() {
 	oauth2Main(rootCmd)
 	orgMain(rootCmd)
 	siteMain(rootCmd)
+	deviceIDMain(rootCmd)
 
 	if err := envcfg.Unmarshal(&environ); err != nil {
 		fmt.Printf("Environment Error: %s\n", err)
