@@ -48,8 +48,9 @@ type wanInfo struct {
 	staticRoute     net.IP
 	staticDNSServer string
 
-	done chan bool
-	wg   sync.WaitGroup
+	updateNeeded chan bool
+	done         chan bool
+	wg           sync.WaitGroup
 }
 
 var wan *wanInfo
@@ -99,7 +100,7 @@ func wanStaticChanged(prop, val string) {
 	}
 
 	if changed {
-		wan.updateConfig()
+		wan.updateNeeded <- true
 	}
 }
 
@@ -132,7 +133,7 @@ func wanStaticDeleted(prop string) {
 	if (oldDNS != wan.staticDNSServer) || (oldAddr != wan.staticAddr) ||
 		!oldRoute.Equal(wan.staticRoute) {
 
-		wan.updateConfig()
+		wan.updateNeeded <- true
 	}
 }
 
@@ -351,6 +352,8 @@ func (w *wanInfo) monitorLoop() {
 	done := false
 	for !done {
 		if w.ipCheck() {
+			// address changed since last check, force dhcp to
+			// refresh
 			refresh = time.Now()
 		}
 
@@ -361,7 +364,8 @@ func (w *wanInfo) monitorLoop() {
 
 		select {
 		case done = <-wan.done:
-			return
+		case <-w.updateNeeded:
+			w.updateConfig()
 		case <-t.C:
 		}
 	}
@@ -432,6 +436,7 @@ func wanInit(cfgWan *cfgapi.WanInfo) {
 	enablePacketForwarding()
 
 	wan = &wanInfo{
+		updateNeeded:  make(chan bool, 2),
 		done:          make(chan bool),
 		staticCapable: plat.NetworkManaged && !aputil.IsSatelliteMode(),
 	}
@@ -454,6 +459,6 @@ func wanInit(cfgWan *cfgapi.WanInfo) {
 
 	if dev := findWanDevice(); dev != nil {
 		wan.setNic(dev.name)
-		wan.updateConfig()
+		wan.updateNeeded <- true
 	}
 }

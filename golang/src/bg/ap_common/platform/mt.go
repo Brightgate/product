@@ -362,7 +362,11 @@ func mtNetConfig(nic, proto, ipaddr, gw, dnsserver string) error {
 	case "dhcp":
 		newProps["proto"] = "dhcp"
 		newProps["reqopts"] = "60 43"
-
+		if dnsserver == "" {
+			newProps["dns"] = current["dns"]
+		} else {
+			newProps["dns"] = dnsserver
+		}
 	case "static":
 		newProps["proto"] = "static"
 		newProps["gateway"] = gw
