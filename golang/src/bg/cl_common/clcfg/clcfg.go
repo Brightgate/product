@@ -59,7 +59,7 @@ func NewConfigd(pname, uuid, url string, tlsEnabled bool) (*Configd, error) {
 	}
 
 	if tlsEnabled {
-		conn, err = grpcutils.NewClientTLSConn(url, "", pname)
+		conn, err = grpcutils.NewClientTLSConn(url, "", pname, "")
 	} else {
 		conn, err = grpcutils.NewClientConn(url, pname)
 	}

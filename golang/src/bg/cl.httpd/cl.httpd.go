@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -36,15 +36,18 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
+	"bg/cl_common/certificate"
 	"bg/cl_common/clcfg"
 	"bg/cl_common/daemonutils"
 	"bg/cloud_models/appliancedb"
 	"bg/cloud_models/sessiondb"
 	"bg/common/cfgapi"
 
+	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/storage"
 	"github.com/sfreiberg/gotwilio"
 	"github.com/tomazk/envcfg"
@@ -70,9 +73,12 @@ type Cfg struct {
 	// We use this variable to navigate the Let's Encrypt directory
 	// hierarchy.
 	CertHostname string `envcfg:"B10E_CERT_HOSTNAME"`
+	GenerateCert bool   `envcfg:"B10E_GENERATE_CERT"`
 	// Enable various debug stuff, non-priv port #s, relax secure MW, etc.
 	Developer                 bool   `envcfg:"B10E_CLHTTPD_DEVELOPER"`
 	DisableTLS                bool   `envcfg:"B10E_CLHTTPD_DISABLE_TLS"`
+	LoadBalanced              bool   `envcfg:"B10E_CLHTTPD_LOAD_BALANCED"`
+	AllowedHosts              string `envcfg:"B10E_CLHTTPD_ALLOWED_HOSTS"`
 	HTTPListen                string `envcfg:"B10E_CLHTTPD_HTTP_LISTEN"`
 	HTTPSListen               string `envcfg:"B10E_CLHTTPD_HTTPS_LISTEN"`
 	WellKnownPath             string `envcfg:"B10E_CERTBOT_WELLKNOWN_PATH"`
@@ -110,6 +116,7 @@ const (
 var (
 	environ          Cfg
 	enableConfigdTLS bool
+	lbName           string
 )
 
 func gracefulShutdown(e *echo.Echo) {
@@ -121,14 +128,30 @@ func gracefulShutdown(e *echo.Echo) {
 }
 
 func mkTLSConfig() (*tls.Config, error) {
-	// https (typically port 443) listener.
-	certf := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem",
-		environ.CertHostname)
-	keyf := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem",
-		environ.CertHostname)
-	keyPair, err := tls.LoadX509KeyPair(certf, keyf)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load X509 Key Pair from %s, %s: %v", certf, keyf, err)
+	var keyPair tls.Certificate
+	var err error
+	if environ.GenerateCert {
+		// Behind an HTTPS load-balancer proxy, we need to use a
+		// key/cert pair, even if they don't correspond to the
+		// host being contacted.
+		keyb, certb, err := certificate.CreateSSKeyCert(environ.CertHostname)
+		if err != nil {
+			return nil, fmt.Errorf("generate self-signed cert failed: %v", err)
+		}
+		keyPair, err = tls.X509KeyPair(certb, keyb)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate X509 Key Pair: %v", err)
+		}
+	} else {
+		certf := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem",
+			environ.CertHostname)
+		keyf := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem",
+			environ.CertHostname)
+
+		keyPair, err = tls.LoadX509KeyPair(certf, keyf)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load X509 Key Pair from %s, %s: %v", certf, keyf, err)
+		}
 	}
 
 	return &tls.Config{
@@ -138,7 +161,7 @@ func mkTLSConfig() (*tls.Config, error) {
 		// The ciphers below are chosen for high security and enough
 		// browser compatibility for our expected user base using the
 		// qualys tool at https://www.ssllabs.com/ssltest/.
-		// As of Sep. 2018 we earn an A+ rating.
+		// As of Dec. 2019 we earn an A+ rating.
 		CipherSuites: []uint16{
 			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
@@ -155,10 +178,50 @@ func mkTLSConfig() (*tls.Config, error) {
 	}, nil
 }
 
-func mkSecureMW() echo.MiddlewareFunc {
+func mkSecureMW(r *echo.Echo) echo.MiddlewareFunc {
+	allowedHosts := strings.Split(environ.AllowedHosts, ",")
+	// Work around weird Split() behavior
+	if len(allowedHosts) == 1 && allowedHosts[0] == "" {
+		allowedHosts = []string{}
+	}
+
+	if len(allowedHosts) == 0 {
+		// This just gets the first one.
+		if ip, err := metadata.InternalIP(); err == nil && ip != "" {
+			allowedHosts = append(allowedHosts, ip)
+		} else if err != nil {
+			r.Logger.Warnf("Unable to retrieve internal IP address: %v", err)
+		}
+
+		if ip, err := metadata.ExternalIP(); err == nil && ip != "" {
+			allowedHosts = append(allowedHosts, ip)
+		} else if err != nil {
+			r.Logger.Warnf("Unable to retrieve external IP address: %v", err)
+		}
+
+		// IP address assigned to the load balancer
+		if ip, err := metadata.InstanceAttributeValue("lb-ip"); err == nil && ip != "" {
+			allowedHosts = append(allowedHosts, ip)
+		} else if err != nil {
+			r.Logger.Warnf("Unable to retrieve load balancer IP address: %v", err)
+		}
+
+		// Name assigned to the load balancer
+		if lbName != "" {
+			allowedHosts = append(allowedHosts, lbName)
+		}
+	}
+
+	if len(allowedHosts) == 0 {
+		r.Logger.Fatalf("Unable to determine allowed hosts; set " +
+			"$B10E_CLHTTPD_ALLOWED_HOSTS to override discovery")
+	}
+	r.Logger.Infof("Accepting requests for %s", strings.Join(allowedHosts, ", "))
+
 	secureMW := secure.New(secure.Options{
-		AllowedHosts:          []string{"svc0.b10e.net", "svc1.b10e.net", "build0.b10e.net:9443"},
+		AllowedHosts:          allowedHosts,
 		HostsProxyHeaders:     []string{"X-Forwarded-Host"},
+		SSLProxyHeaders:       map[string]string{"X-Forwarded-Proto": "https"},
 		STSSeconds:            315360000,
 		STSIncludeSubdomains:  true,
 		STSPreload:            true,
@@ -245,6 +308,30 @@ func (rs *routerState) mkApplianceDB() {
 	log.Infof(checkMark + "Appliance Secrets")
 }
 
+func mkEchoLoggerConfig(logger echo.Logger) middleware.LoggerConfig {
+	gcpInstName, err := metadata.InstanceName()
+	if err != nil {
+		logger.Warnf("Unable to retrieve instance name: %v", err)
+	}
+
+	gcpZone, err := metadata.Zone()
+	if err != nil {
+		logger.Warnf("Unable to retrieve GCP zone: %v", err)
+	}
+
+	// Insert a few fields into the log after the time, but before the rest.
+	lcFmtArray := strings.Split(middleware.DefaultLoggerConfig.Format, ",")
+	lcFmtArray = append(lcFmtArray, "", "", "")
+	copy(lcFmtArray[4:], lcFmtArray[1:])
+	lcFmtArray[1] = fmt.Sprintf(`"gcp_zone":"%s"`, gcpZone)
+	lcFmtArray[2] = fmt.Sprintf(`"gcp_instance_name":"%s"`, gcpInstName)
+	// Google Cloud Load Balancing cookie
+	lcFmtArray[3] = `"GCLB":"${cookie:GCLB}"`
+
+	lcFmt := strings.Join(lcFmtArray, ",")
+	return middleware.LoggerConfig{Format: lcFmt}
+}
+
 func mkRouterHTTPS() *routerState {
 	var state routerState
 
@@ -297,8 +384,8 @@ func mkRouterHTTPS() *routerState {
 		r.Logger.Warnf("Disabling Twilio Client")
 	}
 
-	r.Use(middleware.Logger())
-	r.Use(mkSecureMW())
+	r.Use(middleware.LoggerWithConfig(mkEchoLoggerConfig(r.Logger)))
+	r.Use(mkSecureMW(r))
 	r.Use(middleware.Recover())
 	r.Use(session.Middleware(state.sessionStore))
 	r.Static("/.well-known", wellKnownPath)
@@ -358,10 +445,33 @@ func mkRouterHTTP() *echo.Echo {
 		r.Logger.SetLevel(gommonlog.INFO)
 	}
 	r.HideBanner = true
-	r.Use(middleware.Logger())
-	r.Use(mkSecureMW())
+	r.Use(middleware.LoggerWithConfig(mkEchoLoggerConfig(r.Logger)))
+	r.Use(mkSecureMW(r))
 	r.Use(middleware.Recover())
-	r.Use(middleware.HTTPSRedirect())
+
+	// Redirect HTTP requests to HTTPS, with the exception of health checks,
+	// which must target a specific URL.  Note that the middleware redirects
+	// only if the scheme is "https", based on whether the connection is TLS
+	// or whether one of the standard X-Forwarded- headers suggests it is.
+	//
+	// We could also restrict it to come from a private IP (for k8s/GKE) or
+	// 35.191.0.0/16 and 130.211.0.0/22, as documented at
+	// https://cloud.google.com/load-balancing/docs/health-checks#fw-rule
+	r.Use(middleware.HTTPSRedirectWithConfig(
+		middleware.RedirectConfig{
+			Skipper: func(c echo.Context) bool {
+				return strings.HasPrefix(
+					c.Request().RequestURI, "/check/")
+			},
+		},
+	))
+
+	// We don't bother with something like getCheckProduction() for the HTTP
+	// router, because it doesn't do anything other than the redirection.
+	r.GET("/check/pulse", func(c echo.Context) error {
+		return c.String(http.StatusOK, "healthy\n")
+	})
+
 	return r
 }
 
@@ -379,17 +489,13 @@ func getConfigClientHandle(cuuid string) (*cfgapi.Handle, error) {
 	return configHandle, nil
 }
 
-func main() {
-	var err error
-	startupLog := gommonlog.New("startup")
-	startupLog.Infof("start")
-	err = envcfg.Unmarshal(&environ)
-	if err != nil {
-		startupLog.Fatalf("Environment Error: %s", err)
+func processEnv(logger *gommonlog.Logger) {
+	if environ.Developer && environ.LoadBalanced {
+		logger.Fatalf("dev mode and LB mode can't be set simultaneously")
 	}
 
 	if environ.Developer {
-		startupLog.Infof("environ %v", environ)
+		logger.Infof("environ %v", environ)
 	}
 
 	if environ.HTTPListen == "" {
@@ -406,6 +512,28 @@ func main() {
 			environ.HTTPSListen = ":443"
 		}
 	}
+
+	// Name assigned to the load balancer
+	if name, err := metadata.InstanceAttributeValue("lb-name"); err == nil && name != "" {
+		lbName = name
+	} else if err != nil {
+		logger.Warnf("Unable to retrieve load balancer name: %v", err)
+	}
+
+	if environ.CertHostname == "" {
+		environ.CertHostname = lbName
+	}
+}
+
+func main() {
+	var err error
+	startupLog := gommonlog.New("startup")
+	startupLog.Infof("start")
+	err = envcfg.Unmarshal(&environ)
+	if err != nil {
+		startupLog.Fatalf("Environment Error: %s", err)
+	}
+	processEnv(startupLog)
 
 	rsHTTPS := mkRouterHTTPS()
 	defer rsHTTPS.Fini(context.Background())

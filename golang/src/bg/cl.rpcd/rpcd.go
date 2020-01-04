@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -35,12 +35,18 @@ import (
 
 	"bg/base_def"
 	"bg/cl_common/auth/m2mauth"
+	"bg/cl_common/certificate"
+	"bg/cl_common/clcfg"
 	"bg/cl_common/daemonutils"
 	"bg/cloud_models/appliancedb"
 	"bg/cloud_rpc"
+	"bg/common/cfgapi"
 
 	"github.com/satori/uuid"
 	"github.com/tomazk/envcfg"
+
+	"github.com/labstack/echo"
+	"github.com/labstack/echo/middleware"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
@@ -72,8 +78,10 @@ type Cfg struct {
 	// We use this variable to navigate the Let's Encrypt directory
 	// hierarchy.
 	CertHostname       string `envcfg:"B10E_CERT_HOSTNAME"`
+	GenerateCert       bool   `envcfg:"B10E_GENERATE_CERT"`
 	DiagPort           string `envcfg:"B10E_CLRPCD_DIAG_PORT"`
 	GrpcPort           string `envcfg:"B10E_CLRPCD_GRPC_PORT"`
+	HTTPListen         string `envcfg:"B10E_CLRPCD_HTTP_LISTEN"`
 	PubsubProject      string `envcfg:"B10E_CLRPCD_PUBSUB_PROJECT"`
 	PubsubTopic        string `envcfg:"B10E_CLRPCD_PUBSUB_TOPIC"`
 	PostgresConnection string `envcfg:"B10E_CLRPCD_POSTGRES_CONNECTION"`
@@ -86,7 +94,11 @@ type Cfg struct {
 	// Whether to disable TLS for outbound requests to cl.configd
 	ConfigdDisableTLS bool   `envcfg:"B10E_CLRPCD_CLCONFIGD_DISABLE_TLS"`
 	RPCTimeout        string `envcfg:"B10E_CLRPCD_CLCONFIGD_TIMEOUT"`
+
+	KeyLogFile string `envcfg:"SSLKEYLOGFILE"`
 }
+
+type getClientHandleFunc func(uuid string) (*cfgapi.Handle, error)
 
 const (
 	checkMark = `✔︎ `
@@ -159,6 +171,9 @@ func processEnv() {
 	if environ.GrpcPort == "" {
 		environ.GrpcPort = base_def.CLRPCD_GRPC_PORT
 	}
+	if environ.HTTPListen == "" {
+		environ.HTTPListen = ":80"
+	}
 	slog.Infof(checkMark + "Environ looks good")
 }
 
@@ -196,22 +211,34 @@ func makeGrpcServer(applianceDB appliancedb.DataStore) *grpc.Server {
 		slog.Warnf("TLS Mode: local, NO TLS!  For developers only.")
 	} else {
 		slog.Infof(checkMark + "TLS Mode: Secured by TLS")
-		if environ.CertHostname == "" {
-			slog.Fatalf("B10E_CERT_HOSTNAME must be defined")
+		if environ.CertHostname == "" && !environ.GenerateCert {
+			slog.Fatalf("B10E_GENERATE_CERT must be defined if B10E_CERT_HOSTNAME is not")
 		}
-		// Port 443 listener.
-		certf := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem",
-			environ.CertHostname)
-		keyf := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem",
-			environ.CertHostname)
 
-		certb, err := ioutil.ReadFile(certf)
-		if err != nil {
-			slog.Fatalw("read cert file failed", "err", err)
-		}
-		keyb, err := ioutil.ReadFile(keyf)
-		if err != nil {
-			slog.Fatalw("read key file failed", "err", err)
+		var keyb, certb []byte
+		var err error
+		if environ.GenerateCert {
+			// Behind an HTTPS load-balancer proxy, we need to use a
+			// key/cert pair, even if they don't correspond to the
+			// host being contacted.
+			keyb, certb, err = certificate.CreateSSKeyCert(environ.CertHostname)
+			if err != nil {
+				slog.Fatalw("generate self-signed cert failed", "err", err)
+			}
+		} else {
+			certf := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem",
+				environ.CertHostname)
+			keyf := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem",
+				environ.CertHostname)
+
+			certb, err = ioutil.ReadFile(certf)
+			if err != nil {
+				slog.Fatalw("read cert file failed", "err", err)
+			}
+			keyb, err = ioutil.ReadFile(keyf)
+			if err != nil {
+				slog.Fatalw("read key file failed", "err", err)
+			}
 		}
 
 		keypair, err = tls.X509KeyPair(certb, keyb)
@@ -242,6 +269,13 @@ func makeGrpcServer(applianceDB appliancedb.DataStore) *grpc.Server {
 				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 			},
+		}
+
+		if environ.KeyLogFile != "" {
+			w, err := os.Create(environ.KeyLogFile)
+			if err == nil {
+				tlsc.KeyLogWriter = w
+			}
 		}
 
 		opts = append(opts, grpc.Creds(credentials.NewTLS(&tlsc)))
@@ -302,6 +336,32 @@ func setupGrpcLog(log *zap.Logger) {
 		zap.AddCallerSkip(3),
 	)
 	grpclog.SetLogger(zapgrpc.NewLogger(glog, zapgrpc.WithDebug()))
+}
+
+func getConfigClientHandle(cuuid string) (*cfgapi.Handle, error) {
+	uu, err := uuid.FromString(cuuid)
+	if err != nil {
+		return nil, err
+	}
+	configd, err := clcfg.NewConfigd(pname, uu.String(),
+		environ.ConfigdConnection, !environ.ConfigdDisableTLS)
+	if err != nil {
+		return nil, err
+	}
+	configHandle := cfgapi.NewHandle(configd)
+	return configHandle, nil
+}
+
+func makeHTTPServer() *echo.Echo {
+	r := echo.New()
+	r.HideBanner = true
+	r.Use(middleware.Logger())
+	r.Use(middleware.Recover())
+
+	// Setup /check endpoints
+	_ = newCheckHandler(r, getConfigClientHandle)
+
+	return r
 }
 
 func main() {
@@ -370,6 +430,16 @@ func main() {
 		slog.Fatalf("gRPC Server failed: %v", err)
 	}()
 	slog.Infof(checkMark+"Started gRPC service at %v", environ.GrpcPort)
+
+	rHTTP := makeHTTPServer()
+	httpSrv := &http.Server{
+		Addr: environ.HTTPListen,
+	}
+	go func() {
+		if err := rHTTP.StartServer(httpSrv); err != nil {
+			rHTTP.Logger.Info("shutting down HTTP (health) service")
+		}
+	}()
 
 	sig := make(chan os.Signal, 2)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)

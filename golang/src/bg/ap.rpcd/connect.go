@@ -143,7 +143,7 @@ func grpcConnect(ctx context.Context) *grpc.ClientConn {
 			}
 
 			slog.Debugf("Connecting to '%s'%s", url, as)
-			conn, err = grpcutils.NewClientTLSConn(url, certHost, pname)
+			conn, err = grpcutils.NewClientTLSConn(url, certHost, pname, *keyLogFile)
 		} else {
 			slog.Debugf("Connecting to '%s'", url)
 			conn, err = grpcutils.NewClientConn(url, pname)

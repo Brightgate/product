@@ -62,6 +62,7 @@ var (
 	maxCompletions = apcfg.Int("max_completions", 64, true, nil)
 	maxUpdates     = apcfg.Int("max_updates", 32, true, nil)
 	logLevel       = apcfg.String("log_level", "info", false, aputil.LogSetLevel)
+	keyLogFile     = apcfg.String("key_log_file", "", false, nil)
 
 	pname string
 

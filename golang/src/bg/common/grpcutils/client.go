@@ -14,6 +14,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/pkg/errors"
@@ -37,7 +38,7 @@ func newConn(server, agent string, opts []grpc.DialOption) (*grpc.ClientConn, er
 }
 
 // NewClientTLSConn will create a new Cloud Appliance gRPC client using TLS.
-func NewClientTLSConn(serverAddr, certHost, agent string) (*grpc.ClientConn, error) {
+func NewClientTLSConn(serverAddr, certHost, agent, keyLogFile string) (*grpc.ClientConn, error) {
 	var opts []grpc.DialOption
 
 	cp, err := x509.SystemCertPool()
@@ -47,6 +48,15 @@ func NewClientTLSConn(serverAddr, certHost, agent string) (*grpc.ClientConn, err
 
 	tc := tls.Config{
 		RootCAs: cp,
+	}
+	if keyLogFile == "" {
+		keyLogFile = os.Getenv("SSLKEYLOGFILE")
+	}
+	if keyLogFile != "" {
+		w, err := os.Create(keyLogFile)
+		if err == nil {
+			tc.KeyLogWriter = w
+		}
 	}
 
 	ctls := credentials.NewTLS(&tc)

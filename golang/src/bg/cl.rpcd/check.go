@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"bg/cloud_models/appliancedb"
-	"bg/cloud_models/sessiondb"
 
 	"github.com/labstack/echo"
 )
@@ -27,7 +26,6 @@ type checkHandler struct {
 
 type checkResponse struct {
 	ApplianceDBStatus string   `json:"applianceDBStatus"`
-	SessionDBStatus   string   `json:"sessionDBStatus"`
 	ConfigdStatus     string   `json:"configdStatus"`
 	EnvironProblems   []string `json:"environProblems"`
 }
@@ -40,11 +38,10 @@ func (h *checkHandler) getCheckProduction(c echo.Context) error {
 	var fail bool
 	r := checkResponse{
 		ApplianceDBStatus: "unknown",
-		SessionDBStatus:   "unknown",
 		ConfigdStatus:     "unknown",
 		EnvironProblems:   nil,
 	}
-	dbURI := environ.ApplianceDB + "&connect_timeout=3"
+	dbURI := environ.PostgresConnection + "&connect_timeout=3"
 	applianceDB, err := appliancedb.Connect(dbURI)
 	if err != nil {
 		c.Logger().Errorf("check failed for applianceDB connect: %v", err)
@@ -62,27 +59,6 @@ func (h *checkHandler) getCheckProduction(c echo.Context) error {
 		}
 	}
 
-	dbURI = environ.SessionDB + "&connect_timeout=3"
-	sessionDB, err := sessiondb.Connect(dbURI, false)
-	if err != nil {
-		c.Logger().Errorf("check failed for sessionDB connect: %v", err)
-		fail = true
-		r.SessionDBStatus = err.Error()
-	} else {
-		err = sessionDB.PingContext(c.Request().Context())
-		sessionDB.Close()
-		if err != nil {
-			fail = true
-			r.SessionDBStatus = err.Error()
-			c.Logger().Errorf("check failed for sessionDB ping: %v", err)
-		} else {
-			r.SessionDBStatus = "ok"
-		}
-	}
-	if environ.Developer {
-		c.Logger().Errorf("production check failed: developer mode enabled")
-		r.EnvironProblems = append(r.EnvironProblems, "developer mode enabled")
-	}
 	if environ.DisableTLS {
 		c.Logger().Errorf("production check failed: TLS disabled")
 		r.EnvironProblems = append(r.EnvironProblems, "tls disabled")
@@ -119,7 +95,11 @@ func newCheckHandler(r *echo.Echo, getClientHandle getClientHandleFunc) *checkHa
 	h := &checkHandler{getClientHandle}
 	// A production-quality, in-depth health check
 	r.GET("/check/production", h.getCheckProduction)
-	// A basic, rapid-response health check
+	// This is a really stupid health check, but we have to have something
+	// that returns 200 for a simple GET.  We can't configure the method,
+	// headers, or posted data for a health check in GCP.
+	// K8s allows you to run a command as a health check, which would allow
+	// us to use https://github.com/grpc-ecosystem/grpc-health-probe.
 	r.GET("/check/pulse", func(c echo.Context) error {
 		return c.String(http.StatusOK, "healthy\n")
 	})

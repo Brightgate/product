@@ -143,7 +143,7 @@ func openidConnectProvider(r *echo.Echo) goth.Provider {
 		environ.OpenIDConnectDiscoveryURL,
 		"openid", "profile", "email", "phone")
 	if err != nil || openidConnect == nil {
-		r.Logger.Fatalf("failed to initialized openid-connect")
+		r.Logger.Fatalf("failed to initialize openid-connect: %v", err)
 	}
 	return openidConnect
 }
