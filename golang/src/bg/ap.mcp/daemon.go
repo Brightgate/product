@@ -74,6 +74,7 @@ type daemon struct {
 	child        *aputil.Child
 	childState   *aputil.ChildState
 	startTime    time.Time
+	stopTime     time.Time
 	exitDetected bool
 
 	// Tracking daemon health
@@ -168,8 +169,8 @@ func (d *daemon) setState(state int) {
 func (d *daemon) wait() {
 	var msg string
 
-	startTime := time.Now()
 	err := d.child.Wait()
+	d.stopTime = time.Now()
 
 	if err == nil {
 		msg = "exited cleanly"
@@ -177,7 +178,7 @@ func (d *daemon) wait() {
 		msg = fmt.Sprintf("exited with '%v'", err)
 	}
 	logInfo("%s exited %s after %s", d.Name, msg,
-		time.Since(startTime))
+		time.Since(d.startTime))
 
 	if err != nil && d.goalState != mcp.OFFLINE {
 		// XXX: there are certainly times we would like to know that a
@@ -256,6 +257,7 @@ func (d *daemon) start() {
 	child.LogPreserve(32 * 1024)
 
 	d.setState(mcp.STARTING)
+	d.startTime = time.Now()
 	if err = child.Start(); err != nil {
 		logWarn("%s unable to launch: %v", d.Name, err)
 		d.setState(mcp.OFFLINE)
@@ -359,7 +361,7 @@ func stateOffline(d *daemon) {
 	}
 
 	restartDelay := time.Second * time.Duration(d.failures)
-	ready := time.Since(d.startTime) > restartDelay
+	ready := time.Since(d.stopTime) > restartDelay
 	if d.goalState == mcp.ONLINE {
 		if d.blocked() {
 			d.setState(mcp.BLOCKED)
@@ -370,7 +372,6 @@ func stateOffline(d *daemon) {
 			d.setState(mcp.BROKEN)
 
 		} else if ready {
-			d.startTime = time.Now()
 			d.exitDetected = false
 			d.start()
 		}
