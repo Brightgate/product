@@ -271,6 +271,14 @@ func UnmarshalDPvulns(str []byte) (interface{}, error) {
 	return target, json.Unmarshal(str, &target)
 }
 
+// RDPVulnerability captures data we obtain from an rdpscan scan
+//
+type RDPVulnerability struct {
+	IP      string `json:"ip"`
+	Port    string `json:"port,omitempty"`
+	Details string `json:"details,omitempty"`
+}
+
 // MarshalNotVulnerable creates a JSON object representing why a test
 // is not vulnerable, including the reason.
 //

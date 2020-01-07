@@ -283,6 +283,7 @@ class AppliancePackage(Package):
         "rsyslog",
 
         "bg-hostapd",
+        "bg-rdpscan",
     ]
 
     def __init__(self, distro, arch, version, proto):

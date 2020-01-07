@@ -63,5 +63,10 @@
         "Options": {
                 "services": "ssh:22"
         }
+    },
+    "CVE-2019-0708": {
+        "Nickname": "bluekeep",
+        "Tool": "rdpscan",
+        "Actions": [ "Warn" ]
     }
 }
