@@ -1,5 +1,5 @@
 <!--
-  COPYRIGHT 2019 Brightgate Inc. All rights reserved.
+  COPYRIGHT 2020 Brightgate Inc. All rights reserved.
 
   This copyright notice is Copyright Management Information under 17 USC 1202
   and is included to protect this work and deter copyright infringement.
@@ -18,7 +18,7 @@ span.wifi {
 <template>
   <f7-page
     ptr
-    @ptr:refresh="usersPullRefresh"
+    @ptr:refresh="pullRefresh"
     @page:beforein="onPageBeforeIn">
 
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.users.title')" sliding />
@@ -162,13 +162,16 @@ export default {
     },
   },
   methods: {
-    usersPullRefresh: async function(event, done) {
-      await this.$store.dispatch('fetchUsers');
-      await this.$store.dispatch('fetchOrgAccounts');
-      this.accountList.forEach((uu) => {
-        this.$store.dispatch('fetchAccountSelfProvision', uu);
-      });
-      done();
+    pullRefresh: async function(done) {
+      try {
+        await this.$store.dispatch('fetchUsers');
+        await this.$store.dispatch('fetchOrgAccounts');
+        this.accountList.forEach((uu) => {
+          this.$store.dispatch('fetchAccountSelfProvision', uu);
+        });
+      } finally {
+        done();
+      }
     },
 
     onPageBeforeIn: async function() {

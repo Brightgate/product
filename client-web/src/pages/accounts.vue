@@ -1,5 +1,5 @@
 <!--
-  COPYRIGHT 2019 Brightgate Inc. All rights reserved.
+  COPYRIGHT 2020 Brightgate Inc. All rights reserved.
 
   This copyright notice is Copyright Management Information under 17 USC 1202
   and is included to protect this work and deter copyright infringement.
@@ -25,7 +25,7 @@ li.short-media-item >>> div.item-media {
 <template>
   <f7-page
     ptr
-    @ptr:refresh="acctsPullRefresh"
+    @ptr:refresh="pullRefresh"
     @page:beforein="onPageBeforeIn">
 
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.accounts.title')" sliding />
@@ -54,10 +54,8 @@ li.short-media-item >>> div.item-media {
   </f7-page>
 </template>
 <script>
-import Debug from 'debug';
 import vuex from 'vuex';
 import VueAvatar from 'vue-avatar';
-const debug = Debug('page:users');
 
 export default {
   components: {
@@ -86,13 +84,12 @@ export default {
   },
 
   methods: {
-    acctsPullRefresh: async function(event, done) {
+    pullRefresh: async function(done) {
       try {
         await this.$store.dispatch('fetchOrgAccounts');
-      } catch (err) {
-        debug('acctsPullRefresh failed', err);
+      } finally {
+        done();
       }
-      done();
     },
 
     onPageBeforeIn: function() {

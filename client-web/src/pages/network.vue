@@ -1,5 +1,5 @@
 <!--
-  COPYRIGHT 2019 Brightgate Inc. All rights reserved.
+  COPYRIGHT 2020 Brightgate Inc. All rights reserved.
 
   This copyright notice is Copyright Management Information under 17 USC 1202
   and is included to protect this work and deter copyright infringement.
@@ -25,7 +25,7 @@ li.accordion-item.accordion-item-opened >>> span.hide-when-accordion-open {
 }
 </style>
 <template>
-  <f7-page ptr @ptr:refresh="onPtrRefresh" @page:beforein="onPageBeforeIn">
+  <f7-page ptr @ptr:refresh="pullRefresh" @page:beforein="onPageBeforeIn">
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.network.title')" sliding />
     <bg-site-breadcrumb :siteid="$f7route.params.siteID" />
 
@@ -138,8 +138,12 @@ export default {
   },
 
   methods: {
-    onPtrRefresh: function(el, done) {
-      return this.$store.dispatch('fetchNetworkConfig').catch(() => {}).asCallback(done);
+    pullRefresh: async function(done) {
+      try {
+        await this.$store.dispatch('fetchNetworkConfig');
+      } finally {
+        done();
+      }
     },
 
     onPageBeforeIn: function() {

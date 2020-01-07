@@ -1,5 +1,5 @@
 <!--
-  COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+  COPYRIGHT 2020 Brightgate Inc. All rights reserved.
 
   This copyright notice is Copyright Management Information under 17 USC 1202
   and is included to protect this work and deter copyright infringement.
@@ -8,7 +8,7 @@
   such unauthorized removal or alteration will be a violation of federal law.
 -->
 <template>
-  <f7-page ptr @page:beforein="onPageBeforeIn" @ptr:refresh="onPtrRefresh">
+  <f7-page ptr @page:beforein="onPageBeforeIn" @ptr:refresh="pullRefresh">
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.compliance_report.title')" sliding />
     <bg-site-breadcrumb :siteid="$f7route.params.siteID" />
 
@@ -116,7 +116,6 @@
 
 <script>
 import Vuex from 'vuex';
-import Promise from 'bluebird';
 import {sortBy} from 'lodash-es';
 import vulnerability from '../vulnerability';
 import BGRingSummary from '../components/ring_summary.vue';
@@ -173,12 +172,14 @@ export default {
     vulnHeadline: function(vulnid) {
       return vulnerability.headline(vulnid);
     },
-    onPtrRefresh: function(el, done) {
-      return Promise.all([
-        this.$store.dispatch('fetchNetworkConfig').catch(() => {}),
-        this.$store.dispatch('fetchDevices').catch(() => {}),
-        this.$store.dispatch('fetchRings').catch(() => {}),
-      ]).asCallback(done);
+    pullRefresh: async function(done) {
+      try {
+        await this.$store.dispatch('fetchNetworkConfig');
+        await this.$store.dispatch('fetchDevices');
+        await this.$store.dispatch('fetchRings');
+      } finally {
+        done();
+      }
     },
 
     onPageBeforeIn: function() {

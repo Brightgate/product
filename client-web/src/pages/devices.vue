@@ -1,5 +1,5 @@
 <!--
-  COPYRIGHT 2019 Brightgate Inc. All rights reserved.
+  COPYRIGHT 2020 Brightgate Inc. All rights reserved.
 
   This copyright notice is Copyright Management Information under 17 USC 1202
   and is included to protect this work and deter copyright infringement.
@@ -104,7 +104,6 @@ div.shorter-block {
   </f7-page>
 </template>
 <script>
-import {f7Popover} from 'framework7-vue';
 import Vuex from 'vuex';
 import {sortBy} from 'lodash-es';
 import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
@@ -115,7 +114,6 @@ const RING_ORDER = ['unenrolled', 'quarantine', 'core', 'standard', 'devices', '
 export default {
   components: {
     'bg-site-breadcrumb': BGSiteBreadcrumb,
-    f7Popover,
   },
 
   data: function() {
@@ -171,12 +169,12 @@ export default {
   },
 
   methods: {
-    pullRefresh: function(event, done) {
-      this.$store.dispatch('fetchDevices').then(() => {
-        return done();
-      }).catch((err) => {
-        return done(err);
-      });
+    pullRefresh: async function(done) {
+      try {
+        await this.$store.dispatch('fetchDevices');
+      } finally {
+        done();
+      }
     },
 
     mediaIcon: function(dev) {
