@@ -93,9 +93,6 @@ func dhcpIPv4Expired(hwaddr string) {
 }
 
 func dhcpIPv4Changed(hwaddr string, client *cfgapi.ClientInfo) {
-	// In most cases, this change will just be a broadcast notification of a
-	// lease change we just registered.  All other cases should be an IP
-	// address being statically assigned.  Anything else is user error.
 	ipaddr := client.IPv4
 	expires := client.Expires
 
@@ -119,48 +116,44 @@ func dhcpIPv4Changed(hwaddr string, client *cfgapi.ClientInfo) {
 	h.Lock()
 	defer h.Unlock()
 
-	var oldipv4 net.IP
 	l := h.leaseSearch(hwaddr)
-	if l != nil {
-		if ipaddr.Equal(l.ipaddr) {
-			new := time.Now()
-			lease := new
+	if l != nil && ipaddr.Equal(l.ipaddr) {
+		// The IP address hasn't changed.  If the expiration time hasn't
+		// either, then this is a no-op.  We're probably responding to
+		// configd's broadcast notification of the property change we
+		// just issued.
 
-			if expires != nil {
-				new = *expires
-			}
-			if l.expires != nil {
-				lease = *l.expires
-			}
-
-			if new.Equal(lease) {
-				// The expiration times are missing or the same,
-				// so we're resetting the same static IP or
-				// seeing our own notificiation
-				return
-			}
+		var newExpires, oldExpires time.Time
+		if expires != nil {
+			newExpires = *expires
+		}
+		if l.expires != nil {
+			oldExpires = *l.expires
 		}
 
-		if expires != nil {
-			// Either somebody else explicitly made a dynamic IP
-			// assignment (which would be user error), or we've
-			// already changed the assignment since this
-			// notification was sent.  Either way, we're ignoring
-			// it.
-			slog.Infof("Rejecting non-static ipv4 assignment %s->%s",
-				ipaddr, hwaddr)
+		if newExpires.Equal(oldExpires) {
 			return
 		}
-
-		oldipv4 = l.ipaddr
 	}
 
-	if !ipaddr.Equal(oldipv4) {
-		if oldipv4 != nil {
-			notifyRelease(oldipv4)
-		}
-		notifyProvisioned(ipaddr)
+	if expires != nil {
+		// Either somebody else explicitly made a dynamic IP
+		// assignment (which would be user error), or we've
+		// already changed the assignment since this
+		// notification was sent.  Either way, we're ignoring
+		// it.
+		slog.Infof("Rejecting non-static ipv4 assignment %s->%s",
+			ipaddr, hwaddr)
+		return
 	}
+
+	if l != nil && !ipaddr.Equal(l.ipaddr) {
+		// The client's address is changing, so release its old lease
+		l.assigned = false
+		l.confirmed = false
+		notifyRelease(l.ipaddr)
+	}
+
 	l = h.getLease(ipaddr)
 	h.recordLease(l, hwaddr, "", ipaddr, nil)
 }
@@ -284,26 +277,6 @@ func notifyClaimed(p dhcp.Packet, ipaddr net.IP, name string,
 }
 
 /*
- * We've have provisionally assigned an IP address to a client.  Send a
- * net.resource message indicating that that address is no longer available.
- */
-func notifyProvisioned(ipaddr net.IP) {
-	action := base_msg.EventNetResource_PROVISIONED
-	resource := &base_msg.EventNetResource{
-		Timestamp:   aputil.NowToProtobuf(),
-		Sender:      proto.String(brokerd.Name),
-		Debug:       proto.String("-"),
-		Action:      &action,
-		Ipv4Address: proto.Uint32(network.IPAddrToUint32(ipaddr)),
-	}
-
-	err := brokerd.Publish(resource, base_def.TOPIC_RESOURCE)
-	if err != nil {
-		slog.Warnf("couldn't publish %s: %v", base_def.TOPIC_RESOURCE, err)
-	}
-}
-
-/*
  * An IP address has been released.  It may have been released or declined by
  * the client, or the lease may have expired.
  */
@@ -411,7 +384,6 @@ func (h *ringHandler) discover(p dhcp.Packet, options dhcp.Options) dhcp.Packet 
 	}
 	slog.Infof("  OFFER %s to %s", l.ipaddr, l.hwaddr)
 
-	notifyProvisioned(l.ipaddr)
 	dhcpMetrics.provisioned.Inc()
 	return dhcp.ReplyPacket(p, dhcp.Offer, h.serverIP, l.ipaddr, h.duration,
 		h.options.SelectOrderOrAll(options[dhcp.OptionParameterRequestList]))
@@ -540,7 +512,7 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	}
 
 	slog.Infof("   REQUEST assigned %s to %s (%q) until %s",
-		l.ipaddr, hwaddr, l.name, l.expires)
+		l.ipaddr, hwaddr, l.name, l.expires.Format(time.Stamp))
 
 	config.CreateProp(propPath(hwaddr, "ipv4"), l.ipaddr.String(), l.expires)
 	config.CreateProp(propPath(hwaddr, "dhcp_name"), l.name, nil)
@@ -782,13 +754,20 @@ func (h *ringHandler) leaseAssign(hwaddr string) (*lease, error) {
  * NIC.
  */
 func (h *ringHandler) leaseSearch(hwaddr string) *lease {
+	var rval *lease
+
 	for i := 0; i < h.rangeSpan; i++ {
 		l := &h.leases[i]
 		if l.assigned && l.hwaddr == hwaddr {
-			return l
+			if rval != nil {
+				slog.Warnf("multiple leases for %s: %v and %v",
+					hwaddr, rval.ipaddr, l.ipaddr)
+			} else {
+				rval = l
+			}
 		}
 	}
-	return nil
+	return rval
 }
 
 func (h *ringHandler) getLease(ip net.IP) *lease {
