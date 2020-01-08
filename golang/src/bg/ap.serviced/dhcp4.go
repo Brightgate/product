@@ -511,8 +511,13 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 		l.name = x
 	}
 
-	slog.Infof("   REQUEST assigned %s to %s (%q) until %s",
-		l.ipaddr, hwaddr, l.name, l.expires.Format(time.Stamp))
+	if l.expires == nil {
+		slog.Infof("   REQUEST assigned static %s to %s (%q)",
+			l.ipaddr, hwaddr, l.name)
+	} else {
+		slog.Infof("   REQUEST assigned %s to %s (%q) until %s",
+			l.ipaddr, hwaddr, l.name, l.expires.Format(time.Stamp))
+	}
 
 	config.CreateProp(propPath(hwaddr, "ipv4"), l.ipaddr.String(), l.expires)
 	config.CreateProp(propPath(hwaddr, "dhcp_name"), l.name, nil)
