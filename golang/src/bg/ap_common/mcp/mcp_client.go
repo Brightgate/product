@@ -122,22 +122,22 @@ func (l DaemonList) Sort() {
 	sort.Sort(l)
 }
 
-func newConnection(name string, ip net.IP) (*MCP, error) {
+func newConnection(daemon, host string) (*MCP, error) {
 	var handle *MCP
 
-	url := "tcp://" + ip.String() + base_def.MCP_COMM_REP_PORT
+	url := "tcp://" + host + base_def.MCP_COMM_REP_PORT
 	comm, err := comms.NewAPClient(url)
 	if err != nil {
 		err = fmt.Errorf("creating APClient: %v", err)
 	} else {
-		sender := fmt.Sprintf("%s(%d)", name, os.Getpid())
+		sender := fmt.Sprintf("%s(%d)", daemon, os.Getpid())
 		handle = &MCP{
 			sender:   sender,
 			comm:     comm,
 			platform: platform.NewPlatform(),
 		}
-		if name[0:3] == "ap." {
-			handle.daemon = name[3:]
+		if daemon[0:3] == "ap." {
+			handle.daemon = daemon[3:]
 			handle.SetState(INITING)
 		}
 		if err = handle.Ping(); err != nil {
@@ -151,8 +151,7 @@ func newConnection(name string, ip net.IP) (*MCP, error) {
 // New connects to ap.mcp on this node, and returns an opaque handle that can be
 // used for subsequent communication with the daemon.
 func New(name string) (*MCP, error) {
-	ip := net.IPv4(127, 0, 0, 1)
-	return newConnection(name, ip)
+	return newConnection(name, "localhost")
 }
 
 // NewPeer connects to ap.mcp running on a gateway node, and returns an opaque
@@ -162,7 +161,7 @@ func NewPeer(name string, ip net.IP) (*MCP, error) {
 		log.Printf("Warning: NewPeer() is only intended to be called " +
 			"by ap.mcp on satellite nodes.")
 	}
-	c, err := newConnection(name, ip)
+	c, err := newConnection(name, ip.String())
 	if err == nil {
 		c.comm.SetRecvTimeout(time.Second)
 		c.comm.SetSendTimeout(time.Second)
@@ -316,11 +315,6 @@ func (m *MCP) SetState(state int) error {
 
 // Do is used to instruct ap.mcp to initiate an operation on a daemon
 func (m *MCP) Do(daemon, command string) error {
-	// Allow time for the daemons to grind to a halt
-	if command == "stop" || command == "restart" {
-		m.comm.SetRecvTimeout(15 * time.Second)
-		m.comm.SetSendTimeout(15 * time.Second)
-	}
 	_, err := m.daemonMsg(DO, daemon, command, -1)
 
 	return err

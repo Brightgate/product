@@ -24,9 +24,12 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 )
 
+type daemonMap map[string]*mcp.DaemonState
+
 var (
-	dateFormat = time.Stamp
-	colFormat  string
+	dateFormat  = time.Stamp
+	colFormat   string
+	verboseWait bool
 )
 
 var validCmds = map[string]int{
@@ -99,14 +102,8 @@ func printNode(states mcp.DaemonList, node string) {
 	}
 }
 
-func printState(incoming string) {
-	var states mcp.DaemonList
+func printState(states mcp.DaemonList) {
 	var localID string
-
-	if err := json.Unmarshal([]byte(incoming), &states); err != nil {
-		fmt.Printf("Unable to unpack result from ap.mcp\n")
-		return
-	}
 
 	if len(states) == 0 {
 		return
@@ -144,11 +141,108 @@ func printState(incoming string) {
 	}
 }
 
+func getState(c *mcp.MCP, daemon string) (mcp.DaemonList, error) {
+	var states mcp.DaemonList
+
+	raw, err := c.GetState(daemon)
+	if err == nil {
+		if err = json.Unmarshal([]byte(raw), &states); err != nil {
+			err = fmt.Errorf("unpacking daemon state: %v", err)
+		}
+	}
+
+	return states, err
+}
+
+// Ask ap.mcp for the state of one or more daemons in the cluster.  Use the
+// returned slice to build a node:daemon indexed map, which will be returned to
+// the caller.
+func getStateMap(c *mcp.MCP, daemon string) (daemonMap, error) {
+	dmap := make(daemonMap)
+	states, err := getState(c, daemon)
+	if err == nil {
+		for _, d := range states {
+			key := d.Node + ":" + d.Name
+			dmap[key] = d
+		}
+	}
+	return dmap, err
+}
+
+// Periodically poll ap.mcp for the current states, printing any that have
+// changed.  Repeat until all of the daemons have reached a stable state.
+// This acts as a 'wait' until the current operation, and all its triggered
+// state changes, have completed.
+func wait(c *mcp.MCP, old daemonMap, timeout time.Duration) error {
+	const maxDelay = time.Second / 2
+	var done bool
+	var err error
+
+	transitionStates := map[int]bool{
+		mcp.STARTING: true,
+		mcp.INITING:  true,
+		mcp.STOPPING: true,
+	}
+
+	giveUp := time.Now().Add(timeout)
+	delay := 10 * time.Millisecond
+
+	for !done && err == nil {
+		var current daemonMap
+		done = true
+
+		time.Sleep(delay)
+		if delay *= 2; delay > maxDelay {
+			delay = maxDelay
+		}
+
+		current, err = getStateMap(c, "all")
+		for name, c := range current {
+			if transitionStates[c.State] {
+				// If any daemon is still transitioning, we keep
+				// waiting.
+				done = false
+			}
+
+			if verboseWait && c.State != old[name].State {
+				fmt.Printf("%s %s %v\n",
+					c.Since.Format(time.Stamp), c.Name,
+					mcp.States[c.State])
+			}
+		}
+		if !done && time.Now().After(giveUp) {
+			err = fmt.Errorf("timed out after %v", timeout)
+		}
+		old = current
+	}
+
+	return err
+}
+
+func do(c *mcp.MCP, cmd string, daemons []string) error {
+	state, err := getStateMap(c, "all")
+	if err == nil {
+		for _, daemon := range daemons {
+			if err = c.Do(daemon, cmd); err != nil {
+				break
+			}
+		}
+		if err == nil && (cmd == "stop" || verboseWait) {
+			err = wait(c, state, 10*time.Second)
+		}
+	}
+	return err
+}
+
 func ctl() {
-	var cmd, daemon string
+	var cmd string
 	var err error
 
 	args := os.Args[1:]
+	if len(args) > 0 && args[0] == "-v" {
+		args = args[1:]
+		verboseWait = true
+	}
 	if len(args) > 0 {
 		cmd = args[0]
 		args = args[1:]
@@ -165,41 +259,38 @@ func ctl() {
 		os.Exit(1)
 	}
 
-	if cmd == "ip" {
-		var status int
-
-		ip, err := mcp.Gateway()
-		if err == nil {
+	switch cmd {
+	case "ip":
+		ip, xerr := mcp.Gateway()
+		if xerr != nil {
+			err = fmt.Errorf("failed to get gateway: %v", xerr)
+		} else {
 			fmt.Printf("%v\n", ip)
-		} else {
-			fmt.Printf("failed to get gateway: %v", err)
-			status = 1
 		}
-		os.Exit(status)
+
+	case "status":
+		for _, d := range args {
+			states, xerr := getState(mcp, d)
+			if xerr == nil {
+				printState(states)
+			} else {
+				err = xerr
+				break
+			}
+		}
+
+	case "restart":
+		if err = do(mcp, "stop", args); err == nil {
+			err = do(mcp, "start", args)
+		}
+	case "stop", "start", "crash":
+		err = do(mcp, cmd, args)
 	}
 
-	for _, daemon = range args {
-		if cmd == "status" {
-			var rval string
-			rval, err = mcp.GetState(daemon)
-			if err != nil {
-				fmt.Printf("%s: failed get state for '%s': %v\n",
-					pname, daemon, err)
-			} else {
-				printState(rval)
-			}
-		} else {
-			err = mcp.Do(daemon, cmd)
-			if err != nil {
-				fmt.Printf("%s: failed to %s %s: %v\n", pname, cmd,
-					daemon, err)
-			}
-		}
-		if err != nil {
-			os.Exit(1)
-		}
+	if err != nil {
+		fmt.Printf("%s: %v\n", pname, err)
+		os.Exit(1)
 	}
-	os.Exit(0)
 }
 
 func init() {

@@ -345,8 +345,8 @@ func shutdown(rval int) {
 	// intended states for those daemons, we stop updating the online file.
 	onlineState.track = false
 
-	all := "all"
-	handleStop(selectTargets(&all))
+	daemonStopAll()
+
 	logInfo("MCP exiting")
 	if logfile != nil {
 		logfile.Close()

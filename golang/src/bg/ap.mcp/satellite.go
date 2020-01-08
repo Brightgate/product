@@ -72,28 +72,6 @@ func connectToGateway() *mcp.MCP {
 	}
 }
 
-// Shut down any daemons that may be running.  Return a set containing those
-// daemons.
-func satelliteIdle() daemonSet {
-	var err error
-
-	daemons.Lock()
-	active := activeDaemons()
-	if len(active) > 0 {
-		if x := handleStop(active); x != 0 {
-			err = fmt.Errorf("unable to shutdown all daemons")
-		}
-	}
-	daemons.Unlock()
-
-	if err != nil {
-		logWarn("%v", err)
-		shutdown(1)
-	}
-
-	return active
-}
-
 func satelliteLoop() {
 	var mcpd *mcp.MCP
 	var restartList daemonSet
@@ -113,7 +91,7 @@ func satelliteLoop() {
 		}
 
 		daemons.Lock()
-		state := getCurrentState(daemons.local)
+		state := getCurrentState(daemons.local, true)
 		daemons.Unlock()
 
 		state, err = mcpd.PeerUpdate(lifeDuration, state)
@@ -122,7 +100,7 @@ func satelliteLoop() {
 			mcpd.Close()
 			mcpd = nil
 
-			x := satelliteIdle()
+			x := daemonStopAll()
 			if len(restartList) == 0 {
 				restartList = x
 			}

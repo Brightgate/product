@@ -48,7 +48,7 @@ func handleGetState(set daemonSet, includeRemote bool) *string {
 		}
 	}
 
-	list := getCurrentState(set)
+	list := getCurrentState(set, len(set) > 1)
 	if includeRemote {
 		for _, remoteList := range daemons.remote {
 			list = append(list, remoteList.state...)
@@ -118,38 +118,12 @@ func handleStart(set daemonSet) {
 	}
 }
 
-func handleStop(set daemonSet) int {
-	running := make(daemonSet)
-	for n, d := range set {
+func handleStop(set daemonSet) {
+	for _, d := range set {
 		if !d.offline() {
-			running[n] = d
+			logInfo("Tell %s to shut down", d.Name)
 			d.goal <- mcp.OFFLINE
 		}
-	}
-
-	// Wait for the daemons to die
-	deadline := time.Now().Add(offlineTimeout)
-	for len(running) > 0 && time.Now().Before(deadline) {
-		for n, d := range running {
-			if d.offline() {
-				delete(running, n)
-			}
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	if len(running) > 0 {
-		msg := "failed to shut down: "
-		for n := range running {
-			msg += n + " "
-		}
-		logInfo("%s", msg)
-	}
-	return len(running)
-}
-
-func handleRestart(set daemonSet) {
-	if handleStop(set) == 0 {
-		handleStart(set)
 	}
 }
 
@@ -196,9 +170,6 @@ func handleDoCmd(set daemonSet, cmd string) base_msg.MCPResponse_OpResponse {
 	case "start":
 		handleStart(set)
 
-	case "restart":
-		handleRestart(set)
-
 	case "stop":
 		handleStop(set)
 
@@ -225,6 +196,7 @@ func selectTargets(name *string) daemonSet {
 			set[d.Name] = d
 		}
 	}
+
 	return set
 }
 

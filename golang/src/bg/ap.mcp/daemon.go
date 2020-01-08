@@ -298,6 +298,13 @@ func (d *daemon) stop() {
 	if !d.offline() && d.state != mcp.STOPPING {
 		d.setState(mcp.STOPPING)
 		if c := d.child; c != nil {
+			if len(d.dependents) > 0 {
+				// Any dependents should react to our change in
+				// state by shutting themselves down.  Give
+				// them a second to exit cleanly before we tear
+				// down any infrastructure they rely on.
+				time.Sleep(time.Second)
+			}
 			pid := -1
 			if c.Process != nil {
 				pid = c.Process.Pid
@@ -439,10 +446,12 @@ func daemonToState(d *daemon) *mcp.DaemonState {
 	return &state
 }
 
-func getCurrentState(set daemonSet) mcp.DaemonList {
+func getCurrentState(set daemonSet, includeSelf bool) mcp.DaemonList {
 	list := make(mcp.DaemonList, 0)
 
-	list = append(list, daemonToState(self))
+	if includeSelf {
+		list = append(list, daemonToState(self))
+	}
 
 	for _, d := range set {
 		list = append(list, daemonToState(d))
@@ -450,6 +459,37 @@ func getCurrentState(set daemonSet) mcp.DaemonList {
 	list.Sort()
 
 	return list
+}
+
+// Shut down any daemons that may be running.  Return a set containing those
+// daemons.
+func daemonStopAll() daemonSet {
+	daemons.Lock()
+	defer daemons.Unlock()
+
+	running := activeDaemons()
+	active := make(daemonSet)
+	for n, d := range running {
+		active[n] = d
+	}
+
+	deadline := time.Now().Add(offlineTimeout)
+	handleStop(running)
+	for len(running) > 0 && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+		running = activeDaemons()
+	}
+
+	if len(running) > 0 {
+		msg := "failed to shut down: "
+		for n := range running {
+			msg += n + " "
+		}
+		logWarn("%s", msg)
+		shutdown(1)
+	}
+
+	return active
 }
 
 // Build the lists of dependents and dependencies
