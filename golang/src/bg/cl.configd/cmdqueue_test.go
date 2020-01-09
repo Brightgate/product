@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -85,7 +85,7 @@ func mkQueries(start int64, n int) map[int64]*cfgmsg.ConfigQuery {
 	for i := int64(start); i < start+int64(n); i++ {
 		query, err := cfgapi.PropOpsToQuery([]cfgapi.PropertyOp{
 			{
-				Op:      cfgapi.PropAdd,
+				Op:      cfgapi.PropCreate,
 				Name:    fmt.Sprintf("@/test%d", i),
 				Value:   fmt.Sprintf("%d", i),
 				Expires: nil,

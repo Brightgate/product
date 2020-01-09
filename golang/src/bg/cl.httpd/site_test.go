@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -125,6 +125,11 @@ type TestConfigExec struct{}
 
 func (t *TestConfigExec) Ping(ctx context.Context) error {
 	return nil
+}
+
+func (t *TestConfigExec) ExecuteAt(ctx context.Context, ops []cfgapi.PropertyOp,
+	level cfgapi.AccessLevel) cfgapi.CmdHdl {
+	return &TestCmdHdl{}
 }
 
 func (t *TestConfigExec) Execute(ctx context.Context, ops []cfgapi.PropertyOp) cfgapi.CmdHdl {

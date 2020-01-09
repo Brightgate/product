@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -834,10 +834,10 @@ func configPropHandler(query *cfgmsg.ConfigQuery) (string, error) {
 		case cfgmsg.ConfigOp_PING:
 		// no-op
 
-		case cfgmsg.ConfigOp_ADDPROP:
+		case cfgmsg.ConfigOp_ADDVALID:
 			if level != cfgapi.AccessInternal {
 				err = fmt.Errorf("must be internal to add " +
-					"new settings")
+					"new property types")
 			} else {
 				slog.Debugf("Adding %s: %s", prop, val)
 				err = addSetting(prop, val)

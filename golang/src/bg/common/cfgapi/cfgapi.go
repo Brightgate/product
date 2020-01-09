@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -50,6 +50,7 @@ type CmdHdl interface {
 type ConfigExec interface {
 	Ping(ctx context.Context) error
 	Execute(ctx context.Context, ops []PropertyOp) CmdHdl
+	ExecuteAt(ctx context.Context, ops []PropertyOp, level AccessLevel) CmdHdl
 	HandleChange(path string, handler func([]string, string, *time.Time)) error
 	HandleDelete(path string, handler func([]string)) error
 	HandleExpire(path string, handler func([]string)) error
@@ -276,9 +277,9 @@ const (
 	PropSet
 	PropCreate
 	PropDelete
-	PropAdd
 	PropTest
 	PropTestEq
+	AddPropValidation
 	TreeReplace
 )
 
@@ -291,14 +292,14 @@ type PropertyOp struct {
 }
 
 var opName = map[int]string{
-	PropGet:     "PropGet",
-	PropSet:     "PropSet",
-	PropCreate:  "PropCreate",
-	PropDelete:  "PropDelete",
-	PropAdd:     "PropAdd",
-	PropTest:    "PropTest",
-	PropTestEq:  "PropTestEq",
-	TreeReplace: "TreeReplace",
+	PropGet:           "PropGet",
+	PropSet:           "PropSet",
+	PropCreate:        "PropCreate",
+	PropDelete:        "PropDelete",
+	PropTest:          "PropTest",
+	PropTestEq:        "PropTestEq",
+	AddPropValidation: "AddPropValidation",
+	TreeReplace:       "TreeReplace",
 }
 
 func (p PropertyOp) String() string {
@@ -361,6 +362,22 @@ func (c *Handle) HandleDelete(path string, handler func([]string)) error {
 // a property expires
 func (c *Handle) HandleExpire(path string, handler func([]string)) error {
 	return c.exec.HandleExpire(path, handler)
+}
+
+// AddPropValidation adds a new property and value type to ap.configd's syntax
+// validation table.
+func (c *Handle) AddPropValidation(path, proptype string) error {
+	ops := []PropertyOp{
+		{
+			Op:    AddPropValidation,
+			Name:  path,
+			Value: proptype,
+		},
+	}
+
+	_, err := c.exec.ExecuteAt(nil, ops, AccessInternal).Wait(nil)
+
+	return err
 }
 
 // GetProps retrieves the properties subtree rooted at the given property, and

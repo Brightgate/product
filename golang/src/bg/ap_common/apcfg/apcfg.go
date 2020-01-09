@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -189,7 +189,6 @@ func (c *APConfig) sendOp(query *cfgmsg.ConfigQuery) (string, error) {
 	var rval string
 
 	query.Sender = c.sender
-	query.Level = int32(c.level)
 	msg, err := proto.Marshal(query)
 	if err != nil {
 		return "", fmt.Errorf("unable to build op: %v", err)
@@ -214,6 +213,7 @@ func (c *APConfig) sendOp(query *cfgmsg.ConfigQuery) (string, error) {
 // verify that the connection is up and running.
 func (c *APConfig) Ping(ctx context.Context) error {
 	query := cfgapi.NewPingQuery()
+	query.Level = int32(c.level)
 	_, err := c.sendOp(query)
 	if err != nil {
 		err = fmt.Errorf("ping failed: %v", err)
@@ -221,10 +221,12 @@ func (c *APConfig) Ping(ctx context.Context) error {
 	return err
 }
 
-// Execute takes a slice of PropertyOp structures, marshals them into a protobuf
-// query, and sends that to ap.configd.  It then unmarshals the result from
-// ap.configd, and returns that to the caller.
-func (c *APConfig) Execute(ctx context.Context, ops []cfgapi.PropertyOp) cfgapi.CmdHdl {
+// ExecuteAt takes a slice of PropertyOp structures, marshals them into a protobuf
+// query, and sends that to ap.configd to be executed at the specified access
+// level.  It then unmarshals the result from ap.configd, and returns that to
+// the caller.
+func (c *APConfig) ExecuteAt(ctx context.Context, ops []cfgapi.PropertyOp,
+	level cfgapi.AccessLevel) cfgapi.CmdHdl {
 
 	rval := &cmdStatus{}
 
@@ -233,11 +235,18 @@ func (c *APConfig) Execute(ctx context.Context, ops []cfgapi.PropertyOp) cfgapi.
 		if query == nil {
 			rval.err = err
 		} else {
+			query.Level = int32(level)
 			rval.rval, rval.err = c.sendOp(query)
 		}
 	}
 
 	return rval
+}
+
+// Execute executes a set of operations at the default access level for this
+// config handle.
+func (c *APConfig) Execute(ctx context.Context, ops []cfgapi.PropertyOp) cfgapi.CmdHdl {
+	return c.ExecuteAt(ctx, ops, c.level)
 }
 
 // GetComm returns the APComm handle used to communicate with configd

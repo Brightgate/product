@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -213,9 +213,11 @@ func (c *Configd) Ping(ctx context.Context) error {
 	return err
 }
 
-// Execute takes a slice of PropertyOp structs, converts them to a
-// cfgapi.ConfigQuery, and sends it to cl.configd.
-func (c *Configd) Execute(ctx context.Context, ops []cfgapi.PropertyOp) cfgapi.CmdHdl {
+// ExecuteAt takes a slice of PropertyOp structs, converts them to a
+// cfgapi.ConfigQuery, and sends it to cl.configd to be executed at the
+// specified access level.
+func (c *Configd) ExecuteAt(ctx context.Context, ops []cfgapi.PropertyOp,
+	level cfgapi.AccessLevel) cfgapi.CmdHdl {
 	hdl := &cmdHdl{
 		cfg:      c,
 		inflight: true,
@@ -228,7 +230,7 @@ func (c *Configd) Execute(ctx context.Context, ops []cfgapi.PropertyOp) cfgapi.C
 	}
 
 	cmd.Sender = c.sender
-	cmd.Level = int32(c.level)
+	cmd.Level = int32(level)
 	cmd.SiteUUID = c.uuid
 
 	ctx, ctxcancel := c.getContext(ctx)
@@ -254,6 +256,12 @@ func (c *Configd) Execute(ctx context.Context, ops []cfgapi.PropertyOp) cfgapi.C
 	}
 
 	return hdl
+}
+
+// Execute executes a set of operations at the default access level for this
+// config handle.
+func (c *Configd) Execute(ctx context.Context, ops []cfgapi.PropertyOp) cfgapi.CmdHdl {
+	return c.ExecuteAt(ctx, ops, c.level)
 }
 
 // Close cleans up the gRPC connection to cl.configd

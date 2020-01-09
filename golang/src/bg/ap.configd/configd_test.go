@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -28,6 +28,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -47,6 +48,9 @@ var (
 	testFile = flag.String("testdata", "testdata/ap_testing.json",
 		"path to an initial config tree")
 	testData []byte
+	config   = internalConfig{
+		level: cfgapi.AccessUser,
+	}
 )
 
 type leafMap map[string]string
@@ -62,30 +66,16 @@ func checkLeaf(t *testing.T, prop, val string, leaves leafMap) {
 	}
 }
 
-func execute(level cfgapi.AccessLevel, ops []cfgapi.PropertyOp) (string, error) {
-	var rval string
-	var err error
-
-	query, err := cfgapi.PropOpsToQuery(ops)
-	query.Level = int32(level)
-	if err == nil {
-		response := processOneEvent(query)
-		if response.Response != cfgmsg.ConfigResponse_OK {
-			_, err = cfgapi.ParseConfigResponse(response)
-		} else if ops[0].Op == cfgapi.PropGet {
-			rval = response.Value
-		}
-	}
-
-	return rval, err
-}
-
 func executeInternal(ops []cfgapi.PropertyOp) (string, error) {
-	return execute(cfgapi.AccessInternal, ops)
+	ctx := context.Background()
+
+	return config.ExecuteAt(ctx, ops, cfgapi.AccessInternal).Wait(ctx)
 }
 
 func executeUser(ops []cfgapi.PropertyOp) (string, error) {
-	return execute(cfgapi.AccessUser, ops)
+	ctx := context.Background()
+
+	return config.Execute(ctx, ops).Wait(ctx)
 }
 
 // utility function to attempt the 'get' of a single property.  The caller
@@ -900,11 +890,13 @@ func TestInvalidAccessLevel(t *testing.T) {
 		cfgapi.AccessInternal + 1,
 	}
 
+	ctx := context.Background()
 	for _, level := range badLevels {
 		for _, x := range testops {
 			ops := []cfgapi.PropertyOp{x}
 			a := testTreeInit(t)
-			if _, err := execute(level, ops); err == nil {
+			_, err := config.ExecuteAt(ctx, ops, level).Wait(ctx)
+			if err == nil {
 				t.Errorf("%#v at level %d succeeded unexpectedly", x, level)
 			} else if !strings.Contains(err.Error(), "invalid access level") {
 				t.Errorf("%#v at level %d failed with unexpected error %v", x, level, err)

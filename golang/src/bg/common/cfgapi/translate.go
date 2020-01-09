@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -34,14 +34,14 @@ var (
 	}
 
 	apiToMsg = map[int]cfgmsg.ConfigOp_Operation{
-		PropGet:     cfgmsg.ConfigOp_GET,
-		PropSet:     cfgmsg.ConfigOp_SET,
-		PropCreate:  cfgmsg.ConfigOp_CREATE,
-		PropDelete:  cfgmsg.ConfigOp_DELETE,
-		PropAdd:     cfgmsg.ConfigOp_ADDPROP,
-		PropTest:    cfgmsg.ConfigOp_TEST,
-		PropTestEq:  cfgmsg.ConfigOp_TESTEQ,
-		TreeReplace: cfgmsg.ConfigOp_REPLACE,
+		PropGet:           cfgmsg.ConfigOp_GET,
+		PropSet:           cfgmsg.ConfigOp_SET,
+		PropCreate:        cfgmsg.ConfigOp_CREATE,
+		PropDelete:        cfgmsg.ConfigOp_DELETE,
+		PropTest:          cfgmsg.ConfigOp_TEST,
+		PropTestEq:        cfgmsg.ConfigOp_TESTEQ,
+		AddPropValidation: cfgmsg.ConfigOp_ADDVALID,
+		TreeReplace:       cfgmsg.ConfigOp_REPLACE,
 	}
 
 	codeToErr map[cfgmsg.ConfigResponse_OpResponse]error

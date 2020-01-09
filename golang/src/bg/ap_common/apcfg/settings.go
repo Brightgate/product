@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"bg/common/cfgapi"
-	"bg/common/cfgmsg"
 )
 
 type callbackFn func(name, val string) error
@@ -252,40 +251,22 @@ func Duration(name string, defval time.Duration, dynamic bool,
 	return &val
 }
 
-func genAddProps(root string) *cfgmsg.ConfigQuery {
-	ops := make([]cfgapi.PropertyOp, 0)
-	for _, s := range settings {
-		op := cfgapi.PropertyOp{
-			Op:    cfgapi.PropAdd,
-			Name:  root + "/" + s.name,
-			Value: s.val.Type(),
-		}
-		ops = append(ops, op)
-	}
-
-	query, err := cfgapi.PropOpsToQuery(ops)
-	if err != nil {
-		log.Fatalf("Failed to initialize setting '%s': %v\n", root, err)
-	}
-	query.Level = int32(cfgapi.AccessInternal)
-
-	return query
-}
-
 func settingsInit(hdl *cfgapi.Handle, config *APConfig) {
+	identity = config.name
+
 	if len(settings) == 0 {
 		return
 	}
-
-	identity = config.name
 	root := "@/settings/" + identity
 
 	// Register all possible settings with configd.  This will add them to
 	// the list of configuration paths allowed by the validation table, but
 	// will not make any changes to the config tree itself.
-	query := genAddProps(root)
-	if _, err := config.sendOp(query); err != nil {
-		log.Fatalf("failed to configure settings: %v", err)
+	for _, s := range settings {
+		path := root + "/" + s.name
+		if err := hdl.AddPropValidation(path, s.val.Type()); err != nil {
+			log.Fatalf("Failed to initialize setting '%s': %v\n", root, err)
+		}
 	}
 
 	// Fetch any setting values stored in the config tree, and use those to
