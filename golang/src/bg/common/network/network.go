@@ -31,6 +31,7 @@ var (
 	MacZeroInt  = HWAddrToUint64(MacZero)
 	MacBcast    = net.HardwareAddr([]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF})
 	MacBcastInt = HWAddrToUint64(MacBcast)
+	IPLocalhost = net.IPv4(127, 0, 0, 1)
 
 	// Multicast addresses for mDNS
 	MacmDNSv4 = net.HardwareAddr([]byte{0x01, 0x00, 0x5E, 0x00, 0x00, 0xFB})

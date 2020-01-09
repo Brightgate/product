@@ -106,6 +106,11 @@ var (
 		},
 	}
 
+	clientSelf = &cfgapi.ClientInfo{
+		Ring: base_def.RING_CORE,
+		IPv4: network.IPLocalhost,
+	}
+
 	domainname    string
 	brightgateDNS string
 	upstreamDNS   = "8.8.8.8:53"
@@ -405,6 +410,10 @@ func getClient(w dns.ResponseWriter) (string, *cfgapi.ClientInfo) {
 	addr, ok := w.RemoteAddr().(*net.UDPAddr)
 	if !ok {
 		return "", nil
+	}
+
+	if addr.IP.Equal(clientSelf.IPv4) {
+		return network.MacZero.String(), clientSelf
 	}
 
 	clientMtx.Lock()

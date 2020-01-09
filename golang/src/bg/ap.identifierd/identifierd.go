@@ -171,6 +171,10 @@ func handleRequest(event []byte) {
 		return
 	}
 
+	if ip.Equal(network.IPLocalhost) {
+		return
+	}
+
 	hwaddr, ok := getHWaddr(network.IPAddrToUint32(ip))
 	if !ok {
 		slog.Warnf("unknown entity: %v", ip)
