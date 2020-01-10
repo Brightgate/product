@@ -949,7 +949,7 @@ func updateFriendlyNames() {
 				fdns = base + "_" + strconv.Itoa(i)
 			}
 			updates[mac] = fdns
-			existing[mac] = fdns
+			existing[fdns] = mac
 		}
 	}
 	clientMtx.Unlock()
