@@ -1,5 +1,5 @@
 <!--
-  COPYRIGHT 2019 Brightgate Inc. All rights reserved.
+  COPYRIGHT 2020 Brightgate Inc. All rights reserved.
 
   This copyright notice is Copyright Management Information under 17 USC 1202
   and is included to protect this work and deter copyright infringement.
@@ -36,7 +36,14 @@ span.dev-inactive {
   text-align: right;
 }
 
-div.oui-name {
+/*
+ * Some list items need to have a primary piece of information as well as an
+ * explanatory comment or other piece of information below.
+ */
+div.list-item-primary-info {
+  text-align: right;
+}
+div.list-item-secondary-info {
   text-align: right;
   font-size: 12px;
   color: grey;
@@ -235,8 +242,8 @@ div.title-model {
       <!-- mac addr -->
       <f7-list-item :title="$t('message.dev_details.hw_addr')">
         <div>
-          <div>{{ dev.hwAddr }}</div>
-          <div class="oui-name">{{ devOUI }}</div>
+          <div class="list-item-primary-info">{{ dev.hwAddr }}</div>
+          <div class="list-item-secondary-info">{{ devOUI }}</div>
         </div>
       </f7-list-item>
 
@@ -269,7 +276,14 @@ div.title-model {
     <f7-list>
       <!-- name -->
       <f7-list-item :title="$t('message.dev_details.name')">
-        {{ dev.displayName }}
+        <div>
+          <div class="list-item-primary-info">{{ dev.displayName }}
+            <f7-link v-if="supportsFriendlyNameChange" icon-material="edit" @click="clientFriendlyDialog" />
+          </div>
+          <div v-if="supportsFriendlyNameChange" class="list-item-secondary-info">
+            {{ dev.friendlyName ? $t('message.dev_details.name_admin') : $t('message.dev_details.name_auto') }}
+          </div>
+        </div>
       </f7-list-item>
 
       <!-- dhcp id -->
@@ -375,6 +389,7 @@ export default {
       'accountByEmail',
       'userByUID',
       'currentSiteID',
+      'features',
       'networkConfig',
       'nodes',
       'vaps',
@@ -461,8 +476,19 @@ export default {
     },
 
     dnsName: function() {
-      return this.dev.dnsName;
+      if (this.dev.dnsName) {
+        return this.dev.dnsName;
+      }
+      if (this.dev.friendlyDNS) {
+        return this.dev.friendlyDNS;
+      }
+      return undefined;
     },
+
+    supportsFriendlyNameChange: function() {
+      return !!this.features.clientFriendlyName;
+    },
+
     // Return the subset of rings acceptable for the device's VAP.
     // If the VAP is missing, or something else goes wrong, return all rings.
     //
@@ -547,6 +573,38 @@ export default {
         storeArg, (err) => {
           return this.$t('message.dev_details.change_ring_err',
             {dev: this.dev.displayName, ring: newRing, err: err});
+        }
+      );
+    },
+    clientFriendlyDialog: async function() {
+      debug('clientFriendlyDialog');
+      let newFriendly;
+      try {
+        newFriendly = await new Promise((resolve, reject) => {
+          this.$f7.dialog.prompt(this.$t('message.dev_details.name_entry'),
+            resolve, reject, this.dev.friendlyName);
+        });
+      } catch (err) {
+        if (typeof err === 'string') {
+          // This is the user canceling the dialog
+          debug('user canceled dialog');
+          return;
+        }
+        // some other error
+        throw err;
+      }
+
+      // Could do additional/more snazzy name validation in the future, but the
+      // API will check the friendly name and reject if it's unacceptable.
+      debug('clientFriendlyDialog got new name', newFriendly);
+      const storeArg = {
+        deviceUniqID: this.dev.uniqid,
+        newFriendly: newFriendly,
+      };
+      await uiUtils.submitConfigChange(this, 'setDeviceFriendly', 'setDeviceFriendly',
+        storeArg, (err) => {
+          return this.$t('message.dev_details.name_entry_err',
+            {dev: this.dev.hwAddr, newFriendly: newFriendly, err: err});
         }
       );
     },

@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -1539,8 +1539,10 @@ export default [
     "connVAP": "psk",
     "dhcpExpiry": "2019-06-26T07:07:23Z",
     "dhcpName": "amazon-160612181",
-    "displayName": "echo-dot",
-    "dnsName": "echo-dot",
+    "displayName": "Pam's Echo Dot",
+    "dnsName": "",
+    "friendlyName": "Pam's Echo Dot",
+    "friendlyDNS": "pams-echo-dot",
     "hwAddr": "00:01:02:03:70:78",
     "ipv4Addr": "192.168.230.166",
     "ring": "devices",

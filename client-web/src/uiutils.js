@@ -33,7 +33,11 @@ async function submitConfigChange(component, description, storeDispatchOp, store
     if (err instanceof siteApi.UnfinishedOperationError) {
       txt = component.$t('message.api.unfinished_operation');
     } else {
-      txt = errMsgFunc(err);
+      if (err.response && err.response.data && err.response.data.message) {
+        txt = errMsgFunc(err.response.data.message);
+      } else {
+        txt = errMsgFunc(err);
+      }
     }
     component.$f7.toast.show({
       text: txt,

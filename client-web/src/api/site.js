@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -197,6 +197,10 @@ async function siteHealthGet(siteID) {
   return await commonApplianceGet(siteID, 'health');
 }
 
+async function siteFeaturesGet(siteID) {
+  return await commonApplianceGet(siteID, 'features');
+}
+
 // Load the list of rings from the server.
 async function siteRingsGet(siteID) {
   return await commonApplianceGet(siteID, 'rings');
@@ -218,6 +222,14 @@ async function siteClientsRingSet(siteID, deviceID, newRing) {
   const propName = `@/clients/${deviceID}/ring`;
   debug(`siteClientsRingSet: ${propName} -> ${newRing}`);
   await siteConfigWaitProp(siteID, propName, newRing);
+}
+
+async function siteClientsFriendlySet(siteID, deviceID, newFriendly) {
+  assert.equal(typeof siteID, 'string');
+  assert.equal(typeof deviceID, 'string');
+  assert.equal(typeof newFriendly, 'string');
+
+  await commonAppliancePost(siteID, `devices/${deviceID}`, {friendlyName: newFriendly});
 }
 
 // Load the DNS config from the server.
@@ -537,8 +549,10 @@ export default {
   sitesGet,
   siteDevicesGet,
   siteHealthGet,
+  siteFeaturesGet,
   siteRingsGet,
   siteClientsRingSet,
+  siteClientsFriendlySet,
   siteDNSConfigGet,
   siteVAPsGet,
   siteVAPPost,

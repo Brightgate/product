@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -266,6 +266,10 @@ export default {
         title: 'Device Details',
         device: 'Device',
         name: 'Name',
+        name_admin: 'Set by an administrator',
+        name_auto: 'Default name',
+        name_entry: 'Enter new name; clear to revert to default name.',
+        name_entry_err: 'Failed to change name for {dev} to {newFriendly}: {err}',
         ipv4_addr: 'IPv4 Address',
         ipv4_addr_none: 'None',
         hw_addr: 'Hardware Address',

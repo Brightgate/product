@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -22,8 +22,10 @@ import (
 
 	"bg/common/cfgapi"
 	"bg/common/mfg"
+	"bg/common/network"
 
 	"github.com/gorilla/mux"
+	"github.com/pkg/errors"
 	"github.com/satori/uuid"
 )
 
@@ -49,6 +51,8 @@ type daDevice struct {
 	DNSName         string                `json:"dnsName,omitempty"`
 	DHCPName        string                `json:"dhcpName"`
 	DHCPExpiry      string                `json:"dhcpExpiry,omitempty"`
+	FriendlyName    string                `json:"friendlyName,omitempty"`
+	FriendlyDNS     string                `json:"friendlyDNS,omitempty"`
 	IPv4Addr        *net.IP               `json:"ipv4Addr,omitempty"`
 	OSVersion       string                `json:"osVersion,omitempty"`
 	Active          bool                  `json:"active"`
@@ -84,6 +88,8 @@ func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
 		DNSName:         client.DNSName,
 		DHCPName:        client.DHCPName,
 		DHCPExpiry:      "static",
+		FriendlyDNS:     client.FriendlyDNS,
+		FriendlyName:    client.FriendlyName,
 		IPv4Addr:        &client.IPv4,
 		OSVersion:       "",
 		Active:          client.IsActive(),
@@ -167,7 +173,34 @@ func demoDevicesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type demoPostDevice struct {
-	Ring *string `json:"ring"`
+	FriendlyName *string `json:"friendlyName"`
+	Ring         *string `json:"ring"`
+}
+
+// JSONError is an echo-compatible JSON response to be sent with an HTTP error
+type JSONError struct {
+	Message string `json:"message"`
+}
+
+// HTTPJSONError is an analogue to http.Error, which emits an echo-style
+// { message: "something failed" } when something goes wrong.
+func HTTPJSONError(w http.ResponseWriter, error string, code int) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(code)
+
+	/* mirrors logic in echo NewHTTPError */
+	msg := http.StatusText(code)
+	if len(error) > 0 {
+		msg = error
+	}
+	jsonErr := JSONError{
+		Message: msg,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(&jsonErr); err != nil {
+		panic(err)
+	}
 }
 
 // Presently this only allows for ring changes
@@ -176,16 +209,40 @@ func demoDevicePostHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	deviceID := vars["deviceid"]
 
-	var input demoPostDevice
+	var input, empty demoPostDevice
 	if err = json.NewDecoder(r.Body).Decode(&input); err != nil {
 		log.Printf("demoPostDevice decode failed: %v", err)
 		http.Error(w, "bad device", http.StatusBadRequest)
 		return
 	}
 
-	if input.Ring == nil {
-		http.Error(w, "bad ring value", http.StatusBadRequest)
+	if input == empty {
+		http.Error(w, "must specify a field to modify", http.StatusBadRequest)
 		return
+	}
+
+	if input.FriendlyName != nil {
+		features, err := config.GetFeatures()
+		if err != nil {
+			err = errors.Wrap(err, "could not get features")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if !features[cfgapi.FeatureClientFriendlyName] {
+			http.Error(w, "friendly names not supported for this client",
+				http.StatusBadRequest)
+			return
+		}
+		// allow '', it means "return to the default"
+		if *input.FriendlyName != "" {
+			dnsName := network.GenerateDNSName(*input.FriendlyName)
+			if dnsName == "" {
+				HTTPJSONError(w,
+					"invalid name; must contain some alphanumeric characters",
+					http.StatusBadRequest)
+				return
+			}
+		}
 	}
 
 	ops := []cfgapi.PropertyOp{
@@ -193,12 +250,28 @@ func demoDevicePostHandler(w http.ResponseWriter, r *http.Request) {
 			Op:   cfgapi.PropTest,
 			Name: fmt.Sprintf("@/clients/%s", deviceID),
 		},
-		{
+	}
+
+	if input.Ring != nil {
+		ops = append(ops, cfgapi.PropertyOp{
 			Op:    cfgapi.PropCreate,
 			Name:  fmt.Sprintf("@/clients/%s/ring", deviceID),
 			Value: *input.Ring,
-		},
+		})
 	}
+
+	if input.FriendlyName != nil {
+		op := cfgapi.PropCreate
+		if *input.FriendlyName == "" {
+			op = cfgapi.PropDelete
+		}
+		ops = append(ops, cfgapi.PropertyOp{
+			Op:    op,
+			Name:  fmt.Sprintf("@/clients/%s/friendly_name", deviceID),
+			Value: *input.FriendlyName,
+		})
+	}
+
 	_, err = config.Execute(r.Context(), ops).Wait(r.Context())
 	if err != nil {
 		log.Printf("demoDevicePost failed to execute: %v", err)
@@ -590,6 +663,21 @@ func demoConfigGetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// getFeatures implements GET /api/sites/:uuid/features
+func demoFeaturesGetHandler(w http.ResponseWriter, r *http.Request) {
+	features, err := config.GetFeatures()
+	if err != nil {
+		http.Error(w, "failed to get features",
+			http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err = json.NewEncoder(w).Encode(features); err != nil {
+		panic(err)
+	}
+	return
+}
+
 func demoConfigPostHandler(w http.ResponseWriter, r *http.Request) {
 	var ops []cfgapi.PropertyOp
 
@@ -894,6 +982,7 @@ func makeDemoAPIRouter() *mux.Router {
 	router.HandleFunc("/sites/{s}/config", demoConfigPostHandler).Methods("POST")
 	router.HandleFunc("/sites/{s}/devices", demoDevicesHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/devices/{deviceid}", demoDevicePostHandler).Methods("POST")
+	router.HandleFunc("/sites/{s}/features", demoFeaturesGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/network/dns", demoDNSInfoGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/network/vap", demoVAPGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/network/vap/{vapname}", demoVAPNameGetHandler).Methods("GET")

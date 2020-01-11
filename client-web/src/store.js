@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -94,6 +94,7 @@ class Site {
       baseAddress: '',
     },
     this.health = {};
+    this.features = {};
     debug(`done new Site id=${id}`);
   }
 
@@ -377,6 +378,10 @@ const mutations = {
     getSite(state, id).health = health;
   },
 
+  setSiteFeatures(state, {id, features}) {
+    getSite(state, id).features = features;
+  },
+
   setSiteRings(state, {id, rings}) {
     getSite(state, id).rings = rings;
   },
@@ -544,6 +549,13 @@ const getters = {
   },
   health: (state) => {
     return state.currentSite.health;
+  },
+
+  siteFeatures: (state) => (siteID) => {
+    return getSite(state, siteID).features;
+  },
+  features: (state) => {
+    return state.currentSite.features;
   },
 
   appMode: (state) => {
@@ -846,6 +858,16 @@ const actions = {
     context.commit('setSiteHealth', {id: id, health: health});
   },
 
+  async fetchSiteFeatures(context) {
+    if (context.state.currentSite === nullSite) {
+      debug('fetchSiteFeatures: skipped, nullSite');
+      return;
+    }
+    const id = context.state.currentSiteID;
+    const features = await siteApi.siteFeaturesGet(id);
+    context.commit('setSiteFeatures', {id: id, features: features});
+  },
+
   async setCurrentSiteID(context, {id}) {
     context.commit('setCurrentSiteID', id);
     await context.dispatch('fetchPeriodicStop');
@@ -1095,6 +1117,18 @@ const actions = {
     await context.dispatch('fetchDevices');
   },
 
+  // Ask the server to change the friendlyName property for a device.
+  async setDeviceFriendly(context, {deviceUniqID, newFriendly}) {
+    if (context.state.currentSite === nullSite) {
+      debug('changeRing: skipped, nullSite');
+      return;
+    }
+    const id = context.state.currentSiteID;
+    await siteApi.siteClientsFriendlySet(id, deviceUniqID, newFriendly);
+    await context.dispatch('fetchDevices');
+  },
+
+
   // Ask the server to repair a vulnerability by setting the appropriate
   // property.
   async repairVuln(context, {deviceID, vulnID}) {
@@ -1252,6 +1286,7 @@ const actions = {
     context.dispatch('fetchAccountRoles', context.state.myAccountUUID).catch(() => {});
     context.dispatch('fetchAccountSelfProvision', context.state.myAccountUUID).catch(() => {});
     context.dispatch('fetchSiteHealth').catch(() => {});
+    context.dispatch('fetchSiteFeatures').catch(() => {});
     context.dispatch('fetchDevices').catch(() => {});
     context.dispatch('fetchRings').catch(() => {});
     context.dispatch('fetchUsers').catch(() => {});

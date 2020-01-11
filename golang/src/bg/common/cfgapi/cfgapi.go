@@ -463,6 +463,37 @@ func (c *Handle) Close() {
 	c.exec.Close()
 }
 
+// CfgFeature describes a configuration feature
+type CfgFeature string
+
+// FeatureClientFriendlyName indicates that the site is running software new
+// enough to accept friendly_name property settings.  This functionality was
+// introduced with cfgversion 25.
+const FeatureClientFriendlyName CfgFeature = "clientFriendlyName"
+
+// CfgFeatures captures information about config-tree related features which
+// may be present, which are not obviously discoverable simply by inspecting
+// the tree.
+type CfgFeatures map[CfgFeature]bool
+
+// GetFeatures returns the Features information for the tree being inspected;
+// this allows clients to determine whether certain functionality is supported.
+func (c *Handle) GetFeatures() (CfgFeatures, error) {
+	val, err := c.GetProp("@/cfgversion")
+	if err != nil {
+		return nil, err
+	}
+	var rval int
+	if rval, err = strconv.Atoi(val); err != nil {
+		return nil, fmt.Errorf("malformed cfgversion: %s", val)
+	}
+	features := make(CfgFeatures)
+	if rval >= 25 {
+		features[FeatureClientFriendlyName] = true
+	}
+	return features, nil
+}
+
 // DisplayName returns the name of the client suitable for primary
 // display to the user.
 func (c *ClientInfo) DisplayName() string {

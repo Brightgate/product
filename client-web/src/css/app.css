@@ -1,8 +1,23 @@
+/*
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
+ *
+ * This copyright notice is Copyright Management Information under 17 USC 1202
+ * and is included to protect this work and deter copyright infringement.
+ * Removal or alteration of this Copyright Management Information without the
+ * express written permission of Brightgate Inc is prohibited, and any
+ * such unauthorized removal or alteration will be a violation of federal law.
+ */
+
 /* Your app styles here */
 
 /* Override vue-avatar's boneheaded forced font selection */
 .vue-avatar--wrapper {
 	font-family: var(--f7-font-family) !important;
+}
+
+/* Tweak f7 to ensure that item titles have some margin */
+.list .item-title {
+	margin-right: 4px;
 }
 
 :root {

@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -21,8 +21,10 @@ import (
 	"bg/cloud_models/appliancedb"
 	"bg/common/cfgapi"
 	"bg/common/mfg"
+	"bg/common/network"
 
 	"github.com/labstack/echo"
+	"github.com/pkg/errors"
 	"github.com/satori/uuid"
 	"github.com/sfreiberg/gotwilio"
 	"github.com/ttacon/libphonenumber"
@@ -169,7 +171,7 @@ func (a *siteHandler) getConfig(c echo.Context) error {
 	return c.JSON(http.StatusOK, pnode.Value)
 }
 
-// getConfig implements GET /api/sites/:uuid/configtree
+// getConfigTree implements GET /api/sites/:uuid/configtree
 func (a *siteHandler) getConfigTree(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
@@ -184,6 +186,21 @@ func (a *siteHandler) getConfigTree(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, pnode)
+}
+
+// getFeatures implements GET /api/sites/:uuid/features
+func (a *siteHandler) getFeatures(c echo.Context) error {
+	hdl, err := a.getClientHandle(c.Param("uuid"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	defer hdl.Close()
+
+	features, err := hdl.GetFeatures()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError)
+	}
+	return c.JSON(http.StatusOK, features)
 }
 
 // postConfig implements POST /api/sites/:uuid/config
@@ -255,6 +272,8 @@ type apiDevice struct {
 	DHCPName        string                 `json:"dhcpName,omitempty"`
 	DNSName         string                 `json:"dnsName,omitempty"`
 	DHCPExpiry      string                 `json:"dhcpExpiry,omitempty"`
+	FriendlyName    string                 `json:"friendlyName,omitempty"`
+	FriendlyDNS     string                 `json:"friendlyDNS,omitempty"`
 	IPv4Addr        *net.IP                `json:"ipv4Addr,omitempty"`
 	OSVersion       string                 `json:"osVersion,omitempty"`
 	Active          bool                   `json:"active"`
@@ -282,6 +301,8 @@ func buildDeviceResponse(c echo.Context, hdl *cfgapi.Handle,
 		DHCPName:        client.DHCPName,
 		DNSName:         client.DNSName,
 		DHCPExpiry:      "static",
+		FriendlyDNS:     client.FriendlyDNS,
+		FriendlyName:    client.FriendlyName,
 		IPv4Addr:        &client.IPv4,
 		OSVersion:       "",
 		Active:          client.IsActive(),
@@ -345,11 +366,12 @@ func (a *siteHandler) getDevices(c echo.Context) error {
 }
 
 type apiPostDevice struct {
-	Ring *string `json:"ring"`
+	FriendlyName *string `json:"friendlyName"`
+	Ring         *string `json:"ring"`
 }
 
 // postDevice implements POST /api/sites/:uuid/devices/:deviceID
-// Presently this only allows for ring changes
+// Presently this only allows for ring and friendly name changes.
 func (a *siteHandler) postDevice(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
@@ -359,25 +381,57 @@ func (a *siteHandler) postDevice(c echo.Context) error {
 
 	deviceID := c.Param("deviceid")
 
-	var input apiPostDevice
+	var input, empty apiPostDevice
 	if err := c.Bind(&input); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "bad device")
 	}
-	// For now, Ring is the only modifiable property.
-	if input.Ring == nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "bad ring value")
+	if input == empty {
+		return echo.NewHTTPError(http.StatusBadRequest, "must specify a field to modify")
 	}
 
+	if input.FriendlyName != nil {
+		features, err := hdl.GetFeatures()
+		if err != nil {
+			err = errors.Wrap(err, "could not get features")
+			return echo.NewHTTPError(http.StatusInternalServerError, err)
+		}
+		if !features[cfgapi.FeatureClientFriendlyName] {
+			return echo.NewHTTPError(http.StatusBadRequest,
+				"friendly names not supported for this client")
+		}
+		// allow '', it means "return to the default"
+		if *input.FriendlyName != "" {
+			dnsName := network.GenerateDNSName(*input.FriendlyName)
+			if dnsName == "" {
+				return echo.NewHTTPError(http.StatusBadRequest,
+					"invalid name; must contain some alphanumeric characters")
+			}
+		}
+	}
 	ops := []cfgapi.PropertyOp{
 		{
 			Op:   cfgapi.PropTest,
 			Name: fmt.Sprintf("@/clients/%s", deviceID),
 		},
-		{
+	}
+	if input.Ring != nil {
+		ops = append(ops, cfgapi.PropertyOp{
 			Op:    cfgapi.PropCreate,
 			Name:  fmt.Sprintf("@/clients/%s/ring", deviceID),
 			Value: *input.Ring,
-		},
+		})
+	}
+
+	if input.FriendlyName != nil {
+		op := cfgapi.PropCreate
+		if *input.FriendlyName == "" {
+			op = cfgapi.PropDelete
+		}
+		ops = append(ops, cfgapi.PropertyOp{
+			Op:    op,
+			Name:  fmt.Sprintf("@/clients/%s/friendly_name", deviceID),
+			Value: *input.FriendlyName,
+		})
 	}
 	return executePropChange(c, hdl, ops)
 }
@@ -1190,6 +1244,7 @@ func newSiteHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []echo.M
 	siteU.GET("/devices", h.getDevices, admin)
 	siteU.POST("/devices/:deviceid", h.postDevice, admin)
 	siteU.POST("/enroll_guest", h.postEnrollGuest, user)
+	siteU.GET("/features", h.getFeatures, user)
 	siteU.GET("/health", h.getHealth, user)
 	siteU.GET("/network/vap", h.getNetworkVAP, user)
 	siteU.GET("/network/dns", h.getNetworkDNS, user)

@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -287,6 +287,10 @@ const mockWan = {
   'dhcpRoute': '10.1.4.1',
 };
 
+const mockFeatures = {
+  'clientFriendlyName': true,
+};
+
 const mockHealth = {
   'heartbeatProblem': true,
   'configProblem': true,
@@ -439,6 +443,7 @@ function mockAxios(normalAxios, mode) {
   mock
     .onGet('/api/sites').reply(200, mockSites)
     .onGet(/\/api\/sites\/.+\/users/).reply(200, mockUsers)
+    .onGet(/\/api\/sites\/.+\/features/).reply(200, mockFeatures)
     .onGet(/\/api\/sites\/.+\/health/).reply(200, mockHealth)
     .onGet(/\/api\/sites\/.+\/config\?.*/).reply(configGetHandler)
     .onPost(/\/api\/sites\/.+\/config/).reply(configPostHandler)
