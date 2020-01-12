@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -98,9 +98,11 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -114,6 +116,7 @@ import (
 	"time"
 
 	"bg/cl_common/clcfg"
+	"bg/cl_common/registry"
 	"bg/common/cfgapi"
 	"bg/common/network"
 	"bg/common/ssh"
@@ -127,8 +130,9 @@ const pname = "cl-service"
 var environ struct {
 	// XXX: this will eventually be a postgres connection, and we will look
 	// up the per-appliance cl.configd connection via the database
-	ConfigdConnection string `envcfg:"B10E_CLCONFIGD_CONNECTION"`
-	DisableTLS        bool   `envcfg:"B10E_CLCONFIGD_DISABLE_TLS"`
+	ConfigdConnection  string `envcfg:"B10E_CLCONFIGD_CONNECTION"`
+	DisableTLS         bool   `envcfg:"B10E_CLCONFIGD_DISABLE_TLS"`
+	PostgresConnection string `envcfg:"REG_DBURI"`
 }
 
 var (
@@ -320,8 +324,22 @@ func connectToConfigd() error {
 	if url == "" {
 		return fmt.Errorf("B10E_CLCONFIGD_CONNECTION must be set")
 	}
+
+	u, err := registry.SiteUUIDByNameFuzzy(
+		context.Background(), environ.PostgresConnection, *uuid)
+	if err != nil {
+		if ase, ok := err.(registry.AmbiguousSiteError); ok {
+			log.Fatal(ase.Pretty())
+		}
+		log.Fatal(err)
+	}
+	if u.SiteName != "" {
+		log.Printf("%q matched more than one site, but %q (%s) seemed the most likely",
+			*uuid, u.SiteName, u.SiteUUID)
+	}
+
 	tls := !environ.DisableTLS
-	conn, err := clcfg.NewConfigd(pname, *uuid, url, tls)
+	conn, err := clcfg.NewConfigd(pname, u.SiteUUID.String(), url, tls)
 	if err != nil {
 		return fmt.Errorf("connection failure: %s", err)
 	}

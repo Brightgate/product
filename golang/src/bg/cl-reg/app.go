@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -37,6 +37,24 @@ func listAppliances(cmd *cobra.Command, args []string) error {
 	apps, err := db.AllApplianceIDs(context.Background())
 	if err != nil {
 		return err
+	}
+
+	u, err := registry.SiteUUIDByNameFuzzy(context.Background(), db, siteUUID)
+	if err != nil {
+		if ase, ok := err.(registry.AmbiguousSiteError); ok {
+			fmt.Fprint(os.Stderr, ase.Pretty())
+			os.Exit(1)
+		}
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	if u.SiteName != "" {
+		fmt.Fprintf(os.Stderr,
+			"%q matched more than one site, but %q (%s) seemed the most likely\n",
+			siteUUID, u.SiteName, u.SiteUUID)
+	}
+	if u.SiteUUID != uuid.Nil {
+		siteUUID = u.SiteUUID.String()
 	}
 
 	// XXX We could write a query with a WHERE clause ...

@@ -126,6 +126,14 @@
 
 [[projects]]
   branch = "master"
+  digest = "1:6bdcaf23f04adc4f12472ffa24a11868f8a3503d438485e5729b06a2cc4d0901"
+  name = "github.com/dhduvall/closestmatch"
+  packages = ["."]
+  pruneopts = ""
+  revision = "0d2a99329185d841e32198869ed45c68007228d0"
+
+[[projects]]
+  branch = "master"
   digest = "1:512a089b2397eb5c8a3ec115c5f55b8e37e1e85ef1748b29158dba2675e56509"
   name = "github.com/dhduvall/gcloudzap"
   packages = ["."]
@@ -1265,6 +1273,7 @@
     "github.com/antonlindstrom/pgstore",
     "github.com/bluele/gcache",
     "github.com/dgrijalva/jwt-go",
+    "github.com/dhduvall/closestmatch",
     "github.com/dhduvall/gcloudzap",
     "github.com/fatih/color",
     "github.com/fsouza/fake-gcs-server/fakestorage",

@@ -191,3 +191,7 @@
 [[constraint]]
   name = "github.com/unrolled/secure"
   version = "1.0.4"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/dhduvall/closestmatch"
