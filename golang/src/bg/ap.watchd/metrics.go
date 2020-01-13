@@ -12,8 +12,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/gob"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -359,13 +360,15 @@ func copyPortlist(in []int) []int {
 }
 
 func writeStats(dir string, sn *archive.Snapshot) error {
-	file := dir + "/" + sn.Start.Format(time.RFC3339) + ".json"
+	file := dir + "/" + sn.Start.Format(time.RFC3339) + ".gob"
 
 	archive := []*archive.Snapshot{sn}
-	s, err := json.MarshalIndent(archive, "", "  ")
+	buf := new(bytes.Buffer)
+	enc := gob.NewEncoder(buf)
+	err := enc.Encode(archive)
 	if err != nil {
-		err = fmt.Errorf("unable to construct snapshot JSON: %v", err)
-	} else if err = ioutil.WriteFile(file, s, 0644); err != nil {
+		err = fmt.Errorf("unable to construct snapshot GOB: %v", err)
+	} else if err = ioutil.WriteFile(file, buf.Bytes(), 0644); err != nil {
 		err = fmt.Errorf("failed to write snapshot file %s: %v",
 			file, err)
 	}

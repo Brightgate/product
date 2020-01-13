@@ -112,6 +112,7 @@ var updates = map[string]updateInfo{
 type uploadType struct {
 	dir    string
 	prefix string
+	suffix string
 	ctype  string
 }
 
@@ -119,12 +120,26 @@ var uploadTypes = []uploadType{
 	{
 		"__APDATA__/watchd/droplog",
 		"drops",
+		".json",
 		archive.DropContentType,
 	},
 	{
 		"__APDATA__/watchd/stats",
 		"stats",
+		".json",
 		archive.StatContentType,
+	},
+	{
+		"__APDATA__/watchd/droplog",
+		"drops",
+		".gob",
+		archive.DropBinaryType,
+	},
+	{
+		"__APDATA__/watchd/stats",
+		"stats",
+		".gob",
+		archive.StatBinaryType,
 	},
 }
 
@@ -288,7 +303,7 @@ func generateSignedURLs(rpcClient cloud_rpc.CloudStorageClient,
 }
 
 // Get a list of the filenames in a directory, up to a caller-specified limit
-func getFilenames(dir string, max int) []string {
+func getFilenames(dir, suffix string, max int) []string {
 	names := make([]string, 0)
 
 	files, err := ioutil.ReadDir(dir)
@@ -299,7 +314,9 @@ func getFilenames(dir string, max int) []string {
 			if i == max {
 				break
 			}
-			names = append(names, f.Name())
+			if strings.HasSuffix(f.Name(), suffix) {
+				names = append(names, f.Name())
+			}
 		}
 	}
 	return names
@@ -323,7 +340,7 @@ func doUpload(rpcClient cloud_rpc.CloudStorageClient) {
 	for _, t := range uploadTypes {
 		dir := plat.ExpandDirPath(t.dir)
 		urls, err := generateSignedURLs(rpcClient, &t,
-			getFilenames(dir, *uploadBatchSize))
+			getFilenames(dir, t.suffix, *uploadBatchSize))
 		if err != nil {
 			slog.Warnf("Couldn't generate signed URLs for upload: %v", err)
 			continue
@@ -334,6 +351,7 @@ func doUpload(rpcClient cloud_rpc.CloudStorageClient) {
 				signedURL: url,
 				uType:     t,
 			}
+			slog.Debugf("uploading %s as %s", u.source, t.ctype)
 			uploads = append(uploads, u)
 		}
 	}

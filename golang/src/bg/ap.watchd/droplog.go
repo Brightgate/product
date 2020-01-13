@@ -13,7 +13,8 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
+	"bytes"
+	"encoding/gob"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -152,13 +153,15 @@ func archiveOne(start, end time.Time, lan, wan []*archive.DropRecord) {
 	if len(wan) > 0 {
 		rec.WanDrops = wan
 	}
-	file := dropDir + "/" + start.Format(time.RFC3339) + ".json"
-
+	file := dropDir + "/" + start.Format(time.RFC3339) + ".gob"
 	archive := []archive.DropArchive{rec}
-	s, err := json.MarshalIndent(&archive, "", "  ")
+	buf := new(bytes.Buffer)
+	enc := gob.NewEncoder(buf)
+	err := enc.Encode(&archive)
+
 	if err != nil {
-		slog.Warnf("unable to construct droplog JSON: %v", err)
-	} else if err = ioutil.WriteFile(file, s, 0644); err != nil {
+		slog.Warnf("unable to construct droplog GOB: %v", err)
+	} else if err = ioutil.WriteFile(file, buf.Bytes(), 0644); err != nil {
 		slog.Warnf("failed to write droplog file %s: %v", file, err)
 	}
 }

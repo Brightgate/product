@@ -13,6 +13,7 @@ package main
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -103,28 +104,46 @@ func (cs *cloudStorageServer) GenerateURL(ctx context.Context, req *cloud_rpc.Ge
 	}
 
 	// Specific prefixes have specific requirements
+	ct := req.ContentType
+	errmsg := ""
 	if req.Prefix == "drops" {
-		if req.ContentType != archive.DropContentType {
-			return nil, status.Errorf(codes.FailedPrecondition, "bad content-type for drops")
+		if ct == "" {
+			errmsg = "missing content-type for drops"
+		} else if ct != archive.DropContentType && ct != archive.DropBinaryType {
+			errmsg = "bad content-type for drops: " + ct
 		}
 	} else if req.Prefix == "stats" {
-		if req.ContentType != archive.StatContentType {
-			return nil, status.Errorf(codes.FailedPrecondition, "bad content-type for stats")
+		if ct == "" {
+			errmsg = "missing content-type for stats"
+		} else if ct != archive.StatContentType && ct != archive.StatBinaryType {
+			errmsg = "bad content-type for stats: " + ct
 		}
 	} else if req.Prefix == "" {
-		return nil, status.Errorf(codes.FailedPrecondition, "bad prefix")
+		errmsg = "missing prefix"
+	}
+	if errmsg != "" {
+		return nil, status.Errorf(codes.FailedPrecondition, errmsg)
 	}
 
 	for _, obj := range req.Objects {
 		var fullName string
 		if req.Prefix == "drops" || req.Prefix == "stats" {
-			// We liberally accept any timezone, but store everything as UTC
-			t, err := time.Parse(time.RFC3339, strings.TrimSuffix(obj, ".json"))
-			if err != nil {
-				slog.Warnf("GenerateURL: invalid object name %v", obj)
-				return nil, status.Errorf(codes.FailedPrecondition, "invalid object name")
+			suffix := filepath.Ext(obj)
+
+			if suffix != ".json" && suffix != ".gob" {
+				slog.Warnf("GenerateURL: invalid object suffix %v", obj)
+				return nil, status.Errorf(codes.FailedPrecondition,
+					"invalid object suffix")
 			}
-			fullName = req.Prefix + "/" + t.UTC().Format(time.RFC3339) + ".json"
+
+			// We liberally accept any timezone, but store everything as UTC
+			t, err := time.Parse(time.RFC3339, strings.TrimSuffix(obj, suffix))
+			if err != nil {
+				slog.Warnf("GenerateURL: invalid object timestamp %v", obj)
+				return nil, status.Errorf(codes.FailedPrecondition,
+					"invalid object timestamp")
+			}
+			fullName = req.Prefix + "/" + t.UTC().Format(time.RFC3339) + suffix
 		} else {
 			fullName = req.Prefix + "/" + obj
 		}
