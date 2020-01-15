@@ -240,6 +240,10 @@ func (c *APComm) Send(msg []byte) ([]byte, error) {
 			log.Printf("sending")
 		}
 		timeout := deadline.Sub(time.Now())
+		if timeout < time.Second {
+			timeout = time.Second
+		}
+
 		err = c.socket.SetOption(mangos.OptionSendDeadline, timeout)
 		if err != nil {
 			log.Printf("setting send deadline: %v", err)
@@ -250,6 +254,9 @@ func (c *APComm) Send(msg []byte) ([]byte, error) {
 				log.Printf("receiving")
 			}
 			timeout = deadline.Sub(time.Now())
+			if timeout < time.Second {
+				timeout = time.Second
+			}
 			err = c.socket.SetOption(mangos.OptionRecvDeadline, timeout)
 			reply, err = c.socket.Recv()
 		}
