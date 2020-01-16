@@ -344,6 +344,7 @@
     {"Path": "@/clients/%macaddr%/ipv4", "Type": "ipaddr", "Level": "internal"},
     {"Path": "@/clients/%macaddr%/ipv4_observed", "Type": "ipaddr", "Level": "internal"},
     {"Path": "@/clients/%macaddr%/dns_name", "Type": "hostname", "Level": "user"},
+    {"Path": "@/clients/%macaddr%/dns_private", "Type": "bool", "Level": "user"},
     {"Path": "@/clients/%macaddr%/ring", "Type": "ring", "Level": "admin"},
     {"Path": "@/clients/%macaddr%/identity", "Type": "int", "Level": "internal"},
     {"Path": "@/clients/%macaddr%/confidence", "Type": "float", "Level": "internal"},

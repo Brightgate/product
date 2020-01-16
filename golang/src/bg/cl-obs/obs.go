@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -54,12 +54,14 @@ import (
 	"log"
 	"net"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime/pprof"
 	"strings"
 	"time"
 
 	"bg/base_msg"
+	"bg/cl_common/daemonutils"
 
 	"golang.org/x/crypto/sha3"
 	"google.golang.org/api/option"
@@ -77,6 +79,8 @@ import (
 
 const (
 	pname = "cl-obs"
+
+	ouiDefaultFile = "etc/oui.txt"
 
 	unknownSite = "-unknown-site-"
 
@@ -994,6 +998,9 @@ func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	flag.Parse()
 
+	clRoot := daemonutils.ClRoot()
+	ouiFile = filepath.Join(clRoot, ouiDefaultFile)
+
 	rootCmd := &cobra.Command{
 		Use: "cl-obs",
 		PersistentPreRun: func(ccmd *cobra.Command, args []string) {
@@ -1033,7 +1040,7 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&ingestDir, "dir", "", "directory for DeviceInfo files")
 	rootCmd.PersistentFlags().StringVar(&ingestProject, "project", "", "GCP project for DeviceInfo files")
 	rootCmd.PersistentFlags().StringVar(&observationsFile, "observations-file", "obs.db", "observations index path")
-	rootCmd.PersistentFlags().StringVar(&ouiFile, "oui-file", "oui.txt", "OUI text database path")
+	rootCmd.PersistentFlags().StringVar(&ouiFile, "oui-file", ouiFile, "OUI text database path")
 
 	siteCmd := &cobra.Command{
 		Use:   "site",

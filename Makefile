@@ -380,7 +380,6 @@ APPCOMMAND_GOPKGS = \
 	bg/ap-diag \
 	bg/ap-inspect \
 	bg/ap-factory \
-	bg/ap-ouisearch \
 	bg/ap-tools \
 	bg/ap-vuln-aggregate
 
@@ -474,9 +473,6 @@ APPCONFIGS_openwrt = \
 
 APPCONFIGS = \
 	$(APPCONFIGS_$(DISTRO)) \
-	$(APPETCIDENTIFIERD)/ap_identities.csv \
-	$(APPETCIDENTIFIERD)/ap_mfgid.json \
-	$(APPETCIDENTIFIERD)/oui.txt \
 	$(APPDATAWATCHD)/vuln-db.json \
 	$(APPETC)/configd.json \
 	$(APPETC)/devices.json \
@@ -539,15 +535,17 @@ CLOUDROOT=$(ROOT)/cloud
 CLOUDBASE=$(CLOUDROOT)/opt/net.b10e
 CLOUDBIN=$(CLOUDBASE)/bin
 CLOUDETC=$(CLOUDBASE)/etc
-CLOUDLIB=$(CLOUDBASE)/lib
-CLOUDLIBCLHTTPDWEB=$(CLOUDLIB)/cl.httpd-web
-CLOUDLIBCLHTTPDWEBCLIENTWEB=$(CLOUDLIBCLHTTPDWEB)/client-web
 CLOUDETCDEVICESJSON=$(CLOUDETC)/devices.json
+CLOUDETCOUITXT=$(CLOUDETC)/oui.txt
 CLOUDETCSCHEMA=$(CLOUDETC)/schema
 CLOUDETCSCHEMAAPPLIANCEDB=$(CLOUDETCSCHEMA)/appliancedb
 CLOUDETCSCHEMASESSIONDB=$(CLOUDETCSCHEMA)/sessiondb
 CLOUDETCSSHDCONFIG=$(CLOUDETC)/sshd_config.got
 CLOUDETCSSHCONFIG=$(CLOUDETC)/ssh_config.got
+CLOUDLIB=$(CLOUDBASE)/lib
+CLOUDLIBCLHTTPDWEB=$(CLOUDLIB)/cl.httpd-web
+CLOUDLIBCLHTTPDWEBCLIENTWEB=$(CLOUDLIBCLHTTPDWEB)/client-web
+CLOUDLIBCRONCLOBS=$(CLOUDLIB)/cron-cl-obs
 CLOUDROOTLIB=$(CLOUDROOT)/lib
 CLOUDROOTLIBSYSTEMDSYSTEM=$(CLOUDROOTLIB)/systemd/system
 CLOUDVAR=$(CLOUDBASE)/var
@@ -608,9 +606,13 @@ CLOUDSERVICES = \
 CLOUDSYSTEMDSERVICES = $(CLOUDSERVICES:%=$(CLOUDROOTLIBSYSTEMDSYSTEM)/%)
 
 CLOUDETCFILES = \
+	$(CLOUDETCDEVICESJSON) \
+	$(CLOUDETCOUITXT) \
 	$(CLOUDETCSSHCONFIG) \
-	$(CLOUDETCSSHDCONFIG) \
-	$(CLOUDETCDEVICESJSON)
+	$(CLOUDETCSSHDCONFIG)
+
+CLOUDLIBFILES = \
+	$(CLOUDLIBCRONCLOBS)
 
 CLOUDSCHEMAS = \
 	$(CLOUDETCSCHEMAAPPLIANCEDB)/schema000.sql \
@@ -648,7 +650,7 @@ CLOUDDIRS = \
 	$(CLOUDSPOOL) \
 	$(CLOUDVAR)
 
-CLOUDCOMPONENTS = $(CLOUDBINARIES) $(CLOUDSYSTEMDSERVICES) $(CLOUDDIRS) $(CLOUDSCHEMAS) $(CLOUDETCFILES)
+CLOUDCOMPONENTS = $(CLOUDBINARIES) $(CLOUDSYSTEMDSERVICES) $(CLOUDDIRS) $(CLOUDSCHEMAS) $(CLOUDETCFILES) $(CLOUDLIBFILES)
 
 ALL_GOPKGS = $(APP_GOPKGS) $(CLOUD_GOPKGS)
 
@@ -821,13 +823,6 @@ check-go: vet-go lint-go fmt-go
 
 # Installation of appliance configuration files
 
-$(APPETCIDENTIFIERD)/ap_identities.csv: ap_identities.csv | $(APPETCIDENTIFIERD)
-	$(INSTALL) -m 0644 $< $@
-
-$(APPETCIDENTIFIERD)/ap_mfgid.json: ap_mfgid.json | $(APPETCIDENTIFIERD)
-	$(INSTALL) -m 0644 $< $@
-
-
 $(APPETC)/configd.json: $(GOSRCBG)/ap.configd/configd.json | $(APPETC)
 	$(INSTALL) -m 0644 $< $@
 
@@ -836,17 +831,6 @@ $(APPETC)/devices.json: $(GOSRCBG)/ap.configd/devices.json | $(APPETC)
 
 $(APPETC)/mcp.json: $(GOSRCBG)/ap.mcp/mcp.json | $(APPETC)
 	$(INSTALL) -m 0644 $< $@
-
-$(APPETCIDENTIFIERD)/oui.txt: | $(APPETCIDENTIFIERD)
-	-curl --connect-timeout 5 -s -S -R -o $@ http://standards-oui.ieee.org/oui.txt
-	@if [ -s $@ ]; then \
-		mkdir -p $(DOWNLOAD_CACHEDIR); \
-		echo Copying $@ to $(DOWNLOAD_CACHEDIR); \
-		cp -p $@ $(DOWNLOAD_CACHEDIR)/oui.txt; \
-	else \
-		echo Copying $@ from $(DOWNLOAD_CACHEDIR); \
-		cp -p $(DOWNLOAD_CACHEDIR)/oui.txt $@; \
-	fi
 
 $(ROOTETCCHRONY)/bg-chrony.client: $(DISTRODIR)/bg-chrony.client | $(ROOTETCCHRONY)
 	$(INSTALL) -m 0644 $< $@
@@ -980,6 +964,20 @@ $(CLOUDETCSSHDCONFIG): $(GOSRCBG)/cl-service/sshd_config.got | $(CLOUDETC)
 
 $(CLOUDETCSSHCONFIG): $(GOSRCBG)/cl-service/ssh_config.got | $(CLOUDETC)
 	$(INSTALL) -m 0644 $< $@
+
+$(CLOUDETCOUITXT):
+	-curl --connect-timeout 5 -s -S -R -o $@ http://standards-oui.ieee.org/oui.txt
+	@if [ -s $@ ]; then \
+		mkdir -p $(DOWNLOAD_CACHEDIR); \
+		echo Copying $@ to $(DOWNLOAD_CACHEDIR); \
+		cp -p $@ $(DOWNLOAD_CACHEDIR)/oui.txt; \
+	else \
+		echo Copying $@ from $(DOWNLOAD_CACHEDIR); \
+		cp -p $(DOWNLOAD_CACHEDIR)/oui.txt $@; \
+	fi
+
+$(CLOUDLIBCRONCLOBS): $(GOSRCBG)/cl-obs/cron-cl-obs.bash
+	$(INSTALL) -m 0755 $< $@
 
 # Install service descriptions
 $(CLOUDROOTLIBSYSTEMDSYSTEM)/%: build/cl-systemd/% | $(CLOUDROOTLIBSYSTEMDSYSTEM)

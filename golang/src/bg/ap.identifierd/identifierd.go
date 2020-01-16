@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -8,28 +8,17 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 
-/*
-Use observed data to make predictions about client identities.
-To Do:
-  1) Incorporate sampled data
-  2) When an unknown manufacturer or unknown device is detected emit an event
-     (maybe IdentifyException) which would trigger a more detailed scan and,
-     subsequently, a telemetry report.
-  3) Need for IdentifyRequest and Response?
-  4) Make the proposed ap.namerd part of ap.identifierd.
-*/
+// Observe various events and record them to observations log files for
+// later cloud upload.
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,59 +36,33 @@ import (
 	"bg/common/network"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/klauspost/oui"
 	"go.uber.org/zap"
 )
 
 var (
-	dataDir  = apcfg.String("datadir", "/etc", false, nil)
-	modelDir = apcfg.String("modeldir", "/etc/device_model", false, nil)
-	logDir   = apcfg.String("logdir", "/var/spool/identifierd", false, nil)
-	_        = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
+	logDir = apcfg.String("logdir", "/var/spool/identifierd", false, nil)
+	_      = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
 
 	brokerd *broker.Broker
 	config  *cfgapi.Handle
 	slog    *zap.SugaredLogger
 
-	ouiDB   oui.DynamicDB
-	mfgidDB = make(map[string]int)
-
 	// DNS requests only contain the IP addr, so we maintin a map ipaddr -> hwaddr
 	ipMtx sync.Mutex
 	ipMap = make(map[uint32]uint64)
 
-	testData = newObservations()
-	newData  = newEntities()
+	newData = newEntities()
 )
 
 const (
 	pname = "ap.identifierd"
 
-	ouiFile     = "oui.txt"
-	mfgidFile   = "ap_mfgid.json"
-	trainFile   = "ap_identities.csv"
-	testFile    = "test_data.csv"
 	observeFile = "observations.pb"
 
 	keepFor            = 2 * 24 * time.Hour
 	logInterval        = 15 * time.Minute
 	collectionDuration = 30 * time.Minute
-	predictInterval    = 5 * time.Minute
 )
-
-// dnsQ matches DNS questions.
-// See github.com/miekg/dns/types.go: func (q *Question) String() {}
-var dnsQ = regexp.MustCompile(`;(.*?)\t`)
-
-// formatPortString formats a port attribute
-func formatPortString(protocol string, port int32) string {
-	return fmt.Sprintf("%s %d", protocol, port)
-}
-
-// formatMfgString formats a manufacturer attribute
-func formatMfgString(mfg int) string {
-	return fmt.Sprintf("Mfg%d", mfg)
-}
 
 func delHWaddr(hwaddr uint64) {
 	ipMtx.Lock()
@@ -125,40 +88,31 @@ func addIP(ip uint32, hwaddr uint64) {
 	ipMap[ip] = hwaddr
 }
 
-func removeIP(ip uint32) {
-	ipMtx.Lock()
-	defer ipMtx.Unlock()
-	delete(ipMap, ip)
-}
-
 func handleEntity(event []byte) {
-	var id int
 	msg := &base_msg.EventNetEntity{}
-	proto.Unmarshal(event, msg)
-
-	if msg.MacAddress == nil {
+	err := proto.Unmarshal(event, msg)
+	if err != nil {
+		slog.Warnw("failed to unmarshal to entity", "event", event, "error", err)
 		return
 	}
-	hwaddr := *msg.MacAddress
-	mac := network.Uint64ToMac(hwaddr)
-	entry, err := ouiDB.Query(mac)
-	if err != nil {
-		slog.Infof("MAC address %s not in OUI database", mac)
-		id = mfgidDB["Unknown"]
-	} else {
-		id = mfgidDB[entry.Manufacturer]
+	if msg.MacAddress == nil {
+		return
 	}
 	// Strip stuff we don't care about passing along
 	msg.Sender = nil
 	msg.Debug = nil
 
-	testData.setByName(hwaddr, formatMfgString(id))
-	newData.addMsgEntity(hwaddr, msg)
+	newData.addMsgEntity(*msg.MacAddress, msg)
 }
 
 func handleRequest(event []byte) {
 	request := &base_msg.EventNetRequest{}
-	proto.Unmarshal(event, request)
+	err := proto.Unmarshal(event, request)
+	if err != nil {
+		slog.Warnw("failed to unmarshal to NetRequest", "event", event, "error", err)
+		return
+	}
+	slog.Debugw("handleRequest", "request", request)
 
 	if *request.Protocol != base_msg.Protocol_DNS {
 		return
@@ -181,11 +135,6 @@ func handleRequest(event []byte) {
 		return
 	}
 
-	for _, q := range request.Request {
-		qName := dnsQ.FindStringSubmatch(q)[1]
-		testData.setByName(hwaddr, qName)
-	}
-
 	// Strip stuff we don't care about passing along
 	request.Sender = nil
 	request.Debug = nil
@@ -194,6 +143,7 @@ func handleRequest(event []byte) {
 }
 
 func configDHCPChanged(path []string, val string, expires *time.Time) {
+	slog.Debugf("configDHCPChanged: %s %s %v", path[1], val, expires)
 	mac, err := net.ParseMAC(path[1])
 	if err != nil {
 		slog.Warnf("invalid MAC address %s", path[1])
@@ -205,6 +155,7 @@ func configDHCPChanged(path []string, val string, expires *time.Time) {
 }
 
 func configIPv4Changed(path []string, val string, expires *time.Time) {
+	slog.Debugf("configIPv4Changed: %s %s %v", path[1], val, expires)
 	mac, err := net.ParseMAC(path[1])
 	if err != nil {
 		slog.Warnf("invalid MAC address %s", path[1])
@@ -221,6 +172,7 @@ func configIPv4Changed(path []string, val string, expires *time.Time) {
 }
 
 func configIPv4Delexp(path []string) {
+	slog.Debugf("configIPv4Delexp: %s", path[1])
 	mac, err := net.ParseMAC(path[1])
 	if err != nil {
 		slog.Warnf("invalid MAC address %s", path[1])
@@ -231,6 +183,7 @@ func configIPv4Delexp(path []string) {
 }
 
 func configPrivacyChanged(path []string, val string, expires *time.Time) {
+	slog.Debugf("configPrivacyChanged: %s %s %v", path[1], val, expires)
 	mac, err := net.ParseMAC(path[1])
 	if err != nil {
 		slog.Warnf("invalid MAC address %s: %s", path[1], err)
@@ -247,6 +200,7 @@ func configPrivacyChanged(path []string, val string, expires *time.Time) {
 }
 
 func configPrivacyDelete(path []string) {
+	slog.Debugf("configPrivacyDelete: %s", path[1])
 	mac, err := net.ParseMAC(path[1])
 	if err != nil {
 		slog.Warnf("invalid MAC address %s", path[1])
@@ -258,40 +212,37 @@ func configPrivacyDelete(path []string) {
 
 func handleScan(event []byte) {
 	scan := &base_msg.EventNetScan{}
-	proto.Unmarshal(event, scan)
+	err := proto.Unmarshal(event, scan)
+	if err != nil {
+		slog.Warnw("failed to unmarshal to NetScan", "event", event, "error", err)
+		return
+	}
+	slog.Debugw("handleScan", "scan", scan)
 
 	hwaddr, ok := getHWaddr(*scan.Ipv4Address)
 	if !ok {
 		return
 	}
 
-	for _, h := range scan.Hosts {
-		for _, p := range h.Ports {
-			if *p.State != "open" {
-				continue
-			}
-			portString := formatPortString(*p.Protocol, *p.PortId)
-			testData.setByName(hwaddr, portString)
-		}
-	}
+	// Strip stuff we don't care about passing along
+	scan.Sender = nil
+	scan.Debug = nil
 
 	newData.addMsgScan(hwaddr, scan)
 }
 
 func handleListen(event []byte) {
 	listen := &base_msg.EventListen{}
-	proto.Unmarshal(event, listen)
+	err := proto.Unmarshal(event, listen)
+	if err != nil {
+		slog.Warnw("failed to unmarshal to Listen", "event", event, "error", err)
+		return
+	}
+	slog.Debugw("handleListen", "listen", listen)
 
 	hwaddr, ok := getHWaddr(*listen.Ipv4Address)
 	if !ok {
 		return
-	}
-
-	switch *listen.Type {
-	case base_msg.EventListen_SSDP:
-		testData.setByName(hwaddr, "SSDP")
-	case base_msg.EventListen_mDNS:
-		testData.setByName(hwaddr, "mDNS")
 	}
 
 	// Strip stuff we don't care about passing along
@@ -303,7 +254,13 @@ func handleListen(event []byte) {
 
 func handleOptions(event []byte) {
 	options := &base_msg.DHCPOptions{}
-	proto.Unmarshal(event, options)
+	err := proto.Unmarshal(event, options)
+	if err != nil {
+		slog.Warnw("failed to unmarshal to DHCPOptions", "event", event, "error", err)
+		return
+	}
+
+	slog.Debugw("handleOptions", "options", options)
 
 	// Strip stuff we don't care about passing along
 	options.Sender = nil
@@ -316,12 +273,9 @@ func save() {
 	if err := newData.writeInventory(filepath.Join(*logDir, observeFile)); err != nil {
 		slog.Warnf("could not save observation data:", err)
 	}
-
-	if err := testData.saveTestData(filepath.Join(*dataDir, testFile)); err != nil {
-		slog.Warnf("could not save test data:", err)
-	}
 }
 
+// clean removes old observation files from logDir
 func clean() {
 	walkFunc := func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -337,6 +291,7 @@ func clean() {
 			return nil
 		}
 
+		slog.Debugf("removing %s", path)
 		if err := os.Remove(path); err != nil {
 			return fmt.Errorf("error removing %s: %v", path, err)
 		}
@@ -365,25 +320,6 @@ func logger(stop chan bool, wg *sync.WaitGroup) {
 		case <-stop:
 			save()
 			return
-		}
-	}
-}
-
-func updateClient(hwaddr uint64, devID string, confidence float32) {
-	mac := network.Uint64ToMac(hwaddr)
-
-	propTest := fmt.Sprintf("@/clients/%s", mac)
-	identProp := fmt.Sprintf("@/clients/%s/identity", mac)
-	confProp := fmt.Sprintf("@/clients/%s/confidence", mac)
-	props := []cfgapi.PropertyOp{
-		// avoid recreating clients which have been deleted.
-		{Op: cfgapi.PropTest, Name: propTest},
-		{Op: cfgapi.PropCreate, Name: identProp, Value: devID},
-		{Op: cfgapi.PropCreate, Name: confProp, Value: fmt.Sprintf("%.2f", confidence)},
-	}
-	if _, err := config.Execute(nil, props).Wait(nil); err != nil {
-		if err != cfgapi.ErrNoProp {
-			slog.Errorf("Failed to update client properties: %s", err)
 		}
 	}
 }
@@ -422,7 +358,7 @@ func main() {
 	var err error
 
 	slog = aputil.NewLogger(pname)
-	defer slog.Sync()
+	defer func() { _ = slog.Sync() }()
 
 	slog.Infof("starting")
 
@@ -433,7 +369,7 @@ func main() {
 
 	if strings.EqualFold(os.Getenv("BG_FAILSAFE"), "true") {
 		slog.Infof("Starting in failsafe mode - going idle")
-		err = mcpd.SetState(mcp.FAILSAFE)
+		_ = mcpd.SetState(mcp.FAILSAFE)
 		signalHandler()
 		os.Exit(0)
 	}
@@ -456,34 +392,9 @@ func main() {
 
 	plat := platform.NewPlatform()
 
-	*dataDir = plat.ExpandDirPath(platform.APPackage, "etc/identifierd")
-	*modelDir = plat.ExpandDirPath(platform.APPackage, "etc/identifierd/device_model")
 	*logDir = plat.ExpandDirPath(platform.APData, "identifierd")
 
-	// OUI database
-	ouiPath := filepath.Join(*dataDir, ouiFile)
-	ouiDB, err = oui.OpenFile(ouiPath)
-	if err != nil {
-		slog.Fatalf("failed to open OUI file %s: %s", ouiPath, err)
-	}
-
-	// Manufacturer database
-	mfgidPath := filepath.Join(*dataDir, mfgidFile)
-	file, err := ioutil.ReadFile(mfgidPath)
-	if err != nil {
-		slog.Fatalf("failed to open manufacturer ID file %s: %v", mfgidPath, err)
-	}
-
-	err = json.Unmarshal(file, &mfgidDB)
-	if err != nil {
-		slog.Fatalf("failed to import manufacturer IDs from %s: %v", mfgidPath, err)
-	}
-
 	recoverClients()
-
-	if err = testData.loadTestData(filepath.Join(*dataDir, testFile)); err != nil {
-		slog.Warnf("failed to recover test data:", err)
-	}
 
 	brokerd.Handle(base_def.TOPIC_ENTITY, handleEntity)
 	brokerd.Handle(base_def.TOPIC_REQUEST, handleRequest)
@@ -491,12 +402,12 @@ func main() {
 	brokerd.Handle(base_def.TOPIC_LISTEN, handleListen)
 	brokerd.Handle(base_def.TOPIC_OPTIONS, handleOptions)
 
-	config.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
-	config.HandleChange(`^@/clients/.*/dhcp_name$`, configDHCPChanged)
-	config.HandleDelete(`^@/clients/.*/ipv4$`, configIPv4Delexp)
-	config.HandleExpire(`^@/clients/.*/ipv4$`, configIPv4Delexp)
-	config.HandleChange(`^@/clients/.*/dns_private$`, configPrivacyChanged)
-	config.HandleDelete(`^@/clients/.*/dns_private$`, configPrivacyDelete)
+	_ = config.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
+	_ = config.HandleChange(`^@/clients/.*/dhcp_name$`, configDHCPChanged)
+	_ = config.HandleDelete(`^@/clients/.*/ipv4$`, configIPv4Delexp)
+	_ = config.HandleExpire(`^@/clients/.*/ipv4$`, configIPv4Delexp)
+	_ = config.HandleChange(`^@/clients/.*/dns_private$`, configPrivacyChanged)
+	_ = config.HandleDelete(`^@/clients/.*/dns_private$`, configPrivacyDelete)
 
 	if err = os.MkdirAll(*logDir, 0755); err != nil {
 		slog.Fatalf("failed to mkdir:", err)
