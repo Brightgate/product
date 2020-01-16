@@ -1,5 +1,5 @@
 #
-# COPYRIGHT 2019 Brightgate Inc. All rights reserved.
+# COPYRIGHT 2020 Brightgate Inc. All rights reserved.
 #
 # This copyright notice is Copyright Management Information under 17 USC 1202
 # and is included to protect this work and deter copyright infringement.
@@ -367,6 +367,7 @@ APPCOMMON_GOPKGS = \
 	bg/ap_common/aptest \
 	bg/ap_common/aputil \
 	bg/ap_common/apvuln \
+	bg/ap_common/bgmetrics \
 	bg/ap_common/broker \
 	bg/ap_common/certificate \
 	bg/ap_common/dhcp \
@@ -480,7 +481,6 @@ APPCONFIGS = \
 	$(APPETC)/configd.json \
 	$(APPETC)/devices.json \
 	$(APPETC)/mcp.json \
-	$(APPETC)/prometheus.yml \
 	$(ROOTETCCHRONY)/bg-chrony.client \
 	$(ROOTETCCHRONY)/bg-chrony.platform \
 	$(ROOTETCIPTABLES)/rules.v4 \
@@ -847,9 +847,6 @@ $(APPETCIDENTIFIERD)/oui.txt: | $(APPETCIDENTIFIERD)
 		echo Copying $@ from $(DOWNLOAD_CACHEDIR); \
 		cp -p $(DOWNLOAD_CACHEDIR)/oui.txt $@; \
 	fi
-
-$(APPETC)/prometheus.yml: prometheus.yml | $(APPETC)
-	$(INSTALL) -m 0644 $< $@
 
 $(ROOTETCCHRONY)/bg-chrony.client: $(DISTRODIR)/bg-chrony.client | $(ROOTETCCHRONY)
 	$(INSTALL) -m 0644 $< $@

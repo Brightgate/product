@@ -1,5 +1,5 @@
 
-COPYRIGHT 2019 Brightgate Inc. All rights reserved.
+COPYRIGHT 2020 Brightgate Inc. All rights reserved.
 
 This copyright notice is Copyright Management Information under 17 USC 1202
 and is included to protect this work and deter copyright infringement.
@@ -181,7 +181,6 @@ $ ./proto.armv7l/appliance/opt/com.brightgate/bin/ap-ctl status all
         iotd 14582   39 MB   0 MB     0s       online  Fri Jun 8 21:17:55 gateway
         logd 14583   25 MB   0 MB     0s       online  Fri Jun 8 21:17:53 gateway
     networkd 14618   29 MB   0 MB     0s       online  Fri Jun 8 21:17:56 gateway
-  prometheus 14565   42 MB   0 MB     0s       online  Fri Jun 8 21:17:50 gateway
       relayd 14702   28 MB   0 MB     0s       online  Fri Jun 8 21:17:59 gateway
      updated 14621   39 MB   0 MB     0s       online  Fri Jun 8 21:17:56 gateway
    userauthd 14622   28 MB   0 MB     0s       online  Fri Jun 8 21:17:56 gateway

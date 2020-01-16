@@ -958,7 +958,7 @@ func TestMain(m *testing.M) {
 		fail("Validation init failed: %v\n", err)
 	}
 
-	prometheusInit()
+	metricsInit()
 	testData, err = ioutil.ReadFile(*testFile)
 	if err != nil {
 		log.Printf("Failed to load properties file %s: %v\n",

@@ -38,7 +38,6 @@ import (
 	"flag"
 	"fmt"
 	"net"
-	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
@@ -49,6 +48,7 @@ import (
 	"time"
 
 	"bg/ap_common/aputil"
+	"bg/ap_common/bgmetrics"
 	"bg/ap_common/broker"
 	"bg/ap_common/comms"
 	"bg/ap_common/mcp"
@@ -63,8 +63,6 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
 
@@ -73,14 +71,18 @@ const (
 	serverURL = base_def.INCOMING_COMM_URL + base_def.CONFIGD_COMM_REP_PORT
 )
 
-var metrics struct {
-	getCounts  prometheus.Counter
-	setCounts  prometheus.Counter
-	delCounts  prometheus.Counter
-	expCounts  prometheus.Counter
-	testCounts prometheus.Counter
-	treeSize   prometheus.Gauge
-}
+var (
+	bgm *bgmetrics.Metrics
+
+	metrics struct {
+		getCounts  *bgmetrics.Counter
+		setCounts  *bgmetrics.Counter
+		delCounts  *bgmetrics.Counter
+		expCounts  *bgmetrics.Counter
+		testCounts *bgmetrics.Counter
+		treeSize   *bgmetrics.Gauge
+	}
+)
 
 type subtreeOpHandler func(*cfgmsg.ConfigQuery) (string, error)
 type subtreeMatch struct {
@@ -391,7 +393,6 @@ func selectRing(mac string, client *cfgtree.PNode, vap, ring string) string {
 	if vap != "" {
 		// if we're already assigned to a ring on this vap, keep it
 		if vap == oldVAP {
-			slog.Debugf("  vap hasn't changed - keep %s", oldRing)
 			return oldRing
 		}
 		if vapRing, ok := virtualAPToDefaultRing[vap]; ok {
@@ -993,41 +994,16 @@ func msgHandler(msg []byte) []byte {
 	return data
 }
 
-func prometheusInit() {
-	metrics.getCounts = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "configd_gets",
-		Help: "get operations",
-	})
-	metrics.setCounts = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "configd_sets",
-		Help: "set operations",
-	})
-	metrics.delCounts = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "configd_deletes",
-		Help: "delete operations",
-	})
-	metrics.expCounts = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "configd_expires",
-		Help: "property expirations",
-	})
-	metrics.testCounts = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "configd_tests",
-		Help: "test operations",
-	})
-	metrics.treeSize = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "configd_tree_size",
-		Help: "size of config tree",
-	})
+func metricsInit() {
+	hdl := NewInternalHdl()
 
-	prometheus.MustRegister(metrics.getCounts)
-	prometheus.MustRegister(metrics.setCounts)
-	prometheus.MustRegister(metrics.delCounts)
-	prometheus.MustRegister(metrics.testCounts)
-	prometheus.MustRegister(metrics.expCounts)
-
-	prometheus.MustRegister(metrics.treeSize)
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(base_def.CONFIGD_DIAG_PORT, nil)
+	bgm = bgmetrics.NewMetrics(pname, hdl)
+	metrics.getCounts = bgm.NewCounter("gets")
+	metrics.setCounts = bgm.NewCounter("sets")
+	metrics.delCounts = bgm.NewCounter("deletes")
+	metrics.expCounts = bgm.NewCounter("expires")
+	metrics.testCounts = bgm.NewCounter("tests")
+	metrics.treeSize = bgm.NewGauge("tree_size")
 }
 
 func fail(format string, a ...interface{}) {
@@ -1056,10 +1032,20 @@ func configInit() {
 }
 
 func signalHandler() {
-	sig := make(chan os.Signal, 2)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	var s os.Signal
 
-	s := <-sig
+	sig := make(chan os.Signal, 3)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+
+	done := false
+	for !done {
+		s = <-sig
+		if s == syscall.SIGHUP {
+			bgm.Dump()
+		} else {
+			done = true
+		}
+	}
 	slog.Infof("Signal (%v) received, stopping", s)
 	serverPort.Close()
 }
@@ -1079,7 +1065,7 @@ func main() {
 		slog.Warnf("Failed to connect to mcp: %v", err)
 	}
 
-	prometheusInit()
+	metricsInit()
 	configInit()
 
 	brokerd, err = broker.NewBroker(slog, pname)

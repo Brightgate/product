@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -392,7 +392,7 @@ func sampleLoop(state *samplerState) {
 					state.iface, s.PacketsDropped,
 					s.PacketsReceived)
 				lastDropped = s.PacketsDropped
-				metrics.missedPkts.Add(float64(delta))
+				metrics.missedPkts.Add(int64(delta))
 			}
 		}
 	}

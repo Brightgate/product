@@ -221,10 +221,10 @@ func (c *APConfig) Ping(ctx context.Context) error {
 	return err
 }
 
-// ExecuteAt takes a slice of PropertyOp structures, marshals them into a protobuf
-// query, and sends that to ap.configd to be executed at the specified access
-// level.  It then unmarshals the result from ap.configd, and returns that to
-// the caller.
+// ExecuteAt takes a slice of PropertyOp structures, marshals them into a
+// protobuf query, and sends that to ap.configd to be executed at the specified
+// access level.  It then unmarshals the result from ap.configd, and returns
+// that to the caller.
 func (c *APConfig) ExecuteAt(ctx context.Context, ops []cfgapi.PropertyOp,
 	level cfgapi.AccessLevel) cfgapi.CmdHdl {
 

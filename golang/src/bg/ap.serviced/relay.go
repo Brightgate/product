@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -25,6 +25,7 @@ import (
 
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
+	"bg/ap_common/bgmetrics"
 	"bg/base_def"
 	"bg/base_msg"
 	"bg/common/cfgapi"
@@ -32,7 +33,6 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/miekg/dns"
-	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/net/ipv4"
 )
 
@@ -92,12 +92,12 @@ var (
 	relayerMtx sync.Mutex
 
 	relayMetric struct {
-		mdnsRequests  prometheus.Counter
-		mdnsReplies   prometheus.Counter
-		ssdpSearches  prometheus.Counter
-		ssdpTimeouts  prometheus.Counter
-		ssdpNotifies  prometheus.Counter
-		ssdpResponses prometheus.Counter
+		mdnsRequests  *bgmetrics.Counter
+		mdnsReplies   *bgmetrics.Counter
+		ssdpSearches  *bgmetrics.Counter
+		ssdpTimeouts  *bgmetrics.Counter
+		ssdpNotifies  *bgmetrics.Counter
+		ssdpResponses *bgmetrics.Counter
 	}
 )
 
@@ -623,37 +623,13 @@ func (r *relayer) run() {
 	r.conn.Close()
 }
 
-func relayPrometheusInit() {
-	relayMetric.mdnsRequests = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "relayd_mdns_requests",
-		Help: "mDNS requests handled",
-	})
-	relayMetric.mdnsReplies = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "relayd_mdns_replies",
-		Help: "mDNS replies handled",
-	})
-	relayMetric.ssdpSearches = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "relayd_ssdp_searches",
-		Help: "SSDP search requests handled",
-	})
-	relayMetric.ssdpTimeouts = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "relayd_ssdp_timeouts",
-		Help: "SSDP search timeouts",
-	})
-	relayMetric.ssdpNotifies = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "relayd_ssdp_notifies",
-		Help: "SSDP notifies handled",
-	})
-	relayMetric.ssdpResponses = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "relayd_ssdp_requests",
-		Help: "SSDP requests handled",
-	})
-
-	prometheus.MustRegister(relayMetric.mdnsRequests)
-	prometheus.MustRegister(relayMetric.mdnsReplies)
-	prometheus.MustRegister(relayMetric.ssdpSearches)
-	prometheus.MustRegister(relayMetric.ssdpNotifies)
-	prometheus.MustRegister(relayMetric.ssdpResponses)
+func relayMetricsInit() {
+	relayMetric.mdnsRequests = bgm.NewCounter("relay/mdns_requests")
+	relayMetric.mdnsReplies = bgm.NewCounter("relay/mdns_replies")
+	relayMetric.ssdpSearches = bgm.NewCounter("relay/ssdp_searches")
+	relayMetric.ssdpTimeouts = bgm.NewCounter("relay/ssdp_timeouts")
+	relayMetric.ssdpNotifies = bgm.NewCounter("relay/ssdp_notifies")
+	relayMetric.ssdpResponses = bgm.NewCounter("relay/ssdp_requests")
 }
 
 func launchRelayers() {
@@ -695,6 +671,6 @@ func relayRestart() {
 }
 
 func relayInit() {
-	relayPrometheusInit()
+	relayMetricsInit()
 	launchRelayers()
 }

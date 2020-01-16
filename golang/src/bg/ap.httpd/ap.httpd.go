@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -28,6 +28,7 @@ import (
 
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
+	"bg/ap_common/bgmetrics"
 	"bg/ap_common/broker"
 	"bg/ap_common/certificate"
 	"bg/ap_common/data"
@@ -46,9 +47,6 @@ import (
 	"github.com/NYTimes/gziphandler"
 	"github.com/unrolled/secure"
 	"github.com/urfave/negroni"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
@@ -69,8 +67,9 @@ var (
 
 	certInstalled = make(chan bool, 1)
 
+	bgm     *bgmetrics.Metrics
 	metrics struct {
-		latencies prometheus.Summary
+		latencies *bgmetrics.Summary
 	}
 )
 
@@ -237,15 +236,9 @@ func getPortList() []string {
 	return ports
 }
 
-func prometheusInit() {
-	metrics.latencies = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "http_render_seconds",
-		Help: "HTTP page render time",
-	})
-	prometheus.MustRegister(metrics.latencies)
-
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(base_def.HTTPD_DIAG_PORT, nil)
+func metricsInit() {
+	bgm = bgmetrics.NewMetrics(pname, config)
+	metrics.latencies = bgm.NewSummary("render_seconds")
 }
 
 func main() {
@@ -262,7 +255,8 @@ func main() {
 		slog.Warnf("Failed to connect to mcp\n")
 	}
 
-	prometheusInit()
+	metricsInit()
+	go http.ListenAndServe(base_def.HTTPD_DIAG_PORT, nil)
 
 	// Set up connection with the broker daemon
 	brokerd, err := broker.NewBroker(slog, pname)

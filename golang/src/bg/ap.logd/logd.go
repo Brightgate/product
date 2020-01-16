@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -19,8 +19,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net/http"
-	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -38,8 +36,6 @@ import (
 	"bg/common/network"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
 
@@ -48,17 +44,6 @@ var (
 	logFile *os.File
 	slog    *zap.SugaredLogger
 	mcpd    *mcp.MCP
-
-	metrics struct {
-		pingEvents      prometheus.Counter
-		configEvents    prometheus.Counter
-		entityEvents    prometheus.Counter
-		errorEvents     prometheus.Counter
-		exceptionEvents prometheus.Counter
-		requestEvents   prometheus.Counter
-		resourceEvents  prometheus.Counter
-		identityEvents  prometheus.Counter
-	}
 )
 
 const pname = "ap.logd"
@@ -100,7 +85,6 @@ func handlePing(event []byte) {
 
 	extendMsg(&msg, "from", ping.Sender, "?")
 	log.Printf("%s [sys.ping]\t%s", tstring(ping.Timestamp), msg)
-	metrics.pingEvents.Inc()
 }
 
 func handleConfig(event []byte) {
@@ -128,7 +112,6 @@ func handleConfig(event []byte) {
 	extendMsg(&msg, "val", config.NewValue, "")
 
 	log.Printf("%s [sys.config]\t%s", tstring(config.Timestamp), msg)
-	metrics.configEvents.Inc()
 }
 
 func handleEntity(event []byte) {
@@ -159,7 +142,6 @@ func handleEntity(event []byte) {
 	extendMsg(&msg, "username", entity.Username, "")
 
 	log.Printf("%s [net.entity]\t%s", tstring(entity.Timestamp), msg)
-	metrics.entityEvents.Inc()
 }
 
 func handleError(event []byte) {
@@ -184,7 +166,6 @@ func handleError(event []byte) {
 
 	log.Printf("%s [sys.error]\t%s", tstring(syserror.Timestamp), msg)
 
-	metrics.errorEvents.Inc()
 }
 
 func handleException(event []byte) {
@@ -192,7 +173,6 @@ func handleException(event []byte) {
 
 	exception := &base_msg.EventNetException{}
 	proto.Unmarshal(event, exception)
-	metrics.exceptionEvents.Inc()
 
 	extendMsg(&msg, "Sender", exception.Sender, "?")
 	if exception.Protocol != nil {
@@ -257,7 +237,6 @@ func handleResource(event []byte) {
 	extendMsg(&msg, "hostname", resource.Hostname, "")
 
 	log.Printf("%s [net.resource]\t%s", tstring(resource.Timestamp), msg)
-	metrics.resourceEvents.Inc()
 }
 
 var (
@@ -347,7 +326,6 @@ func handleRequest(event []byte) {
 	}
 
 	log.Printf("%s [net.request]\t%s", tstring(request.Timestamp), msg)
-	metrics.requestEvents.Inc()
 }
 
 func openLog(path string) (*os.File, error) {
@@ -382,52 +360,6 @@ func reopenLogfile() error {
 	return nil
 }
 
-func prometheusInit() {
-	metrics.pingEvents = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "logd_ping_events",
-		Help: "Number of Ping events logged.",
-	})
-	metrics.configEvents = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "logd_config_events",
-		Help: "Number of Config events logged.",
-	})
-	metrics.entityEvents = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "logd_entity_events",
-		Help: "Number of NetEntity events logged.",
-	})
-	metrics.errorEvents = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "logd_error_events",
-		Help: "Number of SysError events logged.",
-	})
-	metrics.exceptionEvents = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "logd_exception_events",
-		Help: "Number of NetException events logged.",
-	})
-	metrics.requestEvents = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "logd_request_events",
-		Help: "Number of NetRequest events logged.",
-	})
-	metrics.resourceEvents = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "logd_resource_events",
-		Help: "Number of NetResource events logged.",
-	})
-	metrics.identityEvents = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "logd_identity_events",
-		Help: "Number of NetIdentity events logged.",
-	})
-	prometheus.MustRegister(metrics.pingEvents)
-	prometheus.MustRegister(metrics.configEvents)
-	prometheus.MustRegister(metrics.entityEvents)
-	prometheus.MustRegister(metrics.errorEvents)
-	prometheus.MustRegister(metrics.exceptionEvents)
-	prometheus.MustRegister(metrics.requestEvents)
-	prometheus.MustRegister(metrics.resourceEvents)
-	prometheus.MustRegister(metrics.identityEvents)
-
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(base_def.LOGD_DIAG_PORT, nil)
-}
-
 // send a single message to both the MCP log and the logd-specific log
 func dualLog(format string, v ...interface{}) {
 	msg := fmt.Sprintf(format, v...)
@@ -456,8 +388,6 @@ func main() {
 		slog.Errorf("Failed to setup logging: %s\n", err)
 		os.Exit(1)
 	}
-
-	prometheusInit()
 
 	b, err := broker.NewBroker(slog, pname)
 	if err != nil {

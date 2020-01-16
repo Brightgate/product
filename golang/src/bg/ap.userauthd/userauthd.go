@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -74,9 +74,6 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type rConf struct {
@@ -117,13 +114,6 @@ var (
 	secret        []byte
 	rc            *rConf
 	certInstalled = make(chan bool, 1)
-
-	// XXX: these metrics are currently just aspirational, since hostapd
-	// does all of the authentication work internally.
-	metrics struct {
-		authRequests prometheus.Counter
-		authFailures prometheus.Counter
-	}
 )
 
 const (
@@ -360,22 +350,6 @@ func establishSecret() ([]byte, error) {
 	return []byte(s64), nil
 }
 
-func prometheusInit() {
-	metrics.authRequests = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "userauthd_radius_auth_requests",
-		Help: "Number of RADIUS authentication requests",
-	})
-	metrics.authFailures = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "userauthd_radius_auth_failures",
-		Help: "Number of RADIUS authentication failures",
-	})
-	prometheus.MustRegister(metrics.authRequests)
-	prometheus.MustRegister(metrics.authFailures)
-
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(base_def.USERAUTHD_DIAG_PORT, nil)
-}
-
 func siteIDChange(path []string, val string, expires *time.Time) {
 	slog.Info("restarting due to changed domain")
 	os.Exit(0)
@@ -394,7 +368,6 @@ func main() {
 	}
 
 	plat = platform.NewPlatform()
-	prometheusInit()
 	brokerd, err := broker.NewBroker(slog, pname)
 	if err != nil {
 		slog.Fatal(err)
@@ -459,6 +432,7 @@ func main() {
 	}
 
 	running = true
+	go http.ListenAndServe(base_def.USERAUTHD_DIAG_PORT, nil)
 	go signalHandler()
 
 	runOne(rc)

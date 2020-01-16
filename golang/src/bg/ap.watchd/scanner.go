@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -1085,11 +1085,11 @@ func vulnScan(req *ScanRequest) {
 
 	vulnScanProcess(req.IP, found)
 
-	done := time.Now()
+	t := time.Now().Sub(start).Seconds()
+
 	metrics.vulnScans.Inc()
-	metrics.vulnScanTime.Observe(done.Sub(start).Seconds())
-	slog.Debugf("vulnerability scan of %s ended, %.1f seconds",
-		req.IP, done.Sub(start).Seconds())
+	metrics.vulnScanTime.Observe(t)
+	slog.Debugf("vulnerability scan of %s ended, %.1f seconds", req.IP, t)
 }
 
 // ByDateModified is for sorting files by date modified.

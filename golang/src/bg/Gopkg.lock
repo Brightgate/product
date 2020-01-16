@@ -1327,7 +1327,6 @@
     "github.com/miekg/dns",
     "github.com/pin/tftp",
     "github.com/pkg/errors",
-    "github.com/prometheus/client_golang/prometheus",
     "github.com/prometheus/client_golang/prometheus/promhttp",
     "github.com/satori/uuid",
     "github.com/sethvargo/go-diceware/diceware",

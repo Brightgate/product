@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -26,6 +26,7 @@ import (
 
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
+	"bg/ap_common/bgmetrics"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
 	"bg/ap_common/platform"
@@ -39,9 +40,6 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapgrpc"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
@@ -77,8 +75,14 @@ var (
 	nodeBootTime time.Time
 	rpcSuccess   *bool
 
+	bgm     *bgmetrics.Metrics
 	metrics struct {
-		events prometheus.Counter
+		exceptions          *bgmetrics.Counter
+		heartbeatsSucceeded *bgmetrics.Counter
+		heartbeatsFailed    *bgmetrics.Counter
+		updates             *bgmetrics.Counter
+		commands            *bgmetrics.Counter
+		completions         *bgmetrics.Counter
 	}
 
 	cleanup struct {
@@ -163,7 +167,7 @@ func handleNetException(ctx context.Context, tclient cloud_rpc.EventClient, even
 		return errors.Wrap(err, "Failed to unmarshal exception")
 	}
 	slog.Infof("[net.exception] %v", exception)
-	metrics.events.Inc()
+	metrics.exceptions.Inc()
 
 	cloudNetExc := &cloud_rpc.NetException{
 		Timestamp: &timestamp.Timestamp{
@@ -255,14 +259,14 @@ func healthLoop(ctx context.Context, tclient cloud_rpc.EventClient,
 	wg.Done()
 }
 
-func prometheusInit() {
-	metrics.events = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "rpcd_events_handled",
-		Help: "Number of events logged.",
-	})
-	prometheus.MustRegister(metrics.events)
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(base_def.RPCD_DIAG_PORT, nil)
+func metricsInit() {
+	bgm = bgmetrics.NewMetrics(pname, config)
+	metrics.exceptions = bgm.NewCounter("exceptions_handled")
+	metrics.heartbeatsSucceeded = bgm.NewCounter("heartbeats_succeeded")
+	metrics.heartbeatsFailed = bgm.NewCounter("heartbeats_failed")
+	metrics.updates = bgm.NewCounter("updates")
+	metrics.commands = bgm.NewCounter("commands")
+	metrics.completions = bgm.NewCounter("completions")
 }
 
 func commonInit() error {
@@ -375,7 +379,6 @@ func daemonStart() {
 		slog.Fatalf("Failed to connect to mcp: %s", err)
 	}
 
-	prometheusInit()
 	brokerd, err = broker.NewBroker(slog, pname)
 	if err != nil {
 		slog.Fatal(err)
@@ -386,6 +389,9 @@ func daemonStart() {
 		mcpd.SetState(mcp.BROKEN)
 		slog.Fatalf("commonInit failed: %v", err)
 	}
+	metricsInit()
+	go http.ListenAndServe(base_def.RPCD_DIAG_PORT, nil)
+
 	aputil.ReportInit(slog, pname)
 	go healthLoop(nil, nil, &cleanup.wg, addDoneChan())
 

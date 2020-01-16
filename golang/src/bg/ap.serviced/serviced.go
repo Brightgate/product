@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -23,13 +23,13 @@ import (
 
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
+	"bg/ap_common/bgmetrics"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
 	"bg/base_def"
 	"bg/common/cfgapi"
 	"bg/common/network"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
 
@@ -39,6 +39,7 @@ var (
 	brokerd *broker.Broker
 	config  *cfgapi.Handle
 	slog    *zap.SugaredLogger
+	bgm     *bgmetrics.Metrics
 
 	clientMtx sync.Mutex
 	clients   cfgapi.ClientMap
@@ -220,11 +221,6 @@ func configNodesChanged(path []string, val string, expires *time.Time) {
 	initInterfaces()
 }
 
-func prometheusInit() {
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(base_def.SERVICED_DIAG_PORT, nil)
-}
-
 func main() {
 	var mcpState int
 
@@ -239,7 +235,6 @@ func main() {
 		slog.Warnf("cannot connect to mcp: %v", err)
 	}
 
-	prometheusInit()
 	brokerd, err = broker.NewBroker(slog, pname)
 	if err != nil {
 		slog.Fatal(err)
@@ -250,6 +245,9 @@ func main() {
 	if err != nil {
 		slog.Fatalf("cannot connect to configd: %v", err)
 	}
+	bgm = bgmetrics.NewMetrics(pname, config)
+
+	go http.ListenAndServe(base_def.SERVICED_DIAG_PORT, nil)
 	go apcfg.HealthMonitor(config, mcpd)
 	aputil.ReportInit(slog, pname)
 

@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -26,6 +26,7 @@ import (
 
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
+	"bg/ap_common/bgmetrics"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
 	"bg/ap_common/platform"
@@ -35,8 +36,6 @@ import (
 	"bg/common/network"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
 
@@ -64,21 +63,22 @@ var (
 	gateways     map[uint32]bool
 	internalMacs map[uint64]bool
 
+	bgm     *bgmetrics.Metrics
 	metrics struct {
-		lanDrops       prometheus.Counter
-		wanDrops       prometheus.Counter
-		sampledPkts    prometheus.Counter
-		missedPkts     prometheus.Counter
-		tcpScans       prometheus.Counter
-		tcpScanTime    prometheus.Summary
-		udpScans       prometheus.Counter
-		udpScanTime    prometheus.Summary
-		subnetScans    prometheus.Counter
-		subnetScanTime prometheus.Summary
-		vulnScans      prometheus.Counter
-		vulnScanTime   prometheus.Summary
-		blockedIPs     prometheus.Counter
-		knownHosts     prometheus.Gauge
+		lanDrops       *bgmetrics.Counter
+		wanDrops       *bgmetrics.Counter
+		sampledPkts    *bgmetrics.Counter
+		missedPkts     *bgmetrics.Counter
+		tcpScans       *bgmetrics.Counter
+		tcpScanTime    *bgmetrics.Summary
+		udpScans       *bgmetrics.Counter
+		udpScanTime    *bgmetrics.Summary
+		subnetScans    *bgmetrics.Counter
+		subnetScanTime *bgmetrics.Summary
+		vulnScans      *bgmetrics.Counter
+		vulnScanTime   *bgmetrics.Summary
+		blockedIPs     *bgmetrics.Counter
+		knownHosts     *bgmetrics.Gauge
 	}
 )
 
@@ -316,80 +316,22 @@ func signalHandler() {
 	slog.Infof("Signal (%v) received.", s)
 }
 
-func prometheusInit() {
-	metrics.lanDrops = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "watchd_landrops",
-		Help: "Number of internal packets dropped by the firewall",
-	})
-	metrics.wanDrops = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "watchd_wandrops",
-		Help: "Number of external packets dropped by the firewall",
-	})
-	metrics.sampledPkts = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "watchd_sampled_pkts",
-		Help: "Number of packets exampined by the sampler",
-	})
-	metrics.missedPkts = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "watchd_missed_pkts",
-		Help: "Number of packets missed by the sampler",
-	})
-	metrics.tcpScans = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "watchd_tcp_scans",
-		Help: "Number of device tcp port scans completed",
-	})
-	metrics.tcpScanTime = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "watchd_tcp_scan_time",
-		Help: "time spent on tcp port scans",
-	})
-	metrics.udpScans = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "watchd_udp_scans",
-		Help: "Number of device udp port scans completed",
-	})
-	metrics.udpScanTime = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "watchd_udp_scan_time",
-		Help: "time spent on udp port scans",
-	})
-	metrics.subnetScans = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "watchd_subnet_scans",
-		Help: "Number of subnet scans completed",
-	})
-	metrics.subnetScanTime = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "watchd_subnet_scan_time",
-		Help: "time spent on subnet scans",
-	})
-	metrics.vulnScans = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "watchd_vuln_scans",
-		Help: "Number of device vulnerability scans completed",
-	})
-	metrics.vulnScanTime = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "watchd_vuln_scan_time",
-		Help: "time spent on vulnerability scans",
-	})
-	metrics.blockedIPs = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "watchd_blocked_ips",
-		Help: "Number of dangerous IPs we've detected and blocked",
-	})
-	metrics.knownHosts = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "watchd_known_hosts",
-		Help: "Number of devices we know about and are monitoring",
-	})
-	prometheus.MustRegister(metrics.lanDrops)
-	prometheus.MustRegister(metrics.wanDrops)
-	prometheus.MustRegister(metrics.sampledPkts)
-	prometheus.MustRegister(metrics.missedPkts)
-	prometheus.MustRegister(metrics.tcpScans)
-	prometheus.MustRegister(metrics.tcpScanTime)
-	prometheus.MustRegister(metrics.udpScans)
-	prometheus.MustRegister(metrics.udpScanTime)
-	prometheus.MustRegister(metrics.subnetScans)
-	prometheus.MustRegister(metrics.subnetScanTime)
-	prometheus.MustRegister(metrics.vulnScans)
-	prometheus.MustRegister(metrics.vulnScanTime)
-	prometheus.MustRegister(metrics.blockedIPs)
-	prometheus.MustRegister(metrics.knownHosts)
-
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(base_def.WATCHD_DIAG_PORT, nil)
+func bgmetricsInit() {
+	bgm = bgmetrics.NewMetrics(pname, config)
+	metrics.lanDrops = bgm.NewCounter("landrops")
+	metrics.wanDrops = bgm.NewCounter("wandrops")
+	metrics.sampledPkts = bgm.NewCounter("sampled_pkts")
+	metrics.missedPkts = bgm.NewCounter("missed_pkts")
+	metrics.tcpScans = bgm.NewCounter("tcp_scans")
+	metrics.tcpScanTime = bgm.NewSummary("tcp_scan_time")
+	metrics.udpScans = bgm.NewCounter("udp_scans")
+	metrics.udpScanTime = bgm.NewSummary("udp_scan_time")
+	metrics.subnetScans = bgm.NewCounter("subnet_scans")
+	metrics.subnetScanTime = bgm.NewSummary("subnet_scan_time")
+	metrics.vulnScans = bgm.NewCounter("vuln_scans")
+	metrics.vulnScanTime = bgm.NewSummary("vuln_scan_time")
+	metrics.blockedIPs = bgm.NewCounter("blocked_ips")
+	metrics.knownHosts = bgm.NewGauge("known_hosts")
 }
 
 func main() {
@@ -420,8 +362,6 @@ func main() {
 		os.Exit(0)
 	}
 
-	prometheusInit()
-
 	brokerd, err = broker.NewBroker(slog, pname)
 	if err != nil {
 		slog.Fatal(err)
@@ -432,8 +372,11 @@ func main() {
 	if err != nil {
 		slog.Fatalf("cannot connect to configd: %v", err)
 	}
+
+	go http.ListenAndServe(base_def.WATCHD_DIAG_PORT, nil)
 	go apcfg.HealthMonitor(config, mcpd)
 	aputil.ReportInit(slog, pname)
+	bgmetricsInit()
 
 	config.HandleDelete(`^@/clients/.*`, configClientDelete)
 	config.HandleExpire(`^@/clients/.*/ipv4$`, configClientDelete)

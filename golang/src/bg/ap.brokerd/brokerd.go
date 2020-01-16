@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -18,7 +18,6 @@ package main
 
 import (
 	"flag"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -27,7 +26,6 @@ import (
 	"bg/ap_common/mcp"
 	"bg/base_def"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 
 	"nanomsg.org/go/mangos/v2"
@@ -72,9 +70,6 @@ func main() {
 	if err != nil {
 		slog.Warnf("Failed to connect to mcp")
 	}
-
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(*addr, nil)
 
 	sock, err := bus.NewSocket()
 	if err != nil {

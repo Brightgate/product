@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -78,6 +78,19 @@ func metricsPropHandler(query *cfgmsg.ConfigQuery) (string, error) {
 		case cfgmsg.ConfigOp_DELETE:
 			if err = validatePropDel(prop, level); err == nil {
 				err = metricsDel(prop)
+			}
+
+		case cfgmsg.ConfigOp_ADDVALID:
+			if level < cfgapi.AccessInternal {
+				err = fmt.Errorf("must be internal")
+			} else {
+				node, rerr := newVnode(prop)
+				if rerr != nil {
+					err = rerr
+				} else {
+					node.valType = "string"
+					node.level = cfgapi.AccessInternal
+				}
 			}
 
 		case cfgmsg.ConfigOp_PING:

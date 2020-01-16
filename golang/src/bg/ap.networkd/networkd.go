@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -40,7 +40,6 @@ import (
 	"bg/common/wifi"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
 
@@ -1137,11 +1136,6 @@ func signalHandler() {
 	networkdStop(fmt.Sprintf("Received signal %v", s))
 }
 
-func prometheusInit() {
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(base_def.NETWORKD_DIAG_PORT, nil)
-}
-
 func addDoneChan() chan bool {
 	dc := make(chan bool, 1)
 
@@ -1172,7 +1166,6 @@ func main() {
 	slog.Infof("starting")
 
 	plat = platform.NewPlatform()
-	prometheusInit()
 	networkCleanup()
 	if err := daemonInit(); err != nil {
 		if mcpd != nil {
@@ -1195,6 +1188,9 @@ func main() {
 
 	go apMonitorLoop(&cleanup.wg, addDoneChan())
 	go hostapdLoop(&cleanup.wg, addDoneChan())
+
+	// for pprof
+	go http.ListenAndServe(base_def.NETWORKD_DIAG_PORT, nil)
 
 	cleanup.wg.Wait()
 	slog.Infof("Cleaning up")

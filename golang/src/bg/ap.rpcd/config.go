@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -121,6 +121,8 @@ func (c *rpcClient) pushCompletions() error {
 		slog.Infof("lost connection to cl.configd")
 	} else if resp.Response == rpc.CfgBackEndResponse_ERROR {
 		err = fmt.Errorf("CompleteCmds() failed: %s", resp.Errmsg)
+	} else {
+		metrics.completions.Add(int64(len(completions)))
 	}
 
 	// If the push fails re-queue the completions for a subsequent retry.
@@ -166,6 +168,8 @@ func (c *rpcClient) pushUpdates() error {
 		slog.Infof("lost connection to cl.configd")
 	} else if resp.Response == rpc.CfgBackEndResponse_ERROR {
 		err = fmt.Errorf("Update() failed: %s", resp.Errmsg)
+	} else {
+		metrics.updates.Add(int64(len(updates)))
 	}
 
 	// If we failed to forward the updates to the cloud, requeue them to
@@ -258,6 +262,7 @@ func (c *rpcClient) fetchStream(ctx context.Context) error {
 				cmds[0].CmdID)
 			trimRefreshDups(cmds)
 			for _, cmd := range cmds {
+				metrics.commands.Inc()
 				execQuery(cmd)
 			}
 		}

@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -40,6 +40,7 @@ import (
 
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
+	"bg/ap_common/bgmetrics"
 	"bg/ap_common/data"
 	"bg/base_def"
 	"bg/base_msg"
@@ -48,7 +49,6 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/miekg/dns"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
@@ -131,19 +131,19 @@ var (
 	cachedResponses dnsCache
 
 	dnsMetrics struct {
-		requests         prometheus.Counter
-		blocked          prometheus.Counter
-		upstreamCnt      prometheus.Counter
-		upstreamFailures prometheus.Counter
-		upstreamTimeouts prometheus.Counter
-		upstreamLatency  prometheus.Summary
-		requestSize      prometheus.Summary
-		responseSize     prometheus.Summary
-		cacheSize        prometheus.Gauge
-		cacheEntries     prometheus.Gauge
-		cacheLookups     prometheus.Counter
-		cacheCollisions  prometheus.Counter
-		cacheHitRate     prometheus.Gauge
+		requests         *bgmetrics.Counter
+		blocked          *bgmetrics.Counter
+		upstreamCnt      *bgmetrics.Counter
+		upstreamFailures *bgmetrics.Counter
+		upstreamTimeouts *bgmetrics.Counter
+		upstreamLatency  *bgmetrics.Summary
+		requestSize      *bgmetrics.Summary
+		responseSize     *bgmetrics.Summary
+		cacheSize        *bgmetrics.Gauge
+		cacheEntries     *bgmetrics.Gauge
+		cacheLookups     *bgmetrics.Counter
+		cacheCollisions  *bgmetrics.Counter
+		cacheHitRate     *bgmetrics.Gauge
 	}
 )
 
@@ -1080,79 +1080,25 @@ func dnsListener(protocol string) {
 	}
 }
 
-func dnsPrometheusInit() {
-	slog.Info("dns prometheus init")
-	dnsMetrics.requests = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dns4d_requests",
-		Help: "dns requests handled",
-	})
-	dnsMetrics.blocked = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dns4d_blocked",
-		Help: "suspicious dns requests blocked",
-	})
-	dnsMetrics.upstreamCnt = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dns4d_upstream_cnt",
-		Help: "dns requests forwarded to upstream resolver",
-	})
-	dnsMetrics.upstreamFailures = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dns4d_upstream_failures",
-		Help: "upstream DNS failures",
-	})
-	dnsMetrics.upstreamTimeouts = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dns4d_upstream_timeouts",
-		Help: "upstream DNS timeouts",
-	})
-	dnsMetrics.upstreamLatency = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "dns4d_upstream_latency",
-		Help: "upstream query resolution time",
-	})
-	dnsMetrics.requestSize = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "dns4d_request_size",
-		Help: "dns4d_dns request size (bytes)",
-	})
-	dnsMetrics.responseSize = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "dns4d_response_size",
-		Help: "dns response size (bytes)",
-	})
-	dnsMetrics.cacheSize = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "dns4d_cache_size",
-		Help: "data stored in DNS cache (bytes)",
-	})
-	dnsMetrics.cacheEntries = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "dns4d_cache_entries",
-		Help: "# of entries in DNS cache",
-	})
-	dnsMetrics.cacheCollisions = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dns4d_cache_collisions",
-		Help: "hash key collisions in the DNS cache map",
-	})
-	dnsMetrics.cacheLookups = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dns4d_cache_lookups",
-		Help: "lookups in the DNS cache",
-	})
-	dnsMetrics.cacheHitRate = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "dns4d_cache_hitrate",
-		Help: "success rate of cache lookups",
-	})
-
-	prometheus.MustRegister(dnsMetrics.requests)
-	prometheus.MustRegister(dnsMetrics.blocked)
-	prometheus.MustRegister(dnsMetrics.upstreamCnt)
-	prometheus.MustRegister(dnsMetrics.upstreamFailures)
-	prometheus.MustRegister(dnsMetrics.upstreamTimeouts)
-	prometheus.MustRegister(dnsMetrics.upstreamLatency)
-	prometheus.MustRegister(dnsMetrics.requestSize)
-	prometheus.MustRegister(dnsMetrics.responseSize)
-	prometheus.MustRegister(dnsMetrics.cacheSize)
-	prometheus.MustRegister(dnsMetrics.cacheEntries)
-	prometheus.MustRegister(dnsMetrics.cacheLookups)
-	prometheus.MustRegister(dnsMetrics.cacheCollisions)
-	prometheus.MustRegister(dnsMetrics.cacheHitRate)
+func dnsMetricsInit() {
+	dnsMetrics.requests = bgm.NewCounter("dns4d/requests")
+	dnsMetrics.blocked = bgm.NewCounter("dns4d/blocked")
+	dnsMetrics.upstreamCnt = bgm.NewCounter("dns4d/upstream_cnt")
+	dnsMetrics.upstreamFailures = bgm.NewCounter("dns4d/upstream_failures")
+	dnsMetrics.upstreamTimeouts = bgm.NewCounter("dns4d/upstream_timeouts")
+	dnsMetrics.upstreamLatency = bgm.NewSummary("dns4d/upstream_latency")
+	dnsMetrics.requestSize = bgm.NewSummary("dns4d/request_size")
+	dnsMetrics.responseSize = bgm.NewSummary("dns4d/response_size")
+	dnsMetrics.cacheSize = bgm.NewGauge("dns4d/cache_size")
+	dnsMetrics.cacheEntries = bgm.NewGauge("dns4d/cache_entries")
+	dnsMetrics.cacheCollisions = bgm.NewCounter("dns4d/cache_collisions")
+	dnsMetrics.cacheLookups = bgm.NewCounter("dns4d/cache_lookups")
+	dnsMetrics.cacheHitRate = bgm.NewGauge("dns4d/cache_hitrate")
 }
 
 func dnsInit() {
 	slog.Info("dns init")
-	dnsPrometheusInit()
+	dnsMetricsInit()
 
 	cachedResponses.init()
 	initNetwork()

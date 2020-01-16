@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -22,6 +22,7 @@ import (
 
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
+	"bg/ap_common/bgmetrics"
 	bgdhcp "bg/ap_common/dhcp"
 	"bg/base_def"
 	"bg/base_msg"
@@ -30,7 +31,6 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	dhcp "github.com/krolaw/dhcp4"
-	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/net/ipv4"
 )
 
@@ -48,15 +48,15 @@ var (
 	verbose = apcfg.Bool("verbose", false, true, nil)
 
 	dhcpMetrics struct {
-		requests    prometheus.Counter
-		provisioned prometheus.Counter
-		claimed     prometheus.Counter
-		renewed     prometheus.Counter
-		released    prometheus.Counter
-		declined    prometheus.Counter
-		expired     prometheus.Counter
-		rejected    prometheus.Counter
-		exhausted   prometheus.Counter
+		requests    *bgmetrics.Counter
+		provisioned *bgmetrics.Counter
+		claimed     *bgmetrics.Counter
+		renewed     *bgmetrics.Counter
+		released    *bgmetrics.Counter
+		declined    *bgmetrics.Counter
+		expired     *bgmetrics.Counter
+		rejected    *bgmetrics.Counter
+		exhausted   *bgmetrics.Counter
 	}
 )
 
@@ -958,58 +958,22 @@ func dhcpLoop() {
 	}
 }
 
-func dhcpPrometheusInit() {
-	dhcpMetrics.requests = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dhcp4d_requests",
-		Help: "Number of addresses requested",
-	})
-	dhcpMetrics.provisioned = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dhcp4d_provisioned",
-		Help: "Number of addresses provisioned",
-	})
-	dhcpMetrics.claimed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dhcp4d_claimed",
-		Help: "Number of addresses claimed",
-	})
-	dhcpMetrics.renewed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dhcp4d_renewed",
-		Help: "Number of addresses renewed",
-	})
-	dhcpMetrics.released = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dhcp4d_released",
-		Help: "Number of addresses released",
-	})
-	dhcpMetrics.declined = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dhcp4d_declined",
-		Help: "Number of addresses declined",
-	})
-	dhcpMetrics.expired = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dhcp4d_expired",
-		Help: "Number of addresses expired",
-	})
-	dhcpMetrics.rejected = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dhcp4d_rejected",
-		Help: "Number of addresses rejected",
-	})
-	dhcpMetrics.exhausted = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dhcp4d_exhausted",
-		Help: "Number of exhaustion failures",
-	})
-
-	prometheus.MustRegister(dhcpMetrics.requests)
-	prometheus.MustRegister(dhcpMetrics.provisioned)
-	prometheus.MustRegister(dhcpMetrics.claimed)
-	prometheus.MustRegister(dhcpMetrics.released)
-	prometheus.MustRegister(dhcpMetrics.declined)
-	prometheus.MustRegister(dhcpMetrics.expired)
-	prometheus.MustRegister(dhcpMetrics.rejected)
-	prometheus.MustRegister(dhcpMetrics.exhausted)
+func dhcpMetricsInit() {
+	dhcpMetrics.requests = bgm.NewCounter("dhcp4d/requests")
+	dhcpMetrics.provisioned = bgm.NewCounter("dhcp4d/provisioned")
+	dhcpMetrics.claimed = bgm.NewCounter("dhcp4d/claimed")
+	dhcpMetrics.renewed = bgm.NewCounter("dhcp4d/renewed")
+	dhcpMetrics.released = bgm.NewCounter("dhcp4d/released")
+	dhcpMetrics.declined = bgm.NewCounter("dhcp4d/declined")
+	dhcpMetrics.expired = bgm.NewCounter("dhcp4d/expired")
+	dhcpMetrics.rejected = bgm.NewCounter("dhcp4d/rejected")
+	dhcpMetrics.exhausted = bgm.NewCounter("dhcp4d/exhausted")
 }
 
 func dhcpInit() {
 	var err error
 
-	dhcpPrometheusInit()
+	dhcpMetricsInit()
 
 	domainName, err = config.GetDomain()
 	if err != nil {
