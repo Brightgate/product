@@ -552,9 +552,12 @@ func main() {
 	}
 
 	go func() {
-		if err := rsHTTPS.echo.StartServer(httpsSrv); err != nil {
-			rsHTTPS.echo.Logger.Infof("shutting down HTTPS service: %v", err)
+		if err := rsHTTPS.echo.StartServer(httpsSrv); err != nil && err != http.ErrServerClosed {
+			rsHTTPS.echo.Logger.Fatalf("failed to start HTTPS service: %v", err)
 		}
+		// A bug in our current implementation (for which we don't have
+		// root-cause) means that we never see StartServer return.
+		rsHTTPS.echo.Logger.Info("finished serving HTTPS")
 	}()
 
 	// http (typically port 80) listener.
@@ -564,9 +567,12 @@ func main() {
 	eHTTP := mkRouterHTTP()
 
 	go func() {
-		if err := eHTTP.StartServer(httpSrv); err != nil {
-			eHTTP.Logger.Info("shutting down HTTP service")
+		if err := eHTTP.StartServer(httpSrv); err != nil && err != http.ErrServerClosed {
+			eHTTP.Logger.Fatalf("failed to start HTTP service: %v", err)
 		}
+		// A bug in our current implementation (for which we don't have
+		// root-cause) means that we never see StartServer return.
+		eHTTP.Logger.Info("finished serving HTTP")
 	}()
 
 	sig := make(chan os.Signal)
