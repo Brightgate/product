@@ -418,6 +418,10 @@ func (c *Handle) GetProp(prop string) (string, error) {
 // SetProp updates a single property, taking an optional expiration time.  If
 // the property doesn't already exist, an error is returned.
 func (c *Handle) SetProp(prop, val string, expires *time.Time) error {
+	if expires != nil && expires.IsZero() {
+		expires = nil
+	}
+
 	ops := []PropertyOp{
 		{Op: PropSet, Name: prop, Value: val, Expires: expires},
 	}
@@ -430,6 +434,10 @@ func (c *Handle) SetProp(prop, val string, expires *time.Time) error {
 // the property doesn't already exist, it is created - as well as any parent
 // properties needed to provide a path through the tree.
 func (c *Handle) CreateProp(prop, val string, expires *time.Time) error {
+	if expires != nil && expires.IsZero() {
+		expires = nil
+	}
+
 	ops := []PropertyOp{
 		{Op: PropCreate, Name: prop, Value: val, Expires: expires},
 	}

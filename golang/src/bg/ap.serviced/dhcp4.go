@@ -93,9 +93,13 @@ func dhcpIPv4Expired(hwaddr string) {
 }
 
 func dhcpIPv4Changed(hwaddr string, client *cfgapi.ClientInfo) {
-	ipaddr := client.IPv4
-	expires := client.Expires
+	var expires time.Time
 
+	if client.Expires != nil {
+		expires = *client.Expires
+	}
+
+	ipaddr := client.IPv4
 	ring := getRing(hwaddr)
 	if ring == "" {
 		// While we could assign an address to a client we've never seen
@@ -117,26 +121,15 @@ func dhcpIPv4Changed(hwaddr string, client *cfgapi.ClientInfo) {
 	defer h.Unlock()
 
 	l := h.leaseSearch(hwaddr)
-	if l != nil && ipaddr.Equal(l.ipaddr) {
-		// The IP address hasn't changed.  If the expiration time hasn't
-		// either, then this is a no-op.  We're probably responding to
-		// configd's broadcast notification of the property change we
-		// just issued.
 
-		var newExpires, oldExpires time.Time
-		if expires != nil {
-			newExpires = *expires
-		}
-		if l.expires != nil {
-			oldExpires = *l.expires
-		}
-
-		if newExpires.Equal(oldExpires) {
-			return
-		}
+	if l != nil && ipaddr.Equal(l.ipaddr) && expires.Equal(l.expires) {
+		// If the IP address and expiration time haven't changed, then
+		// this is a no-op.  We're probably responding to configd's
+		// broadcast notification of the property change we just issued.
+		return
 	}
 
-	if expires != nil {
+	if !expires.IsZero() {
 		// Either somebody else explicitly made a dynamic IP
 		// assignment (which would be user error), or we've
 		// already changed the assignment since this
@@ -155,7 +148,7 @@ func dhcpIPv4Changed(hwaddr string, client *cfgapi.ClientInfo) {
 	}
 
 	l = h.getLease(ipaddr)
-	h.recordLease(l, hwaddr, "", ipaddr, nil)
+	l.record(hwaddr, expires)
 }
 
 func dhcpDeleteEvent(hwaddr string) {
@@ -173,13 +166,12 @@ func dhcpDeleteEvent(hwaddr string) {
 		h.Lock()
 		if l := h.leaseSearch(hwaddr); l != nil {
 			dhcpMetrics.released.Inc()
-			if l.expires == nil {
+			if l.expires.IsZero() {
 				// If this was a statically assigned lease, give
 				// the client an expiration time of 'now' to
 				// prevent it from being given a static address
 				// on its next request.
-				now := time.Now()
-				l.expires = &now
+				l.expires = time.Now()
 				l.static = false
 			}
 			l.assigned = false
@@ -254,8 +246,7 @@ func notifyNewEntity(p dhcp.Packet, options dhcp.Options, ring string) {
 /*
  * A provisioned IP address has now been claimed by a client.
  */
-func notifyClaimed(p dhcp.Packet, ipaddr net.IP, name string,
-	dur time.Duration) {
+func notifyClaimed(p dhcp.Packet, ipv4 net.IP, name string, dur time.Duration) {
 
 	ttl := uint32(dur.Seconds())
 
@@ -265,7 +256,7 @@ func notifyClaimed(p dhcp.Packet, ipaddr net.IP, name string,
 		Sender:      proto.String(brokerd.Name),
 		Debug:       proto.String("-"),
 		Action:      &action,
-		Ipv4Address: proto.Uint32(network.IPAddrToUint32(ipaddr)),
+		Ipv4Address: proto.Uint32(network.IPAddrToUint32(ipv4)),
 		Hostname:    proto.String(name),
 		Duration:    proto.Uint32(ttl),
 	}
@@ -339,13 +330,12 @@ func notifyOptions(hwaddr net.HardwareAddr, options dhcp.Options, msgType dhcp.M
  */
 
 type lease struct {
-	name      string     // Client's name from DHCP packet
-	hwaddr    string     // Client's CHAddr
-	ipaddr    net.IP     // Client's IP address
-	expires   *time.Time // When the lease expires
-	static    bool       // Statically assigned?
-	assigned  bool       // Lease assigned to a client?
-	confirmed bool       // Client accepted lease?
+	hwaddr    string    // Client's CHAddr
+	ipaddr    net.IP    // Client's IP address
+	expires   time.Time // When the lease expires
+	static    bool      // Statically assigned?
+	assigned  bool      // Lease assigned to a client?
+	confirmed bool      // Client accepted lease?
 }
 
 type ringHandler struct {
@@ -356,9 +346,41 @@ type ringHandler struct {
 	rangeEnd   net.IP        // End of IP range to distribute
 	rangeSpan  int           // Number of IPs to distribute (starting from start)
 	duration   time.Duration // Lease period
-	leases     []lease       // Per-lease state
+	leases     []*lease      // Per-lease state
 
 	sync.Mutex
+}
+
+func (l *lease) String() string {
+	var exp string
+
+	if l.expires.IsZero() {
+		exp = " static"
+	} else {
+		exp = " until " + l.expires.Format(time.Stamp)
+	}
+
+	return l.hwaddr + "->" + l.ipaddr.String() + exp
+
+}
+
+// If this lease has expired, clear its assigned/confirmed bits
+func (l *lease) expireCheck() {
+	if l.assigned && !l.expires.IsZero() && l.expires.Before(time.Now()) {
+		slog.Infof("cleaning up expired lease: %s", l)
+		l.assigned = false
+		l.confirmed = false
+	}
+}
+
+func (l *lease) record(hwaddr string, etime time.Time) {
+	l.hwaddr = hwaddr
+	l.expires = etime
+	l.static = etime.IsZero()
+	if l.static || l.expires.After(time.Now()) {
+		slog.Infof("recorded lease: %s", l)
+		l.assigned = true
+	}
 }
 
 /*
@@ -403,7 +425,7 @@ func extractHostname(options dhcp.Options) string {
 		name = name[:null]
 	}
 
-	if !network.ValidDNSName(name) {
+	if strings.ToLower(name) == "localhost" || !network.ValidDNSName(name) {
 		name = ""
 	}
 
@@ -415,6 +437,7 @@ func extractHostname(options dhcp.Options) string {
  */
 func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	var reqIP net.IP
+	var expiresAt time.Time
 
 	hwaddr := p.CHAddr().String()
 	slog.Infof("REQUEST for %s on %s", hwaddr, h.ring)
@@ -484,9 +507,10 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 		reqIP = net.IP(p.CIAddr())
 		action = "CLAIMED"
 	}
+	slog.Infof("   REQUEST %s %s", action, reqIP.String())
 
 	if len(reqIP) != 4 || reqIP.Equal(net.IPv4zero) {
-		slog.Warnf("Invalid reqIP %s from %s", reqIP.String(), hwaddr)
+		slog.Warnf("Invalid reqIP %s from %s", reqIP, hwaddr)
 		dhcpMetrics.rejected.Inc()
 		return h.nak(p)
 	}
@@ -497,31 +521,18 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 		dhcpMetrics.rejected.Inc()
 		return h.nak(p)
 	}
+	name := extractHostname(options)
+	slog.Infof("   REQUEST assigned %s for %q", l, name)
 
-	slog.Infof("   REQUEST %s %s", action, reqIP.String())
-	if l.static {
-		l.expires = nil
-	} else {
-		expires := time.Now().Add(leaseDuration)
-		l.expires = &expires
+	if !l.static {
+		expiresAt = time.Now().Add(leaseDuration)
 	}
-
+	l.record(hwaddr, expiresAt)
 	l.confirmed = true
-	if x := extractHostname(options); strings.ToLower(x) != "localhost" {
-		l.name = x
-	}
 
-	if l.expires == nil {
-		slog.Infof("   REQUEST assigned static %s to %s (%q)",
-			l.ipaddr, hwaddr, l.name)
-	} else {
-		slog.Infof("   REQUEST assigned %s to %s (%q) until %s",
-			l.ipaddr, hwaddr, l.name, l.expires.Format(time.Stamp))
-	}
-
-	config.CreateProp(propPath(hwaddr, "ipv4"), l.ipaddr.String(), l.expires)
-	config.CreateProp(propPath(hwaddr, "dhcp_name"), l.name, nil)
-	notifyClaimed(p, l.ipaddr, l.name, leaseDuration)
+	config.CreateProp(propPath(hwaddr, "ipv4"), l.ipaddr.String(), &l.expires)
+	config.CreateProp(propPath(hwaddr, "dhcp_name"), name, nil)
+	notifyClaimed(p, l.ipaddr, name, leaseDuration)
 	dhcpMetrics.claimed.Inc()
 
 	if h.ring == base_def.RING_INTERNAL {
@@ -551,7 +562,7 @@ func (h *ringHandler) releaseLease(l *lease, hwaddr string) bool {
 	if l == nil || !l.assigned || l.hwaddr != hwaddr || l.static {
 		return false
 	}
-	if l.expires == nil {
+	if l.expires.IsZero() {
 		return false
 	}
 
@@ -577,7 +588,7 @@ func (h *ringHandler) release(p dhcp.Packet) {
 	}
 	if h.releaseLease(l, hwaddr) {
 		dhcpMetrics.released.Inc()
-		slog.Infof("RELEASE %s", hwaddr)
+		slog.Infof("RELEASE %s", l)
 	}
 }
 
@@ -693,27 +704,13 @@ func (h *ringHandler) ServeDHCP(p dhcp.Packet, msgType dhcp.MessageType,
 	return nil
 }
 
-func (h *ringHandler) recordLease(l *lease, hwaddr, name string, ipv4 net.IP,
-	etime *time.Time) {
-	l.name = name
-	l.hwaddr = hwaddr
-	l.ipaddr = ipv4.To4()
-	l.expires = etime
-	l.static = (etime == nil)
-	l.assigned = true
-}
-
 /*
  * If this nic already has a live lease, return that.  Otherwise, assign an
  * available lease at random.
  */
 func (h *ringHandler) leaseAssign(hwaddr string) (*lease, error) {
-	var rval *lease
 	var err error
-
-	now := time.Now()
-	target := rand.Intn(h.rangeSpan)
-	assigned := -1
+	var assigned *lease
 
 	if ring := getRing(hwaddr); ring != "" && ring != h.ring {
 		// This shouldn't be possible, since the hwaddr was used to
@@ -722,36 +719,30 @@ func (h *ringHandler) leaseAssign(hwaddr string) (*lease, error) {
 			hwaddr, ring, h.ring)
 	}
 
-	for i, l := range h.leases {
-		if l.expires != nil && l.expires.Before(now) {
-			// We don't actively handle lease expiration messages;
-			// they get cleaned up lazily here.
-			l.assigned = false
-			l.confirmed = false
-		}
+	slot := 0
+	targetSlot := rand.Intn(h.rangeSpan)
 
+	for i, l := range h.leases {
 		if l.assigned && l.hwaddr == hwaddr {
-			rval = &l
+			assigned = l
 			break
 		}
 
-		if !l.assigned && assigned < target {
-			assigned = i
+		l.expireCheck()
+		if !l.assigned && (assigned == nil || slot < targetSlot) {
+			assigned = l
+			slot = i
 		}
 	}
 
-	if rval == nil {
-		if assigned >= 0 {
-			ipv4 := dhcp.IPAdd(h.rangeStart, assigned)
-			rval = &h.leases[assigned]
-			expires := time.Now().Add(h.duration)
-			h.recordLease(rval, hwaddr, "", ipv4, &expires)
-		} else {
-			err = fmt.Errorf("out of leases on '%s' ring", h.ring)
-			dhcpMetrics.exhausted.Inc()
-		}
+	if assigned != nil {
+		assigned.record(hwaddr, time.Now().Add(h.duration))
+	} else {
+		dhcpMetrics.exhausted.Inc()
+		err = fmt.Errorf("out of leases on '%s' ring", h.ring)
 	}
-	return rval, err
+
+	return assigned, err
 }
 
 /*
@@ -761,8 +752,9 @@ func (h *ringHandler) leaseAssign(hwaddr string) (*lease, error) {
 func (h *ringHandler) leaseSearch(hwaddr string) *lease {
 	var rval *lease
 
-	for i := 0; i < h.rangeSpan; i++ {
-		l := &h.leases[i]
+	for _, l := range h.leases {
+		l.expireCheck()
+
 		if l.assigned && l.hwaddr == hwaddr {
 			if rval != nil {
 				slog.Warnf("multiple leases for %s: %v and %v",
@@ -781,7 +773,7 @@ func (h *ringHandler) getLease(ip net.IP) *lease {
 	}
 
 	slot := dhcp.IPRange(h.rangeStart, ip) - 1
-	return &h.leases[slot]
+	return h.leases[slot]
 }
 
 func ipRange(ring *cfgapi.RingConfig) (net.IP, int) {
@@ -832,8 +824,12 @@ func newHandler(name string, rings cfgapi.RingMap) *ringHandler {
 			dhcp.OptionDomainNameServer:           myip,
 			dhcp.OptionNetworkTimeProtocolServers: myip,
 		},
-		leases: make([]lease, span, span),
+		leases: make([]*lease, span, span),
 	}
+	for i := 0; i < span; i++ {
+		h.leases[i] = &lease{ipaddr: dhcp.IPAdd(start, i)}
+	}
+
 	h.options[dhcp.OptionDomainName] = []byte(domainName)
 	h.options[dhcp.OptionVendorClassIdentifier] = []byte("Brightgate, Inc.")
 
@@ -852,8 +848,12 @@ func (h *ringHandler) recoverLeases() {
 		}
 
 		if l := h.getLease(client.IPv4); l != nil {
-			h.recordLease(l, macaddr, client.DHCPName, client.IPv4,
-				client.Expires)
+			var exp time.Time
+			if client.Expires != nil {
+				exp = *client.Expires
+			}
+
+			l.record(macaddr, exp)
 		}
 	}
 	clientMtx.Unlock()
