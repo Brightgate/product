@@ -337,7 +337,7 @@ type siteMachine struct {
 	DeviceMAC string
 }
 
-func classifySite(B *backdrop, models []RecordedClassifier, uuid string) error {
+func classifySite(B *backdrop, models []RecordedClassifier, uuid string, persistent bool) error {
 	var rows *sql.Rows
 	var err error
 
@@ -368,7 +368,7 @@ func classifySite(B *backdrop, models []RecordedClassifier, uuid string) error {
 
 	for _, m := range machines {
 		fmt.Printf("    %s %s\n", m.DeviceMAC,
-			classifyMac(B, models, m.SiteUUID, m.DeviceMAC, B.persistClassifications))
+			classifyMac(B, models, m.SiteUUID, m.DeviceMAC, persistent))
 	}
 
 	return nil

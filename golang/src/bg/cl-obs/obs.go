@@ -194,37 +194,23 @@ type Ingester interface {
 }
 
 type backdrop struct {
-	ingester               Ingester
-	db                     *sqlx.DB
-	modeldb                *sqlx.DB
-	modelsLoaded           bool
-	persistClassifications bool
-	ouidb                  oui.OuiDB
+	ingester     Ingester
+	db           *sqlx.DB
+	modeldb      *sqlx.DB
+	modelsLoaded bool
+	ouidb        oui.OuiDB
 }
 
 var (
 	_B backdrop
 
-	cpuProfile            string
-	deviceDetails         bool
-	extractListDHCPParams bool
-	extractListDNSRecords bool
-	extractListModels     bool
-	extractListOUIMfgs    bool
-	extractOutput         string
-	ingestDir             string
-	ingestProject         string
-	lsDetails             bool
-	modelDir              string
-	modelFile             string
-	persistent            bool
-	reviewDetails         bool
-	observationsFile      string
-	ouiFile               string
-	siteDetails           bool
-	siteNoNames           bool
-	// trainOutput           string
-	trainSelect string
+	cpuProfile       string
+	ingestDir        string
+	ingestProject    string
+	modelDir         string
+	modelFile        string
+	observationsFile string
+	ouiFile          string
 )
 
 func getShake256(schema string) string {
@@ -422,7 +408,7 @@ type hostBucket struct {
 
 const dnsINRequestPat = ";(.*)\tIN\t (.*)"
 
-var dnsINRequestRE *regexp.Regexp
+var dnsINRequestRE = regexp.MustCompile(dnsINRequestPat)
 
 func printDHCPOptions(w io.Writer, do []*base_msg.DHCPOptions) {
 	var params []byte
@@ -537,35 +523,18 @@ func listDevices(B *backdrop, modelDir string, detailed bool) error {
 	return nil
 }
 
-type site struct {
-	SiteName string
-	SiteUUID string
-}
-
-func matchSites(B *backdrop, match string) ([]site, error) {
-	var rows *sql.Rows
+func matchSites(B *backdrop, match string) ([]RecordedSite, error) {
 	var err error
 
-	sites := make([]site, 0)
+	sites := make([]RecordedSite, 0)
 
 	if match == "" || match == "*" {
-		rows, err = B.db.Query("SELECT site_uuid, site_name FROM site;")
+		err = B.db.Select(&sites, "SELECT site_uuid, site_name FROM site ORDER BY site_uuid;")
 	} else {
-		rows, err = B.db.Query("SELECT site_uuid, site_name FROM site WHERE site_uuid GLOB $1 OR site_name GLOB $1;", match)
+		err = B.db.Select(&sites, "SELECT site_uuid, site_name FROM site WHERE site_uuid GLOB $1 OR site_name GLOB $1 ORDER BY site_uuid;", match)
 	}
 	if err != nil {
 		return nil, errors.Wrap(err, "select site failed")
-	}
-
-	for rows.Next() {
-		var suuid, sname string
-
-		err = rows.Scan(&suuid, &sname)
-		if err != nil {
-			log.Printf("site scan failed: %v\n", err)
-			continue
-		}
-		sites = append(sites, site{sname, suuid})
 	}
 	return sites, nil
 }
@@ -589,7 +558,7 @@ func listSites(B *backdrop, includeDevices bool, noNames bool, args []string) er
 		args = []string{"*"}
 	}
 
-	sites := make([]site, 0)
+	sites := make([]RecordedSite, 0)
 	for _, arg := range args {
 		nsites, err := matchSites(B, arg)
 		if err != nil {
@@ -635,11 +604,14 @@ func listSites(B *backdrop, includeDevices bool, noNames bool, args []string) er
 }
 
 func siteSub(cmd *cobra.Command, args []string) error {
-	return listSites(&_B, siteDetails, siteNoNames, args)
+	verbose, _ := cmd.Flags().GetBool("verbose")
+	noNames, _ := cmd.Flags().GetBool("no-names")
+	return listSites(&_B, verbose, noNames, args)
 }
 
 func deviceSub(cmd *cobra.Command, args []string) error {
-	return listDevices(&_B, modelDir, deviceDetails)
+	verbose, _ := cmd.Flags().GetBool("verbose")
+	return listDevices(&_B, modelDir, verbose)
 }
 
 func reviewSub(cmd *cobra.Command, args []string) error {
@@ -756,6 +728,8 @@ func getModels(B *backdrop) ([]RecordedClassifier, error) {
 }
 
 func classifySub(cmd *cobra.Command, args []string) error {
+	persist, _ := cmd.Flags().GetBool("persist")
+
 	models, err := getModels(&_B)
 	if err != nil {
 		return errors.Wrap(err, "getModels failed")
@@ -768,7 +742,7 @@ func classifySub(cmd *cobra.Command, args []string) error {
 		// is it a mac?
 		_, err = net.ParseMAC(arg)
 		if err == nil {
-			classifyMac(&_B, models, "", arg, _B.persistClassifications)
+			classifyMac(&_B, models, "", arg, persist)
 			continue
 		}
 
@@ -778,7 +752,7 @@ func classifySub(cmd *cobra.Command, args []string) error {
 			return errors.Wrapf(err, "couldn't find a site name or UUID matching %s", arg)
 		}
 		for _, site := range sites {
-			classifySite(&_B, models, site.SiteUUID)
+			classifySite(&_B, models, site.SiteUUID, persist)
 		}
 	}
 
@@ -793,7 +767,6 @@ func lsByUUID(u string, details bool) error {
 	var seen map[string]int
 
 	rows, err := _B.db.Queryx("SELECT * FROM inventory WHERE site_uuid = ? ORDER BY inventory_date DESC;", u)
-
 	if err != nil {
 		return errors.Wrap(err, "inventory Queryx error")
 	}
@@ -816,7 +789,7 @@ func lsByUUID(u string, details bool) error {
 		}
 
 		content := getContentStatusFromReader(rdr)
-		if content == "----" && !lsDetails {
+		if content == "----" && !details {
 			continue
 		}
 
@@ -896,10 +869,11 @@ func lsByMac(m string, details bool) error {
 
 func lsSub(cmd *cobra.Command, args []string) error {
 	// Each argument to the ls subcommand is a MAC address or site UUID/Name
+	verbose, _ := cmd.Flags().GetBool("verbose")
 	for _, arg := range args {
 		// is it a mac?
 		if _, err := net.ParseMAC(arg); err == nil {
-			lsByMac(arg, lsDetails)
+			lsByMac(arg, verbose)
 			continue
 		}
 
@@ -909,24 +883,26 @@ func lsSub(cmd *cobra.Command, args []string) error {
 			return errors.Wrapf(err, "couldn't find a site name or UUID matching %s", arg)
 		}
 		for _, site := range sites {
-			lsByUUID(site.SiteUUID, lsDetails)
+			lsByUUID(site.SiteUUID, verbose)
 		}
 	}
 	return nil
 }
 
 func extractSub(cmd *cobra.Command, args []string) error {
-	if extractListDHCPParams {
+	if dhcp, _ := cmd.Flags().GetBool("dhcp"); dhcp {
 		return extractDHCPRecords(&_B, ingestDir)
-	} else if extractListDNSRecords {
+	}
+	if dns, _ := cmd.Flags().GetBool("dns"); dns {
 		return extractDNSRecords(&_B, ingestDir)
-	} else if extractListOUIMfgs {
+	}
+	if mfg, _ := cmd.Flags().GetBool("mfg"); mfg {
 		return extractMfgs(&_B, ingestDir)
-	} else if extractListModels {
+	}
+	if device, _ := cmd.Flags().GetBool("device"); device {
 		return extractDevices(&_B)
 	}
-
-	return errors.New("please specify extraction list")
+	return errors.New("please specify extraction type")
 }
 
 func trainSub(cmd *cobra.Command, args []string) error {
@@ -1044,11 +1020,6 @@ func readyBackdrop(B *backdrop) error {
 	} else {
 		B.modelsLoaded = true
 	}
-
-	if persistent {
-		B.persistClassifications = true
-	}
-
 	return nil
 }
 
@@ -1134,8 +1105,8 @@ func main() {
 		Args:  cobra.MinimumNArgs(0),
 		RunE:  siteSub,
 	}
-	siteCmd.Flags().BoolVarP(&siteDetails, "verbose", "v", false, "list site details")
-	siteCmd.Flags().BoolVarP(&siteNoNames, "no-names", "n", false, "only print site UUIDs; no names")
+	siteCmd.Flags().BoolP("verbose", "v", false, "list site details")
+	siteCmd.Flags().BoolP("no-names", "n", false, "only print site UUIDs; no names")
 	siteCmd.Flags().StringVar(&modelFile, "model-file", "trained-models.db", "path to model file")
 	rootCmd.AddCommand(siteCmd)
 
@@ -1145,7 +1116,7 @@ func main() {
 		Args:  cobra.NoArgs,
 		RunE:  deviceSub,
 	}
-	deviceCmd.Flags().BoolVarP(&deviceDetails, "verbose", "v", false, "list device details")
+	deviceCmd.Flags().BoolP("verbose", "v", false, "list device details")
 	rootCmd.AddCommand(deviceCmd)
 
 	lsCmd := &cobra.Command{
@@ -1154,7 +1125,7 @@ func main() {
 		Args:  cobra.MinimumNArgs(1),
 		RunE:  lsSub,
 	}
-	lsCmd.Flags().BoolVarP(&lsDetails, "verbose", "v", false, "detailed output")
+	lsCmd.Flags().BoolP("verbose", "v", false, "detailed output")
 	rootCmd.AddCommand(lsCmd)
 
 	ingestCmd := &cobra.Command{
@@ -1171,11 +1142,10 @@ func main() {
 		Args:  cobra.NoArgs,
 		RunE:  extractSub,
 	}
-	extractCmd.Flags().BoolVar(&extractListDHCPParams, "dhcp", false, "list device DHCP parameters")
-	extractCmd.Flags().BoolVar(&extractListDNSRecords, "dns", false, "list device DNS queries")
-	extractCmd.Flags().BoolVar(&extractListOUIMfgs, "mfg", false, "list OUI manufacturers")
-	extractCmd.Flags().BoolVar(&extractListModels, "device", false, "list devices")
-	extractCmd.Flags().StringVar(&extractOutput, "output", "obs-grid.out", "path for output file")
+	extractCmd.Flags().Bool("dhcp", false, "list device DHCP parameters")
+	extractCmd.Flags().Bool("dns", false, "list device DNS queries")
+	extractCmd.Flags().Bool("mfg", false, "list OUI manufacturers")
+	extractCmd.Flags().Bool("device", false, "list devices")
 	rootCmd.AddCommand(extractCmd)
 
 	trainCmd := &cobra.Command{
@@ -1184,7 +1154,6 @@ func main() {
 		Args:  cobra.NoArgs,
 		RunE:  trainSub,
 	}
-	trainCmd.Flags().StringVar(&trainSelect, "classifier", "bayes-os", "select classifier to run [bayes-os, bayes-device]")
 	trainCmd.Flags().StringVar(&modelFile, "model-file", "trained-models.db", "output path to write classifier")
 	rootCmd.AddCommand(trainCmd)
 
@@ -1194,7 +1163,6 @@ func main() {
 		Args:  cobra.NoArgs,
 		RunE:  reviewSub,
 	}
-	reviewCmd.Flags().BoolVarP(&reviewDetails, "verbose", "v", false, "detailed output")
 	reviewCmd.Flags().StringVar(&modelFile, "model-file", "trained-models.db", "path to model file")
 	rootCmd.AddCommand(reviewCmd)
 
@@ -1205,10 +1173,8 @@ func main() {
 		RunE:  classifySub,
 	}
 	classifyCmd.Flags().StringVar(&modelFile, "model-file", "trained-models.db", "path to model file")
-	classifyCmd.Flags().BoolVar(&persistent, "persist", false, "record classifications")
+	classifyCmd.Flags().Bool("persist", false, "record classifications")
 	rootCmd.AddCommand(classifyCmd)
-
-	dnsINRequestRE = regexp.MustCompile(dnsINRequestPat)
 
 	initMaps()
 
