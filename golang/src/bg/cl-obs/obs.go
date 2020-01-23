@@ -53,6 +53,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -71,7 +72,6 @@ import (
 	"github.com/klauspost/oui"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/pkg/errors"
-	"github.com/satori/uuid"
 	"github.com/spf13/cobra"
 
 	"cloud.google.com/go/storage"
@@ -212,7 +212,6 @@ var (
 	extractListModels     bool
 	extractListOUIMfgs    bool
 	extractOutput         string
-	ingestCap             int
 	ingestDir             string
 	ingestProject         string
 	lsDetails             bool
@@ -223,7 +222,7 @@ var (
 	observationsFile      string
 	ouiFile               string
 	siteDetails           bool
-	siteMatch             string
+	siteNoNames           bool
 	// trainOutput           string
 	trainSelect string
 )
@@ -538,8 +537,40 @@ func listDevices(B *backdrop, modelDir string, detailed bool) error {
 	return nil
 }
 
-func listSites(B *backdrop, includeDevices bool, match string) error {
+type site struct {
+	SiteName string
+	SiteUUID string
+}
+
+func matchSites(B *backdrop, match string) ([]site, error) {
 	var rows *sql.Rows
+	var err error
+
+	sites := make([]site, 0)
+
+	if match == "" || match == "*" {
+		rows, err = B.db.Query("SELECT site_uuid, site_name FROM site;")
+	} else {
+		rows, err = B.db.Query("SELECT site_uuid, site_name FROM site WHERE site_uuid GLOB $1 OR site_name GLOB $1;", match)
+	}
+	if err != nil {
+		return nil, errors.Wrap(err, "select site failed")
+	}
+
+	for rows.Next() {
+		var suuid, sname string
+
+		err = rows.Scan(&suuid, &sname)
+		if err != nil {
+			log.Printf("site scan failed: %v\n", err)
+			continue
+		}
+		sites = append(sites, site{sname, suuid})
+	}
+	return sites, nil
+}
+
+func listSites(B *backdrop, includeDevices bool, noNames bool, args []string) error {
 	var err error
 
 	withClassifications := B.modelsLoaded
@@ -554,28 +585,28 @@ func listSites(B *backdrop, includeDevices bool, match string) error {
 		log.Printf("models: %d", len(models))
 	}
 
-	if match == "" {
-		rows, err = B.db.Query("SELECT site_uuid, site_name FROM site;")
-	} else {
-		rows, err = B.db.Query("SELECT site_uuid, site_name FROM site WHERE site_uuid GLOB $1 OR site_name GLOB $1;", match)
-	}
-	if err != nil {
-		return errors.Wrap(err, "select site failed")
+	if len(args) == 0 {
+		args = []string{"*"}
 	}
 
-	for rows.Next() {
-		var suuid, sname string
-
-		err = rows.Scan(&suuid, &sname)
+	sites := make([]site, 0)
+	for _, arg := range args {
+		nsites, err := matchSites(B, arg)
 		if err != nil {
-			log.Printf("site scan failed: %v\n", err)
-			continue
+			return errors.Wrapf(err, "site match %q failed", arg)
+		}
+		sites = append(sites, nsites...)
+	}
+
+	for _, site := range sites {
+		if noNames {
+			fmt.Printf("%s\n", site.SiteUUID)
+		} else {
+			fmt.Printf("%18s %20s\n", site.SiteUUID, site.SiteName)
 		}
 
-		fmt.Printf("%18s %20s\n", suuid, sname)
-
 		if includeDevices {
-			drows, err := B.db.Query("SELECT DISTINCT device_mac FROM inventory WHERE site_uuid = $1 ORDER BY inventory_date ASC;", suuid)
+			drows, err := B.db.Query("SELECT DISTINCT device_mac FROM inventory WHERE site_uuid = $1 ORDER BY inventory_date ASC;", site.SiteUUID)
 			if err != nil {
 				log.Printf("select inventory failed: %v\n", err)
 				continue
@@ -592,7 +623,7 @@ func listSites(B *backdrop, includeDevices bool, match string) error {
 
 				p := ""
 				if withClassifications {
-					p = classifyMac(B, models, suuid, mac, false)
+					p = classifyMac(B, models, site.SiteUUID, mac, false)
 				}
 				fmt.Printf("  %15s %20s %s\n", mac, getMfgFromMAC(B, mac), p)
 			}
@@ -604,7 +635,7 @@ func listSites(B *backdrop, includeDevices bool, match string) error {
 }
 
 func siteSub(cmd *cobra.Command, args []string) error {
-	return listSites(&_B, siteDetails, siteMatch)
+	return listSites(&_B, siteDetails, siteNoNames, args)
 }
 
 func deviceSub(cmd *cobra.Command, args []string) error {
@@ -698,6 +729,9 @@ func reviewSub(cmd *cobra.Command, args []string) error {
 
 func getModels(B *backdrop) ([]RecordedClassifier, error) {
 	models := make([]RecordedClassifier, 0)
+	if !B.modelsLoaded {
+		return nil, errors.Errorf("Model not loaded.  You may need to pass --model-file")
+	}
 
 	// For reporting, we restrict based on the readiness level.
 	err := _B.modeldb.Select(&models, "SELECT * FROM model ORDER BY name ASC")
@@ -730,14 +764,22 @@ func classifySub(cmd *cobra.Command, args []string) error {
 	log.Printf("models: %d", len(models))
 
 	// Loop over positional arguments.
-	for _, mac := range args {
-		_, err = net.ParseMAC(mac)
+	for _, arg := range args {
+		// is it a mac?
+		_, err = net.ParseMAC(arg)
 		if err == nil {
-			classifyMac(&_B, models, "", mac, _B.persistClassifications)
+			classifyMac(&_B, models, "", arg, _B.persistClassifications)
 			continue
 		}
 
-		classifySite(&_B, models, mac)
+		// else try to run the site matcher on it
+		sites, err := matchSites(&_B, arg)
+		if err != nil {
+			return errors.Wrapf(err, "couldn't find a site name or UUID matching %s", arg)
+		}
+		for _, site := range sites {
+			classifySite(&_B, models, site.SiteUUID)
+		}
 	}
 
 	return nil
@@ -853,18 +895,23 @@ func lsByMac(m string, details bool) error {
 }
 
 func lsSub(cmd *cobra.Command, args []string) error {
-	// Each argument to the ls subcommand is a MAC address or a UUID.
-	for _, v := range args {
-		_, err := uuid.FromString(v)
+	// Each argument to the ls subcommand is a MAC address or site UUID/Name
+	for _, arg := range args {
+		// is it a mac?
+		if _, err := net.ParseMAC(arg); err == nil {
+			lsByMac(arg, lsDetails)
+			continue
+		}
+
+		// else try to run the site matcher on it
+		sites, err := matchSites(&_B, arg)
 		if err != nil {
-			log.Printf("by MAC %v", v)
-			lsByMac(v, lsDetails)
-		} else {
-			log.Printf("by UUID %v", v)
-			lsByUUID(v, lsDetails)
+			return errors.Wrapf(err, "couldn't find a site name or UUID matching %s", arg)
+		}
+		for _, site := range sites {
+			lsByUUID(site.SiteUUID, lsDetails)
 		}
 	}
-
 	return nil
 }
 
@@ -883,9 +930,8 @@ func extractSub(cmd *cobra.Command, args []string) error {
 }
 
 func trainSub(cmd *cobra.Command, args []string) error {
-	err := attachBackdropModels(&_B)
-	if err != nil {
-		return errors.Wrap(err, "attach backdrop models")
+	if !_B.modelsLoaded {
+		return errors.Errorf("Model not loaded.  You may need to pass --model-file")
 	}
 
 	trainDeviceGenusBayesClassifier(&_B, ingestDir)
@@ -895,6 +941,54 @@ func trainSub(cmd *cobra.Command, args []string) error {
 	trainInterfaceMfgLookupClassifier(&_B)
 
 	return nil
+}
+
+func loadModel(modelFile string) (*sqlx.DB, error) {
+	var modelPath string
+
+	log.Printf("load model %q", modelFile)
+	url, err := url.Parse(modelFile)
+	if err != nil {
+		return nil, errors.Wrap(err, "parsing model-file")
+	}
+
+	if url.Scheme == "gs" {
+		ctx := context.Background()
+		cenv := os.Getenv(googleCredentialsEnvVar)
+		storageClient, err := storage.NewClient(ctx, option.WithCredentialsFile(cenv))
+		bucket := storageClient.Bucket(url.Host)
+		upath := strings.TrimLeft(url.Path, "/")
+		object := bucket.Object(upath)
+		r, err := object.NewReader(ctx)
+		if err != nil {
+			return nil, errors.Wrapf(err, "reading %s", modelFile)
+		}
+		defer r.Close()
+		tmpFile, err := ioutil.TempFile("", "cl-obs-trained-model")
+		if _, err := io.Copy(tmpFile, r); err != nil {
+			// TODO: Handle error.
+			return nil, errors.Wrapf(err, "copying %s -> %s", modelFile, tmpFile.Name())
+		}
+		if err := tmpFile.Close(); err != nil {
+			return nil, errors.Wrapf(err, "closing %s", tmpFile.Name())
+		}
+		modelPath = tmpFile.Name()
+		log.Printf("downloaded model to %s", modelPath)
+
+	} else if url.Scheme == "" {
+		// If modelFile doesn't exist, don't create it.
+		if _, err := os.Stat(modelFile); os.IsNotExist(err) {
+			return nil, errors.Wrap(err, "doesn't exist")
+		}
+		modelPath = url.Path
+	}
+
+	modeldb, err := sqlx.Connect("sqlite3", modelPath)
+	if err != nil {
+		log.Fatalf("model database open: %v\n", err)
+	}
+	checkModelDB(modeldb)
+	return modeldb, nil
 }
 
 func readyBackdrop(B *backdrop) error {
@@ -944,20 +1038,12 @@ func readyBackdrop(B *backdrop) error {
 		log.Fatalf("must provide --dir or --project")
 	}
 
-	// If modelFile doesn't exist, don't create it.
-	if _, err := os.Stat(modelFile); os.IsNotExist(err) {
-		B.modelsLoaded = false
-		return nil
-	}
-
-	B.modeldb, err = sqlx.Connect("sqlite3", modelFile)
+	B.modeldb, err = loadModel(modelFile)
 	if err != nil {
-		log.Fatalf("model database open: %v\n", err)
+		log.Printf("loadModel failed: %v", err)
+	} else {
+		B.modelsLoaded = true
 	}
-
-	checkModelDB(B.modeldb)
-
-	B.modelsLoaded = true
 
 	if persistent {
 		B.persistClassifications = true
@@ -1043,14 +1129,14 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&ouiFile, "oui-file", ouiFile, "OUI text database path")
 
 	siteCmd := &cobra.Command{
-		Use:   "site",
+		Use:   "site [*|site-name|site-uuid]",
 		Short: "List sites",
-		Args:  cobra.NoArgs,
+		Args:  cobra.MinimumNArgs(0),
 		RunE:  siteSub,
 	}
-	siteCmd.Flags().BoolVar(&siteDetails, "verbose", false, "list site details")
+	siteCmd.Flags().BoolVarP(&siteDetails, "verbose", "v", false, "list site details")
+	siteCmd.Flags().BoolVarP(&siteNoNames, "no-names", "n", false, "only print site UUIDs; no names")
 	siteCmd.Flags().StringVar(&modelFile, "model-file", "trained-models.db", "path to model file")
-	siteCmd.Flags().StringVar(&siteMatch, "match", "", "match site UUID or name pattern")
 	rootCmd.AddCommand(siteCmd)
 
 	deviceCmd := &cobra.Command{
@@ -1059,16 +1145,16 @@ func main() {
 		Args:  cobra.NoArgs,
 		RunE:  deviceSub,
 	}
-	deviceCmd.Flags().BoolVar(&deviceDetails, "verbose", false, "list device details")
+	deviceCmd.Flags().BoolVarP(&deviceDetails, "verbose", "v", false, "list device details")
 	rootCmd.AddCommand(deviceCmd)
 
 	lsCmd := &cobra.Command{
-		Use:   "ls",
+		Use:   "ls [*|site-name|site-uuid|macaddr ...]",
 		Short: "List deviceInfos for matching MACs or MACs for matching UUIDs",
 		Args:  cobra.MinimumNArgs(1),
 		RunE:  lsSub,
 	}
-	lsCmd.Flags().BoolVar(&lsDetails, "verbose", false, "detailed output")
+	lsCmd.Flags().BoolVarP(&lsDetails, "verbose", "v", false, "detailed output")
 	rootCmd.AddCommand(lsCmd)
 
 	ingestCmd := &cobra.Command{
@@ -1077,7 +1163,6 @@ func main() {
 		Args:  cobra.NoArgs,
 		RunE:  ingestSub,
 	}
-	ingestCmd.Flags().IntVar(&ingestCap, "ingest-cap", 0, "maximum files to ingest")
 	rootCmd.AddCommand(ingestCmd)
 
 	extractCmd := &cobra.Command{
@@ -1109,14 +1194,14 @@ func main() {
 		Args:  cobra.NoArgs,
 		RunE:  reviewSub,
 	}
-	reviewCmd.Flags().BoolVar(&reviewDetails, "verbose", false, "detailed output")
+	reviewCmd.Flags().BoolVarP(&reviewDetails, "verbose", "v", false, "detailed output")
 	reviewCmd.Flags().StringVar(&modelFile, "model-file", "trained-models.db", "path to model file")
 	rootCmd.AddCommand(reviewCmd)
 
 	classifyCmd := &cobra.Command{
-		Use:   "classify",
+		Use:   "classify [*|site-name|site-uuid|macaddr ...]",
 		Short: "Classify device",
-		Args:  cobra.MinimumNArgs(1),
+		Args:  cobra.MinimumNArgs(0),
 		RunE:  classifySub,
 	}
 	classifyCmd.Flags().StringVar(&modelFile, "model-file", "trained-models.db", "path to model file")

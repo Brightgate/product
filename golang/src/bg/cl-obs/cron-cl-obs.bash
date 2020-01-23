@@ -1,6 +1,6 @@
-#!/bin/bash -px
+#!/bin/bash -p
 #
-# COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+# COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
 #
 # This copyright notice is Copyright Management Information under 17 USC 1202
 # and is included to protect this work and deter copyright infringement.
@@ -9,46 +9,98 @@
 # such unauthorized removal or alteration will be a violation of federal law.
 #
 
-# Typical job for cron-driven ingest and predict.
+# cron-driven ingest and predict.
 
 set -o errexit
+set -o pipefail
 
-CL_OBS=./proto.x86_64/cloud/opt/net.b10e/bin/cl-obs
-OUI=./proto.x86_64/appliance/opt/com.brightgate/etc/identifierd/oui.txt
+if [[ -z $GOOGLE_APPLICATION_CREDENTIALS ]]; then
+	echo "must supply \$GOOGLE_APPLICATION_CREDENTIALS" 1>&2
+	exit 2
+fi
+if [[ -z $GCP_PROJECT ]]; then
+	echo "must supply \$GCP_PROJECT" 1>&2
+	exit 2
+fi
 
-FACTS=./golang/src/bg/cl-obs/facts.sqlite3
-OBSERVATIONS=./golang/src/bg/cl-obs/observations.db
-TRAINED_MODELS=./golang/src/bg/cl-obs/trained-models.db
+if [[ -z $B10E_CLREG_CLCONFIGD_CONNECTION ]]; then
+	echo "must supply \$B10E_CLREG_CLCONFIGD_CONNECTION" 1>&2
+	exit 2
+fi
 
-export GOOGLE_APPLICATION_CREDENTIALS=~/creds/staging-168518-79d693d0ae83.json
+if [[ -z $REG_DBURI ]]; then
+	echo "must supply \$REG_DBURI" 1>&2
+	exit 2
+fi
 
 function orun {
-	echo "###" "$@"
-	time "$@"
+       echo "" 1>&2
+       echo "###" "$@" 1>&2
+       "$@"
 }
 
-export CL_SRC="--project staging-168518"
+# mirrors golang daemonutils:ClRoot(); trust CLROOT if set, else
+# compute CLROOT relative to executable's path.
+if [[ -z $CLROOT ]]; then
+	dir=$(dirname "${BASH_SOURCE[0]}")
+	CLROOT=$(realpath "$dir/.." )
+	export CLROOT
+fi
+echo "CLROOT is $CLROOT"
 
-orun $CL_OBS ingest --cpuprofile=ingest-1.prof \
-	$CL_SRC \
-	--oui-file=$OUI \
-		--observations-file=$OBSERVATIONS
+CL_OBS=$CLROOT/bin/cl-obs
+CL_REG=$CLROOT/bin/cl-reg
 
-# Re-apply facts. (XXX Should not be needed.)
-sqlite3 "$OBSERVATIONS" < "$FACTS"
+DATADIR=${DATADIR:-$CLROOT/var/cron-cl-obs}
+if [[ ! -d $DATADIR ]]; then
+	orun mkdir -p "$DATADIR"
+fi
 
-# Classify all known sites.
-for site in $($CL_OBS site \
-	$CL_SRC \
-	--model-file $TRAINED_MODELS \
-	--oui-file $OUI \
-	--observations-file $OBSERVATIONS \
-	| cut -f 1 -d ' '); do
-	$CL_OBS classify \
-		--persist \
-		$CL_SRC \
-		--model-file $TRAINED_MODELS \
-		--oui-file $OUI \
-		--observations-file $OBSERVATIONS \
-		"$site"
+OBSERVATIONS=$DATADIR/observations.db
+TRAINED_MODELS=${TRAINED_MODELS:-gs://bg-classifier-support/trained-models.db}
+
+export CL_SRC="--project=$GCP_PROJECT"
+
+orun "$CL_OBS" ingest \
+	"$CL_SRC" \
+	--observations-file="$OBSERVATIONS"
+
+# For testing, allow an override of sites
+sites=('*')
+if [[ -n $SITES ]]; then
+	echo "overriding site selection using \$SITES"
+	sites=($SITES)
+fi
+
+# Classify sites
+orun "$CL_OBS" classify \
+	"$CL_SRC" \
+	--persist \
+	--model-file "$TRAINED_MODELS" \
+	--observations-file "$OBSERVATIONS" "${sites[@]}"
+if [[ $? -ne 0 ]]; then
+	echo "failed during classify"
+	exit 1
+fi
+
+if [[ -z $SYNC ]]; then
+	echo "Set \$SYNC to enable real sync; using Dry Run instead"
+	SYNC_DRYRUN="--dry-run"
+fi
+
+if [[ -n $SITES ]]; then
+	for site in "${sites[@]}"; do
+		orun "$CL_REG" deviceid sync $SYNC_DRYRUN -s "$site" --sqlite-src "$OBSERVATIONS"
+		if [[ $? -ne 0 ]]; then
+			echo "failed deviceid site $site to config trees"
+			exit 1
+		fi
 	done
+else
+	orun "$CL_REG" deviceid sync $SYNC_DRYRUN -a --sqlite-src "$OBSERVATIONS"
+	if [[ $? -ne 0 ]]; then
+		echo "failed deviceid sync to config trees"
+		exit 1
+	fi
+fi
+exit 0

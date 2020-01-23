@@ -62,7 +62,7 @@ func sqliteClassifications(ctx context.Context, siteUUID uuid.UUID, db *sqlx.DB,
 	return nil
 }
 
-func syncSiteClassifications(ctx context.Context, siteUUID uuid.UUID, classifications chan classification) {
+func syncSiteClassifications(ctx context.Context, siteUUID uuid.UUID, dryRun bool, classifications chan classification) {
 	log.Printf("started syncing %s\n", siteUUID.String())
 
 	// macPropOps[<macaddr>][<propname>] -> propOp (del or add)
@@ -153,6 +153,10 @@ func syncSiteClassifications(ctx context.Context, siteUUID uuid.UUID, classifica
 		for _, pOp := range cPropOpMap {
 			ops = append(ops, pOp)
 		}
+		if dryRun {
+			log.Printf("dryRun; not syncing %s:@/client/%s\n\t%v\n", siteUUID.String(), cmac, ops)
+			continue
+		}
 		log.Printf("syncing %s:@/client/%s\n\t%v\n", siteUUID.String(), cmac, ops)
 		_, err := cfg.Execute(ctx, ops).Wait(ctx)
 		if err != nil {
@@ -171,6 +175,8 @@ func syncDeviceID(cmd *cobra.Command, args []string) error {
 	orgStr, _ := cmd.Flags().GetString("org")
 	siteStr, _ := cmd.Flags().GetString("site")
 	allOrgs, _ := cmd.Flags().GetBool("all")
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
+
 	if allOrgs && (orgStr != "" || siteStr != "") {
 		return fmt.Errorf("Can't specify --all and either --site or --org")
 	}
@@ -259,7 +265,7 @@ func syncDeviceID(cmd *cobra.Command, args []string) error {
 			close(classChan)
 		}
 
-		syncSiteClassifications(ctx, site.UUID, classChan)
+		syncSiteClassifications(ctx, site.UUID, dryRun, classChan)
 	}
 	return nil
 }
@@ -282,6 +288,7 @@ func deviceIDMain(rootCmd *cobra.Command) {
 	syncDeviceIDCmd.Flags().StringP("site", "s", "", "sync only for this site")
 	syncDeviceIDCmd.Flags().BoolP("all", "a", false, "sync for all orgs and all sites")
 	syncDeviceIDCmd.Flags().String("sqlite-src", "", "sqlite database containing classifications")
+	syncDeviceIDCmd.Flags().BoolP("dry-run", "n", false, "dry-run-- do not publish changes")
 	deviceIDCmd.AddCommand(syncDeviceIDCmd)
 
 	clearDeviceIDCmd := &cobra.Command{
@@ -293,5 +300,6 @@ func deviceIDMain(rootCmd *cobra.Command) {
 	clearDeviceIDCmd.Flags().StringP("org", "o", "", "clear only for this organization")
 	clearDeviceIDCmd.Flags().StringP("site", "s", "", "clear only for this site")
 	clearDeviceIDCmd.Flags().BoolP("all", "a", false, "clear for all orgs and all sites")
+	clearDeviceIDCmd.Flags().BoolP("dry-run", "n", false, "dry-run-- do not publish changes")
 	deviceIDCmd.AddCommand(clearDeviceIDCmd)
 }
