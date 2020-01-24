@@ -224,6 +224,14 @@ func (c *Child) Wait() error {
 	return err
 }
 
+// WaitChan waits for the child process to exit.  When it does, its exit status
+// will be sent to the provided channel.  If we are capturing its output, we
+// will wait for the stdin/stderr pipes to be closed.
+func (c *Child) WaitChan(errChan chan error) {
+	err := c.Wait()
+	errChan <- err
+}
+
 // SetUID allows us to launch a child process with different credentials than
 // the launching daemon.
 func (c *Child) SetUID(uid, gid uint32) {

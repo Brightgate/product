@@ -87,9 +87,10 @@ var (
 
 const (
 	// Allow up to 4 failures in a 1 minute period before giving up
-	failuresAllowed = 4
-	maxSSIDs        = 4
-	period          = time.Duration(time.Minute)
+	failuresAllowed  = 4
+	maxSSIDs         = 4
+	period           = time.Duration(time.Minute)
+	hotplugBlockFile = "/tmp/bg-skip-hotplug"
 
 	pname = "ap.networkd"
 )
@@ -454,6 +455,44 @@ func sanityCheckSubnets() error {
 	return nil
 }
 
+// Create a sentinel file, which prevents the hotplug scripts from being
+// executed
+func hotplugBlock() {
+	slog.Debugf("blocking hotplug scripts")
+	f, err := os.Create(hotplugBlockFile)
+	if err != nil {
+		slog.Warnf("creating %s: %v", hotplugBlockFile, err)
+	} else {
+		f.Close()
+	}
+}
+
+// Remove the hotplug-blocking sentinel file.  Create and remove a dummy bridge
+// device, which will cause the hotplug scripts to be run once.
+func hotplugUnblock() {
+	hotplugTrigger := "trigger"
+
+	if aputil.FileExists(hotplugBlockFile) {
+		slog.Debugf("unblocking hotplug scripts")
+		err := os.Remove(hotplugBlockFile)
+		if err != nil {
+			slog.Warnf("removing %s: %v", hotplugBlockFile, err)
+		}
+
+		slog.Debugf("triggering hotplug refresh")
+		err = exec.Command(plat.BrctlCmd, "addbr", hotplugTrigger).Run()
+		if err != nil {
+			slog.Warnf("addbr %s failed: %v", hotplugTrigger, err)
+		} else {
+			time.Sleep(100 * time.Millisecond)
+		}
+		err = exec.Command(plat.BrctlCmd, "delbr", hotplugTrigger).Run()
+		if err != nil {
+			slog.Warnf("delbr %s failed: %v", hotplugTrigger, err)
+		}
+	}
+}
+
 func resetInterfaces() {
 	if err := sanityCheckSubnets(); err != nil {
 		slog.Errorf("%v", err)
@@ -461,10 +500,13 @@ func resetInterfaces() {
 		networkdStop("subnet sanity check failed")
 		return
 	}
+
+	hotplugBlock()
 	deleteBridges()
 	createBridges()
 	rebuildLan()
 	rebuildInternalNet()
+	hotplugUnblock()
 
 	resource := &base_msg.EventNetUpdate{
 		Timestamp: aputil.NowToProtobuf(),

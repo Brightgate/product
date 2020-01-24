@@ -26,6 +26,9 @@ line_remove "/root/.profile" "/. \/opt\/com.brightgate\/etc\/com-brightgate-prof
 # Drop /etc/rsyslog.d from /etc/rsyslog.conf.
 line_remove "/etc/rsyslog.conf" "/\\\$IncludeConfig \/etc\/rsyslog.d\// d"
 
+# Drop "skip hotplug scripts" line from /sbin/hotplug-call
+line_remove "/sbin/hotplug-call" "/\/tmp\/bg-skip-hotplug/d"
+
 # Revert OS logging locations to default.
 sed -i \
 	-e "s/\/.*\/messages/\/var\/log\/messages/" \

@@ -51,6 +51,9 @@ line_add "/root/.profile" ". $BG_ETC/com-brightgate-profile"
 # Add /etc/rsyslog.d to /etc/rsyslog.conf and restart rsyslog.
 line_add "/etc/rsyslog.conf" "\$IncludeConfig /etc/rsyslog.d/" "ActionFileDefaultTemplate"
 
+# Add "skip hotplug scripts" line to /sbin/hotplug-call
+line_add "/sbin/hotplug-call" "[ -f /tmp/bg-skip-hotplug ] && exit" "Copyright"
+
 mkdir -p $PKG_ROOT/data/rsyslog
 
 # Divert OS logging to persistent storage.

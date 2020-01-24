@@ -1149,8 +1149,12 @@ func (h *hostapdHdl) start() {
 
 	slog.Infof("Starting hostapd")
 
+	hotplugBlock()
+	hotplugBlocked := true
+
 	startTime := time.Now()
 	if err := h.process.Start(); err != nil {
+		hotplugUnblock()
 		stopNetworkRebuild <- true
 		h.done <- fmt.Errorf("failed to launch: %v", err)
 		return
@@ -1162,7 +1166,28 @@ func (h *hostapdHdl) start() {
 		go c.run(&wg)
 	}
 
-	h.process.Wait()
+	// create a channel which will be signalled when the child exits
+	waiting := true
+	childChan := make(chan error, 1)
+	go h.process.WaitChan(childChan)
+
+	// create a channel which will be signalled in 10 seconds.  This should
+	// give hostapd enough time to create its devices and populate the
+	// bridges before we re-enable the hotplug scripts.
+	timer := time.NewTimer(10 * time.Second)
+	defer timer.Stop()
+
+	for waiting {
+		select {
+		case <-timer.C:
+		case <-childChan:
+			waiting = false
+		}
+		if hotplugBlocked {
+			hotplugUnblock()
+			hotplugBlocked = false
+		}
+	}
 
 	slog.Infof("hostapd exited after %s", time.Since(startTime))
 	stopNetworkRebuild <- true
