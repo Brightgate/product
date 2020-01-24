@@ -466,12 +466,12 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	// it might ask for.
 	//
 	// Each ring has a designated lease time.  Established clients are
-	// assigned leases of that length.  New or migrating clients get a 1
+	// assigned leases of that length.  New or migrating clients get a 2
 	// minute lease, as we want their ring assignment to be stable before
 	// granting them a long-term lease.
 	action := ""
 	current := h.leaseSearch(hwaddr)
-	leaseDuration := time.Minute
+	leaseDuration := 2 * time.Minute
 	if current != nil {
 		reqIP = current.ipaddr
 		if requestOption != nil {
@@ -516,18 +516,18 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	}
 
 	l := h.getLease(reqIP)
-	if l == nil || !l.assigned || l.hwaddr != hwaddr {
+	if l == nil || (l.assigned && l.hwaddr != hwaddr) {
 		slog.Warnf("Invalid lease of %s for %s", reqIP.String(), hwaddr)
 		dhcpMetrics.rejected.Inc()
 		return h.nak(p)
 	}
 	name := extractHostname(options)
-	slog.Infof("   REQUEST assigned %s for %q", l, name)
-
 	if !l.static {
 		expiresAt = time.Now().Add(leaseDuration)
 	}
 	l.record(hwaddr, expiresAt)
+
+	slog.Infof("   REQUEST assigned %s for %q", l, name)
 	l.confirmed = true
 
 	config.CreateProp(propPath(hwaddr, "ipv4"), l.ipaddr.String(), &l.expires)
