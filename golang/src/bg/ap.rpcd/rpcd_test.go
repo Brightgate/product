@@ -178,6 +178,6 @@ func TestSendInventory(t *testing.T) {
 func TestMain(m *testing.M) {
 	// Need to setup global
 	applianceCred = grpcutils.NewTestCredential()
-	metricsInit()
+	metricsInit(nil)
 	os.Exit(m.Run())
 }

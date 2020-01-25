@@ -259,7 +259,7 @@ func healthLoop(ctx context.Context, tclient cloud_rpc.EventClient,
 	wg.Done()
 }
 
-func metricsInit() {
+func metricsInit(config *cfgapi.Handle) {
 	bgm = bgmetrics.NewMetrics(pname, config)
 	metrics.exceptions = bgm.NewCounter("exceptions_handled")
 	metrics.heartbeatsSucceeded = bgm.NewCounter("heartbeats_succeeded")
@@ -389,7 +389,7 @@ func daemonStart() {
 		mcpd.SetState(mcp.BROKEN)
 		slog.Fatalf("commonInit failed: %v", err)
 	}
-	metricsInit()
+	metricsInit(config)
 	go http.ListenAndServe(base_def.RPCD_DIAG_PORT, nil)
 
 	aputil.ReportInit(slog, pname)
@@ -449,6 +449,7 @@ func cmdStart() {
 	if err != nil || applianceCred == nil {
 		slog.Fatalf("grpc init failed: %v", err)
 	}
+	metricsInit(nil)
 
 	conn := grpcConnect(ctx)
 	defer conn.Close()
