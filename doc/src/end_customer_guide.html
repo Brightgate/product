@@ -10,23 +10,21 @@
 
 <head>
   <meta http-equiv="content-type" content="text/html; charset=UTF-8">
-  <title>Brightgate Alpha Guide</title>
+  <title>Brightgate Beta Guide</title>
   <!-- BRIGHTGATE HEAD INSERTION POINT -->
 </head>
 
 <body>
   <!-- BRIGHTGATE CONTENT START -->
-  <h1 id="brightgate-alpha-guide">Brightgate Alpha Guide</h1>
+  <h1 id="brightgate-beta-guide">Brightgate Administration Guide (Beta)</h1>
   <p><i>NDA REQUIRED</i></p>
   <img src="./images/Blue_NoBoarderArtboard-1@1.5x.png" alt="Brightgate Logo">
-  <p>Q3 2019</p>
-  <p>Version 2.0</p>
+  <p>Q1 2020</p>
+  <p>Version 3.0</p>
   <h2 id="about-this-guide">About this guide</h2>
   <p>We wrote this guide to help you understand both how Brightgate secures
-    your network and how to administer your Brightgate networks. We've also
-    included some help content that you can share directly with end users or
-    use as input to your own in-house help content.</p>
-  <p>Please jump to topics of interest or read the guide in its entirety.</p>
+    your network and how to administer your Brightgate networks. Please jump to
+    topics of interest or read the guide in its entirety.</p>
   <ul>
     <li>Technology concepts:
       <ul>
@@ -39,26 +37,27 @@
       <ul>
         <li><a href="#getting-started">Getting started</a></li>
         <li><a href="#secure-your-networks">Secure your networks</a></li>
-        <li><a href="#help-guests-online">Help guests get online</a></li>
+        <li><a href="#help-guests-connect-network">Help guests connect to the
+            network</a>
+        </li>
         <li><a href="#review-network-configuration-and-users">Review network
             configuration and accounts</a></li>
       </ul>
     </li>
-    <li>Online help for network users:
+    <li>Adding devices to the networks:
       <ul>
         <li><a href="#add-mac-network">Add an Apple computer</a></li>
         <li><a href="#add-iphone-network">Add an iPhone or iPad</a></li>
         <li><a href="#add-android-phone-network">Add an Android phone</a></li>
         <li><a href="#add-windows-network">Add a Windows computer</a></li>
-        <li><a href="#help-guests-online">Help guests get online</a></li>
+        <li><a href="#help-guests-connect-network">Help guests connect to the
+            network</a></li>
       </ul>
     </li>
   </ul>
   <h3>Audience</h3>
-  <p>This guide is written primarily for those administering the Brightgate
-    appliance during our Alpha program; end user content is included either to
-    be provided directly to your end users or to use as an aid in creating
-    online help.</p>
+  <p>This guide is written those administering Brightgate-secured networks
+    appliance during our Beta program.</p>
   <h2 id="why-brightgate">Why Brightgate</h2>
   <p>Business networks are under attack. And attacks are becoming both more
     frequent and more automated. As a result, your data—the lifeblood of your
@@ -211,7 +210,7 @@
     Acme Corp would name the
     networks<span>&nbsp;</span><code>Acme-users</code>,<span>&nbsp;</span><code>Acme-device</code>,
     and<span>&nbsp;</span><code>Acme-guest</code><span>&nbsp;</span>when first
-    setting up their network. During the Alpha program, Brightgate will set up
+    setting up their network. During the Beta program, Brightgate will set up
     your networks following this recommendation.</p>
   <h3 id="automated-trust-group-assignment">Automated trust group assignment
   </h3>
@@ -308,7 +307,7 @@
   </table>
   <h4 id="default-trust-groups">Default trust groups</h4>
   <p>The Brightgate appliance provides a default set of trust groups, so
-    network administration isn’t a chore. During the alpha program, the
+    network administration isn’t a chore. During the Beta program, the
     default trust group is the trust group into which a device is initially
     enrolled. Devices authenticated using EAP are automatically added to the
     <code>standard</code>
@@ -372,13 +371,13 @@
     managing the trust group assignment for your devices. As a result, with
     Brightgate, administration of your network involves the following tasks:</p>
   <ol>
-    <li><a href="#install-brightgate">Install Brightgate</a></li>
+    <li><a href="#install-brightgate">Install the Brightgate appliance</a></li>
     <li><a href="#set-up-your-account">Set up your account</a></li>
     <li><a href="#name-your-gateway">Name your gateway (and satellites)</a></li>
     <li><a href="#set-up-your-networks">Set up your networks</a></li>
     <li><a href="#add-devices">Add devices</a></li>
   </ol>
-  <h3 id="install-brightgate">Install Brightgate</h3>
+  <h3 id="install-brightgate">Install the Brightgate appliance</h3>
   <p>The Brightgate appliance installs quickly with these three steps:</p>
   <ol>
     <li>Attach the antennae
@@ -405,7 +404,7 @@
       href="#the-brightgate-management-app">the Brightgate management app</a>.
   </p>
   <p>The Brightgate management app supports Google Sign-In and Sign-In with
-    Microsoft. <b>Note:</b> During the Alpha program, only Google Sign-In and
+    Microsoft. <b>Note:</b> During the Beta program, Google Sign-In and
     Sign-In with Microsoft are supported for user logins. Other identity
     providers will be available in future releases.</p>
   <p>When you're logging in to the Brightgate management app, we authenticate
@@ -442,14 +441,13 @@
   </p>
   <ol>
     <li>Log in to the Brightgate management app</li>
-    <li>(Optional) Select your site from the list</li>
+    <li>(Optional) Select your site</li>
     <li>Select <b>Hardware</b> to view the list of
       Brightgate appliances at this site</li>
     <li>Click the appliance you want to rename; details about this appliance
       will display</li>
-    <li>Click the pencil icon next to the gateway or satellite to rename it
-    </li>
-    <li>Enter the new name, then select OK</li>
+    <li>Click the pencil icon next to the gateway or satellite</li>
+    <li>Enter the new name, then select <b>OK</b></li>
     <li>(Optional) Repeat for associated satellites</li>
   </ol>
   <img src="./images/change-node-name.png"
@@ -457,7 +455,7 @@
   <h3 id="set-up-your-networks">Set up your networks</h3>
   <p>To start using the security features of the Brightgate appliance, set up
     your Wi-Fi networks. If you want to continue using existing network names,
-    we'll overlay the existing Wi-Fi networks for you during the Alpha program,
+    we'll overlay the existing Wi-Fi networks for you during the Beta program,
     but it's helpful to know the overall process.</p>
   <p>Start by deciding whether you're:</p>
   <ul>
@@ -469,7 +467,7 @@
       password based on the level to which you trust the current network.
       If you trust what you've administered previously, then
       reuse the network name and password. If you're uncertain, it's more
-      secure to create a new network name and password. During the Alpha
+      secure to create a new network name and password. During the Beta
       program, overlaying an existing Wi-Fi network requires Brightgate support.
     </li>
   </ul>
@@ -497,7 +495,7 @@
     at your site. </p>
   <ol>
     <li>Log in to the Brightgate management app</li>
-    <li>(Optional) Select your site from the list</li>
+    <li>(Optional) Select your site</li>
     <li>Select <b>Networks</b> to view the complete list of
       Brightgate-secured networks. <b>Note:</b> The default network names are
       <code>setme-users</code>, <code>setme-devices</code>, and
@@ -693,7 +691,7 @@
   </p>
   <ol>
     <li>Log in to the Brightgate management app</li>
-    <li>(Optional) Select your site from the list</li>
+    <li>(Optional) Select your site</li>
     <li>Select <b>Network Configuration</b></li>
     <li>From the list of networks, select the <code>*-device</code> network
       to view the <b>Network Details</b></li>
@@ -706,13 +704,13 @@
   <p>At this point, you're ready to administer your Brightgate-secured network.
     This section will help you get your guests online, manage accounts, and
     respond to vulnerabilities.</p>
-  <h4 id="help-guests-online">Help guests get online</h4>
+  <h4 id="help-guests-connect-network">Help guests connect to the network</h4>
   <p>Add one-time users' devices, those that need only temporary access to
     Wi-Fi, to the <code>*-guest</code> network, which uses a password that
     administrators rotate.</p>
   <ol>
     <li>Log in to the Brightgate management app</li>
-    <li>(Optional) Select your site from the list</li>
+    <li>(Optional) Select your site</li>
     <li>Select <b>Enroll a Guest User</b></li>
     <li>Share the password with your guest with using any of these choices:
       <ul>
@@ -728,7 +726,6 @@
     </li>
   </ol>
   <p> <img src="./images/guest-enrollment.png" alt="Enroll guests"> </p>
-  <h4 id="manage-accounts">Manage accounts</h4>
   <h4 id="remediate-threats">Remediate threats</h4>
   <p>When Brightgate identifies a vulnerability, you'll see an alert section
     similar to this when you first log in:</p>
@@ -749,7 +746,7 @@
       to understand the security policy violation and suggestions regarding
       how to remediate the issue.</li>
   </ol>
-  <p><strong>Important:</strong> During the Alpha program, once the the threat
+  <p><strong>Important:</strong> During the Beta program, once the the threat
     is resolved, administrators will need to view the trust group assigned to
     the device and potentially move it from <code>quarantine</code> to the
     appropriate trust group, which is discussed fully in <a
@@ -801,7 +798,7 @@
     Brightgate-secured networks for multiple clients, one of which has
     multiple sites.</p>
   <p>Brightgate support first establishes the MSP as an organization.
-    <b>Note:</b> During the Alpha program, Brightgate support will establish
+    <b>Note:</b> During the Beta program, Brightgate support will establish
     the MSP and its relationship to client organizations and sites. </p>
   <p><img src="./images/MSP-as-org.png" alt="Management organization"></p>
   <p>Then Brightgate support associates the MSP organization with the clients
@@ -913,31 +910,39 @@
     device is in violation of security policies, or acting oddly, as discussed
     in <a href="#remediate-threats">remediate threats</a>.</p>
   <h3 id="device-details">View device details</h3>
-  <p>Brightgate supplies details specific to each device on the network, which
-    you can access directly if alerted to do so when you first log in or, from
-    the main menu, <i>select your site &gt; Manage Devices &gt; click the
-      device name.</i></p>
+  <p>Brightgate supplies details specific to each device on the network. Access
+    this information directly by clicking the alert when you first log in or,
+    from the main menu, <i>select site &gt; Devices &gt; select device name.</i>
+  </p>
   <p>Details for each device on the network display, specifying if Brightgate
     has identified any vulnerabilities. In this example, the device is using a
     password that exposes both the device and network to potential attack.
     Brightgate suggests a remedy, with helpful links to further information if
     you'd like to know more about the issue. We also specify the time the
     vulnerability was identified and when a repair, if any, was executed.</p>
-  <p>You can also view the network details for this device, including the
-    device's name on the network, IPv4 address, hardware address, whether the
-    device is active, and the time of the most recent scan for
-    vulnerabilities.</p>
+  <p>Also confirm the network details for this device, including the:</p>
+  <ul>
+    <li>device's name on the network</li>
+    <li>network to which the device is connected</li>
+    <li>device's IPv4 address</li>
+    <li>device's hardware address</li>
+    <li>time and date of Brightgate's most recent vulnerability scan for this
+      device</li>
+  </ul>
   <p>The <i>Access Control</i> displays the assigned trust group for the
     device, which is discussed fully in <a
       href="#change-device-trust-group">change
-      a device's trust group assignment</a>.</p>
+      a device's trust group assignment</a>.
+  </p>
+  <p>The <i>Client Attributes</i> display the name, DHCP ID, and DNS Name (if
+    set) for this device.
+  </p>
   <p><img src="./images/device-details.png" alt="Device details"></p>
   <h3 id="compliance-report">View the Compliance Report</h3>
   <p>To view compliance information across all your Brightgate-secured
-    networks, from the main menu, <i>select your site &gt; Compliance
-      Report.</i></p>
-  <p>If a device is currently violating policy, the red lightning icon will
-    display in the <i>Summary</i>. The <i>Summary</i> also displays the
+    networks, from the main menu, <i>select site &gt; Compliance Report.</i></p>
+  <p>If a device is currently violating policy, the red lightning icon
+    displays in the <i>Summary</i>. The <i>Summary</i> also displays the
     total number of accounts currently enrolled in the network.<i> <br>
     </i></p>
   <p><i>Active Violations,</i> if any are currently identified, are listed in
@@ -955,9 +960,9 @@
     and network to potential attack. </p>
   <p><img src="./images/compliance-report.png" alt="Compliance report"></p>
   <h3 id="view-devices-network">View devices on the network</h3>
-  <p>To view all devices on the network, from the main menu, <i>select your
-      site &gt; Manage Devices.</i> The parentheses next to Manage Devices is
-    the total number of all devices enrolled across all Brightgate-secured
+  <p>To view devices on your network, from the main menu, <i>select your
+      site &gt; Devices.</i> The parentheses next to <b>Devices</b> displays
+    the active and inactive devices enrolled across the Brightgate-secured
     networks for your organization.</p>
   <p><img src="./images/manage-devices.png" alt="Manage devices"></p>
   <h3 id="remove-devices">Remove devices</h3>
@@ -997,7 +1002,7 @@
     an appropriate trust group, and watch the device's behavior to keep your
     network secure.
   </p>
-  <p><b>Important:</b> During the Alpha program, all devices added to the
+  <p><b>Important:</b> During the Beta program, all devices added to the
     <code>*-device</code> network will be assigned to the
     <code>unenrolled</code> trust group. Administrators will need to explicitly
     move devices to the
@@ -1055,11 +1060,10 @@
   <p><img src="./images/move-lan-trust-group.png" alt="Move LAN trust group">
   </p>
   <h3 id="rotate-passwords">Rotate passwords</h3>
-  <p>During the Alpha program, passwords are not automatically rotated.
-    However, administrators may manually change the password for the
-    <code>*-guest</code>
-    and <code>*-device</code> network. From the main menu, <i>select your
-      site &gt; Network Configuration</i> to display the networks secured by
+  <p>During the Beta program, passwords are not automatically rotated.
+    Administrators may manually change the password for the <code>*-guest</code>
+    and <code>*-device</code> network. From the main menu, <i>select your site
+      &gt; Network Configuration</i> to display the networks secured by
     Brightgate. To change the password:</p>
   <ol>
     <li>Select the network name, either <code>*-guest </code>or
@@ -1219,8 +1223,8 @@
   <p>To manage site-specific administrators, from the main menu,
     <i>select your site > Users.</i></p>
   <p> Additional site-specific administrators may be added by using the
-    + icon at the bottom of the list; however, during the Alpha program, we
-    recommend calling Brightgate for assistance if this type of user is
+    + icon at the bottom of the list; however, during the Beta program, please
+    contact Brightgate support for assistance if this type of user is
     required.</p>
   <p><img src="./images/site-specific-admin.png"
       alt="Site-specific administrators"></p>
