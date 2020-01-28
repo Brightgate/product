@@ -281,6 +281,7 @@ func logUnknown(ring, mac, ipstr string) bool {
 func netEventHandler(event []byte) {
 	slog.Debugf("got network update event - reevaluting interfaces")
 	getGateways()
+	scannerPauseUntil(time.Now().Add(time.Minute))
 }
 
 func entityEventHandler(event []byte) {

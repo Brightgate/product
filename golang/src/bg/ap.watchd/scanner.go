@@ -45,8 +45,9 @@ type scanPool struct {
 	scansRun  uint32
 	scansLate uint32
 
-	scanning bool
-	wg       sync.WaitGroup
+	pauseUntil time.Time
+	scanning   bool
+	wg         sync.WaitGroup
 
 	sync.Mutex
 }
@@ -58,8 +59,8 @@ var (
 	scanThreads = map[string]int{
 		"tcp":    2,
 		"udp":    2,
-		"vuln":   2,
-		"passwd": 2,
+		"vuln":   1,
+		"passwd": 1,
 		"subnet": 1,
 	}
 
@@ -342,11 +343,12 @@ func scheduleScan(request *ScanRequest, delay time.Duration, force bool) {
 }
 
 func poolGetNext(pool *scanPool) *ScanRequest {
-	if len(pool.pending) == 0 {
+	now := time.Now()
+
+	if now.Before(pool.pauseUntil) || len(pool.pending) == 0 {
 		return nil
 	}
 
-	now := time.Now()
 	req := pool.pending[0]
 
 	delta := now.Sub(req.When).Seconds()
@@ -1134,14 +1136,38 @@ func vulnInit() {
 	os.Setenv("PATH", os.Getenv("PATH")+":"+plat.ExpandDirPath("__APPACKAGE__", "/bin"))
 }
 
+func poolStopActive(pool *scanPool) {
+	for _, req := range pool.active {
+		if req != nil {
+			if !pool.scanning {
+				// If we're shutting down the pool, don't
+				// reschedule the scan.
+				req.Period = nil
+			}
+			req.Child.Stop()
+		}
+	}
+}
+
+func scannerPauseUntil(when time.Time) {
+	slog.Infof("pausing scanner threads until %s", when.Format(time.Stamp))
+	for _, pool := range scanPools {
+		pool.Lock()
+		pool.pauseUntil = when
+		poolStopActive(pool)
+		pool.Unlock()
+	}
+}
+
 func initScanPool(cnt int) *scanPool {
 	pool := &scanPool{
-		pending: make(scanQueue, 0),
-		active:  make([]*ScanRequest, cnt),
+		pending:    make(scanQueue, 0),
+		active:     make([]*ScanRequest, cnt),
+		pauseUntil: time.Now().Add(time.Minute),
+		scanning:   true,
 	}
 	heap.Init(&pool.pending)
 
-	pool.scanning = true
 	for i := 0; i < cnt; i++ {
 		pool.wg.Add(1)
 		go scanner(pool, i)
@@ -1151,17 +1177,11 @@ func initScanPool(cnt int) *scanPool {
 }
 
 func scannerFini(w *watcher) {
-	slog.Infof("Stopping active scans")
-
+	slog.Infof("stopping scanner threads")
 	for _, pool := range scanPools {
 		pool.Lock()
 		pool.scanning = false
-		for _, req := range pool.active {
-			if req != nil {
-				req.Period = nil
-				req.Child.Stop()
-			}
-		}
+		poolStopActive(pool)
 		pool.Unlock()
 	}
 	for _, pool := range scanPools {
@@ -1183,7 +1203,7 @@ func scannerInit(w *watcher) {
 
 	mapMtx.Lock()
 	for mac, ip := range macToIP {
-		scannerRequest(mac, ip, 30*time.Second)
+		scannerRequest(mac, ip, 0)
 	}
 	mapMtx.Unlock()
 
