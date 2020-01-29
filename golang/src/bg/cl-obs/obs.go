@@ -753,6 +753,7 @@ func classifySub(cmd *cobra.Command, args []string) error {
 		}
 		for _, site := range sites {
 			classifySite(&_B, models, site.SiteUUID, persist)
+			log.Printf("finished classifying %s", site.SiteUUID)
 		}
 	}
 

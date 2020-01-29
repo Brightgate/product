@@ -42,6 +42,7 @@ const Version = int32(25)
 type CmdHdl interface {
 	Status(ctx context.Context) (string, error)
 	Wait(ctx context.Context) (string, error)
+	Cancel(ctx context.Context) error
 }
 
 // ConfigExec defines the operations that must be supplied by a

@@ -119,6 +119,10 @@ func (h *TestCmdHdl) Wait(ctx context.Context) (string, error) {
 	return "", cfgapi.ErrNoConfig
 }
 
+func (h *TestCmdHdl) Cancel(ctx context.Context) error {
+	return cfgapi.ErrNoConfig
+}
+
 // TestConfigExec Implements ConfigExec; it does nothing except return
 // TestCmdHdl, which just returns cfgapi.ErrNoConfig.
 type TestConfigExec struct{}

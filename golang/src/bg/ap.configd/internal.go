@@ -35,6 +35,10 @@ func (c *cmdStatus) Wait(ctx context.Context) (string, error) {
 	return c.Status(ctx)
 }
 
+func (c *cmdStatus) Cancel(ctx context.Context) error {
+	panic("unsupported call")
+}
+
 func (c *internalConfig) HandleChange(path string, handler func([]string, string,
 	*time.Time)) error {
 	panic("unsupported call")

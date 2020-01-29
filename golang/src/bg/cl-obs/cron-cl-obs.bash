@@ -61,9 +61,11 @@ TRAINED_MODELS=${TRAINED_MODELS:-gs://bg-classifier-support/trained-models.db}
 
 export CL_SRC="--project=$GCP_PROJECT"
 
-orun "$CL_OBS" ingest \
-	"$CL_SRC" \
-	--observations-file="$OBSERVATIONS"
+if [[ -z $SKIP_INGEST ]]; then
+	orun "$CL_OBS" ingest \
+		"$CL_SRC" \
+		--observations-file="$OBSERVATIONS"
+fi
 
 # For testing, allow an override of sites
 sites=('*')

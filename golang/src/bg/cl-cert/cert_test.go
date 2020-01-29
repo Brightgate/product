@@ -136,6 +136,10 @@ func (h *TestCmdHdl) Wait(_ context.Context) (string, error) {
 	return "", nil
 }
 
+func (h *TestCmdHdl) Cancel(_ context.Context) error {
+	return nil
+}
+
 // TestConfigExec implements ConfigExec; it does nothing except return
 // TestCmdHdl.
 type TestConfigExec struct{}

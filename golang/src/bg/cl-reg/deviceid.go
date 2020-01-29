@@ -137,34 +137,53 @@ func syncSiteClassifications(ctx context.Context, siteUUID uuid.UUID, dryRun boo
 	}
 
 	log.Printf("finished ingesting classification records")
+
+	prefix := ""
+	if dryRun {
+		prefix = "dryrun: "
+	}
 	// Work through the per-client PropOps.  Generate a PropOp array for
 	// each, along with a guarding PropTest (so we don't accidentally
 	// recreate a deleted client).  Then execute.
+	ops := make([]cfgapi.PropertyOp, 0)
+	log.Printf(prefix + "preparing PropOps:")
 	for cmac, cPropOpMap := range macPropOps {
 		if len(cPropOpMap) == 0 {
 			continue
 		}
-		ops := []cfgapi.PropertyOp{
+		clientOps := []cfgapi.PropertyOp{
 			{
 				Op:   cfgapi.PropTest,
 				Name: fmt.Sprintf("@/clients/%s", cmac),
 			},
 		}
 		for _, pOp := range cPropOpMap {
-			ops = append(ops, pOp)
+			clientOps = append(clientOps, pOp)
 		}
-		if dryRun {
-			log.Printf("dryRun; not syncing %s:@/client/%s\n\t%v\n", siteUUID.String(), cmac, ops)
-			continue
-		}
-		log.Printf("syncing %s:@/client/%s\n\t%v\n", siteUUID.String(), cmac, ops)
-		_, err := cfg.Execute(ctx, ops).Wait(ctx)
-		if err != nil {
-			log.Printf("error on cfg execute/wait: %s", err)
+		log.Printf("\t%v", clientOps)
+		ops = append(ops, clientOps...)
+	}
+
+	if len(ops) == 0 {
+		log.Printf(prefix+"zero ops to sync for %s\n", siteUUID.String())
+	} else {
+		log.Printf(prefix+"sending %s %d ops", siteUUID.String(), len(ops))
+		if !dryRun {
+			cmdHdl := cfg.Execute(ctx, ops)
+			_, err := cmdHdl.Wait(ctx)
+			if err != nil {
+				log.Printf("error on cfg execute/wait: %s", err)
+				err := cmdHdl.Cancel(ctx)
+				if err != nil {
+					log.Printf("tried to cancel operation, but cancelation failed: %s", err)
+				} else {
+					log.Printf("cancelled config operation; site was not responsive")
+				}
+			}
 		}
 	}
 
-	log.Printf("done syncing %s\n", siteUUID.String())
+	log.Printf(prefix+"done syncing %s\n", siteUUID)
 }
 
 func syncDeviceID(cmd *cobra.Command, args []string) error {

@@ -194,6 +194,30 @@ func (c *cmdHdl) Wait(ctx context.Context) (string, error) {
 	return msg, err
 }
 
+// Cancel will attempt to cancel the command-- i.e. remove it from the queue
+func (c *cmdHdl) Cancel(ctx context.Context) error {
+	var err error
+	if !c.inflight {
+		return fmt.Errorf("command not in-flight; cannot cancel")
+	}
+
+	ctx, ctxcancel := c.cfg.getContext(ctx)
+	defer ctxcancel()
+	cmd := rpc.CfgCmdID{
+		Time:     ptypes.TimestampNow(),
+		SiteUUID: c.cfg.uuid,
+		CmdID:    c.cmdID,
+	}
+	r, err := c.cfg.client.Cancel(ctx, &cmd)
+	if err != nil {
+		c.err = cfgapi.ErrComm
+		return err
+	}
+	_, c.err = cfgapi.ParseConfigResponse(r)
+	c.inflight = false
+	return c.err
+}
+
 // Ping sends a single ping message to configd just to verify that a round-trip
 // grpc call can succeed.
 func (c *Configd) Ping(ctx context.Context) error {

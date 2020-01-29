@@ -135,6 +135,10 @@ func (c *cmdStatus) Wait(ctx context.Context) (string, error) {
 	return c.Status(ctx)
 }
 
+func (c *cmdStatus) Cancel(ctx context.Context) error {
+	panic("not implemented")
+}
+
 // NewConfigdHdl builds and returns a handle that can be used to
 // interact with the config daemon.
 func NewConfigdHdl(b *broker.Broker, name string,
