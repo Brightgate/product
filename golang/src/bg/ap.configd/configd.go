@@ -44,6 +44,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -120,9 +121,10 @@ var configdSettings = map[string]struct {
 	valType    string
 	valDefault string
 }{
-	"verbose":   {"bool", "false"},
-	"log_level": {"string", "info"},
-	"downgrade": {"bool", "false"},
+	"verbose":    {"bool", "false"},
+	"log_level":  {"string", "info"},
+	"downgrade":  {"bool", "false"},
+	"store_freq": {"duration", "1s"},
 }
 
 var singletonOps = map[cfgmsg.ConfigOp_Operation]bool{
@@ -135,6 +137,8 @@ var (
 	logLevel       = flag.String("log-level", "info", "zap log level")
 	allowDowngrade = flag.Bool("downgrade",
 		true, "allow migrations to lower level rings")
+	storeFreq = flag.Duration("store-freq", time.Second,
+		"tree store frequency")
 
 	propTree *cfgtree.PTree
 
@@ -324,12 +328,7 @@ func eventHandler(event []byte) {
 		propTree.ChangesetRevert()
 	} else {
 		updateNotify(updates)
-		if propTree.ChangesetCommit() {
-			if rerr := propTreeStore(); rerr != nil {
-				aputil.ReportError("failed to write properties: %v",
-					rerr)
-			}
-		}
+		propTree.ChangesetCommit()
 	}
 }
 
@@ -449,6 +448,13 @@ func updateSetting(op int, prop, val string) {
 			*verbose = true
 		} else {
 			*verbose = false
+		}
+	case "store_freq":
+		f, err := time.ParseDuration(val)
+		if err == nil {
+			*storeFreq = f
+		} else {
+			slog.Warnf("ignoring bad %s: %s", path[3], val)
 		}
 	case "log_level":
 		*logLevel = val
@@ -889,11 +895,9 @@ func configPropHandler(query *cfgmsg.ConfigQuery) (string, error) {
 		expirationsEval(changedPaths)
 
 		updateNotify(updates)
-		if propTree.ChangesetCommit() || persistTree {
-			if rerr := propTreeStore(); rerr != nil {
-				aputil.ReportError("failed to write properties: %v",
-					rerr)
-			}
+		propTree.ChangesetCommit()
+		if persistTree {
+			propTreeStoreTrigger <- true
 		}
 	}
 
@@ -1052,6 +1056,7 @@ func signalHandler() {
 
 func main() {
 	var err error
+	var wg sync.WaitGroup
 
 	flag.Parse()
 	slog = aputil.NewLogger(pname)
@@ -1067,6 +1072,10 @@ func main() {
 
 	metricsInit()
 	configInit()
+
+	exitSignal := make(chan bool, 1)
+	wg.Add(1)
+	go propTreeWriter(exitSignal, &wg)
 
 	brokerd, err = broker.NewBroker(slog, pname)
 	if err != nil {
@@ -1086,6 +1095,9 @@ func main() {
 	go expirationHandler()
 	signalHandler()
 
+	propTreeStoreTrigger <- true
+	exitSignal <- true
+	wg.Wait()
 	slog.Infof("stopping")
 }
 

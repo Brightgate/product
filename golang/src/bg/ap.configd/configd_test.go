@@ -966,5 +966,15 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
+	go func() {
+		// When testing, we don't have a go routine periodically flushing
+		// the tree to disk and monitoring the trigger channel.  The
+		// following loop absorbs signals to the channel, preventing the
+		// tests from blocking.
+		for {
+			<-propTreeStoreTrigger
+		}
+	}()
+
 	os.Exit(m.Run())
 }

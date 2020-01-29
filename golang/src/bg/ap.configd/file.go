@@ -14,12 +14,14 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"regexp"
 	"strconv"
+	"sync"
 	"time"
 
 	"bg/ap_common/aputil"
@@ -45,8 +47,9 @@ const (
 )
 
 var (
-	propTreeDir    *os.File
-	propTreeLoaded bool
+	propTreeDir          *os.File
+	propTreeLoaded       bool
+	propTreeStoreTrigger = make(chan bool, 32)
 
 	archiveTimes []time.Time
 
@@ -141,41 +144,83 @@ func updateSnapshots() bool {
 	return syncNeeded
 }
 
-// Move the current config file aside as a backup, and persist the config tree
-// to disk in its place.  If the latest snapshot is old enough, take a fresh
-// snapshot and reap any stale snapshots.
-func propTreeStore() error {
-	var err error
-	if !propTreeLoaded {
-		return nil
-	}
+func propTreeWriter(exitSignal chan bool, wg *sync.WaitGroup) {
+	var lastWrite time.Time
+	var reported bool
 
-	s := propTree.Export(true)
-	metrics.treeSize.Set(float64(len(s)))
+	name := plat.ExpandDirPath(propertyDir, propertyFilename)
+	t := time.NewTicker(time.Second)
 
-	syncNeeded := updateSnapshots()
-	if propFileRename(propertyFilename, backupFilename) {
-		syncNeeded = true
-	}
+	propTree.Lock()
+	oldHash := propTree.Root().Hash()
+	propTree.Unlock()
+	done := false
+	for !done {
+		var data []byte
+		var force bool
 
-	if syncNeeded {
+		select {
+		case done = <-exitSignal:
+		case <-t.C:
+		case force = <-propTreeStoreTrigger:
+			slog.Infof("sync forced")
+		}
+
+		if !propTreeLoaded {
+			continue
+		}
+
+		if !force && time.Since(lastWrite) < *storeFreq {
+			continue
+		}
+
+		propTree.Lock()
+		curHash := propTree.Root().Hash()
+		if !bytes.Equal(curHash, oldHash) {
+			// Don't bothed marshaling and writing the tree if the
+			// contents haven't changed since the last write.
+			data = propTree.Export(true)
+			oldHash = curHash
+		}
+		propTree.Unlock()
+
+		if len(data) == 0 {
+			continue
+		}
+
+		slog.Debugf("syncing tree to disk")
+		lastWrite = time.Now()
+		metrics.treeSize.Set(float64(len(data)))
+
+		syncNeeded := updateSnapshots()
+		if propFileRename(propertyFilename, backupFilename) {
+			syncNeeded = true
+		}
+
+		if syncNeeded {
+			// Force directory metadata out to disk.
+			if err := propTreeDir.Sync(); err != nil {
+				slog.Warnf("Failed to sync properties dir: %v", err)
+			}
+		}
+
+		if err := bgioutil.WriteFileSync(name, data, 0644); err != nil {
+			slog.Warnf("Failed to write properties file: %v", err)
+			if !reported {
+				reported = true
+				aputil.ReportError("failed to write %s: %v",
+					name, err)
+			}
+		} else {
+			reported = false
+		}
+
 		// Force directory metadata out to disk.
-		if err = propTreeDir.Sync(); err != nil {
+		if err := propTreeDir.Sync(); err != nil {
 			slog.Warnf("Failed to sync properties dir: %v", err)
 		}
 	}
-
-	propTreeFile := plat.ExpandDirPath(propertyDir, propertyFilename)
-	err = bgioutil.WriteFileSync(propTreeFile, s, 0644)
-	if err != nil {
-		slog.Warnf("Failed to write properties file: %v", err)
-	}
-	// Force directory metadata out to disk.
-	err = propTreeDir.Sync()
-	if err != nil {
-		slog.Warnf("Failed to sync properties dir: %v", err)
-	}
-	return err
+	wg.Done()
 }
 
 // Try to load a config tree from the given file.
@@ -251,9 +296,7 @@ func versionTree() error {
 	propTree.ChangesetCommit()
 
 	if upgraded {
-		if err := propTreeStore(); err != nil {
-			return fmt.Errorf("Failed to write properties: %v", err)
-		}
+		propTreeStoreTrigger <- true
 	}
 	return nil
 }
@@ -337,9 +380,7 @@ func propTreeInit(defaults *cfgtree.PNode) error {
 			slog.Fatalf("Unable to set SiteID: %v", err)
 		}
 		propTree.ChangesetCommit()
-		if err := propTreeStore(); err != nil {
-			slog.Fatalf("Failed to write properties: %v", err)
-		}
+		propTreeStoreTrigger <- true
 	}
 
 	if err = versionTree(); err != nil {

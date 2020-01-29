@@ -166,9 +166,6 @@ func processExpirations(expired []string) {
 
 	updateNotify(updates)
 	propTree.ChangesetCommit()
-	if cnt > 0 {
-		propTreeStore()
-	}
 }
 
 func delay() time.Duration {
