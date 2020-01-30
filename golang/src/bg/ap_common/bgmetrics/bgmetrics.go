@@ -15,6 +15,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"bg/common/cfgapi"
@@ -43,6 +44,14 @@ type Summary struct {
 	val float64
 }
 
+// DurationSummary is similar to a Summary metric, but is specifically used to
+// track time.Duration values.
+type DurationSummary struct {
+	updated bool
+	// Will eventually be a bucketed slice
+	val time.Duration
+}
+
 // Metrics is an opaque handle used to register, update, and track a set of
 // metrics.
 type Metrics struct {
@@ -57,6 +66,9 @@ type Metrics struct {
 	counters  map[string]*Counter
 	gauges    map[string]*Gauge
 	summaries map[string]*Summary
+	durations map[string]*DurationSummary
+
+	sync.Mutex
 }
 
 // Add increases a Counter by an arbitrary amount
@@ -79,6 +91,9 @@ func (c *Counter) Reset() {
 
 // NewCounter allocates and returns a new Counter metric
 func (m *Metrics) NewCounter(name string) *Counter {
+	m.Lock()
+	defer m.Unlock()
+
 	m.addMetricProperty(name)
 	c := &Counter{}
 	m.counters[name] = c
@@ -93,10 +108,37 @@ func (g *Gauge) Set(val float64) {
 
 // NewGauge allocates and returns a new Gauge metric
 func (m *Metrics) NewGauge(name string) *Gauge {
+	m.Lock()
+	defer m.Unlock()
+
 	m.addMetricProperty(name)
 	g := &Gauge{}
 	m.gauges[name] = g
 	return g
+}
+
+// Observe adds a new duration to the set of durations the given metric has
+// taken on.
+func (d *DurationSummary) Observe(val time.Duration) {
+	d.val = val
+	d.updated = true
+}
+
+// NewDurationSummary allocates and returns a new DurationSummary metric
+func (m *Metrics) NewDurationSummary(name string) *DurationSummary {
+	m.Lock()
+	defer m.Unlock()
+
+	m.addMetricProperty(name)
+	d := &DurationSummary{}
+	m.durations[name] = d
+	return d
+}
+
+// Reset sets the current duration to 0 and erases any history.
+func (d *DurationSummary) Reset() {
+	d.val = time.Duration(0)
+	d.updated = true
 }
 
 // Observe adds a new value to the set of values the given metric has taken on.
@@ -107,6 +149,9 @@ func (s *Summary) Observe(val float64) {
 
 // NewSummary allocates and returns a new Summary metric
 func (m *Metrics) NewSummary(name string) *Summary {
+	m.Lock()
+	defer m.Unlock()
+
 	m.addMetricProperty(name)
 	s := &Summary{}
 	m.summaries[name] = s
@@ -133,6 +178,9 @@ func (m *Metrics) addMetricProperty(name string) {
 // Dump is a debugging function which prints out all of the current metrics and
 // their values.
 func (m *Metrics) Dump() {
+	m.Lock()
+	defer m.Unlock()
+
 	for name, c := range m.counters {
 		fmt.Printf("  %s: %d\n", name, c.val)
 	}
@@ -172,12 +220,20 @@ func (m *Metrics) addIntOp(name string, val int64) cfgapi.PropertyOp {
 	return m.addOp(name, s)
 }
 
+func (m *Metrics) addDurationOp(name string, val time.Duration) cfgapi.PropertyOp {
+	s := val.String()
+	return m.addOp(name, s)
+}
+
 // PushUpdates sends any changes in our set of metrics to ap.configd, where they
 // get stored at @/metrics/<daemon>/<metric>
 func (m *Metrics) PushUpdates() {
 	if m.config == nil {
 		return
 	}
+
+	m.Lock()
+	defer m.Unlock()
 
 	ops := make([]cfgapi.PropertyOp, 0)
 	for name, c := range m.counters {
@@ -196,6 +252,12 @@ func (m *Metrics) PushUpdates() {
 		if s.updated {
 			s.updated = false
 			ops = append(ops, m.addFloatOp(name, s.val))
+		}
+	}
+	for name, d := range m.durations {
+		if d.updated {
+			d.updated = false
+			ops = append(ops, m.addDurationOp(name, d.val))
 		}
 	}
 	if len(ops) > 0 {
@@ -251,6 +313,7 @@ func NewMetrics(pname string, config *cfgapi.Handle) *Metrics {
 		counters:   make(map[string]*Counter),
 		gauges:     make(map[string]*Gauge),
 		summaries:  make(map[string]*Summary),
+		durations:  make(map[string]*DurationSummary),
 	}
 
 	go m.updateLoop()

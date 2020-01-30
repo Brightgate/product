@@ -126,7 +126,7 @@ func newConnection(daemon, host string) (*MCP, error) {
 	var handle *MCP
 
 	url := "tcp://" + host + base_def.MCP_COMM_REP_PORT
-	comm, err := comms.NewAPClient(url)
+	comm, err := comms.NewAPClient(daemon, url)
 	if err != nil {
 		err = fmt.Errorf("creating APClient: %v", err)
 	} else {
@@ -151,7 +151,7 @@ func newConnection(daemon, host string) (*MCP, error) {
 // New connects to ap.mcp on this node, and returns an opaque handle that can be
 // used for subsequent communication with the daemon.
 func New(name string) (*MCP, error) {
-	return newConnection(name, "localhost")
+	return newConnection(name, "127.0.0.1")
 }
 
 // NewPeer connects to ap.mcp running on a gateway node, and returns an opaque
@@ -186,7 +186,7 @@ func (m *MCP) msg(op *base_msg.MCPRequest) (string, error) {
 		return "", fmt.Errorf("marshaling mcp arguments: %v", err)
 	}
 
-	reply, err := m.comm.Send(data)
+	reply, err := m.comm.ReqRepl(data)
 	if err != nil {
 		err = fmt.Errorf("communicating with mcp: %v", err)
 

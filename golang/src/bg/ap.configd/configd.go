@@ -76,12 +76,20 @@ var (
 	bgm *bgmetrics.Metrics
 
 	metrics struct {
-		getCounts  *bgmetrics.Counter
-		setCounts  *bgmetrics.Counter
-		delCounts  *bgmetrics.Counter
-		expCounts  *bgmetrics.Counter
-		testCounts *bgmetrics.Counter
-		treeSize   *bgmetrics.Gauge
+		getCounts    *bgmetrics.Counter
+		setCounts    *bgmetrics.Counter
+		delCounts    *bgmetrics.Counter
+		expCounts    *bgmetrics.Counter
+		testCounts   *bgmetrics.Counter
+		treeSize     *bgmetrics.Gauge
+		queueLenAvg  *bgmetrics.Gauge
+		queueLenMax  *bgmetrics.Gauge
+		queueTimeAvg *bgmetrics.DurationSummary
+		queueTimeMax *bgmetrics.DurationSummary
+		execTimeAvg  *bgmetrics.DurationSummary
+		execTimeMax  *bgmetrics.DurationSummary
+		replyTimeAvg *bgmetrics.DurationSummary
+		replyTimeMax *bgmetrics.DurationSummary
 	}
 )
 
@@ -972,8 +980,22 @@ func processOneEvent(query *cfgmsg.ConfigQuery) *cfgmsg.ConfigResponse {
 		}
 	}
 
+	start := time.Now()
 	if err == nil {
 		rval, err = executePropOps(query)
+	}
+	if t := time.Since(start); t > 100*time.Millisecond {
+		sstr := query.GetSender()
+		qstr := cfgapi.QueryToString(query)
+		if l := len(qstr); l > 200 {
+			r := strconv.Itoa(l - 100)
+			qstr = qstr[:100] + " ... <" + r + " removed>"
+		}
+		if t > 500*time.Millisecond {
+			slog.Warnf("%s op took %v: %s", sstr, t, qstr)
+		} else {
+			slog.Debugf("%s op took %v: %s", sstr, t, qstr)
+		}
 	}
 
 	if err == nil && *verbose {
@@ -981,21 +1003,44 @@ func processOneEvent(query *cfgmsg.ConfigQuery) *cfgmsg.ConfigResponse {
 	}
 
 	response := cfgapi.GenerateConfigResponse(rval, err)
+	response.CmdID = query.CmdID
 	response.Sender = pname + "(" + strconv.Itoa(os.Getpid()) + ")"
+
 	return response
 }
 
 func msgHandler(msg []byte) []byte {
-	query := &cfgmsg.ConfigQuery{}
-	proto.Unmarshal(msg, query)
+	var response *cfgmsg.ConfigResponse
 
-	response := processOneEvent(query)
+	query := &cfgmsg.ConfigQuery{}
+	if err := proto.Unmarshal(msg, query); err != nil {
+		response = cfgapi.GenerateConfigResponse("", err)
+	} else {
+		response = processOneEvent(query)
+	}
 	data, err := proto.Marshal(response)
 	if err != nil {
 		slog.Warnf("Failed to marshal response to %v: %v",
 			*query, err)
 	}
 	return data
+}
+
+func statsLoop() {
+	t := time.NewTicker(5 * time.Second)
+	for {
+		<-t.C
+
+		s := serverPort.Stats()
+		metrics.queueLenAvg.Set(float64(s.QueueLenAvg))
+		metrics.queueLenMax.Set(float64(s.QueueLenMax))
+		metrics.queueTimeAvg.Observe(s.QueueTime.Avg)
+		metrics.queueTimeMax.Observe(s.QueueTime.Max)
+		metrics.execTimeAvg.Observe(s.ExecTime.Avg)
+		metrics.execTimeMax.Observe(s.ExecTime.Max)
+		metrics.replyTimeAvg.Observe(s.ReplyTime.Avg)
+		metrics.replyTimeMax.Observe(s.ReplyTime.Max)
+	}
 }
 
 func metricsInit() {
@@ -1008,6 +1053,14 @@ func metricsInit() {
 	metrics.expCounts = bgm.NewCounter("expires")
 	metrics.testCounts = bgm.NewCounter("tests")
 	metrics.treeSize = bgm.NewGauge("tree_size")
+	metrics.queueLenAvg = bgm.NewGauge("queue_len_avg")
+	metrics.queueLenMax = bgm.NewGauge("queue_len_max")
+	metrics.queueTimeAvg = bgm.NewDurationSummary("queue_time_avg")
+	metrics.queueTimeMax = bgm.NewDurationSummary("queue_time_max")
+	metrics.execTimeAvg = bgm.NewDurationSummary("exec_time_avg")
+	metrics.execTimeMax = bgm.NewDurationSummary("exec_time_max")
+	metrics.replyTimeAvg = bgm.NewDurationSummary("reply_time_avg")
+	metrics.replyTimeMax = bgm.NewDurationSummary("reply_time_max")
 }
 
 func fail(format string, a ...interface{}) {
@@ -1084,10 +1137,11 @@ func main() {
 	brokerd.Handle(base_def.TOPIC_ENTITY, eventHandler)
 	defer brokerd.Fini()
 
-	if serverPort, err = comms.NewAPServer(serverURL); err != nil {
+	if serverPort, err = comms.NewAPServer(pname, serverURL); err != nil {
 		fail("opening server port: %v", err)
 	}
 	go serverPort.Serve(msgHandler)
+	go statsLoop()
 
 	slog.Infof("%s online running %s", pname, common.GitVersion)
 	mcpd.SetState(mcp.ONLINE)

@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	pname = "ap.healthd"
+	pname = "ap.tron"
 )
 
 var (

@@ -323,7 +323,7 @@ func apiInit() {
 	}
 
 	url := base_def.INCOMING_COMM_URL + base_def.MCP_COMM_REP_PORT
-	server, err := comms.NewAPServer(url)
+	server, err := comms.NewAPServer(pname, url)
 	if err != nil {
 		log.Fatalf("failed to get open server port")
 	}

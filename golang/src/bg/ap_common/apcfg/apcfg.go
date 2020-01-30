@@ -16,6 +16,7 @@ import (
 	"log"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"bg/ap_common/aputil"
@@ -34,6 +35,10 @@ import (
 const (
 	errLimit = 5
 	daemon   = "configd"
+)
+
+var (
+	commandID = int64(0)
 )
 
 // APConfig is an opaque type representing a connection to ap.configd
@@ -150,7 +155,7 @@ func NewConfigdHdl(b *broker.Broker, name string,
 	}
 
 	url := aputil.GatewayURL(base_def.CONFIGD_COMM_REP_PORT)
-	comm, err := comms.NewAPClient(url)
+	comm, err := comms.NewAPClient(name, url)
 	if err != nil {
 		return nil, fmt.Errorf("creating new client: %v", err)
 	}
@@ -193,12 +198,13 @@ func (c *APConfig) sendOp(query *cfgmsg.ConfigQuery) (string, error) {
 	var rval string
 
 	query.Sender = c.sender
+	query.CmdID = atomic.AddInt64(&commandID, 1)
 	msg, err := proto.Marshal(query)
 	if err != nil {
 		return "", fmt.Errorf("unable to build op: %v", err)
 	}
 
-	reply, err := c.comm.Send(msg)
+	reply, err := c.comm.ReqRepl(msg)
 
 	if c.errChan != nil {
 		(*c.errChan) <- err
@@ -206,7 +212,14 @@ func (c *APConfig) sendOp(query *cfgmsg.ConfigQuery) (string, error) {
 
 	if err == nil && len(reply) > 0 {
 		r := &cfgmsg.ConfigResponse{}
-		proto.Unmarshal(reply, r)
+		if err = proto.Unmarshal(reply, r); err != nil {
+			log.Fatalf("unmarshaling config response: %s\n", err)
+		}
+
+		if query.CmdID != r.CmdID {
+			log.Fatalf("query %d got response %d\n",
+				query.CmdID, r.CmdID)
+		}
 		rval, err = cfgapi.ParseConfigResponse(r)
 	}
 

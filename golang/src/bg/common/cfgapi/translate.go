@@ -204,8 +204,24 @@ func QueryToPropOps(q *cfgmsg.ConfigQuery) ([]PropertyOp, error) {
 	return ops, err
 }
 
-func init() {
+// QueryToString translates a ConfigQuery structure into a human-readable
+// string.
+func QueryToString(q *cfgmsg.ConfigQuery) string {
+	var s string
 
+	ops, err := QueryToPropOps(q)
+	if err != nil {
+		s = "unparseable query"
+	} else {
+
+		for _, op := range ops {
+			s += op.String()
+		}
+	}
+	return s
+}
+
+func init() {
 	codeToErr = make(map[cfgmsg.ConfigResponse_OpResponse]error)
 	for e, c := range errToCode {
 		codeToErr[c] = e

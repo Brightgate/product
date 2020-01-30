@@ -181,7 +181,7 @@ func apiHandle(msg []byte) []byte {
 func apiInit() error {
 	url := base_def.INCOMING_COMM_URL + base_def.WATCHD_COMM_REP_PORT
 
-	server, err := comms.NewAPServer(url)
+	server, err := comms.NewAPServer(pname, url)
 	if err != nil {
 		slog.Warnf("creating API endpoint: %v", err)
 	} else {

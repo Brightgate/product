@@ -320,7 +320,7 @@ func sendMsg(c *comms.APComm, op *base_msg.WatchdRequest) (*base_msg.WatchdRespo
 		return nil, fmt.Errorf("failed to marshal command: %v", err)
 	}
 
-	reply, err := c.Send(data)
+	reply, err := c.ReqRepl(data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send command: %v", err)
 	}
@@ -360,7 +360,7 @@ func watchctl() {
 
 	findGateway()
 	url := aputil.GatewayURL(base_def.WATCHD_COMM_REP_PORT)
-	comm, err := comms.NewAPClient(url)
+	comm, err := comms.NewAPClient(os.Args[0], url)
 	if err != nil {
 		fmt.Printf("%s: unable to connect to watchd: %v\n", pname, err)
 		os.Exit(1)
