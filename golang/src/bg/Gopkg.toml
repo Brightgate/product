@@ -116,13 +116,13 @@
 # pre-1.0, use ~; make sure to audit changelog
 [[constraint]]
   name = "cloud.google.com/go"
-  version = "~0.46.3"
+  version = "~0.52.0"
 
 # Override is more powerful than constraint; github.com/dhduvall/gcloudzap
 # sets cloud.google.com/go ~ 0.32.0, and we want to go newer.
 [[override]]
   name = "cloud.google.com/go"
-  version = "~0.46.3"
+  version = "~0.52.0"
 
 [[constraint]]
   name = "google.golang.org/api"
@@ -195,3 +195,8 @@
 [[constraint]]
   branch = "master"
   name = "github.com/dhduvall/closestmatch"
+
+[[constraint]]
+  name = "github.com/fsouza/fake-gcs-server"
+  version = "1.17.0"
+

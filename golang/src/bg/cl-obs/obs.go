@@ -59,6 +59,7 @@ import (
 	"regexp"
 	"runtime/pprof"
 	"strings"
+	"sync"
 	"time"
 
 	"bg/base_msg"
@@ -72,14 +73,13 @@ import (
 	"github.com/klauspost/oui"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/pkg/errors"
+	"github.com/satori/uuid"
 	"github.com/spf13/cobra"
 
 	"cloud.google.com/go/storage"
 )
 
 const (
-	pname = "cl-obs"
-
 	ouiDefaultFile = "etc/oui.txt"
 
 	unknownSite = "-unknown-site-"
@@ -137,10 +137,15 @@ type RecordedTraining struct {
 // contains information about some number of the most recent ingestion
 // runs.
 type RecordedIngest struct {
-	IngestDate         time.Time `db:"ingest_date"`
-	NewSites           int       `db:"new_sites"`
-	NewInventories     int       `db:"new_inventories"`
-	UpdatedInventories int       `db:"updated_inventories"`
+	IngestDate     time.Time `db:"ingest_date"`
+	SiteUUID       string    `db:"site_uuid"`
+	NewInventories int64     `db:"new_inventories"`
+	sync.Mutex
+}
+
+func (r *RecordedIngest) String() string {
+	return fmt.Sprintf("[%s %s New:%d]", r.IngestDate.Format(time.RFC3339Nano),
+		r.SiteUUID, r.NewInventories)
 }
 
 // RecordedClassification represents a row of the classification table. The
@@ -190,7 +195,7 @@ type dhcpBucket struct {
 type Ingester interface {
 	DeviceInfoOpen(*backdrop, string, string, string) (io.Reader, error)
 	SiteExists(*backdrop, string) (bool, error)
-	Ingest(*backdrop) error
+	Ingest(*backdrop, map[uuid.UUID]bool) error
 }
 
 type backdrop struct {
@@ -205,8 +210,6 @@ var (
 	_B backdrop
 
 	cpuProfile       string
-	ingestDir        string
-	ingestProject    string
 	modelDir         string
 	modelFile        string
 	observationsFile string
@@ -333,9 +336,9 @@ func checkDB(idb *sqlx.DB) {
 	const ingestSchema = `
     CREATE TABLE IF NOT EXISTS ingest (
 	ingest_date TIMESTAMP,
-	new_sites int,
+	site_uuid text REFERENCES site(site_uuid),
 	new_inventories int,
-	updated_inventories int
+	PRIMARY KEY (ingest_date, site_uuid)
     );`
 	const classifySchema = `
     CREATE TABLE IF NOT EXISTS classification (
@@ -752,7 +755,10 @@ func classifySub(cmd *cobra.Command, args []string) error {
 			return errors.Wrapf(err, "couldn't find a site name or UUID matching %s", arg)
 		}
 		for _, site := range sites {
-			classifySite(&_B, models, site.SiteUUID, persist)
+			err := classifySite(&_B, models, site.SiteUUID, persist)
+			if err != nil {
+				return err
+			}
 			log.Printf("finished classifying %s", site.SiteUUID)
 		}
 	}
@@ -761,7 +767,49 @@ func classifySub(cmd *cobra.Command, args []string) error {
 }
 
 func ingestSub(cmd *cobra.Command, args []string) error {
-	return _B.ingester.Ingest(&_B)
+	var selectedUUIDs map[uuid.UUID]bool
+
+	ingestProject, _ := cmd.Flags().GetString("project")
+	ingestDir, _ := cmd.Flags().GetString("dir")
+	workers, _ := cmd.Flags().GetInt("workers")
+
+	if ingestProject != "" {
+		log.Printf("cloud ingest from %s", ingestProject)
+		ingester, err := newCloudIngester(ingestProject, workers)
+		if err != nil {
+			return err
+		}
+		_B.ingester = ingester
+	} else if ingestDir != "" {
+		log.Printf("file ingest from %s", ingestDir)
+		_B.ingester = newFileIngester(ingestDir)
+	} else {
+		// None has been defined.
+		return errors.Errorf("must provide --dir or --project")
+	}
+
+	if len(args) > 0 {
+		selectedUUIDs = make(map[uuid.UUID]bool)
+		for _, arg := range args {
+			if arg == "*" {
+				// * overrides whatever else was passed
+				selectedUUIDs = nil
+				break
+			}
+			uu, err := uuid.FromString(arg)
+			if err != nil {
+				return err
+			}
+			selectedUUIDs[uu] = true
+		}
+	}
+
+	err := _B.ingester.Ingest(&_B, selectedUUIDs)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func lsByUUID(u string, details bool) error {
@@ -874,7 +922,10 @@ func lsSub(cmd *cobra.Command, args []string) error {
 	for _, arg := range args {
 		// is it a mac?
 		if _, err := net.ParseMAC(arg); err == nil {
-			lsByMac(arg, verbose)
+			err := lsByMac(arg, verbose)
+			if err != nil {
+				return err
+			}
 			continue
 		}
 
@@ -884,7 +935,9 @@ func lsSub(cmd *cobra.Command, args []string) error {
 			return errors.Wrapf(err, "couldn't find a site name or UUID matching %s", arg)
 		}
 		for _, site := range sites {
-			lsByUUID(site.SiteUUID, verbose)
+			if err := lsByUUID(site.SiteUUID, verbose); err != nil {
+				log.Printf("error listing %s: %v", site.SiteUUID, err)
+			}
 		}
 	}
 	return nil
@@ -892,13 +945,13 @@ func lsSub(cmd *cobra.Command, args []string) error {
 
 func extractSub(cmd *cobra.Command, args []string) error {
 	if dhcp, _ := cmd.Flags().GetBool("dhcp"); dhcp {
-		return extractDHCPRecords(&_B, ingestDir)
+		return extractDHCPRecords(&_B)
 	}
 	if dns, _ := cmd.Flags().GetBool("dns"); dns {
-		return extractDNSRecords(&_B, ingestDir)
+		return extractDNSRecords(&_B)
 	}
 	if mfg, _ := cmd.Flags().GetBool("mfg"); mfg {
-		return extractMfgs(&_B, ingestDir)
+		return extractMfgs(&_B)
 	}
 	if device, _ := cmd.Flags().GetBool("device"); device {
 		return extractDevices(&_B)
@@ -910,13 +963,16 @@ func trainSub(cmd *cobra.Command, args []string) error {
 	if !_B.modelsLoaded {
 		return errors.Errorf("Model not loaded.  You may need to pass --model-file")
 	}
-
-	trainDeviceGenusBayesClassifier(&_B, ingestDir)
-	trainOSGenusBayesClassifier(&_B, ingestDir)
-	trainOSSpeciesBayesClassifier(&_B, ingestDir)
-
+	if err := trainDeviceGenusBayesClassifier(&_B, "XXX"); err != nil {
+		return err
+	}
+	if err := trainOSGenusBayesClassifier(&_B, "XXX"); err != nil {
+		return err
+	}
+	if err := trainOSSpeciesBayesClassifier(&_B, "XXX"); err != nil {
+		return err
+	}
 	trainInterfaceMfgLookupClassifier(&_B)
-
 	return nil
 }
 
@@ -933,6 +989,9 @@ func loadModel(modelFile string) (*sqlx.DB, error) {
 		ctx := context.Background()
 		cenv := os.Getenv(googleCredentialsEnvVar)
 		storageClient, err := storage.NewClient(ctx, option.WithCredentialsFile(cenv))
+		if err != nil {
+			return nil, errors.Wrapf(err, "creating storage client")
+		}
 		bucket := storageClient.Bucket(url.Host)
 		upath := strings.TrimLeft(url.Path, "/")
 		object := bucket.Object(upath)
@@ -942,6 +1001,9 @@ func loadModel(modelFile string) (*sqlx.DB, error) {
 		}
 		defer r.Close()
 		tmpFile, err := ioutil.TempFile("", "cl-obs-trained-model")
+		if err != nil {
+			return nil, errors.Wrap(err, "creating temp file")
+		}
 		if _, err := io.Copy(tmpFile, r); err != nil {
 			// TODO: Handle error.
 			return nil, errors.Wrapf(err, "copying %s -> %s", modelFile, tmpFile.Name())
@@ -976,10 +1038,11 @@ func readyBackdrop(B *backdrop) error {
 		log.Fatalf("unable to open OUI database: %v", err)
 	}
 
-	B.db, err = sqlx.Connect("sqlite3", observationsFile)
+	B.db, err = sqlx.Connect("sqlite3", fmt.Sprintf("file:%s?cache=shared", observationsFile))
 	if err != nil {
 		log.Fatalf("database open: %v\n", err)
 	}
+	B.db.SetMaxOpenConns(1)
 
 	err = B.db.Ping()
 	if err != nil {
@@ -988,66 +1051,30 @@ func readyBackdrop(B *backdrop) error {
 
 	checkDB(B.db)
 
-	log.Printf("running combined version: %s\n", getCombinedVersion())
-
-	if ingestProject != "" {
-		log.Printf("backdrop deviceInfoOpen cloud")
-		ingester := newCloudIngester(ingestProject)
-
-		cenv := os.Getenv(googleCredentialsEnvVar)
-		if cenv == "" {
-			return fmt.Errorf("Provide cloud credentials through %s envvar",
-				googleCredentialsEnvVar)
-		}
-
-		ingester.storageClient, err = storage.NewClient(context.Background(),
-			option.WithCredentialsFile(cenv))
-		if err != nil {
-			return errors.Wrap(err, "storage client")
-		}
-
-		B.ingester = ingester
-	} else if ingestDir != "" {
-		log.Printf("backdrop deviceInfoOpen file")
-		B.ingester = newFileIngester(ingestDir)
-	} else {
-		// None has been defined.
-		log.Fatalf("must provide --dir or --project")
+	// These settings enable the write-ahead log, and relax the synchronous mode
+	// from FULL to NORMAL.  This seems to provide a massive performance boost.
+	_, err = _B.db.Exec("PRAGMA main.journal_mode = WAL; PRAGMA main.synchronous = NORMAL;")
+	if err != nil {
+		log.Fatalf("Couldn't set DB performance settings: %v", err)
 	}
+
+	log.Printf("running combined version: %s\n", getCombinedVersion())
 
 	B.modeldb, err = loadModel(modelFile)
 	if err != nil {
 		log.Printf("loadModel failed: %v", err)
 	} else {
 		B.modelsLoaded = true
+		checkModelDB(B.modeldb)
 	}
 	return nil
 }
 
-func attachBackdropModels(B *backdrop) error {
-	if B.modelsLoaded {
-		return nil
-	}
-
-	var err error
-
-	B.modeldb, err = sqlx.Connect("sqlite3", modelFile)
-	if err != nil {
-		log.Fatalf("model database open: %v\n", err)
-	}
-
-	checkModelDB(B.modeldb)
-
-	B.modelsLoaded = true
-	return nil
-}
-
-func closeBackdrop(B *backdrop) error {
+func closeBackdrop(B *backdrop) {
 	B.db.Close()
 	if B.modelsLoaded {
 		B.modeldb.Close()
 	}
-	return nil
 }
 
 func main() {
@@ -1069,7 +1096,9 @@ func main() {
 				}
 
 				log.Printf("activating CPU profiling to %s", cpuProfile)
-				pprof.StartCPUProfile(pf)
+				if err = pprof.StartCPUProfile(pf); err != nil {
+					panic(err.Error())
+				}
 			}
 
 			if ccmd.Name() == "help" {
@@ -1091,12 +1120,9 @@ func main() {
 			}
 
 			closeBackdrop(&_B)
-
 		},
 	}
 	rootCmd.PersistentFlags().StringVar(&cpuProfile, "cpuprofile", "", "CPU profiling filename")
-	rootCmd.PersistentFlags().StringVar(&ingestDir, "dir", "", "directory for DeviceInfo files")
-	rootCmd.PersistentFlags().StringVar(&ingestProject, "project", "", "GCP project for DeviceInfo files")
 	rootCmd.PersistentFlags().StringVar(&observationsFile, "observations-file", "obs.db", "observations index path")
 	rootCmd.PersistentFlags().StringVar(&ouiFile, "oui-file", ouiFile, "OUI text database path")
 
@@ -1130,11 +1156,14 @@ func main() {
 	rootCmd.AddCommand(lsCmd)
 
 	ingestCmd := &cobra.Command{
-		Use:   "ingest",
+		Use:   "ingest [*|site-name|site-uuid ...]",
 		Short: "Ingest device info files from tree",
-		Args:  cobra.NoArgs,
+		Args:  cobra.MinimumNArgs(0),
 		RunE:  ingestSub,
 	}
+	ingestCmd.Flags().String("dir", "", "directory for DeviceInfo files")
+	ingestCmd.Flags().String("project", "", "GCP project for DeviceInfo files")
+	ingestCmd.Flags().Int("workers", 0, "number of asynchronous workers")
 	rootCmd.AddCommand(ingestCmd)
 
 	extractCmd := &cobra.Command{

@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -12,17 +12,19 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"regexp"
+	"time"
 
 	"cloud.google.com/go/storage"
 	"github.com/pkg/errors"
 	"github.com/satori/uuid"
+	"golang.org/x/sync/semaphore"
 	"google.golang.org/api/iterator"
+	"google.golang.org/api/option"
 )
 
 const (
@@ -32,13 +34,20 @@ const (
 	objectFmt     = "obs/%s/device_info.%s.pb"
 	objectPattern = `obs/(?P<mac>[a-f0-9:]*)/device_info.(?P<ts>[0-9]*).pb`
 
-	//	IngestProject = "staging-168518"
 	bucketPrefix = "bg-appliance-data-"
 )
 
+var (
+	bucketRE = regexp.MustCompile(bucketPattern)
+	objectRE = regexp.MustCompile(objectPattern)
+)
+
 type cloudIngester struct {
-	project       string
-	storageClient *storage.Client
+	project              string
+	storageClient        *storage.Client
+	bucketWorkers        int64
+	objectWorkersPerSite int64
+	allObjectWorkers     *semaphore.Weighted
 }
 
 func (c *cloudIngester) SiteExists(B *backdrop, siteUUID string) (bool, error) {
@@ -73,39 +82,161 @@ func (c *cloudIngester) DeviceInfoOpen(B *backdrop, siteUUID string, deviceMac s
 	return o.NewReader(context.Background())
 }
 
-func (c *cloudIngester) Ingest(B *backdrop) error {
+func (c *cloudIngester) ingestSiteBucket(B *backdrop, siteUUID uuid.UUID,
+	prevIngestTime time.Time, bucketName string) error {
+
+	bucket := c.storageClient.Bucket(bucketName)
+	q := storage.Query{Prefix: "obs/"}
+	if err := q.SetAttrSelection([]string{"Name", "Updated"}); err != nil {
+		return errors.Wrap(err, "setting up GCS query")
+	}
+
+	ingestStats := RecordedIngest{
+		SiteUUID:   siteUUID.String(),
+		IngestDate: prevIngestTime,
+	}
+	log.Printf("start bucket: %s", bucketName)
+	log.Printf("previous cursor: %s", prevIngestTime.Format(time.RFC3339Nano))
+	log.Printf("ingest stats %v", &ingestStats)
+
+	startOtherSentenceV, err := countOtherSentenceVersions(B.db, siteUUID, getCombinedVersion())
+	if err != nil {
+		return errors.Wrap(err, "checking for old sentences")
+	}
+	if startOtherSentenceV > 0 {
+		log.Printf("%s: old/version-mismatched sentences were detected.  Will do a full reingest.", siteUUID)
+		// Zero out the prevIngestTime to force full refresh
+		prevIngestTime = time.Time{}
+	} else {
+		log.Printf("%s: zero old/version-mismatched sentences were detected.", siteUUID)
+	}
+
+	// controls the worker goroutines for this bucket
+	objectIngestSem := semaphore.NewWeighted(c.objectWorkersPerSite)
+
+	nObjs := 0
+	objs := bucket.Objects(context.Background(), &q)
+	for {
+		oattrs, err := objs.Next()
+		if err == iterator.Done {
+			break
+		}
+		nObjs++
+		if nObjs%500 == 0 {
+			log.Printf("%s: examined %d objects", siteUUID, nObjs)
+		}
+
+		// If before, or same, we've already got this one
+		if !oattrs.Updated.After(prevIngestTime) {
+			continue
+		}
+
+		om := objectRE.FindAllStringSubmatch(oattrs.Name, -1)
+		if om == nil {
+			log.Printf("object '%s' doesn't match pattern", oattrs.Name)
+			continue
+		}
+
+		deviceMAC := om[0][1]
+		diTimestamp := om[0][2]
+
+		log.Printf("starting ingestable %s %s %s", siteUUID, deviceMAC, diTimestamp)
+		if err := objectIngestSem.Acquire(context.TODO(), 1); err != nil {
+			log.Fatalf("error getting objectIngest semaphore: %v", err)
+		}
+		if err := c.allObjectWorkers.Acquire(context.TODO(), 1); err != nil {
+			log.Fatalf("error getting allObjectWorkers semaphore: %v", err)
+		}
+
+		go func() {
+			defer objectIngestSem.Release(1)
+			defer c.allObjectWorkers.Release(1)
+			// log.Printf("getting attrs next object")
+			ordr, err := bucket.Object(oattrs.Name).NewReader(context.Background())
+			if err != nil {
+				log.Printf("couldn't make reader from bucket %s: %v", oattrs.Name, err)
+				return
+			}
+
+			inventoryRecord := RecordedInventory{
+				Storage:       "cloud",
+				InventoryDate: oattrs.Updated,
+				UnixTimestamp: diTimestamp,
+				SiteUUID:      siteUUID.String(),
+				DeviceMAC:     deviceMAC,
+			}
+
+			// log.Printf("adding info from reader")
+			err = inventoryRecord.addInfoFromReader(B.ouidb, ordr)
+			if err != nil {
+				log.Printf("couldn't add info to inventory %v: %v", inventoryRecord, err)
+				return
+			}
+
+			// log.Printf("recording inventory to db: %v", inventoryRecord)
+			err = recordInventory(B.db, &ingestStats, &inventoryRecord)
+			if err != nil {
+				log.Fatalf("couldn't record inventory: %v", err)
+			}
+			log.Printf("finished work on %v", inventoryRecord)
+		}()
+	}
+	// Wait for all workers to finish
+	_ = objectIngestSem.Acquire(context.TODO(), c.objectWorkersPerSite)
+	log.Printf("looked at %d objects", nObjs)
+
+	if ingestStats.NewInventories != 0 {
+		// Record the results of the ingest.
+		err = insertSiteIngest(B.db, &ingestStats)
+		if err != nil {
+			log.Fatalf("insert Site Ingest %v failed: %v", &ingestStats, err)
+		} else {
+			log.Printf("recorded ingest bucket %s: %v", bucketName, &ingestStats)
+		}
+	}
+
+	// We re-count the non-matching sentences here, in order to see if
+	// there are some which, despite the re-import, are still from other
+	// versions.  This could happen if the population of ingestable
+	// records changes from run to run (i.e. one or more got deleted),
+	// leaving an unfixable sentence.
+	endOtherSentenceV, err := countOtherSentenceVersions(B.db, siteUUID,
+		getCombinedVersion())
+	if err != nil {
+		return errors.Wrap(err, "checking for old sentences")
+	}
+	if endOtherSentenceV > 0 {
+		log.Printf("Site %s: After reingest %d old/version-mismatched sentences were seen (%d at start). Purging.",
+			siteUUID, endOtherSentenceV, startOtherSentenceV)
+		err = removeOtherSentenceVersions(B.db, siteUUID, getCombinedVersion())
+		if err != nil {
+			return errors.Wrap(err, "removing old sentences")
+		}
+	}
+	return nil
+}
+
+func (c *cloudIngester) Ingest(B *backdrop, selectedUUIDs map[uuid.UUID]bool) error {
 	log.Printf("backdrop: %+v", B)
 
-	// How to log in, again?
 	cenv := os.Getenv(googleCredentialsEnvVar)
 	if cenv == "" {
 		return fmt.Errorf("Provide cloud credentials through %s envvar",
 			googleCredentialsEnvVar)
 	}
 
-	BucketRE := regexp.MustCompile(bucketPattern)
-	ObjectRE := regexp.MustCompile(objectPattern)
-
 	bkts := c.storageClient.Buckets(context.Background(), c.project)
 	bkts.Prefix = bucketPrefix
 
-	q := storage.Query{Prefix: "obs/"}
-
-	// stats, newer should be initialized here.
-	// Part 1.  Tree walk.
-	row := B.db.QueryRowx("SELECT * FROM ingest ORDER BY ingest_date DESC LIMIT 1;")
-
-	prevStats := RecordedIngest{}
-	stats := RecordedIngest{}
-	err := row.StructScan(&prevStats)
-	if err != nil && err != sql.ErrNoRows {
-		return errors.Wrap(err, "select ingest scan failed")
+	prevIngestTimes, err := getSiteIngestTimes(B.db)
+	if err != nil {
+		return err
 	}
+	newSites := 0
 
-	newer := prevStats.IngestDate
-	log.Printf("ingest objects after %v", newer)
-	newest := newer
+	bucketIngestSem := semaphore.NewWeighted(c.bucketWorkers)
 
+	// Walk the set of buckets
 	for {
 		battrs, err := bkts.Next()
 		if err == iterator.Done {
@@ -114,84 +245,78 @@ func (c *cloudIngester) Ingest(B *backdrop) error {
 			return errors.Wrap(err, "bkts next")
 		}
 
-		bm := BucketRE.FindAllStringSubmatch(battrs.Name, -1)
+		bm := bucketRE.FindAllStringSubmatch(battrs.Name, -1)
 		if bm == nil {
 			log.Printf("bucket '%s' doesn't match pattern", battrs.Name)
 			continue
 		}
+		siteUUID := uuid.Must(uuid.FromString(bm[0][1]))
 
-		siteUUID := bm[0][1]
-		uu, err := uuid.FromString(siteUUID)
-		if err != nil {
+		// This is awkward because we're walking buckets, and matching to
+		// passed-in sites.  In the future a better strategy is to get the
+		// sites/buckets from the appliancedb.
+		if selectedUUIDs != nil && !selectedUUIDs[siteUUID] {
 			continue
 		}
 
-		stats.NewSites += insertNewSiteByUUID(B.db, uu)
+		// XXX consider expunging all of the "newsite-ness tracking"?
+		// XXX also error semantics here are weird
+		newSites += insertNewSiteByUUID(B.db, siteUUID)
 
-		bucket := c.storageClient.Bucket(battrs.Name)
-
-		objs := bucket.Objects(context.Background(), &q)
-
-		for {
-			oattrs, err := objs.Next()
-			if err == iterator.Done {
-				break
-			}
-
-			if oattrs.Updated.Before(newer) {
-				continue
-			}
-
-			om := ObjectRE.FindAllStringSubmatch(oattrs.Name, -1)
-			if om == nil {
-				log.Printf("object '%s' doesn't match pattern", oattrs.Name)
-				continue
-			}
-
-			deviceMac := om[0][1]
-			diTimestamp := om[0][2]
-
-			ordr, err := bucket.Object(oattrs.Name).NewReader(context.Background())
-
-			objSupport := ingestReaderSupport{
-				storage: "cloud",
-				// XXX In principle, we could see an
-				// update for a deviceInfo object.
-				newRecord:   true,
-				siteUUID:    siteUUID,
-				deviceMac:   deviceMac,
-				diTimestamp: diTimestamp,
-				modTime:     oattrs.Updated,
-			}
-
-			rt := ingestFromReader(B, &stats, ordr, newest, objSupport)
-
-			// rt is the returned time.  We will
-			// want to update the ingest cache value
-			// to the maximum rt we receive.  rt >=
-			// newer by definition.
-			if newest.Before(rt) {
-				newest = rt
-			}
+		if err := bucketIngestSem.Acquire(context.TODO(), 1); err != nil {
+			log.Fatalf("couldn't acquire semaphore: %v", err)
 		}
 
-		log.Printf("stats bucket %s: %+v", battrs.Name, stats)
+		go func() {
+			defer bucketIngestSem.Release(1)
+			// Ingest the bucket.
+			err = c.ingestSiteBucket(B, siteUUID, prevIngestTimes[siteUUID], battrs.Name)
+			if err != nil {
+				log.Printf("failed ingesting bucket %s", battrs.Name)
+			}
+		}()
 	}
+	// Make sure all workers are done.
+	_ = bucketIngestSem.Acquire(context.TODO(), c.bucketWorkers)
 
-	// The time here should be the newest of the ModTime() values
-	// we've seen.
-	stats.IngestDate = newest
-
-	_, err = B.db.Exec("INSERT INTO ingest (ingest_date, new_sites, new_inventories, updated_inventories) VALUES ($1, $2, $3, $4)", stats.IngestDate, stats.NewSites, stats.NewInventories, stats.UpdatedInventories)
-	if err != nil {
-		log.Printf("ingest insert failed: %v", err)
-	}
-
-	log.Printf("ingest stats %+v", stats)
-
+	log.Printf("Discovered %d new sites", newSites)
 	return nil
 }
 
-func newCloudIngester(project string) *cloudIngester {
-	return &cloudIngester{project: project}
+func newCloudIngester(project string, workers int) (*cloudIngester, error) {
+	cenv := os.Getenv(googleCredentialsEnvVar)
+	if cenv == "" {
+		return nil, fmt.Errorf("Provide cloud credentials through %s envvar",
+			googleCredentialsEnvVar)
+	}
+	storageClient, err := storage.NewClient(context.Background(),
+		option.WithCredentialsFile(cenv))
+	if err != nil {
+		return nil, errors.Wrap(err, "storage client")
+	}
+
+	var bucketWorkers int64
+	var objectWorkers int64
+	var totalWorkers int64
+
+	if workers == 0 {
+		bucketWorkers = 25
+		objectWorkers = 25
+		totalWorkers = 200
+	} else if workers <= 4 {
+		bucketWorkers = 1
+		objectWorkers = 1
+		totalWorkers = 1
+	} else {
+		bucketWorkers = int64(workers / 4)
+		objectWorkers = int64(workers / 4)
+		totalWorkers = int64(workers)
+	}
+	return &cloudIngester{
+		project:              project,
+		bucketWorkers:        bucketWorkers,
+		objectWorkersPerSite: objectWorkers,
+		allObjectWorkers:     semaphore.NewWeighted(totalWorkers),
+		storageClient:        storageClient,
+	}, nil
 }

@@ -33,6 +33,13 @@ if [[ -z $REG_DBURI ]]; then
 	exit 2
 fi
 
+# For testing, allow an override of sites
+sites=('*')
+if [[ -n $SITES ]]; then
+	echo "overriding site selection using \$SITES"
+	sites=($SITES)
+fi
+
 function orun {
        echo "" 1>&2
        echo "###" "$@" 1>&2
@@ -61,22 +68,16 @@ TRAINED_MODELS=${TRAINED_MODELS:-gs://bg-classifier-support/trained-models.db}
 
 export CL_SRC="--project=$GCP_PROJECT"
 
-if [[ -z $SKIP_INGEST ]]; then
+if [[ -n $SKIP_INGEST ]]; then
+	echo "Skipping ingest due to \$SKIP_INGEST"
+else
 	orun "$CL_OBS" ingest \
 		"$CL_SRC" \
-		--observations-file="$OBSERVATIONS"
-fi
-
-# For testing, allow an override of sites
-sites=('*')
-if [[ -n $SITES ]]; then
-	echo "overriding site selection using \$SITES"
-	sites=($SITES)
+		--observations-file="$OBSERVATIONS" "${sites[@]}"
 fi
 
 # Classify sites
 orun "$CL_OBS" classify \
-	"$CL_SRC" \
 	--persist \
 	--model-file "$TRAINED_MODELS" \
 	--observations-file "$OBSERVATIONS" "${sites[@]}"

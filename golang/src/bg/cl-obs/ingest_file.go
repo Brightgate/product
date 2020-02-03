@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -11,15 +11,14 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -32,11 +31,16 @@ const (
 )
 
 type fileIngester struct {
-	fName string
+	ingestDir       string
+	selectedUUIDs   map[uuid.UUID]bool
+	prevIngestTimes map[uuid.UUID]time.Time
+	ingestRecords   map[uuid.UUID]*RecordedIngest
+	// Need to pick up this lock to access ingestRecords
+	ingestRecordsLock sync.Mutex
 }
 
 func (f *fileIngester) SiteExists(B *backdrop, siteUUID string) (bool, error) {
-	ud := fmt.Sprintf("%s/%s", f.fName, siteUUID)
+	ud := fmt.Sprintf("%s/%s", f.ingestDir, siteUUID)
 	us, err := os.Stat(ud)
 
 	if err == nil && us.IsDir() {
@@ -51,175 +55,147 @@ func (f *fileIngester) SiteExists(B *backdrop, siteUUID string) (bool, error) {
 }
 
 func (f *fileIngester) DeviceInfoOpen(B *backdrop, siteUUID string, deviceMac string, unixTimestamp string) (io.Reader, error) {
-	fn := fmt.Sprintf(infofileFmt, ingestDir, siteUUID, deviceMac, unixTimestamp)
+	fn := fmt.Sprintf(infofileFmt, f.ingestDir, siteUUID, deviceMac, unixTimestamp)
 
 	return os.Open(fn)
 }
 
-func ingestFile(B *backdrop, stats *RecordedIngest, fpath string, newer time.Time) time.Time {
-	// Is a dir?
-	fi, err := os.Stat(fpath)
-	if err != nil {
-		log.Fatalf("stat somehow failed after walk: %v", err)
-	}
-
-	if fi.IsDir() {
-		bn := path.Base(fpath)
-
-		// If the basename parses as a UUID, this component is
-		// the reporting appliance UUID.
-		uu, err := uuid.FromString(bn)
-		if err == nil {
-			stats.NewSites += insertNewSiteByUUID(B.db, uu)
-
-			return newer
-		}
-
-		// If the basename parses as a MAC address, this
-		// component is the device.
-		_, err = net.ParseMAC(bn)
-		if err != nil {
-			log.Printf("directory not parseable as UUID or MAC: %s", bn)
-		}
-
-		return newer
-	}
-
-	mt := fi.ModTime()
-
-	if mt.Before(newer) {
-		return mt
-	}
-
+func (f *fileIngester) ingestFile(B *backdrop, fpath string, info os.FileInfo) error {
 	// Remove prefix from fpath.
-	cpath := strings.TrimPrefix(fpath, ingestDir)
+	cpath := strings.TrimPrefix(fpath, f.ingestDir)
 	cpath = strings.TrimPrefix(cpath, "/")
 	fpMatch := filepathRe.FindAllStringSubmatch(cpath, -1)
 	if len(fpMatch) < 1 {
-		log.Printf("path not compliant with pattern: '%s', %d", cpath, len(fpMatch))
-		return newer
+		return errors.Errorf("path not compliant with pattern: %q, %d", cpath, len(fpMatch))
 	}
 
-	siteUUID := fpMatch[0][1]
-	deviceMac := fpMatch[0][2]
+	uuStr := fpMatch[0][1]
+	deviceMAC := fpMatch[0][2]
 	diTimestamp := fpMatch[0][3]
 
-	row := B.db.QueryRowx("SELECT * FROM inventory WHERE site_uuid = $1 AND device_mac = $2 AND unix_timestamp = $3;", siteUUID, deviceMac, diTimestamp)
-	ri := RecordedInventory{}
-	sqlerr := row.StructScan(&ri)
-
-	if sqlerr == nil && ri.BayesSentenceVersion == getCombinedVersion() {
-		return mt
+	siteUUID, err := uuid.FromString(uuStr)
+	if err != nil {
+		return errors.Wrapf(err, "Couldn't get site UUID from %s", cpath)
+	}
+	// Weed out any sites we're not interested in; mostly this should get
+	// handled when we weed out sites by directory name, but this is here
+	// as a double-check.
+	if f.selectedUUIDs != nil && !f.selectedUUIDs[siteUUID] {
+		return nil
+	}
+	if !info.ModTime().After(f.prevIngestTimes[siteUUID]) {
+		return nil
 	}
 
-	if sqlerr != sql.ErrNoRows {
-		log.Printf("select inventory failed: %v", sqlerr)
-		return mt
-	}
+	f.ingestRecordsLock.Lock()
+	ingestRecord := f.ingestRecords[siteUUID]
+	f.ingestRecordsLock.Unlock()
 
-	// We only want to perform the .ReadFile() when the line is
+	log.Printf("starting ingestable %s %s %s", siteUUID, deviceMAC, diTimestamp)
+	// XXX We only want to perform the .ReadFile() when the line is
 	// absent, or the sentence versions differ.
 	fd, err := os.Open(fpath)
 	if err != nil {
-		log.Printf("open failed %s: %v", fpath, err)
-		return newer
+		return errors.Wrapf(err, "open %q failed: %v", fpath, err)
 	}
-
 	defer fd.Close()
 
-	fileSupport := ingestReaderSupport{
-		storage:     "files",
-		deviceMac:   deviceMac,
-		siteUUID:    siteUUID,
-		diTimestamp: diTimestamp,
-		modTime:     mt,
+	inventoryRecord := RecordedInventory{
+		Storage:       "files",
+		InventoryDate: info.ModTime(),
+		UnixTimestamp: diTimestamp,
+		SiteUUID:      siteUUID.String(),
+		DeviceMAC:     deviceMAC,
 	}
 
-	return ingestFromReader(B, stats, fd, newer, fileSupport)
-}
-
-var ingestCount int
-
-func countFile(fpath string, newer time.Time) {
-	fi, _ := os.Stat(fpath)
-
-	if fi.IsDir() {
-		return
-	}
-
-	if fi.ModTime().Before(newer) {
-		return
-	}
-	ingestCount++
-}
-
-func (f *fileIngester) Ingest(B *backdrop) error {
-	fmt.Print(f.fName, ":")
-
-	// Part 1.  Tree walk.
-	row := B.db.QueryRowx("SELECT * FROM ingest ORDER BY ingest_date DESC LIMIT 1;")
-
-	prevStats := RecordedIngest{}
-	stats := RecordedIngest{}
-	err := row.StructScan(&prevStats)
-	if err != nil && err != sql.ErrNoRows {
-		return errors.Wrap(err, "select ingest scan failed")
-	}
-
-	ingestFile(B, &stats, f.fName, prevStats.IngestDate)
-
-	ingestCount = 0
-
-	filepath.Walk(f.fName, func(path string, info os.FileInfo, err error) error {
-		countFile(path, prevStats.IngestDate)
-		return nil
-	})
-
-	log.Printf("%d files to consider", ingestCount)
-
-	if ingestCount < 1 {
-		ingestCount = 1
-	}
-
-	newest := prevStats.IngestDate
-
-	filepath.Walk(f.fName, func(path string, info os.FileInfo, err error) error {
-		ift := ingestFile(B, &stats, path, prevStats.IngestDate)
-		if newest.Before(ift) {
-			newest = ift
-		}
-		return nil
-	})
-
-	// Part 2.  Table scan for incorrect sentence versions.
-	rows, err := B.db.Queryx("SELECT * FROM inventory WHERE bayes_sentence_version != $1;", getCombinedVersion())
-
-	if err == nil {
-		for rows.Next() {
-			ri := RecordedInventory{}
-			rows.StructScan(&ri)
-			log.Printf("would update %v", ri)
-		}
-
-		rows.Close()
-	} else {
-		log.Printf("select inventory failed: %v", err)
-	}
-
-	// The time here should be the newest of the ModTime() values
-	// we've seen.
-	stats.IngestDate = newest
-
-	_, err = B.db.Exec("INSERT INTO ingest (ingest_date, new_sites, new_inventories, updated_inventories) VALUES ($1, $2, $3, $4)", stats.IngestDate, stats.NewSites, stats.NewInventories, stats.UpdatedInventories)
+	err = inventoryRecord.addInfoFromReader(B.ouidb, fd)
 	if err != nil {
-		log.Printf("ingest insert failed: %v", err)
+		return errors.Wrapf(err, "couldn't add info to inventory %v: %v", inventoryRecord, err)
 	}
 
-	log.Printf("ingest stats %+v", stats)
+	err = recordInventory(B.db, ingestRecord, &inventoryRecord)
+	if err != nil {
+		log.Fatalf("couldn't record inventory: %v", err)
+	}
+	return nil
+}
+
+func (f *fileIngester) walk(B *backdrop) error {
+	newSites := 0
+	werr := filepath.Walk(f.ingestDir, func(fpath string, info os.FileInfo, err error) error {
+		if err != nil {
+			log.Printf("got error from filepath.Walk: %v", err)
+			return err
+		}
+		// The structure is <...stuff.../uuid/macaddr/record.pb>
+		if info.IsDir() {
+			// If the basename parses as a UUID, this component is
+			// the reporting site's UUID.
+			siteUUID, err := uuid.FromString(info.Name())
+			if err == nil {
+				if f.selectedUUIDs != nil && !f.selectedUUIDs[siteUUID] {
+					// Forces filepath.Walk() to skip this dir
+					return filepath.SkipDir
+				}
+				newSites += insertNewSiteByUUID(B.db, siteUUID)
+				return nil
+			}
+
+			// If the basename parses as a MAC address, this component is the device.
+			_, err = net.ParseMAC(info.Name())
+			if err != nil {
+				// This directory isn't a site or a macaddr, but it may contain those,
+				// so keep looking.
+				log.Printf("directory %q not parseable as UUID or MAC: %s", info.Name(), err)
+				return nil
+			}
+			return nil
+		}
+
+		// Now handle individual files we encounter on our walk
+		err = f.ingestFile(B, fpath, info)
+		if err != nil {
+			// Report on errors but keep going.
+			log.Printf("Couldn't ingest %s: %v", fpath, err)
+		}
+		return nil
+	})
+	log.Printf("Discovered %d new sites", newSites)
+	return werr
+}
+
+func (f *fileIngester) Ingest(B *backdrop, selectedUUIDs map[uuid.UUID]bool) error {
+	var err error
+	fmt.Print(f.ingestDir, ":")
+
+	f.selectedUUIDs = selectedUUIDs
+	f.ingestRecords = make(map[uuid.UUID]*RecordedIngest)
+	f.prevIngestTimes, err = getSiteIngestTimes(B.db)
+	if err != nil {
+		return err
+	}
+
+	err = f.walk(B)
+	if err != nil {
+		return errors.Wrap(err, "filesystem walk failed")
+	}
+
+	// Write out all of the site ingest records
+	for siteUUID, record := range f.ingestRecords {
+		record.SiteUUID = siteUUID.String()
+		if record.NewInventories != 0 {
+			err = insertSiteIngest(B.db, record)
+			if err != nil {
+				log.Fatalf("Failed to insert ingest record %v: %v", record, err)
+			} else {
+				log.Printf("Recorded ingest %v", record)
+			}
+		}
+	}
 
 	return nil
 }
 
-func newFileIngester(fname string) *fileIngester {
-	return &fileIngester{fName: fname}
+func newFileIngester(ingestDir string) *fileIngester {
+	return &fileIngester{ingestDir: ingestDir}
 }

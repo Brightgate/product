@@ -2,7 +2,7 @@
 
 
 [[projects]]
-  digest = "1:fd319661e53f3607b8ddbded6121f8e4fe42978cb66968b20fdee68e10d10f9f"
+  digest = "1:d1642928c5514e33a1210ae050dbfa1473d43ee65dd16e2022442316ca5dcfc7"
   name = "cloud.google.com/go"
   packages = [
     ".",
@@ -21,8 +21,8 @@
     "storage",
   ]
   pruneopts = ""
-  revision = "264def2dd949cdb8a803bb9f50fa29a67b798a6a"
-  version = "v0.46.3"
+  revision = "6daa679260d92196ffca2362d652c924fdcb7a22"
+  version = "v0.52.0"
 
 [[projects]]
   digest = "1:e4b30804a381d7603b8a344009987c1ba351c26043501b23b8c7ce21f0b67474"
@@ -149,15 +149,15 @@
   version = "v1.7.0"
 
 [[projects]]
-  digest = "1:7a8ebafb45af57575719ad9c455d91fd8a969934bab8e11410607f396d7c4890"
+  digest = "1:d3d06cda93fcc9905e97da4d3699c50fbf3285298059f74d3420e2e2cb00b892"
   name = "github.com/fsouza/fake-gcs-server"
   packages = [
     "fakestorage",
     "internal/backend",
   ]
   pruneopts = ""
-  revision = "8a9fc606da50d36f2cbdac4604142f81e2c6098f"
-  version = "v1.13.1"
+  revision = "e7301000a5ffd02a6dac05f97342f668f6e574b9"
+  version = "v1.17.0"
 
 [[projects]]
   digest = "1:f85a7225ca7dbf52638161d3b3990cb1bc1f2fcb3b1eba449589a8e0820e306a"
@@ -284,6 +284,14 @@
   pruneopts = ""
   revision = "08b5f424b9271eedf6f9f0ce86cb9396ed337a42"
   version = "v1.1.1"
+
+[[projects]]
+  digest = "1:3e16b38456fa0dd6173c032e594cc070a0167755f5af89afcfd32ca92d7764e3"
+  name = "github.com/gorilla/handlers"
+  packages = ["."]
+  pruneopts = ""
+  revision = "8a3748addc242fc560bd6d4ff28b0374c010b1b4"
+  version = "v1.4.2"
 
 [[projects]]
   digest = "1:883e2fdbdd0e577187bd8106fec775b1176059af267a7f40eba5308955c67d52"
@@ -1367,6 +1375,7 @@
     "golang.org/x/net/ipv4",
     "golang.org/x/oauth2",
     "golang.org/x/oauth2/google",
+    "golang.org/x/sync/semaphore",
     "golang.org/x/text/encoding/unicode",
     "golang.org/x/text/transform",
     "google.golang.org/api/googleapi",

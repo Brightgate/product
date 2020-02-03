@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -47,7 +47,7 @@ const (
 	termDNSHitFmt = "dns-%s"
 )
 
-func extractDNSRecords(B *backdrop, dpath string) error {
+func extractDNSRecords(B *backdrop) error {
 	dnss := make(map[string]hostBucket)
 
 	rows, err := B.db.Queryx("SELECT * FROM training;")
@@ -380,7 +380,7 @@ func matchDHCPVendor(vendor string) (string, error) {
 	return unknownDHCPVendor, fmt.Errorf("matchDHCPVendor no match '%s'", vendor)
 }
 
-func extractDHCPRecords(B *backdrop, dpath string) error {
+func extractDHCPRecords(B *backdrop) error {
 	dhcpvs := make(map[int]dhcpBucket)
 
 	rows, err := B.db.Queryx("SELECT * FROM training;")
@@ -444,7 +444,7 @@ func extractDHCPRecords(B *backdrop, dpath string) error {
 	return nil
 }
 
-func extractMfgs(B *backdrop, dpath string) error {
+func extractMfgs(B *backdrop) error {
 	mfgs := make(map[string]mfgBucket)
 
 	rows, err := B.db.Queryx("SELECT * FROM training;")

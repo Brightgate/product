@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -272,7 +272,7 @@ func (m *bayesClassifier) GenSetFromDB(B *backdrop, ifLookup string) error {
 			var sent sentence
 
 			// Retrieve inventory.
-			ri, err := inventoryFromTraining(B, rt)
+			ri, err := inventoryFromTraining(B.db, rt)
 
 			if err == nil && ri.BayesSentenceVersion == getCombinedVersion() {
 				sent = newSentenceFromString(ri.BayesSentence)

@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -216,7 +216,7 @@ func syncDeviceID(cmd *cobra.Command, args []string) error {
 		if obsFile == "" {
 			return fmt.Errorf("must specify a --sqlite-src source database")
 		}
-		obsDSN := fmt.Sprintf("file:%s?mode=ro", obsFile)
+		obsDSN := fmt.Sprintf("file:%s?cache=shared", obsFile)
 		sqliteDB, err = sqlx.Connect("sqlite3", obsDSN)
 		if err != nil {
 			log.Fatalf("database open: %v\n", err)

@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/jmoiron/sqlx"
 	"github.com/lytics/multibayes"
 	"github.com/pkg/errors"
 )
@@ -127,9 +128,10 @@ func findResult(name string, results []classifyResult) (*classifyResult, error) 
 	return nil, fmt.Errorf("result for model '%s' not found", name)
 }
 
-func updateClassificationTable(B *backdrop, siteUUID string, deviceMac string, models []RecordedClassifier, results []classifyResult) {
+func updateClassificationTable(db *sqlx.DB, siteUUID string, deviceMac string, models []RecordedClassifier, results []classifyResult) {
 	// Lookup our existing results in the classification table.
-	rows, err := B.db.Queryx("SELECT * FROM classification WHERE site_uuid = $1 AND mac = $2;",
+	var classifications []RecordedClassification
+	err := db.Select(&classifications, "SELECT * FROM classification WHERE site_uuid = $1 AND mac = $2;",
 		siteUUID, deviceMac)
 
 	if err == sql.ErrNoRows {
@@ -142,24 +144,13 @@ func updateClassificationTable(B *backdrop, siteUUID string, deviceMac string, m
 		return
 	}
 
-	defer rows.Close()
-
-	// With the SQLite3 backend, we use a transaction to bundle
-	// filesystem operations into larger groups for performance
-	// reasons.  This transaction may be superfluous with other
-	// backends.
-	t, _ := B.db.Beginx()
+	t, err := db.Beginx()
+	if err != nil {
+		log.Printf("no txn allowed: %v", err)
+	}
 
 	// Phase 1: updates.
-	for rows.Next() {
-		rp := RecordedClassification{}
-
-		err = rows.StructScan(&rp)
-		if err != nil {
-			log.Printf("struct scan classification failed: %v", err)
-			continue
-		}
-
+	for _, rp := range classifications {
 		result, err := findResult(rp.ModelName, results)
 		if err != nil {
 			log.Printf("no result matches classification model '%s' named in table", rp.ModelName)
@@ -215,15 +206,13 @@ func updateClassificationTable(B *backdrop, siteUUID string, deviceMac string, m
 
 	}
 
-	rows.Close()
-
 	err = t.Commit()
 	if err != nil {
-		log.Printf("txn commit failed: %v", err)
+		log.Fatalf("txn commit failed: %v", err)
 	}
 
 	// Phase 2: certain results that are not in the classification table.
-	t, err = B.db.Beginx()
+	t, err = db.Beginx()
 	if err != nil {
 		log.Printf("no txn allowed: %v", err)
 	}
@@ -255,7 +244,7 @@ func updateClassificationTable(B *backdrop, siteUUID string, deviceMac string, m
 
 	err = t.Commit()
 	if err != nil {
-		log.Printf("txn commit failed: %v", err)
+		log.Fatalf("txn commit failed: %v", err)
 	}
 }
 
@@ -325,7 +314,7 @@ func classifyMac(B *backdrop, models []RecordedClassifier, siteUUID string, mac 
 
 	if persistent {
 		for _, s := range siteUUIDs {
-			updateClassificationTable(B, s, mac, models, results)
+			updateClassificationTable(B.db, s, mac, models, results)
 		}
 	}
 
@@ -333,35 +322,23 @@ func classifyMac(B *backdrop, models []RecordedClassifier, siteUUID string, mac 
 }
 
 type siteMachine struct {
-	SiteUUID  string
-	DeviceMAC string
+	SiteUUID  string `db:"site_uuid"`
+	DeviceMAC string `db:"device_mac"`
 }
 
 func classifySite(B *backdrop, models []RecordedClassifier, uuid string, persistent bool) error {
-	var rows *sql.Rows
-	var err error
-
 	log.Printf("classify site %s", uuid)
 
-	rows, err = B.db.Query("SELECT DISTINCT site.site_uuid, inventory.device_mac FROM site, inventory WHERE site.site_uuid = inventory.site_uuid AND ( site.site_uuid GLOB $1 OR site.site_name GLOB $1) ORDER BY inventory.inventory_date ASC;", uuid)
+	var machines []siteMachine
+	err := B.db.Select(&machines, `
+		SELECT DISTINCT site.site_uuid, inventory.device_mac
+		FROM site, inventory
+		WHERE
+			site.site_uuid = inventory.site_uuid AND
+			( site.site_uuid GLOB $1 OR site.site_name GLOB $1)
+		ORDER BY inventory.inventory_date ASC;`, uuid)
 	if err != nil {
 		return errors.Wrap(err, "select site failed")
-	}
-
-	defer rows.Close()
-
-	machines := make([]siteMachine, 0)
-
-	for rows.Next() {
-		rsm := siteMachine{}
-
-		err = rows.Scan(&rsm.SiteUUID, &rsm.DeviceMAC)
-		if err != nil {
-			log.Printf("site, inventory scan failed: %v\n", err)
-			continue
-		}
-
-		machines = append(machines, rsm)
 	}
 
 	log.Printf("machines: %d", len(machines))
