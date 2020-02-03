@@ -13,7 +13,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -89,9 +88,13 @@ func (f *fileIngester) ingestFile(B *backdrop, fpath string, info os.FileInfo) e
 
 	f.ingestRecordsLock.Lock()
 	ingestRecord := f.ingestRecords[siteUUID]
+	if ingestRecord == nil {
+		ingestRecord = &RecordedIngest{}
+		f.ingestRecords[siteUUID] = ingestRecord
+	}
 	f.ingestRecordsLock.Unlock()
 
-	log.Printf("starting ingestable %s %s %s", siteUUID, deviceMAC, diTimestamp)
+	slog.Debugf("%s: starting DeviceInfo %s %s", siteUUID, deviceMAC, diTimestamp)
 	// XXX We only want to perform the .ReadFile() when the line is
 	// absent, or the sentence versions differ.
 	fd, err := os.Open(fpath)
@@ -113,10 +116,12 @@ func (f *fileIngester) ingestFile(B *backdrop, fpath string, info os.FileInfo) e
 		return errors.Wrapf(err, "couldn't add info to inventory %v: %v", inventoryRecord, err)
 	}
 
+	slog.Debugf("%s: recording %v", siteUUID, inventoryRecord)
 	err = recordInventory(B.db, ingestRecord, &inventoryRecord)
 	if err != nil {
-		log.Fatalf("couldn't record inventory: %v", err)
+		slog.Fatalf("couldn't record inventory: %v", err)
 	}
+	slog.Debugf("%s: finished work on %s %s", siteUUID, deviceMAC, diTimestamp)
 	return nil
 }
 
@@ -124,7 +129,7 @@ func (f *fileIngester) walk(B *backdrop) error {
 	newSites := 0
 	werr := filepath.Walk(f.ingestDir, func(fpath string, info os.FileInfo, err error) error {
 		if err != nil {
-			log.Printf("got error from filepath.Walk: %v", err)
+			slog.Warnf("got error from filepath.Walk: %v", err)
 			return err
 		}
 		// The structure is <...stuff.../uuid/macaddr/record.pb>
@@ -146,7 +151,7 @@ func (f *fileIngester) walk(B *backdrop) error {
 			if err != nil {
 				// This directory isn't a site or a macaddr, but it may contain those,
 				// so keep looking.
-				log.Printf("directory %q not parseable as UUID or MAC: %s", info.Name(), err)
+				slog.Warnf("directory %q not parseable as UUID or MAC: %s", info.Name(), err)
 				return nil
 			}
 			return nil
@@ -156,11 +161,11 @@ func (f *fileIngester) walk(B *backdrop) error {
 		err = f.ingestFile(B, fpath, info)
 		if err != nil {
 			// Report on errors but keep going.
-			log.Printf("Couldn't ingest %s: %v", fpath, err)
+			slog.Warnf("Couldn't ingest %s: %v", fpath, err)
 		}
 		return nil
 	})
-	log.Printf("Discovered %d new sites", newSites)
+	slog.Infof("discovered %d new sites", newSites)
 	return werr
 }
 
@@ -186,13 +191,14 @@ func (f *fileIngester) Ingest(B *backdrop, selectedUUIDs map[uuid.UUID]bool) err
 		if record.NewInventories != 0 {
 			err = insertSiteIngest(B.db, record)
 			if err != nil {
-				log.Fatalf("Failed to insert ingest record %v: %v", record, err)
+				slog.Fatalf("Failed to insert ingest record %v: %v", record, err)
 			} else {
-				log.Printf("Recorded ingest %v", record)
+				slog.Debugf("recorded ingest %v", record)
 			}
 		}
 	}
 
+	slog.Infof("finished ingest")
 	return nil
 }
 

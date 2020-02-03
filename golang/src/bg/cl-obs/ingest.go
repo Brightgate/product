@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"regexp"
 	"time"
 
@@ -42,14 +41,14 @@ func getContentStatusFromReader(rdr io.Reader) string {
 
 	buf, err := ioutil.ReadAll(rdr)
 	if err != nil {
-		log.Printf("could not read: %v\n", err)
+		slog.Warnf("could not read: %v\n", err)
 		return "????"
 	}
 
 	di := &base_msg.DeviceInfo{}
 	err = proto.Unmarshal(buf, di)
 	if err != nil {
-		log.Printf("could not unmarshal content: %v\n", err)
+		slog.Warnf("could not unmarshal content: %v\n", err)
 		return "????"
 	}
 
@@ -92,14 +91,14 @@ func insertNewSiteByUUID(db *sqlx.DB, UUID uuid.UUID) int {
 	} else if err == sql.ErrNoRows {
 		_, err := db.Exec("INSERT INTO site (site_uuid, site_name) VALUES ($1, $2);", UUID.String(), unknownSite)
 		if err != nil {
-			log.Printf("insert site failed: %v\n", err)
+			slog.Fatalf("insert site failed: %v\n", err)
 		}
 
 		siteBF.AddByte(UUID.Bytes())
 		return 1
 	}
 
-	log.Printf("site scan err %v\n", err)
+	slog.Errorf("site scan err %v\n", err)
 	// No addition due to error.
 	return 0
 }
@@ -141,7 +140,7 @@ func getSiteIngestTimes(db *sqlx.DB) (map[uuid.UUID]time.Time, error) {
 // results of an ingest run for a site.
 func insertSiteIngest(db *sqlx.DB, ingest *RecordedIngest) error {
 	if ingest.SiteUUID == "" || ingest.IngestDate.IsZero() {
-		log.Fatalf("malformed RecordedIngest %v", ingest)
+		slog.Fatalf("malformed RecordedIngest %v", ingest)
 	}
 	_, err := db.NamedExec(`
 		INSERT OR REPLACE INTO ingest (ingest_date, site_uuid, new_inventories)

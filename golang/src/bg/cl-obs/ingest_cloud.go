@@ -14,7 +14,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"regexp"
 	"time"
@@ -34,7 +33,8 @@ const (
 	objectFmt     = "obs/%s/device_info.%s.pb"
 	objectPattern = `obs/(?P<mac>[a-f0-9:]*)/device_info.(?P<ts>[0-9]*).pb`
 
-	bucketPrefix = "bg-appliance-data-"
+	bucketPrefix          = "bg-appliance-data-"
+	progressEveryNObjects = 1000
 )
 
 var (
@@ -52,7 +52,7 @@ type cloudIngester struct {
 
 func (c *cloudIngester) SiteExists(B *backdrop, siteUUID string) (bool, error) {
 	if c.storageClient == nil {
-		log.Fatalf("storage client not properly initialized")
+		slog.Fatalf("storage client not properly initialized")
 	}
 
 	bn := fmt.Sprintf(bucketFmt, siteUUID)
@@ -70,7 +70,7 @@ func (c *cloudIngester) SiteExists(B *backdrop, siteUUID string) (bool, error) {
 
 func (c *cloudIngester) DeviceInfoOpen(B *backdrop, siteUUID string, deviceMac string, unixTimestamp string) (io.Reader, error) {
 	if c.storageClient == nil {
-		log.Fatalf("storage client not properly initialized")
+		slog.Fatalf("storage client not properly initialized")
 	}
 
 	bn := fmt.Sprintf(bucketFmt, siteUUID)
@@ -95,66 +95,71 @@ func (c *cloudIngester) ingestSiteBucket(B *backdrop, siteUUID uuid.UUID,
 		SiteUUID:   siteUUID.String(),
 		IngestDate: prevIngestTime,
 	}
-	log.Printf("start bucket: %s", bucketName)
-	log.Printf("previous cursor: %s", prevIngestTime.Format(time.RFC3339Nano))
-	log.Printf("ingest stats %v", &ingestStats)
+	slog.Infof("start bucket: %s", bucketName)
+	slog.Debugf("previous cursor: %s", prevIngestTime.Format(time.RFC3339Nano))
+	slog.Debugf("ingest stats %v", &ingestStats)
 
 	startOtherSentenceV, err := countOtherSentenceVersions(B.db, siteUUID, getCombinedVersion())
 	if err != nil {
 		return errors.Wrap(err, "checking for old sentences")
 	}
 	if startOtherSentenceV > 0 {
-		log.Printf("%s: old/version-mismatched sentences were detected.  Will do a full reingest.", siteUUID)
+		slog.Warnf("%s: old/version-mismatched sentences were detected.  Will do a full reingest.", siteUUID)
 		// Zero out the prevIngestTime to force full refresh
 		prevIngestTime = time.Time{}
 	} else {
-		log.Printf("%s: zero old/version-mismatched sentences were detected.", siteUUID)
+		slog.Debugf("%s: zero old/version-mismatched sentences were detected.", siteUUID)
 	}
 
 	// controls the worker goroutines for this bucket
 	objectIngestSem := semaphore.NewWeighted(c.objectWorkersPerSite)
 
 	nObjs := 0
+	ingest := 0
+	skipped := 0
 	objs := bucket.Objects(context.Background(), &q)
 	for {
+		// We track and report stats using the loop iterations, (i.e. synchronously)
+		// even though some of the ingest proceeds async.
+		if nObjs > 0 && nObjs%progressEveryNObjects == 0 {
+			slog.Infof("%s: ingested %d of %d examined objects (%d skips)", siteUUID, ingest, nObjs, skipped)
+		}
 		oattrs, err := objs.Next()
 		if err == iterator.Done {
 			break
 		}
 		nObjs++
-		if nObjs%500 == 0 {
-			log.Printf("%s: examined %d objects", siteUUID, nObjs)
-		}
 
 		// If before, or same, we've already got this one
 		if !oattrs.Updated.After(prevIngestTime) {
+			skipped++
 			continue
 		}
 
 		om := objectRE.FindAllStringSubmatch(oattrs.Name, -1)
 		if om == nil {
-			log.Printf("object '%s' doesn't match pattern", oattrs.Name)
+			slog.Warnf("object '%s' doesn't match pattern", oattrs.Name)
 			continue
 		}
 
 		deviceMAC := om[0][1]
 		diTimestamp := om[0][2]
 
-		log.Printf("starting ingestable %s %s %s", siteUUID, deviceMAC, diTimestamp)
 		if err := objectIngestSem.Acquire(context.TODO(), 1); err != nil {
-			log.Fatalf("error getting objectIngest semaphore: %v", err)
+			slog.Fatalf("error getting objectIngest semaphore: %v", err)
 		}
 		if err := c.allObjectWorkers.Acquire(context.TODO(), 1); err != nil {
-			log.Fatalf("error getting allObjectWorkers semaphore: %v", err)
+			slog.Fatalf("error getting allObjectWorkers semaphore: %v", err)
 		}
+		ingest++
 
 		go func() {
 			defer objectIngestSem.Release(1)
 			defer c.allObjectWorkers.Release(1)
-			// log.Printf("getting attrs next object")
+			slog.Debugf("%s: starting DeviceInfo %s %s", siteUUID, deviceMAC, diTimestamp)
 			ordr, err := bucket.Object(oattrs.Name).NewReader(context.Background())
 			if err != nil {
-				log.Printf("couldn't make reader from bucket %s: %v", oattrs.Name, err)
+				slog.Errorf("couldn't make reader from bucket %s: %v", oattrs.Name, err)
 				return
 			}
 
@@ -166,32 +171,31 @@ func (c *cloudIngester) ingestSiteBucket(B *backdrop, siteUUID uuid.UUID,
 				DeviceMAC:     deviceMAC,
 			}
 
-			// log.Printf("adding info from reader")
 			err = inventoryRecord.addInfoFromReader(B.ouidb, ordr)
 			if err != nil {
-				log.Printf("couldn't add info to inventory %v: %v", inventoryRecord, err)
+				slog.Errorf("couldn't add info to inventory %v: %v", inventoryRecord, err)
 				return
 			}
 
-			// log.Printf("recording inventory to db: %v", inventoryRecord)
+			slog.Debugf("%s: recording %v", siteUUID, inventoryRecord)
 			err = recordInventory(B.db, &ingestStats, &inventoryRecord)
 			if err != nil {
-				log.Fatalf("couldn't record inventory: %v", err)
+				slog.Fatalf("couldn't record inventory: %v", err)
 			}
-			log.Printf("finished work on %v", inventoryRecord)
+			slog.Debugf("%s: finished work on %s %s", siteUUID, deviceMAC, diTimestamp)
 		}()
 	}
 	// Wait for all workers to finish
 	_ = objectIngestSem.Acquire(context.TODO(), c.objectWorkersPerSite)
-	log.Printf("looked at %d objects", nObjs)
+	slog.Infof("%s: ingested %d of %d examined objects (%d skips) [done]", siteUUID, ingest, nObjs, skipped)
 
 	if ingestStats.NewInventories != 0 {
 		// Record the results of the ingest.
 		err = insertSiteIngest(B.db, &ingestStats)
 		if err != nil {
-			log.Fatalf("insert Site Ingest %v failed: %v", &ingestStats, err)
+			slog.Fatalf("insert Site Ingest %v failed: %v", &ingestStats, err)
 		} else {
-			log.Printf("recorded ingest bucket %s: %v", bucketName, &ingestStats)
+			slog.Debugf("recorded ingest: %v", &ingestStats)
 		}
 	}
 
@@ -206,18 +210,19 @@ func (c *cloudIngester) ingestSiteBucket(B *backdrop, siteUUID uuid.UUID,
 		return errors.Wrap(err, "checking for old sentences")
 	}
 	if endOtherSentenceV > 0 {
-		log.Printf("Site %s: After reingest %d old/version-mismatched sentences were seen (%d at start). Purging.",
+		slog.Warnf("%s: after reingest %d old/version-mismatched sentences were seen (%d at start). Purging.",
 			siteUUID, endOtherSentenceV, startOtherSentenceV)
 		err = removeOtherSentenceVersions(B.db, siteUUID, getCombinedVersion())
 		if err != nil {
 			return errors.Wrap(err, "removing old sentences")
 		}
 	}
+	slog.Infof("end bucket: %s", bucketName)
 	return nil
 }
 
 func (c *cloudIngester) Ingest(B *backdrop, selectedUUIDs map[uuid.UUID]bool) error {
-	log.Printf("backdrop: %+v", B)
+	slog.Debugf("backdrop: %+v", B)
 
 	cenv := os.Getenv(googleCredentialsEnvVar)
 	if cenv == "" {
@@ -236,6 +241,7 @@ func (c *cloudIngester) Ingest(B *backdrop, selectedUUIDs map[uuid.UUID]bool) er
 
 	bucketIngestSem := semaphore.NewWeighted(c.bucketWorkers)
 
+	slog.Infof("begin bucket walk")
 	// Walk the set of buckets
 	for {
 		battrs, err := bkts.Next()
@@ -247,7 +253,7 @@ func (c *cloudIngester) Ingest(B *backdrop, selectedUUIDs map[uuid.UUID]bool) er
 
 		bm := bucketRE.FindAllStringSubmatch(battrs.Name, -1)
 		if bm == nil {
-			log.Printf("bucket '%s' doesn't match pattern", battrs.Name)
+			slog.Warnf("bucket '%s' doesn't match pattern", battrs.Name)
 			continue
 		}
 		siteUUID := uuid.Must(uuid.FromString(bm[0][1]))
@@ -264,7 +270,7 @@ func (c *cloudIngester) Ingest(B *backdrop, selectedUUIDs map[uuid.UUID]bool) er
 		newSites += insertNewSiteByUUID(B.db, siteUUID)
 
 		if err := bucketIngestSem.Acquire(context.TODO(), 1); err != nil {
-			log.Fatalf("couldn't acquire semaphore: %v", err)
+			slog.Fatalf("couldn't acquire semaphore: %v", err)
 		}
 
 		go func() {
@@ -272,14 +278,14 @@ func (c *cloudIngester) Ingest(B *backdrop, selectedUUIDs map[uuid.UUID]bool) er
 			// Ingest the bucket.
 			err = c.ingestSiteBucket(B, siteUUID, prevIngestTimes[siteUUID], battrs.Name)
 			if err != nil {
-				log.Printf("failed ingesting bucket %s", battrs.Name)
+				slog.Errorf("failed ingesting bucket %s", battrs.Name)
 			}
 		}()
 	}
 	// Make sure all workers are done.
 	_ = bucketIngestSem.Acquire(context.TODO(), c.bucketWorkers)
 
-	log.Printf("Discovered %d new sites", newSites)
+	slog.Infof("Discovered %d new sites", newSites)
 	return nil
 }
 

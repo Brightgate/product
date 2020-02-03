@@ -13,7 +13,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/lytics/multibayes"
 	"github.com/pkg/errors"
@@ -48,7 +47,7 @@ func initDeviceGenusBayesClassifier() bayesClassifier {
 func deviceGenusTargetValue(rdi RecordedDeviceInfo) string {
 	_, present := deviceRevMap[rdi.AssignedDeviceGenus]
 	if !present {
-		log.Printf("deviceRevMap unknown device %s", rdi.AssignedDeviceGenus)
+		slog.Warnf("deviceRevMap unknown device %s", rdi.AssignedDeviceGenus)
 		return unknownDevice
 	}
 

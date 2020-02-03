@@ -23,7 +23,6 @@
 package main
 
 import (
-	"log"
 	"time"
 )
 
@@ -58,7 +57,7 @@ func (m *lookupClassifier) train(B *backdrop) {
 		m.uncertainBelow,
 		"")
 	if ierr != nil {
-		log.Printf("could not update '%s' model: %s", m.name, ierr)
+		slog.Fatalf("could not update '%s' model: %s", m.name, ierr)
 	}
 }
 

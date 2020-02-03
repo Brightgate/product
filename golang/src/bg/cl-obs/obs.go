@@ -51,7 +51,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/url"
 	"os"
@@ -65,6 +64,7 @@ import (
 	"bg/base_msg"
 	"bg/cl_common/daemonutils"
 
+	"go.uber.org/zap"
 	"golang.org/x/crypto/sha3"
 	"google.golang.org/api/option"
 
@@ -214,6 +214,9 @@ var (
 	modelFile        string
 	observationsFile string
 	ouiFile          string
+
+	log  *zap.Logger
+	slog *zap.SugaredLogger
 )
 
 func getShake256(schema string) string {
@@ -228,7 +231,7 @@ func checkTableSchema(db *sqlx.DB, tname string, tschema string, verb string) {
 
 	_, err := db.Exec(tschema)
 	if err != nil {
-		log.Fatalf("could not create '%s' table: %v\n", tname, err)
+		slog.Fatalf("could not create '%s' table: %v\n", tname, err)
 	}
 
 	// Check that schema matches what we expect.  If not, we
@@ -244,21 +247,20 @@ func checkTableSchema(db *sqlx.DB, tname string, tschema string, verb string) {
 		// Not present case.  Insert.
 		_, err := db.Exec("INSERT INTO version (table_name, schema_hash, create_date) VALUES ($1, $2, $3)", tname, tschemaHash, time.Now().UTC())
 		if err != nil {
-			log.Printf("insert version failed: %v\n", err)
+			slog.Errorf("insert version failed: %v\n", err)
 		}
 		return
 	}
 
 	if err != nil {
-		log.Printf("scan err %v\n", err)
+		slog.Errorf("scan err %v\n", err)
 		return
 	}
 
 	// Mismatch.
 	if tschemaHash != schemaHash {
-		log.Printf("tname %s tschema %s; name %s, schema %s, create %v\n", tname, tschemaHash, name, schemaHash, creationDate)
-		log.Printf("schema hash mismatch for '%s'; delete and re-%s", tname, verb)
-		os.Exit(1)
+		slog.Infof("tname %s tschema %s; name %s, schema %s, create %v\n", tname, tschemaHash, name, schemaHash, creationDate)
+		slog.Fatalf("schema hash mismatch for '%s'; delete and re-%s", tname, verb)
 	}
 }
 
@@ -272,7 +274,7 @@ func mustCreateVersionTable(vdb *sqlx.DB) {
 
 	_, err := vdb.Exec(versionSchema)
 	if err != nil {
-		log.Fatalf("could not create version table: %v\n", err)
+		slog.Fatalf("could not create version table: %v\n", err)
 	}
 }
 
@@ -366,7 +368,7 @@ func checkDB(idb *sqlx.DB) {
     CREATE INDEX IF NOT EXISTS ix_inventory_device_mac ON inventory ( device_mac );
     CREATE INDEX IF NOT EXISTS ix_inventory_inventory_date_desc ON inventory ( inventory_date DESC );`
 	if _, err := idb.Exec(inventoryIndex); err != nil {
-		log.Fatalf("could not create indexes: %v", err)
+		slog.Fatalf("could not create indexes: %v", err)
 	}
 }
 
@@ -515,7 +517,7 @@ func listDevices(B *backdrop, modelDir string, detailed bool) error {
 		ri := RecordedInventory{}
 		err = rows.StructScan(&ri)
 		if err != nil {
-			log.Printf("inventory scan failed: %v\n", err)
+			slog.Errorf("inventory scan failed: %v\n", err)
 			continue
 		}
 
@@ -552,7 +554,7 @@ func listSites(B *backdrop, includeDevices bool, noNames bool, args []string) er
 			return err
 		}
 
-		log.Printf("models: %d", len(models))
+		slog.Infof("models: %d", len(models))
 	}
 
 	if len(args) == 0 {
@@ -578,7 +580,7 @@ func listSites(B *backdrop, includeDevices bool, noNames bool, args []string) er
 		if includeDevices {
 			drows, err := B.db.Query("SELECT DISTINCT device_mac FROM inventory WHERE site_uuid = $1 ORDER BY inventory_date ASC;", site.SiteUUID)
 			if err != nil {
-				log.Printf("select inventory failed: %v\n", err)
+				slog.Errorf("select inventory failed: %v\n", err)
 				continue
 			}
 
@@ -587,15 +589,16 @@ func listSites(B *backdrop, includeDevices bool, noNames bool, args []string) er
 
 				err = drows.Scan(&mac)
 				if err != nil {
-					log.Printf("device scan failed: %v\n", err)
+					slog.Errorf("device scan failed: %v\n", err)
 					continue
 				}
 
-				p := ""
+				fmt.Printf("  %15s %20s\n", mac, getMfgFromMAC(B, mac))
 				if withClassifications {
-					p = classifyMac(B, models, site.SiteUUID, mac, false)
+					desc, sent := classifyMac(B, models, site.SiteUUID, mac, false)
+					fmt.Printf("\t%s\n", desc)
+					fmt.Printf("\t%s\n", sent.toString())
 				}
-				fmt.Printf("  %15s %20s %s\n", mac, getMfgFromMAC(B, mac), p)
 			}
 
 		}
@@ -635,7 +638,7 @@ func reviewSub(cmd *cobra.Command, args []string) error {
 
 		err = rows.StructScan(&dt)
 		if err != nil {
-			log.Printf("training scan failed: %v\n", err)
+			slog.Errorf("training scan failed: %v\n", err)
 			continue
 		}
 
@@ -653,7 +656,7 @@ func reviewSub(cmd *cobra.Command, args []string) error {
 		if dt.DeviceMAC == devicemac {
 			n := devicesent.addSentence(sent)
 			if !n {
-				log.Printf("no new information in (%s, %s, %s)", dt.SiteUUID, dt.DeviceMAC, dt.UnixTimestamp)
+				slog.Warnf("no new information in (%s, %s, %s)", dt.SiteUUID, dt.DeviceMAC, dt.UnixTimestamp)
 				redundCount++
 			}
 		} else {
@@ -666,14 +669,14 @@ func reviewSub(cmd *cobra.Command, args []string) error {
 	for _, dt := range missed {
 		se, _ := _B.ingester.SiteExists(&_B, dt.SiteUUID)
 		if !se {
-			log.Printf("training entry refers to non-existent site %s", dt.SiteUUID)
+			slog.Errorf("training entry refers to non-existent site %s", dt.SiteUUID)
 		}
 
-		log.Printf("missing information for (%s, %s, %s)", dt.SiteUUID, dt.DeviceMAC, dt.UnixTimestamp)
+		slog.Errorf("missing information for (%s, %s, %s)", dt.SiteUUID, dt.DeviceMAC, dt.UnixTimestamp)
 	}
 
-	log.Printf("training table has %d/%d valid rows (%f)", validCount, rowCount, float32(validCount)/float32(rowCount))
-	log.Printf("training table has %d/%d redundant rows (%f)", redundCount, rowCount, float32(redundCount)/float32(rowCount))
+	slog.Infof("training table has %d/%d valid rows (%f)", validCount, rowCount, float32(validCount)/float32(rowCount))
+	slog.Infof("training table has %d/%d redundant rows (%f)", redundCount, rowCount, float32(redundCount)/float32(rowCount))
 
 	if !_B.modelsLoaded {
 		return fmt.Errorf("model database does not exist")
@@ -686,7 +689,7 @@ func reviewSub(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("model select failed: %+v", err)
 	}
 
-	log.Printf("models: %d", len(models))
+	slog.Infof("models: %d", len(models))
 
 	for _, m := range models {
 		switch m.ClassifierType {
@@ -723,7 +726,7 @@ func classifySub(cmd *cobra.Command, args []string) error {
 		return errors.Wrap(err, "getModels failed")
 	}
 
-	log.Printf("models: %d", len(models))
+	slog.Infof("models: %d", len(models))
 
 	// Loop over positional arguments.
 	for _, arg := range args {
@@ -744,7 +747,7 @@ func classifySub(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				return err
 			}
-			log.Printf("finished classifying %s", site.SiteUUID)
+			slog.Infof("finished classifying %s", site.SiteUUID)
 		}
 	}
 
@@ -759,14 +762,14 @@ func ingestSub(cmd *cobra.Command, args []string) error {
 	workers, _ := cmd.Flags().GetInt("workers")
 
 	if ingestProject != "" {
-		log.Printf("cloud ingest from %s", ingestProject)
+		slog.Infof("cloud ingest from %s", ingestProject)
 		ingester, err := newCloudIngester(ingestProject, workers)
 		if err != nil {
 			return err
 		}
 		_B.ingester = ingester
 	} else if ingestDir != "" {
-		log.Printf("file ingest from %s", ingestDir)
+		slog.Infof("file ingest from %s", ingestDir)
 		_B.ingester = newFileIngester(ingestDir)
 	} else {
 		// None has been defined.
@@ -812,13 +815,13 @@ func lsByUUID(u string, details bool) error {
 
 		err = rows.StructScan(&ri)
 		if err != nil {
-			log.Printf("struct scan failed : %v", err)
+			slog.Errorf("struct scan failed : %v", err)
 			continue
 		}
 
 		rdr, err := readerFromRecord(&_B, ri)
 		if err != nil {
-			log.Printf("couldn't read %v: %v", ri, err)
+			slog.Errorf("couldn't read %v: %v", ri, err)
 			continue
 		}
 
@@ -841,7 +844,7 @@ func lsByUUID(u string, details bool) error {
 		if details {
 			rdr, err = readerFromRecord(&_B, ri)
 			if err != nil {
-				log.Printf("couldn't read %v: %v", ri, err)
+				slog.Errorf("couldn't read %v: %v", ri, err)
 			} else {
 				printDeviceFromReader(os.Stdout, &_B, ri.DeviceMAC, rdr, true)
 			}
@@ -866,13 +869,13 @@ func lsByMac(m string, details bool) error {
 
 		err = rows.StructScan(&ri)
 		if err != nil {
-			log.Printf("struct scan failed : %v", err)
+			slog.Errorf("struct scan failed : %v", err)
 			continue
 		}
 
 		rdr, err := readerFromRecord(&_B, ri)
 		if err != nil {
-			log.Printf("couldn't read %v: %v", ri, err)
+			slog.Errorf("couldn't read %v: %v", ri, err)
 			continue
 		}
 
@@ -889,7 +892,7 @@ func lsByMac(m string, details bool) error {
 		if details {
 			rdr, err = readerFromRecord(&_B, ri)
 			if err != nil {
-				log.Printf("couldn't read %v: %v", ri, err)
+				slog.Errorf("couldn't read %v: %v", ri, err)
 			} else {
 				printDeviceFromReader(os.Stdout, &_B, ri.DeviceMAC, rdr, true)
 			}
@@ -921,7 +924,7 @@ func lsSub(cmd *cobra.Command, args []string) error {
 		}
 		for _, site := range sites {
 			if err := lsByUUID(site.SiteUUID, verbose); err != nil {
-				log.Printf("error listing %s: %v", site.SiteUUID, err)
+				slog.Errorf("error listing %s: %v", site.SiteUUID, err)
 			}
 		}
 	}
@@ -964,7 +967,7 @@ func trainSub(cmd *cobra.Command, args []string) error {
 func loadModel(modelFile string) (*sqlx.DB, error) {
 	var modelPath string
 
-	log.Printf("load model %q", modelFile)
+	slog.Infof("load model %q", modelFile)
 	url, err := url.Parse(modelFile)
 	if err != nil {
 		return nil, errors.Wrap(err, "parsing model-file")
@@ -997,7 +1000,7 @@ func loadModel(modelFile string) (*sqlx.DB, error) {
 			return nil, errors.Wrapf(err, "closing %s", tmpFile.Name())
 		}
 		modelPath = tmpFile.Name()
-		log.Printf("downloaded model to %s", modelPath)
+		slog.Infof("downloaded model to %s", modelPath)
 
 	} else if url.Scheme == "" {
 		// If modelFile doesn't exist, don't create it.
@@ -1009,7 +1012,7 @@ func loadModel(modelFile string) (*sqlx.DB, error) {
 
 	modeldb, err := sqlx.Connect("sqlite3", modelPath)
 	if err != nil {
-		log.Fatalf("model database open: %v\n", err)
+		slog.Fatalf("model database open: %v\n", err)
 	}
 	checkModelDB(modeldb)
 	return modeldb, nil
@@ -1020,18 +1023,21 @@ func readyBackdrop(B *backdrop) error {
 
 	B.ouidb, err = oui.OpenStaticFile(ouiFile)
 	if err != nil {
-		log.Fatalf("unable to open OUI database: %v", err)
+		slog.Fatalf("unable to open OUI database: %v", err)
 	}
 
-	B.db, err = sqlx.Connect("sqlite3", fmt.Sprintf("file:%s?cache=shared", observationsFile))
+	obsPath := fmt.Sprintf("file:%s?cache=shared", observationsFile)
+	slog.Infof("Observations DB %s", obsPath)
+
+	B.db, err = sqlx.Connect("sqlite3", obsPath)
 	if err != nil {
-		log.Fatalf("database open: %v\n", err)
+		slog.Fatalf("database open: %v\n", err)
 	}
 	B.db.SetMaxOpenConns(1)
 
 	err = B.db.Ping()
 	if err != nil {
-		log.Fatalf("database ping: %v\n", err)
+		slog.Fatalf("database ping: %v\n", err)
 	}
 
 	checkDB(B.db)
@@ -1040,14 +1046,14 @@ func readyBackdrop(B *backdrop) error {
 	// from FULL to NORMAL.  This seems to provide a massive performance boost.
 	_, err = _B.db.Exec("PRAGMA main.journal_mode = WAL; PRAGMA main.synchronous = NORMAL;")
 	if err != nil {
-		log.Fatalf("Couldn't set DB performance settings: %v", err)
+		slog.Fatalf("Couldn't set DB performance settings: %v", err)
 	}
 
-	log.Printf("running combined version: %s\n", getCombinedVersion())
+	slog.Infof("running combined version: %s\n", getCombinedVersion())
 
 	B.modeldb, err = loadModel(modelFile)
 	if err != nil {
-		log.Printf("loadModel failed: %v", err)
+		slog.Errorf("loadModel failed: %v", err)
 	} else {
 		B.modelsLoaded = true
 		checkModelDB(B.modeldb)
@@ -1065,8 +1071,8 @@ func closeBackdrop(B *backdrop) {
 func main() {
 	var err error
 
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 	flag.Parse()
+	log, slog = daemonutils.SetupLogs()
 
 	clRoot := daemonutils.ClRoot()
 	ouiFile = filepath.Join(clRoot, ouiDefaultFile)
@@ -1074,13 +1080,15 @@ func main() {
 	rootCmd := &cobra.Command{
 		Use: "cl-obs",
 		PersistentPreRun: func(ccmd *cobra.Command, args []string) {
+			log, slog = daemonutils.ResetupLogs()
+			_ = zap.RedirectStdLog(log)
 			if cpuProfile != "" {
 				pf, err := os.Create(cpuProfile)
 				if err != nil {
-					log.Fatalf("CPU profiling file not created: %v", err)
+					slog.Fatalf("CPU profiling file not created: %v", err)
 				}
 
-				log.Printf("activating CPU profiling to %s", cpuProfile)
+				slog.Infof("activating CPU profiling to %s", cpuProfile)
 				if err = pprof.StartCPUProfile(pf); err != nil {
 					panic(err.Error())
 				}
@@ -1092,7 +1100,7 @@ func main() {
 
 			err = readyBackdrop(&_B)
 			if err != nil {
-				log.Fatalf("initialization failed: %v", err)
+				slog.Fatalf("initialization failed: %v", err)
 			}
 		},
 		PersistentPostRun: func(ccmd *cobra.Command, args []string) {
@@ -1110,6 +1118,7 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&cpuProfile, "cpuprofile", "", "CPU profiling filename")
 	rootCmd.PersistentFlags().StringVar(&observationsFile, "observations-file", "obs.db", "observations index path")
 	rootCmd.PersistentFlags().StringVar(&ouiFile, "oui-file", ouiFile, "OUI text database path")
+	rootCmd.PersistentFlags().AddFlagSet(daemonutils.GetLogFlagSet())
 
 	siteCmd := &cobra.Command{
 		Use:   "site [*|site-name|site-uuid]",

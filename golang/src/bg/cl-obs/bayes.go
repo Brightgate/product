@@ -51,7 +51,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
-	"log"
 	"sort"
 	"strconv"
 	"strings"
@@ -245,7 +244,7 @@ func (m *bayesClassifier) GenSetFromDB(B *backdrop, ifLookup string) error {
 
 		err = rows.StructScan(&rdi)
 		if err != nil {
-			log.Printf("device scan failed: %v\n", err)
+			slog.Errorf("device scan failed: %v\n", err)
 			continue
 		}
 
@@ -265,7 +264,7 @@ func (m *bayesClassifier) GenSetFromDB(B *backdrop, ifLookup string) error {
 
 			err = trows.StructScan(&rt)
 			if err != nil {
-				log.Printf("training scan failed: %v\n", err)
+				slog.Errorf("training scan failed: %v\n", err)
 				continue
 			}
 
@@ -279,7 +278,7 @@ func (m *bayesClassifier) GenSetFromDB(B *backdrop, ifLookup string) error {
 			} else {
 				rdr, err := readerFromTraining(B, rt)
 				if err != nil {
-					log.Printf("couldn't get reader for %v: %v\n", rt, err)
+					slog.Errorf("couldn't get reader for %v: %v\n", rt, err)
 					continue
 				}
 
@@ -295,7 +294,7 @@ func (m *bayesClassifier) GenSetFromDB(B *backdrop, ifLookup string) error {
 		trows.Close()
 	}
 
-	log.Printf("model has %d rows, set has %d machines", n, len(m.set))
+	slog.Infof("model has %d rows, set has %d machines", n, len(m.set))
 	rows.Close()
 
 	return nil
@@ -303,7 +302,7 @@ func (m *bayesClassifier) GenSetFromDB(B *backdrop, ifLookup string) error {
 
 func (m *bayesClassifier) instancesTrainSpecifiedSplit() ([]machine, []machine) {
 	if len(m.set) == 0 {
-		log.Printf("empty source machine set from %s", m.name)
+		slog.Infof("empty source machine set from %s", m.name)
 	}
 
 	trainingRows := make([]machine, 0)
@@ -312,21 +311,21 @@ func (m *bayesClassifier) instancesTrainSpecifiedSplit() ([]machine, []machine) 
 	// Create the return structure
 	for _, s := range m.set {
 		if len(s.Classes) == 1 && s.Classes[0] != m.unknownValue {
-			log.Printf("machine -> training: %+v", s)
+			slog.Infof("machine -> training: %+v", s)
 			trainingRows = append(trainingRows, s)
 		} else {
-			log.Printf("machine -> testing: %+v", s)
+			slog.Infof("machine -> testing: %+v", s)
 			testingRows = append(testingRows, s)
 		}
 	}
 
-	log.Printf("training set size %d (%f)", len(trainingRows), float64((1.*len(trainingRows))/len(m.set)))
+	slog.Infof("training set size %d (%f)", len(trainingRows), float64((1.*len(trainingRows))/len(m.set)))
 
 	return trainingRows, testingRows
 }
 
 func (m *bayesClassifier) train(B *backdrop, trainData []machine) {
-	log.Printf("train %s start", m.name)
+	slog.Infof("train %s start", m.name)
 
 	for _, machine := range trainData {
 		for _, cl := range m.classifiers {
@@ -337,19 +336,21 @@ func (m *bayesClassifier) train(B *backdrop, trainData []machine) {
 	for k, cl := range m.classifiers {
 		jm, err := cl.MarshalJSON()
 		if err == nil {
-			log.Printf("Model:\n%s\n", string(jm))
+			slog.Infof("Model:\n%s\n", string(jm))
 		} else {
-			log.Printf("Cannot marshal '%s' classifier to JSON", k)
+			slog.Errorf("Cannot marshal '%s' classifier to JSON: %v", k, err)
+			// XXX?
+			continue
 		}
 
 		_, ierr := B.modeldb.Exec("INSERT OR REPLACE INTO model (generation_date, name, classifier_type, classifier_level, multibayes_min, certain_above, uncertain_below, model_json) VALUES ($1, $2, $3, $4, $5, $6, $7, $8);",
 			time.Now(), k, "bayes", m.level, cl.MinClassSize, m.certainAbove, m.uncertainBelow, jm)
 		if ierr != nil {
-			log.Printf("could not update '%s' model: %s", k, ierr)
+			slog.Errorf("could not update '%s' model: %s", k, ierr)
 		}
 	}
 
-	log.Printf("train %s finish", m.name)
+	slog.Infof("train %s finish", m.name)
 }
 
 func reviewBayes(m RecordedClassifier) string {

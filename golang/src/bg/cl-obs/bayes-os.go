@@ -13,7 +13,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/lytics/multibayes"
 	"github.com/pkg/errors"
@@ -51,7 +50,7 @@ func initOSGenusBayesClassifier() bayesClassifier {
 func osGenusTargetValue(rdi RecordedDeviceInfo) string {
 	_, present := osRevGenusMap[rdi.AssignedOSGenus]
 	if !present {
-		log.Printf("osRevGenusMap unknown OS %s", rdi.AssignedOSGenus)
+		slog.Warnf("osRevGenusMap unknown OS %s", rdi.AssignedOSGenus)
 		return unknownOs
 	}
 
@@ -77,7 +76,7 @@ func initOSSpeciesBayesClassifier() bayesClassifier {
 func osSpeciesTargetValue(rdi RecordedDeviceInfo) string {
 	_, present := osRevSpeciesMap[rdi.AssignedOSSpecies]
 	if !present {
-		log.Printf("osRevSpeciesMap unknown OS %s", rdi.AssignedOSSpecies)
+		slog.Warnf("osRevSpeciesMap unknown OS %s", rdi.AssignedOSSpecies)
 		return unknownOs
 	}
 

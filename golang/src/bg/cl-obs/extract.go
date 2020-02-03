@@ -24,14 +24,12 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"regexp"
 	"strings"
 
 	"bg/base_msg"
 	"bg/common/network"
 
-	"github.com/fatih/color"
 	"github.com/golang/protobuf/proto"
 	"github.com/klauspost/oui"
 	"github.com/pkg/errors"
@@ -60,26 +58,26 @@ func extractDNSRecords(B *backdrop) error {
 
 		err = rows.StructScan(&dt)
 		if err != nil {
-			log.Printf("training scan failed: %v\n", err)
+			slog.Warnf("training scan failed: %v\n", err)
 			continue
 		}
 
 		rdr, rerr := readerFromTraining(B, dt)
 		if rerr != nil {
-			log.Printf("couldn't get reader: %v", err)
+			slog.Warnf("couldn't get reader: %v", err)
 			continue
 		}
 
 		buf, err := ioutil.ReadAll(rdr)
 		if err != nil {
-			log.Printf("couldn't ReadAll %v: %s", rdr, err)
+			slog.Warnf("couldn't ReadAll %v: %s", rdr, err)
 			continue
 		}
 
 		di := &base_msg.DeviceInfo{}
 		err = proto.Unmarshal(buf, di)
 		if err != nil {
-			log.Printf("unmarshal failed: %v\n", err)
+			slog.Warnf("unmarshal failed: %v\n", err)
 			continue
 		}
 
@@ -88,7 +86,7 @@ func extractDNSRecords(B *backdrop) error {
 			for q := range di.Request[r].Request {
 				host := di.Request[r].Request[q]
 				vals := dnsINRequestRE.FindStringSubmatch(host)
-				log.Printf("name = %s, query = '%s'\n", vals[1], vals[2])
+				slog.Infof("name = %s, query = '%s'", vals[1], vals[2])
 
 				hb, present := dnss[vals[1]]
 				if !present {
@@ -220,7 +218,7 @@ func extractDeviceInfoDHCP(di *base_msg.DeviceInfo) (sentence, string) {
 		if len(vc) > 0 {
 			vendorMatch, err := matchDHCPVendor(vc)
 			if err != nil {
-				log.Printf("unknown DHCP vendor: %v", vc)
+				slog.Warnf("unknown DHCP vendor: %v", vc)
 			}
 
 			s.addTermf(termDHCPVendorFmt, vendorMatch)
@@ -358,13 +356,13 @@ func genBayesSentenceFromDeviceInfo(ouiDB oui.OuiDB, di *base_msg.DeviceInfo) (s
 func genBayesSentenceFromReader(ouiDB oui.OuiDB, rdr io.Reader) (string, sentence) {
 	buf, err := ioutil.ReadAll(rdr)
 	if err != nil {
-		log.Fatalf("couldn't read: %v; new ingest needed?\n", err)
+		slog.Fatalf("couldn't read: %v; new ingest needed?\n", err)
 	}
 
 	di := &base_msg.DeviceInfo{}
 	err = proto.Unmarshal(buf, di)
 	if err != nil {
-		log.Fatalf("couldn't unmarshal: %v\n", err)
+		slog.Fatalf("couldn't unmarshal: %v\n", err)
 	}
 
 	return genBayesSentenceFromDeviceInfo(ouiDB, di)
@@ -385,7 +383,7 @@ func extractDHCPRecords(B *backdrop) error {
 
 	rows, err := B.db.Queryx("SELECT * FROM training;")
 	if err != nil {
-		log.Fatalf("select training failed: %v\n", err)
+		slog.Fatalf("select training failed: %v\n", err)
 	}
 
 	n := 0
@@ -395,24 +393,24 @@ func extractDHCPRecords(B *backdrop) error {
 
 		err = rows.StructScan(&dt)
 		if err != nil {
-			log.Printf("training scan failed: %v\n", err)
+			slog.Warnf("training scan failed: %v\n", err)
 			continue
 		}
 
 		rdr, rerr := readerFromTraining(B, dt)
 		if rerr != nil {
-			log.Printf("couldn't get reader for %v: %v", dt, rerr)
+			slog.Warnf("couldn't get reader for %v: %v", dt, rerr)
 			continue
 		}
 		buf, rerr := ioutil.ReadAll(rdr)
 		if rerr != nil {
-			log.Printf("couldn't read: %v", rerr)
+			slog.Warnf("couldn't read: %v", rerr)
 			continue
 		}
 		di := &base_msg.DeviceInfo{}
 		err = proto.Unmarshal(buf, di)
 		if err != nil {
-			log.Printf("unmarshal failed: %v\n", err)
+			slog.Warnf("unmarshal failed: %v\n", err)
 			continue
 		}
 
@@ -426,7 +424,7 @@ func extractDHCPRecords(B *backdrop) error {
 			if len(dhb.Vendor) > 0 {
 				dhb.VendorMatch, err = matchDHCPVendor(dhb.Vendor)
 				if err != nil {
-					log.Printf("unknown DHCP vendor: %v", dhb.Vendor)
+					slog.Warnf("unknown DHCP vendor: %v", dhb.Vendor)
 				}
 			}
 			dhcpvs[n] = dhb
@@ -450,7 +448,7 @@ func extractMfgs(B *backdrop) error {
 	rows, err := B.db.Queryx("SELECT * FROM training;")
 
 	if err != nil {
-		log.Fatalf("select device failed: %v\n", err)
+		slog.Fatalf("select device failed: %v\n", err)
 	}
 
 	for rows.Next() {
@@ -458,7 +456,7 @@ func extractMfgs(B *backdrop) error {
 
 		err = rows.StructScan(&dt)
 		if err != nil {
-			log.Printf("device scan failed: %v\n", err)
+			slog.Warnf("device scan failed: %v\n", err)
 			continue
 		}
 
@@ -466,7 +464,7 @@ func extractMfgs(B *backdrop) error {
 
 		entry, err := B.ouidb.Query(dmac)
 		if err != nil {
-			log.Printf("%v unknown manufacturer: %+v\n", dmac, dt)
+			slog.Warnf("%v unknown manufacturer: %+v\n", dmac, dt)
 			continue
 		}
 
@@ -494,7 +492,7 @@ func extractMfgs(B *backdrop) error {
 func extractDevices(B *backdrop) error {
 	rows, err := B.db.Queryx("SELECT * FROM device;")
 	if err != nil {
-		log.Fatalf("select device failed: %v", err)
+		slog.Fatalf("select device failed: %v", err)
 	}
 
 	for rows.Next() {
@@ -504,7 +502,7 @@ func extractDevices(B *backdrop) error {
 
 		err = rows.StructScan(&rdi)
 		if err != nil {
-			log.Printf("device struct scan failed: %v\n", err)
+			slog.Warnf("device struct scan failed: %v\n", err)
 			continue
 		}
 
@@ -523,10 +521,10 @@ func extractDevices(B *backdrop) error {
 		}
 
 		if !deviceFound {
-			log.Fatalf(color.RedString("!! no device match '%s'", rdi.AssignedDeviceGenus))
+			slog.Fatalf("!! no device match '%s'", rdi.AssignedDeviceGenus)
 		}
 		if !osFound {
-			log.Fatalf(color.RedString("!! no OS match '%s'", rdi.AssignedOSGenus))
+			slog.Fatalf("!! no OS match '%s'", rdi.AssignedOSGenus)
 		}
 	}
 

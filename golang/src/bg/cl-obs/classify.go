@@ -13,7 +13,6 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -22,6 +21,7 @@ import (
 	"github.com/lytics/multibayes"
 	"github.com/pkg/errors"
 	"github.com/satori/uuid"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -83,7 +83,7 @@ func displayPredictResults(results []classifyResult) string {
 
 	for _, r := range results {
 		if msg.Len() > 0 {
-			msg.WriteString(" ")
+			msg.WriteString("  ")
 		}
 
 		var prob string
@@ -142,25 +142,25 @@ func updateClassificationTable(db *sqlx.DB, siteUUID string, deviceMac string, m
 		siteUUID, deviceMac)
 
 	if err == sql.ErrNoRows {
-		log.Printf("select classification shows no classifications for (%s, %s)",
+		slog.Warnf("select classification shows no classifications for (%s, %s)",
 			siteUUID, deviceMac)
 		return
 	} else if err != nil {
-		log.Printf("select classification failed for (%s, %s): %v",
+		slog.Warnf("select classification failed for (%s, %s): %v",
 			siteUUID, deviceMac, err)
 		return
 	}
 
 	t, err := db.Beginx()
 	if err != nil {
-		log.Printf("no txn allowed: %v", err)
+		slog.Fatalf("no txn allowed: %v", err)
 	}
 
 	// Phase 1: updates.
 	for _, rp := range classifications {
 		result, err := findResult(rp.ModelName, results)
 		if err != nil {
-			log.Printf("no result matches classification model '%s' named in table", rp.ModelName)
+			slog.Warnf("no result matches classification model '%s' named in table", rp.ModelName)
 			continue
 		}
 
@@ -180,17 +180,17 @@ func updateClassificationTable(db *sqlx.DB, siteUUID string, deviceMac string, m
 					result.Classification, result.Probability, now,
 					siteUUID, deviceMac, rp.ModelName)
 				if err != nil {
-					log.Printf("update classification failed: %v", err)
+					slog.Errorf("update classification failed: %v", err)
 				}
 			} else {
-				log.Printf("classifications differ '%s' != '%s'", rp.Classification, result.Classification)
+				slog.Infof("classifications differ '%s' != '%s'", rp.Classification, result.Classification)
 				_, err = t.Exec(`UPDATE classification
 				SET classification = $1, probability = $2, classification_created = $3, classification_updated = $4
 				WHERE site_uuid = $5 AND mac = $6 AND model_name = $7;`,
 					result.Classification, result.Probability, now, now,
 					siteUUID, deviceMac, rp.ModelName)
 				if err != nil {
-					log.Printf("update classification failed: %v", err)
+					slog.Errorf("update classification failed: %v", err)
 				}
 			}
 		case classifyCrossing:
@@ -202,12 +202,12 @@ func updateClassificationTable(db *sqlx.DB, siteUUID string, deviceMac string, m
 			// to be a TRIGGER on the classification table, and one
 			// or more agents using LISTEN/NOTIFY to handle
 			// classification updates and deletions.
-			log.Printf("remove/annul existing certain classification for %v", result)
+			slog.Infof("remove/annul existing certain classification for %v", result)
 			_, err = t.Exec(`DELETE FROM classification
 				WHERE site_uuid = $1 AND mac = $2 AND model_name = $3;`,
 				siteUUID, deviceMac, rp.ModelName)
 			if err != nil {
-				log.Printf("delete classification failed: %v", err)
+				slog.Errorf("delete classification failed: %v", err)
 			}
 		}
 
@@ -215,13 +215,13 @@ func updateClassificationTable(db *sqlx.DB, siteUUID string, deviceMac string, m
 
 	err = t.Commit()
 	if err != nil {
-		log.Fatalf("txn commit failed: %v", err)
+		slog.Fatalf("txn commit failed: %v", err)
 	}
 
 	// Phase 2: certain results that are not in the classification table.
 	t, err = db.Beginx()
 	if err != nil {
-		log.Printf("no txn allowed: %v", err)
+		slog.Fatalf("no txn allowed: %v", err)
 	}
 
 	for _, r := range results {
@@ -230,7 +230,7 @@ func updateClassificationTable(db *sqlx.DB, siteUUID string, deviceMac string, m
 		}
 
 		if r.Region == classifyCertain {
-			log.Printf("insert new certain classification for %v", r)
+			slog.Infof("insert new certain classification for %v", r)
 			now := time.Now()
 
 			_, err = t.Exec(`INSERT INTO classification (site_uuid,
@@ -244,14 +244,14 @@ func updateClassificationTable(db *sqlx.DB, siteUUID string, deviceMac string, m
 				siteUUID, deviceMac, r.ModelName, r.Classification,
 				r.Probability, now, now)
 			if err != nil {
-				log.Printf("insert classification failed: %v\n", err)
+				slog.Errorf("insert classification failed: %v\n", err)
 			}
 		}
 	}
 
 	err = t.Commit()
 	if err != nil {
-		log.Fatalf("txn commit failed: %v", err)
+		slog.Fatalf("txn commit failed: %v", err)
 	}
 }
 
@@ -268,7 +268,7 @@ func classifySentence(B *backdrop, models []RecordedClassifier, mac string, sent
 			if cl == nil {
 				cl, err = multibayes.NewClassifierFromJSON([]byte(model.ModelJSON))
 				if err != nil {
-					log.Printf("skipping '%s'; could not create classifier: %+v", model.ModelName, err)
+					slog.Errorf("skipping '%s'; could not create classifier: %+v", model.ModelName, err)
 					continue
 				}
 				cl.MinClassSize = model.MultibayesMin
@@ -299,14 +299,14 @@ func classifySentence(B *backdrop, models []RecordedClassifier, mac string, sent
 			results = append(results, lr)
 
 		default:
-			log.Fatalf("Unknown classifier %s", model.ClassifierType)
+			slog.Fatalf("Unknown classifier %s", model.ClassifierType)
 		}
 	}
 
 	return results
 }
 
-func classifyMac(B *backdrop, models []RecordedClassifier, siteUUID string, mac string, persistent bool) string {
+func classifyMac(B *backdrop, models []RecordedClassifier, siteUUID string, mac string, persistent bool) (string, sentence) {
 	records := []RecordedInventory{}
 	err := B.db.Select(&records, `
 		SELECT * FROM inventory
@@ -314,8 +314,8 @@ func classifyMac(B *backdrop, models []RecordedClassifier, siteUUID string, mac 
 		ORDER BY inventory_date DESC
 		LIMIT 12`, mac)
 	if err != nil {
-		log.Printf("select failed for %s: %+v", mac, err)
-		return "-classify-fails-"
+		slog.Errorf("select failed for %s: %+v", mac, err)
+		return "-classify-fails-", newSentence()
 	}
 
 	sent := combineSentenceFromInventory(records)
@@ -335,11 +335,10 @@ func classifyMac(B *backdrop, models []RecordedClassifier, siteUUID string, mac 
 		}
 	}
 
-	return displayPredictResults(results) + "\n\t" + sent.toString()
+	return displayPredictResults(results), sent
 }
 
 func classifySite(B *backdrop, models []RecordedClassifier, siteUUID string, persistent bool) error {
-	log.Printf("classify site %s", siteUUID)
 	_ = uuid.Must(uuid.FromString(siteUUID))
 
 	var machines []string
@@ -352,11 +351,14 @@ func classifySite(B *backdrop, models []RecordedClassifier, siteUUID string, per
 		return errors.Wrap(err, "select site failed")
 	}
 
-	log.Printf("machines: %d", len(machines))
+	fmt.Printf("\nclassify %s; machines: %d\n", siteUUID, len(machines))
 
 	for _, mac := range machines {
-		c := classifyMac(B, models, siteUUID, mac, persistent)
-		fmt.Printf("    %s %s\n", mac, c)
+		desc, sentence := classifyMac(B, models, siteUUID, mac, persistent)
+		fmt.Printf("    %s %s\n", mac, desc)
+		if ce := log.Check(zapcore.DebugLevel, "debugging"); ce != nil {
+			fmt.Printf("\t%s\n", sentence.toString())
+		}
 	}
 
 	return nil
