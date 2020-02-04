@@ -379,6 +379,12 @@ func matchDHCPVendor(vendor string) (string, error) {
 }
 
 func extractDHCPRecords(B *backdrop) error {
+	type dhcpBucket struct {
+		Options     []byte
+		Vendor      string
+		VendorMatch string
+	}
+
 	dhcpvs := make(map[int]dhcpBucket)
 
 	rows, err := B.db.Queryx("SELECT * FROM training;")
@@ -443,10 +449,15 @@ func extractDHCPRecords(B *backdrop) error {
 }
 
 func extractMfgs(B *backdrop) error {
+	type mfgBucket struct {
+		Prefix string
+		Name   string
+		Count  int
+	}
+
 	mfgs := make(map[string]mfgBucket)
 
 	rows, err := B.db.Queryx("SELECT * FROM training;")
-
 	if err != nil {
 		slog.Fatalf("select device failed: %v\n", err)
 	}

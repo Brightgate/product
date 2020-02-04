@@ -20,7 +20,6 @@
 set -o errexit
 
 CL_OBS=./proto.x86_64/cloud/opt/net.b10e/bin/cl-obs
-OUI=./proto.x86_64/appliance/opt/com.brightgate/etc/identifierd/oui.txt
 
 FACTS=./golang/src/bg/cl-obs/facts.sqlite3
 OBSERVATIONS=./golang/src/bg/cl-obs/observations.db
@@ -31,12 +30,15 @@ function orun {
 	time "$@"
 }
 
+FILES_SRC=${FILES_SRC:-/home/stephen/staging-spools/svc-1/spool}
+CLOUD_SRC=${CLOUD_SRC:-staging-168518}
+
 if [ "$1" == "files" ]; then
-	export CL_SRC="--dir /home/stephen/staging-spools/svc-1/spool"
+	export CL_SRC="--dir $FILES_SRC"
 	OBSERVATIONS=./golang/src/bg/cl-obs/observations-files.db
 	TRAINED_MODELS=./golang/src/bg/cl-obs/trained-models-files.db
 elif [ "$1" == "cloud" ]; then
-	export CL_SRC="--project staging-168518"
+	export CL_SRC="--project $CLOUD_SRC"
 
 	if [ -z "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
 		echo "must define GOOGLE_APPLICATION_CREDENTIALS for cloud runs"
@@ -45,11 +47,11 @@ else
 	echo "need input source ('cloud' or 'files')"
 	exit 2
 fi
+echo "### CL_SRC is '$CL_SRC'"
 
 if [ "$2" == "ingest" ]; then
 	$CL_OBS ingest --cpuprofile=ingest-1.prof \
 		$CL_SRC \
-		--oui-file=$OUI \
 		--observations-file=$OBSERVATIONS
 fi
 
@@ -60,35 +62,26 @@ sqlite3 "$OBSERVATIONS" < "$FACTS"
 
 orun $CL_OBS extract --dhcp \
 	$CL_SRC \
-	--oui-file=$OUI \
 	--observations-file $OBSERVATIONS
 orun $CL_OBS extract --dns  \
 	$CL_SRC \
-	--oui-file $OUI \
 	--observations-file $OBSERVATIONS
 orun $CL_OBS extract --mfg  \
 	$CL_SRC \
-	--oui-file $OUI \
 	--observations-file $OBSERVATIONS
 orun $CL_OBS extract --device  \
 	$CL_SRC \
-	--oui-file $OUI \
 	--observations-file $OBSERVATIONS
 
 # Site options
 
 orun $CL_OBS site \
-	$CL_SRC \
-	--oui-file $OUI \
 	--observations-file $OBSERVATIONS
 orun $CL_OBS site --verbose \
-	$CL_SRC \
-	--oui-file $OUI \
 	--observations-file $OBSERVATIONS
 
 orun $CL_OBS ls \
 	$CL_SRC \
-	--oui-file $OUI \
 	--observations-file $OBSERVATIONS \
 	"00:11:d9:95:3d:b2"
 
@@ -97,54 +90,39 @@ orun $CL_OBS ls \
 orun $CL_OBS train --cpuprofile=train-0.prof \
 	$CL_SRC \
 	--model-file $TRAINED_MODELS \
-	--oui-file $OUI \
 	--observations-file $OBSERVATIONS
 
 #   Review the training set for validity and redundancy.
 orun $CL_OBS review \
 	$CL_SRC \
 	--model-file $TRAINED_MODELS \
-	--oui-file $OUI \
 	--observations-file $OBSERVATIONS
 
 # Classify
 #   Use the combined models file.
 orun $CL_OBS classify \
-	$CL_SRC \
 	--model-file $TRAINED_MODELS \
-	--oui-file $OUI \
 	--observations-file $OBSERVATIONS \
 	cc4f2549-5e64-4710-b63b-64ab5558aeee
 
 # Classify all known sites.
-for site in $($CL_OBS site \
-	$CL_SRC \
+$CL_OBS classify \
+	--persist \
 	--model-file $TRAINED_MODELS \
-	--oui-file $OUI \
 	--observations-file $OBSERVATIONS \
-	| cut -f 1 -d ' '); do
-	$CL_OBS classify \
-		--persist \
-		$CL_SRC \
-		--model-file $TRAINED_MODELS \
-		--oui-file $OUI \
-		--observations-file $OBSERVATIONS \
-		"$site"
-	done
+	'*'
 
 # Site, with predictions.
 orun $CL_OBS site \
 	--verbose \
 	$CL_SRC \
 	--model-file $TRAINED_MODELS \
-	--oui-file $OUI \
 	--observations-file $OBSERVATIONS \
-	--match dogfood-mt7623
+	dogfood-mt7623
 
 orun $CL_OBS site \
 	--verbose \
 	$CL_SRC \
 	--model-file $TRAINED_MODELS \
-	--oui-file $OUI \
 	--observations-file $OBSERVATIONS \
-	--match stephen-osage
+	stephen-osage

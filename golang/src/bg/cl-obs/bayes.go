@@ -230,44 +230,26 @@ func (s sentence) wordHash() uint64 {
 }
 
 func (m *bayesClassifier) GenSetFromDB(B *backdrop, ifLookup string) error {
-	rows, err := B.db.Queryx("SELECT * FROM device;")
+	var devices []RecordedDeviceInfo
+	err := B.db.Select(&devices, "SELECT * FROM device;")
 	if err != nil {
 		return errors.Wrap(err, "select device failed")
 	}
 
-	defer rows.Close()
-
 	n := 0
 
-	for rows.Next() {
-		rdi := RecordedDeviceInfo{}
-
-		err = rows.StructScan(&rdi)
-		if err != nil {
-			slog.Errorf("device scan failed: %v\n", err)
-			continue
-		}
-
+	for _, rdi := range devices {
 		target := m.TargetValue(rdi)
 
 		// Query training set for this DGroupID.
-		trows, err := B.db.Queryx("SELECT * FROM training WHERE dgroup_id = $1", rdi.DGroupID)
+		var trainings []RecordedTraining
+		err := B.db.Select(&trainings, "SELECT * FROM training WHERE dgroup_id = $1", rdi.DGroupID)
 		if err != nil {
 			return errors.Wrap(err, "select training failed")
 		}
-		defer trows.Close()
-
 		p := newSentence()
 
-		for trows.Next() {
-			rt := RecordedTraining{}
-
-			err = trows.StructScan(&rt)
-			if err != nil {
-				slog.Errorf("training scan failed: %v\n", err)
-				continue
-			}
-
+		for _, rt := range trainings {
 			var sent sentence
 
 			// Retrieve inventory.
@@ -290,12 +272,9 @@ func (m *bayesClassifier) GenSetFromDB(B *backdrop, ifLookup string) error {
 
 		m.set = append(m.set, machine{rdi.DeviceMAC, p.toString(), []string{target}})
 		n++
-
-		trows.Close()
 	}
 
 	slog.Infof("model has %d rows, set has %d machines", n, len(m.set))
-	rows.Close()
 
 	return nil
 }

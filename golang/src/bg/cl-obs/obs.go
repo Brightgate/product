@@ -175,18 +175,6 @@ type RecordedClassifier struct {
 	ModelJSON       string    `db:"model_json"`
 }
 
-type mfgBucket struct {
-	Prefix string
-	Name   string
-	Count  int
-}
-
-type dhcpBucket struct {
-	Options     []byte
-	Vendor      string
-	VendorMatch string
-}
-
 // Ingester represents a storage backend that contains DeviceInfo object
 // stored according to some understood convention.  For example, a
 // cloudIngester encodes the convention that, for a given cloud project,
@@ -208,12 +196,6 @@ type backdrop struct {
 
 var (
 	_B backdrop
-
-	cpuProfile       string
-	modelDir         string
-	modelFile        string
-	observationsFile string
-	ouiFile          string
 
 	log  *zap.Logger
 	slog *zap.SugaredLogger
@@ -366,7 +348,8 @@ func checkDB(idb *sqlx.DB) {
 	const inventoryIndex = `
     CREATE INDEX IF NOT EXISTS ix_inventory_site_uuid ON inventory ( site_uuid );
     CREATE INDEX IF NOT EXISTS ix_inventory_device_mac ON inventory ( device_mac );
-    CREATE INDEX IF NOT EXISTS ix_inventory_inventory_date_desc ON inventory ( inventory_date DESC );`
+    CREATE INDEX IF NOT EXISTS ix_inventory_inventory_date_desc ON inventory ( inventory_date DESC );
+    CREATE INDEX IF NOT EXISTS ix_inventory_inventory_date_asc ON inventory ( inventory_date ASC );`
 	if _, err := idb.Exec(inventoryIndex); err != nil {
 		slog.Fatalf("could not create indexes: %v", err)
 	}
@@ -507,7 +490,7 @@ func printDeviceFromReader(w io.Writer, B *backdrop, dmac string, r io.Reader, d
 	}
 }
 
-func listDevices(B *backdrop, modelDir string, detailed bool) error {
+func listDevices(B *backdrop, detailed bool) error {
 	rows, err := B.db.Queryx("SELECT * FROM inventory ORDER BY device_mac;")
 	if err != nil {
 		return errors.Wrap(err, "select inventory failed")
@@ -578,21 +561,18 @@ func listSites(B *backdrop, includeDevices bool, noNames bool, args []string) er
 		}
 
 		if includeDevices {
-			drows, err := B.db.Query("SELECT DISTINCT device_mac FROM inventory WHERE site_uuid = $1 ORDER BY inventory_date ASC;", site.SiteUUID)
+			var deviceMacs []string
+			err := B.db.Select(&deviceMacs, `
+				SELECT DISTINCT device_mac
+				FROM inventory
+				WHERE site_uuid = $1
+				ORDER BY inventory_date ASC;`, site.SiteUUID)
 			if err != nil {
 				slog.Errorf("select inventory failed: %v\n", err)
 				continue
 			}
 
-			for drows.Next() {
-				var mac string
-
-				err = drows.Scan(&mac)
-				if err != nil {
-					slog.Errorf("device scan failed: %v\n", err)
-					continue
-				}
-
+			for _, mac := range deviceMacs {
 				fmt.Printf("  %15s %20s\n", mac, getMfgFromMAC(B, mac))
 				if withClassifications {
 					desc, sent := classifyMac(B, models, site.SiteUUID, mac, false)
@@ -600,7 +580,6 @@ func listSites(B *backdrop, includeDevices bool, noNames bool, args []string) er
 					fmt.Printf("\t%s\n", sent.toString())
 				}
 			}
-
 		}
 	}
 
@@ -615,11 +594,15 @@ func siteSub(cmd *cobra.Command, args []string) error {
 
 func deviceSub(cmd *cobra.Command, args []string) error {
 	verbose, _ := cmd.Flags().GetBool("verbose")
-	return listDevices(&_B, modelDir, verbose)
+	return listDevices(&_B, verbose)
 }
 
 func reviewSub(cmd *cobra.Command, args []string) error {
 	missed := make([]RecordedTraining, 0)
+
+	if _B.ingester == nil {
+		return errors.Errorf("You must provide --dir or --project")
+	}
 
 	rows, err := _B.db.Queryx("SELECT * FROM training ORDER BY device_mac;")
 	if err != nil {
@@ -754,9 +737,7 @@ func classifySub(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func ingestSub(cmd *cobra.Command, args []string) error {
-	var selectedUUIDs map[uuid.UUID]bool
-
+func setupIngester(cmd *cobra.Command) (Ingester, error) {
 	ingestProject, _ := cmd.Flags().GetString("project")
 	ingestDir, _ := cmd.Flags().GetString("dir")
 	workers, _ := cmd.Flags().GetInt("workers")
@@ -765,15 +746,24 @@ func ingestSub(cmd *cobra.Command, args []string) error {
 		slog.Infof("cloud ingest from %s", ingestProject)
 		ingester, err := newCloudIngester(ingestProject, workers)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		_B.ingester = ingester
-	} else if ingestDir != "" {
+		return ingester, nil
+	}
+	if ingestDir != "" {
 		slog.Infof("file ingest from %s", ingestDir)
-		_B.ingester = newFileIngester(ingestDir)
-	} else {
-		// None has been defined.
-		return errors.Errorf("must provide --dir or --project")
+		return newFileIngester(ingestDir), nil
+	}
+	// None has been defined.
+	return nil, errors.Errorf("no ingester configured")
+}
+
+func ingestSub(cmd *cobra.Command, args []string) error {
+	var selectedUUIDs map[uuid.UUID]bool
+	var err error
+
+	if _B.ingester == nil {
+		return errors.Errorf("You must provide --dir or --project")
 	}
 
 	if len(args) > 0 {
@@ -792,7 +782,7 @@ func ingestSub(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	err := _B.ingester.Ingest(&_B, selectedUUIDs)
+	err = _B.ingester.Ingest(&_B, selectedUUIDs)
 	if err != nil {
 		return err
 	}
@@ -905,8 +895,15 @@ func lsByMac(m string, details bool) error {
 }
 
 func lsSub(cmd *cobra.Command, args []string) error {
+	var err error
 	// Each argument to the ls subcommand is a MAC address or site UUID/Name
 	verbose, _ := cmd.Flags().GetBool("verbose")
+
+	_B.ingester, err = setupIngester(cmd)
+	if err != nil {
+		return err
+	}
+
 	for _, arg := range args {
 		// is it a mac?
 		if _, err := net.ParseMAC(arg); err == nil {
@@ -932,6 +929,10 @@ func lsSub(cmd *cobra.Command, args []string) error {
 }
 
 func extractSub(cmd *cobra.Command, args []string) error {
+	if _B.ingester == nil {
+		return errors.Errorf("You must provide --dir or --project")
+	}
+
 	if dhcp, _ := cmd.Flags().GetBool("dhcp"); dhcp {
 		return extractDHCPRecords(&_B)
 	}
@@ -950,6 +951,9 @@ func extractSub(cmd *cobra.Command, args []string) error {
 func trainSub(cmd *cobra.Command, args []string) error {
 	if !_B.modelsLoaded {
 		return errors.Errorf("Model not loaded.  You may need to pass --model-file")
+	}
+	if _B.ingester == nil {
+		return errors.Errorf("You must provide --dir or --project")
 	}
 	if err := trainDeviceGenusBayesClassifier(&_B, "XXX"); err != nil {
 		return err
@@ -1018,26 +1022,29 @@ func loadModel(modelFile string) (*sqlx.DB, error) {
 	return modeldb, nil
 }
 
-func readyBackdrop(B *backdrop) error {
+func readyBackdrop(B *backdrop, cmd *cobra.Command) error {
 	var err error
 
+	ouiFile, _ := cmd.Flags().GetString("oui-file")
 	B.ouidb, err = oui.OpenStaticFile(ouiFile)
 	if err != nil {
-		slog.Fatalf("unable to open OUI database: %v", err)
+		return errors.Wrap(err, "unable to open OUI database")
 	}
 
-	obsPath := fmt.Sprintf("file:%s?cache=shared", observationsFile)
+	obsFile, _ := cmd.Flags().GetString("observations-file")
+	obsPath := fmt.Sprintf("file:%s?cache=shared", obsFile)
 	slog.Infof("Observations DB %s", obsPath)
 
 	B.db, err = sqlx.Connect("sqlite3", obsPath)
 	if err != nil {
-		slog.Fatalf("database open: %v\n", err)
+		return errors.Wrap(err, "database open")
 	}
+	// This means no nested queries...
 	B.db.SetMaxOpenConns(1)
 
 	err = B.db.Ping()
 	if err != nil {
-		slog.Fatalf("database ping: %v\n", err)
+		return errors.Wrap(err, "database ping")
 	}
 
 	checkDB(B.db)
@@ -1046,17 +1053,24 @@ func readyBackdrop(B *backdrop) error {
 	// from FULL to NORMAL.  This seems to provide a massive performance boost.
 	_, err = _B.db.Exec("PRAGMA main.journal_mode = WAL; PRAGMA main.synchronous = NORMAL;")
 	if err != nil {
-		slog.Fatalf("Couldn't set DB performance settings: %v", err)
+		return errors.Wrap(err, "Couldn't set DB performance settings")
 	}
 
 	slog.Infof("running combined version: %s\n", getCombinedVersion())
 
+	modelFile, _ := cmd.Flags().GetString("model-file")
+	slog.Infof("Models DB %s", modelFile)
 	B.modeldb, err = loadModel(modelFile)
 	if err != nil {
-		slog.Errorf("loadModel failed: %v", err)
+		slog.Warnf("loadModel failed: %v", err)
 	} else {
 		B.modelsLoaded = true
 		checkModelDB(B.modeldb)
+	}
+
+	B.ingester, err = setupIngester(cmd)
+	if err != nil {
+		slog.Debugf("couldn't setup ingester: %v", err)
 	}
 	return nil
 }
@@ -1075,14 +1089,14 @@ func main() {
 	log, slog = daemonutils.SetupLogs()
 
 	clRoot := daemonutils.ClRoot()
-	ouiFile = filepath.Join(clRoot, ouiDefaultFile)
+	defaultOUIFile := filepath.Join(clRoot, ouiDefaultFile)
 
 	rootCmd := &cobra.Command{
 		Use: "cl-obs",
 		PersistentPreRun: func(ccmd *cobra.Command, args []string) {
 			log, slog = daemonutils.ResetupLogs()
 			_ = zap.RedirectStdLog(log)
-			if cpuProfile != "" {
+			if cpuProfile, _ := ccmd.Flags().GetString("cpuprofile"); cpuProfile != "" {
 				pf, err := os.Create(cpuProfile)
 				if err != nil {
 					slog.Fatalf("CPU profiling file not created: %v", err)
@@ -1098,13 +1112,12 @@ func main() {
 				return
 			}
 
-			err = readyBackdrop(&_B)
-			if err != nil {
+			if err = readyBackdrop(&_B, ccmd); err != nil {
 				slog.Fatalf("initialization failed: %v", err)
 			}
 		},
 		PersistentPostRun: func(ccmd *cobra.Command, args []string) {
-			if cpuProfile != "" {
+			if cpuProfile, _ := ccmd.Flags().GetString("cpuprofile"); cpuProfile != "" {
 				pprof.StopCPUProfile()
 			}
 
@@ -1115,9 +1128,12 @@ func main() {
 			closeBackdrop(&_B)
 		},
 	}
-	rootCmd.PersistentFlags().StringVar(&cpuProfile, "cpuprofile", "", "CPU profiling filename")
-	rootCmd.PersistentFlags().StringVar(&observationsFile, "observations-file", "obs.db", "observations index path")
-	rootCmd.PersistentFlags().StringVar(&ouiFile, "oui-file", ouiFile, "OUI text database path")
+	rootCmd.PersistentFlags().String("cpuprofile", "", "CPU profiling filename")
+	rootCmd.PersistentFlags().String("observations-file", "obs.db", "observations index path")
+	rootCmd.PersistentFlags().String("oui-file", defaultOUIFile, "OUI text database path")
+	rootCmd.PersistentFlags().String("project", "", "GCP project for DeviceInfo files")
+	rootCmd.PersistentFlags().String("dir", "", "Directory for DeviceInfo files")
+	rootCmd.PersistentFlags().String("model-file", "trained-models.db", "path to model file")
 	rootCmd.PersistentFlags().AddFlagSet(daemonutils.GetLogFlagSet())
 
 	siteCmd := &cobra.Command{
@@ -1128,7 +1144,6 @@ func main() {
 	}
 	siteCmd.Flags().BoolP("verbose", "v", false, "list site details")
 	siteCmd.Flags().BoolP("no-names", "n", false, "only print site UUIDs; no names")
-	siteCmd.Flags().StringVar(&modelFile, "model-file", "trained-models.db", "path to model file")
 	rootCmd.AddCommand(siteCmd)
 
 	deviceCmd := &cobra.Command{
@@ -1155,8 +1170,6 @@ func main() {
 		Args:  cobra.MinimumNArgs(0),
 		RunE:  ingestSub,
 	}
-	ingestCmd.Flags().String("dir", "", "directory for DeviceInfo files")
-	ingestCmd.Flags().String("project", "", "GCP project for DeviceInfo files")
 	ingestCmd.Flags().Int("workers", 0, "number of asynchronous workers")
 	rootCmd.AddCommand(ingestCmd)
 
@@ -1178,7 +1191,6 @@ func main() {
 		Args:  cobra.NoArgs,
 		RunE:  trainSub,
 	}
-	trainCmd.Flags().StringVar(&modelFile, "model-file", "trained-models.db", "output path to write classifier")
 	rootCmd.AddCommand(trainCmd)
 
 	reviewCmd := &cobra.Command{
@@ -1187,7 +1199,6 @@ func main() {
 		Args:  cobra.NoArgs,
 		RunE:  reviewSub,
 	}
-	reviewCmd.Flags().StringVar(&modelFile, "model-file", "trained-models.db", "path to model file")
 	rootCmd.AddCommand(reviewCmd)
 
 	classifyCmd := &cobra.Command{
@@ -1196,7 +1207,6 @@ func main() {
 		Args:  cobra.MinimumNArgs(0),
 		RunE:  classifySub,
 	}
-	classifyCmd.Flags().StringVar(&modelFile, "model-file", "trained-models.db", "path to model file")
 	classifyCmd.Flags().Bool("persist", false, "record classifications")
 	rootCmd.AddCommand(classifyCmd)
 
