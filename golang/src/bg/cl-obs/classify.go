@@ -21,6 +21,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/lytics/multibayes"
 	"github.com/pkg/errors"
+	"github.com/satori/uuid"
 )
 
 const (
@@ -85,13 +86,19 @@ func displayPredictResults(results []classifyResult) string {
 			msg.WriteString(" ")
 		}
 
+		var prob string
+		if r.Probability == 1.0 {
+			prob = "1.0"
+		} else {
+			prob = fmt.Sprintf("%.2f", r.Probability)
+		}
 		switch r.Region {
 		case classifyCertain:
-			msg.WriteString(color.GreenString("%s: %s (%f)", r.ModelName, r.Classification, r.Probability))
+			msg.WriteString(fmt.Sprintf("%s: %s (%s)", r.ModelName, color.GreenString(r.Classification), prob))
 		case classifyCrossing:
-			msg.WriteString(color.YellowString("%s: %s (%f)", r.ModelName, r.Classification, r.Probability))
+			msg.WriteString(fmt.Sprintf("%s: %s (%s)", r.ModelName, color.YellowString(r.Classification), prob))
 		default:
-			msg.WriteString(fmt.Sprintf("%s: %s (%f)", r.ModelName, r.Classification, r.Probability))
+			msg.WriteString(fmt.Sprintf("%s: %s (%s)", r.ModelName, r.Classification, prob))
 		}
 
 	}
@@ -248,19 +255,25 @@ func updateClassificationTable(db *sqlx.DB, siteUUID string, deviceMac string, m
 	}
 }
 
+var classifierCache = make(map[string]*multibayes.Classifier)
+
 func classifySentence(B *backdrop, models []RecordedClassifier, mac string, sent sentence) []classifyResult {
+	var err error
 	results := make([]classifyResult, 0)
 
 	for _, model := range models {
 		switch model.ClassifierType {
 		case "bayes":
-			cl, err := multibayes.NewClassifierFromJSON([]byte(model.ModelJSON))
-			if err != nil {
-				log.Printf("skipping '%s'; could not create classifier: %+v", model.ModelName, err)
-				continue
+			cl := classifierCache[model.ModelName]
+			if cl == nil {
+				cl, err = multibayes.NewClassifierFromJSON([]byte(model.ModelJSON))
+				if err != nil {
+					log.Printf("skipping '%s'; could not create classifier: %+v", model.ModelName, err)
+					continue
+				}
+				cl.MinClassSize = model.MultibayesMin
+				classifierCache[model.ModelName] = cl
 			}
-
-			cl.MinClassSize = model.MultibayesMin
 
 			// Run sentence through each classifier.
 			post := cl.Posterior(sent.toString())
@@ -295,7 +308,11 @@ func classifySentence(B *backdrop, models []RecordedClassifier, mac string, sent
 
 func classifyMac(B *backdrop, models []RecordedClassifier, siteUUID string, mac string, persistent bool) string {
 	records := []RecordedInventory{}
-	err := B.db.Select(&records, "SELECT * FROM inventory WHERE device_mac = $1 ORDER BY inventory_date DESC LIMIT 12", mac)
+	err := B.db.Select(&records, `
+		SELECT * FROM inventory
+		WHERE device_mac = $1
+		ORDER BY inventory_date DESC
+		LIMIT 12`, mac)
 	if err != nil {
 		log.Printf("select failed for %s: %+v", mac, err)
 		return "-classify-fails-"
@@ -321,31 +338,25 @@ func classifyMac(B *backdrop, models []RecordedClassifier, siteUUID string, mac 
 	return displayPredictResults(results) + "\n\t" + sent.toString()
 }
 
-type siteMachine struct {
-	SiteUUID  string `db:"site_uuid"`
-	DeviceMAC string `db:"device_mac"`
-}
+func classifySite(B *backdrop, models []RecordedClassifier, siteUUID string, persistent bool) error {
+	log.Printf("classify site %s", siteUUID)
+	_ = uuid.Must(uuid.FromString(siteUUID))
 
-func classifySite(B *backdrop, models []RecordedClassifier, uuid string, persistent bool) error {
-	log.Printf("classify site %s", uuid)
-
-	var machines []siteMachine
+	var machines []string
 	err := B.db.Select(&machines, `
-		SELECT DISTINCT site.site_uuid, inventory.device_mac
-		FROM site, inventory
-		WHERE
-			site.site_uuid = inventory.site_uuid AND
-			( site.site_uuid GLOB $1 OR site.site_name GLOB $1)
-		ORDER BY inventory.inventory_date ASC;`, uuid)
+		SELECT DISTINCT device_mac
+		FROM inventory
+		WHERE site_uuid = $1
+		ORDER BY device_mac`, siteUUID)
 	if err != nil {
 		return errors.Wrap(err, "select site failed")
 	}
 
 	log.Printf("machines: %d", len(machines))
 
-	for _, m := range machines {
-		fmt.Printf("    %s %s\n", m.DeviceMAC,
-			classifyMac(B, models, m.SiteUUID, m.DeviceMAC, persistent))
+	for _, mac := range machines {
+		c := classifyMac(B, models, siteUUID, mac, persistent)
+		fmt.Printf("    %s %s\n", mac, c)
 	}
 
 	return nil

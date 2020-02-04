@@ -309,7 +309,8 @@ func checkDB(idb *sqlx.DB) {
 	bayes_sentence_version text,
 	bayes_sentence text,
 	PRIMARY KEY(site_uuid, device_mac, unix_timestamp)
-    );`
+    );
+    `
 	const siteSchema = `
     CREATE TABLE IF NOT EXISTS site (
 	site_uuid text PRIMARY KEY,
@@ -361,13 +362,11 @@ func checkDB(idb *sqlx.DB) {
 	checkTableSchema(idb, "classify", classifySchema, "classify")
 
 	const inventoryIndex = `
-    CREATE INDEX IF NOT EXISTS ix_inventory ON inventory (
-	inventory_date ASC
-    );`
-
-	_, err := idb.Exec(inventoryIndex)
-	if err != nil {
-		log.Fatalf("could not create ix_inventory index: %v\n", err)
+    CREATE INDEX IF NOT EXISTS ix_inventory_site_uuid ON inventory ( site_uuid );
+    CREATE INDEX IF NOT EXISTS ix_inventory_device_mac ON inventory ( device_mac );
+    CREATE INDEX IF NOT EXISTS ix_inventory_inventory_date_desc ON inventory ( inventory_date DESC );`
+	if _, err := idb.Exec(inventoryIndex); err != nil {
+		log.Fatalf("could not create indexes: %v", err)
 	}
 }
 
@@ -544,14 +543,13 @@ func matchSites(B *backdrop, match string) ([]RecordedSite, error) {
 
 func listSites(B *backdrop, includeDevices bool, noNames bool, args []string) error {
 	var err error
-
 	withClassifications := B.modelsLoaded
 
 	models := []RecordedClassifier{}
 	if withClassifications {
-		err = B.modeldb.Select(&models, "SELECT * FROM model ORDER BY name ASC")
+		models, err = getModels(B)
 		if err != nil {
-			return errors.Wrap(err, "model select failed")
+			return err
 		}
 
 		log.Printf("models: %d", len(models))
@@ -704,9 +702,6 @@ func reviewSub(cmd *cobra.Command, args []string) error {
 
 func getModels(B *backdrop) ([]RecordedClassifier, error) {
 	models := make([]RecordedClassifier, 0)
-	if !B.modelsLoaded {
-		return nil, errors.Errorf("Model not loaded.  You may need to pass --model-file")
-	}
 
 	// For reporting, we restrict based on the readiness level.
 	err := _B.modeldb.Select(&models, "SELECT * FROM model ORDER BY name ASC")
@@ -714,25 +709,15 @@ func getModels(B *backdrop) ([]RecordedClassifier, error) {
 		return nil, errors.Wrap(err, "model select failed")
 	}
 
-	lm := initInterfaceMfgLookupClassifier()
-
-	lmrc := RecordedClassifier{
-		GenerationTS:    time.Now(),
-		ModelName:       lm.name,
-		ClassifierType:  "lookup",
-		ClassifierLevel: lm.level,
-		CertainAbove:    lm.certainAbove,
-		UncertainBelow:  lm.uncertainBelow,
-	}
-
-	models = append(models, lmrc)
-
 	return models, nil
 }
 
 func classifySub(cmd *cobra.Command, args []string) error {
 	persist, _ := cmd.Flags().GetBool("persist")
 
+	if !_B.modelsLoaded {
+		return errors.Errorf("Model not loaded.  You may need to pass --model-file")
+	}
 	models, err := getModels(&_B)
 	if err != nil {
 		return errors.Wrap(err, "getModels failed")
