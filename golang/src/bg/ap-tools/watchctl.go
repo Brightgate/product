@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -42,7 +42,7 @@ type watchCmd struct {
 
 var (
 	sortKeys  []string
-	validKeys = []string{"id", "ip", "mac", "type", "state", "when"}
+	validKeys = []string{"id", "ip", "mac", "type", "state", "when", "period"}
 
 	watchCmds map[string]watchCmd
 )
@@ -104,6 +104,14 @@ func (list scanList) Less(i, j int) bool {
 			} else if whenJ.Before(*whenI) {
 				comp = sGreater
 			}
+		case "period":
+			periodI := *list[i].Period
+			periodJ := *list[j].Period
+			if periodI < periodJ {
+				comp = sLess
+			} else if periodJ < periodI {
+				comp = sGreater
+			}
 		}
 		if comp != sEqual {
 			break
@@ -146,6 +154,31 @@ func stateToString(scanState *base_msg.WatchdScanInfo_ScanState) string {
 	return s
 }
 
+func periodToString(period *uint32) string {
+	var rval string
+
+	if period == nil {
+		rval = "-"
+	} else {
+		p := *period
+		h := p / (60 * 60)
+		p -= (h * (60 * 60))
+		m := p / 60
+		s := p - (m * 60)
+
+		if h > 0 {
+			rval = fmt.Sprintf("%dh%02dm", h, m)
+		} else if m > 0 && s > 0 {
+			rval = fmt.Sprintf("%dm%02ds", m, s)
+		} else if m > 0 {
+			rval = fmt.Sprintf("%dm", m)
+		} else {
+			rval = fmt.Sprintf("%ds", s)
+		}
+	}
+	return rval
+}
+
 func parseListArgs(args []string) {
 	fs := flag.NewFlagSet("scan list", flag.ExitOnError)
 
@@ -185,8 +218,8 @@ func listScans(c *comms.APComm, args []string) error {
 	}
 
 	sort.Sort(scanList(rval.Scans))
-	fmt.Printf("%5s %-17s %-17s %-6s %-9s %s\n",
-		"ID", "IP", "mac", "type", "state", "when")
+	fmt.Printf("%5s %-17s %-17s %-6s %-9s %6s %s\n",
+		"ID", "IP", "mac", "type", "state", "period", "when")
 	for _, scan := range rval.Scans {
 		ip := "unknown"
 		if scan.Ip != nil {
@@ -200,14 +233,15 @@ func listScans(c *comms.APComm, args []string) error {
 
 		scanType := typeToString(scan.Type)
 		state := stateToString(scan.State)
+		period := periodToString(scan.Period)
 
 		when := "unknown"
 		if scan.When != nil {
 			w := aputil.ProtobufToTime(scan.When)
 			when = w.Format(time.RFC3339)
 		}
-		fmt.Printf("%5d %-17s %-17s %-6s %-9s %s\n",
-			*scan.Id, ip, mac, scanType, state, when)
+		fmt.Printf("%5d %-17s %-17s %-6s %-9s %6s %s\n",
+			*scan.Id, ip, mac, scanType, state, period, when)
 	}
 
 	return nil
@@ -284,6 +318,8 @@ func delScan(c *comms.APComm, args []string) error {
 
 // Instruct watchd to reschedule a scan so that it will run ASAP.
 func nowScan(c *comms.APComm, args []string) error {
+	var period uint32
+
 	if len(args) != 1 {
 		watchUsage()
 	}
@@ -293,11 +329,9 @@ func nowScan(c *comms.APComm, args []string) error {
 		return fmt.Errorf("invalid scan ID: %s", args[0])
 	}
 
-	var epoch time.Time
-
 	scan := base_msg.WatchdScanInfo{
-		Id:   proto.Uint32(uint32(id)),
-		When: aputil.TimeToProtobuf(&epoch),
+		Id:     proto.Uint32(uint32(id)),
+		Period: &period,
 	}
 
 	cmd := base_msg.WatchdRequest_SCAN_RESCHED
@@ -385,7 +419,7 @@ func init() {
 
 	watchCmds = map[string]watchCmd{
 		"list": {listScans, "[-k <" + strings.Join(validKeys, "|") + ">]"},
-		"add":  {addScan, "<ip> [<tcp|udp|vuln>]"},
+		"add":  {addScan, "<ip> [<tcp|udp|vuln|passwd>]"},
 		"del":  {delScan, "<id>"},
 		"now":  {nowScan, "<id>"},
 	}

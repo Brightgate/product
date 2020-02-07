@@ -115,6 +115,8 @@ var (
 	ErrNotEqual   = errors.New("not equal to expected value")
 	ErrTimeout    = errors.New("communication timeout")
 	ErrBadTree    = errors.New("unable to parse tree")
+	ErrNotLeaf    = errors.New("not a leaf property")
+	ErrBadType    = errors.New("property type mismatch")
 )
 
 // ValidRings is a map containing all of the known ring names.  Checking for map
@@ -410,7 +412,11 @@ func (c *Handle) GetProp(prop string) (string, error) {
 
 	root, err := c.GetProps(prop)
 	if err == nil {
-		rval = root.Value
+		if len(root.Children) > 0 {
+			err = ErrNotLeaf
+		} else {
+			rval = root.Value
+		}
 	}
 
 	return rval, err
@@ -1402,4 +1408,20 @@ func (c *Handle) GetDomain() (string, error) {
 		return "", fmt.Errorf("property get %s failed: %v", prop, err)
 	}
 	return siteid, nil
+}
+
+// GetDuration retrieves a single property from the tree, returning it as a
+// time.Duration
+func (c *Handle) GetDuration(prop string) (time.Duration, error) {
+	var rval time.Duration
+
+	val, err := c.GetProp(prop)
+	if err == nil {
+		rval, err = time.ParseDuration(val)
+		if err != nil {
+			err = ErrBadType
+		}
+	}
+
+	return rval, err
 }

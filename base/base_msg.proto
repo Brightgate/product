@@ -437,6 +437,7 @@ message WatchdScanInfo {
 	optional ScanType type		= 0x04;
 	optional ScanState state	= 0x05;
 	optional Timestamp when		= 0x06;
+	optional uint32 period		= 0x07;
 }
 
 message WatchdRequest {

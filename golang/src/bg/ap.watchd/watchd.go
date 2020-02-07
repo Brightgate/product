@@ -178,6 +178,17 @@ func configClientDelete(path []string) {
 	}
 }
 
+func ipToRing(ip string) string {
+	ipv4 := net.ParseIP(ip)
+	for ring, ringConfig := range rings {
+		if ringConfig.IPNet.Contains(ipv4) {
+			return ring
+		}
+	}
+
+	return ""
+}
+
 func getGateways() {
 	// Build a map with all possible gateway IPs.  This is used as a fast
 	// way to determine whether a packet source/destination is one of our
@@ -382,6 +393,8 @@ func main() {
 	config.HandleDelete(`^@/clients/.*`, configClientDelete)
 	config.HandleExpire(`^@/clients/.*/ipv4$`, configClientDelete)
 	config.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
+	config.HandleChange(`^@/policy/clients/.*/scans/.*$`, configScanPolicyChanged)
+	config.HandleChange(`^@/policy/rings/.*/scans/.*$`, configScanPolicyChanged)
 	brokerd.Handle(base_def.TOPIC_UPDATE, netEventHandler)
 	brokerd.Handle(base_def.TOPIC_ENTITY, entityEventHandler)
 

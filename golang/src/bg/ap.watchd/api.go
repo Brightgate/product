@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -13,6 +13,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"time"
 
 	"bg/ap_common/aputil"
 	"bg/ap_common/comms"
@@ -27,12 +28,12 @@ func reschedScan(req *base_msg.WatchdScanInfo) *base_msg.WatchdResponse {
 
 	if req.Id == nil {
 		resp.Errmsg = proto.String("missing scanID")
-	} else if req.When == nil {
+	} else if req.Period == nil {
 		resp.Errmsg = proto.String("missing scan time")
 	} else {
-		when := aputil.ProtobufToTime(req.When)
+		period := time.Duration(req.GetPeriod()) * time.Second
 
-		if err := rescheduleScan(*req.Id, when); err != nil {
+		if err := rescheduleScan(*req.Id, &period); err != nil {
 			resp.Errmsg = proto.String(fmt.Sprintf("%v", err))
 		}
 	}
@@ -52,35 +53,43 @@ func delScan(req *base_msg.WatchdScanInfo) *base_msg.WatchdResponse {
 
 	return resp
 }
+
 func addScan(req *base_msg.WatchdScanInfo) *base_msg.WatchdResponse {
 	var scan *ScanRequest
+	var ip, mac, ring string
+
+	if req.Ip != nil {
+		ip = *req.Ip
+		mac = getMacFromIP(ip)
+	}
 
 	resp := &base_msg.WatchdResponse{}
 
 	if req.Ip == nil {
 		resp.Errmsg = proto.String("missing IP")
-	} else if ip := net.ParseIP(*req.Ip); ip == nil {
+	} else if net.ParseIP(ip) == nil {
 		resp.Errmsg = proto.String("invalid IP")
 	} else if req.Type == nil {
 		resp.Errmsg = proto.String("missing scan type")
+	} else if ring = ipToRing(ip); ring == "" {
+		resp.Errmsg = proto.String("not a managed subnet")
 	} else {
 		switch *req.Type {
 		case base_msg.WatchdScanInfo_TCP_PORTS:
-			scan = newTCPScan("", *req.Ip)
+			scan = newTCPScan(mac, ip, ring)
 		case base_msg.WatchdScanInfo_UDP_PORTS:
-			scan = newUDPScan("", *req.Ip)
+			scan = newUDPScan(mac, ip, ring)
 		case base_msg.WatchdScanInfo_VULN:
-			scan = newVulnScan("", *req.Ip)
+			scan = newVulnScan(mac, ip, ring)
 		case base_msg.WatchdScanInfo_PASSWD:
-			scan = newPasswdScan("", *req.Ip)
+			scan = newPasswdScan(mac, ip, ring)
 		case base_msg.WatchdScanInfo_SUBNET:
-			scan = newSubnetScan("", *req.Ip)
+			scan = newSubnetScan(ring, ip)
 		default:
 			resp.Errmsg = proto.String("illegal scan type")
 		}
 	}
 	if scan != nil {
-		scan.Period = nil
 		scheduleScan(scan, 0, true)
 	}
 
@@ -111,13 +120,15 @@ func convertScan(in *ScanRequest, active bool) *base_msg.WatchdScanInfo {
 	case "subnet":
 		scanType = base_msg.WatchdScanInfo_SUBNET
 	}
+	period := uint32(in.Period.Seconds())
 	out := base_msg.WatchdScanInfo{
-		Id:    proto.Uint32(uint32(in.ID)),
-		Ip:    proto.String(in.IP),
-		Mac:   proto.String(in.Mac),
-		Type:  &scanType,
-		State: &state,
-		When:  aputil.TimeToProtobuf(&in.When),
+		Id:     proto.Uint32(uint32(in.ID)),
+		Ip:     proto.String(in.IP),
+		Mac:    proto.String(in.Mac),
+		Type:   &scanType,
+		State:  &state,
+		When:   aputil.TimeToProtobuf(&in.When),
+		Period: &period,
 	}
 	return &out
 }

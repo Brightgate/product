@@ -400,6 +400,15 @@
     {"Path": "@/metrics/health/%nodeid%/cloud_rpc/fail", "Type": "time", "Level": "internal"},
     {"Path": "@/metrics/health/%nodeid%/role", "Type": "string", "Level": "internal"},
     {"Path": "@/metrics/health/%nodeid%/boot_time", "Type": "time", "Level": "internal"},
-    {"Path": "@/metrics/health/%nodeid%/alive", "Type": "time", "Level": "internal"}
+    {"Path": "@/metrics/health/%nodeid%/alive", "Type": "time", "Level": "internal"},
+    {"Path": "@/policy/rings/%ring%/scans/tcp/period", "Type": "duration", "Level": "admin"},
+    {"Path": "@/policy/rings/%ring%/scans/udp/period", "Type": "duration", "Level": "admin"},
+    {"Path": "@/policy/rings/%ring%/scans/passwd/period", "Type": "duration", "Level": "admin"},
+    {"Path": "@/policy/rings/%ring%/scans/vuln/period", "Type": "duration", "Level": "admin"},
+    {"Path": "@/policy/rings/%ring%/scans/subnet/period", "Type": "duration", "Level": "admin"},
+    {"Path": "@/policy/clients/%macaddr%/scans/tcp/period", "Type": "duration", "Level": "admin"},
+    {"Path": "@/policy/clients/%macaddr%/scans/udp/period", "Type": "duration", "Level": "admin"},
+    {"Path": "@/policy/clients/%macaddr%/scans/passwd/period", "Type": "duration", "Level": "admin"},
+    {"Path": "@/policy/clients/%macaddr%/scans/vuln/period", "Type": "duration", "Level": "admin"}
   ]
 }
