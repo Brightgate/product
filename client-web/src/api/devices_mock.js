@@ -1121,8 +1121,8 @@ export default [
     "connVAP": "eap",
     "username": "pam@dundermifflin.com",
     "dhcpExpiry": "2019-06-26T19:10:25Z",
-    "dhcpName": "catbook",
-    "displayName": "catbook",
+    "dhcpName": "pambook",
+    "displayName": "pambook",
     "hwAddr": "00:01:02:b9:8d:b0",
     "ipv4Addr": "192.168.229.128",
     "devID": {
@@ -1209,7 +1209,9 @@ export default [
     "active": true,
     "dhcpExpiry": "2019-06-26T03:03:15Z",
     "dhcpName": "XRX9C934E2CF72C",
-    "displayName": "XRX9C934E2CF72C",
+    "displayName": "Hallway Printer",
+    "friendlyName": "Hallway Printer",
+    "friendlyDNS": "hallway-printer",
     "hwAddr": "00:01:02:2c:f7:2c",
     "ipv4Addr": "192.168.230.49",
     "ring": "devices",
@@ -1234,10 +1236,10 @@ export default [
     },
     "vulnerabilities": {
       "defaultpassword": {
-        "active": false,
+        "active": true,
         "details": "Service: ftp | Protocol: tcp | Port: 21 | User: \"admin\" | Password: \"password\"",
-        "first_detected": "2019-03-03T16:39:15Z",
-        "latest_detected": "2019-06-20T15:58:00Z",
+        "first_detected": "2020-01-03T16:39:15Z",
+        "latest_detected": "2020-01-07T15:58:00Z",
         "repaired": null
       }
     },
@@ -1369,8 +1371,11 @@ export default [
   {
     "active": false,
     "dhcpExpiry": "2019-06-12T21:19:27Z",
-    "dhcpName": "",
-    "displayName": "",
+    "dhcpName": "schrute-farms",
+    "displayName": "Dwight Schrute's PC",
+    "dnsName": "",
+    "friendlyName": "Dwight Schrute's PC",
+    "friendlyDNS": "dwight-schrutes",
     "hwAddr": "00:01:02:9c:d0:2e",
     "ipv4Addr": "192.168.231.26",
     "ring": "guest",
@@ -1700,5 +1705,5 @@ export default [
       }
     },
     "wireless": false
-  }
+  },
 ];
