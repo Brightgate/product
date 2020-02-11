@@ -1,3 +1,4 @@
 {
-  "phabricator.uri" : "https://ph0.b10e.net/"
+  "phabricator.uri": "https://ph0.b10e.net/",
+  "repository.callsign": "PS"
 }
