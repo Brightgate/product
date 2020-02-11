@@ -56,14 +56,19 @@ func sqliteClassifications(ctx context.Context, siteUUID uuid.UUID, db *sqlx.DB,
 		if c.PropName == "" {
 			continue
 		}
-		log.Printf("built classification %v", c)
 		output <- c
 	}
 	return nil
 }
 
-func syncSiteClassifications(ctx context.Context, siteUUID uuid.UUID, dryRun bool, classifications chan classification) {
-	log.Printf("started syncing %s\n", siteUUID.String())
+func syncSiteClassifications(ctx context.Context, siteUUID uuid.UUID, dryRun bool, verbose bool, classifications chan classification) {
+
+	vPrintf := func(fmt string, args ...interface{}) {
+		if !verbose {
+			return
+		}
+		log.Printf(fmt, args...)
+	}
 
 	// macPropOps[<macaddr>][<propname>] -> propOp (del or add)
 	macPropOps := make(map[string]map[string]cfgapi.PropertyOp)
@@ -83,7 +88,7 @@ func syncSiteClassifications(ctx context.Context, siteUUID uuid.UUID, dryRun boo
 	// For every client classification property we see in the tree,
 	// generate propop groups which clear out the classification info,
 	// grouped by client.
-	log.Printf("generating clearouts for classification props")
+	vPrintf("generating clearouts for classification props")
 	for cmac := range clients.Children {
 		deletes := make([]string, 0)
 		for _, prop := range model2prop {
@@ -101,18 +106,18 @@ func syncSiteClassifications(ctx context.Context, siteUUID uuid.UUID, dryRun boo
 			}
 		}
 		if len(deletes) > 0 {
-			log.Printf("\t%s: %s", cmac, strings.Join(deletes, ", "))
+			vPrintf("\t%s: %s", cmac, strings.Join(deletes, ", "))
 		}
 	}
 
-	log.Printf("ingesting classification records")
+	vPrintf("ingesting classification records")
 	// Consume classification data in the channel ...
 	for c := range classifications {
 		// ... skip if the client is not present in the tree
 		clientPath := fmt.Sprintf("@/clients/%s", c.Mac)
 		_, err := cfg.GetProp(clientPath)
 		if err != nil {
-			log.Printf("\tskipping client %s; not in tree", clientPath)
+			vPrintf("\tskipping client %s; not in tree", clientPath)
 			continue
 		}
 		propPath := fmt.Sprintf("@/clients/%s/%s", c.Mac, c.PropName)
@@ -121,11 +126,11 @@ func syncSiteClassifications(ctx context.Context, siteUUID uuid.UUID, dryRun boo
 		// down the removal of the property.
 		if oldValue == c.Classification {
 			delete(macPropOps[c.Mac], c.PropName)
-			log.Printf("\tskip %s=%q; already set", c.PropName, c.Classification)
+			vPrintf("\tskip %s=%q; already set", c.PropName, c.Classification)
 			continue
 		}
 		// ... else create the property
-		log.Printf("\t%s=%q\n", propPath, c.Classification)
+		vPrintf("\t%s=%q\n", propPath, c.Classification)
 		if macPropOps[c.Mac] == nil {
 			macPropOps[c.Mac] = make(map[string]cfgapi.PropertyOp)
 		}
@@ -136,7 +141,7 @@ func syncSiteClassifications(ctx context.Context, siteUUID uuid.UUID, dryRun boo
 		}
 	}
 
-	log.Printf("finished ingesting classification records")
+	vPrintf("finished ingesting classification records")
 
 	prefix := ""
 	if dryRun {
@@ -146,7 +151,7 @@ func syncSiteClassifications(ctx context.Context, siteUUID uuid.UUID, dryRun boo
 	// each, along with a guarding PropTest (so we don't accidentally
 	// recreate a deleted client).  Then execute.
 	ops := make([]cfgapi.PropertyOp, 0)
-	log.Printf(prefix + "preparing PropOps:")
+	vPrintf(prefix + "preparing PropOps:")
 	for cmac, cPropOpMap := range macPropOps {
 		if len(cPropOpMap) == 0 {
 			continue
@@ -165,7 +170,7 @@ func syncSiteClassifications(ctx context.Context, siteUUID uuid.UUID, dryRun boo
 	}
 
 	if len(ops) == 0 {
-		log.Printf(prefix+"zero ops to sync for %s\n", siteUUID.String())
+		log.Printf(prefix+"nothing to sync for %s\n", siteUUID.String())
 	} else {
 		log.Printf(prefix+"sending %s %d ops", siteUUID.String(), len(ops))
 		if !dryRun {
@@ -182,8 +187,6 @@ func syncSiteClassifications(ctx context.Context, siteUUID uuid.UUID, dryRun boo
 			}
 		}
 	}
-
-	log.Printf(prefix+"done syncing %s\n", siteUUID)
 }
 
 func syncDeviceID(cmd *cobra.Command, args []string) error {
@@ -195,6 +198,7 @@ func syncDeviceID(cmd *cobra.Command, args []string) error {
 	siteStr, _ := cmd.Flags().GetString("site")
 	allOrgs, _ := cmd.Flags().GetBool("all")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	verbose, _ := cmd.Flags().GetBool("verbose")
 
 	if allOrgs && (orgStr != "" || siteStr != "") {
 		return fmt.Errorf("Can't specify --all and either --site or --org")
@@ -284,7 +288,9 @@ func syncDeviceID(cmd *cobra.Command, args []string) error {
 			close(classChan)
 		}
 
-		syncSiteClassifications(ctx, site.UUID, dryRun, classChan)
+		log.Printf("--- started syncing <%s> %s", site.Name, site.UUID)
+		syncSiteClassifications(ctx, site.UUID, dryRun, verbose, classChan)
+		log.Printf("--- finished syncing <%s> %s", site.Name, site.UUID)
 	}
 	return nil
 }
@@ -308,6 +314,7 @@ func deviceIDMain(rootCmd *cobra.Command) {
 	syncDeviceIDCmd.Flags().BoolP("all", "a", false, "sync for all orgs and all sites")
 	syncDeviceIDCmd.Flags().String("sqlite-src", "", "sqlite database containing classifications")
 	syncDeviceIDCmd.Flags().BoolP("dry-run", "n", false, "dry-run-- do not publish changes")
+	syncDeviceIDCmd.Flags().BoolP("verbose", "v", false, "extra output")
 	deviceIDCmd.AddCommand(syncDeviceIDCmd)
 
 	clearDeviceIDCmd := &cobra.Command{
@@ -320,5 +327,6 @@ func deviceIDMain(rootCmd *cobra.Command) {
 	clearDeviceIDCmd.Flags().StringP("site", "s", "", "clear only for this site")
 	clearDeviceIDCmd.Flags().BoolP("all", "a", false, "clear for all orgs and all sites")
 	clearDeviceIDCmd.Flags().BoolP("dry-run", "n", false, "dry-run-- do not publish changes")
+	clearDeviceIDCmd.Flags().BoolP("verbose", "v", false, "extra output")
 	deviceIDCmd.AddCommand(clearDeviceIDCmd)
 }

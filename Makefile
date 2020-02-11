@@ -602,6 +602,8 @@ CLOUDSERVICES = \
 	cl.configd.service \
 	cl.eventd.service \
 	cl.httpd.service \
+	cl-obs.service \
+	cl-obs.timer \
 	cl.rpcd.service
 
 CLOUDSYSTEMDSERVICES = $(CLOUDSERVICES:%=$(CLOUDROOTLIBSYSTEMDSYSTEM)/%)
