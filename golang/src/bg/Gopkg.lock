@@ -1075,15 +1075,16 @@
   revision = "0673112484210f23155c2a43af63b23fc7762655"
 
 [[projects]]
-  digest = "1:254256370288b0246425753bfbf37e1dd128a500b3b6321abc53e30d303243a2"
+  digest = "1:441862601d80124d31cda44155434f39e8f369c7f74ea8e1507aea550b96ef8a"
   name = "google.golang.org/api"
   packages = [
+    ".",
     "dns/v1",
-    "gensupport",
     "googleapi",
-    "googleapi/internal/uritemplates",
     "googleapi/transport",
     "internal",
+    "internal/gensupport",
+    "internal/third_party/uritemplates",
     "iterator",
     "option",
     "people/v1",
@@ -1095,8 +1096,8 @@
     "transport/http/internal/propagation",
   ]
   pruneopts = ""
-  revision = "09a9d0a772eb18da65a7917760cf4ca9ae943c83"
-  version = "v0.10.0"
+  revision = "6f5c88b9e8c709c0f1fff128c30b041c71d14da4"
+  version = "v0.17.0"
 
 [[projects]]
   digest = "1:0568e577f790e9bd0420521cff50580f9b38165a38f217ce68f55c4bbaa97066"
@@ -1143,10 +1144,12 @@
   revision = "92dd089d5514cecde7a465f807541f83dfd486d5"
 
 [[projects]]
-  digest = "1:30d215704e78c21ffff90aa8e86ca1a438fec2837bad082116510fe5a862af5e"
+  digest = "1:52e042987a82bfe51831ac0de4d2fcaaf08e9042a6be0c39f8c8753320d529b3"
   name = "google.golang.org/grpc"
   packages = [
     ".",
+    "attributes",
+    "backoff",
     "balancer",
     "balancer/base",
     "balancer/grpclb",
@@ -1174,10 +1177,13 @@
     "internal/backoff",
     "internal/balancerload",
     "internal/binarylog",
+    "internal/buffer",
     "internal/channelz",
     "internal/envconfig",
     "internal/grpcrand",
     "internal/grpcsync",
+    "internal/resolver/dns",
+    "internal/resolver/passthrough",
     "internal/syscall",
     "internal/transport",
     "keepalive",
@@ -1185,16 +1191,14 @@
     "naming",
     "peer",
     "resolver",
-    "resolver/dns",
-    "resolver/passthrough",
     "serviceconfig",
     "stats",
     "status",
     "tap",
   ]
   pruneopts = ""
-  revision = "f6d0f9ee430895e87ef1ceb5ac8f39725bafceef"
-  version = "v1.24.0"
+  revision = "f495f5b15ae7ccda3b38c53a1bfcde4c1a58a2bc"
+  version = "v1.27.1"
 
 [[projects]]
   digest = "1:40cf02345bfa29fb217cfe0767a9416d99569d4ff21dbb1fd3378ef10682549c"
@@ -1376,6 +1380,7 @@
     "golang.org/x/sync/semaphore",
     "golang.org/x/text/encoding/unicode",
     "golang.org/x/text/transform",
+    "google.golang.org/api",
     "google.golang.org/api/googleapi",
     "google.golang.org/api/iterator",
     "google.golang.org/api/option",

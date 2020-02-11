@@ -20,6 +20,9 @@
 #  name = "github.com/x/y"
 #  version = "2.4.0"
 
+# For whatever reason, dep can't see that cloud.google.com/go needs this.
+# So the [required] statement forces it to be included.
+required = ["google.golang.org/api"]
 
 # Override is more powerful than constraint; since some of our dependent
 # libraries have started using dep, they've not all agreed on the right way to
@@ -87,7 +90,7 @@
 
 [[constraint]]
   name = "google.golang.org/grpc"
-  version = "1.24.0"
+  version = "1.27.1"
 
 [[constraint]]
   name = "github.com/lib/pq"
@@ -126,14 +129,14 @@
 
 [[constraint]]
   name = "google.golang.org/api"
-  version = "~0.10.0"
+  version = "~0.17.0"
 
 # Override is more powerful than constraint; github.com/go-acme/lego depends on
 # google.golang.org/api@master, which dep considers to be outside of the
-# version stream.  We want to specifically choose 0.10.0.
+# version stream.  We want to specifically choose 0.17.0.
 [[override]]
   name = "google.golang.org/api"
-  version = "~0.10.0"
+  version = "~0.17.0"
 
 [[constraint]]
   name = "go.uber.org/zap"
