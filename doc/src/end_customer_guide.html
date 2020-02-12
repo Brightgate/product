@@ -692,7 +692,7 @@
   <ol>
     <li>Log in to the Brightgate management app</li>
     <li>(Optional) Select your site</li>
-    <li>Select <b>Network Configuration</b></li>
+    <li>Select <b>Networks</b></li>
     <li>From the list of networks, select the <code>*-device</code> network
       to view the <b>Network Details</b></li>
     <li>Click the eye icon to reveal the <i>Passphrase</i> for the network</li>
@@ -879,6 +879,24 @@
     reboot the appliance. If a reboot of the appliance doesn't resolve the LEDs
     from solid to blinking, please contact Brightgate support.
   </p>
+  <h3 id="brightgate-appliance-info">View Brightgate appliance information</h3>
+  <p>To view information regarding the Brightgate appliance that secures your
+    network, from the main menu of the Brightgate management app, <i>select your
+      site &gt; Hardware.</i> The page displays information for the Brightgate
+    appliance (and satellites, if installed):</p>
+  <ul>
+    <li>Serial number</li>
+    <li>Appliance name, which can be changed using the procedure outlined in
+      <a href="#name-your-gateway">name your gateway (and satellites)</a></li>
+    <li>Radio frequency (either 2.4 or 5GHz), channel, and channel width.
+      Clicking the radio provides further detail, including the protocol for
+      this radio and the ability to switch the assigned channel.</li>
+    <li>Wired ports and their assigned trust groups, which can be changed using
+      the procedure outlined in <a href="#change-device-trust-group">change a
+        device's trust group assignment</a>.</li>
+  </ul>
+  <p><img src="./images/brightgate-appliance-info.png"
+      alt="Brightgate appliance information"></p>
   <h4 id="quick-word-certificates">A quick word about certificates</h4>
   <p>When connecting your device to the authenticated users network for the
     first time and periodically when the certificate requires renewal, the
@@ -909,35 +927,6 @@
     so by the Brightgate appliance. This type of alert occurs if we find a
     device is in violation of security policies, or acting oddly, as discussed
     in <a href="#remediate-threats">remediate threats</a>.</p>
-  <h3 id="device-details">View device details</h3>
-  <p>Brightgate supplies details specific to each device on the network. Access
-    this information directly by clicking the alert when you first log in or,
-    from the main menu, <i>select site &gt; Devices &gt; select device name.</i>
-  </p>
-  <p>Details for each device on the network display, specifying if Brightgate
-    has identified any vulnerabilities. In this example, the device is using a
-    password that exposes both the device and network to potential attack.
-    Brightgate suggests a remedy, with helpful links to further information if
-    you'd like to know more about the issue. We also specify the time the
-    vulnerability was identified and when a repair, if any, was executed.</p>
-  <p>Also confirm the network details for this device, including the:</p>
-  <ul>
-    <li>device's name on the network</li>
-    <li>network to which the device is connected</li>
-    <li>device's IPv4 address</li>
-    <li>device's hardware address</li>
-    <li>time and date of Brightgate's most recent vulnerability scan for this
-      device</li>
-  </ul>
-  <p>The <i>Access Control</i> displays the assigned trust group for the
-    device, which is discussed fully in <a
-      href="#change-device-trust-group">change
-      a device's trust group assignment</a>.
-  </p>
-  <p>The <i>Client Attributes</i> display the name, DHCP ID, and DNS Name (if
-    set) for this device.
-  </p>
-  <p><img src="./images/device-details.png" alt="Device details"></p>
   <h3 id="compliance-report">View the Compliance Report</h3>
   <p>To view compliance information across all your Brightgate-secured
     networks, from the main menu, <i>select site &gt; Compliance Report.</i></p>
@@ -955,16 +944,69 @@
     for all trust groups that the site maintains, across all networks
     (<code>*-users</code>,
     <code>*-device</code>, or <code>*-guest</code>).</p>
-  <p>In this example, the network has 21 active devices, one of which is yet
-    to be scanned, and one that is using a password that exposes the device
-    and network to potential attack. </p>
+  <p>In this example, the network has 22 active devices, all of which have been
+    scanned, and none that are exposing the device or network to potential
+    attack. </p>
   <p><img src="./images/compliance-report.png" alt="Compliance report"></p>
   <h3 id="view-devices-network">View devices on the network</h3>
-  <p>To view devices on your network, from the main menu, <i>select your
-      site &gt; Devices.</i> The parentheses next to <b>Devices</b> displays
-    the active and inactive devices enrolled across the Brightgate-secured
-    networks for your organization.</p>
+  <p>To view devices on your network, from the main menu,
+    <i>select your site &gt; Devices.</i> From this page, you can toggle to view
+    <i>Active</i> or <i>Inactive</i> devices as well as the device's assigned
+    trust group, MAC address, and IP address. The parentheses
+    next to <b>Devices</b> displays the active and inactive devices enrolled
+    across the Brightgate-secured networks for your organization.</p>
   <p><img src="./images/manage-devices.png" alt="Manage devices"></p>
+  <h3 id="device-details">View device details</h3>
+  <p>Brightgate supplies details specific to each device on the network. Access
+    this information directly by clicking the alert when you first log in or,
+    from the main menu, <i>select site &gt; Devices &gt; select device name.</i>
+  </p>
+  <p>Details for each device on the network display, specifying if Brightgate
+    has identified any vulnerabilities. In this example, the device is using a
+    login and password unchanged from the manufacturer default, exposing the
+    device to being hijacked and used for an attacker's purposes. Brightgate
+    suggests a remedy, with helpful links to further information if you'd like
+    to know more about the issue. We also specify the time the vulnerability was
+    identified and when a repair was executed. For example, Brightgate will
+    change a default password automatically if we know how to do so for this
+    client device.</p>
+  <p>Also confirm the network details for this device, including the:</p>
+  <ul>
+    <li>User logged in to the network on this device</li>
+    <li>Signal strength of the device as reported by the Brightgate appliance
+    </li>
+    <li>Device's name on the network</li>
+    <li>Network to which the device is connected</li>
+    <li>Device's IPv4 address</li>
+    <li>Device's hardware address and its manufacturer</li>
+    <li>Time and date of Brightgate's most recent vulnerability scan for this
+      device</li>
+  </ul>
+  <p>The <i>Access Control</i> displays the assigned trust group for the
+    device, which is discussed fully in <a
+      href="#change-device-trust-group">change
+      a device's trust group assignment</a>.</p>
+  <p>The <i>Client Attributes</i> displays the name, DHCP ID, and DNS Name (if
+    set) for this device. In addition, where possible, the hardware model and
+    operating system for this device as identified by the Brightgate machine
+    learning algorithm.</p>
+  <p><img src="./images/device-details.png" alt="Device details"></p>
+  <h3 id="change-device-name">Change a device's name</h3>
+  <p>Using the Brightgate management app, you can rename client devices that
+    have access to your network. This helps differentiate among devices and
+    provides a friendly name to more easily identify and memorialize device
+    behavior. To rename a client device:</p>
+  <ol>
+    <li>Log in to the Brightgate management app</li>
+    <li>(Optional) Select your site</li>
+    <li>Select <b>Devices</b></li>
+    <li>From the list of devices, select the one to be renamed</li>
+    <li>Click the pencil icon to enter the friendly name for this device</li>
+    <li>Click <b>OK</b></li>
+  </ol>
+  <p>
+    <img src=./images/rename-client-device.png alt="Rename client device">
+  </p>
   <h3 id="remove-devices">Remove devices</h3>
   <p>Brightgate tracks device behavior based on those that are authenticated
     to the network. As a result, devices are not explicitly removed from a
@@ -1030,8 +1072,7 @@
     <dt><code>internal</code>:</dt>
     <dd>Reserved for Brightgate use.</dd>
   </dl>
-  <p>Trust groups may be changed for devices connected to both the wired port
-    and devices connected to the Wi-Fi network.</p>
+  <p>Trust groups may be changed for devices connected to the Wi-Fi network.</p>
   <p>To change the trust group assignment for a device connected to the Wi-Fi
     network:
   </p>
@@ -1053,9 +1094,8 @@
       the appropriate LAN Port to view Lan Port Details.</li>
     <li>From <i>Port Trust Group</i>, click to display the available choices,
       then select the appropriate trust group to which to assign the wired port.
-      In the
-      example, the port is being assigned into the <code>devices</code> trust
-      group:</li>
+      In the example, the port is being assigned into the <code>devices</code>
+      trust group:</li>
   </ol>
   <p><img src="./images/move-lan-trust-group.png" alt="Move LAN trust group">
   </p>
@@ -1063,26 +1103,26 @@
   <p>During the Beta program, passwords are not automatically rotated.
     Administrators may manually change the password for the <code>*-guest</code>
     and <code>*-device</code> network. From the main menu, <i>select your site
-      &gt; Network Configuration</i> to display the networks secured by
-    Brightgate. To change the password:</p>
+      &gt; Networks</i> to display the networks secured by Brightgate. To change
+    the password:</p>
   <ol>
-    <li>Select the network name, either <code>*-guest </code>or
-      <code>*-device.</code></li>
+    <li>Select the network name, either <code>-guest</code> or
+      <code>-device</code></li>
     <li>Click the Settings button to edit the details for this network</li>
-    <li>Change the passphrase. Note: if you wish to view the current
+    <li>Change the passphrase. <b>Note:</b> To view the current
       passphrase, click the eyeball icon.</li>
     <li>Click <b>Save</b></li>
   </ol>
   <p><img src="./images/edit-network-details.png" alt="Edit network details">
   </p>
   <h2 id="review-network-configuration-and-users">Review network configuration
-    and Accounts</h2>
+    and accounts</h2>
   <p>The Brightgate management app displays information regarding the
     configuration of all Brightgate-secured networks for your organization as
     well as network accounts across all networks. </p>
   <h3 id="network-configuration">View your network configuration</h3>
   <p>To view your networks, from the main menu, <i>select your site &gt;
-      Network Configuration.</i></p>
+      Networks.</i></p>
   <p>The networks defined for your site display as well as network
     configuration, including the networks' DNS server and WAN address.</p>
   <p><img src="./images/network-configuration.png" alt="Network configuration">
@@ -1161,6 +1201,10 @@
     <li>Click <b>Manage Roles</b></li>
     <li>Check the <b>Administrator</b> box</li>
   </ol>
+  <p>
+    <img src="./images/grant-admin-privilege.png"
+      alt="Grant administrative privileges">
+  </p>
   <h4 id="view-accounts">View accounts</h4>
   <p>To view accounts created for the Brightgate cloud, from the main menu,
     select <i>Accounts.</i></p>
