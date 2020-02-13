@@ -404,6 +404,7 @@ APPTOOLS = \
 	ap-complete \
 	ap-configctl \
 	ap-ctl \
+	ap-observation \
 	ap-scan \
 	ap-speedtest \
 	ap-userctl \
