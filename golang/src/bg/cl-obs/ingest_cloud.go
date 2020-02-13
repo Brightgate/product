@@ -11,9 +11,9 @@
 package main
 
 import (
+	"bg/cl_common/deviceinfo"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"regexp"
 	"time"
@@ -27,10 +27,7 @@ import (
 )
 
 const (
-	bucketFmt     = "bg-appliance-data-%s"
 	bucketPattern = `bg-appliance-data-(?P<uuid>[a-f0-9-]*)`
-
-	objectFmt     = "obs/%s/device_info.%s.pb"
 	objectPattern = `obs/(?P<mac>[a-f0-9:]*)/device_info.(?P<ts>[0-9]*).pb`
 
 	bucketPrefix          = "bg-appliance-data-"
@@ -48,38 +45,6 @@ type cloudIngester struct {
 	bucketWorkers        int64
 	objectWorkersPerSite int64
 	allObjectWorkers     *semaphore.Weighted
-}
-
-func (c *cloudIngester) SiteExists(B *backdrop, siteUUID string) (bool, error) {
-	if c.storageClient == nil {
-		slog.Fatalf("storage client not properly initialized")
-	}
-
-	bn := fmt.Sprintf(bucketFmt, siteUUID)
-	b := c.storageClient.Bucket(bn)
-	_, err := b.Attrs(context.Background())
-	if err != nil {
-		if err == storage.ErrObjectNotExist {
-			return false, nil
-		}
-		return false, err
-	}
-
-	return true, nil
-}
-
-func (c *cloudIngester) DeviceInfoOpen(B *backdrop, siteUUID string, deviceMac string, unixTimestamp string) (io.Reader, error) {
-	if c.storageClient == nil {
-		slog.Fatalf("storage client not properly initialized")
-	}
-
-	bn := fmt.Sprintf(bucketFmt, siteUUID)
-	on := fmt.Sprintf(objectFmt, deviceMac, unixTimestamp)
-
-	b := c.storageClient.Bucket(bn)
-	o := b.Object(on)
-
-	return o.NewReader(context.Background())
 }
 
 func (c *cloudIngester) ingestSiteBucket(B *backdrop, siteUUID uuid.UUID,
@@ -142,8 +107,10 @@ func (c *cloudIngester) ingestSiteBucket(B *backdrop, siteUUID uuid.UUID,
 			continue
 		}
 
-		deviceMAC := om[0][1]
-		diTimestamp := om[0][2]
+		tuple, err := deviceinfo.NewTupleFromStrings(siteUUID.String(), om[0][1], om[0][2])
+		if err != nil {
+			slog.Fatalf("error building tuple: %v", err)
+		}
 
 		if err := objectIngestSem.Acquire(context.TODO(), 1); err != nil {
 			slog.Fatalf("error getting objectIngest semaphore: %v", err)
@@ -156,33 +123,20 @@ func (c *cloudIngester) ingestSiteBucket(B *backdrop, siteUUID uuid.UUID,
 		go func() {
 			defer objectIngestSem.Release(1)
 			defer c.allObjectWorkers.Release(1)
-			slog.Debugf("%s: starting DeviceInfo %s %s", siteUUID, deviceMAC, diTimestamp)
-			ordr, err := bucket.Object(oattrs.Name).NewReader(context.Background())
+			slog.Debugf("%s: starting DeviceInfo %s", siteUUID, tuple)
+
+			di, err := B.store.ReadTuple(context.Background(), tuple)
 			if err != nil {
-				slog.Errorf("couldn't make reader from bucket %s: %v", oattrs.Name, err)
+				slog.Errorf("couldn't get DeviceInfo %s: %v", tuple, err)
 				return
 			}
 
-			inventoryRecord := RecordedInventory{
-				Storage:       "cloud",
-				InventoryDate: oattrs.Updated,
-				UnixTimestamp: diTimestamp,
-				SiteUUID:      siteUUID.String(),
-				DeviceMAC:     deviceMAC,
-			}
-
-			err = inventoryRecord.addInfoFromReader(B.ouidb, ordr)
+			err = RecordInventory(B.db, B.ouidb,
+				B.store, tuple, oattrs.Updated, di, &ingestStats)
 			if err != nil {
-				slog.Errorf("couldn't add info to inventory %v: %v", inventoryRecord, err)
-				return
+				slog.Fatalf("couldn't record inventory %s: %v", tuple, err)
 			}
-
-			slog.Debugf("%s: recording %v", siteUUID, inventoryRecord)
-			err = recordInventory(B.db, &ingestStats, &inventoryRecord)
-			if err != nil {
-				slog.Fatalf("couldn't record inventory: %v", err)
-			}
-			slog.Debugf("%s: finished work on %s %s", siteUUID, deviceMAC, diTimestamp)
+			slog.Debugf("%s: finished DeviceInfo %s", siteUUID, tuple)
 		}()
 	}
 	// Wait for all workers to finish

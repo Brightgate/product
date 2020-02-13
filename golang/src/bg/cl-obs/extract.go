@@ -22,9 +22,8 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"regexp"
 	"strings"
 
@@ -32,7 +31,6 @@ import (
 	"bg/cl-obs/sentence"
 	"bg/common/network"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/klauspost/oui"
 	"github.com/pkg/errors"
 )
@@ -64,6 +62,12 @@ const (
 var dnsINRequestRE = regexp.MustCompile(dnsINRequestPat)
 
 func extractDNSRecords(B *backdrop) error {
+	type hostBucket struct {
+		ACount     int
+		AAAACount  int
+		OtherCount int
+	}
+
 	dnss := make(map[string]hostBucket)
 
 	rows, err := B.db.Queryx("SELECT * FROM training;")
@@ -72,30 +76,17 @@ func extractDNSRecords(B *backdrop) error {
 	}
 
 	for rows.Next() {
-		var dt RecordedTraining
+		var rt RecordedTraining
 
-		err = rows.StructScan(&dt)
+		err = rows.StructScan(&rt)
 		if err != nil {
 			slog.Warnf("training scan failed: %v\n", err)
 			continue
 		}
 
-		rdr, rerr := readerFromTraining(B, dt)
-		if rerr != nil {
-			slog.Warnf("couldn't get reader: %v", err)
-			continue
-		}
-
-		buf, err := ioutil.ReadAll(rdr)
+		di, err := B.store.ReadTuple(context.Background(), rt.Tuple())
 		if err != nil {
-			slog.Warnf("couldn't ReadAll %v: %s", rdr, err)
-			continue
-		}
-
-		di := &base_msg.DeviceInfo{}
-		err = proto.Unmarshal(buf, di)
-		if err != nil {
-			slog.Warnf("unmarshal failed: %v\n", err)
+			slog.Warnf("couldn't get DeviceInfo %s: %v", rt.Tuple(), err)
 			continue
 		}
 
@@ -415,21 +406,6 @@ func genBayesSentenceFromDeviceInfo(ouiDB oui.OuiDB, di *base_msg.DeviceInfo) (s
 	return getCombinedVersion(), s
 }
 
-func genBayesSentenceFromReader(ouiDB oui.OuiDB, rdr io.Reader) (string, sentence.Sentence) {
-	buf, err := ioutil.ReadAll(rdr)
-	if err != nil {
-		slog.Fatalf("couldn't read: %v; new ingest needed?\n", err)
-	}
-
-	di := &base_msg.DeviceInfo{}
-	err = proto.Unmarshal(buf, di)
-	if err != nil {
-		slog.Fatalf("couldn't unmarshal: %v\n", err)
-	}
-
-	return genBayesSentenceFromDeviceInfo(ouiDB, di)
-}
-
 func matchDHCPVendor(vendor string) (string, error) {
 	for p := range dhcpVendorPatterns {
 		matched, _ := regexp.MatchString(p, vendor)
@@ -457,28 +433,17 @@ func extractDHCPRecords(B *backdrop) error {
 	n := 0
 
 	for rows.Next() {
-		var dt RecordedTraining
+		var rt RecordedTraining
 
-		err = rows.StructScan(&dt)
+		err = rows.StructScan(&rt)
 		if err != nil {
 			slog.Warnf("training scan failed: %v\n", err)
 			continue
 		}
 
-		rdr, rerr := readerFromTraining(B, dt)
-		if rerr != nil {
-			slog.Warnf("couldn't get reader for %v: %v", dt, rerr)
-			continue
-		}
-		buf, rerr := ioutil.ReadAll(rdr)
-		if rerr != nil {
-			slog.Warnf("couldn't read: %v", rerr)
-			continue
-		}
-		di := &base_msg.DeviceInfo{}
-		err = proto.Unmarshal(buf, di)
+		di, err := B.store.ReadTuple(context.Background(), rt.Tuple())
 		if err != nil {
-			slog.Warnf("unmarshal failed: %v\n", err)
+			slog.Warnf("couldn't get DeviceInfo %s: %v", rt.Tuple(), err)
 			continue
 		}
 
@@ -525,19 +490,19 @@ func extractMfgs(B *backdrop) error {
 	}
 
 	for rows.Next() {
-		var dt RecordedTraining
+		var rt RecordedTraining
 
-		err = rows.StructScan(&dt)
+		err = rows.StructScan(&rt)
 		if err != nil {
 			slog.Warnf("device scan failed: %v\n", err)
 			continue
 		}
 
-		dmac := dt.DeviceMAC
+		dmac := rt.DeviceMAC
 
 		entry, err := B.ouidb.Query(dmac)
 		if err != nil {
-			slog.Warnf("%v unknown manufacturer: %+v\n", dmac, dt)
+			slog.Warnf("%v unknown manufacturer: %+v\n", dmac, rt)
 			continue
 		}
 

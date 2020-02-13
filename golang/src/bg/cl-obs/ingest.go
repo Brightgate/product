@@ -13,14 +13,11 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"io"
-	"io/ioutil"
-	"regexp"
 	"time"
 
 	"bg/base_msg"
+	"bg/cl_common/deviceinfo"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/jmoiron/sqlx"
 	"github.com/klauspost/oui"
 	"github.com/pkg/errors"
@@ -29,48 +26,8 @@ import (
 )
 
 var (
-	siteBF     *bloom.Filter
-	filepathRe *regexp.Regexp
+	siteBF *bloom.Filter = bloom.New(10000, 500)
 )
-
-func getContentStatusFromReader(rdr io.Reader) string {
-	entityPresent := "-"
-	dhcpPresent := "-"
-	dnsRecordsPresent := "-"
-	networkScanPresent := "-"
-
-	buf, err := ioutil.ReadAll(rdr)
-	if err != nil {
-		slog.Warnf("could not read: %v\n", err)
-		return "????"
-	}
-
-	di := &base_msg.DeviceInfo{}
-	err = proto.Unmarshal(buf, di)
-	if err != nil {
-		slog.Warnf("could not unmarshal content: %v\n", err)
-		return "????"
-	}
-
-	if di.Entity != nil {
-		entityPresent = "E"
-	}
-
-	if len(di.Options) > 0 {
-		dhcpPresent = "D"
-	}
-
-	if len(di.Request) > 0 {
-		dnsRecordsPresent = "N"
-	}
-
-	if len(di.Scan) > 0 {
-		networkScanPresent = "S"
-	}
-
-	return fmt.Sprintf("%s%s%s%s", entityPresent, dhcpPresent,
-		dnsRecordsPresent, networkScanPresent)
-}
 
 // insertNewSiteByUUID adds a new site to the 'site' table if it isn't
 // present.  To keep things fast, we use a bloom filter to remember
@@ -149,68 +106,51 @@ func insertSiteIngest(db *sqlx.DB, ingest *RecordedIngest) error {
 	return err
 }
 
-func readerFromTraining(B *backdrop, rt RecordedTraining) (io.Reader, error) {
-	return B.ingester.DeviceInfoOpen(B, rt.SiteUUID, rt.DeviceMAC, rt.UnixTimestamp)
-}
+// RecordInventory writes assembles a RecordedInventory record from
+// the supplied arguments and writes it to the database.
+func RecordInventory(db *sqlx.DB, ouiDB oui.OuiDB, store deviceinfo.Store,
+	tuple deviceinfo.Tuple,
+	invDate time.Time, di *base_msg.DeviceInfo, stats *RecordedIngest) error {
 
-func readerFromRecord(B *backdrop, rdi RecordedInventory) (io.Reader, error) {
-	return B.ingester.DeviceInfoOpen(B, rdi.SiteUUID, rdi.DeviceMAC, rdi.UnixTimestamp)
-}
-
-func inventoryFromTraining(db *sqlx.DB, rt RecordedTraining) (*RecordedInventory, error) {
-	ri := RecordedInventory{}
-	err := db.Get(&ri, `
-		SELECT * FROM inventory
-		WHERE site_uuid=$1 AND device_mac=$2 AND unix_timestamp = $3;`,
-		rt.SiteUUID, rt.DeviceMAC, rt.UnixTimestamp)
-	if err != nil {
-		return nil, errors.Wrap(err, "inventoryFromTraining failed")
-	}
-	return &ri, nil
-}
-
-// addInfoFromReader adds information from the protobuf in rdr into the
-// inventory record.  This includes the Sentence and DHCP information.
-func (r *RecordedInventory) addInfoFromReader(ouiDB oui.OuiDB, rdr io.Reader) error {
-	buf, err := ioutil.ReadAll(rdr)
-	if err != nil {
-		return errors.Wrap(err, "couldn't ReadAll")
-	}
-
-	di := &base_msg.DeviceInfo{}
-	err = proto.Unmarshal(buf, di)
-	if err != nil {
-		return errors.Wrap(err, "couldn't unmarshal inventory record")
+	ri := RecordedInventory{
+		Storage:       store.Name(),
+		InventoryDate: invDate,
+		UnixTimestamp: fmt.Sprintf("%d", tuple.TS.Unix()),
+		SiteUUID:      tuple.SiteUUID.String(),
+		DeviceMAC:     tuple.MAC,
 	}
 
 	// Extract DHCP vendor raw string.
-	_, r.DHCPVendor = extractDeviceInfoDHCP(di)
+	_, ri.DHCPVendor = extractDeviceInfoDHCP(di)
 
 	// Add sentence of extracted features
 	sentenceVersion, sentence := genBayesSentenceFromDeviceInfo(ouiDB, di)
-	r.BayesSentenceVersion = sentenceVersion
-	r.BayesSentence = sentence.String()
-	return nil
-}
+	ri.BayesSentenceVersion = sentenceVersion
+	ri.BayesSentence = sentence.String()
 
-func recordInventory(db *sqlx.DB, stats *RecordedIngest, inventory *RecordedInventory) error {
 	_, err := db.NamedExec(`INSERT OR REPLACE INTO inventory
 		(storage, inventory_date, unix_timestamp,
 		 site_uuid, device_mac, dhcp_vendor,
 		 bayes_sentence_version, bayes_sentence)
 		VALUES (:storage, :inventory_date, :unix_timestamp,
 		 :site_uuid, :device_mac, :dhcp_vendor,
-		 :bayes_sentence_version, :bayes_sentence)`, inventory)
+		 :bayes_sentence_version, :bayes_sentence)`, ri)
 	if err != nil {
-		return errors.Wrapf(err, "insert inventory %v failed", inventory)
+		return errors.Wrapf(err, "insert inventory %v failed", ri)
 	}
+
 	stats.Lock()
 	defer stats.Unlock()
 	stats.NewInventories++
 
 	// We want to update the ingest cache value to the maximum time we see.
-	if inventory.InventoryDate.After(stats.IngestDate) {
-		stats.IngestDate = inventory.InventoryDate
+	if ri.InventoryDate.After(stats.IngestDate) {
+		stats.IngestDate = ri.InventoryDate
+	}
+
+	// We want to update the ingest cache value to the maximum time we see.
+	if ri.InventoryDate.After(stats.IngestDate) {
+		stats.IngestDate = ri.InventoryDate
 	}
 	return nil
 }
@@ -241,10 +181,4 @@ func removeOtherSentenceVersions(db *sqlx.DB, siteUUID uuid.UUID, version string
 		WHERE site_uuid = $1 AND bayes_sentence_version != $2
 		);`, siteUUID, version)
 	return err
-}
-
-func init() {
-	siteBF = bloom.New(10000, 500)
-
-	filepathRe = regexp.MustCompile(filepathPattern)
 }

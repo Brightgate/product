@@ -566,6 +566,7 @@ CLOUDCOMMON_GOPKGS = \
 	bg/cl_common/auth/m2mauth \
 	bg/cl_common/clcfg \
 	bg/cl_common/daemonutils \
+	bg/cl_common/deviceinfo \
 	bg/cl_common/pgutils \
 	bg/cl_common/registry \
 	bg/cloud_models/appliancedb \
@@ -591,6 +592,7 @@ CLOUDCOMMANDS = $(CLOUDCOMMAND_GOPKGS:bg/%=%)
 GO_CLOUD_TESTABLES = \
 	bg/cl_common/auth/m2mauth \
 	bg/cl_common/daemonutils \
+	bg/cl_common/deviceinfo \
 	bg/cl_common/registry \
 	bg/cl_common/vaultdb \
 	bg/cloud_models/appliancedb \

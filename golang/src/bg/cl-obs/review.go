@@ -11,11 +11,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"bg/cl-obs/sentence"
 
 	"github.com/pkg/errors"
+	"github.com/satori/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -84,15 +86,16 @@ func reviewSub(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		dtr, rerr := readerFromTraining(&_B, dt)
-		if rerr != nil {
+		// Get backing deviceinfo from the store
+		di, err := _B.store.ReadTuple(context.Background(), dt.Tuple())
+		if err != nil {
 			missed = append(missed, dt)
 			continue
 		}
 
 		validCount++
 
-		_, sent := genBayesSentenceFromReader(_B.ouidb, dtr)
+		_, sent := genBayesSentenceFromDeviceInfo(_B.ouidb, di)
 		if dt.DeviceMAC == devicemac {
 			dupe := devicesent.AddSentence(sent)
 			if dupe {
@@ -107,12 +110,13 @@ func reviewSub(cmd *cobra.Command, args []string) error {
 
 	// Review missing sites, objects/files.
 	for _, dt := range missed {
-		se, _ := _B.ingester.SiteExists(&_B, dt.SiteUUID)
+		siteUU := uuid.Must(uuid.FromString(dt.SiteUUID))
+		se, _ := _B.store.SiteExists(context.Background(), siteUU)
 		if !se {
-			slog.Infof("training entry refers to non-existent site %s", dt.SiteUUID)
+			slog.Infof("training entry refers to non-existent site %s", siteUU)
 		}
 
-		slog.Infof("missing information for (%s, %s, %s)", dt.SiteUUID, dt.DeviceMAC, dt.UnixTimestamp)
+		slog.Infof("missing information for (%s, %s, %s)", siteUU, dt.DeviceMAC, dt.UnixTimestamp)
 	}
 
 	// Review classified devices with no training data.

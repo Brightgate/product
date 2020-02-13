@@ -33,6 +33,7 @@ import (
 
 	"bg/base_def"
 	"bg/cl_common/daemonutils"
+	"bg/cl_common/deviceinfo"
 	"bg/cloud_models/appliancedb"
 	"bg/cloud_rpc"
 
@@ -73,6 +74,8 @@ var (
 	log  *zap.Logger
 	slog *zap.SugaredLogger
 )
+
+const gcsBaseURL = "https://storage.cloud.google.com/"
 
 // XXX Should this move to cl_common?  Or should we do like we do for stats and
 // drops, and just have the client request a signed URL to write the output to
@@ -356,6 +359,21 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	applianceDB := makeApplianceDB(environ.PostgresConnection)
+	storageClient, err := storage.NewClient(ctx)
+	if err != nil {
+		slog.Fatalf("failed storage client creation: %v", err)
+	}
+	uuidToCSMapper := func(ctx context.Context, siteUUID uuid.UUID) (string, string, error) {
+		res, err := applianceDB.CloudStorageByUUID(ctx, siteUUID)
+		if err != nil {
+			return "", "", err
+		}
+		return res.Provider, res.Bucket, nil
+	}
+	cloudStore := deviceinfo.NewGCSStore(storageClient, uuidToCSMapper)
+	inv := inventoryWriter{
+		stores: []deviceinfo.Store{cloudStore},
+	}
 
 	pubsubClient, err := pubsub.NewClient(ctx, environ.PubsubProject)
 	if err != nil {
@@ -401,7 +419,7 @@ func main() {
 		case "cloud_rpc.Heartbeat":
 			heartbeatMessage(ctx, applianceDB, applianceUUID, siteUUID, m)
 		case "cloud_rpc.InventoryReport":
-			inventoryMessage(ctx, applianceDB, siteUUID, m)
+			inv.inventoryMessage(ctx, siteUUID, m)
 		case "cloud_rpc.FaultReport":
 			faultMessage(ctx, applianceDB, siteUUID, m)
 		case "cloud_rpc.NetException":

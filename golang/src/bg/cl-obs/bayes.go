@@ -48,13 +48,16 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"bg/cl-obs/sentence"
+	"bg/cl_common/deviceinfo"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/lytics/multibayes"
 	"github.com/pkg/errors"
 )
@@ -76,6 +79,19 @@ type bayesClassifier struct {
 	unknownValue       string
 	classificationProp string
 	TargetValue        func(rdi RecordedDevice) string
+}
+
+// inventoryFromTuple pulls the inventory record which matches the tuple
+func inventoryFromTuple(db *sqlx.DB, tup deviceinfo.Tuple) (*RecordedInventory, error) {
+	ri := RecordedInventory{}
+	err := db.Get(&ri, `
+		SELECT * FROM inventory
+		WHERE site_uuid=$1 AND device_mac=$2 AND unix_timestamp=$3;`,
+		tup.SiteUUID, tup.MAC, tup.TS.Unix())
+	if err != nil {
+		return nil, errors.Wrap(err, "inventoryFromTraining failed")
+	}
+	return &ri, nil
 }
 
 func (m *bayesClassifier) GenSetFromDB(B *backdrop) error {
@@ -100,18 +116,18 @@ func (m *bayesClassifier) GenSetFromDB(B *backdrop) error {
 
 		for _, rt := range trainings {
 			// Retrieve inventory.
-			ri, err := inventoryFromTraining(B.db, rt)
+			ri, err := inventoryFromTuple(B.db, rt.Tuple())
 
 			if err == nil && ri.BayesSentenceVersion == getCombinedVersion() {
 				p.AddString(ri.BayesSentence)
 			} else {
-				rdr, err := readerFromTraining(B, rt)
+				di, err := B.store.ReadTuple(context.Background(), rt.Tuple())
 				if err != nil {
-					slog.Errorf("couldn't get reader for %v: %v\n", rt, err)
+					slog.Errorf("couldn't get DeviceInfo %s: %v\n", rt.Tuple(), err)
 					continue
 				}
 
-				_, sent := genBayesSentenceFromReader(B.ouidb, rdr)
+				_, sent := genBayesSentenceFromDeviceInfo(B.ouidb, di)
 				p.AddSentence(sent)
 			}
 		}
