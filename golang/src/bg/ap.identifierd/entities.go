@@ -144,7 +144,7 @@ func (e *entities) addMsgListen(hwaddr uint64, msg *base_msg.EventListen) {
 	}
 }
 
-func (e *entities) writeInventory(path string) error {
+func (e *entities) writeInventory(path string) (int, error) {
 	e.Lock()
 	defer e.Unlock()
 	defer debug.FreeOSMemory()
@@ -168,27 +168,27 @@ func (e *entities) writeInventory(path string) error {
 	}
 
 	if len(inventory.Devices) == 0 {
-		return nil
+		return 0, nil
 	}
 
 	out, err := proto.Marshal(inventory)
 	if err != nil {
-		return fmt.Errorf("failed to encode device inventory: %s", err)
+		return 0, fmt.Errorf("failed to encode device inventory: %s", err)
 	}
 
 	newPath := fmt.Sprintf("%s.%d", path, int(time.Now().Unix()))
 	slog.Debugf("writing Inventory %s", newPath)
 	f, err := os.OpenFile(newPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer f.Close()
 
 	if _, err := f.Write(out); err != nil {
-		return fmt.Errorf("failed to write device inventory: %s", err)
+		return 0, fmt.Errorf("failed to write device inventory: %s", err)
 	}
 
-	return nil
+	return len(inventory.Devices), nil
 }
 
 // NewEntities creates an empty Entities

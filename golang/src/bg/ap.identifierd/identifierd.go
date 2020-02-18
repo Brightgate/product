@@ -270,8 +270,22 @@ func handleOptions(event []byte) {
 }
 
 func save() {
-	if err := newData.writeInventory(filepath.Join(*logDir, observeFile)); err != nil {
+	n, err := newData.writeInventory(filepath.Join(*logDir, observeFile))
+	if err != nil {
 		slog.Warnf("could not save observation data:", err)
+		return
+	}
+	if n == 0 {
+		return
+	}
+
+	inv := base_msg.EventDeviceInventory{
+		Timestamp: aputil.NowToProtobuf(),
+		Sender:    proto.String(brokerd.Name),
+		Debug:     proto.String("-"),
+	}
+	if err := brokerd.Publish(&inv, base_def.TOPIC_DEVICE_INVENTORY); err != nil {
+		slog.Warnf("could not publish to %s: %v", base_def.TOPIC_DEVICE_INVENTORY, err)
 	}
 }
 

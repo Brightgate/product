@@ -1,6 +1,6 @@
 #!/usr/bin/python
 #
-# COPYRIGHT 2017 Brightgate Inc.  All rights reserved.
+# COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
 #
 # This copyright notice is Copyright Management Information under 17 USC 1202
 # and is included to protect this work and deter copyright infringement.
@@ -193,9 +193,9 @@ assignments = [
     [Statement.SIMPLE_STR, "TOPIC_SCAN", "net.scan"],
     [Statement.SIMPLE_STR, "TOPIC_LISTEN", "net.listen"],
     [Statement.SIMPLE_STR, "TOPIC_EXCEPTION", "net.exception"],
-    [Statement.SIMPLE_STR, "TOPIC_IDENTITY",  "net.identity"],
     [Statement.SIMPLE_STR, "TOPIC_UPDATE",  "net.update"],
     [Statement.SIMPLE_STR, "TOPIC_OPTIONS",  "net.options"],
+    [Statement.SIMPLE_STR, "TOPIC_DEVICE_INVENTORY",  "net.device_inventory"],
 
     [Statement.COMMENT, "Diagnostic client HTTP ports"],
     [Statement.SIMPLE_PORT, "BROKERD_DIAG_PORT", 3200],

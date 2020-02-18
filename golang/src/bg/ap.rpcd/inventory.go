@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -23,6 +23,7 @@ import (
 
 	"bg/ap_common/aputil"
 	"bg/ap_common/platform"
+	"bg/base_def"
 	"bg/base_msg"
 	"bg/cloud_rpc"
 	"bg/common/network"
@@ -193,6 +194,14 @@ func sendInventory(ctx context.Context, client cloud_rpc.EventClient) error {
 func inventoryLoop(ctx context.Context, client cloud_rpc.EventClient, wg *sync.WaitGroup, doneChan chan bool) {
 	var done bool
 
+	invChan := make(chan bool, 1)
+
+	brokerd.Handle(base_def.TOPIC_DEVICE_INVENTORY, func(event []byte) {
+		slog.Debugf("new inventory indicated on %s", base_def.TOPIC_DEVICE_INVENTORY)
+		invChan <- true
+	})
+	slog.Infof("inventory loop starting")
+
 	ticker := time.NewTicker(12 * time.Hour)
 	defer ticker.Stop()
 	for !done {
@@ -202,6 +211,7 @@ func inventoryLoop(ctx context.Context, client cloud_rpc.EventClient, wg *sync.W
 		}
 		select {
 		case done = <-doneChan:
+		case <-invChan:
 		case <-ticker.C:
 		}
 	}
