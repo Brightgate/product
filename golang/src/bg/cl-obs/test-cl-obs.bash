@@ -42,6 +42,7 @@ elif [ "$1" == "cloud" ]; then
 
 	if [ -z "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
 		echo "must define GOOGLE_APPLICATION_CREDENTIALS for cloud runs"
+		exit 2
 	fi
 else
 	echo "need input source ('cloud' or 'files')"
