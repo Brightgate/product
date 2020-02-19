@@ -836,6 +836,25 @@
   version = "v1.0.1"
 
 [[projects]]
+  digest = "1:9d60bab3032d500b5ed9e96bda513ecc943cf7ce002b2f19c522228e1882c324"
+  name = "github.com/vishvananda/netlink"
+  packages = [
+    ".",
+    "nl",
+  ]
+  pruneopts = ""
+  revision = "f049be6f391489d3f374498fe0c8df8449258372"
+  version = "v1.1.0"
+
+[[projects]]
+  branch = "master"
+  digest = "1:0b30de1a6957125af05f8dbe7dfe8843fb4aa0d87d803d3ebd83f39aed113c9a"
+  name = "github.com/vishvananda/netns"
+  packages = ["."]
+  pruneopts = ""
+  revision = "0a2b9b5464df8343199164a0321edf3313202f7e"
+
+[[projects]]
   digest = "1:b126ccc9554b49fcf865344928807f5a2bee24673e0a87afab40b8b5417dbe41"
   name = "github.com/yourbasic/bloom"
   packages = ["."]
@@ -1362,6 +1381,7 @@
     "github.com/ttacon/libphonenumber",
     "github.com/unrolled/secure",
     "github.com/urfave/negroni",
+    "github.com/vishvananda/netlink",
     "github.com/yourbasic/bloom",
     "go.uber.org/zap",
     "go.uber.org/zap/zapcore",

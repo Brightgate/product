@@ -31,7 +31,6 @@ type Platform struct {
 	ResetSignal  syscall.Signal
 	ReloadSignal syscall.Signal
 	HostapdCmd   string
-	BrctlCmd     string
 	SysctlCmd    string
 	IPCmd        string
 	IwCmd        string
@@ -40,7 +39,6 @@ type Platform struct {
 	DigCmd       string // ap.httpd diags
 	CurlCmd      string // ap.httpd diags
 	RestoreCmd   string
-	VconfigCmd   string
 
 	probe         func() bool
 	setNodeID     func(string) error

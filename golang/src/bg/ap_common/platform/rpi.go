@@ -325,7 +325,6 @@ func init() {
 		ResetSignal:  syscall.SIGINT,
 		ReloadSignal: syscall.SIGINT,
 		HostapdCmd:   "/usr/sbin/hostapd",
-		BrctlCmd:     "/sbin/brctl",
 		SysctlCmd:    "/sbin/sysctl",
 		IPCmd:        "/sbin/ip",
 		IwCmd:        "/sbin/iw",
@@ -334,7 +333,6 @@ func init() {
 		DigCmd:       "/usr/bin/dig",
 		CurlCmd:      "/usr/bin/curl",
 		RestoreCmd:   "/sbin/iptables-restore",
-		VconfigCmd:   "/sbin/vconfig",
 
 		probe:         rpiProbe,
 		setNodeID:     rpiSetNodeID,

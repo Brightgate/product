@@ -484,7 +484,6 @@ func init() {
 		ResetSignal:  syscall.SIGINT,
 		ReloadSignal: syscall.SIGHUP,
 		HostapdCmd:   "/usr/sbin/hostapd",
-		BrctlCmd:     "/usr/sbin/brctl",
 		SysctlCmd:    "/sbin/sysctl",
 		IPCmd:        "/sbin/ip",
 		IwCmd:        "/usr/sbin/iw",
@@ -493,7 +492,6 @@ func init() {
 		DigCmd:       "/usr/bin/dig",
 		CurlCmd:      "/usr/bin/curl",
 		RestoreCmd:   "/usr/sbin/iptables-restore",
-		VconfigCmd:   "/sbin/vconfig",
 
 		probe:         mtProbe,
 		setNodeID:     mtSetNodeID,

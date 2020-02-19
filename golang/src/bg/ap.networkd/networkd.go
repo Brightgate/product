@@ -18,7 +18,6 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
-	"os/exec"
 	"os/signal"
 	"sync"
 	"syscall"
@@ -28,6 +27,7 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
+	"bg/ap_common/netctl"
 	"bg/ap_common/platform"
 	"bg/base_def"
 	"bg/common/cfgapi"
@@ -140,14 +140,13 @@ func hotplugUnblock() {
 		}
 
 		slog.Debugf("triggering hotplug refresh")
-		err = exec.Command(plat.BrctlCmd, "addbr", hotplugTrigger).Run()
-		if err != nil {
+		if err = netctl.BridgeCreate(hotplugTrigger); err != nil {
 			slog.Warnf("addbr %s failed: %v", hotplugTrigger, err)
 		} else {
 			time.Sleep(100 * time.Millisecond)
 		}
-		err = exec.Command(plat.BrctlCmd, "delbr", hotplugTrigger).Run()
-		if err != nil {
+
+		if err = netctl.BridgeDestroy(hotplugTrigger); err != nil {
 			slog.Warnf("delbr %s failed: %v", hotplugTrigger, err)
 		}
 	}

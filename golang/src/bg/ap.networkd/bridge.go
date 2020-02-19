@@ -15,13 +15,13 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
 
 	"bg/ap_common/aputil"
 	"bg/ap_common/mcp"
+	"bg/ap_common/netctl"
 	"bg/base_def"
 	"bg/base_msg"
 	"bg/common/cfgapi"
@@ -32,8 +32,7 @@ import (
 func addDevToRingBridge(dev *physDevice, ring string) error {
 	var err error
 
-	err = exec.Command(plat.IPCmd, "link", "set", "up", dev.name).Run()
-	if err != nil {
+	if err = netctl.LinkUp(dev.name); err != nil {
 		slog.Warnf("Failed to enable %s: %v", dev.name, err)
 	}
 
@@ -41,9 +40,8 @@ func addDevToRingBridge(dev *physDevice, ring string) error {
 		br := config.Bridge
 		slog.Debugf("Connecting %s (%s) to the %s bridge: %s",
 			dev.name, dev.hwaddr, ring, br)
-		c := exec.Command(plat.BrctlCmd, "addif", br, dev.name)
-		if out, rerr := c.CombinedOutput(); rerr != nil {
-			err = fmt.Errorf(string(out))
+		if err = netctl.BridgeAddIface(br, dev.name); err != nil {
+			err = fmt.Errorf("adding %s to %s: %v", br, dev.name, err)
 		}
 	} else {
 		err = fmt.Errorf("non-existent ring %s", ring)
@@ -58,6 +56,7 @@ func addDevToRingBridge(dev *physDevice, ring string) error {
 func rebuildInternalNet() {
 	satNode := aputil.IsSatelliteMode()
 
+	slog.Debugf("rebuilding internal network")
 	// For each internal network device, create a virtual device for each
 	// LAN ring and attach it to the bridge for that ring
 	for _, dev := range physDevices {
@@ -134,35 +133,35 @@ func rebuildUnenrolled(devs []*physDevice, interrupt chan bool) {
 func addVif(nic string, vlan int, bridge string) {
 	vid := strconv.Itoa(vlan)
 	vif := nic + "." + vid
+	slog.Debugf("adding nic %s to %s", vif, bridge)
 
-	deleteVif(vif)
-	err := exec.Command(plat.VconfigCmd, "add", nic, vid).Run()
-	if err != nil {
+	err := netctl.LinkDelete(vif)
+	if err != nil && err != netctl.ErrNoDevice {
+		slog.Warnf("LinkDelete(%s) failed: %v", vif, err)
+	}
+
+	if err = netctl.VlanAdd(nic, vlan); err != nil {
 		slog.Warnf("Failed to create vif %s: %v", vif, err)
-		return
-	}
 
-	err = exec.Command(plat.BrctlCmd, "addif", bridge, vif).Run()
-	if err != nil {
+	} else if err = netctl.BridgeAddIface(bridge, vif); err != nil {
 		slog.Warnf("Failed to add %s to %s: %v", vif, bridge, err)
-		return
-	}
 
-	err = exec.Command(plat.IPCmd, "link", "set", "up", vif).Run()
-	if err != nil {
+	} else if err = netctl.LinkUp(vif); err != nil {
 		slog.Warnf("Failed to enable %s: %v", vif, err)
 	}
 }
 
-func deleteVif(vif string) {
-	slog.Debugf("deleting nic %s", vif)
-	exec.Command(plat.IPCmd, "link", "del", vif).Run()
-}
-
 func deleteBridge(bridge string) {
 	slog.Debugf("deleting bridge %s", bridge)
-	exec.Command(plat.IPCmd, "link", "set", "down", bridge).Run()
-	exec.Command(plat.BrctlCmd, "delbr", bridge).Run()
+	err := netctl.LinkDown(bridge)
+	if err != nil && err != netctl.ErrNoDevice {
+		slog.Warnf("LinkDown(%s) failed: %v", bridge, err)
+	}
+
+	err = netctl.BridgeDestroy(bridge)
+	if err != nil && err != netctl.ErrNoDevice {
+		slog.Warnf("BridgeDestroy(%s) failed: %v", bridge, err)
+	}
 }
 
 // Delete the bridges associated with each ring.  This gets us back to a known
@@ -194,46 +193,34 @@ func createBridge(ringName string) {
 
 	slog.Infof("Preparing %s ring: %s %s", ringName, bridge, ring.Subnet)
 
-	err := exec.Command(plat.BrctlCmd, "addbr", bridge).Run()
-	if err != nil {
+	if err := netctl.BridgeCreate(bridge); err != nil {
 		slog.Warnf("addbr %s failed: %v", bridge, err)
 		return
 	}
 
-	err = exec.Command(plat.IPCmd, "link", "set", "up", bridge).Run()
-	if err != nil {
+	if err := netctl.LinkUp(bridge); err != nil {
 		slog.Warnf("bridge %s failed to come up: %v", bridge, err)
 		return
 	}
 
-	// ip addr flush dev brvlan0
-	cmd := exec.Command(plat.IPCmd, "addr", "flush", "dev", bridge)
-	if err := cmd.Run(); err != nil {
-		slog.Fatalf("Failed to remove existing IP address: %v", err)
+	if err := netctl.AddrFlush(bridge); err != nil {
+		slog.Warnf("flushing old addresses from %s: %v", bridge, err)
 	}
 
-	// ip route del 192.168.136.0/24
-	cmd = exec.Command(plat.IPCmd, "route", "del", ring.Subnet)
-	cmd.Run()
+	if err := netctl.RouteDel(ring.Subnet); err != nil {
+		slog.Warnf("deleting route: %v", err)
+	}
 
-	// ip addr add 192.168.136.1 dev brvlan0
-	router := localRouter(ring)
-	cmd = exec.Command(plat.IPCmd, "addr", "add", router, "dev", bridge)
-	slog.Debugf("Setting %s to %s", bridge, router)
-	if err := cmd.Run(); err != nil {
+	if err := netctl.AddrAdd(bridge, localRouter(ring)); err != nil {
 		slog.Fatalf("Failed to set the router address: %v", err)
 	}
 
-	// ip link set up brvlan0
-	cmd = exec.Command(plat.IPCmd, "link", "set", "up", bridge)
-	if err := cmd.Run(); err != nil {
+	if err := netctl.LinkUp(bridge); err != nil {
 		slog.Fatalf("Failed to enable bridge: %v", err)
 	}
-	// ip route add 192.168.136.0/24 dev brvlan0
-	cmd = exec.Command(plat.IPCmd, "route", "add", ring.Subnet, "dev", bridge)
-	if err := cmd.Run(); err != nil {
-		slog.Fatalf("Failed to add %s as the new route: %v",
-			ring.Subnet, err)
+
+	if err := netctl.RouteAdd(ring.Subnet, bridge); err != nil {
+		slog.Fatalf("Failed to add %s as route: %v", ring.Subnet, err)
 	}
 }
 
@@ -264,10 +251,14 @@ func resetInterfaces() {
 	}
 
 	hotplugBlock()
+
+	start := time.Now()
 	deleteBridges()
 	createBridges()
 	rebuildLan()
 	rebuildInternalNet()
+	slog.Debugf("network rebuild took %v", time.Since(start))
+
 	hotplugUnblock()
 
 	resource := &base_msg.EventNetUpdate{
@@ -290,7 +281,11 @@ func networkCleanup() {
 		name := dev.Name()
 
 		if plat.NicIsVirtual(name) {
-			deleteVif(name)
+			err := netctl.LinkDelete(name)
+			if err != nil && err != netctl.ErrNoDevice {
+				slog.Warnf("LinkDelete(%s) failed: %v",
+					name, err)
+			}
 		}
 	}
 
