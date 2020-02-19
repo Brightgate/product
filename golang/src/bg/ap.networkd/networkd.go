@@ -41,7 +41,7 @@ var (
 		true, nil)
 	rulesDir = apcfg.String("rules_dir", "/etc/filter.rules.d",
 		true, nil)
-	hostapdLatency = apcfg.Int("hostapd_latency", 5, true, nil)
+	hostapdLatency = apcfg.Int("hostapd_latency", 60, true, nil)
 	hostapdDebug   = apcfg.Bool("hostapd_debug", false, true,
 		hostapdReset)
 	hostapdVerbose = apcfg.Bool("hostapd_verbose", false, true,
@@ -51,8 +51,8 @@ var (
 	retransmitHardLimit = apcfg.Int("retransmit_hard", 6, true, nil)
 	retransmitTimeout   = apcfg.Duration("retransmit_timeout",
 		5*time.Minute, true, nil)
-	apScanFreq   = apcfg.Duration("ap_scan_freq", time.Minute, true, nil)
-	apStale      = apcfg.Duration("ap_stale", 5*time.Minute, true, nil)
+	apScanFreq   = apcfg.Duration("ap_scan_freq", 3*time.Minute, true, nil)
+	apStale      = apcfg.Duration("ap_stale", 10*time.Minute, true, nil)
 	chanEvalFreq = apcfg.Duration("chan_eval_freq", 6*time.Hour, true, nil)
 	_            = apcfg.String("log_level", "info", true,
 		aputil.LogSetLevel)

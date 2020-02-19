@@ -207,12 +207,22 @@ func copyChannelList(name string) []int {
 }
 
 func apMonitorLoop(wg *sync.WaitGroup, doneChan chan bool) {
-	done := false
+	defer func() {
+		slog.Infof("AP monitor loop exiting")
+		wg.Done()
+	}()
 
 	freq := *apScanFreq
 	t := time.NewTicker(freq)
 	slog.Infof("AP monitor loop starting")
-	for !done {
+	for {
+		select {
+		case <-doneChan:
+			return
+
+		case <-t.C:
+		}
+
 		for _, d := range physDevices {
 			if d.wifi != nil && !d.pseudo {
 				updateAPScan(d.name)
@@ -224,11 +234,6 @@ func apMonitorLoop(wg *sync.WaitGroup, doneChan chan bool) {
 			hostapd.reset()
 		}
 
-		select {
-		case done = <-doneChan:
-		case <-t.C:
-		}
-
 		// If the frequency setting has been changed, reset our timer to
 		// the new value.
 		if freq != *apScanFreq {
@@ -237,8 +242,6 @@ func apMonitorLoop(wg *sync.WaitGroup, doneChan chan bool) {
 			t = time.NewTicker(freq)
 		}
 	}
-	slog.Infof("AP monitor loop exiting")
-	wg.Done()
 }
 
 func setChannel(w *wifiInfo, band string, channel, width int) error {
