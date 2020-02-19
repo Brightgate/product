@@ -1,6 +1,6 @@
 #!/bin/bash -px
 #
-# COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+# COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
 #
 # This copyright notice is Copyright Management Information under 17 USC 1202
 # and is included to protect this work and deter copyright infringement.
@@ -34,11 +34,11 @@ FILES_SRC=${FILES_SRC:-/home/stephen/staging-spools/svc-1/spool}
 CLOUD_SRC=${CLOUD_SRC:-staging-168518}
 
 if [ "$1" == "files" ]; then
-	export CL_SRC="--dir $FILES_SRC"
+	export CL_SRC="--dir=$FILES_SRC"
 	OBSERVATIONS=./golang/src/bg/cl-obs/observations-files.db
 	TRAINED_MODELS=./golang/src/bg/cl-obs/trained-models-files.db
 elif [ "$1" == "cloud" ]; then
-	export CL_SRC="--project $CLOUD_SRC"
+	export CL_SRC="--project=$CLOUD_SRC"
 
 	if [ -z "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
 		echo "must define GOOGLE_APPLICATION_CREDENTIALS for cloud runs"
@@ -50,10 +50,19 @@ else
 fi
 echo "### CL_SRC is '$CL_SRC'"
 
-if [ "$2" == "ingest" ]; then
+shift
+
+if [ "$1" == "ingest" ]; then
 	$CL_OBS ingest --cpuprofile=ingest-1.prof \
-		$CL_SRC \
+		"$CL_SRC" \
 		--observations-file=$OBSERVATIONS
+
+	shift
+fi
+
+if [ "$1" == "detailed" ]; then
+	detailed=1
+	echo "running detailed tests"
 fi
 
 # Re-apply facts
@@ -62,40 +71,49 @@ sqlite3 "$OBSERVATIONS" < "$FACTS"
 # Extract options
 
 orun $CL_OBS extract --dhcp \
-	$CL_SRC \
+	"$CL_SRC" \
 	--observations-file $OBSERVATIONS
-orun $CL_OBS extract --dns  \
-	$CL_SRC \
-	--observations-file $OBSERVATIONS
-orun $CL_OBS extract --mfg  \
-	$CL_SRC \
-	--observations-file $OBSERVATIONS
-orun $CL_OBS extract --device  \
-	$CL_SRC \
-	--observations-file $OBSERVATIONS
+if [ -n "$detailed" ]; then
+	orun $CL_OBS extract --dns  \
+		"$CL_SRC" \
+		--observations-file $OBSERVATIONS
+	orun $CL_OBS extract --mfg  \
+		"$CL_SRC" \
+		--observations-file $OBSERVATIONS
+	orun $CL_OBS extract --device  \
+		"$CL_SRC" \
+		--observations-file $OBSERVATIONS
+fi
 
 # Site options
 
 orun $CL_OBS site \
+	"$CL_SRC" \
 	--observations-file $OBSERVATIONS
 orun $CL_OBS site --verbose \
+	"$CL_SRC" \
 	--observations-file $OBSERVATIONS
 
 orun $CL_OBS ls \
-	$CL_SRC \
+	"$CL_SRC" \
+	--observations-file $OBSERVATIONS \
+	"00:11:d9:95:3d:b2"
+orun $CL_OBS ls \
+	--redundant \
+	"$CL_SRC" \
 	--observations-file $OBSERVATIONS \
 	"00:11:d9:95:3d:b2"
 
 # Train and review
 #   Output to the combined models file.
 orun $CL_OBS train --cpuprofile=train-0.prof \
-	$CL_SRC \
+	"$CL_SRC" \
 	--model-file $TRAINED_MODELS \
 	--observations-file $OBSERVATIONS
 
 #   Review the training set for validity and redundancy.
 orun $CL_OBS review \
-	$CL_SRC \
+	"$CL_SRC" \
 	--model-file $TRAINED_MODELS \
 	--observations-file $OBSERVATIONS
 
@@ -116,14 +134,14 @@ $CL_OBS classify \
 # Site, with predictions.
 orun $CL_OBS site \
 	--verbose \
-	$CL_SRC \
+	"$CL_SRC" \
 	--model-file $TRAINED_MODELS \
 	--observations-file $OBSERVATIONS \
 	dogfood-mt7623
 
 orun $CL_OBS site \
 	--verbose \
-	$CL_SRC \
+	"$CL_SRC" \
 	--model-file $TRAINED_MODELS \
 	--observations-file $OBSERVATIONS \
 	stephen-osage

@@ -33,7 +33,7 @@ type lookupClassifier struct {
 	uncertainBelow     float64
 	unknownValue       string
 	classificationProp string
-	TargetValue        func(rdi RecordedDeviceInfo) string
+	TargetValue        func(rdi RecordedDevice) string
 	Lookup             func(B *backdrop, datum string) string
 }
 

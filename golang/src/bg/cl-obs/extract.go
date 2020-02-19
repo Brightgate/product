@@ -17,6 +17,7 @@
 // sentences as our dataset becomes large, each extractor has a version,
 // represented by a single character.  The concatenation of these
 // extractor versions is then the version of the generated sentence.
+
 package main
 
 import (
@@ -36,14 +37,30 @@ import (
 )
 
 const (
-	termMacMfgFmt = "hw-mac-mfg-%s"
+	// Update ediSeparatorVersion when either the separator constant or one
+	// of the format constants is modified.
+	//   The separator character, '_', is chosen to neutralize the
+	//   tokenizing and stemming implementations in the underlying
+	//   third party Bayesian algorithm.  That is, our vocabulary
+	//   passes through its preprocessing unchanged.
+	ediSeparatorVersion = "0"
+	separator           = "_"
 
-	termDHCPVendorFmt      = "dh-vendor-agent-%s"
-	termDHCPOptionsFmt     = "dh-vendor-options-%s"
-	termDHCPAAPLSpecialFmt = "dh-aapl-special-%s"
+	// The trailing separators in the following formats prevent
+	// stemming.
+	termMacMfgFmt    = "hw_mac_mfg_%s_"
+	termMacTripleFmt = "hw_mac_triple_%s_"
 
-	termDNSHitFmt = "dns-%s"
+	termDHCPVendorFmt      = "dh_vendor_agent_%s_"
+	termDHCPOptionsFmt     = "dh_vendor_options_%s_"
+	termDHCPAAPLSpecialFmt = "dh_aapl_special_%s_"
+
+	termDNSHitFmt = "dns_%s_"
+
+	dnsINRequestPat = ";(.*)\tIN\t (.*)"
 )
+
+var dnsINRequestRE = regexp.MustCompile(dnsINRequestPat)
 
 func extractDNSRecords(B *backdrop) error {
 	dnss := make(map[string]hostBucket)
@@ -86,19 +103,29 @@ func extractDNSRecords(B *backdrop) error {
 			for q := range di.Request[r].Request {
 				host := di.Request[r].Request[q]
 				vals := dnsINRequestRE.FindStringSubmatch(host)
-				slog.Infof("name = %s, query = '%s'", vals[1], vals[2])
+
+				if len(vals) == 0 {
+					slog.Infof("no re match: %s", host)
+					continue
+				}
 
 				hb, present := dnss[vals[1]]
 				if !present {
 					hb = hostBucket{}
 				}
-				switch vals[2] {
-				case "A":
-					hb.ACount++
-				case "AAAA":
-					hb.AAAACount++
-				default:
-					hb.OtherCount++
+
+				if len(vals) == 3 {
+					slog.Infof("name = %s, query = '%s'", vals[1], vals[2])
+					switch vals[2] {
+					case "A":
+						hb.ACount++
+					case "AAAA":
+						hb.AAAACount++
+					default:
+						hb.OtherCount++
+					}
+				} else {
+					slog.Info("unusual re match length: %d %+v", len(vals), vals)
 				}
 				dnss[vals[1]] = hb
 			}
@@ -107,6 +134,7 @@ func extractDNSRecords(B *backdrop) error {
 
 	used := make(map[string]int)
 
+	fmt.Printf(" %60s %5s %5s %5s\n", "DOMAIN", "#A", "#AAAA", "#OTH")
 	for d := range dnss {
 		found := false
 		for m := range dnsAttributes {
@@ -136,13 +164,14 @@ func extractDNSRecords(B *backdrop) error {
 
 func smashMfg(mfg string) string {
 	l := strings.ToLower(mfg)
-	l = strings.Replace(l, "(", "-", -1)
-	l = strings.Replace(l, ")", "-", -1)
-	l = strings.Replace(l, ",", "-", -1)
-	l = strings.Replace(l, ".", "-", -1)
-	l = strings.Replace(l, "\u00a0", "-", -1) // Non-breaking space.
-	l = strings.Replace(l, " ", "-", -1)
-	return strings.Trim(l, "-")
+	l = strings.Replace(l, "(", separator, -1)
+	l = strings.Replace(l, ")", separator, -1)
+	l = strings.Replace(l, ",", separator, -1)
+	l = strings.Replace(l, ".", separator, -1)
+	l = strings.Replace(l, "-", separator, -1)
+	l = strings.Replace(l, "\u00a0", separator, -1) // Non-breaking space.
+	l = strings.Replace(l, " ", separator, -1)
+	return strings.Trim(l, separator)
 }
 
 func macToMfgAlias(ouiDB oui.OuiDB, smac string) string {
@@ -169,12 +198,12 @@ func wordifyDHCPOptions(opts []byte) string {
 		stropt = append(stropt, fmt.Sprintf("%d", b))
 	}
 
-	return strings.Join(stropt, "-")
+	return strings.Join(stropt, separator)
 }
 
 func appendOnlyNew(sentence []string, terms ...string) []string {
 	for _, term := range terms {
-		sterm := strings.Replace(term, ".", "-", -1)
+		sterm := strings.Replace(term, ".", separator, -1)
 
 		for _, t := range sentence {
 			if t == sterm {
@@ -188,19 +217,24 @@ func appendOnlyNew(sentence []string, terms ...string) []string {
 	return sentence
 }
 
-const ediEntityVersion = "0"
+const ediEntityVersion = "1"
 
-func extractDeviceInfoEntity(di *base_msg.DeviceInfo) sentence {
+func extractDeviceInfoEntity(ouiDB oui.OuiDB, di *base_msg.DeviceInfo) sentence {
 	s := newSentence()
 
-	// for e := range di.Entity {
-	// 	continue
-	// }
+	mac := network.Uint64ToMac(*di.MacAddress)
+
+	// Manufacturer's name.
+	mfg := macToMfgAlias(ouiDB, mac)
+	s.addTermf(termMacMfgFmt, smashMfg(mfg))
+
+	// First three octets of MAC.
+	s.addTermf(termMacTripleFmt, strings.ReplaceAll(mac[0:8], ":", separator))
 
 	return s
 }
 
-const ediDHCPVersion = "1"
+const ediDHCPVersion = "0"
 
 var emptyDHCPOptions string
 
@@ -222,8 +256,6 @@ func extractDeviceInfoDHCP(di *base_msg.DeviceInfo) (sentence, string) {
 			}
 
 			s.addTermf(termDHCPVendorFmt, vendorMatch)
-		} else {
-			s.addTermf(termDHCPVendorFmt, "empty")
 		}
 
 		options := di.Options[o].ParamReqList
@@ -261,8 +293,9 @@ func extractDeviceInfoDNS(di *base_msg.DeviceInfo) sentence {
 
 			for i := range dnsAttributes {
 				if strings.Contains(host, dnsAttributes[i]) {
-					s.addTermf(termDNSHitFmt,
-						dnsAttributes[i])
+					l := strings.Replace(dnsAttributes[i], ".", separator, -1)
+					l = strings.Replace(l, "-", separator, -1)
+					s.addTermf(termDNSHitFmt, l)
 				}
 			}
 		}
@@ -271,7 +304,7 @@ func extractDeviceInfoDNS(di *base_msg.DeviceInfo) sentence {
 	return s
 }
 
-const ediListenVersion = "0"
+const ediListenVersion = "1"
 
 func extractDeviceInfoListen(di *base_msg.DeviceInfo) sentence {
 	s := newSentence()
@@ -282,12 +315,12 @@ func extractDeviceInfoListen(di *base_msg.DeviceInfo) sentence {
 			// XXX We only want to add this if a device is
 			// publishing, not using SEARCH or DISCOVER.
 			if *di.Listen[l].Ssdp.Type == base_msg.EventSSDP_ALIVE {
-				s.addTerm("listen-ssdp")
+				s.addTerm("listen_ssdp")
 			}
 		} else if *di.Listen[l].Type == base_msg.EventListen_mDNS {
 			// XXX We only want to add this if a device is
 			// publishing, not querying.
-			s.addTerm("listen-mdns")
+			s.addTerm("listen_mdns")
 		}
 	}
 
@@ -305,7 +338,7 @@ func extractDeviceInfoScan(di *base_msg.DeviceInfo) sentence {
 				if *port.PortId > 10000 {
 					continue
 				}
-				s.addTermf("scan-port-%s-%d",
+				s.addTermf("scan_port_%s_%d",
 					*di.Scan[sc].Hosts[h].Ports[p].Protocol,
 					*di.Scan[sc].Hosts[h].Ports[p].PortId)
 			}
@@ -316,7 +349,7 @@ func extractDeviceInfoScan(di *base_msg.DeviceInfo) sentence {
 }
 
 func getCombinedVersion() string {
-	return ediEntityVersion + ediDHCPVersion + ediDNSVersion + ediListenVersion + ediScanVersion
+	return ediSeparatorVersion + ediEntityVersion + ediDHCPVersion + ediDNSVersion + ediListenVersion + ediScanVersion
 }
 
 // The Bayesian sentence we compute from a DeviceInfo is composed of the
@@ -329,13 +362,7 @@ func genBayesSentenceFromDeviceInfo(ouiDB oui.OuiDB, di *base_msg.DeviceInfo) (s
 		return getCombinedVersion(), s
 	}
 
-	mac := network.Uint64ToMac(*di.MacAddress)
-
-	mfg := macToMfgAlias(ouiDB, mac)
-
-	s.addTermf(termMacMfgFmt, smashMfg(mfg))
-
-	entitySentence := extractDeviceInfoEntity(di)
+	entitySentence := extractDeviceInfoEntity(ouiDB, di)
 	s.addSentence(entitySentence)
 
 	dhcpSentence, _ := extractDeviceInfoDHCP(di)
@@ -507,7 +534,7 @@ func extractDevices(B *backdrop) error {
 	}
 
 	for rows.Next() {
-		var rdi RecordedDeviceInfo
+		var rdi RecordedDevice
 		deviceFound := false
 		osFound := false
 

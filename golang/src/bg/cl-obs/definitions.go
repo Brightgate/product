@@ -110,6 +110,7 @@ var deviceGenusMap = map[int]string{
 	0x1f: "Apple AirPort",
 	0x20: "OBi100/200",
 	0x21: "Dreambox",
+	0x22: "Wyze Cam",
 }
 
 var deviceRevMap map[string]uint64
@@ -235,7 +236,7 @@ const unknownDHCPVendor = "-unknown-dhcp-vendor-"
 
 var dhcpVendors = []string{
 	unknownDHCPVendor,
-	"aastra-ip-phone",
+	"aastra_ip_phone",
 	"android",
 	"araknis",
 	"canon",
@@ -246,9 +247,9 @@ var dhcpVendors = []string{
 	"microsoft",
 	"hp",
 	"polycom",
-	"rabbit-2000",
+	"rabbit_2000",
 	"solaris",
-	"sony-ps4",
+	"sony_ps4",
 	"ubiquiti",
 	"udhcp",
 	"udhcpc",
@@ -257,24 +258,26 @@ var dhcpVendors = []string{
 
 var dhcpVendorPatterns = map[string]string{
 	unknownDHCPVendor:            unknownDHCPVendor, // Shouldn't match any agents.
-	"^AastraIPPhone":             "aastra-ip-phone",
+	"^AastraIPPhone":             "aastra_ip_phone",
 	"^android-dhcp-":             "android",
 	"^Araknis":                   "araknis",
 	"^Canon":                     "canon",
 	"^Cytracom ":                 "cytracom",
 	"^DHCPV4C":                   "dhcpv4",
 	"^dhcpcd[- ]":                "dhcpcd",
+	"^EDGEMARC":                  "edgemark",
+	"^Grandstream":               "grandstream",
 	"^GoogleWifi":                "google",
 	"^Linux":                     "linux",
 	"^HP LaserJet":               "hp",
 	"^HP Printer":                "hp",
 	"^Hewlett-Packard OfficeJet": "hp",
 	"^Hewlett-Packard JetDirect": "hp",
-	"^HUAWEI:android":            "huawei-android",
+	"^HUAWEI:android":            "huawei_android",
 	"^MSFT ":                     "microsoft",
 	"^Polycom-":                  "polycom",
-	"^PS4":                       "sony-ps4",
-	"^Rabbit2000-TCPIP":          "rabbit-2000",
+	"^PS4":                       "sony_ps4",
+	"^Rabbit2000-TCPIP":          "rabbit_2000",
 	"^SUNW.i86pc":                "solaris",
 	"^ubnt":                      "ubiquiti",
 	"^udhcpc":                    "udhcpc",
@@ -288,8 +291,11 @@ var dhcpReverseVendorMap map[string]uint64
 
 // Notable DNS queries.
 //   Queries not present in this list are ignored when a classifier is
-//   being trained from incoming DeviceInfos.  Keep ordered with
-//     sort -t . -k4,4 -k3,3 -k2,2 -k1,1
+//   being trained from incoming DeviceInfos.  If you add or delete more than
+//   one or two, you must bump the DNS extraction version.
+//
+//   Keep ordered with
+//	sort -t . -k4,4 -k3,3 -k2,2 -k1,1
 var dnsAttributes = []string{
 	"api.amazon.com",
 	"device-messaging-na.amazon.com",
@@ -302,14 +308,15 @@ var dnsAttributes = []string{
 	"gs.apple.com",
 	"gs-loc.apple.com",
 	"guzzoni.apple.com",
+	"iadsdk.apple.com",
 	"iphone-ld.apple.com",
 	"lcdn-locator.apple.com",
 	"ls.apple.com",
+	"mesu.apple.com",
 	"push.apple.com",
 	"time.apple.com",
 	"time-ios.apple.com",
 	"xp.apple.com",
-	"clients3.google.com",
 	"time1.google.com",
 	"play.googleapis.com",
 	"connectivitycheck.gstatic.com",
@@ -320,6 +327,7 @@ var dnsAttributes = []string{
 	"-calendars.icloud.com",
 	"-ckdatabase.icloud.com",
 	"-contacts.icloud.com",
+	"gateway.icloud.com",
 	"-keyvalueservice.icloud.com",
 	"-quota.icloud.com",
 	"setup.icloud.com",
@@ -327,27 +335,45 @@ var dnsAttributes = []string{
 	"www.msftconnecttest.com",
 	"devices.nest.com",
 	"frontdoor.nest.com",
-	"weather.nest.com",
+	"time.nest.com",
+	"sonos.pandora.com",
+	"update-firmware.sonos.com",
 	"sr.symcd.com",
 	"daisy.ubuntu.com",
 	"ntp.ubuntu.com",
 	"time.windows.com",
+	"download.windowsupdate.com",
 	"heartbeat.xwemo.com",
+	// "weather.nest.com",		// Also used by phone app.
+	// "clients3.google.com",	// Also used by Sonos.
 	"heartbeat.lswf.net",
+	"dl.playstation.net",
 	"api.xbcs.net",
 	"nat.xbcs.net",
 	"archive.raspberrypi.org",
 	"mirrordirector.raspbian.org",
+	"time-osx.g.aaplimg.com.",
 	"api-glb-sjc.smoot.apple.com",
 	"android.clients.google.com",
 	"settings-win.data.microsoft.com",
 	"displaycatalog.mp.microsoft.com",
 	"transport.home.nest.com",
+	"feature-config.sslauth.sonos.com",
+	"account.ws.sonos.com",
+	"service-catalog.ws.sonos.com",
 	"remserv11.support.xerox.com",
+	"epdg.epc.att.net",
+	"sentitlement2.mobile.att.net",
+	"vvm.mobile.att.net",
+	"np.communication.playstation.net",
+	"np.community.playstation.net",
 	"ps4.update.playstation.net",
 	"android.pool.ntp.org",
 	"debian.pool.ntp.org",
 	"openwrt.pool.ntp.org",
+	"smartos.pool.ntp.org",
+	"sonostime.pool.ntp.org",
+	"ubnt.pool.ntp.org",
 }
 
 func initMaps() {

@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -9,6 +9,7 @@
 //
 
 // Implementation of a Bayesian classifier for the device family.
+
 package main
 
 import (
@@ -44,7 +45,7 @@ func initDeviceGenusBayesClassifier() bayesClassifier {
 	return m
 }
 
-func deviceGenusTargetValue(rdi RecordedDeviceInfo) string {
+func deviceGenusTargetValue(rdi RecordedDevice) string {
 	_, present := deviceRevMap[rdi.AssignedDeviceGenus]
 	if !present {
 		slog.Warnf("deviceRevMap unknown device %s", rdi.AssignedDeviceGenus)
@@ -54,11 +55,11 @@ func deviceGenusTargetValue(rdi RecordedDeviceInfo) string {
 	return rdi.AssignedDeviceGenus
 }
 
-func trainDeviceGenusBayesClassifier(B *backdrop, ifLookup string) error {
+func trainDeviceGenusBayesClassifier(B *backdrop) error {
 	var trainData []machine
 
 	dgs := initDeviceGenusBayesClassifier()
-	err := dgs.GenSetFromDB(B, ifLookup)
+	err := dgs.GenSetFromDB(B)
 	if err != nil {
 		return errors.Wrap(err, "unable to train os species")
 	}

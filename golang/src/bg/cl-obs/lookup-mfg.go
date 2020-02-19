@@ -25,7 +25,7 @@ func initInterfaceMfgLookupClassifier() lookupClassifier {
 	}
 }
 
-func lookupInterfaceMfgTargetValue(rdi RecordedDeviceInfo) string {
+func lookupInterfaceMfgTargetValue(rdi RecordedDevice) string {
 	return ""
 }
 

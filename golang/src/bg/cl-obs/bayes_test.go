@@ -64,11 +64,11 @@ func TestAddRedundantSentence(t *testing.T) {
 	q := newSentenceFromString("potato carrot")
 	r := newSentenceFromString("avocado turnip")
 
-	added := r.addSentence(q)
+	r.addSentence(q)
 
 	s := newSentenceFromString("carrot turnip")
 
-	added = r.addSentence(s)
+	added := r.addSentence(s)
 
 	assert.Equal(t, 4, r.termCount(), "sentence should have termCount matching sum of distinct terms in sentences")
 	assert.Equal(t, true, added, "sentence addition has only redundant content")

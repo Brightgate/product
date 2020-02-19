@@ -76,7 +76,7 @@ type bayesClassifier struct {
 	uncertainBelow     float64
 	unknownValue       string
 	classificationProp string
-	TargetValue        func(rdi RecordedDeviceInfo) string
+	TargetValue        func(rdi RecordedDevice) string
 }
 
 // A sentence is implemented using a map so that we can easily compute
@@ -229,8 +229,8 @@ func (s sentence) wordHash() uint64 {
 	return h.Sum64()
 }
 
-func (m *bayesClassifier) GenSetFromDB(B *backdrop, ifLookup string) error {
-	var devices []RecordedDeviceInfo
+func (m *bayesClassifier) GenSetFromDB(B *backdrop) error {
+	var devices []RecordedDevice
 	err := B.db.Select(&devices, "SELECT * FROM device;")
 	if err != nil {
 		return errors.Wrap(err, "select device failed")

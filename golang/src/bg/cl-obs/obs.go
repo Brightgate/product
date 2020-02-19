@@ -54,8 +54,8 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
-	"regexp"
 	"runtime/pprof"
 	"strings"
 	"sync"
@@ -110,9 +110,9 @@ type RecordedInventory struct {
 	BayesSentence        string    `db:"bayes_sentence"`
 }
 
-// RecordedDeviceInfo represents a row of the device table.  The device table
-// is a collection of the devices and value assignments for the training set.
-type RecordedDeviceInfo struct {
+// RecordedDevice represents a row of the device table.  The device table is
+// a collection of the devices and value assignments for the training set.
+type RecordedDevice struct {
 	DGroupID              int    `db:"dgroup_id"`
 	DeviceMAC             string `db:"device_mac"`
 	AssignedOSGenus       string `db:"assigned_os_genus"`
@@ -395,10 +395,6 @@ type hostBucket struct {
 	OtherCount int
 }
 
-const dnsINRequestPat = ";(.*)\tIN\t (.*)"
-
-var dnsINRequestRE = regexp.MustCompile(dnsINRequestPat)
-
 func printDHCPOptions(w io.Writer, do []*base_msg.DHCPOptions) {
 	var params []byte
 	var vendor []byte
@@ -591,101 +587,13 @@ func listSites(B *backdrop, includeDevices bool, noNames bool, args []string) er
 func siteSub(cmd *cobra.Command, args []string) error {
 	verbose, _ := cmd.Flags().GetBool("verbose")
 	noNames, _ := cmd.Flags().GetBool("no-names")
+
 	return listSites(&_B, verbose, noNames, args)
 }
 
 func deviceSub(cmd *cobra.Command, args []string) error {
 	verbose, _ := cmd.Flags().GetBool("verbose")
 	return listDevices(&_B, verbose)
-}
-
-func reviewSub(cmd *cobra.Command, args []string) error {
-	missed := make([]RecordedTraining, 0)
-
-	if _B.ingester == nil {
-		return errors.Errorf("You must provide --dir or --project")
-	}
-
-	rows, err := _B.db.Queryx("SELECT * FROM training ORDER BY device_mac;")
-	if err != nil {
-		return errors.Wrap(err, "select training failed")
-	}
-
-	rowCount := 0
-	validCount := 0
-	redundCount := 0
-
-	var devicemac string
-	devicesent := newSentence()
-
-	for rows.Next() {
-		var dt RecordedTraining
-
-		err = rows.StructScan(&dt)
-		if err != nil {
-			slog.Errorf("training scan failed: %v\n", err)
-			continue
-		}
-
-		rowCount++
-
-		dtr, rerr := readerFromTraining(&_B, dt)
-		if rerr != nil {
-			missed = append(missed, dt)
-			continue
-		}
-
-		validCount++
-
-		_, sent := genBayesSentenceFromReader(_B.ouidb, dtr)
-		if dt.DeviceMAC == devicemac {
-			n := devicesent.addSentence(sent)
-			if !n {
-				slog.Warnf("no new information in (%s, %s, %s)", dt.SiteUUID, dt.DeviceMAC, dt.UnixTimestamp)
-				redundCount++
-			}
-		} else {
-			devicesent = sent
-			devicemac = dt.DeviceMAC
-		}
-	}
-
-	// Review missed.
-	for _, dt := range missed {
-		se, _ := _B.ingester.SiteExists(&_B, dt.SiteUUID)
-		if !se {
-			slog.Errorf("training entry refers to non-existent site %s", dt.SiteUUID)
-		}
-
-		slog.Errorf("missing information for (%s, %s, %s)", dt.SiteUUID, dt.DeviceMAC, dt.UnixTimestamp)
-	}
-
-	slog.Infof("training table has %d/%d valid rows (%f)", validCount, rowCount, float32(validCount)/float32(rowCount))
-	slog.Infof("training table has %d/%d redundant rows (%f)", redundCount, rowCount, float32(redundCount)/float32(rowCount))
-
-	if !_B.modelsLoaded {
-		return fmt.Errorf("model database does not exist")
-	}
-
-	// Model review
-	models := []RecordedClassifier{}
-	err = _B.modeldb.Select(&models, "SELECT * FROM model ORDER BY name ASC")
-	if err != nil {
-		return fmt.Errorf("model select failed: %+v", err)
-	}
-
-	slog.Infof("models: %d", len(models))
-
-	for _, m := range models {
-		switch m.ClassifierType {
-		case "bayes":
-			fmt.Println(reviewBayes(m))
-		case "lookup":
-			fmt.Printf("Lookup Classifier, Name: %s\n", m.ModelName)
-		}
-	}
-
-	return nil
 }
 
 func getModels(B *backdrop) ([]RecordedClassifier, error) {
@@ -849,12 +757,14 @@ func lsByUUID(u string, details bool) error {
 	return nil
 }
 
-func lsByMac(m string, details bool) error {
+func lsByMac(m string, details bool, redundant bool) error {
 	rows, err := _B.db.Queryx("SELECT * FROM inventory WHERE device_mac = ? ORDER BY inventory_date DESC;", m)
 
 	if err != nil {
 		return errors.Wrap(err, "inventory Queryx error")
 	}
+
+	sent := newSentence()
 
 	for rows.Next() {
 		var ri RecordedInventory
@@ -862,6 +772,11 @@ func lsByMac(m string, details bool) error {
 		err = rows.StructScan(&ri)
 		if err != nil {
 			slog.Errorf("struct scan failed : %v", err)
+			continue
+		}
+
+		dupe := sent.addString(ri.BayesSentence)
+		if !redundant && dupe {
 			continue
 		}
 
@@ -873,11 +788,11 @@ func lsByMac(m string, details bool) error {
 
 		content := getContentStatusFromReader(rdr)
 
-		fmt.Printf("-- %v %v %v %v\n",
+		fmt.Printf("-- %v %v %v %v %v\n",
 			ri.DeviceMAC,
 			getMfgFromMAC(&_B, ri.DeviceMAC),
 			ri.InventoryDate.String(),
-			content)
+			content, sent)
 
 		fmt.Printf("insert or replace into training (dgroup_id, site_uuid, device_mac, unix_timestamp) values (0, \"%s\", \"%s\", \"%s\");\n", ri.SiteUUID, ri.DeviceMAC, ri.UnixTimestamp)
 		// Display deviceInfo if verbose.
@@ -899,6 +814,7 @@ func lsByMac(m string, details bool) error {
 func lsSub(cmd *cobra.Command, args []string) error {
 	var err error
 	// Each argument to the ls subcommand is a MAC address or site UUID/Name
+	redundant, _ := cmd.Flags().GetBool("redundant")
 	verbose, _ := cmd.Flags().GetBool("verbose")
 
 	_B.ingester, err = setupIngester(cmd)
@@ -909,7 +825,7 @@ func lsSub(cmd *cobra.Command, args []string) error {
 	for _, arg := range args {
 		// is it a mac?
 		if _, err := net.ParseMAC(arg); err == nil {
-			err := lsByMac(arg, verbose)
+			err := lsByMac(arg, verbose, redundant)
 			if err != nil {
 				return err
 			}
@@ -951,22 +867,82 @@ func extractSub(cmd *cobra.Command, args []string) error {
 }
 
 func trainSub(cmd *cobra.Command, args []string) error {
-	if !_B.modelsLoaded {
-		return errors.Errorf("Model not loaded.  You may need to pass --model-file")
-	}
+	modelFile, _ := cmd.Flags().GetString("model-file")
+	outBucket, _ := cmd.Flags().GetString("output-bucket")
+
 	if _B.ingester == nil {
 		return errors.Errorf("You must provide --dir or --project")
 	}
-	if err := trainDeviceGenusBayesClassifier(&_B, "XXX"); err != nil {
+
+	if !_B.modelsLoaded {
+		return errors.Errorf("Model not loaded.  You may need to pass --model-file")
+	}
+
+	if err := trainDeviceGenusBayesClassifier(&_B); err != nil {
 		return err
 	}
-	if err := trainOSGenusBayesClassifier(&_B, "XXX"); err != nil {
+	if err := trainOSGenusBayesClassifier(&_B); err != nil {
 		return err
 	}
-	if err := trainOSSpeciesBayesClassifier(&_B, "XXX"); err != nil {
+	if err := trainOSSpeciesBayesClassifier(&_B); err != nil {
 		return err
 	}
 	trainInterfaceMfgLookupClassifier(&_B)
+
+	slog.Infof("training models complete")
+
+	// If the 'output-bucket' flag is set then copy the model output
+	// file to GCS.
+	// "bg-classifier-support" is the production bucket.
+	if outBucket != "" {
+		cenv := os.Getenv(googleCredentialsEnvVar)
+		if cenv == "" {
+			return fmt.Errorf("Provide cloud credentials through %s envvar",
+				googleCredentialsEnvVar)
+		}
+
+		ctx := context.Background()
+		client, err := storage.NewClient(ctx, option.WithCredentialsFile(cenv))
+
+		if err != nil {
+			slog.Fatalf("cannot access cloud storage: %v", err)
+		}
+
+		rdr, err := os.Open(modelFile)
+		if err != nil {
+			slog.Fatalf("cannot open '%s' to upload to bucket '%s': %v",
+				modelFile, outBucket, err)
+		}
+
+		bkt := client.Bucket(outBucket)
+		_, err = bkt.Attrs(ctx)
+		if err != nil {
+			slog.Fatalf("cannot retrieve bucket attrs for %s: %v", outBucket, err)
+		}
+
+		ufn := path.Base(modelFile)
+
+		obj := bkt.Object(ufn)
+		_, err = obj.Attrs(ctx)
+		if err != nil {
+			slog.Infof("cannot retrieve object attrs for %s: %v", obj.ObjectName(), err)
+		}
+
+		wrt := obj.NewWriter(ctx)
+
+		written, err := io.Copy(wrt, rdr)
+		if err != nil {
+			slog.Infof("upload i/o error: %v", err)
+		} else {
+			slog.Infof("uploaded %d bytes", written)
+		}
+
+		err = wrt.Close()
+		if err != nil {
+			slog.Fatalf("close failure on upload: %v", err)
+		}
+	}
+
 	return nil
 }
 
@@ -1164,6 +1140,7 @@ func main() {
 		RunE:  lsSub,
 	}
 	lsCmd.Flags().BoolP("verbose", "v", false, "detailed output")
+	lsCmd.Flags().Bool("redundant", false, "also show redundant objects")
 	rootCmd.AddCommand(lsCmd)
 
 	ingestCmd := &cobra.Command{
@@ -1193,6 +1170,7 @@ func main() {
 		Args:  cobra.NoArgs,
 		RunE:  trainSub,
 	}
+	trainCmd.Flags().String("output-bucket", "", "also write output to given bucket")
 	rootCmd.AddCommand(trainCmd)
 
 	reviewCmd := &cobra.Command{

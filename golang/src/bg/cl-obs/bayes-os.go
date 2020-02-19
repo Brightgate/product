@@ -47,7 +47,7 @@ func initOSGenusBayesClassifier() bayesClassifier {
 	return m
 }
 
-func osGenusTargetValue(rdi RecordedDeviceInfo) string {
+func osGenusTargetValue(rdi RecordedDevice) string {
 	_, present := osRevGenusMap[rdi.AssignedOSGenus]
 	if !present {
 		slog.Warnf("osRevGenusMap unknown OS %s", rdi.AssignedOSGenus)
@@ -73,7 +73,7 @@ func initOSSpeciesBayesClassifier() bayesClassifier {
 	return m
 }
 
-func osSpeciesTargetValue(rdi RecordedDeviceInfo) string {
+func osSpeciesTargetValue(rdi RecordedDevice) string {
 	_, present := osRevSpeciesMap[rdi.AssignedOSSpecies]
 	if !present {
 		slog.Warnf("osRevSpeciesMap unknown OS %s", rdi.AssignedOSSpecies)
@@ -83,11 +83,11 @@ func osSpeciesTargetValue(rdi RecordedDeviceInfo) string {
 	return rdi.AssignedOSSpecies
 }
 
-func trainOSGenusBayesClassifier(B *backdrop, ifLookup string) error {
+func trainOSGenusBayesClassifier(B *backdrop) error {
 	var trainData []machine
 
 	ogs := initOSGenusBayesClassifier()
-	err := ogs.GenSetFromDB(B, ifLookup)
+	err := ogs.GenSetFromDB(B)
 	if err != nil {
 		return errors.Wrap(err, "unable to train os genus")
 	}
@@ -102,11 +102,11 @@ func trainOSGenusBayesClassifier(B *backdrop, ifLookup string) error {
 	return nil
 }
 
-func trainOSSpeciesBayesClassifier(B *backdrop, ifLookup string) error {
+func trainOSSpeciesBayesClassifier(B *backdrop) error {
 	var trainData []machine
 
 	oss := initOSSpeciesBayesClassifier()
-	err := oss.GenSetFromDB(B, ifLookup)
+	err := oss.GenSetFromDB(B)
 	if err != nil {
 		return errors.Wrap(err, "unable to train os species")
 	}

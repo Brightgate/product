@@ -311,18 +311,31 @@ func classifyMac(B *backdrop, models []RecordedClassifier, siteUUID string, mac 
 	err := B.db.Select(&records, `
 		SELECT * FROM inventory
 		WHERE device_mac = $1
-		ORDER BY inventory_date DESC
-		LIMIT 12`, mac)
+		ORDER BY inventory_date DESC`, mac)
 	if err != nil {
 		slog.Errorf("select failed for %s: %+v", mac, err)
 		return "-classify-fails-", newSentence()
 	}
 
-	sent := combineSentenceFromInventory(records)
+	filteredRecords := []RecordedInventory{}
+
+	ninetyDaysAgo := time.Now().Add(-90 * 24 * time.Hour)
+	for _, rec := range records {
+		if len(filteredRecords) < 50 || rec.InventoryDate.After(ninetyDaysAgo) {
+			filteredRecords = append(filteredRecords, rec)
+		}
+	}
+	slog.Debugf("combined %d records from %v - %v to use in classification",
+		len(filteredRecords),
+		filteredRecords[len(filteredRecords)-1].InventoryDate,
+		filteredRecords[0].InventoryDate)
+
+	sent := combineSentenceFromInventory(filteredRecords)
+	slog.Debugf("90 day sentence: %s", sent.toString())
 
 	var siteUUIDs []string
 	if siteUUID == "" {
-		siteUUIDs = affectedSitesFromInventory(records)
+		siteUUIDs = affectedSitesFromInventory(filteredRecords)
 	} else {
 		siteUUIDs = append(siteUUIDs, siteUUID)
 	}
