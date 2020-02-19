@@ -649,7 +649,8 @@ func selectRingHandler(p dhcp.Packet, options dhcp.Options) *ringHandler {
 		if requestRing != "" {
 			src += "('" + requestRing + "' ring)"
 		}
-		txt := "client from " + ring + " ring requested address on " + src
+		txt := "client " + mac + " from " + ring +
+			" ring requested address on " + src
 		err = fmt.Errorf(txt)
 
 		// Once a client starts requesting on the wrong ring, they may

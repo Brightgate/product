@@ -26,7 +26,7 @@
 #   packages.  For OpenWrt, the sum is the Git hash of the rWRT repository that
 #   produced the sysroot.
 
-PATH=/usr/bin:/usr/sbin:/bin
+PATH=/usr/bin:/usr/sbin:/bin:/sbin
 export PATH
 
 pname=$(basename "$0")
@@ -167,17 +167,15 @@ info "SYSROOT_NAME=$SYSROOT_NAME  (Based on $cfgfile)"
 
 [[ -d $SYSROOT_NAME ]] && fatal "looks like $SYSROOT_NAME already exists"
 
-# Fetch tensorflow upfront.  In the future we will want to cross compile
-# TensorFlow as part of our CI workflow.  For now just download a pre-built
-# binary.
-info "Fetching tensorflow"
-tmpdir=$(mktemp --directory)
-git clone -n ssh://git@ph0.b10e.net:2222/source/Extbin.git $tmpdir/Extbin || fatal "git clone failed"
-git -C $tmpdir/Extbin checkout f2a32eb || fatal "git checkout failed"
-ln $tmpdir/Extbin/tensorflow/libtensorflow-r1.4.1-raspberrypi.tar.gz $tmpdir
-trap "rm -fr $tmpdir" EXIT
-
 /usr/sbin/multistrap -f "$cfgfile" || fatal "multistrap failed!"
+
+if [[ "$DISTRO" == "debian" ]]; then
+	PFRING=pfring-dev_7.4.0_$ARCH.deb
+	$GCS_WRAPPER cp gs://$SYSROOT_BUCKET_NAME/$PFRING . || \
+		fatal "could not download gs://$SYSROOT_BUCKET_NAME/$PFRING"
+
+	fakeroot dpkg -i --force-architecture --root=$SYSROOT_NAME $PFRING || fatal "can't install $PFRING"
+fi
 
 NEW_SUM=$(egrep "^(Package|Version):" $SYSROOT_NAME/var/lib/dpkg/status | sha256sum | awk '{print $1}')
 if [[ $NEW_SUM != $SYSROOT_SUM ]]; then
@@ -202,13 +200,6 @@ info "remove unnecessary but large files from var"
 # Keep .list, .shlibs, and .symbols files around because they're used by dpkg-shlibdeps
 find $SYSROOT_NAME/var/lib/dpkg/info -type f \
     \! \( -name '*.list' -o -name '*.shlibs' -o -name '*.symbols' \) -exec rm \{\} +
-
-info "Adding tensorflow"
-mkdir -p "$SYSROOT_NAME/usr/local/lib"
-tar --to-stdout -x -f "$tmpdir/libtensorflow-r1.4.1-raspberrypi.tar.gz" \
-	raspberrypi_cross/libtensorflow.so > "$SYSROOT_NAME/usr/local/lib/libtensorflow.so" || \
-	fatal "tar extract failed"
-chmod a+rx "$SYSROOT_NAME/usr/local/lib/libtensorflow.so"
 
 touch $SYSROOT_NAME/.$NEW_SUM
 

@@ -28,7 +28,7 @@ import (
 	// Requires libpcap
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"github.com/google/gopacket/pcap"
+	"github.com/google/gopacket/pfring"
 )
 
 var (
@@ -66,7 +66,7 @@ type samplerState struct {
 	ring   string
 	iface  string
 	hwaddr net.HardwareAddr
-	handle *pcap.Handle
+	handle *pfring.Ring
 
 	// State of the current packet being analyzed
 	parser      *gopacket.DecodingLayerParser
@@ -342,10 +342,12 @@ func findInterface(ring, bridge string) (net.HardwareAddr, error) {
 	return hwaddr, err
 }
 
-func openInterface(bridge string) (*pcap.Handle, error) {
-	handle, err := pcap.OpenLive(bridge, 65536, true, pcap.BlockForever)
+func openInterface(bridge string) (*pfring.Ring, error) {
+	handle, err := pfring.NewRing(bridge, 1024, pfring.FlagPromisc)
 	if err != nil {
-		err = fmt.Errorf("pcap.OpenLive(%s) failed: %v", bridge, err)
+		err = fmt.Errorf("pfring.NewRing(%s) failed: %v", bridge, err)
+	} else if err = handle.Enable(); err != nil {
+		err = fmt.Errorf("pfring.Enable(%s) failed: %v", bridge, err)
 	}
 
 	return handle, err
@@ -364,16 +366,39 @@ func parserInit(state *samplerState) {
 		&state.decodedTCP)
 }
 
-//
+// Check the ring stats on each packet processed.  Log a message whenever we've
+// dropped 100+ packets, as long as it's been at least 10 seconds since the
+// previous message.
+func ringStatsUpdate(state *samplerState, old *pfring.Stats, when *time.Time) {
+	stats, _ := state.handle.Stats()
+	dropped := int64(stats.Dropped - old.Dropped)
+
+	if dropped >= 100 {
+		now := time.Now()
+		if elapsed := now.Sub(*when); elapsed >= 10*time.Second {
+			metrics.droppedPkts.Add(dropped)
+			processed := stats.Received - old.Received
+			pct := 100.0 * (float64(dropped) / float64(processed))
+			slog.Infof("%s dropped %d of %d packets(%1.2f) in %v",
+				state.iface, dropped, processed, pct, elapsed)
+
+			*when = time.Now()
+			*old = stats
+		}
+	}
+}
+
 // Per-interface loop that endlessly consumes and processes packets
-//
 func sampleLoop(state *samplerState) {
-	lastDropped := 0
-	packets := 0
+	stats := pfring.Stats{}
+	lastUpdate := time.Now()
 
 	for samplerRunning {
+		ringStatsUpdate(state, &stats, &lastUpdate)
+
 		data, _, err := state.handle.ZeroCopyReadPacketData()
 		if err != nil {
+			slog.Warnf("Error reading packet data: %v", err)
 			if err != io.EOF || samplerRunning {
 				slog.Warnf("Error reading packet data: %v", err)
 			}
@@ -382,19 +407,6 @@ func sampleLoop(state *samplerState) {
 
 		processOnePacket(state, data)
 		metrics.sampledPkts.Inc()
-
-		packets++
-		if packets%10000 == 0 {
-			s, err := state.handle.Stats()
-			delta := s.PacketsDropped - lastDropped
-			if err == nil && delta != 0 {
-				slog.Infof("%s: dropped %d of %d packets",
-					state.iface, s.PacketsDropped,
-					s.PacketsReceived)
-				lastDropped = s.PacketsDropped
-				metrics.missedPkts.Add(int64(delta))
-			}
-		}
 	}
 }
 
@@ -409,7 +421,7 @@ func sampleInterface(state *samplerState) {
 
 	parserInit(state)
 	for samplerRunning {
-		var hdl *pcap.Handle
+		var hdl *pfring.Ring
 
 		hwaddr, err := findInterface(ring, bridge)
 		if err == nil {
@@ -429,6 +441,7 @@ func sampleInterface(state *samplerState) {
 		}
 		tlog.Clear()
 
+		hdl.SetSocketMode(pfring.ReadOnly)
 		slog.Infof("Sampler for %s (%s) online", bridge, ring)
 		state.hwaddr = hwaddr
 		state.handle = hdl
@@ -443,7 +456,7 @@ func sampleFini(w *watcher) {
 	samplerRunning = false
 	for _, s := range samplers {
 		if s.handle != nil {
-			s.handle.Close()
+			s.handle.Disable()
 		}
 	}
 

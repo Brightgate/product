@@ -264,6 +264,7 @@
     ".",
     "layers",
     "pcap",
+    "pfring",
   ]
   pruneopts = ""
   revision = "6d3e2615da4ed2ed2a349918fe74e7e6d03482fa"
@@ -1338,6 +1339,7 @@
     "github.com/google/gopacket",
     "github.com/google/gopacket/layers",
     "github.com/google/gopacket/pcap",
+    "github.com/google/gopacket/pfring",
     "github.com/gorilla/mux",
     "github.com/gorilla/securecookie",
     "github.com/gorilla/sessions",

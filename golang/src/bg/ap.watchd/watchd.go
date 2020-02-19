@@ -68,7 +68,7 @@ var (
 		lanDrops       *bgmetrics.Counter
 		wanDrops       *bgmetrics.Counter
 		sampledPkts    *bgmetrics.Counter
-		missedPkts     *bgmetrics.Counter
+		droppedPkts    *bgmetrics.Counter
 		tcpScans       *bgmetrics.Counter
 		tcpScanTime    *bgmetrics.Summary
 		udpScans       *bgmetrics.Counter
@@ -333,7 +333,7 @@ func bgmetricsInit() {
 	metrics.lanDrops = bgm.NewCounter("landrops")
 	metrics.wanDrops = bgm.NewCounter("wandrops")
 	metrics.sampledPkts = bgm.NewCounter("sampled_pkts")
-	metrics.missedPkts = bgm.NewCounter("missed_pkts")
+	metrics.droppedPkts = bgm.NewCounter("dropped_pkts")
 	metrics.tcpScans = bgm.NewCounter("tcp_scans")
 	metrics.tcpScanTime = bgm.NewSummary("tcp_scan_time")
 	metrics.udpScans = bgm.NewCounter("udp_scans")

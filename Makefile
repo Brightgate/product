@@ -195,7 +195,7 @@ CROSS_CGO_CFLAGS = --sysroot $(CROSS_SYSROOT) -Iusr/local/include -Iusr/include
 # This is the checksum of the sysroot blob to be used; it's outside the
 # cross-compile conditional because the build-sysroot target uses this to see
 # whether the sysroot has changed and needs to be re-uploaded.
-SYSROOT_SUM=a66af97cd6bbab3fc23eba227b663789b266be7c6efa1da68160d3b46c2d1f44
+SYSROOT_SUM=41c3448d0fc9f58e9fcef5be5384482d7b6fe4269ffd74041b72a0f15b4fed27
 SYSROOT_LOCAL_FLAGS = -f $(SYSROOT_CFG_LOCAL)
 
 DISTRO_OTHER = openwrt
@@ -207,7 +207,7 @@ CROSS_CGO_LDFLAGS = --sysroot $(CROSS_SYSROOT)
 CROSS_CGO_CFLAGS = --sysroot $(CROSS_SYSROOT) -I$(CROSS_SYSROOT)/usr/include
 
 SYSROOT = build/cross-compile/sysroot.$(DISTRO).$(SYSROOT_SUM)
-SYSROOT_SUM_arm_openwrt=2e168b253ccbeff4e10b75cbfa15dfe2dd5cadd8
+SYSROOT_SUM_arm_openwrt=b0f06cb0486a7ffceb575f4b0ec569c5cc85a2af
 SYSROOT_SUM=$(SYSROOT_SUM_arm_openwrt)
 SYSROOT_LOCAL_FLAGS =
 
