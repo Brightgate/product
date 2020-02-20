@@ -333,7 +333,8 @@ func checkDB(idb *sqlx.DB) {
 	classification text,
 	probability float,
 	classification_created timestamp,
-	classification_updated timestamp
+	classification_updated timestamp,
+	PRIMARY KEY (site_uuid, mac, model_name)
     );`
 
 	mustCreateVersionTable(idb)
@@ -349,9 +350,7 @@ func checkDB(idb *sqlx.DB) {
     CREATE INDEX IF NOT EXISTS ix_inventory_site_uuid ON inventory ( site_uuid );
     CREATE INDEX IF NOT EXISTS ix_inventory_device_mac ON inventory ( device_mac );
     CREATE INDEX IF NOT EXISTS ix_inventory_inventory_date_desc ON inventory ( inventory_date DESC );
-    CREATE INDEX IF NOT EXISTS ix_inventory_inventory_date_asc ON inventory ( inventory_date ASC );
-    CREATE INDEX IF NOT EXISTS ix_classification_multi1 ON classification ( site_uuid, mac );
-    CREATE INDEX IF NOT EXISTS ix_classification_multi2 ON classification ( site_uuid, mac, model_name );`
+    CREATE INDEX IF NOT EXISTS ix_inventory_inventory_date_asc ON inventory ( inventory_date ASC );`
 	if _, err := idb.Exec(inventoryIndex); err != nil {
 		slog.Fatalf("could not create indexes: %v", err)
 	}
@@ -640,7 +639,7 @@ func classifySub(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				return err
 			}
-			slog.Infof("finished classifying %s", site.SiteUUID)
+			slog.Debugf("finished classifying %s", site.SiteUUID)
 		}
 	}
 

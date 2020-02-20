@@ -13,6 +13,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -37,7 +38,6 @@ type classifyResult struct {
 	NextProb       float64
 	Region         int
 	Unknown        bool
-	_Visited       bool
 }
 
 func convertPosteriorToResult(name string, certainAbove float64, uncertainBelow float64, posterior map[string]float64) classifyResult {
@@ -74,7 +74,6 @@ func convertPosteriorToResult(name string, certainAbove float64, uncertainBelow 
 		NextProb:       nextProb,
 		Region:         region,
 		Unknown:        false,
-		_Visited:       false,
 	}
 }
 
@@ -126,132 +125,124 @@ func combineSentenceFromInventory(rs []RecordedInventory) sentence {
 	return paragraph
 }
 
-func findResult(name string, results []classifyResult) (*classifyResult, error) {
-	for _, r := range results {
-		if r.ModelName == name {
-			return &r, nil
+func updateOneClassification(db *sqlx.DB, siteUUID string, deviceMac string, newCl classifyResult) error {
+	// Lookup our existing results in the classification table.
+	now := time.Now()
+
+	var oldCl RecordedClassification
+	err := db.Get(&oldCl, `
+		SELECT *
+		FROM classification
+		WHERE site_uuid = $1 AND mac = $2 AND model_name = $3;`,
+		siteUUID, deviceMac, newCl.ModelName)
+	if err != nil && err != sql.ErrNoRows {
+		return errors.Wrap(err, "select classification")
+	}
+
+	// If the classification isn't present, we can just add it, if it's
+	// "certain"; else do nothing, as we don't record new uncertain results.
+	if err == sql.ErrNoRows {
+		if newCl.Region != classifyCertain {
+			return nil
+		}
+
+		slog.Infof("new %s classification %q (%f)", newCl.ModelName, newCl.Classification, newCl.Probability)
+		_, err = db.Exec(`
+			INSERT INTO classification
+			  (site_uuid, mac, model_name, classification,
+			   probability, classification_created, classification_updated)
+			VALUES ($1, $2, $3, $4, $5, $6, $7);`,
+			siteUUID, deviceMac, newCl.ModelName, newCl.Classification,
+			newCl.Probability, now, now)
+		if err != nil {
+			return errors.Wrap(err, "insert classification")
+		}
+		return nil
+	}
+
+	switch newCl.Region {
+	case classifyCertain:
+		var created time.Time
+
+		// If nothing has changed, keep going; there's no need to touch
+		// the database at all.
+		pDelta := math.Abs(oldCl.Probability - newCl.Probability)
+		if oldCl.Classification == newCl.Classification && pDelta < 0.001 {
+			slog.Debugf("old and new classifications look the same")
+			return nil
+		}
+
+		// If our classification result is different, then reset
+		// the created date.  Otherwise, copy it from the
+		// existing row.
+		if newCl.Classification == oldCl.Classification {
+			slog.Infof("update %s %s probability %f --> %f",
+				newCl.ModelName, newCl.Classification,
+				oldCl.Probability, newCl.Probability)
+			created = oldCl.ClassificationCreated
+		} else {
+			created = now
+			slog.Infof("update %s classification %q --> %q",
+				newCl.ModelName, oldCl.Classification,
+				newCl.Classification)
+		}
+
+		_, err = db.Exec(`
+			UPDATE classification
+			SET
+			  classification = $1, probability = $2,
+			  classification_created = $3, classification_updated = $4
+			WHERE
+			  site_uuid = $5 AND mac = $6 AND model_name = $7;`,
+			newCl.Classification, newCl.Probability, created, now,
+			siteUUID, deviceMac, newCl.ModelName)
+		if err != nil {
+			return errors.Wrap(err, "update classification")
+		}
+	case classifyCrossing:
+		// Nothing to do.
+	default:
+		// If our result is below the threshold, delete the row (or
+		// update to unknown).
+		// XXX In the production version, we would expect there
+		// to be a TRIGGER on the classification table, and one
+		// or more agents using LISTEN/NOTIFY to handle
+		// classification updates and deletions.
+		slog.Infof("delete %s classification %q", newCl.ModelName, newCl.Classification)
+		_, err = db.Exec(`DELETE FROM classification
+			WHERE site_uuid = $1 AND mac = $2 AND model_name = $3;`,
+			siteUUID, deviceMac, newCl.ModelName)
+		if err != nil {
+			return errors.Wrap(err, "delete classification")
 		}
 	}
-	return nil, fmt.Errorf("result for model '%s' not found", name)
+	return nil
 }
 
-func updateClassificationTable(db *sqlx.DB, siteUUID string, deviceMac string, models []RecordedClassifier, results []classifyResult) {
-	// Lookup our existing results in the classification table.
-	var classifications []RecordedClassification
-	err := db.Select(&classifications, "SELECT * FROM classification WHERE site_uuid = $1 AND mac = $2;",
-		siteUUID, deviceMac)
-
-	if err == sql.ErrNoRows {
-		slog.Warnf("select classification shows no classifications for (%s, %s)",
-			siteUUID, deviceMac)
-		return
-	} else if err != nil {
-		slog.Warnf("select classification failed for (%s, %s): %v",
-			siteUUID, deviceMac, err)
-		return
-	}
-
-	t, err := db.Beginx()
-	if err != nil {
-		slog.Fatalf("no txn allowed: %v", err)
-	}
-
-	// Phase 1: updates.
-	for _, rp := range classifications {
-		result, err := findResult(rp.ModelName, results)
+// updateClassificationTable walks the result set, updating or adding each
+// classification in the classification table.  Finally it removes any
+// stray classification entries corresponding to models outside of the result
+// set.
+func updateClassificationTable(db *sqlx.DB, siteUUID string, deviceMac string, results []classifyResult) {
+	var cleanupQ string
+	for _, result := range results {
+		err := updateOneClassification(db, siteUUID, deviceMac, result)
 		if err != nil {
-			slog.Warnf("no result matches classification model '%s' named in table", rp.ModelName)
-			continue
+			slog.Errorf("failed updating classification %s %s %v: %v",
+				siteUUID, deviceMac, result, err)
 		}
 
-		result._Visited = true
-
-		now := time.Now()
-
-		switch result.Region {
-		case classifyCertain:
-			// If our result is the same, update the time
-			// and the classification.  If our result is a
-			// change, update the row.
-			if rp.Classification == result.Classification {
-				_, err = t.Exec(`UPDATE classification
-				SET classification = $1, probability = $2, classification_updated = $3
-				WHERE site_uuid = $4 AND mac = $5 AND model_name = $6;`,
-					result.Classification, result.Probability, now,
-					siteUUID, deviceMac, rp.ModelName)
-				if err != nil {
-					slog.Errorf("update classification failed: %v", err)
-				}
-			} else {
-				slog.Infof("classifications differ '%s' != '%s'", rp.Classification, result.Classification)
-				_, err = t.Exec(`UPDATE classification
-				SET classification = $1, probability = $2, classification_created = $3, classification_updated = $4
-				WHERE site_uuid = $5 AND mac = $6 AND model_name = $7;`,
-					result.Classification, result.Probability, now, now,
-					siteUUID, deviceMac, rp.ModelName)
-				if err != nil {
-					slog.Errorf("update classification failed: %v", err)
-				}
-			}
-		case classifyCrossing:
-			// Nothing to do.
-		default:
-			// If our result is below the threshold, delete the row (or
-			// update to unknown).
-			// XXX In the production version, we would expect there
-			// to be a TRIGGER on the classification table, and one
-			// or more agents using LISTEN/NOTIFY to handle
-			// classification updates and deletions.
-			slog.Infof("remove/annul existing certain classification for %v", result)
-			_, err = t.Exec(`DELETE FROM classification
-				WHERE site_uuid = $1 AND mac = $2 AND model_name = $3;`,
-				siteUUID, deviceMac, rp.ModelName)
-			if err != nil {
-				slog.Errorf("delete classification failed: %v", err)
-			}
+		if len(cleanupQ) > 0 {
+			cleanupQ += ", "
 		}
-
+		cleanupQ += "'" + result.ModelName + "'"
 	}
 
-	err = t.Commit()
+	_, err := db.Exec(`DELETE FROM classification
+		WHERE site_uuid = $1 AND mac = $2 AND model_name NOT IN (`+cleanupQ+`);`,
+		siteUUID, deviceMac)
 	if err != nil {
-		slog.Fatalf("txn commit failed: %v", err)
-	}
-
-	// Phase 2: certain results that are not in the classification table.
-	t, err = db.Beginx()
-	if err != nil {
-		slog.Fatalf("no txn allowed: %v", err)
-	}
-
-	for _, r := range results {
-		if r._Visited {
-			continue
-		}
-
-		if r.Region == classifyCertain {
-			slog.Infof("insert new certain classification for %v", r)
-			now := time.Now()
-
-			_, err = t.Exec(`INSERT INTO classification (site_uuid,
-					mac,
-					model_name,
-					classification,
-					probability,
-					classification_created,
-					classification_updated)
-				VALUES ($1, $2, $3, $4, $5, $6, $7);`,
-				siteUUID, deviceMac, r.ModelName, r.Classification,
-				r.Probability, now, now)
-			if err != nil {
-				slog.Errorf("insert classification failed: %v\n", err)
-			}
-		}
-	}
-
-	err = t.Commit()
-	if err != nil {
-		slog.Fatalf("txn commit failed: %v", err)
+		slog.Fatalf("failed to cleanup: %v", err)
 	}
 }
 
@@ -344,7 +335,7 @@ func classifyMac(B *backdrop, models []RecordedClassifier, siteUUID string, mac 
 
 	if persistent {
 		for _, s := range siteUUIDs {
-			updateClassificationTable(B.db, s, mac, models, results)
+			updateClassificationTable(B.db, s, mac, results)
 		}
 	}
 
