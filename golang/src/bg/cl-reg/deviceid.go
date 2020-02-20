@@ -115,13 +115,22 @@ func syncSiteClassifications(ctx context.Context, siteUUID uuid.UUID, dryRun boo
 	for c := range classifications {
 		// ... skip if the client is not present in the tree
 		clientPath := fmt.Sprintf("@/clients/%s", c.Mac)
-		_, err := cfg.GetProp(clientPath)
+		_, err := cfg.GetProps(clientPath)
 		if err != nil {
-			vPrintf("\tskipping client %s; not in tree", clientPath)
-			continue
+			if err == cfgapi.ErrNoProp {
+				vPrintf("\tskipping client %s; not in tree", clientPath)
+				continue
+			} else {
+				log.Printf("error getting %s; skipping: %v", clientPath, err)
+				continue
+			}
 		}
 		propPath := fmt.Sprintf("@/clients/%s/%s", c.Mac, c.PropName)
-		oldValue, _ := cfg.GetProp(propPath)
+		oldValue, err := cfg.GetProp(propPath)
+		if err != nil && err != cfgapi.ErrNoProp {
+			log.Printf("error getting %s; skipping: %v", propPath, err)
+			continue
+		}
 		// ... skip if the old and new values are the same, and shoot
 		// down the removal of the property.
 		if oldValue == c.Classification {

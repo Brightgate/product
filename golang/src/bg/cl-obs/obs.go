@@ -656,6 +656,7 @@ func setupIngester(cmd *cobra.Command) (Ingester, error) {
 		slog.Infof("cloud ingest from %s", ingestProject)
 		ingester, err := newCloudIngester(ingestProject, workers)
 		if err != nil {
+			slog.Warnf("failed setting up cloud ingester: %v", err)
 			return nil, err
 		}
 		return ingester, nil
