@@ -13,6 +13,8 @@ package main
 import (
 	"fmt"
 
+	"bg/cl-obs/sentence"
+
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -61,7 +63,7 @@ func reviewSub(cmd *cobra.Command, args []string) error {
 	redundCount := 0
 
 	var devicemac string
-	devicesent := newSentence()
+	devicesent := sentence.New()
 	missed := make([]RecordedTraining, 0)
 
 	for rows.Next() {
@@ -92,7 +94,7 @@ func reviewSub(cmd *cobra.Command, args []string) error {
 
 		_, sent := genBayesSentenceFromReader(_B.ouidb, dtr)
 		if dt.DeviceMAC == devicemac {
-			dupe := devicesent.addSentence(sent)
+			dupe := devicesent.AddSentence(sent)
 			if dupe {
 				slog.Infof("no new information in (%s, %s, %s)", dt.SiteUUID, dt.DeviceMAC, dt.UnixTimestamp)
 				redundCount++

@@ -62,6 +62,7 @@ import (
 	"time"
 
 	"bg/base_msg"
+	"bg/cl-obs/sentence"
 	"bg/cl_common/daemonutils"
 
 	"go.uber.org/zap"
@@ -574,7 +575,7 @@ func listSites(B *backdrop, includeDevices bool, noNames bool, args []string) er
 				if withClassifications {
 					desc, sent := classifyMac(B, models, site.SiteUUID, mac, false)
 					fmt.Printf("\t%s\n", desc)
-					fmt.Printf("\t%s\n", sent.toString())
+					fmt.Printf("\t%s\n", sent.String())
 				}
 			}
 		}
@@ -764,7 +765,7 @@ func lsByMac(m string, details bool, redundant bool) error {
 		return errors.Wrap(err, "inventory Queryx error")
 	}
 
-	sent := newSentence()
+	sent := sentence.New()
 
 	for rows.Next() {
 		var ri RecordedInventory
@@ -775,7 +776,7 @@ func lsByMac(m string, details bool, redundant bool) error {
 			continue
 		}
 
-		dupe := sent.addString(ri.BayesSentence)
+		dupe := sent.AddString(ri.BayesSentence)
 		if !redundant && dupe {
 			continue
 		}

@@ -569,7 +569,8 @@ CLOUDCOMMON_GOPKGS = \
 	bg/cl_common/pgutils \
 	bg/cl_common/registry \
 	bg/cloud_models/appliancedb \
-	bg/cloud_models/sessiondb
+	bg/cloud_models/sessiondb \
+	bg/cl-obs/sentence
 
 CLOUDCOMMAND_GOPKGS = \
 	bg/cl-aggregate \
@@ -595,7 +596,7 @@ GO_CLOUD_TESTABLES = \
 	bg/cloud_models/sessiondb \
 	bg/common/mfg \
 	bg/cl-cert \
-	bg/cl-obs \
+	bg/cl-obs/sentence \
 	bg/cl.configd \
 	bg/cl.httpd
 

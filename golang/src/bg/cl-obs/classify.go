@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"bg/cl-obs/sentence"
+
 	"github.com/fatih/color"
 	"github.com/jmoiron/sqlx"
 	"github.com/lytics/multibayes"
@@ -113,16 +115,6 @@ func affectedSitesFromInventory(rs []RecordedInventory) []string {
 	}
 
 	return siteUUIDs
-}
-
-func combineSentenceFromInventory(rs []RecordedInventory) sentence {
-	paragraph := newSentence()
-
-	for _, r := range rs {
-		paragraph.addSentence(newSentenceFromString(r.BayesSentence))
-	}
-
-	return paragraph
 }
 
 func updateOneClassification(db *sqlx.DB, siteUUID string, deviceMac string, newCl classifyResult) error {
@@ -248,7 +240,7 @@ func updateClassificationTable(db *sqlx.DB, siteUUID string, deviceMac string, r
 
 var classifierCache = make(map[string]*multibayes.Classifier)
 
-func classifySentence(B *backdrop, models []RecordedClassifier, mac string, sent sentence) []classifyResult {
+func classifySentence(B *backdrop, models []RecordedClassifier, mac string, sent sentence.Sentence) []classifyResult {
 	var err error
 	results := make([]classifyResult, 0)
 
@@ -267,7 +259,7 @@ func classifySentence(B *backdrop, models []RecordedClassifier, mac string, sent
 			}
 
 			// Run sentence through each classifier.
-			post := cl.Posterior(sent.toString())
+			post := cl.Posterior(sent.String())
 			spost := convertPosteriorToResult(model.ModelName,
 				model.CertainAbove, model.UncertainBelow, post)
 
@@ -297,7 +289,7 @@ func classifySentence(B *backdrop, models []RecordedClassifier, mac string, sent
 	return results
 }
 
-func classifyMac(B *backdrop, models []RecordedClassifier, siteUUID string, mac string, persistent bool) (string, sentence) {
+func classifyMac(B *backdrop, models []RecordedClassifier, siteUUID string, mac string, persistent bool) (string, sentence.Sentence) {
 	records := []RecordedInventory{}
 	err := B.db.Select(&records, `
 		SELECT * FROM inventory
@@ -305,7 +297,7 @@ func classifyMac(B *backdrop, models []RecordedClassifier, siteUUID string, mac 
 		ORDER BY inventory_date DESC`, mac)
 	if err != nil {
 		slog.Errorf("select failed for %s: %+v", mac, err)
-		return "-classify-fails-", newSentence()
+		return "-classify-fails-", sentence.New()
 	}
 
 	filteredRecords := []RecordedInventory{}
@@ -321,8 +313,11 @@ func classifyMac(B *backdrop, models []RecordedClassifier, siteUUID string, mac 
 		filteredRecords[len(filteredRecords)-1].InventoryDate,
 		filteredRecords[0].InventoryDate)
 
-	sent := combineSentenceFromInventory(filteredRecords)
-	slog.Debugf("90 day sentence: %s", sent.toString())
+	sent := sentence.New()
+	for _, r := range filteredRecords {
+		sent.AddString(r.BayesSentence)
+	}
+	slog.Debugf("combined sentence: %s", sent)
 
 	var siteUUIDs []string
 	if siteUUID == "" {
@@ -361,7 +356,7 @@ func classifySite(B *backdrop, models []RecordedClassifier, siteUUID string, per
 		desc, sentence := classifyMac(B, models, siteUUID, mac, persistent)
 		fmt.Printf("    %s %s\n", mac, desc)
 		if ce := log.Check(zapcore.DebugLevel, "debugging"); ce != nil {
-			fmt.Printf("\t%s\n", sentence.toString())
+			fmt.Printf("\t%s\n", sentence)
 		}
 	}
 

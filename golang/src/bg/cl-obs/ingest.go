@@ -189,7 +189,7 @@ func (r *RecordedInventory) addInfoFromReader(ouiDB oui.OuiDB, rdr io.Reader) er
 	// Add sentence of extracted features
 	sentenceVersion, sentence := genBayesSentenceFromDeviceInfo(ouiDB, di)
 	r.BayesSentenceVersion = sentenceVersion
-	r.BayesSentence = sentence.toString()
+	r.BayesSentence = sentence.String()
 	return nil
 }
 

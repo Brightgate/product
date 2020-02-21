@@ -50,11 +50,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
+
+	"bg/cl-obs/sentence"
 
 	"github.com/lytics/multibayes"
 	"github.com/pkg/errors"
@@ -79,156 +78,6 @@ type bayesClassifier struct {
 	TargetValue        func(rdi RecordedDevice) string
 }
 
-// A sentence is implemented using a map so that we can easily compute
-// whether or not two sentences have similar (same terms, but possibly
-// different frequencies) or identical information content (terms and
-// frequencies identical).
-type sentence struct {
-	words map[string]int
-}
-
-func newSentence() sentence {
-	s := sentence{}
-
-	s.words = make(map[string]int)
-
-	return s
-}
-
-// addTerm, like all "add" methods for the sentence structure, returns true
-// when all added terms are redundant (in that they were already present in the
-// sentence).  If any added term is new, then false is returned.
-func (s sentence) addTerm(term string) bool {
-	s.words[term] = s.words[term] + 1
-
-	return s.words[term] > 1
-}
-
-func (s sentence) addTermf(format string, a ...interface{}) bool {
-	lt := strings.Fields(fmt.Sprintf(format, a...))
-	ret := true
-
-	for _, v := range lt {
-		addl := s.addTerm(v)
-		ret = ret && addl
-	}
-
-	return ret
-}
-
-func newSentenceFromString(sent string) sentence {
-	s := newSentence()
-
-	lt := strings.Fields(sent)
-
-	for _, v := range lt {
-		s.addTerm(v)
-	}
-
-	return s
-}
-
-func (s sentence) terms() []string {
-	t := make([]string, 0)
-
-	for k := range s.words {
-		t = append(t, k)
-	}
-
-	return t
-}
-
-func (s sentence) toString() string {
-	ts := s.terms()
-
-	sort.Strings(ts)
-
-	return strings.Join(ts, " ")
-}
-
-func (s sentence) toNaryString() string {
-	t := make([]string, 0)
-
-	for k, v := range s.words {
-		for u := 0; u < v; u++ {
-			t = append(t, k)
-		}
-	}
-
-	return strings.Join(t, " ")
-}
-
-func (s sentence) addString(sent string) bool {
-	ret := true
-
-	lt := strings.Fields(sent)
-
-	for _, v := range lt {
-		n := s.addTerm(v)
-		ret = ret && n
-	}
-
-	return ret
-}
-
-func (s sentence) addSentence(s2 sentence) bool {
-	ret := true
-
-	for k, v := range s2.words {
-		s.words[k] += v
-		if s.words[k] == v {
-			// Meaning that this word was exclusive to the added
-			// sentence.
-			ret = false
-		}
-	}
-
-	return ret
-}
-
-func (s sentence) termCount() int {
-	return len(s.words)
-}
-
-func (s sentence) termHash() uint64 {
-	h := fnv.New64()
-
-	ws := s.terms()
-
-	sort.Strings(ws)
-
-	for _, k := range ws {
-		h.Write([]byte(k))
-	}
-
-	return h.Sum64()
-}
-
-func (s sentence) wordCount() int {
-	n := 0
-
-	for _, v := range s.words {
-		n += v
-	}
-
-	return n
-}
-
-func (s sentence) wordHash() uint64 {
-	h := fnv.New64()
-
-	ws := s.terms()
-
-	sort.Strings(ws)
-
-	for _, k := range ws {
-		h.Write([]byte(k))
-		h.Write([]byte(strconv.Itoa(s.words[k])))
-	}
-
-	return h.Sum64()
-}
-
 func (m *bayesClassifier) GenSetFromDB(B *backdrop) error {
 	var devices []RecordedDevice
 	err := B.db.Select(&devices, "SELECT * FROM device;")
@@ -247,16 +96,14 @@ func (m *bayesClassifier) GenSetFromDB(B *backdrop) error {
 		if err != nil {
 			return errors.Wrap(err, "select training failed")
 		}
-		p := newSentence()
+		p := sentence.New()
 
 		for _, rt := range trainings {
-			var sent sentence
-
 			// Retrieve inventory.
 			ri, err := inventoryFromTraining(B.db, rt)
 
 			if err == nil && ri.BayesSentenceVersion == getCombinedVersion() {
-				sent = newSentenceFromString(ri.BayesSentence)
+				p.AddString(ri.BayesSentence)
 			} else {
 				rdr, err := readerFromTraining(B, rt)
 				if err != nil {
@@ -264,13 +111,12 @@ func (m *bayesClassifier) GenSetFromDB(B *backdrop) error {
 					continue
 				}
 
-				_, sent = genBayesSentenceFromReader(B.ouidb, rdr)
+				_, sent := genBayesSentenceFromReader(B.ouidb, rdr)
+				p.AddSentence(sent)
 			}
-
-			p.addSentence(sent)
 		}
 
-		m.set = append(m.set, machine{rdi.DeviceMAC, p.toString(), []string{target}})
+		m.set = append(m.set, machine{rdi.DeviceMAC, p.String(), []string{target}})
 		n++
 	}
 
