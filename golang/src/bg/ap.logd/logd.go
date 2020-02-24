@@ -11,6 +11,9 @@
 
 /*
  * message logger
+ *   Records all events on the appliance bus to logfiles.  Additionally,
+ *   ap.logd will format public log events in CEF and forward them to the
+ *   syslog servers defined in the @/log configuration subtree.
  */
 
 package main
@@ -27,12 +30,14 @@ import (
 	"syscall"
 	"time"
 
+	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
 	"bg/ap_common/platform"
 	"bg/base_def"
 	"bg/base_msg"
+	"bg/common/cfgapi"
 	"bg/common/network"
 
 	"github.com/golang/protobuf/proto"
@@ -40,13 +45,14 @@ import (
 )
 
 var (
+	pname   string
 	logDir  string
 	logFile *os.File
 	slog    *zap.SugaredLogger
 	mcpd    *mcp.MCP
+	config  *cfgapi.Handle
+	brokerd *broker.Broker
 )
-
-const pname = "ap.logd"
 
 func extendMsg(msg *string, field string, value *string, def string) {
 	var v, space string
@@ -328,6 +334,19 @@ func handleRequest(event []byte) {
 	log.Printf("%s [net.request]\t%s", tstring(request.Timestamp), msg)
 }
 
+func handlePublicLog(event []byte) {
+	plog := &base_msg.EventNetPublicLog{}
+
+	if err := proto.Unmarshal(event, plog); err != nil {
+		log.Printf("[net.public_log]\tCouldn't unmarshal event: %v", err)
+		return
+	}
+
+	log.Printf("%s [net.public_log]\t%v", tstring(plog.Timestamp),
+		fmtCefPublicLog(plog))
+	sendLogToSyslog(fmtCefPublicLog(plog))
+}
+
 func openLog(path string) (*os.File, error) {
 	fp, err := filepath.Abs(path)
 	if err != nil {
@@ -367,45 +386,76 @@ func dualLog(format string, v ...interface{}) {
 	slog.Infof("%s", msg)
 }
 
-func main() {
+func commonInit() error {
 	var err error
 
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+	if brokerd != nil {
+		config, err = apcfg.NewConfigd(brokerd, pname,
+			cfgapi.AccessInternal)
+		if err != nil {
+			return fmt.Errorf("connecting to configd: %v", err)
+		}
+		go apcfg.HealthMonitor(config, mcpd)
+	}
 
-	plat := platform.NewPlatform()
-	logDir = plat.ExpandDirPath("__APDATA__", "logd")
+	config.HandleChange(`^@/log/.*$`, configLogSettingsChanged)
 
-	flag.Parse()
+	return nil
+}
 
-	slog = aputil.NewLogger(pname)
+func daemonStop() {
+	slog.Infof("Exiting")
+	os.Exit(0)
+}
+
+func daemonStart() {
+	var err error
+
 	defer slog.Sync()
 
 	if mcpd, err = mcp.New(pname); err != nil {
-		slog.Warnf("Failed to connect to mcp")
+		slog.Fatalf("Failed to connect to mcp: %s", err)
 	}
+
+	brokerd, err = broker.NewBroker(slog, pname)
+	if err != nil {
+		slog.Fatal(err)
+	}
+	defer brokerd.Fini()
+
+	if err := commonInit(); err != nil {
+		mcpd.SetState(mcp.BROKEN)
+		slog.Fatalf("commonInit failed: %v", err)
+	}
+	plat := platform.NewPlatform()
+	logDir = plat.ExpandDirPath("__APDATA__", "logd")
 
 	if err = reopenLogfile(); err != nil {
 		slog.Errorf("Failed to setup logging: %s\n", err)
 		os.Exit(1)
 	}
 
-	b, err := broker.NewBroker(slog, pname)
-	if err != nil {
-		slog.Fatal(err)
-	}
-	b.Handle(base_def.TOPIC_PING, handlePing)
-	b.Handle(base_def.TOPIC_CONFIG, handleConfig)
-	b.Handle(base_def.TOPIC_ENTITY, handleEntity)
-	b.Handle(base_def.TOPIC_ERROR, handleError)
-	b.Handle(base_def.TOPIC_EXCEPTION, handleException)
-	b.Handle(base_def.TOPIC_RESOURCE, handleResource)
-	b.Handle(base_def.TOPIC_REQUEST, handleRequest)
-	defer b.Fini()
-
-	mcpd.SetState(mcp.ONLINE)
+	brokerd.Handle(base_def.TOPIC_PING, handlePing)
+	brokerd.Handle(base_def.TOPIC_CONFIG, handleConfig)
+	brokerd.Handle(base_def.TOPIC_ENTITY, handleEntity)
+	brokerd.Handle(base_def.TOPIC_ERROR, handleError)
+	brokerd.Handle(base_def.TOPIC_EXCEPTION, handleException)
+	brokerd.Handle(base_def.TOPIC_RESOURCE, handleResource)
+	brokerd.Handle(base_def.TOPIC_REQUEST, handleRequest)
+	brokerd.Handle(base_def.TOPIC_PUBLIC_LOG, handlePublicLog)
 
 	kernelMonitorStart()
+
 	aputil.ReportInit(slog, pname)
+
+	stateName := mcp.States[mcp.ONLINE]
+	slog.Infof("Setting state %s", stateName)
+	err = mcpd.SetState(mcp.ONLINE)
+	if err != nil {
+		slog.Fatalf("Failed to set %s: %v", stateName, err)
+	}
+
+	updateReceivers()
 
 	sig := make(chan os.Signal, 3)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
@@ -426,4 +476,28 @@ func main() {
 
 	kernelMonitorStop()
 	slog.Infof("stopping")
+
+	daemonStop()
+}
+
+func main() {
+	pname = filepath.Base(os.Args[0])
+
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
+	flag.Parse()
+
+	slog = aputil.NewLogger(pname)
+
+	if pname == "ap.logd" {
+		daemonStart()
+	} else if pname == "ap-publiclog" {
+		cmdStart()
+	} else {
+		slog.Fatalf("Couldn't determine program mode")
+	}
+}
+
+func init() {
+	plat = platform.NewPlatform()
 }

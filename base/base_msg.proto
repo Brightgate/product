@@ -288,6 +288,55 @@ message EventNetUpdate {
 	optional string debug = 0x03;
 }
 
+// The network public log message is sent whenever an application or service
+// encounters a condition that has been documented as part of the
+// public log message catalog.  The names for the specific fields are
+// derived from the ArcSight CEF conventional names for that data, when
+// included in a particular message.
+//
+// Common Event Format V25 has been our source for the conventional
+// names.
+//
+// @topic "net.public_log", TOPIC_PUBLIC_LOG
+// @range 0x900
+
+message EventNetPublicLog {
+	required Timestamp timestamp = 0x01;
+	optional string sender = 0x02;
+	optional string debug = 0x03;
+	optional string identity_uuid = 0x04;
+
+        optional string event_class_id = 0x900;
+
+	optional string cef_act = 0x901;    // Used for Action (Quartine, Cleaned, Deleted, …) in an Anti-Virus context.
+	optional string cef_app = 0x902;
+	optional string cef_cat = 0x903;
+
+	optional fixed64 cef_cn1 = 0x910;  // Used for Channel in a Wireless context.
+	optional string cef_cn1Label = 0x911;
+
+	optional string cef_cs1 = 0x920;    // Used for Rule Num in a // Firewall context.  // Used for Virus Name is an // Anti-Virus context.  // Used for Relay in an Email context.
+	optional string cef_cs1Label = 0x921;
+	optional string cef_cs2 = 0x922;    // Used for SSID in a Wireless context.  // Used for Signature in an Anti-Virus context.
+	optional string cef_cs2Label = 0x923;
+
+	optional string cef_dhost = 0x930;
+	optional string cef_dmac = 0x931;
+	optional uint32 cef_dpt = 0x932;
+	optional string cef_dst = 0x933;
+	optional string cef_duser = 0x934;	// Used for Recipient in an Email context.
+
+	optional string cef_msg = 0x940;
+	optional string cef_proto = 0x941;
+	optional string cef_reason = 0x942;
+
+	optional string cef_shost = 0x950;
+	optional string cef_smac = 0x951;
+	optional uint32 cef_spt = 0x952;
+	optional string cef_src = 0x953;
+	optional string cef_suser = 0x954;	// Used for Sender in an Email context.
+}
+
 // For network scans
 message Port {
 	required string protocol = 0x01;
@@ -460,7 +509,7 @@ message WatchdRequest {
 
 	required Timestamp timestamp	= 0x01;
 	optional string sender		= 0x02;
-	required Cmd cmd 		= 0x03;
+	required Cmd cmd		= 0x03;
 	optional WatchdScanInfo scan	= 0x04;
 }
 

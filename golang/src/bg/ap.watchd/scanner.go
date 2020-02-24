@@ -28,6 +28,7 @@ import (
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/ap_common/apvuln"
+	"bg/ap_common/publiclog"
 	"bg/base_def"
 	"bg/base_msg"
 	"bg/common/cfgapi"
@@ -1023,6 +1024,8 @@ func vulnException(mac, ip string, details []string) {
 		slog.Warnf("couldn't publish %v to %s: %v",
 			entity, base_def.TOPIC_EXCEPTION, err)
 	}
+
+	publiclog.SendLogVulnDetected(brokerd, mac, ip)
 }
 
 func vulnPropOp(mac, vuln, field, val string) cfgapi.PropertyOp {
@@ -1142,6 +1145,8 @@ func vulnScanProcess(ip string, discovered map[string]apvuln.TestResult) {
 		}
 		ops = append(ops, op)
 		slog.Infof("%s being quarantined", mac)
+
+		publiclog.SendLogDeviceQuarantine(brokerd, mac)
 	}
 
 	if len(found) > 0 {

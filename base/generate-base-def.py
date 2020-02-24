@@ -196,6 +196,7 @@ assignments = [
     [Statement.SIMPLE_STR, "TOPIC_UPDATE",  "net.update"],
     [Statement.SIMPLE_STR, "TOPIC_OPTIONS",  "net.options"],
     [Statement.SIMPLE_STR, "TOPIC_DEVICE_INVENTORY",  "net.device_inventory"],
+    [Statement.SIMPLE_STR, "TOPIC_PUBLIC_LOG", "net.publiclog"],
 
     [Statement.COMMENT, "Diagnostic client HTTP ports"],
     [Statement.SIMPLE_PORT, "BROKERD_DIAG_PORT", 3200],
@@ -227,6 +228,14 @@ assignments = [
     [Statement.COMMENT, "API related definitions"],
     [Statement.SIMPLE_STR, "API_URL", "https://api.brightgate.com"],
     [Statement.LIST, "API_PROTOBUF_URL", "API_URL", "+", "/protobuf"],
+
+    [Statement.COMMENT, "CEF message IDs"],
+    [Statement.SIMPLE_STR, "CEF_TEST", "test-message"],
+    [Statement.SIMPLE_STR, "CEF_VULN_DETECTED", "vulnerability-detected"],
+    [Statement.SIMPLE_STR, "CEF_DEVICE_QUARANTINE", "device-quarantined"],
+    [Statement.SIMPLE_STR, "CEF_DEVICE_UNENROLLED", "device-unenrolled"],
+    [Statement.SIMPLE_STR, "CEF_LOGIN_EAP_SUCCESS", "login-eap-successful"],
+    [Statement.SIMPLE_STR, "CEF_LOGIN_FAILURE", "login-failure"],
 
     [Statement.SECTION, ")"],
     [Statement.FOOTER, None],

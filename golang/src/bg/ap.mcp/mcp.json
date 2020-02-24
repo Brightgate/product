@@ -37,7 +37,7 @@
     "logd": {
         "Name": "logd",
         "Binary": "ap.logd",
-        "DependsOn": "brokerd",
+        "DependsOn": "configd",
         "Privileged": true,
         "Modes": [ "gateway" ],
         "MemWarn": 18,

@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"bg/ap_common/publiclog"
+	"bg/base_def"
 	"bg/common/cfgapi"
 	"bg/common/wifi"
 )
@@ -94,6 +96,10 @@ func configClientChanged(path []string, val string, expires *time.Time) {
 	} else {
 		// False alarm.
 		return
+	}
+
+	if newRing == base_def.RING_QUARANTINE {
+		publiclog.SendLogDeviceQuarantine(brokerd, hwaddr)
 	}
 
 	hostapd.reload()

@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"bg/ap_common/aputil"
+	"bg/ap_common/publiclog"
 	"bg/ap_common/wificaps"
 	"bg/base_def"
 	"bg/base_msg"
@@ -429,14 +430,18 @@ func (c *hostapdConn) eapSuccess(sta, username string) {
 	}
 
 	slog.Infof("%v eapSuccess(%s) user=%s", c, sta, username)
+
 	sendNetEntity(sta, user, &c.vapName, &c.wifiBand, nil, false)
+	publiclog.SendLogLoginEAPSuccess(brokerd, sta, username)
 }
 
 func (c *hostapdConn) stationBadPassword(sta, username string) {
 	reason := base_msg.EventNetException_BAD_PASSWORD
 
 	slog.Infof("%v stationBadPassword(%s) user=%s", c, sta, username)
+
 	sendNetException(sta, username, &c.vapName, &reason)
+	publiclog.SendLogLoginRepeatedFailure(brokerd, sta, username)
 }
 
 func (c *hostapdConn) deauthSta(sta string) {

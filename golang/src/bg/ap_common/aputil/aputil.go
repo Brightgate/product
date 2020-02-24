@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -13,6 +13,7 @@ package aputil
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -40,7 +41,21 @@ import (
 var (
 	nodeMode string
 	nodeLock sync.Mutex
+
+	// LocalResolver is a DNS resolver that connects to the local
+	// DNS server provided by ap.serviced.  By using this resolver,
+	// the appliance can use a local hostname in the
+	// @/log/.../syslog_host // property.
+	LocalResolver = net.Resolver{
+		Dial: localResolverDial,
+	}
 )
+
+func localResolverDial(ctx context.Context, network, address string) (net.Conn, error) {
+	var ld net.Dialer
+
+	return ld.DialContext(ctx, "tcp", "127.0.0.1:53")
+}
 
 // Child is used to build and track the state of an child subprocess
 type Child struct {

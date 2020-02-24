@@ -320,7 +320,8 @@ func rpiDataDir() string {
 
 func init() {
 	rpiPlatform = &Platform{
-		name: "rpi3",
+		name:             "rpi3",
+		CefDeviceProduct: "Test RPi",
 
 		ResetSignal:  syscall.SIGINT,
 		ReloadSignal: syscall.SIGINT,

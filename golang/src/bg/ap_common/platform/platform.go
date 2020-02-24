@@ -27,6 +27,9 @@ import (
 // hardware platforms we support as appliances.
 type Platform struct {
 	name string
+	// CefDeviceProduct is the product string we use within public CEF
+	// messages.
+	CefDeviceProduct string
 
 	ResetSignal  syscall.Signal
 	ReloadSignal syscall.Signal

@@ -36,7 +36,7 @@ import (
 // between topics a daemon doesn't recognize and those it is choosing to ignore.
 // This has no functional impact, other than being logged differently in
 // event_listener()
-var knownTopics = [7]string{
+var knownTopics = [8]string{
 	base_def.TOPIC_PING,
 	base_def.TOPIC_CONFIG,
 	base_def.TOPIC_ENTITY,
@@ -44,6 +44,7 @@ var knownTopics = [7]string{
 	base_def.TOPIC_REQUEST,
 	base_def.TOPIC_SCAN,
 	base_def.TOPIC_DEVICE_INVENTORY,
+	base_def.TOPIC_PUBLIC_LOG,
 }
 
 var debug = false
@@ -80,7 +81,7 @@ func (b *Broker) Ping() error {
 // resulting data on the broker's COMM socket
 func (b *Broker) Publish(pb proto.Message, topic string) error {
 	if b == nil {
-		return nil
+		return fmt.Errorf("publish to '%s' attempted on nil broker", topic)
 	}
 
 	data, err := proto.Marshal(pb)
@@ -145,8 +146,10 @@ func eventListener(b *Broker) {
 // Handle adds a new callback function for the identified topic.
 func (b *Broker) Handle(topic string, handler handlerF) {
 	if b == nil {
-		return
+		panic("attempt to register handler on nil broker")
 	}
+
+	b.slog.Infof("Starting to handle '%s'", topic)
 
 	b.Lock()
 	if b.handlers[topic] == nil {
@@ -154,6 +157,7 @@ func (b *Broker) Handle(topic string, handler handlerF) {
 	}
 	b.handlers[topic] = append(b.handlers[topic], handler)
 	b.Unlock()
+
 }
 
 func (b *Broker) connect() error {
@@ -174,10 +178,10 @@ func (b *Broker) connect() error {
 	return err
 }
 
-// Fini closes the subscriber's connection to the broker
+// Fini closes the subscriber's connection to the broker.
 func (b *Broker) Fini() {
 	if b == nil {
-		return
+		panic("attempt to finalize on nil broker")
 	}
 
 	b.socket.Close()

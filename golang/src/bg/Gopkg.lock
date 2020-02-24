@@ -701,6 +701,14 @@
   version = "v1.2.0"
 
 [[projects]]
+  branch = "master"
+  digest = "1:7b3894720be2cf00871b6a28fe5b51635344bda64f1415a1c852c93b5701444c"
+  name = "github.com/schahn/srslog"
+  packages = ["."]
+  pruneopts = ""
+  revision = "a4725f04ec91af1a91b380da679d6e0c2f061e59"
+
+[[projects]]
   digest = "1:5bce793b50c671c1a18fb89701a2fcf9a7e1a6027987349dfa951db64c6b745f"
   name = "github.com/sethvargo/go-diceware"
   packages = ["diceware"]
@@ -1367,6 +1375,7 @@
     "github.com/pkg/errors",
     "github.com/prometheus/client_golang/prometheus/promhttp",
     "github.com/satori/uuid",
+    "github.com/schahn/srslog",
     "github.com/sethvargo/go-diceware/diceware",
     "github.com/sfreiberg/gotwilio",
     "github.com/sparrc/go-ping",

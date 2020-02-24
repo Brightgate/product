@@ -411,6 +411,7 @@ APPTOOLS = \
 	ap-watchctl
 
 MISCCOMMANDS = \
+	ap-publiclog \
 	ap-rpc
 
 APPBINARIES = \
@@ -425,6 +426,7 @@ GO_AP_TESTABLES = \
 	bg/ap_common/certificate \
 	bg/ap.configd \
 	bg/ap-defaultpass\
+	bg/ap.logd \
 	bg/ap.networkd \
 	bg/ap.rpcd \
 	bg/ap.userauthd \
@@ -942,6 +944,9 @@ $(APPBIN)/%: $(CROSS_DEP)
 
 $(GOSRCBG)/common/version.go: $(GITCHANGED)
 	sed "s/GITHASH/$(GITHASH)/" $(GOSRCBG)/common/version.base > $@
+
+$(APPBIN)/ap-publiclog: $(APPBIN)/ap.logd
+	ln -sf $(<F) $@
 
 $(APPBIN)/ap-rpc: $(APPBIN)/ap.rpcd
 	ln -sf $(<F) $@

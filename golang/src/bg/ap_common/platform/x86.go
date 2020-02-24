@@ -116,7 +116,8 @@ func x86DataDir() string {
 
 func init() {
 	x86Platform = &Platform{
-		name: "x86",
+		name:             "x86",
+		CefDeviceProduct: "Test x86",
 
 		ResetSignal:  syscall.SIGINT,
 		ReloadSignal: syscall.SIGINT,

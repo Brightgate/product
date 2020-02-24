@@ -479,7 +479,8 @@ func mtDataDir() string {
 
 func init() {
 	mtPlatform = &Platform{
-		name: "mt7623",
+		name:             "mt7623",
+		CefDeviceProduct: "Model 100",
 
 		ResetSignal:  syscall.SIGINT,
 		ReloadSignal: syscall.SIGHUP,
