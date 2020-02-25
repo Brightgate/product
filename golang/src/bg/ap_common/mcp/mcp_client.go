@@ -192,26 +192,28 @@ func (m *MCP) msg(op *base_msg.MCPRequest) (string, error) {
 
 	} else if len(reply) > 0 {
 		r := base_msg.MCPResponse{}
-		proto.Unmarshal(reply, &r)
 
-		switch *r.Response {
-		case INVALID:
-			err = fmt.Errorf("invalid command")
-		case NODAEMON:
-			err = fmt.Errorf("no such daemon")
-		case BADVER:
-			var version string
-			if r.MinVersion != nil {
-				version = fmt.Sprintf("%d or greater",
-					*r.MinVersion.Major)
-			} else {
-				version = fmt.Sprintf("%d",
-					*r.Version.Major)
-			}
-			err = fmt.Errorf("requires version %s", version)
-		default:
-			if r.State != nil {
-				rval = *r.State
+		if mErr := proto.Unmarshal(reply, &r); mErr != nil {
+			err = fmt.Errorf("unmarshaling ap.mcp reply: %v", err)
+		} else {
+			switch r.GetResponse() {
+			case INVALID:
+				err = fmt.Errorf("invalid command")
+			case NODAEMON:
+				err = fmt.Errorf("no such daemon")
+			case BADVER:
+				var version string
+				if v := r.GetMinVersion(); v != nil {
+					version = fmt.Sprintf("%d or greater", *v.Major)
+				} else if v := r.GetVersion(); v != nil {
+					version = fmt.Sprintf("%d", *v.Major)
+				} else {
+					version = "unknown"
+				}
+
+				err = fmt.Errorf("requires version %s", version)
+			default:
+				rval = r.GetState()
 			}
 		}
 	}

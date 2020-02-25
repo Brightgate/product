@@ -930,7 +930,7 @@ GENERATED_GO_FILES = \
 	$(GOSRCBG)/common/version.go
 
 $(GOTOOLS_DIR)/godeps.mk: | $(COMPUTE_DEPS) $(GENERATED_GO_FILES)
-	$(COMPUTE_DEPS) $(ALL_GOBINS) > $@ || $(RM) -f $@
+	unset GOARCH && $(COMPUTE_DEPS) $(ALL_GOBINS) > $@ || $(RM) -f $@
 
 include $(GOTOOLS_DIR)/godeps.mk
 

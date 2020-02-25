@@ -228,11 +228,12 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 	daemons.Lock()
 	defer daemons.Unlock()
 
-	if *req.Version.Major != mcp.Version {
+	ver := req.GetVersion()
+	if ver == nil || *ver.Major != mcp.Version {
 		return nil, mcp.BADVER
 	}
 
-	switch *req.Operation {
+	switch req.GetOperation() {
 	case mcp.PING:
 
 	case mcp.GET:
@@ -255,7 +256,7 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 		if req.Command == nil {
 			code = mcp.INVALID
 		} else if set, code = getDaemonSet(req); code == mcp.OK {
-			code = handleDoCmd(set, *req.Command)
+			code = handleDoCmd(set, req.GetCommand())
 		}
 
 	case mcp.UPDATE:
@@ -263,13 +264,13 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 			code = mcp.INVALID
 		} else {
 			rval, code = handlePeerUpdate(req.Node, req.State,
-				*req.Lifetime)
+				req.GetLifetime())
 		}
 
 	case mcp.REBOOT:
-		from := "unknown"
-		if req.Sender != nil {
-			from = *req.Sender
+		from := req.GetSender()
+		if from == "" {
+			from = "unknown"
 		}
 		reboot(from)
 
@@ -286,11 +287,18 @@ func handleRequest(req *base_msg.MCPRequest) (*string,
 }
 
 func apiHandle(msg []byte) []byte {
+	var rval *string
+	var rc base_msg.MCPResponse_OpResponse
+
 	me := "mcp." + strconv.Itoa(os.Getpid()) + ")"
 
 	req := &base_msg.MCPRequest{}
-	proto.Unmarshal(msg, req)
-	rval, rc := handleRequest(req)
+	if err := proto.Unmarshal(msg, req); err != nil {
+		logWarn("unmarshaling request: %v", err)
+		rc = mcp.INVALID
+	} else {
+		rval, rc = handleRequest(req)
+	}
 
 	version := base_msg.Version{Major: proto.Int32(mcp.Version)}
 	response := &base_msg.MCPResponse{
