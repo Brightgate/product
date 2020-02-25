@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"sync"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -65,6 +66,13 @@ func addKeypair() error {
 	precomputedKeys.keys = append(precomputedKeys.keys, &pair)
 	precomputedKeys.Unlock()
 	return nil
+}
+
+func addKeypairs(n int, delay time.Duration) {
+	time.Sleep(delay)
+	for i := 0; i < n; i++ {
+		addKeypair()
+	}
 }
 
 // Fetch a precomputed keypair.  Return both keys in PEM-encoded blocks.
@@ -188,7 +196,5 @@ func GenerateSSHKeypair(file string) (string, string, error) {
 // It can take multiple seconds to generate an ssh keypair.  Start creating a
 // few now, so they're ready if we need them.
 func init() {
-	for i := 0; i < precomputedPoolSize; i++ {
-		go addKeypair()
-	}
+	go addKeypairs(precomputedPoolSize, 10*time.Minute)
 }

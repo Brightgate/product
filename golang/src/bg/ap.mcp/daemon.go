@@ -338,7 +338,7 @@ func stateStarting(d *daemon) {
 		// Kill it and try again.
 		logWarn("%s took more than %v to come online. "+
 			"Giving up.", d.Name, onlineTimeout)
-		d.stop()
+		d.crash()
 		d.failures++
 	}
 }

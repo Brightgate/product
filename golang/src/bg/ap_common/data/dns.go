@@ -17,6 +17,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 
 	"bg/ap_common/platform"
 	"bg/common/network"
@@ -36,6 +37,8 @@ var (
 
 	dnsAllowlist *dnsMatchList
 	dnsBlocklist *dnsMatchList
+
+	blockLock sync.Mutex
 )
 
 type dnsMatchList struct {
@@ -62,6 +65,8 @@ func inList(name string, list *dnsMatchList) bool {
 
 // BlockedHostname reports whether a given host/domain name is blocked.
 func BlockedHostname(name string) bool {
+	blockLock.Lock()
+	defer blockLock.Unlock()
 	return inList(name, dnsBlocklist) && !inList(name, dnsAllowlist)
 }
 
@@ -103,8 +108,12 @@ func ingestDNSFile(filename string) (*dnsMatchList, error) {
 	return &list, nil
 }
 
-// LoadDNSBlocklist loads the DNS antiphishing databases.
-func LoadDNSBlocklist(dataDir string) {
+// Parsing a blocklist with tens of thousands of entries can take a while, so we
+// do it in a background goroutine
+func backgroundLoad(dataDir string) {
+	blockLock.Lock()
+	defer blockLock.Unlock()
+
 	wfile := plat.ExpandDirPath(dataDir, allowlistName)
 	bfile := plat.ExpandDirPath(dataDir, blocklistName)
 
@@ -126,6 +135,11 @@ func LoadDNSBlocklist(dataDir string) {
 	} else {
 		dnsBlocklist = list
 	}
+}
+
+// LoadDNSBlocklist loads the DNS antiphishing databases.
+func LoadDNSBlocklist(dataDir string) {
+	go backgroundLoad(dataDir)
 }
 
 func init() {

@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"sync"
 	"text/template"
 	"time"
 
@@ -29,6 +30,10 @@ type ntpdConf struct {
 
 const (
 	ntpserversConfig = "@/network/ntpservers"
+)
+
+var (
+	ntpLock sync.Mutex
 )
 
 func getNTPServers() ([]string, error) {
@@ -99,6 +104,8 @@ func generateNTPDConf() error {
 }
 
 func restartNTP() {
+	ntpLock.Lock()
+	defer ntpLock.Unlock()
 	if err := generateNTPDConf(); err != nil {
 		slog.Errorf("Failed to generate NTP configuration: %v\n", err)
 	} else {
@@ -110,11 +117,11 @@ func restartNTP() {
 // new configuration we need for this through chronyc isn't really possible, so
 // we have to just restart the daemon.
 func configNTPServersChanged(path []string, val string, expires *time.Time) {
-	restartNTP()
+	go restartNTP()
 }
 
 func configNTPServersDeleted(path []string) {
-	restartNTP()
+	go restartNTP()
 }
 
 func ntpdSetup() {
@@ -124,5 +131,5 @@ func ntpdSetup() {
 
 	// We kick the daemon to start with, because, even if it's already
 	// running, it might be running with pre-Brightgate configuration.
-	restartNTP()
+	go restartNTP()
 }

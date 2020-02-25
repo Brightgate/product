@@ -1103,12 +1103,12 @@ func dnsInit() {
 	cachedResponses.init()
 	initNetwork()
 	initHostMap()
+	data.LoadDNSBlocklist(*dataDir)
 
 	dns.HandleFunc(domainname+".", localHandler)
 	dns.HandleFunc(".", proxyHandler)
 
 	go updateFriendlyNames()
-	go data.LoadDNSBlocklist(*dataDir)
 	go dnsListener("udp")
 	go dnsListener("tcp")
 
