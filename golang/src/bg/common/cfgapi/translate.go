@@ -54,7 +54,7 @@ var (
 // GenerateConfigResponse takes a return-value string and an error, and
 // constructs a cfgmsg.ConfigResponse protobuf that can be transmitted over the
 // wire.
-func GenerateConfigResponse(rval string, err error) *cfgmsg.ConfigResponse {
+func GenerateConfigResponse(rval *string, err error) *cfgmsg.ConfigResponse {
 	r := &cfgmsg.ConfigResponse{
 		Timestamp: ptypes.TimestampNow(),
 		Version:   &CfgmsgVersion,
@@ -63,10 +63,14 @@ func GenerateConfigResponse(rval string, err error) *cfgmsg.ConfigResponse {
 
 	if err == nil {
 		r.Response = cfgmsg.ConfigResponse_OK
-		r.Value = rval
+		if rval != nil {
+			r.Value = *rval
+		}
 	} else if code, ok := errToCode[err]; ok {
 		r.Response = code
-		r.Errmsg = rval
+		if rval != nil {
+			r.Errmsg = *rval
+		}
 		if code == cfgmsg.ConfigResponse_BADVERSION {
 			r.Version.Major = Version
 		}

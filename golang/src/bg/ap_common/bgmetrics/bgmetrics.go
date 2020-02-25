@@ -210,7 +210,7 @@ func (m *Metrics) addFloatOp(name string, val float64) cfgapi.PropertyOp {
 	} else {
 		s = strconv.FormatFloat(val, 'g', 8, 64)
 	}
-	s = strings.TrimRight(s, ".0")
+	s = strings.TrimRight(strings.TrimRight(s, "0"), ".")
 
 	return m.addOp(name, s)
 }
@@ -262,7 +262,7 @@ func (m *Metrics) PushUpdates() {
 	}
 	if len(ops) > 0 {
 		if _, err := m.config.Execute(nil, ops).Wait(nil); err != nil {
-			fmt.Printf("Error updating metrics: %v", err)
+			log.Printf("Error updating metrics: %v", err)
 		}
 	}
 }

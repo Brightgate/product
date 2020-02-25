@@ -169,10 +169,10 @@ func (s *siteState) metricsScheduleRefresh() {
 	}
 }
 
-func (s *siteState) metricsGet(prop string) (string, error) {
+func (s *siteState) metricsGet(prop string) (*string, error) {
 	var node *cfgtree.PNode
 	var err error
-	var payload []byte
+	var rval *string
 
 	s.Lock()
 	m := s.metrics
@@ -187,9 +187,13 @@ func (s *siteState) metricsGet(prop string) (string, error) {
 	s.Unlock()
 
 	if node != nil {
-		payload, err = json.Marshal(node)
+		j, err := json.Marshal(node)
+		if err == nil {
+			x := string(j)
+			rval = &x
+		}
 	}
-	return string(payload), err
+	return rval, err
 }
 
 func (s *siteState) updateCaches(ctx context.Context, prop, rval string) {

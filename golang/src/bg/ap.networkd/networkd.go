@@ -258,7 +258,8 @@ func daemonInit() error {
 	rings = make(cfgapi.RingMap)
 
 	config.HandleChange(`^@/site_index`, configSiteIndexChanged)
-	config.HandleChange(`^@/clients/.*/ring$`, configClientChanged)
+	config.HandleChange(`^@/clients/.*/ring$`, configClientRingChanged)
+	config.HandleChange(`^@/clients/.*/node$`, configClientNodeChanged)
 	config.HandleChange(`^@/nodes/`+nodeID+`/nics/.*$`, configNicChanged)
 	config.HandleDelete(`^@/nodes/`+nodeID+`/nics/.*$`, configNicDeleted)
 	config.HandleChange(`^@/rings/.*`, configRingChanged)

@@ -78,7 +78,18 @@ func configNicDeleted(path []string) {
 	}
 }
 
-func configClientChanged(path []string, val string, expires *time.Time) {
+func configClientNodeChanged(path []string, val string, expires *time.Time) {
+	hwaddr := path[1]
+	newNode := val
+	c, ok := clients[hwaddr]
+
+	if ok && c.ConnNode != newNode {
+		slog.Infof("Moving %s from %s to %s", hwaddr, c.ConnNode, newNode)
+		c.ConnNode = newNode
+	}
+}
+
+func configClientRingChanged(path []string, val string, expires *time.Time) {
 	hwaddr := path[1]
 	newRing := val
 	c, ok := clients[hwaddr]

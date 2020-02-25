@@ -252,7 +252,6 @@ func updateRolling(period time.Duration) {
 	}
 	statsMtx.RUnlock()
 
-	props := make([]cfgapi.PropertyOp, 0)
 	now := time.Now().Format(time.RFC3339)
 	for mac, stats := range delta {
 		macKey := network.MacToUint64(mac)
@@ -260,6 +259,7 @@ func updateRolling(period time.Duration) {
 			continue
 		}
 
+		props := make([]cfgapi.PropertyOp, 0)
 		base := "@/metrics/clients/" + mac
 
 		// If this client sent any data in the current period, update
@@ -287,11 +287,11 @@ func updateRolling(period time.Duration) {
 			props = append(props, metricOps(base+"/day", &r.day)...)
 		}
 
-	}
-	if len(props) > 0 {
-		ctx := context.Background()
-		if _, err := config.Execute(ctx, props).Wait(ctx); err != nil {
-			slog.Warnf("update failed: %v", err)
+		if len(props) > 0 {
+			ctx := context.Background()
+			if _, err := config.Execute(ctx, props).Wait(ctx); err != nil {
+				slog.Warnf("updating %s failed: %v", base, err)
+			}
 		}
 	}
 }

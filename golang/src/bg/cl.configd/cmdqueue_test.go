@@ -168,7 +168,8 @@ func testStatus(t *testing.T, q cmdQueue, slogger *zap.SugaredLogger) {
 
 	// complete each query in order, check status
 	for _, qid := range testQsKeys {
-		rval := cfgapi.GenerateConfigResponse("fake response", nil)
+		resp := "fake response"
+		rval := cfgapi.GenerateConfigResponse(&resp, nil)
 		rval.CmdID = qid
 		err = q.complete(ctx, testSS1, rval)
 		assert.NoError(err)
@@ -217,7 +218,8 @@ func testFetch(t *testing.T, q cmdQueue, slogger *zap.SugaredLogger) {
 
 	// complete each query in order, check status
 	for _, qid := range testQsKeys {
-		rval := cfgapi.GenerateConfigResponse("fake response", nil)
+		resp := "fake response"
+		rval := cfgapi.GenerateConfigResponse(&resp, nil)
 		rval.CmdID = qid
 		err = q.complete(ctx, testSS1, rval)
 		assert.NoError(err)
@@ -264,7 +266,8 @@ func testCancel(t *testing.T, q cmdQueue, slogger *zap.SugaredLogger) {
 	assert.Equal([]*cfgmsg.ConfigQuery{testQs[3]}, qs)
 
 	// complete a command-- check cancellation impossible
-	r := cfgapi.GenerateConfigResponse("fake response", nil)
+	resp := "fake response"
+	r := cfgapi.GenerateConfigResponse(&resp, nil)
 	r.CmdID = 3
 	err = q.complete(ctx, testSS1, r)
 	assert.NoError(err)
@@ -280,7 +283,8 @@ func testComplete(t *testing.T, q cmdQueue, slogger *zap.SugaredLogger) {
 
 	submitQueries(ctx, t, q, slogger, testQs)
 
-	response := cfgapi.GenerateConfigResponse("response", nil)
+	resp := "response"
+	response := cfgapi.GenerateConfigResponse(&resp, nil)
 	response.CmdID = 1
 	err := q.complete(ctx, testSS1, response)
 	assert.NoError(err)
@@ -290,7 +294,7 @@ func testComplete(t *testing.T, q cmdQueue, slogger *zap.SugaredLogger) {
 	assert.NoError(err)
 
 	// An invalid cmdID yields a warning but nothing else
-	response = cfgapi.GenerateConfigResponse("", cfgapi.ErrNoProp)
+	response = cfgapi.GenerateConfigResponse(nil, cfgapi.ErrNoProp)
 	response.CmdID = 100
 	err = q.complete(ctx, testSS1, response)
 	assert.NoError(err)
@@ -332,7 +336,8 @@ func testFullRefresh(t *testing.T, q cmdQueue, slogger *zap.SugaredLogger) {
 
 	submitQueries(ctx, t, q, slogger, qs)
 
-	response := cfgapi.GenerateConfigResponse("{}", nil)
+	empty := "{}"
+	response := cfgapi.GenerateConfigResponse(&empty, nil)
 	response.CmdID = 1
 	err = q.complete(ctx, testSS1, response)
 	assert.NoError(err)
@@ -340,7 +345,8 @@ func testFullRefresh(t *testing.T, q cmdQueue, slogger *zap.SugaredLogger) {
 
 	// Doesn't give an error when tree is bad, but should not explode
 	tc.ptree = nil
-	response = cfgapi.GenerateConfigResponse("badtree", nil)
+	badtree := "badtree"
+	response = cfgapi.GenerateConfigResponse(&badtree, nil)
 	response.CmdID = 2
 	err = q.complete(ctx, testSS1, response)
 	assert.NoError(err)
@@ -367,7 +373,8 @@ func testSiteSpoof(t *testing.T, q cmdQueue, slogger *zap.SugaredLogger) {
 	// Use site 2 to try to complete one of site 1's commands
 	// This will not return an error, but also should not affect the
 	// command.
-	rval := cfgapi.GenerateConfigResponse("{}", nil)
+	empty := "{}"
+	rval := cfgapi.GenerateConfigResponse(&empty, nil)
 	rval.CmdID = 1
 	err = q.complete(ctx, testSS2, rval)
 	assert.NoError(err)
@@ -379,7 +386,7 @@ func testSiteSpoof(t *testing.T, q cmdQueue, slogger *zap.SugaredLogger) {
 	// Use site 2 to try to cancel one of site 1's commands
 	// This will not return an error (the daemon will warn instead), but
 	// also should not affect the command.
-	response = cfgapi.GenerateConfigResponse("{}", nil)
+	response = cfgapi.GenerateConfigResponse(&empty, nil)
 	response.CmdID = 1
 	_, err = q.cancel(ctx, testSS2, 1)
 	assert.NoError(err)

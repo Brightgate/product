@@ -1253,11 +1253,11 @@ func clearActive() {
 		nodes[node.ID] = true
 	}
 
-	clients := config.GetClients()
 	ops := make([]cfgapi.PropertyOp, 0)
 	for mac, client := range clients {
-		if client.IsActive() && client.Wireless &&
-			(client.ConnNode == nodeID || !nodes[client.ConnNode]) {
+		if (client.ConnNode == nodeID || !nodes[client.ConnNode]) &&
+			client.Wireless {
+
 			op := cfgapi.PropertyOp{
 				Op:    cfgapi.PropCreate,
 				Name:  "@/clients/" + mac + "/connection/active",

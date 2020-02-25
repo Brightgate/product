@@ -163,7 +163,7 @@ func (s *frontEndServer) Submit(ctx context.Context,
 	// appliance to execute later.
 	if getProp != "" {
 		var err error
-		var payload string
+		var payload *string
 
 		if strings.HasPrefix(getProp+"/", metricsPath) {
 			payload, err = state.metricsGet(getProp)
@@ -175,7 +175,9 @@ func (s *frontEndServer) Submit(ctx context.Context,
 
 		if err == nil {
 			rval.Response = cfgmsg.ConfigResponse_OK
-			rval.Value = payload
+			if payload != nil {
+				rval.Value = *payload
+			}
 		} else if err == cfgtree.ErrNoProp {
 			rval.Response = cfgmsg.ConfigResponse_NOPROP
 		} else {

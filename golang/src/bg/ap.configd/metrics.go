@@ -22,7 +22,7 @@ var (
 	mTree *cfgtree.PTree
 )
 
-func metricsGet(prop string) (string, error) {
+func metricsGet(prop string) (*string, error) {
 	rval, err := mTree.Get(prop)
 	err = xlateError(err)
 
@@ -49,8 +49,8 @@ func metricsDel(prop string) error {
 	return xlateError(err)
 }
 
-func metricsPropHandler(query *cfgmsg.ConfigQuery) (string, error) {
-	var rval string
+func metricsPropHandler(query *cfgmsg.ConfigQuery) (*string, error) {
+	var rval *string
 	var err error
 
 	level := cfgapi.AccessLevel(query.Level)

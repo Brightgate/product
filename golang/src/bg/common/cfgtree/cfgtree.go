@@ -36,6 +36,9 @@ type PTree struct {
 	root *PNode
 	path string
 
+	cacheable     bool
+	cachedMarshal map[string]*string
+
 	preserved []*PNode // nodes preserved to allow for a rollback
 
 	sync.Mutex
@@ -55,6 +58,9 @@ type PNode struct {
 	path   string
 	hash   []byte
 	data   interface{}
+
+	cached     bool
+	cacheScore int
 
 	// As changes are made to nodes in the tree, copies of the original
 	// nodes are preserved in this path->PNode map.  These copies are freed
@@ -282,6 +288,14 @@ func (node *PNode) update(value string, exp *time.Time) error {
 	return err
 }
 
+func (node *PNode) uncache() {
+	if node.cached {
+		node.cached = false
+		node.cacheScore = 0
+		delete(node.tree.cachedMarshal, node.path)
+	}
+}
+
 func (node *PNode) commit(now time.Time) bool {
 	updated := false
 
@@ -292,6 +306,7 @@ func (node *PNode) commit(now time.Time) bool {
 				current.Expires != old.Expires {
 				copy := now
 				current.Modified = &copy
+				current.uncache()
 				updated = true
 			}
 		}
@@ -312,6 +327,7 @@ func (node *PNode) commit(now time.Time) bool {
 		if updated {
 			copy := now
 			x.Modified = &copy
+			x.uncache()
 		}
 	}
 	return updated
@@ -493,17 +509,37 @@ func (t *PTree) GetNode(prop string) (*PNode, error) {
 	return node, err
 }
 
+// SetCacheable is a hint that this tree is stable enough that we should
+// consider caching the results of marshaling frequently used subtrees.
+func (t *PTree) SetCacheable() {
+	t.cacheable = true
+	t.cachedMarshal = make(map[string]*string)
+}
+
 // Get will find the node indicated by the provided path, and will return a
 // marshaled JSON structure representing the node, or the subtree rooted at
 // that node.
-func (t *PTree) Get(prop string) (string, error) {
-	var rval string
-	var b []byte
+func (t *PTree) Get(prop string) (*string, error) {
+	var rval *string
+
+	if t.cacheable {
+		if rval, ok := t.cachedMarshal[prop]; ok {
+			return rval, nil
+		}
+	}
 
 	node, err := t.GetNode(prop)
 	if err == nil {
+		var b []byte
+
+		node.cacheScore++
 		if b, err = json.Marshal(node); err == nil {
-			rval = string(b)
+			x := string(b)
+			rval = &x
+			if t.cacheable && node.cacheScore > 2 {
+				node.cached = true
+				t.cachedMarshal[prop] = rval
+			}
 		}
 	}
 

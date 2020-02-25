@@ -664,7 +664,6 @@ func subnetScan(req *ScanRequest) {
 		slog.Warnf("Scan of %s ring failed: %v", req.Ring, err)
 		return
 	}
-	clients := config.GetClients()
 	for _, host := range scanResults.Hosts {
 		slog.Debugf("nmap found %v: %s", host.Addresses,
 			host.Status.State)
@@ -690,7 +689,7 @@ func subnetScan(req *ScanRequest) {
 			continue
 		}
 
-		if _, ok := clients[mac]; !ok {
+		if getIPFromMac(mac) == "" {
 			slog.Infof("Unknown host %s found on ring %s: %s",
 				mac, req.Ring, ip)
 			logUnknown(req.Ring, mac, ip)

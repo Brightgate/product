@@ -286,7 +286,7 @@ func execQuery(cmd *cfgmsg.ConfigQuery) {
 		payload, err = config.Execute(nil, ops).Wait(nil)
 	}
 
-	resp := cfgapi.GenerateConfigResponse(payload, err)
+	resp := cfgapi.GenerateConfigResponse(&payload, err)
 	resp.CmdID = cmd.CmdID
 
 	queued.Lock()

@@ -34,7 +34,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"net"
@@ -93,7 +92,7 @@ var (
 	}
 )
 
-type subtreeOpHandler func(*cfgmsg.ConfigQuery) (string, error)
+type subtreeOpHandler func(*cfgmsg.ConfigQuery) (*string, error)
 type subtreeMatch struct {
 	path    *regexp.Regexp
 	handler subtreeOpHandler
@@ -667,18 +666,19 @@ func checkIPv4(prop, addr string) error {
 		updating = path[2]
 	}
 
+	now := time.Now()
 	for name, device := range clients.Children {
 		if updating == name {
 			// Reassigning the device's address to itself is fine
 			continue
 		}
 
-		if ipv4Node, ok := device.Children["ipv4"]; ok {
-			addr := net.ParseIP(ipv4Node.Value)
-			expired := ipv4Node.Expires != nil &&
-				ipv4Node.Expires.Before(time.Now())
+		if node, ok := device.Children["ipv4"]; ok {
+			if node.Expires != nil && node.Expires.Before(now) {
+				continue
+			}
 
-			if ipv4.Equal(addr) && !expired {
+			if ipv4.Equal(net.ParseIP(node.Value)) {
 				return fmt.Errorf("%s in use by %s", addr, name)
 			}
 		}
@@ -700,7 +700,14 @@ func xlateError(err error) error {
 	return err
 }
 
-func cfgPropGet(prop string) (string, error) {
+func cfgPropGetNode(prop string) (*cfgtree.PNode, error) {
+	rval, err := propTree.GetNode(prop)
+	err = xlateError(err)
+
+	return rval, err
+}
+
+func cfgPropGet(prop string) (*string, error) {
 	rval, err := propTree.Get(prop)
 	err = xlateError(err)
 
@@ -762,8 +769,8 @@ func restart() {
 	os.Exit(0)
 }
 
-func configPropHandler(query *cfgmsg.ConfigQuery) (string, error) {
-	var rval string
+func configPropHandler(query *cfgmsg.ConfigQuery) (*string, error) {
+	var rval *string
 	var err error
 	var persistTree bool
 
@@ -826,23 +833,21 @@ func configPropHandler(query *cfgmsg.ConfigQuery) (string, error) {
 		case cfgmsg.ConfigOp_TEST:
 			metrics.testCounts.Inc()
 			if err = validateProp(prop); err == nil {
-				_, err = cfgPropGet(prop)
+				_, err = cfgPropGetNode(prop)
 			}
 
 		case cfgmsg.ConfigOp_TESTEQ:
-			var testVal string
-			var testNode cfgapi.PropertyNode
+			var testNode *cfgtree.PNode
 
 			metrics.testCounts.Inc()
 			if err = validateProp(prop); err != nil {
 				break
 			}
-			if testVal, err = cfgPropGet(prop); err != nil {
+			if testNode, err = cfgPropGetNode(prop); err != nil {
 				break
 			}
 
-			err = json.Unmarshal([]byte(testVal), &testNode)
-			if err == nil && val != testNode.Value {
+			if val != testNode.Value {
 				err = cfgapi.ErrNotEqual
 			}
 
@@ -912,14 +917,14 @@ func configPropHandler(query *cfgmsg.ConfigQuery) (string, error) {
 	return rval, err
 }
 
-func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
+func executePropOps(query *cfgmsg.ConfigQuery) (*string, error) {
 	var handler subtreeOpHandler
-	var rval string
+	var rval *string
 	var err error
 
 	level := cfgapi.AccessLevel(query.Level)
 	if _, ok := cfgapi.AccessLevelNames[level]; !ok {
-		return "", fmt.Errorf("invalid access level: %d", level)
+		return nil, fmt.Errorf("invalid access level: %d", level)
 	}
 
 	// Iterate over all of the operations in the vector to sanity-check the
@@ -968,7 +973,7 @@ func executePropOps(query *cfgmsg.ConfigQuery) (string, error) {
 
 func processOneEvent(query *cfgmsg.ConfigQuery) *cfgmsg.ConfigResponse {
 	var err error
-	var rval string
+	var rval *string
 
 	if query.Version.Major != cfgapi.Version {
 		err = cfgapi.ErrBadVer
@@ -1014,7 +1019,7 @@ func msgHandler(msg []byte) []byte {
 
 	query := &cfgmsg.ConfigQuery{}
 	if err := proto.Unmarshal(msg, query); err != nil {
-		response = cfgapi.GenerateConfigResponse("", err)
+		response = cfgapi.GenerateConfigResponse(nil, err)
 	} else {
 		response = processOneEvent(query)
 	}
@@ -1082,6 +1087,7 @@ func configInit() {
 	if err = propTreeInit(defaults); err != nil {
 		fail("propTreeInit() failed: %v", err)
 	}
+	propTree.SetCacheable()
 
 	initSettings()
 	expirationInit(propTree)

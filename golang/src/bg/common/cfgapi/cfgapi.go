@@ -320,7 +320,7 @@ func (p PropertyOp) String() string {
 		}
 	}
 	if p.Expires != nil {
-		s += fmt.Sprintf(" (%s)" + p.Expires.String())
+		s += " (" + p.Expires.Format(time.Stamp) + ")"
 	}
 	s += ">"
 	return s
