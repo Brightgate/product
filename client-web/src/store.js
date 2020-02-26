@@ -762,7 +762,7 @@ function computeDeviceProps(device) {
     'Google Pixel': ['personal', 'personal-phone-android'],
     'Nest Sensor': ['iot', 'iot'],
     'Raspberry Pi': ['computer', 'computer'],
-    'Roku Streaming Media Player': ['media', 'media'],
+    'Roku Streaming Media Player': ['media', 'media-dvr'],
     'Sonos Wireless Sound Device': ['media', 'media-speaker'],
     'Ubiquiti AP': ['networking', 'networking'],
     'Ubiquiti mFi': ['networking', 'networking'],

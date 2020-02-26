@@ -1595,13 +1595,18 @@ export default [
     "wireless": false
   },
   {
-    "active": false,
+    "active": true,
     "dhcpExpiry": "2019-05-22T22:51:45Z",
-    "dhcpName": "",
-    "displayName": "",
+    "dhcpName": "roku",
+    "displayName": "roku",
     "hwAddr": "00:01:02:f4:1d:eb",
     "ipv4Addr": "192.168.229.166",
     "ring": "standard",
+    "devID": {
+      "ouiMfg": "Roku",
+      "deviceGenus": "Roku Streaming Media Player",
+      "osGenus": "Linux",
+    },
     "scans": {
       "tcp": {
         "finish": "2019-06-23T20:28:57Z",
