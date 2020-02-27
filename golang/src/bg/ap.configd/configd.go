@@ -1003,7 +1003,7 @@ func processOneEvent(query *cfgmsg.ConfigQuery) *cfgmsg.ConfigResponse {
 		}
 	}
 
-	if err == nil && *verbose {
+	if err != nil && *verbose {
 		slog.Warnf("Config operation failed: %v", err)
 	}
 
