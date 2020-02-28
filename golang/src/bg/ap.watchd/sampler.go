@@ -37,6 +37,16 @@ var (
 	warnTime = apcfg.Duration("warn_time", time.Duration(time.Hour), true,
 		nil)
 
+	// bytes per packet to sample
+	samplerSize = apcfg.Int("sampler_size", 1536, true, nil)
+
+	// how frequently to update the sampler drop stats
+	samplerStatPeriod = apcfg.Duration("sampler_stat_period",
+		10*time.Second, true, nil)
+
+	// report dropped samples if the dropped rate exceeds <n> / 1000
+	samplerDropRate = apcfg.Int("sampler_drop_rate", 5, true, nil)
+
 	// Currently granted DHCP leases (maps Mac -> IPv4)
 	currentAddrs = make(map[uint64]uint32)
 	currentMtx   sync.RWMutex
@@ -67,6 +77,7 @@ type samplerState struct {
 	iface  string
 	hwaddr net.HardwareAddr
 	handle *pfring.Ring
+	sz     uint32
 
 	// State of the current packet being analyzed
 	parser      *gopacket.DecodingLayerParser
@@ -234,7 +245,7 @@ func processOnePacket(state *samplerState, data []byte) {
 			src.port = int(tcp.SrcPort)
 			dst.port = int(tcp.DstPort)
 		}
-		updateStats(src, dst, proto, len(data))
+		updateStats(src, dst, proto, int(ipv4.Length))
 
 		if !localIPAddr(srcIP) {
 			checkBlock(dstMac, srcIP)
@@ -342,8 +353,8 @@ func findInterface(ring, bridge string) (net.HardwareAddr, error) {
 	return hwaddr, err
 }
 
-func openInterface(bridge string) (*pfring.Ring, error) {
-	handle, err := pfring.NewRing(bridge, 1024, pfring.FlagPromisc)
+func openInterface(bridge string, sz uint32) (*pfring.Ring, error) {
+	handle, err := pfring.NewRing(bridge, sz, pfring.FlagPromisc)
 	if err != nil {
 		err = fmt.Errorf("pfring.NewRing(%s) failed: %v", bridge, err)
 	} else if err = handle.Enable(); err != nil {
@@ -366,35 +377,42 @@ func parserInit(state *samplerState) {
 		&state.decodedTCP)
 }
 
-// Check the ring stats on each packet processed.  Log a message whenever we've
-// dropped 100+ packets, as long as it's been at least 10 seconds since the
-// previous message.
-func ringStatsUpdate(state *samplerState, old *pfring.Stats, when *time.Time) {
+// Periodically check the count of dropped packets.  Log a message whenever we
+// exceed some interesting threshold.
+func ringStatsUpdate(state *samplerState, old *pfring.Stats, when time.Time) {
 	stats, _ := state.handle.Stats()
-	dropped := int64(stats.Dropped - old.Dropped)
 
-	if dropped >= 100 {
-		now := time.Now()
-		if elapsed := now.Sub(*when); elapsed >= 10*time.Second {
-			metrics.droppedPkts.Add(dropped)
-			processed := stats.Received - old.Received
-			pct := 100.0 * (float64(dropped) / float64(processed))
-			slog.Infof("%s dropped %d of %d packets(%1.2f) in %v",
-				state.iface, dropped, processed, pct, elapsed)
+	dropped := stats.Dropped - old.Dropped
+	total := (stats.Received - old.Received) + dropped
+	if total > 0 {
+		rate := (dropped * 1000) / total
+		if rate >= uint64(*samplerDropRate) {
+			slog.Infof("%s dropped %d of %d packets (%1.2f%%) in %v",
+				state.iface, dropped, total, float64(rate)/10,
+				time.Since(when))
 
-			*when = time.Now()
-			*old = stats
 		}
 	}
+	metrics.droppedPkts.Add(int64(dropped))
+	*old = stats
 }
 
 // Per-interface loop that endlessly consumes and processes packets
 func sampleLoop(state *samplerState) {
 	stats := pfring.Stats{}
-	lastUpdate := time.Now()
+	lastCheck := time.Now()
 
 	for samplerRunning {
-		ringStatsUpdate(state, &stats, &lastUpdate)
+		if time.Since(lastCheck) > *samplerStatPeriod {
+			ringStatsUpdate(state, &stats, lastCheck)
+			lastCheck = time.Now()
+		}
+
+		if state.sz != uint32(*samplerSize) {
+			slog.Infof("sampler size changed from %d to %d - resetting",
+				state.sz, *samplerSize)
+			return
+		}
 
 		data, _, err := state.handle.ZeroCopyReadPacketData()
 		if err != nil {
@@ -425,7 +443,8 @@ func sampleInterface(state *samplerState) {
 
 		hwaddr, err := findInterface(ring, bridge)
 		if err == nil {
-			hdl, err = openInterface(bridge)
+			state.sz = uint32(*samplerSize)
+			hdl, err = openInterface(bridge, state.sz)
 		}
 
 		if err != nil {

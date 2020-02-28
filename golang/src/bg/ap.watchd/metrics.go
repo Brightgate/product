@@ -37,6 +37,7 @@ type endpoint struct {
 }
 
 type timeStats struct {
+	total    archive.XferStats
 	previous archive.XferStats
 	second   archive.XferStats
 	minute   archive.XferStats
@@ -248,6 +249,11 @@ func updateRolling(period time.Duration) {
 			PktsSent:  current.PktsSent - running.previous.PktsSent,
 		}
 
+		running.total.BytesRcvd += delta[mac].BytesRcvd
+		running.total.PktsRcvd += delta[mac].PktsRcvd
+		running.total.BytesSent += delta[mac].BytesSent
+		running.total.PktsSent += delta[mac].PktsSent
+
 		running.previous = *current
 	}
 	statsMtx.RUnlock()
@@ -275,6 +281,7 @@ func updateRolling(period time.Duration) {
 
 		r := rollingStats[mac]
 		if roll(&r.second, stats, time.Second, period) {
+			props = append(props, metricOps(base+"/total", &r.total)...)
 			props = append(props, metricOps(base+"/second", &r.second)...)
 		}
 		if roll(&r.minute, stats, time.Minute, period) {
