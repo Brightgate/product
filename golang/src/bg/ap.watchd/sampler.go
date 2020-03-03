@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os/exec"
 	"sync"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	// Requires libpcap
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
+	"github.com/google/gopacket/pcap"
 	"github.com/google/gopacket/pfring"
 )
 
@@ -36,6 +38,9 @@ var (
 		false, nil)
 	warnTime = apcfg.Duration("warn_time", time.Duration(time.Hour), true,
 		nil)
+
+	// use pfring or pcap to sample packets
+	samplerType = apcfg.String("sampler", "pcap", false, nil)
 
 	// bytes per packet to sample
 	samplerSize = apcfg.Int("sampler_size", 1536, true, nil)
@@ -71,13 +76,23 @@ var (
 	samplerWaitGroup sync.WaitGroup
 )
 
+type samplerHandle interface {
+	ZeroCopyReadPacketData() (data []byte, ci gopacket.CaptureInfo, err error)
+	Close()
+}
+
+type samplerStats struct {
+	total   uint64
+	dropped uint64
+}
+
 type samplerState struct {
 	// Persistent state describing the identity of the sampler
-	ring   string
-	iface  string
-	hwaddr net.HardwareAddr
-	handle *pfring.Ring
-	sz     uint32
+	ring    string
+	iface   string
+	hwaddr  net.HardwareAddr
+	sampler samplerHandle
+	sz      uint32
 
 	// State of the current packet being analyzed
 	parser      *gopacket.DecodingLayerParser
@@ -353,15 +368,32 @@ func findInterface(ring, bridge string) (net.HardwareAddr, error) {
 	return hwaddr, err
 }
 
-func openInterface(bridge string, sz uint32) (*pfring.Ring, error) {
-	handle, err := pfring.NewRing(bridge, sz, pfring.FlagPromisc)
-	if err != nil {
-		err = fmt.Errorf("pfring.NewRing(%s) failed: %v", bridge, err)
-	} else if err = handle.Enable(); err != nil {
-		err = fmt.Errorf("pfring.Enable(%s) failed: %v", bridge, err)
+func openInterface(bridge string, sz uint32) (samplerHandle, error) {
+	var hdl samplerHandle
+	var err error
+
+	if *samplerType == "pfring" {
+		var ring *pfring.Ring
+		ring, err = pfring.NewRing(bridge, sz, pfring.FlagPromisc)
+		if err != nil {
+			err = fmt.Errorf("pfring.NewRing(%s) failed: %v", bridge, err)
+		} else if err = ring.Enable(); err != nil {
+			err = fmt.Errorf("pfring.Enable(%s) failed: %v", bridge, err)
+		} else {
+			slog.Debugf("sampling %s with pf_ring", bridge)
+			ring.SetSocketMode(pfring.ReadOnly)
+			hdl = ring
+		}
+	} else {
+		hdl, err = pcap.OpenLive(bridge, 65536, true, pcap.BlockForever)
+		if err != nil {
+			err = fmt.Errorf("pcap.OpenLive(%s) failed: %v", bridge, err)
+		} else {
+			slog.Debugf("sampling %s with pcap", bridge)
+		}
 	}
 
-	return handle, err
+	return hdl, err
 }
 
 //
@@ -379,11 +411,24 @@ func parserInit(state *samplerState) {
 
 // Periodically check the count of dropped packets.  Log a message whenever we
 // exceed some interesting threshold.
-func ringStatsUpdate(state *samplerState, old *pfring.Stats, when time.Time) {
-	stats, _ := state.handle.Stats()
+func packetStatsUpdate(state *samplerState, old *samplerStats, when time.Time) {
+	var stats samplerStats
 
-	dropped := stats.Dropped - old.Dropped
-	total := (stats.Received - old.Received) + dropped
+	switch sampler := state.sampler.(type) {
+	case *pfring.Ring:
+		x, _ := sampler.Stats()
+		stats.dropped = x.Dropped
+		stats.total = x.Received + x.Dropped
+	case *pcap.Handle:
+		x, _ := sampler.Stats()
+		stats.dropped = uint64(x.PacketsDropped)
+		stats.total = uint64(x.PacketsReceived + x.PacketsDropped)
+	default:
+		return
+	}
+
+	dropped := stats.dropped - old.dropped
+	total := stats.total - old.total
 	if total > 0 {
 		rate := (dropped * 1000) / total
 		if rate >= uint64(*samplerDropRate) {
@@ -399,12 +444,12 @@ func ringStatsUpdate(state *samplerState, old *pfring.Stats, when time.Time) {
 
 // Per-interface loop that endlessly consumes and processes packets
 func sampleLoop(state *samplerState) {
-	stats := pfring.Stats{}
+	stats := samplerStats{}
 	lastCheck := time.Now()
 
 	for samplerRunning {
 		if time.Since(lastCheck) > *samplerStatPeriod {
-			ringStatsUpdate(state, &stats, lastCheck)
+			packetStatsUpdate(state, &stats, lastCheck)
 			lastCheck = time.Now()
 		}
 
@@ -414,7 +459,7 @@ func sampleLoop(state *samplerState) {
 			return
 		}
 
-		data, _, err := state.handle.ZeroCopyReadPacketData()
+		data, _, err := state.sampler.ZeroCopyReadPacketData()
 		if err != nil {
 			slog.Warnf("Error reading packet data: %v", err)
 			if err != io.EOF || samplerRunning {
@@ -439,7 +484,7 @@ func sampleInterface(state *samplerState) {
 
 	parserInit(state)
 	for samplerRunning {
-		var hdl *pfring.Ring
+		var hdl samplerHandle
 
 		hwaddr, err := findInterface(ring, bridge)
 		if err == nil {
@@ -460,10 +505,9 @@ func sampleInterface(state *samplerState) {
 		}
 		tlog.Clear()
 
-		hdl.SetSocketMode(pfring.ReadOnly)
 		slog.Infof("Sampler for %s (%s) online", bridge, ring)
 		state.hwaddr = hwaddr
-		state.handle = hdl
+		state.sampler = hdl
 		sampleLoop(state)
 		hdl.Close()
 		slog.Infof("Sampler for %s (%s) offline", bridge, ring)
@@ -474,8 +518,13 @@ func sampleFini(w *watcher) {
 	slog.Infof("Shutting down sampler")
 	samplerRunning = false
 	for _, s := range samplers {
-		if s.handle != nil {
-			s.handle.Disable()
+		if s.sampler != nil {
+			switch sampler := s.sampler.(type) {
+			case *pfring.Ring:
+				sampler.Disable()
+			case *pcap.Handle:
+				sampler.Close()
+			}
 		}
 	}
 
@@ -496,6 +545,12 @@ func subnetBroadcastAddr(n *net.IPNet) net.IP {
 func sampleInit(w *watcher) {
 	blocklistInit()
 
+	if *samplerType != "pfring" {
+		cmd := exec.Command("/sbin/rmmod", "pf_ring")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			slog.Warnf("failed to unload pf_ring: %v", string(out))
+		}
+	}
 	samplerRunning = true
 	for ring, config := range rings {
 		if config.Bridge == "" {
