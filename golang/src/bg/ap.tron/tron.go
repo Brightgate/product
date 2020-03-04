@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -74,86 +74,6 @@ type hTest struct {
 }
 
 var (
-	networkTests = []*hTest{wanTest, carrierTest, addrTest,
-		connectTest, dnsTest}
-
-	stackTests = []*hTest{selfTest, mcpTest, configTest, rpcdTest}
-
-	// The following 2 tests are used to determine whether the wan link is
-	// alive.  The wan_carrier state is displayed on a dedicated LED and is
-	// controlled by the hardware.  We only track it internally so it can be
-	// used to trigger higher-level tests.
-	wanTest = &hTest{
-		name:     "wan_discover",
-		testFn:   getWanName,
-		period:   10 * time.Second,
-		source:   "",                    // initialized at runtime
-		triggers: []*hTest{carrierTest}, // new wan -> check carrier
-	}
-	carrierTest = &hTest{
-		name:     "wan_carrier",
-		testFn:   getCarrierState,
-		period:   time.Second,
-		triggers: []*hTest{addrTest},
-	}
-
-	// The following 3 tests attempt to determine how much basic network
-	// functionality we currently have.  These are used to determine the
-	// blink pattern displayed on LED 3.
-	addrTest = &hTest{
-		name:     "wan_address",
-		testFn:   getAddressState,
-		period:   5 * time.Second,
-		triggers: []*hTest{connectTest},
-		ledValue: 10,
-	}
-	connectTest = &hTest{
-		name:     "net_connect",
-		testFn:   connCheck,
-		period:   30 * time.Second,
-		triggers: []*hTest{dnsTest, rpcdTest},
-		ledValue: 90,
-	}
-	dnsTest = &hTest{
-		name:     "dns_lookup",
-		testFn:   dnsCheck,
-		period:   60 * time.Second,
-		ledValue: 100,
-	}
-
-	// The remaining tests attempt to determine the health of the brightgate
-	// software stack.  In particular, we want to know whether enough of our
-	// stack is working to support the creation of service tunnels from the
-	// cloud.  This is communicated through the blink pattern on LED 4.
-	selfTest = &hTest{
-		name:     "self",
-		testFn:   selfCheck,
-		period:   time.Second,
-		ledValue: 10,
-	}
-	mcpTest = &hTest{
-		name:     "mcp",
-		testFn:   mcpCheck,
-		period:   5 * time.Second,
-		triggers: []*hTest{configTest},
-		ledValue: 50,
-	}
-	configTest = &hTest{
-		name:     "configd",
-		testFn:   configCheck,
-		period:   5 * time.Second,
-		source:   "@/apversion",
-		triggers: []*hTest{wanTest, rpcdTest},
-		ledValue: 90,
-	}
-	rpcdTest = &hTest{
-		name:     "cloud_rpc",
-		testFn:   rpcCheck,
-		period:   5 * time.Second,
-		source:   "", // initialized at runtime
-		ledValue: 100,
-	}
-
 	// Two different ways of iterating over all of the tests
 	allTests    []*hTest
 	perLedTests map[string][]*hTest
@@ -194,15 +114,31 @@ func logDebug(format string, v ...interface{}) {
 	}
 }
 
+func (t *hTest) setValue(key, newVal string) {
+	prop := t.name + "/" + key
+	old := states.current[prop]
+	if old != newVal {
+		states.Lock()
+		states.current[prop] = newVal
+		states.updated <- true
+		states.Unlock()
+	}
+}
+
+func (t *hTest) setState(newState string) {
+	if t.state != newState {
+		t.state = newState
+		t.setValue(newState, time.Now().Format(time.RFC3339))
+	}
+}
+
 // Periodically execute a single health check.
-func monitorOne(t *hTest, wg *sync.WaitGroup) {
+func (t *hTest) monitor(wg *sync.WaitGroup) {
 	logDebug("%s monitor started", t.name)
 
 	defer wg.Done()
 	for running {
 		oldPass := t.pass
-		oldState := t.state
-
 		t.pass = t.testFn(t)
 
 		if t.pass != oldPass {
@@ -216,16 +152,6 @@ func monitorOne(t *hTest, wg *sync.WaitGroup) {
 					"of %s", t.name, trigger.name)
 				trigger.signal <- true
 			}
-		}
-
-		if t.state != oldState {
-			states.Lock()
-			states.current[t.name] = t.state
-			states.Unlock()
-		}
-
-		if t.pass != oldPass || t.state != oldState {
-			states.updated <- true
 		}
 
 		select {
@@ -253,7 +179,7 @@ func healthMonitor() {
 	for _, t := range allTests {
 		t.signal = make(chan bool, 1)
 		wg.Add(1)
-		go monitorOne(t, &wg)
+		go t.monitor(&wg)
 	}
 
 	sig := make(chan os.Signal, 2)
@@ -301,6 +227,7 @@ func main() {
 		"4": stackTests,
 	}
 	allTests = make([]*hTest, 0)
+	allTests = append(allTests, sysTests...)
 	allTests = append(allTests, networkTests...)
 	allTests = append(allTests, stackTests...)
 

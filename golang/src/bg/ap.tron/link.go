@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -14,25 +14,68 @@ package main
 import (
 	"net"
 	"os"
-	"syscall"
 	"time"
-	"unsafe"
 
 	"bg/base_def"
 
 	"github.com/sparrc/go-ping"
+	"github.com/vishvananda/netlink"
+	"golang.org/x/sys/unix"
 )
 
 var (
 	wanName  string
 	wanIface *net.Interface
-)
 
-var (
 	// XXX: These should come from a config property, so we can tweak it
 	// over time and for geographical suitability
 	pingAddresses = []string{"8.8.8.8", "1.1.1.1"}
 	dnsNames      = []string{"www.google.com", "rpc0.b10e.net"}
+
+	networkTests = []*hTest{wanTest, carrierTest, addrTest,
+		connectTest, dnsTest}
+
+	// The following 2 tests are used to determine whether the wan link is
+	// alive.  The wan_carrier state is displayed on a dedicated LED and is
+	// controlled by the hardware.  We only track it internally so it can be
+	// used to trigger higher-level tests.
+	wanTest = &hTest{
+		name:     "wan_discover",
+		testFn:   getWanName,
+		period:   10 * time.Second,
+		source:   "",                    // initialized at runtime
+		triggers: []*hTest{carrierTest}, // new wan -> check carrier
+	}
+	carrierTest = &hTest{
+		name:     "wan_carrier",
+		testFn:   getCarrierState,
+		period:   time.Second,
+		triggers: []*hTest{addrTest},
+	}
+
+	// The following 3 tests attempt to determine how much basic network
+	// functionality we currently have.  These are used to determine the
+	// blink pattern displayed on LED 3.
+	addrTest = &hTest{
+		name:     "wan_address",
+		testFn:   getAddressState,
+		period:   5 * time.Second,
+		triggers: []*hTest{connectTest},
+		ledValue: 10,
+	}
+	connectTest = &hTest{
+		name:     "net_connect",
+		testFn:   connCheck,
+		period:   30 * time.Second,
+		triggers: []*hTest{dnsTest, rpcdTest},
+		ledValue: 90,
+	}
+	dnsTest = &hTest{
+		name:     "dns_lookup",
+		testFn:   dnsCheck,
+		period:   60 * time.Second,
+		ledValue: 100,
+	}
 )
 
 // ap.networkd selects the wan device, which we learn of via configd.  If we
@@ -87,80 +130,59 @@ func getWanName(t *hTest) bool {
 	return (wanIface != nil)
 }
 
-// Use the netlink() system call to fetch a specific set of attributes for a
-// single interface
-func getAttrs(idx, call int, hdr uint16) []syscall.NetlinkRouteAttr {
-	msg, err := syscall.NetlinkRIB(call, syscall.AF_UNSPEC)
-	if err != nil {
-		return nil
-	}
+func getWanLink() netlink.Link {
+	var link netlink.Link
 
-	msgs, err := syscall.ParseNetlinkMessage(msg)
-	if err != nil {
-		return nil
-	}
-
-	for _, m := range msgs {
-		if m.Header.Type == hdr {
-			ifim := (*syscall.IfInfomsg)(unsafe.Pointer(&m.Data[0]))
-			if int(ifim.Index) == idx {
-				attrs, _ := syscall.ParseNetlinkRouteAttr(&m)
-				return attrs
-			}
+	if wanIface != nil {
+		l, err := netlink.LinkByIndex(wanIface.Index)
+		if err != nil {
+			logInfo("failed to get link for %s(%d): %v",
+				wanName, wanIface.Index, err)
+		} else {
+			link = l
 		}
 	}
 
-	return nil
+	return link
 }
 
 // Determine whether we have a live upstream link
 func getCarrierState(t *hTest) bool {
-	const IflaCarrier = 33
+	var live bool
 
-	if wanIface == nil {
-		return false
+	if l := getWanLink(); l != nil {
+		a := l.Attrs()
+		live = (a != nil && a.OperState == netlink.OperUp)
 	}
 
-	attrs := getAttrs(wanIface.Index, syscall.RTM_GETLINK,
-		syscall.RTM_NEWLINK)
-
-	for _, a := range attrs {
-		if a.Attr.Type == IflaCarrier {
-			if a.Value[0] == 1 {
-				return true
-			}
-		}
-	}
-
-	return false
+	return live
 }
 
 // Determine the scope of our WAN address (if any)
 func getAddressState(t *hTest) bool {
-	t.state = "none"
+	state := "none"
 
-	if wanIface == nil {
-		return false
-	}
+	if l := getWanLink(); l != nil {
+		addrs, err := netlink.AddrList(l, netlink.FAMILY_V4)
+		if err != nil {
+			logInfo("Failed to get addr for %s: %v", wanName, err)
+			addrs = nil
+		}
 
-	attrs := getAttrs(wanIface.Index, syscall.RTM_GETADDR,
-		syscall.RTM_NEWADDR)
-
-	for _, a := range attrs {
-		if a.Attr.Type == syscall.IFLA_ADDRESS &&
-			len(a.Value) == net.IPv4len {
-
-			ip := net.IP(a.Value)
-			if ip.IsLinkLocalUnicast() {
-				t.state = "self-assigned"
-			} else {
-				t.state = "valid"
-				break
+		for _, a := range addrs {
+			if a.Flags == unix.IFA_F_PERMANENT && a.IP != nil {
+				if a.IP.IsLinkLocalUnicast() {
+					state = "self-assigned"
+				} else {
+					state = "valid"
+					break
+				}
 			}
 		}
 	}
 
-	return (t.state == "valid")
+	t.setState(state)
+	return (state == "valid")
 }
 
 // Check to see whether we can ping remote sites
@@ -171,7 +193,7 @@ func connCheck(t *hTest) bool {
 	// root.  We pretend that the connection succeeded, so we continue on to
 	// perform the DNS check.
 	if os.Geteuid() != 0 {
-		t.state = ""
+		t.setState("")
 		return true
 	}
 
@@ -196,12 +218,12 @@ func connCheck(t *hTest) bool {
 	}
 
 	if (hits == 0) || (*strict && hits < len(pingAddresses)) {
-		t.state = "fail"
-		return false
+		t.setState("fail")
+	} else {
+		t.setState("success")
 	}
 
-	t.state = "success"
-	return true
+	return (t.state == "success")
 }
 
 // Check to see whether we can resolve some well-known addresses
@@ -218,10 +240,10 @@ func dnsCheck(t *hTest) bool {
 	}
 
 	if (hits == 0) || (*strict && hits < len(dnsNames)) {
-		t.state = "fail"
-		return false
+		t.setState("fail")
+	} else {
+		t.setState("success")
 	}
 
-	t.state = "success"
-	return true
+	return (t.state == "success")
 }

@@ -31,6 +31,41 @@ var (
 
 	// daemons mcp believes to be online
 	daemonsOnline = make(map[string]time.Time)
+
+	stackTests = []*hTest{selfTest, mcpTest, configTest, rpcdTest}
+
+	// These tests attempt to determine the health of the brightgate
+	// software stack.  In particular, we want to know whether enough of our
+	// stack is working to support the creation of service tunnels from the
+	// cloud.  This is communicated through the blink pattern on LED 4.
+	selfTest = &hTest{
+		name:     "self",
+		testFn:   selfCheck,
+		period:   time.Second,
+		ledValue: 10,
+	}
+	mcpTest = &hTest{
+		name:     "mcp",
+		testFn:   mcpCheck,
+		period:   5 * time.Second,
+		triggers: []*hTest{configTest},
+		ledValue: 50,
+	}
+	configTest = &hTest{
+		name:     "configd",
+		testFn:   configCheck,
+		period:   5 * time.Second,
+		source:   "@/apversion",
+		triggers: []*hTest{wanTest, rpcdTest},
+		ledValue: 90,
+	}
+	rpcdTest = &hTest{
+		name:     "cloud_rpc",
+		testFn:   rpcCheck,
+		period:   5 * time.Second,
+		source:   "", // initialized at runtime
+		ledValue: 100,
+	}
 )
 
 // Attempt to connect to configd if we aren't already.
@@ -72,31 +107,30 @@ func configUpdater(wg *sync.WaitGroup) {
 
 	propBase := "@/metrics/health/" + nodeUUID + "/"
 	for running {
-		// Determine which states changed
-		updates := make(map[string]string)
-		states.Lock()
-		for component, state := range states.current {
-			if old := states.old[component]; old != state {
-				updates[component] = state
-			}
-		}
-		states.Unlock()
-
-		if configConnected {
-			now := time.Now().Format(time.RFC3339)
-			for component, state := range updates {
-				prop := propBase + component + "/" + state
-				config.CreateProp(prop, now, nil)
-				states.old[component] = state
-			}
-		}
-
-		// Block until a state is updated, then drain any
-		// accumulated update signals.
+		// Block until a state is updated, then drain any accumulated
+		// update signals.
 		<-states.updated
 		for len(states.updated) > 0 {
 			<-states.updated
 		}
+
+		if !configConnected {
+			continue
+		}
+
+		states.Lock()
+		for prop, current := range states.current {
+			if old := states.old[prop]; old != current {
+				full := propBase + prop
+				err := config.CreateProp(full, current, nil)
+				if err == nil {
+					states.old[prop] = current
+				} else {
+					break
+				}
+			}
+		}
+		states.Unlock()
 	}
 }
 
