@@ -218,9 +218,10 @@ func appendOnlyNew(sentence []string, terms ...string) []string {
 	return sentence
 }
 
-const ediEntityVersion = "1"
+const ediBaseVersion = "1"
 
-func extractDeviceInfoEntity(ouiDB oui.OuiDB, di *base_msg.DeviceInfo) sentence.Sentence {
+// extract information from the top level of the DeviceInfo record.
+func extractDeviceInfoBase(ouiDB oui.OuiDB, di *base_msg.DeviceInfo) sentence.Sentence {
 	s := sentence.New()
 
 	mac := network.Uint64ToMac(*di.MacAddress)
@@ -350,7 +351,7 @@ func extractDeviceInfoScan(di *base_msg.DeviceInfo) sentence.Sentence {
 }
 
 func getCombinedVersion() string {
-	return ediSeparatorVersion + ediEntityVersion + ediDHCPVersion + ediDNSVersion + ediListenVersion + ediScanVersion
+	return ediSeparatorVersion + ediBaseVersion + ediDHCPVersion + ediDNSVersion + ediListenVersion + ediScanVersion
 }
 
 // The Bayesian sentence we compute from a DeviceInfo is composed of the
@@ -363,8 +364,8 @@ func genBayesSentenceFromDeviceInfo(ouiDB oui.OuiDB, di *base_msg.DeviceInfo) (s
 		return getCombinedVersion(), s
 	}
 
-	entitySentence := extractDeviceInfoEntity(ouiDB, di)
-	s.AddSentence(entitySentence)
+	baseSentence := extractDeviceInfoBase(ouiDB, di)
+	s.AddSentence(baseSentence)
 
 	dhcpSentence, _ := extractDeviceInfoDHCP(di)
 	s.AddSentence(dhcpSentence)

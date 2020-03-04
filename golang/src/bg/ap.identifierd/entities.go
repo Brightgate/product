@@ -11,6 +11,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"net"
 	"os"
@@ -36,10 +37,99 @@ import (
 // The 30 minute timeout is reset if identiferd restarts.
 // XXX Add config option to reset the timeout on a specific client.
 type entity struct {
+	mac     uint64
 	timeout time.Time
 	saved   time.Time
 	private bool
 	info    *base_msg.DeviceInfo
+	// scans tracks whether we have seen a scan result for a given type
+	// (tcp, udp) for the client.  If we have then we ignore subsequent
+	// scans until a reset().  Scans happen frequently enough that if we
+	// gathered them all we'd have a result in most intervals.
+	scans map[base_msg.ScanType]bool
+	// fullResetTime tracks the time after which the entity record should
+	// go through a full reset, so that data collection can begin again.
+	fullResetTime time.Time
+}
+
+func newEntity(hwaddr uint64) *entity {
+	return &entity{
+		mac:     hwaddr,
+		private: false,
+		info: &base_msg.DeviceInfo{
+			Created:    aputil.NowToProtobuf(),
+			MacAddress: proto.Uint64(hwaddr),
+		},
+		scans:         make(map[base_msg.ScanType]bool),
+		fullResetTime: time.Now().Add(resetDuration),
+	}
+}
+
+func (e *entity) reset() {
+	e.info = &base_msg.DeviceInfo{
+		Created:    aputil.NowToProtobuf(),
+		MacAddress: proto.Uint64(e.mac),
+	}
+
+	// Have we crossed a "major reset" interval?  If so, clear
+	// data so that we restart the collection of a broader set of
+	// information from this client.
+	if time.Now().After(e.fullResetTime) {
+		e.scans = make(map[base_msg.ScanType]bool)
+		e.fullResetTime = time.Now().Add(resetDuration)
+		e.timeout = time.Time{}
+
+		hwaddr := network.Uint64ToHWAddr(e.mac)
+		slog.Debugf("%s: starting full reset (next at %s)", hwaddr, e.fullResetTime)
+	}
+}
+
+func (e *entity) addTimeout() {
+	if e.timeout.IsZero() {
+		e.timeout = time.Now().Add(collectionDuration)
+	}
+}
+
+func (e *entity) isRecording() bool {
+	return time.Now().Before(e.timeout)
+}
+
+// addOptions adds the DHCPOptions to the DeviceInfo if it seems to be
+// different than a previous entry (differences seem to be very rare).
+func (e *entity) addOptions(msg *base_msg.DHCPOptions) {
+	// We expect Options to be of length 1 in nearly all cases-- DHCP
+	// clients universally post the same ParamReqList and VendorClassId for
+	// both DISCOVER and REQUEST.  Even getting two different entries is
+	// noteworthy.  Here we limit the total number of Options which can be
+	// gathered in order to prevent a runaway use of space by a broken or
+	// antagonistic client.
+	if len(e.info.Options) > 8 {
+		return
+	}
+	// If this entry is substantially redundant with any previous entry we've
+	// seen for this device during this interval, don't bother recording it.
+	for _, o := range e.info.Options {
+		if bytes.Equal(msg.ParamReqList, o.ParamReqList) &&
+			bytes.Equal(msg.VendorClassId, o.VendorClassId) {
+			return
+		}
+	}
+	e.info.Options = append(e.info.Options, msg)
+	e.info.Updated = aputil.NowToProtobuf()
+}
+
+// addScan adds an EventNetScan to the outbound entity; scans come in
+// periodically, and may not be aligned with a recording interval.  So we track
+// them separately, posting them in the interval when they arrive.
+func (e *entity) addScan(msg *base_msg.EventNetScan) {
+	t := msg.GetScanType()
+	if t != base_msg.ScanType_UNKNOWN {
+		if !e.scans[t] {
+			e.scans[t] = true
+			e.info.Scan = append(e.info.Scan, msg)
+			e.info.Updated = aputil.NowToProtobuf()
+		}
+	}
 }
 
 // entities is a vessel to collect data about clients.
@@ -51,13 +141,7 @@ type entities struct {
 func (e *entities) getEntityLocked(hwaddr uint64) *entity {
 	_, ok := e.dataMap[hwaddr]
 	if !ok {
-		e.dataMap[hwaddr] = &entity{
-			private: false,
-			info: &base_msg.DeviceInfo{
-				Created:    aputil.NowToProtobuf(),
-				MacAddress: proto.Uint64(hwaddr),
-			},
-		}
+		e.dataMap[hwaddr] = newEntity(hwaddr)
 	}
 	return e.dataMap[hwaddr]
 }
@@ -75,15 +159,7 @@ func (e *entities) addDHCPName(hwaddr uint64, name string) {
 	defer e.Unlock()
 
 	d := e.getEntityLocked(hwaddr)
-	if d.info.DhcpName == nil {
-		d.info.DhcpName = proto.String(name)
-	}
-}
-
-func addTimeout(d *entity) {
-	if d.timeout.IsZero() {
-		d.timeout = time.Now().Add(collectionDuration)
-	}
+	d.info.DhcpName = proto.String(name)
 }
 
 func (e *entities) addMsgEntity(hwaddr uint64, msg *base_msg.EventNetEntity) {
@@ -91,8 +167,8 @@ func (e *entities) addMsgEntity(hwaddr uint64, msg *base_msg.EventNetEntity) {
 	defer e.Unlock()
 
 	d := e.getEntityLocked(hwaddr)
-	addTimeout(d)
-	if d.info.Entity == nil {
+	d.addTimeout()
+	if d.isRecording() && d.info.Entity == nil {
 		d.info.Entity = msg
 		d.info.Updated = aputil.NowToProtobuf()
 	}
@@ -103,9 +179,8 @@ func (e *entities) addMsgOptions(hwaddr uint64, msg *base_msg.DHCPOptions) {
 	defer e.Unlock()
 
 	d := e.getEntityLocked(hwaddr)
-	addTimeout(d)
-	d.info.Options = append(d.info.Options, msg)
-	d.info.Updated = aputil.NowToProtobuf()
+	d.addTimeout()
+	d.addOptions(msg)
 }
 
 func (e *entities) addMsgScan(hwaddr uint64, msg *base_msg.EventNetScan) {
@@ -113,11 +188,8 @@ func (e *entities) addMsgScan(hwaddr uint64, msg *base_msg.EventNetScan) {
 	defer e.Unlock()
 
 	d := e.getEntityLocked(hwaddr)
-	addTimeout(d)
-	if time.Now().Before(d.timeout) {
-		d.info.Scan = append(d.info.Scan, msg)
-		d.info.Updated = aputil.NowToProtobuf()
-	}
+	d.addTimeout()
+	d.addScan(msg)
 }
 
 func (e *entities) addMsgRequest(hwaddr uint64, msg *base_msg.EventNetRequest) {
@@ -125,8 +197,8 @@ func (e *entities) addMsgRequest(hwaddr uint64, msg *base_msg.EventNetRequest) {
 	defer e.Unlock()
 
 	d := e.getEntityLocked(hwaddr)
-	addTimeout(d)
-	if time.Now().Before(d.timeout) && !d.private {
+	d.addTimeout()
+	if d.isRecording() && !d.private {
 		d.info.Request = append(d.info.Request, msg)
 		d.info.Updated = aputil.NowToProtobuf()
 	}
@@ -137,8 +209,8 @@ func (e *entities) addMsgListen(hwaddr uint64, msg *base_msg.EventListen) {
 	defer e.Unlock()
 
 	d := e.getEntityLocked(hwaddr)
-	addTimeout(d)
-	if time.Now().Before(d.timeout) {
+	d.addTimeout()
+	if d.isRecording() {
 		d.info.Listen = append(d.info.Listen, msg)
 		d.info.Updated = aputil.NowToProtobuf()
 	}
@@ -153,18 +225,13 @@ func (e *entities) writeInventory(path string) (int, error) {
 		Timestamp: aputil.NowToProtobuf(),
 	}
 
-	for h, d := range e.dataMap {
+	for _, d := range e.dataMap {
 		updated := aputil.ProtobufToTime(d.info.Updated)
-		if updated == nil || updated.Before(d.saved) {
-			continue
+		if updated != nil && updated.After(d.saved) {
+			inventory.Devices = append(inventory.Devices, d.info)
+			d.saved = time.Now()
 		}
-
-		inventory.Devices = append(inventory.Devices, d.info)
-		d.saved = time.Now()
-		d.info = &base_msg.DeviceInfo{
-			Created:    aputil.NowToProtobuf(),
-			MacAddress: proto.Uint64(h),
-		}
+		d.reset()
 	}
 
 	if len(inventory.Devices) == 0 {

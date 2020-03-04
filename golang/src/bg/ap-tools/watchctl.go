@@ -121,20 +121,20 @@ func (list scanList) Less(i, j int) bool {
 	return comp == sLess
 }
 
-func typeToString(scanType *base_msg.WatchdScanInfo_ScanType) string {
+func typeToString(scanType *base_msg.ScanType) string {
 	s := "unknown"
 
 	if scanType != nil {
 		switch *scanType {
-		case base_msg.WatchdScanInfo_TCP_PORTS:
+		case base_msg.ScanType_TCP_PORTS:
 			s = "tcp"
-		case base_msg.WatchdScanInfo_UDP_PORTS:
+		case base_msg.ScanType_UDP_PORTS:
 			s = "udp"
-		case base_msg.WatchdScanInfo_VULN:
+		case base_msg.ScanType_VULN:
 			s = "vuln"
-		case base_msg.WatchdScanInfo_PASSWD:
+		case base_msg.ScanType_PASSWD:
 			s = "passwd"
-		case base_msg.WatchdScanInfo_SUBNET:
+		case base_msg.ScanType_SUBNET:
 			s = "subnet"
 		}
 	}
@@ -263,16 +263,16 @@ func addScan(c *comms.APComm, args []string) error {
 	}
 
 	if len(args) == 2 {
-		var scanType base_msg.WatchdScanInfo_ScanType
+		var scanType base_msg.ScanType
 		switch args[1] {
 		case "tcp":
-			scanType = base_msg.WatchdScanInfo_TCP_PORTS
+			scanType = base_msg.ScanType_TCP_PORTS
 		case "udp":
-			scanType = base_msg.WatchdScanInfo_UDP_PORTS
+			scanType = base_msg.ScanType_UDP_PORTS
 		case "vuln":
-			scanType = base_msg.WatchdScanInfo_VULN
+			scanType = base_msg.ScanType_VULN
 		case "passwd":
-			scanType = base_msg.WatchdScanInfo_PASSWD
+			scanType = base_msg.ScanType_PASSWD
 		default:
 			return fmt.Errorf("Invalid scan type: %s", args[1])
 		}

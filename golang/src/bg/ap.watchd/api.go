@@ -75,15 +75,15 @@ func addScan(req *base_msg.WatchdScanInfo) *base_msg.WatchdResponse {
 		resp.Errmsg = proto.String("not a managed subnet")
 	} else {
 		switch *req.Type {
-		case base_msg.WatchdScanInfo_TCP_PORTS:
+		case base_msg.ScanType_TCP_PORTS:
 			scan = newTCPScan(mac, ip, ring)
-		case base_msg.WatchdScanInfo_UDP_PORTS:
+		case base_msg.ScanType_UDP_PORTS:
 			scan = newUDPScan(mac, ip, ring)
-		case base_msg.WatchdScanInfo_VULN:
+		case base_msg.ScanType_VULN:
 			scan = newVulnScan(mac, ip, ring)
-		case base_msg.WatchdScanInfo_PASSWD:
+		case base_msg.ScanType_PASSWD:
 			scan = newPasswdScan(mac, ip, ring)
-		case base_msg.WatchdScanInfo_SUBNET:
+		case base_msg.ScanType_SUBNET:
 			scan = newSubnetScan(ring, ip)
 		default:
 			resp.Errmsg = proto.String("illegal scan type")
@@ -96,10 +96,10 @@ func addScan(req *base_msg.WatchdScanInfo) *base_msg.WatchdResponse {
 	return resp
 }
 
-// Given a ScanRequest structure, construct an equivalent WatchScanInfo
+// Given a ScanRequest structure, construct an equivalent WatchdScanInfo
 // structure which can be returned to a 0mq client.
 func convertScan(in *ScanRequest, active bool) *base_msg.WatchdScanInfo {
-	var scanType base_msg.WatchdScanInfo_ScanType
+	var scanType base_msg.ScanType
 	var state base_msg.WatchdScanInfo_ScanState
 
 	if active {
@@ -110,15 +110,15 @@ func convertScan(in *ScanRequest, active bool) *base_msg.WatchdScanInfo {
 
 	switch in.ScanType {
 	case "tcp":
-		scanType = base_msg.WatchdScanInfo_TCP_PORTS
+		scanType = base_msg.ScanType_TCP_PORTS
 	case "udp":
-		scanType = base_msg.WatchdScanInfo_UDP_PORTS
+		scanType = base_msg.ScanType_UDP_PORTS
 	case "vuln":
-		scanType = base_msg.WatchdScanInfo_VULN
+		scanType = base_msg.ScanType_VULN
 	case "passwd":
-		scanType = base_msg.WatchdScanInfo_PASSWD
+		scanType = base_msg.ScanType_PASSWD
 	case "subnet":
-		scanType = base_msg.WatchdScanInfo_SUBNET
+		scanType = base_msg.ScanType_SUBNET
 	}
 	period := uint32(in.Period.Seconds())
 	out := base_msg.WatchdScanInfo{

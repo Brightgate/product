@@ -62,6 +62,9 @@ const (
 	keepFor            = 2 * 24 * time.Hour
 	logInterval        = 15 * time.Minute
 	collectionDuration = 30 * time.Minute
+	// Just less than every 6 days, so that we stride through different
+	// days of the week and different times of day.
+	resetDuration = time.Hour * (6*24 - 3)
 )
 
 func delHWaddr(hwaddr uint64) {

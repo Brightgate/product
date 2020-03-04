@@ -391,6 +391,15 @@ message InfoAndType {
 	required string type = 0x02;
 }
 
+enum ScanType {
+	UNKNOWN = 0;
+	TCP_PORTS = 1;
+	UDP_PORTS = 2;
+	VULN = 3;
+	PASSWD = 4;
+	SUBNET = 5;
+}
+
 message Host {
 	required Timestamp starttime = 0x01;
 	required Timestamp endtime = 0x02;
@@ -422,6 +431,7 @@ message EventNetScan {
 	optional Timestamp finish_time = 0x1002;
 	repeated Host hosts = 0x1003;
 	required string summary = 0x1004;
+	optional ScanType scan_type = 0x1005;
 }
 
 message Pair {
@@ -481,13 +491,6 @@ message WatchdScanInfo {
 	enum ScanState {
 		ACTIVE		= 1;
 		SCHEDULED	= 2;
-	}
-	enum ScanType {
-		TCP_PORTS	= 1;
-		UDP_PORTS	= 2;
-		VULN		= 3;
-		PASSWD		= 4;
-		SUBNET		= 5;
 	}
 
 	optional uint32 id		= 0x01;

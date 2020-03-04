@@ -1000,6 +1000,12 @@ func portScan(req *ScanRequest) {
 		Summary:     proto.String(res.RunStats.Finished.Summary),
 	}
 
+	if req.ScanType == "tcp" {
+		scan.ScanType = base_msg.ScanType_TCP_PORTS.Enum()
+	} else if req.ScanType == "udp" {
+		scan.ScanType = base_msg.ScanType_UDP_PORTS.Enum()
+	}
+
 	err = brokerd.Publish(scan, base_def.TOPIC_SCAN)
 	if err != nil {
 		slog.Warnf("Error sending scan: %v", err)
