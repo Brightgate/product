@@ -767,6 +767,9 @@ func lsByMac(m string, details bool, redundant bool) error {
 
 	sent := sentence.New()
 
+	if !redundant {
+		fmt.Printf("[omitting redundant inventory records; use --redundant to see them]\n")
+	}
 	for rows.Next() {
 		var ri RecordedInventory
 
@@ -775,6 +778,8 @@ func lsByMac(m string, details bool, redundant bool) error {
 			slog.Errorf("struct scan failed : %v", err)
 			continue
 		}
+
+		localSent := sentence.NewFromString(ri.BayesSentence)
 
 		dupe := sent.AddString(ri.BayesSentence)
 		if !redundant && dupe {
@@ -789,11 +794,11 @@ func lsByMac(m string, details bool, redundant bool) error {
 
 		content := getContentStatusFromReader(rdr)
 
-		fmt.Printf("-- %v %v %v %v %v\n",
+		fmt.Printf("-- %v %v %v %v\n",
 			ri.DeviceMAC,
 			getMfgFromMAC(&_B, ri.DeviceMAC),
 			ri.InventoryDate.String(),
-			content, sent)
+			content)
 
 		fmt.Printf("insert or replace into training (dgroup_id, site_uuid, device_mac, unix_timestamp) values (0, \"%s\", \"%s\", \"%s\");\n", ri.SiteUUID, ri.DeviceMAC, ri.UnixTimestamp)
 		// Display deviceInfo if verbose.
@@ -805,6 +810,8 @@ func lsByMac(m string, details bool, redundant bool) error {
 				printDeviceFromReader(os.Stdout, &_B, ri.DeviceMAC, rdr, true)
 			}
 		}
+		fmt.Printf("--    Record's sentence: %s\n", localSent)
+		fmt.Printf("-- Accumulated sentence: %s\n\n", sent)
 	}
 
 	rows.Close()
@@ -1141,7 +1148,7 @@ func main() {
 		RunE:  lsSub,
 	}
 	lsCmd.Flags().BoolP("verbose", "v", false, "detailed output")
-	lsCmd.Flags().Bool("redundant", false, "also show redundant objects")
+	lsCmd.Flags().Bool("redundant", false, "also show redundant inventory records")
 	rootCmd.AddCommand(lsCmd)
 
 	ingestCmd := &cobra.Command{
@@ -1155,7 +1162,7 @@ func main() {
 
 	extractCmd := &cobra.Command{
 		Use:   "extract",
-		Short: "Extract ingested data",
+		Short: "Extract data from training set",
 		Args:  cobra.NoArgs,
 		RunE:  extractSub,
 	}

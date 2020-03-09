@@ -27,14 +27,15 @@ update site set site_name = "example" where site_uuid = "0e068325-3bf3-494e-8ac4
 
 -- Training table
 
-DROP TABLE training;
+DROP TABLE IF EXISTS training;
 
 CREATE TABLE IF NOT EXISTS training (
 	fact_id integer PRIMARY KEY,
 	dgroup_id int REFERENCES device(dgroup_id),
 	site_uuid text,
 	device_mac text,
-	unix_timestamp text
+	unix_timestamp text,
+	FOREIGN KEY (site_uuid, device_mac, unix_timestamp) REFERENCES inventory(site_uuid, device_mac, unix_timestamp)
 	);
 
 -- 1: A Moto Z Force2 [*]

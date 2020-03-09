@@ -153,6 +153,7 @@ func (m *bayesClassifier) train(B *backdrop, trainData []machine) {
 	slog.Infof("train %s start", m.name)
 
 	for _, machine := range trainData {
+		slog.Debugf("training on %v", machine)
 		for _, cl := range m.classifiers {
 			cl.Add(machine.Text, machine.Classes)
 		}

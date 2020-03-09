@@ -273,6 +273,8 @@ var dhcpVendorPatterns = map[string]string{
 	"^HP Printer":                "hp",
 	"^Hewlett-Packard OfficeJet": "hp",
 	"^Hewlett-Packard JetDirect": "hp",
+	"^Mfg=Hewlett Packard":       "hp",
+	"^Mfg=Hewlett-Packard":       "hp",
 	"^HUAWEI:android":            "huawei_android",
 	"^MSFT ":                     "microsoft",
 	"^Polycom-":                  "polycom",

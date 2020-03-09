@@ -329,20 +329,53 @@ func extractDeviceInfoListen(di *base_msg.DeviceInfo) sentence.Sentence {
 	return s
 }
 
-const ediScanVersion = "1"
+const ediScanVersion = "2"
 
 func extractDeviceInfoScan(di *base_msg.DeviceInfo) sentence.Sentence {
 	s := sentence.New()
 
-	for sc := range di.Scan {
-		for h := range di.Scan[sc].Hosts {
-			for p, port := range di.Scan[sc].Hosts[h].Ports {
-				if *port.PortId > 10000 {
+	for _, scan := range di.Scan {
+		for _, host := range scan.Hosts {
+			for _, port := range host.Ports {
+				portid := port.GetPortId()
+				if portid > 10000 {
 					continue
 				}
-				s.AddTermf("scan_port_%s_%d",
-					*di.Scan[sc].Hosts[h].Ports[p].Protocol,
-					*di.Scan[sc].Hosts[h].Ports[p].PortId)
+				protocol := port.GetProtocol()
+				// UDP ports in open|filtered or states other
+				// than "open" are super ambiguous and it's
+				// hard to know what to make of them, so skip
+				// them.
+				if protocol == "udp" && port.GetState() != "open" {
+					continue
+				}
+
+				s.AddTermf("scan_port_%s_%d", protocol, portid)
+
+				product := port.GetProduct()
+
+				// We're going with the assumption that having
+				// TCP product information is better than not
+				// having it.  We may have to white/blacklist
+				// specific ports in the future.
+				if protocol == "tcp" && product != "" {
+					s.AddTermf("scan_port_%s_%d_prod_%s",
+						protocol, portid, smashMfg(product))
+				}
+
+				// For UDP we are less sure; but we know that
+				// UDP Netbios NS can give a good OS hint, so we
+				// absorb those if present:
+				//
+				//   On a Windows 10 system: "Microsoft Windows or Samba netbios-ns"
+				//   On a Macos X system: "Apple Mac OS X netbios-ns"
+				if portid == 137 && protocol == "udp" &&
+					strings.Contains(product, "netbios-ns") {
+
+					s.AddTermf("scan_port_%s_%d_prod_%s",
+						protocol, portid, smashMfg(product))
+				}
+
 			}
 		}
 	}
