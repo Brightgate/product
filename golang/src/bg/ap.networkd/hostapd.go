@@ -97,10 +97,11 @@ type hostapdCmd struct {
 }
 
 type retransmitState struct {
-	count     int
-	restarted bool
-	first     time.Time
-	last      time.Time
+	count     int       // how many RETRANSMIT events have we seen?
+	broken    bool      // has this client exceeded its hard limit?
+	restarted bool      // has hostapd been reset during RETRANSMIT loop?
+	first     time.Time // time of the first RETRANSMIT event
+	last      time.Time // time of the most recent RETRANSMIT event
 }
 
 var (
@@ -418,12 +419,15 @@ func (c *hostapdConn) stationRetransmit(sta string) {
 func (c *hostapdConn) eapSuccess(sta, username string) {
 	var user *string
 
-	state := getClientRetransmit(sta)
-	if state.count != 0 {
-		slog.Infof("%s connected after %d retransmits", sta,
-			state.count)
-		state.count = 0
+	clientRetransmitsMtx.Lock()
+	if state, ok := clientRetransmits[sta]; ok {
+		delete(clientRetransmits, sta)
+		if state.count != 0 {
+			slog.Infof("%s connected after %d retransmits", sta,
+				state.count)
+		}
 	}
+	clientRetransmitsMtx.Unlock()
 
 	if len(username) > 0 {
 		user = &username
@@ -467,7 +471,7 @@ func getClientRetransmit(mac string) *retransmitState {
 
 	// While we're scanning the map, clean up any counts that have aged out
 	for x, state := range clientRetransmits {
-		if state.last.Before(expired) {
+		if !state.broken && state.last.Before(expired) {
 			slog.Debugf("%s is clear.  %d since %s",
 				x, state.count, state.first.Format(time.RFC3339))
 			delete(clientRetransmits, x)
@@ -507,7 +511,10 @@ func (c *hostapdConn) eapRetransmit(mac string) {
 	state := getClientRetransmit(mac)
 	state.count++
 
-	if state.count >= *retransmitHardLimit {
+	if state.broken {
+		return
+	} else if state.count >= *retransmitHardLimit {
+		state.broken = true
 		if state.count == *retransmitHardLimit {
 			c.stationRetransmit(mac)
 		}
