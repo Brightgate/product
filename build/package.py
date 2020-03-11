@@ -318,7 +318,7 @@ def main_func():
 
     opts = parser.parse_args(sys.argv[1:])
     calver = time.strftime("%y%m%d%H%M")
-    version = "0.0.%s-1" % calver
+    version = "0.1.%s-1" % calver
 
     if opts.distro == "raspbian":
         logging.info("auto-correcting 'raspbian' distro to 'debian'")
