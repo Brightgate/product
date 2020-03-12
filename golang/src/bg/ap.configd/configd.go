@@ -321,6 +321,7 @@ func eventHandler(event []byte) {
 	failed := false
 	for _, u := range updates {
 		if len(u.value) > 0 {
+			slog.Debugf("Added %s -> %s", u.path, u.value)
 			err := propTree.Add(u.path, u.value, nil)
 			if err != nil {
 				slog.Warnf("failed to insert %s: %v", u.path, err)
@@ -788,11 +789,10 @@ func configPropHandler(query *cfgmsg.ConfigQuery) (*string, error) {
 		case cfgmsg.ConfigOp_GET:
 			metrics.getCounts.Inc()
 			if err = validateProp(prop); err == nil {
-				if prop == "@/" {
-					refreshEvent()
-				}
-
 				rval, err = cfgPropGet(prop)
+				if prop == "@/" {
+					refreshEvent(rval)
+				}
 			}
 
 		case cfgmsg.ConfigOp_CREATE, cfgmsg.ConfigOp_SET:
@@ -803,6 +803,7 @@ func configPropHandler(query *cfgmsg.ConfigQuery) (*string, error) {
 			}
 
 			if err == nil {
+				slog.Debugf("Set %s -> %s", prop, val)
 				update := updateChange(prop, &val, expires)
 				update.hash = propTree.Root().Hash()
 				updates = append(updates, update)
@@ -817,6 +818,7 @@ func configPropHandler(query *cfgmsg.ConfigQuery) (*string, error) {
 			}
 
 			for _, path := range paths {
+				slog.Debugf("Deleted %s", path)
 				update := updateDelete(path)
 				if path == prop {
 					// If we delete a subtree, we send

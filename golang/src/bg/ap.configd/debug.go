@@ -12,6 +12,10 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
+	"encoding/csv"
+	"fmt"
+	"io"
 	"sync"
 	"time"
 
@@ -25,85 +29,98 @@ var (
 	refreshReported time.Time
 )
 
-// Compare a node from the in-core tree with the same node from the file.  They
-// should have the same hash value, the same child properties, and all of their
-// children should have the same hashes.
-func treeCompare(core, file *cfgtree.PNode) {
-	if bytes.Compare(core.Hash(), file.Hash()) != 0 {
-		cv := "internal"
-		fv := "internal"
-
-		if len(core.Children) == 0 {
-			cv = core.Value
-		}
-		if len(file.Children) == 0 {
-			fv = file.Value
-		}
-		slog.Warnf("hash mismatch at %s.  core: %s  file: %s",
-			core.Path(), cv, fv)
-	}
-
-	fc := make(map[string]*cfgtree.PNode)
-	for p, fileNode := range file.Children {
-		fc[p] = fileNode
-	}
-	for p, coreNode := range core.Children {
-		if fileNode := fc[p]; fileNode != nil {
-			treeCompare(coreNode, fileNode)
-			delete(fc, p)
-		} else {
-			slog.Warnf("file is missing %s", coreNode.Path())
-		}
-	}
-	for _, fileNode := range fc {
-		slog.Warnf("core is missing %s", fileNode.Path())
-	}
-}
-
-// compare the root hash values of the in-core tree with one reconsituted from
-// the on-disk tree.  If the two hashes match, we assume the rest of the tree is
-// fine.  If they don't, we do a detailed comparison.
-func hashCompare() bool {
-	miscompare := false
-
-	fullPath := plat.ExpandDirPath(propertyDir, propertyFilename)
-	fileTree, err := propTreeLoad(fullPath)
+// generate flattened versions of the live and exported copies of the config
+// tree.  Do a node-by-node comparison of the values and hashes in each tree.
+func flatCompare(exported *string) error {
+	exportedTree, err := cfgtree.NewPTree("@/", []byte(*exported))
 	if err != nil {
-		slog.Warnf("unable to reload %s: %v", fullPath, err)
-	} else {
-		coreHash := propTree.Root().Hash()
-		fileHash := fileTree.Root().Hash()
-		if bytes.Compare(coreHash, fileHash) != 0 {
-			treeCompare(propTree.Root(), fileTree.Root())
-			miscompare = true
+		slog.Fatalf("can't unpack tree: %v", err)
+	}
+	expFlat := exportedTree.Flatten()
+	liveFlat := propTree.Flatten()
+
+	errs := 0
+	for prop, node := range expFlat {
+		liveNode, ok := liveFlat[prop]
+		if !ok {
+			slog.Warnf("missing from live tree: %s", prop)
+			errs++
+			continue
+		}
+		delete(liveFlat, prop)
+
+		if node.Value != liveNode.Value {
+			slog.Warnf("mismatch: %s  exported: %q  live: %q",
+				prop, node.Value, liveNode.Value)
+			errs++
+
+		} else if !bytes.Equal(node.Hash, liveNode.Hash) {
+			buf := new(bytes.Buffer)
+			binary.Write(buf, binary.LittleEndian, node.Hash)
+			expHash := fmt.Sprintf("%x", buf.Bytes())
+
+			buf = new(bytes.Buffer)
+			binary.Write(buf, binary.LittleEndian, liveNode.Hash)
+			liveHash := fmt.Sprintf("%x", buf.Bytes())
+
+			slog.Warnf("hash mismatch: %s exported: %s live: %s",
+				prop, expHash, liveHash)
+			errs++
 		}
 	}
-	return miscompare
+	for prop := range liveFlat {
+		slog.Warnf("missing from exported tree: %s", prop)
+		errs++
+	}
+
+	if errs != 0 {
+		err = fmt.Errorf("tree comparison failed with %d errs", errs)
+	}
+
+	return err
 }
 
 // The occasional cloud refresh is OK, but frequent refreshes may be a signal
 // that something has gone more deeply wrong.  If that happens, we do a full
-// node-by-node comparison of our in-core tree and one reconstituted from the
-// file.
-func refreshEvent() {
+// node-by-node comparison of our in-core tree and the one being pushed to the
+// cloud.
+func refreshEvent(exported *string) {
 	refreshLock.Lock()
 	defer refreshLock.Unlock()
 
 	err := refreshTracker.Tick()
-	slog.Debugf("Refresh requested")
+	slog.Infof("Full tree refresh requested")
 	if err != nil && time.Since(refreshReported) > time.Hour {
 		if !propTree.Root().Validate() {
 			slog.Errorf("tree is not internally consistent")
 		} else {
 			slog.Debugf("tree is internally consistent")
 		}
-		if hashCompare() {
-			slog.Errorf("tree is not consistent with on-disk copy")
+		if err = flatCompare(exported); err != nil {
+			slog.Errorf("%s", err)
 			refreshReported = time.Now()
 		} else {
-			slog.Debugf("tree is consistent with the on-disk copy")
+			slog.Debugf("exported and live trees are consistent")
 		}
 	}
+}
+
+// dump a flattened version of the tree to a .csv file
+func dumpTree(t *cfgtree.PTree, file io.Writer) {
+	kinds := map[bool]string{true: "leaf", false: "internal"}
+
+	w := csv.NewWriter(file)
+
+	flat := t.Flatten()
+	for prop, node := range flat {
+		buf := new(bytes.Buffer)
+		binary.Write(buf, binary.LittleEndian, node.Hash)
+		hash := fmt.Sprintf("%x", buf.Bytes())
+
+		l := []string{prop, node.Value, kinds[node.Leaf], hash}
+		w.Write(l)
+	}
+	w.Flush()
 }
 
 func init() {

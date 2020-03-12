@@ -70,6 +70,15 @@ type PNode struct {
 	origHash     []byte
 }
 
+// PFlat is a single node in a flat representation of a configuration tree.
+type PFlat struct {
+	Value    string
+	Modified time.Time
+	Expires  time.Time
+	Hash     []byte
+	Leaf     bool
+}
+
 func (t *PTree) parse(prop string) []string {
 	if !strings.HasPrefix(prop, t.path) {
 		return nil
@@ -522,24 +531,25 @@ func (t *PTree) SetCacheable() {
 func (t *PTree) Get(prop string) (*string, error) {
 	var rval *string
 
+	node, err := t.GetNode(prop)
+	if err != nil {
+		return nil, err
+	}
+
 	if t.cacheable {
-		if rval, ok := t.cachedMarshal[prop]; ok {
+		if rval, ok := t.cachedMarshal[node.path]; ok {
 			return rval, nil
 		}
 	}
 
-	node, err := t.GetNode(prop)
+	node.cacheScore++
+	b, err := json.Marshal(node)
 	if err == nil {
-		var b []byte
-
-		node.cacheScore++
-		if b, err = json.Marshal(node); err == nil {
-			x := string(b)
-			rval = &x
-			if t.cacheable && node.cacheScore > 2 {
-				node.cached = true
-				t.cachedMarshal[prop] = rval
-			}
+		x := string(b)
+		rval = &x
+		if t.cacheable && node.cacheScore > 2 {
+			node.cached = true
+			t.cachedMarshal[node.path] = rval
 		}
 	}
 
@@ -642,6 +652,46 @@ func (node *PNode) dump(indent string) {
 // Dump will dump the whole tree to stdout
 func (t *PTree) Dump() {
 	t.root.dump("")
+}
+
+func (node *PNode) flattenNode(flat *map[string]*PFlat, internal bool) {
+	if len(node.Children) == 0 || internal {
+		fnode := PFlat{
+			Value: node.Value,
+			Leaf:  len(node.Children) == 0,
+			Hash:  node.Hash(),
+		}
+		if node.Modified != nil {
+			fnode.Modified = *node.Modified
+		}
+		if node.Expires != nil {
+			fnode.Expires = *node.Expires
+		}
+
+		(*flat)[node.path] = &fnode
+	}
+	for _, c := range node.Children {
+		c.flattenNode(flat, internal)
+	}
+}
+
+func (t *PTree) flattenTree(internal bool) map[string]*PFlat {
+	flat := make(map[string]*PFlat)
+	t.root.flattenNode(&flat, internal)
+
+	return flat
+}
+
+// FlattenLeaves returns a flattened version of the leaf nodes of the provided
+// tree.
+func (t *PTree) FlattenLeaves() map[string]*PFlat {
+	return t.flattenTree(false)
+}
+
+// Flatten returns a flattened version of the provided tree, including both leaf
+// and internal nodes
+func (t *PTree) Flatten() map[string]*PFlat {
+	return t.flattenTree(true)
 }
 
 // GraftTree will finalize a partially instantiated tree.  It will compute the

@@ -205,6 +205,11 @@ func (s *siteState) updateCaches(ctx context.Context, prop, rval string) {
 		return
 	}
 
+	if len(rval) == 0 {
+		slog.Debugf("ignoring null'ed refresh of %s for %s", prop, s.siteUUID)
+		return
+	}
+
 	tree, err := cfgtree.NewPTree(prop, []byte(rval))
 	if err != nil {
 		slog.Warnf("failed to refresh %s for %s: %v", prop, s.siteUUID, err)
