@@ -573,7 +573,6 @@ func (a *siteHandler) getHealth(c echo.Context) error {
 	if err == nil && len(cmds) > 0 {
 		response.ConfigProblem = true
 	}
-	c.Logger().Infof("got cmds response: %v", cmds)
 
 	return c.JSON(http.StatusOK, response)
 }

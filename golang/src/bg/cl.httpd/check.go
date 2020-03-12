@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"time"
 
+	"bg/cl_common/pgutils"
+	"bg/cl_common/vaultdb"
 	"bg/cloud_models/appliancedb"
 	"bg/cloud_models/sessiondb"
 
@@ -23,6 +25,8 @@ import (
 
 type checkHandler struct {
 	getClientHandle getClientHandleFunc
+	sessionVDBC     *vaultdb.Connector
+	applianceVDBC   *vaultdb.Connector
 }
 
 type checkResponse struct {
@@ -44,8 +48,17 @@ func (h *checkHandler) getCheckProduction(c echo.Context) error {
 		ConfigdStatus:     "unknown",
 		EnvironProblems:   nil,
 	}
-	dbURI := environ.ApplianceDB + "&connect_timeout=3"
-	applianceDB, err := appliancedb.Connect(dbURI)
+
+	var err error
+	var applianceDB appliancedb.DataStore
+
+	if h.applianceVDBC != nil {
+		applianceDB, err = appliancedb.VaultConnect(h.applianceVDBC)
+	} else {
+		dbURI := pgutils.AddConnectTimeout(environ.ApplianceDB, "3")
+		dbURI = pgutils.AddApplication(dbURI, pname)
+		applianceDB, err = appliancedb.Connect(dbURI)
+	}
 	if err != nil {
 		c.Logger().Errorf("check failed for applianceDB connect: %v", err)
 		fail = true
@@ -62,8 +75,14 @@ func (h *checkHandler) getCheckProduction(c echo.Context) error {
 		}
 	}
 
-	dbURI = environ.SessionDB + "&connect_timeout=3"
-	sessionDB, err := sessiondb.Connect(dbURI, false)
+	var sessionDB sessiondb.DataStore
+	if h.sessionVDBC != nil {
+		sessionDB, err = sessiondb.VaultConnect(h.sessionVDBC, false)
+	} else {
+		dbURI := pgutils.AddConnectTimeout(environ.SessionDB, "3")
+		dbURI = pgutils.AddApplication(dbURI, pname)
+		sessionDB, err = sessiondb.Connect(dbURI, false)
+	}
 	if err != nil {
 		c.Logger().Errorf("check failed for sessionDB connect: %v", err)
 		fail = true
@@ -115,12 +134,16 @@ func (h *checkHandler) getCheckProduction(c echo.Context) error {
 }
 
 // newCheckHandler creates a checkHandler to handle uptime check endpoints
-func newCheckHandler(r *echo.Echo, getClientHandle getClientHandleFunc) *checkHandler {
-	h := &checkHandler{getClientHandle}
+func newCheckHandler(state *routerState, getClientHandle getClientHandleFunc) *checkHandler {
+	h := &checkHandler{
+		getClientHandle: getClientHandle,
+		sessionVDBC:     state.sessionVDBC,
+		applianceVDBC:   state.applianceVDBC,
+	}
 	// A production-quality, in-depth health check
-	r.GET("/check/production", h.getCheckProduction)
+	state.echo.GET("/check/production", h.getCheckProduction)
 	// A basic, rapid-response health check
-	r.GET("/check/pulse", func(c echo.Context) error {
+	state.echo.GET("/check/pulse", func(c echo.Context) error {
 		return c.String(http.StatusOK, "healthy\n")
 	})
 	return h

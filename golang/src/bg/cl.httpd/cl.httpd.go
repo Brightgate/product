@@ -43,12 +43,18 @@ import (
 	"bg/cl_common/certificate"
 	"bg/cl_common/clcfg"
 	"bg/cl_common/daemonutils"
+	"bg/cl_common/pgutils"
+	"bg/cl_common/vaultdb"
+	"bg/cl_common/vaultgcpauth"
+	"bg/cl_common/vaulttags"
 	"bg/cloud_models/appliancedb"
 	"bg/cloud_models/sessiondb"
 	"bg/common/cfgapi"
 
 	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/storage"
+
+	vault "github.com/hashicorp/vault/api"
 	"github.com/sfreiberg/gotwilio"
 	"github.com/tomazk/envcfg"
 
@@ -82,28 +88,38 @@ type Cfg struct {
 	HTTPListen                string `envcfg:"B10E_CLHTTPD_HTTP_LISTEN"`
 	HTTPSListen               string `envcfg:"B10E_CLHTTPD_HTTPS_LISTEN"`
 	WellKnownPath             string `envcfg:"B10E_CERTBOT_WELLKNOWN_PATH"`
-	SessionSecret             string `envcfg:"B10E_CLHTTPD_SESSION_SECRET"`
-	SessionBlockSecret        string `envcfg:"B10E_CLHTTPD_SESSION_BLOCK_SECRET"`
-	AccountSecret             string `envcfg:"B10E_CLHTTPD_ACCOUNT_SECRET"`
-	GoogleKey                 string `envcfg:"B10E_CLHTTPD_GOOGLE_KEY"`
-	GoogleSecret              string `envcfg:"B10E_CLHTTPD_GOOGLE_SECRET"`
-	Auth0Key                  string `envcfg:"B10E_CLHTTPD_AUTH0_KEY"`
-	Auth0Secret               string `envcfg:"B10E_CLHTTPD_AUTH0_SECRET"`
+	VaultAuthPath             string `envcfg:"B10E_CLHTTPD_VAULT_AUTH_PATH"`
+	VaultKVPath               string `envcfg:"B10E_CLHTTPD_VAULT_KV_PATH"`
+	VaultKVComponent          string `envcfg:"B10E_CLHTTPD_VAULT_KV_COMPONENT"`
+	VaultDBPath               string `envcfg:"B10E_CLHTTPD_VAULT_DB_PATH"`
+	VaultDBRole               string `envcfg:"B10E_CLHTTPD_VAULT_DB_ROLE"`
 	Auth0Domain               string `envcfg:"B10E_CLHTTPD_AUTH0_DOMAIN"`
-	OpenIDConnectKey          string `envcfg:"B10E_CLHTTPD_OPENID_CONNECT_KEY"`
-	OpenIDConnectSecret       string `envcfg:"B10E_CLHTTPD_OPENID_CONNECT_SECRET"`
 	OpenIDConnectDiscoveryURL string `envcfg:"B10E_CLHTTPD_OPENID_CONNECT_DISCOVERY_URL"`
-	AzureADV2Key              string `envcfg:"B10E_CLHTTPD_AZUREADV2_KEY"`
-	AzureADV2Secret           string `envcfg:"B10E_CLHTTPD_AZUREADV2_SECRET"`
-	SessionDB                 string `envcfg:"B10E_CLHTTPD_POSTGRES_SESSIONDB"`
-	ApplianceDB               string `envcfg:"B10E_CLHTTPD_POSTGRES_APPLIANCEDB"`
-	ConfigdConnection         string `envcfg:"B10E_CLHTTPD_CLCONFIGD_CONNECTION"`
-	TwilioSID                 string `envcfg:"B10E_CLHTTPD_TWILIO_SID"`
-	TwilioAuthToken           string `envcfg:"B10E_CLHTTPD_TWILIO_AUTHTOKEN"`
-	AvatarBucket              string `envcfg:"B10E_CLHTTPD_AVATAR_BUCKET"`
+	// These should have no credential information in them; instead, set the
+	// VaultDB* variables appropriately and pull from Vault.
+	SessionDB         string `envcfg:"B10E_CLHTTPD_POSTGRES_SESSIONDB"`
+	ApplianceDB       string `envcfg:"B10E_CLHTTPD_POSTGRES_APPLIANCEDB"`
+	ConfigdConnection string `envcfg:"B10E_CLHTTPD_CLCONFIGD_CONNECTION"`
+	AvatarBucket      string `envcfg:"B10E_CLHTTPD_AVATAR_BUCKET"`
 	// Whether to Disable TLS for outbound connections to cl.configd
 	ConfigdDisableTLS bool   `envcfg:"B10E_CLHTTPD_CLCONFIGD_DISABLE_TLS"`
 	AppPath           string `enccfg:"B10E_CLHTTPD_APP"`
+}
+
+type kvSecrets struct {
+	SessionSecret       string `envcfg:"B10E_CLHTTPD_SESSION_SECRET" vault:"session/secret"`
+	SessionBlockSecret  string `envcfg:"B10E_CLHTTPD_SESSION_BLOCK_SECRET" vault:"session/block_secret"`
+	AccountSecret       string `envcfg:"B10E_CLHTTPD_ACCOUNT_SECRET" vault:"account/secret"`
+	GoogleKey           string `envcfg:"B10E_CLHTTPD_GOOGLE_KEY" vault:"google/key"`
+	GoogleSecret        string `envcfg:"B10E_CLHTTPD_GOOGLE_SECRET" vault:"google/secret"`
+	Auth0Key            string `envcfg:"B10E_CLHTTPD_AUTH0_KEY" vault:"auth0/key"`
+	Auth0Secret         string `envcfg:"B10E_CLHTTPD_AUTH0_SECRET" vault:"auth0/secret"`
+	OpenIDConnectKey    string `envcfg:"B10E_CLHTTPD_OPENID_CONNECT_KEY" vault:"openid/key"`
+	OpenIDConnectSecret string `envcfg:"B10E_CLHTTPD_OPENID_CONNECT_SECRET" vault:"openid/secret"`
+	AzureADV2Key        string `envcfg:"B10E_CLHTTPD_AZUREADV2_KEY" vault:"azureadv2/key"`
+	AzureADV2Secret     string `envcfg:"B10E_CLHTTPD_AZUREADV2_SECRET" vault:"azureadv2/secret"`
+	TwilioSID           string `envcfg:"B10E_CLHTTPD_TWILIO_SID" vault:"twilio/sid"`
+	TwilioAuthToken     string `envcfg:"B10E_CLHTTPD_TWILIO_AUTHTOKEN" vault:"twilio/authtoken"`
 }
 
 const (
@@ -115,8 +131,12 @@ const (
 
 var (
 	environ          Cfg
+	secrets          kvSecrets
 	enableConfigdTLS bool
 	lbName           string
+	useVaultForDB    bool
+	useVaultForKV    bool
+	vaultClient      *vault.Client
 )
 
 func gracefulShutdown(e *echo.Echo) {
@@ -236,7 +256,9 @@ func mkSecureMW(r *echo.Echo) echo.MiddlewareFunc {
 
 type routerState struct {
 	applianceDB     appliancedb.DataStore
+	applianceVDBC   *vaultdb.Connector
 	sessionDB       sessiondb.DataStore
+	sessionVDBC     *vaultdb.Connector
 	sessionStore    *pgstore.PGStore
 	sessCleanupDone chan<- struct{}
 	sessCleanupQuit <-chan struct{}
@@ -252,19 +274,32 @@ func (rs *routerState) Fini(ctx context.Context) {
 func (rs *routerState) mkSessionStore() {
 	log := rs.echo.Logger
 	log.Infof("Creating Session Store\n")
-	if environ.SessionSecret == "" {
+	if secrets.SessionSecret == "" {
 		log.Fatalf("You must set B10E_CLHTTPD_SESSION_SECRET")
 	}
-	if environ.SessionBlockSecret == "" {
+	if secrets.SessionBlockSecret == "" {
 		log.Fatalf("You must set B10E_CLHTTPD_SESSION_BLOCK_SECRET")
 	}
-	blockSecret, err := hex.DecodeString(environ.SessionBlockSecret)
+	blockSecret, err := hex.DecodeString(secrets.SessionBlockSecret)
 	if err != nil || len(blockSecret) != 32 {
 		log.Fatalf("Failed to decode B10E_CLHTTPD_SESSION_BLOCK_SECRET; should be hex encoded and 32 bytes long")
 	}
-	rs.sessionDB, err = sessiondb.Connect(environ.SessionDB, false)
-	if err != nil {
-		log.Fatalf("failed to connect to session DB: %v", err)
+
+	dbURI := pgutils.AddApplication(environ.SessionDB, pname)
+
+	if useVaultForDB {
+		vdbc := vaultdb.NewConnector(dbURI, vaultClient,
+			environ.VaultDBPath, environ.VaultDBRole, log)
+		rs.sessionDB, err = sessiondb.VaultConnect(vdbc, true)
+		rs.sessionVDBC = vdbc
+		if err != nil {
+			log.Fatalf("failed configuring session DB from Vault: %v", err)
+		}
+	} else {
+		rs.sessionDB, err = sessiondb.Connect(dbURI, false)
+		if err != nil {
+			log.Fatalf("failed to connect to session DB: %v", err)
+		}
 	}
 	log.Infof(checkMark + "Connected to Session DB")
 	err = rs.sessionDB.Ping()
@@ -272,7 +307,8 @@ func (rs *routerState) mkSessionStore() {
 		log.Fatalf("failed to ping DB: %s", err)
 	}
 	log.Infof(checkMark + "Pinged Session DB")
-	rs.sessionStore, err = pgstore.NewPGStoreFromPool(rs.sessionDB.GetPG(), []byte(environ.SessionSecret), blockSecret)
+
+	rs.sessionStore, err = pgstore.NewPGStoreFromPool(rs.sessionDB.GetPG(), []byte(secrets.SessionSecret), blockSecret)
 	if err != nil {
 		log.Fatalf("failed to start PG Store: %s", err)
 	}
@@ -284,10 +320,24 @@ func (rs *routerState) mkSessionStore() {
 func (rs *routerState) mkApplianceDB() {
 	var err error
 	log := rs.echo.Logger
-	// Appliancedb setup
-	rs.applianceDB, err = appliancedb.Connect(environ.ApplianceDB)
-	if err != nil {
-		log.Fatalf("failed to connect to appliance DB: %v", err)
+
+	dbURI := pgutils.AddApplication(environ.ApplianceDB, pname)
+
+	// Appliancedb setup.  Use Vault if we successfully connected to it;
+	// otherwise, assume that the environment has the necessary credentials.
+	if useVaultForDB {
+		vdbc := vaultdb.NewConnector(dbURI, vaultClient,
+			environ.VaultDBPath, environ.VaultDBRole, log)
+		rs.applianceDB, err = appliancedb.VaultConnect(vdbc)
+		rs.applianceVDBC = vdbc
+		if err != nil {
+			log.Fatalf("Error configuring DB from Vault: %v", err)
+		}
+	} else {
+		rs.applianceDB, err = appliancedb.Connect(dbURI)
+		if err != nil {
+			log.Fatalf("failed to connect to appliance DB: %v", err)
+		}
 	}
 	log.Infof(checkMark + "Created Appliance DB client")
 	err = rs.applianceDB.Ping()
@@ -297,10 +347,10 @@ func (rs *routerState) mkApplianceDB() {
 	log.Infof(checkMark + "Pinged Appliance DB")
 
 	// Setup Account Secrets
-	if environ.AccountSecret == "" {
+	if secrets.AccountSecret == "" {
 		log.Fatalf("Must specify B10E_CLHTTPD_ACCOUNT_SECRET")
 	}
-	accountSecret, err := hex.DecodeString(environ.AccountSecret)
+	accountSecret, err := hex.DecodeString(secrets.AccountSecret)
 	if err != nil || len(accountSecret) != 32 {
 		log.Fatalf("Failed to decode B10E_CLHTTPD_ACCOUNT_SECRET; should be hex encoded and 32 bytes long %d", len(accountSecret))
 	}
@@ -376,9 +426,9 @@ func mkRouterHTTPS() *routerState {
 
 	// Twilio setup
 	var twil *gotwilio.Twilio
-	if environ.TwilioSID != "" && environ.TwilioAuthToken != "" {
-		twil = gotwilio.NewTwilioClient(environ.TwilioSID,
-			environ.TwilioAuthToken)
+	if secrets.TwilioSID != "" && secrets.TwilioAuthToken != "" {
+		twil = gotwilio.NewTwilioClient(secrets.TwilioSID,
+			secrets.TwilioAuthToken)
 		r.Logger.Infof(checkMark + "Setup Twilio Client")
 	} else {
 		r.Logger.Warnf("Disabling Twilio Client")
@@ -431,7 +481,7 @@ func mkRouterHTTPS() *routerState {
 	_ = newAccessHandler(r, state.applianceDB, state.sessionStore)
 
 	// Setup /check endpoints
-	_ = newCheckHandler(r, getConfigClientHandle)
+	_ = newCheckHandler(&state, getConfigClientHandle)
 
 	return &state
 }
@@ -457,6 +507,8 @@ func mkRouterHTTP() *echo.Echo {
 	// We could also restrict it to come from a private IP (for k8s/GKE) or
 	// 35.191.0.0/16 and 130.211.0.0/22, as documented at
 	// https://cloud.google.com/load-balancing/docs/health-checks#fw-rule
+	// as well as the Stackdriver Monitoring IPs, as documented at
+	// https://cloud.google.com/monitoring/uptime-checks/using-uptime-checks#monitoring_uptime_check_list_ips-console
 	r.Use(middleware.HTTPSRedirectWithConfig(
 		middleware.RedirectConfig{
 			Skipper: func(c echo.Context) bool {
@@ -495,7 +547,8 @@ func processEnv(logger *gommonlog.Logger) {
 	}
 
 	if environ.Developer {
-		logger.Infof("environ %v", environ)
+		logger.SetLevel(gommonlog.DEBUG)
+		logger.Debugf("environ %+v", environ)
 	}
 
 	if environ.HTTPListen == "" {
@@ -523,6 +576,45 @@ func processEnv(logger *gommonlog.Logger) {
 	if environ.CertHostname == "" {
 		environ.CertHostname = lbName
 	}
+
+	// DBRole and KVComponent both default to pname, and the path variables
+	// determine whether we look at Vault at all.
+	if environ.VaultDBRole == "" {
+		environ.VaultDBRole = pname
+	}
+	useVaultForDB = environ.VaultDBPath != ""
+
+	if environ.VaultKVComponent == "" {
+		environ.VaultKVComponent = pname
+	}
+	useVaultForKV = environ.VaultKVPath != ""
+
+	if (useVaultForDB || useVaultForKV) && environ.VaultAuthPath == "" {
+		project, err := metadata.ProjectID()
+		if err != nil {
+			logger.Fatalf("Can't get GCP project ID: %v", err)
+		}
+		environ.VaultAuthPath = "auth/gcp-" + project
+		logger.Warnf("B10E_CLHTTPD_VAULT_AUTH_PATH not found in "+
+			"environment; setting to %s", environ.VaultAuthPath)
+	}
+}
+
+func getVaultSecrets(glog *gommonlog.Logger, vc *vault.Client) {
+	mount := environ.VaultKVPath
+	if mount == "" {
+		mount = "secret"
+	}
+	component := environ.VaultKVComponent
+	if component == "" {
+		component = pname
+	}
+
+	vcl := vc.Logical()
+	err := vaulttags.Unmarshal(mount, component, vcl, glog, &secrets)
+	if err != nil {
+		glog.Fatalf("Error retrieving secrets from Vault: %s", err)
+	}
 }
 
 func main() {
@@ -534,6 +626,40 @@ func main() {
 		startupLog.Fatalf("Environment Error: %s", err)
 	}
 	processEnv(startupLog)
+
+	// First, fetch secrets from Vault, if we can.
+	vaultClient, err = vault.NewClient(nil)
+	if useVaultForDB || useVaultForKV {
+		if err != nil {
+			startupLog.Fatalf("Vault error: %s", err)
+		} else {
+			if vaultClient.Token() == "" || !environ.Developer {
+				if vaultClient.Token() != "" && !environ.Developer {
+					startupLog.Warnf("Vault token found in environment; will override")
+				}
+				if err = vaultgcpauth.VaultAuth(context.Background(),
+					startupLog, vaultClient, environ.VaultAuthPath,
+					pname); err != nil {
+					startupLog.Fatalf("Vault login error: %s", err)
+				}
+				if environ.Developer {
+					startupLog.Debugf("Initial GCP login token %s", vaultClient.Token())
+				}
+			}
+			getVaultSecrets(startupLog, vaultClient)
+		}
+	}
+
+	// Next, fetch secrets from the environment.  If a secret is in both,
+	// the environment will take precedence.
+	err = envcfg.Unmarshal(&secrets)
+	if err != nil {
+		startupLog.Fatalf("Environment error: %s", err)
+	}
+
+	if environ.Developer {
+		startupLog.Debugf("secrets: %+v", secrets)
+	}
 
 	rsHTTPS := mkRouterHTTPS()
 	defer rsHTTPS.Fini(context.Background())

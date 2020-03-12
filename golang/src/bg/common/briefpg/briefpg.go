@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -291,7 +291,6 @@ func (bp *BriefPG) DBUri(dbName string) string {
 
 // Fini stops the database server, if running, and
 func (bp *BriefPG) Fini(ctx context.Context) error {
-	bp.state = stateDefunct
 	if bp.state >= stateServerStarted {
 		cmd := exec.Command(pgCmds["pg_ctl"], "-m", "immediate", "-w", "-D", bp.dbDir(), "stop")
 		bp.Logger.Println("briefpg: " + strings.Join(cmd.Args, " "))
@@ -305,5 +304,7 @@ func (bp *BriefPG) Fini(ctx context.Context) error {
 	if bp.state >= statePresent {
 		os.RemoveAll(bp.TmpDir)
 	}
+
+	bp.state = stateDefunct
 	return nil
 }

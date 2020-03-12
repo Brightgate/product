@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -111,7 +111,7 @@ func callbackURI(provider string) (string, error) {
 type providerFunc func(*echo.Echo) goth.Provider
 
 func googleProvider(r *echo.Echo) goth.Provider {
-	if environ.GoogleKey == "" && environ.GoogleSecret == "" {
+	if secrets.GoogleKey == "" && secrets.GoogleSecret == "" {
 		r.Logger.Warnf("not enabling google authentication: missing B10E_CLHTTPD_GOOGLE_KEY or B10E_CLHTTPD_GOOGLE_SECRET")
 		return nil
 	}
@@ -121,13 +121,13 @@ func googleProvider(r *echo.Echo) goth.Provider {
 		r.Logger.Fatalf("Failed to enable google auth: %v", err)
 	}
 	r.Logger.Infof("enabling google authentication")
-	return google.New(environ.GoogleKey, environ.GoogleSecret,
+	return google.New(secrets.GoogleKey, secrets.GoogleSecret,
 		callback, "profile", "email",
 		people.UserPhonenumbersReadScope)
 }
 
 func openidConnectProvider(r *echo.Echo) goth.Provider {
-	if environ.OpenIDConnectKey == "" || environ.OpenIDConnectSecret == "" || environ.OpenIDConnectDiscoveryURL == "" {
+	if secrets.OpenIDConnectKey == "" || secrets.OpenIDConnectSecret == "" || environ.OpenIDConnectDiscoveryURL == "" {
 		r.Logger.Warnf("not enabling openid authentication: missing B10E_CLHTTPD_OPENID_CONNECT_KEY, B10E_CLHTTPD_OPENID_CONNECT_SECRET or B10E_CLHTTPD_OPENID_CONNECT_DISCOVERY_URL")
 		return nil
 	}
@@ -137,8 +137,8 @@ func openidConnectProvider(r *echo.Echo) goth.Provider {
 	}
 	r.Logger.Infof("enabling openid connect authentication via %s", environ.OpenIDConnectDiscoveryURL)
 	openidConnect, err := openidConnect.New(
-		environ.OpenIDConnectKey,
-		environ.OpenIDConnectSecret,
+		secrets.OpenIDConnectKey,
+		secrets.OpenIDConnectSecret,
 		callback,
 		environ.OpenIDConnectDiscoveryURL,
 		"openid", "profile", "email", "phone")
@@ -149,7 +149,7 @@ func openidConnectProvider(r *echo.Echo) goth.Provider {
 }
 
 func auth0Provider(r *echo.Echo) goth.Provider {
-	if environ.Auth0Key == "" || environ.Auth0Secret == "" || environ.Auth0Domain == "" {
+	if secrets.Auth0Key == "" || secrets.Auth0Secret == "" || environ.Auth0Domain == "" {
 		r.Logger.Warnf("not enabling Auth0 authentication: missing B10E_CLHTTPD_AUTH0_KEY, B10E_CLHTTPD_AUTH0_SECRET or B10E_CLHTTPD_AUTH0_DOMAIN")
 		return nil
 	}
@@ -159,12 +159,12 @@ func auth0Provider(r *echo.Echo) goth.Provider {
 		r.Logger.Fatalf("Failed to enable auth0 auth: %v", err)
 	}
 	r.Logger.Infof("enabling Auth0 authentication")
-	return auth0.New(environ.Auth0Key, environ.Auth0Secret, callback,
+	return auth0.New(secrets.Auth0Key, secrets.Auth0Secret, callback,
 		environ.Auth0Domain, "openid", "profile", "email", "zug.zug")
 }
 
 func azureadv2Provider(r *echo.Echo) goth.Provider {
-	if environ.AzureADV2Key == "" || environ.AzureADV2Secret == "" {
+	if secrets.AzureADV2Key == "" || secrets.AzureADV2Secret == "" {
 		r.Logger.Warnf("not enabling AzureADV2 authentication: missing B10E_CLHTTPD_AZUREADV2_KEY, B10E_CLHTTPD_AZUREADV2_SECRET")
 		return nil
 	}
@@ -175,7 +175,7 @@ func azureadv2Provider(r *echo.Echo) goth.Provider {
 	}
 	r.Logger.Infof("enabling AzureADV2 authentication")
 	opts := azureadv2.ProviderOptions{}
-	return azureadv2.New(environ.AzureADV2Key, environ.AzureADV2Secret, callback, opts)
+	return azureadv2.New(secrets.AzureADV2Key, secrets.AzureADV2Secret, callback, opts)
 }
 
 // getProviders implements /auth/providers, which indicates which oauth

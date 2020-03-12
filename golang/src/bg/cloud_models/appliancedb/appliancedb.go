@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -19,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"bg/cl_common/vaultdb"
 
 	"github.com/guregu/null"
 	"github.com/jmoiron/sqlx"
@@ -106,8 +108,7 @@ type DataStore interface {
 	BeginTxx(context.Context, *sql.TxOptions) (*sqlx.Tx, error)
 }
 
-// ApplianceDB implements DataStore with the actual DB backend
-// sql.DB implements Ping() and Close()
+// ApplianceDB implements DataStore with the actual DB backend.
 type ApplianceDB struct {
 	*sqlx.DB
 	accountSecretsPassphrase []byte
@@ -293,6 +294,20 @@ func Connect(dataSource string) (DataStore, error) {
 	return ds, nil
 }
 
+// VaultConnect takes an existing VaultDB object, opens the connection, and
+// creates a DataStore from it.
+func VaultConnect(vdbc *vaultdb.Connector) (DataStore, error) {
+	db := sqlx.NewDb(sql.OpenDB(vdbc), "postgres")
+	db.SetMaxOpenConns(16)
+	if err := vdbc.SetConnMaxLifetime(db.DB); err != nil {
+		return nil, err
+	}
+	var ds DataStore = &ApplianceDB{
+		DB: db,
+	}
+	return ds, nil
+}
+
 // LoadSchema loads the SQL schema files from a directory.  ioutil.ReadDir sorts
 // the input, ensuring the schema is loaded in the right sequence.
 // XXX: Not sure this is the right interface in the right place.  Possibly an
@@ -320,12 +335,6 @@ func (db *ApplianceDB) LoadSchema(ctx context.Context, schemaDir string) error {
 		}
 	}
 	return nil
-}
-
-// BeginTx creates a transaction in the database.
-func (db *ApplianceDB) BeginTx(ctx context.Context) (*sql.Tx, error) {
-	tx, err := db.DB.BeginTx(ctx, nil)
-	return tx, err
 }
 
 // InsertCustomerSite inserts a record into the customer_site table.
@@ -746,7 +755,7 @@ func (db *ApplianceDB) OrganizationByUUID(ctx context.Context, orgUUID uuid.UUID
 // InsertOrganization inserts an Organization.
 func (db *ApplianceDB) InsertOrganization(ctx context.Context,
 	org *Organization) error {
-	dbx, err := db.Beginx()
+	dbx, err := db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
 	}

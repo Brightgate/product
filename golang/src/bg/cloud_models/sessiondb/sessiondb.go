@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -15,6 +15,8 @@ import (
 	"database/sql"
 	"io/ioutil"
 	"path/filepath"
+
+	"bg/cl_common/vaultdb"
 
 	"github.com/pkg/errors"
 
@@ -32,10 +34,32 @@ type DataStore interface {
 	Close() error
 }
 
-// SessionDB implements DataStore with the actual DB backend
-// sql.DB takes care of Ping() and Close().
+// SessionDB implements DataStore with the actual DB backend.
 type SessionDB struct {
 	*sql.DB
+}
+
+func connectPost(sqldb *sql.DB, allowCreate bool) (DataStore, error) {
+	// We found that not limiting this can cause problems as Go attempts to
+	// open many many connections to the database.  (presumably the cloud
+	// sql proxy can't handle massive numbers of connections)
+	sqldb.SetMaxOpenConns(16)
+
+	if !allowCreate {
+		var exists sql.NullString
+		row := sqldb.QueryRow("SELECT to_regclass('public.http_sessions');")
+		err := row.Scan(&exists)
+		if err != nil {
+			return nil, errors.Wrap(err, "error testing if table exists")
+		}
+		if !exists.Valid {
+			return nil, errors.Errorf("http_sessions table does "+
+				"not exist: '%s'", exists.String)
+		}
+	}
+
+	var ds DataStore = &SessionDB{sqldb}
+	return ds, nil
 }
 
 // Connect opens a new connection to the DataStore
@@ -44,25 +68,17 @@ func Connect(dataSource string, allowCreate bool) (DataStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	// We found that not limiting this can cause problems as Go attempts to
-	// open many many connections to the database.  (presumably the cloud
-	// sql proxy can't handle massive numbers of connections)
-	sqldb.SetMaxOpenConns(16)
+	return connectPost(sqldb, allowCreate)
+}
 
-	if !allowCreate {
-		var exists string
-		row := sqldb.QueryRow("SELECT to_regclass('public.http_sessions');")
-		err = row.Scan(&exists)
-		if err != nil {
-			return nil, errors.Wrap(err, "error testing if table exists")
-		}
-		if exists != "http_sessions" {
-			return nil, errors.Errorf("http_sessions table does not exist: '%s'", exists)
-		}
+// VaultConnect takes an existing VaultDB object, opens the connection, and
+// creates a DataStore from it.
+func VaultConnect(vdbc *vaultdb.Connector, allowCreate bool) (DataStore, error) {
+	sqldb := sql.OpenDB(vdbc)
+	if err := vdbc.SetConnMaxLifetime(sqldb); err != nil {
+		return nil, err
 	}
-
-	var ds DataStore = &SessionDB{sqldb}
-	return ds, nil
+	return connectPost(sqldb, allowCreate)
 }
 
 // GetPG returns the underlying *sql.DB

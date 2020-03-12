@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -54,33 +54,46 @@ func CensorPassword(connInfo string) string {
 	return re.ReplaceAllString(connInfo, "password="+dummy)
 }
 
-// HasPassword checks the connection URI to see if it specifies the password.
-func HasPassword(connInfo string) bool {
+func hasParameter(connInfo, name string) bool {
 	if strings.HasPrefix(connInfo, "postgres://") ||
 		strings.HasPrefix(connInfo, "postgresql://") {
 		theURL, _ := url.Parse(connInfo)
 
 		// See if the query string has the password.
 		q := theURL.Query()
-		return q.Get("password") != ""
+		return q.Get(name) != ""
 	}
 
-	re := regexp.MustCompile(`\bpassword=[^ ]*`)
+	re := regexp.MustCompile(fmt.Sprintf(`\b%s=[^ ]*`, name))
 	return re.MatchString(connInfo)
 }
 
-// AddPassword adds the password to the connection URI.
-func AddPassword(connInfo, password string) string {
+// HasPassword checks the connection URI to see if it specifies the password.
+func HasPassword(connInfo string) bool {
+	return hasParameter(connInfo, "password")
+}
+
+// HasUsername checks the connection URI to see if it specifies the username.
+func HasUsername(connInfo string) bool {
+	return hasParameter(connInfo, "user")
+}
+
+func addParameter(connInfo, name, value string) string {
 	if strings.HasPrefix(connInfo, "postgres://") ||
 		strings.HasPrefix(connInfo, "postgresql://") {
 		theURL, _ := url.Parse(connInfo)
 
 		q := theURL.Query()
-		q.Set("password", password)
+		q.Set(name, value)
 		theURL.RawQuery = q.Encode()
 		return theURL.String()
 	}
 	return connInfo
+}
+
+// AddPassword adds the password to the connection URI.
+func AddPassword(connInfo, password string) string {
+	return addParameter(connInfo, "password", password)
 }
 
 // PasswordPrompt prompts at the terminal for a password (if the given URI
@@ -96,4 +109,25 @@ func PasswordPrompt(dbURI string) (string, error) {
 		dbURI = AddPassword(dbURI, string(bytePassword))
 	}
 	return dbURI, nil
+}
+
+// AddUsername adds the username to the connection URI.
+func AddUsername(connInfo, username string) string {
+	return addParameter(connInfo, "user", username)
+}
+
+// AddApplication adds the application name to the connection URI.
+func AddApplication(connInfo, app string) string {
+	return addParameter(connInfo, "application_name", app)
+}
+
+// AddTimezone adds the timezone to the connection URI.
+func AddTimezone(connInfo, zone string) string {
+	return addParameter(connInfo, "timezone", zone)
+}
+
+// AddConnectTimeout adds the connection timeout (as an integer number of
+// seconds, represented as a string) to the connection URI.
+func AddConnectTimeout(connInfo, timeout string) string {
+	return addParameter(connInfo, "connect_timeout", timeout)
 }
