@@ -51,9 +51,9 @@ var (
 	retransmitHardLimit = apcfg.Int("retransmit_hard", 6, true, nil)
 	retransmitTimeout   = apcfg.Duration("retransmit_timeout",
 		5*time.Minute, true, nil)
-	apScanFreq   = apcfg.Duration("ap_scan_freq", 3*time.Minute, true, nil)
+	apScanFreq   = apcfg.Duration("ap_scan_freq", 7*time.Hour, true, nil)
 	apStale      = apcfg.Duration("ap_stale", 10*time.Minute, true, nil)
-	chanEvalFreq = apcfg.Duration("chan_eval_freq", 6*time.Hour, true, nil)
+	chanEvalFreq = apcfg.Duration("chan_eval_freq", 12*time.Hour, true, nil)
 	_            = apcfg.String("log_level", "info", true,
 		aputil.LogSetLevel)
 
