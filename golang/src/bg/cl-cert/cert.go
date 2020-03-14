@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -35,6 +35,7 @@ import (
 	"github.com/go-acme/lego/acme/api"
 	"github.com/go-acme/lego/certificate"
 	"github.com/go-acme/lego/lego"
+	"github.com/pkg/errors"
 	"github.com/satori/uuid"
 	"github.com/spf13/cobra"
 	"github.com/tatsushid/go-prettytable"
@@ -176,22 +177,22 @@ func processEnv(dbOnly bool) {
 }
 
 // makeApplianceDB handles connection setup to the appliance database
-func makeApplianceDB(postgresURI string) appliancedb.DataStore {
+func makeApplianceDB(postgresURI string) (appliancedb.DataStore, error) {
 	postgresURI, err := pgutils.PasswordPrompt(postgresURI)
 	if err != nil {
-		slog.Fatalw("failed to get DB password", "error", err)
+		return nil, errors.Wrapf(err, "failed to get DB password")
 	}
 	applianceDB, err := appliancedb.Connect(postgresURI)
 	if err != nil {
-		slog.Fatalw("failed to connect to DB", "error", err)
+		return nil, errors.Wrapf(err, "failed to connect to DB")
 	}
 	slog.Infof(checkMark + "Connected to Appliance DB")
 	err = applianceDB.Ping()
 	if err != nil {
-		slog.Fatalw("failed to ping DB", "error", err)
+		return nil, errors.Wrapf(err, "failed to ping DB")
 	}
 	slog.Infof(checkMark + "Pinged Appliance DB")
-	return applianceDB
+	return applianceDB, nil
 }
 
 func getCertsForDomains(ctx context.Context, lh LegoHandler, db appliancedb.DataStore, tag string, domains []appliancedb.DecomposedDomain) []appliancedb.DecomposedDomain {
@@ -728,7 +729,11 @@ func setupWriteOps() (func(), *legoHandle, *lego.Config, appliancedb.DataStore) 
 			"error", err)
 	}
 
-	lh, config := legoSetup()
+	lh, config, err := legoSetup()
+	if err != nil {
+		unlock(lockPath)
+		slog.Fatalw("Failed to setup lego", "error", err)
+	}
 
 	getConfigClientHandle = realGetConfigClientHandle
 	if environ.ConfigdDisableTLS {
@@ -736,16 +741,22 @@ func setupWriteOps() (func(), *legoHandle, *lego.Config, appliancedb.DataStore) 
 	}
 	hdl, err := getConfigClientHandle(uuid.Nil.String())
 	if err != nil {
+		unlock(lockPath)
 		slog.Fatalw("failed to make config client", "error", err)
 	}
 	err = hdl.Ping(context.Background())
 	hdl.Close()
 	if err != nil {
+		unlock(lockPath)
 		slog.Fatalw("failed to ping config client", "error", err)
 	}
 	slog.Info(checkMark + "Can connect to cl.configd")
 
-	applianceDB := makeApplianceDB(environ.PostgresConnection)
+	applianceDB, err := makeApplianceDB(environ.PostgresConnection)
+	if err != nil {
+		unlock(lockPath)
+		slog.Fatalw("failed to connect to DB", "error", err)
+	}
 
 	return func() { unlock(lockPath) }, lh, config, applianceDB
 }
@@ -753,7 +764,10 @@ func setupWriteOps() (func(), *legoHandle, *lego.Config, appliancedb.DataStore) 
 func certDelete(cmd *cobra.Command, args []string) error {
 	expired, _ := cmd.Flags().GetBool("expired")
 
-	db := makeApplianceDB(environ.PostgresConnection)
+	db, err := makeApplianceDB(environ.PostgresConnection)
+	if err != nil {
+		slog.Fatalw("failed to connect to DB", "error", err)
+	}
 	defer db.Close()
 
 	ctx := context.Background()
@@ -883,7 +897,10 @@ func run(cmd *cobra.Command, args []string) error {
 }
 
 func listCerts(cmd *cobra.Command, args []string) error {
-	db := makeApplianceDB(environ.PostgresConnection)
+	db, err := makeApplianceDB(environ.PostgresConnection)
+	if err != nil {
+		slog.Fatalw("failed to connect to DB", "error", err)
+	}
 	defer db.Close()
 
 	certs, uuids, err := db.AllServerCerts(context.Background())
@@ -920,7 +937,10 @@ func listCerts(cmd *cobra.Command, args []string) error {
 }
 
 func certStatus(cmd *cobra.Command, args []string) error {
-	db := makeApplianceDB(environ.PostgresConnection)
+	db, err := makeApplianceDB(environ.PostgresConnection)
+	if err != nil {
+		slog.Fatalw("failed to connect to DB", "error", err)
+	}
 	defer db.Close()
 
 	missing, err := db.DomainsMissingCerts(context.Background())
@@ -1044,7 +1064,10 @@ func certExtract(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	db := makeApplianceDB(environ.PostgresConnection)
+	db, err := makeApplianceDB(environ.PostgresConnection)
+	if err != nil {
+		slog.Fatalw("failed to connect to DB", "error", err)
+	}
 	defer db.Close()
 	sc, err := db.ServerCertByFingerprint(context.Background(), fpBytes)
 	if err != nil {

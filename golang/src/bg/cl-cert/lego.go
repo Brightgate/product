@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -22,6 +22,7 @@ import (
 	legolog "github.com/go-acme/lego/log"
 	dnsexec "github.com/go-acme/lego/providers/dns/exec"
 	dnsgoog "github.com/go-acme/lego/providers/dns/gcloud"
+	"github.com/pkg/errors"
 
 	"go.uber.org/zap"
 )
@@ -176,12 +177,12 @@ func (ll LegoLog) Println(args ...interface{}) {
 	ll.slog.Info(args...)
 }
 
-func legoSetup() (*legoHandle, *lego.Config) {
+func legoSetup() (*legoHandle, *lego.Config, error) {
 	legolog.Logger = LegoLog{slog}
 
 	config, client, err := acmeSetup(environ.AcmeConfig, environ.AcmeURL)
 	if err != nil {
-		slog.Fatalw("Failed to set up ACME connection info", "error", err)
+		return nil, nil, errors.Wrapf(err, "Failed to set up ACME connection info")
 	}
 	lh := newLegoHandle(client)
 
@@ -194,7 +195,7 @@ func legoSetup() (*legoHandle, *lego.Config) {
 			environ.DNSCredFile)
 	}
 	if err != nil {
-		slog.Fatalw("Failed to set DNS challenge provider", "error", err)
+		return nil, nil, errors.Wrapf(err, "Failed to set DNS challenge provider")
 	}
 
 	challengeOptions := make([]dns01.ChallengeOption, 0)
@@ -234,9 +235,9 @@ func legoSetup() (*legoHandle, *lego.Config) {
 
 	err = client.Challenge.SetDNS01Provider(provider, challengeOptions...)
 	if err != nil {
-		slog.Fatalw("Failed to set DNS challenge provider", "error", err)
+		return nil, nil, errors.Wrapf(err, "Failed to set DNS challenge provider")
 	}
 	slog.Info(checkMark + "Set up ACME connection info for " + environ.AcmeURL)
 
-	return lh, config
+	return lh, config, nil
 }
