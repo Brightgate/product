@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -25,6 +25,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,6 +38,7 @@ import (
 	"github.com/satori/uuid"
 
 	"github.com/golang/protobuf/ptypes"
+	"github.com/spf13/afero"
 )
 
 // If it looks like we're running with a self-assigned serial number, notify
@@ -173,9 +175,71 @@ func getCurrentCommits() map[string]string {
 		}
 	}
 
-	// Pull version information for XS and VUB, once they're available.
+	getCurrentCommitsPkgs(afero.NewOsFs(), commitMap)
+
+	// Pull version information for VUB, once it's available.
 
 	return commitMap
+}
+
+func getCurrentCommitsPkgs(fs afero.Fs, commitMap map[string]string) {
+	verDirPath := plat.ExpandDirPath(platform.APRoot, "etc", "bg-versions.d")
+	verDir, err := fs.Open(verDirPath)
+	if err != nil {
+		return
+	}
+
+	names, err := verDir.Readdirnames(0)
+	if err != nil {
+		return
+	}
+
+	// repoMap maps repo names to a set of commit IDs
+	repoMap := make(map[string]map[string]bool)
+
+	// pkgMap maps repo names to a map of repo and package
+	// names to commit IDs
+	pkgMap := make(map[string]map[string]string)
+
+	for _, name := range names {
+		path := filepath.Join(verDirPath, name)
+		commit, err := afero.ReadFile(fs, path)
+		if err != nil {
+			continue
+		}
+
+		commitStr := string(bytes.TrimSpace(commit))
+		spl := strings.SplitN(name, ":", 2)
+		if len(spl) == 1 {
+			commitMap[name] = commitStr
+		} else {
+			repo := spl[0]
+			if _, ok := repoMap[repo]; !ok {
+				repoMap[repo] = make(map[string]bool)
+				pkgMap[repo] = make(map[string]string)
+			}
+			repoMap[repo][commitStr] = true
+			pkg := spl[1]
+			// Split the package into name and version; only report
+			// the name
+			pkgSpl := strings.SplitN(pkg, "_", 2)
+			pkgMap[repo][pkgSpl[0]] = commitStr
+		}
+	}
+
+	for repo := range repoMap {
+		if len(repoMap[repo]) == 1 {
+			for commit := range repoMap[repo] {
+				commitMap[repo] = commit
+			}
+		} else {
+			for pkg, commit := range pkgMap[repo] {
+				commitMap[repo+":"+pkg] = commit
+			}
+		}
+	}
+
+	return
 }
 
 // Reports to the cloud what we know about the currently-running release.
