@@ -15,6 +15,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -24,9 +26,10 @@ import (
 )
 
 var (
-	mcpd   *mcp.MCP
-	config *cfgapi.Handle
+	mcpd        *mcp.MCP
+	gatewayAddr net.IP
 
+	config          *cfgapi.Handle
 	configConnected bool
 
 	// daemons mcp believes to be online
@@ -79,7 +82,9 @@ func configConnect() error {
 	configMtx.Lock()
 	defer configMtx.Unlock()
 
-	if config == nil {
+	if config == nil && gatewayAddr != nil {
+		os.Setenv("APGATEWAY", gatewayAddr.String())
+		logDebug("connecting to config on %s", gatewayAddr.String())
 		config, err = apcfg.NewConfigdHdl(nil, pname,
 			cfgapi.AccessInternal)
 		if err != nil {
@@ -163,6 +168,11 @@ func mcpCheck(t *hTest) bool {
 			c.SetRecvTimeout(time.Second)
 			c.SetSendTimeout(10 * time.Millisecond)
 			c.SetOpenTimeout(time.Second)
+		}
+
+		gatewayAddr, err = mcpd.Gateway()
+		if err != nil {
+			logWarn("failed to get gateway address: %v", err)
 		}
 	}
 

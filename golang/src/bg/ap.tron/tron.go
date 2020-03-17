@@ -116,12 +116,13 @@ func logDebug(format string, v ...interface{}) {
 
 func (t *hTest) setValue(key, newVal string) {
 	prop := t.name + "/" + key
+	states.Lock()
+	defer states.Unlock()
+
 	old := states.current[prop]
 	if old != newVal {
-		states.Lock()
 		states.current[prop] = newVal
 		states.updated <- true
-		states.Unlock()
 	}
 }
 
