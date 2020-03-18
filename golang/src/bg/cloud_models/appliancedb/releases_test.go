@@ -364,6 +364,10 @@ func testReleases(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.S
 	uu, err = ds.GetTargetRelease(ctx, appUU)
 	assert.NoError(err)
 	assert.Equal(mtRel1, uu)
+
+	// Make sure we can set the current release to the null UUID
+	err = ds.SetCurrentRelease(ctx, appUU, uuid.Nil, time.Now().UTC())
+	assert.NoError(err)
 }
 
 func testReleaseStatus(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {

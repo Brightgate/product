@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -235,10 +235,6 @@ func upgradeMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 		// This is probably slow, but if we don't know the full hash:
 		//     SELECT * FROM artifacts WHERE encode(commit_hash, 'hex') LIKE 'ac64649%';
 
-		if relUU == uuid.Nil {
-			slog.Warn("Unknown release UUID; not recording")
-			break
-		}
 		err = applianceDB.SetCurrentRelease(ctx, applianceUUID, relUU, reportTS)
 		if err != nil {
 			slog.Errorw("failed to process upgrade report: DB failure",
