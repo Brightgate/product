@@ -37,6 +37,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
@@ -1150,6 +1151,9 @@ func main() {
 	}
 	go serverPort.Serve(msgHandler)
 	go statsLoop()
+
+	// for pprof
+	go http.ListenAndServe(base_def.CONFIGD_DIAG_PORT, nil)
 
 	slog.Infof("%s online running %s", pname, common.GitVersion)
 	mcpd.SetState(mcp.ONLINE)

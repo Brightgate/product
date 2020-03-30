@@ -437,6 +437,32 @@ func (c *Handle) SetProp(prop, val string, expires *time.Time) error {
 	return err
 }
 
+// SetProps updates multiple properties, taking an optional expiration time.  If
+// any property doesn't already exist, an error is returned.
+func (c *Handle) SetProps(all map[string]string, expires *time.Time) error {
+	if expires != nil && expires.IsZero() {
+		expires = nil
+	}
+
+	if len(all) == 0 {
+		return nil
+	}
+
+	ops := make([]PropertyOp, 0)
+	for prop, val := range all {
+		op := PropertyOp{
+			Op:      PropSet,
+			Name:    prop,
+			Value:   val,
+			Expires: expires}
+		ops = append(ops, op)
+	}
+
+	_, err := c.Execute(nil, ops).Wait(nil)
+
+	return err
+}
+
 // CreateProp updates a single property, taking an optional expiration time.  If
 // the property doesn't already exist, it is created - as well as any parent
 // properties needed to provide a path through the tree.
@@ -448,6 +474,31 @@ func (c *Handle) CreateProp(prop, val string, expires *time.Time) error {
 	ops := []PropertyOp{
 		{Op: PropCreate, Name: prop, Value: val, Expires: expires},
 	}
+	_, err := c.Execute(nil, ops).Wait(nil)
+
+	return err
+}
+
+// CreateProps creates multiple properties, taking an optional expiration time.
+func (c *Handle) CreateProps(all map[string]string, expires *time.Time) error {
+	if expires != nil && expires.IsZero() {
+		expires = nil
+	}
+
+	if len(all) == 0 {
+		return nil
+	}
+
+	ops := make([]PropertyOp, 0)
+	for prop, val := range all {
+		op := PropertyOp{
+			Op:      PropCreate,
+			Name:    prop,
+			Value:   val,
+			Expires: expires}
+		ops = append(ops, op)
+	}
+
 	_, err := c.Execute(nil, ops).Wait(nil)
 
 	return err

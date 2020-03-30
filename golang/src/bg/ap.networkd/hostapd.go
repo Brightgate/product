@@ -348,20 +348,13 @@ func (c *hostapdConn) statusAll() {
 	}
 	c.Unlock()
 
-	props := make([]cfgapi.PropertyOp, 0)
+	props := make(map[string]string)
 	for _, sta := range stations {
 		if str, err := c.statusOne(sta); err == nil {
-			props = append(props, cfgapi.PropertyOp{
-				Op:    cfgapi.PropCreate,
-				Name:  "@/metrics/clients/" + sta + "/signal_str",
-				Value: str,
-			})
+			props["@/metrics/clients/"+sta+"/signal_str"] = str
 		}
 	}
-
-	if len(props) > 0 {
-		_ = config.Execute(nil, props)
-	}
+	config.CreateProps(props, nil)
 
 	c.Lock()
 	c.inStatus = false

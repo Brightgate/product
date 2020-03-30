@@ -57,6 +57,7 @@ var (
 	}
 
 	validationFuncs = map[string]typeValidate{
+		"null":       validateNull,
 		"bool":       validateBool,
 		"cidr":       validateCIDR,
 		"const":      validateString,
@@ -91,6 +92,14 @@ var (
 		"wifiwidth":  validateWifiWidth,
 	}
 )
+
+func validateNull(val string) error {
+	var err error
+	if len(val) != 0 {
+		err = fmt.Errorf("cannot be set to a non-null value")
+	}
+	return err
+}
 
 func validateBool(val string) error {
 	var err error
@@ -490,7 +499,7 @@ func validatePropDel(prop string, level cfgapi.AccessLevel) error {
 		// modified at this access level.
 		if p, l := validateChildren(node, level); p != "" {
 			err = fmt.Errorf("%s requires '%s' access to delete",
-				prop+"/"+p, cfgapi.AccessLevelNames[l])
+				p, cfgapi.AccessLevelNames[l])
 		}
 	}
 

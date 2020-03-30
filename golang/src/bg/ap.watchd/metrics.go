@@ -13,7 +13,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/gob"
 	"fmt"
 	"io/ioutil"
@@ -26,7 +25,6 @@ import (
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/common/archive"
-	"bg/common/cfgapi"
 	"bg/common/network"
 )
 
@@ -143,21 +141,11 @@ func getKey(remoteIP net.IP, rport, lport int) uint64 {
 	return (archive.SessionToKey(s))
 }
 
-func metricOp(base, field string, val uint64) cfgapi.PropertyOp {
-	return cfgapi.PropertyOp{
-		Op:    cfgapi.PropCreate,
-		Name:  base + "/" + field,
-		Value: strconv.FormatUint(val, 10),
-	}
-}
-
-func metricOps(base string, data *archive.XferStats) []cfgapi.PropertyOp {
-	return []cfgapi.PropertyOp{
-		metricOp(base, "bytes_sent", data.BytesSent),
-		metricOp(base, "pkts_sent", data.PktsSent),
-		metricOp(base, "bytes_rcvd", data.BytesRcvd),
-		metricOp(base, "pkts_rcvd", data.PktsRcvd),
-	}
+func addMetrics(props map[string]string, base string, data *archive.XferStats) {
+	props[base+"/"+"bytes_sent"] = strconv.FormatUint(data.BytesSent, 10)
+	props[base+"/"+"pkts_sent"] = strconv.FormatUint(data.PktsSent, 10)
+	props[base+"/"+"bytes_rcvd"] = strconv.FormatUint(data.BytesRcvd, 10)
+	props[base+"/"+"pkts_rcvd"] = strconv.FormatUint(data.PktsRcvd, 10)
 }
 
 // Given an average value over periodA and a new value over periodB, calculate a
@@ -265,40 +253,32 @@ func updateRolling(period time.Duration) {
 			continue
 		}
 
-		props := make([]cfgapi.PropertyOp, 0)
+		props := make(map[string]string)
 		base := "@/metrics/clients/" + mac
 
 		// If this client sent any data in the current period, update
 		// its 'last_activity' property.
 		if stats.BytesSent != 0 {
-			op := cfgapi.PropertyOp{
-				Op:    cfgapi.PropCreate,
-				Name:  base + "/last_activity",
-				Value: now,
-			}
-			props = append(props, op)
+			props[base+"/last_activity"] = now
 		}
 
 		r := rollingStats[mac]
 		if roll(&r.second, stats, time.Second, period) {
-			props = append(props, metricOps(base+"/total", &r.total)...)
-			props = append(props, metricOps(base+"/second", &r.second)...)
+			addMetrics(props, base+"/total", &r.total)
+			addMetrics(props, base+"/second", &r.second)
 		}
 		if roll(&r.minute, stats, time.Minute, period) {
-			props = append(props, metricOps(base+"/minute", &r.minute)...)
+			addMetrics(props, base+"/minute", &r.minute)
 		}
 		if roll(&r.hour, stats, time.Hour, period) {
-			props = append(props, metricOps(base+"/hour", &r.hour)...)
+			addMetrics(props, base+"/hour", &r.hour)
 		}
 		if roll(&r.day, stats, 24*time.Hour, period) {
-			props = append(props, metricOps(base+"/day", &r.day)...)
+			addMetrics(props, base+"/day", &r.day)
 		}
 
-		if len(props) > 0 {
-			ctx := context.Background()
-			if _, err := config.Execute(ctx, props).Wait(ctx); err != nil {
-				slog.Warnf("updating %s failed: %v", base, err)
-			}
+		if err := config.CreateProps(props, nil); err != nil {
+			slog.Warnf("updating %s failed: %v", base, err)
 		}
 	}
 }
