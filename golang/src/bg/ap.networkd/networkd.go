@@ -234,6 +234,7 @@ func daemonInit() error {
 	} else {
 		mcpd.SetState(mcp.INITING)
 	}
+	satellite = aputil.IsSatelliteMode()
 
 	brokerd, err = broker.NewBroker(slog, pname)
 	if err != nil {
@@ -306,13 +307,20 @@ func daemonInit() error {
 	// the satellite nodes, we need pull it from the address the gateway's
 	// DHCP server gave us.
 	networkNodeIdx = 1
-	if satellite = aputil.IsSatelliteMode(); satellite {
+	if satellite {
 		ip := getInternalAddr()
 		if ip == nil {
 			return fmt.Errorf("satellite node has no gateway " +
 				"connection")
 		}
 		networkNodeIdx = ip[3]
+	}
+
+	if !satellite {
+		// The VPN server only runs on the gateway node
+		if err := vpnInit(); err != nil {
+			slog.Errorf("vpnInit failed: %v", err)
+		}
 	}
 
 	ntpdSetup()
@@ -386,7 +394,9 @@ func main() {
 
 	resetInterfaces()
 
-	if !aputil.IsSatelliteMode() {
+	if !satellite {
+		// We are currently a gateway.  Monitor the DHCP info on the wan
+		// port to see if that changes
 		wan.monitor()
 		defer wan.stop()
 	}

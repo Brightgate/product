@@ -3,7 +3,7 @@
     "Children": {
       "apversion": {},
       "cfgversion": {
-        "Value": "23"
+        "Value": "26"
       },
       "clients": {},
       "cloud": {
@@ -257,6 +257,19 @@
                 "Value": "0"
               }
             }
+          },
+	  "vpn": {
+            "Children": {
+              "vap": {
+                "Value": ""
+              },
+              "lease_duration": {
+               "Value": "0"
+              },
+              "vlan": {
+                "Value": "-1"
+              }
+            }
           }
         }
       },
@@ -303,6 +316,10 @@
     {"Path": "@/network/vap/%string%/keymgmt", "Type": "keymgmt", "Level": "admin"},
     {"Path": "@/network/vap/%string%/passphrase", "Type": "passphrase", "Level": "admin"},
     {"Path": "@/network/vap/%string%/default_ring", "Type": "ring", "Level": "admin"},
+    {"Path": "@/network/vpn/address", "Type": "string", "Level": "internal"},
+    {"Path": "@/network/vpn/public_key", "Type": "string", "Level": "internal"},
+    {"Path": "@/network/vpn/private_key", "Type": "string", "Level": "internal"},
+    {"Path": "@/network/vpn/port", "Type": "int", "Level": "admin"},
     {"Path": "@/network/regdomain", "Type": "string", "Level": "admin"},
     {"Path": "@/network/radius_auth_secret", "Type": "string", "Level": "internal"},
     {"Path": "@/log/%int%/protocol", "Type": "string", "Level": "admin"},

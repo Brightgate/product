@@ -181,6 +181,7 @@ assignments = [
     [Statement.SIMPLE_STR, "RING_QUARANTINE", "quarantine"],
     [Statement.SIMPLE_STR, "RING_WAN", "wan"],
     [Statement.SIMPLE_STR, "RING_INTERNAL", "internal"],
+    [Statement.SIMPLE_STR, "RING_VPN", "vpn"],
 
     [Statement.COMMENT, "Message bus topics"],
     [Statement.SIMPLE_STR, "TOPIC_PING", "sys.ping"],

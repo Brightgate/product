@@ -1625,6 +1625,14 @@
   revision = "0673112484210f23155c2a43af63b23fc7762655"
 
 [[projects]]
+  branch = "master"
+  digest = "1:4718a61a7cce260898ec28b8842f034a83adc3e2548c8132c35244ff4354d2ff"
+  name = "golang.zx2c4.com/wireguard/wgctrl"
+  packages = ["wgtypes"]
+  pruneopts = ""
+  revision = "ceff61240acf0dd610d9af3df6e1f8463a49ca54"
+
+[[projects]]
   digest = "1:441862601d80124d31cda44155434f39e8f369c7f74ea8e1507aea550b96ef8a"
   name = "google.golang.org/api"
   packages = [
@@ -1948,6 +1956,7 @@
     "golang.org/x/sys/unix",
     "golang.org/x/text/encoding/unicode",
     "golang.org/x/text/transform",
+    "golang.zx2c4.com/wireguard/wgctrl/wgtypes",
     "google.golang.org/api",
     "google.golang.org/api/googleapi",
     "google.golang.org/api/iterator",

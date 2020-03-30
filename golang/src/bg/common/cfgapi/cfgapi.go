@@ -34,7 +34,7 @@ import (
 
 // Version gets increased each time there is a non-compatible change to the
 // config tree format, or configd API.
-const Version = int32(25)
+const Version = int32(26)
 
 // CmdHdl is returned when one or more operations are submitted to Execute().
 // This handle can be used to check on the status of a pending operation, or to
@@ -130,6 +130,14 @@ var ValidRings = map[string]bool{
 	base_def.RING_GUEST:      true,
 	base_def.RING_QUARANTINE: true,
 	base_def.RING_WAN:        true,
+	base_def.RING_VPN:        true,
+}
+
+// SystemRings is a map containing special rings that are exempted from many
+// standard functions.
+var SystemRings = map[string]bool{
+	base_def.RING_INTERNAL: true,
+	base_def.RING_VPN:      true,
 }
 
 // MaxRings is the largest number of rings we support.  This includes currently
@@ -148,6 +156,7 @@ var ringToSubnetIdx = map[string]int{
 	base_def.RING_DEVICES:    4,
 	base_def.RING_GUEST:      5,
 	base_def.RING_QUARANTINE: 6,
+	base_def.RING_VPN:        7,
 }
 
 // RingConfig defines the parameters of a ring's subnet
