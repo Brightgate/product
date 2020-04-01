@@ -1,16 +1,17 @@
-//
-// COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
-//
-// This copyright notice is Copyright Management Information under 17 USC 1202
-// and is included to protect this work and deter copyright infringement.
-// Removal or alteration of this Copyright Management Information without the
-// express written permission of Brightgate Inc is prohibited, and any
-// such unauthorized removal or alteration will be a violation of federal law.
-//
+/*
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
+ *
+ * This copyright notice is Copyright Management Information under 17 USC 1202
+ * and is included to protect this work and deter copyright infringement.
+ * Removal or alteration of this Copyright Management Information without the
+ * express written permission of Brightgate Inc is prohibited, and any
+ * such unauthorized removal or alteration will be a violation of federal law.
+ */
 
 package main
 
 import (
+	"bg/cl-obs/extract"
 	"bg/cl_common/deviceinfo"
 	"context"
 	"fmt"
@@ -64,7 +65,7 @@ func (c *cloudIngester) ingestSiteBucket(B *backdrop, siteUUID uuid.UUID,
 	slog.Debugf("previous cursor: %s", prevIngestTime.Format(time.RFC3339Nano))
 	slog.Debugf("ingest stats %v", &ingestStats)
 
-	startOtherSentenceV, err := countOtherSentenceVersions(B.db, siteUUID, getCombinedVersion())
+	startOtherSentenceV, err := countOtherSentenceVersions(B.db, siteUUID, extract.CombinedVersion)
 	if err != nil {
 		return errors.Wrap(err, "checking for old sentences")
 	}
@@ -159,14 +160,14 @@ func (c *cloudIngester) ingestSiteBucket(B *backdrop, siteUUID uuid.UUID,
 	// records changes from run to run (i.e. one or more got deleted),
 	// leaving an unfixable sentence.
 	endOtherSentenceV, err := countOtherSentenceVersions(B.db, siteUUID,
-		getCombinedVersion())
+		extract.CombinedVersion)
 	if err != nil {
 		return errors.Wrap(err, "checking for old sentences")
 	}
 	if endOtherSentenceV > 0 {
 		slog.Warnf("%s: after reingest %d old/version-mismatched sentences were seen (%d at start). Purging.",
 			siteUUID, endOtherSentenceV, startOtherSentenceV)
-		err = removeOtherSentenceVersions(B.db, siteUUID, getCombinedVersion())
+		err = removeOtherSentenceVersions(B.db, siteUUID, extract.CombinedVersion)
 		if err != nil {
 			return errors.Wrap(err, "removing old sentences")
 		}

@@ -1,12 +1,12 @@
-//
-// COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
-//
-// This copyright notice is Copyright Management Information under 17 USC 1202
-// and is included to protect this work and deter copyright infringement.
-// Removal or alteration of this Copyright Management Information without the
-// express written permission of Brightgate Inc is prohibited, and any
-// such unauthorized removal or alteration will be a violation of federal law.
-//
+/*
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
+ *
+ * This copyright notice is Copyright Management Information under 17 USC 1202
+ * and is included to protect this work and deter copyright infringement.
+ * Removal or alteration of this Copyright Management Information without the
+ * express written permission of Brightgate Inc is prohibited, and any
+ * such unauthorized removal or alteration will be a violation of federal law.
+ */
 
 // cl-obs combines two related capabilities, based on access to a pool
 // of observed device information objects:
@@ -50,9 +50,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -61,6 +59,10 @@ import (
 	"sync"
 	"time"
 
+	"bg/cl-obs/classifier"
+	"bg/cl-obs/defs"
+	"bg/cl-obs/extract"
+	"bg/cl-obs/modeldb"
 	"bg/cl_common/daemonutils"
 	"bg/cl_common/deviceinfo"
 
@@ -180,20 +182,6 @@ type RecordedClassification struct {
 	ClassificationUpdated time.Time `db:"classification_updated"`
 }
 
-// RecordedClassifier represents an entry in model table. Each entry
-// represents an active classifier and its trained implementation, where
-// appropriate.
-type RecordedClassifier struct {
-	GenerationTS    time.Time `db:"generation_date"`
-	ModelName       string    `db:"name"`
-	ClassifierType  string    `db:"classifier_type"`
-	ClassifierLevel int       `db:"classifier_level"`
-	MultibayesMin   int       `db:"multibayes_min"`
-	CertainAbove    float64   `db:"certain_above"`
-	UncertainBelow  float64   `db:"uncertain_below"`
-	ModelJSON       string    `db:"model_json"`
-}
-
 // Ingester represents a storage backend that contains DeviceInfo object
 // stored according to some understood convention.  For example, a
 // cloudIngester encodes the convention that, for a given cloud project,
@@ -204,12 +192,14 @@ type Ingester interface {
 }
 
 type backdrop struct {
-	ingester     Ingester
-	db           *sqlx.DB
-	modeldb      *sqlx.DB
-	modelsLoaded bool
-	ouidb        oui.OuiDB
-	store        deviceinfo.Store
+	ingester            Ingester
+	db                  *sqlx.DB
+	modeldb             modeldb.DataStore
+	modelsLoaded        bool
+	ouidb               oui.OuiDB
+	store               deviceinfo.Store
+	bayesClassifiers    []*classifier.BayesClassifier
+	lookupMfgClassifier *classifier.MfgLookupClassifier
 }
 
 var (
@@ -374,25 +364,6 @@ func checkDB(idb *sqlx.DB) {
 	}
 }
 
-// Classifier levels are ordered so that we can train new classifiers
-// without impacting the production output.
-func checkModelDB(mdb *sqlx.DB) {
-	const modelSchema = `
-    CREATE TABLE IF NOT EXISTS model (
-	generation_date TIMESTAMP,
-	name TEXT PRIMARY KEY,
-	classifier_type TEXT,
-	classifier_level INTEGER,
-	multibayes_min INTEGER,
-	certain_above FLOAT,
-	uncertain_below FLOAT,
-	model_json TEXT
-    );`
-	mustCreateVersionTable(mdb)
-
-	checkTableSchema(mdb, "model", modelSchema, "train")
-}
-
 func getMfgFromMAC(B *backdrop, mac string) string {
 	if strings.HasPrefix(strings.ToLower(mac), "60:90:84:a") {
 		return "Brightgate, Inc."
@@ -403,7 +374,7 @@ func getMfgFromMAC(B *backdrop, mac string) string {
 		return entry.Manufacturer
 	}
 
-	return unknownMfg
+	return defs.UnknownMfg
 }
 
 func listDevices(B *backdrop, detailed bool) error {
@@ -446,9 +417,9 @@ func listSites(B *backdrop, includeDevices bool, noNames bool, args []string) er
 	var err error
 	withClassifications := B.modelsLoaded
 
-	models := []RecordedClassifier{}
+	models := []modeldb.RecordedClassifier{}
 	if withClassifications {
-		models, err = getModels(B)
+		models, err = B.modeldb.GetModels()
 		if err != nil {
 			return err
 		}
@@ -514,25 +485,13 @@ func deviceSub(cmd *cobra.Command, args []string) error {
 	return listDevices(&_B, verbose)
 }
 
-func getModels(B *backdrop) ([]RecordedClassifier, error) {
-	models := make([]RecordedClassifier, 0)
-
-	// For reporting, we restrict based on the readiness level.
-	err := _B.modeldb.Select(&models, "SELECT * FROM model ORDER BY name ASC")
-	if err != nil {
-		return nil, errors.Wrap(err, "model select failed")
-	}
-
-	return models, nil
-}
-
 func classifySub(cmd *cobra.Command, args []string) error {
 	persist, _ := cmd.Flags().GetBool("persist")
 
 	if !_B.modelsLoaded {
 		return errors.Errorf("Model not loaded.  You may need to pass --model-file")
 	}
-	models, err := getModels(&_B)
+	models, err := _B.modeldb.GetModels()
 	if err != nil {
 		return errors.Wrap(err, "getModels failed")
 	}
@@ -718,58 +677,45 @@ func trainSub(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func loadModel(modelFile string) (*sqlx.DB, error) {
+func loadModel(B *backdrop, modelFile string) error {
 	var modelPath string
 
 	slog.Infof("load model %q", modelFile)
-	url, err := url.Parse(modelFile)
+	modelPath, err := modeldb.GetModelFromURL(modelFile)
 	if err != nil {
-		return nil, errors.Wrap(err, "parsing model-file")
+		return errors.Wrap(err, "getting model file")
 	}
+	slog.Infof("modelPath %q", modelPath)
 
-	if url.Scheme == "gs" {
-		ctx := context.Background()
-		cenv := os.Getenv(googleCredentialsEnvVar)
-		storageClient, err := storage.NewClient(ctx, option.WithCredentialsFile(cenv))
-		if err != nil {
-			return nil, errors.Wrapf(err, "creating storage client")
-		}
-		bucket := storageClient.Bucket(url.Host)
-		upath := strings.TrimLeft(url.Path, "/")
-		object := bucket.Object(upath)
-		r, err := object.NewReader(ctx)
-		if err != nil {
-			return nil, errors.Wrapf(err, "reading %s", modelFile)
-		}
-		defer r.Close()
-		tmpFile, err := ioutil.TempFile("", "cl-obs-trained-model")
-		if err != nil {
-			return nil, errors.Wrap(err, "creating temp file")
-		}
-		if _, err := io.Copy(tmpFile, r); err != nil {
-			// TODO: Handle error.
-			return nil, errors.Wrapf(err, "copying %s -> %s", modelFile, tmpFile.Name())
-		}
-		if err := tmpFile.Close(); err != nil {
-			return nil, errors.Wrapf(err, "closing %s", tmpFile.Name())
-		}
-		modelPath = tmpFile.Name()
-		slog.Infof("downloaded model to %s", modelPath)
-
-	} else if url.Scheme == "" {
-		// If modelFile doesn't exist, don't create it.
-		if _, err := os.Stat(modelFile); os.IsNotExist(err) {
-			return nil, errors.Wrap(err, "doesn't exist")
-		}
-		modelPath = url.Path
-	}
-
-	modeldb, err := sqlx.Connect("sqlite3", modelPath)
+	B.modeldb, err = modeldb.OpenSQLite(modelPath)
 	if err != nil {
 		slog.Fatalf("model database open: %v\n", err)
 	}
-	checkModelDB(modeldb)
-	return modeldb, nil
+	if err := B.modeldb.CheckDB(); err != nil {
+		slog.Fatalf("modeldb check: %v\n", err)
+	}
+	classifiers, err := B.modeldb.GetModels()
+	if err != nil {
+		slog.Fatalf("modeldb get: %v\n", err)
+	}
+	B.bayesClassifiers = make([]*classifier.BayesClassifier, 0)
+
+	for _, rc := range classifiers {
+		if rc.ClassifierType == "bayes" {
+			cl, err := classifier.NewBayesClassifier(rc)
+			if err != nil {
+				return errors.Wrap(err, "failed to make bayes classifier")
+			}
+			B.bayesClassifiers = append(_B.bayesClassifiers, cl)
+		} else if rc.ModelName == "lookup-mfg" {
+			cl := classifier.NewMfgLookupClassifier(B.ouidb)
+			B.lookupMfgClassifier = cl
+		} else {
+			slog.Warnf("unknown classifier %v", rc)
+		}
+	}
+	B.modelsLoaded = true
+	return nil
 }
 
 func readyBackdrop(B *backdrop, cmd *cobra.Command) error {
@@ -806,16 +752,13 @@ func readyBackdrop(B *backdrop, cmd *cobra.Command) error {
 		return errors.Wrap(err, "Couldn't set DB performance settings")
 	}
 
-	slog.Infof("running combined version: %s\n", getCombinedVersion())
+	slog.Infof("running combined version: %s\n", extract.CombinedVersion)
 
 	modelFile, _ := cmd.Flags().GetString("model-file")
 	slog.Infof("Models DB %s", modelFile)
-	B.modeldb, err = loadModel(modelFile)
+	err = loadModel(B, modelFile)
 	if err != nil {
 		slog.Warnf("loadModel failed: %v", err)
-	} else {
-		B.modelsLoaded = true
-		checkModelDB(B.modeldb)
 	}
 
 	var store deviceinfo.Store
@@ -977,8 +920,6 @@ func main() {
 	}
 	classifyCmd.Flags().Bool("persist", false, "record classifications")
 	rootCmd.AddCommand(classifyCmd)
-
-	initMaps()
 
 	err = rootCmd.Execute()
 	os.Exit(map[bool]int{true: 0, false: 1}[err == nil])

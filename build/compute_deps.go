@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -107,7 +107,9 @@ func main() {
 	deplib := make(map[string]*gopkg)
 
 	for _, pkg := range library {
-		if strings.HasPrefix(pkg.name, "bg/ap.") || strings.HasPrefix(pkg.name, "bg/ap-") {
+		if strings.Count(pkg.name, "/") > 1 {
+			deplib["$(BGDEPDIR)/"+strings.Replace(pkg.name, "/", "--", -1)] = pkg
+		} else if strings.HasPrefix(pkg.name, "bg/ap.") || strings.HasPrefix(pkg.name, "bg/ap-") {
 			applib["$(APPBIN)/"+pkg.name[3:]] = pkg
 		} else if strings.HasPrefix(pkg.name, "bg/cl.") || strings.HasPrefix(pkg.name, "bg/cl-") {
 			cllib["$(CLOUDBIN)/"+pkg.name[3:]] = pkg

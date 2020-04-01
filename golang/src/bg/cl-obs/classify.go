@@ -1,12 +1,12 @@
-//
-// COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
-//
-// This copyright notice is Copyright Management Information under 17 USC 1202
-// and is included to protect this work and deter copyright infringement.
-// Removal or alteration of this Copyright Management Information without the
-// express written permission of Brightgate Inc is prohibited, and any
-// such unauthorized removal or alteration will be a violation of federal law.
-//
+/*
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
+ *
+ * This copyright notice is Copyright Management Information under 17 USC 1202
+ * and is included to protect this work and deter copyright infringement.
+ * Removal or alteration of this Copyright Management Information without the
+ * express written permission of Brightgate Inc is prohibited, and any
+ * such unauthorized removal or alteration will be a violation of federal law.
+ */
 
 package main
 
@@ -14,72 +14,22 @@ import (
 	"database/sql"
 	"fmt"
 	"math"
+	"net"
 	"strings"
 	"time"
 
+	"bg/cl-obs/classifier"
+	"bg/cl-obs/modeldb"
 	"bg/cl-obs/sentence"
 
 	"github.com/fatih/color"
 	"github.com/jmoiron/sqlx"
-	"github.com/lytics/multibayes"
 	"github.com/pkg/errors"
 	"github.com/satori/uuid"
 	"go.uber.org/zap/zapcore"
 )
 
-const (
-	classifyUncertain = 0
-	classifyCrossing  = 1
-	classifyCertain   = 2
-)
-
-type classifyResult struct {
-	ModelName      string
-	Classification string
-	Probability    float64
-	NextProb       float64
-	Region         int
-	Unknown        bool
-}
-
-func convertPosteriorToResult(name string, certainAbove float64, uncertainBelow float64, posterior map[string]float64) classifyResult {
-	var maxProb = -1.
-	var maxClass string
-	var nextProb = -1.
-
-	for k, v := range posterior {
-		if v > maxProb {
-			nextProb = maxProb
-
-			maxProb = v
-			maxClass = k
-
-			continue
-		}
-
-		if v > nextProb {
-			nextProb = v
-		}
-	}
-
-	region := classifyUncertain
-	if maxProb > certainAbove {
-		region = classifyCertain
-	} else if maxProb > uncertainBelow {
-		region = classifyCrossing
-	}
-
-	return classifyResult{
-		ModelName:      name,
-		Classification: maxClass,
-		Probability:    maxProb,
-		NextProb:       nextProb,
-		Region:         region,
-		Unknown:        false,
-	}
-}
-
-func displayPredictResults(results []classifyResult) string {
+func displayPredictResults(results []*classifier.ClassifyResult) string {
 	var msg strings.Builder
 
 	for _, r := range results {
@@ -94,9 +44,9 @@ func displayPredictResults(results []classifyResult) string {
 			prob = fmt.Sprintf("%.2f", r.Probability)
 		}
 		switch r.Region {
-		case classifyCertain:
+		case classifier.ClassifyCertain:
 			msg.WriteString(fmt.Sprintf("%s: %s (%s)", r.ModelName, color.GreenString(r.Classification), prob))
-		case classifyCrossing:
+		case classifier.ClassifyCrossing:
 			msg.WriteString(fmt.Sprintf("%s: %s (%s)", r.ModelName, color.YellowString(r.Classification), prob))
 		default:
 			msg.WriteString(fmt.Sprintf("%s: %s (%s)", r.ModelName, r.Classification, prob))
@@ -108,16 +58,21 @@ func displayPredictResults(results []classifyResult) string {
 }
 
 func affectedSitesFromInventory(rs []RecordedInventory) []string {
-	siteUUIDs := make([]string, 0)
+	siteUUMap := make(map[string]bool)
 
 	for _, r := range rs {
-		siteUUIDs = appendOnlyNew(siteUUIDs, r.SiteUUID)
+		siteUUMap[r.SiteUUID] = true
 	}
-
+	siteUUIDs := make([]string, len(siteUUMap))
+	i := 0
+	for u := range siteUUMap {
+		siteUUIDs[i] = u
+		i++
+	}
 	return siteUUIDs
 }
 
-func updateOneClassification(db *sqlx.DB, siteUUID string, deviceMac string, newCl classifyResult) error {
+func updateOneClassification(db *sqlx.DB, siteUUID string, deviceMac string, newCl *classifier.ClassifyResult) error {
 	// Lookup our existing results in the classification table.
 	now := time.Now()
 
@@ -134,7 +89,7 @@ func updateOneClassification(db *sqlx.DB, siteUUID string, deviceMac string, new
 	// If the classification isn't present, we can just add it, if it's
 	// "certain"; else do nothing, as we don't record new uncertain results.
 	if err == sql.ErrNoRows {
-		if newCl.Region != classifyCertain {
+		if newCl.Region != classifier.ClassifyCertain {
 			return nil
 		}
 
@@ -153,7 +108,7 @@ func updateOneClassification(db *sqlx.DB, siteUUID string, deviceMac string, new
 	}
 
 	switch newCl.Region {
-	case classifyCertain:
+	case classifier.ClassifyCertain:
 		var created time.Time
 
 		// If nothing has changed, keep going; there's no need to touch
@@ -191,7 +146,7 @@ func updateOneClassification(db *sqlx.DB, siteUUID string, deviceMac string, new
 		if err != nil {
 			return errors.Wrap(err, "update classification")
 		}
-	case classifyCrossing:
+	case classifier.ClassifyCrossing:
 		// Nothing to do.
 	default:
 		// If our result is below the threshold, delete the row (or
@@ -215,7 +170,7 @@ func updateOneClassification(db *sqlx.DB, siteUUID string, deviceMac string, new
 // classification in the classification table.  Finally it removes any
 // stray classification entries corresponding to models outside of the result
 // set.
-func updateClassificationTable(db *sqlx.DB, siteUUID string, deviceMac string, results []classifyResult) {
+func updateClassificationTable(db *sqlx.DB, siteUUID string, deviceMac string, results []*classifier.ClassifyResult) {
 	var cleanupQ string
 	for _, result := range results {
 		err := updateOneClassification(db, siteUUID, deviceMac, result)
@@ -238,58 +193,24 @@ func updateClassificationTable(db *sqlx.DB, siteUUID string, deviceMac string, r
 	}
 }
 
-var classifierCache = make(map[string]*multibayes.Classifier)
-
-func classifySentence(B *backdrop, models []RecordedClassifier, mac string, sent sentence.Sentence) []classifyResult {
+func classifySentence(B *backdrop, mac string, sent sentence.Sentence) []*classifier.ClassifyResult {
 	var err error
-	results := make([]classifyResult, 0)
-
-	for _, model := range models {
-		switch model.ClassifierType {
-		case "bayes":
-			cl := classifierCache[model.ModelName]
-			if cl == nil {
-				cl, err = multibayes.NewClassifierFromJSON([]byte(model.ModelJSON))
-				if err != nil {
-					slog.Errorf("skipping '%s'; could not create classifier: %+v", model.ModelName, err)
-					continue
-				}
-				cl.MinClassSize = model.MultibayesMin
-				classifierCache[model.ModelName] = cl
-			}
-
-			// Run sentence through each classifier.
-			post := cl.Posterior(sent.String())
-			spost := convertPosteriorToResult(model.ModelName,
-				model.CertainAbove, model.UncertainBelow, post)
-
-			results = append(results, spost)
-
-		case "lookup":
-			lo := initInterfaceMfgLookupClassifier()
-
-			lresult, lprob := lo.classify(B, mac)
-
-			lr := classifyResult{
-				ModelName:      model.ModelName,
-				Classification: lresult,
-				Probability:    lprob,
-				NextProb:       0.,
-				Unknown:        false,
-				Region:         classifyCertain,
-			}
-
-			results = append(results, lr)
-
-		default:
-			slog.Fatalf("Unknown classifier %s", model.ClassifierType)
-		}
+	results := make([]*classifier.ClassifyResult, 0)
+	for _, c := range B.bayesClassifiers {
+		res := c.Classify(sent)
+		results = append(results, &res)
 	}
-
+	hwaddr, err := net.ParseMAC(mac)
+	if err != nil {
+		slog.Warnf("bad mac %s: %v", mac, err)
+	} else {
+		lookupRes := B.lookupMfgClassifier.Classify(hwaddr)
+		results = append(results, &lookupRes)
+	}
 	return results
 }
 
-func classifyMac(B *backdrop, models []RecordedClassifier, siteUUID string, mac string, persistent bool) (string, sentence.Sentence) {
+func classifyMac(B *backdrop, models []modeldb.RecordedClassifier, siteUUID string, mac string, persistent bool) (string, sentence.Sentence) {
 	records := []RecordedInventory{}
 	err := B.db.Select(&records, `
 		SELECT * FROM inventory
@@ -326,7 +247,7 @@ func classifyMac(B *backdrop, models []RecordedClassifier, siteUUID string, mac 
 		siteUUIDs = append(siteUUIDs, siteUUID)
 	}
 
-	results := classifySentence(B, models, mac, sent)
+	results := classifySentence(B, mac, sent)
 
 	if persistent {
 		for _, s := range siteUUIDs {
@@ -337,7 +258,7 @@ func classifyMac(B *backdrop, models []RecordedClassifier, siteUUID string, mac 
 	return displayPredictResults(results), sent
 }
 
-func classifySite(B *backdrop, models []RecordedClassifier, siteUUID string, persistent bool) error {
+func classifySite(B *backdrop, models []modeldb.RecordedClassifier, siteUUID string, persistent bool) error {
 	_ = uuid.Must(uuid.FromString(siteUUID))
 
 	var machines []string

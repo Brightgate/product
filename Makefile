@@ -559,6 +559,7 @@ CLOUDSPOOL=$(CLOUDVAR)/spool
 CLOUDDAEMON_GOPKGS = \
 	bg/cl.configd \
 	bg/cl.eventd \
+	bg/cl.identifierd \
 	bg/cl.httpd \
 	bg/cl.rpcd
 
@@ -572,6 +573,10 @@ CLOUDCOMMON_GOPKGS = \
 	bg/cl_common/registry \
 	bg/cloud_models/appliancedb \
 	bg/cloud_models/sessiondb \
+	bg/cl-obs/classifier \
+	bg/cl-obs/defs \
+	bg/cl-obs/extract \
+	bg/cl-obs/modeldb \
 	bg/cl-obs/sentence
 
 CLOUDCOMMAND_GOPKGS = \
@@ -601,8 +606,11 @@ GO_CLOUD_TESTABLES = \
 	bg/cloud_models/sessiondb \
 	bg/common/mfg \
 	bg/cl-cert \
+	bg/cl-obs/classifier \
+	bg/cl-obs/extract \
 	bg/cl-obs/sentence \
 	bg/cl.configd \
+	bg/cl.identifierd \
 	bg/cl.httpd
 
 CLOUDSERVICES = \
@@ -611,6 +619,7 @@ CLOUDSERVICES = \
 	cl.configd.service \
 	cl.eventd.service \
 	cl.httpd.service \
+	cl.identifierd.service \
 	cl-obs.service \
 	cl-obs.timer \
 	cl.rpcd.service

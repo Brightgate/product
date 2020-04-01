@@ -1,17 +1,18 @@
-//
-// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
-//
-// This copyright notice is Copyright Management Information under 17 USC 1202
-// and is included to protect this work and deter copyright infringement.
-// Removal or alteration of this Copyright Management Information without the
-// express written permission of Brightgate Inc is prohibited, and any
-// such unauthorized removal or alteration will be a violation of federal law.
-//
+/*
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
+ *
+ * This copyright notice is Copyright Management Information under 17 USC 1202
+ * and is included to protect this work and deter copyright infringement.
+ * Removal or alteration of this Copyright Management Information without the
+ * express written permission of Brightgate Inc is prohibited, and any
+ * such unauthorized removal or alteration will be a violation of federal law.
+ */
 
 // Bayesian classifier for operating system genus and species.
 package main
 
 import (
+	"bg/cl-obs/defs"
 	"fmt"
 
 	"github.com/lytics/multibayes"
@@ -32,52 +33,48 @@ const (
 )
 
 func initOSGenusBayesClassifier() bayesClassifier {
-	var m bayesClassifier
-
-	m.name = fmt.Sprintf("%s-%d", "bayes-os", osGenusMinClassSize)
-	m.level = productionClassifier
-	m.set = make([]machine, 0)
-	m.classifiers = make(map[string]*multibayes.Classifier)
-	m.certainAbove = osCertainAbove
-	m.uncertainBelow = osUncertainBelow
-	m.unknownValue = unknownOs
-	m.TargetValue = osGenusTargetValue
-	m.classificationProp = osGenusProperty
-
-	return m
+	return bayesClassifier{
+		name:               fmt.Sprintf("%s-%d", "bayes-os", osGenusMinClassSize),
+		level:              productionClassifier,
+		set:                make([]machine, 0),
+		classifiers:        make(map[string]*multibayes.Classifier),
+		certainAbove:       osCertainAbove,
+		uncertainBelow:     osUncertainBelow,
+		unknownValue:       defs.UnknownOS,
+		TargetValue:        osGenusTargetValue,
+		classificationProp: osGenusProperty,
+	}
 }
 
 func osGenusTargetValue(rdi RecordedDevice) string {
-	_, present := osRevGenusMap[rdi.AssignedOSGenus]
+	_, present := defs.OSRevGenusMap[rdi.AssignedOSGenus]
 	if !present {
-		slog.Warnf("osRevGenusMap unknown OS %s", rdi.AssignedOSGenus)
-		return unknownOs
+		slog.Warnf("OSRevGenusMap unknown OS %s", rdi.AssignedOSGenus)
+		return defs.UnknownOS
 	}
 
 	return rdi.AssignedOSGenus
 }
 
 func initOSSpeciesBayesClassifier() bayesClassifier {
-	var m bayesClassifier
-
-	m.name = fmt.Sprintf("%s-%d", "bayes-distro", osSpeciesMinClassSize)
-	m.level = experimentalClassifier
-	m.set = make([]machine, 0)
-	m.classifiers = make(map[string]*multibayes.Classifier)
-	m.certainAbove = distroCertainAbove
-	m.uncertainBelow = distroUncertainBelow
-	m.unknownValue = unknownOs
-	m.TargetValue = osSpeciesTargetValue
-	m.classificationProp = osSpeciesProperty
-
-	return m
+	return bayesClassifier{
+		name:               fmt.Sprintf("%s-%d", "bayes-distro", osSpeciesMinClassSize),
+		level:              experimentalClassifier,
+		set:                make([]machine, 0),
+		classifiers:        make(map[string]*multibayes.Classifier),
+		certainAbove:       distroCertainAbove,
+		uncertainBelow:     distroUncertainBelow,
+		unknownValue:       defs.UnknownOS,
+		TargetValue:        osSpeciesTargetValue,
+		classificationProp: osSpeciesProperty,
+	}
 }
 
 func osSpeciesTargetValue(rdi RecordedDevice) string {
-	_, present := osRevSpeciesMap[rdi.AssignedOSSpecies]
+	_, present := defs.OSRevSpeciesMap[rdi.AssignedOSSpecies]
 	if !present {
-		slog.Warnf("osRevSpeciesMap unknown OS %s", rdi.AssignedOSSpecies)
-		return unknownOs
+		slog.Warnf("OSRevSpeciesMap unknown OS %s", rdi.AssignedOSSpecies)
+		return defs.UnknownOS
 	}
 
 	return rdi.AssignedOSSpecies

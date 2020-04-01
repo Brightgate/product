@@ -1908,6 +1908,7 @@
     "github.com/go-acme/lego/registration",
     "github.com/goftp/file-driver",
     "github.com/goftp/server",
+    "github.com/gogo/protobuf/proto",
     "github.com/golang/protobuf/jsonpb",
     "github.com/golang/protobuf/proto",
     "github.com/golang/protobuf/ptypes",

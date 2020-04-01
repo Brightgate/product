@@ -1,12 +1,12 @@
-//
-// COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
-//
-// This copyright notice is Copyright Management Information under 17 USC 1202
-// and is included to protect this work and deter copyright infringement.
-// Removal or alteration of this Copyright Management Information without the
-// express written permission of Brightgate Inc is prohibited, and any
-// such unauthorized removal or alteration will be a violation of federal law.
-//
+/*
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
+ *
+ * This copyright notice is Copyright Management Information under 17 USC 1202
+ * and is included to protect this work and deter copyright infringement.
+ * Removal or alteration of this Copyright Management Information without the
+ * express written permission of Brightgate Inc is prohibited, and any
+ * such unauthorized removal or alteration will be a violation of federal law.
+ */
 
 package sentence
 
@@ -89,6 +89,26 @@ func (s Sentence) AddSentence(s2 Sentence) bool {
 	return redundant
 }
 
+// SubtractSentence removes the contents of s2 from the sentence s1.
+func (s Sentence) SubtractSentence(s2 Sentence) bool {
+	redundant := true
+
+	for k, v := range s2 {
+		if s[k] == 0 {
+			// Term not in s
+			continue
+		}
+		s[k] -= v
+		if s[k] == 0 {
+			// s no longer contains this term
+			delete(s, k)
+			redundant = false
+		}
+	}
+
+	return redundant
+}
+
 // Terms returns the slice of strings that make up the sentence terms.
 func (s Sentence) Terms() []string {
 	t := make([]string, len(s))
@@ -117,7 +137,7 @@ func (s Sentence) TermHash() uint64 {
 	sort.Strings(ws)
 
 	for _, k := range ws {
-		h.Write([]byte(k))
+		_, _ = h.Write([]byte(k))
 	}
 
 	return h.Sum64()
@@ -146,8 +166,8 @@ func (s Sentence) WordHash() uint64 {
 	sort.Strings(ws)
 
 	for _, k := range ws {
-		h.Write([]byte(k))
-		h.Write([]byte(strconv.Itoa(s[k])))
+		_, _ = h.Write([]byte(k))
+		_, _ = h.Write([]byte(strconv.Itoa(s[k])))
 	}
 
 	return h.Sum64()

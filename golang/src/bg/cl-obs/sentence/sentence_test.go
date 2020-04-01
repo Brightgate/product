@@ -1,12 +1,12 @@
-//
-// COPYRIGHT 2019 Brightgate Inc. All rights reserved.
-//
-// This copyright notice is Copyright Management Information under 17 USC 1202
-// and is included to protect this work and deter copyright infringement.
-// Removal or alteration of this Copyright Management Information without the
-// express written permission of Brightgate Inc is prohibited, and any
-// such unauthorized removal or  alteration will be a violation of federal law.
-//
+/*
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
+ *
+ * This copyright notice is Copyright Management Information under 17 USC 1202
+ * and is included to protect this work and deter copyright infringement.
+ * Removal or alteration of this Copyright Management Information without the
+ * express written permission of Brightgate Inc is prohibited, and any
+ * such unauthorized removal or alteration will be a violation of federal law.
+ */
 
 package sentence
 
@@ -101,4 +101,48 @@ func TestAddRedundantSentence(t *testing.T) {
 
 	assert.Equal(4, r.TermCount(), "sentence should have termCount matching sum of distinct terms in sentences")
 	assert.True(added, "sentence addition has only redundant content")
+}
+
+func TestSubtractSentence(t *testing.T) {
+	assert := require.New(t)
+
+	q := NewFromString("potato carrot")
+	r := NewFromString("avocado turnip")
+
+	redundant := q.AddSentence(r)
+	assert.False(redundant)
+	assert.Equal(4, q.TermCount())
+	assert.Equal(4, q.WordCount())
+
+	redundant = q.AddSentence(r)
+	assert.True(redundant)
+	assert.Equal(4, q.TermCount())
+	assert.Equal(6, q.WordCount())
+
+	redundant = q.SubtractSentence(r)
+	assert.True(redundant)
+	assert.Equal(4, q.TermCount())
+	assert.Equal(4, q.WordCount())
+
+	redundant = q.SubtractSentence(r)
+	assert.False(redundant)
+	assert.Equal(2, q.TermCount())
+	assert.Equal(2, q.WordCount())
+
+	// Now r is not "in" q, so this is redundant
+	redundant = q.SubtractSentence(r)
+	assert.True(redundant)
+	assert.Equal(2, q.TermCount())
+	assert.Equal(2, q.WordCount())
+
+	// Test subbing from yourself
+	redundant = q.SubtractSentence(q)
+	assert.False(redundant)
+	assert.Equal(0, q.TermCount())
+
+	// Test subbing from empty sentence
+	q = New()
+	redundant = q.SubtractSentence(r)
+	assert.True(redundant)
+	assert.Equal(0, q.TermCount())
 }

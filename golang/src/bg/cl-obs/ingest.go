@@ -1,12 +1,12 @@
-//
-// COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
-//
-// This copyright notice is Copyright Management Information under 17 USC 1202
-// and is included to protect this work and deter copyright infringement.
-// Removal or alteration of this Copyright Management Information without the
-// express written permission of Brightgate Inc is prohibited, and any
-// such unauthorized removal or alteration will be a violation of federal law.
-//
+/*
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
+ *
+ * This copyright notice is Copyright Management Information under 17 USC 1202
+ * and is included to protect this work and deter copyright infringement.
+ * Removal or alteration of this Copyright Management Information without the
+ * express written permission of Brightgate Inc is prohibited, and any
+ * such unauthorized removal or alteration will be a violation of federal law.
+ */
 
 package main
 
@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"bg/base_msg"
+	"bg/cl-obs/extract"
 	"bg/cl_common/deviceinfo"
 
 	"github.com/jmoiron/sqlx"
@@ -121,12 +122,11 @@ func RecordInventory(db *sqlx.DB, ouiDB oui.OuiDB, store deviceinfo.Store,
 	}
 
 	// Extract DHCP vendor raw string.
-	_, ri.DHCPVendor = extractDeviceInfoDHCP(di)
+	ri.DHCPVendor, _ = extract.DHCPVendorFromDeviceInfo(di)
 
 	// Add sentence of extracted features
-	sentenceVersion, sentence := genBayesSentenceFromDeviceInfo(ouiDB, di)
-	ri.BayesSentenceVersion = sentenceVersion
-	ri.BayesSentence = sentence.String()
+	ri.BayesSentence = extract.BayesSentenceFromDeviceInfo(ouiDB, di).String()
+	ri.BayesSentenceVersion = extract.CombinedVersion
 
 	_, err := db.NamedExec(`INSERT OR REPLACE INTO inventory
 		(storage, inventory_date, unix_timestamp,

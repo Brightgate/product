@@ -1,12 +1,12 @@
-//
-// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
-//
-// This copyright notice is Copyright Management Information under 17 USC 1202
-// and is included to protect this work and deter copyright infringement.
-// Removal or alteration of this Copyright Management Information without the
-// express written permission of Brightgate Inc is prohibited, and any
-// such unauthorized removal or alteration will be a violation of federal law.
-//
+/*
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
+ *
+ * This copyright notice is Copyright Management Information under 17 USC 1202
+ * and is included to protect this work and deter copyright infringement.
+ * Removal or alteration of this Copyright Management Information without the
+ * express written permission of Brightgate Inc is prohibited, and any
+ * such unauthorized removal or alteration will be a violation of federal law.
+ */
 
 // A "lookup" classifier isn't a trained classifier, like the supervised
 // Bayesian classifiers used elsewhere, but is instead a classifier that
@@ -23,6 +23,7 @@
 package main
 
 import (
+	"bg/cl-obs/modeldb"
 	"time"
 )
 
@@ -34,33 +35,20 @@ type lookupClassifier struct {
 	unknownValue       string
 	classificationProp string
 	TargetValue        func(rdi RecordedDevice) string
-	Lookup             func(B *backdrop, datum string) string
 }
 
 func (m *lookupClassifier) train(B *backdrop) {
-	_, ierr := B.modeldb.Exec(`INSERT OR REPLACE INTO model (
-					generation_date,
-					name,
-					classifier_type,
-					classifier_level,
-					multibayes_min,
-					certain_above,
-					uncertain_below,
-					model_json
-				) VALUES ($1, $2, $3, $4, $5, $6, $7,$8);`,
-		time.Now(),
-		m.name,
-		"lookup",
-		m.level,
-		0,
-		m.certainAbove,
-		m.uncertainBelow,
-		"")
-	if ierr != nil {
-		slog.Fatalf("could not update '%s' model: %s", m.name, ierr)
+	r := modeldb.RecordedClassifier{
+		GenerationTS:    time.Now(),
+		ModelName:       m.name,
+		ClassifierType:  "lookup",
+		ClassifierLevel: m.level,
+		MultibayesMin:   0,
+		CertainAbove:    m.certainAbove,
+		UncertainBelow:  m.uncertainBelow,
+		ModelJSON:       "",
 	}
-}
-
-func (m *lookupClassifier) classify(B *backdrop, mac string) (string, float64) {
-	return m.Lookup(B, mac), 1.
+	if err := B.modeldb.UpsertModel(r); err != nil {
+		slog.Fatalf("could not update '%s' model: %s", m.name, err)
+	}
 }

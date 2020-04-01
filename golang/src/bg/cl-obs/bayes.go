@@ -1,12 +1,12 @@
-//
-// COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
-//
-// This copyright notice is Copyright Management Information under 17 USC 1202
-// and is included to protect this work and deter copyright infringement.
-// Removal or alteration of this Copyright Management Information without the
-// express written permission of Brightgate Inc is prohibited, and any
-// such unauthorized removal or alteration will be a violation of federal law.
-//
+/*
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
+ *
+ * This copyright notice is Copyright Management Information under 17 USC 1202
+ * and is included to protect this work and deter copyright infringement.
+ * Removal or alteration of this Copyright Management Information without the
+ * express written permission of Brightgate Inc is prohibited, and any
+ * such unauthorized removal or alteration will be a violation of federal law.
+ */
 
 // A Bayesian classifier is a supervised trained classifier.  With the
 // accumulation of the training set, the classifier is capable of
@@ -54,6 +54,8 @@ import (
 	"strings"
 	"time"
 
+	"bg/cl-obs/extract"
+	"bg/cl-obs/modeldb"
 	"bg/cl-obs/sentence"
 	"bg/cl_common/deviceinfo"
 
@@ -118,7 +120,7 @@ func (m *bayesClassifier) GenSetFromDB(B *backdrop) error {
 			// Retrieve inventory.
 			ri, err := inventoryFromTuple(B.db, rt.Tuple())
 
-			if err == nil && ri.BayesSentenceVersion == getCombinedVersion() {
+			if err == nil && ri.BayesSentenceVersion == extract.CombinedVersion {
 				p.AddString(ri.BayesSentence)
 			} else {
 				di, err := B.store.ReadTuple(context.Background(), rt.Tuple())
@@ -127,7 +129,7 @@ func (m *bayesClassifier) GenSetFromDB(B *backdrop) error {
 					continue
 				}
 
-				_, sent := genBayesSentenceFromDeviceInfo(B.ouidb, di)
+				sent := extract.BayesSentenceFromDeviceInfo(B.ouidb, di)
 				p.AddSentence(sent)
 			}
 		}
@@ -185,17 +187,25 @@ func (m *bayesClassifier) train(B *backdrop, trainData []machine) {
 			continue
 		}
 
-		_, ierr := B.modeldb.Exec("INSERT OR REPLACE INTO model (generation_date, name, classifier_type, classifier_level, multibayes_min, certain_above, uncertain_below, model_json) VALUES ($1, $2, $3, $4, $5, $6, $7, $8);",
-			time.Now(), k, "bayes", m.level, cl.MinClassSize, m.certainAbove, m.uncertainBelow, jm)
-		if ierr != nil {
-			slog.Errorf("could not update '%s' model: %s", k, ierr)
+		r := modeldb.RecordedClassifier{
+			GenerationTS:    time.Now(),
+			ModelName:       k,
+			ClassifierType:  "bayes",
+			ClassifierLevel: m.level,
+			MultibayesMin:   cl.MinClassSize,
+			CertainAbove:    m.certainAbove,
+			UncertainBelow:  m.uncertainBelow,
+			ModelJSON:       string(jm),
+		}
+		if ierr := B.modeldb.UpsertModel(r); ierr != nil {
+			slog.Errorf("train recording failed: %s", ierr)
 		}
 	}
 
 	slog.Infof("train %s finish", m.name)
 }
 
-func reviewBayes(m RecordedClassifier) string {
+func reviewBayes(m modeldb.RecordedClassifier) string {
 	var msg strings.Builder
 
 	fmt.Fprintf(&msg, "Bayesian Classifier, Name: %s\nGenerated: %s\nCutoff: %d\n", m.ModelName,

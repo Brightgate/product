@@ -1,12 +1,12 @@
-//
-// COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
-//
-// This copyright notice is Copyright Management Information under 17 USC 1202
-// and is included to protect this work and deter copyright infringement.
-// Removal or alteration of this Copyright Management Information without the
-// express written permission of Brightgate Inc is prohibited, and any
-// such unauthorized removal or alteration will be a violation of federal law.
-//
+/*
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
+ *
+ * This copyright notice is Copyright Management Information under 17 USC 1202
+ * and is included to protect this work and deter copyright infringement.
+ * Removal or alteration of this Copyright Management Information without the
+ * express written permission of Brightgate Inc is prohibited, and any
+ * such unauthorized removal or alteration will be a violation of federal law.
+ */
 
 package main
 
@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 
+	"bg/cl-obs/extract"
 	"bg/cl-obs/sentence"
 
 	"github.com/pkg/errors"
@@ -95,7 +96,7 @@ func reviewSub(cmd *cobra.Command, args []string) error {
 
 		validCount++
 
-		_, sent := genBayesSentenceFromDeviceInfo(_B.ouidb, di)
+		sent := extract.BayesSentenceFromDeviceInfo(_B.ouidb, di)
 		if dt.DeviceMAC == devicemac {
 			dupe := devicesent.AddSentence(sent)
 			if dupe {
@@ -137,8 +138,7 @@ func reviewSub(cmd *cobra.Command, args []string) error {
 	}
 
 	// Model review
-	models := []RecordedClassifier{}
-	err = _B.modeldb.Select(&models, "SELECT * FROM model ORDER BY name ASC")
+	models, err := _B.modeldb.GetModels()
 	if err != nil {
 		return fmt.Errorf("model select failed: %+v", err)
 	}

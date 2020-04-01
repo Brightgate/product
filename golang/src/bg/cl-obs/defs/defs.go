@@ -1,24 +1,25 @@
-//
-// COPYRIGHT 2019 Brightgate Inc. All rights reserved.
-//
-// This copyright notice is Copyright Management Information under 17 USC 1202
-// and is included to protect this work and deter copyright infringement.
-// Removal or alteration of this Copyright Management Information without the
-// express written permission of Brightgate Inc is prohibited, and any
-// such unauthorized removal or  alteration will be a violation of federal law.
-//
+/*
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
+ *
+ * This copyright notice is Copyright Management Information under 17 USC 1202
+ * and is included to protect this work and deter copyright infringement.
+ * Removal or alteration of this Copyright Management Information without the
+ * express written permission of Brightgate Inc is prohibited, and any
+ * such unauthorized removal or alteration will be a violation of federal law.
+ */
 
-package main
+package defs
 
 // Classification maps.
 
 // Operating systems.
 
-const unknownOs = "-unknown-os-"
+// UnknownOS represents the classification result that the OS is not known
+const UnknownOS = "-unknown-os-"
 
-// osGenusMap holds a sparse identifier space to organize operating systems.
-var osGenusMap = map[int]string{
-	0x00: unknownOs,
+// OSGenusMap holds a sparse identifier space to organize operating systems.
+var OSGenusMap = map[int]string{
+	0x00: UnknownOS,
 	0x10: "Windows",
 	0x20: "macOS",
 	0x30: "iOS",
@@ -32,10 +33,13 @@ var osGenusMap = map[int]string{
 	0x80: "Embedded/RTOS",
 }
 
-// osSpeciesMap holds a spare identifier space to organize operating
+// OSRevGenusMap is an inverted form of OSGenusMap, indexed by OS genus name
+var OSRevGenusMap map[string]uint64
+
+// OSSpeciesMap holds a sparse identifier space to organize operating
 // systems on a more detailed level.
-var osSpeciesMap = map[int]string{
-	0x0000: unknownOs,
+var OSSpeciesMap = map[int]string{
+	0x0000: UnknownOS,
 	0x1000: "Windows",
 	0x1700: "Windows 7",
 	0x1800: "Windows 8",
@@ -67,16 +71,17 @@ var osSpeciesMap = map[int]string{
 	0x8300: "ZentriOS",
 }
 
-var osRevGenusMap map[string]uint64
-var osRevSpeciesMap map[string]uint64
+// OSRevSpeciesMap is an inverted form of OSRevSpeciesMap, indexed by OS species name
+var OSRevSpeciesMap map[string]uint64
 
 // Devices.
 
-const unknownDevice = "-unknown-device-"
+// UnknownDevice represents the classification result that the device is not known
+const UnknownDevice = "-unknown-device-"
 
-// Dense identifier space to organize device genera.
-var deviceGenusMap = map[int]string{
-	0x00: unknownDevice,
+// DeviceGenusMap is a dense identifier space to organize device genera.
+var DeviceGenusMap = map[int]string{
+	0x00: UnknownDevice,
 	0x01: "Amazon Kindle",
 	0x02: "Android Phone",
 	0x03: "Apple iPhone/iPad",
@@ -113,15 +118,17 @@ var deviceGenusMap = map[int]string{
 	0x22: "Wyze Cam",
 }
 
-var deviceRevMap map[string]uint64
+// DeviceRevMap is an inverted form of DeviceGenusMap, indexed by device genus name
+var DeviceRevMap map[string]uint64
 
 // Manufacturers.
 
-const unknownMfg = "-unknown-mfg-"
+// UnknownMfg represents the extraction/classification result that the manufacturer is not known
+const UnknownMfg = "-unknown-mfg-"
 
-// mfgAliasMap maps 3rd party manufacturer names to our space.
-// (Primarily for IEEE OUI mappings.)
-var mfgAliasMap = map[string][]string{
+// MfgAliasMap maps short-form 3rd party manufacturer names to the IEEE OUI
+// forms.  (Primarily for IEEE OUI mappings.)
+var MfgAliasMap = map[string][]string{
 	"Amazon":                      {"Amazon Technologies Inc.", "Amazon.com, LLC"},
 	"Apple":                       {"Apple, Inc."},
 	"Arcadyan":                    {"Arcadyan Corporation"},
@@ -228,19 +235,22 @@ var mfgAliasMap = map[string][]string{
 	"Zentri":                      {"Zentri Pty Ltd"},
 }
 
-var mfgReverseAliasMap map[string]string
+// MfgReverseAliasMap is an inverted form of MfgAliasMap, mapping IEEE OUI manufacturer names to our short-form.
+var MfgReverseAliasMap map[string]string
 
 // DHCP Vendor strings.
 
-const unknownDHCPVendor = "-unknown-dhcp-vendor-"
+// UnknownDHCPVendor represents the extraction result that the DHCP vendor is not recognized
+const UnknownDHCPVendor = "-unknown-dhcp-vendor-"
 
-var dhcpVendors = []string{
-	unknownDHCPVendor,
+// DHCPVendors is a list of known short-form DHCP vendor names; see also DHCPVendorPatterns
+var DHCPVendors = []string{
+	UnknownDHCPVendor,
 	"aastra_ip_phone",
 	"android",
 	"araknis",
 	"canon",
-	"crytracom",
+	"cytracom",
 	"dhcpv4",
 	"google",
 	"linux",
@@ -256,8 +266,9 @@ var dhcpVendors = []string{
 	"xerox",
 }
 
-var dhcpVendorPatterns = map[string]string{
-	unknownDHCPVendor:            unknownDHCPVendor, // Shouldn't match any agents.
+// DHCPVendorPatterns maps regexp patterns to short-form DHCP vendor names
+var DHCPVendorPatterns = map[string]string{
+	UnknownDHCPVendor:            UnknownDHCPVendor, // Shouldn't match any agents.
 	"^AastraIPPhone":             "aastra_ip_phone",
 	"^android-dhcp-":             "android",
 	"^Araknis":                   "araknis",
@@ -289,16 +300,13 @@ var dhcpVendorPatterns = map[string]string{
 	"^XEROX":                     "xerox",
 }
 
-var dhcpReverseVendorMap map[string]uint64
-
-// Notable DNS queries.
-//   Queries not present in this list are ignored when a classifier is
-//   being trained from incoming DeviceInfos.  If you add or delete more than
-//   one or two, you must bump the DNS extraction version.
+// DNSAttributes contains a list of notable DNS queries.  Queries not present
+// in this list are ignored when a classifier is being trained from incoming
+// DeviceInfos.  If you add or delete more than one or two, you must bump the
+// DNS extraction version.
 //
-//   Keep ordered with
-//	sort -t . -k4,4 -k3,3 -k2,2 -k1,1
-var dnsAttributes = []string{
+// Keep ordered with: sort -t . -k4,4 -k3,3 -k2,2 -k1,1
+var DNSAttributes = []string{
 	"api.amazon.com",
 	"device-messaging-na.amazon.com",
 	"device-metrics-us.amazon.com",
@@ -378,42 +386,38 @@ var dnsAttributes = []string{
 	"ubnt.pool.ntp.org",
 }
 
-func initMaps() {
-	osRevGenusMap = make(map[string]uint64)
+func init() {
+	OSRevGenusMap = make(map[string]uint64)
 
-	for k, v := range osGenusMap {
-		osRevGenusMap[v] = uint64(k)
+	for k, v := range OSGenusMap {
+		OSRevGenusMap[v] = uint64(k)
 	}
 
-	osRevSpeciesMap = make(map[string]uint64)
+	OSRevSpeciesMap = make(map[string]uint64)
 
-	for k, v := range osSpeciesMap {
-		osRevSpeciesMap[v] = uint64(k)
+	for k, v := range OSSpeciesMap {
+		OSRevSpeciesMap[v] = uint64(k)
 	}
 
-	deviceRevMap = make(map[string]uint64)
+	DeviceRevMap = make(map[string]uint64)
 
-	for k, v := range deviceGenusMap {
-		deviceRevMap[v] = uint64(k)
+	for k, v := range DeviceGenusMap {
+		DeviceRevMap[v] = uint64(k)
 	}
 
-	mfgReverseAliasMap = make(map[string]string)
+	MfgReverseAliasMap = make(map[string]string)
 
-	for s, al := range mfgAliasMap {
-		mfgReverseAliasMap[s] = s
+	for s, al := range MfgAliasMap {
+		MfgReverseAliasMap[s] = s
 
 		for a := range al {
-			mfgReverseAliasMap[al[a]] = s
+			MfgReverseAliasMap[al[a]] = s
 		}
 	}
 
-	for v := range dhcpVendorPatterns {
-		dhcpVendors = append(dhcpVendors, v)
-	}
-
-	dhcpReverseVendorMap = make(map[string]uint64)
-
-	for n, v := range dhcpVendors {
-		dhcpReverseVendorMap[v] = uint64(n)
+	// XXX this seems like a weird way to assemble things.
+	// Revise the structure of the above.
+	for _, v := range DHCPVendorPatterns {
+		DHCPVendors = append(DHCPVendors, v)
 	}
 }
