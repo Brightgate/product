@@ -97,6 +97,11 @@ var (
 			base_def.RING_DEVICES:  true,
 			base_def.RING_GUEST:    true,
 		},
+		base_def.RING_VPN: {
+			base_def.RING_STANDARD: true,
+			base_def.RING_DEVICES:  true,
+			base_def.RING_GUEST:    true,
+		},
 		base_def.RING_DEVICES: {
 			base_def.RING_DEVICES: true,
 			base_def.RING_GUEST:   true,

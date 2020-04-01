@@ -116,9 +116,18 @@ func configClientRingChanged(path []string, val string, expires *time.Time) {
 	hostapd.reload()
 }
 
+func configUserChanged(path []string, val string, expires *time.Time) {
+	if len(path) == 5 && path[2] == "vpn" {
+		vpnUpdateUser(path, val, expires)
+	}
+}
+
 func configUserDeleted(path []string) {
 	if len(path) == 2 {
 		hostapd.deauthUser(path[1])
+		vpnDeleteUser(path)
+	} else if len(path) > 2 && path[2] == "vpn" {
+		vpnDeleteUser(path)
 	}
 }
 
@@ -134,11 +143,9 @@ func configRingSubnetDeleted(path []string) {
 }
 
 func configRingChanged(path []string, val string, expires *time.Time) {
-
 	if len(path) != 3 {
 		return
 	}
-
 	ring := path[1]
 	r, ok := rings[ring]
 	if !ok {
@@ -190,6 +197,10 @@ func configNetworkDeleted(path []string) {
 	if configSet(path[1], "") {
 		wifiEvaluate = true
 		hostapd.reload()
+
+	} else if len(path) >= 2 && path[1] == "vpn" {
+		vpnDelete(path)
+
 	} else if len(path) >= 3 && path[1] == "wan" && path[2] == "static" {
 		field := "all"
 		if len(path) > 3 {
@@ -209,6 +220,10 @@ func configNetworkChanged(path []string, val string, expires *time.Time) {
 	switch len(path) {
 	case 2:
 		reload = configSet(path[1], val)
+	case 3:
+		if path[1] == "vpn" {
+			vpnUpdate(path, val, expires)
+		}
 	case 4:
 		if path[1] == "vap" {
 			hostapd.reload()

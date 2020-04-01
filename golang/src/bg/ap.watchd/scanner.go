@@ -1339,6 +1339,10 @@ func scannerInit(w *watcher) {
 	mapMtx.Unlock()
 
 	for ring, config := range rings {
+		if cfgapi.SystemRings[ring] {
+			continue
+		}
+
 		subnetScan := newSubnetScan(ring, config.Subnet)
 		scheduleScan(subnetScan, 0, true)
 	}

@@ -379,6 +379,10 @@ func main() {
 
 	ports := getPortList()
 	for ring, config := range rings {
+		if cfgapi.SystemRings[ring] {
+			continue
+		}
+
 		router := network.SubnetRouter(config.Subnet)
 		// The secure middleware effectively links the ports, as
 		// http/80 requests redirect to https/443.

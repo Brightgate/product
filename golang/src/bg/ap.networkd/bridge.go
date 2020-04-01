@@ -75,7 +75,7 @@ func rebuildInternalNet() {
 			}
 		}
 		for name, ring := range rings {
-			if name != base_def.RING_INTERNAL {
+			if !cfgapi.SystemRings[name] {
 				addVif(dev.name, ring.Vlan, ring.Bridge)
 			}
 		}
@@ -169,7 +169,9 @@ func deleteBridge(bridge string) {
 // starts back up.
 func deleteBridges() {
 	for _, conf := range rings {
-		deleteBridge(conf.Bridge)
+		if conf.Bridge != "" {
+			deleteBridge(conf.Bridge)
+		}
 	}
 }
 
@@ -183,15 +185,11 @@ func localRouter(ring *cfgapi.RingConfig) string {
 	return (net.IP(raw)).String()
 }
 
-//
-// Prepare a ring's bridge: clean up any old state, assign a new address, set up
-// routes, etc.
-//
 func createBridge(ringName string) {
 	ring := rings[ringName]
 	bridge := ring.Bridge
 
-	slog.Infof("Preparing %s ring: %s %s", ringName, bridge, ring.Subnet)
+	slog.Infof("Creating %s ring: %s %s", ringName, bridge, ring.Subnet)
 
 	if err := netctl.BridgeCreate(bridge); err != nil {
 		slog.Warnf("addbr %s failed: %v", bridge, err)
@@ -202,24 +200,29 @@ func createBridge(ringName string) {
 		slog.Warnf("bridge %s failed to come up: %v", bridge, err)
 		return
 	}
+}
 
-	if err := netctl.AddrFlush(bridge); err != nil {
-		slog.Warnf("flushing old addresses from %s: %v", bridge, err)
+// Prepare a ring's bridge: clean up any old state, assign a new address, set up
+// routes, etc.
+func plumbBridge(ring *cfgapi.RingConfig, iface string) {
+	if err := netctl.AddrFlush(iface); err != nil {
+		slog.Warnf("flushing old addresses from %s: %v", iface, err)
 	}
 
 	if err := netctl.RouteDel(ring.Subnet); err != nil {
 		slog.Warnf("deleting route: %v", err)
 	}
 
-	if err := netctl.AddrAdd(bridge, localRouter(ring)); err != nil {
+	slog.Infof("setting %s to %s", iface, localRouter(ring))
+	if err := netctl.AddrAdd(iface, localRouter(ring)); err != nil {
 		slog.Fatalf("Failed to set the router address: %v", err)
 	}
 
-	if err := netctl.LinkUp(bridge); err != nil {
-		slog.Fatalf("Failed to enable bridge: %v", err)
+	if err := netctl.LinkUp(iface); err != nil {
+		slog.Fatalf("Failed to enable iface: %v", err)
 	}
 
-	if err := netctl.RouteAdd(ring.Subnet, bridge); err != nil {
+	if err := netctl.RouteAdd(ring.Subnet, iface); err != nil {
 		slog.Fatalf("Failed to add %s as route: %v", ring.Subnet, err)
 	}
 }
@@ -227,14 +230,21 @@ func createBridge(ringName string) {
 func createBridges() {
 	satNode := aputil.IsSatelliteMode()
 
-	for ring := range rings {
-		if satNode && ring == base_def.RING_INTERNAL {
-			// Satellite nodes don't build an internal ring - they connect
-			// to the primary node's internal ring using DHCP.
+	for name, ring := range rings {
+		// Satellite nodes don't build an internal ring - they connect
+		// to the primary node's internal ring using DHCP.
+		if satNode && name == base_def.RING_INTERNAL {
 			continue
 		}
 
-		createBridge(ring)
+		// The VPN ring doesn't live on a bridge.  Its packets get
+		// routed.
+		if name == base_def.RING_VPN {
+			continue
+		}
+
+		createBridge(name)
+		plumbBridge(ring, ring.Bridge)
 	}
 }
 

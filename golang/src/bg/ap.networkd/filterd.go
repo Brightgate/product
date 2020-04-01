@@ -216,11 +216,19 @@ func iptablesAddRule(table, chain, rule string) {
 // Build the core routing rules for a single managed subnet
 //
 func ifaceForwardRules(ring string) {
+	var bridge string
+
 	if ring == base_def.RING_QUARANTINE {
 		// The quarantine ring doesn't get the normal NAT behavior
 		return
 	}
+
 	config := rings[ring]
+	if ring == base_def.RING_VPN {
+		bridge = vpnNic
+	} else {
+		bridge = config.Bridge
+	}
 
 	// Do not forward any traffic from a client that appears to be spoofing
 	// its source address.  Our criteria for spoofing are fairly lax - we
@@ -228,7 +236,7 @@ func ifaceForwardRules(ring string) {
 	// originated on.  We could be stricter, requiring that the ip address
 	// matches the mac address, but that would require updating the rules on
 	// every DHCP assignment/expiration.
-	spoofRule := " -i " + config.Bridge
+	spoofRule := " -i " + bridge
 	spoofRule += " ! -s " + config.Subnet
 	spoofRule += " -j dropped"
 	iptablesAddRule("filter", "FORWARD", spoofRule)
@@ -271,7 +279,9 @@ func genEndpointRing(e *endpoint, src bool) (string, error) {
 
 	if ring := rings[e.detail]; ring != nil {
 		b := ring.Bridge
-		if e.detail == base_def.RING_INTERNAL && satellite {
+		if e.detail == base_def.RING_VPN {
+			b = vpnNic
+		} else if e.detail == base_def.RING_INTERNAL && satellite {
 			// The gateway node has an internal bridge that all
 			// satellite links connect to.  Satellite nodes use
 			// their 'wan' nic for internal traffic.
@@ -487,11 +497,26 @@ func buildRule(r *rule) (string, string, error) {
 	return chain, iptablesRule, nil
 }
 
+func isVPNEndpoint(e *endpoint) bool {
+	var isVPN bool
+
+	if e != nil && e.kind == endpointRing && e.detail == base_def.RING_VPN {
+		isVPN = true
+	}
+
+	return isVPN
+}
+
 func addRule(r *rule) error {
 	if r.action == actionCapture {
 		// 'capture' isn't a single rule - it's a coordinated collection
 		// of rules.
 		return addCaptureRules(r)
+	}
+
+	// Satellites don't have VPN interfaces, so ignore their rules
+	if satellite && (isVPNEndpoint(r.to) || isVPNEndpoint(r.from)) {
+		return nil
 	}
 
 	chain, rule, err := buildRule(r)

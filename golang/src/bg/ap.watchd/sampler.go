@@ -24,6 +24,7 @@ import (
 	"bg/ap_common/apcfg"
 	"bg/ap_common/aputil"
 	"bg/base_def"
+	"bg/common/cfgapi"
 	"bg/common/network"
 
 	// Requires libpcap
@@ -553,7 +554,7 @@ func sampleInit(w *watcher) {
 	}
 	samplerRunning = true
 	for ring, config := range rings {
-		if config.Bridge == "" {
+		if cfgapi.SystemRings[ring] {
 			continue
 		}
 

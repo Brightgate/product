@@ -192,6 +192,9 @@ func initInterfaces() {
 	// router for that subnet.
 	//
 	for ring, conf := range rings {
+		if conf.Bridge == "" {
+			continue
+		}
 		iface, err := net.InterfaceByName(conf.Bridge)
 		if iface == nil || err != nil {
 			slog.Warnf("No interface %s: %v", conf.Bridge, err)

@@ -271,6 +271,7 @@ func daemonInit() error {
 	config.HandleDelete(`^@/firewall/rules/`, configRuleDeleted)
 	config.HandleChange(`^@/firewall/blocked/`, configBlocklistChanged)
 	config.HandleExpire(`^@/firewall/blocked/`, configBlocklistExpired)
+	config.HandleChange(`^@/users/.*/vpn/.*`, configUserChanged)
 	config.HandleDelete(`^@/users/.*`, configUserDeleted)
 	config.HandleExpire(`^@/users/.*`, configUserDeleted)
 
@@ -320,6 +321,8 @@ func daemonInit() error {
 		// The VPN server only runs on the gateway node
 		if err := vpnInit(); err != nil {
 			slog.Errorf("vpnInit failed: %v", err)
+		} else {
+			go vpnLoop(&cleanup.wg, addDoneChan())
 		}
 	}
 

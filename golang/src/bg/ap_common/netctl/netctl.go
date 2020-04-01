@@ -94,10 +94,11 @@ import (
 )
 
 const (
-	linkUp = iota
-	linkDown
-	linkAdd
+	linkAdd = iota
 	linkDel
+	linkUp
+	linkDown
+	linkAddrAdd
 	linkFlush
 )
 
@@ -119,6 +120,18 @@ func getIfaceIdx(iface string) (int, error) {
 	}
 
 	return i.Index, nil
+}
+
+type wireguard struct {
+	netlink.LinkAttrs
+}
+
+func (w wireguard) Attrs() *netlink.LinkAttrs {
+	return &w.LinkAttrs
+}
+
+func (w wireguard) Type() string {
+	return "wireguard"
 }
 
 // VlanAdd -> vconfig add <iface> <vlan>
@@ -148,6 +161,10 @@ func linkOp(name string, addr *netlink.Addr, op int) error {
 	}
 
 	switch op {
+	case linkDel:
+		if err = netlink.LinkDel(link); err != nil {
+			err = fmt.Errorf("LinkDel(%s): %v", name, err)
+		}
 	case linkUp:
 		if err = netlink.LinkSetUp(link); err != nil {
 			err = fmt.Errorf("LinkSetUp(%s): %v", name, err)
@@ -156,11 +173,7 @@ func linkOp(name string, addr *netlink.Addr, op int) error {
 		if err = netlink.LinkSetDown(link); err != nil {
 			err = fmt.Errorf("LinkSetDown(%s): %v", name, err)
 		}
-	case linkDel:
-		if err = netlink.LinkDel(link); err != nil {
-			err = fmt.Errorf("LinkDel(%s): %v", name, err)
-		}
-	case linkAdd:
+	case linkAddrAdd:
 		if err = netlink.AddrAdd(link, addr); err != nil {
 			err = fmt.Errorf("AddrAdd(%s): %v", name, err)
 		}
@@ -188,6 +201,18 @@ func LinkDown(name string) error {
 	return linkOp(name, nil, linkDown)
 }
 
+// LinkAddWireguard -> ip link add dev <name> type wireguard
+func LinkAddWireguard(name string) error {
+	var err error
+
+	link := &wireguard{netlink.LinkAttrs{Name: name, TxQLen: 1000}}
+
+	if err = netlink.LinkAdd(link); err != nil {
+		err = fmt.Errorf("LinkAdd(%s): %v", name, err)
+	}
+	return err
+}
+
 // LinkDelete -> ip link del <name>
 func LinkDelete(name string) error {
 	return linkOp(name, nil, linkDel)
@@ -195,14 +220,20 @@ func LinkDelete(name string) error {
 
 // AddrAdd -> ip addr add <addr> dev <name>
 func AddrAdd(name, addr string) error {
-	_, ipnet, err := net.ParseCIDR(addr + "/32")
+	ip, ipnet, err := net.ParseCIDR(addr)
 	if err != nil {
-		return fmt.Errorf("invalid address %s: %v", addr, err)
+		if ip, ipnet, err = net.ParseCIDR(addr + "/32"); err != nil {
+			return fmt.Errorf("invalid address %s: %v", addr, err)
+		}
 	}
+
+	// through trial and error, it appears that netlink is expecting the
+	// IPNet struct to contain the real IP address to set, not the "network
+	// number" ParseCIDR returns.
 	arg := netlink.Addr{
-		IPNet: ipnet,
+		IPNet: &net.IPNet{IP: ip, Mask: ipnet.Mask},
 	}
-	return linkOp(name, &arg, linkAdd)
+	return linkOp(name, &arg, linkAddrAdd)
 }
 
 // AddrFlush -> ip addr flush dev <name>
