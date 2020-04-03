@@ -3,7 +3,7 @@
     "Children": {
       "apversion": {},
       "cfgversion": {
-        "Value": "26"
+        "Value": "27"
       },
       "clients": {},
       "cloud": {
@@ -71,6 +71,16 @@
                   },
                   "rule": {
                     "Value": "ACCEPT TCP FROM RING core TO AP DPORTS 22"
+                  }
+                }
+	      },
+              "smb-egress": {
+                "Children": {
+                  "active": {
+                    "Value": "true"
+                  },
+                  "rule": {
+                    "Value": "BLOCK TCP TO IFACE wan DPORTS 445"
                   }
                 }
               }
