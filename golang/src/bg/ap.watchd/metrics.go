@@ -46,16 +46,14 @@ type timeStats struct {
 var (
 	sfreq   = apcfg.Duration("snapshot_freq", 5*time.Minute, false, nil)
 	rfreq   = apcfg.Duration("rolling_freq", 5*time.Second, false, nil)
-	mretain = apcfg.Duration("mem_retain", 3*time.Hour, true, nil)
 	dretain = apcfg.Duration("disk_retain", 24*time.Hour, true, nil)
 
 	metricsDone      = make(chan bool, 1)
 	metricsWaitGroup sync.WaitGroup
 
-	rollingStats    = make(map[string]*timeStats)
-	currentStats    *archive.Snapshot
-	historicalStats []*archive.Snapshot
-	statsMtx        sync.RWMutex
+	rollingStats = make(map[string]*timeStats)
+	currentStats *archive.Snapshot
+	statsMtx     sync.RWMutex
 )
 
 func newDeviceRecord(mac string) *archive.DeviceRecord {
@@ -363,7 +361,7 @@ func writeStats(dir string, sn *archive.Snapshot) error {
 	return err
 }
 
-func snapshotStats(dir string) {
+func snapshotStats(dir string) *archive.Snapshot {
 	statsMtx.RLock()
 
 	now := time.Now()
@@ -373,6 +371,7 @@ func snapshotStats(dir string) {
 	sn.End = now
 	currentStats.Start = now
 	currentStats.End = now.Add(*sfreq)
+	lan, wan := 0, 0
 	for mac, cur := range currentStats.Data {
 		cur.Lock()
 
@@ -390,6 +389,8 @@ func snapshotStats(dir string) {
 			LANStats:   cur.LANStats,
 			WANStats:   cur.WANStats,
 		}
+		lan += len(cur.LANStats)
+		wan += len(cur.WANStats)
 
 		cur.BlockedOut = make(map[uint64]int)
 		cur.BlockedIn = make(map[uint64]int)
@@ -402,24 +403,14 @@ func snapshotStats(dir string) {
 	}
 	statsMtx.RUnlock()
 
-	historicalStats = append(historicalStats, sn)
+	slog.Debugf("snapshot lan stats: %d  wan stats: %d", lan, wan)
+
+	return sn
 }
 
 func snapshotClean(dir string) {
-	memLimit := time.Now().Add(-1 * *mretain)
 	diskLimit := time.Now().Add(-1 * *dretain)
 
-	oldest := 0
-	for idx, sn := range historicalStats {
-		if sn.End.After(memLimit) {
-			break
-		}
-		oldest = idx
-	}
-	historicalStats = historicalStats[oldest:]
-
-	// Once we start uploading these snapshots to the cloud, this cleanup
-	// will be performed as a side effect of that process.
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
 		slog.Warnf("Unable to get contents of %s: %v", dir, err)
@@ -430,6 +421,8 @@ func snapshotClean(dir string) {
 			if err := os.Remove(name); err != nil {
 				slog.Warnf("Unable to remove old %s: %v",
 					name, err)
+			} else {
+				slog.Infof("removed stale stats: %s", name)
 			}
 		}
 	}
@@ -468,8 +461,7 @@ func snapshotter() {
 
 		updateRolling(*rfreq)
 		if time.Now().After(nextSnapshot) {
-			snapshotStats(statsDir)
-			sn := historicalStats[len(historicalStats)-1]
+			sn := snapshotStats(statsDir)
 			if err := writeStats(statsDir, sn); err != nil {
 				slog.Warnf("Persisting snapshot: %v", err)
 			}
@@ -495,8 +487,6 @@ func init() {
 	currentStats = newSnapshot()
 	currentStats.Start = time.Now()
 	currentStats.End = currentStats.Start.Add(*sfreq)
-
-	historicalStats = make([]*archive.Snapshot, 0)
 
 	addWatcher("metrics", metricsInit, metricsFini)
 }
