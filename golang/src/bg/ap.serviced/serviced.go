@@ -111,8 +111,13 @@ func clientUpdateEvent(path []string, val string, expires *time.Time) {
 func clientDeleteEvent(path []string) {
 	var update bool
 
-	if len(path) < 2 || len(path) > 3 {
-		slog.Warnf("bad path: %s", strings.Join(path, "/"))
+	if len(path) < 2 {
+		slog.Warnf("clientDeleteEvent: bad path: @/%s", strings.Join(path, "/"))
+		return
+	}
+
+	// e.g. delete @/clients/<mac>/classification/oui_mfg; we don't care
+	if len(path) > 3 {
 		return
 	}
 
