@@ -232,3 +232,7 @@ required = ["google.golang.org/api"]
 [[constraint]]
   name = "github.com/antonlindstrom/pgstore"
   revision = "8c655faf9a6f6b51a84f0f51d6b2110c0aff0022"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/tevino/abool"

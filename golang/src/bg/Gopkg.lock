@@ -1312,6 +1312,14 @@
 
 [[projects]]
   branch = "master"
+  digest = "1:86e6712cfd4070a2120c03fcec41cfcbbc51813504a74e28d74479edfaf669ee"
+  name = "github.com/tevino/abool"
+  packages = ["."]
+  pruneopts = ""
+  revision = "9b9efcf221b50905aab9bbabd3daed56dc10f339"
+
+[[projects]]
+  branch = "master"
   digest = "1:bf9e7db8b421fa1c18e86cd51c98ed6574a7665d0ed40d5355b6514f7b40e9a9"
   name = "github.com/tomazk/envcfg"
   packages = ["."]
@@ -1968,6 +1976,7 @@
     "github.com/stretchr/testify/mock",
     "github.com/stretchr/testify/require",
     "github.com/tatsushid/go-prettytable",
+    "github.com/tevino/abool",
     "github.com/tomazk/envcfg",
     "github.com/ttacon/libphonenumber",
     "github.com/unrolled/secure",

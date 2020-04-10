@@ -137,6 +137,7 @@ var (
 	useVaultForDB    bool
 	useVaultForKV    bool
 	vaultClient      *vault.Client
+	notifier         *daemonutils.FanOut
 )
 
 func gracefulShutdown(e *echo.Echo) {
@@ -288,7 +289,7 @@ func (rs *routerState) mkSessionStore() {
 	dbURI := pgutils.AddApplication(environ.SessionDB, pname)
 
 	if useVaultForDB {
-		vdbc := vaultdb.NewConnector(dbURI, vaultClient,
+		vdbc := vaultdb.NewConnector(dbURI, vaultClient, notifier,
 			environ.VaultDBPath, environ.VaultDBRole, log)
 		rs.sessionDB, err = sessiondb.VaultConnect(vdbc, true)
 		rs.sessionVDBC = vdbc
@@ -326,7 +327,7 @@ func (rs *routerState) mkApplianceDB() {
 	// Appliancedb setup.  Use Vault if we successfully connected to it;
 	// otherwise, assume that the environment has the necessary credentials.
 	if useVaultForDB {
-		vdbc := vaultdb.NewConnector(dbURI, vaultClient,
+		vdbc := vaultdb.NewConnector(dbURI, vaultClient, notifier,
 			environ.VaultDBPath, environ.VaultDBRole, log)
 		rs.applianceDB, err = appliancedb.VaultConnect(vdbc)
 		rs.applianceVDBC = vdbc
@@ -634,10 +635,11 @@ func main() {
 			startupLog.Fatalf("Vault error: %s", err)
 		} else {
 			if vaultClient.Token() == "" || !environ.Developer {
+				startupLog.Info("Authenticating to Vault with GCP auth")
 				if vaultClient.Token() != "" && !environ.Developer {
 					startupLog.Warnf("Vault token found in environment; will override")
 				}
-				if err = vaultgcpauth.VaultAuth(context.Background(),
+				if notifier, err = vaultgcpauth.VaultAuth(context.Background(),
 					startupLog, vaultClient, environ.VaultAuthPath,
 					pname); err != nil {
 					startupLog.Fatalf("Vault login error: %s", err)
@@ -645,6 +647,9 @@ func main() {
 				if environ.Developer {
 					startupLog.Debugf("Initial GCP login token %s", vaultClient.Token())
 				}
+				startupLog.Info(checkMark + "Authenticated to Vault")
+			} else {
+				startupLog.Info("Authenticating to Vault with existing token")
 			}
 			getVaultSecrets(startupLog, vaultClient)
 		}

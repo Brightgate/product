@@ -22,6 +22,8 @@ import (
 	"net/url"
 	"time"
 
+	"bg/cl_common/daemonutils"
+
 	"github.com/hashicorp/go-hclog"
 	vault "github.com/hashicorp/vault/api"
 	"github.com/hashicorp/vault/command/agent/auth"
@@ -229,12 +231,16 @@ func gommonToHCLog(glog *gommonlog.Logger, prefix string) hclog.Logger {
 }
 
 type vaultClientSink struct {
-	client *vault.Client
-	log    *gommonlog.Logger
+	client   *vault.Client
+	log      *gommonlog.Logger
+	notifier *daemonutils.FanOut
 }
 
 func (s *vaultClientSink) WriteToken(token string) error {
 	s.client.SetToken(token)
+	// This is a different token each time.  We need to signal to the other
+	// users of s.client that they should get *new* leases.
+	s.notifier.Notify()
 	return nil
 }
 
@@ -244,7 +250,7 @@ func (s *vaultClientSink) WriteToken(token string) error {
 //
 // XXX httpd uses gommon.log and rpcd (and others) use zap.  They'll need to
 // pre-convert to an hclog.Logger.
-func VaultAuth(ctx context.Context, glog *gommonlog.Logger, vc *vault.Client, path, role string) error {
+func VaultAuth(ctx context.Context, glog *gommonlog.Logger, vc *vault.Client, path, role string) (*daemonutils.FanOut, error) {
 	hclogger := gommonToHCLog(glog, "vault-authenticator")
 	authConfig := &auth.AuthConfig{
 		Logger:    hclogger,
@@ -257,7 +263,7 @@ func VaultAuth(ctx context.Context, glog *gommonlog.Logger, vc *vault.Client, pa
 	}
 	authMethod, err := gcp.NewGCPAuthMethod(authConfig)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	authHandlerConfig := &auth.AuthHandlerConfig{
@@ -267,7 +273,11 @@ func VaultAuth(ctx context.Context, glog *gommonlog.Logger, vc *vault.Client, pa
 	}
 	authHandler := auth.NewAuthHandler(authHandlerConfig)
 
-	vcSink := &vaultClientSink{client: vc, log: glog}
+	vcSink := &vaultClientSink{
+		client:   vc,
+		log:      glog,
+		notifier: daemonutils.NewFanOut(make(chan struct{})),
+	}
 	sinkConfig := &sink.SinkConfig{
 		Client: vc,
 		Logger: hclogger,
@@ -288,9 +298,9 @@ func VaultAuth(ctx context.Context, glog *gommonlog.Logger, vc *vault.Client, pa
 	for count := 0; vc.Token() == ""; count++ {
 		time.Sleep(250 * time.Millisecond)
 		if count > 20 {
-			return fmt.Errorf("Couldn't authenticate to Vault within 5 seconds")
+			return nil, fmt.Errorf("Couldn't authenticate to Vault within 5 seconds")
 		}
 	}
 
-	return nil
+	return vcSink.notifier, nil
 }

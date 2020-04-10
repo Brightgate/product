@@ -21,11 +21,13 @@ import (
 	"sync"
 	"time"
 
+	"bg/cl_common/daemonutils"
 	"bg/cl_common/pgutils"
 
 	vault "github.com/hashicorp/vault/api"
 	"github.com/lib/pq"
 	"github.com/pkg/errors"
+	"github.com/tevino/abool"
 )
 
 // Logger is a basic logging interface.
@@ -115,21 +117,28 @@ type Connector struct {
 	watcher     *vault.LifetimeWatcher
 	creds       *vault.Secret
 	l           sync.Mutex
-	rolename    string // DB role; also found in creds
-	rolepass    string // DB role password; also found in creds
+	notifier    chan struct{} // tells us to reauthenticate to Vault
+	needCreds   *abool.AtomicBool
+	watchHUP    chan struct{}
 }
 
-// NewConnector returns a Connector object, based on a database URI, vault
-// client object, path to the database mount in Vault, the Vault role, and
-// a logger.  If the vault client is nil, or either path or role are empty, the
+// NewConnector returns a Connector object giving the caller access to the
+// database specified in `uri`, using credentials acquired from Vault via
+// `vaultClient`.  It handles both database credential rotation, as well as
+// Vault authentication token renewal (via `notifier`, acquired from a custom
+// Vault authentication package).  The database secrets engine is mounted at
+// `path`, and the Vault role for the database used by this connector is named
+// by `role`.
+//
+// If the vault client is nil, or either `path` or `role` are empty, the
 // function will panic.
-func NewConnector(uri string, vaultClient *vault.Client, path, role string, log Logger) *Connector {
+func NewConnector(uri string, vaultClient *vault.Client, notifier *daemonutils.FanOut, path, role string, log Logger) *Connector {
 	// Handle some basic, will-never-work issues.
 	if vaultClient == nil {
-		panic("vault.Client parameter is nil")
+		log.Panicf("vault.Client parameter is nil")
 	}
 	if path == "" || role == "" {
-		panic("either path or role parameter is empty")
+		log.Panicf("either path or role parameter is empty")
 	}
 
 	var creds string
@@ -151,13 +160,23 @@ func NewConnector(uri string, vaultClient *vault.Client, path, role string, log 
 			"'%s'", creds, pgutils.CensorPassword(uri))
 	}
 
-	return &Connector{
+	var notifierChannel chan struct{}
+	if notifier != nil {
+		notifierChannel = notifier.AddReceiver()
+	}
+
+	c := &Connector{
 		connectURI:  uri,
 		vaultClient: vaultClient,
 		path:        path,
 		role:        role,
 		log:         log,
+		notifier:    notifierChannel,
+		needCreds:   abool.NewBool(true),
+		watchHUP:    make(chan struct{}),
 	}
+	go c.waitWatcher()
+	return c
 }
 
 func (c *Connector) getWatcher() (*vault.LifetimeWatcher, error) {
@@ -165,14 +184,25 @@ func (c *Connector) getWatcher() (*vault.LifetimeWatcher, error) {
 		&vault.LifetimeWatcherInput{Secret: c.creds})
 }
 
-func (c *Connector) getCreds(dbURI string) error {
-	c.l.Lock()
-	defer c.l.Unlock()
+func (c *Connector) waitWatcher() {
+	for {
+		var doneCh <-chan error
+		var renewCh <-chan *vault.RenewOutput
+		c.l.Lock()
+		if c.watcher != nil {
+			doneCh = c.watcher.DoneCh()
+			renewCh = c.watcher.RenewCh()
+		}
+		c.l.Unlock()
 
-	needCreds := false
-	if c.watcher != nil {
 		select {
-		case err := <-c.watcher.DoneCh():
+		case <-c.notifier:
+			c.log.Infof("Couldn't renew lease '%s' any longer (auth token replaced)",
+				c.creds.LeaseID)
+			c.watcher.Stop()
+			c.needCreds.Set()
+
+		case err := <-doneCh:
 			base := "Couldn't renew lease '%s' any longer"
 			if err != nil {
 				c.log.Errorf(base+": %v", c.creds.LeaseID, err)
@@ -180,48 +210,74 @@ func (c *Connector) getCreds(dbURI string) error {
 				c.log.Infof(base, c.creds.LeaseID)
 			}
 			c.watcher.Stop()
-			needCreds = true
-		default:
-			select {
-			case renewal := <-c.watcher.RenewCh():
-				warnStr := ""
-				if len(renewal.Secret.Warnings) > 0 {
-					warnStr = fmt.Sprintf("; warnings: %s",
-						renewal.Secret.Warnings)
-				}
-				c.log.Infof("Got a renewal for '%s'%s",
-					renewal.Secret.LeaseID, warnStr)
-			default:
+			c.needCreds.Set()
+
+		case renewal := <-renewCh:
+			warnStr := ""
+			if len(renewal.Secret.Warnings) > 0 {
+				warnStr = fmt.Sprintf("; warnings: %s",
+					renewal.Secret.Warnings)
 			}
+			c.log.Infof("Got a renewal for '%s' for %s%s",
+				renewal.Secret.LeaseID,
+				time.Duration(renewal.Secret.LeaseDuration)*time.Second,
+				warnStr)
+
+		case <-c.watchHUP:
+			// This is just a signal to restart the loop, because
+			// c.watcher has changed.
 		}
-	} else {
-		needCreds = true
+	}
+}
+
+func (c *Connector) getCreds(dbURI string) error {
+	c.l.Lock()
+	// We can't defer the unlock because we need to unlock explicitly before
+	// sending to watchHUP, and then we'd panic when unlocking an unlocked
+	// mutex.
+
+	if !c.needCreds.IsSet() {
+		c.l.Unlock()
+		return nil
 	}
 
-	if needCreds {
-		var err error
-		creds, err := getDBCreds(c.vaultClient, c.path, c.role, c.log)
-		if err != nil {
-			return err
-		}
-		safeURI := pgutils.CensorPassword(dbURI)
-		c.log.Infof("Got DB Credentials for '%s' (username=%s)",
-			safeURI, creds.Data["username"].(string))
-		c.log.Debugf("Credentials are under lease '%s'", creds.LeaseID)
-		c.creds = creds
-
-		watcher, err := c.vaultClient.NewLifetimeWatcher(
-			&vault.LifetimeWatcherInput{Secret: creds})
-		if err != nil {
-			c.log.Panicf("Unable to watch for secret rotation: %v", err)
-		}
-		c.watcher = watcher
-		go watcher.Start()
-		c.rolename = creds.Data["username"].(string)
-		c.rolepass = creds.Data["password"].(string)
+	var err error
+	creds, err := getDBCreds(c.vaultClient, c.path, c.role, c.log)
+	if err != nil {
+		c.l.Unlock()
+		return err
 	}
+	safeURI := pgutils.CensorPassword(dbURI)
+	c.log.Infof("Got DB Credentials for '%s' (username=%s)",
+		safeURI, creds.Data["username"].(string))
+	c.log.Debugf("Credentials are under lease '%s' for %s",
+		creds.LeaseID,
+		time.Duration(creds.LeaseDuration)*time.Second)
+	c.creds = creds
+
+	watcher, err := c.getWatcher()
+	if err != nil {
+		c.log.Panicf("Unable to watch for secret rotation: %v", err)
+	}
+	c.watcher = watcher
+	go watcher.Start()
+	c.needCreds.UnSet()
+
+	// Restart the loop so that c.watcher can be re-evaluated, since
+	// it will have changed.  We have to drop the lock first, or we could
+	// end up in a deadlock.
+	c.l.Unlock()
+	c.watchHUP <- struct{}{}
 
 	return nil
+}
+
+func (c *Connector) username() string {
+	return c.creds.Data["username"].(string)
+}
+
+func (c *Connector) password() string {
+	return c.creds.Data["password"].(string)
 }
 
 // Connect implements the Connect() method in the Connector interface.  It
