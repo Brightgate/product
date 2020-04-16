@@ -3,7 +3,7 @@
     "Children": {
       "apversion": {},
       "cfgversion": {
-        "Value": "27"
+        "Value": "28"
       },
       "clients": {},
       "cloud": {
@@ -95,6 +95,13 @@
           },
           "dnsserver": {
             "Value": "8.8.8.8:53"
+          },
+          "vpn": {
+            "Children": {
+              "last_mac": {
+                "Value": "00:40:54:00:00:00"
+              }
+            }
           },
           "vap": {
             "Children": {
@@ -330,6 +337,7 @@
     {"Path": "@/network/vpn/public_key", "Type": "string", "Level": "internal"},
     {"Path": "@/network/vpn/private_key", "Type": "string", "Level": "internal"},
     {"Path": "@/network/vpn/port", "Type": "int", "Level": "admin"},
+    {"Path": "@/network/vpn/last_mac", "Type": "macaddr", "Level": "internal"},
     {"Path": "@/network/regdomain", "Type": "string", "Level": "admin"},
     {"Path": "@/network/radius_auth_secret", "Type": "string", "Level": "internal"},
     {"Path": "@/log/%int%/protocol", "Type": "string", "Level": "admin"},
@@ -350,6 +358,12 @@
     {"Path": "@/users/%user%/uuid", "Type": "uuid", "Level": "internal"},
     {"Path": "@/users/%user%/display_name", "Type": "string", "Level": "user"},
     {"Path": "@/users/%user%/self_provisioning", "Type": "bool", "Level": "internal"},
+    {"Path": "@/users/%user%/vpn", "Type": "null", "Level": "admin"},
+    {"Path": "@/users/%user%/vpn/%int%", "Type": "null", "Level": "admin"},
+    {"Path": "@/users/%user%/vpn/%int%/public_key", "Type": "string", "Level": "admin"},
+    {"Path": "@/users/%user%/vpn/%int%/assigned_ip", "Type": "ipaddr", "Level": "admin"},
+    {"Path": "@/users/%user%/vpn/%int%/label", "Type": "string", "Level": "admin"},
+    {"Path": "@/users/%user%/vpn/%int%/mac", "Type": "macaddr", "Level": "internal"},
     {"Path": "@/httpd/cookie_aes_key", "Type": "string", "Level": "internal"},
     {"Path": "@/httpd/cookie_hmac_key", "Type": "string", "Level": "internal"},
     {"Path": "@/nodes/%nodeid%/nics/%nic%/name", "Type": "string", "Level": "internal"},

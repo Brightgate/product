@@ -408,6 +408,7 @@ APPTOOLS = \
 	ap-scan \
 	ap-speedtest \
 	ap-userctl \
+	ap-vpntool \
 	ap-watchctl
 
 MISCCOMMANDS = \
@@ -581,7 +582,8 @@ CLOUDCOMMAND_GOPKGS = \
 	bg/cl-obs \
 	bg/cl-reg \
 	bg/cl-release \
-	bg/cl-service
+	bg/cl-service \
+	bg/cl-vpntool
 
 CLOUD_GOPKGS = $(CLOUDCOMMON_GOPKGS) $(CLOUDDAEMON_GOPKGS) $(CLOUDCOMMAND_GOPKGS)
 

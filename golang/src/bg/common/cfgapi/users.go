@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log"
 	"net/mail"
+	"strconv"
 
 	"github.com/pkg/errors"
 
@@ -26,6 +27,17 @@ import (
 	"github.com/satori/uuid"
 	"github.com/ttacon/libphonenumber"
 )
+
+// WireguardConf contains the non-secret information associated with a client
+// Wireguard configuration.
+type WireguardConf struct {
+	ID           int
+	WGPublicKey  string // wireguard public key
+	WGAssignedIP string // CIDR for assigned IP address
+	WGAllowedIPs string // CIDR to restrict source of VPN connection
+	Label        string // User-defined value to distinguish between configs
+	mac          string // Artificial MAC address used for accounting
+}
 
 // UserInfo contains all of the configuration information for an appliance user
 // account.  Expected roles are: "SITE_ADMIN", "SITE_USER",
@@ -45,10 +57,36 @@ type UserInfo struct {
 	SelfProvisioning bool
 	config           *Handle
 	newUser          bool // need to do creation activities
+
+	WGConfig []*WireguardConf
 }
 
 // UserMap maps an account's username to its configuration information
 type UserMap map[string]*UserInfo
+
+// GetMac returns the artificial MAC address used for internal accounting.
+// This should never be exposed to admins/users.
+func (w *WireguardConf) GetMac() string {
+	return w.mac
+}
+
+func getWireguard(root *PropertyNode) []*WireguardConf {
+	var s []*WireguardConf
+	if len(root.Children) > 0 {
+		s = make([]*WireguardConf, 0)
+		for id, key := range root.Children {
+			c := &WireguardConf{}
+			c.ID, _ = strconv.Atoi(id)
+			c.WGPublicKey, _ = getStringVal(key, "public_key")
+			c.WGAssignedIP, _ = getStringVal(key, "assigned_ip")
+			c.WGAllowedIPs, _ = getStringVal(key, "allowed_ips")
+			c.Label, _ = getStringVal(key, "label")
+			c.mac, _ = getStringVal(key, "mac")
+			s = append(s, c)
+		}
+	}
+	return s
+}
 
 // newUserFromNode creates a UserInfo from config properties
 func newUserFromNode(name string, user *PropertyNode) (*UserInfo, error) {
@@ -79,6 +117,10 @@ func newUserFromNode(name string, user *PropertyNode) (*UserInfo, error) {
 		Password:         password,
 		MD4Password:      md4password,
 		SelfProvisioning: selfProvisioning,
+	}
+
+	if vpn, ok := user.Children["vpn"]; ok {
+		u.WGConfig = getWireguard(vpn)
 	}
 
 	return u, nil
