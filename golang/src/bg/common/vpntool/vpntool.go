@@ -54,7 +54,7 @@ func addKey(cmd *cobra.Command, args []string) error {
 // ID#, label, or "all"
 func removeKey(cmd *cobra.Command, args []string) error {
 	var label string
-	var cnt, idx int
+	var cnt, id int
 	var all, deleted bool
 
 	user, _ := cmd.Flags().GetString("user")
@@ -69,7 +69,7 @@ func removeKey(cmd *cobra.Command, args []string) error {
 	if label, _ = cmd.Flags().GetString("label"); label != "" {
 		cnt++
 	}
-	if idx, _ = cmd.Flags().GetInt("id"); idx >= 0 {
+	if id, _ = cmd.Flags().GetInt("id"); id >= 0 {
 		cnt++
 	}
 	if all, _ = cmd.Flags().GetBool("all"); all {
@@ -80,8 +80,8 @@ func removeKey(cmd *cobra.Command, args []string) error {
 	}
 
 	for _, key := range conf.WGConfig {
-		if all || idx == key.ID || (label != "" && label == key.Label) {
-			if err = vpn.RemoveKey(user, key.ID); err != nil {
+		if all || id == key.ID || (label != "" && label == key.Label) {
+			if err = vpn.RemoveKey(user, key.GetMac()); err != nil {
 				return err
 			}
 
@@ -181,7 +181,7 @@ func Exec(ctx context.Context, p string, hdl *cfgapi.Handle, args []string) erro
 		SilenceErrors: true,
 	}
 	removeCmd.Flags().StringP("user", "u", "", "user")
-	removeCmd.Flags().Int("id", -1, "remove a user's key by index number")
+	removeCmd.Flags().IntP("id", "i", -1, "remove a user's key by index number")
 	removeCmd.Flags().StringP("label", "l", "", "remove a user's key by label")
 	removeCmd.Flags().Bool("all", false, "remove all of a user's keys")
 	rootCmd.AddCommand(removeCmd)

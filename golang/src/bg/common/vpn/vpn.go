@@ -254,12 +254,12 @@ Retry:
 	}
 	public := private.PublicKey()
 
-	idx := chooseIndex(user)
-	base := "@/users/" + name + "/vpn/" + idx + "/"
+	id := chooseIndex(user)
+	base := "@/users/" + name + "/vpn/" + newMac + "/"
 	props := map[string]string{
 		base + "public_key":  public.String(),
 		base + "assigned_ip": ipaddr,
-		base + "mac":         newMac,
+		base + "id":          id,
 		lastMacProp:          newMac,
 	}
 	if label != "" {
@@ -268,7 +268,7 @@ Retry:
 
 	conf := keyConfig{
 		User:             name,
-		ID:               idx,
+		ID:               id,
 		ClientAddr:       ipaddr,
 		ClientPrivateKey: private.String(),
 		AllowedIPs:       subnets,
@@ -296,8 +296,8 @@ Retry:
 
 // RemoveKey removes the config properties associated with a single wireguard
 // key.
-func RemoveKey(name string, id int) error {
-	prop := "@/users/" + name + "/vpn/" + strconv.Itoa(id)
+func RemoveKey(name, mac string) error {
+	prop := "@/users/" + name + "/vpn/" + mac
 
 	err := config.DeleteProp(prop)
 	if err != nil && err != cfgapi.ErrNoProp {

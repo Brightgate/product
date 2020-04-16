@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"log"
 	"net/mail"
-	"strconv"
 
 	"github.com/pkg/errors"
 
@@ -32,11 +31,12 @@ import (
 // Wireguard configuration.
 type WireguardConf struct {
 	ID           int
-	WGPublicKey  string // wireguard public key
-	WGAssignedIP string // CIDR for assigned IP address
-	WGAllowedIPs string // CIDR to restrict source of VPN connection
-	Label        string // User-defined value to distinguish between configs
-	mac          string // Artificial MAC address used for accounting
+	WGPublicKey  string    // wireguard public key
+	WGAssignedIP string    // CIDR for assigned IP address
+	WGAllowedIPs string    // CIDR to restrict source of VPN connection
+	Label        string    // User-defined value to distinguish between configs
+	mac          string    // Artificial MAC address used for accounting
+	user         *UserInfo // owner of the key
 }
 
 // UserInfo contains all of the configuration information for an appliance user
@@ -70,18 +70,24 @@ func (w *WireguardConf) GetMac() string {
 	return w.mac
 }
 
-func getWireguard(root *PropertyNode) []*WireguardConf {
+// GetUser returns a pointer to the user struct that owns the keyj
+func (w *WireguardConf) GetUser() *UserInfo {
+	return w.user
+}
+
+func getWireguard(user *UserInfo, root *PropertyNode) []*WireguardConf {
 	var s []*WireguardConf
 	if len(root.Children) > 0 {
 		s = make([]*WireguardConf, 0)
-		for id, key := range root.Children {
+		for mac, key := range root.Children {
 			c := &WireguardConf{}
-			c.ID, _ = strconv.Atoi(id)
+			c.ID, _ = getIntVal(key, "id")
 			c.WGPublicKey, _ = getStringVal(key, "public_key")
 			c.WGAssignedIP, _ = getStringVal(key, "assigned_ip")
 			c.WGAllowedIPs, _ = getStringVal(key, "allowed_ips")
 			c.Label, _ = getStringVal(key, "label")
-			c.mac, _ = getStringVal(key, "mac")
+			c.mac = mac
+			c.user = user
 			s = append(s, c)
 		}
 	}
@@ -120,7 +126,7 @@ func newUserFromNode(name string, user *PropertyNode) (*UserInfo, error) {
 	}
 
 	if vpn, ok := user.Children["vpn"]; ok {
-		u.WGConfig = getWireguard(vpn)
+		u.WGConfig = getWireguard(u, vpn)
 	}
 
 	return u, nil
