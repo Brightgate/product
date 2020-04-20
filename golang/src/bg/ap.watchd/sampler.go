@@ -89,6 +89,7 @@ type samplerStats struct {
 
 type samplerState struct {
 	// Persistent state describing the identity of the sampler
+	layer2  bool
 	ring    string
 	iface   string
 	hwaddr  net.HardwareAddr
@@ -193,6 +194,13 @@ func unregisterIPAddr(macStr string) {
 	registerIPAddr(macStr, nil)
 }
 
+func wgGetMacs(srcIP, dstIP net.IP) (net.HardwareAddr, net.HardwareAddr) {
+	srcMAC, _ := net.ParseMAC(ipToMac[srcIP.String()])
+	dstMAC, _ := net.ParseMAC(ipToMac[dstIP.String()])
+
+	return srcMAC, dstMAC
+}
+
 func processOnePacket(state *samplerState, data []byte) {
 	var (
 		eth            *layers.Ethernet
@@ -220,7 +228,8 @@ func processOnePacket(state *samplerState, data []byte) {
 			tcp = &state.decodedTCP
 		}
 	}
-	if eth == nil {
+
+	if state.layer2 && eth == nil {
 		return
 	}
 
@@ -242,15 +251,20 @@ func processOnePacket(state *samplerState, data []byte) {
 		}
 
 		srcIP, dstIP = ipv4.SrcIP, ipv4.DstIP
-		srcMac, dstMac = eth.SrcMAC, eth.DstMAC
+		if state.layer2 {
+			srcMac, dstMac = eth.SrcMAC, eth.DstMAC
+		} else {
+			srcMac, dstMac = wgGetMacs(srcIP, dstIP)
+		}
+
 		proto := ""
 		src := endpoint{
 			ip:     ipv4.SrcIP,
-			hwaddr: eth.SrcMAC,
+			hwaddr: srcMac,
 		}
 		dst := endpoint{
 			ip:     ipv4.DstIP,
-			hwaddr: eth.DstMAC,
+			hwaddr: dstMac,
 		}
 		if udp != nil {
 			proto = "udp"
@@ -359,7 +373,7 @@ func findInterface(ring, bridge string) (net.HardwareAddr, error) {
 	} else {
 		hwaddr = iface.HardwareAddr
 
-		if ring != base_def.RING_INTERNAL {
+		if !cfgapi.SystemRings[ring] {
 			if err = network.WaitForDevice(bridge, time.Minute); err != nil {
 				err = fmt.Errorf("WaitForDevice(%s) failed: %v",
 					bridge, err)
@@ -369,28 +383,31 @@ func findInterface(ring, bridge string) (net.HardwareAddr, error) {
 	return hwaddr, err
 }
 
-func openInterface(bridge string, sz uint32) (samplerHandle, error) {
+func openInterface(s *samplerState) (samplerHandle, error) {
 	var hdl samplerHandle
 	var err error
 
-	if *samplerType == "pfring" {
+	if s.layer2 && *samplerType == "pfring" {
 		var ring *pfring.Ring
-		ring, err = pfring.NewRing(bridge, sz, pfring.FlagPromisc)
+		ring, err = pfring.NewRing(s.iface, s.sz, pfring.FlagPromisc)
 		if err != nil {
-			err = fmt.Errorf("pfring.NewRing(%s) failed: %v", bridge, err)
+			err = fmt.Errorf("pfring.NewRing(%s) failed: %v",
+				s.iface, err)
 		} else if err = ring.Enable(); err != nil {
-			err = fmt.Errorf("pfring.Enable(%s) failed: %v", bridge, err)
+			err = fmt.Errorf("pfring.Enable(%s) failed: %v",
+				s.iface, err)
 		} else {
-			slog.Debugf("sampling %s with pf_ring", bridge)
+			slog.Debugf("sampling %s with pf_ring", s.iface)
 			ring.SetSocketMode(pfring.ReadOnly)
 			hdl = ring
 		}
 	} else {
-		hdl, err = pcap.OpenLive(bridge, 65536, true, pcap.BlockForever)
+		hdl, err = pcap.OpenLive(s.iface, 65536, true, pcap.BlockForever)
 		if err != nil {
-			err = fmt.Errorf("pcap.OpenLive(%s) failed: %v", bridge, err)
+			err = fmt.Errorf("pcap.OpenLive(%s) failed: %v",
+				s.iface, err)
 		} else {
-			slog.Debugf("sampling %s with pcap", bridge)
+			slog.Debugf("sampling %s with pcap", s.iface)
 		}
 	}
 
@@ -401,13 +418,22 @@ func openInterface(bridge string, sz uint32) (samplerHandle, error) {
 // Set up the GoPacket parser for this interface's packet stream
 //
 func parserInit(state *samplerState) {
-	state.parser = gopacket.NewDecodingLayerParser(
-		layers.LayerTypeEthernet,
-		&state.decodedEth,
-		&state.decodedIPv4,
-		&state.decodedARP,
-		&state.decodedUDP,
-		&state.decodedTCP)
+	if state.layer2 {
+		state.parser = gopacket.NewDecodingLayerParser(
+			layers.LayerTypeEthernet,
+			&state.decodedEth,
+			&state.decodedIPv4,
+			&state.decodedARP,
+			&state.decodedUDP,
+			&state.decodedTCP)
+	} else {
+		state.parser = gopacket.NewDecodingLayerParser(
+			layers.LayerTypeIPv4,
+			&state.decodedIPv4,
+			&state.decodedARP,
+			&state.decodedUDP,
+			&state.decodedTCP)
+	}
 }
 
 // Periodically check the count of dropped packets.  Log a message whenever we
@@ -490,7 +516,7 @@ func sampleInterface(state *samplerState) {
 		hwaddr, err := findInterface(ring, bridge)
 		if err == nil {
 			state.sz = uint32(*samplerSize)
-			hdl, err = openInterface(bridge, state.sz)
+			hdl, err = openInterface(state)
 		}
 
 		if err != nil {
@@ -500,7 +526,7 @@ func sampleInterface(state *samplerState) {
 				lastErrMsg = errMsg
 			}
 
-			tlog.Warnf("%v", err)
+			tlog.Warnf("%s sampler: %v", ring, err)
 			time.Sleep(time.Second)
 			continue
 		}
@@ -554,7 +580,7 @@ func sampleInit(w *watcher) {
 	}
 	samplerRunning = true
 	for ring, config := range rings {
-		if cfgapi.SystemRings[ring] {
+		if ring == base_def.RING_INTERNAL {
 			continue
 		}
 
@@ -562,13 +588,19 @@ func sampleInit(w *watcher) {
 		subnetBcast = append(subnetBcast, bcastAddr)
 		subnets = append(subnets, config.IPNet)
 
-		s := samplerState{
-			ring:  ring,
-			iface: config.Bridge,
+		s := &samplerState{ring: ring}
+
+		if ring == base_def.RING_VPN {
+			s.iface = "wg0"
+			s.layer2 = false
+		} else {
+			s.iface = config.Bridge
+			s.layer2 = true
 		}
-		samplers = append(samplers, &s)
+
+		samplers = append(samplers, s)
 		samplerWaitGroup.Add(1)
-		go sampleInterface(&s)
+		go sampleInterface(s)
 	}
 
 	samplerWaitGroup.Add(1)

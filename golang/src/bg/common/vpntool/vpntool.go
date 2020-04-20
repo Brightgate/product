@@ -102,50 +102,37 @@ func removeKey(cmd *cobra.Command, args []string) error {
 
 // list all of the configured VPN keys
 func listKeys(cmd *cobra.Command, args []string) error {
-	var users cfgapi.UserMap
-
-	if name, _ := cmd.Flags().GetString("user"); name != "" {
-		u, err := config.GetUser(name)
-		if err != nil {
-			return err
-		}
-		users = cfgapi.UserMap{name: u}
-	} else {
-		users = config.GetUsers()
+	name, _ := cmd.Flags().GetString("user")
+	keys, err := vpn.GetKeys(name)
+	if err != nil {
+		return err
 	}
 
 	// Determine the widths of the 'username' and 'label' columns
 	ulen := len("username")
 	llen := len("label")
-	for name, conf := range users {
-		if conf.WGConfig != nil {
-			if l := len(name); l > ulen {
-				ulen = l
-			}
-			for _, key := range conf.WGConfig {
-				if l := len(key.Label); l > llen {
-					llen = l
-				}
-			}
+	for _, key := range keys {
+		if l := len(key.GetUser()); l > ulen {
+			ulen = l
+		}
+		if l := len(key.Label); l > llen {
+			llen = l
 		}
 	}
+
 	uhdr := fmt.Sprintf("%%%ds", ulen)
 	lhdr := fmt.Sprintf("%%%ds", llen)
 
 	fmt.Printf(uhdr+"  %4s  "+lhdr+"  %18s  %17s  %s\n",
 		"username", "ID", "label", "assigned IP", "accounting mac",
 		"public key")
-	for name, conf := range users {
-		if conf.WGConfig == nil {
-			continue
-		}
 
-		for _, key := range conf.WGConfig {
-			fmt.Printf(uhdr+"  %4d  "+lhdr+"  %18s  %17s  %s\n",
-				name, key.ID, key.Label, key.WGAssignedIP,
-				key.GetMac(), key.WGPublicKey)
-		}
+	for _, key := range keys {
+		fmt.Printf(uhdr+"  %4d  "+lhdr+"  %18s  %17s  %s\n",
+			key.GetUser(), key.ID, key.Label, key.WGAssignedIP,
+			key.GetMac(), key.WGPublicKey)
 	}
+
 	return nil
 }
 

@@ -29,6 +29,7 @@ import (
 	"bg/base_def"
 	"bg/common/cfgapi"
 	"bg/common/network"
+	"bg/common/vpn"
 
 	"go.uber.org/zap"
 )
@@ -41,8 +42,9 @@ var (
 	slog    *zap.SugaredLogger
 	bgm     *bgmetrics.Metrics
 
-	clientMtx sync.Mutex
-	clients   cfgapi.ClientMap
+	clientMtx  sync.Mutex
+	clients    cfgapi.ClientMap
+	vpnClients map[string]net.IP
 
 	_ = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
 
@@ -52,6 +54,18 @@ var (
 
 	exitChan = make(chan struct{})
 )
+
+func vpnUpdate(hwaddr net.HardwareAddr, ip net.IP) {
+	clientMtx.Lock()
+	defer clientMtx.Unlock()
+
+	mac := hwaddr.String()
+	if ip == nil {
+		delete(vpnClients, mac)
+	} else {
+		vpnClients[mac] = ip
+	}
+}
 
 func clientUpdateEvent(path []string, val string, expires *time.Time) {
 	clientMtx.Lock()
@@ -213,6 +227,19 @@ func initInterfaces() {
 	ipv4ToIface = i2i
 }
 
+func getVPNClients() {
+	vpnClients = make(map[string]net.IP)
+
+	vpn.Init(config)
+	keys, _ := vpn.GetKeys("")
+	for _, key := range keys {
+		if ip := net.ParseIP(key.WGAssignedIP); ip != nil {
+			vpnClients[key.GetMac()] = ip
+		}
+	}
+	vpn.RegisterMacIPHandler(vpnUpdate)
+}
+
 func eventHandler(event []byte) {
 	slog.Debugf("got network update event - reevaluting interfaces")
 	initInterfaces()
@@ -260,6 +287,7 @@ func main() {
 	aputil.ReportInit(slog, pname)
 
 	clients = config.GetClients()
+	getVPNClients()
 	rings = config.GetRings()
 
 	brokerd.Handle(base_def.TOPIC_UPDATE, eventHandler)

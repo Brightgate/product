@@ -228,8 +228,13 @@ func (e *entities) writeInventory(path string) (int, error) {
 	for _, d := range e.dataMap {
 		updated := aputil.ProtobufToTime(d.info.Updated)
 		if updated != nil && updated.After(d.saved) {
-			inventory.Devices = append(inventory.Devices, d.info)
-			d.saved = time.Now()
+			if *trackVPN || !isVPN(d.mac) {
+				slog.Debugf("Storing inventory for %x", d.mac)
+				inventory.Devices = append(inventory.Devices, d.info)
+				d.saved = time.Now()
+			} else {
+				slog.Debugf("Skipping inventory for %x", d.mac)
+			}
 		}
 		d.reset()
 	}

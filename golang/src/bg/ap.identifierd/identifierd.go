@@ -34,22 +34,25 @@ import (
 	"bg/base_msg"
 	"bg/common/cfgapi"
 	"bg/common/network"
+	"bg/common/vpn"
 
 	"github.com/golang/protobuf/proto"
 	"go.uber.org/zap"
 )
 
 var (
-	logDir = apcfg.String("logdir", "/var/spool/identifierd", false, nil)
-	_      = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
+	logDir   = apcfg.String("logdir", "/var/spool/identifierd", false, nil)
+	trackVPN = apcfg.Bool("vpn", false, true, nil)
+	_        = apcfg.String("log_level", "info", true, aputil.LogSetLevel)
 
 	brokerd *broker.Broker
 	config  *cfgapi.Handle
 	slog    *zap.SugaredLogger
 
 	// DNS requests only contain the IP addr, so we maintin a map ipaddr -> hwaddr
-	ipMtx sync.Mutex
-	ipMap = make(map[uint32]uint64)
+	ipMtx      sync.Mutex
+	ipMap      = make(map[uint32]uint64)
+	vpnClients = make(map[uint64]bool)
 
 	newData = newEntities()
 )
@@ -76,6 +79,7 @@ func delHWaddr(hwaddr uint64) {
 			break
 		}
 	}
+	delete(vpnClients, hwaddr)
 }
 
 func getHWaddr(ip uint32) (uint64, bool) {
@@ -85,10 +89,14 @@ func getHWaddr(ip uint32) (uint64, bool) {
 	return hwaddr, ok
 }
 
-func addIP(ip uint32, hwaddr uint64) {
+func addIP(ip uint32, hwaddr uint64, vpn bool) {
 	ipMtx.Lock()
 	defer ipMtx.Unlock()
 	ipMap[ip] = hwaddr
+
+	if vpn {
+		vpnClients[hwaddr] = true
+	}
 }
 
 func handleEntity(event []byte) {
@@ -145,6 +153,23 @@ func handleRequest(event []byte) {
 	newData.addMsgRequest(hwaddr, request)
 }
 
+func isVPN(mac uint64) bool {
+	ipMtx.Lock()
+	defer ipMtx.Unlock()
+
+	return vpnClients[mac]
+}
+
+func vpnUpdate(hwaddr net.HardwareAddr, ip net.IP) {
+	mac := network.HWAddrToUint64(hwaddr)
+	if ip == nil {
+		delHWaddr(mac)
+	} else {
+		ipaddr := network.IPAddrToUint32(ip)
+		addIP(ipaddr, mac, true)
+	}
+}
+
 func configDHCPChanged(path []string, val string, expires *time.Time) {
 	slog.Debugf("configDHCPChanged: %s %s %v", path[1], val, expires)
 	mac, err := net.ParseMAC(path[1])
@@ -171,7 +196,7 @@ func configIPv4Changed(path []string, val string, expires *time.Time) {
 		return
 	}
 	ipaddr := network.IPAddrToUint32(ipv4)
-	addIP(ipaddr, network.HWAddrToUint64(mac))
+	addIP(ipaddr, network.HWAddrToUint64(mac), false)
 }
 
 func configIPv4Delexp(path []string) {
@@ -353,7 +378,7 @@ func recoverClients() {
 		hw := network.HWAddrToUint64(hwaddr)
 
 		if client.IPv4 != nil {
-			addIP(network.IPAddrToUint32(client.IPv4), hw)
+			addIP(network.IPAddrToUint32(client.IPv4), hw, false)
 		}
 
 		if client.DHCPName != "" {
@@ -362,6 +387,17 @@ func recoverClients() {
 
 		newData.setPrivacy(hwaddr, client.DNSPrivate)
 	}
+
+	vpnClients = make(map[uint64]bool)
+	vpn.Init(config)
+	keys, _ := vpn.GetKeys("")
+	for mac, key := range keys {
+		if ip := net.ParseIP(key.WGAssignedIP); ip != nil {
+			hwaddr := network.MacToUint64(mac)
+			addIP(network.IPAddrToUint32(ip), hwaddr, true)
+		}
+	}
+	vpn.RegisterMacIPHandler(vpnUpdate)
 }
 
 func signalHandler() {

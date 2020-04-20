@@ -411,14 +411,14 @@ func logUnknown(ipstr string) bool {
 
 // Determine whether the DNS request came from a known client.  If it did,
 // return the client record.  If it didn't, raise a warning flag and return nil.
-func getClient(w dns.ResponseWriter) (string, *cfgapi.ClientInfo) {
+func getClient(w dns.ResponseWriter) (string, net.IP, string) {
 	addr, ok := w.RemoteAddr().(*net.UDPAddr)
 	if !ok {
-		return "", nil
+		return "", nil, ""
 	}
 
 	if addr.IP.Equal(clientSelf.IPv4) {
-		return network.MacZero.String(), clientSelf
+		return network.MacZero.String(), clientSelf.IPv4, clientSelf.Ring
 	}
 
 	clientMtx.Lock()
@@ -426,32 +426,23 @@ func getClient(w dns.ResponseWriter) (string, *cfgapi.ClientInfo) {
 
 	for mac, c := range clients {
 		if addr.IP.Equal(c.IPv4) {
-			return mac, c
+			return mac, c.IPv4, c.Ring
+		}
+	}
+
+	for mac, ip := range vpnClients {
+		if addr.IP.Equal(ip) {
+			return mac, ip, base_def.RING_VPN
 		}
 	}
 
 	ipStr := addr.IP.String()
 	if !wasWarned(ipStr, unknownWarned) {
+		logUnknown(ipStr)
 		slog.Warnf("DNS request from unknown client: %s", ipStr)
 	}
 
-	return "", nil
-}
-
-// Look through the client table to find the mac address corresponding to this
-// client record.
-func getMac(record *cfgapi.ClientInfo) net.HardwareAddr {
-	clientMtx.Lock()
-	defer clientMtx.Unlock()
-
-	for m, c := range clients {
-		if c == record {
-			mac, _ := net.ParseMAC(m)
-			return mac
-		}
-	}
-
-	return network.MacZero
+	return "", nil, ""
 }
 
 func answerA(q dns.Question, rec *dnsRecord) *dns.A {
@@ -627,8 +618,8 @@ func localHandler(w dns.ResponseWriter, r *dns.Msg) {
 
 	dnsMetrics.requests.Inc()
 	dnsMetrics.requestSize.Observe(float64(r.Len()))
-	_, c := getClient(w)
-	if c == nil {
+	_, ipv4, ring := getClient(w)
+	if ipv4 == nil {
 		return
 	}
 
@@ -650,7 +641,7 @@ func localHandler(w dns.ResponseWriter, r *dns.Msg) {
 	start := time.Now()
 
 	if perRingHosts[name] {
-		rec, ok = ringRecords[c.Ring]
+		rec, ok = ringRecords[ring]
 	} else {
 		hostsMtx.Lock()
 		rec, ok = hosts[name]
@@ -658,7 +649,7 @@ func localHandler(w dns.ResponseWriter, r *dns.Msg) {
 	}
 
 	if ok {
-		if dnsVisibility[c.Ring][rec.hostRing] {
+		if dnsVisibility[ring][rec.hostRing] {
 			if rec.rectype == dns.TypeA {
 				m.Answer = append(m.Answer, answerA(q, rec))
 				m.RecursionAvailable = true
@@ -678,14 +669,20 @@ func localHandler(w dns.ResponseWriter, r *dns.Msg) {
 	dnsMetrics.responseSize.Observe(float64(m.Len()))
 	w.WriteMsg(m)
 
-	logRequest("localHandler", start, c.IPv4, r, m)
+	logRequest("localHandler", start, ipv4, r, m)
 }
 
-func notifyBlockEvent(c *cfgapi.ClientInfo, hostname string) {
+func notifyBlockEvent(mac string, ipv4 net.IP, hostname string) {
 	protocol := base_msg.Protocol_DNS
 	reason := base_msg.EventNetException_PHISHING_ADDRESS
 	topic := base_def.TOPIC_EXCEPTION
-	dev := getMac(c)
+
+	hwaddr := network.MacZero
+	if mac != "" {
+		if x, err := net.ParseMAC(mac); err == nil {
+			hwaddr = x
+		}
+	}
 
 	entity := &base_msg.EventNetException{
 		Timestamp:   aputil.NowToProtobuf(),
@@ -694,8 +691,8 @@ func notifyBlockEvent(c *cfgapi.ClientInfo, hostname string) {
 		Protocol:    &protocol,
 		Reason:      &reason,
 		Details:     []string{hostname},
-		MacAddress:  proto.Uint64(network.HWAddrToUint64(dev)),
-		Ipv4Address: proto.Uint32(network.IPAddrToUint32(c.IPv4)),
+		MacAddress:  proto.Uint64(network.HWAddrToUint64(hwaddr)),
+		Ipv4Address: proto.Uint32(network.IPAddrToUint32(ipv4)),
 	}
 
 	if err := brokerd.Publish(entity, topic); err != nil {
@@ -720,8 +717,8 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 	dnsMetrics.requests.Inc()
 	dnsMetrics.requestSize.Observe(float64(r.Len()))
 
-	mac, c := getClient(w)
-	if c == nil {
+	mac, ipv4, ring := getClient(w)
+	if ipv4 == nil {
 		return
 	}
 
@@ -743,10 +740,10 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 	name := strings.ToLower(q.Name)
 
 	hostname := name[:len(name)-1]
-	if phishingRings[c.Ring] && data.BlockedHostname(hostname) {
+	if phishingRings[ring] && data.BlockedHostname(hostname) {
 		// XXX: maybe we should return a CNAME record for our
 		// local 'phishing.<siteid>.brightgate.net'?
-		localRecord, _ := ringRecords[c.Ring]
+		localRecord, _ := ringRecords[ring]
 		m.Answer = append(m.Answer, answerA(q, localRecord))
 
 		// We want to log and Event blocked hostnames for each
@@ -755,7 +752,7 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 		if !wasWarned(key, blockWarned) {
 			slog.Infof("Blocking suspected phishing site "+
 				"'%s' for %s", hostname, mac)
-			notifyBlockEvent(c, hostname)
+			notifyBlockEvent(mac, ipv4, hostname)
 			dnsMetrics.blocked.Inc()
 		}
 	} else if q.Qtype == dns.TypePTR && localAddress(q.Name) {
@@ -764,7 +761,7 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 		hostsMtx.Unlock()
 
 		if ok && rec.rectype == dns.TypePTR &&
-			dnsVisibility[c.Ring][rec.hostRing] {
+			dnsVisibility[ring][rec.hostRing] {
 
 			m.Answer = append(m.Answer, answerPTR(q, rec))
 		}
@@ -781,7 +778,7 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 	}
 	dnsMetrics.responseSize.Observe(float64(m.Len()))
 	w.WriteMsg(m)
-	logRequest("proxyHandler", start, c.IPv4, r, m)
+	logRequest("proxyHandler", start, ipv4, r, m)
 }
 
 func dnsUpdateRecord(name, mac, ring, val string, rectype uint16) {

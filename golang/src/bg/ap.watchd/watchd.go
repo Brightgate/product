@@ -34,6 +34,7 @@ import (
 	"bg/base_msg"
 	"bg/common/cfgapi"
 	"bg/common/network"
+	"bg/common/vpn"
 
 	"github.com/golang/protobuf/proto"
 	"go.uber.org/zap"
@@ -128,6 +129,9 @@ func setMacIP(mac string, ipv4 net.IP) {
 	registerIPAddr(mac, ipv4)
 
 	mapMtx.Lock()
+	if ip, ok := macToIP[mac]; ok {
+		delete(ipToMac, ip)
+	}
 	macToIP[mac] = ip
 	ipToMac[ip] = mac
 	mapMtx.Unlock()
@@ -142,6 +146,26 @@ func clearMac(mac string) {
 	}
 	delete(macToIP, mac)
 	mapMtx.Unlock()
+}
+
+func vpnUpdate(hwaddr net.HardwareAddr, ip net.IP) {
+	mac := hwaddr.String()
+	if ip == nil {
+		clearMac(mac)
+	} else {
+		setMacIP(mac, ip)
+	}
+}
+
+func getVPNClients() {
+	vpn.Init(config)
+	keys, _ := vpn.GetKeys("")
+	for _, key := range keys {
+		if ip := net.ParseIP(key.WGAssignedIP); ip != nil {
+			setMacIP(key.GetMac(), ip)
+		}
+	}
+	vpn.RegisterMacIPHandler(vpnUpdate)
 }
 
 func configIPv4Changed(path []string, value string, expires *time.Time) {
@@ -401,6 +425,7 @@ func main() {
 	rings = config.GetRings()
 	getGateways()
 	getLeases()
+	getVPNClients()
 
 	mcpd.SetState(mcp.ONLINE)
 	slog.Infof("watchd online")

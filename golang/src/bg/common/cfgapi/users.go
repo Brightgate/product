@@ -70,13 +70,19 @@ func (w *WireguardConf) GetMac() string {
 	return w.mac
 }
 
-// GetUser returns a pointer to the user struct that owns the keyj
-func (w *WireguardConf) GetUser() *UserInfo {
-	return w.user
+// GetUser returns the name of the user to which the key is assigned
+func (w *WireguardConf) GetUser() string {
+	var name string
+
+	if u := w.user; u != nil {
+		name = u.UID
+	}
+	return name
 }
 
 func getWireguard(user *UserInfo, root *PropertyNode) []*WireguardConf {
 	var s []*WireguardConf
+
 	if len(root.Children) > 0 {
 		s = make([]*WireguardConf, 0)
 		for mac, key := range root.Children {

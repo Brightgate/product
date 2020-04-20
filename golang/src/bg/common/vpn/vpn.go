@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+	"time"
 
 	"bg/base_def"
 	"bg/common/cfgapi"
@@ -36,6 +37,8 @@ var (
 	vpnStart  net.IP
 	vpnRouter net.IP
 	vpnSpan   int
+
+	configCallback func(net.HardwareAddr, net.IP)
 )
 
 type keyConfig struct {
@@ -305,6 +308,64 @@ func RemoveKey(name, mac string) error {
 	}
 
 	return nil
+}
+
+// GetKeys returns a mac->WireguardConfig map containing all of the keys
+// configured for the given user.  If the user parameter is the empty string,
+// the call will return all keys in the system.
+func GetKeys(name string) (map[string]*cfgapi.WireguardConf, error) {
+	var users cfgapi.UserMap
+
+	rval := make(map[string]*cfgapi.WireguardConf)
+
+	if name != "" {
+		u, err := config.GetUser(name)
+		if err != nil {
+			return nil, err
+		}
+		users = cfgapi.UserMap{name: u}
+	} else {
+		users = config.GetUsers()
+	}
+
+	for _, conf := range users {
+		if conf.WGConfig != nil {
+			for _, key := range conf.WGConfig {
+				rval[key.GetMac()] = key
+			}
+		}
+	}
+
+	return rval, nil
+}
+
+func userUpdateEvent(path []string, val string, expires *time.Time) {
+	if len(path) == 5 && path[4] == "assigned_ip" {
+		if ip := net.ParseIP(val); ip != nil {
+			if mac, err := net.ParseMAC(path[3]); err == nil {
+				configCallback(mac, ip)
+			}
+		}
+	}
+}
+
+func userDeleteEvent(path []string) {
+	if len(path) == 5 && path[4] == "assigned_ip" {
+		if mac, err := net.ParseMAC(path[3]); err == nil {
+			configCallback(mac, nil)
+		}
+	}
+}
+
+// RegisterMacIPHandler indicates that the caller wants to be notified of any
+// changes to the mac->ip mappings maintained for vpn clients.
+func RegisterMacIPHandler(cb func(net.HardwareAddr, net.IP)) {
+	if configCallback == nil {
+		config.HandleChange(`^@/users/.*/vpn/.*`, userUpdateEvent)
+		config.HandleDelete(`^@/users/.*/vpn/.*`, userDeleteEvent)
+		config.HandleExpire(`^@/users/.*/vpn/.*`, userDeleteEvent)
+	}
+	configCallback = cb
 }
 
 // Init must be called before any other vpn function.
