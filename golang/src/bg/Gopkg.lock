@@ -180,12 +180,12 @@
   revision = "0d2a99329185d841e32198869ed45c68007228d0"
 
 [[projects]]
-  branch = "master"
-  digest = "1:512a089b2397eb5c8a3ec115c5f55b8e37e1e85ef1748b29158dba2675e56509"
+  digest = "1:5ed86665a768a381e7ad128cbd478cfdd305dc0782a511a8ed39125befc8ed9d"
   name = "github.com/dhduvall/gcloudzap"
   packages = ["."]
   pruneopts = ""
-  revision = "da9a454c7d192668c0c5eb9733b21692b0f71474"
+  revision = "9fdcb41e84b18e93fedaa9d98ac62599f6d7a19f"
+  version = "v0.3.1"
 
 [[projects]]
   digest = "1:044b2f1eea2f5cfb0d3678baf60892734f59d5c2ea3932cb6ed894a97ccba15c"

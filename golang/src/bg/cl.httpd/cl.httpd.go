@@ -31,6 +31,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/hex"
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -43,6 +44,7 @@ import (
 	"bg/cl_common/certificate"
 	"bg/cl_common/clcfg"
 	"bg/cl_common/daemonutils"
+	"bg/cl_common/echozap"
 	"bg/cl_common/pgutils"
 	"bg/cl_common/vaultdb"
 	"bg/cl_common/vaultgcpauth"
@@ -57,13 +59,14 @@ import (
 	vault "github.com/hashicorp/vault/api"
 	"github.com/sfreiberg/gotwilio"
 	"github.com/tomazk/envcfg"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	// Echo
 	"github.com/antonlindstrom/pgstore"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/middleware"
-	gommonlog "github.com/labstack/gommon/log"
 	"github.com/satori/uuid"
 	"github.com/unrolled/secure"
 )
@@ -127,6 +130,9 @@ const (
 
 	// CSP matched to that of ap.httpd.
 	contentSecurityPolicy = "default-src 'self'; script-src 'self'; img-src 'self' data:; font-src 'self' data:; frame-src https://brightgate.freshdesk.com/; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'"
+
+	defaultHTTPListen  = ":80"
+	defaultHTTPSListen = ":443"
 )
 
 var (
@@ -136,8 +142,6 @@ var (
 	lbName           string
 	useVaultForDB    bool
 	useVaultForKV    bool
-	vaultClient      *vault.Client
-	notifier         *daemonutils.FanOut
 )
 
 func gracefulShutdown(e *echo.Echo) {
@@ -199,7 +203,9 @@ func mkTLSConfig() (*tls.Config, error) {
 	}, nil
 }
 
-func mkSecureMW(r *echo.Echo) echo.MiddlewareFunc {
+func mkSecureMW(log *zap.Logger) echo.MiddlewareFunc {
+	slog := log.Sugar()
+
 	allowedHosts := strings.Split(environ.AllowedHosts, ",")
 	// Work around weird Split() behavior
 	if len(allowedHosts) == 1 && allowedHosts[0] == "" {
@@ -209,22 +215,25 @@ func mkSecureMW(r *echo.Echo) echo.MiddlewareFunc {
 	if len(allowedHosts) == 0 {
 		// This just gets the first one.
 		if ip, err := metadata.InternalIP(); err == nil && ip != "" {
+			if environ.HTTPSListen != defaultHTTPSListen {
+				ip += environ.HTTPSListen
+			}
 			allowedHosts = append(allowedHosts, ip)
 		} else if err != nil {
-			r.Logger.Warnf("Unable to retrieve internal IP address: %v", err)
+			slog.Warnf("Unable to retrieve internal IP address: %v", err)
 		}
 
 		if ip, err := metadata.ExternalIP(); err == nil && ip != "" {
 			allowedHosts = append(allowedHosts, ip)
 		} else if err != nil {
-			r.Logger.Warnf("Unable to retrieve external IP address: %v", err)
+			slog.Warnf("Unable to retrieve external IP address: %v", err)
 		}
 
 		// IP address assigned to the load balancer
 		if ip, err := metadata.InstanceAttributeValue("lb-ip"); err == nil && ip != "" {
 			allowedHosts = append(allowedHosts, ip)
 		} else if err != nil {
-			r.Logger.Warnf("Unable to retrieve load balancer IP address: %v", err)
+			slog.Warnf("Unable to retrieve load balancer IP address: %v", err)
 		}
 
 		// Name assigned to the load balancer
@@ -234,10 +243,10 @@ func mkSecureMW(r *echo.Echo) echo.MiddlewareFunc {
 	}
 
 	if len(allowedHosts) == 0 {
-		r.Logger.Fatalf("Unable to determine allowed hosts; set " +
+		slog.Fatalf("Unable to determine allowed hosts; set " +
 			"$B10E_CLHTTPD_ALLOWED_HOSTS to override discovery")
 	}
-	r.Logger.Infof("Accepting requests for %s", strings.Join(allowedHosts, ", "))
+	slog.Infof("Accepting requests for %s", strings.Join(allowedHosts, ", "))
 
 	secureMW := secure.New(secure.Options{
 		AllowedHosts:          allowedHosts,
@@ -264,6 +273,7 @@ type routerState struct {
 	sessCleanupDone chan<- struct{}
 	sessCleanupQuit <-chan struct{}
 	echo            *echo.Echo
+	logger          *zap.SugaredLogger
 }
 
 func (rs *routerState) Fini(ctx context.Context) {
@@ -272,9 +282,9 @@ func (rs *routerState) Fini(ctx context.Context) {
 	rs.sessionStore.Close()
 }
 
-func (rs *routerState) mkSessionStore() {
-	log := rs.echo.Logger
-	log.Infof("Creating Session Store\n")
+func (rs *routerState) mkSessionStore(vaultClient *vault.Client, notifier *daemonutils.FanOut) {
+	log := rs.logger
+	log.Info("Creating Session Store")
 	if secrets.SessionSecret == "" {
 		log.Fatalf("You must set B10E_CLHTTPD_SESSION_SECRET")
 	}
@@ -289,8 +299,9 @@ func (rs *routerState) mkSessionStore() {
 	dbURI := pgutils.AddApplication(environ.SessionDB, pname)
 
 	if useVaultForDB {
+		subLog := log.Named("vaultdb.sessiondb")
 		vdbc := vaultdb.NewConnector(dbURI, vaultClient, notifier,
-			environ.VaultDBPath, environ.VaultDBRole, log)
+			environ.VaultDBPath, environ.VaultDBRole, subLog)
 		rs.sessionDB, err = sessiondb.VaultConnect(vdbc, true)
 		rs.sessionVDBC = vdbc
 		if err != nil {
@@ -318,17 +329,18 @@ func (rs *routerState) mkSessionStore() {
 	rs.sessCleanupDone, rs.sessCleanupQuit = rs.sessionStore.Cleanup(time.Minute * 5)
 }
 
-func (rs *routerState) mkApplianceDB() {
+func (rs *routerState) mkApplianceDB(vaultClient *vault.Client, notifier *daemonutils.FanOut) {
 	var err error
-	log := rs.echo.Logger
+	log := rs.logger
 
 	dbURI := pgutils.AddApplication(environ.ApplianceDB, pname)
 
 	// Appliancedb setup.  Use Vault if we successfully connected to it;
 	// otherwise, assume that the environment has the necessary credentials.
 	if useVaultForDB {
+		subLog := log.Named("vaultdb.appliancedb")
 		vdbc := vaultdb.NewConnector(dbURI, vaultClient, notifier,
-			environ.VaultDBPath, environ.VaultDBRole, log)
+			environ.VaultDBPath, environ.VaultDBRole, subLog)
 		rs.applianceDB, err = appliancedb.VaultConnect(vdbc)
 		rs.applianceVDBC = vdbc
 		if err != nil {
@@ -359,32 +371,46 @@ func (rs *routerState) mkApplianceDB() {
 	log.Infof(checkMark + "Appliance Secrets")
 }
 
-func mkEchoLoggerConfig(logger echo.Logger) middleware.LoggerConfig {
+func mkEchoZapLogger(zlog *zap.Logger) echo.MiddlewareFunc {
+	slog := zlog.Sugar()
+
 	gcpInstName, err := metadata.InstanceName()
 	if err != nil {
-		logger.Warnf("Unable to retrieve instance name: %v", err)
+		slog.Warnf("Unable to retrieve instance name: %v", err)
 	}
 
 	gcpZone, err := metadata.Zone()
 	if err != nil {
-		logger.Warnf("Unable to retrieve GCP zone: %v", err)
+		slog.Warnf("Unable to retrieve GCP zone: %v", err)
 	}
 
-	// Insert a few fields into the log after the time, but before the rest.
-	lcFmtArray := strings.Split(middleware.DefaultLoggerConfig.Format, ",")
-	lcFmtArray = append(lcFmtArray, "", "", "")
-	copy(lcFmtArray[4:], lcFmtArray[1:])
-	lcFmtArray[1] = fmt.Sprintf(`"gcp_zone":"%s"`, gcpZone)
-	lcFmtArray[2] = fmt.Sprintf(`"gcp_instance_name":"%s"`, gcpInstName)
-	// Google Cloud Load Balancing cookie
-	lcFmtArray[3] = `"GCLB":"${cookie:GCLB}"`
-
-	lcFmt := strings.Join(lcFmtArray, ",")
-	return middleware.LoggerConfig{Format: lcFmt}
+	// Mostly the default fields, but we skip time, which is already emitted
+	// by zap, and id, which is always empty.  We add the zone and instance
+	// name, so we can tell what part of the backend is handling it, and the
+	// GCLB cookie, which is how the load-balancing works.
+	m := []echozap.Field{
+		{Name: "gcp_zone", Data: gcpZone},
+		{Name: "gcp_instance_name", Data: gcpInstName},
+		echozap.CookieField("GCLB"),
+		echozap.CoreField("remote_ip"),
+		echozap.CoreField("host"),
+		echozap.CoreField("method"),
+		echozap.CoreField("uri"),
+		echozap.CoreField("user_agent"),
+		echozap.CoreField("status"),
+		echozap.CoreField("error"),
+		echozap.CoreField("latency"),
+		echozap.CoreField("latency_human"),
+		echozap.CoreField("bytes_in"),
+		echozap.CoreField("bytes_out"),
+	}
+	return echozap.Logger(zlog, m)
 }
 
-func mkRouterHTTPS() *routerState {
+func mkRouterHTTPS(log *zap.Logger, vaultClient *vault.Client, notifier *daemonutils.FanOut) *routerState {
 	var state routerState
+	log = log.Named("https")
+	slog := log.Sugar()
 
 	wellKnownPath := "/var/www/html/.well-known"
 	if environ.WellKnownPath != "" {
@@ -399,50 +425,47 @@ func mkRouterHTTPS() *routerState {
 	state.echo = echo.New()
 	r := state.echo
 	r.Debug = environ.Developer
-	if r.Debug {
-		r.Logger.SetLevel(gommonlog.DEBUG)
-	} else {
-		r.Logger.SetLevel(gommonlog.INFO)
-	}
+	r.Logger = ZapToGommonLog(log)
 	r.HideBanner = true
 
-	state.mkSessionStore()
-	state.mkApplianceDB()
+	state.logger = slog
+	state.mkSessionStore(vaultClient, notifier)
+	state.mkApplianceDB(vaultClient, notifier)
 
 	// Configd setup
 	enableConfigdTLS = !environ.ConfigdDisableTLS && !environ.Developer
 	if !enableConfigdTLS {
-		r.Logger.Warnf("Disabling TLS for connection to Configd")
+		slog.Warnf("Disabling TLS for connection to Configd")
 	}
 	hdl, err := getConfigClientHandle(appliancedb.NullSiteUUID.String())
 	if err != nil {
-		r.Logger.Fatalf("failed to make Config Client: %s", err)
+		slog.Fatalf("failed to make Config Client: %s", err)
 	}
 	defer hdl.Close()
 	err = hdl.Ping(context.Background())
 	if err != nil {
-		r.Logger.Fatalf("failed to Ping Config Client: %s", err)
+		slog.Fatalf("failed to Ping Config Client: %s", err)
 	}
-	r.Logger.Infof(checkMark + "Pinged cl.configd")
+	slog.Infof(checkMark + "Pinged cl.configd")
 
 	// Twilio setup
 	var twil *gotwilio.Twilio
 	if secrets.TwilioSID != "" && secrets.TwilioAuthToken != "" {
 		twil = gotwilio.NewTwilioClient(secrets.TwilioSID,
 			secrets.TwilioAuthToken)
-		r.Logger.Infof(checkMark + "Setup Twilio Client")
+		slog.Infof(checkMark + "Setup Twilio Client")
 	} else {
-		r.Logger.Warnf("Disabling Twilio Client")
+		slog.Warnf("Disabling Twilio Client")
 	}
 
-	r.Use(middleware.LoggerWithConfig(mkEchoLoggerConfig(r.Logger)))
-	r.Use(mkSecureMW(r))
+	r.Use(mkEchoZapLogger(log.Named("server")))
+	r.Use(mkSecureMW(log))
 	r.Use(middleware.Recover())
 	r.Use(session.Middleware(state.sessionStore))
 	r.Static("/.well-known", wellKnownPath)
 	cwp := filepath.Join(appPath, "client-web")
 	r.Static("/client-web", cwp)
-	r.Logger.Infof("Serving %s as /client-web/", cwp)
+	slog.Infof("Serving %s as /client-web/", cwp)
 	r.GET("/", func(c echo.Context) error {
 		return c.Redirect(http.StatusTemporaryRedirect, "/client-web/")
 	})
@@ -455,21 +478,21 @@ func mkRouterHTTPS() *routerState {
 		if environ.Developer {
 			avBucketName = "bg-appliance-dev-avatars"
 		} else {
-			r.Logger.Fatalf("Must specify Avatar Storage Bucket B10E_CLHTTPD_AVATAR_BUCKET")
+			slog.Fatalf("Must specify Avatar Storage Bucket B10E_CLHTTPD_AVATAR_BUCKET")
 		}
 	}
 
 	// Setup /auth endpoints
 	gcs, err := storage.NewClient(context.Background())
 	if err != nil {
-		r.Logger.Fatalf("failed to make gcs client: %s", err)
+		slog.Fatalf("failed to make gcs client: %s", err)
 	}
 	avBucket := gcs.Bucket(avBucketName)
 	avBucketAttrs, err := avBucket.Attrs(context.Background())
 	if err != nil {
-		r.Logger.Fatalf("failed to get bucket attrs: %s", err)
+		slog.Fatalf("failed to get bucket attrs: %s", err)
 	}
-	r.Logger.Infof(checkMark+"Setup Avatar Bucket '%s'", avBucketAttrs.Name)
+	slog.Infof(checkMark+"Setup Avatar Bucket '%s'", avBucketAttrs.Name)
 
 	_ = newAuthHandler(r, state.sessionStore, state.applianceDB, avBucket)
 
@@ -487,17 +510,15 @@ func mkRouterHTTPS() *routerState {
 	return &state
 }
 
-func mkRouterHTTP() *echo.Echo {
+func mkRouterHTTP(log *zap.Logger) *echo.Echo {
+	log = log.Named("http")
+
 	r := echo.New()
 	r.Debug = environ.Developer
-	if r.Debug {
-		r.Logger.SetLevel(gommonlog.DEBUG)
-	} else {
-		r.Logger.SetLevel(gommonlog.INFO)
-	}
+	r.Logger = ZapToGommonLog(log)
 	r.HideBanner = true
-	r.Use(middleware.LoggerWithConfig(mkEchoLoggerConfig(r.Logger)))
-	r.Use(mkSecureMW(r))
+	r.Use(mkEchoZapLogger(log.Named("server")))
+	r.Use(mkSecureMW(log))
 	r.Use(middleware.Recover())
 
 	// Redirect HTTP requests to HTTPS, with the exception of health checks,
@@ -542,28 +563,28 @@ func getConfigClientHandle(cuuid string) (*cfgapi.Handle, error) {
 	return configHandle, nil
 }
 
-func processEnv(logger *gommonlog.Logger) {
+func processEnv(logger *zap.SugaredLogger) {
 	if environ.Developer && environ.LoadBalanced {
 		logger.Fatalf("dev mode and LB mode can't be set simultaneously")
 	}
 
 	if environ.Developer {
-		logger.SetLevel(gommonlog.DEBUG)
-		logger.Debugf("environ %+v", environ)
+		daemonutils.SetLogLevel(zapcore.DebugLevel)
+		logger.With(daemonutils.SkipField).Debugf("environ %+v", environ)
 	}
 
 	if environ.HTTPListen == "" {
 		if environ.Developer {
 			environ.HTTPListen = ":9080"
 		} else {
-			environ.HTTPListen = ":80"
+			environ.HTTPListen = defaultHTTPListen
 		}
 	}
 	if environ.HTTPSListen == "" {
 		if environ.Developer {
 			environ.HTTPSListen = ":9443"
 		} else {
-			environ.HTTPSListen = ":443"
+			environ.HTTPSListen = defaultHTTPSListen
 		}
 	}
 
@@ -601,7 +622,7 @@ func processEnv(logger *gommonlog.Logger) {
 	}
 }
 
-func getVaultSecrets(glog *gommonlog.Logger, vc *vault.Client) {
+func getVaultSecrets(glog *zap.SugaredLogger, vc *vault.Client) {
 	mount := environ.VaultKVPath
 	if mount == "" {
 		mount = "secret"
@@ -620,8 +641,12 @@ func getVaultSecrets(glog *gommonlog.Logger, vc *vault.Client) {
 
 func main() {
 	var err error
-	startupLog := gommonlog.New("startup")
-	startupLog.Infof("start")
+
+	flag.Parse()
+	log, slog := daemonutils.SetupLogs()
+
+	startupLog := slog.Named("startup")
+	startupLog.Infof("starting %s", pname)
 	err = envcfg.Unmarshal(&environ)
 	if err != nil {
 		startupLog.Fatalf("Environment Error: %s", err)
@@ -629,7 +654,8 @@ func main() {
 	processEnv(startupLog)
 
 	// First, fetch secrets from Vault, if we can.
-	vaultClient, err = vault.NewClient(nil)
+	vaultClient, err := vault.NewClient(nil)
+	var notifier *daemonutils.FanOut
 	if useVaultForDB || useVaultForKV {
 		if err != nil {
 			startupLog.Fatalf("Vault error: %s", err)
@@ -639,8 +665,9 @@ func main() {
 				if vaultClient.Token() != "" && !environ.Developer {
 					startupLog.Warnf("Vault token found in environment; will override")
 				}
+				hcLog := vaultgcpauth.ZapToHCLog(slog)
 				if notifier, err = vaultgcpauth.VaultAuth(context.Background(),
-					startupLog, vaultClient, environ.VaultAuthPath,
+					hcLog, vaultClient, environ.VaultAuthPath,
 					pname); err != nil {
 					startupLog.Fatalf("Vault login error: %s", err)
 				}
@@ -663,10 +690,10 @@ func main() {
 	}
 
 	if environ.Developer {
-		startupLog.Debugf("secrets: %+v", secrets)
+		startupLog.With(daemonutils.SkipField).Debugf("secrets: %+v", secrets)
 	}
 
-	rsHTTPS := mkRouterHTTPS()
+	rsHTTPS := mkRouterHTTPS(log, vaultClient, notifier)
 	defer rsHTTPS.Fini(context.Background())
 
 	var cfg *tls.Config
@@ -695,7 +722,7 @@ func main() {
 	httpSrv := &http.Server{
 		Addr: environ.HTTPListen,
 	}
-	eHTTP := mkRouterHTTP()
+	eHTTP := mkRouterHTTP(log)
 
 	go func() {
 		if err := eHTTP.StartServer(httpSrv); err != nil && err != http.ErrServerClosed {
@@ -710,9 +737,9 @@ func main() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
 	s := <-sig
-	eHTTP.Logger.Infof("Signal (%v) received, shutting down", s)
+	startupLog.Infof("Signal (%v) received, shutting down", s)
 
 	gracefulShutdown(rsHTTPS.echo)
 	gracefulShutdown(eHTTP)
-	eHTTP.Logger.Infof("All servers shut down, goodbye.")
+	startupLog.Infof("All servers shut down, goodbye.")
 }

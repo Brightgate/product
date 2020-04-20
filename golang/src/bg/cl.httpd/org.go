@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -36,21 +36,21 @@ func (o *orgHandler) getOrgs(c echo.Context) error {
 
 	accountUUID, ok := c.Get("account_uuid").(uuid.UUID)
 	if !ok || accountUUID == uuid.Nil {
-		return echo.NewHTTPError(http.StatusUnauthorized)
+		return newHTTPError(http.StatusUnauthorized)
 	}
 	acct, err := o.db.AccountByUUID(ctx, accountUUID)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError)
+		return newHTTPError(http.StatusInternalServerError)
 	}
 	rels, err := o.db.OrgOrgRelationshipsByOrg(ctx, acct.OrganizationUUID)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError)
+		return newHTTPError(http.StatusInternalServerError)
 	}
 	response := make([]orgsResponse, len(rels))
 	for idx, rel := range rels {
 		tgtOrg, err := o.db.OrganizationByUUID(ctx, rel.TargetOrganizationUUID)
 		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError)
+			return newHTTPError(http.StatusInternalServerError)
 		}
 		response[idx] = orgsResponse{
 			OrganizationUUID: tgtOrg.UUID,
@@ -65,12 +65,12 @@ func (o *orgHandler) getOrgAccounts(c echo.Context) error {
 	ctx := c.Request().Context()
 	accountUUID, ok := c.Get("account_uuid").(uuid.UUID)
 	if !ok || accountUUID == uuid.Nil {
-		return echo.NewHTTPError(http.StatusUnauthorized)
+		return newHTTPError(http.StatusUnauthorized)
 	}
 
 	orgUUID, err := uuid.FromString(c.Param("org_uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 
 	mr := c.Get("matched_roles").(matchedRoles)
@@ -79,14 +79,14 @@ func (o *orgHandler) getOrgAccounts(c echo.Context) error {
 		// Get session's own AccountInfo
 		acct, err := o.db.AccountInfoByUUID(ctx, accountUUID)
 		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err)
+			return newHTTPError(http.StatusInternalServerError, err)
 		}
 		accounts = append(accounts, *acct)
 	} else if mr["admin"] {
 		var err error
 		accounts, err = o.db.AccountInfosByOrganization(ctx, orgUUID)
 		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err)
+			return newHTTPError(http.StatusInternalServerError, err)
 		}
 	}
 	if accounts == nil {
@@ -105,17 +105,17 @@ func (o *orgHandler) mkOrgMiddleware(allowedRoles []string) echo.MiddlewareFunc 
 			ctx := c.Request().Context()
 			accountUUID, ok := c.Get("account_uuid").(uuid.UUID)
 			if !ok || accountUUID == uuid.Nil {
-				return echo.NewHTTPError(http.StatusUnauthorized)
+				return newHTTPError(http.StatusUnauthorized)
 			}
 
 			orgUUID, err := uuid.FromString(c.Param("org_uuid"))
 			if err != nil {
-				return echo.NewHTTPError(http.StatusBadRequest)
+				return newHTTPError(http.StatusBadRequest)
 			}
 			aoRoles, err := o.db.AccountOrgRolesByAccountTarget(ctx,
 				accountUUID, orgUUID)
 			if err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError)
+				return newHTTPError(http.StatusInternalServerError)
 			}
 			matches := make(matchedRoles)
 			for _, aor := range aoRoles {
@@ -133,7 +133,7 @@ func (o *orgHandler) mkOrgMiddleware(allowedRoles []string) echo.MiddlewareFunc 
 			}
 			c.Logger().Debugf("Unauthorized: %s org=%v, acc=%v, ur=%v, ar=%v",
 				c.Path(), orgUUID, accountUUID, aoRoles, allowedRoles)
-			return echo.NewHTTPError(http.StatusUnauthorized)
+			return newHTTPError(http.StatusUnauthorized)
 		}
 	}
 }

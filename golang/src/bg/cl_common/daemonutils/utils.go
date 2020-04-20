@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -52,6 +52,10 @@ var (
 	globalLevel      zap.AtomicLevel
 	logConfig        LogConfig
 	clrootFlag       = flag.String("root", "", "Root of cloud installation")
+
+	// SkipField is a zap field that can be used to prevent a log entry from
+	// being submitted to Stackdriver.
+	SkipField = gcloudzap.SkipField
 )
 
 func (l *logType) String() string {
@@ -257,8 +261,8 @@ func SetupLogs(opts ...zap.Option) (*zap.Logger, *zap.SugaredLogger) {
 		panic(fmt.Sprintf("can't zap: %v", err))
 	}
 
-	// Make sure the program name is available in the log payload
-	log = log.Named(pname)
+	// Redirect the Go standard logger.
+	_ = zap.RedirectStdLog(log)
 
 	log.Debug(fmt.Sprintf("Zap %s Logging at %s", lt, config.Level))
 	globalLog = log
@@ -278,6 +282,11 @@ func ResetupLogs() (*zap.Logger, *zap.SugaredLogger) {
 // GetLogs returns the current global pair of loggers.
 func GetLogs() (*zap.Logger, *zap.SugaredLogger) {
 	return globalLog, globalSugaredLog
+}
+
+// SetLogLevel sets the level of the global loggers and all their descendants.
+func SetLogLevel(l zapcore.Level) {
+	globalLevel.SetLevel(l)
 }
 
 // EndpointLogger builds a zap logger customized for use by an endpoint.  It

@@ -121,12 +121,6 @@ required = ["google.golang.org/api"]
   name = "cloud.google.com/go"
   version = "~0.52.0"
 
-# Override is more powerful than constraint; github.com/dhduvall/gcloudzap
-# sets cloud.google.com/go ~ 0.32.0, and we want to go newer.
-[[override]]
-  name = "cloud.google.com/go"
-  version = "~0.52.0"
-
 [[constraint]]
   name = "google.golang.org/api"
   version = "~0.17.0"
@@ -164,8 +158,8 @@ required = ["google.golang.org/api"]
   name = "github.com/tatsushid/go-prettytable"
 
 [[constraint]]
-  branch = "master"
   name = "github.com/dhduvall/gcloudzap"
+  version = "0.3.1"
 
 [[constraint]]
   name = "github.com/jmoiron/sqlx"

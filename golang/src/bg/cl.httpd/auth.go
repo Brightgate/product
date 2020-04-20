@@ -835,7 +835,7 @@ func (a *authHandler) getProviderCallback(c echo.Context) error {
 	// that case.
 	session, err := a.sessionStore.Get(c.Request(), "bg_login")
 	if err != nil && session == nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
+		return newHTTPError(http.StatusInternalServerError, err)
 	}
 	session.Values["email"] = loginInfo.Account.Email
 	session.Values["userid"] = sessionUserID
@@ -845,7 +845,7 @@ func (a *authHandler) getProviderCallback(c echo.Context) error {
 	session.Values["primary_org_roles"] = loginInfo.PrimaryOrgRoles
 
 	if err = session.Save(c.Request(), c.Response()); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
+		return newHTTPError(http.StatusInternalServerError, err)
 	}
 	return c.Redirect(http.StatusTemporaryRedirect, "/client-web/")
 }
@@ -880,7 +880,7 @@ func (a *authHandler) getUserID(c echo.Context) error {
 	ctx := c.Request().Context()
 	session, err := a.sessionStore.Get(c.Request(), "bg_login")
 	if err != nil {
-		return echo.NewHTTPError(http.StatusUnauthorized)
+		return newHTTPError(http.StatusUnauthorized)
 	}
 
 	flashes := session.Flashes("useridError")
@@ -911,11 +911,11 @@ func (a *authHandler) getUserID(c echo.Context) error {
 
 	account, err := a.db.AccountByUUID(ctx, accountUUID)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
+		return newHTTPError(http.StatusInternalServerError, err)
 	}
 	person, err := a.db.PersonByUUID(ctx, account.PersonUUID)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
+		return newHTTPError(http.StatusInternalServerError, err)
 	}
 	resp := userIDResponse{
 		Username:    account.Email,
@@ -927,7 +927,7 @@ func (a *authHandler) getUserID(c echo.Context) error {
 	if account.OrganizationUUID != appliancedb.NullOrganizationUUID {
 		organization, err := a.db.OrganizationByUUID(ctx, account.OrganizationUUID)
 		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err)
+			return newHTTPError(http.StatusInternalServerError, err)
 		}
 		resp.Organization = organization.Name
 	}
@@ -989,15 +989,15 @@ func (sm *sessionMiddleware) Process(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		session, err := sm.sessionStore.Get(c.Request(), "bg_login")
 		if err != nil {
-			return echo.NewHTTPError(http.StatusUnauthorized)
+			return newHTTPError(http.StatusUnauthorized)
 		}
 		au, ok := session.Values["account_uuid"].(string)
 		if !ok {
-			return echo.NewHTTPError(http.StatusUnauthorized)
+			return newHTTPError(http.StatusUnauthorized)
 		}
 		accountUUID, err := uuid.FromString(au)
 		if err != nil {
-			return echo.NewHTTPError(http.StatusUnauthorized)
+			return newHTTPError(http.StatusUnauthorized)
 		}
 		c.Set("account_uuid", accountUUID)
 		return next(c)

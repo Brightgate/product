@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+// COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -67,16 +67,16 @@ var pwRegime = passwordgen.HumanPasswordSpec.String()
 func (a *accountHandler) adminOrSelf(c echo.Context) error {
 	sessionAccountUUID, ok := c.Get("account_uuid").(uuid.UUID)
 	if !ok || sessionAccountUUID == uuid.Nil {
-		return echo.NewHTTPError(http.StatusUnauthorized)
+		return newHTTPError(http.StatusUnauthorized)
 	}
 	accountUUID, err := uuid.FromString(c.Param("acct_uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	roles := c.Get("matched_roles").(matchedRoles)
 	// Only admins may look at other account's information
 	if !roles["admin"] && accountUUID != sessionAccountUUID {
-		return echo.NewHTTPError(http.StatusUnauthorized)
+		return newHTTPError(http.StatusUnauthorized)
 	}
 	return nil
 }
@@ -91,24 +91,24 @@ func (a *accountHandler) getAccountAvatar(c echo.Context) error {
 	targetUUIDParam := c.Param("acct_uuid")
 	targetUUID, err := uuid.FromString(targetUUIDParam)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 
 	account, err := a.db.AccountByUUID(ctx, targetUUID)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusNotFound, err)
+		return newHTTPError(http.StatusNotFound, err)
 	}
 	c.Logger().Debugf("account is %v", account)
 	aHash := hex.EncodeToString(account.AvatarHash)
 	if len(account.AvatarHash) == 0 {
-		return echo.NewHTTPError(http.StatusNotFound)
+		return newHTTPError(http.StatusNotFound)
 	}
 	c.Response().Header().Set("Cache-Control", "max-age=3600")
 	c.Response().Header().Set("ETag", aHash)
 
 	for _, ifNoneMatchVal := range c.Request().Header["If-None-Match"] {
 		if ifNoneMatchVal == aHash {
-			return echo.NewHTTPError(http.StatusNotModified)
+			return newHTTPError(http.StatusNotModified)
 		}
 	}
 
@@ -117,16 +117,16 @@ func (a *accountHandler) getAccountAvatar(c echo.Context) error {
 	oa, err := obj.Attrs(ctx)
 	if err != nil {
 		if err == storage.ErrObjectNotExist {
-			return echo.NewHTTPError(http.StatusNotFound)
+			return newHTTPError(http.StatusNotFound)
 		}
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
+		return newHTTPError(http.StatusInternalServerError, err)
 	}
 	reader, err := obj.NewReader(ctx)
 	if err != nil {
 		if err == storage.ErrObjectNotExist {
-			return echo.NewHTTPError(http.StatusNotFound)
+			return newHTTPError(http.StatusNotFound)
 		}
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
+		return newHTTPError(http.StatusInternalServerError, err)
 	}
 	defer reader.Close()
 
@@ -146,28 +146,28 @@ func (a *accountHandler) getAccountPasswordGen(c echo.Context) error {
 	ctx := c.Request().Context()
 	sessionAccountUUID, ok := c.Get("account_uuid").(uuid.UUID)
 	if !ok || sessionAccountUUID == uuid.Nil {
-		return echo.NewHTTPError(http.StatusUnauthorized)
+		return newHTTPError(http.StatusUnauthorized)
 	}
 
 	account, err := a.db.AccountByUUID(ctx, sessionAccountUUID)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
+		return newHTTPError(http.StatusInternalServerError, err)
 	}
 
 	pw, err := passwordgen.HumanPassword(passwordgen.HumanPasswordSpec)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
+		return newHTTPError(http.StatusInternalServerError, err)
 	}
 	// In the session, we store the bcrypt and mschapv2 versions of the
 	// most recently generated password.  When we get the provisioning
 	// request, we can see if the values match up.
 	pwHash, err := cfgapi.HashUserPassword(pw)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
+		return newHTTPError(http.StatusInternalServerError, err)
 	}
 	mschapHash, err := cfgapi.HashMSCHAPv2Password(pw)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
+		return newHTTPError(http.StatusInternalServerError, err)
 	}
 
 	// The verifier is used to validate that the value saved in the
@@ -176,19 +176,19 @@ func (a *accountHandler) getAccountPasswordGen(c echo.Context) error {
 	// is provisioned.
 	verifier, err := rand.Int(rand.Reader, big.NewInt(math.MaxUint32))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
+		return newHTTPError(http.StatusInternalServerError, err)
 	}
 
 	session, err := a.sessionStore.Get(c.Request(), "bg_login")
 	if err != nil {
-		return echo.NewHTTPError(http.StatusUnauthorized)
+		return newHTTPError(http.StatusUnauthorized)
 	}
 	session.Values["account-pw-user"] = pwHash
 	session.Values["account-pw-mschapv2"] = mschapHash
 	session.Values["account-pw-verifier"] = verifier.String()
 	err = session.Save(c.Request(), c.Response())
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
+		return newHTTPError(http.StatusInternalServerError, err)
 	}
 	c.Logger().Infof("saved crypted pw %s,%s", pwHash, mschapHash)
 	return c.JSON(http.StatusOK, &accountSelfProvisionRequest{
@@ -209,45 +209,45 @@ func (a *accountHandler) postAccountSelfProvision(c echo.Context) error {
 	ctx := c.Request().Context()
 	sessionAccountUUID, ok := c.Get("account_uuid").(uuid.UUID)
 	if !ok || sessionAccountUUID == uuid.Nil {
-		return echo.NewHTTPError(http.StatusUnauthorized)
+		return newHTTPError(http.StatusUnauthorized)
 	}
 	targetUUIDParam := c.Param("acct_uuid")
 	targetUUID, err := uuid.FromString(targetUUIDParam)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	// Only ever allowed for yourself
 	if sessionAccountUUID != targetUUID {
-		return echo.NewHTTPError(http.StatusUnauthorized)
+		return newHTTPError(http.StatusUnauthorized)
 	}
 
 	session, err := a.sessionStore.Get(c.Request(), "bg_login")
 	if err != nil {
-		return echo.NewHTTPError(http.StatusUnauthorized)
+		return newHTTPError(http.StatusUnauthorized)
 	}
 	userpwSessionVal, ok := session.Values["account-pw-user"].(string)
 	if !ok {
 		c.Logger().Warnf("Didn't find account-pw-user in session")
-		return echo.NewHTTPError(http.StatusBadRequest, err)
+		return newHTTPError(http.StatusBadRequest, err)
 	}
 	mschapSessionVal, ok := session.Values["account-pw-mschapv2"].(string)
 	if !ok {
 		c.Logger().Warnf("Didn't find account-pw-mschapv2 in session")
-		return echo.NewHTTPError(http.StatusBadRequest, err)
+		return newHTTPError(http.StatusBadRequest, err)
 	}
 	verifierSessionVal, ok := session.Values["account-pw-verifier"].(string)
 	if !ok {
 		c.Logger().Warnf("Didn't find account-pw-verifier in session")
-		return echo.NewHTTPError(http.StatusBadRequest, err)
+		return newHTTPError(http.StatusBadRequest, err)
 	}
 
 	var provReq accountSelfProvisionRequest
 	if err := c.Bind(&provReq); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, err)
+		return newHTTPError(http.StatusBadRequest, err)
 	}
 	if provReq.Verifier == "" || provReq.Verifier != verifierSessionVal {
 		c.Logger().Warnf("provInfo.Verifier %s != verifierSessionVal %s", provReq.Verifier, verifierSessionVal)
-		return echo.NewHTTPError(http.StatusBadRequest, "stale request, verifier did not match")
+		return newHTTPError(http.StatusBadRequest, "stale request, verifier did not match")
 	}
 
 	// We've now got confirmation that the user wants to provision this
@@ -264,13 +264,13 @@ func (a *accountHandler) postAccountSelfProvision(c echo.Context) error {
 	}
 	err = a.db.UpsertAccountSecrets(ctx, accountSecrets)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
+		return newHTTPError(http.StatusInternalServerError, err)
 	}
 
 	err = registry.SyncAccountSelfProv(ctx, a.db, a.getConfigHandle, sessionAccountUUID, nil)
 	if err != nil {
 		c.Logger().Errorf("registry.SyncAccountSelfProv failed: %v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
+		return newHTTPError(http.StatusInternalServerError, err)
 	}
 
 	return c.Redirect(http.StatusFound, "/client-web")
@@ -283,13 +283,13 @@ func (a *accountHandler) postAccountDeprovision(c echo.Context) error {
 
 	accountUUID, err := uuid.FromString(c.Param("acct_uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 
 	err = registry.AccountDeprovision(ctx, a.db, a.getConfigHandle, accountUUID)
 	if err != nil {
 		c.Logger().Errorf("registry.AccountDeprovision failed: %v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
+		return newHTTPError(http.StatusInternalServerError, err)
 	}
 	return nil
 }
@@ -307,12 +307,12 @@ func (a *accountHandler) getAccountSelfProvision(c echo.Context) error {
 	}
 	sessionAccountUUID, ok := c.Get("account_uuid").(uuid.UUID)
 	if !ok || sessionAccountUUID == uuid.Nil {
-		return echo.NewHTTPError(http.StatusUnauthorized)
+		return newHTTPError(http.StatusUnauthorized)
 	}
 
 	accountUUID, err := uuid.FromString(c.Param("acct_uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	account, err := a.db.AccountByUUID(ctx, accountUUID)
 	if err != nil {
@@ -322,7 +322,7 @@ func (a *accountHandler) getAccountSelfProvision(c echo.Context) error {
 	roles := c.Get("matched_roles").(matchedRoles)
 	// Only admins may look at other account's information
 	if !roles["admin"] && accountUUID != sessionAccountUUID {
-		return echo.NewHTTPError(http.StatusUnauthorized)
+		return newHTTPError(http.StatusUnauthorized)
 	}
 
 	resp := &accountSelfProvisionResponse{
@@ -347,11 +347,11 @@ func (a *accountHandler) deleteAccount(c echo.Context) error {
 	ctx := c.Request().Context()
 	accountUUID, err := uuid.FromString(c.Param("acct_uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	err = registry.DeleteAccountInformation(ctx, a.db, a.getConfigHandle, accountUUID)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError)
+		return newHTTPError(http.StatusInternalServerError)
 	}
 	return c.NoContent(http.StatusOK)
 }
@@ -366,12 +366,12 @@ func (a *accountHandler) getAccountRoles(c echo.Context) error {
 	}
 	accountUUID, err := uuid.FromString(c.Param("acct_uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	aoRoles, err := a.db.AccountOrgRolesByAccount(ctx, accountUUID)
 	if err != nil {
 		c.Logger().Errorf("failed getting AccountOrgRolesByAccount: %v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError)
+		return newHTTPError(http.StatusInternalServerError)
 	}
 	resp := make(accountRolesResponse, len(aoRoles))
 	for i, aor := range aoRoles {
@@ -392,22 +392,22 @@ func (a *accountHandler) postAccountRoles(c echo.Context) error {
 
 	tgtAcctUUID, err := uuid.FromString(c.Param("acct_uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	tgtAcct, err := a.db.AccountByUUID(ctx, tgtAcctUUID)
 	if err != nil {
 		if _, ok := err.(appliancedb.NotFoundError); ok {
-			return echo.NewHTTPError(http.StatusNotFound)
+			return newHTTPError(http.StatusNotFound)
 		}
-		return echo.NewHTTPError(http.StatusInternalServerError)
+		return newHTTPError(http.StatusInternalServerError)
 	}
 	tgtRole := c.Param("tgt_role")
 	if !appliancedb.ValidRole(tgtRole) {
-		return echo.NewHTTPError(http.StatusNotFound)
+		return newHTTPError(http.StatusNotFound)
 	}
 	tgtOrgUUID, err := uuid.FromString(c.Param("tgt_org_uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusNotFound)
+		return newHTTPError(http.StatusNotFound)
 	}
 
 	type roleValue struct {
@@ -415,7 +415,7 @@ func (a *accountHandler) postAccountRoles(c echo.Context) error {
 	}
 	var rv roleValue
 	if err := c.Bind(&rv); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, err)
+		return newHTTPError(http.StatusBadRequest, err)
 	}
 	relationship := "self"
 	// Until we have more than one kind of relationship, we can infer this
@@ -444,9 +444,9 @@ func (a *accountHandler) postAccountRoles(c echo.Context) error {
 		if ok && pqe.Code.Name() == "foreign_key_violation" {
 			c.Logger().Errorf("Couldn't %s role %v; the role or org/org relationship may not exist.\nPQ Message: %s\nPQ Detail: %s",
 				cmd, aor, pqe.Message, pqe.Detail)
-			return echo.NewHTTPError(http.StatusBadRequest, err)
+			return newHTTPError(http.StatusBadRequest, err)
 		}
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
+		return newHTTPError(http.StatusInternalServerError, err)
 	}
 
 	return nil
@@ -462,22 +462,22 @@ func (a *accountHandler) mkAccountMiddleware(allowedRoles []string) echo.Middlew
 			ctx := c.Request().Context()
 			sessionAccountUUID, ok := c.Get("account_uuid").(uuid.UUID)
 			if !ok || sessionAccountUUID == uuid.Nil {
-				return echo.NewHTTPError(http.StatusUnauthorized)
+				return newHTTPError(http.StatusUnauthorized)
 			}
 
 			targetUUIDParam := c.Param("acct_uuid")
 			targetUUID, err := uuid.FromString(targetUUIDParam)
 			if err != nil {
-				return echo.NewHTTPError(http.StatusBadRequest)
+				return newHTTPError(http.StatusBadRequest)
 			}
 
 			tgtAcct, err := a.db.AccountByUUID(ctx, targetUUID)
 			if err != nil {
 				if _, ok := err.(appliancedb.NotFoundError); ok {
-					return echo.NewHTTPError(http.StatusNotFound)
+					return newHTTPError(http.StatusNotFound)
 				}
 				c.Logger().Errorf("failed to get account: %v", err)
-				return echo.NewHTTPError(http.StatusInternalServerError)
+				return newHTTPError(http.StatusInternalServerError)
 			}
 			// See what the session's account is allowed to do to the target's
 			// org.
@@ -485,7 +485,7 @@ func (a *accountHandler) mkAccountMiddleware(allowedRoles []string) echo.Middlew
 				sessionAccountUUID, tgtAcct.OrganizationUUID)
 			if err != nil {
 				c.Logger().Errorf("failed to get account roles: %v", err)
-				return echo.NewHTTPError(http.StatusInternalServerError, err)
+				return newHTTPError(http.StatusInternalServerError, err)
 			}
 			matches := make(matchedRoles)
 			for _, aor := range aoRoles {
@@ -503,7 +503,7 @@ func (a *accountHandler) mkAccountMiddleware(allowedRoles []string) echo.Middlew
 			}
 			c.Logger().Debugf("Unauthorized: %s acct=%v, acc=%v, ur=%v, ar=%v",
 				c.Path(), sessionAccountUUID, targetUUID, aoRoles, allowedRoles)
-			return echo.NewHTTPError(http.StatusUnauthorized)
+			return newHTTPError(http.StatusUnauthorized)
 		}
 	}
 }

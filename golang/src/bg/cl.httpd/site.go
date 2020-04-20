@@ -44,7 +44,7 @@ func executePropChange(c echo.Context, hdl *cfgapi.Handle, ops []cfgapi.Property
 		timeoutStr := timeoutHdr[0]
 		timeout, err = strconv.Atoi(timeoutStr)
 		if err != nil || timeout < 5000 {
-			return echo.NewHTTPError(http.StatusBadRequest, "bad X-Timeout")
+			return newHTTPError(http.StatusBadRequest, "bad X-Timeout")
 		}
 	}
 
@@ -69,7 +69,7 @@ func executePropChange(c echo.Context, hdl *cfgapi.Handle, ops []cfgapi.Property
 			return c.NoContent(http.StatusAccepted)
 		}
 		c.Logger().Errorf("request %v failed: %v", ops, err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "Execution failed on appliance")
+		return newHTTPError(http.StatusInternalServerError, "Execution failed on appliance")
 	}
 	return nil
 }
@@ -92,13 +92,13 @@ func (a *siteHandler) getSites(c echo.Context) error {
 	ctx := c.Request().Context()
 	accountUUID, ok := c.Get("account_uuid").(uuid.UUID)
 	if !ok || accountUUID == uuid.Nil {
-		return echo.NewHTTPError(http.StatusUnauthorized)
+		return newHTTPError(http.StatusUnauthorized)
 	}
 
 	sites, err := a.db.CustomerSitesByAccount(ctx, accountUUID)
 	if err != nil {
 		c.Logger().Errorf("Failed to get Sites by Account: %+v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
+		return newHTTPError(http.StatusInternalServerError, err)
 	}
 
 	apiSites := make([]siteResponse, len(sites))
@@ -120,31 +120,31 @@ func (a *siteHandler) getSitesUUID(c echo.Context) error {
 	ctx := c.Request().Context()
 	accountUUID, ok := c.Get("account_uuid").(uuid.UUID)
 	if !ok || accountUUID == uuid.Nil {
-		return echo.NewHTTPError(http.StatusUnauthorized)
+		return newHTTPError(http.StatusUnauthorized)
 	}
 	// Parsing UUID from string input
 	u, err := uuid.FromString(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	site, err := a.db.CustomerSiteByUUID(ctx, u)
 	if err != nil {
 		if _, ok := err.(appliancedb.NotFoundError); ok {
-			return echo.NewHTTPError(http.StatusNotFound, "No such site")
+			return newHTTPError(http.StatusNotFound, "No such site")
 		}
-		return echo.NewHTTPError(http.StatusInternalServerError)
+		return newHTTPError(http.StatusInternalServerError)
 	}
 	aoRoles, err := a.db.AccountOrgRolesByAccountTarget(ctx, accountUUID,
 		site.OrganizationUUID)
 	if err != nil {
 		c.Logger().Errorf("Failed to get roles: %+v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
+		return newHTTPError(http.StatusInternalServerError, err)
 	}
 	// Zero roles returned means the user has tried to access a site
 	// for which they are not authorized; this could be 404, but for
 	// now we match the response the middleware gives.
 	if len(aoRoles) == 0 {
-		return echo.NewHTTPError(http.StatusUnauthorized)
+		return newHTTPError(http.StatusUnauthorized)
 	}
 	resp := siteResponse{
 		UUID:             site.UUID,
@@ -158,14 +158,14 @@ func (a *siteHandler) getSitesUUID(c echo.Context) error {
 func (a *siteHandler) getConfig(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	defer hdl.Close()
 
 	pnode, err := hdl.GetProps(c.QueryString())
 	if err != nil {
 		// XXX improve?
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 
 	return c.JSON(http.StatusOK, pnode.Value)
@@ -175,14 +175,14 @@ func (a *siteHandler) getConfig(c echo.Context) error {
 func (a *siteHandler) getConfigTree(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	defer hdl.Close()
 
 	pnode, err := hdl.GetProps(c.QueryString())
 	if err != nil {
 		// XXX improve?
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 
 	return c.JSON(http.StatusOK, pnode)
@@ -192,13 +192,13 @@ func (a *siteHandler) getConfigTree(c echo.Context) error {
 func (a *siteHandler) getFeatures(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	defer hdl.Close()
 
 	features, err := hdl.GetFeatures()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError)
+		return newHTTPError(http.StatusInternalServerError)
 	}
 	return c.JSON(http.StatusOK, features)
 }
@@ -207,17 +207,17 @@ func (a *siteHandler) getFeatures(c echo.Context) error {
 func (a *siteHandler) postConfig(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	defer hdl.Close()
 
 	values, err := c.FormParams()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 
 	if len(values) == 0 {
-		return echo.NewHTTPError(
+		return newHTTPError(
 			http.StatusBadRequest,
 			"Empty request")
 	}
@@ -225,7 +225,7 @@ func (a *siteHandler) postConfig(c echo.Context) error {
 	var ops []cfgapi.PropertyOp
 	for param, paramValues := range values {
 		if len(paramValues) != 1 {
-			return echo.NewHTTPError(
+			return newHTTPError(
 				http.StatusBadRequest,
 				"Properties may only have one value")
 		}
@@ -239,7 +239,7 @@ func (a *siteHandler) postConfig(c echo.Context) error {
 	_, err = hdl.Execute(c.Request().Context(), ops).Wait(c.Request().Context())
 	if err != nil {
 		c.Logger().Errorf("failed to set properties: %v", err)
-		return echo.NewHTTPError(
+		return newHTTPError(
 			http.StatusBadRequest,
 			"failed to set properties")
 	}
@@ -350,7 +350,7 @@ func buildDeviceResponse(c echo.Context, hdl *cfgapi.Handle,
 func (a *siteHandler) getDevices(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	defer hdl.Close()
 
@@ -375,7 +375,7 @@ type apiPostDevice struct {
 func (a *siteHandler) postDevice(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	defer hdl.Close()
 
@@ -383,27 +383,27 @@ func (a *siteHandler) postDevice(c echo.Context) error {
 
 	var input, empty apiPostDevice
 	if err := c.Bind(&input); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "bad device")
+		return newHTTPError(http.StatusBadRequest, "bad device")
 	}
 	if input == empty {
-		return echo.NewHTTPError(http.StatusBadRequest, "must specify a field to modify")
+		return newHTTPError(http.StatusBadRequest, "must specify a field to modify")
 	}
 
 	if input.FriendlyName != nil {
 		features, err := hdl.GetFeatures()
 		if err != nil {
 			err = errors.Wrap(err, "could not get features")
-			return echo.NewHTTPError(http.StatusInternalServerError, err)
+			return newHTTPError(http.StatusInternalServerError, err)
 		}
 		if !features[cfgapi.FeatureClientFriendlyName] {
-			return echo.NewHTTPError(http.StatusBadRequest,
+			return newHTTPError(http.StatusBadRequest,
 				"friendly names not supported for this client")
 		}
 		// allow '', it means "return to the default"
 		if *input.FriendlyName != "" {
 			dnsName := network.GenerateDNSName(*input.FriendlyName)
 			if dnsName == "" {
-				return echo.NewHTTPError(http.StatusBadRequest,
+				return newHTTPError(http.StatusBadRequest,
 					"invalid name; must contain some alphanumeric characters")
 			}
 		}
@@ -471,7 +471,7 @@ func (a *siteHandler) postEnrollGuest(c echo.Context) error {
 	var err error
 
 	if a.twilio == nil {
-		return echo.NewHTTPError(http.StatusServiceUnavailable, "no twilio client configured")
+		return newHTTPError(http.StatusServiceUnavailable, "no twilio client configured")
 	}
 
 	accountUUID := c.Get("account_uuid").(uuid.UUID)
@@ -479,31 +479,31 @@ func (a *siteHandler) postEnrollGuest(c echo.Context) error {
 
 	var gr siteEnrollGuestRequest
 	if err := c.Bind(&gr); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "bad guest info")
+		return newHTTPError(http.StatusBadRequest, "bad guest info")
 	}
 
 	config, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	defer config.Close()
 
 	vaps := config.GetVirtualAPs()
 	guestVAP, ok := vaps["guest"]
 	if !ok {
-		return echo.NewHTTPError(http.StatusForbidden, "no guest vap")
+		return newHTTPError(http.StatusForbidden, "no guest vap")
 	}
 	if len(guestVAP.Rings) == 0 {
-		return echo.NewHTTPError(http.StatusForbidden, "guest vap not enabled")
+		return newHTTPError(http.StatusForbidden, "guest vap not enabled")
 	}
 
-	c.Logger().Infof("Guest Entrollment by %v for %v at site %v network %s",
+	c.Logger().Infof("Guest Enrollment by %v for %v at site %v network %s",
 		accountUUID, gr, siteUUID, guestVAP.SSID)
 	if gr.Kind != "psk" {
-		return echo.NewHTTPError(http.StatusBadRequest, "missing kind={psk}")
+		return newHTTPError(http.StatusBadRequest, "missing kind={psk}")
 	}
 	if gr.PhoneNumber == "" {
-		return echo.NewHTTPError(http.StatusBadRequest, "missing phoneNumber")
+		return newHTTPError(http.StatusBadRequest, "missing phoneNumber")
 	}
 
 	// XXX need to solve phone region eventually
@@ -527,7 +527,7 @@ func (a *siteHandler) postEnrollGuest(c echo.Context) error {
 		response, err = a.sendOneSMS(from, formattedTo, message)
 		if err != nil {
 			c.Logger().Warnf("Enroll Guest Handler: twilio err='%v'\n", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, "Twilio Error")
+			return newHTTPError(http.StatusInternalServerError, "Twilio Error")
 		}
 		// if not sent then give up sending more
 		if !response.SMSDelivered {
@@ -546,13 +546,13 @@ type siteHealth struct {
 func (a *siteHandler) getHealth(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	defer hdl.Close()
 
 	siteUUID, err := uuid.FromString(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "bad site uuid")
+		return newHTTPError(http.StatusBadRequest, "bad site uuid")
 	}
 
 	ctx := c.Request().Context()
@@ -582,7 +582,7 @@ func (a *siteHandler) getHealth(c echo.Context) error {
 func (a *siteHandler) getNetworkDNS(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	defer hdl.Close()
 	dns := hdl.GetDNSInfo()
@@ -593,7 +593,7 @@ func (a *siteHandler) getNetworkDNS(c echo.Context) error {
 func (a *siteHandler) getNetworkVAP(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	defer hdl.Close()
 
@@ -610,7 +610,7 @@ func (a *siteHandler) getNetworkVAP(c echo.Context) error {
 func (a *siteHandler) getNetworkVAPName(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	defer hdl.Close()
 
@@ -623,7 +623,7 @@ func (a *siteHandler) getNetworkVAPName(c echo.Context) error {
 		vap.Passphrase = ""
 	}
 	if !ok {
-		return echo.NewHTTPError(http.StatusNotFound)
+		return newHTTPError(http.StatusNotFound)
 	}
 	return c.JSON(http.StatusOK, vap)
 }
@@ -638,18 +638,18 @@ type apiVAPUpdate struct {
 func (a *siteHandler) postNetworkVAPName(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	defer hdl.Close()
 
 	var av apiVAPUpdate
 	if err := c.Bind(&av); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "bad vap")
+		return newHTTPError(http.StatusBadRequest, "bad vap")
 	}
 	vaps := hdl.GetVirtualAPs()
 	vap, ok := vaps[c.Param("vapname")]
 	if !ok {
-		return echo.NewHTTPError(http.StatusNotFound)
+		return newHTTPError(http.StatusNotFound)
 	}
 	var ops []cfgapi.PropertyOp
 	if av.SSID != "" && vap.SSID != av.SSID {
@@ -677,7 +677,7 @@ func (a *siteHandler) postNetworkVAPName(c echo.Context) error {
 func (a *siteHandler) getNetworkWan(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	defer hdl.Close()
 
@@ -772,14 +772,14 @@ func (a *siteHandler) getNodes(c echo.Context) error {
 	ctx := c.Request().Context()
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	defer hdl.Close()
 
 	result := make([]apiNodeInfo, 0)
 	nodes, err := hdl.GetNodes()
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
+		return newHTTPError(http.StatusInternalServerError, err)
 	}
 	for _, node := range nodes {
 		ni := apiNodeInfo{
@@ -859,7 +859,7 @@ type apiPostNode struct {
 func (a *siteHandler) postNode(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	defer hdl.Close()
 
@@ -867,7 +867,7 @@ func (a *siteHandler) postNode(c echo.Context) error {
 
 	var input apiPostNode
 	if err := c.Bind(&input); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 
 	ops := []cfgapi.PropertyOp{
@@ -896,31 +896,31 @@ type apiPostNodePort struct {
 func (a *siteHandler) postNodePort(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	defer hdl.Close()
 
 	nodeID := c.Param("nodeid")
 	if len(nodeID) == 0 {
-		return echo.NewHTTPError(http.StatusBadRequest, "nodeid")
+		return newHTTPError(http.StatusBadRequest, "nodeid")
 	}
 	portID := c.Param("portid")
 	if len(portID) == 0 {
-		return echo.NewHTTPError(http.StatusBadRequest, "portid")
+		return newHTTPError(http.StatusBadRequest, "portid")
 	}
 	var input apiPostNodePort
 	if err := c.Bind(&input); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "input binding")
+		return newHTTPError(http.StatusBadRequest, "input binding")
 	}
 	nic, err := hdl.GetNic(nodeID, portID)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "nic")
+		return newHTTPError(http.StatusBadRequest, "nic")
 	}
 	if input.Ring != nil && nic.Kind != "wired" {
-		return echo.NewHTTPError(http.StatusBadRequest, "ring, wired")
+		return newHTTPError(http.StatusBadRequest, "ring, wired")
 	}
 	if input.Channel != nil && (nic.Kind != "wireless" || nic.WifiInfo == nil) {
-		return echo.NewHTTPError(http.StatusBadRequest, "chan, wireless")
+		return newHTTPError(http.StatusBadRequest, "chan, wireless")
 	}
 
 	var ops []cfgapi.PropertyOp
@@ -929,10 +929,10 @@ func (a *siteHandler) postNodePort(c echo.Context) error {
 		// XXX need a better check here; the uplink port could also be
 		// 'internal'; T466.
 		if portID == "wan" || nic.Ring == "wan" {
-			return echo.NewHTTPError(http.StatusForbidden)
+			return newHTTPError(http.StatusForbidden)
 		}
 		if !cfgapi.ValidRings[*input.Ring] {
-			return echo.NewHTTPError(http.StatusBadRequest, "bad ring")
+			return newHTTPError(http.StatusBadRequest, "bad ring")
 		}
 		path := fmt.Sprintf("@/nodes/%s/nics/%s/ring", nodeID, portID)
 		ops = append(ops, []cfgapi.PropertyOp{
@@ -950,7 +950,7 @@ func (a *siteHandler) postNodePort(c echo.Context) error {
 
 	if input.Channel != nil {
 		if !nic.WifiInfo.ValidChannel(*input.Channel) {
-			return echo.NewHTTPError(http.StatusBadRequest, "invalid channel")
+			return newHTTPError(http.StatusBadRequest, "invalid channel")
 		}
 		testPath := fmt.Sprintf("@/nodes/%s/nics/%s", nodeID, portID)
 		path := fmt.Sprintf("@/nodes/%s/nics/%s/cfg_channel", nodeID, portID)
@@ -1013,7 +1013,7 @@ func (a *siteHandler) getUsers(c echo.Context) error {
 
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	defer hdl.Close()
 
@@ -1029,18 +1029,18 @@ func (a *siteHandler) getUserByUUID(c echo.Context) error {
 	// Parsing User UUID from string input
 	ruuid, err := uuid.FromString(c.Param("useruuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "bad user uuid")
+		return newHTTPError(http.StatusBadRequest, "bad user uuid")
 	}
 
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	defer hdl.Close()
 
 	userInfo, err := hdl.GetUserByUUID(ruuid)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusNotFound, "not found")
+		return newHTTPError(http.StatusNotFound, "not found")
 	}
 
 	cu := newAPIUserInfo(userInfo)
@@ -1051,12 +1051,12 @@ func (a *siteHandler) getUserByUUID(c echo.Context) error {
 func (a *siteHandler) postUserByUUID(c echo.Context) error {
 	var au apiUserInfo
 	if err := c.Bind(&au); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "bad user")
+		return newHTTPError(http.StatusBadRequest, "bad user")
 	}
 
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	defer hdl.Close()
 
@@ -1065,7 +1065,7 @@ func (a *siteHandler) postUserByUUID(c echo.Context) error {
 		ui, err = hdl.NewUserInfo(au.UID)
 		if err != nil {
 			c.Logger().Warnf("error making new user: %v %v", au, err)
-			return echo.NewHTTPError(http.StatusBadRequest,
+			return newHTTPError(http.StatusBadRequest,
 				"invalid uid or user exists")
 		}
 	} else {
@@ -1073,11 +1073,11 @@ func (a *siteHandler) postUserByUUID(c echo.Context) error {
 		// Parsing User UUID from string input
 		userUUID, err = uuid.FromString(c.Param("useruuid"))
 		if err != nil {
-			return echo.NewHTTPError(http.StatusBadRequest, "bad uuid")
+			return newHTTPError(http.StatusBadRequest, "bad uuid")
 		}
 		ui, err = hdl.GetUserByUUID(userUUID)
 		if err != nil {
-			return echo.NewHTTPError(http.StatusBadRequest, "invalid or unknown user")
+			return newHTTPError(http.StatusBadRequest, "invalid or unknown user")
 		}
 	}
 	// propagate daUser to UserInfo
@@ -1097,18 +1097,18 @@ func (a *siteHandler) postUserByUUID(c echo.Context) error {
 	if au.SetPassword != nil {
 		extraOps, err = ui.PropOpsFromPassword(*au.SetPassword)
 		if err != nil {
-			return echo.NewHTTPError(http.StatusBadRequest, "failed generate passwords")
+			return newHTTPError(http.StatusBadRequest, "failed generate passwords")
 		}
 	}
 	cmdHdl, err := ui.Update(extraOps...)
 	if err != nil {
 		c.Logger().Errorf("failed setup update for user '%s': %v\n", au.UID, err)
-		return echo.NewHTTPError(http.StatusBadRequest, "failed to save user")
+		return newHTTPError(http.StatusBadRequest, "failed to save user")
 	}
 	_, err = cmdHdl.Wait(c.Request().Context())
 	if err != nil {
 		c.Logger().Errorf("failed update for user '%s': %v\n", au.UID, err)
-		return echo.NewHTTPError(http.StatusBadRequest, "failed to save user")
+		return newHTTPError(http.StatusBadRequest, "failed to save user")
 	}
 
 	// Reget to reflect password, etc. changes from backend
@@ -1125,7 +1125,7 @@ func (a *siteHandler) postUserByUUID(c echo.Context) error {
 func (a *siteHandler) deleteUserByUUID(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	defer hdl.Close()
 
@@ -1133,10 +1133,10 @@ func (a *siteHandler) deleteUserByUUID(c echo.Context) error {
 	// Parsing User UUID from string input
 	userUUID, err := uuid.FromString(c.Param("useruuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "bad uuid")
+		return newHTTPError(http.StatusBadRequest, "bad uuid")
 	}
 	if ui, err = hdl.GetUserByUUID(userUUID); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid or unknown user")
+		return newHTTPError(http.StatusBadRequest, "invalid or unknown user")
 	}
 	if err = ui.Delete(); err != nil {
 		return err
@@ -1158,7 +1158,7 @@ type apiRings map[string]apiRing
 func (a *siteHandler) getRings(c echo.Context) error {
 	hdl, err := a.getClientHandle(c.Param("uuid"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest)
 	}
 	defer hdl.Close()
 
@@ -1183,26 +1183,26 @@ func (a *siteHandler) mkSiteMiddleware(allowedRoles []string) echo.MiddlewareFun
 			ctx := c.Request().Context()
 			accountUUID, ok := c.Get("account_uuid").(uuid.UUID)
 			if !ok || accountUUID == uuid.Nil {
-				return echo.NewHTTPError(http.StatusUnauthorized)
+				return newHTTPError(http.StatusUnauthorized)
 			}
 
 			siteUUIDParam := c.Param("uuid")
 			siteUUID, err := uuid.FromString(siteUUIDParam)
 			if err != nil {
-				return echo.NewHTTPError(http.StatusBadRequest)
+				return newHTTPError(http.StatusBadRequest)
 			}
 			// XXX could merge these two db calls
 			site, err := a.db.CustomerSiteByUUID(ctx, siteUUID)
 			if err != nil {
 				if _, ok := err.(appliancedb.NotFoundError); ok {
-					return echo.NewHTTPError(http.StatusNotFound)
+					return newHTTPError(http.StatusNotFound)
 				}
-				return echo.NewHTTPError(http.StatusInternalServerError)
+				return newHTTPError(http.StatusInternalServerError)
 			}
 			aoRoles, err := a.db.AccountOrgRolesByAccountTarget(ctx,
 				accountUUID, site.OrganizationUUID)
 			if err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError)
+				return newHTTPError(http.StatusInternalServerError)
 			}
 			matches := make(matchedRoles)
 			for _, aor := range aoRoles {
@@ -1220,7 +1220,7 @@ func (a *siteHandler) mkSiteMiddleware(allowedRoles []string) echo.MiddlewareFun
 			}
 			c.Logger().Debugf("Unauthorized: %s site=%v, acc=%v, ur=%v, ar=%v",
 				c.Path(), siteUUID, accountUUID, aoRoles, allowedRoles)
-			return echo.NewHTTPError(http.StatusUnauthorized)
+			return newHTTPError(http.StatusUnauthorized)
 		}
 	}
 }
