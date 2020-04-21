@@ -408,8 +408,7 @@ func main() {
 	}
 
 	config.HandleChange(`^@/users/.*$`, configUserChanged)
-	config.HandleDelete(`^@/users/.*$`, configUserDeleted)
-	config.HandleExpire(`^@/users/.*$`, configUserDeleted)
+	config.HandleDelExp(`^@/users/.*$`, configUserDeleted)
 	config.HandleChange(`^@/network/radius_auth_secret`, configNetworkRadiusSecretChanged)
 	config.HandleChange(`^@/siteid`, siteIDChange)
 

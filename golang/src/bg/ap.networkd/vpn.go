@@ -28,6 +28,9 @@ import (
 )
 
 const (
+	vpnEnabledProp = "@/policy/site/vpn/enabled"
+	vpnRingsProp   = "@/policy/site/vpn/rings"
+
 	vpnPublicProp  = "@/network/vpn/public_key"
 	vpnPrivateProp = "@/network/vpn/private_key"
 	vpnPortProp    = "@/network/vpn/port"
@@ -43,6 +46,7 @@ type vpnKeyInfo struct {
 
 var (
 	vpnInfo struct {
+		enabled    bool
 		publicKey  *wgtypes.Key
 		privateKey *wgtypes.Key
 		listenPort int
@@ -67,9 +71,34 @@ func vpnKeySet(name, key string) *wgtypes.Key {
 	return rval
 }
 
+func vpnUpdateRings(path []string, val string, expires *time.Time) {
+	applyFilters()
+}
+
+func vpnDeleteRings(path []string) {
+	applyFilters()
+}
+
+func vpnUpdateEnabled(path []string, val string, expires *time.Time) {
+	if strings.EqualFold(val, "true") && !vpnInfo.enabled {
+		slog.Infof("enabling the vpn")
+		vpnInfo.enabled = true
+		vpnInfo.updated <- true
+	} else if strings.EqualFold(val, "false") && vpnInfo.enabled {
+		slog.Infof("disabling the vpn")
+		vpnInfo.enabled = false
+		vpnInfo.updated <- true
+	}
+}
+
+func vpnDeleteEnabled(path []string) {
+	vpnUpdateEnabled(path, "false", nil)
+}
+
 func vpnUpdateUser(path []string, val string, expires *time.Time) {
 	var updated bool
 
+	slog.Debugf("%s -> %s", strings.Join(path, "/"), val)
 	mac := path[3]
 	field := path[4]
 
@@ -103,6 +132,7 @@ func vpnUpdateUser(path []string, val string, expires *time.Time) {
 func vpnDeleteUser(path []string) {
 	var updated bool
 
+	slog.Debugf("delete %s", strings.Join(path, "/"))
 	mac := path[3]
 
 	vpnInfo.Lock()
@@ -160,30 +190,7 @@ func vpnDelete(path []string) {
 // using the information already pulled from the config tree, generate a
 // wireguard config.
 func vpnReconfig() {
-	vpnInfo.Lock()
-	defer vpnInfo.Unlock()
-
-	if vpnInfo.privateKey == nil || vpnInfo.listenPort == 0 {
-		slog.Infof("vpn configuration incomplete")
-		return
-	}
-
-	peers := make([]wgtypes.PeerConfig, 0)
-	for _, key := range vpnInfo.keys {
-		if key.publicKey == nil || key.assignedIP == "" {
-			continue
-		}
-		_, ipnet, _ := net.ParseCIDR(key.assignedIP)
-		if ipnet == nil {
-			continue
-		}
-
-		peer := wgtypes.PeerConfig{
-			PublicKey:  *key.publicKey,
-			AllowedIPs: []net.IPNet{*ipnet},
-		}
-		peers = append(peers, peer)
-	}
+	var peers []wgtypes.PeerConfig
 
 	client, err := wgctrl.New()
 	if err != nil {
@@ -192,14 +199,41 @@ func vpnReconfig() {
 	}
 	defer client.Close()
 
+	vpnInfo.Lock()
+	defer vpnInfo.Unlock()
+
+	privateKey := new(wgtypes.Key)
+	if vpnInfo.enabled {
+		if vpnInfo.privateKey == nil {
+			slog.Infof("vpn configuration missing private key")
+		} else {
+			privateKey = vpnInfo.privateKey
+		}
+		peers = make([]wgtypes.PeerConfig, 0)
+		for _, key := range vpnInfo.keys {
+			if key.publicKey == nil || key.assignedIP == "" {
+				continue
+			}
+			_, ipnet, _ := net.ParseCIDR(key.assignedIP)
+			if ipnet == nil {
+				continue
+			}
+
+			peer := wgtypes.PeerConfig{
+				PublicKey:  *key.publicKey,
+				AllowedIPs: []net.IPNet{*ipnet},
+			}
+			peers = append(peers, peer)
+		}
+	}
+
 	c := wgtypes.Config{
-		PrivateKey:   vpnInfo.privateKey,
+		PrivateKey:   privateKey,
 		ListenPort:   &vpnInfo.listenPort,
 		ReplacePeers: true,
 		Peers:        peers,
 	}
 
-	slog.Debugf("applying wireguard config: %v", c)
 	if err = client.ConfigureDevice(vpnNic, c); err != nil {
 		slog.Errorf("configuring %s: %v", vpnNic, err)
 	}
@@ -214,12 +248,24 @@ func vpnLoop(wg *sync.WaitGroup, doneChan chan bool) {
 	updateNeeded := true
 	for !done {
 		if updateNeeded {
+			applyFilters()
 			vpnReconfig()
 		}
 
 		select {
 		case done = <-doneChan:
 		case updateNeeded = <-vpnInfo.updated:
+		}
+
+		// Multiple properties may be updated at once, so drain the
+		// channel
+		for drained := false; !drained; {
+			select {
+			case x := <-vpnInfo.updated:
+				updateNeeded = updateNeeded || x
+			default:
+				drained = true
+			}
 		}
 	}
 
@@ -257,6 +303,38 @@ func getStr(p string) (string, error) {
 	}
 
 	return v, nil
+}
+
+func vpnFirewallRules() []string {
+	if !vpnInfo.enabled {
+		return nil
+	}
+
+	port := strconv.Itoa(base_def.WIREGUARD_PORT)
+	if vpnInfo.listenPort > 0 {
+		port = strconv.Itoa(vpnInfo.listenPort)
+	}
+	rules := []string{"ACCEPT UDP FROM IFACE wan TO AP DPORTS " + port}
+
+	rings, err := config.GetProp(vpnRingsProp)
+	if err == cfgapi.ErrNoProp {
+		rings = "standard,devices"
+	}
+
+	// XXX - need to handle per-user exceptions
+	for _, ring := range slice(rings) {
+		if cfgapi.ValidRings[ring] {
+			var rule string
+			if ring == base_def.RING_WAN {
+				rule = "ACCEPT FROM RING vpn to IFACE wan"
+			} else {
+				rule = "ACCEPT FROM RING vpn to RING " + ring
+			}
+			rules = append(rules, rule)
+		}
+	}
+
+	return rules
 }
 
 // Attempt to pull the system-level vpn configuration from the config tree.  If
@@ -301,10 +379,11 @@ func vpnSystemInit() error {
 	}
 
 	if port == "" {
-		port = "51820"
+		port = strconv.Itoa(base_def.WIREGUARD_PORT)
 		config.CreateProp(vpnPortProp, port, nil)
 	}
 
+	vpnInfo.enabled, _ = config.GetPropBool(vpnEnabledProp)
 	vpnInfo.publicKey = vpnKeySet("system public", public)
 	vpnInfo.privateKey = vpnKeySet("system private", private)
 	vpnInfo.listenPort, err = strconv.Atoi(port)
@@ -316,8 +395,6 @@ func vpnSystemInit() error {
 }
 
 func vpnInit() error {
-	slog.Infof("vpninit")
-
 	ring, ok := rings[base_def.RING_VPN]
 	if !ok {
 		return fmt.Errorf("vpn ring is undefined")

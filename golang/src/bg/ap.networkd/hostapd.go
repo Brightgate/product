@@ -1308,8 +1308,8 @@ func logActiveChange(dev []*physDevice, oldDescs []string) []string {
 		}
 	}
 	if changed {
-		old := "[" + strings.Join(oldDescs, ",") + "]"
-		now := "[" + strings.Join(newDescs, ",") + "]"
+		old := "[" + list(oldDescs) + "]"
+		now := "[" + list(newDescs) + "]"
 		slog.Infof("Wireless settings changed from %s to %s",
 			old, now)
 	}

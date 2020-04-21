@@ -316,8 +316,7 @@ func tunnelConfigInit() {
 	processConfigChanges()
 
 	config.HandleChange(`^@/cloud/service/.*$`, handleUpdateEvent)
-	config.HandleDelete(`^@/cloud/service.*$`, handleDeleteEvent)
-	config.HandleExpire(`^@/cloud/service/.*$`, handleDeleteEvent)
+	config.HandleDelExp(`^@/cloud/service.*$`, handleDeleteEvent)
 }
 
 // Open and maintain an ssh tunnel connection to a cloud endpoint.  Launch (and

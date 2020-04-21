@@ -17,12 +17,6 @@ ACCEPT ICMP FROM RING internal to IFACE wan
 # Allow clients to ping the AP
 ACCEPT ICMP FROM IFACE NOT wan TO AP
 
-# Allow vpn traffic to enter the box and then transit to the standard and
-# devices rings
-ACCEPT UDP FROM IFACE wan TO AP DPORTS 51820
-ACCEPT FROM RING vpn to RING standard
-ACCEPT FROM RING vpn TO RING devices
-
 # Expose some services to our clients
 ACCEPT UDP FROM IFACE NOT wan TO AP DPORTS 53 67     # DNS, DHCP
 ACCEPT TCP FROM IFACE NOT wan TO AP DPORTS 80 443    # HTTP(s)

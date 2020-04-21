@@ -228,6 +228,8 @@ assignments = [
     [Statement.SIMPLE_PORT, "CLRPCD_GRPC_PORT", 443],
     [Statement.SIMPLE_PORT, "CLCONFIGD_GRPC_PORT", 4431],
 
+    [Statement.SIMPLE_NUM, "WIREGUARD_PORT", 51820],
+
     [Statement.COMMENT, "API related definitions"],
     [Statement.SIMPLE_STR, "API_URL", "https://api.brightgate.com"],
     [Statement.LIST, "API_PROTOBUF_URL", "API_URL", "+", "/protobuf"],

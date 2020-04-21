@@ -303,8 +303,7 @@ func main() {
 	}
 
 	config.HandleChange(`^@/clients/.*`, clientUpdateEvent)
-	config.HandleDelete(`^@/clients/.*`, clientDeleteEvent)
-	config.HandleExpire(`^@/clients/.*`, clientExpireEvent)
+	config.HandleDelExp(`^@/clients/.*`, clientDeleteEvent)
 	config.HandleChange(`^@/nodes/.*$`, configNodesChanged)
 	config.HandleChange(`^@/site_index$`, configSiteChanged)
 	config.HandleChange(`^@/network/base_address$`, configSiteChanged)

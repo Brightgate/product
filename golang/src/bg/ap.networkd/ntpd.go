@@ -126,8 +126,7 @@ func configNTPServersDeleted(path []string) {
 
 func ntpdSetup() {
 	config.HandleChange(`^@/network/ntpservers/`, configNTPServersChanged)
-	config.HandleDelete(`^@/network/ntpservers/`, configNTPServersDeleted)
-	config.HandleExpire(`^@/network/ntpservers/`, configNTPServersDeleted)
+	config.HandleDelExp(`^@/network/ntpservers/`, configNTPServersDeleted)
 
 	// We kick the daemon to start with, because, even if it's already
 	// running, it might be running with pre-Brightgate configuration.

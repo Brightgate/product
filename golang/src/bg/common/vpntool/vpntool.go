@@ -29,7 +29,6 @@ var (
 // Add a new key for this user and print the associated config file to stdout.
 func addKey(cmd *cobra.Command, args []string) error {
 	user, _ := cmd.Flags().GetString("user")
-	rings, _ := cmd.Flags().GetString("rings")
 	label, _ := cmd.Flags().GetString("label")
 	ipaddr, _ := cmd.Flags().GetString("ip")
 	file, _ := cmd.Flags().GetString("file")
@@ -38,7 +37,7 @@ func addKey(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("must specify a user name")
 	}
 
-	conf, err := vpn.AddKey(user, rings, label, ipaddr)
+	conf, err := vpn.AddKey(user, label, ipaddr)
 	if err == nil {
 		if file == "" {
 			fmt.Printf(string(conf))
@@ -156,7 +155,6 @@ func Exec(ctx context.Context, p string, hdl *cfgapi.Handle, args []string) erro
 	addCmd.Flags().StringP("user", "u", "", "user")
 	addCmd.Flags().String("ip", "", "assigned ip address")
 	addCmd.Flags().StringP("label", "l", "", "user-friendly label")
-	addCmd.Flags().StringP("rings", "r", "standard,devices", "rings to access via vpn")
 	addCmd.Flags().StringP("file", "f", "", "file to write config into")
 	rootCmd.AddCommand(addCmd)
 

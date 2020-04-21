@@ -46,13 +46,13 @@ func newNicOps(id string, nic *physDevice,
 					c = append(c, strconv.Itoa(channel))
 				}
 				if len(b) > 0 {
-					newVals["bands"] = strings.Join(b, ",")
+					newVals["bands"] = list(b)
 				}
 				if len(m) > 0 {
-					newVals["modes"] = strings.Join(m, ",")
+					newVals["modes"] = list(m)
 				}
 				if len(c) > 0 {
-					newVals["channels"] = strings.Join(c, ",")
+					newVals["channels"] = list(c)
 				}
 			}
 			if x := w.activeMode; x != "" {
@@ -283,7 +283,7 @@ func getRemoteWifi(mac string, nodes []cfgapi.NodeInfo) (string, string) {
 		}
 	}
 
-	return strings.Join(remote, ","), strings.Join(offline, ",")
+	return list(remote), list(offline)
 }
 
 //

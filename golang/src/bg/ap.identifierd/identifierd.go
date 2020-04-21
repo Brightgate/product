@@ -457,8 +457,7 @@ func main() {
 
 	_ = config.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
 	_ = config.HandleChange(`^@/clients/.*/dhcp_name$`, configDHCPChanged)
-	_ = config.HandleDelete(`^@/clients/.*/ipv4$`, configIPv4Delexp)
-	_ = config.HandleExpire(`^@/clients/.*/ipv4$`, configIPv4Delexp)
+	_ = config.HandleDelExp(`^@/clients/.*/ipv4$`, configIPv4Delexp)
 	_ = config.HandleChange(`^@/clients/.*/dns_private$`, configPrivacyChanged)
 	_ = config.HandleDelete(`^@/clients/.*/dns_private$`, configPrivacyDelete)
 

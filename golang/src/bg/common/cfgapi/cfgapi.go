@@ -376,6 +376,16 @@ func (c *Handle) HandleExpire(path string, handler func([]string)) error {
 	return c.exec.HandleExpire(path, handler)
 }
 
+// HandleDelExp allows clients to register a callback that will be invoked when
+// a property is deleted or expires
+func (c *Handle) HandleDelExp(path string, handler func([]string)) error {
+	err := c.exec.HandleDelete(path, handler)
+	if err == nil {
+		err = c.exec.HandleExpire(path, handler)
+	}
+	return err
+}
+
 // AddPropValidation adds a new property and value type to ap.configd's syntax
 // validation table.
 func (c *Handle) AddPropValidation(path, proptype string) error {
@@ -425,6 +435,38 @@ func (c *Handle) GetProp(prop string) (string, error) {
 			err = ErrNotLeaf
 		} else {
 			rval = root.Value
+		}
+	}
+
+	return rval, err
+}
+
+// GetPropInt retrieves a single property, returning it as an integer.
+func (c *Handle) GetPropInt(prop string) (int, error) {
+	var rval int
+
+	v, err := c.GetProp(prop)
+	if err == nil {
+		if rval, err = strconv.Atoi(v); err != nil {
+			err = ErrBadType
+		}
+	}
+
+	return rval, err
+}
+
+// GetPropBool retrieves a single property, returning it as a boolean.
+func (c *Handle) GetPropBool(prop string) (bool, error) {
+	var rval bool
+
+	v, err := c.GetProp(prop)
+	if err == nil {
+		if strings.EqualFold(v, "true") {
+			rval = true
+		} else if strings.EqualFold(v, "false") {
+			rval = false
+		} else {
+			err = ErrBadType
 		}
 	}
 

@@ -19,6 +19,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -96,6 +97,14 @@ type physDevice struct {
 	disabled bool
 
 	wifi *wifiInfo
+}
+
+func list(slice []string) string {
+	return strings.Join(slice, ",")
+}
+
+func slice(list string) []string {
+	return strings.Split(list, ",")
 }
 
 func hostapdReset(name, val string) error {
@@ -268,12 +277,15 @@ func daemonInit() error {
 	config.HandleChange(`^@/network/.*`, configNetworkChanged)
 	config.HandleDelete(`^@/network/.*`, configNetworkDeleted)
 	config.HandleChange(`^@/firewall/rules/`, configRuleChanged)
-	config.HandleDelete(`^@/firewall/rules/`, configRuleDeleted)
+	config.HandleDelExp(`^@/firewall/rules/`, configRuleDeleted)
 	config.HandleChange(`^@/firewall/blocked/`, configBlocklistChanged)
-	config.HandleExpire(`^@/firewall/blocked/`, configBlocklistExpired)
+	config.HandleDelExp(`^@/firewall/blocked/`, configBlocklistExpired)
 	config.HandleChange(`^@/users/.*/vpn/.*`, configUserChanged)
-	config.HandleDelete(`^@/users/.*`, configUserDeleted)
-	config.HandleExpire(`^@/users/.*`, configUserDeleted)
+	config.HandleDelExp(`^@/users/.*`, configUserDeleted)
+	config.HandleChange(`^@/policy/site/vpn/enabled`, vpnUpdateEnabled)
+	config.HandleDelExp(`^@/policy/site/vpn/enabled`, vpnDeleteEnabled)
+	config.HandleChange(`^@/policy/.*/vpn/rings`, vpnUpdateRings)
+	config.HandleDelExp(`^@/policy/.*/vpn/rings`, vpnDeleteRings)
 
 	rings = config.GetRings()
 	clients = config.GetClients()

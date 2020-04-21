@@ -27,12 +27,15 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
-const lastMacProp = "@/network/vpn/last_mac"
+const (
+	lastMacProp = "@/network/vpn/last_mac"
+	vpnRingProp = "@/policy/site/vpn/rings"
+)
 
 var (
 	config *cfgapi.Handle
 
-	rings cfgapi.RingMap
+	ringSubnets map[string]string
 
 	vpnStart  net.IP
 	vpnRouter net.IP
@@ -49,6 +52,7 @@ type keyConfig struct {
 
 	ClientAddr       string // IP address assigned to client device
 	ClientPrivateKey string // Client's private key
+	ClientPublicKey  string // Client's public key
 
 	ServerAddress   string // Internet facing DNS or IP address
 	ServerPublicKey string // Server's public key
@@ -59,7 +63,7 @@ type keyConfig struct {
 }
 
 const confTemplate = `
-# Client key {{.User}} {{.ID}} {{.Label}}
+# Client key {{.User}} {{.ID}} {{.Label}} {{.ClientPublicKey}}
 
 [Interface]
 Address = {{.ClientAddr}}/32
@@ -163,9 +167,9 @@ func chooseRoutedSubnets(routedRings string) (string, error) {
 	ringList = append(ringList, "vpn")
 
 	for _, ring := range ringList {
-		if c, ok := rings[ring]; ok {
+		if subnet, ok := ringSubnets[ring]; ok {
 			if !included[ring] {
-				subnets = append(subnets, c.Subnet)
+				subnets = append(subnets, subnet)
 				included[ring] = true
 			}
 		} else {
@@ -218,10 +222,9 @@ func updateConfig(lastMac string, props map[string]string) error {
 // into the config tree, and returns the contents of a wireguard config file to
 // the caller.
 //
-// The caller can optionally identify the rings that should be routed over the
-// VPN, a label that should be associated with the key, and the IP address the
-// connecting client should be assigned,
-func AddKey(name, rings, label, ipaddr string) ([]byte, error) {
+// The caller can optionally identify a label that should be associated with the
+// key, and the IP address the connecting client should be assigned,
+func AddKey(name, label, ipaddr string) ([]byte, error) {
 	var rval []byte
 	var err error
 
@@ -246,6 +249,7 @@ Retry:
 		return nil, fmt.Errorf("no such user")
 	}
 
+	rings, _ := config.GetProp(vpnRingProp)
 	subnets, err := chooseRoutedSubnets(rings)
 	if err != nil {
 		return nil, err
@@ -274,6 +278,7 @@ Retry:
 		ID:               id,
 		ClientAddr:       ipaddr,
 		ClientPrivateKey: private.String(),
+		ClientPublicKey:  public.String(),
 		AllowedIPs:       subnets,
 	}
 	if label != "" {
@@ -308,6 +313,12 @@ func RemoveKey(name, mac string) error {
 	}
 
 	return nil
+}
+
+// IsEnabled checks whether the VPN functionality has been enabled for this site
+func IsEnabled() bool {
+	v, _ := config.GetPropBool("@/policy/site/vpn/enabled")
+	return v
 }
 
 // GetKeys returns a mac->WireguardConfig map containing all of the keys
@@ -374,20 +385,27 @@ func Init(c *cfgapi.Handle) error {
 	var vpnRing *cfgapi.RingConfig
 
 	config = c
-	if rings = config.GetRings(); rings == nil {
-		err = fmt.Errorf("unable to fetch ring configs")
-
-	} else if vpnRing = rings[base_def.RING_VPN]; vpnRing == nil {
-		err = fmt.Errorf("VPN ring is unconfigured")
-
-	} else {
-		start, ipnet, _ := net.ParseCIDR(vpnRing.Subnet)
-		ones, bits := ipnet.Mask.Size()
-
-		vpnStart = start
-		vpnSpan = (1<<uint32(bits-ones) - 3)
-		vpnRouter = dhcp.IPAdd(vpnStart, 1)
+	rings := config.GetRings()
+	if rings == nil {
+		return fmt.Errorf("unable to fetch ring configs")
 	}
+
+	if vpnRing = rings[base_def.RING_VPN]; vpnRing == nil {
+		return fmt.Errorf("VPN ring is unconfigured")
+	}
+
+	start, ipnet, _ := net.ParseCIDR(vpnRing.Subnet)
+	ones, bits := ipnet.Mask.Size()
+
+	vpnStart = start
+	vpnSpan = (1<<uint32(bits-ones) - 3)
+	vpnRouter = dhcp.IPAdd(vpnStart, 1)
+
+	ringSubnets = make(map[string]string)
+	for name, ring := range rings {
+		ringSubnets[name] = ring.IPNet.String()
+	}
+	ringSubnets[base_def.RING_WAN] = "0.0.0.0/0"
 
 	return err
 }

@@ -60,6 +60,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"bg/base_def"
@@ -71,6 +72,7 @@ var (
 	rules      ruleList
 	applied    map[string]map[string][]string
 	blockedIPs map[uint32]struct{}
+	filterLock sync.Mutex
 )
 
 //
@@ -604,8 +606,8 @@ func configRuleChanged(path []string, val string, expires *time.Time) {
 	} else {
 		slog.Infof("Responding to change in firewall rules")
 	}
-	iptablesRebuild()
-	iptablesReset()
+
+	applyFilters()
 }
 
 func configRuleDeleted(path []string) {
@@ -638,6 +640,16 @@ func firewallRules() {
 		r, err := firewallRule(rule)
 		if err != nil {
 			slog.Warnf("bad firewall rule '%s': %v", name, err)
+		} else if r != nil {
+			addRule(r)
+		}
+	}
+
+	vpnRules := vpnFirewallRules()
+	for _, rule := range vpnRules {
+		r, err := parseRule(rule)
+		if err != nil {
+			slog.Warnf("bad vpn rule '%s': %v", rule, err)
 		} else if r != nil {
 			addRule(r)
 		}
@@ -707,6 +719,7 @@ func iptablesRebuild() {
 	iptablesAddRule("filter", "dropped", "-j DROP")
 
 	firewallRules()
+	vpnFirewallRules()
 
 	// Now add filter rules, from the most specific to the most general
 	sort.Sort(rules)
@@ -747,6 +760,10 @@ func loadFilterRules() error {
 }
 
 func applyFilters() {
+	filterLock.Lock()
+
 	iptablesRebuild()
 	iptablesReset()
+
+	filterLock.Unlock()
 }

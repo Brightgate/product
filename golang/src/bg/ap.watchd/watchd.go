@@ -415,7 +415,7 @@ func main() {
 	bgmetricsInit()
 
 	config.HandleDelete(`^@/clients/.*`, configClientDelete)
-	config.HandleExpire(`^@/clients/.*/ipv4$`, configClientDelete)
+	config.HandleDelExp(`^@/clients/.*/ipv4$`, configClientDelete)
 	config.HandleChange(`^@/clients/.*/ipv4$`, configIPv4Changed)
 	config.HandleChange(`^@/policy/clients/.*/scans/.*$`, configScanPolicyChanged)
 	config.HandleChange(`^@/policy/rings/.*/scans/.*$`, configScanPolicyChanged)
