@@ -3,7 +3,7 @@
         "Name": "brokerd",
         "Binary": "ap.brokerd",
         "Privileged": false,
-        "Modes": [ "core", "gateway", "http-dev" ],
+        "Modes": [ "core", "gateway", "cloudapp", "http-dev" ],
         "MemWarn": 18,
         "MemKill": 25
     },
@@ -12,7 +12,7 @@
         "Binary": "ap.configd",
         "DependsOn": "brokerd",
         "Privileged": true,
-        "Modes": [ "core", "gateway", "http-dev" ],
+        "Modes": [ "core", "gateway", "cloudapp", "http-dev" ],
         "MemWarn": 28,
         "MemKill": 40
     },
@@ -21,7 +21,7 @@
         "Binary": "ap.httpd",
         "DependsOn": "networkd",
         "Privileged": true,
-        "Modes": [ "gateway", "http-dev" ],
+        "Modes": [ "gateway", "cloudapp", "http-dev" ],
         "MemWarn": 25,
         "MemKill": 30
     },
@@ -39,7 +39,7 @@
         "Binary": "ap.logd",
         "DependsOn": "configd",
         "Privileged": true,
-        "Modes": [ "gateway" ],
+        "Modes": [ "gateway", "cloudapp" ],
         "MemWarn": 18,
         "MemKill": 22
     },
@@ -48,7 +48,7 @@
         "Binary": "ap.rpcd",
         "DependsOn": "configd",
         "Privileged": true,
-        "Modes": [ "gateway", "satellite" ],
+        "Modes": [ "gateway", "satellite", "cloudapp" ],
         "MemWarn": 25,
         "MemKill": 40
     },
@@ -57,7 +57,7 @@
         "Binary": "ap.networkd",
         "DependsOn": "configd",
         "Privileged": true,
-        "Modes": [ "core", "gateway", "satellite" ],
+        "Modes": [ "core", "gateway", "satellite", "cloudapp" ],
         "MemWarn": 25,
         "MemKill": 30,
         "SoftTimeout": 5000
@@ -67,7 +67,7 @@
         "Binary": "ap.serviced",
         "DependsOn": "networkd",
         "Privileged": true,
-        "Modes": [ "core", "gateway" ],
+        "Modes": [ "core", "gateway", "cloudapp" ],
         "MemWarn": 30,
         "MemKill": 35
     },
@@ -85,7 +85,7 @@
         "Binary": "ap.watchd",
         "DependsOn": "networkd",
         "Privileged": true,
-        "Modes": [ "gateway" ],
+        "Modes": [ "gateway", "cloudapp" ],
         "MemWarn": 75,
         "MemKill": 90,
         "SoftTimeout": 3000

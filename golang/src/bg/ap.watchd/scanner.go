@@ -59,6 +59,9 @@ const (
 	passwdPeriodDefault = 24 * time.Hour
 	vulnPeriodDefault   = 30 * time.Minute
 	subnetPeriodDefault = 5 * time.Minute
+
+	scanGateway = 0x01
+	scanCloud   = 0x02
 )
 
 var (
@@ -156,6 +159,7 @@ type ScanRequest struct {
 	ScanType string
 	Scanner  func(*ScanRequest)
 	Child    *aputil.Child
+	Where    uint32
 
 	Cancelled bool
 	Period    time.Duration
@@ -342,6 +346,13 @@ func cancelAllScans(mac, ip string) {
 func scheduleScan(request *ScanRequest, delay time.Duration, force bool) {
 	if request == nil {
 		slog.Fatalf("nil scan request")
+	}
+
+	if aputil.IsGatewayMode() && (request.Where&scanGateway) == 0 {
+		return
+	}
+	if aputil.IsCloudAppMode() && (request.Where&scanCloud) == 0 {
+		return
 	}
 
 	st := request.ScanType
@@ -545,6 +556,7 @@ func newSubnetScan(ring, subnet string) *ScanRequest {
 		ScanType: "subnet",
 		Scanner:  subnetScan,
 		Period:   period,
+		Where:    scanGateway,
 	}
 }
 
@@ -561,6 +573,7 @@ func newTCPScan(mac, ip, ring string) *ScanRequest {
 		ScanType: "tcp",
 		Scanner:  portScan,
 		Period:   period,
+		Where:    scanGateway,
 	}
 }
 
@@ -577,6 +590,7 @@ func newUDPScan(mac, ip, ring string) *ScanRequest {
 		ScanType: "udp",
 		Scanner:  portScan,
 		Period:   period,
+		Where:    scanGateway,
 	}
 }
 
@@ -593,6 +607,7 @@ func newVulnScan(mac, ip, ring string) *ScanRequest {
 		ScanType: "vuln",
 		Scanner:  vulnScan,
 		Period:   period,
+		Where:    scanGateway,
 	}
 }
 
@@ -609,6 +624,7 @@ func newPasswdScan(mac, ip, ring string) *ScanRequest {
 		ScanType: "passwd",
 		Scanner:  vulnScan,
 		Period:   period,
+		Where:    scanGateway,
 	}
 }
 

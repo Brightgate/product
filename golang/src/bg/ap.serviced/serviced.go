@@ -257,8 +257,6 @@ func configNodesChanged(path []string, val string, expires *time.Time) {
 }
 
 func main() {
-	var mcpState int
-
 	slog = aputil.NewLogger(pname)
 	defer slog.Sync()
 	slog.Infof("starting")
@@ -293,13 +291,15 @@ func main() {
 	brokerd.Handle(base_def.TOPIC_UPDATE, eventHandler)
 	initInterfaces()
 	dnsInit()
-	dhcpInit()
-	if strings.EqualFold(os.Getenv("BG_FAILSAFE"), "true") {
-		slog.Infof("Starting in failsafe mode - disabling relay")
-		mcpState = mcp.FAILSAFE
-	} else {
-		relayInit()
-		mcpState = mcp.ONLINE
+	mcpState := mcp.ONLINE
+	if aputil.IsGatewayMode() {
+		dhcpInit()
+		if strings.EqualFold(os.Getenv("BG_FAILSAFE"), "true") {
+			slog.Infof("failsafe mode - disabling relay")
+			mcpState = mcp.FAILSAFE
+		} else {
+			relayInit()
+		}
 	}
 
 	config.HandleChange(`^@/clients/.*`, clientUpdateEvent)

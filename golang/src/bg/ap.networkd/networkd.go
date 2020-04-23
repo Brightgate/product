@@ -397,15 +397,17 @@ func main() {
 
 	resetInterfaces()
 
-	if !satellite {
-		// We are currently a gateway.  Monitor the DHCP info on the wan
-		// port to see if that changes
-		wan.monitor()
-		defer wan.stop()
-	}
+	if !aputil.IsCloudAppMode() {
+		if !satellite {
+			// We are currently a gateway.  Monitor the DHCP info on
+			// the wan port to see if that changes
+			wan.monitor()
+			defer wan.stop()
+		}
 
-	go apMonitorLoop(&cleanup.wg, addDoneChan())
-	go hostapdLoop(&cleanup.wg, addDoneChan())
+		go apMonitorLoop(&cleanup.wg, addDoneChan())
+		go hostapdLoop(&cleanup.wg, addDoneChan())
+	}
 
 	// for pprof
 	go http.ListenAndServe(base_def.NETWORKD_DIAG_PORT, nil)

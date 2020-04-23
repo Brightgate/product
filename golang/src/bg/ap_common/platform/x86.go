@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -8,14 +8,17 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 
+// Note - this 'x86' platform is specifically intended to support the http-dev
+// and cloudapp models on Google Cloud systems.  Moving to a real appliance or a
+// different cloud provider will likely require updating this support.
+
 package platform
 
 import (
 	"fmt"
 	"io/ioutil"
-	"os"
-	"os/exec"
 	"regexp"
+	"strings"
 	"syscall"
 
 	"bg/common/release"
@@ -38,25 +41,6 @@ func x86Probe() bool {
 	return false
 }
 
-func x86ParseNodeID(data []byte) (string, error) {
-	return rpiParseNodeID(data)
-}
-
-func x86SetNodeID(uuidStr string) error {
-	return fmt.Errorf("setting the nodeID is unsupported")
-}
-
-func x86GetNodeID() (string, error) {
-	// This is primarily a developer override
-	e := os.Getenv("B10E_NODEID")
-	if e != "" {
-		nodeID = e
-		return nodeID, nil
-	}
-
-	return rpiGetNodeID()
-}
-
 func x86NicIsVirtual(nic string) bool {
 	return false
 }
@@ -66,11 +50,11 @@ func x86NicIsWireless(nic string) bool {
 }
 
 func x86NicIsWired(nic string) bool {
-	return false
+	return strings.HasPrefix(nic, "eth")
 }
 
 func x86NicIsWan(name, mac string) bool {
-	return false
+	return name == "eth0"
 }
 
 func x86NicGetID(name, mac string) string {
@@ -79,31 +63,6 @@ func x86NicGetID(name, mac string) string {
 
 func x86NicLocation(name string) string {
 	return ""
-}
-
-func x86GetDHCPInterfaces() ([]string, error) {
-	return rpiGetDHCPInterfaces()
-}
-
-func x86GetDHCPInfo(iface string) (map[string]string, error) {
-	return rpiGetDHCPInfo(iface)
-}
-
-func x86DHCPPidfile(nic string) string {
-	return ""
-}
-
-func x86NetConfig(nic, proto, ipaddr, gw, dnsserver string) error {
-	return nil
-}
-
-func x86RestartService(service string) error {
-	cmd := exec.Command("/bin/systemctl", "restart", service+".service")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to restart %s: %v", service, err)
-	}
-
-	return nil
 }
 
 func x86Upgrade(rel release.Release) ([]byte, error) {
@@ -132,9 +91,9 @@ func init() {
 		RestoreCmd:   "/sbin/iptables-restore",
 
 		probe:         x86Probe,
-		setNodeID:     x86SetNodeID,
-		getNodeID:     rpiGetNodeID,
-		GenNodeID:     rpiGenNodeID,
+		setNodeID:     debianSetNodeID,
+		getNodeID:     debianGetNodeID,
+		GenNodeID:     debianGenNodeID,
 		NicIsVirtual:  x86NicIsVirtual,
 		NicIsWireless: x86NicIsWireless,
 		NicIsWired:    x86NicIsWired,
@@ -143,16 +102,16 @@ func init() {
 		NicLocation:   x86NicLocation,
 		DataDir:       x86DataDir,
 
-		GetDHCPInterfaces: x86GetDHCPInterfaces,
-		GetDHCPInfo:       x86GetDHCPInfo,
-		DHCPPidfile:       x86DHCPPidfile,
+		GetDHCPInterfaces: debianGetDHCPInterfaces,
+		GetDHCPInfo:       debianGetDHCPInfo,
+		DHCPPidfile:       debianDHCPPidfile,
 
 		NetworkManaged: false,
-		NetConfig:      x86NetConfig,
+		NetConfig:      debianNetConfig,
 
-		NtpdService:    "chrony",
+		NtpdService:    "ntpd",
 		MaintainTime:   func() {},
-		RestartService: x86RestartService,
+		RestartService: debianRestartService,
 
 		Upgrade: x86Upgrade,
 	}

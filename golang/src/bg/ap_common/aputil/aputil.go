@@ -534,6 +534,7 @@ var LegalModes = map[string]bool{
 	base_def.MODE_GATEWAY:   true,
 	base_def.MODE_CORE:      true,
 	base_def.MODE_SATELLITE: true,
+	base_def.MODE_CLOUDAPP:  true,
 	base_def.MODE_HTTP_DEV:  true,
 }
 
@@ -550,12 +551,14 @@ func GetNodeMode() string {
 		return nodeMode
 	}
 
-	interfaces, _ := net.Interfaces()
-	for _, iface := range interfaces {
-		lease, _ := dhcp.GetLease(iface.Name)
-		if lease != nil && lease.Mode != "" {
-			mode = lease.Mode
-			break
+	if mode = os.Getenv("APMODE"); mode == "" {
+		interfaces, _ := net.Interfaces()
+		for _, iface := range interfaces {
+			lease, _ := dhcp.GetLease(iface.Name)
+			if lease != nil && lease.Mode != "" {
+				mode = lease.Mode
+				break
+			}
 		}
 	}
 
@@ -585,11 +588,17 @@ func GatewayURL(port string) string {
 
 // IsSatelliteMode checks to see whether this node is running as a mesh node
 func IsSatelliteMode() bool {
-	if os.Getenv("APMODE") == base_def.MODE_SATELLITE {
-		return true
-	}
-
 	return GetNodeMode() == base_def.MODE_SATELLITE
+}
+
+// IsCloudAppMode checks to see whether this node is running as a cloud appliance
+func IsCloudAppMode() bool {
+	return GetNodeMode() == base_def.MODE_CLOUDAPP
+}
+
+// IsGatewayMode checks to see whether this node is running as a gateway
+func IsGatewayMode() bool {
+	return GetNodeMode() == base_def.MODE_GATEWAY
 }
 
 // SortIntKeys takes an integer-indexed map and returns a sorted slice of the

@@ -41,7 +41,7 @@ func addDevToRingBridge(dev *physDevice, ring string) error {
 		slog.Debugf("Connecting %s (%s) to the %s bridge: %s",
 			dev.name, dev.hwaddr, ring, br)
 		if err = netctl.BridgeAddIface(br, dev.name); err != nil {
-			err = fmt.Errorf("adding %s to %s: %v", br, dev.name, err)
+			err = fmt.Errorf("adding %s to %s: %v", dev.name, br, err)
 		}
 	} else {
 		err = fmt.Errorf("non-existent ring %s", ring)

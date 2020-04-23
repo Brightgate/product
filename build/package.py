@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 #
-# COPYRIGHT 2018 Brightgate Inc.  All rights reserved.
+# COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
 #
 # This copyright notice is Copyright Management Information under 17 USC 1202
 # and is included to protect this work and deter copyright infringement.
@@ -115,6 +115,10 @@ class Package:
             self.control_dir = self.deb_dir
 
             self._depends = self.deb_depends
+            if self.arch == "armhf":
+                self._depends = self._depends + self.deb_arm_depends
+            elif self.arch == "x86":
+                self._depends = self._depends + self.deb_x86_depends
             self._template = deb_template
         elif distro == "openwrt":
             self.package_name = self.ipk_package_name
@@ -247,9 +251,15 @@ class AppliancePackage(Package):
     distros = ["archive", "debian", "openwrt"]
     description = """Appliance components."""
     maintainer = "Brightgate Software <contact_us@brightgate.com>"
+    deb_arm_depends = [
+        "bg-hostapd",
+        "chrony",
+    ]
+    deb_x86_depends = [
+        "ntp",
+    ]
     deb_depends = [
         "bridge-utils",
-        "chrony",
         "curl",
         "dhcpcd5",
         "dnsutils",
@@ -260,12 +270,12 @@ class AppliancePackage(Package):
         "iw",
         "libc6",
         "libpcap-dev",
+        "ndpi",
         "netfilter-persistent",
         "nmap",
+        "pfring",
         "procps",
         "vlan",
-
-        "bg-hostapd",
     ]
     ipk_depends = [
         "libgcc",

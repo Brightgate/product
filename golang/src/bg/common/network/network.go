@@ -140,7 +140,7 @@ func SubnetBroadcast(subnet string) net.IP {
 	return raw
 }
 
-// WaitForDevice will wait for a network device to reach the 'up' state.
+// WaitForDevice will wait for a network device to leave the 'down' state.
 // Returns an error on timeout or if the device doesn't exist
 func WaitForDevice(dev string, timeout time.Duration) error {
 	fn := "/sys/class/net/" + dev + "/operstate"
@@ -148,7 +148,8 @@ func WaitForDevice(dev string, timeout time.Duration) error {
 	start := time.Now()
 	for {
 		state, err := ioutil.ReadFile(fn)
-		if err == nil && string(state[0:2]) == "up" {
+		if err == nil &&
+			(len(state) < 4 || string(state[0:3]) != "down") {
 			break
 		}
 		if time.Since(start) >= timeout {

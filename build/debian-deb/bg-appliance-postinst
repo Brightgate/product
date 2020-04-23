@@ -1,6 +1,6 @@
 #!/bin/sh -e
 #
-# COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+# COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
 #
 # This copyright notice is Copyright Management Information under 17 USC 1202
 # and is included to protect this work and deter copyright infringement.
@@ -9,13 +9,15 @@
 # such unauthorized removal or alteration will be a violation of federal law.
 #
 
+is_installed() {
+        dpkg-query -s $1 > /dev/null 2>&1
+}
+
 stopsvc() {
 	if systemctl is-enabled --quiet $1; then
-		echo "systemctl disable $1"
 		systemctl disable $1
 	fi
 	if systemctl is-active --quiet $1; then
-		echo "systemctl stop $1"
 		systemctl stop $1
 	fi
 }
@@ -37,22 +39,27 @@ set -x
 if [ "x$1" = "xconfigure" ]; then
 	rm -f $appackage/etc/release.json
 
+	if ! systemctl is-active --quiet dhcpcd; then
+		echo "dhcpcd must be running"
+		exit 1
+	fi
+
 	# Disable services that collide with our use, or that we want to manage
 	# directly.
-	stopsvc dnsmasq.service
-	stopsvc avahi-daemon.service
+	is_installed dnsmasq && stopsvc dnsmasq.service
+	is_installed avahi-daemon && stopsvc avahi-daemon.service
 
 	# Prevent linux from acting like a wlan client
 	# Ask the upstream DHCP server to identify itself
 	cat >> /etc/dhcpcd.conf << EOF
 
-	# Brightgate Options Start
-	ipv4only
-	nohook wpa_supplicant
-	allowinterfaces eth* enx*
-	denyinterfaces eth*.* enx*.*
-	option vendor_class_identifier, vendor_encapsulated_options
-	# Brightgate Options End
+# Brightgate Options Start
+ipv4only
+nohook wpa_supplicant
+allowinterfaces eth* enx*
+denyinterfaces eth*.* enx*.*
+option vendor_class_identifier, vendor_encapsulated_options
+# Brightgate Options End
 EOF
 
 	copy_preserve $appackage/etc/secret/cloud/cloud.secret.json \
@@ -68,7 +75,7 @@ EOF
 
 	# Enable appliance service.
 	systemctl enable ap.mcp.service
-	systemctl start ap.mcp.service
+	systemctl restart ap.mcp.service
 fi
 
 # Some other abort action was received.

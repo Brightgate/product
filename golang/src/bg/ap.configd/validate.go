@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -234,7 +234,8 @@ func validateNic(val string) error {
 	// we don't know the platform type.  The best we can do now is flag
 	// those values that aren't valid on any platform.
 	if val == "wan" || strings.HasPrefix(val, "lan") ||
-		strings.HasPrefix(val, "wlan") {
+		strings.HasPrefix(val, "wlan") ||
+		strings.HasPrefix(val, "eth") {
 		return nil
 	}
 

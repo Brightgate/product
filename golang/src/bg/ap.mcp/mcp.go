@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -383,7 +383,11 @@ func main() {
 	if aputil.LegalModes[initMode] {
 		nodeMode = initMode
 	} else if initMode == "" {
-		nodeMode = base_def.MODE_GATEWAY
+		if plat.GetPlatform() == "x86" {
+			nodeMode = base_def.MODE_CLOUDAPP
+		} else {
+			nodeMode = base_def.MODE_GATEWAY
+		}
 		logInfo("Can't determine mode.  Defaulting to %s.", nodeMode)
 	} else {
 		logPanic("Unrecognized node mode: %s", initMode)
@@ -397,10 +401,12 @@ func main() {
 	orphanCleanup()
 	go plat.MaintainTime()
 
-	switch initMode {
-	case base_def.MODE_SATELLITE:
+	if initMode == base_def.MODE_SATELLITE {
 		go satelliteLoop()
-	case "":
+	} else if initMode == "" && nodeMode == base_def.MODE_GATEWAY {
+		// If we guessed that we're running as a gateway, we have to
+		// keep watching the DHCP settings on the WAN port to see if an
+		// upstream node wants us to switch to satellite mode.
 		go modeMonitor()
 	}
 
