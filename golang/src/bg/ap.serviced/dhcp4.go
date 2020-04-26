@@ -737,7 +737,12 @@ func (h *ringHandler) leaseAssign(hwaddr string) (*lease, error) {
 	}
 
 	if assigned != nil {
-		assigned.record(hwaddr, time.Now().Add(h.duration))
+		var expires time.Time
+
+		if !assigned.static {
+			expires = time.Now().Add(h.duration)
+		}
+		assigned.record(hwaddr, expires)
 	} else {
 		dhcpMetrics.exhausted.Inc()
 		err = fmt.Errorf("out of leases on '%s' ring", h.ring)
