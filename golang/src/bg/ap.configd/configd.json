@@ -335,7 +335,7 @@
     {"Path": "@/network/vap/%string%/default_ring", "Type": "ring", "Level": "admin"},
     {"Path": "@/network/vpn/address", "Type": "string", "Level": "admin"},
     {"Path": "@/network/vpn/public_key", "Type": "string", "Level": "internal"},
-    {"Path": "@/network/vpn/private_key", "Type": "string", "Level": "internal"},
+    {"Path": "@/network/vpn/escrowed_key", "Type": "string", "Level": "internal"},
     {"Path": "@/network/vpn/port", "Type": "int", "Level": "admin"},
     {"Path": "@/network/vpn/last_mac", "Type": "macaddr", "Level": "internal"},
     {"Path": "@/network/regdomain", "Type": "string", "Level": "admin"},

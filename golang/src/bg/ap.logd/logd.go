@@ -163,6 +163,8 @@ func handleError(event []byte) {
 			reason = "RENEWED_SSL_CERTIFICATE"
 		case base_msg.EventSysError_DAEMON_CRASH_REQUESTED:
 			reason = "DAEMON_CRASH_REQUESTED"
+		case base_msg.EventSysError_VPN_KEY_MISMATCH:
+			reason = "VPN_KEY_MISMATCH"
 		default:
 			reason = "unknown"
 		}

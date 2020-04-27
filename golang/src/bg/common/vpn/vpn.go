@@ -27,9 +27,18 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
+// File locations and vpn-related properties
 const (
+	SecretDir   = "__APSECRET__/vpn"
+	PrivateFile = "private_key"
+	EnabledProp = "@/policy/site/vpn/enabled"
+	RingsProp   = "@/policy/site/vpn/rings"
+
+	PublicProp   = "@/network/vpn/public_key"
+	EscrowedProp = "@/network/vpn/escrowed_key"
+	PortProp     = "@/network/vpn/port"
+
 	lastMacProp = "@/network/vpn/last_mac"
-	vpnRingProp = "@/policy/site/vpn/rings"
 )
 
 // Vpn is an opaque handle which is used to perform vpn-related config
@@ -251,7 +260,7 @@ Retry:
 		return nil, fmt.Errorf("no such user")
 	}
 
-	rings, _ := v.config.GetProp(vpnRingProp)
+	rings, _ := v.config.GetProp(RingsProp)
 	subnets, err := v.chooseRoutedSubnets(rings)
 	if err != nil {
 		return nil, err

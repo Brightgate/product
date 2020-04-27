@@ -13,28 +13,25 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"bg/ap_common/aputil"
 	"bg/ap_common/netctl"
 	"bg/base_def"
 	"bg/common/cfgapi"
+	"bg/common/vpn"
 
 	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
 const (
-	vpnEnabledProp = "@/policy/site/vpn/enabled"
-	vpnRingsProp   = "@/policy/site/vpn/rings"
-
-	vpnPublicProp  = "@/network/vpn/public_key"
-	vpnPrivateProp = "@/network/vpn/private_key"
-	vpnPortProp    = "@/network/vpn/port"
-
 	vpnNic = "wg0"
 )
 
@@ -47,7 +44,6 @@ type vpnKeyInfo struct {
 var (
 	vpnInfo struct {
 		enabled    bool
-		publicKey  *wgtypes.Key
 		privateKey *wgtypes.Key
 		listenPort int
 
@@ -58,7 +54,7 @@ var (
 	}
 )
 
-func vpnKeySet(name, key string) *wgtypes.Key {
+func vpnKeyParse(name, key string) *wgtypes.Key {
 	var rval *wgtypes.Key
 
 	parsed, err := wgtypes.ParseKey(key)
@@ -121,7 +117,7 @@ func vpnUpdateUser(path []string, val string, expires *time.Time) {
 		updated = true
 
 	case "public_key":
-		key.publicKey = vpnKeySet("user public", val)
+		key.publicKey = vpnKeyParse("user public", val)
 		updated = true
 	}
 	vpnInfo.Unlock()
@@ -156,13 +152,11 @@ func vpnUpdate(path []string, val string, expires *time.Time) {
 	var updated bool
 
 	vpnInfo.Lock()
-
 	if len(path) == 3 {
 		switch path[2] {
 		case "public_key":
-			vpnInfo.publicKey = vpnKeySet("system public", val)
-		case "private_key":
-			vpnInfo.privateKey = vpnKeySet("system private", val)
+			vpnGetSystemKeys()
+			updated = true
 		case "port":
 			var err error
 
@@ -170,6 +164,7 @@ func vpnUpdate(path []string, val string, expires *time.Time) {
 			if err != nil {
 				slog.Warn("invalid vpn port %s: %v", val, err)
 			}
+			updated = true
 		}
 	}
 	vpnInfo.Unlock()
@@ -179,8 +174,8 @@ func vpnUpdate(path []string, val string, expires *time.Time) {
 
 func vpnDelete(path []string) {
 	vpnInfo.Lock()
-	vpnInfo.privateKey = nil
-	vpnInfo.publicKey = nil
+
+	vpnGetSystemKeys()
 	vpnInfo.listenPort = 0
 	vpnInfo.Unlock()
 
@@ -203,12 +198,10 @@ func vpnReconfig() {
 	defer vpnInfo.Unlock()
 
 	privateKey := new(wgtypes.Key)
-	if vpnInfo.enabled {
-		if vpnInfo.privateKey == nil {
-			slog.Infof("vpn configuration missing private key")
-		} else {
-			privateKey = vpnInfo.privateKey
-		}
+	if vpnInfo.privateKey == nil {
+		slog.Infof("vpn configuration missing private key")
+	} else if vpnInfo.enabled {
+		privateKey = vpnInfo.privateKey
 		peers = make([]wgtypes.PeerConfig, 0)
 		for _, key := range vpnInfo.keys {
 			if key.publicKey == nil || key.assignedIP == "" {
@@ -284,7 +277,7 @@ func vpnUserInit() {
 				slog.Warnf("skipping incomplete vpn key %q",
 					key.GetMac())
 			}
-			public := vpnKeySet("user public", key.WGPublicKey)
+			public := vpnKeyParse("user public", key.WGPublicKey)
 			vpnInfo.keys[key.GetMac()] = &vpnKeyInfo{
 				publicKey:  public,
 				assignedIP: key.WGAssignedIP + "/32",
@@ -316,7 +309,7 @@ func vpnFirewallRules() []string {
 	}
 	rules := []string{"ACCEPT UDP FROM IFACE wan TO AP DPORTS " + port}
 
-	rings, err := config.GetProp(vpnRingsProp)
+	rings, err := config.GetProp(vpn.RingsProp)
 	if err == cfgapi.ErrNoProp {
 		rings = "standard,devices"
 	}
@@ -337,61 +330,56 @@ func vpnFirewallRules() []string {
 	return rules
 }
 
-// Attempt to pull the system-level vpn configuration from the config tree.  If
-// it doesn't exist, create it and insert into the tree.
-func vpnSystemInit() error {
-	var err error
-	var public, private, port string
+func vpnKeyCreate() error {
+	slog.Infof("generating initial wireguard config")
 
-	// XXX: First look for private key in a file.  If it's not there, then
-	// the config tree.  If all else fails, generate a new one.  When
-	// generating a new key, insert it into the config tree.  It can be
-	// removed after being escrowed.
+	keyDir := plat.ExpandDirPath(vpn.SecretDir)
+	keyFile := plat.ExpandDirPath(vpn.SecretDir, vpn.PrivateFile)
 
-	if public, err = getStr(vpnPublicProp); err == nil {
-		if private, err = getStr(vpnPrivateProp); err == nil {
-			port, err = getStr(vpnPortProp)
-		}
+	if !aputil.FileExists(keyDir) {
+		os.Mkdir(keyDir, 0700)
 	}
 
+	private, err := wgtypes.GeneratePrivateKey()
 	if err != nil {
-		return err
-	}
-
-	if public == "" || private == "" {
-		if public == "" && private == "" {
-			slog.Infof("generating initial wireguard config")
-		} else {
-			slog.Infof("replacing incomplete wireguard config")
-		}
-
-		newPrivate, err := wgtypes.GeneratePrivateKey()
+		err = fmt.Errorf("generating wireguard key: %v", err)
+	} else {
+		data := []byte(private.String())
+		err = ioutil.WriteFile(keyFile, data, 0600)
 		if err != nil {
-			slog.Warnf("generating wireguard private key: %v", err)
-			return err
+			err = fmt.Errorf("persisting private key at %s: %v",
+				keyFile, err)
+		} else {
+			public := private.PublicKey().String()
+			config.CreateProp(vpn.PublicProp, public, nil)
 		}
-
-		private = newPrivate.String()
-		config.CreateProp(vpnPrivateProp, private, nil)
-
-		public = newPrivate.PublicKey().String()
-		config.CreateProp(vpnPublicProp, public, nil)
-	}
-
-	if port == "" {
-		port = strconv.Itoa(base_def.WIREGUARD_PORT)
-		config.CreateProp(vpnPortProp, port, nil)
-	}
-
-	vpnInfo.enabled, _ = config.GetPropBool(vpnEnabledProp)
-	vpnInfo.publicKey = vpnKeySet("system public", public)
-	vpnInfo.privateKey = vpnKeySet("system private", private)
-	vpnInfo.listenPort, err = strconv.Atoi(port)
-	if err != nil {
-		slog.Warnf("invalid vpn listen port: %s", port)
 	}
 
 	return err
+}
+
+func vpnGetSystemKeys() {
+	vpnInfo.privateKey = nil
+
+	keyFile := plat.ExpandDirPath(vpn.SecretDir, vpn.PrivateFile)
+	if !aputil.FileExists(keyFile) {
+		if err := vpnKeyCreate(); err != nil {
+			slog.Warnf("creating VPN key: %v", err)
+			return
+		}
+	}
+	text, err := ioutil.ReadFile(keyFile)
+	if err != nil {
+		slog.Warnf("reading VPN private key from %s: %v", keyFile, err)
+		return
+	}
+
+	private := vpnKeyParse("system private", string(text))
+	if err == nil {
+		vpnInfo.privateKey = private
+	} else {
+		slog.Warnf("invalid private key: %v", err)
+	}
 }
 
 func vpnInit() error {
@@ -410,6 +398,21 @@ func vpnInit() error {
 
 	plumbBridge(ring, vpnNic)
 
+	vpnGetSystemKeys()
+
+	port, err := getStr(vpn.PortProp)
+	if err != nil {
+		return err
+	}
+	if port == "" {
+		port = strconv.Itoa(base_def.WIREGUARD_PORT)
+		config.CreateProp(vpn.PortProp, port, nil)
+	}
+	vpnInfo.listenPort, err = strconv.Atoi(port)
+
+	vpnInfo.enabled, _ = config.GetPropBool(vpn.EnabledProp)
+
 	vpnUserInit()
-	return vpnSystemInit()
+
+	return nil
 }
