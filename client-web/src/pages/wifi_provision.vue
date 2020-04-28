@@ -118,7 +118,7 @@ span.warning {
 <template>
   <!-- XXX I18N is missing for most of this page -->
   <f7-page @page:beforein="onPageBeforeIn">
-    <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.self_provision.title')" sliding />
+    <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.wifi_provision.title')" sliding />
     <template v-if="sp && sp.status === 'provisioned' && activate !== ACTIVATE.SUCCESS">
       <f7-card>
         <f7-card-header>Wi-Fi Provisioned</f7-card-header>
@@ -300,7 +300,7 @@ import Debug from 'debug';
 import * as clipboard from 'clipboard-polyfill';
 import siteApi from '../api/site';
 import {format, parseISO} from '../date-fns-wrapper';
-const debug = Debug('page:self_provision');
+const debug = Debug('page:wifi_provision');
 
 const ACTIVATE = {
   NONE: 0,

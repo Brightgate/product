@@ -23,6 +23,7 @@ import (
 	"bg/common/cfgapi"
 	"bg/common/mfg"
 	"bg/common/network"
+	"bg/common/vpn"
 
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
@@ -374,6 +375,68 @@ func demoWanGetHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(&wan); err != nil {
 		panic(err)
+	}
+}
+
+// Implements GET /api/site/:uuid/network/wg, returning information about the
+// WG VPN.
+func demoWGGetHandler(w http.ResponseWriter, r *http.Request) {
+	vpnMod, err := vpn.NewVpn(config)
+	if err != nil {
+		err = errors.Wrap(err, "getting vpn handle")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	serverCfg, err := vpnMod.ServerConfig()
+	if err != nil {
+		err = errors.Wrap(err, "getting server config")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(&serverCfg); err != nil {
+		panic(err)
+	}
+}
+
+// Implements POST /api/site/:uuid/network/wg, returning information about the
+// WG VPN.
+func demoWGPostHandler(w http.ResponseWriter, r *http.Request) {
+	var err error
+	var input vpn.ServerConfig
+	if err = json.NewDecoder(r.Body).Decode(&input); err != nil {
+		log.Printf("demoWGPost decode failed: %v", err)
+		http.Error(w, errors.Wrap(err, "bad input").Error(), http.StatusBadRequest)
+		return
+	}
+	// User should not be passing this
+	if input.PublicKey != "" {
+		http.Error(w, errors.New("cannot pass publicKey").Error(), http.StatusBadRequest)
+		return
+	}
+
+	ops := []cfgapi.PropertyOp{
+		{
+			Op:    cfgapi.PropCreate,
+			Name:  vpn.AddressProp,
+			Value: input.Address,
+		},
+		{
+			Op:    cfgapi.PropCreate,
+			Name:  vpn.PortProp,
+			Value: fmt.Sprintf("%d", input.Port),
+		},
+		{
+			Op:    cfgapi.PropCreate,
+			Name:  vpn.EnabledProp,
+			Value: fmt.Sprintf("%t", input.Enabled),
+		},
+	}
+	_, err = config.Execute(r.Context(), ops).Wait(r.Context())
+	if err != nil {
+		log.Printf("demoWGPostHandler failed to execute: %v", err)
+		http.Error(w, "failed to set properties", http.StatusInternalServerError)
 	}
 }
 
@@ -987,6 +1050,8 @@ func makeDemoAPIRouter() *mux.Router {
 	router.HandleFunc("/sites/{s}/network/vap/{vapname}", demoVAPNameGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/network/vap/{vapname}", demoVAPNamePostHandler).Methods("POST")
 	router.HandleFunc("/sites/{s}/network/wan", demoWanGetHandler).Methods("GET")
+	router.HandleFunc("/sites/{s}/network/wg", demoWGGetHandler).Methods("GET")
+	router.HandleFunc("/sites/{s}/network/wg", demoWGPostHandler).Methods("POST")
 	router.HandleFunc("/sites/{s}/nodes", demoNodesGetHandler).Methods("GET")
 	router.HandleFunc("/sites/{s}/nodes/{nodeid}", demoNodePostHandler).Methods("POST")
 	router.HandleFunc("/sites/{s}/nodes/{nodeid}/ports/{portid}", demoNodePortPostHandler).Methods("POST")

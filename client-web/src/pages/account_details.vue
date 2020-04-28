@@ -71,7 +71,7 @@ div.avatar {
         {{ $t('message.account_details.manage_roles') }}
       </f7-list-item>
       <f7-list-item>
-        <span>{{ $t('message.account_details.network_access') }}<br>
+        <span>{{ $t('message.account_details.wifi_login') }}<br>
           <small>
             <template v-if="sp && sp.status === 'unprovisioned'">
               {{ $t('message.account_details.not_provisioned') }}

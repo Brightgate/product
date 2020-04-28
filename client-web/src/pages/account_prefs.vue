@@ -41,9 +41,13 @@ div.avatar {
 
     <f7-list>
       <f7-list-item
-        :title="$t('message.account_prefs.self_provision')"
-        link="/account_prefs/self_provision" />
+        :title="$t('message.account_prefs.wifi_provision')"
+        link="/account_prefs/wifi_provision/" />
+      <f7-list-item
+        :title="$t('message.account_prefs.vpn')"
+        link="/account_prefs/wg/" />
     </f7-list>
+
 
     <f7-block-title>Roles</f7-block-title>
     <f7-list>

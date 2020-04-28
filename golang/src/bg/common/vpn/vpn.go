@@ -146,6 +146,30 @@ func (v *Vpn) getServerConfig(conf *keyConfig) error {
 	return nil
 }
 
+// ServerConfig contains the VPN Server configuration for a site.
+type ServerConfig struct {
+	Enabled   bool   `json:"enabled"`
+	PublicKey string `json:"publicKey"`
+	Address   string `json:"address"`
+	Port      int    `json:"port"`
+}
+
+// ServerConfig returns the VPN Server configuration for a site.
+func (v *Vpn) ServerConfig() (*ServerConfig, error) {
+	var conf keyConfig
+	err := v.getServerConfig(&conf)
+	if err != nil {
+		return nil, fmt.Errorf("getting server config: %v", err)
+	}
+
+	return &ServerConfig{
+		Enabled:   v.IsEnabled(),
+		PublicKey: conf.ServerPublicKey,
+		Address:   conf.ServerAddress,
+		Port:      conf.ServerPort,
+	}, nil
+}
+
 // Choose an address in the VPN subnet that isn't already in use by some other
 // client.
 func (v *Vpn) chooseIPAddr(users cfgapi.UserMap) (string, error) {
@@ -227,7 +251,7 @@ func chooseIndex(user *cfgapi.UserInfo) string {
 	return strconv.Itoa(next)
 }
 
-func (v *Vpn) updateConfig(lastMac string, props map[string]string) error {
+func (v *Vpn) updateConfig(ctx context.Context, lastMac string, props map[string]string) error {
 
 	ops := make([]cfgapi.PropertyOp, 0)
 
@@ -250,18 +274,29 @@ func (v *Vpn) updateConfig(lastMac string, props map[string]string) error {
 		ops = append(ops, op)
 	}
 
-	_, err := v.config.Execute(context.Background(), ops).Wait(nil)
+	_, err := v.config.Execute(ctx, ops).Wait(ctx)
 	return err
 }
 
+// AddKeyResult collects the results of an AddKey operation
+type AddKeyResult struct {
+	Mac           string
+	ConfData      []byte
+	AssignedIP    string
+	Label         string
+	Publickey     string
+	ServerAddress string
+	ServerPort    int
+}
+
 // AddKey generates a new client wireguard key, inserts the related properties
-// into the config tree, and returns the contents of a wireguard config file to
-// the caller.
+// into the config tree, and returns to the caller the AddKeyResult, with the
+// synthetic mac address of the new client, the contents of a wireguard config
+// file, and other related information.
 //
 // The caller can optionally identify a label that should be associated with the
-// key, and the IP address the connecting client should be assigned,
-func (v *Vpn) AddKey(name, label, ipaddr string) ([]byte, error) {
-	var rval []byte
+// key, and the IP address the connecting client should be assigned.
+func (v *Vpn) AddKey(ctx context.Context, name, label, ipaddr string) (*AddKeyResult, error) {
 	var err error
 
 	retries := 0
@@ -324,9 +359,10 @@ Retry:
 		return nil, err
 	}
 
-	err = v.updateConfig(lastMac, props)
+	var confData []byte
+	err = v.updateConfig(ctx, lastMac, props)
 	if err == nil {
-		rval, err = genConfig(conf)
+		confData, err = genConfig(conf)
 	} else if err == cfgapi.ErrNotEqual {
 		if retries++; retries < 5 {
 			goto Retry
@@ -335,15 +371,31 @@ Retry:
 	} else {
 		// If we can't return a known-good config to the caller, ensure
 		// that we don't leave an unusable key in the config tree.
-		v.RemoveKey(name, newMac, public.String())
+		// XXX For now, we use a fresh context in case the above failed
+		// due to context timeout/expiry, but this probably needs to
+		// be more sophisticated.  The full solution probably involves
+		// looking at the deadline, making the initial call in a
+		// sub-context with a shorter duration, then, if an error
+		// happens, enqueue the work using another shorter-duration
+		// context.  See T470.
+		v.RemoveKey(context.TODO(), name, newMac, public.String())
 	}
 
-	return rval, err
+	result := AddKeyResult{
+		Mac:           newMac,
+		Label:         label,
+		ConfData:      confData,
+		AssignedIP:    ipaddr,
+		Publickey:     public.String(),
+		ServerAddress: conf.ServerAddress,
+		ServerPort:    conf.ServerPort,
+	}
+	return &result, err
 }
 
 // RemoveKey removes the config properties associated with a single wireguard
 // key.
-func (v *Vpn) RemoveKey(name, mac, public string) error {
+func (v *Vpn) RemoveKey(ctx context.Context, name, mac, public string) error {
 	base := "@/users/" + name + "/vpn/" + mac
 	ops := make([]cfgapi.PropertyOp, 0)
 	if public != "" {
@@ -359,7 +411,7 @@ func (v *Vpn) RemoveKey(name, mac, public string) error {
 		Name: base,
 	}
 	ops = append(ops, op)
-	_, err := v.config.Execute(context.Background(), ops).Wait(nil)
+	_, err := v.config.Execute(ctx, ops).Wait(ctx)
 	if err != nil && err != cfgapi.ErrNoProp {
 		err = fmt.Errorf("deleting %s: %v", base, err)
 	}

@@ -22,6 +22,7 @@ import (
 	"bg/common/cfgapi"
 	"bg/common/mfg"
 	"bg/common/network"
+	"bg/common/vpn"
 
 	"github.com/labstack/echo"
 	"github.com/pkg/errors"
@@ -688,6 +689,65 @@ func (a *siteHandler) getNetworkWan(c echo.Context) error {
 	return c.JSON(http.StatusOK, wan)
 }
 
+// getNetworkWG implements GET /api/sites/:uuid/network/wg
+// returning information about the Wireguard VPN configuration
+func (a *siteHandler) getNetworkWG(c echo.Context) error {
+	hdl, err := a.getClientHandle(c.Param("uuid"))
+	if err != nil {
+		return newHTTPError(http.StatusBadRequest)
+	}
+	defer hdl.Close()
+
+	vpnMod, err := vpn.NewVpn(hdl)
+	if err != nil {
+		// This basically indicates that the site doesn't support VPN
+		return newHTTPError(http.StatusNotImplemented, err)
+	}
+	serverCfg, err := vpnMod.ServerConfig()
+	if err != nil {
+		return newHTTPError(http.StatusInternalServerError, err)
+	}
+	return c.JSON(http.StatusOK, serverCfg)
+}
+
+// postNetworkWG implements POST /api/sites/:uuid/network/wg for
+// altering the Wireguard VPN server configuration.
+func (a *siteHandler) postNetworkWG(c echo.Context) error {
+	hdl, err := a.getClientHandle(c.Param("uuid"))
+	if err != nil {
+		return newHTTPError(http.StatusBadRequest)
+	}
+	defer hdl.Close()
+
+	var input vpn.ServerConfig
+	if err := c.Bind(&input); err != nil {
+		return newHTTPError(http.StatusBadRequest, err)
+	}
+	// User should not be passing this
+	if input.PublicKey != "" {
+		return newHTTPError(http.StatusBadRequest, "publicKey")
+	}
+
+	ops := []cfgapi.PropertyOp{
+		{
+			Op:    cfgapi.PropCreate,
+			Name:  vpn.AddressProp,
+			Value: input.Address,
+		},
+		{
+			Op:    cfgapi.PropCreate,
+			Name:  vpn.PortProp,
+			Value: fmt.Sprintf("%d", input.Port),
+		},
+		{
+			Op:    cfgapi.PropCreate,
+			Name:  vpn.EnabledProp,
+			Value: fmt.Sprintf("%t", input.Enabled),
+		},
+	}
+	return executePropChange(c, hdl, ops)
+}
+
 type apiNodeNic struct {
 	Name       string           `json:"name"`
 	MacAddr    string           `json:"macaddr"`
@@ -1250,6 +1310,8 @@ func newSiteHandler(r *echo.Echo, db appliancedb.DataStore, middlewares []echo.M
 	siteU.GET("/network/vap/:vapname", h.getNetworkVAPName, user)
 	siteU.POST("/network/vap/:vapname", h.postNetworkVAPName, admin)
 	siteU.GET("/network/wan", h.getNetworkWan, admin)
+	siteU.GET("/network/wg", h.getNetworkWG, user)
+	siteU.POST("/network/wg", h.postNetworkWG, admin)
 	siteU.GET("/nodes", h.getNodes, admin)
 	siteU.POST("/nodes/:nodeid", h.postNode, admin)
 	siteU.POST("/nodes/:nodeid/ports/:portid", h.postNodePort, admin)

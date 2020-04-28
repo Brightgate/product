@@ -35,16 +35,18 @@ func addKey(cmd *cobra.Command, args []string) error {
 	ipaddr, _ := cmd.Flags().GetString("ip")
 	file, _ := cmd.Flags().GetString("file")
 
+	ctx := context.Background()
+
 	if user == "" {
 		return fmt.Errorf("must specify a user name")
 	}
 
-	conf, err := vpnHdl.AddKey(user, label, ipaddr)
+	res, err := vpnHdl.AddKey(ctx, user, label, ipaddr)
 	if err == nil {
 		if file == "" {
-			fmt.Printf(string(conf))
+			fmt.Printf(string(res.ConfData))
 		} else {
-			err = ioutil.WriteFile(file, conf, 0644)
+			err = ioutil.WriteFile(file, res.ConfData, 0644)
 		}
 	}
 
@@ -77,6 +79,8 @@ func removeKey(cmd *cobra.Command, args []string) error {
 	var cnt, id int
 	var all, deleted bool
 
+	ctx := context.Background()
+
 	user, _ := cmd.Flags().GetString("user")
 	if user == "" {
 		return fmt.Errorf("must specify a user name")
@@ -108,7 +112,7 @@ func removeKey(cmd *cobra.Command, args []string) error {
 
 	for _, key := range conf.WGConfig {
 		if all || matches(key, id, mac, label, public) {
-			err = vpnHdl.RemoveKey(user, key.GetMac(),
+			err = vpnHdl.RemoveKey(ctx, user, key.GetMac(),
 				key.WGPublicKey)
 			if err != nil {
 				return err

@@ -588,6 +588,11 @@ type CfgFeature string
 // introduced with cfgversion 25.
 const FeatureClientFriendlyName CfgFeature = "clientFriendlyName"
 
+// FeatureVPNConfig indicates that the site is running software new
+// enough to accept VPN related user and site level property settings.  This
+// functionality was introduced with cfgversion 28.
+const FeatureVPNConfig CfgFeature = "vpnConfig"
+
 // CfgFeatures captures information about config-tree related features which
 // may be present, which are not obviously discoverable simply by inspecting
 // the tree.
@@ -607,6 +612,9 @@ func (c *Handle) GetFeatures() (CfgFeatures, error) {
 	features := make(CfgFeatures)
 	if rval >= 25 {
 		features[FeatureClientFriendlyName] = true
+	}
+	if rval >= 28 {
+		features[FeatureVPNConfig] = true
 	}
 	return features, nil
 }

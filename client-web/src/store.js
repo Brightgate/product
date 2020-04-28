@@ -404,6 +404,12 @@ const mutations = {
     Vue.set(getAccount(state, accountID), 'roles', roles);
   },
 
+  setAccountWG(state, {accountID, wg}) {
+    assert.equal(typeof accountID, 'string');
+    assert(Array.isArray(wg), 'expected wg to be array');
+    Vue.set(getAccount(state, accountID), 'wg', wg);
+  },
+
   setSiteNetworkConfig(state, {id, networkConfig}) {
     getSite(state, id).networkConfig = networkConfig;
   },
@@ -1060,6 +1066,16 @@ const actions = {
     context.dispatch('fetchOrgAccounts');
   },
 
+  // Get WireGuard info for an account
+  async fetchAccountWG(context, accountID) {
+    if (context.state.appMode !== appDefs.APPMODE_CLOUD) {
+      return;
+    }
+    assert.equal(typeof accountID, 'string');
+    const wg = await siteApi.accountWGGet(accountID);
+    debug('fetchAccountWG: accountID, wg', accountID, wg);
+    context.commit('setAccountWG', {accountID: accountID, wg: wg});
+  },
 
   // Load the various aspects of the network configuration from the server.
   async fetchNetworkConfig(context) {
@@ -1076,6 +1092,10 @@ const actions = {
         debug('wan get failed', err);
         return null;
       }),
+      wg: siteApi.siteWGGet(id).catch((err) => {
+        debug('wg vpn get failed', err);
+        return null;
+      }),
       vaps: siteApi.siteVAPsGet(id),
       baseAddress: siteApi.siteConfigGet(id, '@/network/base_address', ''),
     });
@@ -1086,11 +1106,14 @@ const actions = {
   },
 
   async updateVAPConfig(context, {vapName, vapConfig}) {
-    if (context.state.appMode !== appDefs.APPMODE_CLOUD) {
-      return;
-    }
     const id = context.state.currentSiteID;
     await siteApi.siteVAPPost(id, vapName, vapConfig);
+    await context.dispatch('fetchNetworkConfig');
+  },
+
+  async updateWGConfig(context, {wgConfig}) {
+    const id = context.state.currentSiteID;
+    await siteApi.siteWGPost(id, wgConfig);
     await context.dispatch('fetchNetworkConfig');
   },
 
@@ -1277,6 +1300,7 @@ const actions = {
     await context.dispatch('fetchAccountRoles', context.state.myAccountUUID);
     context.dispatch('fetchOrgs').then(() => {
       context.dispatch('fetchOrgAccounts').catch(() => {});
+      context.dispatch('fetchAccountSelfProvision', context.state.myAccountUUID).catch(() => {});
     }).catch(() => {});
     context.dispatch('fetchSites');
   },

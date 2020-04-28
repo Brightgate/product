@@ -48,16 +48,16 @@
 
     <template v-if="accountNeedsProvisioning">
       <f7-block-title>{{ $t("message.notifications.notifications") }}</f7-block-title>
-      <f7-list media-list chevron-center>
+      <f7-list>
         <f7-list-item
           v-if="accountNeedsProvisioning"
           key="selfProvision"
           :title="$t('message.notifications.self_provision_title')"
-          :text="$t('message.notifications.self_provision_text')"
-          link="/account_prefs/self_provision">
-          <div slot="media">
-            <f7-icon ios="f7:alert_fill" md="material:warning" color="yellow" />
-          </div>
+          :subtitle="$t('message.notifications.self_provision_text')"
+          media-item
+          chevron-center
+          link="/account_prefs/wifi_provision/">
+          <f7-icon slot="media" size="48" ios="f7:alert_fill" md="material:warning" color="yellow" />
         </f7-list-item>
         <!-- XXX the below notifications can never trigger in the current app
           <f7-list-item
@@ -95,7 +95,7 @@
             :key="alert.deviceID + '-' + alert.vulnid"
             :link="`/sites/${currentSiteID}/devices/${alert.deviceID}/`">
             <div slot="media">
-              <f7-icon f7="bolt_circle_fill" color="red" class="alert-icon" />
+              <f7-icon f7="bolt_circle_fill" color="red" />
             </div>
             <span>
               {{ $t('message.alerts.problem_on_device',

@@ -264,6 +264,19 @@ async function siteWanGet(siteID) {
   return await commonApplianceGet(siteID, 'network/wan');
 }
 
+// Load the Wireguard VPN information from the server.
+async function siteWGGet(siteID) {
+  return await commonApplianceGet(siteID, 'network/wg');
+}
+
+// Post changes to the Wireguard VPN config
+async function siteWGPost(siteID, wgConfig) {
+  assert.equal(typeof siteID, 'string', 'siteID');
+  assert.equal(typeof wgConfig, 'object', 'wgConfig');
+
+  await commonAppliancePost(siteID, `network/wg`, wgConfig);
+}
+
 // Load the list of users from the server.
 async function siteUsersGet(siteID) {
   const res = await commonApplianceGet(siteID, 'users');
@@ -520,6 +533,78 @@ async function accountDelete(accountUUID) {
   }
 }
 
+// Load wireguard VPN information for the listed account
+async function accountWGGet(accountUUID) {
+  assert.equal(typeof accountUUID, 'string');
+  const u = buildUrl(`/api/account/${accountUUID}/wg`);
+  try {
+    const res = await axios.get(u);
+    return res.data;
+  } catch (err) {
+    debug('accountRolesGet: failed', err);
+    throw err;
+  }
+}
+
+// Create a new wireguard VPN configuration for the listed account
+async function accountWGSiteNewPost(accountUUID, siteUUID, label) {
+  assert.equal(typeof accountUUID, 'string');
+  assert.equal(typeof siteUUID, 'string');
+  assert.equal(typeof label, 'string');
+
+  // The default of 5000ms is too short for us here; wait longer
+  const timeout = 30000;
+
+  // We need to post our timezone so that the server can
+  // give us back a nicely formed zip file.
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone; // eslint-disable-line new-cap
+
+  // We don't do the same timeout dance that we do for DELETE below, see the
+  // server code for more details.
+  const u = buildUrl(`/api/account/${accountUUID}/wg/${siteUUID}/new`);
+  const postData = {label, tz};
+  debug(`POST ${u}`, postData);
+
+  const res = await axios({
+    timeout: timeout,
+    method: 'POST',
+    url: u,
+    headers: {
+      'content-type': 'application/json',
+    },
+    data: postData,
+  });
+  debug(`POST ${u} result`, res);
+  assert(typeof res.data === 'object');
+  return res.data;
+}
+
+// Delete a wireguard VPN configuration for the listed account
+async function accountWGSiteMacDelete(accountUUID, siteUUID, mac, publicKey) {
+  assert.equal(typeof accountUUID, 'string');
+  assert.equal(typeof siteUUID, 'string');
+  assert.equal(typeof mac, 'string');
+  assert.equal(typeof publicKey, 'string');
+
+  // XXX See also T470 and account.go; this value is intentionally long because
+  // the server doesn't handle it properly.
+  const timeout = 20000;
+
+  const macComp = encodeURIComponent(mac);
+  const publicKeyComp = encodeURIComponent(publicKey);
+  const u = buildUrl(`/api/account/${accountUUID}/wg/${siteUUID}/${macComp}/${publicKeyComp}`);
+  debug(`DELETE ${u}`);
+  const res = await axios({
+    timeout: timeout,
+    method: 'DELETE',
+    headers: {'X-Timeout': `${timeout}`},
+    url: u,
+  });
+  if (res.status === 202) {
+    throw new UnfinishedOperationError(u);
+  }
+}
+
 async function orgsGet() {
   const u = buildUrl(`/api/org`);
   try {
@@ -557,6 +642,8 @@ export default {
   siteVAPsGet,
   siteVAPPost,
   siteWanGet,
+  siteWGGet,
+  siteWGPost,
   siteNodesGet,
   siteNodePost,
   siteNodePortPost,
@@ -576,6 +663,9 @@ export default {
   accountSelfProvisionPost,
   accountRolesGet,
   accountRolesPost,
+  accountWGGet,
+  accountWGSiteNewPost,
+  accountWGSiteMacDelete,
   orgsGet,
   orgAccountsGet,
   setMockMode,

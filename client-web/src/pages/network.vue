@@ -46,6 +46,16 @@ li.accordion-item.accordion-item-opened >>> span.hide-when-accordion-open {
           </div>
         </f7-list-item>
       </template>
+      <template v-if="features.vpnConfig">
+        <f7-list-item :key="'vpn'"
+                      :title="$t('message.network.names.vpn')"
+                      :link="`${$f7route.url}wg`"
+                      chevron-center>
+          <div slot="text">
+            {{ $t('message.network.descriptions.vpn') }}
+          </div>
+        </f7-list-item>
+      </template>
     </f7-list>
 
     <f7-block-title>{{ $t('message.network.config') }} </f7-block-title>
@@ -124,6 +134,7 @@ export default {
     // Map various $store elements as computed properties for use in the
     // template.
     ...vuex.mapGetters([
+      'features',
       'networkConfig',
       'vaps',
     ]),

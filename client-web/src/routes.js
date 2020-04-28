@@ -12,6 +12,8 @@ import Accounts from './pages/accounts.vue';
 import AccountDetails from './pages/account_details.vue';
 import AccountPrefs from './pages/account_prefs.vue';
 import AccountRoles from './pages/account_roles.vue';
+import AccountWG from './pages/account_wg.vue';
+import AccountWGConfig from './pages/account_wg_config.vue';
 import ComplianceReport from './pages/compliance_report.vue';
 import DevDetails from './pages/dev_details.vue';
 import Devices from './pages/devices.vue';
@@ -27,7 +29,9 @@ import MalwareWarn from './pages/malware_warn.vue';
 import Network from './pages/network.vue';
 import NetworkVAP from './pages/network_vap.vue';
 import NetworkVAPEditor from './pages/network_vap_editor.vue';
-import SelfProvision from './pages/self_provision.vue';
+import NetworkWG from './pages/network_wg.vue';
+import NetworkWGEditor from './pages/network_wg_editor.vue';
+import WifiProvision from './pages/wifi_provision.vue';
 import SiteAdmin from './pages/site_admin.vue';
 import SiteAlert from './pages/site_alert.vue';
 import Support from './pages/support.vue';
@@ -54,8 +58,16 @@ export default [
     component: AccountPrefs,
   },
   {
-    path: '/account_prefs/self_provision',
-    component: SelfProvision,
+    path: '/account_prefs/wifi_provision/',
+    component: WifiProvision,
+  },
+  {
+    path: '/account_prefs/wg/',
+    component: AccountWG,
+  },
+  {
+    path: '/account_prefs/wg/:id/',
+    component: AccountWGConfig,
   },
   {
     path: '/accounts/',
@@ -132,6 +144,14 @@ export default [
   {
     path: '/sites/:siteID/network/vap/:vapName/editor',
     component: NetworkVAPEditor,
+  },
+  {
+    path: '/sites/:siteID/network/wg',
+    component: NetworkWG,
+  },
+  {
+    path: '/sites/:siteID/network/wg/editor',
+    component: NetworkWGEditor,
   },
   {
     path: '/support/',

@@ -364,7 +364,7 @@ func SyncAccountDeprovision(ctx context.Context,
 		var hdl *cfgapi.Handle
 		hdl, err = getConfig(site.UUID.String())
 		if err != nil {
-			return err
+			return errors.Wrap(err, "getConfig")
 		}
 
 		ui, err := hdl.GetUserByUUID(account.UUID)
@@ -379,6 +379,8 @@ func SyncAccountDeprovision(ctx context.Context,
 			log.Printf("GetUserByUUID failed unexpectedly: %v", err)
 			continue
 		}
+		// Setup ops to remove passwords
+		ui.SetNoPassword()
 		uis = append(uis, ui)
 	}
 
@@ -394,7 +396,7 @@ func SyncAccountDeprovision(ctx context.Context,
 			ui.SetNoPassword()
 			cmdHdl, err = ui.Update(ctx)
 			if err != nil {
-				errs = append(errs, err)
+				errs = append(errs, errors.Wrap(err, "Update"))
 				continue
 			}
 		}
@@ -402,8 +404,12 @@ func SyncAccountDeprovision(ctx context.Context,
 		if err != nil {
 			if err == cfgapi.ErrQueued || err == cfgapi.ErrInProgress {
 				queued++
+			} else if err == cfgapi.ErrNoProp {
+				// Seems unlikely, but more harmless than not since
+				// this is deprovision/delete
+				success++
 			} else {
-				errs = append(errs, err)
+				errs = append(errs, errors.Wrap(err, "Status"))
 			}
 			continue
 		}
