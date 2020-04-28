@@ -23,6 +23,7 @@ import (
 
 var (
 	config *cfgapi.Handle
+	vpnHdl *vpn.Vpn
 	pname  string
 )
 
@@ -37,7 +38,7 @@ func addKey(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("must specify a user name")
 	}
 
-	conf, err := vpn.AddKey(user, label, ipaddr)
+	conf, err := vpnHdl.AddKey(user, label, ipaddr)
 	if err == nil {
 		if file == "" {
 			fmt.Printf(string(conf))
@@ -80,7 +81,7 @@ func removeKey(cmd *cobra.Command, args []string) error {
 
 	for _, key := range conf.WGConfig {
 		if all || id == key.ID || (label != "" && label == key.Label) {
-			if err = vpn.RemoveKey(user, key.GetMac()); err != nil {
+			if err = vpnHdl.RemoveKey(user, key.GetMac()); err != nil {
 				return err
 			}
 
@@ -102,7 +103,7 @@ func removeKey(cmd *cobra.Command, args []string) error {
 // list all of the configured VPN keys
 func listKeys(cmd *cobra.Command, args []string) error {
 	name, _ := cmd.Flags().GetString("user")
-	keys, err := vpn.GetKeys(name)
+	keys, err := vpnHdl.GetKeys(name)
 	if err != nil {
 		return err
 	}
@@ -137,6 +138,8 @@ func listKeys(cmd *cobra.Command, args []string) error {
 
 // Exec executes the bulk of the vpntool work.
 func Exec(ctx context.Context, p string, hdl *cfgapi.Handle, args []string) error {
+	var err error
+
 	config = hdl
 	pname = p
 
@@ -181,9 +184,8 @@ func Exec(ctx context.Context, p string, hdl *cfgapi.Handle, args []string) erro
 	listCmd.Flags().StringP("user", "u", "", "list keys for a specific user")
 	rootCmd.AddCommand(listCmd)
 
-	if err := vpn.Init(config); err != nil {
-		return err
+	if vpnHdl, err = vpn.NewVpn(config); err == nil {
+		err = rootCmd.Execute()
 	}
-
-	return rootCmd.Execute()
+	return err
 }

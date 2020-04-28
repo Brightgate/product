@@ -158,14 +158,18 @@ func vpnUpdate(hwaddr net.HardwareAddr, ip net.IP) {
 }
 
 func getVPNClients() {
-	vpn.Init(config)
-	keys, _ := vpn.GetKeys("")
-	for _, key := range keys {
-		if ip := net.ParseIP(key.WGAssignedIP); ip != nil {
-			setMacIP(key.GetMac(), ip)
+	hdl, err := vpn.NewVpn(config)
+	if err != nil {
+		slog.Warnf("vpn.NewVpn() failed: %v", err)
+	} else {
+		keys, _ := hdl.GetKeys("")
+		for _, key := range keys {
+			if ip := net.ParseIP(key.WGAssignedIP); ip != nil {
+				setMacIP(key.GetMac(), ip)
+			}
 		}
+		hdl.RegisterMacIPHandler(vpnUpdate)
 	}
-	vpn.RegisterMacIPHandler(vpnUpdate)
 }
 
 func configIPv4Changed(path []string, value string, expires *time.Time) {

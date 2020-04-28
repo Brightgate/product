@@ -58,7 +58,7 @@ func shortToMac(short int) string {
 }
 
 // Returns the last mac allocated and a map of all in-use mac addresses.
-func getInuseMacs(users cfgapi.UserMap) (int, map[int]bool, error) {
+func (v *Vpn) getInuseMacs(users cfgapi.UserMap) (int, map[int]bool, error) {
 	var lastAllocated int
 
 	// iterate over all the assigned VPN keys, adding their addresses to the
@@ -72,7 +72,7 @@ func getInuseMacs(users cfgapi.UserMap) (int, map[int]bool, error) {
 		}
 	}
 
-	lastMac, err := config.GetProp(lastMacProp)
+	lastMac, err := v.config.GetProp(lastMacProp)
 	if err == nil {
 		lastAllocated, _ = macToShort(lastMac)
 	} else {
@@ -84,11 +84,11 @@ func getInuseMacs(users cfgapi.UserMap) (int, map[int]bool, error) {
 
 // Returns the last mac address assigned and a candidate mac address for this
 // new key.
-func chooseMacAddress(users cfgapi.UserMap) (string, string, error) {
+func (v *Vpn) chooseMacAddress(users cfgapi.UserMap) (string, string, error) {
 	const mask = 0xffffff // only iterate over the 3 low-order bytes
 	var lastMac, newMac string
 
-	last, inuse, err := getInuseMacs(users)
+	last, inuse, err := v.getInuseMacs(users)
 	if err == nil {
 		err = fmt.Errorf("no mac addresses available")
 		lastMac = shortToMac(last)

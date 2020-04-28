@@ -32,17 +32,18 @@ const (
 	vpnRingProp = "@/policy/site/vpn/rings"
 )
 
-var (
+// Vpn is an opaque handle which is used to perform vpn-related config
+// operations.
+type Vpn struct {
 	config *cfgapi.Handle
 
-	ringSubnets map[string]string
+	updateCallback func(net.HardwareAddr, net.IP)
 
+	subnets   map[string]string
 	vpnStart  net.IP
 	vpnRouter net.IP
 	vpnSpan   int
-
-	configCallback func(net.HardwareAddr, net.IP)
-)
+}
 
 type keyConfig struct {
 	// Used to help match an issued key with its associated config data
@@ -102,10 +103,10 @@ func genConfig(conf keyConfig) ([]byte, error) {
 
 }
 
-func getServerConfig(conf *keyConfig) error {
+func (v *Vpn) getServerConfig(conf *keyConfig) error {
 	var port string
 
-	props, err := config.GetProps("@/network/vpn")
+	props, err := v.config.GetProps("@/network/vpn")
 	if err != nil {
 		return fmt.Errorf("fetching server vpn config: %v", err)
 	}
@@ -126,29 +127,29 @@ func getServerConfig(conf *keyConfig) error {
 		return fmt.Errorf("bad port number %s: %v", port, err)
 	}
 
-	conf.DNSAddress = vpnRouter.String()
+	conf.DNSAddress = v.vpnRouter.String()
 
 	return nil
 }
 
 // Choose an address in the VPN subnet that isn't already in use by some other
 // client.
-func chooseIPAddr(users cfgapi.UserMap) (string, error) {
+func (v *Vpn) chooseIPAddr(users cfgapi.UserMap) (string, error) {
 	// Build a map of all possible addresses in the VPN ring's subnet
 	available := make(map[string]bool)
-	for i := 0; i < vpnSpan; i++ {
-		str := dhcp.IPAdd(vpnStart, i).String()
+	for i := 0; i < v.vpnSpan; i++ {
+		str := dhcp.IPAdd(v.vpnStart, i).String()
 		available[str] = true
 	}
 
 	// Remove all in-use addresses from the available list
-	for _, u := range config.GetUsers() {
+	for _, u := range v.config.GetUsers() {
 		for _, key := range u.WGConfig {
 			delete(available, key.WGAssignedIP)
 		}
 	}
 	// The router address isn't available either
-	delete(available, vpnRouter.String())
+	delete(available, v.vpnRouter.String())
 
 	for addr := range available {
 		return addr, nil
@@ -159,7 +160,7 @@ func chooseIPAddr(users cfgapi.UserMap) (string, error) {
 
 // Given a list of rings we want the client to access, return a list of the
 // subnets to include in its route table.
-func chooseRoutedSubnets(routedRings string) (string, error) {
+func (v *Vpn) chooseRoutedSubnets(routedRings string) (string, error) {
 	subnets := make([]string, 0)      // list of subnets to include
 	included := make(map[string]bool) // used to avoid duplicates
 
@@ -167,7 +168,7 @@ func chooseRoutedSubnets(routedRings string) (string, error) {
 	ringList = append(ringList, "vpn")
 
 	for _, ring := range ringList {
-		if subnet, ok := ringSubnets[ring]; ok {
+		if subnet, ok := v.subnets[ring]; ok {
 			if !included[ring] {
 				subnets = append(subnets, subnet)
 				included[ring] = true
@@ -192,7 +193,8 @@ func chooseIndex(user *cfgapi.UserInfo) string {
 	return strconv.Itoa(next)
 }
 
-func updateConfig(lastMac string, props map[string]string) error {
+func (v *Vpn) updateConfig(lastMac string, props map[string]string) error {
+
 	ops := make([]cfgapi.PropertyOp, 0)
 
 	if lastMac != "" {
@@ -214,7 +216,7 @@ func updateConfig(lastMac string, props map[string]string) error {
 		ops = append(ops, op)
 	}
 
-	_, err := config.Execute(context.Background(), ops).Wait(nil)
+	_, err := v.config.Execute(context.Background(), ops).Wait(nil)
 	return err
 }
 
@@ -224,22 +226,22 @@ func updateConfig(lastMac string, props map[string]string) error {
 //
 // The caller can optionally identify a label that should be associated with the
 // key, and the IP address the connecting client should be assigned,
-func AddKey(name, label, ipaddr string) ([]byte, error) {
+func (v *Vpn) AddKey(name, label, ipaddr string) ([]byte, error) {
 	var rval []byte
 	var err error
 
 	retries := 0
 Retry:
-	users := config.GetUsers()
+	users := v.config.GetUsers()
 	if ipaddr == "" {
-		if ipaddr, err = chooseIPAddr(users); err != nil {
+		if ipaddr, err = v.chooseIPAddr(users); err != nil {
 			return nil, err
 		}
 	} else if ip := net.ParseIP(ipaddr); ip == nil {
 		return nil, fmt.Errorf("bad client address: %s", ipaddr)
 	}
 
-	lastMac, newMac, err := chooseMacAddress(users)
+	lastMac, newMac, err := v.chooseMacAddress(users)
 	if err != nil {
 		return nil, fmt.Errorf("choosing a new mac address: %v", err)
 	}
@@ -249,8 +251,8 @@ Retry:
 		return nil, fmt.Errorf("no such user")
 	}
 
-	rings, _ := config.GetProp(vpnRingProp)
-	subnets, err := chooseRoutedSubnets(rings)
+	rings, _ := v.config.GetProp(vpnRingProp)
+	subnets, err := v.chooseRoutedSubnets(rings)
 	if err != nil {
 		return nil, err
 	}
@@ -285,11 +287,11 @@ Retry:
 		conf.Label = "(" + label + ")"
 	}
 
-	if err = getServerConfig(&conf); err != nil {
+	if err = v.getServerConfig(&conf); err != nil {
 		return nil, err
 	}
 
-	err = updateConfig(lastMac, props)
+	err = v.updateConfig(lastMac, props)
 	if err == nil {
 		rval, err = genConfig(conf)
 	} else if err == cfgapi.ErrNotEqual {
@@ -304,10 +306,10 @@ Retry:
 
 // RemoveKey removes the config properties associated with a single wireguard
 // key.
-func RemoveKey(name, mac string) error {
+func (v *Vpn) RemoveKey(name, mac string) error {
 	prop := "@/users/" + name + "/vpn/" + mac
 
-	err := config.DeleteProp(prop)
+	err := v.config.DeleteProp(prop)
 	if err != nil && err != cfgapi.ErrNoProp {
 		return fmt.Errorf("deleting %s: %v", prop, err)
 	}
@@ -316,27 +318,27 @@ func RemoveKey(name, mac string) error {
 }
 
 // IsEnabled checks whether the VPN functionality has been enabled for this site
-func IsEnabled() bool {
-	v, _ := config.GetPropBool("@/policy/site/vpn/enabled")
-	return v
+func (v *Vpn) IsEnabled() bool {
+	enabled, _ := v.config.GetPropBool("@/policy/site/vpn/enabled")
+	return enabled
 }
 
 // GetKeys returns a mac->WireguardConfig map containing all of the keys
 // configured for the given user.  If the user parameter is the empty string,
 // the call will return all keys in the system.
-func GetKeys(name string) (map[string]*cfgapi.WireguardConf, error) {
+func (v *Vpn) GetKeys(name string) (map[string]*cfgapi.WireguardConf, error) {
 	var users cfgapi.UserMap
 
 	rval := make(map[string]*cfgapi.WireguardConf)
 
 	if name != "" {
-		u, err := config.GetUser(name)
+		u, err := v.config.GetUser(name)
 		if err != nil {
 			return nil, err
 		}
 		users = cfgapi.UserMap{name: u}
 	} else {
-		users = config.GetUsers()
+		users = v.config.GetUsers()
 	}
 
 	for _, conf := range users {
@@ -350,62 +352,67 @@ func GetKeys(name string) (map[string]*cfgapi.WireguardConf, error) {
 	return rval, nil
 }
 
-func userUpdateEvent(path []string, val string, expires *time.Time) {
+func (v *Vpn) userUpdateEvent(path []string, val string, expires *time.Time) {
 	if len(path) == 5 && path[4] == "assigned_ip" {
 		if ip := net.ParseIP(val); ip != nil {
 			if mac, err := net.ParseMAC(path[3]); err == nil {
-				configCallback(mac, ip)
+				v.updateCallback(mac, ip)
 			}
 		}
 	}
 }
 
-func userDeleteEvent(path []string) {
+func (v *Vpn) userDeleteEvent(path []string) {
 	if len(path) == 5 && path[4] == "assigned_ip" {
 		if mac, err := net.ParseMAC(path[3]); err == nil {
-			configCallback(mac, nil)
+			v.updateCallback(mac, nil)
 		}
 	}
 }
 
 // RegisterMacIPHandler indicates that the caller wants to be notified of any
 // changes to the mac->ip mappings maintained for vpn clients.
-func RegisterMacIPHandler(cb func(net.HardwareAddr, net.IP)) {
-	if configCallback == nil {
-		config.HandleChange(`^@/users/.*/vpn/.*`, userUpdateEvent)
-		config.HandleDelete(`^@/users/.*/vpn/.*`, userDeleteEvent)
-		config.HandleExpire(`^@/users/.*/vpn/.*`, userDeleteEvent)
+func (v *Vpn) RegisterMacIPHandler(cb func(net.HardwareAddr, net.IP)) error {
+	if v.updateCallback != nil {
+		return fmt.Errorf("vpn update callback already registered")
 	}
-	configCallback = cb
+
+	v.updateCallback = cb
+	v.config.HandleChange(`^@/users/.*/vpn/.*`, v.userUpdateEvent)
+	v.config.HandleDelete(`^@/users/.*/vpn/.*`, v.userDeleteEvent)
+	v.config.HandleExpire(`^@/users/.*/vpn/.*`, v.userDeleteEvent)
+	return nil
 }
 
-// Init must be called before any other vpn function.
-func Init(c *cfgapi.Handle) error {
-	var err error
+// NewVpn returns a Vpn handle associated with the provided configd handle.
+func NewVpn(config *cfgapi.Handle) (*Vpn, error) {
 	var vpnRing *cfgapi.RingConfig
 
-	config = c
 	rings := config.GetRings()
 	if rings == nil {
-		return fmt.Errorf("unable to fetch ring configs")
+		return nil, fmt.Errorf("unable to fetch ring configs")
 	}
 
+	subnets := make(map[string]string)
+	for name, ring := range rings {
+		subnets[name] = ring.IPNet.String()
+	}
+	subnets[base_def.RING_WAN] = "0.0.0.0/0"
+
 	if vpnRing = rings[base_def.RING_VPN]; vpnRing == nil {
-		return fmt.Errorf("VPN ring is unconfigured")
+		return nil, fmt.Errorf("VPN ring is unconfigured")
 	}
 
 	start, ipnet, _ := net.ParseCIDR(vpnRing.Subnet)
 	ones, bits := ipnet.Mask.Size()
 
-	vpnStart = start
-	vpnSpan = (1<<uint32(bits-ones) - 3)
-	vpnRouter = dhcp.IPAdd(vpnStart, 1)
-
-	ringSubnets = make(map[string]string)
-	for name, ring := range rings {
-		ringSubnets[name] = ring.IPNet.String()
+	v := Vpn{
+		config:    config,
+		subnets:   subnets,
+		vpnStart:  start,
+		vpnSpan:   (1<<uint32(bits-ones) - 3),
+		vpnRouter: dhcp.IPAdd(start, 1),
 	}
-	ringSubnets[base_def.RING_WAN] = "0.0.0.0/0"
 
-	return err
+	return &v, nil
 }

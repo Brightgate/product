@@ -388,16 +388,20 @@ func recoverClients() {
 		newData.setPrivacy(hwaddr, client.DNSPrivate)
 	}
 
-	vpnClients = make(map[uint64]bool)
-	vpn.Init(config)
-	keys, _ := vpn.GetKeys("")
-	for mac, key := range keys {
-		if ip := net.ParseIP(key.WGAssignedIP); ip != nil {
-			hwaddr := network.MacToUint64(mac)
-			addIP(network.IPAddrToUint32(ip), hwaddr, true)
+	hdl, err := vpn.NewVpn(config)
+	if err != nil {
+		slog.Warnf("vpn.NewVpn() failed: %v", err)
+	} else {
+		vpnClients = make(map[uint64]bool)
+		keys, _ := hdl.GetKeys("")
+		for mac, key := range keys {
+			if ip := net.ParseIP(key.WGAssignedIP); ip != nil {
+				hwaddr := network.MacToUint64(mac)
+				addIP(network.IPAddrToUint32(ip), hwaddr, true)
+			}
 		}
+		hdl.RegisterMacIPHandler(vpnUpdate)
 	}
-	vpn.RegisterMacIPHandler(vpnUpdate)
 }
 
 func signalHandler() {
