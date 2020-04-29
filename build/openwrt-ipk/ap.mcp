@@ -1,6 +1,6 @@
 #!/bin/sh /etc/rc.common
 #
-# COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+# COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
 #
 # This copyright notice is Copyright Management Information under 17 USC 1202
 # and is included to protect this work and deter copyright infringement.
@@ -26,6 +26,15 @@ set_hostname () {
 # Workaround for CVE-2019-11477 and CV-2019-11478.
 cve_2019_tcp_sack () {
 	echo 0 > /proc/sys/net/ipv4/tcp_sack
+}
+
+is_model100 () {
+	fw_printenv -n bg_ext_serial | egrep -q "001-[0-9]{6}[A-Z]{2}-[0-9]{6}"
+}
+
+# MT7623 platforms.  Workaround for NETDEV WATCHDOG (T256).
+mt7623_netdev_watchdog () {
+	ethtool -s eth0 autoneg off
 }
 
 start_service()
@@ -59,6 +68,10 @@ start_service()
 	fi
 
 	cve_2019_tcp_sack
+	if is_model100; then
+		mt7623_netdev_watchdog
+	fi
+
 
 	# Start service via procd.
 	procd_open_instance
