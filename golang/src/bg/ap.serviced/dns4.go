@@ -63,6 +63,12 @@ type dnsRecord struct {
 	recval   string
 }
 
+type requestor struct {
+	ip   net.IP
+	mac  string
+	ring string
+}
+
 var (
 	cacheSize = apcfg.Int("cache_size", 1024*1024, false, nil)
 	dataDir   = apcfg.String("dir", data.DefaultDataDir, false, nil)
@@ -116,9 +122,9 @@ var (
 		IPv4: network.IPLocalhost,
 	}
 
-	domainname    string
-	brightgateDNS string
-	upstreamDNS   = "8.8.8.8:53"
+	dnsLocalDomain  string // the domain we resolve for
+	dnsUpstream     string // the server we refer non-local requests to
+	dnsSearchDomain string // the domain managed by the upstream server
 
 	dnsHTTPClient *http.Client
 )
@@ -254,6 +260,10 @@ func adjustTTL(delta uint32, records []dns.RR) {
 func (d *dnsCache) lookup(key uint64, question string) *dns.Msg {
 	var r *dns.Msg
 
+	if *cacheSize == 0 {
+		return nil
+	}
+
 	d.lookups++
 	dnsMetrics.cacheLookups.Inc()
 	d.Lock()
@@ -354,8 +364,26 @@ func cnameDeleteEvent(path []string) {
 	deleteOneCname(path[2])
 }
 
-func serverUpdateEvent(path []string, val string, expires *time.Time) {
-	setNameserver(val)
+// handle udpates to @/network/dns/*
+func dnsUpdateEvent(path []string, val string, expires *time.Time) {
+	slog.Debugf("updating %s -> %s", pathStr(path), val)
+	if len(path) == 3 {
+		if path[2] == "server" {
+			setNameserver(val)
+		} else if path[2] == "search" {
+			setSearchDomain(val)
+		}
+	}
+}
+
+func dnsDeleteEvent(path []string) {
+	slog.Debugf("deleting %s -> %s", pathStr(path))
+	if len(path) == 2 {
+		setNameserver("")
+		setSearchDomain("")
+	} else {
+		dnsUpdateEvent(path, "", nil)
+	}
 }
 
 func logRequest(handler string, start time.Time, ip net.IP, r, m *dns.Msg) {
@@ -411,14 +439,18 @@ func logUnknown(ipstr string) bool {
 
 // Determine whether the DNS request came from a known client.  If it did,
 // return the client record.  If it didn't, raise a warning flag and return nil.
-func getClient(w dns.ResponseWriter) (string, net.IP, string) {
+func getRequestor(w dns.ResponseWriter) *requestor {
 	addr, ok := w.RemoteAddr().(*net.UDPAddr)
 	if !ok {
-		return "", nil, ""
+		return nil
 	}
 
 	if addr.IP.Equal(clientSelf.IPv4) {
-		return network.MacZero.String(), clientSelf.IPv4, clientSelf.Ring
+		return &requestor{
+			ip:   clientSelf.IPv4,
+			mac:  network.MacZero.String(),
+			ring: clientSelf.Ring,
+		}
 	}
 
 	clientMtx.Lock()
@@ -426,13 +458,21 @@ func getClient(w dns.ResponseWriter) (string, net.IP, string) {
 
 	for mac, c := range clients {
 		if addr.IP.Equal(c.IPv4) {
-			return mac, c.IPv4, c.Ring
+			return &requestor{
+				ip:   c.IPv4,
+				mac:  mac,
+				ring: c.Ring,
+			}
 		}
 	}
 
 	for mac, ip := range vpnClients {
 		if addr.IP.Equal(ip) {
-			return mac, ip, base_def.RING_VPN
+			return &requestor{
+				ip:   ip,
+				mac:  mac,
+				ring: base_def.RING_VPN,
+			}
 		}
 	}
 
@@ -442,7 +482,7 @@ func getClient(w dns.ResponseWriter) (string, net.IP, string) {
 		slog.Warnf("DNS request from unknown client: %s", ipStr)
 	}
 
-	return "", nil, ""
+	return nil
 }
 
 func answerA(q dns.Question, rec *dnsRecord) *dns.A {
@@ -560,116 +600,119 @@ func dnsOverHTTPSExchange(m *dns.Msg, server string) (*dns.Msg, error) {
 	return rval, err
 }
 
-func upstreamRequest(server string, r, m *dns.Msg) {
-	var cacheResult bool
-	var upstream *dns.Msg
+func addReply(m, r *dns.Msg) {
+	m.Compress = r.Compress
+	m.Authoritative = r.Authoritative
+	m.Truncated = r.Truncated
+	m.RecursionDesired = r.RecursionDesired
+	m.RecursionAvailable = r.RecursionAvailable
+	m.Rcode = r.Rcode
+	m.Answer = append(m.Answer, r.Answer...)
+	m.Ns = append(m.Ns, r.Ns...)
+	m.Extra = append(m.Extra, r.Extra...)
+}
+
+func upstreamRequest(r *dns.Msg) *dns.Msg {
 	var err error
 
-	question := strings.ToLower(r.Question[0].String())
-	key := crc64.Checksum([]byte(question), cachedResponses.table)
-	if *cacheSize > 0 {
-		upstream = cachedResponses.lookup(key, question)
-	}
+	q := strings.ToLower(r.Question[0].String())
+	key := crc64.Checksum([]byte(q), cachedResponses.table)
+	a := cachedResponses.lookup(key, q)
 
-	if upstream == nil {
-		c := new(dns.Client)
-		start := time.Now()
-		dnsMetrics.upstreamCnt.Inc()
-		if dnsHTTPClient != nil {
-			upstream, err = dnsOverHTTPSExchange(r, server)
+	if a == nil {
+		if dnsUpstream == "" {
+			err = fmt.Errorf("no upstream dns server configured")
 		} else {
-			upstream, _, err = c.Exchange(r, server)
+			c := new(dns.Client)
+			start := time.Now()
+			if dnsHTTPClient != nil {
+				a, err = dnsOverHTTPSExchange(r, dnsUpstream)
+			} else {
+				a, _, err = c.Exchange(r, dnsUpstream)
+			}
+			latency := time.Since(start).Seconds()
+			dnsMetrics.upstreamLatency.Observe(latency)
+			dnsMetrics.upstreamCnt.Inc()
 		}
-		dnsMetrics.upstreamLatency.Observe(time.Since(start).Seconds())
-		cacheResult = (err == nil) && shouldCache(r, upstream)
+		if err == nil && shouldCache(r, a) {
+			cachedResponses.insert(key, q, a)
+		}
 	}
 
 	tlog := aputil.GetThrottledLogger(slog, time.Second, 10*time.Minute)
-	if err != nil || upstream == nil {
+	if err != nil || a == nil {
 		tlog.Warnf("failed to exchange: %v", err)
 		dnsMetrics.upstreamFailures.Inc()
 		if os.IsTimeout(err) {
 			dnsMetrics.upstreamTimeouts.Inc()
 		}
-		m.Rcode = dns.RcodeServerFailure
-		return
+		r.Rcode = dns.RcodeServerFailure
+		return nil
 	}
 	tlog.Clear()
 
-	// Copy the flags from the message header
-	m.Compress = upstream.Compress
-	m.Authoritative = upstream.Authoritative
-	m.Truncated = upstream.Truncated
-	m.RecursionDesired = upstream.RecursionDesired
-	m.RecursionAvailable = upstream.RecursionAvailable
-	m.Rcode = upstream.Rcode
-	m.Answer = append(m.Answer, upstream.Answer...)
-	m.Ns = append(m.Ns, upstream.Ns...)
-	m.Extra = append(m.Extra, upstream.Extra...)
-
-	if upstream.Rcode == dns.RcodeSuccess && cacheResult {
-		cachedResponses.insert(key, question, upstream)
-	}
+	return a
 }
 
-func localHandler(w dns.ResponseWriter, r *dns.Msg) {
-	var rec *dnsRecord
-	var ok bool
-
-	dnsMetrics.requests.Inc()
-	dnsMetrics.requestSize.Observe(float64(r.Len()))
-	_, ipv4, ring := getClient(w)
-	if ipv4 == nil {
-		return
-	}
-
-	m := new(dns.Msg)
-	m.SetReply(r)
-	m.Authoritative = true
-
-	// The protocol technically allows multiple questions, but the major
-	// resolvers don't.  With multiple questions, some of the message header
-	// bits become ambiguous.
-	if len(r.Question) != 1 {
-		m.Rcode = dns.RcodeFormatError
-		w.WriteMsg(m)
-		return
-	}
-
+func localHandler(who *requestor, alsoTry string, r, m *dns.Msg) {
 	q := r.Question[0]
-	name := strings.ToLower(q.Name)
-	start := time.Now()
 
-	if perRingHosts[name] {
-		rec, ok = ringRecords[ring]
-	} else {
-		hostsMtx.Lock()
-		rec, ok = hosts[name]
-		hostsMtx.Unlock()
+	// We include the domain name in our maps.  If the searched-for name
+	// only includes the host, append the domain before attempting a map
+	// lookup.
+	name := q.Name
+	if strings.Count(name, ".") == 1 {
+		name += dnsLocalDomain + "."
+	}
+	name = strings.ToLower(name)
+
+	hostsMtx.Lock()
+	rec, ok := hosts[name]
+	hostsMtx.Unlock()
+	if !ok || !dnsVisibility[who.ring][rec.hostRing] {
+		if perRingHosts[name] {
+			rec, ok = ringRecords[who.ring]
+		} else {
+			ok = false
+		}
 	}
 
 	if ok {
-		if dnsVisibility[ring][rec.hostRing] {
-			if rec.rectype == dns.TypeA {
-				m.Answer = append(m.Answer, answerA(q, rec))
-				m.RecursionAvailable = true
-			} else if rec.rectype == dns.TypeCNAME {
-				m.Answer = append(m.Answer, answerCNAME(q, rec))
-				m.RecursionAvailable = true
-			}
+		if rec.rectype == dns.TypeA {
+			m.Answer = append(m.Answer, answerA(q, rec))
+			m.RecursionAvailable = true
+		} else if rec.rectype == dns.TypeCNAME {
+			m.Answer = append(m.Answer, answerCNAME(q, rec))
+			m.RecursionAvailable = true
 		}
-	} else if brightgateDNS != "" {
-		// Proxy needed if we have decided that we are allowing
-		// our brightgate domain to be handled upstream as well.
-		pq := new(dns.Msg)
-		pq.MsgHdr = r.MsgHdr
-		pq.Question = append(pq.Question, q)
-		upstreamRequest(brightgateDNS, pq, m)
+		return
 	}
-	dnsMetrics.responseSize.Observe(float64(m.Len()))
-	w.WriteMsg(m)
 
-	logRequest("localHandler", start, ipv4, r, m)
+	if alsoTry == "" {
+		return
+	}
+
+	newQ := dns.Question{
+		Name:   alsoTry,
+		Qtype:  q.Qtype,
+		Qclass: q.Qclass,
+	}
+
+	pq := new(dns.Msg)
+	pq.MsgHdr = r.MsgHdr
+	pq.Question = append(pq.Question, newQ)
+	if u := upstreamRequest(pq); u != nil {
+		cname := &dns.CNAME{
+			Hdr: dns.RR_Header{
+				Name:   q.Name,
+				Rrtype: dns.TypeCNAME,
+				Class:  dns.ClassINET,
+				Ttl:    uint32(localTTL.Seconds())},
+			Target: alsoTry,
+		}
+		m.Answer = append(m.Answer, cname)
+		addReply(m, u)
+	}
 }
 
 func notifyBlockEvent(mac string, ipv4 net.IP, hostname string) {
@@ -713,46 +756,25 @@ func localAddress(arpa string) bool {
 	return false
 }
 
-func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
-	dnsMetrics.requests.Inc()
-	dnsMetrics.requestSize.Observe(float64(r.Len()))
-
-	mac, ipv4, ring := getClient(w)
-	if ipv4 == nil {
-		return
-	}
-
-	m := new(dns.Msg)
-	m.SetReply(r)
-	m.Authoritative = false
-
-	// The protocol technically allows multiple questions, but the major
-	// resolvers don't.  With multiple questions, some of the message header
-	// bits become ambiguous.
-	if len(r.Question) != 1 {
-		m.Rcode = dns.RcodeFormatError
-		w.WriteMsg(m)
-		return
-	}
-
-	start := time.Now()
+func proxyHandler(who *requestor, r, m *dns.Msg) {
+	slog.Debugf("proxyHandler(%v)", r.Question[0])
 	q := r.Question[0]
 	name := strings.ToLower(q.Name)
 
 	hostname := name[:len(name)-1]
-	if phishingRings[ring] && data.BlockedHostname(hostname) {
+	if phishingRings[who.ring] && data.BlockedHostname(hostname) {
 		// XXX: maybe we should return a CNAME record for our
 		// local 'phishing.<siteid>.brightgate.net'?
-		localRecord, _ := ringRecords[ring]
+		localRecord, _ := ringRecords[who.ring]
 		m.Answer = append(m.Answer, answerA(q, localRecord))
 
 		// We want to log and Event blocked hostnames for each
 		// client that attempts the lookup.
-		key := mac + ":" + hostname
+		key := who.mac + ":" + hostname
 		if !wasWarned(key, blockWarned) {
 			slog.Infof("Blocking suspected phishing site "+
-				"'%s' for %s", hostname, mac)
-			notifyBlockEvent(mac, ipv4, hostname)
+				"'%s' for %s", hostname, who.mac)
+			notifyBlockEvent(who.mac, who.ip, hostname)
 			dnsMetrics.blocked.Inc()
 		}
 	} else if q.Qtype == dns.TypePTR && localAddress(q.Name) {
@@ -761,12 +783,14 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 		hostsMtx.Unlock()
 
 		if ok && rec.rectype == dns.TypePTR &&
-			dnsVisibility[ring][rec.hostRing] {
+			dnsVisibility[who.ring][rec.hostRing] {
 
 			m.Answer = append(m.Answer, answerPTR(q, rec))
 		}
 	} else {
-		upstreamRequest(upstreamDNS, r, m)
+		if u := upstreamRequest(r); u != nil {
+			addReply(m, u)
+		}
 	}
 
 	if m.Len() >= 512 {
@@ -776,9 +800,53 @@ func proxyHandler(w dns.ResponseWriter, r *dns.Msg) {
 		// shrinking the packet before it gets put on the wire.
 		m.Compress = true
 	}
+}
+
+func dnsHandler(w dns.ResponseWriter, r *dns.Msg) {
+	dnsMetrics.requests.Inc()
+	dnsMetrics.requestSize.Observe(float64(r.Len()))
+
+	who := getRequestor(w)
+	if who == nil {
+		return
+	}
+
+	m := new(dns.Msg)
+	m.SetReply(r)
+	m.Authoritative = true
+
+	// The protocol technically allows multiple questions, but the major
+	// resolvers don't.  With multiple questions, some of the message header
+	// bits become ambiguous.
+	if len(r.Question) != 1 {
+		m.Rcode = dns.RcodeFormatError
+		w.WriteMsg(m)
+		return
+	}
+	queryName := strings.ToLower(r.Question[0].Name)
+	localHost := strings.HasSuffix(queryName, dnsLocalDomain+".")
+	hostnameOnly := strings.Count(queryName, ".") == 1
+
+	start := time.Now()
+	if localHost || hostnameOnly {
+		var alsoTry string
+
+		if hostnameOnly && dnsSearchDomain != "" {
+			// If the incoming name doesn't include a domain, then
+			// we want to search for it in our managed domain as
+			// well as any configured search domain
+			alsoTry = queryName + dnsSearchDomain + "."
+		}
+
+		localHandler(who, alsoTry, r, m)
+		logRequest("localHandler", start, who.ip, r, m)
+	} else {
+		proxyHandler(who, r, m)
+		logRequest("proxyHandler", start, who.ip, r, m)
+	}
+
 	dnsMetrics.responseSize.Observe(float64(m.Len()))
 	w.WriteMsg(m)
-	logRequest("proxyHandler", start, ipv4, r, m)
 }
 
 func dnsUpdateRecord(name, mac, ring, val string, rectype uint16) {
@@ -831,7 +899,7 @@ func dnsUpdateClient(mac string, c *cfgapi.ClientInfo) {
 	name := strings.ToLower(configName)
 
 	if network.ValidDNSName(name) && name != "localhost" && c.IPv4 != nil {
-		hostname = name + "." + domainname + "."
+		hostname = name + "." + dnsLocalDomain + "."
 		ipv4 = c.IPv4.String()
 		clearWarned(ipv4, unknownWarned)
 
@@ -855,8 +923,8 @@ func updateOneCname(hostname, canonical string) {
 		return
 	}
 
-	hostname += "." + domainname + "."
-	canonical = canonical + "." + domainname + "."
+	hostname += "." + dnsLocalDomain + "."
+	canonical = canonical + "." + dnsLocalDomain + "."
 	slog.Infof("Adding cname %s -> %s", hostname, canonical)
 
 	hostsMtx.Lock()
@@ -868,7 +936,7 @@ func updateOneCname(hostname, canonical string) {
 }
 
 func deleteOneCname(hostname string) {
-	hostname = strings.ToLower(hostname) + "." + domainname + "."
+	hostname = strings.ToLower(hostname) + "." + dnsLocalDomain + "."
 	slog.Infof("Deleting cname %s", hostname)
 
 	hostsMtx.Lock()
@@ -993,11 +1061,13 @@ func initHostMap() {
 	perRingHosts = make(map[string]bool)
 	hostnames := [...]string{"gateway", "phishing", "malware", "captive"}
 	for _, name := range hostnames {
-		perRingHosts[name+"."+domainname+"."] = true
+		perRingHosts[name+"."+dnsLocalDomain+"."] = true
 	}
 }
 
 func setNameserver(in string) {
+	dnsUpstream = ""
+
 	// If the server looks like dns-over-http, accept it as-is.  Otherwise
 	// we try to interpret it as an <ip>:<port> tuple.
 	if strings.HasPrefix(in, "https://") {
@@ -1027,8 +1097,18 @@ func setNameserver(in string) {
 		dnsHTTPClient = nil
 	}
 	slog.Infof("Using nameserver: %s", in)
-	upstreamDNS = in
+	dnsUpstream = in
 	cachedResponses.init()
+}
+
+func setSearchDomain(in string) {
+	if network.ValidDNSName(in) {
+		slog.Infof("set search domain to %s", in)
+		dnsSearchDomain = in
+	} else {
+		slog.Warnf("invalid search domain: %s", in)
+		dnsSearchDomain = ""
+	}
 }
 
 func siteIDChange(path []string, val string, expires *time.Time) {
@@ -1042,15 +1122,18 @@ func initNetwork() {
 	unknownWarned = make(map[string]time.Time)
 	blockWarned = make(map[string]time.Time)
 
-	domainname, err = config.GetDomain()
+	dnsLocalDomain, err = config.GetDomain()
 	if err != nil {
 		slog.Fatalf("failed to fetch gateway domain: %v", err)
 	}
-	domainname = strings.ToLower(domainname)
+	dnsLocalDomain = strings.ToLower(dnsLocalDomain)
 	config.HandleChange(`^@/siteid`, siteIDChange)
 
-	if tmp, _ := config.GetProp("@/network/dnsserver"); tmp != "" {
+	if tmp, _ := config.GetProp("@/network/dns/server"); tmp != "" {
 		setNameserver(tmp)
+	}
+	if tmp, _ := config.GetProp("@/network/dns/search"); tmp != "" {
+		setSearchDomain(tmp)
 	}
 
 	rings := config.GetRings()
@@ -1107,8 +1190,7 @@ func dnsInit() {
 	initHostMap()
 	data.LoadDNSBlocklist(*dataDir)
 
-	dns.HandleFunc(domainname+".", localHandler)
-	dns.HandleFunc(".", proxyHandler)
+	dns.HandleFunc(".", dnsHandler)
 
 	go updateFriendlyNames()
 	go dnsListener("udp")
@@ -1117,5 +1199,6 @@ func dnsInit() {
 	config.HandleChange(`^@/dns/cnames/.*$`, cnameUpdateEvent)
 	config.HandleDelete(`^@/dns/cnames/.*$`, cnameDeleteEvent)
 	config.HandleChange(`^@/updates/dns_.*list$`, blocklistUpdateEvent)
-	config.HandleChange(`^@/network/dnsserver$`, serverUpdateEvent)
+	config.HandleChange(`^@/network/dns.*`, dnsUpdateEvent)
+	config.HandleDelete(`^@/network/dns.*`, dnsDeleteEvent)
 }

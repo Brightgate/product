@@ -327,6 +327,16 @@ func vpnFirewallRules() []string {
 		}
 	}
 
+	subnets, err := config.GetProp(vpn.SubnetsProp)
+	for _, subnet := range slice(subnets) {
+		if _, _, err := net.ParseCIDR(subnet); err != nil {
+			slog.Infof("bad vpn-allowed subnet %s: %v", subnet, err)
+		} else {
+			rule := "ACCEPT FROM RING vpn to ADDR " + subnet
+			rules = append(rules, rule)
+		}
+	}
+
 	return rules
 }
 

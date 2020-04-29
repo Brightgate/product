@@ -55,6 +55,10 @@ var (
 	exitChan = make(chan struct{})
 )
 
+func pathStr(path []string) string {
+	return strings.Join(path, "/")
+}
+
 func vpnUpdate(hwaddr net.HardwareAddr, ip net.IP) {
 	clientMtx.Lock()
 	defer clientMtx.Unlock()
@@ -126,7 +130,7 @@ func clientDeleteEvent(path []string) {
 	var update bool
 
 	if len(path) < 2 {
-		slog.Warnf("clientDeleteEvent: bad path: @/%s", strings.Join(path, "/"))
+		slog.Warnf("clientDeleteEvent: bad path: @/%s", pathStr(path))
 		return
 	}
 
@@ -252,7 +256,7 @@ func eventHandler(event []byte) {
 
 func configSiteChanged(path []string, val string, expires *time.Time) {
 	slog.Infof("%s changed - restarting to reset DHCP configuration",
-		strings.Join(path, "/"))
+		pathStr(path))
 	close(exitChan)
 }
 

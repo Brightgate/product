@@ -83,6 +83,9 @@ func (b *Broker) Publish(pb proto.Message, topic string) error {
 	if b == nil {
 		return fmt.Errorf("publish to '%s' attempted on nil broker", topic)
 	}
+	if b.socket == nil {
+		return nil
+	}
 
 	data, err := proto.Marshal(pb)
 	if err != nil {

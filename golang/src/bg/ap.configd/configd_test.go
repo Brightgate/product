@@ -39,6 +39,7 @@ import (
 	"testing"
 
 	"bg/ap_common/aputil"
+	"bg/ap_common/broker"
 	"bg/common/cfgapi"
 	"bg/common/cfgmsg"
 	"bg/common/cfgtree"
@@ -412,7 +413,7 @@ func TestDeleteNonProp(t *testing.T) {
 // TestDeleteProp verifies that we can successfully remove a single property
 func TestDeleteProp(t *testing.T) {
 	const (
-		delProp = "@/network/dnsserver"
+		delProp = "@/network/base_address"
 	)
 
 	a := testTreeInit(t)
@@ -1012,5 +1013,6 @@ func TestMain(m *testing.M) {
 		}
 	}()
 
+	brokerd = new(broker.Broker)
 	os.Exit(m.Run())
 }

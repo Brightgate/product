@@ -4,7 +4,7 @@
       "Value": ""
     },
     "cfgversion": {
-      "Value": "20"
+      "Value": "26"
     },
     "uuid": {
       "Value": "407edeb5-84f5-4167-8a81-1Fbdf66eef0b"
@@ -262,8 +262,21 @@
                "Value": "0"
              }
            }
-         }
-       }
+         },
+	  "vpn": {
+            "Children": {
+              "vap": {
+                "Value": ""
+              },
+              "lease_duration": {
+               "Value": "0"
+              },
+              "vlan": {
+                "Value": "-1"
+              }
+            }
+          }
+        }
      },
      "siteid": {
        "Value": "setup.brightgate.net"

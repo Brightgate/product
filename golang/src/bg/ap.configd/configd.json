@@ -93,8 +93,12 @@
           "base_address": {
             "Value": "192.168.2.0/24"
           },
-          "dnsserver": {
-            "Value": "8.8.8.8:53"
+          "dns": {
+            "Children": {
+              "server": {
+                "Value": "8.8.8.8:53"
+              }
+            }
           },
           "vpn": {
             "Children": {
@@ -325,7 +329,8 @@
     {"Path": "@/network/wan/static/address", "Type": "cidr", "Level": "admin"},
     {"Path": "@/network/wan/static/route", "Type": "ipaddr", "Level": "admin"},
     {"Path": "@/network/base_address", "Type": "cidr", "Level": "internal"},
-    {"Path": "@/network/dnsserver", "Type": "ipoptport", "Level": "admin"},
+    {"Path": "@/network/dns/server", "Type": "ipoptport", "Level": "admin"},
+    {"Path": "@/network/dns/search", "Type": "dnsaddr", "Level": "admin"},
     {"Path": "@/network/nologwan", "Type": "bool", "Level": "admin"},
     {"Path": "@/network/ntpservers/%int%", "Type": "dnsaddr", "Level": "admin"},
     {"Path": "@/network/vap/%string%/ssid", "Type": "ssid", "Level": "admin"},
@@ -467,6 +472,7 @@
     {"Path": "@/policy/%policy_src%/scans/vuln/period", "Type": "duration", "Level": "admin"},
     {"Path": "@/policy/%policy_sr%/scans/subnet/period", "Type": "duration", "Level": "admin"},
     {"Path": "@/policy/%policy_s%/vpn/enabled", "Type": "bool", "Level": "admin"},
-    {"Path": "@/policy/%policy_sc%/vpn/rings", "Type": "string", "Level": "admin"}
+    {"Path": "@/policy/%policy_sc%/vpn/rings", "Type": "string", "Level": "admin"},
+    {"Path": "@/policy/%policy_sc%/vpn/subnets", "Type": "string", "Level": "admin"}
   ]
 }

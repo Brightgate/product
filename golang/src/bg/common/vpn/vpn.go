@@ -33,6 +33,7 @@ const (
 	PrivateFile = "private_key"
 	EnabledProp = "@/policy/site/vpn/enabled"
 	RingsProp   = "@/policy/site/vpn/rings"
+	SubnetsProp = "@/policy/site/vpn/subnets"
 
 	PublicProp   = "@/network/vpn/public_key"
 	EscrowedProp = "@/network/vpn/escrowed_key"
@@ -167,23 +168,43 @@ func (v *Vpn) chooseIPAddr(users cfgapi.UserMap) (string, error) {
 	return "", fmt.Errorf("no addresses available")
 }
 
-// Given a list of rings we want the client to access, return a list of the
-// subnets to include in its route table.
-func (v *Vpn) chooseRoutedSubnets(routedRings string) (string, error) {
+// Using the configured rings and subnets a vpn client is allowed to access,
+// return a list of the subnets to include in its route table.
+func (v *Vpn) chooseRoutedSubnets() (string, error) {
 	subnets := make([]string, 0)      // list of subnets to include
 	included := make(map[string]bool) // used to avoid duplicates
 
-	ringList := strings.Split(routedRings, ",")
+	ringProp, _ := v.config.GetProp(RingsProp)
+	ringList := strings.Split(ringProp, ",")
 	ringList = append(ringList, "vpn")
 
 	for _, ring := range ringList {
+		if len(ring) == 0 {
+			continue
+		}
 		if subnet, ok := v.subnets[ring]; ok {
-			if !included[ring] {
+			if !included[subnet] {
 				subnets = append(subnets, subnet)
-				included[ring] = true
+				included[subnet] = true
 			}
 		} else {
 			return "", fmt.Errorf("no such ring: %s", ring)
+		}
+	}
+
+	subnetProp, _ := v.config.GetProp(SubnetsProp)
+	subnetList := strings.Split(subnetProp, ",")
+	if len(subnetList) > 0 {
+		for _, subnet := range subnetList {
+			if len(subnet) == 0 {
+				continue
+			}
+			if _, _, err := net.ParseCIDR(subnet); err != nil {
+				return "", fmt.Errorf("invalid subnet: %s", subnet)
+			} else if !included[subnet] {
+				subnets = append(subnets, subnet)
+				included[subnet] = true
+			}
 		}
 	}
 
@@ -260,8 +281,7 @@ Retry:
 		return nil, fmt.Errorf("no such user")
 	}
 
-	rings, _ := v.config.GetProp(RingsProp)
-	subnets, err := v.chooseRoutedSubnets(rings)
+	subnets, err := v.chooseRoutedSubnets()
 	if err != nil {
 		return nil, err
 	}

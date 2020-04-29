@@ -43,6 +43,7 @@ type wanInfo struct {
 	dhcpStart    time.Time
 	dhcpDuration time.Duration
 	dhcpRoute    string
+	dhcpDomain   string
 
 	staticAddr      string
 	staticRoute     net.IP
@@ -321,6 +322,10 @@ func (w *wanInfo) dhcpRefresh() {
 	}
 
 	update := false
+	if w.dhcpDomain != d.DomainName {
+		update = true
+		w.dhcpDomain = d.DomainName
+	}
 	if w.dhcpAddr != d.Addr {
 		update = true
 		w.dhcpAddr = d.Addr
