@@ -39,9 +39,16 @@ func (e *stackError) StackTrace() errors.StackTrace {
 }
 
 func (e *stackError) Error() string {
+	if len(e.stack) == 0 {
+		return "stackError with no stack!"
+	}
+
 	frame := e.stack[0]
 	pc := uintptr(frame) - 1
 	fn := runtime.FuncForPC(pc)
+	if fn == nil {
+		return fmt.Sprintf("caller site %#x", pc)
+	}
 	file, line := fn.FileLine(pc)
 	return fmt.Sprintf("caller site %s:%d(%s)", file, line, fn.Name())
 }

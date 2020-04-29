@@ -17,12 +17,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/logging"
 	"github.com/dhduvall/gcloudzap"
 	"github.com/grpc-ecosystem/go-grpc-middleware/util/metautils"
+	"github.com/pkg/errors"
 	"github.com/spf13/pflag"
 	"github.com/tomazk/envcfg"
 	"go.uber.org/zap"
@@ -185,6 +187,83 @@ func GetLogFlagSet() *pflag.FlagSet {
 	return logFlagSet
 }
 
+// This mirrors the stackTracer interface in pkg/errors.
+type stackTracer interface {
+	StackTrace() errors.StackTrace
+}
+
+// bgCore is a pass-through zapcore.Core which overrides the Caller and Stack
+// fields of an entry to use that data from errors in the fields rather than
+// from the point of calling the logging function.  When we log to stackdriver,
+// gcloudzap takes care of this for us, but we want these benefits when looking
+// at the console logs, too.
+type bgCore struct {
+	c zapcore.Core
+}
+
+func (c *bgCore) Enabled(lvl zapcore.Level) bool {
+	return c.c.Enabled(lvl)
+}
+
+func (c *bgCore) With(fields []zapcore.Field) zapcore.Core {
+	return &bgCore{c.c.With(fields)}
+}
+
+func (c *bgCore) Check(ent zapcore.Entry, ce *zapcore.CheckedEntry) *zapcore.CheckedEntry {
+	if c.Enabled(ent.Level) {
+		return ce.AddCore(ent, c)
+	}
+	return ce
+}
+
+// This is where we can override ent.Caller and ent.Stack based on what we get
+// out of the fields.  We take the first field with the key gcloudzap.CallerKey
+// (which has been added for us in echozap) that is a stackTracer.
+func (c *bgCore) Write(ent zapcore.Entry, fields []zapcore.Field) error {
+	for _, f := range fields {
+		if f.Key != gcloudzap.CallerKey {
+			continue
+		}
+
+		if err, ok := f.Interface.(stackTracer); ok {
+			trace := err.StackTrace()
+
+			// If there's no actual stack associated with the error,
+			// set the members to something that indicates that, but
+			// don't stop looking for other possible errors.
+			if len(trace) == 0 {
+				if ent.Stack != "" {
+					ent.Stack = "no stack available"
+				}
+				ent.Caller = zapcore.NewEntryCaller(0, "", 0, false)
+				continue
+			}
+
+			// We should only add the stack if the stack is enabled.
+			// That information is stashed in the logger with no way
+			// to access it, so we look at whether a stack has
+			// already been recorded, which there will be if and
+			// only if the logger determined that it is enabled.
+			if ent.Stack != "" {
+				ent.Stack = fmt.Sprintf("%+v", trace)
+			}
+
+			pc := uintptr(trace[0]) - 1
+			if fn := runtime.FuncForPC(pc); fn != nil {
+				file, line := fn.FileLine(pc)
+				ent.Caller = zapcore.NewEntryCaller(pc, file, line, true)
+			}
+
+			break
+		}
+	}
+	return c.c.Write(ent, fields)
+}
+
+func (c *bgCore) Sync() error {
+	return c.c.Sync()
+}
+
 // SetupLogs creates a pair of zap loggers-- one structured and one
 // "sugared" for use by cloud daemons.
 func SetupLogs(opts ...zap.Option) (*zap.Logger, *zap.SugaredLogger) {
@@ -218,6 +297,10 @@ func SetupLogs(opts ...zap.Option) (*zap.Logger, *zap.SugaredLogger) {
 	zapOptions := make([]zap.Option, 0)
 	zapOptions = append(zapOptions, opts...)
 	zapOptions = append(zapOptions, zap.AddStacktrace(zapcore.ErrorLevel))
+	zapOptions = append(zapOptions, zap.WrapCore(
+		func(c zapcore.Core) zapcore.Core {
+			return &bgCore{c}
+		}))
 
 	if lt == logTypeDev {
 		config = zap.NewDevelopmentConfig()
