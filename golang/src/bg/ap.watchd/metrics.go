@@ -203,13 +203,18 @@ func updateRolling(period time.Duration) {
 	// idle activity in the final stage.
 	delta := make(map[string]*archive.XferStats)
 	for mac := range rollingStats {
-		delta[mac] = &archive.XferStats{}
+		if mac != "" {
+			delta[mac] = &archive.XferStats{}
+		}
 	}
 
 	// Calculate the change in all the stats since the last time this
 	// function was called.
 	statsMtx.RLock()
 	for mac, stats := range currentStats.Data {
+		if mac == "" {
+			continue
+		}
 		current := &stats.Aggregate
 		running := rollingStats[mac]
 
@@ -373,6 +378,10 @@ func snapshotStats(dir string) *archive.Snapshot {
 	currentStats.End = now.Add(*sfreq)
 	lan, wan := 0, 0
 	for mac, cur := range currentStats.Data {
+		if mac == "" {
+			continue
+		}
+
 		cur.Lock()
 
 		// Make a copy of the current state.  For the elements we are

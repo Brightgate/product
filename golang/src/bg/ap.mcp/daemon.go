@@ -177,10 +177,9 @@ func (d *daemon) wait() {
 	} else {
 		msg = fmt.Sprintf("exited with '%v'", err)
 	}
-	logInfo("%s exited %s after %s", d.Name, msg,
-		time.Since(d.startTime))
+	logInfo("%s exited %s after %s", d.Name, msg, time.Since(d.startTime))
 
-	if err != nil && d.goalState != mcp.OFFLINE {
+	if err != nil && d.goalState != mcp.OFFLINE && !d.blocked() {
 		// XXX: there are certainly times we would like to know that a
 		// daemon crashed while trying to shut down.  However, because
 		// we don't yet support the cancellation of cfgapi operations,
