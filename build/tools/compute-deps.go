@@ -41,7 +41,13 @@ func getall(pkgs []string, library map[string]*gopkg) error {
 		args := []string{"list", "-json"}
 		args = append(args, pkgs...)
 		cmd := exec.Command("go", args...)
+		cmd.Dir = "golang/src/bg"
 		cmd.Stderr = os.Stderr
+		// Turning off module processing means that "go list" won't go
+		// recursing through external dependencies and doing all the
+		// downloads at this point.
+		os.Setenv("GO111MODULE", "off")
+		cmd.Env = os.Environ()
 		output, err := cmd.StdoutPipe()
 		if err != nil {
 			return fmt.Errorf("Couldn't execute %s: %v", strings.Join(cmd.Args, " "), err)

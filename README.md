@@ -75,6 +75,50 @@ $ make clobber
 If Golang is not installed in the expected places as described above, you may
 need to set `$GOROOT` in your environment before running `make`.
 
+## Go Dependencies
+
+Go dependencies, recorded in `go.mod` and `go.sum`, are supposed to be
+relatively self-maintaining.  The `go` executable will typically update the
+files with new modules when it needs to, and a run of `go mod tidy` will remove
+stale ones.
+
+When adding a new dependency, the simplest thing to do is to make the requisite
+changes to your sources (import the new package, do whatever with it) and then
+override `GO_MOD_FLAG` to nothing in order to allow `go` to update `go.mod` and
+`go.sum` appropriately:
+```
+$ make GO_MOD_FLAG=
+```
+Without that override, you'll get the error message `import lookup disabled by
+-mod=readonly`.
+
+To update a dependency, there's a convenience target using the `DEPNAME`
+variable:
+```
+$ make godeps-update DEPNAME=path/to/module@version
+```
+The version tag can be any commit hash, branch, or tag.  If you specify no
+`@version` (or `@latest`), then you get the latest tagged version.
+
+A more aggressive update target is `godeps-update-all`, which upgrades the
+dependency and all of its dependencies.  Normally, the latter are specified by
+the direct dependency.  The default is to update the indirect dependencies to
+the latest patch of the same minor.  Specify `UPDATE_MINOR=1` to upgrade
+further.  Specify `UPDATE_TEST=1` to update test dependencies as well.
+
+To remove a dependency, remove the use of the package from the sources and run
+`make godeps-tidy`.
+
+When using the `make` targets, there is no need to or unset any `$GO...`
+environment variables.  But when running `go` commands independently, you must
+`cd` to `golang/src/bg` and make sure that `$GO111MODULE` is set to `on` (unless
+you have `$GOPATH` set, which is largely no longer useful).  This includes `go
+doc` (for docs of dependencies) and `go test`.
+
+There is much more information at `go help modules`, `go help module-get`, `go
+help mod edit` (and other `mod` subcommands), as well as at the
+[Golang Module Wiki](https://github.com/golang/go/wiki/Modules).
+
 ## Building Debian packages
 
 While not required (you may run from the `proto` area), you may wish to build
@@ -221,7 +265,7 @@ for example, enabling WAN-facing SSH and configuring SSIDs and EAP users.
 
 - Images
   - [Exclamation Mark](https://pixabay.com/en/attention-warning-exclamation-mark-98513/)
-	Creative Commons: Free for commercial use, no attribution required
+        Creative Commons: Free for commercial use, no attribution required
   - [Raspberry Pi Glamour](https://commons.wikimedia.org/wiki/File:Raspberry_Pi_3_illustration.svg)
     client-web/public/img/rpi3-glamour.png
         Creative Commons Attribution-Share Alike 4.0 International license.

@@ -1,5 +1,5 @@
 #
-# COPYRIGHT 2019 Brightgate Inc. All rights reserved.
+# COPYRIGHT 2020 Brightgate Inc. All rights reserved.
 #
 # This copyright notice is Copyright Management Information under 17 USC 1202
 # and is included to protect this work and deter copyright infringement.
@@ -8,55 +8,43 @@
 # such unauthorized removal or alteration will be a violation of federal law.
 #
 
-# This makefile contains rules and definitions for go vendoring and dependency
-# management and is meant for inclusion by the main Makefile.
+# This makefile contains convenience targets for Go dependency management and
+# is meant for inclusion by the main Makefile.  You can retarget at the tools
+# directory by setting GOSRC=build/tools.
 
-# n.b. we use realpath because 'dep' is very picky when faced with symlinks.
-GODEPS_ENSURED=.make-deps-ensured
-$(GODEPS_ENSURED): $(GOSRCBG)/Gopkg.lock $(GOSRCBG)/Gopkg.toml $(GOTOOLS)
-	cd $(realpath $(GOSRCBG)) && $(GOTOOLS_BIN_DEP) ensure -v
-	touch $@
+# Remove records of modules and versions no longer in use.  Run after making
+# changes to the source which add or remove references to a dependency.
+.PHONY: godeps-tidy
+godeps-tidy:
+	cd $(or $(GOSRC),$(GOSRCBG)) && $(GO) mod tidy -v
 
-.PHONY: godeps-ensured
-godeps-ensured: FRC
-	cd $(realpath $(GOSRCBG)) && $(GOTOOLS_BIN_DEP) ensure -v
-	touch $(GODEPS_ENSURED)
-
-#
-# Invoke this target by hand to force vendored packages to update.  This
-# could cause breakage, so test accordingly.  Check in the resultant
-# Gopkg.lock file.
-#
+# Update $(DEPNAME) to the version specified.
 .PHONY: godeps-update
-godeps-update: $(GOTOOLS)
-	cd $(realpath $(GOSRCBG)) && $(GOTOOLS_BIN_DEP) ensure -v -update $(DEPNAME)
-	touch $(GODEPS_ENSURED)
+godeps-update:
+	cd $(or $(GOSRC),$(GOSRCBG)) && $(GO) get -v $(DEPNAME) && $(GO) mod tidy -v
 
-#
-# Invoke this target by hand to get a table of packages and their metadata.
-#
+# Update $(DEPNAME) to the version specified, and its dependencies.  If
+# $(UPDATE_MINOR) is non-empty, allow upgrades to newer minor versions.
+.PHONY: godeps-update-all
+godeps-update-all:
+	cd $(or $(GOSRC),$(GOSRCBG)) && $(GO) get -u$(if $(UPDATE_MINOR),,=patch)$(if $(UPDATE_TEST), -t) -v $(DEPNAME) && $(GO) mod tidy -v
+
+# List the versions of all the direct dependencies.
 .PHONY: godeps-status
-godeps-status: $(GOTOOLS)
-	cd $(realpath $(GOSRCBG)) && $(GOTOOLS_BIN_DEP) status
+godeps-status:
+	cd $(or $(GOSRC),$(GOSRCBG)) && $(GO) list $(GO_MOD_FLAG) -f '{{if (not (or .Main .Indirect))}}{{.Path}}: {{.Version}}{{end}}' -m $(or $(DEPNAME),all) 2> /dev/null
 
-#
-# Invoke this target to check that vendor is synced up properly
-#
-.PHONY: godeps-check
-godeps-check: $(GOTOOLS)
-	cd $(realpath $(GOSRCBG)) && $(GOTOOLS_BIN_DEP) check
+# List the versions of all dependencies (direct, indirect, alternate targets).
+.PHONY: godeps-status-all
+godeps-status-all:
+	cd $(or $(GOSRC),$(GOSRCBG)) && $(GO) list $(GO_MOD_FLAG) -f '{{.Path}}: {{.Version}}' -m $(or $(DEPNAME),all) 2> /dev/null
 
-#
-# Invoke this target by hand to add a new dependency.  For example:
-# make godeps-add DEPNAME=github.com/foo/baz@0.5.2
-#
-# Check in the resultant Gopkg.lock and Gopkg.toml changes.
-#
-.PHONY: godeps-add
-godeps-add: $(GOTOOLS)
-	cd $(realpath $(GOSRCBG)) && $(GOTOOLS_BIN_DEP) ensure -add $(DEPNAME)
-	touch $(GODEPS_ENSURED)
+# Lists the direct dependencies that can be updated.
+.PHONY: godeps-updatable
+godeps-updatable:
+	cd $(or $(GOSRC),$(GOSRCBG)) && $(GO) list $(GO_MOD_FLAG) -u -f '{{if (and (not (or .Main .Indirect)) .Update)}}{{.Path}}: {{.Version}} -> {{.Update.Version}}{{end}}' -m $(or $(DEPNAME),all) 2> /dev/null
 
-.PHONY: godeps-clobber
-godeps-clobber:
-	$(RM) -fr $(GOSRCBGVENDOR) $(GOSRCBGVENDORNEW) $(GODEPS_ENSURED)
+# Lists all dependencies (direct, indirect, alternate targets) that can be updated.
+.PHONY: godeps-updatable-all
+godeps-updatable-all:
+	cd $(or $(GOSRC),$(GOSRCBG)) && $(GO) list $(GO_MOD_FLAG) -u -f '{{if (.Update)}}{{.Path}}: {{.Version}} -> {{.Update.Version}}{{end}}' -m $(or $(DEPNAME),all) 2> /dev/null

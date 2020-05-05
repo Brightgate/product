@@ -1,5 +1,5 @@
 #
-# COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+# COPYRIGHT 2020 Brightgate Inc. All rights reserved.
 #
 # This copyright notice is Copyright Management Information under 17 USC 1202
 # and is included to protect this work and deter copyright infringement.
@@ -11,79 +11,37 @@
 GOTOOLS_DIR=$(GITROOT)/_tools.$(GOHOSTARCH)
 GOTOOLS_BIN=$(GOTOOLS_DIR)/bin
 
-GOTOOLS_dep_repo=github.com/golang/dep
-# dep v0.5.4
-GOTOOLS_dep_hash=1f7c19e5
-
-GOTOOLS_cmddep_repo=github.com/golang/dep/cmd/dep
-# Pin to same as dep
-GOTOOLS_cmddep_hash=$(GOTOOLS_dep_hash)
-# Must build after dep
-GOTOOLS_cmddep_deps=$(GOTOOLS_dep_built)
-GOTOOLS_BIN_DEP=$(GOTOOLS_BIN)/dep
-
-GOTOOLS_pgengo_repo=github.com/golang/protobuf/protoc-gen-go
-# v1.3.2
-GOTOOLS_pgengo_hash=6c65a556
+GOTOOLS_protobuf_repo=github.com/golang/protobuf
+GOTOOLS_pgengo_pkg=$(GOTOOLS_protobuf_repo)/protoc-gen-go
 GOTOOLS_BIN_PROTOCGENGO=$(GOTOOLS_BIN)/protoc-gen-go
+GOTOOLS_SRC_protobuf=$(shell cd build/tools; go list -m -f '{{.Dir}}' $(GOTOOLS_protobuf_repo))
 
-GOTOOLS_mockery_repo=github.com/vektra/mockery/mockery
-GOTOOLS_mockery_hash=e78b021dcbb558a8e7ac1fc5bc757ad7c277bb81
-
-GOTOOLS_cmdmockery_repo=github.com/vektra/mockery/cmd/mockery
-# Pin to same as mockery
-GOTOOLS_cmdmockery_hash=$(GOTOOLS_mockery_hash)
-# Must build after mockery
-GOTOOLS_cmdmockery_deps=$(GOTOOLS_mockery_built)
+GOTOOLS_mockery_repo=github.com/vektra/mockery
+GOTOOLS_mockery_pkg=$(GOTOOLS_mockery_repo)/cmd/mockery
 GOTOOLS_BIN_MOCKERY=$(GOTOOLS_BIN)/mockery
 
-GOTOOLS_golangci_lint_repo=github.com/golangci/golangci-lint/cmd/golangci-lint
-# v1.17.1
-GOTOOLS_golangci_lint_hash=4ba2155996359eabd8800d1fbf3e3a9777c80490
+GOTOOLS_golangci_lint_repo=github.com/golangci/golangci-lint
+GOTOOLS_golangci_lint_cmd=$(GOTOOLS_golangci_lint_repo)/cmd/golangci-lint
 GOTOOLS_BIN_GOLANGCI_LINT=$(GOTOOLS_BIN)/golangci-lint
 
 
-GOTOOLS_ALL=\
-	    GOTOOLS_dep \
-	    GOTOOLS_cmddep \
-	    GOTOOLS_pgengo \
-	    GOTOOLS_mockery \
-	    GOTOOLS_cmdmockery \
-	    GOTOOLS_golangci_lint
+GOTOOLS = \
+	    $(GOTOOLS_BIN_PROTOCGENGO) \
+	    $(GOTOOLS_BIN_MOCKERY) \
+	    $(GOTOOLS_BIN_GOLANGCI_LINT)
 
-GOTOOLS_ALL_BUILT=
+$(GOTOOLS_BIN)/%: export GOBIN=$(GOTOOLS_BIN)
+$(GOTOOLS_BIN)/%: export GOARCH=
 
-$(GOTOOLS_DIR):
-	mkdir -p $@
+$(GOTOOLS_BIN_MOCKERY):
+	cd build/tools && $(GO) install $(GO_BUILD_FLAGS) $(GOTOOLS_mockery_pkg)
 
-define GOTOOL_MAKETARGET
-# escape the name of the repo, / -> -
-$(target)_repo_e=$$(subst /,-,$$($(target)_repo))
-# glob pattern so we can delete all buildstamps for this repo name
-$(target)_built_glob=$(GOTOOLS_DIR)/buildstamp/$$($(target)_repo_e)-GITHASH-*
-# buildstamp for repo and hash
-$(target)_built=$(GOTOOLS_DIR)/buildstamp/$$($(target)_repo_e)-GITHASH-$$($(target)_hash)-$$(GOVERSION_STAMP)
-GOTOOLS_ALL_BUILT+=$$($(target)_built)
+$(GOTOOLS_BIN_GOLANGCI_LINT):
+	cd build/tools && $(GO) install $(GO_BUILD_FLAGS) $(GOTOOLS_golangci_lint_cmd)
 
-$$($(target)_built): $$($(target)_deps) | $(GOTOOLS_DIR)
-	@echo "go-tools: installing $$($(target)_repo)@$$($(target)_hash)"
-	@$(RM) -f $$($(target)_built_glob)
-	@trap "$(RM) -fr $(GOTOOLS_DIR)/src/ $(GOTOOLS_DIR)/buildstamp" INT && \
-		unset GOARCH && export GOPATH=$(GOTOOLS_DIR) && \
-	        $(GO) get -d $$($(target)_repo) && \
-		git -C $(GOTOOLS_DIR)/src/$$($(target)_repo) fetch --tags --quiet && \
-	        git -C $(GOTOOLS_DIR)/src/$$($(target)_repo) checkout --force --quiet $$($(target)_hash) && \
-	        $(GO) install $$($(target)_repo)
-	@$(MKDIR) -p $$(dir $$@) && touch $$@
-
-endef
-
-$(foreach target, $(GOTOOLS_ALL), $(eval $(GOTOOL_MAKETARGET)))
-
-GOTOOLS=.make-go-tools
-$(GOTOOLS): $(GOTOOLS_ALL_BUILT)
-	touch $@
+$(GOTOOLS_BIN_PROTOCGENGO):
+	cd build/tools && $(GO) install $(GO_BUILD_FLAGS) $(GOTOOLS_pgengo_pkg)
 
 .PHONY: gotools-clobber
 gotools-clobber:
-	$(RM) -fr $(GOTOOLS_DIR) $(GOTOOLS)
+	$(RM) -fr $(GOTOOLS_DIR)

@@ -64,7 +64,13 @@ GITHASH_FULL := $(shell git rev-parse HEAD)
 # Needs deferred expansion, can't use :=
 GITCHANGED = $(shell grep -s -q '"$(GITHASH)"' $(GOSRCBG)/common/version.go || echo FRC)
 
+# GO111MODULE defaults to "auto", which is "on" when you're in a directory with
+# a go.mod file and not in a directory beneath $GOPATH.  We turn it on
+# explicitly because we will be in a subdirectory of $GOPATH, and we need to
+# set the latter because that's the only way to tell go where to put the module
+# cache.
 export GOPATH=$(GITROOT)/golang
+export GO111MODULE=on
 
 #
 # Go environment setup
@@ -98,6 +104,10 @@ GOFMT = $(GOROOT)/bin/gofmt
 GOLINT = $(GOROOT)/bin/golint
 GO_CLEAN_FLAGS = -i -x
 GO_GET_FLAGS = -v
+# Add -trimpath when upgrading to 1.13
+# Add -v (et al) by setting GOFLAGS=-v
+GO_MOD_FLAG = -mod=readonly
+GO_BUILD_FLAGS = $(GO_MOD_FLAG)
 
 ifeq ("$(wildcard $(GO))","")
 ifeq ("$(findstring $(origin GOROOT), "command line|environment")","")
@@ -115,11 +125,7 @@ GOVERSION := $(shell GOROOT=$(GOROOT) $(GO) version)
 GOVERSION_STAMP := $(shell GOROOT=$(GOROOT) $(GO) version | awk '{print $$3}')
 
 GOWS = golang
-GOSRC = $(GOWS)/src
-GOSRCBG = $(GOSRC)/bg
-# Vendoring directory, where external deps are placed
-GOSRCBGVENDOR = $(GOSRCBG)/vendor
-GOSRCBGVENDORNEW = $(GOSRCBG)/.vendor-new
+GOSRCBG = $(GOWS)/src/bg
 # Where we stick build tools
 GOBIN = $(GOPATH)/bin
 
@@ -671,15 +677,15 @@ ALL_GOBINS = \
 	     $(APPCOMMAND_GOPKGS) $(APPDAEMON_GOPKGS) \
 	     $(CLOUDCOMMAND_GOPKGS) $(CLOUDDAEMON_GOPKGS)
 
-COVERAGE_DIR = coverage
+COVERAGE_DIR = $(GITROOT)/coverage
 
 #
-# Go Tools: Install versioned binaries for 'dep', 'mockery', etc.
+# Go Tools: Install versioned binaries for 'mockery', etc.
 #
 include ./Makefile.gotools
 
 #
-# Go Dependencies: Pull in definitions for 'dep'
+# Go Dependencies: Targets to make module dependency maintenance easier
 #
 include ./Makefile.godeps
 
@@ -690,7 +696,7 @@ include ./Makefile.doc
 
 .DEFAULT_GOAL = install
 
-install: tools mocks $(TARGETS)
+install: mocks $(TARGETS)
 
 appliance: $(APPCOMPONENTS)
 
@@ -766,7 +772,7 @@ $(GO_MOCK_CLOUDRPC): MOCK_NAME = 'EventClient'
 $(GO_MOCK_CLOUDRPC): $(GO_MOCK_CLOUDRPC_SRCS)
 $(GO_MOCK_APPLIANCEDB): MOCK_NAME = 'DataStore'
 $(GO_MOCK_APPLIANCEDB):  $(GO_MOCK_APPLIANCEDB_SRCS)
-$(GO_MOCK_SRCS): $(GOTOOLS) $(GODEPS_ENSURED)
+$(GO_MOCK_SRCS): $(GOTOOLS_BIN_MOCKERY)
 
 # The use of 'realpath' avoids an issue in mockery for workspaces with
 # symlinks (https://github.com/vektra/mockery/issues/157).
@@ -786,7 +792,7 @@ ifeq ("$(GO_TESTABLES)","")
 endif
 
 test-go: install
-	APROOT=$(GITROOT)/$(APPROOT) $(GO) test $(GO_TESTFLAGS) $(GO_TESTABLES)
+	cd $(GOSRCBG) && APROOT=$(GITROOT)/$(APPROOT) $(GO) test $(GO_TESTFLAGS) $(GO_TESTABLES)
 
 coverage: coverage-go
 
@@ -795,6 +801,7 @@ comma := ,
 
 coverage-go: install
 	$(MKDIR) -p $(COVERAGE_DIR)
+	cd $(GOSRCBG); \
 	err=""; of=$$(mktemp coverXXXXXX); for p in $(GO_TESTABLES); do \
 		pkgs=$(subst $(space),$(comma),$(APPCOMMON_GOPKGS)); \
 		pkgs=$$pkgs,$(subst $(space),$(comma),$(CLOUDCOMMON_GOPKGS)); \
@@ -810,12 +817,12 @@ coverage-go: install
 	if [ -n "$${err}" ]; then echo "Failures in the following packages:$$err"; exit 1; fi
 	echo "mode: set" > $(COVERAGE_DIR)/cover.out
 	grep -h -v "^mode:" $(COVERAGE_DIR)/bg*.out | sort -u >> $(COVERAGE_DIR)/cover.out
-	$(GO) tool cover \
+	cd $(GOSRCBG) && $(GO) tool cover \
 		-html=$(COVERAGE_DIR)/cover.out -o $(COVERAGE_DIR)/coverage.html
 
 vet-go: $(GENERATED_GO_FILES) $(GO_MOCK_SRCS)
-	$(GO) vet $(APP_GOPKGS)
-	$(GO) vet $(CLOUD_GOPKGS)
+	cd $(GOSRCBG) && $(GO) vet $(APP_GOPKGS)
+	cd $(GOSRCBG) && $(GO) vet $(CLOUD_GOPKGS)
 
 LINT_GOPKGS = $(ALL_GOPKGS)
 
@@ -825,11 +832,11 @@ lint-go: $(GENERATED_GO_FILES) $(GO_MOCK_SRCS)
 fmt-go:
 	build/check-gofmt.sh
 
-CILINT_GOPKGS = $(LINT_GOPKGS:%=$(GOSRC)/%)
+CILINT_GOPKGS = $(LINT_GOPKGS:bg/%=%)
 
 # See also .golangci.yaml, where we specify some defaults
-cilint-go:
-	$(GOTOOLS_BIN_GOLANGCI_LINT) run $(CILINT_FLAGS) $(CILINT_GOPKGS)
+cilint-go: $(GOTOOLS_BIN_GOLANGCI_LINT)
+	cd $(GOSRCBG) && $(GOTOOLS_BIN_GOLANGCI_LINT) run $(CILINT_FLAGS) $(CILINT_GOPKGS)
 
 # ordered in most-to-least useful to most developers
 check-go: vet-go lint-go fmt-go
@@ -919,14 +926,15 @@ $(ROOTETCINITD)/ap.tron: build/openwrt-ipk/ap.tron | $(ROOTETCINITD)
 $(APPDIRS):
 	$(MKDIR) -p $@
 
-$(APPBINARIES): $(GODEPS_ENSURED) | $(APPBIN)
+$(APPBINARIES): | $(APPBIN)
 
 # Build rules for go binaries.
 
-COMPUTE_DEPS = $(GOTOOLS_DIR)/compute_deps
+COMPUTE_DEPS = $(GOTOOLS_DIR)/bin/compute-deps
+$(COMPUTE_DEPS): export GOBIN=$(GOTOOLS_DIR)/bin
 
-$(COMPUTE_DEPS): build/compute_deps.go
-	unset GOARCH && $(GO) build -o $@ $^
+$(COMPUTE_DEPS): build/tools/compute-deps.go
+	unset GOARCH && cd $(^D) && $(GO) install $(GO_BUILD_FLAGS) $(^F)
 
 GENERATED_GO_FILES = \
 	$(GOSRCBG)/base_def/base_def.go \
@@ -947,7 +955,7 @@ $(APPTOOLS:%=$(APPBIN)/%): $(APPBIN)/ap-tools
 # the latter isn't any faster.  We use 'go build' because because 'go install'
 # refuses to install cross-compiled binaries into GOBIN.
 $(APPBIN)/%: $(CROSS_DEP)
-	$(CROSS_ENV) $(GO) build -o $(@) bg/$*
+	$(CROSS_ENV) cd $(GOSRCBG)/$* && $(GO) build $(GO_BUILD_FLAGS) -o ../../../../$(@) bg/$*
 
 $(GOSRCBG)/common/version.go: $(GITCHANGED)
 	sed "s/GITHASH/$(GITHASH)/" $(GOSRCBG)/common/version.base > $@
@@ -999,10 +1007,8 @@ $(CLOUDLIBCRONCLOBS): $(GOSRCBG)/cl-obs/cron-cl-obs.bash
 $(CLOUDROOTLIBSYSTEMDSYSTEM)/%: build/cl-systemd/% | $(CLOUDROOTLIBSYSTEMDSYSTEM)
 	$(INSTALL) -m 0644 $< $@
 
-$(CLOUDBINARIES): $(GODEPS_ENSURED)
-
 $(CLOUDBIN)/%: | $(CLOUDBIN)
-	$(GO) build -o $(@) bg/$*
+	cd $(GOSRCBG)/$* && $(GO) build $(GO_BUILD_FLAGS) -o ../../../../$(@) bg/$*
 
 $(CLOUDROOTLIBSYSTEMDSYSTEM): | $(CLOUDROOTLIB)
 	$(MKDIR) -p $@
@@ -1030,7 +1036,7 @@ $(BGDEPDIR)/%: | $(BGDEPDIR)
 # Protocol buffers
 #
 
-$(GOSRCBG)/base_msg/base_msg.pb.go: base/base_msg.proto $(GOTOOLS)
+$(GOSRCBG)/base_msg/base_msg.pb.go: base/base_msg.proto $(GOTOOLS_BIN_PROTOCGENGO)
 	cd base && \
 		protoc --plugin=$(GOTOOLS_BIN_PROTOCGENGO) \
 		    --go_out ../$(GOSRCBG)/base_msg $(notdir $<)
@@ -1038,19 +1044,17 @@ $(GOSRCBG)/base_msg/base_msg.pb.go: base/base_msg.proto $(GOTOOLS)
 base/base_msg_pb2.py: base/base_msg.proto
 	protoc --python_out . $<
 
-$(GOSRCBG)/common/cfgmsg/cfgmsg.pb.go: base/cfgmsg.proto $(GOTOOLS)
+$(GOSRCBG)/common/cfgmsg/cfgmsg.pb.go: base/cfgmsg.proto $(GOTOOLS_BIN_PROTOCGENGO)
 	cd base && \
 		protoc --plugin=$(GOTOOLS_BIN_PROTOCGENGO) \
 		    --go_out=../$(GOSRCBG)/common/cfgmsg \
 		    $(notdir $<)
 
-$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go: base/cloud_rpc.proto $(GOTOOLS)
+$(GOSRCBG)/cloud_rpc/cloud_rpc.pb.go: base/cloud_rpc.proto $(GOTOOLS_BIN_PROTOCGENGO)
 	cd base && \
 		protoc --plugin=$(GOTOOLS_BIN_PROTOCGENGO) \
 			-I/usr/local/include \
 			-I . \
-			-I$(GOTOOLS_DIR)/src \
-			-I$(GOTOOLS_DIR)/src/$(GOTOOLS_pgengo_repo)/descriptor \
 			--go_out=plugins=grpc,Mbase_msg.proto=bg/base_msg,Mcfgmsg.proto=bg/common/cfgmsg:../$(GOSRCBG)/cloud_rpc \
 			$(notdir $<)
 
@@ -1112,7 +1116,8 @@ client-web: doc .make-npm-installed FRC | $(HTTPD_CLIENTWEB_DIR) $(CLOUDLIBCLHTT
 FRC:
 
 .PHONY: clobber
-clobber: clean packages-clobber godeps-clobber gotools-clobber doc-clobber
+clobber: clean packages-clobber gotools-clobber doc-clobber
+	chmod -R u+w $(GOWS)/pkg
 	$(RM) -fr $(ROOT) $(GOWS)/pkg $(GOWS)/bin $(SYSROOT)
 	$(RM) -fr _venv.*
 	$(RM) -f .make-*
