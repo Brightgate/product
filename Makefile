@@ -72,6 +72,8 @@ GITCHANGED = $(shell grep -s -q '"$(GITHASH)"' $(GOSRCBG)/common/version.go || e
 export GOPATH=$(GITROOT)/golang
 export GO111MODULE=on
 
+export GOPROXY=http://build0.b10e.net:8888/
+
 #
 # Go environment setup
 #

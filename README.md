@@ -89,8 +89,8 @@ override `GO_MOD_FLAG` to nothing in order to allow `go` to update `go.mod` and
 ```
 $ make GO_MOD_FLAG=
 ```
-Without that override, you'll get the error message `import lookup disabled by
--mod=readonly`.
+Without that override, you'll get the error message
+`import lookup disabled by -mod=readonly`.
 
 To update a dependency, there's a convenience target using the `DEPNAME`
 variable:
@@ -112,11 +112,11 @@ To remove a dependency, remove the use of the package from the sources and run
 When using the `make` targets, there is no need to or unset any `$GO...`
 environment variables.  But when running `go` commands independently, you must
 `cd` to `golang/src/bg` and make sure that `$GO111MODULE` is set to `on` (unless
-you have `$GOPATH` set, which is largely no longer useful).  This includes `go
-doc` (for docs of dependencies) and `go test`.
+you have `$GOPATH` set, which is largely no longer useful).  This includes `go doc`
+(for docs of dependencies) and `go test`.
 
-There is much more information at `go help modules`, `go help module-get`, `go
-help mod edit` (and other `mod` subcommands), as well as at the
+There is much more information at `go help modules`, `go help module-get`,
+`go help mod edit` (and other `mod` subcommands), as well as at the
 [Golang Module Wiki](https://github.com/golang/go/wiki/Modules).
 
 ## Building Debian packages
