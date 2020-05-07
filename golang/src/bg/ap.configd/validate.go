@@ -56,6 +56,14 @@ var (
 		children: make(map[string]*vnode),
 	}
 
+	expansions = map[string][]string{
+		`%policy_src%`: {`site`, `rings/%ring%`, `clients/%macaddr%`},
+		`%policy_sc%`:  {`site`, `clients/%macaddr%`},
+		`%policy_sr%`:  {`site`, `rings/%ring%`},
+		`%policy_rc%`:  {`rings/%ring%`, `clients/%macaddr%`},
+		`%policy_s%`:   {`site`},
+	}
+
 	validationFuncs = map[string]typeValidate{
 		"null":       validateNull,
 		"bool":       validateBool,
@@ -627,14 +635,45 @@ func addOneProperty(prop, val, level string) error {
 	return err
 }
 
+// Iterate over all the property paths in the provided list.  If any of the
+// fields in the path match an "expandable field", replace that one path with
+// each of the possible replacement paths.
+func expandMultiProperties(in []string) []string {
+	out := make([]string, 0)
+
+	for _, p := range in {
+		exp := make([]string, 0)
+		for stub, replacements := range expansions {
+			f := strings.SplitN(p, stub, 2)
+			if len(f) == 2 {
+				for _, rep := range replacements {
+					exp = append(exp, f[0]+rep+f[1])
+				}
+			}
+		}
+		if len(exp) == 0 {
+			out = append(out, p)
+		} else {
+			out = append(out, exp...)
+		}
+	}
+
+	return out
+}
+
 func validationInit(descriptions []propDescription) error {
 	var rval error
 
 	for _, d := range descriptions {
-		if err := addOneProperty(d.Path, d.Type, d.Level); err != nil {
-			slog.Errorf("failed to add property %s: %v",
-				d.Path, err)
-			rval = err
+		paths := expandMultiProperties([]string{d.Path})
+
+		for _, p := range paths {
+			err := addOneProperty(p, d.Type, d.Level)
+			if err != nil {
+				slog.Errorf("failed to add property %s: %v",
+					p, err)
+				rval = err
+			}
 		}
 	}
 

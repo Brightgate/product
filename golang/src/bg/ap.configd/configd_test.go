@@ -906,6 +906,42 @@ func TestInvalidAccessLevel(t *testing.T) {
 	}
 }
 
+func TestValidExpansions(t *testing.T) {
+	newProps := []string{
+		"@/policy/site/scans/udp/period",
+		"@/policy/rings/standard/scans/udp/period",
+		"@/policy/clients/00:40:54:00:00:2f/scans/udp/period",
+	}
+	newVal := "10m"
+
+	a := testTreeInit(t)
+	for _, prop := range newProps {
+		a[prop] = newVal
+		insertOneProp(t, prop, newVal, true)
+		testValidateTree(t, a)
+	}
+}
+
+func TestInvalidExpansions(t *testing.T) {
+	newProps := []string{
+		"@/policy/site/00:40:54:00:00:2f/scans/udp/period",
+		"@/policy/rings/site/scans/udp/period",
+		"@/policy/rings/scans/udp/period",
+		"@/policy/clients/standard/00:40:54:00:00:2f/scans/udp/period",
+		"@/policy/00:40:54:00:00:2f/scans/udp/period",
+		"@/policy/00:40:54:00:00:2f/clients/scans/udp/period",
+		"@/policy/rings/standard/vpn/enabled",
+		"@/policy/clients/00:40:54:00:00:2f/vpn/enabled",
+	}
+	newVal := "10m"
+
+	a := testTreeInit(t)
+	for _, prop := range newProps {
+		insertOneProp(t, prop, newVal, false)
+		testValidateTree(t, a)
+	}
+}
+
 func TestMetrics(t *testing.T) {
 	const prop = "@/metrics/clients/11:22:33:44:55:66/signal_str"
 	const str1 = "-22"
