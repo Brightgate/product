@@ -15,9 +15,7 @@ package vaultgcpauth
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net/http"
-	"net/url"
 	"time"
 
 	"bg/cl_common/daemonutils"
@@ -28,52 +26,6 @@ import (
 	"github.com/hashicorp/vault/command/agent/auth/gcp"
 	"github.com/hashicorp/vault/command/agent/sink"
 )
-
-func vaultAuthManual(vc *vault.Client, path, role string) error {
-	baseURL := "http://metadata/computeMetadata/v1/instance/service-accounts/default/identity"
-	u, err := url.Parse(baseURL)
-	if err != nil {
-		panic(err)
-	}
-	urlData := u.Query()
-	urlData.Set("audience", "vault/"+role)
-	urlData.Set("format", "full")
-	u.RawQuery = urlData.Encode()
-
-	request, err := http.NewRequest(http.MethodGet, u.String(), nil)
-	if err != nil {
-		return err
-	}
-	request.Header.Set("Metadata-Flavor", "Google")
-	resp, err := http.DefaultClient.Do(request)
-	if err != nil {
-		return err
-	}
-
-	jwt, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-
-	vLoginURL := fmt.Sprintf("/v1/%s/login", path)
-	vReq := vc.NewRequest(http.MethodPost, vLoginURL)
-	vReq.BodyBytes = []byte(fmt.Sprintf(`{"role": "%s", "jwt": "%s"}`, role, jwt))
-	vResp, err := vc.RawRequest(vReq)
-	if err != nil {
-		return err
-	}
-	secret, err := vault.ParseSecret(vResp.Body)
-	if err != nil {
-		return err
-	}
-	token, err := secret.TokenID()
-	if err != nil {
-		return err
-	}
-	vc.SetToken(token)
-
-	return nil
-}
 
 type vaultClientSink struct {
 	client   *vault.Client
@@ -145,4 +97,48 @@ func VaultAuth(ctx context.Context, hclogger hclog.Logger, vc *vault.Client, pat
 	}
 
 	return vcSink.notifier, nil
+}
+
+// VaultAuthOnce sets up authentication to Vault using GCP, setting the
+// retrieved token on the passed-in Vault client.  No renewal machinery is
+// started, so once the token expires, the caller will have to log in again.
+func VaultAuthOnce(ctx context.Context, hclogger hclog.Logger, vc *vault.Client, path, role string) error {
+	hclogger = hclogger.Named("vault-authenticator")
+	authConfig := &auth.AuthConfig{
+		Logger:    hclogger,
+		MountPath: path,
+		Config: map[string]interface{}{
+			"type":            "gce",
+			"role":            role,
+			"service_account": "default", // configurable?
+		},
+	}
+
+	gcpAuth, err := gcp.NewGCPAuthMethod(authConfig)
+	if err != nil {
+		return err
+	}
+
+	vLoginURL, data, err := gcpAuth.Authenticate(ctx, vc)
+	if err != nil {
+		return err
+	}
+
+	vReq := vc.NewRequest(http.MethodPost, "/v1/"+vLoginURL)
+	vReq.SetJSONBody(data)
+	vResp, err := vc.RawRequestWithContext(ctx, vReq)
+	if err != nil {
+		return err
+	}
+	secret, err := vault.ParseSecret(vResp.Body)
+	if err != nil {
+		return err
+	}
+	token, err := secret.TokenID()
+	if err != nil {
+		return err
+	}
+	vc.SetToken(token)
+
+	return nil
 }

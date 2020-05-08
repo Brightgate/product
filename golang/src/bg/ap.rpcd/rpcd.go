@@ -349,7 +349,7 @@ func cloud(isFailsafe bool, wg *sync.WaitGroup, doneChan chan bool) {
 			go updateLoop(&cleanup.wg, addDoneChan())
 			go uploadLoop(sclient, &cleanup.wg, addDoneChan())
 			go cloudCertLoop(ctx, conn, &cleanup.wg, addDoneChan())
-			go vpnInit()
+			go vpnInit(ctx, conn)
 		}
 
 		go configLoop(ctx, cclient, &cleanup.wg, addDoneChan())
@@ -484,7 +484,7 @@ func cmdStart() {
 		tclient := cloud_rpc.NewEventClient(conn)
 		err = sendFaults(ctx, tclient)
 	case "vpn-escrow":
-		vpnCheckEscrow()
+		vpnCheckEscrow(ctx, conn)
 	case "net-exception":
 		tclient := cloud_rpc.NewEventClient(conn)
 		err = testNetException(ctx, tclient)

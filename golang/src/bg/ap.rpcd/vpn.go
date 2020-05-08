@@ -11,6 +11,7 @@
 package main
 
 import (
+	"context"
 	"io/ioutil"
 	"sync"
 	"time"
@@ -18,16 +19,38 @@ import (
 	"bg/ap_common/aputil"
 	"bg/base_def"
 	"bg/base_msg"
+	"bg/cloud_rpc"
 	"bg/common/cfgapi"
 	"bg/common/vpn"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/pkg/errors"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
+	"google.golang.org/grpc"
 )
 
 var vpnEscrowLock sync.Mutex
 
-func grpcEscrowCall() error {
+func grpcEscrowCall(ctx context.Context, conn *grpc.ClientConn, privateKey string) error {
+	var err error
+	ctx, err = applianceCred.MakeGRPCContext(ctx)
+	if err != nil {
+		return errors.WithMessage(err, "failed to make GRPC credential")
+	}
+
+	clientDeadline := time.Now().Add(*rpcDeadline)
+	ctx, ctxcancel := context.WithDeadline(ctx, clientDeadline)
+	defer ctxcancel()
+
+	req := &cloud_rpc.VPNPrivateKey{Key: privateKey}
+
+	client := cloud_rpc.NewVPNManagerClient(conn)
+
+	_, err = client.EscrowVPNPrivateKey(ctx, req)
+	if err != nil {
+		return errors.WithMessage(err, "escrow gRPC call failed")
+	}
+
 	return nil
 }
 
@@ -47,7 +70,7 @@ func vpnKeyMismatchError(txt string) {
 	}
 }
 
-func vpnCheckEscrow() {
+func vpnCheckEscrow(ctx context.Context, conn *grpc.ClientConn) {
 	vpnEscrowLock.Lock()
 	defer vpnEscrowLock.Unlock()
 
@@ -93,7 +116,13 @@ func vpnCheckEscrow() {
 		return
 	}
 
-	err = grpcEscrowCall()
+	// This could try a few times?
+	if err = grpcEscrowCall(ctx, conn, private.String()); err != nil {
+		slog.Errorw("Failed to escrow VPN private key", "error", err)
+		return
+	}
+
+	slog.Info("VPN private key escrowed in cloud")
 
 	err = config.CreateProp(vpn.EscrowedProp, public, nil)
 	if err != nil {
@@ -101,19 +130,18 @@ func vpnCheckEscrow() {
 	}
 }
 
-func vpnHandleUpdate(path []string, val string, expires *time.Time) {
-	vpnCheckEscrow()
-}
+func vpnInit(ctx context.Context, conn *grpc.ClientConn) {
+	vpnHandleUpdate := func(path []string, val string, expires *time.Time) {
+		vpnCheckEscrow(context.Background(), conn)
+	}
+	vpnHandleDelete := func(path []string) {
+		vpnCheckEscrow(context.Background(), conn)
+	}
 
-func vpnHandleDelete(path []string) {
-	vpnCheckEscrow()
-}
-
-func vpnInit() {
 	config.HandleChange(`^`+vpn.PublicProp, vpnHandleUpdate)
 	config.HandleChange(`^`+vpn.EscrowedProp, vpnHandleUpdate)
 	config.HandleDelExp(`^`+vpn.PublicProp, vpnHandleDelete)
 	config.HandleDelExp(`^`+vpn.EscrowedProp, vpnHandleDelete)
 
-	vpnCheckEscrow()
+	vpnCheckEscrow(ctx, conn)
 }

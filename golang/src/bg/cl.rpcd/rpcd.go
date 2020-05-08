@@ -77,14 +77,17 @@ type Cfg struct {
 	// with the SSL certificate, and not necessarily the nodename.
 	// We use this variable to navigate the Let's Encrypt directory
 	// hierarchy.
-	CertHostname       string `envcfg:"B10E_CERT_HOSTNAME"`
-	GenerateCert       bool   `envcfg:"B10E_GENERATE_CERT"`
-	DiagPort           string `envcfg:"B10E_CLRPCD_DIAG_PORT"`
-	GrpcPort           string `envcfg:"B10E_CLRPCD_GRPC_PORT"`
-	HTTPListen         string `envcfg:"B10E_CLRPCD_HTTP_LISTEN"`
-	PubsubProject      string `envcfg:"B10E_CLRPCD_PUBSUB_PROJECT"`
-	PubsubTopic        string `envcfg:"B10E_CLRPCD_PUBSUB_TOPIC"`
-	PostgresConnection string `envcfg:"B10E_CLRPCD_POSTGRES_CONNECTION"`
+	CertHostname            string `envcfg:"B10E_CERT_HOSTNAME"`
+	GenerateCert            bool   `envcfg:"B10E_GENERATE_CERT"`
+	DiagPort                string `envcfg:"B10E_CLRPCD_DIAG_PORT"`
+	GrpcPort                string `envcfg:"B10E_CLRPCD_GRPC_PORT"`
+	HTTPListen              string `envcfg:"B10E_CLRPCD_HTTP_LISTEN"`
+	PubsubProject           string `envcfg:"B10E_CLRPCD_PUBSUB_PROJECT"`
+	PubsubTopic             string `envcfg:"B10E_CLRPCD_PUBSUB_TOPIC"`
+	PostgresConnection      string `envcfg:"B10E_CLRPCD_POSTGRES_CONNECTION"`
+	VaultAuthPath           string `envcfg:"B10E_CLRPCD_VAULT_AUTH_PATH"`
+	VaultVPNEscrowPath      string `envcfg:"B10E_CLRPCD_VAULT_VPN_ESCROW_PATH"`
+	VaultVPNEscrowComponent string `envcfg:"B10E_CLRPCD_VAULT_VPN_ESCROW_COMPONENT"`
 	// Whether to disable TLS for incoming requests (danger!)
 	// XXX it would be nicer if we could have this be ENABLE_TLS with
 	// default=true but envcfg does not support that.
@@ -147,16 +150,25 @@ func getApplianceUUID(ctx context.Context, allowNullApplianceUUID bool) (uuid.UU
 // processEnv checks (and in some cases modifies) the environment-derived
 // configuration.
 func processEnv() {
+	var project string
+	getProject := func() {
+		if project != "" {
+			return
+		}
+		p, err := metadata.ProjectID()
+		if err != nil {
+			slog.Fatalw("Can't get GCP project ID", "error", err)
+		}
+		project = p
+	}
+
 	if environ.PostgresConnection == "" {
 		slog.Fatalf("B10E_CLRPCD_POSTGRES_CONNECTION must be set")
 	}
 	if environ.PubsubProject == "" {
-		p, err := metadata.ProjectID()
-		if err != nil {
-			slog.Fatalf("Couldn't determine GCE ProjectID")
-		}
-		environ.PubsubProject = p
-		slog.Infof("B10E_CLRPCD_PUBSUB_PROJECT defaulting to %v", p)
+		getProject()
+		environ.PubsubProject = project
+		slog.Infof("B10E_CLRPCD_PUBSUB_PROJECT defaulting to %v", project)
 	}
 	if environ.PubsubTopic == "" {
 		slog.Fatalf("B10E_CLRPCD_PUBSUB_TOPIC must be set")
@@ -174,6 +186,26 @@ func processEnv() {
 	if environ.HTTPListen == "" {
 		environ.HTTPListen = ":80"
 	}
+
+	if environ.VaultAuthPath == "" {
+		getProject()
+		environ.VaultAuthPath = "auth/gcp-" + project
+		slog.Warnf("B10E_CLRPCD_VAULT_AUTH_PATH not found in "+
+			"environment; setting to %s", environ.VaultAuthPath)
+	}
+	if environ.VaultVPNEscrowPath == "" {
+		getProject()
+		environ.VaultVPNEscrowPath = "secret/" + project
+		slog.Warnf("B10E_CLRPCD_VAULT_VPN_ESCROW_PATH not found in "+
+			"environment; setting to %s", environ.VaultVPNEscrowPath)
+	}
+	if environ.VaultVPNEscrowComponent == "" {
+		environ.VaultVPNEscrowComponent = "appliance-vpn-escrow"
+		slog.Warnf("B10E_CLRPCD_VAULT_VPN_ESCROW_COMPONENT not found "+
+			"in environment; setting to %s",
+			environ.VaultVPNEscrowComponent)
+	}
+
 	slog.Infof(checkMark + "Environ looks good")
 }
 
@@ -386,7 +418,7 @@ func main() {
 
 	pubsubClient, err := pubsub.NewClient(context.Background(), environ.PubsubProject)
 	if err != nil {
-		slog.Fatalf("failed to make pubsub client")
+		slog.Fatalf("failed to make pubsub client: %s", err)
 	}
 
 	eventServer, err := newEventServer(pubsubClient, environ.PubsubTopic)
@@ -406,6 +438,8 @@ func main() {
 	slog.Infof(checkMark + "Ready to serve certificate requests")
 	cloud_rpc.RegisterReleaseManagerServer(grpcServer, relServer)
 	slog.Infof(checkMark + "Ready to serve release requests")
+	cloud_rpc.RegisterVPNManagerServer(grpcServer, &vpnServer{})
+	slog.Infof(checkMark + "Ready to escrow appliance VPN private keys")
 
 	if environ.ConfigdDisableTLS {
 		slog.Warnf("Disabling TLS for connection to Configd")
