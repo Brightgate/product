@@ -328,6 +328,10 @@ Retry:
 			goto Retry
 		}
 		err = fmt.Errorf("excess mac collisions")
+	} else {
+		// If we can't return a known-good config to the caller, ensure
+		// that we don't leave an unusable key in the config tree.
+		v.RemoveKey(name, newMac, public.String())
 	}
 
 	return rval, err
@@ -335,15 +339,28 @@ Retry:
 
 // RemoveKey removes the config properties associated with a single wireguard
 // key.
-func (v *Vpn) RemoveKey(name, mac string) error {
-	prop := "@/users/" + name + "/vpn/" + mac
-
-	err := v.config.DeleteProp(prop)
+func (v *Vpn) RemoveKey(name, mac, public string) error {
+	base := "@/users/" + name + "/vpn/" + mac
+	ops := make([]cfgapi.PropertyOp, 0)
+	if public != "" {
+		op := cfgapi.PropertyOp{
+			Op:    cfgapi.PropTestEq,
+			Name:  base + "/public_key",
+			Value: public,
+		}
+		ops = append(ops, op)
+	}
+	op := cfgapi.PropertyOp{
+		Op:   cfgapi.PropDelete,
+		Name: base,
+	}
+	ops = append(ops, op)
+	_, err := v.config.Execute(context.Background(), ops).Wait(nil)
 	if err != nil && err != cfgapi.ErrNoProp {
-		return fmt.Errorf("deleting %s: %v", prop, err)
+		err = fmt.Errorf("deleting %s: %v", base, err)
 	}
 
-	return nil
+	return err
 }
 
 // IsEnabled checks whether the VPN functionality has been enabled for this site

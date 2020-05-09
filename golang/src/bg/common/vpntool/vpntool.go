@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"strings"
 
 	"bg/common/cfgapi"
 	"bg/common/vpn"
@@ -50,10 +51,29 @@ func addKey(cmd *cobra.Command, args []string) error {
 	return err
 }
 
+func matches(key *cfgapi.WireguardConf, id int, mac, label, public string) bool {
+	match := true
+
+	if id > 0 && id != key.ID {
+		match = false
+	}
+	if mac != "" && !strings.EqualFold(mac, key.GetMac()) {
+		match = false
+	}
+	if label != "" && !strings.EqualFold(label, key.Label) {
+		match = false
+	}
+	if public != "" && !strings.EqualFold(public, key.WGPublicKey) {
+		match = false
+	}
+
+	return match
+}
+
 // Remove one or more keys belonging to this user.  The key may be identified by
-// ID#, label, or "all"
+// ID#, label, mac address, public key, or "all"
 func removeKey(cmd *cobra.Command, args []string) error {
-	var label string
+	var label, mac, public string
 	var cnt, id int
 	var all, deleted bool
 
@@ -69,27 +89,34 @@ func removeKey(cmd *cobra.Command, args []string) error {
 	if label, _ = cmd.Flags().GetString("label"); label != "" {
 		cnt++
 	}
+	if mac, _ = cmd.Flags().GetString("mac"); mac != "" {
+		cnt++
+	}
+	if public, _ = cmd.Flags().GetString("public"); public != "" {
+		cnt++
+	}
 	if id, _ = cmd.Flags().GetInt("id"); id >= 0 {
 		cnt++
 	}
 	if all, _ = cmd.Flags().GetBool("all"); all {
 		cnt++
 	}
-	if cnt != 1 {
-		return fmt.Errorf("choose one of --label, --id, or --all")
+	if cnt < 1 {
+		return fmt.Errorf("must specify at least one of " +
+			"--label, --id, --mac, --public, or --all")
 	}
 
 	for _, key := range conf.WGConfig {
-		if all || id == key.ID || (label != "" && label == key.Label) {
-			if err = vpnHdl.RemoveKey(user, key.GetMac()); err != nil {
+		if all || matches(key, id, mac, label, public) {
+			err = vpnHdl.RemoveKey(user, key.GetMac(),
+				key.WGPublicKey)
+			if err != nil {
 				return err
 			}
 
-			label := ""
-			if len(key.Label) > 0 {
-				label = "(" + key.Label + ")"
-			}
-			fmt.Printf("Deleted key %d %s\n", key.ID, label)
+			fmt.Printf("Deleted key %4d %18s %17s %32s %s\n",
+				key.ID, key.GetMac(), key.WGAssignedIP,
+				key.WGPublicKey, key.Label)
 			deleted = true
 		}
 	}
@@ -171,6 +198,8 @@ func Exec(ctx context.Context, p string, hdl *cfgapi.Handle, args []string) erro
 	removeCmd.Flags().StringP("user", "u", "", "user")
 	removeCmd.Flags().IntP("id", "i", -1, "remove a user's key by index number")
 	removeCmd.Flags().StringP("label", "l", "", "remove a user's key by label")
+	removeCmd.Flags().StringP("mac", "m", "", "mac address")
+	removeCmd.Flags().StringP("public", "p", "", "public key")
 	removeCmd.Flags().Bool("all", false, "remove all of a user's keys")
 	rootCmd.AddCommand(removeCmd)
 

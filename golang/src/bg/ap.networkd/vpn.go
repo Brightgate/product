@@ -316,6 +316,9 @@ func vpnFirewallRules() []string {
 
 	// XXX - need to handle per-user exceptions
 	for _, ring := range slice(rings) {
+		if ring == "" {
+			continue
+		}
 		if cfgapi.ValidRings[ring] {
 			var rule string
 			if ring == base_def.RING_WAN {
@@ -329,6 +332,9 @@ func vpnFirewallRules() []string {
 
 	subnets, err := config.GetProp(vpn.SubnetsProp)
 	for _, subnet := range slice(subnets) {
+		if subnet == "" {
+			continue
+		}
 		if _, _, err := net.ParseCIDR(subnet); err != nil {
 			slog.Infof("bad vpn-allowed subnet %s: %v", subnet, err)
 		} else {
