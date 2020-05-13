@@ -12,7 +12,6 @@ package comms
 
 import (
 	"fmt"
-	"sync"
 	"time"
 )
 
@@ -31,8 +30,6 @@ type CommStats struct {
 	QueueTime TimeStat // Time spent on the incoming queue
 	ExecTime  TimeStat // Time spent executing message callbacks
 	ReplyTime TimeStat // Time spent pushing replies to clients
-
-	sync.Mutex
 }
 
 // TimeStat is used to track a single timing statistic
@@ -64,8 +61,8 @@ func (c *APComm) Stats() *CommStats {
 
 	s := c.stats
 	if s != nil {
-		s.Lock()
-		defer s.Unlock()
+		c.statsLock.Lock()
+		defer c.statsLock.Unlock()
 
 		c := *s
 		rval = &c
@@ -79,8 +76,8 @@ func (c *APComm) String() string {
 
 	s := c.stats
 	if s != nil {
-		s.Lock()
-		defer s.Unlock()
+		c.statsLock.Lock()
+		defer c.statsLock.Unlock()
 
 		rval = fmt.Sprintf("rcvd: %d  queueTime: %s  execTime: %s  replyTime: %s",
 			s.Received, s.QueueTime.String(),
@@ -92,8 +89,8 @@ func (c *APComm) String() string {
 // Update the "received messages" stats
 func (c *APComm) observeRcvd(m *msg) {
 	s := c.stats
-	s.Lock()
-	defer s.Unlock()
+	c.statsLock.Lock()
+	defer c.statsLock.Unlock()
 
 	m.recvd = time.Now()
 	s.Received++
@@ -111,8 +108,8 @@ func (c *APComm) observeRcvd(m *msg) {
 // Update the "dequeued messages" stats
 func (c *APComm) observeDeqd(m *msg) {
 	s := c.stats
-	s.Lock()
-	defer s.Unlock()
+	c.statsLock.Lock()
+	defer c.statsLock.Unlock()
 
 	m.dequeued = time.Now()
 	s.QueueLenCur--
@@ -122,8 +119,8 @@ func (c *APComm) observeDeqd(m *msg) {
 // Update the "executed messages" stats
 func (c *APComm) observeExeced(m *msg) {
 	s := c.stats
-	s.Lock()
-	defer s.Unlock()
+	c.statsLock.Lock()
+	defer c.statsLock.Unlock()
 
 	m.completed = time.Now()
 	s.ExecTime.addObservation(m.completed.Sub(m.dequeued))
@@ -132,8 +129,8 @@ func (c *APComm) observeExeced(m *msg) {
 // Update the "replied messages" stats
 func (c *APComm) observeReplied(m *msg) {
 	s := c.stats
-	s.Lock()
-	defer s.Unlock()
+	c.statsLock.Lock()
+	defer c.statsLock.Unlock()
 
 	s.ReplyTime.addObservation(time.Since(m.completed))
 }

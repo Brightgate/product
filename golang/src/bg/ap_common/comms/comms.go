@@ -39,7 +39,8 @@ type APComm struct {
 	sendTimeout time.Duration
 	openTimeout time.Duration
 
-	stats *CommStats
+	stats     *CommStats
+	statsLock sync.Mutex
 
 	sync.Mutex
 }

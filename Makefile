@@ -354,34 +354,11 @@ RPCD_TEMPLATE_DIR=$(APPETC)/templates/ap.rpcd
 USERAUTHD_TEMPLATE_DIR=$(APPETC)/templates/ap.userauthd
 
 COMMON_GOPKGS = \
-	bg/common/archive \
-	bg/common/briefpg \
-	bg/common/cfgapi \
-	bg/common/cfgmsg \
-	bg/common/cfgtree \
-	bg/common/configctl \
-	bg/common/grpcutils \
-	bg/common/mfg \
-	bg/common/network \
-	bg/common/passwordgen \
-	bg/common/ssh \
-	bg/common/urlfetch \
-	bg/common/zaperr
+	bg/common/...
 
 APPCOMMON_GOPKGS = \
 	$(COMMON_GOPKGS) \
-	bg/ap_common/apcfg \
-	bg/ap_common/apscan \
-	bg/ap_common/aptest \
-	bg/ap_common/aputil \
-	bg/ap_common/apvuln \
-	bg/ap_common/bgmetrics \
-	bg/ap_common/broker \
-	bg/ap_common/certificate \
-	bg/ap_common/dhcp \
-	bg/ap_common/mcp \
-	bg/ap_common/platform \
-	bg/ap_common/wificaps
+	bg/ap_common/...
 
 APPCOMMAND_GOPKGS = \
 	bg/ap-defaultpass \
@@ -573,19 +550,9 @@ CLOUDDAEMON_GOPKGS = \
 
 CLOUDCOMMON_GOPKGS = \
 	$(COMMON_GOPKGS) \
-	bg/cl_common/auth/m2mauth \
-	bg/cl_common/clcfg \
-	bg/cl_common/daemonutils \
-	bg/cl_common/deviceinfo \
-	bg/cl_common/pgutils \
-	bg/cl_common/registry \
-	bg/cloud_models/appliancedb \
-	bg/cloud_models/sessiondb \
-	bg/cl-obs/classifier \
-	bg/cl-obs/defs \
-	bg/cl-obs/extract \
-	bg/cl-obs/modeldb \
-	bg/cl-obs/sentence
+	bg/cl_common/... \
+	bg/cloud_models/... \
+	bg/cl-obs/...
 
 CLOUDCOMMAND_GOPKGS = \
 	bg/cl-aggregate \
@@ -826,7 +793,8 @@ vet-go: $(GENERATED_GO_FILES) $(GO_MOCK_SRCS)
 	cd $(GOSRCBG) && $(GO) vet $(APP_GOPKGS)
 	cd $(GOSRCBG) && $(GO) vet $(CLOUD_GOPKGS)
 
-LINT_GOPKGS = $(ALL_GOPKGS)
+# sort to remove dups
+LINT_GOPKGS = $(sort $(ALL_GOPKGS))
 
 lint-go: $(GENERATED_GO_FILES) $(GO_MOCK_SRCS)
 	$(GOLINT) -set_exit_status $(LINT_GOPKGS)
