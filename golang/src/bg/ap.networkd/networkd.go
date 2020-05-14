@@ -63,10 +63,13 @@ var (
 	mcpd    *mcp.MCP
 	brokerd *broker.Broker
 	config  *cfgapi.Handle
-	clients cfgapi.ClientMap // macaddr -> ClientInfo
-	rings   cfgapi.RingMap   // ring -> config
-	nodeID  string
-	slog    *zap.SugaredLogger
+
+	clients    cfgapi.ClientMap // macaddr -> ClientInfo
+	clientsMtx sync.Mutex
+	rings      cfgapi.RingMap // ring -> config
+
+	nodeID string
+	slog   *zap.SugaredLogger
 
 	plat           *platform.Platform
 	hostapd        *hostapdHdl
@@ -268,8 +271,8 @@ func daemonInit() error {
 	rings = make(cfgapi.RingMap)
 
 	config.HandleChange(`^@/site_index`, configSiteIndexChanged)
-	config.HandleChange(`^@/clients/.*/ring$`, configClientRingChanged)
-	config.HandleChange(`^@/clients/.*/node$`, configClientNodeChanged)
+	config.HandleChange(`^@/clients/.*$`, configClientChanged)
+	config.HandleDelete(`^@/clients/.*$`, configClientDeleted)
 	config.HandleChange(`^@/nodes/`+nodeID+`/nics/.*$`, configNicChanged)
 	config.HandleDelete(`^@/nodes/`+nodeID+`/nics/.*$`, configNicDeleted)
 	config.HandleChange(`^@/rings/.*`, configRingChanged)
@@ -286,6 +289,8 @@ func daemonInit() error {
 	config.HandleDelExp(`^@/policy/site/vpn/enabled`, vpnDeleteEnabled)
 	config.HandleChange(`^@/policy/.*/vpn/rings`, vpnUpdateRings)
 	config.HandleDelExp(`^@/policy/.*/vpn/rings`, vpnDeleteRings)
+	config.HandleChange(`^@/policy/site/network/forward/.*`, forwardUpdated)
+	config.HandleDelExp(`^@/policy/site/network/forward/.*`, forwardDeleted)
 
 	rings = config.GetRings()
 	clients = config.GetClients()

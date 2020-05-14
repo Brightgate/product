@@ -68,6 +68,7 @@ var (
 		"null":       validateNull,
 		"bool":       validateBool,
 		"cidr":       validateCIDR,
+		"fwtarget":   validateForwardTarget,
 		"const":      validateString,
 		"dnsaddr":    validateDNS,
 		"duration":   validateDuration,
@@ -85,6 +86,7 @@ var (
 		"passphrase": validatePassphrase,
 		"phone":      validateString,
 		"port":       validatePort,
+		"proto":      validateProto,
 		"nodeid":     validateNodeID,
 		"ring":       validateRing,
 		"sshaddr":    validateSSHAddr,
@@ -263,6 +265,36 @@ func validateCIDR(val string) error {
 	_, _, err := net.ParseCIDR(val)
 	if err != nil {
 		err = fmt.Errorf("'%s' is not a valid CIDR: %v", val, err)
+	}
+	return err
+}
+
+// Validate a forward target, which is <client_mac>[/port]
+func validateForwardTarget(val string) error {
+	var err error
+
+	f := strings.Split(val, "/")
+	if len(f) > 2 {
+		err = fmt.Errorf("must be <mac>[/port]")
+	} else {
+		err = validateMac(f[0])
+		if err == nil && len(f) == 2 {
+			err = validatePort(f[1])
+		}
+	}
+	if err != nil {
+		err = fmt.Errorf("'%s' is not a valid forward target: %v",
+			val, err)
+	}
+
+	return err
+}
+
+func validateProto(val string) error {
+	var err error
+
+	if !strings.EqualFold(val, "tcp") && !strings.EqualFold(val, "udp") {
+		err = fmt.Errorf("'%s' is not a valid protocol", val)
 	}
 	return err
 }

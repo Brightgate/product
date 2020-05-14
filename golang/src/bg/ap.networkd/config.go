@@ -12,6 +12,7 @@
 package main
 
 import (
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -78,42 +79,59 @@ func configNicDeleted(path []string) {
 	}
 }
 
-func configClientNodeChanged(path []string, val string, expires *time.Time) {
+func configClientChanged(path []string, val string, expires *time.Time) {
 	hwaddr := path[1]
-	newNode := val
+	clientsMtx.Lock()
 	c, ok := clients[hwaddr]
+	if !ok {
+		if val == "" {
+			clientsMtx.Unlock()
+			return
+		}
 
-	if ok && c.ConnNode != newNode {
-		slog.Infof("Moving %s from %s to %s", hwaddr, c.ConnNode, newNode)
-		c.ConnNode = newNode
+		slog.Infof("new client: %s", hwaddr)
+		c = &cfgapi.ClientInfo{}
+		clients[hwaddr] = c
+	}
+	clientsMtx.Unlock()
+
+	switch path[2] {
+	case "node":
+		if c.ConnNode != val {
+			slog.Infof("Moving %s from %s to %s", hwaddr,
+				c.ConnNode, val)
+			c.ConnNode = val
+		}
+	case "ring":
+		if c.Ring != val {
+			c.Ring = val
+			hostapd.reload()
+			hostapd.disassociate(hwaddr)
+			if val == base_def.RING_QUARANTINE {
+				publiclog.SendLogDeviceQuarantine(brokerd, hwaddr)
+			}
+		}
+	case "ipv4":
+		ip := net.ParseIP(val)
+		if !ip.Equal(c.IPv4) {
+			c.IPv4 = ip
+			forwardUpdateTarget(hwaddr, val)
+		}
 	}
 }
 
-func configClientRingChanged(path []string, val string, expires *time.Time) {
+func configClientDeleted(path []string) {
 	hwaddr := path[1]
-	newRing := val
-	c, ok := clients[hwaddr]
-
-	if !ok {
-		c := cfgapi.ClientInfo{Ring: newRing}
-		slog.Infof("New client %s in %s", hwaddr, newRing)
-		clients[hwaddr] = &c
-		hostapd.disassociate(hwaddr)
-	} else if c.Ring != newRing {
-		slog.Infof("Moving %s from %s to %s", hwaddr, c.Ring, newRing)
-		c.Ring = newRing
-		hostapd.reload()
-		hostapd.disassociate(hwaddr)
-	} else {
-		// False alarm.
-		return
+	if _, ok := clients[hwaddr]; ok {
+		if len(path) == 2 {
+			clientsMtx.Lock()
+			delete(clients, hwaddr)
+			clientsMtx.Unlock()
+			forwardUpdateTarget(hwaddr, "")
+		} else {
+			configClientChanged(path, "", nil)
+		}
 	}
-
-	if newRing == base_def.RING_QUARANTINE {
-		publiclog.SendLogDeviceQuarantine(brokerd, hwaddr)
-	}
-
-	hostapd.reload()
 }
 
 func configUserChanged(path []string, val string, expires *time.Time) {

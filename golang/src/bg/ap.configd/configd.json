@@ -466,6 +466,7 @@
     {"Path": "@/metrics/health/%nodeid%/role", "Type": "string", "Level": "internal"},
     {"Path": "@/metrics/health/%nodeid%/boot_time", "Type": "time", "Level": "internal"},
     {"Path": "@/metrics/health/%nodeid%/alive", "Type": "time", "Level": "internal"},
+    {"Path": "@/policy/site/network/forward/%proto%/%port%", "Type": "fwtarget", "Level": "admin"},
     {"Path": "@/policy/%policy_src%/scans/tcp/period", "Type": "duration", "Level": "admin"},
     {"Path": "@/policy/%policy_src%/scans/udp/period", "Type": "duration", "Level": "admin"},
     {"Path": "@/policy/%policy_src%/scans/passwd/period", "Type": "duration", "Level": "admin"},
