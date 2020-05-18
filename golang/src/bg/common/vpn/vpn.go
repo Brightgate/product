@@ -29,17 +29,21 @@ import (
 
 // File locations and vpn-related properties
 const (
-	SecretDir   = "__APSECRET__/vpn"
+	serverStub  = "server/0"
+	SecretDir   = "__APSECRET__/vpn/" + serverStub
 	PrivateFile = "private_key"
-	EnabledProp = "@/policy/site/vpn/enabled"
-	RingsProp   = "@/policy/site/vpn/rings"
-	SubnetsProp = "@/policy/site/vpn/subnets"
 
-	PublicProp   = "@/network/vpn/public_key"
-	EscrowedProp = "@/network/vpn/escrowed_key"
-	PortProp     = "@/network/vpn/port"
+	policyStub  = "@/policy/site/vpn/" + serverStub + "/"
+	EnabledProp = policyStub + "enabled"
+	RingsProp   = policyStub + "rings"
+	SubnetsProp = policyStub + "subnets"
 
-	lastMacProp = "@/network/vpn/last_mac"
+	configStub   = "@/network/vpn/" + serverStub + "/"
+	PublicProp   = configStub + "public_key"
+	EscrowedProp = configStub + "escrowed_key"
+	AddressProp  = configStub + "address"
+	PortProp     = configStub + "port"
+	LastMacProp  = configStub + "last_mac"
 )
 
 // Vpn is an opaque handle which is used to perform vpn-related config
@@ -95,7 +99,7 @@ func getVal(tree *cfgapi.PropertyNode, prop string) (string, error) {
 		return node.Value, nil
 	}
 
-	return "", fmt.Errorf("missing @/network/vpn/%s", prop)
+	return "", fmt.Errorf("missing %s/%s", configStub, prop)
 }
 
 // Generate a wireguard config file to be deployed by the client
@@ -116,7 +120,7 @@ func genConfig(conf keyConfig) ([]byte, error) {
 func (v *Vpn) getServerConfig(conf *keyConfig) error {
 	var port string
 
-	props, err := v.config.GetProps("@/network/vpn")
+	props, err := v.config.GetProps(configStub)
 	if err != nil {
 		return fmt.Errorf("fetching server vpn config: %v", err)
 	}
@@ -232,7 +236,7 @@ func (v *Vpn) updateConfig(lastMac string, props map[string]string) error {
 		// hasn't changed since we chose one for this key.
 		op := cfgapi.PropertyOp{
 			Op:    cfgapi.PropTestEq,
-			Name:  lastMacProp,
+			Name:  LastMacProp,
 			Value: lastMac,
 		}
 		ops = append(ops, op)
@@ -298,7 +302,7 @@ Retry:
 		base + "public_key":  public.String(),
 		base + "assigned_ip": ipaddr,
 		base + "id":          id,
-		lastMacProp:          newMac,
+		LastMacProp:          newMac,
 	}
 	if label != "" {
 		props[base+"label"] = label

@@ -94,7 +94,6 @@ func vpnDeleteEnabled(path []string) {
 func vpnUpdateUser(path []string, val string, expires *time.Time) {
 	var updated bool
 
-	slog.Debugf("%s -> %s", strings.Join(path, "/"), val)
 	mac := path[3]
 	field := path[4]
 
@@ -343,6 +342,9 @@ func vpnFirewallRules() []string {
 		}
 	}
 
+	rule := "ACCEPT TCP FROM RING vpn to AP DPORTS 53"
+	rules = append(rules, rule)
+
 	return rules
 }
 
@@ -353,7 +355,7 @@ func vpnKeyCreate() error {
 	keyFile := plat.ExpandDirPath(vpn.SecretDir, vpn.PrivateFile)
 
 	if !aputil.FileExists(keyDir) {
-		os.Mkdir(keyDir, 0700)
+		os.MkdirAll(keyDir, 0700)
 	}
 
 	private, err := wgtypes.GeneratePrivateKey()
@@ -367,7 +369,16 @@ func vpnKeyCreate() error {
 				keyFile, err)
 		} else {
 			public := private.PublicKey().String()
-			config.CreateProp(vpn.PublicProp, public, nil)
+			props := map[string]string{
+				vpn.PublicProp:  public,
+				vpn.LastMacProp: "00:40:54:00:00:00",
+				vpn.RingsProp:   "standard,devices",
+			}
+
+			err := config.CreateProps(props, nil)
+			if err != nil {
+				slog.Warnf("failed to create props: %v", err)
+			}
 		}
 	}
 

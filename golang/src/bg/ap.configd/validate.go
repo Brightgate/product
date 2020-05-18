@@ -61,7 +61,6 @@ var (
 		`%policy_sc%`:  {`site`, `clients/%macaddr%`},
 		`%policy_sr%`:  {`site`, `rings/%ring%`},
 		`%policy_rc%`:  {`rings/%ring%`, `clients/%macaddr%`},
-		`%policy_s%`:   {`site`},
 	}
 
 	validationFuncs = map[string]typeValidate{

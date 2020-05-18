@@ -3,7 +3,7 @@
     "Children": {
       "apversion": {},
       "cfgversion": {
-        "Value": "28"
+        "Value": "30"
       },
       "clients": {},
       "cloud": {
@@ -97,13 +97,6 @@
             "Children": {
               "server": {
                 "Value": "8.8.8.8:53"
-              }
-            }
-          },
-          "vpn": {
-            "Children": {
-              "last_mac": {
-                "Value": "00:40:54:00:00:00"
               }
             }
           },
@@ -338,11 +331,11 @@
     {"Path": "@/network/vap/%string%/keymgmt", "Type": "keymgmt", "Level": "admin"},
     {"Path": "@/network/vap/%string%/passphrase", "Type": "passphrase", "Level": "admin"},
     {"Path": "@/network/vap/%string%/default_ring", "Type": "ring", "Level": "admin"},
-    {"Path": "@/network/vpn/address", "Type": "string", "Level": "admin"},
-    {"Path": "@/network/vpn/public_key", "Type": "string", "Level": "internal"},
-    {"Path": "@/network/vpn/escrowed_key", "Type": "string", "Level": "internal"},
-    {"Path": "@/network/vpn/port", "Type": "int", "Level": "admin"},
-    {"Path": "@/network/vpn/last_mac", "Type": "macaddr", "Level": "internal"},
+    {"Path": "@/network/vpn/server/%int%/address", "Type": "string", "Level": "admin"},
+    {"Path": "@/network/vpn/server/%int%/public_key", "Type": "string", "Level": "internal"},
+    {"Path": "@/network/vpn/server/%int%/escrowed_key", "Type": "string", "Level": "internal"},
+    {"Path": "@/network/vpn/server/%int%/port", "Type": "int", "Level": "admin"},
+    {"Path": "@/network/vpn/server/%int%/last_mac", "Type": "macaddr", "Level": "internal"},
     {"Path": "@/network/regdomain", "Type": "string", "Level": "admin"},
     {"Path": "@/network/radius_auth_secret", "Type": "string", "Level": "internal"},
     {"Path": "@/log/%int%/protocol", "Type": "string", "Level": "admin"},
@@ -472,8 +465,8 @@
     {"Path": "@/policy/%policy_src%/scans/passwd/period", "Type": "duration", "Level": "admin"},
     {"Path": "@/policy/%policy_src%/scans/vuln/period", "Type": "duration", "Level": "admin"},
     {"Path": "@/policy/%policy_sr%/scans/subnet/period", "Type": "duration", "Level": "admin"},
-    {"Path": "@/policy/%policy_s%/vpn/enabled", "Type": "bool", "Level": "admin"},
-    {"Path": "@/policy/%policy_sc%/vpn/rings", "Type": "string", "Level": "admin"},
-    {"Path": "@/policy/%policy_sc%/vpn/subnets", "Type": "string", "Level": "admin"}
+    {"Path": "@/policy/site/vpn/server/%int%/enabled", "Type": "bool", "Level": "admin"},
+    {"Path": "@/policy/%policy_sc%/vpn/server/%int%/rings", "Type": "string", "Level": "admin"},
+    {"Path": "@/policy/%policy_sc%/vpn/server/%int%/subnets", "Type": "string", "Level": "admin"}
   ]
 }

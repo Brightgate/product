@@ -72,11 +72,11 @@ func (v *Vpn) getInuseMacs(users cfgapi.UserMap) (int, map[int]bool, error) {
 		}
 	}
 
-	lastMac, err := v.config.GetProp(lastMacProp)
+	lastMac, err := v.config.GetProp(LastMacProp)
 	if err == nil {
 		lastAllocated, _ = macToShort(lastMac)
 	} else {
-		err = fmt.Errorf("fetching %s: %v", lastMacProp, err)
+		err = fmt.Errorf("fetching %s: %v", LastMacProp, err)
 	}
 
 	return lastAllocated, inuse, err
