@@ -833,25 +833,19 @@ func configPropHandler(query *cfgmsg.ConfigQuery) (*string, error) {
 				updates = append(updates, update)
 			}
 
-		case cfgmsg.ConfigOp_TEST:
+		case cfgmsg.ConfigOp_TEST, cfgmsg.ConfigOp_TESTEQ:
+			opEq := (op.Operation == cfgmsg.ConfigOp_TESTEQ)
 			metrics.testCounts.Inc()
 			if err = validateProp(prop); err == nil {
-				_, err = cfgPropGetNode(prop)
-			}
+				var testNode *cfgtree.PNode
 
-		case cfgmsg.ConfigOp_TESTEQ:
-			var testNode *cfgtree.PNode
-
-			metrics.testCounts.Inc()
-			if err = validateProp(prop); err != nil {
-				break
-			}
-			if testNode, err = cfgPropGetNode(prop); err != nil {
-				break
-			}
-
-			if val != testNode.Value {
-				err = cfgapi.ErrNotEqual
+				testNode, err = cfgPropGetNode(prop)
+				if err == nil && opEq && val != testNode.Value {
+					err = cfgapi.ErrNotEqual
+				}
+				if err != nil {
+					slog.Debugf("%v failed: %v", op, err)
+				}
 			}
 
 		case cfgmsg.ConfigOp_PING:
