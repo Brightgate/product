@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -117,7 +117,9 @@ func newOrgRel(cmd *cobra.Command, args []string) error {
 		TargetOrganizationUUID: tgtUU,
 		Relationship:           relType,
 	}
-	err = db.InsertOrgOrgRelationship(ctx, rel)
+	if err := db.InsertOrgOrgRelationship(ctx, rel); err != nil {
+		return err
+	}
 	fmt.Printf("Created Org/Org Relationship uuid=%s: %s ---%s--> %s\n", uu, orgUU, relType, tgtUU)
 	return nil
 }

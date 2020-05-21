@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -17,7 +17,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"fmt"
+	"log"
 	"math"
 	"math/big"
 	"net"
@@ -208,9 +208,6 @@ func GetAccountInformation(ctx context.Context, db appliancedb.DataStore, acctUU
 // cfgapi Handles given a siteUUID
 type GetConfigHandleFunc func(siteUUID string) (*cfgapi.Handle, error)
 
-// ErrNotSelfProvisioned indicates an account which has not self-provisioned
-var ErrNotSelfProvisioned = errors.New("Account is not self provisioned")
-
 // ErrNoAccount indicates an non-existent account
 var ErrNoAccount = errors.New("Account does not exist")
 
@@ -221,7 +218,7 @@ var ErrNoAccount = errors.New("Account does not exist")
 // - If sites is nil, all sites for the account's organization are synced.
 func SyncAccountSelfProv(ctx context.Context,
 	db appliancedb.DataStore, getConfig GetConfigHandleFunc,
-	accountUUID uuid.UUID, sites []appliancedb.CustomerSite) error {
+	accountUUID uuid.UUID, sites []appliancedb.CustomerSite, wait bool) error {
 
 	account, err := db.AccountByUUID(ctx, accountUUID)
 	if err != nil {
@@ -233,24 +230,25 @@ func SyncAccountSelfProv(ctx context.Context,
 
 	secret, err := db.AccountSecretsByUUID(ctx, accountUUID)
 	if err != nil {
-		if _, ok := err.(appliancedb.NotFoundError); ok {
-			return ErrNotSelfProvisioned
+		// it's ok if secret is nil as long as the reason is
+		// that there is no secret; other failures require
+		// a hard stop.
+		if _, ok := err.(appliancedb.NotFoundError); !ok {
+			log.Printf("AccountSecretsByUUID: %v", err)
+			return errors.Wrap(err, "getting account secrets")
 		}
-		return err
-	}
-	if secret.ApplianceUserMSCHAPv2 == "" {
-		return ErrNotSelfProvisioned
+		log.Printf("AccountSecretsByUUID indicated no secrets")
 	}
 
 	person, err := db.PersonByUUID(ctx, account.PersonUUID)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "getting person")
 	}
 
 	if sites == nil {
 		sites, err = db.CustomerSitesByOrganization(ctx, account.OrganizationUUID)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "getting customer sites")
 		}
 	} else {
 		// Check that input sites are valid
@@ -268,45 +266,66 @@ func SyncAccountSelfProv(ctx context.Context,
 	uis := make([]*cfgapi.UserInfo, 0)
 	for _, site := range sites {
 		var hdl *cfgapi.Handle
+		log.Printf("syncing to %s %s", site.UUID, site.Name)
 		hdl, err := getConfig(site.UUID.String())
 		if err != nil {
-			return err
+			return errors.Wrap(err, "getConfig")
 		}
-		// Try to get a single property; helps us detect if there is no
-		// config at all for this site.
-		_, err = hdl.GetProp("@/apversion")
-		if err != nil && errors.Cause(err) == cfgapi.ErrNoConfig {
-			// No config for this site, keep going.
-			continue
-		} else if err != nil {
-			return err
-		}
+
+		// Fetch the old UserInfo structure.  This is also a test to
+		// detect if there is a config at all for this site.
 		var ui *cfgapi.UserInfo
-		ui, err = hdl.NewSelfProvisionUserInfo(account.Email, accountUUID)
+		ui, err = hdl.GetUserByUUID(accountUUID)
 		if err != nil {
-			return err
+			if errors.Cause(err) == cfgapi.ErrNoConfig {
+				// No config for this site, keep going.
+				log.Printf("no config found for %s %s", site.UUID, site.Name)
+				continue
+			}
+			if _, ok := errors.Cause(err).(cfgapi.NoSuchUserError); ok {
+				// Create the new UI and then fall out of this error logic
+				ui, err = hdl.NewSelfProvisionUserInfo(account.Email, accountUUID)
+				if err != nil {
+					return errors.Wrap(err, "NewSelfProvisionUserInfo")
+				}
+			} else {
+				err = errors.Wrap(err, "GetUserByUUID")
+				return err
+			}
 		}
+
 		ui.DisplayName = person.Name
 		ui.Email = account.Email
 		ui.TelephoneNumber = account.PhoneNumber
 		if ui.TelephoneNumber == "" {
 			ui.TelephoneNumber = "650-555-1212"
 		}
+		if secret != nil {
+			ui.SetPasswordsByHash(secret.ApplianceUserBcrypt, secret.ApplianceUserMSCHAPv2)
+		} else {
+			ui.SetNoPassword()
+		}
 		uis = append(uis, ui)
 	}
+
 	var errs []error
 	success := 0
 	for _, ui := range uis {
-		ops := ui.PropOpsFromPasswordHashes(secret.ApplianceUserBcrypt, secret.ApplianceUserMSCHAPv2)
-		_, err := ui.Update(ops...)
-		if err != nil {
-			errs = append(errs, err)
-		} else {
-			success++
-		}
-		// XXX for now we don't wait around to see if the update succeeds.
 		// More work is needed to give the user progress and/or partial
 		// results.
+		hdl, err := ui.Update(ctx)
+		if err != nil {
+			errs = append(errs, errors.Wrap(err, "Update"))
+			continue
+		}
+		if wait {
+			_, err := hdl.Wait(ctx)
+			if err != nil {
+				errs = append(errs, errors.Wrap(err, "Wait"))
+				continue
+			}
+		}
+		success++
 	}
 	if errs != nil {
 		return errors.Wrapf(errs[0], "partial or total failure. #success=%d, #fail=%d.  First failure is indicated",
@@ -315,13 +334,15 @@ func SyncAccountSelfProv(ctx context.Context,
 	return nil
 }
 
-// SyncAccountDeprovision performs deletion of an account to all CustomerSites
-// for the account's organization.
+// SyncAccountDeprovision performs password deprovisioning or full
+// @/users/<uid>/ deletion of an account to all CustomerSites for the account's
+// organization.
+//
 // - getConfig is a function which serves a source of cfgapi.Handles for
 //   talking to configd.
 func SyncAccountDeprovision(ctx context.Context,
 	db appliancedb.DataStore, getConfig GetConfigHandleFunc,
-	accountUUID uuid.UUID) error {
+	accountUUID uuid.UUID, fullDelete bool) error {
 
 	account, err := db.AccountByUUID(ctx, accountUUID)
 	if err != nil {
@@ -335,38 +356,48 @@ func SyncAccountDeprovision(ctx context.Context,
 		return err
 	}
 
+	uis := make([]*cfgapi.UserInfo, 0)
 	// Try to build up all of the handles we need first, then run the
 	// deletions.  We want to do our best to see that this operation
 	// succeeds or fails as a whole.
-	acctProp := fmt.Sprintf("@/users/%s", account.Email)
-	hdls := make([]*cfgapi.Handle, 0)
 	for _, site := range sites {
 		var hdl *cfgapi.Handle
 		hdl, err = getConfig(site.UUID.String())
 		if err != nil {
 			return err
 		}
-		_, err = hdl.GetProp("@/apversion")
-		if err != nil && errors.Cause(err) == cfgapi.ErrNoConfig {
-			// No config for this site, keep going.
+
+		ui, err := hdl.GetUserByUUID(account.UUID)
+		if err != nil {
+			if errors.Cause(err) == cfgapi.ErrNoConfig {
+				// No config for this site, keep going.
+				continue
+			}
+			if _, ok := errors.Cause(err).(cfgapi.NoSuchUserError); ok {
+				continue
+			}
+			log.Printf("GetUserByUUID failed unexpectedly: %v", err)
 			continue
-		} else if err != nil {
-			return err
 		}
-		// We could test for the existence of the user here, but we
-		// want the greatest assurance that the user is gone, so
-		// we unconditionally blow it away below.
-		hdls = append(hdls, hdl)
+		uis = append(uis, ui)
 	}
 
 	var errs []error
 	success := 0
 	queued := 0
-	ops := []cfgapi.PropertyOp{
-		{Op: cfgapi.PropDelete, Name: acctProp},
-	}
-	for _, hdl := range hdls {
-		cmdHdl := hdl.Execute(ctx, ops)
+	for _, ui := range uis {
+		var cmdHdl cfgapi.CmdHdl
+		if fullDelete {
+			cmdHdl = ui.Delete(ctx)
+		} else {
+			// Just remove password instead of deletion
+			ui.SetNoPassword()
+			cmdHdl, err = ui.Update(ctx)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+		}
 		_, err = cmdHdl.Status(ctx)
 		if err != nil {
 			if err == cfgapi.ErrQueued || err == cfgapi.ErrInProgress {
@@ -374,9 +405,9 @@ func SyncAccountDeprovision(ctx context.Context,
 			} else {
 				errs = append(errs, err)
 			}
-		} else {
-			success++
+			continue
 		}
+		success++
 		// XXX for now we don't wait around to see if the update succeeds.
 		// More work is needed to give the user progress and/or partial
 		// results.
@@ -392,8 +423,8 @@ func SyncAccountDeprovision(ctx context.Context,
 func DeleteAccountInformation(ctx context.Context, db appliancedb.DataStore,
 	getConfig GetConfigHandleFunc, accountUUID uuid.UUID) error {
 
-	err := SyncAccountDeprovision(ctx, db, getConfig, accountUUID)
-	if err != nil && err != ErrNotSelfProvisioned {
+	err := SyncAccountDeprovision(ctx, db, getConfig, accountUUID, true)
+	if err != nil {
 		return err
 	}
 	return db.DeleteAccount(ctx, accountUUID)
@@ -404,8 +435,8 @@ func DeleteAccountInformation(ctx context.Context, db appliancedb.DataStore,
 func AccountDeprovision(ctx context.Context, db appliancedb.DataStore,
 	getConfig GetConfigHandleFunc, accountUUID uuid.UUID) error {
 
-	err := SyncAccountDeprovision(ctx, db, getConfig, accountUUID)
-	if err != nil && err != ErrNotSelfProvisioned {
+	err := SyncAccountDeprovision(ctx, db, getConfig, accountUUID, false)
+	if err != nil {
 		return err
 	}
 	return db.DeleteAccountSecrets(ctx, accountUUID)

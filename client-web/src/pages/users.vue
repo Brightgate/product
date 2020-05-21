@@ -37,7 +37,7 @@ span.wifi {
       </template>
     </f7-block>
     <f7-list v-if="appMode === appDefs.APPMODE_CLOUD">
-      <f7-list-item v-if="spUsers.length === 0" disabled>
+      <f7-list-item v-if="wifiUsers.length === 0" disabled>
         <div slot="title">
           <span>
             <f7-icon material="block" />
@@ -45,7 +45,7 @@ span.wifi {
           </span>
         </div>
       </f7-list-item>
-      <f7-list-item v-for="user in spUsers"
+      <f7-list-item v-for="user in wifiUsers"
                     :key="user.UUID"
                     :link="`/accounts/${user.UUID}/`">
         <div slot="title">
@@ -56,7 +56,7 @@ span.wifi {
     </f7-list>
     <!-- non-cloud view -->
     <f7-list v-if="appMode === appDefs.APPMODE_LOCAL">
-      <f7-list-item v-for="user in spUsers"
+      <f7-list-item v-for="user in wifiUsers"
                     :key ="user.UUID"
                     :link="`${$f7route.url}${user.UUID}/`">
         <div slot="title">
@@ -124,12 +124,12 @@ export default {
       'vaps',
     ]),
 
-    spUsers: function() {
+    wifiUsers: function() {
       const users = this.$store.getters.users;
-      debug('spUsers: users', users);
-      const spu = pickBy(users, (user) => {
+      debug('wifiUsers: users', users);
+      const wifiU = pickBy(users, (user) => {
         if (this.appMode !== appDefs.APPMODE_CLOUD) {
-          return user.SelfProvisioning;
+          return user.SelfProvisioning && user.HasPassword;
         }
         // cloud mode; logic is a bit different-- we consult the account
         // as authoritative since the provisioning might be pending.
@@ -142,8 +142,8 @@ export default {
         const acct = this.accountByID(user.UUID);
         return acct && acct.name && acct.selfProvision && acct.selfProvision.status === 'provisioned';
       });
-      const o = orderBy(spu, 'DisplayName');
-      debug('spUsers', o);
+      const o = orderBy(wifiU, 'DisplayName');
+      debug('wifiUsers', o);
       return o;
     },
 

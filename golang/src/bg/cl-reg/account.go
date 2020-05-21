@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -333,7 +333,7 @@ func syncAccounts(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Printf("Syncing Organization %s (%s) %s\n", org.Name, org.UUID, s)
 		for _, acct := range accts {
-			err = registry.SyncAccountSelfProv(ctx, db, getConfig, acct.UUID, sites)
+			err = registry.SyncAccountSelfProv(ctx, db, getConfig, acct.UUID, sites, true)
 			if err != nil {
 				fmt.Printf("  Sync Error <%s>: %v\n", acct.Email, err)
 			} else {
@@ -371,7 +371,7 @@ func accountMain(rootCmd *cobra.Command) {
 	accountCmd.AddCommand(infoAccountCmd)
 
 	deprovisionAccountCmd := &cobra.Command{
-		Use:   "deprovision",
+		Use:   "deprovision <account-uuid>",
 		Args:  cobra.ExactArgs(1),
 		Short: "Remove account Wi-Fi credentials, and remove users pushed to sites",
 		RunE:  deprovisionAccount,

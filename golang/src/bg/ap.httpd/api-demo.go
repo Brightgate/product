@@ -836,24 +836,23 @@ func demoUserByUUIDPostHandler(w http.ResponseWriter, r *http.Request) {
 	if dau.Role != nil {
 		ui.Role = *dau.Role
 	}
-	var extraOps []cfgapi.PropertyOp
 	if dau.SetPassword != nil {
-		extraOps, err = ui.PropOpsFromPassword(*dau.SetPassword)
+		err = ui.SetPassword(*dau.SetPassword)
 		if err != nil {
-			log.Printf("failed to get generate PropOps from password")
+			log.Printf("SetPassword failed: %v", err)
 			http.Error(w, "unexpected failure", 500)
 			return
 		}
 	}
-	hdl, err := ui.Update(extraOps...)
+	hdl, err := ui.Update(r.Context())
 	if err != nil {
-		log.Printf("failed to setup update of user '%s': %v\n", dau.UID, err)
+		log.Printf("Update '%s' failed: %v\n", dau.UID, err)
 		http.Error(w, fmt.Sprintf("failed to save: %v", err), 500)
 		return
 	}
 	_, err = hdl.Wait(r.Context())
 	if err != nil {
-		log.Printf("update wait failed '%s': %v\n", dau.UID, err)
+		log.Printf("Wait '%s' failed: %v\n", dau.UID, err)
 		http.Error(w, fmt.Sprintf("failed to save: %v", err), 500)
 		return
 	}
@@ -889,14 +888,14 @@ func demoUserByUUIDDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ui, err := config.GetUserByUUID(ruuid)
 	if err != nil {
-		log.Printf("config.GetUserByUUID(%v): %v:", ruuid, err)
+		log.Printf("GetUserByUUID(%v): %v:", ruuid, err)
 		http.Error(w, "invalid or unknown user", 400)
 		return
 	}
 
-	err = ui.Delete()
+	_, err = ui.Delete(r.Context()).Wait(r.Context())
 	if err != nil {
-		log.Printf("failed to delete user '%s': %v\n", ui.UID, err)
+		log.Printf("Delete user '%s' failed: %v\n", ui.UID, err)
 		http.Error(w, "failed to delete user", 400)
 		return
 	}

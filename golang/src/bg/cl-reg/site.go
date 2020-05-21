@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -74,7 +74,7 @@ func newSite(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Syncing accounts:\n")
 	for _, acct := range accounts {
 		err = registry.SyncAccountSelfProv(ctx, db, getConfig, acct.UUID,
-			[]appliancedb.CustomerSite{*site})
+			[]appliancedb.CustomerSite{*site}, true)
 		if err != nil {
 			fmt.Printf("  Sync Error <%s>: %v\n", acct.Email, err)
 		} else {

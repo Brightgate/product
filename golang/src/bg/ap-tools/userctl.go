@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2017 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -139,13 +139,16 @@ func addUser() error {
 	ui.DisplayName = displayNameFlag.String()
 	ui.Email = emailFlag.String()
 	ui.TelephoneNumber = phoneFlag.String()
-	hdl, err := ui.Update()
+	ui.SetNoPassword()
+
+	ctx := context.Background()
+	hdl, err := ui.Update(ctx)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Update failed")
 	}
-	_, err = hdl.Wait(context.Background())
+	_, err = hdl.Wait(ctx)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "config operation failed")
 	}
 	log.Printf("added user '%s'\n", uidArg)
 	return nil
@@ -168,13 +171,14 @@ func updateUser() error {
 	if phoneFlag.set {
 		ui.TelephoneNumber = phoneFlag.String()
 	}
-	hdl, err := ui.Update()
+	ctx := context.Background()
+	hdl, err := ui.Update(ctx)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Update failed")
 	}
-	_, err = hdl.Wait(context.Background())
+	_, err = hdl.Wait(ctx)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Wait failed")
 	}
 	log.Printf("updated user '%s'\n", uidArg)
 	return nil
@@ -185,8 +189,8 @@ func deleteUser() error {
 	if err != nil {
 		return err
 	}
-	err = ui.Delete()
-	if err == nil {
+	ctx := context.Background()
+	if _, err = ui.Delete(ctx).Wait(ctx); err == nil {
 		log.Printf("deleted user '%s'\n", uidArg)
 	}
 	return err
@@ -223,7 +227,17 @@ func setUserPassword() error {
 	if err != nil {
 		return errors.Wrap(err, "SetPassword failed")
 	}
-	log.Printf("New password set for user '%s'\n", uidArg)
+
+	ctx := context.Background()
+	hdl, err := ui.Update(ctx)
+	if err != nil {
+		return errors.Wrap(err, "Update failed")
+	}
+	_, err = hdl.Wait(ctx)
+	if err != nil {
+		return errors.Wrap(err, "Wait failed")
+	}
+	log.Printf("New password set for user '%s' (%s)\n", uidArg, ui.DisplayName)
 
 	return nil
 }

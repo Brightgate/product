@@ -1093,14 +1093,13 @@ func (a *siteHandler) postUserByUUID(c echo.Context) error {
 	if au.Role != nil {
 		ui.Role = *au.Role
 	}
-	var extraOps []cfgapi.PropertyOp
 	if au.SetPassword != nil {
-		extraOps, err = ui.PropOpsFromPassword(*au.SetPassword)
+		err = ui.SetPassword(*au.SetPassword)
 		if err != nil {
 			return newHTTPError(http.StatusBadRequest, "failed generate passwords")
 		}
 	}
-	cmdHdl, err := ui.Update(extraOps...)
+	cmdHdl, err := ui.Update(c.Request().Context())
 	if err != nil {
 		c.Logger().Errorf("failed setup update for user '%s': %v\n", au.UID, err)
 		return newHTTPError(http.StatusBadRequest, "failed to save user")
@@ -1138,7 +1137,8 @@ func (a *siteHandler) deleteUserByUUID(c echo.Context) error {
 	if ui, err = hdl.GetUserByUUID(userUUID); err != nil {
 		return newHTTPError(http.StatusBadRequest, "invalid or unknown user")
 	}
-	if err = ui.Delete(); err != nil {
+	ctx := c.Request().Context()
+	if _, err = ui.Delete(ctx).Wait(ctx); err != nil {
 		return err
 	}
 

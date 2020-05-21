@@ -267,7 +267,8 @@ func (a *accountHandler) postAccountSelfProvision(c echo.Context) error {
 		return newHTTPError(http.StatusInternalServerError, err)
 	}
 
-	err = registry.SyncAccountSelfProv(ctx, a.db, a.getConfigHandle, sessionAccountUUID, nil)
+	// Note that we pass 'false' so that this doesn't wait around.
+	err = registry.SyncAccountSelfProv(ctx, a.db, a.getConfigHandle, sessionAccountUUID, nil, false)
 	if err != nil {
 		c.Logger().Errorf("registry.SyncAccountSelfProv failed: %v", err)
 		return newHTTPError(http.StatusInternalServerError, err)
