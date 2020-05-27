@@ -86,6 +86,8 @@ type DataStore interface {
 	DeleteOAuth2OrganizationRule(context.Context, *OAuth2OrganizationRule) error
 	DeleteOAuth2OrganizationRuleTx(context.Context, DBX, *OAuth2OrganizationRule) error
 
+	AppSiteOrgChain(context.Context, []uuid.UUID) ([]AppSiteOrg, error)
+
 	// Methods related to accounts, persons, identity
 	accountManager
 
@@ -911,4 +913,48 @@ func (db *ApplianceDB) DeleteOAuth2OrganizationRuleTx(ctx context.Context, dbx D
 		    rule_value=:rule_value AND
 		    organization_uuid=:organization_uuid`, rule)
 	return err
+}
+
+// AppSiteOrg is a tuple of the name and UUID of an appliance, its site, and its
+// organization.
+type AppSiteOrg struct {
+	AppUUID  uuid.UUID `db:"app_uuid"`
+	AppName  string    `db:"app_name"`
+	SiteUUID uuid.UUID `db:"site_uuid"`
+	SiteName string    `db:"site_name"`
+	OrgUUID  uuid.UUID `db:"org_uuid"`
+	OrgName  string    `db:"org_name"`
+}
+
+// AppSiteOrgChain returns a list of AppSiteOrg objects corresponding to the
+// appliance UUIDs passed in, or for all appliances if the list is empty.
+func (db *ApplianceDB) AppSiteOrgChain(ctx context.Context, appUUs []uuid.UUID) ([]AppSiteOrg, error) {
+	var chain []AppSiteOrg
+	q := `
+		SELECT o.name AS org_name,
+			o.uuid AS org_uuid,
+			s.name AS site_name,
+			s.uuid AS site_uuid,
+			a.appliance_reg_id AS app_name,
+			a.appliance_uuid AS app_uuid
+		FROM appliance_id_map a, customer_site s, organization o
+		WHERE a.site_uuid = s.uuid AND s.organization_uuid = o.uuid%s`
+
+	// The usual $1::uuid IS NULL OR m.appliance_uuid IN (?) trick doesn't
+	// work because sqlx.In doesn't like it if we pass in an empty array.
+	var args []interface{}
+	if len(appUUs) > 0 {
+		q = fmt.Sprintf(q, ` AND a.appliance_uuid IN (?)`)
+		var err error
+		q, args, err = sqlx.In(q, appUUs)
+		if err != nil {
+			return nil, err
+		}
+		q = db.Rebind(q)
+	} else {
+		q = fmt.Sprintf(q, "")
+	}
+	err := db.SelectContext(ctx, &chain, q, args...)
+
+	return chain, err
 }

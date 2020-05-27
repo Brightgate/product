@@ -42,7 +42,7 @@ godeps-status-all:
 # Lists the direct dependencies that can be updated.
 .PHONY: godeps-updatable
 godeps-updatable:
-	cd $(or $(GOSRC),$(GOSRCBG)) && $(GO) list $(GO_MOD_FLAG) -u -f '{{if (and (not (or .Main .Indirect)) .Update)}}{{.Path}}: {{.Version}} -> {{.Update.Version}}{{end}}' -m $(or $(DEPNAME),all) 2> /dev/null
+	(printf ".TS\nnowarn tab(@);\nlblblb\n---\nlll.\nModule@Current Version@Upgradable To\n"; cd $(or $(GOSRC),$(GOSRCBG)) && $(GO) list $(GO_MOD_FLAG) -u -f '{{if (and (not (or .Main .Indirect)) .Update)}}{{.Path}}@{{.Version}}@{{.Update.Version}}{{end}}' -m $(or $(DEPNAME),all) 2> /dev/null; printf ".TE\n") | groff -t -Tascii | sed -e '/^$$/d'
 
 # Lists all dependencies (direct, indirect, alternate targets) that can be updated.
 .PHONY: godeps-updatable-all

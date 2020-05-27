@@ -598,6 +598,37 @@ func testCustomerSite(t *testing.T, ds DataStore, logger *zap.Logger, slogger *z
 	assert.Equal(chg, *schg)
 }
 
+// Test AppSiteOrgChain().  subtest of TestDatabaseModel
+func testAppSiteOrgChain(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
+	ctx := context.Background()
+	assert := require.New(t)
+
+	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, &testID1)
+	mkOrgSiteApp(t, ds, &testOrg2, &testSite2, &testID2)
+
+	chains, err := ds.AppSiteOrgChain(ctx, nil)
+	assert.NoError(err)
+	assert.Len(chains, 2)
+	for _, chain := range chains {
+		switch chain.AppUUID {
+		case testID1.ApplianceUUID:
+			assert.Equal(chain.AppName, testID1.ApplianceRegID)
+			assert.Equal(chain.SiteUUID, testID1.SiteUUID)
+			assert.Equal(chain.SiteName, testSite1.Name)
+			assert.Equal(chain.OrgUUID, testSite1.OrganizationUUID)
+			assert.Equal(chain.OrgName, testOrg1.Name)
+		case testID2.ApplianceUUID:
+			assert.Equal(chain.AppName, testID2.ApplianceRegID)
+			assert.Equal(chain.SiteUUID, testID2.SiteUUID)
+			assert.Equal(chain.SiteName, testSite2.Name)
+			assert.Equal(chain.OrgUUID, testSite2.OrganizationUUID)
+			assert.Equal(chain.OrgName, testOrg2.Name)
+		default:
+			t.Errorf("Unknown appliance UUID %s", chain.AppUUID)
+		}
+	}
+}
+
 // Test OAuth2OrganizationRule APIs.  subtest of TestDatabaseModel
 func testOAuth2OrganizationRule(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
 	ctx := context.Background()

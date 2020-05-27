@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -252,6 +252,7 @@ func applianceStatus(cmd *cobra.Command, args []string) error {
 	appUUStrs, _ := cmd.Flags().GetStringArray("app")
 	siteUUStrs, _ := cmd.Flags().GetStringArray("site")
 	orgUUStrs, _ := cmd.Flags().GetStringArray("org")
+	noNames, _ := cmd.Flags().GetBool("no-name")
 
 	if (len(appUUStrs) > 0 && len(siteUUStrs) > 0) ||
 		(len(appUUStrs) > 0 && len(orgUUStrs) > 0) ||
@@ -284,24 +285,62 @@ func applianceStatus(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		table, _ := prettytable.NewTable(
-			prettytable.Column{Header: "Appliance"},
-			// Checkmark for up-to-date?
+		var asoMap map[uuid.UUID]appliancedb.AppSiteOrg
+		if !noNames {
+			chain, err := db.AppSiteOrgChain(ctx, appUUs)
+			if err != nil {
+				return err
+			}
+			asoMap = make(map[uuid.UUID]appliancedb.AppSiteOrg, len(appUUs))
+			for _, aso := range chain {
+				asoMap[aso.AppUUID] = aso
+			}
+		}
+
+		var columns []prettytable.Column
+		if noNames {
+			columns = append(columns, prettytable.Column{Header: "Appliance"})
+		} else {
+			columns = append(columns, prettytable.Column{Header: "Organization/Site"})
+			columns = append(columns, prettytable.Column{Header: "Appliance"})
+		}
+		// Checkmark for up-to-date?
+		columns = append(columns,
 			prettytable.Column{Header: "Target Release UUID"},
 			prettytable.Column{Header: "Name"},
 			prettytable.Column{Header: "Current Release UUID"},
 			prettytable.Column{Header: "Name"},
-			prettytable.Column{Header: "Since"},
-		)
+			prettytable.Column{Header: "Since"})
+		table, _ := prettytable.NewTable(columns...)
 		table.Separator = "  "
 
 		appUUs = make([]uuid.UUID, 0)
 		for appUU := range status {
 			appUUs = append(appUUs, appUU)
 		}
-		sort.Slice(appUUs, func(i, j int) bool {
-			return bytes.Compare(appUUs[i].Bytes(), appUUs[j].Bytes()) == -1
-		})
+		appNames := make(map[uuid.UUID][]interface{}, len(appUUs))
+		if noNames {
+			for _, appUU := range appUUs {
+				appNames[appUU] = []interface{}{appUU.String()}
+			}
+			sort.Slice(appUUs, func(i, j int) bool {
+				return bytes.Compare(appUUs[i].Bytes(), appUUs[j].Bytes()) == -1
+			})
+		} else {
+			for _, appUU := range appUUs {
+				appNames[appUU] = []interface{}{
+					fmt.Sprintf("%s / %s", asoMap[appUU].OrgName, asoMap[appUU].SiteName),
+					asoMap[appUU].AppName,
+				}
+			}
+			sort.Slice(appUUs, func(i, j int) bool {
+				ei0 := appNames[appUUs[i]][0].(string)
+				ei1 := appNames[appUUs[i]][1].(string)
+				ej0 := appNames[appUUs[j]][0].(string)
+				ej1 := appNames[appUUs[j]][1].(string)
+				return ei0+ei1 < ej0+ej1
+			})
+		}
 
 		for _, appUU := range appUUs {
 			stat := status[appUU]
@@ -323,7 +362,10 @@ func applianceStatus(cmd *cobra.Command, args []string) error {
 				curName = "-"
 				since = "-"
 			}
-			table.AddRow(appUU, targUU, targName, curUU, curName, since)
+			var outCols []interface{}
+			outCols = append(outCols, appNames[appUU]...)
+			outCols = append(outCols, targUU, targName, curUU, curName, since)
+			table.AddRow(outCols...)
 		}
 		table.Print()
 	}
@@ -448,6 +490,7 @@ func main() {
 	statusCmd.Flags().StringArrayP("app", "a", []string{}, "appliance UUID")
 	statusCmd.Flags().StringArrayP("site", "s", []string{}, "site UUID")
 	statusCmd.Flags().StringArrayP("org", "o", []string{}, "organization UUID")
+	statusCmd.Flags().BoolP("no-name", "n", false, "don't resolve appliance UUIDs into names")
 	rootCmd.AddCommand(statusCmd)
 
 	if err := processEnv(); err != nil {
