@@ -79,23 +79,44 @@ func executeUser(ops []cfgapi.PropertyOp) (string, error) {
 	return config.Execute(ctx, ops).Wait(ctx)
 }
 
-// utility function to attempt the 'get' of a single property.  The caller
-// decides whether the operation should succeed or fail.
-func checkOneProp(t *testing.T, prop, val string, succeed bool) {
+func fetchSubtree(t *testing.T, prop string, succeed bool) string {
+	var rval string
+
 	ops := []cfgapi.PropertyOp{
 		{Op: cfgapi.PropGet, Name: prop},
 	}
 
-	treeVal, err := executeInternal(ops)
+	blob, err := executeInternal(ops)
 	if err != nil {
 		if succeed {
 			t.Errorf("Failed to get %s: %v", prop, err)
 		}
-	} else if !succeed {
-		t.Errorf("Got %s -> %s.  Expected failure.", prop, treeVal)
 	} else {
+		rval = string(blob)
+		if !succeed {
+			t.Errorf("Got %s -> %s.  Expected failure.", prop, rval)
+		}
+	}
+
+	return rval
+}
+
+func checkSubtree(t *testing.T, prop, expected string) {
+	val := fetchSubtree(t, prop, true)
+
+	if !t.Failed() && expected != val {
+		t.Errorf("Got %s -> %s.  Expected '%s'", prop, val, expected)
+	}
+}
+
+// utility function to attempt the 'get' of a single property.  The caller
+// decides whether the operation should succeed or fail.
+func checkOneProp(t *testing.T, prop, val string, succeed bool) {
+	treeVal := fetchSubtree(t, prop, succeed)
+
+	if !t.Failed() && succeed {
 		var node cfgtree.PNode
-		if err = json.Unmarshal([]byte(treeVal), &node); err != nil {
+		if err := json.Unmarshal([]byte(treeVal), &node); err != nil {
 			t.Errorf("Failed to decode %s: %v", prop, err)
 		} else if node.Value != val {
 			t.Errorf("Got %s -> %s.  Expected '%s'", prop,
@@ -160,6 +181,7 @@ func testTreeInit(t *testing.T) leafMap {
 		t.Fatalf("failed to import config tree: %v", err)
 	}
 	propTree = tree
+	propTree.SetCacheable()
 	versionTree()
 
 	return testBuildMap(t)
@@ -940,6 +962,73 @@ func TestInvalidExpansions(t *testing.T) {
 	for _, prop := range newProps {
 		insertOneProp(t, prop, newVal, false)
 		testValidateTree(t, a)
+	}
+}
+
+// TestCacheStale checks to see whether stale data is left in the config tree
+// cache after deleting the subtree that includes it.
+func TestCacheStale(t *testing.T) {
+	const nicsProp = "@/nodes/001-201913ZZ-000039/nics"
+	const lan0Prop = nicsProp + "/lan0"
+	const ringProp = lan0Prop + "/ring"
+
+	a := testTreeInit(t)
+
+	// Fetch the same subtree a few times to ensure that it's cached
+	oldSubtree := fetchSubtree(t, nicsProp, true)
+	checkSubtree(t, nicsProp, oldSubtree)
+	checkSubtree(t, nicsProp, oldSubtree)
+	checkSubtree(t, nicsProp, oldSubtree)
+	checkSubtree(t, nicsProp, oldSubtree)
+	checkSubtree(t, nicsProp, oldSubtree)
+
+	// Delete the subtree
+	deleteOneProp(t, nicsProp, true)
+
+	// Repopulate it, with the ring property changed from 'standard' to
+	// 'internal'
+	ops := []cfgapi.PropertyOp{
+		{
+			Op:    cfgapi.PropCreate,
+			Name:  lan0Prop + "/kind",
+			Value: "wired",
+		},
+		{
+			Op:    cfgapi.PropCreate,
+			Name:  lan0Prop + "/mac",
+			Value: "60:90:84:a0:00:22",
+		},
+		{
+			Op:    cfgapi.PropCreate,
+			Name:  lan0Prop + "/name",
+			Value: "lan0",
+		},
+		{
+			Op:    cfgapi.PropCreate,
+			Name:  lan0Prop + "/pseudo",
+			Value: "false",
+		},
+		{
+			Op:    cfgapi.PropCreate,
+			Name:  lan0Prop + "/ring",
+			Value: "internal",
+		},
+	}
+
+	for _, op := range ops {
+		a[op.Name] = op.Value
+	}
+
+	if _, err := executeInternal(ops); err != nil {
+		t.Error(err)
+	} else {
+		testValidateTree(t, a)
+	}
+
+	// Check to see whether the old data is still in the cache
+	newSubtree := fetchSubtree(t, nicsProp, true)
+	if oldSubtree == newSubtree {
+		t.Errorf("Got stale data")
 	}
 }
 

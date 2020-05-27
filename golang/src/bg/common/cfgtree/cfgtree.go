@@ -297,11 +297,16 @@ func (node *PNode) update(value string, exp *time.Time) error {
 	return err
 }
 
-func (node *PNode) uncache() {
+func (node *PNode) uncache(recurse bool) {
 	if node.cached {
 		node.cached = false
 		node.cacheScore = 0
 		delete(node.tree.cachedMarshal, node.path)
+	}
+	if recurse {
+		for _, child := range node.Children {
+			child.uncache(true)
+		}
 	}
 }
 
@@ -315,7 +320,7 @@ func (node *PNode) commit(now time.Time) bool {
 				current.Expires != old.Expires {
 				copy := now
 				current.Modified = &copy
-				current.uncache()
+				current.uncache(false)
 				updated = true
 			}
 		}
@@ -323,8 +328,9 @@ func (node *PNode) commit(now time.Time) bool {
 
 	// Using the original list of child nodes, look for any that have been
 	// deleted
-	for prop := range node.origChildren {
+	for prop, origNode := range node.origChildren {
 		if _, ok := node.Children[prop]; !ok {
+			origNode.uncache(true)
 			updated = true
 		}
 	}
@@ -336,7 +342,7 @@ func (node *PNode) commit(now time.Time) bool {
 		if updated {
 			copy := now
 			x.Modified = &copy
-			x.uncache()
+			x.uncache(false)
 		}
 	}
 	return updated
