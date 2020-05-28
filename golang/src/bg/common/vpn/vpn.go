@@ -421,7 +421,7 @@ func (v *Vpn) RemoveKey(ctx context.Context, name, mac, public string) error {
 
 // IsEnabled checks whether the VPN functionality has been enabled for this site
 func (v *Vpn) IsEnabled() bool {
-	enabled, _ := v.config.GetPropBool("@/policy/site/vpn/enabled")
+	enabled, _ := v.config.GetPropBool(EnabledProp)
 	return enabled
 }
 
