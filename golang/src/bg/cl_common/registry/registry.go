@@ -16,14 +16,19 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
+	"fmt"
+	"io/ioutil"
 	"log"
 	"math"
 	"math/big"
 	"net"
+	"os"
 	"time"
 
 	"github.com/guregu/null"
+	vault "github.com/hashicorp/vault/api"
 	"github.com/pkg/errors"
 	"github.com/satori/uuid"
 
@@ -455,11 +460,12 @@ func AccountDeprovision(ctx context.Context, db appliancedb.DataStore,
 func NewAppliance(ctx context.Context, db appliancedb.DataStore,
 	appliance uuid.UUID, site uuid.UUID,
 	project, region, regID, appID string,
-	systemReprHWSerial, systemReprMAC string) (uuid.UUID, []byte, []byte, error) {
+	systemReprHWSerial, systemReprMAC string,
+	noEscrow bool) (uuid.UUID, []byte, []byte, []byte, string, error) {
 
 	keyPEM, certPEM, err := genPEMKey()
 	if err != nil {
-		return uuid.Nil, nil, nil, err
+		return uuid.Nil, nil, nil, nil, "", err
 	}
 
 	if appliance == uuid.Nil {
@@ -470,7 +476,7 @@ func NewAppliance(ctx context.Context, db appliancedb.DataStore,
 	if systemReprHWSerial != "" {
 		_, err = mfg.NewExtSerialFromString(systemReprHWSerial)
 		if err != nil {
-			return uuid.Nil, nil, nil, err
+			return uuid.Nil, nil, nil, nil, "", err
 		}
 		reprSerial = null.StringFrom(systemReprHWSerial)
 	}
@@ -479,7 +485,7 @@ func NewAppliance(ctx context.Context, db appliancedb.DataStore,
 	if systemReprMAC != "" {
 		mac, err := net.ParseMAC(systemReprMAC)
 		if err != nil {
-			return uuid.Nil, nil, nil, errors.Wrap(err, "Invalid systemReprMAC")
+			return uuid.Nil, nil, nil, nil, "", errors.Wrap(err, "Invalid systemReprMAC")
 		}
 		reprMac = null.StringFrom(mac.String())
 	}
@@ -501,19 +507,84 @@ func NewAppliance(ctx context.Context, db appliancedb.DataStore,
 
 	tx, err := db.BeginTxx(ctx, nil)
 	if err != nil {
-		return uuid.Nil, nil, nil, err
+		return uuid.Nil, nil, nil, nil, "", err
 	}
 	defer tx.Rollback()
 
 	if err = db.InsertApplianceIDTx(ctx, tx, id); err != nil {
-		return uuid.Nil, nil, nil, err
+		return uuid.Nil, nil, nil, nil, "", err
 	}
 	if err = db.InsertApplianceKeyTx(ctx, tx, appliance, key); err != nil {
-		return uuid.Nil, nil, nil, err
+		return uuid.Nil, nil, nil, nil, "", err
 	}
 	err = tx.Commit()
 	if err != nil {
-		return uuid.Nil, nil, nil, err
+		return uuid.Nil, nil, nil, nil, "", err
 	}
-	return appliance, keyPEM, certPEM, nil
+
+	// From here on, return the data in addition to the error, because the
+	// caller may still be able to do something with it.
+	jsecret, err := applianceSecret(project, region, regID, appID, keyPEM)
+	if noEscrow || err != nil {
+		return appliance, keyPEM, certPEM, jsecret, "", err
+	}
+
+	path, err := escrowPrivateKey(ctx, appliance, project, region, regID, appID, jsecret)
+
+	return appliance, keyPEM, certPEM, jsecret, path, err
+}
+
+func applianceSecret(project, region, registry, id string, keyPEM []byte) ([]byte, error) {
+	jmap := map[string]string{
+		"project":      project,
+		"region":       region,
+		"registry":     registry,
+		"appliance_id": id,
+		"private_key":  string(keyPEM),
+	}
+	return json.MarshalIndent(jmap, "", "\t")
+}
+
+func escrowPrivateKey(ctx context.Context, appliance uuid.UUID, project, region, regID, appID string, jsecret []byte) (string, error) {
+	vaultClient, err := vault.NewClient(nil)
+	if err != nil {
+		return "", err
+	}
+
+	// If $VAULT_TOKEN wasn't set, then look at ~/.vault-token, like vault
+	// itself does.
+	if vaultClient.Token() == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", errors.Wrap(err,
+				"Couldn't find .vault-token in home directory")
+		}
+		token, err := ioutil.ReadFile(fmt.Sprintf("%s/.vault-token", home))
+		if err != nil {
+			return "", errors.Wrap(err,
+				"Couldn't read .vault-token in home directory")
+		}
+		vaultClient.SetToken(string(token))
+	}
+
+	vcl := vaultClient.Logical()
+	data := map[string]interface{}{
+		"data": map[string]interface{}{
+			"cloud_secret": string(jsecret),
+		},
+	}
+	enginePath := os.Getenv("B10E_CLREG_VAULT_PUBKEY_PATH")
+	if enginePath == "" {
+		enginePath = fmt.Sprintf("secret/%s", project)
+	}
+	componentPath := os.Getenv("B10E_CLREG_VAULT_PUBKEY_COMPONENT")
+	if componentPath == "" {
+		componentPath = fmt.Sprintf("appliance-pubkey-escrow/%s/%s/%s",
+			region, regID, appID)
+	}
+	path := fmt.Sprintf("%s/data/%s", enginePath, componentPath)
+	// `vault kv get` needs the path without `/data`.
+	cleanPath := fmt.Sprintf("%s/%s", enginePath, componentPath)
+	_, err = vcl.Write(path, data)
+	return cleanPath, err
 }

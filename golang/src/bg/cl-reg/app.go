@@ -12,7 +12,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -102,6 +102,7 @@ func newAppliance(cmd *cobra.Command, args []string) error {
 	appUUID, _ := cmd.Flags().GetString("uuid")
 	hwSerial, _ := cmd.Flags().GetString("hw-serial")
 	mac, _ := cmd.Flags().GetString("mac-address")
+	noEscrow, _ := cmd.Flags().GetBool("no-escrow")
 
 	var appUU uuid.UUID
 	if appUUID != "" {
@@ -129,31 +130,30 @@ func newAppliance(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
-	var keyPEM []byte
-	appUU, keyPEM, _, err = registry.NewAppliance(context.Background(),
+	// Creating the appliance object will put it in the database and save
+	// the cloud secret in Vault (unless noEscrow is true).  If noEscrow is
+	// true, we'll attempt to write the secret to a file.  If either that or
+	// the escrow fails, we'll emit the secret (if we got it) to stdout.
+	var jout []byte
+	var vaultPath string
+	appUU, _, _, jout, vaultPath, err = registry.NewAppliance(context.Background(),
 		db, appUU, siteUU, reg.Project, reg.Region, reg.Registry, appID,
-		hwSerial, mac)
+		hwSerial, mac, noEscrow)
 	if err != nil {
-		return err
-	}
-
-	jmap := map[string]string{
-		"project":      reg.Project,
-		"region":       reg.Region,
-		"registry":     reg.Registry,
-		"appliance_id": appID,
-		"private_key":  string(keyPEM),
-	}
-	jout, err := json.MarshalIndent(jmap, "", "\t")
-	if err != nil {
-		return err
+		// Only exit if we didn't get the secret bytes back; otherwise,
+		// the escrow failed, and that's recoverable.
+		if jout == nil {
+			return err
+		}
 	}
 
 	var ioerr error
 	var secretsFile string
-	if ioerr = os.MkdirAll(outdir, 0700); ioerr == nil {
-		secretsFile = outdir + "/" + appID + ".cloud.secret.json"
-		ioerr = ioutil.WriteFile(secretsFile, jout, 0600)
+	if noEscrow {
+		if ioerr = os.MkdirAll(outdir, 0700); ioerr == nil {
+			secretsFile = outdir + "/" + appID + ".cloud.secret.json"
+			ioerr = ioutil.WriteFile(secretsFile, jout, 0600)
+		}
 	}
 
 	fmt.Printf("-------------------------------------------------------------\n")
@@ -161,19 +161,41 @@ func newAppliance(cmd *cobra.Command, args []string) error {
 		reg.Project, reg.Region, reg.Registry, appID)
 	fmt.Printf("     Site UUID: %s\n", siteUU)
 	fmt.Printf("Appliance UUID: %s\n", appUU)
-	if ioerr == nil {
+	if secretsFile != "" && ioerr == nil {
 		fmt.Printf("  Secrets file: %s\n", secretsFile)
 		fmt.Printf("-------------------------------------------------------------\n")
 		fmt.Printf("Next, provision %s to the appliance at:\n", secretsFile)
 		fmt.Printf("    /data/secret/rpcd/cloud.secret.json\n")
 		fmt.Printf("    /var/spool/secret/rpcd/cloud.secret.json (on Debian)\n")
-	} else {
+	} else if err != nil || ioerr != nil {
+		// If err != nil at this point, that means we tried to escrow,
+		// but failed.  If ioerr != nil, we tried to write the file, but
+		// didn't try to escrow.  So only one would be non-nil.
+		if ioerr == nil {
+			ioerr = err
+			// The app will print the error at the end; we don't
+			// need it duplicated, but it should exit 1 and print
+			// some error.
+			err = errors.New("failed to escrow key")
+		}
 		fmt.Printf("-------------------------------------------------------------\n")
-		fmt.Printf("Secrets file couldn't be written: %s\n", ioerr)
+		fmt.Printf("Secrets file couldn't be written/escrowed: %v\n", ioerr)
 		fmt.Printf("Copy the following to the appliance at:\n")
 		fmt.Printf("    /data/secret/rpcd/cloud.secret.json\n")
 		fmt.Printf("    /var/spool/secret/rpcd/cloud.secret.json (on Debian)\n")
+		fmt.Printf("and try to write to Vault with the command:\n")
+		fmt.Printf("    cat <data> | vault kv put %s cloud_secret=-\n", vaultPath)
+		fmt.Printf("-------------------------------------------------------------\n")
 		fmt.Printf("%s\n", jout)
+		fmt.Printf("-------------------------------------------------------------\n")
+	} else {
+		fmt.Printf("    Vault path: %s\n", vaultPath)
+		fmt.Printf("-------------------------------------------------------------\n")
+		fmt.Printf("Next, provision secret to the appliance at:\n")
+		fmt.Printf("    /data/secret/rpcd/cloud.secret.json\n")
+		fmt.Printf("    /var/spool/secret/rpcd/cloud.secret.json (on Debian)\n")
+		fmt.Printf("The secret can be retrieved with the command:\n")
+		fmt.Printf("    vault kv get -field cloud_secret %s\n", vaultPath)
 	}
 
 	return err
@@ -240,6 +262,7 @@ func appMain(rootCmd *cobra.Command) {
 	newAppCmd.Flags().StringP("input", "i", "", "registry data JSON file")
 	newAppCmd.Flags().StringP("uuid", "u", "", "appliance UUID")
 	newAppCmd.Flags().StringP("site-uuid", "s", "", "site UUID")
+	newAppCmd.Flags().BoolP("no-escrow", "", false, "don't escrow the private key in Vault")
 	appCmd.AddCommand(newAppCmd)
 
 	listAppCmd := &cobra.Command{
