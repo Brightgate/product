@@ -313,7 +313,7 @@ func (a *accountHandler) getAccountSelfProvision(c echo.Context) error {
 	}
 	sessionAccountUUID, ok := c.Get("account_uuid").(uuid.UUID)
 	if !ok || sessionAccountUUID == uuid.Nil {
-		return newHTTPError(http.StatusUnauthorized)
+		return newHTTPError(http.StatusUnauthorized, errors.Wrap(err, "account_uuid"))
 	}
 
 	accountUUID, err := uuid.FromString(c.Param("acct_uuid"))
@@ -328,7 +328,7 @@ func (a *accountHandler) getAccountSelfProvision(c echo.Context) error {
 	roles := c.Get("matched_roles").(matchedRoles)
 	// Only admins may look at other account's information
 	if !roles["admin"] && accountUUID != sessionAccountUUID {
-		return newHTTPError(http.StatusUnauthorized)
+		return newHTTPError(http.StatusUnauthorized, errors.Errorf("insufficient access; check roles"))
 	}
 
 	resp := &accountSelfProvisionResponse{
@@ -353,11 +353,11 @@ func (a *accountHandler) deleteAccount(c echo.Context) error {
 	ctx := c.Request().Context()
 	accountUUID, err := uuid.FromString(c.Param("acct_uuid"))
 	if err != nil {
-		return newHTTPError(http.StatusBadRequest)
+		return newHTTPError(http.StatusBadRequest, err)
 	}
 	err = registry.DeleteAccountInformation(ctx, a.db, a.getConfigHandle, accountUUID)
 	if err != nil {
-		return newHTTPError(http.StatusInternalServerError)
+		return newHTTPError(http.StatusInternalServerError, err)
 	}
 	return c.NoContent(http.StatusOK)
 }

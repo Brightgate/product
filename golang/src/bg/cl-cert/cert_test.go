@@ -30,6 +30,7 @@ import (
 	"bg/cloud_models/appliancedb"
 	"bg/common/briefpg"
 	"bg/common/cfgapi"
+	"bg/common/mockcfg"
 
 	"github.com/go-acme/lego/certificate"
 	"github.com/satori/uuid"
@@ -125,56 +126,8 @@ func mkTemplate(ctx context.Context) error {
 	return nil
 }
 
-// TestCmdHdl Implements a mocked CmdHdl; this handle always succeeds.
-type TestCmdHdl struct{}
-
-func (h *TestCmdHdl) Status(_ context.Context) (string, error) {
-	return "", nil
-}
-
-func (h *TestCmdHdl) Wait(_ context.Context) (string, error) {
-	return "", nil
-}
-
-func (h *TestCmdHdl) Cancel(_ context.Context) error {
-	return nil
-}
-
-// TestConfigExec implements ConfigExec; it does nothing except return
-// TestCmdHdl.
-type TestConfigExec struct{}
-
-func (t *TestConfigExec) Ping(_ context.Context) error {
-	return nil
-}
-
-func (t *TestConfigExec) ExecuteAt(_ context.Context, _ []cfgapi.PropertyOp,
-	_ cfgapi.AccessLevel) cfgapi.CmdHdl {
-
-	return &TestCmdHdl{}
-}
-
-func (t *TestConfigExec) Execute(_ context.Context, _ []cfgapi.PropertyOp) cfgapi.CmdHdl {
-	return &TestCmdHdl{}
-}
-
-func (t *TestConfigExec) HandleChange(_ string, _ func([]string, string, *time.Time)) error {
-	return nil
-}
-
-func (t *TestConfigExec) HandleDelete(_ string, _ func([]string)) error {
-	return nil
-}
-
-func (t *TestConfigExec) HandleExpire(_ string, _ func([]string)) error {
-	return nil
-}
-
-func (t *TestConfigExec) Close() {
-}
-
 func testGetConfigClientHandle(_ string) (*cfgapi.Handle, error) {
-	return cfgapi.NewHandle(&TestConfigExec{}), nil
+	return cfgapi.NewHandle(mockcfg.NewMockExec()), nil
 }
 
 type legoCert = certificate.Resource

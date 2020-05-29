@@ -11,7 +11,6 @@
 package main
 
 import (
-	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -22,6 +21,7 @@ import (
 	"time"
 
 	"bg/common/cfgapi"
+	"bg/common/mockcfg"
 
 	"github.com/gorilla/securecookie"
 	"github.com/gorilla/sessions"
@@ -107,59 +107,12 @@ var (
 	}
 )
 
-// TestCmdHdl Implements a mocked CmdHdl; this handle always returns
-// cfgapi.ErrNoConfig.
-type TestCmdHdl struct{}
-
-func (h *TestCmdHdl) Status(ctx context.Context) (string, error) {
-	return "", cfgapi.ErrNoConfig
-}
-
-func (h *TestCmdHdl) Wait(ctx context.Context) (string, error) {
-	return "", cfgapi.ErrNoConfig
-}
-
-func (h *TestCmdHdl) Cancel(ctx context.Context) error {
-	return cfgapi.ErrNoConfig
-}
-
-// TestConfigExec Implements ConfigExec; it does nothing except return
-// TestCmdHdl, which just returns cfgapi.ErrNoConfig.
-type TestConfigExec struct{}
-
-func (t *TestConfigExec) Ping(ctx context.Context) error {
-	return nil
-}
-
-func (t *TestConfigExec) ExecuteAt(ctx context.Context, ops []cfgapi.PropertyOp,
-	level cfgapi.AccessLevel) cfgapi.CmdHdl {
-	return &TestCmdHdl{}
-}
-
-func (t *TestConfigExec) Execute(ctx context.Context, ops []cfgapi.PropertyOp) cfgapi.CmdHdl {
-	return &TestCmdHdl{}
-}
-
-func (t *TestConfigExec) HandleChange(path string, handler func([]string, string, *time.Time)) error {
-	return nil
-}
-
-func (t *TestConfigExec) HandleDelete(path string, handler func([]string)) error {
-	return nil
-}
-
-func (t *TestConfigExec) HandleExpire(path string, handler func([]string)) error {
-	return nil
-}
-
-func (t *TestConfigExec) Close() {
-}
-
-// Return the a TestConfigExec backed handle.  This will always reply with
-// cfgapi.ErrNoConfig.  In the future we'd like a fully flexible config mock
-// handle.
+// Return a MockExec backed handle.  We're being super lazy here and
+// always building a new MockExec-- which means that every time this is
+// called it's acting on a fresh tree-- there is room for improvement
+// here.
 func getMockClientHandle(uuid string) (*cfgapi.Handle, error) {
-	return cfgapi.NewHandle(&TestConfigExec{}), nil
+	return cfgapi.NewHandle(mockcfg.NewMockExecFromDefaults()), nil
 }
 
 // addValidSession does a handstand to setup a valid session cookie on the

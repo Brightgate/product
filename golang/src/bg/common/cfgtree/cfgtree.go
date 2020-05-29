@@ -15,6 +15,7 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"strings"
 	"sync"
@@ -644,20 +645,20 @@ func (t *PTree) Replace(data []byte) error {
 	return nil
 }
 
-func (node *PNode) dump(indent string) {
+func (node *PNode) dump(w io.Writer, indent string) {
 	e := ""
 	if node.Expires != nil {
 		e = node.Expires.Format("2006-01-02T15:04:05")
 	}
-	fmt.Printf("%s%s: %s  %s\n", indent, node.Name(), node.Value, e)
+	fmt.Fprintf(w, "%s%s: %s  %s\n", indent, node.Name(), node.Value, e)
 	for _, child := range node.Children {
-		child.dump(indent + "  ")
+		child.dump(w, indent+"  ")
 	}
 }
 
 // Dump will dump the whole tree to stdout
-func (t *PTree) Dump() {
-	t.root.dump("")
+func (t *PTree) Dump(w io.Writer) {
+	t.root.dump(w, "")
 }
 
 func (node *PNode) flattenNode(flat *map[string]*PFlat, internal bool) {

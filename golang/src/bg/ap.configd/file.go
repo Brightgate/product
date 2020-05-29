@@ -393,7 +393,7 @@ func propTreeInit(defaults *cfgtree.PNode) error {
 		propTree.ChangesetCommit()
 	}
 	if *verbose {
-		tree.Dump()
+		tree.Dump(os.Stdout)
 	}
 	return err
 }

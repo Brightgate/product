@@ -698,6 +698,8 @@ func xlateError(err error) error {
 		err = cfgapi.ErrNoProp
 	} else if err == cfgtree.ErrExpired {
 		err = cfgapi.ErrExpired
+	} else if err == cfgtree.ErrNotLeaf {
+		err = cfgapi.ErrNotLeaf
 	}
 	return err
 }
