@@ -544,8 +544,8 @@ CLOUDSPOOL=$(CLOUDVAR)/spool
 CLOUDDAEMON_GOPKGS = \
 	bg/cl.configd \
 	bg/cl.eventd \
-	bg/cl.identifierd \
 	bg/cl.httpd \
+	bg/cl.identifierd \
 	bg/cl.rpcd
 
 CLOUDCOMMON_GOPKGS = \

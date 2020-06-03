@@ -49,12 +49,15 @@ import (
 	"bg/cl_common/vaultdb"
 	"bg/cl_common/vaultgcpauth"
 	"bg/cl_common/vaulttags"
+	"bg/cl_common/vaulttokensource"
 	"bg/cloud_models/appliancedb"
 	"bg/cloud_models/sessiondb"
 	"bg/common/cfgapi"
 
 	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/storage"
+	"golang.org/x/oauth2"
+	"google.golang.org/api/option"
 
 	vault "github.com/hashicorp/vault/api"
 	"github.com/sfreiberg/gotwilio"
@@ -96,6 +99,8 @@ type Cfg struct {
 	VaultKVComponent          string `envcfg:"B10E_CLHTTPD_VAULT_KV_COMPONENT"`
 	VaultDBPath               string `envcfg:"B10E_CLHTTPD_VAULT_DB_PATH"`
 	VaultDBRole               string `envcfg:"B10E_CLHTTPD_VAULT_DB_ROLE"`
+	VaultGCPPath              string `envcfg:"B10E_CLHTTPD_VAULT_GCP_PATH"`
+	VaultGCPRole              string `envcfg:"B10E_CLHTTPD_VAULT_GCP_ROLE"`
 	Auth0Domain               string `envcfg:"B10E_CLHTTPD_AUTH0_DOMAIN"`
 	OpenIDConnectDiscoveryURL string `envcfg:"B10E_CLHTTPD_OPENID_CONNECT_DISCOVERY_URL"`
 	// These should have no credential information in them; instead, set the
@@ -483,7 +488,17 @@ func mkRouterHTTPS(log *zap.Logger, vaultClient *vault.Client, notifier *daemonu
 	}
 
 	// Setup /auth endpoints
-	gcs, err := storage.NewClient(context.Background())
+	vts := vaulttokensource.NewVaultTokenSource(
+		vaultClient, environ.VaultGCPPath, environ.VaultGCPRole)
+	ts := oauth2.ReuseTokenSource(nil, vts)
+	var opts []option.ClientOption
+	if _, err = ts.Token(); err == nil {
+		opts = append(opts, option.WithTokenSource(ts))
+	} else {
+		slog.Warnf("Failed to get access token from Vault; falling "+
+			"back to ADC: %v", err)
+	}
+	gcs, err := storage.NewClient(context.Background(), opts...)
 	if err != nil {
 		slog.Fatalf("failed to make gcs client: %s", err)
 	}
@@ -611,14 +626,31 @@ func processEnv(logger *zap.SugaredLogger) {
 	}
 	useVaultForKV = environ.VaultKVPath != ""
 
-	if (useVaultForDB || useVaultForKV) && environ.VaultAuthPath == "" {
-		project, err := metadata.ProjectID()
+	var project string
+	getProject := func() {
+		if project != "" {
+			return
+		}
+		p, err := metadata.ProjectID()
 		if err != nil {
 			logger.Fatalf("Can't get GCP project ID: %v", err)
 		}
+		project = p
+	}
+
+	if (useVaultForDB || useVaultForKV) && environ.VaultAuthPath == "" {
+		getProject()
 		environ.VaultAuthPath = "auth/gcp-" + project
 		logger.Warnf("B10E_CLHTTPD_VAULT_AUTH_PATH not found in "+
 			"environment; setting to %s", environ.VaultAuthPath)
+	}
+
+	if environ.VaultGCPPath == "" {
+		getProject()
+		environ.VaultGCPPath = "gcp/" + project
+	}
+	if environ.VaultGCPRole == "" {
+		environ.VaultGCPRole = pname
 	}
 }
 

@@ -327,6 +327,11 @@ func SetupLogs(opts ...zap.Option) (*zap.Logger, *zap.SugaredLogger) {
 			// call .Close() on this to flush all the loggers, but
 			// we do call .Sync() on the logger, which will perform
 			// the flush.
+			//
+			// We rely on ADC to provide the logging.logWriter role,
+			// rather than trying to find a way to get an access
+			// token from Vault.  In production, the role should be
+			// granted to the instance service account.
 			gcl, err := logging.NewClient(context.Background(), proj)
 			if err != nil {
 				panic(fmt.Sprintf("can't create google logging client: %s\n", err))
