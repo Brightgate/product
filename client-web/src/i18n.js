@@ -181,6 +181,8 @@ export default {
         download_button: 'Download',
         qr_scan_button: 'Scan QR Code',
         qr_scan_explain: 'Use the WireGuard® application on your mobile device to scan this code.  This will import the VPN configuration into your client.',
+        enabled_optgroup: 'Sites with VPN Enabled',
+        disabled_optgroup: 'Sites with VPN Disabled',
       },
       wifi_provision: {
         title: 'Wi-Fi Self Provisioning',

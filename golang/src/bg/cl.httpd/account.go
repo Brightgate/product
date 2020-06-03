@@ -514,7 +514,7 @@ func (a *accountHandler) mkAccountMiddleware(allowedRoles []string) echo.Middlew
 	}
 }
 
-type accountWGResponseItem struct {
+type accountWGResponseConfig struct {
 	// OrganizationUUID is not strictly needed; it accomodates a future in
 	// which we might allow MSPs to get VPN access to their clients sites.
 	// It simply describes the organization which owns the SiteUUID.
@@ -526,7 +526,10 @@ type accountWGResponseItem struct {
 	AssignedIP       string    `json:"assignedIP"`
 }
 
-type accountWGResponse []accountWGResponseItem
+type accountWGResponse struct {
+	EnabledSites []uuid.UUID               `json:"enabledSites"`
+	Configs      []accountWGResponseConfig `json:"configs"`
+}
 
 // getAccountWG retrieves Wireguard VPN configurations for this account only
 // non-sensitive materials are returned.
@@ -548,7 +551,10 @@ func (a *accountHandler) getAccountWG(c echo.Context) error {
 		return newHTTPError(http.StatusNotFound, err)
 	}
 
-	resp := make(accountWGResponse, 0)
+	resp := accountWGResponse{
+		EnabledSites: make([]uuid.UUID, 0),
+		Configs:      make([]accountWGResponseConfig, 0),
+	}
 	// Look through all of the sites, looking for VPN configs for this user.
 	for _, site := range sites {
 		// The DB query above will return all sites the user has rights
@@ -565,6 +571,13 @@ func (a *accountHandler) getAccountWG(c echo.Context) error {
 			return newHTTPError(http.StatusInternalServerError, err)
 		}
 
+		v, err := vpn.NewVpn(hdl)
+		if err == nil {
+			if v.IsEnabled() {
+				resp.EnabledSites = append(resp.EnabledSites, site.UUID)
+			}
+		}
+
 		userInfo, err := hdl.GetUserByUUID(account.UUID)
 		if err != nil {
 			if errors.Cause(err) == cfgapi.ErrNoConfig {
@@ -579,7 +592,7 @@ func (a *accountHandler) getAccountWG(c echo.Context) error {
 		}
 
 		for _, wgConfig := range userInfo.WGConfig {
-			r := accountWGResponseItem{
+			r := accountWGResponseConfig{
 				OrganizationUUID: site.OrganizationUUID,
 				SiteUUID:         site.UUID,
 				Label:            wgConfig.Label,
@@ -587,7 +600,7 @@ func (a *accountHandler) getAccountWG(c echo.Context) error {
 				PublicKey:        wgConfig.WGPublicKey,
 				AssignedIP:       wgConfig.WGAssignedIP,
 			}
-			resp = append(resp, r)
+			resp.Configs = append(resp.Configs, r)
 		}
 	}
 	return c.JSON(http.StatusOK, resp)
@@ -631,7 +644,7 @@ func confDataToZip(confFileName, clientTZ string, confData []byte) ([]byte, erro
 }
 
 type wgNewConfigResponse struct {
-	accountWGResponseItem
+	accountWGResponseConfig
 
 	// Endpoint information
 	ServerAddress string `json:"serverAddress"`
@@ -746,7 +759,7 @@ func (a *accountHandler) postAccountWGNew(c echo.Context) error {
 	zipFileName := fmt.Sprintf("%s-%s-Brightgate-Wireguard.zip", req.Label, tgtSite.Name)
 
 	resp := wgNewConfigResponse{
-		accountWGResponseItem: accountWGResponseItem{
+		accountWGResponseConfig: accountWGResponseConfig{
 			OrganizationUUID: tgtSite.OrganizationUUID,
 			SiteUUID:         tgtSite.UUID,
 			PublicKey:        addRes.Publickey,

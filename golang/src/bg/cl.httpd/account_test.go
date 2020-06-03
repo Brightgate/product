@@ -28,6 +28,7 @@ import (
 	"github.com/gorilla/sessions"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
+	"github.com/satori/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
@@ -474,13 +475,36 @@ func TestAccountsVPN(t *testing.T) {
 			return nil, cfgapi.ErrNoConfig
 		})
 
+	var acctWG accountWGResponse
+	var noConfigsWG = accountWGResponse{
+		EnabledSites: []uuid.UUID{},
+		Configs:      []accountWGResponseConfig{},
+	}
+
 	// Request vpn config, there should be none
 	url := fmt.Sprintf("/api/account/%s/wg", mockAccount.UUID.String())
 	req, rec := setupReqRec(&mockAccount, echo.GET, url, nil, ss)
 	e.ServeHTTP(rec, req)
 	t.Logf("return body %s", rec.Body.String())
 	assert.Equal(http.StatusOK, rec.Code)
-	assert.Equal("[]\n", rec.Body.String())
+	acctWG = accountWGResponse{}
+	err = json.Unmarshal(rec.Body.Bytes(), &acctWG)
+	assert.NoError(err)
+	assert.Equal(noConfigsWG, acctWG)
+
+	// Add VPN enabled prop...
+	err = mehdl.CreateProps(map[string]string{vpn.EnabledProp: "true"}, nil)
+	assert.NoError(err)
+	noConfigsWG.EnabledSites = []uuid.UUID{mockSites[0].UUID}
+
+	// ... and see that it appears in the response for enabledSites.
+	req, rec = setupReqRec(&mockAccount, echo.GET, url, nil, ss)
+	e.ServeHTTP(rec, req)
+	assert.Equal(http.StatusOK, rec.Code)
+	acctWG = accountWGResponse{}
+	err = json.Unmarshal(rec.Body.Bytes(), &acctWG)
+	assert.NoError(err)
+	assert.Equal(noConfigsWG, acctWG)
 
 	ui, err := mehdl.NewSelfProvisionUserInfo(mockAccount.Email, mockAccount.UUID)
 	assert.NoError(err)
@@ -503,7 +527,9 @@ func TestAccountsVPN(t *testing.T) {
 	e.ServeHTTP(rec, req)
 	assert.Equal(http.StatusOK, rec.Code)
 	t.Logf("return body %s", rec.Body.String())
-	assert.Equal("[]\n", rec.Body.String())
+	err = json.Unmarshal(rec.Body.Bytes(), &acctWG)
+	assert.NoError(err)
+	assert.Equal(noConfigsWG, acctWG)
 
 	// Allocate new vpn config
 	url = fmt.Sprintf("/api/account/%s/wg/%s/new", mockAccount.UUID.String(), mockSites[0].UUID.String())
@@ -533,10 +559,9 @@ func TestAccountsVPN(t *testing.T) {
 	t.Logf("return body %s", rec.Body.String())
 	assert.Equal(http.StatusOK, rec.Code)
 	// Check response body
-	var acctWG accountWGResponse
 	err = json.Unmarshal(rec.Body.Bytes(), &acctWG)
 	assert.NoError(err)
-	assert.Equal(newVpnResult.PublicKey, acctWG[0].PublicKey)
+	assert.Equal(newVpnResult.PublicKey, acctWG.Configs[0].PublicKey)
 	assert.Equal(newVpnResult.Label, "abcd")
 
 	me.PTree.Dump(newWriteLogger("ptree before delete", t))
@@ -545,8 +570,8 @@ func TestAccountsVPN(t *testing.T) {
 	url = fmt.Sprintf("/api/account/%s/wg/%s/%s/%s",
 		mockAccount.UUID.String(),
 		newVpnResult.SiteUUID.String(),
-		neturl.PathEscape(newVpnResult.accountWGResponseItem.Mac),
-		neturl.PathEscape(newVpnResult.accountWGResponseItem.PublicKey))
+		neturl.PathEscape(newVpnResult.accountWGResponseConfig.Mac),
+		neturl.PathEscape(newVpnResult.accountWGResponseConfig.PublicKey))
 	t.Logf("url is %s", url)
 	req, rec = setupReqRec(&mockAccount, echo.DELETE, url, nil, ss)
 	e.ServeHTTP(rec, req)
@@ -562,7 +587,10 @@ func TestAccountsVPN(t *testing.T) {
 	e.ServeHTTP(rec, req)
 	assert.Equal(http.StatusOK, rec.Code)
 	t.Logf("return body %s", rec.Body.String())
-	assert.Equal("[]\n", rec.Body.String())
+	acctWG = accountWGResponse{}
+	err = json.Unmarshal(rec.Body.Bytes(), &acctWG)
+	assert.NoError(err)
+	assert.Equal(noConfigsWG, acctWG)
 
 	// Delete User, take another lap (using req we setup before),
 	// allocating new VPN config.  Should see user automatically

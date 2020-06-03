@@ -149,8 +149,8 @@ export default {
 
     orderedCfgs: function() {
       let cfgs = [];
-      if (this.myAccount.wg) {
-        cfgs = [...this.myAccount.wg];
+      if (this.myAccount.wg && this.myAccount.wg.configs) {
+        cfgs = [...this.myAccount.wg.configs];
       }
       cfgs.sort((a, b) => {
         return a.label.localeCompare(b.label);

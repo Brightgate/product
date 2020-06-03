@@ -21,7 +21,26 @@
           required
           type="select"
           @change="(evt) => { siteID = evt.target.value; }">
-          <option v-for="site in orderedSites" :key="site.id" :value="site.id" :selected="site.id == siteID">{{ site.name }}</option>
+          <optgroup v-if="wgSites(true).length > 0"
+                    :label="$t('message.account_wg_config.enabled_optgroup')">
+            <option v-for="site in wgSites(true)"
+                    :disabled="!enabledSiteMap[site.id]"
+                    :key="site.id"
+                    :value="site.id"
+                    :selected="site.id == siteID">
+              {{ site.name }}
+            </option>
+          </optgroup>
+          <optgroup v-if="wgSites(false).length > 0"
+                    :label="$t('message.account_wg_config.disabled_optgroup')">
+            <option v-for="site in wgSites(false)"
+                    :key="site.id"
+                    :value="site.id"
+                    :selected="site.id == siteID"
+                    disabled>
+              {{ site.name }}
+            </option>
+          </optgroup>
         </f7-list-input>
         <f7-list-input
           id="wg_label"
@@ -115,6 +134,7 @@
 </template>
 
 <script>
+import assert from 'assert';
 import vuex from 'vuex';
 import Debug from 'debug';
 import {saveAs} from 'file-saver';
@@ -150,35 +170,46 @@ export default {
       'sites',
     ]),
 
-    orderedSites: function() {
-      debug('sites', this.sites);
-      const sites = [];
-      // Bail if currentOrg isn't set yet
-      if (!this.currentOrg) {
-        return sites;
+    enabledSiteMap: function() {
+      // Bail if currentOrg or wg isn't set yet
+      if (!this.currentOrg || !this.myAccount.wg) {
+        return {};
       }
-      // Copy out to a standard array for sorting
-      Object.keys(this.sites).forEach((key) => {
-        debug('this.sites[key] = ', key, this.sites[key]);
-        debug('orderedSites, currentOrg is', this.currentOrg);
-        if (this.sites[key].regInfo.organizationUUID === this.currentOrg.id) {
-          sites.push(this.sites[key]);
-        }
-      });
-      const sorted = sites.sort((a, b) => {
-        return a.name.localeCompare(b.name);
-      });
-      debug('sorted sites', sorted);
-      return sorted;
+      // Convert to a map
+      const enabled = {};
+      this.myAccount.wg.enabledSites.forEach((siteUU) => {enabled[siteUU] = true;});
+      return enabled;
     },
   },
 
   methods: {
     onPageBeforeIn: function() {
-      debug('onPageBeforeIn; sites is', this.sites);
-      this.siteID = this.orderedSites[0].id;
-      // const vpnConfigID = this.$f7route.params.configID;
-      // this.$store.dispatch('fetchAccountRoles', accountID);
+      // We should already have account WG info by the time we are here.
+      const wgEnabledSites = this.wgSites(true);
+      if (wgEnabledSites.length === 0) {
+        this.siteID = null;
+      } else {
+        this.siteID = wgEnabledSites[0].id;
+      }
+    },
+
+    wgSites: function(enabled) {
+      debug(`wgSites(${enabled}) currentOrg=${this.currentOrg}`);
+      assert.equal(typeof enabled, 'boolean');
+      const unsorted = [];
+      Object.keys(this.sites).forEach((siteUU) => {
+        debug('this.sites ', siteUU, this.sites[siteUU]);
+        if (this.sites[siteUU].regInfo.organizationUUID === this.currentOrg.id) {
+          if (enabled === Boolean(this.enabledSiteMap[siteUU])) {
+            unsorted.push(this.sites[siteUU]);
+          }
+        }
+      });
+      const sorted = unsorted.sort((a, b) => {
+        return a.name.localeCompare(b.name);
+      });
+      debug('sorted sites', sorted);
+      return sorted;
     },
 
     createConfig: async function() {

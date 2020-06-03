@@ -406,7 +406,9 @@ const mutations = {
 
   setAccountWG(state, {accountID, wg}) {
     assert.equal(typeof accountID, 'string');
-    assert(Array.isArray(wg), 'expected wg to be array');
+    assert.equal(typeof wg, 'object');
+    assert(Array.isArray(wg.configs), 'expected configs to be array');
+    assert(Array.isArray(wg.enabledSites), 'expected enabledSites to be array');
     Vue.set(getAccount(state, accountID), 'wg', wg);
   },
 
