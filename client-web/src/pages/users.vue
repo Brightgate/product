@@ -57,7 +57,7 @@ span.wifi {
     <!-- non-cloud view -->
     <f7-list v-if="appMode === appDefs.APPMODE_LOCAL">
       <f7-list-item v-for="user in wifiUsers"
-                    :key ="user.UUID"
+                    :key="user.UUID"
                     :link="`${$f7route.url}${user.UUID}/`">
         <div slot="title">
           <f7-icon ios="f7:cloud_fill" md="material:cloud" color="gray" />
@@ -76,7 +76,7 @@ span.wifi {
     </f7-block>
     <f7-list>
       <f7-list-item v-for="user in localUsers"
-                    :key ="user.UUID"
+                    :key="user.UUID"
                     :link="`${$f7route.url}${user.UUID}/`">
         <div slot="title">
           <f7-icon material="router" color="gray" /> {{ user.DisplayName ? user.DisplayName : user.UID }}

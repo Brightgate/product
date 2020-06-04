@@ -59,7 +59,7 @@ img.glamour {
         <div slot="title">
           {{ node.role === "gateway" ?
             $t('message.node_details.gateway') :
-          $t('message.node_details.satellite') }}
+            $t('message.node_details.satellite') }}
         </div>
       </f7-list-item>
     </f7-list>

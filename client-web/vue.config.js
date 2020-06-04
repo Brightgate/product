@@ -77,15 +77,9 @@ const config = {
       .use('extract-loader').loader('extract-loader').end()
       .use('html-loader')
       .loader('html-loader')
-      .options({
-        url(url) {
-          // console.error('url is ', url, !url.startsWith('#'));
-          return !url.startsWith('#');
-        },
-      })
+      .options({})
       .end();
   },
-  lintOnSave: false,
 };
 
 // Set the APISERVER environment variable to the HTTP address

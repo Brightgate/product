@@ -47,8 +47,8 @@ div.trademark {
                 :label="$t('message.account_wg_config.enabled_optgroup')">
                 <option
                   v-for="site in wgSites(true)"
-                  :disabled="!enabledSiteMap[site.id]"
                   :key="site.id"
+                  :disabled="!enabledSiteMap[site.id]"
                   :value="site.id"
                   :selected="site.id == siteID">
                   {{ site.name }}

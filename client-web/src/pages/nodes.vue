@@ -29,7 +29,8 @@ div.shorter-block {
         <div slot="subtitle">
           {{ node.role === "gateway" ?
             $t('message.nodes.gateway_role') :
-          $t('message.nodes.satellite_role') }}
+            $t('message.nodes.satellite_role')
+          }}
         </div>
       </f7-list-item>
     </f7-list>

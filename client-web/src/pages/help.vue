@@ -66,7 +66,7 @@ div.help-content figure.screenshot img {
           </center>
         </p>
       </f7-block>
-      <f7-block class="help-content" v-html="helpfile" />
+      <f7-block class="help-content" v-html="helpfile" /> <!-- eslint-disable-line vue/no-v-html -->
     </div>
 
   </f7-page>

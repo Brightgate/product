@@ -118,13 +118,13 @@ div.title-model {
                Future work here is to parse the HTML and decorate <a> links
                with target= properly.  Or to support some non-HTML markup -->
           <!-- XXXI18N-- note that presently we don't support localized explanation text -->
-          <div v-html="vulnExplanation(vulnid)" />
+          <div v-html="vulnExplanation(vulnid)" /> <!-- eslint-disable-line vue/no-v-html -->
           <ul style="-webkit-padding-start: 20px; padding-left: 20px;">
             <!-- Note: allowed to have HTML content.
                  Future work here is to parse the HTML and decorate <a> links
                  with target= properly.  Or to support some non-HTML markup -->
             <!-- XXXI18N-- note that presently we don't support localized remediation text -->
-            <li v-html="$t('message.dev_details.vuln_remediation', { text: vulnRemediation(vulnid) })" />
+            <li v-html="$t('message.dev_details.vuln_remediation', { text: vulnRemediation(vulnid) })" /> <!-- eslint-disable-line vue/no-v-html -->
             <li>{{ $t('message.dev_details.vuln_first_detected', {time: timeAbs(vuln.first_detected)}) }}</li>
             <li>{{ $t('message.dev_details.vuln_latest_detected', {time: timeRel(vuln.latest_detected)}) }}</li>
             <li v-if="vuln.repaired">
@@ -280,8 +280,10 @@ div.title-model {
     <f7-list form>
       <f7-list-input
         ref="ringInput"
-        :value="dev.ring"
         :key="0"
+        :title="$t('message.dev_details.security_ring')"
+        :label="$t('message.dev_details.security_ring')"
+        :value="dev.ring"
         inline-label
         type="select"
         @change="changeRing($event.target.value)">
@@ -291,8 +293,8 @@ div.title-model {
           :tip="$t('message.dev_details.ring_tip')" />
         <option
           v-for="(ring, ringName) in allowedRings"
-          :value="ringName"
-          :key="ringName">
+          :key="ringName"
+          :value="ringName">
           {{ ringName }}
         </option>
       </f7-list-input>

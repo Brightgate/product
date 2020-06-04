@@ -220,7 +220,7 @@ div.container.appliance-login-container {
 
 <script>
 import assert from 'assert';
-import {f7LoginScreen, f7LoginScreenTitle} from 'framework7-vue';
+import {f7LoginScreen} from 'framework7-vue';
 import vuex from 'vuex';
 import Promise from 'bluebird';
 import Debug from 'debug';
@@ -230,7 +230,7 @@ import googleLogoIcon from '../assets/google-logo.svg';
 const debug = Debug('component:login_screen');
 
 export default {
-  components: {f7LoginScreen, f7LoginScreenTitle, msLogoIcon, googleLogoIcon},
+  components: {f7LoginScreen, msLogoIcon, googleLogoIcon},
 
   props: {
     id: {

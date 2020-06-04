@@ -44,14 +44,12 @@ div.shorter-block {
       <f7-checkbox :checked="showInactive" @change="toggleInactive" /> Show inactive
     </f7-block>
     <f7-list class="shorter-block">
-      <f7-list-group v-for="ringkey in RING_ORDER"
-                     v-if="deviceCount(devicesByRing(ringkey)) > 0"
-                     :key="ringkey">
+      <f7-list-group v-for="ring in rings" :key="ring">
 
         <f7-list-item group-title>
-          {{ $te('message.general.rings.' + ringkey) ? $t('message.general.rings.' + ringkey) : ringkey }}
+          {{ $te('message.general.rings.' + ring) ? $t('message.general.rings.' + ring) : ring }}
         </f7-list-item>
-        <f7-list-item v-for="device in devicesByRing(ringkey)"
+        <f7-list-item v-for="device in devicesByRing(ring)"
                       :key="device.uniqid"
                       :title="device.displayName"
                       :link="`${$f7route.url}${device.uniqid}/`"
@@ -165,6 +163,17 @@ export default {
           return device.displayName.toLowerCase();
         }, 'uniqid']);
       };
+    },
+
+    // Return rings, in RING_ORDER order, which have non-zero devices
+    rings: function() {
+      return RING_ORDER.filter((ring) => {
+        let devs = this.$store.getters.devicesByRing(ring);
+        if (!this.showInactive) {
+          devs = devs.filter((dev) => dev.active);
+        }
+        return devs.length > 0;
+      });
     },
   },
 

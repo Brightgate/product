@@ -48,17 +48,17 @@ div.shorter-block {
 
       <f7-list-input
         ref="ringInput"
+        :key="0"
         :title="$t('message.node_lan_port.port_ring')"
         :label="$t('message.node_lan_port.port_ring')"
-        :key="0"
         inline-label
         type="select"
         @change="changeRing($event.target.value)">
         <option
           v-for="ringName in ['standard', 'core', 'devices', 'guest', 'internal']"
+          :key="ringName"
           :value="ringName"
-          :selected="ringName === nic.ring"
-          :key="ringName">
+          :selected="ringName === nic.ring">
           {{ $t('message.general.rings.' + ringName) }}
         </option>
       </f7-list-input>
@@ -115,8 +115,7 @@ export default {
         storeArg, (err) => {
           return this.$t('message.node_lan_port.change_ring_err',
             {nic: this.nic.silkscreen, ring: newRing, err: err.message});
-        }
-      );
+        });
     },
   },
 };

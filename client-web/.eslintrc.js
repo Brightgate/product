@@ -16,6 +16,7 @@ module.exports = {
   ],
   'parserOptions': {
     'sourceType': 'module',
+    'parser': 'babel-eslint',
   },
   'rules': {
     // Code formatting rules-- above we adopt the 'google' ruleset, which
@@ -64,6 +65,14 @@ module.exports = {
     'no-eval': 'error',
     'no-implied-eval': 'error',
     'no-script-url': 'error',
+
+    'comma-dangle': ['error', {
+      'arrays': 'always-multiline',
+      'objects': 'always-multiline',
+      'imports': 'always-multiline',
+      'exports': 'always-multiline',
+      'functions': 'never',
+    }],
 
     'eqeqeq': ['error', 'always'],
     'no-eq-null': 'error',
@@ -121,5 +130,8 @@ module.exports = {
     // Tweak vue lint rules
     'vue/max-attributes-per-line': 'off',
     'vue/html-closing-bracket-spacing': 'error',
+    'vue/multiline-html-element-content-newline': 'off',
+    'vue/singleline-html-element-content-newline': 'off',
+    'vue/html-closing-bracket-newline': 'off',
   },
 };

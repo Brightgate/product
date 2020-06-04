@@ -1,6 +1,6 @@
 /* eslint-disable import/no-commonjs */
 module.exports = {
   presets: [
-    '@vue/app',
+    '@vue/cli-plugin-babel/preset',
   ],
 };

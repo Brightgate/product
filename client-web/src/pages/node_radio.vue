@@ -65,8 +65,8 @@ div.shorter-block {
 
       <f7-list-input
         ref="channelInput"
-        :label="$t('message.node_radio.channel_label')"
         :key="0"
+        :label="$t('message.node_radio.channel_label')"
         :value="nic.wifiInfo.configChannel"
         inline-label
         type="select"
@@ -81,9 +81,9 @@ div.shorter-block {
         </option>
         <option
           v-for="channelName in validChannels"
+          :key="channelName"
           :value="channelName"
-          :selected="channelName === nic.wifiInfo.configChannel"
-          :key="channelName">
+          :selected="channelName === nic.wifiInfo.configChannel">
           {{ channelName }}
         </option>
       </f7-list-input>

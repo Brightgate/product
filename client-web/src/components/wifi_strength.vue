@@ -30,7 +30,7 @@ div.dim {
 
 <template>
   <div class="container">
-    <div v-for="n in 5" :class="n <= bars ? 'lit' : 'dim'" :key="n" class="ind" />
+    <div v-for="n in 5" :key="n" :class="n <= bars ? 'lit' : 'dim'" class="ind" />
   </div>
 </template>
 

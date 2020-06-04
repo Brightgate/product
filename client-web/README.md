@@ -78,7 +78,13 @@ To enable our test tools, including the mock-data facility, open the browser con
 localStorage.testTools='yes'
 ```
 
-(Note that this isn't an instant-enable; you have to reload the app).
+(Note that this isn't an instant-enable; you have to reload the app).  To
+enable mock data:
+- Reload the app after enabling testTools
+- Close the login window (top right corner X button)
+- Visit the hamburger menu, then select 'test tools'
+- Turn on "Mock API Responses", "Simulate being Logged In" and "Force Cloud Mode".
+- Then go to hamburger menu and select "Dunder Mifflin" to return home.
 
 ## Pre-integration testing
 

@@ -227,9 +227,9 @@ span.warning {
               <f7-block>
                 <div class="explain">
                   <p>Store your Wi-Fi user name and password in a safe
-                  location.  You need them whenever you add devices to your
-                  organization's Wi-Fi.  We recommend using a password manager to
-                  securely store this information.
+                    location.  You need them whenever you add devices to your
+                    organization's Wi-Fi.  We recommend using a password manager to
+                    securely store this information.
                   </p>
                   <p>
                     <b>If you lose this password, you will need to repeat this process. Keep your password safe!</b>
@@ -264,7 +264,7 @@ span.warning {
                 </div>
                 <div class="explain">
                   Consult the <f7-link href="/help/end_customer_guide">Admin
-                  Guide</f7-link> to learn how to connect your device to the Wi-Fi.
+                    Guide</f7-link> to learn how to connect your device to the Wi-Fi.
                   <ul>
                     <li>
                       <f7-link href="/help/end_customer_guide/add-iphone-network">Connect an iPhone</f7-link>
