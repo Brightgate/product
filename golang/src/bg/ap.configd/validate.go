@@ -213,7 +213,7 @@ func validateNodeID(val string) error {
 func validateRing(val string) error {
 	var err error
 
-	if val != "" && cfgapi.ValidRings[val] == false {
+	if cfgapi.ValidRings[val] == false {
 		err = fmt.Errorf("'%s' is not a valid ring", val)
 	}
 	return err
@@ -440,6 +440,38 @@ func validateTimeUnit(val string) error {
 	return err
 }
 
+func getValidationFunc(propType string) (typeValidate, error) {
+	var err error
+
+	propType = strings.TrimPrefix(propType, "list:")
+	rval, ok := validationFuncs[propType]
+	if !ok {
+		err = fmt.Errorf("unknown type: %s", propType)
+	}
+
+	return rval, err
+}
+
+func validate(valType, valInstance string) error {
+	vfunc, err := getValidationFunc(valType)
+	if err == nil {
+		var vals []string
+		if strings.HasPrefix(valType, "list:") {
+			vals = strings.Split(valInstance, ",")
+		} else {
+			vals = []string{valInstance}
+		}
+		for _, val := range vals {
+			val = strings.TrimSpace(val)
+			if err = vfunc(val); err != nil {
+				break
+			}
+
+		}
+	}
+	return err
+}
+
 // Walking a concrete path, find the vnode that matches this field in the path.
 func getNextVnode(parent *vnode, field string) *vnode {
 	for _, node := range parent.children {
@@ -447,11 +479,8 @@ func getNextVnode(parent *vnode, field string) *vnode {
 			if node.keyText == field {
 				return node
 			}
-		} else {
-			vfunc := validationFuncs[node.keyType]
-			if vfunc(field) == nil {
-				return node
-			}
+		} else if validate(node.keyType, field) == nil {
+			return node
 		}
 	}
 
@@ -500,11 +529,8 @@ func validatePropVal(prop string, val string, level cfgapi.AccessLevel) error {
 				"or better",
 				prop, cfgapi.AccessLevelNames[node.level])
 
-		} else {
-			vfunc := validationFuncs[node.valType]
-			if err = vfunc(val); err != nil {
-				err = fmt.Errorf("invalid value: %v", err)
-			}
+		} else if err = validate(node.valType, val); err != nil {
+			err = fmt.Errorf("invalid value: %v", err)
 		}
 	}
 
@@ -584,8 +610,8 @@ func newVnode(prop string) (*vnode, error) {
 			}
 
 			t := f[1:end]
-			if _, ok := validationFuncs[t]; !ok {
-				return nil, fmt.Errorf("unknown type: %s", t)
+			if _, err := getValidationFunc(t); err != nil {
+				return nil, err
 			}
 			keyType = t
 		} else {
@@ -595,10 +621,13 @@ func newVnode(prop string) (*vnode, error) {
 
 		// Make sure we don't put conflicting entries into the tree.
 		for _, sib := range parent.children {
-			if (keyType == "const" && sib.keyType != "const" &&
-				validationFuncs[sib.keyType](f) == nil) ||
-				(sib.keyType == "const" && keyType != "const" &&
-					validationFuncs[keyType](sib.keyText) == nil) {
+			var conflicts bool
+			if keyType == "const" && sib.keyType != "const" {
+				conflicts = (validate(sib.keyType, f) == nil)
+			} else if sib.keyType == "const" && keyType != "const" {
+				conflicts = (validate(keyType, sib.keyText) == nil)
+			}
+			if conflicts {
 				return nil, fmt.Errorf("%s incompatible with %s",
 					path, sib.path)
 			}
@@ -623,44 +652,40 @@ func addSetting(setting, valType string) error {
 		return fmt.Errorf("invalid settings path: %s", setting)
 	}
 
-	if _, ok := validationFuncs[valType]; !ok {
-		return fmt.Errorf("unknown value type: %s", setting)
+	if _, err := getValidationFunc(valType); err != nil {
+		return err
 	}
 
 	// Unlike addOneProperty(), it is not an error to add the same setting
 	// twice.  It most likely means that a daemon has been restarted.
 	node, err := newVnode(setting)
-	if err != nil {
-		return err
+	if err == nil {
+		node.valType = valType
+		node.level = cfgapi.AccessDeveloper
 	}
-
-	node.valType = valType
-	node.level = cfgapi.AccessDeveloper
 
 	return err
 }
 
 // Add a new property to the validation tree
 func addOneProperty(prop, val, level string) error {
-	node, err := newVnode(prop)
-	if err != nil {
+	if _, err := getValidationFunc(val); err != nil {
 		return err
 	}
 
-	if v, ok := cfgapi.AccessLevels[strings.ToLower(level)]; ok {
-		node.level = v
-	} else {
-		err = fmt.Errorf("invalid level '%s' for %s", level, prop)
+	accessLevel, ok := cfgapi.AccessLevels[strings.ToLower(level)]
+	if !ok {
+		return fmt.Errorf("invalid level '%s' for %s", level, prop)
 	}
 
-	if _, ok := validationFuncs[val]; !ok {
-		err = fmt.Errorf("unknown value type: %s", val)
-	}
-
-	if node.valType != "" {
-		err = fmt.Errorf("duplicate property: %s", prop)
-	} else {
-		node.valType = val
+	node, err := newVnode(prop)
+	if err == nil {
+		if node.valType != "" {
+			err = fmt.Errorf("duplicate property: %s", prop)
+		} else {
+			node.valType = val
+			node.level = accessLevel
+		}
 	}
 
 	return err

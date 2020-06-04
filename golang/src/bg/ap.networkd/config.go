@@ -173,12 +173,11 @@ func configRingChanged(path []string, val string, expires *time.Time) {
 
 	switch path[2] {
 	case "vap":
-		if r.VirtualAP != val {
-			slog.Infof("Changing VAP for ring %s from %s to %s",
-				ring, r.VirtualAP, val)
-			r.VirtualAP = val
-			hostapd.reset()
-		}
+		old := r.VirtualAPs
+		r.VirtualAPs = strings.Split(val, ",")
+		slog.Infof("Changing VAP for ring %s from %s to %s",
+			ring, old, r.VirtualAPs)
+		hostapd.reset()
 	case "subnet":
 		if r.Subnet != val {
 			slog.Infof("Changing subnet for ring %s from %s to %s",

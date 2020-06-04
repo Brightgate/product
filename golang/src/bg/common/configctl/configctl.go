@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -37,6 +37,13 @@ var (
 	nameToNode map[string]string
 	nodeToName map[string]string
 )
+
+func maxLen(old int, str string) int {
+	if l := len(str); l > old {
+		return l
+	}
+	return old
+}
 
 func timeStringShort(t time.Time) string {
 	return t.Format("2006-01-02T15:04")
@@ -117,7 +124,14 @@ func getRings(cmd string, args []string) error {
 		cnt[c.Ring]++
 	}
 
-	fmt.Printf("%-10s %-5s %-4s %-9s %-18s %-7s\n",
+	max := 0
+	for _, name := range names {
+		ring := rings[name]
+		max = maxLen(max, strings.Join(ring.VirtualAPs, ","))
+	}
+
+	vapHdr := "%-" + strconv.Itoa(max) + "s"
+	fmt.Printf("%-10s "+vapHdr+" %-4s %-9s %-18s %-7s\n",
 		"ring", "vap", "vlan", "interface", "subnet", "clients")
 	for _, name := range names {
 		var vlan string
@@ -129,9 +143,9 @@ func getRings(cmd string, args []string) error {
 			vlan = "-"
 		}
 
-		fmt.Printf("%-10s %-5s %-4s %-9s %-18s %7d\n",
-			name, ring.VirtualAP, vlan, ring.Bridge, ring.Subnet,
-			cnt[name])
+		vaps := strings.Join(ring.VirtualAPs, ",")
+		fmt.Printf("%-10s "+vapHdr+" %-4s %-9s %-18s %7d\n",
+			name, vaps, vlan, ring.Bridge, ring.Subnet, cnt[name])
 	}
 	return nil
 }
@@ -421,6 +435,38 @@ func getClients(cmd string, args []string) error {
 	return nil
 }
 
+func getVaps(cmd string, args []string) error {
+	counts := make(map[string]int)
+	for _, client := range configd.GetClients() {
+		counts[client.ConnVAP]++
+	}
+
+	vaps := configd.GetVirtualAPs()
+
+	maxName := len("VAP")
+	maxSSID := len("SSID")
+	maxDefault := len("Default")
+	for name, vap := range vaps {
+		maxName = maxLen(maxName, name)
+		maxSSID = maxLen(maxSSID, vap.SSID)
+		maxDefault = maxLen(maxDefault, vap.DefaultRing)
+	}
+	nameHdr := "%-" + strconv.Itoa(maxName) + "s"
+	ssidHdr := "%-" + strconv.Itoa(maxSSID) + "s"
+	defHdr := "%-" + strconv.Itoa(maxDefault) + "s"
+
+	fmt.Printf(nameHdr+" "+ssidHdr+"  %-8s  "+defHdr+"  %7s  %s\n",
+		"VAP", "SSID", "Security", "Default", "Clients", "Rings")
+
+	for name, vap := range vaps {
+		fmt.Printf(nameHdr+" "+ssidHdr+"  %-8s  "+defHdr+"  %7d  %s\n",
+			name, vap.SSID, vap.KeyMgmt, vap.DefaultRing,
+			counts[name], strings.Join(vap.Rings, ","))
+	}
+
+	return nil
+}
+
 func getNicString(nic *cfgapi.NicInfo) string {
 	var state string
 
@@ -504,6 +550,8 @@ func getFormatted(cmd string, args []string) error {
 		return getNodes(cmd, args[1:])
 	case "rings":
 		return getRings(cmd, args[1:])
+	case "vaps":
+		return getVaps(cmd, args[1:])
 	default:
 		return fmt.Errorf("unrecognized property: %s", args[0])
 	}
@@ -730,7 +778,7 @@ var usages = map[string]string{
 	"ping":    "",
 	"set":     "<prop> <value [duration]>",
 	"add":     "<prop> <value [duration]>",
-	"get":     "<prop> | clients [-a] [-v] | rings",
+	"get":     "<prop> | clients [-a] [-v] | rings | vaps",
 	"del":     "<prop>",
 	"mon":     "<prop>",
 	"replace": "<file | ->",

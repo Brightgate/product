@@ -34,7 +34,7 @@ import (
 
 // Version gets increased each time there is a non-compatible change to the
 // config tree format, or configd API.
-const Version = int32(31)
+const Version = int32(32)
 
 // CmdHdl is returned when one or more operations are submitted to Execute().
 // This handle can be used to check on the status of a pending operation, or to
@@ -164,7 +164,7 @@ type RingConfig struct {
 	Subnet        string
 	IPNet         *net.IPNet
 	Bridge        string
-	VirtualAP     string
+	VirtualAPs    []string
 	Vlan          int
 	LeaseDuration int
 }
@@ -740,7 +740,13 @@ func getStringSlice(root *PropertyNode, name string) ([]string, error) {
 	if str == "" {
 		return make([]string, 0), err
 	}
-	rval := strings.Split(str, ",")
+	rval := make([]string, 0)
+	for _, x := range strings.Split(str, ",") {
+		if v := strings.TrimSpace(x); v != "" {
+			rval = append(rval, v)
+		}
+	}
+
 	return rval, err
 }
 
@@ -921,7 +927,8 @@ func (c *Handle) GetRings() RingMap {
 
 	set := make(map[string]*RingConfig)
 	for ringName, ring := range props.Children {
-		var subnet, bridge, vap string
+		var subnet, bridge string
+		var vap []string
 		var vlan, duration int
 		var ipnet *net.IPNet
 		var err error
@@ -936,7 +943,7 @@ func (c *Handle) GetRings() RingMap {
 			}
 		}
 		if err == nil {
-			vap, err = getStringVal(ring, "vap")
+			vap, err = getStringSlice(ring, "vap")
 		}
 
 		if err == nil {
@@ -961,7 +968,7 @@ func (c *Handle) GetRings() RingMap {
 				Subnet:        subnet,
 				IPNet:         ipnet,
 				Bridge:        bridge,
-				VirtualAP:     vap,
+				VirtualAPs:    vap,
 				LeaseDuration: duration,
 			}
 			set[ringName] = &c
@@ -1021,8 +1028,33 @@ func newVAP(name string, root *PropertyNode) *VirtualAP {
 	}
 }
 
+func ringsPerVap(allRings RingMap, vap string) []string {
+	vapRings := make([]string, 0)
+
+	for ringName, ringConfig := range allRings {
+		for _, v := range ringConfig.VirtualAPs {
+			if v == vap {
+				vapRings = append(vapRings, ringName)
+			}
+		}
+	}
+
+	return vapRings
+}
+
+// GetClientRings returns a slice of all the rings available to this client,
+// based on the VAP it last connected to.  If it has never connected to a VAP
+// (i.e., if it's a new and/or wired client), it returns nil.
+func (c *Handle) GetClientRings(client *ClientInfo) []string {
+	if client.ConnVAP == "" || !client.Wireless {
+		return nil
+	}
+
+	return ringsPerVap(c.GetRings(), client.ConnVAP)
+}
+
 // GetVirtualAPs returns a map of all the virtual APs configured for this
-// appliances
+// appliance
 func (c *Handle) GetVirtualAPs() map[string]*VirtualAP {
 
 	props, err := c.GetProps("@/network/vap")
@@ -1031,21 +1063,12 @@ func (c *Handle) GetVirtualAPs() map[string]*VirtualAP {
 		return nil
 	}
 
+	rings := c.GetRings()
+
 	vaps := make(map[string]*VirtualAP)
 	for vapName, conf := range props.Children {
 		vaps[vapName] = newVAP(vapName, conf)
-	}
-
-	// populate the Rings[] slice of each VirtualAP
-	rings := c.GetRings()
-	if err != nil {
-		log.Printf("Failed to get ring list: %v\n", err)
-	}
-	for ringName, ringConfig := range rings {
-		vap, ok := vaps[ringConfig.VirtualAP]
-		if ok && ValidRings[ringName] {
-			vap.Rings = append(vap.Rings, ringName)
-		}
+		vaps[vapName].Rings = ringsPerVap(rings, vapName)
 	}
 
 	return vaps

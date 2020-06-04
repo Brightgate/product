@@ -28,11 +28,8 @@ func upgradeV31() error {
 
 				slog.Infof("moving %s from  %s to %s",
 					port.Value, oldPath, newPath)
+				propTree.Delete(oldPath)
 				propTree.Add(newPath, port.Value, port.Expires)
-
-				// Turn the old leaf into an internal node
-				port.Value = ""
-				port.Expires = nil
 			}
 		}
 	}

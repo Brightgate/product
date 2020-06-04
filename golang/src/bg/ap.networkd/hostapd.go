@@ -952,22 +952,30 @@ func getVAPConfig(name string, d *physDevice, idx int) *vapConfig {
 //
 // Generate the configuration files needed for hostapd.
 //
-func generateVlanConf(vap *vapConfig) {
-	// Create the 'vlan' file, which tells hostapd which vlans to create
+func generateVlanConf(vap *vapConfig) error {
+	// Determine all of the rings/vlans accessible via this VAP
+	vapVlans := make(map[string]int)
+	for ring, ringInfo := range rings {
+		if ring == base_def.RING_UNENROLLED {
+			continue
+		}
+		for _, ringVap := range ringInfo.VirtualAPs {
+			if ringVap == vap.Name {
+				vapVlans[ring] = ringInfo.Vlan
+			}
+		}
+	}
+
+	// Create the 'vlan' file, which tells hostapd which vlans to use
 	vfn := vap.ConfPrefix + ".vlan"
 	vf, err := os.Create(vfn)
 	if err != nil {
-		slog.Fatalf("Unable to create %s: %v", vfn, err)
+		return fmt.Errorf("Unable to create %s: %v", vfn, err)
 	}
 
-	vapRings := make(cfgapi.RingMap)
-	noVlan := rings[base_def.RING_UNENROLLED]
-	for name, ring := range rings {
-		if ring.VirtualAP == vap.Name && ring != noVlan {
-			vapRings[name] = ring
-			fmt.Fprintf(vf, "%d %s.%d\n", ring.Vlan,
-				vap.physical.name, ring.Vlan)
-		}
+	for _, vlan := range vapVlans {
+		fmt.Fprintf(vf, "%d %s_%s.%d\n", vlan, vap.physical.name,
+			vap.Name, vlan)
 	}
 	vf.Close()
 
@@ -976,16 +984,18 @@ func generateVlanConf(vap *vapConfig) {
 	mfn := vap.ConfPrefix + ".macs"
 	mf, err := os.Create(mfn)
 	if err != nil {
-		slog.Fatalf("Unable to create %s: %v", mfn, err)
+		return fmt.Errorf("Unable to create %s: %v", mfn, err)
 	}
 
 	// One client per line, containing "<mac addr> <vlan_id>"
 	for client, info := range clients {
-		if ring, ok := vapRings[info.Ring]; ok {
-			fmt.Fprintf(mf, "%s %d\n", client, ring.Vlan)
+		if vlan, ok := vapVlans[info.Ring]; ok {
+			fmt.Fprintf(mf, "%s %d\n", client, vlan)
 		}
 	}
 	mf.Close()
+
+	return nil
 }
 
 func (h *hostapdHdl) deauthUser(user string) {
@@ -1045,7 +1055,8 @@ func (h *hostapdHdl) generateHostAPDConf() {
 		slog.Errorf("Unable to parse %s: %v", apfile, err)
 		return
 	}
-	unenrolledVap := rings[base_def.RING_UNENROLLED].VirtualAP
+
+	unenrolledVap := rings[base_def.RING_UNENROLLED].VirtualAPs[0]
 	for _, d := range h.devices {
 		confName := confdir + "/" + "hostapd.conf." + d.name
 		cf, _ := os.Create(confName)
@@ -1066,8 +1077,9 @@ func (h *hostapdHdl) generateHostAPDConf() {
 				break
 			}
 			if vap := getVAPConfig(name, d, idx); vap != nil {
-				generateVlanConf(vap)
-				err = vapTemplate.Execute(cf, vap)
+				if err = generateVlanConf(vap); err == nil {
+					err = vapTemplate.Execute(cf, vap)
+				}
 				if err == nil {
 					allVaps = append(allVaps, vap)
 					idx++

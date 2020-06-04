@@ -157,7 +157,7 @@ var (
 	serverPort *comms.APComm
 
 	virtualAPToDefaultRing map[string]string
-	ringToVirtualAP        map[string]string
+	ringOnVirtualAP        map[string]bool
 )
 
 /*************************************************************************
@@ -348,7 +348,7 @@ func eventHandler(event []byte) {
  */
 func defaultRingInit() {
 	vapToRing := make(map[string]string)
-	ringToVap := make(map[string]string)
+	ringOnVap := make(map[string]bool)
 
 	// For each virtual AP, find @/network/vap/<id>/default_ring
 	if node, _ := propTree.GetNode("@/network/vap"); node != nil {
@@ -362,13 +362,17 @@ func defaultRingInit() {
 	// For each virtual ring, find @/rings/<ring>/vap
 	if node, _ := propTree.GetNode("@/rings"); node != nil {
 		for ring, config := range node.Children {
-			if vap, ok := config.Children["vap"]; ok {
-				ringToVap[ring] = vap.Value
+			if vapNode, ok := config.Children["vap"]; ok {
+				vaps := strings.Split(vapNode.Value, ",")
+				for _, vap := range vaps {
+					key := ring + ":" + strings.TrimSpace(vap)
+					ringOnVap[key] = true
+				}
 			}
 		}
 	}
 	virtualAPToDefaultRing = vapToRing
-	ringToVirtualAP = ringToVap
+	ringOnVirtualAP = ringOnVap
 }
 
 // These are the ring transitions we will impose automatically when we find a
@@ -385,7 +389,9 @@ func selectRing(mac string, client *cfgtree.PNode, vap, ring string) string {
 
 	if client != nil && client.Children != nil {
 		if n := client.Children["ring"]; n != nil {
-			if vap, ok := ringToVirtualAP[n.Value]; ok {
+			ring := strings.TrimSpace(n.Value)
+			key := ring + ":" + vap
+			if ringOnVirtualAP[key] {
 				oldRing = n.Value
 				oldVAP = vap
 			}

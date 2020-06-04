@@ -236,7 +236,7 @@
           "quarantine": {
             "Children": {
               "vap": {
-                "Value": "psk"
+                "Value": "psk,eap,guest"
               },
               "lease_duration": {
                 "Value": "10"
@@ -346,7 +346,7 @@
     {"Path": "@/log/%int%/syslog_tls_self_signed_ok", "Type": "bool", "Level": "admin"},
     {"Path": "@/rings/%ring%/lease_duration", "Type": "int", "Level": "admin"},
     {"Path": "@/rings/%ring%/vlan", "Type": "int", "Level": "developer"},
-    {"Path": "@/rings/%ring%/vap", "Type": "string", "Level": "developer"},
+    {"Path": "@/rings/%ring%/vap", "Type": "list:string", "Level": "developer"},
     {"Path": "@/rings/%ring%/subnet", "Type": "cidr", "Level": "admin"},
     {"Path": "@/users/%user%/email", "Type": "email", "Level": "user"},
     {"Path": "@/users/%user%/telephone_number", "Type": "phone", "Level": "user"},
@@ -467,7 +467,7 @@
     {"Path": "@/policy/%policy_src%/scans/vuln/period", "Type": "duration", "Level": "admin"},
     {"Path": "@/policy/%policy_sr%/scans/subnet/period", "Type": "duration", "Level": "admin"},
     {"Path": "@/policy/site/vpn/server/%int%/enabled", "Type": "bool", "Level": "admin"},
-    {"Path": "@/policy/%policy_sc%/vpn/server/%int%/rings", "Type": "string", "Level": "admin"},
-    {"Path": "@/policy/%policy_sc%/vpn/server/%int%/subnets", "Type": "string", "Level": "admin"}
+    {"Path": "@/policy/%policy_sc%/vpn/server/%int%/rings", "Type": "list:ring", "Level": "admin"},
+    {"Path": "@/policy/%policy_sc%/vpn/server/%int%/subnets", "Type": "list:cidr", "Level": "admin"}
   ]
 }

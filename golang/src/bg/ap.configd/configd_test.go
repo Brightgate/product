@@ -155,7 +155,7 @@ func insertOneProp(t *testing.T, prop, val string, succeed bool) {
 	} else if succeed {
 		checkOneProp(t, prop, val, true)
 	} else {
-		t.Errorf("Inserted %s.  Should have failed", prop)
+		t.Errorf("Inserted %s -> %s.  Should have failed", prop, val)
 	}
 }
 
@@ -700,6 +700,48 @@ func TestBadDNS(t *testing.T) {
 	a := testTreeInit(t)
 	for _, name := range badNames {
 		insertOneProp(t, dnsProp, name, false)
+		testValidateTree(t, a)
+	}
+}
+
+func TestListType(t *testing.T) {
+	const (
+		ringProp = "@/policy/site/vpn/server/0/rings"
+	)
+
+	goodRings := []string{
+		"core",
+		"standard",
+		"core,standard",
+		"core, standard",
+		"core,core,standard",
+	}
+
+	a := testTreeInit(t)
+	for _, ring := range goodRings {
+		insertOneProp(t, ringProp, ring, true)
+		a[ringProp] = ring
+		testValidateTree(t, a)
+	}
+}
+
+func TestBadListType(t *testing.T) {
+	const (
+		ringProp = "@/policy/site/vpn/server/0/rings"
+	)
+
+	badRings := []string{
+		"foo",
+		"core,foo,standard",
+		"core/standard",
+		"core:standard",
+		"core,standard,",
+		"core,standard,12",
+	}
+
+	a := testTreeInit(t)
+	for _, ring := range badRings {
+		insertOneProp(t, ringProp, ring, false)
 		testValidateTree(t, a)
 	}
 }
