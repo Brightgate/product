@@ -34,7 +34,7 @@ import (
 
 // Version gets increased each time there is a non-compatible change to the
 // config tree format, or configd API.
-const Version = int32(30)
+const Version = int32(31)
 
 // CmdHdl is returned when one or more operations are submitted to Execute().
 // This handle can be used to check on the status of a pending operation, or to

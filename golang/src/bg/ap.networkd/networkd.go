@@ -291,8 +291,8 @@ func daemonInit() error {
 	config.HandleDelExp(`^@/policy/.*/vpn/server/.*/rings`, vpnDeleteRings)
 	config.HandleChange(`^@/policy/.*/vpn/server/.*/subnets`, vpnUpdateRings)
 	config.HandleDelExp(`^@/policy/.*/vpn/server/.*/subnets`, vpnDeleteRings)
-	config.HandleChange(`^@/policy/site/network/forward/.*`, forwardUpdated)
-	config.HandleDelExp(`^@/policy/site/network/forward/.*`, forwardDeleted)
+	config.HandleChange(`^@/policy/site/network/forward/.*/tgt$`, forwardUpdated)
+	config.HandleDelExp(`^@/policy/site/network/forward/.*/tgt$`, forwardDeleted)
 
 	rings = config.GetRings()
 	clients = config.GetClients()

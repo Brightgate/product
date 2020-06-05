@@ -15,6 +15,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"bg/common/cfgapi"
 )
 
 var (
@@ -42,24 +44,30 @@ func forwardUpdateTarget(mac, ip string) {
 }
 
 // Given a forwarding target, return the mac, ip, and port numbers
-func forwardTarget(t string) (string, string, string, error) {
+func forwardTarget(n *cfgapi.PropertyNode) (string, string, string, error) {
 	var mac, ip, port string
 	var err error
 
-	f := strings.Split(t, "/")
-	if c, ok := clients[f[0]]; ok {
-		mac = f[0]
-		if c.IPv4 != nil {
-			ip = c.IPv4.String()
+	if x := n.Children["tgt"]; x != nil {
+		tgt := x.Value
+
+		f := strings.Split(tgt, "/")
+		if c, ok := clients[f[0]]; ok {
+			mac = f[0]
+			if c.IPv4 != nil {
+				ip = c.IPv4.String()
+			}
+		} else {
+			slog.Infof("unknown client: %s", f[0])
+		}
+
+		if len(f) == 2 {
+			port = f[1]
+		} else if len(f) > 2 {
+			err = fmt.Errorf("improperly formatted target: %s", tgt)
 		}
 	} else {
-		slog.Infof("unknown client: %s", f[0])
-	}
-
-	if len(f) == 2 {
-		port = f[1]
-	} else if len(f) > 2 {
-		err = fmt.Errorf("improperly formatted target: %s", t)
+		err = fmt.Errorf("no target defined")
 	}
 
 	return mac, ip, port, err
@@ -95,9 +103,10 @@ func forwardingRules() {
 
 		// .../<port> -> <mac[/port]>
 		for port, target := range node.Children {
-			mac, tgtIP, tgtPort, err := forwardTarget(target.Value)
+			mac, tgtIP, tgtPort, err := forwardTarget(target)
 			if err != nil {
-				slog.Warnf("%v", err)
+				slog.Warnf("forwarding policy for %s/%s: %v",
+					proto, port, err)
 				continue
 			}
 			newTargets[mac] = tgtIP
