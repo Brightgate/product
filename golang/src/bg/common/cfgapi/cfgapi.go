@@ -177,6 +177,7 @@ type VirtualAP struct {
 	Passphrase  string   `json:"passphrase,omitempty"`
 	DefaultRing string   `json:"defaultRing"`
 	Rings       []string `json:"rings"`
+	Disabled    bool     `json:"disabled"`
 }
 
 // WifiInfo contains both the configured and actual band, channel, and channel
@@ -725,11 +726,11 @@ func (c *Handle) Ping(ctx context.Context) error {
 func getProp(root *PropertyNode, name string) (string, error) {
 	child := root.Children[name]
 	if child == nil {
-		return "", fmt.Errorf("missing %s property", name)
+		return "", ErrNoProp
 	}
 
 	if child.Expires != nil && child.Expires.Before(time.Now()) {
-		return "", fmt.Errorf("expired %s property", name)
+		return "", ErrExpired
 	}
 
 	return child.Value, nil
@@ -982,7 +983,6 @@ func (c *Handle) GetRings() RingMap {
 
 func newVAP(name string, root *PropertyNode) *VirtualAP {
 	var ssid, keymgmt, pass, defaultRing string
-	var tag bool
 
 	if x := root.Children["ssid"]; x != nil {
 		ssid = x.Value
@@ -1004,12 +1004,14 @@ func newVAP(name string, root *PropertyNode) *VirtualAP {
 		}
 	}
 
-	if x := root.Children["5ghz"]; x != nil {
-		b, err := strconv.ParseBool(x.Value)
-		if err != nil {
-			log.Printf("vap %s: malformed 5ghz: %s", name, x.Value)
-		}
-		tag = b
+	tag, err := getBoolVal(root, "5ghz")
+	if err != nil && err != ErrNoProp {
+		log.Printf("vap %s: %v", name, err)
+	}
+
+	disabled, err := getBoolVal(root, "disabled")
+	if err != nil && err != ErrNoProp {
+		log.Printf("vap %s: %v", name, err)
 	}
 
 	if x := root.Children["default_ring"]; x != nil {
@@ -1025,6 +1027,7 @@ func newVAP(name string, root *PropertyNode) *VirtualAP {
 		Tag5GHz:     tag,
 		Rings:       make([]string, 0),
 		DefaultRing: defaultRing,
+		Disabled:    disabled,
 	}
 }
 

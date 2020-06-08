@@ -877,6 +877,11 @@ func getVAPConfig(name string, d *physDevice, idx int) *vapConfig {
 	var logical *physDevice
 
 	vap := virtualAPs[name]
+	if vap.Disabled {
+		slog.Infof("VAP %s: disabled", name)
+		return nil
+	}
+
 	if len(vap.Rings) == 0 {
 		slog.Infof("VAP %s: no assigned rings", name)
 		return nil

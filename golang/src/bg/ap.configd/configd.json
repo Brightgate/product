@@ -331,6 +331,7 @@
     {"Path": "@/network/vap/%string%/keymgmt", "Type": "keymgmt", "Level": "admin"},
     {"Path": "@/network/vap/%string%/passphrase", "Type": "passphrase", "Level": "admin"},
     {"Path": "@/network/vap/%string%/default_ring", "Type": "ring", "Level": "admin"},
+    {"Path": "@/network/vap/%string%/disabled", "Type": "bool", "Level": "admin"},
     {"Path": "@/network/vpn/server/%int%/address", "Type": "string", "Level": "admin"},
     {"Path": "@/network/vpn/server/%int%/public_key", "Type": "string", "Level": "internal"},
     {"Path": "@/network/vpn/server/%int%/escrowed_key", "Type": "string", "Level": "internal"},
