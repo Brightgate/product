@@ -383,6 +383,7 @@
     {"Path": "@/nodes/%nodeid%/nics/%nic%/pseudo", "Type": "bool", "Level": "internal"},
     {"Path": "@/nodes/%nodeid%/platform", "Type": "string", "Level": "internal"},
     {"Path": "@/nodes/%nodeid%/name", "Type": "string", "Level": "admin"},
+    {"Path": "@/nodes/%nodeid%/mode", "Type": "string", "Level": "internal"},
     {"Path": "@/nodes/%nodeid%/target_release", "Type": "string", "Level": "internal"},
     {"Path": "@/clients/%macaddr%/dhcp_name", "Type": "hostname", "Level": "internal"},
     {"Path": "@/clients/%macaddr%/friendly_name", "Type": "string", "Level": "user"},

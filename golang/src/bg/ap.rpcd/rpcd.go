@@ -418,14 +418,21 @@ func daemonStart() {
 		slog.Fatalf("Failed to set %s: %v", stateName, err)
 	}
 
+	modePath := ("@/nodes/" + nodeUUID + "/mode")
+	mode := aputil.GetNodeMode()
+	if err = config.CreateProp(modePath, mode, nil); err != nil {
+		slog.Errorf("Couldn't store node mode: %v", err)
+	}
+
 	setCertExpirationHandler()
 	slog.Info("Provisionally generating self-signed certificate")
 	genNo := "0"
 	err = config.CreateProp("@/cert_generation", genNo, nil)
 	if err != nil {
-		slog.Fatalf("Couldn't set initial certificate generation number: %v", err)
+		slog.Errorf("Couldn't set initial certificate generation number: %v", err)
+	} else {
+		go ssCertGen(genNo)
 	}
-	go ssCertGen(genNo)
 
 	exitSig := make(chan os.Signal, 2)
 	signal.Notify(exitSig, syscall.SIGINT, syscall.SIGTERM)
