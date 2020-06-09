@@ -1046,11 +1046,20 @@ func ringsPerVap(allRings RingMap, vap string) []string {
 }
 
 // GetClientRings returns a slice of all the rings available to this client,
-// based on the VAP it last connected to.  If it has never connected to a VAP
-// (i.e., if it's a new and/or wired client), it returns nil.
-func (c *Handle) GetClientRings(client *ClientInfo) []string {
-	if client.ConnVAP == "" || !client.Wireless {
-		return nil
+// based on the type of connection (wired/wireless) and the VAP it last
+// connected to.  If it has never connected to a VAP (i.e., if it's a new
+// client), also offer a wide selection of valid rings.
+func (c *Handle) GetClientRings(client *ClientInfo, allRings RingMap) []string {
+	if !client.Wireless || client.ConnVAP == "" {
+		// Return GetRings() - SystemRings
+		ringList := make([]string, 0)
+		for name := range allRings {
+			if SystemRings[name] {
+				continue
+			}
+			ringList = append(ringList, name)
+		}
+		return ringList
 	}
 
 	return ringsPerVap(c.GetRings(), client.ConnVAP)

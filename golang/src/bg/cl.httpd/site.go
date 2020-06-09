@@ -283,6 +283,7 @@ type apiDevice struct {
 	ConnNode        string                 `json:"connNode,omitempty"`
 	ConnVAP         string                 `json:"connVAP,omitempty"`
 	Username        string                 `json:"username,omitempty"`
+	AllowedRings    []string               `json:"allowedRings"`
 	DevID           *cfgapi.DevIDInfo      `json:"devID,omitempty"`
 	Scans           map[string]apiScanInfo `json:"scans,omitempty"`
 	Vulnerabilities map[string]apiVulnInfo `json:"vulnerabilities,omitempty"`
@@ -292,6 +293,7 @@ type apiDevice struct {
 
 func buildDeviceResponse(c echo.Context, hdl *cfgapi.Handle,
 	hwaddr string, client *cfgapi.ClientInfo,
+	allowedRings []string,
 	scanMap cfgapi.ScanMap, vulnMap cfgapi.VulnMap,
 	metrics *cfgapi.ClientMetrics) *apiDevice {
 
@@ -312,6 +314,7 @@ func buildDeviceResponse(c echo.Context, hdl *cfgapi.Handle,
 		ConnNode:        client.ConnNode,
 		ConnVAP:         client.ConnVAP,
 		Username:        client.Username,
+		AllowedRings:    allowedRings,
 		DevID:           client.DevID,
 		Scans:           make(map[string]apiScanInfo),
 		Vulnerabilities: make(map[string]apiVulnInfo),
@@ -355,12 +358,14 @@ func (a *siteHandler) getDevices(c echo.Context) error {
 	}
 	defer hdl.Close()
 
+	allRings := hdl.GetRings()
 	response := make([]*apiDevice, 0)
 	for mac, client := range hdl.GetClients() {
 		scans := hdl.GetClientScans(mac)
 		vulns := hdl.GetVulnerabilities(mac)
 		metrics := hdl.GetClientMetrics(mac)
-		d := buildDeviceResponse(c, hdl, mac, client, scans, vulns, metrics)
+		allowedRings := hdl.GetClientRings(client, allRings)
+		d := buildDeviceResponse(c, hdl, mac, client, allowedRings, scans, vulns, metrics)
 		response = append(response, d)
 	}
 	return c.JSON(http.StatusOK, response)

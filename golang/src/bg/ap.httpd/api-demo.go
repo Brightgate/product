@@ -62,6 +62,7 @@ type daDevice struct {
 	ConnNode        string                `json:"connNode,omitempty"`
 	ConnVAP         string                `json:"connVAP,omitempty"`
 	Username        string                `json:"username,omitempty"`
+	AllowedRings    []string              `json:"allowedRings"`
 	DevID           *cfgapi.DevIDInfo     `json:"devID,omitempty"`
 	Scans           map[string]daScanInfo `json:"scans,omitempty"`
 	Vulnerabilities map[string]daVulnInfo `json:"vulnerabilities,omitempty"`
@@ -79,6 +80,7 @@ type daRing struct {
 type daRings map[string]daRing
 
 func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
+	allowedRings []string,
 	scanMap cfgapi.ScanMap, vulnMap cfgapi.VulnMap,
 	metrics *cfgapi.ClientMetrics) *daDevice {
 
@@ -99,6 +101,7 @@ func buildDeviceResponse(hwaddr string, client *cfgapi.ClientInfo,
 		ConnNode:        client.ConnNode,
 		ConnVAP:         client.ConnVAP,
 		Username:        client.Username,
+		AllowedRings:    allowedRings,
 		DevID:           client.DevID,
 		Scans:           make(map[string]daScanInfo),
 		Vulnerabilities: make(map[string]daVulnInfo),
@@ -159,11 +162,13 @@ func demoDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	clientsRaw := config.GetClients()
 	devices := make([]*daDevice, 0)
 
+	allRings := config.GetRings()
 	for mac, client := range clientsRaw {
 		scans := config.GetClientScans(mac)
 		vulns := config.GetVulnerabilities(mac)
 		metrics := config.GetClientMetrics(mac)
-		cd := buildDeviceResponse(mac, client, scans, vulns, metrics)
+		allowedRings := config.GetClientRings(client, allRings)
+		cd := buildDeviceResponse(mac, client, allowedRings, scans, vulns, metrics)
 		devices = append(devices, cd)
 	}
 

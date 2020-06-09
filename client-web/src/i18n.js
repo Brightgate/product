@@ -325,6 +325,7 @@ export default {
         hw_addr: 'Hardware Address',
         access_control: 'Access Control',
         security_ring: 'Trust Group',
+        ring_tip: 'Affects the security protections and network access for this device.  See admin guide.',
         vuln_scan: 'Vulnerability Scan',
         vuln_scan_notyet: 'Not Scanned Yet',
         vuln_scan_initial: 'Initial Scan in Progress',

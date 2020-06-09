@@ -81,6 +81,7 @@ export default {
     this.f7tooltip = this.$f7.tooltip.create({
       targetEl: titleRef,
       text: this.tip,
+      offset: 15, // get out of the way of a finger
       cssClass: 'bg-list-item-title-tooltip',
     });
   },

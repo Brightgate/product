@@ -256,15 +256,17 @@ div.title-model {
     <f7-list form>
       <f7-list-input
         ref="ringInput"
-        :title="$t('message.dev_details.security_ring')"
-        :label="$t('message.dev_details.security_ring')"
         :value="dev.ring"
         :key="0"
         inline-label
         type="select"
         @change="changeRing($event.target.value)">
+        <bg-list-item-title
+          slot="label"
+          :title="$t('message.dev_details.security_ring')"
+          :tip="$t('message.dev_details.ring_tip')" />
         <option
-          v-for="(ring, ringName) in vapRings"
+          v-for="(ring, ringName) in allowedRings"
           :value="ringName"
           :key="ringName">
           {{ ringName }}
@@ -489,29 +491,25 @@ export default {
       return !!this.features.clientFriendlyName;
     },
 
-    // Return the subset of rings acceptable for the device's VAP.
-    // If the VAP is missing, or something else goes wrong, return all rings.
+    // Return the subset of rings/trust groups acceptable for this device,
+    // based on its VAP.  If that fails, return all rings, favoring giving
+    // the admin some recourse versus taking away their power to set the ring.
     //
     // XXX This is arguably dangerous and we might need to adjust.
-    // Another option would be to return no rings and disable the UI.
-    vapRings: function() {
+    allowedRings: function() {
       const uniqid = this.$f7route.params.UniqID;
       const dev = this.$store.getters.deviceByUniqID(uniqid);
       const allRings = this.$store.getters.rings;
-      const vaps = this.vaps;
       try {
-        if (!dev.connVAP || !vaps[dev.connVAP]) {
-          debug('missing information; returning allRings',
-            dev.connVAP, vaps[dev.connVAP]);
-          return allRings;
+        if (dev.allowedRings) {
+          return pickBy(allRings, (val, key) => {
+            return dev.allowedRings.includes(key);
+          });
         }
-        return pickBy(allRings, (val, key) => {
-          return vaps[dev.connVAP].rings.includes(key);
-        });
       } catch (err) {
         debug('error filtering rings', err);
-        return allRings;
       }
+      return allRings;
     },
   },
 
