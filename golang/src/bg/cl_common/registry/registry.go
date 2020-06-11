@@ -276,6 +276,12 @@ func SyncAccountSelfProv(ctx context.Context,
 		if err != nil {
 			return errors.Wrap(err, "getConfig")
 		}
+		// This is a little trickier than it might seem.  We really do
+		// want to defer the handle closes until the end of function
+		// (as opposed to end of this loop iteration) because the
+		// UserInfo structs we get back from GetUserByUUID() embed the
+		// hdl.
+		defer hdl.Close()
 
 		// Fetch the old UserInfo structure.  This is also a test to
 		// detect if there is a config at all for this site.
@@ -371,6 +377,12 @@ func SyncAccountDeprovision(ctx context.Context,
 		if err != nil {
 			return errors.Wrap(err, "getConfig")
 		}
+		// This is a little trickier than it might seem.  We really do
+		// want to defer the handle closes until the end of function
+		// (as opposed to end of this loop iteration) because the
+		// UserInfo structs we get back from GetUserByUUID() embed the
+		// hdl.
+		defer hdl.Close()
 
 		ui, err := hdl.GetUserByUUID(account.UUID)
 		if err != nil {

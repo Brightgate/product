@@ -299,6 +299,7 @@ func (h *InventoryHandler) PushToConfigTree(ctx context.Context, slog *zap.Sugar
 		slog.Warnf("failed syncing %s: config handle: %s\n", err)
 		return err
 	}
+	defer cfg.Close()
 
 	clientPath := fmt.Sprintf("@/clients/%s", client.HWAddr.String())
 	_, err = cfg.GetProps(clientPath)
