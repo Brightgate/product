@@ -46,6 +46,8 @@ const (
 	LastMacProp  = configStub + "last_mac"
 )
 
+var errIncomplete = fmt.Errorf("configuration incomplete")
+
 // Vpn is an opaque handle which is used to perform vpn-related config
 // operations.
 type Vpn struct {
@@ -119,6 +121,7 @@ func genConfig(conf keyConfig) ([]byte, error) {
 
 func (v *Vpn) getServerConfig(conf *keyConfig) error {
 	var port string
+	incomplete := false
 
 	props, err := v.config.GetProps(configStub)
 	if err != nil {
@@ -126,22 +129,25 @@ func (v *Vpn) getServerConfig(conf *keyConfig) error {
 	}
 
 	if conf.ServerPublicKey, err = getVal(props, "public_key"); err != nil {
-		return err
+		incomplete = true
 	}
 
 	if conf.ServerAddress, err = getVal(props, "address"); err != nil {
-		return err
+		incomplete = true
 	}
 
 	if port, err = getVal(props, "port"); err != nil {
-		return err
-	}
-
-	if conf.ServerPort, err = strconv.Atoi(port); err != nil {
-		return fmt.Errorf("bad port number %s: %v", port, err)
+		incomplete = true
+	} else {
+		if conf.ServerPort, err = strconv.Atoi(port); err != nil {
+			return fmt.Errorf("bad port number %s: %v", port, err)
+		}
 	}
 
 	conf.DNSAddress = v.vpnRouter.String()
+	if incomplete {
+		return errIncomplete
+	}
 
 	return nil
 }
@@ -155,11 +161,14 @@ type ServerConfig struct {
 }
 
 // ServerConfig returns the VPN Server configuration for a site.
+// Unlike getServerConfig(), this routine returns nil if the server
+// configuration is incomplete, returning whatever portion of the
+// config has been established.
 func (v *Vpn) ServerConfig() (*ServerConfig, error) {
 	var conf keyConfig
 	err := v.getServerConfig(&conf)
-	if err != nil {
-		return nil, fmt.Errorf("getting server config: %v", err)
+	if err != nil && err != errIncomplete {
+		return nil, err
 	}
 
 	return &ServerConfig{

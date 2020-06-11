@@ -40,4 +40,6 @@ export default {
     NO_ROLES: 3,
     NO_SESSION: 4,
   },
+
+  WIREGUARD_PORT: 51820,
 };

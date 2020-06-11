@@ -36,8 +36,8 @@
         :value="wg.port"
         :error-message-force="showPortErr"
         type="number"
-        info="UDP Port in the range 1024-65535"
-        error-message="UDP Port in the range 1024-65535"
+        info="UDP Port in the range 1024-65535; default is 51820"
+        error-message="UDP Port in the range 1024-65535; default is 51820"
         @change="(evt) => wg.port = Number(evt.target.value)"
       />
     </f7-list>
@@ -64,6 +64,7 @@ import Debug from 'debug';
 import isFQDN from 'validator/es/lib/isFQDN';
 import isIP from 'validator/es/lib/isIP';
 import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
+import appDefs from '../app_defs';
 import uiUtils from '../uiutils';
 
 const debug = Debug('page:network_wg_editor');
@@ -162,7 +163,8 @@ export default {
       if (this.networkConfig.wg) {
         // only grab subset of properties from wgConfig that we operate on
         this.wg.address = this.networkConfig.wg.address;
-        this.wg.port = this.networkConfig.wg.port;
+        // Fill in default WG port if not set
+        this.wg.port = this.networkConfig.wg.port ? this.networkConfig.wg.port : appDefs.WIREGUARD_PORT;
         this.wg.enabled = this.networkConfig.wg.enabled;
         debug('onPageBeforeIn: updated local copy of wg', this.wg);
       }
