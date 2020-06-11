@@ -461,7 +461,38 @@ func NewAppliance(ctx context.Context, db appliancedb.DataStore,
 	appliance uuid.UUID, site uuid.UUID,
 	project, region, regID, appID string,
 	systemReprHWSerial, systemReprMAC string,
+	enginePath, componentPath string,
 	noEscrow bool) (uuid.UUID, []byte, []byte, []byte, string, error) {
+
+	// Check to see if we'll be able to escrow the appliance's cloud secret
+	// when the time comes, and exit early if we don't have the permissions
+	// (or can't tell).  This is racy, but it's unlikely to trigger.
+	var vaultClient *vault.Client
+	var err error
+	path, cleanPath := escrowPrivateKeyPath(enginePath, componentPath,
+		project, region, regID, appID)
+	if !noEscrow {
+		vaultClient, err = getVaultClient()
+		var caps []string
+		if caps, err = vaultClient.Sys().CapabilitiesSelf(path); err != nil {
+			return uuid.Nil, nil, nil, nil, "",
+				errors.New("unable to determine token " +
+					"capabilities; aborting")
+		}
+		var found bool
+		for _, cap := range caps {
+			if cap == "create" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return uuid.Nil, nil, nil, nil, "",
+				errors.Errorf("escrow will fail due to "+
+					"insufficient Vault permissions at %s",
+					path)
+		}
+	}
 
 	keyPEM, certPEM, err := genPEMKey()
 	if err != nil {
@@ -529,9 +560,9 @@ func NewAppliance(ctx context.Context, db appliancedb.DataStore,
 		return appliance, keyPEM, certPEM, jsecret, "", err
 	}
 
-	path, err := escrowPrivateKey(ctx, appliance, project, region, regID, appID, jsecret)
+	err = escrowPrivateKey(ctx, vaultClient, appliance, path, jsecret)
 
-	return appliance, keyPEM, certPEM, jsecret, path, err
+	return appliance, keyPEM, certPEM, jsecret, cleanPath, err
 }
 
 func applianceSecret(project, region, registry, id string, keyPEM []byte) ([]byte, error) {
@@ -545,10 +576,26 @@ func applianceSecret(project, region, registry, id string, keyPEM []byte) ([]byt
 	return json.MarshalIndent(jmap, "", "\t")
 }
 
-func escrowPrivateKey(ctx context.Context, appliance uuid.UUID, project, region, regID, appID string, jsecret []byte) (string, error) {
+func escrowPrivateKeyPath(enginePath, componentPath, project, region, regID, appID string) (string, string) {
+	if enginePath == "" {
+		enginePath = fmt.Sprintf("secret/%s", project)
+	}
+	if componentPath == "" {
+		componentPath = fmt.Sprintf("appliance-pubkey-escrow/%s/%s/%s",
+			region, regID, appID)
+	}
+
+	path := fmt.Sprintf("%s/data/%s", enginePath, componentPath)
+	// `vault kv get` needs the path without `/data`.
+	cleanPath := fmt.Sprintf("%s/%s", enginePath, componentPath)
+
+	return path, cleanPath
+}
+
+func getVaultClient() (*vault.Client, error) {
 	vaultClient, err := vault.NewClient(nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// If $VAULT_TOKEN wasn't set, then look at ~/.vault-token, like vault
@@ -556,35 +603,27 @@ func escrowPrivateKey(ctx context.Context, appliance uuid.UUID, project, region,
 	if vaultClient.Token() == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return "", errors.Wrap(err,
+			return nil, errors.Wrap(err,
 				"Couldn't find .vault-token in home directory")
 		}
 		token, err := ioutil.ReadFile(fmt.Sprintf("%s/.vault-token", home))
 		if err != nil {
-			return "", errors.Wrap(err,
+			return nil, errors.Wrap(err,
 				"Couldn't read .vault-token in home directory")
 		}
 		vaultClient.SetToken(string(token))
 	}
 
+	return vaultClient, err
+}
+
+func escrowPrivateKey(ctx context.Context, vaultClient *vault.Client, appliance uuid.UUID, path string, jsecret []byte) error {
 	vcl := vaultClient.Logical()
 	data := map[string]interface{}{
 		"data": map[string]interface{}{
 			"cloud_secret": string(jsecret),
 		},
 	}
-	enginePath := os.Getenv("B10E_CLREG_VAULT_PUBKEY_PATH")
-	if enginePath == "" {
-		enginePath = fmt.Sprintf("secret/%s", project)
-	}
-	componentPath := os.Getenv("B10E_CLREG_VAULT_PUBKEY_COMPONENT")
-	if componentPath == "" {
-		componentPath = fmt.Sprintf("appliance-pubkey-escrow/%s/%s/%s",
-			region, regID, appID)
-	}
-	path := fmt.Sprintf("%s/data/%s", enginePath, componentPath)
-	// `vault kv get` needs the path without `/data`.
-	cleanPath := fmt.Sprintf("%s/%s", enginePath, componentPath)
-	_, err = vcl.Write(path, data)
-	return cleanPath, err
+	_, err := vcl.Write(path, data)
+	return err
 }
