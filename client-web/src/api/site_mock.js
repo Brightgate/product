@@ -350,26 +350,29 @@ export const mockAccountRoles = [
   },
 ];
 
-const mockAccountVPN = [
-  {
-    'organizationUUID': 'd91864cd-434a-4b52-8236-d3b95afde170',
-    'siteUUID': '5182ab0b-39db-4256-86e0-8154171b35ac',
-    'mac': '00:40:54:00:00:39',
-    'label': 'macbook',
-    'publicKey': 'bS8ew5wpY79e2bV8muCEq9c2i6Y5pzQHAZ14NZK8TSY=',
-    'assignedIP': '192.168.233.159',
-  },
-  {
-    'organizationUUID': 'd91864cd-434a-4b52-8236-d3b95afde170',
-    'siteUUID': 'ef9b1046-95fa-41c5-a226-ad88198da9e2',
-    'mac': '00:40:54:00:00:27',
-    'label': 'buffalo-macbook',
-    'publicKey': 'aT7ev4xmX75e2bV8muCEq9c2i6Y5pzQHAZ14NZK8TSY=',
-    'assignedIP': '192.168.233.144',
-  },
-];
+const mockAccountWG = {
+  enabledSites: ['5182ab0b-39db-4256-86e0-8154171b35ac'],
+  configs: [
+    {
+      'organizationUUID': 'd91864cd-434a-4b52-8236-d3b95afde170',
+      'siteUUID': '5182ab0b-39db-4256-86e0-8154171b35ac',
+      'mac': '00:40:54:00:00:39',
+      'label': 'My Macbook',
+      'publicKey': 'bS8ew5wpY79e2bV8muCEq9c2i6Y5pzQHAZ14NZK8TSY=',
+      'assignedIP': '192.168.233.159',
+    },
+    {
+      'organizationUUID': 'd91864cd-434a-4b52-8236-d3b95afde170',
+      'siteUUID': 'ef9b1046-95fa-41c5-a226-ad88198da9e2',
+      'mac': '00:40:54:00:00:27',
+      'label': 'My iPhone',
+      'publicKey': 'aT7ev4xmX75e2bV8muCEq9c2i6Y5pzQHAZ14NZK8TSY=',
+      'assignedIP': '192.168.233.144',
+    },
+  ],
+};
 
-const mockVPNNew = {
+const mockWGNew = {
   'organizationUUID': 'd91864cd-434a-4b52-8236-d3b95afde170',
   'siteUUID': '5182ab0b-39db-4256-86e0-8154171b35ac',
   'mac': '00:40:54:00:00:39',
@@ -378,9 +381,10 @@ const mockVPNNew = {
   'assignedIP': '192.168.233.35',
   'serverAddress': '192.168.5.1',
   'serverPort': 51280,
+  'confName': 'Scranton-Office',
   'confData': '\n# Client key dp@brightgate.com 2 (macbook) 50D5rMWQgLUolbYS2GKH7tjor+rP21/TNKK8WcldPz0=\n\n[Interface]\nAddress = 192.168.233.35/32\nPrivateKey = GHUdCZ268yYuToOlF8LQ+rCIpttSSb9IrP53krUZk0w=\nDNS = 192.168.233.1\n\n[Peer]\nPublicKey = fTtPyn+6HAv9TOGNzeYvE589l7My1adM5KykqpvJy1Q=\nEndpoint = 192.168.5.1:51280\nAllowedIPs = 192.168.229.0/24,192.168.233.0/24\n\nPersistentKeepalive = 25\n',
   'downloadConfBody': 'UEsDBBQACAAAAMJtp1AAAAAAAAAAAAAAAAAOAAkAd2lyZWd1YXJkLmNvbmZVVAUAAYxztF4KIyBDbGllbnQga2V5IGRwQGJyaWdodGdhdGUuY29tIDIgKG1hY2Jvb2spIDUwRDVyTVdRZ0xVb2xiWVMyR0tIN3Rqb3IrclAyMS9UTktLOFdjbGRQejA9CgpbSW50ZXJmYWNlXQpBZGRyZXNzID0gMTkyLjE2OC4yMzMuMzUvMzIKUHJpdmF0ZUtleSA9IEdIVWRDWjI2OHlZdVRvT2xGOExRK3JDSXB0dFNTYjlJclA1M2tyVVprMHc9CkROUyA9IDE5Mi4xNjguMjMzLjEKCltQZWVyXQpQdWJsaWNLZXkgPSBmVHRQeW4rNkhBdjlUT0dOemVZdkU1ODlsN015MWFkTTVLeWtxcHZKeTFRPQpFbmRwb2ludCA9IDE5Mi4xNjguNS4xOjUxMjgwCkFsbG93ZWRJUHMgPSAxOTIuMTY4LjIyOS4wLzI0LDE5Mi4xNjguMjMzLjAvMjQKClBlcnNpc3RlbnRLZWVwYWxpdmUgPSAyNQpQSwcI9UthYncBAAB3AQAAUEsBAhQAFAAIAAAAwm2nUPVLYWJ3AQAAdwEAAA4ACQAAAAAAAAAAAAAAAAAAAHdpcmVndWFyZC5jb25mVVQFAAGMc7ReUEsFBgAAAAABAAEARQAAALwBAAAAAA==',
-  'downloadConfName': 'macbook-Buffalo_Office-Brightgate-Wireguard.zip',
+  'downloadConfName': 'Macbook-Scranton-Office-Brightgate-WireGuard.zip',
   'downloadConfContentType': 'application/octet-stream',
 };
 
@@ -510,8 +514,8 @@ function mockAxios(normalAxios, mode) {
     .onPost(/\/api\/account\/.+\/deprovision/).reply(200)
     .onGet(/\/api\/account\/.+\/roles/).reply(200, mockAccountRoles)
     .onPost(/\/api\/account\/.+\/roles\/.+\/.+/).reply(200)
-    .onGet(/\/api\/account\/.+\/wg/).reply(200, mockAccountVPN)
-    .onPost(/\/api\/account\/.+\/wg\/5182ab0b-39db-4256-86e0-8154171b35ac\/new/).reply(200, mockVPNNew)
+    .onGet(/\/api\/account\/.+\/wg/).reply(200, mockAccountWG)
+    .onPost(/\/api\/account\/.+\/wg\/5182ab0b-39db-4256-86e0-8154171b35ac\/new/).reply(200, mockWGNew)
     .onPost(/\/api\/account\/.+\/wg\/.+\/new/).reply(500, {message: 'misc mock vpn failure'})
     .onDelete(/\/api\/account\/.+\/wg\/5182ab0b-39db-4256-86e0-8154171b35ac\/fT.+/).reply(200)
     .onDelete(/\/api\/account\/.+\/wg\/.+\/.+/).reply(202)

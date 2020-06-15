@@ -264,12 +264,12 @@ async function siteWanGet(siteID) {
   return await commonApplianceGet(siteID, 'network/wan');
 }
 
-// Load the Wireguard VPN information from the server.
+// Load the WireGuard VPN information from the server.
 async function siteWGGet(siteID) {
   return await commonApplianceGet(siteID, 'network/wg');
 }
 
-// Post changes to the Wireguard VPN config
+// Post changes to the WireGuard VPN config
 async function siteWGPost(siteID, wgConfig) {
   assert.equal(typeof siteID, 'string', 'siteID');
   assert.equal(typeof wgConfig, 'object', 'wgConfig');

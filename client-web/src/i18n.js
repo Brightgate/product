@@ -49,11 +49,11 @@ export default {
           str_1: 'Very Poor',
           str_0: 'Unknown',
         },
-        unfinished_operation: 'This site isn\'t responding to cloud commands at the moment.  This command has been queued for processing; when the site reconnects to the cloud, the change will occur.',
+        unfinished_operation: 'This site isn\'t responding to cloud commands at the moment. This command has been queued for processing; when the site reconnects to the cloud, the change will occur.',
       },
       home: {
         local_site: 'Local Site',
-        local_site_explanation: 'You are administering the Brightgate Wi-fi appliances on your local network (the Local Site).  Changes will also be reflected in the Brightgate cloud.',
+        local_site_explanation: 'You are administering the Brightgate Wi-fi appliances on your local network (the Local Site). Changes will also be reflected in the Brightgate cloud.',
         select_site: 'Select Site',
         tools: 'Tools',
       },
@@ -164,23 +164,26 @@ export default {
         title: 'VPN',
         configs: 'My VPN Configurations',
         download: 'Download VPN Software',
-        download_explain: 'Brightgate uses the highly secure, open source VPN software called WireGuard®.  You can download WireGuard for your system using the links below.  Then load your VPN configuration(s) into WireGuard.',
+        download_explain: 'Brightgate uses the secure, open source VPN software called WireGuard®. You can learn more and download WireGuard for your system using the links below. Then load your VPN configuration(s) into WireGuard.',
         plat_other: 'Other Platforms',
         delete_button: 'Delete',
-        delete_unfinished: 'The site {site} isn\'t responding to cloud commands at the moment.  Your VPN configuration has been queued for deletion; when the site reconnects to the cloud, your VPN configuration will be deleted.',
+        delete_unfinished: 'The site {site} isn\'t responding to cloud commands at the moment. Your VPN configuration has been queued for deletion; when the site reconnects to the cloud, your VPN configuration will be deleted.',
       },
       account_wg_config: {
         title: 'New VPN Configuration',
         name: 'Configuration Name',
         name_placeholder: 'My Laptop',
+        name_info: 'The device where you will install this config',
+        name_error: 'Please describe the device where you will install this config',
         site: 'Site',
+        site_info: 'The remote site you will connect to',
         create_button: 'Create',
-        create_explain: 'Create a new VPN configuration, suitable for loading into a Wireguard client.  After the configuration is generated, you can download it or scan it using the Wireguard application\'s QR code scanner.',
-        success_explain: 'Here is your new VPN configuration.  Download or Scan the QR code now; you won\'t be able to retrieve it later.',
+        create_explain: 'Create a new VPN configuration, suitable for loading into a WireGuard® client. After the configuration is generated, you can download it, or scan it using the WireGuard application\'s QR code scanner.',
+        success_explain: 'Here is your new VPN configuration. Download or Scan the QR code now; you won\'t be able to retrieve it later.',
         create_failed: 'Failed to create VPN configuration: {msg}',
         download_button: 'Download',
         qr_scan_button: 'Scan QR Code',
-        qr_scan_explain: 'Use the WireGuard® application on your mobile device to scan this code.  This will import the VPN configuration into your client.',
+        qr_scan_explain: 'Use the WireGuard® application on your mobile device to scan this code. This will import the VPN configuration into your client. If the WireGuard application prompts you for "Tunnel Name", here are some suggested names:',
         enabled_optgroup: 'Sites with VPN Enabled',
         disabled_optgroup: 'Sites with VPN Disabled',
       },
@@ -213,7 +216,7 @@ export default {
         title: 'Network Details',
         descriptions: {
           eap: 'Each network user has their own login ID and password, created using the Brightgate App or Cloud Portal. Use it for laptops, tablets, and phones.',
-          psk: 'All devices on this network share the same password.  Use it for IoT devices, such as printers, security cameras, or "smart" appliances.',
+          psk: 'All devices on this network share the same password. Use it for IoT devices, such as printers, security cameras, or "smart" appliances.',
           guest: 'Guests use this network. Administrators periodically rotate this password. To reveal the current password, click the password eye.',
         },
         properties: 'Network Properties',
@@ -270,7 +273,7 @@ export default {
       compliance_report: {
         title: 'Compliance Report',
         summary: 'Summary',
-        summary_violations: 'There are no policy violations. | There is one policy violation.  Correct it to stay compliant. | There are {num} policy violations.  Correct these to stay compliant.',
+        summary_violations: 'There are no policy violations. | There is one policy violation. Correct it to stay compliant. | There are {num} policy violations. Correct these to stay compliant.',
         summary_no_violations: 'This network is currently in compliance with your policy.',
         summary_enrolled: '{num} users are enrolled in this network.',
         summary_phish: '{num} incidents of phishing activity detected.',
@@ -325,7 +328,7 @@ export default {
         hw_addr: 'Hardware Address',
         access_control: 'Access Control',
         security_ring: 'Trust Group',
-        ring_tip: 'Affects the security protections and network access for this device.  See admin guide.',
+        ring_tip: 'Affects the security protections and network access for this device. See admin guide.',
         vuln_scan: 'Vulnerability Scan',
         vuln_scan_notyet: 'Not Scanned Yet',
         vuln_scan_initial: 'Initial Scan in Progress',
@@ -351,7 +354,7 @@ export default {
         dhcp_id_tip: 'Name presented by the device when it joined the network.',
         dns_name: 'DNS Name',
         dns_name_none: 'Not set',
-        dns_name_tip: 'The gateway\'s built-in DNS (Domain Name System) server publishes a record for this client using the name indicated.  Clients on the local network can reference this system using this name.',
+        dns_name_tip: 'The gateway\'s built-in DNS (Domain Name System) server publishes a record for this client using the name indicated. Clients on the local network can reference this system using this name.',
         devid_tip: 'Based on observation of this device\'s network activity.',
         os_name: 'Operating System',
         os_name_none: 'Unknown',
@@ -380,16 +383,16 @@ export default {
         username: 'User Name',
         password: 'Password',
         sign_in: 'Sign In',
-        fail_unauthorized: 'Login failed.  Invalid user name or password.',
+        fail_unauthorized: 'Login failed. Invalid user name or password.',
         fail_other: 'Login failed unexpectedly: {err}.',
         oauth2_google: 'Sign in with Google',
         oauth2_microsoft: 'Sign in with Microsoft',
         oauth2_other: 'Sign in with {provider}',
-        down: 'The login system is not working right now.  It will be back shortly.',
+        down: 'The login system is not working right now. It will be back shortly.',
         no_oauth_rule: 'An account for {email} (via {provider}) could not be created. This account could not be linked to any known Brightgate customers.',
         server_error: 'The server experienced an unexpected error during login.',
         no_roles: 'The account {email} exists, but currently has no roles assigned; it cannot login.',
-        unknown_error: 'An unknown error occurred.  Please contact service for help.',
+        unknown_error: 'An unknown error occurred. Please contact service for help.',
       },
       users: {
         title: 'Users',
@@ -407,7 +410,7 @@ export default {
       },
       account_details: {
         title: 'Account Details',
-        delete_text: '{name}\'s account will be removed from {org}\'s organization.  Subscription fees associated with this account will no longer be charged.',
+        delete_text: '{name}\'s account will be removed from {org}\'s organization. Subscription fees associated with this account will no longer be charged.',
         delete_title: 'Delete Account?',
         administration: 'Account Administration',
         wifi_login: 'Wi-Fi Login',
@@ -601,7 +604,7 @@ export default {
         dhcp_id_tip: 'Name presented by the device when it joined the network.', // XXXI18N
         dns_name: 'DNS Name', // XXXI18N
         dns_name_none: 'Not set', // XXXI18N
-        dns_name_tip: 'The gateway\'s built-in DNS (Domain Name System) server publishes a record for this client using the name indicated.  Clients on the local network can reference this system using this name.', // XXXI18N
+        dns_name_tip: 'The gateway\'s built-in DNS (Domain Name System) server publishes a record for this client using the name indicated. Clients on the local network can reference this system using this name.', // XXXI18N
         devid_tip: 'Based on observation of this device\'s network activity.', // XXXI18N
         os_name: 'Operating System', // XXXI18N
         os_name_none: 'Unknown', // XXXI18N
@@ -627,12 +630,12 @@ export default {
         username: 'Name',
         password: 'Passwort',
         sign_in: 'Anmelden',
-        fail_unauthorized: 'Login failed.  Invalid user name or password.', // XXXI18N
+        fail_unauthorized: 'Login failed. Invalid user name or password.', // XXXI18N
         fail_other: 'Login failed unexpectedly: {err}.', // XXXI18N
         oauth2_with_google: 'Login with Google', // XXXI18N
         oauth2_with_microsoft: 'Login with Microsoft', // XXXI18N
         oauth2_with_other: 'Login with {provider}', // XXXI18N
-        down: 'The login system is not working right now.  It will be back shortly.', // XXXI18N
+        down: 'The login system is not working right now. It will be back shortly.', // XXXI18N
       },
       users: {
         title: 'Benutzer',

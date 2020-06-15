@@ -7,129 +7,172 @@
   express written permission of Brightgate Inc is prohibited, and any
   such unauthorized removal or alteration will be a violation of federal law.
 -->
+<style scoped>
+/*
+ * Cause the trademark message to float to the bottom of viewport
+ * https://stackoverflow.com/questions/12239166/footer-at-bottom-of-page-or-content-whichever-is-lower
+ */
+div.content-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+div.content-flex {
+  flex: 1;
+}
+div.trademark {
+  font-size: small;
+}
+</style>
+
 <template>
   <f7-page @page:beforein="onPageBeforeIn">
     <f7-navbar :back-link="$t('message.general.back')" :title="$t('message.account_wg_config.title')" sliding />
+    <div class="content-container">
+      <div class="content-flex">
 
-    <div v-if="!created" id="vpn-phase1">
-      <f7-block>
-        {{ $t('message.account_wg_config.create_explain') }}
-      </f7-block>
-      <f7-list>
-        <f7-list-input
-          :label="$t('message.account_wg_config.site')"
-          required
-          type="select"
-          @change="(evt) => { siteID = evt.target.value; }">
-          <optgroup v-if="wgSites(true).length > 0"
-                    :label="$t('message.account_wg_config.enabled_optgroup')">
-            <option v-for="site in wgSites(true)"
-                    :disabled="!enabledSiteMap[site.id]"
-                    :key="site.id"
-                    :value="site.id"
-                    :selected="site.id == siteID">
-              {{ site.name }}
-            </option>
-          </optgroup>
-          <optgroup v-if="wgSites(false).length > 0"
-                    :label="$t('message.account_wg_config.disabled_optgroup')">
-            <option v-for="site in wgSites(false)"
-                    :key="site.id"
-                    :value="site.id"
-                    :selected="site.id == siteID"
-                    disabled>
-              {{ site.name }}
-            </option>
-          </optgroup>
-        </f7-list-input>
-        <f7-list-input
-          id="wg_label"
-          :label="$t('message.account_wg_config.name')"
-          :placeholder="$t('message.account_wg_config.name_placeholder')"
-          pattern="^[a-zA-Z0-9_=+.-]{1,15}$"
-          info="1-15 letters, numbers, _=+.- with no spaces"
-          error-message="1-15 letters, numbers, _=+.- with no spaces"
-          validate
-          required
-          minlength="1"
-          maxlength="15"
-          type="text"
-          input-id="wg_label_input"
-          @change="(evt) => { label = evt.target.value; }" />
-      </f7-list>
+        <div v-if="!created" id="vpn-phase1">
+          <f7-block>
+            {{ $t('message.account_wg_config.create_explain') }}
+          </f7-block>
+          <f7-list>
+            <f7-list-input
+              :label="$t('message.account_wg_config.site')"
+              :info="$t('message.account_wg_config.site_info')"
+              required
+              type="select"
+              @change="(evt) => { siteID = evt.target.value; }">
+              <optgroup
+                v-if="wgSites(true).length > 0"
+                :label="$t('message.account_wg_config.enabled_optgroup')">
+                <option
+                  v-for="site in wgSites(true)"
+                  :disabled="!enabledSiteMap[site.id]"
+                  :key="site.id"
+                  :value="site.id"
+                  :selected="site.id == siteID">
+                  {{ site.name }}
+                </option>
+              </optgroup>
+              <optgroup
+                v-if="wgSites(false).length > 0"
+                :label="$t('message.account_wg_config.disabled_optgroup')">
+                <option
+                  v-for="site in wgSites(false)"
+                  :key="site.id"
+                  :value="site.id"
+                  :selected="site.id == siteID"
+                  disabled>
+                  {{ site.name }}
+                </option>
+              </optgroup>
+            </f7-list-input>
 
-      <!-- Controls: Cancel, Create -->
-      <f7-block>
-        <f7-row>
-          <f7-col>
-            <f7-button :text="$t('message.general.cancel')" outline back />
-          </f7-col>
-          <f7-col>
-            <f7-button
-              :text="$t('message.account_wg_config.create_button')"
-              fill
-              raised
-              @click="createConfig" />
-          </f7-col>
-        </f7-row>
+            <f7-list-input
+              id="wg_label"
+              :label="$t('message.account_wg_config.name')"
+              :placeholder="$t('message.account_wg_config.name_placeholder')"
+              :info="$t('message.account_wg_config.name_info')"
+              :error-message="$t('message.account_wg_config.name_error')"
+              validate
+              required
+              minlength="1"
+              maxlength="64"
+              type="text"
+              input-id="wg_label_input"
+              @change="(evt) => { label = evt.target.value; }" />
+
+          </f7-list>
+
+          <!-- Controls: Cancel, Create -->
+          <f7-block>
+            <f7-row>
+              <f7-col>
+                <f7-button :text="$t('message.general.cancel')" outline back />
+              </f7-col>
+              <f7-col>
+                <f7-button
+                  :text="$t('message.account_wg_config.create_button')"
+                  :disabled="!siteID"
+                  fill
+                  raised
+                  @click="createConfig" />
+              </f7-col>
+            </f7-row>
+          </f7-block>
+        </div>
+
+        <template v-if="created">
+          <f7-block>
+            {{ $t('message.account_wg_config.success_explain') }}
+          </f7-block>
+          <bg-vpn-card :site-name="sites[vpnConfig.siteUUID].name" :vpn-config="vpnConfig" download-controls>
+            <template slot="controlfooter">
+              <f7-button
+                :text="$t('message.account_wg_config.download_button')"
+                fill
+                icon-md="material:cloud_download"
+                icon-ios="f7:cloud_download"
+                @click="downloadClick" />
+              <f7-button
+                v-if="$f7.device.desktop"
+                :text="$t('message.account_wg_config.qr_scan_button')"
+                popup-open=".wg-config-qr-popup"
+                fill
+                icon-md="f7:qrcode"
+                icon-ios="f7:qrcode" />
+              <f7-button
+                v-else
+                :text="$t('message.account_wg_config.qr_scan_button')"
+                sheet-open=".wg-config-qr-sheet"
+                fill
+                icon-md="f7:qrcode"
+                icon-ios="f7:qrcode" />
+            </template>
+          </bg-vpn-card>
+
+          <f7-button
+            :text="$t('message.general.done')"
+            back />
+
+          <!-- popup for desktop class environments -->
+          <f7-popup class="wg-config-qr-popup">
+            <f7-block>
+              <p>
+                {{ $t('message.account_wg_config.qr_scan_explain') }}
+                <ul>
+                  <li><tt>{{ sites[vpnConfig.siteUUID].name }}</tt></li>
+                  <li><tt>{{ vpnConfig.confName }}</tt></li>
+                </ul>
+              </p>
+            </f7-block>
+            <center>
+              <qrcode :value="vpnConfig.confData" :options="{ width: 400, color: {dark: '#002d5cff' } }" />
+            </center>
+            <f7-button :text="$t('message.general.close')" popup-close />
+          </f7-popup>
+
+          <!-- sheet for mobile class environments -->
+          <f7-sheet class="wg-config-qr-sheet" style="height:auto;" swipe-to-close backdrop>
+            <f7-button :text="$t('message.general.close')" sheet-close />
+            <f7-block>
+              {{ $t('message.account_wg_config.qr_scan_explain') }}
+              <ul>
+                <li><tt>{{ sites[vpnConfig.siteUUID].name }}</tt></li>
+                <li><tt>{{ vpnConfig.confName }}</tt></li>
+              </ul>
+            </f7-block>
+            <center>
+              <qrcode :value="vpnConfig.confData" :options="{ color: {dark: '#002d5cff' } }" />
+            </center>
+          </f7-sheet>
+        </template>
+      </div>
+
+      <f7-block class="trademark">
+        "WireGuard" is a registered trademark of Jason A. Donenfeld.
       </f7-block>
     </div>
-
-    <template v-if="created">
-      <f7-block>
-        {{ $t('message.account_wg_config.success_explain') }}
-      </f7-block>
-      <bg-vpn-card :site-name="sites[vpnConfig.siteUUID].name" :vpn-config="vpnConfig" download-controls>
-        <template slot="controlfooter">
-          <f7-button
-            :text="$t('message.account_wg_config.download_button')"
-            fill
-            icon-md="material:cloud_download"
-            icon-ios="f7:cloud_download"
-            @click="downloadClick" />
-          <f7-button
-            v-if="$f7.device.desktop"
-            :text="$t('message.account_wg_config.qr_scan_button')"
-            popup-open=".wg-config-qr-popup"
-            fill
-            icon-md="f7:qrcode"
-            icon-ios="f7:qrcode" />
-          <f7-button
-            v-else
-            :text="$t('message.account_wg_config.qr_scan_button')"
-            sheet-open=".wg-config-qr-sheet"
-            fill
-            icon-md="f7:qrcode"
-            icon-ios="f7:qrcode" />
-        </template>
-      </bg-vpn-card>
-
-      <f7-button
-        :text="$t('message.general.done')"
-        back />
-
-      <!-- popup for desktop class environments -->
-      <f7-popup class="wg-config-qr-popup">
-        <f7-block>
-          {{ $t('message.account_wg_config.qr_scan_explain') }}
-        </f7-block>
-        <center>
-          <qrcode :value="vpnConfig.confData" :options="{ width: 400, color: {dark: '#002d5cff' } }" />
-        </center>
-        <f7-button :text="$t('message.general.close')" popup-close />
-      </f7-popup>
-
-      <!-- sheet for mobile class environments -->
-      <f7-sheet class="wg-config-qr-sheet" style="height:auto;" swipe-to-close backdrop>
-        <f7-button :text="$t('message.general.close')" sheet-close />
-        <f7-block>
-          {{ $t('message.account_wg_config.qr_scan_explain') }}
-        </f7-block>
-        <center>
-          <qrcode :value="vpnConfig.confData" :options="{ color: {dark: '#002d5cff' } }" />
-        </center>
-      </f7-sheet>
-    </template>
   </f7-page>
 </template>
 
@@ -143,7 +186,7 @@ import VueQrcode from '@chenfengyuan/vue-qrcode';
 import siteApi from '../api/site';
 import BgVpnCard from '../components/vpn_card.vue';
 
-const debug = Debug('page:vpn_provision_config');
+const debug = Debug('page:account_wg_config');
 
 export default {
   components: {
@@ -198,7 +241,6 @@ export default {
       assert.equal(typeof enabled, 'boolean');
       const unsorted = [];
       Object.keys(this.sites).forEach((siteUU) => {
-        debug('this.sites ', siteUU, this.sites[siteUU]);
         if (this.sites[siteUU].regInfo.organizationUUID === this.currentOrg.id) {
           if (enabled === Boolean(this.enabledSiteMap[siteUU])) {
             unsorted.push(this.sites[siteUU]);
@@ -213,9 +255,7 @@ export default {
     },
 
     createConfig: async function() {
-      debug('siteID', this.siteID);
-
-      const valid = this.$f7.input.validate('#wg_label');
+      const valid = this.$f7.input.validate('#wg_label_input');
       debug(`label_input valid=${valid}; this.label=${this.label}`);
       if (!valid || !this.label) {
         // Find the div below the li, and add item-input-with-error-message to
@@ -223,6 +263,10 @@ export default {
         const contentItem = this.Dom7('#wg_label').find('div.item-content');
         debug('contentItem is', contentItem);
         contentItem.addClass('item-input-with-error-message');
+        return;
+      }
+
+      if (!this.siteID) {
         return;
       }
 

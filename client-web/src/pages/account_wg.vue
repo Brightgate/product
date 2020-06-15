@@ -30,6 +30,22 @@ a.download-button >>> i.icon {
   top: -2px;
 }
 
+/*
+ * Cause the trademark message to float to the bottom of viewport
+ * https://stackoverflow.com/questions/12239166/footer-at-bottom-of-page-or-content-whichever-is-lower
+ */
+div.content-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+div.content-flex {
+  flex: 1;
+}
+div.trademark {
+  font-size: small;
+  width: 80%; /* avoid the FAB on this page */
+}
 </style>
 <template>
   <f7-page @page:beforein="onPageBeforeIn">
@@ -38,88 +54,102 @@ a.download-button >>> i.icon {
     <f7-fab color="pink" href="NEW/">
       <f7-icon size="32" ios="f7:plus" md="material:add" />
     </f7-fab>
-    <f7-block-title>{{ $t('message.account_wg.download') }} </f7-block-title>
-    <f7-block>
-      {{ $t('message.account_wg.download_explain') }}
+    <div class="content-container">
+      <div class="content-flex">
+        <f7-block-title>{{ $t('message.account_wg.download') }} </f7-block-title>
+        <f7-block>
+          {{ $t('message.account_wg.download_explain') }}
 
-      <div class="download-button-container">
-        <!-- ios -->
-        <f7-link
-          v-if="$f7.device.ios"
-          external
-          icon-f7="logo_apple"
-          icon-size="18"
-          target="_blank"
-          class="download-button"
-          href="https://itunes.apple.com/us/app/wireguard/id1441195189?ls=1&mt=8">
-          iOS App Store (iPhone, iPad)
-        </f7-link>
+          <div class="download-button-container">
+            <!-- ios -->
+            <f7-link
+              v-if="$f7.device.ios"
+              external
+              icon-f7="logo_apple"
+              icon-size="18"
+              target="_blank"
+              class="download-button"
+              href="https://itunes.apple.com/us/app/wireguard/id1441195189?ls=1&mt=8">
+              iOS App Store (iPhone, iPad)
+            </f7-link>
 
-        <!-- android -->
-        <f7-link
-          v-if="$f7.device.android"
-          external
-          icon-material="android"
-          icon-size="18"
-          target="_blank"
-          class="download-button"
-          href="https://play.google.com/store/apps/details?id=com.wireguard.android">
-          On Google Play (Android)
-        </f7-link>
+            <!-- android -->
+            <f7-link
+              v-if="$f7.device.android"
+              external
+              icon-material="android"
+              icon-size="18"
+              target="_blank"
+              class="download-button"
+              href="https://play.google.com/store/apps/details?id=com.wireguard.android">
+              On Google Play (Android)
+            </f7-link>
 
-        <f7-link
-          v-if="$f7.device.macos"
-          external
-          icon-f7="logo_apple"
-          icon-size="18"
-          target="_blank"
-          class="download-button"
-          href="https://apps.apple.com/us/app/wireguard/id1451685025?ls=1&mt=12">
-          Mac App Store
-        </f7-link>
+            <f7-link
+              v-if="$f7.device.macos"
+              external
+              icon-f7="logo_apple"
+              icon-size="18"
+              target="_blank"
+              class="download-button"
+              href="https://apps.apple.com/us/app/wireguard/id1451685025?ls=1&mt=12">
+              Mac App Store
+            </f7-link>
 
-        <f7-link
-          v-if="$f7.device.windows"
-          external
-          icon-f7="logo_windows"
-          icon-size="18"
-          target="_blank"
-          class="download-button"
-          href="https://www.wireguard.com/install/">
-          Windows 7, 8, 8.1 &amp; 10
-        </f7-link>
+            <f7-link
+              v-if="$f7.device.windows"
+              external
+              icon-f7="logo_windows"
+              icon-size="18"
+              target="_blank"
+              class="download-button"
+              href="https://www.wireguard.com/install/">
+              Windows 7, 8, 8.1 &amp; 10
+            </f7-link>
 
-        <br>
-        <f7-link
-          external
-          icon-material="devices_other"
-          icon-size="18"
-          target="_blank"
-          class="download-button"
-          href="https://www.wireguard.com/install/">
-          {{ $t('message.account_wg.plat_other') }}
-        </f7-link>
-      </div>
-    </f7-block>
+            <br>
+            <f7-link
+              external
+              icon-material="devices_other"
+              icon-size="18"
+              target="_blank"
+              class="download-button"
+              href="https://www.wireguard.com/install/">
+              {{ $t('message.account_wg.plat_other') }}
+            </f7-link>
+          </div>
 
-    <f7-block-title>{{ $t('message.account_wg.configs') }} </f7-block-title>
-    <template v-for="cfg in orderedCfgs">
-      <bg-vpn-card
-        :key="`${cfg.siteUUID}${cfg.mac}`"
-        :site-name="sites[cfg.siteUUID].name"
-        :vpn-config="cfg">
-        <!-- delete control in the footer -->
-        <template slot="controlfooter">
-          <span />
-          <f7-link
-            icon-ios="f7:trash"
-            icon-md="material:delete"
-            @click="deleteConfig(cfg.siteUUID, cfg.mac, cfg.publicKey)">
-            {{ $t('message.account_wg.delete_button') }}
-          </f7-link>
+        </f7-block>
+
+        <f7-block-title>{{ $t('message.account_wg.configs') }} </f7-block-title>
+        <template v-if="orderedCfgs.length === 0">
+          <f7-block>
+            None yet
+          </f7-block>
         </template>
-      </bg-vpn-card>
-    </template>
+        <template v-for="cfg in orderedCfgs">
+          <bg-vpn-card
+            :key="`${cfg.siteUUID}${cfg.mac}`"
+            :site-name="sites[cfg.siteUUID].name"
+            :vpn-config="cfg">
+            <!-- delete control in the footer -->
+            <template slot="controlfooter">
+              <span />
+              <f7-link
+                icon-ios="f7:trash"
+                icon-md="material:delete"
+                @click="deleteConfig(cfg.siteUUID, cfg.mac, cfg.publicKey)">
+                {{ $t('message.account_wg.delete_button') }}
+              </f7-link>
+            </template>
+          </bg-vpn-card>
+        </template>
+      </div>
+
+      <f7-block class="trademark">
+        "WireGuard" is a registered trademark of Jason A. Donenfeld.
+      </f7-block>
+    </div>
 
   </f7-page>
 </template>
@@ -131,7 +161,7 @@ import siteApi from '../api/site';
 import uiutils from '../uiutils';
 import BgVpnCard from '../components/vpn_card.vue';
 
-const debug = Debug('page:vpn_provision');
+const debug = Debug('page:account_wg');
 
 export default {
   components: {

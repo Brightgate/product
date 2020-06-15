@@ -650,6 +650,9 @@ type wgNewConfigResponse struct {
 	ServerAddress string `json:"serverAddress"`
 	ServerPort    int    `json:"serverPort"`
 
+	// Name of the config inside of the zip; can be used as a
+	// hint to the user.
+	ConfName string `json:"confName"`
 	// plain text representation of config file
 	ConfData string `json:"confData"`
 	// downloadable (zip file) archive containing config file, base64
@@ -667,10 +670,37 @@ type postAccountWGRequest struct {
 	TZ string `json:"tz,omitempty"`
 }
 
-// This RE is chosen from analyzing wireguard clients on several platforms.  It
-// seems to be the most universal subset.  Windows has some reserved words as
-// well, but these are unlikely to crop up in common usage (e.g. COM1).
-var labelRE = regexp.MustCompile(`^[a-zA-Z0-9_=+.-]{1,15}$`)
+// This RE is chosen from analyzing WireGuard clients on several platforms.  It
+// seems to be the most universal subset.  The purpose is to strip invalid
+// chars from e.g. a site name in order to give the user a tunnel name that
+// makes sense to them.
+var confNameReplacer = regexp.MustCompile(`[^a-zA-Z0-9_=+-.]`)
+
+// Linux/Android are limited to just 15 characters in the conf name and will
+// barf on longer names.
+const wgConfNameMaxLen = 15
+
+// wgConfName converts the input string to a string suitable for naming a
+// WireGuard .conf file across known platforms.  Obscure reserved names on
+// Windows (e.g. COM1) are not accounted for.
+func wgConfName(name string) string {
+	if len(name) > wgConfNameMaxLen {
+		// Try dropping spaces to see if that helps
+		name = strings.ReplaceAll(name, " ", "")
+		// If not, then trim.
+		if len(name) > wgConfNameMaxLen {
+			name = name[:wgConfNameMaxLen]
+		}
+	}
+	name = confNameReplacer.ReplaceAllLiteralString(name, "-")
+	// Remove any trailing dashes
+	name = strings.TrimRight(name, "-")
+	if name == "" {
+		// Just in case we trimmed away the whole thing
+		name = "vpn"
+	}
+	return name
+}
 
 // postAccountWGNew creates a new Wireguard VPN configuration for the account,
 // storing it into the config store.  The WG configuration is returned in
@@ -695,8 +725,8 @@ func (a *accountHandler) postAccountWGNew(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return err
 	}
-	if !labelRE.MatchString(req.Label) {
-		return newHTTPError(http.StatusBadRequest, errors.New("invalid or missing label"))
+	if len(req.Label) > 64 {
+		return newHTTPError(http.StatusBadRequest, errors.New("invalid label; too long"))
 	}
 
 	hdl, err := a.getConfigHandle(tgtSiteUUID.String())
@@ -745,7 +775,14 @@ func (a *accountHandler) postAccountWGNew(c echo.Context) error {
 		return newHTTPError(http.StatusInternalServerError, err)
 	}
 
-	confFileName := req.Label
+	// On at least MacOS and Windows (but not on Android or some other
+	// platforms) the conf file name informs the name of the tunnel in the
+	// UI (although you can change it at any time).  Since the tunnel is a
+	// tunnel from where you are (my laptop) TO someplace (Houston Office),
+	// we choose to name the confFile after the site; we have to crunch
+	// that down to an acceptable name.
+	confName := wgConfName(tgtSite.Name)
+	confFileName := confName
 	// in case the user put ".conf" in their label name, don't double
 	// suffix it
 	if !strings.HasSuffix(confFileName, ".conf") {
@@ -756,7 +793,21 @@ func (a *accountHandler) postAccountWGNew(c echo.Context) error {
 		return newHTTPError(http.StatusInternalServerError, err)
 	}
 
-	zipFileName := fmt.Sprintf("%s-%s-Brightgate-Wireguard.zip", req.Label, tgtSite.Name)
+	// Nuke out spaces and path separators to make the label name more palatable
+	// in the filename.
+	filenameLabel := strings.ReplaceAll(req.Label, " ", "-")
+	filenameLabel = strings.ReplaceAll(filenameLabel, "/", "-")
+	filenameLabel = strings.ReplaceAll(filenameLabel, "\\", "-")
+	filenameLabel = strings.ReplaceAll(filenameLabel, ":", "-")
+
+	// So if we started with:
+	//   req.Label='My Laptop' tgtSite.Name='Minn/St. Paul Office'
+	// We would get:
+	//   filenameLabel='My-Laptop' confName='Minn-St.PaulOff'
+	// And then merge those into:
+	//   zipFileName='My-Laptop-Minn-St.PaulOff-Brightgate-WireGuard.zip'
+	// Which is long but also clear.
+	zipFileName := fmt.Sprintf("%s-%s-Brightgate-WireGuard.zip", filenameLabel, confName)
 
 	resp := wgNewConfigResponse{
 		accountWGResponseConfig: accountWGResponseConfig{
@@ -769,6 +820,7 @@ func (a *accountHandler) postAccountWGNew(c echo.Context) error {
 		},
 		ServerAddress:           addRes.ServerAddress,
 		ServerPort:              addRes.ServerPort,
+		ConfName:                confName,
 		ConfData:                string(addRes.ConfData),
 		DownloadConfBody:        zipFile,
 		DownloadConfName:        zipFileName,
