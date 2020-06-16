@@ -74,7 +74,7 @@ import uiUtils from '../uiutils';
 import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
 import BGPortLabel from '../components/port_label.vue';
 
-const debug = Debug('page:node-lan-port');
+const debug = Debug('page:node_lan_port');
 
 export default {
   components: {

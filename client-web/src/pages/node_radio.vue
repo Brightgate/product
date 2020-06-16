@@ -99,7 +99,7 @@ import uiUtils from '../uiutils';
 import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
 import BGPortLabel from '../components/port_label.vue';
 
-const debug = Debug('page:node-radio');
+const debug = Debug('page:node_radio');
 
 // These are cribbed from wificaps.go:
 const hiBand20MHz = new Set([36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108,

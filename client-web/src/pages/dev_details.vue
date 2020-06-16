@@ -365,7 +365,7 @@ import BGListItemTitle from '../components/list_item_title.vue';
 import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
 import BGWifiStrength from '../components/wifi_strength.vue';
 
-const debug = Debug('page:dev-details');
+const debug = Debug('page:dev_details');
 
 function repairable(vulnid, vuln) {
   const res = (vulnid === 'defaultpassword' &&

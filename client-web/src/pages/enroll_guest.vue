@@ -132,7 +132,7 @@ import Debug from 'debug';
 import appDefs from '../app_defs';
 import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
 
-const debug = Debug('page:enroll-guest');
+const debug = Debug('page:enroll_guest');
 let phoneAYT = null;
 
 export default {

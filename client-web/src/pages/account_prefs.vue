@@ -66,7 +66,7 @@ import vuex from 'vuex';
 import Debug from 'debug';
 import VueAvatar from 'vue-avatar';
 
-const debug = Debug('page:accountprefs');
+const debug = Debug('page:account_prefs');
 
 export default {
   components: {

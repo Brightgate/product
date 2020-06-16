@@ -114,7 +114,9 @@ export default {
           const scrollTo = this.Dom7(e.srcElement.hash);
           scrollTo[0].scrollIntoView(true);
         } else {
-          debug('non hash link clicked');
+          debug('non hash link clicked; trying to open', url);
+          const win = window.open(url, '_blank');
+          win.focus();
         }
       });
     },

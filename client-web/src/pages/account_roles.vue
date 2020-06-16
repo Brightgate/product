@@ -54,7 +54,7 @@ div.checkbox-list {
 import Debug from 'debug';
 import vuex from 'vuex';
 import appDefs from '../app_defs';
-const debug = Debug('page:account-roles');
+const debug = Debug('page:account_roles');
 
 export default {
   data: function() {

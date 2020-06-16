@@ -467,6 +467,7 @@ func mkRouterHTTPS(log *zap.Logger, vaultClient *vault.Client, notifier *daemonu
 	r.Use(mkSecureMW(log))
 	r.Use(middleware.Recover())
 	r.Use(session.Middleware(state.sessionStore))
+	r.Use(middleware.Gzip())
 	r.Static("/.well-known", wellKnownPath)
 	cwp := filepath.Join(appPath, "client-web")
 	r.Static("/client-web", cwp)

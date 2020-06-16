@@ -75,7 +75,7 @@ import Debug from 'debug';
 import vulnerability from '../vulnerability';
 
 import BGSiteControls from '../components/site_controls.vue';
-const debug = Debug('page:site-admin');
+const debug = Debug('page:site_admin');
 
 export default {
   components: {

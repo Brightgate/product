@@ -109,7 +109,7 @@ import Debug from 'debug';
 import vuex from 'vuex';
 import VueAvatar from 'vue-avatar';
 import {format, parseISO} from '../date-fns-wrapper';
-const debug = Debug('page:account-details');
+const debug = Debug('page:account_details');
 
 export default {
   components: {

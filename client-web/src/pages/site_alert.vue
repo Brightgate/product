@@ -63,7 +63,7 @@ import vuex from 'vuex';
 import Debug from 'debug';
 
 import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
-const debug = Debug('page:site-alert');
+const debug = Debug('page:site_alert');
 
 export default {
   components: {

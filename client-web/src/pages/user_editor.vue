@@ -100,7 +100,7 @@ import {cloneDeep} from 'lodash-es';
 import Debug from 'debug';
 import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
 
-const debug = Debug('page:user-editor');
+const debug = Debug('page:user_editor');
 
 export default {
   components: {

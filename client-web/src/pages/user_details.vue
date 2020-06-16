@@ -106,7 +106,7 @@ import Debug from 'debug';
 
 import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
 
-const debug = Debug('page:user-details');
+const debug = Debug('page:user_details');
 
 export default {
   components: {
