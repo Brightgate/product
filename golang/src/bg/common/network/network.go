@@ -272,12 +272,12 @@ func ChoosePort(a ...int) (int, error) {
 	}
 
 	for port := minPort; port <= maxPort; port++ {
-		addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("localhost:%d", port))
-		if err != nil {
-			return 0, fmt.Errorf("unable to resolve localhost: %v", err)
+		addr := net.TCPAddr{
+			IP:   net.IPv4(127, 0, 0, 1),
+			Port: port,
 		}
 
-		l, err := net.ListenTCP("tcp", addr)
+		l, err := net.ListenTCP("tcp", &addr)
 		if err != nil {
 			inUse := false
 			if oe, ok := err.(*net.OpError); ok {
