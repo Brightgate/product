@@ -43,7 +43,10 @@ var (
 			"PS":  {"bg-appliance_*_arm_cortex-a7_neon-vfpv4.ipk"},
 			"VUB": {"u-boot-mtk.bin"},
 			"WRT": {"root.squashfs", "uImage-ramdisk.itb", "uImage.itb"},
-			"XS":  {"bg-hostapd_*_arm_cortex-a7_neon-vfpv4.ipk"},
+			"XS": {
+				"bg-hostapd_*_arm_cortex-a7_neon-vfpv4.ipk",
+				"bg-rdpscan_*_arm_cortex-a7_neon-vfpv4.ipk",
+			},
 		},
 		"rpi3": {
 			"PS": {"bg-appliance_*_armhf.deb"},

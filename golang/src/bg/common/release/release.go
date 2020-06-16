@@ -77,11 +77,13 @@ func (r Release) SortArtifacts() {
 		if err != nil {
 			return false
 		}
+		// We assume that there are no inter-dependencies between our
+		// packages, other than bg-appliance depends on all the others.
 		if strings.HasPrefix(path.Base(iURL.Path), "bg-appliance_") &&
-			strings.HasPrefix(path.Base(jURL.Path), "bg-hostapd_") {
+			!strings.HasPrefix(path.Base(jURL.Path), "bg-appliance_") {
 			return false
 		} else if strings.HasPrefix(path.Base(jURL.Path), "bg-appliance_") &&
-			strings.HasPrefix(path.Base(iURL.Path), "bg-hostapd_") {
+			!strings.HasPrefix(path.Base(iURL.Path), "bg-appliance_") {
 			return true
 		}
 		return false
