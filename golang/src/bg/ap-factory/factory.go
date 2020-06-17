@@ -1,5 +1,5 @@
 //
-// COPYRIGHT 2019 Brightgate Inc. All rights reserved.
+// COPYRIGHT 2020 Brightgate Inc. All rights reserved.
 //
 // This copyright notice is Copyright Management Information under 17 USC 1202
 // and is included to protect this work and deter copyright infringement.
@@ -49,13 +49,6 @@ import (
 	"bg/common/passwordgen"
 )
 
-type diskPart struct {
-	number int
-	start  int
-	end    int
-	ptype  int
-}
-
 const (
 	noSide = iota
 	sideA
@@ -72,8 +65,7 @@ type slice struct {
 
 type platformStorage struct {
 	mainStorage  string
-	partitions   []diskPart
-	sfdiskOutput string
+	sfdiskOutput map[string]string
 	slices       map[string]slice
 }
 
@@ -106,13 +98,7 @@ const (
 )
 
 var (
-	mt7623emmcPartitions = []diskPart{
-		{1, 264192, 2361343, 83},
-		{2, 2361345, 4458496, 83},
-		{3, 4458497, 152269887, 83},
-	}
-
-	mt7623emmcSfdisk = `label: dos
+	mt7623emmcSfdisk8G = `label: dos
 label-id: 0x00000000
 device: /dev/mmcblk0
 unit: sectors
@@ -121,7 +107,15 @@ unit: sectors
 /dev/mmcblk0p2 : start=     2361345, size=     2097152, type=83
 /dev/mmcblk0p3 : start=     4458497, size=    10811391, type=83
 `
+	mt7623emmcSfdisk4G = `label: dos
+label-id: 0x00000000
+device: /dev/mmcblk0
+unit: sectors
 
+/dev/mmcblk0p1 : start=      264192, size=     2097152, type=83
+/dev/mmcblk0p2 : start=     2361345, size=     2097152, type=83
+/dev/mmcblk0p3 : start=     4458497, size=     3274751, type=83
+`
 	mt7623slices = map[string]slice{
 		"UBOOT":   {noSide, mt7623MainStorage, mt7623UBootOffset, mt7623UBootMaxSize, "UBOOT"},
 		"KERNEL":  {sideA, mt7623MainStorage, mt7623KernelOffset, mt7623KernelMaxSize, "KERNEL"},
@@ -132,8 +126,12 @@ unit: sectors
 	}
 
 	platforms = map[string]platformStorage{
-		"mt7623": {mt7623MainStorage, mt7623emmcPartitions,
-			mt7623emmcSfdisk, mt7623slices},
+		"mt7623": {mt7623MainStorage,
+			map[string]string{
+				"8GB": mt7623emmcSfdisk8G,
+				"4GB": mt7623emmcSfdisk4G,
+			},
+			mt7623slices},
 	}
 
 	sides = []string{"no-side", "side-a", "side-b"}
@@ -181,12 +179,15 @@ func partitionsAcceptable() bool {
 	}
 
 	rs := string(result)
-	if rs == mt7623emmcSfdisk {
-		return true
+	for ak, ap := range targetPlatform.sfdiskOutput {
+		if rs == ap {
+			log.Printf("partition table for %s device found\n", ak)
+			return true
+		}
 	}
 
-	log.Printf("partition tables differ:\nfound %s\nexpected %s\n",
-		rs, mt7623emmcSfdisk)
+	log.Printf("nonstandard partition table found %s\n", rs)
+
 	return false
 }
 
@@ -203,7 +204,13 @@ func repartitionSfdisk() {
 
 	go func() {
 		defer stdin.Close()
-		io.WriteString(stdin, mt7623emmcSfdisk)
+		// On the MT7623 platform, we have used both 4GB and 8GB
+		// storage devices.  sfdisk(1) will correct an overlarge
+		// final partition request to fit the actually available
+		// device storage.  That behavior allows us to write the
+		// 8GB partition map, and it will be correctly applied
+		// to 4GB devices.
+		io.WriteString(stdin, mt7623emmcSfdisk8G)
 		finishSfdisk <- "written"
 	}()
 
@@ -471,24 +478,26 @@ func retrieveFileHTTP(filename string) int64 {
 	}
 	defer hr.Body.Close()
 
-	if hr.StatusCode != http.StatusOK {
-		log.Fatalf("GET %s operation unsuccessful: %d %v\n",
-			srcURL, hr.StatusCode, http.StatusText(hr.StatusCode))
+	if hr.StatusCode == http.StatusOK {
+		outfn := fmt.Sprintf("%s/%s", imageDir, filename)
+		outf, err := os.Create(outfn)
+		if err != nil {
+			log.Fatalf("open '%s' failed: %v\n", outfn, err)
+		}
+		defer outf.Close()
+
+		bw, err := io.Copy(outf, hr.Body)
+		if err != nil {
+			log.Fatalf("copy failed: %v\n", err)
+		}
+
+		return bw
 	}
 
-	outfn := fmt.Sprintf("%s/%s", imageDir, filename)
-	outf, err := os.Create(outfn)
-	if err != nil {
-		log.Fatalf("open '%s' failed: %v\n", outfn, err)
-	}
-	defer outf.Close()
+	log.Fatalf("GET %s operation unsuccessful: %d %v\n",
+		srcURL, hr.StatusCode, http.StatusText(hr.StatusCode))
 
-	bw, err := io.Copy(outf, hr.Body)
-	if err != nil {
-		log.Fatalf("copy failed: %v\n", err)
-	}
-
-	return bw
+	return -1
 }
 
 func retrieveImagesHTTP() {
