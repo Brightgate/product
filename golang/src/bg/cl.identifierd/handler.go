@@ -148,7 +148,6 @@ func (h *InventoryHandler) Site(uu uuid.UUID) *Site {
 // storage.  This ensures that we have the best aggregate sentence for
 // a client.
 func (h *InventoryHandler) BackfillClient(ctx context.Context, slog *zap.SugaredLogger, siteUUID uuid.UUID, client *Client) error {
-	slog.Infof("starting backfill")
 	if client.Backfilled {
 		panic("client already backfilled")
 	}
@@ -157,9 +156,10 @@ func (h *InventoryHandler) BackfillClient(ctx context.Context, slog *zap.Sugared
 	if err != nil {
 		return err
 	}
-
 	bucket := h.StorageClient.Bucket(res.Bucket)
 	prefix := fmt.Sprintf("obs/%s", client.HWAddr)
+	slog.Infof("backfill: starting. source: %s/%s", res.Bucket, prefix)
+
 	q := storage.Query{Prefix: prefix}
 	if err := q.SetAttrSelection([]string{"Name", "Updated"}); err != nil {
 		return errors.Wrap(err, "setting up GCS query")
@@ -221,7 +221,7 @@ func (h *InventoryHandler) BackfillClient(ctx context.Context, slog *zap.Sugared
 		i--
 		break
 	}
-	slog.Infof("going to add %d records of total %d tuples; i = %d", addRecords, len(tuples), i)
+	slog.Debugf("backfill: going to add %d records of total %d tuples; i = %d", addRecords, len(tuples), i)
 	// Lop off the too-old records
 	i++
 	skipped := i
@@ -230,7 +230,7 @@ func (h *InventoryHandler) BackfillClient(ctx context.Context, slog *zap.Sugared
 	if len(tuples) > 0 {
 		oldest := tuples[0].TS
 		newest := tuples[len(tuples)-1].TS
-		slog.Infof("oldest tuple: %s; newest tuple: %s", oldest.Format(time.RFC3339), newest.Format(time.RFC3339))
+		slog.Debugf("backfill: oldest tuple: %s; newest tuple: %s", oldest.Format(time.RFC3339), newest.Format(time.RFC3339))
 	}
 
 	// Now work forwards from the oldest to newest
@@ -262,7 +262,7 @@ func (h *InventoryHandler) BackfillClient(ctx context.Context, slog *zap.Sugared
 
 	// Wait for all workers to finish
 	_ = clientIngestSem.Acquire(context.TODO(), maxPerClientWorkers)
-	slog.Infof("ingested %d of %d examined objects (%d skips) [done]", ingest, nObjs, skipped)
+	slog.Infof("backfill: done; ingested %d of %d examined objects (%d skips)", ingest, nObjs, skipped)
 
 	// So we don't do it again
 	client.Backfilled = true
@@ -289,6 +289,8 @@ var model2prop = map[string]string{
 	"bayes-device-3": "classification/device_genus",
 	"lookup-mfg":     "classification/oui_mfg",
 }
+
+var errNothingToPush = fmt.Errorf("nothing to push")
 
 // PushToConfigTree compares the classification results for a client to the
 // values stored in the corresponding config tree.  If they are different,
@@ -347,8 +349,7 @@ func (h *InventoryHandler) PushToConfigTree(ctx context.Context, slog *zap.Sugar
 	}
 
 	if len(propOps) == 0 {
-		slog.Infof(prefix + "nothing to sync")
-		return nil
+		return errNothingToPush
 	}
 
 	// Work through the propOps.  Generate a PropOp array along with a
@@ -387,8 +388,12 @@ func (h *InventoryHandler) InventoryMessage(ctx context.Context, siteUUID uuid.U
 
 	inv := &cloud_rpc.InventoryReport{}
 
-	slog := slog.With("appliance_uuid", m.Attributes["appliance_uuid"],
-		"site_uuid", m.Attributes["site_uuid"])
+	slog := slog.With("site_uuid", m.Attributes["site_uuid"])
+	site, err := h.ApplianceDB.CustomerSiteByUUID(ctx, siteUUID)
+	if err == nil {
+		// Makes it easier to see what is going on
+		slog = slog.With("site_name", site.Name)
+	}
 
 	err = proto.Unmarshal(m.Data, inv)
 	if err != nil {
@@ -397,7 +402,11 @@ func (h *InventoryHandler) InventoryMessage(ctx context.Context, siteUUID uuid.U
 	}
 
 	inventory := inv.GetInventory()
-	for _, device := range inventory.GetDevices() {
+	devices := inventory.GetDevices()
+	slog.Infow("incoming inventory", "ts", inventory.Timestamp, "devices", len(devices))
+	updatesPushed := 0
+
+	for _, device := range devices {
 		mac := device.GetMacAddress()
 		hwaddr := network.Uint64ToHWAddr(mac)
 		sent := extract.BayesSentenceFromDeviceInfo(h.OuiDB, device)
@@ -414,7 +423,11 @@ func (h *InventoryHandler) InventoryMessage(ctx context.Context, siteUUID uuid.U
 			didBackfill = true
 			err := h.BackfillClient(ctx, slog, siteUUID, client)
 			if err != nil {
+				// Conservative approach: don't proceed for a
+				// client we can't backfill.
 				slog.Errorf("failed to backfill: %s", err)
+				client.Unlock()
+				continue
 			}
 		}
 		client.Unlock()
@@ -449,15 +462,19 @@ func (h *InventoryHandler) InventoryMessage(ctx context.Context, siteUUID uuid.U
 			// Log results if there was a change; we restate all of
 			// the results, with ! marking those which changed.
 			if changed > 0 {
-				slog.Infof("changed %d results; %v", changed, resultStrs)
-				slog.Infof("trying to push to config tree")
+				slog.Infof("changed %d in-memory results: %v", changed, resultStrs)
+				slog.Debugf("trying to push to config tree")
 				err := h.PushToConfigTree(ctx, slog, siteUUID, client)
-				if err != nil {
+				if err == errNothingToPush {
+					slog.Debugf("nothing to push to tree")
+				} else if err != nil {
 					slog.Errorf("error pushing to config tree: %v", err)
 				} else {
-					slog.Infof("pushed to config tree")
+					slog.Debugf("pushed to config tree")
+					updatesPushed++
 				}
 			}
 		}
 	}
+	slog.Infow("finished incoming inventory", "updatesPushed", updatesPushed)
 }
