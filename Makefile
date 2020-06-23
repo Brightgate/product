@@ -394,7 +394,8 @@ APPTOOLS = \
 	ap-speedtest \
 	ap-userctl \
 	ap-vpntool \
-	ap-watchctl
+	ap-watchctl \
+	ap-wg
 
 MISCCOMMANDS = \
 	ap-publiclog \

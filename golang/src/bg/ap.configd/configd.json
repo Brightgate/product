@@ -337,6 +337,14 @@
     {"Path": "@/network/vpn/server/%int%/escrowed_key", "Type": "string", "Level": "internal"},
     {"Path": "@/network/vpn/server/%int%/port", "Type": "int", "Level": "admin"},
     {"Path": "@/network/vpn/server/%int%/last_mac", "Type": "macaddr", "Level": "internal"},
+    {"Path": "@/network/vpn/client/%int%/wg/client_address", "Type": "ipaddr", "Level": "admin"},
+    {"Path": "@/network/vpn/client/%int%/wg/client_private", "Type": "string", "Level": "admin"},
+    {"Path": "@/network/vpn/client/%int%/wg/server_address", "Type": "string", "Level": "admin"},
+    {"Path": "@/network/vpn/client/%int%/wg/server_port", "Type": "int", "Level": "admin"},
+    {"Path": "@/network/vpn/client/%int%/wg/server_public", "Type": "string", "Level": "admin"},
+    {"Path": "@/network/vpn/client/%int%/wg/dns_domain", "Type": "string", "Level": "admin"},
+    {"Path": "@/network/vpn/client/%int%/wg/dns_server", "Type": "ipaddr", "Level": "admin"},
+    {"Path": "@/network/vpn/client/%int%/wg/subnets", "Type": "list:cidr", "Level": "admin"},
     {"Path": "@/network/regdomain", "Type": "string", "Level": "admin"},
     {"Path": "@/network/radius_auth_secret", "Type": "string", "Level": "internal"},
     {"Path": "@/log/%int%/protocol", "Type": "string", "Level": "admin"},
@@ -469,7 +477,9 @@
     {"Path": "@/policy/%policy_src%/scans/vuln/period", "Type": "duration", "Level": "admin"},
     {"Path": "@/policy/%policy_sr%/scans/subnet/period", "Type": "duration", "Level": "admin"},
     {"Path": "@/policy/site/vpn/server/%int%/enabled", "Type": "bool", "Level": "admin"},
+    {"Path": "@/policy/site/vpn/client/%int%/enabled", "Type": "bool", "Level": "admin"},
     {"Path": "@/policy/%policy_sc%/vpn/server/%int%/rings", "Type": "list:ring", "Level": "admin"},
-    {"Path": "@/policy/%policy_sc%/vpn/server/%int%/subnets", "Type": "list:cidr", "Level": "admin"}
+    {"Path": "@/policy/%policy_sc%/vpn/server/%int%/subnets", "Type": "list:cidr", "Level": "admin"},
+    {"Path": "@/policy/ring/%ring%/vpn/client/%int%/allowed", "Type": "bool", "Level": "admin"}
   ]
 }
