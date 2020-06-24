@@ -447,7 +447,7 @@ func dataFilesystemAcceptable() bool {
 		// Attempt a mount.
 		err := syscall.Mount(getDataDevice(), "/data", "f2fs", syscall.MS_NOSUID, "")
 		if err != nil {
-			log.Printf("couldn't mount /data: %v\n", err)
+			log.Printf("couldn't mount %s at /data: %v\n", getDataDevice(), err)
 			return false
 		}
 	}
@@ -464,6 +464,8 @@ func createDataFilesystem() {
 	if err != nil {
 		log.Printf("mkfs.f2fs failure: %s\n", err)
 	}
+
+	createAbsentDir("/data")
 
 	if dataFilesystemAcceptable() {
 		log.Printf("mounted newly created F2FS filesystem at /data\n")
@@ -991,6 +993,15 @@ func f2fsOverlay(side int, clearOverlay bool) {
 	varLock := fmt.Sprintf("%s/var/lock", xRootDir)
 	mustMkdirAll(varLock, 0755)
 
+	// /data mount must exist and be mounted.
+	if !dataFilesystemAcceptable() {
+		if dryRun {
+			log.Println("dry-run: skipping /data creation")
+		} else {
+			createDataFilesystem()
+		}
+	}
+
 	err = syscall.Mount("/data", xDataDir, "none", syscall.MS_BIND, "")
 	if err != nil {
 		log.Fatalf("bind overlay data mount failed %v", err)
@@ -1182,11 +1193,14 @@ func mountOther(cmd *cobra.Command, args []string) error {
 
 func umountOther(cmd *cobra.Command, args []string) error {
 	var loopback string
+	var err error
 
 	// Unmount /data bind mount.
-	err := syscall.Unmount(xDataDir, 0)
-	if err != nil {
-		log.Fatalf("overlay data unmount failed %v", err)
+	if isFilesystemMounted(xDataDir) {
+		err = syscall.Unmount(xDataDir, 0)
+		if err != nil {
+			log.Printf("overlay data unmount failed %v", err)
+		}
 	}
 
 	// Unmount root (as overlay of rom and writeable)
@@ -1239,6 +1253,27 @@ func umountOther(cmd *cobra.Command, args []string) error {
 	}
 
 	syscall.Sync()
+
+	return nil
+}
+
+func harden(cmd *cobra.Command, args []string) error {
+	// Require login for console access.
+	ttylogin := exec.Command("/sbin/uci", "set", "system.@system[-1].ttylogin=1")
+	_, err := ttylogin.Output()
+	if err != nil {
+		log.Fatalf("uci set failed: %v", err)
+	}
+
+	commit := exec.Command("/sbin/uci", "commit")
+	_, err = commit.Output()
+	if err != nil {
+		log.Fatalf("uci commit failed: %v", err)
+	}
+
+	syscall.Sync()
+
+	log.Printf("uci set to require console login")
 
 	return nil
 }
@@ -1392,6 +1427,14 @@ func main() {
 	installCmd.Flags().StringVarP(&installSide, "side", "s", "other",
 		"target install 'side' ['a', 'b', 'same', 'other']")
 	rootCmd.AddCommand(installCmd)
+
+	hardenCmd := &cobra.Command{
+		Use:   "harden",
+		Short: "Set hardened appliance configuration",
+		Args:  cobra.NoArgs,
+		RunE:  harden,
+	}
+	rootCmd.AddCommand(hardenCmd)
 
 	flipCmd := &cobra.Command{
 		Use:   "flip",
