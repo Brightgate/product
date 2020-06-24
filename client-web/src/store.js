@@ -1299,11 +1299,10 @@ const actions = {
 
   async fetchPostLogin(context) {
     debug('fetchPostLogin');
+    await context.dispatch('fetchOrgs');
     await context.dispatch('fetchAccountRoles', context.state.myAccountUUID);
-    context.dispatch('fetchOrgs').then(() => {
-      context.dispatch('fetchOrgAccounts').catch(() => {});
-      context.dispatch('fetchAccountSelfProvision', context.state.myAccountUUID).catch(() => {});
-    }).catch(() => {});
+    context.dispatch('fetchOrgAccounts').catch(() => {});
+    context.dispatch('fetchAccountSelfProvision', context.state.myAccountUUID).catch(() => {});
     context.dispatch('fetchSites');
   },
 

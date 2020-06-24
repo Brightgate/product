@@ -578,9 +578,10 @@ export default {
       debug('clientFriendlyDialog');
       let newFriendly;
       try {
+        const title = this.$t('message.dev_details.rename_title');
+        const text = this.$t('message.dev_details.rename_entry');
         newFriendly = await new Promise((resolve, reject) => {
-          this.$f7.dialog.prompt(this.$t('message.dev_details.name_entry'),
-            resolve, reject, this.dev.friendlyName);
+          this.$f7.dialog.prompt(text, title, resolve, reject, this.dev.friendlyName);
         });
       } catch (err) {
         if (typeof err === 'string') {
@@ -601,7 +602,7 @@ export default {
       };
       await uiUtils.submitConfigChange(this, 'setDeviceFriendly', 'setDeviceFriendly',
         storeArg, (err) => {
-          return this.$t('message.dev_details.name_entry_err',
+          return this.$t('message.dev_details.rename_entry_err',
             {dev: this.dev.hwAddr, newFriendly: newFriendly, err: err});
         }
       );

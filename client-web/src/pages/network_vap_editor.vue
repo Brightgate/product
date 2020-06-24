@@ -135,12 +135,10 @@ export default {
       const currentSSID = this.vap.ssid;
       // Step 2: Confirmation dialog
       try {
+        const title = this.$t('message.network_vap_editor.warning_title');
+        const text = this.$t('message.network_vap_editor.warning', {ssid: currentSSID});
         await new Promise((resolve, reject) => {
-          this.$f7.dialog.confirm(
-            this.$t('message.network_vap_editor.warning',
-              {ssid: currentSSID}),
-            this.$t('message.network_vap_editor.warning_title'),
-            resolve, reject);
+          this.$f7.dialog.confirm(text, title, resolve, reject);
         });
       } catch (err) {
         return;

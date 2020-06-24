@@ -127,11 +127,10 @@ export default {
           Number(this.networkConfig.wg.port) !== Number(this.wg.port)) {
           // Step 2: Confirmation dialog
           try {
+            const title = this.$t('message.network_wg_editor.warning_title');
+            const text = this.$t('message.network_wg_editor.warning');
             await new Promise((resolve, reject) => {
-              this.$f7.dialog.confirm(
-                this.$t('message.network_wg_editor.warning'),
-                this.$t('message.network_wg_editor.warning_title'),
-                resolve, reject);
+              this.$f7.dialog.confirm(text, title, resolve, reject);
             });
           } catch (err) {
             debug('dialog box err', err);

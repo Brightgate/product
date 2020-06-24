@@ -184,9 +184,10 @@ export default {
       debug('nodeNameDialog');
       let newName;
       try {
+        const title = this.$t('message.node_details.rename_title');
+        const text = this.$t('message.node_details.rename_text');
         newName = await new Promise((resolve, reject) => {
-          this.$f7.dialog.prompt('Enter new name',
-            resolve, reject, this.node.name);
+          this.$f7.dialog.prompt(text, title, resolve, reject, this.node.name);
         });
       } catch (err) {
         if (typeof err === 'string') {

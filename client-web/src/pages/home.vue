@@ -178,7 +178,7 @@ export default {
         return false;
       }
       /* For now, only show for the user's home Org */
-      if (this.currentOrg.id !== this.myAccount.organizationUUID) {
+      if (!this.currentOrg || (this.currentOrg.id !== this.myAccount.organizationUUID)) {
         return false;
       }
       const sp = this.myAccount.selfProvision;
