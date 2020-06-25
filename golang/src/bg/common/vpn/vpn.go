@@ -128,7 +128,7 @@ func (v *Vpn) getServerConfig(conf *keyConfig) error {
 		if portstr, perr = props.GetChildString("port"); perr != nil {
 			err = errIncomplete
 		} else if port, perr = strconv.Atoi(portstr); perr != nil {
-			err = fmt.Errorf("bad port number %s: %v", port, perr)
+			err = fmt.Errorf("bad port number %s: %v", portstr, perr)
 		}
 
 		conf.ServerPublicKey = key
