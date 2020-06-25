@@ -926,7 +926,8 @@ func getVAPConfig(name string, d *physDevice, idx int) *vapConfig {
 		// bssids by incrementing the final octet of the nic's mac
 		// address.
 		p := initPseudoNic(d, idx)
-		physDevices[getNicID(p)] = p
+		id := plat.NicID(p.name, p.hwaddr)
+		wirelessNics[id] = p
 		bssid = "bss=" + p.name
 		logical = p
 	}
@@ -1102,17 +1103,22 @@ func (h *hostapdHdl) generateHostAPDConf() {
 		devices = append(devices, d)
 	}
 
-	updateNicProperties()
-
 	h.vaps = allVaps
 	h.devices = devices
 	h.unenrolled = unenrolled
 	h.confFiles = files
 }
 
-func (h *hostapdHdl) cleanup() {
-	for _, c := range h.conns {
-		os.Remove(c.localName)
+func (h *hostapdHdl) generateConfigFiles() {
+	h.generateHostAPDConf()
+
+	if aputil.IsGatewayMode() {
+		fn, err := generateRadiusConfig()
+		if err == nil {
+			h.confFiles = append(h.confFiles, fn)
+		} else {
+			slog.Warnf("failed to generate radius config: %v", err)
+		}
 	}
 }
 
@@ -1147,13 +1153,15 @@ func (h *hostapdHdl) newConn(vap *vapConfig) *hostapdConn {
 }
 
 func (h *hostapdHdl) start() {
-	h.generateHostAPDConf()
-	defer h.cleanup()
-
 	slog.Debugf("starting hostapd")
+
+	h.generateConfigFiles()
+
 	// There is a control interface for each BSSID
 	for _, v := range h.vaps {
-		h.conns = append(h.conns, h.newConn(v))
+		conn := h.newConn(v)
+		defer os.Remove(conn.localName)
+		h.conns = append(h.conns, conn)
 	}
 
 	stopNetworkRebuild := make(chan bool, 1)
@@ -1232,7 +1240,7 @@ func (h *hostapdHdl) reload() {
 	if h != nil {
 		slog.Infof("Reloading hostapd")
 		virtualAPs = config.GetVirtualAPs()
-		h.generateHostAPDConf()
+		h.generateConfigFiles()
 		h.process.Signal(plat.ReloadSignal)
 	}
 }
@@ -1241,12 +1249,13 @@ func (h *hostapdHdl) reset() {
 	if h != nil {
 		slog.Infof("Resetting hostapd")
 		virtualAPs = config.GetVirtualAPs()
+		h.generateConfigFiles()
 		h.process.Signal(plat.ResetSignal)
 	}
 }
 
 func (h *hostapdHdl) halt() {
-	slog.Infof("Resetting hostapd")
+	slog.Infof("Halting hostapd")
 	p := h.process
 
 	p.Signal(plat.ResetSignal)
@@ -1374,7 +1383,7 @@ runLoop:
 			slog.Warnf("hostapd is dying too quickly: %v", err)
 			wifiEvaluate = false
 		}
-		resetInterfaces()
+		wifiCleanup()
 	}
 
 	if hostapd != nil {

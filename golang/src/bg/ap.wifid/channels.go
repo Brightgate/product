@@ -90,6 +90,17 @@ var (
 	apLock sync.Mutex
 )
 
+func wifiInfoEqual(a, b *wifiInfo) bool {
+	return a.configChannel == b.configChannel &&
+		a.activeChannel == b.activeChannel &&
+		a.configWidth == b.configWidth &&
+		a.activeWidth == b.activeWidth &&
+		a.configBand == b.configBand &&
+		a.activeBand == b.activeBand &&
+		a.activeMode == b.activeMode &&
+		a.state == b.state
+}
+
 // trigger a scan for nearby APs on the given device, and use the results to
 // update the tracking map.
 func updateAPScan(dev string) {
@@ -97,7 +108,7 @@ func updateAPScan(dev string) {
 	now := time.Now()
 
 	ourRadios := make(map[string]bool)
-	for _, d := range physDevices {
+	for _, d := range wirelessNics {
 		ourRadios[strings.ToLower(d.hwaddr)] = true
 	}
 	apLock.Lock()
@@ -206,6 +217,8 @@ func copyChannelList(name string) []int {
 	return append([]int(nil), wificaps.ChannelLists[name]...)
 }
 
+// Monitor the other APs we can see, so we can try to avoid using the same
+// channel(s) they are.
 func apMonitorLoop(wg *sync.WaitGroup, doneChan chan bool) {
 	defer func() {
 		slog.Infof("AP monitor loop exiting")
@@ -223,8 +236,8 @@ func apMonitorLoop(wg *sync.WaitGroup, doneChan chan bool) {
 		case <-t.C:
 		}
 
-		for _, d := range physDevices {
-			if d.wifi != nil && !d.pseudo {
+		for _, d := range wirelessNics {
+			if !d.pseudo {
 				updateAPScan(d.name)
 			}
 		}
@@ -320,6 +333,8 @@ func selectWifiChannel(d *physDevice, band string) error {
 		return fmt.Errorf("doesn't support %s", band)
 	}
 
+	oldInfo := *w
+
 	w.activeChannel = 0
 	if w.configChannel != 0 {
 		err = setChannel(w, band, w.configChannel, w.configWidth)
@@ -327,12 +342,16 @@ func selectWifiChannel(d *physDevice, band string) error {
 			w.state = wifi.DevBadChan
 			err = fmt.Errorf("setChannel failed: %v", err)
 		}
-		return err
+		if !wifiInfoEqual(&oldInfo, w) {
+			wifiDeviceToConfig(d)
+			return err
+		}
 	}
 
 	if band == wifi.LoBand {
-		// We first try to choose one of the non-overlapping channels.
-		// If that fails, we'll take any channel in this range.
+		// We first try to choose one of the non-overlapping
+		// channels.  If that fails, we'll take any channel in
+		// this range.
 		findChannel(w, band, "loBandNoOverlap", 20)
 		if w.activeChannel == 0 {
 			findChannel(w, band, "loBand20MHz", 20)
@@ -354,6 +373,10 @@ func selectWifiChannel(d *physDevice, band string) error {
 		w.state = wifi.DevNoChan
 		err = fmt.Errorf("no channels available")
 	}
+
+	if !wifiInfoEqual(&oldInfo, w) {
+		wifiDeviceToConfig(d)
+	}
 	return err
 }
 
@@ -361,7 +384,7 @@ func selectWifiChannel(d *physDevice, band string) error {
 func score(d *physDevice, band string) int {
 	var score int
 
-	if d == nil || d.pseudo || d.wifi == nil {
+	if d == nil || d.pseudo {
 		return 0
 	}
 
@@ -403,9 +426,6 @@ func score(d *physDevice, band string) int {
 // legal and supported.
 func setState(d *physDevice) {
 	w := d.wifi
-	if w == nil {
-		return
-	}
 
 	if d.disabled {
 		w.state = wifi.DevDisabled
@@ -457,7 +477,7 @@ func selectWifiDevices(oldList []*physDevice) []*physDevice {
 	}
 	wifiEvaluate = false
 
-	for _, d := range physDevices {
+	for _, d := range wirelessNics {
 		if !d.pseudo {
 			setState(d)
 		}
@@ -479,8 +499,8 @@ func selectWifiDevices(oldList []*physDevice) []*physDevice {
 	// Iterate over all possible combinations to find the pair of devices
 	// that supports the most desirable combination of modes.
 	oldScore := best
-	for _, a := range physDevices {
-		for _, b := range physDevices {
+	for _, a := range wirelessNics {
+		for _, b := range wirelessNics {
 			if a == b {
 				continue
 			}
@@ -503,12 +523,10 @@ func selectWifiDevices(oldList []*physDevice) []*physDevice {
 		return oldList
 	}
 
-	for _, d := range physDevices {
-		if d.wifi != nil {
-			d.wifi.activeChannel = 0
-			d.wifi.activeWidth = 0
-			d.wifi.activeBand = ""
-		}
+	for _, d := range wirelessNics {
+		d.wifi.activeChannel = 0
+		d.wifi.activeWidth = 0
+		d.wifi.activeBand = ""
 	}
 
 	newList := make([]*physDevice, 0)

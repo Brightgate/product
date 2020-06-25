@@ -59,7 +59,7 @@ func rebuildInternalNet() {
 	slog.Debugf("rebuilding internal network")
 	// For each internal network device, create a virtual device for each
 	// LAN ring and attach it to the bridge for that ring
-	for _, dev := range physDevices {
+	for _, dev := range wiredNics {
 		if dev.disabled {
 			continue
 		}
@@ -84,47 +84,12 @@ func rebuildInternalNet() {
 
 func rebuildLan() {
 	// Connect all the wired LAN NICs to ring-appropriate bridges.
-	for _, dev := range physDevices {
-		if !dev.disabled && dev.wifi == nil &&
-			!plat.NicIsVirtual(dev.name) &&
+	for _, dev := range wiredNics {
+		if !dev.disabled && !plat.NicIsVirtual(dev.name) &&
 			dev.ring != base_def.RING_INTERNAL &&
 			dev.ring != base_def.RING_WAN {
 			addDevToRingBridge(dev, dev.ring)
 		}
-	}
-}
-
-// If hostapd authorizes a client that isn't assigned to a VLAN, it gets
-// connected to the physical wifi device rather than a virtual interface.
-// Connect those physical devices to the UNENROLLED bridge once hostapd is
-// running.  We don't have a good way to determine when hostapd has gotten far
-// enough for this operation to succeed, so we just keep trying.
-func rebuildUnenrolled(devs []*physDevice, interrupt chan bool) {
-	t := time.NewTicker(time.Second)
-	defer t.Stop()
-	for len(devs) > 0 {
-		select {
-		case <-interrupt:
-			return
-		case <-t.C:
-		}
-
-		bad := make([]*physDevice, 0)
-		for _, dev := range devs {
-			if dev.disabled {
-				continue
-			}
-
-			_, err := net.InterfaceByName(dev.name)
-			if err == nil {
-				err = addDevToRingBridge(dev,
-					base_def.RING_UNENROLLED)
-			}
-			if err != nil {
-				bad = append(bad, dev)
-			}
-		}
-		devs = bad
 	}
 }
 
@@ -249,8 +214,8 @@ func createBridges() {
 }
 
 // Tear down all the bridges and interfaces we created and then build it all
-// back up again.  We do this each time hostapd restarts, so we can be sure that
-// the system is in a clean state where hostapd can create its virtual
+// back up again.  We do this each time networkd restarts, so we can be sure
+// that the system is in a clean state where hostapd can create its virtual
 // interfaces and add them to our bridges.
 func resetInterfaces() {
 	if err := sanityCheckSubnets(); err != nil {
@@ -260,16 +225,12 @@ func resetInterfaces() {
 		return
 	}
 
-	hotplugBlock()
-
 	start := time.Now()
 	deleteBridges()
 	createBridges()
 	rebuildLan()
 	rebuildInternalNet()
 	slog.Debugf("network rebuild took %v", time.Since(start))
-
-	hotplugUnblock()
 
 	resource := &base_msg.EventNetUpdate{
 		Timestamp: aputil.NowToProtobuf(),

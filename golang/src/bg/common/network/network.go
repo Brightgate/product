@@ -17,12 +17,16 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io/ioutil"
+	"math/bits"
 	"net"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
+
+	"bg/base_def"
 )
 
 // Well known addresses
@@ -300,4 +304,37 @@ func ChoosePort(a ...int) (int, error) {
 	}
 
 	return 0, fmt.Errorf(errStr)
+}
+
+// MacSetLocal sets the 'locally administered' bit in the first octet of the mac
+// address
+func MacSetLocal(mac string) string {
+	octets := strings.Split(mac, ":")
+	b, _ := strconv.ParseUint(octets[0], 16, 32)
+	b |= 0x02
+	octets[0] = fmt.Sprintf("%02x", b)
+	mac = strings.Join(octets, ":")
+
+	return mac
+}
+
+// MacUpdateLastOctet the final bits of a mac address
+func MacUpdateLastOctet(mac string, val uint64) (string, error) {
+	var err error
+
+	maskSize := uint64(bits.Len(uint(base_def.MAX_SSIDS - 1)))
+	octets := strings.Split(mac, ":")
+	if len(octets) == 6 {
+		b, _ := strconv.ParseUint(octets[5], 16, 32)
+		mask := ^((uint64(1) << maskSize) - 1)
+		new := (b & mask) | val
+		if new != b {
+			octets[5] = fmt.Sprintf("%02x", new)
+			mac = MacSetLocal(strings.Join(octets, ":"))
+		}
+	} else {
+		err = fmt.Errorf("invalid mac address: %s", mac)
+	}
+
+	return mac, err
 }

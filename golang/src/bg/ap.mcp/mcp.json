@@ -71,12 +71,12 @@
         "MemWarn": 30,
         "MemKill": 35
     },
-    "userauthd": {
-        "Name": "userauthd",
-        "Binary": "ap.userauthd",
-        "DependsOn": "configd",
+    "wifid": {
+        "Name": "wifid",
+        "Binary": "ap.wifid",
+        "DependsOn": "networkd",
         "Privileged": true,
-        "Modes": [ "core", "gateway" ],
+        "Modes": [ "core", "gateway", "satellite" ],
         "MemWarn": 20,
         "MemKill": 25
     },

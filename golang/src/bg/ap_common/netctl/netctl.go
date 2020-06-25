@@ -68,6 +68,18 @@ bridgeAddIface(int fd, char *bridge, int iface) {
 }
 
 int
+bridgeDelIface(int fd, char *bridge, int iface) {
+	struct ifreq args;
+
+	strncpy(args.ifr_name, bridge, IFNAMSIZ);
+	args.ifr_ifindex = iface;
+	if (ioctl(fd, SIOCBRDELIF, &args) < 0) {
+		return errno;
+	}
+	return 0;
+}
+
+int
 vlanAdd(int fd, char *iface, int vlan) {
 	struct vlan_ioctl_args args;
 	int err = 0;
@@ -326,6 +338,24 @@ func BridgeAddIface(bridge, iface string) error {
 
 	if err := C.bridgeAddIface(ioctlFD, cstr, C.int(idx)); err != 0 {
 		return fmt.Errorf("bridgeAddIface(%s, %s): %s", bridge, iface,
+			unixErrStr(err))
+	}
+
+	return nil
+}
+
+// BridgeDelIface -> brctl delif <bridge> <iface>
+func BridgeDelIface(bridge, iface string) error {
+	idx, err := getIfaceIdx(iface)
+	if err != nil {
+		return fmt.Errorf("looking for %s: %v", iface, err)
+	}
+
+	cstr := C.CString(bridge)
+	defer C.free(unsafe.Pointer(cstr))
+
+	if err := C.bridgeDelIface(ioctlFD, cstr, C.int(idx)); err != 0 {
+		return fmt.Errorf("bridgeDelIface(%s, %s): %s", bridge, iface,
 			unixErrStr(err))
 	}
 

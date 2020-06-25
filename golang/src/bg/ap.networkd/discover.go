@@ -20,8 +20,15 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/wificaps"
 	"bg/common/cfgapi"
+	"bg/common/network"
 	"bg/common/wifi"
 )
+
+func configUpdateRing(nic *physDevice) {
+	id := plat.NicID(nic.name, nic.hwaddr)
+	base := "@/nodes/" + nodeID + "/nics/" + id
+	config.CreateProp(base+"/ring", nic.ring, nil)
+}
 
 func newNicOps(id string, nic *physDevice,
 	cur *cfgapi.PropertyNode) []cfgapi.PropertyOp {
@@ -35,9 +42,9 @@ func newNicOps(id string, nic *physDevice,
 		if nic.ring != "" {
 			newVals["ring"] = nic.ring
 		}
-		if w := nic.wifi; w != nil {
+		if nic.wireless {
 			newVals["kind"] = "wireless"
-			if cap := w.cap; cap != nil {
+			if cap := nic.cap; cap != nil {
 				b := aputil.SortStringKeys(cap.WifiBands)
 				m := aputil.SortStringKeys(cap.WifiModes)
 				x := aputil.SortIntKeys(cap.Channels)
@@ -55,44 +62,9 @@ func newNicOps(id string, nic *physDevice,
 					newVals["channels"] = list(c)
 				}
 			}
-			if x := w.activeMode; x != "" {
-				newVals["active_mode"] = x
-			}
-			if x := w.configBand; x != "" {
-				newVals["cfg_band"] = x
-			}
-			if x := w.activeBand; x != "" {
-				newVals["active_band"] = x
-			}
-			if x := w.configChannel; x != 0 {
-				newVals["cfg_channel"] = strconv.Itoa(x)
-			}
-			if x := w.activeChannel; x != 0 {
-				newVals["active_channel"] = strconv.Itoa(x)
-			}
-			if x := w.configWidth; x != 0 {
-				newVals["cfg_width"] = strconv.Itoa(x)
-			}
-			if x := w.activeWidth; x != 0 {
-				newVals["active_width"] = strconv.Itoa(x)
-			}
-			if w.state == "" {
-				newVals["state"] = wifi.DevOK
-			} else {
-				newVals["state"] = w.state
-			}
+
 		} else {
 			newVals["kind"] = "wired"
-			if nic.disabled {
-				newVals["state"] = wifi.DevDisabled
-			} else {
-				newVals["state"] = wifi.DevOK
-			}
-		}
-		if nic.pseudo {
-			newVals["pseudo"] = "true"
-		} else {
-			newVals["pseudo"] = "false"
 		}
 
 		// Check to see whether anything has changed before we send any
@@ -110,6 +82,8 @@ func newNicOps(id string, nic *physDevice,
 				// everything matches - send back an empty slice
 				return ops
 			}
+		} else {
+			newVals["state"] = wifi.DevOK
 		}
 	}
 
@@ -135,11 +109,11 @@ func newNicOps(id string, nic *physDevice,
 }
 
 // Update the config tree with the current NIC inventory
-func updateNicProperties() {
+func updateConfigTree(all map[string]*physDevice) {
 	needName := !aputil.IsSatelliteMode()
 
 	inventory := make(map[string]*physDevice)
-	for id, d := range physDevices {
+	for id, d := range all {
 		inventory[id] = d
 	}
 
@@ -209,8 +183,9 @@ func getWireless(i net.Interface) *physDevice {
 	var err error
 
 	d := physDevice{
-		name:   i.Name,
-		hwaddr: i.HardwareAddr.String(),
+		name:     i.Name,
+		hwaddr:   i.HardwareAddr.String(),
+		wireless: true,
 	}
 
 	if strings.HasPrefix(d.hwaddr, "02:00") {
@@ -219,8 +194,7 @@ func getWireless(i net.Interface) *physDevice {
 		return nil
 	}
 
-	d.wifi = new(wifiInfo)
-	if d.wifi.cap, err = wificaps.GetCapabilities(d.name); err != nil {
+	if d.cap, err = wificaps.GetCapabilities(d.name); err != nil {
 		slog.Warnf("Couldn't determine wifi capabilities of %s: %v",
 			d.name, err)
 		return nil
@@ -229,7 +203,7 @@ func getWireless(i net.Interface) *physDevice {
 	slog.Infof("device: %s", d.name)
 	// Emit one line at a time to the log, or only the first line will get
 	// the log prefix.
-	capstr := fmt.Sprintf("%s", d.wifi.cap)
+	capstr := fmt.Sprintf("%s", d.cap)
 	for _, line := range strings.Split(strings.TrimSuffix(capstr, "\n"), "\n") {
 		slog.Debugf(line)
 	}
@@ -240,8 +214,10 @@ func getWireless(i net.Interface) *physDevice {
 	// upper 47 bits, so we need to ensure that the base address has the
 	// lowest bits set to 0.
 	oldMac := d.hwaddr
-	d.hwaddr = macUpdateLastOctet(d.hwaddr, 0)
-	if d.hwaddr != oldMac {
+	d.hwaddr, err = network.MacUpdateLastOctet(d.hwaddr, 0)
+	if err != nil {
+		slog.Warnf("Updating %s from %v: %v", d.name, oldMac, err)
+	} else if d.hwaddr != oldMac {
 		slog.Debugf("Changed mac from %s to %s", oldMac, d.hwaddr)
 	}
 
@@ -249,13 +225,9 @@ func getWireless(i net.Interface) *physDevice {
 	// have the locally administered bit set.  Because we need the upper
 	// bits of all macs to match, we have to set the bit for the base mac
 	// even if we haven't modified it.
-	d.hwaddr = macSetLocal(d.hwaddr)
+	d.hwaddr = network.MacSetLocal(d.hwaddr)
 
 	return &d
-}
-
-func getNicID(d *physDevice) string {
-	return plat.NicID(d.name, d.hwaddr)
 }
 
 // Find the other nodes on which a device with this mac is present.  Returns
@@ -287,8 +259,8 @@ func getRemoteWifi(mac string, nodes []cfgapi.NodeInfo) (string, string) {
 //
 // Inventory the physical network devices in the system
 //
-func getDevices() {
-	all, err := net.Interfaces()
+func discoverDevices() {
+	ifaces, err := net.Interfaces()
 	if err != nil {
 		slog.Fatalf("Unable to inventory network devices: %v", err)
 	}
@@ -299,7 +271,10 @@ func getDevices() {
 	}
 
 	macs := make(map[string]*physDevice)
-	for _, i := range all {
+	allNics := make(map[string]*physDevice)
+	wiredNics = make(map[string]*physDevice)
+
+	for _, i := range ifaces {
 		var d *physDevice
 
 		if i.HardwareAddr.String() == "00:00:00:00:00:00" {
@@ -319,7 +294,7 @@ func getDevices() {
 		// If this is a wireless device and we already have another
 		// wireless nic with the same mac address, we want to leave this
 		// one offline.
-		if d != nil && d.wifi != nil {
+		if d != nil && d.wireless {
 			var conflicts, faults string
 
 			name := d.name
@@ -353,24 +328,23 @@ func getDevices() {
 		}
 
 		if d != nil {
-			physDevices[getNicID(d)] = d
+			id := plat.NicID(d.name, d.hwaddr)
+			allNics[id] = d
+			if !d.wireless {
+				wiredNics[id] = d
+			}
 			macs[d.hwaddr] = d
 		}
 	}
 
 	nicsProp := "@/nodes/" + nodeID + "/nics"
 	for nicID, nic := range config.GetChildren(nicsProp) {
-		if d := physDevices[nicID]; d != nil {
+		if d := wiredNics[nicID]; d != nil {
 			d.ring, _ = nic.GetChildString("ring")
-			if d.wifi != nil {
-				d.wifi.configBand, _ = nic.GetChildString("cfg_band")
-				d.wifi.configChannel, _ = nic.GetChildInt("cfg_channel")
-				d.wifi.configWidth, _ = nic.GetChildInt("cfg_width")
-			}
 			x, _ := nic.GetChildString("state")
-			if strings.EqualFold(x, "disabled") {
-				d.disabled = true
-			}
+			d.disabled = strings.EqualFold(x, "disabled")
 		}
 	}
+
+	updateConfigTree(allNics)
 }

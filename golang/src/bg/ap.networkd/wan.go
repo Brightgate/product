@@ -50,8 +50,6 @@ type wanInfo struct {
 	staticDNSServer string
 
 	updateNeeded chan bool
-	done         chan bool
-	wg           sync.WaitGroup
 }
 
 var wan *wanInfo
@@ -350,7 +348,9 @@ func (w *wanInfo) dhcpRefresh() {
 	}
 }
 
-func (w *wanInfo) monitorLoop() {
+func (w *wanInfo) monitorLoop(wg *sync.WaitGroup, doneChan chan bool) {
+	defer wg.Done()
+
 	refresh := time.Now()
 	t := time.NewTicker(time.Second)
 
@@ -368,27 +368,12 @@ func (w *wanInfo) monitorLoop() {
 		}
 
 		select {
-		case done = <-wan.done:
+		case done = <-doneChan:
 		case <-w.updateNeeded:
 			w.updateConfig()
 		case <-t.C:
 		}
 	}
-
-	wan.wg.Done()
-}
-
-// Monitor the state of our wan connection.
-// Every second, check to see if the IP address has changed.
-// Every minute (or when our IP changes) see if our DHCP state has changed.
-func (w *wanInfo) monitor() {
-	wan.wg.Add(1)
-	go w.monitorLoop()
-}
-
-func (w *wanInfo) stop() {
-	wan.done <- true
-	wan.wg.Wait()
 }
 
 // Determine the external-facing NIC for this node
@@ -400,8 +385,8 @@ func findWanDevice() *physDevice {
 		ring = base_def.RING_INTERNAL
 	}
 
-	for _, dev := range physDevices {
-		if dev.wifi != nil || !plat.NicIsWan(dev.name, dev.hwaddr) {
+	for _, dev := range wiredNics {
+		if !plat.NicIsWan(dev.name, dev.hwaddr) {
 			continue
 		}
 
@@ -425,6 +410,7 @@ func findWanDevice() *physDevice {
 		selected.ring = ring
 		slog.Infof("No WAN network device configured.  Using %s",
 			selected.hwaddr)
+		configUpdateRing(selected)
 	}
 
 	return selected
@@ -442,7 +428,6 @@ func wanInit(cfgWan *cfgapi.WanInfo) {
 
 	wan = &wanInfo{
 		updateNeeded:  make(chan bool, 2),
-		done:          make(chan bool),
 		staticCapable: plat.NetworkManaged && !aputil.IsSatelliteMode(),
 	}
 

@@ -1,0 +1,6 @@
+# all users must use one of the following methods:
+* PEAP,TTLS
+
+{{range $u, $s := .Users}}
+"{{$u}}" MSCHAPV2 hash:{{$s}} [2]
+{{end}}

@@ -165,6 +165,7 @@ assignments = [
     [Statement.SIMPLE_STR, "GATEWAY_CLIENT_DOMAIN", "brightgate.net"],
     [Statement.SIMPLE_NUM, "BEARER_JWT_EXPIRY_SECS", 60 * 60],
     [Statement.SIMPLE_NUM, "MAX_SATELLITES", 8],
+    [Statement.SIMPLE_NUM, "MAX_SSIDS", 4],
 
     [Statement.COMMENT, "Appliance operating modes"],
     [Statement.SIMPLE_STR, "MODE_GATEWAY", "gateway"],
@@ -205,7 +206,7 @@ assignments = [
     [Statement.SIMPLE_PORT, "HTTPD_DIAG_PORT", 3201],
     [Statement.SIMPLE_PORT, "LOGD_DIAG_PORT", 3202],
     [Statement.SIMPLE_PORT, "NETWORKD_DIAG_PORT", 3205],
-    [Statement.SIMPLE_PORT, "USERAUTHD_DIAG_PORT", 3206],
+    [Statement.SIMPLE_PORT, "WIFID_DIAG_PORT", 3206],
     [Statement.SIMPLE_PORT, "CONFIGD_DIAG_PORT", 3207],
     [Statement.SIMPLE_PORT, "WATCHD_DIAG_PORT", 3208],
     [Statement.SIMPLE_PORT, "RPCD_DIAG_PORT", 3210],

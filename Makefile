@@ -351,7 +351,7 @@ ROOTETCSYSCTLD=$(ROOTETC)/sysctl.d
 HTTPD_CLIENTWEB_DIR=$(APPVAR)/www/client-web
 NETWORKD_TEMPLATE_DIR=$(APPETC)/templates/ap.networkd
 RPCD_TEMPLATE_DIR=$(APPETC)/templates/ap.rpcd
-USERAUTHD_TEMPLATE_DIR=$(APPETC)/templates/ap.userauthd
+WIFID_TEMPLATE_DIR=$(APPETC)/templates/ap.wifid
 
 COMMON_GOPKGS = \
 	bg/common/...
@@ -379,8 +379,8 @@ APPDAEMON_GOPKGS = \
 	bg/ap.rpcd \
 	bg/ap.serviced \
 	bg/ap.tron \
-	bg/ap.userauthd \
-	bg/ap.watchd
+	bg/ap.watchd \
+	bg/ap.wifid
 
 APP_GOPKGS = $(APPCOMMON_GOPKGS) $(APPCOMMAND_GOPKGS) $(APPDAEMON_GOPKGS)
 
@@ -415,7 +415,7 @@ GO_AP_TESTABLES = \
 	bg/ap.logd \
 	bg/ap.networkd \
 	bg/ap.rpcd \
-	bg/ap.userauthd \
+	bg/ap.wifid \
 	bg/ap_common/aputil \
 	bg/ap_common/comms \
 	bg/ap_common/platform \
@@ -426,21 +426,21 @@ GO_AP_TESTABLES = \
 
 NETWORKD_TEMPLATE_FILES = \
 	bg-chrony.client.got \
-	bg-chrony.server.got \
-	hostapd.conf.got \
-	virtualap.conf.got
+	bg-chrony.server.got
 
 RPCD_TEMPLATE_FILES = sshd_config.got
 
-USERAUTHD_TEMPLATE_FILES = \
+WIFID_TEMPLATE_FILES = \
 	hostapd.radius.got \
 	hostapd.radius_clients.got \
-	hostapd.users.got
+	hostapd.conf.got \
+	hostapd.users.got \
+	virtualap.conf.got
 
 NETWORKD_TEMPLATES = $(NETWORKD_TEMPLATE_FILES:%=$(NETWORKD_TEMPLATE_DIR)/%)
 RPCD_TEMPLATES = $(RPCD_TEMPLATE_FILES:%=$(RPCD_TEMPLATE_DIR)/%)
-USERAUTHD_TEMPLATES = $(USERAUTHD_TEMPLATE_FILES:%=$(USERAUTHD_TEMPLATE_DIR)/%)
-APPTEMPLATES = $(NETWORKD_TEMPLATES) $(RPCD_TEMPLATES) $(USERAUTHD_TEMPLATES)
+WIFID_TEMPLATES = $(WIFID_TEMPLATE_FILES:%=$(WIFID_TEMPLATE_DIR)/%)
+APPTEMPLATES = $(NETWORKD_TEMPLATES) $(RPCD_TEMPLATES) $(WIFID_TEMPLATES)
 
 FILTER_RULES = \
 	$(APPRULES)/base.rules \
@@ -509,7 +509,7 @@ APPDIRS = \
 	$(ROOTETCLOGROTATED) \
 	$(ROOTETCRSYSLOGD) \
 	$(RPCD_TEMPLATE_DIR) \
-	$(USERAUTHD_TEMPLATE_DIR)
+	$(WIFID_TEMPLATE_DIR)
 
 APPCOMPONENTS = \
 	$(APPBINARIES) \
@@ -855,7 +855,7 @@ $(NETWORKD_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.networkd/% | $(APPETC)
 $(RPCD_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.rpcd/% | $(APPETC)
 	$(INSTALL) -m 0644 $< $@
 
-$(USERAUTHD_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.userauthd/% | $(APPETC)
+$(WIFID_TEMPLATE_DIR)/%: $(GOSRCBG)/ap.wifid/% | $(APPETC)
 	$(INSTALL) -m 0644 $< $@
 
 $(APPRULES)/%: $(GOSRCBG)/ap.networkd/% | $(APPRULES)

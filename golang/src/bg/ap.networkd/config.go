@@ -13,7 +13,6 @@ package main
 
 import (
 	"net"
-	"strconv"
 	"strings"
 	"time"
 
@@ -24,59 +23,31 @@ import (
 )
 
 func configNicChanged(path []string, val string, expires *time.Time) {
-	var eval bool
-
 	if len(path) != 5 {
 		return
 	}
-	p := physDevices[path[3]]
-	if p == nil || p.pseudo {
+	p := wiredNics[path[3]]
+	if p == nil {
 		return
 	}
 
-	switch path[4] {
-	case "cfg_channel":
-		x, _ := strconv.Atoi(val)
-		if eval = (p.wifi != nil && p.wifi.configChannel != x); eval {
-			p.wifi.configChannel = x
-		}
-	case "cfg_width":
-		x, _ := strconv.Atoi(val)
-		if eval = (p.wifi != nil && p.wifi.configWidth != x); eval {
-			p.wifi.configWidth = x
-		}
-	case "cfg_band":
-		if eval = (p.wifi != nil && p.wifi.configBand != val); eval {
-			p.wifi.configBand = val
-		}
-	case "ring":
-		if p.ring != val {
-			p.ring = val
-			networkdStop("exiting to rebuild network")
-		}
-	case "state":
-		newState := strings.ToLower(val)
-		if newState == wifi.DevDisabled || newState == wifi.DevOK {
-			oldVal := p.disabled
-			p.disabled = (newState == wifi.DevDisabled)
-			eval = (oldVal != p.disabled)
-			setState(p)
-		}
+	if path[4] == "ring" && p.ring != val {
+		networkdStop("exiting to rebuild network")
 	}
 
-	if eval {
-		wifiEvaluate = true
-		hostapd.reset()
+	if path[4] == "state" {
+		newState := strings.ToLower(val)
+		if newState == wifi.DevDisabled || newState == wifi.DevOK {
+			disabled := (newState == wifi.DevDisabled)
+			if disabled != p.disabled {
+				networkdStop("exiting to rebuild network")
+			}
+		}
 	}
 }
 
 func configNicDeleted(path []string) {
-	if len(path) == 5 {
-		switch path[4] {
-		case "cfg_channel", "cfg_width", "cfg_band", "ring", "state":
-			configNicChanged(path, "", nil)
-		}
-	}
+	configNicChanged(path, "", nil)
 }
 
 func configClientChanged(path []string, val string, expires *time.Time) {
@@ -95,23 +66,14 @@ func configClientChanged(path []string, val string, expires *time.Time) {
 	}
 	clientsMtx.Unlock()
 
-	switch path[2] {
-	case "node":
-		if c.ConnNode != val {
-			slog.Infof("Moving %s from %s to %s", hwaddr,
-				c.ConnNode, val)
-			c.ConnNode = val
+	if path[2] == "ring" && c.Ring != val {
+		c.Ring = val
+		if val == base_def.RING_QUARANTINE {
+			publiclog.SendLogDeviceQuarantine(brokerd, hwaddr)
 		}
-	case "ring":
-		if c.Ring != val {
-			c.Ring = val
-			hostapd.reload()
-			hostapd.disassociate(hwaddr)
-			if val == base_def.RING_QUARANTINE {
-				publiclog.SendLogDeviceQuarantine(brokerd, hwaddr)
-			}
-		}
-	case "ipv4":
+	}
+
+	if path[2] == "ipv4" {
 		ip := net.ParseIP(val)
 		if !ip.Equal(c.IPv4) {
 			c.IPv4 = ip
@@ -142,7 +104,6 @@ func configUserChanged(path []string, val string, expires *time.Time) {
 
 func configUserDeleted(path []string) {
 	if len(path) == 2 {
-		hostapd.deauthUser(path[1])
 		vpnDeleteUser(path)
 	} else if len(path) > 2 && path[2] == "vpn" {
 		vpnDeleteUser(path)
@@ -171,19 +132,10 @@ func configRingChanged(path []string, val string, expires *time.Time) {
 		return
 	}
 
-	switch path[2] {
-	case "vap":
-		old := r.VirtualAPs
-		r.VirtualAPs = strings.Split(val, ",")
-		slog.Infof("Changing VAP for ring %s from %s to %s",
-			ring, old, r.VirtualAPs)
-		hostapd.reset()
-	case "subnet":
-		if r.Subnet != val {
-			slog.Infof("Changing subnet for ring %s from %s to %s",
-				ring, r.Subnet, val)
-			networkdStop("exiting to rebuild network")
-		}
+	if path[2] == "subnet" && r.Subnet != val {
+		slog.Infof("Changing subnet for ring %s from %s to %s",
+			ring, r.Subnet, val)
+		networkdStop("exiting to rebuild network")
 	}
 }
 
@@ -195,14 +147,6 @@ func configSet(name, val string) bool {
 		networkdStop("base_address changed - exiting to rebuild network")
 		return false
 
-	case "radius_auth_secret":
-		prop := &wconf.radiusSecret
-		if prop != nil && *prop != val {
-			slog.Infof("%s changed to '%s'", name, val)
-			*prop = val
-			reload = true
-		}
-
 	case "dnsserver":
 		wanStaticChanged(name, val)
 	}
@@ -211,11 +155,7 @@ func configSet(name, val string) bool {
 }
 
 func configNetworkDeleted(path []string) {
-	if configSet(path[1], "") {
-		wifiEvaluate = true
-		hostapd.reload()
-
-	} else if len(path) >= 2 && path[1] == "vpn" {
+	if len(path) >= 2 && path[1] == "vpn" {
 		vpnDelete(path)
 
 	} else if len(path) >= 3 && path[1] == "wan" && path[2] == "static" {
@@ -232,25 +172,9 @@ func configSiteIndexChanged(path []string, val string, expires *time.Time) {
 }
 
 func configNetworkChanged(path []string, val string, expires *time.Time) {
-	var reload bool
-
-	switch len(path) {
-	case 2:
-		reload = configSet(path[1], val)
-	case 3:
-		if path[1] == "vpn" {
-			vpnUpdate(path, val, expires)
-		}
-	case 4:
-		if path[1] == "vap" {
-			hostapd.reload()
-		} else if path[1] == "wan" && path[2] == "static" {
-			wanStaticChanged(path[3], val)
-		}
-	}
-
-	if reload {
-		wifiEvaluate = true
-		hostapd.reload()
+	if len(path) == 3 && path[1] == "vpn" {
+		vpnUpdate(path, val, expires)
+	} else if len(path) == 4 && path[1] == "wan" && path[2] == "static" {
+		wanStaticChanged(path[3], val)
 	}
 }

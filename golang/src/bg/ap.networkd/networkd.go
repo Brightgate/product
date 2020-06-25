@@ -28,8 +28,8 @@ import (
 	"bg/ap_common/aputil"
 	"bg/ap_common/broker"
 	"bg/ap_common/mcp"
-	"bg/ap_common/netctl"
 	"bg/ap_common/platform"
+	"bg/ap_common/wificaps"
 	"bg/base_def"
 	"bg/common/cfgapi"
 	"bg/common/network"
@@ -42,23 +42,10 @@ var (
 		true, nil)
 	rulesDir = apcfg.String("rules_dir", "/etc/filter.rules.d",
 		true, nil)
-	hostapdLatency = apcfg.Int("hostapd_latency", 60, true, nil)
-	hostapdDebug   = apcfg.Bool("hostapd_debug", false, true,
-		hostapdReset)
-	hostapdVerbose = apcfg.Bool("hostapd_verbose", false, true,
-		hostapdReset)
-	deadmanTimeout      = apcfg.Duration("deadman", 5*time.Second, true, nil)
-	retransmitSoftLimit = apcfg.Int("retransmit_soft", 3, true, nil)
-	retransmitHardLimit = apcfg.Int("retransmit_hard", 6, true, nil)
-	retransmitTimeout   = apcfg.Duration("retransmit_timeout",
-		5*time.Minute, true, nil)
-	apScanFreq   = apcfg.Duration("ap_scan_freq", 7*time.Hour, true, nil)
-	apStale      = apcfg.Duration("ap_stale", 10*time.Minute, true, nil)
-	chanEvalFreq = apcfg.Duration("chan_eval_freq", 12*time.Hour, true, nil)
-	_            = apcfg.String("log_level", "info", true,
+	_ = apcfg.String("log_level", "info", true,
 		aputil.LogSetLevel)
 
-	physDevices = make(map[string]*physDevice)
+	wiredNics map[string]*physDevice
 
 	mcpd    *mcp.MCP
 	brokerd *broker.Broker
@@ -72,7 +59,6 @@ var (
 	slog   *zap.SugaredLogger
 
 	plat           *platform.Platform
-	hostapd        *hostapdHdl
 	satellite      bool
 	networkNodeIdx byte
 
@@ -83,12 +69,6 @@ var (
 )
 
 const (
-	// Allow up to 4 failures in a 1 minute period before giving up
-	failuresAllowed  = 4
-	maxSSIDs         = 4
-	period           = time.Duration(time.Minute)
-	hotplugBlockFile = "/tmp/bg-skip-hotplug"
-
 	pname = "ap.networkd"
 )
 
@@ -96,10 +76,10 @@ type physDevice struct {
 	name     string // Linux device name
 	hwaddr   string // mac address
 	ring     string // configured ring
-	pseudo   bool
 	disabled bool
+	wireless bool
 
-	wifi *wifiInfo
+	cap *wificaps.WifiCapabilities
 }
 
 func list(slice []string) string {
@@ -108,13 +88,6 @@ func list(slice []string) string {
 
 func slice(list string) []string {
 	return strings.Split(list, ",")
-}
-
-func hostapdReset(name, val string) error {
-	if hostapd != nil {
-		hostapd.reset()
-	}
-	return nil
 }
 
 func sanityCheckSubnets() error {
@@ -127,47 +100,10 @@ func sanityCheckSubnets() error {
 	return nil
 }
 
-// Create a sentinel file, which prevents the hotplug scripts from being
-// executed
-func hotplugBlock() {
-	slog.Debugf("blocking hotplug scripts")
-	f, err := os.Create(hotplugBlockFile)
-	if err != nil {
-		slog.Warnf("creating %s: %v", hotplugBlockFile, err)
-	} else {
-		f.Close()
-	}
-}
-
-// Remove the hotplug-blocking sentinel file.  Create and remove a dummy bridge
-// device, which will cause the hotplug scripts to be run once.
-func hotplugUnblock() {
-	hotplugTrigger := "trigger"
-
-	if aputil.FileExists(hotplugBlockFile) {
-		slog.Debugf("unblocking hotplug scripts")
-		err := os.Remove(hotplugBlockFile)
-		if err != nil {
-			slog.Warnf("removing %s: %v", hotplugBlockFile, err)
-		}
-
-		slog.Debugf("triggering hotplug refresh")
-		if err = netctl.BridgeCreate(hotplugTrigger); err != nil {
-			slog.Warnf("addbr %s failed: %v", hotplugTrigger, err)
-		} else {
-			time.Sleep(100 * time.Millisecond)
-		}
-
-		if err = netctl.BridgeDestroy(hotplugTrigger); err != nil {
-			slog.Warnf("delbr %s failed: %v", hotplugTrigger, err)
-		}
-	}
-}
-
 // Find the network device being used for internal traffic, and return the IP
 // address assigned to it.
 func getInternalAddr() net.IP {
-	for _, dev := range physDevices {
+	for _, dev := range wiredNics {
 		if dev.ring != base_def.RING_INTERNAL {
 			continue
 		}
@@ -297,26 +233,18 @@ func daemonInit() error {
 	rings = config.GetRings()
 	clients = config.GetClients()
 
-	props, err := config.GetProps("@/network")
-	if err != nil {
-		return fmt.Errorf("unable to fetch configuration: %v", err)
-	}
-
-	if err = globalWifiInit(props); err != nil {
-		return err
-	}
-
-	getDevices()
+	discoverDevices()
 	wanInit(config.GetWanInfo())
 
 	// All wired devices that haven't yet been assigned to a ring will be
 	// put into "standard" by default
-	for _, dev := range physDevices {
-		if dev.wifi == nil && dev.ring == "" {
+	for id, dev := range wiredNics {
+		if dev.ring == "" {
+			slog.Infof("defaulting %s into standard", id)
 			dev.ring = base_def.RING_STANDARD
+			configUpdateRing(dev)
 		}
 	}
-	updateNicProperties()
 
 	if err = loadFilterRules(); err != nil {
 		return fmt.Errorf("unable to load filter rules: %v", err)
@@ -350,25 +278,17 @@ func daemonInit() error {
 	return nil
 }
 
-// When we get a signal, signal any hostapd process we're monitoring.  We want
-// to be sure the wireless interface has been released before we give mcp a
-// chance to restart the whole stack.
-func signalHandler() {
-	var s os.Signal
+func signalHandler(wg *sync.WaitGroup, doneChan chan bool) {
+	defer wg.Done()
 
-	sig := make(chan os.Signal, 3)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	sig := make(chan os.Signal)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
-	done := false
-	for !done {
-		if s = <-sig; s == syscall.SIGHUP {
-			nextChanEval = time.Now()
-		} else {
-			done = true
-		}
+	select {
+	case s := <-sig:
+		networkdStop(fmt.Sprintf("Received signal %v", s))
+	case <-doneChan:
 	}
-
-	networkdStop(fmt.Sprintf("Received signal %v", s))
 }
 
 func addDoneChan() chan bool {
@@ -412,7 +332,7 @@ func main() {
 	applyFilters()
 
 	mcpd.SetState(mcp.ONLINE)
-	go signalHandler()
+	go signalHandler(&cleanup.wg, addDoneChan())
 
 	resetInterfaces()
 
@@ -420,12 +340,8 @@ func main() {
 		if !satellite {
 			// We are currently a gateway.  Monitor the DHCP info on
 			// the wan port to see if that changes
-			wan.monitor()
-			defer wan.stop()
+			go wan.monitorLoop(&cleanup.wg, addDoneChan())
 		}
-
-		go apMonitorLoop(&cleanup.wg, addDoneChan())
-		go hostapdLoop(&cleanup.wg, addDoneChan())
 	}
 
 	// for pprof

@@ -23,8 +23,8 @@ var (
 	AppFs = afero.NewMemMapFs()
 
 	// Build an RConf.
-	trc = rConf{
-		ConfDir: "/opt/com.brightgate/etc/templates/ap.userauthd",
+	trc = &rConf{
+		ConfDir: "/opt/com.brightgate/etc/templates/ap.wifid",
 	}
 
 	UserauthTemplates = []struct {
