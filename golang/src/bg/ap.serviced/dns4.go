@@ -1046,16 +1046,14 @@ func updateFriendlyNames() {
 func initHostMap() {
 	clientMtx.Lock()
 	for mac, c := range clients {
-		if c.Expires == nil || c.Expires.After(time.Now()) {
+		if c.HasIP() {
 			dnsUpdateClient(mac, c)
 		}
 	}
 	clientMtx.Unlock()
 
-	if cnames, _ := config.GetProps("@/dns/cnames"); cnames != nil {
-		for name, c := range cnames.Children {
-			updateOneCname(name, c.Value)
-		}
+	for name, c := range config.GetChildren("@/dns/cnames") {
+		updateOneCname(name, c.Value)
 	}
 
 	perRingHosts = make(map[string]bool)

@@ -91,11 +91,11 @@ func getWireguard(user *UserInfo, root *PropertyNode) []*WireguardConf {
 		s = make([]*WireguardConf, 0)
 		for mac, key := range root.Children {
 			c := &WireguardConf{}
-			c.ID, _ = getIntVal(key, "id")
-			c.WGPublicKey, _ = getStringVal(key, "public_key")
-			c.WGAssignedIP, _ = getStringVal(key, "assigned_ip")
-			c.WGAllowedIPs, _ = getStringVal(key, "allowed_ips")
-			c.Label, _ = getStringVal(key, "label")
+			c.ID, _ = key.GetChildInt("id")
+			c.WGPublicKey, _ = key.GetChildString("public_key")
+			c.WGAssignedIP, _ = key.GetChildString("assigned_ip")
+			c.WGAllowedIPs, _ = key.GetChildString("allowed_ips")
+			c.Label, _ = key.GetChildString("label")
 			c.mac = mac
 			c.user = user
 			s = append(s, c)
@@ -106,7 +106,7 @@ func getWireguard(user *UserInfo, root *PropertyNode) []*WireguardConf {
 
 // newUserFromNode creates a UserInfo from config properties
 func newUserFromNode(name string, user *PropertyNode) (*UserInfo, error) {
-	uid, err := getStringVal(user, "uid")
+	uid, err := user.GetChildString("uid")
 	if err != nil {
 		// Most likely manual creation of the @/users/[uid] node.
 		return nil, errors.Wrap(err, "incomplete user property node")
@@ -115,14 +115,14 @@ func newUserFromNode(name string, user *PropertyNode) (*UserInfo, error) {
 		return nil, fmt.Errorf("prop name '%s' != uid '%s'", name, uid)
 	}
 
-	password, _ := getStringVal(user, "user_password")
-	md4password, _ := getStringVal(user, "user_md4_password")
-	suuid, _ := getStringVal(user, "uuid")
+	password, _ := user.GetChildString("user_password")
+	md4password, _ := user.GetChildString("user_md4_password")
+	suuid, _ := user.GetChildString("uuid")
 	xuuid, _ := uuid.FromString(suuid)
-	email, _ := getStringVal(user, "email")
-	telephoneNumber, _ := getStringVal(user, "telephone_number")
-	displayName, _ := getStringVal(user, "display_name")
-	selfProvisioning, _ := getBoolVal(user, "self_provisioning")
+	email, _ := user.GetChildString("email")
+	telephoneNumber, _ := user.GetChildString("telephone_number")
+	displayName, _ := user.GetChildString("display_name")
+	selfProvisioning, _ := user.GetChildBool("self_provisioning")
 
 	u := &UserInfo{
 		UID:              uid,

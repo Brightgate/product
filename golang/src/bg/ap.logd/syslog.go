@@ -147,14 +147,7 @@ func sendLogToSyslog(msg string) {
 func iterateReceivers() map[string]Receiver {
 	nr := make(map[string]Receiver)
 
-	receiverProps, err := config.GetProps("@/log")
-	if err != nil {
-		// If the @/log property subtree is not defined, then an empty
-		// receivers map is fine.
-		return nr
-	}
-
-	for name, receiver := range receiverProps.Children {
+	for name, receiver := range config.GetChildren("@/log") {
 		r := Receiver{
 			protocol:       "syslog",
 			syslogHost:     "",

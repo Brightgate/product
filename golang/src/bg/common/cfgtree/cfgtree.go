@@ -518,11 +518,25 @@ func (t *PTree) GetNode(prop string) (*PNode, error) {
 
 	if node == nil {
 		err = ErrNoProp
-	} else if node.Expires != nil && node.Expires.Before(time.Now()) {
+	} else if node.Expired() {
 		err = ErrExpired
 	}
 
 	return node, err
+}
+
+// GetChildren retrieves the properties subtree rooted at the given property,
+// and returns a map representing the immediate children, if any, of that
+// property.  It is not considered an error if the property is missing or
+// has no children.
+func (t *PTree) GetChildren(prop string) map[string]*PNode {
+	var rval map[string]*PNode
+
+	if node, err := t.GetNode(prop); err == nil {
+		rval = node.Children
+	}
+
+	return rval
 }
 
 // SetCacheable is a hint that this tree is stable enough that we should
@@ -643,6 +657,19 @@ func (t *PTree) Replace(data []byte) error {
 	t.preserved = nil
 
 	return nil
+}
+
+// Expired returns true if the property has an expiration time which has already
+// passed.
+func (node *PNode) Expired() bool {
+	if node.Expires == nil {
+		return false
+	}
+	if node.Expires.After(time.Now()) {
+		return false
+	}
+
+	return true
 }
 
 func (node *PNode) dump(w io.Writer, indent string) {

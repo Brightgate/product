@@ -533,13 +533,13 @@ func scanGetLists() ([]ScanRequest, []ScanRequest) {
 func getScanPeriod(mac, ring, scantype string, def time.Duration) time.Duration {
 	// First look for a per-client policy
 	cprop := "@/policy/clients/" + mac + "/scans/" + scantype + "/period"
-	if rval, err := config.GetDuration(cprop); err == nil {
+	if rval, err := config.GetPropDuration(cprop); err == nil {
 		return rval
 	}
 
 	// Next, look for a per-ring policy
 	rprop := "@/policy/rings/" + ring + "/scans/" + scantype + "/period"
-	if rval, err := config.GetDuration(rprop); err == nil {
+	if rval, err := config.GetPropDuration(rprop); err == nil {
 		return rval
 	}
 

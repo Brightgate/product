@@ -146,14 +146,12 @@ func updateNicProperties() {
 	// Get the information currently recorded in the config tree
 	root := "@/nodes/" + nodeID
 	nics := make(cfgapi.ChildMap)
-	if r, _ := config.GetProps(root); r != nil {
-		if r.Children != nil {
-			if r.Children["name"] != nil {
-				needName = false
-			}
-			if n := r.Children["nics"]; n != nil {
-				nics = n.Children
-			}
+	if c := config.GetChildren(root); c != nil {
+		if c["name"] != nil {
+			needName = false
+		}
+		if n := c["nics"]; n != nil {
+			nics = n.Children
 		}
 	}
 
@@ -360,27 +358,18 @@ func getDevices() {
 		}
 	}
 
-	nics, _ := config.GetProps("@/nodes/" + nodeID + "/nics")
-	if nics != nil {
-		for nicID, nic := range nics.Children {
-			if d := physDevices[nicID]; d != nil {
-				if x, ok := nic.Children["ring"]; ok {
-					d.ring = x.Value
-				}
-				if x, ok := nic.Children["cfg_band"]; ok {
-					d.wifi.configBand = x.Value
-				}
-				if x, ok := nic.Children["cfg_channel"]; ok {
-					d.wifi.configChannel, _ = strconv.Atoi(x.Value)
-				}
-				if x, ok := nic.Children["cfg_width"]; ok {
-					d.wifi.configWidth, _ = strconv.Atoi(x.Value)
-				}
-				if x, ok := nic.Children["state"]; ok {
-					if strings.ToLower(x.Value) == "disabled" {
-						d.disabled = true
-					}
-				}
+	nicsProp := "@/nodes/" + nodeID + "/nics"
+	for nicID, nic := range config.GetChildren(nicsProp) {
+		if d := physDevices[nicID]; d != nil {
+			d.ring, _ = nic.GetChildString("ring")
+			if d.wifi != nil {
+				d.wifi.configBand, _ = nic.GetChildString("cfg_band")
+				d.wifi.configChannel, _ = nic.GetChildInt("cfg_channel")
+				d.wifi.configWidth, _ = nic.GetChildInt("cfg_width")
+			}
+			x, _ := nic.GetChildString("state")
+			if strings.EqualFold(x, "disabled") {
+				d.disabled = true
 			}
 		}
 	}

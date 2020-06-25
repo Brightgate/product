@@ -403,6 +403,20 @@ func (c *Handle) AddPropValidation(path, proptype string) error {
 	return err
 }
 
+// GetChildren retrieves the properties subtree rooted at the given property,
+// and returns a map representing the immediate children, if any, of that
+// property.  It is not considered an error if the property is missing or
+// has no children.
+func (c *Handle) GetChildren(prop string) ChildMap {
+	var rval ChildMap
+
+	if node, err := c.GetProps(prop); err == nil {
+		rval = node.Children
+	}
+
+	return rval
+}
+
 // GetProps retrieves the properties subtree rooted at the given property, and
 // returns a PropertyNode representing the root of that subtree
 func (c *Handle) GetProps(prop string) (*PropertyNode, error) {
@@ -467,6 +481,22 @@ func (c *Handle) GetPropBool(prop string) (bool, error) {
 		} else if strings.EqualFold(v, "false") {
 			rval = false
 		} else {
+			err = ErrBadType
+		}
+	}
+
+	return rval, err
+}
+
+// GetPropDuration retrieves a single property from the tree, returning it as a
+// time.Duration
+func (c *Handle) GetPropDuration(prop string) (time.Duration, error) {
+	var rval time.Duration
+
+	val, err := c.GetProp(prop)
+	if err == nil {
+		rval, err = time.ParseDuration(val)
+		if err != nil {
 			err = ErrBadType
 		}
 	}
@@ -634,6 +664,19 @@ func (c *ClientInfo) DisplayName() string {
 	return ""
 }
 
+// HasIP returns true if the client has a static IP address or a DHCP lease
+// which hasn't expired.
+func (c *ClientInfo) HasIP() bool {
+	if c.IPv4 == nil {
+		return false
+	}
+	if c.Expires != nil && c.Expires.Before(time.Now()) {
+		return false
+	}
+
+	return true
+}
+
 // IsActive returns 'true' if a wireless client is connected to an AP, or if a
 // wired client has a valid IP address.
 func (c *ClientInfo) IsActive() bool {
@@ -647,22 +690,16 @@ func (c *ClientInfo) IsActive() bool {
 		return false
 	}
 
-	validIP := false
-	if c.IPv4 != nil {
-		if c.Expires == nil || !c.Expires.Before(time.Now()) {
-			validIP = true
-		}
-	}
-
-	return validIP
+	return c.HasIP()
 }
 
 func dumpSubtree(w io.Writer, name string, node *PropertyNode, indent string) {
+	if node.Expired() {
+		return
+	}
+
 	e := ""
 	if node.Expires != nil {
-		if time.Now().After(*node.Expires) {
-			return
-		}
 		e = node.Expires.Format("2006-01-02T15:04:05")
 		fmt.Fprintf(w, "%s%s: %s  %s\n", indent, name, node.Value, e)
 	} else {
@@ -717,148 +754,6 @@ func (c *Handle) Execute(ctx context.Context, ops []PropertyOp) CmdHdl {
 // Ping performs a simple round-trip connectivity test
 func (c *Handle) Ping(ctx context.Context) error {
 	return c.exec.Ping(ctx)
-}
-
-//
-// Utility functions to fetch specific property subtrees and transform the
-// results into typed maps
-
-func getProp(root *PropertyNode, name string) (string, error) {
-	child := root.Children[name]
-	if child == nil {
-		return "", ErrNoProp
-	}
-
-	if child.Expires != nil && child.Expires.Before(time.Now()) {
-		return "", ErrExpired
-	}
-
-	return child.Value, nil
-}
-
-func getStringSlice(root *PropertyNode, name string) ([]string, error) {
-	str, err := getProp(root, name)
-	if str == "" {
-		return make([]string, 0), err
-	}
-	rval := make([]string, 0)
-	for _, x := range strings.Split(str, ",") {
-		if v := strings.TrimSpace(x); v != "" {
-			rval = append(rval, v)
-		}
-	}
-
-	return rval, err
-}
-
-func getStringVal(root *PropertyNode, name string) (string, error) {
-	return getProp(root, name)
-}
-
-func getIntSet(root *PropertyNode, name string) (map[int]bool, error) {
-	set := make(map[int]bool)
-
-	str, err := getProp(root, name)
-	for _, val := range strings.Split(str, ",") {
-		intVal, serr := strconv.Atoi(val)
-		if serr == nil {
-			set[intVal] = true
-		} else if err == nil {
-			err = serr
-		}
-	}
-
-	return set, err
-}
-
-func getIntVal(root *PropertyNode, name string) (int, error) {
-	var val string
-	var rval int
-	var err error
-
-	if val, err = getProp(root, name); err == nil {
-		if rval, err = strconv.Atoi(val); err != nil {
-			err = fmt.Errorf("malformed %s property: %s",
-				name, val)
-		}
-	}
-
-	return rval, err
-}
-
-func getUintVal(root *PropertyNode, name string) (uint64, error) {
-	var val string
-	var rval uint64
-	var err error
-
-	if val, err = getProp(root, name); err == nil {
-		if rval, err = strconv.ParseUint(val, 10, 64); err != nil {
-			err = fmt.Errorf("malformed %s property: %s", name, val)
-		}
-	}
-	return rval, err
-}
-
-func getFloat64Val(root *PropertyNode, name string) (float64, error) {
-	var val string
-	var rval float64
-	var err error
-
-	if val, err = getProp(root, name); err == nil {
-		if rval, err = strconv.ParseFloat(val, 64); err != nil {
-			err = fmt.Errorf("malformed %s property: %s",
-				name, val)
-		}
-	}
-
-	return rval, err
-}
-
-func getBoolVal(root *PropertyNode, name string) (bool, error) {
-	var val string
-	var rval bool
-	var err error
-
-	if val, err = getProp(root, name); err == nil {
-		if rval, err = strconv.ParseBool(val); err != nil {
-			err = fmt.Errorf("malformed %s property: %s",
-				name, val)
-		}
-	}
-	return rval, err
-}
-
-// Note that unlike other functions in this family, this routine returns
-// nil if the time is not present.  Hence the Nil in the name.
-func getTimeValNil(root *PropertyNode, name string) (*time.Time, error) {
-	var val string
-	var rval time.Time
-	var err error
-
-	if val, err = getProp(root, name); err == nil {
-		if rval, err = time.Parse(time.RFC3339, val); err != nil {
-			err = fmt.Errorf("malformed %s property: %s",
-				name, val)
-		}
-	}
-	if rval.IsZero() {
-		return nil, err
-	}
-	return &rval, err
-}
-
-func getIPv4Val(root *PropertyNode, name string) (*net.IP, error) {
-	var val string
-	var err error
-
-	if val, err = getProp(root, name); err != nil {
-		return nil, err
-	}
-
-	if ip := net.ParseIP(val); ip != nil {
-		return &ip, nil
-	}
-	return nil, fmt.Errorf("Invalid ipv4 address")
 }
 
 // fetch the various properties we need to calculate the subnet addresses for
@@ -938,17 +833,17 @@ func (c *Handle) GetRings() RingMap {
 			err = fmt.Errorf("invalid ring name: %s", ringName)
 		}
 		if err == nil {
-			vlan, err = getIntVal(ring, "vlan")
+			vlan, err = ring.GetChildInt("vlan")
 			if vlan >= 0 {
 				bridge = "brvlan" + strconv.Itoa(int(vlan))
 			}
 		}
 		if err == nil {
-			vap, err = getStringSlice(ring, "vap")
+			vap, err = ring.GetChildStringSlice("vap")
 		}
 
 		if err == nil {
-			subnet, err = getStringVal(ring, "subnet")
+			subnet, err = ring.GetChildString("subnet")
 			if err != nil {
 				subnetIdx := ringToSubnetIdx[ringName]
 				subnet, err = GenSubnet(base, siteIdx, subnetIdx)
@@ -956,7 +851,7 @@ func (c *Handle) GetRings() RingMap {
 		}
 
 		if err == nil {
-			duration, err = getIntVal(ring, "lease_duration")
+			duration, err = ring.GetChildInt("lease_duration")
 		}
 
 		if err == nil {
@@ -1004,12 +899,12 @@ func newVAP(name string, root *PropertyNode) *VirtualAP {
 		}
 	}
 
-	tag, err := getBoolVal(root, "5ghz")
+	tag, err := root.GetChildBool("5ghz")
 	if err != nil && err != ErrNoProp {
 		log.Printf("vap %s: %v", name, err)
 	}
 
-	disabled, err := getBoolVal(root, "disabled")
+	disabled, err := root.GetChildBool("disabled")
 	if err != nil && err != ErrNoProp {
 		log.Printf("vap %s: %v", name, err)
 	}
@@ -1132,20 +1027,19 @@ func (c *Handle) GetWanInfo() *WanInfo {
 		return nil
 	}
 
-	if current := wan.Children["current"]; current != nil {
-		w.CurrentAddress, _ = getStringVal(current, "address")
-	}
+	w.CurrentAddress, _ = wan.GetChildString("address")
+
 	if static := wan.Children["static"]; static != nil {
-		w.StaticAddress, _ = getStringVal(static, "address")
-		w.StaticRoute, _ = getIPv4Val(static, "route")
+		w.StaticAddress, _ = static.GetChildString("address")
+		w.StaticRoute, _ = static.GetChildIPv4("route")
 	}
 	if dhcp := wan.Children["dhcp"]; dhcp != nil {
-		w.DHCPAddress, _ = getStringVal(dhcp, "address")
-		w.DHCPRoute, _ = getIPv4Val(dhcp, "route")
-		w.DHCPStart, _ = getTimeValNil(dhcp, "start")
-		w.DHCPDuration, _ = getIntVal(dhcp, "duration")
+		w.DHCPAddress, _ = dhcp.GetChildString("address")
+		w.DHCPRoute, _ = dhcp.GetChildIPv4("route")
+		w.DHCPStart, _ = dhcp.GetChildTime("start")
+		w.DHCPDuration, _ = dhcp.GetChildInt("duration")
 	}
-	w.DNSServer, _ = getStringVal(props, "dnsserver")
+	w.DNSServer, _ = props.GetChildString("dnsserver")
 	return &w
 }
 
@@ -1158,25 +1052,25 @@ func getClient(client *PropertyNode) *ClientInfo {
 	var err error
 	var devID *DevIDInfo
 
-	private, _ = getBoolVal(client, "dns_private")
-	ring, _ = getStringVal(client, "ring")
-	dhcp, _ = getStringVal(client, "dhcp_name")
-	dns, _ = getStringVal(client, "dns_name")
-	friendly, _ = getStringVal(client, "friendly_name")
-	friendlyDNS, _ = getStringVal(client, "friendly_dns")
-	if addr, ok := client.Children["ipv4"]; ok {
-		if ip := net.ParseIP(addr.Value); ip != nil {
+	private, _ = client.GetChildBool("dns_private")
+	ring, _ = client.GetChildString("ring")
+	dhcp, _ = client.GetChildString("dhcp_name")
+	dns, _ = client.GetChildString("dns_name")
+	friendly, _ = client.GetChildString("friendly_name")
+	friendlyDNS, _ = client.GetChildString("friendly_dns")
+	if node, err := client.GetChild("ipv4"); err == nil {
+		if ip, err := node.GetIPv4(); err == nil {
 			ipv4 = ip.To4()
-			exp = addr.Expires
+			exp = node.Expires
 		}
 	}
 	if conn, ok := client.Children["connection"]; ok {
-		username, _ = getStringVal(conn, "username")
-		connVAP, _ = getStringVal(conn, "vap")
-		connBand, _ = getStringVal(conn, "band")
-		connNode, _ = getStringVal(conn, "node")
-		active, _ = getStringVal(conn, "active")
-		wireless, err = getBoolVal(conn, "wireless")
+		username, _ = conn.GetChildString("username")
+		connVAP, _ = conn.GetChildString("vap")
+		connBand, _ = conn.GetChildString("band")
+		connNode, _ = conn.GetChildString("node")
+		active, _ = conn.GetChildString("active")
+		wireless, err = conn.GetChildBool("wireless")
 		// Improve our guess for legacy devices which don't have the
 		// 'wireless' boolean.
 		if err != nil && connVAP != "" {
@@ -1184,9 +1078,9 @@ func getClient(client *PropertyNode) *ClientInfo {
 		}
 	}
 	if dev, ok := client.Children["classification"]; ok {
-		ouiMfg, _ := getStringVal(dev, "oui_mfg")
-		devGenus, _ := getStringVal(dev, "device_genus")
-		osGenus, _ := getStringVal(dev, "os_genus")
+		ouiMfg, _ := dev.GetChildString("oui_mfg")
+		devGenus, _ := dev.GetChildString("device_genus")
+		osGenus, _ := dev.GetChildString("os_genus")
 		devID = &DevIDInfo{
 			OUIMfg:      ouiMfg,
 			DeviceGenus: devGenus,
@@ -1219,26 +1113,22 @@ func getClient(client *PropertyNode) *ClientInfo {
 func (c *Handle) GetVulnerabilities(macaddr string) VulnMap {
 	list := make(VulnMap)
 
-	vulns, _ := c.GetProps("@/clients/" + macaddr + "/vulnerabilities")
-	if vulns != nil {
-		for name, props := range vulns.Children {
-			var v VulnInfo
-			v.FirstDetected, _ = getTimeValNil(props, "first")
-			v.LatestDetected, _ = getTimeValNil(props, "latest")
-			v.WarnedAt, _ = getTimeValNil(props, "warned")
-			v.ClearedAt, _ = getTimeValNil(props, "cleared")
-			v.RepairedAt, _ = getTimeValNil(props, "repaired")
-			v.Ignore, _ = getBoolVal(props, "ignore")
-			v.Active, _ = getBoolVal(props, "active")
-			v.Details, _ = getStringVal(props, "details")
-			// Repair may be absent and the distinction is important
-			if val, err := getProp(props, "repair"); err == nil {
-				if repair, err := strconv.ParseBool(val); err == nil {
-					v.Repair = &repair
-				}
-			}
-			list[name] = &v
+	vulnProp := "@/clients/" + macaddr + "/vulnerabilities"
+	for name, props := range c.GetChildren(vulnProp) {
+		var v VulnInfo
+		v.FirstDetected, _ = props.GetChildTime("first")
+		v.LatestDetected, _ = props.GetChildTime("latest")
+		v.WarnedAt, _ = props.GetChildTime("warned")
+		v.ClearedAt, _ = props.GetChildTime("cleared")
+		v.RepairedAt, _ = props.GetChildTime("repaired")
+		v.Ignore, _ = props.GetChildBool("ignore")
+		v.Active, _ = props.GetChildBool("active")
+		v.Details, _ = props.GetChildString("details")
+		// Repair may be absent and the distinction is important
+		if val, err := props.GetChildBool("repair"); err == nil {
+			v.Repair = &val
 		}
+		list[name] = &v
 	}
 
 	return list
@@ -1248,14 +1138,12 @@ func (c *Handle) GetVulnerabilities(macaddr string) VulnMap {
 func (c *Handle) GetClientScans(macaddr string) ScanMap {
 	scanMap := make(ScanMap)
 
-	scans, _ := c.GetProps("@/clients/" + macaddr + "/scans")
-	if scans != nil {
-		for name, props := range scans.Children {
-			var s ScanInfo
-			s.Start, _ = getTimeValNil(props, "start")
-			s.Finish, _ = getTimeValNil(props, "finish")
-			scanMap[name] = &s
-		}
+	scanProp := "@/clients/" + macaddr + "/scans"
+	for name, props := range c.GetChildren(scanProp) {
+		var s ScanInfo
+		s.Start, _ = props.GetChildTime("start")
+		s.Finish, _ = props.GetChildTime("finish")
+		scanMap[name] = &s
 	}
 
 	return scanMap
@@ -1308,16 +1196,16 @@ type ClientMetrics struct {
 func (c *Handle) GetClientMetricsFromNode(clientMetrics *PropertyNode) *ClientMetrics {
 	var cm ClientMetrics
 	// The order matches the slot order for the ClientMetrics struct
-	cm.LastActivity, _ = getTimeValNil(clientMetrics, "last_activity")
-	cm.SignalStrength, _ = getIntVal(clientMetrics, "signal_str")
+	cm.LastActivity, _ = clientMetrics.GetChildTime("last_activity")
+	cm.SignalStrength, _ = clientMetrics.GetChildInt("signal_str")
 	subs := []string{"second", "minute", "hour", "day"}
 	for i, sub := range subs {
 		m := clientMetrics.Children[sub]
 		if m != nil {
-			cm.BytesRcvd[i], _ = getUintVal(m, "bytes_rcvd")
-			cm.BytesSent[i], _ = getUintVal(m, "bytes_sent")
-			cm.PktsRcvd[i], _ = getUintVal(m, "pkts_rcvd")
-			cm.PktsSent[i], _ = getUintVal(m, "pkts_sent")
+			cm.BytesRcvd[i], _ = m.GetChildUint("bytes_rcvd")
+			cm.BytesSent[i], _ = m.GetChildUint("bytes_sent")
+			cm.PktsRcvd[i], _ = m.GetChildUint("pkts_rcvd")
+			cm.PktsSent[i], _ = m.GetChildUint("pkts_sent")
 		}
 	}
 	return &cm
@@ -1337,26 +1225,26 @@ func (c *Handle) GetClientMetrics(mac string) *ClientMetrics {
 func getNic(nic *PropertyNode) NicInfo {
 	n := NicInfo{}
 
-	n.Name, _ = getStringVal(nic, "name")
-	n.Ring, _ = getStringVal(nic, "ring")
-	n.MacAddr, _ = getStringVal(nic, "mac")
-	n.Kind, _ = getStringVal(nic, "kind")
-	n.Pseudo, _ = getBoolVal(nic, "pseudo")
-	n.State, _ = getStringVal(nic, "state")
+	n.Name, _ = nic.GetChildString("name")
+	n.Ring, _ = nic.GetChildString("ring")
+	n.MacAddr, _ = nic.GetChildString("mac")
+	n.Kind, _ = nic.GetChildString("kind")
+	n.Pseudo, _ = nic.GetChildBool("pseudo")
+	n.State, _ = nic.GetChildString("state")
 
 	if n.Kind == "wireless" && !n.Pseudo {
 		w := WifiInfo{}
-		w.ConfigBand, _ = getStringVal(nic, "cfg_band")
-		w.ConfigChannel, _ = getIntVal(nic, "cfg_channel")
-		w.ConfigWidth, _ = getStringVal(nic, "cfg_width")
-		w.ActiveMode, _ = getStringVal(nic, "active_mode")
-		w.ActiveBand, _ = getStringVal(nic, "active_band")
-		w.ActiveChannel, _ = getIntVal(nic, "active_channel")
-		w.ActiveWidth, _ = getStringVal(nic, "active_width")
-		w.ValidBands, _ = getStringSlice(nic, "bands")
-		w.ValidModes, _ = getStringSlice(nic, "modes")
+		w.ConfigBand, _ = nic.GetChildString("cfg_band")
+		w.ConfigChannel, _ = nic.GetChildInt("cfg_channel")
+		w.ConfigWidth, _ = nic.GetChildString("cfg_width")
+		w.ActiveMode, _ = nic.GetChildString("active_mode")
+		w.ActiveBand, _ = nic.GetChildString("active_band")
+		w.ActiveChannel, _ = nic.GetChildInt("active_channel")
+		w.ActiveWidth, _ = nic.GetChildString("active_width")
+		w.ValidBands, _ = nic.GetChildStringSlice("bands")
+		w.ValidModes, _ = nic.GetChildStringSlice("modes")
 
-		supported, _ := getIntSet(nic, "channels")
+		supported, _ := nic.GetChildIntSet("channels")
 		w.ValidLoChannels = make([]int, 0)
 		for _, c := range wifi.Channels[wifi.LoBand] {
 			if supported[c] {
@@ -1449,21 +1337,14 @@ func (c *Handle) GetNic(node, nic string) (*NicInfo, error) {
 func (c *Handle) getInternalAddrs() map[string]string {
 	addrs := make(map[string]string)
 
-	clients, _ := c.GetProps("@/clients")
-	if clients != nil {
-		for mac, client := range clients.Children {
-			var ring, addr string
+	for mac, client := range c.GetChildren("@/clients") {
+		var ring, addr string
 
-			if p, ok := client.Children["ring"]; ok {
-				ring = p.Value
-			}
-			if p, ok := client.Children["ipv4"]; ok {
-				addr = p.Value
-			}
+		ring, _ = client.GetChildString("ring")
+		addr, _ = client.GetChildString("ipv4")
 
-			if ring == base_def.RING_INTERNAL {
-				addrs[mac] = addr
-			}
+		if ring == base_def.RING_INTERNAL {
+			addrs[mac] = addr
 		}
 	}
 
@@ -1489,14 +1370,14 @@ func (c *Handle) GetNodes() ([]NodeInfo, error) {
 		ni := NodeInfo{
 			ID: nodeName,
 		}
-		ni.Platform, _ = getStringVal(node, "platform")
-		ni.Name, _ = getStringVal(node, "name")
+		ni.Platform, _ = node.GetChildString("platform")
+		ni.Name, _ = node.GetChildString("name")
 		ni.Nics, _ = getNics(prop, nodeName)
 
 		if m, ok := metrics[nodeName]; ok {
-			ni.Alive, _ = getTimeValNil(m, "alive")
-			ni.BootTime, _ = getTimeValNil(m, "boot_time")
-			ni.Role, _ = getStringVal(m, "role")
+			ni.Alive, _ = m.GetChildTime("alive")
+			ni.BootTime, _ = m.GetChildTime("boot_time")
+			ni.Role, _ = m.GetChildString("role")
 			if ni.Role == "gateway" {
 				a, _ := c.GetProp("@/network/wan/current/address")
 				ni.Addr, _, _ = net.ParseCIDR(a)
@@ -1531,12 +1412,9 @@ func (c *Handle) GetNodes() ([]NodeInfo, error) {
 func (c *Handle) GetActiveBlocks() []string {
 	list := make([]string, 0)
 
-	if active, _ := c.GetProps("@/firewall/blocked"); active != nil {
-		now := time.Now()
-		for name, node := range active.Children {
-			if node.Expires == nil || now.Before(*node.Expires) {
-				list = append(list, name)
-			}
+	for name, node := range c.GetChildren("@/firewall/blocked") {
+		if !node.Expired() {
+			list = append(list, name)
 		}
 	}
 
@@ -1553,20 +1431,4 @@ func (c *Handle) GetDomain() (string, error) {
 		return "", fmt.Errorf("property get %s failed: %v", prop, err)
 	}
 	return siteid, nil
-}
-
-// GetDuration retrieves a single property from the tree, returning it as a
-// time.Duration
-func (c *Handle) GetDuration(prop string) (time.Duration, error) {
-	var rval time.Duration
-
-	val, err := c.GetProp(prop)
-	if err == nil {
-		rval, err = time.ParseDuration(val)
-		if err != nil {
-			err = ErrBadType
-		}
-	}
-
-	return rval, err
 }

@@ -306,11 +306,9 @@ func tunnelConfigInit() {
 		"tunnel_user_key": "",
 	}
 
-	if props, err := config.GetProps("@/cloud/service"); err == nil {
-		for key, n := range props.Children {
-			if n.Expires == nil || n.Expires.After(time.Now()) {
-				queueConfigChange(key, n.Value)
-			}
+	for key, n := range config.GetChildren("@/cloud/service") {
+		if !n.Expired() {
+			queueConfigChange(key, n.Value)
 		}
 	}
 	processConfigChanges()

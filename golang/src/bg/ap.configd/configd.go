@@ -351,23 +351,19 @@ func defaultRingInit() {
 	ringOnVap := make(map[string]bool)
 
 	// For each virtual AP, find @/network/vap/<id>/default_ring
-	if node, _ := propTree.GetNode("@/network/vap"); node != nil {
-		for id, vap := range node.Children {
-			if ring, ok := vap.Children["default_ring"]; ok {
-				vapToRing[id] = ring.Value
-			}
+	for id, vap := range propTree.GetChildren("@/network/vap") {
+		if ring, ok := vap.Children["default_ring"]; ok {
+			vapToRing[id] = ring.Value
 		}
 	}
 
 	// For each virtual ring, find @/rings/<ring>/vap
-	if node, _ := propTree.GetNode("@/rings"); node != nil {
-		for ring, config := range node.Children {
-			if vapNode, ok := config.Children["vap"]; ok {
-				vaps := strings.Split(vapNode.Value, ",")
-				for _, vap := range vaps {
-					key := ring + ":" + strings.TrimSpace(vap)
-					ringOnVap[key] = true
-				}
+	for ring, config := range propTree.GetChildren("@/rings") {
+		if vapNode, ok := config.Children["vap"]; ok {
+			vaps := strings.Split(vapNode.Value, ",")
+			for _, vap := range vaps {
+				key := ring + ":" + strings.TrimSpace(vap)
+				ringOnVap[key] = true
 			}
 		}
 	}
@@ -492,10 +488,8 @@ func initSettings() {
 	}
 
 	// Apply any settings already present in the config tree
-	if settings, _ := propTree.GetNode(base); settings != nil {
-		for name, node := range settings.Children {
-			updateSetting(propChange, base+name, node.Value)
-		}
+	for name, node := range propTree.GetChildren(base) {
+		updateSetting(propChange, base+name, node.Value)
 	}
 }
 
@@ -518,11 +512,7 @@ func checkUUID(prop, uuid string) error {
 func dnsNameInuse(ignore *cfgtree.PNode, hostname string) bool {
 	lower := strings.ToLower(hostname)
 
-	clients, _ := propTree.GetNode("@/clients")
-	if clients == nil {
-		return false
-	}
-	for _, device := range clients.Children {
+	for _, device := range propTree.GetChildren("@/clients") {
 		if device == ignore {
 			continue
 		}
@@ -538,14 +528,9 @@ func dnsNameInuse(ignore *cfgtree.PNode, hostname string) bool {
 		}
 	}
 
-	if cnames, _ := propTree.GetNode("@/dns/cnames"); cnames != nil {
-		for name, record := range cnames.Children {
-			if record == ignore {
-				continue
-			}
-			if strings.ToLower(name) == lower {
-				return true
-			}
+	for name, record := range propTree.GetChildren("@/dns/cnames") {
+		if record != ignore && strings.ToLower(name) == lower {
+			return true
 		}
 	}
 

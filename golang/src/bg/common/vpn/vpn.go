@@ -95,15 +95,6 @@ AllowedIPs = {{.AllowedIPs}}
 PersistentKeepalive = 25
 `
 
-func getVal(tree *cfgapi.PropertyNode, prop string) (string, error) {
-	node, ok := tree.Children[prop]
-	if ok {
-		return node.Value, nil
-	}
-
-	return "", fmt.Errorf("missing %s/%s", configStub, prop)
-}
-
 // Generate a wireguard config file to be deployed by the client
 func genConfig(conf keyConfig) ([]byte, error) {
 	tmpl, err := template.New("wireguard").Parse(confTemplate)
@@ -120,36 +111,33 @@ func genConfig(conf keyConfig) ([]byte, error) {
 }
 
 func (v *Vpn) getServerConfig(conf *keyConfig) error {
-	var port string
-	incomplete := false
+	var key, addr, portstr string
+	var port int
+	var perr error
 
 	props, err := v.config.GetProps(configStub)
 	if err != nil {
-		return fmt.Errorf("fetching server vpn config: %v", err)
-	}
-
-	if conf.ServerPublicKey, err = getVal(props, "public_key"); err != nil {
-		incomplete = true
-	}
-
-	if conf.ServerAddress, err = getVal(props, "address"); err != nil {
-		incomplete = true
-	}
-
-	if port, err = getVal(props, "port"); err != nil {
-		incomplete = true
+		err = fmt.Errorf("fetching server vpn config: %v", err)
 	} else {
-		if conf.ServerPort, err = strconv.Atoi(port); err != nil {
-			return fmt.Errorf("bad port number %s: %v", port, err)
+		if key, perr = props.GetChildString("public_key"); perr != nil {
+			err = errIncomplete
 		}
+		if addr, perr = props.GetChildString("address"); perr != nil {
+			err = errIncomplete
+		}
+		if portstr, perr = props.GetChildString("port"); perr != nil {
+			err = errIncomplete
+		} else if port, perr = strconv.Atoi(portstr); perr != nil {
+			err = fmt.Errorf("bad port number %s: %v", port, perr)
+		}
+
+		conf.ServerPublicKey = key
+		conf.ServerAddress = addr
+		conf.ServerPort = port
+		conf.DNSAddress = v.vpnRouter.String()
 	}
 
-	conf.DNSAddress = v.vpnRouter.String()
-	if incomplete {
-		return errIncomplete
-	}
-
-	return nil
+	return err
 }
 
 // ServerConfig contains the VPN Server configuration for a site.

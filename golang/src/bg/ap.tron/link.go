@@ -103,12 +103,10 @@ func getWanName(t *hTest) bool {
 
 	if t.data != nil && t.data.Children != nil {
 		for name, nic := range t.data.Children {
-			if nic.Children != nil {
-				node, ok := nic.Children["ring"]
-				if ok && node.Value == base_def.RING_WAN {
-					nicName = name
-					break
-				}
+			ring, _ := nic.GetChildString("ring")
+			if ring == base_def.RING_WAN {
+				nicName = name
+				break
 			}
 		}
 	}

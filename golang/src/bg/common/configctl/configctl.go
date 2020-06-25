@@ -191,22 +191,6 @@ func printStats(s *perClient) {
 		s.data["minute"], s.data["second"])
 }
 
-func getVal(data *cfgapi.PropertyNode, field string) (uint64, error) {
-	var val uint64
-	var err error
-
-	if node, ok := data.Children[field]; ok {
-		v := node.Value
-		if val, err = strconv.ParseUint(v, 10, 64); err != nil {
-			err = fmt.Errorf("bad %s (%s): %v", field, v, err)
-		}
-	} else {
-		err = fmt.Errorf("missing %s", field)
-	}
-
-	return val, err
-}
-
 func buildStatsPair(data *cfgapi.PropertyNode) (*statsPair, error) {
 	var p statsPair
 	var err error
@@ -214,13 +198,13 @@ func buildStatsPair(data *cfgapi.PropertyNode) (*statsPair, error) {
 	if data == nil {
 		err = fmt.Errorf("missing data")
 	} else {
-		v, verr := getVal(data, "bytes_rcvd")
+		v, verr := data.GetChildUint("bytes_rcvd")
 		if verr == nil {
 			p.bytesRcvd = v
 		} else {
 			err = verr
 		}
-		v, verr = getVal(data, "bytes_sent")
+		v, verr = data.GetChildUint("bytes_sent")
 		if verr == nil {
 			p.bytesSent = v
 		} else {
