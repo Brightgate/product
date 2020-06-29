@@ -16,8 +16,11 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"os"
+	"strings"
 
 	"cloud.google.com/go/storage"
+	"github.com/pkg/errors"
 	"github.com/satori/uuid"
 	"github.com/spf13/cobra"
 	"github.com/tatsushid/go-prettytable"
@@ -85,15 +88,69 @@ func newSite(cmd *cobra.Command, args []string) error {
 }
 
 func listSites(cmd *cobra.Command, args []string) error {
+	orgsArg, _ := cmd.Flags().GetStringSlice("org")
+	sitesArg, _ := cmd.Flags().GetStringSlice("site")
+
+	if len(orgsArg) > 0 && len(sitesArg) > 0 {
+		return fmt.Errorf("Only one of --org and --site may be specified")
+	}
+
 	db, _, err := assembleRegistry(cmd)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
-	sites, err := db.AllCustomerSites(context.Background())
-	if err != nil {
-		return err
+	ctx := context.Background()
+
+	var sites []appliancedb.CustomerSite
+	for _, site := range sitesArg {
+		fm, err := registry.SiteUUIDByNameFuzzy(ctx, db, site)
+		if err != nil {
+			if ase, ok := err.(registry.AmbiguousSiteError); ok {
+				return errors.New(strings.TrimSpace(ase.Pretty()))
+			}
+			return err
+		}
+		if fm.Name != "" {
+			fmt.Fprintf(os.Stderr,
+				"%q matched more than one site, but %q (%s) "+
+					"seemed the most likely\n",
+				site, fm.Name, fm.UUID)
+		}
+		s, err := db.CustomerSiteByUUID(ctx, fm.UUID)
+		if err != nil {
+			return err
+		}
+		sites = append(sites, *s)
+	}
+
+	for _, org := range orgsArg {
+		fm, err := registry.OrgUUIDByNameFuzzy(ctx, db, org)
+		if err != nil {
+			if aoe, ok := err.(registry.AmbiguousOrgError); ok {
+				return errors.New(strings.TrimSpace(aoe.Pretty()))
+			}
+			return err
+		}
+		if fm.Name != "" {
+			fmt.Fprintf(os.Stderr,
+				"%q matched more than one org, but %q (%s) "+
+					"seemed the most likely\n",
+				org, fm.Name, fm.UUID)
+		}
+		s, err := db.CustomerSitesByOrganization(ctx, fm.UUID)
+		if err != nil {
+			return err
+		}
+		sites = append(sites, s...)
+	}
+
+	if len(sites) == 0 {
+		sites, err = db.AllCustomerSites(ctx)
+		if err != nil {
+			return err
+		}
 	}
 
 	table, _ := prettytable.NewTable(
@@ -166,6 +223,8 @@ func siteMain(rootCmd *cobra.Command) {
 		RunE:  listSites,
 	}
 	listSiteCmd.Flags().StringP("input", "i", "", "registry data JSON file")
+	listSiteCmd.Flags().StringSliceP("org", "o", []string{}, "list sites belonging to these orgs")
+	listSiteCmd.Flags().StringSliceP("site", "s", []string{}, "list these sites")
 	siteCmd.AddCommand(listSiteCmd)
 
 	setSiteCmd := &cobra.Command{

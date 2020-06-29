@@ -271,57 +271,69 @@ func applianceStatus(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
 	// If we didn't specify --app, --site, or --org, then dump everything,
-	// per-appliance.
-	var appUUs []uuid.UUID
-	if len(appUUStrs) > 0 {
-		appUUs = make([]uuid.UUID, len(appUUStrs))
-		for i, appUUStr := range appUUStrs {
-			appUU, err := uuid.FromString(appUUStr)
-			if err != nil {
-				return err
-			}
-			appUUs[i] = appUU
+	// per-appliance, represented by an empty appUUs.  We take advantage of
+	// the constraint that only one of appUUStrs, siteUUStrs, and orgUUStrs
+	// is populated being enforced above.
+	appUUs := make([]uuid.UUID, len(appUUStrs))
+	for i, appUUStr := range appUUStrs {
+		appUU, err := uuid.FromString(appUUStr)
+		if err != nil {
+			return err
 		}
-	} else if len(siteUUStrs) > 0 {
-		for _, siteUUStr := range siteUUStrs {
-			fm, err := registry.SiteUUIDByNameFuzzy(ctx, db, siteUUStr)
-			if err != nil {
-				if ase, ok := err.(registry.AmbiguousSiteError); ok {
-					return errors.New(strings.TrimSpace(ase.Pretty()))
-				}
-				return err
+		appUUs[i] = appUU
+	}
+
+	for _, siteUUStr := range siteUUStrs {
+		fm, err := registry.SiteUUIDByNameFuzzy(ctx, db, siteUUStr)
+		if err != nil {
+			if ase, ok := err.(registry.AmbiguousSiteError); ok {
+				return errors.New(strings.TrimSpace(ase.Pretty()))
 			}
-			if fm.SiteName != "" {
-				fmt.Fprintf(os.Stderr,
-					"%q matched more than one site, but %q "+
-						"(%s) seemed the most likely\n",
-					siteUUStr, fm.SiteName, fm.SiteUUID)
-			}
-			var siteUU uuid.UUID
-			if fm.SiteUUID != uuid.Nil {
-				siteUU = fm.SiteUUID
-			}
-			siteApps, err := db.ApplianceIDsBySiteID(ctx, siteUU)
-			if err != nil {
-				return err
-			}
-			for _, appID := range siteApps {
-				appUUs = append(appUUs, appID.ApplianceUUID)
-			}
+			return err
 		}
-	} else if len(orgUUStrs) > 0 {
-		for _, orgUUStr := range orgUUStrs {
-			orgUU, err := uuid.FromString(orgUUStr)
-			if err != nil {
-				return err
+		if fm.Name != "" {
+			fmt.Fprintf(os.Stderr,
+				"%q matched more than one site, but %q (%s) "+
+					"seemed the most likely\n",
+				siteUUStr, fm.Name, fm.UUID)
+		}
+		var siteUU uuid.UUID
+		if fm.UUID != uuid.Nil {
+			siteUU = fm.UUID
+		}
+		siteApps, err := db.ApplianceIDsBySiteID(ctx, siteUU)
+		if err != nil {
+			return err
+		}
+		for _, appID := range siteApps {
+			appUUs = append(appUUs, appID.ApplianceUUID)
+		}
+	}
+
+	for _, orgUUStr := range orgUUStrs {
+		fm, err := registry.OrgUUIDByNameFuzzy(ctx, db, orgUUStr)
+		if err != nil {
+			if aoe, ok := err.(registry.AmbiguousOrgError); ok {
+				return errors.New(strings.TrimSpace(aoe.Pretty()))
 			}
-			orgApps, err := db.ApplianceIDsByOrgID(ctx, orgUU)
-			if err != nil {
-				return err
-			}
-			for _, appID := range orgApps {
-				appUUs = append(appUUs, appID.ApplianceUUID)
-			}
+			return err
+		}
+		if fm.Name != "" {
+			fmt.Fprintf(os.Stderr,
+				"%q matched more than one org, but %q (%s) "+
+					"seemed the most likely\n",
+				orgUUStr, fm.Name, fm.UUID)
+		}
+		var orgUU uuid.UUID
+		if fm.UUID != uuid.Nil {
+			orgUU = fm.UUID
+		}
+		orgApps, err := db.ApplianceIDsByOrgID(ctx, orgUU)
+		if err != nil {
+			return err
+		}
+		for _, appID := range orgApps {
+			appUUs = append(appUUs, appID.ApplianceUUID)
 		}
 	}
 

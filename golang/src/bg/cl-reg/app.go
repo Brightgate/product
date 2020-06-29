@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
 
 	"bg/cl_common/registry"
 	"bg/cloud_models/appliancedb"
@@ -27,34 +28,68 @@ import (
 
 func listAppliances(cmd *cobra.Command, args []string) error {
 	appID, _ := cmd.Flags().GetString("name")
-	siteUUID, _ := cmd.Flags().GetString("site-uuid")
+	orgs, _ := cmd.Flags().GetStringSlice("org")
+	sites, _ := cmd.Flags().GetStringSlice("site")
+
+	if len(orgs) > 0 && len(sites) > 0 {
+		return fmt.Errorf("Only one of --org and --site may be specified")
+	}
 
 	db, reg, err := assembleRegistry(cmd)
 	if err != nil {
 		return err
 	}
 
-	apps, err := db.AllApplianceIDs(context.Background())
-	if err != nil {
-		return err
+	ctx := context.Background()
+
+	var apps []appliancedb.ApplianceID
+	for _, site := range sites {
+		fm, err := registry.SiteUUIDByNameFuzzy(ctx, db, site)
+		if err != nil {
+			if ase, ok := err.(registry.AmbiguousSiteError); ok {
+				return errors.New(strings.TrimSpace(ase.Pretty()))
+			}
+			return err
+		}
+		if fm.Name != "" {
+			fmt.Fprintf(os.Stderr,
+				"%q matched more than one site, but %q (%s) "+
+					"seemed the most likely\n",
+				site, fm.Name, fm.UUID)
+		}
+		a, err := db.ApplianceIDsBySiteID(ctx, fm.UUID)
+		if err != nil {
+			return err
+		}
+		apps = append(apps, a...)
 	}
 
-	u, err := registry.SiteUUIDByNameFuzzy(context.Background(), db, siteUUID)
-	if err != nil {
-		if ase, ok := err.(registry.AmbiguousSiteError); ok {
-			fmt.Fprint(os.Stderr, ase.Pretty())
-			os.Exit(1)
+	for _, org := range orgs {
+		fm, err := registry.OrgUUIDByNameFuzzy(ctx, db, org)
+		if err != nil {
+			if aoe, ok := err.(registry.AmbiguousOrgError); ok {
+				return errors.New(strings.TrimSpace(aoe.Pretty()))
+			}
+			return err
 		}
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		if fm.Name != "" {
+			fmt.Fprintf(os.Stderr,
+				"%q matched more than one org, but %q (%s) "+
+					"seemed the most likely\n",
+				org, fm.Name, fm.UUID)
+		}
+		a, err := db.ApplianceIDsByOrgID(ctx, fm.UUID)
+		if err != nil {
+			return err
+		}
+		apps = append(apps, a...)
 	}
-	if u.SiteName != "" {
-		fmt.Fprintf(os.Stderr,
-			"%q matched more than one site, but %q (%s) seemed the most likely\n",
-			siteUUID, u.SiteName, u.SiteUUID)
-	}
-	if u.SiteUUID != uuid.Nil {
-		siteUUID = u.SiteUUID.String()
+
+	if len(apps) == 0 {
+		apps, err = db.AllApplianceIDs(ctx)
+		if err != nil {
+			return err
+		}
 	}
 
 	// XXX We could write a query with a WHERE clause ...
@@ -65,7 +100,6 @@ func listAppliances(cmd *cobra.Command, args []string) error {
 		if (reg.Project == "" || reg.Project == app.GCPProject) &&
 			(reg.Region == "" || reg.Region == app.GCPRegion) &&
 			(reg.Registry == "" || reg.Registry == app.ApplianceReg) &&
-			(siteUUID == "" || app.SiteUUID.String() == siteUUID) &&
 			(appID == "" || appID == app.ApplianceRegID) {
 			matchingApps = append(matchingApps, app)
 		}
@@ -291,7 +325,8 @@ func appMain(rootCmd *cobra.Command) {
 	listAppCmd.Flags().StringP("registry", "r", "", "appliance registry")
 	listAppCmd.Flags().StringP("name", "n", "", "appliance name")
 	listAppCmd.Flags().StringP("input", "i", "", "registry data JSON file")
-	listAppCmd.Flags().StringP("site-uuid", "s", "", "site UUID")
+	listAppCmd.Flags().StringSliceP("org", "o", []string{}, "list appliances belonging to these orgs")
+	listAppCmd.Flags().StringSliceP("site", "s", []string{}, "list appliances at these sites")
 	appCmd.AddCommand(listAppCmd)
 
 	setAppCmd := &cobra.Command{

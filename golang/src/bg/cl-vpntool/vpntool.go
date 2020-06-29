@@ -71,14 +71,14 @@ func main() {
 		}
 		log.Fatal(err)
 	}
-	if u.SiteName != "" {
+	if u.Name != "" {
 		log.Printf("%q matched more than one site, but %q (%s) seemed the most likely",
-			*uuid, u.SiteName, u.SiteUUID)
+			*uuid, u.Name, u.UUID)
 	}
 
 	url := environ.ConfigdConnection
 	tls := !environ.DisableTLS
-	conn, err := clcfg.NewConfigd(pname, u.SiteUUID.String(), url, tls)
+	conn, err := clcfg.NewConfigd(pname, u.UUID.String(), url, tls)
 	if err != nil {
 		log.Fatalf("connection failure: %s", err)
 	}
