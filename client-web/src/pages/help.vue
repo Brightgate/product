@@ -1,5 +1,5 @@
 <!--
-  COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+  COPYRIGHT 2020 Brightgate Inc. All rights reserved.
 
   This copyright notice is Copyright Management Information under 17 USC 1202
   and is included to protect this work and deter copyright infringement.
@@ -8,10 +8,29 @@
   such unauthorized removal or alteration will be a violation of federal law.
 -->
 <style>
-.help-content img {
+div.help-content {
+  max-width: 800px;
+}
+
+div.help-content figure {
+  text-align: center;
+}
+
+div.help-content p.note {
+  border: solid 1px;
+  padding: 0.5em;
+  background: lightyellow;
+}
+
+div.help-content p.note::before {
+  font-weight: bold;
+  content: "Note: ";
+}
+
+div.help-content img {
   margin: 0.5em 0;
   max-width: 100%;  /* prevent horizontal overflow */
-  max-height: 80vh; /* 80% of viewport height */
+  max-height: 60vh; /* 60% of viewport height */
 }
 </style>
 <template>

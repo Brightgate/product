@@ -1,11 +1,107 @@
+/*
+ * COPYRIGHT 2020 Brightgate Inc. All rights reserved.
+ *
+ * This copyright notice is Copyright Management Information under 17 USC 1202
+ * and is included to protect this work and deter copyright infringement.
+ * Removal or alteration of this Copyright Management Information without the
+ * express written permission of Brightgate Inc. is prohibited, and any
+ * such unauthorized removal or  alteration will be a violation of federal law.
+ */
+
+@charset "UTF-8";
+
 @page {
 	size: Letter;
 	margin: 1in;
+	@bottom-right {
+		font-family: "GentiumBookBasic", Palatino, serif;
+		content: "Brightgate Administration Guide · " counter(page);
+	}
 }
 
-html { hyphens: auto; }
+@page :first {
+	@bottom-center {
+		font-family: "GentiumBookBasic", Palatino, serif;
+		content: counter(page);
+	}
+	@bottom-right {
+		content: "";
+	}
+}
+
+html {
+	hyphens: auto;
+}
+
+html body {
+	font-family: "GentiumBookBasic", Palatino, serif;
+}
+
+h1,h2,h3,h4,h5,h6 {
+	font-family: "LibreFranklin", Helvetica, sans-serif;
+}
+
+h1 {
+	counter-reset: sec-num;
+}
+
+h2.section::before {
+	content: counter(sec-num) ". ";
+}
+
+h2.section {
+	counter-increment: sec-num;
+}
+
+code, pre {
+	font-family: "SourceCodePro", Courier, monospace;
+}
 
 img {
-	max-width: 100%;
-	max-height: 18cm; /* ~7 inches */
+	max-width: 80%;
+	max-height: 12cm; /* ~4.75 inches */
+}
+
+section#contents > ul {
+}
+
+section#contents > ul > li {
+}
+
+section#contents > ul > li::before {
+}
+
+section#contents > ul > ul {
+}
+
+section#contents > ul > li > ul > li {
+}
+
+section#contents > ul > li > ul > li::before {
+}
+
+section#contents > ul > li > ul > li > a {
+}
+
+section#contents > ul > li > ul > li > a::before {
+}
+
+section#contents > ul > li > ul > li > a::after {
+	content: target-counter(attr(href), page);
+	float: right;
+}
+
+figure {
+	text-align: center;
+}
+
+p.note {
+	border: solid 1px;
+	padding: 0.5em;
+	background: lightyellow;
+}
+
+p.note::before {
+	font-weight: bold;
+	content: "Note: ";
 }
