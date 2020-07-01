@@ -408,16 +408,16 @@
   <ol>
     <li>Navigate to the <a href="https://svc1.b10e.net">Brightgate
         management app</a></li>
-    <li>Select either the <b>Login with Google</b> or <b>Login with
+    <li>Select either the <b>Sign in with Google</b> or <b>Sign in with
         Microsoft</b>
       button to log in to the Brightgate cloud
-      <figure> <img src="./images/login_shot.png" alt="Logging in to Brightgate">
+      <figure class="screenshot"> <img src="./images/login_shot.png" alt="Logging in to Brightgate">
       </figure>
     </li>
     <li>Provide credentials for either your Google or Microsoft account
-      <figure> <img src="./images/select_account.png" alt="Select Google account">
+      <figure class="screenshot"> <img src="./images/select_account.png" alt="Select Google account">
       </figure>
-      <figure>
+      <figure class="screenshot">
         <img src="./images/select_account_ms.png"
           alt="Select Microsoft account">
       </figure>
@@ -443,7 +443,7 @@
     <li>Enter the new name, then select <b>OK</b></li>
     <li>(Optional) Repeat for associated satellites</li>
   </ol>
-  <figure>
+  <figure class="screenshot">
   <img src="./images/change-node-name.png"
     alt="Change the Brightgate appliance name">
   </figure>
@@ -535,11 +535,15 @@
       </ul>
     </li>
   </ol>
-  <figure> <img src="./images/guest-enrollment.png" alt="Enroll guests"> </figure>
+  <figure class="screenshot">
+    <img src="./images/guest-enrollment.png" alt="Enroll guests">
+  </figure>
   <h4 id="remediate-threats">Remediate threats</h4>
   <p>When Brightgate identifies a vulnerability, you'll see an alert section
     similar to this when you first log in:</p>
-  <figure><img src="./images/security_alert.png" alt="Security alert"></figure>
+  <figure class="screenshot">
+    <img src="./images/security_alert.png" alt="Security alert">
+  </figure>
   <p>When alerted to a vulnerability, administrators have two options:</p>
   <ol>
     <li>For a <i>specific</i> device, including the security policy violation
@@ -626,7 +630,8 @@
   <p>In the Brightgate management app, if you manage multiple organizations,
     switch among them by clicking the <b>Organization button</b> at the top
     left, then selecting the correct organization from the displayed list.</p>
-  <figure><img src="./images/select-organization.png" alt="Select the organization">
+  <figure class="screenshot">
+    <img src="./images/select-organization.png" alt="Select the organization">
   </figure>
   <h3 id="appliance-overview">Appliance overview</h3>
   <p>This appliance provides the following:</p>
@@ -707,7 +712,7 @@
       the procedure outlined in <a href="#change-device-trust-group">change a
         device's trust group assignment</a>.</li>
   </ul>
-  <figure><img src="./images/brightgate-appliance-info.png"
+  <figure class="screenshot"><img src="./images/brightgate-appliance-info.png"
       alt="Brightgate appliance information"></figure>
   <h4 id="quick-word-certificates">A quick word about certificates</h4>
   <p>When connecting your device to the authenticated users network for the
@@ -760,7 +765,7 @@
   <p>In this example, the network has 22 active devices, all of which have been
     scanned, and none that are exposing the device or network to potential
     attack. </p>
-  <figure><img src="./images/compliance-report.png" alt="Compliance report"></figure>
+  <figure class="screenshot"><img src="./images/compliance-report.png" alt="Compliance report"></figure>
   <h3 id="view-devices-network">View devices on the network</h3>
   <p>To view devices on your network, from the main menu,
     <i>select your site &gt; Devices.</i> From this page, you can toggle to view
@@ -768,7 +773,7 @@
     trust group, MAC address, and IP address. The parentheses
     next to <b>Devices</b> displays the active and inactive devices enrolled
     across the Brightgate-secured networks for your organization.</p>
-  <figure><img src="./images/manage-devices.png" alt="Manage devices"></figure>
+  <figure class="screenshot"><img src="./images/manage-devices.png" alt="Manage devices"></figure>
   <h3 id="device-details">View device details</h3>
   <p>Brightgate supplies details specific to each device on the network. Access
     this information directly by clicking the alert when you first log in or,
@@ -803,7 +808,7 @@
     set) for this device. In addition, where possible, the hardware model and
     operating system for this device as identified by the Brightgate machine
     learning algorithm.</p>
-  <figure><img src="./images/device-details.png" alt="Device details"></figure>
+  <figure class="screenshot"><img src="./images/device-details.png" alt="Device details"></figure>
   <h3 id="change-device-name">Change a device's name</h3>
   <p>Using the Brightgate management app, you can rename client devices that
     have access to your network. This helps differentiate among devices and
@@ -817,7 +822,7 @@
     <li>Click the pencil icon to enter the friendly name for this device</li>
     <li>Click <b>OK</b></li>
   </ol>
-  <figure>
+  <figure class="screenshot">
     <img src=./images/rename-client-device.png alt="Rename client device">
   </figure>
   <h3 id="remove-devices">Remove devices</h3>
@@ -898,7 +903,9 @@
       device. In the example, the device is being assigned into the
       <code>standard</code> trust group:</li>
   </ol>
-  <figure><img src="./images/move-trust-group.png" alt="Move trust group"></figure>
+  <figure class="screenshot">
+    <img src="./images/move-trust-group.png" alt="Move trust group">
+  </figure>
   <p>To change the trust group assignment for devices connected to a wired port:
   </p>
   <ol>
@@ -910,7 +917,8 @@
       In the example, the port is being assigned into the <code>devices</code>
       trust group:</li>
   </ol>
-  <figure><img src="./images/move-lan-trust-group.png" alt="Move LAN trust group">
+  <figure class="screenshot">
+    <img src="./images/move-lan-trust-group.png" alt="Move LAN trust group">
   </figure>
   <h3 id="rotate-passwords">Rotate passwords</h3>
   <p>During the Beta program, passwords are not automatically rotated.
@@ -926,7 +934,7 @@
       passphrase, click the eyeball icon.</li>
     <li>Click <b>Save</b></li>
   </ol>
-  <figure><img src="./images/edit-network-details.png" alt="Edit network details">
+  <figure class="screenshot"><img src="./images/edit-network-details.png" alt="Edit network details">
   </figure>
   <h3>Enable remote access</h3>
   <p>The Brightgate appliance can optionally allow remote access to the managed network via a WireGuard&reg;-based virtual private network.</p>
@@ -938,7 +946,7 @@
     <li>Click the "Enable VPN" toggle to the on position, then click the "Save"
       button.  Remote access is now active.</li>
   </ol>
-  <figure><img src="./images/enable-vpn.png" alt="Enable site VPN">
+  <figure class="screenshot"><img src="./images/enable-vpn.png" alt="Enable site VPN">
   </figure>
   <p>If your Brightgate appliance is not directly reachable from the remote access clients, then you must adjust the "External Address" field to have an IPv4 address that the clients can reach.  You must then make sure that the device responding at that address forwards the UDP port set in "External Port" to that port on the Brightgate appliance's WAN interface.</p>
   <h3>Provisioning remote access credentials</h3>
@@ -953,7 +961,7 @@
   </ol>
   <p class="note">Brightgate does not retain a copy of the user's configuration, which contains a user-specific secret.  If a user loses their configuration, they should delete the old configuration and generate a new one.</p>
 
-  <figure><img src="./images/generate-vpn-config.png" alt="Generate VPN client configuration">
+  <figure class="screenshot"><img src="./images/generate-vpn-config.png" alt="Generate VPN client configuration">
   </figure>
 
   <h2 class="section" id="review-network-configuration-and-users">Review network configuration
@@ -965,8 +973,30 @@
   <p>To view your networks, from the main menu, <i>select your site &gt;
       Networks.</i></p>
   <p>The networks defined for your site display as well as network
-    configuration, including the networks' DNS server and WAN address.</p>
-  <figure><img src="./images/network-configuration.png" alt="Network configuration">
+    configuration, including:</p>
+  <ul>
+    <li><b>DNS Server:</b> the IP address of the server that the gateway is
+      using to resolve network names.  For example, when the gateway needs
+      to contact Brightgate, it will use this DNS server to lookup the
+      addresses for Brightgate's cloud.  Brightgate gateways use
+      `8.8.8.8`, also known as <a href="https://developers.google.com/speed/public-dns">Google
+      Public DNS</a>.  This is also the server that the on-gateway DNS
+      resolver will use when it cannot resolve a query itself.
+    </li>
+    <li><b>Site DNS Domain:</b> an automatically assigned name for this
+      site's network that allows the Brightgate appliance to serve valid
+      DNS records for local devices and to generate valid TLS certificates.
+      It is not editable.  You can force a client device to have a locally
+      resolvable DNS name by manually assigning it a Name on the Device
+      Details page; the gateway will derive a suitable DNS name from the Name
+      and display it in the DNS Name field on the same page.
+    </li>
+    <li><b>WAN Link:</b> the IP address the gateway is currently using on its
+      WAN (upstream) network link.  Clicking reveals additional
+      information about the configuration of the WAN link.
+    </li>
+  </ul>
+  <figure class="screenshot"><img src="./images/network-configuration.png" alt="Network configuration">
   </figure>
   <p>To view the details for a particular network, select it from the display.
     Brightgate displays for each network:</p>
@@ -1042,14 +1072,14 @@
     <li>Click <b>Manage Roles</b></li>
     <li>Check the <b>Administrator</b> box</li>
   </ol>
-  <figure>
+  <figure class="screenshot">
     <img src="./images/grant-admin-privilege.png"
       alt="Grant administrative privileges">
   </figure>
   <h4 id="view-accounts">View accounts</h4>
   <p>To view accounts created for the Brightgate cloud, from the main menu,
     select <i>Accounts.</i></p>
-  <figure><img src="./images/display-accounts.png" alt="Display accounts"></figure>
+  <figure class="screenshot"><img src="./images/display-accounts.png" alt="Display accounts"></figure>
   <h4 id="view-account-details">View account details</h4>
   <p>Click the account for which you'd like to view details to do any of the
     following:</p>
@@ -1068,7 +1098,7 @@
       the steps outlined in <a href="#delete-account">delete an account.</a>
     </li>
   </ul>
-  <figure><img src="./images/account-details.png" alt="Account details"></figure>
+  <figure class="screenshot"><img src="./images/account-details.png" alt="Account details"></figure>
   <h4 id="deprovision-account">Deprovision an account</h4>
   <p>For users who are taking an extended leave and whose accounts will not
     require access
@@ -1111,8 +1141,9 @@
     + icon at the bottom of the list; however, during the Beta program, please
     contact Brightgate support for assistance if this type of user is
     required.</p>
-  <figure><img src="./images/site-specific-admin.png"
-      alt="Site-specific administrators"></figure>
+  <figure class="screenshot">
+    <img src="./images/site-specific-admin.png" alt="Site-specific administrators">
+  </figure>
   <h2 id="add-devices">Adding different devices</h2>
   <p>Add devices that use the Wi-Fi user name and password created in the
     Brightgate management app, such as a laptop, phone, or tablet, to the
@@ -1144,7 +1175,7 @@
   <p class="note">The first time you add your Mac to the network, you will be
       asked to accept a certificate. Select <b>Continue</b> to add the
       certificate. You're welcome to read more in <a href="#quick-word-certificates">a quick word about certificates</a>.</p>
-  <figure>
+  <figure class="screenshot">
   <img src="./images/add_mac_to_network.png" alt="Adding a Mac to the network">
   </figure>
   <p>When your Mac joins the network, you'll see the bars of the Wi-Fi logo
@@ -1219,18 +1250,18 @@
       if you're not sure of the network name.
     </li>
     <li>Click <b>Connect</b>
-      <figure> <img src="./images/windows-auto-connect.png"
+      <figure class="screenshot"> <img src="./images/windows-auto-connect.png"
           alt="Automatically connect to Wi-Fi">
       </figure>
     </li>
     <li>Wait for Windows to check network requirements
-      <figure> <img src="./images/windows-check-requirements.png"
+      <figure class="screenshot"> <img src="./images/windows-check-requirements.png"
           alt="Checking requirements">
       </figure>
     </li>
     <li>Enter the user name and password you created in the Brightgate
       application, then click <b>OK</b>.
-      <figure> <img src="./images/windows-enter-password.png"
+      <figure class="screenshot"> <img src="./images/windows-enter-password.png"
           alt="Provide your username and password">
       </figure>
       <br>
@@ -1249,25 +1280,27 @@
     see your enterprise network, use this procedure to connect manually:</p>
   <ol>
     <li>Click on Cortana ("Ask me anything" box in taskbar)
-      <figure> <img src="./images/windows-cortana.png" alt="Click on Cortana">
+      <figure class="screenshot">
+        <img src="./images/windows-cortana.png" alt="Click on Cortana">
       </figure>
     </li>
     <li>Type “Control Panel” to open the Control Panel
-      <figure> <img src="./images/windows-control-panel.png" alt="Control panel">
+      <figure class="screenshot">
+	<img src="./images/windows-control-panel.png" alt="Control panel">
       </figure>
     </li>
     <li>Open <b>Network and Internet</b>
-      <figure> <img src="./images/windows-network-and-internet.png"
+      <figure class="screenshot"> <img src="./images/windows-network-and-internet.png"
           alt="Network and internet">
       </figure>
     </li>
     <li>Open the <b>Network and Sharing Center</b>
-      <figure> <img src="./images/windows-network-and-sharing.png"
+      <figure class="screenshot"> <img src="./images/windows-network-and-sharing.png"
           alt="Network and Sharing Center">
       </figure>
     </li>
     <li>Select <b>Set up a new connection or network</b>
-      <figure> <img src="./images/windows-set-up-new-connection.png"
+      <figure class="screenshot"> <img src="./images/windows-set-up-new-connection.png"
           alt="New connection">
       </figure>
     </li>
@@ -1278,7 +1311,7 @@
       now open the Wi-Fi configuration interface from the taskbar as described
       previously. Complete the connection by providing the Wi-Fi user name and
       password created in the Brightgate management application.
-      <figure> <img src="./images/windows-enter-network.png"
+      <figure class="screenshot"> <img src="./images/windows-enter-network.png"
           alt="Provide network name">
       </figure>
     </li>

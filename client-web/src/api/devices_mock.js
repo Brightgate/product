@@ -73,7 +73,15 @@ export default [
         "start": "2019-06-25T19:02:24Z"
       }
     },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": true,
@@ -101,7 +109,15 @@ export default [
         "start": "2019-06-25T19:02:58Z"
       }
     },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": true,
@@ -125,7 +141,15 @@ export default [
         "start": "2019-06-25T19:15:43Z"
       }
     },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": false,
@@ -154,13 +178,26 @@ export default [
         "start": "2019-06-20T16:25:09Z"
       }
     },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": false,
     "connBand": "5GHz",
     "connNode": "001-201901BB-000002",
     "connVAP": "psk",
+    "allowedRings": [
+      "quarantine",
+      "unenrolled",
+      "devices"
+    ],
     "dhcpExpiry": "2019-04-08T18:42:43Z",
     "dhcpName": "",
     "displayName": "",
@@ -181,7 +218,7 @@ export default [
         "start": "2019-05-28T16:19:06Z"
       }
     },
-    "wireless": false
+    "wireless": true
   },
   {
     "active": false,
@@ -197,13 +234,26 @@ export default [
         "start": "2019-06-12T20:21:51Z"
       }
     },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": false,
     "connBand": "2.4GHz",
     "connNode": "001-201901BB-000002",
     "connVAP": "psk",
+    "allowedRings": [
+      "quarantine",
+      "unenrolled",
+      "devices"
+    ],
     "dhcpExpiry": "static",
     "dhcpName": "",
     "displayName": "",
@@ -248,13 +298,26 @@ export default [
         "start": "2019-06-14T17:44:00Z"
       }
     },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": false,
     "connBand": "5GHz",
     "connNode": "001-201901BB-000001",
     "connVAP": "eap",
+    "allowedRings": [
+      "standard",
+      "core",
+      "quarantine"
+    ],
     "dhcpExpiry": "2019-06-22T17:59:20Z",
     "dhcpName": "",
     "displayName": "",
@@ -297,7 +360,15 @@ export default [
         "start": "2019-03-15T21:48:52Z"
       }
     },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": false,
@@ -330,13 +401,26 @@ export default [
         "repaired": null
       }
     },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": true,
     "connBand": "5GHz",
     "connNode": "0dfc2484-9860-41e8-b5af-7677e18b9c2b",
     "connVAP": "eap",
+    "allowedRings": [
+      "standard",
+      "core",
+      "quarantine"
+    ],
     "dhcpExpiry": "2019-06-24T01:50:32Z",
     "dhcpName": "",
     "displayName": "",
@@ -383,7 +467,15 @@ export default [
         "start": "2019-06-25T18:59:13Z"
       }
     },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": true,
@@ -412,13 +504,26 @@ export default [
         "start": "2019-06-25T18:57:11Z"
       }
     },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": true,
     "connBand": "2.4GHz",
     "connNode": "001-201901BB-000001",
     "connVAP": "eap",
+    "allowedRings": [
+      "standard",
+      "core",
+      "quarantine"
+    ],
     "dhcpExpiry": "2019-06-26T19:07:24Z",
     "dhcpName": "",
     "displayName": "",
@@ -465,13 +570,26 @@ export default [
         "start": "2019-03-15T14:23:23Z"
       }
     },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": false,
     "connBand": "5GHz",
     "connNode": "001-201901BB-000001",
     "connVAP": "eap",
+    "allowedRings": [
+      "standard",
+      "core",
+      "quarantine"
+    ],
     "dhcpExpiry": "2019-06-20T02:21:05Z",
     "dhcpName": "",
     "displayName": "",
@@ -492,7 +610,7 @@ export default [
         "start": "2019-06-05T23:24:02Z"
       }
     },
-    "wireless": false
+    "wireless": true
   },
   {
     "active": false,
@@ -519,13 +637,26 @@ export default [
         "start": "2019-06-18T20:13:33Z"
       }
     },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": false,
     "connBand": "5GHz",
     "connNode": "001-201901BB-000001",
     "connVAP": "eap",
+    "allowedRings": [
+      "standard",
+      "core",
+      "quarantine"
+    ],
     "dhcpExpiry": "2019-06-25T19:38:47Z",
     "dhcpName": "Pams-MBP",
     "displayName": "Pams-MBP",
@@ -549,31 +680,6 @@ export default [
     "wireless": true,
     "signalStrength": -77,
     "lastActivity": "2019-06-26T19:10:25Z",
-  },
-  {
-    "active": false,
-    "dhcpExpiry": "2019-04-26T18:28:50Z",
-    "dhcpName": "",
-    "displayName": "creed2",
-    "dnsName": "creed2",
-    "hwAddr": "00:01:02:a7:a6:35",
-    "ipv4Addr": "192.168.229.53",
-    "ring": "standard",
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-23T20:27:23Z",
-        "start": "2019-06-23T20:27:18Z"
-      },
-      "udp": {
-        "finish": "2019-04-26T21:23:56Z",
-        "start": "2019-04-26T21:23:52Z"
-      },
-      "vuln": {
-        "finish": "2019-05-28T16:20:02Z",
-        "start": "2019-05-28T16:19:59Z"
-      }
-    },
-    "wireless": false
   },
   {
     "active": true,
@@ -601,7 +707,15 @@ export default [
         "start": "2019-06-25T19:02:46Z"
       }
     },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": false,
@@ -625,13 +739,26 @@ export default [
         "start": "2019-06-23T20:22:59Z"
       }
     },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": false,
     "connBand": "5GHz",
     "connNode": "001-201901BB-000001",
     "connVAP": "eap",
+    "allowedRings": [
+      "standard",
+      "core",
+      "quarantine"
+    ],
     "dhcpExpiry": "2019-06-12T20:51:19Z",
     "dhcpName": "",
     "displayName": "",
@@ -652,37 +779,18 @@ export default [
         "start": "2019-05-28T16:19:47Z"
       }
     },
-    "wireless": false
-  },
-  {
-    "active": false,
-    "dhcpExpiry": "static",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:4b:77:32",
-    "ipv4Addr": "",
-    "ring": "",
-    "scans": {
-      "tcp": {
-        "finish": "2019-04-08T18:51:54Z",
-        "start": "2019-04-08T18:59:07Z"
-      },
-      "udp": {
-        "finish": "2019-04-08T16:44:30Z",
-        "start": "2019-04-08T18:24:11Z"
-      },
-      "vuln": {
-        "finish": "2019-04-08T18:50:38Z",
-        "start": "2019-04-08T18:50:39Z"
-      }
-    },
-    "wireless": false
+    "wireless": true
   },
   {
     "active": false,
     "connBand": "2.4GHz",
     "connNode": "001-201901BB-000001",
     "connVAP": "psk",
+    "allowedRings": [
+      "quarantine",
+      "unenrolled",
+      "devices"
+    ],
     "dhcpExpiry": "2019-06-26T05:31:52Z",
     "dhcpName": "",
     "displayName": "",
@@ -709,33 +817,14 @@ export default [
   },
   {
     "active": false,
-    "dhcpExpiry": "2019-06-04T18:40:07Z",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:a0:00:14",
-    "ipv4Addr": "192.168.229.239",
-    "ring": "standard",
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-23T20:26:49Z",
-        "start": "2019-06-23T20:26:44Z"
-      },
-      "udp": {
-        "finish": "2019-06-06T21:49:13Z",
-        "start": "2019-06-06T21:49:09Z"
-      },
-      "vuln": {
-        "finish": "2019-06-20T16:25:09Z",
-        "start": "2019-06-20T16:25:00Z"
-      }
-    },
-    "wireless": false
-  },
-  {
-    "active": false,
     "connBand": "5GHz",
     "connNode": "001-201901BB-000001",
     "connVAP": "eap",
+    "allowedRings": [
+      "standard",
+      "core",
+      "quarantine"
+    ],
     "dhcpExpiry": "2019-05-15T18:44:13Z",
     "dhcpName": "",
     "displayName": "",
@@ -783,7 +872,15 @@ export default [
         "start": "2019-06-25T18:59:25Z"
       }
     },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": true,
@@ -807,7 +904,15 @@ export default [
         "start": "2019-06-25T19:18:07Z"
       }
     },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": true,
@@ -831,85 +936,26 @@ export default [
         "start": "2019-06-25T19:15:00Z"
       }
     },
-    "wireless": false
-  },
-  {
-    "active": false,
-    "dhcpExpiry": "2019-05-26T03:09:43Z",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:ce:c3:3d",
-    "ipv4Addr": "192.168.229.199",
-    "ring": "standard",
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-23T20:26:00Z",
-        "start": "2019-06-23T20:25:55Z"
-      },
-      "udp": {
-        "finish": "2019-05-28T16:22:01Z",
-        "start": "2019-05-28T16:21:58Z"
-      },
-      "vuln": {
-        "finish": "2019-05-28T16:21:55Z",
-        "start": "2019-05-28T16:21:52Z"
-      }
-    },
-    "wireless": false
-  },
-  {
-    "active": false,
-    "dhcpExpiry": "2019-06-04T18:48:28Z",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:a0:00:85",
-    "ipv4Addr": "192.168.229.147",
-    "ring": "standard",
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-23T20:23:45Z",
-        "start": "2019-06-23T20:23:39Z"
-      },
-      "udp": {
-        "finish": "2019-06-23T20:23:45Z",
-        "start": "2019-06-23T20:23:43Z"
-      },
-      "vuln": {
-        "finish": "2019-06-23T20:23:45Z",
-        "start": "2019-06-23T20:23:38Z"
-      }
-    },
-    "wireless": false
-  },
-  {
-    "active": true,
-    "dhcpExpiry": "2019-06-26T08:23:53Z",
-    "dhcpName": "sat-conservatory",
-    "displayName": "sat-conservatory",
-    "hwAddr": "00:01:02:64:ee:4f",
-    "ipv4Addr": "192.168.226.3",
-    "ring": "internal",
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-25T19:12:17Z",
-        "start": "2019-06-25T19:11:58Z"
-      },
-      "udp": {
-        "finish": "2019-06-25T18:17:59Z",
-        "start": "2019-06-25T17:20:49Z"
-      },
-      "vuln": {
-        "finish": "2019-06-25T19:02:45Z",
-        "start": "2019-06-25T19:02:37Z"
-      }
-    },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": true,
     "connBand": "2.4GHz",
     "connNode": "001-201901BB-000001",
     "connVAP": "eap",
+    "allowedRings": [
+      "standard",
+      "core",
+      "quarantine"
+    ],
     "dhcpExpiry": "2019-06-26T19:11:25Z",
     "dhcpName": "Samsung-Galaxy-S7",
     "displayName": "Samsung-Galaxy-S7",
@@ -940,78 +986,6 @@ export default [
     "lastActivity": "2019-06-26T19:10:25Z",
   },
   {
-    "active": false,
-    "dhcpExpiry": "2019-06-04T21:04:09Z",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:a0:00:0e",
-    "ipv4Addr": "192.168.229.15",
-    "ring": "standard",
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-23T20:26:42Z",
-        "start": "2019-06-23T20:26:37Z"
-      },
-      "udp": {
-        "finish": "2019-04-02T18:35:26Z",
-        "start": "2019-04-02T17:39:48Z"
-      },
-      "vuln": {
-        "finish": "2019-05-28T16:19:31Z",
-        "start": "2019-05-28T16:19:28Z"
-      }
-    },
-    "wireless": false
-  },
-  {
-    "active": false,
-    "dhcpExpiry": "static",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:fe:df:59",
-    "ipv4Addr": "",
-    "ring": "guest",
-    "scans": {
-      "tcp": {
-        "finish": "2019-03-15T16:18:46Z",
-        "start": "2019-03-15T16:15:12Z"
-      },
-      "udp": {
-        "finish": "2019-03-15T11:26:15Z",
-        "start": "2019-03-15T10:30:33Z"
-      },
-      "vuln": {
-        "finish": "2019-03-15T13:36:28Z",
-        "start": "2019-03-15T13:13:39Z"
-      }
-    },
-    "wireless": false
-  },
-  {
-    "active": true,
-    "dhcpExpiry": "2019-06-26T08:23:12Z",
-    "dhcpName": "dev-test2",
-    "displayName": "dev-test2",
-    "hwAddr": "00:01:02:ca:8d:b5",
-    "ipv4Addr": "192.168.229.159",
-    "ring": "standard",
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-25T19:06:40Z",
-        "start": "2019-06-25T19:06:23Z"
-      },
-      "udp": {
-        "finish": "2019-06-25T15:06:19Z",
-        "start": "2019-06-25T14:46:40Z"
-      },
-      "vuln": {
-        "finish": "2019-06-25T18:59:43Z",
-        "start": "2019-06-25T18:59:37Z"
-      }
-    },
-    "wireless": false
-  },
-  {
     "active": true,
     "dhcpExpiry": "static",
     "dhcpName": "dp-raspberrypi",
@@ -1038,87 +1012,26 @@ export default [
         "start": "2019-06-25T19:16:37Z"
       }
     },
-    "wireless": false
-  },
-  {
-    "active": false,
-    "dhcpExpiry": "2019-06-13T19:49:53Z",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:a0:00:6b",
-    "ipv4Addr": "192.168.229.56",
-    "ring": "standard",
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-23T20:24:15Z",
-        "start": "2019-06-23T20:24:10Z"
-      },
-      "udp": {
-        "finish": "2019-05-24T21:30:19Z",
-        "start": "2019-05-24T21:30:15Z"
-      },
-      "vuln": {
-        "finish": "2019-06-23T20:24:15Z",
-        "start": "2019-06-23T20:24:09Z"
-      }
-    },
-    "wireless": false
-  },
-  {
-    "active": false,
-    "dhcpExpiry": "2019-06-15T22:43:33Z",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:56:f9:37",
-    "ipv4Addr": "192.168.229.184",
-    "ring": "standard",
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-23T20:23:30Z",
-        "start": "2019-06-23T20:23:23Z"
-      },
-      "udp": {
-        "finish": "2019-06-23T20:23:30Z",
-        "start": "2019-06-23T20:23:24Z"
-      },
-      "vuln": {
-        "finish": "2019-06-23T20:23:26Z",
-        "start": "2019-06-23T20:23:17Z"
-      }
-    },
-    "wireless": false
-  },
-  {
-    "active": false,
-    "dhcpExpiry": "static",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:53:71:73",
-    "ipv4Addr": "",
-    "ring": "standard",
-    "wireless": false
-  },
-  {
-    "active": false,
-    "dhcpExpiry": "static",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:31:a5:9a",
-    "ipv4Addr": "",
-    "ring": "",
-    "scans": {
-      "tcp": {
-        "finish": "2019-04-23T23:01:30Z",
-        "start": "2019-04-23T23:01:27Z"
-      }
-    },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": true,
     "connBand": "5GHz",
     "connNode": "001-201901BB-000002",
     "connVAP": "eap",
+    "allowedRings": [
+      "standard",
+      "core",
+      "quarantine"
+    ],
     "username": "pam@dundermifflin.com",
     "dhcpExpiry": "2019-06-26T19:10:25Z",
     "dhcpName": "pambook",
@@ -1148,62 +1061,6 @@ export default [
     "wireless": true,
     "signalStrength": -35,
     "lastActivity": "2019-06-26T19:10:25Z",
-  },
-  {
-    "active": false,
-    "dhcpExpiry": "2019-05-30T18:54:55Z",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:a0:00:8b",
-    "ipv4Addr": "192.168.229.95",
-    "ring": "standard",
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-23T20:30:07Z",
-        "start": "2019-06-23T20:30:02Z"
-      }
-    },
-    "wireless": false
-  },
-  {
-    "active": false,
-    "dhcpExpiry": "2019-05-30T19:04:25Z",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:a0:00:92",
-    "ipv4Addr": "192.168.229.251",
-    "ring": "standard",
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-23T20:25:55Z",
-        "start": "2019-06-23T20:25:50Z"
-      }
-    },
-    "wireless": false
-  },
-  {
-    "active": false,
-    "dhcpExpiry": "static",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:4b:77:31",
-    "ipv4Addr": "",
-    "ring": "",
-    "scans": {
-      "tcp": {
-        "finish": "2019-04-08T18:49:35Z",
-        "start": "2019-04-08T18:47:58Z"
-      },
-      "udp": {
-        "finish": "2019-04-08T15:39:27Z",
-        "start": "2019-04-08T14:45:19Z"
-      },
-      "vuln": {
-        "finish": "2019-04-08T17:45:35Z",
-        "start": "2019-04-08T17:36:05Z"
-      }
-    },
-    "wireless": false
   },
   {
     "active": true,
@@ -1243,71 +1100,15 @@ export default [
         "repaired": null
       }
     },
-    "wireless": false
-  },
-  {
-    "active": false,
-    "dhcpExpiry": "static",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:31:a5:99",
-    "ipv4Addr": "",
-    "ring": "",
-    "scans": {
-      "tcp": {
-        "finish": "2019-04-23T23:01:03Z",
-        "start": "2019-04-23T23:00:59Z"
-      }
-    },
-    "wireless": false
-  },
-  {
-    "active": false,
-    "dhcpExpiry": "2019-06-21T20:24:25Z",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:a0:00:26",
-    "ipv4Addr": "192.168.229.22",
-    "ring": "standard",
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-23T20:26:26Z",
-        "start": "2019-06-23T20:26:22Z"
-      },
-      "udp": {
-        "finish": "2019-05-28T16:19:56Z",
-        "start": "2019-05-28T16:19:48Z"
-      },
-      "vuln": {
-        "finish": "2019-06-20T20:22:22Z",
-        "start": "2019-06-20T20:22:12Z"
-      }
-    },
-    "wireless": false
-  },
-  {
-    "active": false,
-    "dhcpExpiry": "2019-06-13T19:16:48Z",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:a0:00:9e",
-    "ipv4Addr": "192.168.229.150",
-    "ring": "standard",
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-23T20:23:50Z",
-        "start": "2019-06-23T20:23:43Z"
-      },
-      "udp": {
-        "finish": "2019-06-23T20:23:50Z",
-        "start": "2019-06-23T20:23:45Z"
-      },
-      "vuln": {
-        "finish": "2019-06-23T20:23:50Z",
-        "start": "2019-06-23T20:23:43Z"
-      }
-    },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": false,
@@ -1337,12 +1138,22 @@ export default [
     "wireless": true,
     "signalStrength": -75,
     "lastActivity": "2019-06-26T19:10:25Z",
+    "allowedRings": [
+      "standard",
+      "core",
+      "quarantine"
+    ],
   },
   {
     "active": true,
     "connBand": "2.4GHz",
     "connNode": "001-201901BB-000001",
     "connVAP": "eap",
+    "allowedRings": [
+      "standard",
+      "core",
+      "quarantine"
+    ],
     "dhcpExpiry": "2019-06-26T19:07:32Z",
     "dhcpName": "DESKTOP-GEK7J5G",
     "displayName": "DESKTOP-GEK7J5G",
@@ -1412,7 +1223,15 @@ export default [
         "repaired": null
       }
     },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": true,
@@ -1440,7 +1259,15 @@ export default [
         "start": "2019-06-25T19:12:25Z"
       }
     },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": false,
@@ -1464,36 +1291,15 @@ export default [
         "start": "2019-06-23T20:22:59Z"
       }
     },
-    "wireless": false
-  },
-  {
-    "active": true,
-    "dhcpExpiry": "2019-06-26T08:23:20Z",
-    "dhcpName": "duvall-pi0",
-    "displayName": "duvall-pi0",
-    "hwAddr": "00:01:02:6d:4c:74",
-    "ipv4Addr": "192.168.229.126",
-    "ring": "standard",
-    "devID": {
-      "ouiMfg": "Raspberry Pi Foundation",
-      "deviceGenus": "Raspberry Pi",
-      "osGenus": "Linux",
-    },
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-25T19:09:49Z",
-        "start": "2019-06-25T19:06:55Z"
-      },
-      "udp": {
-        "finish": "2019-06-25T16:00:06Z",
-        "start": "2019-06-25T15:02:39Z"
-      },
-      "vuln": {
-        "finish": "2019-06-25T18:55:53Z",
-        "start": "2019-06-25T18:55:44Z"
-      }
-    },
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": true,
@@ -1522,26 +1328,26 @@ export default [
         "start": "2019-06-25T19:18:30Z"
       }
     },
-    "wireless": false
-  },
-  {
-    "active": false,
-    "connBand": "5GHz",
-    "connNode": "0dfc2484-9860-41e8-b5af-7677e18b9c2b",
-    "connVAP": "guest",
-    "dhcpExpiry": "static",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:b9:8d:b1",
-    "ipv4Addr": "",
-    "ring": "standard",
-    "wireless": false
+    "wireless": false,
+    "allowedRings": [
+      "quarantine",
+      "standard",
+      "unenrolled",
+      "core",
+      "devices",
+      "guest"
+    ],
   },
   {
     "active": true,
     "connBand": "5GHz",
     "connNode": "001-201901BB-000002",
     "connVAP": "psk",
+    "allowedRings": [
+      "quarantine",
+      "unenrolled",
+      "devices"
+    ],
     "dhcpExpiry": "2019-06-26T07:07:23Z",
     "dhcpName": "amazon-160612181",
     "displayName": "Pam's Echo Dot",
@@ -1575,26 +1381,6 @@ export default [
     "lastActivity": "2019-06-26T19:10:25Z",
   },
   {
-    "active": false,
-    "dhcpExpiry": "2019-05-30T21:01:47Z",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:a0:00:93",
-    "ipv4Addr": "192.168.229.207",
-    "ring": "standard",
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-23T20:26:58Z",
-        "start": "2019-06-23T20:26:52Z"
-      },
-      "vuln": {
-        "finish": "2019-05-29T21:49:31Z",
-        "start": "2019-05-29T21:49:29Z"
-      }
-    },
-    "wireless": false
-  },
-  {
     "active": true,
     "dhcpExpiry": "2019-05-22T22:51:45Z",
     "dhcpName": "roku",
@@ -1615,46 +1401,6 @@ export default [
       "vuln": {
         "finish": "2019-05-28T16:19:35Z",
         "start": "2019-05-28T16:19:33Z"
-      }
-    },
-    "wireless": false
-  },
-  {
-    "active": false,
-    "dhcpExpiry": "2019-06-13T18:18:55Z",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:a0:00:99",
-    "ipv4Addr": "192.168.229.243",
-    "ring": "standard",
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-23T20:27:03Z",
-        "start": "2019-06-23T20:26:58Z"
-      }
-    },
-    "wireless": false
-  },
-  {
-    "active": false,
-    "dhcpExpiry": "static",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:b3:e4:19",
-    "ipv4Addr": "",
-    "ring": "standard",
-    "scans": {
-      "tcp": {
-        "finish": "2019-05-03T22:47:53Z",
-        "start": "2019-05-03T22:47:50Z"
-      },
-      "udp": {
-        "finish": "2019-03-21T22:22:27Z",
-        "start": "2019-03-21T22:16:49Z"
-      },
-      "vuln": {
-        "finish": "2019-03-21T22:51:44Z",
-        "start": "2019-03-21T22:51:43Z"
       }
     },
     "wireless": false
@@ -1686,29 +1432,5 @@ export default [
       }
     },
     "wireless": true
-  },
-  {
-    "active": false,
-    "dhcpExpiry": "2019-05-14T22:41:44Z",
-    "dhcpName": "",
-    "displayName": "",
-    "hwAddr": "00:01:02:a0:00:84",
-    "ipv4Addr": "192.168.229.153",
-    "ring": "standard",
-    "scans": {
-      "tcp": {
-        "finish": "2019-06-23T20:23:59Z",
-        "start": "2019-06-23T20:23:52Z"
-      },
-      "udp": {
-        "finish": "2019-06-23T20:23:59Z",
-        "start": "2019-06-23T20:23:57Z"
-      },
-      "vuln": {
-        "finish": "2019-06-23T20:23:59Z",
-        "start": "2019-06-23T20:23:52Z"
-      }
-    },
-    "wireless": false
   },
 ];

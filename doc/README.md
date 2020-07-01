@@ -79,3 +79,22 @@ Four markers are placed in the file, using HTML comments:
 
   For example, the body content is extracted and then deposited into Framework
   7-compatible `div` elements.
+
+## Screenshots
+
+Many of the images in the documentation are screenshots.  Screenshots should be
+saved as PNG images.  The documentation build applies some tools to reduce the
+size of these images.
+
+For the web application (and otherwise when possible) use Google Chrome
+developer tools to make screenshots for inclusion in the documentation.
+Typically we put the view into mobile mode, with "Pixel 2" selected as the
+target device.  To take a screenshot, use the Three-dots Menu > Capture
+Screenshot (not Capture full-size screenshot).  Then use tools such as Apple
+Preview to crop the screenshot if needed.  Make sure to take a look at the
+image to make sure no developer artifacts (such as highlighted elements or
+labeled elements) are present, sometimes Chrome seems to mess up and emit
+screenshots with those included.
+
+Screenshots need not have borders, and in general it is better that they don't,
+as the doc css rules automatically includes them.

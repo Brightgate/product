@@ -95,6 +95,10 @@ figure {
 	text-align: center;
 }
 
+figure.screenshot img {
+	border: solid 1px #888;
+}
+
 p.note {
 	border: solid 1px;
 	padding: 0.5em;

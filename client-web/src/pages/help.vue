@@ -17,9 +17,12 @@ div.help-content figure {
 }
 
 div.help-content p.note {
-  border: solid 1px;
+  border-left: solid 4px var(--bg-color-yellow-100);
+  border-radius: 4px;
   padding: 0.5em;
-  background: lightyellow;
+  background: var(--bg-color-yellow-10);
+  margin-top: 6px;
+  margin-bottom: 6px;
 }
 
 div.help-content p.note::before {
@@ -32,6 +35,12 @@ div.help-content img {
   max-width: 100%;  /* prevent horizontal overflow */
   max-height: 60vh; /* 60% of viewport height */
 }
+
+div.help-content figure.screenshot img {
+  border: 1px solid #bbb;
+  box-shadow: var(--f7-elevation-4);
+}
+
 </style>
 <template>
   <f7-page id="help-page" @page:beforein="onPageBeforeIn" @page:init="onPageBeforeIn">

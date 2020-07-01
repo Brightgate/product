@@ -65,7 +65,11 @@ li.accordion-item.accordion-item-opened >>> span.hide-when-accordion-open {
              we will want to do better -->
         {{ networkConfig.dns.servers ? networkConfig.dns.servers.join(',') : '' }}
       </f7-list-item>
-      <f7-list-item :title="$t('message.network.config_dns_domain')">
+      <f7-list-item>
+        <bg-list-item-title
+          slot="title"
+          :title="$t('message.network.config_dns_domain')"
+          :tip="$t('message.network.config_dns_domain_tip')" />
         {{ networkConfig.dns.domain }}
       </f7-list-item>
       <f7-list-item v-if="networkConfig.wan" accordion-item inset title="WAN Link">
@@ -115,6 +119,7 @@ import vuex from 'vuex';
 import Debug from 'debug';
 import appDefs from '../app_defs';
 
+import BGListItemTitle from '../components/list_item_title.vue';
 import BGSiteBreadcrumb from '../components/site_breadcrumb.vue';
 
 const debug = Debug('page:network');
@@ -122,6 +127,7 @@ const debug = Debug('page:network');
 export default {
   components: {
     'bg-site-breadcrumb': BGSiteBreadcrumb,
+    'bg-list-item-title': BGListItemTitle,
   },
   data: function() {
     return {
