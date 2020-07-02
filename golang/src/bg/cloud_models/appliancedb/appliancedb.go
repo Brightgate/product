@@ -55,6 +55,8 @@ type DataStore interface {
 	UpdateCustomerSiteTx(context.Context, DBX, *CustomerSite) error
 
 	AllApplianceIDs(context.Context) ([]ApplianceID, error)
+	ApplianceIDsBySiteID(context.Context, uuid.UUID) ([]ApplianceID, error)
+	ApplianceIDsByOrgID(context.Context, uuid.UUID) ([]ApplianceID, error)
 	ApplianceIDByClientID(context.Context, string) (*ApplianceID, error)
 	ApplianceIDByUUID(context.Context, uuid.UUID) (*ApplianceID, error)
 	ApplianceIDByHWSerial(context.Context, string) (*ApplianceID, error)
@@ -464,6 +466,41 @@ func (db *ApplianceDB) AllApplianceIDs(ctx context.Context) ([]ApplianceID, erro
 		return nil, err
 	}
 	return ids, nil
+}
+
+// ApplianceIDsBySiteID returns a list of the Appliance IDs which are associated
+// with a particular site.
+func (db *ApplianceDB) ApplianceIDsBySiteID(ctx context.Context, u uuid.UUID) (
+	[]ApplianceID, error) {
+	var ids []ApplianceID
+	err := db.SelectContext(ctx, &ids,
+		`SELECT * FROM appliance_id_map WHERE site_uuid=$1`, u)
+	// SelectContext doesn't return sql.ErrNoRows, so we detect it otherwise.
+	if len(ids) == 0 {
+		return nil, NotFoundError{fmt.Sprintf(
+			"ApplianceIDsBySiteID: Couldn't find appliances for site %s", u)}
+	}
+	return ids, err
+}
+
+// ApplianceIDsByOrgID returns a list of the Appliance IDs which are associated
+// with a particular organization.
+func (db *ApplianceDB) ApplianceIDsByOrgID(ctx context.Context, u uuid.UUID) (
+	[]ApplianceID, error) {
+	var ids []ApplianceID
+	err := db.SelectContext(ctx, &ids, `
+		SELECT *
+		FROM appliance_id_map
+		WHERE site_uuid IN (
+			SELECT uuid
+			FROM customer_site
+			WHERE organization_uuid=$1
+		)`, u)
+	if len(ids) == 0 {
+		return nil, NotFoundError{fmt.Sprintf(
+			"ApplianceIDsByOrgID: Couldn't find appliances for org %s", u)}
+	}
+	return ids, err
 }
 
 // ApplianceIDByUUID selects an ApplianceID using its UUID

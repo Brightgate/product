@@ -24,6 +24,7 @@ import (
 
 	"bg/cl_common/clcfg"
 	"bg/cl_common/pgutils"
+	"bg/cl_common/registry"
 	"bg/cl_common/release"
 	"bg/cloud_models/appliancedb"
 	"bg/common/cfgapi"
@@ -253,6 +254,7 @@ func applianceStatus(cmd *cobra.Command, args []string) error {
 	siteUUStrs, _ := cmd.Flags().GetStringArray("site")
 	orgUUStrs, _ := cmd.Flags().GetStringArray("org")
 	noNames, _ := cmd.Flags().GetBool("no-name")
+	verbose, _ := cmd.Flags().GetBool("verbose")
 
 	if (len(appUUStrs) > 0 && len(siteUUStrs) > 0) ||
 		(len(appUUStrs) > 0 && len(orgUUStrs) > 0) ||
@@ -270,8 +272,9 @@ func applianceStatus(cmd *cobra.Command, args []string) error {
 
 	// If we didn't specify --app, --site, or --org, then dump everything,
 	// per-appliance.
-	if len(appUUStrs) > 0 || (len(siteUUStrs) == 0 && len(orgUUStrs) == 0) {
-		appUUs := make([]uuid.UUID, len(appUUStrs))
+	var appUUs []uuid.UUID
+	if len(appUUStrs) > 0 {
+		appUUs = make([]uuid.UUID, len(appUUStrs))
 		for i, appUUStr := range appUUStrs {
 			appUU, err := uuid.FromString(appUUStr)
 			if err != nil {
@@ -279,95 +282,197 @@ func applianceStatus(cmd *cobra.Command, args []string) error {
 			}
 			appUUs[i] = appUU
 		}
-
-		status, err := db.GetReleaseStatusByAppliances(ctx, appUUs)
-		if err != nil {
-			return err
-		}
-
-		var asoMap map[uuid.UUID]appliancedb.AppSiteOrg
-		if !noNames {
-			chain, err := db.AppSiteOrgChain(ctx, appUUs)
+	} else if len(siteUUStrs) > 0 {
+		for _, siteUUStr := range siteUUStrs {
+			fm, err := registry.SiteUUIDByNameFuzzy(ctx, db, siteUUStr)
+			if err != nil {
+				if ase, ok := err.(registry.AmbiguousSiteError); ok {
+					return errors.New(strings.TrimSpace(ase.Pretty()))
+				}
+				return err
+			}
+			if fm.SiteName != "" {
+				fmt.Fprintf(os.Stderr,
+					"%q matched more than one site, but %q "+
+						"(%s) seemed the most likely\n",
+					siteUUStr, fm.SiteName, fm.SiteUUID)
+			}
+			var siteUU uuid.UUID
+			if fm.SiteUUID != uuid.Nil {
+				siteUU = fm.SiteUUID
+			}
+			siteApps, err := db.ApplianceIDsBySiteID(ctx, siteUU)
 			if err != nil {
 				return err
 			}
-			asoMap = make(map[uuid.UUID]appliancedb.AppSiteOrg, len(appUUs))
-			for _, aso := range chain {
-				asoMap[aso.AppUUID] = aso
+			for _, appID := range siteApps {
+				appUUs = append(appUUs, appID.ApplianceUUID)
 			}
 		}
-
-		var columns []prettytable.Column
-		if noNames {
-			columns = append(columns, prettytable.Column{Header: "Appliance"})
-		} else {
-			columns = append(columns, prettytable.Column{Header: "Organization/Site"})
-			columns = append(columns, prettytable.Column{Header: "Appliance"})
-		}
-		// Checkmark for up-to-date?
-		columns = append(columns,
-			prettytable.Column{Header: "Target Release UUID"},
-			prettytable.Column{Header: "Name"},
-			prettytable.Column{Header: "Current Release UUID"},
-			prettytable.Column{Header: "Name"},
-			prettytable.Column{Header: "Since"})
-		table, _ := prettytable.NewTable(columns...)
-		table.Separator = "  "
-
-		appUUs = make([]uuid.UUID, 0)
-		for appUU := range status {
-			appUUs = append(appUUs, appUU)
-		}
-		appNames := make(map[uuid.UUID][]interface{}, len(appUUs))
-		if noNames {
-			for _, appUU := range appUUs {
-				appNames[appUU] = []interface{}{appUU.String()}
+	} else if len(orgUUStrs) > 0 {
+		for _, orgUUStr := range orgUUStrs {
+			orgUU, err := uuid.FromString(orgUUStr)
+			if err != nil {
+				return err
 			}
-			sort.Slice(appUUs, func(i, j int) bool {
-				return bytes.Compare(appUUs[i].Bytes(), appUUs[j].Bytes()) == -1
-			})
-		} else {
-			for _, appUU := range appUUs {
-				appNames[appUU] = []interface{}{
-					fmt.Sprintf("%s / %s", asoMap[appUU].OrgName, asoMap[appUU].SiteName),
-					asoMap[appUU].AppName,
-				}
+			orgApps, err := db.ApplianceIDsByOrgID(ctx, orgUU)
+			if err != nil {
+				return err
 			}
-			sort.Slice(appUUs, func(i, j int) bool {
-				ei0 := appNames[appUUs[i]][0].(string)
-				ei1 := appNames[appUUs[i]][1].(string)
-				ej0 := appNames[appUUs[j]][0].(string)
-				ej1 := appNames[appUUs[j]][1].(string)
-				return ei0+ei1 < ej0+ej1
-			})
+			for _, appID := range orgApps {
+				appUUs = append(appUUs, appID.ApplianceUUID)
+			}
 		}
+	}
 
+	status, err := db.GetReleaseStatusByAppliances(ctx, appUUs)
+	if err != nil {
+		return err
+	}
+
+	var asoMap map[uuid.UUID]appliancedb.AppSiteOrg
+	if !noNames {
+		chain, err := db.AppSiteOrgChain(ctx, appUUs)
+		if err != nil {
+			return err
+		}
+		asoMap = make(map[uuid.UUID]appliancedb.AppSiteOrg, len(appUUs))
+		for _, aso := range chain {
+			asoMap[aso.AppUUID] = aso
+		}
+	}
+
+	var columns []prettytable.Column
+	if noNames {
+		columns = append(columns, prettytable.Column{Header: "Appliance"})
+	} else {
+		columns = append(columns, prettytable.Column{Header: "Organization/Site"})
+		columns = append(columns, prettytable.Column{Header: "Appliance"})
+	}
+	// Checkmark for up-to-date?
+	columns = append(columns,
+		prettytable.Column{Header: "Target Release UUID"},
+		prettytable.Column{Header: "Name"},
+		prettytable.Column{Header: "Current Release UUID"},
+		prettytable.Column{Header: "Name"},
+		prettytable.Column{Header: "Prog"}, // ress
+		prettytable.Column{Header: "Since"})
+	table, _ := prettytable.NewTable(columns...)
+	table.Separator = "  "
+
+	appUUs = make([]uuid.UUID, 0)
+	for appUU := range status {
+		appUUs = append(appUUs, appUU)
+	}
+	appNames := make(map[uuid.UUID][]interface{}, len(appUUs))
+	if noNames {
 		for _, appUU := range appUUs {
-			stat := status[appUU]
-			var targUU, targName, curUU, curName, since string
-			if stat.TargetReleaseUUID.Valid {
-				targUU = stat.TargetReleaseUUID.UUID.String()
-				targName = stat.TargetReleaseName.String
-			} else {
-				targUU = "-"
-				targName = "-"
+			appNames[appUU] = []interface{}{appUU.String()}
+		}
+		sort.Slice(appUUs, func(i, j int) bool {
+			return bytes.Compare(appUUs[i].Bytes(), appUUs[j].Bytes()) == -1
+		})
+	} else {
+		for _, appUU := range appUUs {
+			appNames[appUU] = []interface{}{
+				fmt.Sprintf("%s / %s", asoMap[appUU].OrgName, asoMap[appUU].SiteName),
+				asoMap[appUU].AppName,
 			}
-			if stat.CurrentReleaseUUID.Valid {
+		}
+		sort.Slice(appUUs, func(i, j int) bool {
+			ei0 := appNames[appUUs[i]][0].(string)
+			ei1 := appNames[appUUs[i]][1].(string)
+			ej0 := appNames[appUUs[j]][0].(string)
+			ej1 := appNames[appUUs[j]][1].(string)
+			return ei0+ei1 < ej0+ej1
+		})
+	}
+
+	var messages, logURLs []string
+	for _, appUU := range appUUs {
+		stat := status[appUU]
+		var targUU, targName, curUU, curName, since, progress string
+
+		// If .Valid is false, we want the empty string.
+		messages = append(messages, stat.Message.String)
+		logURLs = append(logURLs, stat.LogURL.String)
+
+		if stat.TargetReleaseUUID.Valid {
+			targUU = stat.TargetReleaseUUID.UUID.String()
+			targName = stat.TargetReleaseName.String
+		} else {
+			targUU = "-"
+			targName = "-"
+		}
+
+		if stat.CurrentReleaseUUID.Valid {
+			if stat.CurrentReleaseUUID.UUID == uuid.Nil && stat.Commits != nil {
+				var a []string
+				for repo, hash := range stat.Commits {
+					l := 10
+					if len(hash) < l {
+						l = len(hash)
+					}
+					a = append(a, repo+":"+hash[:l])
+				}
+				curUU = strings.Join(a, " ")
+				// We could try to figure out which
+				// release the commits most closely
+				// describe, then print that, plus its
+				// diffs. (~Beta 2: PS:d4db33f)
+				curName = "-"
+			} else {
 				curUU = stat.CurrentReleaseUUID.UUID.String()
 				curName = stat.CurrentReleaseName.String
-				since = stat.RunningSince.Time.In(time.Local).
-					Round(time.Second).Format(timeLayout)
-			} else {
-				curUU = "-"
-				curName = "-"
-				since = "-"
 			}
-			var outCols []interface{}
-			outCols = append(outCols, appNames[appUU]...)
-			outCols = append(outCols, targUU, targName, curUU, curName, since)
-			table.AddRow(outCols...)
+			since = stat.RunningSince.Time.In(time.Local).
+				Round(time.Second).Format(timeLayout)
+		} else {
+			curUU = "-"
+			curName = "-"
+			since = "-"
 		}
-		table.Print()
+
+		if stat.Stage.Valid {
+			success := "-"
+			if stat.Success.Valid {
+				if stat.Success.Bool {
+					success = "✔"
+				} else {
+					success = "✘"
+				}
+			}
+			progress = map[string]string{
+				"notified":           success + "---",
+				"manifest_retrieved": "✔" + success + "--",
+				"installed":          "✔✔" + success + "-",
+				"complete":           "✔✔✔" + success,
+			}[stat.Stage.String]
+		}
+
+		var outCols []interface{}
+		outCols = append(outCols, appNames[appUU]...)
+		outCols = append(outCols, targUU, targName, curUU, curName,
+			progress, since)
+		table.AddRow(outCols...)
+	}
+
+	lines := bytes.Split(bytes.TrimSpace(table.Bytes()), []byte("\n"))
+	os.Stdout.Write(append(lines[0], []byte("\n")...))
+	for i, line := range lines[1:] {
+		os.Stdout.Write(append(line, []byte("\n")...))
+
+		// Messages and log URLs are typically not found for
+		// successfully completed upgrades.  These will normally only
+		// show up when an upgrade has failed, or when an appliance is
+		// in between stages.
+		if verbose && messages[i] != "" {
+			fmt.Printf("  Message: %s\n", strings.TrimSpace(messages[i]))
+		}
+		if verbose && logURLs[i] != "" {
+			fmt.Printf("  Log URL: %s\n", logURLs[i])
+		}
+
 	}
 
 	return nil
@@ -423,13 +528,17 @@ func notifyAppliances(cmd *cobra.Command, args []string) error {
 	}
 	cmdHdl := cfgHdl.Execute(ctx, ops)
 	_, err = cmdHdl.Status(ctx)
+	now := time.Now()
 	if err != nil {
 		if err != cfgapi.ErrQueued && err != cfgapi.ErrInProgress {
+			db.SetUpgradeStage(ctx, appUU, relUU, now, "notified",
+				false, err.Error())
 			return err
 		}
 		fmt.Println("Notification has been queued; the appliance will " +
 			"upgrade once it receives the notification")
 	}
+	db.SetUpgradeStage(ctx, appUU, relUU, now, "notified", true, "")
 
 	return nil
 }
@@ -484,13 +593,22 @@ func main() {
 	statusCmd := &cobra.Command{
 		Use:   "status [flags]",
 		Short: "Get release status of appliances",
-		Args:  cobra.NoArgs,
-		RunE:  applianceStatus,
+		Long: `Get the release status of appliances.
+
+The 'Prog' column indicates success (✔) or failure (✘) of each stage.
+The stages, in order, are 'notified' (a notification has been posted to
+the config tree), 'manifest retrieved' (the appliance has retrieved the
+manifest), 'installed' (the appliance has performed its installation and
+sent the log to the cloud), 'complete' (the appliance has rebooted and
+reported its running release).`,
+		Args: cobra.NoArgs,
+		RunE: applianceStatus,
 	}
-	statusCmd.Flags().StringArrayP("app", "a", []string{}, "appliance UUID")
-	statusCmd.Flags().StringArrayP("site", "s", []string{}, "site UUID")
-	statusCmd.Flags().StringArrayP("org", "o", []string{}, "organization UUID")
+	statusCmd.Flags().StringArrayP("app", "a", []string{}, "appliance UUIDs")
+	statusCmd.Flags().StringArrayP("site", "s", []string{}, "site UUIDs")
+	statusCmd.Flags().StringArrayP("org", "o", []string{}, "organization UUIDs")
 	statusCmd.Flags().BoolP("no-name", "n", false, "don't resolve appliance UUIDs into names")
+	statusCmd.Flags().BoolP("verbose", "v", false, "extra output (latest message and log URL)")
 	rootCmd.AddCommand(statusCmd)
 
 	if err := processEnv(); err != nil {

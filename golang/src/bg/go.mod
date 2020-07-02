@@ -75,7 +75,7 @@ require (
 	github.com/lytics/multibayes v0.0.0-20161108162840-3457a5582021
 	github.com/m-lab/ndt7-client-go v0.1.0
 	github.com/markbates/goth v1.56.0
-	github.com/mattn/go-runewidth v0.0.4 // indirect
+	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/mattn/go-sqlite3 v1.11.0
 	github.com/miekg/dns v1.1.20
 	github.com/oklog/run v1.1.0 // indirect

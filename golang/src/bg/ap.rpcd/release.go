@@ -41,6 +41,10 @@ import (
 	"github.com/spf13/afero"
 )
 
+var (
+	errSameRelease = errors.New("Target release matches current release")
+)
+
 // If it looks like we're running with a self-assigned serial number, notify
 // the cloud.
 func validateNodeID(ctx context.Context, tclient cloud_rpc.EventClient,
@@ -59,7 +63,7 @@ func validateNodeID(ctx context.Context, tclient cloud_rpc.EventClient,
 			}
 		}
 	} else {
-		slog.Warnf("while parsing nodeID %s: %v", nodeID, err)
+		slog.Warnf("failed to parse nodeID %s: %v", nodeID, err)
 	}
 }
 
@@ -105,7 +109,11 @@ func upgradeLoop(ctx context.Context, client cloud_rpc.ReleaseManagerClient,
 		case <-releaseChan:
 			slog.Info("Got signal to upgrade")
 
-			if err = doUpgrade(ctx, client, tclient, curRelUU); err != nil {
+			if err = doUpgradeAndReport(ctx, client, tclient, curRelUU); err != nil {
+				if err == errSameRelease {
+					slog.Warn(err)
+					continue
+				}
 				slog.Error(err)
 			}
 		}
@@ -302,43 +310,64 @@ func cleanupOldArtifacts(targetRelease string, curRelUU *uuid.UUID) {
 }
 
 func doUpgrade(ctx context.Context, client cloud_rpc.ReleaseManagerClient,
-	tclient cloud_rpc.EventClient, curRelUU *uuid.UUID) error {
+	curRelUU *uuid.UUID) (string, []byte, error) {
 	resp, err := fetchReleaseDescriptor(ctx, client)
 	if err != nil {
-		return errors.Wrap(err, "Failed to fetch release descriptor")
+		return "", nil, errors.Wrap(err, "Failed to fetch release descriptor")
 	}
 
 	rel, err := unmarshalRelease(resp.Release)
 	if err != nil {
-		return errors.Wrap(err, "Failed to unmarshal release descriptor")
+		return "", nil, errors.Wrap(err, "Failed to unmarshal release descriptor")
 	}
 
 	targetRelease := rel.Release.UUID.String()
 	slog.Infof("Target release is %s", targetRelease)
 
+	// If we're already running this release, bail out early
+	if curRelUU != nil && targetRelease == curRelUU.String() {
+		return targetRelease, nil, errSameRelease
+	}
+
 	dir := plat.ExpandDirPath(platform.APData, "release", targetRelease)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return errors.Wrapf(err, "Failed to create release download directory %s", dir)
+		return targetRelease, nil, errors.Wrapf(err, "Failed to create release download directory %s", dir)
 	}
 	prettyBytes := indentReleaseJSON(resp.Release)
-	ioutil.WriteFile(filepath.Join(dir, "release.json"), []byte(prettyBytes), 0644)
+	err = ioutil.WriteFile(filepath.Join(dir, "release.json"), []byte(prettyBytes), 0644)
+	if err != nil {
+		return targetRelease, nil, errors.Wrapf(err, "Failed to write release descriptor")
+	}
 
 	// Double-check that the release matches the running platform.
 	if rel.Platform != plat.GetPlatform() {
-		return errors.Errorf("Release %s is for platform %s, not %s",
+		return targetRelease, nil, errors.Errorf("Release %s is for platform %s, not %s",
 			targetRelease, rel.Platform, plat.GetPlatform())
 	}
 
 	err = fetchArtifacts(ctx, rel, dir)
 	if err != nil {
-		return errors.Wrapf(err, "Failed to fetch release artifacts")
+		return targetRelease, nil, errors.Wrapf(err, "Failed to fetch release artifacts")
 	}
 
 	out, err := plat.Upgrade(rel)
+	return targetRelease, out, err
+}
+
+func doUpgradeAndReport(ctx context.Context, client cloud_rpc.ReleaseManagerClient,
+	tclient cloud_rpc.EventClient, curRelUU *uuid.UUID) error {
+
+	targetRelease, out, err := doUpgrade(ctx, client, curRelUU)
+
+	var errText string
+	if err != nil {
+		errText = err.Error()
+	}
 	report := &cloud_rpc.UpgradeReport{
 		RecordTime:  ptypes.TimestampNow(),
 		ReleaseUuid: targetRelease,
 		Output:      out,
+		Error:       errText,
 	}
 	if err != nil {
 		report.Result = cloud_rpc.UpgradeReport_FAILURE
@@ -350,15 +379,24 @@ func doUpgrade(ctx context.Context, client cloud_rpc.ReleaseManagerClient,
 		slog.Errorf("Failed to publish upgrade failure event: %v",
 			pubErr)
 	}
+	if out != nil {
+		slog.Infof("Upgrade output:\n%s", string(out))
+	}
 	if err != nil {
 		return errors.Wrap(err, "Failed to upgrade")
 	}
-	slog.Infof("Upgrade output:\n%s", string(out))
 
 	cleanupOldArtifacts(targetRelease, curRelUU)
 
-	slog.Info("Upgrade complete; rebooting")
-	mcpd.Reboot()
+	if os.Getenv("APROOT") == "/" {
+		slog.Info("Upgrade complete; rebooting")
+		mcpd.Reboot()
+	} else {
+		// It'd be nice if we could tell mcp to shut everything down and
+		// restart itself (and then everything else), and that "reboot"
+		// did that in this configuration.
+		slog.Info("Upgrade complete; test mode means no reboot")
+	}
 
 	return nil
 }
@@ -429,6 +467,11 @@ func fetchArtifacts(ctx context.Context, rel release.Release, dir string) error 
 
 		hexHash := hex.EncodeToString(h.Sum(nil))
 		if hexHash != artifact.Hash {
+			// Signed URLs are really long due to a lot of lengthy
+			// query parameters.  We could trim the query off, since
+			// it normally shouldn't be interesting for diagnostic
+			// purposes, but in case there's a problem with the
+			// signing, it might be useful.
 			return fmt.Errorf("%q hash of %q (%q) is %s, should be %s",
 				artifact.HashType, artifact.URL, f.Name(), hexHash, artifact.Hash)
 		}

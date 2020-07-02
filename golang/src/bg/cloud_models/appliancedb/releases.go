@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc. All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc. All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -33,11 +33,13 @@ type releaseManager interface {
 	InsertRelease(context.Context, []*ReleaseArtifact, map[string]string) (uuid.UUID, error)
 	GetRelease(context.Context, uuid.UUID) (*Release, error)
 	GetCurrentRelease(context.Context, uuid.UUID) (uuid.UUID, error)
-	SetCurrentRelease(context.Context, uuid.UUID, uuid.UUID, time.Time) error
+	SetCurrentRelease(context.Context, uuid.UUID, uuid.UUID, time.Time, map[string]string) error
 	GetTargetRelease(context.Context, uuid.UUID) (uuid.UUID, error)
 	SetTargetRelease(context.Context, uuid.UUID, uuid.UUID) error
 	ListReleases(context.Context) ([]*Release, error)
 	GetReleaseStatusByAppliances(context.Context, []uuid.UUID) (map[uuid.UUID]ApplianceReleaseStatus, error)
+	SetUpgradeResults(context.Context, time.Time, uuid.UUID, uuid.UUID, bool, sql.NullString, string) error
+	SetUpgradeStage(context.Context, uuid.UUID, uuid.UUID, time.Time, string, bool, string) error
 }
 
 // ReleaseArtifact objects represent rows in the artifacts table.
@@ -52,11 +54,6 @@ type ReleaseArtifact struct {
 	Hash       []byte
 }
 
-// scanReleaseArtifact is an alias for ReleaseArtifact that allows us to create
-// a custom scanner to pull out elements of the array composing the "commits"
-// column from the queries in GetRelease() and ListReleases().
-type scanReleaseArtifact ReleaseArtifact
-
 // Scan implements the sql.Scanner interface.  The queries whose results
 // populate this struct each have a column which is an array of composite (row)
 // type, and it is a single member of those arrays which is being scanned here.
@@ -65,7 +62,7 @@ type scanReleaseArtifact ReleaseArtifact
 // distinguishable by the number of elements, so we check that to determine
 // which "mode" to use.  Note that no column can have a comma in the field, or
 // this parsing will break.
-func (sra *scanReleaseArtifact) Scan(src interface{}) error {
+func (ra *ReleaseArtifact) Scan(src interface{}) error {
 	srcBytes, ok := src.([]byte)
 	if !ok {
 		return fmt.Errorf("Type assertion from %T to []byte failed", src)
@@ -94,35 +91,35 @@ func (sra *scanReleaseArtifact) Scan(src interface{}) error {
 	if len(elems) == 3 {
 		repoIdx, commitIdx, genIdx = 0, 1, 2
 	} else if len(elems) == 6 {
-		sra.Filename = string(elems[0])
-		if sra.Hash, err = decodeBytea(elems[1]); err != nil {
+		ra.Filename = string(elems[0])
+		if ra.Hash, err = decodeBytea(elems[1]); err != nil {
 			return err
 		}
-		sra.HashType = string(elems[2])
+		ra.HashType = string(elems[2])
 		repoIdx, commitIdx, genIdx = 3, 4, 5
 	} else {
 		return fmt.Errorf("artifact/commit column has %d columns, not 3 or 6",
 			len(elems))
 	}
-	sra.Repo = string(elems[repoIdx])
-	if sra.Commit, err = decodeBytea(elems[commitIdx]); err != nil {
+	ra.Repo = string(elems[repoIdx])
+	if ra.Commit, err = decodeBytea(elems[commitIdx]); err != nil {
 		return err
 	}
-	if sra.Generation, err = strconv.Atoi(string(elems[genIdx])); err != nil {
+	if ra.Generation, err = strconv.Atoi(string(elems[genIdx])); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// scanReleaseArtifactArray is an alias for a slice of scanReleaseArtifact to
-// allow us to use pq's array parsing to split the response into individual
-// encoded blobs representing scanReleaseArtifact objects.
-type scanReleaseArtifactArray []scanReleaseArtifact
+// ReleaseArtifactArray is an alias for a slice of ReleaseArtifact to allow us
+// to use pq's array parsing to split the response into individual encoded blobs
+// representing ReleaseArtifact objects.
+type ReleaseArtifactArray []ReleaseArtifact
 
 // Scan implements the sql.Scanner interface.
-func (sraa *scanReleaseArtifactArray) Scan(src interface{}) error {
-	ga := pq.GenericArray{A: sraa}
+func (raa *ReleaseArtifactArray) Scan(src interface{}) error {
+	ga := pq.GenericArray{A: raa}
 	return ga.Scan(src)
 }
 
@@ -138,6 +135,10 @@ func (p KVMap) Value() (driver.Value, error) {
 
 // Scan implements the sql.Scanner interface.
 func (p *KVMap) Scan(src interface{}) error {
+	if src == nil {
+		return nil
+	}
+
 	source, ok := src.([]byte)
 	if !ok {
 		return fmt.Errorf("Type assertion from %T to []byte failed", src)
@@ -190,10 +191,10 @@ func (p *KVMap) Scan(src interface{}) error {
 // Release objects represent rows in the releases table, joined with data from
 // the artifacts and platforms tables.
 type Release struct {
-	UUID     uuid.UUID                `db:"release_uuid"`
-	Creation time.Time                `db:"create_ts"`
-	Platform string                   `db:"platform"`
-	Commits  scanReleaseArtifactArray `db:"commits"`
+	UUID     uuid.UUID            `db:"release_uuid"`
+	Creation time.Time            `db:"create_ts"`
+	Platform string               `db:"platform"`
+	Commits  ReleaseArtifactArray `db:"commits"`
 	Metadata KVMap
 
 	// OnePlatform is a synthetic column created by the query in
@@ -418,9 +419,8 @@ func (db *ApplianceDB) ListReleases(ctx context.Context) ([]*Release, error) {
 	// seems like overkill.
 	//
 	// The commits come back as an array of "tuples" (rows).  There's no
-	// supported way to scan this directly; see the scanReleaseArtifact and
-	// scanReleaseArtifactArray objects and their Scan() methods to see how
-	// we do this.
+	// supported way to scan this directly; see the Scan() methods of the
+	// ReleaseArtifact and ReleaseArtifactArray types to see how we do this.
 	q := `
 		SELECT r.release_uuid,
 			r.create_ts,
@@ -512,14 +512,74 @@ func (db *ApplianceDB) GetCurrentRelease(ctx context.Context, appUU uuid.UUID) (
 
 // SetCurrentRelease sets the release which we think an appliance is currently
 // running.
-func (db *ApplianceDB) SetCurrentRelease(ctx context.Context, appUU, relUU uuid.UUID, ts time.Time) error {
+func (db *ApplianceDB) SetCurrentRelease(ctx context.Context, appUU, relUU uuid.UUID,
+	ts time.Time, commits map[string]string) error {
+	// XXX If the commits match a release and relUU is uuid.Nil, we could
+	// set relUU to the real value.  This has diminished value until
+	// appliances start reporting VUB versions.
+	//
+	// XXX If the commits don't match a release and relUU isn't uuid.Nil, we
+	// could set relUU to uuid.Nil.  Note that this would be actively
+	// counterproductive until appliances start reporting VUB versions.
+	//
 	// XXX If an appliance reboots into an older release, we won't ever
 	// record the fact that it's fallen back.
+	commitJSON, err := json.Marshal(commits)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.ExecContext(ctx, `
+		WITH c AS (
+			SELECT release_uuid = $2 AS success
+			FROM appliance_release_targets
+			WHERE appliance_uuid = $1
+		)
+		INSERT INTO appliance_release_history (
+			appliance_uuid, release_uuid, updated_ts, stage, success, repo_commits
+		)
+		VALUES ($1, $2, $3, 'complete', (SELECT success FROM c), $4::jsonb)
+		ON CONFLICT (appliance_uuid, release_uuid, stage) DO
+			UPDATE SET (updated_ts, success, repo_commits) = (
+				EXCLUDED.updated_ts, EXCLUDED.success, EXCLUDED.repo_commits
+			) WHERE appliance_release_history.success IS DISTINCT FROM EXCLUDED.success OR
+				appliance_release_history.repo_commits IS DISTINCT FROM EXCLUDED.repo_commits`,
+		appUU, relUU, ts, commitJSON)
+	if pqErr, ok := err.(*pq.Error); ok && pqErr.Code.Name() == "foreign_key_violation" {
+		var m string
+		switch pqErr.Constraint {
+		case "appliance_release_history_appliance_uuid_fkey":
+			m = fmt.Sprintf("Unknown appliance UUID %s", appUU)
+		case "appliance_release_history_release_uuid_fkey":
+			m = fmt.Sprintf("Unknown release UUID %s", relUU)
+		default:
+			m = fmt.Sprintf("Unexpected constraint %s violated in table %s: %s",
+				pqErr.Constraint, pqErr.Table, pqErr.Detail)
+		}
+		return ForeignKeyError{
+			simpleMessage: m,
+			Message:       pqErr.Message,
+			Detail:        pqErr.Detail,
+			Schema:        pqErr.Schema,
+			Table:         pqErr.Table,
+			Constraint:    pqErr.Constraint,
+		}
+	}
+	return err
+}
+
+// SetUpgradeStage records what stage the upgrade has completed, its success or
+// failure, and any message associated with it.  For the "complete" stage, use
+// SetCurrentRelease, and for the "installed" stage, use SetUpgradeResults.
+func (db *ApplianceDB) SetUpgradeStage(ctx context.Context, appUU, relUU uuid.UUID, ts time.Time, stage string, success bool, msg string) error {
 	_, err := db.ExecContext(ctx, `
-		INSERT INTO appliance_release_history (appliance_uuid, release_uuid, updated_ts)
-			VALUES ($1, $2, $3)
-		ON CONFLICT (appliance_uuid, release_uuid) DO NOTHING`,
-		appUU, relUU, ts)
+		INSERT INTO appliance_release_history (
+			appliance_uuid, release_uuid, updated_ts, stage, success
+		)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (appliance_uuid, release_uuid, stage) DO
+			UPDATE SET (updated_ts, success, message) = (EXCLUDED.updated_ts, EXCLUDED.success, EXCLUDED.message)`,
+		appUU, relUU, ts, stage, success)
 	if pqErr, ok := err.(*pq.Error); ok && pqErr.Code.Name() == "foreign_key_violation" {
 		var m string
 		switch pqErr.Constraint {
@@ -598,6 +658,43 @@ func (db *ApplianceDB) SetTargetRelease(ctx context.Context, appUU, relUU uuid.U
 	return err
 }
 
+// SetUpgradeResults stores a short error message, if any, and a pointer to the
+// log for an appliance's upgrade procedure (the part before the reboot).
+func (db *ApplianceDB) SetUpgradeResults(ctx context.Context, ts time.Time,
+	appUU, relUU uuid.UUID, success bool, upgradeErr sql.NullString, logURL string) error {
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO appliance_release_history (
+			appliance_uuid, release_uuid, updated_ts, stage, success, message, log_url
+		)
+		VALUES ($1, $2, $3, 'installed', $4, $5, $6)
+		ON CONFLICT (appliance_uuid, release_uuid, stage) DO UPDATE
+		SET (updated_ts, success, message, log_url) = (
+			EXCLUDED.updated_ts, EXCLUDED.success, EXCLUDED.message, EXCLUDED.log_url
+		)`,
+		appUU, relUU, ts, success, upgradeErr, logURL)
+	if pqErr, ok := err.(*pq.Error); ok && pqErr.Code.Name() == "foreign_key_violation" {
+		var m string
+		switch pqErr.Constraint {
+		case "appliance_release_history_appliance_uuid_fkey":
+			m = fmt.Sprintf("Unknown appliance UUID %s", appUU)
+		case "appliance_release_history_release_uuid_fkey":
+			m = fmt.Sprintf("Unknown release UUID %s", relUU)
+		default:
+			m = fmt.Sprintf("Unexpected constraint %s violated in table %s: %s",
+				pqErr.Constraint, pqErr.Table, pqErr.Detail)
+		}
+		return ForeignKeyError{
+			simpleMessage: m,
+			Message:       pqErr.Message,
+			Detail:        pqErr.Detail,
+			Schema:        pqErr.Schema,
+			Table:         pqErr.Table,
+			Constraint:    pqErr.Constraint,
+		}
+	}
+	return err
+}
+
 // ApplianceReleaseStatus represents the join of the appliance_release_targets
 // and appliance_release_history for an individual appliance.
 type ApplianceReleaseStatus struct {
@@ -606,6 +703,11 @@ type ApplianceReleaseStatus struct {
 	RunningSince       null.Time
 	TargetReleaseUUID  uuid.NullUUID
 	TargetReleaseName  sql.NullString
+	Commits            KVMap
+	Stage              sql.NullString
+	Success            sql.NullBool
+	Message            sql.NullString
+	LogURL             sql.NullString
 }
 
 // GetReleaseStatusByAppliances returns information about what appliances are
@@ -616,7 +718,8 @@ func (db *ApplianceDB) GetReleaseStatusByAppliances(ctx context.Context, appUUs 
 		SELECT DISTINCT ON (appliance_uuid)
 			m.appliance_uuid,
 			c.release_uuid, rc.metadata->>'name', c.updated_ts,
-			t.release_uuid, rt.metadata->>'name'
+			t.release_uuid, rt.metadata->>'name', c.repo_commits,
+			c.stage, c.success, c.message, c.log_url
 		FROM (
 			appliance_release_targets t
 				INNER JOIN releases rt USING (release_uuid)
@@ -656,9 +759,13 @@ func (db *ApplianceDB) GetReleaseStatusByAppliances(ctx context.Context, appUUs 
 	for rows.Next() {
 		var appUU uuid.UUID
 		var curUU, targUU uuid.NullUUID
-		var curName, targName sql.NullString
+		var curName, targName, stage, message, logurl sql.NullString
+		var success sql.NullBool
 		var curTime null.Time
-		err = rows.Scan(&appUU, &curUU, &curName, &curTime, &targUU, &targName)
+		commits := make(KVMap)
+		err = rows.Scan(&appUU, &curUU, &curName, &curTime,
+			&targUU, &targName, &commits, &stage, &success,
+			&message, &logurl)
 		if err != nil {
 			return nil, err
 		}
@@ -668,6 +775,11 @@ func (db *ApplianceDB) GetReleaseStatusByAppliances(ctx context.Context, appUUs 
 			RunningSince:       curTime,
 			TargetReleaseUUID:  targUU,
 			TargetReleaseName:  targName,
+			Commits:            commits,
+			Stage:              stage,
+			Success:            success,
+			Message:            message,
+			LogURL:             logurl,
 		}
 	}
 

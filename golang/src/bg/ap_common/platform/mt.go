@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -467,8 +467,8 @@ func mtUpgrade(rel release.Release) ([]byte, error) {
 	cmd := exec.Command(apFactory, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return output, errors.Wrapf(err, "failed to upgrade (%s):\n%s",
-			cmd.Args, output)
+		return output, errors.Wrapf(err, "failed to upgrade (%s)",
+			cmd.Args)
 	}
 	return output, nil
 }

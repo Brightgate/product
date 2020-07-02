@@ -19,6 +19,8 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"net/http"
@@ -73,9 +75,15 @@ var (
 
 	log  *zap.Logger
 	slog *zap.SugaredLogger
+
+	getStorageClient func(context.Context) (*storage.Client, error) = getRealStorageClient
 )
 
-const gcsBaseURL = "https://storage.cloud.google.com/"
+const gcsBaseURL = "gs://"
+
+func getRealStorageClient(ctx context.Context) (*storage.Client, error) {
+	return storage.NewClient(ctx)
+}
 
 // XXX Should this move to cl_common?  Or should we do like we do for stats and
 // drops, and just have the client request a signed URL to write the output to
@@ -91,7 +99,7 @@ func writeCSObject(ctx context.Context, applianceDB appliancedb.DataStore,
 		return "", fmt.Errorf("writeCSObject not implemented for provider %s",
 			scs.Provider)
 	}
-	client, err := storage.NewClient(ctx)
+	client, err := getStorageClient(ctx)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to create storage client")
 	}
@@ -229,41 +237,96 @@ func upgradeMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 		slog.Infow("Set current release", "release_uuid", relUU,
 			"commits", report.Commits)
 
-		// XXX We should record the commits somewhere; but where?
-		//
-		// We should probably try to derive the release UUID from the
-		// commits.  We'll need to know the platform name.  If there are
-		// multiple generations, we won't know.
-		//
-		// This is probably slow, but if we don't know the full hash:
-		//     SELECT * FROM artifacts WHERE encode(commit_hash, 'hex') LIKE 'ac64649%';
+		commits := make(map[string]string)
+		for repo, hash := range report.Commits {
+			// git describe --long, when given a commit that's past
+			// a tag, will prefix the (shortened) hash with "-g".
+			if idx := strings.Index(hash, "-g"); idx != -1 {
+				hash = hash[idx+2:]
+			}
+			// Should we remove -dirty, if present?
+			if idx := strings.Index(hash, "-dirty"); idx != -1 {
+				hash = hash[:idx]
+			}
+			commits[repo] = hash
+		}
 
-		err = applianceDB.SetCurrentRelease(ctx, applianceUUID, relUU, reportTS)
+		// Try to confirm the release against the commits.  We could try
+		// to find the release based on the commits and report that, as
+		// well.
+		rel, err := applianceDB.GetRelease(ctx, relUU)
+		if err != nil {
+			slog.Errorw("failed to retrieve release from database",
+				"error", err, "release_uuid", relUU)
+		} else if relUU != uuid.Nil {
+			var badMatches []interface{}
+			for _, commit := range rel.Commits {
+				ra := appliancedb.ReleaseArtifact(commit)
+				raCommitHex := hex.EncodeToString(ra.Commit)
+				if !strings.HasPrefix(raCommitHex, commits[ra.Repo]) {
+					badMatches = append(badMatches,
+						fmt.Sprintf("expected_%s", ra.Repo),
+						raCommitHex,
+						fmt.Sprintf("reported_%s", ra.Repo),
+						commits[ra.Repo])
+				}
+			}
+			if len(badMatches) > 0 {
+				slog.Warnw("Reported release UUID doesn't match commits in database",
+					badMatches...)
+			}
+		}
+
+		// Record that the appliance is running the release.
+		err = applianceDB.SetCurrentRelease(ctx, applianceUUID, relUU,
+			reportTS, commits)
 		if err != nil {
 			slog.Errorw("failed to process upgrade report: DB failure",
 				"error", err)
 		}
 
-		// XXX Do we want to log these to the database, too?
-	case cloud_rpc.UpgradeReport_SUCCESS:
-		filePath := path.Join("upgrade_log", applianceUUID.String(),
-			reportTS.Format(time.RFC3339)+"-success")
-		url, err := writeCSObject(ctx, applianceDB, siteUUID, filePath, report.Output)
-		if err != nil {
-			slog.Errorw("failed to archive successful upgrade log",
-				"url", url, "error", err)
+	case cloud_rpc.UpgradeReport_SUCCESS, cloud_rpc.UpgradeReport_FAILURE:
+		var tag, adj string
+		if report.Result == cloud_rpc.UpgradeReport_SUCCESS {
+			tag = "-success"
+			adj = "successful"
 		} else {
-			slog.Infow("archived successful upgrade log", "url", url)
+			tag = "-failure"
+			adj = "failed"
 		}
-	case cloud_rpc.UpgradeReport_FAILURE:
+
 		filePath := path.Join("upgrade_log", applianceUUID.String(),
-			reportTS.Format(time.RFC3339)+"-failure")
-		url, err := writeCSObject(ctx, applianceDB, siteUUID, filePath, report.Output)
+			reportTS.Format(time.RFC3339)+tag)
+		var output []byte
+		if report.Error != "" {
+			output = append(output, []byte(report.Error)...)
+			output = append(output, byte('\n'))
+			if len(report.Output) > 0 {
+				output = append(output, byte('\n'))
+			}
+		}
+		output = append(output, report.Output...)
+
+		url, err := writeCSObject(ctx, applianceDB, siteUUID, filePath, output)
+		fields := []interface{}{zap.String("url", url)}
+		dbErrVal := sql.NullString{String: report.Error}
+		if report.Error != "" {
+			fields = append(fields, zap.String("error", report.Error))
+			dbErrVal.Valid = true
+		}
 		if err != nil {
-			slog.Errorw("failed to archive failed upgrade log",
-				"url", url, "error", err)
+			msg := fmt.Sprintf("failed to archive %s upgrade log", adj)
+			fields = append(fields, zap.NamedError("archive_error", err))
+			slog.Errorw(msg, fields...)
 		} else {
-			slog.Infow("archived failed upgrade log", "url", url)
+			msg := fmt.Sprintf("archived %s upgrade log", adj)
+			slog.Infow(msg, fields...)
+		}
+		err = applianceDB.SetUpgradeResults(ctx, reportTS, applianceUUID,
+			relUU, report.Result == cloud_rpc.UpgradeReport_SUCCESS,
+			dbErrVal, url)
+		if err != nil {
+			slog.Errorw("Failed to store upgrade error in DB", "error", err)
 		}
 
 	default:

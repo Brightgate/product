@@ -61,6 +61,7 @@ message UpgradeReport {
 	bytes output            = 0x03;
 	google.protobuf.Timestamp record_time = 0x04;
 	map<string, string> commits = 0x05;
+	string error            = 0x06;
 }
 
 message SerialException {

@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -260,18 +260,18 @@ func testReleases(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.S
 	assert.Equal("mt7623", releases[5].Platform)
 	assert.Equal("my big fancy greek name", releases[5].Metadata["name"])
 	assert.Len(releases[5].Metadata, 1)
-	assert.ElementsMatch(releases[5].Commits, []scanReleaseArtifact{
-		scanReleaseArtifact{
+	assert.ElementsMatch(releases[5].Commits, []ReleaseArtifact{
+		{
 			Repo:       rootRA.Repo,
 			Commit:     rootRA.Commit,
 			Generation: rootRA.Generation,
 		},
-		scanReleaseArtifact{
+		{
 			Repo:       psRA3.Repo,
 			Commit:     psRA3.Commit,
 			Generation: psRA3.Generation,
 		},
-		scanReleaseArtifact{
+		{
 			Repo:       xsRA.Repo,
 			Commit:     xsRA.Commit,
 			Generation: xsRA.Generation,
@@ -315,7 +315,7 @@ func testReleases(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.S
 
 	// Set the current release for an appliance not in the database
 	curRelUU = greekReleaseUUID
-	err = ds.SetCurrentRelease(ctx, appUU, curRelUU, time.Now().UTC())
+	err = ds.SetCurrentRelease(ctx, appUU, curRelUU, time.Now().UTC(), nil)
 	assert.IsType(ForeignKeyError{}, err, "%+v", err)
 	assert.Equal("appliance_release_history_appliance_uuid_fkey", err.(ForeignKeyError).Constraint)
 
@@ -327,14 +327,14 @@ func testReleases(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.S
 
 	// Register the appliance, and try again.
 	mkOrgSiteApp(t, ds, &testOrg1, &testSite1, &testID1)
-	err = ds.SetCurrentRelease(ctx, appUU, curRelUU, time.Now().UTC())
+	err = ds.SetCurrentRelease(ctx, appUU, curRelUU, time.Now().UTC(), nil)
 	assert.NoError(err)
 	err = ds.SetTargetRelease(ctx, appUU, targRelUU)
 	assert.NoError(err)
 
 	// Set the current release for a release not in the database
 	newRelUU := uuid.NewV4()
-	err = ds.SetCurrentRelease(ctx, appUU, newRelUU, time.Now().UTC())
+	err = ds.SetCurrentRelease(ctx, appUU, newRelUU, time.Now().UTC(), nil)
 	assert.IsType(ForeignKeyError{}, err)
 	assert.Equal("appliance_release_history_release_uuid_fkey", err.(ForeignKeyError).Constraint)
 
@@ -352,7 +352,7 @@ func testReleases(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.S
 	assert.Equal(targRelUU, uu)
 
 	// Make sure we can update the current release
-	err = ds.SetCurrentRelease(ctx, appUU, mtRel1, time.Now().UTC())
+	err = ds.SetCurrentRelease(ctx, appUU, mtRel1, time.Now().UTC(), nil)
 	assert.NoError(err)
 	uu, err = ds.GetCurrentRelease(ctx, appUU)
 	assert.NoError(err)
@@ -366,8 +366,62 @@ func testReleases(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.S
 	assert.Equal(mtRel1, uu)
 
 	// Make sure we can set the current release to the null UUID
-	err = ds.SetCurrentRelease(ctx, appUU, uuid.Nil, time.Now().UTC())
+	err = ds.SetCurrentRelease(ctx, appUU, uuid.Nil, time.Now().UTC(), nil)
 	assert.NoError(err)
+	uu, err = ds.GetCurrentRelease(ctx, appUU)
+	assert.NoError(err)
+	assert.Equal(uuid.Nil, uu)
+
+	// Make sure we can set the current release to the null UUID, with
+	// commits.
+	commitMap := map[string]string{
+		"PS":  "0707077",
+		"XS":  "4923719436dd41890c7d57b8d221da82bef3b8eb",
+		"WRT": "d33cf56973",
+	}
+	then := time.Now().UTC()
+	err = ds.SetCurrentRelease(ctx, appUU, uuid.Nil, then, commitMap)
+	assert.NoError(err)
+	uu, err = ds.GetCurrentRelease(ctx, appUU)
+	assert.NoError(err)
+	assert.Equal(uuid.Nil, uu)
+
+	// Check that the commits got recorded correctly.
+	commits := make(KVMap)
+	err = db.GetContext(ctx, &commits, `
+		SELECT repo_commits
+		FROM appliance_release_history
+		WHERE stage = 'complete' AND appliance_uuid = $1`,
+		appUU)
+	assert.NoError(err)
+	assert.EqualValues(commitMap, commits)
+
+	// Register the same data, and see that the timestamp doesn't change.
+	err = ds.SetCurrentRelease(ctx, appUU, uuid.Nil, time.Now().UTC(), commitMap)
+	assert.NoError(err)
+	var now time.Time
+	err = db.GetContext(ctx, &now, `
+		SELECT updated_ts
+		FROM appliance_release_history
+		WHERE stage = 'complete' AND appliance_uuid = $1`,
+		appUU)
+	assert.NoError(err)
+	// testify has WithinDuration, which we could use here, but the inverse,
+	// which we'd need next.  And until #780 is fixed, it can't compare
+	// durations directly.
+	assert.Less(int64(now.Sub(then)), int64(time.Microsecond))
+
+	// Update one of the commits, see that the timestamp does change.
+	commitMap["PS"] = "d4db33f"
+	err = ds.SetCurrentRelease(ctx, appUU, uuid.Nil, time.Now().UTC(), commitMap)
+	assert.NoError(err)
+	err = db.GetContext(ctx, &now, `
+		SELECT updated_ts
+		FROM appliance_release_history
+		WHERE stage = 'complete' AND appliance_uuid = $1`,
+		appUU)
+	assert.NoError(err)
+	assert.Greater(int64(now.Sub(then)), int64(time.Microsecond))
 }
 
 func testReleaseStatus(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.SugaredLogger) {
@@ -376,6 +430,7 @@ func testReleaseStatus(t *testing.T, ds DataStore, logger *zap.Logger, slogger *
 
 	// Build and insert three releases
 	var releases []uuid.UUID
+	commits := make(map[uuid.UUID]map[string]string)
 	for i := 0; i < 3; i++ {
 		rootRA, kernelRA, ramdiskRA := buildWRT(nil, 0)
 		rootRA, err := ds.InsertArtifact(ctx, *rootRA)
@@ -394,6 +449,11 @@ func testReleaseStatus(t *testing.T, ds DataStore, logger *zap.Logger, slogger *
 		rel, err := ds.InsertRelease(ctx, artifacts, nil)
 		assert.NoError(err)
 		releases = append(releases, rel)
+		commits[rel] = map[string]string{
+			"PS":  hex.EncodeToString(psRA.Commit),
+			"XS":  hex.EncodeToString(xsRA.Commit),
+			"WRT": hex.EncodeToString(rootRA.Commit),
+		}
 	}
 
 	// Register some appliances
@@ -402,11 +462,14 @@ func testReleaseStatus(t *testing.T, ds DataStore, logger *zap.Logger, slogger *
 	mkOrgSiteApp(t, ds, &testOrg3, &testSite3, &testID3)
 
 	// Give them current releases
-	err := ds.SetCurrentRelease(ctx, testID1.ApplianceUUID, releases[0], time.Now().UTC())
+	err := ds.SetCurrentRelease(ctx, testID1.ApplianceUUID, releases[0], time.Now().UTC(),
+		commits[releases[0]])
 	assert.NoError(err)
-	err = ds.SetCurrentRelease(ctx, testID2.ApplianceUUID, releases[0], time.Now().UTC())
+	err = ds.SetCurrentRelease(ctx, testID2.ApplianceUUID, releases[0], time.Now().UTC(),
+		commits[releases[0]])
 	assert.NoError(err)
-	err = ds.SetCurrentRelease(ctx, testID3.ApplianceUUID, releases[0], time.Now().UTC())
+	err = ds.SetCurrentRelease(ctx, testID3.ApplianceUUID, releases[0], time.Now().UTC(),
+		commits[releases[0]])
 	assert.NoError(err)
 
 	// Get the release status for all three appliances, explicitly, and make
@@ -419,12 +482,15 @@ func testReleaseStatus(t *testing.T, ds DataStore, logger *zap.Logger, slogger *
 	assert.True(status[testID1.ApplianceUUID].CurrentReleaseUUID.Valid)
 	assert.Equal(releases[0], status[testID1.ApplianceUUID].CurrentReleaseUUID.UUID)
 	assert.False(status[testID1.ApplianceUUID].TargetReleaseUUID.Valid)
+	assert.EqualValues(commits[releases[0]], status[testID1.ApplianceUUID].Commits)
 	assert.True(status[testID2.ApplianceUUID].CurrentReleaseUUID.Valid)
 	assert.Equal(releases[0], status[testID2.ApplianceUUID].CurrentReleaseUUID.UUID)
 	assert.False(status[testID2.ApplianceUUID].TargetReleaseUUID.Valid)
+	assert.EqualValues(commits[releases[0]], status[testID2.ApplianceUUID].Commits)
 	assert.True(status[testID3.ApplianceUUID].CurrentReleaseUUID.Valid)
 	assert.Equal(releases[0], status[testID3.ApplianceUUID].CurrentReleaseUUID.UUID)
 	assert.False(status[testID3.ApplianceUUID].TargetReleaseUUID.Valid)
+	assert.EqualValues(commits[releases[0]], status[testID3.ApplianceUUID].Commits)
 
 	// Get the release status for all three appliances, implicitly, and make
 	// sure we get back three rows, each indicating the correct current
@@ -436,12 +502,15 @@ func testReleaseStatus(t *testing.T, ds DataStore, logger *zap.Logger, slogger *
 	assert.True(status[testID1.ApplianceUUID].CurrentReleaseUUID.Valid)
 	assert.Equal(releases[0], status[testID1.ApplianceUUID].CurrentReleaseUUID.UUID)
 	assert.False(status[testID1.ApplianceUUID].TargetReleaseUUID.Valid)
+	assert.EqualValues(commits[releases[0]], status[testID1.ApplianceUUID].Commits)
 	assert.True(status[testID2.ApplianceUUID].CurrentReleaseUUID.Valid)
 	assert.Equal(releases[0], status[testID2.ApplianceUUID].CurrentReleaseUUID.UUID)
 	assert.False(status[testID2.ApplianceUUID].TargetReleaseUUID.Valid)
+	assert.EqualValues(commits[releases[0]], status[testID2.ApplianceUUID].Commits)
 	assert.True(status[testID3.ApplianceUUID].CurrentReleaseUUID.Valid)
 	assert.Equal(releases[0], status[testID3.ApplianceUUID].CurrentReleaseUUID.UUID)
 	assert.False(status[testID3.ApplianceUUID].TargetReleaseUUID.Valid)
+	assert.EqualValues(commits[releases[0]], status[testID3.ApplianceUUID].Commits)
 
 	// Get the release status for one of the appliances, and make sure we
 	// get back one rows, indicating the correct current release, and no
@@ -457,7 +526,8 @@ func testReleaseStatus(t *testing.T, ds DataStore, logger *zap.Logger, slogger *
 	// Update one of the appliances.  Make sure that the release status only
 	// has one current release (rather than all elements of the history it
 	// now has) and the one we expect.
-	err = ds.SetCurrentRelease(ctx, testID3.ApplianceUUID, releases[1], time.Now().UTC())
+	err = ds.SetCurrentRelease(ctx, testID3.ApplianceUUID, releases[1],
+		time.Now().UTC(), commits[releases[1]])
 	assert.NoError(err)
 	apps = []uuid.UUID{testID3.ApplianceUUID}
 	status, err = ds.GetReleaseStatusByAppliances(ctx, apps)
@@ -466,6 +536,7 @@ func testReleaseStatus(t *testing.T, ds DataStore, logger *zap.Logger, slogger *
 	assert.True(status[testID3.ApplianceUUID].CurrentReleaseUUID.Valid)
 	assert.Equal(releases[1], status[testID3.ApplianceUUID].CurrentReleaseUUID.UUID)
 	assert.False(status[testID3.ApplianceUUID].TargetReleaseUUID.Valid)
+	assert.EqualValues(commits[releases[1]], status[testID3.ApplianceUUID].Commits)
 
 	// Set target releases, make sure everything seems right.
 	err = ds.SetTargetRelease(ctx, testID1.ApplianceUUID, releases[1])
@@ -490,6 +561,40 @@ func testReleaseStatus(t *testing.T, ds DataStore, logger *zap.Logger, slogger *
 	assert.Equal(releases[1], status[testID3.ApplianceUUID].CurrentReleaseUUID.UUID)
 	assert.True(status[testID3.ApplianceUUID].TargetReleaseUUID.Valid)
 	assert.Equal(releases[1], status[testID3.ApplianceUUID].TargetReleaseUUID.UUID)
+
+	// Update one of the appliance to something that's not a release.
+	nonRelCommits := make(map[string]string)
+	for k, v := range commits[releases[2]] {
+		nonRelCommits[k] = v
+	}
+	nonRelCommits["PS"] = "d4db33f"
+	err = ds.SetCurrentRelease(ctx, testID3.ApplianceUUID, uuid.Nil,
+		time.Now().UTC(), nonRelCommits)
+	assert.NoError(err)
+	status, err = ds.GetReleaseStatusByAppliances(ctx, []uuid.UUID{testID3.ApplianceUUID})
+	assert.NoError(err)
+	assert.Len(status, 1)
+	assert.True(status[testID3.ApplianceUUID].CurrentReleaseUUID.Valid)
+	assert.Equal(uuid.Nil, status[testID3.ApplianceUUID].CurrentReleaseUUID.UUID)
+	assert.EqualValues(nonRelCommits, status[testID3.ApplianceUUID].Commits)
+
+	// Make sure setting an arbitrary stage returns an error.
+	err = ds.SetUpgradeStage(ctx, testID3.ApplianceUUID, uuid.Nil, time.Now().UTC(), "junk", true, "")
+	assert.Error(err)
+
+	// Set the upgrade stage to a valid value.
+	err = ds.SetUpgradeStage(ctx, testID3.ApplianceUUID, uuid.Nil, time.Now().UTC(), "notified", true, "")
+	assert.NoError(err)
+
+	// Setting the upgrade stage for an unknown appliance should fail.
+	err = ds.SetUpgradeStage(ctx, badUUID, uuid.Nil, time.Now().UTC(), "notified", true, "")
+	assert.IsType(ForeignKeyError{}, err, "%+v", err)
+	assert.Equal("appliance_release_history_appliance_uuid_fkey", err.(ForeignKeyError).Constraint)
+
+	// Setting the upgrade stage with an unknown release should fail.
+	err = ds.SetUpgradeStage(ctx, testID3.ApplianceUUID, badUUID, time.Now().UTC(), "notified", true, "")
+	assert.IsType(ForeignKeyError{}, err, "%+v", err)
+	assert.Equal("appliance_release_history_release_uuid_fkey", err.(ForeignKeyError).Constraint)
 }
 
 func TestFilterSlice(t *testing.T) {
@@ -504,9 +609,9 @@ func TestFilterSlice(t *testing.T) {
 
 	// All true should filter out nothing
 	r := []*Release{
-		&Release{UUID: u(0), OnePlatform: true},
-		&Release{UUID: u(1), OnePlatform: true},
-		&Release{UUID: u(2), OnePlatform: true},
+		{UUID: u(0), OnePlatform: true},
+		{UUID: u(1), OnePlatform: true},
+		{UUID: u(2), OnePlatform: true},
 	}
 
 	platCheck := func(i int) bool {
@@ -520,9 +625,9 @@ func TestFilterSlice(t *testing.T) {
 
 	// Corner case: filter out first
 	r = []*Release{
-		&Release{UUID: u(0), OnePlatform: false},
-		&Release{UUID: u(1), OnePlatform: true},
-		&Release{UUID: u(2), OnePlatform: true},
+		{UUID: u(0), OnePlatform: false},
+		{UUID: u(1), OnePlatform: true},
+		{UUID: u(2), OnePlatform: true},
 	}
 
 	bad = filterSlice(&r, platCheck)
@@ -533,9 +638,9 @@ func TestFilterSlice(t *testing.T) {
 
 	// Corner case: filter out last
 	r = []*Release{
-		&Release{UUID: u(0), OnePlatform: true},
-		&Release{UUID: u(1), OnePlatform: true},
-		&Release{UUID: u(2), OnePlatform: false},
+		{UUID: u(0), OnePlatform: true},
+		{UUID: u(1), OnePlatform: true},
+		{UUID: u(2), OnePlatform: false},
 	}
 
 	bad = filterSlice(&r, platCheck)
@@ -546,9 +651,9 @@ func TestFilterSlice(t *testing.T) {
 
 	// All false should filter out everything.
 	r = []*Release{
-		&Release{UUID: u(0), OnePlatform: false},
-		&Release{UUID: u(1), OnePlatform: false},
-		&Release{UUID: u(2), OnePlatform: false},
+		{UUID: u(0), OnePlatform: false},
+		{UUID: u(1), OnePlatform: false},
+		{UUID: u(2), OnePlatform: false},
 	}
 
 	bad = filterSlice(&r, platCheck)
@@ -557,10 +662,10 @@ func TestFilterSlice(t *testing.T) {
 
 	// Make sure two consecutive bad releases get removed.
 	r = []*Release{
-		&Release{UUID: u(0), OnePlatform: true},
-		&Release{UUID: u(1), OnePlatform: false},
-		&Release{UUID: u(2), OnePlatform: false},
-		&Release{UUID: u(3), OnePlatform: true},
+		{UUID: u(0), OnePlatform: true},
+		{UUID: u(1), OnePlatform: false},
+		{UUID: u(2), OnePlatform: false},
+		{UUID: u(3), OnePlatform: true},
 	}
 
 	bad = filterSlice(&r, platCheck)

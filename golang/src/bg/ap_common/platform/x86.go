@@ -15,8 +15,9 @@
 package platform
 
 import (
-	"fmt"
 	"io/ioutil"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"syscall"
@@ -65,8 +66,25 @@ func x86NicLocation(name string) string {
 	return ""
 }
 
+// This is a very simplistic "upgrade" procedure that doesn't change any of the
+// bits on disk, but does put the release.json symlink in place so that ap.rpcd
+// can report the release to the cloud.  This is only used in testing.
 func x86Upgrade(rel release.Release) ([]byte, error) {
-	return nil, fmt.Errorf("%s has no upgrade procedure", x86Platform.name)
+	linkDir := x86Platform.ExpandDirPath(APPackage, "etc")
+	relDir := x86Platform.ExpandDirPath(APData, "release", rel.Release.UUID.String())
+
+	relPath, err := filepath.Rel(linkDir, filepath.Join(relDir, "release.json"))
+	if err != nil {
+		return nil, err
+	}
+	curLinkPath := filepath.Join(linkDir, "release.json")
+
+	os.Remove(curLinkPath)
+	if err = os.Symlink(relPath, curLinkPath); err != nil {
+		return nil, err
+	}
+
+	return []byte("This is\nlots of\noutput\nwoo\nhoo\n"), nil
 }
 
 func x86DataDir() string {

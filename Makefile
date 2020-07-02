@@ -585,6 +585,7 @@ GO_CLOUD_TESTABLES = \
 	bg/cl-obs/extract \
 	bg/cl-obs/sentence \
 	bg/cl.configd \
+	bg/cl.eventd \
 	bg/cl.identifierd \
 	bg/cl.httpd
 

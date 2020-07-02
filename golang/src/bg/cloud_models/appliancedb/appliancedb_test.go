@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -50,17 +50,19 @@ const (
 	appNStr         = "10000000-1000-1000-1000-000000000009"
 	site1Str        = "20000000-2000-2000-2000-000000000001"
 	site2Str        = "20000000-2000-2000-2000-000000000002"
+	site4Str        = "20000000-2000-2000-2000-000000000004"
 	org1Str         = "30000000-3000-3000-3000-000000000001"
 	org2Str         = "30000000-3000-3000-3000-000000000002"
-	orgMSP1Str      = "30000000-3000-3000-3000-000000000003"
+	org4Str         = "30000000-3000-3000-3000-000000000004"
+	orgMSP1Str      = "30000000-3000-3000-3000-100000000001"
 	person1Str      = "40000000-4000-4000-4000-000000000001"
 	person2Str      = "40000000-4000-4000-4000-000000000002"
-	personMSP1Str   = "40000000-4000-4000-4000-000000000003"
-	personMSP2Str   = "40000000-4000-4000-4000-000000000004"
+	personMSP1Str   = "40000000-4000-4000-4000-100000000001"
+	personMSP2Str   = "40000000-4000-4000-4000-100000000002"
 	account1Str     = "50000000-5000-5000-5000-000000000001"
 	account2Str     = "50000000-5000-5000-5000-000000000002"
-	accountMSP1Str  = "50000000-5000-5000-5000-000000000003"
-	accountMSP2Str  = "50000000-5000-5000-5000-000000000004"
+	accountMSP1Str  = "50000000-5000-5000-5000-100000000001"
+	accountMSP2Str  = "50000000-5000-5000-5000-100000000002"
 	orgOrgRel1Str   = "60000000-6000-6000-6000-000000000001"
 	orgOrgRel2Str   = "60000000-6000-6000-6000-000000000002"
 	badStr          = "ffffffff-ffff-ffff-ffff-ffffffffffff"
@@ -79,6 +81,10 @@ var (
 		UUID: uuid.Must(uuid.FromString(org2Str)),
 		Name: "org2",
 	}
+	testOrg4 = Organization{
+		UUID: uuid.Must(uuid.FromString(org4Str)),
+		Name: "org4",
+	}
 	testMSPOrg1 = Organization{
 		UUID: uuid.Must(uuid.FromString(orgMSP1Str)),
 		Name: "MSP org1",
@@ -93,6 +99,11 @@ var (
 		UUID:             uuid.Must(uuid.FromString(site2Str)),
 		OrganizationUUID: testOrg2.UUID,
 		Name:             "site2",
+	}
+	testSite4 = CustomerSite{
+		UUID:             uuid.Must(uuid.FromString(site4Str)),
+		OrganizationUUID: testOrg4.UUID,
+		Name:             "site4",
 	}
 
 	testID1 = ApplianceID{
@@ -466,7 +477,7 @@ func testApplianceID(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 
 	mkOrgSiteApp(t, ds, &testOrg2, &testSite2, &testID2)
 
-	// Test getting complete set of appliance
+	// Test getting complete set of appliances
 	ids, err = ds.AllApplianceIDs(ctx)
 	assert.NoError(err)
 	assert.Len(ids, 2)
@@ -483,6 +494,28 @@ func testApplianceID(t *testing.T, ds DataStore, logger *zap.Logger, slogger *za
 	idn, err := ds.ApplianceIDByUUID(ctx, testIDN.ApplianceUUID)
 	assert.NoError(err)
 	assert.Equal(chg, *idn)
+
+	// Test appliance lookup by site
+	ids, err = ds.ApplianceIDsBySiteID(ctx, testSite2.UUID)
+	assert.NoError(err)
+	assert.Equal(1, len(ids))
+	assert.Equal(testID2.ApplianceUUID, ids[0].ApplianceUUID)
+
+	// Test appliance lookup by site: no appliances
+	ids, err = ds.ApplianceIDsBySiteID(ctx, testSite4.UUID)
+	assert.Error(err)
+	assert.IsType(NotFoundError{}, err)
+
+	// Test appliance lookup by org
+	ids, err = ds.ApplianceIDsByOrgID(ctx, testOrg2.UUID)
+	assert.NoError(err)
+	assert.Equal(1, len(ids))
+	assert.Equal(testID2.ApplianceUUID, ids[0].ApplianceUUID)
+
+	// Test appliance lookup by org: no appliances
+	ids, err = ds.ApplianceIDsByOrgID(ctx, testOrg4.UUID)
+	assert.Error(err)
+	assert.IsType(NotFoundError{}, err)
 }
 
 // Test operations related to appliance public keys.  subtest of TestDatabaseModel
