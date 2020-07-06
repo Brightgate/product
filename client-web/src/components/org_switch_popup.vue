@@ -34,7 +34,7 @@ span.check-slot {
 </style>
 
 <template>
-  <f7-popup class="org-switch-popup">
+  <f7-popup close-on-escape class="org-switch-popup">
     <f7-page>
       <f7-navbar no-shadow no-hairline class="org-switch-navbar">
         <f7-nav-left>

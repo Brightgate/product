@@ -136,7 +136,7 @@ div.trademark {
             back />
 
           <!-- popup for desktop class environments -->
-          <f7-popup class="wg-config-qr-popup">
+          <f7-popup close-on-escape class="wg-config-qr-popup">
             <f7-block>
               <p>
                 {{ $t('message.account_wg_config.qr_scan_explain') }}
@@ -153,7 +153,7 @@ div.trademark {
           </f7-popup>
 
           <!-- sheet for mobile class environments -->
-          <f7-sheet class="wg-config-qr-sheet" style="height:auto;" swipe-to-close backdrop>
+          <f7-sheet class="wg-config-qr-sheet" style="height:auto;" swipe-to-close close-on-escape backdrop>
             <f7-button :text="$t('message.general.close')" sheet-close />
             <f7-block>
               {{ $t('message.account_wg_config.qr_scan_explain') }}

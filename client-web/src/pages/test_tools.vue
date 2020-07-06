@@ -83,7 +83,7 @@
       <f7-button fill popup-open=".color-popup">Colors</f7-button>
     </f7-block>
 
-    <f7-popup class="color-popup">
+    <f7-popup close-on-escape class="color-popup">
       <f7-page>
         <f7-block>
           <f7-button fill popup-close=".color-popup">Close</f7-button>

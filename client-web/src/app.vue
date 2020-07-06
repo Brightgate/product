@@ -64,6 +64,9 @@ export default {
         theme: 'auto',
         routes: routes,
         debugger: true,
+        dialog: {
+          keyboardActions: true,
+        },
       },
     };
   },
