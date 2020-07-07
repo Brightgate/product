@@ -1027,7 +1027,9 @@ func (c *Handle) GetWanInfo() *WanInfo {
 		return nil
 	}
 
-	w.CurrentAddress, _ = wan.GetChildString("address")
+	if current := wan.Children["current"]; current != nil {
+		w.CurrentAddress, _ = current.GetChildString("address")
+	}
 
 	if static := wan.Children["static"]; static != nil {
 		w.StaticAddress, _ = static.GetChildString("address")
