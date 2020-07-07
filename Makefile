@@ -914,6 +914,11 @@ GENERATED_GO_FILES = \
 	$(GOSRCBG)/common/cfgmsg/cfgmsg.pb.go \
 	$(GOSRCBG)/common/version.go
 
+# When we've moved go files around, godeps.mk is no longer valid and must be
+# rebuilt.
+%.go:
+	rm -f $(GOTOOLS_DIR)/godeps.mk
+
 $(GOTOOLS_DIR)/godeps.mk: | $(COMPUTE_DEPS) $(GENERATED_GO_FILES)
 	unset GOARCH && $(COMPUTE_DEPS) $(ALL_GOBINS) > $@ || $(RM) -f $@
 
