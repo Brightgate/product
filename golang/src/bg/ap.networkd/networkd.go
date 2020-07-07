@@ -6,7 +6,6 @@
  * Removal or alteration of this Copyright Management Information without the
  * express written permission of Brightgate Inc is prohibited, and any
  * such unauthorized removal or alteration will be a violation of federal law.
- *
  */
 
 package main
@@ -213,16 +212,16 @@ func daemonInit() error {
 	config.HandleDelete(`^@/nodes/`+nodeID+`/nics/.*$`, configNicDeleted)
 	config.HandleChange(`^@/rings/.*`, configRingChanged)
 	config.HandleDelete(`^@/rings/.*/subnet$`, configRingSubnetDeleted)
-	config.HandleChange(`^@/network/.*`, configNetworkChanged)
-	config.HandleDelete(`^@/network/.*`, configNetworkDeleted)
+	config.HandleChange(`^@/network/.*`, configNetworkUpdated)
+	config.HandleDelExp(`^@/network/.*`, configNetworkDeleted)
 	config.HandleChange(`^@/firewall/rules/`, configRuleChanged)
 	config.HandleDelExp(`^@/firewall/rules/`, configRuleDeleted)
 	config.HandleChange(`^@/firewall/blocked/`, configBlocklistChanged)
 	config.HandleDelExp(`^@/firewall/blocked/`, configBlocklistExpired)
 	config.HandleChange(`^@/users/.*/vpn/.*`, configUserChanged)
 	config.HandleDelExp(`^@/users/.*`, configUserDeleted)
-	config.HandleChange(`^@/policy/site/vpn/server/.*/enabled`, vpnUpdateEnabled)
-	config.HandleDelExp(`^@/policy/site/vpn/server/.*/enabled`, vpnDeleteEnabled)
+	config.HandleChange(`^@/policy/site/vpn/server/.*/enabled`, vpnServerUpdateEnabled)
+	config.HandleDelExp(`^@/policy/site/vpn/server/.*/enabled`, vpnServerDeleteEnabled)
 	config.HandleChange(`^@/policy/.*/vpn/server/.*/rings`, vpnUpdateRings)
 	config.HandleDelExp(`^@/policy/.*/vpn/server/.*/rings`, vpnDeleteRings)
 	config.HandleChange(`^@/policy/.*/vpn/server/.*/subnets`, vpnUpdateRings)
@@ -266,10 +265,10 @@ func daemonInit() error {
 
 	if !satellite {
 		// The VPN server only runs on the gateway node
-		if err := vpnInit(); err != nil {
-			slog.Errorf("vpnInit failed: %v", err)
+		if err := vpnServerInit(); err != nil {
+			slog.Errorf("vpnServerInit failed: %v", err)
 		} else {
-			go vpnLoop(&cleanup.wg, addDoneChan())
+			go vpnServerLoop(&cleanup.wg, addDoneChan())
 		}
 	}
 

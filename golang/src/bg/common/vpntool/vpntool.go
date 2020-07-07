@@ -17,15 +17,16 @@ import (
 	"strings"
 
 	"bg/common/cfgapi"
-	"bg/common/vpn"
+	"bg/common/wgconf"
+	"bg/common/wgsite"
 
 	"github.com/spf13/cobra"
 )
 
 var (
-	config *cfgapi.Handle
-	vpnHdl *vpn.Vpn
-	pname  string
+	config  *cfgapi.Handle
+	siteHdl *wgsite.Site
+	pname   string
 )
 
 // Add a new key for this user and print the associated config file to stdout.
@@ -41,7 +42,7 @@ func addKey(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("must specify a user name")
 	}
 
-	res, err := vpnHdl.AddKey(ctx, user, label, ipaddr)
+	res, err := siteHdl.AddKey(ctx, user, label, ipaddr)
 	if err == nil {
 		if file == "" {
 			fmt.Printf(string(res.ConfData))
@@ -53,19 +54,19 @@ func addKey(cmd *cobra.Command, args []string) error {
 	return err
 }
 
-func matches(key *cfgapi.WireguardConf, id int, mac, label, public string) bool {
+func matches(key *wgconf.UserConf, id int, mac, label, public string) bool {
 	match := true
 
 	if id > 0 && id != key.ID {
 		match = false
 	}
-	if mac != "" && !strings.EqualFold(mac, key.GetMac()) {
+	if mac != "" && !strings.EqualFold(mac, key.Mac) {
 		match = false
 	}
 	if label != "" && !strings.EqualFold(label, key.Label) {
 		match = false
 	}
-	if public != "" && !strings.EqualFold(public, key.WGPublicKey) {
+	if public != "" && !strings.EqualFold(public, key.Key.String()) {
 		match = false
 	}
 
@@ -112,15 +113,15 @@ func removeKey(cmd *cobra.Command, args []string) error {
 
 	for _, key := range conf.WGConfig {
 		if all || matches(key, id, mac, label, public) {
-			err = vpnHdl.RemoveKey(ctx, user, key.GetMac(),
-				key.WGPublicKey)
+			err = siteHdl.RemoveKey(ctx, user, key.Mac,
+				key.Key.String())
 			if err != nil {
 				return err
 			}
 
-			fmt.Printf("Deleted key %4d %18s %17s %32s %s\n",
-				key.ID, key.GetMac(), key.WGAssignedIP,
-				key.WGPublicKey, key.Label)
+			fmt.Printf("Deleted key %4d %18s %17v %32s %s\n",
+				key.ID, key.Mac, key.IPAddress, key.Key,
+				key.Label)
 			deleted = true
 		}
 	}
@@ -134,7 +135,7 @@ func removeKey(cmd *cobra.Command, args []string) error {
 // list all of the configured VPN keys
 func listKeys(cmd *cobra.Command, args []string) error {
 	name, _ := cmd.Flags().GetString("user")
-	keys, err := vpnHdl.GetKeys(name)
+	keys, err := siteHdl.GetKeys(name)
 	if err != nil {
 		return err
 	}
@@ -143,7 +144,7 @@ func listKeys(cmd *cobra.Command, args []string) error {
 	ulen := len("username")
 	llen := len("label")
 	for _, key := range keys {
-		if l := len(key.GetUser()); l > ulen {
+		if l := len(key.User); l > ulen {
 			ulen = l
 		}
 		if l := len(key.Label); l > llen {
@@ -159,9 +160,9 @@ func listKeys(cmd *cobra.Command, args []string) error {
 		"public key")
 
 	for _, key := range keys {
-		fmt.Printf(uhdr+"  %4d  "+lhdr+"  %18s  %17s  %s\n",
-			key.GetUser(), key.ID, key.Label, key.WGAssignedIP,
-			key.GetMac(), key.WGPublicKey)
+		fmt.Printf(uhdr+"  %4d  "+lhdr+"  %18s  %17s  %v\n",
+			key.User, key.ID, key.Label, key.IPAddress,
+			key.Mac, key.Key)
 	}
 
 	return nil
@@ -217,7 +218,7 @@ func Exec(ctx context.Context, p string, hdl *cfgapi.Handle, args []string) erro
 	listCmd.Flags().StringP("user", "u", "", "list keys for a specific user")
 	rootCmd.AddCommand(listCmd)
 
-	if vpnHdl, err = vpn.NewVpn(config); err == nil {
+	if siteHdl, err = wgsite.NewSite(config); err == nil {
 		err = rootCmd.Execute()
 	}
 	return err

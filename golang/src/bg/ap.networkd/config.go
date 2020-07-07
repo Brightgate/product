@@ -6,7 +6,6 @@
  * Removal or alteration of this Copyright Management Information without the
  * express written permission of Brightgate Inc is prohibited, and any
  * such unauthorized removal or alteration will be a violation of federal law.
- *
  */
 
 package main
@@ -154,27 +153,37 @@ func configSet(name, val string) bool {
 	return reload
 }
 
-func configNetworkDeleted(path []string) {
-	if len(path) >= 2 && path[1] == "vpn" {
-		vpnDelete(path)
+func configNetworkUpdated(path []string, val string, expires *time.Time) {
+	l := len(path)
 
-	} else if len(path) >= 3 && path[1] == "wan" && path[2] == "static" {
-		field := "all"
-		if len(path) > 3 {
+	if l == 5 && path[1] == "vpn" && path[2] == "server" {
+		// @/network/vpn/server/0/<prop>
+		vpnServerUpdate(path[4], val)
+
+	} else if l == 4 && path[1] == "wan" && path[2] == "static" {
+		// @/network/wan/static/<prop>
+		wanStaticChanged(path[3], val)
+	}
+}
+
+func configNetworkDeleted(path []string) {
+	l := len(path)
+
+	if l == 5 && path[1] == "vpn" && path[2] == "server" {
+		vpnServerDelete(path)
+
+	} else if l >= 3 && path[1] == "wan" && path[2] == "static" {
+		var field string
+		if l > 3 {
 			field = path[3]
+		} else {
+			field = "all"
 		}
+
 		wanStaticDeleted(field)
 	}
 }
 
 func configSiteIndexChanged(path []string, val string, expires *time.Time) {
 	networkdStop("site_index changed - exiting to rebuild network")
-}
-
-func configNetworkChanged(path []string, val string, expires *time.Time) {
-	if len(path) == 3 && path[1] == "vpn" {
-		vpnUpdate(path, val, expires)
-	} else if len(path) == 4 && path[1] == "wan" && path[2] == "static" {
-		wanStaticChanged(path[3], val)
-	}
 }

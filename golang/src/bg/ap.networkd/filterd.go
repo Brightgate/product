@@ -6,7 +6,6 @@
  * Removal or alteration of this Copyright Management Information without the
  * express written permission of Brightgate Inc is prohibited, and any
  * such unauthorized removal or alteration will be a violation of federal law.
- *
  */
 
 /*
@@ -217,7 +216,7 @@ func iptablesAddRule(table, chain, rule string) {
 //
 // Build the core routing rules for a single managed subnet
 //
-func ifaceForwardRules(ring string) {
+func ifaceForwardRules(ring, iface string) {
 	var bridge string
 
 	if ring == base_def.RING_QUARANTINE {
@@ -227,7 +226,7 @@ func ifaceForwardRules(ring string) {
 
 	config := rings[ring]
 	if ring == base_def.RING_VPN {
-		bridge = vpnNic
+		bridge = vpnServerNic
 	} else {
 		bridge = config.Bridge
 	}
@@ -244,7 +243,7 @@ func ifaceForwardRules(ring string) {
 	iptablesAddRule("filter", "FORWARD", spoofRule)
 
 	// Traffic from the managed network has its IP addresses masqueraded
-	masqRule := " -o " + wan.getNic()
+	masqRule := " -o " + iface
 	masqRule += " -s " + config.Subnet
 	masqRule += " -j MASQUERADE"
 	iptablesAddRule("nat", "POSTROUTING", masqRule)
@@ -282,7 +281,7 @@ func genEndpointRing(e *endpoint, src bool) (string, error) {
 	if ring := rings[e.detail]; ring != nil {
 		b := ring.Bridge
 		if e.detail == base_def.RING_VPN {
-			b = vpnNic
+			b = vpnServerNic
 		} else if e.detail == base_def.RING_INTERNAL && satellite {
 			// The gateway node has an internal bridge that all
 			// satellite links connect to.  Satellite nodes use
@@ -645,7 +644,7 @@ func firewallRules() {
 		}
 	}
 
-	vpnRules := vpnFirewallRules()
+	vpnRules := vpnServerFirewallRules()
 	for _, rule := range vpnRules {
 		r, err := parseRule(rule)
 		if err != nil {
@@ -684,7 +683,7 @@ func iptablesRebuild() {
 
 		// Add the basic routing rules for each interface
 		for ring := range rings {
-			ifaceForwardRules(ring)
+			ifaceForwardRules(ring, wanNic)
 		}
 	} else {
 		slog.Warnf("No WAN interface defined - cannot set up NAT")
@@ -721,7 +720,6 @@ func iptablesRebuild() {
 	iptablesAddRule("filter", "dropped", "-j DROP")
 
 	firewallRules()
-	vpnFirewallRules()
 
 	// Now add filter rules, from the most specific to the most general
 	sort.Sort(rules)

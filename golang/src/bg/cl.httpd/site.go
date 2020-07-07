@@ -22,7 +22,7 @@ import (
 	"bg/common/cfgapi"
 	"bg/common/mfg"
 	"bg/common/network"
-	"bg/common/vpn"
+	"bg/common/wgsite"
 
 	"github.com/labstack/echo"
 	"github.com/pkg/errors"
@@ -722,12 +722,12 @@ func (a *siteHandler) getNetworkWG(c echo.Context) error {
 	}
 	defer hdl.Close()
 
-	vpnMod, err := vpn.NewVpn(hdl)
+	siteMod, err := wgsite.NewSite(hdl)
 	if err != nil {
 		// This basically indicates that the site doesn't support VPN
 		return newHTTPError(http.StatusNotImplemented, err)
 	}
-	serverCfg, err := vpnMod.ServerConfig()
+	serverCfg, err := siteMod.ServerConfig()
 	if err != nil {
 		return newHTTPError(http.StatusInternalServerError, err)
 	}
@@ -743,7 +743,7 @@ func (a *siteHandler) postNetworkWG(c echo.Context) error {
 	}
 	defer hdl.Close()
 
-	var input vpn.ServerConfig
+	var input wgsite.ServerConfig
 	if err := c.Bind(&input); err != nil {
 		return newHTTPError(http.StatusBadRequest, err)
 	}
@@ -755,17 +755,17 @@ func (a *siteHandler) postNetworkWG(c echo.Context) error {
 	ops := []cfgapi.PropertyOp{
 		{
 			Op:    cfgapi.PropCreate,
-			Name:  vpn.AddressProp,
+			Name:  wgsite.AddressProp,
 			Value: input.Address,
 		},
 		{
 			Op:    cfgapi.PropCreate,
-			Name:  vpn.PortProp,
+			Name:  wgsite.PortProp,
 			Value: fmt.Sprintf("%d", input.Port),
 		},
 		{
 			Op:    cfgapi.PropCreate,
-			Name:  vpn.EnabledProp,
+			Name:  wgsite.EnabledProp,
 			Value: fmt.Sprintf("%t", input.Enabled),
 		},
 	}

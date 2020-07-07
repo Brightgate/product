@@ -8,7 +8,7 @@
  * such unauthorized removal or alteration will be a violation of federal law.
  */
 
-package vpn
+package wgsite
 
 import (
 	"fmt"
@@ -58,7 +58,7 @@ func shortToMac(short int) string {
 }
 
 // Returns the last mac allocated and a map of all in-use mac addresses.
-func (v *Vpn) getInuseMacs(users cfgapi.UserMap) (int, map[int]bool, error) {
+func (s *Site) getInuseMacs(users cfgapi.UserMap) (int, map[int]bool, error) {
 	var lastAllocated int
 
 	// iterate over all the assigned VPN keys, adding their addresses to the
@@ -66,13 +66,13 @@ func (v *Vpn) getInuseMacs(users cfgapi.UserMap) (int, map[int]bool, error) {
 	inuse := make(map[int]bool)
 	for _, u := range users {
 		for _, key := range u.WGConfig {
-			if short, err := macToShort(key.GetMac()); err == nil {
+			if short, err := macToShort(key.Mac); err == nil {
 				inuse[short] = true
 			}
 		}
 	}
 
-	lastMac, err := v.config.GetProp(LastMacProp)
+	lastMac, err := s.config.GetProp(LastMacProp)
 	if err == nil {
 		lastAllocated, _ = macToShort(lastMac)
 	} else {
@@ -84,11 +84,11 @@ func (v *Vpn) getInuseMacs(users cfgapi.UserMap) (int, map[int]bool, error) {
 
 // Returns the last mac address assigned and a candidate mac address for this
 // new key.
-func (v *Vpn) chooseMacAddress(users cfgapi.UserMap) (string, string, error) {
+func (s *Site) chooseMacAddress(users cfgapi.UserMap) (string, string, error) {
 	const mask = 0xffffff // only iterate over the 3 low-order bytes
 	var lastMac, newMac string
 
-	last, inuse, err := v.getInuseMacs(users)
+	last, inuse, err := s.getInuseMacs(users)
 	if err == nil {
 		err = fmt.Errorf("no mac addresses available")
 		lastMac = shortToMac(last)

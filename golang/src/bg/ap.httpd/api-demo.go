@@ -23,7 +23,7 @@ import (
 	"bg/common/cfgapi"
 	"bg/common/mfg"
 	"bg/common/network"
-	"bg/common/vpn"
+	"bg/common/wgsite"
 
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
@@ -403,13 +403,13 @@ func demoWanGetHandler(w http.ResponseWriter, r *http.Request) {
 // Implements GET /api/site/:uuid/network/wg, returning information about the
 // WG VPN.
 func demoWGGetHandler(w http.ResponseWriter, r *http.Request) {
-	vpnMod, err := vpn.NewVpn(config)
+	siteMod, err := wgsite.NewSite(config)
 	if err != nil {
-		err = errors.Wrap(err, "getting vpn handle")
+		err = errors.Wrap(err, "getting site handle")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	serverCfg, err := vpnMod.ServerConfig()
+	serverCfg, err := siteMod.ServerConfig()
 	if err != nil {
 		err = errors.Wrap(err, "getting server config")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -426,7 +426,7 @@ func demoWGGetHandler(w http.ResponseWriter, r *http.Request) {
 // WG VPN.
 func demoWGPostHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
-	var input vpn.ServerConfig
+	var input wgsite.ServerConfig
 	if err = json.NewDecoder(r.Body).Decode(&input); err != nil {
 		log.Printf("demoWGPost decode failed: %v", err)
 		http.Error(w, errors.Wrap(err, "bad input").Error(), http.StatusBadRequest)
@@ -441,17 +441,17 @@ func demoWGPostHandler(w http.ResponseWriter, r *http.Request) {
 	ops := []cfgapi.PropertyOp{
 		{
 			Op:    cfgapi.PropCreate,
-			Name:  vpn.AddressProp,
+			Name:  wgsite.AddressProp,
 			Value: input.Address,
 		},
 		{
 			Op:    cfgapi.PropCreate,
-			Name:  vpn.PortProp,
+			Name:  wgsite.PortProp,
 			Value: fmt.Sprintf("%d", input.Port),
 		},
 		{
 			Op:    cfgapi.PropCreate,
-			Name:  vpn.EnabledProp,
+			Name:  wgsite.EnabledProp,
 			Value: fmt.Sprintf("%t", input.Enabled),
 		},
 	}

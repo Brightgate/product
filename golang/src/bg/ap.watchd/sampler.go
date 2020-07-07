@@ -591,7 +591,7 @@ func sampleInit(w *watcher) {
 		s := &samplerState{ring: ring}
 
 		if ring == base_def.RING_VPN {
-			s.iface = "wg0"
+			s.iface = "wgs0"
 			s.layer2 = false
 		} else {
 			s.iface = config.Bridge

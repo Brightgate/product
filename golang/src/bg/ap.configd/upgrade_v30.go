@@ -14,7 +14,7 @@ import (
 	"os"
 
 	"bg/ap_common/aputil"
-	"bg/common/vpn"
+	"bg/common/wgsite"
 )
 
 func upgradeV30() error {
@@ -40,11 +40,11 @@ func upgradeV30() error {
 		}
 	}
 
-	oldKeyFile := plat.ExpandDirPath("__APSECRET__/vpn", vpn.PrivateFile)
-	newKeyFile := plat.ExpandDirPath(vpn.SecretDir, vpn.PrivateFile)
+	oldKeyFile := plat.ExpandDirPath("__APSECRET__/vpn", wgsite.PrivateFile)
+	newKeyFile := plat.ExpandDirPath(wgsite.SecretDir, wgsite.PrivateFile)
 	if aputil.FileExists(oldKeyFile) {
 		slog.Infof("Moving %s to %s", oldKeyFile, newKeyFile)
-		newKeyDir := plat.ExpandDirPath(vpn.SecretDir)
+		newKeyDir := plat.ExpandDirPath(wgsite.SecretDir)
 		err = os.MkdirAll(newKeyDir, 0700)
 		if err != nil {
 			slog.Warnf("failed: %v", err)

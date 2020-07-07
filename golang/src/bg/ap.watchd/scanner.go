@@ -6,7 +6,6 @@
  * Removal or alteration of this Copyright Management Information without the
  * express written permission of Brightgate Inc is prohibited, and any
  * such unauthorized removal or alteration will be a violation of federal law.
- *
  */
 
 package main
@@ -939,7 +938,7 @@ func iptablesRule(opt, rule string) {
 		return
 	}
 
-	opts := []string{opt}
+	opts := []string{"-w", opt}
 	opts = append(opts, strings.Split(rule, " ")...)
 	cmd := exec.Command(plat.IPTablesCmd, opts...)
 	out, err := cmd.CombinedOutput()

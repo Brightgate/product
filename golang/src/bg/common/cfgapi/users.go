@@ -16,6 +16,8 @@ import (
 	"log"
 	"net/mail"
 
+	"bg/common/wgconf"
+
 	"github.com/pkg/errors"
 
 	"golang.org/x/crypto/bcrypt"
@@ -27,18 +29,6 @@ import (
 	"github.com/satori/uuid"
 	"github.com/ttacon/libphonenumber"
 )
-
-// WireguardConf contains the non-secret information associated with a client
-// Wireguard configuration.
-type WireguardConf struct {
-	ID           int
-	WGPublicKey  string    // wireguard public key
-	WGAssignedIP string    // CIDR for assigned IP address
-	WGAllowedIPs string    // CIDR to restrict source of VPN connection
-	Label        string    // User-defined value to distinguish between configs
-	mac          string    // Artificial MAC address used for accounting
-	user         *UserInfo // owner of the key
-}
 
 // UserInfo contains all of the configuration information for an appliance user
 // account.  Expected roles are: "SITE_ADMIN", "SITE_USER",
@@ -59,50 +49,64 @@ type UserInfo struct {
 	config           *Handle
 	newUser          bool // need to do creation activities
 
-	WGConfig []*WireguardConf
+	WGConfig []*wgconf.UserConf
 
 	// PropertyOps which accumulate password to set.
 	passwordOps []PropertyOp
 }
 
-// UserMap maps an account's username to its configuration information
-type UserMap map[string]*UserInfo
+func wgConfig(user, mac string, root *PropertyNode) (*wgconf.UserConf, error) {
+	var key, addr string
+	var err error
 
-// GetMac returns the artificial MAC address used for internal accounting.
-// This should never be exposed to admins/users.
-func (w *WireguardConf) GetMac() string {
-	return w.mac
-}
-
-// GetUser returns the name of the user to which the key is assigned
-func (w *WireguardConf) GetUser() string {
-	var name string
-
-	if u := w.user; u != nil {
-		name = u.UID
+	c := &wgconf.UserConf{
+		Mac:  mac,
+		User: user,
 	}
-	return name
+	c.ID, _ = root.GetChildInt("id")
+	c.Label, _ = root.GetChildString("label")
+
+	if key, _ = root.GetChildString("public_key"); key == "" {
+		return nil, fmt.Errorf("missing public key")
+	} else if err = c.SetKey(key); err != nil {
+		return nil, err
+	}
+
+	if addr, _ = root.GetChildString("assigned_ip"); addr == "" {
+		return nil, fmt.Errorf("missing ip address")
+	} else if err = c.SetIPAddress(addr); err != nil {
+		return nil, err
+	}
+
+	if subnets, _ := root.GetChildString("allowed_ips"); subnets != "" {
+		if err = c.SetSubnets(subnets); err != nil {
+			return nil, err
+		}
+	}
+
+	return c, nil
 }
 
-func getWireguard(user *UserInfo, root *PropertyNode) []*WireguardConf {
-	var s []*WireguardConf
+func wgConfigs(user *UserInfo, root *PropertyNode) []*wgconf.UserConf {
+	var s []*wgconf.UserConf
 
 	if len(root.Children) > 0 {
-		s = make([]*WireguardConf, 0)
+		s = make([]*wgconf.UserConf, 0)
 		for mac, key := range root.Children {
-			c := &WireguardConf{}
-			c.ID, _ = key.GetChildInt("id")
-			c.WGPublicKey, _ = key.GetChildString("public_key")
-			c.WGAssignedIP, _ = key.GetChildString("assigned_ip")
-			c.WGAllowedIPs, _ = key.GetChildString("allowed_ips")
-			c.Label, _ = key.GetChildString("label")
-			c.mac = mac
-			c.user = user
-			s = append(s, c)
+			c, err := wgConfig(user.UID, mac, key)
+			if err != nil {
+				log.Printf("bad vpn key %s/%s: %v",
+					user.UID, mac, err)
+			} else {
+				s = append(s, c)
+			}
 		}
 	}
 	return s
 }
+
+// UserMap maps an account's username to its configuration information
+type UserMap map[string]*UserInfo
 
 // newUserFromNode creates a UserInfo from config properties
 func newUserFromNode(name string, user *PropertyNode) (*UserInfo, error) {
@@ -136,7 +140,7 @@ func newUserFromNode(name string, user *PropertyNode) (*UserInfo, error) {
 	}
 
 	if vpn, ok := user.Children["vpn"]; ok {
-		u.WGConfig = getWireguard(u, vpn)
+		u.WGConfig = wgConfigs(u, vpn)
 	}
 
 	return u, nil

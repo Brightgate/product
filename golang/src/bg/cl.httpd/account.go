@@ -28,7 +28,7 @@ import (
 	"bg/cloud_models/appliancedb"
 	"bg/common/cfgapi"
 	"bg/common/passwordgen"
-	"bg/common/vpn"
+	"bg/common/wgsite"
 
 	"cloud.google.com/go/storage"
 	"github.com/gorilla/sessions"
@@ -571,7 +571,7 @@ func (a *accountHandler) getAccountWG(c echo.Context) error {
 			return newHTTPError(http.StatusInternalServerError, err)
 		}
 
-		v, err := vpn.NewVpn(hdl)
+		v, err := wgsite.NewSite(hdl)
 		if err == nil {
 			if v.IsEnabled() {
 				resp.EnabledSites = append(resp.EnabledSites, site.UUID)
@@ -596,9 +596,9 @@ func (a *accountHandler) getAccountWG(c echo.Context) error {
 				OrganizationUUID: site.OrganizationUUID,
 				SiteUUID:         site.UUID,
 				Label:            wgConfig.Label,
-				Mac:              wgConfig.GetMac(),
-				PublicKey:        wgConfig.WGPublicKey,
-				AssignedIP:       wgConfig.WGAssignedIP,
+				Mac:              wgConfig.Mac,
+				PublicKey:        wgConfig.Key.String(),
+				AssignedIP:       wgConfig.IPAddress.String(),
 			}
 			resp.Configs = append(resp.Configs, r)
 		}
@@ -761,12 +761,12 @@ func (a *accountHandler) postAccountWGNew(c echo.Context) error {
 		}
 	}
 
-	vpn, err := vpn.NewVpn(hdl)
+	site, err := wgsite.NewSite(hdl)
 	if err != nil {
 		return newHTTPError(http.StatusInternalServerError, err)
 	}
 
-	addRes, err := vpn.AddKey(ctx, userInfo.UID, req.Label, "")
+	addRes, err := site.AddKey(ctx, userInfo.UID, req.Label, "")
 	if err != nil {
 		if err == cfgapi.ErrQueued || err == cfgapi.ErrInProgress || err == cfgapi.ErrTimeout {
 			return newHTTPError(http.StatusInternalServerError,
@@ -878,11 +878,11 @@ func (a *accountHandler) deleteAccountWGSiteMac(c echo.Context) error {
 		return newHTTPError(http.StatusInternalServerError, err)
 	}
 
-	vpn, err := vpn.NewVpn(hdl)
+	site, err := wgsite.NewSite(hdl)
 	if err != nil {
 		return newHTTPError(http.StatusInternalServerError, err)
 	}
-	err = vpn.RemoveKey(ctx, userInfo.UID, tgtMac, pubKey)
+	err = site.RemoveKey(ctx, userInfo.UID, tgtMac, pubKey)
 	if err != nil {
 		return newHTTPError(http.StatusInternalServerError, err)
 	}

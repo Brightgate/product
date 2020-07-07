@@ -21,7 +21,7 @@ import (
 	"bg/base_msg"
 	"bg/cloud_rpc"
 	"bg/common/cfgapi"
-	"bg/common/vpn"
+	"bg/common/wgsite"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/pkg/errors"
@@ -74,23 +74,23 @@ func vpnCheckEscrow(ctx context.Context, conn *grpc.ClientConn) {
 	vpnEscrowLock.Lock()
 	defer vpnEscrowLock.Unlock()
 
-	filename := plat.ExpandDirPath(vpn.SecretDir, vpn.PrivateFile)
+	filename := plat.ExpandDirPath(wgsite.SecretDir, wgsite.PrivateFile)
 	if !aputil.FileExists(filename) {
 		slog.Infof("No VPN key configured")
 		return
 	}
 
-	public, err := config.GetProp(vpn.PublicProp)
+	public, err := config.GetProp(wgsite.PublicProp)
 	if err == cfgapi.ErrNoProp || len(public) == 0 {
 		vpnKeyMismatchError("private key has an empty public key")
 		return
 	}
 	if err != nil {
-		slog.Warnf("failed to fetch %s: %v", vpn.PublicProp, err)
+		slog.Warnf("failed to fetch %s: %v", wgsite.PublicProp, err)
 		return
 	}
 
-	escrow, _ := config.GetProp(vpn.EscrowedProp)
+	escrow, _ := config.GetProp(wgsite.EscrowedProp)
 	if public == escrow {
 		slog.Infof("current VPN private key already escrowed")
 		return
@@ -124,7 +124,7 @@ func vpnCheckEscrow(ctx context.Context, conn *grpc.ClientConn) {
 
 	slog.Info("VPN private key escrowed in cloud")
 
-	err = config.CreateProp(vpn.EscrowedProp, public, nil)
+	err = config.CreateProp(wgsite.EscrowedProp, public, nil)
 	if err != nil {
 		slog.Warnf("failed to update escrowed property: %v", err)
 	}
@@ -138,10 +138,10 @@ func vpnInit(ctx context.Context, conn *grpc.ClientConn) {
 		vpnCheckEscrow(context.Background(), conn)
 	}
 
-	config.HandleChange(`^`+vpn.PublicProp, vpnHandleUpdate)
-	config.HandleChange(`^`+vpn.EscrowedProp, vpnHandleUpdate)
-	config.HandleDelExp(`^`+vpn.PublicProp, vpnHandleDelete)
-	config.HandleDelExp(`^`+vpn.EscrowedProp, vpnHandleDelete)
+	config.HandleChange(`^`+wgsite.PublicProp, vpnHandleUpdate)
+	config.HandleChange(`^`+wgsite.EscrowedProp, vpnHandleUpdate)
+	config.HandleDelExp(`^`+wgsite.PublicProp, vpnHandleDelete)
+	config.HandleDelExp(`^`+wgsite.EscrowedProp, vpnHandleDelete)
 
 	vpnCheckEscrow(ctx, conn)
 }

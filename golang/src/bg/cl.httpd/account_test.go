@@ -36,7 +36,7 @@ import (
 	"bg/cloud_models/appliancedb/mocks"
 	"bg/common/cfgapi"
 	"bg/common/mockcfg"
-	"bg/common/vpn"
+	"bg/common/wgsite"
 
 	"cloud.google.com/go/storage"
 	"github.com/fsouza/fake-gcs-server/fakestorage"
@@ -458,10 +458,10 @@ func TestAccountsVPN(t *testing.T) {
 
 	var err error
 	props := map[string]string{
-		vpn.PublicProp:  "Jtl3E4nr8KIqyi5ukyzXX1KKz1fkPVKCqLX5HfCAT1A=",
-		vpn.AddressProp: "192.168.5.1",
-		vpn.PortProp:    "51281",
-		vpn.LastMacProp: "00:40:54:00:00:00",
+		wgsite.PublicProp:  "Jtl3E4nr8KIqyi5ukyzXX1KKz1fkPVKCqLX5HfCAT1A=",
+		wgsite.AddressProp: "192.168.5.1",
+		wgsite.PortProp:    "51281",
+		wgsite.LastMacProp: "00:40:54:00:00:00",
 	}
 	err = mehdl.CreateProps(props, nil)
 	assert.NoError(err)
@@ -493,7 +493,7 @@ func TestAccountsVPN(t *testing.T) {
 	assert.Equal(noConfigsWG, acctWG)
 
 	// Add VPN enabled prop...
-	err = mehdl.CreateProps(map[string]string{vpn.EnabledProp: "true"}, nil)
+	err = mehdl.CreateProps(map[string]string{wgsite.EnabledProp: "true"}, nil)
 	assert.NoError(err)
 	noConfigsWG.EnabledSites = []uuid.UUID{mockSites[0].UUID}
 

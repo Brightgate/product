@@ -160,11 +160,29 @@ type perClient struct {
 	data map[string]*statsPair
 }
 
+func toSize(bytes uint64) string {
+	var unit string
+
+	if bytes < 1000 {
+		return fmt.Sprintf("%dB", bytes)
+	}
+	f := float64(bytes)
+
+	for _, unit = range []string{"KB", "MB", "GB", "TB"} {
+		if f = f / 1000; f < 1000 {
+			break
+		}
+	}
+
+	return fmt.Sprintf("%1.1f%s", f, unit)
+}
+
 func (sp *statsPair) String() string {
 	if sp == nil {
 		return fmt.Sprintf("%10s %10s", "bytesSent", "bytesRcvd")
 	}
-	return fmt.Sprintf("%10d %10d", sp.bytesSent, sp.bytesRcvd)
+	return fmt.Sprintf("%10s %10s", toSize(sp.bytesSent),
+		toSize(sp.bytesRcvd))
 }
 
 // Return a string of 'width' length, with 'text' in the center

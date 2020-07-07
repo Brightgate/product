@@ -34,7 +34,7 @@ import (
 	"bg/base_msg"
 	"bg/common/cfgapi"
 	"bg/common/network"
-	"bg/common/vpn"
+	"bg/common/wgsite"
 
 	"github.com/golang/protobuf/proto"
 	"go.uber.org/zap"
@@ -388,16 +388,17 @@ func recoverClients() {
 		newData.setPrivacy(hwaddr, client.DNSPrivate)
 	}
 
-	hdl, err := vpn.NewVpn(config)
+	hdl, err := wgsite.NewSite(config)
 	if err != nil {
-		slog.Warnf("vpn.NewVpn() failed: %v", err)
+		slog.Warnf("wgsite.NewSite() failed: %v", err)
 	} else {
 		vpnClients = make(map[uint64]bool)
 		keys, _ := hdl.GetKeys("")
 		for mac, key := range keys {
-			if ip := net.ParseIP(key.WGAssignedIP); ip != nil {
+			if ipnet := key.IPAddress; ipnet != nil {
 				hwaddr := network.MacToUint64(mac)
-				addIP(network.IPAddrToUint32(ip), hwaddr, true)
+				addIP(network.IPAddrToUint32(ipnet.IP),
+					hwaddr, true)
 			}
 		}
 		hdl.RegisterMacIPHandler(vpnUpdate)

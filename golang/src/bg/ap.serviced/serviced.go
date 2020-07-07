@@ -6,7 +6,6 @@
  * Removal or alteration of this Copyright Management Information without the
  * express written permission of Brightgate Inc is prohibited, and any
  * such unauthorized removal or alteration will be a violation of federal law.
- *
  */
 
 package main
@@ -29,7 +28,7 @@ import (
 	"bg/base_def"
 	"bg/common/cfgapi"
 	"bg/common/network"
-	"bg/common/vpn"
+	"bg/common/wgsite"
 
 	"go.uber.org/zap"
 )
@@ -234,14 +233,14 @@ func initInterfaces() {
 func getVPNClients() {
 	vpnClients = make(map[string]net.IP)
 
-	hdl, err := vpn.NewVpn(config)
+	hdl, err := wgsite.NewSite(config)
 	if err != nil {
-		slog.Warnf("vpn.NewVpn() failed: %v", err)
+		slog.Warnf("wgsiter.NewSite() failed: %v", err)
 	} else {
 		keys, _ := hdl.GetKeys("")
 		for _, key := range keys {
-			if ip := net.ParseIP(key.WGAssignedIP); ip != nil {
-				vpnClients[key.GetMac()] = ip
+			if ipnet := key.IPAddress; ipnet != nil {
+				vpnClients[key.Mac] = ipnet.IP
 			}
 		}
 		hdl.RegisterMacIPHandler(vpnUpdate)
