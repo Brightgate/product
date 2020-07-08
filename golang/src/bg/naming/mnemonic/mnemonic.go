@@ -6,6 +6,7 @@
 // Removal or alteration of this Copyright Management Information without the
 // express written permission of Brightgate Inc is prohibited, and any
 // such unauthorized removal or alteration will be a violation of federal law.
+//
 
 // Mnemonic wordlist used under the following license:
 

@@ -7,6 +7,7 @@
 // express written permission of Brightgate Inc is prohibited, and any
 // such unauthorized removal or  alteration will be a violation of federal law.
 //
+
 package base_msg
 
 import (
