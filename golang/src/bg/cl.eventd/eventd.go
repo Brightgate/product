@@ -258,7 +258,7 @@ func upgradeMessage(ctx context.Context, applianceDB appliancedb.DataStore,
 		if err != nil {
 			slog.Errorw("failed to retrieve release from database",
 				"error", err, "release_uuid", relUU)
-		} else if relUU != uuid.Nil {
+		} else if rel != nil {
 			var badMatches []interface{}
 			for _, commit := range rel.Commits {
 				ra := appliancedb.ReleaseArtifact(commit)

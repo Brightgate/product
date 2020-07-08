@@ -455,8 +455,14 @@ func (db *ApplianceDB) ListReleases(ctx context.Context) ([]*Release, error) {
 }
 
 // GetRelease gets the details of a release, sufficient to build an upgrade
-// descriptor that ap-factory can use.
+// descriptor that ap-factory can use.  The placeholder nil release is special,
+// and has no associated artifacts; the return for that release is nil, but also
+// a nil error.
 func (db *ApplianceDB) GetRelease(ctx context.Context, relUU uuid.UUID) (*Release, error) {
+	if relUU == uuid.Nil {
+		return nil, nil
+	}
+
 	q := `
 		SELECT r.release_uuid,
 			r.create_ts,

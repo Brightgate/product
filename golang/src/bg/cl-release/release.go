@@ -418,7 +418,7 @@ func applianceStatus(cmd *cobra.Command, args []string) error {
 		}
 
 		if stat.CurrentReleaseUUID.Valid {
-			if stat.CurrentReleaseUUID.UUID == uuid.Nil && stat.Commits != nil {
+			if stat.CurrentReleaseUUID.UUID == uuid.Nil {
 				var a []string
 				for repo, hash := range stat.Commits {
 					l := 10
@@ -427,16 +427,19 @@ func applianceStatus(cmd *cobra.Command, args []string) error {
 					}
 					a = append(a, repo+":"+hash[:l])
 				}
-				curUU = strings.Join(a, " ")
+				if len(a) > 0 {
+					curUU = strings.Join(a, " ")
+				} else {
+					curUU = "-"
+				}
 				// We could try to figure out which
 				// release the commits most closely
 				// describe, then print that, plus its
 				// diffs. (~Beta 2: PS:d4db33f)
-				curName = "-"
 			} else {
 				curUU = stat.CurrentReleaseUUID.UUID.String()
-				curName = stat.CurrentReleaseName.String
 			}
+			curName = stat.CurrentReleaseName.String
 			since = stat.RunningSince.Time.In(time.Local).
 				Round(time.Second).Format(timeLayout)
 		} else {

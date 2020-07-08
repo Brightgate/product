@@ -210,6 +210,11 @@ func testReleases(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.S
 	assert.Error(err)
 	assert.IsType(NotFoundError{}, err)
 
+	// Make sure that the nil release returns nil.
+	nilRel, err := ds.GetRelease(ctx, uuid.Nil)
+	assert.NoError(err)
+	assert.Nil(nilRel)
+
 	// Build a new appliance stack and create a new release with that.
 	psRA2 := buildPS(nil, 0, "mt7623")
 	psRA2, err = ds.InsertArtifact(ctx, *psRA2)
@@ -407,8 +412,8 @@ func testReleases(t *testing.T, ds DataStore, logger *zap.Logger, slogger *zap.S
 		appUU)
 	assert.NoError(err)
 	// testify has WithinDuration, which we could use here, but the inverse,
-	// which we'd need next.  And until #780 is fixed, it can't compare
-	// durations directly.
+	// which we'd need next, doesn't exist.  And until #780 is fixed, it
+	// can't compare durations directly.
 	assert.Less(int64(now.Sub(then)), int64(time.Microsecond))
 
 	// Update one of the commits, see that the timestamp does change.
@@ -562,7 +567,7 @@ func testReleaseStatus(t *testing.T, ds DataStore, logger *zap.Logger, slogger *
 	assert.True(status[testID3.ApplianceUUID].TargetReleaseUUID.Valid)
 	assert.Equal(releases[1], status[testID3.ApplianceUUID].TargetReleaseUUID.UUID)
 
-	// Update one of the appliance to something that's not a release.
+	// Update one of the appliances to something that's not a release.
 	nonRelCommits := make(map[string]string)
 	for k, v := range commits[releases[2]] {
 		nonRelCommits[k] = v

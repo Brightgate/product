@@ -174,6 +174,7 @@ func TestUpgradeMessage(t *testing.T) {
 	for _, rel := range mockReleases {
 		ds.On("GetRelease", mock.Anything, rel.UUID).Return(&rel, nil)
 	}
+	ds.On("GetRelease", mock.Anything, uuid.Nil).Return(nil, nil)
 	ds.On("GetRelease", mock.Anything, mock.Anything).Return(nil, appliancedb.NotFoundError{})
 	ds.On("SetCurrentRelease", mock.Anything, mock.AnythingOfType("uuid.UUID"),
 		mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("time.Time"),
@@ -222,6 +223,21 @@ func TestUpgradeMessage(t *testing.T) {
 	logEntries = tUR(time.Now(), mkReleaseUUID(99), appUU, siteUU, nil)
 	assert.Len(logEntries, 2)
 	assert.Equal("failed to retrieve release from database", logEntries[1].Message)
+
+	// Send an upgrade report with the nil release and no commits, and make
+	// sure we only get the one "Set current release" message.
+	logEntries = tUR(time.Now(), uuid.Nil, appUU, siteUU, nil)
+	assert.Len(logEntries, 1)
+	assert.Equal("Set current release", logEntries[0].Message)
+
+	// Send an upgrade report with the nil release and some commits.
+	logEntries = tUR(time.Now(), uuid.Nil, appUU, siteUU,
+		map[string]string{
+			"R1": "11111111",
+			"R2": "22222222",
+		})
+	assert.Len(logEntries, 1)
+	assert.Equal("Set current release", logEntries[0].Message)
 
 	// Send an upgrade report with commits, specified by partial hashes and
 	// "git describe" decoration matching how the release was defined.
