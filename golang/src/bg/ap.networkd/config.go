@@ -156,7 +156,11 @@ func configSet(name, val string) bool {
 func configNetworkUpdated(path []string, val string, expires *time.Time) {
 	l := len(path)
 
-	if l == 5 && path[1] == "vpn" && path[2] == "server" {
+	if l == 6 && path[1] == "vpn" && path[2] == "client" {
+		// @/network/vpn/client/0/wg/<prop>
+		vpnClientUpdate(path[5], val)
+
+	} else if l == 5 && path[1] == "vpn" && path[2] == "server" {
 		// @/network/vpn/server/0/<prop>
 		vpnServerUpdate(path[4], val)
 
@@ -169,7 +173,10 @@ func configNetworkUpdated(path []string, val string, expires *time.Time) {
 func configNetworkDeleted(path []string) {
 	l := len(path)
 
-	if l == 5 && path[1] == "vpn" && path[2] == "server" {
+	if l == 6 && path[1] == "vpn" && path[2] == "client" {
+		vpnClientDelete(path)
+
+	} else if l == 5 && path[1] == "vpn" && path[2] == "server" {
 		vpnServerDelete(path)
 
 	} else if l >= 3 && path[1] == "wan" && path[2] == "static" {

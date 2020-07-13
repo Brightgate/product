@@ -220,8 +220,12 @@ func daemonInit() error {
 	config.HandleDelExp(`^@/firewall/blocked/`, configBlocklistExpired)
 	config.HandleChange(`^@/users/.*/vpn/.*`, configUserChanged)
 	config.HandleDelExp(`^@/users/.*`, configUserDeleted)
+	config.HandleChange(`^@/policy/site/vpn/client/.*/enabled`, vpnClientUpdateEnabled)
+	config.HandleDelExp(`^@/policy/site/vpn/client/.*/enabled`, vpnClientDeleteEnabled)
 	config.HandleChange(`^@/policy/site/vpn/server/.*/enabled`, vpnServerUpdateEnabled)
 	config.HandleDelExp(`^@/policy/site/vpn/server/.*/enabled`, vpnServerDeleteEnabled)
+	config.HandleChange(`^@/policy/.*/vpn/client/.*/allowed`, vpnClientUpdateAllowed)
+	config.HandleDelExp(`^@/policy/.*/vpn/client/.*/allowed`, vpnClientDeleteAllowed)
 	config.HandleChange(`^@/policy/.*/vpn/server/.*/rings`, vpnUpdateRings)
 	config.HandleDelExp(`^@/policy/.*/vpn/server/.*/rings`, vpnDeleteRings)
 	config.HandleChange(`^@/policy/.*/vpn/server/.*/subnets`, vpnUpdateRings)
@@ -269,6 +273,11 @@ func daemonInit() error {
 			slog.Errorf("vpnServerInit failed: %v", err)
 		} else {
 			go vpnServerLoop(&cleanup.wg, addDoneChan())
+		}
+		if err := vpnClientInit(); err != nil {
+			slog.Errorf("vpnClientInit failed: %v", err)
+		} else {
+			go vpnClientLoop(&cleanup.wg, addDoneChan())
 		}
 	}
 

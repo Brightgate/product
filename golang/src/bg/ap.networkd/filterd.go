@@ -306,6 +306,12 @@ func genEndpointIface(e *endpoint, src bool) (string, error) {
 
 	if e.detail == "wan" && wan.getNic() != "" {
 		name = wan.getNic()
+	} else if strings.HasPrefix(e.detail, "vpnclient") {
+		id := strings.TrimPrefix(e.detail, "vpnclient")
+		if _, err := strconv.Atoi(id); err != nil {
+			return "", fmt.Errorf("bad vpn interface: %s", e.detail)
+		}
+		name = "wgc" + id
 	} else {
 		return "", fmt.Errorf("no such interface: %s", e.detail)
 	}
@@ -645,6 +651,7 @@ func firewallRules() {
 	}
 
 	vpnRules := vpnServerFirewallRules()
+	vpnRules = append(vpnClientFirewallRules())
 	for _, rule := range vpnRules {
 		r, err := parseRule(rule)
 		if err != nil {

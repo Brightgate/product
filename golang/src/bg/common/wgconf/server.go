@@ -60,7 +60,12 @@ func (s *Server) validateLocked() (bool, error) {
 	if ip == nil {
 		err = fmt.Errorf("bad server address: '%s'", addr)
 	} else {
-		old := s.IPAddress.String()
+		var old string
+
+		if s.IPAddress != nil {
+			old = s.IPAddress.String()
+		}
+
 		s.setIPAddressLocked(ip)
 		changed = (old != s.IPAddress.String())
 	}

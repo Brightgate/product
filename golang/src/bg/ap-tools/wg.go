@@ -16,12 +16,16 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"bg/ap_common/apcfg"
+	"bg/ap_common/wgctl"
 	"bg/common/cfgapi"
 	"bg/common/wgconf"
 
 	"github.com/spf13/cobra"
+
+	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
 var (
@@ -40,6 +44,38 @@ func wgDebug(format string, a ...interface{}) {
 	if wgVerbose {
 		fmt.Printf(format, a...)
 	}
+}
+
+func wgUp(cmd *cobra.Command, args []string) error {
+	clientIdx, _ := cmd.Flags().GetInt("idx")
+
+	c, err := wgctl.GetClient(config, clientIdx)
+	if err != nil {
+		err = fmt.Errorf("initializing client %d: %v", clientIdx, err)
+
+	} else if err = wgctl.ClientDevUp(c); err != nil {
+		err = fmt.Errorf("plumbing WireGuard device %s: %v",
+			c.Devname, err)
+
+	} else if err = wgctl.InstallConfig(c); err != nil {
+		err = fmt.Errorf("configuuring WireGuard device %s: %v",
+			c.Devname, err)
+	}
+
+	return err
+}
+
+func wgDown(cmd *cobra.Command, args []string) error {
+	clientIdx, _ := cmd.Flags().GetInt("idx")
+
+	c, err := wgctl.GetClient(config, clientIdx)
+	if err != nil {
+		err = fmt.Errorf("initializing client %d: %v", clientIdx, err)
+	} else {
+		err = wgctl.ClientDevDown(c)
+	}
+
+	return err
 }
 
 func wgImport(cmd *cobra.Command, args []string) error {
@@ -127,6 +163,47 @@ func allowedIPs(set []net.IPNet) string {
 	return strings.Join(all, ",")
 }
 
+func wgShow(cmd *cobra.Command, args []string) error {
+	var nullKey wgtypes.Key
+
+	devs, err := wgctl.GetDevices()
+	if err == nil {
+		for _, d := range devs {
+			if d.PublicKey == nullKey {
+				continue
+			}
+
+			fmt.Printf("interface: %s   public key: %s   port: %d\n",
+				d.Name, d.PublicKey.String(), d.ListenPort)
+			for _, p := range d.Peers {
+				var when string
+
+				if p.PublicKey == nullKey {
+					continue
+				}
+				if t := p.LastHandshakeTime; !t.IsZero() {
+					when = t.Format(time.Stamp)
+				} else {
+					when = "never"
+				}
+				fmt.Printf("    peer: %s\n", p.PublicKey)
+				if p.Endpoint != nil {
+					fmt.Printf("        endpt: %v\n", p.Endpoint)
+				}
+				fmt.Printf("        allowedIPs: %v\n",
+					allowedIPs(p.AllowedIPs))
+				fmt.Printf("        last handshake: %s\n", when)
+
+				fmt.Printf("        tx: %d  rx: %d\n",
+					p.TransmitBytes, p.ReceiveBytes)
+			}
+			fmt.Printf("\n")
+		}
+	}
+
+	return err
+}
+
 func wgMain() {
 	var err error
 
@@ -141,6 +218,26 @@ func wgMain() {
 	}
 	rootCmd.PersistentFlags().BoolVar(&wgVerbose, "v", false, "verbose")
 
+	upCmd := &cobra.Command{
+		Use:           "up",
+		Short:         "open a WireGuard connection",
+		RunE:          wgUp,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+	}
+	upCmd.Flags().IntP("idx", "i", 0, "client index to bring up")
+	rootCmd.AddCommand(upCmd)
+
+	downCmd := &cobra.Command{
+		Use:           "down",
+		Short:         "close a WireGuard connection",
+		RunE:          wgDown,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+	}
+	downCmd.Flags().IntP("idx", "i", 0, "client index to bring down")
+	rootCmd.AddCommand(downCmd)
+
 	importCmd := &cobra.Command{
 		Use:           "import",
 		Short:         "import a WireGuard config file",
@@ -152,9 +249,18 @@ func wgMain() {
 	importCmd.Flags().IntP("idx", "i", 0, "client index to assign")
 	rootCmd.AddCommand(importCmd)
 
+	showCmd := &cobra.Command{
+		Use:           "show",
+		Short:         "show instantiated WireGuard connections",
+		RunE:          wgShow,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+	}
+	rootCmd.AddCommand(showCmd)
+
 	listCmd := &cobra.Command{
 		Use:           "list",
-		Short:         "list defined WireGuard connections",
+		Short:         "list configured WireGuard connections",
 		RunE:          wgList,
 		SilenceUsage:  true,
 		SilenceErrors: true,
