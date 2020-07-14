@@ -38,10 +38,17 @@ import (
 	"bg/cl_common/certificate"
 	"bg/cl_common/clcfg"
 	"bg/cl_common/daemonutils"
+	"bg/cl_common/echozap"
+	"bg/cl_common/pgutils"
+	"bg/cl_common/vaultdb"
+	"bg/cl_common/vaultgcpauth"
+	"bg/cl_common/vaulttokensource"
+	"bg/cl_common/zapgommon"
 	"bg/cloud_models/appliancedb"
 	"bg/cloud_rpc"
 	"bg/common/cfgapi"
 
+	vault "github.com/hashicorp/vault/api"
 	"github.com/satori/uuid"
 	"github.com/tomazk/envcfg"
 
@@ -54,7 +61,6 @@ import (
 	"go.uber.org/zap/zapgrpc"
 
 	"cloud.google.com/go/compute/metadata"
-	"cloud.google.com/go/pubsub"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -66,7 +72,7 @@ import (
 
 	"github.com/grpc-ecosystem/go-grpc-middleware"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
-	"github.com/grpc-ecosystem/go-grpc-middleware/tags"
+	grpc_ctxtags "github.com/grpc-ecosystem/go-grpc-middleware/tags"
 	"github.com/grpc-ecosystem/go-grpc-middleware/util/metautils"
 	"github.com/grpc-ecosystem/go-grpc-prometheus"
 )
@@ -86,6 +92,10 @@ type Cfg struct {
 	PubsubTopic             string `envcfg:"B10E_CLRPCD_PUBSUB_TOPIC"`
 	PostgresConnection      string `envcfg:"B10E_CLRPCD_POSTGRES_CONNECTION"`
 	VaultAuthPath           string `envcfg:"B10E_CLRPCD_VAULT_AUTH_PATH"`
+	VaultDBPath             string `envcfg:"B10E_CLRPCD_VAULT_DB_PATH"`
+	VaultDBRole             string `envcfg:"B10E_CLRPCD_VAULT_DB_ROLE"`
+	VaultGCPPath            string `envcfg:"B10E_CLRPCD_VAULT_GCP_PATH"`
+	VaultGCPRole            string `envcfg:"B10E_CLRPCD_VAULT_GCP_ROLE"`
 	VaultVPNEscrowPath      string `envcfg:"B10E_CLRPCD_VAULT_VPN_ESCROW_PATH"`
 	VaultVPNEscrowComponent string `envcfg:"B10E_CLRPCD_VAULT_VPN_ESCROW_COMPONENT"`
 	// Whether to disable TLS for incoming requests (danger!)
@@ -112,7 +122,8 @@ var (
 	log  *zap.Logger
 	slog *zap.SugaredLogger
 
-	environ Cfg
+	environ       Cfg
+	useVaultForDB bool
 )
 
 func getSiteUUID(ctx context.Context, allowNullSiteUUID bool) (uuid.UUID, error) {
@@ -187,6 +198,11 @@ func processEnv() {
 		environ.HTTPListen = ":80"
 	}
 
+	if environ.VaultDBRole == "" {
+		environ.VaultDBRole = pname
+	}
+	useVaultForDB = environ.VaultDBPath != ""
+
 	if environ.VaultAuthPath == "" {
 		getProject()
 		environ.VaultAuthPath = "auth/gcp-" + project
@@ -206,6 +222,18 @@ func processEnv() {
 			environ.VaultVPNEscrowComponent)
 	}
 
+	if environ.VaultGCPPath == "" {
+		getProject()
+		environ.VaultGCPPath = "gcp/" + project
+		slog.Warnf("B10E_CLRPCD_VAULT_GCP_PATH not found in "+
+			"environment; setting to %s", environ.VaultGCPPath)
+	}
+	if environ.VaultGCPRole == "" {
+		environ.VaultGCPRole = pname
+		slog.Warnf("B10E_CLRPCD_VAULT_GCP_ROLE not found in "+
+			"environment; setting to %s", environ.VaultGCPRole)
+	}
+
 	slog.Infof(checkMark + "Environ looks good")
 }
 
@@ -220,10 +248,24 @@ func prometheusInit(prometheusPort string) {
 }
 
 // makeApplianceDB handles connection setup to the appliance database
-func makeApplianceDB(postgresURI string) appliancedb.DataStore {
-	applianceDB, err := appliancedb.Connect(postgresURI)
-	if err != nil {
-		slog.Fatalf("failed to connect to DB: %v", err)
+func makeApplianceDB(postgresURI string, vaultClient *vault.Client, notifier *daemonutils.FanOut) (appliancedb.DataStore, *vaultdb.Connector) {
+	postgresURI = pgutils.AddApplication(postgresURI, pname)
+
+	var err error
+	var applianceDB appliancedb.DataStore
+	var vdbc *vaultdb.Connector
+	if vaultClient != nil {
+		vdbc = vaultdb.NewConnector(postgresURI, vaultClient, notifier,
+			environ.VaultDBPath, environ.VaultDBRole, slog)
+		applianceDB, err = appliancedb.VaultConnect(vdbc)
+		if err != nil {
+			slog.Fatalf("Error configuring DB from Vault: %v", err)
+		}
+	} else {
+		applianceDB, err = appliancedb.Connect(postgresURI)
+		if err != nil {
+			slog.Fatalf("failed to connect to DB: %v", err)
+		}
 	}
 	slog.Infof(checkMark + "Connected to Appliance DB")
 	err = applianceDB.Ping()
@@ -231,7 +273,7 @@ func makeApplianceDB(postgresURI string) appliancedb.DataStore {
 		slog.Fatalf("failed to ping DB: %s", err)
 	}
 	slog.Infof(checkMark + "Pinged Appliance DB")
-	return applianceDB
+	return applianceDB, vdbc
 }
 
 func makeGrpcServer(applianceDB appliancedb.DataStore) *grpc.Server {
@@ -384,14 +426,36 @@ func getConfigClientHandle(cuuid string) (*cfgapi.Handle, error) {
 	return configHandle, nil
 }
 
-func makeHTTPServer() *echo.Echo {
+func mkEchoZapLogger(zlog *zap.Logger) echo.MiddlewareFunc {
+	// Mostly the default fields, but we skip time, which is already emitted
+	// by zap, and id, which is always empty.
+	m := []echozap.Field{
+		echozap.CoreField("remote_ip"),
+		echozap.CoreField("host"),
+		echozap.CoreField("method"),
+		echozap.CoreField("uri"),
+		echozap.CoreField("user_agent"),
+		echozap.CoreField("status"),
+		echozap.CoreField("error"),
+		echozap.CoreField("latency"),
+		echozap.CoreField("latency_human"),
+		echozap.CoreField("bytes_in"),
+		echozap.CoreField("bytes_out"),
+	}
+	return echozap.Logger(zlog, m)
+}
+
+func makeHTTPServer(vdbc *vaultdb.Connector, log *zap.Logger) *echo.Echo {
+	log = log.Named("http")
+
 	r := echo.New()
 	r.HideBanner = true
-	r.Use(middleware.Logger())
+	r.Logger = zapgommon.ZapToGommonLog(log)
+	r.Use(mkEchoZapLogger(log.Named("server")))
 	r.Use(middleware.Recover())
 
 	// Setup /check endpoints
-	_ = newCheckHandler(r, getConfigClientHandle)
+	_ = newCheckHandler(r, getConfigClientHandle, vdbc)
 
 	return r
 }
@@ -413,22 +477,47 @@ func main() {
 
 	slog.Infow(pname+" starting", "args", os.Args)
 
-	applianceDB := makeApplianceDB(environ.PostgresConnection)
-	grpcServer := makeGrpcServer(applianceDB)
-
-	pubsubClient, err := pubsub.NewClient(context.Background(), environ.PubsubProject)
-	if err != nil {
-		slog.Fatalf("failed to make pubsub client: %s", err)
+	var vaultClient *vault.Client
+	var notifier *daemonutils.FanOut
+	if useVaultForDB {
+		vaultClient, err = vault.NewClient(nil)
+		if err != nil {
+			slog.Fatalf("Vault error: %s", err)
+		}
+		if vaultClient.Token() == "" {
+			slog.Info("Authenticating to Vault with GCP auth")
+			hcLog := vaultgcpauth.ZapToHCLog(slog)
+			if notifier, err = vaultgcpauth.VaultAuth(context.Background(),
+				hcLog, vaultClient, environ.VaultAuthPath, pname); err != nil {
+				slog.Fatalf("Vault login error: %s", err)
+			}
+			slog.Info(checkMark + "Authenticated to Vault")
+		} else {
+			slog.Info("Authenticating to Vault with existing token")
+		}
 	}
 
-	eventServer, err := newEventServer(pubsubClient, environ.PubsubTopic)
+	applianceDB, vdbc := makeApplianceDB(environ.PostgresConnection, vaultClient, notifier)
+	grpcServer := makeGrpcServer(applianceDB)
+
+	slog.Infof("Attempting to get token source from Vault: path=%s role=%s",
+		environ.VaultGCPPath, environ.VaultGCPRole)
+	vts, err := vaulttokensource.NewVaultTokenSource(
+		vaultClient, environ.VaultGCPPath, environ.VaultGCPRole)
+	if err != nil {
+		slog.Warnf("Failed to get access token from Vault; falling "+
+			"back to ADC: %v", err)
+		vts = nil
+	}
+
+	eventServer, err := newEventServer(vts, environ.PubsubTopic)
 	if err != nil {
 		slog.Fatalf("failed to start event server: %s", err)
 	}
 
-	cloudStorageServer := defaultCloudStorageServer(applianceDB)
+	cloudStorageServer := defaultCloudStorageServer(applianceDB, vts.Copy())
 	certificateServer := newCertServer(applianceDB)
-	relServer := newReleaseServer(applianceDB)
+	relServer := newReleaseServer(applianceDB, vts.Copy())
 
 	cloud_rpc.RegisterEventServer(grpcServer, eventServer)
 	slog.Infof(checkMark+"Ready to put event to Cloud PubSub %s", environ.PubsubTopic)
@@ -438,7 +527,7 @@ func main() {
 	slog.Infof(checkMark + "Ready to serve certificate requests")
 	cloud_rpc.RegisterReleaseManagerServer(grpcServer, relServer)
 	slog.Infof(checkMark + "Ready to serve release requests")
-	cloud_rpc.RegisterVPNManagerServer(grpcServer, &vpnServer{})
+	cloud_rpc.RegisterVPNManagerServer(grpcServer, &vpnServer{vaultClient})
 	slog.Infof(checkMark + "Ready to escrow appliance VPN private keys")
 
 	if environ.ConfigdDisableTLS {
@@ -465,13 +554,13 @@ func main() {
 	}()
 	slog.Infof(checkMark+"Started gRPC service at %v", environ.GrpcPort)
 
-	rHTTP := makeHTTPServer()
+	rHTTP := makeHTTPServer(vdbc, log)
 	httpSrv := &http.Server{
 		Addr: environ.HTTPListen,
 	}
 	go func() {
 		if err := rHTTP.StartServer(httpSrv); err != nil {
-			rHTTP.Logger.Info("shutting down HTTP (health) service")
+			rHTTP.Logger.Info("shutting down HTTP (health) service: %v", err)
 		}
 	}()
 

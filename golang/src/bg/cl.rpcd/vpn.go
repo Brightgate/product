@@ -16,7 +16,6 @@ import (
 	"fmt"
 
 	"bg/cl_common/daemonutils"
-	"bg/cl_common/vaultgcpauth"
 	"bg/cloud_rpc"
 
 	vault "github.com/hashicorp/vault/api"
@@ -26,6 +25,7 @@ import (
 )
 
 type vpnServer struct {
+	vaultClient *vault.Client
 }
 
 func (vs *vpnServer) EscrowVPNPrivateKey(ctx context.Context, req *cloud_rpc.VPNPrivateKey) (*cloud_rpc.VPNEscrowResponse, error) {
@@ -38,29 +38,7 @@ func (vs *vpnServer) EscrowVPNPrivateKey(ctx context.Context, req *cloud_rpc.VPN
 		return nil, err
 	}
 
-	vaultClient, err := vault.NewClient(nil)
-	if err != nil {
-		slog.Errorw("Failed to create Vault client", "error", err)
-		return nil, status.Errorf(codes.Internal, "failed to create Vault client: %s", err)
-	}
-
-	if vaultClient.Token() == "" {
-		// Right now, we're authenticating on each connection.  Once
-		// cl.rpcd is using Vault to get its database and service
-		// account credentials, we'll authenticate once at startup and
-		// keep that login renewed.
-		hcLog := vaultgcpauth.ZapToHCLog(slog)
-		if err := vaultgcpauth.VaultAuthOnce(ctx, hcLog, vaultClient,
-			environ.VaultAuthPath, pname); err != nil {
-			slog.Errorw("Failed to authenticate to Vault", "error", err)
-			return nil, status.Errorf(codes.Internal, "Vault login error: %s", err)
-		}
-		slog.Info("Authenticated to Vault with GCP auth")
-	} else {
-		slog.Info("Authenticating to Vault with existing token")
-	}
-
-	vcl := vaultClient.Logical()
+	vcl := vs.vaultClient.Logical()
 	data := map[string]interface{}{
 		"data": map[string]interface{}{
 			"private_key": req.Key,

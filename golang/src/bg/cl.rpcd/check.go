@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"time"
 
+	"bg/cl_common/pgutils"
+	"bg/cl_common/vaultdb"
 	"bg/cloud_models/appliancedb"
 
 	"github.com/labstack/echo"
@@ -22,6 +24,7 @@ import (
 
 type checkHandler struct {
 	getClientHandle getClientHandleFunc
+	vdbc            *vaultdb.Connector
 }
 
 type checkResponse struct {
@@ -41,8 +44,15 @@ func (h *checkHandler) getCheckProduction(c echo.Context) error {
 		ConfigdStatus:     "unknown",
 		EnvironProblems:   nil,
 	}
-	dbURI := environ.PostgresConnection + "&connect_timeout=3"
-	applianceDB, err := appliancedb.Connect(dbURI)
+	var applianceDB appliancedb.DataStore
+	var err error
+	if h.vdbc != nil {
+		applianceDB, err = appliancedb.VaultConnect(h.vdbc)
+	} else {
+		dbURI := pgutils.AddConnectTimeout(environ.PostgresConnection, "3")
+		dbURI = pgutils.AddApplication(dbURI, pname)
+		applianceDB, err = appliancedb.Connect(dbURI)
+	}
 	if err != nil {
 		c.Logger().Errorf("check failed for applianceDB connect: %v", err)
 		fail = true
@@ -91,8 +101,11 @@ func (h *checkHandler) getCheckProduction(c echo.Context) error {
 }
 
 // newCheckHandler creates a checkHandler to handle uptime check endpoints
-func newCheckHandler(r *echo.Echo, getClientHandle getClientHandleFunc) *checkHandler {
-	h := &checkHandler{getClientHandle}
+func newCheckHandler(r *echo.Echo, getClientHandle getClientHandleFunc, vdbc *vaultdb.Connector) *checkHandler {
+	h := &checkHandler{
+		getClientHandle: getClientHandle,
+		vdbc:            vdbc,
+	}
 	// A production-quality, in-depth health check
 	r.GET("/check/production", h.getCheckProduction)
 	// This is a really stupid health check, but we have to have something

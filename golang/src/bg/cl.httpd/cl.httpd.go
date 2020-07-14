@@ -50,6 +50,7 @@ import (
 	"bg/cl_common/vaultgcpauth"
 	"bg/cl_common/vaulttags"
 	"bg/cl_common/vaulttokensource"
+	"bg/cl_common/zapgommon"
 	"bg/cloud_models/appliancedb"
 	"bg/cloud_models/sessiondb"
 	"bg/common/cfgapi"
@@ -377,25 +378,10 @@ func (rs *routerState) mkApplianceDB(vaultClient *vault.Client, notifier *daemon
 }
 
 func mkEchoZapLogger(zlog *zap.Logger) echo.MiddlewareFunc {
-	slog := zlog.Sugar()
-
-	gcpInstName, err := metadata.InstanceName()
-	if err != nil {
-		slog.Warnf("Unable to retrieve instance name: %v", err)
-	}
-
-	gcpZone, err := metadata.Zone()
-	if err != nil {
-		slog.Warnf("Unable to retrieve GCP zone: %v", err)
-	}
-
 	// Mostly the default fields, but we skip time, which is already emitted
-	// by zap, and id, which is always empty.  We add the zone and instance
-	// name, so we can tell what part of the backend is handling it, and the
-	// GCLB cookie, which is how the load-balancing works.
+	// by zap, and id, which is always empty.  We add the GCLB cookie, which
+	// is how the load-balancing works.
 	m := []echozap.Field{
-		{Name: "gcp_zone", Data: gcpZone},
-		{Name: "gcp_instance_name", Data: gcpInstName},
 		echozap.CookieField("GCLB"),
 		echozap.CoreField("remote_ip"),
 		echozap.CoreField("host"),
@@ -430,7 +416,7 @@ func mkRouterHTTPS(log *zap.Logger, vaultClient *vault.Client, notifier *daemonu
 	state.echo = echo.New()
 	r := state.echo
 	r.Debug = environ.Developer
-	r.Logger = ZapToGommonLog(log)
+	r.Logger = zapgommon.ZapToGommonLog(log)
 	r.HideBanner = true
 
 	state.logger = slog
@@ -489,13 +475,18 @@ func mkRouterHTTPS(log *zap.Logger, vaultClient *vault.Client, notifier *daemonu
 	}
 
 	// Setup /auth endpoints
-	vts := vaulttokensource.NewVaultTokenSource(
-		vaultClient, environ.VaultGCPPath, environ.VaultGCPRole)
-	ts := oauth2.ReuseTokenSource(nil, vts)
 	var opts []option.ClientOption
-	if _, err = ts.Token(); err == nil {
-		opts = append(opts, option.WithTokenSource(ts))
-	} else {
+	slog.Infof("Attempting to get token source from Vault: path=%s role=%s",
+		environ.VaultGCPPath, environ.VaultGCPRole)
+	vts, err := vaulttokensource.NewVaultTokenSource(
+		vaultClient, environ.VaultGCPPath, environ.VaultGCPRole)
+	if err == nil {
+		ts := oauth2.ReuseTokenSource(nil, vts)
+		if _, err = ts.Token(); err == nil {
+			opts = append(opts, option.WithTokenSource(ts))
+		}
+	}
+	if opts == nil {
 		slog.Warnf("Failed to get access token from Vault; falling "+
 			"back to ADC: %v", err)
 	}
@@ -531,7 +522,7 @@ func mkRouterHTTP(log *zap.Logger) *echo.Echo {
 
 	r := echo.New()
 	r.Debug = environ.Developer
-	r.Logger = ZapToGommonLog(log)
+	r.Logger = zapgommon.ZapToGommonLog(log)
 	r.HideBanner = true
 	r.Use(mkEchoZapLogger(log.Named("server")))
 	r.Use(mkSecureMW(log))
@@ -649,9 +640,13 @@ func processEnv(logger *zap.SugaredLogger) {
 	if environ.VaultGCPPath == "" {
 		getProject()
 		environ.VaultGCPPath = "gcp/" + project
+		logger.Warnf("B10E_CLHTTPD_VAULT_GCP_PATH not found in "+
+			"environment; setting to %s", environ.VaultGCPPath)
 	}
 	if environ.VaultGCPRole == "" {
 		environ.VaultGCPRole = pname
+		logger.Warnf("B10E_CLHTTPD_VAULT_GCP_ROLE not found in "+
+			"environment; setting to %s", environ.VaultGCPRole)
 	}
 }
 

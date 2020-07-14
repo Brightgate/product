@@ -15,17 +15,21 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"strings"
 	"time"
 
 	"bg/cl_common/daemonutils"
 	"bg/cl_common/release"
+	"bg/cl_common/vaulttokensource"
 	"bg/cloud_models/appliancedb"
 	"bg/cloud_rpc"
 
 	"cloud.google.com/go/storage"
+	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -36,28 +40,61 @@ const (
 )
 
 type releaseServer struct {
+	tokenSource *vaulttokensource.VaultTokenSource
+	clientOpts  []option.ClientOption
 	serviceID   string
 	privateKey  []byte
+	projectID   string
 	applianceDB appliancedb.DataStore
 }
 
-func newReleaseServer(applianceDB appliancedb.DataStore) *releaseServer {
+func newReleaseServer(applianceDB appliancedb.DataStore, vts *vaulttokensource.VaultTokenSource) *releaseServer {
 	ctx := context.Background()
-	creds, err := google.FindDefaultCredentials(ctx)
-	if err != nil {
-		slog.Fatalw("failed to find cloud credentials", "error", err)
-	}
 
-	jwt, err := google.JWTConfigFromJSON(creds.JSON)
-	if err != nil {
-		slog.Fatalw("bad cloud credentials", "error", err)
+	var privateKey []byte
+	var opts []option.ClientOption
+	var email, project string
+	if vts == nil {
+		creds, err := google.FindDefaultCredentials(ctx)
+		if err != nil {
+			slog.Fatalw("failed to find cloud credentials", "error", err)
+		}
+
+		jwt, err := google.JWTConfigFromJSON(creds.JSON)
+		if err != nil {
+			slog.Fatalw("bad cloud credentials", "error", err)
+		}
+		email = jwt.Email
+		privateKey = jwt.PrivateKey
+		project = creds.ProjectID
+	} else {
+		email = vts.ServiceAccountEmail()
+		project = vts.Project()
+		opts = append(opts, option.WithTokenSource(oauth2.ReuseTokenSource(nil, vts)))
 	}
 
 	return &releaseServer{
-		serviceID:   jwt.Email,
-		privateKey:  jwt.PrivateKey,
+		tokenSource: vts,
+		clientOpts:  opts,
+		serviceID:   email,
+		privateKey:  privateKey,
+		projectID:   project,
 		applianceDB: applianceDB,
 	}
+}
+
+func (rs *releaseServer) signBytes(ctx context.Context, input []byte) ([]byte, error) {
+	return signBytes(ctx, input, rs.serviceID, rs.clientOpts)
+}
+
+func (rs *releaseServer) updateMetadata() error {
+	err := rs.tokenSource.UpdateMetadata()
+	if err != nil {
+		return err
+	}
+	rs.serviceID = rs.tokenSource.ServiceAccountEmail()
+	rs.projectID = rs.tokenSource.Project()
+	return nil
 }
 
 func (rs *releaseServer) FetchDescriptor(ctx context.Context, req *cloud_rpc.ReleaseRequest) (*cloud_rpc.ReleaseResponse, error) {
@@ -112,6 +149,11 @@ func (rs *releaseServer) FetchDescriptor(ctx context.Context, req *cloud_rpc.Rel
 		Method:         "GET",
 		Expires:        time.Now().Add(1 * time.Hour),
 	}
+	if rs.privateKey == nil {
+		options.SignBytes = func(input []byte) ([]byte, error) {
+			return rs.signBytes(ctx, input)
+		}
+	}
 
 	for i, artifact := range desc.Artifacts {
 		u, err := url.Parse(artifact.URL)
@@ -132,7 +174,14 @@ func (rs *releaseServer) FetchDescriptor(ctx context.Context, req *cloud_rpc.Rel
 		}
 		bucketName := u.Hostname()
 		objectName := strings.TrimPrefix(u.Path, "/")
-		surl, err := storage.SignedURL(bucketName, objectName, options)
+		var surl string
+		op := func() (err error) {
+			surl, err = storage.SignedURL(bucketName, objectName, options)
+			return
+		}
+		err = vaulttokensource.Retry(op, rs.updateMetadata, func(msg string, e error) {
+			slog.Warnw(fmt.Sprintf("FetchDescriptor: %s", msg), "error", e)
+		})
 		if err != nil {
 			slog.Errorw("Failed to process release descriptor retrieval: failed to create signed URL",
 				"error", err, "target_release_uuid", relUU.String())

@@ -8,11 +8,11 @@
 // such unauthorized removal or alteration will be a violation of federal law.
 //
 
-package main
+package zapgommon
 
 import (
+	"bytes"
 	"io"
-	"os"
 
 	"go.uber.org/zap"
 
@@ -26,9 +26,23 @@ type logger struct {
 	prefix   string
 }
 
+// loggerWriter replicates a similar private struct in zap, allowing code to
+// call logger.Output() and get a Writer that dumps its bytes into the zap
+// logstream.
+type loggerWriter struct {
+	logFunc func(...interface{})
+}
+
+func (l *loggerWriter) Write(p []byte) (int, error) {
+	p = bytes.TrimSpace(p)
+	l.logFunc(string(p))
+	return len(p), nil
+}
+
 func (l *logger) Output() io.Writer {
-	return os.Stdout
-	// panic("Output() not implemented for zap adapter")
+	// We need to skip two frames, which involves sugaring and desugaring.
+	zl := l.ancestor.Desugar().WithOptions(zap.AddCallerSkip(2)).Sugar()
+	return &loggerWriter{zl.Info}
 }
 
 func (l *logger) SetOutput(w io.Writer) {

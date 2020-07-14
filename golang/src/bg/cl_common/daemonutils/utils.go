@@ -144,7 +144,8 @@ func (ol *optionalLevel) UnmarshalText(text []byte) error {
 }
 
 // LogConfig represents the logging configuration which can be set by
-// environment variables and command-line flags.
+// environment variables and command-line flags.  The tag can also be set by
+// instance metadata; this value, if present, will override all other sources.
 type LogConfig struct {
 	Level     optionalLevel  `envcfg:"B10E_LOG_LEVEL"`
 	TagPrefix optionalString `envcfg:"B10E_LOG_TAG_PREFIX"`
@@ -323,6 +324,30 @@ func SetupLogs(opts ...zap.Option) (*zap.Logger, *zap.SugaredLogger) {
 				panic(fmt.Sprintf("can't get project ID: %s\n", err))
 			}
 
+			tagPrefix, _ := metadata.InstanceAttributeValue("log-tag-prefix")
+			if tagPrefix == "" {
+				tagPrefix = logConfig.TagPrefix.String()
+			}
+
+			// When the logs are coming from multiple machines, it's
+			// very useful to have fields in the logs that identify
+			// the original machines, so we always add zone and
+			// instance name.
+			zone, err := metadata.Zone()
+			if err != nil {
+				panic(fmt.Sprintf("Unable to retrieve GCP zone: %v", err))
+			}
+
+			inst, err := metadata.InstanceName()
+			if err != nil {
+				panic(fmt.Sprintf("Unable to retrieve instance name: %v", err))
+			}
+
+			zapOptions = append(zapOptions, zap.Fields(
+				zap.String("gcp_zone", zone),
+				zap.String("gcp_instance_name", inst),
+			))
+
 			// Create the logging client.  The docs say we should
 			// call .Close() on this to flush all the loggers, but
 			// we do call .Sync() on the logger, which will perform
@@ -338,7 +363,7 @@ func SetupLogs(opts ...zap.Option) (*zap.Logger, *zap.SugaredLogger) {
 			}
 
 			// Tag the logger; eg, "b10e.cloud.eventd"
-			tag := logConfig.TagPrefix.String() + "." + strings.Replace(pname, "cl.", "cloud.", 1)
+			tag := tagPrefix + "." + strings.Replace(pname, "cl.", "cloud.", 1)
 
 			log, err = gcloudzap.New(config, gcl, tag, zapOptions...)
 		} else {

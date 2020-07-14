@@ -30,6 +30,22 @@ import (
 	"github.com/tevino/abool"
 )
 
+type cacheKey struct {
+	uri  string
+	path string
+	role string
+}
+
+type cacheValue struct {
+	value   time.Duration
+	expires time.Time
+}
+
+var (
+	ttlCache     map[cacheKey]cacheValue
+	ttlCacheLock sync.Mutex
+)
+
 // Logger is a basic logging interface.
 type Logger interface {
 	Debugf(string, ...interface{})
@@ -307,14 +323,44 @@ func (c *Connector) Driver() driver.Driver {
 }
 
 // SetConnMaxLifetime sets the maximum amount of time a connection may be
-// reused, based on the maximum TTL of the credentials in Vault.  This can
-// return error if there's a failure retrieving the data from Vault.
+// reused, based on the maximum TTL of the credentials in Vault.  Because
+// retrieving the lifetime frequently is costly, we cache the value for a
+// limited time.  This function can return an error if there's a failure
+// retrieving the data from Vault.
 func (c *Connector) SetConnMaxLifetime(db *sql.DB) error {
+	ttlCacheLock.Lock()
+	defer ttlCacheLock.Unlock()
+
+	key := cacheKey{
+		uri:  c.connectURI,
+		path: c.path,
+		role: c.role,
+	}
+	val, ok := ttlCache[key]
+	if ok && time.Now().Before(val.expires) {
+		db.SetConnMaxLifetime(val.value)
+		return nil
+	}
+
 	var maxTTL time.Duration
 	var err error
 	if maxTTL, err = getDBRoleTTL(c.vaultClient, c.path, c.role, c.log); err != nil {
 		return err
 	}
 	db.SetConnMaxLifetime(maxTTL)
+	// The expiration time is somewhat arbitrary, as it only corresponds to
+	// when the credentials expire on the first connection, and only roughly
+	// even then.  But this value is unlikely to change very fast, if at
+	// all, and it's all advisory anyway, since there's nothing on the DB
+	// kicking us out (yet).
+	ttlCache[key] = cacheValue{
+		value:   maxTTL,
+		expires: time.Now().Add(maxTTL),
+	}
+
 	return nil
+}
+
+func init() {
+	ttlCache = make(map[cacheKey]cacheValue)
 }

@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -13,10 +13,15 @@ package main
 
 import (
 	"context"
+	"fmt"
 
 	"bg/cl_common/daemonutils"
+	"bg/cl_common/vaulttokensource"
 	"bg/cloud_rpc"
 
+	"github.com/pkg/errors"
+	"golang.org/x/oauth2"
+	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -27,15 +32,26 @@ type eventServer struct {
 	topicName    string
 	eventTopic   *pubsub.Topic
 	pubsubClient *pubsub.Client
+	tokenSource  *vaulttokensource.VaultTokenSource
 }
 
-func newEventServer(pubsubClient *pubsub.Client, topicName string) (*eventServer, error) {
+func newEventServer(vts *vaulttokensource.VaultTokenSource, topicName string) (*eventServer, error) {
+	var opts []option.ClientOption
+	if vts != nil {
+		opts = append(opts, option.WithTokenSource(oauth2.ReuseTokenSource(nil, vts)))
+	}
+	pubsubClient, err := pubsub.NewClient(context.Background(), environ.PubsubProject, opts...)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to make pubsub client")
+	}
+
 	eventTopic := pubsubClient.Topic(topicName)
 
 	return &eventServer{
 		topicName,
 		eventTopic,
 		pubsubClient,
+		vts,
 	}, nil
 }
 
@@ -61,8 +77,15 @@ func (ts *eventServer) Put(ctx context.Context, req *cloud_rpc.PutEventRequest) 
 		Data: req.Payload.Value,
 	}
 	slog.Infow("outgoing pubsub", "datalen", len(m.Data), "attributes", m.Attributes)
-	pubsubResult := ts.eventTopic.Publish(ctx, m)
-	_, err = pubsubResult.Get(ctx)
+	op := func() (err error) {
+		pubsubResult := ts.eventTopic.Publish(ctx, m)
+		_, err = pubsubResult.Get(ctx)
+		return
+	}
+	err = vaulttokensource.Retry(op, ts.tokenSource.UpdateMetadata,
+		func(msg string, e error) {
+			slog.Warnw(fmt.Sprintf("Put: %s", msg), "error", e)
+		})
 	if err != nil {
 		slog.Warnw("Publish failed", "message", m, "error", err)
 		return nil, status.Errorf(codes.Unavailable, "Publish failed")

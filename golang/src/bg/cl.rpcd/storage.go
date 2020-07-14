@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT 2019 Brightgate Inc.  All rights reserved.
+ * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
  *
  * This copyright notice is Copyright Management Information under 17 USC 1202
  * and is included to protect this work and deter copyright infringement.
@@ -19,52 +19,103 @@ import (
 
 	"bg/cl_common/daemonutils"
 	"bg/cl_common/registry"
+	"bg/cl_common/vaulttokensource"
 	"bg/cloud_models/appliancedb"
 	"bg/cloud_rpc"
 	"bg/common/archive"
 
+	credentials "cloud.google.com/go/iam/credentials/apiv1"
 	"cloud.google.com/go/storage"
+	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"google.golang.org/api/option"
+	credentialspb "google.golang.org/genproto/googleapis/iam/credentials/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 type cloudStorageServer struct {
-	serviceID     string
-	privateKey    []byte
-	projectID     string
-	storageClient *storage.Client
-	applianceDB   appliancedb.DataStore
+	tokenSource *vaulttokensource.VaultTokenSource
+	clientOpts  []option.ClientOption
+	serviceID   string
+	privateKey  []byte
+	projectID   string
+	applianceDB appliancedb.DataStore
 }
 
-func defaultCloudStorageServer(applianceDB appliancedb.DataStore) *cloudStorageServer {
+func defaultCloudStorageServer(applianceDB appliancedb.DataStore, vts *vaulttokensource.VaultTokenSource) *cloudStorageServer {
 	ctx := context.Background()
-	creds, _ := google.FindDefaultCredentials(ctx, storage.ScopeFullControl)
-	if creds == nil {
-		slog.Fatalf("no cloud credentials defined")
+
+	var privateKey []byte
+	var email, project string
+	if vts == nil {
+		creds, _ := google.FindDefaultCredentials(ctx, storage.ScopeFullControl)
+		if creds == nil {
+			slog.Fatalf("no cloud credentials defined")
+		}
+
+		jwt, err := google.JWTConfigFromJSON(creds.JSON)
+		if err != nil {
+			slog.Fatalf("bad cloud credentials: %v", err)
+		}
+		email = jwt.Email
+		privateKey = jwt.PrivateKey
+		project = creds.ProjectID
+	} else {
+		email = vts.ServiceAccountEmail()
+		project = vts.Project()
 	}
 
-	jwt, err := google.JWTConfigFromJSON(creds.JSON)
-	if err != nil {
-		slog.Fatalf("bad cloud credentials: %v", err)
-	}
-
-	client, err := storage.NewClient(context.Background())
-	if err != nil {
-		slog.Fatalf("failed to make storage client")
-	}
-	return newCloudStorageServer(client, jwt.Email, creds.ProjectID, jwt.PrivateKey, applianceDB)
+	return newCloudStorageServer(vts, email, project, privateKey, applianceDB)
 }
 
-func newCloudStorageServer(client *storage.Client, serviceID string, projectID string, privateKey []byte, appliancedb appliancedb.DataStore) *cloudStorageServer {
+func newCloudStorageServer(vts *vaulttokensource.VaultTokenSource, serviceID string, projectID string, privateKey []byte, appliancedb appliancedb.DataStore) *cloudStorageServer {
+	var opts []option.ClientOption
+	if vts != nil {
+		opts = append(opts, option.WithTokenSource(oauth2.ReuseTokenSource(nil, vts)))
+	}
 	c := &cloudStorageServer{
-		serviceID:     serviceID,
-		privateKey:    privateKey,
-		projectID:     projectID,
-		storageClient: client,
-		applianceDB:   appliancedb,
+		tokenSource: vts,
+		clientOpts:  opts,
+		serviceID:   serviceID,
+		privateKey:  privateKey,
+		projectID:   projectID,
+		applianceDB: appliancedb,
 	}
 	return c
+}
+
+func signBytes(ctx context.Context, input []byte, serviceID string, opts []option.ClientOption) ([]byte, error) {
+	iamClient, err := credentials.NewIamCredentialsClient(ctx, opts...)
+	if err != nil {
+		return nil, err
+	}
+	defer iamClient.Close()
+
+	req := &credentialspb.SignBlobRequest{
+		Payload: input,
+		Name:    serviceID,
+	}
+
+	resp, err := iamClient.SignBlob(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return resp.SignedBlob, nil
+}
+
+func (cs *cloudStorageServer) signBytes(ctx context.Context, input []byte) ([]byte, error) {
+	return signBytes(ctx, input, cs.serviceID, cs.clientOpts)
+}
+
+func (cs *cloudStorageServer) updateMetadata() error {
+	err := cs.tokenSource.UpdateMetadata()
+	if err != nil {
+		return err
+	}
+	cs.serviceID = cs.tokenSource.ServiceAccountEmail()
+	cs.projectID = cs.tokenSource.Project()
+	return nil
 }
 
 func (cs *cloudStorageServer) GenerateURL(ctx context.Context, req *cloud_rpc.GenerateURLRequest) (*cloud_rpc.GenerateURLResponse, error) {
@@ -101,6 +152,11 @@ func (cs *cloudStorageServer) GenerateURL(ctx context.Context, req *cloud_rpc.Ge
 		Method:         req.HttpMethod,
 		ContentType:    req.ContentType,
 		Expires:        exp,
+	}
+	if cs.privateKey == nil {
+		options.SignBytes = func(input []byte) ([]byte, error) {
+			return cs.signBytes(ctx, input)
+		}
 	}
 
 	// Specific prefixes have specific requirements
@@ -149,7 +205,15 @@ func (cs *cloudStorageServer) GenerateURL(ctx context.Context, req *cloud_rpc.Ge
 		}
 		slog.Debugf("URL request for obj=%v -> fullName=%v", obj, fullName)
 
-		genurl, err := storage.SignedURL(cloudStor.Bucket, fullName, options)
+		var genurl string
+		op := func() (err error) {
+			options.GoogleAccessID = cs.serviceID
+			genurl, err = storage.SignedURL(cloudStor.Bucket, fullName, options)
+			return
+		}
+		err = vaulttokensource.Retry(op, cs.updateMetadata, func(msg string, e error) {
+			slog.Warnf("GenerateURL: %s: %v", msg, e)
+		})
 		if err != nil {
 			slog.Errorf("GenerateURL: failed SignedURL: %v", err)
 			return nil, status.Errorf(codes.Internal, "could not Sign URL")

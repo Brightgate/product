@@ -37,4 +37,14 @@ GRANT USAGE
     ON SEQUENCE oauth2_identity_id_seq
     TO httpd_group;
 
+DO $$
+BEGIN
+    CREATE ROLE vault_root WITH LOGIN CREATEROLE;
+    EXCEPTION WHEN duplicate_object THEN
+        RAISE NOTICE 'vault_root role already exists';
+END
+$$;
+
+GRANT httpd_group TO vault_root;
+
 COMMIT;
