@@ -143,10 +143,12 @@ func (n *PropertyNode) GetIPv4() (*net.IP, error) {
 
 // GetChild returns the PropertyNode for the node's child with the given name.
 func (n *PropertyNode) GetChild(name string) (*PropertyNode, error) {
+	var child *PropertyNode
 	var err error
 
-	child := n.Children[name]
-	if child == nil {
+	if n == nil {
+		err = ErrNoProp
+	} else if child = n.Children[name]; child == nil {
 		err = ErrNoProp
 	} else if child.Expired() {
 		err = ErrExpired

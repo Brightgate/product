@@ -122,6 +122,7 @@ var updateHandlers = []struct {
 	handler func(int, string, string)
 }{
 	{regexp.MustCompile(`^@/network/vap/.*/default_ring$`), updateDefaultRing},
+	{regexp.MustCompile(`^@/clients/.*/home$`), updateClientHome},
 	{regexp.MustCompile(`^@/settings/ap.configd/.*`), updateSetting},
 }
 
@@ -362,7 +363,7 @@ func defaultRingInit() {
 		if vapNode, ok := config.Children["vap"]; ok {
 			vaps := strings.Split(vapNode.Value, ",")
 			for _, vap := range vaps {
-				key := ring + ":" + strings.TrimSpace(vap)
+				key := ring + "/" + strings.TrimSpace(vap)
 				ringOnVap[key] = true
 			}
 		}
@@ -371,65 +372,92 @@ func defaultRingInit() {
 	ringOnVirtualAP = ringOnVap
 }
 
-// These are the ring transitions we will impose automatically when we find a
-// client on a new VAP.  Essentially, we will let a device transition from a PSK
-// ring to an EAP ring, but not from EAP to PSK.
-var validRingUpgrades = map[string]bool{
-	base_def.RING_UNENROLLED + ":" + base_def.RING_STANDARD: true,
-	base_def.RING_GUEST + ":" + base_def.RING_STANDARD:      true,
-	base_def.RING_DEVICES + ":" + base_def.RING_STANDARD:    true,
+func getChild(n *cfgtree.PNode, prop string) string {
+	var rval string
+
+	if n != nil && n.Children != nil {
+		c := n.Children[prop]
+		if c != nil && !c.Expired() {
+			rval = c.Value
+		}
+	}
+
+	return rval
 }
 
 func selectRing(mac string, client *cfgtree.PNode, vap, ring string) string {
-	var oldVAP, oldRing, newRing string
-
-	if client != nil && client.Children != nil {
-		if n := client.Children["ring"]; n != nil {
-			ring := strings.TrimSpace(n.Value)
-			key := ring + ":" + vap
-			if ringOnVirtualAP[key] {
-				oldRing = n.Value
-				oldVAP = vap
-			}
-		}
-	}
+	var newRing string
 
 	if ring != "" && !cfgapi.ValidRings[ring] {
-		slog.Warnf("invalid ring for %s: %s", mac, ring)
-	} else {
-		newRing = ring
+		// Should really never happen
+		slog.Warnf("invalid incoming ring for %s: %s", mac, ring)
+		ring = ""
+	}
+
+	oldRing := getChild(client, "ring")
+	homeRing := getChild(client, "home")
+	slog.Debugf("selectRing(mac: %s  vap: %s  ring: %s (was: %s)  home: %s",
+		mac, vap, ring, oldRing, homeRing)
+
+	if ring == base_def.RING_INTERNAL && homeRing != base_def.RING_INTERNAL {
+		slog.Warnf("unexpected client %s found on %s", mac, ring)
+		return ""
 	}
 
 	if vap != "" {
-		// if we're already assigned to a ring on this vap, keep it
-		if vap == oldVAP {
-			return oldRing
-		}
-		if vapRing, ok := virtualAPToDefaultRing[vap]; ok {
-			newRing = vapRing
-		} else {
-			slog.Warnf("invalid virtualAP for %s: %s", mac, vap)
-		}
-	}
+		// With a VAP in the event, it came from wifid detecting a new
+		// client attaching.  If the client is already assigned to a
+		// ring on the VAP, stick with it.  If it's not assigned to that
+		// VAP, but its home ring is, then reassign it to the home ring.
+		// If all else fails, it gets the default ring for that VAP.
 
-	if oldRing == "" {
-		if newRing == "" {
-			slog.Warnf("%s: no ring assignment available", mac)
-		} else {
-			slog.Infof("%s: assigned to %s ring", mac, newRing)
-		}
-
-	} else if oldRing != newRing {
-		if !*allowDowngrade && !validRingUpgrades[oldRing+":"+newRing] {
-			slog.Infof("%s: declining to move from '%s' to '%s' ring",
-				mac, oldRing, newRing)
+		if key := oldRing + "/" + vap; ringOnVirtualAP[key] {
+			slog.Debugf("%s stays on %s", mac, key)
 			newRing = oldRing
+
+		} else if key := homeRing + "/" + vap; ringOnVirtualAP[key] {
+			slog.Infof("%s migrates to home ring %s", mac, key)
+			newRing = homeRing
+
+		} else if defaultRing, ok := virtualAPToDefaultRing[vap]; ok {
+			slog.Infof("%s migrates to default ring %s/%s", mac,
+				vap, defaultRing)
+			newRing = defaultRing
+
 		} else {
-			slog.Infof("%s: migrating from '%s' to '%s' ring", mac,
-				oldRing, newRing)
+			slog.Warnf("%s has no ring on %s", mac, vap)
+		}
+	} else if ring != "" {
+		// With no VAP in the event, this event came from a DHCP
+		// request.
+		if oldRing == ring {
+			slog.Debugf("%s stays on %s", ring)
+		} else if oldRing == "" {
+			slog.Infof("%s: assigned to %s ring", mac, ring)
+		} else {
+			slog.Infof("%s: migrating from %s to %s ring", mac, oldRing, ring)
+		}
+		newRing = ring
+	}
+
+	return newRing
+}
+
+// When a client's home ring is reset and that client is currently assigned to a
+// different ring, clear the current ring setting.  The next time the client
+// connects, the empty setting will cause it to be reassigned to its new home.
+// If the client is currently connected, this will also cause ap.wifid to force
+// a disconnect, so the desired reconnect/reassignment will happen immediately.
+func updateClientHome(op int, prop, val string) {
+	client, _ := propTree.GetNode(prop)
+	if client != nil {
+		ringProp := strings.TrimSuffix(prop, "home") + "ring"
+		currentRing, _ := propTree.GetProp(ringProp)
+
+		if currentRing != val {
+			_ = propTree.Set(ringProp, "", nil)
 		}
 	}
-	return newRing
 }
 
 func updateDefaultRing(op int, prop, val string) {
@@ -510,26 +538,21 @@ func checkUUID(prop, uuid string) error {
 // using this hostname?"
 //
 func dnsNameInuse(ignore *cfgtree.PNode, hostname string) bool {
-	lower := strings.ToLower(hostname)
-
 	for _, device := range propTree.GetChildren("@/clients") {
 		if device == ignore {
 			continue
 		}
-		if prop, ok := device.Children["dns_name"]; ok {
-			if strings.ToLower(prop.Value) == lower {
-				return true
-			}
-		}
-		if prop, ok := device.Children["friendly_dns"]; ok {
-			if strings.ToLower(prop.Value) == lower {
-				return true
-			}
+
+		dns := getChild(device, "dns_name")
+		friendly := getChild(device, "friendly_dns")
+		if strings.EqualFold(dns, hostname) ||
+			strings.EqualFold(friendly, hostname) {
+			return true
 		}
 	}
 
 	for name, record := range propTree.GetChildren("@/dns/cnames") {
-		if record != ignore && strings.ToLower(name) == lower {
+		if record != ignore && strings.EqualFold(name, hostname) {
 			return true
 		}
 	}
@@ -659,19 +682,14 @@ func checkIPv4(prop, addr string) error {
 		updating = path[2]
 	}
 
-	now := time.Now()
 	for name, device := range clients.Children {
 		if updating == name {
 			// Reassigning the device's address to itself is fine
 			continue
 		}
 
-		if node, ok := device.Children["ipv4"]; ok {
-			if node.Expires != nil && node.Expires.Before(now) {
-				continue
-			}
-
-			if ipv4.Equal(net.ParseIP(node.Value)) {
+		if addr := getChild(device, "ipv4"); addr != "" {
+			if ipv4.Equal(net.ParseIP(addr)) {
 				return fmt.Errorf("%s in use by %s", addr, name)
 			}
 		}

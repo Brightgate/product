@@ -1158,12 +1158,15 @@ func vulnScanProcess(ip string, discovered map[string]apvuln.TestResult) {
 	}
 
 	if quarantine {
-		op := cfgapi.PropertyOp{
-			Op:    cfgapi.PropSet,
-			Name:  "@/clients/" + mac + "/ring",
-			Value: base_def.RING_QUARANTINE,
+		ringProp := "@/clients/" + mac + "/ring"
+		homeProp := "@/clients/" + mac + "/home"
+		qRing := base_def.RING_QUARANTINE
+		qOps := []cfgapi.PropertyOp{
+			{Op: cfgapi.PropCreate, Name: ringProp, Value: qRing},
+			{Op: cfgapi.PropCreate, Name: homeProp, Value: qRing},
 		}
-		ops = append(ops, op)
+		ops = append(ops, qOps...)
+
 		slog.Infof("%s being quarantined", mac)
 
 		publiclog.SendLogDeviceQuarantine(brokerd, mac)

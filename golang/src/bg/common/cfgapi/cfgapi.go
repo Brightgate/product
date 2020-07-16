@@ -34,7 +34,7 @@ import (
 
 // Version gets increased each time there is a non-compatible change to the
 // config tree format, or configd API.
-const Version = int32(32)
+const Version = int32(33)
 
 // CmdHdl is returned when one or more operations are submitted to Execute().
 // This handle can be used to check on the status of a pending operation, or to
@@ -230,7 +230,8 @@ type DevIDInfo struct {
 
 // ClientInfo contains all of the configuration information for a client device
 type ClientInfo struct {
-	Ring         string     // Assigned security ring
+	Ring         string     // Current/latest security ring
+	Home         string     // Intended security ring
 	FriendlyName string     // Assigned friendly
 	FriendlyDNS  string     // Hostname derived from FriendlyName
 	DNSName      string     // Assigned hostname
@@ -1046,20 +1047,20 @@ func (c *Handle) GetWanInfo() *WanInfo {
 }
 
 func getClient(client *PropertyNode) *ClientInfo {
-	var ring, dns, dhcp, friendly, friendlyDNS string
 	var ipv4 net.IP
 	var exp *time.Time
-	var wireless, private bool
+	var wireless bool
 	var username, connVAP, connBand, connNode, active string
-	var err error
 	var devID *DevIDInfo
+	var err error
 
-	private, _ = client.GetChildBool("dns_private")
-	ring, _ = client.GetChildString("ring")
-	dhcp, _ = client.GetChildString("dhcp_name")
-	dns, _ = client.GetChildString("dns_name")
-	friendly, _ = client.GetChildString("friendly_name")
-	friendlyDNS, _ = client.GetChildString("friendly_dns")
+	private, _ := client.GetChildBool("dns_private")
+	ring, _ := client.GetChildString("ring")
+	home, _ := client.GetChildString("home")
+	dhcp, _ := client.GetChildString("dhcp_name")
+	dns, _ := client.GetChildString("dns_name")
+	friendly, _ := client.GetChildString("friendly_name")
+	friendlyDNS, _ := client.GetChildString("friendly_dns")
 	if node, err := client.GetChild("ipv4"); err == nil {
 		if ip, err := node.GetIPv4(); err == nil {
 			ipv4 = ip.To4()
@@ -1092,6 +1093,7 @@ func getClient(client *PropertyNode) *ClientInfo {
 
 	c := ClientInfo{
 		Ring:         ring,
+		Home:         home,
 		DHCPName:     dhcp,
 		FriendlyName: friendly,
 		FriendlyDNS:  friendlyDNS,

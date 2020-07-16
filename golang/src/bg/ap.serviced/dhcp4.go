@@ -60,14 +60,15 @@ var (
 	}
 )
 
-func getRing(hwaddr string) string {
-	var ring string
+func getRing(hwaddr string) (string, string) {
+	var ring, home string
 
 	if client := clients[hwaddr]; client != nil {
 		ring = client.Ring
+		home = client.Home
 	}
 
-	return ring
+	return ring, home
 }
 
 /*******************************************************
@@ -100,7 +101,7 @@ func dhcpIPv4Changed(hwaddr string, client *cfgapi.ClientInfo) {
 	}
 
 	ipaddr := client.IPv4
-	ring := getRing(hwaddr)
+	ring, _ := getRing(hwaddr)
 	if ring == "" {
 		// While we could assign an address to a client we've never seen
 		// before, it's up to somebody else to create the initial client
@@ -452,7 +453,7 @@ func (h *ringHandler) request(p dhcp.Packet, options dhcp.Options) dhcp.Packet {
 	requestOption := net.IP(options[dhcp.OptionRequestedIPAddress])
 
 	clientMtx.Lock()
-	ring := getRing(hwaddr)
+	ring, _ := getRing(hwaddr)
 	clientMtx.Unlock()
 	if ring != h.ring {
 		slog.Infof("   '%s' client requesting lease on '%s' ring",
@@ -615,11 +616,12 @@ func selectRingHandler(p dhcp.Packet, options dhcp.Options) *ringHandler {
 	var err error
 
 	mac := p.CHAddr().String()
-	requestIface := clientRequestOn[mac]
-	requestRing := ifaceToRing[requestIface.Index]
+	x := clientRequestOn[mac]
+	requestIface := x.Name
+	requestRing := ifaceToRing[x.Index]
 
 	clientMtx.Lock()
-	ring := getRing(mac)
+	ring, home := getRing(mac)
 	clientMtx.Unlock()
 
 	if ring == "" {
@@ -636,34 +638,40 @@ func selectRingHandler(p dhcp.Packet, options dhcp.Options) *ringHandler {
 		// to reverse-engineer the ring from the VLAN the request
 		// arrived on.
 		if requestRing != "" {
-			slog.Infof("New client %s on %d (%s)", mac,
-				requestIface.Index, requestIface.Name)
+			slog.Infof("New client %s on %s", mac, requestIface)
 			notifyNewEntity(p, options, requestRing)
 		} else {
-			slog.Infof("Ignoring request from unknown client %s "+
-				"on %d (%s)", mac, requestIface.Index, requestIface.Name)
+			slog.Infof("Ignoring unknown client %s on %s",
+				mac, requestIface)
 		}
 
 	} else if ring != requestRing {
-		src := requestIface.Name
-		if requestRing != "" {
-			src += "('" + requestRing + "' ring)"
-		}
-		txt := "client " + mac + " from " + ring +
-			" ring requested address on " + src
-		err = fmt.Errorf(txt)
+		// A request came in on a different ring than this device was
+		// last associated with.  If this is a wired device assigned to
+		// a different ring, send an exception.  Otherwise, treat this
+		// like a new Entity and let ap.configd assign it to a ring.
+		if home != "" && home != requestRing {
+			if requestRing != "" {
+				requestIface += "('" + requestRing + "' ring)"
+			}
+			txt := "client " + mac + " from " + home +
+				" ring requested address on " + requestIface
+			err = fmt.Errorf(txt)
 
-		// Once a client starts requesting on the wrong ring, they may
-		// keep doing so every few seconds forever.  We don't want to
-		// log all of those requests
-		if badRingRequests[mac] != src {
-			slog.Warnf("%s", txt)
-			badRingRequests[mac] = src
-			notifyNetException(mac, txt,
-				base_msg.EventNetException_BAD_RING)
+			// Once a client starts requesting on the wrong ring,
+			// they may keep doing so every few seconds forever.  We
+			// don't want to log all of those requests
+			if badRingRequests[mac] != requestIface {
+				slog.Warnf("%s", txt)
+				badRingRequests[mac] = requestIface
+				notifyNetException(mac, txt,
+					base_msg.EventNetException_BAD_RING)
+			}
+		} else {
+			slog.Infof("Migrating client %s on %s", mac, requestIface)
+			notifyNewEntity(p, options, requestRing)
 		}
-
-	} else if handler = handlers[ring]; handler == nil {
+	} else if handler = handlers[requestRing]; handler == nil {
 		aputil.ReportError("Client %s on unknown ring '%s'", mac, ring)
 	}
 
@@ -713,7 +721,7 @@ func (h *ringHandler) leaseAssign(hwaddr string) (*lease, error) {
 	var err error
 	var assigned *lease
 
-	if ring := getRing(hwaddr); ring != "" && ring != h.ring {
+	if ring, _ := getRing(hwaddr); ring != "" && ring != h.ring {
 		// This shouldn't be possible, since the hwaddr was used to
 		// select this ring hander, but it's still worth checking.
 		return nil, fmt.Errorf("%s from '%s' requested address in '%s'",
@@ -915,7 +923,8 @@ func (s *multiConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 		n = 0
 	} else {
 		clientRequestOn[clientMac] = iface
-		slog.Debugf("DHCP pkt from %s on %s", clientMac, iface.Name)
+		slog.Debugf("DHCP pkt from %s on %s / %d", clientMac,
+			iface.Name, iface.Index)
 	}
 	return
 }

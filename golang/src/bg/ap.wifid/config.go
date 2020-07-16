@@ -92,7 +92,6 @@ func configClientChanged(path []string, val string, expires *time.Time) {
 			return
 		}
 
-		slog.Infof("new client: %s", hwaddr)
 		c = &cfgapi.ClientInfo{}
 		clients[hwaddr] = c
 	}
@@ -105,9 +104,18 @@ func configClientChanged(path []string, val string, expires *time.Time) {
 				c.ConnNode, val)
 			c.ConnNode = val
 		}
-	case "ring":
-		if c.Ring != val {
+	case "ring", "home":
+		var reload bool
+
+		if path[2] == "ring" && c.Ring != val {
 			c.Ring = val
+			reload = true
+		} else if path[2] == "home" && c.Home != val {
+			c.Home = val
+			reload = true
+		}
+
+		if reload {
 			hostapd.reload()
 			hostapd.disassociate(hwaddr)
 			if val == base_def.RING_QUARANTINE {

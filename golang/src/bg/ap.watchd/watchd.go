@@ -326,16 +326,11 @@ func entityEventHandler(event []byte) {
 	entity := &base_msg.EventNetEntity{}
 	if err := proto.Unmarshal(event, entity); err != nil {
 		slog.Warnf("Unmarshaling NET.ENTITY event: %v", err)
-		return
-	}
 
-	if entity.MacAddress == nil || entity.Disconnect == nil {
-		slog.Warnf("Received incomplete NET.ENTITY event: %v",
-			entity)
-		return
-	}
+	} else if entity.MacAddress == nil {
+		slog.Warnf("Received incomplete NET.ENTITY event: %v", entity)
 
-	if *entity.Disconnect {
+	} else if entity.Disconnect != nil && *entity.Disconnect {
 		mac := network.Uint64ToMac(*entity.MacAddress)
 		mapMtx.Lock()
 		ip, ok := macToIP[mac]
