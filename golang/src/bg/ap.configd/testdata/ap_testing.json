@@ -4,7 +4,7 @@
       "Value": ""
     },
     "cfgversion": {
-      "Value": "26"
+      "Value": "32"
     },
     "uuid": {
       "Value": "407edeb5-84f5-4167-8a81-1Fbdf66eef0b"
@@ -94,7 +94,17 @@
                    "Value": "ACCEPT TCP FROM RING core TO AP DPORTS 22"
                  }
                }
-             }
+             },
+             "smb-egress": {
+                "Children": {
+                  "active": {
+                    "Value": "true"
+                  },
+                  "rule": {
+                    "Value": "BLOCK TCP TO IFACE wan DPORTS 445"
+                  }
+                }
+              }
            }
          }
        }
@@ -104,8 +114,19 @@
          "base_address": {
            "Value": "192.168.2.0/24"
          },
-         "dnsserver": {
-           "Value": "8.8.8.8:53"
+         "dns": {
+           "Children": {
+             "dnsserver": {
+               "Value": "8.8.8.8:53"
+             }
+           }
+         },
+         "vpn": {
+           "Children": {
+             "last_mac": {
+               "Value": "00:40:54:00:00:00"
+             }
+           }
          },
          "vap": {
            "Children": {
@@ -227,7 +248,7 @@
          "quarantine": {
            "Children": {
              "vap": {
-               "Value": "psk"
+               "Value": "psk,eap,guest"
              },
              "lease_duration": {
                "Value": "10"

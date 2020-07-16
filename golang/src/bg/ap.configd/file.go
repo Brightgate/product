@@ -43,7 +43,7 @@ const (
 	baseFilename     = "configd.json"
 	// snapshot format is <year><month><day><hour><minute>
 	snapFormat       = "200601021504"
-	minConfigVersion = 20
+	minConfigVersion = 32
 )
 
 var (
@@ -53,7 +53,7 @@ var (
 
 	archiveTimes []time.Time
 
-	upgradeHooks []func() error
+	upgradeHooks = make([]func() error, cfgapi.Version+1)
 )
 
 func propFileRename(old, new string) bool {
@@ -254,9 +254,6 @@ func addUpgradeHook(version int32, hook func() error) {
 		panic(msg)
 	}
 
-	if upgradeHooks == nil {
-		upgradeHooks = make([]func() error, cfgapi.Version+1)
-	}
 	upgradeHooks[version] = hook
 }
 

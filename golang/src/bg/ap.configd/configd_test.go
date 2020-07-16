@@ -182,7 +182,9 @@ func testTreeInit(t *testing.T) leafMap {
 	}
 	propTree = tree
 	propTree.SetCacheable()
-	versionTree()
+	if err := versionTree(); err != nil {
+		t.Fatalf("failed to upgrade config tree: %v", err)
+	}
 
 	return testBuildMap(t)
 }
