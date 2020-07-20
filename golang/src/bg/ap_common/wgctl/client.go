@@ -143,6 +143,8 @@ func HandleSettingChange(c *wgconf.Client, prop, newval string) error {
 		err = c.SetKey(newval)
 	case "subnets":
 		err = c.SetSubnets(newval)
+	case "dns_domain", "dns_server":
+		// no-op
 	default:
 		err = fmt.Errorf("unrecognized property: %s", prop)
 	}

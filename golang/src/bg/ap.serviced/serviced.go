@@ -297,6 +297,7 @@ func main() {
 
 	brokerd.Handle(base_def.TOPIC_UPDATE, eventHandler)
 	initInterfaces()
+	vpnInfoInit()
 	dnsInit()
 	mcpState := mcp.ONLINE
 	if aputil.IsGatewayMode() {
@@ -314,6 +315,22 @@ func main() {
 	config.HandleChange(`^@/nodes/.*$`, configNodesChanged)
 	config.HandleChange(`^@/site_index$`, configSiteChanged)
 	config.HandleChange(`^@/network/base_address$`, configSiteChanged)
+	config.HandleChange(`^@/network/vpn/client/.*/dns_domain$`,
+		configVpnDNSChanged)
+	config.HandleDelExp(`^@/network/vpn/client/.*/dns_domain$`,
+		configVpnDNSDelExp)
+	config.HandleChange(`^@/network/vpn/client/.*/dns_server$`,
+		configVpnDNSChanged)
+	config.HandleDelExp(`^@/network/vpn/client/.*/dns_server$`,
+		configVpnDNSDelExp)
+	config.HandleChange(`^@/policy/ring/.*/allowed`,
+		configVpnAllowedChanged)
+	config.HandleDelExp(`^@/policy/ring/.*/allowed`,
+		configVpnAllowedDelExp)
+	config.HandleChange(`^@/policy/site/client/.*/enabled`,
+		configVpnEnabledChanged)
+	config.HandleDelExp(`^@/policy/site/client/.*/enabled`,
+		configVpnEnabledDelExp)
 
 	mcpd.SetState(mcpState)
 

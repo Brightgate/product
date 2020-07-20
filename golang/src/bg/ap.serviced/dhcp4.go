@@ -71,6 +71,12 @@ func getRing(hwaddr string) (string, string) {
 	return ring, home
 }
 
+func updateDHCPOptions() {
+	for _, h := range handlers {
+		h.updateDHCPOptions()
+	}
+}
+
 /*******************************************************
  *
  * Communication with message broker
@@ -340,12 +346,13 @@ type lease struct {
 }
 
 type ringHandler struct {
-	ring       string        // Client ring eligible for this server
-	serverIP   net.IP        // DHCP server's IP
-	options    dhcp.Options  // Options to send to DHCP Clients
-	rangeStart net.IP        // Start of IP range to distribute
-	rangeEnd   net.IP        // End of IP range to distribute
-	rangeSpan  int           // Number of IPs to distribute (starting from start)
+	ring       string       // Client ring eligible for this server
+	serverIP   net.IP       // DHCP server's IP
+	options    dhcp.Options // Options to send to DHCP Clients
+	rangeStart net.IP       // Start of IP range to distribute
+	rangeEnd   net.IP       // End of IP range to distribute
+	rangeSpan  int          // Number of IPs to distribute (starting from start)
+	mask       net.IPMask
 	duration   time.Duration // Lease period
 	leases     []*lease      // Per-lease state
 
@@ -798,6 +805,49 @@ func ipRange(ring *cfgapi.RingConfig) (net.IP, int) {
 	return start, span
 }
 
+// Given a list of domains, return a binary slice with those domains in
+// compressed format, as described in section 4.1.4 in
+// https://tools.ietf.org/html/rfc1035.
+func packDomainString(domains []string) []byte {
+	packed := make([]byte, 0)
+
+	for _, d := range domains {
+		packedDomain := make([]byte, 0)
+		for _, l := range strings.Split(d, ".") {
+			packedDomain = append(packedDomain, byte(len(l)))
+			packedDomain = append(packedDomain, []byte(l)...)
+		}
+		packedDomain = append(packedDomain, 0)
+		if len(packedDomain)+len(packed) <= 255 {
+			packed = append(packed, packedDomain...)
+		} else {
+			slog.Warnf("skipped %s - list was too long", d)
+		}
+	}
+
+	return packed
+}
+
+func (h *ringHandler) updateDHCPOptions() {
+	h.options = dhcp.Options{
+		dhcp.OptionSubnetMask:                 h.mask,
+		dhcp.OptionRouter:                     h.serverIP,
+		dhcp.OptionDomainNameServer:           h.serverIP,
+		dhcp.OptionNetworkTimeProtocolServers: h.serverIP,
+	}
+
+	// If this ring is allowed to use an active upstream VPN, and we have a
+	// dns_domain set for that VPN, add it to the search list for clients on
+	// this ring.
+	searchList := []string{domainName}
+	if vpnDomains := vpnGetDomains(h.ring); vpnDomains != nil {
+		searchList = append(searchList, vpnDomains...)
+	}
+	h.options[dhcp.OptionDomainSearch] = packDomainString(searchList)
+	h.options[dhcp.OptionDomainName] = []byte(domainName)
+	h.options[dhcp.OptionVendorClassIdentifier] = []byte("Brightgate, Inc.")
+}
+
 //
 // Instantiate a new DHCP handler for the given ring
 //
@@ -831,21 +881,15 @@ func newHandler(name string, rings cfgapi.RingMap) *ringHandler {
 		rangeStart: start,
 		rangeEnd:   dhcp.IPAdd(start, span),
 		rangeSpan:  span,
+		mask:       ring.IPNet.Mask,
 		duration:   duration,
-		options: dhcp.Options{
-			dhcp.OptionSubnetMask:                 ring.IPNet.Mask,
-			dhcp.OptionRouter:                     myip,
-			dhcp.OptionDomainNameServer:           myip,
-			dhcp.OptionNetworkTimeProtocolServers: myip,
-		},
-		leases: make([]*lease, span, span),
+		leases:     make([]*lease, span, span),
 	}
 	for i := 0; i < span; i++ {
 		h.leases[i] = &lease{ipaddr: dhcp.IPAdd(start, i)}
 	}
 
-	h.options[dhcp.OptionDomainName] = []byte(domainName)
-	h.options[dhcp.OptionVendorClassIdentifier] = []byte("Brightgate, Inc.")
+	h.updateDHCPOptions()
 
 	return &h
 }

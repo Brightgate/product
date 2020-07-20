@@ -612,23 +612,44 @@ func addReply(m, r *dns.Msg) {
 	m.Extra = append(m.Extra, r.Extra...)
 }
 
-func upstreamRequest(r *dns.Msg) *dns.Msg {
+// Choose the correct DNS server to handle this request.  If the request is for
+// a domain on the other side of a VPN, the request goes to the DNS server on
+// that VPN.  Otherewise, it goes to the default upstream server.
+func chooseServer(who *requestor, q string) string {
+	server := dnsUpstream
+
+	// Split at the first period, which should give us the hostname and the
+	// domain.
+	if f := strings.SplitN(q, ".", 2); len(f) == 2 {
+		// Remove the trailing "." from the question
+		domain := strings.TrimRight(f[1], ".")
+		if s := vpnGetDNSServer(who.ring, domain); s != nil {
+			server = s.String() + ":53"
+		}
+	}
+
+	return server
+}
+
+func upstreamRequest(who *requestor, r *dns.Msg) *dns.Msg {
 	var err error
 
 	q := strings.ToLower(r.Question[0].String())
 	key := crc64.Checksum([]byte(q), cachedResponses.table)
 	a := cachedResponses.lookup(key, q)
 
+	server := chooseServer(who, r.Question[0].Name)
+
 	if a == nil {
-		if dnsUpstream == "" {
+		if server == "" {
 			err = fmt.Errorf("no upstream dns server configured")
 		} else {
 			c := new(dns.Client)
 			start := time.Now()
 			if dnsHTTPClient != nil {
-				a, err = dnsOverHTTPSExchange(r, dnsUpstream)
+				a, err = dnsOverHTTPSExchange(r, server)
 			} else {
-				a, _, err = c.Exchange(r, dnsUpstream)
+				a, _, err = c.Exchange(r, server)
 			}
 			latency := time.Since(start).Seconds()
 			dnsMetrics.upstreamLatency.Observe(latency)
@@ -701,7 +722,7 @@ func localHandler(who *requestor, alsoTry string, r, m *dns.Msg) {
 	pq := new(dns.Msg)
 	pq.MsgHdr = r.MsgHdr
 	pq.Question = append(pq.Question, newQ)
-	if u := upstreamRequest(pq); u != nil {
+	if u := upstreamRequest(who, pq); u != nil {
 		cname := &dns.CNAME{
 			Hdr: dns.RR_Header{
 				Name:   q.Name,
@@ -788,7 +809,7 @@ func proxyHandler(who *requestor, r, m *dns.Msg) {
 			m.Answer = append(m.Answer, answerPTR(q, rec))
 		}
 	} else {
-		if u := upstreamRequest(r); u != nil {
+		if u := upstreamRequest(who, r); u != nil {
 			addReply(m, u)
 		}
 	}
