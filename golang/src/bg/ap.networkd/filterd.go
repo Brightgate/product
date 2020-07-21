@@ -651,7 +651,7 @@ func firewallRules() {
 	}
 
 	vpnRules := vpnServerFirewallRules()
-	vpnRules = append(vpnClientFirewallRules())
+	vpnRules = append(vpnRules, vpnClientFirewallRules()...)
 	for _, rule := range vpnRules {
 		r, err := parseRule(rule)
 		if err != nil {
