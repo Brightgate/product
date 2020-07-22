@@ -428,15 +428,26 @@ func selectRing(mac string, client *cfgtree.PNode, vap, ring string) string {
 			slog.Warnf("%s has no ring on %s", mac, vap)
 		}
 	} else if ring != "" {
+		var action string
+
 		// With no VAP in the event, this event came from a DHCP
-		// request.
-		if oldRing == ring {
-			slog.Debugf("%s stays on %s", ring)
+		// request.  This is primarily interesting as a way to identify
+		// wired clients, as we can rely on ap.wifid to identify
+		// wireless clients.
+
+		if ring == base_def.RING_UNENROLLED {
+			// We don't let DHCP migrate a client to the UNENROLLED
+			// ring.  Only the admin or ap.wifid can do that.
+			action = "ignoring on"
+			ring = oldRing
+		} else if oldRing == ring {
+			action = "stays on"
 		} else if oldRing == "" {
-			slog.Infof("%s: assigned to %s ring", mac, ring)
+			action = "assigned to"
 		} else {
-			slog.Infof("%s: migrating from %s to %s ring", mac, oldRing, ring)
+			action = "migrating from " + oldRing + " to"
 		}
+		slog.Infof("%s: %s %s ring", mac, action, ring)
 		newRing = ring
 	}
 

@@ -105,7 +105,7 @@
               "psk": {
                 "Children": {
                   "default_ring": {
-                    "Value": "standard"
+                    "Value": "devices"
                   },
                   "5ghz": {
                     "Value": "false"
