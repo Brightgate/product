@@ -748,7 +748,7 @@ $(GO_MOCK_SRCS): $(GOTOOLS_BIN_MOCKERY)
 # The use of 'realpath' avoids an issue in mockery for workspaces with
 # symlinks (https://github.com/vektra/mockery/issues/157).
 $(GO_MOCK_SRCS):
-	cd $(realpath $(dir $<)) && GOPATH=$(realpath $(GOPATH)) $(GOTOOLS_BIN_MOCKERY) -name $(MOCK_NAME)
+	cd $(realpath $(dir $<)) && GOPATH=$(realpath $(GOPATH)) $(GOTOOLS_BIN_MOCKERY) --name $(MOCK_NAME) --log-level warn
 
 test: test-go
 

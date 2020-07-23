@@ -26,13 +26,13 @@ require (
 	github.com/fatih/color v1.7.0
 	github.com/flynn/go-shlex v0.0.0-20150515145356-3f9db97f8568 // indirect
 	github.com/fsouza/fake-gcs-server v1.17.0
-	github.com/gliderlabs/ssh v0.2.2
+	github.com/gliderlabs/ssh v0.3.0
 	github.com/go-acme/lego v2.7.2+incompatible
 	github.com/go-ole/go-ole v1.2.4 // indirect
 	github.com/go-sql-driver/mysql v1.5.0 // indirect
 	github.com/go-test/deep v1.0.5 // indirect
 	github.com/goftp/file-driver v0.0.0-20180502053751-5d604a0fc0c9
-	github.com/goftp/server v0.0.0-20190712054601-1149070ae46b
+	github.com/goftp/server v0.0.0-20200708154336-f64f7c2d8a42
 	github.com/gogo/protobuf v1.3.1
 	github.com/golang/protobuf v1.3.2
 	github.com/google/go-cmp v0.4.0
@@ -78,6 +78,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/mattn/go-sqlite3 v1.11.0
 	github.com/miekg/dns v1.1.20
+	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/oklog/run v1.1.0 // indirect
 	github.com/pierrec/lz4 v2.4.0+incompatible // indirect
 	github.com/pin/tftp v2.1.0+incompatible
@@ -95,7 +96,8 @@ require (
 	github.com/spf13/afero v1.2.2
 	github.com/spf13/cobra v0.0.5
 	github.com/spf13/pflag v1.0.3
-	github.com/stretchr/testify v1.4.0
+	github.com/stretchr/objx v0.3.0 // indirect
+	github.com/stretchr/testify v1.6.1
 	github.com/tatsushid/go-prettytable v0.0.0-20141013043238-ed2d14c29939
 	github.com/tebeka/strftime v0.1.4 // indirect
 	github.com/tevino/abool v0.0.0-20170917061928-9b9efcf221b5
@@ -120,6 +122,8 @@ require (
 	google.golang.org/api v0.17.0
 	google.golang.org/genproto v0.0.0-20200115191322-ca5a22157cba
 	google.golang.org/grpc v1.27.1
+	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
 	gopkg.in/yaml.v2 v2.2.8 // indirect
+	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776 // indirect
 	nanomsg.org/go/mangos/v2 v2.0.2
 )

@@ -18,5 +18,5 @@ import (
 	// https://github.com/golang/go/wiki/Modules#how-can-i-track-tool-dependencies-for-a-module
 	_ "github.com/golang/protobuf/protoc-gen-go"
 	_ "github.com/golangci/golangci-lint/cmd/golangci-lint"
-	_ "github.com/vektra/mockery/cmd/mockery"
+	_ "github.com/vektra/mockery/v2/cmd"
 )

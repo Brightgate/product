@@ -16,8 +16,8 @@ GOTOOLS_pgengo_pkg=$(GOTOOLS_protobuf_repo)/protoc-gen-go
 GOTOOLS_BIN_PROTOCGENGO=$(GOTOOLS_BIN)/protoc-gen-go
 GOTOOLS_SRC_protobuf=$(shell cd build/tools; go list -m -f '{{.Dir}}' $(GOTOOLS_protobuf_repo))
 
-GOTOOLS_mockery_repo=github.com/vektra/mockery
-GOTOOLS_mockery_pkg=$(GOTOOLS_mockery_repo)/cmd/mockery
+GOTOOLS_mockery_repo=github.com/vektra/mockery/v2
+GOTOOLS_mockery_pkg=$(GOTOOLS_mockery_repo)/...
 GOTOOLS_BIN_MOCKERY=$(GOTOOLS_BIN)/mockery
 
 GOTOOLS_golangci_lint_repo=github.com/golangci/golangci-lint
