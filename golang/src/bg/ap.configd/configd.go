@@ -36,6 +36,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -111,6 +112,7 @@ var updateCheckTable = []struct {
 	{regexp.MustCompile(`^@/clients/.*/(dns|dhcp)_name$`), checkDNS},
 	{regexp.MustCompile(`^@/clients/.*/ipv4$`), checkIPv4},
 	{regexp.MustCompile(`^@/network/base_address$`), checkSubnet},
+	{regexp.MustCompile(`^@/rings/.*/subnet$`), checkSubnet},
 	{regexp.MustCompile(`^@/network/wan/static.*`), checkWan},
 	{regexp.MustCompile(`^@/site_index$`), checkSubnet},
 	{regexp.MustCompile(`^@/dns/cnames/`), checkCname},
@@ -123,6 +125,9 @@ var updateHandlers = []struct {
 	{regexp.MustCompile(`^@/network/vap/.*/default_ring$`), updateDefaultRing},
 	{regexp.MustCompile(`^@/clients/.*/home$`), updateClientHome},
 	{regexp.MustCompile(`^@/settings/ap.configd/.*`), updateSetting},
+	{regexp.MustCompile(`^@/site_index`), updateSiteIdx},
+	{regexp.MustCompile(`^@/network/base_address`), updateBaseAddress},
+	{regexp.MustCompile(`^@/rings/.*/subnet`), updateRingSubnet},
 }
 
 var configdSettings = map[string]struct {
@@ -138,6 +143,12 @@ var configdSettings = map[string]struct {
 var singletonOps = map[cfgmsg.ConfigOp_Operation]bool{
 	cfgmsg.ConfigOp_REPLACE: true,
 	cfgmsg.ConfigOp_GET:     true,
+}
+
+type subnetInfo struct {
+	siteIndex   int
+	baseAddress string
+	perRing     map[string]*net.IPNet
 }
 
 var (
@@ -156,9 +167,62 @@ var (
 	plat       *platform.Platform
 	serverPort *comms.APComm
 
+	ringSubnets subnetInfo
+
 	virtualAPToDefaultRing map[string]string
 	ringOnVirtualAP        map[string]bool
 )
+
+/*************************************************************************
+ * track subnets
+ */
+func recalculateRingSubnets(si *subnetInfo) {
+	base := si.baseAddress
+	idx := si.siteIndex
+	si.perRing = make(map[string]*net.IPNet)
+
+	for ring, info := range propTree.GetChildren("@/rings") {
+		var subnet string
+
+		if x, ok := info.Children["subnet"]; ok {
+			subnet = x.Value
+		} else {
+			subnet, _ = cfgapi.RingSubnet(ring, base, idx)
+		}
+		_, si.perRing[ring], _ = net.ParseCIDR(subnet)
+	}
+}
+
+func ringSubnetInit() {
+	x, err := propTree.GetProp("@/site_index")
+	if err != nil {
+		fail("fetching @/site_index: %v", err)
+	}
+	ringSubnets.siteIndex, _ = strconv.Atoi(x)
+
+	ringSubnets.baseAddress, err = propTree.GetProp("@/network/base_address")
+	if err != nil {
+		fail("fetching @/network/base_address: %v", err)
+	}
+	recalculateRingSubnets(&ringSubnets)
+}
+
+func updateSiteIdx(op int, prop, val string) {
+	slog.Infof("updated siteIndex to %s", val)
+	ringSubnets.siteIndex, _ = strconv.Atoi(val)
+	recalculateRingSubnets(&ringSubnets)
+}
+
+func updateBaseAddress(op int, prop, val string) {
+	slog.Infof("updated baseAddress to %s", val)
+	ringSubnets.baseAddress = val
+	recalculateRingSubnets(&ringSubnets)
+}
+
+func updateRingSubnet(op int, prop, val string) {
+	slog.Infof("updated %s to %s", prop, val)
+	recalculateRingSubnets(&ringSubnets)
+}
 
 /*************************************************************************
  *
@@ -377,10 +441,12 @@ func cfgPropSet(prop string, val string, exp *time.Time, add bool) error {
 		return fmt.Errorf("no value supplied")
 	}
 
-	for _, r := range updateCheckTable {
-		if r.path.MatchString(prop) {
-			if err = r.check(prop, val); err != nil {
-				return xlateError(err)
+	if old, _ := propTree.GetProp(prop); old != val {
+		for _, r := range updateCheckTable {
+			if r.path.MatchString(prop) {
+				if err = r.check(prop, val); err != nil {
+					return xlateError(err)
+				}
 			}
 		}
 	}
@@ -743,6 +809,7 @@ func configInit() {
 	initSettings()
 	expirationInit(propTree)
 	defaultRingInit()
+	ringSubnetInit()
 }
 
 func signalHandler() {

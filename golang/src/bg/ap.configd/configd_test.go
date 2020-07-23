@@ -185,6 +185,7 @@ func testTreeInit(t *testing.T) leafMap {
 	if err := versionTree(); err != nil {
 		t.Fatalf("failed to upgrade config tree: %v", err)
 	}
+	ringSubnetInit()
 
 	return testBuildMap(t)
 }
@@ -1112,6 +1113,139 @@ func TestMetrics(t *testing.T) {
 	}
 	if val := p.Value; val != str2 {
 		fail("%s was %s - expected %s", prop, val, str2)
+	}
+}
+
+func TestBaseIndex(t *testing.T) {
+	const baseProp = "@/network/base_address"
+	const idxProp = "@/site_index"
+	const clientIPProp = "@/clients/64:9a:be:da:b1:9a/ipv4"
+	const clientIPVal = "192.168.7.8"
+
+	var goodBase = []string{
+		"192.168.5.0/24",
+		"192.168.42.0/24",
+		"172.16.0.0/24",
+		"172.16.100.0/24",
+		"172.30.100.0/24",
+		"172.16.100.0/20",
+		"10.0.0.0/12",
+		"10.1.0.0/12",
+		"10.1.1.0/20",
+		"10.100.100.0/20",
+	}
+
+	var badBase = []string{
+		"192.168.5.0/1",
+		"192.168.5.0",
+		"192.168.250.0/24",
+		"34.82.77.0/24",
+		"34.82.77.0/24",
+		"a.b.c.d/24",
+	}
+
+	var goodIndex = []string{"0", "1", "7", "9", "15"}
+	var badIndex = []string{"16", "-1", "a", ""}
+
+	for _, val := range goodBase {
+		a := testTreeInit(t)
+		updateOneProp(t, baseProp, val, true)
+		a[baseProp] = val
+		testValidateTree(t, a)
+	}
+
+	for _, val := range badBase {
+		a := testTreeInit(t)
+		updateOneProp(t, baseProp, val, false)
+		testValidateTree(t, a)
+	}
+
+	for _, val := range goodIndex {
+		a := testTreeInit(t)
+		updateOneProp(t, idxProp, val, true)
+		a[idxProp] = val
+		testValidateTree(t, a)
+	}
+
+	for _, val := range badIndex {
+		a := testTreeInit(t)
+		updateOneProp(t, idxProp, val, false)
+		testValidateTree(t, a)
+	}
+
+	// Insert a static IP assignment and verify that all attempts to change
+	// the standard ranges now fail.
+	for _, val := range goodBase {
+		a := testTreeInit(t)
+		updateOneProp(t, clientIPProp, clientIPVal, true)
+		updateOneProp(t, baseProp, val, false)
+		testValidateTree(t, a)
+	}
+
+	for _, val := range goodIndex {
+		if val == "0" {
+			// this is a no-op, and should succeed even with a
+			// static IP.
+			continue
+		}
+		a := testTreeInit(t)
+		updateOneProp(t, clientIPProp, clientIPVal, true)
+		updateOneProp(t, idxProp, val, false)
+		testValidateTree(t, a)
+	}
+
+}
+
+func TestRingSubnets(t *testing.T) {
+	const standardSubnetProp = "@/rings/standard/subnet"
+	const guestSubnetProp = "@/rings/guest/subnet"
+	const clientIPProp = "@/clients/64:9a:be:da:b1:9a/ipv4"
+	const clientIPVal = "192.168.7.8"
+
+	var goodVal = []string{
+		"192.168.1.0/24",
+		"192.168.12.0/24",
+		"192.168.253.0/24",
+		"10.0.0.0/20",
+	}
+
+	var badVal = []string{
+		"192.168.8.0/24", // conflicts with quarantine ring
+		"34.82.77.1/24",  // not a private subnet
+		"34.82.77.1",     // not a subnet
+		"a.b.c.d/24",     // invalid syntax
+	}
+
+	for _, val := range goodVal {
+		a := testTreeInit(t)
+		insertOneProp(t, standardSubnetProp, val, true)
+		a[standardSubnetProp] = val
+		testValidateTree(t, a)
+	}
+
+	for _, val := range badVal {
+		a := testTreeInit(t)
+		insertOneProp(t, standardSubnetProp, val, false)
+		testValidateTree(t, a)
+	}
+
+	// Insert a static guest IP assignment and verify that all attempts to
+	// change the standard subnet still succeed.
+	for _, val := range goodVal {
+		a := testTreeInit(t)
+		updateOneProp(t, clientIPProp, clientIPVal, true)
+		insertOneProp(t, standardSubnetProp, val, true)
+		a[standardSubnetProp] = val
+		testValidateTree(t, a)
+	}
+
+	// Insert a static guest IP assignment and verify that all attempts to
+	// change the guest subnet now fail.
+	for _, val := range goodVal {
+		a := testTreeInit(t)
+		updateOneProp(t, clientIPProp, clientIPVal, true)
+		insertOneProp(t, guestSubnetProp, val, false)
+		testValidateTree(t, a)
 	}
 }
 

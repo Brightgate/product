@@ -64,41 +64,42 @@ var (
 	}
 
 	validationFuncs = map[string]typeValidate{
-		"null":       validateNull,
-		"bool":       validateBool,
-		"cidr":       validateCIDR,
-		"fwtarget":   validateForwardTarget,
-		"const":      validateString,
-		"dnsaddr":    validateDNS,
-		"duration":   validateDuration,
-		"email":      validateString,
-		"float":      validateFloat,
-		"hostname":   validateHostname,
-		"int":        validateInt,
-		"ipaddr":     validateIP,
-		"ipoptport":  validateIPOptPort,
-		"keymgmt":    validateKeyMgmt,
-		"macaddr":    validateMac,
-		"nic":        validateNic,
-		"nickind":    validateNicKind,
-		"nicstate":   validateNicState,
-		"passphrase": validatePassphrase,
-		"phone":      validateString,
-		"port":       validatePort,
-		"proto":      validateProto,
-		"nodeid":     validateNodeID,
-		"ring":       validateRing,
-		"sshaddr":    validateSSHAddr,
-		"ssid":       validateSSID,
-		"string":     validateString,
-		"time":       validateTime,
-		"time_unit":  validateTimeUnit,
-		"tribool":    validateTribool,
-		"uid":        validateString,
-		"user":       validateString,
-		"uuid":       validateUUID,
-		"wifiband":   validateWifiBand,
-		"wifiwidth":  validateWifiWidth,
+		"null":        validateNull,
+		"bool":        validateBool,
+		"cidr":        validateCIDR,
+		"privatecidr": validatePrivateCIDR,
+		"fwtarget":    validateForwardTarget,
+		"const":       validateString,
+		"dnsaddr":     validateDNS,
+		"duration":    validateDuration,
+		"email":       validateString,
+		"float":       validateFloat,
+		"hostname":    validateHostname,
+		"int":         validateInt,
+		"ipaddr":      validateIP,
+		"ipoptport":   validateIPOptPort,
+		"keymgmt":     validateKeyMgmt,
+		"macaddr":     validateMac,
+		"nic":         validateNic,
+		"nickind":     validateNicKind,
+		"nicstate":    validateNicState,
+		"passphrase":  validatePassphrase,
+		"phone":       validateString,
+		"port":        validatePort,
+		"proto":       validateProto,
+		"nodeid":      validateNodeID,
+		"ring":        validateRing,
+		"sshaddr":     validateSSHAddr,
+		"ssid":        validateSSID,
+		"string":      validateString,
+		"time":        validateTime,
+		"time_unit":   validateTimeUnit,
+		"tribool":     validateTribool,
+		"uid":         validateString,
+		"user":        validateString,
+		"uuid":        validateUUID,
+		"wifiband":    validateWifiBand,
+		"wifiwidth":   validateWifiWidth,
 	}
 )
 
@@ -268,6 +269,16 @@ func validateCIDR(val string) error {
 	_, _, err := net.ParseCIDR(val)
 	if err != nil {
 		err = fmt.Errorf("'%s' is not a valid CIDR: %v", val, err)
+	}
+	return err
+}
+
+func validatePrivateCIDR(val string) error {
+	ip, _, err := net.ParseCIDR(val)
+	if err != nil {
+		err = fmt.Errorf("'%s' is not a valid CIDR: %v", val, err)
+	} else if !network.IsPrivate(ip) {
+		err = fmt.Errorf("'%s' is not a private subnet: %v", val, err)
 	}
 	return err
 }

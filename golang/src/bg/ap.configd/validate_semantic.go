@@ -16,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 
-	"bg/common/cfgapi"
 	"bg/common/cfgtree"
 	"bg/common/network"
 )
@@ -120,77 +119,151 @@ func checkCname(prop, hostname string) error {
 	return err
 }
 
-// Validate that a given site_index and base_address will allow us to generate
-// legal subnet addresses
-func checkSubnet(prop, val string) error {
+// Build the set of per-ring subnets that would result from this property change
+func proposedSubnets(prop, val string) (map[string]*net.IPNet, error) {
 	const basePath = "@/network/base_address"
 	const sitePath = "@/site_index"
-	var baseProp, siteProp string
+	var addr, idx string
+	var err error
 
 	if prop == basePath {
-		baseProp = val
+		addr = val
 	} else if p, err := propTree.GetProp(basePath); err == nil {
-		baseProp = p
+		addr = p
 	} else {
-		baseProp = "192.168.0.2/24"
+		return nil, fmt.Errorf("missing %s", basePath)
+	}
+	if _, _, err := net.ParseCIDR(addr); err != nil {
+		return nil, err
 	}
 
 	if prop == sitePath {
-		siteProp = val
+		idx = val
 	} else if p, err := propTree.GetProp(sitePath); err == nil {
-		siteProp = p
+		idx = p
 	} else {
-		siteProp = "0"
+		return nil, fmt.Errorf("missing %s", sitePath)
 	}
-	siteIdx, err := strconv.Atoi(siteProp)
+	idxInt, err := strconv.Atoi(idx)
 	if err != nil {
-		return fmt.Errorf("invalid %s: %v", sitePath, err)
+		return nil, err
 	}
 
-	// Make sure the base network address generates a valid subnet for both
-	// the lowest and highest subnet indices.
-	_, err = cfgapi.GenSubnet(baseProp, siteIdx, 0)
+	// Calculate the default subnets from base_address and site_index
+	si := &subnetInfo{
+		siteIndex:   idxInt,
+		baseAddress: addr,
+	}
+	recalculateRingSubnets(si)
+
+	// If the property being changed is a per-ring subnet, that gets
+	// inserted now.  (@/rings/<ring>/subnet)
+	f := strings.Split(prop, "/")
+	if len(f) == 4 && f[1] == "rings" && f[3] == "subnet" {
+		ring := f[2]
+		_, si.perRing[ring], _ = net.ParseCIDR(val)
+	}
+
+	return si.perRing, nil
+}
+
+// Validate that this subnet-related change will allow us to generate legal
+// subnet addresses and will not violate any client's existing static IP
+// assignment.
+func checkSubnet(prop, val string) error {
+	errors := make([]string, 0)
+
+	subnets, err := proposedSubnets(prop, val)
 	if err != nil {
-		err = fmt.Errorf("invalid %s: %v", prop, err)
-	} else {
-		_, err = cfgapi.GenSubnet(baseProp, siteIdx, cfgapi.MaxRings-1)
-		if err != nil {
-			err = fmt.Errorf("invalid %s for max subnet: %v",
-				prop, err)
+		return err
+	}
+
+	for r1, s1 := range subnets {
+		if s1 == nil {
+			errors = append(errors, r1+" no subnet")
+			continue
+		}
+
+		for r2, s2 := range subnets {
+			if r1 == r2 || s2 == nil {
+				continue
+			}
+			if s2.Contains(s1.IP) || s1.Contains(s2.IP) {
+				errors = append(errors,
+					r1+" and "+r2+" overlap")
+			}
 		}
 	}
 
-	return err
+	// Make sure we haven't moved a subnet with static client assignments
+	clients := propTree.GetChildren("@/clients")
+	for mac, client := range clients {
+		var ip net.IP
+		var subnet *net.IPNet
+
+		if x, ok := client.Children["ipv4"]; ok && x.Expires == nil {
+			ip = net.ParseIP(x.Value)
+		}
+
+		if x, ok := client.Children["ring"]; ok {
+			subnet = subnets[x.Value]
+		}
+
+		if ip != nil && subnet != nil && !subnet.Contains(ip) {
+			errors = append(errors, mac+" lost subnet")
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("invalid %s (%s): %s",
+			prop, val, strings.Join(errors, ","))
+
+	}
+	return nil
 }
 
 // Validate an ipv4 assignment for this device
 func checkIPv4(prop, addr string) error {
-	var updating string
+	var updateMac string
 
 	ipv4 := net.ParseIP(addr)
 	if ipv4 == nil {
 		return fmt.Errorf("invalid address: %s", addr)
 	}
+	if path := strings.Split(prop, "/"); len(path) > 3 {
+		updateMac = path[2]
+	} else {
+		// We should only get to this routine if the property path
+		// passes the above test.
+		return fmt.Errorf("internal error")
+	}
+
+	// Verify that the new IP address is within the ring to which the client
+	// is assigned.
+	ring, _ := propTree.GetProp("@/clients/" + updateMac + "/ring")
+	if ring == "" {
+		return fmt.Errorf("client not assigned to a ring")
+	}
+
+	subnet := ringSubnets.perRing[ring]
+	if subnet == nil {
+		return fmt.Errorf("no subnet defined for %s ring", ring)
+	} else if !subnet.Contains(ipv4) {
+		return fmt.Errorf("address outside of %s ring's subnet (%s)",
+			ring, subnet)
+	}
 
 	// Make sure the address isn't already assigned
-	clients, _ := propTree.GetNode("@/clients")
-	if clients == nil {
-		return nil
-	}
-
-	if path := strings.Split(prop, "/"); len(path) > 3 {
-		updating = path[2]
-	}
-
-	for name, device := range clients.Children {
-		if updating == name {
+	clients := propTree.GetChildren("@/clients")
+	for mac, device := range clients {
+		if updateMac == mac {
 			// Reassigning the device's address to itself is fine
 			continue
 		}
 
 		if addr := getChild(device, "ipv4"); addr != "" {
 			if ipv4.Equal(net.ParseIP(addr)) {
-				return fmt.Errorf("%s in use by %s", addr, name)
+				return fmt.Errorf("%s in use by %s", addr, mac)
 			}
 		}
 	}

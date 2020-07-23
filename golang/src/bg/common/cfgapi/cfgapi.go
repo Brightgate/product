@@ -780,7 +780,7 @@ func (c *Handle) getSubnetInfo() (string, int, error) {
 	return baseProp, siteIndex, err
 }
 
-// GenSubnet calculates the subnet address for a ring.
+// GenSubnet calculates the subnet address for a given subnet index.
 func GenSubnet(base string, siteIdx, subnetIdx int) (string, error) {
 	maxSubnetIdx := MaxRings - 1
 	if subnetIdx > maxSubnetIdx {
@@ -805,6 +805,16 @@ func GenSubnet(base string, siteIdx, subnetIdx int) (string, error) {
 
 	cidr := fmt.Sprintf("%v/%d", subnet, ones)
 	return cidr, nil
+}
+
+// RingSubnet returns the calculated subnet for a given ring
+func RingSubnet(ring, base string, siteIdx int) (string, error) {
+	subnetIdx, ok := ringToSubnetIdx[ring]
+	if !ok {
+		return "", fmt.Errorf("no such ring")
+	}
+
+	return GenSubnet(base, siteIdx, subnetIdx)
 }
 
 // GetRings fetches the Rings subtree from ap.configd, and converts the json
