@@ -122,8 +122,7 @@ var (
 	log  *zap.Logger
 	slog *zap.SugaredLogger
 
-	environ       Cfg
-	useVaultForDB bool
+	environ Cfg
 )
 
 func getSiteUUID(ctx context.Context, allowNullSiteUUID bool) (uuid.UUID, error) {
@@ -201,7 +200,6 @@ func processEnv() {
 	if environ.VaultDBRole == "" {
 		environ.VaultDBRole = pname
 	}
-	useVaultForDB = environ.VaultDBPath != ""
 
 	if environ.VaultAuthPath == "" {
 		getProject()
@@ -254,14 +252,20 @@ func makeApplianceDB(postgresURI string, vaultClient *vault.Client, notifier *da
 	var err error
 	var applianceDB appliancedb.DataStore
 	var vdbc *vaultdb.Connector
-	if vaultClient != nil {
+
+	// Only attempt to get credentials from Vault if we're properly
+	// configured to do so.  If this fails, or if we're not properly
+	// configured, we'll retry with the URI we already have.
+	if vaultClient != nil && vaultClient.Token() != "" && environ.VaultDBPath != "" {
 		vdbc = vaultdb.NewConnector(postgresURI, vaultClient, notifier,
 			environ.VaultDBPath, environ.VaultDBRole, slog)
 		applianceDB, err = appliancedb.VaultConnect(vdbc)
 		if err != nil {
-			slog.Fatalf("Error configuring DB from Vault: %v", err)
+			slog.Errorf("Error configuring DB from Vault: %v", err)
 		}
-	} else {
+	}
+
+	if applianceDB == nil {
 		applianceDB, err = appliancedb.Connect(postgresURI)
 		if err != nil {
 			slog.Fatalf("failed to connect to DB: %v", err)
@@ -477,25 +481,33 @@ func main() {
 
 	slog.Infow(pname+" starting", "args", os.Args)
 
-	var vaultClient *vault.Client
-	var notifier *daemonutils.FanOut
-	if useVaultForDB {
-		vaultClient, err = vault.NewClient(nil)
-		if err != nil {
-			slog.Fatalf("Vault error: %s", err)
-		}
-		if vaultClient.Token() == "" {
-			slog.Info("Authenticating to Vault with GCP auth")
-			hcLog := vaultgcpauth.ZapToHCLog(slog)
-			if notifier, err = vaultgcpauth.VaultAuth(context.Background(),
-				hcLog, vaultClient, environ.VaultAuthPath, pname); err != nil {
-				slog.Fatalf("Vault login error: %s", err)
-			}
-			slog.Info(checkMark + "Authenticated to Vault")
-		} else {
-			slog.Info("Authenticating to Vault with existing token")
-		}
+	vaultClient, err := vault.NewClient(nil)
+	if err != nil {
+		slog.Fatalf("Vault error: %s", err)
 	}
+
+	// Either the environment already presents a token or it doesn't.  If
+	// it's the former, we'll use it, but we can't handle if it expires.  If
+	// it's the latter, we'll attempt to get a token with GCP auth.
+	var notifier *daemonutils.FanOut
+	if vaultClient.Token() == "" {
+		slog.Info("Authenticating to Vault with GCP auth")
+		hcLog := vaultgcpauth.ZapToHCLog(slog)
+		if notifier, err = vaultgcpauth.VaultAuth(context.Background(),
+			hcLog, vaultClient, environ.VaultAuthPath, pname); err != nil {
+			slog.Errorf("Vault login error: %s", err)
+		} else {
+			slog.Info(checkMark + "Authenticated to Vault")
+		}
+	} else {
+		slog.Info("Authenticating to Vault with existing token")
+	}
+
+	// At this point, we either have a Vault token or we don't, and if we
+	// do, it may be valid or it might not, and if it's valid, it may or may
+	// not have some or all of the capabilities we need.  And the validity
+	// and capabilities may change over time.  So callees need to be
+	// prepared.
 
 	applianceDB, vdbc := makeApplianceDB(environ.PostgresConnection, vaultClient, notifier)
 	grpcServer := makeGrpcServer(applianceDB)
@@ -528,6 +540,9 @@ func main() {
 	cloud_rpc.RegisterReleaseManagerServer(grpcServer, relServer)
 	slog.Infof(checkMark + "Ready to serve release requests")
 	cloud_rpc.RegisterVPNManagerServer(grpcServer, &vpnServer{vaultClient})
+	// It's not necessarily ready (though it's ready to receive the events);
+	// improper configuration could mean it will never work, but we won't
+	// know until we actually try it.
 	slog.Infof(checkMark + "Ready to escrow appliance VPN private keys")
 
 	if environ.ConfigdDisableTLS {
