@@ -234,7 +234,11 @@ func validateMac(val string) error {
 	if err != nil {
 		err = fmt.Errorf("'%s' is not a valid MAC address: %v",
 			val, err)
+	} else if val != strings.ToLower(val) {
+		err = fmt.Errorf("'%s': MAC addresses must be all lowercase",
+			val)
 	}
+
 	return err
 }
 
