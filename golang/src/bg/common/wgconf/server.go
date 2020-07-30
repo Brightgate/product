@@ -22,10 +22,12 @@ import (
 // UserConf contains the information needed for a WireGuard server to
 // authenticate an incoming client and its traffic.
 type UserConf struct {
-	ID    int
-	Mac   string // Artificial MAC address used for accounting
-	User  string // owner of the key
-	Label string // User-defined value to distinguish between configs
+	ID        int
+	Mac       string // Artificial MAC address used for accounting
+	User      string // owner of the key
+	Label     string // User-defined value to distinguish between configs
+	ServerKey string // Public key of server when key was created
+	IsStale   bool   // was key generated with a different server public key
 
 	Endpoint
 }

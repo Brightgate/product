@@ -34,7 +34,7 @@ import (
 
 // Version gets increased each time there is a non-compatible change to the
 // config tree format, or configd API.
-const Version = int32(33)
+const Version = int32(34)
 
 // CmdHdl is returned when one or more operations are submitted to Execute().
 // This handle can be used to check on the status of a pending operation, or to
@@ -625,6 +625,12 @@ const FeatureClientFriendlyName CfgFeature = "clientFriendlyName"
 // functionality was introduced with cfgversion 28.
 const FeatureVPNConfig CfgFeature = "vpnConfig"
 
+// FeatureUserServerKey indicates that the site is capable of recording the
+// current VPN server public key in a user's client config record.  Storing the
+// server key in the client config lets us identify client VPN keys that have
+// been made stale by the generation of a new server key.
+const FeatureUserServerKey CfgFeature = "vpnUserServerKey"
+
 // CfgFeatures captures information about config-tree related features which
 // may be present, which are not obviously discoverable simply by inspecting
 // the tree.
@@ -647,6 +653,9 @@ func (c *Handle) GetFeatures() (CfgFeatures, error) {
 	}
 	if rval >= 28 {
 		features[FeatureVPNConfig] = true
+	}
+	if rval >= 34 {
+		features[FeatureUserServerKey] = true
 	}
 	return features, nil
 }

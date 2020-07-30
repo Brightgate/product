@@ -75,6 +75,7 @@ type keyConfig struct {
 	ServerAddress   string // Internet facing DNS or IP address
 	ServerPublicKey string // Server's public key
 	ServerPort      int    // Port open on the internet
+	serverEscrowed  string // public counterpart of the escrowed private key
 
 	DNSAddress string // Address of DNS server (= VPN ring router)
 	AllowedIPs string // Ring subnets that should be routed over VPN
@@ -136,6 +137,7 @@ func (s *Site) getServerConfig(conf *keyConfig) error {
 		conf.ServerAddress = addr
 		conf.ServerPort = port
 		conf.DNSAddress = s.vpnRouter.String()
+		conf.serverEscrowed, _ = props.GetChildString("escrowed_key")
 	}
 
 	return err
@@ -296,6 +298,11 @@ type AddKeyResult struct {
 // key, and the IP address the connecting client should be assigned.
 func (s *Site) AddKey(ctx context.Context, name, label, ipaddr string) (*AddKeyResult, error) {
 	var err error
+	var includeServerKey bool
+
+	if f, err := s.config.GetFeatures(); err == nil {
+		includeServerKey = f[cfgapi.FeatureUserServerKey]
+	}
 
 	retries := 0
 Retry:
@@ -355,6 +362,10 @@ Retry:
 
 	if err = s.getServerConfig(&conf); err != nil {
 		return nil, err
+	}
+
+	if includeServerKey {
+		props[base+"server_key"] = conf.ServerPublicKey
 	}
 
 	var confData []byte
@@ -429,6 +440,7 @@ func (s *Site) IsEnabled() bool {
 func (s *Site) GetKeys(name string) (map[string]*wgconf.UserConf, error) {
 	var users cfgapi.UserMap
 
+	serverPublic, _ := s.config.GetProp(PublicProp)
 	rval := make(map[string]*wgconf.UserConf)
 
 	if name != "" {
@@ -442,10 +454,10 @@ func (s *Site) GetKeys(name string) (map[string]*wgconf.UserConf, error) {
 	}
 
 	for _, conf := range users {
-		if conf.WGConfig != nil {
-			for _, key := range conf.WGConfig {
-				rval[key.Mac] = key
-			}
+		for _, key := range conf.WGConfig {
+			key.IsStale = key.ServerKey != "" &&
+				key.ServerKey != serverPublic
+			rval[key.Mac] = key
 		}
 	}
 

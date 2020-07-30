@@ -3,7 +3,7 @@
     "Children": {
       "apversion": {},
       "cfgversion": {
-        "Value": "33"
+        "Value": "34"
       },
       "clients": {},
       "cloud": {
@@ -368,6 +368,7 @@
     {"Path": "@/users/%user%/vpn", "Type": "null", "Level": "admin"},
     {"Path": "@/users/%user%/vpn/%macaddr%", "Type": "null", "Level": "admin"},
     {"Path": "@/users/%user%/vpn/%macaddr%/public_key", "Type": "string", "Level": "admin"},
+    {"Path": "@/users/%user%/vpn/%macaddr%/server_key", "Type": "string", "Level": "admin"},
     {"Path": "@/users/%user%/vpn/%macaddr%/assigned_ip", "Type": "ipaddr", "Level": "admin"},
     {"Path": "@/users/%user%/vpn/%macaddr%/label", "Type": "string", "Level": "admin"},
     {"Path": "@/users/%user%/vpn/%macaddr%/id", "Type": "int", "Level": "internal"},

@@ -24,9 +24,10 @@ import (
 )
 
 var (
-	config  *cfgapi.Handle
-	siteHdl *wgsite.Site
-	pname   string
+	config      *cfgapi.Handle
+	siteHdl     *wgsite.Site
+	pname       string
+	keyFilePath string
 )
 
 // Add a new key for this user and print the associated config file to stdout.
@@ -168,6 +169,27 @@ func listKeys(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func checkServer(cmd *cobra.Command, args []string) error {
+	warnings := siteHdl.SanityCheck(keyFilePath)
+	if len(warnings) == 0 {
+		fmt.Printf("ok\n")
+	} else {
+		fmt.Printf("Potential problems:\n")
+		for _, w := range warnings {
+			fmt.Printf("    %s\n", w)
+		}
+	}
+
+	return nil
+}
+
+// SetKeyFile lets the caller provide the path to the locally stored server
+// private key.  This file will only be available on the appliance - not in the
+// cloud.
+func SetKeyFile(path string) {
+	keyFilePath = path
+}
+
 // Exec executes the bulk of the vpntool work.
 func Exec(ctx context.Context, p string, hdl *cfgapi.Handle, args []string) error {
 	var err error
@@ -217,6 +239,15 @@ func Exec(ctx context.Context, p string, hdl *cfgapi.Handle, args []string) erro
 	}
 	listCmd.Flags().StringP("user", "u", "", "list keys for a specific user")
 	rootCmd.AddCommand(listCmd)
+
+	checkCmd := &cobra.Command{
+		Use:           "check",
+		Short:         "sanity check the VPN server configuration",
+		RunE:          checkServer,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+	}
+	rootCmd.AddCommand(checkCmd)
 
 	if siteHdl, err = wgsite.NewSite(config); err == nil {
 		err = rootCmd.Execute()

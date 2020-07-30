@@ -16,8 +16,10 @@ import (
 	"os"
 
 	"bg/ap_common/apcfg"
+	"bg/ap_common/platform"
 	"bg/common/cfgapi"
 	"bg/common/vpntool"
+	"bg/common/wgsite"
 )
 
 func vpntoolMain() {
@@ -29,6 +31,12 @@ func vpntoolMain() {
 		fmt.Printf("cannot connect to configd: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Provide the tool with a path to the private key, so it can verify
+	// that it corresponds with the public key in the config file.
+	plat := platform.NewPlatform()
+	keyFile := plat.ExpandDirPath(wgsite.SecretDir, wgsite.PrivateFile)
+	vpntool.SetKeyFile(keyFile)
 
 	err = vpntool.Exec(context.Background(), pname, configd, os.Args[1:])
 

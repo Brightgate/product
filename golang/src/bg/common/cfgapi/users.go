@@ -65,6 +65,7 @@ func wgConfig(user, mac string, root *PropertyNode) (*wgconf.UserConf, error) {
 	}
 	c.ID, _ = root.GetChildInt("id")
 	c.Label, _ = root.GetChildString("label")
+	c.ServerKey, _ = root.GetChildString("server_key")
 
 	if key, _ = root.GetChildString("public_key"); key == "" {
 		return nil, fmt.Errorf("missing public key")
