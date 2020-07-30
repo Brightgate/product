@@ -186,7 +186,7 @@ func (a *accountHandler) getAccountPasswordGen(c echo.Context) error {
 		return newHTTPError(http.StatusInternalServerError, err)
 	}
 
-	session, err := a.sessionStore.Get(c.Request(), "bg_login")
+	session, err := a.sessionStore.Get(c.Request(), sessionCookieName)
 	if err != nil {
 		return newHTTPError(http.StatusUnauthorized)
 	}
@@ -226,7 +226,7 @@ func (a *accountHandler) postAccountSelfProvision(c echo.Context) error {
 		return newHTTPError(http.StatusUnauthorized)
 	}
 
-	session, err := a.sessionStore.Get(c.Request(), "bg_login")
+	session, err := a.sessionStore.Get(c.Request(), sessionCookieName)
 	if err != nil {
 		return newHTTPError(http.StatusUnauthorized)
 	}

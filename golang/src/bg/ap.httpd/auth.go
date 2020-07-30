@@ -21,7 +21,11 @@ import (
 )
 
 const (
-	cookieName = "com.brightgate.appliance"
+	// Note that the naming of the cookie is significant.  The
+	// __Host- prefix asserts that some of the security attributes
+	// we desire for our cookies are also True.  See
+	// https://tools.ietf.org/html/draft-ietf-httpbis-rfc6265bis-05#page-14
+	sessionCookieName = "__Host-com.brightgate.appliance-login"
 )
 
 func makeApplianceAuthRouter() *mux.Router {
@@ -110,12 +114,21 @@ func siteLoginHandler(w http.ResponseWriter, r *http.Request) {
 		"uid": uid,
 	}
 
-	if encoded, err := cutter.Encode(cookieName, filling); err == nil {
+	if encoded, err := cutter.Encode(sessionCookieName, filling); err == nil {
 		cookie := &http.Cookie{
-			Name:  cookieName,
+			Name:  sessionCookieName,
 			Value: encoded,
 			Path:  "/",
-			// Default lifetime is 30 days.
+			// Default lifetime is 30 days; we're using 7
+			MaxAge: 86400 * 7,
+			// Only send cookie over HTTPS
+			Secure: true,
+			// Inaccessible to JS Document.Cookie APIs
+			HttpOnly: true,
+			// Cookies will only be sent in a first-party context
+			// and not be sent along with requests initiated by
+			// third party websites.
+			SameSite: http.SameSiteStrictMode,
 		}
 
 		if cookie.String() == "" {
@@ -137,9 +150,9 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 	var value map[string]string
 
 	// XXX Should only logout if logged in.
-	if cookie, err := r.Cookie(cookieName); err == nil {
+	if cookie, err := r.Cookie(sessionCookieName); err == nil {
 		value = make(map[string]string)
-		if err = cutter.Decode(cookieName, cookie.Value, &value); err == nil {
+		if err = cutter.Decode(sessionCookieName, cookie.Value, &value); err == nil {
 			slog.Infof("Logging out '%s'", value["uid"])
 		} else {
 			slog.Infof("Could not decode cookie")
@@ -157,12 +170,20 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 		"uid": "",
 	}
 
-	if encoded, err := cutter.Encode(cookieName, filling); err == nil {
+	if encoded, err := cutter.Encode(sessionCookieName, filling); err == nil {
 		cookie := &http.Cookie{
-			Name:   cookieName,
+			Name:   sessionCookieName,
 			Value:  encoded,
 			Path:   "/",
 			MaxAge: -1,
+			// Only send cookie over HTTPS
+			Secure: true,
+			// Inaccessible to JS Document.Cookie APIs
+			HttpOnly: true,
+			// Cookies will only be sent in a first-party context
+			// and not be sent along with requests initiated by
+			// third party websites.
+			SameSite: http.SameSiteStrictMode,
 		}
 		http.SetCookie(w, cookie)
 	} else {
@@ -209,14 +230,14 @@ func userIDHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func getRequestUID(r *http.Request) string {
-	cookie, err := r.Cookie(cookieName)
+	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil {
 		// No cookie.
 		return ""
 	}
 
 	value := make(map[string]string)
-	if err = cutter.Decode(cookieName, cookie.Value, &value); err != nil {
+	if err = cutter.Decode(sessionCookieName, cookie.Value, &value); err != nil {
 		slog.Infof("request contains undecryptable cookie value: %v", err)
 		return ""
 	}

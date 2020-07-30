@@ -48,6 +48,14 @@ import (
 
 type providerContextKey struct{}
 
+const (
+	// Note that the naming of the cookie is significant.  The
+	// __Host- prefix asserts that some of the security attributes
+	// we desire for our cookies are also True.  See
+	// https://tools.ietf.org/html/draft-ietf-httpbis-rfc6265bis-05#page-14
+	sessionCookieName = "__Host-com.brightgate.cloud-login"
+)
+
 func init() {
 	// Replace Gothic GetProviderName routine
 	gothic.GetProviderName = getProviderName
@@ -211,7 +219,7 @@ func (a *authHandler) getAuth(c echo.Context) error {
 	}
 	html += "<p><a href=\"/auth/logout\">Logout</a></p>\n"
 
-	sess, err := a.sessionStore.Get(c.Request(), "bg_login")
+	sess, err := a.sessionStore.Get(c.Request(), sessionCookieName)
 	if err == nil {
 		var email string
 		email, ok := sess.Values["email"].(string)
@@ -756,16 +764,16 @@ func (a *authHandler) setUserIDError(c echo.Context, err error) {
 			WrappedError: err,
 		}
 	}
-	session, err := a.sessionStore.Get(c.Request(), "bg_login")
+	session, err := a.sessionStore.Get(c.Request(), sessionCookieName)
 	if err != nil && session == nil {
-		c.Logger().Warnf("Couldn't get bg_login: %s", err)
+		c.Logger().Warnf("Couldn't get %s: %s", sessionCookieName, err)
 		return
 	}
 
 	c.Logger().Debugf("adding flash %v", lerr)
 	session.AddFlash(lerr, "useridError")
 	if err = session.Save(c.Request(), c.Response()); err != nil {
-		c.Logger().Warnf("Couldn't save bg_login: %s", err)
+		c.Logger().Warnf("Couldn't save %s: %s", sessionCookieName, err)
 		return
 	}
 }
@@ -833,10 +841,19 @@ func (a *authHandler) getProviderCallback(c echo.Context) error {
 	// exists but could not be decoded.'  For our purposes, we just
 	// want to blow over top of an invalid session, so drive on in
 	// that case.
-	session, err := a.sessionStore.Get(c.Request(), "bg_login")
+	session, err := a.sessionStore.Get(c.Request(), sessionCookieName)
 	if err != nil && session == nil {
 		return newHTTPError(http.StatusInternalServerError, err)
 	}
+	// This trio of options helps to secure the cookies we send.
+	// Only send cookie over HTTPS
+	session.Options.Secure = true
+	// Inaccessible to JS Document.Cookie APIs
+	session.Options.HttpOnly = true
+	// Cookies will only be sent in a first-party context and not be
+	// sent along with requests initiated by third party websites.
+	session.Options.SameSite = http.SameSiteStrictMode
+
 	session.Values["email"] = loginInfo.Account.Email
 	session.Values["userid"] = sessionUserID
 	session.Values["auth_time"] = time.Now().Format(time.RFC3339)
@@ -853,7 +870,7 @@ func (a *authHandler) getProviderCallback(c echo.Context) error {
 // getLogout implements /auth/logout
 func (a *authHandler) getLogout(c echo.Context) error {
 	gothic.Logout(c.Response(), c.Request())
-	session, _ := a.sessionStore.Get(c.Request(), "bg_login")
+	session, _ := a.sessionStore.Get(c.Request(), sessionCookieName)
 	if session != nil {
 		session.Options.MaxAge = -1
 		session.Values = make(map[interface{}]interface{})
@@ -878,7 +895,7 @@ type userIDResponse struct {
 // logged-in user.
 func (a *authHandler) getUserID(c echo.Context) error {
 	ctx := c.Request().Context()
-	session, err := a.sessionStore.Get(c.Request(), "bg_login")
+	session, err := a.sessionStore.Get(c.Request(), sessionCookieName)
 	if err != nil {
 		return newHTTPError(http.StatusUnauthorized)
 	}
@@ -987,7 +1004,7 @@ func newSessionMiddleware(sessionStore sessions.Store) *sessionMiddleware {
 // account_uuid into the echo context for use in subsequent handlers.
 func (sm *sessionMiddleware) Process(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		session, err := sm.sessionStore.Get(c.Request(), "bg_login")
+		session, err := sm.sessionStore.Get(c.Request(), sessionCookieName)
 		if err != nil {
 			return newHTTPError(http.StatusUnauthorized)
 		}

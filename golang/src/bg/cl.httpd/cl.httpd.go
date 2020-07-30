@@ -332,6 +332,8 @@ func (rs *routerState) mkSessionStore(vaultClient *vault.Client, notifier *daemo
 	}
 	// Defaults to 4K but some providers (Azure) issue enormous tokens
 	rs.sessionStore.MaxLength(32768)
+	// One week
+	rs.sessionStore.MaxAge(86400 * 7)
 	rs.sessCleanupDone, rs.sessCleanupQuit = rs.sessionStore.Cleanup(time.Minute * 5)
 }
 

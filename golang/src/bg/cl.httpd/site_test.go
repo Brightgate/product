@@ -122,7 +122,7 @@ func getMockClientHandle(uuid string) (*cfgapi.Handle, error) {
 // https://gist.github.com/jonnyreeves/17f91155a0d4a5d296d6
 func addValidSession(req *http.Request, ss sessions.Store, acct *appliancedb.Account) {
 	rec := httptest.NewRecorder()
-	sess, err := ss.New(req, "bg_login")
+	sess, err := ss.New(req, sessionCookieName)
 	if err != nil {
 		panic("Failed session create")
 	}
