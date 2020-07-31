@@ -87,8 +87,8 @@ $(info operating-system macOS)
 endif
 else
 # On Linux
-export GOROOT=$(wildcard /opt/net.b10e/go-1.12.15)
-GOROOT_SEARCH += /opt/net.b10e/go-1.12.15
+export GOROOT=$(wildcard /opt/net.b10e/go-1.14.6)
+GOROOT_SEARCH += /opt/net.b10e/go-1.14.6
 ifeq ("$(GOROOT)","")
 export GOROOT=$(HOME)/go
 GOROOT_SEARCH += $(HOME)/go

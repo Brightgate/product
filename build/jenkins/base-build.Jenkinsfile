@@ -19,7 +19,7 @@
 pipeline {
     agent any
     environment {
-        GOROOT = '/opt/net.b10e/go-1.12.15'
+        GOROOT = '/opt/net.b10e/go-1.14.6'
         DOWNLOAD_CACHEDIR = '/ex1/product-dl-cache'
         GCS_KEY_ARTIFACT = credentials('bg-artifact-uploader')
         GCS_KEY_SYSROOT = credentials('sysroot-uploader')

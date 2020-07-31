@@ -50,7 +50,7 @@ machine you maintain.  Current versions are:
 
   | Software    | Version
   | ----------- | -------
-  | Go (golang) | 1.12.15 (any 1.12.x is likely to work)
+  | Go (golang) | 1.14.6 (any 1.14.x is likely to work)
   | Node.js     | 8.11.2 (any 8.x is likely to work)
 
 # Building Product Software

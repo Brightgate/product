@@ -119,7 +119,8 @@ func VaultAuthOnce(ctx context.Context, hclogger hclog.Logger, vc *vault.Client,
 		return err
 	}
 
-	vLoginURL, data, err := gcpAuth.Authenticate(ctx, vc)
+	// header (retval #2) is always nil for this provider
+	vLoginURL, _, data, err := gcpAuth.Authenticate(ctx, vc)
 	if err != nil {
 		return err
 	}

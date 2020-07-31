@@ -1,6 +1,6 @@
 module bg
 
-go 1.12
+go 1.14
 
 require (
 	cloud.google.com/go v0.52.0
@@ -10,7 +10,7 @@ require (
 	github.com/Jeffail/gabs v1.4.0 // indirect
 	github.com/NYTimes/gziphandler v1.1.1
 	github.com/StackExchange/wmi v0.0.0-20190523213315-cbe66965904d // indirect
-	github.com/anmitsu/go-shlex v0.0.0-20161002113705-648efa622239 // indirect
+	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 	github.com/antonlindstrom/pgstore v0.0.0-20200226150733-8c655faf9a6f
 	github.com/armon/go-metrics v0.3.2 // indirect
 	github.com/armon/go-proxyproto v0.0.0-20200108142055-f0b8253b1507 // indirect
@@ -23,8 +23,7 @@ require (
 	github.com/dhduvall/gcloudzap v0.3.1
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a // indirect
 	github.com/fastly/go-utils v0.0.0-20180712184237-d95a45783239 // indirect
-	github.com/fatih/color v1.7.0
-	github.com/flynn/go-shlex v0.0.0-20150515145356-3f9db97f8568 // indirect
+	github.com/fatih/color v1.9.0
 	github.com/fsouza/fake-gcs-server v1.17.0
 	github.com/gliderlabs/ssh v0.3.0
 	github.com/go-acme/lego v2.7.2+incompatible
@@ -37,27 +36,22 @@ require (
 	github.com/golang/protobuf v1.3.2
 	github.com/google/go-cmp v0.4.0
 	github.com/google/gopacket v1.1.17
-	github.com/gorilla/context v1.1.1 // indirect
 	github.com/gorilla/mux v1.7.3
 	github.com/gorilla/schema v1.1.0 // indirect
 	github.com/gorilla/securecookie v1.1.1
 	github.com/gorilla/sessions v1.2.0
-	github.com/gorilla/websocket v1.4.1 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.1.0
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/guregu/null v3.4.0+incompatible
-	github.com/hashicorp/go-gcp-common v0.6.0 // indirect
 	github.com/hashicorp/go-hclog v0.12.0
 	github.com/hashicorp/go-memdb v1.0.4 // indirect
 	github.com/hashicorp/go-retryablehttp v0.6.4 // indirect
-	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
-	github.com/hashicorp/go-uuid v1.0.2 // indirect
 	github.com/hashicorp/go-version v1.2.0
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/hashicorp/raft v1.1.2 // indirect
-	github.com/hashicorp/vault v1.3.2
-	github.com/hashicorp/vault/api v1.0.5-0.20200117231345-460d63e36490
-	github.com/hashicorp/vault/sdk v0.1.14-0.20200121232954-73f411823aa0
+	github.com/hashicorp/vault v1.4.3
+	github.com/hashicorp/vault/api v1.0.5-0.20200317185738-82f498082f02
+	github.com/hashicorp/vault/sdk v0.1.14-0.20200702114606-96dd7d6e10db
 	github.com/hashicorp/yamux v0.0.0-20190923154419-df201c70410d // indirect
 	github.com/jehiah/go-strftime v0.0.0-20171201141054-1d33003b3869 // indirect
 	github.com/jlaffaye/ftp v0.0.0-20190828173736-6aaa91c7796e
@@ -108,10 +102,9 @@ require (
 	github.com/urfave/negroni v1.0.0
 	github.com/vishvananda/netlink v1.1.0
 	github.com/yourbasic/bloom v0.0.0-20170602163913-04a87e707a81
-	go.etcd.io/bbolt v1.3.3 // indirect
 	go.uber.org/zap v1.10.0
 	golang.org/x/crypto v0.0.0-20200204104054-c9f3fb736b72
-	golang.org/x/net v0.0.0-20200202094626-16171245cfb2
+	golang.org/x/net v0.0.0-20200226121028-0de0cce0169b
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
 	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
 	golang.org/x/sys v0.0.0-20200302150141-5c8b2ff67527
@@ -123,7 +116,6 @@ require (
 	google.golang.org/genproto v0.0.0-20200115191322-ca5a22157cba
 	google.golang.org/grpc v1.27.1
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
-	gopkg.in/yaml.v2 v2.2.8 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776 // indirect
 	nanomsg.org/go/mangos/v2 v2.0.2
 )
