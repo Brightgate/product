@@ -1,12 +1,11 @@
 /*
- * COPYRIGHT 2020 Brightgate Inc.  All rights reserved.
+ * Copyright 2020 Brightgate Inc.
  *
- * This copyright notice is Copyright Management Information under 17 USC 1202
- * and is included to protect this work and deter copyright infringement.
- * Removal or alteration of this Copyright Management Information without the
- * express written permission of Brightgate Inc is prohibited, and any
- * such unauthorized removal or alteration will be a violation of federal law.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
+
 
 // Extraction of data used in the Bayesian classifier results in the
 // concatenation of a sequence of synthetic terms (representing various
@@ -304,3 +303,4 @@ func BayesSentenceFromDeviceInfo(ouiDB oui.OuiDB, di *base_msg.DeviceInfo) sente
 // CombinedVersion is the current combined sentence version string, of the form
 // "010112"
 const CombinedVersion = ediSeparatorVersion + ediBaseVersion + ediDHCPVersion + ediDNSVersion + ediListenVersion + ediScanVersion
+

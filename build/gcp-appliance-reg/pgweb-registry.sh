@@ -1,13 +1,12 @@
 #!/bin/bash
 #
-# COPYRIGHT 2018 Brightgate Inc. All rights reserved.
+# Copyright 2018 Brightgate Inc.
 #
-# This copyright notice is Copyright Management Information under 17 USC 1202
-# and is included to protect this work and deter copyright infringement.
-# Removal or alteration of this Copyright Management Information without the
-# express written permission of Brightgate Inc is prohibited, and any
-# such unauthorized removal or alteration will be a violation of federal law.
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
+
 
 #
 # This script is a developer aid-- it stands up a pgweb (a postgres web viewer)
@@ -48,3 +47,4 @@ read -r -s -p "Postgres database password [user=postgres]: " PASSWORD
 export DATABASE_URL="$REG_DBURI&password=$PASSWORD"
 
 exec $pdir/pgweb_linux_amd64 --bind=0.0.0.0 $*
+

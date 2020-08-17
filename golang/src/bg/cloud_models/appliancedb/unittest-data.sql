@@ -1,12 +1,11 @@
 --
--- COPYRIGHT 2019 Brightgate Inc. All rights reserved.
+-- Copyright 2019 Brightgate Inc.
 --
--- This copyright notice is Copyright Management Information under 17 USC 1202
--- and is included to protect this work and deter copyright infringement.
--- Removal or alteration of this Copyright Management Information without the
--- express written permission of Brightgate Inc is prohibited, and any
--- such unauthorized removal or alteration will be a violation of federal law.
+-- This Source Code Form is subject to the terms of the Mozilla Public
+-- License, v. 2.0. If a copy of the MPL was not distributed with this
+-- file, You can obtain one at https://mozilla.org/MPL/2.0/.
 --
+
 
 -- Example Data
 INSERT INTO organization (uuid, name) VALUES
@@ -42,3 +41,4 @@ INSERT INTO site_commands (site_uuid, enq_ts, config_query) VALUES
 INSERT INTO site_net_exception (site_uuid, ts, reason, macaddr, exc) VALUES
     ('20000000-2000-2000-2000-000000000001'::uuid, '2019-05-22 21:17:52.469775+00', 'TEST_EXCEPTION', 18838586676582,
         '{"reason": "TEST_EXCEPTION", "details": ["detail 1", "detail 2"], "message": "This is a test of the emergency broadcast system.", "protocol": "IP", "timestamp": "2019-05-22T21:17:52.469774773Z", "virtualAP": "psk", "macAddress": "18838586676582", "ipv4Address": 2864434397}')
+

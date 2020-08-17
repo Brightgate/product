@@ -36,6 +36,7 @@ require (
 	github.com/golang/protobuf v1.3.2
 	github.com/google/go-cmp v0.4.0
 	github.com/google/gopacket v1.1.17
+	github.com/gorilla/context v1.1.1 // indirect
 	github.com/gorilla/mux v1.7.3
 	github.com/gorilla/schema v1.1.0 // indirect
 	github.com/gorilla/securecookie v1.1.1

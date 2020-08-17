@@ -1,12 +1,11 @@
 --
--- COPYRIGHT 2019 Brightgate Inc. All rights reserved.
+-- Copyright 2019 Brightgate Inc.
 --
--- This copyright notice is Copyright Management Information under 17 USC 1202
--- and is included to protect this work and deter copyright infringement.
--- Removal or alteration of this Copyright Management Information without the
--- express written permission of Brightgate Inc is prohibited, and any
--- such unauthorized removal or alteration will be a violation of federal law.
+-- This Source Code Form is subject to the terms of the Mozilla Public
+-- License, v. 2.0. If a copy of the MPL was not distributed with this
+-- file, You can obtain one at https://mozilla.org/MPL/2.0/.
 --
+
 
 BEGIN;
 
@@ -33,3 +32,4 @@ COMMENT ON COLUMN account_org_role.organization_uuid IS 'Organization the role a
 COMMENT ON COLUMN account_org_role.role IS 'Role name';
 
 COMMIT;
+
