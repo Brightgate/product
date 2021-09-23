@@ -1,9 +1,10 @@
-
+<!--
 Copyright 2020 Brightgate Inc.
 
 This Source Code Form is subject to the terms of the Mozilla Public
 License, v. 2.0. If a copy of the MPL was not distributed with this
 file, You can obtain one at https://mozilla.org/MPL/2.0/.
+-->
 
 
 # Cross-compilation README
@@ -38,7 +39,7 @@ README.md for the rWRT repository.
 
 ## Building a Raspbian sysroot [OBSOLETE]
 
-```
+```shellsession
 $ sudo apt-get install multistrap
 $ cd build/cross-compile
 $ ./build-multistrap-sysroot.sh raspbian-stretch.multistrap
@@ -47,7 +48,7 @@ $ ./build-multistrap-sysroot.sh raspbian-stretch.multistrap
 
 When this is done, you will have a directory called `sysroot.raspbian-stretch`.
 You can do this in one step, from the top-level directory:
-```
+```shellsession
 $ make build-sysroot
 ```
 
@@ -59,13 +60,13 @@ sysroot, the target distro is used to build the appropriate packages.
 
 For the OpenWrt build, use 'openwrt' as the distro:
 
-```
+```shellsession
 $ make DISTRO=openwrt GOARCH=arm GOARM=7 packages
 ```
 
 For Raspbian, use 'debian' as the distro:
 
-```
+```shellsession
 $ make DISTRO=debian GOARCH=arm GOARM=7 packages
 ```
 

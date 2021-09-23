@@ -1,15 +1,23 @@
+<!--
+Copyright 2020 Brightgate Inc.
+
+This Source Code Form is subject to the terms of the Mozilla Public
+License, v. 2.0. If a copy of the MPL was not distributed with this
+file, You can obtain one at https://mozilla.org/MPL/2.0/.
+-->
+
 # client-web
 
 ## Project setup
-```
-npm install
+```shellsession
+$ npm install
 ```
 
 You should also re-run this after `git pull`.
 
 ### Compiles and hot-reloads for development
-```
-npm run serve
+```shellsession
+$ npm run serve
 ```
 
 The development server is ideal during prototyping and working through user
@@ -41,18 +49,18 @@ This creates a clause in the webpack.devServer configuration which looks like th
 ```
 
 ### Compiles and minifies for production
-```
-npm run build
+```shellsession
+$ npm run build
 ```
 
 ### Lint files
-```
-npm run lint
+```shellsession
+$ npm run lint
 ```
 
 ### Lint and fix files
-```
-npm run lint-fix
+```shellsession
+$ npm run lint-fix
 ```
 
 (This works amazingly well)

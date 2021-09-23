@@ -1,12 +1,10 @@
-```
+<!--
 Copyright 2020 Brightgate Inc.
 
 This Source Code Form is subject to the terms of the Mozilla Public
 License, v. 2.0. If a copy of the MPL was not distributed with this
 file, You can obtain one at https://mozilla.org/MPL/2.0/.
-```
-
-README.registry.md
+-->
 
 This directory contains tools for use with our Google Cloud based Appliance
 Registry.  An Appliance Registry tracks vital data about a fleet of appliances,
@@ -30,7 +28,7 @@ to describe the registry.
 
 Here is an example of registry creation:
 
-```shell
+```shellsession
 $ ./new-appliance-reg.sh
 usage: ./new_appliance-reg.sh <credentials-file> <cloudsql-instance> <project-id> <region-id> <registry-id>
 
@@ -79,7 +77,7 @@ a cloud installation, or in the proto area in a workspace.
 
 Example:
 
-```shell
+```shellsession
 $ cl-reg app add -d output_secrets -i appliance-reg-peppy-breaker-161717-us-west1-testreg3.json test-appliance
 Enter DB password:
 -------------------------------------------------------------
@@ -101,7 +99,7 @@ but you can override it by passing the `-s` flag.
 If you need to provision an appliance on a CloudSQL instance for which there's
 not a proxy already running, use the shell script wrapper:
 
-```shell
+```shellsession
 $ . appliance-reg-peppy-breaker-161717-us-west1-testreg3.sh
 $ ./new-appliance.sh -c ~/secrets/Engineering-f51a19014a36.json test-appliance
 Activated service account credentials for: [cloudappliance-reg-admin@peppy-breaker-161717.iam.gserviceaccount.com]
@@ -133,6 +131,6 @@ by running `chmod 600 /data/secret/rpcd/cloud.secret.json` is a good practice.
 
 To confirm that it's working, try:
 
-```
+```shellsession
 pi@pi $ sudo /opt/com.brightgate/bin/ap-rpc heartbeat
 ```

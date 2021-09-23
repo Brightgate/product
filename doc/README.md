@@ -1,12 +1,12 @@
-```
+<!--
 Copyright 2020 Brightgate Inc.
 
 This Source Code Form is subject to the terms of the Mozilla Public
 License, v. 2.0. If a copy of the MPL was not distributed with this
 file, You can obtain one at https://mozilla.org/MPL/2.0/.
-```
+-->
 
-# README
+# Documentation Creation and Build
 
 The content used to generate product documentation is placed in `doc/src`, and
 then manipulated by the build process, using `doc/build` for intermediate
@@ -25,7 +25,7 @@ prerequisite packages needed for WeasyPrint.
 
 Invoking
 
-```
+```shellsession
 $ make doc
 ```
 
@@ -34,14 +34,14 @@ These include a PDF print version, named `[filestem]-print.pdf`, and an HTML
 fragment containing only the body content, named `[filestem]-body.html`.
 These outputs are placed in `doc/output`.
 
-```
+```shellsession
 $ make doc-check
 ```
 
 at the root of the source tree will run sanity checks over the documentation
 HTML, looking for syntactic problems.  Documentation must pass these checks.
 
-```
+```shellsession
 $ make doc-clobber
 ```
 
@@ -72,7 +72,7 @@ Four markers are placed in the file, using HTML comments:
 - The content start and end markers are expected to be used to prune the HTML
   document to only the content, and none of the document level elements.
 
-    `<!-- BRIGHTGATE CONTENT START -->`
+    `<!-- BRIGHTGATE CONTENT START -->`\
     `<!-- BRIGHTGATE CONTENT END -->`
 
   For example, the body content is extracted and then deposited into Framework
@@ -95,4 +95,4 @@ labeled elements) are present, sometimes Chrome seems to mess up and emit
 screenshots with those included.
 
 Screenshots need not have borders, and in general it is better that they don't,
-as the doc css rules automatically includes them.
+as the doc CSS rules automatically includes them.
